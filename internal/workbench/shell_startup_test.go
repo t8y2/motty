@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 )
 
@@ -43,8 +43,8 @@ func TestTerminalStatusFollowsShellStartup(test *testing.T) {
 		test.Fatal("the tab reports readiness before any shell output")
 	}
 	session.HostID = localHostID
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitConnProgress); ok {
 		test.Fatal("a local shell offers a network connection progress page")
 	}
@@ -78,8 +78,8 @@ func BenchmarkShellStartupPaint(bench *testing.B) {
 				connection.shell(bench).say("$ ")
 				state.Wake()
 			}
-			var canvas ui.Canvas
-			size := ui.Size{Width: 1400, Height: 900}
+			var canvas gfx.Canvas
+			size := gfx.Size{Width: 1400, Height: 900}
 			state.Paint(&canvas, size)
 			bench.ReportAllocs()
 			bench.ResetTimer()

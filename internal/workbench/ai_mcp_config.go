@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 type aiMCPClient uint8
@@ -28,9 +28,9 @@ const (
 	aiMCPClientCount
 )
 
-func aiMCPClientID(client aiMCPClient) ui.ID { return hitAISetMCPClients.At(int(client)) }
+func aiMCPClientID(client aiMCPClient) gfx.ID { return hitAISetMCPClients.At(int(client)) }
 
-func aiAgentClientID(client aiMCPClient) ui.ID { return hitAISetAgentClients.At(int(client)) }
+func aiAgentClientID(client aiMCPClient) gfx.ID { return hitAISetAgentClients.At(int(client)) }
 
 const (
 	aiMCPClientSetting   = "ai.mcp.client"
@@ -48,7 +48,8 @@ func aiMCPClientFromKey(key string) aiMCPClient {
 	return aiMCPClaude
 }
 
-// Export preferences do not reconfigure either MCP service or its access level.
+// Export preferences do not reconfigure either MCP service or its access level,
+// but every open window shows the same stored choice.
 func (state *State) aiChooseMCPClient(client aiMCPClient, agent bool) {
 	if client >= aiMCPClientCount {
 		return
@@ -69,6 +70,9 @@ func (state *State) aiChooseMCPClient(client aiMCPClient, agent bool) {
 		state.ai.cfg.agentClient = client
 	} else {
 		state.ai.cfg.mcpClient = client
+	}
+	if state.options.Group != nil {
+		state.options.Group.assistantChoicesChanged(state)
 	}
 }
 
@@ -121,6 +125,10 @@ func aiMCPConfig(client aiMCPClient, endpoint, token string) string {
 	case aiMCPCherry:
 		delete(server, "url")
 		server["baseUrl"], server["type"], server["name"] = endpoint, "streamableHttp", "motty"
+	case aiMCPPi:
+		// Pi's default exposure keeps MCP tools out of the model's tool list and
+		// reachable only from codemode scripts; direct exposure declares them.
+		server["exposure"], server["timeout"] = "direct", 900
 	}
 	if client == aiMCPVSCode {
 		root = "servers"

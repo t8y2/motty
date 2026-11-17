@@ -147,7 +147,8 @@ type compiled struct {
 
 // Set is a compiled list of rules. A nil Set marks nothing.
 type Set struct {
-	rules []compiled
+	rules            []compiled
+	paddingSensitive bool
 }
 
 // Compile builds a set from rules in priority order: where two rules match the
@@ -172,12 +173,18 @@ func Compile(rules []Rule) *Set {
 			continue
 		}
 		set.rules = append(set.rules, compiled{expression: expression, slot: rule.Slot})
+		set.paddingSensitive = true
 	}
 	return set
 }
 
 // Empty reports whether the set can mark anything.
 func (set *Set) Empty() bool { return set == nil || len(set.rules) == 0 }
+
+// PaddingSensitive reports whether changing trailing spaces can change a
+// match. Builtin whole-word and address rules are independent of padding;
+// user rules may count spaces or anchor a match at the end of the row.
+func (set *Set) PaddingSensitive() bool { return set != nil && set.paddingSensitive }
 
 // Mark colors the bytes of line that a rule matches: marks[i] is the slot of
 // line[i]. It reports whether it marked anything. Bytes another rule already

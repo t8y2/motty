@@ -5,14 +5,14 @@ import (
 	"path"
 	"strings"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/workbench/icons"
 )
 
 // sftpExtensionIcons maps a lower-case extension to its file-type glyph. The
 // glyphs are Material Icon Theme's: flat, filled and colored, so the list reads
 // at a glance by shape and hue. Built once at start; a listing only looks up.
-var sftpExtensionIcons = map[string]*ui.Icon{
+var sftpExtensionIcons = map[string]*gfx.Icon{
 	".png": &icons.MitImage, ".jpg": &icons.MitImage, ".jpeg": &icons.MitImage, ".gif": &icons.MitImage,
 	".webp": &icons.MitImage, ".svg": &icons.MitImage, ".bmp": &icons.MitImage, ".ico": &icons.MitImage,
 	".heic": &icons.MitImage, ".avif": &icons.MitImage, ".tif": &icons.MitImage, ".tiff": &icons.MitImage,
@@ -60,7 +60,7 @@ var sftpExtensionIcons = map[string]*ui.Icon{
 }
 
 // sftpNameIcons covers files recognized by their whole name.
-var sftpNameIcons = map[string]*ui.Icon{
+var sftpNameIcons = map[string]*gfx.Icon{
 	"dockerfile": &icons.MitDocker, "docker-compose.yml": &icons.MitDocker, "docker-compose.yaml": &icons.MitDocker,
 	"license": &icons.MitLicense, "licence": &icons.MitLicense, "copying": &icons.MitLicense,
 	"readme": &icons.MitReadme, "readme.md": &icons.MitReadme, "readme.txt": &icons.MitReadme,
@@ -73,7 +73,7 @@ var sftpNameIcons = map[string]*ui.Icon{
 // mono reports a glyph that has no colors of its own (the generic file and the
 // link), which the list tints quietly. It runs once when a listing arrives,
 // not on every paint.
-func sftpFileIcon(name string, mode os.FileMode) (icon *ui.Icon, mono bool) {
+func sftpFileIcon(name string, mode os.FileMode) (icon *gfx.Icon, mono bool) {
 	switch {
 	case mode&os.ModeSymlink != 0:
 		return &icons.Link, true

@@ -6,7 +6,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/keymap"
 	"motty/internal/remotetools"
 )
 
@@ -40,7 +41,7 @@ func TestRemoteSearchFindsIdleProcessesAndNeverSendsQueries(t *testing.T) {
 	if len(state.remote.rows) != 0 || server.ran("LC_ALL=C ps") != before {
 		t.Fatal("search text entered remote commands or was not treated literally")
 	}
-	state.Click(hitRemoteSearchClear)
+	clickRemoteToolsSearchClear(t, state)
 	if len(state.remote.rows) != 101 || state.remote.searches[remoteProcesses].editor.String() != "" {
 		t.Fatal("clearing search did not restore the complete loaded snapshot")
 	}
@@ -49,7 +50,7 @@ func TestRemoteSearchFindsIdleProcessesAndNeverSendsQueries(t *testing.T) {
 func TestRemoteSearchQueriesStayIndependentAcrossTabsAndRefresh(t *testing.T) {
 	state, _, _ := openRemoteToolsDialog(t)
 	replaceRemoteQuery(t, state, "NGINX")
-	state.Click(hitRemoteTabContainers)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	if len(state.remote.rows) != 2 {
 		t.Fatal("process query leaked into containers")
@@ -58,12 +59,12 @@ func TestRemoteSearchQueriesStayIndependentAcrossTabsAndRefresh(t *testing.T) {
 	if len(state.remote.rows) != 1 {
 		t.Fatal("container search failed")
 	}
-	state.Click(hitRemoteRefresh)
+	clickRemoteToolsAction(t, state, hitRemoteRefresh)
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	if len(state.remote.rows) != 1 {
 		t.Fatal("refresh lost container query")
 	}
-	state.Click(hitRemoteTabProcesses)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabProcesses)
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	if len(state.remote.rows) != 1 || state.remote.rows[0].cells[0] != "2211" {
 		t.Fatal("returning to process tab lost its independent query")
@@ -72,13 +73,16 @@ func TestRemoteSearchQueriesStayIndependentAcrossTabsAndRefresh(t *testing.T) {
 
 func TestRemoteSearchNativeFocusTypingAndEscape(t *testing.T) {
 	state, server, _ := openRemoteToolsDialog(t)
-	driver, err := app.NewDriver(app.Config{Title: "remote search", Width: 1400, Height: 900, Tree: Tree(), Paint: state.Paint, OnKey: state.Key, OnShortcut: state.Shortcut, OnPointer: state.Pointer, TextInput: state.RemoteToolsInput}, nil)
+	driver, err := app.NewDriver(state.WindowConfig(app.Config{
+		Title: "remote search", Width: 1400, Height: 900, Tree: Tree(),
+		Paint: state.Paint, OnKey: state.Key, OnShortcut: state.Shortcut, OnPointer: state.Pointer,
+	}), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer driver.Close()
-	find := state.shortcuts.chords[shortcutFind]
-	if err := driver.Chord(find.Modifiers, string(find.Key)); err != nil {
+	find := state.shortcuts.chords.Chord(shortcutFind)
+	if err := driver.Chord(find.Modifiers, string(find.Char)); err != nil {
 		t.Fatal(err)
 	}
 	if driver.Snapshot().Focused != hitRemoteSearch {
@@ -91,7 +95,14 @@ func TestRemoteSearchNativeFocusTypingAndEscape(t *testing.T) {
 	if len(state.remote.rows) != 1 || state.remote.rows[0].cells[0] != "3000" {
 		t.Fatal("native text input did not filter process rows")
 	}
-	if err := driver.Key(ui.KeyEscape, 0); err != nil {
+	if err := driver.Chord(find.Modifiers, string(find.Char)); err != nil {
+		t.Fatal(err)
+	}
+	editor := state.remote.searches[state.remote.tab].queryEditor()
+	if selected := editor.Selection(); selected.Start != 0 || selected.End != editor.RuneCount() || selected.End == 0 {
+		t.Fatalf("Find re-fire selection = %+v, want all of %q", selected, editor.String())
+	}
+	if err := driver.Key(gfx.KeyEscape, 0); err != nil {
 		t.Fatal(err)
 	}
 	if state.modal != modalRemoteTools || len(state.remote.rows) != 3 {
@@ -110,7 +121,7 @@ func TestRemoteSearchNativeFocusTypingAndEscape(t *testing.T) {
 func TestRemoteSearchEscapeClearsQueryAfterResultsTakeFocus(t *testing.T) {
 	state, _, _ := openRemoteToolsDialog(t)
 	replaceRemoteQuery(t, state, "nginx")
-	result := state.remoteSearchKey(ui.KeyEvent{Target: hitRemoteRowList.At(0), Key: ui.KeyEscape})
+	result := state.remoteSearchKey(gfx.KeyEvent{Key: gfx.KeyEscape})
 	if !result.Handled || state.remote.searches[remoteProcesses].editor.String() != "" || len(state.remote.rows) != 3 {
 		t.Fatal("Escape from the result list did not clear its query before closing")
 	}
@@ -118,10 +129,10 @@ func TestRemoteSearchEscapeClearsQueryAfterResultsTakeFocus(t *testing.T) {
 
 func TestRemoteSearchZeroMatchesDoesNotMeanNoDockerObjects(t *testing.T) {
 	state, _, _ := openRemoteToolsDialog(t)
-	state.Click(hitRemoteTabContainers)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	replaceRemoteQuery(t, state, "no-matching-container")
-	state.Click(hitRemoteRefresh)
+	clickRemoteToolsAction(t, state, hitRemoteRefresh)
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	if state.remote.sourceTotal != 2 || len(state.remote.rows) != 0 || state.remote.status == state.messages.Tools.RemoteEmptyContainers {
 		t.Fatalf("filtered snapshot was reported as an empty host: %q", state.remote.status)
@@ -144,16 +155,16 @@ func TestRemoteSearchNativeUtilityWindowUsesItsOwnInput(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer driver.Close()
-		state.shortcuts.bind(shortcutFind, shortcutChord{Named: ui.KeyF8})
-		if err := driver.Key(ui.KeyF8, 0); err != nil {
+		state.shortcuts.bind(shortcutFind, keymap.Chord{Key: gfx.KeyF8})
+		if err := driver.Key(gfx.KeyF8, 0); err != nil {
 			t.Fatal(err)
 		}
 		if driver.Snapshot().Focused != hitRemoteSearch {
 			t.Fatal("named Find binding did not focus the utility window's search")
 		}
 		state.shortcuts = defaultShortcuts()
-		find := state.shortcuts.chords[shortcutFind]
-		if err := driver.Chord(find.Modifiers, string(find.Key)); err != nil {
+		find := state.shortcuts.chords.Chord(shortcutFind)
+		if err := driver.Chord(find.Modifiers, string(find.Char)); err != nil {
 			t.Fatal(err)
 		}
 		if err := driver.Type("ALICE"); err != nil {
@@ -162,7 +173,7 @@ func TestRemoteSearchNativeUtilityWindowUsesItsOwnInput(t *testing.T) {
 		if len(w.ui.remote.rows) != 1 || w.ui.remote.rows[0].cells[0] != "3000" || state.modal != modalNone {
 			t.Fatal("native utility search was routed to the workbench or lost its source")
 		}
-		if err := driver.Key(ui.KeyEscape, 0); err != nil {
+		if err := driver.Key(gfx.KeyEscape, 0); err != nil {
 			t.Fatal(err)
 		}
 		if w.closed || len(w.ui.remote.rows) != 3 {

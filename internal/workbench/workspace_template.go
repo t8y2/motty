@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"unicode"
@@ -20,10 +21,10 @@ const (
 
 var (
 	ErrWorkspaceTemplateName       = errors.New("workbench: workspace template needs a name")
-	ErrWorkspaceTemplateHosts      = errors.New("workbench: workspace template needs 1 to 8 hosts")
+	ErrWorkspaceTemplateHosts      = errors.New("workbench: workspace template needs 1 to 12 hosts")
 	ErrWorkspaceTemplateHostID     = errors.New("workbench: workspace template host id is invalid")
 	ErrWorkspaceTemplateDupID      = errors.New("workbench: workspace template host ids must be unique")
-	ErrWorkspaceTemplateCols       = errors.New("workbench: workspace template columns must be 1 to 3")
+	ErrWorkspaceTemplateLayout     = errors.New("workbench: workspace template layout is invalid")
 	ErrWorkspaceTemplateID         = errors.New("workbench: workspace template id is invalid")
 	ErrWorkspaceSaveEmptyPane      = errors.New("workbench: workspace has an empty pane")
 	ErrWorkspaceSaveMissingSession = errors.New("workbench: workspace pane has no session")
@@ -31,20 +32,39 @@ var (
 	ErrWorkspaceSaveDuplicateHost  = errors.New("workbench: workspace panes repeat a host")
 )
 
+// WorkspaceCommand configures one SSH terminal within a workspace.
+type WorkspaceCommand struct {
+	Command string `json:"command"`
+}
+
+func (command WorkspaceCommand) normalized() WorkspaceCommand {
+	command.Command = restoredLoginCommand(command.Command)
+	return command
+}
+
 // WorkspaceTemplate is the small, shareable definition of a saved workspace.
-// It references catalog hosts or this computer's default local terminal and
-// never contains credentials, sessions, or terminal state.
+// It references catalog hosts, this computer's default local terminal, or one
+// named local shell, and never contains credentials, sessions, or terminal
+// state.
 type WorkspaceTemplate struct {
-	ID      string   `json:"id"`
-	Name    string   `json:"name"`
-	HostIDs []string `json:"host_ids"`
-	Columns uint8    `json:"columns"`
+	Commands map[string]WorkspaceCommand `json:"commands,omitempty"`
+	ID       string                      `json:"id"`
+	Name     string                      `json:"name"`
+	HostIDs  []string                    `json:"host_ids"`
+	// Layout is left out when it is zero. A record from before layouts existed
+	// holds only Columns, and the save that projects such a record re-encodes
+	// it; a zero kind has no name to write and would otherwise fail every save
+	// for as long as that record is stored.
+	Layout layoutcore.LayoutSpec `json:"layout,omitzero"`
+	// Columns is read from files written before layouts existed, which stored
+	// only a grid width. normalizeWorkspaceTemplate folds it into Layout.
+	Columns uint8 `json:"columns,omitempty"`
 }
 
 // NewWorkspaceTemplate validates a new template and assigns its stable id.
-func NewWorkspaceTemplate(name string, hostIDs []string, columns uint8) (WorkspaceTemplate, error) {
+func NewWorkspaceTemplate(name string, hostIDs []string, layout layoutcore.LayoutSpec) (WorkspaceTemplate, error) {
 	template := WorkspaceTemplate{
-		Name: name, HostIDs: slices.Clone(hostIDs), Columns: columns,
+		Name: name, HostIDs: slices.Clone(hostIDs), Layout: layout,
 	}
 	if err := template.validate(); err != nil {
 		return WorkspaceTemplate{}, err
@@ -66,20 +86,34 @@ func (template *WorkspaceTemplate) validate() error {
 	if len(template.HostIDs) == 0 || len(template.HostIDs) > maxWorkspaceTemplateHosts {
 		return ErrWorkspaceTemplateHosts
 	}
-	if template.Columns < layoutcore.MinGridColumns || int(template.Columns) > layoutcore.MaxGridColumns {
-		return ErrWorkspaceTemplateCols
+	if template.Layout.Validate(len(template.HostIDs)) != nil {
+		return ErrWorkspaceTemplateLayout
 	}
 	seen := make(map[string]struct{}, len(template.HostIDs))
 	for index, hostID := range template.HostIDs {
 		hostID = strings.TrimSpace(hostID)
-		if hostID != workspaceLocalTerminalRef && (!validCatalogID(hostID) || hostID == "") {
-			return ErrWorkspaceTemplateHostID
+		if hostID != workspaceLocalTerminalRef {
+			if _, shell := workspaceLocalShellRef(hostID); !shell && (!validCatalogID(hostID) || hostID == "") {
+				return ErrWorkspaceTemplateHostID
+			}
 		}
 		if _, exists := seen[hostID]; exists {
 			return ErrWorkspaceTemplateDupID
 		}
 		seen[hostID] = struct{}{}
 		template.HostIDs[index] = hostID
+	}
+	template.Commands = maps.Clone(template.Commands)
+	for id, command := range template.Commands {
+		command = command.normalized()
+		if _, ok := seen[id]; !ok || id == workspaceLocalTerminalRef || command.Command == "" {
+			delete(template.Commands, id)
+		} else {
+			template.Commands[id] = command
+		}
+	}
+	if len(template.Commands) == 0 {
+		template.Commands = nil
 	}
 	return nil
 }
@@ -97,6 +131,10 @@ func normalizeWorkspaceTemplate(template WorkspaceTemplate) (WorkspaceTemplate, 
 		return WorkspaceTemplate{}, ErrWorkspaceTemplateID
 	}
 	template.HostIDs = slices.Clone(template.HostIDs)
+	if template.Layout.Kind == 0 && template.Columns != 0 {
+		template.Layout = layoutcore.GridSpec(template.Columns)
+	}
+	template.Columns = 0
 	if err := template.validate(); err != nil {
 		return WorkspaceTemplate{}, err
 	}

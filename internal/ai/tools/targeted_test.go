@@ -8,16 +8,17 @@ import (
 
 func TestTargetedToolsDescribeTheLockedDefaultWithoutChangingMCP(t *testing.T) {
 	before := All()
-	schemas := make([]string, len(before))
-	for index, spec := range before {
-		schemas[index] = string(spec.Schema)
+	originals := make(map[string]Spec, len(before))
+	for _, spec := range before {
+		originals[spec.Name] = spec
 	}
 	targeted := Targeted()
-	if len(before) != len(targeted) {
+	if len(before) != len(targeted)+5 {
 		t.Fatal("targeted catalog changed the available tool set")
 	}
-	for index, spec := range targeted {
-		if spec.Name != before[index].Name || spec.Kind != before[index].Kind || !json.Valid(spec.Schema) {
+	for _, spec := range targeted {
+		original, ok := originals[spec.Name]
+		if !ok || spec.Name == NameListHosts || spec.Name == NameToolOutputRead || isJobTool(spec.Name) || spec.Kind != original.Kind || !json.Valid(spec.Schema) {
 			t.Fatalf("invalid targeted tool: %+v", spec)
 		}
 		var schema struct {
@@ -33,7 +34,8 @@ func TestTargetedToolsDescribeTheLockedDefaultWithoutChangingMCP(t *testing.T) {
 		if spec.Name == NameListSessions && !strings.Contains(spec.Description, "not the currently visible tab") {
 			t.Fatal("active marker was not explained as the locked default")
 		}
-		if original, _ := Lookup(spec.Name); string(original.Schema) != schemas[index] || original.Description != before[index].Description {
+		fromAll, _ := Lookup(spec.Name)
+		if fromAll.Schema == nil || string(fromAll.Schema) != string(original.Schema) || fromAll.Description != original.Description {
 			t.Fatal("targeted catalog modified the external MCP catalog")
 		}
 	}

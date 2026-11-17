@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/selfupdate"
 	"motty/internal/update"
@@ -21,8 +21,9 @@ type Updater interface {
 	Package() update.Package
 	// Prepare downloads the release's package and checks it; it changes nothing.
 	Prepare(ctx context.Context, release update.Release, progress func(selfupdate.Progress), phase func(selfupdate.Phase)) (selfupdate.Staged, error)
-	// Launch starts what replaces the program once it has quit.
-	Launch(staged selfupdate.Staged) error
+	// Launch starts what replaces the program once it has quit. quit ends the
+	// application, which a payload install hands to the installer.
+	Launch(staged selfupdate.Staged, quit func()) error
 	// TakeFailure is why the last update did not finish, if it did not, and forgets it.
 	TakeFailure() string
 }
@@ -52,6 +53,11 @@ type updateInstall struct {
 		done, size int64
 		line       string
 	}
+	// bar is the progress slot, fraction what it is filled to, and draw the
+	// painter kept so the declaration makes no method value.
+	bar      ui.Box
+	fraction float32
+	draw     func(*ui.DrawContext)
 }
 
 var (
@@ -169,7 +175,7 @@ func (state *State) finishInstall(serial int, staged selfupdate.Staged, err erro
 		return
 	}
 	if err == nil {
-		err = state.options.Updater.Launch(staged)
+		err = state.options.Updater.Launch(staged, state.options.Quit)
 	}
 	if err != nil {
 		install.phase, install.err = installFailed, err
@@ -196,7 +202,7 @@ func (state *State) cancelInstall() {
 	state.showNextPrompt()
 }
 
-func (state *State) clickUpdateProgress(id ui.ID) {
+func (state *State) clickUpdateProgress(id gfx.ID) {
 	install := &state.update.install
 	switch id {
 	case hitUpdateProgressCancel:
@@ -218,7 +224,7 @@ func (state *State) clickUpdateProgress(id ui.ID) {
 	}
 }
 
-func (state *State) paintUpdateProgress(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) declareUpdateProgress(c ui.C) {
 	install, m, pal := &state.update.install, state.messages.Tools, state.pal
 	title := fmt.Sprintf(m.UpdateDownloadingTitleFmt, state.update.release.Version)
 	bodyHeight := float32(68)
@@ -230,23 +236,27 @@ func (state *State) paintUpdateProgress(canvas *ui.Canvas, viewport ui.Rect) {
 		title = m.UpdateFailedTitle
 		bodyHeight = 4 * 20
 	}
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitUpdateProgressDimiss, CloseID: hitUpdateProgressCancel, InitialFocusID: hitUpdateProgressCancel,
-		ContentSize: ui.Size{Width: 540}, FitBody: true, BodyHeight: bodyHeight,
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 540, "", bodyHeight)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: title, Width: 540, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitUpdateProgressDimiss, CloseID: hitUpdateProgressCancel,
+		InitialFocusID: hitUpdateProgressCancel,
 	})
-	layout := dialog.Begin(title, "")
-	switch install.phase {
-	case installFailed:
-		f := state.partLayout.Begin(canvas, state.Theme(), layout.Body)
-		f.Paragraph(fmt.Sprintf(m.UpdateFailedBodyFmt, install.failure), 4).FontSize(metrics.FontSizeS).Color(pal.danger).LineHeight(20).MarginSides(4, 0, 0, 0)
-		f.End()
-		dialog.Actions(layout,
-			components.ButtonAction{ID: hitUpdateProgressCancel, Label: state.messages.LabelWindowClose, Variant: components.ButtonSecondary},
-			components.ButtonAction{ID: hitUpdateProgressPage, Label: m.UpdateOpenPage})
-	default:
-		line := ""
-		fraction := float32(1)
+	if install.phase == installFailed {
+		dialog.Body(func() {
+			ui.Column(c).Fill().Children(func() {
+				ui.Paragraph(c, fmt.Sprintf(m.UpdateFailedBodyFmt, install.failure), 4).FontSize(metrics.FontSizeS).Color(pal.danger).LineHeight(20).MarginSides(4, 0, 0, 0)
+			})
+		})
+		dialog.Footer(func() {
+			state.dialogActionFooter(c,
+				components.ButtonAction{ID: hitUpdateProgressCancel, Label: state.messages.LabelWindowClose, Variant: components.ButtonSecondary},
+				components.ButtonAction{ID: hitUpdateProgressPage, Label: m.UpdateOpenPage},
+			)
+		})
+	} else {
+		line, fraction := "", float32(1)
 		switch install.phase {
 		case installDownloading:
 			progress := install.progress
@@ -265,19 +275,29 @@ func (state *State) paintUpdateProgress(canvas *ui.Canvas, viewport ui.Rect) {
 		case installVerifying:
 			line = m.UpdateVerifying
 		}
-		var bar flex.Box
-		f := state.partLayout.Begin(canvas, state.Theme(), layout.Body)
-		f.Column().Fill().Children(func() {
-			bar = f.Slot().Height(8).Shrink(0).MarginSides(12, 0, 0, 0)
-			f.Text(line).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(20).MarginSides(10, 0, 0, 0)
+		install.fraction = fraction
+		install.bar = ui.Box{}
+		dialog.Body(func() {
+			column := ui.Column(c).Fill()
+			column.Children(func() {
+				install.bar = ui.Slot(c).Height(8).Shrink(0).MarginSides(12, 0, 0, 0)
+				ui.Text(c, line).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(20).MarginSides(10, 0, 0, 0)
+			})
+			if install.draw == nil {
+				install.draw = state.drawUpdateProgressBar
+			}
+			column.DrawOver(install.draw)
 		})
-		f.End()
-		components.Progress(canvas, state.Theme(), bar.Rect(), fraction)
-		if install.phase == installRestarting {
-			dialog.End()
-			return
+		if install.phase != installRestarting {
+			dialog.Footer(func() {
+				state.dialogActionFooter(c, components.ButtonAction{ID: hitUpdateProgressCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary})
+			})
 		}
-		dialog.Actions(layout, components.ButtonAction{ID: hitUpdateProgressCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary})
 	}
-	dialog.End()
+}
+
+// drawUpdateProgressBar paints the install progress into its slot.
+func (state *State) drawUpdateProgressBar(d *ui.DrawContext) {
+	install := &state.update.install
+	components.Progress(d.Canvas, *d.Theme, install.bar.Rect(), install.fraction)
 }

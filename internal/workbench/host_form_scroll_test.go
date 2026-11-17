@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
@@ -42,7 +42,7 @@ func TestHostFormScrollKeepsFooterAndReachesEveryField(t *testing.T) {
 				}
 			}
 			must(view.Rest())
-			find := func(id ui.ID) ui.Hit {
+			find := func(id gfx.ID) gfx.Hit {
 				t.Helper()
 				for _, h := range view.Snapshot().Hits {
 					if h.ID == id && !h.IsLabel {
@@ -50,13 +50,13 @@ func TestHostFormScrollKeepsFooterAndReachesEveryField(t *testing.T) {
 					}
 				}
 				t.Fatalf("missing visible control %v", id)
-				return ui.Hit{}
+				return gfx.Hit{}
 			}
 			footer := find(hitDialogSubmit).Bounds
 			if state.editor.form.geometry.MaxOffsetY <= 0 {
 				t.Fatal("short form should scroll")
 			}
-			seen := map[ui.ID]bool{}
+			seen := map[gfx.ID]bool{}
 			for i := 0; i < state.editor.form.count+2; i++ {
 				id := view.Snapshot().Focused
 				seen[id] = true
@@ -70,25 +70,30 @@ func TestHostFormScrollKeepsFooterAndReachesEveryField(t *testing.T) {
 				must(view.Keys("Tab"))
 				must(view.Rest())
 			}
-			for _, id := range []ui.ID{hostPickerIDs.Trigger, hitHostProxyConfigure, hitDialogAlgorithms, hitDialogOTP, hitDialogForwardX11, hitDialogCancel, hitDialogSubmit} {
+			for _, id := range []gfx.ID{hostPickerIDs.Trigger, hitHostProxyConfigure, hitDialogAlgorithms, hitDialogOTP, hitDialogForwardX11, hitDialogCancel, hitDialogSubmit} {
 				if !seen[id] {
 					t.Fatalf("Tab skipped %v", id)
 				}
+			}
+			// The protocol choice is a page control; its chosen segment must
+			// still be in the form's tab ring.
+			if id := state.editor.form.choiceIDs.protocol; id.IsZero() || !seen[id] {
+				t.Fatalf("Tab skipped the protocol choice %v", id)
 			}
 			must(view.Keys("Shift+Tab"))
 			must(view.Rest())
 			find(view.Snapshot().Focused)
 			// Wheel and a captured scrollbar drag use the same clamped geometry.
 			b := state.editor.form.geometry.Viewport
-			must(view.Driver().Scroll(ui.ScrollEvent{X: b.X + 4, Y: b.Y + 4, DeltaY: 10000}))
+			must(view.Driver().Scroll(gfx.ScrollEvent{X: b.X + 4, Y: b.Y + 4, DeltaY: 10000}))
 			must(view.Rest())
 			if state.editor.form.offset != state.editor.form.geometry.MaxOffsetY {
 				t.Fatal("wheel failed to reach bottom")
 			}
 			bar := state.editor.form.geometry.VerticalThumb
-			must(view.Driver().Press(bar.X+bar.Width/2, bar.Y+bar.Height/2, ui.PointerButtonPrimary))
+			must(view.Driver().Press(bar.X+bar.Width/2, bar.Y+bar.Height/2, gfx.PointerButtonPrimary))
 			must(view.Driver().Move(bar.X+bar.Width/2, b.Y-40))
-			must(view.Driver().Release(bar.X+bar.Width/2, b.Y-40, ui.PointerButtonPrimary))
+			must(view.Driver().Release(bar.X+bar.Width/2, b.Y-40, gfx.PointerButtonPrimary))
 			must(view.Rest())
 			if state.editor.form.offset != 0 {
 				t.Fatal("captured scrollbar did not reach top")
@@ -98,13 +103,12 @@ func TestHostFormScrollKeepsFooterAndReachesEveryField(t *testing.T) {
 			must(view.Driver().Resize(900, 600))
 			must(view.Rest())
 			before := state.editor.form.offset
-			state.scrollHostForm(ui.ScrollEvent{X: b.X + 2, Y: b.Y + 2, DeltaY: 100})
-			if state.editor.form.offset != before {
+			if result := state.Scroll(gfx.ScrollEvent{X: b.X + 2, Y: b.Y + 2, DeltaY: 100}); !result.Handled || state.editor.form.offset != before {
 				t.Fatal("scrolled behind a popup")
 			}
 			must(view.Keys("Escape"))
 			must(view.Rest())
-			if state.modal != modalNewHost || state.editor.iconOpen {
+			if state.modal != modalNewHost || state.editor.iconPicker.control.Open {
 				t.Fatal("Escape closed the parent form")
 			}
 		})
@@ -115,8 +119,8 @@ func TestHostFormRoomierLayoutAndReset(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.setLanguage(i18n.Chinese)
 	state.openHostDialog()
-	c, _ := paintAt(state, ui.Size{Width: 1100, Height: 900})
-	var label, input, nextLabel ui.Rect
+	c, _ := paintAt(state, gfx.Size{Width: 1100, Height: 900})
+	var label, input, nextLabel gfx.Rect
 	for _, h := range c.Hits() {
 		if h.ID == hitDialogAddress && h.IsLabel {
 			nextLabel = h.Bounds
@@ -124,7 +128,7 @@ func TestHostFormRoomierLayoutAndReset(t *testing.T) {
 		if h.ID == hitDialogLabel {
 			if h.IsLabel {
 				label = h.Bounds
-			} else if h.Role == ui.RoleTextField {
+			} else if h.Role == gfx.RoleTextField {
 				input = h.Bounds
 			}
 		}
@@ -156,5 +160,32 @@ func TestHostFormRoomierLayoutAndReset(t *testing.T) {
 		if err = view.Screenshot(filepath.Join(dir, "host-form-spacing.png")); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+// A wheel over the page behind a dialog must not scroll it. The page hands the
+// wheel to the list under the pointer before the window's own handler, and that
+// list lies behind the dialog too; scrollWindow asks the dialog first.
+func TestWheelBehindADialogKeepsTheHostListStill(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	group := state.hosts[0].Group
+	for i := 0; i < 60; i++ {
+		state.hosts = append(state.hosts, Host{ID: 1000 + uint32(i), Label: fmt.Sprintf("host-%d", i), Address: "192.0.2.1", Port: 22, Group: group})
+	}
+	state.syncVisible()
+	state.WindowConfig(app.Config{OnScroll: state.Scroll})
+	paintedTexts(state)
+	if state.hostList.scroll == nil {
+		t.Fatal("the list did not get a scroll position")
+	}
+	clickHostAction(state, hitAddHost)
+	state.Click(hitDialogIcon)
+	paintedTexts(state)
+	before := state.hostList.scroll.Offset
+	if result := state.scrollWindow(gfx.ScrollEvent{X: 250, Y: 500, DeltaY: 120}); !result.Handled {
+		t.Fatal("the wheel behind the dialog was not handled")
+	}
+	if state.hostList.scroll.Offset != before {
+		t.Fatalf("the host list scrolled behind the dialog: %v -> %v", before, state.hostList.scroll.Offset)
 	}
 }

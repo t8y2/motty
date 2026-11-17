@@ -6,7 +6,7 @@ import (
 	"unicode"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func TestWorkspaceNavigationFollowsHostsWithoutTemplateCount(t *testing.T) {
@@ -17,10 +17,10 @@ func TestWorkspaceNavigationFollowsHostsWithoutTemplateCount(t *testing.T) {
 		mustWorkspaceTemplate(t, "Edge", []string{"host_c"}, 1),
 	}
 
-	canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	hosts := panelHit(t, canvas, hitHosts)
 	workspaces := panelHit(t, canvas, hitWorkspaces)
-	if workspaces.Label != state.messages.NavWorkspaces || workspaces.Role != ui.RoleMenuItem {
+	if workspaces.Label != state.messages.NavWorkspaces || workspaces.Role != gfx.RoleMenuItem {
 		t.Fatalf("workspace row = %+v", workspaces)
 	}
 	if workspaces.Bounds.Width != hosts.Bounds.Width || workspaces.Bounds.Height != hosts.Bounds.Height {
@@ -35,7 +35,7 @@ func TestWorkspaceNavigationFollowsHostsWithoutTemplateCount(t *testing.T) {
 	if state.activeSection != sectionWorkspaces || state.workspaceName() != "workspaces" {
 		t.Fatalf("workspace click left section=%d name=%q", state.activeSection, state.workspaceName())
 	}
-	canvas, _ = paintAt(state, ui.Size{Width: 1400, Height: 900})
+	canvas, _ = paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	workspaces = panelHit(t, canvas, hitWorkspaces)
 	if !workspaces.Selected {
 		t.Fatalf("workspace row is not selected after opening it: %+v", workspaces)
@@ -54,13 +54,13 @@ func TestWorkspaceNavigationFollowsHostsWithoutTemplateCount(t *testing.T) {
 	if len(state.commandPalette.visible) != 1 {
 		t.Fatalf("workspace palette matches = %d", len(state.commandPalette.visible))
 	}
-	state.Key(ui.KeyEvent{Target: hitCommandPaletteSearch, Key: ui.KeyEnter})
+	state.Key(gfx.KeyEvent{Target: hitCommandPaletteSearch, Key: gfx.KeyEnter})
 	if state.activeSection != sectionWorkspaces {
 		t.Fatalf("palette opened section %d", state.activeSection)
 	}
 }
 
-func assertNoTemplateCountInSidebar(t *testing.T, canvas *ui.Canvas, row ui.Hit) {
+func assertNoTemplateCountInSidebar(t *testing.T, canvas *gfx.Canvas, row gfx.Hit) {
 	t.Helper()
 	rowTexts := 0
 	for _, text := range canvas.Texts() {
@@ -80,7 +80,7 @@ func assertNoTemplateCountInSidebar(t *testing.T, canvas *ui.Canvas, row ui.Hit)
 	}
 }
 
-func inside(inner, outer ui.Rect) bool {
+func inside(inner, outer gfx.Rect) bool {
 	return inner.X >= outer.X && inner.Y >= outer.Y &&
 		inner.X+inner.Width <= outer.X+outer.Width &&
 		inner.Y+inner.Height <= outer.Y+outer.Height

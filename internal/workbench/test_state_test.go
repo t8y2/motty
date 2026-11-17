@@ -4,11 +4,13 @@ import (
 	"context"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
+	"motty/internal/linkwatch"
 	"motty/internal/localshell"
 )
 
@@ -36,13 +38,25 @@ func newTestState(t testing.TB, options Options) *State {
 	if options.WatchSystemAppearance == nil {
 		options.WatchSystemAppearance = func(func()) func() { return func() {} }
 	}
+	if options.WatchNetworkChanges == nil {
+		// A test never polls the machine's interfaces: the path a test walks is
+		// the one it reports by hand.
+		options.WatchNetworkChanges = func(func(linkwatch.Change)) func() { return func() {} }
+	}
 	if options.SetInterfaceFont == nil {
 		// Nor may a test change the process's interface font, or read the fonts of
 		// the machine it runs on.
-		options.SetInterfaceFont = func(string) bool { return true }
+		options.SetInterfaceFont = func(string, int, int) bool { return true }
 	}
 	if options.FontFamilies == nil {
 		options.FontFamilies = func() []string { return nil }
+	}
+	if options.FontWeights == nil {
+		options.FontWeights = func(string) []int { return nil }
+	}
+	if options.SetTerminalFontWeights == nil {
+		// The terminal's weights reach the same process-wide engine.
+		options.SetTerminalFontWeights = func(int, int) bool { return true }
 	}
 	if options.ClipboardText == nil {
 		// The clipboard a test reads is its own: the real one is asked on the
@@ -53,6 +67,11 @@ func newTestState(t testing.TB, options Options) *State {
 		// Nor does a test read the files the developer last copied.
 		options.ClipboardFiles = func() ([]string, error) { return nil, app.ErrNoFiles }
 	}
+	if options.SetClipboardFiles == nil {
+		// Nor may a test replace them: the real clipboard belongs to the machine
+		// running the test.
+		options.SetClipboardFiles = func([]string) error { return nil }
+	}
 	if options.Keystore == nil {
 		// Left nil, the vault's key store is the machine's own: a test binary is
 		// not the signed application, so macOS asks for the login keychain's
@@ -60,6 +79,11 @@ func newTestState(t testing.TB, options Options) *State {
 		// keys in memory; the ones that exercise a missing or denied store pass
 		// their own.
 		options.Keystore = &memKeys{}
+	}
+	if options.Invalidator == nil {
+		// The window's invalidator, for pages that declare a ui.Effect: the
+		// effect wakes the window when its work finishes.
+		options.Invalidator = new(app.Invalidator)
 	}
 	state := New(options)
 	// The shells a Windows computer offers are whatever is installed on it, and
@@ -77,7 +101,12 @@ func newTestState(t testing.TB, options Options) *State {
 	// A test never waits for the automatic check; the ones that exercise it set
 	// these back to something short.
 	state.update.firstDelay, state.update.every = time.Hour, time.Hour
-	t.Cleanup(state.Close)
+	t.Cleanup(func() {
+		state.Close()
+		eventCanvasesMu.Lock()
+		delete(eventCanvases, state)
+		eventCanvasesMu.Unlock()
+	})
 	return state
 }
 
@@ -85,20 +114,25 @@ func newTestState(t testing.TB, options Options) *State {
 // A real window has one; a test that calls state.Pointer directly has none, so the
 // helper makes it. It lives in the test, not in State: production code never holds
 // a canvas.
-var eventCanvases = map[*State]*ui.Canvas{}
+var eventCanvases = map[*State]*gfx.Canvas{}
+var eventCanvasesMu sync.Mutex
 
 // pointer sends a pointer event the way a window does: to the state's Pointer
 // first and, if nothing there took it, to the controls that declared themselves
 // to it while painting (the event pass). The state is painted once before its first
 // event so that the controls have declared what they listen to.
-func pointer(state *State, event ui.PointerEvent) ui.EventResult {
-	if event.Viewport == (ui.Size{}) {
-		event.Viewport = ui.Size{Width: 1400, Height: 900}
+func pointer(state *State, event gfx.PointerEvent) gfx.EventResult {
+	if event.Viewport == (gfx.Size{}) {
+		event.Viewport = gfx.Size{Width: 1400, Height: 900}
 	}
+	eventCanvasesMu.Lock()
 	canvas, seen := eventCanvases[state]
 	if !seen {
-		canvas = &ui.Canvas{}
+		canvas = &gfx.Canvas{}
 		eventCanvases[state] = canvas
+	}
+	eventCanvasesMu.Unlock()
+	if !seen {
 		canvas.BeginFrame()
 		state.Paint(canvas, event.Viewport)
 		canvas.EndFrame()

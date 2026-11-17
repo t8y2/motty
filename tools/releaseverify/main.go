@@ -327,6 +327,10 @@ func expectedAssets(version string) []string {
 		"motty-" + version + "-windows-amd64.zip",
 		"motty_" + version + "_arm64.deb",
 		"motty_" + version + "_amd64.deb",
+		"motty-" + version + "-linux-arm64.PKGBUILD",
+		"motty-" + version + "-linux-amd64.PKGBUILD",
+		"motty-" + version + "-linux-arm64.SRCINFO",
+		"motty-" + version + "-linux-amd64.SRCINFO",
 	}
 	return append(assets, "SHA256SUMS", "SIGNATURES")
 }

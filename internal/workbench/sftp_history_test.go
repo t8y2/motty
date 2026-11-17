@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
 )
@@ -129,7 +129,7 @@ func TestSFTPHistoryCanceledSamePathDoesNotAcceptOlderResult(t *testing.T) {
 		*view.pathInput() = *text.NewEditor("/home/test/docs")
 		state.submitSFTPPath(view)
 	}
-	cancel := func() { state.sftpPathKey(ui.KeyEvent{Target: hitSFTPPath, Key: ui.KeyEscape}) }
+	cancel := func() { state.sftpPathKey(gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEscape}) }
 	view.pathEditing = true
 	submit()
 	<-gated.started
@@ -282,7 +282,7 @@ func TestSFTPHistoryLocalPathEscapeCancelsPendingListing(t *testing.T) {
 	if v.lfolder.navigation.id == 0 {
 		t.Fatal("local listing was not pending")
 	}
-	state.sftpPathKey(ui.KeyEvent{Target: hitSFTPPath, Key: ui.KeyEscape})
+	state.sftpPathKey(gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEscape})
 	historyUntil(t, func() bool {
 		state.ai.inbox.mu.Lock()
 		defer state.ai.inbox.mu.Unlock()
@@ -300,8 +300,8 @@ func BenchmarkSFTPHistoryMore(b *testing.B) {
 		session.files.history.touch(fmt.Sprintf("/history/path-%d", i))
 	}
 	session.files.headerMenuOpen = true
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	b.ReportAllocs()
 	for b.Loop() {

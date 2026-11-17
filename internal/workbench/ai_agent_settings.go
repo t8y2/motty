@@ -3,6 +3,7 @@ package workbench
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -10,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/gate"
 	"motty/internal/ai/store"
@@ -22,9 +23,6 @@ import (
 // client configuration that starts it, and what they did.
 
 var (
-	hitAISetAgentObserve       = tree.ID(aiSettingsHits, "ai-set-agent-observe")
-	hitAISetAgentRun           = tree.ID(aiSettingsHits, "ai-set-agent-run")
-	hitAISetAgentAllowAll      = tree.ID(aiSettingsHits, "ai-set-agent-allow-all")
 	hitAISetAgentCopy          = tree.ID(aiSettingsHits, "ai-set-agent-copy")
 	hitAISetAgentClear         = tree.ID(aiSettingsHits, "ai-set-agent-clear")
 	hitAISetAgentSelect        = tree.ID(aiSettingsHits, "ai-set-agent-select")
@@ -35,26 +33,33 @@ var (
 // agentAuditShown is how many of the latest calls the page lists.
 const agentAuditShown = 5
 
-func (state *State) aiAgentModeOptions() [3]components.SegmentOption {
-	m := state.messages.AISettings
-	return [...]components.SegmentOption{
-		{ID: hitAISetAgentObserve, Label: m.AgentModeObserve},
-		{ID: hitAISetAgentRun, Label: m.AgentModeRun},
-		{ID: hitAISetAgentAllowAll, Label: m.MCPModeAllowAll},
+var agentHostModeChoices = [...]agentHostMode{agentHostModeNone, agentHostModeFollow, agentHostModeAll}
+
+func (state *State) agentHostModeLabel(mode agentHostMode) string {
+	switch mode {
+	case agentHostModeNone:
+		return state.messages.AISettings.AgentHostsNone
+	case agentHostModeAll:
+		return state.messages.AISettings.AgentHostsAll
+	}
+	return state.messages.AISettings.AgentHostsFollow
+}
+
+// applyAgentHostMode stores a bulk choice and persists it. A refused save puts
+// the mode and the per-host permissions back, so the page, the running server
+// and the file keep describing the same access.
+func (state *State) applyAgentHostMode(mode agentHostMode) {
+	previousMode, previousHosts := state.agentHostMode, maps.Clone(state.agentHosts)
+	state.setAgentHostMode(mode)
+	if err := state.saveWithResult(); err != nil {
+		state.agentHostMode, state.agentHosts = previousMode, previousHosts
+		state.showActionFailure(state.messages.AISettings.AgentsTitle, err, state.messages.ActionFeedback.SaveFailed)
 	}
 }
 
-// aiAgentClick handles the controls of the group.
-func (state *State) aiAgentClick(id ui.ID) bool {
+// aiAgentClick handles the controls of the group that are not its mode choice.
+func (state *State) aiAgentClick(id gfx.ID) bool {
 	switch id {
-	case hitAISetAgentObserve:
-		state.aiPut(agentModeSetting, AgentModeReadOnly)
-	case hitAISetAgentRun:
-		state.aiPut(agentModeSetting, AgentModeCommands)
-	case hitAISetAgentAllowAll:
-		if state.ai.settings.agentMode != gate.ModeAllowAll {
-			state.ai.cfg.dialog = aiDialogAgentAllowAll
-		}
 	case hitAISetAgentCopy:
 		state.aiCopyText(hitAISetAgentCopy, state.aiAgentPreview())
 	case hitAISetAgentSelect:
@@ -75,6 +80,21 @@ func (state *State) aiAgentClick(id ui.ID) bool {
 		return false
 	}
 	return true
+}
+
+// applyAIAgentMode stores the stdio server's access level the choice already
+// wrote. Full access is asked for, not written: the confirmation stores it.
+func (state *State) applyAIAgentMode(mode gate.Mode) {
+	switch mode {
+	case gate.ModeAllowAll:
+		if state.ai.settings.agentMode != gate.ModeAllowAll {
+			state.ai.cfg.dialog = aiDialogAgentAllowAll
+		}
+	case gate.ModeAsk:
+		state.aiPut(agentModeSetting, AgentModeCommands)
+	default:
+		state.aiPut(agentModeSetting, AgentModeReadOnly)
+	}
 }
 
 // agentExecutable is the program a client has to start.
@@ -156,15 +176,7 @@ func (state *State) agentAuditLines() []string {
 }
 
 func (state *State) paintAIAgents(page *settingsPage) {
-	pal, m := state.pal, state.messages.AISettings
-	selected := hitAISetAgentObserve
-	switch state.ai.settings.agentMode {
-	case gate.ModeAsk:
-		selected = hitAISetAgentRun
-	case gate.ModeAllowAll:
-		selected = hitAISetAgentAllowAll
-	}
-	modes := state.aiAgentModeOptions()
+	c, pal, m := page.c, state.pal, state.messages.AISettings
 	hosts := state.agentHostsText()
 	entries := state.ai.agentAudit
 	activity := m.AgentActivityNone
@@ -172,17 +184,33 @@ func (state *State) paintAIAgents(page *settingsPage) {
 		activity = m.AgentActivityDesc
 	}
 	page.group(m.AgentsTitle, func() {
-		page.f.Column().Pad(18).Children(func() {
-			page.f.Wrap(m.AgentsDescription).FontSize(metrics.FontSizeS).LineHeight(18).Color(pal.muted)
+		ui.Column(c).Pad(18).Children(func() {
+			ui.Wrap(c, m.AgentsDescription).FontSize(metrics.FontSizeS).LineHeight(18).Color(pal.muted)
 		})
-		page.mcpFrame(m.AgentMode, m.AgentModeDesc, pal.muted, func() {
-			width := min(components.SegmentedControlWidth(page.f.Canvas(), state.Theme(), modes[:]), max(0, page.width-36))
-			page.segmentSlot(width, modes[:], selected)
-		})
+		mode := state.ai.settings.agentMode
+		settingsChoiceRow(page, m.AgentMode, m.AgentModeDesc, &mode, aiAgentModeChoices[:], state.aiAgentModeLabel,
+			func() { state.applyAIAgentMode(mode) }, nil)
 		if state.ai.settings.agentMode == gate.ModeAllowAll {
 			page.mcpAccessWarning(m.AgentAllowAllWarning)
 		}
-		page.mcpFrame(m.AgentHosts, hosts, pal.muted, func() {})
+		hostMode := state.effectiveAgentHostMode()
+		choices := agentHostModeChoices[:]
+		controlWidth := max(min(float32(300), max(float32(190), page.width*0.40)), settingsChoiceWidth(page, choices, state.agentHostModeLabel))
+		controlWidth = min(controlWidth, max(page.width-60, 0))
+		page.mcpFrame(m.AgentHosts, hosts, pal.muted, func() {
+			choice := ui.Choice(c, &hostMode, choices, state.agentHostModeLabel).Width(controlWidth)
+			if choice.Changed() {
+				state.applyAgentHostMode(hostMode)
+				return
+			}
+			// Clicking the option already shown changes nothing in the value, but
+			// is still a choice: re-apply the effective mode, so a stored label
+			// that drifted from the permissions is written back as what the page
+			// shows.
+			if _, clicked := choice.ChosenIndex(); clicked {
+				state.applyAgentHostMode(state.effectiveAgentHostMode())
+			}
+		})
 		page.separator()
 		state.paintMCPConfigBlock(page, aiMCPConfigView{
 			title: m.AgentConfig, description: m.AgentConfigDesc,
@@ -198,10 +226,9 @@ func (state *State) paintAIAgents(page *settingsPage) {
 			return
 		}
 		page.separator()
-		f := page.f
-		f.Column().Pad(18).Gap(4).Children(func() {
+		ui.Column(c).Pad(18).Gap(4).Children(func() {
 			for _, line := range state.agentAuditLines() {
-				f.Wrap(line).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(16)
+				ui.Wrap(c, line).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(16)
 			}
 		})
 	})
@@ -245,7 +272,7 @@ func agentAuditLine(entry store.AuditEntry, m i18n.AISettingsMessages) string {
 
 // aiCopyText puts text on the clipboard and remembers which button did, so the
 // button can say it worked.
-func (state *State) aiCopyText(target ui.ID, value string) {
+func (state *State) aiCopyText(target gfx.ID, value string) {
 	cfg := &state.ai.cfg
 	cfg.copyTarget = target
 	if err := state.options.SetClipboardText(value); err != nil {

@@ -1,13 +1,13 @@
 package workbench
 
 import (
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 )
 
-var sftpWindowActionIDs = [...]ui.ID{hitSFTPOpenEntry, hitSFTPDownload, hitSFTPDownloadHere, hitSFTPSend, hitSFTPEditExternal, hitSFTPRename, hitSFTPMove, hitSFTPChmod, hitSFTPExtract, hitSFTPCompress, hitSFTPDelete, hitSFTPNewDirectory, hitSFTPUpload, hitSFTPUploadDirectory, hitSFTPNewLink, hitSFTPProperties}
+var sftpWindowActionIDs = [...]gfx.ID{hitSFTPOpenEntry, hitSFTPDownload, hitSFTPDownloadHere, hitSFTPSend, hitSFTPEditExternal, hitSFTPRename, hitSFTPMove, hitSFTPChmod, hitSFTPChown, hitSFTPExtract, hitSFTPCompress, hitSFTPDelete, hitSFTPNewDirectory, hitSFTPUpload, hitSFTPUploadDirectory, hitSFTPNewLink, hitSFTPProperties, hitSFTPCalculateDirectorySize}
 
-func sftpWindowActionIndex(id ui.ID) int {
+func sftpWindowActionIndex(id gfx.ID) int {
 	for i, action := range sftpWindowActionIDs {
 		if action == id {
 			return i
@@ -51,7 +51,7 @@ func (w *sftpWindow) selectionActions(local bool) []sftpWindowAction {
 	folder := w.folder(local)
 	selection := w.selection(local)
 	count, selected := selection.count, selection.index
-	add := func(id ui.ID, glyph uint8, label string) {
+	add := func(id gfx.ID, glyph uint8, label string) {
 		actions = append(actions, sftpWindowAction{sftpWindowActionIndex(id), glyph, label})
 	}
 	if count == 1 {
@@ -62,6 +62,9 @@ func (w *sftpWindow) selectionActions(local bool) []sftpWindowAction {
 			add(hitSFTPEditExternal, iconExternal, m.Tools.ExtEditButton)
 		}
 		add(hitSFTPSend, iconUpload, m.Tools.SendToServer)
+		if count > 0 {
+			add(hitSFTPDelete, iconTrash, m.SFTPDelete)
+		}
 		return actions
 	}
 	add(hitSFTPDownload, iconDownload, m.SFTPDownload)
@@ -72,30 +75,43 @@ func (w *sftpWindow) selectionActions(local bool) []sftpWindowAction {
 			add(hitSFTPEditExternal, iconExternal, m.Tools.ExtEditButton)
 		}
 		add(hitSFTPRename, iconPencil, m.SFTPRename)
-		add(hitSFTPMove, iconFolderOpen, m.SFTPMove)
 		add(hitSFTPChmod, iconLock, m.SFTPPermissions)
+		if sftpOwnershipAvailable(&w.session, w.view) {
+			add(hitSFTPChown, iconWrench, m.SFTPOwnership)
+		}
 		if !entry.IsDir() && archiveKindOf(entry.Name) != archiveNone && w.session.host.System != sshconn.SystemWindows {
 			add(hitSFTPExtract, iconArchive, m.Tools.Extract)
 		}
 		if entry.IsDir() && !entry.IsLink() && w.session.host.System != sshconn.SystemWindows {
 			add(hitSFTPCompress, iconArchive, m.Tools.Compress)
 		}
+	}
+	if count > 0 {
+		add(hitSFTPMove, iconFolderOpen, m.SFTPMove)
 		add(hitSFTPDelete, iconTrash, m.SFTPDelete)
 	}
 	return actions
 }
 
-func (w *sftpWindow) fileAction(local bool, id ui.ID) {
+func (w *sftpWindow) fileAction(local bool, id gfx.ID) {
 	defer w.invalidate()
 	w.selectionChanged(local)
 	w.activeLocal, w.view.local = local, local
+	if id == hitSFTPCalculateDirectorySize {
+		w.owner.calculateSFTPDirectorySize(w.view)
+		return
+	}
 	if id == hitSFTPProperties {
 		if properties, ok := captureSFTPProperties(w.folder(local), local); ok {
+			w.fileProperties.close()
 			w.fileProperties = properties
+			if canCalculateSFTPFolderSize(w.view) {
+				w.owner.calculateSFTPFolderSize(w.view, &w.fileProperties)
+			}
 		}
 		return
 	}
-	if w.browse.pending != nil || w.pendingLocal != "" || !local && (w.view.busy || !w.connected()) {
+	if w.browse.pending != nil || w.pendingLocal != "" || local && w.view.localBusy || !local && (w.view.busy || !w.connected()) {
 		return
 	}
 	w.cancelDrag()
@@ -148,10 +164,12 @@ func (w *sftpWindow) fileAction(local bool, id ui.ID) {
 		if !local {
 			w.owner.openSFTPDialog(w.view, sftpDialogChmod)
 		}
-	case hitSFTPDelete:
-		if !local {
-			w.owner.openSFTPDialog(w.view, sftpDialogDelete)
+	case hitSFTPChown:
+		if !local && sftpOwnershipAvailable(&w.session, w.view) {
+			w.owner.openSFTPDialog(w.view, sftpDialogChown)
 		}
+	case hitSFTPDelete:
+		w.owner.openSFTPDialog(w.view, sftpDialogDelete)
 	case hitSFTPExtract:
 		if !local {
 			w.owner.openSFTPExtractDialog(w.view)

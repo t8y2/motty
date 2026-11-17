@@ -129,17 +129,17 @@ func windowsIdentity(ctx context.Context, path string) (Identity, error) {
 	return identity, nil
 }
 
-// verifyWindows holds the downloaded installer to the signer of the running program.
-func verifyWindows(ctx context.Context, setup string, want Identity) error {
-	status, got, err := windowsSignature(ctx, setup)
+// verifyWindows holds the replacement program or installer to the running signer.
+func verifyWindows(ctx context.Context, candidate string, want Identity) error {
+	status, got, err := windowsSignature(ctx, candidate)
 	if err != nil {
 		return err
 	}
 	if status != "Valid" || got.Subject == "" {
-		return fmt.Errorf("selfupdate: the installer's signature is not valid (%s)", status)
+		return fmt.Errorf("selfupdate: the replacement's signature is not valid (%s)", status)
 	}
 	if got.Subject != want.Subject {
-		return fmt.Errorf("selfupdate: the installer is signed by %q, not %q", got.Subject, want.Subject)
+		return fmt.Errorf("selfupdate: the replacement is signed by %q, not %q", got.Subject, want.Subject)
 	}
 	return nil
 }

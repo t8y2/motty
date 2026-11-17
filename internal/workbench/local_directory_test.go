@@ -113,7 +113,7 @@ func TestLocalDirectoriesRestoreIndependentlyWithoutFileFollowing(t *testing.T) 
 		session.term.promptStarted, session.term.folderIntegrationSeen = true, true
 		state.terminalDirectory(session.ID, term.Cwd{Path: dirs[index]})
 	}
-	state.flushLocalDirectories()
+	state.flushTerminalDirectories()
 	restored := newTestState(t, options)
 	if len(restored.sessions) != 2 {
 		t.Fatalf("restored sessions = %d", len(restored.sessions))

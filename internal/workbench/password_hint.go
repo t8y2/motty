@@ -4,14 +4,15 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
-// Password prompt assist: when sudo asks for the account's password, the saved
-// one is offered as dim text after the prompt, and Enter sends it. Nothing is
-// sent without that Enter, and anything else the user types takes the offer
-// back. su is left out: its prompt is bare and asks for root's password, which
-// is not the one saved for the host.
+// Password prompt assist for sudo: when sudo asks for the account's password,
+// the saved one is offered as dim text after the prompt, and Enter sends it.
+// Nothing is sent without that Enter, and anything else the user types takes the
+// offer back. su is handled by the password offer in autofill_picker.go: its
+// prompt is bare and asks for root's password, which is not the one saved for
+// the host, so the user chooses from the saved passwords there.
 //
 // Ownership: the prompt comes from the emulator's screen and the password from
 // the vault, both application state. The text is drawn by the same ghost path
@@ -28,6 +29,9 @@ func (state *State) setPasswordHint(on bool) bool {
 		return false
 	}
 	state.passwordHintOff = !on
+	if !on {
+		state.closeAutofillPick()
+	}
 	return true
 }
 
@@ -46,7 +50,7 @@ func (state *State) notePasswordPrompt(session *Session) {
 		return
 	}
 	line := t.screen.RowText(cursor.Y)
-	if len(line) < len("[sudo]") || !strings.EqualFold(line[:len("[sudo]")], "[sudo]") || !sudoPromptRe.MatchString(line) {
+	if len(line) < len("[sudo") || !strings.EqualFold(line[:len("[sudo")], "[sudo") || !sudoPromptRe.MatchString(line) {
 		t.passwordHint = ""
 		return
 	}
@@ -81,8 +85,8 @@ func (state *State) passwordHintGhost(session *Session) (string, bool) {
 }
 
 // passwordHintKey takes the Enter that accepts the offer.
-func (state *State) passwordHintKey(session *Session, event ui.KeyEvent) bool {
-	if event.Key != ui.KeyEnter || event.Modifiers != 0 || event.Repeat || !state.passwordHintActive(session) {
+func (state *State) passwordHintKey(session *Session, event gfx.KeyEvent) bool {
+	if event.Key != gfx.KeyEnter || event.Modifiers != 0 || event.Repeat || !state.passwordHintActive(session) {
 		return false
 	}
 	value, result := state.vaultSecret(state.passwordName(session))

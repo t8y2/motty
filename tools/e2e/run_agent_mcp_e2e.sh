@@ -27,7 +27,7 @@ cleanup() {
 	rm -rf "$work"
 }
 trap cleanup EXIT
-mkdir -p "$work/home/.ssh" "$work/data"
+mkdir -p "$work/home/.ssh"
 ssh-keygen -q -t ed25519 -N "" -C agent-e2e -f "$work/home/.ssh/id_ed25519"
 
 E2E_EXTRA_PUBKEY="$work/home/.ssh/id_ed25519.pub" E2E_ALLOW_EXEC=1 "$server" 2248 >"$work/fixture.log" 2>&1 &
@@ -40,15 +40,15 @@ while ! grep -q "^listening on" "$work/fixture.log" 2>/dev/null; do
 done
 
 drive() { # script
-	MOTTY_HEAD="$head" MOTTY_LANG=en MOTTY_DATA_DIR="$work/data" python3 tools/headless_drive.py "$work/home" "$1"
+	MOTTY_HEAD="$head" MOTTY_LANG=en python3 tools/headless_drive.py "$work/home" "$1"
 }
 
 echo "== window: hosts, trust, mode =="
 drive tools/e2e/agent_mcp_setup_e2e.txt >"$work/setup.log" 2>&1 || { cat "$work/setup.log"; exit 1; }
-[ "$(sqlite3 "$work/data/ai.db" "select value from settings where key='ai.mcp.stdio.mode'")" = ask ] || { echo "the mode was not saved"; exit 1; }
+[ "$(sqlite3 "$work/home/motty-data/ai.db" "select value from settings where key='ai.mcp.stdio.mode'")" = ask ] || { echo "the mode was not saved"; exit 1; }
 
 echo "== mcp-serve over stdio =="
-python3 tools/e2e/agent_mcp_e2e.py "$bin" "$work/home" "$work/data"
+python3 tools/e2e/agent_mcp_e2e.py "$bin" "$work/home" "$work/home/motty-data"
 
 echo "== window: what the agent did =="
 drive tools/e2e/agent_mcp_activity_e2e.txt >"$work/activity.log" 2>&1 || { cat "$work/activity.log"; exit 1; }
@@ -56,5 +56,5 @@ grep -q "agent-host  terminal_exec rm -rf /tmp/motty-agent-e2e — refused" "$wo
 grep -q "closed-host  terminal_exec echo nope — failed" "$work/activity.log" || { echo "the activity list lacks the call on the closed host"; exit 1; }
 grep -q "terminal_exec echo [$][(][(]6[*]7[)][)]marker — ran" "$work/activity.log" || { echo "the activity list lacks the last command"; exit 1; }
 if grep -q "42marker" "$work/activity.log"; then echo "output leaked into the log"; exit 1; fi
-[ "$(sqlite3 "$work/data/ai.db" "select count(*) from agent_audit")" = 0 ] || { echo "Clear did not empty the log"; exit 1; }
+[ "$(sqlite3 "$work/home/motty-data/ai.db" "select count(*) from agent_audit")" = 0 ] || { echo "Clear did not empty the log"; exit 1; }
 echo "agent MCP end to end verified"

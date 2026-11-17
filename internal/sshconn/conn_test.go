@@ -2,6 +2,8 @@ package sshconn
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"errors"
 	"io"
 	"net"
@@ -13,6 +15,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+	sshknownhosts "golang.org/x/crypto/ssh/knownhosts"
 )
 
 func TestDialContextNeedsAConnectedConn(t *testing.T) {
@@ -158,37 +161,179 @@ func TestRejectingTheHostKeyFailsWithoutAuthenticating(t *testing.T) {
 	}
 }
 
-func TestChangedHostKeyFailsWithoutPromptingAndKeepsTheFile(t *testing.T) {
+// changedKeyHarness trusts one server key, restarts the server on the same
+// port with a different key, and returns the new connection, the trusted file
+// and the two public keys.
+func changedKeyHarness(t *testing.T) (h *harness, server *testServer, path string, trusted, offered ssh.PublicKey) {
+	t.Helper()
 	genuine := startServer(t, func(s *testServer) { s.password = "pw" })
 	first := dial(t, genuine, nil)
 	first.phase(PhaseHostKeyPrompt)
 	first.conn.TrustHostKey(true)
 	first.phase(PhasePasswordPrompt)
+	path = first.conn.config.KnownHostsPath
 	first.conn.Close()
-	path := first.conn.config.KnownHostsPath
-	trusted, _ := os.ReadFile(path)
 
-	// Same address and port, different key: a rebuilt server or an attacker.
 	_, port := genuine.host()
 	genuine.stop()
 	impostor := startServer(t, func(s *testServer) { s.port = port; s.password = "pw" })
-	h := dial(t, impostor, func(c *Config) { c.KnownHostsPath = path })
-	failed := h.until("a verdict", func(s Status) bool { return s.Phase == PhaseFailed || s.Phase == PhaseHostKeyPrompt })
-	if failed.Phase == PhaseHostKeyPrompt {
-		t.Fatal("a changed host key was offered for approval")
+	h = dial(t, impostor, func(c *Config) { c.KnownHostsPath = path })
+	t.Cleanup(func() {
+		h.conn.Close()
+		impostor.stop()
+	})
+	return h, impostor, path, genuine.hostKey.PublicKey(), impostor.hostKey.PublicKey()
+}
+
+func TestChangedHostKeyAsksAndUpdateReplacesTheRecord(t *testing.T) {
+	h, server, path, trusted, offered := changedKeyHarness(t)
+	prompt := h.phase(PhaseHostKeyPrompt)
+	if !prompt.HostKey.Changed {
+		t.Fatalf("a changed key did not say so: %+v", prompt.HostKey)
 	}
-	if !errors.Is(failed.Err, ErrHostKeyChanged) {
-		t.Fatalf("error = %v, want ErrHostKeyChanged", failed.Err)
+	if len(prompt.HostKey.Known) != 1 || prompt.HostKey.Known[0] != ssh.FingerprintSHA256(trusted) ||
+		prompt.HostKey.Fingerprint != ssh.FingerprintSHA256(offered) {
+		t.Fatalf("fingerprints = %+v", prompt.HostKey)
 	}
-	if len(failed.HostKey.Known) != 1 || failed.HostKey.Known[0] != ssh.FingerprintSHA256(genuine.hostKey.PublicKey()) ||
-		failed.HostKey.Fingerprint != ssh.FingerprintSHA256(impostor.hostKey.PublicKey()) {
-		t.Fatalf("fingerprints = %+v", failed.HostKey)
-	}
-	if after, _ := os.ReadFile(path); string(after) != string(trusted) {
-		t.Fatal("a changed key modified the known-hosts file")
-	}
-	if len(impostor.offered()) != 0 {
+	if len(server.offered()) != 0 {
 		t.Fatal("credentials were offered to a server with a changed key")
+	}
+
+	h.conn.TrustHostKey(true)
+	h.phase(PhasePasswordPrompt)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := net.JoinHostPort(h.conn.config.Host, itoa(h.conn.config.Port))
+	oldLine := sshknownhosts.Line([]string{address}, trusted)
+	newLine := sshknownhosts.Line([]string{address}, offered)
+	if strings.Contains(string(data), oldLine) {
+		t.Fatalf("the replaced record stayed: %q", data)
+	}
+	if !strings.Contains(string(data), newLine) {
+		t.Fatalf("the accepted key was not saved: %q", data)
+	}
+}
+
+func TestChangedHostKeyConnectOnceKeepsTheOldRecord(t *testing.T) {
+	h, _, path, _, _ := changedKeyHarness(t)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.phase(PhaseHostKeyPrompt)
+	h.conn.TrustHostKey(false)
+	h.phase(PhasePasswordPrompt)
+	after, _ := os.ReadFile(path)
+	if string(after) != string(before) {
+		t.Fatal("connecting once modified the known-hosts file")
+	}
+}
+
+func TestChangedHostKeyRejectedEndsTheConnectionWithoutWriting(t *testing.T) {
+	h, _, path, _, _ := changedKeyHarness(t)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.phase(PhaseHostKeyPrompt)
+	h.conn.RejectHostKey()
+	failed := h.phase(PhaseFailed)
+	if !errors.Is(failed.Err, ErrHostKeyRejected) {
+		t.Fatalf("error = %v, want ErrHostKeyRejected", failed.Err)
+	}
+	after, _ := os.ReadFile(path)
+	if string(after) != string(before) {
+		t.Fatal("a rejected changed key modified the known-hosts file")
+	}
+}
+
+// Replacing a record touches only the plain records for that host and key
+// type; comments, malformed lines, markers, other types and other hosts stay.
+func TestRememberReplacingKeepsOtherRecords(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "known_hosts")
+	oldPublic, _ := newPrivate(t)
+	oldKey, err := ssh.NewPublicKey(oldPublic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newPublic, _ := newPrivate(t)
+	newKey, err := ssh.NewPublicKey(newPublic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherType := newECDSAPublic(t)
+	const host, otherHost = "example.com", "other.example.com"
+	oldLine := sshknownhosts.Line([]string{host}, oldKey) + " old"
+	otherTypeLine := sshknownhosts.Line([]string{host}, otherType) + " ecdsa"
+	otherHostLine := sshknownhosts.Line([]string{otherHost}, oldKey)
+	revoked := "@revoked " + sshknownhosts.Line([]string{host}, otherType)
+	data := strings.Join([]string{oldLine, otherTypeLine, otherHostLine, revoked, "# a comment", "not a record"}, "\n") + "\n"
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	keys, err := newHostKeys(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := keys.rememberReplacing(host, newKey); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(after)
+	if strings.Contains(text, oldLine) {
+		t.Fatalf("the old record stayed: %q", text)
+	}
+	for _, want := range []string{sshknownhosts.Line([]string{host}, newKey), otherTypeLine, otherHostLine, revoked, "# a comment", "not a record"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("rewriting lost %q: %q", want, text)
+		}
+	}
+}
+
+// A record imported with a hashed host pattern still answers for the host it
+// hides, so an update replaces it instead of leaving the old key behind.
+func TestRememberReplacingMatchesAHashedRecord(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "known_hosts")
+	oldPublic, _ := newPrivate(t)
+	oldKey, err := ssh.NewPublicKey(oldPublic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newPublic, _ := newPrivate(t)
+	newKey, err := ssh.NewPublicKey(newPublic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const host = "hidden.example.com"
+	fields := strings.Fields(string(ssh.MarshalAuthorizedKey(oldKey)))
+	hashedLine := sshknownhosts.HashHostname(host) + " " + fields[0] + " " + fields[1]
+	if err := os.WriteFile(path, []byte(hashedLine+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	keys, err := newHostKeys(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := keys.rememberReplacing(host, newKey); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(after)
+	if hashed := strings.Split(hashedLine, " ")[0]; strings.Contains(text, hashed) {
+		t.Fatalf("the hashed old record stayed: %q", text)
+	}
+	if !strings.Contains(text, sshknownhosts.Line([]string{host}, newKey)) {
+		t.Fatalf("the accepted key was not saved: %q", text)
 	}
 }
 
@@ -341,19 +486,81 @@ func TestEncryptedIdentityPromptsAfterHostTrustAndAuthenticates(t *testing.T) {
 	}
 }
 
-func TestSkippingEncryptedIdentityFallsBackToPassword(t *testing.T) {
+// An encrypted identity file must not preempt the ssh-agent: the agent can
+// authenticate without unlocking a key the server never asks a signature for.
+func TestAgentAuthenticatesWithoutUnlockingAnUnrelatedIdentity(t *testing.T) {
+	path := encryptedIdentity(t, "locked")
+	agentPath, public := startAgent(t, "manager-key")
+	server := startServer(t, func(s *testServer) { s.authorized = []ssh.PublicKey{public} })
+	h := dial(t, server, func(c *Config) {
+		c.IdentityFiles = []string{path}
+		c.Agent = true
+		c.AgentAddress = agentPath
+	})
+	h.phase(PhaseHostKeyPrompt)
+	h.conn.TrustHostKey(false)
+	connected := h.until("the agent to authenticate", func(status Status) bool {
+		return status.Phase == PhaseConnected || status.Phase == PhaseFailed
+	})
+	if connected.Phase != PhaseConnected || connected.Method != "publickey" || len(connected.Skipped) != 0 {
+		t.Fatalf("connected = %+v", connected)
+	}
+}
+
+// A key Motty keeps for itself follows the same rule.
+func TestAgentAuthenticatesWithoutUnlockingAStoredIdentity(t *testing.T) {
 	_, private := newPrivate(t)
 	block, err := ssh.MarshalPrivateKeyWithPassphrase(private, "", []byte("locked"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(t.TempDir(), "id_ed25519")
-	if err := os.WriteFile(path, pemEncode(block), 0o600); err != nil {
-		t.Fatal(err)
+	const ref = StoredKeyPrefix + "work"
+	agentPath, public := startAgent(t, "manager-key")
+	server := startServer(t, func(s *testServer) { s.authorized = []ssh.PublicKey{public} })
+	h := dial(t, server, func(c *Config) {
+		c.IdentityFiles = []string{}
+		c.AdditionalIdentityFiles = []string{ref}
+		c.Agent = true
+		c.AgentAddress = agentPath
+		c.StoredKey = func(string) ([]byte, error) { return pemEncode(block), nil }
+	})
+	h.phase(PhaseHostKeyPrompt)
+	h.conn.TrustHostKey(false)
+	connected := h.until("the agent to authenticate", func(status Status) bool {
+		return status.Phase == PhaseConnected || status.Phase == PhaseFailed
+	})
+	if connected.Phase != PhaseConnected || connected.Method != "publickey" || len(connected.Skipped) != 0 {
+		t.Fatalf("connected = %+v", connected)
 	}
+}
+
+// The server decides whether a key is worth a signature before the client asks
+// for its passphrase: a key the server does not accept must not be unlocked,
+// the way OpenSSH leaves an unrelated encrypted identity alone.
+func TestUnauthorizedEncryptedIdentityIsNotUnlocked(t *testing.T) {
+	path := encryptedIdentity(t, "locked")
 	other := newSigner(t)
 	server := startServer(t, func(s *testServer) {
 		s.authorized = []ssh.PublicKey{other.PublicKey()}
+		s.password = "pw"
+	})
+	h := dial(t, server, func(c *Config) { c.IdentityFiles = []string{path} })
+	h.phase(PhaseHostKeyPrompt)
+	h.conn.TrustHostKey(false)
+	status := h.phase(PhasePasswordPrompt)
+	if len(status.Skipped) != 0 {
+		t.Fatalf("skipped = %v, want the refused encrypted key left alone", status.Skipped)
+	}
+	h.conn.SubmitPassword("pw")
+	if connected := h.phase(PhaseConnected); connected.Method != "password" {
+		t.Fatalf("connected = %+v", connected)
+	}
+}
+
+func TestSkippingEncryptedIdentityFallsBackToPassword(t *testing.T) {
+	path := encryptedIdentity(t, "locked")
+	server := startServer(t, func(s *testServer) {
+		s.authorized = []ssh.PublicKey{publicOf(t, path)}
 		s.password = "pw"
 	})
 	h := dial(t, server, func(c *Config) { c.IdentityFiles = []string{path} })
@@ -367,6 +574,40 @@ func TestSkippingEncryptedIdentityFallsBackToPassword(t *testing.T) {
 	}
 	h.conn.SubmitPassword("pw")
 	if connected := h.phase(PhaseConnected); connected.Method != "password" {
+		t.Fatalf("connected = %+v", connected)
+	}
+}
+
+// An encrypted RSA identity still offers SHA-2 signatures: which algorithms the
+// key can sign with is known from its public half, before it is unlocked.
+func TestEncryptedRSAIdentitySignsWithSHA2(t *testing.T) {
+	private, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, err := ssh.MarshalPrivateKeyWithPassphrase(private, "", []byte("locked"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "id_rsa")
+	if err := os.WriteFile(path, pemEncode(block), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	signer, err := ssh.NewSignerFromKey(private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := startServer(t, func(s *testServer) {
+		s.authorized = []ssh.PublicKey{signer.PublicKey()}
+		s.pubKeyAuths = []string{ssh.KeyAlgoRSASHA256}
+	})
+	h := dial(t, server, func(c *Config) { c.IdentityFiles = []string{path} })
+	h.phase(PhaseHostKeyPrompt)
+	h.conn.TrustHostKey(false)
+	h.phase(PhaseKeyPassphrasePrompt)
+	h.conn.SubmitKeyPassphrase("locked")
+	connected := h.phase(PhaseConnected)
+	if connected.Method != "publickey" {
 		t.Fatalf("connected = %+v", connected)
 	}
 }

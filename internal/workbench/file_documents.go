@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -14,7 +13,9 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/document"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/filecontent"
 	"motty/internal/sftpclient"
 )
@@ -30,10 +31,12 @@ type fileWindowManager struct {
 	active      string                   // UI thread only
 	// pending is the last document the user asked to open: a slow load that
 	// finishes after another one must not take the visible tab back.
-	pending    string // UI thread only
-	painting   bool   // UI thread only
-	tabStrip   tabStrip
-	tabs       fileWindowTabUI
+	pending  string // UI thread only
+	painting bool   // UI thread only
+	tabStrip tabStrip
+	tabs     fileWindowTabUI
+	// page is the window's page, made on the first paint.
+	page       *ui.Page // UI thread only
 	closingAll bool     // UI thread only
 	closeQueue []string // UI thread only
 	closeDone  func()   // UI thread only
@@ -77,6 +80,7 @@ const (
 
 type fileDocument struct {
 	owner                            *State
+	note                             *noteWindow
 	cacheKey, location, name, source string
 	local                            bool
 	worker                           *sftpclient.Worker
@@ -166,30 +170,44 @@ func (state *State) openFileWindow(view *sftpView, location string, local bool) 
 		}()
 		return
 	}
-	conn, mode := session.conn, session.host.Transfer
-	if conn == nil {
+	if session.conn == nil || view.openFiles == nil {
 		delete(state.fileWindows.documents, key)
 		state.fileOpenNotice(view.detached, state.messages.FileWindow.CannotOpen, state.messages.SFTPUnavailable, components.ToastError)
 		return
 	}
-	d.worker = sftpclient.NewWorker(func() (sftpclient.Remote, error) { return openRemoteFiles(conn, mode) }, func() {})
-	go func() {
-		for result := range d.worker.Results() {
-			if result.Operation == sftpclient.OperationOpenDocument {
-				state.postFileEvent(decodeFileEvent(d, result.Data, result.Err))
-			}
-			if result.Operation == sftpclient.OperationSaveDocument {
-				state.postFileEvent(fileDocumentEvent{document: d, data: result.Data, err: result.Err, saved: true})
-			}
-			if result.Operation == sftpclient.OperationReadDocument {
-				state.postFileEvent(fileDocumentEvent{document: d, data: result.Data, err: result.Err, compared: true})
-			}
-		}
-	}()
+	d.openRemoteWorker(view.openFiles)
 	if !d.worker.OpenDocument(location) {
 		delete(state.fileWindows.documents, key)
 		d.worker.Close()
 		state.fileOpenNotice(view.detached, state.messages.FileWindow.CannotOpen, state.messages.SFTPUnavailable, components.ToastError)
+	}
+}
+
+func (d *fileDocument) openRemoteWorker(open func() (sftpclient.Remote, error)) {
+	worker := sftpclient.NewWorker(open, func() {})
+	d.worker = worker
+	go func() {
+		for result := range worker.Results() {
+			if result.Operation == sftpclient.OperationOpenDocument {
+				d.owner.postFileEvent(decodeFileEvent(d, result.Data, result.Err))
+			}
+			if result.Operation == sftpclient.OperationSaveDocument {
+				d.owner.postFileEvent(fileDocumentEvent{document: d, data: result.Data, err: result.Err, saved: true})
+			}
+			if result.Operation == sftpclient.OperationReadDocument {
+				d.owner.postFileEvent(fileDocumentEvent{document: d, data: result.Data, err: result.Err, compared: true})
+			}
+		}
+	}()
+}
+
+func (state *State) forgetSFTPDocumentAccess(view *sftpView) {
+	for _, document := range state.fileWindows.documents {
+		if document.view == view && !document.local && !document.closed && document.worker != nil {
+			document.worker.Close()
+			message := state.messages.SFTPUnavailable
+			document.openRemoteWorker(func() (sftpclient.Remote, error) { return nil, errors.New(message) })
+		}
 	}
 }
 
@@ -326,11 +344,11 @@ func (d *fileDocument) setText(decoded filecontent.Text, err error) {
 }
 
 func (d *fileDocument) dirty() bool {
-	return d.image == nil && d.ready && d.editor.String() != d.original
+	return d.note == nil && d.image == nil && d.ready && d.editor.String() != d.original
 }
 
 func (d *fileDocument) requestSave(closeAfter bool) {
-	if d.busy || !d.ready || d.image != nil {
+	if d.note != nil || d.busy || !d.ready || d.image != nil {
 		return
 	}
 	d.encodingOpen = false
@@ -533,6 +551,9 @@ func (d *fileDocument) chooseEncoding(name string) {
 }
 
 func (d *fileDocument) requestClose(allow func()) {
+	if d.note != nil {
+		d.owner.save()
+	}
 	d.encodingOpen = false
 	if d.busy {
 		d.allowClose = allow
@@ -566,6 +587,21 @@ func (d *fileDocument) dispose() {
 		return
 	}
 	d.closed = true
+	if d.note != nil {
+		n := &d.note.content
+		n.captureNoteSelection()
+		if n.owner == n {
+			n.body.Unmark()
+			n.title.Unmark()
+			n.tags.Unmark()
+			n.owner = nil
+		}
+		d.note.content.imageToken++
+		if cancel := d.note.content.imageCancel; cancel != nil {
+			cancel()
+		}
+	}
+
 	d.closeCanceled = nil
 	d.stopComparison()
 	if d.worker != nil {
@@ -730,7 +766,7 @@ func (d *fileDocument) openComparisonWindow() error {
 func (d *fileDocument) comparisonConfig() app.Config {
 	return app.Config{
 		Title: fmt.Sprintf(d.owner.messages.FileWindow.CompareWindowTitle, d.name),
-		Icon:  AppIcon(), Width: 1120, Height: 720, MinWidth: fileWindowMinWidth, MinHeight: fileWindowMinHeight, Tree: Tree(),
+		Icon:  AppIcon(), Width: 1120, Height: 720, MinWidth: fileWindowMinWidth, MinHeight: fileWindowMinHeight, WindowMode: app.WindowCustomTitlebar, TitlebarHeight: TitlebarHeight, ClearColor: windowClearColor(d.owner.Theme().Background), WindowBorderColor: func() app.Color { return windowClearColor(d.owner.Theme().Background) }, Tree: Tree(),
 		Paint: d.paintComparison, TextInput: d.comparisonTextInput, OnPointer: d.comparisonPointer,
 		OnKey: d.comparisonKey, OnShortcut: d.comparisonShortcut, OnScroll: d.comparisonScroll,
 		OnCloseRequest: d.requestComparisonClose, OnClosed: d.onComparisonClosed,
@@ -969,6 +1005,13 @@ func (state *State) closeFileWindows() {
 // ConfirmDocumentClose serializes dirty-document confirmation before closing a
 // source window or quitting. Cancel leaves the application and edits alive.
 func (state *State) ConfirmDocumentClose(allow func()) bool {
+	if state.confirmNoteClose(func() {
+		if !state.ConfirmDocumentClose(allow) {
+			allow()
+		}
+	}) {
+		return true
+	}
 	m := &state.fileWindows
 	for _, key := range m.order {
 		d := m.documents[key]
@@ -1022,12 +1065,7 @@ func (state *State) fileOpenPathReason(origin *sftpWindow, title, format, locati
 }
 
 func readLocalDocument(location string) ([]byte, error) {
-	source, err := os.Open(location)
-	if err != nil {
-		return nil, err
-	}
-	defer source.Close()
-	info, err := source.Stat()
+	info, err := os.Lstat(location)
 	if err != nil {
 		return nil, err
 	}
@@ -1037,57 +1075,30 @@ func readLocalDocument(location string) ([]byte, error) {
 	if info.Size() > sftpclient.MaxPreviewFileBytes {
 		return nil, sftpclient.ErrPreviewFileTooLarge
 	}
-	data, err := io.ReadAll(io.LimitReader(source, sftpclient.MaxPreviewFileBytes+1))
-	if len(data) > sftpclient.MaxPreviewFileBytes {
-		return nil, sftpclient.ErrPreviewFileTooLarge
+	data, _, err := document.Read(location)
+	if errors.Is(err, document.ErrNotRegular) {
+		return nil, filecontent.ErrBinary
 	}
 	return data, err
 }
 
 func saveLocalDocument(location string, data []byte, revision sftpclient.Revision) error {
-	info, err := os.Lstat(location)
-	if err != nil {
-		return err
-	}
-	if !info.Mode().IsRegular() {
+	_, err := document.Save(location, data, document.Revision(revision))
+	switch {
+	case errors.Is(err, document.ErrChanged):
+		return sftpclient.ErrRemoteChanged
+	case errors.Is(err, document.ErrNotRegular):
 		return filecontent.ErrBinary
 	}
-	current, err := readLocalDocument(location)
-	if err != nil {
-		return err
-	}
-	if sftpclient.Revision(sha256.Sum256(current)) != revision {
-		return sftpclient.ErrRemoteChanged
-	}
-	temporary, err := os.CreateTemp(filepath.Dir(location), ".motty-edit-*")
-	if err != nil {
-		return err
-	}
-	name := temporary.Name()
-	defer os.Remove(name)
-	if err = temporary.Chmod(info.Mode().Perm()); err == nil {
-		_, err = temporary.Write(data)
-	}
-	if err == nil {
-		err = temporary.Sync()
-	}
-	closeErr := temporary.Close()
-	if err != nil {
-		return err
-	}
-	if closeErr != nil {
-		return closeErr
-	}
-	current, err = readLocalDocument(location)
-	if err != nil {
-		return err
-	}
-	if sftpclient.Revision(sha256.Sum256(current)) != revision {
-		return sftpclient.ErrRemoteChanged
-	}
-	return os.Rename(name, location)
+	return err
 }
 
+// config is a document's own window. Its page routes the window's controls;
+// Paint stays the document's, which paints the editor and its overlays after
+// the page lays them out.
 func (d *fileDocument) config() app.Config {
-	return app.Config{Title: d.name + " — " + d.source, Icon: AppIcon(), Width: 1000, Height: 760, MinWidth: fileWindowMinWidth, MinHeight: fileWindowMinHeight, Tree: Tree(), Paint: d.paint, TextInput: d.textInput, OnPointer: d.pointer, OnKey: d.key, OnShortcut: d.shortcut, OnScroll: d.scroll, OnCloseRequest: d.requestClose, OnClosed: d.onClosed}
+	base := app.Config{Title: d.name + " — " + d.source, Icon: AppIcon(), Width: 1000, Height: 760, MinWidth: fileWindowMinWidth, MinHeight: fileWindowMinHeight, WindowMode: app.WindowCustomTitlebar, TitlebarHeight: TitlebarHeight, ClearColor: windowClearColor(d.owner.Theme().Background), Tree: Tree(), Paint: d.paint, TextInput: d.textInput, OnPointer: d.pointer, OnKey: d.key, OnShortcut: d.shortcut, OnScroll: d.scroll, OnCloseRequest: d.requestClose, OnClosed: d.onClosed}
+	config := d.documentPage().Config(base)
+	config.Paint = base.Paint
+	return config
 }

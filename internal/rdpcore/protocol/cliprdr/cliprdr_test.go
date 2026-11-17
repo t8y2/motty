@@ -407,7 +407,7 @@ func TestHandlerFormatListCallback(t *testing.T) {
 
 	var gotHasText bool
 	var callbackCalled bool
-	h.OnRemoteCopy(func(hasText, hasImage bool) {
+	h.OnRemoteCopy(func(hasText, hasImage, hasFiles bool) {
 		callbackCalled = true
 		gotHasText = hasText
 	})
@@ -443,7 +443,7 @@ func TestHandlerFormatListCallback_NoText(t *testing.T) {
 	h := NewHandler(func(data []byte) error { return nil }, testLog)
 
 	var gotHasText bool
-	h.OnRemoteCopy(func(hasText, hasImage bool) {
+	h.OnRemoteCopy(func(hasText, hasImage, hasFiles bool) {
 		gotHasText = hasText
 	})
 
@@ -523,6 +523,9 @@ func TestHandlerTextDataCallback(t *testing.T) {
 	h.OnTextData(func(text string) {
 		gotText = text
 	})
+	if err := h.RequestRemoteText(); err != nil {
+		t.Fatal(err)
+	}
 
 	// Simulate server sending format data response with "Hello"
 	wireData := textToWire("Hello")
@@ -624,7 +627,7 @@ func TestSetEnabled_SuppressesCallbacks(t *testing.T) {
 	h := NewHandler(func(data []byte) error { return nil }, testLog)
 
 	var callbackCalled bool
-	h.OnRemoteCopy(func(hasText, hasImage bool) {
+	h.OnRemoteCopy(func(hasText, hasImage, hasFiles bool) {
 		callbackCalled = true
 	})
 
@@ -722,7 +725,7 @@ func TestHandlerFormatListCallback_WithImage(t *testing.T) {
 	h := NewHandler(func(data []byte) error { return nil }, testLog)
 
 	var gotHasText, gotHasImage bool
-	h.OnRemoteCopy(func(hasText, hasImage bool) {
+	h.OnRemoteCopy(func(hasText, hasImage, hasFiles bool) {
 		gotHasText = hasText
 		gotHasImage = hasImage
 	})

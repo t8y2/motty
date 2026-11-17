@@ -5,7 +5,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode"
@@ -15,10 +17,9 @@ import (
 	"motty/internal/sshconn"
 )
 
-// An image on the clipboard cannot travel through a terminal, but the programs
-// that want one (Claude Code and other coding assistants) read it from a file
-// path. So pasting into an SSH terminal while the clipboard holds an image and
-// no text uploads the picture to the server and types the path of the copy.
+// An image on the clipboard cannot travel through a terminal, but programs
+// can read it from a path. Paste saves a private local copy or uploads it to an
+// SSH server and types the path of the copy.
 
 // pasteImageHits is the place of the controls this file paints.
 var pasteImageHits = tree.Feature("paste-image")
@@ -43,15 +44,14 @@ func (state *State) setPasteImage(on bool) bool {
 	return true
 }
 
-// canPasteImage reports whether pasting into this session may send a picture to
-// its server. A container's shell sees another file system than the one the
-// upload reaches, so it is left out.
+// canPasteImage reports whether a paste can give the shell a reachable picture.
+// A container's shell sees another file system than the one the upload reaches.
 func (state *State) canPasteImage(session *Session) bool {
-	return !state.pasteImageOff && session.hasServer() && session.conn != nil &&
-		session.phase == sshconn.PhaseConnected && session.containerCommand == ""
+	return !state.pasteImageOff && (session.isLocal() || session.hasServer() && session.conn != nil &&
+		session.phase == sshconn.PhaseConnected && session.containerCommand == "")
 }
 
-// pasteClipboardImage uploads the image on the clipboard and reports whether it
+// pasteClipboardImage saves the image on the clipboard and reports whether it
 // took the paste over: false when there is nothing for it to do, so the paste
 // stays what it was. The clipboard is read when the paste is asked for, not
 // before, as asking another program what it holds can take a while.
@@ -77,12 +77,58 @@ func (state *State) pasteClipboardImage(session *Session) bool {
 	}
 	session.pastingImage = true
 	state.status = m.PasteImageUploading
-	id, connection, transfer := session.ID, session.conn, session.host.Transfer
+	id, connection, transfer, local := session.ID, session.conn, session.host.Transfer, session.isLocal()
 	go func() {
-		remote, err := uploadPastedImage(connection, transfer, data, time.Now())
-		state.aiPost(func(state *State) { state.finishPasteImage(id, remote, err) })
+		var target string
+		var err error
+		if local {
+			target, err = saveLocalPastedImage(data, time.Now())
+		} else {
+			target, err = uploadPastedImage(connection, transfer, data, time.Now())
+		}
+		state.aiPost(func(state *State) { state.finishPasteImage(id, target, err) })
 	}()
 	return true
+}
+
+func saveLocalPastedImage(png []byte, now time.Time) (string, error) {
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return "", err
+	}
+	directory := filepath.Join(cache, "motty", "paste")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(directory, 0o700); err != nil {
+		return "", err
+	}
+	file, err := os.CreateTemp(directory, "paste-"+now.Format("20060102-150405")+"-*.png")
+	if err != nil {
+		return "", err
+	}
+	name := file.Name()
+	if _, err = file.Write(png); err == nil {
+		err = file.Close()
+	} else {
+		file.Close()
+	}
+	if err != nil {
+		os.Remove(name)
+		return "", err
+	}
+	entries, readErr := os.ReadDir(directory)
+	if readErr == nil {
+		for _, entry := range entries {
+			if !isPastedImage(entry.Name()) || !entry.Type().IsRegular() || entry.Name() == filepath.Base(name) {
+				continue
+			}
+			if info, err := entry.Info(); err == nil && info.ModTime().Before(now.Add(-pasteImageKeep)) {
+				os.Remove(filepath.Join(directory, entry.Name()))
+			}
+		}
+	}
+	return name, nil
 }
 
 // uploadPastedImage puts one picture on the server and returns its path there.
@@ -133,13 +179,21 @@ func (state *State) finishPasteImage(sessionID uint32, remote string, err error)
 		state.status = fmt.Sprintf(m.PasteImageFailedFmt, err)
 		return
 	}
-	state.status = fmt.Sprintf(m.PasteImageDoneFmt, remote)
+	if session.isLocal() {
+		state.status = ""
+	} else {
+		state.status = fmt.Sprintf(m.PasteImageDoneFmt, remote)
+	}
 	if session.term == nil || session.term.shell == nil {
 		return
 	}
 	// A space follows, as it does when a file is dropped on a terminal, so the
 	// next word is not part of the path.
-	state.typed(session, encodeTerminalPaste(shellEscapePath(remote)+" ", session.term))
+	quoted := shellEscapePath(remote)
+	if session.isLocal() && (session.wslDistro() != "" || filepath.Separator == '\\') {
+		quoted = quotedPaths([]string{remote}, session.wslDistro())
+	}
+	state.typed(session, encodeTerminalPaste(quoted+" ", session.term))
 }
 
 // shellEscapePath writes a path so a shell and the programs that read dropped

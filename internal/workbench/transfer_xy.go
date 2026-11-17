@@ -8,7 +8,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/xymodem"
 	"motty/internal/zmodem"
@@ -24,15 +24,16 @@ import (
 var transferXyHits = tree.Feature("transfer-xy")
 
 var (
-	hitXYProtocolX  = tree.ID(transferXyHits, "xy-protocol-x")
-	hitXYProtocol1K = tree.ID(transferXyHits, "xy-protocol1-k")
-	hitXYProtocolY  = tree.ID(transferXyHits, "xy-protocol-y")
-	hitXYSend       = tree.ID(transferXyHits, "xy-send")
-	hitXYReceive    = tree.ID(transferXyHits, "xy-receive")
-	hitXYStart      = tree.ID(transferXyHits, "xy-start")
-	hitXYCancel     = tree.ID(transferXyHits, "xy-cancel")
-	hitXYClose      = tree.ID(transferXyHits, "xy-close")
-	hitXYDismiss    = tree.ID(transferXyHits, "xy-dismiss")
+	hitXYStart   = tree.ID(transferXyHits, "xy-start")
+	hitXYCancel  = tree.ID(transferXyHits, "xy-cancel")
+	hitXYClose   = tree.ID(transferXyHits, "xy-close")
+	hitXYDismiss = tree.ID(transferXyHits, "xy-dismiss")
+)
+
+// The dialog's two segmented choices, declared in the dialog's body page.
+var (
+	xyModeChoices      = [...]xymodem.Mode{xymodem.XMODEM, xymodem.XMODEM1K, xymodem.YMODEM}
+	xyDirectionChoices = [...]bool{true, false}
 )
 
 // xySetup is the dialog's choices.
@@ -41,27 +42,69 @@ type xySetup struct {
 	sending bool
 }
 
+// xyModeChoiceLabel names one transfer mode as the dialog shows it.
+func (state *State) xyModeChoiceLabel(mode xymodem.Mode) string {
+	switch mode {
+	case xymodem.XMODEM1K:
+		return "XMODEM-1K"
+	case xymodem.YMODEM:
+		return "YMODEM"
+	default:
+		return "XMODEM"
+	}
+}
+
+// xyDirectionChoiceLabel names the direction the dialog shows.
+func (state *State) xyDirectionChoiceLabel(sending bool) string {
+	if sending {
+		return state.messages.Tools.XYSend
+	}
+	return state.messages.Tools.XYReceive
+}
+
+// xyDialogBodyHeight is the dialog's body: two labelled choices, one under the
+// other.
+const xyDialogBodyHeight = 138
+
+// declareXYDialog declares the setup dialog in the workbench page, whose
+// choices take the window's keys and pointer as any other page control does.
+func (state *State) declareXYDialog(c ui.C) {
+	m := state.messages.Tools
+	viewport := dialogViewport(c)
+	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
+		ContentSize: gfx.Size{Width: 540}, FitBody: true,
+	}).Layout(m.XYDescription)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.XYTitle, Description: m.XYDescription, Width: 540,
+		Height: layout.Content.Height + xyDialogBodyHeight,
+		Layer:  dialogLayer, Scope: dialogScope,
+		DismissID: hitXYDismiss, CloseID: hitXYClose, InitialFocusID: hitXYStart,
+	})
+	dialog.Body(func() {
+		ui.Column(c).Fill().PadSides(4, 4, 0, 4).Gap(8).Children(func() {
+			hostFormChoice(c, m.XYProtocol, 62, &state.xy.mode, xyModeChoices[:], state.xyModeChoiceLabel)
+			hostFormChoice(c, m.XYDirection, 62, &state.xy.sending, xyDirectionChoices[:], state.xyDirectionChoiceLabel)
+		})
+	})
+	dialog.Footer(func() {
+		state.dialogActionFooter(c,
+			components.ButtonAction{ID: hitXYCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
+			components.ButtonAction{ID: hitXYStart, Label: m.XYStart},
+		)
+	})
+}
+
 // openXYSetup opens the dialog for the session.
 func (state *State) openXYSetup(session *Session) {
-	if session.term == nil || session.term.shell == nil || state.transfer.phase != transferNone {
+	if session.term == nil || session.term.shell == nil || session.transferBusy() {
 		return
 	}
 	state.xy = xySetup{mode: xymodem.YMODEM, sending: true}
 	state.modal, state.modalSession = modalXYTransfer, session.ID
 }
 
-func (state *State) clickXYSetup(id ui.ID) {
+func (state *State) clickXYSetup(id gfx.ID) {
 	switch id {
-	case hitXYProtocolX:
-		state.xy.mode = xymodem.XMODEM
-	case hitXYProtocol1K:
-		state.xy.mode = xymodem.XMODEM1K
-	case hitXYProtocolY:
-		state.xy.mode = xymodem.YMODEM
-	case hitXYSend:
-		state.xy.sending = true
-	case hitXYReceive:
-		state.xy.sending = false
 	case hitXYStart:
 		state.startXYTransfer()
 	case hitXYCancel, hitXYClose, hitXYDismiss:
@@ -72,7 +115,7 @@ func (state *State) clickXYSetup(id ui.ID) {
 // startXYTransfer asks for the files or the place to put them, and starts.
 func (state *State) startXYTransfer() {
 	session := state.promptSession()
-	if session == nil || session.term == nil || session.term.shell == nil || state.transfer.phase != transferNone {
+	if session == nil || session.term == nil || session.term.shell == nil || session.transferBusy() {
 		state.closeModal()
 		return
 	}
@@ -119,9 +162,9 @@ func (state *State) startXYTransfer() {
 		engine = xymodem.NewReceiver(setup.mode, filepath.Base(name), target)
 	}
 	state.closeModal()
-	state.transfer = fileTransfer{phase: transferOffered, sessionID: session.ID, sending: setup.sending, target: target, sources: sources}
-	state.modal, state.modalSession = modalFileTransfer, session.ID
+	session.transfer = fileTransfer{phase: transferOffered, sessionID: session.ID, sending: setup.sending, target: target, sources: sources}
 	state.startTransfer(session, engine)
+	state.showNextPrompt()
 }
 
 // openSendFiles opens the files to send, refusing what a transfer cannot carry.
@@ -158,48 +201,4 @@ func (state *State) openSendFiles(paths []string) (files []zmodem.SendFile, open
 		files = append(files, zmodem.SendFile{Name: filepath.Base(path), Size: info.Size(), ModTime: info.ModTime(), Mode: uint32(info.Mode().Perm()), Source: file})
 	}
 	return files, opened, ""
-}
-
-func (state *State) paintXYDialog(canvas *ui.Canvas, viewport ui.Rect) {
-	m, theme := state.messages.Tools, state.Theme()
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitXYDismiss, CloseID: hitXYClose, InitialFocusID: hitXYStart,
-		ContentSize: ui.Size{Width: 540}, FitBody: true, BodyHeight: 138, // two labelled choices
-	})
-	layout := dialog.Begin(m.XYTitle, m.XYDescription)
-	protocols := [...]components.SegmentOption{
-		{ID: hitXYProtocolX, Label: "XMODEM"}, {ID: hitXYProtocol1K, Label: "XMODEM-1K"}, {ID: hitXYProtocolY, Label: "YMODEM"},
-	}
-	selected := hitXYProtocolY
-	switch state.xy.mode {
-	case xymodem.XMODEM:
-		selected = hitXYProtocolX
-	case xymodem.XMODEM1K:
-		selected = hitXYProtocol1K
-	}
-	directions := [...]components.SegmentOption{{ID: hitXYSend, Label: m.XYSend}, {ID: hitXYReceive, Label: m.XYReceive}}
-	selectedDirection := hitXYReceive
-	if state.xy.sending {
-		selectedDirection = hitXYSend
-	}
-	// Two labelled choices, one under the other.
-	var protocol, direction flex.Box
-	f := state.partLayout.Begin(canvas, theme, layout.Body)
-	f.Column().Fill().PadSides(4, 4, 0, 4).Gap(8).Children(func() {
-		protocol = f.Slot().Height(62).Shrink(0)
-		direction = f.Slot().Height(62).Shrink(0)
-	})
-	f.End()
-	content := components.BeginField(canvas, theme, protocol.Rect()).Paint(m.XYProtocol, "", "")
-	content.Height = 32
-	components.BeginSegmentedControl(canvas, theme, content, protocols[:], selected).Paint()
-	content = components.BeginField(canvas, theme, direction.Rect()).Paint(m.XYDirection, "", "")
-	content.Height = 32
-	components.BeginSegmentedControl(canvas, theme, content, directions[:], selectedDirection).Paint()
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitXYCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitXYStart, Label: m.XYStart},
-	)
-	dialog.End()
 }

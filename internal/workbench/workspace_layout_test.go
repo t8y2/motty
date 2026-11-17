@@ -136,7 +136,7 @@ func TestMultipleWorkspacesRestoreIndependentTreesContextAndDoNotDial(t *testing
 
 	openEmptyTab(first)
 	database := first.deck.ActiveWorkspace()
-	first.Click(hitPaneChooseHost)
+	first.chooseHostSection()
 	first.Click(hitHostList.At(2))
 	openHost(first)
 	if database == production || len(world.conns) != 3 { // two production shells, one database

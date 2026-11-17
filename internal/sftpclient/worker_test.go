@@ -356,3 +356,51 @@ func BenchmarkEntriesFrom(b *testing.B) {
 		}
 	}
 }
+
+// linkRemote can follow links, and counts the round trips a listing spends on
+// them. Path completion must not pay for a followed link per entry.
+type linkRemote struct {
+	fakeRemote
+	lookups int
+}
+
+func (remote *linkRemote) ReadLink(string) (string, error) {
+	remote.lookups++
+	return "/target", nil
+}
+
+func (remote *linkRemote) Stat(string) (os.FileInfo, error) {
+	remote.lookups++
+	return fakeInfo{name: "target", mode: os.ModeDir}, nil
+}
+
+func (remote *linkRemote) Symlink(string, string) error { return nil }
+
+func TestWorkerListNamesSkipsOwnerAndLinkWork(t *testing.T) {
+	remote := &linkRemote{fakeRemote: fakeRemote{cwd: "/home/test", closed: make(chan struct{}), infos: []os.FileInfo{
+		fakeInfo{name: "z.txt", size: 9},
+		fakeInfo{name: "src", mode: os.ModeDir | 0o755},
+		fakeInfo{name: "link", mode: os.ModeSymlink | 0o777},
+	}}}
+	worker := NewWorker(func() (Remote, error) { return remote, nil }, nil)
+	defer worker.Close()
+	if !worker.ListNames("/home/test") {
+		t.Fatal("names listing was not queued")
+	}
+	result := waitResult(t, worker)
+	if result.Err != nil || !result.NamesOnly || result.Path != "/home/test" {
+		t.Fatalf("result = %+v", result)
+	}
+	want := []string{"src", "link", "z.txt"}
+	if len(result.Entries) != len(want) {
+		t.Fatalf("entries = %+v", result.Entries)
+	}
+	for index, entry := range result.Entries {
+		if entry.Name != want[index] || entry.HasOwner || entry.LinkDir {
+			t.Fatalf("entry %d = %+v, want %q without owner or link work", index, entry, want[index])
+		}
+	}
+	if remote.lookups != 0 {
+		t.Fatalf("the names listing followed %d links", remote.lookups)
+	}
+}

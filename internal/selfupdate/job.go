@@ -101,6 +101,8 @@ func (job Job) Run() error {
 		err = job.applyMac()
 	case KindWindowsSetup:
 		err = job.applyWindows()
+	case KindWindowsPortable:
+		err = job.applyPortable()
 	case KindLinuxPrefix:
 		err = job.applyLinux()
 	case KindLinuxDeb:
@@ -118,6 +120,8 @@ func (job Job) Run() error {
 	// when it cannot be removed while running (Windows); the next update clears it.
 	if job.Kind == KindLinuxDeb {
 		os.Remove(job.Staged)
+	} else if job.Kind == KindWindowsPortable {
+		os.RemoveAll(filepath.Dir(job.Staged))
 	} else {
 		os.RemoveAll(job.Staged)
 	}
@@ -146,7 +150,7 @@ func (job Job) start() error {
 	switch job.Kind {
 	case KindMacApp:
 		cmd = exec.Command("/usr/bin/open", job.Root)
-	case KindWindowsSetup:
+	case KindWindowsSetup, KindWindowsPortable:
 		cmd = exec.Command(filepath.Join(job.Root, filepath.Base(job.Exe)))
 	case KindLinuxDeb:
 		cmd = exec.Command(job.Exe)

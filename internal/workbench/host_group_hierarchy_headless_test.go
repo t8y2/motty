@@ -10,13 +10,13 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
 func TestHostGroupHierarchyNativeMenusAndDialogs(t *testing.T) {
-	for _, size := range []ui.Size{{Width: 1400, Height: 900}, {Width: 900, Height: 600}} {
+	for _, size := range []gfx.Size{{Width: 1400, Height: 900}, {Width: 900, Height: 600}} {
 		for _, mode := range []hostViewMode{hostViewList, hostViewGrid} {
 			for _, light := range []bool{false, true} {
 				t.Run(fmt.Sprintf("%dx%d/view=%d/light=%v", int(size.Width), int(size.Height), mode, light), func(t *testing.T) {
@@ -49,7 +49,7 @@ func TestHostGroupHierarchyNativeMenusAndDialogs(t *testing.T) {
 						}
 					}
 					must(view.Rest())
-					hit := func(id ui.ID) ui.Hit {
+					hit := func(id gfx.ID) gfx.Hit {
 						t.Helper()
 						h, ok := hitByIDSnapshot(view.Snapshot().Hits, id)
 						if !ok {
@@ -57,9 +57,17 @@ func TestHostGroupHierarchyNativeMenusAndDialogs(t *testing.T) {
 						}
 						return h
 					}
-					click := func(id ui.ID) {
+					click := func(id gfx.ID) {
 						t.Helper()
 						h := hit(id)
+						must(view.Click(h.Bounds.X+h.Bounds.Width/2, h.Bounds.Y+h.Bounds.Height/2))
+					}
+					clickLabel := func(label string) {
+						t.Helper()
+						h, ok := hitByLabelSnapshot(view.Snapshot().Hits, label)
+						if !ok {
+							t.Fatalf("missing button %q", label)
+						}
 						must(view.Click(h.Bounds.X+h.Bounds.Width/2, h.Bounds.Y+h.Bounds.Height/2))
 					}
 					shot := func(name string) {
@@ -70,12 +78,20 @@ func TestHostGroupHierarchyNativeMenusAndDialogs(t *testing.T) {
 							must(view.Screenshot(filepath.Join(dir, fmt.Sprintf("%s-%dx%d-view%d-light%v.png", name, int(size.Width), int(size.Height), mode, light))))
 						}
 					}
-					group := func(path string) ui.Hit {
-						id := hitHostGroupRowList.At(state.hostGroupIndex(path))
+					group := func(path string) gfx.Hit {
+						hits := view.Snapshot().Hits
 						if mode == hostViewGrid {
-							id = hitHostGroupOpenList.At(state.hostGroupIndex(path))
+							h, ok := hitByIDSnapshot(hits, hitHostGroupOpenList.At(state.hostGroupIndex(path)))
+							if !ok {
+								t.Fatalf("view %d missing group %q", mode, path)
+							}
+							return h
 						}
-						return hit(id)
+						h, ok := hostListGroupHitIn(hits, state, state.hostGroupIndex(path))
+						if !ok {
+							t.Fatalf("view %d missing group %q", mode, path)
+						}
+						return h
 					}
 					right := func(path string) {
 						t.Helper()
@@ -84,7 +100,7 @@ func TestHostGroupHierarchyNativeMenusAndDialogs(t *testing.T) {
 					}
 					shot("tree")
 					right("Team/Prod")
-					for _, id := range []ui.ID{hitGroupNewHost, hitGroupNewChild, hitGroupRename, hitGroupMove, hitGroupPin, hitGroupDelete} {
+					for _, id := range []gfx.ID{hitGroupNewHost, hitGroupNewChild, hitGroupRename, hitGroupMove, hitGroupPin, hitGroupDelete} {
 						hit(id)
 					}
 					shot("menu")
@@ -104,7 +120,7 @@ func TestHostGroupHierarchyNativeMenusAndDialogs(t *testing.T) {
 					}
 					shot("parent-picker")
 					click(hitGroupParentItems.At(state.hostGroupIndex("Team2")))
-					click(hitMoveGroupSubmit)
+					clickLabel(state.messages.MoveGroupSubmit)
 					if state.hosts[0].Group != "Team2/上海生产/EU" {
 						t.Fatal("native parent selection failed", state.dialogError)
 					}
@@ -113,12 +129,12 @@ func TestHostGroupHierarchyNativeMenusAndDialogs(t *testing.T) {
 					if state.editor.value(fieldGroup) != "Team2/上海生产" {
 						t.Fatal("native new host omitted clicked group")
 					}
-					click(hitDialogCancel)
+					clickLabel(state.messages.Cancel)
 					right("Team2/上海生产")
 					click(hitGroupDelete)
 					shot("delete")
 					click(hitGroupDeleteUngroup)
-					click(hitMoveGroupSubmit)
+					clickLabel(state.messages.HostGroupActions.Delete)
 					if state.hosts[0].Group != "" || len(state.hosts) != 3 {
 						t.Fatal("native deletion lost a host or destination")
 					}
@@ -134,8 +150,8 @@ func TestHostGroupLongPathsNativeFitDeleteDialog(t *testing.T) {
 	state.hosts[0].Group = long + "/Child"
 	state.hostDataChanged()
 	chooseHostGroupAction(t, state, long+"/Child", "delete")
-	var painted *ui.Canvas
-	view, err := headless.Open(app.Config{Width: 900, Height: 600, Tree: Tree(), Paint: func(c *ui.Canvas, size ui.Size) { state.Paint(c, size); painted = c }}, nil, headless.Options{Scale: 1.5})
+	var painted *gfx.Canvas
+	view, err := headless.Open(app.Config{Width: 900, Height: 600, Tree: Tree(), Paint: func(c *gfx.Canvas, size gfx.Size) { state.Paint(c, size); painted = c }}, nil, headless.Options{Scale: 1.5})
 	if err != nil {
 		t.Fatal(err)
 	}

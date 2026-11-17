@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // TestTerminalLineHeightDefaultLeavesCellHeightUntouched pins the contract that
@@ -35,12 +35,16 @@ func TestTerminalLineHeightDefaultLeavesCellHeightUntouched(t *testing.T) {
 // height from the same font, and only the height (columns are untouched).
 func TestTerminalLineHeightScalesCellHeight(t *testing.T) {
 	state := newTestState(t, testOptions(t))
+	var canvas gfx.Canvas
+	paint := func() { state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900}) }
+	paint()
 	base := state.cellHeight
 	baseWidth := state.cellWidth
 	for _, mode := range []lineHeight{lineHeightCompact, lineHeightRoomy} {
 		if !state.setTerminalLineHeight(mode) {
 			t.Fatalf("setTerminalLineHeight(%v) reported no change", mode)
 		}
+		paint()
 		if got := state.cellHeight; !aboutEqual(got, base*mode.factor()) {
 			t.Fatalf("after %v cell height = %v, want %v", mode, got, base*mode.factor())
 		}
@@ -52,6 +56,7 @@ func TestTerminalLineHeightScalesCellHeight(t *testing.T) {
 	if !state.setTerminalLineHeight(lineHeightNormal) {
 		t.Fatal("returning to normal reported no change")
 	}
+	paint()
 	if !aboutEqual(state.cellHeight, base) {
 		t.Fatalf("after normal cell height = %v, want base %v", state.cellHeight, base)
 	}
@@ -68,6 +73,9 @@ func TestTerminalLineHeightPersistsRoundTrip(t *testing.T) {
 	if reloaded.terminalLineHeight != lineHeightRoomy {
 		t.Fatalf("reloaded spacing = %v, want roomy", reloaded.terminalLineHeight)
 	}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	reloaded.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if !aboutEqual(reloaded.cellHeight, state.cellHeight) {
 		t.Fatalf("reloaded cell height = %v, want %v", reloaded.cellHeight, state.cellHeight)
 	}
@@ -79,14 +87,14 @@ func aboutEqual(a, b float32) bool {
 }
 
 // TestSyncedLineSpacingRefitsOpenTerminals covers the live-window restore path:
-// a spacing that arrives from another device has to change the open grid right
-// away, not on the next resize.
+// a spacing that arrives from another device has to change the open grid with the
+// next frame, not on the next resize.
 func TestSyncedLineSpacingRefitsOpenTerminals(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.sessions = append(state.sessions, Session{ID: 1, term: newTerminal(80, 24)})
 	state.activeSessionID = 1
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	state.fitTerminals()
 	_, before := state.sessions[0].term.screen.Size()
 
@@ -98,6 +106,7 @@ func TestSyncedLineSpacingRefitsOpenTerminals(t *testing.T) {
 	if state.terminalLineHeight != lineHeightRoomy {
 		t.Fatalf("spacing = %v, want roomy", state.terminalLineHeight)
 	}
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	_, after := state.sessions[0].term.screen.Size()
 	if after >= before {
 		t.Fatalf("rows %d then %d: a taller row should fit fewer", before, after)

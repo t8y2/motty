@@ -8,15 +8,15 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sftpclient"
 )
 
-func dropFixture(t *testing.T) (*State, *Session, *workbenchSFTPRemote, ui.Rect, []string) {
+func dropFixture(t *testing.T) (*State, *Session, *workbenchSFTPRemote, gfx.Rect, []string) {
 	t.Helper()
 	state, session, _, remote := openTestSFTP(t)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	panel := state.contextRect
 	if panel.Width == 0 {
 		t.Fatal("the paint reported no files panel")
@@ -47,12 +47,12 @@ func waitTransfersDone(t *testing.T, state *State, session *Session, count int) 
 
 func TestDroppedFilesUploadIntoTheFolderShown(t *testing.T) {
 	state, session, remote, panel, paths := dropFixture(t)
-	at := ui.FileDropEvent{X: panel.X + panel.Width/2, Y: panel.Y + panel.Height - 40, Paths: paths}
-	at.Phase = ui.FileDropOver
+	at := gfx.FileDropEvent{X: panel.X + panel.Width/2, Y: panel.Y + panel.Height - 40, Paths: paths}
+	at.Phase = gfx.FileDropOver
 	if result := state.FileDrop(at); !result.Handled || !session.files.dropping {
 		t.Fatalf("hover result %+v, dropping %v", result, session.files.dropping)
 	}
-	at.Phase = ui.FileDropDrop
+	at.Phase = gfx.FileDropDrop
 	if result := state.FileDrop(at); !result.Handled {
 		t.Fatalf("drop result %+v", result)
 	}
@@ -79,16 +79,16 @@ func TestDroppedFilesOnAFolderRowGoIntoThatFolder(t *testing.T) {
 	if row < 0 {
 		t.Fatal("no docs row")
 	}
-	event := ui.FileDropEvent{
+	event := gfx.FileDropEvent{
 		X: panel.X + 40, Y: panel.Y + 60, Paths: paths[:1],
 		Target: contextID(hitSFTPEntryList.At(row - session.files.first)),
 	}
-	event.Phase = ui.FileDropOver
+	event.Phase = gfx.FileDropOver
 	state.FileDrop(event)
 	if session.files.dropRow != row {
 		t.Fatalf("hover row %d, want %d", session.files.dropRow, row)
 	}
-	event.Phase = ui.FileDropDrop
+	event.Phase = gfx.FileDropDrop
 	state.FileDrop(event)
 	waitTransfersDone(t, state, session, 1)
 	remote.mu.Lock()
@@ -101,23 +101,23 @@ func TestDroppedFilesOnAFolderRowGoIntoThatFolder(t *testing.T) {
 
 func TestDropIsRefusedOutsideThePanelAndLeaveClearsTheHighlight(t *testing.T) {
 	state, session, _, panel, paths := dropFixture(t)
-	outside := ui.FileDropEvent{X: panel.X - 50, Y: 4, Paths: paths}
-	outside.Phase = ui.FileDropOver
+	outside := gfx.FileDropEvent{X: panel.X - 50, Y: 4, Paths: paths}
+	outside.Phase = gfx.FileDropOver
 	if result := state.FileDrop(outside); result.Handled {
 		t.Fatalf("the window bar accepted the hover: %+v", result)
 	}
-	outside.Phase = ui.FileDropDrop
+	outside.Phase = gfx.FileDropDrop
 	if result := state.FileDrop(outside); result.Handled || len(session.files.transfers) != 0 {
 		t.Fatalf("a drop outside the panel was taken: %+v, %d transfers", result, len(session.files.transfers))
 	}
 
-	over := ui.FileDropEvent{X: panel.X + 40, Y: panel.Y + 60}
-	over.Phase = ui.FileDropOver
+	over := gfx.FileDropEvent{X: panel.X + 40, Y: panel.Y + 60}
+	over.Phase = gfx.FileDropOver
 	state.FileDrop(over)
 	if !session.files.dropping {
 		t.Fatal("hover over the panel did not show the target")
 	}
-	state.FileDrop(ui.FileDropEvent{Phase: ui.FileDropLeave})
+	state.FileDrop(gfx.FileDropEvent{Phase: gfx.FileDropLeave})
 	if session.files.dropping {
 		t.Fatal("leaving did not clear the target")
 	}
@@ -126,14 +126,14 @@ func TestDropIsRefusedOutsideThePanelAndLeaveClearsTheHighlight(t *testing.T) {
 func TestDropOnTheLocalPaneIsRefused(t *testing.T) {
 	state, session, _, panel, paths := dropFixture(t)
 	state.Click(hitSFTPPaneToggle)
-	event := ui.FileDropEvent{X: panel.X + 40, Y: panel.Y + 60, Paths: paths}
-	event.Phase = ui.FileDropDrop
+	event := gfx.FileDropEvent{X: panel.X + 40, Y: panel.Y + 60, Paths: paths}
+	event.Phase = gfx.FileDropDrop
 	if result := state.FileDrop(event); result.Handled || len(session.files.transfers) != 0 {
 		t.Fatalf("the local pane took a drop: %+v", result)
 	}
 }
 
-func terminalPoint(panel ui.Rect) (float32, float32) {
+func terminalPoint(panel gfx.Rect) (float32, float32) {
 	if panel.X > 100 {
 		return panel.X - 50, panel.Y + 60
 	}
@@ -144,14 +144,14 @@ func TestDroppedFilesOnTheTerminalUploadIntoTheShellsFolder(t *testing.T) {
 	state, session, remote, panel, paths := dropFixture(t)
 	session.term.screen.Write([]byte("\x1b]7;file:///home/test/docs\x07"))
 	x, y := terminalPoint(panel)
-	event := ui.FileDropEvent{X: x, Y: y, Paths: paths[:1]}
-	event.Phase = ui.FileDropOver
+	event := gfx.FileDropEvent{X: x, Y: y, Paths: paths[:1]}
+	event.Phase = gfx.FileDropOver
 	if result := state.FileDrop(event); !result.Handled || state.terminalDrop.directory != "/home/test/docs" {
 		t.Fatalf("hover result %+v, target %+v", result, state.terminalDrop)
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
-	event.Phase = ui.FileDropDrop
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	event.Phase = gfx.FileDropDrop
 	if result := state.FileDrop(event); !result.Handled {
 		t.Fatalf("drop result %+v", result)
 	}
@@ -180,8 +180,8 @@ func TestDroppedFilesOnTheTerminalUploadIntoTheShellsFolder(t *testing.T) {
 func TestDroppedFilesThatCannotBeUploadedAreReportedOnTheTerminal(t *testing.T) {
 	state, session, _, panel, paths := dropFixture(t)
 	x, y := terminalPoint(panel)
-	event := ui.FileDropEvent{X: x, Y: y, Paths: paths[:1]}
-	event.Phase = ui.FileDropDrop
+	event := gfx.FileDropEvent{X: x, Y: y, Paths: paths[:1]}
+	event.Phase = gfx.FileDropDrop
 	state.FileDrop(event)
 	waitTransfersDone(t, state, session, 1)
 	state.FileDrop(event) // the same name is already there
@@ -195,8 +195,8 @@ func TestDroppedFilesThatCannotBeUploadedAreReportedOnTheTerminal(t *testing.T) 
 func TestDroppedFilesOnATerminalWithoutAReportGoToThePanelsFolder(t *testing.T) {
 	state, session, remote, panel, paths := dropFixture(t)
 	x, y := terminalPoint(panel)
-	event := ui.FileDropEvent{X: x, Y: y, Paths: paths[:1]}
-	event.Phase = ui.FileDropDrop
+	event := gfx.FileDropEvent{X: x, Y: y, Paths: paths[:1]}
+	event.Phase = gfx.FileDropDrop
 	if result := state.FileDrop(event); !result.Handled {
 		t.Fatalf("drop result %+v", result)
 	}
@@ -213,8 +213,8 @@ func TestDropOnATerminalWhoseFolderIsUnknownIsRefused(t *testing.T) {
 	state, session, _, panel, paths := dropFixture(t)
 	state.closeSFTP(session)
 	x, y := terminalPoint(panel)
-	event := ui.FileDropEvent{X: x, Y: y, Paths: paths[:1]}
-	event.Phase = ui.FileDropOver
+	event := gfx.FileDropEvent{X: x, Y: y, Paths: paths[:1]}
+	event.Phase = gfx.FileDropOver
 	if result := state.FileDrop(event); result.Handled {
 		t.Fatalf("a terminal with no known folder accepted the hover: %+v", result)
 	}

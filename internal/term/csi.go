@@ -294,6 +294,15 @@ func (t *Terminal) eraseDisplay(mode int) {
 		}
 		t.eraseRange(lines[t.cy], 0, t.cx+1)
 	case 2:
+		// A full-screen program on the main screen clears the screen before it
+		// draws over it (top does this on startup). The desktop terminals users
+		// compare against — Windows Terminal, VTE, Terminal.app and iTerm2 — move
+		// the rows they wipe into the scrollback first, so the content before the
+		// program is still there with the wheel. xterm erases in place; following
+		// it would leave a session that ran top with no scrollback to go back to.
+		if !t.onAlt {
+			t.pushScreenToHistory()
+		}
 		for _, l := range lines {
 			t.eraseLine2(l)
 		}
@@ -417,6 +426,7 @@ func (t *Terminal) enterAlt(clearScreen bool) {
 		return
 	}
 	t.onAlt, t.scr, t.modes.AltScreen = true, &t.alt, true
+	t.inputStartSet = false
 	t.view = 0
 	if clearScreen {
 		if t.images != nil {
@@ -430,6 +440,7 @@ func (t *Terminal) enterAlt(clearScreen bool) {
 	}
 	t.top, t.bot = 0, t.rows-1
 	t.pend = false
+	t.generation++
 	t.version++
 }
 
@@ -450,6 +461,7 @@ func (t *Terminal) leaveAlt(clearScreen bool) {
 	t.onAlt, t.scr, t.modes.AltScreen = false, &t.main, false
 	t.top, t.bot = 0, t.rows-1
 	t.pend = false
+	t.generation++
 	t.version++
 }
 

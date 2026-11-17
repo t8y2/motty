@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/selfupdate"
 	"motty/internal/sshconn"
 	"motty/internal/update"
@@ -37,7 +37,7 @@ func (updater *fakeUpdater) Prepare(ctx context.Context, _ update.Release, progr
 	return selfupdate.Staged{Version: "99.0.0"}, nil
 }
 
-func (updater *fakeUpdater) Launch(selfupdate.Staged) error {
+func (updater *fakeUpdater) Launch(selfupdate.Staged, func()) error {
 	updater.mu.Lock()
 	defer updater.mu.Unlock()
 	updater.launched++
@@ -103,6 +103,20 @@ func TestAnUpdateThatCanBeInstalledIsInstalledAndTheApplicationQuits(t *testing.
 	waitUpdate(t, state, func() bool { return quits == 1 })
 	if updater.launches() != 1 || state.update.install.phase != installRestarting || len(opened) != 0 {
 		t.Fatalf("launched %d, phase %d, opened %q", updater.launches(), state.update.install.phase, opened)
+	}
+}
+
+func TestPortableUpdateOffersAnInPlaceInstall(t *testing.T) {
+	updater, quits, opened := &fakeUpdater{packageType: update.PackagePortable}, 0, []string(nil)
+	state := updateWindow(t, updater, &quits, &opened)
+	_, texts := paintedTexts(state)
+	if !contains(texts, state.messages.Tools.UpdateInstall) || contains(texts, state.messages.Tools.GeneralUpdateDownload) {
+		t.Fatalf("portable update still offers only a manual download: %q", texts)
+	}
+	state.Click(hitUpdateInstall)
+	waitUpdate(t, state, func() bool { return quits == 1 })
+	if updater.launches() != 1 || len(opened) != 0 {
+		t.Fatalf("portable update launched %d times and opened %q", updater.launches(), opened)
 	}
 }
 
@@ -210,7 +224,10 @@ func TestAnUpdateThatCannotBeInstalledSaysWhyAndKeepsTheDownloadPage(t *testing.
 	state := updateWindow(t, updater, &quits, &opened)
 	_, texts := paintedTexts(state)
 	m := state.messages.Tools
-	if contains(texts, m.UpdateInstall) || !contains(texts, m.GeneralUpdateDownload) || !contains(texts, m.UpdateWhyNotUserInstall) {
+	// The reason wraps in the dialog, so match its first sentence across the
+	// painted lines rather than the whole string in one line.
+	shown := strings.Join(texts, " ")
+	if contains(texts, m.UpdateInstall) || !contains(texts, m.GeneralUpdateDownload) || !strings.Contains(shown, firstSentence(m.UpdateWhyNotUserInstall)) {
 		t.Fatalf("texts %q", texts)
 	}
 	state.Click(hitUpdateDownload)
@@ -357,11 +374,11 @@ func TestLongReleaseNotesScrollInsideABoundedArea(t *testing.T) {
 	if !notes.scrolls || notes.viewHeight != updateNotesMaxHeight || notes.max <= 0 {
 		t.Fatalf("fifty notes should fill the cap and scroll: %+v", notes)
 	}
-	result := state.Scroll(ui.ScrollEvent{DeltaY: 100000, Precise: true})
+	result := state.Scroll(gfx.ScrollEvent{DeltaY: 100000, Precise: true})
 	if !result.Handled || notes.scroll != notes.max {
 		t.Fatalf("the wheel did not reach the end of the notes: scroll %v, max %v", notes.scroll, notes.max)
 	}
-	state.Key(ui.KeyEvent{Key: ui.KeyHome, Target: hitUpdateNotes})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyHome, Target: hitUpdateNotes})
 	if notes.scroll != 0 {
 		t.Fatalf("Home did not return to the top: %v", notes.scroll)
 	}
@@ -384,7 +401,7 @@ func TestUpdateNotesScrollbarCanBeDragged(t *testing.T) {
 	}
 	foundBar := false
 	for _, hit := range canvas.Hits() {
-		if hit.ID == hitUpdateNotesScrollbar && hit.Role == ui.RoleSlider {
+		if hit.ID == hitUpdateNotesScrollbar && hit.Role == gfx.RoleSlider {
 			foundBar = true
 			break
 		}
@@ -394,8 +411,8 @@ func TestUpdateNotesScrollbarCanBeDragged(t *testing.T) {
 	}
 
 	downY := bar.Thumb.Y + bar.Thumb.Height/2
-	down := state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary,
+	down := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary,
 		Target: hitUpdateNotesScrollbar, X: bar.Track.X + bar.Track.Width/2, Y: downY,
 		Viewport: state.viewport,
 	})
@@ -405,8 +422,8 @@ func TestUpdateNotesScrollbarCanBeDragged(t *testing.T) {
 
 	travel := bar.Track.Height - bar.Thumb.Height
 	moveY := downY + travel*0.75
-	move := state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Captured: true,
+	move := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Captured: true,
 		Target: hitUpdateNotesScrollbar, X: bar.Track.X + bar.Track.Width/2, Y: moveY,
 		Viewport: state.viewport,
 	})
@@ -414,8 +431,8 @@ func TestUpdateNotesScrollbarCanBeDragged(t *testing.T) {
 		t.Fatalf("dragging moved notes to %v of %v: %+v", notes.scroll, bar.MaxOffset, move)
 	}
 
-	up := state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Captured: true,
+	up := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Captured: true,
 		Target: hitUpdateNotesScrollbar, X: bar.Track.X + bar.Track.Width/2, Y: moveY,
 		Viewport: state.viewport,
 	})
@@ -423,7 +440,7 @@ func TestUpdateNotesScrollbarCanBeDragged(t *testing.T) {
 		t.Fatalf("releasing the thumb did not end the drag: %+v, notes %+v", up, notes)
 	}
 
-	state.Key(ui.KeyEvent{Key: ui.KeyHome, Target: hitUpdateNotesScrollbar})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyHome, Target: hitUpdateNotesScrollbar})
 	if notes.scroll != 0 {
 		t.Fatalf("Home with the scrollbar focused did not return to the top: %v", notes.scroll)
 	}

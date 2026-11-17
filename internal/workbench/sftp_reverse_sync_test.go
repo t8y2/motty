@@ -1,8 +1,8 @@
 package workbench
 
 import (
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 	"os"
 	"strings"
@@ -26,8 +26,8 @@ func TestReverseFolderSyncIsOffByDefaultAndPersistsIndependently(t *testing.T) {
 	}
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsFiles)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 1100})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1100})
 	if _, ok := hitByID(&canvas, hitSettingsTerminalFollowToggle); !ok {
 		t.Fatal("reverse sync has no visible settings switch")
 	}
@@ -36,6 +36,7 @@ func TestReverseFolderSyncIsOffByDefaultAndPersistsIndependently(t *testing.T) {
 func TestFolderSyncCanOptOutOfShellIntegration(t *testing.T) {
 	state, session, fake, _ := openTestSFTP(t)
 	state.sftpFollowOff, state.sftpTerminalFollow = true, false
+	state.setCompletionMode(completionOff)
 	session.term.shell.Close()
 	session.term.shell = nil
 	state.openShell(session)
@@ -43,7 +44,7 @@ func TestFolderSyncCanOptOutOfShellIntegration(t *testing.T) {
 	config := fake.configs[len(fake.configs)-1]
 	fake.mu.Unlock()
 	if config.IntegrateShell {
-		t.Fatal("both synchronization directions are off, but startup still changes")
+		t.Fatal("folder synchronization and automatic completion are off, but startup still changes")
 	}
 }
 
@@ -359,5 +360,8 @@ func TestReverseFolderSyncNeverWritesToUnsafePrompts(t *testing.T) {
 }
 
 func folderSyncMarker(session *Session, kind string) string {
+	if kind == "C" {
+		return string(sshconn.IntegrationCommandStartMarker(session.term.folderToken))
+	}
 	return "\x1b]133;" + kind + ";motty=" + session.term.folderToken + "\x07"
 }

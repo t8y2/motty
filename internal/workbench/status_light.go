@@ -4,7 +4,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 )
 
@@ -30,8 +30,8 @@ const (
 
 // paintLight draws a status light centered on (x, y). behind is the color the
 // light sits on, which an idle ring needs for its empty middle.
-func paintLight(canvas *ui.Canvas, x, y float32, kind lightKind, color, behind ui.Color) {
-	core := ui.Rect{X: x - lightCore/2, Y: y - lightCore/2, Width: lightCore, Height: lightCore}
+func paintLight(canvas *gfx.Canvas, x, y float32, kind lightKind, color, behind gfx.Color) {
+	core := gfx.Rect{X: x - lightCore/2, Y: y - lightCore/2, Width: lightCore, Height: lightCore}
 	if kind == lightIdle {
 		canvas.RoundedBorder(core, lightCore/2, 1.5, color, behind)
 		return
@@ -48,12 +48,12 @@ func paintLight(canvas *ui.Canvas, x, y float32, kind lightKind, color, behind u
 	}
 	halo := color
 	halo.Alpha *= alpha
-	canvas.Rounded(ui.Rect{X: x - lightHalo/2, Y: y - lightHalo/2, Width: lightHalo, Height: lightHalo}, lightHalo/2, halo)
+	canvas.Rounded(gfx.Rect{X: x - lightHalo/2, Y: y - lightHalo/2, Width: lightHalo, Height: lightHalo}, lightHalo/2, halo)
 	canvas.Rounded(core, lightCore/2, color)
 }
 
 // sessionLight is the light of a session: what state it is in, and its color.
-func (state *State) sessionLight(session *Session) (lightKind, ui.Color) {
+func (state *State) sessionLight(session *Session) (lightKind, gfx.Color) {
 	pal := state.pal
 	switch {
 	case session.term != nil && session.term.ended:
@@ -76,7 +76,7 @@ func (state *State) sessionLight(session *Session) (lightKind, ui.Color) {
 
 // hostLight is the light of a saved host: that of its session, or an idle ring
 // when no connection has been made to it.
-func (state *State) hostLight(host Host) (lightKind, ui.Color) {
+func (state *State) hostLight(host Host) (lightKind, gfx.Color) {
 	best, bestColor := lightIdle, state.pal.faint
 	for session := range state.connectionSessions() {
 		if session.HostID != host.ID {

@@ -8,6 +8,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -24,7 +25,24 @@ type remoteToolsWindow struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	closed     bool
-	pageSize   int
+
+	// The window's page and the stable callbacks it declares. The callbacks are
+	// made once, not in each paint.
+	page *ui.Page
+	root string
+
+	tableHandlers   ui.Handlers
+	refreshHandlers ui.Handlers
+	autoHandlers    ui.Handlers
+	tableDraw       func(*ui.DrawContext)
+	tableHeaderDraw func(*ui.DrawContext)
+	refreshDraw     func(*ui.DrawContext)
+	autoDraw        func(*ui.DrawContext)
+	footerFlow      remoteToolsButtonFlow
+	paintTab        remoteTab
+	tablePressRow   int
+	tableHoverRow   int
+	menuCtx         ui.C
 }
 
 func (state *State) openRemoteToolsWindowTab(session *Session, tab remoteTab, switchTab bool) {
@@ -42,9 +60,8 @@ func (state *State) openRemoteToolsWindowTab(session *Session, tab remoteTab, sw
 					window.ui.remote.tab = tab
 				}
 				window.ui.remote.selected = ""
-				window.ui.remote.page = 0
 				window.ui.remote.rows = nil
-				window.ui.remote.pageText = ""
+				window.ui.remote.processScroll = 0
 				window.ui.remote.collectedAt = time.Time{}
 				window.ui.remote.stale = false
 				window.window.Show()
@@ -58,54 +75,14 @@ func (state *State) openRemoteToolsWindowTab(session *Session, tab remoteTab, sw
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	w := &remoteToolsWindow{owner: state, group: state.options.Group, connection: session.conn, ctx: ctx, cancel: cancel, pageSize: remoteRowsPerPage}
+	w := &remoteToolsWindow{owner: state, group: state.options.Group, connection: session.conn, ctx: ctx, cancel: cancel, tablePressRow: -1, tableHoverRow: -1}
 	w.session.ID = session.ID
 	w.bind(state, session)
 	w.ui.language, w.ui.messages = state.language, state.messages
 	w.ui.appearance, w.ui.pal, w.ui.theme = state.appearance, state.pal, state.theme
 	w.ui.modal, w.ui.activeSessionID, w.ui.remoteWindow = modalRemoteTools, session.ID, w
 	w.ui.remote = remoteToolsView{session: session.ID, title: session.Title, tab: tab, sort: state.remote.sort, serial: 1}
-	window, err := state.options.OpenContentWindow(app.Config{
-		Title: state.messages.Tools.RemoteTitle + " · " + session.Title + " · " + session.Address,
-		Icon:  AppIcon(), Width: 1100, Height: 780, Tree: &tree,
-		WindowMode: app.WindowTitled,
-		MinWidth:   remoteToolsMinWidth, MinHeight: remoteToolsMinHeight,
-		ClearColor: app.Color{Red: float64(state.pal.workspace.Red), Green: float64(state.pal.workspace.Green), Blue: float64(state.pal.workspace.Blue), Alpha: 1},
-		Paint:      w.paint, OnKey: w.key, OnPointer: w.pointer, OnClosed: w.dispose,
-		OnShortcut: func(event ui.KeyEvent) ui.EventResult {
-			w.ui.shortcuts = w.owner.shortcuts
-			if result, handled := w.ui.remoteDetailShortcut(event); handled {
-				return result
-			}
-			return w.ui.remoteSearchShortcut(event)
-		},
-		OnMinimize: func(minimized bool) {
-			if minimized || w.closed || w.ui.remote.loading {
-				return
-			}
-			// A restored window is looked at again, like a reopened one. Its
-			// rows describe the host when they were read, not now.
-			w.ui.refreshRemoteTools()
-		},
-		OnScroll: func(event ui.ScrollEvent) ui.EventResult {
-			if w.ui.remote.auto.open {
-				return ui.EventResult{Handled: true, Repaint: w.ui.remote.auto.scroll.Wheel(event)}
-			}
-			if result, handled := w.ui.remoteProcessWheel(event); handled {
-				return result
-			}
-			return ui.EventResult{Handled: true}
-		},
-		TextInput: func(c app.TextInputContext) *app.TextInput {
-			if input := w.ui.RemoteToolsInput(c); input != nil {
-				return input
-			}
-			if w.ui.modal != modalForm || c.ID.Scope() != hitFormFieldList {
-				return nil
-			}
-			return &app.TextInput{Editor: w.ui.formEditor(c.ID)}
-		},
-	}, nil)
+	window, err := state.options.OpenContentWindow(w.config(), nil)
 	if err != nil {
 		w.dispose()
 		state.fileNotices.show(state.messages.Tools.RemoteTitle, err.Error(), components.ToastError)
@@ -120,6 +97,36 @@ func (state *State) openRemoteToolsWindowTab(session *Session, tab remoteTab, sw
 	w.ui.refreshRemoteTools()
 }
 
+// config is the window's app.Config: the page's own routing, over the window's
+// real handlers for text selection, scrolling and the source's shortcuts.
+func (w *remoteToolsWindow) config() app.Config {
+	base := app.Config{
+		Title: w.ui.messages.Tools.RemoteTitle + " · " + w.session.Title + " · " + w.session.Address,
+		Icon:  AppIcon(), Width: 1100, Height: 780, Tree: &tree,
+		WindowMode: app.WindowCustomTitlebar, TitlebarHeight: TitlebarHeight,
+		MinWidth: remoteToolsMinWidth, MinHeight: remoteToolsMinHeight,
+		ClearColor: app.Color{Red: float64(w.ui.pal.workspace.Red), Green: float64(w.ui.pal.workspace.Green), Blue: float64(w.ui.pal.workspace.Blue), Alpha: 1},
+		Paint:      w.paint, OnKey: w.key, OnPointer: w.pointer, OnClosed: w.dispose,
+		OnShortcut: w.shortcut, OnScroll: w.scroll, TextInput: w.textInput,
+		OnMinimize: func(minimized bool) {
+			if minimized || w.closed || w.ui.remote.loading {
+				return
+			}
+			// A restored window is looked at again, like a reopened one. Its
+			// rows describe the host when they were read, not now.
+			w.ui.refreshRemoteTools()
+		},
+	}
+	base.WindowBorderColor = func() app.Color {
+		return app.Color{Red: float64(w.ui.pal.workspace.Red), Green: float64(w.ui.pal.workspace.Green), Blue: float64(w.ui.pal.workspace.Blue), Alpha: 1}
+	}
+	config := w.windowPage().Config(base)
+	// The page's Config paints the page; the window's paint keeps the presenters
+	// in step with its owner before the page is declared.
+	config.Paint = w.paint
+	return config
+}
+
 func (w *remoteToolsWindow) bind(owner *State, source *Session) {
 	if w.owner != owner {
 		w.owner.remoteWindows = slices.DeleteFunc(w.owner.remoteWindows, func(other *remoteToolsWindow) bool { return other == w })
@@ -128,6 +135,7 @@ func (w *remoteToolsWindow) bind(owner *State, source *Session) {
 	}
 	w.session.Title, w.session.Address, w.session.host = source.Title, source.Address, source.host
 	w.session.conn, w.session.term, w.session.phase = w.connection, source.term, source.phase
+	w.session.sudoCommands, w.session.sudoPassword = source.sudoCommands, source.sudoPassword
 }
 
 // Locate the captured connection, including after its tab moves to another
@@ -167,12 +175,15 @@ func (w *remoteToolsWindow) dispose() {
 		return
 	}
 	w.closed, w.ui.closed = true, true
+	w.ui.sudoSFTP = sudoSFTPDialog{}
+	w.ui.modal = modalNone
 	w.ui.remote.auto.enabled, w.ui.remote.auto.open = false, false
 	w.ui.remote.serial++
 	w.ui.cancelRemoteProcessCommand()
 	w.ui.cancelRemoteProcessEnvironment()
 	w.ui.cancelRemoteContainerEnvironment()
 	w.cancel()
+	w.session.sudoCommands, w.session.sudoPassword = false, ""
 	w.owner.remoteWindows = slices.DeleteFunc(w.owner.remoteWindows, func(other *remoteToolsWindow) bool { return other == w })
 }
 
@@ -234,13 +245,6 @@ func (state *State) postRemoteToolsUpdate(update func(*State)) {
 	state.aiPost(update)
 }
 
-func (state *State) remotePageSize() int {
-	if state.remoteWindow != nil {
-		return max(state.remoteWindow.pageSize, 1)
-	}
-	return remoteRowsPerPage
-}
-
 func (state *State) typeRemoteCommand(session *Session, command string) bool {
 	if state.remoteWindow == nil {
 		return state.typed(session, []byte(command+"\r"))
@@ -286,32 +290,76 @@ func (state *State) finishRemoteTerminalAction() {
 	}
 }
 
-func (w *remoteToolsWindow) click(id ui.ID) {
+// act runs one stable application action: the window's page controls call it
+// from their click handlers, and the tests call it directly.
+func (w *remoteToolsWindow) act(id gfx.ID) {
 	if w.closed {
 		return
 	}
-	if w.ui.modal == modalForm {
+	switch w.ui.modal {
+	case modalSudoSFTP:
+		w.ui.clickSudoSFTP(id)
+	case modalForm:
 		w.ui.clickForm(id)
-	} else if id == hitRemoteClose || id == hitRemoteDismiss {
-		w.close()
-	} else {
-		w.ui.clickRemoteTools(id)
+	default:
+		switch {
+		case id == hitRemoteClose || id == hitRemoteDismiss:
+			w.close()
+		case id == hitRemoteAutoToggle:
+			w.ui.remote.auto.enabled = !w.ui.remote.auto.enabled
+			w.ui.remote.auto.restart()
+		case id.Scope() == hitRemoteIntervals:
+			if index := item(id); index >= 0 && index < len(remoteRefreshIntervals) {
+				w.ui.remote.auto.interval = remoteRefreshIntervals[index]
+				w.ui.remote.auto.enabled = true
+				w.ui.remote.auto.restart()
+			}
+		default:
+			w.ui.clickRemoteTools(id)
+		}
 	}
 }
 
-func (w *remoteToolsWindow) key(event ui.KeyEvent) ui.EventResult {
+// key handles the keys the window's page does not: the dialogs' text editing,
+// the tools' own search and detail keys, and Escape closing the window.
+func (w *remoteToolsWindow) key(event gfx.KeyEvent) gfx.EventResult {
+	if w.closed {
+		return gfx.EventResult{Handled: true}
+	}
 	w.ui.shortcuts = w.owner.shortcuts
-	if result, handled := w.ui.remoteProcessDetailsKey(event); handled {
-		return result
+	switch w.ui.modal {
+	case modalSudoSFTP:
+		// The page's dialog owns Escape and its controls.
+		if event.Key == gfx.KeyEnter && !event.Repeat && event.Target == hitSudoSFTPPassword {
+			w.ui.submitSudoSFTP()
+			return gfx.EventResult{Handled: true, Repaint: true}
+		}
+		return gfx.EventResult{}
+	case modalForm:
+		// The page's dialog owns Escape and its controls.
+		if event.Key == gfx.KeyEnter && event.Modifiers == 0 && !event.Repeat {
+			if editor := w.ui.formEditor(event.Target); editor != nil {
+				if _, composing := editor.Composition(); !composing {
+					w.ui.submitForm()
+				}
+				return gfx.EventResult{Handled: true, Repaint: true}
+			}
+		}
+		return gfx.EventResult{}
 	}
-	if result, handled := w.ui.remoteContainerDetailsKey(event); handled {
-		return result
+	if w.ui.remote.processDetails.open {
+		if result, handled := w.ui.remoteProcessDetailsKey(event); handled {
+			return result
+		}
 	}
-	if result, handled := w.ui.menuKey(event); handled {
-		return result
+	if w.ui.remote.containerDetails.open {
+		if result, handled := w.ui.remoteContainerDetailsKey(event); handled {
+			return result
+		}
 	}
-	if result, handled := w.ui.remoteProcessTableKey(event); handled {
-		return result
+	if w.ui.remote.auto.open {
+		// The page's menu has the keyboard.
+		return gfx.EventResult{}
 	}
 	if result := w.ui.remoteSearchShortcut(event); result.Handled {
 		return result
@@ -319,106 +367,89 @@ func (w *remoteToolsWindow) key(event ui.KeyEvent) ui.EventResult {
 	if result := w.ui.remoteSearchKey(event); result.Handled {
 		return result
 	}
-	if result := w.ui.remoteRefreshKey(event); result.Handled {
-		return result
-	}
-	if event.Key == ui.KeyEscape && !event.Repeat {
-		if w.ui.modal == modalForm {
-			w.ui.clickForm(hitFormCancel)
-		} else {
-			w.close()
+	if (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) && !event.Repeat {
+		if w.ui.clickRemoteTableSort(event.Target) {
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
-		return ui.EventResult{Handled: true, Repaint: true}
 	}
-	if w.ui.modal == modalForm {
-		if event.Key == ui.KeyEnter && event.Modifiers == 0 && !event.Repeat {
-			if editor := w.ui.formEditor(event.Target); editor != nil {
-				if _, composing := editor.Composition(); !composing {
-					w.ui.submitForm()
-				}
-				return ui.EventResult{Handled: true, Repaint: true}
-			}
-		}
-		return ui.EventResult{}
+	if event.Key == gfx.KeyEscape && !event.Repeat {
+		w.close()
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	var options [6]components.SegmentOption
-	for i, id := range remoteTabHits {
-		options[i].ID = id
-	}
-	if next, handled := components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key); handled {
-		w.click(next)
-		return ui.EventResult{Focus: next, FocusVisible: true, Handled: true, Repaint: true}
-	}
-	return ui.EventResult{}
+	return gfx.EventResult{}
 }
 
-func (w *remoteToolsWindow) paint(canvas *ui.Canvas, size ui.Size) {
+// shortcut gives the tools' own find key and the detail text's copy/select-all
+// their chords.
+func (w *remoteToolsWindow) shortcut(event gfx.KeyEvent) gfx.EventResult {
 	if w.closed {
-		return
+		return gfx.EventResult{Handled: true}
 	}
-	w.ui.beginMenus()
-	defer w.ui.endMenus()
-	canvas.SetTree(&tree)
-	if id, ok := canvas.ClickTarget(); ok {
-		canvas.AfterPaint(func() { w.click(id) })
+	w.ui.shortcuts = w.owner.shortcuts
+	if w.ui.modal == modalForm || w.ui.modal == modalSudoSFTP || w.ui.remote.auto.open {
+		return gfx.EventResult{}
 	}
-	w.ui.language, w.ui.messages = w.owner.language, w.owner.messages
-	w.ui.appearance, w.ui.pal, w.ui.theme = w.owner.appearance, w.owner.pal, w.owner.theme
-	w.ui.viewport = size
-	theme := w.ui.Theme()
-	canvas.Fill(ui.Rect{Width: size.Width, Height: size.Height}, theme.Background)
-	const pad, buttonHeight, buttonGap = float32(16), float32(32), float32(8)
-	width := max(size.Width-pad*2, 0)
-	actions, count := w.ui.remoteToolActions()
-	var boxes [8]ui.Rect
-	x, y := float32(0), float32(0)
-	for i := 0; i < count; i++ {
-		buttonWidth := min(components.BeginButton(canvas, theme, ui.ID{}, ui.Rect{}).Small().SizeToFit(actions[i].Label).BoundsWidth(), width)
-		if x > 0 && x+buttonWidth > width {
-			x, y = 0, y+buttonHeight+buttonGap
+	if result, handled := w.ui.remoteDetailShortcut(event); handled {
+		return result
+	}
+	return w.ui.remoteSearchShortcut(event)
+}
+
+// pointer handles the pointers the page's controls and overlays do not own:
+// selecting and scrolling the detail text, and dragging the process scrollbar.
+// A press or release it leaves untouched reaches the page's click pass, which
+// is what lets a dialog's buttons, its close target and a menu's items act.
+func (w *remoteToolsWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
+	if w.closed {
+		return gfx.EventResult{Handled: true}
+	}
+	if w.ui.remote.processDetails.open {
+		if result, handled := w.ui.remoteProcessDetailsTextPointer(event); handled {
+			return result
 		}
-		boxes[i] = ui.Rect{X: pad + x, Y: y, Width: buttonWidth, Height: buttonHeight}
-		x += buttonWidth + buttonGap
-	}
-	footerTop := max(pad, size.Height-pad-y-buttonHeight)
-	body := ui.Rect{X: pad, Y: pad, Width: width, Height: max(footerTop-pad-12, 0)}
-	toolbar := remoteToolbarHeight + remoteSearchHeight + 8
-	if width < 800 {
-		toolbar += remoteToolbarHeight + 8
-	}
-	if w.ui.remote.tab != remoteProcesses {
-		pageSize := max(1, int((body.Height-toolbar-48-components.TableHeaderHeight(theme))/components.TableRowHeight(theme)))
-		if pageSize != w.pageSize {
-			first := w.ui.remote.page * w.pageSize
-			w.pageSize = pageSize
-			w.ui.remote.page = min(first/pageSize, max(0, (len(w.ui.remote.rows)-1)/pageSize))
-			w.ui.remote.pageText = ""
+		if result, handled := w.ui.remoteProcessDetailsScrollPointer(event); handled {
+			return result
 		}
 	}
-	canvas.Clip(body)
-	w.ui.paintRemoteToolsBody(canvas, body)
-	canvas.Unclip()
-	for i := 0; i < count; i++ {
-		bounds := boxes[i]
-		bounds.Y += footerTop
-		button := components.BeginButton(canvas, theme, actions[i].ID, bounds).Small()
-		if actions[i].Disabled {
-			button = button.Disabled()
+	if w.ui.remote.containerDetails.open {
+		if result, handled := w.ui.remoteContainerDetailsTextPointer(event); handled {
+			return result
 		}
-		switch actions[i].Variant {
-		case components.ButtonDestructive:
-			button.Destructive(actions[i].Label)
-		case components.ButtonSecondary:
-			button.Secondary(actions[i].Label)
-		default:
-			button.Outline(actions[i].Label)
+		if result, handled := w.ui.remoteContainerDetailsScrollPointer(event); handled {
+			return result
 		}
 	}
-	w.ui.paintRemoteRefreshMenu(canvas)
-	w.ui.paintRemoteProcessMenu(canvas, ui.Rect{Width: size.Width, Height: size.Height})
-	if w.ui.modal == modalForm {
-		w.ui.paintFormDialog(canvas, ui.Rect{Width: size.Width, Height: size.Height})
+	if result, handled := w.ui.remoteProcessScrollPointer(event); handled {
+		return result
 	}
-	w.ui.paintRemoteProcessDetails(canvas, ui.Rect{Width: size.Width, Height: size.Height})
-	w.ui.paintRemoteContainerDetails(canvas, ui.Rect{Width: size.Width, Height: size.Height})
+	return gfx.EventResult{}
+}
+
+// scroll sends the wheel to the open dialog, else to the selected snapshot.
+func (w *remoteToolsWindow) scroll(event gfx.ScrollEvent) gfx.EventResult {
+	if w.closed {
+		return gfx.EventResult{Handled: true}
+	}
+	if w.ui.remote.auto.open {
+		return gfx.EventResult{Handled: true}
+	}
+	if result, handled := w.ui.remoteProcessWheel(event); handled {
+		return result
+	}
+	return gfx.EventResult{Handled: true}
+}
+
+// textInput answers for a form or sudo field before the page has declared it,
+// since the platform may ask for an editor as soon as the dialog opens.
+func (w *remoteToolsWindow) textInput(context app.TextInputContext) *app.TextInput {
+	if w.ui.modal == modalSudoSFTP && context.ID == hitSudoSFTPPassword {
+		return &app.TextInput{Editor: &w.ui.sudoSFTP.password}
+	}
+	if w.ui.modal != modalForm || context.ID.Scope() != hitFormFieldList {
+		return nil
+	}
+	if editor := w.ui.formEditor(context.ID); editor != nil {
+		return &app.TextInput{Editor: editor}
+	}
+	return nil
 }

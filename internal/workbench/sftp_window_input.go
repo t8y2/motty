@@ -1,27 +1,55 @@
 package workbench
 
 import (
+	"fmt"
 	"math"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/keymap"
 	"motty/internal/sftpclient"
-	"motty/internal/sshconn"
 )
 
 type sftpWindowDrag struct {
 	armed, active, fromLocal bool
-	start, at                ui.Point
+	start, at                gfx.Point
 	sourceDir                string
 	entries                  []sftpclient.Entry
+	// screen and outside place the pointer among this process's windows; target
+	// is where the release would land, and the highlights name what is lit.
+	screen         gfx.Point
+	outside        bool
+	target         sftpDragTarget
+	highlighted    *sftpWindow
+	highlightedTab *State
 }
 
+// sftpDragTarget is where a file drag would land: a pane of this or another
+// server window, or the tab of another server. A file tab names a state
+// and a session; the target folder is read when the release happens.
+type sftpDragTarget struct {
+	kind  uint8 // sftpDragNone, sftpDragPeer, sftpDragTab
+	peer  *sftpWindow
+	local bool // the target pane is this computer's
+	dir   string
+	row   int
+	state *State
+	tab   uint32
+}
+
+const (
+	sftpDragNone uint8 = iota
+	sftpDragPeer
+	sftpDragTab
+)
+
 func (w *sftpWindow) cancelDrag() {
+	w.clearDragHighlights()
 	w.drag = sftpWindowDrag{}
 	pending := w.deferredListings
 	w.deferredListings = [2]func(){}
@@ -29,6 +57,164 @@ func (w *sftpWindow) cancelDrag() {
 		if apply != nil && !w.closed {
 			apply()
 		}
+	}
+}
+
+// clearDragHighlights takes the drop picture off every window it lit.
+func (w *sftpWindow) clearDragHighlights() {
+	if peer := w.drag.highlighted; peer != nil {
+		peer.foreign = sftpForeignDrag{}
+		peer.invalidate()
+	}
+	if state := w.drag.highlightedTab; state != nil && state.foreignFileTab != 0 {
+		state.foreignFileTab = 0
+		if state.options.Invalidate != nil {
+			state.options.Invalidate()
+		}
+	}
+	w.drag.highlighted, w.drag.highlightedTab = nil, nil
+}
+
+// trackFileDrag resolves where a file drag would land: a file tab of any main
+// window, this window's own panes, or another server window under the pointer.
+func (w *sftpWindow) trackFileDrag(event gfx.PointerEvent) {
+	w.drag.screen = gfx.Point{X: event.ScreenX, Y: event.ScreenY}
+	w.drag.at = gfx.Point{X: event.X, Y: event.Y}
+	w.drag.outside = event.X < 0 || event.Y < 0 || event.X >= event.Viewport.Width || event.Y >= event.Viewport.Height
+	// A tab's strip is in the same window as its panes; a native window's is
+	// somewhere else, and only a pointer outside its content can be over it.
+	if w.window == nil || w.drag.outside {
+		if state, tab, ok := w.owner.fileDragTabAt(w.drag.screen, w); ok {
+			w.setDragPeerHighlight(nil, false, false, "", -1)
+			w.setDragTabHighlight(state, tab)
+			w.drag.target = sftpDragTarget{kind: sftpDragTab, state: state, tab: tab}
+			return
+		}
+	}
+	w.setDragTabHighlight(nil, 0)
+	if !w.drag.outside || event.Viewport.Width <= 0 {
+		if local, target, row, valid := w.dropTarget(event.X, event.Y, w.drag.fromLocal); valid {
+			w.setDragPeerHighlight(nil, false, false, "", -1)
+			w.drag.target = sftpDragTarget{kind: sftpDragPeer, peer: w, local: local, dir: target, row: row}
+			return
+		}
+	}
+	if !w.drag.outside {
+		w.setDragPeerHighlight(nil, false, false, "", -1)
+		w.drag.target = sftpDragTarget{}
+		return
+	}
+	if peer := w.owner.fileDropWindowAt(w.drag.screen, w); peer != nil {
+		if frame, ok := peer.frame(); ok {
+			if local, target, row, valid := peer.dropTargetAny(w.drag.screen.X-frame.X, w.drag.screen.Y-frame.Y); valid && !(w.drag.fromLocal && local) {
+				w.setDragPeerHighlight(peer, w.drag.fromLocal, local, target, row)
+				w.drag.target = sftpDragTarget{kind: sftpDragPeer, peer: peer, local: local, dir: target, row: row}
+				return
+			}
+		}
+	}
+	w.setDragPeerHighlight(nil, false, false, "", -1)
+	w.drag.target = sftpDragTarget{}
+}
+
+// setDragPeerHighlight lights the pane of the window a drop would land in. The
+// source window paints its own pane itself.
+func (w *sftpWindow) setDragPeerHighlight(peer *sftpWindow, fromLocal, local bool, target string, row int) {
+	if w.drag.highlighted != peer {
+		if old := w.drag.highlighted; old != nil {
+			old.foreign = sftpForeignDrag{}
+			old.invalidate()
+		}
+		w.drag.highlighted = peer
+	}
+	if peer == nil || peer == w {
+		return
+	}
+	peer.foreign = sftpForeignDrag{active: true, fromLocal: fromLocal, local: local, target: target, row: row}
+	peer.invalidate()
+}
+
+// setDragTabHighlight lights the file tab another window's drag would fill.
+func (w *sftpWindow) setDragTabHighlight(state *State, tab uint32) {
+	if w.drag.highlightedTab == state && (state == nil || state.foreignFileTab == tab) {
+		return
+	}
+	if old := w.drag.highlightedTab; old != nil {
+		old.foreignFileTab = 0
+		if old.options.Invalidate != nil {
+			old.options.Invalidate()
+		}
+	}
+	w.drag.highlightedTab = nil
+	if state == nil || tab == 0 {
+		return
+	}
+	state.foreignFileTab = tab
+	w.drag.highlightedTab = state
+	if state.options.Invalidate != nil {
+		state.options.Invalidate()
+	}
+}
+
+// dropFileDrag queues what the release would move: a same-window drop keeps its
+// old path; a peer pane or another server's tab decides the direction by the
+// two sides.
+func (w *sftpWindow) dropFileDrag() {
+	target := w.drag.target
+	switch target.kind {
+	case sftpDragPeer:
+		if target.peer == w {
+			w.queueEntries(w.drag.fromLocal, w.drag.entries, w.drag.sourceDir, target.dir)
+			return
+		}
+		w.dropOnPeer(target)
+	case sftpDragTab:
+		w.dropOnTab(target)
+	}
+}
+
+func (w *sftpWindow) dropOnPeer(target sftpDragTarget) {
+	peer := target.peer
+	switch {
+	case w.drag.fromLocal && !target.local:
+		peer.queueEntries(true, w.drag.entries, w.drag.sourceDir, target.dir)
+	case !w.drag.fromLocal && target.local:
+		w.queueEntries(false, w.drag.entries, w.drag.sourceDir, target.dir)
+		peer.localRefresh = true
+	case !w.drag.fromLocal && !target.local:
+		queued, rejected := peer.owner.queueRemoteCopies(peer.view, copySourceFromView(w.view), w.drag.sourceDir, target.dir, w.drag.entries)
+		w.reportRemoteCopy(queued, rejected, target.dir)
+	}
+}
+
+func (w *sftpWindow) dropOnTab(target sftpDragTarget) {
+	if target.state == nil {
+		return
+	}
+	targetWindow := target.state.sftpWindows[target.tab]
+	if targetWindow == nil || targetWindow.closed || targetWindow.view.worker == nil {
+		return
+	}
+	dir := targetWindow.folder(false).path
+	if dir == "" {
+		return
+	}
+	if w.drag.fromLocal {
+		targetWindow.queueEntries(true, w.drag.entries, w.drag.sourceDir, dir)
+		return
+	}
+	queued, rejected := target.state.queueRemoteCopies(targetWindow.view, copySourceFromView(w.view), w.drag.sourceDir, dir, w.drag.entries)
+	w.reportRemoteCopy(queued, rejected, dir)
+}
+
+func (w *sftpWindow) reportRemoteCopy(queued, rejected int, target string) {
+	if queued > 0 {
+		w.notices.show(w.owner.messages.SFTPWindow.Title,
+			fmt.Sprintf(w.owner.messages.SFTPCopiedCountFmt, queued, target), components.ToastSuccess)
+	}
+	if rejected > 0 {
+		w.notices.show(w.owner.messages.SFTPWindow.Title,
+			fmt.Sprintf(w.owner.messages.SFTPWindow.QueueRejectedFmt, rejected), components.ToastWarning)
 	}
 }
 
@@ -43,7 +229,17 @@ func (view *sftpView) deferDraggedListing(local bool, apply func()) bool {
 	return false
 }
 
-func (w *sftpWindow) rowTarget(id ui.ID) (bool, int, bool) {
+func (w *sftpWindow) rowTarget(id gfx.ID) (bool, int, bool) {
+	for side := range 2 {
+		if scope := w.folder(side == 0).listRowsScope; !scope.IsZero() {
+			if index, ok := id.In(scope); ok {
+				return side == 0, index, true
+			}
+		}
+	}
+	// The scopes the rows had before they were a List still name them: the
+	// tests, and the window's own focus results that predate the List, speak in
+	// them.
 	for side, scope := range sftpWindowRows {
 		if index, ok := id.In(scope); ok {
 			return side == 0, index, true
@@ -52,10 +248,114 @@ func (w *sftpWindow) rowTarget(id ui.ID) (bool, int, bool) {
 	return false, 0, false
 }
 
+// rowID is the identity of row index on a side: the List's, once it has
+// declared its rows, else the scope the rows had before it did.
+func (w *sftpWindow) rowID(side, index int) gfx.ID {
+	if scope := w.folder(side == 0).listRowsScope; !scope.IsZero() {
+		return scope.At(index)
+	}
+	return sftpWindowRows[side].At(index)
+}
+
+// listBlocked reports a layer above the file lists that owns the keyboard or
+// the pointer, so a row key must not reach the folder behind it.
+func (w *sftpWindow) listBlocked() bool {
+	return w.view.worker == nil || w.fileProperties.open || w.bookmark.open || w.closeConfirm || w.externalConflict != 0 ||
+		w.view.dialog != sftpDialogNone || w.ui.menuOpen || w.view.bookmarksOpen || w.headerMenuOpen()
+}
+
+// listTypeahead moves to the row whose name begins with the letters typed. The
+// window page's List has its own typeahead and sees the key first; this remains
+// for the window's own shortcut route, which is reached when a pane's List has
+// not been painted yet.
+func (w *sftpWindow) listTypeahead(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	text := event.Text
+	if text == "" && event.Key == gfx.KeySpace {
+		text = " "
+	}
+	if text == "" || w.listBlocked() {
+		return gfx.EventResult{}, false
+	}
+	for side := range 2 {
+		folder := w.folder(side == 0)
+		scope := folder.listRowsScope
+		if scope.IsZero() || len(folder.rows) == 0 {
+			continue
+		}
+		if _, inside := event.Target.In(scope); !inside {
+			continue
+		}
+		rows := components.MenuTypeaheadRows{
+			N:     len(folder.rows),
+			ID:    func(i int) gfx.ID { return scope.At(i) },
+			Label: func(i int) string { return folder.rows[i].entry.Name },
+		}
+		id, ok := w.ui.typeahead[side].TypeRows(text, time.Now(), rows, event.Target)
+		if !ok {
+			return gfx.EventResult{}, false
+		}
+		index, ok := id.In(scope)
+		if !ok || index < 0 || index >= len(folder.rows) {
+			return gfx.EventResult{}, false
+		}
+		folder.selectRow(index, 0)
+		folder.list.Select(index)
+		folder.list.ScrollIntoView(index)
+		w.selectionChanged(side == 0)
+		return gfx.EventResult{Handled: true, Repaint: true, Focus: id, FocusVisible: true}, true
+	}
+	return gfx.EventResult{}, false
+}
+
+// listOffset is the rows' offset for side, handing the List an offset the model
+// (a history restore, a filter, a sort, a test) wrote since the last paint.
+func (w *sftpWindow) listOffset(side int) float32 {
+	if w.ui.offset[side] != w.ui.offsetSynced[side] {
+		return w.setListOffset(side, w.ui.offset[side])
+	}
+	return w.ui.offset[side]
+}
+
+// setListOffset moves the List to offset and mirrors it into the fields the
+// drop target, the model and the tests read between paints.
+func (w *sftpWindow) setListOffset(side int, offset float32) float32 {
+	folder := w.folder(side == 0)
+	offset = max(offset, 0)
+	if room := w.ui.bars[side].MaxOffsetY; room > 0 && offset > room {
+		offset = room
+	}
+	if scroll := folder.listScroll; scroll != nil {
+		scroll.ScrollTo(offset)
+		offset = scroll.Offset
+	}
+	w.ui.offset[side], w.ui.offsetSynced[side] = offset, offset
+	folder.scrollOffset = offset
+	folder.first = max(0, int(offset/sftpRowHeight))
+	return offset
+}
+
 // Pointer capture retains the source hit during a drag. Resolve destinations
 // from current coordinates, never that captured hit or the active terminal tab.
 func (w *sftpWindow) dropTarget(x, y float32, fromLocal bool) (local bool, target string, row int, valid bool) {
-	local = !fromLocal
+	target, row, valid = w.dropTargetSide(!fromLocal, x, y)
+	return !fromLocal, target, row, valid
+}
+
+// dropTargetAny is the destination from another window's drag: either pane of
+// this window, whichever the pointer is over, since the source pane may be a
+// server as well.
+func (w *sftpWindow) dropTargetAny(x, y float32) (local bool, target string, row int, valid bool) {
+	for side := range 2 {
+		local = side == 0
+		if target, row, valid = w.dropTargetSide(local, x, y); valid {
+			return
+		}
+	}
+	return false, "", -1, false
+}
+
+// dropTargetSide is the folder one pane offers a drop at.
+func (w *sftpWindow) dropTargetSide(local bool, x, y float32) (target string, row int, valid bool) {
 	side := sideIndex(local)
 	row = -1
 	if !w.connected() || w.navigationBusy() || w.bookmark.open || w.view.dialog != sftpDialogNone || w.closeConfirm || w.externalConflict != 0 || w.view.bookmarksOpen || w.ui.menuOpen || w.headerMenuOpen() || !pointInRect(x, y, w.ui.list[side]) {
@@ -79,66 +379,86 @@ func (w *sftpWindow) dropTarget(x, y float32, fromLocal bool) (local bool, targe
 	return
 }
 
-func (w *sftpWindow) pointer(event ui.PointerEvent) ui.EventResult {
+// pointer sends a pointer event to the window's hand-painted chrome: the split,
+// the scroll bars, the row drags and drops, and the popups. The panes' Lists are
+// part of the window page now, so their clicks complete there first.
+func (w *sftpWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
 	if w.view.worker == nil {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
-	handled := ui.EventResult{Handled: true, Repaint: true}
+	handled := gfx.EventResult{Handled: true, Repaint: true}
 	if w.fileProperties.open {
 		// Let the dialog's own controls complete their normal press/release
 		// click sequence. Every other pointer event belongs to the modal layer.
 		if event.Target == hitFilePropertiesClose || event.Target == hitFilePropertiesDismiss {
-			return ui.EventResult{}
+			return gfx.EventResult{}
 		}
 		return handled
 	}
 	if w.closeConfirm || w.externalConflict != 0 || w.view.dialog != sftpDialogNone {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	if w.bookmark.open {
 		return w.profilePointer(event)
+	}
+	if w.ui.profileQuickOpen {
+		if w.ui.profileQuickScroll.Drag(event) {
+			return handled
+		}
+		if event.Kind == gfx.PointerDown && event.Target == hitSFTPProfileQuickDismiss {
+			w.closeProfileQuickMenu()
+			return handled
+		}
+		return gfx.EventResult{}
 	}
 	if w.headerMenuOpen() {
 		if w.ui.headerScroll.Drag(event) {
 			return handled
 		}
-		if event.Kind == ui.PointerDown && event.Target == hitSFTPWindowHeaderDismiss {
+		if event.Kind == gfx.PointerDown && event.Target == hitSFTPWindowHeaderDismiss {
 			w.closeHeaderMenu()
 			return handled
 		}
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	if w.ui.menuOpen {
 		if w.ui.menuScroll.Drag(event) {
 			return handled
 		}
-		if event.Kind == ui.PointerDown && event.Target == hitSFTPWindowMenuDismiss {
+		if event.Kind == gfx.PointerDown && event.Target == hitSFTPWindowMenuDismiss {
 			w.ui.menuOpen = false
 			return handled
 		}
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	if w.view.bookmarksOpen {
 		wasDragging := w.view.places.scroll.Dragging()
 		changed := w.view.places.scroll.Drag(event)
 		if wasDragging || changed || w.view.places.scroll.Dragging() {
-			return ui.EventResult{Handled: true, Repaint: changed}
+			return gfx.EventResult{Handled: true, Repaint: changed}
 		}
-		if event.Kind == ui.PointerDown && event.Target == hitSFTPBookmarkDismiss {
+		if event.Kind == gfx.PointerDown && event.Target == hitSFTPBookmarkDismiss {
 			w.view.bookmarksOpen = false
 			return handled
 		}
-		return ui.EventResult{}
+		return gfx.EventResult{}
+	}
+	if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary {
+		for side, id := range sftpWindowPathEdit {
+			if event.Target == id {
+				return w.startPathEditing(side)
+			}
+		}
 	}
 	if w.ui.splitting {
-		if event.Kind == ui.PointerMove {
+		if event.Kind == gfx.PointerMove {
 			w.ui.fraction = w.ui.split.FractionAt(event.X)
-		} else if event.Kind == ui.PointerUp || event.Kind == ui.PointerExit {
+		} else if event.Kind == gfx.PointerUp || event.Kind == gfx.PointerExit {
 			w.ui.splitting = false
 		}
 		return handled
 	}
-	if event.Kind == ui.PointerDown && event.Target == hitSFTPWindowSplit {
+	if event.Kind == gfx.PointerDown && event.Target == hitSFTPWindowSplit {
 		if fraction, ok := w.ui.split.FractionForClick(event.ClickCount); ok {
 			w.ui.fraction = fraction
 		} else {
@@ -146,11 +466,17 @@ func (w *sftpWindow) pointer(event ui.PointerEvent) ui.EventResult {
 		}
 		return handled
 	}
+	if result, handled := w.columnResizePointer(event); handled {
+		return result
+	}
+	if result, ok := w.directoryTreePointer(event); ok {
+		return result
+	}
 	if w.ui.barDrag > 0 {
 		side := w.ui.barDrag - 1
-		if event.Kind == ui.PointerMove {
+		if event.Kind == gfx.PointerMove {
 			if !event.Captured {
-				return ui.EventResult{Handled: true}
+				return gfx.EventResult{Handled: true}
 			}
 			var before, after float32
 			if side == 2 {
@@ -158,19 +484,18 @@ func (w *sftpWindow) pointer(event ui.PointerEvent) ui.EventResult {
 				w.ui.queueOffset = w.ui.queueBar.VerticalOffsetForThumb(event.Y - w.ui.barGrab)
 				after = w.ui.queueOffset
 			} else {
-				before = w.ui.offset[side]
-				w.ui.offset[side] = w.ui.bars[side].VerticalOffsetForThumb(event.Y - w.ui.barGrab)
-				after = w.ui.offset[side]
+				before = w.listOffset(side)
+				after = w.setListOffset(side, w.ui.bars[side].VerticalOffsetForThumb(event.Y-w.ui.barGrab))
 			}
-			return ui.EventResult{Handled: true, Repaint: before != after}
-		} else if event.Kind == ui.PointerUp {
+			return gfx.EventResult{Handled: true, Repaint: before != after}
+		} else if event.Kind == gfx.PointerUp {
 			w.ui.barDrag = 0
-		} else if event.Kind == ui.PointerExit && !event.Captured {
+		} else if event.Kind == gfx.PointerExit && !event.Captured {
 			w.ui.barDrag = 0
 		}
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
-	if event.Kind == ui.PointerDown && event.Target == hitSFTPWindowQueueBar {
+	if event.Kind == gfx.PointerDown && event.Target == hitSFTPWindowQueueBar {
 		geometry := w.ui.queueBar
 		before := w.ui.queueOffset
 		w.ui.barGrab = geometry.VerticalThumb.Height / 2
@@ -179,29 +504,29 @@ func (w *sftpWindow) pointer(event ui.PointerEvent) ui.EventResult {
 		}
 		w.ui.barDrag = 3
 		w.ui.queueOffset = geometry.VerticalOffsetForThumb(event.Y - w.ui.barGrab)
-		return ui.EventResult{Handled: true, Repaint: before != w.ui.queueOffset}
+		return gfx.EventResult{Handled: true, Repaint: before != w.ui.queueOffset}
 	}
 	for side, id := range sftpWindowBar {
-		if event.Kind == ui.PointerDown && event.Target == id {
+		if event.Kind == gfx.PointerDown && event.Target == id {
 			geometry := w.ui.bars[side]
-			before := w.ui.offset[side]
+			before := w.listOffset(side)
 			w.ui.barGrab = geometry.VerticalThumb.Height / 2
 			if event.Y >= geometry.VerticalThumb.Y && event.Y < geometry.VerticalThumb.Y+geometry.VerticalThumb.Height {
 				w.ui.barGrab = event.Y - geometry.VerticalThumb.Y
 			}
 			w.ui.barDrag = side + 1
-			w.ui.offset[side] = geometry.VerticalOffsetForThumb(event.Y - w.ui.barGrab)
-			return ui.EventResult{Handled: true, Repaint: before != w.ui.offset[side]}
+			w.setListOffset(side, geometry.VerticalOffsetForThumb(event.Y-w.ui.barGrab))
+			return gfx.EventResult{Handled: true, Repaint: before != w.ui.offset[side]}
 		}
 	}
 	if w.drag.armed || w.drag.active {
-		w.drag.at = ui.Point{X: event.X, Y: event.Y}
-		if (event.Kind == ui.PointerDown || event.Kind == ui.PointerUp) && event.Button != ui.PointerButtonPrimary {
+		w.drag.at = gfx.Point{X: event.X, Y: event.Y}
+		if (event.Kind == gfx.PointerDown || event.Kind == gfx.PointerUp) && event.Button != gfx.PointerButtonPrimary {
 			w.cancelDrag()
 			return handled
 		}
 		switch event.Kind {
-		case ui.PointerMove:
+		case gfx.PointerMove:
 			if !w.drag.active && math.Hypot(float64(event.X-w.drag.start.X), float64(event.Y-w.drag.start.Y)) >= 6 {
 				w.drag.active = true
 				for _, row := range w.folder(w.drag.fromLocal).rows {
@@ -210,43 +535,40 @@ func (w *sftpWindow) pointer(event ui.PointerEvent) ui.EventResult {
 					}
 				}
 			}
-			return handled
-		case ui.PointerUp:
 			if w.drag.active {
-				_, target, _, valid := w.dropTarget(event.X, event.Y, w.drag.fromLocal)
-				if valid {
-					w.queueEntries(w.drag.fromLocal, w.drag.entries, w.drag.sourceDir, target)
-				}
+				w.trackFileDrag(event)
+			}
+			return handled
+		case gfx.PointerUp:
+			if w.drag.active {
+				w.trackFileDrag(event)
+				w.dropFileDrag()
 			}
 			w.cancelDrag()
 			return handled
-		case ui.PointerExit:
+		case gfx.PointerExit:
 			if !event.Captured {
 				w.cancelDrag()
 			}
 			return handled
 		}
 	}
-	if event.Kind != ui.PointerDown {
-		return ui.EventResult{}
+	if event.Kind != gfx.PointerDown {
+		return gfx.EventResult{}
 	}
 	local, index, ok := w.rowTarget(event.Target)
 	if !ok {
 		for side, id := range sftpWindowList {
-			if event.Target == id && event.Button == ui.PointerButtonSecondary {
+			if event.Target == id && event.Button == gfx.PointerButtonSecondary {
 				w.cancelDrag()
 				w.activeLocal, w.view.local = side == 0, side == 0
-				folder := w.folder(side == 0)
-				for i := range folder.rows {
-					folder.rows[i].selected = false
-				}
-				folder.selected = -1
+				w.folder(side == 0).clearSelection()
 				w.selectionChanged(side == 0)
-				w.ui.menuOpen, w.ui.menuAt = true, ui.Point{X: event.X, Y: event.Y}
+				w.ui.menuOpen, w.ui.menuAt = true, gfx.Point{X: event.X, Y: event.Y}
 				return handled
 			}
 		}
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	folder := w.folder(local)
 	if index < 0 || index >= len(folder.rows) || (!local && w.view.busy) {
@@ -255,17 +577,17 @@ func (w *sftpWindow) pointer(event ui.PointerEvent) ui.EventResult {
 	w.selectionChanged(local)
 	w.activeLocal, w.view.local = local, local
 	handled.Focus = event.Target
-	if event.Button == ui.PointerButtonSecondary {
+	if event.Button == gfx.PointerButtonSecondary {
 		w.cancelDrag()
 		if !folder.rows[index].selected {
 			folder.selectRow(index, 0)
 		}
 		w.ui.menuOpen = true
-		w.ui.menuAt = ui.Point{X: event.X, Y: event.Y}
+		w.ui.menuAt = gfx.Point{X: event.X, Y: event.Y}
 		return handled
 	}
-	if event.Button != ui.PointerButtonPrimary {
-		return ui.EventResult{}
+	if event.Button != gfx.PointerButtonPrimary {
+		return gfx.EventResult{}
 	}
 	if event.ClickCount >= 2 {
 		w.openEntry(local, index)
@@ -275,24 +597,14 @@ func (w *sftpWindow) pointer(event ui.PointerEvent) ui.EventResult {
 		folder.selectRow(index, event.Modifiers)
 	}
 	if w.connected() && !w.view.busy && w.pendingLocal == "" {
-		w.drag = sftpWindowDrag{armed: true, fromLocal: local, start: ui.Point{X: event.X, Y: event.Y}, at: ui.Point{X: event.X, Y: event.Y}, sourceDir: folder.path}
+		w.drag = sftpWindowDrag{armed: true, fromLocal: local, start: gfx.Point{X: event.X, Y: event.Y}, at: gfx.Point{X: event.X, Y: event.Y}, sourceDir: folder.path}
 	}
 	return handled
 }
 
-func (w *sftpWindow) click(id ui.ID) {
+func (w *sftpWindow) click(id gfx.ID) {
 	defer w.invalidate()
 	if w.view.worker == nil {
-		switch id {
-		case hitSFTPWindowConnectCancel:
-			w.closeHostNow()
-		case hitSFTPWindowConnectRetry:
-			if w.session.failed() || w.session.phase == sshconn.PhaseClosed {
-				w.connect()
-			}
-		case hitSFTPWindowAuthenticate:
-			w.owner.raiseSFTPAuthentication(&w.session)
-		}
 		return
 	}
 	if w.clickFileProperties(id) {
@@ -335,7 +647,20 @@ func (w *sftpWindow) click(id ui.ID) {
 		}
 		return
 	}
+	if w.clickProfileQuick(id) {
+		return
+	}
 	if w.clickFilterControl(id) {
+		return
+	}
+	for side := range 2 {
+		if id == sftpWindowTreeToggle[side] {
+			w.activeLocal, w.view.local = side == 0, side == 0
+			w.toggleDirectoryTree(side == 0)
+			return
+		}
+	}
+	if w.clickDirectoryTree(id) {
 		return
 	}
 	if id == hitSFTPWindowMenuDismiss {
@@ -344,6 +669,10 @@ func (w *sftpWindow) click(id ui.ID) {
 	}
 	if w.ui.menuOpen {
 		w.ui.menuOpen = false
+		if id == hitSFTPMenuSudo {
+			w.owner.toggleSudoSFTP(&w.session, w.view)
+			return
+		}
 		if index, ok := id.In(sftpWindowMenuActions); ok && index < len(sftpWindowActionIDs) {
 			w.fileAction(w.activeLocal, sftpWindowActionIDs[index])
 			return
@@ -353,10 +682,22 @@ func (w *sftpWindow) click(id ui.ID) {
 				w.notices.show(w.owner.messages.SFTPWindow.Title, err.Error(), components.ToastError)
 			}
 		}
+		if id == hitSFTPMenuCopyFiles {
+			if _, err := w.owner.copySFTPSelection(w.view); err != nil {
+				w.notices.show(w.owner.messages.SFTPWindow.Title, err.Error(), components.ToastError)
+			}
+		}
+		if id == hitSFTPMenuPasteFiles {
+			w.pasteClipboard()
+		}
 		return
 	}
 	if w.view.bookmarksOpen {
 		w.clickDirectoryPlace(id)
+		return
+	}
+	if id == hitSFTPWindowSudoMode {
+		w.owner.toggleSudoSFTP(&w.session, w.view)
 		return
 	}
 	for side := range 2 {
@@ -374,8 +715,11 @@ func (w *sftpWindow) click(id ui.ID) {
 			return
 		}
 	}
-	if w.owner.clickTransferTask(id) {
-		w.invalidate()
+	if w.clickQueueDetails(id) {
+		return
+	}
+	if action, ok := tree.Local(sftpWindowQueueActions, id); ok {
+		w.owner.clickTransferTask(action, w.view)
 		return
 	}
 	if id == hitSFTPBookmarkList {
@@ -408,6 +752,12 @@ func (w *sftpWindow) click(id ui.ID) {
 	}
 	for side := range sftpWindowPath {
 		local := side == 0
+		if index, ok := id.In(sftpWindowBreadcrumbs[side]); ok {
+			if folder := w.folder(local); index >= 0 && index < len(folder.crumbs) {
+				w.navigate(local, folder.crumbs[index].path)
+			}
+			return
+		}
 		switch id {
 		case sftpWindowRefresh[side]:
 			w.refresh(local)
@@ -500,17 +850,37 @@ func (w *sftpWindow) textInput(context app.TextInputContext) *app.TextInput {
 	return nil
 }
 
-func (w *sftpWindow) key(event ui.KeyEvent) ui.EventResult {
-	if event.Release {
-		return ui.EventResult{}
+func (w *sftpWindow) startPathEditing(side int) gfx.EventResult {
+	folder := w.folder(side == 0)
+	if !w.owner.sftpPathVisible(folder) {
+		folder.resetPathInput()
 	}
-	handled := ui.EventResult{Handled: true, Repaint: true}
+	folder.pathEditing = true
+	w.activeLocal, w.view.local = side == 0, side == 0
+	w.cancelDrag()
+	return gfx.EventResult{Handled: true, Repaint: true, Focus: sftpWindowPath[side], FocusVisible: true}
+}
+
+func (w *sftpWindow) key(event gfx.KeyEvent) gfx.EventResult {
+	if event.Release {
+		return gfx.EventResult{}
+	}
+	// The List submits Enter to the window; opening the row is the window's.
+	// Take it before the List's key route so a folder is entered once, not
+	// twice.
+	if !event.Repeat && event.Key == gfx.KeyEnter && event.Modifiers == 0 && !w.listBlocked() {
+		if local, index, ok := w.rowTarget(event.Target); ok {
+			w.openEntry(local, index)
+			return gfx.EventResult{Handled: true, Repaint: true}
+		}
+	}
+	handled := gfx.EventResult{Handled: true, Repaint: true}
 	if w.view.worker == nil {
-		if event.Key == ui.KeyEscape && !event.Repeat {
+		if event.Key == gfx.KeyEscape && !event.Repeat {
 			w.requestHostClose()
 			return handled
 		}
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	if result, handled := w.filePropertiesKey(event); handled {
 		return result
@@ -519,17 +889,21 @@ func (w *sftpWindow) key(event ui.KeyEvent) ui.EventResult {
 		if result, handled := w.profileScopeKey(event); handled {
 			return result
 		}
+		if event.Target == hitSFTPBookmarkSync && !event.Repeat && event.Modifiers == 0 && (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) {
+			w.clickBookmarkEditor(hitSFTPBookmarkSync)
+			return handled
+		}
 		if index, ok := event.Target.In(hitSFTPBookmarkFields); ok && index < len(w.bookmark.fields) {
 			if _, composing := w.bookmark.fields[index].Composition(); composing {
-				return ui.EventResult{}
+				return gfx.EventResult{}
 			}
 		}
 		if !event.Repeat && event.Modifiers == 0 {
 			switch event.Key {
-			case ui.KeyEscape:
+			case gfx.KeyEscape:
 				w.bookmark.open = false
 				return handled
-			case ui.KeyEnter:
+			case gfx.KeyEnter:
 				if event.Target == hitSFTPBookmarkFields.At(0) || event.Target == hitSFTPBookmarkSave {
 					w.saveBookmark()
 					return handled
@@ -548,17 +922,17 @@ func (w *sftpWindow) key(event ui.KeyEvent) ui.EventResult {
 				}
 			}
 		}
-		if index, row := event.Target.In(hitSFTPProfileItems); row && (event.Key == ui.KeyDown || event.Key == ui.KeyUp || event.Key == ui.KeyHome || event.Key == ui.KeyEnd) {
+		if index, row := event.Target.In(hitSFTPProfileItems); row && (event.Key == gfx.KeyDown || event.Key == gfx.KeyUp || event.Key == gfx.KeyHome || event.Key == gfx.KeyEnd) {
 			profiles := w.visibleProfiles()
 			next := index
 			switch event.Key {
-			case ui.KeyDown:
+			case gfx.KeyDown:
 				next++
-			case ui.KeyUp:
+			case gfx.KeyUp:
 				next--
-			case ui.KeyHome:
+			case gfx.KeyHome:
 				next = 0
-			case ui.KeyEnd:
+			case gfx.KeyEnd:
 				next = len(profiles) - 1
 			}
 			if len(profiles) > 0 {
@@ -572,9 +946,15 @@ func (w *sftpWindow) key(event ui.KeyEvent) ui.EventResult {
 			}
 			return handled
 		}
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
-	if event.Key == ui.KeyEscape {
+	if result, handled := w.profileQuickKey(event); handled {
+		return result
+	}
+	if result, handled := w.owner.sftpOwnershipKey(w.view, event); handled {
+		return result
+	}
+	if event.Key == gfx.KeyEscape {
 		if w.closeConfirm {
 			w.click(hitSFTPWindowCloseCancel)
 		} else if w.externalConflict != 0 {
@@ -583,6 +963,8 @@ func (w *sftpWindow) key(event ui.KeyEvent) ui.EventResult {
 			w.owner.closeSFTPDialog(w.view)
 		} else if w.headerMenuOpen() {
 			w.closeHeaderMenu()
+		} else if w.ui.queueDetails.pinned != 0 {
+			w.ui.queueDetails.dismiss()
 		} else if result, ok := w.filterEscape(event); ok {
 			return result
 		} else {
@@ -600,13 +982,17 @@ func (w *sftpWindow) key(event ui.KeyEvent) ui.EventResult {
 							w.owner.cancelSFTPNavigation(w.view)
 						}
 						folder.resetPathInput()
+						if !w.owner.sftpPathInput {
+							folder.pathEditing = false
+							handled.Focus, handled.FocusVisible = sftpWindowPathEdit[side], true
+						}
 					}
 				}
 			}
 		}
 		return handled
 	}
-	if w.view.dialog != sftpDialogNone && event.Key == ui.KeyEnter && (event.Target == hitSFTPDialogField || event.Target == hitSFTPDialogField2 || event.Target == hitSFTPDialogSubmit) {
+	if w.view.dialog != sftpDialogNone && event.Key == gfx.KeyEnter && (event.Target == hitSFTPDialogField || event.Target == hitSFTPDialogField2 || event.Target == hitSFTPDialogSubmit) {
 		w.owner.submitSFTPDialog(w.view)
 		return handled
 	}
@@ -615,7 +1001,7 @@ func (w *sftpWindow) key(event ui.KeyEvent) ui.EventResult {
 			handled.Focus, handled.FocusVisible = next, true
 			return handled
 		}
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	if w.ui.menuOpen || w.view.bookmarksOpen {
 		scroll := &w.ui.menuScroll
@@ -626,10 +1012,20 @@ func (w *sftpWindow) key(event ui.KeyEvent) ui.EventResult {
 			handled.Focus, handled.FocusVisible = next, true
 			return handled
 		}
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	if w.fileProperties.open || w.closeConfirm || w.externalConflict != 0 || w.view.dialog != sftpDialogNone {
-		return ui.EventResult{}
+		return gfx.EventResult{}
+	}
+	if !event.Repeat && event.Modifiers == 0 && (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) {
+		for side, id := range sftpWindowPathEdit {
+			if event.Target == id {
+				return w.startPathEditing(side)
+			}
+		}
+	}
+	if result, handled := w.directoryTreeKey(event); handled {
+		return result
 	}
 	if delta, ok := sftpHistoryChord(event); ok {
 		isText := false
@@ -643,7 +1039,7 @@ func (w *sftpWindow) key(event ui.KeyEvent) ui.EventResult {
 	}
 	for _, id := range sftpWindowFilter {
 		if event.Target == id {
-			return ui.EventResult{}
+			return gfx.EventResult{}
 		}
 	}
 	if event.Target == hitSFTPWindowSplit {
@@ -654,7 +1050,7 @@ func (w *sftpWindow) key(event ui.KeyEvent) ui.EventResult {
 	}
 	for side, id := range sftpWindowPath {
 		if event.Target == id {
-			if event.Key == ui.KeyEnter {
+			if event.Key == gfx.KeyEnter {
 				if _, composing := w.folder(side == 0).pathInput().Composition(); !composing && !event.Repeat && event.Modifiers == 0 && (side == 0 || !w.view.busy) {
 					w.cancelDrag()
 					w.activeLocal, w.view.local = side == 0, side == 0
@@ -662,65 +1058,76 @@ func (w *sftpWindow) key(event ui.KeyEvent) ui.EventResult {
 				}
 				return handled
 			}
-			return ui.EventResult{}
+			return gfx.EventResult{}
 		}
 	}
 	local, index, row := w.rowTarget(event.Target)
-	if row {
+	if row && event.Key != gfx.KeyTab {
+		// Tabbing through rows to reach another control does not move the
+		// side the toolbar actions apply to.
 		w.activeLocal, w.view.local = local, local
 	}
 	folder := w.folder(w.activeLocal)
 	switch event.Key {
-	case ui.KeyF5:
+	case gfx.KeyF5:
 		w.queueSelection(w.activeLocal)
 		return handled
-	case ui.KeyEnter:
+	case gfx.KeyEnter:
 		if row {
 			w.openEntry(local, index)
 			return handled
 		}
-	case ui.KeyF2:
+	case gfx.KeyF2:
 		if !w.activeLocal && !w.view.busy && w.connected() {
 			w.cancelDrag()
 			w.view.local = false
 			w.owner.openSFTPDialog(w.view, sftpDialogRename)
 			return handled
 		}
-	case ui.KeyDelete:
-		if !w.activeLocal && !w.view.busy && w.connected() {
+	case gfx.KeyDelete:
+		if w.activeLocal {
+			if !w.view.localBusy && w.pendingLocal == "" && w.browse.pending == nil {
+				w.cancelDrag()
+				w.view.local = true
+				w.owner.openSFTPDialog(w.view, sftpDialogDelete)
+				return handled
+			}
+			return handled
+		}
+		if !w.view.busy && w.connected() {
 			w.cancelDrag()
 			w.view.local = false
 			w.owner.openSFTPDialog(w.view, sftpDialogDelete)
 			return handled
 		}
-	case ui.KeyBackspace:
+	case gfx.KeyBackspace:
 		parent := path.Dir(folder.path)
 		if w.activeLocal {
 			parent = filepath.Dir(folder.path)
 		}
 		w.navigate(w.activeLocal, parent)
 		return handled
-	case ui.KeyUp, ui.KeyDown, ui.KeyHome, ui.KeyEnd, ui.KeyPageUp, ui.KeyPageDown:
+	case gfx.KeyUp, gfx.KeyDown, gfx.KeyHome, gfx.KeyEnd, gfx.KeyPageUp, gfx.KeyPageDown:
 		if len(folder.rows) == 0 {
 			return handled
 		}
 		next := folder.selected
 		switch event.Key {
-		case ui.KeyUp:
+		case gfx.KeyUp:
 			next--
-		case ui.KeyDown:
+		case gfx.KeyDown:
 			next++
-		case ui.KeyHome:
+		case gfx.KeyHome:
 			next = 0
-		case ui.KeyEnd:
+		case gfx.KeyEnd:
 			next = len(folder.rows) - 1
-		case ui.KeyPageUp:
+		case gfx.KeyPageUp:
 			next -= folder.visibleRows
-		case ui.KeyPageDown:
+		case gfx.KeyPageDown:
 			next += folder.visibleRows
 		}
 		next = max(0, min(next, len(folder.rows)-1))
-		folder.selectRow(next, event.Modifiers&ui.ModifierShift)
+		folder.selectRow(next, event.Modifiers&gfx.ModifierShift)
 		w.selectionChanged(w.activeLocal)
 		side := sideIndex(w.activeLocal)
 		top, bottom := float32(next)*sftpRowHeight, float32(next+1)*sftpRowHeight
@@ -728,41 +1135,71 @@ func (w *sftpWindow) key(event ui.KeyEvent) ui.EventResult {
 		if bottom > w.ui.offset[side]+w.ui.list[side].Height {
 			w.ui.offset[side] = bottom - w.ui.list[side].Height
 		}
-		handled.Focus = sftpWindowRows[side].At(next)
+		handled.Focus = w.rowID(side, next)
 		handled.FocusVisible = true
 		return handled
 	}
-	return ui.EventResult{}
+	return gfx.EventResult{}
 }
 
-func (w *sftpWindow) shortcut(event ui.KeyEvent) ui.EventResult {
-	if event.Release || event.Modifiers&(ui.ModifierControl|ui.ModifierMeta) == 0 {
-		return ui.EventResult{}
+func (w *sftpWindow) shortcut(event gfx.KeyEvent) gfx.EventResult {
+	if event.Release {
+		return gfx.EventResult{}
+	}
+	// A printable key while a List row has the keyboard is the List's typeahead.
+	// The window owns OnShortcut, so it feeds the same session a Menu uses.
+	if event.Modifiers&^gfx.ModifierShift == 0 {
+		if result, ok := w.listTypeahead(event); ok {
+			return result
+		}
+	}
+	if event.Modifiers&(gfx.ModifierControl|gfx.ModifierMeta) == 0 {
+		return gfx.EventResult{}
 	}
 	if w.view.worker == nil && strings.ToLower(event.Text) != "w" {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	for _, id := range sftpWindowPath {
 		if event.Target == id && strings.ToLower(event.Text) != "l" && strings.ToLower(event.Text) != "w" && strings.ToLower(event.Text) != "f" && strings.ToLower(event.Text) != "b" && strings.ToLower(event.Text) != "o" {
-			return ui.EventResult{}
+			return gfx.EventResult{}
 		}
 	}
 	if w.fileProperties.open || w.view.dialog != sftpDialogNone || w.bookmark.open || w.closeConfirm || w.externalConflict != 0 || w.ui.menuOpen || w.view.bookmarksOpen || w.headerMenuOpen() {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	for _, id := range sftpWindowFilter {
 		if event.Target == id && strings.ToLower(event.Text) != "f" && strings.ToLower(event.Text) != "l" && strings.ToLower(event.Text) != "w" {
-			return ui.EventResult{}
+			return gfx.EventResult{}
 		}
 	}
 	if local, ok := w.targetSide(event.Target); ok {
 		w.activeLocal, w.view.local = local, local
 	}
-	handled := ui.EventResult{Handled: true, Repaint: true}
+	handled := gfx.EventResult{Handled: true, Repaint: true}
+	// Copy and paste are application actions with bindings the settings page
+	// owns, so the window follows the chord the user kept or chose.
+	if chord, ok := keymap.FromEvent(event); ok {
+		switch w.owner.shortcuts.actionFor(chord) {
+		case shortcutCopy:
+			if event.Repeat {
+				return handled
+			}
+			if _, err := w.owner.copySFTPSelection(w.view); err != nil {
+				w.notices.show(w.owner.messages.SFTPWindow.Title, err.Error(), components.ToastError)
+			}
+			return handled
+		case shortcutPaste:
+			if event.Repeat {
+				return handled
+			}
+			w.pasteClipboard()
+			return handled
+		}
+	}
 	switch strings.ToLower(event.Text) {
 	case "f":
-		if event.Modifiers != defaultShortcutModifier() {
-			return ui.EventResult{}
+		if event.Modifiers != keymap.Primary {
+			return gfx.EventResult{}
 		}
 		w.cancelDrag()
 		w.folder(w.activeLocal).filterOpen = true
@@ -772,7 +1209,7 @@ func (w *sftpWindow) shortcut(event ui.KeyEvent) ui.EventResult {
 		w.editBookmark(nil)
 		return handled
 	case "b":
-		if event.Modifiers&(ui.ModifierAlt|ui.ModifierShift) == 0 && !w.navigationBusy() {
+		if event.Modifiers&(gfx.ModifierAlt|gfx.ModifierShift) == 0 && !w.navigationBusy() {
 			w.editBookmark(w.currentBookmark())
 			return handled
 		}
@@ -781,12 +1218,14 @@ func (w *sftpWindow) shortcut(event ui.KeyEvent) ui.EventResult {
 		for index := range folder.rows {
 			folder.rows[index].selected = true
 		}
+		folder.listNeedsSeed = true
 		w.selectionChanged(w.activeLocal)
 		return handled
 	case "l":
 		side := sideIndex(w.activeLocal)
-		app.TextEvent{Kind: app.TextCommandEvent, Command: app.TextSelectAll}.Apply(w.folder(w.activeLocal).pathInput())
-		handled.Focus = sftpWindowPath[side]
+		handled = w.startPathEditing(side)
+		folder := w.folder(w.activeLocal)
+		app.TextEvent{Kind: app.TextCommandEvent, Command: app.TextSelectAll}.Apply(folder.pathInput())
 		return handled
 	case "r":
 		w.refresh(w.activeLocal)
@@ -795,82 +1234,88 @@ func (w *sftpWindow) shortcut(event ui.KeyEvent) ui.EventResult {
 		w.requestHostClose()
 		return handled
 	}
-	return ui.EventResult{}
+	return gfx.EventResult{}
 }
 
-func (w *sftpWindow) scroll(event ui.ScrollEvent) ui.EventResult {
+func (w *sftpWindow) scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if w.bookmark.open {
 		b := &w.bookmark
 		if b.scopeOpen {
-			return ui.EventResult{Handled: true, Repaint: b.scopeMenu.Wheel(event)}
+			return gfx.EventResult{Handled: true, Repaint: b.scopeMenu.Wheel(event)}
 		}
 		if pointInRect(event.X, event.Y, b.list) {
 			before := b.offset
 			b.offset = max(0, min(b.area.MaxOffsetY, b.offset+event.DeltaY))
-			return ui.EventResult{Handled: true, Repaint: before != b.offset}
+			return gfx.EventResult{Handled: true, Repaint: before != b.offset}
 		}
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
+	}
+	if w.ui.profileQuickOpen {
+		return gfx.EventResult{Handled: true, Repaint: w.ui.profileQuickScroll.Wheel(event)}
 	}
 	if w.headerMenuOpen() {
-		return ui.EventResult{Handled: true, Repaint: w.ui.headerScroll.Wheel(event)}
+		return gfx.EventResult{Handled: true, Repaint: w.ui.headerScroll.Wheel(event)}
 	}
 	if w.ui.menuOpen {
-		return ui.EventResult{Handled: true, Repaint: w.ui.menuScroll.Wheel(event)}
+		return gfx.EventResult{Handled: true, Repaint: w.ui.menuScroll.Wheel(event)}
 	}
 	if w.view.bookmarksOpen {
-		return ui.EventResult{Handled: true, Repaint: w.view.places.scroll.Wheel(event)}
+		return gfx.EventResult{Handled: true, Repaint: w.view.places.scroll.Wheel(event)}
 	}
 	if w.fileProperties.open || w.view.dialog != sftpDialogNone || w.bookmark.open || w.closeConfirm || w.externalConflict != 0 {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
+	}
+	if result, handled := w.directoryTreeScroll(event); handled {
+		return result
 	}
 	for side, bounds := range w.ui.list {
 		if pointInRect(event.X, event.Y, bounds) {
-			before := w.ui.offset[side]
+			before := w.listOffset(side)
+			folder := w.folder(side == 0)
 			if event.Precise {
-				w.folder(side == 0).wheel = 0
-				w.ui.offset[side] = max(0, min(w.ui.bars[side].MaxOffsetY, before+event.DeltaY))
+				// A trackpad moves exactly what it reports, as the side panel
+				// does; the List keeps the offset and its scrollbar follows.
+				folder.wheel = 0
+				w.setListOffset(side, before+event.DeltaY)
 			} else {
-				folder := w.folder(side == 0)
+				// A notch is whole rows, accumulated as the side panel does, so
+				// both lists move alike for the same wheel.
 				scrollFolder(folder, event)
-				w.ui.offset[side] = max(0, min(w.ui.bars[side].MaxOffsetY, float32(folder.first)*sftpRowHeight))
+				w.setListOffset(side, float32(folder.first)*sftpRowHeight)
 			}
-			return ui.EventResult{Handled: true, Repaint: before != w.ui.offset[side]}
+			return gfx.EventResult{Handled: true, Repaint: before != w.ui.offset[side]}
 		}
 	}
 	if pointInRect(event.X, event.Y, w.ui.queueBounds) {
 		before := w.ui.queueOffset
 		w.ui.queueOffset = max(0, min(w.ui.queueBar.MaxOffsetY, w.ui.queueOffset+event.DeltaY))
-		return ui.EventResult{Handled: true, Repaint: before != w.ui.queueOffset}
+		if before != w.ui.queueOffset {
+			w.ui.queueDetails.dismiss()
+		}
+		return gfx.EventResult{Handled: true, Repaint: before != w.ui.queueOffset}
 	}
-	return ui.EventResult{}
+	return gfx.EventResult{}
 }
 
-func (w *sftpWindow) fileDrop(event ui.FileDropEvent) ui.EventResult {
-	if event.Phase == ui.FileDropLeave {
+func (w *sftpWindow) fileDrop(event gfx.FileDropEvent) gfx.EventResult {
+	if event.Phase == gfx.FileDropLeave {
 		w.cancelDrag()
-		return ui.EventResult{Repaint: true}
+		return gfx.EventResult{Repaint: true}
 	}
 	if w.fileProperties.open {
 		w.cancelDrag()
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	_, target, _, valid := w.dropTarget(event.X, event.Y, true)
 	if !valid {
 		w.cancelDrag()
-		return ui.EventResult{Repaint: true}
+		return gfx.EventResult{Repaint: true}
 	}
-	if event.Phase == ui.FileDropOver {
-		w.drag = sftpWindowDrag{active: true, fromLocal: true, at: ui.Point{X: event.X, Y: event.Y}}
-		return ui.EventResult{Handled: true, Repaint: true}
+	if event.Phase == gfx.FileDropOver {
+		w.drag = sftpWindowDrag{active: true, fromLocal: true, at: gfx.Point{X: event.X, Y: event.Y}}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	w.cancelDrag()
-	for _, location := range event.Paths {
-		info, err := os.Lstat(location)
-		if err != nil {
-			w.notices.show(w.owner.messages.SFTPWindow.Title, err.Error(), components.ToastError)
-			continue
-		}
-		w.queueEntries(true, []sftpclient.Entry{{Name: filepath.Base(location), Mode: info.Mode()}}, filepath.Dir(location), target)
-	}
-	return ui.EventResult{Handled: true, Repaint: true}
+	w.queueLocalPaths(event.Paths, target)
+	return gfx.EventResult{Handled: true, Repaint: true}
 }

@@ -8,7 +8,8 @@ import (
 
 // The server picks every size and rectangle in these PDUs, and MS-RDPEGFX
 // carries them in 16 bits: a few bytes of CreateSurface used to be enough to
-// allocate gigabytes. These tests hold the client to maxPixelBytes, and to the
+// allocate gigabytes. These tests hold the client to its surface and cache
+// budgets, and to the
 // surface each rectangle claims to be in.
 
 func newTestHandler() *Handler {
@@ -58,8 +59,8 @@ func TestCreateSurfaceRefusesSurfaceOverBudget(t *testing.T) {
 	if len(h.surfaces) != 0 {
 		t.Fatalf("created %d surfaces, want none", len(h.surfaces))
 	}
-	if h.pixelBytes != 0 {
-		t.Fatalf("pixelBytes = %d, want 0", h.pixelBytes)
+	if h.surfaceBytes != 0 {
+		t.Fatalf("surfaceBytes = %d, want 0", h.surfaceBytes)
 	}
 
 	// A surface a display can actually show is still created.
@@ -73,19 +74,19 @@ func TestSurfaceBudgetFollowsReplaceAndDelete(t *testing.T) {
 	h := newTestHandler()
 
 	h.handleCreateSurface(createSurfacePDU(1, 100, 100))
-	if want := 100 * 100 * 4; h.pixelBytes != want {
-		t.Fatalf("pixelBytes = %d, want %d", h.pixelBytes, want)
+	if want := 100 * 100 * 4; h.surfaceBytes != want {
+		t.Fatalf("surfaceBytes = %d, want %d", h.surfaceBytes, want)
 	}
 
 	// Replacing a surface must hand back the old buffer instead of counting both.
 	h.handleCreateSurface(createSurfacePDU(1, 200, 50))
-	if want := 200 * 50 * 4; h.pixelBytes != want {
-		t.Fatalf("after replace pixelBytes = %d, want %d", h.pixelBytes, want)
+	if want := 200 * 50 * 4; h.surfaceBytes != want {
+		t.Fatalf("after replace surfaceBytes = %d, want %d", h.surfaceBytes, want)
 	}
 
 	h.handleDeleteSurface([]byte{1, 0})
-	if h.pixelBytes != 0 {
-		t.Fatalf("after delete pixelBytes = %d, want 0", h.pixelBytes)
+	if h.surfaceBytes != 0 {
+		t.Fatalf("after delete surfaceBytes = %d, want 0", h.surfaceBytes)
 	}
 }
 
@@ -98,8 +99,8 @@ func TestResetGraphicsReturnsSurfaceBudget(t *testing.T) {
 	binary.LittleEndian.PutUint32(reset[4:8], 600)
 	h.handleResetGraphics(reset)
 
-	if len(h.surfaces) != 0 || h.pixelBytes != 0 {
-		t.Fatalf("after reset: %d surfaces, %d bytes, want 0 and 0", len(h.surfaces), h.pixelBytes)
+	if len(h.surfaces) != 0 || h.surfaceBytes != 0 || h.cacheBytes != 0 {
+		t.Fatalf("after reset: %d surfaces, %d surface bytes, %d cache bytes, want none", len(h.surfaces), h.surfaceBytes, h.cacheBytes)
 	}
 }
 
@@ -114,15 +115,39 @@ func TestBitmapCacheEvictsToStayWithinItsCount(t *testing.T) {
 	if len(h.cache) != maxCacheEntries {
 		t.Fatalf("cache holds %d entries, want %d", len(h.cache), maxCacheEntries)
 	}
-	// The 1x1 surface stays counted alongside the cache entries.
-	if want := 4 + maxCacheEntries*4; h.pixelBytes != want {
-		t.Fatalf("pixelBytes = %d, want %d", h.pixelBytes, want)
+	// The 1x1 surface is counted against its own budget, not the cache's.
+	if want := 4; h.surfaceBytes != want {
+		t.Fatalf("surfaceBytes = %d, want %d", h.surfaceBytes, want)
+	}
+	if want := maxCacheEntries * 4; h.cacheBytes != want {
+		t.Fatalf("cacheBytes = %d, want %d", h.cacheBytes, want)
 	}
 
-	// Evicting a slot hands its buffer back to the budget.
+	// Evicting a slot hands its buffer back to the cache budget.
 	h.handleEvictCacheEntry([]byte{0, 0})
-	if want := 4 + (maxCacheEntries-1)*4; h.pixelBytes != want {
-		t.Fatalf("after evict pixelBytes = %d, want %d", h.pixelBytes, want)
+	if want := (maxCacheEntries - 1) * 4; h.cacheBytes != want {
+		t.Fatalf("after evict cacheBytes = %d, want %d", h.cacheBytes, want)
+	}
+}
+
+// TestBitmapCacheEvictsToStayWithinItsBytes holds the cache to the 100 MB a
+// client that did not ask for a small cache is allowed (MS-RDPEGFX 3.3.1.4).
+func TestBitmapCacheEvictsToStayWithinItsBytes(t *testing.T) {
+	h := newTestHandler()
+	h.handleCreateSurface(createSurfacePDU(1, 1000, 1000))
+	entry := 1000 * 1000 * 4 // one full-surface copy
+
+	for slot := 0; slot < 40; slot++ {
+		h.handleSurfaceToCache(surfaceToCachePDU(1, uint16(slot), 0, 0, 1000, 1000))
+		if h.cacheBytes > maxCacheBytes {
+			t.Fatalf("cache holds %d bytes, budget is %d", h.cacheBytes, maxCacheBytes)
+		}
+	}
+	if want := maxCacheBytes / entry; len(h.cache) != want {
+		t.Fatalf("cache holds %d entries, want %d", len(h.cache), want)
+	}
+	if h.surfaceBytes != entry {
+		t.Fatalf("surfaceBytes = %d, want %d", h.surfaceBytes, entry)
 	}
 }
 

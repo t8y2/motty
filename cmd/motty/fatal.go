@@ -82,7 +82,14 @@ func stopLogging() { logSession.Close() }
 func fatal(err error) {
 	log.Print(err)
 	if os.Getenv("VIVA_HEADLESS") == "" {
-		title, body := fatalText(launchLanguage(), err, logDirectory())
+		// Only a run that opened the log can say where it is. The claim comes
+		// before startLogging, and a launch that fails there has written no
+		// file: naming one would send the user after a log that is not there.
+		logDir := ""
+		if logSession != nil {
+			logDir = logDirectory()
+		}
+		title, body := fatalText(launchLanguage(), err, logDir)
 		app.ShowFatalError(title, body)
 	}
 	stopLogging()

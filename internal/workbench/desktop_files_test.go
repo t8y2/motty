@@ -12,7 +12,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/keymap"
 	"motty/internal/desktop"
 	"motty/internal/sshconn"
 )
@@ -22,16 +23,17 @@ import (
 // release, as the walk of a large folder would.
 type fileDesktop struct {
 	*followingDesktop
-	mu      sync.Mutex
-	texts   []string
-	typed   []string
-	keys    []desktop.KeyEvent
-	offers  [][]string
-	offer   desktop.FileOffer
-	err     error
-	hold    bool
-	release chan struct{}
-	started chan struct{}
+	mu       sync.Mutex
+	texts    []string
+	typed    []string
+	keys     []desktop.KeyEvent
+	offers   [][]string
+	offer    desktop.FileOffer
+	received []desktop.ReceivedFiles
+	err      error
+	hold     bool
+	release  chan struct{}
+	started  chan struct{}
 }
 
 func newFileDesktop() *fileDesktop {
@@ -56,6 +58,17 @@ func (s *fileDesktop) SetClipboard(text string) error {
 	s.texts = append(s.texts, text)
 	s.mu.Unlock()
 	return nil
+}
+
+func (s *fileDesktop) RemoteFiles() (desktop.ReceivedFiles, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.received) == 0 {
+		return desktop.ReceivedFiles{}, false
+	}
+	files := s.received[0]
+	s.received = s.received[1:]
+	return files, true
 }
 
 func (s *fileDesktop) SendText(text string) error {
@@ -110,6 +123,9 @@ func fileDesktopState(t *testing.T, remote desktop.Session, clipboard bool, opti
 	}
 	if options.ClipboardText != nil {
 		state.options.ClipboardText = options.ClipboardText
+	}
+	if options.SetClipboardFiles != nil {
+		state.options.SetClipboardFiles = options.SetClipboardFiles
 	}
 	state.connectionReconnect = reconnectOff
 	state.dialDesktop = func(ctx context.Context, request desktopRequest) (desktop.Session, error) {
@@ -236,8 +252,8 @@ func TestACopyThatFailsIsSilentButADropTellsWhy(t *testing.T) {
 
 	// A drop is the user's own act: it says what was wrong.
 	x, y := dropPoint(t, state, session)
-	state.FileDrop(ui.FileDropEvent{Phase: ui.FileDropOver, X: x, Y: y})
-	result := state.FileDrop(ui.FileDropEvent{Phase: ui.FileDropDrop, X: x, Y: y, Paths: paths})
+	state.FileDrop(gfx.FileDropEvent{Phase: gfx.FileDropOver, X: x, Y: y})
+	result := state.FileDrop(gfx.FileDropEvent{Phase: gfx.FileDropDrop, X: x, Y: y, Paths: paths})
 	if !result.Handled {
 		t.Fatal("a drop on the picture was not taken")
 	}
@@ -250,9 +266,9 @@ func TestACopyThatFailsIsSilentButADropTellsWhy(t *testing.T) {
 
 func dropPoint(t *testing.T, state *State, session *Session) (x, y float32) {
 	t.Helper()
-	var canvas ui.Canvas
-	state.Resize(ui.Size{Width: 1200, Height: 800})
-	state.Paint(&canvas, ui.Size{Width: 1200, Height: 800})
+	var canvas gfx.Canvas
+	state.Resize(gfx.Size{Width: 1200, Height: 800})
+	state.Paint(&canvas, gfx.Size{Width: 1200, Height: 800})
 	_, bounds, ok := state.paneAt(600, 400)
 	if !ok {
 		t.Fatal("no pane under the middle of the window")
@@ -267,21 +283,21 @@ func TestFilesDroppedOnTheDesktopAreOfferedToTheRemoteClipboard(t *testing.T) {
 	paths := copiedFiles(t, "report.pdf")
 	x, y := dropPoint(t, state, session)
 
-	over := state.FileDrop(ui.FileDropEvent{Phase: ui.FileDropOver, X: x, Y: y})
+	over := state.FileDrop(gfx.FileDropEvent{Phase: gfx.FileDropOver, X: x, Y: y})
 	if !over.Handled || state.terminalDrop.session != session.ID || !state.terminalDrop.desktop {
 		t.Fatalf("hovering files over the picture: %+v, drop = %+v", over, state.terminalDrop)
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1200, Height: 800})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1200, Height: 800})
 	if !canvasHasText(&canvas, state.messages.Tools.DropDesktopFiles) {
 		t.Fatalf("the hover did not say what a drop does: %v", canvasTexts(&canvas))
 	}
-	if left := state.FileDrop(ui.FileDropEvent{Phase: ui.FileDropLeave}); !left.Repaint || state.terminalDrop.session != 0 {
+	if left := state.FileDrop(gfx.FileDropEvent{Phase: gfx.FileDropLeave}); !left.Repaint || state.terminalDrop.session != 0 {
 		t.Fatalf("leaving left the hover: %+v", state.terminalDrop)
 	}
 
-	state.FileDrop(ui.FileDropEvent{Phase: ui.FileDropOver, X: x, Y: y})
-	if result := state.FileDrop(ui.FileDropEvent{Phase: ui.FileDropDrop, X: x, Y: y, Paths: paths}); !result.Handled {
+	state.FileDrop(gfx.FileDropEvent{Phase: gfx.FileDropOver, X: x, Y: y})
+	if result := state.FileDrop(gfx.FileDropEvent{Phase: gfx.FileDropDrop, X: x, Y: y, Paths: paths}); !result.Handled {
 		t.Fatalf("the drop was not taken: %+v", result)
 	}
 	waitForOffer(t, remote)
@@ -298,7 +314,7 @@ func TestFilesDroppedOnTheDesktopAreOfferedToTheRemoteClipboard(t *testing.T) {
 func TestADropOnADesktopThatCannotTakeFilesSaysSo(t *testing.T) {
 	state, session := fileDesktopState(t, newFollowingDesktop(64, 48, false), true, Options{}) // a picture and no file transfer, as VNC
 	x, y := dropPoint(t, state, session)
-	state.FileDrop(ui.FileDropEvent{Phase: ui.FileDropDrop, X: x, Y: y, Paths: copiedFiles(t, "a")})
+	state.FileDrop(gfx.FileDropEvent{Phase: gfx.FileDropDrop, X: x, Y: y, Paths: copiedFiles(t, "a")})
 	if len(state.fileNotices.items) != 1 || state.fileNotices.items[0].detail != state.messages.Tools.DesktopFilesUnsupported {
 		t.Fatalf("notices = %+v", state.fileNotices.items)
 	}
@@ -308,7 +324,7 @@ func TestADropOnAHostWithoutClipboardSharingSaysSo(t *testing.T) {
 	remote := newFileDesktop()
 	state, session := fileDesktopState(t, remote, false, Options{})
 	x, y := dropPoint(t, state, session)
-	state.FileDrop(ui.FileDropEvent{Phase: ui.FileDropDrop, X: x, Y: y, Paths: copiedFiles(t, "a")})
+	state.FileDrop(gfx.FileDropEvent{Phase: gfx.FileDropDrop, X: x, Y: y, Paths: copiedFiles(t, "a")})
 	noOffer(t, remote)
 	if len(state.fileNotices.items) != 1 || state.fileNotices.items[0].detail != state.messages.Tools.DesktopFilesClipboardOff {
 		t.Fatalf("notices = %+v", state.fileNotices.items)
@@ -447,7 +463,7 @@ func TestDroppedFilesStayTheRemoteClipboardUntilSomethingNewIsCopied(t *testing.
 	})
 	dropped := copiedFiles(t, "dropped.txt")
 	x, y := dropPoint(t, state, session)
-	state.FileDrop(ui.FileDropEvent{Phase: ui.FileDropDrop, X: x, Y: y, Paths: dropped})
+	state.FileDrop(gfx.FileDropEvent{Phase: gfx.FileDropDrop, X: x, Y: y, Paths: dropped})
 	waitForOffer(t, remote)
 	waitUntil(t, state, "the drop to be reported", func() bool { return session.desk.files.dropped })
 
@@ -489,7 +505,7 @@ func TestThePasteShortcutPastesFilesOnTheRemote(t *testing.T) {
 		ClipboardFiles: func() ([]string, error) { return paths, nil },
 		ClipboardText:  func() (string, error) { return clipboardText, nil },
 	})
-	paste := ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: defaultShortcutModifier(), Text: "v"}
+	paste := gfx.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: keymap.Primary, Text: "v"}
 	if result := state.Shortcut(paste); !result.Handled {
 		t.Fatalf("the paste shortcut was left to the text system: %+v", result)
 	}
@@ -512,5 +528,46 @@ func TestThePasteShortcutPastesFilesOnTheRemote(t *testing.T) {
 	session.desk.files.sentKey = ""
 	if result := state.Shortcut(paste); result.Handled || len(remote.keys) != pressed {
 		t.Fatalf("a paste of text was taken: %+v", result)
+	}
+}
+
+func TestFilesCopiedOnTheRemoteArePutOnTheLocalClipboard(t *testing.T) {
+	remote := newFileDesktop()
+	root := t.TempDir()
+	paths := []string{filepath.Join(root, "report.pdf"), filepath.Join(root, "folder")}
+	var put [][]string
+	remote.received = append(remote.received, desktop.ReceivedFiles{
+		Paths: paths, Files: 1, Folders: 1, Bytes: 2048,
+	})
+	state, session := fileDesktopState(t, remote, true, Options{
+		SetClipboardFiles: func(got []string) error {
+			put = append(put, append([]string(nil), got...))
+			return nil
+		},
+		ClipboardFiles: func() ([]string, error) { return paths, nil },
+		ClipboardText:  func() (string, error) { return "report.pdf\nfolder", nil },
+	})
+	state.pumpDesktop(session)
+	if len(put) != 1 || !slices.Equal(put[0], paths) {
+		t.Fatalf("put %q, want %q", put, paths)
+	}
+	if !strings.Contains(state.status, "Received 2 items") {
+		t.Fatalf("status = %q", state.status)
+	}
+	// The files stand for the local clipboard now; the next sync must not offer
+	// them back to the remote as a new copy.
+	state.syncClipboard(session.desk)
+	if offers := remote.offered(); len(offers) != 0 {
+		t.Fatalf("the received files were offered back: %q", offers)
+	}
+}
+
+func TestAFailedRemoteFileCopyIsShown(t *testing.T) {
+	remote := newFileDesktop()
+	remote.received = append(remote.received, desktop.ReceivedFiles{Err: errors.New("read failed")})
+	state, session := fileDesktopState(t, remote, true, Options{})
+	state.pumpDesktop(session)
+	if !strings.Contains(state.status, "read failed") {
+		t.Fatalf("status = %q", state.status)
 	}
 }

@@ -2,7 +2,7 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func (w *sftpWindow) headerMenu() (int, bool) {
@@ -18,8 +18,17 @@ func (w *sftpWindow) closeHeaderMenu() {
 	w.view.lfolder.headerMenuOpen, w.view.sftpFolder.headerMenuOpen = false, false
 }
 
-func (w *sftpWindow) targetSide(id ui.ID) (bool, bool) {
+func (w *sftpWindow) targetSide(id gfx.ID) (bool, bool) {
+	if _, ok := id.In(hitSFTPProfileHoverItems); ok {
+		return true, true
+	}
 	for side := range 2 {
+		if _, ok := id.In(sftpWindowBreadcrumbs[side]); ok {
+			return side == 0, true
+		}
+		if id == sftpWindowPathEdit[side] {
+			return side == 0, true
+		}
 		if _, ok := id.In(sftpWindowRecentHits[side]); ok {
 			return side == 0, true
 		}
@@ -28,7 +37,7 @@ func (w *sftpWindow) targetSide(id ui.ID) (bool, bool) {
 		}
 	}
 	switch id {
-	case hitSFTPLocationProfiles, hitSFTPBrowseSync, hitSFTPLocalPlaces, hitSFTPLocalStar:
+	case hitSFTPLocationProfiles, hitSFTPProfileQuick, hitSFTPBrowseSync, hitSFTPLocalPlaces, hitSFTPLocalStar:
 		return true, true
 	case hitSFTPBookmarkList, hitSFTPBookmarkToggle, hitSFTPNewLink, hitSFTPWindowUpload, hitSFTPWindowDownload:
 		return false, true
@@ -37,13 +46,22 @@ func (w *sftpWindow) targetSide(id ui.ID) (bool, bool) {
 		return local, true
 	}
 	for side := range 2 {
+		if id == sftpWindowTreeToggle[side] {
+			return side == 0, true
+		}
+		if _, ok := id.In(sftpWindowTreeRows[side]); ok {
+			return side == 0, true
+		}
+		if _, ok := id.In(sftpWindowTreeDisclosures[side]); ok {
+			return side == 0, true
+		}
 		if _, ok := id.In(sftpWindowSortHits[side]); ok {
 			return side == 0, true
 		}
 		if _, ok := id.In(sftpWindowActions[side]); ok {
 			return side == 0, true
 		}
-		for _, ids := range [][2]ui.ID{sftpWindowPath, sftpWindowFilter, sftpWindowList, sftpWindowMore, sftpWindowFilterClear, sftpWindowFilterToggle, sftpWindowHidden, sftpWindowHeaderHidden, sftpWindowRefresh, sftpWindowUp, sftpWindowNewFolder, sftpWindowBar} {
+		for _, ids := range [][2]gfx.ID{sftpWindowPath, sftpWindowFilter, sftpWindowList, sftpWindowMore, sftpWindowFilterClear, sftpWindowFilterToggle, sftpWindowHidden, sftpWindowHeaderHidden, sftpWindowRefresh, sftpWindowUp, sftpWindowNewFolder, sftpWindowBar, sftpWindowTreeBar} {
 			if id == ids[side] {
 				return side == 0, true
 			}
@@ -60,7 +78,7 @@ func (w *sftpWindow) applyFolderFilter(local bool) {
 	w.ui.offset[sideIndex(local)] = float32(folder.first) * sftpRowHeight
 }
 
-func (w *sftpWindow) clickFilterControl(id ui.ID) bool {
+func (w *sftpWindow) clickFilterControl(id gfx.ID) bool {
 	if local, ok := w.targetSide(id); ok {
 		w.activeLocal, w.view.local = local, local
 	}
@@ -106,13 +124,13 @@ func (w *sftpWindow) clickFilterControl(id ui.ID) bool {
 	return false
 }
 
-func (w *sftpWindow) filterEscape(event ui.KeyEvent) (ui.EventResult, bool) {
+func (w *sftpWindow) filterEscape(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	for side, id := range sftpWindowFilter {
 		folder := w.folder(side == 0)
 		if event.Target != id || !folder.filterOpen {
 			continue
 		}
-		result := ui.EventResult{Handled: true, Repaint: true, Focus: id, FocusVisible: true}
+		result := gfx.EventResult{Handled: true, Repaint: true, Focus: id, FocusVisible: true}
 		if _, composing := folder.filterInputEditor().Composition(); composing || event.Repeat {
 			return result, true
 		}
@@ -123,18 +141,23 @@ func (w *sftpWindow) filterEscape(event ui.KeyEvent) (ui.EventResult, bool) {
 			folder.filterOpen = false
 			result.Focus = sftpWindowList[side]
 			if len(folder.rows) > 0 {
-				result.Focus = sftpWindowRows[side].At(max(0, folder.selected))
+				result.Focus = w.rowID(side, max(0, folder.selected))
 			}
 		}
 		return result, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
-func (w *sftpWindow) paintHeaderMenu(canvas *ui.Canvas, side int) {
+// paintHeaderMenu paints one pane's More menu. A file tab paints over the page,
+// so its menu does too: the page clips what is drawn inside the tab, which would
+// cut the dismiss backdrop down to the tab and leave the window bar unreachable.
+// A standalone transfer window's canvas is the whole window, so its menu does not
+// need the page's popup state.
+func (w *sftpWindow) paintHeaderMenu(canvas *gfx.Canvas, side int, viewport gfx.Rect, scroll *components.MenuScroll) {
 	m, folder, local := w.owner.messages, w.folder(side == 0), side == 0
 	anchor := w.ui.headerAnchor[side]
-	count := 6 + len(folder.history.recent)
+	count := 7 + len(folder.history.recent)
 	if label, _ := w.owner.sftpEditorItem(w.view, folder); label != "" {
 		count++
 	}
@@ -145,8 +168,19 @@ func (w *sftpWindow) paintHeaderMenu(canvas *ui.Canvas, side int) {
 	if !local && narrow {
 		count += 2
 	}
-	bounds := ui.Rect{X: anchor.X + anchor.Width - 224, Y: anchor.Y + anchor.Height + 4, Width: 224, Height: float32(count*32 + 8)}
-	menu := components.BeginDropdownMenu(canvas, w.owner.Theme(), bounds, components.DropdownMenuOptions{Layer: popupLayer, Scope: hitSFTPWindowHeaderDismiss, DismissID: hitSFTPWindowHeaderDismiss, Viewport: ui.Rect{Width: w.ui.size.Width, Height: w.ui.size.Height}, Scroll: &w.ui.headerScroll})
+	bounds := gfx.Rect{X: anchor.X + anchor.Width - 224, Y: anchor.Y + anchor.Height + 4, Width: 224, Height: float32(count*32 + 8)}
+	dismiss := hitSFTPWindowHeaderDismiss
+	// A window hosted in a main-window tab has no native window of its own: its
+	// menu is painted over the page, so it takes the page's popup state and the
+	// wheel, the keyboard and Escape reach it as they reach any other menu.
+	overPage := w.window == nil
+	if overPage {
+		scroll = w.owner.menuScrollFor(dismiss)
+	}
+	menu := components.BeginDropdownMenu(canvas, w.owner.Theme(), bounds, components.DropdownMenuOptions{Layer: popupLayer, Scope: dismiss, DismissID: dismiss, Viewport: viewport, Scroll: scroll})
+	if overPage {
+		w.owner.menuPlaced(menu.Bounds())
+	}
 	w.owner.paintSFTPHistoryMenu(&menu, w.view, local, sftpWindowHistoryBack[side], sftpWindowHistoryForward[side], sftpWindowRecentHits[side])
 	menu.AddItem(components.DropdownMenuItem{ID: sftpWindowFilterToggle[side], Label: m.Tools.FilesFilterLabel, Icon: lucideIcons[iconSearch], Selected: folder.filterOpen || folder.filterInputEditor().String() != ""})
 	hiddenIcon, hiddenLabel := uint8(iconEyeOff), m.Tools.FilesShowHidden
@@ -158,6 +192,10 @@ func (w *sftpWindow) paintHeaderMenu(canvas *ui.Canvas, side int) {
 		menu.AddItem(components.DropdownMenuItem{ID: sftpWindowHeaderEditor[side], Label: label, Icon: lucideIcons[iconExternal], Disabled: disabled})
 	}
 	busy := w.browse.pending != nil || local && w.pendingLocal != "" || !local && (w.view.busy || !w.connected())
+	menu.AddItem(components.DropdownMenuItem{
+		ID:    sftpWindowActions[side].At(sftpWindowActionIndex(hitSFTPCalculateDirectorySize)),
+		Label: m.SFTPWindow.CalculateDirectorySize, Icon: lucideIcons[iconInfo], Disabled: folder.path == "" || !local && w.view.openFiles == nil,
+	})
 	menu.AddItem(components.DropdownMenuItem{ID: sftpWindowNewFolder[side], Label: m.SFTPNewDirectory, Icon: lucideIcons[iconFolderPlus], Disabled: busy})
 	if !local {
 		menu.AddItem(components.DropdownMenuItem{ID: hitSFTPNewLink, Label: m.Tools.TipNewLink, Icon: lucideIcons[iconLink], Disabled: busy})

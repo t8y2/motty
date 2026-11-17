@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 func TestRevealButtonShowsASecretAndHidesItAgainWhenTheDialogIsReopened(t *testing.T) {
@@ -16,7 +16,7 @@ func TestRevealButtonShowsASecretAndHidesItAgainWhenTheDialogIsReopened(t *testi
 	secure := func() bool {
 		canvas, _ := paintedTexts(state)
 		for _, hit := range canvas.Hits() {
-			if hit.ID == hitDialogPassword && hit.Role == ui.RoleTextField {
+			if hit.ID == hitDialogPassword && hit.Role == gfx.RoleTextField {
 				return hit.Secure
 			}
 		}
@@ -61,14 +61,14 @@ func TestHostFormSavesTheKeyPassphraseUnderTheKeyAndRefusesAWrongOne(t *testing.
 	typeInto(state, hitDialogUser, "ops")
 	state.Click(hitDialogAuth)
 	state.Click(hitDialogAuthItemList.At(int(authPrivateKey)))
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitDialogPassphrase); ok {
 		t.Fatal("the passphrase was asked before a key was chosen")
 	}
 	state.Click(hitDialogIdentity)
 	state.Click(hitDialogIdentityItemList.At(int(state.identities[0].ID)))
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitDialogPassphrase); !ok {
 		t.Fatal("an encrypted key did not ask for its passphrase")
 	}

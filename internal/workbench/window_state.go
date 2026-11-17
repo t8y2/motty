@@ -3,7 +3,7 @@ package workbench
 import (
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // The window as the desktop sees it: where it is and whether the window manager
@@ -19,7 +19,7 @@ const (
 
 type windowChrome struct {
 	remember          bool
-	frame             ui.Rect
+	frame             gfx.Rect
 	hasFrame          bool
 	minimized         bool
 	saveTimer         *time.Timer
@@ -30,13 +30,13 @@ type windowChrome struct {
 
 // RestoredWindowFrame is where the last first window was, if a previous run
 // saved it. The window opens there and at that size.
-func (state *State) RestoredWindowFrame() (ui.Rect, bool) {
+func (state *State) RestoredWindowFrame() (gfx.Rect, bool) {
 	return state.winChrome.frame, state.winChrome.hasFrame
 }
 
 // restoreWindowFrame takes the frame a saved state carries. It is this window's
 // own, read from the record it saved, so it is kept here and not shared.
-func (state *State) restoreWindowFrame(frame ui.Rect) {
+func (state *State) restoreWindowFrame(frame gfx.Rect) {
 	if frame.Width < 1 || frame.Height < 1 {
 		return
 	}
@@ -46,7 +46,7 @@ func (state *State) restoreWindowFrame(frame ui.Rect) {
 // NoteWindowFrame records where the window is, as Viva reports every move and
 // size change, and saves it once the drag settles. Windows that do not remember
 // their frame ignore it.
-func (state *State) NoteWindowFrame(frame ui.Rect) {
+func (state *State) NoteWindowFrame(frame gfx.Rect) {
 	if !state.winChrome.remember || state.closed || state.winChrome.fullscreen || state.winChrome.fullscreenSession != 0 {
 		return
 	}
@@ -86,7 +86,7 @@ func (state *State) closeWindowChrome() {
 
 // savedWindowFrame is the frame to write: this window's own, which is what its
 // record holds. Two windows of one process save two places.
-func (state *State) savedWindowFrame() (ui.Rect, bool) {
+func (state *State) savedWindowFrame() (gfx.Rect, bool) {
 	return state.winChrome.frame, state.winChrome.hasFrame
 }
 

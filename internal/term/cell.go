@@ -97,7 +97,8 @@ type Row struct {
 	ID      uint64
 	Version uint32
 	Wrapped bool
-	// Written is when the line was first written, in unix seconds, or 0 when
-	// stamping is off (see SetClock) or nothing was written to it.
+	// Written is when the line was last written, in unix seconds, or 0 when
+	// stamping is off (see SetClock) or nothing was written to it. Rewriting or
+	// erasing the line moves it forward.
 	Written int64
 }

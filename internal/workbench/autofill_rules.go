@@ -9,7 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/autofill"
@@ -33,7 +33,6 @@ var autofillHits = tree.Feature("autofill-rules")
 var (
 	hitSettingsAutofillAdd  = tree.ID(autofillHits, "settings-autofill-add")
 	hitSettingsAutofillSudo = tree.ID(autofillHits, "settings-autofill-sudo")
-	hitSettingsAutofillSu   = tree.ID(autofillHits, "settings-autofill-su")
 	hitAutofillName         = tree.ID(autofillHits, "autofill-name")
 	hitAutofillPattern      = tree.ID(autofillHits, "autofill-pattern")
 	hitAutofillFixed        = tree.ID(autofillHits, "autofill-fixed")
@@ -71,9 +70,25 @@ type autofillUI struct {
 	send                        autofill.Send
 	enter                       bool
 	dialogError                 string
+	// The slots are where the dialog body paints the controls.
+	nameBox, patternBox ui.Box
+	fixedBox, scopeBox  ui.Box
+	enterRow            ui.Box
+	sendChoices         [3]ui.Box
 
-	ask autofillAsk
+	ask  autofillAsk
+	pick autofillPick
+	// scanRules is the user's rules plus the built-in prompt assist, rebuilt on
+	// each idle scan without allocating.
+	scanRules []*autofill.Rule
 }
+
+// autofillSendKinds are the ways a rule may answer, in the order the dialog
+// shows them.
+var autofillSendKinds = [...]struct {
+	id   gfx.ID
+	send autofill.Send
+}{{hitAutofillPassword, autofill.SendPassword}, {hitAutofillOTP, autofill.SendOTP}, {hitAutofillText, autofill.SendText}}
 
 // autofillAsk is a rule waiting for the user's word before it answers.
 type autofillAsk struct {
@@ -112,10 +127,24 @@ func (state *State) scanAutofill(session *Session) {
 	}
 	line := screen.RowText(cursor.Y)
 	host := session.host
-	rule := t.autofill.Scan(line, state.autofillRules.rules, func(rule *autofill.Rule) bool {
+	rules := state.autofillRules.rules
+	if state.passwordAssistOn() {
+		state.autofillRules.scanRules = append(state.autofillRules.scanRules[:0], rules...)
+		state.autofillRules.scanRules = append(state.autofillRules.scanRules, passwordAssistRule)
+		rules = state.autofillRules.scanRules
+	}
+	rule := t.autofill.Scan(line, rules, func(rule *autofill.Rule) bool {
 		return rule.AppliesTo(host.Label, host.Group)
 	})
 	if rule == nil {
+		return
+	}
+	if rule == passwordAssistRule {
+		if state.modal != modalNone {
+			t.autofill.Retry(state.now()) // the offer waits for the dialog in the way
+			return
+		}
+		state.openPasswordPick(session, line)
 		return
 	}
 	if t.autofill.Allowed(rule.ID) {
@@ -135,14 +164,20 @@ func (state *State) scanAutofill(session *Session) {
 
 // requestAutofillFrames asks for the one frame that looks at a prompt once the
 // output has paused. A terminal that is quiet asks for nothing.
-func (state *State) requestAutofillFrames(canvas *ui.Canvas) {
-	if !state.autofillRules.armed {
+func (state *State) requestAutofillFrames(canvas *gfx.Canvas) {
+	if !state.autofillRules.armed && !state.passwordAssistOn() {
 		return
 	}
 	now := state.now()
 	for index := range state.sessions {
-		t := state.sessions[index].term
+		session := &state.sessions[index]
+		t := session.term
 		if t == nil {
+			continue
+		}
+		// The built-in offer asks for the pause frame only while there are
+		// shared passwords to offer: ordinary terminals keep asking for none.
+		if !state.autofillRules.armed && !state.passwordAssistWantsFrame(session) {
 			continue
 		}
 		if wait, pending := t.autofill.Pending(now); pending && wait > 0 {
@@ -151,7 +186,17 @@ func (state *State) requestAutofillFrames(canvas *ui.Canvas) {
 	}
 }
 
-func (state *State) clickAutofillConfirm(id ui.ID) {
+// passwordAssistWantsFrame reports whether the pause frame is worth asking for:
+// something saved could be offered. It reads no screen text and makes no vault
+// lookup, so an idle paint never pays for the offer; without a shared password
+// there is nothing the frame could show, and the host's own password is already
+// covered by the sudo hint.
+func (state *State) passwordAssistWantsFrame(session *Session) bool {
+	t := session.term
+	return t != nil && t.shell != nil && !t.ended && len(state.credentials) > 0
+}
+
+func (state *State) clickAutofillConfirm(id gfx.ID) {
 	ask := state.autofillRules.ask
 	switch id {
 	case hitAutofillAllow:
@@ -284,7 +329,7 @@ func (state *State) openAutofillDialog(rule *autofill.Rule) {
 // that preset sends a fixed text. Both are anchored at the start of the line, so
 // a program that only mentions a password is not taken for the prompt.
 const (
-	sudoPromptPattern = `(?i)^\[sudo\][^\n]*(?:password|密码|密碼)[^\n]*[:：]\s*$`
+	sudoPromptPattern = `(?i)^\[sudo(?::[^\]]*)?\][^\n]*(?:password|密码|密碼)[^\n]*[:：]\s*$`
 	suPromptPattern   = `(?i)^(?:password|密码|密碼|口令)\s*[:：]\s*$`
 )
 
@@ -297,16 +342,7 @@ func (state *State) openAutofillSudoPreset() {
 	form.send = autofill.SendPassword
 }
 
-// openAutofillSuPreset opens the rule dialog filled in for su's prompt.
-func (state *State) openAutofillSuPreset() {
-	state.openAutofillDialog(nil)
-	form := &state.autofillRules
-	form.name.Insert(state.messages.Autofill.PresetSuName)
-	form.pattern.Insert(suPromptPattern)
-	form.send = autofill.SendText
-}
-
-func (state *State) clickAutofillDialog(id ui.ID) {
+func (state *State) clickAutofillDialog(id gfx.ID) {
 	form := &state.autofillRules
 	switch id {
 	case hitAutofillSubmit:
@@ -486,8 +522,8 @@ func (state *State) sendKindName(send autofill.Send) string {
 // ---------------------------------------------------------------------------
 // Painting
 
-func (state *State) paintAutofillDialog(canvas *ui.Canvas, viewport ui.Rect) {
-	m, pal, theme := state.messages.Autofill, state.pal, state.Theme()
+func (state *State) declareAutofillDialog(c ui.C) {
+	m := state.messages.Autofill
 	form := &state.autofillRules
 	title := m.DialogAddTitle
 	if form.editing != nil {
@@ -497,83 +533,85 @@ func (state *State) paintAutofillDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	if form.send == autofill.SendText {
 		body += 68
 	}
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 600, "", withError(body, form.dialogError))
 	// No scrim dismiss: a press beside the form must not discard its input.
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		CloseID: hitAutofillClose, InitialFocusID: hitAutofillName,
-		ContentSize: ui.Size{Width: 600}, FitBody: true, BodyHeight: withError(body, form.dialogError),
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: title, Width: 600, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, CloseID: hitAutofillClose, InitialFocusID: hitAutofillName,
 	})
-	layout := dialog.Begin(title, "")
-	kinds := [...]struct {
-		id   ui.ID
-		send autofill.Send
-	}{{hitAutofillPassword, autofill.SendPassword}, {hitAutofillOTP, autofill.SendOTP}, {hitAutofillText, autofill.SendText}}
-	var name, pattern, fixed, scope, enter flex.Box
-	var choices [len(kinds)]flex.Box
-	f := state.settingsRow.Begin(canvas, theme, layout.Body)
-	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
-		name = f.Slot().Height(62).MarginSides(0, 0, 6, 0)
-		pattern = f.Slot().Height(62).MarginSides(0, 0, 6, 0)
-		f.Text(m.Send).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.muted).LineHeight(18).MarginSides(0, 0, 4, 2)
-		f.Row().Gap(8).Height(30).MarginSides(0, 0, 8, 0).Children(func() {
-			for index, kind := range kinds {
+	dialog.Body(func() { state.declareAutofillBody(c) })
+	dialog.Footer(func() {
+		if dialogButton(c, state.messages.Cancel, components.ButtonSecondary, false).Clicked() {
+			c.After(func() { state.clickAutofillDialog(hitAutofillCancel) })
+		}
+		if dialogButton(c, m.Save, components.ButtonDefault, false).Clicked() {
+			c.After(func() { state.clickAutofillDialog(hitAutofillSubmit) })
+		}
+	})
+}
+
+// declareAutofillBody lays out the rule editor: the name and pattern fields, the
+// sending choice, the fixed text when it sends one, the scope and the Enter box.
+func (state *State) declareAutofillBody(c ui.C) {
+	m, pal := state.messages.Autofill, state.pal
+	form := &state.autofillRules
+	column := ui.Column(c).Fill().PadSides(2, 4, 0, 4)
+	column.Children(func() {
+		form.nameBox = ui.Slot(c).Height(62).MarginSides(0, 0, 6, 0)
+		form.patternBox = ui.Slot(c).Height(62).MarginSides(0, 0, 6, 0)
+		ui.Text(c, m.Send).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(18).MarginSides(0, 0, 4, 2)
+		ui.Row(c).Gap(8).Height(30).MarginSides(0, 0, 8, 0).Children(func() {
+			for index, kind := range autofillSendKinds {
 				border, width := withAlpha(pal.line, 0.9), float32(1)
 				if form.send == kind.send {
 					border, width = pal.accent, 2
 				}
-				choices[index] = f.Row().Grow(1).Height(30).Items(flex.Center).PadX(12).Background(pal.terminal).
+				form.sendChoices[index] = ui.Row(c).Grow(1).Height(30).Items(ui.Center).PadX(12).Background(pal.terminal).
 					Radius(radius.control).Border(width, border).Children(func() {
-					f.Text(state.sendKindName(kind.send)).FontSize(metrics.FontSizeM).Color(pal.text)
+					ui.Text(c, state.sendKindName(kind.send)).FontSize(metrics.FontSizeM).Color(pal.text)
 				})
 			}
 		})
 		if form.send == autofill.SendText {
-			fixed = f.Slot().Height(62).MarginSides(0, 0, 6, 0)
+			form.fixedBox = ui.Slot(c).Height(62).MarginSides(0, 0, 6, 0)
 		}
-		scope = f.Slot().Height(62).MarginSides(0, 0, 6, 0)
-		enter = state.declareDialogCheckbox(f, m.Enter, 4, 0)
+		form.scopeBox = ui.Slot(c).Height(62).MarginSides(0, 0, 6, 0)
+		form.enterRow = state.declareDialogCheckboxC(c, m.Enter, 4, 0)
 		if form.dialogError != "" {
-			f.Text(form.dialogError).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.danger).LineHeight(18).MarginSides(15, 0, 0, 0)
+			ui.Text(c, form.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.danger).LineHeight(18).MarginSides(15, 0, 0, 0)
 		}
 	})
-	f.End()
-	field := func(box flex.Box, id ui.ID, label, placeholder, value string, secret bool) {
-		content := components.BeginField(canvas, theme, box.Rect()).Paint(label, "", "")
-		focused := canvas.Focused() == id
-		state.paintSecretInput(canvas, content, components.InputSnapshot{
-			ID: id, Label: label, Value: value, Placeholder: placeholder, Secure: secret,
-			Focused: focused, PlatformEditing: focused && value != "", Invalid: form.dialogError != "",
-		})
-	}
-	field(name, hitAutofillName, m.Name, m.NamePlaceholder, form.name.String(), false)
-	field(pattern, hitAutofillPattern, m.Pattern, m.PatternPlaceholder, form.pattern.String(), false)
-	for index, kind := range kinds {
-		canvas.HitWithOptions(kind.id, choices[index].Rect(), state.sendKindName(kind.send), ui.HitOptions{Role: ui.RoleButton, Selected: form.send == kind.send})
-	}
-	if form.send == autofill.SendText {
-		placeholder := ""
-		if form.editing != nil && form.editing.Send == autofill.SendText {
-			placeholder = m.FixedTextHint
+	column.DrawOver(func(d *ui.DrawContext) {
+		canvas, theme := d.Canvas, *d.Theme
+		field := func(box ui.Box, id gfx.ID, label, placeholder, value string, secret bool) {
+			content := components.BeginField(canvas, theme, box.Rect()).Paint(label, "", "")
+			focused := canvas.Focused() == id
+			state.paintSecretInput(canvas, content, components.InputSnapshot{
+				ID: id, Label: label, Value: value, Placeholder: placeholder, Secure: secret,
+				Focused: focused, PlatformEditing: focused && value != "", Invalid: form.dialogError != "",
+			})
 		}
-		field(fixed, hitAutofillFixed, m.FixedText, placeholder, form.fixed.String(), true)
-	}
-	field(scope, hitAutofillScope, m.Scope, m.ScopePlaceholder, form.scope.String(), false)
-	state.paintDialogCheckbox(canvas, hitAutofillEnter, m.Enter, form.enter, enter)
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitAutofillCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitAutofillSubmit, Label: m.Save},
-	)
-	dialog.End()
+		field(form.nameBox, hitAutofillName, m.Name, m.NamePlaceholder, form.name.String(), false)
+		field(form.patternBox, hitAutofillPattern, m.Pattern, m.PatternPlaceholder, form.pattern.String(), false)
+		for index, kind := range autofillSendKinds {
+			canvas.HitWithOptions(kind.id, form.sendChoices[index].Rect(), state.sendKindName(kind.send), gfx.HitOptions{Role: gfx.RoleButton, Selected: form.send == kind.send})
+		}
+		if form.send == autofill.SendText {
+			placeholder := ""
+			if form.editing != nil && form.editing.Send == autofill.SendText {
+				placeholder = m.FixedTextHint
+			}
+			field(form.fixedBox, hitAutofillFixed, m.FixedText, placeholder, form.fixed.String(), true)
+		}
+		field(form.scopeBox, hitAutofillScope, m.Scope, m.ScopePlaceholder, form.scope.String(), false)
+		state.paintDialogCheckbox(canvas, hitAutofillEnter, m.Enter, form.enter, form.enterRow)
+	})
 }
 
-func (state *State) paintAutofillConfirm(canvas *ui.Canvas, viewport ui.Rect) {
-	m, pal, theme := state.messages.Autofill, state.pal, state.Theme()
+func (state *State) declareAutofillConfirm(c ui.C) {
+	m := state.messages.Autofill
 	ask := state.autofillRules.ask
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitAutofillConfirmAway, CloseID: hitAutofillConfirmClose, InitialFocusID: hitAutofillDeny,
-		ContentSize: ui.Size{Width: 560}, FitBody: true, BodyHeight: 92,
-	})
 	address := ""
 	if session, ok := state.sessionByIDPointer(ask.sessionID); ok {
 		address = session.Address
@@ -582,25 +620,38 @@ func (state *State) paintAutofillConfirm(canvas *ui.Canvas, viewport ui.Rect) {
 	if ask.rule != nil {
 		name = ask.rule.Name
 	}
+	description := fmt.Sprintf(m.ConfirmFmt, name, address)
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 560, description, 92)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.ConfirmTitle, Description: description, Width: 560, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitAutofillConfirmAway, CloseID: hitAutofillConfirmClose, InitialFocusID: hitAutofillDeny,
+	})
+	dialog.Body(func() { state.declareAutofillConfirmBody(c) })
+	dialog.Footer(func() {
+		state.dialogActionFooter(c,
+			components.ButtonAction{ID: hitAutofillDeny, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
+			components.ButtonAction{ID: hitAutofillAllow, Label: m.ConfirmAllow},
+		)
+	})
+}
+
+// declareAutofillConfirmBody lays out what would be sent and the line that
+// prompted it.
+func (state *State) declareAutofillConfirmBody(c ui.C) {
+	m, pal := state.messages.Autofill, state.pal
+	ask := state.autofillRules.ask
 	kind := ""
 	if ask.rule != nil {
 		kind = state.sendKindName(ask.rule.Send)
 	}
-	layout := dialog.Begin(m.ConfirmTitle, fmt.Sprintf(m.ConfirmFmt, name, address))
-	f := state.partLayout.Begin(canvas, theme, layout.Body)
-	f.Column().Fill().Children(func() {
-		f.Text(fmt.Sprintf(m.ConfirmSendsFmt, kind)).FontSize(metrics.FontSizeM).Color(pal.text).LineHeight(20)
-		f.Row().Height(58).Shrink(0).Items(flex.Center).PadX(11).MarginSides(8, 0, 0, 0).
+	ui.Column(c).Fill().Children(func() {
+		ui.Textf(c, m.ConfirmSendsFmt, kind).FontSize(metrics.FontSizeM).Color(pal.text).LineHeight(20)
+		ui.Row(c).Height(58).Shrink(0).Items(ui.Center).PadX(11).MarginSides(8, 0, 0, 0).
 			Border(1, pal.line).Background(pal.surface).Radius(radius.control).Children(func() {
-			f.Text(m.ConfirmLine + ": " + clipboardPreview(ask.line)).FontSize(metrics.FontSizeS).Color(pal.text)
+			ui.Text(c, m.ConfirmLine+": "+clipboardPreview(ask.line)).FontSize(metrics.FontSizeS).Color(pal.text)
 		})
 	})
-	f.End()
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitAutofillDeny, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitAutofillAllow, Label: m.ConfirmAllow},
-	)
-	dialog.End()
 }
 
 // paintAutofillSettings is the Autofill rules group of Settings.
@@ -608,28 +659,11 @@ func (state *State) paintAutofillSettings(page *settingsPage) {
 	m := state.messages.Autofill
 	rules := state.autofillRules.rules
 	page.group(m.Group, func() {
-		for index, rule := range rules {
-			scope := m.ScopeAll
-			if len(rule.Scope) > 0 {
-				scope = fmt.Sprintf(m.ScopeFmt, strings.Join(rule.Scope, ", "))
-			}
-			send := state.sendKindName(rule.Send)
-			if rule.Enter {
-				send += " + " + m.WithEnter
-			}
-			status, toggle := m.StateOff, m.TurnOn
-			if rule.Enabled {
-				status, toggle = m.StateOn, m.TurnOff
-			}
-			page.actionRow(rule.Name, status+" · "+send+" · "+scope+" · "+rule.Pattern, false,
-				components.ButtonAction{ID: hitAutofillToggleList.At(index), Label: toggle, Variant: components.ButtonOutline},
-				components.ButtonAction{ID: hitAutofillEditList.At(index), Label: m.Edit, Variant: components.ButtonOutline},
-				components.ButtonAction{ID: hitAutofillDeleteList.At(index), Label: m.Delete, Variant: components.ButtonOutline})
-		}
+		page.actionRow(m.Row, fmt.Sprintf(state.messages.RuleManagement.CountFmt, len(rules)), false,
+			components.ButtonAction{ID: hitSettingsAutofillManage, Label: state.messages.RuleManagement.Manage, Variant: components.ButtonOutline})
 		full := len(rules) >= autofill.MaxRules
 		page.actionRow(m.Row, m.RowDescription, full,
 			components.ButtonAction{ID: hitSettingsAutofillSudo, Label: m.PresetSudo, Variant: components.ButtonOutline},
-			components.ButtonAction{ID: hitSettingsAutofillSu, Label: m.PresetSu, Variant: components.ButtonOutline},
 			components.ButtonAction{ID: hitSettingsAutofillAdd, Label: m.Add, Variant: components.ButtonOutline})
 	})
 }

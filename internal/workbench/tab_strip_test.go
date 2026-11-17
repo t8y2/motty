@@ -3,14 +3,14 @@ package workbench
 import (
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	layoutcore "motty/internal/workspace"
 )
 
 func TestTabStripKeepsVisibleActiveTabInViewWhenLockChangesWidth(t *testing.T) {
 	var strip tabStrip
 	tabs := []layoutcore.WorkspaceInfo{{ID: 1}, {ID: 2}, {ID: 3}}
-	area := ui.Rect{Width: 300}
+	area := gfx.Rect{Width: 300}
 	strip.layout(area, 300, tabs, 100, 96, 3)
 	offset := strip.layout(area, 354, tabs, 118, 114, 3)
 	if float32(2*118+114)-offset > area.Width {
@@ -18,19 +18,19 @@ func TestTabStripKeepsVisibleActiveTabInViewWhenLockChangesWidth(t *testing.T) {
 	}
 	// User scrolling must still be respected on a resize or another lock change.
 	strip.offset = 0
-	if got := strip.layout(ui.Rect{Width: 280}, 354, tabs, 118, 114, 3); got != 0 {
+	if got := strip.layout(gfx.Rect{Width: 280}, 354, tabs, 118, 114, 3); got != 0 {
 		t.Fatal("geometry change undid a deliberate scroll")
 	}
 }
 
-func manyTabs(t *testing.T, count int) (*State, *ui.Canvas) {
+func manyTabs(t *testing.T, count int) (*State, *gfx.Canvas) {
 	t.Helper()
 	state := newTestState(t, testOptions(t))
 	for range count {
 		openEmptyTab(state)
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	return state, &canvas
 }
 
@@ -78,21 +78,21 @@ func TestWheelOverTheTabsScrollsThemAndOnlyThere(t *testing.T) {
 		t.Fatalf("the active (last) tab is not scrolled into view: offset %v max %v", end, state.tabStrip.max)
 	}
 	over := state.tabStrip.area
-	result := state.Scroll(ui.ScrollEvent{X: over.X + 40, Y: over.Y + 14, DeltaY: -120, Viewport: state.viewport})
+	result := state.Scroll(gfx.ScrollEvent{X: over.X + 40, Y: over.Y + 14, DeltaY: -120, Viewport: state.viewport})
 	if !result.Handled || !result.Repaint || state.tabStrip.offset != end-120 {
 		t.Fatalf("scroll over the tabs: %+v offset %v", result, state.tabStrip.offset)
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if state.tabStrip.offset != end-120 {
 		t.Fatalf("the next paint undid the scroll: %v", state.tabStrip.offset)
 	}
-	state.Scroll(ui.ScrollEvent{X: over.X, Y: over.Y, DeltaX: -100000})
+	state.Scroll(gfx.ScrollEvent{X: over.X, Y: over.Y, DeltaX: -100000})
 	if state.tabStrip.offset != 0 {
 		t.Fatalf("scrolling past the start must stop at 0, got %v", state.tabStrip.offset)
 	}
 	before := state.tabStrip.offset
-	state.Scroll(ui.ScrollEvent{X: 700, Y: 400, DeltaY: 100, Viewport: state.viewport})
+	state.Scroll(gfx.ScrollEvent{X: 700, Y: 400, DeltaY: 100, Viewport: state.viewport})
 	if state.tabStrip.offset != before {
 		t.Fatal("a wheel over the page moved the tabs")
 	}
@@ -109,8 +109,8 @@ func TestTabShowsFullTitleAsHoverHintWhenLabelIsElided(t *testing.T) {
 	state.activeSessionID = 0
 	state.activeSection = sectionTerminal
 	state.rebuildTabOptions()
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 600, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 600, Height: 900})
 	hit, ok := hitByID(&canvas, hitTabList.At(int(id)))
 	if !ok {
 		t.Fatal("the tab is not painted")
@@ -122,13 +122,13 @@ func TestTabShowsFullTitleAsHoverHintWhenLabelIsElided(t *testing.T) {
 
 func TestActivatingATabScrollsItIntoView(t *testing.T) {
 	state, _ := manyTabs(t, 30)
-	state.Scroll(ui.ScrollEvent{X: state.tabStrip.area.X, Y: 10, DeltaX: -100000})
+	state.Scroll(gfx.ScrollEvent{X: state.tabStrip.area.X, Y: 10, DeltaX: -100000})
 	first := state.workspaceTabs[0].ID
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	state.Click(hitTabList.At(int(first)))
-	canvas = ui.Canvas{}
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	canvas = gfx.Canvas{}
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	hit, ok := hitByID(&canvas, hitTabList.At(int(first)))
 	if !ok || hit.Bounds.X < state.tabStrip.area.X || hit.Bounds.X+hit.Bounds.Width > state.tabStrip.area.X+state.tabStrip.area.Width+0.5 {
 		t.Fatalf("the activated tab is not fully visible: %+v in %+v (%v)", hit.Bounds, state.tabStrip.area, ok)

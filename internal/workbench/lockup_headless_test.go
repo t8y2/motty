@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 )
 
 func TestStartupUploadsSidebarLockupWithoutNavigation(test *testing.T) {
@@ -18,13 +18,13 @@ func TestStartupUploadsSidebarLockupWithoutNavigation(test *testing.T) {
 			if mode == "light" {
 				state.Click(hitTheme)
 			}
-			var canvas ui.Canvas
-			size := ui.Size{Width: 1400, Height: 900}
+			var canvas gfx.Canvas
+			size := gfx.Size{Width: 1400, Height: 900}
 			state.Paint(&canvas, size)
 			paints := 0
 			session, err := headless.Open(app.Config{
 				Width: 1400, Height: 900, Tree: Tree(),
-				Paint: func(canvas *ui.Canvas, size ui.Size) {
+				Paint: func(canvas *gfx.Canvas, size gfx.Size) {
 					paints++
 					state.Paint(canvas, size)
 				},

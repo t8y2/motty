@@ -8,7 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
+	"motty/internal/sshconn"
 	"motty/internal/update"
 )
 
@@ -21,8 +22,16 @@ func TestLaunchTextReadsWhatPeopleTypeAtACommandLine(t *testing.T) {
 		{[]string{"alice@host"}, "alice@host", false},
 		{[]string{"-ssh", "-P", "2222", "-l", "bob", "host"}, "-p 2222 -l bob host", false},
 		{[]string{"-ssh", "-P2200", "host"}, "-p2200 host", false},
+		{[]string{"-p", "2222", "-l", "bob", "-pw", "secret", "host"}, "-p 2222 -l bob -pw secret host", false},
 		{[]string{"ssh://bob@host:2222/"}, "ssh://bob@host:2222/", true},
+		{[]string{"-url", "ssh://bob:pw@host:2222"}, "ssh://bob:pw@host:2222", true},
+		{[]string{"xshell://ssh://bob@host:2222"}, "xshell://ssh://bob@host:2222", true},
+		{[]string{"sftp://bob@host:2222"}, "sftp://bob@host:2222", true},
 		{[]string{"TELNET://switch"}, "TELNET://switch", true},
+		{[]string{"rdp://alice@win.example"}, "rdp://alice@win.example", true},
+		{[]string{"rdp+ssh://alice@win.example"}, "rdp+ssh://alice@win.example", true},
+		{[]string{"vnc://desk.example"}, "vnc://desk.example", true},
+		{[]string{"vnc+ssh://desk.example"}, "vnc+ssh://desk.example", true},
 		{[]string{"--background"}, "", false},
 		{nil, "", false},
 	} {
@@ -143,6 +152,11 @@ func openGeneralSettings(state *State) {
 	state.settingsCategory = settingsGeneral
 }
 
+func openAboutSettings(state *State) {
+	state.activeSection = sectionSettings
+	state.settingsCategory = settingsAbout
+}
+
 func waitUpdate(t *testing.T, state *State, done func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
@@ -166,7 +180,7 @@ func TestCheckingForUpdatesOffersTheDownloadOfANewerVersion(t *testing.T) {
 	var opened []string
 	options.OpenURL = func(url string) error { opened = append(opened, url); return nil }
 	state := newTestState(t, options)
-	openGeneralSettings(state)
+	openAboutSettings(state)
 	_, texts := paintedTexts(state)
 	if contains(texts, state.messages.Tools.GeneralUpdateDownload) {
 		t.Fatal("a download button before any check")
@@ -447,7 +461,7 @@ func TestAWaitingRequestStartsWhenTheDialogIsClosedByAKey(t *testing.T) {
 	state.Launch([]string{"four@four.example.com"})
 	state.Wake()
 	state.modal = modalNone // as an escape or a click elsewhere would
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyTab}); !result.Repaint || len(world.configs) != 2 {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyTab}); !result.Repaint || len(world.configs) != 2 {
 		t.Fatalf("repaint %v, dials %d", result.Repaint, len(world.configs))
 	}
 }
@@ -482,6 +496,76 @@ func TestAStartAtLoginDoesNotBringTheWindowForward(t *testing.T) {
 	}
 }
 
+func TestRelaunchChoiceOpensAWindowWithoutChangingOtherLaunches(t *testing.T) {
+	options := freshOptions(t)
+	options.Invalidate = func() {}
+	opened, raised := 0, 0
+	options.NewWindow = func() error { opened++; return nil }
+	options.Raise = func() { raised++ }
+	first := newTestState(t, options)
+	openGeneralSettings(first)
+	_, texts := paintedTexts(first)
+	if !contains(texts, first.messages.Tools.GeneralRelaunch) {
+		t.Fatal("the relaunch choice is missing from General settings")
+	}
+	first.Launch(nil)
+	first.Wake()
+	if raised != 1 || opened != 0 {
+		t.Fatalf("default relaunch: raised %d, opened %d", raised, opened)
+	}
+	clickSettingsChoice(t, first, first.messages.Tools.GeneralRelaunchNewWindow)
+	first.Launch(nil)
+	first.Wake()
+	if raised != 1 || opened != 1 {
+		t.Fatalf("configured relaunch: raised %d, opened %d", raised, opened)
+	}
+	first.Launch([]string{"--background"})
+	first.Wake()
+	if raised != 1 || opened != 1 {
+		t.Fatalf("background launch: raised %d, opened %d", raised, opened)
+	}
+	first.Launch([]string{"-unknown"})
+	first.Wake()
+	if opened != 1 {
+		t.Fatal("a launch with arguments opened a new window")
+	}
+	first.Launch([]string{"ssh://bob@link.example.com/"})
+	first.Wake()
+	if first.modal != modalOpenLink || raised != 3 || opened != 1 {
+		t.Fatalf("link launch: modal %v, raised %d, opened %d", first.modal, raised, opened)
+	}
+	first.Close()
+
+	second := newTestState(t, options)
+	second.Launch(nil)
+	second.Wake()
+	if opened != 2 {
+		t.Fatal("the new-window choice did not survive a restart")
+	}
+	openGeneralSettings(second)
+	clickSettingsChoice(t, second, second.messages.Tools.GeneralRelaunchRaise)
+	second.Launch(nil)
+	second.Wake()
+	if opened != 2 || raised != 4 {
+		t.Fatalf("restored default: raised %d, opened %d", raised, opened)
+	}
+}
+
+func TestRelaunchUsesChoiceChangedInAnotherWindow(t *testing.T) {
+	pair := newTwoWindows(t)
+	opened := 0
+	pair.second.options.NewWindow = func() error { opened++; return nil }
+	// The first window only shows the row; the launch happens in the second.
+	pair.first.options.NewWindow = func() error { return nil }
+	openGeneralSettings(pair.first)
+	clickSettingsChoice(t, pair.first, pair.first.messages.Tools.GeneralRelaunchNewWindow)
+	pair.second.Launch(nil)
+	pair.second.Wake()
+	if opened != 1 {
+		t.Fatal("the last window did not pick up the relaunch choice from the other window")
+	}
+}
+
 func TestThePreviousRunsCrashIsToldOnceAtStart(t *testing.T) {
 	_, options := newWorld(t)
 	options.Invalidate = func() {}
@@ -511,7 +595,7 @@ func TestWhatClosingDoesIsChosenInSettingsAndSurvivesARestart(t *testing.T) {
 	if !contains(texts, first.messages.Tools.GeneralClose) {
 		t.Fatalf("no close row: %q", texts)
 	}
-	first.Click(hitSettingsCloseQuit)
+	clickSettingsChoice(t, first, first.messages.Tools.GeneralCloseQuit)
 	if first.StaysInTray() {
 		t.Fatal("choosing Quit still stays in the tray")
 	}
@@ -519,7 +603,7 @@ func TestWhatClosingDoesIsChosenInSettingsAndSurvivesARestart(t *testing.T) {
 	if second.StaysInTray() {
 		t.Fatal("the choice was forgotten by a restart")
 	}
-	second.Click(hitSettingsCloseTray)
+	clickSettingsChoice(t, second, second.messages.Tools.GeneralCloseTray)
 	if !second.StaysInTray() {
 		t.Fatal("choosing the tray again did not stick")
 	}
@@ -531,5 +615,107 @@ func TestWithoutAStatusAreaThereIsNothingToChooseAboutClosing(t *testing.T) {
 	_, texts := paintedTexts(state)
 	if contains(texts, state.messages.Tools.GeneralClose) {
 		t.Fatal("a close row on a desktop with no status area")
+	}
+}
+
+func TestAnXshellLinkAsksAndUsesItsPasswordOnce(t *testing.T) {
+	state, world, _ := launchState(t)
+	before := len(state.hosts)
+	state.Launch([]string{"xshell://ssh://bob:secret@bastion.example.com:2222"})
+	state.Wake()
+	if state.modal != modalOpenLink || len(world.configs) != 0 {
+		t.Fatalf("modal %d, dials %d", state.modal, len(world.configs))
+	}
+	if description := state.launchDescription(); strings.Contains(description, "secret") || !strings.Contains(description, "bob@bastion.example.com:2222") {
+		t.Fatalf("description %q", description)
+	}
+	_, texts := paintedTexts(state)
+	if !contains(texts, state.messages.Tools.LaunchPasswordWarning) {
+		t.Fatal("the dialog did not say the link carries a password")
+	}
+	state.Click(hitLaunchConnect)
+	state.Wake()
+	if len(world.configs) != 1 {
+		t.Fatalf("dialed %d connections", len(world.configs))
+	}
+	config := world.configs[0]
+	if config.Host != "bastion.example.com" || config.Port != 2222 || config.User != "bob" {
+		t.Fatalf("dialed %+v", config)
+	}
+	if len(state.hosts) != before {
+		t.Fatal("the link wrote a host into the library")
+	}
+	conn := world.conns[0]
+	conn.set(func(status *sshconn.Status) {
+		status.Phase = sshconn.PhasePasswordPrompt
+		status.Attempt = 1
+		status.Questions = []sshconn.Question{{Secret: true}}
+	})
+	state.Wake()
+	conn.mu.Lock()
+	passwords := append([]string(nil), conn.passwords...)
+	conn.mu.Unlock()
+	if state.modal != modalNone || len(passwords) != 1 || passwords[0] != "secret" {
+		t.Fatalf("modal %d, passwords %q", state.modal, passwords)
+	}
+	// The one-shot password is spent: a refused round is the user's to answer.
+	conn.set(func(status *sshconn.Status) {
+		status.Phase = sshconn.PhasePasswordPrompt
+		status.Attempt = 2
+		status.Questions = []sshconn.Question{{Secret: true}}
+	})
+	state.Wake()
+	conn.mu.Lock()
+	again := len(conn.passwords)
+	conn.mu.Unlock()
+	if state.modal != modalPassword || again != 1 {
+		t.Fatalf("modal %d, passwords %d", state.modal, again)
+	}
+}
+
+func TestAnXftpLinkOpensTheFileWindow(t *testing.T) {
+	state, world, _ := launchState(t)
+	state.sftpOpenMode = sftpOpenTab
+	state.Launch([]string{"xftp://sftp://bob:secret@files.example.com:2222"})
+	state.Wake()
+	if state.modal != modalOpenLink || !strings.Contains(state.launchDescription(), "files.example.com") {
+		t.Fatalf("modal %d, description %q", state.modal, state.launchDescription())
+	}
+	state.Click(hitLaunchConnect)
+	state.Wake()
+	open := 0
+	for _, w := range state.sftpWindows {
+		if !w.closed {
+			open++
+		}
+	}
+	if len(state.sessions) != 0 || open != 1 || len(world.configs) != 1 {
+		t.Fatalf("sessions %d, file windows %d, dials %d", len(state.sessions), open, len(world.configs))
+	}
+	config := world.configs[0]
+	if config.Host != "files.example.com" || config.Port != 2222 || config.User != "bob" {
+		t.Fatalf("dialed %+v", config)
+	}
+	conn := world.conns[0]
+	conn.set(func(status *sshconn.Status) {
+		status.Phase = sshconn.PhasePasswordPrompt
+		status.Attempt = 1
+		status.Questions = []sshconn.Question{{Secret: true}}
+	})
+	state.Wake()
+	conn.mu.Lock()
+	passwords := append([]string(nil), conn.passwords...)
+	conn.mu.Unlock()
+	if len(passwords) != 1 || passwords[0] != "secret" {
+		t.Fatalf("the file window got passwords %q", passwords)
+	}
+}
+
+func TestAFailedLinkDoesNotShowItsPassword(t *testing.T) {
+	state, _, _ := launchState(t)
+	state.Launch([]string{"ssh://bob:secret@bad host"})
+	state.Wake()
+	if strings.Contains(state.status, "secret") || !strings.Contains(state.status, "***") {
+		t.Fatalf("status %q", state.status)
 	}
 }

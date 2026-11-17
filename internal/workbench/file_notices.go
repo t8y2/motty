@@ -6,7 +6,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 var fileNoticeHits = tree.Feature("file-notices")
@@ -15,11 +15,11 @@ var hitFileNotices = tree.Sub(fileNoticeHits, tree.Name("dismiss"))
 const maxFileNoticeDetailRunes = 240
 
 type fileNotice struct {
-	id            ui.ID
+	id            gfx.ID
 	title, detail string
 	kind          components.ToastType
 	// action is the button beside the text, when the notice offers one.
-	action      ui.ID
+	action      gfx.ID
 	actionLabel string
 }
 type fileNotices struct {
@@ -52,7 +52,7 @@ func (notices *fileNotices) show(title, detail string, kind components.ToastType
 // no immediate answer is announced without a dialog taking the keyboard from
 // what the user is doing; whatever it announces must also have a lasting place,
 // since the notice expires.
-func (notices *fileNotices) showAction(title, detail string, kind components.ToastType, action ui.ID, actionLabel string) {
+func (notices *fileNotices) showAction(title, detail string, kind components.ToastType, action gfx.ID, actionLabel string) {
 	for _, item := range notices.items {
 		if item.title == title && item.detail == detail {
 			return
@@ -67,7 +67,7 @@ func (notices *fileNotices) showAction(title, detail string, kind components.Toa
 }
 
 // dismissAction removes the notice whose button is action.
-func (notices *fileNotices) dismissAction(action ui.ID) {
+func (notices *fileNotices) dismissAction(action gfx.ID) {
 	for _, item := range notices.items {
 		if item.action == action {
 			notices.queue.Remove(item.id)
@@ -114,7 +114,7 @@ func elideMiddleRunes(value string, limit int) string {
 	right := kept / 2
 	return string(runes[:left]) + "…" + string(runes[len(runes)-right:])
 }
-func (notices *fileNotices) removeItem(id ui.ID) {
+func (notices *fileNotices) removeItem(id gfx.ID) {
 	for i, item := range notices.items {
 		if item.id == id {
 			notices.items = append(notices.items[:i], notices.items[i+1:]...)
@@ -122,7 +122,7 @@ func (notices *fileNotices) removeItem(id ui.ID) {
 		}
 	}
 }
-func (notices *fileNotices) click(id ui.ID) bool {
+func (notices *fileNotices) click(id gfx.ID) bool {
 	if id.Scope() != hitFileNotices {
 		return false
 	}
@@ -130,7 +130,7 @@ func (notices *fileNotices) click(id ui.ID) bool {
 	notices.removeItem(id)
 	return true
 }
-func (notices *fileNotices) paint(canvas *ui.Canvas, theme ui.Theme, bounds ui.Rect) {
+func (notices *fileNotices) paint(canvas *gfx.Canvas, theme gfx.Theme, bounds gfx.Rect) {
 	now := time.Now()
 	for {
 		id, ok := notices.queue.Expire(now)

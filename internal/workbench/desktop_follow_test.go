@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/desktop"
 )
 
@@ -73,8 +73,8 @@ func (s *followingDesktop) asked() []desktopTarget {
 
 // pictureTiles are the tiles of the remote picture among a frame's images; the
 // window's own icons and backgrounds are bitmaps too.
-func pictureTiles(canvas *ui.Canvas) []ui.Image {
-	var tiles []ui.Image
+func pictureTiles(canvas *gfx.Canvas) []gfx.Image {
+	var tiles []gfx.Image
 	for _, image := range canvas.Images() {
 		if image.Bitmap.ID >= 1<<61 {
 			tiles = append(tiles, image)
@@ -87,7 +87,7 @@ func pictureTiles(canvas *ui.Canvas) []ui.Image {
 // display scale and a clock the test moves.
 type frames struct {
 	state  *State
-	canvas ui.Canvas
+	canvas gfx.Canvas
 	now    time.Duration
 }
 
@@ -98,7 +98,7 @@ func newFrames(state *State, scale float32) *frames {
 	return f
 }
 
-func (f *frames) paint(size ui.Size, at time.Duration) {
+func (f *frames) paint(size gfx.Size, at time.Duration) {
 	f.now = at
 	f.state.Resize(size)
 	f.canvas.BeginFrame()
@@ -106,7 +106,7 @@ func (f *frames) paint(size ui.Size, at time.Duration) {
 	f.canvas.EndFrame()
 }
 
-func followState(t *testing.T, scale float32, can bool, size ui.Size) (*State, *Session, *followingDesktop, *desktopRequest, *frames) {
+func followState(t *testing.T, scale float32, can bool, size gfx.Size) (*State, *Session, *followingDesktop, *desktopRequest, *frames) {
 	t.Helper()
 	_, options := newWorld(t)
 	state := newTestState(t, options)
@@ -134,7 +134,7 @@ func followState(t *testing.T, scale float32, can bool, size ui.Size) (*State, *
 }
 
 func TestRDPDesktopIsAskedForThePanesPixelsAndFollowsItOnceItSettles(t *testing.T) {
-	size := ui.Size{Width: 1400, Height: 900}
+	size := gfx.Size{Width: 1400, Height: 900}
 	state, session, server, request, screen := followState(t, 1.25, true, size)
 
 	area := desktopLayout(size, false).area
@@ -167,49 +167,49 @@ func TestRDPDesktopIsAskedForThePanesPixelsAndFollowsItOnceItSettles(t *testing.
 	if math.Abs(float64(scale)-0.8) > 1e-6 {
 		t.Fatalf("one picture pixel is %v logical pixels, want 0.8", scale)
 	}
-	pointer(state, ui.PointerEvent{Kind: ui.PointerMove, X: origin.X + 100, Y: origin.Y + 50, Target: hitTerminalList.At(int(session.ID)), Viewport: size})
+	pointer(state, gfx.PointerEvent{Kind: gfx.PointerMove, X: origin.X + 100, Y: origin.Y + 50, Target: hitTerminalList.At(int(session.ID)), Viewport: size})
 	waitUntil(t, state, "the pointer", func() bool { server.mu.Lock(); defer server.mu.Unlock(); return len(server.pointer) > 0 })
 	if got := server.pointer[len(server.pointer)-1]; got != [2]int{125, 62} {
 		t.Fatalf("the press reached the remote at %v, want 125,62", got)
 	}
 
 	// A window being dragged asks for nothing until it holds a size.
-	shrunk := ui.Size{Width: 1000, Height: 700}
+	shrunk := gfx.Size{Width: 1000, Height: 700}
 	screen.paint(shrunk, 1000*time.Millisecond)
-	screen.paint(ui.Size{Width: 900, Height: 650}, 1100*time.Millisecond)
-	screen.paint(ui.Size{Width: 800, Height: 600}, 1200*time.Millisecond)
+	screen.paint(gfx.Size{Width: 900, Height: 650}, 1100*time.Millisecond)
+	screen.paint(gfx.Size{Width: 800, Height: 600}, 1200*time.Millisecond)
 	if got := server.asked(); len(got) != 0 {
 		t.Fatalf("a pane still being dragged asked for %v", got)
 	}
 	if delay, ok := screen.canvas.NextFrame(); !ok || delay <= 0 || delay > desktopResizeDelay {
 		t.Fatalf("no frame is wanted to end the wait: %v %v", delay, ok)
 	}
-	screen.paint(ui.Size{Width: 800, Height: 600}, 1200*time.Millisecond+desktopResizeDelay)
-	settled := desktopLayout(ui.Size{Width: 800, Height: 600}, false).area
+	screen.paint(gfx.Size{Width: 800, Height: 600}, 1200*time.Millisecond+desktopResizeDelay)
+	settled := desktopLayout(gfx.Size{Width: 800, Height: 600}, false).area
 	want := desktopTarget{width: int(math.Floor(float64(settled.Width)*1.25)) &^ 1, height: int(math.Floor(float64(settled.Height) * 1.25)), scale: 1.25}
 	if got := server.asked(); len(got) != 1 || got[0] != want {
 		t.Fatalf("the settled pane asked for %v, want exactly %v", got, want)
 	}
-	screen.paint(ui.Size{Width: 800, Height: 600}, 3*time.Second)
+	screen.paint(gfx.Size{Width: 800, Height: 600}, 3*time.Second)
 	if got := server.asked(); len(got) != 1 {
 		t.Fatalf("a settled pane asked again: %v", got)
 	}
 
 	// Moving to a display of another scale is a new desktop too.
 	screen.canvas.SetPixelScale(2)
-	screen.paint(ui.Size{Width: 800, Height: 600}, 4*time.Second)
-	screen.paint(ui.Size{Width: 800, Height: 600}, 4*time.Second+desktopResizeDelay)
+	screen.paint(gfx.Size{Width: 800, Height: 600}, 4*time.Second)
+	screen.paint(gfx.Size{Width: 800, Height: 600}, 4*time.Second+desktopResizeDelay)
 	if got := server.asked(); len(got) != 2 || got[1].scale != 2 || got[1].width != int(math.Floor(float64(settled.Width)*2))&^1 {
 		t.Fatalf("a new display scale asked for %v", got)
 	}
 }
 
 func TestDesktopThatCannotFollowIsScaledAndNeverAsked(t *testing.T) {
-	size := ui.Size{Width: 1400, Height: 900}
+	size := gfx.Size{Width: 1400, Height: 900}
 	_, _, server, _, screen := followState(t, 1.25, false, size)
 	screen.paint(size, 10*time.Millisecond)
-	screen.paint(ui.Size{Width: 900, Height: 700}, 20*time.Millisecond)
-	screen.paint(ui.Size{Width: 900, Height: 700}, time.Second)
+	screen.paint(gfx.Size{Width: 900, Height: 700}, 20*time.Millisecond)
+	screen.paint(gfx.Size{Width: 900, Height: 700}, time.Second)
 	if got := server.asked(); len(got) != 0 {
 		t.Fatalf("a server that cannot resize was asked for %v", got)
 	}

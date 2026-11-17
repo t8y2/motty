@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -11,16 +13,22 @@ import (
 
 type adapter struct {
 	program  string
+	flavor   string
 	required []string
 	version  []string
 	help     []string
 	checks   []capabilityCheck
+	// alternate is the same program's other capability profile. It is tried
+	// only when none of required's flags are present, so a program that keeps
+	// its old profile stays on the primary one.
+	alternate *adapter
 }
 
 type capabilityCheck struct {
 	label    string
 	args     []string
 	env      []string
+	isolate  bool
 	validate func([]byte) checkFailure
 }
 
@@ -54,7 +62,7 @@ func compatibilityFailure(program string, c command, label, reason, detail strin
 	return CompatibilityDiagnostic{Program: program, Version: c.version, Reason: reason, Detail: detail, Command: label}
 }
 
-var cliVersionPattern = regexp.MustCompile(`\b[0-9]+\.[0-9]+\.[0-9]+\b`)
+var cliVersionPattern = regexp.MustCompile(`[0-9]+\.[0-9]+\.[0-9]+\b`)
 
 // helpFlags collects the flags a --help page lists. Only the leading column is
 // read: a name a description happens to mention is prose, not a capability.
@@ -123,13 +131,32 @@ func probeAdapter(ctx context.Context, a adapter, c *command) error {
 		return compatibilityFailure(a.program, *c, strings.Join(helpArgs, " "), "unavailable", "")
 	}
 	flags := helpFlags(raw)
-	for _, flag := range a.required {
-		if !flags[flag] {
-			return compatibilityFailure(a.program, *c, strings.Join(helpArgs, " "), "missing_capability", flag)
+	if missing := missingFlag(flags, a.required); missing != "" {
+		if a.alternate == nil {
+			return compatibilityFailure(a.program, *c, strings.Join(helpArgs, " "), "missing_capability", missing)
 		}
+		if altMissing := missingFlag(flags, a.alternate.required); altMissing != "" {
+			return compatibilityFailure(a.program, *c, strings.Join(helpArgs, " "), "missing_capability", missing)
+		}
+		a = *a.alternate
 	}
+	c.flavor = a.flavor
 	for _, check := range a.checks {
-		raw, err := run(ctx, check.args, check.env, 4<<20)
+		env := check.env
+		if check.isolate {
+			home, err := os.MkdirTemp("", "motty-cli-probe-")
+			if err != nil {
+				return errors.New("cli: runtime_directory_failed")
+			}
+			defer os.RemoveAll(home)
+			env = append(env, "HOME="+home, "USERPROFILE="+home,
+				"OPENCODE_CONFIG_DIR="+filepath.Join(home, ".config", "opencode"),
+				"XDG_CONFIG_HOME="+filepath.Join(home, ".config"),
+				"XDG_DATA_HOME="+filepath.Join(home, ".local", "share"),
+				"XDG_CACHE_HOME="+filepath.Join(home, ".cache"),
+				"XDG_STATE_HOME="+filepath.Join(home, ".local", "state"))
+		}
+		raw, err := run(ctx, check.args, env, 4<<20)
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -141,4 +168,14 @@ func probeAdapter(ctx context.Context, a adapter, c *command) error {
 		}
 	}
 	return nil
+}
+
+// missingFlag reports the first declared capability the help page does not list.
+func missingFlag(flags map[string]bool, required []string) string {
+	for _, flag := range required {
+		if !flags[flag] {
+			return flag
+		}
+	}
+	return ""
 }

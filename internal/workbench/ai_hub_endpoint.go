@@ -17,20 +17,10 @@ func (state *State) setMCPEndpoint(url, token string) {
 			s.ai.cfg.copied = aiCopyIdle
 		}
 		s.ai.mcpAddr, s.ai.mcpToken = addr, token
-		// Every window uses the same database and HTTP service. Reload access
-		// even when its endpoint did not change (or HTTP is disabled), so a
-		// second window cannot display stale permissions. Do not open a store
-		// just for publication: an unopened settings page loads it on demand.
-		if s.ai.store == nil {
-			return
-		}
-		enabled, _, enabledErr := s.ai.store.Setting("ai.mcp.enabled")
-		mode, _, modeErr := s.ai.store.Setting("ai.mcp.mode")
-		agentMode, _, agentErr := s.ai.store.Setting(agentModeSetting)
-		if enabledErr == nil && modeErr == nil && agentErr == nil {
-			s.ai.settings.mcpEnabled = enabled == "on"
-			s.ai.settings.mcpMode = mcpModeFromSetting(mode)
-			s.ai.settings.agentMode = mcpModeFromSetting(agentMode)
-		}
+		// Every assistant setting publishes through the hub, including changes
+		// made while HTTP is disabled or the endpoint stays the same. Refresh
+		// the shared choices without reopening an unused assistant or saving
+		// another window's conversation state back into the store.
+		s.reloadAISettings()
 	})
 }

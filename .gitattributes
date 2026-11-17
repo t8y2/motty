@@ -6,3 +6,8 @@ go.sum text eol=lf
 # round-trip identically); line-ending conversion on a Windows checkout
 # corrupts it, so it is pinned as binary.
 internal/completion/data/catalog.bin binary
+
+# Microsoft's signed ConPTY binaries are shipped byte-exact; a checkout with
+# core.autocrlf must not rewrite them either.
+internal/localshell/conpty/**/*.dll binary
+internal/localshell/conpty/**/*.exe binary

@@ -156,6 +156,59 @@ func TestDecodeNewPointer(t *testing.T) {
 	}
 }
 
+// newPointerData builds a TS_POINTERATTRIBUTE for a w×h cursor at xorBpp.
+func newPointerData(w, h, xorBpp int, xorMask, andMask []byte) []byte {
+	data := make([]byte, 2+14+len(xorMask)+len(andMask))
+	binary.LittleEndian.PutUint16(data[0:], uint16(xorBpp))
+	binary.LittleEndian.PutUint16(data[8:], uint16(w))
+	binary.LittleEndian.PutUint16(data[10:], uint16(h))
+	binary.LittleEndian.PutUint16(data[12:], uint16(len(andMask)))
+	binary.LittleEndian.PutUint16(data[14:], uint16(len(xorMask)))
+	copy(data[16:], xorMask)
+	copy(data[16+len(xorMask):], andMask)
+	return data
+}
+
+// An xrdp X cursor arrives at 32bpp with per-pixel alpha and an all-zero AND
+// mask. An alpha of zero means transparent; treating it as opaque black paints
+// a black square around the pointer.
+func TestNewPointerAlphaZeroIsTransparent(t *testing.T) {
+	xorMask := []byte{
+		0x00, 0x00, 0x00, 0x00, // black, alpha 0 → transparent
+		0xFF, 0xFF, 0xFF, 0xFF, // white, alpha 255 → opaque
+	}
+	pu, _, err := DecodeNewPointer(slog.Default(), nil, newPointerData(2, 1, 32, xorMask, []byte{0x00, 0x00}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := pu.Data[3]; a != 0 {
+		t.Fatalf("pixel 0 alpha: got %d, want 0 (transparent)", a)
+	}
+	if r, g, b, a := pu.Data[4], pu.Data[5], pu.Data[6], pu.Data[7]; r != 0xFF || g != 0xFF || b != 0xFF || a != 0xFF {
+		t.Fatalf("pixel 1: got RGBA(%d,%d,%d,%d), want (255,255,255,255)", r, g, b, a)
+	}
+}
+
+// A 32bpp cursor whose XOR mask has no alpha channel still gets its
+// transparency from the AND mask.
+func TestNewPointerWithoutAlphaUsesMasks(t *testing.T) {
+	xorMask := []byte{
+		0x00, 0x00, 0xFF, 0x00, // red, alpha 0
+		0x00, 0x00, 0x00, 0x00, // black, alpha 0
+	}
+	andMask := []byte{0x40, 0x00} // pixel 0 AND=0, pixel 1 AND=1
+	pu, _, err := DecodeNewPointer(slog.Default(), nil, newPointerData(2, 1, 32, xorMask, andMask))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r, g, b, a := pu.Data[0], pu.Data[1], pu.Data[2], pu.Data[3]; r != 0xFF || g != 0 || b != 0 || a != 0xFF {
+		t.Fatalf("pixel 0: got RGBA(%d,%d,%d,%d), want (255,0,0,255)", r, g, b, a)
+	}
+	if a := pu.Data[7]; a != 0 {
+		t.Fatalf("pixel 1 alpha: got %d, want 0 (transparent)", a)
+	}
+}
+
 func TestTransparency(t *testing.T) {
 	// 2x1 24bpp: AND=1+XOR=black → transparent, AND=1+XOR=white → XOR-invert
 	// (rendered as opaque black with white halo painted into transparent neighbors).

@@ -5,8 +5,9 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/markdown"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/remotetools"
 )
 
@@ -14,24 +15,22 @@ import (
 // process and container detail dialogs. MarkdownView supplies the text layout
 // and hit testing; the detail dialog owns the surrounding tabs and actions.
 type remoteDetailText struct {
-	mode           remoteDetailMode
-	doc            markdown.Document
-	view           components.MarkdownView
-	table          components.Table
-	source         string
-	layoutWidth    float32
-	layoutSize     float32
-	lineHeight     float32
-	selectionStart int
-	selectionEnd   int
-	dragging       bool
+	mode        remoteDetailMode
+	doc         markdown.Document
+	view        components.MarkdownView
+	table       components.Table
+	source      string
+	layoutWidth float32
+	layoutSize  float32
+	lineHeight  float32
+	selection   components.TextSelection
 
 	scroll         float32
 	scrollBar      components.ScrollAreaGeometry
 	scrollDragging bool
 	scrollGrab     float32
-	bounds         ui.Rect
-	viewport       ui.Rect
+	bounds         gfx.Rect
+	viewport       gfx.Rect
 }
 
 type remoteDetailMode uint8
@@ -42,8 +41,13 @@ const (
 )
 
 func (text *remoteDetailText) clearSelection() {
-	text.selectionStart, text.selectionEnd = 0, 0
-	text.dragging = false
+	text.selection.Clear()
+}
+
+// pointAt is where a window point lies in the text: it has one surface.
+func (text *remoteDetailText) pointAt(point gfx.Point) (components.TextPoint, bool) {
+	offset, ok := text.offsetAt(point)
+	return components.TextPoint{Offset: offset}, ok
 }
 
 func (text *remoteDetailText) selectedText() (string, bool) {
@@ -52,16 +56,14 @@ func (text *remoteDetailText) selectedText() (string, bool) {
 			return "", false
 		}
 		value := text.table.SelectedText(components.TableSelection{
-			Enabled: true, Anchor: text.selectionStart, Focus: text.selectionEnd,
+			Enabled: true, Anchor: text.selection.Anchor.Offset, Focus: text.selection.Focus.Offset,
 		})
 		return value, value != ""
 	}
 	if text.view.TextLen() == 0 {
 		return "", false
 	}
-	value := text.view.SelectedText(components.MarkdownSelection{
-		Anchor: text.selectionStart, Focus: text.selectionEnd,
-	})
+	value := text.view.SelectedText(text.selection.In(0))
 	return value, value != ""
 }
 
@@ -72,7 +74,7 @@ func (text *remoteDetailText) textLen() int {
 	return text.view.TextLen()
 }
 
-func (text *remoteDetailText) offsetAt(point ui.Point) (int, bool) {
+func (text *remoteDetailText) offsetAt(point gfx.Point) (int, bool) {
 	if text.mode == remoteDetailTable {
 		return text.table.OffsetAt(point)
 	}
@@ -115,11 +117,11 @@ func remoteDetailRows(rows [][2]string) string {
 }
 
 func (state *State) paintRemoteDetailText(
-	canvas *ui.Canvas,
-	bounds ui.Rect,
+	canvas *gfx.Canvas,
+	bounds gfx.Rect,
 	text *remoteDetailText,
 	body, textIDLabel, scrollbarLabel string,
-	textID, scrollbarID ui.ID,
+	textID, scrollbarID gfx.ID,
 ) {
 	state.paintRemoteDetailTextSource(
 		canvas, bounds, text, remoteDetailSource(body),
@@ -129,11 +131,11 @@ func (state *State) paintRemoteDetailText(
 }
 
 func (state *State) paintRemoteDetailCode(
-	canvas *ui.Canvas,
-	bounds ui.Rect,
+	canvas *gfx.Canvas,
+	bounds gfx.Rect,
 	text *remoteDetailText,
 	body, textIDLabel, scrollbarLabel string,
-	textID, scrollbarID ui.ID,
+	textID, scrollbarID gfx.ID,
 ) {
 	state.paintRemoteDetailTextSource(
 		canvas, bounds, text, remoteDetailSource(body),
@@ -143,14 +145,14 @@ func (state *State) paintRemoteDetailCode(
 }
 
 func (state *State) paintRemoteDetailTable(
-	canvas *ui.Canvas,
-	bounds ui.Rect,
+	canvas *gfx.Canvas,
+	bounds gfx.Rect,
 	text *remoteDetailText,
 	columns []components.TableColumn,
 	header []string,
 	rows [][]string,
 	textIDLabel, scrollbarLabel string,
-	textID, scrollbarID ui.ID,
+	textID, scrollbarID gfx.ID,
 ) {
 	if bounds.Width <= 0 || bounds.Height <= 0 {
 		return
@@ -167,7 +169,7 @@ func (state *State) paintRemoteDetailTable(
 		text.scroll = 0
 	}
 	text.bounds = inner
-	content := ui.Size{Width: width, Height: max(contentHeight, inner.Height)}
+	content := gfx.Size{Width: width, Height: max(contentHeight, inner.Height)}
 	area := components.BeginScrollArea(canvas, theme, inner, content).
 		Offset(0, text.scroll).
 		Viewport(textID, textIDLabel).
@@ -175,30 +177,30 @@ func (state *State) paintRemoteDetailTable(
 	geometry := area.Geometry()
 	text.scroll, text.scrollBar, text.viewport = geometry.OffsetY, geometry, geometry.Viewport
 	geometry = area.BeginContent()
-	tableBounds := ui.Rect{
+	tableBounds := gfx.Rect{
 		X: geometry.Viewport.X, Y: geometry.Viewport.Y - geometry.OffsetY,
 		Width: geometry.Viewport.Width, Height: contentHeight,
 	}
 	table := components.BeginTable(canvas, theme, tableBounds, columns)
 	table.Selection = components.TableSelection{
 		Enabled: true,
-		Anchor:  text.selectionStart,
-		Focus:   text.selectionEnd,
+		Anchor:  text.selection.Anchor.Offset,
+		Focus:   text.selection.Focus.Offset,
 	}
 	table.Header(header)
 	for _, row := range rows {
-		table.Row(ui.ID{}, row, false)
+		table.Row(gfx.ID{}, row, false)
 	}
 	text.table = table
 	area.EndContent()
 }
 
 func (state *State) paintRemoteDetailTextSource(
-	canvas *ui.Canvas,
-	bounds ui.Rect,
+	canvas *gfx.Canvas,
+	bounds gfx.Rect,
 	text *remoteDetailText,
 	source, textIDLabel, scrollbarLabel string,
-	textID, scrollbarID ui.ID,
+	textID, scrollbarID gfx.ID,
 	framed, hideCodeFrame bool,
 ) {
 	if bounds.Width <= 0 || bounds.Height <= 0 {
@@ -208,7 +210,7 @@ func (state *State) paintRemoteDetailTextSource(
 	inner := bounds
 	if framed {
 		canvas.RoundedBorder(bounds, radius.control, 1, pal.line, pal.workspace)
-		inner = ui.Rect{
+		inner = gfx.Rect{
 			X: bounds.X + 1, Y: bounds.Y + 1,
 			Width: max(bounds.Width-2, 0), Height: max(bounds.Height-2, 0),
 		}
@@ -230,7 +232,7 @@ func (state *State) paintRemoteDetailTextSource(
 		text.layoutWidth, text.layoutSize, text.lineHeight = width, size, lineHeight
 	}
 	text.bounds = inner
-	content := ui.Size{Width: width, Height: max(text.view.Height(), inner.Height)}
+	content := gfx.Size{Width: width, Height: max(text.view.Height(), inner.Height)}
 	area := components.BeginScrollArea(canvas, theme, inner, content).
 		Offset(0, text.scroll).
 		Viewport(textID, textIDLabel).
@@ -241,31 +243,29 @@ func (state *State) paintRemoteDetailTextSource(
 	look := components.MarkdownLookFor(theme)
 	look.CodeFill, look.Line = pal.workspace, pal.line
 	if hideCodeFrame {
-		look.CodeFill, look.Line = ui.Color{}, ui.Color{}
+		look.CodeFill, look.Line = gfx.Color{}, gfx.Color{}
 	}
 	look.Selection = theme.Selection
 	text.view.Paint(canvas, components.MarkdownPaint{
-		Look: look,
-		X:    geometry.Viewport.X + 12,
-		Y:    geometry.Viewport.Y + 10 - geometry.OffsetY,
-		Clip: geometry.Viewport,
-		Selection: components.MarkdownSelection{
-			Anchor: text.selectionStart, Focus: text.selectionEnd,
-		},
+		Look:      look,
+		X:         geometry.Viewport.X + 12,
+		Y:         geometry.Viewport.Y + 10 - geometry.OffsetY,
+		Clip:      geometry.Viewport,
+		Selection: text.selection.In(0),
 	})
 	area.EndContent()
 }
 
 func (state *State) paintRemoteEnvironmentView(
-	canvas *ui.Canvas,
-	bounds ui.Rect,
+	canvas *gfx.Canvas,
+	bounds gfx.Rect,
 	text *remoteDetailText,
 	loading, failed bool,
 	status, emptyMessage string,
 	variables []remotetools.ProcessEnvironmentVariable,
 	header [2]string,
 	textIDLabel, scrollbarLabel string,
-	textID, scrollbarID ui.ID,
+	textID, scrollbarID gfx.ID,
 ) {
 	notice, color := "", state.pal.muted
 	switch {
@@ -278,7 +278,7 @@ func (state *State) paintRemoteEnvironmentView(
 	}
 	if notice != "" {
 		text.reset()
-		canvas.LabelCenter(notice, bounds, ui.TextStyle{
+		canvas.LabelCenter(notice, bounds, gfx.TextStyle{
 			Size: state.Theme().Metrics.FontSizeM, Color: color,
 		})
 		return
@@ -300,62 +300,40 @@ func areaMaxOffset(content, viewport float32) float32 {
 	return max(content-viewport, 0)
 }
 
-func (state *State) remoteDetailTextPointer(event ui.PointerEvent, text *remoteDetailText, textID ui.ID) (ui.EventResult, bool) {
-	if textID.IsZero() || !text.dragging && !(event.Kind == ui.PointerDown && event.Target == textID) {
-		return ui.EventResult{}, false
+func (state *State) remoteDetailTextPointer(event gfx.PointerEvent, text *remoteDetailText, textID gfx.ID) (gfx.EventResult, bool) {
+	if textID.IsZero() || !text.selection.Dragging() && !(event.Kind == gfx.PointerDown && event.Target == textID) {
+		return gfx.EventResult{}, false
 	}
-	if event.Kind == ui.PointerDown && event.Button != ui.PointerButtonPrimary {
-		return ui.EventResult{}, false
+	if event.Kind == gfx.PointerDown && event.Button != gfx.PointerButtonPrimary {
+		return gfx.EventResult{}, false
 	}
-	beforeStart, beforeEnd := text.selectionStart, text.selectionEnd
-	switch event.Kind {
-	case ui.PointerDown:
-		offset, ok := text.offsetAt(ui.Point{X: event.X, Y: event.Y})
-		if !ok {
-			return ui.EventResult{}, false
-		}
-		text.dragging = true
-		text.selectionStart, text.selectionEnd = offset, offset
-		return ui.EventResult{Handled: true, Repaint: true, Focus: textID}, true
-	case ui.PointerMove:
-		if !event.Captured {
-			return ui.EventResult{}, true
-		}
-		offset, ok := text.offsetAt(ui.Point{X: event.X, Y: event.Y})
-		if ok {
-			text.selectionEnd = offset
-		}
-	case ui.PointerUp:
-		text.dragging = false
-		if text.selectionStart == text.selectionEnd {
-			text.clearSelection()
-		}
-	case ui.PointerExit:
-		if !event.Captured {
-			text.dragging = false
-		}
-	default:
-		return ui.EventResult{}, false
+	if event.Kind == gfx.PointerMove && !event.Captured {
+		return gfx.EventResult{}, true
 	}
-	return ui.EventResult{
-		Handled: true,
-		Repaint: beforeStart != text.selectionStart || beforeEnd != text.selectionEnd,
-	}, true
+	result := text.selection.Pointer(event, text.pointAt)
+	if !result.Handled {
+		return gfx.EventResult{}, false
+	}
+	outcome := gfx.EventResult{Handled: true, Repaint: result.Changed}
+	if event.Kind == gfx.PointerDown {
+		outcome.Focus = textID
+	}
+	return outcome, true
 }
 
-func (state *State) remoteDetailScrollPointer(event ui.PointerEvent, text *remoteDetailText, scrollbarID ui.ID) (ui.EventResult, bool) {
+func (state *State) remoteDetailScrollPointer(event gfx.PointerEvent, text *remoteDetailText, scrollbarID gfx.ID) (gfx.EventResult, bool) {
 	if scrollbarID.IsZero() ||
 		(!text.scrollDragging &&
-			!(event.Kind == ui.PointerDown && event.Button == ui.PointerButtonPrimary && event.Target == scrollbarID)) {
-		return ui.EventResult{}, false
+			!(event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary && event.Target == scrollbarID)) {
+		return gfx.EventResult{}, false
 	}
-	if event.Kind == ui.PointerDown && event.Button != ui.PointerButtonPrimary {
-		return ui.EventResult{}, false
+	if event.Kind == gfx.PointerDown && event.Button != gfx.PointerButtonPrimary {
+		return gfx.EventResult{}, false
 	}
 	geometry := text.scrollBar
 	before := text.scroll
 	switch event.Kind {
-	case ui.PointerDown:
+	case gfx.PointerDown:
 		text.scrollDragging = true
 		text.scrollGrab = geometry.VerticalThumb.Height / 2
 		if event.Y >= geometry.VerticalThumb.Y &&
@@ -364,100 +342,99 @@ func (state *State) remoteDetailScrollPointer(event ui.PointerEvent, text *remot
 		} else {
 			text.scroll = geometry.VerticalOffsetForThumb(event.Y - text.scrollGrab)
 		}
-	case ui.PointerMove:
+	case gfx.PointerMove:
 		if !event.Captured {
-			return ui.EventResult{}, true
+			return gfx.EventResult{}, true
 		}
 		text.scroll = geometry.VerticalOffsetForThumb(event.Y - text.scrollGrab)
-	case ui.PointerUp:
+	case gfx.PointerUp:
 		text.scrollDragging = false
-	case ui.PointerExit:
+	case gfx.PointerExit:
 		if !event.Captured {
 			text.scrollDragging = false
 		}
 	default:
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	return ui.EventResult{Handled: true, Repaint: before != text.scroll}, true
+	return gfx.EventResult{Handled: true, Repaint: before != text.scroll}, true
 }
 
-func (state *State) remoteDetailWheel(event ui.ScrollEvent, text *remoteDetailText, textID, scrollbarID ui.ID) (ui.EventResult, bool) {
+func (state *State) remoteDetailWheel(event gfx.ScrollEvent, text *remoteDetailText, textID, scrollbarID gfx.ID) (gfx.EventResult, bool) {
 	if textID.IsZero() || text.scrollBar.MaxOffsetY <= 0 {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	inside := pointInRect(event.X, event.Y, text.bounds) ||
 		pointInRect(event.X, event.Y, text.scrollBar.Bounds) ||
 		event.Target == textID || event.Target == scrollbarID
 	if !inside {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	before := text.scroll
 	text.scroll = min(max(text.scroll+event.StepY(32), 0), text.scrollBar.MaxOffsetY)
-	return ui.EventResult{Handled: true, Repaint: before != text.scroll}, true
+	return gfx.EventResult{Handled: true, Repaint: before != text.scroll}, true
 }
 
 func (state *State) remoteDetailKeyboardScroll(
-	event ui.KeyEvent,
+	event gfx.KeyEvent,
 	text *remoteDetailText,
-	textID, scrollbarID ui.ID,
-) (ui.EventResult, bool) {
+	textID, scrollbarID gfx.ID,
+) (gfx.EventResult, bool) {
 	if event.Target != textID && event.Target != scrollbarID {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if text.scrollBar.MaxOffsetY <= 0 {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	step := min(max(text.viewport.Height/2, 32), 96)
 	page := max(text.viewport.Height-step, step)
 	before := text.scroll
 	switch event.Key {
-	case ui.KeyUp:
+	case gfx.KeyUp:
 		text.scroll -= step
-	case ui.KeyDown:
+	case gfx.KeyDown:
 		text.scroll += step
-	case ui.KeyPageUp:
+	case gfx.KeyPageUp:
 		text.scroll -= page
-	case ui.KeyPageDown:
+	case gfx.KeyPageDown:
 		text.scroll += page
-	case ui.KeyHome:
+	case gfx.KeyHome:
 		text.scroll = 0
-	case ui.KeyEnd:
+	case gfx.KeyEnd:
 		text.scroll = text.scrollBar.MaxOffsetY
 	default:
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	text.scroll = min(max(text.scroll, 0), text.scrollBar.MaxOffsetY)
-	return ui.EventResult{Handled: true, Repaint: before != text.scroll}, true
+	return gfx.EventResult{Handled: true, Repaint: before != text.scroll}, true
 }
 
-func (state *State) remoteDetailTextShortcut(event ui.KeyEvent, text *remoteDetailText) (ui.EventResult, bool) {
-	chord, ok := shortcutChordFromEvent(event)
+func (state *State) remoteDetailTextShortcut(event gfx.KeyEvent, text *remoteDetailText) (gfx.EventResult, bool) {
+	chord, ok := keymap.FromEvent(event)
 	if !ok {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if chord.Modifiers == defaultShortcutModifier() && chord.Key == 'a' {
+	if chord.Modifiers == keymap.Primary && chord.Char == 'a' {
 		length := text.textLen()
 		if length == 0 {
-			return ui.EventResult{}, false
+			return gfx.EventResult{}, false
 		}
-		text.selectionStart, text.selectionEnd = 0, length
-		text.dragging = false
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		text.selection.Select(components.TextPoint{}, components.TextPoint{Offset: length})
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	if state.shortcuts.actionFor(chord) != shortcutCopy {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if !event.Repeat {
 		if value, selected := text.selectedText(); selected {
 			state.copyRemoteProcessValue(value)
 		}
 	}
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
-func (state *State) remoteDetailShortcut(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) remoteDetailShortcut(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if !state.remoteToolsVisible() {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if state.remote.processDetails.open {
 		return state.remoteDetailTextShortcut(event, &state.remote.processDetails.text)
@@ -465,5 +442,5 @@ func (state *State) remoteDetailShortcut(event ui.KeyEvent) (ui.EventResult, boo
 	if state.remote.containerDetails.open {
 		return state.remoteDetailTextShortcut(event, &state.remote.containerDetails.text)
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }

@@ -3,11 +3,14 @@ package workbench
 import (
 	"fmt"
 	"testing"
+	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/headless"
 )
 
-func emptyStateActionHit(canvas *ui.Canvas, id ui.ID) (ui.Hit, bool) {
+func emptyStateActionHit(canvas *gfx.Canvas, id gfx.ID) (gfx.Hit, bool) {
 	for _, hit := range canvas.Hits() {
 		if hit.ID == id &&
 			hit.Bounds.Width == emptyStateActionWidth &&
@@ -15,7 +18,7 @@ func emptyStateActionHit(canvas *ui.Canvas, id ui.ID) (ui.Hit, bool) {
 			return hit, true
 		}
 	}
-	return ui.Hit{}, false
+	return gfx.Hit{}, false
 }
 
 func TestCatalogEmptyStatesUseSharedVisualMetrics(t *testing.T) {
@@ -23,7 +26,7 @@ func TestCatalogEmptyStatesUseSharedVisualMetrics(t *testing.T) {
 		name        string
 		section     uint8
 		title       func(*State) string
-		action      ui.ID
+		action      gfx.ID
 		actionLabel func(*State) string
 		prepare     func(*State)
 		hasAction   bool
@@ -83,7 +86,7 @@ func TestCatalogEmptyStatesUseSharedVisualMetrics(t *testing.T) {
 		},
 	}
 
-	for _, size := range []ui.Size{{Width: 1400, Height: 900}, {Width: 760, Height: 620}} {
+	for _, size := range []gfx.Size{{Width: 1400, Height: 900}, {Width: 760, Height: 620}} {
 		for _, test := range tests {
 			// A case runs once per size, so the size is part of its name: two
 			// cases of one name make Go append "#01", and a "#" in a test
@@ -93,7 +96,7 @@ func TestCatalogEmptyStatesUseSharedVisualMetrics(t *testing.T) {
 				test.prepare(state)
 				state.activeSection = test.section
 				title := test.title(state)
-				var canvas ui.Canvas
+				var canvas gfx.Canvas
 				state.Paint(&canvas, size)
 
 				texts := make([]string, 0, len(canvas.Texts()))
@@ -148,8 +151,8 @@ func TestHostSearchNoMatchesUsesTheSharedEmptyState(t *testing.T) {
 	state.hosts = []Host{{ID: 1, Label: "web", Address: "web.example", Port: 22}}
 	state.search.Insert("no-such-host")
 	state.activeSection = sectionHosts
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 
 	var texts []string
 	for _, text := range canvas.Texts() {
@@ -172,5 +175,143 @@ func TestHostSearchNoMatchesUsesTheSharedEmptyState(t *testing.T) {
 		if hit.Bounds.Width == emptyStateActionWidth && hit.Bounds.Height == toolbarHeight {
 			t.Fatalf("the no-match state painted an action: %+v", hit)
 		}
+	}
+}
+
+// The empty state's action is painted by the page and still takes a real press:
+// the first-run screen opens the New Host dialog.
+func TestEmptyStateActionTakesARealPress(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.hosts, state.visible = nil, nil
+	state.activeSection = sectionHosts
+	view, err := headless.Open(app.Config{
+		Title: "hosts", Width: 1400, Height: 900, Tree: Tree(),
+		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
+	}, nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Wait(50 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	action, ok := hitByIDInSnapshot(view.Snapshot(), hitAddHostEmpty)
+	if !ok {
+		t.Fatal("the empty state painted no add action")
+	}
+	if action.Bounds.Width != emptyStateActionWidth || action.Bounds.Height != toolbarHeight {
+		t.Fatalf("the empty-state action is %v, want %.0fx%.0f", action.Bounds, emptyStateActionWidth, toolbarHeight)
+	}
+	if err := view.Click(action.Bounds.X+action.Bounds.Width/2, action.Bounds.Y+action.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Wait(50 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if state.modal != modalNewHost {
+		t.Fatalf("pressing the empty-state action opened modal %d, want the New Host dialog", state.modal)
+	}
+}
+
+// The catalog sections declare their empty state in the workbench page now; its
+// action is still a hit the window delivers, and pressing it runs the section's
+// create workflow.
+func TestCatalogEmptyStateActionsTakeRealPresses(t *testing.T) {
+	tests := []struct {
+		name    string
+		section uint8
+		action  gfx.ID
+		prepare func(*State)
+		check   func(*State) error
+	}{
+		{
+			name: "forwards", section: sectionForwards, action: hitForwardAdd,
+			prepare: func(state *State) {
+				state.hosts = []Host{{ID: 1, Label: "web", Address: "web.example", Port: 22}}
+			},
+			check: func(state *State) error {
+				if state.modal != modalNewForward {
+					return fmt.Errorf("modal = %d, want the forward dialog", state.modal)
+				}
+				return nil
+			},
+		},
+		{
+			name: "proxies", section: sectionProxies, action: hitProxyAdd,
+			prepare: func(state *State) {
+				state.hosts = []Host{
+					{ID: 1, Label: "jump", Address: "jump.example", Port: 22},
+					{ID: 2, Label: "target", Address: "target.example", Port: 22},
+				}
+			},
+			check: func(state *State) error {
+				if state.modal != modalNewProxy {
+					return fmt.Errorf("modal = %d, want the proxy dialog", state.modal)
+				}
+				return nil
+			},
+		},
+		{
+			name: "keys", section: sectionKeys, action: hitKeysAdd,
+			prepare: func(*State) {},
+			check: func(state *State) error {
+				if !state.keysMenu {
+					return fmt.Errorf("keys menu is closed")
+				}
+				return nil
+			},
+		},
+		{
+			name: "snippets", section: sectionSnippets, action: hitSnippetAdd,
+			prepare: func(*State) {},
+			check: func(state *State) error {
+				if state.modal != modalSnippet {
+					return fmt.Errorf("modal = %d, want the snippet dialog", state.modal)
+				}
+				return nil
+			},
+		},
+		{
+			name: "workspace library", section: sectionWorkspaces, action: hitWorkspaceNew,
+			prepare: func(*State) {},
+			check: func(state *State) error {
+				if state.modal != modalWorkspaceDraft {
+					return fmt.Errorf("modal = %d, want the workspace draft", state.modal)
+				}
+				return nil
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			state := newTestState(t, testOptions(t))
+			test.prepare(state)
+			state.activeSection = test.section
+			view, err := headless.Open(app.Config{
+				Title: test.name, Width: 1400, Height: 900, Tree: Tree(),
+				Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
+			}, nil, headless.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer view.Close()
+			if err := view.Wait(50 * time.Millisecond); err != nil {
+				t.Fatal(err)
+			}
+			action, ok := hitByIDInSnapshot(view.Snapshot(), test.action)
+			if !ok {
+				t.Fatalf("%s painted no empty-state action", test.name)
+			}
+			if err := view.Click(action.Bounds.X+action.Bounds.Width/2, action.Bounds.Y+action.Bounds.Height/2); err != nil {
+				t.Fatal(err)
+			}
+			if err := view.Wait(50 * time.Millisecond); err != nil {
+				t.Fatal(err)
+			}
+			if err := test.check(state); err != nil {
+				t.Fatalf("%s: %v", test.name, err)
+			}
+		})
 	}
 }

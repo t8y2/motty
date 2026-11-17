@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/sftpclient"
 )
@@ -32,7 +32,7 @@ type sftpNativeWindow struct {
 	shows  int
 }
 
-func (h *sftpNativeHost) OpenWindow(config app.Config, canvas *ui.Canvas, closed func()) (app.WindowControl, error) {
+func (h *sftpNativeHost) OpenWindow(config app.Config, canvas *gfx.Canvas, closed func()) (app.WindowControl, error) {
 	view, err := headless.Open(config, canvas, headless.Options{Scale: h.scale})
 	if err != nil {
 		return nil, err
@@ -59,9 +59,9 @@ func (w *sftpNativeWindow) Close() {
 		w.closed()
 	}
 }
-func (w *sftpNativeWindow) Hide()                  {}
-func (w *sftpNativeWindow) Show()                  { w.shows++ }
-func (w *sftpNativeWindow) Frame() (ui.Rect, bool) { return ui.Rect{Width: 1200, Height: 800}, true }
+func (w *sftpNativeWindow) Hide()                   {}
+func (w *sftpNativeWindow) Show()                   { w.shows++ }
+func (w *sftpNativeWindow) Frame() (gfx.Rect, bool) { return gfx.Rect{Width: 1200, Height: 800}, true }
 
 func dualSFTPFixture(t *testing.T, scale float64) (*State, *sftpWindow, *workbenchSFTPRemote, *sftpNativeHost, string) {
 	t.Helper()
@@ -113,7 +113,7 @@ func dualWait(t *testing.T, state *State, w *sftpWindow, view *headless.Session,
 	t.Fatalf("dual pane did not settle: busy=%t status=%s error=%s", w.view.busy, w.view.status, w.view.errorText)
 }
 
-func dualRow(t *testing.T, w *sftpWindow, local bool, name string) ui.ID {
+func dualRow(t *testing.T, w *sftpWindow, local bool, name string) gfx.ID {
 	t.Helper()
 	for i, row := range w.folder(local).rows {
 		if row.entry.Name == name {
@@ -121,19 +121,35 @@ func dualRow(t *testing.T, w *sftpWindow, local bool, name string) ui.ID {
 		}
 	}
 	t.Fatal("missing row", name)
-	return ui.ID{}
+	return gfx.ID{}
 }
-func dualHit(t *testing.T, view *headless.Session, id ui.ID) ui.Rect {
+func dualHit(t *testing.T, view *headless.Session, id gfx.ID) gfx.Rect {
 	t.Helper()
 	for _, h := range view.Snapshot().Hits {
 		if h.ID == id && !h.Block {
 			return h.Bounds
 		}
 	}
+	// A row named by the scope it had before it was a List resolves through the
+	// scope the List declared for it in the last paint.
+	for side, scope := range sftpWindowRows {
+		index, ok := id.In(scope)
+		if !ok {
+			continue
+		}
+		if listScope := sftpWindowListRows[side]; !listScope.IsZero() {
+			want := listScope.At(index)
+			for _, h := range view.Snapshot().Hits {
+				if h.ID == want && !h.Block {
+					return h.Bounds
+				}
+			}
+		}
+	}
 	t.Fatal("missing hit", id)
-	return ui.Rect{}
+	return gfx.Rect{}
 }
-func dualDrag(t *testing.T, view *headless.Session, source, target ui.Rect) {
+func dualDrag(t *testing.T, view *headless.Session, source, target gfx.Rect) {
 	t.Helper()
 	x, y := source.X+30, source.Y+source.Height/2
 	for _, step := range []func() error{func() error { return view.Press(x, y) }, func() error { return view.Move(x+10, y+2) }, func() error { return view.Move(target.X+30, target.Y+target.Height/2) }, func() error { return view.Release(target.X+30, target.Y+target.Height/2) }} {
@@ -146,10 +162,17 @@ func dualDrag(t *testing.T, view *headless.Session, source, target ui.Rect) {
 func TestSFTPWindowNativeDragTransfersBothWaysAndKeepsConnection(t *testing.T) {
 	state, w, remote, host, localDir := dualSFTPFixture(t, 1.25)
 	view := host.windows[0].view
+	settled := func(count int) bool {
+		return len(w.view.transfers) == count && !sftpTransfersActive(w.view.transfers) &&
+			!w.view.busy && !w.view.refreshAfterTransfers && w.pendingLocal == "" && !w.localRefresh
+	}
 	sourceID := w.session.ID
 	state.activeSessionID = 0 // returning home must not retarget the independent window
+	uploadListID := w.view.acceptedListID
 	dualDrag(t, view, dualHit(t, view, dualRow(t, w, true, "中文上传.yml")), dualHit(t, view, dualRow(t, w, false, "docs")))
-	dualWait(t, state, w, view, func() bool { return len(w.view.transfers) == 1 && !sftpTransfersActive(w.view.transfers) })
+	// A completed transfer precedes its result and the automatic directory
+	// refresh. The next gesture needs the refreshed list to be interactive.
+	dualWait(t, state, w, view, func() bool { return settled(1) && w.view.acceptedListID != uploadListID })
 	remote.mu.Lock()
 	uploaded := bytes.Clone(remote.files["/home/test/docs/中文上传.yml"])
 	remote.mu.Unlock()
@@ -157,7 +180,7 @@ func TestSFTPWindowNativeDragTransfersBothWaysAndKeepsConnection(t *testing.T) {
 		t.Fatalf("upload missed the folder target: %q %+v", uploaded, w.view.transfers)
 	}
 	dualDrag(t, view, dualHit(t, view, dualRow(t, w, false, "notes.txt")), dualHit(t, view, dualRow(t, w, true, "destination")))
-	dualWait(t, state, w, view, func() bool { return len(w.view.transfers) == 2 && !sftpTransfersActive(w.view.transfers) })
+	dualWait(t, state, w, view, func() bool { return settled(2) })
 	actual, err := os.ReadFile(filepath.Join(localDir, "destination", "notes.txt"))
 	if err != nil || string(actual) != "hello world" {
 		t.Fatalf("download missed target: %q %v", actual, err)
@@ -168,19 +191,19 @@ func TestSFTPWindowNativeDragTransfersBothWaysAndKeepsConnection(t *testing.T) {
 	if err := view.ClickLabel("tree"); err != nil {
 		t.Fatal(err)
 	}
+	uploadListID = w.view.acceptedListID
 	w.queueSelection(true)
-	dualWait(t, state, w, view, func() bool { return len(w.view.transfers) == 3 && !sftpTransfersActive(w.view.transfers) })
+	dualWait(t, state, w, view, func() bool { return settled(3) && w.view.acceptedListID != uploadListID })
 	remote.mu.Lock()
 	nested := string(remote.files["/home/test/tree/leaf.txt"])
 	remote.mu.Unlock()
 	if nested != "nested file" {
 		t.Fatal("recursive directory upload failed", w.view.errorText)
 	}
-	dualWait(t, state, w, view, func() bool { return !w.view.busy })
 	remoteFolder := dualHit(t, view, dualRow(t, w, false, "docs"))
 	view.Click(remoteFolder.X+25, remoteFolder.Y+10)
 	w.queueSelection(false)
-	dualWait(t, state, w, view, func() bool { return len(w.view.transfers) == 4 && !sftpTransfersActive(w.view.transfers) })
+	dualWait(t, state, w, view, func() bool { return settled(4) })
 	guide, err := os.ReadFile(filepath.Join(localDir, "docs", "guide.md"))
 	if err != nil || string(guide) != "guide\n" {
 		t.Fatal("recursive directory download failed", err)
@@ -231,7 +254,7 @@ func TestSFTPWindowConflictNeedsConfirmation(t *testing.T) {
 		t.Fatal("conflict overwrote without confirmation")
 	}
 	index := state.transfers.byTask[transferKey{w.view, w.view.transfers[0].ID}]
-	w.click(hitTransfersReplace.At(state.transfers.entries[index].id))
+	dualClickID(t, view, tree.MountID(sftpWindowQueueActions, hitTransfersReplace.At(state.transfers.entries[index].id)))
 	dualWait(t, state, w, view, func() bool { return len(w.view.transfers) == 1 && !sftpTransfersActive(w.view.transfers) })
 	remote.mu.Lock()
 	after := string(remote.files["/home/test/notes.txt"])
@@ -307,17 +330,21 @@ func TestSFTPWindowLayoutAndEntryAtDisplayScales(t *testing.T) {
 			state, w, _, host, _ := dualSFTPFixture(t, scale)
 			state.setLanguage(i18n.Chinese)
 			view := host.windows[0].view
+			if config := host.windows[0].config; config.WindowMode != app.WindowCustomTitlebar || config.TitlebarHeight != TitlebarHeight {
+				t.Fatalf("transfer window lost its custom titlebar: %+v", config)
+			}
 			for _, light := range []bool{false, true} {
 				if light {
 					state.setAppearance(appearanceLight)
 				}
-				for _, size := range []ui.Size{{Width: 640, Height: 360}, {Width: 820, Height: 500}, {Width: 1200, Height: 800}} {
+				for _, size := range []gfx.Size{{Width: 640, Height: 360}, {Width: 820, Height: 500}, {Width: 1200, Height: 800}} {
 					if err := view.Resize(int(size.Width), int(size.Height)); err != nil {
 						t.Fatal(err)
 					}
 					view.Rest()
 					for _, bounds := range w.ui.list {
-						if bounds.Width < 150 || bounds.Height < 60 || bounds.X < 0 || bounds.Y < 0 || bounds.X+bounds.Width > size.Width || bounds.Y+bounds.Height > size.Height {
+						// The panes sit under the window's own titlebar, never over it.
+						if bounds.Width < 150 || bounds.Height < 60 || bounds.X < 0 || bounds.Y < TitlebarHeight || bounds.X+bounds.Width > size.Width || bounds.Y+bounds.Height > size.Height {
 							t.Fatal("pane escaped viewport", scale, size, bounds)
 						}
 					}
@@ -326,12 +353,12 @@ func TestSFTPWindowLayoutAndEntryAtDisplayScales(t *testing.T) {
 					}
 				}
 			}
-			var canvas ui.Canvas
-			state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
-			var entry, files ui.Rect
+			var canvas gfx.Canvas
+			state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+			var entry, files gfx.Rect
 			source, _ := state.sessionByIDPointer(w.session.ID)
 			for _, hit := range canvas.Hits() {
-				if local, ok := tree.Local(contextMount, hit.ID); ok && local == hitSFTPDetach {
+				if hit.ID == hitSFTPDetach && pointInRect(hit.Bounds.X, hit.Bounds.Y, state.contextRect) {
 					t.Fatal("standalone entry still lives in side panel")
 				}
 				local, ok := tree.Local(paneMount(source), hit.ID)
@@ -368,9 +395,9 @@ func TestSFTPWindowMultiSelectQueueScrollAndSystemDrop(t *testing.T) {
 	view.Rest()
 	file := dualHit(t, view, dualRow(t, w, true, "batch-00.txt"))
 	view.Click(file.X+25, file.Y+10)
-	modifier := ui.ModifierControl
+	modifier := gfx.ModifierControl
 	if runtime.GOOS == "darwin" {
-		modifier = ui.ModifierMeta
+		modifier = gfx.ModifierMeta
 	}
 	if handled, err := view.Driver().ShortcutChord(modifier, 'a'); err != nil || !handled {
 		t.Fatal("select all failed", err)
@@ -390,13 +417,14 @@ func TestSFTPWindowMultiSelectQueueScrollAndSystemDrop(t *testing.T) {
 		t.Fatal("batch queue has no scrollbar")
 	}
 	bounds := w.ui.queueBounds
-	if err := view.Scroll(ui.ScrollEvent{X: bounds.X + 20, Y: bounds.Y + 20, DeltaY: 10000}); err != nil {
+	if err := view.Scroll(gfx.ScrollEvent{X: bounds.X + 20, Y: bounds.Y + 20, DeltaY: 10000}); err != nil {
 		t.Fatal(err)
 	}
 	if w.ui.queueOffset != w.ui.queueBar.MaxOffsetY {
 		t.Fatal("queue failed to reach older/later items")
 	}
-	dualHit(t, view, sftpWindowQueueRows.At(20))
+	oldest := w.ui.queueEntries[len(w.ui.queueEntries)-1]
+	dualHit(t, view, sftpWindowQueueRows.At(state.transfers.entries[oldest].id))
 	for _, bounds := range w.ui.list {
 		if bounds.Y+bounds.Height > w.ui.size.Height {
 			t.Fatal("queue pushed file list outside the window")
@@ -405,7 +433,9 @@ func TestSFTPWindowMultiSelectQueueScrollAndSystemDrop(t *testing.T) {
 	external := filepath.Join(t.TempDir(), "external.txt")
 	os.WriteFile(external, []byte("external drop"), 0600)
 	target := dualHit(t, view, dualRow(t, w, false, "docs"))
-	if accepted, err := view.Drop(ui.FileDropEvent{Phase: ui.FileDropDrop, X: target.X + 25, Y: target.Y + 10, Paths: []string{external}}); err != nil || !accepted {
+	// The row can be clipped by the bottom of a short list, so aim at the middle
+	// of what is actually visible rather than a fixed depth from its top.
+	if accepted, err := view.Drop(gfx.FileDropEvent{Phase: gfx.FileDropDrop, X: target.X + 25, Y: target.Y + target.Height/2, Paths: []string{external}}); err != nil || !accepted {
 		t.Fatal("native system drop refused", err)
 	}
 	dualWait(t, state, w, view, func() bool { return len(w.view.transfers) == 22 && !sftpTransfersActive(w.view.transfers) })
@@ -425,7 +455,7 @@ func TestSFTPWindowRefreshCannotRetargetAnActiveDrag(t *testing.T) {
 			target := dualHit(t, view, dualRow(t, w, false, "docs"))
 			x, y := target.X+25, target.Y+10
 			if external {
-				if accepted, err := view.Drop(ui.FileDropEvent{Phase: ui.FileDropOver, X: x, Y: y}); err != nil || !accepted {
+				if accepted, err := view.Drop(gfx.FileDropEvent{Phase: gfx.FileDropOver, X: x, Y: y}); err != nil || !accepted {
 					t.Fatal("system drag refused", err)
 				}
 			} else {
@@ -443,7 +473,7 @@ func TestSFTPWindowRefreshCannotRetargetAnActiveDrag(t *testing.T) {
 				t.Fatal("refresh moved the highlighted destination during a drag")
 			}
 			if external {
-				view.Drop(ui.FileDropEvent{Phase: ui.FileDropDrop, X: x, Y: y, Paths: []string{filepath.Join(dir, "中文上传.yml")}})
+				view.Drop(gfx.FileDropEvent{Phase: gfx.FileDropDrop, X: x, Y: y, Paths: []string{filepath.Join(dir, "中文上传.yml")}})
 			} else {
 				view.Release(x, y)
 			}
@@ -495,11 +525,10 @@ func TestSFTPWindowPreviewAndAsyncLocalPathUseWindowContext(t *testing.T) {
 	for index := range 513 {
 		os.WriteFile(filepath.Join(large, fmt.Sprintf("file-%03d.conf", index)), nil, 0600)
 	}
-	pathField := dualHit(t, view, sftpWindowPath[0])
-	view.Click(pathField.X+30, pathField.Y+12)
-	modifier := ui.ModifierControl
+	dualClickID(t, view, sftpWindowPath[0])
+	modifier := gfx.ModifierControl
 	if runtime.GOOS == "darwin" {
-		modifier = ui.ModifierMeta
+		modifier = gfx.ModifierMeta
 	}
 	view.Driver().ShortcutChord(modifier, 'a')
 	view.Type(large)
@@ -530,5 +559,152 @@ func TestSFTPWindowShowsServerDotfilesByDefault(t *testing.T) {
 	w := state.newSFTPWindow(source)
 	if !w.view.sftpFolder.showHidden {
 		t.Fatal("a detached transfer window hid the server's dotfiles")
+	}
+}
+
+func sftpWindowRowIndex(t *testing.T, w *sftpWindow, local bool, name string) int {
+	t.Helper()
+	for i, row := range w.folder(local).rows {
+		if row.entry.Name == name {
+			return i
+		}
+	}
+	t.Fatal("missing row", name)
+	return -1
+}
+
+func sftpWindowPrimaryModifier() string {
+	if runtime.GOOS == "darwin" {
+		return "cmd"
+	}
+	return "ctrl"
+}
+
+// A Shift press chooses the range from the row chosen last and a Command or
+// Control press toggles one row, as a file list does; the List carries the same
+// choice, so the rows show what the model will act on.
+func TestSFTPWindowListShiftAndPrimarySelection(t *testing.T) {
+	state, w, _, host, dir := dualSFTPFixture(t, 1)
+	view := host.windows[0].view
+	for i := range 5 {
+		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("sel-%d.txt", i)), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w.navigate(true, dir)
+	dualWait(t, state, w, view, func() bool { return !w.view.busy && w.pendingLocal == "" && len(w.view.lfolder.rows) >= 8 })
+	folder := &w.view.lfolder
+	first := sftpWindowRowIndex(t, w, true, "sel-0.txt")
+	third := sftpWindowRowIndex(t, w, true, "sel-2.txt")
+	dualClickID(t, view, dualRow(t, w, true, "sel-0.txt"))
+	if err := view.KeyDown("shift"); err != nil {
+		t.Fatal(err)
+	}
+	dualClickID(t, view, dualRow(t, w, true, "sel-2.txt"))
+	if err := view.KeyUp("shift"); err != nil {
+		t.Fatal(err)
+	}
+	from, to := min(first, third), max(first, third)
+	for i := range folder.rows {
+		want := i >= from && i <= to
+		if folder.rows[i].selected != want || folder.list.Selection.Has(i) != want {
+			t.Fatalf("Shift range row %d: selected=%t list=%t want %t", i, folder.rows[i].selected, folder.list.Selection.Has(i), want)
+		}
+	}
+	// Primary (Command, Control elsewhere) takes one row out of the range.
+	if err := view.KeyDown(sftpWindowPrimaryModifier()); err != nil {
+		t.Fatal(err)
+	}
+	dualClickID(t, view, dualRow(t, w, true, "sel-1.txt"))
+	if err := view.KeyUp(sftpWindowPrimaryModifier()); err != nil {
+		t.Fatal(err)
+	}
+	toggle := sftpWindowRowIndex(t, w, true, "sel-1.txt")
+	if folder.rows[toggle].selected || folder.list.Selection.Has(toggle) {
+		t.Fatal("Primary click did not take the row out of the choice")
+	}
+	if !folder.rows[first].selected || !folder.rows[third].selected {
+		t.Fatal("Primary click cleared the rest of the range")
+	}
+}
+
+// A double click submits the row: the window opens it, entering a folder.
+func TestSFTPWindowListDoubleClickOpensRow(t *testing.T) {
+	state, w, _, host, _ := dualSFTPFixture(t, 1)
+	view := host.windows[0].view
+	row := dualHit(t, view, dualRow(t, w, false, "docs"))
+	if err := view.DoubleClick(row.X+30, row.Y+row.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	dualWait(t, state, w, view, func() bool { return !w.view.busy && w.view.path == "/home/test/docs" })
+}
+
+// The List owns the offset; the custom scrollbar is drawn from it and its drag
+// moves it, while the model fields the drop target reads follow.
+func TestSFTPWindowListScrollbarOffset(t *testing.T) {
+	state, w, _, host, dir := dualSFTPFixture(t, 1)
+	view := host.windows[0].view
+	for i := range 60 {
+		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("scroll-%02d.txt", i)), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w.navigate(true, dir)
+	dualWait(t, state, w, view, func() bool { return !w.view.busy && w.pendingLocal == "" && len(w.view.lfolder.rows) >= 60 })
+	folder := &w.view.lfolder
+	if w.ui.bars[0].MaxOffsetY <= 0 {
+		t.Fatal("long folder has no scrollbar")
+	}
+	scroll := folder.listScroll
+	if scroll == nil {
+		t.Fatal("the list has no scroll state")
+	}
+	center := w.ui.list[0]
+	if err := view.Scroll(gfx.ScrollEvent{X: center.X + 20, Y: center.Y + 20, DeltaY: 10000}); err != nil {
+		t.Fatal(err)
+	}
+	if w.ui.offset[0] != scroll.Offset || w.ui.offset[0] != folder.scrollOffset || folder.first != int(scroll.Offset/sftpRowHeight) {
+		t.Fatalf("wheel offset not carried by the List: ui=%v list=%v first=%d", w.ui.offset[0], scroll.Offset, folder.first)
+	}
+	if w.ui.offset[0] <= 0 {
+		t.Fatal("wheel did not move the list")
+	}
+	thumb := w.ui.bars[0].VerticalThumb
+	before := scroll.Offset
+	if err := view.Press(thumb.X+thumb.Width/2, thumb.Y+thumb.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Move(thumb.X+thumb.Width/2, thumb.Y+thumb.Height/2-30); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Release(thumb.X+thumb.Width/2, thumb.Y+thumb.Height/2-30); err != nil {
+		t.Fatal(err)
+	}
+	if scroll.Offset >= before || w.ui.offset[0] != scroll.Offset {
+		t.Fatalf("scrollbar drag did not move the List: %v -> %v", before, scroll.Offset)
+	}
+}
+
+// A system drop maps a List row to the folder it names through the window's
+// offset, and the empty room below the rows to the folder on show.
+func TestSFTPWindowListDropTargetMapsRows(t *testing.T) {
+	_, w, _, host, _ := dualSFTPFixture(t, 1)
+	view := host.windows[0].view
+	docs := dualHit(t, view, dualRow(t, w, false, "docs"))
+	local, target, row, valid := w.dropTarget(docs.X+20, docs.Y+docs.Height/2, true)
+	index := sftpWindowRowIndex(t, w, false, "docs")
+	if !valid || local || row != index || target != "/home/test/docs" {
+		t.Fatalf("folder row drop = local %t row %d target %q valid %t", local, row, target, valid)
+	}
+	list := w.ui.list[1]
+	local, target, row, valid = w.dropTarget(list.X+10, list.Y+list.Height-5, true)
+	if !valid || local || row != -1 || target != "/home/test" {
+		t.Fatalf("folder drop = local %t row %d target %q valid %t", local, row, target, valid)
+	}
+}
+
+func (h *sftpNativeHost) Post(fn func()) {
+	if fn != nil {
+		fn()
 	}
 }

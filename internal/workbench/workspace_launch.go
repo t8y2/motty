@@ -13,9 +13,9 @@ var ErrWorkspaceLaunchSave = errors.New("workbench: could not save workspace lau
 // workspaceLaunchIdentity is the metadata saved atomically with a new
 // workspace. Zero fields mean an ordinary tab with no saved template identity.
 type workspaceLaunchIdentity struct {
-	managedColumns   uint8
-	temporary        bool
-	temporaryColumns uint8
+	managedLayout   layoutcore.LayoutSpec
+	temporary       bool
+	temporaryLayout layoutcore.LayoutSpec
 }
 
 // launchWorkspace opens an ordinary workspace tab.
@@ -64,7 +64,7 @@ func (state *State) launchWorkspaceWithIdentity(
 		}
 		paneIDs = append(paneIDs, paneID)
 	}
-	if err := state.deck.SetGrid(workspaceID, paneIDs, int(plan.Columns)); err != nil {
+	if err := state.deck.SetLayout(workspaceID, paneIDs, plan.Layout); err != nil {
 		state.rollbackWorkspaceLaunch(workspaceID, nil, previousWorkspace, previousSessionID, previousSection, previousNextSessionID, previousBroadcast, previousPauseSave)
 		return 0, nil, err
 	}
@@ -76,20 +76,28 @@ func (state *State) launchWorkspaceWithIdentity(
 			state.rollbackWorkspaceLaunch(workspaceID, sessionIDs, previousWorkspace, previousSessionID, previousSection, previousNextSessionID, previousBroadcast, previousPauseSave)
 			return 0, nil, layoutcore.ErrPaneFull
 		}
+		if workspaceCommandHost(host) {
+			session.workspaceCommand = plan.Commands[workspaceHostReference(host)].normalized()
+		}
 		sessionIDs = append(sessionIDs, session.ID)
 	}
 
 	state.clearBroadcast()
-	if identity.managedColumns != 0 {
-		state.managedWorkspaceColumns[workspaceID] = identity.managedColumns
+	if identity.managedLayout.Kind != 0 {
+		state.managedWorkspaceLayouts[workspaceID] = identity.managedLayout
 	}
 	if identity.temporary {
-		columns := identity.temporaryColumns
-		if columns == 0 {
-			columns = identity.managedColumns
+		layout := identity.temporaryLayout
+		if layout.Kind == 0 {
+			layout = identity.managedLayout
 		}
-		state.temporaryWorkspaceColumns[workspaceID] = columns
+		state.temporaryWorkspaceLayouts[workspaceID] = layout
 	}
+	// A split focuses the pane it opens, which is what a user splitting a pane
+	// wants. A launch splits only to build structure, so it picks the focus
+	// itself once the plan is in place: the first pane, the one the user chose
+	// first.
+	state.deck.ActivatePane(workspaceID, paneIDs[0])
 	state.syncActiveSession()
 	state.activeSection = sectionTerminal
 	state.refreshWorkspaceViews()
@@ -125,8 +133,8 @@ func validateWorkspaceLaunchPlan(plan WorkspaceLaunchPlan) error {
 	if len(plan.Hosts) > layoutcore.MaxPanes {
 		return ErrWorkspaceLaunchFull
 	}
-	if plan.Columns < layoutcore.MinGridColumns || int(plan.Columns) > layoutcore.MaxGridColumns {
-		return ErrWorkspaceTemplateCols
+	if plan.Layout.Validate(len(plan.Hosts)) != nil {
+		return ErrWorkspaceTemplateLayout
 	}
 	return nil
 }
@@ -158,8 +166,8 @@ func (state *State) rollbackWorkspaceLaunch(
 		state.sessions = kept
 	}
 	_, _ = state.deck.RemoveWorkspace(workspaceID, nil)
-	delete(state.temporaryWorkspaceColumns, workspaceID)
-	delete(state.managedWorkspaceColumns, workspaceID)
+	delete(state.temporaryWorkspaceLayouts, workspaceID)
+	delete(state.managedWorkspaceLayouts, workspaceID)
 	state.broadcast = previousBroadcast
 	if previousWorkspace != 0 {
 		state.deck.ActivateWorkspace(previousWorkspace)

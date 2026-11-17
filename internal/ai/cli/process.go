@@ -8,6 +8,7 @@ import (
 	"motty/internal/ai/llm"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"time"
 )
@@ -19,14 +20,34 @@ const maxStderr = 64 << 10
 type command struct {
 	program   string
 	version   string
+	flavor    string
 	args, env []string
 	dir       string
 	input     string
 }
 
+// PathEnv carries the user's login PATH into a process Motty starts on its own
+// terminal, such as a CLI login. It is empty where the inherited PATH is already
+// the user's.
+func PathEnv() []string {
+	if path := loginPath(); path != "" {
+		return []string{"PATH=" + path}
+	}
+	return nil
+}
+
 func processEnv(overrides []string) []string {
+	return childEnv(os.Environ(), overrides, loginPath())
+}
+
+// childEnv applies the login PATH under the explicit overrides, so a provider
+// that names its own PATH entry still wins.
+func childEnv(base, overrides []string, path string) []string {
+	env := slices.Clone(base)
+	if path != "" {
+		overrides = append([]string{"PATH=" + path}, overrides...)
+	}
 	// Replace rather than append duplicate names (Windows comparisons ignore case).
-	env := os.Environ()
 	for _, pair := range overrides {
 		name, _, ok := strings.Cut(pair, "=")
 		if !ok {
@@ -97,11 +118,19 @@ func capture(ctx context.Context, spec command, limit int) ([]byte, error) {
 	child, cancel := context.WithCancel(ctx)
 	defer cancel()
 	out := &boundedWriter{limit: limit, strict: true, cancel: cancel}
-	_, err := runCommand(child, spec, out)
+	stderr, err := runCommand(child, spec, out)
 	if len(out.data) >= limit {
 		return nil, errors.New("cli: output_limit")
 	}
-	return out.data, err
+	if err != nil {
+		return nil, err
+	}
+	// Some CLIs print help on stderr. Machine-readable output stays on stdout,
+	// so only an otherwise empty capture falls back.
+	if len(bytes.TrimSpace(out.data)) == 0 {
+		return stderr, nil
+	}
+	return out.data, nil
 }
 
 type jsonLines struct {

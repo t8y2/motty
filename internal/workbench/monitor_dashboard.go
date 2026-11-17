@@ -12,9 +12,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/monitoring"
 	"motty/internal/remotestats"
 	"motty/internal/sshconn"
@@ -54,6 +53,7 @@ var (
 )
 var hitDashboardViewList = tree.Sub(dashboardHits, tree.Name("host-view"))
 var hitDashboardSimpleViewList = tree.Sub(dashboardHits, tree.Name("simple-view"))
+var hitDashboardSudoList = tree.Sub(dashboardHits, tree.Name("sudo"))
 var dashboardIntervals = [...]int{2, 5, 10, 30, 60}
 var dashboardRetentions = [...]int{15, 60, 360, 1440}
 
@@ -63,13 +63,15 @@ type dashboardEditor struct {
 	selected                             []string
 	error                                string
 	scroll, content                      float32
-	bounds                               ui.Rect
+	bounds                               gfx.Rect
 	fromHosts                            bool
 	page                                 int
 	order                                components.ReorderListState
 	groups                               []string
 	group                                string
 	groupFilter, groupOpen, selectedOnly bool
+	orderMode                            hostOrderMode
+	orderOpen                            bool
 }
 type dashboardState struct {
 	panels          []monitoring.Panel
@@ -81,18 +83,17 @@ type dashboardState struct {
 	search          text.Editor
 	editor          dashboardEditor
 	menu            int
-	selectBounds    [3]ui.Rect
-	body            ui.Rect
+	selectBounds    [3]gfx.Rect
+	body            gfx.Rect
 	scroll, content float32
 	width           int
 	refresh         monitorView
-	emptyLayout     flex.View
 	scrollX         float32
 	dragging        bool
 	dragX           bool
 	grab            float32
 	addHosts        []string
-	addAnchor       ui.Rect
+	addAnchor       gfx.Rect
 	// visible reports whether the dashboard is the page the window last
 	// painted, so a background panel does not repaint the window from another
 	// section. Paint writes it; collector goroutines read it.
@@ -118,7 +119,7 @@ func (d *dashboardState) panelDefinitions() []monitoring.Panel {
 	return panels
 }
 
-func dashboardHostEligible(h Host) bool { return h.isSSH() && h.ID != localHostID }
+func dashboardHostEligible(h Host) bool { return h.isSSH() && !h.mosh() && h.ID != localHostID }
 
 func (s *State) dashboardPanel() *monitoring.Panel {
 	for i := range s.dashboard.panels {
@@ -187,6 +188,7 @@ func (s *State) reconcileDashboard() {
 }
 
 func (s *State) connectDashboardSource(source *dashboardSource) {
+	source.session.sudoCommands, source.session.sudoPassword = false, ""
 	s.dashboard.engine.BeginSource(source.session.host.CatalogID)
 	if source.cancel != nil {
 		source.cancel()
@@ -242,6 +244,7 @@ func (s *State) connectDashboardSource(source *dashboardSource) {
 	s.dashboard.engine.SetStatus(v.host.CatalogID, monitoring.Connecting)
 }
 func (s *State) closeDashboardSource(source *dashboardSource) {
+	source.session.sudoCommands, source.session.sudoPassword = false, ""
 	s.dashboard.engine.BeginSource(source.session.host.CatalogID)
 	source.collecting = 0
 	source.errors = nil
@@ -254,6 +257,9 @@ func (s *State) closeDashboardSource(source *dashboardSource) {
 		source.timer = nil
 	}
 	if s.modalSession == source.session.ID {
+		s.closeModal()
+	}
+	if s.modal == modalSudoSFTP && s.sudoSFTP.dashboard && s.sudoSFTP.sessionID == source.session.ID {
 		s.closeModal()
 	}
 	if source.session.conn != nil {
@@ -312,6 +318,7 @@ func (s *State) pumpDashboard() {
 				s.rememberSecret(v)
 			}
 			if v.phase == sshconn.PhaseClosed || v.phase == sshconn.PhaseFailed {
+				v.sudoCommands, v.sudoPassword = false, ""
 				s.dashboard.engine.BeginSource(id)
 				if source.cancel != nil {
 					source.cancel()
@@ -372,8 +379,9 @@ func (s *State) startDashboardCollector(id string, source *dashboardSource) {
 	// Disks and interfaces change slowly; their details keep the sidebar's
 	// five-second floor even when the sample cadence is faster, so a fast
 	// panel does not run df and interface counters every two seconds.
-	worker := startMonitorWorker(source.session.conn, nil, system, source.interval)
-	details := startMonitorDetails(source.session.conn, nil, system, max(source.interval, 5))
+	runner := commandRunnerFor(&source.session)
+	worker := startMonitorWorker(runner, nil, system, source.interval)
+	details := startMonitorDetails(runner, nil, system, max(source.interval, 5))
 	var detailResults <-chan remotestats.DetailResult
 	if details != nil {
 		detailResults = details.Results()
@@ -519,7 +527,7 @@ func (s *State) deleteDashboard() {
 		return ""
 	}})
 }
-func (s *State) dashboardEditorFor(hit ui.ID) *text.Editor {
+func (s *State) dashboardEditorFor(hit gfx.ID) *text.Editor {
 	if s.modal == modalDashboard {
 		if s.dashboard.editor.page != 0 {
 			return nil
@@ -538,7 +546,7 @@ func (s *State) dashboardEditorFor(hit ui.ID) *text.Editor {
 	}
 	return nil
 }
-func (s *State) clickDashboard(id ui.ID) bool {
+func (s *State) clickDashboard(id gfx.ID) bool {
 	d := &s.dashboard
 	if s.clickDashboardManagement(id) {
 		return true
@@ -547,6 +555,17 @@ func (s *State) clickDashboard(id ui.ID) bool {
 		switch {
 		case id == hitDashboardGroupFilter:
 			d.editor.groupOpen = !d.editor.groupOpen
+			d.editor.orderOpen = false
+		case id == hitDashboardSelectMatches && d.editor.page == 0:
+			s.toggleDashboardMatches()
+		case id == hitDashboardOrderMode && d.editor.page == 1:
+			d.editor.orderOpen = !d.editor.orderOpen
+		case id == hitDashboardOrderDismiss:
+			d.editor.orderOpen = false
+		case id.Scope() == hitDashboardOrderModes && d.editor.page == 1:
+			if mode := hostOrderMode(item(id)); mode <= hostOrderIP {
+				s.sortDashboardHosts(mode)
+			}
 		case id == hitDashboardGroupDismiss:
 			d.editor.groupOpen = false
 		case id == hitDashboardSelectedOnly:
@@ -565,6 +584,7 @@ func (s *State) clickDashboard(id ui.ID) bool {
 		case id == hitDashboardPickTab || id == hitDashboardOrderTab:
 			d.editor.order.Cancel()
 			d.editor.groupOpen = false
+			d.editor.orderOpen = false
 			d.editor.page = 0
 			if id == hitDashboardOrderTab {
 				d.editor.page = 1
@@ -574,6 +594,7 @@ func (s *State) clickDashboard(id ui.ID) bool {
 			if i := item(id); i < len(d.editor.selected) {
 				if host, ok := s.dashboardHost(d.editor.selected[i]); !ok || !dashboardHostEligible(host) {
 					d.editor.selected = slices.Delete(d.editor.selected, i, i+1)
+					d.editor.orderMode = hostOrderManual
 				}
 			}
 		case id == hitDashboardDialogSave:
@@ -583,7 +604,8 @@ func (s *State) clickDashboard(id ui.ID) bool {
 			s.showNextPrompt()
 		case id.Scope() == hitDashboardHostList:
 			h, ok := s.hostByID(uint32(item(id)))
-			if ok && h.isSSH() && h.ID != localHostID {
+			if ok && h.isSSH() && !h.mosh() && h.ID != localHostID {
+				d.editor.orderMode = hostOrderManual
 				if slices.Contains(d.editor.selected, h.CatalogID) {
 					d.editor.selected = slices.DeleteFunc(d.editor.selected, func(v string) bool { return v == h.CatalogID })
 				} else {
@@ -603,6 +625,12 @@ func (s *State) clickDashboard(id ui.ID) bool {
 	}
 	p := s.dashboardPanel()
 	switch {
+	case id.Scope() == hitDashboardSudoList && p != nil:
+		if h, ok := s.hostByID(uint32(item(id))); ok {
+			if source := d.sources[h.CatalogID]; source != nil && source.session.phase == sshconn.PhaseConnected {
+				s.toggleSudoCommands(&source.session, false)
+			}
+		}
 	case id.Scope() == hitDashboardSimpleViewList && p != nil:
 		n := item(id)
 		if h, ok := s.hostByID(uint32(n / 3)); ok {

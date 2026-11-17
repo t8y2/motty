@@ -2,7 +2,7 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 var (
@@ -10,6 +10,8 @@ var (
 	hitSnippetMenuSend    = tree.ID(snippetsHits, "snippet-menu-send")
 	hitSnippetMenuEdit    = tree.ID(snippetsHits, "snippet-menu-edit")
 	hitSnippetMenuDelete  = tree.ID(snippetsHits, "snippet-menu-delete")
+	hitSnippetMenuUp      = tree.ID(snippetsHits, "snippet-menu-up")
+	hitSnippetMenuDown    = tree.ID(snippetsHits, "snippet-menu-down")
 )
 
 // snippetMenu is the right-click menu of a row of the Snippets page: which
@@ -18,36 +20,36 @@ type snippetMenu struct {
 	open  bool
 	pick  bool // lists the terminals to send to, instead of the row's actions
 	index int
-	at    ui.Point
+	at    gfx.Point
 }
 
 // snippetMenuPointer closes an open menu on a secondary press outside it. Opening
 // it is the paint of a row (openSnippetMenuOn), where the row is declared.
-func (state *State) snippetMenuPointer(event ui.PointerEvent) (ui.EventResult, bool) {
-	if event.Kind != ui.PointerDown || event.Button == ui.PointerButtonNone || event.Button == ui.PointerButtonPrimary {
-		return ui.EventResult{}, false
+func (state *State) snippetMenuPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	if event.Kind != gfx.PointerDown || event.Button == gfx.PointerButtonNone || event.Button == gfx.PointerButtonPrimary {
+		return gfx.EventResult{}, false
 	}
 	if state.snippetMenu.open && event.Target == hitSnippetMenuDismiss {
 		state.snippetMenu.open = false
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
 // openSnippetMenuOn is called while painting a snippet row: when this paint is the
 // event pass of a secondary press on that row it selects the row and opens its
 // menu there.
-func (state *State) openSnippetMenuOn(canvas *ui.Canvas, id ui.ID, index int) {
+func (state *State) openSnippetMenuOn(canvas *gfx.Canvas, id gfx.ID, index int) {
 	event, ok := canvas.PointerOn(id)
-	if !ok || event.Kind != ui.PointerDown || event.Button != ui.PointerButtonSecondary || state.modal != modalNone || state.activeSection != sectionSnippets {
+	if !ok || event.Kind != gfx.PointerDown || event.Button != gfx.PointerButtonSecondary || state.modal != modalNone || state.activeSection != sectionSnippets {
 		return
 	}
 	state.snippets.selected = index
-	state.snippetMenu = snippetMenu{open: true, index: index, at: ui.Point{X: event.X, Y: event.Y}}
+	state.snippetMenu = snippetMenu{open: true, index: index, at: gfx.Point{X: event.X, Y: event.Y}}
 	canvas.Consume()
 }
 
-func (state *State) paintSnippetMenu(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintSnippetMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 	menu := &state.snippetMenu
 	if !menu.open {
 		return
@@ -57,7 +59,7 @@ func (state *State) paintSnippetMenu(canvas *ui.Canvas, viewport ui.Rect) {
 		return
 	}
 	m := state.messages.Tools
-	icon := func(kind uint8) ui.Icon { return lucideIcons[kind] }
+	icon := func(kind uint8) gfx.Icon { return lucideIcons[kind] }
 	var rows menuRows
 	if menu.pick {
 		for i := range state.sessions {
@@ -88,15 +90,18 @@ func (state *State) paintSnippetMenu(canvas *ui.Canvas, viewport ui.Rect) {
 // snippetActionRows is what a snippet row's menu offers.
 func (state *State) snippetActionRows(rows *menuRows) {
 	m := state.messages.Tools
-	icon := func(kind uint8) ui.Icon { return lucideIcons[kind] }
+	icon := func(kind uint8) gfx.Icon { return lucideIcons[kind] }
 	rows.add(components.ContextMenuItem{ID: hitSnippetMenuSend, Label: m.SnippetSend, Icon: icon(iconPlay)})
+	rows.separate()
+	rows.add(components.ContextMenuItem{ID: hitSnippetMenuUp, Label: m.SnippetMoveUp, Icon: icon(iconArrowUp), Disabled: state.snippetNeighbor(state.snippetMenu.index, -1) < 0})
+	rows.add(components.ContextMenuItem{ID: hitSnippetMenuDown, Label: m.SnippetMoveDown, Icon: icon(iconChevronDown), Disabled: state.snippetNeighbor(state.snippetMenu.index, 1) < 0})
 	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitSnippetMenuEdit, Label: m.SnippetEdit, Icon: icon(iconPencil)})
 	rows.add(components.ContextMenuItem{ID: hitSnippetMenuDelete, Label: m.SnippetDelete, Icon: icon(iconTrash), Variant: components.ContextMenuItemDestructive})
 }
 
 // clickSnippetMenu runs a menu choice. A press anywhere else only closes the menu.
-func (state *State) clickSnippetMenu(id ui.ID) bool {
+func (state *State) clickSnippetMenu(id gfx.ID) bool {
 	if !state.snippetMenu.open {
 		return false
 	}
@@ -114,8 +119,12 @@ func (state *State) clickSnippetMenu(id ui.ID) bool {
 		state.sendSnippetFromPage(index, menu.at)
 	case hitSnippetMenuEdit:
 		state.openSnippetDialog(index)
+	case hitSnippetMenuUp:
+		state.moveSnippet(index, -1)
+	case hitSnippetMenuDown:
+		state.moveSnippet(index, 1)
 	case hitSnippetMenuDelete:
-		state.deleteSnippet(index)
+		state.openSnippetDelete(index)
 	}
 	return true
 }

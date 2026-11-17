@@ -15,14 +15,36 @@ const anthropicVersion = "2023-06-01"
 
 type anthropic struct {
 	base
-	baseErr error
+	baseErr        error
+	modelsEndpoint string
+	modelsErr      error
 }
 
 // NewAnthropic returns a Provider speaking the Anthropic Messages API. An
 // empty BaseURL selects https://api.anthropic.com.
 func NewAnthropic(cfg Config) Provider {
 	u, err := anthropicBase(cfg.BaseURL)
-	return &anthropic{base: newBase(cfg, u), baseErr: err}
+	p := &anthropic{base: newBase(cfg, u), baseErr: err}
+	if strings.TrimSpace(cfg.ModelsURL) != "" {
+		p.modelsEndpoint, p.modelsErr = anthropicModelsBase(cfg.ModelsURL)
+	}
+	return p
+}
+
+// anthropicModelsBase normalizes a models URL: trailing slashes, /models, and
+// /v1 are dropped so /v1/models can be cleanly appended.
+func anthropicModelsBase(raw string) (string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return "", nil
+	}
+	u, err := normalizeBase(raw)
+	if err != nil {
+		return "", err
+	}
+	u.Path, _ = cutSuffixFold(u.Path, "/models")
+	u.Path, _ = cutSuffixFold(u.Path, "/v1")
+	u.Path = strings.TrimRight(u.Path, "/")
+	return u.String(), nil
 }
 
 // anthropicBase returns the base without any /v1 or /v1/messages suffix;
@@ -64,6 +86,11 @@ type anBlock struct {
 	ToolUseID string          `json:"tool_use_id,omitempty"`
 	Content   string          `json:"content,omitempty"`
 	Source    *anImage        `json:"source,omitempty"`
+	// Thinking, Signature and Data make up thinking and redacted_thinking
+	// blocks, which go back to the API exactly as it sent them.
+	Thinking  string `json:"thinking,omitempty"`
+	Signature string `json:"signature,omitempty"`
+	Data      string `json:"data,omitempty"`
 	// CacheControl marks the end of a cacheable prefix.
 	CacheControl *anCacheControl `json:"cache_control,omitempty"`
 }
@@ -95,6 +122,11 @@ type anTool struct {
 	CacheControl *anCacheControl `json:"cache_control,omitempty"`
 }
 
+type anThinking struct {
+	Type         string `json:"type"`
+	BudgetTokens int    `json:"budget_tokens,omitempty"`
+}
+
 type anRequest struct {
 	Model       string      `json:"model"`
 	MaxTokens   int         `json:"max_tokens"`
@@ -103,9 +135,34 @@ type anRequest struct {
 	Tools       []anTool    `json:"tools,omitempty"`
 	Stream      bool        `json:"stream"`
 	Temperature *float64    `json:"temperature,omitempty"`
+	Thinking    *anThinking `json:"thinking,omitempty"`
 }
 
-const defaultAnthropicMaxTokens = 4096
+const (
+	defaultAnthropicMaxTokens  = 4096
+	minAnthropicThinkingBudget = 1024
+)
+
+// anthropicThinkingBudget is the thinking token budget of an effort level; zero
+// means the request does not think. "default" leaves the choice to the model,
+// which for Anthropic means no thinking.
+func anthropicThinkingBudget(effort string) int {
+	switch effort {
+	case "minimal":
+		return 1024
+	case "low":
+		return 2048
+	case "medium":
+		return 4096
+	case "high":
+		return 8192
+	case "xhigh":
+		return 16384
+	case "max":
+		return 32768
+	}
+	return 0
+}
 
 func (p *anthropic) buildBody(req Request) ([]byte, error) {
 	if err := validateRequest(req); err != nil {
@@ -114,6 +171,22 @@ func (p *anthropic) buildBody(req Request) ([]byte, error) {
 	out := anRequest{Model: req.Model, MaxTokens: req.MaxTokens, Stream: true, Temperature: req.Temperature}
 	if out.MaxTokens <= 0 {
 		out.MaxTokens = defaultAnthropicMaxTokens
+	}
+
+	if budget := anthropicThinkingBudget(req.ReasoningEffort); budget > 0 {
+		switch {
+		case req.MaxTokens <= 0:
+			// No limit was asked for, so make room for the answer after the thinking.
+			out.MaxTokens = budget + defaultAnthropicMaxTokens
+		case budget >= req.MaxTokens:
+			// The caller's limit stands: the budget must stay below it.
+			budget = req.MaxTokens - 1
+		}
+		if budget >= minAnthropicThinkingBudget {
+			out.Thinking = &anThinking{Type: "enabled", BudgetTokens: budget}
+			// Thinking allows only the default temperature.
+			out.Temperature = nil
+		}
 	}
 	system := []string{}
 	if req.System != "" {
@@ -150,6 +223,17 @@ func (p *anthropic) buildBody(req Request) ([]byte, error) {
 			addUser(anBlock{Type: "tool_result", ToolUseID: m.ToolCallID, Content: m.Text})
 		case RoleAssistant:
 			var blocks []anBlock
+			// Thinking goes first, and only when this request thinks: the API
+			// refuses a tool turn that continues without its blocks.
+			if out.Thinking != nil {
+				for _, t := range m.Thinking {
+					if t.Redacted {
+						blocks = append(blocks, anBlock{Type: "redacted_thinking", Data: t.Data})
+					} else {
+						blocks = append(blocks, anBlock{Type: "thinking", Thinking: t.Text, Signature: t.Signature})
+					}
+				}
+			}
 			if m.Text != "" {
 				blocks = append(blocks, anBlock{Type: "text", Text: m.Text})
 			}
@@ -221,7 +305,13 @@ func (p *anthropic) Stream(ctx context.Context, req Request) (<-chan Event, erro
 }
 
 func (p *anthropic) Models(ctx context.Context) ([]string, error) {
-	if p.baseErr != nil {
+	if p.modelsErr != nil {
+		return nil, p.modelsErr
+	}
+	endpoint := p.endpoint
+	if p.modelsEndpoint != "" {
+		endpoint = p.modelsEndpoint
+	} else if p.baseErr != nil {
 		return nil, p.baseErr
 	}
 	var ids []string
@@ -231,7 +321,7 @@ func (p *anthropic) Models(ctx context.Context) ([]string, error) {
 		if after != "" {
 			q.Set("after_id", after)
 		}
-		resp, err := p.do(ctx, http.MethodGet, p.endpoint+"/v1/models?"+q.Encode(), nil, func(r *http.Request) {
+		resp, err := p.do(ctx, http.MethodGet, endpoint+"/v1/models?"+q.Encode(), nil, func(r *http.Request) {
 			r.Header.Set("Accept", "application/json")
 			p.headers(r)
 		})
@@ -308,6 +398,11 @@ type anBlockState struct {
 	id   string
 	name string
 	args strings.Builder
+	// think is set for thinking and redacted_thinking blocks, which are kept
+	// whole for replay.
+	think    bool
+	thinking ThinkingBlock
+	text     strings.Builder // the thinking text, which the block carries whole
 }
 
 type anEvent struct {
@@ -321,11 +416,13 @@ type anEvent struct {
 		ID   string `json:"id"`
 		Name string `json:"name"`
 		Text string `json:"text"`
+		Data string `json:"data"`
 	} `json:"content_block"`
 	Delta struct {
 		Type        string `json:"type"`
 		Text        string `json:"text"`
 		Thinking    string `json:"thinking"`
+		Signature   string `json:"signature"`
 		PartialJSON string `json:"partial_json"`
 		StopReason  string `json:"stop_reason"`
 	} `json:"delta"`
@@ -349,6 +446,13 @@ func (h *anHandler) event(ev sseEvent, em *emitter) (bool, error) {
 			h.blocks = map[int]*anBlockState{}
 		}
 		b := &anBlockState{tool: e.ContentBlock.Type == "tool_use", id: e.ContentBlock.ID, name: e.ContentBlock.Name}
+		switch e.ContentBlock.Type {
+		case "thinking":
+			b.think = true
+		case "redacted_thinking":
+			b.think = true
+			b.thinking = ThinkingBlock{Redacted: true, Data: e.ContentBlock.Data}
+		}
 		h.blocks[e.Index] = b
 		if e.ContentBlock.Type == "text" && e.ContentBlock.Text != "" {
 			return false, em.send(Event{Kind: EventText, Text: e.ContentBlock.Text})
@@ -361,7 +465,14 @@ func (h *anHandler) event(ev sseEvent, em *emitter) (bool, error) {
 			}
 		case "thinking_delta":
 			if e.Delta.Thinking != "" {
+				if b := h.blocks[e.Index]; b != nil {
+					b.text.WriteString(e.Delta.Thinking)
+				}
 				return false, em.send(Event{Kind: EventReasoning, Text: e.Delta.Thinking})
+			}
+		case "signature_delta":
+			if b := h.blocks[e.Index]; b != nil {
+				b.thinking.Signature = e.Delta.Signature
 			}
 		case "input_json_delta":
 			if b := h.blocks[e.Index]; b != nil {
@@ -371,6 +482,13 @@ func (h *anHandler) event(ev sseEvent, em *emitter) (bool, error) {
 	case "content_block_stop":
 		b := h.blocks[e.Index]
 		delete(h.blocks, e.Index)
+		if b != nil && b.think {
+			block := b.thinking
+			if !block.Redacted {
+				block.Text = b.text.String()
+			}
+			return false, em.send(Event{Kind: EventThinking, Thinking: &block})
+		}
 		if b == nil || !b.tool {
 			return false, nil
 		}

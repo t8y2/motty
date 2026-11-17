@@ -66,6 +66,7 @@ func ChineseVariant(tag string) Language {
 // Messages is the complete set of user-visible workbench strings. Adding a
 // language means adding one field initialization, not touching call sites.
 type Messages struct {
+	RemoteLogs     RemoteLogMessages
 	ActionFeedback ActionFeedbackMessages
 	Monitor        MonitorMessages
 	Dashboard      DashboardMessages
@@ -87,7 +88,12 @@ type Messages struct {
 	// TerminalInput holds the terminal command and character-handling notices.
 	TerminalInput TerminalInputMessages
 	// Autofill holds the autofill rules' texts; see autofill.go.
-	Autofill AutofillMessages
+	Autofill       AutofillMessages
+	RuleManagement RuleManagementMessages
+	// Credentials holds the saved passwords' texts; see credentials.go.
+	Credentials CredentialMessages
+	// HostTags holds the host tag manager's texts; see host_tags.go.
+	HostTags HostTagMessages
 	// History holds the command history's texts; see history.go.
 	History HistoryMessages
 	// SessionLogs holds the local session-log page's texts; see session_logs.go.
@@ -134,6 +140,9 @@ type Messages struct {
 	WorkspaceSingleHost                   string
 	WorkspaceSingleColumn                 string
 	WorkspaceColumnsFmt                   string
+	WorkspaceLayoutMainRight              string
+	WorkspaceLayoutMainBottom             string
+	WorkspaceLayoutTabs                   string
 	WorkspaceTemplateHostCountFmt         string
 	WorkspaceTemplateMissingFmt           string
 	WorkspaceTemplateMissingListFmt       string
@@ -146,9 +155,17 @@ type Messages struct {
 	WorkspaceDraftTitleFixed              string
 	WorkspaceDraftTitleEdit               string
 	WorkspaceDraftDescription             string
+	WorkspaceCommandField                 string
+	WorkspaceCommandOrderHint             string
+	WorkspaceCommandSave                  string
+	WorkspaceCommandPending               string
+	WorkspaceCommandRun                   string
+	WorkspaceCommandCancel                string
+	WorkspaceCommandInvalid               string
 	WorkspaceDraftEditDescription         string
 	WorkspaceDraftName                    string
 	WorkspaceDraftNamePlaceholder         string
+	WorkspaceDraftLocalGroup              string
 	WorkspaceDraftHosts                   string
 	WorkspaceDraftHostSearch              string
 	WorkspaceDraftSelectedFmt             string
@@ -199,25 +216,9 @@ type Messages struct {
 	WorkspaceHeaderEmptyFmt               string
 	WorkspaceHeaderLayout                 string
 
-	// Debug workspace: a preview surface for the framework's components.
-	DebugTitle                  string
-	DebugDescription            string
-	DebugComponents             string
-	DebugButtonGroupTitle       string
-	DebugButtonGroupDescription string
-	DebugButtonGroupChoice      string
-	DebugAlignLeft              string
-	DebugAlignCenter            string
-	DebugAlignRight             string
-	DebugSelectTitle            string
-	DebugSelectDescription      string
-	DebugSelectChoice           string
-	DebugEnvironmentDevelopment string
-	DebugEnvironmentStaging     string
-	DebugEnvironmentProduction  string
-	DebugColorSwatchTitle       string
-	DebugColorSwatchDescription string
-	DebugColorSwatchChoice      string
+	// Debug workspace: an editor surface for trying the framework's code editor.
+	DebugTitle       string
+	DebugDescription string
 
 	// What the user is told when the saved state could not be loaded as it was.
 	// The Fmt strings take the file names or versions named in persist.go.
@@ -238,8 +239,9 @@ type Messages struct {
 	DevelopmentImportFailedFmt           string
 	DevelopmentImportNotEmpty            string
 
-	// The status-area icon and the panel beside it. TrayTooltipFmt takes the
-	// number of open sessions.
+	// The status-area icon and the panel beside it. TrayTooltipEmpty and
+	// TrayTooltipFmt take the version; the format then takes the number of open
+	// sessions.
 	TrayTitle         string
 	TrayEmpty         string
 	TrayQuit          string
@@ -248,6 +250,11 @@ type Messages struct {
 	TrayCheckUpdates  string
 	TrayTooltipFmt    string
 	TrayTooltipEmpty  string
+	// TrayHintTitle and TrayHintBody are the notification shown the first time
+	// closing a window leaves the application running in the status area, which
+	// is otherwise indistinguishable from quitting.
+	TrayHintTitle string
+	TrayHintBody  string
 
 	// Settings workspace.
 	SettingsTitle                          string
@@ -262,13 +269,8 @@ type Messages struct {
 	SettingsAppearanceLight                string
 	SettingsTextSize                       string
 	SettingsTextSizeDescription            string
-	SettingsTextSizeSmall                  string
-	SettingsTextSizeRegular                string
-	SettingsTextSizeLarge                  string
 	SettingsInterfaceFont                  string
-	SettingsInterfaceFontDescription       string
 	SettingsInterfaceFontDefault           string
-	SettingsInterfaceFontCurrentFmt        string
 	SettingsInterfaceFontUnsupportedFmt    string
 	SettingsOutputAlerts                   string
 	SettingsOutputAlertsDescription        string
@@ -276,14 +278,23 @@ type Messages struct {
 	SettingsTabOrientationDescription      string
 	SettingsTabsHorizontal                 string
 	SettingsTabsVertical                   string
+	SettingsTabNumbers                     string
+	SettingsTabNumbersDescription          string
+	SettingsTabNumberKeys                  string
+	SettingsTabNumberKeysDescription       string
 	SettingsTabsAutoHide                   string
 	SettingsTabsAutoHideDescription        string
 	SettingsTabsGrouping                   string
 	SettingsTabsGroupingDescription        string
+	SettingsSidebar                        string
+	SettingsSidebarHint                    string
+	SettingsSidebarShownFmt                string
+	SettingsSidebarShowAll                 string
 	VerticalTabGroupCountFmt               string
 	VerticalTabsPin                        string
 	VerticalTabsAutoHide                   string
 	VerticalTabsScrollbar                  string
+	TabStripScrollbar                      string
 	SettingsNetworkProxy                   string
 	SettingsNetworkProxyDescription        string
 	SettingsNetworkProxySystem             string
@@ -304,6 +315,8 @@ type Messages struct {
 	SettingsLocalShellDescription          string
 	SettingsLocalShellEmpty                string
 	LocalShellDefault                      string
+	ShellEyeHide                           string
+	ShellEyeShow                           string
 	LocalShellChoose                       string
 	SettingsTerminalFontSize               string
 	SettingsTerminalFontSizeDescription    string
@@ -349,6 +362,7 @@ type Messages struct {
 	VaultSavedFmt                          string
 	VaultSaveFailedFmt                     string
 	VaultKeyLost                           string
+	VaultTooLarge                          string
 	VaultUnavailable                       string
 	VaultCorruptFmt                        string
 	VaultCleared                           string
@@ -377,12 +391,20 @@ type Messages struct {
 	SettingsRestoreOff                     string
 	SettingsRestoreActive                  string
 	SettingsRestoreAll                     string
+	SettingsLocalStart                     string
+	SettingsLocalStartDescription          string
+	SettingsLocalStartRemember             string
+	SettingsLocalStartHome                 string
 	SessionRestoreNeedsYou                 string
 	TipSFTPClose                           string
 	TipFiles                               string
 	TipFilesLocal                          string
 	SFTPInsertPath                         string
 	MenuCopy                               string
+	MenuFile                               string
+	MenuEdit                               string
+	MenuView                               string
+	CopyHostAddress                        string
 	CopyAddressAndPort                     string
 	CopyConnectionName                     string
 	MenuPaste                              string
@@ -410,6 +432,7 @@ type Messages struct {
 	ShortcutsCaptureDescription          string
 	ShortcutsConflictFmt                 string
 	ShortcutsInvalid                     string
+	ShortcutsAcceptInvalid               string
 	ShortcutsTabNumberInvalid            string
 	ShortcutCommandPalette               string
 	ShortcutFind                         string
@@ -438,6 +461,7 @@ type Messages struct {
 	DeleteHost       string
 	MoveHostGroup    string
 	HostGroupActions HostGroupMessages
+	HostCatalog      HostCatalogMessages
 	ExportHosts      string
 	ImportCatalog    string
 	ImportMenu       string
@@ -468,34 +492,40 @@ type Messages struct {
 	SSHConfigWarningProxyCommandFmt string
 
 	// New Host dialog.
-	DialogTitle                 string
-	EditHostTitle               string
-	CopyHostTitle               string
-	FieldLabel                  string
-	FieldLabelPlaceholder       string
-	FieldAddress                string
-	FieldAddressPlaceholder     string
-	FieldUser                   string
-	FieldUserPlaceholder        string
-	FieldPassword               string
-	FieldPasswordHint           string
-	FieldPasswordKeepHint       string
-	FieldPasswordCopyHint       string
-	FieldAuthentication         string
-	AuthAutomatic               string
-	AuthPassword                string
-	AuthPrivateKey              string
-	AuthAgent                   string
-	AuthKerberos                string
-	FieldIdentity               string
-	AuthAllKeys                 string
-	AuthKeyUnavailable          string
-	AuthImportKey               string
-	FieldVNCPassword            string
-	HostPasswordShared          string
-	HostPasswordNotCarried      string
-	FieldGroup                  string
-	FieldGroupPlaceholder       string
+	DialogTitle             string
+	EditHostTitle           string
+	CopyHostTitle           string
+	FieldLabel              string
+	FieldLabelPlaceholder   string
+	FieldAddress            string
+	FieldAddressPlaceholder string
+	FieldUser               string
+	FieldUserPlaceholder    string
+	FieldPassword           string
+	FieldPasswordHint       string
+	FieldPasswordKeepHint   string
+	FieldPasswordCopyHint   string
+	FieldAuthentication     string
+	AuthAutomatic           string
+	AuthPassword            string
+	AuthPrivateKey          string
+	AuthAgent               string
+	AuthKerberos            string
+	FieldIdentity           string
+	AuthAllKeys             string
+	AuthKeyUnavailable      string
+	AuthImportKey           string
+	FieldVNCPassword        string
+	HostPasswordShared      string
+	HostPasswordNotCarried  string
+	FieldGroup              string
+	FieldGroupPlaceholder   string
+	// Encoding is the remote charset of a connection's shell; see the searchable
+	// picker in the New/Edit Host dialog.
+	FieldEncoding               string
+	FieldEncodingPlaceholder    string
+	HostEncodingsEmpty          string
+	EncodingUTF8Default         string
 	FieldPort                   string
 	FieldTags                   string
 	FieldTagsPlaceholder        string
@@ -505,6 +535,8 @@ type Messages struct {
 	ErrHostGroupInvalid         string
 	HostTagsCreatePrefix        string
 	FieldIcon                   string
+	FieldIconPlaceholder        string
+	IconsEmpty                  string
 	FieldColor                  string
 	FieldColorCustom            string
 	ColorPickerChoose           string
@@ -520,14 +552,19 @@ type Messages struct {
 	ColorRed                    string
 	ColorBlue                   string
 	ColorPurple                 string
+	ColorPink                   string
+	ColorTeal                   string
 	ErrHostColorInvalid         string
 	IconAuto                    string
 	IconServer                  string
 	IconTerminal                string
+	IconSerial                  string
 	IconGlobe                   string
 	IconKey                     string
 	IconDesktop                 string
 	ErrLabelRequired            string
+	ErrAddressRequired          string
+	ErrDeviceRequired           string
 	ErrGroupRequired            string
 	ErrAddressTaken             string
 	ErrPortInvalid              string
@@ -606,6 +643,12 @@ type Messages struct {
 	MenuRenameTerminal     string
 	MenuLockTab            string
 	MenuUnlockTab          string
+
+	MenuOpenSSHBrowser    string
+	MenuCloseSSHBrowser   string
+	SSHBrowserNotFound    string
+	SSHBrowserStartFailed string
+
 	// TabLockedHint is the tab's accessible description while it is protected.
 	TabLockedHint                 string
 	CloseLockedTabTitle           string
@@ -625,7 +668,6 @@ type Messages struct {
 	DisconnectTitleFmt            string
 	DisconnectDescription         string
 	DisconnectConfirm             string
-	RenameTabTitle                string
 	RenameTerminalTitle           string
 	RenameTerminalPlaceholder     string
 	RenameTabField                string
@@ -636,17 +678,18 @@ type Messages struct {
 	NewTabPickerPlaceholder       string
 	NewTabPickerEmpty             string
 
-	NewTabSortDefault    string
-	NewTabSortRecent     string
-	NewTabNeverConnected string
-	NewTabJustNow        string
-	NewTabSecondsAgo     string
-	NewTabMinutesAgo     string
-	NewTabHoursAgo       string
-	NewTabDaysAgo        string
-	NewTabWeeksAgo       string
-	NewTabMonthsAgo      string
-	NewTabYearsAgo       string
+	NewTabSortDefault          string
+	NewTabWorkspacePlaceholder string
+	NewTabSortRecent           string
+	NewTabNeverConnected       string
+	NewTabJustNow              string
+	NewTabSecondsAgo           string
+	NewTabMinutesAgo           string
+	NewTabHoursAgo             string
+	NewTabDaysAgo              string
+	NewTabWeeksAgo             string
+	NewTabMonthsAgo            string
+	NewTabYearsAgo             string
 
 	LabelCloseTab    string
 	LabelTerminalFmt string
@@ -680,26 +723,41 @@ type Messages struct {
 	SessionRestoredBody   string
 	SessionReconnect      string
 	SessionReconnectHint  string
-	ConnClosed            string
-	ConnCanceled          string
-	ConnRejected          string
-	ConnFailedFmt         string
-	ConnAuthFailed        string
-	ConnSkippedKeyFmt     string
-	ConnChangedTitle      string
-	ConnChangedBodyFmt    string
-	ConnChangedTrustedFmt string
-	ConnChangedPresented  string
-	ConnChangedHintFmt    string
+	// SessionNoShellInput is shown when someone types into a tab whose shell is
+	// gone: the keys go nowhere, so saying so is what keeps the keyboard from
+	// looking broken.
+	SessionNoShellInput     string
+	ConnClosed              string
+	ConnCanceled            string
+	ConnRejected            string
+	ConnFailedFmt           string
+	ConnAuthFailed          string
+	ConnTooManyAuthAttempts string
+	ConnSkippedKeyFmt       string
+	ConnChangedTitle        string
+	ConnChangedBodyFmt      string
+	ConnChangedTrustedFmt   string
+	ConnChangedPresented    string
+	ConnChangedHintFmt      string
+	// ConnProbeRefused explains a close that the client's own optional probes
+	// caused: the server permits only an interactive session, so the host was
+	// kept to one and the retry can connect.
+	ConnProbeRefused string
 
 	// Host key and password prompts.
 	HostKeyTitle                   string
 	HostKeyDescriptionFmt          string
 	HostKeyType                    string
 	HostKeyFingerprint             string
+	HostKeyChangedTitle            string
+	HostKeyChangedDescriptionFmt   string
+	HostKeySavedFingerprint        string
+	HostKeyUpdateAndContinue       string
 	HostKeyTrust                   string
 	HostKeyOnce                    string
 	HostKeyReject                  string
+	HostKeyForget                  string
+	HostKeyForgetHint              string
 	PasswordTitle                  string
 	PasswordDescription            string
 	PasswordLabel                  string
@@ -715,12 +773,15 @@ type Messages struct {
 	ClipboardAlwaysAllow           string
 
 	// Status bar.
-	StatusReadyIdle    string
-	StatusSelected     string // prefix: host name follows
-	StatusOpened       string // prefix: session title follows
-	StatusReused       string // prefix: session title follows
-	StatusHostAdded    string
-	StatusEditCanceled string
+	StatusReadyIdle       string
+	StatusSelected        string // prefix: host name follows
+	StatusOpened          string // prefix: session title follows
+	StatusReused          string // prefix: session title follows
+	StatusHostAdded       string
+	HostSaveFailedFmt     string
+	HostSaveMissing       string
+	HostEditSaveFailedFmt string
+	StatusEditCanceled    string
 
 	// OpenSSH known_hosts management.
 	KnownHostsTitle                 string
@@ -771,6 +832,7 @@ type Messages struct {
 	KeyEmpty                    string
 	KeyEmptySub                 string
 	KeyCountFmt                 string
+	KeyListScroll               string
 	KeyUnavailable              string
 	KeyUnencrypted              string
 	KeyPassphraseProtected      string
@@ -799,6 +861,15 @@ type Messages struct {
 	KeyPassphraseSavedFmt       string
 	KeyPassphraseRemovedFmt     string
 	KeyPassphraseHostHint       string
+	KeySecurityKey              string
+	SecurityKeyPromptTitle      string
+	SecurityKeyPromptLabel      string
+	SecurityKeyPromptSubmit     string
+	SecurityKeyPromptRequired   string
+	SecurityKeyCancelled        string
+	SecurityKeyWaiting          string
+	SecurityKeyAgentRequired    string
+	SecurityKeyAgentFailedFmt   string
 	VaultForgetKeysFmt          string
 	KeyAdd                      string
 	KeyPaste                    string
@@ -845,6 +916,7 @@ type Messages struct {
 	ForwardEmpty                  string
 	ForwardEmptySub               string
 	ForwardCountFmt               string
+	ForwardListScroll             string
 	ForwardStopped                string
 	ForwardStoppedError           string
 	ForwardWaiting                string
@@ -879,6 +951,13 @@ type Messages struct {
 	ForwardFieldDestinationPort   string
 	ForwardFieldResume            string
 	ForwardResumeHelp             string
+	ForwardFieldViaShell          string
+	ForwardViaShellHelp           string
+	ForwardFieldRelay             string
+	ForwardRelayPlaceholder       string
+	ForwardRefusedHint            string
+	ForwardRelayRefused           string
+	ErrForwardRelayFmt            string
 	ForwardDestinationPlaceholder string
 	ForwardLocalDestinationHint   string
 	ForwardRemoteListenerFmt      string
@@ -898,79 +977,131 @@ type Messages struct {
 	ErrForwardHostMissing         string
 
 	// SSH jump-host routing.
-	ProxyTitle                 string
-	ProxyDescription           string
-	ProxyAdd                   string
-	ProxyEdit                  string
-	ProxyStart                 string
-	ProxyStop                  string
-	ProxyRemove                string
-	ProxyColumnTarget          string
-	ProxyColumnJump            string
-	ProxyColumnRoute           string
-	ProxyColumnStatus          string
-	ProxyRunning               string
-	ProxyStopped               string
-	ProxyEmpty                 string
-	ProxyEmptySub              string
-	ProxyCountFmt              string
-	ProxySelected              string
-	ProxyAdded                 string
-	ProxyStartedStatus         string
-	ProxyStoppedStatus         string
-	ProxyRemoved               string
-	ProxyDialogTitle           string
-	ProxyEditDialogTitle       string
-	ProxyFieldTarget           string
-	ProxyFieldJump             string
-	ProxyCreate                string
-	ProxyRouteSave             string
-	ProxyUpdated               string
-	ErrProxyHostsRequired      string
-	ErrProxyTargetRequired     string
-	ErrProxyJumpRequired       string
-	ErrProxySameHost           string
-	ErrProxyCycle              string
-	ErrProxyTargetTaken        string
-	ErrProxyEditMissing        string
-	ProxyFieldViaShell         string
-	ProxyViaShellHelp          string
-	ProxyFieldRelay            string
-	ProxyRelayPlaceholder      string
-	ProxyRelayPreludeFmt       string
-	ProxyRelayNoPrelude        string
-	ProxyViaShellTag           string
-	ErrProxyRelay              string
-	ConnDetailConnectingViaFmt string
+	ProxyTitle                       string
+	ProxyDescription                 string
+	ProxyAdd                         string
+	ProxyEdit                        string
+	ProxyStart                       string
+	ProxyStop                        string
+	ProxyRemove                      string
+	ProxyColumnTarget                string
+	ProxyColumnJump                  string
+	ProxyColumnRoute                 string
+	ProxyColumnStatus                string
+	ProxyRunning                     string
+	ProxyStopped                     string
+	ProxyEmpty                       string
+	ProxyEmptySub                    string
+	ProxyCountFmt                    string
+	ProxyListScroll                  string
+	ProxySelected                    string
+	ProxyAdded                       string
+	ProxyStartedStatus               string
+	ProxyStoppedStatus               string
+	ProxyRemoved                     string
+	ProxyDialogTitle                 string
+	ProxyEditDialogTitle             string
+	ProxyFieldTarget                 string
+	ProxyFieldJump                   string
+	ProxyCreate                      string
+	ProxyRouteSave                   string
+	ProxyUpdated                     string
+	ErrProxyHostsRequired            string
+	ErrProxyTargetRequired           string
+	ErrProxyJumpRequired             string
+	ErrProxySameHost                 string
+	ErrProxyCycle                    string
+	ErrProxyTargetTaken              string
+	ErrProxyEditMissing              string
+	ProxyFieldViaShell               string
+	ProxyViaShellHelp                string
+	ProxyFieldRelay                  string
+	ProxyRelayPlaceholder            string
+	ProxyRelayPreludeFmt             string
+	ProxyRelayNoPrelude              string
+	ProxyViaShellTag                 string
+	ErrProxyRelay                    string
+	ProxyBatchAssociate              string
+	ProxyBatchAssociateTitle         string
+	ProxyBatchSelectPlaceholder      string
+	ProxyBatchCheckAll               string
+	ProxyBatchUncheckAll             string
+	ProxyBatchOverwrite              string
+	ProxyBatchAssociatedCountFmt     string
+	ProxyBatchUnbind                 string
+	ProxyBatchUnboundCountFmt        string
+	ProxyHubDevicesCountFmt          string
+	ProxyHubToggleAll                string
+	ProxyHubUnbindAll                string
+	HostMenuSetJump                  string
+	ProxyHubSelectJumpPrompt         string
+	ProxyDeleteConfirmTitle          string
+	ProxyDeleteConfirmPromptFmt      string
+	ProxyBatchDeleteConfirmTitle     string
+	ProxyBatchDeleteConfirmPromptFmt string
+	ProxyBatchSelectedCountFmt       string
+	ProxyBatchDelete                 string
+	ProxyBatchStartAll               string
+	ProxyBatchStopAll                string
+	ProxyBatchClearSelection         string
+	ProxyActionEdit                  string
+	ProxyActionDelete                string
+	ProxyColumnAction                string
+	ConnDetailConnectingViaFmt       string
+	// Host pickers shared by the jump-route and port-forwarding dialogs: the
+	// placeholder of the search field and the row shown when nothing matches.
+	HostPickerSearch    string
+	HostPickerNoMatches string
 
 	// SFTP remote-file page.
-	SFTPFiles                   string
-	SFTPUp                      string
-	SFTPRefresh                 string
-	SFTPDownload                string
-	SFTPUpload                  string
-	SFTPUploadDirectory         string
-	SFTPNewDirectory            string
-	SFTPOpen                    string
-	SFTPRename                  string
-	SFTPMove                    string
-	SFTPDelete                  string
-	SFTPPermissions             string
-	SFTPCancelTransfer          string
-	SFTPLoading                 string
-	SFTPUnavailable             string
-	SFTPCanceling               string
-	SFTPCanceled                string
-	SFTPSaveTitle               string
-	SFTPSaveCanceled            string
-	SFTPEmpty                   string
-	SFTPErrorFmt                string
+	SFTPFiles            string
+	SFTPUp               string
+	SFTPRefresh          string
+	SFTPDownload         string
+	SFTPUpload           string
+	SFTPUploadDirectory  string
+	SFTPNewDirectory     string
+	SFTPSudoEnable       string
+	SFTPSudoDisable      string
+	SFTPModeToggle       string
+	SFTPSudoHint         string
+	SFTPSudoPassword     string
+	SFTPSudoBusy         string
+	SudoCommandsEnable   string
+	SudoCommandsDisable  string
+	SudoCommandsHint     string
+	DashboardSudoEnable  string
+	DashboardSudoDisable string
+	DashboardSudoHint    string
+	SFTPOpen             string
+	SFTPRename           string
+	SFTPMove             string
+	SFTPDelete           string
+	SFTPPermissions      string
+	SFTPCancelTransfer   string
+	SFTPLoading          string
+	SFTPUnavailable      string
+	SFTPCanceling        string
+	SFTPCanceled         string
+	SFTPSaveTitle        string
+	SFTPSaveCanceled     string
+	SFTPEmpty            string
+	SFTPErrorFmt         string
+	// SFTPDedicatedConnecting is the panel's status while the connection it
+	// opens for itself because the session's transport refused another channel
+	// is being made. SFTPDedicatedFailedFmt is why that connection did not come
+	// up, and SFTPDedicatedCanceled says the user stopped it.
+	SFTPDedicatedConnecting     string
+	SFTPDedicatedFailedFmt      string
+	SFTPDedicatedCanceled       string
 	SFTPItemsFmt                string
 	SCPItemsFmt                 string
 	SFTPDownloadedFmt           string
 	SFTPUploadTitle             string
 	SFTPUploadCanceled          string
 	SFTPUploadedFmt             string
+	SFTPCopiedFmt               string
+	SFTPCopiedCountFmt          string
 	SFTPUploadDirectoryTitle    string
 	SFTPDownloadDirectoryTitle  string
 	SFTPTransferQueue           string
@@ -986,6 +1117,8 @@ type Messages struct {
 	SFTPDirectoryName           string
 	SFTPCreateDirectory         string
 	SFTPErrDirectoryRequired    string
+	SFTPErrDirectoryExists      string
+	SFTPErrPermissionDenied     string
 	SFTPCreatingDirectoryFmt    string
 	SFTPDirectoryCreatedFmt     string
 	SFTPRenameTitle             string
@@ -1006,8 +1139,13 @@ type Messages struct {
 	SFTPErrMoveInside           string
 	SFTPMovingFmt               string
 	SFTPMovedFmt                string
+	SFTPMovingCountFmt          string
+	SFTPMovedCountFmt           string
 	SFTPDeleteFileTitle         string
 	SFTPDeleteDirectoryTitle    string
+	SFTPDeleteSelectionTitle    string
+	SFTPDeleteSelectionFmt      string
+	SFTPDeleteSelectionPartial  string
 	SFTPDeleteDescriptionFmt    string
 	// SFTPDeleteFolderContentsFmt says a folder goes with everything inside it:
 	// the panel deletes a folder's contents too, not only an empty folder.
@@ -1018,6 +1156,7 @@ type Messages struct {
 	SFTPDeleteConfirm           string
 	SFTPDeletingFmt             string
 	SFTPDeletedFmt              string
+	SFTPDeletedCountFmt         string
 	SFTPPermissionsTitle        string
 	SFTPPermissionsDescription  string
 	SFTPPermissionsMode         string
@@ -1031,6 +1170,14 @@ type Messages struct {
 	SFTPErrModeInvalid          string
 	SFTPChangingPermissionsFmt  string
 	SFTPPermissionsChangedFmt   string
+	SFTPOwnership               string
+	SFTPOwnershipTitle          string
+	SFTPOwnershipDescription    string
+	SFTPOwnershipNoMatches      string
+	SFTPErrOwnershipRequired    string
+	SFTPErrOwnershipInvalid     string
+	SFTPChangingOwnershipFmt    string
+	SFTPOwnershipChangedFmt     string
 	SFTPEditOpeningFmt          string
 	SFTPEditBack                string
 	SFTPEditSave                string
@@ -1065,6 +1212,7 @@ type Messages struct {
 	TerminalFindClose        string
 	TerminalFindNoMatches    string
 	TerminalFindCountFmt     string
+	FindSettings             TerminalFindSettingsMessages
 	TerminalFindTruncatedFmt string
 
 	// The connection page shown until a shell speaks: one row per stage, each
@@ -1115,6 +1263,9 @@ func For(language Language) Messages {
 		messages.AIPanel, messages.AISettings, messages.Tools = chineseAIPanel, chineseAISettings, chineseTools
 		messages.Toolbars = chineseToolbars
 		messages.Autofill = chineseAutofill
+		messages.RuleManagement = chineseRuleManagement
+		messages.Credentials = chineseCredentials
+		messages.HostTags = chineseHostTags
 		messages.History = chineseHistory
 		messages.Completion = chineseCompletion
 		messages.SSHSync = chineseSSHSync
@@ -1126,6 +1277,9 @@ func For(language Language) Messages {
 		messages.AIPanel, messages.AISettings, messages.Tools = traditionalAIPanel, traditionalAISettings, traditionalTools
 		messages.Toolbars = traditionalToolbars
 		messages.Autofill = traditionalAutofill
+		messages.RuleManagement = traditionalRuleManagement
+		messages.Credentials = traditionalCredentials
+		messages.HostTags = traditionalHostTags
 		messages.History = traditionalHistory
 		messages.Completion = traditionalCompletion
 		messages.SSHSync = traditionalSSHSync
@@ -1137,6 +1291,9 @@ func For(language Language) Messages {
 		messages.AIPanel, messages.AISettings, messages.Tools = englishAIPanel, englishAISettings, englishTools
 		messages.Toolbars = englishToolbars
 		messages.Autofill = englishAutofill
+		messages.RuleManagement = englishRuleManagement
+		messages.Credentials = englishCredentials
+		messages.HostTags = englishHostTags
 		messages.History = englishHistory
 		messages.Completion = englishCompletion
 		messages.SSHSync = englishSSHSync

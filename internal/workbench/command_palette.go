@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 )
@@ -13,6 +14,7 @@ import (
 var commandPaletteHits = tree.Feature("command-palette")
 
 var (
+	// hitCommandPalette is the toolbar action that opens the palette.
 	hitCommandPalette        = tree.ID(commandPaletteHits, "command-palette")
 	hitCommandPaletteDismiss = tree.ID(commandPaletteHits, "command-palette-dismiss")
 	hitCommandPaletteClose   = tree.ID(commandPaletteHits, "command-palette-close")
@@ -30,11 +32,31 @@ type commandPaletteEntry struct {
 	recencyHint string
 	detail      string // shown after the label, muted (a host's address)
 	search      string
-	target      ui.ID
+	target      gfx.ID
+	// searchOnly rows answer the search without appearing in the unfiltered
+	// list. The shells behind the Local Terminal row use this: one line until
+	// the user expands it, but typing "bash" still finds the shell.
+	searchOnly bool
 	// header marks a group of the new-tab picker, not a choice in it. Putting
 	// the cursor on one shows nothing selected, and the keyboard steps over it.
 	header bool
+	// foldKey makes a header a row that folds its group: a choice of its own,
+	// which opens or closes the rows under it. foldKey names the group and
+	// expanded says which way it is now. Headers without one only label.
+	foldKey  string
+	expanded bool
+	// checkable rows are choices that tick on and off without closing the
+	// palette: the terminals a command is sent to.
+	checkable bool
+	checked   bool
 }
+
+// folds reports whether the entry is a header that opens and closes a group.
+func (entry *commandPaletteEntry) folds() bool { return entry.header && entry.foldKey != "" }
+
+// isLabel reports whether the entry only names a group: the pointer and the
+// keyboard pass over it.
+func (entry *commandPaletteEntry) isLabel() bool { return entry.header && !entry.folds() }
 
 type commandPalette struct {
 	search   text.Editor
@@ -49,7 +71,7 @@ type commandPalette struct {
 	// selected is a logical row in visible; scroll is the pixel offset.
 	selected int
 	scroll   float32
-	listRect ui.Rect
+	listRect gfx.Rect
 	// bar is the scrollbar as last painted, and barGrab where on its thumb a
 	// drag took hold; dragging is set from the press on the bar to its release.
 	bar      components.ScrollAreaGeometry
@@ -57,14 +79,50 @@ type commandPalette struct {
 	dragging bool
 	// connect makes the list a picker of where a new tab connects, instead of
 	// the palette of commands.
-	connect bool
+	connect    bool
+	workspaces bool
+	// localShells expands the Local Terminal row into the shells this computer
+	// can run, inside the same searchable new-tab list. It is opened from the
+	// saved preference and written back through setLocalShellsExpanded.
+	localShells bool
 	// snippets makes the list a picker of the saved snippets to send to the
 	// active terminal, opened from the terminal toolbar.
 	snippets bool
+	// expandedGroups are the snippet groups the picker shows open, by fold key.
+	// It starts empty, so every group begins closed and a search is what looks
+	// inside them.
+	expandedGroups []string
+	// ctx is the workbench page's declaration context of the last paint; body
+	// declares the dialog into it, kept so a paint makes no closure.
+	ctx  ui.C
+	body func()
+	// listOver paints the list's scrollbar and chromeOver the send form, after
+	// the page laid the boxes they use out. They are kept for the same reason.
+	listOver, chromeOver func(*ui.DrawContext)
+	// sort is the switch's value, derived from workspaces and recentConnectSort
+	// before every paint and written back by its choice.
+	sort connectSortChoice
+	// The boxes the declaration laid out, painted after the page ends: the list
+	// window the scroll area shows and the send form's controls. The search field
+	// is a page field, bound to the editor the palette keeps.
+	searchField   ui.Field
+	searchBound   bool
+	searchLabel   string
+	searchPlace   string
+	listBox       ui.Box
+	sendInputBox  ui.Box
+	sendButtonBox ui.Box
+	sendRunBox    ui.Box
+	emptyText     string
+	bodyWidth     float32
+	// sortLeft, sortTop and sortHeight place the new-tab picker's
+	// default/workspaces/recent switch in the dialog's title row, relative to
+	// the dialog body the page declares.
+	sortLeft, sortTop, sortHeight float32
 }
 
 func (state *State) openCommandPalette() {
-	state.commandPalette.connect, state.commandPalette.snippets = false, false
+	state.commandPalette.connect, state.commandPalette.snippets, state.commandPalette.workspaces, state.commandPalette.localShells = false, false, false, false
 	state.modal = modalCommandPalette
 	state.commandPalette.search = text.Editor{}
 	state.commandPalette.query = ""
@@ -74,7 +132,7 @@ func (state *State) openCommandPalette() {
 }
 
 func (state *State) closeCommandPalette() {
-	state.commandPalette.connect, state.commandPalette.snippets = false, false
+	state.commandPalette.connect, state.commandPalette.snippets, state.commandPalette.workspaces, state.commandPalette.localShells = false, false, false, false
 	state.modal = modalNone
 	state.commandPalette.search = text.Editor{}
 	state.commandPalette.query = ""
@@ -101,15 +159,14 @@ func (state *State) rebuildCommandPalette() {
 		state.rebuildSnippetPicker()
 		return
 	}
-	palette.add(messages.NavHosts, hitHosts)
-	palette.add(messages.NavWorkspaces, hitWorkspaces)
-	palette.add(messages.NavKeychain, hitKeychain)
-	palette.add(messages.NavPortForwarding, hitPortForwarding)
-	palette.add(messages.NavProxies, hitProxies)
-	palette.add(messages.NavKnownHosts, hitKnownHosts)
+	// The sidebar's pages are the palette's navigation: the table that orders the
+	// sidebar also names each page here, and each page's label is the one the
+	// sidebar shows. A page added there is reachable from the palette without
+	// being added a second time, which is how the monitor page went missing.
+	for _, page := range sidebarPages {
+		palette.add(state.navPageLabel(page.page), page.id)
+	}
 	palette.add(messages.NavSettings, hitSettings)
-	palette.add(messages.NavSnippets, hitSnippets)
-	palette.add(messages.SessionLogs.Title, hitSessionLogs)
 	state.devAddPaletteCommands(palette)
 	if state.options.NewWindow != nil {
 		palette.add(messages.NewWindow, hitNewWindow)
@@ -130,6 +187,9 @@ func (state *State) rebuildCommandPalette() {
 		palette.add(messages.MenuRenameTerminal, hitPaneRename)
 		palette.add(messages.SFTPOpen, hitSFTPOpen)
 		if session, _ := state.sessionByIDPointer(state.activeSessionID); session != nil {
+			if session.canViewRemoteLogs() {
+				palette.add(messages.RemoteLogs.Title, hitServerLogs)
+			}
 			if _, ok := state.localProxyTarget(session); ok && !session.host.isDesktop() {
 				palette.addDetailed(messages.LocalProxy.Title, state.sessionAddress(session.host), hitLocalProxyOpen)
 			}
@@ -149,11 +209,7 @@ func (state *State) rebuildCommandPalette() {
 			palette.add(label, hitBroadcast)
 		}
 		for index, entry := range state.snippets.list {
-			detail := ""
-			if entry.Shortcut.valid() {
-				detail = entry.Shortcut.label()
-			}
-			palette.addDetailed(fmt.Sprintf(messages.Tools.SnippetPaletteFmt, entry.Name), detail, hitSnippetSendList.At(index))
+			palette.addDetailed(fmt.Sprintf(messages.Tools.SnippetPaletteFmt, entry.Name), snippetDetail(&entry), hitSnippetSendList.At(index))
 		}
 	}
 	for index := range state.sessions {
@@ -166,13 +222,22 @@ func (state *State) rebuildCommandPalette() {
 	state.refreshCommandPalette()
 }
 
-func (palette *commandPalette) add(label string, target ui.ID) {
+func (palette *commandPalette) add(label string, target gfx.ID) {
 	palette.addDetailed(label, "", target)
 }
 
-func (palette *commandPalette) addDetailed(label, detail string, target ui.ID) {
+func (palette *commandPalette) addDetailed(label, detail string, target gfx.ID) {
 	palette.entries = append(palette.entries, commandPaletteEntry{
 		label: label, detail: detail, search: strings.ToLower(label + " " + detail), target: target,
+	})
+}
+
+// addCandidate adds a row of the new-tab picker, keeping whether a search is
+// the only way it reaches the list.
+func (palette *commandPalette) addCandidate(item connectPickerCandidate) {
+	palette.entries = append(palette.entries, commandPaletteEntry{
+		label: item.label, detail: item.detail, search: strings.ToLower(item.label + " " + item.detail),
+		target: item.target, searchOnly: item.searchOnly,
 	})
 }
 
@@ -187,7 +252,7 @@ func (state *State) refreshCommandPalette() {
 	if palette.filtered && rawQuery == palette.rawQuery {
 		return
 	}
-	if palette.connect && state.recentConnectSort {
+	if palette.connect && !palette.workspaces && state.recentConnectSort {
 		state.rebuildRecentConnectPicker(rawQuery)
 		return
 	}
@@ -201,7 +266,8 @@ func (state *State) refreshCommandPalette() {
 	palette.filtered = true
 	palette.visible = palette.visible[:0]
 	for index := range palette.entries {
-		if palette.entries[index].header {
+		entry := &palette.entries[index]
+		if entry.header {
 			// Group names only head the unfiltered list: a search shows what
 			// matches, not the folders the matches came from.
 			if query == "" {
@@ -209,8 +275,11 @@ func (state *State) refreshCommandPalette() {
 			}
 			continue
 		}
+		if entry.searchOnly && query == "" && !palette.localShells {
+			continue
+		}
 		if query != "" {
-			search := palette.entries[index].search
+			search := entry.search
 			if palette.connect {
 				if !matchesSearchWords(search, keywords) {
 					continue
@@ -229,7 +298,7 @@ func (state *State) refreshCommandPalette() {
 // headings. It returns -1 when the direction runs out of choices.
 func (palette *commandPalette) choiceAt(index, direction int) int {
 	for index >= 0 && index < len(palette.visible) {
-		if !palette.entries[palette.visible[index]].header {
+		if entry := &palette.entries[palette.visible[index]]; !entry.header || entry.folds() {
 			return index
 		}
 		index += direction
@@ -255,7 +324,7 @@ func (palette *commandPalette) follow() {
 	palette.scroll = min(max(palette.scroll, 0), palette.maxScroll())
 }
 
-func (state *State) scrollCommandPalette(event ui.ScrollEvent) ui.EventResult {
+func (state *State) scrollCommandPalette(event gfx.ScrollEvent) gfx.EventResult {
 	state.refreshCommandPalette()
 	palette := &state.commandPalette
 	before, selected := palette.scroll, palette.selected
@@ -264,31 +333,36 @@ func (state *State) scrollCommandPalette(event ui.ScrollEvent) ui.EventResult {
 	// Other palettes resolve the row at the pointer after moving content.
 	if !palette.connect && !palette.dragging && event.DeltaY != 0 && pointInRect(event.X, event.Y, palette.listRect) {
 		row := int((event.Y - palette.listRect.Y + palette.scroll + 2) / commandPaletteRowStep)
-		if row >= 0 && row < len(palette.visible) && !palette.entries[palette.visible[row]].header {
+		if row >= 0 && row < len(palette.visible) && !palette.entries[palette.visible[row]].isLabel() {
 			palette.selected = row
 		}
 	}
-	return ui.EventResult{Handled: true, Repaint: before != palette.scroll || selected != palette.selected}
+	return gfx.EventResult{Handled: true, Repaint: before != palette.scroll || selected != palette.selected}
 }
 
-func (state *State) clickCommandPalette(id ui.ID) {
+func (state *State) clickCommandPalette(id gfx.ID) {
 	switch id {
 	case hitCommandPaletteDismiss, hitCommandPaletteClose:
 		state.closeCommandPalette()
-	case hitConnectSortDefault, hitConnectSortRecent:
-		if !state.commandPalette.connect {
-			return
-		}
-		state.recentConnectSort = id == hitConnectSortRecent
-		state.rebuildCommandPalette()
-		state.save()
+	case hitCommandsBarToggle:
+		// The bar's checkbox is a control of the picker's chrome, not a row of
+		// its searchable list. It switches in place without closing the dialog.
+		state.toggleCommandBarFromPicker()
+		return
 	case hitCommandPaletteSearch:
 		return
 	default:
+		if state.clickSnippetSend(id) {
+			return
+		}
+		if id == hitConnectPickShellPicker {
+			state.setLocalShellsExpanded(!state.commandPalette.localShells)
+			state.rebuildCommandPalette()
+			return
+		}
 		// The pencil of a host row opens the host for editing instead of
 		// connecting: the palette closes and the edit dialog takes over.
 		if id.Scope() == hitConnectPickEdit {
-			state.closeCommandPalette()
 			state.openEditHostID(uint32(item(id)))
 			return
 		}
@@ -309,6 +383,13 @@ func (state *State) executeCommandPalette(visible int) {
 	if visible >= len(palette.visible) {
 		return
 	}
+	if entry := &palette.entries[palette.visible[visible]]; entry.folds() {
+		state.foldSnippetGroup(entry.foldKey, !entry.expanded)
+		return
+	} else if entry.checkable {
+		state.toggleSendSession(uint32(item(entry.target)))
+		return
+	}
 	target := palette.entries[palette.visible[visible]].target
 	if target.IsZero() {
 		return
@@ -324,16 +405,20 @@ func (palette *commandPalette) dragBar(y float32) {
 	palette.scroll = min(max(palette.bar.VerticalOffsetForThumb(y-palette.barGrab), 0), palette.maxScroll())
 }
 
-func (state *State) commandPalettePointer(event ui.PointerEvent) (ui.EventResult, bool) {
+func (state *State) commandPalettePointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	if state.modal != modalCommandPalette {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	palette := &state.commandPalette
+	// WindowConfig gives the page's controls, the sort switch and the dialog's
+	// own backdrop and close button their presses first. The identities this file
+	// names by hand (the rows, the scrollbar) are outside the page, so those
+	// presses reach the gestures below.
 	// A press on the scrollbar takes the pointer for the drag: until it is
 	// released the rows under it must not take the hover, or the highlight
 	// stays on whichever row the drag started over.
 	switch {
-	case event.Kind == ui.PointerDown && event.Target == hitCommandPaletteBar && event.Button == ui.PointerButtonPrimary:
+	case event.Kind == gfx.PointerDown && event.Target == hitCommandPaletteBar && event.Button == gfx.PointerButtonPrimary:
 		thumb := palette.bar.VerticalThumb
 		palette.barGrab = thumb.Height / 2
 		if event.Y >= thumb.Y && event.Y < thumb.Y+thumb.Height {
@@ -341,77 +426,124 @@ func (state *State) commandPalettePointer(event ui.PointerEvent) (ui.EventResult
 		}
 		palette.dragging = true
 		palette.dragBar(event.Y)
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	case palette.dragging:
 		switch event.Kind {
-		case ui.PointerMove:
+		case gfx.PointerMove:
 			palette.dragBar(event.Y)
-		case ui.PointerUp, ui.PointerExit:
+		case gfx.PointerUp, gfx.PointerExit:
 			palette.dragging = false
 		}
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	visible, ok := event.Target.In(hitCommandPaletteItems)
 	if !ok {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	row := visible
 	if row >= len(palette.visible) {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if palette.entries[palette.visible[row]].header {
-		return ui.EventResult{}, false
+	if palette.entries[palette.visible[row]].isLabel() {
+		return gfx.EventResult{}, false
 	}
-	if event.Kind == ui.PointerMove && palette.selected != row {
+	if event.Kind == gfx.PointerMove && palette.selected != row {
 		palette.selected = row
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
-func (state *State) commandPaletteKey(event ui.KeyEvent) (ui.EventResult, bool) {
+// palettePageOwns reports whether target is declared by the workbench page:
+// one of its own elements, or the body of the palette's Dialog, which ui.Dialog
+// names in the application's dialog scope rather than the page root.
+func palettePageOwns(target gfx.ID) bool {
+	return windowPageOwns(target) || tree.Within(target.Scope(), dialogScope.Scope())
+}
+
+func (state *State) commandPaletteKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalCommandPalette {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	state.refreshCommandPalette()
 	palette := &state.commandPalette
-	if event.Key == ui.KeyEscape {
+	if event.Key == gfx.KeyEscape {
 		state.closeCommandPalette()
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
+	// WindowConfig gives the controls the workbench page declares their own keys:
+	// the sort switch's arrows are the page's roving, and the rest of its keys
+	// are the page's. Enter or Space puts the keyboard back in the search field
+	// so typing filters the list.
 	if palette.connect {
-		switch event.Target {
-		case hitConnectSortDefault, hitConnectSortRecent:
-			// The switch is a radio group of its own: the arrows move between its
-			// two options, and choosing one puts the keyboard back in the search
-			// field so typing filters the list at once.
-			options := state.connectSortOptions()
-			if next, handled := components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key); handled && next != event.Target && !event.Repeat {
-				state.clickCommandPalette(next)
-				return ui.EventResult{Handled: true, Repaint: true, Focus: hitCommandPaletteSearch}, true
+		if palettePageOwns(event.Target) {
+			if event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace {
+				return gfx.EventResult{Handled: true, Focus: hitCommandPaletteSearch}, true
 			}
-			if event.Key == ui.KeyEnter || event.Key == ui.KeySpace {
-				return ui.EventResult{Handled: true, Focus: hitCommandPaletteSearch}, true
+		}
+	}
+	if palette.snippets {
+		// The send target is a page Choice in the body: its arrows are the
+		// page's. The other keys of the form stay the palette's.
+		if event.Target == hitSnippetSendInput {
+			if event.Key == gfx.KeyEnter && !event.Repeat {
+				state.submitSend()
+				return gfx.EventResult{Handled: true, Repaint: true}, true
 			}
 		}
 	}
 	inSearch := event.Target == hitCommandPaletteSearch
 	_, inItems := event.Target.In(hitCommandPaletteItems)
 	if !inSearch && !inItems {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if inSearch && event.Key == ui.KeyEnter && !event.Repeat {
+	if inSearch && event.Key == gfx.KeyEnter && !event.Repeat {
 		state.executeCommandPalette(palette.selected)
-		return ui.EventResult{Handled: true, Repaint: true, Focus: state.modalSearchFocus()}, true
+		return gfx.EventResult{Handled: true, Repaint: true, Focus: state.modalSearchFocus()}, true
 	}
-	if inItems && (event.Key == ui.KeyEnter || event.Key == ui.KeySpace) && !event.Repeat {
+	if inItems && (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) && !event.Repeat {
 		state.executeCommandPalette(palette.selected)
-		return ui.EventResult{Handled: true, Repaint: true, Focus: state.modalSearchFocus()}, true
+		return gfx.EventResult{Handled: true, Repaint: true, Focus: state.modalSearchFocus()}, true
 	}
 	row := palette.selected
-	move := func(selected, direction int) (ui.EventResult, bool) {
+	if palette.snippets && !event.Repeat && row >= 0 && row < len(palette.visible) {
+		// A group row opens with Right and closes with Left, like a tree.
+		if entry := &palette.entries[palette.visible[row]]; entry.folds() && (inItems || inSearch && palette.search.String() == "") {
+			switch {
+			case event.Key == gfx.KeyRight && !entry.expanded, event.Key == gfx.KeyLeft && entry.expanded:
+				state.foldSnippetGroup(entry.foldKey, event.Key == gfx.KeyRight)
+				return gfx.EventResult{Handled: true, Repaint: true}, true
+			}
+		}
+	}
+	if inItems && palette.connect && !event.Repeat {
+		toggleShells := func(expand bool) (gfx.EventResult, bool) {
+			if palette.localShells == expand {
+				return gfx.EventResult{}, false
+			}
+			state.setLocalShellsExpanded(expand)
+			state.rebuildCommandPalette()
+			first := palette.choiceAt(0, 1)
+			if first < 0 {
+				return gfx.EventResult{Handled: true, Repaint: true}, true
+			}
+			return gfx.EventResult{Handled: true, Repaint: true, Focus: hitCommandPaletteItems.At(first), FocusVisible: true}, true
+		}
+		switch event.Key {
+		case gfx.KeyRight:
+			if row >= 0 && row < len(palette.visible) {
+				entry := palette.entries[palette.visible[row]]
+				if entry.target == hitConnectPickLocal && localShellSettingVisible() && state.visibleShellCount() > 1 {
+					return toggleShells(true)
+				}
+			}
+		case gfx.KeyLeft:
+			return toggleShells(false)
+		}
+	}
+	move := func(selected, direction int) (gfx.EventResult, bool) {
 		if len(palette.visible) == 0 {
-			return ui.EventResult{Handled: true}, true
+			return gfx.EventResult{Handled: true}, true
 		}
 		selected = min(max(selected, 0), len(palette.visible)-1)
 		selected = palette.choiceAt(selected, direction)
@@ -425,44 +557,44 @@ func (state *State) commandPaletteKey(event ui.KeyEvent) (ui.EventResult, bool) 
 			}
 		}
 		if selected < 0 {
-			return ui.EventResult{Handled: true}, true
+			return gfx.EventResult{Handled: true}, true
 		}
 		palette.selected = selected
 		palette.follow()
 		if inSearch {
-			return ui.EventResult{Handled: true, Repaint: true, Focus: hitCommandPaletteSearch}, true
+			return gfx.EventResult{Handled: true, Repaint: true, Focus: hitCommandPaletteSearch}, true
 		}
-		return ui.EventResult{
+		return gfx.EventResult{
 			Handled: true, Repaint: true,
 			Focus: hitCommandPaletteItems.At(palette.selected), FocusVisible: true,
 		}, true
 	}
 	switch event.Key {
-	case ui.KeyUp:
+	case gfx.KeyUp:
 		return move(row-1, -1)
-	case ui.KeyDown:
+	case gfx.KeyDown:
 		return move(row+1, 1)
-	case ui.KeyPageUp:
+	case gfx.KeyPageUp:
 		return move(row-commandPaletteVisibleRows, -1)
-	case ui.KeyPageDown:
+	case gfx.KeyPageDown:
 		return move(row+commandPaletteVisibleRows, 1)
 	}
 	if inItems {
 		switch event.Key {
-		case ui.KeyHome:
+		case gfx.KeyHome:
 			return move(0, 1)
-		case ui.KeyEnd:
+		case gfx.KeyEnd:
 			return move(len(palette.visible)-1, -1)
 		}
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
 // modalSearchFocus is where the keyboard goes when a palette command has opened
 // a picker with a search field of its own; otherwise it asks for nothing.
-func (state *State) modalSearchFocus() ui.ID {
+func (state *State) modalSearchFocus() gfx.ID {
 	if state.modal == modalHistory {
 		return hitHistorySearch
 	}
-	return ui.ID{}
+	return gfx.ID{}
 }

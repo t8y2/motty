@@ -92,6 +92,47 @@ func TestResizeReachesTheProgram(t *testing.T) {
 	until(t, shell, wakes, "43 132")
 }
 
+func TestForegroundArgsNamesTheRunningCommand(t *testing.T) {
+	shell, _ := start(t, Config{})
+	if !shell.Write([]byte("exec sleep 30\n")) {
+		t.Fatal("Write refused")
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		args, ok := shell.ForegroundArgs()
+		for _, arg := range args {
+			if ok && strings.Contains(arg, "sleep") {
+				return
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	args, _ := shell.ForegroundArgs()
+	t.Fatalf("foreground = %q, want sleep", args)
+}
+
+func TestAnInFlightResizeCanOverlapClosingThePTY(t *testing.T) {
+	shell, _ := start(t, Config{})
+	started, resized := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(resized)
+		close(started)
+		// Call the backend directly to exercise a resize that has already
+		// passed Shell's closed check when Close destroys the descriptor.
+		for i := range 1000 {
+			shell.b.resize(80+i%2, 24)
+		}
+	}()
+	<-started
+	shell.Close()
+	<-resized
+	select {
+	case <-shell.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("concurrent resize kept the closed shell alive")
+	}
+}
+
 func TestExitEndsTheShellCleanlyAndRefusesFurtherInput(t *testing.T) {
 	shell, _ := start(t, Config{})
 	shell.Write([]byte("exit 0\n"))

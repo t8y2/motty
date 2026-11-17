@@ -18,24 +18,44 @@ import (
 // other, so each must be named here or in the record tables.
 func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 	ownDevice := map[string]bool{
-		"recent_connect_sort": true, "recent_connections": true,
+		"notes_view": true, "note_sidebars": true, "recent_connect_sort": true, "recent_connections": true,
 		"monitor_panels": true, "monitor_active": true,
-		"language": true, "theme": true, "network_proxy": true, "terminal_font_size": true, "text_scale": true, "interface_font": true, "terminal_font_face": true, "terminal_font_family": true, "terminal_font_fallbacks": true,
-		"restore_connect": true, "share_connections": true, "update_check": true, "close_action": true, "update_skipped": true, "ai_panel_width": true, "ai_composer_height": true,
+		"language": true, "theme": true, "network_proxy": true, "terminal_font_size": true, "text_scale": true, "interface_text_size": true, "interface_font": true, "interface_font_main_weight": true, "interface_font_bold_weight": true, "terminal_font_face": true, "terminal_font_family": true, "terminal_font_main_weight": true, "terminal_font_bold_weight": true, "terminal_font_fallbacks": true,
+		"restore_connect": true, "share_connections": true, "update_check": true, "close_action": true, "relaunch_action": true, "tray_hint_shown": true, "update_skipped": true, "ai_panel_width": true, "ai_composer_height": true,
 		"sftp_panel_width": true, "monitor_panel_width": true,
 		"terminal_toolbar_position": true,
+		"terminal_find":             true,
 		"terminal_toolbar_size":     true,
-		"workspace":                 true, "active_session": true, "shortcuts": true, "identity_files": true, "agent_hosts": true, "sessions": true, "deck": true, "sync": true,
-		"host_view": true, "background": true, "snippet_shortcuts": true,
+		"workspace":                 true, "active_session": true, "shortcuts": true, "identity_files": true, "agent_hosts": true, "agent_host_mode": true, "sessions": true, "deck": true, "sync": true,
+		// The generation of default chords this computer's table was reconciled
+		// against: which defaults a build ships is not another device's business.
+		"shortcut_defaults_generation": true,
+		"host_view":                    true, "host_privacy": true, "host_privacy_show_name": true,
+		"host_privacy_show_address": true, "host_privacy_show_user": true,
+		// The host tree's width and whether it is open are this computer's own
+		// layout, like the file panel's width below.
+		"host_side_width": true, "host_tree_open": true,
+		"background": true, "snippet_shortcuts": true,
 		"background_output_alerts": true,
 		"tab_orientation":          true, "vertical_tabs_auto_hide": true,
+		"tab_numbers":            true,
 		"vertical_tabs_grouping": true,
 		"workspace_layouts":      true,
 		"sftp_local_bookmarks":   true,
 		"sftp_columns":           true, "sftp_download_directory": true, "default_editor": true,
-		"sftp_window_order": true, "sftp_open_mode": true, "custom_editor_path": true,
-		"toolbars":    true,
-		"local_shell": true, "ssh_agent": true, "ssh_agent_path": true, "local_proxy_port": true, "terminal_cursor": true,
+		"sftp_window_order": true, "sftp_open_mode": true, "sftp_directory_tree": true, "custom_editor_path": true,
+		"sftp_transfer_filter": true,
+		"toolbars":             true,
+		// Whether the new-tab picker lists its shells expanded is this
+		// computer's own picker layout, like the hidden shells below.
+		"local_shells_expanded": true,
+		"local_shell":           true, "local_start": true, "last_local_directory": true, "ssh_agent": true, "ssh_agent_path": true, "local_proxy_port": true, "terminal_cursor": true,
+		// Whether the command bar shows, which groups it filters and how it
+		// orders them are this computer's own layout, not a preference to sync.
+		"commands_shown": true, "commands_sort": true, "commands_hidden_groups": true,
+		// The shells a computer hides from its pickers name this machine's own
+		// programs and distributions; another device hides its own.
+		"hidden_shells": true,
 		// What a launch opens is chosen per computer: the shells and hosts of
 		// this machine, not a preference to carry across devices.
 		"startup_disabled": true, "startup_local": true, "startup_shell": true, "startup_hosts": true, "startup_no_reuse": true,
@@ -43,6 +63,10 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		// The session journal switch belongs to this computer: another device
 		// keeps its own choice, and an older build must not silently drop it.
 		"session_logs_off": true, "session_logs_view": true,
+		// Which navigation entries and cloud-sync categories this computer
+		// hides or excludes: restoreLocal applies both, and the sync scope test
+		// holds that one computer's selection never reaches another.
+		"hidden_nav": true, "sync_excluded": true,
 	}
 	entity := map[string]bool{}
 	for _, field := range entityFields {
@@ -66,9 +90,9 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 func richState() savedState {
 	return savedState{
 		Version: stateFileVersion, HostCatalogVersion: hostCatalogSchemaVersion, ShortcutVersion: shortcutSchemaVersion,
-		Language: "zh-CN", Theme: "dark", NetworkProxy: "system", TabOrientation: "vertical", VerticalTabsAutoHide: true, LocalShell: "/opt/local-shell/bin/shell", TerminalFontSize: 15, TerminalScrollback: 5000, TerminalPadding: "roomy",
+		Language: "zh-CN", Theme: "dark", NetworkProxy: "system", TabOrientation: "vertical", VerticalTabsAutoHide: true, LocalShell: "/opt/local-shell/bin/shell", TerminalFontSize: 15, TerminalScrollback: 5000, TerminalPadding: "roomy", TerminalWordSeparators: "-/", HiddenHostTags: []string{"dev", "prod"},
 		RecentConnectSort: true, RecentConnections: map[string]time.Time{"host_b": time.Date(2026, 11, 3, 8, 0, 0, 0, time.UTC)},
-		SFTPParallel: 2, SFTPTerminalFollow: true, CommandHistory: true,
+		SFTPParallel: 2, SFTPTerminalFollow: true, SFTPTransferFilter: 1, CommandHistory: true,
 		Hosts: []savedHost{
 			{ID: "host_b", Label: "Beta", Address: "b.example.com", User: "me", Port: 22, Group: "prod"},
 			{ID: "host_a", Label: "Alpha", Address: "a.example.com", User: "me", Port: 2222, Group: "dev"},

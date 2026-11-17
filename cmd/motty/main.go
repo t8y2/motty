@@ -12,7 +12,7 @@ import (
 	"runtime"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/buildinfo"
 	"motty/internal/datadir"
 	"motty/internal/diag"
@@ -39,6 +39,12 @@ func main() {
 	// moved main to another OS thread.
 	runtime.LockOSThread()
 	log.SetOutput(io.MultiWriter(os.Stderr, recentLog))
+	// OpenSSH runs SSH_ASKPASS as a child of ssh-add or ssh-sk-helper. Such a
+	// launch carries this marker and must answer the prompt, not claim the
+	// single instance and open a window.
+	if os.Getenv("MOTTY_FIDO_ASKPASS") == "1" {
+		os.Exit(runFidoAskpass(os.Args[1:]))
+	}
 	if len(os.Args) > 1 && os.Args[1] == "mcp-bridge" {
 		os.Exit(runMCPBridge(os.Args[2:]))
 	}
@@ -78,6 +84,9 @@ func main() {
 		windows.launch(args)
 	}
 	hub := workbench.NewAIHub(aiDatabasePath(datadir.Current().Dir))
+	// Security-key agents started for a connection are stopped on quit; a
+	// connection normally does this itself, but a quit can outrun one.
+	defer workbench.ShutdownSecurityKeyAgents()
 	err := app.RunApplication(func(application *app.Application) error {
 		application.OnQuitRequest(windows.quitWithDocuments)
 		status := newTray(application)
@@ -111,6 +120,10 @@ func main() {
 		}
 		// macOS hands links to the running program; elsewhere they are arguments.
 		application.OnOpenURL(func(url string) { windows.launch([]string{url}) })
+		// macOS hands registered document types to the running program. Windows
+		// and Linux start a second process whose path is carried here as an
+		// argument by single-instance handoff.
+		application.OnOpenFile(func(path string) { windows.launch([]string{path}) })
 		if background {
 			// Started at login: the first window opens hidden, so the icon can
 			// go up first and closing it still leaves the application running.
@@ -150,6 +163,9 @@ func main() {
 		return nil
 	})
 	hub.Close()
+	// fatal exits without running deferred functions; stop the agents here as
+	// well so a failed shutdown does not leave one running.
+	workbench.ShutdownSecurityKeyAgents()
 	if err != nil {
 		fatal(err)
 	}
@@ -171,14 +187,18 @@ func (status *tray) show(application *app.Application) {
 	if status == nil || status.item != nil {
 		return
 	}
+	// The icon is named from the start: the shell shows this text as soon as the
+	// pointer rests on it, which can be before the first window wake updates it.
+	tooltip, _ := status.list.Tooltip()
 	item, err := application.AddStatusItem(app.StatusItemConfig{
-		Icon: workbench.TrayIcon(),
+		Icon:    workbench.TrayIcon(),
+		Tooltip: tooltip,
 		// The system's menu, built when it opens. Where a desktop reports a
 		// primary press as an activation instead (a Linux tray), it brings the
 		// window back.
 		Menu: status.list.Menu,
 		OnClick: func(click app.StatusClick) {
-			if click.Button == ui.PointerButtonPrimary {
+			if click.Button == gfx.PointerButtonPrimary {
 				status.list.ShowWindow()
 			}
 		},
@@ -237,7 +257,13 @@ func knownHostsPath(dir string) string {
 func stateDatabasePath() string {
 	dir := datadir.Current().Dir
 	if dir == "" {
-		return ""
+		// An empty directory means the platform's usual place, which is what the
+		// windows resolve the store to as well: an empty path here would read no
+		// window records at all and open a single window every time.
+		var err error
+		if dir, err = defaultDataDir(); err != nil {
+			return ""
+		}
 	}
 	return filepath.Join(dir, "config.db")
 }
@@ -268,7 +294,7 @@ var windowGroup = workbench.NewGroup()
 // placement says how a window is opened when it is not the usual new window: a
 // torn-off tab opens one where the pointer let go, empty but for the tab.
 type placement struct {
-	origin *ui.Point
+	origin *gfx.Point
 	adopt  func(*workbench.State)
 	blank  bool
 	// windowID is which window of this run it is. Zero takes the next number,
@@ -313,6 +339,10 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		if status.hasStatusArea() && state.StaysInTray() && (state.WantsToStay() || status.list.WindowCount() <= 1) {
 			log.Print("motty: window hidden to the status area; the program keeps running")
 			mainWindow.Hide()
+			// A window that disappears into the status area is otherwise
+			// indistinguishable from one that ended the program, so the first
+			// time this happens the user is told the sessions are still there.
+			state.NoteHiddenToTray()
 			return
 		}
 		if state.ConfirmClose(allow) {
@@ -323,16 +353,18 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 	}
 	state = workbench.New(workbench.Options{
 		DevelopmentSource: importSource,
-		Invalidate:        invalidate, NewWindow: newWindow,
+		Invalidate:        invalidate, Invalidator: &invalidator, NewWindow: newWindow,
+		Post:              application.Post,
+		SetMenuBar:        application.SetMenuBar,
 		OpenContentWindow: application.OpenContentWindow,
 		Group:             windowGroup, Blank: place.blank, Log: recentLog,
 		LogDir: logDirectory(), PreviousCrash: crashNoticeFor(place),
 		WindowID:            place.windowID,
 		RememberWindowFrame: place.rememberFrame,
-		TearOff: func(origin ui.Point, adopt func(*workbench.State)) error {
+		TearOff: func(origin gfx.Point, adopt func(*workbench.State)) error {
 			return openWorkbenchWindow(application, status, hub, newWindow, false, placement{origin: &origin, adopt: adopt, blank: true})
 		},
-		OpenDragPreview: func(size ui.Size, origin ui.Point, paint func(*ui.Canvas, ui.Size)) (workbench.DragPreview, error) {
+		OpenDragPreview: func(size gfx.Size, origin gfx.Point, paint func(*gfx.Canvas, gfx.Size)) (workbench.DragPreview, error) {
 			preview, err := application.OpenDragPreview(app.DragPreviewConfig{
 				Width: int(math.Ceil(float64(size.Width))), Height: int(math.Ceil(float64(size.Height))), Origin: origin, Paint: paint,
 			})
@@ -364,14 +396,14 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 	if place.rememberFrame {
 		if frame, ok := state.RestoredWindowFrame(); ok {
 			width, height = int(frame.Width), int(frame.Height)
-			origin = &ui.Point{X: frame.X, Y: frame.Y}
+			origin = &gfx.Point{X: frame.X, Y: frame.Y}
 		}
 	}
 	window := state.WindowColor()
 	width = max(width, workbench.MinimumWindowWidth)
 	height = max(height, workbench.MinimumWindowHeight)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: float32(width), Height: float32(height)})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: float32(width), Height: float32(height)})
 
 	var nativeInput app.TextInput
 	resolveInput := func(context app.TextInputContext) *app.TextInput {
@@ -390,8 +422,17 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		if input := state.TerminalFindInput(context); input != nil {
 			return input
 		}
+		if input := state.TerminalFindPreferencesInput(context); input != nil {
+			return input
+		}
+		if input := state.TerminalWordInput(context); input != nil {
+			return input
+		}
 		// The assistant's message box is multi-line and takes Enter itself.
 		if input := state.AIPanelInput(context); input != nil {
+			return input
+		}
+		if input := state.NotesInput(context); input != nil {
 			return input
 		}
 		editor := state.EditorFor(context.ID)
@@ -404,7 +445,7 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 	}
 
 	var err error
-	mainWindow, err = application.OpenWindow(app.Config{
+	config := app.Config{
 		Title:          mainWindowTitle(),
 		Icon:           workbench.AppIcon(),
 		Tree:           workbench.Tree(),
@@ -458,8 +499,13 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 				status.refresh()
 			}
 		},
-	}, &canvas)
+	}
+	config.WindowBorderColor = state.WindowBorderColor
+	// The workbench page routes the shell's own elements and the application
+	// handlers keep the events it leaves; the workbench's Paint stays its own.
+	mainWindow, err = application.OpenWindow(state.WindowConfig(config), &canvas)
 	if err == nil {
+		state.SyncMenuBar()
 		state.SetWindow(mainWindow.Frame, func() bool { return !mainWindow.Hidden() && !mainWindow.Closed() })
 		state.SetShortcutCapture(mainWindow.CaptureSystemShortcuts)
 		state.SetFullscreenControl(mainWindow.SetFullscreen)
@@ -478,6 +524,9 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		}
 		if status != nil {
 			status.list.Add(state, mainWindow)
+			// The icon can be up before this window exists (a start at login), so
+			// its tooltip is named now instead of at the next wake.
+			status.refresh()
 		}
 		// Wake once now that connections can reach the window: this is when
 		// restored tabs are connected (see workbench.State.Wake).

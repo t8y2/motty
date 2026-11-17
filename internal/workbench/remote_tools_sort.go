@@ -8,13 +8,13 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/remotetools"
 )
 
 var remoteColumnCounts = [...]int{remoteProcesses: 6, remoteContainers: 5, remoteImages: 4, remoteVolumes: 3, remoteNetworks: 4, remoteCompose: 3}
 
-func remoteTableHeaderID(tab remoteTab, column int) ui.ID {
+func remoteTableHeaderID(tab remoteTab, column int) gfx.ID {
 	if tab == remoteProcesses {
 		if column == 2 {
 			return hitRemoteSortCPU
@@ -43,7 +43,10 @@ func (view *remoteToolsView) tableSort() components.TableSortState {
 	return components.TableSortState{}
 }
 
-func (state *State) clickRemoteTableSort(id ui.ID) bool {
+func (state *State) clickRemoteTableSort(id gfx.ID) bool {
+	if !state.remoteToolsVisible() {
+		return false
+	}
 	view := &state.remote
 	for column := 0; column < remoteColumnCounts[view.tab]; column++ {
 		if id != remoteTableHeaderID(view.tab, column) {
@@ -53,7 +56,7 @@ func (state *State) clickRemoteTableSort(id ui.ID) bool {
 			return true
 		}
 		view.ordering[view.tab] = view.tableSort().Toggle(column)
-		view.page, view.pageText = 0, ""
+		view.processScroll = 0
 		// The searchable snapshot is independent of the chosen sort order.
 		// Header changes never issue another remote query.
 		if view.tab == remoteProcesses && (column == 2 || column == 3) {

@@ -5,7 +5,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // Exercise the same input and paint entry points as the window, with enough
@@ -29,7 +29,7 @@ func TestPickerPixelScrolling(t *testing.T) {
 			switch kind {
 			case "fonts":
 				state.openFontPicker(false)
-				waitFor(t, state, func() bool { return !state.fonts.loading })
+				waitForPicker(t, state, func() bool { return !state.fonts.loading })
 				state.refreshFontPicker()
 				offset, step, maximum = &state.fonts.scroll, fontPickerRowStep, state.fonts.maxScroll()
 			case "connections":
@@ -47,13 +47,13 @@ func TestPickerPixelScrolling(t *testing.T) {
 			if maximum <= step {
 				t.Fatal("fixture must scroll")
 			}
-			var canvas ui.Canvas
-			size := ui.Size{Width: 1400, Height: 900}
+			var canvas gfx.Canvas
+			size := gfx.Size{Width: 1400, Height: 900}
 			paint := func() { canvas.Reset(); state.Paint(&canvas, size) }
 			paint()
 			scroll := func(delta float32, precise bool) {
 				t.Helper()
-				result := state.Scroll(ui.ScrollEvent{DeltaY: delta, Precise: precise})
+				result := state.Scroll(gfx.ScrollEvent{DeltaY: delta, Precise: precise})
 				if !result.Handled {
 					t.Fatal("scroll not handled")
 				}
@@ -129,7 +129,7 @@ func TestPickerPixelScrolling(t *testing.T) {
 			if kind == "fonts" {
 				search = hitFontPickerSearch
 			}
-			state.Key(ui.KeyEvent{Key: ui.KeyPageDown, Target: search})
+			state.Key(gfx.KeyEvent{Key: gfx.KeyPageDown, Target: search})
 			paint()
 			selected := int(state.commandPalette.selected)
 			if kind == "fonts" {
@@ -152,7 +152,7 @@ func TestPickerPixelScrolling(t *testing.T) {
 				if state.fonts.selected != selected {
 					t.Fatal("wheel changed font selection")
 				}
-				state.Click(list.At(1))
+				clickFontPickerRow(t, state, 1)
 				if state.fonts.selected != 1 {
 					t.Fatal("partial row click selected wrong font")
 				}
@@ -168,14 +168,14 @@ func TestPickerPixelScrolling(t *testing.T) {
 					want = state.commandPalette.selected
 				}
 				for range 10 {
-					result := state.Scroll(ui.ScrollEvent{DeltaY: 0.1, Precise: true, X: hit.Bounds.X + 10, Y: top + 1, Target: list.At(0)})
+					result := state.Scroll(gfx.ScrollEvent{DeltaY: 0.1, Precise: true, X: hit.Bounds.X + 10, Y: top + 1, Target: list.At(0)})
 					if !result.Handled || state.commandPalette.selected != want {
 						t.Fatalf("wheel selected %d, want %d", state.commandPalette.selected, want)
 					}
 					paint()
 				}
 				if kind == "connections" {
-					state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Target: list.At(1)})
+					state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Target: list.At(1)})
 					if state.commandPalette.selected != 1 {
 						t.Fatal("pointer movement did not update the new-tab selection")
 					}
@@ -195,9 +195,9 @@ func TestPickerPixelScrolling(t *testing.T) {
 func TestPickerShortLists(t *testing.T) {
 	state := newTestState(t, fontOptions(t, []string{"Only font"}))
 	state.openFontPicker(false)
-	waitFor(t, state, func() bool { return !state.fonts.loading })
+	waitForPicker(t, state, func() bool { return !state.fonts.loading })
 	state.refreshFontPicker()
-	state.Scroll(ui.ScrollEvent{DeltaY: 100, Precise: true})
+	state.Scroll(gfx.ScrollEvent{DeltaY: 100, Precise: true})
 	if state.fonts.scroll != 0 {
 		t.Fatal("short font list scrolled")
 	}
@@ -205,7 +205,7 @@ func TestPickerShortLists(t *testing.T) {
 	state.openCommandPalette()
 	state.commandPalette.search.Insert("settings")
 	state.refreshCommandPalette()
-	state.Scroll(ui.ScrollEvent{DeltaY: 100, Precise: true})
+	state.Scroll(gfx.ScrollEvent{DeltaY: 100, Precise: true})
 	if state.commandPalette.scroll != 0 {
 		t.Fatal("short command list scrolled")
 	}

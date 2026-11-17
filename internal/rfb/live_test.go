@@ -16,6 +16,8 @@ import (
 // names one, because nothing in this repository starts it:
 //
 //	MOTTY_VNC_ADDR     host:port of the server
+//	MOTTY_VNC_USERNAME the system account, for a server that offers only Apple
+//	                   Remote Desktop authentication (macOS Screen Sharing)
 //	MOTTY_VNC_PASSWORD its VNC password; empty for a server without security
 //	MOTTY_VNC_DISPLAY  its X display (":2"), when the test runs on the server's
 //	                   own machine: it then drives and inspects the desktop with
@@ -62,7 +64,7 @@ func liveConnect(t *testing.T, password string, encodings []int32) *liveSession 
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { conn.Close() })
-	client, err := Connect(conn, Config{Password: password, Encodings: encodings})
+	client, err := Connect(conn, Config{Username: os.Getenv("MOTTY_VNC_USERNAME"), Password: password, Encodings: encodings})
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
@@ -137,7 +139,7 @@ func TestLiveAuthentication(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer conn.Close()
-		_, err = Connect(conn, Config{Password: password})
+		_, err = Connect(conn, Config{Username: os.Getenv("MOTTY_VNC_USERNAME"), Password: password})
 		return err
 	}
 	if password == "" {

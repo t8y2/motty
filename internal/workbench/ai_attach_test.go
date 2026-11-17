@@ -13,7 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/attach"
 	"motty/internal/ai/gate"
@@ -53,15 +53,15 @@ func panelAt(state *State) (x, y float32) {
 func openedPanel(t *testing.T, model *scriptedModel) *State {
 	t.Helper()
 	state, _ := assistantSession(t, model)
-	state.Paint(&ui.Canvas{}, panelWide)
+	state.Paint(&gfx.Canvas{}, panelWide)
 	state.Click(hitAIToggle)
 	paintAt(state, panelWide)
 	return state
 }
 
-func drop(state *State, x, y float32, paths ...string) ui.EventResult {
-	state.FileDrop(ui.FileDropEvent{Phase: ui.FileDropOver, X: x, Y: y})
-	return state.FileDrop(ui.FileDropEvent{Phase: ui.FileDropDrop, X: x, Y: y, Paths: paths})
+func drop(state *State, x, y float32, paths ...string) gfx.EventResult {
+	state.FileDrop(gfx.FileDropEvent{Phase: gfx.FileDropOver, X: x, Y: y})
+	return state.FileDrop(gfx.FileDropEvent{Phase: gfx.FileDropDrop, X: x, Y: y, Paths: paths})
 }
 
 func attached(t *testing.T, state *State, want int) {
@@ -88,7 +88,7 @@ func TestFilesDroppedOnThePanelGoWithTheNextQuestion(t *testing.T) {
 	shot := writeTestFile(t, "shot.png", redSquarePNG(t))
 	x, y := panelAt(state)
 
-	over := state.FileDrop(ui.FileDropEvent{Phase: ui.FileDropOver, X: x, Y: y})
+	over := state.FileDrop(gfx.FileDropEvent{Phase: gfx.FileDropOver, X: x, Y: y})
 	if !over.Handled || !state.ai.panel.dropping {
 		t.Fatalf("the panel did not accept files dragged over it: %+v", over)
 	}
@@ -305,6 +305,45 @@ func TestPaperclipOpensTheFileDialogAndAttachesWhatIsChosen(t *testing.T) {
 	attached(t, state, 1)
 	if title != state.messages.AIPanel.AttachPickerTitle || state.ai.attachments[0].file.Name != "chosen.txt" {
 		t.Fatalf("title %q, attachments %+v", title, state.ai.attachments)
+	}
+}
+
+func TestUploadPickerKeepsBinaryFilesOutOfModelContext(t *testing.T) {
+	model := &scriptedModel{turn: func(_ int, request llm.Request) []llm.Event {
+		found := false
+		for _, tool := range request.Tools {
+			found = found || tool.Name == tools.NameUploadSelected
+		}
+		if !found {
+			return textTurn("selected upload tool was not offered")
+		}
+		return textTurn("ready")
+	}}
+	state := openedPanel(t, model)
+	state.ai.mode = agent.ModeAgent
+	content := bytes.Repeat([]byte{0, 255, 0, 5}, 1024)
+	selected := writeTestFile(t, "build.tar.gz", content)
+	state.options.OpenFiles = func(options app.OpenFileOptions) ([]string, error) {
+		if options.Title != state.messages.AIPanel.UploadPickerTitle {
+			t.Fatalf("picker title = %q", options.Title)
+		}
+		return []string{selected}, nil
+	}
+	canvas, _ := paintAt(state, panelWide)
+	state.Click(panelHit(t, canvas, hitAIUpload).ID)
+	attached(t, state, 1)
+	if !state.ai.attachments[0].upload {
+		t.Fatal("binary file was attached as model content")
+	}
+	ask(state, "upload to /tmp/build.tar.gz", agent.ModeAgent)
+	pumpUntil(t, state, "the answer", func() bool { return state.ai.run == nil })
+	request := model.requests[0]
+	if len(request.Messages) != 1 || !strings.Contains(request.Messages[0].Text, "id 1, name build.tar.gz") ||
+		strings.Contains(request.Messages[0].Text, string(content)) || len(request.Messages[0].Images) != 0 {
+		t.Fatalf("the model received file bytes or no upload reference: %+v", request.Messages)
+	}
+	if got := state.ai.items[len(state.ai.items)-1].text; got != "ready" {
+		t.Fatalf("tool was not available: %q", got)
 	}
 }
 

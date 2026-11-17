@@ -17,8 +17,8 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/filecontent"
 	"motty/internal/i18n"
 	"motty/internal/sftpclient"
@@ -39,7 +39,7 @@ func TestDocumentWindowNativeTextInputAndLayoutAtDisplayScales(t *testing.T) {
 			if err := view.Rest(); err != nil {
 				t.Fatal(err)
 			}
-			var field ui.Rect
+			var field gfx.Rect
 			for _, hit := range view.Snapshot().Hits {
 				if hit.ID == hitDocumentInput {
 					field = hit.Bounds
@@ -51,9 +51,9 @@ func TestDocumentWindowNativeTextInputAndLayoutAtDisplayScales(t *testing.T) {
 			if err := view.Click(field.X+30, field.Y+20); err != nil {
 				t.Fatal(err)
 			}
-			modifier := ui.ModifierControl
+			modifier := gfx.ModifierControl
 			if runtime.GOOS == "darwin" {
-				modifier = ui.ModifierMeta
+				modifier = gfx.ModifierMeta
 			}
 			// Headless.Keys routes Control chords as terminal bytes. Use the
 			// driver's native text-shortcut path for the platform editing chord.
@@ -97,7 +97,7 @@ func TestDocumentWindowNativeTextInputAndLayoutAtDisplayScales(t *testing.T) {
 func TestDocumentLongPathsAndFooterEncodingMenu(t *testing.T) {
 	for _, language := range []i18n.Language{i18n.Chinese, i18n.English} {
 		for _, scale := range []float64{1, 1.25, 1.5, 1.75, 2} {
-			for _, size := range []ui.Size{{Width: 520, Height: 320}, {Width: 1000, Height: 760}} {
+			for _, size := range []gfx.Size{{Width: 520, Height: 320}, {Width: 1000, Height: 760}} {
 				d := documentFixture(t)
 				d.owner.setLanguage(language)
 				d.cacheKey = "long-path"
@@ -122,13 +122,14 @@ func TestDocumentLongPathsAndFooterEncodingMenu(t *testing.T) {
 				if err := view.Rest(); err != nil {
 					t.Fatal(err)
 				}
-				checkBounds := func(bounds ui.Rect) {
+				checkBounds := func(bounds gfx.Rect) {
 					t.Helper()
 					if bounds.X < 0 || bounds.Y < 0 || bounds.Width <= 0 || bounds.Height <= 0 || bounds.X+bounds.Width > size.Width+.01 || bounds.Y+bounds.Height > size.Height+.01 {
 						t.Fatalf("language %v scale %.2f viewport %+v: control escaped viewport: %+v", language, scale, size, bounds)
 					}
 				}
 				foundTabHint := false
+				foundReload, foundSave := false, false
 				for _, hit := range view.Snapshot().Hits {
 					if hit.ID.Scope() == hitDocumentTabList {
 						foundTabHint = true
@@ -140,12 +141,23 @@ func TestDocumentLongPathsAndFooterEncodingMenu(t *testing.T) {
 					if hit.ID == hitDocumentLocation {
 						t.Fatal("the document name was painted twice")
 					}
-					if hit.ID == hitDocumentEncoding || hit.ID == hitDocumentReload || hit.ID == hitDocumentSave || hit.ID == hitDocumentInput {
+					if hit.ID == hitDocumentEncoding || hit.ID == hitDocumentInput {
+						checkBounds(hit.Bounds)
+					}
+					if hit.Label == d.owner.messages.FileWindow.Reload {
+						foundReload = true
+						checkBounds(hit.Bounds)
+					}
+					if hit.Label == d.owner.messages.FileWindow.Save {
+						foundSave = true
 						checkBounds(hit.Bounds)
 					}
 				}
 				if !foundTabHint {
 					t.Fatal("missing document tab hint")
+				}
+				if !foundReload || !foundSave {
+					t.Fatal("missing footer reload or save button")
 				}
 				d.encodingOpen = true
 				if err := view.Resize(int(size.Width), int(size.Height)+1); err != nil {
@@ -390,8 +402,8 @@ func TestDocumentWindowSharesTabsAndPreservesEachDocument(t *testing.T) {
 		if err := view.Rest(); err != nil {
 			t.Fatal(err)
 		}
-		var tabs []ui.Rect
-		var closes []ui.Rect
+		var tabs []gfx.Rect
+		var closes []gfx.Rect
 		foundDirty := false
 		foundCloseLabel := false
 		for _, hit := range view.Snapshot().Hits {
@@ -437,7 +449,7 @@ func TestDocumentWindowSharesTabsAndPreservesEachDocument(t *testing.T) {
 		if err := view.Rest(); err != nil {
 			t.Fatal(err)
 		}
-		var notesClose ui.Rect
+		var notesClose gfx.Rect
 		for _, hit := range view.Snapshot().Hits {
 			if hit.ID.Scope() == hitDocumentTabCloseList {
 				if index, ok := hit.ID.In(hitDocumentTabCloseList); ok && index == 0 {
@@ -457,7 +469,7 @@ func TestDocumentWindowSharesTabsAndPreservesEachDocument(t *testing.T) {
 		if err := view.Rest(); err != nil {
 			t.Fatal(err)
 		}
-		var cancel ui.Rect
+		var cancel gfx.Rect
 		for _, hit := range view.Snapshot().Hits {
 			if hit.ID == hitDocumentCancel {
 				cancel = hit.Bounds
@@ -537,7 +549,7 @@ func TestDocumentTabsUseSessionChromeAndScrollWhenTheyOverflow(t *testing.T) {
 		t.Fatalf("long tabs did not overflow at the minimum width: max=%.1f width=%.1f", manager.tabStrip.max, manager.tabStrip.tabWidth)
 	}
 
-	tabs := make(map[int]ui.Rect)
+	tabs := make(map[int]gfx.Rect)
 	for _, hit := range view.Snapshot().Hits {
 		if hit.ID == hitDocumentLocation {
 			t.Fatal("the filename is still painted in the editor content")
@@ -588,7 +600,7 @@ func TestDocumentTabsUseSessionChromeAndScrollWhenTheyOverflow(t *testing.T) {
 		}
 	}
 
-	if err := view.Scroll(ui.ScrollEvent{
+	if err := view.Scroll(gfx.ScrollEvent{
 		X: manager.tabStrip.area.X + 20, Y: manager.tabStrip.area.Y + 14,
 		DeltaY: manager.tabStrip.max + 10,
 	}); err != nil {
@@ -602,20 +614,20 @@ func TestDocumentTabsUseSessionChromeAndScrollWhenTheyOverflow(t *testing.T) {
 	}
 
 	geometry := manager.tabs.geometry
-	if result := manager.pointer(ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hitDocumentTabBar,
+	if result := manager.pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hitDocumentTabBar,
 		X: geometry.HorizontalThumb.X + geometry.HorizontalThumb.Width/2,
 		Y: geometry.HorizontalThumb.Y + geometry.HorizontalThumb.Height/2,
 	}); !result.Handled {
 		t.Fatal("pressing the tab scrollbar was not handled")
 	}
-	if result := manager.pointer(ui.PointerEvent{
-		Kind: ui.PointerMove, Target: hitDocumentTabBar, Captured: true,
+	if result := manager.pointer(gfx.PointerEvent{
+		Kind: gfx.PointerMove, Target: hitDocumentTabBar, Captured: true,
 		X: geometry.HorizontalTrack.X + 2, Y: geometry.HorizontalTrack.Y + 3,
 	}); !result.Handled {
 		t.Fatal("dragging the tab scrollbar was not handled")
 	}
-	manager.pointer(ui.PointerEvent{Kind: ui.PointerUp, Target: hitDocumentTabBar, Captured: true})
+	manager.pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Target: hitDocumentTabBar, Captured: true})
 	if manager.tabStrip.offset > 2 {
 		t.Fatalf("dragging the thumb to the start left the strip at %.1f", manager.tabStrip.offset)
 	}
@@ -840,7 +852,7 @@ func TestDocumentImageAndUnsavedConfirmationAtDisplayScales(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			d.click(hitDocumentActual)
+			d.ui.zoom, d.ui.pan = 1, gfx.Point{}
 			view.Resize(681, 481)
 			view.Rest()
 			if math.Abs(float64(d.ui.imageGeometry.Image.Width)*scale-64) > .01 {
@@ -854,7 +866,7 @@ func TestDocumentImageAndUnsavedConfirmationAtDisplayScales(t *testing.T) {
 			d.requestClose(func() { t.Error("unconfirmed document closed") })
 			view.Resize(682, 482)
 			view.Rest()
-			var actions []ui.Rect
+			var actions []gfx.Rect
 			for _, hit := range view.Snapshot().Hits {
 				if hit.ID == hitDocumentSaveClose || hit.ID == hitDocumentCancel || hit.ID == hitDocumentDiscard {
 					actions = append(actions, hit.Bounds)
@@ -879,5 +891,38 @@ func TestDocumentImageAndUnsavedConfirmationAtDisplayScales(t *testing.T) {
 			d.click(hitDocumentCancel)
 			view.Close()
 		}
+	}
+}
+
+// The document window declares its footer buttons as page elements. A click and a
+// key on one go through the window's page: the button's identity is the page's,
+// so the document's central click dispatcher never sees it.
+func TestDocumentWindowPageReceivesFooterButtonClicksAndKeys(t *testing.T) {
+	d := documentFixture(t)
+	view, err := headless.Open(d.config(), nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	wrap, ok := view.Hit(d.owner.messages.CodeEditor.WrapOn)
+	if !ok {
+		t.Fatal("missing the page's wrap button")
+	}
+	before := d.edit.noWrap
+	if err := view.Click(wrap.Bounds.X+wrap.Bounds.Width/2, wrap.Bounds.Y+wrap.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	afterClick := d.edit.noWrap
+	if afterClick == before {
+		t.Fatal("a click on a page button did not run its action")
+	}
+	if err := view.Driver().Key(gfx.KeyEnter, 0); err != nil {
+		t.Fatal(err)
+	}
+	if d.edit.noWrap == afterClick {
+		t.Fatal("a key on the focused page button did not run its action")
 	}
 }

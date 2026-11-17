@@ -6,15 +6,17 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
+	"motty/internal/term"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -30,6 +32,7 @@ var (
 	hitSFTPBookmarkDismiss = tree.ID(sftpHits, "sftp-bookmark-dismiss")
 	hitSFTPExtract         = tree.ID(sftpHits, "sftp-extract")
 	hitSFTPCompress        = tree.ID(sftpHits, "sftp-compress")
+	hitSFTPLocateTerminal  = tree.ID(sftpHits, "sftp-locate-terminal")
 	hitSFTPDialogField2    = tree.ID(sftpHits, "sftp-dialog-field2")
 )
 
@@ -44,6 +47,7 @@ var (
 	hitSettingsPathInput            = tree.ID(sftpHits, "settings-path-input")
 	hitSettingsFollowSetup          = tree.ID(sftpHits, "settings-follow-setup")
 	hitSettingsPanelAutoOpen        = tree.ID(sftpHits, "settings-panel-auto-open")
+	hitSettingsDirectoryTree        = tree.ID(sftpHits, "settings-directory-tree")
 	hitSettingsPanelLeft            = tree.ID(sftpHits, "settings-panel-left")
 	hitSettingsPanelRight           = tree.ID(sftpHits, "settings-panel-right")
 	hitSettingsWindowLocalLeft      = tree.ID(sftpHits, "settings-window-local-left")
@@ -72,14 +76,18 @@ const (
 
 // sftpBookmark is a folder kept for a host, which the host's catalog id names.
 type sftpBookmark struct {
-	host, path  string
-	name, local string
-	shared      bool
+	host, path   string
+	name, local  string
+	shared, sync bool
 }
 
 // clickSFTPExtra handles the presses this file adds to the panel.
-func (state *State) clickSFTPExtra(session *Session, view *sftpView, id ui.ID) bool {
+func (state *State) clickSFTPExtra(session *Session, view *sftpView, id gfx.ID) bool {
 	switch {
+	case id == hitSFTPFollowToggle:
+		state.toggleSFTPFollow(session)
+	case id == hitSFTPLocateTerminal:
+		state.locateSFTPTerminal(view)
 	case id == hitSFTPPaneToggle:
 		state.toggleSFTPPane(view)
 	case id == hitSFTPDownloadHere && !view.busy:
@@ -274,87 +282,92 @@ func firstLines(s string, n int) string {
 
 // ---- following the terminal's folder ----
 
+func (state *State) toggleSFTPFollow(session *Session) {
+	state.sftpFollowOff = !state.sftpFollowOff
+	state.save()
+	if state.sftpFollowOff {
+		return
+	}
+	if session == nil {
+		session = state.chrome.sftpPanel.session
+	}
+	if session == nil {
+		session, _ = state.sessionByIDPointer(state.activeSessionID)
+	}
+	if session != nil && session.term != nil {
+		if cwd, ok := session.term.screen.WorkingDirectory(); ok {
+			state.terminalDirectory(session.ID, cwd)
+			state.followTerminalDirectory(session)
+		} else if session.term.reportedDirectory != (term.Cwd{}) {
+			state.terminalDirectory(session.ID, session.term.reportedDirectory)
+			state.followTerminalDirectory(session)
+		}
+	}
+}
+
 // followSetupCommand is what a shell is given to report its folder at every
 // prompt. It is for bash and zsh, which between them are most shells.
 const followSetupCommand = `if [ -n "$ZSH_VERSION" ]; then precmd() { printf '\e]7;file://%s%s\a' "$HOST" "$PWD"; }; else PROMPT_COMMAND='printf "\e]7;file://%s%s\a" "$HOSTNAME" "$PWD"'; fi`
 
 // ---- the settings ----
 
-func (state *State) settingsParallelOptions() [3]components.SegmentOption {
-	return [...]components.SegmentOption{
-		{ID: hitSettingsParallel1, Label: "1"},
-		{ID: hitSettingsParallel2, Label: "2"},
-		{ID: hitSettingsParallel4, Label: "4"},
+// The values behind the Files page's choices; the ...Options functions above
+// name them for the widths.
+var (
+	settingsParallelChoices          = [...]int{1, 2, 4}
+	settingsPathChoices              = [...]bool{false, true} // breadcrumbs, then the input
+	settingsSFTPPanelPositionChoices = [...]layoutcore.ContextSide{layoutcore.ContextLeft, layoutcore.ContextRight}
+	settingsSFTPWindowOrderChoices   = [...]sftpWindowOrder{sftpLocalLeft, sftpRemoteLeft}
+	settingsSFTPOpenModeChoices      = [...]sftpOpenMode{sftpOpenWindow, sftpOpenTab}
+)
+
+func (state *State) settingsParallelLabel(count int) string { return strconv.Itoa(count) }
+
+func (state *State) settingsPathLabel(input bool) string {
+	if input {
+		return state.messages.Tools.FilesPathInput
 	}
+	return state.messages.Tools.FilesPathBreadcrumbs
 }
 
-func (state *State) settingsPathOptions() [2]components.SegmentOption {
-	return [...]components.SegmentOption{
-		{ID: hitSettingsPathBreadcrumbs, Label: state.messages.Tools.FilesPathBreadcrumbs},
-		{ID: hitSettingsPathInput, Label: state.messages.Tools.FilesPathInput},
+func (state *State) settingsSFTPPanelPositionLabel(side layoutcore.ContextSide) string {
+	if side == layoutcore.ContextRight {
+		return state.messages.Tools.FilesPanelRight
 	}
+	return state.messages.Tools.FilesPanelLeft
 }
 
-func (state *State) settingsSFTPPanelPositionOptions() [2]components.SegmentOption {
-	return [...]components.SegmentOption{
-		{ID: hitSettingsPanelLeft, Label: state.messages.Tools.FilesPanelLeft},
-		{ID: hitSettingsPanelRight, Label: state.messages.Tools.FilesPanelRight},
+func (state *State) settingsSFTPWindowOrderLabel(order sftpWindowOrder) string {
+	if order == sftpRemoteLeft {
+		return state.messages.Tools.FilesWindowRemoteLeft
 	}
+	return state.messages.Tools.FilesWindowLocalLeft
 }
 
-func (state *State) settingsSFTPWindowOrderOptions() [2]components.SegmentOption {
-	return [...]components.SegmentOption{
-		{ID: hitSettingsWindowLocalLeft, Label: state.messages.Tools.FilesWindowLocalLeft},
-		{ID: hitSettingsWindowRemoteLeft, Label: state.messages.Tools.FilesWindowRemoteLeft},
+func (state *State) settingsSFTPOpenModeLabel(mode sftpOpenMode) string {
+	if mode == sftpOpenTab {
+		return state.messages.Tools.FilesOpenTab
 	}
-}
-
-func (state *State) settingsSFTPOpenModeOptions() [2]components.SegmentOption {
-	return [...]components.SegmentOption{
-		{ID: hitSettingsOpenWindow, Label: state.messages.Tools.FilesOpenWindow},
-		{ID: hitSettingsOpenTab, Label: state.messages.Tools.FilesOpenTab},
-	}
+	return state.messages.Tools.FilesOpenWindow
 }
 
 func (state *State) paintFilesSettings(page *settingsPage) {
 	m := state.messages.Tools
-	position := state.settingsSFTPPanelPositionOptions()
-	selectedPosition := hitSettingsPanelLeft
-	if state.sftpPanelSide == layoutcore.ContextRight {
-		selectedPosition = hitSettingsPanelRight
-	}
-	windowOrder := state.settingsSFTPWindowOrderOptions()
-	selectedWindowOrder := hitSettingsWindowLocalLeft
-	if state.sftpWindowOrder == sftpRemoteLeft {
-		selectedWindowOrder = hitSettingsWindowRemoteLeft
-	}
-	openModes := state.settingsSFTPOpenModeOptions()
-	selectedOpenMode := hitSettingsOpenWindow
-	if state.sftpOpenMode == sftpOpenTab {
-		selectedOpenMode = hitSettingsOpenTab
-	}
-	parallel := state.settingsParallelOptions()
-	pathOptions := state.settingsPathOptions()
-	selectedPath := hitSettingsPathBreadcrumbs
-	if state.sftpPathInput {
-		selectedPath = hitSettingsPathInput
-	}
-	selectedParallel := hitSettingsParallel2
-	switch state.sftpParallel {
-	case 1:
-		selectedParallel = hitSettingsParallel1
-	case 4:
-		selectedParallel = hitSettingsParallel4
-	}
 	downloadDescription, downloadActions := state.sftpFilesDownloadSetting()
 	page.groups(func() {
 		page.group("", func() {
 			page.toggleRow(m.FilesPanelAutoOpen, m.FilesPanelAutoOpenDescription, state.sftpPanelAutoOpen, hitSettingsPanelAutoOpen)
-			page.row(m.FilesPanelPosition, m.FilesPanelPositionDescription, position[:], selectedPosition)
-			page.row(m.FilesPathStyle, m.FilesPathDescription, pathOptions[:], selectedPath)
-			page.row(m.FilesWindowOrder, m.FilesWindowOrderDescription, windowOrder[:], selectedWindowOrder)
-			page.row(m.FilesOpenMode, m.FilesOpenModeDescription, openModes[:], selectedOpenMode)
-			page.row(m.FilesParallel, "", parallel[:], selectedParallel)
+			settingsChoiceRow(page, m.FilesPanelPosition, m.FilesPanelPositionDescription, &state.sftpPanelSide, settingsSFTPPanelPositionChoices[:], state.settingsSFTPPanelPositionLabel,
+				func() { state.save() }, nil)
+			settingsChoiceRow(page, m.FilesPathStyle, m.FilesPathDescription, &state.sftpPathInput, settingsPathChoices[:], state.settingsPathLabel,
+				func() { state.save() }, nil)
+			settingsChoiceRow(page, m.FilesWindowOrder, m.FilesWindowOrderDescription, &state.sftpWindowOrder, settingsSFTPWindowOrderChoices[:], state.settingsSFTPWindowOrderLabel,
+				func() { state.invalidateSFTPWindows(); state.save() }, nil)
+			settingsChoiceRow(page, m.FilesOpenMode, m.FilesOpenModeDescription, &state.sftpOpenMode, settingsSFTPOpenModeChoices[:], state.settingsSFTPOpenModeLabel,
+				func() { state.save() }, nil)
+			page.toggleRow(m.FilesDirectoryTree, m.FilesDirectoryTreeDescription, state.sftpDirectoryTree, hitSettingsDirectoryTree)
+			settingsChoiceRow(page, m.FilesParallel, "", &state.sftpParallel, settingsParallelChoices[:], state.settingsParallelLabel,
+				func() { state.applySFTPSettings(); state.save() }, nil)
 			page.actionRow(m.FilesColumns, state.sftpFilesColumnsSummary(), false,
 				components.ButtonAction{ID: hitSettingsConfigureColumns, Label: m.FilesColumnsCustomize, Variant: components.ButtonOutline})
 			page.actionRow(m.FilesDownloadDirectory, downloadDescription, false, downloadActions...)
@@ -395,51 +408,18 @@ func (state *State) customEditorSettingVisible() bool {
 }
 
 // clickFilesSettings handles the presses of the Files settings.
-func (state *State) clickFilesSettings(id ui.ID) bool {
+func (state *State) clickFilesSettings(id gfx.ID) bool {
 	switch id {
 	case hitSettingsPanelAutoOpen:
 		state.sftpPanelAutoOpen = !state.sftpPanelAutoOpen
 		state.save()
-	case hitSettingsPanelLeft, hitSettingsPanelRight:
-		side := layoutcore.ContextLeft
-		if id == hitSettingsPanelRight {
-			side = layoutcore.ContextRight
-		}
-		if state.sftpPanelSide != side {
-			state.sftpPanelSide = side
-			state.save()
-		}
-	case hitSettingsWindowLocalLeft, hitSettingsWindowRemoteLeft:
-		order := sftpLocalLeft
-		if id == hitSettingsWindowRemoteLeft {
-			order = sftpRemoteLeft
-		}
-		if state.sftpWindowOrder != order {
-			state.sftpWindowOrder = order
-			state.invalidateSFTPWindows()
-			state.save()
-		}
-	case hitSettingsOpenWindow, hitSettingsOpenTab:
-		mode := sftpOpenWindow
-		if id == hitSettingsOpenTab {
-			mode = sftpOpenTab
-		}
-		if state.sftpOpenMode != mode {
-			state.sftpOpenMode = mode
-			state.save()
-		}
-	case hitSettingsPathBreadcrumbs, hitSettingsPathInput:
-		input := id == hitSettingsPathInput
-		if state.sftpPathInput != input {
-			state.sftpPathInput = input
-			state.save()
-		}
-	case hitSettingsParallel1, hitSettingsParallel2, hitSettingsParallel4:
-		count := map[ui.ID]int{hitSettingsParallel1: 1, hitSettingsParallel2: 2, hitSettingsParallel4: 4}[id]
-		if state.sftpParallel != count {
-			state.sftpParallel = count
-			state.applySFTPSettings()
-			state.save()
+	case hitSettingsDirectoryTree:
+		state.sftpDirectoryTree = !state.sftpDirectoryTree
+		state.save()
+		for _, window := range state.sftpWindows {
+			if window != nil && !window.closed {
+				window.setDirectoryTreeDefault(state.sftpDirectoryTree)
+			}
 		}
 	case hitSettingsConfigureColumns:
 		state.openSFTPColumnSettings()
@@ -473,8 +453,8 @@ func (state *State) clickFilesSettings(id ui.ID) bool {
 		state.applySFTPSettings()
 		state.save()
 	case hitSettingsFollowToggle:
-		state.sftpFollowOff = !state.sftpFollowOff
-		state.save()
+		session, _ := state.sessionByIDPointer(state.activeSessionID)
+		state.toggleSFTPFollow(session)
 	case hitSettingsTerminalFollowToggle:
 		state.sftpTerminalFollow = !state.sftpTerminalFollow
 		state.save()
@@ -571,6 +551,7 @@ type savedBookmark struct {
 	Name   string `json:"name,omitempty"`
 	Local  string `json:"local,omitempty"`
 	Shared bool   `json:"shared,omitempty"`
+	Sync   bool   `json:"sync,omitempty"`
 }
 
 // restoreSFTPSettings reads the file panel's settings and bookmarks from a state.
@@ -585,11 +566,15 @@ func (state *State) restoreSFTPSettings(saved savedState) {
 	state.sftpTerminalFollow = saved.SFTPTerminalFollow
 	state.sftpPathInput = saved.SFTPPathInput
 	state.sftpPanelAutoOpen = saved.SFTPPanelAutoOpen
+	state.sftpDirectoryTree = saved.SFTPDirectoryTree
 	if saved.SFTPPanelWidth >= layoutcore.MinContextWidth && saved.SFTPPanelWidth <= layoutcore.MaxContextWidth {
 		state.sftpPanelWidth = saved.SFTPPanelWidth
 	}
 	state.sftpColumns = restoreSFTPColumnPreferences(saved.SFTPColumns)
 	state.sftpDownloadDirectory = restoreSFTPDownloadDirectory(saved.SFTPDownloadDirectory)
+	if saved.SFTPTransferFilter >= transferFilterAll && saved.SFTPTransferFilter < transferFilterCount {
+		state.transfers.filter = saved.SFTPTransferFilter
+	}
 	state.sftpPanelSide = layoutcore.ContextLeft
 	if saved.SFTPPanelSide == "right" {
 		state.sftpPanelSide = layoutcore.ContextRight
@@ -605,6 +590,8 @@ func (state *State) restoreSFTPSettings(saved savedState) {
 	}
 	state.updateAtStart = saved.UpdateCheck != "off"
 	state.closeAction = closeActionFromString(saved.CloseAction)
+	state.relaunchAction = relaunchActionFromString(saved.RelaunchAction)
+	state.trayHintShown = saved.TrayHintShown
 	state.update.skipped = saved.UpdateSkipped
 	clear(state.sftpBookmarks)
 	state.sftpBookmarks = state.sftpBookmarks[:0]
@@ -618,9 +605,12 @@ func (state *State) restoreSFTPSettings(saved savedState) {
 			perHost[entry.Host] >= maxBookmarksPerHost || len(state.sftpBookmarks) >= maxBookmarks {
 			continue
 		}
-		bookmark := sftpBookmark{host: entry.Host, path: clean, name: cleanBookmarkName(entry.Name), local: entry.Local, shared: entry.Shared}
+		bookmark := sftpBookmark{host: entry.Host, path: clean, name: cleanBookmarkName(entry.Name), local: entry.Local, shared: entry.Shared, sync: entry.Sync}
 		if !validSavedBookmarkLocal(bookmark.local) {
 			bookmark.local = ""
+		}
+		if bookmark.local == "" {
+			bookmark.sync = false
 		}
 		if slices.Contains(state.sftpBookmarks, bookmark) {
 			continue

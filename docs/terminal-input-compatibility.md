@@ -60,9 +60,13 @@ never cleared to run the repair. The warning can be hidden for this session.
   the current line. Parameter/process/command substitutions, brace expressions,
   heredocs and backticks are deliberately left alone.
 - Unknown shells and sessions without the supported integration remain
-  transparent. Turning off both remote folder-follow integration directions
-  also removes the prompt proof this feature needs; Motty does not force a
-  different shell startup just to enable correction.
+  transparent. To remove the prompt proof this feature needs, turn off both
+  remote folder-follow directions, set **Settings > Terminal > Command
+  completions** to **Shortcut**, select **Connection name** or **Terminal
+  title** under **Settings > Terminal > Tab name**, and reconnect. **Current
+  path** and either automatic completion mode independently enable shell
+  integration; Motty does not force a different shell startup just to enable
+  correction.
 
 This is not a general shell parser, a second command editor, automatic locale
 installation, or a blanket rewrite of Unicode input. It cannot infer a remote

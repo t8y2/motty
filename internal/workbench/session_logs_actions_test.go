@@ -62,11 +62,16 @@ func TestSessionLogLocateRevealsFilteredCollapsedHost(t *testing.T) {
 		state.hostView = mode
 		state.locateSessionLogHost(record.ID)
 		canvas := paintedCanvas(t, state)
-		hit, ok := sessionLogHit(canvas, hitHostList.At(int(host.ID)))
+		hit, ok := hostListHostHit(canvas, state, host.ID)
+		wantFocus := hit.ID
+		if mode == hostViewGrid {
+			hit, ok = sessionLogHit(canvas, hitHostList.At(int(host.ID)))
+			wantFocus = hitHostList.At(int(host.ID))
+		}
 		if !state.hostIsVisible(host.ID) || !ok || hit.Bounds.Height <= 0 {
 			t.Fatalf("located host still hidden for view %d: visible=%v hit=%+v", mode, state.hostIsVisible(host.ID), hit)
 		}
-		if canvas.FocusRequest() != hitHostList.At(int(host.ID)) {
+		if canvas.FocusRequest() != wantFocus {
 			t.Fatalf("located host is not focused: %v", canvas.FocusRequest())
 		}
 	}

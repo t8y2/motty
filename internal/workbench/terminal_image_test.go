@@ -8,7 +8,7 @@ import (
 	"image/png"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // settleImages waits for the background image decode and applies it, then
@@ -40,8 +40,8 @@ func TestTerminalImagesReachVifBitmapCanvasAndSteadyPaintAllocatesNothing(t *tes
 	state.Wake()
 	settleImages(t, state)
 
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	paint := func() {
 		canvas.Reset()
 		state.Paint(&canvas, size)
@@ -66,8 +66,8 @@ func BenchmarkPaintTerminalImageUnchanged(b *testing.B) {
 	shell.say("\x1b_Ga=T,f=32,s=1,v=1,c=20,r=10;" + raw + "\x1b\\")
 	state.Wake()
 	settleImages(&testing.T{}, state)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	b.ReportAllocs()
 	b.ResetTimer()

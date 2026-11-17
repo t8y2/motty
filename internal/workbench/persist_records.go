@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -78,7 +79,17 @@ import (
 // Version 23 requires lossless transactional field patches from every writer.
 // Workspace templates travel as shared records; the layout they restore is a
 // device-local object, which epoch 23 preserves without a version of its own.
-const configFormat = 23
+// Version 24 preserves the SFTP location profile synchronization flag. Profiles
+// are array records, so an older writer would otherwise drop the new field.
+// Version 25 preserves an AI provider's models URL, on the same terms: providers
+// are array records too.
+// Version 26 adds the saved passwords and the hosts' reference to one: an older
+// writer would drop the records it does not know.
+// Version 27 preserves the latency readout's docked position and order: older
+// writers would drop the new toolbar key and silently move it back.
+// Version 28 preserves the device-local interface text size as a pixel number:
+// an older full save would drop the field and reset the size.
+const configFormat = 28
 
 const (
 	kindSetting             = "setting"
@@ -91,6 +102,7 @@ const (
 // development builds. Workspace identity travels with its deck; all other
 // settings remain shared in local state.
 type savedWorkspace struct {
+	NoteSidebars     *savedNoteSidebars     `json:"note_sidebars,omitempty"`
 	Workspace        string                 `json:"workspace,omitempty"`
 	Sessions         []savedSession         `json:"sessions,omitempty"`
 	ActiveSession    int                    `json:"active_session,omitempty"`
@@ -104,6 +116,7 @@ func clearSavedWorkspace(saved *savedState) {
 	saved.ActiveSession = 0
 	saved.Deck = nil
 	saved.WorkspaceLayouts = nil
+	saved.NoteSidebars = nil
 }
 
 func applySavedWorkspace(saved *savedState, raw json.RawMessage) error {
@@ -132,6 +145,7 @@ func applySavedWorkspace(saved *savedState, raw json.RawMessage) error {
 	saved.ActiveSession = workspace.ActiveSession
 	saved.Deck = workspace.Deck
 	saved.WorkspaceLayouts = workspace.WorkspaceLayouts
+	saved.NoteSidebars = workspace.NoteSidebars
 	return nil
 }
 
@@ -157,6 +171,8 @@ type entityField struct {
 }
 
 var entityFields = []entityField{
+	{field: "notes", kind: "note", key: func(f map[string]json.RawMessage) string { return fieldText(f, "id") }},
+	{field: "note_folders", kind: "note-folder", key: func(f map[string]json.RawMessage) string { return fieldText(f, "id") }},
 	{field: "hosts", kind: "host", key: func(fields map[string]json.RawMessage) string {
 		if id := fieldText(fields, "id"); id != "" {
 			return id
@@ -169,14 +185,13 @@ var entityFields = []entityField{
 		return joinKey(fieldText(fields, "mode"), fieldText(fields, "host_address"), fieldText(fields, "host_user"), fieldText(fields, "host_port"),
 			fieldText(fields, "local_port"), fieldText(fields, "destination_host"), fieldText(fields, "destination_port"))
 	}},
-	{field: "proxies", kind: "proxy", key: func(fields map[string]json.RawMessage) string {
-		return joinKey(fieldText(fields, "target_user"), fieldText(fields, "target_address"), fieldText(fields, "target_port"))
-	}},
+	{field: "proxies", kind: "proxy", key: proxyRecordKey},
 	{field: "snippets", kind: "snippet", key: func(fields map[string]json.RawMessage) string { return fieldText(fields, "name") }},
 	{field: "highlights", kind: "highlight", key: func(fields map[string]json.RawMessage) string {
 		return joinKey(fieldText(fields, "pattern"), fieldText(fields, "regex"), fieldText(fields, "case_sensitive"))
 	}},
 	{field: "autofill_rules", kind: "autofill", key: func(fields map[string]json.RawMessage) string { return fieldText(fields, "id") }},
+	{field: "credentials", kind: "credential", key: func(fields map[string]json.RawMessage) string { return fieldText(fields, "id") }},
 	{field: "sftp_bookmarks", kind: "bookmark", key: func(fields map[string]json.RawMessage) string {
 		if name := fieldText(fields, "name"); name != "" {
 			return joinKey("profile", fieldText(fields, "host"), fieldText(fields, "shared"), name)
@@ -188,23 +203,45 @@ var entityFields = []entityField{
 	{field: "outbound_proxy", kind: "outbound-proxy", single: true, key: func(map[string]json.RawMessage) string { return "main" }},
 }
 
+// proxyRecordKey names a route by its target: where the target connects, which is
+// what every build has always done. When the target host is not the first at its
+// destination (its catalog ID is not the one that destination gives) the route
+// is named by that ID instead, so two targets behind one bastion do not share a
+// record.
+func proxyRecordKey(fields map[string]json.RawMessage) string {
+	user, address, port := fieldText(fields, "target_user"), fieldText(fields, "target_address"), fieldText(fields, "target_port")
+	if id := fieldText(fields, "target_id"); id != "" {
+		number, _ := strconv.ParseUint(port, 10, 16)
+		if id != catalogIDFor(Host{Protocol: protocolSSH, Address: address, User: user, Port: uint16(number)}) {
+			return joinKey("host", id)
+		}
+	}
+	return joinKey(user, address, port)
+}
+
 // syncedSettings are the scalar settings every device shares.
 var syncedSettings = map[string]bool{
+	"host_order":                   true,
+	"hidden_host_tags":             true,
 	"highlight_builtin":            true,
 	"terminalOption":               true,
 	"terminal_scrollback":          true,
 	"connection_timeout_seconds":   true,
 	"connection_keepalive_seconds": true,
+	"connection_keepalive_off":     true,
 	"connection_reconnect":         true,
 	"terminal_clipboard":           true,
 	"terminal_cursor_steady":       true,
 	"terminal_cursor_thickness":    true,
 	"terminal_copy_on_select":      true,
+	"terminal_word_separators":     true,
 	"terminal_right_click_paste":   true,
-	"terminal_tab_title":           true,
+	"terminal_tab_title":           true, // read legacy shared preference
+	"tab_title_mode":               true,
 	"terminal_show_latency":        true,
 	"terminal_bell_off":            true,
 	"terminal_link_plain_click":    true,
+	"terminal_input_click_off":     true,
 	"terminal_scheme":              true,
 	"terminal_scheme_dark":         true,
 	"terminal_scheme_light":        true,
@@ -224,8 +261,10 @@ var syncedSettings = map[string]bool{
 	"sftp_panel_auto_open":         true,
 	"sftp_panel_side":              true,
 	"command_history":              true,
+	"command_completion_mode":      true,
 	"command_suggest_off":          true,
 	"command_inline_suggest_off":   true,
+	"command_accept_hint_off":      true,
 }
 
 // stateVersionFields are written back as this build's own on every load.
@@ -236,7 +275,7 @@ var stateVersionFields = map[string]bool{"version": true, "host_catalog_version"
 // live in that window's own local value rather than in this device's document,
 // so two windows of one process never write each other's tabs.
 var windowStateFields = map[string]bool{
-	"sessions": true, "active_session": true, "deck": true,
+	"sessions": true, "active_session": true, "deck": true, "note_sidebars": true,
 	"workspace": true, "workspace_layouts": true,
 	"window_x": true, "window_y": true, "window_width": true, "window_height": true,
 }
@@ -252,6 +291,27 @@ func windowKey(id int, development bool) string {
 }
 
 const collapsedGroupsKey = "collapsed_groups"
+
+// linkedNotesKey is the device-local list of notes whose text lives in a file.
+// They are notes in the state, but not records: nothing about them is shared. A
+// build that does not know the field leaves it in the store, as epoch 23 requires
+// of every device-local field, so it needs no format version of its own.
+const linkedNotesKey = "linked_notes"
+
+// linkedNoteFoldersKey is the same for the folders that mirror a directory.
+const linkedNoteFoldersKey = "linked_note_folders"
+
+// linkedLocalKey names the device-local field holding the linked items of a
+// record kind, or "" for a kind that has none.
+func linkedLocalKey(kind string) string {
+	switch kind {
+	case "note":
+		return linkedNotesKey
+	case "note-folder":
+		return linkedNoteFoldersKey
+	}
+	return ""
+}
 
 func fieldText(fields map[string]json.RawMessage, name string) string {
 	raw := fields[name]
@@ -494,10 +554,15 @@ func splitState(saved savedState, base *configBase, defaults configDefaults) (en
 			return nil, nil, nil, fmt.Errorf("%s: %w", entity.field, err)
 		}
 		used := map[string]bool{}
+		var linked []json.RawMessage
 		for _, item := range items {
 			var itemFields map[string]json.RawMessage
 			if err := json.Unmarshal(item, &itemFields); err != nil {
 				return nil, nil, nil, fmt.Errorf("%s: %w", entity.field, err)
+			}
+			if linkedLocalKey(entity.kind) != "" && isLinkedNote(itemFields) {
+				linked = append(linked, item)
+				continue
 			}
 			id := boundKey(entity.key(itemFields))
 			if id == "" {
@@ -524,6 +589,9 @@ func splitState(saved savedState, base *configBase, defaults configDefaults) (en
 			}
 			entries = append(entries, configstore.Entry{Kind: entity.kind, ID: id, Payload: payload})
 		}
+		if len(linked) > 0 {
+			own[linkedLocalKey(entity.kind)], _ = json.Marshal(linked)
+		}
 	}
 	local, err = json.Marshal(own)
 	if err != nil {
@@ -537,6 +605,65 @@ func splitState(saved savedState, base *configBase, defaults configDefaults) (en
 		return nil, nil, nil, err
 	}
 	return entries, local, window, nil
+}
+
+// isLinkedNote reports whether a note's fields name the file it lives in.
+func isLinkedNote(fields map[string]json.RawMessage) bool {
+	raw := fields["link"]
+	return len(raw) > 0 && !bytes.Equal(raw, []byte("null"))
+}
+
+// linkedSavedFolders is the folders of a list that mirror a directory.
+func linkedSavedFolders(folders []savedNoteFolder) []savedNoteFolder {
+	var linked []savedNoteFolder
+	for _, folder := range folders {
+		if folder.Link != nil {
+			linked = append(linked, folder)
+		}
+	}
+	return linked
+}
+
+// linkedSavedNotes is the notes of a list that live in a file.
+func linkedSavedNotes(notes []savedNote) []savedNote {
+	var linked []savedNote
+	for _, note := range notes {
+		if note.Link != nil {
+			linked = append(linked, note)
+		}
+	}
+	return linked
+}
+
+// mergeLinkedNotes appends the device's linked notes to the shared ones. A note
+// the shared records also hold by id stays the shared one: that is a note that was
+// unlinked, and the stale local entry must not shadow it.
+func mergeLinkedNotes(shared, linked json.RawMessage) json.RawMessage {
+	var held, local []json.RawMessage
+	if json.Unmarshal(shared, &held) != nil && len(shared) > 0 && !bytes.Equal(shared, []byte("null")) {
+		return shared
+	}
+	if json.Unmarshal(linked, &local) != nil {
+		return shared
+	}
+	ids := make(map[string]bool, len(held))
+	for _, item := range held {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(item, &fields) == nil {
+			ids[fieldText(fields, "id")] = true
+		}
+	}
+	for _, item := range local {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(item, &fields) == nil && !ids[fieldText(fields, "id")] {
+			held = append(held, item)
+		}
+	}
+	merged, err := json.Marshal(held)
+	if err != nil {
+		return shared
+	}
+	return merged
 }
 
 // joinState builds a state from records and this device's own values, and the
@@ -605,6 +732,14 @@ func joinState(entries []configstore.Entry, local []byte) (savedState, *configBa
 			list[index] = each.data
 		}
 		fields[entity.field], _ = json.Marshal(list)
+	}
+	if raw, ok := fields[linkedNotesKey]; ok {
+		fields["notes"] = mergeLinkedNotes(fields["notes"], raw)
+		delete(fields, linkedNotesKey)
+	}
+	if raw, ok := fields[linkedNoteFoldersKey]; ok {
+		fields["note_folders"] = mergeLinkedNotes(fields["note_folders"], raw)
+		delete(fields, linkedNoteFoldersKey)
 	}
 	var collapsed []string
 	if raw, ok := fields[collapsedGroupsKey]; ok {
@@ -761,7 +896,7 @@ type localWrite struct {
 
 func isWorkspaceField(name string) bool {
 	switch name {
-	case "workspace", "sessions", "active_session", "deck", "workspace_layouts":
+	case "workspace", "sessions", "active_session", "deck", "workspace_layouts", "note_sidebars":
 		return true
 	default:
 		return false
@@ -778,6 +913,8 @@ func savedStateFieldNames() map[string]bool {
 		}
 	}
 	names[collapsedGroupsKey] = true
+	names[linkedNotesKey] = true
+	names[linkedNoteFoldersKey] = true
 	return names
 }
 
@@ -987,6 +1124,9 @@ func writeEntries(store *configstore.Store, base *configBase, entries []configst
 		default:
 			local.state = value
 		}
+	}
+	if err := guardNoteGraphChange(store, &change); err != nil {
+		return false, err
 	}
 	written, err := store.Commit(change)
 	if err != nil {

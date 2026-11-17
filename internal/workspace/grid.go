@@ -21,20 +21,27 @@ func NewGrid(sessions []SessionID, columns int) (Layout, error) {
 	if columns < MinGridColumns || columns > MaxGridColumns {
 		return Layout{}, ErrInvalidColumns
 	}
-	seen := make(map[SessionID]struct{}, len(sessions))
-	for _, session := range sessions {
-		if session == 0 {
-			return Layout{}, ErrInvalidSession
-		}
-		if _, exists := seen[session]; exists {
-			return Layout{}, ErrSessionExists
-		}
-		seen[session] = struct{}{}
+	if err := checkSessions(sessions); err != nil {
+		return Layout{}, err
 	}
 	tree := buildGridRows(sessions, columns)
 	nodes := make([]NodeDTO, 0, len(sessions)*2-1)
 	appendGridDTO(&nodes, tree)
 	return Restore(DTO{Version: DTOVersion, Root: 1, Nodes: nodes})
+}
+
+func checkSessions(sessions []SessionID) error {
+	seen := make(map[SessionID]struct{}, len(sessions))
+	for _, session := range sessions {
+		if session == 0 {
+			return ErrInvalidSession
+		}
+		if _, exists := seen[session]; exists {
+			return ErrSessionExists
+		}
+		seen[session] = struct{}{}
+	}
+	return nil
 }
 
 type gridNode struct {

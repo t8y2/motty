@@ -57,6 +57,7 @@ const (
 	SystemAzureLinux
 	SystemOracleLinux
 	SystemESXi
+	SystemAIX
 )
 
 // systemNames is each system's persisted name. An /etc/os-release ID that has a
@@ -74,6 +75,7 @@ var systemNames = [...]string{
 	SystemElementary: "elementary", SystemVoid: "void", SystemSlackware: "slackware",
 	SystemAnolis: "anolis", SystemTencentOS: "tencentos", SystemAmazonLinux: "amazonlinux",
 	SystemAzureLinux: "azurelinux", SystemOracleLinux: "oraclelinux", SystemESXi: "esxi",
+	SystemAIX: "aix",
 }
 
 func (system RemoteSystem) String() string {
@@ -86,7 +88,7 @@ func (system RemoteSystem) String() string {
 // IsLinux reports whether the system is a Linux distribution or Linux itself.
 func (system RemoteSystem) IsLinux() bool {
 	switch system {
-	case SystemUnknown, SystemWindows, SystemDarwin, SystemFreeBSD, SystemESXi:
+	case SystemUnknown, SystemWindows, SystemDarwin, SystemFreeBSD, SystemESXi, SystemAIX:
 		return false
 	}
 	return int(system) < len(systemNames)
@@ -227,6 +229,9 @@ func classifyProbe(output string) RemoteSystem {
 		// ESXi is its own kernel: it answers uname with VMkernel, and every
 		// userland file it carries comes from busybox, not from a distribution.
 		return SystemESXi
+	case kernel == "aix":
+		// AIX is a Unix of its own: no /etc/os-release, and uname is all it says.
+		return SystemAIX
 	}
 	// An appliance's own marker outranks the distribution it borrows its userland
 	// from, which is why the markers are read before the ID.
@@ -289,8 +294,15 @@ func (conn *Conn) detectRemoteSystem(client *ssh.Client, banner string) (RemoteS
 	if guess == SystemWindows || guess == SystemDarwin || guess == SystemFreeBSD {
 		return guess, true
 	}
+	// An interactive shell owns the first session on a terminal connection: its
+	// login message is delivered there and nowhere else, so this probe must not
+	// take that place (ADR 0025).
+	conn.waitPrimaryShell()
+	probes := conn.probeState()
+	probes.begin()
 	session, err := client.NewSession()
 	if err != nil {
+		probes.end(err)
 		return guess, false
 	}
 	type answer struct {
@@ -312,11 +324,14 @@ func (conn *Conn) detectRemoteSystem(client *ssh.Client, banner string) (RemoteS
 	var probe answer
 	select {
 	case probe = <-answered:
+		probes.end(probe.err)
 	case <-timer.C:
 		// The channel is left to the server and released with the connection.
+		probes.end(nil)
 		conn.addCloser(session)
 		return guess, false
 	case <-conn.ctx.Done():
+		probes.end(nil)
 		conn.addCloser(session)
 		return guess, false
 	}

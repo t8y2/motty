@@ -11,6 +11,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/cli"
 	"motty/internal/ai/store"
@@ -151,7 +152,7 @@ func (s *State) aiStartCLILogin(id string, device bool) {
 			dir, err = os.MkdirTemp("", "motty-cli-login-")
 		}
 		if err == nil && ctx.Err() == nil {
-			config := localshell.Config{Shell: command.Program, Args: command.Args, Dir: dir, Cols: 90, Rows: 16, Notify: func() { s.aiPost(func(s *State) { s.aiPumpCLILogin() }) }}
+			config := localshell.Config{Shell: command.Program, Args: command.Args, Dir: dir, Env: cli.PathEnv(), Cols: 90, Rows: 16, Notify: func() { s.aiPost(func(s *State) { s.aiPumpCLILogin() }) }}
 			if start != nil {
 				shell, err = start(config)
 			} else {
@@ -272,16 +273,16 @@ func (s *State) aiStopCLILogin() {
 		s.ai.cfg.dialog = aiDialogNone
 	}
 }
-func (s *State) aiCLILoginKey(event ui.KeyEvent) ui.EventResult {
+func (s *State) aiCLILoginKey(event gfx.KeyEvent) gfx.EventResult {
 	login := s.ai.login
 	if login != nil && event.Target == hitAICLILoginTerminal && login.term.shell != nil && !login.finished {
-		if event.Modifiers&ui.ModifierMeta != 0 {
-			return ui.EventResult{}
+		if event.Modifiers&gfx.ModifierMeta != 0 {
+			return gfx.EventResult{}
 		}
 		input := term.EncodeKeyEvent(event, login.term.screen.KeyboardFlags(), login.term.screen.Modes().AppCursorKeys)
 		login.term.shell.Write(input)
 	}
-	return ui.EventResult{Handled: true, Repaint: true}
+	return gfx.EventResult{Handled: true, Repaint: true}
 }
 func (s *State) aiCLILoginInput(context app.TextInputContext) *app.TextInput {
 	login := s.ai.login
@@ -290,7 +291,7 @@ func (s *State) aiCLILoginInput(context app.TextInputContext) *app.TextInput {
 	}
 	t := login.term
 	c := t.screen.Cursor()
-	t.input.Bounds = ui.Rect{X: login.geometry.left + float32(c.X)*s.cellWidth, Y: login.geometry.top + float32(c.Y)*s.cellHeight, Width: s.cellWidth, Height: s.cellHeight}
+	t.input.Bounds = gfx.Rect{X: login.geometry.left + float32(c.X)*s.cellWidth, Y: login.geometry.top + float32(c.Y)*s.cellHeight, Width: s.cellWidth, Height: s.cellHeight}
 	t.input.FontSize = s.terminalFontSize
 	t.input.MonoFace = s.terminalFontFace
 	t.input.Color = s.termPal.termFG
@@ -318,34 +319,65 @@ func (s *State) aiCLILoginInput(context app.TextInputContext) *app.TextInput {
 	}
 	return &t.input
 }
-func (s *State) paintAICLILogin(canvas *ui.Canvas, viewport ui.Rect) {
+
+// declareAICLILogin declares the assistant's CLI sign-in in the window page.
+// The terminal it shows stays the canvas control it was; the dialog shell, its
+// focus and its Cancel are the page's.
+func (s *State) declareAICLILogin(c ui.C) {
 	login := s.ai.login
 	if login == nil {
 		return
 	}
 	m := s.messages.AISettings
+	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
+	width := min(float32(920), max(float32(320), viewport.Width-40))
 	height := min(float32(420), max(float32(180), viewport.Height-230))
-	dialog := components.BeginDialog(canvas, s.Theme(), viewport, components.DialogOptions{Layer: dialogLayer, Scope: dialogScope, DismissID: hitAISetFormDismiss, CloseID: hitAISetFormClose, InitialFocusID: hitAICLILoginTerminal, ContentSize: ui.Size{Width: min(float32(920), max(float32(320), viewport.Width-40))}, FitBody: true, BodyHeight: height})
-	layout := dialog.Begin(m.CLIAuthTitle+" · "+login.provider.Name, m.CLIAuthSensitive)
-	area := layout.Body
-	cols := max(20, int(area.Width/max(s.cellWidth, 1)))
-	rows := max(5, int(area.Height/max(s.cellHeight, 1)))
-	if c, r := login.term.screen.Size(); c != cols || r != rows {
-		login.term.screen.Resize(cols, rows)
-		if login.term.shell != nil {
-			login.term.shell.Resize(cols, rows)
+	description := m.CLIAuthSensitive
+	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
+		ContentSize: gfx.Size{Width: width}, FitBody: true,
+	}).Layout(description)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.CLIAuthTitle + " · " + login.provider.Name, Description: description, Width: width,
+		Height: layout.Content.Height + height, Layer: dialogLayer, Scope: dialogScope,
+		DismissID: hitAISetFormDismiss, CloseID: hitAISetFormClose, InitialFocusID: hitAICLILoginTerminal,
+	})
+	dialog.Body(func() {
+		ui.Slot(c).Fill().Draw(func(d *ui.DrawContext) {
+			// Dismissing the dialog stops the login, and the body is painted
+			// after that decision in the same pass. A stopped login has released
+			// its terminal, so there is nothing left to draw.
+			term := login.term
+			if term == nil {
+				return
+			}
+			area := d.Rect
+			cols := max(20, int(area.Width/max(s.cellWidth, 1)))
+			rows := max(5, int(area.Height/max(s.cellHeight, 1)))
+			if columns, lines := term.screen.Size(); columns != cols || lines != rows {
+				term.screen.Resize(cols, rows)
+				if term.shell != nil {
+					term.shell.Resize(cols, rows)
+				}
+			}
+			login.geometry = terminalGeometry{area: area, left: area.X, top: area.Y, cols: cols, rows: rows}
+			d.Canvas.Fill(area, s.termPal.terminal)
+			s.paintGridWithID(d.Canvas, &Session{Title: m.CLIAuthTitle, Address: m.CLIAuthTitle, term: term}, login.geometry, hitAICLILoginTerminal, true)
+		})
+	})
+	dialog.Footer(func() {
+		label := s.messages.Cancel
+		if login.finished {
+			label = m.FormSave
 		}
+		if ui.Button(c, label).Secondary().Shrink(0).Clicked() {
+			c.After(func() { s.aiDialogClick(hitAISetFormCancel) })
+		}
+	})
+	if dialog.Dismissed() {
+		s.aiStopCLILogin()
 	}
-	login.geometry = terminalGeometry{area: area, left: area.X, top: area.Y, cols: cols, rows: rows}
-	canvas.Fill(area, s.termPal.terminal)
-	s.paintGridWithID(canvas, &Session{Title: m.CLIAuthTitle, Address: m.CLIAuthTitle, term: login.term}, login.geometry, hitAICLILoginTerminal, true)
-	label := s.messages.Cancel
-	if login.finished {
-		label = m.FormSave
-	}
-	dialog.Actions(layout, components.ButtonAction{ID: hitAISetFormCancel, Label: label, Variant: components.ButtonSecondary})
-	dialog.End()
 }
+
 func (s *State) paintAICLIAuth(page *settingsPage) {
 	p, ok := s.aiSelectedProvider()
 	if !ok || !store.IsCLIKind(p.Kind) {
@@ -373,7 +405,7 @@ func (s *State) paintAICLIAuth(page *settingsPage) {
 			// they shrink with the card, the primary Sign in button disappears on
 			// ordinary narrow windows; keep their intrinsic width and let the
 			// status words wrap instead.
-			page.f.Row().Gap(8).Shrink(0).Children(func() {
+			ui.Row(page.c).Gap(8).Shrink(0).Children(func() {
 				page.button(hitAICLIRecheck, m.CLIAuthRecheck, aiButtonOutline, s.ai.auth[p.ID] == cli.AuthChecking)
 				if p.Kind == store.KindCodexCLI {
 					page.button(hitAICLIDevice, m.CLIAuthDevice, aiButtonOutline, s.ai.login != nil)

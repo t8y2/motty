@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 )
@@ -14,6 +14,10 @@ import (
 type aiRenameDialog struct {
 	id     int64
 	editor text.Editor
+	// field is the slot the dialog's field is painted into, and draw the painter
+	// kept so a repaint declares no closure.
+	field ui.Box
+	draw  func(*ui.DrawContext)
 }
 
 // openAIRename asks for a new title for a saved conversation, starting from
@@ -25,13 +29,14 @@ func (state *State) openAIRename(index int) {
 	}
 	conversation := ai.conversations[index]
 	ai.rename = aiRenameDialog{id: conversation.ID}
+	ai.rename.draw = state.drawAIRenameField
 	ai.rename.editor.Insert(conversation.Title)
 	ai.rename.editor.SetSelection(text.Range{End: ai.rename.editor.RuneCount()})
 	state.dialogError = ""
 	state.modal = modalAIRename
 }
 
-func (state *State) clickAIRenameDialog(id ui.ID) {
+func (state *State) clickAIRenameDialog(id gfx.ID) {
 	switch id {
 	case hitAIRenameClose, hitAIRenameCancel:
 		state.modal = modalNone
@@ -58,45 +63,58 @@ func (state *State) clickAIRenameDialog(id ui.ID) {
 }
 
 // aiRenameKey makes Enter in the field, or on the button, submit.
-func (state *State) aiRenameKey(event ui.KeyEvent) (ui.EventResult, bool) {
-	if state.modal != modalAIRename || event.Key != ui.KeyEnter || event.Repeat {
-		return ui.EventResult{}, false
+func (state *State) aiRenameKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if state.modal != modalAIRename || event.Key != gfx.KeyEnter || event.Repeat {
+		return gfx.EventResult{}, false
 	}
 	if event.Target != hitAIRenameField && event.Target != hitAIRenameSubmit {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	state.clickAIRenameDialog(hitAIRenameSubmit)
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
-func (state *State) paintAIRenameDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) declareAIRenameDialog(c ui.C) {
 	m := state.messages.AIPanel
 	// No scrim dismiss: a press beside the form must not discard its input.
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		CloseID: hitAIRenameClose, InitialFocusID: hitAIRenameField,
-		ContentSize: ui.Size{Width: 460}, FitBody: true, BodyHeight: 62,
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 460, "", 62)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.RenameTitle, Width: 460, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, CloseID: hitAIRenameClose, InitialFocusID: hitAIRenameField,
 	})
-	layout := dialog.Begin(m.RenameTitle, "")
-	var slot flex.Box
-	f := state.chrome.dialog.Begin(canvas, state.Theme(), layout.Body)
-	f.Column().Fill().Children(func() { slot = f.Slot().Height(62) })
-	f.End()
-	field := components.BeginField(canvas, state.Theme(), slot.Rect())
+	dialog.Body(func() {
+		column := ui.Column(c).Fill()
+		column.Children(func() {
+			state.ai.rename.field = ui.Slot(c).Height(62)
+		})
+		if state.ai.rename.draw == nil {
+			state.ai.rename.draw = state.drawAIRenameField
+		}
+		column.DrawOver(state.ai.rename.draw)
+	})
+	dialog.Footer(func() {
+		state.dialogActionFooter(c,
+			components.ButtonAction{ID: hitAIRenameCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
+			components.ButtonAction{ID: hitAIRenameSubmit, Label: m.RenameSubmit},
+		)
+	})
+}
+
+// drawAIRenameField paints the rename dialog's field into the slot the body
+// laid out.
+func (state *State) drawAIRenameField(d *ui.DrawContext) {
+	m := state.messages.AIPanel
+	field := components.BeginField(d.Canvas, *d.Theme, state.ai.rename.field.Rect())
 	if state.dialogError != "" {
 		field = field.Invalid()
 	}
 	content := field.Paint(m.RenameField, "", state.dialogError)
 	value := state.ai.rename.editor.String()
-	focused := canvas.Focused() == hitAIRenameField
+	focused := d.Canvas.Focused() == hitAIRenameField
 	content.Height = 32
-	components.PaintInput(canvas, state.Theme(), content, components.InputSnapshot{
+	components.PaintInput(d.Canvas, *d.Theme, content, components.InputSnapshot{
 		ID: hitAIRenameField, Label: m.RenameField, Value: value,
 		Placeholder: m.RenamePlaceholder, Focused: focused, PlatformEditing: focused && value != "",
 	})
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitAIRenameCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitAIRenameSubmit, Label: m.RenameSubmit},
-	)
-	dialog.End()
 }

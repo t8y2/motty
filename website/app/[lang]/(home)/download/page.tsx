@@ -86,6 +86,8 @@ export default async function Page({ params }: PageProps<'/[lang]/download'>) {
         ))}
       </div>
 
+      <p className="mt-6 text-sm text-fd-muted-foreground">{c.requirement}</p>
+
       <p className="mt-8 text-sm text-fd-muted-foreground">
         {c.sourceNote}{' '}
         <a

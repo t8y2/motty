@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sftpclient"
 )
 
@@ -35,6 +35,25 @@ func openSFTPTabFixture(t *testing.T) (*State, *Session, *sftpWindow, *workbench
 		return !w.view.busy && w.view.lfolder.path == localDir && len(w.view.lfolder.rows) == 1
 	})
 	return state, source, w, remote, localDir
+}
+
+// Switching to a file tab hands the keyboard to the path control that is
+// actually painted: the field in permanent-input mode, the edit button in
+// breadcrumbs mode.
+func TestSFTPTabFocusTargetFollowsThePathMode(t *testing.T) {
+	state, _, window, _, _ := openSFTPTabFixture(t)
+	if state.activeSection != sectionSFTP || state.activeSFTPWindow() != window {
+		t.Fatal("the file tab is not the active section")
+	}
+	state.sftpPathInput = false
+	window.view.lfolder.pathEditing = false
+	if got := state.activeTopTabFocusHit(); got != sftpWindowPathEdit[0] {
+		t.Fatalf("breadcrumbs focus target = %v, want %v", got, sftpWindowPathEdit[0])
+	}
+	state.sftpPathInput = true
+	if got := state.activeTopTabFocusHit(); got != sftpWindowPath[0] {
+		t.Fatalf("permanent path input focus target = %v, want %v", got, sftpWindowPath[0])
+	}
 }
 
 func waitSFTPTab(t *testing.T, state *State, w *sftpWindow, ready func() bool) {
@@ -75,8 +94,8 @@ func TestSFTPWindowOrderChangesPresentationButKeepsLogicalSides(t *testing.T) {
 	state, _, w, remote, localDir := openSFTPTabFixture(t)
 
 	state.sftpWindowOrder = sftpLocalLeft
-	var localLeftCanvas ui.Canvas
-	state.Paint(&localLeftCanvas, ui.Size{Width: 1400, Height: 900})
+	var localLeftCanvas gfx.Canvas
+	state.Paint(&localLeftCanvas, gfx.Size{Width: 1400, Height: 900})
 	localLeft, remoteRight := w.ui.list[0], w.ui.list[1]
 	if localLeft.X >= remoteRight.X {
 		t.Fatalf("local-left layout: local %+v, remote %+v", localLeft, remoteRight)
@@ -84,8 +103,8 @@ func TestSFTPWindowOrderChangesPresentationButKeepsLogicalSides(t *testing.T) {
 
 	state.sftpWindowOrder = sftpRemoteLeft
 	state.invalidateSFTPWindows()
-	var remoteLeftCanvas ui.Canvas
-	state.Paint(&remoteLeftCanvas, ui.Size{Width: 1400, Height: 900})
+	var remoteLeftCanvas gfx.Canvas
+	state.Paint(&remoteLeftCanvas, gfx.Size{Width: 1400, Height: 900})
 	remoteLeft, localRight := w.ui.list[0], w.ui.list[1]
 	if remoteLeft.X <= localRight.X {
 		t.Fatalf("remote-left layout: remote %+v, local %+v", remoteLeft, localRight)
@@ -149,38 +168,35 @@ func TestSFTPTabsShareHostEventsAndCollectInTheBackground(t *testing.T) {
 		t.Fatal("the fixture needs a terminal workspace tab")
 	}
 
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1500, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1500, Height: 900})
 	workspaceHit, workspaceOK := hitByID(&canvas, hitTabList.At(int(workspace)))
 	fileHit, fileOK := hitByID(&canvas, sftpFileTabID(source.ID))
 	if !workspaceOK || !fileOK || workspaceHit.Bounds.X >= fileHit.Bounds.X {
 		t.Fatalf("top tab order: workspace=%+v/%t file=%+v/%t", workspaceHit.Bounds, workspaceOK, fileHit.Bounds, fileOK)
 	}
 
-	mount := sftpWindowMount(w)
-	inputID := tree.MountID(mount, sftpWindowPath[1])
-	if state.SFTPTabInput(app.TextInputContext{ID: inputID}) == nil {
-		t.Fatal("the embedded file manager did not resolve a text input")
-	}
 	remoteRow := rowIndexByName(t, w, false, "notes.txt")
-	target := tree.MountID(mount, sftpWindowRows[1].At(remoteRow))
-	if result := state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: target,
-		X: w.ui.list[1].X + 24, Y: w.ui.list[1].Y + 24,
-		Viewport: ui.Size{Width: 1500, Height: 900},
-	}); !result.Handled {
-		t.Fatal("the embedded file manager did not receive pointer input")
+	target := w.view.sftpFolder.listRowsScope.At(remoteRow)
+	if state.SFTPTabInput(app.TextInputContext{ID: sftpWindowPath[1]}) == nil {
+		t.Fatal("the file manager tab did not resolve a text input")
 	}
-	if result := state.Key(ui.KeyEvent{Target: target, Key: ui.KeyDown}); !result.Handled {
-		t.Fatal("the embedded file manager did not receive key input")
+	if result := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: target,
+		X: w.ui.list[1].X + 24, Y: w.ui.list[1].Y + 24,
+		Viewport: gfx.Size{Width: 1500, Height: 900},
+	}); !result.Handled {
+		t.Fatal("the file manager tab did not receive pointer input")
+	}
+	if result := state.Key(gfx.KeyEvent{Target: target, Key: gfx.KeyDown}); !result.Handled {
+		t.Fatal("the file manager tab did not receive key input")
 	}
 	scrollRect := w.ui.list[1]
-	if result := state.Scroll(ui.ScrollEvent{
-		X: state.fileManagerRect.X + scrollRect.X + 24,
-		Y: state.fileManagerRect.Y + scrollRect.Y + 24, DeltaY: 10,
-		Viewport: ui.Size{Width: 1500, Height: 900},
+	if result := state.Scroll(gfx.ScrollEvent{
+		X: scrollRect.X + 24, Y: scrollRect.Y + 24, DeltaY: 10,
+		Viewport: gfx.Size{Width: 1500, Height: 900},
 	}); !result.Handled {
-		t.Fatal("the embedded file manager did not receive scrolling")
+		t.Fatal("the file manager tab did not receive scrolling")
 	}
 
 	external := filepath.Join(t.TempDir(), "dropped.txt")
@@ -192,26 +208,22 @@ func TestSFTPTabsShareHostEventsAndCollectInTheBackground(t *testing.T) {
 	state.sftpWindowOrder = sftpRemoteLeft
 	w.navigate(false, "/home/test")
 	waitSFTPTab(t, state, w, func() bool { return !w.view.busy })
-	var remoteLeftCanvas ui.Canvas
-	state.Paint(&remoteLeftCanvas, ui.Size{Width: 1500, Height: 900})
+	var remoteLeftCanvas gfx.Canvas
+	state.Paint(&remoteLeftCanvas, gfx.Size{Width: 1500, Height: 900})
 	remoteRect := w.ui.list[1]
-	dropX := state.fileManagerRect.X + remoteRect.X + 24
-	dropY := state.fileManagerRect.Y + remoteRect.Y + remoteRect.Height - 12
-	_, remoteDropDir, _, valid := w.dropTarget(
-		dropX-state.fileManagerRect.X,
-		dropY-state.fileManagerRect.Y,
-		true,
-	)
+	dropX := remoteRect.X + 24
+	dropY := remoteRect.Y + remoteRect.Height - 12
+	_, remoteDropDir, _, valid := w.dropTarget(dropX, dropY, true)
 	if !valid {
 		t.Fatal("the remote pane did not accept the system file drop")
 	}
-	if result := state.FileDrop(ui.FileDropEvent{
-		Phase: ui.FileDropDrop,
+	if result := state.FileDrop(gfx.FileDropEvent{
+		Phase: gfx.FileDropDrop,
 		X:     dropX,
 		Y:     dropY,
 		Paths: []string{external},
 	}); !result.Handled {
-		t.Fatal("the embedded file manager did not accept a system file drop")
+		t.Fatal("the file manager tab did not accept a system file drop")
 	}
 	remoteDropPath := path.Join(remoteDropDir, filepath.Base(external))
 	waitSFTPTab(t, state, w, func() bool {
@@ -251,10 +263,10 @@ func TestSFTPTabsShareHostEventsAndCollectInTheBackground(t *testing.T) {
 		t.Fatal("opening the same source again did not activate its existing tab")
 	}
 
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyTab, Modifiers: ui.ModifierControl}); !result.Handled || state.activeSection != sectionTerminal {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyTab, Modifiers: gfx.ModifierControl}); !result.Handled || state.activeSection != sectionTerminal {
 		t.Fatalf("Control+Tab did not move from the file tab to the workspace: %+v, section %d", result, state.activeSection)
 	}
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyTab, Modifiers: ui.ModifierControl}); !result.Handled || state.activeSection != sectionSFTP {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyTab, Modifiers: gfx.ModifierControl}); !result.Handled || state.activeSection != sectionSFTP {
 		t.Fatalf("Control+Tab did not return to the file tab: %+v, section %d", result, state.activeSection)
 	}
 	if got := w.textInput(app.TextInputContext{ID: sftpWindowPath[1]}); got == nil || got.Editor == nil {
@@ -318,8 +330,8 @@ func TestEmbeddedSFTPWakeDoesNotRescanOwnedConnections(t *testing.T) {
 func TestSFTPFileTabRemainsInTheTopBarWithVerticalWorkspaceTabs(t *testing.T) {
 	state, source, _, _, _ := openSFTPTabFixture(t)
 	state.setTabOrientation(tabsVertical)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 
 	fileHit, ok := hitByID(&canvas, sftpFileTabID(source.ID))
 	if !ok || fileHit.Bounds.Y >= windowBarHeight || fileHit.Bounds.Width <= barButtonSize {
@@ -332,7 +344,7 @@ func TestSFTPFileTabRemainsInTheTopBarWithVerticalWorkspaceTabs(t *testing.T) {
 	if state.fileTabStrip.area.Width <= 0 {
 		t.Fatal("the top file-tab strip was not laid out")
 	}
-	if result := state.Key(ui.KeyEvent{Target: sftpFileTabID(source.ID), Key: ui.KeyRight}); !result.Handled {
+	if result := state.Key(gfx.KeyEvent{Target: sftpFileTabID(source.ID), Key: gfx.KeyRight}); !result.Handled {
 		t.Fatal("horizontal file-tab navigation stopped working with vertical workspace tabs")
 	}
 }
@@ -342,15 +354,15 @@ func TestSFTPFileTabRespectsVerticalTabsAutoHide(t *testing.T) {
 	state.setTabOrientation(tabsVertical)
 	state.setVerticalTabsAutoHide(true)
 
-	size := ui.Size{Width: 1400, Height: 900}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	if state.verticalTabs.bounds.Width != verticalTabsRail || state.fileManagerRect.X != verticalTabsRail {
 		t.Fatalf("collapsed rail = %+v, file manager starts at %.1f", state.verticalTabs.bounds, state.fileManagerRect.X)
 	}
 
-	state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerMove, X: 2, Y: windowBarHeight + 2, Viewport: size,
+	state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerMove, X: 2, Y: windowBarHeight + 2, Viewport: size,
 	})
 	canvas.Reset()
 	state.Paint(&canvas, size)
@@ -369,11 +381,11 @@ func TestSFTPFileTabVerticalRailOwnsInputWhenExpanded(t *testing.T) {
 	state.sftpWindowOrder = sftpRemoteLeft
 	state.invalidateSFTPWindows()
 
-	size := ui.Size{Width: 800, Height: 700}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 800, Height: 700}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
-	state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerMove, X: 2, Y: windowBarHeight + 2, Viewport: size,
+	state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerMove, X: 2, Y: windowBarHeight + 2, Viewport: size,
 	})
 	canvas.Reset()
 	state.Paint(&canvas, size)
@@ -383,15 +395,15 @@ func TestSFTPFileTabVerticalRailOwnsInputWhenExpanded(t *testing.T) {
 		t.Fatalf("expanded rail = %+v, file manager starts at %.1f", panel, state.fileManagerRect.X)
 	}
 	remoteList := w.ui.list[1]
-	x := state.fileManagerRect.X + remoteList.X + 10
-	y := state.fileManagerRect.Y + remoteList.Y + remoteList.Height/2
+	x := remoteList.X + 10
+	y := remoteList.Y + remoteList.Height/2
 	if !pointInRect(x, y, panel) {
 		t.Fatalf("test point %.1f,%.1f is outside expanded rail %+v", x, y, panel)
 	}
 
 	w.ui.bars[1].MaxOffsetY = 120
 	w.ui.offset[1] = 20
-	result := state.Scroll(ui.ScrollEvent{
+	result := state.Scroll(gfx.ScrollEvent{
 		X: x, Y: y, DeltaY: 30, Precise: true, Viewport: size,
 	})
 	if !result.Handled || w.ui.offset[1] != 20 {
@@ -399,8 +411,8 @@ func TestSFTPFileTabVerticalRailOwnsInputWhenExpanded(t *testing.T) {
 	}
 
 	w.view.selected = -1
-	state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary,
+	state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary,
 		X: x, Y: y, Viewport: size,
 	})
 	if w.view.selected != -1 {
@@ -408,12 +420,12 @@ func TestSFTPFileTabVerticalRailOwnsInputWhenExpanded(t *testing.T) {
 	}
 
 	localFile := filepath.Join(localDir, "local.yml")
-	over := ui.FileDropEvent{Phase: ui.FileDropOver, X: x, Y: y, Paths: []string{localFile}}
+	over := gfx.FileDropEvent{Phase: gfx.FileDropOver, X: x, Y: y, Paths: []string{localFile}}
 	if result := state.FileDrop(over); !result.Handled || w.drag.active {
 		t.Fatalf("expanded rail accepted a file hover into the page: %+v, drag=%t", result, w.drag.active)
 	}
 	drop := over
-	drop.Phase = ui.FileDropDrop
+	drop.Phase = gfx.FileDropDrop
 	if result := state.FileDrop(drop); !result.Handled || len(w.view.worker.Transfers(nil)) != 0 {
 		t.Fatalf("expanded rail accepted a file drop into the page: %+v, transfers=%d",
 			result, len(w.view.worker.Transfers(nil)))
@@ -444,14 +456,14 @@ func TestSFTPFileTabsScrollAndRemainClickableWithVerticalWorkspaceTabs(t *testin
 	}
 	state.rebuildFileTabOptions()
 
-	size := ui.Size{Width: 720, Height: 600}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 720, Height: 600}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	if state.fileTabStrip.max <= 0 {
 		t.Fatal("twenty file tabs did not overflow the narrow top strip")
 	}
 	start := state.fileTabStrip.offset
-	result := state.Scroll(ui.ScrollEvent{
+	result := state.Scroll(gfx.ScrollEvent{
 		X:      state.fileTabStrip.area.X + 24,
 		Y:      state.fileTabStrip.area.Y + state.fileTabStrip.area.Height/2,
 		DeltaY: 160, Viewport: size,
@@ -461,7 +473,7 @@ func TestSFTPFileTabsScrollAndRemainClickableWithVerticalWorkspaceTabs(t *testin
 	}
 
 	for range 30 {
-		state.Scroll(ui.ScrollEvent{
+		state.Scroll(gfx.ScrollEvent{
 			X:      state.fileTabStrip.area.X + 24,
 			Y:      state.fileTabStrip.area.Y + state.fileTabStrip.area.Height/2,
 			DeltaY: 160, Viewport: size,
@@ -489,11 +501,11 @@ func TestSFTPFileTabsScrollAndRemainClickableWithVerticalWorkspaceTabs(t *testin
 	}
 	canvas.Reset()
 	state.Paint(&canvas, size)
-	if state.fileTabStrip.area != (ui.Rect{}) || state.fileTabStrip.max != 0 || state.fileTabStrip.offset != 0 {
+	if state.fileTabStrip.area != (gfx.Rect{}) || state.fileTabStrip.max != 0 || state.fileTabStrip.offset != 0 {
 		t.Fatalf("closing every file tab left a stale strip behind: %+v", state.fileTabStrip)
 	}
 	if stale.area.Width > 0 {
-		state.Scroll(ui.ScrollEvent{
+		state.Scroll(gfx.ScrollEvent{
 			X: stale.area.X + 24, Y: stale.area.Y + stale.area.Height/2,
 			DeltaY: 160, Viewport: size,
 		})
@@ -509,15 +521,15 @@ func TestWorkspaceTabsRemainScrollableBesideFileTabs(t *testing.T) {
 		openEmptyTab(state)
 	}
 	state.setTabOrientation(tabsVertical)
-	size := ui.Size{Width: 720, Height: 600}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 720, Height: 600}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	if state.tabStrip.max <= 0 || state.tabStrip.offset != state.tabStrip.max {
 		t.Fatalf("workspace tabs did not overflow and reveal the active tab: max=%.1f offset=%.1f", state.tabStrip.max, state.tabStrip.offset)
 	}
 
 	area := state.tabStrip.area
-	result := state.Scroll(ui.ScrollEvent{
+	result := state.Scroll(gfx.ScrollEvent{
 		X: area.X + 10, Y: area.Y + 10, DeltaY: -10000, Viewport: size,
 	})
 	if !result.Handled || !result.Repaint || state.tabStrip.offset != 0 {
@@ -539,8 +551,8 @@ func TestWorkspaceTabsRemainScrollableBesideFileTabs(t *testing.T) {
 func TestSFTPFileTabLeavesRoomForTheAssistantAndKeepsWheelInput(t *testing.T) {
 	state, _, _, _, _ := openSFTPTabFixture(t)
 	state.setAIPanelOpen(true)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1500, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1500, Height: 900})
 
 	panel := state.ai.panel.rect
 	if panel.Width <= 0 {
@@ -549,9 +561,9 @@ func TestSFTPFileTabLeavesRoomForTheAssistantAndKeepsWheelInput(t *testing.T) {
 	if state.fileManagerRect.Right() > panel.X {
 		t.Fatalf("file manager %+v overlaps assistant %+v", state.fileManagerRect, panel)
 	}
-	if result := state.Scroll(ui.ScrollEvent{
+	if result := state.Scroll(gfx.ScrollEvent{
 		X: panel.X + 24, Y: panel.Y + 80, DeltaY: 24,
-		Viewport: ui.Size{Width: 1500, Height: 900},
+		Viewport: gfx.Size{Width: 1500, Height: 900},
 	}); !result.Handled {
 		t.Fatal("a wheel over the assistant panel was not handled by the assistant")
 	}
@@ -560,8 +572,8 @@ func TestSFTPFileTabLeavesRoomForTheAssistantAndKeepsWheelInput(t *testing.T) {
 func TestSFTPFileTabYieldsToTheNarrowAssistantDrawer(t *testing.T) {
 	state, _, w, _, _ := openSFTPTabFixture(t)
 	state.setAIPanelOpen(true)
-	size := ui.Size{Width: 800, Height: 600}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 800, Height: 600}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 
 	panel := state.ai.panel.rect
@@ -573,7 +585,7 @@ func TestSFTPFileTabYieldsToTheNarrowAssistantDrawer(t *testing.T) {
 		t.Fatal("the drawer input was not painted")
 	}
 	fileOffset := w.ui.offset[0]
-	result := state.Scroll(ui.ScrollEvent{
+	result := state.Scroll(gfx.ScrollEvent{
 		X: panel.X + panel.Width/2, Y: panel.Y + panel.Height/2,
 		DeltaY: 120, Precise: true, Viewport: size,
 	})
@@ -581,8 +593,8 @@ func TestSFTPFileTabYieldsToTheNarrowAssistantDrawer(t *testing.T) {
 		t.Fatalf("the drawer's wheel reached the file list: %+v, offset %.1f -> %.1f", result, fileOffset, w.ui.offset[0])
 	}
 
-	event := ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary,
+	event := gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary,
 		Target: input.ID, X: input.Bounds.X + 20, Y: input.Bounds.Y + 10,
 		Viewport: size,
 	}
@@ -595,7 +607,7 @@ func TestSFTPFileTabYieldsToTheNarrowAssistantDrawer(t *testing.T) {
 func TestSFTPFileTabCloseConfirmationAndWindowModeOpening(t *testing.T) {
 	state, source, _, _ := openTestSFTP(t)
 	windowCalls := 0
-	state.options.OpenContentWindow = func(app.Config, *ui.Canvas) (*app.ContentWindow, error) {
+	state.options.OpenContentWindow = func(app.Config, *gfx.Canvas) (*app.ContentWindow, error) {
 		windowCalls++
 		return nil, errors.New("test stops before creating a native window")
 	}
@@ -619,8 +631,8 @@ func TestSFTPFileTabCloseConfirmationAndWindowModeOpening(t *testing.T) {
 	if !w.closeConfirm || w.closed || len(state.sftpTabs) != 1 {
 		t.Fatal("closing an active file tab skipped confirmation")
 	}
-	var canvas ui.Canvas
-	w.paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	w.paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if got := w.closeDescription(); got != state.messages.SFTPWindow.CloseTabDescription {
 		t.Fatalf("file tab close description = %q", got)
 	}
@@ -642,6 +654,58 @@ func TestSFTPFileTabCloseConfirmationAndWindowModeOpening(t *testing.T) {
 	state.requestCloseSFTPTab(w)
 	if !w.closed || len(state.sftpTabs) != 0 {
 		t.Fatal("the confirmed file tab did not close")
+	}
+}
+
+func TestMiddleClickFileTabUsesItsCloseConfirmation(t *testing.T) {
+	state, source, _, _ := openTestSFTP(t)
+	state.sftpOpenMode = sftpOpenTab
+	state.openSFTPWindow(source)
+	w := state.sftpWindows[source.ID]
+	w.view.extracting = true
+	press := gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonMiddle, Target: sftpFileTabID(source.ID)}
+	result := pointer(state, press)
+	if !result.Handled || !result.Repaint || !w.closeConfirm || w.closed || len(state.sftpTabs) != 1 {
+		t.Fatalf("middle press skipped file-tab close confirmation: result=%+v confirm=%v closed=%v", result, w.closeConfirm, w.closed)
+	}
+	w.click(hitSFTPWindowCloseCancel)
+	w.view.extracting = false
+	press.Target = sftpFileTabCloseID(source.ID)
+	pointer(state, press)
+	if !w.closed || len(state.sftpTabs) != 0 {
+		t.Fatal("middle press did not close the file tab")
+	}
+}
+
+// A file tab's menus use a few rows named by the shared sftp features rather
+// than the window's own. While the tab is in front it is the only sftp view
+// painted, so those rows must reach its window, not the docked panel's view.
+func TestFileTabOwnsWindowNamedMenuRows(t *testing.T) {
+	state, source, w, _, _ := openSFTPTabFixture(t)
+	if source.files == nil {
+		t.Fatal("fixture has no docked file view to guard")
+	}
+	state.click(hitSFTPNewLink, false)
+	if w.view.dialog != sftpDialogSymlink {
+		t.Fatalf("the tab did not take the window-named menu row: dialog %v", w.view.dialog)
+	}
+	if source.files.dialog != sftpDialogNone {
+		t.Fatalf("the docked view took the tab's menu row: dialog %v", source.files.dialog)
+	}
+}
+
+func TestSFTPFileTabShowsItsFullTitleOnHover(t *testing.T) {
+	state, _, w, _, _ := openSFTPTabFixture(t)
+	w.session.Title = "production-db-replica-01.example.internal"
+	label := state.sftpFileTabTitle(w)
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 600, Height: 900})
+	hit, ok := hitByID(&canvas, sftpFileTabID(w.session.ID))
+	if !ok {
+		t.Fatal("the file transfer tab is not painted")
+	}
+	if hit.Hint != label {
+		t.Fatalf("hovering the file transfer tab should show its full title, got hint %q want %q", hit.Hint, label)
 	}
 }
 

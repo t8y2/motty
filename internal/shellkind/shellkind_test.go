@@ -48,7 +48,7 @@ func TestFromProgram(t *testing.T) {
 }
 
 func TestUnsupportedShellsAreOnlyThoseWithNoWrapper(t *testing.T) {
-	for _, kind := range []Kind{Unknown, POSIX, PowerShell} {
+	for _, kind := range []Kind{Unknown, POSIX, PowerShell, Console} {
 		if !kind.SupportsExec() {
 			t.Errorf("%v should support exec", kind)
 		}

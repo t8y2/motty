@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/remotestats"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
@@ -24,11 +24,16 @@ var (
 	hitMonitorEvery1        = tree.ID(monitorHits, "every-1")
 	hitMonitorEvery2        = tree.ID(monitorHits, "every-2")
 	hitMonitorEvery5        = tree.ID(monitorHits, "every-5")
+	hitMonitorSudo          = tree.ID(monitorHits, "sudo")
 	hitMonitorDisks         = tree.ID(monitorHits, "more-disks")
 	hitMonitorHardware      = tree.ID(monitorHits, "hardware")
+	hitMonitorLogins        = tree.ID(monitorHits, "logins")
 	hitMonitorOverview      = tree.ID(monitorHits, "overview")
 	hitMonitorDiskPage      = tree.ID(monitorHits, "disk-page")
 	hitMonitorNetworkPage   = tree.ID(monitorHits, "network-page")
+	hitMonitorHostName      = tree.ID(monitorHits, "host-name")
+	hitMonitorHostAddress   = tree.ID(monitorHits, "host-address")
+	hitMonitorHostUser      = tree.ID(monitorHits, "host-user")
 	hitMonitorCores         = tree.ID(monitorHits, "cores")
 	hitMonitorCoresMore     = tree.ID(monitorHits, "cores-more")
 	hitMonitorDisksCollapse = tree.ID(monitorHits, "disks-collapse")
@@ -63,6 +68,17 @@ type monitorCoreText struct {
 	label, percent string
 	value          float64
 }
+type monitorGPUProcessText struct {
+	label, memory string
+}
+type monitorGPUText struct {
+	name, memory, util, power, temperature               string
+	memoryValue, utilValue, powerValue, temperatureValue float64
+	processes                                            []monitorGPUProcessText
+	// processesKnown is false for a card whose vendor the monitor does not
+	// collect processes for: the section is left out rather than claiming none.
+	processesKnown bool
+}
 
 // Fixed storage bounds the last minute of samples, independent of session age.
 type monitorView struct {
@@ -76,43 +92,48 @@ type monitorView struct {
 	noPerCore                                                 bool
 	cores                                                     []monitorCoreText
 	coresTitle, coreMoreText, cpuNote, diskText, diskCapacity string
+	gpuRows                                                   []monitorGPUText
+	memoryLabel, utilLabel, powerLabel, temperatureLabel      string
+	processLabel, noProcessLabel                              string
 	diskValue                                                 float64
 	diskAvailable                                             bool
 	dragging                                                  bool
 	grab                                                      float32
+	copiedAddress                                             string
+	addressCopiedUntil                                        time.Duration
 
-	worker                             *remotestats.DetailsWorker
-	data                               remotestats.Details
-	sample                             remotestats.Sample
-	haveDetails, detailsFailed, paused bool
-	interval                           int
-	disksOpen, hardwareOpen            bool
-	scroll, contentHeight              float32
-	count                              int
-	origin                             time.Time
-	x, cpu, memory, disk, down, up     [61]float32
-	diskIdentity, networkIdentity      string
-	charts                             [4]monitorChart
-	refreshStarted                     time.Duration
-	refreshVersion                     uint32
-	refreshRunning                     bool
-	refreshReset                       bool
-	version                            uint32
-	cpuText                            string
-	memoryText                         string
-	memoryCapacity                     string
-	availableMemory                    string
-	downText                           string
-	upText                             string
-	loadText                           string
-	coresText                          string
-	uptimeText                         string
-	networkText                        string
-	intervalText                       string
-	moreDisks                          string
-	disks                              []monitorDiskText
-	networks                           []monitorNetworkText
-	language                           string
+	worker                                                   *remotestats.DetailsWorker
+	data                                                     remotestats.Details
+	sample                                                   remotestats.Sample
+	haveDetails, detailsFailed, paused                       bool
+	interval                                                 int
+	disksOpen, hardwareOpen, loginsClosed, loginsUnsupported bool
+	scroll, contentHeight                                    float32
+	count                                                    int
+	origin                                                   time.Time
+	x, cpu, memory, disk, down, up                           [61]float32
+	diskIdentity, networkIdentity                            string
+	charts                                                   [4]monitorChart
+	refreshStarted                                           time.Duration
+	refreshVersion                                           uint32
+	refreshRunning                                           bool
+	refreshReset                                             bool
+	version                                                  uint32
+	cpuText                                                  string
+	memoryText                                               string
+	memoryCapacity                                           string
+	availableMemory                                          string
+	downText                                                 string
+	upText                                                   string
+	loadText                                                 string
+	coresText                                                string
+	uptimeText                                               string
+	networkText                                              string
+	intervalText                                             string
+	moreDisks                                                string
+	disks                                                    []monitorDiskText
+	networks                                                 []monitorNetworkText
+	language                                                 string
 }
 
 // Panel width is workspace state. Narrow windows use a drawer without
@@ -121,7 +142,7 @@ func (state *State) monitorShown(workspace layoutcore.WorkspaceID) bool {
 	c, ok := state.deck.Context(workspace)
 	return ok && c.MonitorOpen
 }
-func (state *State) monitorPanelWidth(workspace layoutcore.WorkspaceID, size ui.Size) float32 {
+func (state *State) monitorPanelWidth(workspace layoutcore.WorkspaceID, size gfx.Size) float32 {
 	c, _ := state.deck.Context(workspace)
 	width := c.MonitorWidth
 	if width == 0 {
@@ -141,7 +162,7 @@ func (state *State) monitorPanelWidth(workspace layoutcore.WorkspaceID, size ui.
 // aiPreferredWidth returns the configured or default width of the AI panel,
 // without querying aiPanelLimits or aiSharedWidth (avoiding circular recursion
 // with independentMonitorReserve).
-func (state *State) aiPreferredWidth(size ui.Size) float32 {
+func (state *State) aiPreferredWidth(size gfx.Size) float32 {
 	if state.ai.panelWidth > 0 {
 		return max(state.ai.panelWidth, aiPanelMin)
 	}
@@ -150,7 +171,7 @@ func (state *State) aiPreferredWidth(size ui.Size) float32 {
 
 // monitorAndAICanCoexist reports whether the workspace has room to dock both the
 // resource monitor and the assistant beside the terminal and context panels.
-func (state *State) monitorAndAICanCoexist(workspace layoutcore.WorkspaceID, size ui.Size) bool {
+func (state *State) monitorAndAICanCoexist(workspace layoutcore.WorkspaceID, size gfx.Size) bool {
 	if size.Width < contextDrawerAt || size.Width < aiDockAt {
 		return false
 	}
@@ -165,7 +186,7 @@ func (state *State) monitorAndAICanCoexist(workspace layoutcore.WorkspaceID, siz
 	return base.Width-files-monitorWidth-aiWidth >= minTerminal
 }
 
-func (state *State) independentMonitorReserve(workspace layoutcore.WorkspaceID, size ui.Size) float32 {
+func (state *State) independentMonitorReserve(workspace layoutcore.WorkspaceID, size gfx.Size) float32 {
 	if !state.monitorShown(workspace) || size.Width < contextDrawerAt {
 		return 0
 	}
@@ -187,7 +208,7 @@ func (state *State) independentMonitorReserve(workspace layoutcore.WorkspaceID, 
 	}
 	return width + 1
 }
-func (state *State) monitorDrawer(size ui.Size) bool {
+func (state *State) monitorDrawer(size gfx.Size) bool {
 	return state.monitorShown(state.deck.ActiveWorkspace()) && state.independentMonitorReserve(state.deck.ActiveWorkspace(), size) == 0
 }
 
@@ -198,9 +219,10 @@ func (state *State) ensureMonitor(session *Session) {
 	if session.stats == nil {
 		session.stats = &remoteStatsView{state: remoteStatsMeasuring}
 		session.stats.panel.interval = 2
+		session.stats.panel.hardwareOpen = !session.isLocal()
 	}
 	v := session.stats
-	system := session.host.System
+	system := monitorSystem(session)
 	if !monitorSupported(system) {
 		v.state = remoteStatsUnsupported
 		return
@@ -235,7 +257,7 @@ func (state *State) showMonitor() {
 	_ = state.deck.SetContext(id, c)
 	state.ensureMonitor(session)
 	state.monitorMenu = false
-	state.contextRect = ui.Rect{}
+	state.contextRect = gfx.Rect{}
 	state.fitWorkspaceTerminals(id)
 	state.fitSFTP(state.viewport)
 	state.save()
@@ -249,13 +271,13 @@ func (state *State) closeMonitor() {
 	_ = state.deck.SetContext(id, c)
 	state.stopRemoteStats(state.contextSession())
 	state.monitorMenu = false
-	state.monitorRect = ui.Rect{}
+	state.monitorRect = gfx.Rect{}
 	state.fitWorkspaceTerminals(id)
 	state.fitSFTP(state.viewport)
 	state.save()
 }
 
-func (state *State) clickMonitor(id ui.ID) bool {
+func (state *State) clickMonitor(id gfx.ID) bool {
 	switch id {
 	case hitMonitorSide:
 		state.toggleMonitorSide()
@@ -273,6 +295,11 @@ func (state *State) clickMonitor(id ui.ID) bool {
 	}
 	v := s.stats
 	switch id {
+	case hitMonitorHostAddress:
+		state.copyMonitorHostAddress(s)
+	case hitMonitorSudo:
+		state.monitorMenu = false
+		state.toggleSudoCommands(s, false)
 	case hitMonitorPause:
 		v.panel.refreshReset = true
 		v.panel.paused = !v.panel.paused
@@ -320,6 +347,8 @@ func (state *State) clickMonitor(id ui.ID) bool {
 		v.panel.disksOpen = !v.panel.disksOpen
 	case hitMonitorHardware:
 		v.panel.hardwareOpen = !v.panel.hardwareOpen
+	case hitMonitorLogins:
+		v.panel.loginsClosed = !v.panel.loginsClosed
 	case hitMonitorOverview, hitMonitorDiskPage, hitMonitorNetworkPage:
 		v.panel.page = 0
 		if id == hitMonitorDiskPage {
@@ -357,7 +386,7 @@ func (state *State) toggleMonitorSide() {
 	state.monitorResizing = false
 	state.draggedContextDivider = false
 	state.monitorMenu = false
-	state.monitorRect, state.contextRect = ui.Rect{}, ui.Rect{}
+	state.monitorRect, state.contextRect = gfx.Rect{}, gfx.Rect{}
 	state.fitWorkspaceTerminals(id)
 	state.fitSFTP(state.viewport)
 	state.save()
@@ -429,6 +458,8 @@ func (state *State) formatMonitor(v *remoteStatsView) {
 	p := &v.panel
 	m := state.messages.Monitor
 	p.language = state.language.String()
+	p.memoryLabel, p.utilLabel, p.powerLabel, p.temperatureLabel = m.GPUMemory, m.Utilization, m.Power, m.Temperature
+	p.processLabel, p.noProcessLabel = m.Processes, m.NoProcesses
 	p.cpuText = fmt.Sprintf("%.1f%%", p.sample.CPUPercent)
 	if p.sample.CPUUnavailable {
 		p.cpuText = "—"
@@ -544,6 +575,58 @@ func (state *State) formatMonitor(v *remoteStatsView) {
 		}
 		p.networks = append(p.networks, monitorNetworkText{name: n.Name, rates: down + " / " + up})
 	}
+	p.gpuRows = p.gpuRows[:0]
+	for index := range p.sample.GPUs {
+		gpu := &p.sample.GPUs[index]
+		name := gpu.Name
+		if len(p.sample.GPUs) > 1 {
+			name = fmt.Sprintf("GPU%d · %s", gpu.Index, gpu.Name)
+		}
+		row := monitorGPUText{
+			name:             name,
+			memory:           monitorCapacity(gpu.MemoryUsedBytes, gpu.MemoryTotalBytes),
+			memoryValue:      percentOf(gpu.MemoryUsedBytes, gpu.MemoryTotalBytes),
+			util:             "—",
+			utilValue:        -1,
+			power:            "—",
+			powerValue:       -1,
+			temperature:      "—",
+			temperatureValue: -1,
+			processesKnown:   gpu.Vendor == "NVIDIA",
+		}
+		if gpu.UtilPercent >= 0 {
+			row.util = fmt.Sprintf("%.0f%%", gpu.UtilPercent)
+			row.utilValue = gpu.UtilPercent
+		}
+		if gpu.PowerLimitWatts > 0 && gpu.PowerWatts >= 0 {
+			row.power = fmt.Sprintf("%.0f / %.0f W", gpu.PowerWatts, gpu.PowerLimitWatts)
+			row.powerValue = 100 * gpu.PowerWatts / gpu.PowerLimitWatts
+		} else if gpu.PowerWatts >= 0 {
+			row.power = fmt.Sprintf("%.0f W", gpu.PowerWatts)
+		}
+		if gpu.TemperatureC >= 0 {
+			row.temperature = fmt.Sprintf("%.0f°C", gpu.TemperatureC)
+			row.temperatureValue = gpu.TemperatureC / 110 * 100
+		}
+		for _, process := range gpu.Processes {
+			memory := "—"
+			if process.MemoryKnown {
+				memory = monitorBytes(process.MemoryUsedBytes)
+			}
+			row.processes = append(row.processes, monitorGPUProcessText{
+				label:  fmt.Sprintf("%s · PID %d", process.Name, process.PID),
+				memory: memory,
+			})
+		}
+		p.gpuRows = append(p.gpuRows, row)
+	}
+}
+
+func percentOf(value, total uint64) float64 {
+	if total == 0 {
+		return -1
+	}
+	return min(100, 100*float64(value)/float64(total))
 }
 
 func monitorBytes(value uint64) string {

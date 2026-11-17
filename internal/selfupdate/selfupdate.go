@@ -3,9 +3,9 @@
 // and, on the systems that sign their programs, to the signer of the running
 // copy; then a helper that outlives the program swaps the files in place.
 //
-// User-owned installations are replaced directly. A dpkg-registered Linux DEB
-// instead goes through Polkit and dpkg; other system installs and portable
-// programs are left to the caller to send to the download page.
+// User-owned installations and self-managed Windows portable copies are replaced
+// directly. A dpkg-registered Linux DEB instead goes through Polkit and dpkg;
+// system installs and externally managed copies use the download page.
 package selfupdate
 
 import (
@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"strings"
 
+	"motty/internal/datadir"
 	"motty/internal/update"
 )
 
@@ -25,6 +26,7 @@ const (
 	KindNone Kind = iota
 	KindMacApp
 	KindWindowsSetup
+	KindWindowsPortable
 	KindLinuxPrefix
 	KindLinuxDeb
 )
@@ -35,6 +37,8 @@ func (kind Kind) String() string {
 		return "mac-app"
 	case KindWindowsSetup:
 		return "windows-setup"
+	case KindWindowsPortable:
+		return "windows-portable"
 	case KindLinuxPrefix:
 		return "linux-prefix"
 	case KindLinuxDeb:
@@ -44,7 +48,7 @@ func (kind Kind) String() string {
 }
 
 func parseKind(name string) Kind {
-	for _, kind := range []Kind{KindMacApp, KindWindowsSetup, KindLinuxPrefix, KindLinuxDeb} {
+	for _, kind := range []Kind{KindMacApp, KindWindowsSetup, KindWindowsPortable, KindLinuxPrefix, KindLinuxDeb} {
 		if kind.String() == name {
 			return kind
 		}
@@ -57,8 +61,8 @@ type Reason uint8
 
 const (
 	ReasonNone Reason = iota
-	// ReasonNotUserInstall is an installation that was not made the way the
-	// packages make it: a system package, a portable program, a development build.
+	// ReasonNotUserInstall is a copy Motty does not own, such as a development
+	// build or a portable copy managed by another installer.
 	ReasonNotUserInstall
 	// ReasonNotWritable is a standard installation the user cannot change.
 	ReasonNotWritable
@@ -91,8 +95,10 @@ type Env struct {
 	// for this application, in the same 64-bit registry view as the installer.
 	WindowsUserDir    string
 	WindowsMachineDir string
+	ScoopRoots        []string
 	Writable          func(dir string) bool
 	Exists            func(path string) bool
+	IsDir             func(path string) bool
 	DebInstalled      func(path string) bool
 	PolkitAvailable   func() bool
 }
@@ -106,10 +112,23 @@ func SystemEnv() Env {
 		}
 	}
 	userDir, machineDir := windowsInstallDirs()
+	var scoopRoots []string
+	if root := os.Getenv("SCOOP"); root != "" {
+		scoopRoots = append(scoopRoots, root)
+	}
+	if root := os.Getenv("SCOOP_GLOBAL"); root != "" {
+		scoopRoots = append(scoopRoots, root)
+	}
+	if programData := os.Getenv("ProgramData"); programData != "" {
+		scoopRoots = append(scoopRoots, filepath.Join(programData, "scoop"))
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		scoopRoots = append(scoopRoots, filepath.Join(home, "scoop"))
+	}
 	return Env{
 		GOOS: runtime.GOOS, LocalAppData: os.Getenv("LOCALAPPDATA"), ProgramFiles: programFiles,
-		WindowsUserDir: userDir, WindowsMachineDir: machineDir,
-		Writable: writable, Exists: exists, DebInstalled: debInstalled, PolkitAvailable: polkitAvailable,
+		WindowsUserDir: userDir, WindowsMachineDir: machineDir, ScoopRoots: scoopRoots,
+		Writable: writable, Exists: exists, IsDir: isDir, DebInstalled: debInstalled, PolkitAvailable: polkitAvailable,
 	}
 }
 
@@ -125,6 +144,20 @@ func under(path, dir string) bool {
 func exists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+func isDir(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+func scoopOwned(dir string, env Env) bool {
+	for _, root := range env.ScoopRoots {
+		if root != "" && under(dir, filepath.Join(root, "apps")) {
+			return true
+		}
+	}
+	return env.Exists != nil && (env.Exists(filepath.Join(dir, "install.json")) || env.Exists(filepath.Join(dir, "manifest.json")))
 }
 
 // writable reports whether files can be made in dir.
@@ -163,6 +196,9 @@ func Detect(exe string, env Env) (Install, Reason) {
 		install.Kind, install.Root = KindMacApp, bundle
 	case "windows":
 		dir := filepath.Dir(exe)
+		if !strings.EqualFold(filepath.Base(exe), "motty.exe") {
+			return install, ReasonNotUserInstall
+		}
 		registered := env.WindowsUserDir != "" && strings.EqualFold(filepath.Clean(dir), filepath.Clean(env.WindowsUserDir))
 		if env.WindowsMachineDir != "" && strings.EqualFold(filepath.Clean(dir), filepath.Clean(env.WindowsMachineDir)) {
 			return install, ReasonSystemInstall
@@ -177,8 +213,17 @@ func Detect(exe string, env Env) (Install, Reason) {
 		// detection only when no user installation is registered elsewhere.
 		programs := filepath.Join(env.LocalAppData, "Programs")
 		legacyDefault := env.WindowsUserDir == "" && env.LocalAppData != "" && strings.EqualFold(filepath.Dir(dir), programs)
-		if (!registered && !legacyDefault) || !env.Exists(filepath.Join(dir, "Uninstall.exe")) {
-			return install, ReasonNotUserInstall
+		uninstaller := env.Exists(filepath.Join(dir, "Uninstall.exe"))
+		if !((registered || legacyDefault) && uninstaller) {
+			if registered || legacyDefault || uninstaller ||
+				scoopOwned(dir, env) || env.IsDir == nil || !env.IsDir(filepath.Join(dir, datadir.PortableName)) {
+				return install, ReasonNotUserInstall
+			}
+			if !env.Writable(dir) || !env.Writable(filepath.Join(dir, datadir.PortableName)) {
+				return install, ReasonNotWritable
+			}
+			install.Kind, install.Root = KindWindowsPortable, dir
+			return install, ReasonNone
 		}
 		if !env.Writable(dir) {
 			return install, ReasonNotWritable
@@ -218,6 +263,9 @@ func Detect(exe string, env Env) (Install, Reason) {
 func (install Install) Package() update.Package {
 	if install.Kind == KindLinuxDeb {
 		return update.PackageDeb
+	}
+	if install.Kind == KindWindowsPortable {
+		return update.PackagePortable
 	}
 	return update.PackageArchive
 }

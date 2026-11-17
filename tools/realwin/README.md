@@ -1,12 +1,11 @@
 # realwin: driving Motty on the physical Windows machine
 
-Scripts for the real Windows 11 machine (real GPU, 2880x1800, 200% scale), used where the
-Windows VM in `../../../viva/tools/testenv` is not enough: it renders on WARP and has no
-GPU timing, no refresh rate, no high DPI. Developer-only; nothing here ships.
+Scripts for the physical Windows 11 machine used for platform testing (real GPU,
+2880x1800, 200% scale): a real event loop, GPU timing, refresh rate and high DPI.
+Developer-only; nothing here ships.
 
-The endpoint is `MOTTY_WIN_REAL_HOST` / `MOTTY_WIN_REAL_USER`, read from `local.sh` here or
-from `../viva/tools/testenv/local.sh` (both git-ignored). Login is by SSH key, no password.
-See `local.example.sh`.
+The endpoint is `MOTTY_WIN_REAL_HOST` / `MOTTY_WIN_REAL_USER`, read from `local.sh` here
+(git-ignored). Login is by SSH key, no password. See `local.example.sh`.
 
 ## Why two kinds of remote command
 

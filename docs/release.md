@@ -38,13 +38,22 @@ The application is built from a clean local clone with a real `.git` directory.
 Go 1.26 does not automatically stamp Git metadata from the `.git` file of a
 linked worktree. Before each generated executable is packaged, `tools/checkbuild`
 reads its Go build information and checks the exact commit, commit time, clean
-source status and target OS/architecture. Viva packages that checked executable
+source status and target OS/architecture; for Linux and Windows it also refuses
+an executable built with cgo, so a package cannot silently take the build
+machine's C library. Viva packages that checked executable
 through `--program`, so the Windows executable is Authenticode-signed with the
 configured options before the check reads it: Viva uses a supplied program as it
 is and would otherwise package it unsigned. The check also works for
 cross-compiled Windows binaries.
 The optional `--installer` input is an externally built installer and is not
 covered by this executable check; the automated release workflow does not use it.
+
+Linux and Windows programs are built without cgo: Viva reaches those systems
+through purego and their own system calls, so `viva build` pins `CGO_ENABLED=0`
+for both targets. The Linux packages therefore do not link the C library of the
+runner that built them (a cgo build would take that runner's glibc, and an
+Ubuntu 24.04 binary refuses to start on a distribution with glibc 2.28). They
+need only the libraries they load at run time: Vulkan, XCB and Cairo.
 
 ## What each job does
 
@@ -53,7 +62,7 @@ covered by this executable check; the automated release workflow does not use it
 | Pin viva | Ubuntu | resolves `vivaui/viva` main to one commit |
 | Release draft ready | Ubuntu | checks the tag body is the committed notes, waits for the draft release, and holds its body to those notes |
 | macOS | macOS 15 (arm64) | `.dmg` and `.zip` for arm64 and amd64; signed, notarized and stapled |
-| Linux and Windows | Ubuntu | `.tar.gz` and `.deb` (amd64, arm64), and an NSIS installer for Windows amd64 and arm64; the Windows programs and the installers signed |
+| Linux and Windows | Ubuntu | `.tar.gz` and `.deb` (amd64, arm64), a `PKGBUILD` and `.SRCINFO` for each Linux architecture, and an NSIS installer for Windows amd64 and arm64; the Windows programs and the installers signed |
 | Checksums | Ubuntu | signs every package of the release, writes `SIGNATURES` and `SHA256SUMS`, and verifies the whole release |
 | Publish | Ubuntu | copies the packages to the mirror, publishes the verified draft, then flips `latest.json` |
 
@@ -71,13 +80,42 @@ and where `SHA256SUMS` is written: a build job that signed only its own platform
 would have its manifest replaced by the other job's upload. The Linux packages
 are not code-signed.
 
+## The Viva update feed
+
+Every release publishes two update feeds during the migration:
+
+- `https://dl.motty.page/latest.json`, the existing one read by installed
+  versions, with a minisign signature per package;
+- `https://dl.motty.page/viva/latest.json`, the signed Ed25519 feed
+  `github.com/vivaui/viva/update` reads, with a patch per asset for the previous
+  release (macOS zip, Linux tar.gz, Windows portable zip).
+
+`tools/mirror-release.sh --announce` writes the second one when
+`MOTTY_VIVA_UPDATE_KEY` is set. The key is the base64 64-byte Ed25519 private
+key (`viva update-keygen`); its public half is `VivaPublicKey` in
+`internal/update`. The private key lives only in CI secrets and the owner's
+offline copy. Without the secret only the existing feed is written, which is
+what old versions read.
+
+The Viva feed names the release's own assets and patches at
+`releases/<tag>/`, so a patch URL is immutable. Patches are made from the
+previous published release's matching archives; a first release, or a failed
+download, simply has none and clients download the full archive. The Windows
+portable zip's `motty-data` folder is excluded from its patch, because it is
+the user's data.
+
+Both feeds are published for 12 months after the first version that reads the
+Viva feed ships; then the existing one and `tools/updatesign` are retired. The
+migration stages and decisions are in
+`.private/decisions/0021-updates-converge-on-viva.md`.
+
 ## What the gate checks
 
 The tag is a promise that the artifacts are right, so the *Checksums* job proves
 it before *Publish* runs. `tools/release.sh --sums TAG --expect-viva SHA` stops
 the release unless
 
-- the draft holds exactly the fourteen assets of the matrix and nothing else;
+- the draft holds exactly the eighteen assets of the matrix and nothing else;
 - `SHA256SUMS` lists every package and matches the uploaded bytes;
 - `SIGNATURES` has one line per package and each signature verifies against the
   key compiled into the app, bound to that file name and version;
@@ -289,8 +327,11 @@ What the app downloads is chosen by name, so these must stay as they are:
 
 - the stable asset names in `update.StableNamePackage` (`motty-darwin-<arch>.zip`,
   `motty-linux-<arch>.tar.gz`, `motty_<arch>.deb`,
-  `motty-windows-<arch>-setup.exe`) match what
+  `motty-windows-<arch>-setup.exe`, `motty-windows-<arch>.zip`) match what
   `viva package` produces, after the mirror takes the version out;
+- each Linux architecture also carries `motty-<version>-linux-<arch>.PKGBUILD`
+  and `.SRCINFO`, which install the released `tar.gz` under `/opt` and link it
+  into `/usr/bin`; they are release assets, not packages the app downloads;
 - `latest.json` keeps `version`, `tag` (`v` plus the version) and, per file, `name`,
   `size`, `sha256` and `signature`;
 - the release carries `SIGNATURES`, one `name<TAB>base64` line per package, and
@@ -304,7 +345,7 @@ signature alone, which is what lets Windows update without a code-signing
 certificate.
 
 Only a user-owned installation replaces its own files (an app bundle in a writable folder,
-the per-user Windows installer, a Linux `install.sh` prefix). On Windows, custom
+the per-user Windows installer, a self-managed portable ZIP, a Linux `install.sh` prefix). On Windows, custom
 directories are recognised from the application's per-user uninstall registration
 and still require the uninstaller and write access. The helper passes that exact
 directory to the installer. A dpkg-registered `/usr/bin/motty` selects the signed
@@ -318,6 +359,11 @@ attempts keep the downloaded package for a checked retry. This does not make dpk
 transactional: a failure during package unpacking or maintainer scripts may require
 repair with the system package manager. Missing Polkit, unregistered system installs,
 Snap, Flatpak, and all-users Windows installations use the manual update path.
+An unregistered writable Windows copy with a writable `motty-data` marker selects
+the signed portable ZIP. The updater extracts and checks its executable before
+the helper replaces `motty.exe` and the `conpty` runtime folder; the data folder,
+vault key and every other file are untouched.
+Scoop's version directories remain externally managed and use `scoop update motty`.
 
 The replacement is made by a helper that outlives the app and waits for the
 desktop process to exit. On Windows, stdio MCP servers may still be using the
@@ -356,14 +402,17 @@ notarized and stapled separately, because the system judges the image itself
 when it is opened.
 
 The Windows `.zip` is the portable copy, made by `tools/portablezip` from the same
-signed program the installer carries: `motty.exe` beside a `motty-data` folder, which
-is what switches Motty to keeping its data next to itself (`internal/datadir`). It is
-not offered to the in-app updater, which only replaces installations it owns; a
-portable copy sends the user to the download page.
+signed program the installer carries: `motty.exe` beside the `conpty` runtime
+folder and a `motty-data` folder, which is what switches Motty to keeping its data
+next to itself (`internal/datadir`). The `conpty` folder is the Windows local
+terminal's ConPTY pair; the installer carries the same tree.
+Self-managed copies can update in place using this signed ZIP, without overwriting
+their data. Scoop-managed copies must use `scoop update motty`; read-only or otherwise
+unsupported copies still go to the download page.
 
 A signed release also carries `SIGNATURES`, the minisign signature of every
-package. That is 14 release assets: the packages above, `SHA256SUMS` and
-`SIGNATURES`.
+package. That is 18 release assets: the packages above, the two PKGBUILD and
+.SRCINFO files for each Linux architecture, `SHA256SUMS` and `SIGNATURES`.
 
 `tools/release.sh` refuses to upload when one of those is missing, so a run with
 a broken makensis stops instead of publishing a release with a hole in it. The

@@ -9,7 +9,7 @@ import (
 )
 
 func TestOrderAndLookup(t *testing.T) {
-	want := []string{NameListSessions, NameTerminalRead, NameTerminalExec, NameTerminalExecMany, NameSFTPList, NameSFTPRead, NameSFTPWrite, NameSFTPRemove}
+	want := []string{NameListSessions, NameListHosts, NameTerminalRead, NameTerminalExec, NameTerminalStart, NameTerminalPoll, NameTerminalStop, NameToolOutputRead, NameTerminalExecMany, NameSFTPList, NameSFTPRead, NameSFTPWrite, NameSFTPRemove, NameRZSZUpload, NameRZSZDownload, NameRZSZStatus}
 	var got []string
 	for _, s := range All() {
 		got = append(got, s.Name)
@@ -39,6 +39,9 @@ func jsonNames(t *testing.T, v any) []string {
 	var names []string
 	for i := 0; i < rt.NumField(); i++ {
 		name, _, _ := strings.Cut(rt.Field(i).Tag.Get("json"), ",")
+		if name == "-" {
+			continue
+		}
 		if name == "" {
 			t.Fatalf("%s.%s has no json tag", rt.Name(), rt.Field(i).Name)
 		}
@@ -50,12 +53,14 @@ func jsonNames(t *testing.T, v any) []string {
 
 func TestSchemasMatchArgs(t *testing.T) {
 	args := map[string]any{
-		NameListSessions: ListSessionsArgs{}, NameTerminalRead: TerminalReadArgs{}, NameTerminalExec: TerminalExecArgs{}, NameTerminalExecMany: TerminalExecManyArgs{},
+		NameListSessions: ListSessionsArgs{}, NameListHosts: ListHostsArgs{}, NameTerminalRead: TerminalReadArgs{}, NameTerminalExec: TerminalExecArgs{}, NameTerminalStart: TerminalStartArgs{}, NameTerminalPoll: TerminalPollArgs{}, NameTerminalStop: TerminalStopArgs{}, NameToolOutputRead: ToolOutputReadArgs{}, NameTerminalExecMany: TerminalExecManyArgs{},
 		NameSFTPList: SFTPListArgs{}, NameSFTPRead: SFTPReadArgs{}, NameSFTPWrite: SFTPWriteArgs{}, NameSFTPRemove: SFTPRemoveArgs{},
+		NameRZSZUpload: RZSZUploadArgs{}, NameRZSZDownload: RZSZDownloadArgs{}, NameRZSZStatus: RZSZStatusArgs{},
 	}
 	required := map[string][]string{
-		NameTerminalExec: {"command"}, NameTerminalExecMany: {"command", "sessions"}, NameSFTPList: {"path"}, NameSFTPRead: {"path"},
+		NameTerminalExec: {"command"}, NameTerminalStart: {"command"}, NameTerminalPoll: {"job_id"}, NameTerminalStop: {"job_id"}, NameToolOutputRead: {"offset", "output_id"}, NameTerminalExecMany: {"command", "sessions"}, NameSFTPList: {"path"}, NameSFTPRead: {"path"},
 		NameSFTPWrite: {"content", "path"}, NameSFTPRemove: {"path"},
+		NameRZSZUpload: {"local_path"}, NameRZSZDownload: {"local_dir", "remote_path"},
 	}
 	for _, s := range All() {
 		var sc struct {
@@ -131,7 +136,7 @@ func TestDecoders(t *testing.T) {
 		{"tr malformed", `{"lines":`, tr, nil, true},
 
 		{"te ok", `{"command":"ls -l"}`, te, TerminalExecArgs{Command: "ls -l", TimeoutSeconds: 60}, false},
-		{"te multi", `{"command":"a\nb","timeout_seconds":600,"session":"x"}`, te, TerminalExecArgs{"x", "a\nb", 600}, false},
+		{"te multi", `{"command":"a\nb","timeout_seconds":600,"session":"x"}`, te, TerminalExecArgs{Session: "x", Command: "a\nb", TimeoutSeconds: 600}, false},
 		{"te missing", `{}`, te, nil, true},
 		{"te empty", `{"command":""}`, te, nil, true},
 		{"te blank", `{"command":"  \n"}`, te, nil, true},
@@ -242,9 +247,15 @@ func TestEscalationToolIsAskOnlyAndDecodes(t *testing.T) {
 func TestHeadlessCatalogDropsTheScreenAndStopsPromisingATerminal(t *testing.T) {
 	names := func(commands bool) []string {
 		var names []string
-		for _, spec := range Headless(commands, false) {
+		for _, spec := range Headless(HeadlessOptions{Commands: commands}) {
 			names = append(names, spec.Name)
-			if len(spec.Description) == 0 || len(spec.Description) > 400 {
+			limit := 400
+			if spec.Name == NameNoteQuery || spec.Name == NameNoteEdit {
+				// The note tools explain versioning and linked files in one
+				// paragraph; the other headless tools do not need that room.
+				limit = 800
+			}
+			if len(spec.Description) == 0 || len(spec.Description) > limit {
 				t.Errorf("%s: description length %d", spec.Name, len(spec.Description))
 			}
 			if !json.Valid(spec.Schema) {
@@ -264,10 +275,10 @@ func TestHeadlessCatalogDropsTheScreenAndStopsPromisingATerminal(t *testing.T) {
 		}
 		return names
 	}
-	if got, want := names(false), []string{NameListSessions, NameSFTPList, NameSFTPRead}; !slices.Equal(got, want) {
+	if got, want := names(false), []string{NameListSessions, NameListHosts, NameSFTPList, NameSFTPRead, NameSFTPStat, NameSFTPChecksum, NameTransferStatus}; !slices.Equal(got, want) {
 		t.Errorf("read-only headless tools %v, want %v", got, want)
 	}
-	if got, want := names(true), []string{NameListSessions, NameTerminalExec, NameTerminalExecMany, NameSFTPList, NameSFTPRead}; !slices.Equal(got, want) {
+	if got, want := names(true), []string{NameListSessions, NameListHosts, NameTerminalExec, NameTerminalStart, NameTerminalPoll, NameTerminalStop, NameTerminalExecMany, NameSFTPList, NameSFTPRead, NameSFTPStat, NameSFTPChecksum, NameTransferStatus}; !slices.Equal(got, want) {
 		t.Errorf("headless tools with commands %v, want %v", got, want)
 	}
 	if _, ok := Lookup(NameTerminalRead); !ok {
@@ -276,8 +287,11 @@ func TestHeadlessCatalogDropsTheScreenAndStopsPromisingATerminal(t *testing.T) {
 }
 
 func TestHeadlessFullAccessAddsFileChangesWithoutInventingATerminal(t *testing.T) {
-	full := Headless(true, true)
-	if len(full) != len(All())-1 {
+	full := Headless(HeadlessOptions{Commands: true, WriteFiles: true})
+	// Dropped from the window catalog: terminal_read, tool_output_read and the
+	// three rz/sz tools. The job tools stay: they run on exec channels of their
+	// own. Three host metadata tools are added.
+	if len(full) != len(All())-5+3 {
 		t.Fatal("full access did not expose every tool that works without a terminal")
 	}
 	var writes int

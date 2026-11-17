@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/llm"
 	"motty/internal/ai/tools"
@@ -58,7 +58,7 @@ func TestAIRunShowsFinalTimeAndTokensWithoutHover(t *testing.T) {
 			state.aiEvent(run, agent.Event{Kind: agent.EventDone, Usage: llm.Usage{InputTokens: 1200, OutputTokens: 84}})
 			state.aiFinished(run, nil, outcome.err)
 			state.options.Now = func() time.Duration { return time.Hour }
-			state.ai.panel.pointer = ui.Point{}
+			state.ai.panel.pointer = gfx.Point{}
 			_, texts := paintAt(state, panelWide)
 			for _, want := range []string{outcome.want, "Total time 8.0s", "1,284", "1,200", "84"} {
 				if !hasText(texts, want) {

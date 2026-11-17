@@ -3,12 +3,14 @@ package workbench
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/headless"
 	"motty/internal/i18n"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
@@ -33,10 +35,10 @@ func (w *remoteNativeWindow) Close() {
 }
 func (w *remoteNativeWindow) Hide() {}
 func (w *remoteNativeWindow) Show() { w.shows++ }
-func (w *remoteNativeWindow) Frame() (ui.Rect, bool) {
-	return ui.Rect{Width: float32(w.config.Width), Height: float32(w.config.Height)}, true
+func (w *remoteNativeWindow) Frame() (gfx.Rect, bool) {
+	return gfx.Rect{Width: float32(w.config.Width), Height: float32(w.config.Height)}, true
 }
-func (h *remoteWindowHost) OpenWindow(config app.Config, _ *ui.Canvas, closed func()) (app.WindowControl, error) {
+func (h *remoteWindowHost) OpenWindow(config app.Config, _ *gfx.Canvas, closed func()) (app.WindowControl, error) {
 	w := &remoteNativeWindow{config: config, closed: closed}
 	h.windows = append(h.windows, w)
 	return w, nil
@@ -82,6 +84,63 @@ func withRemoteWindowApplication(t *testing.T, run func(*app.Application, *remot
 	}
 }
 
+func TestRemoteNativeWindowSudoPromptUsesCapturedSession(t *testing.T) {
+	withRemoteWindowApplication(t, func(application *app.Application, host *remoteWindowHost) {
+		state, _, fake, _ := liveSession(t)
+		server := &remoteServer{failures: map[string]error{}}
+		fake.runCommand = server.run
+		session, _ := state.sessionByIDPointer(state.activeSessionID)
+		connection := &sudoRunnerTestConn{fakeConn: fake, run: server.run}
+		session.conn = connection
+		state.options.OpenContentWindow = application.OpenContentWindow
+		state.Click(hitRemoteToolsOpen)
+		if len(state.remoteWindows) != 1 {
+			t.Fatal("native tools window did not open")
+		}
+		window := state.remoteWindows[0]
+		host.until(t, func() bool { return !window.ui.remote.loading })
+		window.act(hitRemoteSudo)
+		if window.ui.modal != modalSudoSFTP || state.modal != modalNone || session.sudoCommands {
+			t.Fatal("native window did not request its own authorization")
+		}
+		var canvas gfx.Canvas
+		window.paint(&canvas, gfx.Size{Width: 1100, Height: 780})
+		if _, ok := hitByID(&canvas, hitSudoSFTPPassword); !ok {
+			t.Fatal("native window did not paint the sudo password field")
+		}
+		if input := host.windows[0].config.TextInput(app.TextInputContext{ID: hitSudoSFTPPassword}); input == nil || input.Editor != &window.ui.sudoSFTP.password {
+			t.Fatal("native password field cannot receive text input")
+		}
+		window.act(hitSudoSFTPCancel)
+		if window.ui.modal != modalRemoteTools || session.sudoCommands {
+			t.Fatal("canceling native authorization changed the source")
+		}
+		window.act(hitRemoteSudo)
+		window.ui.sudoSFTP.password.Insert("native-secret")
+		window.act(hitSudoSFTPEnable)
+		host.until(t, func() bool { return !window.ui.remote.loading })
+		if !session.sudoCommands || session.sudoPassword != "native-secret" || !window.session.sudoCommands {
+			t.Fatal("native authorization did not synchronize with captured source")
+		}
+		connection.mu.Lock()
+		password, calls := connection.password, len(connection.commands)
+		connection.mu.Unlock()
+		if password != "native-secret" || calls == 0 {
+			t.Fatalf("native sudo runner: password=%q calls=%d", password, calls)
+		}
+		window.act(hitRemoteSudo)
+		if session.sudoCommands || session.sudoPassword != "" || window.session.sudoCommands || window.session.sudoPassword != "" {
+			t.Fatal("native window did not discard sudo authorization")
+		}
+		window.act(hitRemoteSudo)
+		window.ui.sudoSFTP.password.Insert("pending-secret")
+		window.close()
+		if window.ui.sudoSFTP.password.String() != "" || session.sudoPassword != "" {
+			t.Fatal("closing native tools retained the pending sudo password")
+		}
+	})
+}
+
 func TestRemoteNativeWindowDoesNotBlockTheWorkbenchAndKeepsItsServer(t *testing.T) {
 	withRemoteWindowApplication(t, func(application *app.Application, host *remoteWindowHost) {
 		state, world, fake, shell := liveSession(t)
@@ -99,7 +158,22 @@ func TestRemoteNativeWindowDoesNotBlockTheWorkbenchAndKeepsItsServer(t *testing.
 		if config := host.windows[0].config; config.MinWidth != remoteToolsMinWidth || config.MinHeight != remoteToolsMinHeight {
 			t.Fatalf("remote tools window lost its native size limits: %+v", config)
 		}
+		if config := host.windows[0].config; config.WindowMode != app.WindowCustomTitlebar || config.TitlebarHeight != TitlebarHeight {
+			t.Fatalf("remote tools window lost its custom titlebar: %+v", config)
+		}
 		host.until(t, func() bool { return !w.ui.remote.loading })
+		var canvas gfx.Canvas
+		w.paint(&canvas, gfx.Size{Width: 1100, Height: 780})
+		movable := false
+		for _, hit := range canvas.Hits() {
+			movable = movable || hit.MovesWindow && hit.Bounds.Y == 0 && hit.Bounds.Height == TitlebarHeight
+		}
+		if !movable {
+			t.Fatal("remote tools titlebar cannot drag the window")
+		}
+		if tab, ok := settingsChoiceIn(&canvas, w.owner.messages.Tools.RemoteTabProcesses); !ok || tab.Bounds.Y < TitlebarHeight {
+			t.Fatal("remote tools tabs overlap the window titlebar")
+		}
 		if len(w.ui.remote.rows) != 3 || !strings.Contains(host.windows[0].config.Title, state.sessions[0].Address) {
 			t.Fatal("native window lost source data or identity")
 		}
@@ -116,38 +190,44 @@ func TestRemoteNativeWindowDoesNotBlockTheWorkbenchAndKeepsItsServer(t *testing.
 		if len(host.windows) != 2 || state.modal != modalNone {
 			t.Fatal("different session did not get an independent non-modal window")
 		}
+		if state.remoteWindows[0].pageRoot() == state.remoteWindows[1].pageRoot() {
+			t.Fatal("two tools windows share one page root")
+		}
 		// Destructive confirmation belongs to the utility, while the main
 		// window can still accept ordinary terminal input in its other tab.
 		host.until(t, func() bool { return !w.ui.remote.loading })
 		selectRemoteToolsWindowRow(w, 0)
-		w.click(hitRemoteKill)
+		w.act(hitRemoteKill)
 		if w.ui.modal != modalForm || state.modal != modalNone {
 			t.Fatal("confirmation escaped into the workbench")
 		}
-		if result := key(state, len(state.sessions)-1, ui.KeyEvent{Text: "echo free\r"}); !result.Handled {
+		if result := key(state, len(state.sessions)-1, gfx.KeyEvent{Text: "echo free\r"}); !result.Handled {
 			t.Fatal("main terminal was blocked by native confirmation")
 		}
-		w.click(hitFormSubmit)
+		w.act(hitFormSubmit)
 		host.until(t, func() bool { return !w.ui.remote.loading })
 		if server.ran("kill -KILL 2211") != 1 || otherServer.ran("kill") != 0 {
 			t.Fatal("confirmation operated on the selected main tab instead of the captured server")
 		}
-		w.click(hitRemoteTabImages)
+		clickRemoteTabChoice(t, w, w.owner.messages.Tools.RemoteTabImages)
 		host.until(t, func() bool { return !w.ui.remote.loading })
-		w.click(hitRemotePull)
+		w.act(hitRemotePull)
 		input := host.windows[0].config.TextInput(app.TextInputContext{ID: hitFormFieldList.At(0)})
 		if input == nil || input.Editor == nil {
 			t.Fatal("native image form has no platform text input")
 		}
 		input.Editor.Insert("alpine:latest")
-		w.key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitFormFieldList.At(0)})
+		var formCanvas gfx.Canvas
+		formSize := gfx.Size{Width: 1100, Height: 780}
+		w.paint(&formCanvas, formSize)
+		clickPageControl(t, w, &formCanvas, w.owner.messages.Tools.RemotePull, gfx.RoleButton, formSize)
 		shell.mu.Lock()
 		actual := string(shell.input)
 		shell.mu.Unlock()
 		if !strings.Contains(actual, "docker pull alpine:latest\r") || state.activeSessionID != source || w.ui.modal != modalRemoteTools || w.closed {
 			t.Fatalf("pull did not target original terminal and keep tools open: %q", actual)
 		}
-		state.Paint(&ui.Canvas{}, ui.Size{Width: 1400, Height: 900})
+		state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
 		openHostInSplit(t, state, state.hosts[1].ID, layoutcore.Horizontal)
 		peer := world.conns[len(world.conns)-1]
 		peer.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
@@ -156,12 +236,12 @@ func TestRemoteNativeWindowDoesNotBlockTheWorkbenchAndKeepsItsServer(t *testing.
 		peerShell.say("\x1b[0m")
 		state.Wake()
 		state.broadcast = state.deck.ActiveWorkspace()
-		w.click(hitRemoteTabContainers)
+		clickRemoteTabChoice(t, w, w.owner.messages.Tools.RemoteTabContainers)
 		host.until(t, func() bool { return !w.ui.remote.loading })
 		selectRemoteToolsWindowRow(w, 0)
 		w.ui.remote.auto.enabled = true
 		w.ui.remote.auto.restart()
-		w.click(hitRemoteLogs)
+		w.act(hitRemoteLogs)
 		if !strings.Contains(shell.typed(), "docker logs") || strings.Contains(peerShell.typed(), "docker logs") ||
 			!w.ui.remote.auto.enabled || w.ui.modal != modalRemoteTools {
 			t.Fatal("tool command was broadcast into another pane or disabled the tool surface")
@@ -236,7 +316,7 @@ func TestRemoteProcessButtonOpensProcessTabAndReusesToolsWindow(t *testing.T) {
 			t.Fatalf("process button opened tab %v with owner modal %v", w.ui.remote.tab, state.modal)
 		}
 
-		w.click(hitRemoteTabContainers)
+		clickRemoteTabChoice(t, w, w.owner.messages.Tools.RemoteTabContainers)
 		host.until(t, func() bool { return !w.ui.remote.loading && w.ui.remote.tab == remoteContainers })
 		state.Click(hitProcessToolsOpen)
 		host.until(t, func() bool { return !w.ui.remote.loading && w.ui.remote.tab == remoteProcesses })
@@ -260,13 +340,13 @@ func TestRemoteNativeWindowContainerShellUsesItsOriginalConnection(t *testing.T)
 		original.mu.Unlock()
 		state.openRemoteTools(source)
 		w := state.remoteWindows[0]
-		w.click(hitRemoteTabContainers)
+		clickRemoteTabChoice(t, w, w.owner.messages.Tools.RemoteTabContainers)
 		host.until(t, func() bool { return !w.ui.remote.loading })
 		state.activeSessionID = 0
 		selectRemoteToolsWindowRow(w, 0)
 		w.ui.remote.auto.enabled = true
 		w.ui.remote.auto.restart()
-		w.click(hitRemoteShell)
+		w.act(hitRemoteShell)
 		host.until(t, func() bool { return !w.ui.remote.loading })
 		if w.ui.remote.failed || len(world.conns) != 1 || len(world.shared) != 1 || len(state.sessions) != 2 ||
 			state.modal != modalNone || w.closed || !w.ui.remote.auto.enabled || w.ui.modal != modalRemoteTools {
@@ -310,7 +390,7 @@ func TestRemoteNativeWindowFollowsItsSessionBetweenWorkbenchWindows(t *testing.T
 		}
 		host.until(t, func() bool { return !w.ui.remote.loading })
 		selectRemoteToolsWindowRow(w, 0)
-		w.click(hitRemoteNiceLower)
+		w.act(hitRemoteNiceLower)
 		host.until(t, func() bool { return !w.ui.remote.loading })
 		if server.ran("renice 10 -p 2211") != 1 {
 			t.Fatal("moved source lost its tool actions")
@@ -334,7 +414,7 @@ func TestRemoteNativeWindowReopenAndRestoreReadTheHostAgain(t *testing.T) {
 		state.Click(hitRemoteToolsOpen)
 		w := state.remoteWindows[0]
 		host.until(t, func() bool { return !w.ui.remote.loading })
-		w.click(hitRemoteTabContainers)
+		clickRemoteTabChoice(t, w, w.owner.messages.Tools.RemoteTabContainers)
 		host.until(t, func() bool { return !w.ui.remote.loading })
 		if len(w.ui.remote.rows) != 2 {
 			t.Fatalf("initial rows = %d", len(w.ui.remote.rows))
@@ -369,22 +449,37 @@ func TestRemoteNativeWindowResizesWithReachableActionsAndVirtualScroll(t *testin
 		w.ui.rebuildRemoteRows()
 		for _, language := range []i18n.Language{i18n.Chinese, i18n.English} {
 			state.setLanguage(language)
-			for _, size := range []ui.Size{{Width: 600, Height: 500}, {Width: 1100, Height: 780}, {Width: 1400, Height: 900}} {
+			for _, size := range []gfx.Size{{Width: 600, Height: 500}, {Width: 1100, Height: 780}, {Width: 1400, Height: 900}} {
 				w.ui.remote.processScroll = 0
-				var canvas ui.Canvas
+				var canvas gfx.Canvas
 				w.paint(&canvas, size)
-				for _, id := range []ui.ID{hitRemoteClose, hitRemoteRefresh, hitRemoteKill, hitRemoteNiceHigher, hitRemoteProcessScroll} {
-					hit, ok := hitByID(&canvas, id)
+				for _, control := range []struct {
+					label string
+					id    gfx.ID
+				}{
+					{state.messages.Tools.RemoteClose, gfx.ID{}},
+					{state.messages.Tools.RemoteRefresh, gfx.ID{}},
+					{state.messages.Tools.RemoteForceKill, gfx.ID{}},
+					{state.messages.Tools.RemoteReniceHigher, gfx.ID{}},
+					{"", hitRemoteProcessScroll},
+				} {
+					var hit gfx.Hit
+					var ok bool
+					if control.id.IsZero() {
+						hit, ok = hitByLabelRole(&canvas, control.label, gfx.RoleButton)
+					} else {
+						hit, ok = hitByID(&canvas, control.id)
+					}
 					if !ok || hit.Bounds.X < 0 || hit.Bounds.Y < 0 || hit.Bounds.X+hit.Bounds.Width > size.Width+.01 || hit.Bounds.Y+hit.Bounds.Height > size.Height+.01 {
-						t.Fatalf("language %v viewport %+v: control %v is unreachable: %+v", language, size, id, hit)
+						t.Fatalf("language %v viewport %+v: control %q is unreachable: %+v", language, size, control.label, hit)
 					}
 				}
-				if _, ok := hitByID(&canvas, hitRemoteNext); ok {
+				if _, ok := hitByLabelRoleLast(&canvas, state.messages.KnownHostsNext, gfx.RoleButton); ok {
 					t.Fatal("process list still paints pagination controls")
 				}
 				bounds := w.ui.remote.processTableBounds
 				before := w.ui.remote.processScroll
-				result, handled := w.ui.remoteProcessWheel(ui.ScrollEvent{
+				result, handled := w.ui.remoteProcessWheel(gfx.ScrollEvent{
 					X: bounds.X + bounds.Width/2, Y: bounds.Y + min(bounds.Height/2, 40),
 					DeltaY: 20, Precise: true, Viewport: size,
 				})
@@ -394,4 +489,563 @@ func TestRemoteNativeWindowResizesWithReachableActionsAndVirtualScroll(t *testin
 			}
 		}
 	})
+}
+
+func TestRemoteNativeWindowScrollsThroughAllDockerObjects(t *testing.T) {
+	withRemoteWindowApplication(t, func(application *app.Application, host *remoteWindowHost) {
+		state, _, fake, _ := liveSession(t)
+		fake.mu.Lock()
+		fake.runCommand = (&remoteServer{}).run
+		fake.mu.Unlock()
+		state.options.OpenContentWindow = application.OpenContentWindow
+		state.Click(hitRemoteToolsOpen)
+		w := state.remoteWindows[0]
+		host.until(t, func() bool { return !w.ui.remote.loading })
+
+		size := gfx.Size{Width: 1100, Height: 780}
+		for _, tab := range []remoteTab{remoteContainers, remoteImages, remoteVolumes, remoteNetworks, remoteCompose} {
+			clickRemoteTabChoice(t, w, w.ui.remoteTabLabel(tab))
+			host.until(t, func() bool { return !w.ui.remote.loading && w.ui.remote.tab == tab })
+			w.ui.remote.rows = make([]remoteRow, 40)
+			for index := range w.ui.remote.rows {
+				w.ui.remote.rows[index] = remoteRow{
+					key:   fmt.Sprintf("resource-%02d", index),
+					cells: [6]string{fmt.Sprintf("resource-%02d", index)},
+				}
+			}
+			w.ui.remote.processScroll = 0
+			var canvas gfx.Canvas
+			w.paint(&canvas, size)
+			for _, label := range []string{w.ui.messages.KnownHostsPrevious, w.ui.messages.KnownHostsNext} {
+				if _, ok := hitByLabelRoleLast(&canvas, label, gfx.RoleButton); ok {
+					t.Fatalf("tab %v still paints %q", tab, label)
+				}
+			}
+			if w.ui.remote.processScrollBar.MaxOffsetY <= 0 {
+				t.Fatalf("tab %v has no virtual scroll range", tab)
+			}
+			bounds := w.ui.remote.processTableBounds
+			result := w.scroll(gfx.ScrollEvent{
+				X: bounds.X + bounds.Width/2, Y: bounds.Y + bounds.Height/2,
+				DeltaY: 100, Precise: true, Viewport: size,
+			})
+			if !result.Handled || w.ui.remote.processScroll <= 0 {
+				t.Fatalf("tab %v wheel did not scroll: %+v", tab, result)
+			}
+			w.ui.remote.processScroll = w.ui.remote.processScrollBar.MaxOffsetY
+			canvas.Reset()
+			w.paint(&canvas, size)
+			if !remoteCanvasHasText(&canvas, "resource-39") {
+				t.Fatalf("tab %v cannot scroll to its last resource", tab)
+			}
+		}
+	})
+}
+
+// A click in the native window's table must select the row painted under the
+// pointer even when a precise scroll stopped between two rows.
+func TestRemoteNativeWindowRowHitTestFollowsPaintedRows(t *testing.T) {
+	withRemoteWindowApplication(t, func(application *app.Application, host *remoteWindowHost) {
+		state, _, fake, _ := liveSession(t)
+		fake.mu.Lock()
+		fake.runCommand = (&remoteServer{}).run
+		fake.mu.Unlock()
+		state.options.OpenContentWindow = application.OpenContentWindow
+		state.Click(hitRemoteToolsOpen)
+		w := state.remoteWindows[0]
+		host.until(t, func() bool { return !w.ui.remote.loading })
+
+		size := gfx.Size{Width: 1100, Height: 780}
+		clickRemoteTabChoice(t, w, w.ui.remoteTabLabel(remoteContainers))
+		host.until(t, func() bool { return !w.ui.remote.loading && w.ui.remote.tab == remoteContainers })
+		w.ui.remote.rows = make([]remoteRow, 40)
+		for index := range w.ui.remote.rows {
+			w.ui.remote.rows[index] = remoteRow{
+				key:   fmt.Sprintf("resource-%02d", index),
+				cells: [6]string{fmt.Sprintf("resource-%02d", index)},
+			}
+		}
+		var canvas gfx.Canvas
+		w.paint(&canvas, size)
+		rowHeight := w.ui.remote.tableRowHeight
+		if rowHeight <= 0 {
+			t.Fatal("the table has no row height")
+		}
+		// Stop more than half a row into the list: an offset that is not a
+		// multiple of the row height, as a precise wheel or dragged scrollbar gives.
+		w.ui.remote.processScroll = 8*rowHeight + 2*rowHeight/3
+		canvas.Reset()
+		w.paint(&canvas, size)
+		if w.ui.remote.tableBodyRemainder == 0 {
+			t.Fatalf("scroll offset %.1f landed on a row boundary", w.ui.remote.processScroll)
+		}
+		viewport := w.ui.remote.processScrollBar.Viewport
+		label := "resource-09"
+		var bounds gfx.Rect
+		for _, painted := range canvas.Texts() {
+			if painted.Value == label && pointInRect(painted.Bounds.X, painted.Bounds.Y, viewport) {
+				bounds = painted.Bounds
+				break
+			}
+		}
+		if bounds.Width == 0 {
+			t.Fatalf("%q is not painted after scrolling to %.1f", label, w.ui.remote.processScroll)
+		}
+		table, ok := hitByLabelRole(&canvas, w.ui.remoteTabLabel(remoteContainers), gfx.RoleGroup)
+		if !ok {
+			t.Fatal("the container table is not a page control")
+		}
+		down := gfx.PointerEvent{
+			Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 1,
+			X: bounds.X + bounds.Width/2, Y: bounds.Y + bounds.Height/2,
+			Target: table.ID, Viewport: size,
+		}
+		pointerPageControl(w, down)
+		up := down
+		up.Kind = gfx.PointerUp
+		pointerPageControl(w, up)
+		if w.ui.remote.selected != label {
+			t.Fatalf("clicking the painted %q selected %q", label, w.ui.remote.selected)
+		}
+	})
+}
+
+func TestRemoteNativeWindowContainerRowDoubleClickOpensDetails(t *testing.T) {
+	withRemoteWindowApplication(t, func(application *app.Application, host *remoteWindowHost) {
+		state, _, fake, _ := liveSession(t)
+		fake.mu.Lock()
+		fake.runCommand = (&remoteServer{}).run
+		fake.mu.Unlock()
+		state.options.OpenContentWindow = application.OpenContentWindow
+		state.Click(hitRemoteToolsOpen)
+		w := state.remoteWindows[0]
+		host.until(t, func() bool { return !w.ui.remote.loading })
+		clickRemoteTabChoice(t, w, w.owner.messages.Tools.RemoteTabContainers)
+		host.until(t, func() bool { return !w.ui.remote.loading && len(w.ui.remote.rows) == 2 })
+		driver := nativeWindowDriver(t, host.windows[0].config)
+
+		bounds := w.ui.remote.tableBodyBounds
+		x, y := bounds.X+bounds.Width/2, bounds.Y+w.ui.remote.tableRowHeight/2
+		if err := driver.Click(x, y); err != nil {
+			t.Fatal(err)
+		}
+		if w.ui.remote.containerDetails.open {
+			t.Fatal("a single click opened native container details")
+		}
+		if w.ui.remote.selected != w.ui.remote.rows[0].key {
+			t.Fatal("a single click did not select the native container")
+		}
+		if err := driver.DoubleClick(x, y); err != nil {
+			t.Fatal(err)
+		}
+		if !w.ui.remote.containerDetails.open || w.ui.remote.containerDetails.container.Name != "web" {
+			t.Fatalf("double-clicking a native container did not open its details: %+v", w.ui.remote.containerDetails)
+		}
+	})
+}
+
+func TestRemoteNativeWindowContainerContextMenuIncludesFooterActions(t *testing.T) {
+	withRemoteWindowApplication(t, func(application *app.Application, host *remoteWindowHost) {
+		state, _, fake, _ := liveSession(t)
+		fake.mu.Lock()
+		fake.runCommand = (&remoteServer{}).run
+		fake.mu.Unlock()
+		state.options.OpenContentWindow = application.OpenContentWindow
+		state.Click(hitRemoteToolsOpen)
+		w := state.remoteWindows[0]
+		host.until(t, func() bool { return !w.ui.remote.loading })
+		clickRemoteTabChoice(t, w, w.owner.messages.Tools.RemoteTabContainers)
+		host.until(t, func() bool { return !w.ui.remote.loading && len(w.ui.remote.rows) == 2 })
+		driver := nativeWindowDriver(t, host.windows[0].config)
+		actions, count := w.ui.remoteToolActions()
+
+		bounds := w.ui.remote.tableBodyBounds
+		x, y := bounds.X+bounds.Width/2, bounds.Y+w.ui.remote.tableRowHeight/2
+		if err := driver.ClickButton(x, y, gfx.PointerButtonSecondary); err != nil {
+			t.Fatal(err)
+		}
+		if w.ui.remote.selected != w.ui.remote.rows[0].key {
+			t.Fatal("right-click did not select the native container")
+		}
+		for _, action := range actions[:count] {
+			found := false
+			for _, hit := range driver.Snapshot().Hits {
+				if hit.Label == action.Label && hit.Role == gfx.RoleMenuItem && !hit.Block {
+					found = true
+					break
+				}
+			}
+			if action.ID == hitRemoteClose {
+				if found {
+					t.Error("native container context menu includes Close")
+				}
+				continue
+			}
+			if !found {
+				t.Errorf("native container context menu lacks %q", action.Label)
+			}
+		}
+		driverClick(t, driver, driverHit(t, driver, w.ui.messages.Tools.RemoteContainerDetails, gfx.RoleMenuItem))
+		if !w.ui.remote.containerDetails.open || w.ui.remote.containerDetails.container.Name != "web" {
+			t.Fatalf("native container context menu did not open details: selected=%q modal=%v details=%+v", w.ui.remote.selected, w.ui.modal, w.ui.remote.containerDetails)
+		}
+	})
+}
+
+// clickRemoteTabChoice clicks one of the remote tools window's tabs by label.
+// The tab switch is a page Choice, so the click is applied in its event pass.
+func clickRemoteTabChoice(t *testing.T, w *remoteToolsWindow, label string) {
+	t.Helper()
+	size := gfx.Size{Width: 1100, Height: 780}
+	var canvas gfx.Canvas
+	w.paint(&canvas, size)
+	hit, ok := settingsChoiceIn(&canvas, label)
+	if !ok {
+		t.Fatalf("no remote tab labeled %q", label)
+	}
+	canvas.BeginEventPass(hit.ID, gfx.ClickInfo{})
+	w.paint(&canvas, size)
+	canvas.EndEventPass()
+}
+
+// hitByLabel finds a page control by its accessible label and role.
+func hitByLabelRole(canvas *gfx.Canvas, label string, role gfx.Role) (gfx.Hit, bool) {
+	for _, hit := range canvas.Hits() {
+		if hit.Label == label && hit.Role == role && !hit.Block {
+			return hit, true
+		}
+	}
+	return gfx.Hit{}, false
+}
+
+// hitByLabelPrefix finds a page control whose accessible label starts with
+// prefix: the auto-refresh control names itself with its current interval.
+func hitByLabelPrefix(canvas *gfx.Canvas, prefix string, role gfx.Role) (gfx.Hit, bool) {
+	for _, hit := range canvas.Hits() {
+		if strings.HasPrefix(hit.Label, prefix) && hit.Role == role && !hit.Block {
+			return hit, true
+		}
+	}
+	return gfx.Hit{}, false
+}
+
+// hitByLabelAny finds a page hit by label whatever its role.
+func hitByLabelAny(canvas *gfx.Canvas, label string) (gfx.Hit, bool) {
+	for _, hit := range canvas.Hits() {
+		if hit.Label == label && !hit.Block {
+			return hit, true
+		}
+	}
+	return gfx.Hit{}, false
+}
+
+// hitByLabelRoleLast finds the last page control with label and role: a dialog
+// button painted over the page's own.
+func hitByLabelRoleLast(canvas *gfx.Canvas, label string, role gfx.Role) (gfx.Hit, bool) {
+	for i := len(canvas.Hits()) - 1; i >= 0; i-- {
+		hit := canvas.Hits()[i]
+		if hit.Label == label && hit.Role == role && !hit.Block {
+			return hit, true
+		}
+	}
+	return gfx.Hit{}, false
+}
+
+// dualLabelHit finds a page control by label in the last frame of a native
+// window.
+func dualLabelHit(t *testing.T, view *headless.Session, label string, role gfx.Role) gfx.Hit {
+	t.Helper()
+	for _, hit := range view.Snapshot().Hits {
+		if hit.Label == label && hit.Role == role && !hit.Block {
+			return hit
+		}
+	}
+	for _, hit := range view.Snapshot().Hits {
+		if strings.HasPrefix(hit.Label, label) && hit.Role == role && !hit.Block {
+			return hit
+		}
+	}
+	t.Fatalf("missing %v %q", role, label)
+	return gfx.Hit{}
+}
+
+// clickPageControl delivers a click on a page control in the event pass and
+// runs its deferred action, as the window runtime does.
+func clickPageControl(t *testing.T, w *remoteToolsWindow, canvas *gfx.Canvas, label string, role gfx.Role, size gfx.Size) {
+	t.Helper()
+	hit, ok := hitByLabelRoleLast(canvas, label, role)
+	if !ok {
+		t.Fatalf("no page control labeled %q", label)
+	}
+	canvas.BeginEventPass(hit.ID, gfx.ClickInfo{})
+	w.paint(canvas, size)
+	canvas.EndEventPass()
+	canvas.RunAfterPaint()
+}
+
+// pointerPageControl delivers a pointer event to the page's control handlers.
+func pointerPageControl(w *remoteToolsWindow, event gfx.PointerEvent) {
+	w.config().OnPointer(event)
+}
+
+// nativeWindowDriver runs a tools window's config in the app runtime, which is
+// where hit testing, the press, and the click pass live. The paint helpers above
+// deliver a click to a control by its identity, so they cannot see a base
+// pointer handler swallow the press a page control needs.
+func nativeWindowDriver(t *testing.T, config app.Config) *app.Driver {
+	t.Helper()
+	driver, err := app.NewDriver(config, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(driver.Close)
+	return driver
+}
+
+// driverHit finds the page control a label and role name in the driver's frame.
+func driverHit(t *testing.T, driver *app.Driver, label string, role gfx.Role) gfx.Hit {
+	t.Helper()
+	for _, hit := range driver.Snapshot().Hits {
+		if hit.Label == label && hit.Role == role && !hit.Block {
+			return hit
+		}
+	}
+	t.Fatalf("missing %v %q", role, label)
+	return gfx.Hit{}
+}
+
+// driverHitPrefix finds the page control whose label starts with prefix.
+func driverHitPrefix(t *testing.T, driver *app.Driver, prefix string, role gfx.Role) gfx.Hit {
+	t.Helper()
+	for _, hit := range driver.Snapshot().Hits {
+		if strings.HasPrefix(hit.Label, prefix) && hit.Role == role && !hit.Block {
+			return hit
+		}
+	}
+	t.Fatalf("missing %v with prefix %q", role, prefix)
+	return gfx.Hit{}
+}
+
+// driverClick clicks the center of a hit, as the pointer would.
+func driverClick(t *testing.T, driver *app.Driver, hit gfx.Hit) {
+	t.Helper()
+	if err := driver.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestRemoteNativeWindowProcessDetailsTakesPointerAndKeys holds the details
+// dialog's own dismiss targets live through the real input path: its Close
+// button, its corner close, a press on the scrim, and the key activation of the
+// focused button. A press the window's base pointer handler swallows never
+// reaches the page's click pass, which leaves the dialog impossible to close
+// except by the native titlebar.
+func TestRemoteNativeWindowProcessDetailsTakesPointerAndKeys(t *testing.T) {
+	withRemoteWindowApplication(t, func(application *app.Application, host *remoteWindowHost) {
+		state, _, fake, _ := liveSession(t)
+		fake.mu.Lock()
+		fake.runCommand = (&remoteServer{}).run
+		fake.mu.Unlock()
+		state.options.OpenContentWindow = application.OpenContentWindow
+		state.Click(hitRemoteToolsOpen)
+		w := state.remoteWindows[0]
+		host.until(t, func() bool { return !w.ui.remote.loading })
+		driver := nativeWindowDriver(t, host.windows[0].config)
+
+		bounds := w.ui.remote.tableBodyBounds
+		x, y := bounds.X+bounds.Width/2, bounds.Y+w.ui.remote.tableRowHeight/2
+		if err := driver.Click(x, y); err != nil {
+			t.Fatal(err)
+		}
+		if w.ui.remote.processDetails.open {
+			t.Fatal("a single click opened native process details")
+		}
+		if w.ui.remote.selected != w.ui.remote.rows[0].key {
+			t.Fatal("a single click did not select the native process")
+		}
+		open := func() {
+			t.Helper()
+			if err := driver.DoubleClick(x, y); err != nil {
+				t.Fatal(err)
+			}
+			if !w.ui.remote.processDetails.open {
+				t.Fatal("a double-click on a process row did not open its details")
+			}
+		}
+
+		open()
+		driverClick(t, driver, driverHit(t, driver, w.ui.messages.Tools.RemoteClose, gfx.RoleButton))
+		if w.ui.remote.processDetails.open {
+			t.Fatal("the pointer did not reach the details' Close button")
+		}
+
+		open()
+		if err := driver.Key(gfx.KeyEnter, 0); err != nil {
+			t.Fatal(err)
+		}
+		if w.ui.remote.processDetails.open {
+			t.Fatal("Enter did not activate the focused Close button")
+		}
+
+		open()
+		var corner gfx.Hit
+		for _, hit := range driver.Snapshot().Hits {
+			if hit.ID == hitRemoteProcessDetailsClose {
+				corner = hit
+			}
+		}
+		if corner.ID.IsZero() {
+			t.Fatal("the details dialog has no corner close")
+		}
+		driverClick(t, driver, corner)
+		if w.ui.remote.processDetails.open {
+			t.Fatal("the corner close did not take the click")
+		}
+
+		// A Dialog keeps its surface 16 pixels inside the frame, so this point is
+		// the scrim whatever the viewport and the text metrics are.
+		open()
+		if err := driver.Click(8, 8); err != nil {
+			t.Fatal(err)
+		}
+		if w.ui.remote.processDetails.open {
+			t.Fatal("a press on the scrim did not dismiss the details")
+		}
+
+		if err := driver.ClickButton(x, y, gfx.PointerButtonSecondary); err != nil {
+			t.Fatal(err)
+		}
+		driverClick(t, driver, driverHit(t, driver, w.ui.messages.Tools.RemoteProcessDetails, gfx.RoleMenuItem))
+		if !w.ui.remote.processDetails.open || w.ui.remote.processDetails.process.PID != 2211 {
+			t.Fatal("the process context menu did not open the selected process")
+		}
+	})
+}
+
+// TestRemoteNativeWindowMenusAndFormsTakePointer holds the window's other
+// overlays live through the real input path: an interval menu opened from its
+// control, and the confirmation a footer action opens.
+func TestRemoteNativeWindowMenusAndFormsTakePointer(t *testing.T) {
+	withRemoteWindowApplication(t, func(application *app.Application, host *remoteWindowHost) {
+		state, _, fake, _ := liveSession(t)
+		fake.mu.Lock()
+		fake.runCommand = (&remoteServer{}).run
+		fake.mu.Unlock()
+		state.options.OpenContentWindow = application.OpenContentWindow
+		state.Click(hitRemoteToolsOpen)
+		w := state.remoteWindows[0]
+		host.until(t, func() bool { return !w.ui.remote.loading })
+		driver := nativeWindowDriver(t, host.windows[0].config)
+
+		driverClick(t, driver, driverHitPrefix(t, driver, w.ui.remoteAutoAccessibleLabel(), gfx.RoleButton))
+		if !w.ui.remote.auto.open {
+			t.Fatal("a press on the auto-refresh control did not open its menu")
+		}
+		driverClick(t, driver, driverHit(t, driver, w.ui.messages.Tools.RemoteAutoStart, gfx.RoleMenuItem))
+		if w.ui.remote.auto.open {
+			t.Fatal("a press on a menu item did not close the menu")
+		}
+
+		selectRemoteToolsWindowRow(w, 0)
+		driverClick(t, driver, driverHit(t, driver, w.ui.messages.Tools.RemoteForceKill, gfx.RoleButton))
+		if w.ui.modal != modalForm {
+			t.Fatal("a press on Force kill did not open its confirmation")
+		}
+		driverClick(t, driver, driverHit(t, driver, w.ui.messages.Cancel, gfx.RoleButton))
+		if w.ui.modal != modalRemoteTools {
+			t.Fatal("the pointer did not reach the confirmation's Cancel button")
+		}
+	})
+}
+
+func TestRemoteNativeWindowDialogsArePageControls(t *testing.T) {
+	withRemoteWindowApplication(t, func(application *app.Application, host *remoteWindowHost) {
+		state, _, fake, _ := liveSession(t)
+		server := &remoteServer{containers: containerFixture}
+		fake.mu.Lock()
+		fake.runCommand = server.run
+		fake.mu.Unlock()
+		session, _ := state.sessionByIDPointer(state.activeSessionID)
+		session.conn = &sudoRunnerTestConn{fakeConn: fake, run: server.run}
+		state.options.OpenContentWindow = application.OpenContentWindow
+		state.Click(hitRemoteToolsOpen)
+		w := state.remoteWindows[0]
+		host.until(t, func() bool { return !w.ui.remote.loading })
+
+		size := gfx.Size{Width: 1100, Height: 780}
+		var canvas gfx.Canvas
+		w.paint(&canvas, size)
+		table, ok := hitByLabelRole(&canvas, w.ui.messages.Tools.RemoteTabProcesses, gfx.RoleGroup)
+		if !ok {
+			t.Fatal("the process table is not a page control")
+		}
+		bounds := w.ui.remote.tableBodyBounds
+		x, y := bounds.X+bounds.Width/2, bounds.Y+w.ui.remote.tableRowHeight/2
+		pointerPageControl(w, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 2, X: x, Y: y, Target: table.ID, Viewport: size})
+		pointerPageControl(w, gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, ClickCount: 2, X: x, Y: y, Target: table.ID, Viewport: size})
+		if !w.ui.remote.processDetails.open {
+			t.Fatal("the table control's press did not open the process details dialog")
+		}
+		canvas.Reset()
+		w.paint(&canvas, size)
+		if !remoteCanvasHasText(&canvas, w.ui.remote.processDetails.process.Command) {
+			t.Fatal("the process details body is not painted in its dialog slot")
+		}
+		closeHit, ok := hitByLabelRoleLast(&canvas, w.ui.messages.Tools.RemoteClose, gfx.RoleButton)
+		if !ok {
+			t.Fatal("the process details dialog has no page Close button")
+		}
+		if canvas.FocusRequest() != closeHit.ID {
+			t.Fatalf("the process details dialog did not request focus on its page Close button: %v", canvas.FocusRequest())
+		}
+		clickPageControl(t, w, &canvas, w.ui.messages.Tools.RemoteClose, gfx.RoleButton, size)
+		if w.ui.remote.processDetails.open {
+			t.Fatal("the dialog's page Close button did not close it")
+		}
+
+		clickRemoteTabChoice(t, w, w.ui.messages.Tools.RemoteTabContainers)
+		host.until(t, func() bool { return !w.ui.remote.loading && w.ui.remote.tab == remoteContainers })
+		canvas.Reset()
+		w.paint(&canvas, size)
+		table, ok = hitByLabelRole(&canvas, w.ui.messages.Tools.RemoteTabContainers, gfx.RoleGroup)
+		if !ok {
+			t.Fatal("the container table is not a page control")
+		}
+		bounds = w.ui.remote.tableBodyBounds
+		pointerPageControl(w, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary,
+			X: bounds.X + bounds.Width/2, Y: bounds.Y + w.ui.remote.tableRowHeight/2, Target: table.ID, Viewport: size})
+		clickPageControl(t, w, &canvas, w.ui.messages.Tools.RemoteContainerDetails, gfx.RoleButton, size)
+		if !w.ui.remote.containerDetails.open {
+			t.Fatal("the container details page button did not open its dialog")
+		}
+		canvas.Reset()
+		w.paint(&canvas, size)
+		if !remoteCanvasHasText(&canvas, w.ui.remote.containerDetails.container.Name) {
+			t.Fatal("the container details body is not painted in its dialog slot")
+		}
+		clickPageControl(t, w, &canvas, w.ui.messages.Tools.RemoteClose, gfx.RoleButton, size)
+		if w.ui.remote.containerDetails.open {
+			t.Fatal("the container details dialog's page Close button did not close it")
+		}
+
+		w.act(hitRemoteSudo)
+		if w.ui.modal != modalSudoSFTP {
+			t.Fatal("sudo did not open its dialog")
+		}
+		canvas.Reset()
+		w.paint(&canvas, size)
+		if _, ok := hitByID(&canvas, hitSudoSFTPPassword); !ok {
+			t.Fatal("the sudo dialog's page field is not painted")
+		}
+		clickPageControl(t, w, &canvas, w.ui.messages.Cancel, gfx.RoleButton, size)
+		if w.ui.modal != modalRemoteTools {
+			t.Fatal("the sudo dialog's page Cancel button did not return to the tools")
+		}
+	})
+}
+
+func (h *remoteWindowHost) Post(fn func()) {
+	if fn != nil {
+		fn()
+	}
 }

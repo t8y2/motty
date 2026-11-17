@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 )
 
@@ -32,7 +32,7 @@ func newTypingRig(t testing.TB) *typingRig {
 		ClearColor:  app.Color{Red: float64(window.Red), Green: float64(window.Green), Blue: float64(window.Blue), Alpha: 1},
 		Invalidator: &invalidator,
 		OnWake:      state.Wake,
-		Paint: func(canvas *ui.Canvas, size ui.Size) {
+		Paint: func(canvas *gfx.Canvas, size gfx.Size) {
 			rig.frames++
 			state.Paint(canvas, size)
 		},

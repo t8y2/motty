@@ -60,8 +60,8 @@ var _ cloudsync.Store = (*Client)(nil)
 
 const defaultMaxBytes = 64 << 20
 
-// New checks the configuration. A nil http client uses one with a 60 second
-// timeout that does not follow redirects to another host.
+// New checks the configuration. A nil http client does not follow redirects to
+// another host. The caller controls the request deadline through its context.
 func New(config Config, client *http.Client) (*Client, error) {
 	base, err := url.Parse(strings.TrimSpace(config.Endpoint))
 	if err != nil || base.Host == "" || base.User != nil {

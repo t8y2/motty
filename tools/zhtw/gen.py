@@ -24,12 +24,15 @@ SIDE_CATALOGS = [
     "dashboard.go",
     "local_proxy.go",
     "monitor.go",
+    "remote_logs.go",
     "session_logs.go",
     "ssh_sync.go",
 ]
 
 # Applied in order after OpenCC, so a longer phrase must come before its parts.
 TERMS = [
+    ("髮送", "發送"),
+    ("回車執行", "按 Enter 執行"),
     ("賬號", "帳號"),
     ("賬戶", "帳戶"),
     ("用戶名", "使用者名稱"),

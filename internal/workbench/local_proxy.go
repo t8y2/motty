@@ -406,7 +406,7 @@ func (state *State) leaveLocalProxy(session *Session) {
 }
 
 func (state *State) localProxyTarget(session *Session) (localProxyTarget, bool) {
-	if session == nil || session.conn == nil || session.isLocal() || !session.host.isSSH() || session.phase != sshconn.PhaseConnected {
+	if session == nil || session.conn == nil || session.isLocal() || !session.host.isSSH() || session.host.mosh() || session.phase != sshconn.PhaseConnected {
 		return localProxyTarget{}, false
 	}
 	status := session.conn.Status()

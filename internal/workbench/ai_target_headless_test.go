@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/agent"
 	"motty/internal/i18n"
 	"motty/internal/sshconn"
@@ -18,7 +18,7 @@ import (
 
 func TestAITargetComposerNativeLayoutAtDisplayScales(t *testing.T) {
 	for _, scale := range []float64{1, 1.25, 1.5, 1.75, 2} {
-		for _, size := range []ui.Size{panelWide, panelNarrow} {
+		for _, size := range []gfx.Size{panelWide, panelNarrow} {
 			t.Run(fmt.Sprintf("%g/%g", scale, size.Width), func(t *testing.T) {
 				state := targetTestWorld(t, quietModel{"ok"})
 				state.setLanguage(i18n.Chinese)
@@ -46,7 +46,7 @@ func TestAITargetComposerNativeLayoutAtDisplayScales(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				find := func(id ui.ID) ui.Hit {
+				find := func(id gfx.ID) gfx.Hit {
 					t.Helper()
 					for _, hit := range view.Snapshot().Hits {
 						if hit.ID == id {
@@ -54,19 +54,31 @@ func TestAITargetComposerNativeLayoutAtDisplayScales(t *testing.T) {
 						}
 					}
 					t.Fatalf("missing %v", id)
-					return ui.Hit{}
+					return gfx.Hit{}
 				}
-				click := func(id ui.ID) {
+				findText := func(id gfx.ID) gfx.HitText {
+					t.Helper()
+					snapshot := view.Snapshot()
+					for index, hit := range snapshot.Hits {
+						if hit.ID == id {
+							text, _ := snapshot.HitTextAt(index)
+							return text
+						}
+					}
+					t.Fatalf("missing text for %v", id)
+					return gfx.HitText{}
+				}
+				click := func(id gfx.ID) {
 					t.Helper()
 					hit := find(id)
 					must(view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2))
 				}
 				must(view.Rest())
-				trigger, editor := find(hitAITarget), find(hitAIInput)
-				if trigger.Bounds.Y+trigger.Bounds.Height > editor.TextBounds.Y || trigger.Bounds.Width > 200 {
+				trigger, editorText := find(hitAITarget), findText(hitAIInput)
+				if trigger.Bounds.Y+trigger.Bounds.Height > editorText.Bounds.Y || trigger.Bounds.Width > 200 {
 					t.Fatal("selector overlaps text or is too large")
 				}
-				if editor.TextBounds.Y+editor.TextBounds.Height >= find(hitAISend).Bounds.Y {
+				if editorText.Bounds.Y+editorText.Bounds.Height >= find(hitAISend).Bounds.Y {
 					t.Fatal("text overlaps bottom controls")
 				}
 				if dir := os.Getenv("MOTTY_AI_TARGET_SCREENSHOTS"); dir != "" && size == panelWide && scale == 1.25 {
@@ -101,8 +113,8 @@ func TestAITargetComposerNativeLayoutAtDisplayScales(t *testing.T) {
 					t.Fatalf("native input = %q", state.ai.input.String())
 				}
 				mention := find(hitAIMentions.At(1))
-				if mention.Label != "@"+state.sessions[1].Title {
-					t.Fatalf("mention differs from tab: %q", mention.Label)
+				if want := "@" + sessionMentionName(&state.sessions[1]); mention.Label != want {
+					t.Fatalf("mention = %q, want %q", mention.Label, want)
 				}
 				caretBefore := state.ai.input.Selection()
 				must(view.Keys("Down"))
@@ -133,9 +145,9 @@ func TestAITargetComposerNativeLayoutAtDisplayScales(t *testing.T) {
 				must(view.Driver().SelectText(0, state.ai.input.RuneCount()))
 				must(view.Type("中文输入候选位置"))
 				must(view.Rest())
-				editor = find(hitAIInput)
-				caret, ok := editor.Placement.CaretBounds()
-				if !ok || caret.Y < editor.TextBounds.Y {
+				editorText = findText(hitAIInput)
+				caret, ok := editorText.Placement.CaretBounds()
+				if !ok || caret.Y < editorText.Bounds.Y {
 					t.Fatal("native candidate anchor overlaps the selector")
 				}
 			})

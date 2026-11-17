@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/llm"
 )
@@ -23,9 +23,9 @@ func TestLastAnswerShowsCopyOnHoverAndUsageAtRest(t *testing.T) {
 	ask(state, "question", agent.ModeAsk)
 	pumpUntil(t, state, "the answer to finish", func() bool { return state.ai.run == nil })
 
-	var first ui.Canvas
+	var first gfx.Canvas
 	first.SetClock(func() time.Duration { return time.Second })
-	state.Paint(&first, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&first, gfx.Size{Width: 1400, Height: 900})
 	status, ok := canvasHit(first.Hits(), hitAIRunStatus)
 	if !ok {
 		t.Fatal("usage is missing before hovering the answer")
@@ -40,11 +40,11 @@ func TestLastAnswerShowsCopyOnHoverAndUsageAtRest(t *testing.T) {
 		t.Fatal("the conversation painted no rows")
 	}
 	last := slots[len(slots)-1].Rect()
-	state.ai.panel.pointer = ui.Point{X: last.X + 20, Y: last.Y + 10}
+	state.ai.panel.pointer = gfx.Point{X: last.X + 20, Y: last.Y + 10}
 
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	canvas.SetClock(func() time.Duration { return time.Second })
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 
 	if _, ok := canvasHit(canvas.Hits(), hitAICopyAnswer); !ok {
 		t.Fatal("the hovered answer has no copy button")
@@ -74,9 +74,9 @@ func TestAnswerActionsFollowThePointer(t *testing.T) {
 	ask(state, "question", agent.ModeAsk)
 	pumpUntil(t, state, "the answer to finish", func() bool { return state.ai.run == nil })
 
-	size := ui.Size{Width: 1400, Height: 900}
-	paint := func() ui.Canvas {
-		var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	paint := func() gfx.Canvas {
+		var canvas gfx.Canvas
 		canvas.SetClock(func() time.Duration { return time.Second })
 		state.Paint(&canvas, size)
 		return canvas
@@ -84,22 +84,22 @@ func TestAnswerActionsFollowThePointer(t *testing.T) {
 	paint()
 	slots := state.ai.panel.rowSlots
 	last := slots[len(slots)-1].Rect()
-	inside := ui.Point{X: last.X + 20, Y: last.Y + 10}
-	move := func(kind ui.PointerEventKind, at ui.Point) ui.EventResult {
-		return state.Pointer(ui.PointerEvent{Kind: kind, X: at.X, Y: at.Y, Viewport: size})
+	inside := gfx.Point{X: last.X + 20, Y: last.Y + 10}
+	move := func(kind gfx.PointerEventKind, at gfx.Point) gfx.EventResult {
+		return state.Pointer(gfx.PointerEvent{Kind: kind, X: at.X, Y: at.Y, Viewport: size})
 	}
 	for visit := 1; visit <= 3; visit++ {
-		if !move(ui.PointerMove, inside).Repaint {
+		if !move(gfx.PointerMove, inside).Repaint {
 			t.Fatalf("visit %d: entering the answer asked for no repaint", visit)
 		}
 		canvas := paint()
 		if _, ok := canvasHit(canvas.Hits(), hitAICopyAnswer); !ok {
 			t.Fatalf("visit %d: the hovered answer has no copy button", visit)
 		}
-		if move(ui.PointerMove, ui.Point{X: inside.X + 1, Y: inside.Y}).Repaint {
+		if move(gfx.PointerMove, gfx.Point{X: inside.X + 1, Y: inside.Y}).Repaint {
 			t.Fatalf("visit %d: moving inside the answer repainted", visit)
 		}
-		if !move(ui.PointerExit, ui.Point{}).Repaint {
+		if !move(gfx.PointerExit, gfx.Point{}).Repaint {
 			t.Fatalf("visit %d: leaving the window asked for no repaint", visit)
 		}
 		canvas = paint()
@@ -109,11 +109,11 @@ func TestAnswerActionsFollowThePointer(t *testing.T) {
 	}
 }
 
-func canvasHit(hits []ui.Hit, id ui.ID) (ui.Hit, bool) {
+func canvasHit(hits []gfx.Hit, id gfx.ID) (gfx.Hit, bool) {
 	for _, hit := range hits {
 		if hit.ID == id {
 			return hit, true
 		}
 	}
-	return ui.Hit{}, false
+	return gfx.Hit{}, false
 }

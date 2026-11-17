@@ -2,7 +2,7 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/desktop"
 	layoutcore "motty/internal/workspace"
 )
@@ -17,7 +17,11 @@ var (
 	hitTabMenuCloseOthers   = tree.ID(tabMenuHits, "tab-menu-close-others")
 	hitTabMenuCloseRight    = tree.ID(tabMenuHits, "tab-menu-close-right")
 	hitTabMenuDuplicate     = tree.ID(tabMenuHits, "tab-menu-duplicate")
+	hitTabMenuBrowserOpen   = tree.ID(tabMenuHits, "tab-menu-open-ssh-browser")
+	hitTabMenuBrowserClose  = tree.ID(tabMenuHits, "tab-menu-close-ssh-browser")
+	hitTabMenuEditHost      = tree.ID(tabMenuHits, "tab-menu-edit-host")
 	hitTabMenuNewWindow     = tree.ID(tabMenuHits, "tab-menu-new-window")
+	hitTabMenuCopyHost      = tree.ID(tabMenuHits, "tab-menu-copy-host")
 	hitTabMenuCopyAddress   = tree.ID(tabMenuHits, "tab-menu-copy-address")
 	hitTabMenuCopyName      = tree.ID(tabMenuHits, "tab-menu-copy-name")
 	hitTabMenuReconnect     = tree.ID(tabMenuHits, "tab-menu-reconnect")
@@ -63,37 +67,48 @@ var (
 type tabMenu struct {
 	open      bool
 	workspace layoutcore.WorkspaceID
-	at        ui.Point
+	at        gfx.Point
 }
 
 // tabMenuPointer closes an open menu on a secondary press outside it (the
 // backdrop swallows the press; only a primary one is also a click). Opening it is
-// the paint of a tab (openTabMenuOn).
-func (state *State) tabMenuPointer(event ui.PointerEvent) (ui.EventResult, bool) {
-	if event.Kind != ui.PointerDown || event.Button == ui.PointerButtonNone || event.Button == ui.PointerButtonPrimary {
-		return ui.EventResult{}, false
+// the paint of a tab (openTabMenuOn). A press on the rename row starts the
+// in-place rename here, on the press, so the field is handed the keyboard by the
+// same event that opens it.
+func (state *State) tabMenuPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	if event.Kind != gfx.PointerDown || event.Button == gfx.PointerButtonNone {
+		return gfx.EventResult{}, false
 	}
-	if state.tabMenu.open && event.Target == hitTabMenuDismiss {
+	if state.tabMenu.open && event.Target == hitTabMenuDismiss && event.Button != gfx.PointerButtonPrimary {
 		state.tabMenu.open = false
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	return ui.EventResult{}, false
+	if state.tabMenu.open && event.Target == hitTabMenuRename {
+		workspace := state.tabMenu.workspace
+		state.tabMenu.open = false
+		state.beginTabInline(workspace)
+		if state.tabInlineActive() {
+			return gfx.EventResult{Handled: true, Repaint: true, Focus: hitTabInline}, true
+		}
+		return gfx.EventResult{Handled: true, Repaint: true}, true
+	}
+	return gfx.EventResult{}, false
 }
 
 // openTabMenuOn is called while painting a tab and its close button: when this
 // paint is the event pass of a secondary press on either, it opens the tab's menu.
-func (state *State) openTabMenuOn(canvas *ui.Canvas, workspace layoutcore.WorkspaceID, tab, closeButton ui.ID) {
+func (state *State) openTabMenuOn(canvas *gfx.Canvas, workspace layoutcore.WorkspaceID, tab, closeButton gfx.ID) {
 	event, ok := canvas.PointerOn(tab)
 	if !ok {
 		event, ok = canvas.PointerOn(closeButton)
 	}
-	if !ok || event.Kind != ui.PointerDown || event.Button != ui.PointerButtonSecondary || state.modal != modalNone {
+	if !ok || event.Kind != gfx.PointerDown || event.Button != gfx.PointerButtonSecondary || state.modal != modalNone {
 		return
 	}
 	if _, ok := state.workspaceTab(workspace); !ok {
 		return
 	}
-	state.tabMenu = tabMenu{open: true, workspace: workspace, at: ui.Point{X: event.X, Y: event.Y}}
+	state.tabMenu = tabMenu{open: true, workspace: workspace, at: gfx.Point{X: event.X, Y: event.Y}}
 	canvas.Consume()
 }
 
@@ -117,7 +132,19 @@ func (state *State) tabMenuSession() (*Session, bool) {
 	return state.sessionByIDPointer(uint32(pane.SessionID))
 }
 
-func (state *State) paintTabMenu(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) tabMenuHost(session *Session) (Host, bool) {
+	if session == nil || session.host.CatalogID == "" {
+		return Host{}, false
+	}
+	for _, host := range state.hosts {
+		if host.CatalogID == session.host.CatalogID {
+			return host, true
+		}
+	}
+	return Host{}, false
+}
+
+func (state *State) paintTabMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 	if !state.tabMenu.open {
 		return
 	}
@@ -132,13 +159,15 @@ func (state *State) paintTabMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	restart := hasSession && state.canReconnectLive(session)
 	disconnect := hasSession && state.canDisconnect(session)
 	var keys [6]string
-	closeKeys := state.shortcuts.chords[shortcutCloseTab].keys(keys[:0])
-	icon := func(kind uint8) ui.Icon { return lucideIcons[kind] }
+	closeKeys := state.shortcuts.chords.Chord(shortcutCloseTab).Keycaps(keys[:0])
+	icon := func(kind uint8) gfx.Icon { return lucideIcons[kind] }
 	var rows menuRows
-	address, name := "", ""
+	address, hostAddress, name := "", "", ""
 	if hasSession {
 		address, name = connectionAddressAndPort(session.host), session.host.Label
+		hostAddress = connectionHostAddress(session.host)
 	}
+	_, hasHost := state.tabMenuHost(session)
 	rows.add(components.ContextMenuItem{ID: hitTabMenuRename, Label: messages.MenuRenameTab, Icon: icon(iconPencil)})
 	lockLabel := messages.MenuLockTab
 	if state.deck.Locked(state.tabMenu.workspace) {
@@ -146,10 +175,19 @@ func (state *State) paintTabMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	}
 	rows.add(components.ContextMenuItem{ID: hitTabMenuLock, Label: lockLabel, Icon: icon(iconLock)})
 	rows.add(components.ContextMenuItem{ID: hitTabMenuDuplicate, Label: messages.MenuDuplicateTab, Icon: icon(iconCopy), Disabled: !hasSession})
+	rows.add(components.ContextMenuItem{ID: hitTabMenuEditHost, Label: messages.EditHostTitle, Icon: icon(iconPencil), Disabled: !hasHost})
 	rows.add(components.ContextMenuItem{ID: hitTabMenuNewWindow, Label: messages.MenuMoveTabToNewWindow, Icon: icon(iconExternal), Disabled: !state.canTearOffTab()})
 	rows.separate()
+	rows.add(components.ContextMenuItem{ID: hitTabMenuCopyHost, Label: messages.CopyHostAddress, Icon: icon(iconCopy), Disabled: hostAddress == ""})
 	rows.add(components.ContextMenuItem{ID: hitTabMenuCopyAddress, Label: messages.CopyAddressAndPort, Icon: icon(iconCopy), Disabled: address == ""})
 	rows.add(components.ContextMenuItem{ID: hitTabMenuCopyName, Label: messages.CopyConnectionName, Icon: icon(iconCopy), Disabled: name == ""})
+	if hasSession && session.canOpenSSHBrowser() {
+		if session.browser != nil && session.browser.Running() {
+			rows.add(components.ContextMenuItem{ID: hitTabMenuBrowserClose, Label: messages.MenuCloseSSHBrowser, Icon: icon(iconGlobe)})
+		} else {
+			rows.add(components.ContextMenuItem{ID: hitTabMenuBrowserOpen, Label: messages.MenuOpenSSHBrowser, Icon: icon(iconGlobe)})
+		}
+	}
 	rows.separate()
 	// A remote desktop keeps its scaling and keyboard controls in the page's
 	// bar, which a host may have asked to hide: the menu holds them either way.
@@ -186,11 +224,12 @@ func (state *State) paintTabMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	if disconnect {
 		rows.add(components.ContextMenuItem{ID: hitTabMenuDisconnect, Label: messages.MenuDisconnect, Icon: icon(iconPlug)})
 	}
-	if _, temporary := state.temporaryWorkspaceColumns[state.tabMenu.workspace]; temporary {
+	if _, temporary := state.temporaryWorkspaceLayouts[state.tabMenu.workspace]; temporary {
 		rows.separate()
 		rows.add(components.ContextMenuItem{ID: hitTabMenuSaveWorkspace, Label: messages.WorkspaceSaveMenu, Icon: icon(iconArchive)})
 	}
 	width, height := rows.size(canvas, state.contextMenuTheme())
+	height += contextMenuSeparator + tabColorFooterHeight
 	bounds := state.popupAt(canvas, viewport, state.tabMenu.at, width, height, 6)
 	menu := components.BeginContextMenu(canvas, state.contextMenuTheme(), bounds, components.ContextMenuOptions{
 		Layer: dialogLayer, Scope: dialogScope, DismissID: hitTabMenuDismiss, Viewport: viewport, Scroll: state.menuScrollFor(hitTabMenuDismiss),
@@ -198,11 +237,12 @@ func (state *State) paintTabMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	})
 	state.menuPlaced(menu.Bounds())
 	rows.paint(&menu, nil)
+	state.paintTabColorChoices(canvas, &menu)
 	menu.End()
 }
 
 // clickTabMenu runs a menu choice. A press anywhere else only closes the menu.
-func (state *State) clickTabMenu(id ui.ID) bool {
+func (state *State) clickTabMenu(id gfx.ID) bool {
 	if !state.tabMenu.open {
 		return false
 	}
@@ -212,10 +252,25 @@ func (state *State) clickTabMenu(id ui.ID) bool {
 	if !ok {
 		return true
 	}
+	if state.clickTabColor(workspace, id) {
+		return true
+	}
 	switch id {
+	case hitTabMenuBrowserOpen:
+		if session, ok := state.tabMenuSessionFor(workspace); ok {
+			state.openSSHBrowser(session)
+		}
+	case hitTabMenuBrowserClose:
+		if session, ok := state.tabMenuSessionFor(workspace); ok {
+			session.closeSSHBrowser()
+		}
 	case hitTabMenuNewWindow:
 		if frame, ok := state.windowFrameOnScreen(); ok && state.canTearOffTab() {
-			state.tearOffTab(workspace, ui.Point{X: frame.X + tearOffCascade, Y: frame.Y + tearOffCascade})
+			state.tearOffTab(workspace, gfx.Point{X: frame.X + tearOffCascade, Y: frame.Y + tearOffCascade})
+		}
+	case hitTabMenuCopyHost:
+		if session, ok := state.tabMenuSessionFor(workspace); ok {
+			state.copyConnectionText(connectionHostAddress(session.host))
 		}
 	case hitTabMenuCopyAddress:
 		if session, ok := state.tabMenuSessionFor(workspace); ok {
@@ -226,7 +281,7 @@ func (state *State) clickTabMenu(id ui.ID) bool {
 			state.copyConnectionText(session.host.Label)
 		}
 	case hitTabMenuRename:
-		state.openTabRename(workspace)
+		state.beginTabInline(workspace)
 	case hitTabMenuLock:
 		_ = state.deck.SetLocked(workspace, !state.deck.Locked(workspace))
 		state.rebuildTabOptions()
@@ -234,7 +289,18 @@ func (state *State) clickTabMenu(id ui.ID) bool {
 	case hitTabMenuDuplicate:
 		if session, ok := state.tabMenuSessionFor(workspace); ok {
 			state.pendingWorkspace, state.pendingPane = 0, 0
+			if session.isLocal() && state.localStart == localStartRemember {
+				// A copy of a local tab is opened beside it, so it starts in
+				// the same folder, the way a split does.
+				state.pendingDirectory = session.localDirectory
+			}
 			state.newHostSession(session.host)
+		}
+	case hitTabMenuEditHost:
+		if session, ok := state.tabMenuSessionFor(workspace); ok {
+			if host, found := state.tabMenuHost(session); found {
+				state.openEditHostID(host.ID)
+			}
 		}
 	case hitTabMenuFit, hitTabMenuActual, hitTabMenuCtrlAltDel, hitTabMenuHideBars, hitTabMenuFullscreen, hitTabMenuLatency:
 		session, ok := state.tabMenuSessionFor(workspace)
@@ -257,6 +323,7 @@ func (state *State) clickTabMenu(id ui.ID) bool {
 			state.toggleDesktopFullscreen(session)
 		case hitTabMenuLatency:
 			state.terminalShowLatency = !state.terminalShowLatency
+			state.syncLatencyToolbarEntry()
 			state.save()
 		}
 	case hitTabMenuClose:

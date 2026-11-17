@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	layoutcore "motty/internal/workspace"
 )
@@ -42,7 +42,7 @@ func TestSFTPPanelPlacesNativeNavigationMatchesDetachedFavorites(t *testing.T) {
 					t.Fatal(err)
 				}
 				defer preview.Close()
-				click := func(id ui.ID) {
+				click := func(id gfx.ID) {
 					t.Helper()
 					hit, ok := findSnapshotHit(preview.Snapshot(), contextID(id))
 					if !ok {
@@ -95,7 +95,7 @@ func TestSFTPPanelPlacesNativeNavigationMatchesDetachedFavorites(t *testing.T) {
 					t.Fatal("server favorite was not independent of local favorites")
 				}
 				click(hitSFTPBookmarkList)
-				terminal := state.workspacePixelBounds(ui.Size{Width: 1400, Height: 900})
+				terminal := state.workspacePixelBounds(gfx.Size{Width: 1400, Height: 900})
 				if err := preview.Click(terminal.X+terminal.Width/2, terminal.Y+terminal.Height/2); err != nil {
 					t.Fatal(err)
 				}

@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,10 +30,12 @@ import (
 
 // This file is the MCP server that runs without a window: `motty mcp-serve`.
 // An MCP client starts it as a child process and talks to it over stdio. It
-// reads what the application saved (the hosts, the vault, the trusted host keys)
-// and works on the hosts the user opened to agents, over connections of its own.
-// It never writes to the application's files except the audit log, never asks a
-// person anything, and ends with its client.
+// reads what the application saved (the hosts, the vault, the trusted host keys,
+// the note library) and works on the hosts the user opened to agents, over
+// connections of its own. It never writes the application's files except the
+// audit log and, under full access, the note records and the Markdown files the
+// user already linked as notes. It never asks a person anything, and ends with
+// its client.
 
 const (
 	// agentModeSetting is the stdio access level in ai.db: observe, ask, or
@@ -47,7 +50,7 @@ const (
 
 	agentIdleDefault   = 2 * time.Minute
 	agentDialLimit     = 60 * time.Second
-	agentCallTimeout   = 12 * time.Minute // a command may take tools.MaxTimeoutSeconds, and dialing comes first
+	mcpCallTimeout     = 12 * time.Minute // a command may take tools.MaxTimeoutSeconds, and approval or dialing comes first
 	agentAuditRetained = 30 * 24 * time.Hour
 )
 
@@ -59,6 +62,7 @@ type AgentOptions struct {
 	StatePath      string
 	AIDatabasePath string
 	VaultPath      string
+	TransferRoots  []string
 	// Keystore holds the vault's data key; nil is the system's, with a key file
 	// beside the vault where there is none.
 	Keystore vault.Keystore
@@ -119,27 +123,44 @@ func ServeAgentMCP(ctx context.Context, in io.Reader, out io.Writer, options Age
 	value, _, _ := log.Setting(agentModeSetting)
 	mode := mcpModeFromSetting(value)
 	backend := newAgentBackend(catalog, options)
-	backend.allowWrites = mode == gate.ModeAllowAll
 	defer backend.Close()
+	if backend.transferRootError != nil {
+		return backend.transferRootError
+	}
+	backend.allowWrites = mode == gate.ModeAllowAll
+	backend.auditLog = log
 	if len(backend.hosts) == 0 {
 		fmt.Fprintln(options.Log, "motty mcp-serve: no host is open to agents; turn it on in the host's settings in Motty")
 	}
 	// Only the separately confirmed full-access mode skips approvals. In other
 	// modes nothing can approve a call, so policy requests remain refusals.
-	agentGate := gate.Gate{Backend: backend, Policy: risk.Policy{Enabled: true, AutoUpTo: risk.Low}, Mode: mode}
-	instructions := "Tools to work on the saved hosts the user opened to you in Motty. Call list_sessions first to get a host id. " +
-		"A host connects when you first use it. Commands run without a terminal and keep no state between calls. "
+	agentGate := gate.Gate{Backend: backend, Policy: risk.Policy{Enabled: true, AutoUpTo: risk.Low}, Mode: mode, NotesEnabled: true, NotesWriteFullAccess: true}
+	instructions := "Tools to work on the saved hosts the user opened to you in Motty. Call list_hosts or list_sessions to get a host id. " +
+		"A host connects when you first use it. Commands run without a terminal and keep no state between calls. " +
+		"note_query searches the user's local note library; note_edit changes it and is offered only with full access."
+	if mode != gate.ModeObserve {
+		instructions += " terminal_start runs a command in the background and returns a job id at once; read it with terminal_poll and end it with terminal_stop, so a long command does not hold up the conversation."
+	}
 	if mode == gate.ModeAllowAll {
-		instructions += "The user enabled full access for these hosts. Commands and file changes run without approval."
+		instructions += " The user enabled full access for these hosts. Commands and file changes run without approval. Note edits also write the Markdown file a linked note points to."
+		if len(backend.transferRoots) == 0 {
+			instructions += " File transfer tools (sftp_upload, sftp_download, transfer_cancel) are off: start the server with --transfer-root <local directory> to offer them."
+		}
 	} else {
-		instructions += "Nobody can approve anything here, so a call that would need approval is refused."
+		instructions += " Nobody can approve anything here, so a call that would need approval is refused."
 	}
 	return mcp.ServeStdio(ctx, in, out, mcp.Config{
-		Tools:        tools.Headless(mode != gate.ModeObserve, mode == gate.ModeAllowAll),
+		Tools: tools.Headless(tools.HeadlessOptions{
+			Commands:   mode != gate.ModeObserve,
+			WriteFiles: mode == gate.ModeAllowAll,
+			LocalFiles: len(backend.transferRoots) > 0,
+			Notes:      true,
+			NoteWrites: mode == gate.ModeAllowAll,
+		}),
 		Dispatch:     backend.audited(agentGate, log),
 		ServerName:   "motty",
 		Version:      "1",
-		CallTimeout:  agentCallTimeout,
+		CallTimeout:  mcpCallTimeout,
 		Instructions: instructions,
 	})
 }
@@ -171,20 +192,40 @@ type agentBackend struct {
 	hosts   []Host
 	options AgentOptions
 
-	mu          sync.Mutex
-	entries     map[string]*agentEntry
-	closed      bool
-	allowWrites bool // immutable after startup, before requests are accepted
+	mu                sync.Mutex
+	entries           map[string]*agentEntry
+	jobs              map[string]*agentJob
+	jobGroup          sync.WaitGroup
+	closed            bool
+	allowWrites       bool // immutable after startup, before requests are accepted
+	transferCtx       context.Context
+	transferCancel    context.CancelFunc
+	transferGroup     sync.WaitGroup
+	transfers         []*agentTransfer
+	nextTransfer      uint64
+	transferPrefix    string
+	transferRoots     []agentTransferRoot
+	transferRootError error
+	auditLog          *store.Store
+	notes             *headlessNotes
 }
 
 var _ gate.Backend = (*agentBackend)(nil)
 
 func newAgentBackend(catalog hostCatalog, options AgentOptions) *agentBackend {
+	ctx, cancel := context.WithCancel(context.Background())
+	roots, rootError := validateTransferRoots(options.TransferRoots)
 	return &agentBackend{
-		catalog: catalog,
-		hosts:   catalog.agentHostList(),
-		options: options,
-		entries: make(map[string]*agentEntry),
+		catalog:           catalog,
+		hosts:             catalog.agentHostList(),
+		options:           options,
+		entries:           make(map[string]*agentEntry),
+		transferCtx:       ctx,
+		transferCancel:    cancel,
+		transferPrefix:    rand.Text(),
+		transferRoots:     roots,
+		transferRootError: rootError,
+		notes:             newHeadlessNotes(options.StatePath),
 	}
 }
 
@@ -200,7 +241,7 @@ type agentEntry struct {
 	timer  *time.Timer
 }
 
-// Close ends every connection.
+// Close ends every connection and every background job running on one.
 func (b *agentBackend) Close() {
 	b.mu.Lock()
 	b.closed = true
@@ -208,7 +249,18 @@ func (b *agentBackend) Close() {
 	for _, entry := range b.entries {
 		entries = append(entries, entry)
 	}
+	jobs := make([]*agentJob, 0, len(b.jobs))
+	for _, job := range b.jobs {
+		jobs = append(jobs, job)
+	}
 	b.mu.Unlock()
+	b.transferCancel()
+	b.transferGroup.Wait()
+	b.notes.Close()
+	for _, job := range jobs {
+		job.cancel()
+	}
+	b.jobGroup.Wait()
 	for _, entry := range entries {
 		entry.mu.Lock()
 		entry.stopIdle()
@@ -369,6 +421,17 @@ func (b *agentBackend) Sessions(context.Context) ([]gate.SessionInfo, error) {
 		}
 	}
 	return sessions, nil
+}
+
+func (b *agentBackend) Hosts(context.Context) ([]gate.HostInfo, error) {
+	hosts := make([]gate.HostInfo, 0, len(b.hosts))
+	for _, host := range b.hosts {
+		hosts = append(hosts, gate.HostInfo{
+			ID: host.CatalogID, Title: host.Label,
+			Address: b.catalog.login(host) + "@" + host.Address + ":" + strconv.Itoa(int(host.Port)),
+		})
+	}
+	return hosts, nil
 }
 
 func (b *agentBackend) ReadTerminal(context.Context, tools.TerminalReadArgs) (string, error) {
@@ -560,6 +623,10 @@ func (b *agentBackend) answerAgentPrompt(conn *sshconn.Conn, host Host, status s
 	switch status.Phase {
 	case sshconn.PhaseHostKeyPrompt:
 		conn.RejectHostKey()
+		if status.HostKey.Changed {
+			return fmt.Errorf("%s: the host key changed (trusted %s, offered %s); confirm the change in the Motty window before agents can use this host",
+				formatEndpoint(status.Endpoint), strings.Join(status.HostKey.Known, ", "), status.HostKey.Fingerprint)
+		}
 		return fmt.Errorf("the host key %s (%s) of %s is not trusted yet; connect to it once from the Motty window to trust it",
 			status.HostKey.Fingerprint, status.HostKey.Type, status.HostKey.Address)
 	case sshconn.PhasePasswordPrompt:
@@ -570,7 +637,7 @@ func (b *agentBackend) answerAgentPrompt(conn *sshconn.Conn, host Host, status s
 		if !isPasswordQuestion(status.Questions) {
 			return fmt.Errorf("%s asks for more than a password (a one-time code?), which an agent cannot answer", who)
 		}
-		password, err := lookup(hostSecretName(b.catalog.secretOwner(host, status.Endpoint, status.EndpointRole), hostPasswordPart))
+		password, err := lookup(b.catalog.passwordSecret(host, status.Endpoint, status.EndpointRole))
 		if err != nil {
 			return err
 		}
@@ -607,20 +674,55 @@ func explainAgentDial(host Host, status sshconn.Status) error {
 	return fmt.Errorf("%s: the connection closed", host.Label)
 }
 
+// QueryNote and EditNote serve the saved note library without a window. They
+// never connect to a host or start synchronization; an edit is a compare-and-
+// swap against the records another process may have changed.
+func (b *agentBackend) QueryNote(ctx context.Context, a tools.NoteQueryArgs) (string, error) {
+	return b.notes.Query(a)
+}
+
+func (b *agentBackend) EditNote(ctx context.Context, a tools.NoteEditArgs) (string, error) {
+	return b.notes.Edit(a)
+}
+
 // audited wraps the gate so that every call, refused ones too, leaves a line in
 // the audit log: when, which host, which tool, the command or path, and how it
 // ended. Never the output.
 func (b *agentBackend) audited(agentGate gate.Gate, log *store.Store) func(context.Context, string, []byte) gate.Result {
 	return func(ctx context.Context, name string, raw []byte) gate.Result {
 		result := agentGate.Run(ctx, name, raw)
+		isNote := name == tools.NameNoteQuery || name == tools.NameNoteEdit
 		var call struct {
-			Session  string   `json:"session"`
-			Sessions []string `json:"sessions"`
-			Command  string   `json:"command"`
-			Path     string   `json:"path"`
+			Session    string   `json:"session"`
+			Sessions   []string `json:"sessions"`
+			Command    string   `json:"command"`
+			Path       string   `json:"path"`
+			LocalPath  string   `json:"local_path"`
+			RemotePath string   `json:"remote_path"`
+			TransferID string   `json:"transfer_id"`
+			JobID      string   `json:"job_id"`
+			Cwd        string   `json:"cwd"`
 		}
 		_ = json.Unmarshal(raw, &call)
+		if call.JobID == "" && name == tools.NameTerminalStart {
+			var view struct {
+				JobID string `json:"job_id"`
+			}
+			if json.Unmarshal(result.Structured, &view) == nil {
+				call.JobID = view.JobID
+			}
+		}
 		ids := call.Sessions
+		if len(ids) == 0 && call.TransferID != "" {
+			if transfers, err := b.Transfers(ctx, call.TransferID); err == nil && len(transfers) == 1 {
+				ids = []string{transfers[0].Session}
+			}
+		}
+		if len(ids) == 0 && call.JobID != "" {
+			if job := b.findJob(call.JobID); job != nil {
+				ids = []string{job.entry.host.CatalogID}
+			}
+		}
 		if len(ids) == 0 && call.Session != "" {
 			ids = []string{call.Session}
 		}
@@ -632,7 +734,7 @@ func (b *agentBackend) audited(agentGate gate.Gate, log *store.Store) func(conte
 				hostIDs, labels = append(hostIDs, id), append(labels, id)
 			}
 		}
-		if len(ids) == 0 && name != tools.NameListSessions {
+		if len(ids) == 0 && !isNote && name != tools.NameListSessions && name != tools.NameListHosts {
 			if host, err := b.resolve(""); err == nil { // the only host there is
 				hostIDs, labels = []string{host.CatalogID}, []string{host.Label}
 			}
@@ -645,8 +747,24 @@ func (b *agentBackend) audited(agentGate gate.Gate, log *store.Store) func(conte
 			outcome = store.AuditFailed
 		}
 		summary := call.Command
+		if summary != "" && call.Cwd != "" {
+			summary = "cwd=" + call.Cwd + ": " + summary
+		}
 		if summary == "" {
 			summary = call.Path
+		}
+		if call.LocalPath != "" {
+			summary = call.LocalPath + " <-> " + call.RemotePath
+		}
+		if call.TransferID != "" {
+			summary = "transfer " + call.TransferID
+		}
+		if call.JobID != "" && summary == "" {
+			summary = "job " + call.JobID
+		}
+		if isNote {
+			hostIDs, labels = nil, []string{"notes"}
+			summary = noteAuditSummary(name, raw)
 		}
 		_ = log.RecordAudit(store.AuditEntry{
 			HostID: strings.Join(hostIDs, ","), HostLabel: strings.Join(labels, ", "),
@@ -654,4 +772,40 @@ func (b *agentBackend) audited(agentGate gate.Gate, log *store.Store) func(conte
 		})
 		return result
 	}
+}
+
+// noteAuditSummary names what a note call was about, never its body.
+func noteAuditSummary(name string, raw []byte) string {
+	switch name {
+	case tools.NameNoteQuery:
+		a, err := tools.DecodeNoteQuery(raw)
+		if err != nil {
+			return ""
+		}
+		parts := []string{a.Action}
+		if a.ID != "" {
+			parts = append(parts, a.ID)
+		}
+		if a.Query != "" {
+			parts = append(parts, a.Query)
+		}
+		return strings.Join(parts, " ")
+	case tools.NameNoteEdit:
+		a, err := tools.DecodeNoteEdit(raw)
+		if err != nil {
+			return ""
+		}
+		parts := []string{a.Action}
+		if a.ID != "" {
+			parts = append(parts, a.ID)
+		}
+		if a.Title != nil {
+			parts = append(parts, *a.Title)
+		}
+		if a.Name != nil {
+			parts = append(parts, *a.Name)
+		}
+		return strings.Join(parts, " ")
+	}
+	return ""
 }

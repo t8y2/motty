@@ -3,6 +3,7 @@ package remotestats
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -110,6 +111,46 @@ func TestDarwinCommandHasTheSamplingIntervalAndNoDoubledBackslashes(t *testing.T
 		if strings.Contains(text, `\\`) {
 			t.Fatal("a command contains a doubled backslash")
 		}
+	}
+}
+
+// vm_stat states the size of its own counters on its first line, and that is
+// the size the page counts are in. A process translated by Rosetta is told
+// hw.pagesize 4096 while the counters are still in the Mac's own pages, 16384
+// on Apple Silicon, which read memory as a quarter of what it is.
+func TestDarwinMemoryFollowsVmStatsOwnPageSize(t *testing.T) {
+	const total = uint64(32) << 30
+	const counters = `Pages free: 1000.
+Pages wired down: 196608.
+Pages purgeable: 1024.
+Anonymous pages: 524288.
+Pages occupied by compressor: 131072.
+`
+	usedPages := uint64(524288 - 1024 + 196608 + 131072)
+	free := func(page uint64) string {
+		return fmt.Sprintf("%d", (total-usedPages*page)/1024)
+	}
+	for _, test := range []struct {
+		name, header, sysctl string
+		page                 uint64
+	}{
+		{"Apple Silicon counters read by a translated process", "Mach Virtual Memory Statistics: (page size of 16384 bytes)\n", "4096", 16384},
+		{"a Mac whose pages are 4096 bytes", "Mach Virtual Memory Statistics: (page size of 4096 bytes)\n", "4096", 4096},
+		{"no header, the sysctl size is all there is", "", "16384", 16384},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := runAwk(t, darwinMemoryAwk, test.header+counters, "ps="+test.sysctl, "total=34359738368")
+			if want := free(test.page); got != want {
+				t.Fatalf("free memory = %q, want %q", got, want)
+			}
+		})
+	}
+	if got := runAwk(t, darwinMemoryAwk, counters, "ps=", "total=34359738368"); got != "" {
+		t.Fatalf("a reading without any page size = %q, want none", got)
+	}
+	missing := strings.Replace(counters, "Pages occupied by compressor: 131072.\n", "", 1)
+	if got := runAwk(t, darwinMemoryAwk, missing, "ps=16384", "total=34359738368"); got != "" {
+		t.Fatalf("a reading missing a counter = %q, want none", got)
 	}
 }
 

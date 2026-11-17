@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"golang.org/x/crypto/ssh"
 	"motty/internal/sshconn"
 )
@@ -197,7 +197,7 @@ func TestKeyPassphraseDialogSubmitsRetriesAndSkips(t *testing.T) {
 		t.Fatalf("passphrase prompt = modal %d description %q", state.modal, state.keyPassphraseDescription)
 	}
 	typeInto(state, hitKeyPassphraseField, "once-only")
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitKeyPassphraseField}); !result.Handled {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitKeyPassphraseField}); !result.Handled {
 		t.Fatal("Enter did not submit key passphrase")
 	}
 	if !slices.Equal(fake.keyPassphrases, []string{"once-only"}) || state.keyPassphrase.String() != "" || state.modal != modalNone {
@@ -226,8 +226,8 @@ func TestKeysSteadyStatePaintDoesNotAllocate(t *testing.T) {
 	state := newTestState(t, options)
 	state.Click(hitKeychain)
 	state.Click(hitKeysImport)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	allocations := testing.AllocsPerRun(100, func() {
 		canvas.Reset()
@@ -245,8 +245,8 @@ func BenchmarkPaintKeysPage(b *testing.B) {
 	state := newTestState(b, options)
 	state.Click(hitKeychain)
 	state.Click(hitKeysImport)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	b.ReportAllocs()
 	b.ResetTimer()

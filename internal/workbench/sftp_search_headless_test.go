@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
@@ -47,15 +47,15 @@ func TestSFTPSearchHeadlessFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer preview.Close()
-	hit := func(id ui.ID) (ui.Hit, bool) {
+	hit := func(id gfx.ID) (gfx.Hit, bool) {
 		for _, hit := range preview.Snapshot().Hits {
 			if hit.ID == id {
 				return hit, true
 			}
 		}
-		return ui.Hit{}, false
+		return gfx.Hit{}, false
 	}
-	click := func(id ui.ID, double bool) {
+	click := func(id gfx.ID, double bool) {
 		t.Helper()
 		target, ok := hit(id)
 		if !ok {
@@ -93,7 +93,7 @@ func TestSFTPSearchHeadlessFlow(t *testing.T) {
 	if !ok || toggle.Label != state.messages.Tools.FilesSearchSubfolders {
 		t.Fatalf("switch hit = %+v, present %v", toggle, ok)
 	}
-	if _, ok := hit(contextID(hitSFTPEntryList.At(2))); !ok {
+	if _, ok := hit(sftpListRowID(t, view.active(), 2)); !ok {
 		t.Fatal("the third result is not on screen")
 	}
 	if dir := os.Getenv("MOTTY_SFTP_SEARCH_SCREENSHOTS"); dir != "" {
@@ -111,7 +111,7 @@ func TestSFTPSearchHeadlessFlow(t *testing.T) {
 		}
 	}
 
-	click(contextID(hitSFTPEntryList.At(2)), true)
+	click(sftpListRowID(t, view.active(), 2), true)
 	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.path == "/home/test/docs/api" })
 	repaint()
 	if view.selected < 0 || view.rows[view.selected].entry.Name != "Guide-v2.md" {

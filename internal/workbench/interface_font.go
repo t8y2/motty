@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
@@ -39,18 +39,25 @@ type interfaceFontUI struct {
 	// family is the chosen family, "" for the platform's own interface font. It
 	// is what the user chose and what is saved.
 	family string
-	// applied is the family the engine was last told: the choice, or "" when the
-	// choice cannot be followed.
-	applied string
+	// main and bold are the weights the family draws the window's main text and
+	// bold text at, as the platform's font weights, or 0 for the family's own.
+	// They are what the user chose and what is saved, like family.
+	main, bold int
+	// applied, appliedMain and appliedBold are what the engine was last told: the
+	// choice, or "" and the platform's own weights when it cannot be followed.
+	applied                  string
+	appliedMain, appliedBold int
 	// missing is set when the system's list is known and does not have the choice.
 	missing bool
 	// known says the platform has been asked once whether it can follow a family
 	// at all; supported is its answer.
 	known, supported bool
 
-	// text is the description the settings row shows; the rest is what it was made
-	// for.
+	// text is the explanation the settings row shows, empty when the choice is in
+	// effect; textMade says it has been made, since empty is a real answer; the
+	// rest is what it was made for.
 	text       string
+	textMade   bool
 	textFamily string
 	textState  uint8
 	textLang   i18n.Language
@@ -63,17 +70,35 @@ func (state *State) interfaceFontRowVisible() bool {
 	return state.uiFont.supported || state.uiFont.family != ""
 }
 
-// interfaceFontName is the name of the font chosen, in the current language.
-func (state *State) interfaceFontName() string {
-	if state.uiFont.family != "" {
-		return state.uiFont.family
+// interfaceFontInEffect is the name the row shows for the font the window's text
+// is actually drawn in: the family the engine was told, which is the platform's
+// own where the choice cannot be followed, and the two weights it is drawn at when
+// the user named them. Showing the saved choice instead would name a font that is
+// not in use, beside a description saying it is not.
+func (state *State) interfaceFontInEffect() string {
+	fonts := &state.uiFont
+	if fonts.applied == "" {
+		return state.messages.SettingsInterfaceFontDefault
 	}
-	return state.messages.SettingsInterfaceFontDefault
+	if len(state.familyWeights(fonts.applied)) == 0 {
+		// The platform draws the family at its own weights: naming the ones it
+		// was told would describe a choice it ignores.
+		return fonts.applied
+	}
+	main, bold := fontWeightName(fonts.appliedMain), fontWeightName(fonts.appliedBold)
+	switch {
+	case main == "" || bold == "":
+		return fonts.applied
+	case main == bold:
+		return fmt.Sprintf("%s · %s", fonts.applied, main)
+	}
+	return fmt.Sprintf("%s · %s/%s", fonts.applied, main, bold)
 }
 
-// interfaceFontDescription is the settings row's explanation: what the font is
-// now, or why the choice is not in effect. It is made again only when that, or
-// the language, changes.
+// interfaceFontDescription is the row's explanation when the choice is not in
+// effect — the platform cannot follow a family, or the system no longer has it —
+// and "" when it is: the row names the font itself, so there is nothing else to
+// explain. It is made again only when that, or the language, changes.
 func (state *State) interfaceFontDescription() string {
 	fonts := &state.uiFont
 	var kind uint8
@@ -83,7 +108,8 @@ func (state *State) interfaceFontDescription() string {
 	case fonts.missing:
 		kind = 2
 	}
-	if fonts.text == "" || fonts.textFamily != fonts.family || fonts.textState != kind || fonts.textLang != state.language {
+	if !fonts.textMade || fonts.textFamily != fonts.family || fonts.textState != kind || fonts.textLang != state.language {
+		fonts.textMade = true
 		fonts.textFamily, fonts.textState, fonts.textLang = fonts.family, kind, state.language
 		switch kind {
 		case 1:
@@ -91,32 +117,33 @@ func (state *State) interfaceFontDescription() string {
 		case 2:
 			fonts.text = fmt.Sprintf(state.messages.Tools.FontMissingFmt, fonts.family)
 		default:
-			fonts.text = fmt.Sprintf(state.messages.SettingsInterfaceFontCurrentFmt, state.interfaceFontName())
+			fonts.text = ""
 		}
 	}
 	return fonts.text
 }
 
-// applyInterfaceFont tells the engine the family in effect. The first call is
-// also the one question of whether the platform can follow a family at all, which
-// its setter answers; the answer is kept, so nothing asks again, and the setter is
-// not called again for a family it already has.
+// applyInterfaceFont tells the engine the family and weights in effect. The first
+// call is also the one question of whether the platform can follow a family at all,
+// which its setter answers; the answer is kept, so nothing asks again, and the
+// setter is not called again for a family and weights it already has.
 func (state *State) applyInterfaceFont() {
 	fonts := &state.uiFont
-	want := fonts.family
-	if fonts.missing {
-		want = ""
+	want, main, bold := fonts.family, fonts.main, fonts.bold
+	if fonts.missing || want == "" {
+		// The platform's own interface font keeps the platform's own weights.
+		want, main, bold = "", 0, 0
 	}
-	if fonts.known && (!fonts.supported || want == fonts.applied) {
+	if fonts.known && (!fonts.supported || (want == fonts.applied && main == fonts.appliedMain && bold == fonts.appliedBold)) {
 		return
 	}
-	followed := state.options.SetInterfaceFont != nil && state.options.SetInterfaceFont(want)
+	followed := state.options.SetInterfaceFont != nil && state.options.SetInterfaceFont(want, main, bold)
 	if !fonts.known {
 		fonts.known, fonts.supported = true, followed
 	}
-	fonts.applied = ""
+	fonts.applied, fonts.appliedMain, fonts.appliedBold = "", 0, 0
 	if followed {
-		fonts.applied = want
+		fonts.applied, fonts.appliedMain, fonts.appliedBold = want, main, bold
 	}
 }
 
@@ -131,13 +158,17 @@ func (state *State) reconcileInterfaceFont() {
 }
 
 // setInterfaceFont is the user's choice of the family the window's text is drawn
-// in, or "" for the platform's own. It reports whether the choice changed.
-func (state *State) setInterfaceFont(family string) bool {
+// in, or "" for the platform's own, and of the weights its main and bold text are
+// drawn at (0 for the family's own). It reports whether the choice changed.
+func (state *State) setInterfaceFont(family string, main, bold int) bool {
 	family = strings.TrimSpace(family)
-	if family == state.uiFont.family {
+	if family == "" {
+		main, bold = 0, 0
+	}
+	if family == state.uiFont.family && main == state.uiFont.main && bold == state.uiFont.bold {
 		return false
 	}
-	state.uiFont.family = family
+	state.uiFont.family, state.uiFont.main, state.uiFont.bold = family, main, bold
 	state.reconcileInterfaceFont()
 	return true
 }
@@ -163,17 +194,17 @@ func (state *State) openInterfaceFontPicker() {
 	state.openPicker(pickInterfaceFont)
 }
 
-// paintInterfaceFontSample is the picker's sample for the interface: the
+// declareInterfaceFontSample is the picker's sample for the interface: the
 // highlighted family set in itself. The Default row has no family to set it in,
 // so its sample is drawn in the interface font as it is, proportional like the
 // rest of the window.
-func (state *State) paintInterfaceFontSample(f *flex.Frame, entry fontEntry) {
+func (state *State) declareInterfaceFontSample(c ui.C, entry fontEntry) {
 	pal := state.pal
-	f.Column().Height(56).Shrink(0).PadSides(7, 11, 0, 11).Background(pal.terminal).Border(1, pal.line).Radius(radius.control).MarginSides(8, 0, 0, 0).Children(func() {
-		first := f.Text(interfaceFontSample).FontSize(metrics.FontSizeM).Color(pal.text).LineHeight(20).Height(20)
-		second := f.Text(interfaceFontSample2).FontSize(metrics.FontSizeM).Color(pal.muted).LineHeight(20).Height(20)
+	ui.Column(c).Height(56).Shrink(0).PadSides(7, 11, 0, 11).Background(pal.terminal).Border(1, pal.line).Radius(radius.control).MarginSides(8, 0, 0, 0).Children(func() {
+		first := ui.Text(c, interfaceFontSample).FontSize(metrics.FontSizeM).Color(pal.text).LineHeight(20).Height(20)
+		second := ui.Text(c, interfaceFontSample2).FontSize(metrics.FontSizeM).Color(pal.muted).LineHeight(20).Height(20)
 		if entry.family != "" {
-			face := ui.MonoFamily(entry.family)
+			face := gfx.MonoFamily(entry.family)
 			first.MonoFace(face)
 			second.MonoFace(face)
 		}

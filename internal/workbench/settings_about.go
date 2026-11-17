@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/assets"
 	"motty/internal/i18n"
@@ -33,17 +33,17 @@ const (
 // tile with it and is drawn as it is.
 type linkMark struct {
 	icon    uint8
-	chip    ui.Color
-	ink     ui.Color
+	chip    gfx.Color
+	ink     gfx.Color
 	size    float32
-	picture func() ui.Bitmap
+	picture func() gfx.Bitmap
 }
 
 // aboutMarkInk and aboutMarkTile are the white a brand mark is drawn on and the
 // color it is drawn in, which is what most of these logos ask for.
 var (
-	aboutMarkInk  = ui.RGB(0xFF, 0xFF, 0xFF)
-	aboutMarkTile = ui.RGB(0xFF, 0xFF, 0xFF)
+	aboutMarkInk  = gfx.RGB(0xFF, 0xFF, 0xFF)
+	aboutMarkTile = gfx.RGB(0xFF, 0xFF, 0xFF)
 )
 
 // The community's own marks, on the chip each one is drawn for: the logos that
@@ -51,16 +51,16 @@ var (
 // hue. These are the only hues on the page, so a place to go is told apart by
 // the service it opens rather than by a decoration the page invented.
 var (
-	aboutQQMark      = linkMark{icon: iconQQ, chip: aboutMarkTile, ink: aboutMarkInk, size: 21}                  // Tencent's penguin
-	aboutWeChatMark  = linkMark{icon: iconWeChat, chip: ui.RGB(0x07, 0xC1, 0x60), ink: aboutMarkInk, size: 16}   // WeChat's green
-	aboutDiscordMark = linkMark{icon: iconDiscord, chip: aboutMarkTile, ink: ui.RGB(0x58, 0x65, 0xF2), size: 17} // Discord's blurple
-	aboutIssuesMark  = linkMark{icon: iconBug, chip: ui.RGB(0xC0, 0x55, 0x4E), ink: aboutMarkInk, size: 16}      // a bug's red, kept quiet
+	aboutQQMark      = linkMark{icon: iconQQ, chip: aboutMarkTile, ink: aboutMarkInk, size: 21}                   // Tencent's penguin
+	aboutWeChatMark  = linkMark{icon: iconWeChat, chip: gfx.RGB(0x07, 0xC1, 0x60), ink: aboutMarkInk, size: 16}   // WeChat's green
+	aboutDiscordMark = linkMark{icon: iconDiscord, chip: aboutMarkTile, ink: gfx.RGB(0x58, 0x65, 0xF2), size: 17} // Discord's blurple
+	aboutIssuesMark  = linkMark{icon: iconBug, chip: gfx.RGB(0xC0, 0x55, 0x4E), ink: aboutMarkInk, size: 16}      // a bug's red, kept quiet
 )
 
 // The project's two: GitHub's mark on the same white chip the community icons
 // use, and the application's own icon for the site it opens.
 var (
-	aboutRepoMark = linkMark{icon: iconGitHub, chip: aboutMarkTile, ink: ui.RGB(0x18, 0x17, 0x17), size: 17}
+	aboutRepoMark = linkMark{icon: iconGitHub, chip: aboutMarkTile, ink: gfx.RGB(0x18, 0x17, 0x17), size: 17}
 	aboutDocsMark = linkMark{picture: aboutIconTile}
 )
 
@@ -177,75 +177,76 @@ const linkMarkSize = float32(26)
 // them. It takes the place of a row, so whatever follows it gets a hairline.
 func (page *settingsPage) tileBox(children func()) {
 	page.separator()
-	page.f.Column().FillWidth().Pad(14).Gap(10).Children(children)
+	ui.Column(page.c).FillWidth().Pad(14).Gap(10).Children(children)
 }
 
 // pair places two tiles side by side, or one above the other when the page is
 // too narrow for two.
 func (page *settingsPage) pair(first, second func()) {
 	if page.width < aboutTwoColumnMin {
-		page.f.Column().FillWidth().Gap(10).Children(func() {
+		ui.Column(page.c).FillWidth().Gap(10).Children(func() {
 			first()
 			second()
 		})
 		return
 	}
-	page.f.Row().FillWidth().Gap(10).Children(func() {
-		page.f.Column().Grow(1).Basis(0).Children(first)
-		page.f.Column().Grow(1).Basis(0).Children(second)
+	ui.Row(page.c).FillWidth().Gap(10).Children(func() {
+		ui.Column(page.c).Grow(1).Basis(0).Children(first)
+		ui.Column(page.c).Grow(1).Basis(0).Children(second)
 	})
 }
 
 // factTile is one fact of the build: its name above its value.
 func (page *settingsPage) factTile(icon uint8, label, value string) {
-	f, pal := page.f, page.state.pal
-	tile := f.Column().FillWidth().Height(60).PadSides(10, 12, 10, 12).Justify(flex.Center).Gap(3).Background(pal.surfaceSoft).Radius(radius.item)
+	c, pal := page.c, page.state.pal
+	tile := ui.Column(c).FillWidth().Height(60).PadSides(10, 12, 10, 12).Justify(ui.Center).Gap(3).Background(pal.surfaceSoft).Radius(radius.item)
 	page.matchAnchor(label, tile, 0)
 	tile.Children(func() {
-		f.Row().Items(flex.Center).Gap(6).Children(func() {
-			f.Icon(lucideIcons[icon]).Size(14, 14).Color(pal.muted).Shrink(0)
-			f.Text(label).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(15)
+		ui.Row(c).Items(ui.Center).Gap(6).Children(func() {
+			ui.Icon(c, lucideIcons[icon]).Size(14, 14).Color(pal.muted).Shrink(0)
+			ui.Text(c, label).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(15)
 		})
-		f.Text(value).Mono().FontSize(metrics.FontSizeM).Color(pal.text).LineHeight(19).Ellipsis()
+		ui.Text(c, value).Mono().FontSize(metrics.FontSizeM).Color(pal.text).LineHeight(19).Ellipsis()
 	})
 }
 
 // linkCard is one place to go: its mark, its name, what it is for, and a sign
 // that it opens outside the window. The whole card is the target.
-func (page *settingsPage) linkCard(id ui.ID, mark linkMark, label, description string) {
-	f, pal := page.f, page.state.pal
+func (page *settingsPage) linkCard(id gfx.ID, mark linkMark, label, description string) {
+	c, pal := page.c, page.state.pal
+	canvas := page.canvas()
 	background := pal.surfaceSoft
-	if f.Canvas().Hovered() == id {
+	if canvas.Hovered() == id {
 		background = pal.surfaceHot
 	}
 	border := withAlpha(pal.line, 0.85)
-	if f.Canvas().Focused() == id {
+	if canvas.Focused() == id {
 		border = pal.accent
 	}
-	card := f.Column().FillWidth().Height(86).PadSides(12, 12, 12, 12).Gap(5).Justify(flex.Center).Background(background).Radius(radius.control).Border(1, border)
+	card := ui.Column(c).FillWidth().Height(86).PadSides(12, 12, 12, 12).Gap(5).Justify(ui.Center).Background(background).Radius(radius.control).Border(1, border)
 	page.matchAnchor(label, card, 0)
-	page.hitOn(card, id, label, ui.HitOptions{Role: ui.RoleLink, Cursor: ui.PointerCursorHand, Description: description})
+	page.hitOn(card, id, label, gfx.HitOptions{Role: gfx.RoleLink, Cursor: gfx.PointerCursorHand, Description: description})
 	card.Children(func() {
-		f.Row().Items(flex.Center).Gap(8).Children(func() {
+		ui.Row(c).Items(ui.Center).Gap(8).Children(func() {
 			page.linkMarkIcon(mark)
-			f.Text(label).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(pal.text).LineHeight(20).Grow(1).Ellipsis()
-			f.Icon(lucideIcons[iconLink]).Size(12, 12).Color(pal.faint).Shrink(0)
+			ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(20).Grow(1).Ellipsis()
+			ui.Icon(c, lucideIcons[iconLink]).Size(12, 12).Color(pal.faint).Shrink(0)
 		})
-		f.Paragraph(description, 2).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(15)
+		ui.Paragraph(c, description, 2).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(15)
 	})
 }
 
 // linkMarkIcon draws a card's mark: its glyph, at the size that mark takes, on
 // the chip of its service, or the picture that brings its own tile.
 func (page *settingsPage) linkMarkIcon(mark linkMark) {
-	f := page.f
+	c := page.c
 	if mark.picture != nil {
-		f.Image(mark.picture()).Size(linkMarkSize, linkMarkSize).Shrink(0)
+		ui.Image(c, mark.picture()).Size(linkMarkSize, linkMarkSize).Shrink(0)
 		return
 	}
-	chip := f.Row().Size(linkMarkSize, linkMarkSize).Shrink(0).Center().Radius(radius.item).Background(mark.chip)
+	chip := ui.Row(c).Size(linkMarkSize, linkMarkSize).Shrink(0).Center().Radius(radius.item).Background(mark.chip)
 	chip.Children(func() {
-		f.Icon(lucideIcons[mark.icon]).Size(mark.size, mark.size).Color(mark.ink).Shrink(0)
+		ui.Icon(c, lucideIcons[mark.icon]).Size(mark.size, mark.size).Color(mark.ink).Shrink(0)
 	})
 }
 
@@ -253,25 +254,25 @@ func (page *settingsPage) linkMarkIcon(mark linkMark) {
 // not a place to go like the cards above, so it is one centered line below
 // them, and the words and the mark are the whole of its target.
 func (page *settingsPage) vivaColophon() {
-	f, pal := page.f, page.state.pal
+	c, pal := page.c, page.state.pal
 	m := page.state.messages
 	color := pal.muted
-	if f.Canvas().Hovered() == hitAboutViva || f.Canvas().Focused() == hitAboutViva {
+	if canvas := page.canvas(); canvas.Hovered() == hitAboutViva || canvas.Focused() == hitAboutViva {
 		color = pal.accent
 	}
-	f.Row().FillWidth().Items(flex.Center).Justify(flex.Center).Children(func() {
-		line := f.Row().Items(flex.Center).Gap(5)
+	ui.Row(c).FillWidth().Items(ui.Center).Justify(ui.Center).Children(func() {
+		line := ui.Row(c).Items(ui.Center).Gap(5)
 		page.matchAnchor(m.About.Viva, line, 0)
-		page.hitOn(line, hitAboutViva, m.About.Viva, ui.HitOptions{Role: ui.RoleLink, Cursor: ui.PointerCursorHand, Description: m.About.VivaDescription})
+		page.hitOn(line, hitAboutViva, m.About.Viva, gfx.HitOptions{Role: gfx.RoleLink, Cursor: gfx.PointerCursorHand, Description: m.About.VivaDescription})
 		line.Children(func() {
-			f.Icon(lucideIcons[iconLink]).Size(11, 11).Color(color).Shrink(0)
-			f.Text(m.About.Viva).FontSize(metrics.FontSizeS).Color(color).LineHeight(15)
+			ui.Icon(c, lucideIcons[iconLink]).Size(11, 11).Color(color).Shrink(0)
+			ui.Text(c, m.About.Viva).FontSize(metrics.FontSizeS).Color(color).LineHeight(15)
 		})
 	})
 }
 
-// paintAboutSettings paints the About category: what this copy is, where to
-// report a problem and where the project lives.
+// paintAboutSettings paints the About category: what this copy is, how to bring
+// it up to date, where to report a problem and where the project lives.
 func (state *State) paintAboutSettings(page *settingsPage) {
 	m, pal := state.messages, state.pal
 	facts := aboutFacts()
@@ -279,15 +280,16 @@ func (state *State) paintAboutSettings(page *settingsPage) {
 	if state.settings.aboutCopied {
 		copyAction = m.About.CopiedAction
 	}
+	c := page.c
 	page.groups(func() {
 		page.group("", func() {
 			// The wordmark is a picture, so it keeps a slot the page paints
 			// once it is laid out, as the sidebar header does.
-			row := page.f.Row().Height(96).PadX(18).Gap(16).Items(flex.Center)
+			row := ui.Row(c).Height(96).PadX(18).Gap(16).Items(ui.Center)
 			row.Children(func() {
-				page.f.Column().Grow(1).Children(func() {
-					page.add(settingsControl{kind: controlLogo, slot: page.f.Slot().Size(lockupWidth, lockupHeight).Shrink(0)})
-					page.f.Paragraph(m.About.Tagline, 2).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(16).MarginSides(6, 0, 0, 0)
+				ui.Column(c).Grow(1).Children(func() {
+					page.add(settingsControl{kind: controlLogo, slot: ui.Slot(c).Size(lockupWidth, lockupHeight).Shrink(0)})
+					ui.Paragraph(c, m.About.Tagline, 2).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(16).MarginSides(6, 0, 0, 0)
 				})
 				page.button(hitAboutCopyInfo, copyAction, aiButtonOutline, false).Shrink(0)
 			})
@@ -305,6 +307,11 @@ func (state *State) paintAboutSettings(page *settingsPage) {
 					page.factTile(iconTerminal, m.About.Runtime, facts.runtime)
 				})
 			})
+		})
+		// The update controls change the copy the facts above describe, so they
+		// sit with it rather than among the application's other preferences.
+		page.group(m.About.UpdateTitle, func() {
+			state.paintUpdateRows(page)
 		})
 		page.group(m.About.CommunityTitle, func() {
 			page.tileBox(func() {
@@ -335,7 +342,7 @@ func (state *State) paintAboutSettings(page *settingsPage) {
 
 // clickAboutSettings handles the presses of the About page. It reports whether
 // the identity was one of them.
-func (state *State) clickAboutSettings(id ui.ID) bool {
+func (state *State) clickAboutSettings(id gfx.ID) bool {
 	switch id {
 	case hitAboutCopyInfo:
 		state.copyAboutInfo()

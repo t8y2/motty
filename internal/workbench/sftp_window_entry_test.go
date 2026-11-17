@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
 )
@@ -36,9 +36,9 @@ func TestSFTPWindowHostMenuAuthenticatesWithoutTerminalAndRetainsDocumentConnect
 	state.options.Dial = func(c sshconn.Config) Connection { dialed = c; dials++; return conn }
 	sessions := len(state.sessions)
 	state.activeSessionID, state.activeSection = 0, sectionHosts
-	state.hostMenu = hostMenu{open: true, host: target.ID, at: ui.Point{X: 300, Y: 250}}
-	var canvas ui.Canvas
-	state.paintHostMenu(&canvas, ui.Rect{Width: 1400, Height: 900})
+	state.hostMenu = hostMenu{open: true, host: target.ID, at: gfx.Point{X: 300, Y: 250}}
+	var canvas gfx.Canvas
+	state.paintHostMenu(&canvas, gfx.Rect{Width: 1400, Height: 900})
 	connect, _ := hitByID(&canvas, hitHostMenuConnect)
 	files, ok := hitByID(&canvas, hitHostMenuSFTP)
 	edit, _ := hitByID(&canvas, hitHostMenuEdit)
@@ -154,16 +154,18 @@ func TestSFTPWindowLoadingCanCancelAuthenticationAndRespectsReducedMotion(t *tes
 				t.Fatal("handshake needs its own loading window, not a toast or browser")
 			}
 			for _, reduced := range []bool{false, true} {
-				var canvas ui.Canvas
+				var canvas gfx.Canvas
 				canvas.SetReduceMotion(reduced)
 				canvas.BeginFrame()
-				w.paint(&canvas, ui.Size{Width: 640, Height: 400})
+				w.paint(&canvas, gfx.Size{Width: 640, Height: 400})
 				canvas.EndFrame()
 				if _, animated := canvas.NextFrame(); animated == reduced {
 					t.Fatal("connection animation did not respect reduced motion")
 				}
-				if _, ok := hitByID(&canvas, hitSFTPWindowConnectCancel); !ok {
+				if hit, ok := sftpPageButtonHit(&canvas, state.messages.ConnClose); !ok {
 					t.Fatal("loading window cannot cancel its handshake")
+				} else if !tree.Within(hit.ID.Scope(), tree.Feature(w.pageRoot())) {
+					t.Fatal("the connecting control is not declared by the window's page")
 				}
 			}
 			conn.set(func(s *sshconn.Status) { s.Phase = sshconn.PhasePasswordPrompt; s.Attempt = 1 })
@@ -171,7 +173,7 @@ func TestSFTPWindowLoadingCanCancelAuthenticationAndRespectsReducedMotion(t *tes
 			if state.modal != modalPassword || state.modalSession != w.session.ID {
 				t.Fatal("loading window lost its authentication prompt")
 			}
-			w.click(hitSFTPWindowConnectCancel)
+			clickSFTPWindowButton(t, w, state.messages.ConnClose)
 			conn.mu.Lock()
 			canceled := conn.canceled
 			conn.mu.Unlock()
@@ -179,6 +181,36 @@ func TestSFTPWindowLoadingCanCancelAuthenticationAndRespectsReducedMotion(t *tes
 				t.Fatal("closing loading left authentication or its connection alive")
 			}
 		})
+	}
+}
+
+func TestSFTPWindowConnectingEscapeUsesItsOwnKeyRoute(t *testing.T) {
+	state, original, _, _, _ := dualSFTPFixture(t, 1)
+	target := original.session.host
+	target.ID += 1000
+	conn := &fakeConn{}
+	conn.set(func(s *sshconn.Status) { s.Phase = sshconn.PhaseConnecting })
+	state.options.Dial = func(sshconn.Config) Connection { return conn }
+	state.openHostSFTPWindow(target)
+	var w *sftpWindow
+	for _, candidate := range state.sftpWindows {
+		if candidate.session.HostID == target.ID {
+			w = candidate
+		}
+	}
+	if w == nil || w.window == nil || w.view.worker != nil {
+		t.Fatal("no connecting window")
+	}
+	// The connecting state is declared by the window's page; a key it does not
+	// own still reaches the window, which closes its handshake.
+	if result := w.key(gfx.KeyEvent{Key: gfx.KeyEscape}); !result.Handled {
+		t.Fatal("Escape did not reach the window while connecting")
+	}
+	conn.mu.Lock()
+	canceled := conn.canceled
+	conn.mu.Unlock()
+	if !w.closed || canceled != 1 {
+		t.Fatalf("connecting window did not close its handshake: closed=%t canceled=%d", w.closed, canceled)
 	}
 }
 
@@ -207,12 +239,12 @@ func TestSFTPWindowFailedHandshakeRetriesInsideSameWindow(t *testing.T) {
 	window := w.window
 	first.set(func(s *sshconn.Status) { s.Phase = sshconn.PhaseFailed; s.Err = errors.New("connection refused") })
 	state.Wake()
-	var canvas ui.Canvas
-	w.paint(&canvas, ui.Size{Width: 640, Height: 400})
-	if _, ok := hitByID(&canvas, hitSFTPWindowConnectRetry); !ok || w.closed || len(state.fileNotices.items) != 0 {
+	var canvas gfx.Canvas
+	w.paint(&canvas, gfx.Size{Width: 640, Height: 400})
+	if _, ok := sftpPageButtonHit(&canvas, state.messages.ConnRetry); !ok || w.closed || len(state.fileNotices.items) != 0 {
 		t.Fatal("failed handshake needs inline failure and retry")
 	}
-	w.click(hitSFTPWindowConnectRetry)
+	clickSFTPWindowButton(t, w, state.messages.ConnRetry)
 	dualWait(t, state, w, host.windows[1].view, func() bool { return w.view.worker != nil && !w.view.busy && len(w.view.rows) == 2 })
 	if w.window != window || dials != 2 || len(host.windows) != 2 || w.session.term != nil {
 		t.Fatal("retry replaced the native window or created a terminal")
@@ -252,12 +284,12 @@ func TestSFTPWindowInvalidRouteStaysFailedAndRetryable(t *testing.T) {
 	if w.session.phase != sshconn.PhaseFailed || w.phase != sshconn.PhaseFailed || w.session.conn != nil {
 		t.Fatalf("invalid route state = session %v, window %v, conn %v", w.session.phase, w.phase, w.session.conn)
 	}
-	var canvas ui.Canvas
-	w.paint(&canvas, ui.Size{Width: 640, Height: 400})
-	if _, ok := hitByID(&canvas, hitSFTPWindowConnectRetry); !ok {
+	var canvas gfx.Canvas
+	w.paint(&canvas, gfx.Size{Width: 640, Height: 400})
+	if _, ok := sftpPageButtonHit(&canvas, state.messages.ConnRetry); !ok {
 		t.Fatal("invalid route failure cannot be retried")
 	}
-	w.click(hitSFTPWindowConnectRetry)
+	clickSFTPWindowButton(t, w, state.messages.ConnRetry)
 	state.Wake()
 	if w.session.phase != sshconn.PhaseFailed || w.closed || len(host.windows) != 2 || dials != 0 || len(state.sessions) != sessions || w.session.term != nil {
 		t.Fatalf("retry changed invalid route window: phase=%v closed=%t windows=%d dials=%d sessions=%d terminal=%v", w.session.phase, w.closed, len(host.windows), dials, len(state.sessions), w.session.term)
@@ -323,7 +355,7 @@ func TestSFTPWindowSecondaryPressCancelsDragBeforeDeferredRowsChange(t *testing.
 	if len(w.view.lfolder.rows) == 0 {
 		t.Fatal("listing was not deferred")
 	}
-	result := w.pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonSecondary, Target: sftpWindowRows[0].At(1), Captured: true})
+	result := w.pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: sftpWindowRows[0].At(1), Captured: true})
 	if !result.Handled || w.drag.active || len(w.view.lfolder.rows) != 0 || len(w.view.worker.Transfers(nil)) != 0 {
 		t.Fatal("secondary press did not safely cancel drag")
 	}
@@ -402,14 +434,14 @@ func TestSFTPWindowPathUsesUpstreamValidationAndOwnNotices(t *testing.T) {
 	editor := w.view.sftpFolder.pathInput()
 	*editor = *text.NewEditor("missing")
 	editor.SetMarkedText("目录", text.Range{Start: 0, End: 2})
-	w.key(ui.KeyEvent{Target: sftpWindowPath[1], Key: ui.KeyEnter})
+	w.key(gfx.KeyEvent{Target: sftpWindowPath[1], Key: gfx.KeyEnter})
 	if w.view.busy || w.view.pathRequest != "" {
 		t.Fatal("IME confirmation submitted a directory")
 	}
 	for attempt := range 2 {
 		_ = attempt
 		*editor = *text.NewEditor("missing")
-		w.key(ui.KeyEvent{Target: sftpWindowPath[1], Key: ui.KeyEnter})
+		w.key(gfx.KeyEvent{Target: sftpWindowPath[1], Key: gfx.KeyEnter})
 		if !w.view.busy {
 			t.Fatal("manual navigation trusted a stale cached directory")
 		}

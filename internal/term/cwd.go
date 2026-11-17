@@ -111,3 +111,22 @@ func parseCwd(value string) (Cwd, bool) {
 	}
 	return Cwd{Host: parsed.Hostname(), Path: parsed.Path}, true
 }
+
+// SetHomeDirectory receives token-bound shell home metadata. The owner decides
+// whether this shell is at its prompt and whether the path belongs to it.
+func (t *Terminal) SetHomeDirectory(fn func(string)) { t.homeDirectoryFn = fn }
+
+func (t *Terminal) homeDirectoryReport(text []byte) {
+	if t.promptToken == "" || t.homeDirectoryFn == nil || len(text) > maxCwd*3+256 {
+		return
+	}
+	parts := strings.SplitN(string(text), ";", 3)
+	if len(parts) != 3 || parts[0] != "motty-home" || parts[1] != t.promptToken {
+		return
+	}
+	home, err := url.PathUnescape(parts[2])
+	if err != nil || home == "" || len(home) > maxCwd || strings.IndexFunc(home, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0 {
+		return
+	}
+	t.homeDirectoryFn(home)
+}

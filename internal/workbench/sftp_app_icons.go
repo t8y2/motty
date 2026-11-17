@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -39,8 +39,10 @@ var appIconIDs atomic.Uint64
 // one), so they share the slot by pointer and all see the answer.
 type fileIconSlot struct {
 	path    string
-	modTime time.Time // of the bundle when listed: an updated one is a different icon
-	bitmap  ui.Bitmap // empty until the system has answered
+	modTime time.Time  // of the bundle when listed: an updated one is a different icon
+	bitmap  gfx.Bitmap // empty until the system has answered
+	loading bool       // a goroutine is asking the system
+	failed  bool       // the system has no icon for this kind, so do not ask again
 }
 
 func (slot *fileIconSlot) ready() bool { return slot != nil && slot.bitmap.Width > 0 }
@@ -120,11 +122,13 @@ func (state *State) loadAppIcons(view *sftpView, previous, rows []sftpRow) {
 
 // declareSFTPRowIcon declares what leads a row: the system's icon for an
 // application bundle once it has arrived, otherwise the glyph of its kind.
-func declareSFTPRowIcon(f *flex.Frame, row *sftpRow, tint ui.Color) {
+func declareSFTPRowIcon(c ui.C, row *sftpRow, tint gfx.Color) {
 	switch {
 	case row.appIcon.ready():
-		f.Image(row.appIcon.bitmap)
+		ui.Image(c, row.appIcon.bitmap)
+	case row.typeIcon.ready():
+		ui.Image(c, row.typeIcon.bitmap)
 	case row.icon != nil:
-		f.Icon(*row.icon).Color(tint)
+		ui.Icon(c, *row.icon).Color(tint)
 	}
 }

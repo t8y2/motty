@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	layoutcore "motty/internal/workspace"
@@ -24,13 +24,15 @@ var (
 // into a reusable template. The workspace remains open after saving.
 type workspaceSave struct {
 	workspace layoutcore.WorkspaceID
-	columns   uint8
+	layout    layoutcore.LayoutSpec
 	name      text.Editor
 	error     string
+	// nameField is the page's handle on the same editor the dialog reads.
+	nameField ui.Field
 }
 
 func (state *State) openWorkspaceSave(workspace layoutcore.WorkspaceID) {
-	columns, temporary := state.temporaryWorkspaceColumns[workspace]
+	layout, temporary := state.temporaryWorkspaceLayouts[workspace]
 	if !temporary {
 		return
 	}
@@ -38,13 +40,14 @@ func (state *State) openWorkspaceSave(workspace layoutcore.WorkspaceID) {
 	if !ok {
 		return
 	}
-	state.workspaceSave = workspaceSave{workspace: workspace, columns: columns}
+	state.workspaceSave = workspaceSave{workspace: workspace, layout: layout}
+	state.workspaceSave.nameField.Bind(&state.workspaceSave.name)
 	state.workspaceSave.name.Insert(state.tabLabel(state.workspaceTabs[index]))
 	state.workspaceSave.name.SetSelection(text.Range{End: state.workspaceSave.name.RuneCount()})
 	state.modal = modalWorkspaceSave
 }
 
-func (state *State) clickWorkspaceSave(id ui.ID) {
+func (state *State) clickWorkspaceSave(id gfx.ID) {
 	switch id {
 	case hitWorkspaceSaveDismiss, hitWorkspaceSaveClose, hitWorkspaceSaveCancel:
 		state.closeModal()
@@ -62,10 +65,19 @@ func (state *State) submitWorkspaceSave() {
 		save.error = state.workspaceSaveCompositionError(err)
 		return
 	}
-	template, err := NewWorkspaceTemplate(strings.TrimSpace(save.name.String()), hostIDs, save.columns)
+	template, err := NewWorkspaceTemplate(strings.TrimSpace(save.name.String()), hostIDs, save.layout)
 	if err != nil {
 		save.error = state.workspaceSaveTemplateError(err)
 		return
+	}
+	template.Commands = make(map[string]WorkspaceCommand)
+	for _, pane := range state.deck.Panes(save.workspace, nil) {
+		if session, ok := state.sessionByIDPointer(uint32(pane.SessionID)); ok && workspaceCommandHost(session.host) && session.workspaceCommand.Command != "" {
+			template.Commands[workspaceHostReference(session.host)] = session.workspaceCommand
+		}
+	}
+	if len(template.Commands) == 0 {
+		template.Commands = nil
 	}
 	previousTemplates := state.templates
 	previousSelected := state.selectedWorkspaceTemplateID
@@ -73,7 +85,7 @@ func (state *State) submitWorkspaceSave() {
 	state.templates = append(state.templates, template)
 	state.selectedWorkspaceTemplateID = template.ID
 	state.workspaceLibraryExpanded = true
-	delete(state.temporaryWorkspaceColumns, save.workspace)
+	delete(state.temporaryWorkspaceLayouts, save.workspace)
 	previousBroadcast := state.broadcast
 	previousStatus := state.status
 	state.clearBroadcast()
@@ -84,7 +96,7 @@ func (state *State) submitWorkspaceSave() {
 		state.templates = previousTemplates
 		state.selectedWorkspaceTemplateID = previousSelected
 		state.workspaceLibraryExpanded = previousExpanded
-		state.temporaryWorkspaceColumns[save.workspace] = save.columns
+		state.temporaryWorkspaceLayouts[save.workspace] = save.layout
 		state.broadcast = previousBroadcast
 		state.status = previousStatus
 		state.activeSection = previousSection
@@ -159,62 +171,78 @@ func (state *State) workspaceSaveHostCatalogIDs(workspace layoutcore.WorkspaceID
 	return hostIDs, nil
 }
 
-func (state *State) paintWorkspaceSaveDialog(canvas *ui.Canvas, viewport ui.Rect) {
+// declareWorkspaceSave declares the save-as-template dialog in the window
+// page: the name field and its buttons are page controls, so the page reads
+// their clicks, the field serves the platform editor and the close/backdrop
+// report the dismissal.
+func (state *State) declareWorkspaceSave(c ui.C) {
+	if state.modal != modalWorkspaceSave {
+		return
+	}
 	messages := state.messages
 	save := &state.workspaceSave
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitWorkspaceSaveDismiss, CloseID: hitWorkspaceSaveClose, InitialFocusID: hitWorkspaceSaveName,
-		ContentSize: ui.Size{Width: 500}, FitBody: true, BodyHeight: 92,
-	})
 	description := ""
 	if index, ok := state.workspaceTab(save.workspace); ok {
 		description = fmt.Sprintf(messages.WorkspaceSaveDescriptionFmt, state.tabLabel(state.workspaceTabs[index]),
 			len(state.deck.Panes(save.workspace, nil)))
 	}
-	layout := dialog.Begin(messages.WorkspaceSaveTitle, description)
-	var field flex.Box
-	f := state.chrome.dialog.Begin(canvas, state.Theme(), layout.Body)
-	f.Column().Fill().Children(func() { field = f.Slot().Height(62) })
-	f.End()
-	beginField := components.BeginField(canvas, state.Theme(), field.Rect())
-	if save.error != "" {
-		beginField = beginField.Invalid()
-	}
-	content := beginField.Paint(messages.WorkspaceDraftName, "", save.error)
-	value := save.name.String()
-	focused := canvas.Focused() == hitWorkspaceSaveName
-	content.Height = 32
-	components.PaintInput(canvas, state.Theme(), content, components.InputSnapshot{
-		ID: hitWorkspaceSaveName, Label: messages.WorkspaceDraftName, Value: value,
-		Placeholder: messages.WorkspaceDraftNamePlaceholder, Focused: focused, PlatformEditing: focused && value != "",
+	const width float32 = 500
+	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
+	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
+		ContentSize: gfx.Size{Width: width}, FitBody: true,
+	}).Layout(description)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: messages.WorkspaceSaveTitle, Description: description,
+		Width: width, Height: layout.Content.Height + 92, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitWorkspaceSaveDismiss, CloseID: hitWorkspaceSaveClose,
+		InitialFocusID: hitWorkspaceSaveName,
 	})
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitWorkspaceSaveCancel, Label: messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitWorkspaceSaveSubmit, Label: messages.WorkspaceDraftSave},
-	)
-	dialog.End()
+	dialog.Body(func() {
+		theme, metrics := c.Theme(), c.Theme().Metrics
+		gap := metrics.GapItem / 2
+		ui.Column(c).Fill().Children(func() {
+			ui.Column(c).Height(62).Children(func() {
+				ui.Text(c, messages.WorkspaceDraftName).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).
+					Color(theme.Foreground).LineHeight(metrics.FontSizeM + 4).Ellipsis()
+				ui.TextFieldID(c, hitWorkspaceSaveName, &save.nameField, messages.WorkspaceDraftName, messages.WorkspaceDraftNamePlaceholder).
+					Height(metrics.ControlHeight).MarginSides(gap, 0, 0, 0)
+				if save.error != "" {
+					ui.Text(c, save.error).FontSize(metrics.FontSizeM).Color(theme.Danger).
+						LineHeight(metrics.FontSizeM+7).MarginSides(gap, 0, 0, 0)
+				}
+			})
+		})
+	})
+	dialog.Footer(func() {
+		if ui.Button(c, messages.Cancel).Secondary().Shrink(0).Clicked() {
+			c.After(func() { state.clickWorkspaceSave(hitWorkspaceSaveCancel) })
+		}
+		if ui.Button(c, messages.WorkspaceDraftSave).Shrink(0).Clicked() {
+			c.After(func() { state.clickWorkspaceSave(hitWorkspaceSaveSubmit) })
+		}
+	})
+	if dialog.Dismissed() {
+		state.closeModal()
+	}
 }
 
-// workspaceSaveKey keeps the save dialog's keyboard behavior local to it:
-// Escape closes, and Enter submits from either the name field or the button.
-func (state *State) workspaceSaveKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) workspaceSaveKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalWorkspaceSave {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if event.Key == ui.KeyEscape && !event.Repeat {
+	if event.Key == gfx.KeyEscape && !event.Repeat {
 		state.closeModal()
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	if event.Key != ui.KeyEnter || event.Repeat ||
+	if event.Key != gfx.KeyEnter || event.Repeat ||
 		(event.Target != hitWorkspaceSaveName && event.Target != hitWorkspaceSaveSubmit) {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if editor := state.EditorFor(event.Target); editor != nil {
 		if _, composing := editor.Composition(); composing {
-			return ui.EventResult{}, false
+			return gfx.EventResult{}, false
 		}
 	}
 	state.submitWorkspaceSave()
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }

@@ -12,9 +12,9 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/filecontent"
 	"motty/internal/i18n"
 )
@@ -76,7 +76,7 @@ func openCodeDocumentWindow(t *testing.T, d *fileDocument, width, height int, sc
 	return window
 }
 
-func documentHitBounds(t *testing.T, view codeWindow, id ui.ID) ui.Rect {
+func documentHitBounds(t *testing.T, view codeWindow, id gfx.ID) gfx.Rect {
 	t.Helper()
 	for _, hit := range view.Snapshot().Hits {
 		if hit.ID == id {
@@ -84,10 +84,10 @@ func documentHitBounds(t *testing.T, view codeWindow, id ui.ID) ui.Rect {
 		}
 	}
 	t.Fatalf("no hit %v", id)
-	return ui.Rect{}
+	return gfx.Rect{}
 }
 
-func documentHasHit(view codeWindow, id ui.ID) bool {
+func documentHasHit(view codeWindow, id gfx.ID) bool {
 	for _, hit := range view.Snapshot().Hits {
 		if hit.ID == id {
 			return true
@@ -97,11 +97,11 @@ func documentHasHit(view codeWindow, id ui.ID) bool {
 }
 
 // primary is the modifier of the platform's editing chords.
-func documentPrimaryModifier() ui.Modifiers {
+func documentPrimaryModifier() gfx.Modifiers {
 	if runtime.GOOS == "darwin" {
-		return ui.ModifierMeta
+		return gfx.ModifierMeta
 	}
-	return ui.ModifierControl
+	return gfx.ModifierControl
 }
 
 func documentCaretAt(d *fileDocument, line, column int) {
@@ -158,7 +158,7 @@ func TestDocumentEditorIndentsPairsAndCommentsLikeAnEditor(t *testing.T) {
 
 	// Enter between the braces opens a block with the caret on an indented line.
 	documentCaretAt(d, 2, len("func main() {"))
-	if err := driver.Key(ui.KeyEnter, 0); err != nil {
+	if err := driver.Key(gfx.KeyEnter, 0); err != nil {
 		t.Fatal(err)
 	}
 	if got, want := d.editor.String(), "package main\n\nfunc main() {\n\t\n}\n"; got != want {
@@ -201,13 +201,13 @@ func TestDocumentEditorIndentsPairsAndCommentsLikeAnEditor(t *testing.T) {
 	// Tab with several lines selected indents them; Shift+Tab takes it back, each as one undo.
 	d.editor.SetSelection(text.Range{Start: d.editor.RuneIndex(strings.Index(d.editor.String(), "func")), End: d.editor.RuneCount()})
 	before := d.editor.String()
-	if err := driver.Key(ui.KeyTab, 0); err != nil {
+	if err := driver.Key(gfx.KeyTab, 0); err != nil {
 		t.Fatal(err)
 	}
 	if got := d.editor.String(); !strings.Contains(got, "\tfunc main() {\n\t\t") {
 		t.Fatalf("Tab over lines gave %q", got)
 	}
-	if err := driver.Key(ui.KeyTab, ui.ModifierShift); err != nil {
+	if err := driver.Key(gfx.KeyTab, gfx.ModifierShift); err != nil {
 		t.Fatal(err)
 	}
 	if d.editor.String() != before {
@@ -227,7 +227,7 @@ func TestDocumentTabInsertsToTheNextStopAndNeverLeavesTheEditor(t *testing.T) {
 	view := openCodeDocumentWindow(t, d, 900, 600, 1)
 	driver := view.Driver()
 	d.editor.MoveTo(1, false)
-	if err := driver.Key(ui.KeyTab, 0); err != nil {
+	if err := driver.Key(gfx.KeyTab, 0); err != nil {
 		t.Fatal(err)
 	}
 	if got := d.editor.String(); got != "x    = 1\n" {
@@ -247,12 +247,12 @@ func TestDocumentReadOnlyStatesRefuseCodeEditing(t *testing.T) {
 	view := openCodeDocumentWindow(t, d, 900, 600, 1)
 	d.busy = true
 	for _, key := range []struct {
-		key       ui.Key
-		modifiers ui.Modifiers
-	}{{ui.KeyTab, 0}, {ui.KeyUp, ui.ModifierAlt}, {ui.KeyDown, ui.ModifierAlt | ui.ModifierShift}} {
-		d.key(ui.KeyEvent{Key: key.key, Modifiers: key.modifiers, Target: hitDocumentInput})
+		key       gfx.Key
+		modifiers gfx.Modifiers
+	}{{gfx.KeyTab, 0}, {gfx.KeyUp, gfx.ModifierAlt}, {gfx.KeyDown, gfx.ModifierAlt | gfx.ModifierShift}} {
+		d.key(gfx.KeyEvent{Key: key.key, Modifiers: key.modifiers, Target: hitDocumentInput})
 	}
-	d.shortcut(ui.KeyEvent{Modifiers: documentPrimaryModifier(), Text: "/", Target: hitDocumentInput})
+	d.shortcut(gfx.KeyEvent{Modifiers: documentPrimaryModifier(), Text: "/", Target: hitDocumentInput})
 	if d.editor.String() != "a\nb\n" {
 		t.Fatalf("a busy document was edited: %q", d.editor.String())
 	}
@@ -292,13 +292,13 @@ func TestDocumentFindSelectsStepsAndReplaces(t *testing.T) {
 	}
 
 	// Enter goes to the next match, Shift+Enter back.
-	if err := driver.Key(ui.KeyEnter, 0); err != nil {
+	if err := driver.Key(gfx.KeyEnter, 0); err != nil {
 		t.Fatal(err)
 	}
 	if got := d.editor.Selection(); got != (text.Range{Start: 16, End: 20}) {
 		t.Fatalf("Enter selected %+v, want the second match", got)
 	}
-	if err := driver.Key(ui.KeyEnter, ui.ModifierShift); err != nil {
+	if err := driver.Key(gfx.KeyEnter, gfx.ModifierShift); err != nil {
 		t.Fatal(err)
 	}
 	if got := d.editor.Selection(); got != (text.Range{Start: 0, End: 4}) {
@@ -335,7 +335,7 @@ func TestDocumentFindSelectsStepsAndReplaces(t *testing.T) {
 	}
 
 	// Escape closes the bar and gives the keyboard back to the text.
-	if err := driver.Key(ui.KeyEscape, 0); err != nil {
+	if err := driver.Key(gfx.KeyEscape, 0); err != nil {
 		t.Fatal(err)
 	}
 	if err := view.Rest(); err != nil {
@@ -382,7 +382,7 @@ func TestDocumentGoToLineMovesTheCaret(t *testing.T) {
 	d := newCodeDocument(t, "main.go", "one\ntwo\n中文 three\nfour\n")
 	view := openCodeDocumentWindow(t, d, 900, 600, 1)
 	driver := view.Driver()
-	if handled, err := driver.ShortcutChord(ui.ModifierControl, 'g'); err != nil || !handled {
+	if handled, err := driver.ShortcutChord(gfx.ModifierControl, 'g'); err != nil || !handled {
 		t.Fatalf("Control+G was not handled: %v", err)
 	}
 	if err := view.Rest(); err != nil {
@@ -394,7 +394,7 @@ func TestDocumentGoToLineMovesTheCaret(t *testing.T) {
 	if err := view.Type("9"); err != nil {
 		t.Fatal(err)
 	}
-	if err := driver.Key(ui.KeyEnter, 0); err != nil {
+	if err := driver.Key(gfx.KeyEnter, 0); err != nil {
 		t.Fatal(err)
 	}
 	if !d.edit.goOpen || !d.edit.goInvalid {
@@ -402,7 +402,7 @@ func TestDocumentGoToLineMovesTheCaret(t *testing.T) {
 	}
 	d.edit.goEditor = *text.NewEditor("3:4")
 	d.edit.goInvalid = false
-	if err := driver.Key(ui.KeyEnter, 0); err != nil {
+	if err := driver.Key(gfx.KeyEnter, 0); err != nil {
 		t.Fatal(err)
 	}
 	if d.edit.goOpen {
@@ -452,7 +452,7 @@ func TestDocumentStatusLineShowsPositionIndentAndEnding(t *testing.T) {
 func TestDocumentCodeBarsStayInsideTheWindowAtEveryScale(t *testing.T) {
 	for _, language := range []i18n.Language{i18n.Chinese, i18n.English} {
 		for _, scale := range []float64{1, 1.25, 1.5, 2} {
-			for _, size := range []ui.Size{{Width: 520, Height: 320}, {Width: 1000, Height: 700}} {
+			for _, size := range []gfx.Size{{Width: 520, Height: 320}, {Width: 1000, Height: 700}} {
 				d := newCodeDocument(t, "main.go", strings.Repeat("func f() { return }\n", 40))
 				d.owner.setLanguage(language)
 				view := openCodeDocumentWindow(t, d, int(size.Width), int(size.Height), scale)
@@ -460,8 +460,8 @@ func TestDocumentCodeBarsStayInsideTheWindowAtEveryScale(t *testing.T) {
 				d.edit.find.Query = *text.NewEditor("func")
 				view.refresh(t)
 				editor := documentHitBounds(t, view, hitDocumentInput)
-				bar := []ui.ID{hitDocumentFind, hitDocumentReplace, hitDocumentFindPrevious, hitDocumentFindNext, hitDocumentFindClose, hitDocumentFindCase, hitDocumentFindWord, hitDocumentFindRegexp, hitDocumentFindToggle, hitDocumentReplaceOne, hitDocumentReplaceAll}
-				seen := map[ui.ID]ui.Rect{}
+				bar := []gfx.ID{hitDocumentFind, hitDocumentReplace, hitDocumentFindPrevious, hitDocumentFindNext, hitDocumentFindClose, hitDocumentFindCase, hitDocumentFindWord, hitDocumentFindRegexp, hitDocumentFindToggle, hitDocumentReplaceOne, hitDocumentReplaceAll}
+				seen := map[gfx.ID]gfx.Rect{}
 				for _, hit := range view.Snapshot().Hits {
 					seen[hit.ID] = hit.Bounds
 				}
@@ -500,7 +500,9 @@ func TestDocumentWrapToggleChangesTheLayoutNotTheText(t *testing.T) {
 	if documentHasHit(view, hitDocumentEditorScrollX) {
 		t.Fatal("a wrapping editor shows a horizontal scrollbar")
 	}
-	d.click(hitDocumentWrap)
+	if err := view.ClickLabel(d.owner.messages.CodeEditor.WrapOn); err != nil {
+		t.Fatal(err)
+	}
 	view.refresh(t)
 	if !d.edit.noWrap || !documentHasHit(view, hitDocumentEditorScrollX) {
 		t.Fatal("without wrapping a long line should scroll sideways")
@@ -550,7 +552,7 @@ func TestDocumentCodeEditorScreenshots(t *testing.T) {
 		shoot(view, fmt.Sprintf("goto-%.0fx", scale))
 
 		d.closeFind()
-		d.click(hitDocumentWrap)
+		d.edit.noWrap = true
 		documentCaretAt(d, 15, 40)
 		view.refresh(t)
 		shoot(view, fmt.Sprintf("nowrap-%.0fx", scale))
@@ -583,7 +585,7 @@ func TestDocumentCodeEditorScreenshots(t *testing.T) {
 func TestDocumentControlHOpensReplaceOnlyWhereItIsNotABackspace(t *testing.T) {
 	d := newCodeDocument(t, "main.go", "alpha\n")
 	view := openCodeDocumentWindow(t, d, 900, 600, 1)
-	handled, err := view.Driver().ShortcutChord(ui.ModifierControl, 'h')
+	handled, err := view.Driver().ShortcutChord(gfx.ModifierControl, 'h')
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -621,7 +623,7 @@ func TestDocumentComparisonPaneEditsLikeTheEditor(t *testing.T) {
 	driver := view.Driver()
 	documentCaretAt(d, 3, 1)
 	d.editor.SetSelection(text.Range{Start: d.editor.RuneIndex(strings.Index(d.editor.String(), "func")), End: d.editor.RuneIndex(strings.Index(d.editor.String(), "\n}"))})
-	if err := driver.Key(ui.KeyTab, 0); err != nil {
+	if err := driver.Key(gfx.KeyTab, 0); err != nil {
 		t.Fatal(err)
 	}
 	if got := d.editor.String(); !strings.Contains(got, "\t\tprintln(1)") || !strings.Contains(got, "\tfunc main()") {
@@ -632,5 +634,217 @@ func TestDocumentComparisonPaneEditsLikeTheEditor(t *testing.T) {
 	}
 	if got := d.editor.String(); !strings.Contains(got, "\t// func main() {\n\t// \tprintln(1)") {
 		t.Fatalf("comment in the comparison gave %q", got)
+	}
+}
+
+// The editor window is one page: its Config routes the editor's typing and the
+// footer's buttons, which the window no longer sends to the page by hand.
+func TestEditorWindowPageRoutesTypingAndFooterClick(t *testing.T) {
+	d := newCodeDocument(t, "main.go", "package main\n\nfunc main() {}\n")
+	d.cacheKey = "main.go"
+	owner := d.owner
+	manager := &owner.fileWindows
+	manager.documents = map[string]*fileDocument{d.cacheKey: d}
+	manager.order = []string{d.cacheKey}
+	manager.active = d.cacheKey
+	config := manager.config()
+	config.Width, config.Height = 900, 620
+	view, err := headless.Open(config, nil, headless.Options{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	pane := documentHitBounds(t, codeWindow{Session: view}, hitDocumentInput)
+	if err := view.Click(pane.X+40, pane.Y+20); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Type("typed"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(d.editor.String(), "typed") {
+		t.Fatalf("typing did not reach the editor: %q", d.editor.String())
+	}
+	before := d.edit.noWrap
+	if err := view.ClickLabel(owner.messages.CodeEditor.WrapOn); err != nil {
+		t.Fatal(err)
+	}
+	if d.edit.noWrap == before {
+		t.Fatal("a footer button click did not reach the page's action")
+	}
+}
+
+func TestDocumentEditorDoubleClickSelectsWord(t *testing.T) {
+	d := newCodeDocument(t, "main.go", "package main\n\nfunc calculateTotal() int {\n\treturn 42\n}\n")
+	view := openCodeDocumentWindow(t, d, 900, 600, 1)
+
+	// Position caret on "calculateTotal" (line 2, column 8).
+	documentCaretAt(d, 2, 8)
+	view.refresh(t)
+
+	caret, ok := d.ui.code.CaretBounds()
+	if !ok {
+		t.Fatal("caret bounds not visible")
+	}
+
+	if err := view.DoubleClick(caret.X+2, caret.Y+caret.Height/2); err != nil {
+		t.Fatal(err)
+	}
+
+	sel := d.editor.Selection()
+	runes := []rune(d.editor.String())
+	if sel.Start >= sel.End || sel.End > len(runes) {
+		t.Fatalf("invalid selection range: %+v", sel)
+	}
+	selected := string(runes[sel.Start:sel.End])
+	if selected != "calculateTotal" {
+		t.Fatalf("expected selection 'calculateTotal', got %q (%+v)", selected, sel)
+	}
+}
+
+func TestDocumentEditorTripleClickSelectsLine(t *testing.T) {
+	d := newCodeDocument(t, "main.go", "package main\n\nfunc calculateTotal() int {\n\treturn 42\n}\n")
+	view := openCodeDocumentWindow(t, d, 900, 600, 1)
+
+	documentCaretAt(d, 2, 8)
+	view.refresh(t)
+
+	caret, ok := d.ui.code.CaretBounds()
+	if !ok {
+		t.Fatal("caret bounds not visible")
+	}
+
+	driver := view.Driver()
+	if err := driver.ClickCount(caret.X+2, caret.Y+caret.Height/2, 3); err != nil {
+		t.Fatal(err)
+	}
+
+	sel := d.editor.Selection()
+	runes := []rune(d.editor.String())
+	if sel.Start >= sel.End || sel.End > len(runes) {
+		t.Fatalf("invalid selection range: %+v", sel)
+	}
+	selected := string(runes[sel.Start:sel.End])
+	if selected != "func calculateTotal() int {\n" {
+		t.Fatalf("expected line selection, got %q (%+v)", selected, sel)
+	}
+}
+
+func TestDocumentEditorDoubleClickDragExpandsWord(t *testing.T) {
+	d := newCodeDocument(t, "main.go", "package main\n\nfunc calculateTotal() int {\n\treturn 42\n}\n")
+	view := openCodeDocumentWindow(t, d, 900, 600, 1)
+
+	// Caret on "calculateTotal" (line 2, col 8)
+	documentCaretAt(d, 2, 8)
+	view.refresh(t)
+
+	caret1, ok := d.ui.code.CaretBounds()
+	if !ok {
+		t.Fatal("caret bounds not visible")
+	}
+
+	// Caret on "int" (line 2, col 23)
+	documentCaretAt(d, 2, 23)
+	view.refresh(t)
+
+	caret2, ok := d.ui.code.CaretBounds()
+	if !ok {
+		t.Fatal("caret bounds not visible")
+	}
+
+	driver := view.Driver()
+	// Click 1: press and release on calculateTotal
+	if err := driver.PressCount(caret1.X+2, caret1.Y+caret1.Height/2, gfx.PointerButtonPrimary, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.ReleaseCount(caret1.X+2, caret1.Y+caret1.Height/2, gfx.PointerButtonPrimary, 1); err != nil {
+		t.Fatal(err)
+	}
+	// Click 2: press on calculateTotal
+	if err := driver.PressCount(caret1.X+2, caret1.Y+caret1.Height/2, gfx.PointerButtonPrimary, 2); err != nil {
+		t.Fatal(err)
+	}
+	// Drag to caret2 ("int")
+	if err := view.Move(caret2.X+2, caret2.Y+caret2.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	// Release at caret2
+	if err := driver.ReleaseCount(caret2.X+2, caret2.Y+caret2.Height/2, gfx.PointerButtonPrimary, 2); err != nil {
+		t.Fatal(err)
+	}
+
+	sel := d.editor.Selection()
+	runes := []rune(d.editor.String())
+	if sel.Start >= sel.End || sel.End > len(runes) {
+		t.Fatalf("invalid selection range: %+v", sel)
+	}
+	selected := string(runes[sel.Start:sel.End])
+	expected := "calculateTotal() int"
+	if selected != expected {
+		t.Fatalf("expected selection %q, got %q (%+v)", expected, selected, sel)
+	}
+}
+
+func TestDocumentEditorTripleClickDragExpandsLine(t *testing.T) {
+	d := newCodeDocument(t, "main.go", "package main\n\nfunc calculateTotal() int {\n\treturn 42\n}\n")
+	view := openCodeDocumentWindow(t, d, 900, 600, 1)
+
+	// Caret on line 2 ("func calculateTotal() int {\n")
+	documentCaretAt(d, 2, 8)
+	view.refresh(t)
+
+	caret1, ok := d.ui.code.CaretBounds()
+	if !ok {
+		t.Fatal("caret bounds not visible")
+	}
+
+	// Caret on line 3 ("\treturn 42\n")
+	documentCaretAt(d, 3, 4)
+	view.refresh(t)
+
+	caret2, ok := d.ui.code.CaretBounds()
+	if !ok {
+		t.Fatal("caret bounds not visible")
+	}
+
+	driver := view.Driver()
+	// Click 1
+	if err := driver.PressCount(caret1.X+2, caret1.Y+caret1.Height/2, gfx.PointerButtonPrimary, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.ReleaseCount(caret1.X+2, caret1.Y+caret1.Height/2, gfx.PointerButtonPrimary, 1); err != nil {
+		t.Fatal(err)
+	}
+	// Click 2
+	if err := driver.PressCount(caret1.X+2, caret1.Y+caret1.Height/2, gfx.PointerButtonPrimary, 2); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.ReleaseCount(caret1.X+2, caret1.Y+caret1.Height/2, gfx.PointerButtonPrimary, 2); err != nil {
+		t.Fatal(err)
+	}
+	// Click 3: press on line 2
+	if err := driver.PressCount(caret1.X+2, caret1.Y+caret1.Height/2, gfx.PointerButtonPrimary, 3); err != nil {
+		t.Fatal(err)
+	}
+	// Drag to line 3
+	if err := view.Move(caret2.X+2, caret2.Y+caret2.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	// Release on line 3
+	if err := driver.ReleaseCount(caret2.X+2, caret2.Y+caret2.Height/2, gfx.PointerButtonPrimary, 3); err != nil {
+		t.Fatal(err)
+	}
+
+	sel := d.editor.Selection()
+	runes := []rune(d.editor.String())
+	if sel.Start >= sel.End || sel.End > len(runes) {
+		t.Fatalf("invalid selection range: %+v", sel)
+	}
+	selected := string(runes[sel.Start:sel.End])
+	expected := "func calculateTotal() int {\n\treturn 42\n"
+	if selected != expected {
+		t.Fatalf("expected selection %q, got %q (%+v)", expected, selected, sel)
 	}
 }

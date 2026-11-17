@@ -5,19 +5,19 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // hostListBar is the bar the hosts page paints for the list in bounds, read from
 // the same helper the page uses.
-func hostListBar(state *State, bounds ui.Rect) components.ScrollAreaGeometry {
-	_, geometry := hostListScrollArea(nil, state.Theme(), bounds, state.hostsContent, state.hostsScroll)
+func hostListBar(state *State, bounds gfx.Rect) components.ScrollAreaGeometry {
+	_, geometry := hostListScrollArea(nil, state.Theme(), bounds, state.hostsContent, state.hostsScroll, false)
 	return geometry
 }
 
 // paintedIn returns the rectangles painted wholly inside room.
-func paintedIn(canvas *ui.Canvas, room ui.Rect) []ui.Rectangle {
-	var out []ui.Rectangle
+func paintedIn(canvas *gfx.Canvas, room gfx.Rect) []gfx.Rectangle {
+	var out []gfx.Rectangle
 	for _, rect := range canvas.Rectangles() {
 		bounds := rect.Bounds
 		if bounds.X >= room.X-0.01 && bounds.X+bounds.Width <= room.X+room.Width+0.01 &&
@@ -31,9 +31,9 @@ func paintedIn(canvas *ui.Canvas, room ui.Rect) []ui.Rectangle {
 // reservedBarStrip is the room the scroll area keeps for the bar when the list
 // overflows; a probe one pixel taller than the list asks the component, so no
 // bar size is spelled out here.
-func reservedBarStrip(t *testing.T, state *State, bounds ui.Rect) ui.Rect {
+func reservedBarStrip(t *testing.T, state *State, bounds gfx.Rect) gfx.Rect {
 	t.Helper()
-	_, geometry := hostListScrollArea(nil, state.Theme(), bounds, bounds.Height+1, 0)
+	_, geometry := hostListScrollArea(nil, state.Theme(), bounds, bounds.Height+1, 0, false)
 	if geometry.VerticalTrack.Width <= 0 || geometry.VerticalThumb.Width <= 0 {
 		t.Fatalf("the scroll area reserves no strip for a bar: %+v", geometry)
 	}
@@ -44,8 +44,9 @@ func reservedBarStrip(t *testing.T, state *State, bounds ui.Rect) ui.Rect {
 // beside the rows, and the rows stay out of that strip.
 func TestTheHostListPaintsTheScrollbarBesideTheRows(t *testing.T) {
 	state := manyHostsState(t, 40)
-	size := ui.Size{Width: 1400, Height: 900}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	state.hostList.over = true // the bar is hover-revealed
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 
 	list := state.chrome.hostList
@@ -56,7 +57,7 @@ func TestTheHostListPaintsTheScrollbarBesideTheRows(t *testing.T) {
 	if bar.Viewport.Width >= list.Width {
 		t.Fatalf("the bar's strip was not reserved: viewport %v in %v", bar.Viewport, list)
 	}
-	row, ok := hitByID(&canvas, hitHostList.At(int(state.hosts[0].ID)))
+	row, ok := hostListHostHit(&canvas, state, state.hosts[0].ID)
 	if !ok {
 		t.Fatal("the first host is not painted")
 	}
@@ -72,8 +73,9 @@ func TestTheHostListPaintsTheScrollbarBesideTheRows(t *testing.T) {
 func TestTheHostGridKeepsItsCardsOutOfTheScrollbar(t *testing.T) {
 	state := manyHostsState(t, 40)
 	state.hostView = hostViewGrid
-	size := ui.Size{Width: 1400, Height: 900}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	state.hostList.over = true // the bar is hover-revealed
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 
 	list := state.chrome.hostList
@@ -99,8 +101,9 @@ func TestTheHostGridKeepsItsCardsOutOfTheScrollbar(t *testing.T) {
 // inside its track.
 func TestTheHostListScrollbarFollowsTheScroll(t *testing.T) {
 	state := manyHostsState(t, 40)
-	size := ui.Size{Width: 1400, Height: 900}
-	var top ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	state.hostList.over = true // the bar is hover-revealed
+	var top gfx.Canvas
 	state.Paint(&top, size)
 
 	list := state.chrome.hostList
@@ -109,7 +112,7 @@ func TestTheHostListScrollbarFollowsTheScroll(t *testing.T) {
 		t.Fatalf("no thumb at the top: %+v", atTop)
 	}
 	state.hostsScroll = state.hostsContent // past the end: the page clamps it
-	var bottom ui.Canvas
+	var bottom gfx.Canvas
 	state.Paint(&bottom, size)
 
 	atBottom := hostListBar(state, list)
@@ -124,21 +127,79 @@ func TestTheHostListScrollbarFollowsTheScroll(t *testing.T) {
 	if thumb := paintedIn(&bottom, atBottom.VerticalTrack); len(thumb) != 1 || thumb[0].Bounds != atBottom.VerticalThumb {
 		t.Fatalf("painted bar = %+v, want %v", thumb, atBottom.VerticalThumb)
 	}
-	if _, ok := hitByID(&bottom, hitHostList.At(int(state.hosts[len(state.hosts)-1].ID))); !ok {
+	if _, ok := hostListHostHit(&bottom, state, state.hosts[len(state.hosts)-1].ID); !ok {
 		t.Fatal("the last host is not reachable at the end of the list")
+	}
+}
+
+// The bar is the hover style: the list at rest shows no thumb, the pointer on
+// the list reveals it, and leaving hides it again.
+func TestTheHostListBarRevealsUnderThePointer(t *testing.T) {
+	state := manyHostsState(t, 40)
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, size)
+	list := state.chrome.hostList
+	bar := hostListBar(state, list)
+	if painted := paintedIn(&canvas, bar.VerticalTrack); len(painted) != 0 {
+		t.Fatalf("the list at rest painted a bar: %+v", painted)
+	}
+
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, X: list.X + 20, Y: list.Y + 20})
+	if !state.hostList.over {
+		t.Fatal("moving onto the list did not reveal its bar")
+	}
+	canvas.Reset()
+	state.Paint(&canvas, size)
+	bar = hostListBar(state, list)
+	if thumb := paintedIn(&canvas, bar.VerticalTrack); len(thumb) != 1 || thumb[0].Bounds != bar.VerticalThumb {
+		t.Fatalf("painted bar = %+v, want %v", thumb, bar.VerticalThumb)
+	}
+
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerExit})
+	if state.hostList.over {
+		t.Fatal("leaving the list left its bar revealed")
+	}
+}
+
+// The hosts bar drags the list like every other catalog bar.
+func TestTheHostListBarDragsTheList(t *testing.T) {
+	state := manyHostsState(t, 40)
+	size := gfx.Size{Width: 1400, Height: 900}
+	state.hostList.over = true // the bar is hover-revealed
+	var canvas gfx.Canvas
+	state.Paint(&canvas, size)
+	list := state.chrome.hostList
+	bar := hostListBar(state, list)
+	if bar.VerticalThumb.Height <= 0 {
+		t.Fatalf("no bar to drag: %+v", bar)
+	}
+	x := bar.VerticalTrack.X + bar.VerticalTrack.Width/2
+	y := bar.VerticalThumb.Y + bar.VerticalThumb.Height/2
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hitHostListBar, X: x, Y: y})
+	if !state.hostList.barDrag.dragging {
+		t.Fatal("a press on the bar did not start a drag")
+	}
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Target: hitHostListBar, Captured: true, X: x, Y: y + 40})
+	if state.hostsScroll == 0 {
+		t.Fatal("dragging the bar did not move the list")
+	}
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: hitHostListBar, Captured: true, X: x, Y: y + 40})
+	if state.hostList.barDrag.dragging {
+		t.Fatal("the release did not end the drag")
 	}
 }
 
 // A host list that fits paints no bar and keeps the whole width for its rows.
 func TestAShortHostListPaintsNoScrollbar(t *testing.T) {
 	state := manyHostsState(t, 3)
-	size := ui.Size{Width: 1400, Height: 900}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 
 	list := state.chrome.hostList
 	bar := hostListBar(state, list)
-	if bar.MaxOffsetY != 0 || bar.VerticalThumb != (ui.Rect{}) {
+	if bar.MaxOffsetY != 0 || bar.VerticalThumb != (gfx.Rect{}) {
 		t.Fatalf("a list that fits has a bar: %+v", bar)
 	}
 	if bar.Viewport != list {
@@ -152,13 +213,14 @@ func TestAShortHostListPaintsNoScrollbar(t *testing.T) {
 // The bar starts exactly when the content stops fitting: content equal to the
 // window paints nothing, one pixel more paints the thumb.
 func TestTheHostListScrollbarStartsWhenTheContentOverflows(t *testing.T) {
-	bounds := ui.Rect{X: 223, Y: 139, Width: 1151, Height: 13 * hostRowHeight}
+	bounds := gfx.Rect{X: 223, Y: 139, Width: 1151, Height: 13 * hostRowHeight}
 	state := manyHostsState(t, 13)
-	var warm ui.Canvas
-	state.Paint(&warm, ui.Size{Width: 1400, Height: 900}) // the real palette and chrome
+	var warm gfx.Canvas
+	state.Paint(&warm, gfx.Size{Width: 1400, Height: 900}) // the real palette and chrome
 
-	var exact ui.Canvas
-	state.paintHostTable(&exact, bounds)
+	var exact gfx.Canvas
+	state.hostsContent = state.hostListHeight(bounds.Width)
+	state.paintHostListBar(&exact, bounds, state.hostsContent)
 	if state.hostsContent != bounds.Height {
 		t.Fatalf("content %v, viewport %v", state.hostsContent, bounds.Height)
 	}
@@ -171,8 +233,10 @@ func TestTheHostListScrollbarStartsWhenTheContentOverflows(t *testing.T) {
 
 	short := bounds
 	short.Height--
-	var over ui.Canvas
-	state.paintHostTable(&over, short)
+	var over gfx.Canvas
+	state.hostList.over = true
+	state.hostsContent = state.hostListHeight(short.Width)
+	state.paintHostListBar(&over, short, state.hostsContent)
 	bar := hostListBar(state, short)
 	if bar.MaxOffsetY <= 0 || bar.VerticalThumb.Height <= 0 {
 		t.Fatalf("content one pixel taller than the window did not scroll: %+v", bar)

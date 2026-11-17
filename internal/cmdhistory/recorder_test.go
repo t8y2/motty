@@ -111,6 +111,30 @@ func TestAPromptThatAsksForASecretIsNeverRecordedEvenIfEchoed(t *testing.T) {
 	s.wantNothing()
 }
 
+// The first command after a password prompt is a command, not an answer: su,
+// sudo -i and ssh leave their question on the row above the child shell's own
+// prompt, and that prompt is no continuation of it (#799).
+func TestACommandBelowAPasswordPromptRowIsRecordedAndSuggestable(t *testing.T) {
+	s := newShell(t, 80)
+	s.prompt("[user@host ~]$ ")
+	s.typeEchoed("su - root")
+	s.wantRecorded("su - root")
+	s.out("密码： ")
+	s.now += 300 * time.Millisecond
+	s.typeHidden("hunter2")
+	if command, ok := s.send("\r"); ok {
+		t.Fatalf("the password was recorded as %q", command)
+	}
+	s.out("\r\n")
+	s.out("[root@host ~]# ")
+	s.now += 300 * time.Millisecond
+	s.typeEchoed("doc")
+	if line, ok := s.line(); !ok || line != "doc" {
+		t.Fatalf("line = %q, %v", line, ok)
+	}
+	s.wantRecorded("doc")
+}
+
 func TestALineStartingWithASpaceIsNotRecorded(t *testing.T) {
 	s := newShell(t, 80)
 	s.prompt("$ ")
@@ -301,6 +325,32 @@ func TestAnOverlongCommandIsNotRecorded(t *testing.T) {
 }
 
 func (s *shell) line() (string, bool) { return s.rec.Line(TermScreen{s.screen}) }
+
+func (s *shell) linePrompt() (string, string, bool) {
+	return s.rec.LinePrompt(TermScreen{s.screen})
+}
+
+func TestTheLineComesWithThePromptItWasTypedAfter(t *testing.T) {
+	s := newShell(t, 80)
+	s.prompt("user@host:~$ ")
+	if _, prompt, ok := s.linePrompt(); ok || prompt != "" {
+		t.Fatalf("a line nobody has typed in yet is %q (%v)", prompt, ok)
+	}
+	s.typeEchoed("git s")
+	line, prompt, ok := s.linePrompt()
+	if !ok || line != "git s" || prompt != "user@host:~$" {
+		t.Fatalf("line=%q prompt=%q ok=%v", line, prompt, ok)
+	}
+
+	// A prompt that wraps is one prompt: the continuation rows count too.
+	s = newShell(t, 20)
+	s.prompt("user@a-long-host:~/projects/x$ ")
+	s.typeEchoed("ls")
+	line, prompt, ok = s.linePrompt()
+	if !ok || line != "ls" || prompt != "user@a-long-host:~/projects/x$" {
+		t.Fatalf("wrapped prompt line=%q prompt=%q ok=%v", line, prompt, ok)
+	}
+}
 
 func TestTheLineBeingTypedIsAvailableToSuggestFor(t *testing.T) {
 	s := newShell(t, 80)

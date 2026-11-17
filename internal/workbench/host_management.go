@@ -6,12 +6,14 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 
+	"motty/internal/configstore"
 	"motty/internal/keyidentity"
 	"motty/internal/sshconn"
 	"motty/internal/vault"
+	layoutcore "motty/internal/workspace"
 )
 
 type hostDialogMode uint8
@@ -22,7 +24,10 @@ const (
 	hostDialogCopy
 )
 
-func (state *State) clickHostManagement(id ui.ID) bool {
+func (state *State) clickHostManagement(id gfx.ID) bool {
+	if state.clickHostPrivacy(id) {
+		return true
+	}
 	if state.importMenu {
 		// A choice closes the menu and then runs as if it had been clicked
 		// directly; any other press only dismisses it.
@@ -58,9 +63,15 @@ func (state *State) clickHostManagement(id ui.ID) bool {
 			state.dialogError = ""
 			state.modal = modalMoveHostGroup
 		case id.Scope() == hitHostGroupItemList:
-			group := state.hostGroups[uint32(item(id))].Name
-			state.hostGroupMenu = false
-			state.applyHostGroup(group)
+			if menu := state.moveGroupTree(); menu != nil {
+				if group, chosen := menu.Choose(item(id)); chosen {
+					state.hostGroupMenu = false
+					state.applyHostGroup(group)
+				}
+			} else if index := item(id); index >= 0 && index < len(state.hostGroups) {
+				state.hostGroupMenu = false
+				state.applyHostGroup(state.hostGroups[index].Name)
+			}
 		default:
 			state.hostGroupMenu = false
 		}
@@ -69,13 +80,12 @@ func (state *State) clickHostManagement(id ui.ID) bool {
 	if state.activeSection != sectionHosts || state.modal != modalNone {
 		return false
 	}
+	if state.clickHostScopeSelection(id) {
+		return true
+	}
 	if hostID, ok := state.hostIDForSelectionHit(id); ok {
 		state.selectedHostID = hostID
 		state.toggleHostSelection(hostID)
-		return true
-	}
-	if id.Scope() == hitHostGroupRowList {
-		state.toggleHostGroup(item(id))
 		return true
 	}
 	if id.Scope() == hitHostGroupOpenList {
@@ -97,11 +107,17 @@ func (state *State) clickHostManagement(id ui.ID) bool {
 	case hitHostFilterMore:
 		state.hostFilterMenu = true
 	case hitHostGroupsExpandAll:
-		state.setHostGroupsExpanded(true)
+		if state.hostGroupControlsOffered() {
+			state.setHostGroupsExpanded(true)
+		}
 	case hitHostGroupsCollapseAll:
-		state.setHostGroupsExpanded(false)
+		if state.hostGroupControlsOffered() {
+			state.setHostGroupsExpanded(false)
+		}
 	case hitEditHost:
 		state.openEditHost()
+	case hitConnectSelectedHosts:
+		state.openSelectedHostsWorkspace()
 	case hitCopyHost:
 		state.openCopyHost()
 	case hitDeleteHost:
@@ -109,9 +125,10 @@ func (state *State) clickHostManagement(id ui.ID) bool {
 	case hitMoveHostGroup:
 		state.captureHostActionIDs()
 		state.groupMenu.menu = false
-		state.hostGroupMenu = len(state.hostActionIDs) > 0
+		state.openMoveHostGroupMenu()
 	case hitImportMenu:
 		state.importMenu = true
+		state.hostPrivacy.menu = false
 	case hitExportHosts:
 		state.exportHostCatalog()
 	case hitImportHostCatalog:
@@ -122,7 +139,33 @@ func (state *State) clickHostManagement(id ui.ID) bool {
 	return true
 }
 
-func (state *State) hostIDForSelectionHit(id ui.ID) (uint32, bool) {
+func (state *State) openSelectedHostsWorkspace() {
+	if !state.selectedHostsWorkspaceEligible() {
+		return
+	}
+	state.openWorkspaceDraft(workspaceDraftTemporary)
+	for _, id := range state.hostSelections {
+		if host, ok := state.hostByID(id); ok {
+			state.workspaceDraft.selected[host.CatalogID] = true
+		}
+	}
+	state.workspaceDraft.layout = DefaultWorkspaceLayout(state.workspaceDraftSelectionCount())
+}
+
+func (state *State) selectedHostsWorkspaceEligible() bool {
+	if len(state.hostSelections) == 0 || len(state.hostSelections) > layoutcore.MaxPanes {
+		return false
+	}
+	for _, id := range state.hostSelections {
+		host, ok := state.hostByID(id)
+		if !ok || !workspaceHostEligible(host) {
+			return false
+		}
+	}
+	return true
+}
+
+func (state *State) hostIDForSelectionHit(id gfx.ID) (uint32, bool) {
 	if id.Scope() != hitHostCheckList {
 		return 0, false
 	}
@@ -156,6 +199,7 @@ func (state *State) hostSelected(id uint32) bool {
 
 func (state *State) refreshHostSelection() {
 	state.hostSelectionText = fmt.Sprintf(state.messages.HostSelectionFmt, len(state.hostSelections))
+	state.refreshHostScopeSelection()
 }
 
 func (state *State) captureHostActionIDs() {
@@ -214,7 +258,7 @@ func (state *State) openCopyHostID(id uint32) {
 	state.selectedHostID = host.ID
 	state.cancelHostTest()
 	state.editor.load(host)
-	state.editor.agentAccess = false // a copy is a new host, closed to agents until asked
+	state.editor.agentAccess = state.effectiveAgentHostMode() == agentHostModeAll
 	state.editor.label = text.Editor{}
 	state.editor.label.Insert(fmt.Sprintf(state.messages.HostCopyLabelFmt, host.Label))
 	state.hostDialogMode = hostDialogCopy
@@ -236,6 +280,9 @@ func (state *State) singleHostAction() (Host, bool) {
 
 func (state *State) submitHostDialog() {
 	if !state.commitHostGroupQuery() {
+		return
+	}
+	if !state.commitHostEncodingQuery() {
 		return
 	}
 	if !state.commitHostTagQuery() {
@@ -288,7 +335,9 @@ func (state *State) submitHostDialog() {
 				used[host.CatalogID] = struct{}{}
 			}
 		}
-		candidate.CatalogID = uniqueCatalogID(candidate.CatalogID, candidate, used)
+		// The form fills in the ID that the address would give; a host that is
+		// being created takes one of its own instead.
+		candidate.CatalogID = freshCatalogID(used)
 	}
 	passwordChanges, failure := state.hostDialogPasswordChanges(candidate, source)
 	if failure != "" {
@@ -307,36 +356,104 @@ func (state *State) submitHostDialog() {
 	}
 	changes := append(passwordChanges, proxyChanges...)
 	changes = append(changes, passphraseChanges...)
-	if len(changes) > 0 {
+	if state.hostDialogMode == hostDialogEdit {
+		previousAgentMode := state.agentHostMode
+		previousAgentAccess, hadAgentAccess := state.agentHosts[candidate.CatalogID]
+		if state.editor.agentAccessChanged {
+			state.agentHostMode = agentHostModeFollow
+		}
+		// Editing may open or close the host's existing entry to agents.
+		state.setAgentAccess(candidate, state.editor.agentAccess)
+		rollbackAgentAccess := func() {
+			state.agentHostMode = previousAgentMode
+			if hadAgentAccess {
+				state.agentHosts[candidate.CatalogID] = previousAgentAccess
+				return
+			}
+			delete(state.agentHosts, candidate.CatalogID)
+		}
+		var commitErr error
+		if len(changes) == 0 {
+			commitErr = state.saveEditedHost(candidate, *previous, true, proxyNote)
+		} else {
+			vaultFile := state.secrets.vault
+			if vaultFile == nil {
+				rollbackAgentAccess()
+				state.dialogError = state.messages.Tools.ProxyErrorNoVault
+				return
+			}
+			// The secrets and the host are written under one lock: a host the
+			// store refuses must not leave the new password behind.
+			commitErr = vaultFile.ApplyWithCommit(changes, func() error {
+				return state.saveEditedHost(candidate, *previous, false, proxyNote)
+			})
+			if commitErr != nil && errors.Is(commitErr, configstore.ErrConflict) {
+				if refreshErr := state.refreshShared(); refreshErr != nil {
+					commitErr = errors.Join(commitErr, fmt.Errorf("reload configuration after conflict: %w", refreshErr))
+				}
+			}
+		}
+		if commitErr != nil {
+			rollbackAgentAccess()
+			var saveErr *hostConfigCommitError
+			switch {
+			case errors.As(commitErr, &saveErr):
+				state.dialogError = fmt.Sprintf(state.messages.HostEditSaveFailedFmt, commitErr)
+				state.showActionFailure(state.messages.EditHostTitle, commitErr, state.messages.ActionFeedback.ChangeSaveFailed)
+			case errors.Is(commitErr, vault.ErrNeedsConversion) && len(proxyChanges) > 0:
+				state.dialogError = state.messages.Tools.ProxyPasswordLocked
+			default:
+				state.dialogError = state.hostPasswordSaveError(commitErr)
+			}
+			return
+		}
+		state.editor.password, state.editor.passphrase = text.Editor{}, text.Editor{}
+		state.editor.proxyPassword = ""
+		state.cancelHostTest()
+		state.dialogError = ""
+		state.restoreAfterHostDialog()
+		return
+	}
+	commit := func() error {
+		return state.saveNewHostFromDialog(candidate, true)
+	}
+	var commitErr error
+	if len(changes) == 0 {
+		commitErr = commit()
+	} else {
 		vaultFile := state.secrets.vault
 		if vaultFile == nil {
 			state.dialogError = state.messages.Tools.ProxyErrorNoVault
 			return
 		}
-		if err := vaultFile.Apply(changes); err != nil {
-			if errors.Is(err, vault.ErrNeedsConversion) && len(proxyChanges) > 0 {
-				state.dialogError = state.messages.Tools.ProxyPasswordLocked
-			} else {
-				state.dialogError = state.hostPasswordSaveError(err)
+		// ApplyWithCommit holds the vault lock while writing the configuration.
+		// A conflict must be reloaded only after that call releases the lock, or
+		// host repairs may try to read the vault recursively.
+		commit = func() error {
+			return state.saveNewHostFromDialog(candidate, false)
+		}
+		commitErr = vaultFile.ApplyWithCommit(changes, commit)
+		if commitErr != nil && errors.Is(commitErr, configstore.ErrConflict) {
+			if refreshErr := state.refreshShared(); refreshErr != nil {
+				commitErr = errors.Join(commitErr, fmt.Errorf("reload configuration after conflict: %w", refreshErr))
 			}
-			return
 		}
 	}
-	state.editor.password, state.editor.passphrase = text.Editor{}, text.Editor{}
-	state.editor.proxyPassword = ""
-	// A copy or a new host is closed to agents unless the switch was turned on in
-	// this very dialog.
-	state.setAgentAccess(candidate, state.editor.agentAccess)
-	if state.hostDialogMode == hostDialogEdit {
-		state.updateHostFromEditor(candidate, *previous, proxyNote)
+	if commitErr != nil {
+		var saveErr *hostConfigCommitError
+		if errors.As(commitErr, &saveErr) {
+			state.dialogError = fmt.Sprintf(state.messages.HostSaveFailedFmt, commitErr)
+		} else if errors.Is(commitErr, vault.ErrNeedsConversion) && len(proxyChanges) > 0 {
+			state.dialogError = state.messages.Tools.ProxyPasswordLocked
+		} else {
+			state.dialogError = state.hostPasswordSaveError(commitErr)
+		}
 		return
 	}
 	host := candidate
-	state.nextHostID++
-	state.hosts = append(state.hosts, host)
-	state.selectedHostID = host.ID
+	state.editor.password, state.editor.passphrase = text.Editor{}, text.Editor{}
+	state.editor.proxyPassword = ""
 	state.cancelHostTest()
-	state.modal = modalNone
 	state.dialogError = ""
 	if state.hostDialogMode == hostDialogCopy {
 		state.status = state.messages.HostCopied + host.Label
@@ -348,28 +465,109 @@ func (state *State) submitHostDialog() {
 	}
 	state.appendStatusNote(proxyNote)
 	state.hostDataChanged()
-	state.save()
-	state.showNextPrompt()
+	state.restoreAfterHostDialog()
 }
 
-func (state *State) updateHostFromEditor(updated Host, previous Host, notes ...string) {
+type hostConfigCommitError struct {
+	err error
+}
+
+func (err *hostConfigCommitError) Error() string { return err.err.Error() }
+func (err *hostConfigCommitError) Unwrap() error { return err.err }
+
+// saveNewHostFromDialog stages a new host, writes it, and removes the staged
+// UI state again if the store refuses it. The caller only closes the dialog
+// after this returns nil, so the list cannot claim a host that will disappear
+// at restart.
+func (state *State) saveNewHostFromDialog(candidate Host, refreshConflict bool) error {
+	previousNextHostID, previousSelection := state.nextHostID, state.selectedHostID
+	previousAgentMode := state.agentHostMode
+	previousAgentAccess, hadAgentAccess := state.agentHosts[candidate.CatalogID]
+	agentAccess := state.editor.agentAccess
+	if state.editor.agentAccessChanged {
+		state.agentHostMode = agentHostModeFollow
+	}
+	state.setAgentAccess(candidate, agentAccess)
+	state.nextHostID++
+	state.hosts = append(state.hosts, candidate)
+	state.selectedHostID = candidate.ID
+	rollback := func() {
+		state.agentHostMode = previousAgentMode
+		index := state.hostDialogCandidateIndex(candidate)
+		if index >= 0 {
+			state.hosts = append(state.hosts[:index], state.hosts[index+1:]...)
+			if state.nextHostID == previousNextHostID+1 {
+				state.nextHostID = previousNextHostID
+			}
+			if hadAgentAccess {
+				state.agentHosts[candidate.CatalogID] = previousAgentAccess
+			} else {
+				delete(state.agentHosts, candidate.CatalogID)
+			}
+		}
+		// A conflict refresh may already have replaced this window with what
+		// reached the store first. Its host records and agent permissions are the
+		// newer values, but the staged selection still has to be repaired.
+		if state.selectedHostID == candidate.ID {
+			state.selectedHostID = previousSelection
+		}
+		if _, ok := state.hostByID(state.selectedHostID); state.selectedHostID != 0 && !ok {
+			state.selectedHostID = 0
+		}
+	}
+	save := state.saveWithResult
+	if !refreshConflict {
+		save = state.saveWithResultWithoutRefresh
+	}
+	if err := save(); err != nil {
+		rollback()
+		return &hostConfigCommitError{err: err}
+	}
+	if state.hostDialogCandidateIndex(candidate) < 0 {
+		rollback()
+		return &hostConfigCommitError{err: errors.New(state.messages.HostSaveMissing)}
+	}
+	return nil
+}
+
+func (state *State) hostDialogCandidateIndex(candidate Host) int {
+	for index, host := range state.hosts {
+		if host.ID == candidate.ID && host.CatalogID == candidate.CatalogID && sameHost(host, candidate) {
+			return index
+		}
+	}
+	return -1
+}
+
+// saveEditedHost puts updated in the place of previous and writes it. A store
+// that refuses the write puts the host and everything that followed it back, so
+// that the dialog can stay open rather than claim an edit the next start would
+// not have.
+func (state *State) saveEditedHost(updated, previous Host, refreshConflict bool, notes ...string) error {
 	index := state.hostIndex(state.hostDialogID)
-	if index < 0 {
-		state.modal = modalNone
-		return
+	if index < 0 || state.hosts[index].CatalogID != previous.CatalogID {
+		return &hostConfigCommitError{err: errors.New(state.messages.HostSaveMissing)}
 	}
 	state.replaceHost(index, previous, updated)
-	state.cancelHostTest()
-	state.modal = modalNone
-	state.dialogError = ""
+	save := state.saveWithResult
+	if !refreshConflict {
+		save = state.saveWithResultWithoutRefresh
+	}
+	if err := save(); err != nil {
+		// A conflict recovery may already have replaced this window with what
+		// reached the store first; only the staged host is put back.
+		if at := state.hostIndex(state.hostDialogID); at >= 0 && state.hosts[at].CatalogID == updated.CatalogID && sameHost(state.hosts[at], updated) {
+			state.replaceHost(at, updated, previous)
+		}
+		return &hostConfigCommitError{err: err}
+	}
 	state.status = state.messages.HostUpdated + updated.Label
 	state.commitOTP(updated)
 	for _, note := range notes {
 		state.appendStatusNote(note)
 	}
 	state.hostDataChanged()
-	state.save()
-	state.showNextPrompt()
+	return nil
 }
 
 // replaceHost puts updated in the place of previous, the host at index, and
@@ -390,15 +588,30 @@ func (state *State) replaceHost(index int, previous, updated Host) {
 			session.Address = state.sessionAddress(updated)
 		}
 	}
+	// A forward belongs to a destination, not to one host: while another host
+	// still connects where this one did, the forward stays with it.
+	forwardsFollow := !state.endpointShared(previous, previous.ID)
 	for index := range state.forwards {
 		forward := &state.forwards[index]
-		if !forward.matchesHost(previous) {
+		if !forwardsFollow || !forward.matchesHost(previous) {
 			continue
 		}
 		forward.HostLabel = updated.Label
 		forward.HostAddress = updated.Address
 		forward.HostUser = updated.User
 		forward.HostPort = updated.Port
+	}
+	// A background tunnel follows its host like a tab does: a live transport
+	// stays, and a retry dials where the host now points.
+	for _, tunnel := range state.forwardTunnels {
+		if tunnel.host.ID != updated.ID {
+			continue
+		}
+		tunnel.host = updated
+		tunnel.session.host = updated
+		if tunnel.session.conn == nil {
+			tunnel.session.Address = state.sessionAddress(updated)
+		}
 	}
 	state.rebuildTabOptions()
 	state.refreshForwards()
@@ -419,7 +632,16 @@ func hostPasswordSecretName(host Host) (string, bool) {
 	default:
 		return "", false
 	}
-	return hostSecretName(host.CatalogID, hostPasswordPart), true
+	return hostSecretName(host.CatalogID, hostPasswordPartFor(host)), true
+}
+
+// hostPasswordPartFor identifies the authentication account independently of
+// the catalog identity assigned to an edited or copied host.
+func hostPasswordPartFor(host Host) string {
+	if host.Protocol == protocolVNC && !host.tunneled() && host.User != "" {
+		return vncSystemPasswordPart(host.User)
+	}
+	return hostPasswordPart
 }
 
 // hostDialogPasswordChanges plans what the form's password field does to the
@@ -431,6 +653,27 @@ func (state *State) hostDialogPasswordChanges(host Host, source *Host) (changes 
 	name, hasPassword := hostPasswordSecretName(host)
 	typed := state.editor.password.String()
 	editing := state.hostDialogMode == hostDialogEdit && source != nil
+	if state.hostTakesCredential() {
+		// The password is the saved one's. What the host kept of its own is left
+		// as it is, for the day the host goes back to it.
+		return nil, ""
+	}
+	if source != nil && source.Protocol == protocolVNC && host.Protocol == protocolVNC && state.editor.passwordSaved &&
+		hostPasswordPartFor(*source) != hostPasswordPartFor(host) {
+		previous, _ := hostPasswordSecretName(*source)
+		if typed == "" {
+			return nil, "" // changing the account must not delete another account's secret
+		}
+		if state.secrets.vault != nil {
+			value, found, err := state.secrets.vault.Get(previous)
+			if err != nil {
+				return nil, state.hostPasswordSaveError(err)
+			}
+			if found && typed == value {
+				return nil, state.messages.Desktop.VNCAccountPasswordChanged
+			}
+		}
+	}
 	switch {
 	case hasPassword && typed != "":
 		if state.secrets.vault == nil {
@@ -441,6 +684,23 @@ func (state *State) hostDialogPasswordChanges(host Host, source *Host) (changes 
 		// Emptied by the user, or no longer a host that has a password.
 		if previous, had := hostPasswordSecretName(*source); had {
 			changes = append(changes, vault.Change{Name: previous, Delete: true})
+		}
+	}
+	if editing && source.Protocol != host.Protocol && state.secrets.vault != nil {
+		if previous, had := hostPasswordSecretName(*source); had && previous != name {
+			changes = append(changes, vault.Change{Name: previous, Delete: true})
+		}
+		if source.Protocol == protocolVNC && state.secrets.vault.Len() > 0 {
+			names, err := state.secrets.vault.Names()
+			if err != nil {
+				return nil, state.hostPasswordSaveError(err)
+			}
+			prefix := hostSecretName(source.CatalogID, "vnc-system-password:")
+			for _, saved := range names {
+				if strings.HasPrefix(saved, prefix) {
+					changes = append(changes, vault.Change{Name: saved, Delete: true})
+				}
+			}
 		}
 	}
 	return changes, ""
@@ -521,7 +781,7 @@ func (state *State) hostReferenceError(ids []uint32) string {
 			}
 		}
 		for _, forward := range state.forwards {
-			if forward.matchesHost(host) {
+			if forward.matchesHost(host) && !state.endpointShared(host, ids...) {
 				return fmt.Sprintf(state.messages.HostDeleteBlockedForwardFmt, host.Label)
 			}
 		}
@@ -534,7 +794,7 @@ func (state *State) hostReferenceError(ids []uint32) string {
 	return ""
 }
 
-func (state *State) clickDeleteHostDialog(id ui.ID) {
+func (state *State) clickDeleteHostDialog(id gfx.ID) {
 	switch id {
 	case hitHostDeleteDismiss, hitHostDeleteClose, hitHostDeleteCancel:
 		state.modal = modalNone
@@ -545,6 +805,9 @@ func (state *State) clickDeleteHostDialog(id ui.ID) {
 }
 
 func (state *State) confirmDeleteHosts() {
+	if !state.flushNoteDraft() {
+		return
+	}
 	if message := state.hostReferenceError(state.hostActionIDs); message != "" {
 		state.dialogError = message
 		return
@@ -554,6 +817,15 @@ func (state *State) confirmDeleteHosts() {
 	vaultFile := state.secrets.vault
 	var changes []vault.Change
 	if vaultFile != nil && vaultFile.Len() > 0 {
+		var names []string
+		if !vaultFile.NeedsConversion() {
+			var err error
+			names, err = vaultFile.Names()
+			if err != nil {
+				state.dialogError = state.hostPasswordSaveError(err)
+				return
+			}
+		}
 		for _, host := range state.hosts {
 			if !containsHostID(state.hostActionIDs, host.ID) {
 				continue
@@ -561,6 +833,12 @@ func (state *State) confirmDeleteHosts() {
 			changes = append(changes,
 				vault.Change{Name: hostSecretName(host.CatalogID, hostPasswordPart), Delete: true},
 				vault.Change{Name: hostSecretName(host.CatalogID, hostOTPPart), Delete: true})
+			prefix := hostSecretName(host.CatalogID, "vnc-system-password:")
+			for _, name := range names {
+				if strings.HasPrefix(name, prefix) {
+					changes = append(changes, vault.Change{Name: name, Delete: true})
+				}
+			}
 			if host.Proxy != nil && host.Proxy.kind != sshconn.ProxyNone && host.Proxy.user != "" {
 				changes = append(changes, vault.Change{Name: hostProxyPasswordSecret(host.CatalogID, host.Proxy), Delete: true})
 			}
@@ -574,6 +852,11 @@ func (state *State) confirmDeleteHosts() {
 		if err := vaultFile.Apply(changes); err != nil {
 			state.dialogError = state.hostPasswordSaveError(err)
 			return
+		}
+	}
+	for _, host := range state.hosts {
+		if containsHostID(state.hostActionIDs, host.ID) {
+			state.unlinkNoteHost(host.CatalogID)
 		}
 	}
 	count := len(state.hostActionIDs)
@@ -603,7 +886,7 @@ func containsHostID(ids []uint32, id uint32) bool {
 	return false
 }
 
-func (state *State) clickMoveHostGroupDialog(id ui.ID) {
+func (state *State) clickMoveHostGroupDialog(id gfx.ID) {
 	if state.groupActions.op == hostGroupRelocate {
 		switch {
 		case id == hitMoveGroupField:
@@ -694,6 +977,7 @@ func (state *State) hostDataChanged() {
 	state.reconcileDashboard()
 	state.sshSyncMark()
 	state.visible = nil
+	state.workspaceViewCacheID = 0
 	state.refreshHostGroups()
 	state.pruneHostSelections()
 	selected, ok := state.hostByID(state.selectedHostID)
@@ -719,8 +1003,12 @@ func (state *State) pruneHostSelections() {
 	state.refreshHostSelection()
 }
 
-func (state *State) hostManagementKey(event ui.KeyEvent) (ui.EventResult, bool) {
-	handled := ui.EventResult{Handled: true, Repaint: true}
+func (state *State) hostManagementKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	handled := gfx.EventResult{Handled: true, Repaint: true}
+	if state.hostOrderMenu && event.Key == gfx.KeyEscape {
+		state.hostOrderMenu = false
+		return handled, true
+	}
 	if state.hostSort.enabled && state.activeSection == sectionHosts && state.modal == modalNone {
 		move, result := state.hostSort.grid.Key(event)
 		if result.Handled {
@@ -730,29 +1018,27 @@ func (state *State) hostManagementKey(event ui.KeyEvent) (ui.EventResult, bool) 
 			}
 			return result, true
 		}
-		if event.Key == ui.KeyEscape && event.Modifiers == 0 && !event.Release && !event.Repeat {
-			state.hostSort.grid.Cancel()
-			state.hostSort.enabled = false
+		if event.Key == gfx.KeyEscape && event.Modifiers == 0 && !event.Release && !event.Repeat {
+			state.endHostSort()
 			return handled, true
 		}
 	}
-	if state.groupActions.drag.pressed && event.Key == ui.KeyEscape {
-		state.groupActions.drag = hostGroupDrag{}
-		return handled, true
+	if result, handled := state.hostRowReorderKey(event); handled {
+		return result, true
 	}
-	if state.groupActions.open && event.Key == ui.KeyEscape {
+	if state.groupActions.open && event.Key == gfx.KeyEscape {
 		state.groupActions.open = false
 		return handled, true
 	}
 	if state.modal == modalDeleteHost {
-		if event.Key == ui.KeyEnter && event.Target == hitHostDeleteConfirm && !event.Repeat {
+		if event.Key == gfx.KeyEnter && event.Target == hitHostDeleteConfirm && !event.Repeat {
 			state.confirmDeleteHosts()
 			return handled, true
 		}
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if state.modal == modalMoveHostGroup {
-		if state.groupActions.parentOpen && event.Key == ui.KeyEscape {
+		if state.groupActions.parentOpen && event.Key == gfx.KeyEscape {
 			state.groupActions.parentOpen = false
 			return handled, true
 		}
@@ -760,36 +1046,48 @@ func (state *State) hostManagementKey(event ui.KeyEvent) (ui.EventResult, bool) 
 			choices := state.groupDeleteChoices()
 			if next, ok := components.RadioGroupKeyDown(event.Target, choices[:], components.DirectionLTR, event.Key); ok {
 				state.groupActions.ungroup = next == hitGroupDeleteUngroup
-				return ui.EventResult{Handled: true, Repaint: true, Focus: next, FocusVisible: true}, true
+				return gfx.EventResult{Handled: true, Repaint: true, Focus: next, FocusVisible: true}, true
 			}
 		}
 		editable := state.groupActions.op == hostGroupMoveHosts || state.groupActions.op == hostGroupRename || state.groupActions.op == hostGroupCreateChild
-		if event.Key == ui.KeyEnter && event.Modifiers == 0 && !event.Release && (editable && event.Target == hitMoveGroupField || event.Target == hitMoveGroupSubmit) {
+		if event.Key == gfx.KeyEnter && event.Modifiers == 0 && !event.Release && (editable && event.Target == hitMoveGroupField || event.Target == hitMoveGroupSubmit) {
 			if _, composing := state.hostGroupEditor.Composition(); event.Repeat || editable && composing {
 				return handled, true
 			}
 			state.clickMoveHostGroupDialog(hitMoveGroupSubmit)
 			return handled, true
 		}
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if state.importMenu && event.Key == ui.KeyEscape {
+	if state.importMenu && event.Key == gfx.KeyEscape {
 		state.importMenu = false
+		return handled, true
+	}
+	if state.hostPrivacy.menu && event.Key == gfx.KeyEscape {
+		state.hostPrivacy.menu = false
 		return handled, true
 	}
 	if result, ok := state.hostChipMenuKey(event); ok {
 		return result, true
 	}
-	if state.hostFilterMenu && event.Key == ui.KeyEscape {
+	if state.hostFilterMenu && event.Key == gfx.KeyEscape {
 		state.hostFilterMenu = false
 		return handled, true
 	}
-	if state.hostGroupMenu && event.Key == ui.KeyEscape {
-		state.hostGroupMenu = false
-		return handled, true
-	}
 	if state.activeSection != sectionHosts || state.modal != modalNone || event.Repeat {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
+	}
+	if event.Target == hitHostSideWidth {
+		if bounds := state.hostSide.splitBounds; bounds.Width > 1 {
+			if fraction, ok := state.hostSideResizable(nil).FractionForKey(event.Key); ok {
+				state.hostSide.width = fraction * (bounds.Width - 1)
+				state.save()
+				return handled, true
+			}
+		}
+	}
+	if event.Key == gfx.KeySpace && !event.Release && state.clickHostScopeSelection(event.Target) {
+		return handled, true
 	}
 	hostID, checkbox := state.hostIDForSelectionHit(event.Target)
 	if !checkbox {
@@ -797,17 +1095,17 @@ func (state *State) hostManagementKey(event ui.KeyEvent) (ui.EventResult, bool) 
 			hostID = host.ID
 		}
 	}
-	if hostID != 0 && event.Key == ui.KeySpace {
+	if hostID != 0 && event.Key == gfx.KeySpace {
 		state.selectedHostID = hostID
 		state.toggleHostSelection(hostID)
 		return handled, true
 	}
-	if event.Key == ui.KeyDelete && (hostID != 0 || len(state.hostSelections) > 0) {
+	if event.Key == gfx.KeyDelete && (hostID != 0 || len(state.hostSelections) > 0) {
 		if hostID != 0 {
 			state.selectedHostID = hostID
 		}
 		state.openDeleteHosts()
 		return handled, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }

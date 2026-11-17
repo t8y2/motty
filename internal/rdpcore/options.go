@@ -19,6 +19,24 @@ const (
 	KeyboardUnicode                      // Send unicode codepoints for printable chars (local layout)
 )
 
+// SecurityMode chooses the security protocols the connection may negotiate.
+type SecurityMode int
+
+const (
+	// SecurityNegotiate asks for Enhanced RDP Security: TLS with NLA
+	// (CredSSP) first, then TLS alone. A server that offers only Standard RDP
+	// Security is refused: that layer derives its keys from a server key that
+	// is never authenticated, so anyone on the path can read the credentials
+	// and the session.
+	SecurityNegotiate SecurityMode = iota
+	// SecurityStandard asks for Standard RDP Security only, with no TLS and no
+	// NLA. Older servers, and servers whose administrator configured the RDP
+	// security layer, require it. The traffic is RC4-encrypted, but from an
+	// unauthenticated server key, so it is not protection against an attacker
+	// on the path.
+	SecurityStandard
+)
+
 // Options configures the RDP client connection.
 //
 // Motty divergence from upstream: Dial and VerifyCertificate replace the
@@ -40,8 +58,9 @@ type Options struct {
 	// set it.
 	VerifyCertificate func(der []byte) error
 
-	// AllowLegacySecurity permits standard RDP Security (no TLS). Off by default.
-	AllowLegacySecurity bool
+	// Security selects the protocol the client may negotiate. The zero value
+	// refuses Standard RDP Security, whose keys are not authenticated.
+	Security SecurityMode
 
 	// Authentication
 	Username string // Login username

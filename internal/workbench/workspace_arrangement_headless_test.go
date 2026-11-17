@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 )
 
 func workspaceEditorView(t *testing.T, state *State) *headless.Session {
@@ -33,7 +33,7 @@ func workspaceEditorView(t *testing.T, state *State) *headless.Session {
 	return view
 }
 
-func workspaceEditorClick(t *testing.T, view *headless.Session, id ui.ID) {
+func workspaceEditorClick(t *testing.T, view *headless.Session, id gfx.ID) {
 	t.Helper()
 	hit, ok := hitByIDSnapshot(view.Snapshot().Hits, id)
 	if !ok || hit.Disabled || hit.Block {
@@ -47,7 +47,26 @@ func workspaceEditorClick(t *testing.T, view *headless.Session, id ui.ID) {
 	}
 }
 
-func workspaceEditorDrag(t *testing.T, view *headless.Session, from, to ui.ID) {
+// workspaceEditorClickLabel clicks the painted button a dialog names, which is
+// the page's control when the dialog is declared in the window page.
+func workspaceEditorClickLabel(t *testing.T, view *headless.Session, label string) {
+	t.Helper()
+	for _, hit := range view.Snapshot().Hits {
+		if hit.Label != label || hit.Role != gfx.RoleButton || hit.Block || hit.Disabled {
+			continue
+		}
+		if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+			t.Fatal(err)
+		}
+		if err := view.Wait(200 * time.Millisecond); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	t.Fatalf("no painted button named %q", label)
+}
+
+func workspaceEditorDrag(t *testing.T, view *headless.Session, from, to gfx.ID) {
 	t.Helper()
 	source, ok := hitByIDSnapshot(view.Snapshot().Hits, from)
 	if !ok {
@@ -81,15 +100,15 @@ func TestWorkspaceLayoutDragAutoSavesWithoutReconnectAndEscapeReturnsFocus(t *te
 	active, dials := state.activeSessionID, len(world.configs)
 	view := workspaceEditorView(t, state)
 	workspaceEditorClick(t, view, hitWorkspaceHeaderLayout)
-	workspaceEditorClick(t, view, hitWorkspaceHeaderColumnsList.At(2))
+	workspaceEditorClick(t, view, hitWorkspaceHeaderPresets.At(1))
 	workspaceEditorDrag(t, view, hitWorkspaceLayoutCards.At(0), hitWorkspaceLayoutCards.At(2))
 	if got := paneSessionIDs(state.deck.Panes(workspace, nil)); !slices.Equal(got, []uint32{before[1], before[2], before[0]}) {
 		t.Fatalf("applied order = %v", got)
 	}
-	if state.activeSessionID != active || len(world.configs) != dials || state.managedWorkspaceColumns[workspace] != 2 {
+	if state.activeSessionID != active || len(world.configs) != dials || !isGrid(state.managedWorkspaceLayouts[workspace], 2) {
 		t.Fatal("layout apply changed sessions or dialed again")
 	}
-	if err := view.Driver().Key(ui.KeyEscape, 0); err != nil {
+	if err := view.Driver().Key(gfx.KeyEscape, 0); err != nil {
 		t.Fatal(err)
 	}
 	if view.Snapshot().Focused != state.activeTerminalFocusHit() {
@@ -105,7 +124,7 @@ func TestWorkspaceTemplateDragAutoSavesThroughWindow(t *testing.T) {
 	state.templates = []WorkspaceTemplate{template}
 	view := workspaceEditorView(t, state)
 	workspaceEditorClick(t, view, hitWorkspaceTemplatePresets.At(0))
-	if state.templates[0].Columns != 1 {
+	if !isGrid(state.templates[0].Layout, 1) {
 		t.Fatal("template preset did not auto-save")
 	}
 	workspaceEditorDrag(t, view, hitWorkspaceTemplateCards.At(0), hitWorkspaceTemplateCards.At(2))
@@ -164,8 +183,8 @@ func TestWorkspaceRestoredTemporaryHeaderSaveThroughWindow(t *testing.T) {
 	if err := view.Type("Reopened workspace"); err != nil {
 		t.Fatal(err)
 	}
-	workspaceEditorClick(t, view, hitWorkspaceSaveSubmit)
-	if len(state.templates) != 1 || state.templates[0].Name != "Reopened workspace" || state.templates[0].Columns != 2 {
+	workspaceEditorClickLabel(t, view, state.messages.WorkspaceDraftSave)
+	if len(state.templates) != 1 || state.templates[0].Name != "Reopened workspace" || !isGrid(state.templates[0].Layout, 2) {
 		t.Fatalf("saved restored workspace = %+v", state.templates)
 	}
 	if len(world.configs) != 2 {
@@ -190,7 +209,7 @@ func TestWorkspaceDraftDragPreservesItsOrderOnSaveAndLaunch(t *testing.T) {
 	if !slices.Equal(state.workspaceDraftSelectedCatalogIDs(), want) {
 		t.Fatal("draft drag did not reorder the selected hosts")
 	}
-	workspaceEditorClick(t, view, hitWorkspaceDraftSubmit)
+	workspaceEditorClickLabel(t, view, state.messages.WorkspaceDraftSave)
 	if len(state.templates) != 1 || !slices.Equal(state.templates[0].HostIDs, want) {
 		t.Fatalf("saved order = %+v", state.templates)
 	}
@@ -212,7 +231,7 @@ func TestWorkspaceLocalTerminalDragSaveAndOpenThroughWindow(t *testing.T) {
 	workspaceEditorClick(t, view, hitWorkspaceDraftHostList.At(0))
 	workspaceEditorClick(t, view, workspaceDraftHostID(0))
 	workspaceEditorDrag(t, view, hitWorkspaceDraftCards.At(0), hitWorkspaceDraftCards.At(1))
-	workspaceEditorClick(t, view, hitWorkspaceDraftSubmit)
+	workspaceEditorClickLabel(t, view, state.messages.WorkspaceDraftSave)
 	want := []string{state.hosts[0].CatalogID, workspaceLocalTerminalRef}
 	if len(state.templates) != 1 || !slices.Equal(state.templates[0].HostIDs, want) {
 		t.Fatalf("mixed template order = %+v", state.templates)
@@ -253,7 +272,7 @@ func TestWorkspaceCardDragCancelsOutsideAndEscapeKeepsSavedEdits(t *testing.T) {
 	if err := view.Move(target.Bounds.X+20, target.Bounds.Y+20); err != nil {
 		t.Fatal(err)
 	}
-	if err := view.Driver().Key(ui.KeyEscape, 0); err != nil {
+	if err := view.Driver().Key(gfx.KeyEscape, 0); err != nil {
 		t.Fatal(err)
 	}
 	if err := view.Release(target.Bounds.X+20, target.Bounds.Y+20); err != nil {
@@ -262,7 +281,7 @@ func TestWorkspaceCardDragCancelsOutsideAndEscapeKeepsSavedEdits(t *testing.T) {
 	if !slices.Equal(state.templates[0].HostIDs, saved) || state.workspaceCardDrag.active {
 		t.Fatal("Escape during drag changed a completed edit")
 	}
-	if err := view.Driver().Key(ui.KeyEscape, 0); err != nil {
+	if err := view.Driver().Key(gfx.KeyEscape, 0); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(state.templates[0].HostIDs, saved) {
@@ -277,7 +296,7 @@ func TestWorkspaceCardKeyboardReorderKeepsTheMovedHostFocused(t *testing.T) {
 	state.templates = []WorkspaceTemplate{template}
 	view := workspaceEditorView(t, state)
 	workspaceEditorClick(t, view, hitWorkspaceTemplateCards.At(0))
-	if err := view.Driver().Key(ui.KeyRight, ui.ModifierAlt); err != nil {
+	if err := view.Driver().Key(gfx.KeyRight, gfx.ModifierAlt); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{template.HostIDs[1], template.HostIDs[0], template.HostIDs[2]}

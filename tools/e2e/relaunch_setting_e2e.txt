@@ -1,0 +1,8 @@
+# Check the relaunch preference in the real workbench settings page.
+# Run with a fresh home: python3 tools/headless_drive.py --build "$(mktemp -d)" tools/e2e/relaunch_setting_e2e.txt
+click "Settings"
+expect text "When launched again"
+expect state id:settings/settings-relaunch-raise selected
+click id:settings/settings-relaunch-new-window
+expect state id:settings/settings-relaunch-new-window selected
+expect layout clean

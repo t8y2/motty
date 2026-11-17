@@ -60,13 +60,13 @@ edit(win / "window_windows.go",
 edit(win / "window_windows.go", "	case wmChar:\n", '	case wmChar:\n		trace("char %d", first)\n')
 edit(win / "window_windows.go", "	case wmKeyDown, wmSysKeyDown:\n", '	case wmKeyDown, wmSysKeyDown:\n		trace("keydown %d", first)\n')
 edit(win / "renderer_windows.go",
-     "	return hresult(comCall(renderer.swap, 8, 1, 0))\n}",
-     '	trace("draw-done")\n	status := comCall(renderer.swap, 8, 1, 0)\n	trace("Present-returned")\n	return hresult(status)\n}')
+     "	return hresult(comCall(renderer.swap, 8, sync, 0))\n}",
+     '	trace("draw-done")\n	status := comCall(renderer.swap, 8, sync, 0)\n	trace("Present-returned")\n	return hresult(status)\n}')
 
 (motty / "internal/workbench/trace_tmp.go").write_text(tracer("workbench", "traceTmp", "MOTTY_PUMP_TRACE"))
 edit(motty / "internal/workbench/terminal.go",
-     "	data := t.rx\n	pending := false\n",
-     '	data := t.rx\n	if len(data) > 0 {\n		traceTmp("pump drained=%d", len(data))\n	}\n	pending := false\n')
+     "	data := t.rx\n	wasExec := t.exec != nil\n",
+     '	data := t.rx\n	if len(data) > 0 {\n		traceTmp("pump drained=%d", len(data))\n	}\n	wasExec := t.exec != nil\n')
 
 (motty / "internal/localshell/trace_tmp.go").write_text(tracer("localshell", "trace", "MOTTY_SHELL_TRACE"))
 shell = motty / "internal/localshell/shell.go"

@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func TestTerminalTypingSurvivesClosingAnEarlierTab(t *testing.T) {
@@ -12,7 +12,7 @@ func TestTerminalTypingSurvivesClosingAnEarlierTab(t *testing.T) {
 	liveTab(t, state, world, 1)
 	last := liveTab(t, state, world, 2).shell(t)
 	lastID := state.sessions[2].ID
-	driver := paneDriver(t, state, ui.Size{Width: 1400, Height: 900})
+	driver := paneDriver(t, state, gfx.Size{Width: 1400, Height: 900})
 	if err := driver.Type("before"); err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestTerminalTypingSurvivesClosingAnEarlierTab(t *testing.T) {
 	if err := driver.Type("after"); err != nil {
 		t.Fatal(err)
 	}
-	if err := driver.Key(ui.KeyEnter, 0); err != nil {
+	if err := driver.Key(gfx.KeyEnter, 0); err != nil {
 		t.Fatal(err)
 	}
 	if got := last.typed(); got != "beforeafter\r" {

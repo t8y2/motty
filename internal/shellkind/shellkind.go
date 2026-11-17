@@ -1,7 +1,8 @@
 // Package shellkind names the family of command language an interactive shell
 // speaks. Code that types a command into a terminal for the user, such as the
 // assistant's terminal_exec, must know it: a POSIX "{ ...; }" group and "$?"
-// mean nothing to PowerShell, cmd.exe, fish or nushell.
+// mean nothing to PowerShell, cmd.exe, fish or nushell, and a network device
+// console has neither.
 package shellkind
 
 import (
@@ -24,6 +25,12 @@ const (
 	Cmd
 	Fish
 	Nushell
+	// Console is a line-oriented terminal that is not a known shell: a network
+	// device CLI, an appliance console, or any other program reached over Telnet
+	// or a serial port. It accepts one command line at a time and shows a prompt
+	// when the command returns, but it has no shell syntax and no exit status of
+	// its own.
+	Console
 )
 
 // String is the shell's display name, for messages shown to the user.
@@ -39,6 +46,8 @@ func (kind Kind) String() string {
 		return "fish"
 	case Nushell:
 		return "nushell"
+	case Console:
+		return "device console"
 	}
 	return "unknown shell"
 }
@@ -110,10 +119,11 @@ func ParseProbe(output string) Kind {
 
 // SupportsExec reports whether the assistant can run a command in a shell of
 // this kind and learn how it ended. Unknown is supported: the POSIX wrapper has
-// always been used for it.
+// always been used for it. Console is supported without a wrapper; the prompt
+// returning marks the end.
 func (kind Kind) SupportsExec() bool {
 	switch kind {
-	case Unknown, POSIX, PowerShell:
+	case Unknown, POSIX, PowerShell, Console:
 		return true
 	}
 	return false

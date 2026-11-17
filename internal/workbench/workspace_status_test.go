@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
 )
@@ -20,7 +20,7 @@ func TestWorkspaceConnectionStateCountsPromptsPendingAndFailuresSettled(t *testi
 			testWorkspaceHost("edge", "edge.example.com"),
 			testWorkspaceHost("worker", "worker.example.com"),
 		},
-		Columns: 2,
+		Layout: layoutcore.GridSpec(2),
 	}
 	workspaceID, sessions, err := state.launchWorkspace(plan, "State")
 	if err != nil {
@@ -91,8 +91,8 @@ func TestWorkspaceConnectionStateTreatsShellWaitAsPending(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)
 	plan := WorkspaceLaunchPlan{
-		Hosts:   []Host{testWorkspaceHost("web", "web.example.com"), testWorkspaceHost("db", "db.example.com")},
-		Columns: 2,
+		Hosts:  []Host{testWorkspaceHost("web", "web.example.com"), testWorkspaceHost("db", "db.example.com")},
+		Layout: layoutcore.GridSpec(2),
 	}
 	workspaceID, sessions, err := state.launchWorkspace(plan, "Shells")
 	if err != nil {
@@ -151,7 +151,7 @@ func TestManagedWorkspaceHeaderAndVerticalTabsReserveSeparateEdges(t *testing.T)
 	state := newTestState(t, options)
 	state.setTabOrientation(tabsVertical)
 	workspaceID := launchTemporaryWorkspace(t, state, 0, 1)
-	size := ui.Size{Width: 1400, Height: 900}
+	size := gfx.Size{Width: 1400, Height: 900}
 
 	bounds := state.workspacePixelBoundsFor(workspaceID, size)
 	if want := state.verticalTabsReserve(size); bounds.X != want {
@@ -161,7 +161,7 @@ func TestManagedWorkspaceHeaderAndVerticalTabsReserveSeparateEdges(t *testing.T)
 		t.Fatalf("workspace top = %v, want below the header", bounds.Y)
 	}
 
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	header, ok := hitByID(&canvas, hitWorkspaceHeaderLayout)
 	if !ok {

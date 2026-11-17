@@ -1,14 +1,16 @@
 package workbench
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
 )
@@ -18,8 +20,11 @@ var (
 	hitFilePropertiesDismiss = tree.ID(filePropertiesHits, "dismiss")
 	hitFilePropertiesClose   = tree.ID(filePropertiesHits, "close")
 
-	hitSFTPCopyPath   = tree.ID(sftpHits, "copy-path")
-	hitSFTPProperties = tree.ID(sftpHits, "properties")
+	hitSFTPCopyPath               = tree.ID(sftpHits, "copy-path")
+	hitSFTPProperties             = tree.ID(sftpHits, "properties")
+	hitSFTPCalculateDirectorySize = tree.ID(sftpHits, "calculate-directory-size")
+	hitSFTPCopyFiles              = tree.ID(sftpHits, "copy-files")
+	hitSFTPPasteFiles             = tree.ID(sftpHits, "paste-files")
 )
 
 const filePropertiesRowHeight float32 = 34
@@ -28,10 +33,80 @@ const filePropertiesRowHeight float32 = 34
 // already carry the metadata transferred with the folder listing, so opening the
 // dialog needs no connection or filesystem round trip.
 type sftpFileProperties struct {
-	open   bool
-	folder string
-	local  bool
-	entry  sftpclient.Entry
+	open       bool
+	folder     string
+	local      bool
+	entry      sftpclient.Entry
+	folderSize string
+	cancelSize context.CancelFunc
+}
+
+func (properties *sftpFileProperties) close() {
+	if properties.cancelSize != nil {
+		properties.cancelSize()
+	}
+	*properties = sftpFileProperties{}
+}
+
+func canCalculateSFTPFolderSize(view *sftpView) bool {
+	count, entry := selectedSFTP(view)
+	return count == 1 && entry.Mode.Type() == os.ModeDir && (view.local || view.openFiles != nil)
+}
+
+func (folder *sftpFolder) stopSizeCalculation() {
+	if folder.cancelSize != nil {
+		folder.cancelSize()
+		folder.cancelSize = nil
+	}
+}
+
+func (state *State) calculateSFTPDirectorySize(view *sftpView) {
+	folder, local := view.active(), view.local
+	if folder.path == "" || !local && view.openFiles == nil {
+		return
+	}
+	folder.stopSizeCalculation()
+	roots := make(map[string]string)
+	for _, row := range folder.allRows {
+		if row.entry.Mode.Type() == os.ModeDir {
+			root := path.Join(folder.path, row.entry.Name)
+			if local {
+				root = filepath.Join(folder.path, row.entry.Name)
+			}
+			roots[row.entry.Name] = root
+		}
+	}
+	if len(roots) == 0 {
+		return
+	}
+	for _, rows := range [][]sftpRow{folder.allRows, folder.rows} {
+		for index := range rows {
+			if _, ok := roots[rows[index].entry.Name]; ok {
+				rows[index].cells[2] = state.messages.SFTPWindow.CalculatingSize
+			}
+		}
+	}
+	folder.cancelSize = state.calculateSFTPSizes(view, local, roots, func(results map[string]sftpSizeResult) {
+		for _, rows := range [][]sftpRow{folder.allRows, folder.rows} {
+			for index := range rows {
+				if result, ok := results[rows[index].entry.Name]; ok && rows[index].entry.Mode.Type() == os.ModeDir {
+					rows[index].entry.Size, rows[index].cells[2] = result.size, result.text
+				}
+			}
+		}
+	})
+}
+
+func (state *State) calculateSFTPFolderSize(view *sftpView, properties *sftpFileProperties) {
+	name := properties.entry.Name
+	root := path.Join(properties.folder, name)
+	if properties.local {
+		root = filepath.Join(properties.folder, name)
+	}
+	properties.folderSize = state.messages.SFTPWindow.CalculatingSize
+	properties.cancelSize = state.calculateSFTPSizes(view, properties.local, map[string]string{name: root}, func(results map[string]sftpSizeResult) {
+		properties.folderSize = results[name].text
+	})
 }
 
 type sftpPropertyRow struct {
@@ -61,6 +136,7 @@ func (state *State) openSFTPProperties(folder *sftpFolder, local bool) bool {
 	if !ok {
 		return false
 	}
+	state.fileProperties.close()
 	state.fileProperties = properties
 	state.modal = modalFileProperties
 	return true
@@ -103,6 +179,8 @@ func (state *State) sftpFilePropertiesRows(properties *sftpFileProperties) []sft
 	size := m.PropertiesUnknown
 	if !entry.IsDir() {
 		size = formatBytes(entry.Size)
+	} else if properties.folderSize != "" {
+		size = properties.folderSize
 	}
 	modified := m.PropertiesUnknown
 	if !entry.ModTime.IsZero() {
@@ -135,94 +213,100 @@ func ownerPropertyValue(name string, id uint32) string {
 	return fmt.Sprintf("%s (%d)", name, id)
 }
 
-func (state *State) paintFileProperties(canvas *ui.Canvas, viewport ui.Rect) {
-	state.paintSFTPFileProperties(canvas, viewport, &state.fileProperties)
+// declareFileProperties declares the properties dialog of the main window's
+// docked file panel.
+func (state *State) declareFileProperties(c ui.C) {
+	state.declareSFTPFileProperties(c, dialogViewport(c), &state.fileProperties)
 }
 
-func (state *State) paintSFTPFileProperties(canvas *ui.Canvas, viewport ui.Rect, properties *sftpFileProperties) {
+// declareSFTPFileProperties declares a file listing's properties dialog in the
+// page of the window that owns it. viewport is the room the owning surface
+// gives the dialog, as the paint path measured it.
+func (state *State) declareSFTPFileProperties(c ui.C, viewport gfx.Rect, properties *sftpFileProperties) {
 	if properties == nil || !properties.open {
 		return
 	}
 	m := state.messages.SFTPWindow
 	rows := state.sftpFilePropertiesRows(properties)
 	contentWidth := min(float32(640), viewport.Width-32)
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitFilePropertiesDismiss, CloseID: hitFilePropertiesClose, InitialFocusID: hitFilePropertiesClose,
-		ContentSize: ui.Size{Width: contentWidth}, FitBody: true,
-		BodyHeight: float32(len(rows)) * filePropertiesRowHeight,
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, contentWidth, properties.entry.Name,
+		float32(len(rows))*filePropertiesRowHeight)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.PropertiesTitle, Description: properties.entry.Name,
+		Width: contentWidth, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitFilePropertiesDismiss, CloseID: hitFilePropertiesClose, InitialFocusID: hitFilePropertiesClose,
 	})
-	layout := dialog.Begin(m.PropertiesTitle, properties.entry.Name)
-	f := state.settingsRow.Begin(canvas, state.Theme(), layout.Body)
-	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
-		for index, row := range rows {
-			if index > 0 {
-				f.Slot().Height(1).Background(state.pal.line)
+	dialog.Body(func() {
+		ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
+			for index, row := range rows {
+				if index > 0 {
+					ui.Slot(c).Height(1).Background(state.pal.line)
+				}
+				ui.Row(c).Height(filePropertiesRowHeight-1).PadSides(10, 8, 10, 8).Gap(16).Items(ui.Center).Children(func() {
+					ui.Text(c, row.label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.muted).
+						LineHeight(20).Width(92).Shrink(0).Ellipsis()
+					ui.Text(c, row.value).FontSize(metrics.FontSizeM).Color(state.pal.text).
+						LineHeight(20).Grow(1).Ellipsis()
+				})
 			}
-			f.Row().Height(filePropertiesRowHeight-1).PadSides(10, 8, 10, 8).Gap(16).Items(flex.Center).Children(func() {
-				f.Text(row.label).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(state.pal.muted).
-					LineHeight(20).Width(92).Shrink(0).Ellipsis()
-				f.Text(row.value).FontSize(metrics.FontSizeM).Color(state.pal.text).
-					LineHeight(20).Grow(1).Ellipsis()
-			})
-		}
+		})
 	})
-	f.End()
-	dialog.Actions(layout, components.ButtonAction{ID: hitFilePropertiesClose, Label: state.messages.LabelWindowClose, Variant: components.ButtonSecondary})
-	dialog.End()
+	dialog.Footer(func() {
+		state.dialogActionFooter(c, components.ButtonAction{ID: hitFilePropertiesClose, Label: state.messages.LabelWindowClose, Variant: components.ButtonSecondary})
+	})
 }
 
-func (state *State) clickFileProperties(id ui.ID) {
+func (state *State) clickFileProperties(id gfx.ID) {
 	if id != hitFilePropertiesDismiss && id != hitFilePropertiesClose {
 		return
 	}
 	state.modal = modalNone
-	state.fileProperties = sftpFileProperties{}
+	state.fileProperties.close()
 }
 
-func (w *sftpWindow) clickFileProperties(id ui.ID) bool {
+func (w *sftpWindow) clickFileProperties(id gfx.ID) bool {
 	if !w.fileProperties.open {
 		return false
 	}
 	if id == hitFilePropertiesDismiss || id == hitFilePropertiesClose {
-		w.fileProperties = sftpFileProperties{}
+		w.fileProperties.close()
 	}
 	return true
 }
 
-func (state *State) filePropertiesKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) filePropertiesKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalFileProperties {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if event.Key == ui.KeyEscape || event.Key == ui.KeyEnter && event.Target == hitFilePropertiesClose {
+	if event.Key == gfx.KeyEscape || event.Key == gfx.KeyEnter && event.Target == hitFilePropertiesClose {
 		state.clickFileProperties(hitFilePropertiesClose)
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
-func (w *sftpWindow) filePropertiesKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (w *sftpWindow) filePropertiesKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if !w.fileProperties.open {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if event.Key == ui.KeyEscape || event.Key == ui.KeyEnter && event.Target == hitFilePropertiesClose {
-		w.fileProperties = sftpFileProperties{}
-		return ui.EventResult{Handled: true, Repaint: true}, true
+	if event.Key == gfx.KeyEscape || event.Key == gfx.KeyEnter && event.Target == hitFilePropertiesClose {
+		w.fileProperties.close()
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	return ui.EventResult{Handled: true}, true
+	return gfx.EventResult{Handled: true}, true
 }
 
 // modalFilePropertiesKey keeps a single-column properties dialog modal: only
 // its own Enter target and Escape reach it. Everything else is consumed before
 // file-list shortcuts can act on the row behind the dialog.
-func (state *State) modalFilePropertiesKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) modalFilePropertiesKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalFileProperties {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if event.Key == ui.KeyEscape && !event.Repeat ||
-		event.Key == ui.KeyEnter && event.Target == hitFilePropertiesClose {
+	if event.Key == gfx.KeyEscape && !event.Repeat ||
+		event.Key == gfx.KeyEnter && event.Target == hitFilePropertiesClose {
 		state.clickFileProperties(hitFilePropertiesClose)
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	return ui.EventResult{Handled: true}, true
+	return gfx.EventResult{Handled: true}, true
 }

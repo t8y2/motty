@@ -10,11 +10,11 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sftpclient"
 )
 
-func typeLinkField(t *testing.T, state *State, hit ui.ID, value string) {
+func typeLinkField(t *testing.T, state *State, hit gfx.ID, value string) {
 	t.Helper()
 	editor := state.EditorFor(hit)
 	if editor == nil {
@@ -75,13 +75,23 @@ func TestConflictDialogCanSkipWhatExists(t *testing.T) {
 	target := filepath.Join(t.TempDir(), "notes.txt")
 	os.WriteFile(target, []byte("mine"), 0o600)
 	state.options.SaveFile = func(app.SaveFileOptions) (string, error) { return target, nil }
+	// A filter or collapsed section must not hide a conflict that needs action.
+	state.transfers.filter = transferFilterRunning
+	state.transfers.direction = transferUpload
+	state.transfers.search.SetText("hidden")
+	state.updateTransferSearch()
+	state.transfers.groups[transferFilterFailed].collapsed = true
 	clickSFTPRow(t, state, view, "notes.txt")
 	state.Click(hitSFTPDownload)
 	waitSFTP(t, state, session, func(view *sftpView) bool {
 		return state.transfers.open && len(state.transfers.entries) == 1 && state.transfers.entries[0].conflict
 	})
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	if center := &state.transfers; center.filter != transferFilterFailed || center.direction != transferAnyDirection ||
+		center.query != "" || center.groups[transferFilterFailed].collapsed {
+		t.Fatalf("conflict is still filtered: status=%d direction=%d query=%q", center.filter, center.direction, center.query)
+	}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitTransfersSkip.At(state.transfers.entries[0].id)); !ok {
 		t.Fatal("the transfer center has no Skip button")
 	}
@@ -105,8 +115,8 @@ func TestBookmarksAreKeptPerHostSurviveARestartAndOpenTheirFolder(t *testing.T) 
 		t.Fatalf("bookmarks = %v", marks)
 	}
 	// The star shows it.
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, contextID(hitSFTPBookmarkToggle)); !ok {
 		t.Fatal("no bookmark star")
 	}
@@ -125,7 +135,7 @@ func TestBookmarksAreKeptPerHostSurviveARestartAndOpenTheirFolder(t *testing.T) 
 		t.Fatal("the list did not open")
 	}
 	canvas.Reset()
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, contextID(hitSFTPBookmarkItemList.At(0))); !ok {
 		t.Fatal("the list has no entry")
 	}
@@ -197,18 +207,101 @@ func TestTheFolderTheShellReportsMovesThePanelUnlessTurnedOff(t *testing.T) {
 	}
 }
 
+func TestSFTPPanelFollowToggleButtonTogglesTerminalFollow(t *testing.T) {
+	state, session, fake, _ := openTestSFTP(t)
+	view := session.files
+	shell := fake.shell(t)
+
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+
+	// Verify the button is painted and initially active (follow is on by default)
+	if _, ok := hitByID(&canvas, hitSFTPFollowToggle); !ok {
+		t.Fatal("hitSFTPFollowToggle button was not painted in panel header")
+	}
+	var found *barTool
+	for i := range state.chrome.sftpPanel.headerTools {
+		tool := &state.chrome.sftpPanel.headerTools[i]
+		if tool.id == hitSFTPFollowToggle {
+			found = tool
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("hitSFTPFollowToggle tool was not found in panel headerTools")
+	}
+	if found.style != iconButtonActive {
+		t.Fatalf("expected button style iconButtonActive, got %v", found.style)
+	}
+
+	// Follow terminal folder initially works
+	shell.say("\x1b]7;file://box/home/test/docs\x07")
+	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.path == "/home/test/docs" })
+
+	// Click button to turn follow off
+	state.Click(hitSFTPFollowToggle)
+	if !state.sftpFollowOff {
+		t.Fatal("sftpFollowOff should be true after clicking follow toggle button")
+	}
+
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	for i := range state.chrome.sftpPanel.headerTools {
+		tool := &state.chrome.sftpPanel.headerTools[i]
+		if tool.id == hitSFTPFollowToggle {
+			if tool.style != iconButtonQuiet {
+				t.Fatalf("expected button style iconButtonQuiet when off, got %v", tool.style)
+			}
+			break
+		}
+	}
+
+	// Move panel back manually to /home/test
+	state.openSFTPDirectory(view, "/home/test")
+	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.path == "/home/test" })
+
+	// Shell reports docs, but following is off so panel stays at /home/test
+	shell.say("\x1b]7;file://box/home/test/docs\x1b\\")
+	state.Wake()
+	time.Sleep(30 * time.Millisecond)
+	state.Wake()
+	if view.path != "/home/test" {
+		t.Fatalf("panel should not follow when off, but got: %s", view.path)
+	}
+
+	// Click follow toggle button again to turn follow on
+	state.Click(hitSFTPFollowToggle)
+	if state.sftpFollowOff {
+		t.Fatal("sftpFollowOff should be false after clicking follow toggle button again")
+	}
+
+	// Panel should immediately follow the terminal's working directory (/home/test/docs)
+	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.path == "/home/test/docs" })
+
+	// Test More menu toggle
+	state.Click(hitSFTPHeaderMore)
+	state.Click(hitSFTPHeaderFollow)
+	if !state.sftpFollowOff {
+		t.Fatal("sftpFollowOff should be true after clicking hitSFTPHeaderFollow")
+	}
+}
+
 func TestFilesSettingsApplyToTheWorkerAndAreSaved(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsFiles)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 1600})
-	for _, id := range []ui.ID{
-		hitSettingsParallel1, hitSettingsParallel4, hitSettingsKeepTimesToggle, hitSettingsFollowToggle, hitSettingsFollowSetup,
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1600})
+	for _, id := range []gfx.ID{
+		hitSettingsKeepTimesToggle, hitSettingsFollowToggle, hitSettingsFollowSetup,
 		hitSettingsConfigureColumns, hitSettingsDownloadDirectory, hitSettingsDownloadAsk,
 	} {
 		if _, ok := hitByID(&canvas, id); !ok {
 			t.Errorf("settings control %d is not painted", id)
+		}
+	}
+	for _, count := range []int{1, 4} {
+		if _, ok := settingsChoiceIn(&canvas, state.settingsParallelLabel(count)); !ok {
+			t.Errorf("parallel choice %d is not painted", count)
 		}
 	}
 	var copied string
@@ -224,7 +317,7 @@ func TestFilesSettingsApplyToTheWorkerAndAreSaved(t *testing.T) {
 	if !strings.Contains(copied, "\\e]7;file://") {
 		t.Fatalf("copied %q", copied)
 	}
-	state.Click(hitSettingsParallel4)
+	clickSettingsChoice(t, state, state.settingsParallelLabel(4))
 	state.Click(hitSettingsKeepTimesToggle)
 	state.Click(hitSettingsConfigureColumns)
 	state.Click(hitSFTPColumnSettingsToggles.At(int(sftpColumnSize)))
@@ -257,13 +350,13 @@ func TestSFTPColumnSettingsReorderFromTheKeyboardAndSave(t *testing.T) {
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsFiles)
 	state.Click(hitSettingsConfigureColumns)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	handle := hitSFTPColumnSettingsHandles.At(int(sftpColumnSize))
 	if _, ok := hitByID(&canvas, handle); !ok {
 		t.Fatal("the size column has no reorder handle")
 	}
-	result := state.Key(ui.KeyEvent{Target: handle, Key: ui.KeyDown})
+	result := state.Key(gfx.KeyEvent{Target: handle, Key: gfx.KeyDown})
 	if !result.Handled || result.Focus != handle {
 		t.Fatalf("keyboard move = %+v", result)
 	}
@@ -323,8 +416,8 @@ func TestExtractingAnArchiveRunsTheCommandAndRefreshes(t *testing.T) {
 	fake.mu.Unlock()
 
 	clickSFTPRow(t, state, view, "pack.zip")
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, contextID(hitSFTPExtract)); !ok {
 		t.Fatal("no Extract button for an archive")
 	}
@@ -359,8 +452,8 @@ func TestAFailedExtractionShowsWhyAndAPlainFileOffersNone(t *testing.T) {
 		t.Fatalf("inline error = %q, global errors = %+v", view.errorText, state.fileNotices.items)
 	}
 	clickSFTPRow(t, state, view, "notes.txt")
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, contextID(hitSFTPExtract)); ok {
 		t.Fatal("Extract is offered for a text file")
 	}

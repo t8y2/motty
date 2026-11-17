@@ -8,11 +8,13 @@ import (
 // A host-menu connection has no terminal, pane or persisted session. SSH's
 // existing authentication dialogs and vault still own host trust and secrets.
 func (state *State) openHostSFTPWindow(host Host) {
-	if !host.isSSH() || host.ID == localHostID || !state.sftpManagersAvailable() {
+	if !host.isSSH() || host.mosh() || host.ID == localHostID || !state.sftpManagersAvailable() {
 		return
 	}
 	for _, w := range state.sftpWindows {
-		if !w.closed && w.session.HostID == host.ID {
+		// A host with no ID is a one-off link target. Every such target shares
+		// ID 0, so reusing by ID would show a window opened for another host.
+		if host.ID != 0 && !w.closed && w.session.HostID == host.ID {
 			w.reveal()
 			return
 		}
@@ -68,7 +70,14 @@ func (w *sftpWindow) connect() {
 }
 
 func (state *State) raiseSFTPAuthentication(session *Session) {
-	if w := state.sftpWindows[session.ID]; w != nil && w.ownsConnection && !w.closed && state.options.Raise != nil {
+	if state.options.Raise == nil {
+		return
+	}
+	if w := state.sftpWindows[session.ID]; w != nil && w.ownsConnection && !w.closed {
+		state.options.Raise()
+		return
+	}
+	if state.dedicatedFileSession(session.ID) != nil {
 		state.options.Raise()
 	}
 }
@@ -109,6 +118,11 @@ func (w *sftpWindow) releaseConnection() {
 	if !w.closed {
 		return
 	}
+	// A server-to-server copy that started here still reads through this
+	// connection. Its last transfer releases the connection when it settles.
+	if len(w.view.outgoingCopies) > 0 {
+		return
+	}
 	if w.ownsConnection {
 		for _, d := range w.owner.fileWindows.documents {
 			if d.origin == w && !d.local && !d.closed {
@@ -146,6 +160,18 @@ func (state *State) connectionSessions() func(func(*Session) bool) {
 		}
 		for i := range state.sessions {
 			if !yield(&state.sessions[i]) {
+				return
+			}
+			// A file panel's own connection asks through the same prompts as
+			// every other connection.
+			if files := state.sessions[i].files; files != nil && files.dedicated != nil && !files.dedicated.ready {
+				if !yield(&files.dedicated.session) {
+					return
+				}
+			}
+		}
+		for _, tunnel := range state.forwardTunnels {
+			if !yield(&tunnel.session) {
 				return
 			}
 		}

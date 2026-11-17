@@ -5,7 +5,7 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/completion"
 	layoutcore "motty/internal/workspace"
 )
@@ -23,6 +23,9 @@ type Group struct {
 	historyClears    map[string]*historyClearJob
 	shareOnce        sync.Once
 	shares           *localProxyManager
+	// remoteClip is the server files the user copied, from any window. The
+	// system clipboard cannot name a server path, so the process keeps them.
+	remoteClip sftpClipboard
 	// reportProgress is what the desktop is told about the work the windows are
 	// doing, and progressStep is the hundredth of the whole it was last told,
 	// with -1 for no bar; progressReported says it was told anything at all.
@@ -33,6 +36,42 @@ type Group struct {
 
 // NewGroup returns an empty group.
 func NewGroup() *Group { return &Group{} }
+
+// remoteClipboard returns the server files the user copied last.
+func (group *Group) remoteClipboard() sftpClipboard {
+	group.mu.Lock()
+	defer group.mu.Unlock()
+	return group.remoteClip
+}
+
+// setRemoteClipboard replaces the copied server files and repaints every window
+// whose paste would now do something different.
+func (group *Group) setRemoteClipboard(clip sftpClipboard) {
+	group.mu.Lock()
+	group.remoteClip = clip
+	members := make([]*State, len(group.members))
+	copy(members, group.members)
+	group.mu.Unlock()
+	for _, member := range members {
+		member.invalidateSFTPWindows()
+	}
+}
+
+// clearRemoteClipboardFrom drops the clipboard when view copied it.
+func (group *Group) clearRemoteClipboardFrom(view *sftpView) {
+	group.mu.Lock()
+	if group.remoteClip.view != view {
+		group.mu.Unlock()
+		return
+	}
+	group.remoteClip = sftpClipboard{}
+	members := make([]*State, len(group.members))
+	copy(members, group.members)
+	group.mu.Unlock()
+	for _, member := range members {
+		member.invalidateSFTPWindows()
+	}
+}
 
 // ClipboardChanged tells every window the system clipboard changed. The
 // watcher callback runs on an unspecified thread, so each State's own flag
@@ -82,6 +121,24 @@ func (group *Group) settingsChanged(origin *State) {
 				fmt.Fprintf(member.options.Log, "settings reload: %v\n", err)
 			}
 		}
+		member.invalidateWindow()
+	}
+}
+
+// assistantChoicesChanged tells every other window that origin changed a
+// database-backed assistant choice that does not reconfigure the MCP servers,
+// such as which client configuration the page shows. A window that has not
+// opened the assistant keeps its store closed and reads the choice when it does.
+func (group *Group) assistantChoicesChanged(origin *State) {
+	group.mu.Lock()
+	members := make([]*State, len(group.members))
+	copy(members, group.members)
+	group.mu.Unlock()
+	for _, member := range members {
+		if member == origin || member.closed || member.callbacksClosed.Load() || member.ai.store == nil {
+			continue
+		}
+		member.reloadAISettings()
 		member.invalidateWindow()
 	}
 }
@@ -136,7 +193,7 @@ func (group *Group) leave(state *State) {
 
 // windowAt is the window other than state whose content area holds the screen
 // point, if any. Hidden and closed windows hold nothing.
-func (group *Group) windowAt(state *State, at ui.Point) *State {
+func (group *Group) windowAt(state *State, at gfx.Point) *State {
 	group.mu.Lock()
 	members := append([]*State(nil), group.members...)
 	group.mu.Unlock()
@@ -155,8 +212,66 @@ func (group *Group) windowAt(state *State, at ui.Point) *State {
 // screen coordinates (app.Window.Frame) and visible says the window is on
 // screen. Without it the window cannot be a drop target for another window's
 // tab. Call it once the window exists.
-func (state *State) SetWindow(frame func() (ui.Rect, bool), visible func() bool) {
+func (state *State) SetWindow(frame func() (gfx.Rect, bool), visible func() bool) {
 	state.frame, state.windowVisible = frame, visible
+}
+
+// dropStates are this window and the group's other windows, this one first.
+func (state *State) dropStates() []*State {
+	states := []*State{state}
+	group := state.options.Group
+	if group == nil {
+		return states
+	}
+	group.mu.Lock()
+	members := append([]*State(nil), group.members...)
+	group.mu.Unlock()
+	for _, member := range members {
+		if member != state {
+			states = append(states, member)
+		}
+	}
+	return states
+}
+
+// fileDropWindowAt is the server window under a screen point, other than the
+// drag's source. Only a window of its own can be found this way; a file tab is
+// found through the tab strip.
+func (state *State) fileDropWindowAt(at gfx.Point, exclude *sftpWindow) *sftpWindow {
+	for _, member := range state.dropStates() {
+		for _, w := range member.sftpWindows {
+			if w == nil || w == exclude || w.closed || w.window == nil || w.frame == nil {
+				continue
+			}
+			if w.visible != nil && !w.visible() {
+				continue
+			}
+			if frame, ok := w.frame(); ok && pointInRect(at.X, at.Y, frame) {
+				return w
+			}
+		}
+	}
+	return nil
+}
+
+// fileDragTabAt is the file tab under a screen point, other than the drag's
+// source: any main window of the process, including this one.
+func (state *State) fileDragTabAt(at gfx.Point, exclude *sftpWindow) (*State, uint32, bool) {
+	for _, member := range state.dropStates() {
+		if member.closed || member.frame == nil || (member.windowVisible != nil && !member.windowVisible()) {
+			continue
+		}
+		frame, ok := member.frame()
+		if !ok || !pointInRect(at.X, at.Y, frame) {
+			continue
+		}
+		if id, ok := member.fileTabAtWindowPoint(at.X-frame.X, at.Y-frame.Y); ok {
+			if w := member.sftpWindows[id]; w != nil && w != exclude {
+				return member, id, true
+			}
+		}
+	}
+	return nil, 0, false
 }
 
 // SetShortcutCapture gives the state the window's way of taking the system's shortcuts (the
@@ -170,34 +285,36 @@ func (state *State) SetShortcutCapture(capture func(bool) error) {
 // and the live sessions in them. Nothing in it is closed or copied; the sessions
 // are the ones the user was working in.
 type tabPayload struct {
-	title         string
-	dto           layoutcore.WorkspaceDTO
-	sessions      []Session
-	transfers     []transferEntry
-	managed       bool
-	managedCols   uint8
-	temporaryCols uint8
-	temporary     bool
+	title           string
+	dto             layoutcore.WorkspaceDTO
+	sessions        []Session
+	transfers       []transferEntry
+	managed         bool
+	managedLayout   layoutcore.LayoutSpec
+	temporaryLayout layoutcore.LayoutSpec
+	temporary       bool
 }
 
 // detachWorkspace takes a tab out of this window without ending its sessions.
 func (state *State) detachWorkspace(id layoutcore.WorkspaceID) (*tabPayload, bool) {
+	// Sessions may leave this window with the tab; the watcher follows what is
+	// left here.
+	defer state.syncLinkWatch()
 	dto, ok := state.deck.ExportWorkspace(id)
 	if !ok {
 		return nil, false
 	}
-	// A transfer in progress belongs to this window's dialog and cannot follow.
-	if state.transfer.phase != transferNone {
-		for _, pane := range dto.Panes {
-			if uint32(pane.SessionID) == state.transfer.sessionID {
-				state.status = state.messages.Tools.TabMoveBusy
-				return nil, false
-			}
+	// A transfer in progress owns that terminal's stream and cannot follow the tab.
+	for _, pane := range dto.Panes {
+		session, ok := state.sessionByIDPointer(uint32(pane.SessionID))
+		if ok && session.transferBusy() {
+			state.status = state.messages.Tools.TabMoveBusy
+			return nil, false
 		}
 	}
 	payload := &tabPayload{title: dto.Title, dto: dto}
-	payload.managedCols, payload.managed = state.managedWorkspaceColumns[id]
-	payload.temporaryCols, payload.temporary = state.temporaryWorkspaceColumns[id]
+	payload.managedLayout, payload.managed = state.managedWorkspaceLayouts[id]
+	payload.temporaryLayout, payload.temporary = state.temporaryWorkspaceLayouts[id]
 	for _, pane := range dto.Panes {
 		if pane.SessionID == 0 {
 			continue
@@ -220,6 +337,11 @@ func (state *State) detachWorkspace(id layoutcore.WorkspaceID) (*tabPayload, boo
 		if state.modalSession == session.ID {
 			state.closeModal()
 		}
+		// A file panel's own connection is not a tab, but its prompt is just as
+		// much this window's while the tab is here.
+		if files := session.files; files != nil && files.dedicated != nil && state.modalSession == files.dedicated.session.ID {
+			state.closeModal()
+		}
 		if state.broadcast == id {
 			state.broadcast = 0
 		}
@@ -231,8 +353,8 @@ func (state *State) detachWorkspace(id layoutcore.WorkspaceID) (*tabPayload, boo
 		}
 	}
 	_, _ = state.deck.RemoveWorkspace(id, nil)
-	delete(state.temporaryWorkspaceColumns, id)
-	delete(state.managedWorkspaceColumns, id)
+	delete(state.temporaryWorkspaceLayouts, id)
+	delete(state.managedWorkspaceLayouts, id)
 	kept := state.sessions[:0]
 	for _, session := range state.sessions {
 		if !payloadHolds(payload, session.ID) {
@@ -269,6 +391,9 @@ func payloadHolds(payload *tabPayload, id uint32) bool {
 // among the tabs, or docked beside a pane. It reports whether it did; on false
 // nothing here changed.
 func (state *State) attachPayload(payload *tabPayload, drop tabDrop) bool {
+	// Live sessions may arrive with the tab; the watcher has to start here even
+	// if no connection status wakes the window afterwards.
+	defer state.syncLinkWatch()
 	if payload == nil || len(payload.sessions) == 0 && len(payload.dto.Panes) == 0 {
 		return false
 	}
@@ -297,10 +422,17 @@ func (state *State) attachPayload(payload *tabPayload, drop tabDrop) bool {
 				session.HostID = host.ID
 			}
 		}
-		session.Title = state.uniqueSessionTitle(session.Title, 0)
+		session.Title = cleanSessionTitle(session.Title)
+		session.Mention = state.uniqueMentionName(session.Title, session.ID)
 		state.sessions = append(state.sessions, session)
 		moved := &state.sessions[len(state.sessions)-1]
 		moved.paneSlot = state.claimPaneSlot()
+		if files := moved.files; files != nil && files.dedicated != nil {
+			// The hidden prompt session takes this window's numbering, so its
+			// number cannot collide with a tab that arrives later.
+			files.dedicated.session.ID = state.nextSessionID
+			state.nextSessionID++
+		}
 		if moved.term != nil {
 			// What the terminal kept of the window it left: its row cache is made
 			// for that window's look, and its callbacks and text handlers name
@@ -327,16 +459,16 @@ func (state *State) attachPayload(payload *tabPayload, drop tabDrop) bool {
 	if docking {
 		destinationIdentity := state.workspaceIdentity(dockInto)
 		sourceIdentity := workspaceIdentity{
-			managed:          payload.managed,
-			managedColumns:   payload.managedCols,
-			temporary:        payload.temporary,
-			temporaryColumns: payload.temporaryCols,
+			managed:         payload.managed,
+			managedLayout:   payload.managedLayout,
+			temporary:       payload.temporary,
+			temporaryLayout: payload.temporaryLayout,
 		}
 		if _, err := state.deck.Dock(dockInto, id, drop.pane, drop.edge.axis(), drop.edge.placement()); err != nil {
 			_, _ = state.deck.RemoveWorkspace(id, nil)
 			state.deck.ActivateWorkspace(dockInto)
-			delete(state.temporaryWorkspaceColumns, id)
-			delete(state.managedWorkspaceColumns, id)
+			delete(state.temporaryWorkspaceLayouts, id)
+			delete(state.managedWorkspaceLayouts, id)
 			keep := len(state.sessions) - len(added)
 			clear(state.sessions[keep:])
 			state.sessions = state.sessions[:keep]
@@ -347,10 +479,10 @@ func (state *State) attachPayload(payload *tabPayload, drop tabDrop) bool {
 		id = dockInto
 	} else {
 		state.restoreWorkspaceIdentity(id, workspaceIdentity{
-			managed:          payload.managed,
-			managedColumns:   payload.managedCols,
-			temporary:        payload.temporary,
-			temporaryColumns: payload.temporaryCols,
+			managed:         payload.managed,
+			managedLayout:   payload.managedLayout,
+			temporary:       payload.temporary,
+			temporaryLayout: payload.temporaryLayout,
 		})
 	}
 	for _, sessionID := range added {
@@ -374,29 +506,29 @@ func (state *State) attachPayload(payload *tabPayload, drop tabDrop) bool {
 
 // workspaceIdentity is the in-memory metadata attached to one workspace tab.
 type workspaceIdentity struct {
-	managed          bool
-	managedColumns   uint8
-	temporary        bool
-	temporaryColumns uint8
+	managed         bool
+	managedLayout   layoutcore.LayoutSpec
+	temporary       bool
+	temporaryLayout layoutcore.LayoutSpec
 }
 
 func (state *State) workspaceIdentity(id layoutcore.WorkspaceID) workspaceIdentity {
-	columns, managed := state.managedWorkspaceColumns[id]
-	temporaryColumns, temporary := state.temporaryWorkspaceColumns[id]
+	layout, managed := state.managedWorkspaceLayouts[id]
+	temporaryLayout, temporary := state.temporaryWorkspaceLayouts[id]
 	return workspaceIdentity{
-		managed: managed, managedColumns: columns,
-		temporary: temporary, temporaryColumns: temporaryColumns,
+		managed: managed, managedLayout: layout,
+		temporary: temporary, temporaryLayout: temporaryLayout,
 	}
 }
 
 func (state *State) restoreWorkspaceIdentity(id layoutcore.WorkspaceID, identity workspaceIdentity) {
-	delete(state.managedWorkspaceColumns, id)
-	delete(state.temporaryWorkspaceColumns, id)
+	delete(state.managedWorkspaceLayouts, id)
+	delete(state.temporaryWorkspaceLayouts, id)
 	if identity.managed {
-		state.managedWorkspaceColumns[id] = identity.managedColumns
+		state.managedWorkspaceLayouts[id] = identity.managedLayout
 	}
 	if identity.temporary {
-		state.temporaryWorkspaceColumns[id] = identity.temporaryColumns
+		state.temporaryWorkspaceLayouts[id] = identity.temporaryLayout
 	}
 }
 
@@ -405,20 +537,20 @@ func (state *State) restoreWorkspaceIdentity(id layoutcore.WorkspaceID, identity
 func mergeWorkspaceIdentities(destination, source workspaceIdentity) workspaceIdentity {
 	result := destination
 	if !result.managed && source.managed {
-		result.managed, result.managedColumns = true, source.managedColumns
+		result.managed, result.managedLayout = true, source.managedLayout
 	}
 	if source.temporary || destination.temporary {
 		result.temporary = true
 		if !result.managed {
 			result.managed = true
 			switch {
-			case destination.temporary && destination.temporaryColumns != 0:
-				result.managedColumns = destination.temporaryColumns
-			case source.temporary && source.temporaryColumns != 0:
-				result.managedColumns = source.temporaryColumns
+			case destination.temporary && destination.temporaryLayout.Kind != 0:
+				result.managedLayout = destination.temporaryLayout
+			case source.temporary && source.temporaryLayout.Kind != 0:
+				result.managedLayout = source.temporaryLayout
 			}
 		}
-		result.temporaryColumns = result.managedColumns
+		result.temporaryLayout = result.managedLayout
 	}
 	return result
 }

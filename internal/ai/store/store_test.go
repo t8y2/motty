@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -52,6 +53,7 @@ func TestProvidersModelsSettings(t *testing.T) {
 	}
 	p.Name = "A2"
 	p.Enabled = false
+	p.ModelsURL = "https://models.example.com/v1"
 	if err := s.SaveProvider(p); err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +64,7 @@ func TestProvidersModelsSettings(t *testing.T) {
 	if err := s.SaveProvider(Provider{ID: "bad", Kind: "nope"}); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("kind: %v", err)
 	}
-	if err := s.SaveModels("p1", []Model{{"p1", "m1", true}, {"p1", "m2", false}}); err != nil {
+	if err := s.SaveModels("p1", []Model{{ProviderID: "p1", Name: "m1", Enabled: true}, {ProviderID: "p1", Name: "m2", Enabled: false}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SetModelEnabled("p1", "m2", true); err != nil {
@@ -75,7 +77,7 @@ func TestProvidersModelsSettings(t *testing.T) {
 	if len(ms) != 2 || !ms[1].Enabled {
 		t.Fatalf("%v", ms)
 	}
-	if err := s.SaveModels("p1", []Model{{"p1", "m3", true}}); err != nil {
+	if err := s.SaveModels("p1", []Model{{ProviderID: "p1", Name: "m3", Enabled: true}}); err != nil {
 		t.Fatal(err)
 	}
 	if ms, _ = s.Models(); len(ms) != 1 || ms[0].Name != "m3" {
@@ -647,5 +649,101 @@ func TestAuditCutsALongSummaryOnACharacterBoundaryAndNeedsAToolAndOutcome(t *tes
 	}
 	if err := s.RecordAudit(AuditEntry{Tool: "x"}); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("no outcome: %v", err)
+	}
+}
+
+func TestModelReasoningPersistenceAndRetention(t *testing.T) {
+	s, _ := openTemp(t)
+	p := Provider{ID: "p1", Name: "Provider", Kind: "openai", BaseURL: "https://api.openai.com", Enabled: true}
+	if err := s.SaveProvider(p); err != nil {
+		t.Fatal(err)
+	}
+
+	modelWithReasoning := Model{
+		ProviderID: "p1",
+		Name:       "o3-mini",
+		Enabled:    true,
+		Reasoning: &ReasoningConfig{
+			Levels:  []string{"low", "medium", "high"},
+			Default: "medium",
+		},
+	}
+	modelPlain := Model{
+		ProviderID: "p1",
+		Name:       "gpt-4o",
+		Enabled:    true,
+	}
+
+	if err := s.SaveModels("p1", []Model{modelWithReasoning, modelPlain}); err != nil {
+		t.Fatal(err)
+	}
+
+	models, err := s.Models()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 2 {
+		t.Fatalf("expected 2 models, got %d", len(models))
+	}
+
+	var foundO3, found4o *Model
+	for i := range models {
+		if models[i].Name == "o3-mini" {
+			foundO3 = &models[i]
+		} else if models[i].Name == "gpt-4o" {
+			found4o = &models[i]
+		}
+	}
+
+	if foundO3 == nil || foundO3.Reasoning == nil {
+		t.Fatalf("expected o3-mini to have reasoning config, got %+v", foundO3)
+	}
+	if !slices.Equal(foundO3.Reasoning.Levels, []string{"low", "medium", "high"}) || foundO3.Reasoning.Default != "medium" {
+		t.Fatalf("unexpected o3 reasoning: %+v", foundO3.Reasoning)
+	}
+	if found4o == nil || found4o.Reasoning != nil {
+		t.Fatalf("expected gpt-4o to have nil reasoning, got %+v", found4o)
+	}
+
+	// Test SetModelReasoning
+	updatedCfg := &ReasoningConfig{
+		Levels:  []string{"low", "high"},
+		Default: "high",
+	}
+	if err := s.SetModelReasoning("p1", "o3-mini", updatedCfg, false); err != nil {
+		t.Fatal(err)
+	}
+	models, _ = s.Models()
+	for _, m := range models {
+		if m.Name == "o3-mini" {
+			if !slices.Equal(m.Reasoning.Levels, []string{"low", "high"}) || m.Reasoning.Default != "high" {
+				t.Fatalf("updated reasoning mismatch: %+v", m.Reasoning)
+			}
+		}
+	}
+
+	// Test SetModelReasoning disabled
+	if err := s.SetModelReasoning("p1", "o3-mini", nil, true); err != nil {
+		t.Fatal(err)
+	}
+	models, _ = s.Models()
+	for _, m := range models {
+		if m.Name == "o3-mini" {
+			if !m.ReasoningDisabled || m.Reasoning != nil {
+				t.Fatalf("expected o3-mini to be ReasoningDisabled, got %+v", m)
+			}
+		}
+	}
+
+	// Re-enable with custom config
+	_ = s.SetModelReasoning("p1", "o3-mini", updatedCfg, false)
+
+	// Test retention: SaveModels without reasoning config should keep existing reasoning config
+	if err := s.SaveModels("p1", []Model{{ProviderID: "p1", Name: "o3-mini", Enabled: true}}); err != nil {
+		t.Fatal(err)
+	}
+	models, _ = s.Models()
+	if len(models) != 1 || models[0].Reasoning == nil || models[0].Reasoning.Default != "high" {
+		t.Fatalf("expected retained reasoning after SaveModels, got %+v", models)
 	}
 }

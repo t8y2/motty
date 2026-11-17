@@ -163,7 +163,7 @@ func (state *State) applyHostCatalog(document hostCatalogDocument) (added, dupli
 		if !ok {
 			continue
 		}
-		if state.hostIndexByEndpoint(host) >= 0 {
+		if state.hostIndexSame(host) >= 0 {
 			duplicates++
 			continue
 		}

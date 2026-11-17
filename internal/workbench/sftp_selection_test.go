@@ -3,14 +3,14 @@ package workbench
 import (
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // press delivers a primary press on a row as the runtime does, then the click on
 // release when the press was not handled.
-func pressSFTPRow(state *State, view *sftpView, index int, modifiers ui.Modifiers) ui.EventResult {
+func pressSFTPRow(state *State, view *sftpView, index int, modifiers gfx.Modifiers) gfx.EventResult {
 	target := contextID(hitSFTPEntryList.At(index - view.first))
-	result := state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, ClickCount: 1, Modifiers: modifiers, Target: target})
+	result := state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 1, Modifiers: modifiers, Target: target})
 	if !result.Handled {
 		state.Click(target)
 	}
@@ -54,16 +54,16 @@ func TestClickingRowsOneByOneSelectsOnlyTheLastOne(t *testing.T) {
 func TestCommandOrControlClickTogglesAndShiftClickSelectsARange(t *testing.T) {
 	state, view := openThreeRowSFTP(t)
 	pressSFTPRow(state, view, 0, 0)
-	pressSFTPRow(state, view, 2, ui.ModifierMeta)
+	pressSFTPRow(state, view, 2, gfx.ModifierMeta)
 	if got := selectedRows(view); len(got) != 2 || got[0] != 0 || got[1] != 2 {
 		t.Fatalf("after Command-click: %v", got)
 	}
-	pressSFTPRow(state, view, 0, ui.ModifierControl)
+	pressSFTPRow(state, view, 0, gfx.ModifierControl)
 	if got := selectedRows(view); len(got) != 1 || got[0] != 2 {
 		t.Fatalf("Control-click on a selected row must unselect it: %v", got)
 	}
 	pressSFTPRow(state, view, 0, 0)
-	pressSFTPRow(state, view, 2, ui.ModifierShift)
+	pressSFTPRow(state, view, 2, gfx.ModifierShift)
 	if got := selectedRows(view); len(got) != 3 || got[0] != 0 || got[2] != 2 {
 		t.Fatalf("after Shift-click from row 0 to 2: %v", got)
 	}
@@ -83,9 +83,9 @@ func TestRowPressIsHandledSoNoClickTogglesItAgain(t *testing.T) {
 	}
 }
 
-func rightClickSFTPRow(state *State, view *sftpView, index int) ui.EventResult {
+func rightClickSFTPRow(state *State, view *sftpView, index int) gfx.EventResult {
 	target := contextID(hitSFTPEntryList.At(index - view.first))
-	return state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonSecondary, ClickCount: 1, Target: target})
+	return state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, ClickCount: 1, Target: target})
 }
 
 // Right-clicking a row of the file list opens a menu whose rows do what the
@@ -100,7 +100,7 @@ func TestRightClickingAFileRowOpensItsMenu(t *testing.T) {
 		t.Fatalf("right-clicking an unselected row must select it alone: %v", got)
 	}
 	canvas, _ := paintedTexts(state)
-	for _, id := range []ui.ID{hitSFTPMenuOpen, hitSFTPMenuDownload, hitSFTPMenuRename, hitSFTPMenuDelete} {
+	for _, id := range []gfx.ID{hitSFTPMenuOpen, hitSFTPMenuDownload, hitSFTPMenuRename, hitSFTPMenuDelete} {
 		if _, ok := hitByID(canvas, id); !ok {
 			t.Fatalf("the menu has no row %s", tree.Text(id))
 		}
@@ -114,7 +114,7 @@ func TestRightClickingAFileRowOpensItsMenu(t *testing.T) {
 func TestRightClickingASelectedRowKeepsTheSelection(t *testing.T) {
 	state, view := openThreeRowSFTP(t)
 	pressSFTPRow(state, view, 0, 0)
-	pressSFTPRow(state, view, 2, ui.ModifierMeta)
+	pressSFTPRow(state, view, 2, gfx.ModifierMeta)
 	rightClickSFTPRow(state, view, 2)
 	if got := selectedRows(view); len(got) != 2 {
 		t.Fatalf("the menu of a selected row acts on the whole selection: %v", got)

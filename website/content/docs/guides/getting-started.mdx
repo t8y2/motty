@@ -45,6 +45,22 @@ the extra field automatically.
   fingerprint you have not compared with the server.
 </Callout>
 
+## Closing the window
+
+Closing the window does not quit Motty: it hides it into the status area, and the
+sessions stay connected. The icon brings the window back, opens a new local
+terminal, or quits. The first time a window hides, a notification says so.
+
+To make closing the last window quit instead, choose **Quit** under
+**Settings → General → Closing the window**. With that setting, closing a
+window that still has sessions asks for confirmation first.
+
+By default, opening Motty again from a desktop shortcut or the Windows taskbar
+menu shows an existing window. Choose **New window** under
+**Settings → General → When launched again** to open a new window instead.
+Motty still runs as a single process; connection links and command-line targets
+retain their usual behavior.
+
 ## The command palette
 
 Almost everything is a command in the palette: **Command+Shift+P** on macOS,

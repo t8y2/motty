@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -12,7 +12,7 @@ func TestWorkspaceLibraryCardsFollowLayoutAndKeepOpenInHeader(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.activeSection = sectionWorkspaces
 	state.templates = []WorkspaceTemplate{mustWorkspaceTemplate(t, "API", workspaceCatalogIDs(state, 0, 1, 2), 2)}
-	canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	header := panelHit(t, canvas, hitWorkspaceTemplateRowList.At(0)).Bounds
 	open := panelHit(t, canvas, hitWorkspaceTemplateOpen.At(0)).Bounds
 	if open.Y < header.Y || open.Y+open.Height > header.Y+header.Height {
@@ -34,15 +34,15 @@ func TestWorkspaceArrangementApplyPreservesSessionsAndTemplate(t *testing.T) {
 	active, dials := state.activeSessionID, len(world.configs)
 	before := paneSessionIDs(state.deck.Panes(workspace, nil))
 	state.openWorkspaceArrangement()
-	state.workspaceLayoutDraft.columns = 2
+	state.workspaceLayoutDraft.layout = layoutcore.GridSpec(2)
 	moveWorkspaceItem(state.workspaceLayoutDraft.items, 0, 2)
 	if !slices.Equal(before, paneSessionIDs(state.deck.Panes(workspace, nil))) {
 		t.Fatal("staging a layout changed live panes")
 	}
 	state.applyWorkspaceArrangement()
 	after := paneSessionIDs(state.deck.Panes(workspace, nil))
-	if !slices.Equal(after, []uint32{before[1], before[2], before[0]}) || state.managedWorkspaceColumns[workspace] != 2 {
-		t.Fatalf("apply order %v, columns %d", after, state.managedWorkspaceColumns[workspace])
+	if !slices.Equal(after, []uint32{before[1], before[2], before[0]}) || !isGrid(state.managedWorkspaceLayouts[workspace], 2) {
+		t.Fatalf("apply order %v, columns %+v", after, state.managedWorkspaceLayouts[workspace])
 	}
 	if !slices.Equal(sessions, sessionIDs(state.sessions)) || state.activeSessionID != active || len(world.configs) != dials {
 		t.Fatal("applying layout changed session identity or reconnected a host")
@@ -53,14 +53,14 @@ func TestWorkspaceArrangementRejectsChangedRuntime(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	workspace := launchTemporaryWorkspace(t, state, 0, 1)
 	state.openWorkspaceArrangement()
-	state.workspaceLayoutDraft.columns = 1
+	state.workspaceLayoutDraft.layout = layoutcore.GridSpec(1)
 	panes := state.deck.Panes(workspace, nil)
 	order := []layoutcore.PaneID{panes[0].ID, panes[1].ID}
-	if err := state.deck.SetGrid(workspace, order, 2); err != nil {
+	if err := state.deck.SetLayout(workspace, order, layoutcore.GridSpec(2)); err != nil {
 		t.Fatal(err)
 	}
 	state.applyWorkspaceArrangement()
-	if state.workspaceLayoutDraft.err == "" || state.managedWorkspaceColumns[workspace] != 2 {
+	if state.workspaceLayoutDraft.err == "" || !isGrid(state.managedWorkspaceLayouts[workspace], 2) {
 		t.Fatal("stale runtime layout was applied")
 	}
 }

@@ -2,7 +2,7 @@ package workbench
 
 import (
 	"fmt"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 
 	layoutcore "motty/internal/workspace"
 )
@@ -97,16 +97,20 @@ func (state *State) toggleBroadcast() {
 // clickTerminalTools handles the controls of the terminal's tools: color
 // scheme cards, highlight rules, snippets and broadcast. It reports whether the
 // id was one of them.
-func (state *State) clickTerminalTools(id ui.ID) bool {
+func (state *State) clickTerminalTools(id gfx.ID) bool {
 	switch {
 	case id == hitBroadcast:
 		state.toggleBroadcast()
-	case id.Scope() == hitSettingsSchemeList:
+	case id.Scope() == hitSettingsSchemeList || id.Scope() == hitSchemeDrawerList:
 		index := item(id)
-		schemeID, _, _ := state.schemeAt(index)
-		if state.setTerminalScheme(schemeID) {
-			state.save()
+		if index < state.schemeTotal() {
+			schemeID, _, _ := state.schemeAt(index)
+			if state.setTerminalScheme(schemeID) {
+				state.save()
+			}
 		}
+	case id == hitSchemeBrowseAll:
+		state.openSchemeBrowser()
 	case id == hitSettingsHighlightToggle:
 		if state.setBuiltinHighlight(state.highlighting.builtinOff) {
 			state.save()
@@ -117,14 +121,15 @@ func (state *State) clickTerminalTools(id ui.ID) bool {
 	case id == hitSettingsCopyOnSelect:
 		state.terminalCopyOnSelect = !state.terminalCopyOnSelect
 		state.save()
-	case id == hitSettingsTabTitle:
-		state.terminalTabTitle = !state.terminalTabTitle
-		state.save()
 	case id == hitSettingsLatencyToggle:
 		state.terminalShowLatency = !state.terminalShowLatency
+		state.syncLatencyToolbarEntry()
 		state.save()
 	case id == hitSettingsRightClickPaste:
 		state.terminalRightClickPaste = !state.terminalRightClickPaste
+		state.save()
+	case id == hitSettingsInputClick:
+		state.terminalInputClickOff = !state.terminalInputClickOff
 		state.save()
 	case id == hitSettingsBellToggle:
 		state.terminalBellOff = !state.terminalBellOff
@@ -159,12 +164,16 @@ func (state *State) clickTerminalTools(id ui.ID) bool {
 		}
 	case id == hitImportSessions:
 		state.modal = modalImportSessions
+	case state.clickCredentialSettings(id):
+	case state.clickHostTagSettings(id):
+	case id == hitSettingsHighlightManage:
+		state.openRuleManager(ruleDeleteHighlight)
+	case id == hitSettingsAutofillManage:
+		state.openRuleManager(ruleDeleteAutofill)
 	case id == hitSettingsAutofillAdd:
 		state.openAutofillDialog(nil)
 	case id == hitSettingsAutofillSudo:
 		state.openAutofillSudoPreset()
-	case id == hitSettingsAutofillSu:
-		state.openAutofillSuPreset()
 	case id.Scope() == hitAutofillToggleList:
 		state.toggleAutofillRule(item(id))
 	case id.Scope() == hitAutofillEditList:

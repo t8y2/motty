@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
 	layoutcore "motty/internal/workspace"
 )
@@ -55,10 +55,10 @@ func TestSFTPFilterMatchesCaseAndUnicodeAndHighlightsTheMatch(t *testing.T) {
 		t.Fatalf("Unicode filter rows=%v, range=%d:%d", rowNames(view.rows), view.rows[0].matchStart, view.rows[0].matchEnd)
 	}
 
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	filter, ok := hitByID(&canvas, contextID(hitSFTPFilter))
-	if !ok || filter.Role != ui.RoleTextField || filter.Label != state.messages.Tools.FilesFilterLabel {
+	if !ok || filter.Role != gfx.RoleTextField || filter.Label != state.messages.Tools.FilesFilterLabel {
 		t.Fatalf("filter hit=%+v, present=%v", filter, ok)
 	}
 	foundAccent := false
@@ -128,19 +128,36 @@ func TestSFTPFilterRefreshesTheCompleteListingWhileFiltered(t *testing.T) {
 
 func TestSFTPFilterShortcutUsesTheFileListFocusAndLeavesTerminalFindAlone(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
-	find := state.shortcuts.chords[shortcutFind]
-	result := state.Shortcut(ui.KeyEvent{
-		Target: contextID(hitSFTPEntryList.At(0)), Modifiers: find.Modifiers, Text: string(find.Key),
+	find := state.shortcuts.chords.Chord(shortcutFind)
+	result := state.Shortcut(gfx.KeyEvent{
+		Target: contextID(hitSFTPEntryList.At(0)), Modifiers: find.Modifiers, Text: string(find.Char),
 	})
 	if !result.Handled || result.Focus != contextID(hitSFTPFilter) || !session.files.active().filterOpen || session.term.find.open {
 		t.Fatalf("file-list find result=%+v filter=%v terminal=%v", result, session.files.active().filterOpen, session.term.find.open)
 	}
 
-	result = state.Shortcut(ui.KeyEvent{
-		Target: contextID(hitTerminalList.At(int(session.ID))), Modifiers: find.Modifiers, Text: string(find.Key),
+	result = state.Shortcut(gfx.KeyEvent{
+		Target: contextID(terminalTestHit(state, session)), Modifiers: find.Modifiers, Text: string(find.Char),
 	})
 	if !result.Handled || result.Focus != hitTerminalFindField || !session.term.find.open {
 		t.Fatalf("terminal find result=%+v open=%v", result, session.term.find.open)
+	}
+}
+
+func TestSFTPFilterShortcutSelectsTheRetainedQuery(t *testing.T) {
+	state, session, _, _ := openTestSFTP(t)
+	replaceSFTPFilter(t, state, session, false, "notes")
+	folder := session.files.active()
+	folder.filterEditor.SetSelection(text.Range{Start: 0, End: 0})
+	find := state.shortcuts.chords.Chord(shortcutFind)
+	result := state.Shortcut(gfx.KeyEvent{
+		Target: contextID(hitSFTPEntryList.At(0)), Modifiers: find.Modifiers, Text: string(find.Char),
+	})
+	if !result.Handled || result.Focus != contextID(hitSFTPFilter) {
+		t.Fatalf("file-list find result=%+v", result)
+	}
+	if selected := folder.filterInputEditor().Selection(); selected.Start != 0 || selected.End != folder.filterInputEditor().RuneCount() {
+		t.Fatalf("filter selection = %+v, want all %d runes", selected, folder.filterInputEditor().RuneCount())
 	}
 }
 
@@ -222,11 +239,11 @@ func TestSFTPHiddenRemoteDefaultsOnAndStaysIndependentWithoutIO(t *testing.T) {
 
 func assertSFTPHiddenToggleLabel(t *testing.T, state *State, want string) {
 	t.Helper()
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	if want == state.messages.Tools.FilesShowHidden {
 		state.Click(contextID(hitSFTPHeaderMore))
 	}
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	id := contextID(hitSFTPHiddenToggle)
 	if want == state.messages.Tools.FilesShowHidden {
 		id = contextID(hitSFTPHeaderHidden)
@@ -291,7 +308,7 @@ func TestSFTPFilterKeepsVisibleSelectionAndDropsHiddenRows(t *testing.T) {
 	})
 	folder := &view.sftpFolder
 	folder.selectRow(0, 0)
-	folder.selectRow(len(folder.rows)-1, ui.ModifierShift)
+	folder.selectRow(len(folder.rows)-1, gfx.ModifierShift)
 	replaceSFTPFilter(t, state, session, false, "beta")
 	if len(view.rows) != 1 || view.rows[0].entry.Name != "beta.txt" {
 		t.Fatalf("filtered rows = %v", rowNames(view.rows))
@@ -346,7 +363,7 @@ func TestSFTPHeaderOverflowUsesMoreMenuForSecondaryFolderControls(t *testing.T) 
 	}
 }
 
-func containsCanvasText(canvas *ui.Canvas, value string) bool {
+func containsCanvasText(canvas *gfx.Canvas, value string) bool {
 	for _, text := range canvas.Texts() {
 		if text.Value == value {
 			return true
@@ -373,7 +390,9 @@ func TestSFTPFilterEscapeClearsThenClosesWithoutClosingThePanel(t *testing.T) {
 		return ok && context.Open && context.Kind == layoutcore.ContextSFTP
 	}
 
-	result := state.Key(ui.KeyEvent{Target: contextID(hitSFTPFilter), Key: ui.KeyEscape})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	result := state.Key(gfx.KeyEvent{Target: contextID(hitSFTPFilter), Key: gfx.KeyEscape})
 	if !result.Handled || !panelOpen() {
 		t.Fatalf("Escape in the filter closed the panel: %+v", result)
 	}
@@ -385,11 +404,11 @@ func TestSFTPFilterEscapeClearsThenClosesWithoutClosingThePanel(t *testing.T) {
 		t.Fatalf("focus left the filter: %v", result.Focus)
 	}
 
-	result = state.Key(ui.KeyEvent{Target: contextID(hitSFTPFilter), Key: ui.KeyEscape})
+	result = state.Key(gfx.KeyEvent{Target: contextID(hitSFTPFilter), Key: gfx.KeyEscape})
 	if !result.Handled || !panelOpen() || view.sftpFolder.filterOpen {
 		t.Fatalf("second Escape did not close the filter or closed the panel: %+v open=%v", result, view.sftpFolder.filterOpen)
 	}
-	if result.Focus != contextID(hitSFTPEntryList.At(0)) {
+	if result.Focus != sftpListRowID(t, view.active(), 0) {
 		t.Fatalf("closing the filter left focus at %v, want the first file", result.Focus)
 	}
 }

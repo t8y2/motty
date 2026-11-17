@@ -14,7 +14,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/keymap"
 	"motty/internal/sftpclient"
 )
 
@@ -80,7 +81,7 @@ func TestSFTPWindowWheelMatchesPanelAndPreservesPreciseDeltas(t *testing.T) {
 	list := w.ui.list[0]
 	expected := sftpFolder{rows: w.view.lfolder.rows, visibleRows: w.view.lfolder.visibleRows}
 	for _, delta := range []float32{1, 2, 17, 10, 144, -60} {
-		event := ui.ScrollEvent{X: list.X + 20, Y: list.Y + 20, DeltaY: delta}
+		event := gfx.ScrollEvent{X: list.X + 20, Y: list.Y + 20, DeltaY: delta}
 		scrollFolder(&expected, event)
 		host.windows[0].view.Scroll(event)
 		host.windows[0].view.Rest()
@@ -89,13 +90,41 @@ func TestSFTPWindowWheelMatchesPanelAndPreservesPreciseDeltas(t *testing.T) {
 		}
 	}
 	before := w.ui.offset[0]
-	w.scroll(ui.ScrollEvent{X: list.X + 20, Y: list.Y + 20, DeltaY: .25, Precise: true})
+	w.scroll(gfx.ScrollEvent{X: list.X + 20, Y: list.Y + 20, DeltaY: .25, Precise: true})
 	if math.Abs(float64(w.ui.offset[0]-before-.25)) > .001 {
 		t.Fatal("precise scroll was rounded")
 	}
 	w.ui.offset[0] = w.ui.bars[0].MaxOffsetY
-	if w.scroll(ui.ScrollEvent{X: list.X + 20, Y: list.Y + 20, DeltaY: 1, Precise: true}).Repaint {
+	if w.scroll(gfx.ScrollEvent{X: list.X + 20, Y: list.Y + 20, DeltaY: 1, Precise: true}).Repaint {
 		t.Fatal("edge scroll requested unnecessary repaint")
+	}
+}
+
+func TestSFTPWindowKeepsPaneRowKeyboardAndTypeahead(t *testing.T) {
+	_, w, _, host, _ := dualSFTPFixture(t, 1)
+	view := host.windows[0].view
+	view.Driver().Pump()
+	view.Rest()
+	folder := w.folder(false)
+	if len(folder.rows) < 2 || folder.listRowsScope.IsZero() {
+		t.Fatalf("remote pane declared %d rows in scope %v", len(folder.rows), folder.listRowsScope)
+	}
+	folder.selectRow(0, 0)
+	row := w.rowID(1, 0)
+	down := w.key(gfx.KeyEvent{Target: row, Key: gfx.KeyDown})
+	if !down.Handled || folder.selected != 1 {
+		t.Fatalf("Down on a pane row = %+v, selected %d", down, folder.selected)
+	}
+	if down.Focus != w.rowID(1, 1) || !down.FocusVisible {
+		t.Fatalf("Down did not focus the next row: %+v", down)
+	}
+	up := w.key(gfx.KeyEvent{Target: down.Focus, Key: gfx.KeyUp})
+	if !up.Handled || folder.selected != 0 {
+		t.Fatalf("Up on a pane row = %+v, selected %d", up, folder.selected)
+	}
+	typeahead := w.shortcut(gfx.KeyEvent{Target: row, Text: "n"})
+	if !typeahead.Handled || folder.selected != 1 || folder.rows[1].entry.Name != "notes.txt" {
+		t.Fatalf("typeahead = %+v, selected %d", typeahead, folder.selected)
 	}
 }
 
@@ -103,18 +132,27 @@ func TestSFTPWindowToolbarAndNativeFileActions(t *testing.T) {
 	state, w, remote, host, _ := dualSFTPFixture(t, 1.5)
 	view := host.windows[0].view
 	up := dualHit(t, view, sftpWindowUp[1])
-	for _, id := range []ui.ID{hitSFTPWindowUpload, hitSFTPWindowDownload} {
+	for _, id := range []gfx.ID{hitSFTPWindowUpload, hitSFTPWindowDownload} {
 		button := dualHit(t, view, id)
 		if button.X >= up.X || button.Y != up.Y {
 			t.Fatal("transfer buttons must precede remote up button")
 		}
 	}
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	w.paint(&canvas, w.ui.size)
+	// The window's own titlebar names the connection; nothing below it may repeat
+	// that name.
+	named := 0
 	for _, text := range canvas.Texts() {
 		if text.Value == w.session.Title+" · "+w.session.Address {
-			t.Fatal("duplicate connection title is still rendered")
+			named++
+			if text.Bounds.Y < 0 || text.Bounds.Y+text.Bounds.Height > TitlebarHeight {
+				t.Fatalf("connection title painted outside the titlebar: %+v", text.Bounds)
+			}
 		}
+	}
+	if named != 1 {
+		t.Fatalf("connection title painted %d times, want once in the titlebar", named)
 	}
 	selectRemote := func(name string) {
 		for i := range w.view.rows {
@@ -131,9 +169,9 @@ func TestSFTPWindowToolbarAndNativeFileActions(t *testing.T) {
 	view.Rest()
 	field := dualHit(t, view, hitSFTPDialogField)
 	view.Click(field.X+20, field.Y+10)
-	modifier := ui.ModifierControl
+	modifier := gfx.ModifierControl
 	if runtime.GOOS == "darwin" {
-		modifier = ui.ModifierMeta
+		modifier = gfx.ModifierMeta
 	}
 	view.Driver().ShortcutChord(modifier, 'a')
 	view.Type("renamed.yml")
@@ -314,14 +352,14 @@ func BenchmarkSFTPWindowScroll(b *testing.B) {
 			w.view.rows = prepareSFTPRows(nil, entries)
 			w.view.lfolder.rows = prepareSFTPRows(nil, entries)
 			w.view.lfolder.path = filepath.Clean(os.TempDir())
-			var canvas ui.Canvas
-			w.paint(&canvas, ui.Size{Width: 1200, Height: 800})
+			var canvas gfx.Canvas
+			w.paint(&canvas, gfx.Size{Width: 1200, Height: 800})
 			b.ReportAllocs()
 			for i := 0; b.Loop(); i++ {
 				w.ui.offset[0] = float32(i%64) * sftpRowHeight
 				w.wake()
 				canvas.Reset()
-				w.paint(&canvas, ui.Size{Width: 1200, Height: 800})
+				w.paint(&canvas, gfx.Size{Width: 1200, Height: 800})
 			}
 		})
 	}
@@ -340,7 +378,7 @@ func TestSFTPWindowDropOverlayKeepsTargetsAndShowsDirection(t *testing.T) {
 				}
 				before := len(view.Snapshot().Hits)
 				list := w.ui.list[1]
-				accepted, err := view.Drop(ui.FileDropEvent{Phase: ui.FileDropOver, X: list.X + 30, Y: list.Y + list.Height - 20})
+				accepted, err := view.Drop(gfx.FileDropEvent{Phase: gfx.FileDropOver, X: list.X + 30, Y: list.Y + list.Height - 20})
 				if err != nil || !accepted {
 					t.Fatal("system upload hover refused", err)
 				}
@@ -362,12 +400,12 @@ func TestSFTPWindowDropOverlayKeepsTargetsAndShowsDirection(t *testing.T) {
 					os.MkdirAll(dir, 0700)
 					view.Screenshot(filepath.Join(dir, fmt.Sprintf("overlay-%.2f-light-%t.png", scale, light)))
 				}
-				view.Drop(ui.FileDropEvent{Phase: ui.FileDropLeave})
+				view.Drop(gfx.FileDropEvent{Phase: gfx.FileDropLeave})
 				if w.drag.active {
 					t.Fatal("leaving did not clear overlay")
 				}
 				list = w.ui.list[0]
-				w.drag = sftpWindowDrag{active: true, at: ui.Point{X: list.X + 30, Y: list.Y + list.Height - 20}}
+				w.drag = sftpWindowDrag{active: true, at: gfx.Point{X: list.X + 30, Y: list.Y + list.Height - 20}}
 				w.window.Invalidate()
 				view.Driver().Pump()
 				if !contains(state.messages.SFTPWindow.DropDownloadHint) {
@@ -395,5 +433,69 @@ func TestSFTPWindowGlobalHistoryRemovalRepaintsNativeQueue(t *testing.T) {
 	view.Driver().Pump()
 	if w.queueCount() != 0 || w.ui.queueBounds.Width != 0 {
 		t.Fatal("global removal left a stale native queue")
+	}
+}
+
+func TestSFTPWindowMovesSelectionThroughContextMenu(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		fail bool
+	}{
+		{name: "file and folder"},
+		{name: "partial failure", fail: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			state, w, remote, host, _ := dualSFTPFixture(t, 1)
+			preview := host.windows[0].view
+			const target = "/home/test/target"
+			if err := remote.Mkdir(target); err != nil {
+				t.Fatal(err)
+			}
+			if tc.fail {
+				remote.mu.Lock()
+				remote.renameErrAt = map[string]error{"/home/test/docs": os.ErrPermission}
+				remote.mu.Unlock()
+			}
+			w.refresh(false)
+			dualWait(t, state, w, preview, func() bool { return !w.view.busy && len(w.view.rows) == 3 })
+			w.view.sftpFolder.selectRow(sftpRowIndex(t, w.view, "docs"), 0)
+			w.view.sftpFolder.selectRow(sftpRowIndex(t, w.view, "notes.txt"), keymap.Primary)
+			w.selectionChanged(false)
+			w.invalidate()
+			if err := preview.RightClickLabel("notes.txt"); err != nil {
+				t.Fatal(err)
+			}
+			dualClickID(t, preview, sftpWindowMenuActions.At(sftpWindowActionIndex(hitSFTPMove)))
+			if w.view.dialog != sftpDialogMove || len(w.view.dialogEntries) != 2 {
+				t.Fatal("Move to did not capture both selected entries")
+			}
+
+			app.TextEvent{Kind: app.TextCommandEvent, Command: app.TextSelectAll}.Apply(&w.view.dialogEditor)
+			w.view.dialogEditor.Insert("docs")
+			w.click(hitSFTPDialogSubmit)
+			if w.view.dialog != sftpDialogMove || w.view.dialogError != state.messages.SFTPErrMoveInside {
+				t.Fatal("Move to allowed the selected folder as the destination")
+			}
+			app.TextEvent{Kind: app.TextCommandEvent, Command: app.TextSelectAll}.Apply(&w.view.dialogEditor)
+			w.view.dialogEditor.Insert("target")
+			w.click(hitSFTPDialogSubmit)
+			dualWait(t, state, w, preview, func() bool {
+				return !w.view.busy && sftpRowIndexOrNegative(w.view, "notes.txt") < 0
+			})
+
+			if got := remoteText(remote, target+"/notes.txt"); got != "hello world" {
+				t.Fatalf("moved file has content %q", got)
+			}
+			if remains := sftpRowIndexOrNegative(w.view, "docs") >= 0; remains != tc.fail {
+				t.Fatalf("source listing contains docs: %v, want %v", remains, tc.fail)
+			}
+			if tc.fail {
+				if len(w.notices.items) != 1 || !strings.Contains(w.notices.items[0].detail, "/home/test/docs") {
+					t.Fatalf("notice did not identify the failed folder: %+v", w.notices.items)
+				}
+			} else if entry, err := remote.Stat(target + "/docs"); err != nil || !entry.IsDir() {
+				t.Fatalf("selected folder was not moved: %v, %v", entry, err)
+			}
+		})
 	}
 }

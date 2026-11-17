@@ -78,6 +78,8 @@ func (folder *sftpFolder) sortRows(order sftpWindowSort) {
 			folder.anchor = i
 		}
 	}
+	folder.listNeedsSeed = true
+	folder.listPendingFirst = folder.first
 }
 
 func (view *sftpView) sortFilteredFolder(local bool) {

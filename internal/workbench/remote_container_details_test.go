@@ -5,26 +5,78 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/keymap"
 )
 
 func openContainerDetailsForTest(t *testing.T) (*State, *remoteServer) {
 	t.Helper()
 	state, server, _ := openRemoteToolsDialog(t)
-	state.Click(hitRemoteTabContainers)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 2 })
 	selectRemoteToolsRow(state, 0)
-	state.Click(hitRemoteContainerDetails)
+	clickRemoteToolsAction(t, state, hitRemoteContainerDetails)
 	if !state.remote.containerDetails.open || state.remote.containerDetails.container.Name != "web" {
 		t.Fatalf("container details did not open: %+v", state.remote.containerDetails)
 	}
 	return state, server
 }
 
+func TestContainerRowDoubleClickOpensDetails(t *testing.T) {
+	state, _, _ := openRemoteToolsDialog(t)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
+	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 2 })
+
+	clickRemoteToolsRow(t, state, 0)
+	if state.remote.containerDetails.open {
+		t.Fatal("a single click opened container details")
+	}
+	if state.remote.selected != state.remote.rows[0].key {
+		t.Fatal("a single click did not select the container")
+	}
+	doubleClickRemoteToolsRow(t, state, 0)
+	if !state.remote.containerDetails.open || state.remote.containerDetails.container.Name != "web" {
+		t.Fatalf("double-clicking a container did not open its details: %+v", state.remote.containerDetails)
+	}
+}
+
+func TestContainerContextMenuIncludesFooterActions(t *testing.T) {
+	state, _, _ := openRemoteToolsDialog(t)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
+	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 2 })
+	actions, count := state.remoteToolActions()
+
+	rightClickRemoteToolsRow(t, state, 0)
+	if state.remote.selected != state.remote.rows[0].key {
+		t.Fatal("right-click did not select the container")
+	}
+	canvas := remoteToolsPaint(t, state)
+	for _, action := range actions[:count] {
+		_, found := hitByLabelRoleLast(canvas, action.Label, gfx.RoleMenuItem)
+		if action.ID == hitRemoteClose {
+			if found {
+				t.Error("container context menu includes Close")
+			}
+			continue
+		}
+		if !found {
+			t.Errorf("container context menu lacks %q", action.Label)
+		}
+	}
+	details, ok := hitByLabelRoleLast(canvas, state.messages.Tools.RemoteContainerDetails, gfx.RoleMenuItem)
+	if !ok {
+		t.Fatal("container context menu has no details action")
+	}
+	clickRemoteToolsPageHit(t, state, details)
+	if !state.remote.containerDetails.open || state.remote.containerDetails.container.Name != "web" {
+		t.Fatal("container context menu did not open details")
+	}
+}
+
 func TestContainerDetailsLoadsSelectableEnvironment(t *testing.T) {
 	state, server := openContainerDetailsForTest(t)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	for _, value := range []string{
 		state.messages.Tools.RemoteContainerDetailsTitle,
 		state.messages.Tools.RemoteContainerOverview,
@@ -35,7 +87,7 @@ func TestContainerDetailsLoadsSelectableEnvironment(t *testing.T) {
 		}
 	}
 
-	state.Click(hitRemoteContainerDetailsEnvironment)
+	clickRemoteToolsDetailTab(t, state, hitRemoteContainerDetailsEnvironment)
 	waitFor(t, state, func() bool { return !state.remote.containerDetails.loading })
 	if server.ran("docker inspect --format '{{json .Config.Env}}'") != 1 ||
 		state.remote.containerDetails.failed || len(state.remote.containerDetails.environment) != 3 {
@@ -43,15 +95,15 @@ func TestContainerDetailsLoadsSelectableEnvironment(t *testing.T) {
 			state.remote.containerDetails.environment, state.remote.containerDetails.status, server.commands)
 	}
 	canvas.Reset()
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	for _, value := range []string{"PATH", "SERVICE"} {
 		if !remoteCanvasHasText(&canvas, value) {
 			t.Errorf("container environment lacks %q", value)
 		}
 	}
 	detailsText := &state.remote.containerDetails.text
-	result := state.Shortcut(ui.KeyEvent{
-		Text: "a", Modifiers: defaultShortcutModifier(), Target: hitRemoteContainerDetailsText,
+	result := state.Shortcut(gfx.KeyEvent{
+		Text: "a", Modifiers: keymap.Primary, Target: hitRemoteContainerDetailsText,
 	})
 	if !result.Handled || !result.Repaint {
 		t.Fatalf("container environment select-all result=%+v", result)
@@ -66,22 +118,22 @@ func TestContainerDetailsLoadsSelectableEnvironment(t *testing.T) {
 	if !found {
 		t.Fatal("container detail text is not selectable")
 	}
-	start := ui.Point{X: textHit.Bounds.X + 4, Y: textHit.Bounds.Y + 4}
-	end := ui.Point{X: textHit.Bounds.X + textHit.Bounds.Width - 8, Y: textHit.Bounds.Bottom() - 4}
-	state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary,
+	start := gfx.Point{X: textHit.Bounds.X + 4, Y: textHit.Bounds.Y + 4}
+	end := gfx.Point{X: textHit.Bounds.X + textHit.Bounds.Width - 8, Y: textHit.Bounds.Bottom() - 4}
+	state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary,
 		X: start.X, Y: start.Y, Target: hitRemoteContainerDetailsText,
-		Viewport: ui.Size{Width: 1400, Height: 900},
+		Viewport: gfx.Size{Width: 1400, Height: 900},
 	})
-	state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Captured: true,
+	state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Captured: true,
 		X: end.X, Y: end.Y, Target: hitRemoteContainerDetailsText,
-		Viewport: ui.Size{Width: 1400, Height: 900},
+		Viewport: gfx.Size{Width: 1400, Height: 900},
 	})
-	state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Captured: true,
+	state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Captured: true,
 		X: end.X, Y: end.Y, Target: hitRemoteContainerDetailsText,
-		Viewport: ui.Size{Width: 1400, Height: 900},
+		Viewport: gfx.Size{Width: 1400, Height: 900},
 	})
 	selected, ok = state.remote.containerDetails.text.selectedText()
 	if !ok || !strings.Contains(selected, "PATH") {
@@ -92,8 +144,8 @@ func TestContainerDetailsLoadsSelectableEnvironment(t *testing.T) {
 		copied = value
 		return nil
 	}
-	result = state.Shortcut(ui.KeyEvent{
-		Text: "c", Modifiers: defaultShortcutModifier(), Target: hitRemoteContainerDetailsText,
+	result = state.Shortcut(gfx.KeyEvent{
+		Text: "c", Modifiers: keymap.Primary, Target: hitRemoteContainerDetailsText,
 	})
 	if !result.Handled || copied != selected {
 		t.Fatalf("copy result=%+v copied=%q, want %q", result, copied, selected)
@@ -103,13 +155,13 @@ func TestContainerDetailsLoadsSelectableEnvironment(t *testing.T) {
 func TestContainerDetailsReportsEnvironmentFailureAndClosesWithEscape(t *testing.T) {
 	state, server := openContainerDetailsForTest(t)
 	server.failures["docker inspect --format '{{json .Config.Env}}'"] = errors.New("exit status 1")
-	state.Click(hitRemoteContainerDetailsEnvironment)
+	clickRemoteToolsDetailTab(t, state, hitRemoteContainerDetailsEnvironment)
 	waitFor(t, state, func() bool { return !state.remote.containerDetails.loading })
 	if !state.remote.containerDetails.failed ||
 		!strings.Contains(state.remote.containerDetails.status, "denied by the test") {
 		t.Fatalf("container environment failure = %+v", state.remote.containerDetails)
 	}
-	result := state.Key(ui.KeyEvent{Key: ui.KeyEscape})
+	result := state.Key(gfx.KeyEvent{Key: gfx.KeyEscape})
 	if !result.Handled || state.remote.containerDetails.open || state.modal != modalRemoteTools {
 		t.Fatalf("Escape result=%+v details=%+v modal=%d", result, state.remote.containerDetails, state.modal)
 	}
@@ -118,13 +170,13 @@ func TestContainerDetailsReportsEnvironmentFailureAndClosesWithEscape(t *testing
 func TestContainerEnvironmentCanRetryAfterFailure(t *testing.T) {
 	state, server := openContainerDetailsForTest(t)
 	server.failures["docker inspect --format '{{json .Config.Env}}'"] = errors.New("exit status 1")
-	state.Click(hitRemoteContainerDetailsEnvironment)
+	clickRemoteToolsDetailTab(t, state, hitRemoteContainerDetailsEnvironment)
 	waitFor(t, state, func() bool { return !state.remote.containerDetails.loading })
 	if !state.remote.containerDetails.failed {
 		t.Fatal("first container environment read did not fail")
 	}
 	delete(server.failures, "docker inspect --format '{{json .Config.Env}}'")
-	state.Click(hitRemoteContainerDetailsEnvironment)
+	clickRemoteToolsDetailTab(t, state, hitRemoteContainerDetailsEnvironment)
 	waitFor(t, state, func() bool {
 		return !state.remote.containerDetails.loading && !state.remote.containerDetails.failed
 	})

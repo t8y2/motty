@@ -4,13 +4,13 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func TestAIRenameDialogButtons(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
-		hit   ui.ID
+		hit   gfx.ID
 		title string
 		want  string
 	}{
@@ -30,7 +30,7 @@ func TestAIRenameDialogButtons(t *testing.T) {
 				t.Fatal(err)
 			}
 			state.Click(hitAIToggle)
-			state.Click(hitAIHistory)
+			clickAIPanelPage(t, state, hitAIHistory)
 			state.Click(hitAIHistoryRename.At(0))
 			if state.modal != modalAIRename || state.ai.rename.id != conversation.ID {
 				t.Fatal("history action did not open the selected conversation")

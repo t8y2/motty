@@ -5,14 +5,14 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 )
 
 var (
 	hitRemoteSearch      = tree.ID(remoteToolsHits, "search")
-	hitRemoteSearchClear = tree.ID(remoteToolsHits, "search-clear")
 	hitRemoteSearchScope = tree.ID(remoteToolsHits, "search-scope")
 )
 
@@ -22,6 +22,10 @@ type remoteSearch struct {
 	editor text.Editor
 	input  app.TextInput
 	ready  bool
+	// field and fieldBound are the page field the tools window declares over the
+	// editor; the main window edits the same editor through RemoteToolsInput.
+	field      ui.Field
+	fieldBound bool
 }
 
 func (search *remoteSearch) queryEditor() *text.Editor {
@@ -30,6 +34,13 @@ func (search *remoteSearch) queryEditor() *text.Editor {
 		search.ready = true
 	}
 	return &search.editor
+}
+
+// selectQuery selects the whole query, so the Find shortcut's next typed rune
+// or paste replaces it instead of appending to it.
+func (search *remoteSearch) selectQuery() {
+	editor := search.queryEditor()
+	editor.SetSelection(text.Range{Start: 0, End: editor.RuneCount()})
 }
 
 // RemoteToolsInput exposes native editing without putting user queries in any
@@ -46,7 +57,7 @@ func (state *State) RemoteToolsInput(context app.TextInputContext) *app.TextInpu
 		before := search.editor.String()
 		event.Apply(&search.editor)
 		if before != search.editor.String() && state.remoteToolsVisible() && state.remote.tab == tab {
-			state.remote.page = 0
+			state.remote.processScroll = 0
 			state.rebuildRemoteRows()
 		}
 		next := app.TextStateOf(&search.editor)
@@ -90,57 +101,37 @@ func (state *State) clearRemoteSearch() {
 	search := &state.remote.searches[state.remote.tab]
 	search.editor = *text.NewEditor("")
 	search.ready = false
-	state.remote.page = 0
+	state.remote.processScroll = 0
 	state.rebuildRemoteRows()
 }
 
-func (state *State) remoteSearchShortcut(event ui.KeyEvent) ui.EventResult {
+func (state *State) remoteSearchShortcut(event gfx.KeyEvent) gfx.EventResult {
 	if !state.remoteToolsVisible() || event.Release {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
-	chord, ok := shortcutChordFromEvent(event)
+	chord, ok := keymap.FromEvent(event)
 	if !ok || state.shortcuts.actionFor(chord) != shortcutFind {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
-	if chord.Modifiers&(ui.ModifierControl|ui.ModifierMeta) == 0 && event.Target == hitRemoteSearch {
-		return ui.EventResult{}
+	if chord.Modifiers&(gfx.ModifierControl|gfx.ModifierMeta) == 0 && event.Target == hitRemoteSearch {
+		return gfx.EventResult{}
 	}
-	return ui.EventResult{Handled: true, Repaint: true, Focus: hitRemoteSearch, FocusVisible: true}
+	state.remote.searches[state.remote.tab].selectQuery()
+	return gfx.EventResult{Handled: true, Repaint: true, Focus: hitRemoteSearch, FocusVisible: true}
 }
 
-func (state *State) remoteSearchKey(event ui.KeyEvent) ui.EventResult {
-	if !state.remoteToolsVisible() || state.remote.auto.open || event.Release || event.Repeat || event.Key != ui.KeyEscape {
-		return ui.EventResult{}
+func (state *State) remoteSearchKey(event gfx.KeyEvent) gfx.EventResult {
+	if !state.remoteToolsVisible() || state.remote.auto.open || event.Release || event.Repeat || event.Key != gfx.KeyEscape {
+		return gfx.EventResult{}
 	}
 	search := &state.remote.searches[state.remote.tab]
-	if event.Target != hitRemoteSearch && search.queryEditor().String() == "" {
-		return ui.EventResult{}
+	if search.queryEditor().String() == "" {
+		// No query to clear: Escape belongs to the dialog's dismissal.
+		return gfx.EventResult{}
 	}
 	if _, composing := search.queryEditor().Composition(); composing && event.Target == hitRemoteSearch {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
-	result := ui.EventResult{Handled: true, Repaint: true}
-	if state.remote.searches[state.remote.tab].editor.String() != "" {
-		state.clearRemoteSearch()
-	} else {
-		result.Focus, result.FocusVisible = hitRemoteRefresh, true
-	}
-	return result
-}
-
-func (state *State) paintRemoteSearch(canvas *ui.Canvas, bounds ui.Rect) {
-	query := state.remote.searches[state.remote.tab].queryEditor().String()
-	clearSlot := components.InputGroupSlot{}
-	if query != "" {
-		clearSlot = components.InputGroupSlot{Kind: components.InputGroupSlotButton, ID: hitRemoteSearchClear,
-			Icon: lucideIcons[iconClose], Label: state.messages.Tools.RemoteSearchClear, ButtonSize: components.InputGroupButtonIconXS}
-	}
-	components.PaintInputGroup(canvas, state.Theme(), ui.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: 32}, components.InputGroupSnapshot{
-		ID: hitRemoteSearch, Label: state.messages.Tools.RemoteSearch, Value: query,
-		Placeholder: state.messages.Tools.RemoteSearchPlaceholder, NativeEditing: canvas.Focused() == hitRemoteSearch && query != "",
-		InlineStart: components.InputGroupSlot{Kind: components.InputGroupSlotIcon, Icon: lucideIcons[iconSearch]}, InlineEnd: clearSlot,
-	})
-	summary := ui.Rect{X: bounds.X, Y: bounds.Y + 36, Width: bounds.Width, Height: 20}
-	canvas.Label(elide(canvas, state.remote.searchSummary, metrics.FontSizeS, ui.WeightRegular, summary.Width), summary, ui.TextStyle{Size: metrics.FontSizeS, Color: state.pal.muted})
-	canvas.HitWithOptions(hitRemoteSearchScope, summary, state.remote.searchSummary, ui.HitOptions{Role: ui.RoleStatus, SkipFocus: true, Hint: state.remote.searchSummary})
+	state.clearRemoteSearch()
+	return gfx.EventResult{Handled: true, Repaint: true, Focus: hitRemoteSearch, FocusVisible: true}
 }

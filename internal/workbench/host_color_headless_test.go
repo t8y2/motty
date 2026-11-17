@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
@@ -70,8 +70,8 @@ func BenchmarkPaintConnectionHeader(b *testing.B) {
 		b.Run("color="+color, func(b *testing.B) {
 			state, _, _, _ := liveSession(b)
 			state.sessions[0].host.Color = color
-			var canvas ui.Canvas
-			size := ui.Size{Width: 1400, Height: 900}
+			var canvas gfx.Canvas
+			size := gfx.Size{Width: 1400, Height: 900}
 			state.Paint(&canvas, size)
 			b.ReportAllocs()
 			for b.Loop() {
@@ -105,7 +105,7 @@ func TestConnectionColorChromeAtDifferentScales(t *testing.T) {
 				}
 				refresh := dualHit(t, view, contextID(hitSFTPRefresh))
 				close := dualHit(t, view, contextID(hitSFTPClose))
-				if refresh.Y != close.Y || close.X+close.Width > 1400 || close.Y < 0 {
+				if refresh.Y < close.Y+close.Height || close.X+close.Width > 1400 || close.Y < 0 {
 					t.Fatal("file header actions are clipped or misaligned")
 				}
 				for move := 0; move < 2; move++ {

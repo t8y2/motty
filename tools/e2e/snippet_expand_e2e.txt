@@ -1,0 +1,30 @@
+click "Search"
+type tester@127.0.0.1:2222
+click "Connect"
+waitfor "Trust" 3000
+click "Trust and Save"
+waitfor "Password" 3000
+type secret
+key enter
+waitfor "tester@e2e" 8000
+click "Hosts"
+click "Snippets"
+click "Add snippet"
+waitfor "Add a snippet" 3000
+type Long command
+key tab
+type echo AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+key enter
+type echo second-line-701
+click "Save"
+settle 600
+expect no-text "second-line-701"
+expect state "Show the full command" collapsed
+click "Show the full command"
+expect state "Hide the full command" expanded
+expect text "second-line-701" within 2000
+click "Hide the full command"
+settle 600
+expect state "Show the full command" collapsed
+expect no-text "second-line-701"
+texts

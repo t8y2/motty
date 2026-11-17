@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+
+	"motty/internal/keyidentity"
 )
 
 // testServer is a real SSH server on the loopback interface: it performs the
@@ -47,12 +49,22 @@ type testServer struct {
 	blockDirect bool // leaves direct-tcpip requests unanswered
 	// envFatal ends the connection on an env request, the way a gateway with a
 	// menu it starts itself may when the request is not one it implements.
-	envFatal  bool
+	envFatal bool
+	// execFatal ends the connection on an exec request, the way a gateway that
+	// permits only an interactive login does.
+	execFatal bool
 	request   func(*ssh.ServerConn, *ssh.Request)
 	connected func(*ssh.ServerConn)
 	// algorithms, when set, restricts what the server will negotiate, to stand
 	// in for an old device.
 	algorithms *ssh.Config
+	// pubKeyAuths, when set, restricts the public-key authentication algorithms
+	// the server accepts, to stand in for a server that refuses SHA-1 RSA.
+	pubKeyAuths []string
+	// maxAuthTries overrides the server's failed-authentication budget, to
+	// stand in for a server that gives up before every key is offered. Zero
+	// keeps the library's default.
+	maxAuthTries int
 
 	// shell, when set, runs for every session that asks for a shell, with the
 	// pty it requested. command handles exec requests. Without either every
@@ -108,6 +120,12 @@ func startServer(t *testing.T, configure func(*testServer)) *testServer {
 	config := &ssh.ServerConfig{ServerVersion: version}
 	if server.algorithms != nil {
 		config.Config = *server.algorithms
+	}
+	if len(server.pubKeyAuths) > 0 {
+		config.PublicKeyAuthAlgorithms = server.pubKeyAuths
+	}
+	if server.maxAuthTries > 0 {
+		config.MaxAuthTries = server.maxAuthTries
 	}
 	config.AddHostKey(server.hostKey)
 	if server.banner != "" {
@@ -474,6 +492,32 @@ func (h *harness) knownHosts() string {
 	return string(data)
 }
 
+// encryptedIdentity writes an OpenSSH private key locked with passphrase,
+// without the .pub file, and returns its path.
+func encryptedIdentity(t *testing.T, passphrase string) string {
+	t.Helper()
+	_, private := newPrivate(t)
+	block, err := ssh.MarshalPrivateKeyWithPassphrase(private, "", []byte(passphrase))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "id_ed25519")
+	if err := os.WriteFile(path, pemEncode(block), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// publicOf reads an identity file's public key without unlocking it.
+func publicOf(t *testing.T, path string) ssh.PublicKey {
+	t.Helper()
+	public, err := keyidentity.PublicKey(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return public
+}
+
 func writeKey(t *testing.T, dir string) (string, ssh.Signer) {
 	t.Helper()
 	_, private, err := ed25519.GenerateKey(rand.Reader)
@@ -532,6 +576,7 @@ type fakeShell struct {
 	term    string
 	cols    int
 	rows    int
+	modes   string // the pty request's encoded terminal modes
 	env     map[string]string
 	resizes [][2]int
 	x11     *x11Request
@@ -582,6 +627,7 @@ func serveSession(server *testServer, conn ssh.Conn, channel ssh.Channel, reques
 			ssh.Unmarshal(request.Payload, &payload)
 			shell.mu.Lock()
 			shell.term, shell.cols, shell.rows = payload.Term, int(payload.Columns), int(payload.Rows)
+			shell.modes = payload.Modes
 			shell.mu.Unlock()
 			request.Reply(true, nil)
 		case "x11-req":
@@ -618,6 +664,10 @@ func serveSession(server *testServer, conn ssh.Conn, channel ssh.Channel, reques
 				go server.shell(shell)
 			}
 		case "exec":
+			if server.execFatal {
+				conn.Close()
+				return
+			}
 			var payload struct{ Command string }
 			if err := ssh.Unmarshal(request.Payload, &payload); err != nil {
 				request.Reply(false, nil)

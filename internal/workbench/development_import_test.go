@@ -13,8 +13,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/configstore"
 	"motty/internal/sshconn"
 	"motty/internal/vault"
@@ -163,7 +163,13 @@ func TestDevelopmentImportSourceFailureCanBeRetriedWithoutPasswords(t *testing.T
 	if state.developmentImport.err == "" || len(state.hosts) != 0 || state.modal != modalDevelopmentImport {
 		t.Fatal("source key failure was hidden or caused a partial config import")
 	}
-	state.Click(hitDevelopmentKeys)
+	// The user leaves the passwords behind by clicking the checkbox's caption, as in
+	// the window: the checkbox writes the choice into the dialog's state itself.
+	driver := modalEventDriver(t, state)
+	clickCaption(t, driver, state.messages.DevelopmentImportPasswords)
+	if state.developmentImport.passwords {
+		t.Fatal("the caption did not clear the passwords choice")
+	}
 	state.Click(hitDevelopmentImport)
 	if state.modal != modalNone || len(state.hosts) != 1 || state.secrets.vault.Len() != 0 {
 		t.Fatalf("explicit no-password import failed: %s", state.developmentImport.err)
@@ -225,16 +231,23 @@ func TestDevelopmentImportReadOnlyKeysRejectWrites(t *testing.T) {
 // the advance of its missing-glyph boxes, narrower than the one em the metrics
 // give a CJK character, so the dialog reports a spill the product does not have.
 func TestDevelopmentImportNativeDialog(t *testing.T) {
-	for _, size := range []ui.Size{{Width: 1400, Height: 900}, {Width: 900, Height: 600}} {
+	for _, tc := range []struct {
+		size    gfx.Size
+		failing bool
+	}{
+		{size: gfx.Size{Width: 1400, Height: 900}},
+		// The smallest window the product allows must still show the dialog
+		// whole while a failed import asks to be retried. Opening below the
+		// minimum tests a size the application never has.
+		{size: gfx.Size{Width: MinimumWindowWidth, Height: MinimumWindowHeight}, failing: true},
+	} {
+		size := tc.size
 		options, sourceKeys := developmentImportFixture(t)
 		state := newTestState(t, options)
-		if size.Width == 900 {
+		if tc.failing {
 			sourceKeys.unavailable = true
 			state.Click(hitDevelopmentImport)
 			sourceKeys.unavailable = false
-		}
-		if _, texts := paintedTexts(state); !contains(texts, state.messages.DevelopmentImportPasswords) {
-			t.Fatal("password consent checkbox has no visible description")
 		}
 		view, err := headless.Open(app.Config{
 			Width: int(size.Width), Height: int(size.Height), Tree: Tree(),
@@ -247,6 +260,16 @@ func TestDevelopmentImportNativeDialog(t *testing.T) {
 		if err := view.Rest(); err != nil {
 			t.Fatal(err)
 		}
+		// Read the text from the view's own paint: a throwaway canvas has no
+		// platform text engine, so it would wrap the dialog by the reference
+		// metrics and leave those lines for the view to reuse.
+		var texts []string
+		for _, text := range view.Snapshot().Texts {
+			texts = append(texts, text.Value)
+		}
+		if !contains(texts, state.messages.DevelopmentImportPasswords) {
+			t.Fatal("password consent checkbox has no visible description")
+		}
 		if problems := headless.CheckLayout(view.Snapshot()); len(problems) != 0 {
 			t.Fatalf("import dialog layout: %+v", problems)
 		}
@@ -258,7 +281,8 @@ func TestDevelopmentImportNativeDialog(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		button, found := hitByIDSnapshot(view.Snapshot().Hits, hitDevelopmentImport)
+		// The import action is a page-owned button now; its label is its address.
+		button, found := snapshotButton(view.Snapshot(), state.messages.DevelopmentImportAction)
 		if !found {
 			t.Fatal("no actionable import button")
 		}
@@ -311,7 +335,7 @@ func TestDevelopmentImportLoopbackSSH(t *testing.T) {
 	if err := view.Rest(); err != nil {
 		t.Fatal(err)
 	}
-	button, found := hitByIDSnapshot(view.Snapshot().Hits, hitDevelopmentImport)
+	button, found := snapshotButton(view.Snapshot(), state.messages.DevelopmentImportAction)
 	if !found {
 		t.Fatal("import action missing")
 	}
@@ -358,4 +382,18 @@ func TestDevelopmentImportLoopbackSSH(t *testing.T) {
 	if password, found, err := opened.Get(hostSecretName("release-host", hostPasswordPart)); err != nil || !found || password != "secret" {
 		t.Fatalf("imported password not durable: found=%t err=%v", found, err)
 	}
+}
+
+// clickCaption presses the text beside a checkbox or switch, which is a label of it.
+func clickCaption(t *testing.T, driver *app.Driver, caption string) {
+	t.Helper()
+	for _, hit := range driver.Snapshot().Hits {
+		if hit.IsLabel && hit.Label == caption {
+			if err := driver.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+				t.Fatal(err)
+			}
+			return
+		}
+	}
+	t.Fatalf("no caption %q on screen", caption)
 }

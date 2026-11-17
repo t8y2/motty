@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/diag"
 	"net"
 	"os"
@@ -18,6 +18,7 @@ import (
 	"motty/internal/ai/store"
 	"motty/internal/aiproviderimport"
 	"motty/internal/buildinfo"
+	"motty/internal/linkwatch"
 	"motty/internal/localshell"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
@@ -44,6 +45,10 @@ type Connection interface {
 	OpenSFTP() (sftpclient.Remote, error)
 	// DialContext opens a remote stream through the authenticated connection.
 	DialContext(context.Context, string, string) (net.Conn, error)
+	// DialShellContext runs a relay command in a shell on the server and returns
+	// its input and output as a remote stream, for a server that refuses
+	// forwarded channels.
+	DialShellContext(context.Context, string, string) (net.Conn, error)
 	// Listen asks the authenticated server to open a remote listener.
 	Listen(string, string) (net.Listener, error)
 	ListenContext(context.Context, string, string, func(net.Listener) error) (net.Listener, error)
@@ -104,6 +109,12 @@ func (conn realConn) OpenSFTP() (sftpclient.Remote, error) {
 	return sftpclient.Open(conn.Conn.Client())
 }
 
+func (conn realConn) OpenSudoSFTP(password string) (sftpclient.Remote, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	return sftpclient.OpenSudo(ctx, conn.Conn.Client(), password)
+}
+
 // OpenSCP is the file backend for a server that has no SFTP subsystem.
 func (conn realConn) OpenSCP() (sftpclient.Remote, error) {
 	return sftpclient.OpenSCP(conn.Conn.Client())
@@ -147,7 +158,7 @@ func openRemoteFiles(conn Connection, mode transferMode) (sftpclient.Remote, err
 // DragPreview is a picture that follows a drag outside every window.
 type DragPreview interface {
 	// MoveTo puts the picture's top-left at origin, in screen coordinates.
-	MoveTo(origin ui.Point)
+	MoveTo(origin gfx.Point)
 	Close()
 }
 
@@ -167,11 +178,22 @@ type Options struct {
 	// Invalidate asks the window to repaint. Connection goroutines call it
 	// when their status changes; the window then calls Wake.
 	Invalidate func()
+	// Post runs work on the window thread, from any goroutine. Nil keeps the
+	// window's own inbox, which Wake drains; a window opened by the application
+	// passes Viva's app.Application.Post.
+	Post func(func())
+	// SetMenuBar installs the application's own menus; nil leaves the menu bar
+	// to the host platform. Non-macOS hosts report app.ErrUnsupported.
+	SetMenuBar func([]app.Menu) error
+	// Invalidator is the same window's invalidator, for a page that declares a
+	// ui.Effect: the effect wakes the window itself when its work finishes. Nil
+	// leaves such a page's results waiting for the next paint.
+	Invalidator *app.Invalidator
 	// NewWindow creates another independent workbench window through Viva's
 	// application lifecycle. Nil means the host did not enable multi-window.
 	NewWindow func() error
 	// OpenContentWindow is Viva's reusable native content-window factory.
-	OpenContentWindow func(app.Config, *ui.Canvas) (*app.ContentWindow, error)
+	OpenContentWindow func(app.Config, *gfx.Canvas) (*app.ContentWindow, error)
 	// CloseWindow closes this window the way its close button does. Command+W
 	// calls it on a page that has no tab to close. Nil leaves that key unbound.
 	CloseWindow func()
@@ -226,12 +248,12 @@ type Options struct {
 	// coordinates) and calls adopt with its state before it first paints; it is
 	// what dropping a tab outside every window does. Nil means a tab cannot be
 	// torn off.
-	TearOff func(origin ui.Point, adopt func(*State)) error
+	TearOff func(origin gfx.Point, adopt func(*State)) error
 	// OpenDragPreview shows a picture of size at origin (screen coordinates),
 	// drawn by paint, above every window; it is what follows a tab dragged out
 	// of every window, where no window can draw it. An error, or nil, means the
 	// platform cannot, and the window shows what it can at its own edge.
-	OpenDragPreview func(size ui.Size, origin ui.Point, paint func(canvas *ui.Canvas, size ui.Size)) (DragPreview, error)
+	OpenDragPreview func(size gfx.Size, origin gfx.Point, paint func(canvas *gfx.Canvas, size gfx.Size)) (DragPreview, error)
 	// Blank starts the window empty: no tabs are restored into it.
 	Blank bool
 	// WindowID is which window of this run it is: the first is 1, and each window
@@ -262,7 +284,7 @@ type Options struct {
 	// FileIcon returns the system's icon for a local file or folder at the given
 	// pixel size, as the file panel shows an application bundle with its own icon.
 	// Nil uses app.FileIcon.
-	FileIcon func(path string, pixels int) (ui.Bitmap, error)
+	FileIcon func(path string, pixels int) (gfx.Bitmap, error)
 	// EditPollInterval is how often a file open in the system's editor is looked
 	// at for a save. Zero means a second.
 	EditPollInterval time.Duration
@@ -276,6 +298,12 @@ type Options struct {
 	// WatchSystemAppearance calls its argument whenever the system's look changes
 	// and returns what stops that. Nil uses app.WatchSystemAppearance.
 	WatchSystemAppearance func(changed func()) (stop func())
+	// WatchNetworkChanges calls its argument after each change of the machine's
+	// network path — a different set of interface addresses, which is what a
+	// Wi-Fi switch, an unplugged cable and a VPN coming up look like — and
+	// returns what stops that. The report runs on a goroutine. Nil polls the
+	// interfaces every two seconds; tests report changes by hand.
+	WatchNetworkChanges func(report func(linkwatch.Change)) (stop func())
 	// SetNativeAppearance pins the look of what the system draws for the window
 	// (buttons, menus, dialogs, native text editing). Nil uses
 	// app.SetNativeAppearance.
@@ -294,6 +322,9 @@ type Options struct {
 	// which a desktop session offers to the remote system. Nil uses
 	// app.ClipboardFiles.
 	ClipboardFiles func() ([]string, error)
+	// SetClipboardFiles puts files on the system clipboard, as a file manager
+	// does after a copy. Nil uses app.SetClipboardFiles.
+	SetClipboardFiles func([]string) error
 	// ClipboardImagePNG reads an image from the system clipboard as PNG bytes.
 	// Nil uses app.ClipboardImagePNG.
 	ClipboardImagePNG func() ([]byte, error)
@@ -320,13 +351,23 @@ type Options struct {
 	// FontFamilies lists every installed font family, for the choice of the
 	// interface's own. Nil uses the platform's list.
 	FontFamilies func() []string
+	// FontWeights lists the weights a family is installed with, ascending, for
+	// the main and the bold text of the interface. Nil uses the platform's list,
+	// and an empty list where the platform cannot report a family's weights.
+	FontWeights func(family string) []int
 	// SetInterfaceFont names the family the window's text is drawn in, or ""
-	// for the platform's own interface font; it reports whether the platform
-	// can follow a family at all. Nil uses the platform's own.
-	SetInterfaceFont func(family string) bool
+	// for the platform's own interface font, and the weights its main and bold
+	// text are drawn at (0 for the platform's own); it reports whether the
+	// platform can follow a family at all. Nil uses the platform's own.
+	SetInterfaceFont func(family string, main, bold int) bool
 	// MonoFamilies lists the installed fixed-pitch font families. Nil uses
 	// app.MonospaceFamilies.
 	MonoFamilies func() []string
+	// SetTerminalFontWeights names the weights the terminal's text is drawn at,
+	// main for its regular text and bold for its bold runs (0 for the platform's
+	// own), and reports whether the platform has the choice. Nil uses the
+	// platform's own.
+	SetTerminalFontWeights func(main, bold int) bool
 	// WallNow is the time of day, for one-time codes. Nil uses time.Now.
 	WallNow func() time.Time
 	// Now is a monotonic clock, for how long a connection has taken and how long
@@ -394,6 +435,11 @@ func (options Options) withDefaults() Options {
 	if options.WatchSystemAppearance == nil {
 		options.WatchSystemAppearance = app.WatchSystemAppearance
 	}
+	if options.WatchNetworkChanges == nil {
+		options.WatchNetworkChanges = func(report func(linkwatch.Change)) func() {
+			return linkwatch.Watch(linkwatch.DefaultInterval, report)
+		}
+	}
 	if options.SetNativeAppearance == nil {
 		options.SetNativeAppearance = app.SetNativeAppearance
 	}
@@ -412,6 +458,9 @@ func (options Options) withDefaults() Options {
 	if options.ClipboardFiles == nil {
 		options.ClipboardFiles = app.ClipboardFiles
 	}
+	if options.SetClipboardFiles == nil {
+		options.SetClipboardFiles = app.SetClipboardFiles
+	}
 	if options.Notify == nil {
 		options.Notify = app.SendNotification
 	}
@@ -421,11 +470,17 @@ func (options Options) withDefaults() Options {
 	if options.MonoFamilies == nil {
 		options.MonoFamilies = app.MonospaceFamilies
 	}
+	if options.SetTerminalFontWeights == nil {
+		options.SetTerminalFontWeights = app.SetMonospaceFontWeights
+	}
 	if options.FontFamilies == nil {
 		options.FontFamilies = app.FontFamilies
 	}
+	if options.FontWeights == nil {
+		options.FontWeights = app.FontWeights
+	}
 	if options.SetInterfaceFont == nil {
-		options.SetInterfaceFont = app.SetInterfaceFontFamily
+		options.SetInterfaceFont = app.SetInterfaceFont
 	}
 	if options.WallNow == nil {
 		options.WallNow = time.Now
@@ -450,6 +505,9 @@ const (
 	modalMobaEncoding
 	modalNewForward
 	modalNewProxy
+	modalProxyBatchAssociate
+	modalProxyDeleteConfirm
+	modalProxyBatchDeleteConfirm
 	modalHostKey
 	modalKeyPassphrase
 	modalPassword
@@ -461,7 +519,10 @@ const (
 	modalVaultUnlock
 	modalVaultForget
 	modalHighlightRule
+	modalRuleManager
 	modalSnippet
+	modalSnippetDelete
+	modalSnippetVariables
 	modalImportSessions
 	modalFontPicker
 	modalOutboundProxy
@@ -483,13 +544,16 @@ const (
 	modalDashboard
 	modalDashboardAdd
 	modalToolbarSettings
+	modalSidebarSettings
 	modalSFTPColumns
+	modalSudoSFTP
 	modalTerminalInput
 	modalDeleteRule
 	modalWorkspaceDraft
 	modalWorkspaceSave
 	modalWorkspaceTemplateDelete
 	modalLocalProxy
+	modalCredential
 )
 
 // tone colors a session's headline.
@@ -526,9 +590,16 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 	session.resetLatency()
 	avoidShare := session.avoidShare || loopbackTunnel(host)
 	session.avoidShare = false
+	// A new transport deserves its own attempt: the server may accept another
+	// channel now, or the host may have changed.
+	session.fileConnectionSeparate = false
+	session.closeSSHBrowser()
+	session.stopRemoteLogs()
 	state.redialSessionForwards(session.ID)
+	state.closeCompletionPath(session)
 	state.closeSFTP(session)
 	state.stopRemoteStats(session)
+	session.sudoCommands, session.sudoPassword = false, ""
 	if session.term != nil && session.term.shell != nil {
 		releaseShell(session.term.shell)
 	}
@@ -544,16 +615,29 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 	}
 	session.established = false
 	session.disconnected = false
+	if session.restored && session.isLocal() && state.localStart == localStartHome {
+		// The folder a restored tab was left in is what the home choice
+		// forgets; a tab that ends and starts again in this run keeps its own.
+		session.localDirectory = ""
+	}
 	session.restored = false
 	session.autoRestore, session.restoreNote = false, ""
 	session.host = host
+	session.agent, session.agentWatch = agentNone, agentWatch{}
 	session.Address = state.sessionAddress(host)
 	session.endpoint = sshconn.Endpoint{Host: host.Address, Port: host.Port, User: state.login(host)}
 	session.role = sshconn.EndpointTarget
 	session.jumpPath = ""
+	session.desktopTunnel = false
 	if host.ID == localHostID {
 		// A shell on this machine: nothing to dial, so it is connected at once.
 		conn := newLocalConn(state.resolveLocalShell(host), state.networkProxy)
+		if _, wsl := localshell.WSLDistro(conn.shell); wsl {
+			// A distribution is the Linux system the shell runs in, not the
+			// Windows that hosts it. The monitor and the tooling that reads the
+			// session's system follow the distribution.
+			session.host.System = sshconn.SystemLinux
+		}
 		conn.dir = localStartupDirectory(session.localDirectory, conn.shell)
 		session.conn = conn
 		state.finishStartingConnection(session, automatic)
@@ -575,6 +659,15 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 		state.finishStartingConnection(session, automatic)
 		return
 	}
+	if host.mosh() {
+		// An SSH host whose terminal runs over mosh: the SSH connection is the
+		// bootstrap, and the session has no SSH server once it is up.
+		config, _ := state.sshConfigFor(session, host)
+		session.sshOptions = host.SSHOptions.Clone()
+		session.conn = state.newMoshConn(session, host, config)
+		state.finishStartingConnection(session, automatic)
+		return
+	}
 	if !host.isSSH() {
 		// Telnet and serial: a stream, dialed in the background.
 		session.conn = state.newStreamConn(host, state.notifyFor(session))
@@ -582,6 +675,11 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 		return
 	}
 	config, valid := state.sshConfigFor(session, host)
+	session.sshOptions = host.SSHOptions.Clone()
+	// This connection is for a terminal: its first session must be the shell,
+	// so the probes wait for it and the server's login message reaches the
+	// terminal (ADR 0025).
+	config.PrimaryShell = true
 	if valid && state.shareConnections == shareConnectionsOn && !avoidShare {
 		if shared, _ := state.shareFrom(session, host); shared != nil {
 			session.conn, session.shared = shared, true
@@ -605,6 +703,10 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 // has no host to dial.
 func (state *State) sshConfigFor(session *Session, host Host) (config sshconn.Config, valid bool) {
 	config, route, valid := state.hostCatalog.sshConfigFor(host, session.host, state.connectionEnv(state.notifyFor(session)))
+	// A hardware security key signs through an agent. The window prepares one
+	// lazily, only when an identity turns out to be an sk-* key, and releases
+	// it with the connection.
+	config.SecurityKeyAgent = newSecurityKeyAgent(state).Agent
 	session.proxyRoute, session.jumpPath = route.proxyKey, route.jumpPath
 	return config, valid
 }
@@ -635,7 +737,7 @@ func (state *State) shareFrom(session *Session, host Host) (Connection, *Session
 		// The saved host may have been edited since this transport was opened.
 		// Compare its dialed account/address, not the next connection's settings.
 		if other.ID == session.ID || other.conn == nil || other.Address != address ||
-			other.jumpPath != session.jumpPath || other.proxyRoute != session.proxyRoute {
+			other.jumpPath != session.jumpPath || other.proxyRoute != session.proxyRoute || !other.sshOptions.Equal(session.sshOptions) {
 			continue
 		}
 		lender, ok := other.conn.(sharer)
@@ -675,6 +777,7 @@ func (state *State) finishStartingConnection(session *Session, automatic bool) {
 		state.closeCompletionList()
 		t := session.term
 		t.shell, t.ended, t.live, t.inputSent, t.told = nil, false, false, false, toldNothing
+		t.noShellTold = false
 		t.resetFolderSync()
 		t.rx = t.rx[:0]
 		t.skippedEndpoint, t.skippedRole, t.skipsTold = sshconn.Endpoint{}, sshconn.EndpointTarget, 0
@@ -683,6 +786,10 @@ func (state *State) finishStartingConnection(session *Session, automatic bool) {
 	}
 	state.describe(session)
 	session.term.find.refreshIfChanged(session.term.screen, state.messages, 0)
+	// A dial was just started; if it is the first live connection, the network
+	// path it is bound to has to be watched from here, before any status wakes
+	// the window.
+	state.syncLinkWatch()
 }
 
 // Wake applies connection changes to the UI state and moves shell output onto
@@ -691,10 +798,13 @@ func (state *State) finishStartingConnection(session *Session, automatic bool) {
 // nothing for sessions whose status is unchanged and whose shell is quiet.
 func (state *State) Wake() {
 	defer state.syncDesktopFullscreen()
-	defer state.flushLocalDirectories()
+	defer state.syncMenuBar()
+	defer state.syncDesktopSleep()
+	defer state.flushTerminalDirectories()
 	defer state.syncLocalProxySessions()
 	state.adoptHistoryClear()
 	state.adoptCompletion()
+	state.pumpNoteLinks()
 	state.pumpRevealResults()
 	state.pumpFileWindows()
 	if state.syncPending {
@@ -705,9 +815,13 @@ func (state *State) Wake() {
 	}
 	if state.restorePending {
 		state.restorePending = false
+		// Local shells first: they dial nothing, so they need not share the
+		// bound on how many connections one restore opens.
+		state.startRestoredLocalSessions()
 		state.connectRestoredSessions()
 		state.openStartupSessions()
 	}
+	state.applyLinkChange()
 	state.advanceReconnects()
 	state.pumpHostTest()
 	state.probeLatency()
@@ -723,7 +837,10 @@ func (state *State) Wake() {
 		state.pumpRemoteStats(session)
 		state.pumpDesktop(session)
 		state.pump(session)
+		state.pumpCompletionPath(session)
+		state.advanceInjection(session, findNow)
 		state.runLoginCommand(session)
+		state.runIdleKeepAlive(session, findNow)
 		// A session-local charset notice changes the available character grid.
 		// Resize after parsing output, never reentrantly from an OSC callback.
 		state.fitTerminal(session)
@@ -740,6 +857,7 @@ func (state *State) Wake() {
 		}
 	}
 	state.refreshOutputAlerts(nil)
+	state.pumpForwardTunnels()
 	state.pumpForwards()
 	state.pumpTransfer()
 	defer state.syncShortcutCapture()
@@ -755,9 +873,13 @@ func (state *State) Wake() {
 	state.pumpSessionLogs()
 	state.showNextPrompt()
 	state.drainAI()
+	state.syncNoteWindows()
 	state.syncSFTPWindows()
 	state.aiPumpCLILogin()
 	state.syncRemoteToolsWindows()
+	// Sessions were created, ended, or moved into a retry above: the network
+	// watcher follows the live ones, so idle windows poll nothing.
+	state.syncLinkWatch()
 }
 
 // apply reads one status into a session: its dot, its busy flag, and the next
@@ -781,6 +903,7 @@ func (state *State) apply(session *Session, status sshconn.Status) {
 	session.version = status.Version
 	session.phase = status.Phase
 	session.attempt = status.Attempt
+	session.securityKey = status.SecurityKey
 	session.busy = false
 	session.hostKey = status.HostKey
 	session.questions = status.Questions
@@ -796,6 +919,7 @@ func (state *State) apply(session *Session, status sshconn.Status) {
 		session.method = status.Method
 	}
 	state.adoptSystem(session, status)
+	state.adoptProbeRefusal(session, status)
 	switch {
 	case status.EndpointRole == sshconn.EndpointProxyJump && status.Phase != sshconn.PhaseConnected:
 		session.stage = stageConnect
@@ -855,9 +979,13 @@ func (state *State) apply(session *Session, status sshconn.Status) {
 			state.ensureContextSFTP()
 		}
 	case sshconn.PhaseClosed:
+		session.closeSSHBrowser()
+		session.stopRemoteLogs()
+		session.sudoCommands, session.sudoPassword = false, ""
 		state.endDesktop(session)
 		session.pendingSecretName, session.pendingSecretValue = "", ""
 		state.stopSessionForwards(session.ID, true)
+		state.closeCompletionPath(session)
 		state.closeSFTP(session)
 		state.closeDisconnectedShell(session)
 		if status.Err != nil && !session.disconnected {
@@ -868,9 +996,13 @@ func (state *State) apply(session *Session, status sshconn.Status) {
 		}
 		state.tell(session, toldEnded, status)
 	case sshconn.PhaseFailed:
+		session.closeSSHBrowser()
+		session.stopRemoteLogs()
+		session.sudoCommands, session.sudoPassword = false, ""
 		state.endDesktop(session)
 		session.pendingSecretName, session.pendingSecretValue = "", ""
 		state.stopSessionForwards(session.ID, true)
+		state.closeCompletionPath(session)
 		state.closeSFTP(session)
 		session.tone = toneFail
 		state.tell(session, toldEnded, status)
@@ -912,13 +1044,22 @@ func (state *State) closeDisconnectedShell(session *Session) {
 		return
 	}
 	terminal.rx = terminal.shell.Drain(terminal.rx[:0])
-	if len(terminal.rx) > 0 {
-		terminal.recording.append(state.now(), terminalRecordingOutput, terminal.rx)
-		terminal.write(terminal.rx)
-		state.goLive(session)
+	if len(terminal.rx) > 0 || terminal.decoder != nil {
+		// The last read may end mid-character; decode and flush it before the
+		// shell goes away, so a trailing GB18030 character is not lost.
+		output := terminal.decodeRemote(terminal.rx)
+		output = append(output, terminal.flushRemoteDecoder()...)
+		terminal.rx = terminal.rx[:0]
+		if len(output) > 0 {
+			terminal.recording.append(state.now(), terminalRecordingOutput, output)
+			terminal.write(output)
+			state.goLive(session)
+		}
 	}
 	releaseShell(terminal.shell)
 	terminal.shell = nil
+	terminal.stopIdleKeepAlive()
+	terminal.login = loginCommand{}
 	terminal.recording.stop()
 	terminal.ended = true
 	terminal.preedit = app.TextState{}
@@ -944,6 +1085,35 @@ func shouldAdoptSystem(known, reported sshconn.RemoteSystem, provisional bool) b
 		return false
 	}
 	return !provisional || known == sshconn.SystemUnknown
+}
+
+// adoptProbeRefusal keeps a host whose server ended the connection on the
+// client's own probes to the interactive session, the only kind it permits. The
+// retry that follows, automatic or by Enter, then opens a shell instead of
+// asking the server the same question again.
+func (state *State) adoptProbeRefusal(session *Session, status sshconn.Status) {
+	if !status.ProbeRefused || !session.host.isSSH() || session.host.InteractiveOnly {
+		return
+	}
+	state.setHostInteractiveOnly(session)
+}
+
+func (state *State) setHostInteractiveOnly(session *Session) {
+	session.host.InteractiveOnly = true
+	if session.HostID != 0 {
+		for index := range state.hosts {
+			if state.hosts[index].ID == session.HostID {
+				state.hosts[index].InteractiveOnly = true
+				break
+			}
+		}
+		for index := range state.sessions {
+			if state.sessions[index].HostID == session.HostID {
+				state.sessions[index].host.InteractiveOnly = true
+			}
+		}
+	}
+	state.save()
 }
 
 func (state *State) setSessionSystem(session *Session, system sshconn.RemoteSystem) {
@@ -999,25 +1169,38 @@ func formatEndpoint(endpoint sshconn.Endpoint) string {
 func (state *State) tellFailure(session *Session, status sshconn.Status) {
 	t, m := session.term, state.messages
 	switch {
-	case errors.Is(status.Err, sshconn.ErrHostKeyChanged):
+	case errors.Is(status.Err, sshconn.ErrHostKeyChanged) || errors.Is(status.Err, sshconn.ErrHostKeyRejected) && status.HostKey.Type == rdpCertificateType && len(status.HostKey.Known) > 0:
 		t.say(sgrFail, m.ConnChangedTitle)
 		t.say("", "")
-		t.say("", fmt.Sprintf(m.ConnChangedBodyFmt, status.HostKey.Address))
+		if status.HostKey.Type == vncServerKeyType {
+			t.say("", state.vncKeyDescription(status.HostKey))
+		} else {
+			t.say("", fmt.Sprintf(m.ConnChangedBodyFmt, status.HostKey.Address))
+		}
 		t.say("", "")
 		for _, known := range status.HostKey.Known {
 			t.say("", fmt.Sprintf(m.ConnChangedTrustedFmt, known))
 		}
 		t.say("", fmt.Sprintf(m.ConnChangedPresented, status.HostKey.Fingerprint))
 		t.say("", "")
-		t.say(sgrMuted, fmt.Sprintf(m.ConnChangedHintFmt, status.HostKey.File))
+		if status.HostKey.Type == vncServerKeyType || status.HostKey.Type == rdpCertificateType {
+			t.say(sgrMuted, m.HostKeyForgetHint)
+		} else {
+			t.say(sgrMuted, fmt.Sprintf(m.ConnChangedHintFmt, status.HostKey.File))
+		}
 	case errors.Is(status.Err, sshconn.ErrHostKeyRejected):
 		t.say(sgrFail, m.ConnRejected)
 	case errors.Is(status.Err, sshconn.ErrCanceled):
 		t.say(sgrFail, m.ConnCanceled)
+	case errors.Is(status.Err, sshconn.ErrTooManyAuthAttempts):
+		t.say(sgrFail, m.ConnTooManyAuthAttempts)
 	case errors.Is(status.Err, sshconn.ErrAuthFailed):
 		t.say(sgrFail, m.ConnAuthFailed)
 	default:
 		t.say(sgrFail, fmt.Sprintf(m.ConnFailedFmt, status.Err))
+	}
+	if status.ProbeRefused {
+		t.say(sgrWarn, m.ConnProbeRefused)
 	}
 	if session.reconnectPending {
 		t.say(sgrMuted, fmt.Sprintf(m.ConnReconnectWaitingFmt, session.reconnectAttempt, clockText(int64(reconnectDelay(session.reconnectAttempt)/time.Second))))
@@ -1103,6 +1286,10 @@ func (state *State) showNextPrompt() {
 			state.hostKeyDescription = fmt.Sprintf(state.messages.HostKeyDescriptionFmt, session.hostKey.Address)
 			if session.hostKey.Type == rdpCertificateType {
 				state.hostKeyDescription = state.rdpCertificateDescription(session.hostKey)
+			} else if session.hostKey.Type == vncServerKeyType {
+				state.hostKeyDescription = state.vncKeyDescription(session.hostKey)
+			} else if session.hostKey.Changed {
+				state.hostKeyDescription = fmt.Sprintf(state.messages.HostKeyChangedDescriptionFmt, session.hostKey.Address)
 			}
 		case sshconn.PhasePasswordPrompt:
 			state.modal = modalPassword
@@ -1127,9 +1314,12 @@ func (state *State) showNextPrompt() {
 		state.modalSession = state.clipboardRequest.sessionID
 		return
 	}
-	if state.transfer.phase == transferOffered {
+	for index := range state.sessions {
+		if state.sessions[index].transfer.phase != transferOffered {
+			continue
+		}
 		state.modal = modalFileTransfer
-		state.modalSession = state.transfer.sessionID
+		state.modalSession = state.sessions[index].ID
 		return
 	}
 	if state.update.offer {
@@ -1141,6 +1331,14 @@ func (state *State) showNextPrompt() {
 }
 
 func (state *State) closeModal() {
+	returnToRules := state.ruleManager.returning && (state.modal == modalHighlightRule || state.modal == modalAutofillRule || state.modal == modalDeleteRule)
+	returnToHost := state.modal == modalCredential && state.credentialReturn != modalNone
+	if state.modal == modalRuleManager {
+		state.ruleManager = ruleManagerUI{}
+	}
+	if state.modal == modalSnippetVariables {
+		state.snippetPrompt = snippetPromptState{}
+	}
 	if state.modal == modalTerminalInput {
 		state.inputConfirmation = terminalInputConfirmation{}
 	}
@@ -1153,8 +1351,14 @@ func (state *State) closeModal() {
 	if state.modal == modalToolbarSettings {
 		state.toolbarEditor.list.Cancel()
 	}
+	if state.modal == modalSidebarSettings {
+		state.sidebarEditor = sidebarSettingsUI{}
+	}
 	if state.modal == modalSFTPColumns {
 		state.sftpColumnEditor.list.Cancel()
+	}
+	if state.modal == modalSudoSFTP {
+		state.sudoSFTP = sudoSFTPDialog{}
 	}
 	if state.modal == modalRemoteClipboard {
 		state.clipboardRequest = remoteClipboardRequest{}
@@ -1162,8 +1366,14 @@ func (state *State) closeModal() {
 	if state.modal == modalAutofillConfirm {
 		state.autofillRules.ask = autofillAsk{}
 	}
+	if state.modal == modalFontPicker {
+		state.closeFontPickerPage()
+	}
 	if state.modal == modalDeleteRule {
 		state.ruleDelete = ruleDelete{}
+	}
+	if state.modal == modalCredential {
+		state.credentialForm = credentialUI{} // the password does not stay in the form
 	}
 	if state.modal == modalWorkspaceDraft {
 		state.workspaceDraft.reset()
@@ -1178,6 +1388,15 @@ func (state *State) closeModal() {
 		state.localProxyUI = localProxyUI{}
 	}
 	state.modal = modalNone
+	if returnToRules {
+		state.modal = modalRuleManager
+		state.ruleManager.returning = false
+		state.ruleManager.list = nil
+	}
+	if returnToHost {
+		state.modal = state.credentialReturn
+		state.credentialReturn = modalNone
+	}
 	state.modalSession = 0
 	state.reveal.reset()
 	state.passwordFields = nil
@@ -1205,8 +1424,14 @@ func (state *State) promptSession() *Session {
 			return &state.sessions[index]
 		}
 	}
+	if tunnel := state.forwardTunnelByID(state.modalSession); tunnel != nil && !tunnel.closed {
+		return &tunnel.session
+	}
 	if w := state.sftpWindows[state.modalSession]; w != nil && w.ownsConnection && !w.closed {
 		return &w.session
+	}
+	if session := state.dedicatedFileSession(state.modalSession); session != nil {
+		return session
 	}
 	return nil
 }
@@ -1220,7 +1445,7 @@ func (state *State) answered(session *Session) {
 
 // clickHostKey handles the host-key dialog. Dismissing it rejects the key:
 // silence must never mean trust.
-func (state *State) clickHostKey(id ui.ID) {
+func (state *State) clickHostKey(id gfx.ID) {
 	session := state.promptSession()
 	if session == nil || session.conn == nil {
 		state.closeModal()
@@ -1229,6 +1454,11 @@ func (state *State) clickHostKey(id ui.ID) {
 	switch id {
 	case hitHostKeyTrust:
 		session.conn.TrustHostKey(true)
+	case hitHostKeyForget:
+		if !state.forgetServerIdentity(session) {
+			return
+		}
+		session.conn.RejectHostKey()
 	case hitHostKeyOnce:
 		session.conn.TrustHostKey(false)
 	case hitHostKeyReject, hitHostKeyClose, hitHostKeyDismiss:
@@ -1241,7 +1471,7 @@ func (state *State) clickHostKey(id ui.ID) {
 
 // clickPassword handles the password dialog. Dismissing it cancels the
 // connection.
-func (state *State) clickPassword(id ui.ID) {
+func (state *State) clickPassword(id gfx.ID) {
 	switch id {
 	case hitPasswordSave:
 		state.secrets.save = !state.secrets.save
@@ -1258,7 +1488,7 @@ func (state *State) clickPassword(id ui.ID) {
 	}
 }
 
-func (state *State) clickKeyPassphrase(id ui.ID) {
+func (state *State) clickKeyPassphrase(id gfx.ID) {
 	switch id {
 	case hitKeyPassphraseSave:
 		state.secrets.save = !state.secrets.save

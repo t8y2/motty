@@ -3,7 +3,7 @@ package workbench
 import (
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -69,8 +69,8 @@ func TestLockedTabStateRestoresAndUnlockAllowsImmediateClose(t *testing.T) {
 		t.Fatal("lock did not survive session restoration")
 	}
 	rightClickTab(state, hitTabList.At(int(id)))
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1100, Height: 700})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1100, Height: 700})
 	hit, ok := hitByID(&canvas, hitTabMenuLock)
 	if !ok || hit.Label != state.messages.MenuUnlockTab {
 		t.Fatalf("unlock menu = %+v", hit)
@@ -138,7 +138,7 @@ func TestLockedTabKeepsItsTitleRoomInACrowdedStrip(t *testing.T) {
 			}
 			state.rebuildTabOptions()
 		}
-		state.Paint(&ui.Canvas{}, ui.Size{Width: 900, Height: 600})
+		state.Paint(&gfx.Canvas{}, gfx.Size{Width: 900, Height: 600})
 		return state.chrome.geometry.tabWidth
 	}
 	if got := measure(false); got != barTabMin {
@@ -155,10 +155,10 @@ func TestLockedTabAnnouncesItsProtection(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	openHost(state)
 	id := state.deck.ActiveWorkspace()
-	hit := func() ui.Hit {
+	hit := func() gfx.Hit {
 		t.Helper()
-		canvas := &ui.Canvas{}
-		state.Paint(canvas, ui.Size{Width: 1400, Height: 900})
+		canvas := &gfx.Canvas{}
+		state.Paint(canvas, gfx.Size{Width: 1400, Height: 900})
 		found, ok := hitByID(canvas, hitTabList.At(int(id)))
 		if !ok {
 			t.Fatal("the tab is not painted")

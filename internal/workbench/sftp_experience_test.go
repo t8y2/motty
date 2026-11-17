@@ -9,7 +9,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sftpclient"
 )
 
@@ -26,8 +26,8 @@ func TestSFTPSidebarHeadersSortEveryColumnWithFoldersFirst(t *testing.T) {
 	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && len(view.rows) == 5 })
 	view := session.files
 
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	for column, label := range []string{
 		state.messages.SFTPWindow.Name,
 		state.messages.SFTPWindow.Size,
@@ -71,7 +71,7 @@ func TestSFTPSidebarHeadersSortEveryColumnWithFoldersFirst(t *testing.T) {
 		t.Fatalf("time ascending = %v", got)
 	}
 	canvas.Reset()
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	foundDirection := false
 	for _, text := range canvas.Texts() {
 		foundDirection = foundDirection || text.Value == state.messages.SFTPWindow.Modified+" ↑"
@@ -85,8 +85,8 @@ func TestSFTPSidebarColumnVisibilityTracksSettings(t *testing.T) {
 	state, _, _, _ := openTestSFTP(t)
 	state.sftpColumns.setEnabled(sftpColumnSize, false)
 	state.sftpColumns.setEnabled(sftpColumnModified, false)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, contextID(hitSFTPColumnList.At(0))); !ok {
 		t.Fatal("the fixed name header was hidden")
 	}
@@ -106,8 +106,8 @@ func TestSFTPColumnOrderAppliesToSidebarAndDetachedWindow(t *testing.T) {
 		t.Fatalf("column order = %q, want %q", got, want)
 	}
 
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	sizeHeader, sizeOK := hitByID(&canvas, contextID(hitSFTPColumnList.At(int(sftpColumnSize))))
 	modifiedHeader, modifiedOK := hitByID(&canvas, contextID(hitSFTPColumnList.At(int(sftpColumnModified))))
 	if !sizeOK || !modifiedOK || modifiedHeader.Bounds.X >= sizeHeader.Bounds.X {
@@ -115,8 +115,8 @@ func TestSFTPColumnOrderAppliesToSidebarAndDetachedWindow(t *testing.T) {
 	}
 
 	w := &sftpWindow{owner: state, session: *session, view: session.files}
-	canvas = ui.Canvas{}
-	w.paintPane(&canvas, ui.Rect{Width: 600, Height: 500}, false)
+	canvas = gfx.Canvas{}
+	w.paint(&canvas, gfx.Size{Width: 600, Height: 500})
 	sizeHeader, sizeOK = hitByID(&canvas, sftpWindowSortHits[1].At(int(sftpColumnSize)))
 	modifiedHeader, modifiedOK = hitByID(&canvas, sftpWindowSortHits[1].At(int(sftpColumnModified)))
 	if !sizeOK || !modifiedOK || modifiedHeader.Bounds.X >= sizeHeader.Bounds.X {
@@ -195,6 +195,27 @@ func TestSFTPDefaultDownloadDirectoryUsesTheSystemDownloadsPlace(t *testing.T) {
 	}
 }
 
+func TestSFTPLocalSideOpensInTheConfiguredDownloadFolder(t *testing.T) {
+	state, source, _, _ := openTestSFTP(t)
+	destination := t.TempDir()
+	state.sftpDownloadDirectory = destination
+	if got := state.localSideStart(); got != destination {
+		t.Fatalf("local side opens in %q, want the configured download folder %q", got, destination)
+	}
+	if window := state.newSFTPWindow(source); window.initialLocal != destination {
+		t.Fatalf("transfer window local side opens in %q, want %q", window.initialLocal, destination)
+	}
+
+	// A configured folder that is not on disk is not browsed: the default
+	// stands in until a download creates it. Ask-every-time has none either.
+	for _, configured := range []string{"", filepath.Join(t.TempDir(), "not-created")} {
+		state.sftpDownloadDirectory = configured
+		if got, want := state.localSideStart(), localDefaultStart(); got != want {
+			t.Fatalf("local side opens in %q for configured %q, want %q", got, configured, want)
+		}
+	}
+}
+
 func TestSFTPDefaultDownloadDirectorySkipsThePicker(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	destination := t.TempDir()
@@ -224,9 +245,11 @@ func TestSFTPWindowColumnVisibilityMatchesSidebarSettings(t *testing.T) {
 	w := &sftpWindow{owner: state, session: *session, view: session.files}
 	hiddenValues := []string{session.files.rows[0].cells[2], session.files.rows[0].cells[3]}
 
-	paint := func() (*ui.Canvas, map[string]bool) {
-		var canvas ui.Canvas
-		w.paintPane(&canvas, ui.Rect{Width: 600, Height: 500}, false)
+	paint := func() (*gfx.Canvas, map[string]bool) {
+		var canvas gfx.Canvas
+		// Wide enough for both split panes to show the full modified time; the
+		// columns being checked are the window's, not the compact pane's.
+		w.paint(&canvas, gfx.Size{Width: 1200, Height: 500})
 		texts := make(map[string]bool)
 		for _, text := range canvas.Texts() {
 			texts[text.Value] = true
@@ -295,29 +318,29 @@ func TestSFTPUnavailableDefaultDirectoryFallsBackToThePicker(t *testing.T) {
 func TestSFTPSidebarScrollbarDragReachesTheWholeListAtDifferentWindowSizes(t *testing.T) {
 	state, session := openLargeSFTP(t, 500)
 	view := session.files
-	for _, size := range []ui.Size{{Width: 900, Height: 600}, {Width: 1400, Height: 900}, {Width: 1900, Height: 1200}} {
+	for _, size := range []gfx.Size{{Width: 900, Height: 600}, {Width: 1400, Height: 900}, {Width: 1900, Height: 1200}} {
 		view.first, view.scrollOffset = 0, 0
-		var canvas ui.Canvas
+		var canvas gfx.Canvas
 		state.Paint(&canvas, size)
 		geometry := view.scroll
 		if geometry.VerticalTrack.Width != 10 || geometry.VerticalThumb.Height < 18 || geometry.MaxOffsetY <= 0 {
 			t.Fatalf("%.0fx%.0f scrollbar geometry = %+v", size.Width, size.Height, geometry)
 		}
-		down := ui.PointerEvent{
-			Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hitSFTPListScrollbar,
+		down := gfx.PointerEvent{
+			Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hitSFTPListScrollbar,
 			Y: geometry.VerticalThumb.Y + geometry.VerticalThumb.Height/2,
 		}
 		if result, handled := state.sftpListPointer(down); !handled || !result.Handled {
 			t.Fatalf("%.0fx%.0f scrollbar press = %+v, handled=%t", size.Width, size.Height, result, handled)
 		}
 		move := down
-		move.Kind, move.Captured = ui.PointerMove, true
+		move.Kind, move.Captured = gfx.PointerMove, true
 		move.Y = geometry.VerticalTrack.Y + geometry.VerticalTrack.Height/2
 		if result, handled := state.sftpListPointer(move); !handled || !result.Handled {
 			t.Fatalf("%.0fx%.0f scrollbar drag = %+v, handled=%t", size.Width, size.Height, result, handled)
 		}
 		up := move
-		up.Kind, up.Captured = ui.PointerUp, false
+		up.Kind, up.Captured = gfx.PointerUp, false
 		if result, handled := state.sftpListPointer(up); !handled || !result.Handled {
 			t.Fatalf("%.0fx%.0f scrollbar release = %+v, handled=%t", size.Width, size.Height, result, handled)
 		}
@@ -333,7 +356,7 @@ func TestSFTPSaveRefreshesTheShownDirectoryAndReportsSuccess(t *testing.T) {
 	readsBefore := remote.readCount("/home/test")
 	const saved = "saved and refreshed\n"
 	replaceSFTPText(t, state, saved)
-	state.Click(hitSFTPEditSave)
+	clickSFTPPageButton(t, state, state.messages.SFTPEditSave)
 	waitSFTP(t, state, session, func(view *sftpView) bool {
 		if view.busy || sftpEditorDirty(view) || view.errorText != "" || len(state.fileNotices.items) != 1 {
 			return false

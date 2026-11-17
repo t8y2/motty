@@ -4,7 +4,7 @@ import (
 	"math"
 	"unicode/utf8"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/highlight"
 	"motty/internal/term"
 )
@@ -20,7 +20,7 @@ const (
 // bgSpan is a stretch of cells painted with a background color.
 type bgSpan struct {
 	from, to int // cell columns, to exclusive
-	color    ui.Color
+	color    gfx.Color
 }
 
 // cellSpan is a stretch of cells of one line, to exclusive. The zero value is
@@ -37,17 +37,18 @@ func (span cellSpan) holds(column int) bool { return column >= span.from && colu
 // an unchanged line costs nothing to paint again, and a line that only moved
 // (the screen scrolled) is found again by its ID.
 type rowEntry struct {
-	id      uint64
-	version uint32
-	cursor  int // the column drawn as the cursor block, or -1
-	covered cellSpan
-	epoch   uint32
-	cols    int
-	used    uint32 // paint generation that last used the entry
-	text    string
-	gutter  gutterEntry
-	runs    []ui.TextRun
-	spans   []bgSpan
+	id       uint64
+	version  uint32
+	cursor   int // the column drawn as the cursor block, or -1
+	covered  cellSpan
+	epoch    uint32
+	cols     int
+	usedCols int
+	used     uint32 // paint generation that last used the entry
+	text     string
+	gutter   gutterEntry
+	runs     []gfx.TextRun
+	spans    []bgSpan
 }
 
 // rowCache holds the prepared lines of one terminal.
@@ -111,9 +112,26 @@ func (cache *rowCache) row(line term.Row, cols, cursor int, covered cellSpan, pa
 		entry.version = ^uint32(0) // never matches: build below
 	}
 	entry.used = cache.generation
-	if entry.version != line.Version || entry.cursor != cursor || entry.covered != covered || entry.epoch != epoch || entry.cols != cols {
+	if entry.version != line.Version || entry.cursor != cursor || entry.covered != covered || entry.epoch != epoch {
 		cache.build(entry, line, cols, cursor, covered, pal, inactive)
 		entry.version, entry.cursor, entry.covered, entry.epoch, entry.cols = line.Version, cursor, covered, epoch, cols
+	} else if entry.cols != cols {
+		rebuild := entry.usedCols > min(entry.cols, cols) || pal.highlight.PaddingSensitive()
+		if !rebuild && cols > entry.cols {
+			// Row clips history to the viewport. Its hidden background cells
+			// survive a resize without changing the line's version, so inspect
+			// the newly exposed columns before reusing the narrower rendering.
+			for _, cell := range line.Cells[min(entry.cols, len(line.Cells)):min(cols, len(line.Cells))] {
+				if cell != (term.Cell{}) {
+					rebuild = true
+					break
+				}
+			}
+		}
+		if rebuild {
+			cache.build(entry, line, cols, cursor, covered, pal, inactive)
+		}
+		entry.cols = cols
 	}
 	return entry
 }
@@ -121,8 +139,8 @@ func (cache *rowCache) row(line term.Row, cols, cursor int, covered cellSpan, pa
 // cellStyle is what a cell looks like once its colors and attributes are
 // resolved against the palette.
 type cellStyle struct {
-	fg        ui.Color
-	bg        ui.Color
+	fg        gfx.Color
+	bg        gfx.Color
 	hasBG     bool
 	weight    float32
 	italic    bool
@@ -160,7 +178,7 @@ func resolveCell(cell term.Cell, pal *palette, inactive bool) cellStyle {
 		style.fg.Alpha *= 0.55
 	}
 	if bold && pal.intense.embolden() {
-		style.weight = ui.WeightBold
+		style.weight = gfx.WeightBold
 	}
 	style.italic = cell.Attr&term.Italic != 0
 	style.underline = cell.Attr&term.Underline != 0
@@ -169,13 +187,13 @@ func resolveCell(cell term.Cell, pal *palette, inactive bool) cellStyle {
 }
 
 // termColor resolves a terminal color; fallback stands in for the default.
-func (pal *palette) termColor(color term.Color, fallback ui.Color) ui.Color {
+func (pal *palette) termColor(color term.Color, fallback gfx.Color) gfx.Color {
 	switch color.Kind() {
 	case term.PaletteColor:
 		red, green, blue := term.Resolve(color.Index(), &pal.ansi)
-		return ui.RGB(red, green, blue)
+		return gfx.RGB(red, green, blue)
 	case term.TrueColor:
-		return ui.RGB(color.Components())
+		return gfx.RGB(color.Components())
 	}
 	return fallback
 }
@@ -206,6 +224,7 @@ func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, c
 
 	run := -1 // index into entry.runs of the run that may still grow
 	runASCII := false
+	usedCols := 0
 	marks := line.Marks
 	// Resolving a cell is the expensive half of a row: it maps the cell's own
 	// colors through the palette. A row is long stretches of one style, so the
@@ -220,7 +239,7 @@ func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, c
 	var (
 		spanFrom  = -1
 		spanTo    int
-		spanColor ui.Color
+		spanColor gfx.Color
 	)
 	closeSpan := func() {
 		if spanFrom >= 0 {
@@ -237,6 +256,9 @@ func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, c
 		width := 1
 		if cell.Attr&term.WideHead != 0 {
 			width = 2
+		}
+		if cell != (term.Cell{}) {
+			usedCols = x + width
 		}
 		if covered.holds(x) {
 			closeSpan()
@@ -305,7 +327,7 @@ func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, c
 			text = utf8.AppendRune(text, marks[0].R)
 			marks = marks[1:]
 		}
-		entry.runs = append(entry.runs, ui.TextRun{
+		entry.runs = append(entry.runs, gfx.TextRun{
 			Column: int32(x), Bytes: int32(len(text) - before), Cells: int32(width),
 			Color: ink.fg, Weight: ink.weight, Italic: ink.italic, Underline: ink.underline, Strike: ink.strike,
 		})
@@ -313,10 +335,22 @@ func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, c
 		runASCII = ascii
 	}
 	closeSpan()
+	for x := count; x < len(cells); x++ {
+		if cells[x] != (term.Cell{}) {
+			usedCols = x + 1
+		}
+	}
 	// The cursor may sit past the last stored cell of a short line.
 	if cursor >= count && cursor >= 0 {
 		entry.spans = append(entry.spans, bgSpan{from: cursor, to: cursor + 1, color: pal.cursor})
 	}
+	if cursor >= 0 && cursor+1 > usedCols {
+		usedCols = cursor + 1
+	}
+	if covered.to > usedCols {
+		usedCols = covered.to
+	}
+	entry.usedCols = usedCols
 
 	// Blanks at the end of the last run are not worth drawing.
 	for run = len(entry.runs) - 1; run >= 0; run = len(entry.runs) - 1 {
@@ -357,9 +391,9 @@ func asciiOnly(value string) bool {
 }
 
 // highlightColor is the color a slot has in the terminal's scheme.
-func (pal *palette) highlightColor(slot highlight.Slot, inactive bool) ui.Color {
+func (pal *palette) highlightColor(slot highlight.Slot, inactive bool) gfx.Color {
 	ansi := pal.ansi[slot.ANSI()]
-	color := ui.RGB(ansi[0], ansi[1], ansi[2])
+	color := gfx.RGB(ansi[0], ansi[1], ansi[2])
 	if inactive {
 		color.Alpha *= 0.55
 	}
@@ -413,7 +447,7 @@ func slotBuffer(buffer *[]highlight.Slot, n int) []highlight.Slot {
 	return *buffer
 }
 
-func sameRunInk(run ui.TextRun, style cellStyle) bool {
+func sameRunInk(run gfx.TextRun, style cellStyle) bool {
 	return run.Color == style.fg && run.Weight == style.weight &&
 		run.Italic == style.italic && run.Underline == style.underline && run.Strike == style.strike
 }

@@ -139,7 +139,8 @@ type screen struct {
 
 // Terminal is the emulator. Create it with New.
 type Terminal struct {
-	cols, rows int
+	cols, rows     int
+	wordSeparators string
 
 	main, alt screen
 	scr       *screen // the active one
@@ -159,7 +160,9 @@ type Terminal struct {
 	histSpare  *line        // an evicted line to reuse, so a budget-bound history does not allocate per line
 	view       int          // how many lines the view is scrolled back
 	scrolled   uint64       // lines ever pushed into history, kept or dropped
-	clock      func() int64 // stamps lines on first write; nil records nothing
+	clock      func() int64 // stamps lines when they are written; nil records nothing
+	clockAt    int64        // clock() for the current Write, see clockNow
+	clockValid bool
 
 	cx, cy   int
 	pend     bool // a character was written in the last column; wrap on the next
@@ -189,16 +192,31 @@ type Terminal struct {
 	imageBytes int
 	imageWake  func()
 
-	replyFn            func([]byte)
-	clipboardFn        func(ClipboardWrite)
-	notifyFn           func(Notification)
-	bellFn             func()
-	cwdFn              func(Cwd)
-	cwdReportFn        func(Cwd)
-	promptReadyFn      func()
-	promptStartFn      func()
-	promptToken        string
+	replyFn       func([]byte)
+	clipboardFn   func(ClipboardWrite)
+	notifyFn      func(Notification)
+	bellFn        func()
+	cwdFn         func(Cwd)
+	cwdReportFn   func(Cwd)
+	promptReadyFn func()
+	promptStartFn func()
+	promptToken   string
+	inputStart    Point // where the shell's editable line begins; see InputMove
+	inputStartSet bool
+
+	// promptLine is the buffer line the shell's prompt began on (OSC 133 A), and
+	// promptActive whether the cursor is still on that prompt; see
+	// markPromptStart. promptStale is whether a resize left the rows it drew on
+	// waiting for the shell's own redraw; promptSaved holds those rows and the
+	// cursor column as the shell drew them until it does.
+	promptLine   uint64
+	promptActive bool
+	promptStale  bool
+	promptSaved  []*line
+	promptCol    int
+
 	inputEnvironmentFn func(InputEnvironment)
+	homeDirectoryFn    func(string)
 	commandStartFn     func()
 	commandFinishedFn  func(int)
 	syncFn             func(bool)
@@ -211,7 +229,10 @@ type Terminal struct {
 	runBuf   []rune // text decoded for the run path, reused across writes
 	nextID   uint64
 	version  uint64
-	reflow   reflow
+	// generation counts the structural changes that make line numbers name
+	// other text; see BufferGeneration.
+	generation uint64
+	reflow     reflow
 
 	parser
 }
@@ -234,9 +255,30 @@ func clampInt(value, low, high int) int { return min(max(value, low), high) }
 // Size is the grid size in cells.
 func (t *Terminal) Size() (cols, rows int) { return t.cols, t.rows }
 
+// AtPrompt reports whether the cursor is on a shell prompt the owning shell
+// reported with OSC 133 A and has not left, which is the state in which the
+// shell redraws the prompt itself after a resize.
+func (t *Terminal) AtPrompt() bool { return t.promptActive && !t.onAlt }
+
 // Version changes whenever anything visible may have changed: written bytes,
 // resizes and scrolling the view. The owner can skip repainting while it holds.
 func (t *Terminal) Version() uint64 { return t.version }
+
+// BufferGeneration changes when the retained line numbers stop naming the text
+// they named before: a reset, and entering or leaving the alternate screen.
+// Ordinary output, which appends and scrolls, leaves it alone. An owner's
+// selection watches it to know when its points have become meaningless.
+func (t *Terminal) BufferGeneration() uint64 { return t.generation }
+
+// RetainedFrom is the oldest line the retained buffer still holds, for owners
+// that anchor to line numbers: it is where a point at or before it has to
+// start. ok is false when the buffer holds no lines at all.
+func (t *Terminal) RetainedFrom() (line uint64, ok bool) {
+	if t.bufferLineCount() == 0 {
+		return 0, false
+	}
+	return t.lineBase(), true
+}
 
 // Title is the window title the application set with OSC 0 or 2.
 func (t *Terminal) Title() string { return t.title }
@@ -310,6 +352,7 @@ func (t *Terminal) ClearScreen() bool {
 	lines[0].wrapped = false
 	t.clearHistory()
 	t.cy = 0
+	t.generation++
 	t.version++
 	return true
 }
@@ -506,11 +549,15 @@ func (t *Terminal) Reset() {
 	}
 	t.view = 0
 	t.title = ""
+	t.generation++
 	t.resetState()
 }
 
 // resetState sets modes, cursor, margins and tabs to their defaults.
 func (t *Terminal) resetState() {
+	t.inputStartSet = false
+	t.promptActive, t.promptStale = false, false
+	t.dropPromptRows()
 	t.setSync(false)
 	t.cx, t.cy, t.pend = 0, 0, false
 	t.top, t.bot = 0, t.rows-1
@@ -619,6 +666,45 @@ func (t *Terminal) recycle(l *line) *line {
 	l.id = t.nextID
 	l.version = 0
 	return l
+}
+
+// pushScreenToHistory moves the content a main-screen erase would wipe into the
+// history, up to the last row that holds any. The blank rows below it would only
+// add empty lines to the scrollback for every clear. Each screen row takes a
+// fresh identity afterwards, so the history keeps its images and the caches
+// built from the old rows cannot paint over the new blank ones.
+func (t *Terminal) pushScreenToHistory() {
+	lines := t.scr.lines
+	last := -1
+	for y, l := range lines {
+		if t.lineHasContent(l) {
+			last = y
+		}
+	}
+	for y := 0; y <= last; y++ {
+		l := lines[y]
+		t.pushHistory(l)
+		lines[y] = t.recycle(l)
+	}
+}
+
+// lineHasContent reports whether a row holds something a clear would destroy: a
+// character other than a space, a combining mark, or an image anchored to it.
+// A background color alone is not content, as in Windows Terminal.
+func (t *Terminal) lineHasContent(l *line) bool {
+	cells := l.cells
+	if len(cells) > t.cols {
+		cells = cells[:t.cols]
+	}
+	for _, c := range cells {
+		if c.R != 0 && c.R != ' ' {
+			return true
+		}
+	}
+	if len(l.marks) != 0 {
+		return true
+	}
+	return t.images != nil && t.images.hasLine(l.id)
 }
 
 // pushHistory appends a copy of l, without its trailing blanks, to the
@@ -766,6 +852,9 @@ func (t *Terminal) Resize(cols, rows int) {
 	}
 	oldCols := t.cols
 	t.cols = cols
+	if cols != oldCols {
+		t.inputStartSet = false // reflow moves the line the shell is editing
+	}
 	t.tabs = defaultTabs(cols, t.tabs[:min(oldCols, cols)])
 	if cols != oldCols {
 		t.reflowMain()
@@ -845,14 +934,20 @@ func (t *Terminal) resizeLines(s *screen, rows int, cursorY *int, useHistory boo
 
 // fitCols makes l exactly as wide as the terminal.
 func (t *Terminal) fitCols(l *line) {
+	changed := false
 	switch {
 	case len(l.cells) > t.cols:
+		if l.used > t.cols {
+			changed = true
+		}
 		l.cells = l.cells[:t.cols]
 		for len(l.marks) > 0 && int(l.marks[len(l.marks)-1].Col) >= t.cols {
 			l.marks = l.marks[:len(l.marks)-1]
+			changed = true
 		}
 		if l.cells[t.cols-1].Attr&WideHead != 0 { // its tail was cut off
 			l.orphan(t.cols - 1)
+			changed = true
 		}
 	case len(l.cells) < t.cols:
 		if cap(l.cells) >= t.cols {
@@ -870,7 +965,9 @@ func (t *Terminal) fitCols(l *line) {
 	}
 	l.used = min(l.used, len(l.cells))
 	l.fitHyperlinks(t.cols)
-	l.version++
+	if changed {
+		l.version++
+	}
 }
 
 // eraseRange blanks cells a..b-1 of l with the current background, repairing
@@ -894,6 +991,12 @@ func (t *Terminal) eraseRange(l *line, a, b int) {
 	t.repairWide(l, a-1)
 	t.repairWide(l, b)
 	l.version++
+	// Erasing is a write too: the line's current (blank) content was produced
+	// now, so it must not keep the time of what it used to hold. A line nothing
+	// has ever been written to stays unstamped.
+	if t.clock != nil && (l.at != 0 || l.used != 0) {
+		l.at = t.clockNow()
+	}
 }
 
 // repairWide blanks the orphan half of a double-width character at x.
@@ -1069,11 +1172,17 @@ func (t *Terminal) AppendRetainedText(dst []byte) []byte {
 	return dst
 }
 
-// SetClock makes the terminal remember when each line is first written: now
-// returns unix seconds and is called once per line, not per character. A nil
-// clock stops recording and costs one nil check per printed run. Lines keep
-// their time when they scroll into the history.
-func (t *Terminal) SetClock(now func() int64) { t.clock = now }
+// SetClock makes the terminal remember when each line is written: now returns
+// unix seconds and is called at most once per Write, not per line or character.
+// A line that is written over takes the time of that write, so a program that
+// repaints the screen in place moves its rows' times forward instead of leaving
+// them at the time each row first appeared. A nil clock stops recording and
+// costs one nil check per printed run. Lines keep their time when they scroll
+// into the history.
+func (t *Terminal) SetClock(now func() int64) {
+	t.clock = now
+	t.clockValid = false
+}
 
 // LineNumber is the 1-based number of view row i among every line the main
 // screen has produced since the terminal started. It keeps counting as the
@@ -1081,9 +1190,35 @@ func (t *Terminal) SetClock(now func() int64) { t.clock = now }
 // screen.
 func (t *Terminal) LineNumber(i int) uint64 { return t.scrolled - uint64(t.view) + uint64(i) + 1 }
 
-// stamp records the first write to l.
+// LineID returns the ID of the retained line numbered line, in the numbering
+// LineNumber and RetainedFrom use. Unlike Row it finds lines in the history as
+// well as on the screen, so an owner can follow a run of lines it wrote while
+// the reader looks somewhere else. ok is false for a line number the retained
+// buffer no longer holds.
+func (t *Terminal) LineID(line uint64) (uint64, bool) {
+	base := t.lineBase()
+	if line < base || line-base >= uint64(t.bufferLineCount()) {
+		return 0, false
+	}
+	return t.bufferLine(int(line - base)).id, true
+}
+
+// clockNow is the time stamped on lines written by the current Write. Asking
+// the clock once keeps a burst of lines on the same second and keeps the clock
+// out of the per-character paths, which call stamp for every rune they print.
+func (t *Terminal) clockNow() int64 {
+	if !t.clockValid {
+		t.clockAt, t.clockValid = t.clock(), true
+	}
+	return t.clockAt
+}
+
+// stamp records when the content of l was written. Overwriting a line moves its
+// time forward: a full-screen program on the main screen writes its rows again
+// every refresh, and the gutter must not report the time a row first appeared
+// for content that has since been replaced.
 func (t *Terminal) stamp(l *line) {
-	if t.clock != nil && l.at == 0 {
-		l.at = t.clock()
+	if t.clock != nil {
+		l.at = t.clockNow()
 	}
 }

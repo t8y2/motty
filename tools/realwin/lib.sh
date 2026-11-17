@@ -1,15 +1,13 @@
 # Source this file. Helpers for driving the physical Windows machine.
 #
-# Endpoint comes from MOTTY_WIN_REAL_HOST / MOTTY_WIN_REAL_USER, read from (first found)
-# tools/realwin/local.sh or ../viva/tools/testenv/local.sh. Both are git-ignored.
+# Endpoint comes from MOTTY_WIN_REAL_HOST / MOTTY_WIN_REAL_USER in
+# tools/realwin/local.sh, which is git-ignored.
 #
 # An SSH login on Windows lives in session 0 and cannot see the desktop. Anything that
 # touches windows, input or the screen therefore runs as a one-shot scheduled task in
 # the user's interactive session (rw_desktop). Plain commands run over SSH (rw_ssh).
 here=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd)
-for f in "$here/local.sh" "$here/../../../viva/tools/testenv/local.sh"; do
-	if [ -f "$f" ]; then . "$f"; break; fi
-done
+if [ -f "$here/local.sh" ]; then . "$here/local.sh"; fi
 : "${MOTTY_WIN_REAL_HOST:?set MOTTY_WIN_REAL_HOST (see tools/realwin/local.example.sh)}"
 : "${MOTTY_WIN_REAL_USER:?set MOTTY_WIN_REAL_USER}"
 RW_TARGET="$MOTTY_WIN_REAL_USER@$MOTTY_WIN_REAL_HOST"

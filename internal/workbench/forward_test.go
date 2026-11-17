@@ -13,8 +13,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
+	"golang.org/x/crypto/ssh"
+	"motty/internal/i18n"
 	"motty/internal/portforward"
 	"motty/internal/sshconn"
 )
@@ -58,11 +60,11 @@ func TestForwardDialogValidatesConfiguration(t *testing.T) {
 			want: func(state *State) string { return state.messages.ErrForwardNameTaken },
 		},
 		{
-			name: "local port duplicate",
+			name: "local port duplicate saves",
 			prepare: func(state *State) {
 				state.forwards = append(state.forwards, forwardRecord{Label: "Other", LocalPort: 8080})
 			},
-			want: func(state *State) string { return state.messages.ErrForwardLocalTaken },
+			want: func(*State) string { return "" },
 		},
 	}
 
@@ -406,29 +408,37 @@ func TestForwardDialogModesShowDestinationsAndSupportKeyboard(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	openForwardEditor(t, state)
 	canvas, _ := paintedTexts(state)
-	if !hasHit(canvas, hitForwardModeLocal) || !hasHit(canvas, hitForwardModeRemote) || !hasHit(canvas, hitForwardModeSOCKS5) || !hasHit(canvas, hitForwardModeHTTPConnect) || !hasHit(canvas, hitForwardDialogDestination) {
+	local := forwardModeChoice(t, canvas, state.messages.ForwardModeLocal)
+	remote := forwardModeChoice(t, canvas, state.messages.ForwardModeRemote)
+	socks := forwardModeChoice(t, canvas, state.messages.ForwardModeSOCKS5)
+	connect := forwardModeChoice(t, canvas, state.messages.ForwardModeHTTPConnect)
+	if !hasHit(canvas, hitForwardDialogDestination) {
 		t.Fatalf("local forward dialog hits = %+v", canvas.Hits())
 	}
-	result := state.Key(ui.KeyEvent{Key: ui.KeyRight, Target: hitForwardModeLocal})
-	if !result.Handled || result.Focus != hitForwardModeRemote || state.forwardEditor.mode != portforward.ModeRemote {
-		t.Fatalf("remote keyboard result=%+v mode=%d", result, state.forwardEditor.mode)
+	// The mode switch is a page Choice: its arrows report the segment to activate
+	// as a click, and the click's event pass writes the value.
+	press := func(from, to gfx.Hit, key gfx.Key, want portforward.Mode) {
+		t.Helper()
+		result := windowKeyRoutes(state, gfx.KeyEvent{Key: key, Target: from.ID})
+		if !result.Handled || result.Focus != to.ID || result.Activate != to.ID {
+			t.Fatalf("mode key %v from %q result=%+v", key, from.Label, result)
+		}
+		activateChoice(t, state, result.Activate)
+		if state.forwardEditor.mode != want {
+			t.Fatalf("mode after %v = %d, want %d", key, state.forwardEditor.mode, want)
+		}
 	}
+	press(local, remote, gfx.KeyRight, portforward.ModeRemote)
 	canvas, texts := paintedTexts(state)
 	if !hasHit(canvas, hitForwardDialogDestination) || !hasHit(canvas, hitForwardDialogDestinationPort) || !contains(texts, state.messages.ForwardFieldRemotePort) {
 		t.Fatalf("remote dialog texts=%v hits=%+v", texts, canvas.Hits())
 	}
-	result = state.Key(ui.KeyEvent{Key: ui.KeyRight, Target: hitForwardModeRemote})
-	if !result.Handled || result.Focus != hitForwardModeSOCKS5 || state.forwardEditor.mode != portforward.ModeSOCKS5 {
-		t.Fatalf("SOCKS5 keyboard result=%+v mode=%d", result, state.forwardEditor.mode)
-	}
+	press(remote, socks, gfx.KeyRight, portforward.ModeSOCKS5)
 	canvas, texts = paintedTexts(state)
 	if hasHit(canvas, hitForwardDialogDestination) || hasHit(canvas, hitForwardDialogDestinationPort) || !contains(texts, state.messages.ForwardSOCKS5Hint) {
 		t.Fatalf("SOCKS5 dialog texts=%v hits=%+v", texts, canvas.Hits())
 	}
-	result = state.Key(ui.KeyEvent{Key: ui.KeyRight, Target: hitForwardModeSOCKS5})
-	if !result.Handled || result.Focus != hitForwardModeHTTPConnect || state.forwardEditor.mode != portforward.ModeHTTPConnect {
-		t.Fatalf("HTTP CONNECT keyboard result=%+v mode=%d", result, state.forwardEditor.mode)
-	}
+	press(socks, connect, gfx.KeyRight, portforward.ModeHTTPConnect)
 	canvas, texts = paintedTexts(state)
 	if hasHit(canvas, hitForwardDialogDestination) || hasHit(canvas, hitForwardDialogDestinationPort) || !contains(texts, state.messages.ForwardHTTPConnectHint) {
 		t.Fatalf("HTTP CONNECT dialog texts=%v hits=%+v", texts, canvas.Hits())
@@ -438,54 +448,181 @@ func TestForwardDialogModesShowDestinationsAndSupportKeyboard(t *testing.T) {
 	if got := state.forwardEditor.validate(state); got != "" {
 		t.Fatalf("HTTP CONNECT validation = %q", got)
 	}
-	result = state.Key(ui.KeyEvent{Key: ui.KeyLeft, Target: hitForwardModeHTTPConnect})
-	if !result.Handled || result.Focus != hitForwardModeSOCKS5 || state.forwardEditor.mode != portforward.ModeSOCKS5 {
-		t.Fatalf("SOCKS5 keyboard result=%+v mode=%d", result, state.forwardEditor.mode)
+	press(connect, socks, gfx.KeyLeft, portforward.ModeSOCKS5)
+	press(socks, remote, gfx.KeyLeft, portforward.ModeRemote)
+	press(remote, local, gfx.KeyLeft, portforward.ModeLocal)
+}
+
+func TestForwardDialogModeSwitchTakesClicks(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	openForwardEditor(t, state)
+	canvas, _ := paintedTexts(state)
+	socks := forwardModeChoice(t, canvas, state.messages.ForwardModeSOCKS5)
+	clickSettingsChoiceHit(t, state, socks)
+	if state.forwardEditor.mode != portforward.ModeSOCKS5 {
+		t.Fatalf("mode after a click = %d", state.forwardEditor.mode)
 	}
-	result = state.Key(ui.KeyEvent{Key: ui.KeyLeft, Target: hitForwardModeSOCKS5})
-	if !result.Handled || result.Focus != hitForwardModeRemote || state.forwardEditor.mode != portforward.ModeRemote {
-		t.Fatalf("remote keyboard result=%+v mode=%d", result, state.forwardEditor.mode)
-	}
-	result = state.Key(ui.KeyEvent{Key: ui.KeyLeft, Target: hitForwardModeRemote})
-	if !result.Handled || result.Focus != hitForwardModeLocal || state.forwardEditor.mode != portforward.ModeLocal {
-		t.Fatalf("local keyboard result=%+v mode=%d", result, state.forwardEditor.mode)
+	local := settingsChoiceHit(t, state, state.messages.ForwardModeLocal)
+	clickSettingsChoiceHit(t, state, local)
+	if state.forwardEditor.mode != portforward.ModeLocal {
+		t.Fatalf("mode after a second click = %d", state.forwardEditor.mode)
 	}
 }
 
-func TestRemoteForwardDuplicatePortsAreScopedToSSHHost(t *testing.T) {
-	tests := []struct {
-		name     string
-		existing forwardRecord
-		want     func(*State) string
-	}{
-		{
-			name:     "same remote host",
-			existing: forwardRecord{Label: "Other", Mode: portforward.ModeRemote, HostAddress: sampleHosts[0].Address, HostUser: sampleHosts[0].User, HostPort: sampleHosts[0].Port, LocalPort: 8080},
-			want:     func(state *State) string { return state.messages.ErrForwardRemoteTaken },
-		},
-		{
-			name:     "different remote host",
-			existing: forwardRecord{Label: "Other", Mode: portforward.ModeRemote, HostAddress: sampleHosts[1].Address, HostUser: sampleHosts[1].User, HostPort: sampleHosts[1].Port, LocalPort: 8080},
-			want:     func(*State) string { return "" },
-		},
-		{
-			name:     "local listener",
-			existing: forwardRecord{Label: "Other", Mode: portforward.ModeLocal, LocalPort: 8080},
-			want:     func(*State) string { return "" },
-		},
+// forwardModeChoice finds the forward type switch's segment with label in the
+// painted dialog.
+func forwardModeChoice(t testing.TB, canvas *gfx.Canvas, label string) gfx.Hit {
+	t.Helper()
+	hit, ok := settingsChoiceIn(canvas, label)
+	if !ok {
+		t.Fatalf("no forward mode choice labeled %q", label)
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			state := newTestState(t, testOptions(t))
-			openForwardEditor(t, state)
-			state.Click(hitForwardModeRemote)
-			replaceForwardField(state, hitForwardDialogLabel, "Remote")
-			replaceForwardField(state, hitForwardDialogDestination, "127.0.0.1")
-			state.forwards = append(state.forwards, test.existing)
-			if got, want := state.forwardEditor.validate(state), test.want(state); got != want {
-				t.Fatalf("validation = %q, want %q", got, want)
-			}
-		})
+	return hit
+}
+
+// activateChoice delivers the click an arrow key reported, so the page Choice
+// writes its value in the event pass.
+func activateChoice(t testing.TB, state *State, id gfx.ID) {
+	t.Helper()
+	var canvas gfx.Canvas
+	canvas.BeginEventPass(id, gfx.ClickInfo{})
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	canvas.EndEventPass()
+}
+
+// A local port can be saved on several forwards, but only one of them listens
+// at a time: the forward whose start comes second reports the taken port, and it
+// runs once the first one stops.
+func TestForwardsSharingALocalPortRunOneAtATime(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	port := freePort(t)
+	addForwardRule(t, state, "Dev", port, "dev.internal", 8080)
+	addForwardRule(t, state, "Test", port, "test.internal", 9090)
+
+	// Neither forward has a tab to borrow a connection from, so both wait on the
+	// one tunnel their host dials.
+	state.selectedForwardID = state.forwards[0].ID
+	state.Click(hitForwardStartStop)
+	state.selectedForwardID = state.forwards[1].ID
+	state.Click(hitForwardStartStop)
+	if len(world.conns) != 1 || len(state.forwardTunnels) != 1 {
+		t.Fatalf("two waiting forwards dialed conns=%d tunnels=%d", len(world.conns), len(state.forwardTunnels))
+	}
+	world.conns[0].set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+
+	first, second := &state.forwards[0], &state.forwards[1]
+	if first.runner == nil {
+		t.Fatalf("the first forward did not start: %+v", *first)
+	}
+	if second.runner != nil || second.pending || second.lastError != state.messages.ErrForwardLocalTaken || second.cells[4] != state.messages.ForwardStoppedError {
+		t.Fatalf("the second forward after the tunnel connected = %+v", *second)
+	}
+	if !strings.Contains(state.status, state.messages.ErrForwardLocalTaken) {
+		t.Fatalf("status = %q", state.status)
+	}
+
+	// The port serves the other forward once its first holder stops.
+	state.selectedForwardID = first.ID
+	state.Click(hitForwardStartStop)
+	state.selectedForwardID = second.ID
+	state.Click(hitForwardStartStop)
+	if !second.pending || second.sessionID == 0 || len(state.forwardTunnels) != 1 || len(world.conns) != 2 {
+		t.Fatalf("restarted forward = %+v tunnels=%d conns=%d", *second, len(state.forwardTunnels), len(world.conns))
+	}
+	world.conns[1].set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	if second.runner == nil || second.lastError != "" || first.runner != nil {
+		t.Fatalf("the second forward on its own start = %+v first=%+v", *second, *first)
+	}
+	if got := second.runner.Status().ListenAddress; got != second.listenAddress() {
+		t.Fatalf("restarted listener = %q, want %q", got, second.listenAddress())
+	}
+}
+
+// A forward whose port a running forward already holds is refused before
+// anything is dialed for it.
+func TestStartingAForwardOnATakenPortDoesNotDial(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	fake := connect(t, state, world)
+	fake.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	port := freePort(t)
+	addForwardRule(t, state, "Dev", port, "dev.internal", 8080)
+	addForwardRuleOnHost(t, state, "Staging Copy", port, "test.internal", 9090, "stag")
+
+	state.selectedForwardID = state.forwards[0].ID
+	state.Click(hitForwardStartStop)
+	if state.forwards[0].runner == nil {
+		t.Fatal("the first forward did not start")
+	}
+	state.selectedForwardID = state.forwards[1].ID
+	state.Click(hitForwardStartStop)
+	second := &state.forwards[1]
+	if second.runner != nil || second.lastError != state.messages.ErrForwardLocalTaken || second.cells[4] != state.messages.ForwardStoppedError {
+		t.Fatalf("refused start = %+v", *second)
+	}
+	if len(world.conns) != 1 || len(state.forwardTunnels) != 0 {
+		t.Fatalf("the refused start dialed conns=%d tunnels=%d", len(world.conns), len(state.forwardTunnels))
+	}
+}
+
+// A remote port can be saved on several forwards of one SSH host; the second
+// one to start is told the host already uses the port, and it runs once the
+// first one stops.
+func TestRemoteForwardsSharingAPortOnOneHostRunOneAtATime(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	fake := connect(t, state, world)
+	fake.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	fake.listen = net.Listen
+	targetA := forwardEchoServer(t)
+	targetB := forwardEchoServer(t)
+	remotePort := freePort(t)
+	addRemoteForwardRule(t, state, "Remote A", remotePort, "127.0.0.1", uint16(targetA.Addr().(*net.TCPAddr).Port))
+	addRemoteForwardRule(t, state, "Remote B", remotePort, "127.0.0.1", uint16(targetB.Addr().(*net.TCPAddr).Port))
+
+	state.selectedForwardID = state.forwards[0].ID
+	state.Click(hitForwardStartStop)
+	first := &state.forwards[0]
+	waitForward(t, state, func() bool { return first.runner != nil })
+
+	state.selectedForwardID = state.forwards[1].ID
+	state.Click(hitForwardStartStop)
+	second := &state.forwards[1]
+	if second.runner != nil || second.starting || second.lastError != state.messages.ErrForwardRemoteTaken || second.cells[4] != state.messages.ForwardStoppedError {
+		t.Fatalf("conflicting remote start = %+v", *second)
+	}
+	if !strings.Contains(state.status, state.messages.ErrForwardRemoteTaken) {
+		t.Fatalf("status = %q", state.status)
+	}
+
+	// A remote listener closes in the background: the port is free once a dial to
+	// it stops succeeding.
+	state.selectedForwardID = first.ID
+	state.Click(hitForwardStartStop)
+	address := fmt.Sprintf("127.0.0.1:%d", remotePort)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		connection, err := net.DialTimeout("tcp", address, 20*time.Millisecond)
+		if err != nil {
+			break
+		}
+		connection.Close()
+		if time.Now().After(deadline) {
+			t.Fatal("the first remote listener stayed open after stopping")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	state.selectedForwardID = second.ID
+	state.Click(hitForwardStartStop)
+	waitForward(t, state, func() bool { return second.runner != nil })
+	if second.lastError != "" || first.runner != nil {
+		t.Fatalf("the second remote forward on its own start = %+v first=%+v", *second, *first)
 	}
 }
 
@@ -528,21 +665,30 @@ func TestRestoreForwardsValidatesModesAndCanonicalizesProxyModes(t *testing.T) {
 	}
 }
 
-func TestForwardWaitsForSSHStartsAndStopsWithSession(t *testing.T) {
+// A forward with no tab to borrow a connection from dials one for itself: it
+// never opens a terminal, waits for that connection, and stops when it closes.
+func TestForwardDialsABackgroundTunnelWithoutATerminal(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)
 	addForwardRule(t, state, "Database", freePort(t), "database.internal", 5432)
 	state.Click(hitForwardStartStop)
 
 	forward := &state.forwards[0]
-	if !forward.pending || forward.runner != nil || len(state.sessions) != 1 || state.activeSection != sectionForwards {
+	if !forward.pending || forward.runner != nil || len(state.sessions) != 0 || state.activeSection != sectionForwards {
 		t.Fatalf("waiting forward=%+v sessions=%d section=%d", *forward, len(state.sessions), state.activeSection)
+	}
+	if len(world.conns) != 1 || len(state.forwardTunnels) != 1 {
+		t.Fatalf("dialed conns=%d tunnels=%d", len(world.conns), len(state.forwardTunnels))
+	}
+	tunnel := state.forwardTunnels[0]
+	if forward.sessionID != tunnel.id || tunnel.host.ID != state.hosts[0].ID {
+		t.Fatalf("forward=%+v tunnel=%+v", *forward, *tunnel)
 	}
 	fake := world.conns[0]
 	fake.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
 	state.Wake()
-	if forward.pending || forward.runner == nil || forward.sessionID != state.sessions[0].ID {
-		t.Fatalf("started forward = %+v", *forward)
+	if forward.pending || forward.runner == nil || forward.sessionID != tunnel.id || tunnel.closed {
+		t.Fatalf("started forward = %+v tunnel=%+v", *forward, *tunnel)
 	}
 
 	fake.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseClosed })
@@ -550,8 +696,220 @@ func TestForwardWaitsForSSHStartsAndStopsWithSession(t *testing.T) {
 	if forward.runner != nil || forward.pending || forward.lastError != state.messages.ForwardConnectionClosed {
 		t.Fatalf("closed forward = %+v", *forward)
 	}
-	if forward.cells[4] != state.messages.ForwardStoppedError {
-		t.Fatalf("closed status = %q", forward.cells[4])
+	if forward.cells[4] != state.messages.ForwardStoppedError || len(state.forwardTunnels) != 0 {
+		t.Fatalf("closed status = %q tunnels=%d", forward.cells[4], len(state.forwardTunnels))
+	}
+	if len(state.sessions) != 0 {
+		t.Fatalf("background forward opened %d terminal sessions", len(state.sessions))
+	}
+}
+
+func TestForwardsOnOneHostShareABackgroundTunnel(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	addForwardRule(t, state, "Web", freePort(t), "web.internal", 8080)
+	addForwardRule(t, state, "Database", freePort(t), "db.internal", 5432)
+
+	state.selectedForwardID = state.forwards[0].ID
+	state.Click(hitForwardStartStop)
+	state.selectedForwardID = state.forwards[1].ID
+	state.Click(hitForwardStartStop)
+	if len(world.conns) != 1 || len(state.forwardTunnels) != 1 || len(state.sessions) != 0 {
+		t.Fatalf("conns=%d tunnels=%d sessions=%d", len(world.conns), len(state.forwardTunnels), len(state.sessions))
+	}
+	tunnel := state.forwardTunnels[0]
+	if state.forwards[0].sessionID != tunnel.id || state.forwards[1].sessionID != tunnel.id {
+		t.Fatalf("forwards = %+v", state.forwards)
+	}
+	world.conns[0].set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	if state.forwards[0].runner == nil || state.forwards[1].runner == nil {
+		t.Fatalf("forwards after connect = %+v", state.forwards)
+	}
+
+	// Stopping one leaves the other's transport alone.
+	state.selectedForwardID = state.forwards[0].ID
+	state.Click(hitForwardStartStop)
+	if len(state.forwardTunnels) != 1 || tunnel.closed {
+		t.Fatal("stopping one forward closed the shared tunnel")
+	}
+	state.selectedForwardID = state.forwards[1].ID
+	state.Click(hitForwardStartStop)
+	if len(state.forwardTunnels) != 0 || !tunnel.closed {
+		t.Fatal("stopping the last forward kept its tunnel")
+	}
+}
+
+func TestForwardBackgroundTunnelAsksForAuthentication(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	addForwardRule(t, state, "Database", freePort(t), "database.internal", 5432)
+	state.Click(hitForwardStartStop)
+
+	tunnel := state.forwardTunnels[0]
+	fake := world.conns[0]
+	fake.set(func(status *sshconn.Status) {
+		status.Phase = sshconn.PhasePasswordPrompt
+		status.Attempt = 1
+		status.Questions = []sshconn.Question{{Text: "Password: ", Secret: true}}
+	})
+	state.Wake()
+	if state.modal != modalPassword || state.modalSession != tunnel.id {
+		t.Fatalf("authentication modal=%d session=%d, want the tunnel's %d", state.modal, state.modalSession, tunnel.id)
+	}
+
+	state.passwordFields[0].Insert("secret")
+	state.submitPassword()
+	if len(fake.passwords) != 1 || fake.passwords[0] != "secret" {
+		t.Fatalf("submitted passwords = %v, want one", fake.passwords)
+	}
+	fake.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	if state.forwards[0].runner == nil || len(state.sessions) != 0 {
+		t.Fatalf("forward after authentication = %+v sessions=%d", state.forwards[0], len(state.sessions))
+	}
+}
+
+func TestForwardBackgroundTunnelResumesAfterItsConnectionDrops(t *testing.T) {
+	world, options := newWorld(t)
+	now := 10 * time.Second
+	options.Now = func() time.Duration { return now }
+	state := newTestState(t, options)
+	state.connectionReconnect = reconnectForever
+	addForwardRule(t, state, "Database", freePort(t), "database.internal", 5432)
+	state.Click(hitForwardEdit)
+	state.Click(hitForwardDialogResume)
+	state.Click(hitForwardDialogSubmit)
+	state.Click(hitForwardStartStop)
+
+	tunnel := state.forwardTunnels[0]
+	world.conns[0].set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	if state.forwards[0].runner == nil {
+		t.Fatal("forward did not start over the tunnel")
+	}
+
+	world.conns[0].set(func(status *sshconn.Status) {
+		status.Phase = sshconn.PhaseClosed
+		status.Err = errors.Join(sshconn.ErrDisconnected, errors.New("network lost"))
+	})
+	state.Wake()
+	forward := &state.forwards[0]
+	if forward.runner != nil || !forward.pending || tunnel.retryDue == 0 {
+		t.Fatalf("forward after the drop = %+v tunnels=%d", *forward, len(state.forwardTunnels))
+	}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	if _, scheduled := canvas.NextFrame(); !scheduled {
+		t.Fatal("a tunnel waiting for its retry scheduled no frame")
+	}
+	now += time.Second
+	state.Wake()
+	if len(world.conns) != 2 {
+		t.Fatalf("retry dialed %d connections, want 2", len(world.conns))
+	}
+	world.conns[1].set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	if forward.runner == nil || forward.pending || len(state.sessions) != 0 {
+		t.Fatalf("forward after the retry = %+v sessions=%d", *forward, len(state.sessions))
+	}
+}
+
+func TestForwardBackgroundTunnelStopsWhenReconnectIsOff(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	addForwardRule(t, state, "Database", freePort(t), "database.internal", 5432)
+	state.Click(hitForwardEdit)
+	state.Click(hitForwardDialogResume)
+	state.Click(hitForwardDialogSubmit)
+	state.Click(hitForwardStartStop)
+
+	world.conns[0].set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	world.conns[0].set(func(status *sshconn.Status) {
+		status.Phase = sshconn.PhaseClosed
+		status.Err = errors.Join(sshconn.ErrDisconnected, errors.New("network lost"))
+	})
+	state.Wake()
+	forward := &state.forwards[0]
+	if forward.runner != nil || forward.pending || len(state.forwardTunnels) != 0 || forward.lastError != state.messages.ForwardConnectionClosed {
+		t.Fatalf("forward with reconnect off = %+v tunnels=%d", *forward, len(state.forwardTunnels))
+	}
+}
+
+func TestStoppingAForwardClosesItsBackgroundTunnel(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	addForwardRule(t, state, "Database", freePort(t), "database.internal", 5432)
+	state.Click(hitForwardStartStop)
+
+	tunnel := state.forwardTunnels[0]
+	state.Click(hitForwardStartStop)
+	forward := &state.forwards[0]
+	if forward.pending || forward.sessionID != 0 || len(state.forwardTunnels) != 0 || !tunnel.closed {
+		t.Fatalf("stopped forward = %+v tunnels=%d", *forward, len(state.forwardTunnels))
+	}
+	if world.conns[0].canceled != 1 {
+		t.Fatalf("tunnel canceled %d times, want once", world.conns[0].canceled)
+	}
+}
+
+func TestTurningReconnectOffStopsAWaitingTunnel(t *testing.T) {
+	world, options := newWorld(t)
+	now := 10 * time.Second
+	options.Now = func() time.Duration { return now }
+	state := newTestState(t, options)
+	state.connectionReconnect = reconnectForever
+	addForwardRule(t, state, "Database", freePort(t), "database.internal", 5432)
+	state.Click(hitForwardEdit)
+	state.Click(hitForwardDialogResume)
+	state.Click(hitForwardDialogSubmit)
+	state.Click(hitForwardStartStop)
+	world.conns[0].set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	world.conns[0].set(func(status *sshconn.Status) {
+		status.Phase = sshconn.PhaseClosed
+		status.Err = errors.Join(sshconn.ErrDisconnected, errors.New("network lost"))
+	})
+	state.Wake()
+	if !state.forwards[0].pending || len(state.forwardTunnels) != 1 {
+		t.Fatalf("forward after the drop = %+v tunnels=%d", state.forwards[0], len(state.forwardTunnels))
+	}
+
+	state.setReconnectPolicy(reconnectOff)
+	forward := &state.forwards[0]
+	if forward.pending || forward.lastError != state.messages.ForwardConnectionClosed || len(state.forwardTunnels) != 0 {
+		t.Fatalf("forward with reconnect turned off = %+v tunnels=%d", *forward, len(state.forwardTunnels))
+	}
+}
+
+func TestABackgroundTunnelFollowsAnEditedHost(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	addForwardRule(t, state, "Web", freePort(t), "web.internal", 8080)
+	state.Click(hitForwardStartStop)
+
+	tunnel := state.forwardTunnels[0]
+	index := state.hostIndex(tunnel.host.ID)
+	previous := state.hosts[index]
+	updated := previous
+	updated.Address = "moved.example.com"
+	state.replaceHost(index, previous, updated)
+	if tunnel.host.Address != "moved.example.com" || tunnel.session.host.Address != "moved.example.com" {
+		t.Fatalf("tunnel host=%q session host=%q", tunnel.host.Address, tunnel.session.host.Address)
+	}
+}
+
+func TestConnectedTabIsPreferredOverANewTunnel(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	fake := connect(t, state, world)
+	fake.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	addForwardRule(t, state, "Database", freePort(t), "database.internal", 5432)
+	state.Click(hitForwardStartStop)
+	if state.forwards[0].runner == nil || len(world.conns) != 1 || len(state.forwardTunnels) != 0 {
+		t.Fatalf("forward=%+v conns=%d tunnels=%d", state.forwards[0], len(world.conns), len(state.forwardTunnels))
 	}
 }
 
@@ -802,7 +1160,7 @@ func TestForwardPagePaintsRowsDialogAndHostOptions(t *testing.T) {
 	if !contains(texts, state.messages.ForwardTitle) || !contains(texts, "Web") || !contains(texts, "web.internal") {
 		t.Fatalf("forward page texts = %v", texts)
 	}
-	if !hasHit(canvas, hitForwardRowList.At(int(state.forwards[0].ID))) || !hasHit(canvas, hitForwardStartStop) || !hasHit(canvas, hitForwardRemove) {
+	if !hasHit(canvas, hitForwardRowList.At(0)) || !hasHit(canvas, hitForwardStartStop) || !hasHit(canvas, hitForwardRemove) {
 		t.Fatalf("forward page hits = %+v", canvas.Hits())
 	}
 
@@ -812,40 +1170,43 @@ func TestForwardPagePaintsRowsDialogAndHostOptions(t *testing.T) {
 	}
 	state.Click(hitForwardDialogHost)
 	canvas, texts = paintedTexts(state)
-	if !contains(texts, state.messages.ForwardDialogTitle) || !hasHit(canvas, hitForwardHostItemList.At(int(state.hosts[0].ID))) || !hasHit(canvas, hitForwardHostDismiss) {
+	if !contains(texts, state.messages.ForwardDialogTitle) || !hasHit(canvas, hitForwardHostItemList.At(0)) || !hasHit(canvas, hitForwardHostDismiss) {
 		t.Fatalf("forward dialog texts=%v hits=%+v", texts, canvas.Hits())
 	}
 }
 
-func TestForwardHostSelectScrollsAndChoosesStableHostID(t *testing.T) {
+// The host picker filters by what identifies a host, not only its label:
+// typing an address or an account narrows the list to the host that has it.
+func TestForwardHostSelectFiltersByAddressAndChoosesStableHostID(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	for index := len(state.hosts); index < forwardHostPageSize+2; index++ {
-		host := Host{ID: state.nextHostID, Label: fmt.Sprintf("Host %d", index), Address: fmt.Sprintf("host-%d.example", index), Port: 22}
+	for index := len(state.hosts); index < 9; index++ {
+		host := Host{ID: state.nextHostID, Label: fmt.Sprintf("Host %d", index), Address: fmt.Sprintf("host-%d.example", index), User: "deploy", Port: 22}
 		host.finish()
 		state.hosts = append(state.hosts, host)
 		state.nextHostID++
 	}
 	openForwardEditor(t, state)
 	state.Click(hitForwardDialogHost)
-	state.Click(hitForwardHostScrollDown)
-	if state.forwardEditor.hostOffset != 1 {
-		t.Fatalf("host offset = %d", state.forwardEditor.hostOffset)
+	state.forwardEditor.hostSelect.Query.Insert("host-8")
+	choices := state.forwardEditor.hostSelect.Choices()
+	if len(choices) != 1 || choices[0].Label != "Host 8" {
+		t.Fatalf("address filter = %+v", choices)
 	}
+	state.Click(hitForwardHostItemList.At(0))
 	last := state.hosts[len(state.hosts)-1]
-	for state.forwardEditor.hostOffset+forwardHostPageSize < len(state.hosts) {
-		state.Click(hitForwardHostScrollDown)
+	if state.forwardEditor.hostID != last.ID || state.forwardEditor.hostSelect.Open {
+		t.Fatalf("selected host=%d open=%v, want %d closed", state.forwardEditor.hostID, state.forwardEditor.hostSelect.Open, last.ID)
 	}
-	state.Click(hitForwardHostItemList.At(int(last.ID)))
-	if state.forwardEditor.hostID != last.ID || state.forwardEditor.hostOpen {
-		t.Fatalf("selected host=%d open=%v", state.forwardEditor.hostID, state.forwardEditor.hostOpen)
+	if state.forwardEditor.hostSelect.Query.String() != "" {
+		t.Fatalf("the query survived choosing a host: %q", state.forwardEditor.hostSelect.Query.String())
 	}
 }
 
 func TestForwardsSteadyStatePaintDoesNotAllocate(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	addForwardRule(t, state, "Web", freePort(t), "web.internal", 8080)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	allocations := testing.AllocsPerRun(100, func() {
 		canvas.Reset()
@@ -859,8 +1220,8 @@ func TestForwardsSteadyStatePaintDoesNotAllocate(t *testing.T) {
 func TestSOCKS5ForwardsSteadyStatePaintDoesNotAllocate(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	addSOCKS5ForwardRule(t, state, "Browser Proxy", freePort(t))
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	allocations := testing.AllocsPerRun(100, func() {
 		canvas.Reset()
@@ -874,8 +1235,8 @@ func TestSOCKS5ForwardsSteadyStatePaintDoesNotAllocate(t *testing.T) {
 func TestHTTPConnectForwardsSteadyStatePaintDoesNotAllocate(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	addHTTPConnectForwardRule(t, state, "HTTP Proxy", freePort(t))
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	allocations := testing.AllocsPerRun(100, func() {
 		canvas.Reset()
@@ -889,8 +1250,8 @@ func TestHTTPConnectForwardsSteadyStatePaintDoesNotAllocate(t *testing.T) {
 func TestRemoteForwardsSteadyStatePaintDoesNotAllocate(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	addRemoteForwardRule(t, state, "Remote", freePort(t), "127.0.0.1", 8080)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	allocations := testing.AllocsPerRun(100, func() {
 		canvas.Reset()
@@ -904,8 +1265,8 @@ func TestRemoteForwardsSteadyStatePaintDoesNotAllocate(t *testing.T) {
 func BenchmarkPaintForwardsPage(b *testing.B) {
 	state := newTestState(b, testOptions(b))
 	addForwardRule(b, state, "Web", freePort(b), "web.internal", 8080)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -931,7 +1292,30 @@ func addForwardRule(t testing.TB, state *State, label string, localPort uint16, 
 	replaceForwardField(state, hitForwardDialogLocalPort, fmt.Sprint(localPort))
 	replaceForwardField(state, hitForwardDialogDestination, destination)
 	replaceForwardField(state, hitForwardDialogDestinationPort, fmt.Sprint(destinationPort))
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitForwardDialogDestinationPort}); !result.Handled {
+	if result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogDestinationPort}); !result.Handled {
+		t.Fatal("Enter did not submit the forward dialog")
+	}
+	if state.modal != modalNone || state.forwardDialogError != "" {
+		t.Fatalf("forward submit modal=%d error=%q", state.modal, state.forwardDialogError)
+	}
+}
+
+// addForwardRuleOnHost saves a local forward the way addForwardRule does, but on
+// the host the given filter narrows the picker to.
+func addForwardRuleOnHost(t testing.TB, state *State, label string, localPort uint16, destination string, destinationPort uint16, hostFilter string) {
+	t.Helper()
+	openForwardEditor(t, state)
+	state.Click(hitForwardDialogHost)
+	state.forwardEditor.hostSelect.Query.Insert(hostFilter)
+	if choices := state.forwardEditor.hostSelect.Choices(); len(choices) != 1 {
+		t.Fatalf("host filter %q left %d choices", hostFilter, len(choices))
+	}
+	state.Click(hitForwardHostItemList.At(0))
+	replaceForwardField(state, hitForwardDialogLabel, label)
+	replaceForwardField(state, hitForwardDialogLocalPort, fmt.Sprint(localPort))
+	replaceForwardField(state, hitForwardDialogDestination, destination)
+	replaceForwardField(state, hitForwardDialogDestinationPort, fmt.Sprint(destinationPort))
+	if result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogDestinationPort}); !result.Handled {
 		t.Fatal("Enter did not submit the forward dialog")
 	}
 	if state.modal != modalNone || state.forwardDialogError != "" {
@@ -942,10 +1326,10 @@ func addForwardRule(t testing.TB, state *State, label string, localPort uint16, 
 func addSOCKS5ForwardRule(t testing.TB, state *State, label string, localPort uint16) {
 	t.Helper()
 	openForwardEditor(t, state)
-	state.Click(hitForwardModeSOCKS5)
+	clickSettingsChoice(t, state, state.messages.ForwardModeSOCKS5)
 	replaceForwardField(state, hitForwardDialogLabel, label)
 	replaceForwardField(state, hitForwardDialogLocalPort, fmt.Sprint(localPort))
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitForwardDialogLocalPort}); !result.Handled {
+	if result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogLocalPort}); !result.Handled {
 		t.Fatal("Enter did not submit the SOCKS5 forward dialog")
 	}
 	if state.modal != modalNone || state.forwardDialogError != "" {
@@ -956,12 +1340,12 @@ func addSOCKS5ForwardRule(t testing.TB, state *State, label string, localPort ui
 func addRemoteForwardRule(t testing.TB, state *State, label string, remotePort uint16, destination string, destinationPort uint16) {
 	t.Helper()
 	openForwardEditor(t, state)
-	state.Click(hitForwardModeRemote)
+	clickSettingsChoice(t, state, state.messages.ForwardModeRemote)
 	replaceForwardField(state, hitForwardDialogLabel, label)
 	replaceForwardField(state, hitForwardDialogLocalPort, fmt.Sprint(remotePort))
 	replaceForwardField(state, hitForwardDialogDestination, destination)
 	replaceForwardField(state, hitForwardDialogDestinationPort, fmt.Sprint(destinationPort))
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitForwardDialogDestinationPort}); !result.Handled {
+	if result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogDestinationPort}); !result.Handled {
 		t.Fatal("Enter did not submit the remote forward dialog")
 	}
 	if state.modal != modalNone || state.forwardDialogError != "" {
@@ -996,10 +1380,10 @@ func waitForwardResult(t testing.TB, state *State) {
 func addHTTPConnectForwardRule(t testing.TB, state *State, label string, localPort uint16) {
 	t.Helper()
 	openForwardEditor(t, state)
-	state.Click(hitForwardModeHTTPConnect)
+	clickSettingsChoice(t, state, state.messages.ForwardModeHTTPConnect)
 	replaceForwardField(state, hitForwardDialogLabel, label)
 	replaceForwardField(state, hitForwardDialogLocalPort, fmt.Sprint(localPort))
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitForwardDialogLocalPort}); !result.Handled {
+	if result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogLocalPort}); !result.Handled {
 		t.Fatal("Enter did not submit the HTTP CONNECT forward dialog")
 	}
 	if state.modal != modalNone || state.forwardDialogError != "" {
@@ -1225,7 +1609,7 @@ func readForwardHTTPConnectResponse(t testing.TB, reader *bufio.Reader, wantStat
 	}
 }
 
-func replaceForwardField(state *State, hit ui.ID, value string) {
+func replaceForwardField(state *State, hit gfx.ID, value string) {
 	editor := state.EditorFor(hit)
 	editor.SetSelection(text.Range{Start: 0, End: editor.RuneCount()})
 	editor.Insert(value)
@@ -1244,7 +1628,7 @@ func freePort(t testing.TB) uint16 {
 	return port
 }
 
-func hasHit(canvas *ui.Canvas, id ui.ID) bool {
+func hasHit(canvas *gfx.Canvas, id gfx.ID) bool {
 	for _, hit := range canvas.Hits() {
 		if hit.ID == id {
 			return true
@@ -1265,70 +1649,142 @@ func (listener *delayedCloseListener) Close() error {
 	return listener.Listener.Close()
 }
 
-// An open host select is a list for the keyboard too: arrows move focus through
-// its visible rows, End reaches the last, and Enter's generic activation then
-// chooses it.
+// The open host list belongs to the keyboard too: arrows move the highlighted
+// row past disabled hosts, and Enter chooses it.
 func TestForwardHostSelectTakesTheArrowKeys(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	openForwardEditor(t, state)
 	state.Click(hitForwardDialogHost)
-	paintAt(state, ui.Size{Width: 1400, Height: 900}) // list the visible hosts for the keyboard
-	first := hitForwardHostItemList.At(int(state.hosts[0].ID))
-	result := state.Key(ui.KeyEvent{Key: ui.KeyDown, Target: hitForwardDialogHost})
-	if !result.Handled || result.Focus != first {
-		t.Fatalf("Down = %+v, want the first host %v", result, first)
+	if result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyDown, Target: hitForwardDialogHost}); !result.Handled {
+		t.Fatalf("Down was not taken: %+v", result)
 	}
-	result = state.Key(ui.KeyEvent{Key: ui.KeyEnd, Target: first})
-	if !result.Handled {
-		t.Fatalf("End was not taken: %+v", result)
-	}
-	last := result.Focus
-	hostID, ok := last.In(hitForwardHostItemList)
-	if !ok {
-		t.Fatalf("End focused %v, not a host row", last)
-	}
-	state.Click(last)
-	if state.forwardEditor.hostID != uint32(hostID) || state.forwardEditor.hostOpen {
-		t.Fatalf("chosen host=%d open=%v, want %d closed", state.forwardEditor.hostID, state.forwardEditor.hostOpen, hostID)
+	result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogHost})
+	if !result.Handled || state.forwardEditor.hostID != state.hosts[1].ID || state.forwardEditor.hostSelect.Open {
+		t.Fatalf("Enter = %+v host=%d open=%v, want the second host closed", result, state.forwardEditor.hostID, state.forwardEditor.hostSelect.Open)
 	}
 }
 
-// Typing on a closed host select commits the matching host without opening the
-// list, as Base UI's closed-trigger typeahead does.
-func TestForwardHostSelectCommitsATypedMatch(t *testing.T) {
+// Typing filters the open list instead of closing it: only the hosts whose
+// name, address or account match stay, and Enter chooses the one left.
+func TestForwardHostSelectFiltersWhileTyping(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	openForwardEditor(t, state)
-	if state.forwardEditor.hostOpen {
-		t.Fatal("the host list is already open")
-	}
+	state.Click(hitForwardDialogHost)
 	var staging uint32
 	for _, host := range state.hosts {
 		if host.Label == "Staging" {
 			staging = host.ID
 		}
 	}
-	result := state.Key(ui.KeyEvent{Key: ui.KeyUnknown, Text: "s", Target: hitForwardDialogHost})
-	if !result.Handled || state.forwardEditor.hostOpen || state.forwardEditor.hostID != staging {
-		t.Fatalf("typed s: %+v host=%d open=%v, want Staging closed", result, state.forwardEditor.hostID, state.forwardEditor.hostOpen)
+	state.forwardEditor.hostSelect.Query.Insert("stag")
+	choices := state.forwardEditor.hostSelect.Choices()
+	if len(choices) != 1 || choices[0].Label != "Staging" {
+		t.Fatalf("filter = %+v, want only Staging", choices)
 	}
-	// A committed match keeps the session for a longer query, as Base UI does;
-	// start a new one to type another first letter.
-	state.selectTypeahead.state.Reset()
-	result = state.Key(ui.KeyEvent{Key: ui.KeyUnknown, Text: "r", Target: hitForwardDialogHost})
-	if !result.Handled || state.forwardEditor.hostID == staging {
-		t.Fatalf("typed r: %+v host=%d, want Router", result, state.forwardEditor.hostID)
+	result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogHost})
+	if !result.Handled || state.forwardEditor.hostSelect.Open || state.forwardEditor.hostID != staging {
+		t.Fatalf("Enter = %+v host=%d open=%v, want Staging closed", result, state.forwardEditor.hostID, state.forwardEditor.hostSelect.Open)
+	}
+	if query := state.forwardEditor.hostSelect.Query.String(); query != "" {
+		t.Fatalf("the chosen host kept its query %q", query)
 	}
 }
 
-// Tab leaves an open select: the menu handler asks the runtime to settle the
-// close first, then traverse the page, instead of cycling through the options.
+// Tab leaves an open host list: the picker asks the runtime to settle the close
+// first, then traverse the page, instead of cycling through the options.
 func TestTabClosesAnOpenSelectBeforeTraversal(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	openForwardEditor(t, state)
 	state.Click(hitForwardDialogHost)
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
-	result := state.Key(ui.KeyEvent{Key: ui.KeyTab, Target: hitForwardDialogHost})
-	if !result.ContinueTraversal || !result.Handled || state.forwardEditor.hostOpen {
-		t.Fatalf("Tab = %+v open=%v, want close then traversal", result, state.forwardEditor.hostOpen)
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyTab, Target: hitForwardDialogHost})
+	if !result.ContinueTraversal || !result.Handled || state.forwardEditor.hostSelect.Open {
+		t.Fatalf("Tab = %+v open=%v, want close then traversal", result, state.forwardEditor.hostSelect.Open)
+	}
+}
+
+// A server that refuses forwarded channels can still carry a forward through a
+// shell: the relay switch makes each accepted connection run a program there
+// instead of opening a channel, and that program's input and output are the
+// stream.
+func TestForwardThroughTheHostsShellUsesTheRelayInsteadOfAChannel(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	fake := connect(t, state, world)
+	fake.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+
+	target := forwardEchoServer(t)
+	fake.dial = func(context.Context, string, string) (net.Conn, error) {
+		return nil, errors.New("direct-tcpip disabled")
+	}
+	fake.shellDial = func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "tcp", target.Addr().String())
+	}
+	addViaShellForwardRule(t, state, "Bastion Web", freePort(t), "127.0.0.1", 3336)
+
+	forward := &state.forwards[0]
+	if !forward.ViaShell || forward.Relay != "ncat %h %p" {
+		t.Fatalf("forward = %+v", *forward)
+	}
+	state.Click(hitForwardStartStop)
+	waitForward(t, state, func() bool { return forward.runner != nil })
+	client, err := net.Dial("tcp", forward.runner.Status().ListenAddress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	writeForwardTestBytes(t, client, []byte("through the shell"))
+	readForwardTestBytes(t, client, []byte("THROUGH THE SHELL"))
+
+	fake.mu.Lock()
+	channels := len(fake.dialCalls)
+	shellDials := append([]fakeShellDialCall(nil), fake.shellDialCalls...)
+	fake.mu.Unlock()
+	if channels != 0 {
+		t.Fatalf("the forward opened %d forwarded channels", channels)
+	}
+	if len(shellDials) != 1 || shellDials[0] != (fakeShellDialCall{command: "ncat %h %p", address: "127.0.0.1:3336"}) {
+		t.Fatalf("shell relay calls = %+v", shellDials)
+	}
+	state.Click(hitForwardStartStop)
+
+	restarted := newTestState(t, options)
+	if len(restarted.forwards) != 1 || !restarted.forwards[0].ViaShell || restarted.forwards[0].Relay != "ncat %h %p" {
+		t.Fatalf("restored forward = %+v", restarted.forwards)
+	}
+}
+
+// A forward the server refuses says where the way out is, instead of repeating
+// the protocol's own words; one that already relayed says the relay was refused.
+func TestARefusedForwardExplainsTheShellRelay(t *testing.T) {
+	messages := i18n.For(i18n.English)
+	refused := &ssh.OpenChannelError{Reason: ssh.Prohibited}
+	if got := forwardFailureText(messages, forwardRecord{}, refused); got != messages.ForwardRefusedHint {
+		t.Fatalf("refused detail = %q", got)
+	}
+	if got := forwardFailureText(messages, forwardRecord{ViaShell: true}, refused); got != messages.ForwardRelayRefused {
+		t.Fatalf("relayed detail = %q", got)
+	}
+	other := errors.New("connection refused")
+	if got := forwardFailureText(messages, forwardRecord{}, other); got != other.Error() {
+		t.Fatalf("other detail = %q", got)
+	}
+}
+
+func addViaShellForwardRule(t testing.TB, state *State, label string, localPort uint16, destination string, destinationPort uint16) {
+	t.Helper()
+	openForwardEditor(t, state)
+	replaceForwardField(state, hitForwardDialogLabel, label)
+	replaceForwardField(state, hitForwardDialogLocalPort, fmt.Sprint(localPort))
+	replaceForwardField(state, hitForwardDialogDestination, destination)
+	replaceForwardField(state, hitForwardDialogDestinationPort, fmt.Sprint(destinationPort))
+	state.Click(hitForwardDialogViaShell)
+	replaceForwardField(state, hitForwardDialogRelay, "ncat %h %p")
+	if result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogRelay}); !result.Handled {
+		t.Fatal("Enter did not submit the forward dialog")
+	}
+	if state.modal != modalNone || state.forwardDialogError != "" {
+		t.Fatalf("forward submit modal=%d error=%q", state.modal, state.forwardDialogError)
 	}
 }

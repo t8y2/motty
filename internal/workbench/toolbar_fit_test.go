@@ -3,7 +3,7 @@ package workbench
 import (
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // The hosts toolbar keeps its buttons apart however wide the platform's text
@@ -12,13 +12,13 @@ import (
 func TestHostsToolbarButtonsNeverOverlapWhateverTheTextWidth(t *testing.T) {
 	for _, factor := range []float32{0.5, 0.56, 0.62, 0.7} {
 		state := newTestState(t, testOptions(t))
-		var canvas ui.Canvas
+		var canvas gfx.Canvas
 		canvas.SetMeasurer(func(value string, size, weight float32) float32 {
 			return float32(len([]rune(value))) * size * factor * (1 + weight)
 		})
-		state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
-		ids := []ui.ID{hitSearch, hitConnect, hitImportMenu, hitAddHost}
-		var rects []ui.Rect
+		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+		ids := []gfx.ID{hitSearch, hitConnect, hitImportMenu, hitAddHost}
+		var rects []gfx.Rect
 		for _, id := range ids {
 			found := false
 			for _, hit := range canvas.Hits() {

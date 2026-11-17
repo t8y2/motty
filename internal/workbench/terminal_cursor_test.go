@@ -3,7 +3,7 @@ package workbench
 import (
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // TestTerminalCursorThicknessDefaultsToNormal pins the default: without a saved
@@ -55,24 +55,16 @@ func TestCursorThicknessControlMarksTheStoredStep(t *testing.T) {
 			state.setTerminalCursorThickness(step)
 			state.Click(hitSettings)
 			state.selectSettingsCategory(settingsTerminal)
-			var canvas ui.Canvas
-			state.Paint(&canvas, ui.Size{Width: 1400, Height: 2400})
-			want := map[cursorThickness]ui.ID{
-				cursorNormal: hitSettingsCursorNormal,
-				cursorThin:   hitSettingsCursorThin,
-				cursorThick:  hitSettingsCursorThick,
-			}[step]
-			for id, label := range map[ui.ID]string{
-				hitSettingsCursorThin:   "thin",
-				hitSettingsCursorNormal: "normal",
-				hitSettingsCursorThick:  "thick",
-			} {
-				hit, ok := hitByID(&canvas, id)
+			var canvas gfx.Canvas
+			state.Paint(&canvas, gfx.Size{Width: 1400, Height: 2400})
+			row := state.messages.Tools.CursorThicknessRow
+			for _, option := range []cursorThickness{cursorThin, cursorNormal, cursorThick} {
+				hit, ok := settingsChoiceInRow(&canvas, row, state.settingsCursorThicknessLabel(option))
 				if !ok {
-					t.Fatalf("the %s step is not on the settings page", label)
+					t.Fatalf("the %s step is not on the settings page", option)
 				}
-				if hit.Selected != (id == want) {
-					t.Errorf("%s selected=%v, want %v", label, hit.Selected, id == want)
+				if hit.Selected != (option == step) {
+					t.Errorf("%s selected=%v, want %v", option, hit.Selected, option == step)
 				}
 			}
 		})

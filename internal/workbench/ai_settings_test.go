@@ -12,9 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/agent"
+	"motty/internal/ai/attach"
 	"motty/internal/ai/gate"
 	"motty/internal/ai/llm"
 	"motty/internal/ai/risk"
@@ -112,9 +114,9 @@ func (world *settingsWorld) open(t *testing.T) *State {
 	return state
 }
 
-func (world *settingsWorld) paint() (*ui.Canvas, []string) {
-	var canvas ui.Canvas
-	world.state.Paint(&canvas, ui.Size{Width: 1400, Height: 3200})
+func (world *settingsWorld) paint() (*gfx.Canvas, []string) {
+	var canvas gfx.Canvas
+	world.state.Paint(&canvas, gfx.Size{Width: 1400, Height: 3200})
 	var texts []string
 	for _, text := range canvas.Texts() {
 		texts = append(texts, text.Value)
@@ -122,9 +124,16 @@ func (world *settingsWorld) paint() (*ui.Canvas, []string) {
 	return &canvas, texts
 }
 
-// type puts text into the field behind a hit the way the runtime does.
-func (world *settingsWorld) typeInto(t *testing.T, hit ui.ID, value string) {
+// type puts text into the field behind a hit the way the runtime does: the
+// provider form's page owns its editors, so it is painted first.
+func (world *settingsWorld) typeInto(t *testing.T, hit gfx.ID, value string) {
 	t.Helper()
+	world.paint()
+	config := world.state.WindowConfig(app.Config{})
+	if input := config.TextInput(app.TextInputContext{ID: hit}); input != nil {
+		input.Editor.Insert(value)
+		return
+	}
 	editor := world.state.EditorFor(hit)
 	if editor == nil {
 		t.Fatalf("hit %d has no editor", hit)
@@ -180,7 +189,7 @@ func TestAIProviderIsAddedStoredAndItsKeyNeverPainted(t *testing.T) {
 	state := world.state
 	state.Click(hitAISetProviderAdd)
 	world.typeInto(t, hitAISetFormName, "Work")
-	state.Click(hitAISetFormKindClaude)
+	clickSettingsChoice(t, state, state.messages.AISettings.ProviderKindClaude)
 	world.typeInto(t, hitAISetFormKey, testSecretKey)
 
 	// While the key is typed the dialog shows bullets, and the hit holds no value.
@@ -243,8 +252,8 @@ func TestAIProviderAuthStyleChoiceKeepsTheSavedKey(t *testing.T) {
 	m := state.messages.AISettings
 	state.Click(hitAISetProviderAdd)
 	world.typeInto(t, hitAISetFormName, "Relay")
-	state.Click(hitAISetFormKindClaude)
-	state.Click(hitAISetFormAuthBearer)
+	clickSettingsChoice(t, state, m.ProviderKindClaude)
+	clickSettingsChoice(t, state, m.FormAuthBearer)
 	world.typeInto(t, hitAISetFormKey, testSecretKey)
 	state.Click(hitAISetFormSubmit)
 	if len(state.ai.providers) != 1 {
@@ -269,7 +278,7 @@ func TestAIProviderAuthStyleChoiceKeepsTheSavedKey(t *testing.T) {
 		t.Fatalf("edit form style = %q", state.ai.cfg.authStyle)
 	}
 	canvas, texts := world.paint()
-	if _, ok := hitByID(canvas, hitAISetFormAuthBearer); !ok {
+	if _, ok := settingsChoiceIn(canvas, m.FormAuthBearer); !ok {
 		t.Fatalf("the edit form has no bearer choice: %v", texts)
 	}
 	for _, value := range texts {
@@ -278,7 +287,7 @@ func TestAIProviderAuthStyleChoiceKeepsTheSavedKey(t *testing.T) {
 		}
 	}
 	// Switching the header does not require re-entering the credential.
-	state.Click(hitAISetFormAuthAPIKey)
+	clickSettingsChoice(t, state, m.FormAuthAPIKey)
 	state.Click(hitAISetFormSubmit)
 	provider = state.ai.providers[0]
 	if provider.AuthStyle != store.AuthStyleAPIKey || state.aiKeyOf(provider) != testSecretKey {
@@ -288,7 +297,7 @@ func TestAIProviderAuthStyleChoiceKeepsTheSavedKey(t *testing.T) {
 	// An OpenAI-compatible provider has no choice of header.
 	state.Click(hitAISetProviderAdd)
 	canvas, _ = world.paint()
-	if _, ok := hitByID(canvas, hitAISetFormAuthBearer); ok {
+	if _, ok := settingsChoiceIn(canvas, m.FormAuthBearer); ok {
 		t.Fatal("the OpenAI form offers a bearer/API-key choice")
 	}
 }
@@ -333,21 +342,21 @@ func TestAIProviderRequestFormatChoice(t *testing.T) {
 
 	// The choice belongs to OpenAI-compatible providers only.
 	state.Click(hitAISetProviderAdd)
-	state.Click(hitAISetFormKindClaude)
+	clickSettingsChoice(t, state, m.ProviderKindClaude)
 	canvas, _ := world.paint()
-	if _, ok := hitByID(canvas, hitAISetFormFormatResp); ok {
+	if _, ok := settingsChoiceIn(canvas, m.FormFormatResponses); ok {
 		t.Fatal("the Anthropic form offers a request format")
 	}
-	state.Click(hitAISetFormKindOpenAI)
+	clickSettingsChoice(t, state, m.ProviderKindOpenAI)
 	canvas, texts := world.paint()
-	if _, ok := hitByID(canvas, hitAISetFormFormatResp); !ok || !contains(texts, m.FormFormatChatRoute) {
+	if _, ok := settingsChoiceIn(canvas, m.FormFormatResponses); !ok || !contains(texts, m.FormFormatChatRoute) {
 		t.Fatalf("the OpenAI form has no request format: %v", texts)
 	}
 
 	world.typeInto(t, hitAISetFormName, "Relay")
 	world.typeInto(t, hitAISetFormURL, "https://relay.example.com/v1")
 	world.typeInto(t, hitAISetFormKey, testSecretKey)
-	state.Click(hitAISetFormFormatResp)
+	clickSettingsChoice(t, state, m.FormFormatResponses)
 	if _, texts = world.paint(); !contains(texts, m.FormFormatResponsesRoute) {
 		t.Fatalf("the route under the choice does not follow it: %v", texts)
 	}
@@ -364,7 +373,7 @@ func TestAIProviderRequestFormatChoice(t *testing.T) {
 	if state.ai.cfg.apiFormat != store.APIFormatResponses {
 		t.Fatalf("edit form format = %q", state.ai.cfg.apiFormat)
 	}
-	state.Click(hitAISetFormFormatChat)
+	clickSettingsChoice(t, state, m.FormFormatChat)
 	state.Click(hitAISetFormSubmit)
 	if got := state.ai.providers[0]; got.APIFormat != "" || state.aiKeyOf(got) != testSecretKey {
 		t.Fatalf("after switching back: %#v", got)
@@ -408,11 +417,21 @@ func TestAIProviderFormValidates(t *testing.T) {
 	if state.ai.cfg.formErr != m.ErrFormName || state.ai.cfg.dialog != aiDialogProvider {
 		t.Fatalf("empty name: err=%q dialog=%d", state.ai.cfg.formErr, state.ai.cfg.dialog)
 	}
+	if state.ai.cfg.formFocus != aiFormFocusName {
+		t.Fatalf("empty name focused %d, want the name field", state.ai.cfg.formFocus)
+	}
 	world.typeInto(t, hitAISetFormName, "x")
 	world.typeInto(t, hitAISetFormURL, "ftp://host")
 	state.Click(hitAISetFormSubmit)
 	if state.ai.cfg.formErr != m.ErrFormBaseURL {
 		t.Fatalf("bad URL: err=%q", state.ai.cfg.formErr)
+	}
+	if state.ai.cfg.formFocus != aiFormFocusURL {
+		t.Fatalf("bad URL focused %d, want the URL field", state.ai.cfg.formFocus)
+	}
+	canvas, texts := world.paint()
+	if got := canvas.FocusRequest(); got != hitAISetFormURL {
+		t.Fatalf("bad URL requested focus %v, want the URL field", got)
 	}
 	for range "ftp://host" {
 		state.EditorFor(hitAISetFormURL).DeleteBackward()
@@ -421,7 +440,13 @@ func TestAIProviderFormValidates(t *testing.T) {
 	if state.ai.cfg.formErr != m.ErrFormKey {
 		t.Fatalf("official endpoint without key: err=%q", state.ai.cfg.formErr)
 	}
-	_, texts := world.paint()
+	if state.ai.cfg.formFocus != aiFormFocusKey {
+		t.Fatalf("missing key focused %d, want the key field", state.ai.cfg.formFocus)
+	}
+	canvas, texts = world.paint()
+	if got := canvas.FocusRequest(); got != hitAISetFormKey {
+		t.Fatalf("missing key requested focus %v, want the key field", got)
+	}
 	if !contains(texts, m.ErrFormKey) {
 		t.Fatalf("the error is not painted: %v", texts)
 	}
@@ -442,6 +467,45 @@ func TestAIProviderFormValidates(t *testing.T) {
 	if state.ai.cfg.dialog != aiDialogNone || state.ai.cfg.name.String() != "" || state.ai.cfg.apiKey.String() != "" || len(state.ai.providers) != 1 {
 		t.Fatalf("cancel left dialog=%d name=%q providers=%d", state.ai.cfg.dialog, state.ai.cfg.name.String(), len(state.ai.providers))
 	}
+}
+
+func TestAIProviderFormModelsURL(t *testing.T) {
+	world := newSettingsWorld(t, newLister())
+	state := world.state
+	m := state.messages.AISettings
+
+	state.Click(hitAISetProviderAdd)
+	world.typeInto(t, hitAISetFormName, "OpenCode")
+	world.typeInto(t, hitAISetFormURL, "https://opencode.ai/inference/go/openai/v1")
+	world.typeInto(t, hitAISetFormModelsURL, "ftp://invalid-models-url")
+	world.typeInto(t, hitAISetFormKey, testSecretKey)
+	state.Click(hitAISetFormSubmit)
+	if state.ai.cfg.formErr != m.ErrFormModelsURL {
+		t.Fatalf("formErr = %q; want %q", state.ai.cfg.formErr, m.ErrFormModelsURL)
+	}
+
+	for range "ftp://invalid-models-url" {
+		state.EditorFor(hitAISetFormModelsURL).DeleteBackward()
+	}
+	world.typeInto(t, hitAISetFormModelsURL, "https://opencode.ai/inference/go/v1")
+	state.Click(hitAISetFormSubmit)
+	if len(state.ai.providers) != 1 {
+		t.Fatalf("providers len = %d; want 1", len(state.ai.providers))
+	}
+	p := state.ai.providers[0]
+	if p.BaseURL != "https://opencode.ai/inference/go/openai/v1" {
+		t.Errorf("BaseURL = %q", p.BaseURL)
+	}
+	if p.ModelsURL != "https://opencode.ai/inference/go/v1" {
+		t.Errorf("ModelsURL = %q, want https://opencode.ai/inference/go/v1", p.ModelsURL)
+	}
+
+	// Reopen form for edit and verify ModelsURL is populated
+	state.aiOpenProviderForm(p.ID)
+	if got := state.ai.cfg.modelsURL.String(); got != "https://opencode.ai/inference/go/v1" {
+		t.Errorf("cfg.modelsURL = %q; want https://opencode.ai/inference/go/v1", got)
+	}
+	state.Click(hitAISetFormCancel)
 }
 
 func TestAIEditKeepsTheOldKeyUnlessReplaced(t *testing.T) {
@@ -466,7 +530,7 @@ func TestAIEditKeepsTheOldKeyUnlessReplaced(t *testing.T) {
 		}
 	}
 	world.typeInto(t, hitAISetFormName, " B")
-	state.Click(hitAISetFormKindClaude)
+	clickSettingsChoice(t, state, state.messages.AISettings.ProviderKindClaude)
 	state.Click(hitAISetFormSubmit)
 	got := state.ai.providers[0]
 	if got.ID != provider.ID || got.Name != "Work B" || got.Kind != store.KindAnthropic || state.aiKeyOf(got) != testSecretKey {
@@ -665,12 +729,13 @@ func TestAIDefaultModelIsWhatTheEngineUses(t *testing.T) {
 	if enabled := state.aiModelList(provider.ID)[1].Enabled; !enabled {
 		t.Fatal("the default model is not enabled")
 	}
+	// With the default model pinned to top, "small" is now in row 0, and "big" in row 1.
 	// The default's switch cannot turn it off; the other model's can.
-	state.Click(hitAISetModelSwitch.At(1))
+	state.Click(hitAISetModelSwitch.At(0))
 	if !state.aiModelList(provider.ID)[1].Enabled {
 		t.Fatal("the default model was disabled")
 	}
-	state.Click(hitAISetModelSwitch.At(0))
+	state.Click(hitAISetModelSwitch.At(1))
 	if state.aiModelList(provider.ID)[0].Enabled {
 		t.Fatal("big, no longer the default, should switch off")
 	}
@@ -678,7 +743,7 @@ func TestAIDefaultModelIsWhatTheEngineUses(t *testing.T) {
 	if !contains(texts, state.messages.AISettings.ModelDefault) {
 		t.Fatalf("the default is not marked: %v", texts)
 	}
-	if hit, ok := hitByID(canvas, hitAISetModelSwitch.At(1)); !ok || !hit.Disabled || !hit.Checked {
+	if hit, ok := hitByID(canvas, hitAISetModelSwitch.At(0)); !ok || !hit.Disabled || !hit.Checked {
 		t.Fatalf("the default model's switch = %+v", hit)
 	}
 
@@ -749,25 +814,26 @@ func TestAIModelsCanBeAddedByNameAndPaged(t *testing.T) {
 func TestAIBehaviourChoicesPersistAndSurviveANewWindow(t *testing.T) {
 	world := newSettingsWorld(t, newLister())
 	state := world.state
-	for _, hit := range []ui.ID{hitAISetRiskHigh, hitAISetSteps24, hitAISetContext120} {
-		state.Click(hit)
+	m := state.messages.AISettings
+	for _, label := range []string{m.RiskHigh, "24", "120", "8 MiB"} {
+		clickSettingsChoice(t, state, label)
 	}
 	state.Click(hitAISetRedact)
 	state.Click(hitAISetHistory)
 	db := world.db(t)
 	for key, want := range map[string]string{
-		"ai.auto_up_to": "high", "ai.max_steps": "24", "ai.context_lines": "120", "ai.redact": "off", "ai.history": "off",
+		"ai.auto_up_to": "high", "ai.max_steps": "24", "ai.context_lines": "120", "ai.attachment_text_mib": "8", "ai.redact": "off", "ai.history": "off",
 	} {
 		if got := settingValue(t, db, key); got != want {
 			t.Errorf("%s = %q, want %q", key, got, want)
 		}
 	}
-	want := aiSettings{autoUpTo: risk.High, maxSteps: 24, contextLines: 120, redact: false, keepHistory: false, mcpMode: gate.ModeObserve, agentMode: gate.ModeObserve}
+	want := aiSettings{autoUpTo: risk.High, maxSteps: 24, contextLines: 120, maxTextBytes: 8 << 20, redact: false, keepHistory: false, mcpMode: gate.ModeObserve, agentMode: gate.ModeObserve}
 	if state.ai.settings != want {
 		t.Fatalf("settings = %+v, want %+v", state.ai.settings, want)
 	}
-	if world.changed != 5 {
-		t.Fatalf("the application was told %d times, want 5", world.changed)
+	if world.changed != 6 {
+		t.Fatalf("the application was told %d times, want 6", world.changed)
 	}
 	state.Close()
 	again := world.open(t)
@@ -775,30 +841,52 @@ func TestAIBehaviourChoicesPersistAndSurviveANewWindow(t *testing.T) {
 		t.Fatalf("a new window has %+v, want %+v", again.ai.settings, want)
 	}
 	canvas, _ := paintedSettings(again)
-	for _, id := range []ui.ID{hitAISetRedact, hitAISetHistory} {
+	for _, id := range []gfx.ID{hitAISetRedact, hitAISetHistory} {
 		if hit, ok := hitByID(canvas, id); !ok || hit.Checked {
 			t.Errorf("switch %d should be off: %+v", id, hit)
 		}
 	}
 	// And back.
-	again.Click(hitAISetRiskLow)
-	again.Click(hitAISetSteps6)
-	again.Click(hitAISetContext0)
+	clickSettingsChoice(t, again, m.RiskLow)
+	clickSettingsChoice(t, again, "6")
+	clickSettingsChoice(t, again, m.ContextOff)
+	clickSettingsChoice(t, again, "4 MiB")
 	again.Click(hitAISetRedact)
 	again.Click(hitAISetHistory)
-	if got, want := again.ai.settings, (aiSettings{autoUpTo: risk.Low, maxSteps: 6, contextLines: 0, redact: true, keepHistory: true, mcpMode: gate.ModeObserve, agentMode: gate.ModeObserve}); got != want {
+	if got, want := again.ai.settings, (aiSettings{autoUpTo: risk.Low, maxSteps: 6, contextLines: 0, maxTextBytes: attach.MaxTextBytes, redact: true, keepHistory: true, mcpMode: gate.ModeObserve, agentMode: gate.ModeObserve}); got != want {
 		t.Fatalf("settings = %+v, want %+v", got, want)
 	}
 }
 
-func paintedSettings(state *State) (*ui.Canvas, []string) {
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 3200})
+func paintedSettings(state *State) (*gfx.Canvas, []string) {
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 3200})
 	var texts []string
 	for _, text := range canvas.Texts() {
 		texts = append(texts, text.Value)
 	}
 	return &canvas, texts
+}
+
+func TestAIBehaviourChoiceMovesWithArrowKeys(t *testing.T) {
+	world := newSettingsWorld(t, newLister())
+	state := world.state
+	current := settingsChoiceHit(t, state, state.messages.AISettings.RiskLow)
+	result := windowKeyRoutes(state, gfx.KeyEvent{Target: current.ID, Key: gfx.KeyRight})
+	if !result.Handled || !result.FocusVisible || result.Focus.IsZero() || result.Activate != result.Focus {
+		t.Fatalf("Right in the risk choice = %+v", result)
+	}
+	// The rove carries out the choice as a click: the event pass applies it.
+	var canvas gfx.Canvas
+	canvas.BeginEventPass(result.Activate, gfx.ClickInfo{})
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 3400})
+	canvas.EndEventPass()
+	if state.ai.settings.autoUpTo != risk.Medium {
+		t.Fatalf("risk after Right = %v, want medium", state.ai.settings.autoUpTo)
+	}
+	if got := settingValue(t, world.db(t), "ai.auto_up_to"); got != "medium" {
+		t.Fatalf("stored risk = %q, want medium", got)
+	}
 }
 
 func TestAIClearHistoryAsksFirst(t *testing.T) {
@@ -854,7 +942,7 @@ func TestAIExternalAccessSettingsPersistAndCopy(t *testing.T) {
 		t.Fatalf("the endpoint should say it is off: %v", texts)
 	}
 	state.Click(hitAISetMCPEnabled)
-	state.Click(hitAISetMCPAsk)
+	clickSettingsChoice(t, state, state.messages.AISettings.MCPModeAsk)
 	if settingValue(t, db, "ai.mcp.enabled") != "on" || settingValue(t, db, "ai.mcp.mode") != "ask" {
 		t.Fatal("the MCP choices are not stored")
 	}
@@ -907,7 +995,7 @@ func TestAIExternalAccessSettingsPersistAndCopy(t *testing.T) {
 	if settingValue(t, db, "ai.mcp.token") != "" || world.changed != before+1 {
 		t.Fatalf("token=%q changed=%d", settingValue(t, db, "ai.mcp.token"), world.changed)
 	}
-	state.Click(hitAISetMCPObserve)
+	clickSettingsChoice(t, state, state.messages.AISettings.MCPModeObserve)
 	if settingValue(t, db, "ai.mcp.mode") != "observe" || state.ai.settings.mcpMode != gate.ModeObserve {
 		t.Fatal("observe was not stored")
 	}
@@ -964,16 +1052,36 @@ func TestAISettingsFocusOrderFollowsThePage(t *testing.T) {
 	state.Click(hitAISetFetchModels)
 	pumpSettings(t, state, "the fetch", func() bool { return state.ai.cfg.fetch == nil })
 	canvas, _ := world.paint()
-	var order []ui.ID
-	for _, hit := range canvas.Hits() {
-		if hit.Focusable && tree.Within(hit.ID.Scope(), aiSettingsHits) && !hit.Disabled {
-			order = append(order, hit.ID)
+	// The page's Choices are named in the settings workspace page, not in the
+	// application's own block of hit identities.
+	workspace := tree.Sub(tree.Feature(shellPageRoot), tree.Name(settingsWorkspacePart))
+	stops := func(canvas *gfx.Canvas) []gfx.ID {
+		var order []gfx.ID
+		for _, hit := range canvas.Hits() {
+			onPage := tree.Within(hit.ID.Scope(), aiSettingsHits) || tree.Within(hit.ID.Scope(), workspace)
+			if hit.Focusable && onPage && !hit.Disabled {
+				order = append(order, hit.ID)
+			}
 		}
+		return order
 	}
-	want := []ui.ID{
+	choice := func(label string) gfx.ID {
+		hit, ok := settingsChoiceIn(canvas, label)
+		if !ok {
+			t.Fatalf("no settings choice labeled %q", label)
+		}
+		return hit.ID
+	}
+	order := stops(canvas)
+	// The page declares its Choices while it is laid out; the controls still
+	// painted by the Frame recipe are visited after every page Choice. Until the
+	// rest of the category is a page too, the Choices therefore lead the keyboard
+	// order, while their own order is the page's.
+	want := []gfx.ID{
+		choice(state.messages.AISettings.RiskLow), choice("12"), choice("60"), choice("4 MiB"),
 		hitAISetProviderRow.At(0), hitAISetProviderSwitch.At(0), hitAISetProviderEdit.At(0), hitAISetProviderDelete.At(0), hitAISetProviderAdd,
 		hitAISetFetchModels, hitAISetModelUse.At(1), hitAISetModelSwitch.At(1), hitAISetModelInput, hitAISetModelAdd,
-		hitAISetRiskLow, hitAISetSteps12, hitAISetContext60, hitAISetRedact, hitAISetHistory, hitAISetClearHistory,
+		hitAISetRedact, hitAISetHistory, hitAISetClearHistory,
 	}
 	position := -1
 	for _, id := range want {
@@ -997,19 +1105,22 @@ func TestAISettingsFocusOrderFollowsThePage(t *testing.T) {
 
 	state.selectSettingsCategory(settingsMCP)
 	canvas, _ = world.paint()
-	order = order[:0]
-	for _, hit := range canvas.Hits() {
-		if hit.Focusable && tree.Within(hit.ID.Scope(), aiSettingsHits) && !hit.Disabled {
-			order = append(order, hit.ID)
-		}
+	order = stops(canvas)
+	mcpObserve, ok := settingsChoiceIn(canvas, state.messages.AISettings.MCPModeObserve)
+	if !ok {
+		t.Fatalf("the external access page has no mode choice: %v", order)
+	}
+	agentObserve, ok := settingsChoiceIn(canvas, state.messages.AISettings.AgentModeObserve)
+	if !ok {
+		t.Fatalf("the external access page has no stdio mode choice: %v", order)
 	}
 	next := 0
 	for _, got := range order {
-		if next < 3 && got == []ui.ID{hitAISetMCPEnabled, hitAISetMCPObserve, hitAISetMCPReset}[next] {
+		if next < 4 && got == []gfx.ID{mcpObserve.ID, agentObserve.ID, hitAISetMCPEnabled, hitAISetMCPReset}[next] {
 			next++
 		}
 	}
-	if next != 3 {
+	if next != 4 {
 		t.Fatalf("the external access page's focus stops are %v", order)
 	}
 }
@@ -1018,16 +1129,16 @@ func TestSettingsPageScrollsToTheAssistantSection(t *testing.T) {
 	world := newSettingsWorld(t, newLister())
 	state := world.state
 	state.selectSettingsCategory(settingsAssistant)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1200, Height: 700}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1200, Height: 700}
 	state.Paint(&canvas, size)
 	if state.settingsContent <= size.Height {
 		t.Fatalf("the page (%v) is not taller than the window", state.settingsContent)
 	}
 	for range 80 {
-		state.scrollSettings(ui.ScrollEvent{DeltaY: 200, Precise: true})
+		state.scrollSettings(gfx.ScrollEvent{DeltaY: 200, Precise: true})
 	}
-	canvas = ui.Canvas{}
+	canvas = gfx.Canvas{}
 	state.Paint(&canvas, size)
 	var visible bool
 	for _, text := range canvas.Texts() {
@@ -1044,16 +1155,42 @@ func TestAISettingsDialogBlocksThePageBehindIt(t *testing.T) {
 	world := newSettingsWorld(t, newLister())
 	state := world.state
 	state.Click(hitAISetProviderAdd)
+	state.selectSettingsCategory(settingsGeneral)
+	driver := modalEventDriver(t, state)
+	find := func(label string, role gfx.Role) (gfx.Hit, bool) {
+		for _, hit := range driver.Snapshot().Hits {
+			if hit.Label == label && hit.Role == role {
+				return hit, true
+			}
+		}
+		return gfx.Hit{}, false
+	}
+	choice, ok := find(state.messages.SettingsLanguageChinese, gfx.RoleRadio)
+	if !ok {
+		t.Fatal("the General page painted no language choice behind the dialog")
+	}
+	cancel, ok := find(state.messages.Cancel, gfx.RoleButton)
+	if !ok {
+		t.Fatal("the dialog painted no Cancel button")
+	}
+	click := func(hit gfx.Hit) {
+		if err := driver.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+			t.Fatal(err)
+		}
+	}
 	before := state.language
-	state.Click(hitSettingsLanguageChinese)
+	click(choice)
 	if state.language != before {
 		t.Fatal("a click reached the page behind the dialog")
 	}
-	state.Click(hitAISetFormCancel)
+	click(cancel)
 	if state.ai.cfg.dialog != aiDialogNone {
 		t.Fatal("cancel did not close the dialog")
 	}
-	state.Click(hitSettingsLanguageChinese)
+	if choice, ok = find(state.messages.SettingsLanguageChinese, gfx.RoleRadio); !ok {
+		t.Fatal("the page did not come back after the dialog")
+	}
+	click(choice)
 	if state.language != i18n.Chinese {
 		t.Fatal("the page does not work after the dialog")
 	}

@@ -41,11 +41,12 @@ func TestTheHostDialogEditsAndValidatesTheAlgorithmChoice(t *testing.T) {
 	state.Click(hitAddHost)
 	state.editor.label.Insert("Old switch")
 	state.editor.address.Insert("switch.example.com")
-	state.Click(hitDialogAlgoCompatible)
+	state.editor.advancedOpen = true
+	clickHostChoice(t, state, state.messages.Tools.AlgoCompatible)
 	if state.editor.algoMode != algoCompatible {
 		t.Fatal("compatible was not chosen")
 	}
-	state.Click(hitDialogAlgoCustom)
+	clickHostChoice(t, state, state.messages.Tools.AlgoCustom)
 	state.Click(hitDialogSubmit)
 	if state.modal != modalNewHost || state.dialogError != state.messages.Tools.ErrAlgoRequired {
 		t.Fatalf("an empty custom list: modal %d, error %q", state.modal, state.dialogError)

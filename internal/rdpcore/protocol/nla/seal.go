@@ -15,6 +15,8 @@ import (
 type ntlmSeal struct {
 	clientSignKey [16]byte
 	serverSignKey [16]byte
+	clientSealKey [16]byte
+	serverSealKey [16]byte
 	clientSeal    *rc4.Cipher
 	serverSeal    *rc4.Cipher
 	seqNumClient  uint32
@@ -35,13 +37,13 @@ func newNTLMSeal(exportedSessionKey [16]byte, log *slog.Logger) *ntlmSeal {
 	s.serverSignKey = signKey(exportedSessionKey[:],
 		"session key to server-to-client signing key magic constant\x00")
 
-	clientSealKey := sealKey(exportedSessionKey[:],
+	s.clientSealKey = sealKey(exportedSessionKey[:],
 		"session key to client-to-server sealing key magic constant\x00")
-	serverSealKey := sealKey(exportedSessionKey[:],
+	s.serverSealKey = sealKey(exportedSessionKey[:],
 		"session key to server-to-client sealing key magic constant\x00")
 
-	s.clientSeal, _ = rc4.NewCipher(clientSealKey[:])
-	s.serverSeal, _ = rc4.NewCipher(serverSealKey[:])
+	s.clientSeal, _ = rc4.NewCipher(s.clientSealKey[:])
+	s.serverSeal, _ = rc4.NewCipher(s.serverSealKey[:])
 	return s
 }
 
@@ -126,27 +128,22 @@ func sealKey(exportedSessionKey []byte, magic string) [16]byte {
 	return key
 }
 
-// makeSignature computes an NTLM MAC over the message (no encryption)
-// and increments the client sequence number.
-// Used for mechListMIC in SPNEGO (RFC 4178 §5).
-func (s *ntlmSeal) makeSignature(message []byte) [16]byte {
-	sig := s.mac(s.clientSignKey[:], s.clientSeal, s.seqNumClient, message)
-	s.seqNumClient++
-	return sig
+// mechListMIC signs the SPNEGO mechanism list (RFC 4178 §5, MS-SPNG 3.2.5.1).
+// The MIC is the first signed message of the NTLM context: it uses sequence
+// number zero and its own request-specific RC4 state, so the persistent sealing
+// cipher that the first application message uses stays at its start. Peers that
+// instead restore a shared handle around the MIC end up at the same state.
+func (s *ntlmSeal) mechListMIC(mechTypes []byte) [16]byte {
+	cipher, _ := rc4.NewCipher(s.clientSealKey[:])
+	return s.mac(s.clientSignKey[:], cipher, 0, mechTypes)
 }
 
-// resetCipherState reinitializes the RC4 cipher handles from the exported
-// session key, without resetting sequence numbers.
-// This matches the NTLM spec behavior: after mechListMIC computation,
-// the cipher state is reset so that subsequent seal/unseal operations
-// start with fresh RC4 keystreams.
-func (s *ntlmSeal) resetCipherState(exportedSessionKey [16]byte) {
-	clientSealKey := sealKey(exportedSessionKey[:],
-		"session key to client-to-server sealing key magic constant\x00")
-	serverSealKey := sealKey(exportedSessionKey[:],
-		"session key to server-to-client sealing key magic constant\x00")
-	s.clientSeal, _ = rc4.NewCipher(clientSealKey[:])
-	s.serverSeal, _ = rc4.NewCipher(serverSealKey[:])
+// verifyMechListMIC checks the acceptor's mechListMIC over the mechanism list
+// the initiator sent, with the same sequence and RC4 rules as mechListMIC.
+func (s *ntlmSeal) verifyMechListMIC(mechTypes, mic []byte) bool {
+	cipher, _ := rc4.NewCipher(s.serverSealKey[:])
+	expected := s.mac(s.serverSignKey[:], cipher, 0, mechTypes)
+	return hmacEqual(mic, expected[:])
 }
 
 func hmacEqual(a, b []byte) bool {

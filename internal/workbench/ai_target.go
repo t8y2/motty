@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/ai/gate"
 	layoutcore "motty/internal/workspace"
 )
@@ -45,20 +45,37 @@ func aiSessionInfo(session *Session) gate.SessionInfo {
 		Ready: session.term != nil && session.term.shell != nil && session.term.live && !session.term.ended}
 }
 
+// Resolve identity through the current catalog, never a session alias or address.
+// The request backend captures this result so it remains fixed for that run.
+func (state *State) aiSessionInfo(session *Session) gate.SessionInfo {
+	info := aiSessionInfo(session)
+	id := session.savedCatalogID()
+	if id == "" || session.isLocal() {
+		return info
+	}
+	for _, host := range state.hosts {
+		if host.CatalogID == id {
+			info.HostID, info.HostName, info.HostGroup = id, host.Label, strings.TrimSpace(host.Group)
+			break
+		}
+	}
+	return info
+}
+
 // Until the first send/explicit choice only the visible terminal is a default.
 // A home/settings page never silently falls back to a background connection.
 func (state *State) aiTarget() gate.SessionInfo {
 	if state.ai.targetSet {
 		if state.ai.target.ID != "" {
 			if session, err := state.aiSession(state.ai.target.ID); err == nil {
-				return aiSessionInfo(session)
+				return state.aiSessionInfo(session)
 			}
 		}
 		return state.ai.target
 	}
 	if state.activeSection == sectionTerminal {
 		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok && session.term != nil {
-			return aiSessionInfo(session)
+			return state.aiSessionInfo(session)
 		}
 	}
 	return gate.SessionInfo{}
@@ -109,7 +126,7 @@ func (state *State) aiExtraTargets() []gate.SessionInfo {
 			continue
 		}
 		if session, err := state.aiSession(extra.ID); err == nil && session.term != nil {
-			live = append(live, aiSessionInfo(session))
+			live = append(live, state.aiSessionInfo(session))
 		}
 	}
 	return live
@@ -159,9 +176,9 @@ func (state *State) aiSetSelected(ids []uint32) {
 			continue
 		}
 		if state.ai.target.ID == "" {
-			state.ai.target = aiSessionInfo(session)
+			state.ai.target = state.aiSessionInfo(session)
 		} else {
-			state.ai.extras = append(state.ai.extras, aiSessionInfo(session))
+			state.ai.extras = append(state.ai.extras, state.aiSessionInfo(session))
 		}
 	}
 	state.ai.targetSet = true
@@ -197,7 +214,7 @@ func (state *State) aiRequestReferences(question string) []gate.SessionInfo {
 		if !ok || session.term == nil {
 			continue
 		}
-		info := aiSessionInfo(session)
+		info := state.aiSessionInfo(session)
 		if !slices.ContainsFunc(references, func(have gate.SessionInfo) bool { return have.ID == info.ID }) {
 			references = append(references, info)
 		}
@@ -325,7 +342,7 @@ func (state *State) aiTargetOptions() []components.SelectItem {
 // aiChooseTarget handles a click in the open target list: a connection or a
 // whole tab is ticked or unticked and the list stays open for the next one. The
 // first ticked connection is the default; unticking it promotes the next.
-func (state *State) aiChooseTarget(id ui.ID) bool {
+func (state *State) aiChooseTarget(id gfx.ID) bool {
 	if state.ai.run != nil {
 		return false
 	}
@@ -367,7 +384,7 @@ func (state *State) aiChooseTarget(id ui.ID) bool {
 
 // aiChooseOnlyTarget is what typing a name on the closed selector does: that
 // connection or tab becomes the whole selection.
-func (state *State) aiChooseOnlyTarget(id ui.ID) bool {
+func (state *State) aiChooseOnlyTarget(id gfx.ID) bool {
 	if state.ai.run != nil {
 		return false
 	}
@@ -384,7 +401,7 @@ func (state *State) aiChooseOnlyTarget(id ui.ID) bool {
 }
 
 // aiTargetRowSessions are the ready sessions a list row stands for.
-func (state *State) aiTargetRowSessions(id ui.ID) ([]uint32, bool) {
+func (state *State) aiTargetRowSessions(id gfx.ID) ([]uint32, bool) {
 	if index, ok := id.In(hitAITargets); ok {
 		session, exists := state.sessionByIDPointer(uint32(index))
 		if !exists || !aiSessionInfo(session).Ready {
@@ -400,19 +417,19 @@ func (state *State) aiTargetRowSessions(id ui.ID) ([]uint32, bool) {
 }
 
 // Keep the numeric disambiguator visible even when a long tab title is elided.
-func (panel *aiPanel) targetCaption(canvas *ui.Canvas, title string, size, width float32) string {
+func (panel *aiPanel) targetCaption(canvas *gfx.Canvas, title string, size, width float32) string {
 	if panel.targetTitle == title && panel.targetWidth == width && panel.targetFontSize == size {
 		return panel.targetValue
 	}
 	original, value := title, title
-	if canvas.TextWidthWeight(title, size, ui.WeightRegular) > width {
+	if canvas.TextWidthWeight(title, size, gfx.WeightRegular) > width {
 		suffix := ""
 		if at := strings.LastIndexByte(title, '-'); at >= 0 {
 			if number, err := strconv.Atoi(title[at+1:]); err == nil && number >= 2 {
 				suffix, title = title[at:], title[:at]
 			}
 		}
-		value = elide(canvas, title, size, ui.WeightRegular, max(width-canvas.TextWidthWeight(suffix, size, ui.WeightRegular), 0)) + suffix
+		value = elide(canvas, title, size, gfx.WeightRegular, max(width-canvas.TextWidthWeight(suffix, size, gfx.WeightRegular), 0)) + suffix
 	}
 	panel.targetTitle, panel.targetWidth, panel.targetFontSize, panel.targetValue = original, width, size, value
 	return value
@@ -421,16 +438,16 @@ func (panel *aiPanel) targetCaption(canvas *ui.Canvas, title string, size, width
 // aiTargetListWidth is the open list's width: as wide as its longest row needs
 // (item inset, icon, label and the tick), never beyond 320 or below the select's
 // own minimum.
-func aiTargetListWidth(canvas *ui.Canvas, options []components.SelectItem, size float32) float32 {
+func aiTargetListWidth(canvas *gfx.Canvas, options []components.SelectItem, size float32) float32 {
 	const chrome, minimum, maximum = 8 + 24 + 40 + 8, 176, 320 // inset, icon and gap, tick column, popup padding
 	widest := float32(0)
 	for _, option := range options {
-		widest = max(widest, canvas.TextWidthWeight(option.Label, size, ui.WeightRegular))
+		widest = max(widest, canvas.TextWidthWeight(option.Label, size, gfx.WeightRegular))
 	}
 	return min(max(widest+chrome, minimum), maximum)
 }
 
-func (state *State) paintAITargetSelect(canvas *ui.Canvas) {
+func (state *State) paintAITargetSelect(canvas *gfx.Canvas) {
 	panel, m := &state.ai.panel, state.messages.AIPanel
 	bounds := panel.targetBounds
 	if !state.aiPanelVisible() || bounds.Width <= 0 || state.modal != modalNone {
@@ -460,7 +477,7 @@ func (state *State) paintAITargetSelect(canvas *ui.Canvas) {
 		hint = state.aiTargetLabel(target) + " · " + status
 		if more := state.aiExtraCount(); more > 0 {
 			more := " +" + strconv.Itoa(more)
-			moreWidth = canvas.TextWidthWeight(more, metrics.FontSizeS, ui.WeightRegular)
+			moreWidth = canvas.TextWidthWeight(more, metrics.FontSizeS, gfx.WeightRegular)
 			suffix = more
 			hint = state.aiConversationTargetLabel(target, state.aiExtraTargets()...) + " · " + status
 		}
@@ -470,7 +487,7 @@ func (state *State) paintAITargetSelect(canvas *ui.Canvas) {
 	// The selector sits in the composer among pills that are one type step below
 	// the message text, so it is the select's chip step rather than a field.
 	size := metrics.FontSizeS
-	bounds.Width = min(bounds.Width, max(108, canvas.TextWidthWeight(value, size, ui.WeightRegular)+moreWidth+targetChromeWidth))
+	bounds.Width = min(bounds.Width, max(108, canvas.TextWidthWeight(value, size, gfx.WeightRegular)+moreWidth+targetChromeWidth))
 	value = panel.targetCaption(canvas, value, size, bounds.Width-targetChromeWidth-moreWidth) + suffix
 	panel.targetBounds = bounds
 	var options []components.SelectItem
@@ -480,19 +497,26 @@ func (state *State) paintAITargetSelect(canvas *ui.Canvas) {
 	below := max(state.viewport.Height-8-bounds.Y-bounds.Height-4, 0)
 	above := max(bounds.Y-windowBarHeight-8, 0)
 	height := min(float32(8+len(options)*32), max(above, below))
-	content := ui.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: min(aiTargetListWidth(canvas, options, state.Theme().Metrics.FontSizeM), state.viewport.Width-16), Height: height}
+	content := gfx.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: min(aiTargetListWidth(canvas, options, state.Theme().Metrics.FontSizeM), state.viewport.Width-16), Height: height}
 	content.X = min(max(content.X, 8), state.viewport.Width-8-content.Width)
 	if below < height {
 		content.Y = bounds.Y - height - 4
 	}
 	// A narrow panel is a modal drawer. Its trigger must remain in that focus
-	// scope even though the menu is painted outside the body's clip.
+	// scope even though the menu is painted outside the body's clip. The trigger
+	// belongs to the drawer's layer, below dialogs and overlay menus, so an open
+	// menu above it does not have the trigger's text show through.
+	//
+	// Its own list still has to cover the drawer, which paints before the modal
+	// pass: the list stays on dialogLayer+1, between the drawer's text and a
+	// dialog. Lowering it to drawerLayer to fix the bleed would move the problem
+	// to the list instead of solving it.
 	layer := popupLayer
 	if state.aiReserve(state.deck.ActiveWorkspace(), state.viewport) == 0 {
 		layer = dialogLayer + 1
 		canvas.PushFocusScope(dialogScope)
 		defer canvas.PopFocusScope()
-		canvas.PushLayer(dialogLayer)
+		canvas.PushLayer(drawerLayer)
 		defer canvas.PopLayer()
 	}
 	theme := state.Theme()

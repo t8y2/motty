@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/ai/llm"
 	"motty/internal/ai/risk"
 )
@@ -40,10 +40,11 @@ func benchAIConversation(b *testing.B, count int) {
 	withModel(b, state)
 	state.ai.open = true
 	longConversation(state, count)
-	state.ai.scroll.ScrollToStart()
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	state.Paint(&canvas, panelWide)
-	state.ai.scroll.ScrollTo(state.ai.panel.maxScroll / 2)
+	aiListScroll(b, state).ScrollTo(0)
+	state.Paint(&canvas, panelWide)
+	aiListScroll(b, state).ScrollTo(state.ai.panel.maxScroll / 2)
 	paint := func() {
 		canvas.Reset()
 		state.Paint(&canvas, panelWide)
@@ -57,17 +58,17 @@ func benchAIConversation(b *testing.B, count int) {
 	})
 	b.Run("scrolling", func(b *testing.B) {
 		paint()
-		base := state.ai.scroll.Offset()
+		base := aiListScroll(b, state).Offset
 		b.ReportAllocs()
 		for i := 0; b.Loop(); i++ {
-			state.ai.scroll.ScrollTo(base + float32(i%64))
+			aiListScroll(b, state).ScrollTo(base + float32(i%64))
 			paint()
 		}
 	})
 	b.Run("resizing", func(b *testing.B) {
 		// Every paint is at another width, so every row is measured again.
 		b.ReportAllocs()
-		sizes := [2]ui.Size{{Width: 1400, Height: 900}, {Width: 400, Height: 900}} // docked, then a drawer 12 pixels narrower
+		sizes := [2]gfx.Size{{Width: 1400, Height: 900}, {Width: 400, Height: 900}} // docked, then a drawer 12 pixels narrower
 		for i := 0; b.Loop(); i++ {
 			canvas.Reset()
 			state.Paint(&canvas, sizes[i%2])

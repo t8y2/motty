@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/ui"
 	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
@@ -345,7 +346,7 @@ func TestImportPasswordsOnlyFillsMissingHostsAndKeepsExistingValues(t *testing.T
 		t.Fatalf("eligible passwords=%d, want only missing existing and new", state.sessionImport.eligible)
 	}
 	canvas, texts := paintedTexts(state)
-	if _, ok := hitByID(canvas, hitImportSavePasswords); !ok || !strings.Contains(strings.Join(texts, " "), "2 can be saved") {
+	if _, ok := hitByLabel(canvas, state.messages.Tools.ImportSavePasswords); !ok || !strings.Contains(strings.Join(texts, " "), "2 can be saved") {
 		t.Fatal("preview does not show an explicit password-save choice and eligible count")
 	}
 	state.Click(hitImportSavePasswords)
@@ -607,5 +608,77 @@ func TestSavedSpacedGroupPathReadsBackAsOneGroup(t *testing.T) {
 	}
 	if index := state.hostGroupIndex("65-Uyghur/Kashgar"); index < 0 || !state.hostGroups[index].Explicit {
 		t.Fatalf("the folder lost its explicit group: %+v", state.hostGroups[index])
+	}
+}
+
+// TestSessionImportDialogsReadTheirButtonsInThePage draws the chooser and the
+// password preview as the window page declares them and presses Cancel in the
+// event pass, so the page's buttons are what closes them.
+func TestSessionImportDialogsReadTheirButtonsInThePage(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.modal = modalImportSessions
+	view := func(c ui.C) { state.declareImportSessions(c) }
+	page, canvas := drawDialogPage(t, state, view)
+	cancel := pageHitByLabel(t, canvas, state.messages.Cancel)
+	if cancel.ID.IsZero() {
+		t.Fatal("the chooser's Cancel is not painted")
+	}
+	clickPageHit(t, state, page, canvas, view, cancel)
+	if state.modal != modalNone {
+		t.Fatalf("the chooser stayed open as modal %d", state.modal)
+	}
+
+	state.modal = modalSessionImportPreview
+	state.sessionImport = sessionImportPreview{plan: hostImportPlan{}}
+	view = func(c ui.C) { state.declareSessionImportPreview(c) }
+	page, canvas = drawDialogPage(t, state, view)
+	cancel = pageHitByLabel(t, canvas, state.messages.Cancel)
+	clickPageHit(t, state, page, canvas, view, cancel)
+	if state.modal != modalNone || len(state.sessionImport.passwords) != 0 {
+		t.Fatalf("the preview stayed open as modal %d", state.modal)
+	}
+}
+
+func TestImportingSecureCRTSessionsAsksForItsSessionsFolder(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "Sessions")
+	session := filepath.Join(root, "Clients", "Acme", "prod.ini")
+	if err := os.MkdirAll(filepath.Dir(session), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	content := "S:\"Protocol Name\"=SSH2\r\nS:\"Hostname\"=prod.example.test\r\n" +
+		"D:\"[SSH2] Port\"=00000898\r\nS:\"Username\"=deploy\r\n" +
+		"S:\"Password V2\"=03:7f59810d05b03f8e49b96e091dad49cb\r\n"
+	if err := os.WriteFile(session, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	options := freshOptions(t)
+	options.StatePath = filepath.Join(filepath.Dir(options.KnownHostsPath), "state.json")
+	var request app.OpenDirectoryOptions
+	options.OpenDirectory = func(asked app.OpenDirectoryOptions) (string, error) {
+		request = asked
+		return root, nil
+	}
+	state := newTestState(t, options)
+
+	state.Click(hitImportSessions)
+	state.Click(hitImportSecureCRT)
+	if !strings.Contains(request.Title, "SecureCRT") || !strings.Contains(request.Title, "Sessions") {
+		t.Fatalf("OpenDirectory request = %+v", request)
+	}
+	if state.modal != modalHostImportResult || len(state.hosts) != 1 {
+		t.Fatalf("modal %d, hosts %d", state.modal, len(state.hosts))
+	}
+	host := state.hosts[0]
+	if host.Label != "prod" || host.Group != "Clients/Acme" || host.Address != "prod.example.test" ||
+		host.User != "deploy" || host.Port != 2200 {
+		t.Fatalf("host = %+v", host)
+	}
+	result := state.hostImportResult
+	if !strings.Contains(result.summary, "SecureCRT") {
+		t.Fatalf("summary = %q", result.summary)
+	}
+	warnings := strings.Join(result.warnings[:result.visible], "\n")
+	if !strings.Contains(warnings, "No readable SSH passwords") {
+		t.Fatalf("warnings = %q", warnings)
 	}
 }

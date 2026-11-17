@@ -13,7 +13,7 @@ import (
 
 	"github.com/pkg/sftp"
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sftpclient"
 )
 
@@ -67,7 +67,7 @@ func TestSFTPBrowseCreateDialogFitsAndInitiallyFocusesPause(t *testing.T) {
 			if err := view.Rest(); err != nil {
 				t.Fatal(err)
 			}
-			for _, id := range []ui.ID{hitSFTPDialogSubmit, hitSFTPDialogCancel, hitSFTPDialogClose} {
+			for _, id := range []gfx.ID{hitSFTPDialogSubmit, hitSFTPDialogCancel, hitSFTPDialogClose} {
 				bounds := dualHit(t, view, id)
 				if bounds.X < 0 || bounds.Y < 0 || bounds.X+bounds.Width > 960 || bounds.Y+bounds.Height > 720 {
 					t.Fatal("confirmation action escaped the window")
@@ -76,7 +76,7 @@ func TestSFTPBrowseCreateDialogFitsAndInitiallyFocusesPause(t *testing.T) {
 			if view.Snapshot().Focused != hitSFTPDialogCancel {
 				t.Fatal("directory creation should require explicit confirmation")
 			}
-			if err := view.Driver().Key(ui.KeyEnter, 0); err != nil {
+			if err := view.Driver().Key(gfx.KeyEnter, 0); err != nil {
 				t.Fatal(err)
 			}
 			if w.navigationBusy() || w.browse.enabled || w.view.dialog != sftpDialogNone {
@@ -141,7 +141,7 @@ func TestSFTPBrowsePendingPairDoesNotOpenAnotherFileDialog(t *testing.T) {
 		t.Fatal("paired navigation did not start")
 	}
 	w.fileAction(true, hitSFTPNewDirectory)
-	for _, id := range []ui.ID{sftpWindowNewFolder[0], sftpWindowNewFolder[1], hitSFTPLocationProfiles} {
+	for _, id := range []gfx.ID{sftpWindowNewFolder[0], sftpWindowNewFolder[1], hitSFTPLocationProfiles} {
 		w.click(id)
 		if w.view.dialog != sftpDialogNone || w.bookmark.open {
 			t.Fatalf("%v opened a competing dialog during paired navigation", id)
@@ -185,7 +185,7 @@ func TestSFTPBrowseCreationCanBePausedByButtonEscapeAndClose(t *testing.T) {
 			w.navigate(false, "/home/test/docs")
 			dualWait(t, state, w, view, func() bool { return w.view.dialog == sftpDialogBrowseCreateDirectory })
 			if cancel == "escape" {
-				if err := view.Driver().Key(ui.KeyEscape, 0); err != nil {
+				if err := view.Driver().Key(gfx.KeyEscape, 0); err != nil {
 					t.Fatal(err)
 				}
 			} else if cancel == "close" {

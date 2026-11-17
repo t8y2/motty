@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 )
 
@@ -51,7 +51,7 @@ func TestSessionsRestoreWithoutDialingAndReconnectOnEnter(t *testing.T) {
 	}
 	// The explanation may wrap onto several lines; it reads as the title,
 	// then the body, all above the buttons and in order.
-	var title ui.Text
+	var title gfx.Text
 	var body strings.Builder
 	var bodyBottom float32
 	for _, text := range canvas.Texts() {
@@ -173,8 +173,8 @@ func TestRestoredSessionIdlePathsDoNotAllocate(t *testing.T) {
 		t.Fatal(err)
 	}
 	state := newTestState(t, options)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	if allocations := testing.AllocsPerRun(100, state.Wake); allocations != 0 {
 		t.Fatalf("restored Wake allocations = %v", allocations)

@@ -1,6 +1,6 @@
 package workbench
 
-import "github.com/vivaui/viva/ui"
+import "github.com/vivaui/viva/gfx"
 
 // tree names every place the workbench can be pointed at. A page or overlay is a
 // feature of it, a list on a page is a scope of that feature, and a control is a
@@ -12,13 +12,16 @@ import "github.com/vivaui/viva/ui"
 //	var hitProxyAdd = tree.ID(proxiesHits, "add")
 //	var hitProxyRows = tree.Sub(proxiesHits, tree.Name("rows"))   // hitProxyRows.At(i)
 //
-// An embedded session page is mounted in the pane that paints it with
-// tree.Mount, so the same controls are different identities in different panes.
-var tree ui.Tree
+// The hand-painted controls of a session pane (a connection page's buttons, a
+// remote desktop's controls) keep the application's identities, and a split
+// mounts them in the pane that paints them with tree.Mount, so the same controls
+// are different identities in different panes. Page-declared elements need no
+// mounting: their part names them.
+var tree gfx.Tree
 
 // Tree is the identity tree of the workbench's controls, for the window that paints
 // them: identities print as paths in logs and in the headless driver.
-func Tree() *ui.Tree { return &tree }
+func Tree() *gfx.Tree { return &tree }
 
 // The pages and overlays whose controls workbench.go declares.
 var (
@@ -36,42 +39,38 @@ var (
 	connHits = tree.Sub(shellHits, tree.Name("connection"))
 )
 
-// Where an embedded session page is painted. Every pane paints the same page with
-// the same controls; mounting it in the pane's place makes them that pane's own
-// identities (see Tree.Mount), and the context panel is a mount of its own.
+// Where the hand-painted controls of a session pane are mounted. The pane's body
+// is part of the workbench page, but its buttons keep the application identities
+// so the central dispatcher can act on them; mounting makes them that pane's own.
 var (
-	panesHits     = tree.Feature("panes")
-	contextMount  = tree.Feature("context")
-	fileTabsHits  = tree.Feature("file-tabs")
-	filePagesHits = tree.Feature("file-pages")
+	panesHits    = tree.Feature("panes")
+	fileTabsHits = tree.Feature("file-tabs")
 
 	fileTabList      = tree.Sub(fileTabsHits, tree.Name("tab"))
 	fileTabCloseList = tree.Sub(fileTabsHits, tree.Name("tab-close"))
 )
 
-func sftpFileTabID(sessionID uint32) ui.ID {
+func sftpFileTabID(sessionID uint32) gfx.ID {
 	return fileTabList.At(int(sessionID))
 }
 
-func sftpFileTabCloseID(sessionID uint32) ui.ID {
+func sftpFileTabCloseID(sessionID uint32) gfx.ID {
 	return fileTabCloseList.At(int(sessionID))
 }
 
-func sftpWindowMount(window *sftpWindow) ui.Scope {
-	return tree.Sub(filePagesHits, ui.Index(int(window.session.ID)))
+// paneMount is the place a session pane's hand-painted controls are mounted at
+// when its body is painted in one of several panes.
+func paneMount(session *Session) gfx.Scope {
+	return tree.Sub(panesHits, gfx.Index(int(session.paneSlot)))
 }
 
-// paneMount is the place the page of a session is mounted at when it is painted
-// in one of several panes.
-func paneMount(session *Session) ui.Scope {
-	return tree.Sub(panesHits, ui.Index(int(session.paneSlot)))
-}
-
-// contextID is the identity a control of the files panel has in the window.
-func contextID(id ui.ID) ui.ID { return tree.MountID(contextMount, id) }
+// contextID is the identity a control of the files panel has in the window. The
+// panel is part of the workbench page, so a control's identity is its own: the
+// helper stays for the tests that name the panel's controls.
+func contextID(id gfx.ID) gfx.ID { return id }
 
 // item is the number of the list item an identity names, or zero for a control.
-func item(id ui.ID) int {
+func item(id gfx.ID) int {
 	n, _ := id.Name().Index()
 	return n
 }

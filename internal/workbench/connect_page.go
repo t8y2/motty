@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 )
@@ -131,7 +131,7 @@ func (state *State) describe(session *Session) {
 		default:
 			session.details[stageConnect] = jump
 		}
-	case session.serverVersion != "":
+	case session.serverVersion != "" && !session.failed():
 		session.details[stageConnect] = fmt.Sprintf(m.ConnDetailServerFmt, session.serverVersion)
 	case session.failed() && session.stage == stageConnect:
 		if session.jumpPath != "" {
@@ -157,7 +157,7 @@ func (state *State) describe(session *Session) {
 	}
 
 	session.details[stageHostKey] = ""
-	if !session.host.isSSH() && !session.host.tunneled() {
+	if !session.host.isSSH() && !session.host.tunneled() && !session.desktopTunnel {
 		// Nothing to verify and no one to log in to: whatever asks for a login
 		// does so in the terminal.
 		session.details[stageLogin] = ""
@@ -192,6 +192,8 @@ func (state *State) describe(session *Session) {
 		session.details[stageLogin] = m.ConnDetailPasswordAsk
 	case session.phase == sshconn.PhaseKeyPassphrasePrompt:
 		session.details[stageLogin] = fmt.Sprintf(m.ConnDetailKeyPassphraseFmt, state.identityLabel(session.identity))
+	case session.securityKey:
+		session.details[stageLogin] = m.SecurityKeyWaiting
 	case session.phase == sshconn.PhaseConnected && session.method != "":
 		session.details[stageLogin] = fmt.Sprintf(m.ConnDetailMethodFmt, session.method)
 	case session.stage == stageLogin:
@@ -228,6 +230,8 @@ func (state *State) failureLine(session *Session) string {
 		return m.ConnRejected
 	case errors.Is(err, sshconn.ErrCanceled):
 		return m.ConnCanceled
+	case errors.Is(err, sshconn.ErrTooManyAuthAttempts):
+		return m.ConnTooManyAuthAttempts
 	case errors.Is(err, sshconn.ErrAuthFailed):
 		return m.ConnAuthFailed
 	}
@@ -236,9 +240,11 @@ func (state *State) failureLine(session *Session) string {
 	return err.Error()
 }
 
-// Card metrics, in logical pixels.
+// Card metrics, in logical pixels. The width sizes the card for its widest
+// footer: a reconnect's localized countdown beside its four actions, whole in
+// every supported language.
 const (
-	cardWidth  = float32(508)
+	cardWidth  = float32(560)
 	cardPad    = float32(28)
 	cardHeader = float32(106)
 	cardFooter = float32(64)
@@ -256,21 +262,137 @@ const (
 	failureInset  = float32(11)
 )
 
-// paintConnectionPage draws only what the connection is doing now. The SSH
-// phases remain in the session model and log, but conditional protocol details
-// are not presented as a fixed user journey.
-// paintPageGround fills the whole pane under a connection or restored page, as a
-// terminal fills its pane: edge to edge, so a split's panes meet with no margin
-// of window color between them, and returns what it filled.
-func paintPageGround(canvas *ui.Canvas, size ui.Size, fill ui.Color) ui.Rect {
-	frame := ui.Rect{Y: windowBarHeight, Width: size.Width, Height: max(size.Height-windowBarHeight, 0)}
-	canvas.Fill(frame, fill)
-	return frame
+// A session pane is part of the workbench page: the connection, restored and
+// desktop bodies are declared in the pane's keyed container, so the page names
+// their controls and the window paints the few parts they leave by hand. The
+// scratch each declaration leaves is kept per pane slot, because a split
+// declares every visible pane's body in one paint.
+
+// paneBody is the declaration scratch of the session's pane.
+func (state *State) paneBody(session *Session) *sessionPaneUI {
+	slot := int(session.paneSlot)
+	if slot < 0 || slot >= len(state.sessionBodies) {
+		slot = 0
+	}
+	return &state.sessionBodies[slot]
 }
 
-func (state *State) paintConnectionPage(canvas *ui.Canvas, size ui.Size, session *Session) {
+// panePartFor is the part naming the session's pane container. It is cached per
+// pane because a new name is a string built from the session number, and the
+// container is declared on every paint.
+func (state *State) panePartFor(session *Session) string {
+	s := state.paneBody(session)
+	if s.part == "" || s.partSession != session.ID {
+		s.part, s.partSession = terminalPageRoot(session.ID), session.ID
+	}
+	return s.part
+}
+
+// sessionButton is one button of a session pane: its identity as the pane paints
+// it, label, size and variant, painted into the slot the declaration left.
+type sessionButton struct {
+	id      gfx.ID
+	label   string
+	size    components.ButtonSize
+	variant components.ButtonVariant
+}
+
+// sessionPaneUI is the declaration scratch of one session's pane body: the boxes
+// the page laid out and the window paints into.
+type sessionPaneUI struct {
+	// part and partSession name the pane's container in the page's identity tree.
+	part        string
+	partSession uint32
+	// declared says the page declared this pane's body in the current paint. A
+	// click delivered during the paint can create a session after the pane loop
+	// ran; its body appears on the repaint, and until then the window must not
+	// paint boxes from an older paint.
+	declared bool
+	// buttons and buttonBoxes are the footer's buttons and their slots, reset
+	// when the body is declared.
+	buttons     []sessionButton
+	buttonBoxes []ui.Box
+	// avatar and failing are the connection card's badges; track and dots its
+	// rail; rail, railTarget and railIcon the rail's own layout.
+	avatar, failing, track, dots ui.Box
+	rail, railTarget, railIcon   ui.Box
+	// keysClose and keysConnect are the restored pane's key hints.
+	keysClose, keysConnect ui.Box
+	closeHint, connectHint []string
+	closeKeys, connectKeys [6]string
+	// light, tools, capture and latency are the desktop bars' slots, and
+	// desktopTools the controls they hold.
+	light, tools, capture, latency ui.Box
+	desktopTools                   []components.ButtonAction
+	latencyBadge                   desktopLatencyUI
+	latencyShown                   bool
+}
+
+// declareSessionPane declares a session the terminal control does not show: its
+// connection, restored or desktop body, in the pane's container.
+func (state *State) declareSessionPane(c ui.C, session *Session, bounds gfx.Rect) {
+	switch {
+	case session.restored:
+		state.declareRestoredSessionBody(c, session, bounds)
+	case state.showsProgress(session):
+		state.declareConnectionBody(c, session, bounds)
+	case session.desk != nil:
+		state.declareDesktopBody(c, session, bounds)
+	}
+}
+
+// paintSessionPaneDetails paints what a session pane's declaration left by hand:
+// its badges, buttons, rail and, for a remote desktop, the picture.
+func (state *State) paintSessionPaneDetails(canvas *gfx.Canvas, session *Session, bounds gfx.Rect) {
+	if !state.paneBody(session).declared {
+		return
+	}
+	switch {
+	case session.restored:
+		state.paintRestoredSessionDetails(canvas, session)
+	case state.showsProgress(session):
+		state.paintConnectionDetails(canvas, session)
+	case session.desk != nil:
+		state.paintDesktopDetails(canvas, session, bounds)
+	}
+}
+
+func (state *State) paintConnectionDetails(canvas *gfx.Canvas, session *Session) {
+	pal := state.pal
+	s := state.paneBody(session)
+
+	step := session.stepOf(connectionDisplayStage(session))
+	if session.failed() {
+		step = stepFailed
+	}
+	state.paintSessionBadge(canvas, session, s.avatar.Rect())
+	state.paintSessionButtons(canvas, session)
+	if step == stepFailed {
+		paintIcon(canvas, iconAlert, s.failing.Rect(), pal.danger)
+	}
+	state.easeRail(canvas, session, step)
+	if step != stepFailed {
+		state.paintConnectionTrack(canvas, session, step, session.railShown, session.host.System)
+	}
+	if step == stepActive && !canvas.ReduceMotion() {
+		paintBouncingDots(canvas, s.dots.Rect(), pal.muted)
+		canvas.RequestFrameIn(connectionSignalStep)
+	}
+	// A shell that stays silent hands the window over to the terminal.
+	if t := session.term; t != nil && t.shell != nil {
+		canvas.RequestFrameIn(max(shellGrace-(state.now()-t.shellOpened), time.Millisecond))
+	}
+}
+
+// declareConnectionBody declares the connection card and the rail it holds.
+// The inputs are the session's, and the boxes it leaves are painted after the
+// page is laid out.
+func (state *State) declareConnectionBody(c ui.C, session *Session, frame gfx.Rect) {
+	canvas := c.Canvas()
 	pal, m := state.pal, state.messages
-	frame := paintPageGround(canvas, size, pal.workspace)
+	s := state.paneBody(session)
+	s.declared = true
+	s.avatar, s.failing, s.track, s.dots, s.rail, s.railTarget, s.railIcon = ui.Box{}, ui.Box{}, ui.Box{}, ui.Box{}, ui.Box{}, ui.Box{}, ui.Box{}
 
 	failed := session.failed()
 	stage := connectionDisplayStage(session)
@@ -306,13 +428,13 @@ func (state *State) paintConnectionPage(canvas *ui.Canvas, size ui.Size, session
 	}
 	var reason []string
 	if failed && session.failure != "" {
-		reason = canvas.WrapLines(state.wrapped[:0], session.failure, metrics.FontSizeS, ui.WeightRegular, innerWidth-24, reasonLines)
+		reason = canvas.WrapLines(state.wrapped[:0], session.failure, metrics.FontSizeS, gfx.WeightRegular, innerWidth-24, reasonLines)
 	}
 
 	titles := [stageCount]string{m.ConnStepConnect, m.ConnStepHostKey, m.ConnStepLogin, m.ConnStepShell}
 	// Working and waiting stay in the page's own ink; only an ending is colored,
 	// and only faintly, so the panel is never a patch of amber.
-	var ending ui.Color
+	var ending gfx.Color
 	switch step {
 	case stepFailed:
 		ending = withAlpha(pal.danger, 0.06)
@@ -330,14 +452,14 @@ func (state *State) paintConnectionPage(canvas *ui.Canvas, size ui.Size, session
 	case stepDone:
 		statusTitle = m.HostStateConnected
 	}
-	detail := elide(canvas, session.details[stage], metrics.FontSizeS, ui.WeightRegular, innerWidth-36)
+	detail := elide(canvas, session.details[stage], metrics.FontSizeS, gfx.WeightRegular, innerWidth-36)
 	footerText := state.reconnectStatusText(canvas, session)
 	if footerText == "" && !failed {
 		footerText = state.elapsedText(canvas, session)
 	}
 	labelWidth := max(innerWidth-avatarSize-16, 0)
-	title := elide(canvas, session.Title, 16, ui.WeightSemibold, labelWidth)
-	address := elide(canvas, session.Address, metrics.FontSizeS, ui.WeightRegular, labelWidth)
+	title := elide(canvas, session.Title, 16, gfx.WeightSemibold, labelWidth)
+	address := elide(canvas, session.Address, metrics.FontSizeS, gfx.WeightRegular, labelWidth)
 	cardEdge := pal.windowStroke
 	cardEdge.Alpha = 0.72
 	reasonEdge, reasonTint := pal.danger, pal.danger
@@ -345,30 +467,32 @@ func (state *State) paintConnectionPage(canvas *ui.Canvas, size ui.Size, session
 
 	// Generous buttons when the card has room for them; the row shrinks them
 	// when it must, as it does for the four buttons of a pending reconnect.
-	sized := func(button flex.Box) flex.Box {
-		switch {
-		case footerHeight < 52:
-			return button.XSmall().Shrink(1)
-		case footerHeight < 64 || session.reconnectPending:
-			return button.Small().Shrink(1)
-		}
-		return button.Shrink(1)
+	size := components.ButtonSizeDefault
+	switch {
+	case footerHeight < 52:
+		size = components.ButtonSizeXSmall
+	case footerHeight < 64 || session.reconnectPending:
+		size = components.ButtonSizeSmall
 	}
-
-	var avatar, track, dots, failing flex.Box
-	f := state.connectionLayout.Begin(canvas, state.theme, frame)
-	f.Column().Fill().Items(flex.Center).Children(func() {
-		f.Spacer().Grow(0.42)
+	s.buttonBoxes, s.buttons = s.buttonBoxes[:0], s.buttons[:0]
+	addButton := func(id gfx.ID, label string, variant components.ButtonVariant) {
+		probe := components.BeginButton(canvas, *c.Theme(), gfx.ID{}, gfx.Rect{}).Size(size).SizeToFit(label)
+		box := ui.Slot(c).Size(probe.BoundsWidth(), probe.BoundsHeight()).Shrink(1)
+		s.buttonBoxes = append(s.buttonBoxes, box)
+		s.buttons = append(s.buttons, sessionButton{id: id, label: label, size: size, variant: variant})
+	}
+	ui.Column(c).Fill().Background(pal.workspace).Items(ui.Center).Children(func() {
+		ui.Spacer(c).Grow(0.42)
 		// The card is a stack so its edge is a layer of its own: a border drawn by
 		// the content column would take a pixel from the layout.
-		f.Stack().Width(width).Shrink(0).Children(func() {
-			f.Column().Fill().Background(pal.surface).Radius(18).Border(1, cardEdge)
-			f.Column().PadX(cardPad).Children(func() {
-				f.Row().Height(headerHeight).Shrink(0).PadSides(avatarTop, 0, 0, 0).Gap(16).Children(func() {
-					avatar = f.Slot().Size(avatarSize, avatarSize).Shrink(0)
-					f.Column().Gap(2).MarginSides(1, 0, 0, 0).Children(func() {
-						f.Text(title).FontSize(16).Bold().Color(pal.text)
-						f.Text(address).FontSize(metrics.FontSizeS).Color(pal.muted)
+		ui.Stack(c).Width(width).Shrink(0).Children(func() {
+			ui.Column(c).Fill().Background(pal.surface).Radius(18).Border(1, cardEdge)
+			ui.Column(c).PadX(cardPad).Children(func() {
+				ui.Row(c).Height(headerHeight).Shrink(0).PadSides(avatarTop, 0, 0, 0).Gap(16).Children(func() {
+					s.avatar = ui.Slot(c).Size(avatarSize, avatarSize).Shrink(0)
+					ui.Column(c).Gap(2).MarginSides(1, 0, 0, 0).Children(func() {
+						ui.Text(c, title).FontSize(16).Bold().Color(pal.text)
+						ui.Text(c, address).FontSize(metrics.FontSizeS).Color(pal.muted)
 					})
 				})
 
@@ -376,46 +500,54 @@ func (state *State) paintConnectionPage(canvas *ui.Canvas, size ui.Size, session
 					// There is no journey left to draw: the rail says nothing once
 					// the connection has ended, so the panel gives its width to the
 					// result instead, with the time it took on the other edge.
-					f.Stack().Height(failureHeight).Shrink(0).Background(panelFill).Radius(14).Children(func() {
-						f.Column().Fill().Background(ending).Radius(14)
-						f.Row().Fill().PadSides(16, 16, 16, 16).Gap(12).Items(flex.Center).Children(func() {
-							failing = f.Slot().Size(20, 20).Shrink(0)
-							f.Column().Grow(1).Justify(flex.Center).Gap(3).Children(func() {
-								f.Text(statusTitle).FontSize(metrics.FontSizeM).Bold().Color(pal.text).LineHeight(23)
+					ui.Stack(c).Height(failureHeight).Shrink(0).Background(panelFill).Radius(14).Children(func() {
+						ui.Column(c).Fill().Background(ending).Radius(14)
+						ui.Row(c).Fill().PadSides(16, 16, 16, 16).Gap(12).Items(ui.Center).Children(func() {
+							s.failing = ui.Slot(c).Size(20, 20).Shrink(0)
+							ui.Column(c).Grow(1).Justify(ui.Center).Gap(3).Children(func() {
+								ui.Text(c, statusTitle).FontSize(metrics.FontSizeM).Bold().Color(pal.text).LineHeight(23)
 								if detail != "" {
-									f.Text(detail).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(17)
+									ui.Text(c, detail).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(17)
 								}
 							})
-							f.Text(state.elapsedText(canvas, session)).FontSize(metrics.FontSizeS).Color(pal.faint).Shrink(0)
+							ui.Text(c, state.elapsedText(canvas, session)).FontSize(metrics.FontSizeS).Color(pal.faint).Shrink(0)
 						})
 					})
 				} else {
-					f.Stack().Height(statusHeight).Shrink(0).Background(panelFill).Radius(14).Children(func() {
-						f.Column().Fill().Background(ending).Radius(14)
-						track = f.Slot().Height(46).FillWidth().MarginSides(12, 18, 0, 18)
-						f.Column().Fill().Justify(flex.End).PadSides(0, 0, 8, 0).Children(func() {
+					ui.Stack(c).Height(statusHeight).Shrink(0).Background(panelFill).Radius(14).Children(func() {
+						ui.Column(c).Fill().Background(ending).Radius(14)
+						s.track = ui.Slot(c).Height(46).FillWidth().MarginSides(12, 18, 0, 18)
+						s.track.Children(func() {
+							ui.Row(c).Fill().Items(ui.Center).Children(func() {
+								s.rail = ui.Slot(c).Grow(1).Height(3).MarginSides(0, 6, 0, 18)
+								s.railTarget = ui.Column(c).Size(30, 30).Center().Shrink(0).Children(func() {
+									s.railIcon = ui.Slot(c).Size(14, 14)
+								})
+							})
+						})
+						ui.Column(c).Fill().Justify(ui.End).PadSides(0, 0, 8, 0).Children(func() {
 							// The badge sits against the panel's edge, the title clipped short of it.
 							titleGap := float32(0)
 							if step == stepWaiting {
 								titleGap = 28
 							}
-							f.Row().Items(flex.Center).Children(func() {
-								f.Text(statusTitle).FontSize(metrics.FontSizeM).Bold().Color(pal.text).LineHeight(25).MarginSides(0, titleGap, 0, 18)
+							ui.Row(c).Items(ui.Center).Children(func() {
+								ui.Text(c, statusTitle).FontSize(metrics.FontSizeM).Bold().Color(pal.text).LineHeight(25).MarginSides(0, titleGap, 0, 18)
 								if step == stepActive && !canvas.ReduceMotion() {
 									// The working ellipsis follows the title, resting 6 above its bottom edge.
-									dots = f.Slot().Size(bouncingDotsWidth, bouncingDotsHeight).Self(flex.End).MarginSides(0, 0, 6, 5).Shrink(0)
+									s.dots = ui.Slot(c).Size(bouncingDotsWidth, bouncingDotsHeight).Self(ui.End).MarginSides(0, 0, 6, 5).Shrink(0)
 								}
 								if step == stepWaiting {
-									f.Spacer()
-									f.Column().Height(22).PadX(9).Center().Background(pal.accentSoft).Radius(11).Shrink(0).Children(func() {
-										f.Text(m.ConnNeedsYou).FontSize(metrics.FontSizeS).Bold().Color(pal.accent)
+									ui.Spacer(c)
+									ui.Column(c).Height(22).PadX(9).Center().Background(pal.accentSoft).Radius(11).Shrink(0).Children(func() {
+										ui.Text(c, m.ConnNeedsYou).FontSize(metrics.FontSizeS).Bold().Color(pal.accent)
 									})
 								}
 							})
 							if detail != "" {
-								f.Text(detail).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(20).MarginX(18)
+								ui.Text(c, detail).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(20).MarginX(18)
 							} else {
-								f.Column().Height(20).Shrink(0)
+								ui.Column(c).Height(20).Shrink(0)
 							}
 						})
 					})
@@ -423,11 +555,11 @@ func (state *State) paintConnectionPage(canvas *ui.Canvas, size ui.Size, session
 
 				// Why it failed.
 				if len(reason) > 0 {
-					f.Row().MarginSides(10, 0, 0, 0).PadSides(reasonInset, 12, reasonInset, 12).Shrink(0).
+					ui.Row(c).MarginSides(10, 0, 0, 0).PadSides(reasonInset, 12, reasonInset, 12).Shrink(0).
 						Background(reasonTint.Over(pal.surface)).Radius(radius.popup).Border(1, reasonEdge.Over(pal.surface)).Children(func() {
-						f.Column().Grow(1).Children(func() {
+						ui.Column(c).Grow(1).Children(func() {
 							for _, line := range reason {
-								f.Text(line).FontSize(metrics.FontSizeS).Color(pal.text).LineHeight(reasonLeadin)
+								ui.Text(c, line).FontSize(metrics.FontSizeS).Color(pal.text).LineHeight(reasonLeadin)
 							}
 						})
 					})
@@ -438,46 +570,30 @@ func (state *State) paintConnectionPage(canvas *ui.Canvas, size ui.Size, session
 				if len(reason) > 0 {
 					footerTop += 6
 				}
-				f.Stack().Height(footerHeight).Shrink(0).MarginSides(footerTop, 0, 0, 0).Children(func() {
-					f.Column().Height(1).Background(pal.line)
-					f.Row().Fill().Items(flex.Center).Gap(state.theme.Metrics.GapItem).Children(func() {
-						f.Text(footerText).FontSize(metrics.FontSizeS).Color(pal.muted).Grow(1)
-						sized(f.Button(hitConnLog, m.ConnShowLog).Ghost())
+				ui.Stack(c).Height(footerHeight).Shrink(0).MarginSides(footerTop, 0, 0, 0).Children(func() {
+					ui.Column(c).Height(1).Background(pal.line)
+					ui.Row(c).Fill().Items(ui.Center).Gap(state.theme.Metrics.GapItem).Children(func() {
+						ui.Text(c, footerText).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().Grow(1)
+						addButton(hitConnLog, m.ConnShowLog, components.ButtonGhost)
 						if session.reconnectPending {
-							sized(f.Button(hitConnExport, m.ConnExportLog).Ghost())
+							addButton(hitConnExport, m.ConnExportLog, components.ButtonGhost)
 						}
-						sized(f.Button(hitConnClose, m.ConnClose).Outline())
+						addButton(hitConnClose, m.ConnClose, components.ButtonOutline)
+						if failed && canForgetServerIdentity(session) {
+							addButton(hitConnForget, m.HostKeyForget, components.ButtonOutline)
+						}
 						if session.reconnectPending {
-							sized(f.Button(hitConnCancelReconnect, m.ConnCancelReconnect))
+							addButton(hitConnCancelReconnect, m.ConnCancelReconnect, components.ButtonDefault)
 						} else if failed && state.canReconnect(session) {
-							sized(f.Button(hitConnRetry, m.ConnRetry))
+							addButton(hitConnRetry, m.ConnRetry, components.ButtonDefault)
 						}
 					})
 				})
 			})
 		})
-		f.Spacer().Grow(0.58)
+		ui.Spacer(c).Grow(0.58)
 	})
-	f.End()
-
-	state.paintSessionBadge(canvas, session, avatar.Rect())
-	if step == stepFailed {
-		paintIcon(canvas, iconAlert, failing.Rect(), pal.danger)
-	}
-	state.easeRail(canvas, session, step)
-	if !failed {
-		state.paintConnectionTrack(canvas, track.Rect(), step, session.railShown, session.host.System)
-	}
-	if step == stepActive && !canvas.ReduceMotion() {
-		paintBouncingDots(canvas, dots.Rect(), pal.muted)
-		canvas.RequestFrameIn(connectionSignalStep)
-	}
-	// A shell that stays silent hands the window over to the terminal.
-	if t := session.term; t != nil && t.shell != nil {
-		canvas.RequestFrameIn(max(shellGrace-(state.now()-t.shellOpened), time.Millisecond))
-	}
 }
-
 func connectionDisplayStage(session *Session) int {
 	switch {
 	case session.shellFailed:
@@ -490,22 +606,15 @@ func connectionDisplayStage(session *Session) int {
 	return min(max(session.stage, 0), stageCount-1)
 }
 
-func (state *State) paintConnectionTrack(canvas *ui.Canvas, bounds ui.Rect, step stepState, fill float32, system sshconn.RemoteSystem) {
+func (state *State) paintConnectionTrack(canvas *gfx.Canvas, session *Session, step stepState, fill float32, system sshconn.RemoteSystem) {
 	const endpointSize, ballSize, ring = float32(30), float32(26), float32(18)
 	pal := state.pal
 
 	// The rail runs from the ring's reach at the left to a little short of the
-	// machine it leads to at the right; only the ball on it moves.
-	var rail, target, targetIcon flex.Box
-	f := state.railLayout.Begin(canvas, state.Theme(), bounds)
-	f.Row().Fill().Items(flex.Center).Children(func() {
-		rail = f.Slot().Grow(1).Height(3).MarginSides(0, 6, 0, ring)
-		target = f.Column().Size(endpointSize, endpointSize).Center().Shrink(0).Children(func() {
-			targetIcon = f.Slot().Size(14, 14)
-		})
-	})
-	f.End()
-	track, targetBounds, iconBounds := rail.Rect(), target.Rect(), targetIcon.Rect()
+	// machine it leads to at the right; only the ball on it moves. Its slots were
+	// declared with the connection body.
+	s := state.paneBody(session)
+	track, targetBounds, iconBounds := s.rail.Rect(), s.railTarget.Rect(), s.railIcon.Rect()
 
 	tint := pal.accent
 	switch step {
@@ -522,7 +631,7 @@ func (state *State) paintConnectionTrack(canvas *ui.Canvas, bounds ui.Rect, step
 	}
 	ballX := track.X + track.Width*min(max(fill, 0), 1)
 	if filled := ballX - track.X; filled > 0 {
-		canvas.Rounded(ui.Rect{X: track.X, Y: track.Y, Width: filled, Height: track.Height}, track.Height/2, withAlpha(tint, 0.55))
+		canvas.Rounded(gfx.Rect{X: track.X, Y: track.Y, Width: filled, Height: track.Height}, track.Height/2, withAlpha(tint, 0.55))
 	}
 
 	canvas.Rounded(targetBounds, endpointSize/2, pal.surfaceHot)
@@ -538,9 +647,9 @@ func (state *State) paintConnectionTrack(canvas *ui.Canvas, bounds ui.Rect, step
 	}
 	centerY := track.Y + track.Height/2
 	clear := ballSize + 8
-	canvas.Rounded(ui.Rect{X: ballX - clear/2, Y: centerY - clear/2, Width: clear, Height: clear}, clear/2, pal.surfaceSoft.Over(pal.surface)) // the track under the ball and its ring
+	canvas.Rounded(gfx.Rect{X: ballX - clear/2, Y: centerY - clear/2, Width: clear, Height: clear}, clear/2, pal.surfaceSoft.Over(pal.surface)) // the track under the ball and its ring
 	// The ball is the machine: its system's badge, as in the host list.
-	paintSystemBadge(canvas, system, ui.Rect{X: ballX - ballSize/2, Y: centerY - ballSize/2, Width: ballSize, Height: ballSize}, pal)
+	paintSystemBadge(canvas, system, gfx.Rect{X: ballX - ballSize/2, Y: centerY - ballSize/2, Width: ballSize, Height: ballSize}, pal)
 	if step == stepActive {
 		paintConnectionRing(canvas, ballX, centerY, ring, tint)
 	}
@@ -558,7 +667,7 @@ const (
 
 // paintConnectionFlow draws the streak, clipped to the rail. Standing still
 // (reduced motion) it draws none: the ring already says it is working.
-func paintConnectionFlow(canvas *ui.Canvas, track ui.Rect, tint ui.Color) {
+func paintConnectionFlow(canvas *gfx.Canvas, track gfx.Rect, tint gfx.Color) {
 	if canvas.ReduceMotion() {
 		return
 	}
@@ -579,7 +688,7 @@ func paintConnectionFlow(canvas *ui.Canvas, track ui.Rect, tint ui.Color) {
 			continue
 		}
 		fade := 1 - float32(index)/float32(slices)
-		canvas.Fill(ui.Rect{X: left, Y: track.Y, Width: right - left, Height: track.Height}, withAlpha(tint, 0.6*fade*fade))
+		canvas.Fill(gfx.Rect{X: left, Y: track.Y, Width: right - left, Height: track.Height}, withAlpha(tint, 0.6*fade*fade))
 	}
 }
 
@@ -590,7 +699,7 @@ const connectionRingPeriod = 900 * time.Millisecond
 // whose brightness trails behind a head that goes round, so it reads as a smooth
 // sweep and costs no path or allocation. With reduced motion it stands still,
 // three quarters lit.
-func paintConnectionRing(canvas *ui.Canvas, x, y, radius float32, tint ui.Color) {
+func paintConnectionRing(canvas *gfx.Canvas, x, y, radius float32, tint gfx.Color) {
 	const dots = 16
 	head := float64(0)
 	if !canvas.ReduceMotion() {
@@ -609,7 +718,7 @@ func paintConnectionRing(canvas *ui.Canvas, x, y, radius float32, tint ui.Color)
 		angle := 2*math.Pi*position - math.Pi/2
 		const diameter = float32(3)
 		cx, cy := x+radius*float32(math.Cos(angle)), y+radius*float32(math.Sin(angle))
-		canvas.Rounded(ui.Rect{X: cx - diameter/2, Y: cy - diameter/2, Width: diameter, Height: diameter}, diameter/2, withAlpha(tint, alpha))
+		canvas.Rounded(gfx.Rect{X: cx - diameter/2, Y: cy - diameter/2, Width: diameter, Height: diameter}, diameter/2, withAlpha(tint, alpha))
 	}
 }
 
@@ -625,7 +734,7 @@ func connectionRailTarget(step stepState) float32 {
 
 // easeRail moves the ball toward where it belongs. The ease is by time, not by
 // frame, so it is as smooth at 30 frames a second as at 120.
-func (state *State) easeRail(canvas *ui.Canvas, session *Session, step stepState) {
+func (state *State) easeRail(canvas *gfx.Canvas, session *Session, step stepState) {
 	now := canvas.Now()
 	target := connectionRailTarget(step)
 	if canvas.ReduceMotion() {
@@ -650,7 +759,7 @@ func (state *State) easeRail(canvas *ui.Canvas, session *Session, step stepState
 // connectionRailDuration is how long the ball takes to its new place.
 const connectionRailDuration = 340 * time.Millisecond
 
-func withAlpha(color ui.Color, alpha float32) ui.Color {
+func withAlpha(color gfx.Color, alpha float32) gfx.Color {
 	color.Alpha = alpha
 	return color
 }
@@ -672,77 +781,110 @@ const (
 
 // paintBouncingDots draws the working ellipsis in its box: the dots rest on the
 // box's bottom edge and hop up.
-func paintBouncingDots(canvas *ui.Canvas, box ui.Rect, color ui.Color) {
+func paintBouncingDots(canvas *gfx.Canvas, box gfx.Rect, color gfx.Color) {
 	now := canvas.Now()
 	for dot := float32(0); dot < 3; dot++ {
 		wave := float32(math.Sin(math.Pi * float64(cycle(now, connectionDotsPeriod, 1-dot*0.14)) * 2))
 		lift := max(wave, 0)
 		color.Alpha = 0.45 + 0.55*lift
-		canvas.Rounded(ui.Rect{X: box.X + dot*(bouncingDotSize+3.5), Y: box.Y + box.Height - bouncingDotSize - 3.5*lift, Width: bouncingDotSize, Height: bouncingDotSize}, bouncingDotSize/2, color)
+		canvas.Rounded(gfx.Rect{X: box.X + dot*(bouncingDotSize+3.5), Y: box.Y + box.Height - bouncingDotSize - 3.5*lift, Width: bouncingDotSize, Height: bouncingDotSize}, bouncingDotSize/2, color)
 	}
 }
 
-func (state *State) paintRestoredSessionPage(canvas *ui.Canvas, size ui.Size, session *Session) {
+func (state *State) paintRestoredSessionDetails(canvas *gfx.Canvas, session *Session) {
+	s := state.paneBody(session)
+	state.paintSessionBadge(canvas, session, s.avatar.Rect())
+	state.paintSessionButtons(canvas, session)
+	state.paintKeyHint(canvas, s.keysClose.Rect(), s.closeHint)
+	state.paintKeyHint(canvas, s.keysConnect.Rect(), s.connectHint)
+}
+
+// declareRestoredSessionBody declares the body of a session that has to be
+// restored: who it is, what happened, what to do, and the keys that do it.
+func (state *State) declareRestoredSessionBody(c ui.C, session *Session, area gfx.Rect) {
+	canvas := c.Canvas()
 	pal, messages := state.pal, state.messages
-	area := paintPageGround(canvas, size, pal.workspace)
+	s := state.paneBody(session)
+	s.declared = true
+	s.avatar, s.keysClose, s.keysConnect = ui.Box{}, ui.Box{}, ui.Box{}
+	s.closeHint, s.connectHint = nil, nil
 
 	// No card: the page is the window's own space, with one column down its
 	// middle (who, what happened, what to do) and the keys that do it.
 	const avatarSize = float32(52)
 	labelMax := max(area.Width-avatarSize-48, 120)
-	title := elide(canvas, session.Title, 18, ui.WeightSemibold, labelMax)
-	address := elide(canvas, session.Address, metrics.FontSizeS, ui.WeightRegular, labelMax)
+	title := elide(canvas, session.Title, 18, gfx.WeightSemibold, labelMax)
+	address := elide(canvas, session.Address, metrics.FontSizeS, gfx.WeightRegular, labelMax)
 	body := messages.SessionRestoredBody
 	if session.restoreNote != "" {
 		body = session.restoreNote
 	}
 	textWidth := min(max(area.Width-64, 200), 440)
-	lines := canvas.WrapLines(state.wrapped[:0], body, metrics.FontSizeM, ui.WeightRegular, textWidth, 3)
+	lines := canvas.WrapLines(state.wrapped[:0], body, metrics.FontSizeM, gfx.WeightRegular, textWidth, 3)
 
 	// Under each button the keys that press it, as wide as their keycaps; they hang
 	// below the button without taking room from the page's centring.
-	var closeKeys, connectKeys [6]string
-	closeHint := state.shortcuts.chords[shortcutCloseTab].keys(closeKeys[:0])
-	connectHint := append(connectKeys[:0], "↵")
+	s.closeHint = state.shortcuts.chords.Chord(shortcutCloseTab).Keycaps(s.closeKeys[:0])
+	s.connectHint = append(s.connectKeys[:0], "↵")
 	hintHeight := state.Theme().Metrics.FontSizeS + 9
-	closeHintWidth, connectHintWidth := state.keyHintWidth(canvas, closeHint, hintHeight), state.keyHintWidth(canvas, connectHint, hintHeight)
+	closeHintWidth, connectHintWidth := state.keyHintWidth(canvas, s.closeHint, hintHeight), state.keyHintWidth(canvas, s.connectHint, hintHeight)
 
-	var avatar, closeKeysBox, connectKeysBox flex.Box
-	f := state.restoredView.Begin(canvas, state.theme, area)
-	f.Column().Fill().PadSides(max(24, area.Height*0.34), 0, 0, 0).Items(flex.Center).Children(func() {
-		f.Row().Gap(16).Items(flex.Center).Children(func() {
-			avatar = f.Slot().Size(avatarSize, avatarSize)
-			f.Column().Children(func() {
-				f.Text(title).FontSize(18).Weight(ui.WeightSemibold).Color(pal.text)
-				f.Text(address).FontSize(metrics.FontSizeS).Color(pal.muted)
+	s.buttonBoxes, s.buttons = s.buttonBoxes[:0], s.buttons[:0]
+	addButton := func(id gfx.ID, label string, variant components.ButtonVariant) {
+		probe := components.BeginButton(canvas, *c.Theme(), gfx.ID{}, gfx.Rect{}).SizeToFit(label)
+		box := ui.Slot(c).Size(max(probe.BoundsWidth(), 96), probe.BoundsHeight())
+		s.buttonBoxes = append(s.buttonBoxes, box)
+		s.buttons = append(s.buttons, sessionButton{id: id, label: label, size: components.ButtonSizeDefault, variant: variant})
+	}
+
+	ui.Column(c).Fill().Background(pal.workspace).PadSides(max(24, area.Height*0.34), 0, 0, 0).Items(ui.Center).Children(func() {
+		ui.Row(c).Gap(16).Items(ui.Center).Children(func() {
+			s.avatar = ui.Slot(c).Size(avatarSize, avatarSize)
+			ui.Column(c).Children(func() {
+				ui.Text(c, title).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text)
+				ui.Text(c, address).FontSize(metrics.FontSizeS).Color(pal.muted)
 			})
 		})
-		f.Column().Width(textWidth).MarginSides(28, 0, 0, 0).Children(func() {
-			f.Text(messages.SessionRestoredTitle).FontSize(metrics.FontSizeM).Weight(ui.WeightSemibold).Color(pal.text).TextCenter().MarginSides(0, 0, 4, 0)
+		ui.Column(c).Width(textWidth).MarginSides(28, 0, 0, 0).Children(func() {
+			ui.Text(c, messages.SessionRestoredTitle).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).TextCenter().MarginSides(0, 0, 4, 0)
 			for _, line := range lines {
-				f.Text(line).Color(pal.muted).TextCenter()
+				ui.Text(c, line).Color(pal.muted).TextCenter()
 			}
 		})
-		f.Row().Gap(14).MarginSides(22, 0, 0, 0).Children(func() {
-			f.Column().Items(flex.Center).Children(func() {
-				f.Button(hitConnClose, messages.ConnClose).Outline().MinWidth(96)
-				closeKeysBox = f.Slot().Size(closeHintWidth, hintHeight).MarginSides(10, 0, -(10 + hintHeight), 0)
+		ui.Row(c).Gap(14).MarginSides(22, 0, 0, 0).Children(func() {
+			ui.Column(c).Items(ui.Center).Children(func() {
+				addButton(hitConnClose, messages.ConnClose, components.ButtonOutline)
+				s.keysClose = ui.Slot(c).Size(closeHintWidth, hintHeight).MarginSides(10, 0, -(10 + hintHeight), 0)
 			})
-			f.Column().Items(flex.Center).Children(func() {
-				f.Button(hitConnRetry, messages.SessionReconnect).MinWidth(96)
-				connectKeysBox = f.Slot().Size(connectHintWidth, hintHeight).MarginSides(10, 0, -(10 + hintHeight), 0)
+			ui.Column(c).Items(ui.Center).Children(func() {
+				addButton(hitConnRetry, messages.SessionReconnect, components.ButtonDefault)
+				s.keysConnect = ui.Slot(c).Size(connectHintWidth, hintHeight).MarginSides(10, 0, -(10 + hintHeight), 0)
 			})
 		})
 	})
-	f.End()
-	state.paintSessionBadge(canvas, session, avatar.Rect())
+}
 
-	state.paintKeyHint(canvas, closeKeysBox.Rect(), closeHint)
-	state.paintKeyHint(canvas, connectKeysBox.Rect(), connectHint)
+// paintSessionButtons paints the footer buttons the session body declared into
+// their slots, keeping the application's identities for the central dispatcher.
+// A split mounts each pane's identities, so the buttons are that pane's own.
+func (state *State) paintSessionButtons(canvas *gfx.Canvas, session *Session) {
+	s := state.paneBody(session)
+	for index, action := range s.buttons {
+		id := state.paneIdentity(session, action.id)
+		button := components.BeginButton(canvas, state.Theme(), id, s.buttonBoxes[index].Rect()).Size(action.size)
+		switch action.variant {
+		case components.ButtonGhost:
+			button.Ghost(action.label)
+		case components.ButtonOutline:
+			button.Outline(action.label)
+		default:
+			button.Default(action.label)
+		}
+	}
 }
 
 // keyHintWidth is how wide the keycaps of a hint are, side by side.
-func (state *State) keyHintWidth(canvas *ui.Canvas, keys []string, height float32) float32 {
+func (state *State) keyHintWidth(canvas *gfx.Canvas, keys []string, height float32) float32 {
 	width := float32(0)
 	for index, key := range keys {
 		width += max(canvas.TextWidth(key, state.Theme().Metrics.FontSizeS)+8, height)
@@ -754,7 +896,7 @@ func (state *State) keyHintWidth(canvas *ui.Canvas, keys []string, height float3
 }
 
 // paintKeyHint draws keycaps in the box that was kept for them.
-func (state *State) paintKeyHint(canvas *ui.Canvas, box ui.Rect, keys []string) {
+func (state *State) paintKeyHint(canvas *gfx.Canvas, box gfx.Rect, keys []string) {
 	group := components.BeginKbdGroup(canvas, state.Theme(), box)
 	for _, key := range keys {
 		group.Add(key)
@@ -764,7 +906,7 @@ func (state *State) paintKeyHint(canvas *ui.Canvas, box ui.Rect, keys []string) 
 // elapsedText is how long the connection has taken, kept between paints so a
 // repaint within the same second builds nothing. The page asks for a frame
 // each second while the clock runs.
-func (state *State) elapsedText(canvas *ui.Canvas, session *Session) string {
+func (state *State) elapsedText(canvas *gfx.Canvas, session *Session) string {
 	end, running := session.finished, session.finished == 0
 	if running {
 		end = state.now()
@@ -790,7 +932,7 @@ func clockText(seconds int64) string {
 
 // clickConnection handles the buttons of the connection page and the way back
 // to it from the log.
-func (state *State) clickConnection(id ui.ID) {
+func (state *State) clickConnection(id gfx.ID) {
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	if !ok {
 		return
@@ -806,6 +948,8 @@ func (state *State) clickConnection(id ui.ID) {
 		if state.canReconnect(session) {
 			state.reconnect(session)
 		}
+	case hitConnForget:
+		state.forgetServerIdentity(session)
 	case hitConnCancelReconnect:
 		if session.reconnectPending {
 			state.cancelReconnect(session)
@@ -821,7 +965,7 @@ func (state *State) clickConnection(id ui.ID) {
 
 // paintSessionBadge is the machine's badge, the one its row in the host list has:
 // its system, or the icon chosen for it. A local shell has the terminal.
-func (state *State) paintSessionBadge(canvas *ui.Canvas, session *Session, bounds ui.Rect) {
+func (state *State) paintSessionBadge(canvas *gfx.Canvas, session *Session, bounds gfx.Rect) {
 	if session.isLocal() {
 		canvas.Rounded(bounds, bounds.Width*0.24, state.pal.accentSoft)
 		paintIcon(canvas, iconTerminal, insetRect(bounds, 0.24), state.pal.accent)

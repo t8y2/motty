@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sftpclient"
 )
 
@@ -33,6 +33,16 @@ func openLocalPane(t *testing.T, state *State, session *Session, dir string) *sf
 	return view
 }
 
+func TestLocalPaneOpensInTheConfiguredDownloadFolder(t *testing.T) {
+	state, session, _, _ := openTestSFTP(t)
+	destination := t.TempDir()
+	state.sftpDownloadDirectory = destination
+	state.Click(hitSFTPPaneToggle)
+	waitSFTP(t, state, session, func(view *sftpView) bool {
+		return view.local && view.lfolder.path == destination
+	})
+}
+
 func TestLocalPaneListsThisComputerFoldersFirstAndKeepsTheServersListing(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	dir := localFixture(t)
@@ -47,8 +57,8 @@ func TestLocalPaneListsThisComputerFoldersFirstAndKeepsTheServersListing(t *test
 	if len(view.rows) != 2 || view.path != "/home/test" {
 		t.Fatalf("the server's listing changed: %d rows at %q", len(view.rows), view.path)
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, contextID(hitSFTPPaneToggle)); !ok {
 		t.Fatal("no way back to the server's files")
 	}
@@ -158,8 +168,8 @@ func TestServerSelectionDownloadsIntoTheLocalFolderOnShow(t *testing.T) {
 	view := openLocalPane(t, state, session, dir)
 	state.Click(hitSFTPPaneToggle) // back to the server, whose download can now go "here"
 	clickSFTPRow(t, state, view, "notes.txt")
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, contextID(hitSFTPDownloadHere)); !ok {
 		t.Fatal("no Download here button though the local side has been opened")
 	}
@@ -199,21 +209,34 @@ func TestLocalNewFolderIsMadeOnThisComputer(t *testing.T) {
 	if onServer {
 		t.Fatal("the folder was made on the server")
 	}
+
+	state.Click(hitSFTPNewDirectory)
+	replaceSFTPDialogText(t, state, "photos")
+	state.Click(hitSFTPDialogSubmit)
+	if view.dialog == sftpDialogNone || view.dialogError != state.messages.SFTPErrDirectoryExists {
+		t.Fatalf("duplicate local folder allowed or wrong error: dialog=%d error=%q", view.dialog, view.dialogError)
+	}
 }
 
 func TestLocalPaneSteadyPaintDoesNotAllocate(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
+	// This test measures painting, not the platform icon service. A failed
+	// shared slot gives every .txt row the built-in fallback without a
+	// background request that could land during the allocation check.
+	state.sftpTypeIcons = map[string]*fileIconSlot{".txt": {failed: true}}
 	view := openLocalPane(t, state, session, localFixture(t))
 	clickSFTPLocalRow(t, state, view, "report.txt")
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	// The completion catalog loads on a background wake. Settle it before
+	// measuring the allocations of an otherwise idle paint.
+	waitFor(t, state, func() bool { return !state.completion.catalogLoading })
+	var canvas gfx.Canvas
+	canvas.SetClock(func() time.Duration { return time.Second })
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
-	if allocations := testingAllocs(func() { canvas.Reset(); state.Paint(&canvas, size) }); allocations != 0 {
+	if allocations := steadyAllocs(func() { canvas.Reset(); state.Paint(&canvas, size) }); allocations != 0 {
 		t.Fatalf("local pane paint allocations = %v", allocations)
 	}
 }
-
-func testingAllocs(fn func()) float64 { return testing.AllocsPerRun(100, fn) }
 
 func TestLocalPaneSortsNamesWithoutRegardToCase(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)

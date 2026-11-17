@@ -20,7 +20,7 @@ type 10.0.0.2
 click "Add Host"
 settle 400
 
-click "Proxies"
+click "Jump Routes"
 settle 300
 click "Add Route"
 settle 300

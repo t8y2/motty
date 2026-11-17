@@ -7,16 +7,16 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // What one whole-window paint costs on the workbench, which is what an event that
 // changes a little still pays today. The numbers decide whether retained view
 // scopes are worth building; see docs/decisions.
 func BenchmarkWholeWindowPaint(b *testing.B) {
-	size := ui.Size{Width: 1400, Height: 900}
+	size := gfx.Size{Width: 1400, Height: 900}
 	run := func(b *testing.B, state *State) {
-		var canvas ui.Canvas
+		var canvas gfx.Canvas
 		state.Paint(&canvas, size)
 		b.ReportAllocs()
 		b.ResetTimer()
@@ -41,7 +41,7 @@ func BenchmarkWholeWindowPaintThroughTheDriver(b *testing.B) {
 	state, _ := openLocal(b)
 	state.Click(hitPaneSplitHorizontal)
 	state.Click(hitSFTPOpen)
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	driver, err := app.NewDriver(app.Config{
 		Title: "cost", Width: 1400, Height: 900, Tree: Tree(),
 		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key,
@@ -56,11 +56,11 @@ func BenchmarkWholeWindowPaintThroughTheDriver(b *testing.B) {
 	// Alternate the pointer between two controls so every event changes the hover
 	// and repaints: the smallest change there is, and what a window pays for it.
 	hits := driver.Snapshot().Hits
-	var points [2]ui.Point
+	var points [2]gfx.Point
 	found := 0
 	for _, hit := range hits {
-		if !hit.Block && hit.Role == ui.RoleButton && found < 2 {
-			points[found] = ui.Point{X: hit.Bounds.X + hit.Bounds.Width/2, Y: hit.Bounds.Y + hit.Bounds.Height/2}
+		if !hit.Block && hit.Role == gfx.RoleButton && found < 2 {
+			points[found] = gfx.Point{X: hit.Bounds.X + hit.Bounds.Width/2, Y: hit.Bounds.Y + hit.Bounds.Height/2}
 			found++
 		}
 	}
@@ -96,7 +96,7 @@ func BenchmarkKnownHostsPageThroughTheDriver(b *testing.B) {
 	writeKnownHostsFixture(b, options.KnownHostsPath)
 	state := newTestState(b, options)
 	state.Click(hitKnownHosts)
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	driver, err := app.NewDriver(app.Config{
 		Title: "cost", Width: 1400, Height: 900, Tree: Tree(),
 		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key,
@@ -106,12 +106,12 @@ func BenchmarkKnownHostsPageThroughTheDriver(b *testing.B) {
 		b.Fatal(err)
 	}
 	defer driver.Close()
-	var points [2]ui.Point
-	for index, id := range [2]ui.ID{hitKnownHostsRefresh, hitKnownHostsRetrust} {
+	var points [2]gfx.Point
+	for index, id := range [2]gfx.ID{hitKnownHostsRefresh, hitKnownHostsRetrust} {
 		found := false
 		for _, hit := range driver.Snapshot().Hits {
 			if hit.ID == id {
-				points[index] = ui.Point{X: hit.Bounds.X + hit.Bounds.Width/2, Y: hit.Bounds.Y + hit.Bounds.Height/2}
+				points[index] = gfx.Point{X: hit.Bounds.X + hit.Bounds.Width/2, Y: hit.Bounds.Y + hit.Bounds.Height/2}
 				found = true
 			}
 		}

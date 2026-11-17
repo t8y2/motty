@@ -1,0 +1,18 @@
+<!-- Drawn for Motty's host icon set in the Lucide style: a DE-9 serial
+     connector seen face-on, its pins and cable. -->
+<svg
+  class="lucide"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M5.5 5h13l2 3.5V13a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V8.5z" />
+  <path d="M6.5 8h3M10.5 8h3M14.5 8h3M8.5 11h3M12.5 11h3" />
+  <path d="M12 15v1.5a3 3 0 0 0 3 3h4.5" />
+</svg>

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/otp"
@@ -42,8 +42,17 @@ type secretsUI struct {
 	// actions is where Settings lays out its buttons, so painting them keeps no
 	// slice of its own.
 	actions [3]components.ButtonAction
-	// layout lays out the body of the vault's dialogs, one at a time.
-	layout flex.View
+	// The save box of the password and passphrase dialogs is declared in their
+	// page; the checkbox and help icon are painted into the slots it leaves.
+	saveBoxDraw               func(*ui.DrawContext)
+	saveBoxID, saveBoxHintID  gfx.ID
+	saveBoxLabel, saveBoxHint string
+	saveBoxCheck, saveBoxHelp ui.Box
+	// unlockField is the slot the unlock field is painted into, forgetText the
+	// description the forget body wraps.
+	unlockField ui.Box
+	forgetText  string
+	forgetLines int
 }
 
 // secretPurpose says what a secret is for: its name in the vault, and the
@@ -68,7 +77,18 @@ func hostSecretName(catalogID, part string) string { return "host:" + catalogID 
 // passwordName and otpSecretName are the secrets of the host the prompt of a
 // session is about (see hostCatalog.secretOwner).
 func (state *State) passwordName(session *Session) string {
-	return hostSecretName(state.secretOwner(session.host, session.endpoint, session.role), hostPasswordPart)
+	return state.passwordSecret(session.host, session.endpoint, session.role)
+}
+
+func vncSystemPasswordPart(username string) string { return "vnc-system-password:" + username }
+
+func passwordPart(host Host, endpoint sshconn.Endpoint) string {
+	if host.Protocol == protocolVNC {
+		if username, ok := strings.CutPrefix(endpoint.User, vncAccountPrefix); ok {
+			return vncSystemPasswordPart(username)
+		}
+	}
+	return hostPasswordPart
 }
 
 func (state *State) otpSecretName(session *Session) string {
@@ -158,10 +178,21 @@ const (
 	autofillSent
 )
 
-// autofill answers a question from the vault when it has the answer.
+// autofill answers a question from the vault when it has the answer. A
+// password a link carried answers the first password question of its own
+// connection and is dropped at once, so it is neither saved nor tried again
+// after the server refuses it.
 func (state *State) autofill(session *Session) autofillResult {
 	if session.phase == sshconn.PhasePasswordPrompt && isOTPQuestion(session.questions) {
 		return state.autofillOTP(session)
+	}
+	if session.phase == sshconn.PhasePasswordPrompt && session.attempt == 1 && session.role == sshconn.EndpointTarget &&
+		session.host.linkPassword != "" && isPasswordQuestion(session.questions) {
+		password := session.host.linkPassword
+		session.host.linkPassword = ""
+		session.conn.SubmitPassword(password)
+		session.answered = promptKey(session.phase, session.attempt, session.identity, session.endpoint, session.role)
+		return autofillSent
 	}
 	name, _ := state.promptSecret(session)
 	vaultFile := state.secrets.vault
@@ -201,7 +232,7 @@ func (state *State) canAutofill(session *Session, status sshconn.Status) bool {
 	var name string
 	switch {
 	case status.Phase == sshconn.PhasePasswordPrompt && isPasswordQuestion(status.Questions):
-		name = hostSecretName(owner, hostPasswordPart)
+		name = state.passwordSecret(session.host, status.Endpoint, status.EndpointRole)
 	case status.Phase == sshconn.PhaseKeyPassphrasePrompt && status.IdentityPath != "":
 		name = passphraseSecretName(status.IdentityPath)
 	default:
@@ -218,6 +249,12 @@ func (state *State) forgetRefusedSecret(session *Session, name string) bool {
 		return false
 	}
 	session.filledSecret = ""
+	if strings.HasPrefix(name, credentialSecretName("")) {
+		// Other hosts use it too, and one host that refuses it says nothing about
+		// the rest. The user changes it in Settings.
+		state.status = state.messages.Credentials.StatusRefused
+		return false
+	}
 	_ = state.secrets.vault.Delete(name)
 	return true
 }
@@ -265,6 +302,8 @@ func (state *State) vaultErrorText(err error) string {
 		return state.messages.VaultUnavailable
 	case errors.Is(err, vault.ErrWrongPassword):
 		return state.messages.VaultWrongPassword
+	case errors.Is(err, vault.ErrTooLarge):
+		return state.messages.VaultTooLarge
 	}
 	return err.Error()
 }
@@ -282,7 +321,7 @@ func (state *State) openVaultUnlock(session *Session, after func()) {
 	state.secrets.after = after
 }
 
-func (state *State) clickVaultUnlock(id ui.ID) {
+func (state *State) clickVaultUnlock(id gfx.ID) {
 	switch id {
 	case hitVaultUnlockSubmit:
 		state.submitVaultUnlock()
@@ -320,33 +359,47 @@ func (state *State) submitVaultUnlock() {
 	state.showNextPrompt()
 }
 
-func (state *State) paintVaultUnlockDialog(canvas *ui.Canvas, viewport ui.Rect) {
-	m, theme := state.messages, state.Theme()
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitVaultUnlockDismiss, CloseID: hitVaultUnlockClose, InitialFocusID: hitVaultUnlockField,
-		ContentSize: ui.Size{Width: 480}, FitBody: true, BodyHeight: withError(66, state.secrets.dialogError),
+// declareVaultUnlockDialog declares the unlock dialog as a dialog of the
+// workbench page.
+func (state *State) declareVaultUnlockDialog(c ui.C) {
+	m := state.messages
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 480, m.VaultConvertDescription, withError(66, state.secrets.dialogError))
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.VaultUnlockTitle, Description: m.VaultConvertDescription, Width: 480, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitVaultUnlockDismiss, CloseID: hitVaultUnlockClose, InitialFocusID: hitVaultUnlockField,
 	})
-	layout := dialog.Begin(m.VaultUnlockTitle, m.VaultConvertDescription)
-	var field flex.Box
-	f := state.secrets.layout.Begin(canvas, theme, layout.Body)
-	f.Column().Fill().PadSides(2, 4, 0, 4).Gap(12).Children(func() {
-		field = f.Slot().Height(62)
-		state.problemLine(f, state.secrets.dialogError)
+	dialog.Body(func() { state.declareVaultUnlockBody(c) })
+	dialog.Footer(func() {
+		if dialogButton(c, m.Cancel, components.ButtonSecondary, false).Clicked() {
+			c.After(func() { state.clickVaultUnlock(hitVaultUnlockCancel) })
+		}
+		if dialogButton(c, m.VaultUnlockButton, components.ButtonDefault, false).Clicked() {
+			c.After(func() { state.clickVaultUnlock(hitVaultUnlockSubmit) })
+		}
 	})
-	f.End()
-	content := components.BeginField(canvas, theme, field.Rect()).Paint(m.VaultUnlockLabel, "", "")
-	value := state.secrets.unlock.String()
-	focused := canvas.Focused() == hitVaultUnlockField
-	state.paintSecretInput(canvas, content, components.InputSnapshot{
-		ID: hitVaultUnlockField, Label: m.VaultUnlockLabel, Value: value, Secure: true,
-		Focused: focused, PlatformEditing: focused && value != "", Invalid: state.secrets.dialogError != "",
+}
+
+// declareVaultUnlockBody lays out the unlock dialog: the master password field,
+// painted by paintSecretInput into the slot it reserves, and the error under it.
+func (state *State) declareVaultUnlockBody(c ui.C) {
+	secrets := &state.secrets
+	column := ui.Column(c).Fill().PadSides(2, 4, 0, 4).Gap(12)
+	column.Children(func() {
+		secrets.unlockField = ui.Slot(c).Height(62)
+		state.problemLineC(c, secrets.dialogError)
 	})
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitVaultUnlockCancel, Label: m.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitVaultUnlockSubmit, Label: m.VaultUnlockButton},
-	)
-	dialog.End()
+	column.DrawOver(func(d *ui.DrawContext) {
+		canvas, theme := d.Canvas, *d.Theme
+		m := state.messages
+		content := components.BeginField(canvas, theme, secrets.unlockField.Rect()).Paint(m.VaultUnlockLabel, "", "")
+		value := secrets.unlock.String()
+		focused := canvas.Focused() == hitVaultUnlockField
+		state.paintSecretInput(canvas, content, components.InputSnapshot{
+			ID: hitVaultUnlockField, Label: m.VaultUnlockLabel, Value: value, Secure: true,
+			Focused: focused, PlatformEditing: focused && value != "", Invalid: secrets.dialogError != "",
+		})
+	})
 }
 
 func (state *State) openVaultForget() {
@@ -354,7 +407,7 @@ func (state *State) openVaultForget() {
 	state.secrets.dialogError = ""
 }
 
-func (state *State) clickVaultForget(id ui.ID) {
+func (state *State) clickVaultForget(id gfx.ID) {
 	switch id {
 	case hitVaultForgetConfirm:
 		if state.secrets.vault != nil {
@@ -373,7 +426,9 @@ func (state *State) clickVaultForget(id ui.ID) {
 	}
 }
 
-func (state *State) paintVaultForgetDialog(canvas *ui.Canvas, viewport ui.Rect) {
+// declareVaultForgetDialog declares the forget dialog as a dialog of the
+// workbench page.
+func (state *State) declareVaultForgetDialog(c ui.C) {
 	m := state.messages
 	// The text is wrapped to the body's width: 540 less the dialog's padding.
 	description := m.VaultForgetDescription
@@ -381,26 +436,34 @@ func (state *State) paintVaultForgetDialog(canvas *ui.Canvas, viewport ui.Rect) 
 		description += " " + fmt.Sprintf(m.VaultForgetKeysFmt, stored)
 	}
 	var wrapped [5]string
-	lines := canvas.WrapLines(wrapped[:0], description, metrics.FontSizeM, ui.WeightRegular, 500, len(wrapped))
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitVaultForgetDismiss, CloseID: hitVaultForgetClose, InitialFocusID: hitVaultForgetCancel,
-		ContentSize: ui.Size{Width: 540}, FitBody: true, BodyHeight: float32(len(lines))*21 - 1,
+	lines := c.Canvas().WrapLines(wrapped[:0], description, metrics.FontSizeM, gfx.WeightRegular, 500, len(wrapped))
+	state.secrets.forgetText, state.secrets.forgetLines = description, len(wrapped)
+	bodyHeight := float32(len(lines))*21 - 1
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 540, "", bodyHeight)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.VaultForgetTitle, Width: 540, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitVaultForgetDismiss, CloseID: hitVaultForgetClose, InitialFocusID: hitVaultForgetCancel,
 	})
-	layout := dialog.Begin(m.VaultForgetTitle, "")
-	f := state.secrets.layout.Begin(canvas, state.Theme(), layout.Body)
-	f.Paragraph(description, len(wrapped)).FontSize(metrics.FontSizeM).Color(state.pal.muted).LineHeight(21)
-	f.End()
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitVaultForgetCancel, Label: m.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitVaultForgetConfirm, Label: m.VaultForgetConfirm, Variant: components.ButtonDestructive},
-	)
-	dialog.End()
+	dialog.Body(func() { state.declareVaultForgetBody(c) })
+	dialog.Footer(func() {
+		state.dialogActionFooter(c,
+			components.ButtonAction{ID: hitVaultForgetCancel, Label: m.Cancel, Variant: components.ButtonSecondary},
+			components.ButtonAction{ID: hitVaultForgetConfirm, Label: m.VaultForgetConfirm, Variant: components.ButtonDestructive},
+		)
+	})
+}
+
+// declareVaultForgetBody lays out the forget dialog's explanation, wrapped to
+// the lines the dialog's height was worked out from.
+func (state *State) declareVaultForgetBody(c ui.C) {
+	secrets := &state.secrets
+	ui.Paragraph(c, secrets.forgetText, secrets.forgetLines).FontSize(metrics.FontSizeM).Color(state.pal.muted).LineHeight(21)
 }
 
 // clickVaultSettings handles the buttons of the Saved passwords group. It
 // reports whether the click was one of them.
-func (state *State) clickVaultSettings(id ui.ID) bool {
+func (state *State) clickVaultSettings(id gfx.ID) bool {
 	vaultFile := state.secrets.vault
 	switch id {
 	case hitSettingsVaultForget:
@@ -425,6 +488,7 @@ func (state *State) clickVaultSettings(id ui.ID) bool {
 func (state *State) paintSecuritySettings(page *settingsPage) {
 	m := state.messages
 	page.groups(func() {
+		state.paintCredentialSettings(page)
 		state.paintSessionLogSettingsGroup(page)
 		vaultFile := state.secrets.vault
 		if vaultFile == nil {
@@ -468,45 +532,60 @@ func (state *State) secretFieldBody(problem string) float32 {
 	return withError(66, problem)
 }
 
-// paintSaveBox draws the box under a dialog body that offers to save what is
-// typed, where a one-field dialog has always put it.
-func (state *State) paintSaveBox(canvas *ui.Canvas, body ui.Rect, id ui.ID, label string) {
-	state.paintSaveBoxAt(canvas, ui.Rect{X: body.X, Y: body.Y + 99, Width: body.Width, Height: 20}, id, label, "", ui.ID{})
-}
-
-// paintSaveBoxAt draws the box where a dialog laid it out. A hint becomes a
-// help icon at its right, so a password error can use the line under the field
-// without colliding with the instruction.
-func (state *State) paintSaveBoxAt(canvas *ui.Canvas, bounds ui.Rect, id ui.ID, label, hint string, hintID ui.ID) {
-	if !state.secrets.canSave || bounds == (ui.Rect{}) {
-		return
-	}
-	var help flex.Box
-	f := state.secrets.layout.Begin(canvas, state.Theme(), bounds)
-	f.Row().Fill().PadX(0).Gap(2).Items(flex.Center).Children(func() {
-		// The checkbox slot is 40px wide with the 16px box centered in it. Pull
-		// the slot left so the box starts where the password field border does.
-		f.Checkbox(id, state.secrets.save).Label(label).MarginSides(0, 0, 0, -8)
-		f.Text(label).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(state.pal.text).LineHeight(20).MarginSides(0, 0, 0, -6)
+// declareSaveBox declares the box that offers to save a secret in the page of a
+// dialog that has one: a checkbox, its label and, where there is a hint, the room
+// its help icon takes. The checkbox keeps its application identity, so the
+// window's dispatcher still handles its click.
+func (state *State) declareSaveBox(c ui.C, id gfx.ID, label, hint string, hintID gfx.ID) {
+	s := &state.secrets
+	s.saveBoxID, s.saveBoxLabel, s.saveBoxHint, s.saveBoxHintID = id, label, hint, hintID
+	s.saveBoxCheck, s.saveBoxHelp = ui.Box{}, ui.Box{}
+	width, height := components.CheckboxHitExtent(*c.Theme())
+	row := ui.Row(c).Fill().PadX(0).Gap(2).Items(ui.Center)
+	row.Children(func() {
+		// The checkbox slot is its hit extent; the square is centered in it.
+		// Pull the slot left so the box starts where the password field border does.
+		s.saveBoxCheck = ui.Slot(c).Width(width).Height(height).MarginSides(0, 0, 0, -8)
+		ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).LineHeight(20).MarginSides(0, 0, 0, -6)
 		if hint != "" {
-			help = f.Slot().Size(16, 16).MarginSides(0, 6, 0, 0).Shrink(0)
+			s.saveBoxHelp = ui.Slot(c).Size(16, 16).MarginSides(0, 6, 0, 0).Shrink(0)
 		}
 		// Keep the help icon beside the label; the rest of the row stays empty
 		// instead of pushing it to the far edge.
-		f.Spacer().Grow(1)
+		ui.Spacer(c).Grow(1)
 	})
-	f.End()
-	if hint != "" && help.Rect().Width > 0 && help.Rect().Height > 0 {
-		canvas.HitWithOptions(hintID, help.Rect(), hint, ui.HitOptions{Role: ui.RoleButton, SkipFocus: true, Hint: hint})
-		paintIcon(canvas, iconHelp, insetRect(help.Rect(), 0.08), state.pal.muted)
+	if s.saveBoxDraw == nil {
+		s.saveBoxDraw = state.paintSaveBoxSlots
 	}
+	row.DrawOver(s.saveBoxDraw)
 }
 
-// problemLine declares the one-line error under a dialog's fields, when
+// paintSaveBoxSlots paints the declared save box's checkbox and help icon into
+// the slots the page left.
+func (state *State) paintSaveBoxSlots(d *ui.DrawContext) {
+	s := &state.secrets
+	canvas, theme := d.Canvas, *d.Theme
+	r := s.saveBoxCheck.Rect()
+	side := components.CheckboxExtent(theme)
+	components.BeginCheckbox(canvas, theme, s.saveBoxID, gfx.Rect{
+		X: r.X + (r.Width-side)/2, Y: r.Y + (r.Height-side)/2, Width: side, Height: side,
+	}, s.save).Label(s.saveBoxLabel).Paint()
+	if s.saveBoxHint == "" {
+		return
+	}
+	help := s.saveBoxHelp.Rect()
+	if help.Width <= 0 || help.Height <= 0 {
+		return
+	}
+	canvas.HitWithOptions(s.saveBoxHintID, help, s.saveBoxHint, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true, Hint: s.saveBoxHint})
+	paintIcon(canvas, iconHelp, insetRect(help, 0.08), state.pal.muted)
+}
+
+// problemLineC declares the one-line error under a dialog's fields, when
 // there is one.
-func (state *State) problemLine(f *flex.Frame, problem string) {
+func (state *State) problemLineC(c ui.C, problem string) {
 	if problem != "" {
-		f.Text(problem).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(state.pal.danger).LineHeight(18)
+		ui.Text(c, problem).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(18)
 	}
 }
 

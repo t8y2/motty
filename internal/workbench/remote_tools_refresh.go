@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/workbench/icons"
 )
@@ -20,8 +21,6 @@ type remoteAutoRefresh struct {
 	now      time.Duration
 	started  time.Duration
 	next     time.Duration
-	anchor   ui.Rect
-	scroll   components.MenuScroll
 
 	// The clock animates even when its interval and accessible text are unchanged.
 	label, accessibleLabel   string
@@ -56,12 +55,38 @@ func (state *State) tickRemoteRefresh(now time.Duration) {
 	}
 }
 
-func (state *State) paintRemoteRefresh(canvas *ui.Canvas, bounds ui.Rect) {
-	m, theme, auto := state.messages.Tools, state.Theme(), &state.remote.auto
+// drawRemoteRefreshControl paints the manual refresh button inside its page
+// control: the tools window and the workbench modal share it.
+func (state *State) drawRemoteRefreshControl(d *ui.DrawContext) {
+	canvas, theme := d.Canvas, *d.Theme
+	theme.Metrics.ControlHeight = d.Rect.Height
+	button := components.BeginButton(canvas, theme, gfx.ID{}, d.Rect).WithState(components.ButtonState{
+		Hovered: d.State.Hovered, Pressed: d.State.Pressed, Focused: d.State.Focused,
+	})
+	if state.remote.loading {
+		button = button.Disabled()
+	}
+	button.Ghost("")
+	foreground := state.pal.muted
+	if d.State.Hovered || d.State.Pressed {
+		foreground = state.pal.text
+	}
+	if state.remote.loading {
+		foreground.Alpha *= 0.4
+	}
+	size := min(d.Rect.Width, d.Rect.Height) * .375
+	canvas.DrawIcon(lucideIcons[iconRefresh], gfx.Rect{
+		X: d.Rect.X + (d.Rect.Width-size)/2, Y: d.Rect.Y + (d.Rect.Height-size)/2,
+		Width: size, Height: size,
+	}, foreground)
+}
+
+// drawRemoteAutoControl paints the auto-refresh button, including its countdown
+// and its clock hands.
+func (state *State) drawRemoteAutoControl(d *ui.DrawContext) {
+	canvas := d.Canvas
+	m, theme, auto := state.messages.Tools, *d.Theme, &state.remote.auto
 	auto.now = canvas.Now()
-	manual := ui.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Height, Height: bounds.Height}
-	state.paintIconButton(canvas, hitRemoteRefresh, iconRefresh, manual, m.RemoteRefresh, state.remote.loading, iconButtonQuiet, theme.Background)
-	auto.anchor = ui.Rect{X: bounds.X + 40, Y: bounds.Y, Width: bounds.Width - 40, Height: bounds.Height}
 	format, seconds := m.RemoteAutoRefresh, 0
 	if auto.enabled {
 		format, seconds = m.RemoteRefreshIntervalFmt, int(auto.period()/time.Second)
@@ -76,9 +101,9 @@ func (state *State) paintRemoteRefresh(canvas *ui.Canvas, bounds ui.Rect) {
 	}
 	label, foreground := auto.label, theme.MutedForeground
 	buttonTheme := theme
-	buttonTheme.Metrics.ControlHeight = auto.anchor.Height
-	button := components.BeginButton(canvas, buttonTheme, ui.ID{}, auto.anchor).WithState(components.ButtonState{
-		Hovered: canvas.Hovered() == hitRemoteAutoRefresh, Pressed: canvas.Pressed() == hitRemoteAutoRefresh, Focused: canvas.FocusVisible() == hitRemoteAutoRefresh,
+	buttonTheme.Metrics.ControlHeight = d.Rect.Height
+	button := components.BeginButton(canvas, buttonTheme, gfx.ID{}, d.Rect).WithState(components.ButtonState{
+		Hovered: d.State.Hovered, Pressed: d.State.Pressed, Focused: d.State.Focused,
 	})
 	if auto.enabled {
 		button.Secondary("")
@@ -86,16 +111,15 @@ func (state *State) paintRemoteRefresh(canvas *ui.Canvas, bounds ui.Rect) {
 	} else {
 		button.Outline("")
 	}
-	canvas.HitWithOptions(hitRemoteAutoRefresh, auto.anchor, auto.accessibleLabel, ui.HitOptions{Role: ui.RoleButton, Hint: m.RemoteAutoRefresh, Expanded: auto.open, Expandable: true, Checked: auto.enabled})
-	clock := ui.Rect{X: auto.anchor.X + 9, Y: auto.anchor.Y + (auto.anchor.Height-18)/2, Width: 18, Height: 18}
+	clock := gfx.Rect{X: d.Rect.X + 9, Y: d.Rect.Y + (d.Rect.Height-18)/2, Width: 18, Height: 18}
 	phase := 0
 	if auto.enabled && !canvas.ReduceMotion() {
 		phase = int(max(auto.now-auto.started, 0)*60/auto.period()) % 60
 	}
 	canvas.DrawIcon(remoteRefreshClock, clock, foreground)
 	canvas.DrawIcon(remoteRefreshHands[phase], clock, foreground)
-	canvas.Label(label, ui.Rect{X: clock.X + 24, Y: auto.anchor.Y, Width: max(auto.anchor.Width-56, 0), Height: auto.anchor.Height}, ui.TextStyle{Size: theme.Metrics.FontSizeM, Weight: ui.WeightMedium, Color: foreground})
-	canvas.DrawIcon(icons.ChevronDown, ui.Rect{X: auto.anchor.X + auto.anchor.Width - 20, Y: auto.anchor.Y + (auto.anchor.Height-12)/2, Width: 12, Height: 12}, foreground)
+	canvas.Label(label, gfx.Rect{X: clock.X + 24, Y: d.Rect.Y, Width: max(d.Rect.Width-56, 0), Height: d.Rect.Height}, gfx.TextStyle{Size: theme.Metrics.FontSizeM, Weight: gfx.WeightMedium, Color: foreground})
+	canvas.DrawIcon(icons.ChevronDown, gfx.Rect{X: d.Rect.X + d.Rect.Width - 20, Y: d.Rect.Y + (d.Rect.Height-12)/2, Width: 12, Height: 12}, foreground)
 	if auto.enabled {
 		remaining := max(auto.next-auto.now, 0)
 		delay := remaining
@@ -122,53 +146,108 @@ func (state *State) paintRemoteRefresh(canvas *ui.Canvas, bounds ui.Rect) {
 	}
 }
 
-func (state *State) paintRemoteRefreshMenu(canvas *ui.Canvas) {
-	auto, m := &state.remote.auto, state.messages.Tools
-	if !auto.open {
-		return
+// remoteAutoAccessibleLabel is the auto-refresh control's name for assistive
+// technology. It is cached with the clock's label so a paint does not allocate.
+func (state *State) remoteAutoAccessibleLabel() string {
+	m, auto := state.messages.Tools, &state.remote.auto
+	format, seconds := m.RemoteAutoRefresh, 0
+	if auto.enabled {
+		format, seconds = m.RemoteRefreshIntervalFmt, int(auto.period()/time.Second)
 	}
-	viewport := ui.Rect{Width: state.viewport.Width, Height: state.viewport.Height}
-	menu := components.BeginDropdownMenu(canvas, state.Theme(), ui.Rect{
-		X: auto.anchor.X + auto.anchor.Width - 188, Y: auto.anchor.Y + auto.anchor.Height + 4,
-		Width: 188, Height: float32(1+len(remoteRefreshIntervals))*32 + 8,
-	}, components.DropdownMenuOptions{Layer: dialogLayer + 1, Scope: remoteAutoScope, DismissID: hitRemoteAutoDismiss, Viewport: viewport, Scroll: &auto.scroll})
-	canvas.SetInitialFocus(hitRemoteAutoToggle)
+	if auto.accessibleLabel == "" || auto.labelFormat != format || auto.labelSeconds != seconds || auto.labelAction != m.RemoteAutoRefresh {
+		auto.labelFormat, auto.labelSeconds, auto.labelAction = format, seconds, m.RemoteAutoRefresh
+		auto.label = format
+		if auto.enabled {
+			auto.label = fmt.Sprintf(format, seconds)
+		}
+		auto.accessibleLabel = m.RemoteAutoRefresh + ": " + auto.label
+	}
+	return auto.accessibleLabel
+}
+
+// declareRemoteAutoMenu declares the auto-refresh interval menu: the
+// start/stop switch, then one row per interval. The tools window and the
+// workbench modal share it.
+func (state *State) declareRemoteAutoMenu(menu *ui.MenuItems) {
+	m := state.messages.Tools
+	auto := &state.remote.auto
 	label := m.RemoteAutoStart
 	if auto.enabled {
 		label = m.RemoteAutoStop
 	}
-	menu.AddItem(components.DropdownMenuItem{ID: hitRemoteAutoToggle, Label: label, Kind: components.DropdownMenuCheckbox, Checked: auto.enabled})
+	if menu.Item(label).Checked(auto.enabled).Clicked() {
+		auto.enabled = !auto.enabled
+		auto.restart()
+	}
 	for i, period := range remoteRefreshIntervals {
-		menu.AddItem(components.DropdownMenuItem{ID: hitRemoteIntervals.At(i), Label: fmt.Sprintf(m.RemoteRefreshIntervalFmt, int(period/time.Second)), Kind: components.DropdownMenuRadio, Selected: auto.enabled && auto.period() == period})
+		chosen := auto.enabled && auto.period() == period
+		if menu.Item(fmt.Sprintf(m.RemoteRefreshIntervalFmt, int(period/time.Second))).Chosen(chosen).Clicked() {
+			auto.interval = remoteRefreshIntervals[i]
+			auto.enabled = true
+			auto.restart()
+		}
 	}
-	menu.End()
 }
 
-func (state *State) remoteRefreshKey(event ui.KeyEvent) ui.EventResult {
-	auto := &state.remote.auto
-	if !state.remoteToolsVisible() || event.Release {
-		return ui.EventResult{}
+// remoteAutoControlPointer opens or closes the interval menu on a primary
+// release.
+func (state *State) remoteAutoControlPointer(event gfx.PointerEvent) gfx.EventResult {
+	if event.Kind != gfx.PointerUp || event.Button != gfx.PointerButtonPrimary {
+		return gfx.EventResult{}
 	}
-	if auto.open {
-		if event.Key == ui.KeyEscape {
-			auto.open = false
-			return ui.EventResult{Focus: hitRemoteAutoRefresh, FocusVisible: true, Handled: true, Repaint: true}
-		}
-		if event.Key == ui.KeyTab {
-			auto.open = false
-			return ui.EventResult{Handled: true, Repaint: true, ContinueTraversal: true}
-		}
-		if id, ok := auto.scroll.Navigate(event.Key, event.Target, true); ok {
-			return ui.EventResult{Focus: id, FocusVisible: true, Handled: true, Repaint: true}
-		}
-	} else if event.Target == hitRemoteAutoRefresh && event.Key == ui.KeyDown {
-		auto.open = true
-		return ui.EventResult{Focus: hitRemoteAutoToggle, FocusVisible: true, Handled: true, Repaint: true}
-	}
-	return ui.EventResult{}
+	state.remote.auto.open = !state.remote.auto.open
+	return gfx.EventResult{Handled: true, Repaint: true}
 }
 
-func (state *State) paintRemoteDockerEmpty(canvas *ui.Canvas, bounds ui.Rect) {
+// remoteAutoControlKey opens the interval menu with Down or toggles it with
+// Enter and Space.
+func (state *State) remoteAutoControlKey(event gfx.KeyEvent) gfx.EventResult {
+	if event.Release || event.Repeat {
+		return gfx.EventResult{}
+	}
+	switch event.Key {
+	case gfx.KeyDown:
+		state.remote.auto.open = true
+	case gfx.KeyEnter, gfx.KeySpace:
+		state.remote.auto.open = !state.remote.auto.open
+	default:
+		return gfx.EventResult{}
+	}
+	return gfx.EventResult{Handled: true, Repaint: true}
+}
+
+// refreshRemoteToolsExplicit reads the current tab again, rechecking Docker
+// availability too. The tools window and the workbench modal share it.
+func (state *State) refreshRemoteToolsExplicit() {
+	if state.remote.loading {
+		return
+	}
+	state.remote.noDocker = false
+	state.refreshRemoteTools()
+}
+
+// remoteRefreshControlPointer runs the explicit refresh on a primary release.
+func (state *State) remoteRefreshControlPointer(event gfx.PointerEvent) gfx.EventResult {
+	if event.Kind != gfx.PointerUp || event.Button != gfx.PointerButtonPrimary {
+		return gfx.EventResult{}
+	}
+	state.refreshRemoteToolsExplicit()
+	return gfx.EventResult{Handled: true, Repaint: true}
+}
+
+// remoteRefreshControlKey runs the explicit refresh from the keyboard.
+func (state *State) remoteRefreshControlKey(event gfx.KeyEvent) gfx.EventResult {
+	if event.Release || event.Repeat {
+		return gfx.EventResult{}
+	}
+	if event.Key != gfx.KeyEnter && event.Key != gfx.KeySpace {
+		return gfx.EventResult{}
+	}
+	state.refreshRemoteToolsExplicit()
+	return gfx.EventResult{Handled: true, Repaint: true}
+}
+
+func (state *State) paintRemoteDockerEmpty(canvas *gfx.Canvas, bounds gfx.Rect) {
 	m := state.messages.Tools
 	components.Empty(canvas, state.Theme(), bounds, components.EmptyData{
 		Media: components.EmptyMediaDefault, Icon: icons.LinuxDocker,
@@ -176,30 +255,30 @@ func (state *State) paintRemoteDockerEmpty(canvas *ui.Canvas, bounds ui.Rect) {
 	})
 }
 
-func (state *State) paintRemoteToolsLoading(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintRemoteToolsLoading(canvas *gfx.Canvas, bounds gfx.Rect) {
 	center := bounds.Y + bounds.Height/2
 	phase := components.SpinnerPhase(0)
 	if !canvas.ReduceMotion() {
 		phase = components.SpinnerPhase(canvas.Now() / (80 * time.Millisecond) % 8)
 		canvas.RequestFrameIn(80 * time.Millisecond)
 	}
-	components.PaintSpinner(canvas, state.Theme(), ui.Rect{X: bounds.X + bounds.Width/2 - 8, Y: center - 24, Width: 16, Height: 16}, phase)
-	canvas.LabelCenter(state.messages.Tools.RemoteLoading, ui.Rect{X: bounds.X, Y: center, Width: bounds.Width, Height: 24}, ui.TextStyle{Size: state.Theme().Metrics.FontSizeM, Color: state.pal.muted})
+	components.PaintSpinner(canvas, state.Theme(), gfx.Rect{X: bounds.X + bounds.Width/2 - 8, Y: center - 24, Width: 16, Height: 16}, phase)
+	canvas.LabelCenter(state.messages.Tools.RemoteLoading, gfx.Rect{X: bounds.X, Y: center, Width: bounds.Width, Height: 24}, gfx.TextStyle{Size: state.Theme().Metrics.FontSizeM, Color: state.pal.muted})
 }
 
 // Small, bounded vector frames keep fractional-DPI rendering crisp and avoid
 // rebuilding paths or accumulating tessellation-cache entries during a sweep.
-var remoteRefreshClock = ui.Icon{ViewBox: 24, Stroke: 2, Cap: ui.CapRound, Join: ui.JoinRound, Commands: []ui.PathCommand{
-	ui.MoveTo(10, 2), ui.LineTo(14, 2),
-	ui.MoveTo(20, 14), ui.CubicTo(20, 18.418, 16.418, 22, 12, 22), ui.CubicTo(7.582, 22, 4, 18.418, 4, 14),
-	ui.CubicTo(4, 9.582, 7.582, 6, 12, 6), ui.CubicTo(16.418, 6, 20, 9.582, 20, 14), ui.ClosePath(),
+var remoteRefreshClock = gfx.Icon{ViewBox: 24, Stroke: 2, Cap: gfx.CapRound, Join: gfx.JoinRound, Commands: []gfx.PathCommand{
+	gfx.MoveTo(10, 2), gfx.LineTo(14, 2),
+	gfx.MoveTo(20, 14), gfx.CubicTo(20, 18.418, 16.418, 22, 12, 22), gfx.CubicTo(7.582, 22, 4, 18.418, 4, 14),
+	gfx.CubicTo(4, 9.582, 7.582, 6, 12, 6), gfx.CubicTo(16.418, 6, 20, 9.582, 20, 14), gfx.ClosePath(),
 }}
 
-var remoteRefreshHands = func() (frames [60]ui.Icon) {
+var remoteRefreshHands = func() (frames [60]gfx.Icon) {
 	for i := range frames {
 		angle := float64(i) * math.Pi / 30
-		frames[i] = ui.Icon{ViewBox: 24, Stroke: 2, Cap: ui.CapRound, Commands: []ui.PathCommand{
-			ui.MoveTo(12, 14), ui.LineTo(12+float32(math.Sin(angle)*6), 14-float32(math.Cos(angle)*6)),
+		frames[i] = gfx.Icon{ViewBox: 24, Stroke: 2, Cap: gfx.CapRound, Commands: []gfx.PathCommand{
+			gfx.MoveTo(12, 14), gfx.LineTo(12+float32(math.Sin(angle)*6), 14-float32(math.Cos(angle)*6)),
 		}}
 	}
 	return

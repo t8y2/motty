@@ -14,7 +14,10 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/keymap"
+
+	"motty/internal/cloudsync"
 )
 
 const testBackupPassword = "correct horse battery"
@@ -124,6 +127,57 @@ func TestABackupFileCarriesHostsSettingsKeysAndPasswordsToAnotherComputer(t *tes
 	}
 }
 
+func TestBackupRestoresCustomPasteShortcutOnANewDevice(t *testing.T) {
+	source, _, file := backupTestState(t)
+	want := keymap.Chord{Modifiers: gfx.ModifierAlt | gfx.ModifierShift, Char: 'v'}
+	source.shortcuts.unbind(shortcutPaste)
+	if _, ok := source.shortcuts.bind(shortcutPaste, want); !ok {
+		t.Fatal("cannot configure a custom paste shortcut")
+	}
+	source.save()
+	exportBackup(t, source)
+
+	_, options := newWorld(t)
+	options.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return []string{file}, nil }
+	target := newTestState(t, options)
+	target.activeSection, target.settingsCategory = sectionSettings, settingsBackup
+	target.Click(hitBackupRestore)
+	fillForm(target, testBackupPassword)
+	target.Click(hitFormSubmit)
+	if target.modal != modalNone {
+		t.Fatalf("restore refused: %q", target.form.dialogError)
+	}
+	if got := target.shortcuts.chords.Chord(shortcutPaste); got != want {
+		t.Fatalf("restored paste shortcut = %+v, want %+v", got, want)
+	}
+	reopened := newTestState(t, options)
+	if got := reopened.shortcuts.chords.Chord(shortcutPaste); got != want {
+		t.Fatalf("paste shortcut after restart = %+v, want %+v", got, want)
+	}
+}
+
+func TestOldBackupLeavesDeviceShortcutsUntouched(t *testing.T) {
+	source, _, _ := backupTestState(t)
+	document, err := source.backupDocument()
+	if err != nil {
+		t.Fatal(err)
+	}
+	document.ShortcutPreferences = nil
+	target, _, _ := backupTestState(t)
+	want := keymap.Chord{Modifiers: gfx.ModifierAlt | gfx.ModifierShift, Char: 'v'}
+	target.shortcuts.unbind(shortcutPaste)
+	if _, ok := target.shortcuts.bind(shortcutPaste, want); !ok {
+		t.Fatal("cannot configure a custom paste shortcut")
+	}
+	target.save()
+	if _, err := target.applyBackup(document); err != nil {
+		t.Fatal(err)
+	}
+	if got := target.shortcuts.chords.Chord(shortcutPaste); got != want {
+		t.Fatalf("old backup changed this device's paste shortcut: %+v", got)
+	}
+}
+
 func TestABackupDoesNotCarryTheLoginsToTheBackupItself(t *testing.T) {
 	state, _, _ := backupTestState(t)
 	for _, name := range []string{webdavPasswordSecret, backupPasswordSecret, "aikey:a@b:22"} {
@@ -196,9 +250,9 @@ func TestARestoreKeepsTheLocalWebDAVServer(t *testing.T) {
 
 // paintedSyncHit paints the settings page and returns the control the user
 // would see, so a button that is never drawn cannot be clicked by a test either.
-func paintedSyncHit(t *testing.T, state *State, id ui.ID) ui.Hit {
+func paintedSyncHit(t *testing.T, state *State, id gfx.ID) gfx.Hit {
 	t.Helper()
-	canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	hit, found := hitByID(canvas, id)
 	if !found {
 		t.Fatalf("hit %d is not painted on the backup page", id)
@@ -207,7 +261,7 @@ func paintedSyncHit(t *testing.T, state *State, id ui.ID) ui.Hit {
 }
 
 // clickPainted clicks a control only if the settings page draws it enabled.
-func clickPainted(t *testing.T, state *State, id ui.ID) {
+func clickPainted(t *testing.T, state *State, id gfx.ID) {
 	t.Helper()
 	if hit := paintedSyncHit(t, state, id); hit.Disabled {
 		t.Fatalf("%q is disabled", hit.Label)
@@ -254,7 +308,7 @@ func TestWebDAVFormTestsTheTypedConnectionWithoutSaving(t *testing.T) {
 	if state.status != state.messages.Tools.SyncTestOK || state.form.dialogError != "" || state.form.testNote != state.messages.Tools.SyncTestOK {
 		t.Fatalf("status %q, form error %q, note %q", state.status, state.form.dialogError, state.form.testNote)
 	}
-	if _, texts := paintAt(state, ui.Size{Width: 1400, Height: 900}); !contains(texts, state.messages.Tools.SyncTestOK) {
+	if _, texts := paintAt(state, gfx.Size{Width: 1400, Height: 900}); !contains(texts, state.messages.Tools.SyncTestOK) {
 		t.Fatal("the dialog does not say the test went through")
 	}
 	if state.modal != modalForm || state.sync.configured() {
@@ -702,7 +756,7 @@ func configureSync(t *testing.T, state *State, server *httptest.Server) {
 	waitFor(t, state, func() bool { return state.status == state.messages.Tools.SyncTestOK })
 }
 
-func syncAndWait(t *testing.T, state *State, id ui.ID, want string) {
+func syncAndWait(t *testing.T, state *State, id gfx.ID, want string) {
 	t.Helper()
 	state.status = ""
 	state.Click(id)
@@ -914,23 +968,23 @@ func TestSyncButtonsAreIdleWithoutAServer(t *testing.T) {
 
 func TestTheBackupPageAndTheFormPaintTheirControls(t *testing.T) {
 	state, _, _ := backupTestState(t)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1280, Height: 800}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1280, Height: 800}
 	state.Paint(&canvas, size)
-	for _, id := range []ui.ID{hitBackupExport, hitBackupRestore, hitSyncConfigure} {
+	for _, id := range []gfx.ID{hitBackupExport, hitBackupRestore, hitSyncConfigure} {
 		if hit, ok := hitByID(&canvas, id); !ok || hit.Disabled {
 			t.Fatalf("control %d: found %v", id, ok)
 		}
 	}
-	for _, id := range []ui.ID{hitSyncNow} {
+	for _, id := range []gfx.ID{hitSyncNow} {
 		if hit, ok := hitByID(&canvas, id); ok && !hit.Disabled {
 			t.Fatalf("control %d is usable without a server", id)
 		}
 	}
 	state.Click(hitSyncConfigure)
-	canvas = ui.Canvas{}
+	canvas = gfx.Canvas{}
 	state.Paint(&canvas, size)
-	for _, id := range []ui.ID{hitFormFieldList.At(0), hitFormFieldList.At(4), hitFormSubmit, hitFormCancel} {
+	for _, id := range []gfx.ID{hitFormFieldList.At(0), hitFormFieldList.At(4), hitFormSubmit, hitFormCancel} {
 		if _, ok := hitByID(&canvas, id); !ok {
 			t.Fatalf("form control %d is not painted", id)
 		}
@@ -939,6 +993,66 @@ func TestTheBackupPageAndTheFormPaintTheirControls(t *testing.T) {
 		t.Fatalf("initial focus %d", canvas.InitialFocus())
 	}
 	state.form.dialogError = "a problem"
-	canvas = ui.Canvas{}
+	canvas = gfx.Canvas{}
 	state.Paint(&canvas, size)
+}
+
+// syncFailure is a failure as long as the network stack's or a server's own
+// words: longer than one line in the sync dialog and than two in the settings
+// row.
+func syncFailure() string {
+	host := strings.Repeat("a-very-long-server-name.", 5) + "example.invalid"
+	return `Get "http://` + host + `/e2e/motty/backup.mottybak": dial tcp: lookup ` + host + `: no such host`
+}
+
+// TestTheSyncDialogShowsALongFailureWhole guards the reason a sync could not go
+// through: it is the server's or the network stack's own words, so the dialog
+// wraps them to its body instead of cutting them off at its edge.
+func TestTheSyncDialogShowsALongFailureWhole(t *testing.T) {
+	state, _, _ := backupTestState(t)
+	state.openSyncConfigure()
+	if state.modal != modalForm {
+		t.Fatal("the sync form did not open")
+	}
+	problem := syncFailure()
+	state.form.dialogError = problem
+	canvas, texts := paintedTexts(state)
+	if !contains(texts, "no such host") {
+		t.Fatal("the end of the failure is not shown")
+	}
+	for _, painted := range canvas.Texts() {
+		if painted.Value == "" || !strings.Contains(problem, painted.Value) {
+			continue
+		}
+		if width := canvas.TextWidthWeight(painted.Value, painted.Style.Size, painted.Style.Weight); width > painted.Bounds.Width+1 {
+			t.Errorf("%q is %.1f wide in a %.1f box: the reason runs past the dialog", painted.Value, width, painted.Bounds.Width)
+		}
+	}
+}
+
+// TestSettingsShowsALongSyncFailureWhole guards the record the settings page
+// keeps of a failed sync: its words are not the application's, so the row grows
+// with them rather than ending them with an ellipsis.
+func TestSettingsShowsALongSyncFailureWhole(t *testing.T) {
+	state, _, _ := backupTestState(t)
+	state.sync = syncState{kind: syncWebDAV, url: "https://dav.example.com/dav", user: "e2e", path: "motty/backup.mottybak"}
+	state.sync.err = syncFailure()
+	_, texts := paintedTexts(state)
+	if !contains(texts, "no such host") {
+		t.Fatal("the end of the last sync's failure is not shown")
+	}
+}
+
+// A sync that lost the race to another device is not a failure the user can do
+// anything about, and the window must not drop the backend's English error into
+// its own language.
+func TestAChangedBackupIsReportedInTheWindowLanguage(t *testing.T) {
+	state, _, _ := backupTestState(t)
+	got := state.backupErrorText(cloudsync.ErrChanged)
+	if got != state.messages.Tools.SyncErrChanged {
+		t.Fatalf("message %q, want %q", got, state.messages.Tools.SyncErrChanged)
+	}
+	if got == cloudsync.ErrChanged.Error() {
+		t.Fatal("the raw error is shown")
+	}
 }

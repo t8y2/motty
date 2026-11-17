@@ -53,8 +53,13 @@ func (state *State) setTerminalPadding(pad terminalPad) bool {
 		return false
 	}
 	state.terminalPad = pad
-	state.fitTerminals()
+	state.applyTerminalPadding()
 	return true
+}
+
+// applyTerminalPadding applies the margin the page's choice already wrote.
+func (state *State) applyTerminalPadding() {
+	state.fitTerminals()
 }
 
 // padding is the margin the terminals are laid out with.

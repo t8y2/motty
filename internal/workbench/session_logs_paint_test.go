@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/sessionlog"
 )
@@ -159,13 +159,13 @@ func sessionLogsSearch(t testing.TB, state *State, value string) {
 }
 
 // sessionLogLabels is the painted texts of one paint.
-func sessionLogLabels(state *State, size ui.Size) []string {
-	var canvas ui.Canvas
+func sessionLogLabels(state *State, size gfx.Size) []string {
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	return canvasTexts(&canvas)
 }
 
-func canvasTexts(canvas *ui.Canvas) []string {
+func canvasTexts(canvas *gfx.Canvas) []string {
 	texts := make([]string, 0, len(canvas.Texts()))
 	for _, text := range canvas.Texts() {
 		texts = append(texts, text.Value)
@@ -174,13 +174,13 @@ func canvasTexts(canvas *ui.Canvas) []string {
 }
 
 // sessionLogHit finds a painted hit of the page.
-func sessionLogHit(canvas *ui.Canvas, id ui.ID) (ui.Hit, bool) {
+func sessionLogHit(canvas *gfx.Canvas, id gfx.ID) (gfx.Hit, bool) {
 	for _, hit := range canvas.Hits() {
 		if hit.ID == id {
 			return hit, true
 		}
 	}
-	return ui.Hit{}, false
+	return gfx.Hit{}, false
 }
 
 // sessionLogRowIDs is the record IDs the painted page holds, in order.
@@ -367,13 +367,13 @@ func TestSessionLogsNavigationAndRestore(t *testing.T) {
 	options.WallNow = func() time.Time { return sessionLogsTestNow }
 	first := newTestState(t, options)
 
-	var canvas ui.Canvas
-	first.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	first.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	row, ok := sessionLogHit(&canvas, hitSessionLogs)
 	if !ok {
 		t.Fatal("the sidebar has no session-log row")
 	}
-	if row.Label != first.messages.SessionLogs.Title || row.Role != ui.RoleMenuItem {
+	if row.Label != first.messages.SessionLogs.Title || row.Role != gfx.RoleMenuItem {
 		t.Fatalf("the sidebar row reads %q with role %v", row.Label, row.Role)
 	}
 	monitor, ok := sessionLogHit(&canvas, hitDashboard)
@@ -410,7 +410,7 @@ func TestSessionLogsNavigationAndRestore(t *testing.T) {
 	if hit, ok := sessionLogHit(paintedCanvas(t, first), hitCommandPaletteItems.At(0)); !ok || hit.Label != first.messages.SessionLogs.Title {
 		t.Fatalf("palette entry = %+v, ok=%v", hit, ok)
 	}
-	first.Key(ui.KeyEvent{Target: hitCommandPaletteSearch, Key: ui.KeyEnter})
+	first.Key(gfx.KeyEvent{Target: hitCommandPaletteSearch, Key: gfx.KeyEnter})
 	if first.activeSection != sectionSessionLogs || first.modal != modalNone {
 		t.Fatalf("palette execute left section=%d modal=%d", first.activeSection, first.modal)
 	}
@@ -431,10 +431,10 @@ func TestSessionLogsNavigationAndRestore(t *testing.T) {
 }
 
 // paintedCanvas paints the page at the standard size and returns its canvas.
-func paintedCanvas(t *testing.T, state *State) *ui.Canvas {
+func paintedCanvas(t *testing.T, state *State) *gfx.Canvas {
 	t.Helper()
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	return &canvas
 }
 
@@ -551,7 +551,7 @@ func TestSessionLogsSearchAndStaleResult(t *testing.T) {
 // recorded events only, never a replay of bytes that do not exist.
 func TestSessionLogsEmptyAndMetadataOnlyStates(t *testing.T) {
 	empty := sessionLogsState(t, false)
-	labels := sessionLogLabels(empty, ui.Size{Width: 1400, Height: 900})
+	labels := sessionLogLabels(empty, gfx.Size{Width: 1400, Height: 900})
 	if !contains(labels, empty.messages.SessionLogs.Empty) {
 		t.Fatalf("the empty page does not say %q: %v", empty.messages.SessionLogs.Empty, labels)
 	}
@@ -565,7 +565,7 @@ func TestSessionLogsEmptyAndMetadataOnlyStates(t *testing.T) {
 
 	state := sessionLogsState(t, true)
 	sessionLogsType(t, state, "no-such-host")
-	labels = sessionLogLabels(state, ui.Size{Width: 1400, Height: 900})
+	labels = sessionLogLabels(state, gfx.Size{Width: 1400, Height: 900})
 	if !contains(labels, state.messages.SessionLogs.NoMatches) {
 		t.Fatalf("the no-match page does not say %q: %v", state.messages.SessionLogs.NoMatches, labels)
 	}
@@ -591,7 +591,7 @@ func TestSessionLogsEmptyAndMetadataOnlyStates(t *testing.T) {
 	unavailable.sessionLogs.view.unavailable = true
 	unavailable.sessionLogs.view.loaded = true
 	unavailable.prepareSessionLogsView()
-	labels = sessionLogLabels(unavailable, ui.Size{Width: 1400, Height: 900})
+	labels = sessionLogLabels(unavailable, gfx.Size{Width: 1400, Height: 900})
 	if !contains(labels, unavailable.messages.SessionLogs.Unavailable) {
 		t.Fatalf("the unavailable page does not say %q: %v", unavailable.messages.SessionLogs.Unavailable, labels)
 	}
@@ -634,7 +634,7 @@ func TestSessionLogsEmptyAndMetadataOnlyStates(t *testing.T) {
 	// A record with no events still shows its localized result code.
 	state.selectSessionLogRecord("log-05")
 	sessionLogsWait(t, state)
-	labels = sessionLogLabels(state, ui.Size{Width: 1400, Height: 900})
+	labels = sessionLogLabels(state, gfx.Size{Width: 1400, Height: 900})
 	if !contains(labels, state.messages.SessionLogs.ReasonProcessRestart) {
 		t.Fatalf("the result code is not localized: %v", labels)
 	}
@@ -647,7 +647,7 @@ func TestSessionLogsEmptyAndMetadataOnlyStates(t *testing.T) {
 	// Legacy rows may predate automatic start/final events.
 	state.sessionLogs.view.events = nil
 	state.prepareSessionLogDetail()
-	labels = sessionLogLabels(state, ui.Size{Width: 1400, Height: 900})
+	labels = sessionLogLabels(state, gfx.Size{Width: 1400, Height: 900})
 	if !contains(labels, state.messages.SessionLogs.NoMoreInformation) {
 		t.Fatalf("a record without events does not say %q: %v", state.messages.SessionLogs.NoMoreInformation, labels)
 	}
@@ -661,14 +661,14 @@ func TestSessionLogsKeyboardAndDeletionFocus(t *testing.T) {
 
 	// Enter on a row opens the detail panel; Escape closes it and returns the
 	// keyboard to the row.
-	if result := state.Key(ui.KeyEvent{Target: hitSessionLogsRowList.At(0), Key: ui.KeyEnter}); !result.Handled {
+	if result := state.Key(gfx.KeyEvent{Target: hitSessionLogsRowList.At(0), Key: gfx.KeyEnter}); !result.Handled {
 		t.Fatal("Enter on a row is not handled")
 	}
 	if view.selected != "log-00" || !view.detailOpen {
 		t.Fatalf("Enter selected %q, detail open=%v", view.selected, view.detailOpen)
 	}
 	sessionLogsWait(t, state)
-	result := state.Key(ui.KeyEvent{Target: hitSessionLogsDetailClose, Key: ui.KeyEscape})
+	result := state.Key(gfx.KeyEvent{Target: hitSessionLogsDetailClose, Key: gfx.KeyEscape})
 	if !result.Handled || view.detailOpen {
 		t.Fatalf("Escape did not close the detail panel: handled=%v open=%v", result.Handled, view.detailOpen)
 	}
@@ -681,7 +681,7 @@ func TestSessionLogsKeyboardAndDeletionFocus(t *testing.T) {
 	if got := len(view.page); got != 1 {
 		t.Fatalf("search rows = %d", got)
 	}
-	result = state.Key(ui.KeyEvent{Target: hitSessionLogsSearch, Key: ui.KeyEscape})
+	result = state.Key(gfx.KeyEvent{Target: hitSessionLogsSearch, Key: gfx.KeyEscape})
 	if !result.Handled {
 		t.Fatal("Escape in the search box is not handled")
 	}
@@ -827,7 +827,7 @@ func TestSessionLogsPaintDoesNotAllocateOnceWarm(t *testing.T) {
 	state.selectSessionLogRecord("log-00")
 	sessionLogsWait(t, state)
 	canvas := paintedCanvas(t, state)
-	size := ui.Size{Width: 1400, Height: 900}
+	size := gfx.Size{Width: 1400, Height: 900}
 	generation := state.sessionLogs.requestGeneration
 	loading := state.sessionLogs.view.loading
 	if allocations := testing.AllocsPerRun(50, func() {
@@ -878,8 +878,8 @@ func BenchmarkPaintSessionLogs(b *testing.B) {
 	state := sessionLogsState(b, true)
 	state.selectSessionLogRecord("log-00")
 	sessionLogsWait(b, state)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	b.ReportAllocs()
 	for b.Loop() {
@@ -895,7 +895,7 @@ func TestSessionLogsLanguageFollowsTheCatalog(t *testing.T) {
 	state.setLanguage(i18n.Chinese)
 	state.Wake()
 	sessionLogsWait(t, state)
-	labels := sessionLogLabels(state, ui.Size{Width: 1400, Height: 900})
+	labels := sessionLogLabels(state, gfx.Size{Width: 1400, Height: 900})
 	zh := i18n.For(i18n.Chinese).SessionLogs
 	if !contains(labels, zh.Title) || !contains(labels, zh.ColumnTarget) {
 		t.Fatalf("the Chinese page does not paint its own title and columns: %v", labels)

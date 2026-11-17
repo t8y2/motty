@@ -2,7 +2,10 @@ package update
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +13,9 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
+
+	vivaupdate "github.com/vivaui/viva/update"
 )
 
 func TestNewer(t *testing.T) {
@@ -62,6 +68,24 @@ func TestDebPackageSelection(t *testing.T) {
 	}
 	if StableNamePackage("darwin", "amd64", PackageDeb) != "" || StableNamePackage("linux", "386", PackageDeb) != "" {
 		t.Fatal("off-platform DEB was offered")
+	}
+}
+
+func TestPortableWindowsUsesTheSignedZipInsteadOfTheInstaller(t *testing.T) {
+	for _, architecture := range []string{"amd64", "arm64"} {
+		stable := "motty-windows-" + architecture + ".zip"
+		if got := StableNamePackage("windows", architecture, PackagePortable); got != stable {
+			t.Fatalf("%s: %s", architecture, got)
+		}
+		server := mirrorServer(t, `{"version":"1.2.3","tag":"v1.2.3","source":"https://github.com/t8y2/motty/releases/tag/v1.2.3","files":[{"name":"`+stable+`","size":100,"sha256":"`+goodHash+`","signature":"c2ln"},{"name":"motty-windows-`+architecture+`-setup.exe","size":100,"sha256":"`+goodHash+`"}]}`)
+		release, err := latestMirrorPackage(context.Background(), server.Client(), server.URL, "windows", architecture, PackagePortable)
+		server.Close()
+		if err != nil || release.Asset.Name != "motty-1.2.3-windows-"+architecture+".zip" || release.Asset.Signature == "" {
+			t.Fatalf("%s: %+v, %v", architecture, release.Asset, err)
+		}
+	}
+	if StableNamePackage("windows", "386", PackagePortable) != "" || StableNamePackage("linux", "amd64", PackagePortable) != "" {
+		t.Fatal("off-platform portable package was offered")
 	}
 }
 
@@ -243,5 +267,76 @@ func TestAMirrorThatNamesNoPackageForThisPlatformWasChecked(t *testing.T) {
 	release, err := LatestMirror(context.Background(), server.Client(), server.URL, "linux", "amd64")
 	if err != nil || release.Asset.Has() || !release.PlatformPackageChecked {
 		t.Fatalf("release %+v, err %v", release, err)
+	}
+}
+
+func TestCheckVivaFeedMapsTheReleaseAndTrustsTheSignedFeed(t *testing.T) {
+	public, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	feed := vivaupdate.Feed{
+		Schema: vivaupdate.SchemaVersion, App: "dev.motty.app",
+		Latest: vivaupdate.Release{
+			Version: "99.0.0", Date: time.Now().UTC(),
+			Assets: []vivaupdate.Asset{
+				{OS: "darwin", Arch: "arm64", Format: vivaupdate.FormatZIP, URL: "https://example.com/motty-99.0.0-darwin-arm64.zip", Size: 10, SHA256: strings.Repeat("a", 64), Patches: []vivaupdate.Patch{{FromVersion: "0.4.7", URL: "https://example.com/motty-darwin-arm64.patch", Size: 5, SHA256: strings.Repeat("d", 64)}}},
+				{OS: "windows", Arch: "amd64", Format: vivaupdate.FormatNSIS, URL: "https://example.com/motty-99.0.0-windows-amd64-setup.exe", Size: 20, SHA256: strings.Repeat("b", 64)},
+				{OS: "windows", Arch: "amd64", Format: vivaupdate.FormatZIP, URL: "https://example.com/motty-99.0.0-windows-amd64.zip", Size: 30, SHA256: strings.Repeat("c", 64), Patches: []vivaupdate.Patch{{FromVersion: "0.4.7", URL: "https://example.com/motty-windows-amd64.patch", Size: 6, SHA256: strings.Repeat("e", 64)}}},
+			},
+		},
+	}
+	body, err := json.Marshal(feed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signature, err := vivaupdate.Sign(body, private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/latest.json":
+			_, _ = writer.Write(body)
+		case "/latest.json.sig":
+			_, _ = writer.Write([]byte(signature))
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	t.Cleanup(server.Close)
+	fetchReleaseNotes = func(context.Context, *http.Client, string) string { return "notes" }
+	t.Cleanup(func() { fetchReleaseNotes = releaseNotes })
+
+	release, err := checkVivaPackageAt(context.Background(), server.Client(), server.URL+"/latest.json",
+		[]string{base64.StdEncoding.EncodeToString(public)}, "darwin", "arm64", PackageArchive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if release.Version != "99.0.0" || release.Notes != "notes" || !release.Asset.FeedVerified || !release.Asset.Signed() {
+		t.Fatalf("release = %+v", release)
+	}
+	if release.Asset.URL != "https://example.com/motty-99.0.0-darwin-arm64.zip" || release.Asset.Size != 10 {
+		t.Fatalf("asset = %+v", release.Asset)
+	}
+	if patch, ok := release.Asset.PatchFrom("0.4.7"); !ok || patch.URL != "https://example.com/motty-darwin-arm64.patch" {
+		t.Fatalf("darwin patch = %+v, %v", patch, ok)
+	}
+	setup, err := checkVivaPackageAt(context.Background(), server.Client(), server.URL+"/latest.json",
+		[]string{base64.StdEncoding.EncodeToString(public)}, "windows", "amd64", PackageArchive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := setup.Asset.PatchFrom("0.4.7"); !ok {
+		t.Fatalf("the NSIS asset did not take the portable zip's patch: %+v", setup.Asset)
+	}
+
+	portable, err := checkVivaPackageAt(context.Background(), server.Client(), server.URL+"/latest.json",
+		[]string{base64.StdEncoding.EncodeToString(public)}, "windows", "amd64", PackagePortable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if portable.Asset.URL != "https://example.com/motty-99.0.0-windows-amd64.zip" || portable.Asset.Name != "motty-windows-amd64.zip" {
+		t.Fatalf("portable asset = %+v", portable.Asset)
 	}
 }

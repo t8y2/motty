@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/remotetools"
 )
 
@@ -20,7 +20,7 @@ func TestRemoteProcessRefreshFailurePreservesStaleRowsAndRecovers(t *testing.T) 
 	server.mu.Lock()
 	server.failures["processes"] = errors.New("listing failed")
 	server.mu.Unlock()
-	state.Click(hitRemoteRefresh)
+	clickRemoteToolsAction(t, state, hitRemoteRefresh)
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	if len(state.remote.rows) != 3 || state.remote.selected != selected || !state.remote.stale || state.remote.collectedAt != stamp || stamp.IsZero() {
 		t.Fatalf("lost successful snapshot: %+v", state.remote)
@@ -31,15 +31,18 @@ func TestRemoteProcessRefreshFailurePreservesStaleRowsAndRecovers(t *testing.T) 
 			t.Fatalf("stale mutation is enabled: %+v", action)
 		}
 	}
-	for _, id := range []ui.ID{hitRemoteKill, hitRemoteTerminate, hitRemoteNiceLower} {
-		state.Click(id)
+	for _, id := range []gfx.ID{hitRemoteKill, hitRemoteTerminate, hitRemoteNiceLower} {
+		state.clickRemoteTools(id)
 		if state.modal != modalRemoteTools || server.ran("kill") != 0 || server.ran("renice") != 0 {
 			t.Fatal("direct dispatch bypassed stale-state guard")
 		}
 	}
-	state.Click(hitRemoteRowList.At(0))
-	canvas := &ui.Canvas{}
-	driver, err := app.NewDriver(app.Config{Title: "stale processes", Width: 1400, Height: 900, Tree: Tree(), Paint: state.Paint, OnKey: state.Key, OnPointer: state.Pointer}, canvas)
+	doubleClickRemoteToolsRow(t, state, 0)
+	canvas := &gfx.Canvas{}
+	driver, err := app.NewDriver(state.WindowConfig(app.Config{
+		Title: "stale processes", Width: 1400, Height: 900, Tree: Tree(),
+		Paint: state.Paint, OnKey: state.Key, OnPointer: state.Pointer,
+	}), canvas)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +50,7 @@ func TestRemoteProcessRefreshFailurePreservesStaleRowsAndRecovers(t *testing.T) 
 	if hit, ok := hitByID(canvas, hitRemoteSnapshotStatus); !ok || !strings.Contains(hit.Label, stamp.Format("15:04:05")) {
 		t.Fatalf("native stale status is missing timestamp: %q found=%v", state.remote.snapshotStatus, ok)
 	}
-	kill, ok := hitByID(canvas, hitRemoteKill)
+	kill, ok := hitByLabelRoleLast(canvas, state.messages.Tools.RemoteForceKill, gfx.RoleButton)
 	if !ok || !kill.Disabled {
 		t.Fatal("native stale signal button is not disabled")
 	}
@@ -57,13 +60,13 @@ func TestRemoteProcessRefreshFailurePreservesStaleRowsAndRecovers(t *testing.T) 
 	if state.modal != modalRemoteTools || server.ran("kill") != 0 {
 		t.Fatal("native pointer activated a stale mutation")
 	}
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEscape}); !result.Handled {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEscape}); !result.Handled {
 		t.Fatal("Escape did not dismiss the stale process details")
 	}
 	server.mu.Lock()
 	delete(server.failures, "processes")
 	server.mu.Unlock()
-	state.Click(hitRemoteRefresh)
+	clickRemoteToolsAction(t, state, hitRemoteRefresh)
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	if state.remote.stale || state.remote.failed || !state.remote.collectedAt.After(stamp) {
 		t.Fatal("successful refresh did not restore freshness")
@@ -86,7 +89,7 @@ func TestRemoteProcessConfirmationCannotEscapeCapturedScope(t *testing.T) {
 		t.Run(change, func(t *testing.T) {
 			state, server, _ := openRemoteToolsDialog(t)
 			selectRemoteToolsRow(state, 0)
-			state.Click(hitRemoteKill)
+			clickRemoteToolsAction(t, state, hitRemoteKill)
 			if state.modal != modalForm {
 				t.Fatal("missing process confirmation")
 			}
@@ -137,7 +140,7 @@ func TestRemoteIdentityUnavailableKeepsSearchButDisablesProcessActions(t *testin
 			}
 		}
 	}
-	state.Click(hitRemoteKill)
+	state.clickRemoteTools(hitRemoteKill)
 	if state.modal != modalRemoteTools || state.remote.status != state.messages.Tools.RemoteProcessUnverifiable {
 		t.Fatal("unsupported identity did not explain read-only state")
 	}
@@ -184,7 +187,7 @@ func TestRemoteInitialFailureHasNoSuccessfulTimestamp(t *testing.T) {
 func TestRemotePIDReuseBetweenConfirmationAndExecutionNeverSignals(t *testing.T) {
 	state, server, _ := openRemoteToolsDialog(t)
 	selectRemoteToolsRow(state, 0)
-	state.Click(hitRemoteKill)
+	clickRemoteToolsAction(t, state, hitRemoteKill)
 	if state.modal != modalForm {
 		t.Fatal("no confirmation")
 	}
@@ -196,7 +199,7 @@ func TestRemotePIDReuseBetweenConfirmationAndExecutionNeverSignals(t *testing.T)
 	if server.ran("kill") != 0 || !state.remote.stale || state.remote.selected != "" || state.remote.status != state.messages.Tools.RemoteProcessChanged {
 		t.Fatal("confirmation signaled a reused PID or left it actionable")
 	}
-	state.Click(hitRemoteRefresh)
+	clickRemoteToolsAction(t, state, hitRemoteRefresh)
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	if state.remote.stale || state.remote.selected != "" {
 		t.Fatal("refresh silently selected a replacement")
@@ -209,7 +212,7 @@ func TestRemoteFailedTabSwitchNeverShowsAnotherTabsTimestamp(t *testing.T) {
 	server.mu.Lock()
 	server.failures["docker ps"] = errors.New("missing docker")
 	server.mu.Unlock()
-	state.Click(hitRemoteTabContainers)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
 	if !state.remote.collectedAt.IsZero() || state.remote.snapshotStatus != "" || strings.Contains(state.remote.searchSummary, previous) {
 		t.Fatal("tab switch painted the previous tab's collection timestamp")
 	}
@@ -228,12 +231,12 @@ func TestRemoteProcessActionPaintStateDoesNotAllocate(t *testing.T) {
 	if allocations := testing.AllocsPerRun(100, func() { state.remoteToolActions() }); allocations != 0 {
 		t.Fatalf("process action paint state allocates: %g", allocations)
 	}
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	// Keep the auto-refresh clock frame deterministic. A wall clock advances
 	// between allocation samples and intentionally tessellates the next hand
 	// phase, which measures animation-cache growth rather than list painting.
 	canvas.SetClock(func() time.Duration { return time.Second })
-	size := ui.Size{Width: 1400, Height: 900}
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	if allocations := testing.AllocsPerRun(100, func() {
 		canvas.Reset()
@@ -263,8 +266,8 @@ func BenchmarkRemoteProcessSnapshotSafetyPaint(b *testing.B) {
 	state.remote.selected = remotetools.ProcessKey(state.remote.procs[4999])
 	state.updateRemoteSnapshotStatus()
 	state.rebuildRemoteRows()
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -278,7 +281,7 @@ func TestRemoteTruncationHintRemainsReachableThroughDriverHitTest(t *testing.T) 
 	state, _, _ := openRemoteToolsDialog(t)
 	state.remote.processesTruncated = true
 	state.rebuildRemoteRows()
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	driver, err := app.NewDriver(app.Config{Title: "narrow snapshot status", Width: 600, Height: 700, Tree: Tree(), Paint: state.Paint, OnKey: state.Key}, &canvas)
 	if err != nil {
 		t.Fatal(err)

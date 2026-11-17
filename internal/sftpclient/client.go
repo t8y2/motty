@@ -69,3 +69,9 @@ func (client remote) OpenTransferFile(path string, flags int) (TransferFile, err
 func (client remote) Create(path string) (io.WriteCloser, error) {
 	return client.Client.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
 }
+
+// Chown changes a path's numeric owner and group. Servers enforce root for
+// this; the elevated subsystem is what makes it usable on a normal account.
+func (client remote) Chown(path string, uid, gid uint32) error {
+	return client.Client.Chown(path, int(uid), int(gid))
+}

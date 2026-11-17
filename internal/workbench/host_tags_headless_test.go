@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
@@ -33,7 +33,7 @@ func TestHostTagsNativeQueryKeepsFocusAndDoesNotSubmitTheHost(t *testing.T) {
 		if err := view.Rest(); err != nil {
 			t.Fatal(err)
 		}
-		click := func(id ui.ID) {
+		click := func(id gfx.ID) {
 			t.Helper()
 			for _, hit := range view.Snapshot().Hits {
 				if hit.ID == id {
@@ -44,6 +44,16 @@ func TestHostTagsNativeQueryKeepsFocusAndDoesNotSubmitTheHost(t *testing.T) {
 				}
 			}
 			t.Fatal("missing hit", id)
+		}
+		clickLabel := func(label string) {
+			t.Helper()
+			hit, ok := hitByLabelSnapshot(view.Snapshot().Hits, label)
+			if !ok {
+				t.Fatal("missing button", label)
+			}
+			if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+				t.Fatal(err)
+			}
 		}
 		click(hitDialogTags)
 		if dir := os.Getenv("MOTTY_TAGS_SCREENSHOTS"); dir != "" && scale == 1 {
@@ -126,7 +136,7 @@ func TestHostTagsNativeQueryKeepsFocusAndDoesNotSubmitTheHost(t *testing.T) {
 		if p.control.Open || state.modal != modalNewHost {
 			t.Fatal("outside click closed host dialog instead of dropdown")
 		}
-		click(hitDialogSubmit)
+		clickLabel(state.messages.AddHost)
 		if len(state.hosts) != 1 || state.hosts[0].Tags != "生产, 测试" {
 			t.Fatal("native tag save failed", state.dialogError)
 		}
@@ -163,7 +173,7 @@ func TestHostTagPopupCanSelectOutsideScrolledForm(t *testing.T) {
 		}
 	}
 	clip := state.editor.form.geometry.Viewport
-	var option ui.Hit
+	var option gfx.Hit
 	for _, hit := range view.Snapshot().Hits {
 		if hit.ID == hitHostTagOptions.At(3) {
 			option = hit
@@ -200,7 +210,7 @@ func TestHostTagPopupEnterChoosesTheHoveredRow(t *testing.T) {
 	if err := view.Rest(); err != nil {
 		t.Fatal(err)
 	}
-	click := func(id ui.ID) {
+	click := func(id gfx.ID) {
 		t.Helper()
 		for _, hit := range view.Snapshot().Hits {
 			if hit.ID == id {
@@ -218,7 +228,7 @@ func TestHostTagPopupEnterChoosesTheHoveredRow(t *testing.T) {
 		t.Fatalf("fixture has %d tag options", len(choices))
 	}
 	wanted := choices[2].Value
-	var option ui.Hit
+	var option gfx.Hit
 	for _, hit := range view.Snapshot().Hits {
 		if hit.ID == hitHostTagOptions.At(2) {
 			option = hit

@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
 )
@@ -26,7 +26,7 @@ func TestClosingSplitRestoresPopulatedTerminal(t *testing.T) {
 			state := newTestState(t, testOptions(t))
 			openHost(state)
 			state.cellWidth, state.cellHeight = 8, 16
-			size := ui.Size{Width: 1200, Height: 800}
+			size := gfx.Size{Width: 1200, Height: 800}
 			state.Resize(size)
 			originalID := state.sessions[0].ID
 			terminal := state.sessions[0].term
@@ -64,9 +64,9 @@ func TestClosingSplitRestoresPopulatedTerminal(t *testing.T) {
 			if after := string(terminal.screen.AppendRetainedText(nil)); after != before {
 				t.Fatal("split/close permanently changed existing output")
 			}
-			var canvas ui.Canvas
+			var canvas gfx.Canvas
 			state.Paint(&canvas, size)
-			hit, ok := hitByID(&canvas, hitTerminalList.At(int(originalID)))
+			hit, ok := hitByID(&canvas, terminalTestHitByID(state, originalID))
 			if !ok || hit.Bounds.Width != 1200-terminalToolRailExtent {
 				t.Fatalf("restored terminal hit = %+v", hit)
 			}
@@ -76,8 +76,8 @@ func TestClosingSplitRestoresPopulatedTerminal(t *testing.T) {
 
 func TestManagementUsesSidebarAndTerminalUsesFullWorkspace(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	size := ui.Size{Width: 1200, Height: 800}
-	var management ui.Canvas
+	size := gfx.Size{Width: 1200, Height: 800}
+	var management gfx.Canvas
 	state.Paint(&management, size)
 	hosts, ok := hitByID(&management, hitHosts)
 	if !ok || hosts.Bounds.Width < 150 || !hosts.Selected {
@@ -86,9 +86,9 @@ func TestManagementUsesSidebarAndTerminalUsesFullWorkspace(t *testing.T) {
 
 	openHost(state)
 	state.sessions[0].term.live = true
-	var terminal ui.Canvas
+	var terminal gfx.Canvas
 	state.Paint(&terminal, size)
-	for _, id := range []ui.ID{hitHosts, hitKeychain, hitProxies, hitPortForwarding, hitKnownHosts, hitSettings} {
+	for _, id := range []gfx.ID{hitHosts, hitKeychain, hitProxies, hitPortForwarding, hitKnownHosts, hitSettings} {
 		if hit, ok := hitByID(&terminal, id); ok {
 			t.Fatalf("terminal painted management navigation %d: %+v", id, hit)
 		}
@@ -96,7 +96,7 @@ func TestManagementUsesSidebarAndTerminalUsesFullWorkspace(t *testing.T) {
 	if bounds := state.workspacePixelBounds(size); bounds.X != 0 || bounds.Width != size.Width-terminalToolRailExtent {
 		t.Fatalf("terminal workspace = %+v, want room for the shared right rail", bounds)
 	}
-	terminalHit, ok := hitByID(&terminal, hitTerminalList.At(int(state.sessions[0].ID)))
+	terminalHit, ok := hitByID(&terminal, terminalTestHit(state, &state.sessions[0]))
 	if !ok || terminalHit.Bounds.X != 0 || terminalHit.Bounds.Width != size.Width-terminalToolRailExtent {
 		t.Fatalf("single terminal does not use full workspace: %+v", terminalHit)
 	}
@@ -109,12 +109,12 @@ func TestSplitPanesShareOneWorkspaceToolbar(t *testing.T) {
 	for index := range state.sessions {
 		state.sessions[index].term.live = true
 	}
-	size := ui.Size{Width: 1200, Height: 800}
+	size := gfx.Size{Width: 1200, Height: 800}
 	state.Resize(size)
 
 	assertToolbarOwnership := func() {
 		t.Helper()
-		var canvas ui.Canvas
+		var canvas gfx.Canvas
 		state.Paint(&canvas, size)
 		frame := state.workspacePixelBounds(size)
 		if _, ok := hitByID(&canvas, hitSFTPOpen); !ok {
@@ -156,7 +156,7 @@ func TestSharedToolbarCloseButtonClosesActivePane(t *testing.T) {
 	openHost(state)
 	openHostInSplit(t, state, 2, layoutcore.Horizontal)
 	closedSession := state.activeSessionID
-	size := ui.Size{Width: 1200, Height: 800}
+	size := gfx.Size{Width: 1200, Height: 800}
 	driver, err := app.NewDriver(app.Config{
 		Title: "pane close", Width: int(size.Width), Height: int(size.Height), Tree: Tree(),
 		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnResize: state.Resize,
@@ -166,7 +166,7 @@ func TestSharedToolbarCloseButtonClosesActivePane(t *testing.T) {
 	}
 	t.Cleanup(driver.Close)
 
-	var closeHit ui.Hit
+	var closeHit gfx.Hit
 	for _, hit := range driver.Snapshot().Hits {
 		if hit.ID == hitPaneClose {
 			closeHit = hit
@@ -186,11 +186,11 @@ func TestSharedToolbarCloseButtonClosesActivePane(t *testing.T) {
 
 func TestWorkspacePanesPaintDistinctInteractiveViews(t *testing.T) {
 	state := threeVisiblePaneState(t)
-	size := ui.Size{Width: 1200, Height: 800}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1200, Height: 800}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 
-	for _, id := range []ui.ID{hitPaneSplitHorizontal, hitPaneSplitVertical, hitPaneClose} {
+	for _, id := range []gfx.ID{hitPaneSplitHorizontal, hitPaneSplitVertical, hitPaneClose} {
 		if _, ok := hitByID(&canvas, id); !ok {
 			t.Fatalf("shared toolbar action %d is missing", id)
 		}
@@ -200,9 +200,9 @@ func TestWorkspacePanesPaintDistinctInteractiveViews(t *testing.T) {
 		if !ok {
 			t.Fatalf("pane divider %d is not hittable", index)
 		}
-		want := ui.PointerCursorResizeHorizontal
+		want := gfx.PointerCursorResizeHorizontal
 		if split.Axis == layoutcore.Vertical {
-			want = ui.PointerCursorResizeVertical
+			want = gfx.PointerCursorResizeVertical
 		}
 		if divider.Cursor != want {
 			t.Fatalf("pane divider %d cursor = %v, want %v", index, divider.Cursor, want)
@@ -218,8 +218,7 @@ func TestWorkspacePanesPaintDistinctInteractiveViews(t *testing.T) {
 		if !ok || activate.Bounds != pixelBounds(frame, panes[index].Bounds) {
 			t.Fatalf("pane %d activation hit = %+v", index, activate)
 		}
-		terminalID := hitTerminalList.At(int(session.ID))
-		terminalID = tree.MountID(paneMount(session), terminalID)
+		terminalID := terminalTestHit(state, session)
 		terminal, ok := hitByID(&canvas, terminalID)
 		if !ok {
 			t.Fatalf("pane %d terminal hit %d is missing", index, terminalID)
@@ -252,8 +251,8 @@ func TestWorkspacePaintsEverySessionPageInsideItsPane(t *testing.T) {
 	state.sessions[3].term.shell = nil
 	state.ActivatePane(state.sessions[2].ID)
 
-	size := ui.Size{Width: 1400, Height: 900}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	assertTextInsidePane(t, state, &canvas, size, state.sessions[1].ID, state.messages.SessionRestoredTitle)
 	assertTextInsidePane(t, state, &canvas, size, state.sessions[3].ID, state.messages.HostStateConnecting)
@@ -268,7 +267,7 @@ func TestWorkspacePaintsEverySessionPageInsideItsPane(t *testing.T) {
 	}
 
 	terminal := &state.sessions[0]
-	terminalID := tree.MountID(paneMount(terminal), hitTerminalList.At(int(terminal.ID)))
+	terminalID := terminalTestHit(state, terminal)
 	if _, ok := hitByID(&canvas, terminalID); !ok {
 		t.Fatalf("terminal page hit %d is missing", terminalID)
 	}
@@ -313,8 +312,8 @@ func TestWorkspacePaneActionsSplitActivateAndClose(t *testing.T) {
 
 func TestWorkspaceBackgroundPointerActivatesPane(t *testing.T) {
 	state := threeVisiblePaneState(t)
-	size := ui.Size{Width: 1200, Height: 800}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1200, Height: 800}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 
 	background := state.sessions[0].ID
@@ -322,13 +321,13 @@ func TestWorkspaceBackgroundPointerActivatesPane(t *testing.T) {
 		background = state.sessions[1].ID
 	}
 	session, _ := state.sessionByIDPointer(background)
-	target := tree.MountID(paneMount(session), hitTerminalList.At(int(session.ID)))
+	target := terminalTestHit(state, session)
 	hit, ok := hitByID(&canvas, target)
 	if !ok {
 		t.Fatalf("background terminal hit %d is missing", target)
 	}
-	result := state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: target,
+	result := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: target,
 		X: hit.Bounds.X + 10, Y: hit.Bounds.Y + 10, Viewport: size,
 	})
 	if state.activeSessionID != background || !result.Handled || !result.Repaint {
@@ -338,7 +337,7 @@ func TestWorkspaceBackgroundPointerActivatesPane(t *testing.T) {
 
 func TestWorkspaceBackgroundTerminalKeepsFocusThroughActivation(t *testing.T) {
 	state := threeVisiblePaneState(t)
-	size := ui.Size{Width: 1200, Height: 800}
+	size := gfx.Size{Width: 1200, Height: 800}
 	driver, err := app.NewDriver(app.Config{
 		Title: "panes", Width: int(size.Width), Height: int(size.Height),
 		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key,
@@ -359,8 +358,8 @@ func TestWorkspaceBackgroundTerminalKeepsFocusThroughActivation(t *testing.T) {
 	if background.ID == state.activeSessionID {
 		background = &state.sessions[1]
 	}
-	target := tree.MountID(paneMount(background), hitTerminalList.At(int(background.ID)))
-	var terminal ui.Hit
+	target := terminalTestHit(state, background)
+	var terminal gfx.Hit
 	for _, hit := range driver.Snapshot().Hits {
 		if hit.ID == target {
 			terminal = hit
@@ -370,7 +369,7 @@ func TestWorkspaceBackgroundTerminalKeepsFocusThroughActivation(t *testing.T) {
 	if terminal.ID.IsZero() {
 		t.Fatalf("background terminal hit %d is missing", target)
 	}
-	if err := driver.Press(terminal.Bounds.X+12, terminal.Bounds.Y+terminal.Bounds.Height-12, ui.PointerButtonPrimary); err != nil {
+	if err := driver.Press(terminal.Bounds.X+12, terminal.Bounds.Y+terminal.Bounds.Height-12, gfx.PointerButtonPrimary); err != nil {
 		t.Fatal(err)
 	}
 	if state.activeSessionID != background.ID || driver.Snapshot().Focused != target {
@@ -383,7 +382,7 @@ func TestNativeTextInputOnlyTargetsTheActivePane(t *testing.T) {
 	if !state.splitActivePane(layoutcore.Horizontal) {
 		t.Fatal("split right")
 	}
-	state.Click(hitPaneChooseHost)
+	state.chooseHostSection()
 	state.Click(hitHostList.At(2))
 	openHost(state)
 	secondConn := world.conns[1]
@@ -395,8 +394,8 @@ func TestNativeTextInputOnlyTargetsTheActivePane(t *testing.T) {
 
 	first := &state.sessions[0]
 	second := &state.sessions[1]
-	firstTarget := tree.MountID(paneMount(first), hitTerminalList.At(int(first.ID)))
-	secondTarget := tree.MountID(paneMount(second), hitTerminalList.At(int(second.ID)))
+	firstTarget := terminalTestHit(state, first)
+	secondTarget := terminalTestHit(state, second)
 	if input := state.TerminalInput(app.TextInputContext{ID: firstTarget, Terminal: true}); input != nil {
 		t.Fatal("inactive pane exposed a native text receiver")
 	}
@@ -421,8 +420,8 @@ func TestSFTPContextFollowsActivePaneWithoutReusingAnotherSession(t *testing.T) 
 		t.Fatal(err)
 	}
 	state.ActivatePane(second.ID)
-	size := ui.Size{Width: 1400, Height: 900}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	// The files panel is on the left, ahead of the panes.
 	panes := state.workspacePixelBounds(size)
@@ -445,22 +444,22 @@ func TestSFTPContextFollowsActivePaneWithoutReusingAnotherSession(t *testing.T) 
 
 func TestContextPanelCollapseRemovesGapAndNarrowWindowUsesDrawer(t *testing.T) {
 	state, _, _, _ := openTestSFTP(t)
-	wide := ui.Size{Width: 1400, Height: 900}
+	wide := gfx.Size{Width: 1400, Height: 900}
 	openBounds := state.workspacePixelBounds(wide)
 	state.Click(hitSFTPClose)
 	closedBounds := state.workspacePixelBounds(wide)
 	if closedBounds != state.baseWorkspacePixelBounds(wide) || closedBounds.Width <= openBounds.Width {
 		t.Fatalf("collapsed bounds open=%+v closed=%+v base=%+v", openBounds, closedBounds, state.baseWorkspacePixelBounds(wide))
 	}
-	var closed ui.Canvas
+	var closed gfx.Canvas
 	state.Paint(&closed, wide)
 	if _, ok := hitByID(&closed, hitContextDivider); ok {
 		t.Fatal("collapsed context left a divider or gap")
 	}
 
 	state.Click(hitSFTPOpen)
-	narrow := ui.Size{Width: 800, Height: 700}
-	var drawer ui.Canvas
+	narrow := gfx.Size{Width: 800, Height: 700}
+	var drawer gfx.Canvas
 	state.Paint(&drawer, narrow)
 	if state.workspacePixelBounds(narrow) != state.baseWorkspacePixelBounds(narrow) {
 		t.Fatalf("drawer reserved terminal width: %+v", state.workspacePixelBounds(narrow))
@@ -479,10 +478,10 @@ func TestContextPanelCollapseRemovesGapAndNarrowWindowUsesDrawer(t *testing.T) {
 // reach the other.
 func TestHoveringTheSFTPDrawerBackdropLeavesItsCloseButtonAlone(t *testing.T) {
 	state, _, _, _ := openTestSFTP(t)
-	size := ui.Size{Width: 800, Height: 700}
-	var quiet ui.Canvas
+	size := gfx.Size{Width: 800, Height: 700}
+	var quiet gfx.Canvas
 	state.Paint(&quiet, size)
-	dismiss := ui.ID{}
+	dismiss := gfx.ID{}
 	for _, hit := range quiet.Hits() {
 		if hit.Backdrop {
 			dismiss = hit.ID
@@ -492,13 +491,13 @@ func TestHoveringTheSFTPDrawerBackdropLeavesItsCloseButtonAlone(t *testing.T) {
 	if dismiss.IsZero() {
 		t.Fatal("the drawer has no backdrop to hover")
 	}
-	paintedWith := func(hovered ui.ID) []ui.Rectangle {
-		var canvas ui.Canvas
-		canvas.SetInteraction(hovered, ui.ID{}, ui.ID{}, false)
+	paintedWith := func(hovered gfx.ID) []gfx.Rectangle {
+		var canvas gfx.Canvas
+		canvas.SetInteraction(hovered, gfx.ID{}, gfx.ID{}, false)
 		state.Paint(&canvas, size)
 		return dialogLayerRectangles(&canvas)
 	}
-	if !slices.Equal(paintedWith(ui.ID{}), paintedWith(dismiss)) {
+	if !slices.Equal(paintedWith(gfx.ID{}), paintedWith(dismiss)) {
 		t.Fatal("hovering the backdrop paints the drawer's controls as hovered")
 	}
 	// The drawer's own button closes the panel, as the panel's does.
@@ -510,22 +509,22 @@ func TestHoveringTheSFTPDrawerBackdropLeavesItsCloseButtonAlone(t *testing.T) {
 
 func TestContextDividerPersistsWidthAndRestoresTerminalFocus(t *testing.T) {
 	state, _, _, _ := openTestSFTP(t)
-	size := ui.Size{Width: 1400, Height: 900}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	divider, ok := hitByID(&canvas, hitContextDivider)
 	if !ok {
 		t.Fatal("context divider is missing")
 	}
-	if divider.Cursor != ui.PointerCursorResizeHorizontal {
+	if divider.Cursor != gfx.PointerCursorResizeHorizontal {
 		t.Fatalf("context divider cursor = %v", divider.Cursor)
 	}
 	base := state.baseWorkspacePixelBounds(size)
 	dragX := base.X + 400 + 0.5
 	y := divider.Bounds.Y + divider.Bounds.Height/2
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hitContextDivider, X: divider.Bounds.X, Y: y, Viewport: size})
-	move := state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Target: hitContextDivider, Captured: true, X: dragX, Y: y, Viewport: size})
-	release := state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: hitContextDivider, Captured: true, X: dragX, Y: y, Viewport: size})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hitContextDivider, X: divider.Bounds.X, Y: y, Viewport: size})
+	move := state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: hitContextDivider, Captured: true, X: dragX, Y: y, Viewport: size})
+	release := state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: hitContextDivider, Captured: true, X: dragX, Y: y, Viewport: size})
 	context, _ := state.deck.Context(state.deck.ActiveWorkspace())
 	if !move.Repaint || context.Width < 399 || context.Width > 401 || release.Focus != state.activeTerminalFocusHit() {
 		t.Fatalf("drag move=%+v release=%+v context=%+v", move, release, context)
@@ -546,9 +545,9 @@ func TestWorkspaceDividerDragResizesTerminalsAndPersists(t *testing.T) {
 	for index := range state.sessions {
 		state.sessions[index].term.live = true
 	}
-	size := ui.Size{Width: 1000, Height: 700}
+	size := gfx.Size{Width: 1000, Height: 700}
 	state.Resize(size)
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	builds := state.workspaceViewBuilds
 	divider, ok := hitByID(&canvas, hitPaneDividerList.At(0))
@@ -558,13 +557,13 @@ func TestWorkspaceDividerDragResizesTerminalsAndPersists(t *testing.T) {
 	y := divider.Bounds.Y + divider.Bounds.Height/2
 	frame := state.workspacePixelBounds(size)
 	dragX := frame.X + 0.5 + (frame.Width-1)*0.70
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hitPaneDividerList.At(0), X: divider.Bounds.X + 2, Y: y, Viewport: size})
-	move := state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Target: hitPaneDividerList.At(0), Captured: true, X: dragX, Y: y, Viewport: size})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hitPaneDividerList.At(0), X: divider.Bounds.X + 2, Y: y, Viewport: size})
+	move := state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: hitPaneDividerList.At(0), Captured: true, X: dragX, Y: y, Viewport: size})
 	beforeRelease := newTestState(t, options).PaneSplits(nil)
 	if len(beforeRelease) != 1 || beforeRelease[0].Ratio != defaultPaneRatio {
 		t.Fatalf("divider move persisted before pointer up: %+v", beforeRelease)
 	}
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: hitPaneDividerList.At(0), Captured: true, X: dragX, Y: y, Viewport: size})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: hitPaneDividerList.At(0), Captured: true, X: dragX, Y: y, Viewport: size})
 	if !move.Handled || !move.Repaint {
 		t.Fatalf("divider move = %+v", move)
 	}
@@ -595,10 +594,10 @@ func TestNestedWorkspaceDividerPreservesEveryLeafMinimumSize(t *testing.T) {
 	tests := []struct {
 		name string
 		axis layoutcore.Axis
-		size ui.Size
+		size gfx.Size
 	}{
-		{name: "columns", axis: layoutcore.Horizontal, size: ui.Size{Width: 1400, Height: 900}},
-		{name: "rows", axis: layoutcore.Vertical, size: ui.Size{Width: 1000, Height: 900}},
+		{name: "columns", axis: layoutcore.Horizontal, size: gfx.Size{Width: 1400, Height: 900}},
+		{name: "rows", axis: layoutcore.Vertical, size: gfx.Size{Width: 1000, Height: 900}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -610,7 +609,7 @@ func TestNestedWorkspaceDividerPreservesEveryLeafMinimumSize(t *testing.T) {
 				state.sessions[index].term.live = true
 			}
 			state.Resize(test.size)
-			var canvas ui.Canvas
+			var canvas gfx.Canvas
 			state.Paint(&canvas, test.size)
 			layout, _ := state.deck.Layout(state.deck.ActiveWorkspace())
 			rootIndex := -1
@@ -637,9 +636,9 @@ func TestNestedWorkspaceDividerPreservesEveryLeafMinimumSize(t *testing.T) {
 			} else {
 				moveY = frame.Y + frame.Height + 100
 			}
-			state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: id, X: downX, Y: downY, Viewport: test.size})
-			move := state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Target: id, Captured: true, X: moveX, Y: moveY, Viewport: test.size})
-			state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: id, Captured: true, X: moveX, Y: moveY, Viewport: test.size})
+			state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: id, X: downX, Y: downY, Viewport: test.size})
+			move := state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: id, Captured: true, X: moveX, Y: moveY, Viewport: test.size})
+			state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: id, Captured: true, X: moveX, Y: moveY, Viewport: test.size})
 			if !move.Repaint {
 				t.Fatal("extreme splitter drag did not resize")
 			}
@@ -690,8 +689,8 @@ func TestWorkspaceDividerDragDoesNotResizeBackgroundWorkspace(t *testing.T) {
 	state.syncActiveSession()
 	state.activeSection = sectionTerminal
 
-	size := ui.Size{Width: 1200, Height: 800}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1200, Height: 800}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	state.Resize(size)
 	backgroundCols, backgroundRows := state.sessions[2].term.screen.Size()
@@ -706,8 +705,8 @@ func TestWorkspaceDividerDragDoesNotResizeBackgroundWorkspace(t *testing.T) {
 	y := divider.Bounds.Y + divider.Bounds.Height/2
 	frame := state.workspacePixelBounds(size)
 	dragX := frame.X + 0.5 + (frame.Width-1)*0.65
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hitPaneDividerList.At(0), X: divider.Bounds.X, Y: y, Viewport: size})
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Target: hitPaneDividerList.At(0), Captured: true, X: dragX, Y: y, Viewport: size})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hitPaneDividerList.At(0), X: divider.Bounds.X, Y: y, Viewport: size})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: hitPaneDividerList.At(0), Captured: true, X: dragX, Y: y, Viewport: size})
 	if cols, rows := state.sessions[2].term.screen.Size(); cols != backgroundCols || rows != backgroundRows || len(backgroundShell.resizes) != backgroundResizes {
 		t.Fatalf("background workspace resized from %dx%d/%d to %dx%d/%d", backgroundCols, backgroundRows, backgroundResizes, cols, rows, len(backgroundShell.resizes))
 	}
@@ -715,8 +714,8 @@ func TestWorkspaceDividerDragDoesNotResizeBackgroundWorkspace(t *testing.T) {
 
 func TestWorkspaceMultiPaneSteadyPaintDoesNotAllocate(t *testing.T) {
 	state := threeVisiblePaneState(t)
-	size := ui.Size{Width: 1400, Height: 900}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
 	for range 3 {
 		canvas.Reset()
 		state.Paint(&canvas, size)
@@ -732,8 +731,8 @@ func TestWorkspaceMultiPaneSteadyPaintDoesNotAllocate(t *testing.T) {
 
 func TestTerminalOutputReusesCachedWorkspaceGeometry(t *testing.T) {
 	state := threeVisiblePaneState(t)
-	size := ui.Size{Width: 1400, Height: 900}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	builds := state.workspaceViewBuilds
 	state.sessions[0].term.screen.Write([]byte("output"))
@@ -746,8 +745,8 @@ func TestTerminalOutputReusesCachedWorkspaceGeometry(t *testing.T) {
 
 func BenchmarkPaintWorkspacePanes(b *testing.B) {
 	state := threeVisiblePaneState(b)
-	size := ui.Size{Width: 1400, Height: 900}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	b.ReportAllocs()
 	for b.Loop() {
@@ -758,15 +757,15 @@ func BenchmarkPaintWorkspacePanes(b *testing.B) {
 
 func BenchmarkWorkspaceSplitterDrag(b *testing.B) {
 	state := threeVisiblePaneState(b)
-	size := ui.Size{Width: 1400, Height: 900}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	divider, ok := hitByID(&canvas, hitPaneDividerList.At(0))
 	if !ok {
 		b.Fatal("divider hit missing")
 	}
 	y := divider.Bounds.Y + divider.Bounds.Height/2
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hitPaneDividerList.At(0), X: divider.Bounds.X, Y: y, Viewport: size})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hitPaneDividerList.At(0), X: divider.Bounds.X, Y: y, Viewport: size})
 	frame := state.workspacePixelBounds(size)
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -776,7 +775,7 @@ func BenchmarkWorkspaceSplitterDrag(b *testing.B) {
 			ratio = 0.55
 		}
 		x := frame.X + 0.5 + (frame.Width-1)*ratio
-		state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Target: hitPaneDividerList.At(0), Captured: true, X: x, Y: y, Viewport: size})
+		state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: hitPaneDividerList.At(0), Captured: true, X: x, Y: y, Viewport: size})
 	}
 }
 
@@ -785,15 +784,15 @@ func BenchmarkContextPanelDividerDrag(b *testing.B) {
 	if err := state.deck.SetContext(state.deck.ActiveWorkspace(), layoutcore.ContextState{Kind: layoutcore.ContextSFTP, Open: true, Width: 340}); err != nil {
 		b.Fatal(err)
 	}
-	size := ui.Size{Width: 1400, Height: 900}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	divider, ok := hitByID(&canvas, hitContextDivider)
 	if !ok {
 		b.Fatal("context divider hit missing")
 	}
 	y := divider.Bounds.Y + divider.Bounds.Height/2
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hitContextDivider, X: divider.Bounds.X, Y: y, Viewport: size})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hitContextDivider, X: divider.Bounds.X, Y: y, Viewport: size})
 	base := state.baseWorkspacePixelBounds(size)
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -803,7 +802,7 @@ func BenchmarkContextPanelDividerDrag(b *testing.B) {
 			width = 350
 		}
 		x := base.X + width + 0.5
-		state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Target: hitContextDivider, Captured: true, X: x, Y: y, Viewport: size})
+		state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: hitContextDivider, Captured: true, X: x, Y: y, Viewport: size})
 	}
 }
 
@@ -825,12 +824,12 @@ func openHostInSplit(t testing.TB, state *State, hostID uint32, axis layoutcore.
 	if !state.splitActivePane(axis) {
 		t.Fatal("could not create an empty split pane")
 	}
-	state.Click(hitPaneChooseHost)
+	state.chooseHostSection()
 	state.Click(hitHostList.At(int(hostID)))
 	openHost(state)
 }
 
-func assertTextInsidePane(t testing.TB, state *State, canvas *ui.Canvas, size ui.Size, sessionID uint32, value string) {
+func assertTextInsidePane(t testing.TB, state *State, canvas *gfx.Canvas, size gfx.Size, sessionID uint32, value string) {
 	t.Helper()
 	pane, ok := state.paneForSession(sessionID)
 	if !ok {
@@ -862,9 +861,9 @@ func TestPanesActivateOnPressNotOnHover(t *testing.T) {
 	for index := range state.sessions {
 		state.sessions[index].term.live = true
 	}
-	size := ui.Size{Width: 1200, Height: 800}
+	size := gfx.Size{Width: 1200, Height: 800}
 	state.Resize(size)
-	state.Paint(&ui.Canvas{}, size)
+	state.Paint(&gfx.Canvas{}, size)
 	active := state.activeSessionID
 	var other *Session
 	for index := range state.sessions {
@@ -872,13 +871,13 @@ func TestPanesActivateOnPressNotOnHover(t *testing.T) {
 			other = &state.sessions[index]
 		}
 	}
-	target := tree.MountID(paneMount(other), hitTerminalList.At(int(other.ID)))
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Target: target, X: 20, Y: 80, Viewport: size})
-	state.Scroll(ui.ScrollEvent{Target: target, X: 20, Y: 80, DeltaY: 40, Viewport: size})
+	target := terminalTestHit(state, other)
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Target: target, X: 20, Y: 80, Viewport: size})
+	state.Scroll(gfx.ScrollEvent{Target: target, X: 20, Y: 80, DeltaY: 40, Viewport: size})
 	if state.activeSessionID != active {
 		t.Fatalf("hover or wheel moved the active pane to %d", state.activeSessionID)
 	}
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: target, X: 20, Y: 80, Viewport: size})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: target, X: 20, Y: 80, Viewport: size})
 	if state.activeSessionID != other.ID {
 		t.Fatalf("pressing the pane left %d active, want %d", state.activeSessionID, other.ID)
 	}
@@ -931,5 +930,141 @@ func TestSplitPaneConnectsBehindItsTerminal(t *testing.T) {
 	tab, _ := state.sessionByIDPointer(state.activeSessionID)
 	if !state.showsProgress(tab) {
 		t.Fatal("a new tab lost its progress page")
+	}
+}
+
+// The terminal panes are components of the workbench page now, not pages of
+// their own. A press, a key and typed text in either pane must reach that pane's
+// terminal through the page, not through a per-session page or a mount.
+func TestSplitPaneEventsGoThroughTheWorkbenchPage(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	openHost(state)
+	openHostInSplit(t, state, 2, layoutcore.Horizontal)
+	if len(state.sessions) < 2 {
+		t.Fatalf("split created only %d sessions", len(state.sessions))
+	}
+	size := gfx.Size{Width: 1200, Height: 800}
+	state.Resize(size)
+	shells := make([]*fakeShell, len(state.sessions))
+	for index := range state.sessions {
+		shells[index] = &fakeShell{}
+		state.sessions[index].term.shell = shells[index]
+		state.sessions[index].term.live = true
+	}
+	second := &state.sessions[1]
+	if !state.ActivatePane(second.ID) {
+		t.Fatal("activate the second pane")
+	}
+
+	var canvas gfx.Canvas
+	state.Paint(&canvas, size)
+	page := state.chrome.windowPage
+	if page == nil {
+		t.Fatal("the workbench page was not created")
+	}
+	for index := range state.sessions {
+		session := &state.sessions[index]
+		hit := terminalTestHit(state, session)
+		if !windowPageOwns(hit) {
+			t.Fatalf("session %d terminal is not in the workbench page: %v", session.ID, hit)
+		}
+		if _, ok := hitByID(&canvas, hit); !ok {
+			t.Fatalf("session %d terminal was not painted", session.ID)
+		}
+	}
+
+	// A press in the second pane goes through the page to its pointer handler.
+	hit := terminalTestHit(state, second)
+	geometry := state.layoutForSession(second.ID)
+	result := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hit, ClickCount: 1,
+		X: geometry.left + state.cellWidth*1.5, Y: geometry.top + state.cellHeight*0.5, Viewport: size,
+	})
+	if !result.Handled || !second.term.selection.dragging {
+		t.Fatalf("press through the page = %+v, dragging=%v", result, second.term.selection.dragging)
+	}
+	state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true,
+		X: geometry.left + state.cellWidth*1.5, Y: geometry.top + state.cellHeight*0.5, Viewport: size,
+	})
+
+	// Typed text and a key reach the second pane's shell through the page's
+	// control routing.
+	input := state.TerminalInput(app.TextInputContext{ID: hit, Terminal: true})
+	if input == nil || input.OnEvent == nil {
+		t.Fatal("the page gave the terminal no text surface")
+	}
+	if _, err := input.OnEvent(app.TextEvent{Kind: app.TextInsert, Text: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := shells[1].typed(); got != "x" {
+		t.Fatalf("typed text reached %q, want the second pane's shell", got)
+	}
+	if result := windowKeyRoutes(state, gfx.KeyEvent{Target: hit, Key: gfx.KeyEnter}); !result.Handled {
+		t.Fatalf("key through the page = %+v", result)
+	}
+	if got := shells[1].typed(); got != "x\r" {
+		t.Fatalf("key reached %q, want the second pane's shell", got)
+	}
+}
+
+// The docked files panel is a component of the workbench page now: its List's
+// rows are the page's identities, not a mount of a panel page. A click, a key
+// and typed text must reach it through the page and the window's own ids.
+func TestDockedFilesPanelEventsGoThroughTheWorkbenchPage(t *testing.T) {
+	state, session, _, _ := openTestSFTP(t)
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, size)
+	page := state.chrome.windowPage
+	if page == nil {
+		t.Fatal("the workbench page was not created")
+	}
+	view := session.files
+	folder := view.active()
+	row := sftpRowIndex(t, view, "notes.txt")
+	rowID := sftpListRowID(t, folder, row)
+	if !windowPageOwns(rowID) || !state.contextPanelOwns(rowID) {
+		t.Fatalf("the files list row is not in the workbench page: %v", rowID)
+	}
+	hit, ok := hitByID(&canvas, rowID)
+	if !ok {
+		t.Fatal("the files list row was not painted")
+	}
+
+	// A press on the row selects it. The page declared the row, so the event
+	// carries the window's identity and is not translated by a mount.
+	result := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 1,
+		Target: rowID, X: hit.Bounds.X + hit.Bounds.Width/2, Y: hit.Bounds.Y + hit.Bounds.Height/2, Viewport: size,
+	})
+	if !result.Handled || !folder.rows[row].selected {
+		t.Fatalf("press through the page = %+v, selected=%v", result, folder.rows[row].selected)
+	}
+
+	// The arrows are the List's, routed by the workbench page.
+	if result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyUp, Target: rowID}); !result.Handled {
+		t.Fatalf("key through the page = %+v", result)
+	}
+	if folder.list.Selected() != 0 {
+		t.Fatalf("arrow moved the List to row %d, want 0", folder.list.Selected())
+	}
+
+	// Typing reaches the filter by the identity the panel paints in the window,
+	// with no embedded page to translate it.
+	state.Click(hitSFTPFilterToggle)
+	state.Paint(&canvas, size)
+	if !state.contextPanelHit(hitSFTPFilter) {
+		t.Fatal("the filter is not part of the docked panel")
+	}
+	input := state.SFTPInput(app.TextInputContext{ID: hitSFTPFilter})
+	if input == nil || input.OnEvent == nil {
+		t.Fatal("the docked filter has no native text input")
+	}
+	if _, err := input.OnEvent(app.TextEvent{Kind: app.TextInsert, Text: "note"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := folder.filterInputEditor().String(); got != "note" {
+		t.Fatalf("typed filter = %q, want note", got)
 	}
 }

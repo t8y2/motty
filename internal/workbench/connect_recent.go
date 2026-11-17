@@ -6,14 +6,61 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/ui"
 )
 
-var (
-	hitConnectSortDefault = tree.ID(commandPaletteHits, "connect-sort-default")
-	hitConnectSortRecent  = tree.ID(commandPaletteHits, "connect-sort-recent")
+// connectSortChoice is an option of the new-tab picker's switch. It is derived
+// from the picker's workspaces flag and the saved recent-connections preference.
+type connectSortChoice uint8
+
+const (
+	connectSortDefault connectSortChoice = iota
+	connectSortWorkspaces
+	connectSortRecent
 )
+
+var connectSortChoices = [...]connectSortChoice{connectSortDefault, connectSortWorkspaces, connectSortRecent}
+
+func (state *State) connectSortLabel(choice connectSortChoice) string {
+	m := state.messages
+	switch choice {
+	case connectSortWorkspaces:
+		return m.WorkspaceLibraryTitle
+	case connectSortRecent:
+		return m.NewTabSortRecent
+	}
+	return m.NewTabSortDefault
+}
+
+// connectSortValue derives the switch's value from the picker's flags.
+func (state *State) connectSortValue() connectSortChoice {
+	if state.commandPalette.workspaces {
+		return connectSortWorkspaces
+	}
+	if state.recentConnectSort {
+		return connectSortRecent
+	}
+	return connectSortDefault
+}
+
+// declareConnectSort declares the default/workspaces/recent switch in the title
+// row of the picker's dialog. It is a page Choice, so its arrows move between the
+// options.
+func (state *State) declareConnectSort(c ui.C) {
+	palette := &state.commandPalette
+	palette.sort = state.connectSortValue()
+	ui.Stack(c).Absolute().Left(palette.sortLeft).Top(palette.sortTop).Width(commandPaletteSortWidth).Height(palette.sortHeight).Children(func() {
+		if !ui.Choice(c, &palette.sort, connectSortChoices[:], state.connectSortLabel).Fill().Changed() {
+			return
+		}
+		palette.workspaces = palette.sort == connectSortWorkspaces
+		if !palette.workspaces {
+			state.recentConnectSort = palette.sort == connectSortRecent
+			state.save()
+		}
+		state.rebuildCommandPalette()
+	})
+}
 
 // rememberRecentConnection consumes the user dial once, never a status refresh
 // or a retry. Local terminals call this only after their shell has started.
@@ -36,26 +83,6 @@ func (state *State) rememberRecentConnection(session *Session) {
 	state.save()
 }
 
-// connectSortOptions is the default/recent switch of the new-tab picker. It is
-// one list for painting and for the keyboard, so the two cannot drift.
-func (state *State) connectSortOptions() [2]components.SegmentOption {
-	return [2]components.SegmentOption{
-		{ID: hitConnectSortDefault, Label: state.messages.NewTabSortDefault},
-		{ID: hitConnectSortRecent, Label: state.messages.NewTabSortRecent},
-	}
-}
-
-func (state *State) paintConnectSort(canvas *ui.Canvas, layout components.DialogLayout) {
-	options := state.connectSortOptions()
-	selected := hitConnectSortDefault
-	if state.recentConnectSort {
-		selected = hitConnectSortRecent
-	}
-	width := float32(184)
-	rect := ui.Rect{X: layout.Close.X - width - 8, Y: layout.Close.Y, Width: width, Height: layout.Close.Height}
-	components.BeginSegmentedControl(canvas, state.Theme(), rect, options[:], selected).Paint()
-}
-
 // rebuildRecentConnectPicker filters the complete catalog before adding capped
 // display rows, so headings describe only the matches and can repeat.
 func (state *State) rebuildRecentConnectPicker(rawQuery string) {
@@ -69,6 +96,9 @@ func (state *State) rebuildRecentConnectPicker(rawQuery string) {
 	}
 	var candidates []candidate
 	state.eachConnectPickerCandidate(func(item connectPickerCandidate) {
+		if item.searchOnly && query == "" && !state.commandPalette.localShells {
+			return
+		}
 		search := strings.ToLower(item.label + " " + item.detail)
 		if !matchesSearchWords(search, keywords) {
 			return
@@ -78,7 +108,7 @@ func (state *State) rebuildRecentConnectPicker(rawQuery string) {
 			group = state.hostGroupLabel(*item.group)
 		}
 		candidates = append(candidates, candidate{
-			entry: commandPaletteEntry{label: item.label, detail: item.detail, search: search, target: item.target},
+			entry: commandPaletteEntry{label: item.label, detail: item.detail, search: search, target: item.target, searchOnly: item.searchOnly},
 			group: group, at: state.recentConnections[item.key],
 		})
 	})

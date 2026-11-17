@@ -6,21 +6,21 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func TestWorkspaceLibraryEmptyStateOffersCreation(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.activeSection = sectionWorkspaces
 
-	canvas, texts := paintAt(state, ui.Size{Width: 1400, Height: 900})
+	canvas, texts := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	if !hasText(texts, state.messages.WorkspaceLibraryEmpty) || !hasText(texts, state.messages.WorkspaceLibraryEmptySub) {
 		t.Fatalf("workspace library empty state is missing: %q", texts)
 	}
-	for _, id := range []ui.ID{hitWorkspaceNew} {
+	for _, id := range []gfx.ID{hitWorkspaceNew} {
 		panelHit(t, canvas, id)
 	}
-	for _, id := range []ui.ID{hitWorkspaces, hitHosts} {
+	for _, id := range []gfx.ID{hitWorkspaces, hitHosts} {
 		panelHit(t, canvas, id)
 	}
 }
@@ -33,7 +33,7 @@ func TestWorkspaceLibraryShowsTemplateFactsAndSelectsRows(t *testing.T) {
 	database := mustWorkspaceTemplate(t, "Database", []string{"host_a"}, 1)
 	state.templates = []WorkspaceTemplate{production, database}
 
-	canvas, texts := paintAt(state, ui.Size{Width: 1400, Height: 900})
+	canvas, texts := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	panelHit(t, canvas, hitWorkspaceTemplateRowList.At(0))
 	panelHit(t, canvas, hitWorkspaceTemplateRowList.At(1))
 	for _, want := range []string{production.Name, database.Name, state.messages.WorkspaceColumnsFmt, state.messages.WorkspaceTemplateMissingFmt} {
@@ -49,7 +49,7 @@ func TestWorkspaceLibraryShowsTemplateFactsAndSelectsRows(t *testing.T) {
 	if state.selectedWorkspaceTemplateID != database.ID {
 		t.Fatalf("selected template = %q, want %q", state.selectedWorkspaceTemplateID, database.ID)
 	}
-	canvas, _ = paintAt(state, ui.Size{Width: 1400, Height: 900})
+	canvas, _ = paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	if !panelHit(t, canvas, hitWorkspaceTemplateRowList.At(1)).Selected {
 		t.Fatal("the second template is not painted selected")
 	}
@@ -68,10 +68,10 @@ func TestWorkspaceLibraryUsesAReadableCardRowAtEveryWidth(t *testing.T) {
 	state.templates = []WorkspaceTemplate{
 		mustWorkspaceTemplate(t, "Production API cluster", workspaceCatalogIDs(state, 0, 1), 2),
 	}
-	for _, size := range []ui.Size{{Width: 1400, Height: 900}, {Width: 960, Height: 600}} {
+	for _, size := range []gfx.Size{{Width: 1400, Height: 900}, {Width: 960, Height: 600}} {
 		canvas, texts := paintAt(state, size)
 		row := panelHit(t, canvas, hitWorkspaceTemplateRowList.At(0))
-		if row.Role != ui.RoleButton || !row.Selected || row.Hint != state.messages.WorkspaceOpenHint {
+		if row.Role != gfx.RoleButton || !row.Selected || row.Hint != state.messages.WorkspaceOpenHint {
 			t.Fatalf("%gx%g row semantics = %+v", size.Width, size.Height, row)
 		}
 		if row.Bounds.X < 0 || row.Bounds.X+row.Bounds.Width > size.Width {
@@ -105,7 +105,7 @@ func TestWorkspaceLibraryAccordionRowsStayInPlaceAtEveryWidth(t *testing.T) {
 		mustWorkspaceTemplate(t, "Database", databaseHosts, 1),
 	}
 
-	canvas, texts := paintAt(state, ui.Size{Width: 1400, Height: 900})
+	canvas, texts := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	production := panelHit(t, canvas, hitWorkspaceTemplateRowList.At(0))
 	api := panelHit(t, canvas, hitWorkspaceTemplateRowList.At(1))
 	database := panelHit(t, canvas, hitWorkspaceTemplateRowList.At(2))
@@ -128,7 +128,7 @@ func TestWorkspaceLibraryAccordionRowsStayInPlaceAtEveryWidth(t *testing.T) {
 		panelHit(t, canvas, hitWorkspaceTemplateCards.At(index))
 	}
 
-	canvas, _ = paintAt(state, ui.Size{Width: 960, Height: 600})
+	canvas, _ = paintAt(state, gfx.Size{Width: 960, Height: 600})
 	production = panelHit(t, canvas, hitWorkspaceTemplateRowList.At(0))
 	api = panelHit(t, canvas, hitWorkspaceTemplateRowList.At(1))
 	database = panelHit(t, canvas, hitWorkspaceTemplateRowList.At(2))
@@ -140,7 +140,7 @@ func TestWorkspaceLibraryAccordionRowsStayInPlaceAtEveryWidth(t *testing.T) {
 	}
 
 	state.Click(hitWorkspaceTemplateRowList.At(1))
-	canvas, _ = paintAt(state, ui.Size{Width: 960, Height: 600})
+	canvas, _ = paintAt(state, gfx.Size{Width: 960, Height: 600})
 	if production := panelHit(t, canvas, hitWorkspaceTemplateRowList.At(0)); production.Expanded {
 		t.Fatalf("old card stayed expanded: %+v", production)
 	}
@@ -152,7 +152,7 @@ func TestWorkspaceLibraryAccordionRowsStayInPlaceAtEveryWidth(t *testing.T) {
 	}
 
 	state.Click(hitWorkspaceTemplateRowList.At(1))
-	canvas, texts = paintAt(state, ui.Size{Width: 960, Height: 600})
+	canvas, texts = paintAt(state, gfx.Size{Width: 960, Height: 600})
 	if api := panelHit(t, canvas, hitWorkspaceTemplateRowList.At(1)); api.Expanded || api.Selected {
 		t.Fatalf("clicking the open row did not collapse it: %+v", api)
 	}
@@ -168,9 +168,9 @@ func TestWorkspaceLibraryApplyLaunchesOnlyTheSelectedTemplate(t *testing.T) {
 	production := mustWorkspaceTemplate(t, "Production", []string{workspaceHostCatalogID(t, state, "Production")}, 1)
 	database := mustWorkspaceTemplate(t, "Database", []string{workspaceHostCatalogID(t, state, "Staging")}, 2)
 	state.templates = []WorkspaceTemplate{production, database}
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	state.Click(hitWorkspaceTemplateRowList.At(1))
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	state.Click(hitWorkspaceTemplateOpen.At(1))
 
 	if len(world.configs) != 1 || world.configs[0].Host != "staging.example.com" {
@@ -193,12 +193,12 @@ func TestWorkspaceLibraryOpensTemplatesByDoubleClick(t *testing.T) {
 		workspaceHostCatalogID(t, state, "Staging"),
 	}, 2)
 	state.templates = []WorkspaceTemplate{template}
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 
-	first := pointer(state, ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, ClickCount: 1,
+	first := pointer(state, gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 1,
 		Target: hitWorkspaceTemplateRowList.At(0),
-		X:      100, Y: 220, Viewport: ui.Size{Width: 1400, Height: 900},
+		X:      100, Y: 220, Viewport: gfx.Size{Width: 1400, Height: 900},
 	})
 	if first.Handled {
 		t.Fatalf("first press = %+v", first)
@@ -208,10 +208,10 @@ func TestWorkspaceLibraryOpensTemplatesByDoubleClick(t *testing.T) {
 		t.Fatalf("single click launched %d sessions", len(world.configs))
 	}
 
-	result := pointer(state, ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, ClickCount: 2,
+	result := pointer(state, gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 2,
 		Target: hitWorkspaceTemplateRowList.At(0),
-		X:      100, Y: 220, Viewport: ui.Size{Width: 1400, Height: 900},
+		X:      100, Y: 220, Viewport: gfx.Size{Width: 1400, Height: 900},
 	})
 	if !result.Handled || !result.Repaint {
 		t.Fatalf("double click = %+v", result)
@@ -233,25 +233,25 @@ func TestWorkspaceLibraryDoubleClickKeepsTheFirstHitAfterCardsMove(t *testing.T)
 		mustWorkspaceTemplate(t, "API", workspaceCatalogIDs(state, 2), 1),
 		mustWorkspaceTemplate(t, "Database", workspaceCatalogIDs(state, 0), 1),
 	}
-	canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	api := panelHit(t, canvas, hitWorkspaceTemplateRowList.At(1))
-	point := ui.Point{X: api.Bounds.X + api.Bounds.Width/2, Y: api.Bounds.Y + api.Bounds.Height/2}
+	point := gfx.Point{X: api.Bounds.X + api.Bounds.Width/2, Y: api.Bounds.Y + api.Bounds.Height/2}
 
-	first := state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, ClickCount: 1,
+	first := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 1,
 		Target: hitWorkspaceTemplateRowList.At(1), X: point.X, Y: point.Y,
-		Viewport: ui.Size{Width: 1400, Height: 900},
+		Viewport: gfx.Size{Width: 1400, Height: 900},
 	})
 	if first.Handled {
 		t.Fatalf("first press opened a workspace: %+v", first)
 	}
 	state.Click(hitWorkspaceTemplateRowList.At(1))
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 
-	second := state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, ClickCount: 2,
+	second := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 2,
 		Target: hitWorkspaceTemplateRowList.At(2), X: point.X, Y: point.Y,
-		Viewport: ui.Size{Width: 1400, Height: 900},
+		Viewport: gfx.Size{Width: 1400, Height: 900},
 	})
 	if !second.Handled || len(world.configs) != 1 || world.configs[0].Host != "192.168.1.1" {
 		t.Fatalf("second press = %+v, dials = %+v", second, world.configs)
@@ -266,17 +266,17 @@ func TestWorkspaceLibraryOpensTheSelectedTemplateWithEnter(t *testing.T) {
 		workspaceHostCatalogID(t, state, "Production"),
 	}, 1)
 	state.templates = []WorkspaceTemplate{template}
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 
-	for _, target := range []ui.ID{hitWorkspaceTemplateRowList.At(0), ui.ID{}} {
+	for _, target := range []gfx.ID{hitWorkspaceTemplateRowList.At(0), gfx.ID{}} {
 		world.configs = nil
 		state.activeSection = sectionWorkspaces
-		result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: target})
+		result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: target})
 		if !result.Handled || len(world.configs) != 1 || state.activeSection != sectionTerminal {
 			t.Fatalf("Enter on %v = %+v dials=%d", target, result, len(world.configs))
 		}
 	}
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitWorkspaceTemplateRowList.At(0), Repeat: true}); result.Handled {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitWorkspaceTemplateRowList.At(0), Repeat: true}); result.Handled {
 		t.Fatal("a repeated Enter launched another workspace")
 	}
 }
@@ -287,7 +287,7 @@ func TestWorkspaceLibraryApplyWithEveryHostMissingDoesNothing(t *testing.T) {
 	state.activeSection = sectionWorkspaces
 	template := mustWorkspaceTemplate(t, "Gone", []string{"host_deleted"}, 1)
 	state.templates = []WorkspaceTemplate{template}
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	workspaces, sessions, dials := len(state.deck.Workspaces(nil)), len(state.sessions), len(world.configs)
 
 	state.Click(hitWorkspaceTemplateOpen.At(0))
@@ -307,7 +307,7 @@ func TestWorkspaceLibraryApplyWithPartialHostsLaunchesTheRest(t *testing.T) {
 	state.activeSection = sectionWorkspaces
 	template := mustWorkspaceTemplate(t, "Mixed", []string{workspaceHostCatalogID(t, state, "Production"), "host_deleted"}, 2)
 	state.templates = []WorkspaceTemplate{template}
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 
 	state.Click(hitWorkspaceTemplateOpen.At(0))
 

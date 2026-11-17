@@ -128,15 +128,23 @@ type cacheEntry struct {
 	height int
 }
 
-// maxPixelBytes bounds the pixel buffers the server can make the client hold.
+// maxSurfaceBytes bounds the pixel buffers the server can make the client hold
+// in surfaces.
 //
-// Every buffer here is sized from numbers the server chooses, and MS-RDPEGFX
+// Every surface is sized from numbers the server chooses, and MS-RDPEGFX
 // carries them in 16 bits: a 20-byte CreateSurface PDU can name a surface of
 // 60471 by 12338 pixels, which is 2.8 GiB, and 256 surfaces fit in the count
 // limit. The session frame buffer tops out at 7680x7680 (236 MiB, see
 // maxSize in internal/desktop/rdp), and a surface may be larger than the output
 // it is scaled into, so the budget admits a few of those and no more.
-const maxPixelBytes = 512 << 20
+const maxSurfaceBytes = 512 << 20
+
+// maxCacheBytes is the bitmap cache ceiling of a client that did not ask for a
+// small cache: MS-RDPEGFX 3.3.1.4 makes it 100 MB, and a conforming client
+// drops a connection that exceeds it. This client evicts entries instead. The
+// cache has its own budget: sharing the surface budget let one session hold
+// 512 MB of cache alone.
+const maxCacheBytes = 100 << 20
 
 // maxCacheEntries bounds how many bitmaps the cache holds: the server picks the
 // slots, and each entry is a copy of a surface region.
@@ -157,7 +165,8 @@ type Handler struct {
 	surfaces        map[uint16]*Surface
 	outputMap       map[uint16][2]int      // surfaceID → (screenX, screenY)
 	cache           map[uint16]*cacheEntry // slot → cached bitmap
-	pixelBytes      int                    // surfaces and cache entries, see maxPixelBytes
+	surfaceBytes    int                    // surfaces, see maxSurfaceBytes
+	cacheBytes      int                    // cache entries, see maxCacheBytes
 	framesDecoded   uint32
 	curFrameID      uint32
 	onBitmap        func(surfID uint16, x, y, w, h int, data []byte)
@@ -183,6 +192,9 @@ type Handler struct {
 	inFrame         bool
 	frameDirtyRects []dirtyRect
 	frameH264       []*H264Frame // H.264 frames batched during StartFrame..EndFrame
+	// frameProgressiveTiles is the set of tiles decoded in this frame. A region
+	// split over several PDUs reuses these tiles, never tiles from an older frame.
+	frameProgressiveTiles map[uint16]map[[2]int]struct{}
 
 	// Asynchronous frame ACK — decouples ACK sending from writeMu
 	// contention so the receive goroutine isn't blocked waiting to write.
@@ -192,7 +204,6 @@ type Handler struct {
 	// Reusable buffers
 	decompBuf   []byte // ZGFX decompression output
 	codecBuf    []byte // codec decompression output
-	blitTmpBuf  []byte // temporary buffer for overlap-safe surface-to-surface blit
 	callbackBuf []byte // reusable buffer for onBitmap callback data
 
 }
@@ -201,14 +212,15 @@ type Handler struct {
 // sendFn is called to write data on the RDPGFX dynamic virtual channel.
 func NewHandler(sendFn func([]byte) error, log *slog.Logger) *Handler {
 	h := &Handler{
-		log:         log,
-		sendFn:      sendFn,
-		surfaces:    make(map[uint16]*Surface),
-		outputMap:   make(map[uint16][2]int),
-		cache:       make(map[uint16]*cacheEntry),
-		progressive: rfx.NewDecoder(log),
-		ackCh:       make(chan []byte, 32),
-		done:        make(chan struct{}),
+		log:                   log,
+		sendFn:                sendFn,
+		surfaces:              make(map[uint16]*Surface),
+		outputMap:             make(map[uint16][2]int),
+		cache:                 make(map[uint16]*cacheEntry),
+		progressive:           rfx.NewDecoder(log),
+		frameProgressiveTiles: make(map[uint16]map[[2]int]struct{}),
+		ackCh:                 make(chan []byte, 32),
+		done:                  make(chan struct{}),
 	}
 	// Send frame ACKs asynchronously — decoupled from writeMu so the
 	// receive goroutine isn't blocked waiting for a write slot.
@@ -238,16 +250,29 @@ func (h *Handler) Close() {
 	}
 }
 
-// fitsPixelBytes reports whether n more pixel bytes fit in the budget.
-func (h *Handler) fitsPixelBytes(n int) bool {
-	return n >= 0 && h.pixelBytes+n <= maxPixelBytes
+// fitsSurfaceBytes reports whether n more pixel bytes fit in the surface budget.
+func (h *Handler) fitsSurfaceBytes(n int) bool {
+	return n >= 0 && h.surfaceBytes+n <= maxSurfaceBytes
 }
 
-// givePixelBytes returns a buffer to the budget when it is dropped.
-func (h *Handler) givePixelBytes(n int) {
-	h.pixelBytes -= n
-	if h.pixelBytes < 0 {
-		h.pixelBytes = 0
+// giveSurfaceBytes returns a surface buffer to the budget when it is dropped.
+func (h *Handler) giveSurfaceBytes(n int) {
+	h.surfaceBytes -= n
+	if h.surfaceBytes < 0 {
+		h.surfaceBytes = 0
+	}
+}
+
+// fitsCacheBytes reports whether n more pixel bytes fit in the cache budget.
+func (h *Handler) fitsCacheBytes(n int) bool {
+	return n >= 0 && h.cacheBytes+n <= maxCacheBytes
+}
+
+// giveCacheBytes returns a cache entry to the budget when it is dropped.
+func (h *Handler) giveCacheBytes(n int) {
+	h.cacheBytes -= n
+	if h.cacheBytes < 0 {
+		h.cacheBytes = 0
 	}
 }
 
@@ -554,14 +579,14 @@ func (h *Handler) handleCreateSurface(data []byte) {
 	need := int64(w) * int64(hh) * 4
 	// The surface replaces the one already under its id, so that buffer goes
 	// back to the budget before the new one is counted.
-	held := int64(h.pixelBytes)
+	held := int64(h.surfaceBytes)
 	if replacing {
 		held -= int64(len(old.Data))
 	}
-	if held+need > maxPixelBytes {
-		h.log.LogAttrs(context.Background(), slog.LevelWarn, "surface exceeds the client's pixel budget, ignoring create",
+	if held+need > maxSurfaceBytes {
+		h.log.LogAttrs(context.Background(), slog.LevelWarn, "surface exceeds the client's surface budget, ignoring create",
 			slog.Int("surfaceId", int(surfId)), slog.Int("width", int(w)), slog.Int("height", int(hh)),
-			slog.Int64("bytes", need), slog.Int("budget", maxPixelBytes))
+			slog.Int64("bytes", need), slog.Int("budget", maxSurfaceBytes))
 		return
 	}
 
@@ -573,9 +598,9 @@ func (h *Handler) handleCreateSurface(data []byte) {
 		pixBuf[i] = 0xFF
 	}
 	if replacing {
-		h.givePixelBytes(len(old.Data))
+		h.giveSurfaceBytes(len(old.Data))
 	}
-	h.pixelBytes += int(need)
+	h.surfaceBytes += int(need)
 	h.surfaces[surfId] = &Surface{
 		ID:     surfId,
 		Width:  w,
@@ -591,7 +616,7 @@ func (h *Handler) handleDeleteSurface(data []byte) {
 	}
 	surfId := binary.LittleEndian.Uint16(data[0:2])
 	if surf := h.surfaces[surfId]; surf != nil {
-		h.givePixelBytes(len(surf.Data))
+		h.giveSurfaceBytes(len(surf.Data))
 	}
 	delete(h.surfaces, surfId)
 	delete(h.outputMap, surfId)
@@ -753,8 +778,17 @@ func (h *Handler) handleStartFrame(data []byte) {
 	h.frameStartMs = time.Now().UnixMilli()
 	h.inFrame = true
 	h.frameDirtyRects = h.frameDirtyRects[:0]
+	h.forgetFrameTiles()
 	clear(h.frameH264)
 	h.frameH264 = h.frameH264[:0]
+}
+
+// forgetFrameTiles empties the per-frame tile sets. It keeps their maps so the
+// next frame does not allocate them again.
+func (h *Handler) forgetFrameTiles() {
+	for _, tiles := range h.frameProgressiveTiles {
+		clear(tiles)
+	}
 }
 
 func (h *Handler) handleEndFrame(data []byte) {
@@ -1103,19 +1137,27 @@ func (h *Handler) handleWireToSurface2(data []byte) {
 	// clipped to avoid overwriting adjacent content (e.g. window pixels placed
 	// by a prior SurfaceToSurface).
 	//
-	// Per MS-RDPEGFX 3.3.8.1, ALL cached tiles overlapping region rects must
-	// be rendered — not only tiles decoded in this PDU. The server may split
-	// a progressive region across multiple WTS2 PDUs within a frame, sending
-	// each tile once but expecting the client to blit cached tiles from prior
-	// decodes against later region rects (e.g. tile at tileX=832 decoded in
-	// the first WTS2 must also be blitted for the second WTS2's region rect
-	// that covers x=852..896).
+	// The server may split a progressive region across WTS2 PDUs in one frame.
+	// Later PDUs re-blit tiles decoded earlier in that frame, but historical
+	// tiles must not overwrite newer drawing commands. A PDU outside
+	// StartFrame/EndFrame has no frame to share, so it reuses only the tiles it
+	// decodes itself.
+	if !h.inFrame {
+		h.forgetFrameTiles()
+	}
+	frameTiles := h.frameProgressiveTiles[surfId]
+	if frameTiles == nil {
+		frameTiles = make(map[[2]int]struct{})
+		h.frameProgressiveTiles[surfId] = frameTiles
+	}
 	dstStride := int(surf.Width) * 4
 	for _, region := range regions {
 		// Blit freshly decoded tiles and track which tile positions were decoded.
 		decodedSet := make(map[[2]int]struct{}, len(region.Tiles))
 		for _, tile := range region.Tiles {
-			decodedSet[[2]int{tile.X / 64, tile.Y / 64}] = struct{}{}
+			key := [2]int{tile.X / 64, tile.Y / 64}
+			decodedSet[key] = struct{}{}
+			frameTiles[key] = struct{}{}
 			tileRight := tile.X + 64
 			tileBottom := tile.Y + 64
 			for _, r := range region.Rects {
@@ -1169,6 +1211,9 @@ func (h *Handler) handleWireToSurface2(data []byte) {
 		cached := h.progressive.GetCachedTiles(uint32(surfId), bbL, bbT, bbR, bbB)
 		for _, ct := range cached {
 			key := [2]int{ct.X / 64, ct.Y / 64}
+			if _, ok := frameTiles[key]; !ok {
+				continue
+			}
 			if _, ok := decodedSet[key]; ok {
 				continue // already blitted from freshly decoded tiles
 			}
@@ -1238,16 +1283,19 @@ func (h *Handler) handleResetGraphics(data []byte) {
 	// monitorCount := binary.LittleEndian.Uint32(data[8:12])
 	// followed by monitor definitions, pad to 340 bytes
 
-	// Clear all surfaces, output maps, and progressive tile state.
+	// Clear all surfaces and output maps. The progressive decoder is kept:
+	// its tile context is not part of the graphics output, and Windows keeps
+	// sending UPGRADE tiles for a surface that it recreates after the reset
+	// without repeating the first pass's SYNC and CONTEXT blocks.
 	// NOTE: bitmap cache (h.cache) is NOT cleared — the server expects
 	// cached bitmaps to survive ResetGraphics and uses CacheToSurface
 	// immediately after creating the new surface.
 	for _, surf := range h.surfaces {
-		h.givePixelBytes(len(surf.Data))
+		h.giveSurfaceBytes(len(surf.Data))
 	}
 	clear(h.surfaces)
 	clear(h.outputMap)
-	h.progressive = rfx.NewDecoder(h.log)
+	clear(h.frameProgressiveTiles)
 	h.frameDirtyRects = h.frameDirtyRects[:0]
 	clear(h.frameH264)
 	h.frameH264 = h.frameH264[:0]
@@ -1372,25 +1420,25 @@ func (h *Handler) handleSurfaceToSurface(data []byte) {
 	dstStride := int(dstSurf.Width) * 4
 	rowBytes := w * 4
 
-	// For same-surface blits, copy source rect to temp buffer first to handle overlap.
+	// A same-surface blit can overlap itself. A single destination is copied
+	// row by row in the order that never overwrites a source row still to read,
+	// so it needs no copy of the source at all. Several destinations can write
+	// over the source of a later one, so only then is a copy kept, for the
+	// length of this PDU; it is not retained for the whole session.
+	direct := sameSurface && int(destPtsCount) == 1
 	var srcData []byte
 	var tmpStride int
-	if sameSurface {
-		need := rowBytes * hh
-		if cap(h.blitTmpBuf) < need {
-			h.blitTmpBuf = make([]byte, need)
-		}
-		h.blitTmpBuf = h.blitTmpBuf[:need]
-		clear(h.blitTmpBuf)
+	if sameSurface && int(destPtsCount) > 1 {
+		tmp := make([]byte, rowBytes*hh)
 		for row := 0; row < hh; row++ {
 			srcOff := (srcTop+row)*srcStride + srcLeft*4
 			if srcOff+rowBytes <= len(srcSurf.Data) {
-				copy(h.blitTmpBuf[row*rowBytes:], srcSurf.Data[srcOff:srcOff+rowBytes])
+				copy(tmp[row*rowBytes:], srcSurf.Data[srcOff:srcOff+rowBytes])
 			}
 		}
-		srcData = h.blitTmpBuf
+		srcData = tmp
 		tmpStride = rowBytes
-	} else {
+	} else if !sameSurface {
 		srcData = srcSurf.Data
 		tmpStride = srcStride
 	}
@@ -1408,16 +1456,37 @@ func (h *Handler) handleSurfaceToSurface(data []byte) {
 			slog.Int("dstX", dstX), slog.Int("dstY", dstY),
 			slog.Int("dstRight", dstX+w), slog.Int("dstBottom", dstY+hh))
 
-		for row := 0; row < hh; row++ {
+		copyRow := func(row int) {
 			var srcOff int
 			if sameSurface {
-				srcOff = row * tmpStride
+				if direct {
+					srcOff = (srcTop+row)*srcStride + srcLeft*4
+				} else {
+					srcOff = row * tmpStride
+				}
 			} else {
 				srcOff = (srcTop+row)*tmpStride + srcLeft*4
 			}
 			dOff := (dstY+row)*dstStride + dstX*4
-			if srcOff+rowBytes <= len(srcData) && dOff+rowBytes <= len(dstSurf.Data) {
-				copy(dstSurf.Data[dOff:dOff+rowBytes], srcData[srcOff:srcOff+rowBytes])
+			var source []byte
+			if direct {
+				source = srcSurf.Data
+			} else {
+				source = srcData
+			}
+			if srcOff+rowBytes <= len(source) && dOff+rowBytes <= len(dstSurf.Data) {
+				copy(dstSurf.Data[dOff:dOff+rowBytes], source[srcOff:srcOff+rowBytes])
+			}
+		}
+		if direct && dstY > srcTop {
+			// Moving down: copy from the bottom, or a source row would be
+			// overwritten before it is read.
+			for row := hh - 1; row >= 0; row-- {
+				copyRow(row)
+			}
+		} else {
+			for row := 0; row < hh; row++ {
+				copyRow(row)
 			}
 		}
 
@@ -1474,13 +1543,13 @@ func (h *Handler) handleSurfaceToCache(data []byte) {
 	// Cap cache entries and pixel bytes to prevent unbounded memory growth: the
 	// old entry under this slot and then other entries make room.
 	if old := h.cache[cacheSlot]; old != nil {
-		h.givePixelBytes(len(old.data))
+		h.giveCacheBytes(len(old.data))
 		delete(h.cache, cacheSlot)
 	}
-	for len(h.cache) >= maxCacheEntries || !h.fitsPixelBytes(len(pixBuf)) {
+	for len(h.cache) >= maxCacheEntries || !h.fitsCacheBytes(len(pixBuf)) {
 		evicted := false
 		for k, entry := range h.cache {
-			h.givePixelBytes(len(entry.data))
+			h.giveCacheBytes(len(entry.data))
 			delete(h.cache, k)
 			evicted = true
 			break
@@ -1489,12 +1558,12 @@ func (h *Handler) handleSurfaceToCache(data []byte) {
 			break
 		}
 	}
-	if !h.fitsPixelBytes(len(pixBuf)) {
-		h.log.LogAttrs(context.Background(), slog.LevelWarn, "bitmap cache would exceed the client's pixel budget, not caching",
-			slog.Int("cacheSlot", int(cacheSlot)), slog.Int("bytes", len(pixBuf)), slog.Int("budget", maxPixelBytes))
+	if !h.fitsCacheBytes(len(pixBuf)) {
+		h.log.LogAttrs(context.Background(), slog.LevelWarn, "bitmap cache would exceed the client's cache budget, not caching",
+			slog.Int("cacheSlot", int(cacheSlot)), slog.Int("bytes", len(pixBuf)), slog.Int("budget", maxCacheBytes))
 		return
 	}
-	h.pixelBytes += len(pixBuf)
+	h.cacheBytes += len(pixBuf)
 	h.cache[cacheSlot] = &cacheEntry{data: pixBuf, width: w, height: hh}
 
 	h.log.LogAttrs(context.Background(), slog.LevelDebug, "SurfaceToCache",
@@ -1653,7 +1722,7 @@ func (h *Handler) handleEvictCacheEntry(data []byte) {
 	}
 	cacheSlot := binary.LittleEndian.Uint16(data[0:2])
 	if entry := h.cache[cacheSlot]; entry != nil {
-		h.givePixelBytes(len(entry.data))
+		h.giveCacheBytes(len(entry.data))
 	}
 	delete(h.cache, cacheSlot)
 }

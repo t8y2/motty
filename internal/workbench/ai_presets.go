@@ -4,8 +4,8 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/store"
 	"motty/internal/i18n"
 	"motty/internal/workbench/icons"
@@ -16,7 +16,7 @@ import (
 // nothing.
 type aiPreset struct {
 	label string
-	icon  ui.Icon
+	icon  gfx.Icon
 	kind  string
 	url   string
 	// urlZH is the address for the Chinese interface when the vendor runs a
@@ -37,6 +37,8 @@ var aiPresets = [...]aiPreset{
 	{label: "Claude Code CLI", icon: icons.AiClaude, kind: store.KindClaudeCLI},
 	{label: "Codex CLI", icon: icons.AiOpenai, kind: store.KindCodexCLI},
 	{label: "OpenCode CLI", icon: icons.Terminal, kind: store.KindOpenCodeCLI},
+	{label: "Pi CLI", icon: icons.Bot, kind: store.KindPiCLI},
+	{label: "Qoder CLI", icon: icons.Terminal, kind: store.KindQoderCLI},
 	{icon: icons.Plug, kind: store.KindOpenAI}, // custom
 }
 
@@ -72,6 +74,8 @@ func (state *State) aiChoosePreset(index int) {
 	}
 	cfg.baseURL.SetSelection(text.Range{Start: 0, End: cfg.baseURL.RuneCount()})
 	cfg.baseURL.Insert(preset.address(state.language))
+	cfg.modelsURL.SetSelection(text.Range{Start: 0, End: cfg.modelsURL.RuneCount()})
+	cfg.modelsURL.Insert("")
 	if store.IsCLIKind(preset.kind) {
 		if cfg.preset != index {
 			// A path belongs to one CLI executable, not to the preset slot.
@@ -145,6 +149,6 @@ func aiHost(address string) string {
 
 // aiProviderIcon is the mark shown for a saved provider: its preset's, or the
 // gear of the custom entry.
-func aiProviderIcon(provider store.Provider) ui.Icon {
+func aiProviderIcon(provider store.Provider) gfx.Icon {
 	return aiPresets[aiPresetOf(provider)].icon
 }

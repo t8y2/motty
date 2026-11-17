@@ -1,0 +1,88 @@
+# End to end: the terminal toolbar's snippet picker folds its groups and sends a
+# typed command to the current terminal, to every terminal, or to the ticked
+# ones. Against the loopback SSH fixture:
+#
+#   (cd tools/e2esshd && go build -o /tmp/e2esshd . && E2E_ALLOW_EXEC=1 /tmp/e2esshd 22601 &)
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/snippet_send_e2e.txt
+#
+# What to look for:
+# - The picker opens with "Ops" and "Dev" closed; opening "Ops" lists its snippet.
+# - "current-42" appears once, "all-42" in both panes, "chosen-42" in the pane
+#   that was ticked only.
+
+click "Search"
+type tester@127.0.0.1:22601
+click "Connect"
+waitfor "Trust" 3000
+click "Trust and Save"
+waitfor "Password" 3000
+type secret
+key enter
+waitfor "tester@e2e" 8000
+
+click "Hosts"
+click "Snippets"
+waitfor "No snippets" 3000
+click "Add snippet"
+waitfor "Add a snippet" 3000
+type Say hello
+key tab
+type echo hello-$((6*7))
+key tab
+type Ops
+key enter
+click "Save"
+click "Add snippet"
+waitfor "Add a snippet" 3000
+type Disk
+key tab
+type df -h
+key tab
+type Dev
+key enter
+click "Save"
+
+click "127.0.0.1:22601"
+settle 300
+click "Split Down"
+waitfor "tester@e2e" 4000
+settle 800
+
+click "Send a snippet"
+waitfor "Search snippets" 3000
+shot /tmp/snippet-send-1.png
+click "Ops"
+waitfor "Say hello" 2000
+shot /tmp/snippet-send-2.png
+
+# Current terminal.
+click "Send a command"
+type echo current-$((6*7))
+key enter
+waitfor "current-42" 4000
+texts
+
+# Every terminal.
+click "Send a snippet"
+waitfor "Search snippets" 3000
+click "All"
+click "Send a command"
+type echo all-$((6*7))
+key enter
+wait 1500
+texts
+
+# Chosen terminals only.
+click "Send a snippet"
+waitfor "Search snippets" 3000
+click "Choose"
+waitfor "Search connected" 3000
+shot /tmp/snippet-send-3.png
+click "127.0.0.1:22601-2"
+shot /tmp/snippet-send-4.png
+click "Send a command"
+type echo chosen-$((6*7))
+key enter
+wait 1500
+texts

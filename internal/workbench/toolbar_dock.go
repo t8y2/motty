@@ -5,7 +5,7 @@ import (
 	"slices"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 type toolbarDockZone string
@@ -90,16 +90,43 @@ func (prefs *toolbarPreferences) restoreDock(saved []toolbarDockEntry) {
 		}
 		prefs.dock = append(prefs.dock, entry)
 	}
+	// A terminal tool added by an upgrade follows the side the user's existing
+	// terminal tools use; the group setting is not consulted here because it is
+	// restored after the layout.
+	missingZone := func(group toolbarGroup) toolbarDockZone {
+		if group == toolbarTerminal {
+			for _, placed := range prefs.dock {
+				if placed.Group != toolbarTerminal {
+					continue
+				}
+				switch {
+				case toolbarDockLeft(placed.Zone):
+					return toolbarDockLeftTop
+				case toolbarDockVertical(placed.Zone):
+					return toolbarDockSideTop
+				}
+			}
+		}
+		return defaultToolbarDockZone(group)
+	}
 	for group := toolbarWindow; group <= toolbarTerminal; group++ {
 		for _, entry := range prefs.entries(group) {
-			if !slices.ContainsFunc(prefs.dock, func(other toolbarDockEntry) bool { return other.Group == group && other.Key == entry.Key }) {
-				prefs.dock = append(prefs.dock, toolbarDockEntry{group, entry.Key, defaultToolbarDockZone(group)})
+			if slices.ContainsFunc(prefs.dock, func(other toolbarDockEntry) bool { return other.Group == group && other.Key == entry.Key }) {
+				continue
 			}
+			placed := toolbarDockEntry{group, entry.Key, missingZone(group)}
+			// The latency readout used to sit at the top of the rail; keep it
+			// ahead of the actions it was pinned above.
+			if group == toolbarTerminal && entry.Key == "latency" {
+				prefs.dock = slices.Insert(prefs.dock, 0, placed)
+				continue
+			}
+			prefs.dock = append(prefs.dock, placed)
 		}
 	}
 }
 
-func toolbarDockIdentity(id ui.ID) (toolbarDockEntry, bool) {
+func toolbarDockIdentity(id gfx.ID) (toolbarDockEntry, bool) {
 	for group := toolbarWindow; group <= toolbarTerminal; group++ {
 		for _, spec := range toolbarCatalog[group] {
 			if spec.id == id {
@@ -136,8 +163,23 @@ func (state *State) windowDockTool(spec toolbarSpec) barTool {
 func (state *State) toolbarDockTools(zone toolbarDockZone, dst *[maxBarTools]barTool) []barTool {
 	var terminal [maxBarTools]barTool
 	var terminalTools []barTool
-	if session, ok := state.terminalSideRailSession(); ok {
+	if session, active := state.toolbarRailSession(); session != nil {
 		terminalTools = state.activeTerminalTools(session, &terminal)
+		if !active {
+			// Focus rests on a pane with no terminal of its own. Keep the live
+			// pane's tools in their places, disabled: the rail belongs to the
+			// workspace and its actions cannot address the restored pane. The
+			// latency readout describes the live terminal, so it stays out.
+			terminalTools = slices.DeleteFunc(terminalTools, func(tool barTool) bool {
+				return tool.id == hitToolbarLatency
+			})
+			for index := range terminalTools {
+				terminalTools[index].disabled = true
+			}
+		}
+	} else if state.noteSidebarVisible() {
+		// Restored/disconnected sessions still need the action that closes the browser.
+		terminalTools = append(terminal[:0], barTool{id: hitNotesPanel, icon: iconNotebook, hint: state.noteText("Notes", "笔记"), style: iconButtonActive})
 	}
 	tools := dst[:0]
 	// Connection progress is a transient navigation action, not a customizable
@@ -202,7 +244,7 @@ func (state *State) toolbarDockTools(zone toolbarDockZone, dst *[maxBarTools]bar
 	if zone == state.defaultToolbarDockZone(toolbarTerminal) && !state.toolbarVisible(toolbarTerminal, hitLocalProxyOpen) {
 		if session, ok := state.terminalSideRailSession(); ok {
 			if snapshot := state.localProxySnapshot(session); snapshot.Phase == localProxyConnecting || snapshot.Phase == localProxyConnected || snapshot.Phase == localProxyFailed {
-				tool := barTool{id: hitLocalProxyOpen, icon: iconGlobe, hint: state.messages.LocalProxy.Title, style: iconButtonActive}
+				tool := barTool{id: hitLocalProxyOpen, icon: iconLocalProxy, hint: state.messages.LocalProxy.Title, style: iconButtonActive}
 				if snapshot.Phase == localProxyConnected && snapshot.RemotePort != 0 {
 					tool.hint = fmt.Sprintf(state.messages.LocalProxy.ConnectedFmt, snapshot.RemotePort)
 				}
@@ -213,7 +255,7 @@ func (state *State) toolbarDockTools(zone toolbarDockZone, dst *[maxBarTools]bar
 	return tools
 }
 
-func (state *State) moveToolbarDockTool(id ui.ID, zone toolbarDockZone, before ui.ID) {
+func (state *State) moveToolbarDockTool(id gfx.ID, zone toolbarDockZone, before gfx.ID) {
 	entry, ok := toolbarDockIdentity(id)
 	if !ok || id == before || !slices.Contains(toolbarDockZones[:], zone) {
 		return
@@ -250,6 +292,9 @@ func (state *State) moveToolbarDockTool(id ui.ID, zone toolbarDockZone, before u
 }
 
 func (state *State) toolbarDockChanged() {
+	// The layout entry is only a mirror of the Show latency preference; keep it
+	// equal so the customize list and the saved layout never disagree.
+	state.syncLatencyToolbarEntry()
 	state.chrome.geometry.valid = false
 	state.toolbarDock.sideScroll = [4]float32{}
 	state.toolbarDock.bottomScroll = [2]float32{}

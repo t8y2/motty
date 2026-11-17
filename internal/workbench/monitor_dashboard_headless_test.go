@@ -13,8 +13,8 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/monitoring"
 	"motty/internal/remotestats"
@@ -132,13 +132,13 @@ func TestDashboardHeaderActionsFitTheirLabels(t *testing.T) {
 			theme.Metrics.ControlHeight = 36
 			for _, action := range []struct {
 				label string
-				icon  ui.Icon
+				icon  gfx.Icon
 			}{{m.New, icons.Plus}, {m.Start, icons.Play}} {
 				hit, ok := view.Hit(action.label)
 				if !ok {
 					t.Fatalf("%q has no header action", action.label)
 				}
-				need := components.BeginButton(&ui.Canvas{}, theme, ui.ID{}, ui.Rect{}).WithIcon(action.icon).SizeToFit(action.label).BoundsWidth()
+				need := components.BeginButton(&gfx.Canvas{}, theme, gfx.ID{}, gfx.Rect{}).WithIcon(action.icon).SizeToFit(action.label).BoundsWidth()
 				if hit.Bounds.Width+0.5 < need {
 					t.Fatalf("%q needs %.1fpx in a %.1fpx button: the label is clipped", action.label, need, hit.Bounds.Width)
 				}
@@ -190,7 +190,7 @@ func TestDashboardNativeSelectsAndHostCards(t *testing.T) {
 		t.Fatal(err)
 	}
 	card, ok := view.Hit("web")
-	if !ok || card.Role != ui.RoleCheckbox || card.Bounds.Width < 180 {
+	if !ok || card.Role != gfx.RoleCheckbox || card.Bounds.Width < 180 {
 		t.Fatalf("host card is not one accessible checkbox: %+v", card)
 	}
 	// Clicking the avatar side of the card must work like its checkbox.
@@ -223,13 +223,13 @@ func TestDashboardNativeSelectsAndHostCards(t *testing.T) {
 		t.Fatal("the panel note must stay in the editor, not the page header")
 	}
 	for _, label := range []string{m.Simple, m.Detailed} {
-		if hit, ok := view.Hit(label); !ok || hit.Role != ui.RoleTab {
+		if hit, ok := view.Hit(label); !ok || hit.Role != gfx.RoleTab {
 			t.Fatal("view modes must use Viva Tabs")
 		}
 	}
 	for _, label := range []string{m.Title, m.Sampling, m.Retention} {
 		hit, ok := view.Hit(label)
-		if !ok || hit.Role != ui.RoleCombobox {
+		if !ok || hit.Role != gfx.RoleCombobox {
 			t.Fatalf("%q is not a Viva select: %+v", label, hit)
 		}
 	}
@@ -246,7 +246,7 @@ func TestDashboardNativeSelectsAndHostCards(t *testing.T) {
 		t.Fatal(err)
 	}
 	click(m.Title)
-	if hit, ok := view.Hit("生产环境"); !ok || hit.Role != ui.RoleOption {
+	if hit, ok := view.Hit("生产环境"); !ok || hit.Role != gfx.RoleOption {
 		t.Fatalf("panel dropdown option is absent: %+v", hit)
 	}
 	shot("dashboard-panel-select")
@@ -448,7 +448,7 @@ func TestDashboardNativeGroupedPickerPreservesFilteredSelection(t *testing.T) {
 		t.Fatal("group select option is missing")
 	}
 	beforeScroll := s.dashboard.editor.scroll
-	if err := view.Scroll(ui.ScrollEvent{X: option.Bounds.X + 10, Y: option.Bounds.Y + 10, DeltaY: 80}); err != nil {
+	if err := view.Scroll(gfx.ScrollEvent{X: option.Bounds.X + 10, Y: option.Bounds.Y + 10, DeltaY: 80}); err != nil {
 		t.Fatal(err)
 	}
 	if s.dashboard.editor.scroll != beforeScroll {

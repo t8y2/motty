@@ -1,0 +1,45 @@
+# Sort the snippets table without changing which command a row sends.
+
+click "Hosts"
+click "Snippets"
+click "Add snippet"
+waitfor "Add a snippet" 3000
+type Zulu
+key tab
+type echo zulu
+click "Save"
+click "Add snippet"
+waitfor "Add a snippet" 3000
+type Alpha
+key tab
+type echo alpha
+click "Save"
+click id:snippets/snippet-sort/#0
+expect layout clean
+shot /tmp/motty-issue574-snippets-ascending.png
+tree
+rightclick id:snippets/snippet-row/#0
+click "Move down"
+expect layout clean
+tree
+down 240 225
+move 240 189
+up 240 189
+expect layout clean
+tree
+click "Add snippet"
+waitfor "Add a snippet" 3000
+type Multi
+key tab
+type echo first
+key enter
+type echo second
+click "Save"
+expect layout clean
+texts
+shot /tmp/motty-issue574-snippets-manual-multiline.png
+tree
+click id:snippets/snippet-sort/#0
+expect layout clean
+shot /tmp/motty-issue574-snippets-descending.png
+tree

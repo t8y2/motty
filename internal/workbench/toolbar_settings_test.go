@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func TestToolbarDefaultsAndAllOffSurvivePersistence(t *testing.T) {
@@ -17,8 +17,10 @@ func TestToolbarDefaultsAndAllOffSurvivePersistence(t *testing.T) {
 	}
 	for group := toolbarWindow; group <= toolbarSFTP; group++ {
 		for _, entry := range state.toolbars.entries(group) {
-			if !entry.Enabled {
-				t.Fatal("a default entry was hidden")
+			// The latency readout owns its own switch and starts hidden.
+			want := !(group == toolbarTerminal && entry.Key == "latency")
+			if entry.Enabled != want {
+				t.Fatalf("default entry %q enabled=%v, want %v", entry.Key, entry.Enabled, want)
 			}
 		}
 		state.openToolbarSettings(group)
@@ -67,6 +69,27 @@ func TestToolbarRestoreIgnoresUnknownAndDuplicateKeys(t *testing.T) {
 	}
 }
 
+func TestToolbarRestoreReturnsTheLatencyReadoutToTheRailTop(t *testing.T) {
+	entries := normalizeToolbar(toolbarTerminal, []toolbarEntry{{Key: "notes", Enabled: true}, {Key: "files", Enabled: false}})
+	if len(entries) != len(toolbarCatalog[toolbarTerminal]) || entries[0].Key != "latency" || entries[0].Enabled {
+		t.Fatalf("migrated terminal layout = %+v", entries)
+	}
+
+	// A saved dock keeps the side the user's own terminal tools use.
+	var prefs toolbarPreferences
+	prefs.restore(&savedToolbars{
+		Terminal: []toolbarEntry{{Key: "notes", Enabled: true}},
+		Dock:     []toolbarDockEntry{{toolbarTerminal, "notes", toolbarDockLeftBottom}},
+	})
+	if prefs.layouts[toolbarTerminal][0].Key != "latency" {
+		t.Fatalf("layout did not lead with the readout: %+v", prefs.layouts[toolbarTerminal])
+	}
+	first := prefs.dock[0]
+	if first.Group != toolbarTerminal || first.Key != "latency" || first.Zone != toolbarDockLeftTop {
+		t.Fatalf("migrated dock = %+v", prefs.dock)
+	}
+}
+
 func TestToolbarOrderAndResetAreRestoredByANewState(t *testing.T) {
 	options := testOptions(t)
 	state := newTestState(t, options)
@@ -100,8 +123,17 @@ func TestToolbarOrderAndResetAreRestoredByANewState(t *testing.T) {
 
 func TestToolbarAllOffHidesOnlyEntriesAndResetRestoresThem(t *testing.T) {
 	state, _, _, _ := openTestSFTP(t)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	// Older versions allowed hiding the title controls through toolbar settings.
+	state.toolbars.restore(&savedToolbars{SFTP: []toolbarEntry{
+		{Key: "panel-side", Enabled: false}, {Key: "close", Enabled: false},
+	}})
+	for _, entry := range state.toolbars.entries(toolbarSFTP) {
+		if entry.Key == "panel-side" || entry.Key == "close" {
+			t.Fatal("panel title controls remain in toolbar customization")
+		}
+	}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	if _, ok := hitByID(&canvas, hitWindowSettings); !ok {
 		t.Fatal("window toolbar fixture was not shown")
@@ -130,6 +162,14 @@ func TestToolbarAllOffHidesOnlyEntriesAndResetRestoresThem(t *testing.T) {
 	if _, ok := hitByID(&canvas, contextID(hitSFTPUp)); !ok {
 		t.Fatal("configuring the header removed path navigation")
 	}
+	for _, id := range []gfx.ID{hitSFTPPanelSide, hitSFTPClose} {
+		if _, ok := hitByID(&canvas, contextID(id)); !ok {
+			t.Fatal("toolbar visibility hid a panel title control")
+		}
+		if sftpToolbarMenuSource(id) {
+			t.Fatal("a panel title control still offers toolbar customization")
+		}
+	}
 	for group := toolbarWindow; group <= toolbarSFTP; group++ {
 		state.openToolbarSettings(group)
 		state.clickToolbarSettings(hitToolbarReset)
@@ -156,15 +196,15 @@ func TestToolbarCustomOrderAppearsInTheThreeRealToolbars(t *testing.T) {
 		t.Fatal(err)
 	}
 	state.toolbars.restore(saved.Toolbars)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	for _, pair := range []struct {
-		first, second ui.ID
+		first, second gfx.ID
 		horizontal    bool
 	}{
 		{hitWindowSettings, hitTransferCenter, true},
 		{hitSFTPOpen, hitConnExport, false},
-		{contextID(hitSFTPClose), contextID(hitSFTPUpload), true},
+		{contextID(hitSFTPFollowToggle), contextID(hitSFTPUpload), true},
 	} {
 		first, firstOK := hitByID(&canvas, pair.first)
 		second, secondOK := hitByID(&canvas, pair.second)
@@ -193,10 +233,10 @@ func TestTerminalToolbarDefaultOrderMatchesTheRail(t *testing.T) {
 		}
 	}
 	want := []string{
-		"close-pane", "broadcast", "snippets",
+		"notes", "close-pane", "broadcast", "snippets",
 		"split-horizontal", "split-vertical",
 		"record", "export-recording", "save-output", "export-log",
-		"resources", "files", "local-proxy", "file-transfer", "remote-tools",
+		"resources", "files", "local-proxy", "file-transfer", "remote-tools", "remote-logs",
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("terminal toolbar order = %v, want %v", got, want)
@@ -205,12 +245,12 @@ func TestTerminalToolbarDefaultOrderMatchesTheRail(t *testing.T) {
 
 func TestToolbarSettingsPaintReusesItsLabelsAndRows(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	for group := toolbarWindow; group <= toolbarSFTP; group++ {
 		state.openToolbarSettings(group)
 		paint := func() {
 			canvas.Reset()
-			state.Paint(&canvas, ui.Size{Width: 1200, Height: 900})
+			state.Paint(&canvas, gfx.Size{Width: 1200, Height: 900})
 		}
 		paint()
 		if allocations := testing.AllocsPerRun(100, paint); allocations != 0 {
@@ -223,8 +263,8 @@ func TestToolbarSettingsPaintReusesItsLabelsAndRows(t *testing.T) {
 // geometry cached for the old button count must not outlive the change.
 func TestWindowToolbarChangesRelayoutTheTabStrip(t *testing.T) {
 	state, _ := manyTabs(t, 30)
-	size := ui.Size{Width: 1200, Height: 800}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1200, Height: 800}
+	var canvas gfx.Canvas
 	paint := func() {
 		canvas.Reset()
 		state.Paint(&canvas, size)

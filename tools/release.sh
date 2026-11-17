@@ -11,7 +11,7 @@
 #
 # --sums is the last step of a release, and the gate in front of publishing it:
 # it signs the whole matrix, writes SHA256SUMS, and then refuses the release
-# unless it carries exactly the fourteen assets of the matrix, SHA256SUMS matches
+# unless it carries exactly the eighteen assets of the matrix, SHA256SUMS matches
 # the files, every signature verifies against the key compiled into the app, the
 # title is "Motty <tag>", the release is still a draft, and its notes name the
 # expected Viva commit. --verify runs the same checks on a release without
@@ -108,6 +108,10 @@ release_assets() {
 	motty-$1-windows-amd64.zip
 	motty_$1_arm64.deb
 	motty_$1_amd64.deb
+	motty-$1-linux-arm64.PKGBUILD
+	motty-$1-linux-amd64.PKGBUILD
+	motty-$1-linux-arm64.SRCINFO
+	motty-$1-linux-amd64.SRCINFO
 	SHA256SUMS
 	SIGNATURES
 	EOF
@@ -295,6 +299,27 @@ git -C "$work/motty" checkout -q --detach "$commit"
 (cd "$work/viva" && go build -o "$work/viva-cli" ./cmd/viva)
 
 cd "$work/motty"
+# The Windows local terminal loads the bundled ConPTY pair from conpty/<arch>.
+# The same files go into the installer and the portable zip; OpenConsole.exe
+# matches the kernel architecture, so an x64 build also carries the arm64 host
+# for Windows on ARM.
+windows_conpty_files() {
+	case "$1" in
+	amd64) cat <<-'EOF'
+	internal/localshell/conpty/LICENSE.txt=conpty/LICENSE.txt
+	internal/localshell/conpty/x64/arm64/OpenConsole.exe=conpty/x64/arm64/OpenConsole.exe
+	internal/localshell/conpty/x64/conpty.dll=conpty/x64/conpty.dll
+	internal/localshell/conpty/x64/x64/OpenConsole.exe=conpty/x64/x64/OpenConsole.exe
+	EOF
+	;;
+	arm64) cat <<-'EOF'
+	internal/localshell/conpty/LICENSE.txt=conpty/LICENSE.txt
+	internal/localshell/conpty/arm64/arm64/OpenConsole.exe=conpty/arm64/arm64/OpenConsole.exe
+	internal/localshell/conpty/arm64/conpty.dll=conpty/arm64/conpty.dll
+	EOF
+	;;
+	esac
+}
 build_package() {
 	local target=$1 arch=$2 program
 	shift 2
@@ -308,9 +333,26 @@ build_package() {
 	# Windows executable is signed here, before the check reads its bytes.
 	[ "$target" != windows ] || "$work/viva-cli" sign --target windows --program "$program" || return
 	go run ./tools/checkbuild -program "$program" -revision "$commit" -time "$commit_time" -target "$target" -arch "$arch" || return
+	local -a conpty=() portable=()
+	if [ "$target" = windows ]; then
+		local entry
+		while IFS= read -r entry; do
+			conpty+=(--file "$entry")
+			portable+=(-file "$entry")
+		done < <(windows_conpty_files "$arch")
+		[ ${#conpty[@]} -gt 0 ] || { echo "   no conpty files for windows/$arch" >&2; return 1; }
+	fi
 	# The portable copy holds these same signed bytes (see internal/datadir).
-	[ "$target" != windows ] || go run ./tools/portablezip -program "$program" -time "$commit_time" -o "$out/motty-$version-windows-$arch.zip" || return
-	"$work/viva-cli" package --target "$target" --arch "$arch" --program "$program" "$@"
+	if [ "$target" = windows ]; then
+		go run ./tools/portablezip -program "$program" -time "$commit_time" \
+			-o "$out/motty-$version-windows-$arch.zip" "${portable[@]+"${portable[@]}"}" || return
+		unzip -l "$out/motty-$version-windows-$arch.zip" > "$work/zip-list-$arch.txt" || return
+		if ! grep -q ' conpty/' "$work/zip-list-$arch.txt"; then
+			echo "   the portable zip is missing its conpty files" >&2
+			return 1
+		fi
+	fi
+	"$work/viva-cli" package --target "$target" --arch "$arch" --program "$program" "${conpty[@]+"${conpty[@]}"}" "$@"
 }
 package() { build_package "$@" 2>&1 | sed 's/^/   /'; }
 
@@ -323,8 +365,29 @@ if want mac; then
 fi
 if want linux; then
 	echo "== Linux"
+	# The PKGBUILD installs the released tar.gz; its source URL names the exact
+	# asset of this release, or the version-less mirror copy when there is no
+	# repository to name (a local build).
+	release_repo=${GITHUB_REPOSITORY:-}
+	if [ -z "$release_repo" ]; then
+		release_repo=$(git -C "$here" remote get-url origin 2>/dev/null \
+			| sed -E 's#(git@|https://)github.com[:/]([^/]+/[^/]+?)(\.git)?$#\2#')
+	fi
 	for arch in amd64 arm64; do
 		package linux "$arch" --format tar.gz,deb -o "$out"
+		pkgbuild_dir=$work/pkgbuild-$arch
+		mkdir -p "$pkgbuild_dir"
+		if [ -n "$release_repo" ]; then
+			release_url="https://github.com/$release_repo/releases/download/v$version/motty-$version-linux-$arch.tar.gz"
+		else
+			release_url="https://dl.motty.page/releases/latest/motty-linux-$arch.tar.gz"
+		fi
+		"$work/viva-cli" package --target linux --arch "$arch" \
+			--program "$work/program-linux-$arch/motty" \
+			--format pkgbuild --pkgbuild-url "$release_url" -o "$pkgbuild_dir" \
+			|| return 1
+		cp "$pkgbuild_dir/PKGBUILD" "$out/motty-$version-linux-$arch.PKGBUILD"
+		cp "$pkgbuild_dir/.SRCINFO" "$out/motty-$version-linux-$arch.SRCINFO"
 	done
 fi
 if want windows; then
@@ -362,6 +425,10 @@ if [ "$strict" = 1 ]; then
 		have 'motty-*-linux-amd64.tar.gz'
 		have 'motty_*_arm64.deb'
 		have 'motty_*_amd64.deb'
+		have 'motty-*-linux-arm64.PKGBUILD'
+		have 'motty-*-linux-amd64.PKGBUILD'
+		have 'motty-*-linux-arm64.SRCINFO'
+		have 'motty-*-linux-amd64.SRCINFO'
 	fi
 	if want windows; then
 		have 'motty-*-windows-amd64-setup.exe'

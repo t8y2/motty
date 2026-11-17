@@ -2,53 +2,47 @@ package sshconn
 
 import (
 	"context"
+	"errors"
 	"path"
 	"strings"
-	"time"
-
-	"golang.org/x/crypto/ssh"
 
 	"motty/internal/shellkind"
 )
 
-const shellIntegrationProbe = `printf '\036motty-shell:%s\037' "$SHELL"`
+const shellIntegrationProbe = `printf '\036motty-shell:%s\037\n' "$SHELL"`
 
-func (conn *Conn) shellIntegrationCommand(token, directory string) string {
-	ctx, cancel := context.WithTimeout(conn.ctx, 2*time.Second)
-	defer cancel()
-	data, err := conn.RunCommand(ctx, shellIntegrationProbe, 4096)
-	if err != nil {
-		return ""
+// shellProbe asks the login shell what it is: its path for the integration
+// script, and the family for callers that type commands into it. It runs on a
+// command session opened after the interactive shell, never before it.
+const shellProbe = shellIntegrationProbe + `
+echo "motty-shell:$PSVersionTable$FISH_VERSION"`
+
+// ProbeShell learns the server's login shell over a command session. It must be
+// called only after the interactive shell session is open: on the first session
+// of a connection it would consume the login message (ADR 0025). A gateway whose
+// banner does not name a full server is not asked at all, and a refusal is
+// reported to the connection the way every optional probe is.
+func (conn *Conn) ProbeShell(ctx context.Context) (path string, kind shellkind.Kind) {
+	if conn.config.InteractiveOnly || !standardImplementation(conn.Status().ServerVersion) {
+		return "", shellkind.Unknown
 	}
+	probes := conn.probeState()
+	probes.begin()
+	data, err := conn.RunCommand(ctx, shellProbe, 4096)
+	probes.end(err)
+	if err != nil {
+		return "", shellkind.Unknown
+	}
+	kind = shellkind.ParseProbe(string(data))
 	_, value, ok := strings.Cut(string(data), "\x1emotty-shell:")
 	if !ok {
-		return ""
+		return "", kind
 	}
 	shell, _, ok := strings.Cut(value, "\x1f")
 	if !ok {
-		return ""
+		return "", kind
 	}
-	return integrationCommandIn(shell, directory, token)
-}
-
-// defaultShellKind asks the server's default shell what it is, once per client:
-// a command channel runs in the same shell an interactive session starts. A host
-// that does not answer in time stays Unknown, and nothing is cached, so the next
-// shell asks again.
-func (conn *Conn) defaultShellKind(client *ssh.Client) shellkind.Kind {
-	conn.kindMu.Lock()
-	defer conn.kindMu.Unlock()
-	if conn.kindClient == client {
-		return conn.kind
-	}
-	ctx, cancel := context.WithTimeout(conn.ctx, 2*time.Second)
-	defer cancel()
-	data, err := conn.RunCommand(ctx, shellkind.Probe, 4096)
-	if err != nil {
-		return shellkind.Unknown
-	}
-	conn.kindClient, conn.kind = client, shellkind.ParseProbe(string(data))
-	return conn.kind
+	return shell, kind
 }
 
 // IntegrationArgs is how a shell of this machine starts with directory and
@@ -60,6 +54,98 @@ func IntegrationArgs(shell, token string) []string {
 		return nil
 	}
 	return []string{"-c", script, "sh", shell}
+}
+
+// IntegrationReadyMarker ends an injected integration script. It is a private
+// OSC string: the terminal drops it while the script's echo is hidden, and
+// nothing else interprets it.
+func IntegrationReadyMarker(token string) []byte {
+	return []byte("\x1b]7777;motty-ready;" + token + "\x07")
+}
+
+// integrationSuffix binds an OSC 133 report to the shell this connection
+// started. The terminal parser accepts a report only with this suffix.
+const integrationSuffix = ";motty="
+
+// IntegrationCommandStartMarker reports the start of a command line, as the
+// injected Bash and Zsh integration scripts print it. The token binds the
+// report to the shell this connection started, so a program cannot fake it.
+func IntegrationCommandStartMarker(token string) []byte {
+	return []byte("\x1b]133;C" + integrationSuffix + token + "\x07")
+}
+
+// UploadIntegration writes the shell integration to a private temporary file
+// on the server and returns the short line that activates it in the running
+// shell. The file goes over a command session, not the pty: a terminal's
+// canonical input buffer is a few kilobytes, and a script typed into it would
+// be truncated. The activation line is small enough for the pty and is history
+// guarded:
+//
+//   - Bash turns history off before sourcing the file, restores it afterwards
+//     and removes the one line Bash recorded before the guard ran.
+//   - Zsh pushes an anonymous history list and pops it after the file.
+//
+// The file starts the shell in directory when it names an existing absolute
+// path, and removes itself in the activation line.
+func (conn *Conn) UploadIntegration(ctx context.Context, shellPath, token, directory string) (string, error) {
+	name := path.Base(shellPath)
+	if !validIntegrationToken(token) || (name != "bash" && name != "zsh") {
+		return "", errors.New("sshconn: shell does not support integration")
+	}
+	start := ""
+	if validStartDirectory(directory) {
+		start = "cd -- " + shellQuote(directory) + " 2>/dev/null\n"
+	}
+	var body string
+	if name == "bash" {
+		body = "_motty_runtime=$(mktemp -d \"${TMPDIR:-/tmp}/motty-inject.XXXXXXXX\") || _motty_runtime=\n" +
+			start + bashHooks(directoryReportFunction, false) + "\n"
+	} else {
+		body = start + zshIntegration(directoryReportFunction) + "\n"
+	}
+	body = strings.ReplaceAll(body, "__MOTTY_INPUT_TOKEN__", token)
+	body = strings.ReplaceAll(body, "__MOTTY_SUFFIX__", integrationSuffix+token)
+	// One command: create a private directory, print its path, and write the
+	// script from stdin. The path is the only output.
+	upload := `d=$(mktemp -d "${TMPDIR:-/tmp}/motty-shell.XXXXXXXX") || exit 1; chmod 700 "$d"; printf '%s\n' "$d"; umask 077; cat > "$d/init"`
+	probes := conn.probeState()
+	probes.begin()
+	output, err := conn.RunCommandInput(ctx, upload, []byte(body), 4096)
+	probes.end(err)
+	if err != nil {
+		return "", err
+	}
+	dir := strings.TrimSpace(string(output))
+	if !validStartDirectory(dir) {
+		return "", errors.New("sshconn: integration upload returned no directory")
+	}
+	return integrationActivation(name, token, dir+"/init", dir), nil
+}
+
+// integrationActivation is the short, history-guarded line written into the
+// running shell. The ready marker is on the last line that is still under the
+// history guard, so restoring history can never record it.
+func integrationActivation(name, token, file, dir string) string {
+	ready := "printf '\\033]7777;motty-ready;" + token + "\\007'"
+	// One line, read while history is off: sourcing, cleanup, dropping the one
+	// guard line the shell recorded, restoring the user's history, and the ready
+	// marker. Bash may prompt between physical lines, so keeping the install on
+	// one line leaves at most one prompt before the marker.
+	install := ". " + shellQuote(file) + "; rm -rf -- " + shellQuote(dir)
+	switch name {
+	case "bash":
+		// The first line turns history off; the shell records it before it
+		// runs. The last entry is deleted only when it is that line, so a shell
+		// that never recorded it (HISTCONTROL=ignorespace) keeps its history.
+		prune := `_motty_hist=$(HISTTIMEFORMAT= history 1); case $_motty_hist in *"_motty_hist_on="*) history -d "$(printf '%s\n' "$_motty_hist" | awk '{print $1}')" 2>/dev/null ;; esac; set -o history; unset _motty_hist`
+		return " _motty_hist_on=; if [[ -o history ]]; then _motty_hist_on=1; set +o history; fi\n" +
+			install + "; if [[ -n ${_motty_hist_on-} ]]; then " + prune + "; fi; unset _motty_hist_on; " + ready + "\n"
+	case "zsh":
+		// The leading space lets a shell with HIST_IGNORE_SPACE keep the one
+		// line it records out of its history; Zsh offers no entry deletion.
+		return " fc -p 2>/dev/null\n" + install + "; " + ready + "; fc -P 2>/dev/null\n"
+	}
+	return ""
 }
 
 // Only recognized Unix shells opt into the startup shim. The probe and shim
@@ -107,7 +193,7 @@ func integrationScriptWith(shell string, forceTrap bool, tokens ...string) strin
 		if !validIntegrationToken(tokens[0]) {
 			return ""
 		}
-		suffix = ";motty=" + tokens[0]
+		suffix = integrationSuffix + tokens[0]
 	}
 	if !strings.HasPrefix(shell, "/") || strings.IndexFunc(shell, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0 {
 		return ""
@@ -180,7 +266,7 @@ MOTTY_USER_ZDOTDIR=${ZDOTDIR-$HOME} MOTTY_USER_ZDOTDIR_SET=${ZDOTDIR+x} ZDOTDIR=
 `
 	}
 	script += "_motty_status=$?\nexit \"$_motty_status\"\n"
-	script = strings.ReplaceAll(script, "__MOTTY_INPUT_TOKEN__", strings.TrimPrefix(suffix, ";motty="))
+	script = strings.ReplaceAll(script, "__MOTTY_INPUT_TOKEN__", strings.TrimPrefix(suffix, integrationSuffix))
 	return strings.ReplaceAll(script, "__MOTTY_SUFFIX__", suffix)
 }
 
@@ -196,7 +282,7 @@ func WSLIntegrationScript(token, startDirectory string) string {
 	if token == "" || !validIntegrationToken(token) || !validVariableName(startDirectory) {
 		return ""
 	}
-	suffix := ";motty=" + token
+	suffix := integrationSuffix + token
 	return `_motty_cd=${` + startDirectory + `-}
 unset ` + startDirectory + `
 if [ -n "$_motty_cd" ]; then
@@ -250,7 +336,12 @@ const wslReportFunction = `__motty_report() {
             *[[:cntrl:]]*) _motty_wsl_dir= ;;
         esac
     fi
+    if [[ ${_motty_wsl_home_source-} != "$HOME" ]]; then
+        _motty_wsl_home_source=$HOME
+        _motty_wsl_home=$(wslpath -w "$HOME" 2>/dev/null)
+    fi
     printf '\033]133;A__MOTTY_SUFFIX__\007'
+    __motty_home_report "${_motty_wsl_home-}"
     if [[ -n ${_motty_wsl_dir-} ]]; then
         printf '\033]9;9;%s\007' "$_motty_wsl_dir"
     fi
@@ -261,20 +352,36 @@ const wslReportFunction = `__motty_report() {
     return "$_motty_status"
 }`
 
-// Encode bytes, not characters: file URI reserved characters and non-ASCII
-// paths must round-trip through the terminal parser without shell evaluation.
-const directoryReportFunction = `__motty_report() {
-    local _motty_status=$?
-    __motty_input_report
-    local LC_ALL=C _motty_path= _motty_char _motty_hex _motty_i
-    for ((_motty_i=0; _motty_i<${#PWD}; _motty_i++)); do
-        _motty_char=${PWD:_motty_i:1}
+// Share the byte encoder between cwd and token-bound home metadata, including
+// Windows paths produced by wslpath. Neither value is evaluated as shell code.
+const homeReportFunction = `__motty_encode_path() {
+    local LC_ALL=C _motty_char _motty_hex _motty_i
+    for ((_motty_i=0; _motty_i<${#1}; _motty_i++)); do
+        _motty_char=${1:_motty_i:1}
         case $_motty_char in
             [a-zA-Z0-9/._~-]) _motty_path=$_motty_path$_motty_char ;;
             *) printf -v _motty_hex '%%%02X' "'$_motty_char"; _motty_path=$_motty_path%${_motty_hex: -2} ;;
         esac
     done
-    printf '\033]133;A__MOTTY_SUFFIX__\007\033]7;file://%s%s\007' "${HOSTNAME:-${HOST:-}}" "$_motty_path"
+}
+__motty_home_report() {
+    [[ -n '__MOTTY_INPUT_TOKEN__' ]] || return 0
+    local _motty_path=
+    __motty_encode_path "$1"
+    printf '\033]777;motty-home;__MOTTY_INPUT_TOKEN__;%s\007' "$_motty_path"
+}
+`
+
+// Encode bytes, not characters: file URI reserved characters and non-ASCII
+// paths must round-trip through the terminal parser without shell evaluation.
+const directoryReportFunction = `__motty_report() {
+    local _motty_status=$?
+    __motty_input_report
+    local _motty_path=
+    __motty_encode_path "$PWD"
+    printf '\033]133;A__MOTTY_SUFFIX__\007'
+    __motty_home_report "$HOME"
+    printf '\033]7;file://%s%s\007' "${HOSTNAME:-${HOST:-}}" "$_motty_path"
     case $PS1 in
         *"$_motty_prompt_marker") ;;
         *) PS1=$PS1$_motty_prompt_marker ;;
@@ -283,23 +390,29 @@ const directoryReportFunction = `__motty_report() {
 }`
 
 func bashIntegration(report string, forceTrap bool) string {
+	return bashIntegrationHead + bashHooks(report, forceTrap)
+}
+
+// bashHooks is the part of the integration that installs the reporting into the
+// current shell, without starting or sourcing anything. The startup wrapper
+// puts it in a private rcfile; an SSH shell receives it by injection after it
+// is already running (ADR 0025).
+func bashHooks(report string, forceTrap bool) string {
 	force := "0"
 	if forceTrap {
 		force = "1"
 	}
-	return bashIntegrationHead + inputEnvironmentFunction + commandFinishedFunction + report + strings.ReplaceAll(bashIntegrationTail, "__MOTTY_FORCE__", force)
+	return inputEnvironmentFunction + homeReportFunction + commandFinishedFunction + report + strings.ReplaceAll(bashIntegrationTail, "__MOTTY_FORCE__", force)
 }
 
 const bashIntegrationHead = `_motty_runtime=$MOTTY_SHELL_DIR
 unset MOTTY_SHELL_DIR
+# A login shell reads /etc/profile and the first of these login profiles, and
+# ~/.bashrc only when that profile sources it. Sourcing ~/.bashrc here as well
+# would run the user's interactive startup twice.
 [[ -r /etc/profile ]] && source /etc/profile
 for _motty_profile in "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"; do
     if [[ -r $_motty_profile ]]; then source "$_motty_profile"; break; fi
-done
-# The login profiles only reach ~/.bashrc when they source it themselves; a
-# server whose interactive setup lives there must still get it.
-for _motty_bashrc in /etc/bash.bashrc "$HOME/.bashrc"; do
-    if [[ -r $_motty_bashrc ]]; then source "$_motty_bashrc"; fi
 done
 `
 
@@ -362,7 +475,7 @@ rm -rf -- "$_motty_runtime"
 unset _motty_runtime _motty_profile`
 
 func zshIntegration(report string) string {
-	return inputEnvironmentFunction + commandFinishedFunction + report + zshIntegrationTail
+	return inputEnvironmentFunction + homeReportFunction + commandFinishedFunction + report + zshIntegrationTail
 }
 
 const zshIntegrationTail = `

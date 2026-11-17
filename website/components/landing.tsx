@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Bot, FolderTree, KeyRound, MonitorPlay, Terminal, Waypoints, type LucideIcon } from 'lucide-react';
 import { landing } from '@/lib/landing-content';
 import { resolveLang } from '@/lib/i18n';
+import { LandingShowcase } from '@/components/landing-showcase';
 
 const icons: Record<(typeof landing.en.features)[number]['icon'], LucideIcon> = {
   terminal: Terminal,
@@ -18,7 +19,7 @@ export function Landing({ lang }: { lang: string }) {
 
   return (
     <main className="flex-1">
-      <section className="relative isolate overflow-hidden px-4 pt-16 pb-12 text-center">
+      <section className="relative isolate overflow-hidden px-4 pt-16 pb-4 text-center">
         <span className="mb-6 inline-block rounded-full border bg-fd-secondary px-3.5 py-1.5 text-sm font-medium text-fd-secondary-foreground">
           {c.badge}
         </span>
@@ -40,18 +41,9 @@ export function Landing({ lang }: { lang: string }) {
             {c.install}
           </Link>
         </div>
-        <div className="mx-auto mt-12 max-w-7xl rounded-xl border bg-fd-card p-1.5 shadow-xl">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/hero-dark.webp"
-            width={2800}
-            height={1750}
-            alt={c.heroAlt}
-            className="w-full rounded-lg"
-            fetchPriority="high"
-          />
-        </div>
       </section>
+
+      <LandingShowcase content={c.showcase} />
 
       <section className="relative isolate mx-auto max-w-5xl px-4 py-16">
         <div

@@ -1,0 +1,38 @@
+# End to end: hosts behind one bastion share its address and differ by name (issue #567). A
+# second host at an existing address saves, and only the same name at the same address is
+# refused as a repeat.
+#
+#   go build -tags vivahead,dev -o /tmp/motty-head ./cmd/motty
+#   MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/host_shared_destination_e2e.txt
+# lang: en
+click "New Host"
+settle 400
+type Target A
+click textfield:Address
+type bastion.example.com
+click textfield:User
+type ops
+click "Add Host"
+settle 400
+click "New Host"
+settle 400
+type Target B
+click textfield:Address
+type bastion.example.com
+click textfield:User
+type ops
+click "Add Host"
+settle 400
+expect text "Target A" within 2000
+expect text "Target B" within 2000
+click "New Host"
+settle 400
+type target b
+click textfield:Address
+type bastion.example.com
+click textfield:User
+type ops
+click "Add Host"
+settle 400
+expect text "This host already exists" within 2000
+expect layout clean

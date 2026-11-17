@@ -5,14 +5,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 )
 
 func recentHostHint(t *testing.T, state *State, label string) string {
 	t.Helper()
 	state.Click(hitNewTab)
-	state.Click(hitConnectSortRecent)
+	clickSettingsChoice(t, state, state.messages.NewTabSortRecent)
 	canvas, _ := paintedTexts(state)
 	for _, hit := range canvas.Hits() {
 		if hit.ID.Scope() == hitCommandPaletteItems && hit.Label == label {
@@ -29,14 +29,30 @@ func TestRecentPickerSwitchTakesTheKeyboardAndHandsItBack(t *testing.T) {
 	if state.modal != modalCommandPalette {
 		t.Fatal("the picker did not open")
 	}
-	result := state.Key(ui.KeyEvent{Target: hitConnectSortDefault, Key: ui.KeyRight})
-	if !result.Handled || !state.recentConnectSort {
-		t.Fatalf("right on the switch = %+v, recent=%t", result, state.recentConnectSort)
+	// The switch is a page Choice: an arrow reports the next segment to activate,
+	// and the click's event pass writes the value.
+	defaultHit := settingsChoiceHit(t, state, state.messages.NewTabSortDefault)
+	workspacesHit := settingsChoiceHit(t, state, state.messages.WorkspaceLibraryTitle)
+	result := windowKeyRoutes(state, gfx.KeyEvent{Target: defaultHit.ID, Key: gfx.KeyRight})
+	if !result.Handled || result.Focus != workspacesHit.ID || result.Activate != workspacesHit.ID {
+		t.Fatalf("right on the switch = %+v", result)
 	}
-	if result.Focus != hitCommandPaletteSearch {
-		t.Fatalf("the keyboard stayed on the switch: %+v", result)
+	activateChoice(t, state, result.Activate)
+	if !state.commandPalette.workspaces {
+		t.Fatal("right on the switch did not choose workspaces")
 	}
-	result = state.Key(ui.KeyEvent{Target: hitConnectSortRecent, Key: ui.KeyEnter})
+	workspacesHit = settingsChoiceHit(t, state, state.messages.WorkspaceLibraryTitle)
+	recentHit := settingsChoiceHit(t, state, state.messages.NewTabSortRecent)
+	result = windowKeyRoutes(state, gfx.KeyEvent{Target: workspacesHit.ID, Key: gfx.KeyRight})
+	if !result.Handled || result.Focus != recentHit.ID || result.Activate != recentHit.ID {
+		t.Fatalf("right from workspaces = %+v", result)
+	}
+	activateChoice(t, state, result.Activate)
+	if !state.recentConnectSort || state.commandPalette.workspaces {
+		t.Fatalf("right from workspaces = recent=%t workspaces=%t", state.recentConnectSort, state.commandPalette.workspaces)
+	}
+	recentHit = settingsChoiceHit(t, state, state.messages.NewTabSortRecent)
+	result = windowKeyRoutes(state, gfx.KeyEvent{Target: recentHit.ID, Key: gfx.KeyEnter})
 	if !result.Handled || result.Focus != hitCommandPaletteSearch {
 		t.Fatalf("enter on the switch = %+v", result)
 	}
@@ -94,7 +110,7 @@ func TestRecentPickerDoesNotRecordAutomaticReconnect(t *testing.T) {
 	state, world, connection, clock := reconnectingSession(t, reconnectThree)
 	// The first manual success has a timestamp; the automatic one must keep it.
 	before := recentHostHint(t, state, state.hosts[0].Label)
-	state.Click(hitCommandPaletteClose)
+	clickCommandPaletteClose(t, state)
 	state.options.WallNow = func() time.Time { return time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC) }
 	disconnectEstablished(connection, state)
 	*clock += time.Second
@@ -143,27 +159,27 @@ func TestRecentPickerLocalInstancesShareSuccessfulStartupTime(t *testing.T) {
 	closeLocalShells(t, state)
 	state.Click(hitLocalTerminal)
 	state.Click(hitNewTab)
-	state.Click(hitConnectSortRecent)
+	clickSettingsChoice(t, state, state.messages.NewTabSortRecent)
 	first := pickerRowLabels(state)
 	if first[0] != state.messages.LocalTerminal {
 		t.Fatalf("local did not sort first: %v", first)
 	}
-	state.Click(hitCommandPaletteClose)
+	clickCommandPaletteClose(t, state)
 	now = now.Add(time.Hour)
 	state.Click(hitLocalTerminal)
 	state.Click(hitNewTab)
-	state.Click(hitConnectSortRecent)
+	clickSettingsChoice(t, state, state.messages.NewTabSortRecent)
 	canvas, _ := paintedTexts(state)
 	hit, ok := hitByID(canvas, hitCommandPaletteItems.At(0))
 	if !ok || hit.Hint != now.Local().Format("2006-01-02 15:04:05 MST") {
 		t.Fatalf("second local time = %q", hit.Hint)
 	}
-	state.Click(hitCommandPaletteClose)
+	clickCommandPaletteClose(t, state)
 	state.localShell = "/does-not-exist/motty-test-shell"
 	now = now.Add(time.Hour)
 	state.Click(hitLocalTerminal)
 	state.Click(hitNewTab)
-	state.Click(hitConnectSortRecent)
+	clickSettingsChoice(t, state, state.messages.NewTabSortRecent)
 	canvas, _ = paintedTexts(state)
 	hit, _ = hitByID(canvas, hitCommandPaletteItems.At(0))
 	if hit.Hint != now.Add(-time.Hour).Local().Format("2006-01-02 15:04:05 MST") {
@@ -201,7 +217,7 @@ func TestRecentPickerKeepsSuccessesFromOtherWindows(t *testing.T) {
 		if got := recentHostHint(t, restarted, restarted.hosts[index].Label); got != at.Local().Format("2006-01-02 15:04:05 MST") {
 			t.Errorf("recent time for %s = %q, want %v", restarted.hosts[index].Label, got, at)
 		}
-		restarted.Click(hitCommandPaletteClose)
+		clickCommandPaletteClose(t, restarted)
 	}
 	// A writer with an older clock must not replace a newer success for the same host.
 	now = productionAt.Add(-time.Hour)

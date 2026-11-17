@@ -6,10 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/keymap"
 )
 
-func gutterTexts(canvas *ui.Canvas) []string {
+func gutterTexts(canvas *gfx.Canvas) []string {
 	var texts []string
 	for _, text := range canvas.Texts() {
 		texts = append(texts, text.Value)
@@ -36,7 +37,7 @@ func TestGutterShowsNumbersAndTimesAndHidesOnTheAlternateScreen(t *testing.T) {
 	session.term.write([]byte("alpha\r\nbeta\r\n"))
 	want := time.Unix(stamp, 0).Format("15:04:05")
 
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	state.paintGrid(&canvas, session, geometry)
 	texts := gutterTexts(&canvas)
 	if !anyContains(texts, want) || !slices.Contains(texts, "2") {
@@ -48,6 +49,36 @@ func TestGutterShowsNumbersAndTimesAndHidesOnTheAlternateScreen(t *testing.T) {
 	state.paintGrid(&canvas, session, geometry)
 	if texts := gutterTexts(&canvas); anyContains(texts, want) {
 		t.Fatalf("gutter still painted on the alternate screen: %q", texts)
+	}
+}
+
+// A program that repaints a row in place (top, a progress bar) moves that
+// row's time forward; the gutter must not keep showing when the row first
+// appeared.
+func TestGutterFollowsRepaintedLines(t *testing.T) {
+	state, session, _ := selectionState()
+	state.viewport.Width = 600
+	stamp := time.Date(2026, 1, 2, 3, 4, 5, 0, time.Local).Unix()
+	state.wallClock = func() int64 { return stamp }
+	state.setTerminalGutter(gutterTime)
+	geometry := state.layoutForSession(session.ID)
+	session.term.write([]byte("alpha"))
+
+	var canvas gfx.Canvas
+	state.paintGrid(&canvas, session, geometry)
+	first := time.Unix(stamp, 0).Format("15:04:05")
+	if !anyContains(gutterTexts(&canvas), first) {
+		t.Fatalf("gutter = %q, want %s", gutterTexts(&canvas), first)
+	}
+
+	stamp += 60
+	canvas.Reset()
+	session.term.write([]byte("\x1b[HALPHA"))
+	state.paintGrid(&canvas, session, geometry)
+	second := time.Unix(stamp, 0).Format("15:04:05")
+	texts := gutterTexts(&canvas)
+	if !anyContains(texts, second) || anyContains(texts, first) {
+		t.Fatalf("gutter after repaint = %q, want %s and not %s", texts, second, first)
 	}
 }
 
@@ -66,13 +97,13 @@ func TestGutterTakesColumnsAndCopyLeavesItOut(t *testing.T) {
 	}
 
 	session.term.write([]byte("alpha beta\r\n"))
-	hit := hitTerminalList.At(int(session.ID))
+	hit := terminalTestHit(state, session)
 	startX, startY := cellPoint(geometry, 0, 2, state.cellWidth, state.cellHeight)
 	endX, endY := cellPoint(geometry, 0, 7, state.cellWidth, state.cellHeight)
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hit, X: startX, Y: startY, Viewport: state.viewport})
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Target: hit, Captured: true, X: endX, Y: endY, Viewport: state.viewport})
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: hit, Captured: true, X: endX, Y: endY, Viewport: state.viewport})
-	if copied := state.Shortcut(ui.KeyEvent{Target: hit, Modifiers: defaultShortcutModifier(), Text: "c"}).ClipboardText; copied != "pha be" {
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hit, X: startX, Y: startY, Viewport: state.viewport})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true, X: endX, Y: endY, Viewport: state.viewport})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true, X: endX, Y: endY, Viewport: state.viewport})
+	if copied := state.Shortcut(gfx.KeyEvent{Target: hit, Modifiers: keymap.Primary, Text: "c"}).ClipboardText; copied != "pha be" {
 		t.Fatalf("copied %q", copied)
 	}
 }
@@ -82,7 +113,8 @@ func TestGutterSettingPersists(t *testing.T) {
 	options.Keystore = &memKeys{}
 	state := newTestState(t, options)
 	state.Click(hitSettings)
-	state.Click(hitSettingsGutterTime)
+	state.selectSettingsCategory(settingsTerminal)
+	clickSettingsChoice(t, state, state.settingsGutterLabel(gutterTime))
 	if restored := newTestState(t, options); restored.terminalGutter != gutterTime {
 		t.Fatalf("restored gutter %v", restored.terminalGutter)
 	}

@@ -20,7 +20,6 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 
-	"motty/internal/shellkind"
 	"motty/internal/x11fwd"
 )
 
@@ -30,7 +29,8 @@ type Phase uint8
 const (
 	// PhaseConnecting covers the TCP dial and the key exchange.
 	PhaseConnecting Phase = iota
-	// PhaseHostKeyPrompt waits for the user to trust or reject an unknown key.
+	// PhaseHostKeyPrompt waits for the user to accept or reject a new or
+	// changed host key.
 	PhaseHostKeyPrompt
 	// PhaseAuthenticating covers key and agent attempts, no input needed.
 	PhaseAuthenticating
@@ -54,6 +54,12 @@ var (
 	ErrAuthFailed       = errors.New("sshconn: authentication failed")
 	ErrDisconnected     = errors.New("sshconn: disconnected")
 	ErrKeepAliveTimeout = errors.New("sshconn: keepalive timed out")
+	// ErrTooManyAuthAttempts is the authentication failure of a server that
+	// ended the connection because the client offered too many keys. It is also
+	// ErrAuthFailed, so callers that only distinguish refused credentials keep
+	// working; a caller that can name the setting which avoids it tests this
+	// error first.
+	ErrTooManyAuthAttempts = errors.New("sshconn: too many authentication attempts")
 )
 
 // maxPasswordAttempts is how many passwords the user may try per method.
@@ -67,8 +73,12 @@ type HostKeyInfo struct {
 	Type string
 	// Fingerprint is the SHA256 fingerprint in the form OpenSSH prints.
 	Fingerprint string
-	// Known lists the fingerprints on file for this address when the key
-	// changed; it is empty for a first connection.
+	// Changed says the address has a trusted key of this type and the server
+	// presented a different one.
+	Changed bool
+	// Known lists the fingerprints on file for this address whose key type
+	// matches the presented key when Changed is set; it is empty for a first
+	// connection.
 	Known []string
 	// File is the known-hosts file that holds (or will hold) the entry.
 	File string
@@ -93,7 +103,15 @@ type Authentication struct {
 	// default identities when IdentityFiles is nil.
 	AdditionalIdentityFiles []string
 	// Agent controls whether the running ssh-agent is offered.
-	Agent bool
+	Agent          bool
+	IdentitiesOnly bool
+}
+
+// SecurityKeyRequest names one hardware security-key identity the connection
+// has to use. Path is a file path, or a StoredKeyPrefix reference.
+type SecurityKeyRequest struct {
+	Path      string
+	PublicKey ssh.PublicKey
 }
 
 // StoredKeyPrefix starts the name of a private key that is not a file but is
@@ -161,6 +179,9 @@ type Status struct {
 	ServerVersion string
 	// Method names how the user authenticated, once connected.
 	Method string
+	// SecurityKey is set while an ssh-agent is waiting for the user to touch
+	// or approve a hardware security key.
+	SecurityKey bool
 	// System is detected after authentication without writing to the user's
 	// interactive shell. It remains unknown when command sessions are refused.
 	System RemoteSystem
@@ -169,6 +190,11 @@ type Status struct {
 	// OpenSSH, so the guess may name the distribution the host was built from
 	// instead of the one it is: it fills a blank, and never more than that.
 	SystemProvisional bool
+	// ProbeRefused reports that the server ended an established connection on
+	// the client's own optional command probes: the pty and shell it permits
+	// were evidently not the whole of what it accepts. The owner should retry
+	// with Config.InteractiveOnly, which is what such a server requires.
+	ProbeRefused bool
 	// Negotiated is what the last endpoint agreed on, once its handshake is done.
 	Negotiated Negotiated
 	// Skipped names identity files not offered to the server: those the user
@@ -188,7 +214,11 @@ type KeepAliveConfig struct {
 	// keepalive; zero disables it.
 	Interval time.Duration
 	// Timeout bounds each probe response. It must be positive when Interval is.
-	Timeout time.Duration
+	Timeout  time.Duration
+	CountMax *int
+	// UseTCP avoids SSH global requests on gateways that accept interactive
+	// traffic only. Non-TCP streams retain the request-based probe as a fallback.
+	UseTCP bool
 }
 
 // Config describes one connection attempt.
@@ -222,6 +252,13 @@ type Config struct {
 	// Windows a named pipe such as \\.\pipe\openssh-ssh-agent. Empty uses
 	// SSH_AUTH_SOCK, and on Windows the OpenSSH pipe when that is unset.
 	AgentAddress string
+	// SecurityKeyAgent prepares an agent for a hardware security key (an
+	// OpenSSH sk-* identity). It is called only after the host key is accepted,
+	// once for each security-key identity. The returned release is called when
+	// the connection closes; nil means nothing to release. Nil disables the
+	// preparation, and such a key then uses the default agent or is reported
+	// as skipped.
+	SecurityKeyAgent func(SecurityKeyRequest) (address string, release func(), err error)
 	// Authentication overrides the legacy identity, agent and password policy
 	// for individual endpoints. An endpoint not in the map uses the fields
 	// above and every supported authentication method.
@@ -238,7 +275,27 @@ type Config struct {
 	// hosts. Zero disables the timeout.
 	DialTimeout time.Duration
 	// KeepAlive optionally detects an unresponsive established connection.
-	KeepAlive KeepAliveConfig
+	KeepAlive         KeepAliveConfig
+	EndpointKeepAlive map[Endpoint]KeepAliveConfig
+	// InteractiveOnly keeps the connection to the interactive session alone:
+	// the client asks for the pty and the shell, and for nothing else. A
+	// gateway that permits only an interactive login ends the whole connection
+	// on a command session, a shell integration probe or a locale request, so
+	// none of those may be sent to one. The cost is that the host's system and
+	// default shell stay unknown, and that directories cannot be followed.
+	InteractiveOnly bool
+	// PrimaryShell says this connection will carry an interactive shell, so the
+	// optional command sessions must not open before it. sshd sends the
+	// connection's login message (PAM's MOTD, pam_lastlog) to the first session
+	// channel and drops it for a command session: a probe that opens first
+	// consumes the user's login banner. With PrimaryShell the probes wait for
+	// OpenShell to accept its shell request (see ADR 0025).
+	PrimaryShell bool
+	// NoProbes keeps optional command sessions off this connection entirely.
+	// It is for a connection that carries one service of its own — a file
+	// transport, say — where a server may allow only that channel and where a
+	// probe could take its place.
+	NoProbes bool
 	// Algorithms sets what each endpoint negotiates, keyed by "host:port" as
 	// Endpoint formats it. An endpoint without an entry keeps the defaults.
 	Algorithms map[string]Algorithms
@@ -268,6 +325,11 @@ type Conn struct {
 	closersClosed bool
 	// disconnectErr records why an established connection was force-closed.
 	disconnectErr error
+	// tcpKeepAlive reports that the target transport is probed by the operating
+	// system's TCP keepalive instead of keepalive@openssh.com requests. It is
+	// written by the target handshake and read by the keepalive worker and the
+	// probe methods, always under mu.
+	tcpKeepAlive bool
 
 	// x11 serves the X11 channels of the current client for every tab on it.
 	x11mu     sync.Mutex
@@ -294,11 +356,17 @@ type Conn struct {
 	// pingPending is set while a keepalive probe sent by Ping is unanswered.
 	pingPending atomic.Bool
 
-	// kind is the family of the server's default shell, learned once per client
-	// by defaultShellKind.
-	kindMu     sync.Mutex
-	kindClient *ssh.Client
-	kind       shellkind.Kind
+	// probes tracks the optional command sessions opened beside the user's
+	// shell. It is shared by every tab on this transport, because the server's
+	// answer to one is about the connection, not the tab.
+	probes *auxiliaryProbes
+
+	// primary is closed once the interactive shell this connection is for has
+	// been accepted, or the connection ends without one. The optional probes
+	// wait on it so the login message reaches the shell, not a command session
+	// that sshd prints nothing for.
+	primary     chan struct{}
+	primaryOnce sync.Once
 }
 
 // finish closes the done channel once, whichever of the goroutine ending and
@@ -322,10 +390,35 @@ type reply struct {
 func Dial(config Config) *Conn {
 	ctx, cancel := context.WithCancel(context.Background())
 	generation := nextConnectionGeneration.Add(1)
-	conn := &Conn{config: config, ctx: ctx, cancel: cancel, done: make(chan struct{})}
+	conn := &Conn{config: config, ctx: ctx, cancel: cancel, done: make(chan struct{}), probes: newAuxiliaryProbes()}
+	if config.PrimaryShell {
+		conn.primary = make(chan struct{})
+	}
 	conn.status.ConnectionGeneration = generation
 	go conn.run()
 	return conn
+}
+
+// releasePrimaryShell lets the optional command sessions run. The interactive
+// shell has been accepted (or can no longer come), so the connection's login
+// message has already reached the session that was going to display it.
+func (conn *Conn) releasePrimaryShell() {
+	if conn.primary == nil {
+		return
+	}
+	conn.primaryOnce.Do(func() { close(conn.primary) })
+}
+
+// waitPrimaryShell blocks until the shell this connection is for has been
+// accepted. A connection that never asked for one is not delayed.
+func (conn *Conn) waitPrimaryShell() {
+	if conn.primary == nil {
+		return
+	}
+	select {
+	case <-conn.primary:
+	case <-conn.ctx.Done():
+	}
 }
 
 // Status returns the current snapshot.
@@ -354,6 +447,14 @@ func (conn *Conn) DialContext(ctx context.Context, network, address string) (net
 		return nil, errors.New("sshconn: not connected")
 	}
 	return client.DialContext(ctx, network, address)
+}
+
+// IsChannelRefused reports whether err is the server declining to open an SSH
+// channel, which is how a server that disallows forwarding answers a forwarded
+// connection: administratively prohibited.
+func IsChannelRefused(err error) bool {
+	var refused *ssh.OpenChannelError
+	return errors.As(err, &refused) && refused.Reason == ssh.Prohibited
 }
 
 // Listen asks the authenticated SSH server to open one remote listener.
@@ -487,6 +588,10 @@ func (endpoint Endpoint) address() string {
 func (conn *Conn) run() {
 	defer conn.finish()
 	defer conn.closeAuxiliary()
+	// A connection that ends before its shell opened (or one that never opens
+	// one) must not leave the optional probes waiting for a session that will
+	// not come.
+	defer conn.releasePrimaryShell()
 	err := conn.connect()
 	conn.mu.Lock()
 	client := conn.client
@@ -502,15 +607,26 @@ func (conn *Conn) run() {
 			<-keepAlive.done
 		}
 		closedErr := conn.closedError(waitErr)
+		// A gateway that permits only an interactive login answers the client's
+		// own probes by ending the transport. Whether a probe reports the refusal
+		// or the connection's own end is woken first is a race, so the reports
+		// get a bounded moment to name the cause.
+		probeRefused := closedErr != nil && conn.probeState().settle(auxiliaryProbeSettle)
 		conn.update(func(status *Status) {
 			status.Phase = PhaseClosed
 			status.Err = closedErr
+			status.ProbeRefused = probeRefused
 		})
 		conn.endShares(closedErr)
 		return
 	}
 	if conn.ctx.Err() != nil && !errors.Is(err, ErrHostKeyChanged) {
 		err = ErrCanceled
+		conn.mu.Lock()
+		if conn.disconnectErr != nil {
+			err = conn.disconnectErr
+		}
+		conn.mu.Unlock()
 	}
 	conn.update(func(status *Status) {
 		status.Phase = PhaseFailed
@@ -579,7 +695,7 @@ func (conn *Conn) connect() error {
 	// until the answer arrives, so a guess that is about to be checked is not
 	// published at all.
 	guess := classifyBanner(serverVersion)
-	ask := standardImplementation(serverVersion) &&
+	ask := !conn.config.InteractiveOnly && !conn.config.NoProbes && standardImplementation(serverVersion) &&
 		(guess == SystemUnknown || guess == SystemUbuntu || guess == SystemDebian)
 	conn.update(func(status *Status) {
 		status.Phase = PhaseConnected
@@ -677,6 +793,22 @@ func (conn *Conn) beginEndpoint(endpoint Endpoint, role EndpointRole) {
 }
 
 func (conn *Conn) handshake(endpoint Endpoint, socket net.Conn, known *hostKeys) (*ssh.Client, string, error) {
+	keepAlive := conn.keepAliveFor(endpoint)
+	target := (Endpoint{Host: conn.config.Host, Port: conn.config.Port, User: conn.config.User}).normalized()
+	// Restricted gateways can end the transport on a global keepalive request;
+	// TCP probes detect a lost network path without sending SSH protocol traffic.
+	useTCP := keepAlive.UseTCP || conn.config.InteractiveOnly && endpoint.normalized() == target
+	tcpKeepAlive := useTCP && configureTCPKeepAlive(socket, keepAlive)
+	if endpoint.normalized() == target {
+		conn.mu.Lock()
+		conn.tcpKeepAlive = tcpKeepAlive
+		conn.mu.Unlock()
+	}
+	var monitored *aliveSocket
+	if !tcpKeepAlive && keepAlive.Interval > 0 && keepAlive.CountMax != nil {
+		monitored = &aliveSocket{Conn: socket, received: make(chan struct{}, 1)}
+		socket = monitored
+	}
 	address := endpoint.address()
 	wanted := conn.config.Algorithms[address]
 	authentication := conn.authentication(endpoint)
@@ -712,7 +844,11 @@ func (conn *Conn) handshake(endpoint Endpoint, socket net.Conn, known *hostKeys)
 	if negotiated, ok := negotiatedFrom(sshConn); ok {
 		conn.update(func(status *Status) { status.Negotiated = negotiated })
 	}
-	return ssh.NewClient(sshConn, channels, requests), string(sshConn.ServerVersion()), nil
+	client := ssh.NewClient(sshConn, channels, requests)
+	if monitored != nil {
+		conn.startCountKeepAlive(client, monitored, keepAlive)
+	}
+	return client, string(sshConn.ServerVersion()), nil
 }
 
 func (conn *Conn) authentication(endpoint Endpoint) Authentication {
@@ -736,15 +872,38 @@ func (conn *Conn) explain(err error) error {
 	switch {
 	case errors.Is(err, ErrCanceled), errors.Is(err, ErrHostKeyRejected), errors.Is(err, ErrHostKeyChanged):
 		return err
+	case containsTooManyAuthAttempts(err):
+		return &tooManyAuthAttemptsError{cause: err}
 	case status.Attempt >= maxPasswordAttempts || containsAuthFailure(err):
 		return fmt.Errorf("%w: %v", ErrAuthFailed, err)
 	}
 	return err
 }
 
+// tooManyAuthAttemptsError keeps the server's own message while matching both
+// ErrTooManyAuthAttempts and ErrAuthFailed.
+type tooManyAuthAttemptsError struct{ cause error }
+
+func (err *tooManyAuthAttemptsError) Error() string { return err.cause.Error() }
+
+func (err *tooManyAuthAttemptsError) Unwrap() error { return err.cause }
+
+func (err *tooManyAuthAttemptsError) Is(target error) bool {
+	return target == ErrTooManyAuthAttempts || target == ErrAuthFailed
+}
+
 func containsAuthFailure(err error) bool {
 	message := err.Error()
-	return strings.Contains(message, "unable to authenticate") || strings.Contains(message, "no supported methods remain")
+	return strings.Contains(message, "unable to authenticate") ||
+		strings.Contains(message, "no supported methods remain") ||
+		containsTooManyAuthAttempts(err)
+}
+
+// containsTooManyAuthAttempts reports the disconnect OpenSSH servers send once
+// refused key offers reach MaxAuthTries. The message is the only signal: SSH has
+// no error code for it, and servers differ in capitalization.
+func containsTooManyAuthAttempts(err error) bool {
+	return strings.Contains(strings.ToLower(err.Error()), "too many authentication failures")
 }
 
 func (conn *Conn) addCloser(closer io.Closer) {

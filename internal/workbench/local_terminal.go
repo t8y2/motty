@@ -172,9 +172,9 @@ func shortHostName(name string) string {
 
 // Coalesce reports from one output drain. Terminal callbacks themselves only
 // update memory, without reentering persistence while the parser is running.
-func (state *State) flushLocalDirectories() {
-	if state.localDirectoryDirty {
-		state.localDirectoryDirty = false
+func (state *State) flushTerminalDirectories() {
+	if state.terminalDirectoryDirty {
+		state.terminalDirectoryDirty = false
 		state.save()
 	}
 }
@@ -182,6 +182,10 @@ func (state *State) flushLocalDirectories() {
 func (conn *localConn) OpenSFTP() (sftpclient.Remote, error) { return nil, errLocalOnly }
 
 func (conn *localConn) DialContext(context.Context, string, string) (net.Conn, error) {
+	return nil, errLocalOnly
+}
+
+func (conn *localConn) DialShellContext(context.Context, string, string) (net.Conn, error) {
 	return nil, errLocalOnly
 }
 
@@ -212,6 +216,8 @@ func (state *State) openLocalTerminal() *Session {
 // openLocalTerminalWith opens a local terminal that runs shell, whatever the
 // default shell is. A zero Choice starts the default one, which stays the
 // default for this tab on a reconnect, so changing the setting later moves it.
+// It starts in the folder the setting picks (newLocalTerminalDirectory) unless
+// the caller already chose one.
 func (state *State) openLocalTerminalWith(shell localshell.Choice) *Session {
 	label := state.messages.LocalTerminalTitle
 	if shell.Path != "" {
@@ -219,6 +225,9 @@ func (state *State) openLocalTerminalWith(shell localshell.Choice) *Session {
 	}
 	host := localHost(label)
 	host.localShell = shell.Path
+	if state.pendingDirectory == "" {
+		state.pendingDirectory = state.newLocalTerminalDirectory()
+	}
 	return state.createHostSession(host, host.Address)
 }
 

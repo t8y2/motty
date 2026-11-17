@@ -153,6 +153,9 @@ func (state *State) diagnosticReport() string {
 	report.Section("Hosts")
 	for _, host := range state.hosts {
 		line := fmt.Sprintf("%s protocol=%s port=%d system=%s", aliases[host.ID], protocolOf(host), host.Port, host.System)
+		if host.mosh() {
+			line += " terminal=mosh"
+		}
 		if host.Algo != nil {
 			line += " custom-algorithms"
 		}

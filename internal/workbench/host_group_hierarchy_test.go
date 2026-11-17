@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 func nestedHostGroupState(t *testing.T) *State {
@@ -54,7 +54,7 @@ func TestHostGroupRenameUpdatesSubtreeFilterExpansionAndPersistence(t *testing.T
 	for index, host := range state.hosts {
 		old := before[index]
 		old.Group = host.Group
-		if host != old {
+		if !reflect.DeepEqual(host, old) {
 			t.Fatalf("rename changed connection fields: got %+v, want %+v", host, old)
 		}
 	}
@@ -102,7 +102,7 @@ func TestHostGroupEditingEnterDoesNotSubmitIMEComposition(t *testing.T) {
 		groups := len(state.hostGroups)
 		chooseHostGroupAction(t, state, "Team", action)
 		state.hostGroupEditor.SetMarkedText("中文", text.Range{Start: 2, End: 2})
-		state.Key(ui.KeyEvent{Target: hitMoveGroupField, Key: ui.KeyEnter})
+		state.Key(gfx.KeyEvent{Target: hitMoveGroupField, Key: gfx.KeyEnter})
 		if state.modal != modalMoveHostGroup || !reflect.DeepEqual(before, state.hosts) || len(state.hostGroups) != groups {
 			t.Fatalf("%s submitted an IME candidate", action)
 		}
@@ -162,12 +162,19 @@ func TestHostGroupRightClickNewHostPrefillsClickedGroup(t *testing.T) {
 		state := nestedHostGroupState(t)
 		state.hostView = view
 		index := state.hostGroupIndex("Team/Prod/EU")
-		row := hitHostGroupRowList.At(index)
-		if view == hostViewGrid {
-			row = hitHostGroupOpenList.At(index)
-		}
-		pointer(state, ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonSecondary, Target: row, X: 400, Y: 300})
 		canvas, _ := paintedTexts(state)
+		var row gfx.Hit
+		var ok bool
+		if view == hostViewGrid {
+			row, ok = hitByID(canvas, hitHostGroupOpenList.At(index))
+		} else {
+			row, ok = hostListGroupHit(canvas, state, index)
+		}
+		if !ok {
+			t.Fatalf("view %d did not paint the group row", view)
+		}
+		pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: row.ID, X: row.Bounds.X + 20, Y: row.Bounds.Y + row.Bounds.Height/2})
+		canvas, _ = paintedTexts(state)
 		newHost := tree.ID(tree.Feature("host-group-actions"), "new-host")
 		if _, ok := hitByID(canvas, newHost); !ok {
 			t.Fatalf("view %d did not offer New Host on group right click", view)
@@ -232,8 +239,56 @@ func TestNestedHostGroupCollapseSearchAndParentFilter(t *testing.T) {
 	state.syncVisible()
 	state.setHostFilter(true, "Team")
 	state.syncVisible()
-	if len(state.hostTreeRows) != 2 || !state.inHostFilter(state.hosts[0]) || state.inHostFilter(state.hosts[2]) {
-		t.Fatalf("parent filter visible=%v, leaked sibling prefix or omitted descendant", state.visible)
+	if len(state.hostTreeRows) != 5 || !state.inHostFilter(state.hosts[0]) || state.inHostFilter(state.hosts[2]) {
+		t.Fatalf("parent filter visible=%v rows=%+v, leaked sibling prefix or omitted descendant", state.visible, state.hostTreeRows)
+	}
+}
+
+func TestFilteredHostGroupKeepsChildHierarchy(t *testing.T) {
+	for _, mode := range []hostViewMode{hostViewList, hostViewGrid} {
+		state := nestedHostGroupState(t)
+		state.hostView = mode
+		state.hosts[1].Group = "Team"
+		state.hostDataChanged()
+		state.toggleHostGroup(state.hostGroupIndex("Team"))
+		state.setHostFilter(true, "Team")
+		if state.hostsFlat() {
+			t.Fatalf("view %d flattened a parent group", mode)
+		}
+		checkRows := func(want []hostTreeRow) {
+			t.Helper()
+			if !reflect.DeepEqual(state.hostTreeRows, want) {
+				t.Fatalf("view %d filtered rows = %+v, want %+v", mode, state.hostTreeRows, want)
+			}
+		}
+		prod := state.hostGroupIndex("Team/Prod")
+		eu := state.hostGroupIndex("Team/Prod/EU")
+		checkRows([]hostTreeRow{
+			{Kind: hostTreeHost, GroupIndex: state.hostGroupIndex("Team"), HostIndex: 1, Depth: 0},
+			{Kind: hostTreeGroup, GroupIndex: prod, HostIndex: -1, Depth: 0},
+			{Kind: hostTreeGroup, GroupIndex: eu, HostIndex: -1, Depth: 1},
+			{Kind: hostTreeHost, GroupIndex: eu, HostIndex: 0, Depth: 2},
+		})
+		canvas, _ := paintedTexts(state)
+		if mode == hostViewGrid {
+			if _, ok := hitByID(canvas, hitHostGroupOpenList.At(prod)); !ok {
+				t.Fatalf("view %d did not render the filtered child group", mode)
+			}
+		} else if _, ok := hostListGroupHit(canvas, state, prod); !ok {
+			t.Fatalf("view %d did not render the filtered child group", mode)
+		}
+		state.toggleHostGroup(prod)
+		checkRows([]hostTreeRow{
+			{Kind: hostTreeHost, GroupIndex: state.hostGroupIndex("Team"), HostIndex: 1, Depth: 0},
+			{Kind: hostTreeGroup, GroupIndex: prod, HostIndex: -1, Depth: 0},
+		})
+		state.setHostFilter(true, "Team/Prod")
+		checkRows([]hostTreeRow{
+			{Kind: hostTreeGroup, GroupIndex: eu, HostIndex: -1, Depth: 0},
+			{Kind: hostTreeHost, GroupIndex: eu, HostIndex: 0, Depth: 1},
+		})
+		state.setHostFilter(true, "Team/Prod/EU")
+		checkRows([]hostTreeRow{{Kind: hostTreeHost, GroupIndex: eu, HostIndex: 0, Depth: 0}})
 	}
 }
 

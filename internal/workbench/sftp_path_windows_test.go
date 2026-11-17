@@ -3,7 +3,7 @@ package workbench
 import (
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func TestSFTPPathWindowsNativeInputNavigatesWithoutSendingKeysToTheShell(t *testing.T) {
@@ -14,14 +14,14 @@ func TestSFTPPathWindowsNativeInputNavigatesWithoutSendingKeysToTheShell(t *test
 		t.Fatal(err)
 	}
 	focusFormField(t, driver, contextID(hitSFTPPath))
-	formChord(t, driver, ui.ModifierControl, 'a')
+	formChord(t, driver, gfx.ModifierControl, 'a')
 	if err := driver.Type("/home/test/docs"); err != nil {
 		t.Fatal(err)
 	}
 	if got := state.EditorFor(hitSFTPPath).String(); got != "/home/test/docs" {
 		t.Fatalf("native editor contains %q", got)
 	}
-	if err := driver.KeyDown(ui.KeyEnter, ""); err != nil {
+	if err := driver.KeyDown(gfx.KeyEnter, ""); err != nil {
 		t.Fatal(err)
 	}
 	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.path == "/home/test/docs" })

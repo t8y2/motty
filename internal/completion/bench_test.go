@@ -18,7 +18,7 @@ func BenchmarkComplete(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	lines := []string{"git s", "git commit --a", "docker cont", "git checkout", "git ", "tar --"}
+	lines := []string{"git s", "git commit --a", "docker cont", "docker compose ", "git checkout", "git ", "tar --"}
 	b.ReportAllocs()
 	for index := 0; index < b.N; index++ {
 		if result := Complete(catalog, lines[index%len(lines)]); result.Suppressed || len(result.Candidates) == 0 {

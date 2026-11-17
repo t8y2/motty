@@ -12,10 +12,11 @@ import (
 )
 
 type probeFixture struct {
-	Version, Help, Features, Config string
-	Extra                           map[string]string
-	VersionExit                     int
-	VersionDelay                    time.Duration
+	Version, Help, Features, Config, RunHelp, Agents, Plugins string
+	Extra                                                     map[string]string
+	VersionExit                                               int
+	VersionDelay                                              time.Duration
+	StderrHelp                                                bool
 }
 
 func TestProbeCLIHelper(t *testing.T) {
@@ -34,7 +35,8 @@ func TestProbeCLIHelper(t *testing.T) {
 			break
 		}
 	}
-	if output, ok := fixture.Extra[strings.Join(args, " ")]; ok {
+	joined := strings.Join(args, " ")
+	if output, ok := fixture.Extra[joined]; ok {
 		fmt.Println(output)
 		os.Exit(0)
 	}
@@ -45,12 +47,22 @@ func TestProbeCLIHelper(t *testing.T) {
 			os.Exit(fixture.VersionExit)
 		}
 		fmt.Println(fixture.Version)
-	case len(args) >= 2 && args[0] == "features" && args[1] == "list":
+	case strings.HasPrefix(joined, "features list"):
 		fmt.Println(fixture.Features)
-	case len(args) >= 2 && args[0] == "debug" && args[1] == "config":
+	case strings.Contains(joined, "debug config"):
 		fmt.Println(fixture.Config)
-	case len(args) > 0 && args[len(args)-1] == "--help":
-		fmt.Println(fixture.Help)
+	case strings.Contains(joined, "debug agents"):
+		fmt.Println(fixture.Agents)
+	case strings.Contains(joined, "plugins list"):
+		fmt.Println(fixture.Plugins)
+	case strings.HasSuffix(joined, "run --help"):
+		fmt.Println(fixture.RunHelp)
+	case strings.HasSuffix(joined, "--help"):
+		if fixture.StderrHelp {
+			fmt.Fprintln(os.Stderr, fixture.Help)
+		} else {
+			fmt.Println(fixture.Help)
+		}
 	default:
 		os.Exit(3)
 	}
@@ -149,6 +161,167 @@ func TestProbeStillRequiresOpenCodeAppliedPermission(t *testing.T) {
 	fixture := probeFixture{Version: "2.0.0", Help: "--pure", Config: `{"permission":"allow"}`}
 	if err := probeFixtureError(t, "opencode-cli", fixture); err == nil || !strings.Contains(err.Error(), "permission=deny") {
 		t.Fatalf("permission was not checked: %v", err)
+	}
+}
+
+const openCodeV2AgentRules = `[{"id":"motty_probe","permissions":[` +
+	`{"action":"*","resource":"*","effect":"allow"},` +
+	`{"action":"*","resource":"*","effect":"deny"},` +
+	`{"action":"motty_probe_allow","resource":"*","effect":"allow"}]}]`
+
+func openCodeV2Fixture(agents string) probeFixture {
+	return probeFixture{
+		Version: "opencode v2.3.0",
+		Help:    "--standalone --server",
+		RunHelp: "--format --agent --file --title --thinking --standalone",
+		Agents:  agents,
+	}
+}
+
+func TestProbeAcceptsOpenCodeV2ByPrivateServerCapability(t *testing.T) {
+	c := probeCommand(t, openCodeV2Fixture(openCodeV2AgentRules))
+	if err := probe(t.Context(), "opencode-cli", &c); err != nil {
+		t.Fatalf("capable V2 build rejected: %v", err)
+	}
+	if c.flavor != openCodeV2 || c.version != "2.3.0" {
+		t.Fatalf("V2 profile not selected: flavor=%q version=%q", c.flavor, c.version)
+	}
+}
+
+func TestProbeKeepsOpenCodeV1ProfileWhenPureIsPresent(t *testing.T) {
+	fixture := probeFixture{Version: "1.19.5", Help: "--pure --standalone", Config: `{"permission":"deny"}`}
+	c := probeCommand(t, fixture)
+	if err := probe(t.Context(), "opencode-cli", &c); err != nil {
+		t.Fatal(err)
+	}
+	if c.flavor != openCodeV1 {
+		t.Fatalf("V1 profile displaced by V2 signal: %q", c.flavor)
+	}
+}
+
+func TestProbeReadsHelpFromStderr(t *testing.T) {
+	fixture := probeFixture{Version: "1.19.5", Help: "--pure", Config: `{"permission":"deny"}`, StderrHelp: true}
+	c := probeCommand(t, fixture)
+	if err := probe(t.Context(), "opencode-cli", &c); err != nil {
+		t.Fatalf("stderr help not read: %v", err)
+	}
+	if c.flavor != openCodeV1 {
+		t.Fatalf("flavor = %q", c.flavor)
+	}
+}
+
+func TestProbeRejectsOpenCodeV2WithoutRequiredRunCapabilities(t *testing.T) {
+	fixture := openCodeV2Fixture(openCodeV2AgentRules)
+	fixture.RunHelp = "--format --agent --file"
+	err := probeFixtureError(t, "opencode-cli", fixture)
+	if err == nil || !strings.Contains(err.Error(), "run --title") {
+		t.Fatalf("incomplete V2 run surface accepted: %v", err)
+	}
+}
+
+func TestProbeRejectsOpenCodeV2WithoutAppliedPermissions(t *testing.T) {
+	for _, tc := range []struct {
+		name, agents, want string
+	}{
+		{"missing agent", `[]`, "agent=motty_probe"},
+		{"builtin allowed", `[{"id":"motty_probe","permissions":[` +
+			`{"action":"*","resource":"*","effect":"deny"},` +
+			`{"action":"read","resource":"*","effect":"allow"},` +
+			`{"action":"motty_probe_allow","resource":"*","effect":"allow"}]}]`, "read=deny"},
+		{"allow rule not applied", `[{"id":"motty_probe","permissions":[` +
+			`{"action":"*","resource":"*","effect":"deny"}]}]`, "motty_probe_allow=allow"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := probeFixtureError(t, "opencode-cli", openCodeV2Fixture(tc.agents))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("unapplied V2 permission accepted: %v", err)
+			}
+		})
+	}
+}
+
+func TestProbeAcceptsQoderWithScopedPluginListing(t *testing.T) {
+	fixture := probeFixture{
+		Version: "1.1.89",
+		Help: "--print --output-format --permission-mode --allowed-tools --mcp-config --strict-mcp-config " +
+			"--setting-sources --settings --no-session-persistence --tools --attachment --model",
+		Plugins: "[]",
+	}
+	c := probeCommand(t, fixture)
+	if err := probe(t.Context(), "qoder-cli", &c); err != nil {
+		t.Fatalf("capable Qoder build rejected: %v", err)
+	}
+	if c.version != "1.1.89" {
+		t.Fatalf("version = %q", c.version)
+	}
+}
+
+func TestProbeRejectsQoderPluginListWithoutIDs(t *testing.T) {
+	fixture := probeFixture{
+		Version: "1.1.89",
+		Help: "--print --output-format --permission-mode --allowed-tools --mcp-config --strict-mcp-config " +
+			"--setting-sources --settings --no-session-persistence --tools --attachment --model",
+		Plugins: "not json",
+	}
+	if err := probeFixtureError(t, "qoder-cli", fixture); err == nil || !strings.Contains(err.Error(), "invalid_output") {
+		t.Fatalf("invalid plugin list accepted: %v", err)
+	}
+}
+
+func TestProbeRejectsQoderWithoutCLIIsolationFlags(t *testing.T) {
+	fixture := probeFixture{Version: "1.1.89", Help: "--print --output-format", Plugins: "[]"}
+	if err := probeFixtureError(t, "qoder-cli", fixture); err == nil || !strings.Contains(err.Error(), "missing_capability") {
+		t.Fatalf("incomplete Qoder isolation surface accepted: %v", err)
+	}
+}
+
+func TestOpenCodePermissionRulesUseLastMatch(t *testing.T) {
+	rules := []openCodePermissionRule{
+		{Action: "*", Resource: "*", Effect: "allow"},
+		{Action: "*", Resource: "*", Effect: "deny"},
+		{Action: "motty_*", Resource: "*", Effect: "allow"},
+		{Action: "motty_secret", Resource: "*", Effect: "deny"},
+	}
+	for _, tc := range []struct{ action, want string }{
+		{"read", "deny"},
+		{"shell", "deny"},
+		{"motty_search", "allow"},
+		{"motty_secret", "deny"},
+	} {
+		if got := openCodePermissionEffect(rules, tc.action, "*"); got != tc.want {
+			t.Errorf("%s: effect=%q want %q", tc.action, got, tc.want)
+		}
+	}
+	for _, tc := range []struct {
+		pattern, value string
+		want           bool
+	}{
+		{"*", "read", true},
+		{"*", "a/b", true},
+		{"motty_*", "motty_x", true},
+		{"motty_?", "motty_x", true},
+		{"motty_?", "motty_xy", false},
+		{"read", "write", false},
+	} {
+		if got := openCodeWildcard(tc.pattern, tc.value); got != tc.want {
+			t.Errorf("wildcard(%q, %q)=%t want %t", tc.pattern, tc.value, got, tc.want)
+		}
+	}
+}
+
+func TestOpenCodeV2ForeignServersReadsBothConfigShapes(t *testing.T) {
+	raw := []byte(`[
+	  {"type":"document","info":{"mcp":{"servers":{"native":{"type":"remote","url":"http://x/"}},
+	    "timeout":{"execution":1000}}}},
+	  {"type":"directory"},
+	  {"type":"document","info":{"mcp":{"legacy":{"type":"local","command":["x"]}}}}
+	]`)
+	names, ok := openCodeV2ForeignServers(raw)
+	if !ok || strings.Join(names, ",") != "legacy,native" {
+		t.Fatalf("foreign servers = %v, %t", names, ok)
+	}
+	if _, ok := openCodeV2ForeignServers([]byte(`{"not":"an array"}`)); ok {
+		t.Fatal("non-array config listing accepted")
 	}
 }
 

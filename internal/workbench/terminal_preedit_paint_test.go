@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // A program that draws its own cursor hides the real one and leaves placeholder
@@ -16,7 +16,7 @@ func TestCompositionHidesPlaceholderUnderIt(t *testing.T) {
 	session.term.write([]byte("\x1b[?25l\x1b[2;3HAsk Codex\x1b[2;3H"))
 	state.terminalText(session.ID, app.TextEvent{Kind: app.TextSetMarked, Text: "wo", MarkedSelection: app.TextRange{Start: 2, End: 2}})
 
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	state.paintGrid(&canvas, session, geometry)
 	var text string
 	for _, painted := range canvas.Texts() {

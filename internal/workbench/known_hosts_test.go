@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"golang.org/x/crypto/ssh"
 	sshknownhosts "golang.org/x/crypto/ssh/knownhosts"
 	"motty/internal/knownhosts"
@@ -27,7 +27,7 @@ func TestKnownHostsWorkspacePaintsEntriesAndInteractiveHits(t *testing.T) {
 		t.Fatalf("section=%d rows=%d", state.activeSection, len(state.knownHosts.rows))
 	}
 	canvas, texts := paintedTexts(state)
-	for _, id := range []ui.ID{
+	for _, id := range []gfx.ID{
 		hitKnownHostsSearch, hitKnownHostsRefresh, hitKnownHostsDelete, hitKnownHostsRetrust,
 		hitKnownHostRowList.At(0), hitKnownHostCheckList.At(0),
 	} {
@@ -65,7 +65,7 @@ func TestKnownHostsWorkspacePaintsEntriesAndInteractiveHits(t *testing.T) {
 		t.Fatalf("selected=%d, want 2", state.knownHosts.selected)
 	}
 	canvas, _ = paintedTexts(state)
-	if hit, _ := hitByID(canvas, hitKnownHostCheckList.At(0)); !hit.Checked || hit.Role != ui.RoleCheckbox {
+	if hit, _ := hitByID(canvas, hitKnownHostCheckList.At(0)); !hit.Checked || hit.Role != gfx.RoleCheckbox {
 		t.Fatalf("first checkbox hit=%+v", hit)
 	}
 	if hit, _ := hitByID(canvas, hitKnownHostsRetrust); hit.Disabled {
@@ -84,16 +84,16 @@ func TestKnownHostsSearchAndKeyboardSelection(t *testing.T) {
 		t.Fatal("Known Hosts search has no text editor")
 	}
 	app.TextEvent{Kind: app.TextInsert, Text: "compromised"}.Apply(editor)
-	state.Paint(&ui.Canvas{}, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
 	if len(state.knownHosts.visible) != 1 {
 		t.Fatalf("visible=%v", state.knownHosts.visible)
 	}
 	index := state.knownHosts.visible[0]
-	result := state.Key(ui.KeyEvent{Target: hitKnownHostRowList.At(index), Key: ui.KeySpace})
+	result := state.Key(gfx.KeyEvent{Target: hitKnownHostRowList.At(index), Key: gfx.KeySpace})
 	if !result.Handled || !state.knownHosts.rows[index].selected {
 		t.Fatalf("space result=%+v selected=%v", result, state.knownHosts.rows[index].selected)
 	}
-	result = state.Key(ui.KeyEvent{Target: hitKnownHostsSearch, Key: ui.KeyEscape})
+	result = state.Key(gfx.KeyEvent{Target: hitKnownHostsSearch, Key: gfx.KeyEscape})
 	if !result.Handled || state.knownHosts.search.RuneCount() != 0 || len(state.knownHosts.visible) != len(state.knownHosts.rows) {
 		t.Fatalf("escape result=%+v search=%q visible=%d", result, state.knownHosts.search.String(), len(state.knownHosts.visible))
 	}
@@ -105,11 +105,11 @@ func TestKnownHostsDeleteRequiresConfirmationAndRefreshes(t *testing.T) {
 	state := newTestState(t, options)
 	state.Click(hitKnownHosts)
 
-	result := state.Key(ui.KeyEvent{Target: hitKnownHostRowList.At(0), Key: ui.KeySpace})
+	result := state.Key(gfx.KeyEvent{Target: hitKnownHostRowList.At(0), Key: gfx.KeySpace})
 	if !result.Handled {
 		t.Fatal("keyboard did not select the row")
 	}
-	result = state.Key(ui.KeyEvent{Target: hitKnownHostRowList.At(0), Key: ui.KeyDelete})
+	result = state.Key(gfx.KeyEvent{Target: hitKnownHostRowList.At(0), Key: gfx.KeyDelete})
 	if !result.Handled || state.knownHosts.action != knownHostsActionDelete {
 		t.Fatalf("delete result=%+v action=%d", result, state.knownHosts.action)
 	}
@@ -121,7 +121,7 @@ func TestKnownHostsDeleteRequiresConfirmationAndRefreshes(t *testing.T) {
 	if _, ok := hitByID(canvas, hitKnownHostsDialogConfirm); !ok || !contains(texts, state.messages.KnownHostsDeleteTitle) {
 		t.Fatal("delete confirmation is not headless-visible")
 	}
-	result = state.Key(ui.KeyEvent{Target: hitKnownHostsDialogConfirm, Key: ui.KeyEnter})
+	result = state.Key(gfx.KeyEvent{Target: hitKnownHostsDialogConfirm, Key: gfx.KeyEnter})
 	if !result.Handled || state.knownHosts.action != knownHostsActionNone || len(state.knownHosts.rows) != 2 {
 		t.Fatalf("confirm result=%+v action=%d rows=%d", result, state.knownHosts.action, len(state.knownHosts.rows))
 	}
@@ -188,8 +188,8 @@ func TestKnownHostsSteadyStatePaintDoesNotAllocate(t *testing.T) {
 	writeKnownHostsFixture(t, options.KnownHostsPath)
 	state := newTestState(t, options)
 	state.Click(hitKnownHosts)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 
 	if allocations := testing.AllocsPerRun(100, func() {

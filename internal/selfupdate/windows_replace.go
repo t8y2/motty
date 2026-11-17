@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+
+	"motty/internal/datadir"
 )
 
 // replaceWindowsExecutable retires the installed image on the same volume before
@@ -46,6 +49,101 @@ func replaceWindowsExecutable(root, name string, install func() error) error {
 	// A running MCP server may still hold this image. Leave it in place until
 	// a later update can remove it; no active process or remote command is killed.
 	cleanRetiredExecutables(root, prefix)
+	return nil
+}
+
+func (job Job) applyPortable() error {
+	if !strings.EqualFold(filepath.Base(job.Exe), "motty.exe") || !strings.EqualFold(filepath.Clean(filepath.Dir(job.Exe)), filepath.Clean(job.Root)) ||
+		filepath.Base(job.Staged) != "motty.exe" || !isDir(filepath.Join(job.Root, datadir.PortableName)) ||
+		exists(filepath.Join(job.Root, "Uninstall.exe")) ||
+		exists(filepath.Join(job.Root, "install.json")) || exists(filepath.Join(job.Root, "manifest.json")) {
+		return ErrUnsupported
+	}
+	if runtime.GOOS == "windows" {
+		install, reason := Detect(job.Exe, SystemEnv())
+		if reason != ReasonNone || install.Kind != KindWindowsPortable || !strings.EqualFold(install.Root, job.Root) {
+			return ErrUnsupported
+		}
+	}
+	stage, err := os.MkdirTemp(job.Root, ".motty-portable-stage-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(stage)
+	ready := filepath.Join(stage, "motty.exe")
+	if err := copyExecutable(job.Staged, ready); err != nil {
+		return err
+	}
+
+	stagedRoot := filepath.Dir(job.Staged)
+	stagedConpty := filepath.Join(stagedRoot, "conpty")
+	var rollbackConpty func() error
+	keepConptyBackup := false
+	if isDir(stagedConpty) {
+		work, err := os.MkdirTemp(job.Root, ".motty-conpty-stage-")
+		if err != nil {
+			return err
+		}
+		defer func() {
+			// A failed restore leaves the old tree in work; deleting it would
+			// remove the only copy, so the failure path keeps it for support.
+			if !keepConptyBackup {
+				os.RemoveAll(work)
+			}
+		}()
+		fresh := filepath.Join(work, "new")
+		if err := moveTree(stagedConpty, fresh); err != nil {
+			return fmt.Errorf("staging the conpty files: %w", err)
+		}
+		installed := filepath.Join(job.Root, "conpty")
+		previous := filepath.Join(work, "old")
+		hadPrevious := false
+		if _, err := os.Stat(installed); err == nil {
+			if err := os.Rename(installed, previous); err != nil {
+				return fmt.Errorf("setting the old conpty files aside: %w", err)
+			}
+			hadPrevious = true
+		}
+		if err := os.Rename(fresh, installed); err != nil {
+			if hadPrevious {
+				if restoreErr := os.Rename(previous, installed); restoreErr != nil {
+					keepConptyBackup = true
+					return errors.Join(
+						fmt.Errorf("installing the conpty files: %w", err),
+						fmt.Errorf("restoring the old conpty files from %s: %w", previous, restoreErr))
+				}
+			}
+			return fmt.Errorf("installing the conpty files: %w", err)
+		}
+		rollbackConpty = func() error {
+			if err := os.RemoveAll(installed); err != nil {
+				return err
+			}
+			if hadPrevious {
+				if err := os.Rename(previous, installed); err != nil {
+					return fmt.Errorf("restoring the old conpty files from %s: %w", previous, err)
+				}
+			}
+			return nil
+		}
+	}
+
+	if err := replaceWindowsExecutable(job.Root, "motty.exe", func() error {
+		return os.Rename(ready, job.Exe)
+	}); err != nil {
+		if rollbackConpty != nil {
+			if restoreErr := rollbackConpty(); restoreErr != nil {
+				keepConptyBackup = true
+				return errors.Join(err, restoreErr)
+			}
+		}
+		return err
+	}
+	// The portable folder's note now describes the payload it arrived with.
+	// Failing to refresh documentation must not fail an installed update.
+	if note, err := os.ReadFile(filepath.Join(stagedRoot, "motty-data", "README.txt")); err == nil {
+		_ = os.WriteFile(filepath.Join(job.Root, datadir.PortableName, "README.txt"), note, 0o644)
+	}
 	return nil
 }
 

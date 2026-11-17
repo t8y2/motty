@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	layoutcore "motty/internal/workspace"
 )
@@ -22,6 +22,8 @@ type tabsClose struct {
 	// again" box.
 	running []string
 	quiet   bool
+	// quietRow is the box the quiet checkbox is painted in.
+	quietRow ui.Box
 }
 
 // sessionRunning reports whether closing the session would end something live: a
@@ -104,7 +106,22 @@ func (state *State) askCloseLockedTab(id layoutcore.WorkspaceID) {
 	state.modal = modalCloseTabs
 }
 
-func (state *State) clickCloseTabsDialog(id ui.ID) {
+func (state *State) tabMiddlePointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	if event.Kind != gfx.PointerDown || event.Button != gfx.PointerButtonMiddle || state.modal != modalNone || state.tabMenu.open {
+		return gfx.EventResult{}, false
+	}
+	switch event.Target.Scope() {
+	case hitTabList, hitTabCloseList:
+		state.closeWorkspace(layoutcore.WorkspaceID(item(event.Target)))
+	case fileTabList, fileTabCloseList:
+		state.requestCloseSFTPTab(state.sftpWindows[uint32(item(event.Target))])
+	default:
+		return gfx.EventResult{}, false
+	}
+	return gfx.EventResult{Handled: true, Repaint: true}, true
+}
+
+func (state *State) clickCloseTabsDialog(id gfx.ID) {
 	switch id {
 	case hitTabsCloseDismiss, hitTabsCloseClose, hitTabsCloseCancel:
 		state.modal = modalNone
@@ -128,28 +145,24 @@ func (state *State) clickCloseTabsDialog(id ui.ID) {
 }
 
 // closeTabsKey makes Enter on the confirm button confirm.
-func (state *State) closeTabsKey(event ui.KeyEvent) (ui.EventResult, bool) {
-	if state.modal != modalCloseTabs || event.Key != ui.KeyEnter || event.Target != hitTabsCloseConfirm || event.Repeat {
-		return ui.EventResult{}, false
+func (state *State) closeTabsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if state.modal != modalCloseTabs {
+		return gfx.EventResult{}, false
+	}
+	if event.Key != gfx.KeyEnter || event.Target != hitTabsCloseConfirm || event.Repeat {
+		return gfx.EventResult{}, false
 	}
 	state.clickCloseTabsDialog(hitTabsCloseConfirm)
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
-func (state *State) paintCloseTabsDialog(canvas *ui.Canvas, viewport ui.Rect) {
+// declareCloseTabsDialog declares the close-tab confirmation as a dialog of the
+// workbench page.
+func (state *State) declareCloseTabsDialog(c ui.C) {
 	messages := state.messages
 	// A tab that asks because of its lock keeps that question; the running one
 	// lists what would stop and offers to stop asking.
 	asking := state.tabsClose.locked == 0 && len(state.tabsClose.running) > 0
-	options := components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitTabsCloseDismiss, CloseID: hitTabsCloseClose, InitialFocusID: hitTabsCloseCancel,
-		ContentSize: ui.Size{Width: 520}, FitBody: true,
-	}
-	if asking {
-		options.BodyHeight = float32(20*min(len(state.tabsClose.running), 6)) + 44
-	}
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, options)
 	title := fmt.Sprintf(messages.CloseTabsTitleFmt, state.tabsClose.count)
 	description := messages.CloseTabsDescription
 	if state.tabsClose.locked > 0 {
@@ -162,27 +175,47 @@ func (state *State) paintCloseTabsDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	if asking {
 		title, description = messages.CloseRunningTitle, messages.CloseRunningDescription
 	}
-	layout := dialog.Begin(title, description)
+	bodyHeight := float32(0)
 	if asking {
-		var quiet flex.Box
-		f := state.settingsRow.Begin(canvas, state.Theme(), layout.Body)
-		f.Column().Fill().Children(func() {
-			for index, name := range state.tabsClose.running {
-				if index == 6 {
-					f.Text(fmt.Sprintf("+%d", len(state.tabsClose.running)-index)).FontSize(metrics.FontSizeM).Color(state.pal.muted).LineHeight(20)
-					break
-				}
-				f.Text(name).FontSize(metrics.FontSizeM).Color(state.pal.text).LineHeight(20)
-			}
-			f.Spacer().Grow(1)
-			quiet = state.declareDialogCheckbox(f, messages.CloseRunningAsk, 0, 0)
-		})
-		f.End()
-		state.paintDialogCheckbox(canvas, hitTabsCloseQuiet, messages.CloseRunningAsk, state.tabsClose.quiet, quiet)
+		bodyHeight = float32(20*min(len(state.tabsClose.running), 6)) + 44
 	}
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitTabsCloseCancel, Label: messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitTabsCloseConfirm, Label: messages.CloseTabsConfirm, Variant: components.ButtonDestructive},
-	)
-	dialog.End()
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 520, description, bodyHeight)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: title, Description: description, Width: 520, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitTabsCloseDismiss, CloseID: hitTabsCloseClose, InitialFocusID: hitTabsCloseCancel,
+	})
+	dialog.Body(func() {
+		if !asking {
+			return
+		}
+		column := ui.Column(c).Fill()
+		column.Children(func() {
+			state.declareCloseTabsBody(c)
+		})
+		column.DrawOver(func(d *ui.DrawContext) {
+			state.paintDialogCheckbox(d.Canvas, hitTabsCloseQuiet, messages.CloseRunningAsk, state.tabsClose.quiet, state.tabsClose.quietRow)
+		})
+	})
+	dialog.Footer(func() {
+		state.dialogActionFooter(c,
+			components.ButtonAction{ID: hitTabsCloseCancel, Label: messages.Cancel, Variant: components.ButtonSecondary},
+			components.ButtonAction{ID: hitTabsCloseConfirm, Label: messages.CloseTabsConfirm, Variant: components.ButtonDestructive},
+		)
+	})
+}
+
+// declareCloseTabsBody lays out the running sessions, at most six, and the box
+// that stops asking.
+func (state *State) declareCloseTabsBody(c ui.C) {
+	pending, messages := &state.tabsClose, state.messages
+	for index, name := range pending.running {
+		if index == 6 {
+			ui.Textf(c, "+%d", len(pending.running)-index).FontSize(metrics.FontSizeM).Color(state.pal.muted).LineHeight(20)
+			break
+		}
+		ui.Text(c, name).FontSize(metrics.FontSizeM).Color(state.pal.text).LineHeight(20)
+	}
+	ui.Spacer(c).Grow(1)
+	pending.quietRow = state.declareDialogCheckboxC(c, messages.CloseRunningAsk, 0, 0)
 }

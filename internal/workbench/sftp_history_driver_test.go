@@ -10,13 +10,13 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
-func historyDriverClick(t *testing.T, driver *app.Driver, id ui.ID) {
+func historyDriverClick(t *testing.T, driver *app.Driver, id gfx.ID) {
 	t.Helper()
 	hit := hitOf(t, driver, id)
 	if err := driver.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
@@ -30,8 +30,11 @@ func TestSFTPHistoryNativeListAltAndTextPassThrough(t *testing.T) {
 	state.navigateSFTPDirectory(view, "/home/test/docs")
 	waitSFTP(t, state, session, func(v *sftpView) bool { return !v.busy && v.path == "/home/test/docs" })
 	driver := sftpPathFocusDriver(t, state)
-	historyDriverClick(t, driver, contextID(hitSFTPEntryList.At(0)))
-	if err := driver.Key(ui.KeyLeft, ui.ModifierAlt); err != nil {
+	if err := driver.Pump(); err != nil {
+		t.Fatal(err)
+	}
+	historyDriverClick(t, driver, sftpListRowID(t, view.active(), 0))
+	if err := driver.Key(gfx.KeyLeft, gfx.ModifierAlt); err != nil {
 		t.Fatal(err)
 	}
 	waitSFTP(t, state, session, func(v *sftpView) bool { return !v.busy && v.path == "/home/test" })
@@ -55,7 +58,7 @@ func TestSFTPHistoryNativeListAltAndTextPassThrough(t *testing.T) {
 			t.Fatal(err)
 		}
 		before := append([]string(nil), view.history.recent...)
-		if err := driver.Key(ui.KeyLeft, ui.ModifierAlt); err != nil {
+		if err := driver.Key(gfx.KeyLeft, gfx.ModifierAlt); err != nil {
 			t.Fatal(err)
 		}
 		if view.path != "/home/test" || !reflect.DeepEqual(before, view.history.recent) {
@@ -65,8 +68,8 @@ func TestSFTPHistoryNativeListAltAndTextPassThrough(t *testing.T) {
 			t.Fatalf("Option word movement did not reach native input: %v", editor)
 		}
 	}
-	for _, target := range []ui.ID{state.activeTerminalFocusHit(), contextID(hitSFTPEditor)} {
-		if result, ok := state.sftpKey(ui.KeyEvent{Target: target, Key: ui.KeyLeft, Modifiers: ui.ModifierAlt}); ok || result.Handled {
+	for _, target := range []gfx.ID{state.activeTerminalFocusHit(), contextID(hitSFTPEditor)} {
+		if result, ok := state.sftpKey(gfx.KeyEvent{Target: target, Key: gfx.KeyLeft, Modifiers: gfx.ModifierAlt}); ok || result.Handled {
 			t.Fatal("history stole terminal/editor key")
 		}
 	}
@@ -75,7 +78,7 @@ func TestSFTPHistoryNativeListAltAndTextPassThrough(t *testing.T) {
 	shell.mu.Lock()
 	inputBefore := len(shell.input)
 	shell.mu.Unlock()
-	if err := driver.Key(ui.KeyRight, ui.ModifierAlt); err != nil {
+	if err := driver.Key(gfx.KeyRight, gfx.ModifierAlt); err != nil {
 		t.Fatal(err)
 	}
 	shell.mu.Lock()
@@ -91,11 +94,116 @@ func TestSFTPHistoryNativeListAltAndTextPassThrough(t *testing.T) {
 	if err := driver.SelectText(0, 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := driver.Key(ui.KeyRight, ui.ModifierAlt); err != nil {
+	if err := driver.Key(gfx.KeyRight, gfx.ModifierAlt); err != nil {
 		t.Fatal(err)
 	}
 	if view.path != "/home/test" || view.editEditor.Caret() == 0 {
 		t.Fatal("remote editor Alt word movement navigated history")
+	}
+}
+
+func historyDriverDoubleClick(t *testing.T, driver *app.Driver, id gfx.ID) {
+	t.Helper()
+	hit := hitOf(t, driver, id)
+	if err := driver.DoubleClick(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSFTPHistoryUnselectedAndBackgroundAltShortcuts(t *testing.T) {
+	state, session, fake, _ := openTestSFTP(t)
+	view := session.files
+	fake.mu.Lock()
+	remote := fake.sftp.(*workbenchSFTPRemote)
+	remote.entries["/home/test/empty"] = nil
+	remote.entries["/home/test"] = append(remote.entries["/home/test"], workbenchFileInfo{name: "empty", mode: os.ModeDir | 0o755})
+	fake.mu.Unlock()
+
+	driver := sftpPathFocusDriver(t, state)
+	if err := driver.Pump(); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Double click "docs" folder row to navigate into /home/test/docs
+	docsIndex := sftpRowIndex(t, view, "docs")
+	docsRowID := sftpListRowID(t, view.active(), docsIndex)
+	historyDriverDoubleClick(t, driver, docsRowID)
+	waitSFTP(t, state, session, func(v *sftpView) bool { return !v.busy && v.path == "/home/test/docs" })
+	if err := driver.Pump(); err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. Immediately press Alt+Left without any intermediate click
+	if err := driver.Key(gfx.KeyLeft, gfx.ModifierAlt); err != nil {
+		t.Fatal(err)
+	}
+	waitSFTP(t, state, session, func(v *sftpView) bool { return !v.busy && v.path == "/home/test" })
+	if err := driver.Pump(); err != nil {
+		t.Fatal(err)
+	}
+
+	// 3. Double click "docs" again, then click list background (whitespace, unselecting rows)
+	docsIndex = sftpRowIndex(t, view, "docs")
+	docsRowID = sftpListRowID(t, view.active(), docsIndex)
+	historyDriverDoubleClick(t, driver, docsRowID)
+	waitSFTP(t, state, session, func(v *sftpView) bool { return !v.busy && v.path == "/home/test/docs" })
+	if err := driver.Pump(); err != nil {
+		t.Fatal(err)
+	}
+
+	historyDriverClick(t, driver, contextID(hitSFTPListBackground))
+
+	// Alt+Left navigates Back to /home/test
+	if err := driver.Key(gfx.KeyLeft, gfx.ModifierAlt); err != nil {
+		t.Fatal(err)
+	}
+	waitSFTP(t, state, session, func(v *sftpView) bool { return !v.busy && v.path == "/home/test" })
+	if err := driver.Pump(); err != nil {
+		t.Fatal(err)
+	}
+
+	// 4. Click column header and Alt+Right navigates Forward to /home/test/docs
+	historyDriverClick(t, driver, contextID(hitSFTPColumnList.At(0)))
+	if err := driver.Key(gfx.KeyRight, gfx.ModifierAlt); err != nil {
+		t.Fatal(err)
+	}
+	waitSFTP(t, state, session, func(v *sftpView) bool { return !v.busy && v.path == "/home/test/docs" })
+	if err := driver.Pump(); err != nil {
+		t.Fatal(err)
+	}
+
+	// 5. Navigate to empty directory where there are no rows to select
+	state.navigateSFTPDirectory(view, "/home/test/empty")
+	waitSFTP(t, state, session, func(v *sftpView) bool { return !v.busy && v.path == "/home/test/empty" })
+	if err := driver.Pump(); err != nil {
+		t.Fatal(err)
+	}
+	if len(view.active().rows) != 0 {
+		t.Fatalf("expected empty directory, got %d rows", len(view.active().rows))
+	}
+	historyDriverClick(t, driver, contextID(hitSFTPListBackground))
+	if err := driver.Key(gfx.KeyLeft, gfx.ModifierAlt); err != nil {
+		t.Fatal(err)
+	}
+	waitSFTP(t, state, session, func(v *sftpView) bool { return !v.busy && v.path == "/home/test/docs" })
+	if err := driver.Pump(); err != nil {
+		t.Fatal(err)
+	}
+
+	// 6. Local directory panel history with background click
+	state.toggleSFTPPane(view)
+	localDirA, localDirB := t.TempDir(), t.TempDir()
+	state.navigateLocalDirectory(view, localDirA)
+	state.navigateLocalDirectory(view, localDirB)
+	if err := driver.Pump(); err != nil {
+		t.Fatal(err)
+	}
+	historyDriverClick(t, driver, contextID(hitSFTPListBackground))
+	if err := driver.Key(gfx.KeyLeft, gfx.ModifierAlt); err != nil {
+		t.Fatal(err)
+	}
+	if view.lfolder.path != localDirA {
+		t.Fatalf("local pane history back failed: got %q want %q", view.lfolder.path, localDirA)
 	}
 }
 
@@ -154,11 +262,11 @@ func TestSFTPHistoryMoreMenusExposeRecentFullPathHints(t *testing.T) {
 	if !foundBack || !foundRecent {
 		t.Fatalf("history More menu missing Back/full recent Hint: %v/%v", foundBack, foundRecent)
 	}
-	if err := driver.Key(ui.KeyEnd, 0); err != nil {
+	if err := driver.Key(gfx.KeyEnd, 0); err != nil {
 		t.Fatal(err)
 	}
-	if driver.Snapshot().Focused != contextID(sftpHeaderSortHits.At(2)) {
-		t.Fatalf("sidebar history More menu lost native keyboard scrolling/focus: got %v want %v owner %v", driver.Snapshot().Focused, contextID(sftpHeaderSortHits.At(2)), state.popups.owner)
+	if driver.Snapshot().Focused != contextID(hitSFTPCalculateDirectorySize) {
+		t.Fatalf("sidebar history More menu lost native keyboard scrolling/focus: got %v want %v owner %v", driver.Snapshot().Focused, contextID(hitSFTPCalculateDirectorySize), state.popups.owner)
 	}
 }
 
@@ -190,7 +298,7 @@ func TestSFTPWindowHistoryNativeRestoreAndIndependentMenus(t *testing.T) {
 	}
 	remoteBefore := append([]string(nil), w.view.history.recent...)
 	dualClickID(t, preview, dualRow(t, w, true, name))
-	if err := preview.Driver().Key(ui.KeyRight, ui.ModifierAlt); err != nil {
+	if err := preview.Driver().Key(gfx.KeyRight, gfx.ModifierAlt); err != nil {
 		t.Fatal(err)
 	}
 	dualWait(t, state, w, preview, func() bool { return folder.path == away })
@@ -217,7 +325,7 @@ func TestSFTPWindowHistoryNativeRestoreAndIndependentMenus(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		if err := preview.Driver().Key(ui.KeyEscape, 0); err != nil {
+		if err := preview.Driver().Key(gfx.KeyEscape, 0); err != nil {
 			t.Fatal(err)
 		}
 		if w.headerMenuOpen() {
@@ -233,8 +341,8 @@ func TestSFTPHistorySteadyPaintBudget(t *testing.T) {
 	}
 	for _, open := range []bool{false, true} {
 		session.files.headerMenuOpen = open
-		var canvas ui.Canvas
-		size := ui.Size{Width: 1400, Height: 900}
+		var canvas gfx.Canvas
+		size := gfx.Size{Width: 1400, Height: 900}
 		state.Paint(&canvas, size)
 		allocs := testing.AllocsPerRun(30, func() { canvas.Reset(); state.Paint(&canvas, size) })
 		if allocs != 0 {
@@ -246,11 +354,14 @@ func TestSFTPHistorySteadyPaintBudget(t *testing.T) {
 		w.view.lfolder.history.touch(fmt.Sprintf("/history/path-%d", i))
 	}
 	w.view.lfolder.headerMenuOpen = true
-	var canvas ui.Canvas
-	w.paint(&canvas, ui.Size{Width: 900, Height: 640})
+	var canvas gfx.Canvas
+	w.paint(&canvas, gfx.Size{Width: 900, Height: 640})
 	// Isolate the added menu: existing pane fmt pools are randomly dropped by
 	// race builds, so the whole-window allocation count has no fixed ceiling.
-	allocs := testing.AllocsPerRun(30, func() { canvas.Reset(); w.paintHeaderMenu(&canvas, 0) })
+	allocs := testing.AllocsPerRun(30, func() {
+		canvas.Reset()
+		w.paintHeaderMenu(&canvas, 0, gfx.Rect{Width: 900, Height: 640}, &w.ui.headerScroll)
+	})
 	if allocs != 0 {
 		t.Fatalf("detached history menu allocations=%v, want zero", allocs)
 	}
@@ -263,13 +374,13 @@ func TestSFTPHistoryBackgroundMenuCannotStealModalInput(t *testing.T) {
 	state.openHostDialog()
 	driver.Resize(1401, 900)
 	historyDriverClick(t, driver, hitDialogLabel)
-	if err := driver.Key(ui.KeyDown, 0); err != nil {
+	if err := driver.Key(gfx.KeyDown, 0); err != nil {
 		t.Fatal(err)
 	}
 	if driver.Snapshot().Focused != hitDialogLabel {
 		t.Fatal("background history menu stole modal arrow focus")
 	}
-	if result := state.Key(ui.KeyEvent{Target: hitDialogLabel, Text: "f"}); !result.Focus.IsZero() {
+	if result := state.Key(gfx.KeyEvent{Target: hitDialogLabel, Text: "f"}); !result.Focus.IsZero() {
 		t.Fatal("background history menu captured modal typed key")
 	}
 	if err := driver.Type("f"); err != nil {
@@ -278,7 +389,7 @@ func TestSFTPHistoryBackgroundMenuCannotStealModalInput(t *testing.T) {
 	if state.editor.label.String() != "f" {
 		t.Fatal("background history menu stole modal typing")
 	}
-	if err := driver.Key(ui.KeyEscape, 0); err != nil {
+	if err := driver.Key(gfx.KeyEscape, 0); err != nil {
 		t.Fatal(err)
 	}
 	if state.modal != modalNone {
@@ -293,11 +404,11 @@ func TestSFTPHistoryBackgroundMenuCannotStealTransferCenterInput(t *testing.T) {
 	state.Click(hitTransferCenter)
 	driver.Resize(1401, 900)
 	historyDriverClick(t, driver, hitTransfersFilter.At(0))
-	for _, event := range []ui.KeyEvent{{Key: ui.KeyDown}, {Text: "f"}} {
+	for _, event := range []gfx.KeyEvent{{Key: gfx.KeyDown}, {Text: "f"}} {
 		if event.Key != 0 {
 			driver.Key(event.Key, 0)
 		} else {
-			if result := state.Key(ui.KeyEvent{Target: driver.Snapshot().Focused, Text: event.Text}); !result.Focus.IsZero() {
+			if result := state.Key(gfx.KeyEvent{Target: driver.Snapshot().Focused, Text: event.Text}); !result.Focus.IsZero() {
 				t.Fatal("background history menu captured transfer center typed key")
 			}
 		}
@@ -305,7 +416,7 @@ func TestSFTPHistoryBackgroundMenuCannotStealTransferCenterInput(t *testing.T) {
 			t.Fatal("background history menu stole transfer center input")
 		}
 	}
-	if err := driver.Key(ui.KeyEscape, 0); err != nil {
+	if err := driver.Key(gfx.KeyEscape, 0); err != nil {
 		t.Fatal(err)
 	}
 	if state.transfers.open {

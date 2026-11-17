@@ -8,6 +8,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/i18n"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
@@ -17,14 +18,17 @@ import (
 // The terminal entry borrows that connection; the host-menu entry owns its
 // connection or authenticated share. Both own their browser and SFTP worker.
 type sftpWindow struct {
-	owner                       *State
-	session                     Session
-	window                      *app.ContentWindow
-	view                        *sftpView
-	closed, closeConfirm        bool
-	closedSignal                atomic.Bool
-	allowClose, afterClosed     func()
-	activeLocal                 bool
+	owner                   *State
+	session                 Session
+	window                  *app.ContentWindow
+	view                    *sftpView
+	closed, closeConfirm    bool
+	closedSignal            atomic.Bool
+	allowClose, afterClosed func()
+	activeLocal             bool
+	// pendingFocus is the control the next paint hands the keyboard to, for a
+	// focus change the model makes outside an input event.
+	pendingFocus                gfx.ID
 	localRefresh                bool
 	pendingLocal                string
 	phase                       sshconn.Phase
@@ -46,6 +50,24 @@ type sftpWindow struct {
 	browse                      sftpBrowseSync
 	bookmark                    sftpBookmarkEditor
 	fileProperties              sftpFileProperties
+	directoryTree               [2]sftpDirectoryTree
+	// frame and visible let another window find this one while a file drag is
+	// outside its own content area. They are nil for a tab hosted by the main
+	// window, which the drag finds through the tab strip instead.
+	frame   func() (gfx.Rect, bool)
+	visible func() bool
+	// foreign is what another window's drag would drop here, for the highlight.
+	foreign sftpForeignDrag
+}
+
+// sftpForeignDrag is a file drag from another window that would land in this
+// window's pane. The highlight is cleared by the drag's source.
+type sftpForeignDrag struct {
+	active    bool
+	fromLocal bool // the source pane is this computer's
+	local     bool // the target pane is this computer's
+	target    string
+	row       int
 }
 
 func (state *State) openSFTPWindow(source *Session) {
@@ -66,6 +88,8 @@ func (state *State) openSFTPWindow(source *Session) {
 
 func (state *State) newSFTPWindow(source *Session) *sftpWindow {
 	w := &sftpWindow{owner: state, activeLocal: true, phase: source.phase, language: state.language, pal: state.pal}
+	w.directoryTree[0].enabled = state.sftpDirectoryTree
+	w.directoryTree[1].enabled = state.sftpDirectoryTree
 	w.view = &sftpView{detached: w, busy: true, operation: sftpclient.OperationList}
 	w.view.startListingStatus(state.messages.SFTPLoading)
 	// A server lists its dotfiles by default, as the docked panel does (openSFTP).
@@ -75,7 +99,7 @@ func (state *State) newSFTPWindow(source *Session) *sftpWindow {
 	w.view.selected, w.view.lfolder.selected = -1, -1
 	w.session = Session{ID: source.ID, HostID: source.HostID, Title: source.Title, Address: source.Address, host: source.host, conn: source.conn, phase: source.phase, files: w.view}
 	w.ui.fraction = .5
-	w.initialLocal = localStart()
+	w.initialLocal = state.localSideStart()
 	if source.files != nil {
 		w.initialRemote = source.files.path
 		if source.files.lfolder.path != "" {
@@ -98,6 +122,8 @@ func (w *sftpWindow) show() {
 		return
 	}
 	w.window = window
+	w.frame = window.Frame
+	w.visible = func() bool { return !window.Closed() && !window.Minimized() }
 	if w.ownsConnection && w.session.relay != nil {
 		w.session.relay.set(func() { window.Invalidate(); state.options.Invalidate() })
 	}
@@ -111,15 +137,30 @@ func (w *sftpWindow) startBrowser() {
 	}
 	state := w.owner
 	connection, mode := w.session.conn, w.session.host.Transfer
-	w.view.worker = sftpclient.NewWorker(func() (sftpclient.Remote, error) { return openRemoteFiles(connection, mode) }, w.invalidate)
+	w.view.openFiles = func() (sftpclient.Remote, error) { return openRemoteFiles(connection, mode) }
+	w.view.worker = sftpclient.NewWorker(w.view.openFiles, w.invalidate)
 	state.configureSFTPWorker(w.view)
 	state.listLocal(w.view, w.initialLocal)
 	state.listSFTP(w.view, w.initialRemote)
+	if w.directoryTree[0].enabled {
+		w.enableDirectoryTree(0, w.initialLocal)
+	}
+	if w.directoryTree[1].enabled {
+		w.enableDirectoryTree(1, w.initialRemote)
+	}
 	w.invalidate()
 }
 
 func (w *sftpWindow) config() app.Config {
-	return app.Config{Title: w.owner.messages.SFTPWindow.Title + " — " + w.session.Title + " · " + w.session.Address, Icon: AppIcon(), Width: 1200, Height: 800, MinWidth: sftpWindowMinWidth, MinHeight: sftpWindowMinHeight, Tree: Tree(), Paint: w.paint, OnWake: w.wake, OnPointer: w.pointer, OnKey: w.key, OnShortcut: w.shortcut, OnScroll: w.scroll, OnFileDrop: w.fileDrop, TextInput: w.textInput, OnCloseRequest: w.requestClose, OnClosed: w.onClosed}
+	base := app.Config{Title: w.owner.messages.SFTPWindow.Title + " — " + w.session.Title + " · " + w.session.Address, Icon: AppIcon(), Width: 1200, Height: 800, MinWidth: sftpWindowMinWidth, MinHeight: sftpWindowMinHeight, WindowMode: app.WindowCustomTitlebar, TitlebarHeight: TitlebarHeight, ClearColor: windowClearColor(w.pal.workspace), WindowBorderColor: func() app.Color { return windowClearColor(w.pal.workspace) }, Tree: Tree(), Paint: w.paint, OnWake: w.wake, OnPointer: w.pointer, OnKey: w.key, OnShortcut: w.shortcut, OnScroll: w.scroll, OnFileDrop: w.fileDrop, TextInput: w.textInput, OnCloseRequest: w.requestClose, OnClosed: w.onClosed}
+	// The window's page routes its chrome, its panes' Lists and its connecting
+	// state. The window keeps Paint (it also paints the toolbar controls, dialogs
+	// and transfer queue the page only lays out) and OnScroll (a wheel notch moves
+	// whole rows, and the window hands the offset to each List).
+	config := w.windowPage().Config(base)
+	config.Paint = base.Paint
+	config.OnScroll = base.OnScroll
+	return config
 }
 
 func (w *sftpWindow) connected() bool {
@@ -154,6 +195,16 @@ func (w *sftpWindow) pump() {
 	}
 	w.owner.pumpSFTP(&w.session)
 	if !w.connected() {
+		if w.view.sudo {
+			w.owner.forgetSFTPDocumentAccess(w.view)
+			w.view.worker.Interrupt()
+			w.view.worker.Close()
+			w.owner.refreshSFTPTransfers(w.view)
+			w.owner.archiveTransfers(w.view)
+			w.view.worker = nil
+			w.view.openFiles = nil
+			w.view.sudo = false
+		}
 		w.browse.enabled, w.browse.pending = false, nil
 		if w.view.dialog == sftpDialogBrowseCreateDirectory {
 			w.owner.closeSFTPDialog(w.view)
@@ -251,6 +302,12 @@ func (w *sftpWindow) onClosed() {
 		return
 	}
 	w.closed = true
+	w.fileProperties.close()
+	w.view.sftpFolder.stopSizeCalculation()
+	w.view.lfolder.stopSizeCalculation()
+	if w.owner.modal == modalSudoSFTP && w.owner.sudoSFTP.window == w {
+		w.owner.closeModal()
+	}
 	w.browse.pending, w.browse.enabled = nil, false
 	if w.ownsConnection && w.owner.modalSession == w.session.ID {
 		w.owner.closeModal()
@@ -258,16 +315,33 @@ func (w *sftpWindow) onClosed() {
 	w.deferredListings = [2]func(){}
 	w.view.localSeq++
 	w.view.remoteSeq++
+	w.cancelDrag()
+	w.clearDirectoryTreeRequests()
+	// The copied server files stay available while another terminal keeps the
+	// connection; only a window that takes its own connection away ends them.
+	if w.ownsConnection {
+		w.owner.clearSFTPRemoteClipboardFrom(w.view)
+	}
+	w.owner.cancelRemoteCopiesFrom(w.view)
 	if w.view.cancelExtract != nil {
 		w.view.cancelExtract()
 	}
 	w.view.extracting = false
 	w.owner.dropWindowExternalEdits(w)
+	if w.view.sudo {
+		w.owner.forgetSFTPDocumentAccess(w.view)
+	}
 	if w.view.worker != nil {
+		// The window's connection is going away with it. Its unfinished uploads
+		// and downloads keep their partial files and wait for a view of the same
+		// host (ADR 0028).
+		w.view.worker.Interrupt()
 		w.view.worker.Close()
 		w.owner.refreshSFTPTransfers(w.view)
 		w.owner.archiveTransfers(w.view)
 	}
+	w.view.openFiles = nil
+	w.view.sudo = false
 	w.owner.options.Invalidate()
 	w.view.rows = nil
 	w.view.lfolder.rows = nil
@@ -362,6 +436,11 @@ func (w *sftpWindow) hasWork() bool {
 		if w.owner.edits.list[i].origin == w {
 			return true
 		}
+	}
+	// A copy this window is the source of still reads through its connection:
+	// closing the window must ask first, and cancel it if the user agrees.
+	if len(w.view.outgoingCopies) > 0 {
+		return true
 	}
 	return w.view.worker != nil && sftpTransfersActive(w.view.worker.Transfers(nil))
 }

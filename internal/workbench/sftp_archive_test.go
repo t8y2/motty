@@ -10,8 +10,8 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
@@ -19,9 +19,9 @@ func TestRemoteFolderContextMenuCompressesOnTheServerAndRefreshes(t *testing.T) 
 	state, session, fake, remote := openTestSFTP(t)
 	view := session.files
 	clickSFTPRow(t, state, view, "docs")
-	state.sftpMenu = sftpMenu{open: true, session: session.ID, at: ui.Point{X: 80, Y: 140}}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	state.sftpMenu = sftpMenu{open: true, session: session.ID, at: gfx.Point{X: 80, Y: 140}}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitSFTPMenuCompress); !ok {
 		t.Fatal("remote folder has no Compress menu item")
 	}
@@ -29,8 +29,8 @@ func TestRemoteFolderContextMenuCompressesOnTheServerAndRefreshes(t *testing.T) 
 	if view.dialog != sftpDialogCompress || view.dialogEditor.String() != "docs.tar.gz" {
 		t.Fatalf("compression dialog = %v, name = %q", view.dialog, view.dialogEditor.String())
 	}
-	var dialogCanvas ui.Canvas
-	state.Paint(&dialogCanvas, ui.Size{Width: 1400, Height: 900})
+	var dialogCanvas gfx.Canvas
+	state.Paint(&dialogCanvas, gfx.Size{Width: 1400, Height: 900})
 	fieldID := hitSFTPDialogField
 	if _, ok := hitByID(&dialogCanvas, fieldID); !ok {
 		t.Fatal("compression dialog did not paint its archive-name input")
@@ -150,7 +150,7 @@ func TestArchiveDialogIMEConfirmationDoesNotSubmit(t *testing.T) {
 	clickSFTPRow(t, state, view, "docs")
 	state.Click(hitSFTPCompress)
 	view.dialogEditor.SetMarkedText("中文", text.Range{Start: 0, End: 2})
-	state.Key(ui.KeyEvent{Target: contextID(hitSFTPDialogField), Key: ui.KeyEnter})
+	state.Key(gfx.KeyEvent{Target: contextID(hitSFTPDialogField), Key: gfx.KeyEnter})
 	if view.dialog != sftpDialogCompress || view.dialogError != "" || view.extracting {
 		t.Fatal("confirming IME composition submitted the archive dialog")
 	}

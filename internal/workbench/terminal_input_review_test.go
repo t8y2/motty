@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func TestTerminalInputPublicPasteRoutesRequireChoice(t *testing.T) {
@@ -20,13 +20,13 @@ func TestTerminalInputPublicPasteRoutesRequireChoice(t *testing.T) {
 			inputGuardPrompt(state, session, shell, "utf8", "")
 			state.options.ClipboardText = func() (string, error) { return "tail\u3000-500f", nil }
 			if menu {
-				state.Paint(&ui.Canvas{}, ui.Size{Width: 1400, Height: 900})
+				state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
 				rightClick(state, session, 400, 300)
-				state.Paint(&ui.Canvas{}, ui.Size{Width: 1400, Height: 900})
+				state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
 				state.Click(hitTerminalMenuPaste)
 			} else {
-				chord := state.shortcuts.chords[shortcutPaste]
-				result := state.Shortcut(ui.KeyEvent{Target: terminalHit(state, 0), Text: string(chord.Key), Modifiers: chord.Modifiers})
+				chord := state.shortcuts.chords.Chord(shortcutPaste)
+				result := state.Shortcut(gfx.KeyEvent{Target: terminalHit(state, 0), Text: string(chord.Char), Modifiers: chord.Modifiers})
 				if !result.Handled {
 					t.Fatal("paste shortcut was not handled")
 				}
@@ -83,7 +83,7 @@ func TestTerminalInputPairedQuotesSurviveLiteralContentAndTrackedDeletion(t *tes
 			state.Click(hitInputReplace)
 			if body == "ab\x7f" {
 				state.terminalText(session.ID, app.TextEvent{Kind: app.TextInsert, Text: "ab"})
-				state.terminalKey(session, ui.KeyEvent{Key: ui.KeyBackspace})
+				state.terminalKey(session, gfx.KeyEvent{Key: gfx.KeyBackspace})
 			} else {
 				state.terminalText(session.ID, app.TextEvent{Kind: app.TextInsert, Text: body})
 			}
@@ -143,8 +143,8 @@ func TestTerminalInputPublicPastePreservesTransparentCases(t *testing.T) {
 			}
 			before := shell.typed()
 			state.options.ClipboardText = func() (string, error) { return value, nil }
-			chord := state.shortcuts.chords[shortcutPaste]
-			state.Shortcut(ui.KeyEvent{Target: terminalHit(state, 0), Text: string(chord.Key), Modifiers: chord.Modifiers})
+			chord := state.shortcuts.chords.Chord(shortcutPaste)
+			state.Shortcut(gfx.KeyEvent{Target: terminalHit(state, 0), Text: string(chord.Char), Modifiers: chord.Modifiers})
 			if shell.typed() != before+want || state.modal != modalNone {
 				t.Fatalf("public paste %s changed: got=%q want=%q modal=%v", mode, shell.typed(), before+want, state.modal)
 			}
@@ -159,8 +159,8 @@ func TestTerminalInputBracketedPasteRetainsAppendOnlyProtection(t *testing.T) {
 	shell.say("\x1b[?2004h")
 	state.Wake()
 	state.options.ClipboardText = func() (string, error) { return "tail ", nil }
-	chord := state.shortcuts.chords[shortcutPaste]
-	state.Shortcut(ui.KeyEvent{Target: terminalHit(state, 0), Text: string(chord.Key), Modifiers: chord.Modifiers})
+	chord := state.shortcuts.chords.Chord(shortcutPaste)
+	state.Shortcut(gfx.KeyEvent{Target: terminalHit(state, 0), Text: string(chord.Char), Modifiers: chord.Modifiers})
 	if shell.typed() != "\x1b[200~tail \x1b[201~" {
 		t.Fatalf("native bracketed paste wrapper changed: %q", shell.typed())
 	}

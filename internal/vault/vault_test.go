@@ -521,6 +521,93 @@ func TestExportStampsSecretsSavedBeforeStampsExisted(t *testing.T) {
 	}
 }
 
+func TestWriteRefusesAFileItCouldNotReadBack(t *testing.T) {
+	vault, path := openVault(t, &memoryKeystore{})
+	if err := vault.Set("keep", "value"); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = vault.Set("huge", strings.Repeat("x", maxFileSize))
+	if !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("Set of a value that overflows the file = %v, want ErrTooLarge", err)
+	}
+	if _, found, err := vault.Get("huge"); err != nil || found {
+		t.Fatalf("the refused secret was kept: found=%v err=%v", found, err)
+	}
+	if got, found, err := vault.Get("keep"); err != nil || !found || got != "value" {
+		t.Fatalf("the refused write changed what was saved: %q found=%v err=%v", got, found, err)
+	}
+	after, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Size() != before.Size() {
+		t.Fatalf("the refused write changed the file: %d then %d bytes", before.Size(), after.Size())
+	}
+	if _, err := Open(path, vault.keys); err != nil {
+		t.Fatalf("the file a refused write left does not open: %v", err)
+	}
+}
+
+func TestMergeRefusesAWholeMergeThatWouldNotFit(t *testing.T) {
+	vault, path := openVault(t, &memoryKeystore{})
+	vault.SetStamper(func() (string, error) { return "s0001", nil })
+	if err := vault.Set("keep", "value"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := vault.Merge([]Secret{{Name: "huge", Value: strings.Repeat("x", maxFileSize), Stamp: "s0002"}})
+	if !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("Merge that overflows the file = %v, want ErrTooLarge", err)
+	}
+	secrets := mustExport(t, vault)
+	if len(secrets) != 1 || secrets[0].Name != "keep" {
+		t.Fatalf("a refused merge changed the vault: %+v", secrets)
+	}
+	if _, err := Open(path, vault.keys); err != nil {
+		t.Fatalf("the file a refused merge left does not open: %v", err)
+	}
+}
+
+func TestRecordCountsAreNotALimit(t *testing.T) {
+	vault, path := openVault(t, &memoryKeystore{})
+	if err := vault.Set("first", "value"); err != nil {
+		t.Fatal(err)
+	}
+	// A vault this size is about a third of what maxFileSize holds, so it fits;
+	// its live secrets and its tombstones are both past the counts that used to
+	// refuse a save.
+	records := append([]record(nil), vault.file.Records...)
+	for i := 0; i < 4500; i++ {
+		live := plainRecord{Name: fmt.Sprintf("host:%d:password", i), Value: "pw", Stamp: "s0001"}
+		sealed, err := seal(vault.key, live)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tomb := plainRecord{Name: fmt.Sprintf("host:old-%d:password", i), Deleted: true, Stamp: "s0001"}
+		gravestone, err := seal(vault.key, tomb)
+		if err != nil {
+			t.Fatal(err)
+		}
+		records = append(records, sealed, gravestone)
+	}
+	if err := vault.write(records); err != nil {
+		t.Fatal(err)
+	}
+	if err := vault.Set("one-more", "pw"); err != nil {
+		t.Fatalf("a vault with %d records refused another secret: %v", len(records), err)
+	}
+	reopened, err := Open(path, vault.keys)
+	if err != nil {
+		t.Fatalf("the file with %d records does not open: %v", len(records), err)
+	}
+	if got, found, err := reopened.Get("one-more"); err != nil || !found || got != "pw" {
+		t.Fatalf("the secret saved last = %q found=%v err=%v", got, found, err)
+	}
+}
+
 func TestPruneDropsOnlyOldTombstones(t *testing.T) {
 	vault, _, _ := stampedVault(t)
 	vault.Set("a", "alpha") // s0001

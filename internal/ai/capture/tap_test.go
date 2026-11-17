@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"motty/internal/shellkind"
 )
@@ -288,6 +289,90 @@ func TestTruncation(t *testing.T) {
 	}
 }
 
+func TestRetainedOutputSurvivesPreviewTruncationAndSplitInput(t *testing.T) {
+	output := strings.Repeat("MCPLOG:中文日志\n", 10000)
+	stream := []byte(output + "\n" + marker(7) + "\n")
+	for _, size := range []int{len(stream), 1, 17, 4096} {
+		tap := NewTap(testNonce, 64<<10)
+		tap.Retain(4 << 20)
+		for len(stream) > 0 {
+			chunk := min(size, len(stream))
+			tap.Feed(stream[:chunk])
+			stream = stream[chunk:]
+		}
+		result := tap.Result()
+		if !result.Truncated || result.RetainLost || result.Retained != strings.TrimSuffix(output, "\n") || result.ExitCode != 7 {
+			t.Fatalf("size %d: preview=%d retained=%d lost=%t exit=%d", size, len(result.Output), len(result.Retained), result.RetainLost, result.ExitCode)
+		}
+		stream = []byte(output + "\n" + marker(7) + "\n")
+	}
+}
+
+func TestRetentionBudgetDoesNotClaimLostOutputIsReadable(t *testing.T) {
+	tap := NewTap(testNonce, 64)
+	tap.Retain(100)
+	tap.Feed([]byte(strings.Repeat("line\n", 100) + "\n" + marker(0) + "\n"))
+	result := tap.Result()
+	if !result.Truncated || !result.RetainLost || result.Retained != "" {
+		t.Fatalf("unexpected retained output: %+v", result)
+	}
+}
+
+func TestLongLineCanBePagedWithinTheRetentionBudget(t *testing.T) {
+	line := strings.Repeat("中文日志", 12000)
+	tap := NewTap(testNonce, 64<<10)
+	tap.Retain(4 << 20)
+	tap.Feed([]byte(line + "\n\n" + marker(0) + "\n"))
+	result := tap.Result()
+	if !result.Truncated || result.RetainLost || result.Retained != line {
+		t.Fatalf("long line: lost=%t preview=%d retained=%d", result.RetainLost, len(result.Output), len(result.Retained))
+	}
+}
+
+func TestWrappedShellEchoDoesNotEnterRetainedOutput(t *testing.T) {
+	sent := Wrap("echo '"+strings.Repeat("x", 140)+"'", testNonce)
+	lines := splitEcho(sent)
+	stream := []byte("shell redraw fragment\r\n> " + string(lines[len(lines)-1]) + "\r\nMCPLOG:0001:中文日志\r\n\r\n" + marker(7) + "\r\n")
+	for _, size := range []int{1, 11, len(stream)} {
+		tap := NewTap(testNonce, 100)
+		tap.Retain(1024)
+		tap.SetEcho(sent)
+		for pending := stream; len(pending) > 0; {
+			chunk := min(size, len(pending))
+			tap.Feed(pending[:chunk])
+			pending = pending[chunk:]
+		}
+		result := tap.Result()
+		if !result.Done || result.Retained != "MCPLOG:0001:中文日志" || result.Output != result.Retained || result.ExitCode != 7 {
+			t.Fatalf("size %d: %+v", size, result)
+		}
+	}
+}
+
+func TestIncompleteEchoFallsBackToCapturedOutput(t *testing.T) {
+	tap := NewTap(testNonce, 100)
+	tap.SetEcho(Wrap("echo hi", testNonce))
+	tap.Feed([]byte("real output\n"))
+	tap.Abort()
+	if result := tap.Result(); result.Output != "real output" {
+		t.Fatalf("incomplete echo was lost: %+v", result)
+	}
+}
+
+func BenchmarkRetainedTap(b *testing.B) {
+	stream := []byte(strings.Repeat("MCPLOG:中文日志\n", 10000) + "\n" + marker(0) + "\n")
+	b.ReportAllocs()
+	b.SetBytes(int64(len(stream)))
+	for range b.N {
+		tap := NewTap(testNonce, 64<<10)
+		tap.Retain(4 << 20)
+		tap.Feed(stream)
+		if !tap.Result().Done {
+			b.Fatal("capture did not complete")
+		}
+	}
+}
+
 func TestLongLineBounded(t *testing.T) {
 	tp := NewTap(testNonce, 100)
 	tp.Feed(bytes.Repeat([]byte("x"), 1<<20))
@@ -400,6 +485,50 @@ func TestWrapForUnknownShellKeepsThePOSIXWrapper(t *testing.T) {
 	}
 }
 
+func TestConsoleWrapperSendsTheCommandExactlyAsTyped(t *testing.T) {
+	tests := map[string]string{
+		"show version": "show version\r",
+		"a\nb":         "a\rb\r",
+		"":             "\r",
+		"a\\":          "a\\\r",
+	}
+	for command, want := range tests {
+		sent, err := WrapFor(shellkind.Console, command, "n1")
+		if err != nil || string(sent) != want {
+			t.Errorf("WrapFor(Console, %q) = %q, %v; want %q", command, sent, err, want)
+		}
+		if strings.Contains(string(sent), "GOPAI_") || strings.Contains(string(sent), "printf") || strings.Contains(string(sent), "};") {
+			t.Errorf("WrapFor(Console, %q) leaked a shell wrapper: %q", command, sent)
+		}
+	}
+}
+
+func TestConsoleTapLeavesThePromptOutOfTheOutput(t *testing.T) {
+	tests := []struct {
+		name, command, stream, want string
+	}{
+		{"command with output", "show version", "Switch#show version\r\nVersion 1.0\r\nSwitch#", "Version 1.0"},
+		{"command with no output", "terminal length 0", "Switch#terminal length 0\r\nSwitch#", ""},
+	}
+	for _, tc := range tests {
+		sent, err := WrapFor(shellkind.Console, tc.command, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		tap := NewConsoleTap(4096)
+		tap.SetEcho(sent)
+		display, done := tap.Feed([]byte(tc.stream))
+		if done || string(display) != tc.stream {
+			t.Fatalf("%s: display = %q done=%v; want the stream unchanged", tc.name, display, done)
+		}
+		tap.FinishConsole("Switch#", -1)
+		result := tap.Result()
+		if !result.Done || result.ExitCode != -1 || result.Output != tc.want {
+			t.Errorf("%s: result = %+v; want done, no exit status, output %q", tc.name, result, tc.want)
+		}
+	}
+}
+
 func TestPowerShellWrapperInvariants(t *testing.T) {
 	for _, command := range []string{"hostname", "a\nb", `dir C:\`, "", "x `"} {
 		sent, err := WrapFor(shellkind.PowerShell, command, "n1")
@@ -450,5 +579,48 @@ func TestPowerShellEchoIsLeftOutOfTheOutput(t *testing.T) {
 	}
 	if strings.Contains(string(shown), "GOPAI_n1") {
 		t.Fatalf("the marker was shown: %q", shown)
+	}
+}
+
+func TestTapPageReadsWhileRunningAndReportsDroppedOutput(t *testing.T) {
+	tap := NewTap("n", 1<<16)
+	tap.RetainWindow(64)
+	tap.SetEcho(Wrap("x", "n"))
+	feed := func(s string) { tap.Feed([]byte(s)) }
+	feed(strings.ReplaceAll(string(Wrap("x", "n")), "\n", "\r\n"))
+	feed("one\r\ntwo\r\npart")
+
+	page := tap.Page(0, 1024)
+	if page.Data != "one\ntwo\n" || page.Next != len(page.Data) || page.Total != page.Next || page.Pending != "part" {
+		t.Fatalf("running page %+v", page)
+	}
+	if again := tap.Page(page.Next, 1024); again.Data != "" || again.Next != page.Next {
+		t.Fatalf("a page at the end must be empty and not move: %+v", again)
+	}
+	// Reading in small steps never splits a character and never loops.
+	feed("\r\n界界界界界界界界界界界界界界界界界界界界界界界界界界界界界\r\n")
+	var got strings.Builder
+	for offset, steps := 0, 0; ; steps++ {
+		p := tap.Page(offset, 4)
+		got.WriteString(p.Data)
+		if p.Next == offset || steps > 1000 {
+			break
+		}
+		if !utf8.ValidString(p.Data) {
+			t.Fatalf("page split a character: %q", p.Data)
+		}
+		offset = p.Next
+	}
+	// Pushing the window past twice its size drops the oldest bytes, and the
+	// absolute offsets say so.
+	for range 10 {
+		feed("0123456789012345678901234567890123456789\r\n")
+	}
+	late := tap.Page(0, 1024)
+	if late.Start == 0 || late.Total < 200 || late.Total-late.Start > 128 {
+		t.Fatalf("expected dropped output to be reported through Start: %+v", late)
+	}
+	if got.Len() == 0 {
+		t.Fatal("small pages returned nothing")
 	}
 }

@@ -2,49 +2,86 @@ package workbench
 
 import (
 	"slices"
+	"strings"
 
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
+	layoutcore "motty/internal/workspace"
 )
 
 type toolbarDockHit struct {
 	tool   barTool
 	zone   toolbarDockZone
-	bounds ui.Rect
+	bounds gfx.Rect
 }
 
 type toolbarDockSlot struct {
 	tool barTool
-	box  flex.Box
+	box  ui.Box
 }
 type toolbarDockDrop struct {
 	valid  bool
 	zone   toolbarDockZone
-	before ui.ID
-	marker ui.Rect
+	before gfx.ID
+	marker gfx.Rect
 }
 type toolbarDockDrag struct {
 	pressed, active, cancelled bool
 	tool                       barTool
-	start, at                  ui.Point
+	start, at                  gfx.Point
 	drop                       toolbarDockDrop
 }
 type toolbarDockUI struct {
 	hits                    [maxBarTools]toolbarDockHit
 	count                   int
 	topSlots                []toolbarDockSlot
-	topArea                 flex.Box
-	zones                   [7]ui.Rect
+	topArea                 ui.Box
+	zones                   [7]gfx.Rect
 	drag                    toolbarDockDrag
 	menu                    bool
-	menuTool                ui.ID
-	menuAt                  ui.Point
+	menuTool                gfx.ID
+	menuAt                  gfx.Point
 	overflow                bool
 	sideScroll              [4]float32
 	sideMax                 [4]float32
-	sideViewports           [4]ui.Rect
+	sideViewports           [4]gfx.Rect
 	bottomScroll, bottomMax [2]float32
-	bottomViewports         [2]ui.Rect
+	bottomViewports         [2]gfx.Rect
+	// The workbench page declares every strip: the top as the bar's own row,
+	// the bottom and each side as Part-named absolute containers. The tools
+	// themselves keep the identities the window names by hand. The scratch
+	// values below are this paint's declaration.
+	topTools          []barTool
+	topOverflow       bool
+	topBuffer         [maxBarTools]barTool
+	bottomLeftWidth   float32
+	bottomRightWidth  float32
+	bottomLeft        ui.Box
+	bottomRight       ui.Box
+	bottomLeftBuffer  [maxBarTools]barTool
+	bottomRightBuffer [maxBarTools]barTool
+	sideScratch       [2]toolbarDockSideScratch
+}
+
+// toolbarDockSideScratch is what the workbench page's side container leaves for
+// the group painted into each half of the rail.
+type toolbarDockSideScratch struct {
+	topHeight, bottomHeight float32
+	top, bottom             ui.Box
+}
+
+// The bottom strip and each side rail are Part-named containers of the
+// workbench page, so they share the window's identity tree and routing.
+const toolbarDockBottomPart = "toolbar-dock-bottom"
+
+var toolbarDockSideParts = [2]string{"toolbar-dock-side-right", "toolbar-dock-side-left"}
+
+// toolbarDockSideAt numbers the sides: right is 0, left is 1.
+func toolbarDockSideAt(left bool) int {
+	if left {
+		return 1
+	}
+	return 0
 }
 
 func toolbarDockZoneIndex(zone toolbarDockZone) int {
@@ -66,16 +103,16 @@ func toolbarDockZoneIndex(zone toolbarDockZone) int {
 	}
 }
 
-func (state *State) toolbarDockBounds(id ui.ID) ui.Rect {
+func (state *State) toolbarDockBounds(id gfx.ID) gfx.Rect {
 	for _, hit := range state.toolbarDock.hits[:state.toolbarDock.count] {
 		if hit.tool.id == id {
 			return hit.bounds
 		}
 	}
-	return ui.Rect{}
+	return gfx.Rect{}
 }
 
-func (state *State) registerToolbarDockTool(canvas *ui.Canvas, tool barTool, zone toolbarDockZone, bounds ui.Rect) {
+func (state *State) registerToolbarDockTool(canvas *gfx.Canvas, tool barTool, zone toolbarDockZone, bounds gfx.Rect) {
 	if _, ok := toolbarDockIdentity(tool.id); !ok || bounds.Width <= 0 || bounds.Height <= 0 {
 		return
 	}
@@ -85,7 +122,7 @@ func (state *State) registerToolbarDockTool(canvas *ui.Canvas, tool barTool, zon
 		dock.count++
 	}
 	if tool.id == hitAIToggle && len(state.ai.approvals) > 0 && !state.aiPanelVisible() {
-		canvas.Rounded(ui.Rect{X: bounds.X + bounds.Width - 8, Y: bounds.Y + 2, Width: 6, Height: 6}, 3, state.pal.warning)
+		canvas.Rounded(gfx.Rect{X: bounds.X + bounds.Width - 8, Y: bounds.Y + 2, Width: 6, Height: 6}, 3, state.pal.warning)
 	}
 	if tool.id == hitTransferCenter {
 		state.paintTransferBadge(canvas)
@@ -95,60 +132,133 @@ func (state *State) registerToolbarDockTool(canvas *ui.Canvas, tool barTool, zon
 	}
 }
 
-func (state *State) declareToolbarDockTop(f *flex.Frame, probe bool) {
-	dock := &state.toolbarDock
-	var buffer [maxBarTools]barTool
-	tools := state.toolbarDockTools(toolbarDockTop, &buffer)
+// toolbarDockTopTools is the top strip's tools and whether the last is the
+// overflow button. buffer holds the tools this paint.
+func (state *State) toolbarDockTopTools(buffer *[maxBarTools]barTool) ([]barTool, bool) {
+	tools := state.toolbarDockTools(toolbarDockTop, buffer)
 	limit := state.toolbarTopLimit()
 	overflow := len(tools) > limit
 	if overflow {
 		tools = tools[:limit-1]
 	}
-	if !probe {
-		dock.topSlots = dock.topSlots[:0]
+	return tools, overflow
+}
+
+// declareToolbarDockTop declares the top strip in the window bar's page: one
+// fixed cell per tool, and the overflow button when the row does not fit. The
+// bar lays the strip out with its own row, so no Frame of its own is needed;
+// paintToolbarDockTop paints the buttons into their cells once the page is laid
+// out.
+func (state *State) declareToolbarDockTop(c ui.C, probe bool) {
+	dock := &state.toolbarDock
+	tools, overflow := state.toolbarDockTopTools(&dock.topBuffer)
+	if probe {
+		// The measuring pass only needs the same room; it paints nothing.
+		area := ui.Row(c).Shrink(0).MinWidth(barButtonSize).Height(barButtonSize).MarginSides(0, 0, 0, 10).Gap(2)
+		area.Children(func() {
+			for _, tool := range tools {
+				slotWidth := barButtonSize
+				if tool.id == hitToolbarLatency {
+					slotWidth = state.toolbarTopLatencyWidth(c.Canvas(), barButtonSize)
+				}
+				ui.Slot(c).Size(slotWidth, barButtonSize).Shrink(0)
+			}
+			if overflow {
+				ui.Slot(c).Size(barButtonSize, barButtonSize).Shrink(0)
+			}
+		})
+		return
 	}
-	area := f.Row().Shrink(0).MinWidth(barButtonSize).Height(barButtonSize).MarginSides(0, 0, 0, 10).Gap(2)
-	if !probe {
-		dock.topArea = area
+	dock.topTools, dock.topOverflow = tools, overflow
+	dock.topSlots = dock.topSlots[:0]
+	width := float32(0)
+	for i, tool := range tools {
+		if i > 0 {
+			width += 2
+		}
+		slotWidth := barButtonSize
+		if tool.id == hitToolbarLatency {
+			slotWidth = state.toolbarTopLatencyWidth(c.Canvas(), barButtonSize)
+		}
+		width += slotWidth
 	}
+	if overflow {
+		if len(tools) > 0 {
+			width += 2
+		}
+		width += barButtonSize
+	}
+	if width <= 0 {
+		width = barButtonSize
+	}
+	area := ui.Row(c).Shrink(0).Width(width).Height(barButtonSize).MarginSides(0, 0, 0, 10).Gap(2)
+	dock.topArea = area
 	area.Children(func() {
 		for _, tool := range tools {
-			box := f.Slot().Size(barButtonSize, barButtonSize).Shrink(0)
-			if !probe {
-				dock.topSlots = append(dock.topSlots, toolbarDockSlot{tool, box})
-				if tool.id == hitAIToggle {
-					state.chrome.bar.assistant = box
-				}
-				if tool.id == hitTransferCenter {
-					state.chrome.bar.transfers = box
-				}
+			var box ui.Box
+			if tool.id == hitToolbarLatency {
+				slotWidth := state.toolbarTopLatencyWidth(c.Canvas(), barButtonSize)
+				box = ui.Slot(c).Size(slotWidth, barButtonSize).Shrink(0)
+			} else {
+				// Titlebar window actions must leave typing focused on the terminal.
+				entry, _ := toolbarDockIdentity(tool.id)
+				box = state.declareIconButtonWithOptions(c, tool.id, tool.icon, tool.hint, tool.disabled, tool.style, 16,
+					gfx.HitOptions{SkipFocus: entry.Group == toolbarWindow}).Size(barButtonSize, barButtonSize).Shrink(0)
+			}
+			dock.topSlots = append(dock.topSlots, toolbarDockSlot{tool, box})
+			if tool.id == hitAIToggle {
+				state.chrome.bar.assistant = box
+			}
+			if tool.id == hitTransferCenter {
+				state.chrome.bar.transfers = box
 			}
 		}
-		if overflow {
-			box := state.barButton(f, probe, hitToolbarDockMore, iconEllipsis, state.messages.Toolbars.More)
-			if !probe {
-				dock.topSlots = append(dock.topSlots, toolbarDockSlot{barTool{id: hitToolbarDockMore}, box})
-			}
+		if dock.topOverflow {
+			box := state.barButton(c, false, hitToolbarDockMore, iconEllipsis, state.messages.Toolbars.More)
+			dock.topSlots = append(dock.topSlots, toolbarDockSlot{barTool{id: hitToolbarDockMore}, box})
 		}
 	})
 }
 
-func (state *State) paintToolbarDockTop(canvas *ui.Canvas) {
+func (state *State) toolbarTopLatencyWidth(canvas *gfx.Canvas, defaultWidth float32) float32 {
+	session, ok := state.terminalSideRailSession()
+	if !ok {
+		return defaultWidth
+	}
+	text, _, ok := state.latencyInfo(session)
+	if !ok {
+		return defaultWidth
+	}
+	label := strings.TrimPrefix(text, "RTT ")
+	if canvas == nil {
+		return defaultWidth
+	}
+	textWidth := canvas.TextWidthWeight(label, 10, gfx.WeightMedium)
+	return max(defaultWidth, textWidth+14)
+}
+
+func (state *State) paintToolbarDockTop(canvas *gfx.Canvas) {
 	dock := &state.toolbarDock
 	dock.zones[0] = dock.topArea.Rect()
 	dock.zones[0].Y, dock.zones[0].Height = 0, windowBarHeight
 	for _, slot := range dock.topSlots {
 		if slot.tool.id == hitToolbarDockMore {
-			if event, ok := canvas.PointerOn(hitToolbarDockMore); ok && event.Kind == ui.PointerDown && event.Button == ui.PointerButtonPrimary {
-				dock.menu, dock.overflow, dock.menuAt = true, true, ui.Point{X: event.X, Y: windowBarHeight}
+			if event, ok := canvas.PointerOn(hitToolbarDockMore); ok && event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary {
+				dock.menu, dock.overflow, dock.menuAt = true, true, gfx.Point{X: event.X, Y: windowBarHeight}
 				canvas.Consume()
 			}
 			continue
 		}
 		tool, bounds := slot.tool, slot.box.Rect()
-		entry, _ := toolbarDockIdentity(tool.id)
-		// Titlebar window actions must leave typing focused on the terminal.
-		state.paintIconButtonWithOptions(canvas, tool.id, tool.icon, bounds, tool.hint, tool.disabled, tool.style, state.pal.shell, 16, ui.HitOptions{SkipFocus: entry.Group == toolbarWindow})
+		if tool.id == hitToolbarLatency {
+			session, ok := state.terminalSideRailSession()
+			if !ok || !state.paintToolbarLatency(canvas, bounds, session) {
+				continue
+			}
+		}
+		if tool.disabled {
+			canvas.Block(bounds)
+		}
 		state.registerToolbarDockTool(canvas, tool, toolbarDockTop, bounds)
 	}
 }
@@ -156,8 +266,11 @@ func (state *State) paintToolbarDockTop(canvas *ui.Canvas) {
 // Reserve each physical side independently. Background terminals keep their
 // eventual tool widths; ordinary pages only reserve globally available actions.
 func (state *State) toolbarDockSideReserveFor(left, includeTerminal bool) float32 {
-	session, hasTerminal := state.terminalToolbarSession()
-	if includeTerminal && hasTerminal && state.terminalToolbarShowsOnSide(session, left) {
+	_, hasTerminal := state.terminalToolbarSession()
+	if !hasTerminal && state.noteSidebarVisible() && (state.terminalToolbarPosition == terminalToolbarLeft) == left {
+		return state.terminalToolbarMetrics().railExtent
+	}
+	if includeTerminal && state.toolbarRailReservedOnSide(left) {
 		return state.terminalToolbarMetrics().railExtent
 	}
 	if state.toolbars.dock == nil {
@@ -179,6 +292,76 @@ func (state *State) toolbarDockSideReserveFor(left, includeTerminal bool) float3
 	return 0
 }
 
+// toolbarRailReservedOnSide reports whether the shared terminal rail owns room
+// on one side of the active workspace. The room belongs to the workspace, not to
+// the pane that happens to have the keyboard: a restored pane beside a live one
+// must not take the rail's width away, and resize both PTYs, when focus moves.
+// The active terminal answers first; otherwise any live terminal of the
+// workspace stands for it.
+func (state *State) toolbarRailReservedOnSide(left bool) bool {
+	active, activeLive := state.terminalToolbarSession()
+	if activeLive && state.terminalToolbarShowsOnSide(active, left) {
+		return true
+	}
+	workspaceID := state.deck.ActiveWorkspace()
+	if workspaceID == 0 {
+		return false
+	}
+	for index := range state.sessions {
+		session := &state.sessions[index]
+		if session.ID == state.activeSessionID || session.term == nil || session.restored || session.desk != nil {
+			continue
+		}
+		workspace, _, ok := state.deck.PaneForSession(layoutcore.SessionID(session.ID))
+		if ok && workspace == workspaceID && state.terminalToolbarShowsOnSide(session, left) {
+			return true
+		}
+	}
+	return false
+}
+
+// toolbarRailSession reports the terminal whose tools the shared rail shows and
+// whether that terminal is the pane with the keyboard. While the workspace has a
+// terminal, the rail keeps its tools even when focus rests on a pane without one
+// of its own or the shell is still coming up: they are drawn disabled rather
+// than vanishing with the rail's room. Another section owns its chrome and gets
+// no rail.
+func (state *State) toolbarRailSession() (session *Session, active bool) {
+	if state.activeSection != sectionTerminal {
+		return nil, false
+	}
+	if rail, ok := state.terminalSideRailSession(); ok {
+		return rail, true
+	}
+	if own, ok := state.terminalToolbarSession(); ok {
+		// The connection page owns the pane while the shell comes up, but the
+		// terminal object already exists: keep the rail's tools in place,
+		// disabled, instead of leaving the room they reserved blank.
+		return own, false
+	}
+	return state.firstLiveWorkspaceSession(), false
+}
+
+// firstLiveWorkspaceSession finds a pane of the active workspace that has a
+// terminal, even though another pane holds the keyboard.
+func (state *State) firstLiveWorkspaceSession() *Session {
+	workspaceID := state.deck.ActiveWorkspace()
+	if workspaceID == 0 {
+		return nil
+	}
+	for index := range state.sessions {
+		session := &state.sessions[index]
+		if session.term == nil || session.restored || session.desk != nil {
+			continue
+		}
+		workspace, _, ok := state.deck.PaneForSession(layoutcore.SessionID(session.ID))
+		if ok && workspace == workspaceID {
+			return session
+		}
+	}
+	return nil
+}
+
 // terminalToolbarShowsOnSide reports whether this physical side has actual
 // content: a tool the bar paints there, or a latency badge backed by an RTT
 // sample. It runs on the steady-state paint path, so it scans preferences
@@ -194,14 +377,20 @@ func (state *State) terminalToolbarShowsOnSide(session *Session, left bool) bool
 	compactMenu := false
 	entries := state.toolbars.entries(toolbarTerminal)
 	for _, preference := range entries {
-		if !preference.Enabled {
-			continue
-		}
 		spec, ok := toolbarSpecFor(toolbarTerminal, preference.Key)
-		if !ok || !state.terminalToolbarOffers(session, spec.id) {
+		if !ok {
 			continue
 		}
-		if managed {
+		visible := preference.Enabled
+		if spec.id == hitToolbarLatency {
+			visible = state.terminalShowLatency
+		}
+		if !visible || !state.terminalToolbarOffers(session, spec.id) {
+			continue
+		}
+		// The latency readout is a status, not an action: compaction never moves
+		// it into the pane-tools menu.
+		if managed && spec.id != hitToolbarLatency {
 			if terminalToolbarCompactVisible(spec.id) && compactCount < capacity {
 				compactCount++
 			} else {
@@ -234,9 +423,6 @@ func (state *State) terminalToolbarShowsOnSide(session *Session, left bool) bool
 			}
 		}
 	}
-	if state.latencyAvailable(session) {
-		return (state.terminalToolbarPosition == terminalToolbarLeft) == left
-	}
 	return false
 }
 
@@ -244,10 +430,10 @@ func (state *State) terminalToolbarShowsOnSide(session *Session, left bool) bool
 // Disabled actions still count because their icon remains visible. A tool the
 // switch does not name is offered: a catalog entry added later must not
 // disappear from the rail just because this list was not updated.
-func (state *State) terminalToolbarOffers(session *Session, id ui.ID) bool {
+func (state *State) terminalToolbarOffers(session *Session, id gfx.ID) bool {
 	switch id {
 	case hitSFTPDetach:
-		return session.host.isSSH() && !session.isLocal()
+		return session.hasServer()
 	case hitSFTPOpen, hitConnExport, hitTerminalRecordingExport, hitTerminalRecord,
 		hitTerminalSaveOutput, hitProcessToolsOpen, hitPaneSplitVertical, hitPaneSplitHorizontal,
 		hitTerminalSnippets:
@@ -257,6 +443,10 @@ func (state *State) terminalToolbarOffers(session *Session, id ui.ID) bool {
 	case hitRemoteStats:
 		_, _, offered := state.remoteStatsToggle(session)
 		return offered
+	case hitServerLogs:
+		return session.remoteLogHost()
+	case hitToolbarLatency:
+		return state.latencyAvailable(session)
 	case hitPaneClose:
 		return state.paneInSplit(session.ID)
 	case hitBroadcast:
@@ -268,11 +458,11 @@ func (state *State) terminalToolbarOffers(session *Session, id ui.ID) bool {
 
 // These are the actions compactWorkspacePaneTools keeps beside the pane title
 // when space permits. Everything else is represented by the synthesized menu.
-func terminalToolbarCompactVisible(id ui.ID) bool {
+func terminalToolbarCompactVisible(id gfx.ID) bool {
 	return id == hitSFTPOpen || id == hitRemoteStats || id == hitPaneClose
 }
 
-func (state *State) toolbarDockSideBoundsFor(size ui.Size, left bool) ui.Rect {
+func (state *State) toolbarDockSideBoundsFor(size gfx.Size, left bool) gfx.Rect {
 	bounds := state.fullWorkspacePixelBounds(size)
 	if !state.terminalPage() && state.activeSFTPWindow() == nil {
 		bounds.X = 0
@@ -286,27 +476,32 @@ func (state *State) toolbarDockSideBoundsFor(size ui.Size, left bool) ui.Rect {
 	return bounds
 }
 
-func (state *State) toolbarDockSideBounds(size ui.Size) ui.Rect {
+func (state *State) toolbarDockSideBounds(size gfx.Size) gfx.Rect {
 	return state.toolbarDockSideBoundsFor(size, state.terminalToolbarPosition == terminalToolbarLeft)
 }
 
 // Terminal geometry also reserves the bottom while a section covers it, just
 // as it does for the existing side rail. Switching pages must not resize a PTY.
 func (state *State) toolbarDockBottomReserve(includeTerminal bool) float32 {
-	_, hasTerminal := state.terminalToolbarSession()
+	session, hasTerminal := state.terminalToolbarSession()
 	for _, entry := range state.toolbars.dock {
 		if !toolbarDockAtBottom(entry.Zone) || (entry.Group == toolbarTerminal && (!includeTerminal || !hasTerminal)) {
 			continue
 		}
 		spec, ok := toolbarSpecFor(entry.Group, entry.Key)
-		if ok && state.toolbarVisible(entry.Group, spec.id) {
-			return state.terminalToolbarMetrics().railExtent
+		if !ok || !state.toolbarVisible(entry.Group, spec.id) {
+			continue
 		}
+		// A latency entry reserves its strip only while a reading exists.
+		if spec.id == hitToolbarLatency && !state.terminalToolbarOffers(session, spec.id) {
+			continue
+		}
+		return state.terminalToolbarMetrics().railExtent
 	}
 	return 0
 }
 
-func (state *State) toolbarDockBottomBounds(size ui.Size, emptyTarget bool) ui.Rect {
+func (state *State) toolbarDockBottomBounds(size gfx.Size, emptyTarget bool) gfx.Rect {
 	bounds := state.fullWorkspacePixelBounds(size)
 	extent := state.toolbarDockBottomReserve(state.terminalPage())
 	if emptyTarget {
@@ -317,19 +512,19 @@ func (state *State) toolbarDockBottomBounds(size ui.Size, emptyTarget bool) ui.R
 	return bounds
 }
 
-func (state *State) paintToolbarDockBottom(canvas *ui.Canvas, size ui.Size) {
-	var leftBuffer, rightBuffer [maxBarTools]barTool
-	left := state.toolbarDockTools(toolbarDockBottom, &leftBuffer)
-	right := state.toolbarDockTools(toolbarDockBottomRight, &rightBuffer)
+// declareToolbarDockBottom declares the bottom strip in the workbench page as
+// the two viewports the left and right groups scroll in. Their widths were
+// measured here, before the page is laid out, since they decide the split.
+func (state *State) declareToolbarDockBottom(c ui.C) {
+	dock := &state.toolbarDock
+	left := state.toolbarDockTools(toolbarDockBottom, &dock.bottomLeftBuffer)
+	right := state.toolbarDockTools(toolbarDockBottomRight, &dock.bottomRightBuffer)
 	if len(left)+len(right) == 0 {
+		dock.bottomLeft, dock.bottomRight = ui.Box{}, ui.Box{}
 		return
 	}
-	bounds := state.toolbarDockBottomBounds(size, false)
-	dock := &state.toolbarDock
-	dock.zones[3], dock.zones[6] = toolbarDockBottomZones(bounds)
-	canvas.Fill(bounds, state.pal.shell)
-	canvas.Fill(ui.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: 1}, state.pal.line)
-	viewport := bounds.Inset(ui.All(4))
+	bounds := state.toolbarDockBottomBounds(state.viewport, false)
+	viewport := bounds.Inset(gfx.All(4))
 	leftExtent, rightExtent := state.toolbarDockHorizontalExtent(left), state.toolbarDockHorizontalExtent(right)
 	gap := float32(0)
 	if len(left) > 0 && len(right) > 0 {
@@ -339,10 +534,28 @@ func (state *State) paintToolbarDockBottom(canvas *ui.Canvas, size ui.Size) {
 	// Let a small group keep its space; share the rest when both overflow.
 	leftWidth := min(leftExtent, max(available/2, available-rightExtent))
 	rightWidth := min(rightExtent, max(available-leftWidth, 0))
-	leftViewport := ui.Rect{X: viewport.X, Y: viewport.Y, Width: leftWidth, Height: viewport.Height}
-	rightViewport := ui.Rect{X: viewport.X + viewport.Width - rightWidth, Y: viewport.Y, Width: rightWidth, Height: viewport.Height}
-	state.paintToolbarDockBottomGroup(canvas, left, toolbarDockBottom, leftViewport)
-	state.paintToolbarDockBottomGroup(canvas, right, toolbarDockBottomRight, rightViewport)
+	dock.bottomLeftWidth, dock.bottomRightWidth = leftWidth, rightWidth
+	c.Part(toolbarDockBottomPart)
+	ui.Row(c).Absolute().Left(bounds.X).Top(bounds.Y).Width(bounds.Width).Height(bounds.Height).Pad(4).Children(func() {
+		dock.bottomLeft = ui.Slot(c).Width(dock.bottomLeftWidth).Shrink(0)
+		ui.Spacer(c)
+		dock.bottomRight = ui.Slot(c).Width(dock.bottomRightWidth).Shrink(0)
+	})
+}
+
+func (state *State) paintToolbarDockBottom(canvas *gfx.Canvas, size gfx.Size) {
+	dock := &state.toolbarDock
+	left := state.toolbarDockTools(toolbarDockBottom, &dock.bottomLeftBuffer)
+	right := state.toolbarDockTools(toolbarDockBottomRight, &dock.bottomRightBuffer)
+	if len(left)+len(right) == 0 {
+		return
+	}
+	bounds := state.toolbarDockBottomBounds(size, false)
+	dock.zones[3], dock.zones[6] = toolbarDockBottomZones(bounds)
+	canvas.Fill(bounds, state.windowFrameColor())
+	canvas.Fill(gfx.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: 1}, state.pal.line)
+	state.paintToolbarDockBottomGroup(canvas, left, toolbarDockBottom, dock.bottomLeft.Rect())
+	state.paintToolbarDockBottomGroup(canvas, right, toolbarDockBottomRight, dock.bottomRight.Rect())
 }
 
 func (state *State) toolbarDockHorizontalExtent(tools []barTool) float32 {
@@ -353,7 +566,7 @@ func (state *State) toolbarDockHorizontalExtent(tools []barTool) float32 {
 	return float32(len(tools))*(metrics.toolSize+metrics.gap) - metrics.gap
 }
 
-func toolbarDockBottomZones(bounds ui.Rect) (ui.Rect, ui.Rect) {
+func toolbarDockBottomZones(bounds gfx.Rect) (gfx.Rect, gfx.Rect) {
 	left := bounds
 	left.Width = bounds.Width / 2
 	right := bounds
@@ -362,7 +575,7 @@ func toolbarDockBottomZones(bounds ui.Rect) (ui.Rect, ui.Rect) {
 	return left, right
 }
 
-func (state *State) paintToolbarDockBottomGroup(canvas *ui.Canvas, tools []barTool, zone toolbarDockZone, viewport ui.Rect) {
+func (state *State) paintToolbarDockBottomGroup(canvas *gfx.Canvas, tools []barTool, zone toolbarDockZone, viewport gfx.Rect) {
 	dock := &state.toolbarDock
 	metrics := state.terminalToolbarMetrics()
 	index := 0
@@ -382,12 +595,19 @@ func (state *State) paintToolbarDockBottomGroup(canvas *ui.Canvas, tools []barTo
 	}
 	canvas.Clip(viewport)
 	for i, tool := range tools {
-		rect := ui.Rect{X: viewport.X + float32(i)*(metrics.toolSize+metrics.gap) - *scroll, Y: viewport.Y, Width: metrics.toolSize, Height: metrics.toolSize}
+		rect := gfx.Rect{X: viewport.X + float32(i)*(metrics.toolSize+metrics.gap) - *scroll, Y: viewport.Y, Width: metrics.toolSize, Height: metrics.toolSize}
 		clipped := intersectRect(rect, viewport)
 		if clipped.Width <= 0 || clipped.Height <= 0 {
 			continue
 		}
-		state.paintIconButtonSized(canvas, tool.id, tool.icon, rect, tool.hint, tool.disabled, tool.style, state.pal.shell, metrics.iconSize)
+		if tool.id == hitToolbarLatency {
+			session, ok := state.terminalSideRailSession()
+			if !ok || !state.paintToolbarLatency(canvas, rect, session) {
+				continue
+			}
+		} else {
+			state.paintIconButtonSized(canvas, tool.id, tool.icon, rect, tool.hint, tool.disabled, tool.style, state.windowFrameColor(), metrics.iconSize)
+		}
 		state.registerToolbarDockTool(canvas, tool, zone, clipped)
 	}
 	canvas.Unclip()
@@ -397,9 +617,54 @@ func (state *State) toolbarDockSideReserve() float32 {
 	return state.toolbarDockSideReserveFor(true, false) + state.toolbarDockSideReserveFor(false, false)
 }
 
-func (state *State) paintToolbarDockSide(canvas *ui.Canvas, size ui.Size) {
-	session, terminalVisible := state.terminalSideRailSession()
-	metrics := state.terminalToolbarMetrics()
+// declareToolbarDockSides declares each physical side rail in the workbench
+// page. Each rail's upper and lower groups scroll in viewports of their own;
+// their heights were measured here, since they decide the split.
+func (state *State) declareToolbarDockSides(c ui.C) {
+	session, _ := state.toolbarRailSession()
+	for _, left := range []bool{false, true} {
+		state.declareToolbarDockSide(c, left, session != nil)
+	}
+}
+
+// declareToolbarDockSide declares one side rail: its upper and lower groups
+// scroll in viewports of their own. A side the shell holds no room for declares
+// nothing and leaves no boxes behind.
+func (state *State) declareToolbarDockSide(c ui.C, left, terminalVisible bool) {
+	dock := &state.toolbarDock
+	side := toolbarDockSideAt(left)
+	scratch := &dock.sideScratch[side]
+	if state.toolbarDockSideReserveFor(left, terminalVisible) == 0 {
+		scratch.top, scratch.bottom = ui.Box{}, ui.Box{}
+		return
+	}
+	topZone, bottomZone := toolbarDockSideTop, toolbarDockSideBottom
+	if left {
+		topZone, bottomZone = toolbarDockLeftTop, toolbarDockLeftBottom
+	}
+	bounds := state.toolbarDockSideBoundsFor(state.viewport, left)
+	var topBuffer, bottomBuffer [maxBarTools]barTool
+	top := state.toolbarDockTools(topZone, &topBuffer)
+	bottom := state.toolbarDockTools(bottomZone, &bottomBuffer)
+	viewport := bounds.Inset(gfx.All(4))
+	bottomHeight := min(state.terminalRailContentExtent(bottom), viewport.Height/2)
+	if len(top) == 0 {
+		bottomHeight = min(state.terminalRailContentExtent(bottom), viewport.Height)
+	}
+	if len(bottom) == 0 {
+		bottomHeight = 0
+	}
+	scratch.topHeight, scratch.bottomHeight = max(viewport.Height-bottomHeight, 0), bottomHeight
+	c.Part(toolbarDockSideParts[side])
+	ui.Column(c).Absolute().Left(bounds.X).Top(bounds.Y).Width(bounds.Width).Height(bounds.Height).Pad(4).Children(func() {
+		scratch.top = ui.Slot(c).Height(scratch.topHeight).Shrink(0)
+		scratch.bottom = ui.Slot(c).Height(scratch.bottomHeight).Shrink(0)
+	})
+}
+
+func (state *State) paintToolbarDockSide(canvas *gfx.Canvas, size gfx.Size) {
+	session, _ := state.toolbarRailSession()
+	terminalVisible := session != nil
 	for _, left := range []bool{false, true} {
 		primary := (state.terminalToolbarPosition == terminalToolbarLeft) == left
 		if state.toolbarDockSideReserveFor(left, terminalVisible) == 0 {
@@ -413,54 +678,44 @@ func (state *State) paintToolbarDockSide(canvas *ui.Canvas, size ui.Size) {
 		if left {
 			topZone, bottomZone = toolbarDockLeftTop, toolbarDockLeftBottom
 		}
+		side := toolbarDockSideAt(left)
 		var topBuffer, bottomBuffer [maxBarTools]barTool
 		top := state.toolbarDockTools(topZone, &topBuffer)
 		bottom := state.toolbarDockTools(bottomZone, &bottomBuffer)
 		dock := &state.toolbarDock
-		dock.zones[toolbarDockZoneIndex(topZone)] = ui.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: bounds.Height / 2}
-		dock.zones[toolbarDockZoneIndex(bottomZone)] = ui.Rect{X: bounds.X, Y: bounds.Y + bounds.Height/2, Width: bounds.Width, Height: bounds.Height / 2}
-		background, border := state.pal.shell, state.pal.line
-		if terminalVisible {
-			background, border = state.pal.workspace, state.pal.line
-			if primary {
-				state.setTerminalRailTools(session, append(top, bottom...))
-				if len(bottom) == 0 {
-					state.paintTerminalSideRail(canvas, bounds, session, top, background, border, left)
-					continue
-				}
+		dock.zones[toolbarDockZoneIndex(topZone)] = gfx.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: bounds.Height / 2}
+		dock.zones[toolbarDockZoneIndex(bottomZone)] = gfx.Rect{X: bounds.X, Y: bounds.Y + bounds.Height/2, Width: bounds.Width, Height: bounds.Height / 2}
+		// The rail is part of the window frame, like the bar above it and the
+		// strip below, so it takes the frame's surface rather than a color of its
+		// own: on a full-page pane that is the workspace it borders. No divider is
+		// drawn beside it: the frame and the pane are one surface, and the tools
+		// read as a column of that surface. A docked panel that takes the same
+		// workspace draws its own line against the rail instead.
+		background := state.windowFrameColor()
+		if terminalVisible && primary {
+			tools := append(top, bottom...)
+			state.setTerminalRailTools(session, tools)
+			if len(bottom) == 0 {
+				state.paintTerminalSideRail(canvas, bounds, session, top, background)
+				continue
 			}
 		}
 		canvas.Fill(bounds, background)
-		x := bounds.X
-		if left {
-			x += bounds.Width - 1
-		}
-		canvas.Fill(ui.Rect{X: x, Y: bounds.Y, Width: 1, Height: bounds.Height}, border)
-		viewport := bounds.Inset(ui.All(4))
 		if terminalVisible && primary {
 			session.term.railBounds = bounds
-			if text, color, ok := state.latencyInfo(session); ok {
-				state.paintRailLatency(canvas, text, color, ui.Rect{X: viewport.X, Y: viewport.Y, Width: viewport.Width, Height: metrics.toolSize}, true)
-				viewport.Y += metrics.toolSize + 4
-				viewport.Height = max(viewport.Height-metrics.toolSize-4, 0)
-			}
 		}
-		bottomHeight := min(state.terminalRailContentExtent(bottom), viewport.Height/2)
-		if len(top) == 0 {
-			bottomHeight = min(state.terminalRailContentExtent(bottom), viewport.Height)
+		scratch := &dock.sideScratch[side]
+		// An input event can switch sections after the page declared its rail.
+		// The repaint will lay out the rail for the new section.
+		if !scratch.top.Valid() || !scratch.bottom.Valid() {
+			continue
 		}
-		if len(bottom) == 0 {
-			bottomHeight = 0
-		}
-		topViewport := viewport
-		topViewport.Height = max(viewport.Height-bottomHeight, 0)
-		bottomViewport := ui.Rect{X: viewport.X, Y: viewport.Y + viewport.Height - bottomHeight, Width: viewport.Width, Height: bottomHeight}
 		var owner *Session
 		if terminalVisible && primary {
 			owner = session
 		}
-		state.paintToolbarDockSideGroup(canvas, top, topZone, topViewport, background, owner)
-		state.paintToolbarDockSideGroup(canvas, bottom, bottomZone, bottomViewport, background, owner)
+		state.paintToolbarDockSideGroup(canvas, top, topZone, scratch.top.Rect(), background, owner)
+		state.paintToolbarDockSideGroup(canvas, bottom, bottomZone, scratch.bottom.Rect(), background, owner)
 	}
 }
 
@@ -477,7 +732,7 @@ func toolbarDockSideIndex(zone toolbarDockZone) int {
 	}
 }
 
-func (state *State) paintToolbarDockSideGroup(canvas *ui.Canvas, tools []barTool, zone toolbarDockZone, viewport ui.Rect, background ui.Color, session *Session) {
+func (state *State) paintToolbarDockSideGroup(canvas *gfx.Canvas, tools []barTool, zone toolbarDockZone, viewport gfx.Rect, background gfx.Color, session *Session) {
 	dock := &state.toolbarDock
 	metrics := state.terminalToolbarMetrics()
 	index := toolbarDockSideIndex(zone)
@@ -499,12 +754,19 @@ func (state *State) paintToolbarDockSideGroup(canvas *ui.Canvas, tools []barTool
 	}
 	canvas.Clip(viewport)
 	for i, tool := range tools {
-		tool.rect = ui.Rect{X: viewport.X, Y: viewport.Y + state.terminalRailItemStart(tools, i) - *scroll, Width: viewport.Width, Height: metrics.toolSize}
+		tool.rect = gfx.Rect{X: viewport.X, Y: viewport.Y + state.terminalRailItemStart(tools, i) - *scroll, Width: viewport.Width, Height: metrics.toolSize}
 		clipped := intersectRect(tool.rect, viewport)
 		if clipped.Width <= 0 || clipped.Height <= 0 {
 			continue
 		}
-		state.paintIconButtonSized(canvas, tool.id, tool.icon, tool.rect, tool.hint, tool.disabled, tool.style, background, metrics.iconSize)
+		if tool.id == hitToolbarLatency {
+			terminal, ok := state.terminalSideRailSession()
+			if !ok || !state.paintToolbarLatency(canvas, tool.rect, terminal) {
+				continue
+			}
+		} else {
+			state.paintIconButtonSized(canvas, tool.id, tool.icon, tool.rect, tool.hint, tool.disabled, tool.style, background, metrics.iconSize)
+		}
 		state.registerToolbarDockTool(canvas, tool, zone, clipped)
 		if tool.id == hitWorkspacePaneTools {
 			state.workspacePaneTools.anchor = tool.rect
@@ -513,7 +775,7 @@ func (state *State) paintToolbarDockSideGroup(canvas *ui.Canvas, tools []barTool
 	canvas.Unclip()
 }
 
-func (state *State) toolbarDockDropZones() [7]ui.Rect {
+func (state *State) toolbarDockDropZones() [7]gfx.Rect {
 	zones := state.toolbarDock.zones
 	if zones[3].Height == 0 {
 		zones[3], zones[6] = toolbarDockBottomZones(state.toolbarDockBottomBounds(state.viewport, true))
@@ -525,8 +787,8 @@ func (state *State) toolbarDockDropZones() [7]ui.Rect {
 		}
 		if zones[index].Width == 0 {
 			bounds := state.toolbarDockSideBoundsFor(state.viewport, left)
-			zones[index] = ui.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: bounds.Height / 2}
-			zones[index+1] = ui.Rect{X: bounds.X, Y: bounds.Y + bounds.Height/2, Width: bounds.Width, Height: bounds.Height / 2}
+			zones[index] = gfx.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: bounds.Height / 2}
+			zones[index+1] = gfx.Rect{X: bounds.X, Y: bounds.Y + bounds.Height/2, Width: bounds.Width, Height: bounds.Height / 2}
 		}
 		for i := index; i <= index+1; i++ {
 			zones[i].Height = max(min(zones[i].Y+zones[i].Height, zones[3].Y)-zones[i].Y, 0)
@@ -535,7 +797,7 @@ func (state *State) toolbarDockDropZones() [7]ui.Rect {
 	return zones
 }
 
-func (state *State) toolbarDockDropAt(at ui.Point) toolbarDockDrop {
+func (state *State) toolbarDockDropAt(at gfx.Point) toolbarDockDrop {
 	dock := &state.toolbarDock
 	zones := state.toolbarDockDropZones()
 	hoverZone := -1
@@ -583,95 +845,112 @@ func (state *State) toolbarDockDropAt(at ui.Point) toolbarDockDrop {
 			position = start + extent + 2
 		}
 		if !toolbarDockVertical(zone) {
-			drop.marker = ui.Rect{X: position, Y: bounds.Y + 5, Width: 2, Height: bounds.Height - 10}
+			drop.marker = gfx.Rect{X: position, Y: bounds.Y + 5, Width: 2, Height: bounds.Height - 10}
 		} else {
-			drop.marker = ui.Rect{X: bounds.X + 5, Y: min(position, bounds.Y+bounds.Height-2), Width: bounds.Width - 10, Height: 2}
+			drop.marker = gfx.Rect{X: bounds.X + 5, Y: min(position, bounds.Y+bounds.Height-2), Width: bounds.Width - 10, Height: 2}
 		}
 		return drop
 	}
 	return toolbarDockDrop{}
 }
 
-func (state *State) toolbarDockPointer(event ui.PointerEvent) ui.EventResult {
+func (state *State) toolbarDockPointer(event gfx.PointerEvent) gfx.EventResult {
 	dock := &state.toolbarDock
 	if dock.menu {
-		if event.Kind == ui.PointerDown && event.Button == ui.PointerButtonSecondary && event.Target == hitToolbarDockDismiss {
+		if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonSecondary && event.Target == hitToolbarDockDismiss {
 			dock.menu = false
-			return ui.EventResult{Handled: true, Repaint: true}
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	if state.modal != modalNone {
 		dock.drag = toolbarDockDrag{}
-		return ui.EventResult{}
+		return gfx.EventResult{}
+	}
+	if result := state.sftpToolbarPointer(event); result.Handled {
+		return result
 	}
 	drag := &dock.drag
 	switch event.Kind {
-	case ui.PointerDown:
+	case gfx.PointerDown:
 		*drag = toolbarDockDrag{}
 		for _, hit := range dock.hits[:dock.count] {
-			if event.Target != hit.tool.id {
+			matches := event.Target == hit.tool.id
+			// A disabled tool is skipped by the hit-tester, so its presses fall
+			// through with no target of their own; a press that does carry one —
+			// an open menu's dismiss layer, one of its rows — belongs to that
+			// control even when the disabled tool's bounds lie under it.
+			if !matches && hit.tool.disabled && event.Target.IsZero() && pointInRect(event.X, event.Y, hit.bounds) {
+				matches = true
+			}
+			if !matches {
 				continue
 			}
-			if event.Button == ui.PointerButtonSecondary {
-				dock.menu, dock.overflow, dock.menuTool, dock.menuAt = true, false, hit.tool.id, ui.Point{X: event.X, Y: event.Y}
-				return ui.EventResult{Handled: true, Repaint: true}
+			if event.Button == gfx.PointerButtonSecondary {
+				dock.menu, dock.overflow, dock.menuTool, dock.menuAt = true, false, hit.tool.id, gfx.Point{X: event.X, Y: event.Y}
+				return gfx.EventResult{Handled: true, Repaint: true}
 			}
-			if event.Button == ui.PointerButtonPrimary {
-				*drag = toolbarDockDrag{pressed: true, tool: hit.tool, start: ui.Point{X: event.X, Y: event.Y}}
+			if event.Button == gfx.PointerButtonPrimary {
+				*drag = toolbarDockDrag{pressed: true, tool: hit.tool, start: gfx.Point{X: event.X, Y: event.Y}}
+				if hit.tool.disabled {
+					return gfx.EventResult{Handled: true}
+				}
 			}
 			break
 		}
-	case ui.PointerMove:
+	case gfx.PointerMove:
 		if !drag.pressed {
-			return ui.EventResult{}
+			return gfx.EventResult{}
 		}
 		if drag.cancelled {
-			return ui.EventResult{Handled: true}
+			return gfx.EventResult{Handled: true}
 		}
-		drag.at = ui.Point{X: event.X, Y: event.Y}
+		drag.at = gfx.Point{X: event.X, Y: event.Y}
 		dx, dy := event.X-drag.start.X, event.Y-drag.start.Y
 		if !drag.active && dx*dx+dy*dy < tabDragThreshold*tabDragThreshold {
-			return ui.EventResult{}
+			return gfx.EventResult{}
 		}
 		drag.active = true
 		drag.drop = state.toolbarDockDropAt(drag.at)
-		return ui.EventResult{Handled: true, Repaint: true}
-	case ui.PointerExit:
+		return gfx.EventResult{Handled: true, Repaint: true}
+	case gfx.PointerExit:
 		if drag.pressed {
 			drag.cancelled = true
 			drag.active = false
-			return ui.EventResult{Handled: true, Repaint: true}
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
-	case ui.PointerUp:
+	case gfx.PointerUp:
 		finished := *drag
 		*drag = toolbarDockDrag{}
 		if finished.cancelled {
-			return ui.EventResult{Handled: true, Repaint: true}
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
 		if !finished.active {
-			return ui.EventResult{}
+			if finished.tool.disabled {
+				return gfx.EventResult{Handled: true}
+			}
+			return gfx.EventResult{}
 		}
 		// Keep the source identity available while resolving the final insertion.
 		dock.drag = finished
-		drop := state.toolbarDockDropAt(ui.Point{X: event.X, Y: event.Y})
+		drop := state.toolbarDockDropAt(gfx.Point{X: event.X, Y: event.Y})
 		dock.drag = toolbarDockDrag{}
 		if drop.valid {
 			state.moveToolbarDockTool(finished.tool.id, drop.zone, drop.before)
 		}
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	return ui.EventResult{}
+	return gfx.EventResult{}
 }
 
-func (state *State) toolbarDockKey(event ui.KeyEvent) ui.EventResult {
+func (state *State) toolbarDockKey(event gfx.KeyEvent) gfx.EventResult {
 	dock := &state.toolbarDock
 	if event.Release {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
-	if event.Key != ui.KeyEscape {
+	if event.Key != gfx.KeyEscape {
 		if dock.menu || dock.drag.pressed || state.modal != modalNone || event.Modifiers != 0 {
-			return ui.EventResult{}
+			return gfx.EventResult{}
 		}
 		for _, hit := range dock.hits[:dock.count] {
 			if hit.tool.id != event.Target {
@@ -700,46 +979,66 @@ func (state *State) toolbarDockKey(event ui.KeyEvent) ui.EventResult {
 			at := slices.IndexFunc(tools, func(tool barTool) bool { return tool.id == event.Target })
 			delta := 0
 			switch {
-			case event.Key == ui.KeyLeft && !vertical || event.Key == ui.KeyUp && vertical:
+			case event.Key == gfx.KeyLeft && !vertical || event.Key == gfx.KeyUp && vertical:
 				delta = -1
-			case event.Key == ui.KeyRight && !vertical || event.Key == ui.KeyDown && vertical:
+			case event.Key == gfx.KeyRight && !vertical || event.Key == gfx.KeyDown && vertical:
 				delta = 1
-			case event.Key == ui.KeyHome:
+			case event.Key == gfx.KeyHome:
 				at, delta = -1, 1
-			case event.Key == ui.KeyEnd:
+			case event.Key == gfx.KeyEnd:
 				at, delta = len(tools), -1
 			default:
-				return ui.EventResult{}
+				return gfx.EventResult{}
 			}
 			for next := at + delta; next >= 0 && next < len(tools); next += delta {
-				if !tools[next].disabled {
-					return ui.EventResult{Handled: true, Repaint: true, Focus: tools[next].id, FocusVisible: true}
+				// The latency readout is a status, not a keyboard stop.
+				if !tools[next].disabled && tools[next].id != hitToolbarLatency {
+					return gfx.EventResult{Handled: true, Repaint: true, Focus: tools[next].id, FocusVisible: true}
 				}
 			}
-			return ui.EventResult{Handled: true}
+			return gfx.EventResult{Handled: true}
 		}
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	if dock.drag.pressed {
 		dock.drag.active, dock.drag.cancelled = false, true
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if dock.menu {
 		dock.menu = false
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	return ui.EventResult{}
+	return gfx.EventResult{}
 }
 
-func (state *State) paintToolbarDockDrag(canvas *ui.Canvas) {
+// declareToolbarDockDragOverlay declares the docked toolbar's drag feedback as
+// hitless elements of a page overlay on ui.LayerDrag: over the page and its
+// chrome, below every menu, dialog and popover. A dialog or menu opening over
+// the drag cancels it (see State.reconcileDragHosts and the paint guard in
+// Paint), so no ghost outlives the drag.
+func (state *State) declareToolbarDockDragOverlay(c ui.C) {
+	if !state.toolbarDock.drag.active {
+		return
+	}
+	chrome := &state.chrome
+	if chrome.toolbarDockDragDraw == nil {
+		chrome.toolbarDockDragDraw = state.drawToolbarDockDrag
+	}
+	ui.Overlay(c, ui.OverlaySpec{Band: ui.LayerDrag, Bounds: state.windowRect()}).Children(func() {
+		ui.Slot(c).Absolute().Inset(0).Draw(chrome.toolbarDockDragDraw)
+	})
+}
+
+// drawToolbarDockDrag paints the candidate drop zones, the insertion marker and
+// the dragged tool under the pointer.
+func (state *State) drawToolbarDockDrag(d *ui.DrawContext) {
 	drag := &state.toolbarDock.drag
 	if !drag.active {
 		return
 	}
-	canvas.PushLayer(tabDragLayer + 1)
-	defer canvas.PopLayer()
+	canvas := d.Canvas
 	for _, bounds := range state.toolbarDockDropZones() {
-		canvas.Rounded(bounds.Inset(ui.All(1)), 4, withAlpha(state.pal.accent, 0.06))
+		canvas.Rounded(bounds.Inset(gfx.All(1)), 4, withAlpha(state.pal.accent, 0.06))
 	}
 	if drag.drop.valid {
 		bounds := state.toolbarDockDropZones()[toolbarDockZoneIndex(drag.drop.zone)]
@@ -750,19 +1049,27 @@ func (state *State) paintToolbarDockDrag(canvas *ui.Canvas) {
 				bounds = state.toolbarDockSideBounds(state.viewport)
 			}
 		}
-		canvas.Rounded(bounds.Inset(ui.All(1)), 4, withAlpha(state.pal.accent, 0.10))
+		canvas.Rounded(bounds.Inset(gfx.All(1)), 4, withAlpha(state.pal.accent, 0.10))
 		canvas.Rounded(drag.drop.marker, 1, state.pal.accent)
 	}
-	box := ui.Rect{X: drag.at.X + 12, Y: drag.at.Y + 12, Width: 36, Height: 36}
+	box := gfx.Rect{X: drag.at.X + 12, Y: drag.at.Y + 12, Width: 36, Height: 36}
 	box.X = min(box.X, state.viewport.Width-box.Width-4)
 	box.Y = min(box.Y, state.viewport.Height-box.Height-4)
 	canvas.RoundedBorder(box, 7, 1, state.pal.accent, state.pal.workspace)
-	canvas.DrawIcon(lucideIcons[drag.tool.icon], box.Inset(ui.All(9)), state.pal.text)
+	if drag.tool.id == hitToolbarLatency {
+		if session, ok := state.terminalSideRailSession(); ok {
+			if text, color, ok := state.latencyInfo(session); ok {
+				state.paintRailLatencyVisual(canvas, text, color, box, true)
+				return
+			}
+		}
+	}
+	canvas.DrawIcon(lucideIcons[drag.tool.icon], box.Inset(gfx.All(9)), state.pal.text)
 }
 
-func (state *State) toolbarDockScroll(event ui.ScrollEvent) ui.EventResult {
+func (state *State) toolbarDockScroll(event gfx.ScrollEvent) gfx.EventResult {
 	if state.modal != modalNone {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	dock := &state.toolbarDock
 	metrics := state.terminalToolbarMetrics()
@@ -776,10 +1083,10 @@ func (state *State) toolbarDockScroll(event ui.ScrollEvent) ui.EventResult {
 		}
 		before := dock.bottomScroll[i]
 		dock.bottomScroll[i] = min(max(before+delta, 0), dock.bottomMax[i])
-		return ui.EventResult{Handled: true, Repaint: before != dock.bottomScroll[i]}
+		return gfx.EventResult{Handled: true, Repaint: before != dock.bottomScroll[i]}
 	}
 	if pointInRect(event.X, event.Y, dock.zones[3]) || pointInRect(event.X, event.Y, dock.zones[6]) {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	for i, viewport := range dock.sideViewports {
 		bounds := viewport
@@ -796,7 +1103,7 @@ func (state *State) toolbarDockScroll(event ui.ScrollEvent) ui.EventResult {
 		}
 		before := *scroll
 		*scroll = min(max(before+event.StepY(metrics.toolSize+metrics.gap), 0), dock.sideMax[i])
-		return ui.EventResult{Handled: true, Repaint: *scroll != before}
+		return gfx.EventResult{Handled: true, Repaint: *scroll != before}
 	}
-	return ui.EventResult{}
+	return gfx.EventResult{}
 }

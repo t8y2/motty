@@ -6,16 +6,17 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/agent"
+	"motty/internal/ai/gate"
 )
 
 // An @name in a message to the assistant brings that session's recent terminal
 // text along with the question, so the assistant need not be told to go and read
 // it and the user decides which hosts it sees. The name is the tab's title with
-// spaces made into dashes. Duplicate titles are numbered when tabs are created,
-// so the menu and the tab strip never invent different names for a session.
+// spaces made into dashes. Titles may repeat, so a name shared by several tabs
+// is numbered once when the title is assigned; the menu offers that exact token.
 
 const (
 	maxMentionSuggestions = 5
@@ -27,10 +28,11 @@ const (
 )
 
 type mentionName struct {
-	name    string
-	title   string // exactly the visible terminal/tab title
-	session uint32
-	detail  string // address shown beside the tab's title
+	noteReference *aiNoteReference
+	name          string
+	title         string // exactly the visible terminal/tab title
+	session       uint32
+	detail        string // address shown beside the tab's title
 }
 
 // mentionSlug is a title written as one word.
@@ -59,6 +61,19 @@ func mentionEmailPrefix(r rune) bool {
 	return r < 128 && (unicode.IsLetter(r) || unicode.IsDigit(r) || strings.ContainsRune("._-+", r))
 }
 
+// sessionMentionName is the @ token assigned to a session. Older states and
+// sessions built directly in tests have none; fall back to the title's slug.
+func sessionMentionName(session *Session) string {
+	if session.Mention != "" {
+		return session.Mention
+	}
+	name := mentionSlug(session.Title)
+	if name == "" {
+		name = "session-" + sessionHandle(session.ID)
+	}
+	return name
+}
+
 // mentionNames is the name of every session a message can mention.
 func (state *State) mentionNames(dst []mentionName) []mentionName {
 	for index := range state.sessions {
@@ -66,11 +81,7 @@ func (state *State) mentionNames(dst []mentionName) []mentionName {
 		if session.term == nil {
 			continue
 		}
-		name := mentionSlug(session.Title)
-		if name == "" {
-			name = "session-" + sessionHandle(session.ID)
-		}
-		dst = append(dst, mentionName{name: name, title: session.Title, session: session.ID, detail: session.Address})
+		dst = append(dst, mentionName{name: sessionMentionName(session), title: session.Title, session: session.ID, detail: session.Address})
 	}
 	return dst
 }
@@ -139,7 +150,7 @@ func (state *State) aiMentionContext(message string, skip uint32) string {
 		if state.ai.settings.redact {
 			text = agent.Redact(text)
 		}
-		fmt.Fprintf(&b, "\n\n[Terminal of session %s: %s (%s), last lines:]\n%s", sessionHandle(session.ID), session.Title, session.Address, text)
+		fmt.Fprintf(&b, "\n\n[Terminal of session %s: %s (%s), last lines:]\n[Session metadata: session_id=%q %s]\n%s", sessionHandle(session.ID), session.Title, session.Address, sessionHandle(session.ID), gate.SessionHostMetadata(state.aiSessionInfo(session)), text)
 	}
 	return b.String()
 }
@@ -155,13 +166,17 @@ func (state *State) mentionQuery() (partial string, span text.Range, ok bool) {
 		return "", text.Range{}, false
 	}
 	start := caret
-	for start > 0 && mentionRune(runes[start-1]) {
+	for start > 0 && (mentionRune(runes[start-1]) || runes[start-1] == '/') {
 		start--
 	}
 	if start == 0 || runes[start-1] != '@' {
 		return "", text.Range{}, false
 	}
-	return string(runes[start:caret]), text.Range{Start: start - 1, End: caret}, true
+	partial = string(runes[start:caret])
+	if strings.Contains(partial, "/") && !noteReferenceAllowsSlash(partial) && !strings.HasPrefix(strings.ToLower(partial), "note") {
+		return "", text.Range{}, false
+	}
+	return partial, text.Range{Start: start - 1, End: caret}, true
 }
 
 // mentionSuggestions fills dst with the sessions whose names start with what is
@@ -171,8 +186,11 @@ func (state *State) mentionSuggestions(dst []mentionName) ([]mentionName, text.R
 	if !ok {
 		return dst[:0], text.Range{}
 	}
+	if strings.HasPrefix(strings.ToLower(partial), "note") {
+		return state.noteMentionSuggestions(dst, partial), span
+	}
 	var all [16]mentionName
-	names := state.mentionNames(all[:0])
+	names := append(state.mentionNames(all[:0]), state.noteMentionNames()...)
 	partial = strings.ToLower(partial)
 	dst = dst[:0]
 	for _, name := range names {
@@ -195,12 +213,12 @@ func (state *State) aiSyncMentions() {
 	panel, input := &state.ai.panel, &state.ai.input
 	value, selection := input.String(), input.Selection()
 	changed := panel.mentionText != value || panel.mentionSelection != selection
-	var selected uint32
+	var selected string
 	if changed {
 		panel.mentionText, panel.mentionSelection = value, selection
 		panel.mentionDismissed = false
 	} else if panel.mentionIndex >= 0 && panel.mentionIndex < len(panel.mentions) {
-		selected = panel.mentions[panel.mentionIndex].session
+		selected = panel.mentions[panel.mentionIndex].name
 	}
 	panel.mentionIndex = 0
 	if _, composing := input.Composition(); composing || panel.mentionDismissed {
@@ -209,7 +227,7 @@ func (state *State) aiSyncMentions() {
 	}
 	panel.mentions, _ = state.mentionSuggestions(panel.mentionBuf[:0])
 	for index, name := range panel.mentions {
-		if name.session == selected {
+		if name.name == selected {
 			panel.mentionIndex = index
 			break
 		}
@@ -226,7 +244,7 @@ func (state *State) aiAcceptSelectedMention() bool {
 	return true
 }
 
-func (state *State) aiMentionKey(event ui.KeyEvent) bool {
+func (state *State) aiMentionKey(event gfx.KeyEvent) bool {
 	if event.Target != hitAIInput && event.Target.Scope() != hitAIMentions || event.Modifiers != 0 {
 		return false
 	}
@@ -239,15 +257,15 @@ func (state *State) aiMentionKey(event ui.KeyEvent) bool {
 		panel.mentionIndex = index
 	}
 	switch event.Key {
-	case ui.KeyDown:
+	case gfx.KeyDown:
 		panel.mentionIndex = (panel.mentionIndex + 1) % len(panel.mentions)
-	case ui.KeyUp:
+	case gfx.KeyUp:
 		panel.mentionIndex = (panel.mentionIndex + len(panel.mentions) - 1) % len(panel.mentions)
-	case ui.KeyEnter, ui.KeyTab:
+	case gfx.KeyEnter, gfx.KeyTab:
 		if !event.Repeat {
 			state.acceptMention(panel.mentions[panel.mentionIndex].name)
 		}
-	case ui.KeyEscape:
+	case gfx.KeyEscape:
 		panel.mentionDismissed = true
 		panel.mentions = panel.mentions[:0]
 	default:
@@ -267,6 +285,7 @@ func (state *State) acceptMention(name string) {
 	if runes := []rune(input.String()); span.Start > 0 && mentionEmailPrefix(runes[span.Start-1]) {
 		prefix = " "
 	}
+	state.aiRememberNoteMention(name)
 	input.SetSelection(span)
 	input.Insert(prefix + "@" + name + " ")
 }

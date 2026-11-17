@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/serial"
 	"motty/internal/sessionimport"
 	"motty/internal/sshconn"
@@ -17,15 +18,18 @@ import (
 // streamWorld replaces the opener of Telnet and serial streams with one that
 // hands out fake shells (or an error), and records what was asked for.
 type streamWorld struct {
-	requests []streamRequest
-	shells   []*fakeShell
-	err      error
-	hold     chan struct{} // when set, opening waits for it to close
+	mu               sync.Mutex
+	recordedRequests []streamRequest
+	shells           []*fakeShell
+	err              error
+	hold             chan struct{} // when set, opening waits for it to close
 }
 
 func (world *streamWorld) install(state *State) {
 	state.openStream = func(ctx context.Context, request streamRequest) (Shell, error) {
-		world.requests = append(world.requests, request)
+		world.mu.Lock()
+		world.recordedRequests = append(world.recordedRequests, request)
+		world.mu.Unlock()
 		if world.hold != nil {
 			select {
 			case <-world.hold:
@@ -37,9 +41,17 @@ func (world *streamWorld) install(state *State) {
 			return nil, world.err
 		}
 		shell := &fakeShell{done: make(chan struct{})}
+		world.mu.Lock()
 		world.shells = append(world.shells, shell)
+		world.mu.Unlock()
 		return shell, nil
 	}
+}
+
+func (world *streamWorld) requests() []streamRequest {
+	world.mu.Lock()
+	defer world.mu.Unlock()
+	return append([]streamRequest(nil), world.recordedRequests...)
 }
 
 func addStreamHost(state *State, host Host) Host {
@@ -83,8 +95,9 @@ func TestTelnetHostOpensAStreamAndNotAnSSHConnection(t *testing.T) {
 	if len(world.conns) != 0 {
 		t.Fatalf("a Telnet host dialed %d SSH connections", len(world.conns))
 	}
-	if len(streams.requests) != 1 || streams.requests[0].Host.Address != "10.0.0.2" || streams.requests[0].Host.Port != 23 {
-		t.Fatalf("stream requests = %+v", streams.requests)
+	requests := streams.requests()
+	if len(requests) != 1 || requests[0].Host.Address != "10.0.0.2" || requests[0].Host.Port != 23 {
+		t.Fatalf("stream requests = %+v", requests)
 	}
 	if session.Address != "10.0.0.2:23" {
 		t.Fatalf("address = %q", session.Address)
@@ -122,8 +135,8 @@ func TestStreamHostsOfferNoServerOnlyTools(t *testing.T) {
 	if session.files != nil {
 		t.Fatal("an SFTP panel opened for a serial port")
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if hit, ok := hitByID(&canvas, hitSFTPOpen); !ok || !hit.Disabled {
 		t.Fatalf("Files should be shown disabled: %+v, %v", hit, ok)
 	}
@@ -154,8 +167,8 @@ func TestAStreamThatFailsToOpenShowsWhyAndRetries(t *testing.T) {
 	streams.err = nil
 	state.Click(hitConnRetry)
 	waitUntil(t, state, "the retry", func() bool { return session.term != nil && session.term.shell != nil })
-	if len(streams.requests) != 2 {
-		t.Fatalf("requests = %d", len(streams.requests))
+	if requests := streams.requests(); len(requests) != 2 {
+		t.Fatalf("requests = %d", len(requests))
 	}
 }
 
@@ -185,16 +198,16 @@ func TestOutboundProxyCarriesTelnetToo(t *testing.T) {
 	state.proxy = outboundProxy{kind: 1, address: "127.0.0.1:1080"}
 	addStreamHost(state, Host{Label: "Switch", Address: "10.0.0.2", Protocol: protocolTelnet})
 	openHost(state)
-	waitUntil(t, state, "the request", func() bool { return len(streams.requests) == 1 })
-	if streams.requests[0].Proxy == nil || streams.requests[0].Proxy.Address != "127.0.0.1:1080" {
-		t.Fatalf("proxy = %+v", streams.requests[0].Proxy)
+	waitUntil(t, state, "the request", func() bool { return len(streams.requests()) == 1 })
+	if proxy := streams.requests()[0].Proxy; proxy == nil || proxy.Address != "127.0.0.1:1080" {
+		t.Fatalf("proxy = %+v", proxy)
 	}
 }
 
 func TestHostDialogAddsATelnetHostAndTheSameAddressForSSHIsAnotherHost(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitAddHost)
-	state.Click(hitDialogProtocolTelnet)
+	clickHostChoice(t, state, state.messages.Tools.ProtocolTelnet)
 	if state.editor.value(fieldPort) != "23" {
 		t.Fatalf("port = %q", state.editor.value(fieldPort))
 	}
@@ -208,10 +221,10 @@ func TestHostDialogAddsATelnetHostAndTheSameAddressForSSHIsAnotherHost(t *testin
 	if added.Protocol != protocolTelnet || added.Port != 23 || added.User != "" || added.CatalogID == catalogIDFor(Host{Address: "prod.example.com", Port: 23}) {
 		t.Fatalf("added = %+v", added)
 	}
-	// The same destination again is a duplicate.
+	// The same destination under the same name again is a duplicate.
 	state.Click(hitAddHost)
-	state.Click(hitDialogProtocolTelnet)
-	typeInto(state, hitDialogLabel, "Again")
+	clickHostChoice(t, state, state.messages.Tools.ProtocolTelnet)
+	typeInto(state, hitDialogLabel, "Prod telnet")
 	typeInto(state, hitDialogAddress, "prod.example.com")
 	state.Click(hitDialogSubmit)
 	if state.modal != modalNewHost || state.dialogError != state.messages.ErrAddressTaken {
@@ -222,7 +235,7 @@ func TestHostDialogAddsATelnetHostAndTheSameAddressForSSHIsAnotherHost(t *testin
 func TestHostDialogAddsASerialHostWithItsLineAndFlow(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitAddHost)
-	state.Click(hitDialogProtocolSerial)
+	clickHostChoice(t, state, state.messages.Tools.ProtocolSerial)
 	if state.editor.value(fieldPort) != "115200 8N1" {
 		t.Fatalf("line = %q", state.editor.value(fieldPort))
 	}
@@ -231,7 +244,7 @@ func TestHostDialogAddsASerialHostWithItsLineAndFlow(t *testing.T) {
 	typeInto(state, hitDialogAddress, "/dev/ttyUSB0")
 	state.editor.port.SetSelection(text.Range{Start: 0, End: len("115200 8N1")})
 	typeInto(state, hitDialogPort, "9600 7E2")
-	state.Click(hitDialogFlowHardware)
+	clickHostChoice(t, state, state.messages.Tools.FlowHardware)
 	state.Click(hitDialogSubmit)
 	if state.modal == modalNewHost {
 		t.Fatalf("dialog stayed open: %q", state.dialogError)
@@ -247,7 +260,7 @@ func TestHostDialogAddsASerialHostWithItsLineAndFlow(t *testing.T) {
 
 	// A line that is not one is refused with the way to write it.
 	state.Click(hitAddHost)
-	state.Click(hitDialogProtocolSerial)
+	clickHostChoice(t, state, state.messages.Tools.ProtocolSerial)
 	typeInto(state, hitDialogLabel, "Bad")
 	state.editor.address = text.Editor{}
 	typeInto(state, hitDialogAddress, "/dev/ttyUSB1")
@@ -262,14 +275,14 @@ func TestHostDialogAddsASerialHostWithItsLineAndFlow(t *testing.T) {
 func TestSwitchingProtocolKeepsWhatTheUserTypedAndChangesWhatTheyDidNot(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitAddHost)
-	state.Click(hitDialogProtocolTelnet)
-	state.Click(hitDialogProtocolSSH)
+	clickHostChoice(t, state, state.messages.Tools.ProtocolTelnet)
+	clickHostChoice(t, state, state.messages.Tools.ProtocolSSH)
 	if state.editor.value(fieldPort) != "22" {
 		t.Fatalf("port went to %q", state.editor.value(fieldPort))
 	}
 	state.editor.port.SetSelection(text.Range{Start: 0, End: 2})
 	typeInto(state, hitDialogPort, "2222")
-	state.Click(hitDialogProtocolTelnet)
+	clickHostChoice(t, state, state.messages.Tools.ProtocolTelnet)
 	if state.editor.value(fieldPort) != "2222" {
 		t.Fatalf("a port the user typed was replaced by %q", state.editor.value(fieldPort))
 	}
@@ -278,28 +291,35 @@ func TestSwitchingProtocolKeepsWhatTheUserTypedAndChangesWhatTheyDidNot(t *testi
 func TestHostDialogPaintsEachProtocolWithItsOwnFields(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitAddHost)
-	size := ui.Size{Width: 1400, Height: 900}
 	for _, test := range []struct {
-		protocol ui.ID
-		want     []ui.ID
-		absent   []ui.ID
+		protocol string
+		want     []gfx.ID
+		wantFlow string
+		absent   []gfx.ID
 	}{
-		{hitDialogProtocolSSH, []ui.ID{hitDialogUser, hitDialogPort}, []ui.ID{hitDialogFlowNone, hitDialogPortsTrigger}},
-		{hitDialogProtocolTelnet, []ui.ID{hitDialogPort}, []ui.ID{hitDialogUser, hitDialogFlowNone}},
-		{hitDialogProtocolSerial, []ui.ID{hitDialogPort, hitDialogFlowNone, hitDialogPortsTrigger}, []ui.ID{hitDialogUser}},
+		{state.messages.Tools.ProtocolSSH, []gfx.ID{hitDialogUser, hitDialogPort}, "", []gfx.ID{hitDialogPortsTrigger}},
+		{state.messages.Tools.ProtocolTelnet, []gfx.ID{hitDialogPort}, "", []gfx.ID{hitDialogUser}},
+		{state.messages.Tools.ProtocolSerial, []gfx.ID{hitDialogPort, hitDialogPortsTrigger}, state.messages.Tools.FlowNone, []gfx.ID{hitDialogUser}},
 	} {
-		state.Click(test.protocol)
-		var canvas ui.Canvas
-		state.Paint(&canvas, size)
+		clickHostChoice(t, state, test.protocol)
+		var canvas gfx.Canvas
+		state.Paint(&canvas, hostChoicePaint)
 		for _, id := range test.want {
 			if _, ok := hitByID(&canvas, id); !ok {
-				t.Errorf("protocol %d: hit %d is not painted", test.protocol, id)
+				t.Errorf("protocol %q: hit %d is not painted", test.protocol, id)
 			}
 		}
 		for _, id := range test.absent {
 			if _, ok := hitByID(&canvas, id); ok {
-				t.Errorf("protocol %d: hit %d is painted", test.protocol, id)
+				t.Errorf("protocol %q: hit %d is painted", test.protocol, id)
 			}
+		}
+		if test.wantFlow == "" {
+			if _, ok := hostChoiceIn(&canvas, state.messages.Tools.FlowNone); ok {
+				t.Errorf("protocol %q: the flow choice is painted", test.protocol)
+			}
+		} else if _, ok := hostChoiceIn(&canvas, test.wantFlow); !ok {
+			t.Errorf("protocol %q: the flow choice is not painted", test.protocol)
 		}
 	}
 }
@@ -418,13 +438,13 @@ func TestImportedTelnetAndSerialSessionsBecomeHostsOnce(t *testing.T) {
 func TestPortsPickerClosesOnAnOutsidePressWithoutClosingTheDialog(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitAddHost)
-	state.Click(hitDialogProtocolSerial)
+	clickHostChoice(t, state, state.messages.Tools.ProtocolSerial)
 	state.Click(hitDialogPortsTrigger)
 	if !state.editor.portsOpen {
 		t.Fatal("the ports picker did not open")
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	backdrop, ok := hitByID(&canvas, hitDialogPortsDismiss)
 	if !ok || backdrop.Bounds.Width != 1400 || backdrop.Bounds.Height != 900 {
 		t.Fatalf("the open picker has no window-wide backdrop: %+v, %v", backdrop, ok)
@@ -444,8 +464,8 @@ func TestTypingATelnetOrSSHLinkConnectsToIt(t *testing.T) {
 
 	state.search.Insert("telnet://10.0.0.5:2323/")
 	state.connectTyped()
-	waitUntil(t, state, "the Telnet request", func() bool { return len(streams.requests) == 1 })
-	if host := streams.requests[0].Host; host.Protocol != protocolTelnet || host.Address != "10.0.0.5" || host.Port != 2323 {
+	waitUntil(t, state, "the Telnet request", func() bool { return len(streams.requests()) == 1 })
+	if host := streams.requests()[0].Host; host.Protocol != protocolTelnet || host.Address != "10.0.0.5" || host.Port != 2323 {
 		t.Fatalf("host = %+v", host)
 	}
 	if len(world.conns) != 0 {

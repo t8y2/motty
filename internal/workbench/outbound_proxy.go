@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
@@ -30,11 +30,6 @@ var outboundProxyHits = tree.Feature("outbound-proxy")
 var (
 	hitSettingsProxyConfigure = tree.ID(outboundProxyHits, "settings-proxy-configure")
 	hitHostProxyConfigure     = tree.ID(outboundProxyHits, "host-proxy-configure")
-	hitProxyKindInherit       = tree.ID(outboundProxyHits, "proxy-kind-inherit")
-	hitProxyKindNone          = tree.ID(outboundProxyHits, "proxy-kind-none")
-	hitProxyKindSOCKS5        = tree.ID(outboundProxyHits, "proxy-kind-socks5")
-	hitProxyKindHTTP          = tree.ID(outboundProxyHits, "proxy-kind-http")
-	hitProxyKindCommand       = tree.ID(outboundProxyHits, "proxy-kind-command")
 	hitOutboundProxyAddress   = tree.ID(outboundProxyHits, "outbound-proxy-address")
 	hitOutboundProxyUser      = tree.ID(outboundProxyHits, "outbound-proxy-user")
 	hitOutboundProxyPassword  = tree.ID(outboundProxyHits, "outbound-proxy-password")
@@ -72,11 +67,63 @@ type outboundProxyForm struct {
 	// unconfirmed is set while the dialog shows an imported proxy command that
 	// the user has not saved yet.
 	unconfirmed bool
+	// choice is the proxy kind the page Choice offers, derived from inherit and
+	// kind before every paint.
+	choice outboundProxyChoice
+	// slots are where the dialog body laid the fields out.
+	slots [4]ui.Box
 	// text is the settings row's description, made for textKind, textFor (the
 	// address) and textLanguage.
 	text, textFor string
 	textKind      sshconn.ProxyKind
 	textLanguage  i18n.Language
+}
+
+// outboundProxyChoice is one option of the proxy kind switch. inherit is the
+// host dialog's "use the global proxy"; command is the host-only proxy command.
+type outboundProxyChoice uint8
+
+const (
+	proxyChoiceInherit outboundProxyChoice = iota
+	proxyChoiceNone
+	proxyChoiceSOCKS5
+	proxyChoiceHTTP
+	proxyChoiceCommand
+)
+
+// selectedChoice derives the switch's value from the form.
+func (form *outboundProxyForm) selectedChoice() outboundProxyChoice {
+	if form.inherit {
+		return proxyChoiceInherit
+	}
+	switch form.kind {
+	case sshconn.ProxySOCKS5:
+		return proxyChoiceSOCKS5
+	case sshconn.ProxyHTTPConnect:
+		return proxyChoiceHTTP
+	case sshconn.ProxyCommand:
+		return proxyChoiceCommand
+	}
+	return proxyChoiceNone
+}
+
+// applyProxyChoice writes the switch's value back into the form.
+func (state *State) applyProxyChoice() {
+	form := &state.proxyForm
+	switch form.choice {
+	case proxyChoiceInherit:
+		form.inherit, form.kind = true, sshconn.ProxyNone
+	case proxyChoiceSOCKS5:
+		form.inherit, form.kind = false, sshconn.ProxySOCKS5
+	case proxyChoiceHTTP:
+		form.inherit, form.kind = false, sshconn.ProxyHTTPConnect
+	case proxyChoiceCommand:
+		if form.forHost {
+			form.inherit, form.kind = false, sshconn.ProxyCommand
+		}
+	default:
+		form.inherit, form.kind = false, sshconn.ProxyNone
+	}
 }
 
 func cloneOutboundProxy(proxy *outboundProxy) *outboundProxy {
@@ -361,25 +408,12 @@ func (state *State) loadProxyForm(saved outboundProxy, password string) {
 	form.dialogError = ""
 }
 
-func (state *State) clickOutboundProxy(id ui.ID) {
-	form := &state.proxyForm
+func (state *State) clickOutboundProxy(id gfx.ID) {
 	switch id {
-	case hitProxyKindInherit:
-		form.inherit, form.kind = true, sshconn.ProxyNone
-	case hitProxyKindNone:
-		form.inherit, form.kind = false, sshconn.ProxyNone
-	case hitProxyKindSOCKS5:
-		form.inherit, form.kind = false, sshconn.ProxySOCKS5
-	case hitProxyKindHTTP:
-		form.inherit, form.kind = false, sshconn.ProxyHTTPConnect
-	case hitProxyKindCommand:
-		if form.forHost {
-			form.inherit, form.kind = false, sshconn.ProxyCommand
-		}
 	case hitOutboundProxySubmit:
 		state.submitOutboundProxy()
 	case hitOutboundProxyCancel, hitOutboundProxyClose:
-		if form.forHost {
+		if state.proxyForm.forHost {
 			state.modal = modalNewHost
 		} else {
 			state.closeModal()
@@ -471,48 +505,65 @@ func (state *State) submitOutboundProxy() {
 	state.save()
 }
 
-func (state *State) paintOutboundProxyDialog(canvas *ui.Canvas, viewport ui.Rect) {
+// declareOutboundProxyBody lays out the route settings: the kind switch, the
+// four fields and the error line.
+func (state *State) declareOutboundProxyBody(c ui.C) {
+	form := &state.proxyForm
+	column := ui.Column(c).Fill().PadSides(2, 4, 0, 4)
+	column.Children(func() {
+		ui.Column(c).Height(34).MarginSides(0, 0, 14, 0).Children(func() { state.declareOutboundProxyKind(c) })
+		for index := range form.slots {
+			form.slots[index] = ui.Slot(c).Height(62).MarginSides(0, 0, 4, 0)
+		}
+		state.problemLineC(c, form.dialogError)
+	})
+	column.DrawOver(func(d *ui.DrawContext) { state.paintOutboundProxyFields(d.Canvas) })
+}
+
+var (
+	// The host dialog also offers inheriting the global proxy and a proxy
+	// command; the global dialog offers only the kinds it can carry.
+	outboundProxyHostChoices   = [...]outboundProxyChoice{proxyChoiceInherit, proxyChoiceNone, proxyChoiceSOCKS5, proxyChoiceHTTP, proxyChoiceCommand}
+	outboundProxyGlobalChoices = [...]outboundProxyChoice{proxyChoiceNone, proxyChoiceSOCKS5, proxyChoiceHTTP}
+)
+
+func (state *State) outboundProxyChoiceLabel(choice outboundProxyChoice) string {
+	m := state.messages.Tools
+	switch choice {
+	case proxyChoiceInherit:
+		return m.HostProxyInherit
+	case proxyChoiceSOCKS5:
+		return m.ProxySOCKS5
+	case proxyChoiceHTTP:
+		return m.ProxyHTTP
+	case proxyChoiceCommand:
+		return m.ProxyCommand
+	}
+	if state.proxyForm.forHost {
+		return m.HostProxyDirect
+	}
+	return m.ProxyNone
+}
+
+// declareOutboundProxyKind declares the proxy kind switch in the dialog body. It
+// is a page Choice, so its arrows move between the options.
+func (state *State) declareOutboundProxyKind(c ui.C) {
+	form := &state.proxyForm
+	form.choice = form.selectedChoice()
+	choices := outboundProxyHostChoices[:]
+	if !form.forHost {
+		choices = outboundProxyGlobalChoices[:]
+	}
+	if ui.Choice(c, &form.choice, choices, state.outboundProxyChoiceLabel).Fill().Changed() {
+		state.applyProxyChoice()
+	}
+}
+
+// paintOutboundProxyFields paints the kind switch and the four fields into the
+// slots the dialog body laid out.
+func (state *State) paintOutboundProxyFields(canvas *gfx.Canvas) {
 	m, theme := state.messages.Tools, state.Theme()
 	form := &state.proxyForm
-	title, description := m.ProxyDialogTitle, m.ProxyDialogDescription
-	if form.forHost {
-		title, description = m.HostProxyDialogTitle, m.HostProxyDialogDescription
-		if form.unconfirmed && form.kind == sshconn.ProxyCommand {
-			description = m.HostProxyCommandConfirm
-		}
-	}
-	// No scrim dismiss: a press beside the form must not discard its input.
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		CloseID: hitOutboundProxyClose, InitialFocusID: hitOutboundProxyAddress,
-		ContentSize: ui.Size{Width: 560}, FitBody: true, BodyHeight: withError(312, form.dialogError), // the kind and four fields
-	})
-	layout := dialog.Begin(title, description)
-	options := [...]components.SegmentOption{
-		{ID: hitProxyKindInherit, Label: m.HostProxyInherit},
-		{ID: hitProxyKindNone, Label: m.HostProxyDirect},
-		{ID: hitProxyKindSOCKS5, Label: m.ProxySOCKS5},
-		{ID: hitProxyKindHTTP, Label: m.ProxyHTTP},
-		{ID: hitProxyKindCommand, Label: m.ProxyCommand},
-	}
-	selected := hitProxyKindNone
-	if form.inherit {
-		selected = hitProxyKindInherit
-	} else {
-		switch form.kind {
-		case sshconn.ProxySOCKS5:
-			selected = hitProxyKindSOCKS5
-		case sshconn.ProxyHTTPConnect:
-			selected = hitProxyKindHTTP
-		case sshconn.ProxyCommand:
-			selected = hitProxyKindCommand
-		}
-	}
-	visibleOptions := options[:]
-	if !form.forHost {
-		options[1].Label = m.ProxyNone
-		visibleOptions = options[1 : len(options)-1]
-	}
 	disabled := form.inherit || form.kind == sshconn.ProxyNone
 	command := form.kind == sshconn.ProxyCommand
 	addressLabel, addressPlaceholder := m.ProxyAddress, "127.0.0.1:1080"
@@ -520,7 +571,7 @@ func (state *State) paintOutboundProxyDialog(canvas *ui.Canvas, viewport ui.Rect
 		addressLabel, addressPlaceholder = m.ProxyCommandField, "cloudflared access ssh --hostname %h"
 	}
 	entries := [...]struct {
-		id          ui.ID
+		id          gfx.ID
 		label       string
 		placeholder string
 		editor      *text.Editor
@@ -531,20 +582,8 @@ func (state *State) paintOutboundProxyDialog(canvas *ui.Canvas, viewport ui.Rect
 		{hitOutboundProxyPassword, m.ProxyPassword, m.ProxyPasswordPlaceholder, &form.password, true},
 		{hitOutboundProxyBypass, m.ProxyBypass, defaultProxyBypass, &form.bypass, false},
 	}
-	var kind flex.Box
-	var slots [len(entries)]flex.Box
-	f := state.settingsRow.Begin(canvas, theme, layout.Body)
-	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
-		kind = f.Slot().Height(34).MarginSides(0, 0, 14, 0)
-		for index := range slots {
-			slots[index] = f.Slot().Height(62).MarginSides(0, 0, 4, 0)
-		}
-		state.problemLine(f, form.dialogError)
-	})
-	f.End()
-	components.BeginSegmentedControl(canvas, theme, kind.Rect(), visibleOptions, selected).Paint()
 	for index, entry := range entries {
-		content := components.BeginField(canvas, theme, slots[index].Rect()).Paint(entry.label, "", "")
+		content := components.BeginField(canvas, theme, form.slots[index].Rect()).Paint(entry.label, "", "")
 		value := entry.editor.String()
 		focused := canvas.Focused() == entry.id
 		login := entry.id == hitOutboundProxyUser || entry.id == hitOutboundProxyPassword
@@ -554,11 +593,37 @@ func (state *State) paintOutboundProxyDialog(canvas *ui.Canvas, viewport ui.Rect
 			Disabled: disabled && entry.id != hitOutboundProxyBypass || command && login,
 		})
 	}
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitOutboundProxyCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitOutboundProxySubmit, Label: m.ProxySave},
-	)
-	dialog.End()
+}
+
+// declareOutboundProxyDialog declares the route settings as a dialog of the
+// workbench page.
+func (state *State) declareOutboundProxyDialog(c ui.C) {
+	m := state.messages.Tools
+	form := &state.proxyForm
+	title, description := m.ProxyDialogTitle, m.ProxyDialogDescription
+	if form.forHost {
+		title, description = m.HostProxyDialogTitle, m.HostProxyDialogDescription
+		if form.unconfirmed && form.kind == sshconn.ProxyCommand {
+			description = m.HostProxyCommandConfirm
+		}
+	}
+	bodyHeight := withError(312, form.dialogError) // the kind and four fields
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 560, description, bodyHeight)
+	// No scrim dismiss: a press beside the form must not discard its input.
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: title, Description: description, Width: 560, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, CloseID: hitOutboundProxyClose, InitialFocusID: hitOutboundProxyAddress,
+	})
+	dialog.Body(func() { state.declareOutboundProxyBody(c) })
+	dialog.Footer(func() {
+		if dialogButton(c, state.messages.Cancel, components.ButtonSecondary, false).Clicked() {
+			c.After(func() { state.clickOutboundProxy(hitOutboundProxyCancel) })
+		}
+		if dialogButton(c, m.ProxySave, components.ButtonDefault, false).Clicked() {
+			c.After(func() { state.clickOutboundProxy(hitOutboundProxySubmit) })
+		}
+	})
 }
 
 func (state *State) hostProxyDescription() string {
@@ -578,21 +643,29 @@ func (state *State) hostProxyDescription() string {
 	return fmt.Sprintf(m.HostProxyDescriptionFmt, state.proxyKindName(proxy.kind), proxy.address)
 }
 
-func (state *State) paintHostProxyRow(canvas *ui.Canvas, bounds ui.Rect) {
-	m, theme := state.messages.Tools, state.Theme()
-	content := components.BeginField(canvas, theme, bounds).Paint(m.HostProxyRow, "", "")
-	button := components.BeginButton(canvas, theme, hitHostProxyConfigure, ui.Rect{}).XSmall().SizeToFit(m.ProxyConfigure)
-	var action flex.Box
-	f := state.partLayout.Begin(canvas, theme, content)
-	// The summary sits in a box like the other fields' inputs, with its button
-	// inside, so the row has the same edge and height as they do.
-	f.Row().Fill().Items(flex.Center).Gap(8).PadSides(0, 4, 0, 12).
-		Background(state.pal.surface).Border(1, state.pal.line).Radius(radius.control).Children(func() {
-		f.Text(state.hostProxyDescription()).FontSize(metrics.FontSizeS).Color(state.pal.muted).Ellipsis().Grow(1)
-		action = f.Slot().Size(button.BoundsWidth(), 24)
+// declareHostProxyRow declares the host form's Outbound proxy row: a form
+// field whose control is the saved route's summary and its Configure button.
+func (state *State) declareHostProxyRow(c ui.C) ui.Box {
+	m, theme, form := state.messages.Tools, state.Theme(), &state.editor.form
+	button := components.BeginButton(c.Canvas(), theme, gfx.ID{}, gfx.Rect{}).XSmall().SizeToFit(m.ProxyConfigure)
+	field := ui.FormField(c, &form.proxyField, m.HostProxyRow).Height(float32(hostFormRowHeight))
+	field.Children(func() {
+		// The summary sits in a box like the other fields' inputs, with its
+		// button inside, so the row has the same edge and height as they do.
+		form.body.proxyRow = ui.Row(c).Fill().Items(ui.Center).Gap(8).PadSides(0, 4, 0, 12).
+			Background(state.pal.surface).Border(1, state.pal.line).Radius(radius.control).Children(func() {
+			ui.Text(c, state.hostProxyDescription()).FontSize(metrics.FontSizeS).Color(state.pal.muted).Ellipsis().Grow(1)
+			form.body.proxyAction = ui.Slot(c).Size(button.BoundsWidth(), 24)
+		})
 	})
-	f.End()
-	components.BeginButton(canvas, theme, hitHostProxyConfigure, action.Rect()).XSmall().Outline(m.ProxyConfigure)
+	return field
+}
+
+// paintHostProxyRow paints the Configure button into the slot the declared
+// row left for it.
+func (state *State) paintHostProxyRow(canvas *gfx.Canvas) {
+	action := state.editor.form.body.proxyAction
+	components.BeginButton(canvas, state.Theme(), hitHostProxyConfigure, action.Rect()).XSmall().Outline(state.messages.Tools.ProxyConfigure)
 	state.rememberHostControl(hitHostProxyConfigure, action.Rect())
 }
 

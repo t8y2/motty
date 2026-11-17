@@ -8,7 +8,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/headless"
 	"motty/internal/cmdhistory"
 	"motty/internal/sshconn"
 )
@@ -157,7 +158,7 @@ func pickerWorld(t *testing.T) *historyWorld {
 
 func (h *historyWorld) search(query string) {
 	app.TextEvent{Kind: app.TextInsert, Text: query}.Apply(h.state.EditorFor(hitHistorySearch))
-	h.state.Paint(&ui.Canvas{}, ui.Size{Width: 1400, Height: 900})
+	h.state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
 }
 
 func (h *historyWorld) listed() []string {
@@ -175,7 +176,7 @@ func TestHistoryPickerRanksFuzzyMatchesAndInsertsWithoutEnter(t *testing.T) {
 	state.Click(hitCommandPalette)
 	app.TextEvent{Kind: app.TextInsert, Text: state.messages.History.Title}.Apply(state.EditorFor(hitCommandPaletteSearch))
 	state.refreshCommandPalette()
-	state.Key(ui.KeyEvent{Target: hitCommandPaletteSearch, Key: ui.KeyEnter})
+	state.Key(gfx.KeyEvent{Target: hitCommandPaletteSearch, Key: gfx.KeyEnter})
 	if state.modal != modalHistory {
 		t.Fatalf("modal = %d", state.modal)
 	}
@@ -189,7 +190,7 @@ func TestHistoryPickerRanksFuzzyMatchesAndInsertsWithoutEnter(t *testing.T) {
 	}
 
 	before := len(h.shell.input)
-	result := state.Key(ui.KeyEvent{Target: hitHistorySearch, Key: ui.KeyEnter})
+	result := state.Key(gfx.KeyEvent{Target: hitHistorySearch, Key: gfx.KeyEnter})
 	if !result.Handled || state.modal != modalNone {
 		t.Fatalf("enter: %+v modal=%d", result, state.modal)
 	}
@@ -206,12 +207,12 @@ func TestHistoryPickerShiftEnterRunsAndScopeWidensToAllHosts(t *testing.T) {
 	if len(h.listed()) != 0 {
 		t.Fatalf("another host's command is listed for this host: %q", h.listed())
 	}
-	state.Click(hitHistoryScopeAll)
+	clickSettingsChoice(t, state, state.messages.History.ScopeAll)
 	if got := h.listed(); len(got) != 1 || got[0] != "kubectl get pods" {
 		t.Fatalf("all hosts lists %q", got)
 	}
 	before := len(h.shell.input)
-	state.Key(ui.KeyEvent{Target: hitHistorySearch, Key: ui.KeyEnter, Modifiers: ui.ModifierShift})
+	state.Key(gfx.KeyEvent{Target: hitHistorySearch, Key: gfx.KeyEnter, Modifiers: gfx.ModifierShift})
 	if got := string(h.shell.input[before:]); got != "kubectl get pods\r" {
 		t.Fatalf("typed %q", got)
 	}
@@ -227,10 +228,10 @@ func TestHistoryPickerDeleteForgetsTheSelectedCommand(t *testing.T) {
 	}
 	selected, _ := state.historySelection()
 	// In the search field Delete edits the text; on a row it removes the entry.
-	if result := state.Key(ui.KeyEvent{Target: hitHistorySearch, Key: ui.KeyDelete}); result.Handled {
+	if result := state.Key(gfx.KeyEvent{Target: hitHistorySearch, Key: gfx.KeyDelete}); result.Handled {
 		t.Fatal("Delete in a filled search field was taken from the text")
 	}
-	if result := state.Key(ui.KeyEvent{Target: hitHistoryItems.At(0), Key: ui.KeyDelete}); !result.Handled {
+	if result := state.Key(gfx.KeyEvent{Target: hitHistoryItems.At(0), Key: gfx.KeyDelete}); !result.Handled {
 		t.Fatal("Delete on a row did nothing")
 	}
 	for _, command := range h.remembered("") {
@@ -252,7 +253,7 @@ func TestHistoryPickerRowsTouchSoCrossingThemKeepsTheHover(t *testing.T) {
 	h := pickerWorld(t)
 	state := h.state
 	state.openHistory(&state.sessions[0])
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	driver, err := app.NewDriver(app.Config{Title: "history", Width: 1400, Height: 900, Tree: Tree(), Paint: state.Paint, OnKey: state.Key}, &canvas)
 	if err != nil {
 		t.Fatal(err)
@@ -273,6 +274,202 @@ func TestHistoryPickerRowsTouchSoCrossingThemKeepsTheHover(t *testing.T) {
 			t.Fatalf("pointer at y=%v between rows %v and %v hits %v (ok=%v), want a history row", y, first.Bounds, second.Bounds, id, ok)
 		}
 	}
+}
+
+// TestHistoryPickerHeadlessEvents drives the picker through the window's real
+// event pass: the search is a page field, the rows and the host/all switch are
+// page elements, and the keys are the window's.
+func TestHistoryPickerHeadlessEvents(t *testing.T) {
+	h := pickerWorld(t)
+	state := h.state
+	state.openHistory(&state.sessions[0])
+	view, err := headless.Open(state.WindowConfig(app.Config{
+		Title: "history", Width: 1400, Height: 900, Tree: Tree(),
+		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
+	}), nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Wait(50 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if focused := view.Snapshot().Focused; focused != hitHistorySearch {
+		t.Fatalf("the picker's search does not have the keyboard: %v", focused)
+	}
+
+	// Typing reaches the page field bound to the picker's editor.
+	if err := view.Type("gst"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Wait(50 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if got := state.history.search.String(); got != "gst" {
+		t.Fatalf("the search holds %q, want gst", got)
+	}
+	if got := strings.Join(h.listed(), "|"); got != "git status|grep -rn gst src|go test ./..." {
+		t.Fatalf("gst lists %q", got)
+	}
+
+	// The arrows move the selection the page's rows show.
+	if err := view.Keys("Down"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Wait(20 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if state.history.selected != 1 {
+		t.Fatalf("down selected %d, want 1", state.history.selected)
+	}
+	if err := view.Keys("PageDown"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Wait(20 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if state.history.selected != len(state.history.ranked)-1 {
+		t.Fatalf("page down selected %d of %d rows", state.history.selected, len(state.history.ranked))
+	}
+	if err := view.Keys("Up"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Wait(20 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if state.history.selected != len(state.history.ranked)-2 {
+		t.Fatalf("up selected %d", state.history.selected)
+	}
+
+	// Enter inserts the selected row without running it and closes the picker.
+	selected, _ := state.historySelection()
+	before := len(h.shell.input)
+	if err := view.Keys("Enter"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Wait(50 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if state.modal != modalNone {
+		t.Fatalf("enter left the picker open (modal %d)", state.modal)
+	}
+	if got := string(h.shell.input[before:]); got != selected.Command {
+		t.Fatalf("enter typed %q, want %q", got, selected.Command)
+	}
+
+	// Reopening, Tab moves the keyboard from the search to a row; Delete then
+	// forgets the selected row. (A focused text field keeps Delete for the text
+	// system, as it does in any window.)
+	state.openHistory(&state.sessions[0])
+	if err := view.Wait(50 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	doomed, _ := state.historySelection()
+	onRow := false
+	for attempt := 0; attempt < 8; attempt++ {
+		if _, ok := view.Snapshot().Focused.In(hitHistoryItems); ok {
+			onRow = true
+			break
+		}
+		if err := view.Keys("Tab"); err != nil {
+			t.Fatal(err)
+		}
+		if err := view.Wait(20 * time.Millisecond); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !onRow {
+		t.Fatal("Tab never reached a history row")
+	}
+	if err := view.Keys("Delete"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Wait(50 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if state.modal != modalHistory {
+		t.Fatal("delete closed the picker")
+	}
+	for _, command := range h.remembered("") {
+		if command == doomed.Command {
+			t.Fatalf("delete did not forget %q", command)
+		}
+	}
+
+	// The host/all switch is a page Choice: a real press widens the list.
+	allLabel := state.messages.History.ScopeAll
+	hit, ok := settingsChoiceInHits(view.Snapshot().Hits, allLabel, true)
+	if !ok {
+		t.Fatalf("the picker has no %q switch", allLabel)
+	}
+	if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Wait(50 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if !state.history.all {
+		t.Fatal("the switch did not widen the picker to all hosts")
+	}
+	found := false
+	for _, command := range h.listed() {
+		if command == "kubectl get pods" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("all hosts lists %q", h.listed())
+	}
+
+	// The switch's arrows are the page's: the option just pressed has the
+	// keyboard, and Left narrows the list again. If a platform put the focus
+	// elsewhere, Tab reaches the switch.
+	for attempt := 0; attempt < 4 && !focusedRadio(view.Snapshot()); attempt++ {
+		if err := view.Keys("Tab"); err != nil {
+			t.Fatal(err)
+		}
+		if err := view.Wait(20 * time.Millisecond); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !focusedRadio(view.Snapshot()) {
+		t.Fatal("the keyboard never reached the host/all switch")
+	}
+	if err := view.Keys("Left"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Wait(30 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if state.history.all {
+		t.Fatal("left did not choose this host")
+	}
+	for _, command := range h.listed() {
+		if command == "kubectl get pods" {
+			t.Fatalf("this host lists %q", h.listed())
+		}
+	}
+
+	// Escape closes it and leaves the keyboard in the terminal.
+	if err := view.Keys("Escape"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Wait(50 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if state.modal != modalNone {
+		t.Fatalf("escape left the picker open (modal %d)", state.modal)
+	}
+}
+
+// focusedRadio reports whether the keyboard is on a Choice option.
+func focusedRadio(snapshot app.Snapshot) bool {
+	for _, hit := range snapshot.Hits {
+		if hit.ID == snapshot.Focused && hit.Role == gfx.RoleRadio {
+			return true
+		}
+	}
+	return false
 }
 
 func TestClearingHistoryReportsCompletionAndDropsDerivedCaches(t *testing.T) {

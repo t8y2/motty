@@ -9,7 +9,7 @@ import (
 	"motty/internal/localshell"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // The launch row of the connection settings: what opening the app connects,
@@ -109,7 +109,7 @@ func (state *State) paintStartupSettings(page *settingsPage) {
 
 // paintStartupHostSelect paints the launch select in the menu pass, outside the
 // settings page's clip, so its popup can leave the page.
-func (state *State) paintStartupHostSelect(canvas *ui.Canvas) {
+func (state *State) paintStartupHostSelect(canvas *gfx.Canvas) {
 	picker, m := &state.startupPicker, state.messages
 	bounds := picker.bounds
 	if !state.startupHostsSettingVisible() || state.modal != modalNone || bounds.Width <= 0 || bounds.Y < windowBarHeight || bounds.Y+bounds.Height > state.viewport.Height {
@@ -120,7 +120,7 @@ func (state *State) paintStartupHostSelect(canvas *ui.Canvas) {
 	above := max(bounds.Y-windowBarHeight-8, 0)
 	rows := 1 + len(state.localShellMenu.choices) + len(state.hosts) // the local terminal, the shells, the hosts
 	height := min(float32(8+rows*32), max(above, below))
-	content := ui.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: bounds.Width, Height: height}
+	content := gfx.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: bounds.Width, Height: height}
 	if below < height {
 		content.Y = bounds.Y - height - 4
 	}
@@ -145,7 +145,7 @@ func (state *State) paintStartupHostSelect(canvas *ui.Canvas) {
 
 // clickStartupHosts works the chooser: the trigger opens it, an item toggles
 // its choice and keeps the menu open, a press anywhere else closes it.
-func (state *State) clickStartupHosts(id ui.ID) bool {
+func (state *State) clickStartupHosts(id gfx.ID) bool {
 	if !state.startupHostsSettingVisible() {
 		return false
 	}
@@ -208,10 +208,12 @@ func (state *State) clickStartupHosts(id ui.ID) bool {
 }
 
 // startupWanted reports whether the first Wake has anything to open: the
-// restored tabs, or the launch choice — a local terminal, a picked shell or
-// hosts. A launch with only a picked shell counts.
+// restored tabs, the restored local shells (which never wait on the restore
+// policy), or the launch choice — a local terminal, a picked shell or hosts. A launch
+// with only a picked shell counts.
 func (state *State) startupWanted() bool {
 	return state.restoreConnect != restoreConnectOff ||
+		state.hasRestoredLocalSession() ||
 		(state.startupEnabled && (state.startupLocal || state.startupShell != "" || len(state.startupHosts) > 0))
 }
 

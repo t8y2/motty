@@ -3,14 +3,13 @@ package workbench
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path"
 	"path/filepath"
 
-	"github.com/pkg/sftp"
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
+	"motty/internal/sftpclient"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -42,45 +41,51 @@ func (state *State) sftpPathVisible(folder *sftpFolder) bool {
 	return state.sftpPathInput || folder.pathEditing
 }
 
-func (state *State) startSFTPPathEditing(view *sftpView) ui.EventResult {
+func (state *State) startSFTPPathEditing(view *sftpView) gfx.EventResult {
 	if view == nil || !view.local && view.busy {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	folder := view.active()
 	if !folder.pathEditing {
 		folder.resetPathInput()
 	}
 	folder.pathEditing = true
-	return ui.EventResult{Handled: true, Repaint: true, Focus: hitSFTPPath, FocusVisible: true}
+	return gfx.EventResult{Handled: true, Repaint: true, Focus: hitSFTPPath, FocusVisible: true}
 }
 
-func (state *State) sftpPathShortcut(target ui.ID) (ui.EventResult, bool) {
+func (state *State) sftpPathShortcut(target gfx.ID) (gfx.EventResult, bool) {
 	session, local, ok := state.decodePaneHit(target)
 	if !ok {
-		session = state.terminalSession(target)
-		local = target
-		ok = session != nil
+		if panelSession, panelOK := state.contextPanelSession(target); panelOK {
+			session, local, ok = panelSession, target, true
+		} else {
+			session = state.terminalSession(target)
+			if session == nil {
+				session = state.terminalPageSession(target)
+			}
+			local = target
+			ok = session != nil
+		}
 	}
 	if !ok || session.files == nil || session.ID != state.activeSessionID || state.activeSection != sectionTerminal || state.modal != modalNone {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if local != hitSFTPPath && local != hitSFTPPathEdit && local != hitSFTPFilter &&
-		local.Scope() != hitSFTPEntryList && local.Scope() != hitSFTPBreadcrumbList {
-		return ui.EventResult{}, false
+		local.Scope() != hitSFTPEntryList && local.Scope() != hitSFTPBreadcrumbList && !session.files.active().onListRow(local) {
+		return gfx.EventResult{}, false
 	}
 	context, ok := state.deck.Context(state.deck.ActiveWorkspace())
 	if !ok || !context.Open || context.Kind != layoutcore.ContextSFTP || session.files.editPath != "" || session.files.dialog != sftpDialogNone || !session.files.local && session.files.busy {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	result := state.startSFTPPathEditing(session.files)
 	if !result.Handled {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	result.Focus = tree.MountID(contextMount, result.Focus)
 	return result, true
 }
 
-func (state *State) paintSFTPPathInput(canvas *ui.Canvas, bounds ui.Rect, view *sftpView) {
+func (state *State) paintSFTPPathInput(canvas *gfx.Canvas, bounds gfx.Rect, view *sftpView) {
 	value := view.active().pathInput().String()
 	focused := canvas.Focused() == hitSFTPPath
 	readOnly := !view.local && view.busy
@@ -94,27 +99,27 @@ func (state *State) paintSFTPPathInput(canvas *ui.Canvas, bounds ui.Rect, view *
 	})
 }
 
-func (state *State) sftpPathKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) sftpPathKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if event.Target != hitSFTPPath || state.activeSection != sectionTerminal || state.modal != modalNone {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	if !ok || session.files == nil || session.files.dialog != sftpDialogNone || session.files.editPath != "" {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	view := session.files
 	folder := view.active()
 	if !state.sftpPathVisible(folder) {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	editor := folder.pathInput()
 	_, composing := editor.Composition()
 	switch event.Key {
-	case ui.KeyEnter:
+	case gfx.KeyEnter:
 		if event.Modifiers == 0 && !event.Repeat && !composing && (view.local || !view.busy) {
 			state.submitSFTPPath(view)
 		}
-	case ui.KeyEscape:
+	case gfx.KeyEscape:
 		if !event.Repeat && !composing {
 			if view.local && folder.navigation.id != 0 {
 				state.cancelSFTPLocalNavigation(view)
@@ -130,9 +135,9 @@ func (state *State) sftpPathKey(event ui.KeyEvent) (ui.EventResult, bool) {
 			}
 		}
 	default:
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
 func (state *State) submitSFTPPath(view *sftpView) {
@@ -213,8 +218,7 @@ func (state *State) showSFTPPathError(destination string, err error) {
 func (state *State) showSFTPPathErrorAt(view *sftpView, destination string, err error) {
 	m := state.messages.Tools
 	detail := fmt.Sprintf(m.FilesPathFailedFmt, destination, err)
-	var status *sftp.StatusError
-	if errors.Is(err, os.ErrNotExist) || errors.As(err, &status) && status.FxCode() == sftp.ErrSSHFxNoSuchFile {
+	if sftpclient.IsPathNotFound(err) {
 		detail = fmt.Sprintf(m.FilesPathNotFoundFmt, destination)
 	}
 	var origin *sftpWindow

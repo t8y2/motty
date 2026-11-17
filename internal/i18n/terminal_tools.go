@@ -4,11 +4,24 @@ package i18n
 // keyword highlighting, snippets and broadcast input.
 type ToolsMessages struct {
 	// Color schemes.
-	SchemeGroup       string
-	SchemeDescription string
-	SchemeDefault     string
-	SchemeLookDark    string
-	SchemeLookLight   string
+	SchemeGroup             string
+	SchemeDescription       string
+	SchemeDefault           string
+	SchemeLookDark          string
+	SchemeLookLight         string
+	SchemeDark              string
+	SchemeLight             string
+	SchemeSearchPlaceholder string
+	SchemeNoMatches         string
+	SchemeDirHintFmt        string
+	SchemeQuickPicks        string
+	SchemeMoreFmt           string
+	SchemeAll               string
+	SchemeCountFmt          string
+	SchemeBuiltin           string
+	SchemeCommunity         string
+	SchemeMine              string
+	SchemeResultsFmt        string
 
 	// Keyword highlighting.
 	HighlightGroup               string
@@ -58,15 +71,30 @@ type ToolsMessages struct {
 	SnippetEmpty              string
 	SnippetEmptySub           string
 	SnippetCountFmt           string
+	SnippetListScroll         string
 	SnippetColumnName         string
 	SnippetColumnShortcut     string
+	SnippetColumnGroup        string
+	SnippetFilterAll          string
+	SnippetFilterNone         string
+	SnippetCountFilteredFmt   string
 	SnippetColumnCommand      string
+	SnippetSortAction         string
+	SnippetSortAscending      string
+	SnippetSortDescending     string
+	SnippetExpand             string
+	SnippetCollapse           string
+	SnippetMoveUp             string
+	SnippetMoveDown           string
 	StatusSnippetRemovedFmt   string
 	SnippetAdd                string
 	SnippetEdit               string
 	SnippetSend               string
 	SnippetSendCurrent        string
 	SnippetDelete             string
+	SnippetDeleteTitle        string
+	SnippetDeleteBodyFmt      string
+	SnippetDeleteConfirm      string
 	SnippetDialogAddTitle     string
 	SnippetDialogEditTitle    string
 	SnippetName               string
@@ -87,6 +115,53 @@ type ToolsMessages struct {
 	StatusSnippetSentFmt      string
 	StatusSnippetNoTerminal   string
 	StatusSnippetNotConnected string
+	// Snippet dynamic variables.
+	SnippetVarTitle        string
+	SnippetVarDescFmt      string
+	SnippetVarHint         string
+	SnippetVarPreview      string
+	SnippetVarRun          string
+	SnippetVarRequired     string
+	SnippetVarPlaceholder  string
+	SnippetVarDefaultFmt   string
+	SendCommandLabel       string
+	SendCommandPlaceholder string
+	SendCommandButton      string
+	SendTargetCurrent      string
+	SendTargetAll          string
+	SendTargetChosen       string
+	SendRun                string
+	SendChosenFmt          string
+	SendTargetsPlaceholder string
+	SendTargetsEmpty       string
+	StatusSendSentFmt      string
+	StatusSendNoTarget     string
+	StatusSendChooseNone   string
+
+	// The strip of saved commands under the terminal.
+	CommandsAdd   string
+	CommandsClose string
+	// CommandsBarShow is the label of the picker's quiet checkbox for that strip;
+	// CommandsBarHidden is that checkbox's tooltip while unticked. Neither names
+	// the strip: the UI uses the language's own word for saved commands.
+	CommandsBarHidden string
+	CommandsBarShow   string
+	// CommandsFilter is the tooltip of the group-filter button at the bar's left
+	// and the heading of the menu it opens.
+	CommandsFilter string
+	// CommandsUngrouped is the checkbox for commands with no group in the filter.
+	CommandsUngrouped string
+	// CommandsShowAll checks every group in the filter; CommandsHideAll clears them.
+	CommandsShowAll string
+	CommandsHideAll string
+	// CommandsNoGroups is the disabled placeholder when no snippet has a group yet.
+	CommandsNoGroups string
+	// The bar's order: the tooltip of its order button, and the three orders that
+	// button offers.
+	CommandsSortRow     string
+	CommandsSortCreated string
+	CommandsSortName    string
+	CommandsSortGroup   string
 
 	// The categories of the settings page, and what each holds.
 	CatGeneral    string
@@ -133,12 +208,20 @@ type ToolsMessages struct {
 	ScrollbarLabel             string
 	CopyOnSelectRow            string
 	CopyOnSelectDescription    string
+	WordSeparatorsRow          string
+	WordSeparatorsDescription  string
+	WordSeparatorsPlaceholder  string
 	RightClickPasteRow         string
 	RightClickPasteDescription string
+	InputClickRow              string
+	InputClickDescription      string
 	LinkPlainClickRow          string
 	LinkPlainClickDescription  string
 	BellRow                    string
 	BellDescription            string
+	TabTitleConnection         string
+	TabTitleTerminal           string
+	TabTitleDirectory          string
 	TabTitleRow                string
 	TabTitleDescription        string
 	LatencyRow                 string
@@ -156,6 +239,12 @@ type ToolsMessages struct {
 	FontPickerSample        string
 	FontPickerSampleSymbols string
 	FontPickerConfirm       string
+
+	// The two weights an interface font is chosen by: the weight its main text
+	// is drawn at, the weight its bold text is drawn at, and the family's own.
+	FontWeightMain    string
+	FontWeightBold    string
+	FontWeightDefault string
 
 	// The fonts that draw what the terminal's font lacks.
 	FontFallbackRow         string
@@ -213,6 +302,15 @@ type ToolsMessages struct {
 	HostProxyDialogTitle        string
 	HostProxyDialogDescription  string
 	HostProxyPasswordNotCarried string
+	// The host form's jump route row: whether the host is reached through
+	// another, and the way to add or edit that route.
+	HostJumpRow                           string
+	HostJumpDescriptionDirect             string
+	HostJumpDescriptionFmt                string // the jump host's label
+	HostJumpDescriptionUnsaved            string
+	HostJumpDescriptionUnavailable        string
+	HostJumpDescriptionUnavailableDesktop string
+	HostJumpDescriptionMissing            string
 
 	// A proxy command: a local program that carries a host's first connection.
 	ProxyCommand                   string
@@ -242,6 +340,7 @@ type ToolsMessages struct {
 	ImportGuide                  string // the link to the docs on exporting from each client
 	ImportGuideURL               string
 	ImportPickerFmt              string // the client's name
+	ImportFolderPickerFmt        string // the client's name; it keeps sessions in a folder
 	ImportCanceled               string
 	ImportFailedFmt              string
 	ImportSummaryFmt             string // hosts, client, duplicates
@@ -273,6 +372,16 @@ type ToolsMessages struct {
 	ProtocolSSH            string
 	ProtocolTelnet         string
 	ProtocolSerial         string
+	ProtocolMosh           string
+	MoshHint               string
+	ErrMoshEncoding        string
+	ErrMoshForwarding      string
+	ErrMoshInteractive     string
+	MoshServerMissing      string
+	MoshLocaleMissing      string
+	MoshUDPUnreachable     string
+	MoshWaiting            string
+	MoshBootstrapFailedFmt string
 	FieldDevice            string
 	FieldDevicePlaceholder string
 	FieldLine              string
@@ -307,12 +416,14 @@ type ToolsMessages struct {
 	TransferDecline           string
 	TransferChooseFiles       string
 	TransferChooseFolder      string
-	TransferToDownloads       string
+	TransferToFolderFmt       string
 
 	// The file panel.
 	CatFiles                        string
 	FilesPanelAutoOpen              string
 	FilesPanelAutoOpenDescription   string
+	FilesDirectoryTree              string
+	FilesDirectoryTreeDescription   string
 	FilesPanelPosition              string
 	FilesPanelPositionDescription   string
 	FilesPanelLeft, FilesPanelRight string
@@ -371,6 +482,8 @@ type ToolsMessages struct {
 	FilesKeepTimesDescription       string
 	FilesFollow                     string
 	FilesFollowDescription          string
+	FilesLocateTerminal             string
+	FilesLocateTerminalSkipped      string
 	FilesTerminalFollow             string
 	FilesTerminalFollowDescription  string
 	FilesTerminalFollowSkipped      string
@@ -477,9 +590,15 @@ type ToolsMessages struct {
 	DesktopFilesTooManyFmt          string // limit
 	DesktopFilesPathTooLongFmt      string // path
 	DesktopFilesFailedFmt           string // error
+	DesktopFilesReceivedFmt         string // count, size
+	DesktopFilesReceivedSkippedFmt  string // count
+	DesktopFilesReceiveFailedFmt    string // error
 	LaunchTitle                     string
 	LaunchWarning                   string
 	LaunchDescriptionFmt            string
+	LaunchFilesDescriptionFmt       string // user@host:port
+	LaunchPasswordWarning           string
+	LaunchFTPUnsupported            string
 	LaunchConnect                   string
 	LaunchXshellFailedFmt           string // base name, error
 	LaunchXshellEmptyFmt            string // base name
@@ -489,6 +608,10 @@ type ToolsMessages struct {
 	GeneralCloseDescription         string
 	GeneralCloseTray                string
 	GeneralCloseQuit                string
+	GeneralRelaunch                 string
+	GeneralRelaunchDescription      string
+	GeneralRelaunchRaise            string
+	GeneralRelaunchNewWindow        string
 	GeneralUpdate                   string
 	GeneralUpdateDescription        string
 	GeneralUpdateCheck              string
@@ -604,6 +727,7 @@ type ToolsMessages struct {
 	SyncFailedFmt                   string
 	SyncErrUnauthorized             string
 	SyncErrNotFound                 string
+	SyncErrChanged                  string
 	SyncErrInsecure                 string
 	SyncAllowInsecureHTTP           string
 	SyncInsecureHTTPDescription     string
@@ -612,7 +736,35 @@ type ToolsMessages struct {
 	SyncErrAddress                  string
 	SyncConfigureS3                 string
 	SyncConfigureGist               string
+	SyncConfigureGitee              string
 	SyncErrTooLarge                 string
+	SyncScopeGroup                  string
+	SyncScopeDescription            string
+	SyncErrNothingSelected          string
+	SyncScopeHosts                  string
+	SyncScopeHostsDescription       string
+	SyncScopeSettings               string
+	SyncScopeSettingsDescription    string
+	SyncScopeNotes                  string
+	SyncScopeNotesDescription       string
+	SyncScopeSnippets               string
+	SyncScopeSnippetsDescription    string
+	SyncScopeRoutes                 string
+	SyncScopeRoutesDescription      string
+	SyncScopeForwards               string
+	SyncScopeForwardsDescription    string
+	SyncScopeWorkspaces             string
+	SyncScopeWorkspacesDescription  string
+	SyncScopeCredentials            string
+	SyncScopeCredentialsDescription string
+	SyncScopeKeys                   string
+	SyncScopeKeysDescription        string
+	SyncScopeAI                     string
+	SyncScopeAIDescription          string
+	SyncScopeRules                  string
+	SyncScopeRulesDescription       string
+	SyncScopeKnownHosts             string
+	SyncScopeKnownHostsDescription  string
 	S3DialogTitle                   string
 	S3DialogDescription             string
 	S3Endpoint                      string
@@ -622,6 +774,7 @@ type ToolsMessages struct {
 	S3PathStyle                     string
 	S3LoginTitle                    string
 	S3LoginDescription              string
+	S3Next, S3Back, S3Stop          string
 	S3AccessKey                     string
 	S3Secret                        string
 	S3ErrFields                     string
@@ -633,6 +786,10 @@ type ToolsMessages struct {
 	GistAPI                         string
 	GistErrFields                   string
 	GistErrTooLarge                 string
+	GiteeDialogTitle                string
+	GiteeDialogDescription          string
+	GiteeID                         string
+	GiteeErrTooLarge                string
 	MenuSaveOutput                  string
 	MenuSearchSelection             string
 	OutputSaveTitle                 string
@@ -810,8 +967,15 @@ type ToolsMessages struct {
 	ExtEditReplace                  string
 	HostViewList                    string
 	HostViewGrid                    string
+	HostViewTree                    string
 	HostSort                        string
 	HostSortDone                    string
+	HostPrivacy                     string
+	HostPrivacyFields               string
+	HostPrivacyName                 string
+	HostPrivacyAddress              string
+	HostPrivacyUser                 string
+	HostPrivacyHiddenHost           string
 	BgGroup                         string
 	BgRow                           string
 	BgRowNone                       string
@@ -857,8 +1021,11 @@ type ToolsMessages struct {
 	X11HintWindows                  string
 	X11HintOther                    string
 	AgentForward                    string
+	InteractiveOnly                 string
 	AgentAccess                     string
 	AgentAccessNote                 string
+	IdentitiesOnly                  string
+	IdentitiesOnlyNote              string
 	AdvancedSession                 string
 	AdvancedAgents                  string
 	AgentForwardUnavailableFmt      string
@@ -882,6 +1049,24 @@ type ToolsMessages struct {
 	LoginCommandField               string
 	LoginCommandPlaceholder         string
 	ErrLoginCommand                 string
+	IdleKeepAliveHeading            string
+	IdleKeepAliveField              string
+	IdleKeepAliveOff                string
+	IdleKeepAliveOneMinute          string
+	IdleKeepAliveFiveMinutes        string
+	IdleKeepAliveTenMinutes         string
+	IdleKeepAliveCustom             string
+	IdleKeepAliveCustomInterval     string
+	IdleKeepAliveUnitSeconds        string
+	IdleKeepAliveUnitMinutes        string
+	IdleKeepAliveInputField         string
+	IdleKeepAliveInputCR            string
+	IdleKeepAliveInputNUL           string
+	IdleKeepAliveInputCustom        string
+	IdleKeepAliveCustomInput        string
+	IdleKeepAliveCustomPlaceholder  string
+	ErrIdleKeepAliveInterval        string
+	ErrIdleKeepAliveInput           string
 	ErrAlgoUnknownFmt               string
 	AlgoWeakFmt                     string
 	AlgoNegotiatedFmt               string
@@ -902,6 +1087,7 @@ type ToolsMessages struct {
 	FilesColumnsReset                    string
 	FilesColumnsClose                    string
 	FilesDownloadDirectory               string
+	FilesResizeColumn                    string
 	FilesDownloadAskDescription          string
 	FilesDownloadCurrentFmt              string
 	FilesDownloadChoose                  string

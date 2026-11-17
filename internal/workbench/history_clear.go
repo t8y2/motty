@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"sync"
+	"time"
 
 	"motty/internal/cmdhistory"
 )
@@ -115,13 +116,13 @@ func (state *State) startHistoryClear(store *cmdhistory.Queue) {
 
 // historyChanged keeps the single suggestion cache coherent in every window.
 // Late reads are invalidated before applying a newly recorded command.
-func (state *State) historyChanged(key, command string) {
+func (state *State) historyChanged(key, command string, used time.Time) {
 	for _, peer := range state.historyPeers() {
 		peer.completion.generation++
 		if command == "" {
 			peer.history.ghost = nil
 		} else {
-			peer.noteGhostCommand(key, command)
+			peer.noteGhostCommand(key, command, used)
 		}
 		peer.closeCompletionList()
 		if invalidate := peer.options.Invalidate; invalidate != nil {

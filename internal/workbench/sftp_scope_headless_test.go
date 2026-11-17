@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
@@ -30,10 +30,10 @@ func unreadableLocalListing(t *testing.T, dir string) localListing {
 	return localListing{}
 }
 
-func nativeScopeWarning(t *testing.T, preview *headless.Session, english bool) ui.Hit {
+func nativeScopeWarning(t *testing.T, preview *headless.Session, english bool) gfx.Hit {
 	t.Helper()
 	for _, hit := range preview.Snapshot().Hits {
-		if hit.Role != ui.RoleStatus || hit.Hint == "" {
+		if hit.Role != gfx.RoleStatus || hit.Hint == "" {
 			continue
 		}
 		if english && !strings.Contains(hit.Hint, "Filtering covers loaded items only") || !english && !strings.Contains(hit.Hint, "筛选仅覆盖已加载项目") {
@@ -56,7 +56,7 @@ func nativeScopeWarning(t *testing.T, preview *headless.Session, english bool) u
 		return hit
 	}
 	t.Fatal("missing full native scope status label/hint")
-	return ui.Hit{}
+	return gfx.Hit{}
 }
 
 func scopeScreenshot(t *testing.T, preview *headless.Session, name string) {
@@ -155,8 +155,8 @@ func TestLocalScopeWindowWarningAddsNoSteadyPaintAllocations(t *testing.T) {
 	state, w, _, _, dir := dualSFTPFixture(t, 1)
 	partial := unreadableLocalListing(t, dir)
 	complete := scanLocalListing(dir, scopeDirEntries(t, dir))
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1200, Height: 800}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1200, Height: 800}
 	measure := func(listing localListing) float64 {
 		state.applyLocalListing(w.view, listing, w.view.localSeq)
 		w.paint(&canvas, size)
@@ -198,7 +198,7 @@ func assertHiddenScopeEmpty(t *testing.T, preview *headless.Session) {
 		}
 	}
 	for _, hit := range preview.Snapshot().Hits {
-		if hit.Role == ui.RoleStatus && hit.Label == hit.Hint && strings.Contains(hit.Hint, "1 items loaded") && strings.Contains(hit.Hint, "1 unreadable") {
+		if hit.Role == gfx.RoleStatus && hit.Label == hit.Hint && strings.Contains(hit.Hint, "1 items loaded") && strings.Contains(hit.Hint, "1 unreadable") {
 			return
 		}
 	}

@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // hostChipMenu is the menu of nested groups a top-level group's chip opens.
@@ -15,7 +15,7 @@ type hostChipMenu struct {
 	root string
 	tree components.HierarchyMenuState
 	// anchor is the chip the menu hangs under, popup the box around its panels.
-	anchor, popup ui.Rect
+	anchor, popup gfx.Rect
 }
 
 // fitChipGroups fills state.hostChips with the groups that get a chip, as
@@ -125,7 +125,7 @@ func (state *State) openHostChipMenu(index int) {
 
 // clickHostChipMenu handles a press while the chip menu is open, or on a chip's
 // chevron. It reports whether the press was the menu's.
-func (state *State) clickHostChipMenu(id ui.ID) bool {
+func (state *State) clickHostChipMenu(id gfx.ID) bool {
 	m := &state.chipMenu
 	if id.Scope() == hitHostFilterChevronList {
 		state.openHostChipMenu(int(item(id)))
@@ -150,10 +150,10 @@ func (state *State) clickHostChipMenu(id ui.ID) bool {
 }
 
 // hostChipMenuKey routes keys to the open chip menu.
-func (state *State) hostChipMenuKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) hostChipMenuKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	m := &state.chipMenu
 	if !m.open || event.Release {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	result := m.tree.Key(event, true)
 	if result.Picked {
@@ -163,15 +163,15 @@ func (state *State) hostChipMenuKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	if result.Handled {
 		return result.EventResult, true
 	}
-	if event.Key == ui.KeyEscape {
+	if event.Key == gfx.KeyEscape {
 		m.open = false
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
 // paintHostChipMenu paints the open chip menu under its chip.
-func (state *State) paintHostChipMenu(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintHostChipMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 	m := &state.chipMenu
 	m.popup = components.PaintHierarchyMenu(canvas, state.Theme(), m.anchor, &m.tree, components.HierarchyMenuOptions{
 		OptionIDs: hitHostChipMenuList, ScrollID: hitHostChipMenuScroll, Scope: dialogScope, Layer: dialogLayer,

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -51,6 +52,15 @@ func (b *fakeBackend) Exec(ctx context.Context, a tools.TerminalExecArgs) (gate.
 		}
 	}
 	return gate.ExecResult{Output: "out", ExitCode: 3}, nil
+}
+func (b *fakeBackend) JobStart(context.Context, tools.TerminalStartArgs) (gate.JobStatus, error) {
+	return gate.JobStatus{}, errors.New("not used")
+}
+func (b *fakeBackend) JobPoll(context.Context, tools.TerminalPollArgs) (gate.JobStatus, error) {
+	return gate.JobStatus{}, errors.New("not used")
+}
+func (b *fakeBackend) JobStop(context.Context, tools.TerminalStopArgs) (gate.JobStatus, error) {
+	return gate.JobStatus{}, errors.New("not used")
 }
 func (b *fakeBackend) ListDir(context.Context, tools.SFTPListArgs) ([]gate.FileEntry, error) {
 	return []gate.FileEntry{{Name: "a", Size: 1}}, nil
@@ -685,6 +695,58 @@ func BenchmarkToolsList(b *testing.B) {
 	}
 }
 
+func TestHTTPSessionsAreIndependentAndUnknownSessionsAreRejected(t *testing.T) {
+	_, server := newServer(t, okGate(&fakeBackend{}), nil)
+	initialize := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`
+	first, _ := post(t, server.URL, initialize, nil)
+	second, _ := post(t, server.URL, initialize, nil)
+	firstID, secondID := first.Header.Get("Mcp-Session-Id"), second.Header.Get("Mcp-Session-Id")
+	if firstID == "" || secondID == "" || firstID == secondID {
+		t.Fatal("initialize did not establish separate HTTP sessions")
+	}
+	request := `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`
+	valid, _ := post(t, server.URL, request, func(req *http.Request) { req.Header.Set("Mcp-Session-Id", firstID) })
+	if valid.StatusCode != http.StatusOK {
+		t.Fatalf("initialized session returned %d", valid.StatusCode)
+	}
+	unknown, _ := post(t, server.URL, request, func(req *http.Request) { req.Header.Set("Mcp-Session-Id", "not-a-session") })
+	if unknown.StatusCode != http.StatusNotFound {
+		t.Fatalf("unknown session returned %d", unknown.StatusCode)
+	}
+}
+
+func TestHTTPSessionsKeepTheMostRecentlyUsedWhenFull(t *testing.T) {
+	_, server := newServer(t, okGate(&fakeBackend{}), nil)
+	initialize := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`
+	request := `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`
+	ids := make([]string, 0, maxSessions)
+	for range maxSessions {
+		resp, _ := post(t, server.URL, initialize, nil)
+		id := resp.Header.Get("Mcp-Session-Id")
+		if id == "" {
+			t.Fatalf("session %d has no id", len(ids))
+		}
+		ids = append(ids, id)
+	}
+	// The oldest session is used again, so the next one becomes the least
+	// recently used.
+	if resp, _ := post(t, server.URL, request, func(req *http.Request) { req.Header.Set("Mcp-Session-Id", ids[0]) }); resp.StatusCode != http.StatusOK {
+		t.Fatalf("reused oldest session returned %d", resp.StatusCode)
+	}
+	fresh, _ := post(t, server.URL, initialize, nil)
+	if fresh.StatusCode != http.StatusOK || fresh.Header.Get("Mcp-Session-Id") == "" {
+		t.Fatalf("a full table did not make room: %d", fresh.StatusCode)
+	}
+	evicted, _ := post(t, server.URL, request, func(req *http.Request) { req.Header.Set("Mcp-Session-Id", ids[1]) })
+	if evicted.StatusCode != http.StatusNotFound {
+		t.Fatalf("least recently used session returned %d", evicted.StatusCode)
+	}
+	kept, _ := post(t, server.URL, request, func(req *http.Request) { req.Header.Set("Mcp-Session-Id", ids[0]) })
+	if kept.StatusCode != http.StatusOK {
+		t.Fatalf("recently used session returned %d", kept.StatusCode)
+	}
+}
+
 func BenchmarkToolsCall(b *testing.B) {
 	s, _ := New(Config{Token: testToken, Gate: func() gate.Gate { return okGate(&fakeBackend{}) }})
 	h := s.Handler()
@@ -717,6 +779,28 @@ func TestShutdownRacingServeLeavesNothingListening(t *testing.T) {
 		if c, err := net.DialTimeout("tcp", ln.Addr().String(), 200*time.Millisecond); err == nil {
 			c.Close()
 			t.Fatal("the listener is still open")
+		}
+	}
+}
+
+// A tool without a schema must still advertise an object: strict clients reject
+// the whole list when inputSchema is null.
+func TestToolsListAlwaysSendsAnObjectSchema(t *testing.T) {
+	for _, schema := range []json.RawMessage{nil, json.RawMessage(``), json.RawMessage(`null`)} {
+		raw, err := buildToolsListFor([]tools.Spec{{Name: "bare", Schema: schema}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var list struct {
+			Tools []struct {
+				InputSchema map[string]any `json:"inputSchema"`
+			} `json:"tools"`
+		}
+		if err := json.Unmarshal(raw, &list); err != nil || len(list.Tools) != 1 {
+			t.Fatalf("%s: %s %v", raw, list, err)
+		}
+		if list.Tools[0].InputSchema["type"] != "object" {
+			t.Fatalf("schema %q became %s", schema, raw)
 		}
 	}
 }

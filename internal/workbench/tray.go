@@ -7,6 +7,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"motty/internal/buildinfo"
+	"motty/internal/update"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -74,10 +75,11 @@ func (tray *Tray) Tooltip() (text string, changed bool) {
 	}
 	tray.count = count
 	messages := tray.members[0].state.messages
+	version := update.Current
 	if count == 0 {
-		tray.tooltip = productText(messages.TrayTooltipEmpty)
+		tray.tooltip = fmt.Sprintf(productText(messages.TrayTooltipEmpty), version)
 	} else {
-		tray.tooltip = productText(fmt.Sprintf(messages.TrayTooltipFmt, count))
+		tray.tooltip = fmt.Sprintf(productText(messages.TrayTooltipFmt), version, count)
 	}
 	return tray.tooltip, true
 }
@@ -104,6 +106,25 @@ func (state *State) StaysInTray() bool { return state.closeAction == closeToTray
 // WantsToStay reports whether a window with sessions should hide rather than
 // close: closing it would end connections the user may still be using.
 func (state *State) WantsToStay() bool { return len(state.sessions) > 0 }
+
+// NoteHiddenToTray tells the user, once per device, that closing the window did
+// not quit: the sessions stay connected and the status icon brings the window
+// back. A window that vanishes into the status area looks the same as one that
+// ended the program, so the first time it happens is explained rather than
+// assumed. Later hides stay silent.
+func (state *State) NoteHiddenToTray() {
+	if state.trayHintShown {
+		return
+	}
+	state.trayHintShown = true
+	state.save()
+	messages := state.messages
+	if err := state.options.Notify(app.Notification{Title: productText(messages.TrayHintTitle), Body: productText(messages.TrayHintBody)}); err != nil {
+		// The platform may have no notification service; the tray icon and the
+		// setting are still there, so this is not reported over the window.
+		return
+	}
+}
 
 // ConfirmClose asks before a window that is about to quit takes its sessions
 // with it, and runs allow only when the user agrees. It reports whether it took

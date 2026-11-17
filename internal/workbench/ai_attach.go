@@ -7,10 +7,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/attach"
@@ -27,6 +28,7 @@ import (
 
 var (
 	hitAIAttach       = tree.ID(aiPanelHits, "ai-attach")
+	hitAIUpload       = tree.ID(aiPanelHits, "ai-upload")
 	hitAIAttachRemove = tree.Sub(aiPanelHits, tree.Name("ai-attach-remove"))
 )
 
@@ -46,8 +48,12 @@ const (
 
 // aiAttachment is a file waiting in the message box.
 type aiAttachment struct {
-	path string
-	file attach.File
+	path     string
+	file     attach.File
+	upload   bool
+	size     int64
+	modified time.Time
+	info     os.FileInfo
 }
 
 // aiAttachmentRef is what a sent message remembers of an attachment.
@@ -66,9 +72,13 @@ type aiChip struct {
 
 // aiLoaded is what reading one path came to.
 type aiLoaded struct {
-	path string
-	file attach.File
-	err  error
+	path     string
+	file     attach.File
+	err      error
+	upload   bool
+	size     int64
+	modified time.Time
+	info     os.FileInfo
 }
 
 // aiAttachPaths starts reading the files at paths so they can be attached. The
@@ -79,12 +89,13 @@ func (state *State) aiAttachPaths(paths []string) {
 		return
 	}
 	paths = append([]string(nil), paths...)
+	maxTextBytes := state.ai.settings.maxTextBytes
 	state.ai.attaching += len(paths)
 	go func() {
 		loaded := make([]aiLoaded, len(paths))
 		for index, path := range paths {
 			loaded[index].path = path
-			loaded[index].file, loaded[index].err = attach.Load(path)
+			loaded[index].file, loaded[index].err = attach.LoadWithLimit(path, maxTextBytes)
 		}
 		state.aiPost(func(state *State) { state.aiAttached(loaded) })
 	}()
@@ -162,15 +173,15 @@ func (state *State) aiPasteText(text string) {
 	state.ai.pastedText++
 	name := fmt.Sprintf("%s-%d.txt", m.PastedTextName, state.ai.pastedText)
 	const suffix = "\n\n... [truncated] ...\n"
-	if len(text) > attach.MaxTextBytes {
-		cut := attach.MaxTextBytes - len(suffix)
+	if len(text) > state.ai.settings.maxTextBytes {
+		cut := state.ai.settings.maxTextBytes - len(suffix)
 		for cut > 0 && !utf8.RuneStart(text[cut]) {
 			cut--
 		}
 		text = text[:cut] + suffix
-		state.ai.notice = fmt.Sprintf(m.AttachPastedTruncatedFmt, name, formatBytes(attach.MaxTextBytes), formatBytes(attach.MaxTextBytes))
+		state.ai.notice = fmt.Sprintf(m.AttachPastedTruncatedFmt, name, formatBytes(int64(state.ai.settings.maxTextBytes)), formatBytes(int64(state.ai.settings.maxTextBytes)))
 	}
-	file, err := attach.Decode(name, []byte(text))
+	file, err := attach.DecodeWithLimit(name, []byte(text), state.ai.settings.maxTextBytes)
 	file.Name = name
 	state.aiAttached([]aiLoaded{{file: file, err: err}})
 }
@@ -183,7 +194,9 @@ func (state *State) aiAttached(loaded []aiLoaded) {
 	var problems []string
 	text := 0
 	for _, existing := range ai.attachments {
-		text += aiAttachmentContextBytes(existing.file)
+		if !existing.upload {
+			text += aiAttachmentContextBytes(existing.file)
+		}
 	}
 	for _, item := range loaded {
 		name := filepath.Base(item.path)
@@ -197,11 +210,13 @@ func (state *State) aiAttached(loaded []aiLoaded) {
 			// The same file twice is one attachment.
 		case len(ai.attachments) >= aiMaxAttachments:
 			problems = append(problems, fmt.Sprintf(state.messages.AIPanel.AttachTooManyFmt, aiMaxAttachments))
-		case text+aiAttachmentContextBytes(item.file) > aiMaxAttachedText:
+		case !item.upload && text+aiAttachmentContextBytes(item.file) > aiMaxAttachedText:
 			problems = append(problems, fmt.Sprintf(state.messages.AIPanel.AttachTotalTextFmt, name, formatBytes(aiMaxAttachedText)))
 		default:
-			text += aiAttachmentContextBytes(item.file)
-			ai.attachments = append(ai.attachments, aiAttachment{path: item.path, file: item.file})
+			if !item.upload {
+				text += aiAttachmentContextBytes(item.file)
+			}
+			ai.attachments = append(ai.attachments, aiAttachment{path: item.path, file: item.file, upload: item.upload, size: item.size, modified: item.modified, info: item.info})
 		}
 	}
 	if len(problems) > 0 {
@@ -227,7 +242,9 @@ func (state *State) aiAttachProblem(name string, err error) string {
 	case errors.Is(err, attach.ErrEmpty):
 		return fmt.Sprintf(m.AttachEmptyFmt, name)
 	case errors.Is(err, attach.ErrTextTooLarge):
-		return fmt.Sprintf(m.AttachTextTooBigFmt, name, formatBytes(attach.MaxTextBytes))
+		return fmt.Sprintf(m.AttachTextTooBigFmt, name, formatBytes(int64(state.ai.settings.maxTextBytes)))
+	case errors.Is(err, attach.ErrReadTooLarge):
+		return fmt.Sprintf(m.AttachReadTooLargeFmt, name, formatBytes(attach.MaxReadBytes))
 	case errors.Is(err, attach.ErrTooLarge):
 		return fmt.Sprintf(m.AttachTooLargeFmt, name)
 	case errors.Is(err, attach.ErrUnsupported):
@@ -313,10 +330,14 @@ func aiAttachmentContextBytes(file attach.File) int {
 // text when the setting is on.
 func aiAttachmentContext(attachments []aiAttachment, redact bool) (text string, images []llm.Image, refs []aiAttachmentRef) {
 	var b strings.Builder
-	for _, attachment := range attachments {
+	for index, attachment := range attachments {
 		name := aiAttachmentName(attachment.file.Name)
-		refs = append(refs, aiAttachmentRef{Name: name, Image: attachment.file.Kind == attach.KindImage})
-		if attachment.file.Kind == attach.KindImage {
+		refs = append(refs, aiAttachmentRef{Name: name, Image: !attachment.upload && attachment.file.Kind == attach.KindImage})
+		if attachment.upload {
+			fmt.Fprintf(&b, "\n\n[File selected for SSH upload: id %d, name %s, size %d bytes. The bytes are not in the model context. Use sftp_upload_selected to upload it only when requested.]", index+1, name, attachment.size)
+			continue
+		}
+		if !attachment.upload && attachment.file.Kind == attach.KindImage {
 			images = append(images, attachment.file.Image)
 			fmt.Fprintf(&b, "%simage %s]", attachedMarker, name)
 			continue
@@ -363,7 +384,7 @@ func (state *State) aiDropHover(over bool) bool {
 }
 
 // paintAIDrop marks the panel while files are dragged over it.
-func (state *State) paintAIDrop(canvas *ui.Canvas) {
+func (state *State) paintAIDrop(canvas *gfx.Canvas) {
 	if panel := &state.ai.panel; panel.dropping && panel.rect.Width > 0 {
 		state.paintSFTPDropOverlay(canvas, panel.rect, state.messages.AIPanel.AttachDropHint)
 	}
@@ -371,14 +392,14 @@ func (state *State) paintAIDrop(canvas *ui.Canvas) {
 
 // aiLayoutChips places the chips of the waiting attachments in rows of the panel's
 // width, and returns how many rows there are.
-func (state *State) aiLayoutChips(canvas *ui.Canvas, width float32) {
+func (state *State) aiLayoutChips(canvas *gfx.Canvas, width float32) {
 	panel := &state.ai.panel
 	panel.chips = panel.chips[:0]
 	panel.chipRows = 0
 	row, used := 0, float32(0)
 	for index := range state.ai.attachments {
 		name := aiAttachmentName(state.ai.attachments[index].file.Name)
-		text := min(canvas.TextWidthWeight(name, aiSmallSize, ui.WeightMedium), aiChipTextMax)
+		text := min(canvas.TextWidthWeight(name, aiSizes.small, gfx.WeightMedium), aiChipTextMax)
 		// icon, text, remove button and the space between and around them
 		chip := min(8+13+5+text+5+18+4, width)
 		if used > 0 && used+aiChipGap+chip > width {
@@ -398,18 +419,18 @@ func (state *State) aiLayoutChips(canvas *ui.Canvas, width float32) {
 
 // declareAIChips declares the waiting attachments above the message box, each a
 // pill with its name and a button that takes it out again.
-func (state *State) declareAIChips(f *flex.Frame) {
+func (state *State) declareAIChips(c ui.C) {
 	chips := state.ai.panel.chips
-	f.Column().Gap(aiChipGap).Children(func() {
+	ui.Column(c).Gap(aiChipGap).Children(func() {
 		for start := 0; start < len(chips); {
 			end := start
 			for end < len(chips) && chips[end].row == chips[start].row {
 				end++
 			}
 			row := chips[start:end]
-			f.Row().Height(aiChipHeight).Gap(aiChipGap).Children(func() {
+			ui.Row(c).Height(aiChipHeight).Gap(aiChipGap).Children(func() {
 				for _, chip := range row {
-					state.declareAIChip(f, chip)
+					state.declareAIChip(c, chip)
 				}
 			})
 			start = end
@@ -417,46 +438,63 @@ func (state *State) declareAIChips(f *flex.Frame) {
 	})
 }
 
-func (state *State) declareAIChip(f *flex.Frame, chip aiChip) {
+func (state *State) declareAIChip(c ui.C, chip aiChip) {
 	pal, m := state.pal, state.messages.AIPanel
 	attachment := &state.ai.attachments[chip.index]
 	name := aiAttachmentName(attachment.file.Name)
 	icon := iconPaperclip
-	if attachment.file.Kind == attach.KindImage {
+	if attachment.upload {
+		icon = iconUpload
+	} else if attachment.file.Kind == attach.KindImage {
 		icon = iconImage
 	}
 	remove := hitAIAttachRemove.At(chip.index)
 	label := fmt.Sprintf(m.AttachRemoveFmt, name)
-	fill := ui.Color{}
-	if f.Canvas().Pressed() == remove || f.Canvas().Hovered() == remove {
+	fill := gfx.Color{}
+	if canvas := c.Canvas(); canvas != nil && (canvas.Pressed() == remove || canvas.Hovered() == remove) {
 		fill = pal.surfaceHot
 	}
-	f.Row().Width(chip.width).Height(aiChipHeight).PadSides(0, 3, 0, 8).Gap(5).Shrink(0).Items(flex.Center).
+	ui.Row(c).Width(chip.width).Height(aiChipHeight).PadSides(0, 3, 0, 8).Gap(5).Shrink(0).Items(ui.Center).
 		Background(pal.surfaceSoft).Radius(aiChipHeight / 2).Children(func() {
-		f.Icon(lucideIcons[icon]).Size(13, 13).Color(pal.muted).Shrink(0)
-		f.Text(name).FontSize(aiSmallSize).Weight(ui.WeightMedium).Color(pal.text).LineHeight(aiSmallLine).Ellipsis().Shrink(1).Grow(1)
-		f.Column().Size(18, 18).Shrink(0).Center().Background(fill).Radius(9).
-			HitWith(remove, label, ui.HitOptions{Role: ui.RoleButton, Hint: label}).Children(func() {
-			f.Icon(lucideIcons[iconClose]).Size(11, 11).Color(pal.muted)
+		ui.Icon(c, lucideIcons[icon]).Size(13, 13).Color(pal.muted).Shrink(0)
+		ui.Text(c, name).FontSize(aiSizes.small).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(aiSizes.smallLine).Ellipsis().Shrink(1).Grow(1)
+		ui.Column(c).Size(18, 18).Shrink(0).Center().Background(fill).Radius(9).
+			HitWith(remove, label, gfx.HitOptions{Role: gfx.RoleButton, Hint: label}).Children(func() {
+			ui.Icon(c, lucideIcons[iconClose]).Size(11, 11).Color(pal.muted)
 		})
 	})
 }
 
 // declareAIAttachButton declares the paperclip in the message box that opens the
 // dialog for files to attach.
-func (state *State) declareAIAttachButton(f *flex.Frame) {
+func (state *State) declareAIAttachButton(c ui.C) {
 	pal, label := state.pal, state.messages.AIPanel.Attach
 	foreground := pal.muted
-	var fill ui.Color
-	switch {
-	case f.Canvas().Pressed() == hitAIAttach:
-		fill, foreground = pal.surfaceHot, pal.text
-	case f.Canvas().Hovered() == hitAIAttach:
-		fill = pal.surfaceSoft
+	var fill gfx.Color
+	if canvas := c.Canvas(); canvas != nil {
+		switch {
+		case canvas.Pressed() == hitAIAttach:
+			fill, foreground = pal.surfaceHot, pal.text
+		case canvas.Hovered() == hitAIAttach:
+			fill = pal.surfaceSoft
+		}
 	}
-	f.Column().Size(aiSendSize, aiSendSize).Shrink(0).Center().Background(fill).Radius(aiSendSize/2).
-		HitWith(hitAIAttach, label, ui.HitOptions{Role: ui.RoleButton, Hint: label}).Children(func() {
-		f.Icon(lucideIcons[iconPaperclip]).Size(16, 16).Color(foreground)
+	ui.Column(c).Size(aiSendSize, aiSendSize).Shrink(0).Center().Background(fill).Radius(aiSendSize/2).
+		HitWith(hitAIAttach, label, gfx.HitOptions{Role: gfx.RoleButton, Hint: label}).Children(func() {
+		ui.Icon(c, lucideIcons[iconPaperclip]).Size(16, 16).Color(foreground)
+	})
+}
+
+func (state *State) declareAIUploadButton(c ui.C) {
+	pal, label := state.pal, state.messages.AIPanel.Upload
+	foreground := pal.muted
+	var fill gfx.Color
+	if canvas := c.Canvas(); canvas != nil && (canvas.Pressed() == hitAIUpload || canvas.Hovered() == hitAIUpload) {
+		fill, foreground = pal.surfaceSoft, pal.text
+	}
+	ui.Column(c).Size(aiSendSize, aiSendSize).Shrink(0).Center().Background(fill).Radius(aiSendSize/2).
+		HitWith(hitAIUpload, label, gfx.HitOptions{Role: gfx.RoleButton, Hint: label}).Children(func() {
+		ui.Icon(c, lucideIcons[iconUpload]).Size(16, 16).Color(foreground)
 	})
 }
 

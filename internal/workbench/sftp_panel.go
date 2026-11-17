@@ -2,7 +2,7 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -64,7 +64,7 @@ func (state *State) toggleSFTPPanelSide() {
 		return
 	}
 	state.draggedContextDivider = false
-	state.contextRect = ui.Rect{}
+	state.contextRect = gfx.Rect{}
 	state.fitWorkspaceTerminals(id)
 	state.fitSFTP(state.viewport)
 	state.save()
@@ -72,7 +72,7 @@ func (state *State) toggleSFTPPanelSide() {
 
 // Share the same geometry for painting and pointer resize. AI keeps the outer
 // right edge, so a right-docked files panel ends before the AI panel's divider.
-func (state *State) sftpPanelResizable(canvas *ui.Canvas, size ui.Size, context layoutcore.ContextState) components.Resizable {
+func (state *State) sftpPanelResizable(canvas *gfx.Canvas, size gfx.Size, context layoutcore.ContextState) components.Resizable {
 	base := state.baseWorkspacePixelBounds(size)
 	width := state.contextPanelWidth(base, context)
 	minimum := state.contextPanelExtent(base, layoutcore.MinContextWidth)

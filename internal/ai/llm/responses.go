@@ -21,7 +21,11 @@ type openAIResponses struct {
 // empty BaseURL selects https://api.openai.com/v1.
 func NewOpenAIResponses(cfg Config) Provider {
 	u, err := openAIBase(cfg.BaseURL)
-	return &openAIResponses{openAI{base: newBase(cfg, u), baseErr: err}}
+	p := &openAIResponses{openAI{base: newBase(cfg, u), baseErr: err}}
+	if strings.TrimSpace(cfg.ModelsURL) != "" {
+		p.modelsEndpoint, p.modelsErr = openAIModelsBase(cfg.ModelsURL)
+	}
+	return p
 }
 
 // rsItem is one element of the request's input list: a message, a function
@@ -69,15 +73,20 @@ type rsTool struct {
 	Strict bool `json:"strict"`
 }
 
+type rsReasoning struct {
+	Effort string `json:"effort,omitempty"`
+}
+
 type rsRequest struct {
-	Model           string   `json:"model"`
-	Instructions    string   `json:"instructions,omitempty"`
-	Input           []rsItem `json:"input"`
-	Tools           []rsTool `json:"tools,omitempty"`
-	Stream          bool     `json:"stream"`
-	Store           bool     `json:"store"`
-	MaxOutputTokens int      `json:"max_output_tokens,omitempty"`
-	Temperature     *float64 `json:"temperature,omitempty"`
+	Model           string       `json:"model"`
+	Instructions    string       `json:"instructions,omitempty"`
+	Input           []rsItem     `json:"input"`
+	Tools           []rsTool     `json:"tools,omitempty"`
+	Stream          bool         `json:"stream"`
+	Store           bool         `json:"store"`
+	MaxOutputTokens int          `json:"max_output_tokens,omitempty"`
+	Temperature     *float64     `json:"temperature,omitempty"`
+	Reasoning       *rsReasoning `json:"reasoning,omitempty"`
 }
 
 func (p *openAIResponses) buildBody(req Request) ([]byte, error) {
@@ -88,6 +97,9 @@ func (p *openAIResponses) buildBody(req Request) ([]byte, error) {
 	// be kept on the provider's side.
 	out := rsRequest{Model: req.Model, Instructions: req.System, Stream: true, Store: false,
 		MaxOutputTokens: req.MaxTokens, Temperature: req.Temperature, Input: []rsItem{}}
+	if req.ReasoningEffort != "" && req.ReasoningEffort != "default" {
+		out.Reasoning = &rsReasoning{Effort: req.ReasoningEffort}
+	}
 	str := func(s string) *string { return &s }
 	for _, m := range req.Messages {
 		switch m.Role {
@@ -145,7 +157,11 @@ func (p *openAIResponses) Stream(ctx context.Context, req Request) (<-chan Event
 	if err != nil {
 		return nil, err
 	}
-	return p.pump(ctx, resp.Body, &rsHandler{dsml: newDSMLFilter(len(req.Tools) > 0)}), nil
+	return p.pump(ctx, resp.Body, &rsHandler{
+		dsml:             newDSMLFilter(true, len(req.Tools) > 0),
+		reasoningText:    newDSMLFilter(true, len(req.Tools) > 0),
+		reasoningSummary: newDSMLFilter(true, len(req.Tools) > 0),
+	}), nil
 }
 
 type rsOutItem struct {
@@ -203,6 +219,13 @@ type rsHandler struct {
 	// one was, so the stop reason can name the turn a tool turn.
 	dsml      dsmlFilter
 	recovered bool
+	// The thinking channel has two independent streams; each needs its own
+	// filter so a tag split across them is not merged. Their calls are held
+	// until the turn ends, like the Chat Completions reasoning channel.
+	reasoningText    dsmlFilter
+	reasoningSummary dsmlFilter
+	reasoningCalls   []ToolCall
+	texted           bool
 }
 
 // call returns the function call an event belongs to, creating it on first
@@ -255,17 +278,23 @@ func (h *rsHandler) send(c *rsCall, em *emitter) error {
 }
 
 func (h *rsHandler) finish(em *emitter, reason string, u *rsUsage) error {
+	if err := h.flushReasoning(em); err != nil {
+		return err
+	}
 	for _, c := range h.calls {
 		if err := h.send(c, em); err != nil {
 			return err
 		}
 	}
-	if err := h.flushText(em); err != nil {
+	if err := h.flushText(em, StopsAtLimit(reason)); err != nil {
+		return err
+	}
+	if err := h.emitReasoningCalls(em); err != nil {
 		return err
 	}
 	if reason == "" {
 		reason = "stop"
-		if h.sentAny {
+		if h.sentAny || h.recovered {
 			reason = "tool_calls"
 		}
 	}
@@ -293,11 +322,15 @@ func (h *rsHandler) event(ev sseEvent, em *emitter) (bool, error) {
 		}
 	case "response.refusal.delta":
 		if e.Delta != "" {
-			return false, em.send(Event{Kind: EventText, Text: e.Delta})
+			return false, h.text(e.Delta, em)
 		}
-	case "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
+	case "response.reasoning_summary_text.delta":
 		if e.Delta != "" {
-			return false, em.send(Event{Kind: EventReasoning, Text: e.Delta})
+			return false, h.reasoningDelta(&h.reasoningSummary, e.Delta, em)
+		}
+	case "response.reasoning_text.delta":
+		if e.Delta != "" {
+			return false, h.reasoningDelta(&h.reasoningText, e.Delta, em)
 		}
 	case "response.output_item.added":
 		if e.Item != nil && e.Item.Type == "function_call" {
@@ -388,17 +421,79 @@ func (h *rsHandler) text(delta string, em *emitter) error {
 	return h.emitText(text, calls, em)
 }
 
-// flushText publishes what the filter still holds when the response is done.
-func (h *rsHandler) flushText(em *emitter) error {
+// reasoningDelta publishes one thinking delta after the filter has taken the
+// markup out of it. A block that breaks the parser is dropped rather than
+// ending a turn that can still answer.
+func (h *rsHandler) reasoningDelta(f *dsmlFilter, delta string, em *emitter) error {
+	text, calls, err := f.push(delta)
+	if err != nil {
+		f.reset()
+		return nil
+	}
+	h.reasoningCalls = append(h.reasoningCalls, calls...)
+	if text != "" {
+		return em.send(Event{Kind: EventReasoning, Text: text})
+	}
+	return nil
+}
+
+// flushText publishes what the content filter still holds when the response is
+// done. Like the Chat Completions handler, leftover markup does not fail a turn
+// that already answered, and a turn cut off at the output limit is reported as
+// the truncation it is.
+func (h *rsHandler) flushText(em *emitter, limited bool) error {
 	text, calls, err := h.dsml.flush()
+	if err != nil && (h.texted || limited) {
+		err = nil
+	}
 	if err != nil {
 		return err
 	}
 	return h.emitText(text, calls, em)
 }
 
+// flushReasoning publishes the tail of both thinking streams and holds any
+// calls they recovered until the turn ends.
+func (h *rsHandler) flushReasoning(em *emitter) error {
+	for _, f := range [...]*dsmlFilter{&h.reasoningSummary, &h.reasoningText} {
+		text, calls, err := f.flush()
+		if err != nil {
+			f.reset()
+			text, calls = "", nil
+		}
+		h.reasoningCalls = append(h.reasoningCalls, calls...)
+		if text != "" {
+			if err := em.send(Event{Kind: EventReasoning, Text: text}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// emitReasoningCalls acts on a call the provider wrote into the thinking
+// channel, only when nothing else answered the turn. A call made natively as
+// well would otherwise run twice, and markup the model merely quoted would run
+// a command it never asked for.
+func (h *rsHandler) emitReasoningCalls(em *emitter) error {
+	defer func() { h.reasoningCalls = nil }()
+	if h.sentAny || h.recovered || h.texted {
+		return nil
+	}
+	for i := range h.reasoningCalls {
+		h.recovered = true
+		if err := em.send(Event{Kind: EventToolCall, ToolCall: &h.reasoningCalls[i]}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (h *rsHandler) emitText(text string, calls []ToolCall, em *emitter) error {
 	if text != "" {
+		if strings.TrimSpace(text) != "" {
+			h.texted = true
+		}
 		if err := em.send(Event{Kind: EventText, Text: text}); err != nil {
 			return err
 		}

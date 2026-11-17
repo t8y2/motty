@@ -21,7 +21,7 @@ func TestWorkspaceBroadcastClickKeepsTypingInTerminal(t *testing.T) {
 	}
 	defer view.Close()
 	session, _ := state.sessionByIDPointer(state.activeSessionID)
-	terminal := state.paneIdentity(session, hitTerminalList.At(int(session.ID)))
+	terminal := state.paneIdentity(session, terminalTestHit(state, session))
 	hit, ok := hitByIDSnapshot(view.Snapshot().Hits, terminal)
 	if !ok {
 		t.Fatal("terminal missing")

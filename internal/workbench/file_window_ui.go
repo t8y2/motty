@@ -10,7 +10,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/filecontent"
 )
@@ -51,26 +51,50 @@ var (
 )
 
 type fileDocumentUI struct {
-	marks                                     []components.MarkdownCodeRun
-	highlighter                               func(string, string, []components.CodeEditorRun) []components.CodeEditorRun
-	frame                                     flex.View
+	marks       []components.MarkdownCodeRun
+	highlighter func(string, string, []components.CodeEditorRun) []components.CodeEditorRun
+	// page is the window's page when this document is painted in a window of its
+	// own (a paint not made by the shared window manager). compareView declares
+	// the comparison body into it.
+	page        *ui.Page
+	compareView func(ui.C)
+	// contentBox, encodingBox and saveBox are the page's slots, kept so what is
+	// painted by hand goes where the page laid it out. compare keeps the
+	// comparison page's slots for the same reason.
+	contentBox, encodingBox, saveBox          ui.Box
+	compare                                   comparisonBody
 	code                                      components.CodeEditor
 	diff                                      components.CodeDiff
 	input                                     app.TextInput
-	editorBounds, encodingBounds, imageBounds ui.Rect
-	size                                      ui.Size
+	editorBounds, encodingBounds, imageBounds gfx.Rect
+	size                                      gfx.Size
 	menu                                      components.MenuScroll
 	saveMenu                                  components.MenuScroll
 	saveMenuOpen                              bool
-	saveAnchor                                ui.Rect
+	saveAnchor                                gfx.Rect
 	zoom                                      float32
 	scale                                     float32
-	pan                                       ui.Point
+	pan                                       gfx.Point
 	imageGeometry                             components.ImageViewGeometry
 	tooltip                                   components.HoverTooltip
+	// caret is the phase of the caret both views draw: the one in the editor and
+	// the one in the comparison, which never shows together.
+	caret components.CaretBlink
 }
 
-func (d *fileDocument) paint(canvas *ui.Canvas, size ui.Size) {
+// comparisonBody is what the comparison page leaves for the buttons painted by
+// hand after it is laid out.
+type comparisonBody struct {
+	retry, returnToEdit, upload ui.Box
+}
+
+func (d *fileDocument) paint(canvas *gfx.Canvas, size gfx.Size) {
+	defer d.owner.paintNoteExit(canvas, gfx.Rect{Width: size.Width, Height: size.Height})
+	if d.note != nil {
+		d.paintNoteWindow(canvas, size)
+		return
+	}
+
 	canvas.SetTree(&tree)
 	if id, ok := canvas.ClickTarget(); ok {
 		canvas.AfterPaint(func() { d.click(id) })
@@ -80,67 +104,25 @@ func (d *fileDocument) paint(canvas *ui.Canvas, size ui.Size) {
 	if d.ui.highlighter == nil {
 		d.ui.highlighter = d.highlight
 	}
-	theme, m := d.owner.Theme(), d.owner.messages.FileWindow
-	canvas.Fill(ui.Rect{Width: size.Width, Height: size.Height}, theme.Background)
-	var content, encoding, save flex.Box
-	f := d.ui.frame.Begin(canvas, theme, ui.Rect{Width: size.Width, Height: size.Height})
-	f.Column().Fill().Pad(12).Gap(8).Children(func() {
-		if d.owner.fileWindows.painting {
-			d.owner.fileWindows.paintTabs(f, size)
-			f.Divider().Background(theme.Border)
-		}
-		if d.problem != "" {
-			f.Paragraph(d.problem, 4).FontSize(theme.Metrics.FontSizeS).Color(theme.Danger).LineHeight(18)
-		}
-		content = f.Slot().Grow(1).MinHeight(64)
-		f.Row().Height(32).Gap(8).Items(flex.Center).Children(func() {
-			if d.image == nil {
-				encoding = f.Slot().Width(min(220, size.Width*.4)).Height(32)
-			}
-			status := d.footerStatus()
-			f.Text(status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(22).Grow(1).
-				HitWith(hitDocumentStatus, status, ui.HitOptions{Role: ui.RoleGroup, SkipFocus: true, Hint: status})
-			if d.image != nil {
-				f.Button(hitDocumentFit, m.Fit).Small().Outline()
-				f.Button(hitDocumentActual, m.Actual).Small().Outline()
-				f.Button(hitDocumentZoomOut, "−").Small().Outline()
-				f.Button(hitDocumentZoomIn, "+").Small().Outline()
-			}
-			if d.image == nil && d.ready {
-				wrap := d.owner.messages.CodeEditor.WrapOn
-				if d.edit.noWrap {
-					wrap = d.owner.messages.CodeEditor.WrapOff
-				}
-				f.Button(hitDocumentWrap, wrap).Small().Outline()
-			}
-			f.Button(hitDocumentReload, m.Reload).Small().Outline().Disabled(d.busy || d.comparison.active)
-			if d.image == nil {
-				disabled := d.busy || !d.ready || !d.dirty() || d.comparison.active
-				if d.local {
-					f.Button(hitDocumentSave, m.Save).Small().Disabled(disabled)
-				} else {
-					save = f.Slot().Width(112).Height(32)
-				}
-			}
-		})
-	})
-	f.End()
+	theme := d.owner.Theme()
+	canvas.Fill(gfx.Rect{Width: size.Width, Height: size.Height}, theme.Background)
+	d.windowPage().Draw(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, d.declareEditWindow)
 	if d.owner.fileWindows.painting {
 		d.owner.fileWindows.paintTabsScrollbar(canvas)
 	}
-	d.ui.saveAnchor = ui.Rect{}
+	d.ui.saveAnchor = gfx.Rect{}
 	if d.image == nil && !d.local {
-		d.ui.saveAnchor = save.Rect()
+		d.ui.saveAnchor = d.ui.saveBox.Rect()
 	}
 	if d.image != nil {
-		d.ui.imageBounds = content.Rect()
-		d.ui.imageGeometry = components.PaintImageView(canvas, theme, content.Rect(), components.ImageViewOptions{
-			Bitmap: ui.Bitmap{Pix: d.image.Pix, Width: d.image.Width, Height: d.image.Height, Stride: d.image.Width * 4, ID: binary.LittleEndian.Uint64(d.revision[:8]), Version: 1}, Zoom: d.ui.zoom, Pan: d.ui.pan,
+		d.ui.imageBounds = d.ui.contentBox.Rect()
+		d.ui.imageGeometry = components.PaintImageView(canvas, theme, d.ui.contentBox.Rect(), components.ImageViewOptions{
+			Bitmap: gfx.Bitmap{Pix: d.image.Pix, Width: d.image.Width, Height: d.image.Height, Stride: d.image.Width * 4, ID: binary.LittleEndian.Uint64(d.revision[:8]), Version: 1}, Zoom: d.ui.zoom, Pan: d.ui.pan,
 		})
 	} else {
-		d.ui.encodingBounds = encoding.Rect()
-		d.ui.editorBounds = content.Rect()
-		d.paintCodeEditor(canvas, theme, content.Rect())
+		d.ui.encodingBounds = d.ui.encodingBox.Rect()
+		d.ui.editorBounds = d.ui.contentBox.Rect()
+		d.paintCodeEditor(canvas, theme, d.ui.contentBox.Rect())
 		d.paintEncoding(canvas)
 	}
 	if d.image == nil && !d.local {
@@ -150,11 +132,86 @@ func (d *fileDocument) paint(canvas *ui.Canvas, size ui.Size) {
 	if d.confirm != "" {
 		d.paintConfirmation(canvas)
 	}
-	d.notices.paint(canvas, theme, ui.Rect{Width: size.Width, Height: size.Height})
-	d.ui.tooltip.Paint(canvas, theme, ui.Rect{Width: size.Width, Height: size.Height}, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
+	d.notices.paint(canvas, theme, gfx.Rect{Width: size.Width, Height: size.Height})
+	d.ui.tooltip.Paint(canvas, theme, gfx.Rect{Width: size.Width, Height: size.Height}, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
 }
 
-func (d *fileDocument) paintComparison(canvas *ui.Canvas, size ui.Size) {
+// windowPage is the page this paint declares its window in: the shared window's
+// one page while the manager paints, else the document's own.
+func (d *fileDocument) windowPage() *ui.Page {
+	if d.owner.fileWindows.painting {
+		return d.owner.fileWindows.editPage(&d.owner.theme)
+	}
+	return d.documentPage()
+}
+
+// declareEditWindow declares the document window: the tab strip when it shares a
+// window, the problem line, the room the editor takes, and the footer. What the
+// editor, the image and the footer's menus paint themselves goes into the slots
+// kept here.
+func (d *fileDocument) declareEditWindow(c ui.C) {
+	theme, m := d.owner.Theme(), d.owner.messages.FileWindow
+	bounds := c.Bounds()
+	shared := d.owner.fileWindows.painting
+	d.ui.encodingBox, d.ui.saveBox = ui.Box{}, ui.Box{}
+	ui.Column(c).Fill().Children(func() {
+		declareWindowTitlebar(c, d.owner.pal, d.name, d.source)
+		ui.Column(c).Grow(1).Shrink(1).Pad(12).Gap(8).Children(func() {
+			if shared {
+				d.owner.fileWindows.declareTabsSection(c, bounds.Width)
+				ui.Divider(c).Background(theme.Border)
+			}
+			if d.problem != "" {
+				ui.Paragraph(c, d.problem, 4).FontSize(theme.Metrics.FontSizeS).Color(theme.Danger).LineHeight(18)
+			}
+			d.ui.contentBox = ui.Slot(c).Grow(1).MinHeight(64)
+			ui.Row(c).Height(32).Gap(8).Items(ui.Center).Children(func() {
+				if d.image == nil {
+					d.ui.encodingBox = ui.Slot(c).Width(min(220, bounds.Width*.4)).Height(32)
+				}
+				status := d.footerStatus()
+				ui.Text(c, status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(22).Grow(1).
+					HitWith(hitDocumentStatus, status, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: status})
+				if d.image != nil {
+					d.pageButton(c, "fit", hitDocumentFit, m.Fit).Small().Outline()
+					d.pageButton(c, "actual", hitDocumentActual, m.Actual).Small().Outline()
+					d.pageButton(c, "zoom-out", hitDocumentZoomOut, "−").Small().Outline()
+					d.pageButton(c, "zoom-in", hitDocumentZoomIn, "+").Small().Outline()
+				}
+				if d.image == nil && d.ready {
+					wrap := d.owner.messages.CodeEditor.WrapOn
+					if d.edit.noWrap {
+						wrap = d.owner.messages.CodeEditor.WrapOff
+					}
+					d.pageButton(c, "wrap", hitDocumentWrap, wrap).Small().Outline()
+				}
+				d.pageButton(c, "reload", hitDocumentReload, m.Reload).Small().Outline().Disabled(d.busy || d.comparison.active)
+				if d.image == nil {
+					disabled := d.busy || !d.ready || !d.dirty() || d.comparison.active
+					if d.local {
+						d.pageButton(c, "save", hitDocumentSave, m.Save).Small().Disabled(disabled)
+					} else {
+						d.ui.saveBox = ui.Slot(c).Width(112).Height(32)
+					}
+				}
+			})
+		})
+	})
+}
+
+// pageButton is a footer button of the page, named by key so its identity does
+// not move when a neighbouring control comes or goes. Its click is the page's,
+// handled after the paint that delivered it.
+func (d *fileDocument) pageButton(c ui.C, key string, id gfx.ID, label string) ui.Box {
+	c.Key(key)
+	button := ui.Button(c, label)
+	if button.Clicked() {
+		c.After(func() { d.click(id) })
+	}
+	return button
+}
+
+func (d *fileDocument) paintComparison(canvas *gfx.Canvas, size gfx.Size) {
 	canvas.SetTree(&tree)
 	if id, ok := canvas.ClickTarget(); ok {
 		canvas.AfterPaint(func() { d.clickComparison(id) })
@@ -166,63 +223,129 @@ func (d *fileDocument) paintComparison(canvas *ui.Canvas, size ui.Size) {
 		uiState.highlighter = d.highlight
 	}
 	theme, m := d.owner.Theme(), d.owner.messages.FileWindow
-	canvas.Fill(ui.Rect{Width: size.Width, Height: size.Height}, theme.Background)
-	var content flex.Box
-	f := uiState.frame.Begin(canvas, theme, ui.Rect{Width: size.Width, Height: size.Height})
-	f.Column().Fill().Pad(12).Gap(8).Children(func() {
-		f.Text(d.name).FontSize(18).Bold().Color(theme.Foreground).Ellipsis().LineHeight(32).
-			HitWith(hitDocumentLocation, d.name, ui.HitOptions{Role: ui.RoleGroup, SkipFocus: true, Hint: d.source + " · " + d.location})
-		if d.problem != "" {
-			f.Paragraph(d.problem, 4).FontSize(theme.Metrics.FontSizeS).Color(theme.Danger).LineHeight(18)
-		}
-		f.Row().Height(28).Gap(10).Items(flex.Center).Children(func() {
-			f.Text(m.ServerVersion).Grow(1).FontSize(theme.Metrics.FontSizeS).Weight(ui.WeightMedium).Color(theme.MutedForeground).Ellipsis()
-			f.Text(fmt.Sprintf(m.CompareAddedRemoved, d.comparison.result.Stats.Added, d.comparison.result.Stats.Removed)).
-				FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis()
-			f.Text(m.LocalVersion).Grow(1).TextEnd().FontSize(theme.Metrics.FontSizeS).Weight(ui.WeightMedium).Color(theme.MutedForeground).Ellipsis()
-		})
-		if d.comparison.result.Stats.Coarse {
-			f.Text(m.CompareCoarse).FontSize(theme.Metrics.FontSizeS).Color(d.owner.pal.warning).Ellipsis()
-		}
-		content = f.Slot().Grow(1).MinHeight(64)
-		f.Row().Height(32).Gap(8).Items(flex.Center).Children(func() {
-			status := d.comparisonStatus()
-			f.Text(status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(22).Grow(1).
-				HitWith(hitDocumentStatus, status, ui.HitOptions{Role: ui.RoleGroup, SkipFocus: true, Hint: status})
-			if d.comparison.conflict {
-				f.Button(hitDocumentCompareRetry, m.CompareRetry).Small().Outline().Disabled(d.busy)
-			}
-			f.Button(hitDocumentReturnToEdit, m.ReturnToEdit).Small().Outline().Disabled(d.busy || d.comparison.saving)
-			f.Button(hitDocumentConfirmUpload, m.Save).Small().Disabled(!d.canUploadComparison())
-		})
-	})
-	f.End()
+	canvas.Fill(gfx.Rect{Width: size.Width, Height: size.Height}, theme.Background)
+	uiState.compare = comparisonBody{}
+	d.comparisonPage().Draw(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, uiState.compareView)
+	d.paintComparisonButtons(canvas, theme)
 
-	uiState.editorBounds = content.Rect()
+	uiState.editorBounds = uiState.contentBox.Rect()
 	value := d.editor.String()
 	selection := d.editor.Selection()
+	caret := d.editor.ByteOffset(d.editor.Caret())
 	focused := canvas.Focused() == hitDocumentInput
+	showCaret := false
+	if focused && selection.Start == selection.End {
+		showCaret = uiState.caret.Lit(canvas, caret)
+	} else {
+		uiState.caret.Rest()
+	}
 	snapshot := components.CodeDiffSnapshot{
 		Result: d.comparison.result, ID: hitDocumentInput, Label: m.DiffLabel,
 		Value: value, Language: documentLanguage(d.name), Highlight: uiState.highlighter,
 		AddedColor: theme.Success, RemovedColor: theme.Danger,
 		FontSize: d.owner.terminalFontSize, MonoFace: d.owner.terminalFontFace, TabWidth: d.edit.options.TabWidth,
 		Disabled: d.busy || d.comparison.loading || d.comparison.confirm, Focused: focused,
-		ShowCaret:      selection.Start == selection.End,
-		Caret:          d.editor.ByteOffset(d.editor.Caret()),
+		ShowCaret:      showCaret,
+		Caret:          caret,
 		SelectionStart: d.editor.ByteOffset(selection.Start), SelectionEnd: d.editor.ByteOffset(selection.End),
+		CaretColor:          d.owner.pal.cursor,
 		VerticalScrollbarID: hitDocumentDiffScroll, HorizontalScrollbarID: hitDocumentDiffScrollX,
 		ViewportID: hitDocumentDiffViewport,
+	}
+	fontSize := d.owner.terminalFontSize
+	if fontSize <= 0 {
+		fontSize = theme.Metrics.FontSizeM
+	}
+	cellWidth, _ := canvas.MonoCellSize(fontSize, d.owner.terminalFontFace)
+	if uiState.contentBox.Rect().Width < 2*(40*cellWidth+72) {
+		snapshot.Layout = components.CodeDiffStacked
 	}
 	if marked, ok := d.editor.Composition(); ok {
 		snapshot.CompositionStart = d.editor.ByteOffset(marked.Start)
 		snapshot.CompositionEnd = d.editor.ByteOffset(marked.End)
 	}
-	uiState.diff.Paint(canvas, theme, content.Rect(), snapshot)
+	uiState.diff.Paint(canvas, theme, uiState.contentBox.Rect(), snapshot)
 	if d.comparison.confirm {
 		d.paintComparisonConfirmation(canvas)
 	}
-	uiState.tooltip.Paint(canvas, theme, ui.Rect{Width: size.Width, Height: size.Height}, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
+	uiState.tooltip.Paint(canvas, theme, gfx.Rect{Width: size.Width, Height: size.Height}, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
+}
+
+// comparisonPage is the page that lays out the comparison window's body. It
+// lives with the comparison's UI so a window opened for one document keeps its
+// own page.
+func (d *fileDocument) comparisonPage() *ui.Page {
+	uiState := &d.comparison.ui
+	if uiState.page == nil {
+		uiState.compareView = d.declareComparisonWindow
+		uiState.page = ui.NewPage(ui.PageConfig{
+			Tree: &tree, Root: fmt.Sprintf("file-comparison-%d", fileWindowPageSeq.Add(1)), Theme: &d.owner.theme, View: uiState.compareView,
+		})
+	}
+	return uiState.page
+}
+
+// declareComparisonWindow declares the comparison window: the file's name, the
+// version counts and the room the diff takes, with the actions under it. The
+// buttons keep their application identities and are painted after the page.
+func (d *fileDocument) declareComparisonWindow(c ui.C) {
+	uiState := &d.comparison.ui
+	theme, m := *c.Theme(), d.owner.messages.FileWindow
+	uiState.contentBox = ui.Box{}
+	uiState.compare = comparisonBody{}
+	ui.Column(c).Fill().Children(func() {
+		declareWindowTitlebar(c, d.owner.pal, m.CompareSave, d.name)
+		ui.Column(c).Grow(1).Shrink(1).Pad(12).Gap(8).Children(func() {
+			ui.Text(c, d.name).FontSize(18).Bold().Color(theme.Foreground).Ellipsis().LineHeight(32).
+				HitWith(hitDocumentLocation, d.name, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: d.source + " · " + d.location})
+			if d.problem != "" {
+				ui.Paragraph(c, d.problem, 4).FontSize(theme.Metrics.FontSizeS).Color(theme.Danger).LineHeight(18)
+			}
+			ui.Row(c).Height(28).Gap(10).Items(ui.Center).Children(func() {
+				ui.Text(c, m.ServerVersion).Grow(1).FontSize(theme.Metrics.FontSizeS).Weight(gfx.WeightMedium).Color(theme.MutedForeground).Ellipsis()
+				ui.Text(c, fmt.Sprintf(m.CompareAddedRemoved, d.comparison.result.Stats.Added, d.comparison.result.Stats.Removed)).
+					FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis()
+				ui.Text(c, m.LocalVersion).Grow(1).TextEnd().FontSize(theme.Metrics.FontSizeS).Weight(gfx.WeightMedium).Color(theme.MutedForeground).Ellipsis()
+			})
+			if d.comparison.result.Stats.Coarse {
+				ui.Text(c, m.CompareCoarse).FontSize(theme.Metrics.FontSizeS).Color(d.owner.pal.warning).Ellipsis()
+			}
+			uiState.contentBox = ui.Slot(c).Grow(1).MinHeight(64)
+			ui.Row(c).Height(32).Gap(8).Items(ui.Center).Children(func() {
+				status := d.comparisonStatus()
+				ui.Text(c, status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(22).Grow(1).
+					HitWith(hitDocumentStatus, status, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: status})
+				if d.comparison.conflict {
+					uiState.compare.retry = pageButtonSlot(c, m.CompareRetry, true)
+				}
+				uiState.compare.returnToEdit = pageButtonSlot(c, m.ReturnToEdit, true)
+				uiState.compare.upload = pageButtonSlot(c, m.Save, true)
+			})
+		})
+	})
+}
+
+// paintComparisonButtons paints the footer's buttons into the page's slots.
+func (d *fileDocument) paintComparisonButtons(canvas *gfx.Canvas, theme gfx.Theme) {
+	uiState := &d.comparison.ui
+	m := d.owner.messages.FileWindow
+	if d.comparison.conflict {
+		button := components.BeginButton(canvas, theme, hitDocumentCompareRetry, uiState.compare.retry.Rect()).Small()
+		if d.busy {
+			button = button.Disabled()
+		}
+		button.Outline(m.CompareRetry)
+	}
+	back := components.BeginButton(canvas, theme, hitDocumentReturnToEdit, uiState.compare.returnToEdit.Rect()).Small()
+	if d.busy || d.comparison.saving {
+		back = back.Disabled()
+	}
+	back.Outline(m.ReturnToEdit)
+	upload := components.BeginButton(canvas, theme, hitDocumentConfirmUpload, uiState.compare.upload.Rect()).Small()
+	if !d.canUploadComparison() {
+		upload = upload.Disabled()
+	}
+	upload.Default(m.Save)
 }
 
 func (d *fileDocument) footerStatus() string {
@@ -274,7 +397,7 @@ func (d *fileDocument) comparisonStatus() string {
 	}
 }
 
-func (d *fileDocument) paintDocumentSave(canvas *ui.Canvas) {
+func (d *fileDocument) paintDocumentSave(canvas *gfx.Canvas) {
 	area := d.ui.saveAnchor
 	if area.Width < 64 || area.Height <= 0 {
 		return
@@ -291,7 +414,7 @@ func (d *fileDocument) paintDocumentSave(canvas *ui.Canvas) {
 	d.ui.saveAnchor = area
 }
 
-func (d *fileDocument) paintSaveMenu(canvas *ui.Canvas) {
+func (d *fileDocument) paintSaveMenu(canvas *gfx.Canvas) {
 	if !d.ui.saveMenuOpen || d.ui.saveAnchor.Width <= 0 {
 		return
 	}
@@ -299,8 +422,8 @@ func (d *fileDocument) paintSaveMenu(canvas *ui.Canvas) {
 	width := float32(184)
 	height := float32(40)
 	anchor := d.ui.saveAnchor
-	viewport := ui.Rect{Width: d.ui.size.Width, Height: d.ui.size.Height}
-	bounds, side := components.PlaceOverlay(anchor, ui.Size{Width: width, Height: height}, viewport, components.OverlayPlacement{
+	viewport := gfx.Rect{Width: d.ui.size.Width, Height: d.ui.size.Height}
+	bounds, side := components.PlaceOverlay(anchor, gfx.Size{Width: width, Height: height}, viewport, components.OverlayPlacement{
 		Side: components.OverlayBottom, Align: components.OverlayAlignEnd, SideOffset: 4, Margin: 8,
 	})
 	menu := components.BeginDropdownMenu(canvas, theme, bounds, components.DropdownMenuOptions{
@@ -311,15 +434,15 @@ func (d *fileDocument) paintSaveMenu(canvas *ui.Canvas) {
 	menu.End()
 }
 
-func (d *fileDocument) paintComparisonConfirmation(canvas *ui.Canvas) {
+func (d *fileDocument) paintComparisonConfirmation(canvas *gfx.Canvas) {
 	m, theme := d.owner.messages.FileWindow, d.owner.Theme()
-	viewport := ui.Rect{Width: d.comparison.ui.size.Width, Height: d.comparison.ui.size.Height}
+	viewport := gfx.Rect{Width: d.comparison.ui.size.Width, Height: d.comparison.ui.size.Height}
 	components.BeginAlertDialog(canvas, theme, viewport, components.AlertDialogOptions{
 		Layer: dialogLayer, Scope: dialogScope, ActionID: hitDocumentUploadConfirm, CancelID: hitDocumentCancel, InitialFocusID: hitDocumentCancel,
 	}).Paint(m.SaveConfirmFinalTitle, m.SaveConfirmFinalDescription, m.Save, m.Cancel)
 }
 
-func (d *fileDocument) paintEncoding(canvas *ui.Canvas) {
+func (d *fileDocument) paintEncoding(canvas *gfx.Canvas) {
 	m := d.owner.messages.FileWindow
 	value := d.format.Encoding
 	if value == "" {
@@ -327,7 +450,7 @@ func (d *fileDocument) paintEncoding(canvas *ui.Canvas) {
 	}
 	bounds := d.ui.encodingBounds
 	height := min(float32(8+32*(len(filecontent.Encodings)+1)), max(bounds.Y-8, d.ui.size.Height-bounds.Y-bounds.Height-8))
-	content := ui.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: bounds.Width, Height: height}
+	content := gfx.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: bounds.Width, Height: height}
 	if content.Y+height > d.ui.size.Height-4 {
 		content.Y = bounds.Y - height - 4
 	}
@@ -338,7 +461,7 @@ func (d *fileDocument) paintEncoding(canvas *ui.Canvas) {
 	}
 	control := components.BeginSelect(canvas, d.owner.Theme(), bounds, components.SelectOptions{
 		TriggerID: hitDocumentEncoding, Label: m.Encoding, Value: m.Encoding + ": " + value, Open: d.encodingOpen, Disabled: d.busy || d.comparison.active,
-		Content: content, Layer: popupLayer, Scope: hitDocumentEncoding, DismissID: hitDocumentEncodingDismiss, Viewport: ui.Rect{Width: d.ui.size.Width, Height: d.ui.size.Height}, Scroll: scroll,
+		Content: content, Layer: popupLayer, Scope: hitDocumentEncoding, DismissID: hitDocumentEncodingDismiss, Viewport: gfx.Rect{Width: d.ui.size.Width, Height: d.ui.size.Height}, Scroll: scroll,
 	})
 	defer control.End()
 	control.AddItem(components.SelectItem{ID: hitDocumentEncodings.At(0), Label: m.Auto, Selected: d.format.Encoding == ""})
@@ -347,15 +470,15 @@ func (d *fileDocument) paintEncoding(canvas *ui.Canvas) {
 	}
 }
 
-func (d *fileDocument) paintConfirmation(canvas *ui.Canvas) {
+func (d *fileDocument) paintConfirmation(canvas *gfx.Canvas) {
 	m, theme := d.owner.messages.FileWindow, d.owner.Theme()
-	viewport := ui.Rect{Width: d.ui.size.Width, Height: d.ui.size.Height}
+	viewport := gfx.Rect{Width: d.ui.size.Width, Height: d.ui.size.Height}
 	if d.confirm == "reload" {
 		components.BeginAlertDialog(canvas, theme, viewport, components.AlertDialogOptions{Layer: dialogLayer, Scope: dialogScope, ActionID: hitDocumentDiscard, CancelID: hitDocumentCancel, ActionVariant: components.ButtonDestructive, InitialFocusID: hitDocumentCancel}).Paint(m.ConfirmTitle, m.ConfirmReload, m.Discard, m.Cancel)
 		return
 	}
 	if d.confirm == "save" {
-		dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{Layer: dialogLayer, Scope: dialogScope, CloseID: hitDocumentCancel, InitialFocusID: hitDocumentCancel, ContentSize: ui.Size{Width: 500}, FitBody: true}).WithoutCloseButton()
+		dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{Layer: dialogLayer, Scope: dialogScope, CloseID: hitDocumentCancel, InitialFocusID: hitDocumentCancel, ContentSize: gfx.Size{Width: 500}, FitBody: true}).WithoutCloseButton()
 		layout := dialog.Begin(m.SaveConfirmTitle, m.SaveConfirmDescription)
 		dialog.Actions(layout,
 			components.ButtonAction{ID: hitDocumentCancel, Label: m.Cancel, Variant: components.ButtonOutline},
@@ -364,7 +487,7 @@ func (d *fileDocument) paintConfirmation(canvas *ui.Canvas) {
 		dialog.End()
 		return
 	}
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{Layer: dialogLayer, Scope: dialogScope, CloseID: hitDocumentCancel, InitialFocusID: hitDocumentCancel, ContentSize: ui.Size{Width: 460}, FitBody: true}).WithoutCloseButton()
+	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{Layer: dialogLayer, Scope: dialogScope, CloseID: hitDocumentCancel, InitialFocusID: hitDocumentCancel, ContentSize: gfx.Size{Width: 460}, FitBody: true}).WithoutCloseButton()
 	layout := dialog.Begin(m.ConfirmTitle, m.ConfirmClose)
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitDocumentDiscard, Label: m.Discard, Variant: components.ButtonDestructive},
@@ -373,8 +496,15 @@ func (d *fileDocument) paintConfirmation(canvas *ui.Canvas) {
 	)
 	dialog.End()
 }
-func (d *fileDocument) click(id ui.ID) {
+func (d *fileDocument) click(id gfx.ID) {
+	if d.owner.clickNoteExit(id) {
+		return
+	}
 	if d.owner.fileWindows.clickTab(id) {
+		return
+	}
+	if d.note != nil {
+		d.clickNoteWindow(id)
 		return
 	}
 	if d.notices.click(id) {
@@ -461,10 +591,10 @@ func (d *fileDocument) click(id ui.ID) {
 		d.chooseEncoding(name)
 	case id == hitDocumentFit:
 		d.ui.zoom = 0
-		d.ui.pan = ui.Point{}
+		d.ui.pan = gfx.Point{}
 	case id == hitDocumentActual:
 		d.ui.zoom = 1
-		d.ui.pan = ui.Point{}
+		d.ui.pan = gfx.Point{}
 	case id == hitDocumentZoomIn:
 		d.zoom(1.25)
 	case id == hitDocumentZoomOut:
@@ -472,7 +602,7 @@ func (d *fileDocument) click(id ui.ID) {
 	}
 }
 
-func (d *fileDocument) clickComparison(id ui.ID) {
+func (d *fileDocument) clickComparison(id gfx.ID) {
 	if d.comparison.confirm {
 		switch id {
 		case hitDocumentCancel:
@@ -532,7 +662,7 @@ func (d *fileDocument) zoom(factor float32) {
 		zoom = d.ui.imageGeometry.Scale * d.ui.pixelScale()
 	}
 	d.ui.zoom = max(min(zoom*factor, 32), .01)
-	d.ui.pan = ui.Point{}
+	d.ui.pan = gfx.Point{}
 }
 func (view *fileDocumentUI) pixelScale() float32 {
 	if view.imageGeometry.Scale <= 0 {
@@ -542,6 +672,13 @@ func (view *fileDocumentUI) pixelScale() float32 {
 }
 
 func (d *fileDocument) textInput(context app.TextInputContext) *app.TextInput {
+	if d.owner.noteExit != nil {
+		return nil
+	}
+	if d.note != nil {
+		return d.noteWindowTextInput(context)
+	}
+
 	if input := d.barTextInput(context.ID); input != nil {
 		return input
 	}
@@ -589,25 +726,32 @@ func (d *fileDocument) comparisonTextInput(context app.TextInputContext) *app.Te
 	return input
 }
 
-func (d *fileDocument) key(event ui.KeyEvent) ui.EventResult {
-	if event.Release {
-		return ui.EventResult{}
+func (d *fileDocument) key(event gfx.KeyEvent) gfx.EventResult {
+	if d.owner.noteExit != nil {
+		return d.owner.noteExitKey(event)
 	}
-	handled := ui.EventResult{Handled: true, Repaint: true}
+	if d.note != nil {
+		return d.noteWindowKey(event)
+	}
+
+	if event.Release {
+		return gfx.EventResult{}
+	}
+	handled := gfx.EventResult{Handled: true, Repaint: true}
 	if d.confirm != "" {
-		if event.Key == ui.KeyEscape {
+		if event.Key == gfx.KeyEscape {
 			d.click(hitDocumentCancel)
 			return handled
 		}
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	if d.ui.saveMenuOpen {
-		if event.Key == ui.KeyEscape {
+		if event.Key == gfx.KeyEscape {
 			d.ui.saveMenuOpen = false
 			handled.Focus = hitDocumentSaveMenu
 			return handled
 		}
-		if event.Key == ui.KeyTab {
+		if event.Key == gfx.KeyTab {
 			d.ui.saveMenuOpen = false
 			handled.ContinueTraversal = true
 			return handled
@@ -619,12 +763,12 @@ func (d *fileDocument) key(event ui.KeyEvent) ui.EventResult {
 		}
 	}
 	if d.encodingOpen {
-		if event.Key == ui.KeyEscape {
+		if event.Key == gfx.KeyEscape {
 			d.encodingOpen = false
 			handled.Focus = hitDocumentEncoding
 			return handled
 		}
-		if event.Key == ui.KeyTab {
+		if event.Key == gfx.KeyTab {
 			d.encodingOpen = false
 			handled.ContinueTraversal = true
 			return handled
@@ -635,27 +779,27 @@ func (d *fileDocument) key(event ui.KeyEvent) ui.EventResult {
 			return handled
 		}
 	}
-	if event.Target == hitDocumentEncoding && !d.comparison.active && (event.Key == ui.KeyDown || event.Key == ui.KeyUp) {
+	if event.Target == hitDocumentEncoding && !d.comparison.active && (event.Key == gfx.KeyDown || event.Key == gfx.KeyUp) {
 		d.encodingOpen = true
 		return handled
 	}
 	if result, ok := d.codeKey(event); ok {
 		return result
 	}
-	return ui.EventResult{}
+	return gfx.EventResult{}
 }
 
-func (d *fileDocument) comparisonKey(event ui.KeyEvent) ui.EventResult {
+func (d *fileDocument) comparisonKey(event gfx.KeyEvent) gfx.EventResult {
 	if event.Release || !d.comparison.active {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
-	handled := ui.EventResult{Handled: true, Repaint: true}
+	handled := gfx.EventResult{Handled: true, Repaint: true}
 	if d.comparison.confirm {
-		if event.Key == ui.KeyEscape {
+		if event.Key == gfx.KeyEscape {
 			d.comparison.confirm = false
 			return handled
 		}
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	if event.Target == hitDocumentInput {
 		if command, ok := components.CodeEditorCommandForKey(event); ok && d.ready && !d.busy && command.Apply(&d.editor) {
@@ -672,16 +816,23 @@ func (d *fileDocument) comparisonKey(event ui.KeyEvent) ui.EventResult {
 		}
 	}
 	if event.Target == hitDocumentDiffViewport || event.Target == hitDocumentDiffScroll || event.Target == hitDocumentDiffScrollX {
-		if result, ok := d.comparison.ui.diff.ScrollForKey(event.Key, event.Modifiers&ui.ModifierShift != 0); ok {
+		if result, ok := d.comparison.ui.diff.ScrollForKey(event.Key, event.Modifiers&gfx.ModifierShift != 0); ok {
 			return result
 		}
 	}
-	return ui.EventResult{}
+	return gfx.EventResult{}
 }
 
-func (d *fileDocument) shortcut(event ui.KeyEvent) ui.EventResult {
-	if event.Modifiers&(ui.ModifierControl|ui.ModifierMeta) == 0 || event.Release {
-		return ui.EventResult{}
+func (d *fileDocument) shortcut(event gfx.KeyEvent) gfx.EventResult {
+	if d.owner.noteExit != nil {
+		return gfx.EventResult{Handled: true, Repaint: true}
+	}
+	if d.note != nil {
+		return d.noteWindowShortcut(event)
+	}
+
+	if event.Modifiers&(gfx.ModifierControl|gfx.ModifierMeta) == 0 || event.Release {
+		return gfx.EventResult{}
 	}
 	if result, ok := d.codeShortcut(event); ok {
 		return result
@@ -691,22 +842,22 @@ func (d *fileDocument) shortcut(event ui.KeyEvent) ui.EventResult {
 		if d.confirm == "" {
 			d.requestSave(false)
 		}
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	case "w":
 		d.window.RequestClose()
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	return ui.EventResult{}
+	return gfx.EventResult{}
 }
 
-func (d *fileDocument) comparisonShortcut(event ui.KeyEvent) ui.EventResult {
-	if event.Modifiers&(ui.ModifierControl|ui.ModifierMeta) == 0 || event.Release || !d.comparison.active {
-		return ui.EventResult{}
+func (d *fileDocument) comparisonShortcut(event gfx.KeyEvent) gfx.EventResult {
+	if event.Modifiers&(gfx.ModifierControl|gfx.ModifierMeta) == 0 || event.Release || !d.comparison.active {
+		return gfx.EventResult{}
 	}
 	if command, ok := components.CodeEditorCommandForKey(event); ok && event.Target == hitDocumentInput && d.ready && !d.busy && !d.comparison.confirm && command.Apply(&d.editor) {
 		d.scheduleDiff()
 		d.comparison.ui.diff.RevealCaret(d.editor.String(), d.editor.ByteOffset(d.editor.Caret()))
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	switch strings.ToLower(event.Text) {
 	case "s":
@@ -718,25 +869,32 @@ func (d *fileDocument) comparisonShortcut(event ui.KeyEvent) ui.EventResult {
 			d.comparison.window.RequestClose()
 		}
 	default:
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
-	return ui.EventResult{Handled: true, Repaint: true}
+	return gfx.EventResult{Handled: true, Repaint: true}
 }
 
-func (d *fileDocument) scroll(event ui.ScrollEvent) ui.EventResult {
+func (d *fileDocument) scroll(event gfx.ScrollEvent) gfx.EventResult {
+	if d.owner.noteExit != nil {
+		return gfx.EventResult{Handled: true, Repaint: true}
+	}
+	if d.note != nil {
+		return d.noteWindowScroll(event)
+	}
+
 	if d.confirm != "" {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	if d.encodingOpen {
 		d.ui.menu.Wheel(event)
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if d.ui.saveMenuOpen {
 		d.ui.saveMenu.Wheel(event)
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if d.image != nil {
-		if event.Modifiers&(ui.ModifierControl|ui.ModifierMeta) != 0 {
+		if event.Modifiers&(gfx.ModifierControl|gfx.ModifierMeta) != 0 {
 			d.zoom(float32(math.Pow(1.0015, float64(-event.DeltaY))))
 		} else {
 			d.ui.pan.X -= event.DeltaX
@@ -750,38 +908,52 @@ func (d *fileDocument) scroll(event ui.ScrollEvent) ui.EventResult {
 	} else {
 		return d.ui.code.Scroll(event)
 	}
-	return ui.EventResult{Handled: true, Repaint: true}
+	return gfx.EventResult{Handled: true, Repaint: true}
 }
 
-func (d *fileDocument) pointer(event ui.PointerEvent) ui.EventResult {
+func (d *fileDocument) pointer(event gfx.PointerEvent) gfx.EventResult {
+	if d.owner.noteExit != nil {
+		if isNoteExitHit(event.Target) {
+			return gfx.EventResult{}
+		}
+		return gfx.EventResult{Handled: true}
+	}
+	if d.note != nil {
+		return d.noteWindowPointer(event)
+	}
+
 	if d.confirm != "" {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	if d.encodingOpen && (event.Target == hitDocumentEncodingBar || d.ui.menu.Dragging()) {
 		d.ui.menu.Drag(event)
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	return d.ui.code.Pointer(event)
 }
 
-func (d *fileDocument) comparisonScroll(event ui.ScrollEvent) ui.EventResult {
+func (d *fileDocument) comparisonScroll(event gfx.ScrollEvent) gfx.EventResult {
 	if !d.comparison.active || d.comparison.confirm {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	return d.comparison.ui.diff.Scroll(event)
 }
 
-func (d *fileDocument) comparisonPointer(event ui.PointerEvent) ui.EventResult {
+func (d *fileDocument) comparisonPointer(event gfx.PointerEvent) gfx.EventResult {
 	if !d.comparison.active || d.comparison.confirm {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	return d.comparison.ui.diff.Pointer(event)
 }
 
-func (d *fileDocument) codeColors() [components.MarkdownCodeClasses]ui.Color {
-	pal := d.owner.pal
-	ansi := func(index int) ui.Color { return ui.RGB(pal.ansi[index][0], pal.ansi[index][1], pal.ansi[index][2]) }
-	return [components.MarkdownCodeClasses]ui.Color{components.CodeComment: pal.faint, components.CodeString: ansi(2), components.CodeNumber: ansi(3), components.CodeKeyword: ansi(5), components.CodeFunction: ansi(4), components.CodeVariable: ansi(6), components.CodeFlag: ansi(6), components.CodeKey: ansi(4), components.CodeAdded: ansi(2), components.CodeRemoved: ansi(1)}
+func (d *fileDocument) codeColors() [components.MarkdownCodeClasses]gfx.Color {
+	return d.owner.codeColors()
+}
+
+func (s *State) codeColors() [components.MarkdownCodeClasses]gfx.Color {
+	pal := s.pal
+	ansi := func(index int) gfx.Color { return gfx.RGB(pal.ansi[index][0], pal.ansi[index][1], pal.ansi[index][2]) }
+	return [components.MarkdownCodeClasses]gfx.Color{components.CodeComment: pal.faint, components.CodeString: ansi(2), components.CodeNumber: ansi(3), components.CodeKeyword: ansi(5), components.CodeFunction: ansi(4), components.CodeVariable: ansi(6), components.CodeFlag: ansi(6), components.CodeKey: ansi(4), components.CodeAdded: ansi(2), components.CodeRemoved: ansi(1)}
 }
 
 func documentLanguage(name string) string {

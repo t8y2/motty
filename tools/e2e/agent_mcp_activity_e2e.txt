@@ -6,6 +6,8 @@ settle 400
 click "MCP"
 settle 600
 texts
+scroll 700 600 0 2000
+settle 300
 click "Clear"
 settle 400
 texts

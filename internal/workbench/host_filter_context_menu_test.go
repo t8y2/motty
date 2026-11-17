@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func TestHostFilterContextMenuTargetsThePointedGroup(t *testing.T) {
@@ -23,8 +23,8 @@ func TestHostFilterContextMenuTargetsThePointedGroup(t *testing.T) {
 				if !ok {
 					t.Fatal("group chip is not visible")
 				}
-				at := ui.Point{X: hit.Bounds.X + hit.Bounds.Width/2, Y: hit.Bounds.Y + hit.Bounds.Height/2}
-				pointer(state, ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonSecondary, Target: id, X: at.X, Y: at.Y})
+				at := gfx.Point{X: hit.Bounds.X + hit.Bounds.Width/2, Y: hit.Bounds.Y + hit.Bounds.Height/2}
+				pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: id, X: at.X, Y: at.Y})
 				if !state.groupActions.open || state.groupActions.path != target || state.groupActions.at != at {
 					t.Fatalf("right-click did not open the pointed group's menu: %+v", state.groupActions)
 				}
@@ -42,7 +42,7 @@ func TestHostFilterContextMenuTargetsThePointedGroup(t *testing.T) {
 
 func TestHostFilterContextMenuDoesNotGiveAllAGroupTarget(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	pointer(state, ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonSecondary, Target: hitHostFilterAll, X: 250, Y: 110})
+	pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitHostFilterAll, X: 250, Y: 110})
 	if state.groupActions.open {
 		t.Fatal("All incorrectly opened a group actions menu")
 	}
@@ -58,18 +58,18 @@ func TestHostFilterOverflowContextMenuReplacesThePicker(t *testing.T) {
 		state.hosts[index].Group = fmt.Sprintf("Group %02d", index)
 	}
 	state.hostDataChanged()
-	paintAt(state, ui.Size{Width: 960, Height: 600})
+	paintAt(state, gfx.Size{Width: 960, Height: 600})
 	if state.hostFilterHidden >= len(state.hostGroups) {
 		t.Fatal("fixture did not overflow")
 	}
 	state.Click(hitHostFilterMore)
 	id := hitHostFilterMenuList.At(state.hostFilterHidden)
-	pointer(state, ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonSecondary, Target: id, X: 500, Y: 150, Viewport: ui.Size{Width: 960, Height: 600}})
+	pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: id, X: 500, Y: 150, Viewport: gfx.Size{Width: 960, Height: 600}})
 	want := state.hostGroups[state.hostFilterHidden].Name
 	if !state.groupActions.open || state.groupActions.path != want || state.hostFilterMenu || state.hostFilterOn {
 		t.Fatalf("overflow right-click did not replace the picker without selecting: menu=%+v picker=%v", state.groupActions, state.hostFilterMenu)
 	}
-	state.Key(ui.KeyEvent{Key: ui.KeyEscape})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEscape})
 	if state.groupActions.open {
 		t.Fatal("Escape did not close the group menu")
 	}

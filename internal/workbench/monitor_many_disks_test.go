@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/remotestats"
 )
 
@@ -28,7 +28,7 @@ func dockerDiskFixture(count int) []remotestats.Disk {
 	return disks
 }
 
-func paintedDockerDisks(canvas *ui.Canvas) int {
+func paintedDockerDisks(canvas *gfx.Canvas) int {
 	count := 0
 	for _, text := range canvas.Texts() {
 		if strings.HasPrefix(text.Value, "/var/lib") || text.Value == "/last" {
@@ -45,8 +45,8 @@ func TestMonitorManyDockerMountsPaintOnlyVisibleRows(t *testing.T) {
 	p.data.Disks = dockerDiskFixture(64)
 	state.formatMonitor(session.stats)
 
-	size := ui.Size{Width: 1280, Height: 900}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1280, Height: 900}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	if monitorDiskCount(p) != 3 {
 		t.Fatalf("collapsed disk rows = %d, want 3", monitorDiskCount(p))
@@ -66,7 +66,7 @@ func TestMonitorManyDockerMountsPaintOnlyVisibleRows(t *testing.T) {
 	if hasPaintedText(&canvas, "/last") {
 		t.Fatal("the last mount is painted while scrolled to the top")
 	}
-	if area.MaxOffsetX != 0 || area.HorizontalTrack != (ui.Rect{}) || area.HorizontalThumb != (ui.Rect{}) {
+	if area.MaxOffsetX != 0 || area.HorizontalTrack != (gfx.Rect{}) || area.HorizontalThumb != (gfx.Rect{}) {
 		t.Fatalf("expanded disks added horizontal scrolling: %+v", area)
 	}
 	viewport := area.Viewport
@@ -90,7 +90,7 @@ func TestMonitorManyDockerMountsPaintOnlyVisibleRows(t *testing.T) {
 	}
 }
 
-func hasPaintedText(canvas *ui.Canvas, value string) bool {
+func hasPaintedText(canvas *gfx.Canvas, value string) bool {
 	for _, text := range canvas.Texts() {
 		if text.Value == value {
 			return true
@@ -106,8 +106,8 @@ func BenchmarkPaintMonitorManyDisksExpanded(b *testing.B) {
 	p.disksOpen = true
 	p.data.Disks = dockerDiskFixture(64)
 	state.formatMonitor(session.stats)
-	size := ui.Size{Width: 1280, Height: 900}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1280, Height: 900}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 
 	b.ReportAllocs()

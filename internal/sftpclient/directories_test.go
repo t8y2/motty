@@ -130,3 +130,27 @@ func TestIsPathNotFoundRecognizesAllSupportedBackendErrors(t *testing.T) {
 		})
 	}
 }
+
+type existingDirectoryRemote struct {
+	*fakeRemote
+	mkdirErr error
+}
+
+func (r *existingDirectoryRemote) Mkdir(string) error {
+	return r.mkdirErr
+}
+
+func (r *existingDirectoryRemote) Lstat(string) (os.FileInfo, error) {
+	return fakeInfo{name: "docs", mode: os.ModeDir}, nil
+}
+
+func TestCreateDirectoryDetectsExistingDirectoryWhenMkdirFails(t *testing.T) {
+	r := &existingDirectoryRemote{
+		fakeRemote: &fakeRemote{},
+		mkdirErr:   &sftp.StatusError{Code: uint32(sftp.ErrSSHFxFailure)},
+	}
+	err := createDirectory(r, "/srv/docs")
+	if !errors.Is(err, ErrDestinationExists) {
+		t.Fatalf("expected ErrDestinationExists, got %v", err)
+	}
+}

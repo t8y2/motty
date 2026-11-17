@@ -5,7 +5,8 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/text/collation"
 )
 
 var (
@@ -46,6 +47,108 @@ func (state *State) moveHostGroup(path, parent string) bool {
 	return true
 }
 
+// hostGroupMoveBesideAllowed says whether group source may be placed as the
+// sibling before or after group target: the target's parent must not be the
+// source or inside it, the two must share the pin state the order groups by,
+// and the new name must not meet another group. Reordering is only defined for
+// the manual order.
+func (state *State) hostGroupMoveBesideAllowed(source, target int) bool {
+	if state.hostOrder != hostOrderManual {
+		return false
+	}
+	if source < 0 || target < 0 || source >= len(state.hostGroups) || target >= len(state.hostGroups) || source == target {
+		return false
+	}
+	src, tgt := state.hostGroups[source], state.hostGroups[target]
+	if src.Name == "" || tgt.Name == "" || src.Pinned != tgt.Pinned {
+		return false
+	}
+	parent := hostGroupParent(tgt.Name)
+	if hostGroupWithin(parent, src.Name) {
+		return false
+	}
+	moved := joinHostGroup(parent, hostGroupLeaf(src.Name))
+	for index, group := range state.hostGroups {
+		if index != source && strings.EqualFold(group.Name, moved) {
+			return false
+		}
+	}
+	return true
+}
+
+// moveHostGroupBeside puts group source next to group target: under the target's
+// parent when the two are in different folders, then before or after the target
+// in the manual order.
+func (state *State) moveHostGroupBeside(source, target int, after bool) bool {
+	if !state.hostGroupMoveBesideAllowed(source, target) {
+		return false
+	}
+	sourceName, targetName := state.hostGroups[source].Name, state.hostGroups[target].Name
+	parent := hostGroupParent(targetName)
+	moved := joinHostGroup(parent, hostGroupLeaf(sourceName))
+	if moved != sourceName && !state.moveHostGroup(sourceName, parent) {
+		return false
+	}
+	state.orderHostGroupBeside(moved, targetName, after)
+	return true
+}
+
+// orderHostGroupBeside assigns the sibling order with path immediately before or
+// after target. The current visible order is the base, so a group dragged from
+// elsewhere lands where the line showed it.
+func (state *State) orderHostGroupBeside(path, target string, after bool) {
+	if state.hostOrder != hostOrderManual {
+		return
+	}
+	targetIndex := state.hostGroupIndex(target)
+	if targetIndex < 0 || state.hostGroupIndex(path) < 0 {
+		return
+	}
+	parent, pinned := hostGroupParent(target), state.hostGroups[targetIndex].Pinned
+	siblings := make([]int, 0, len(state.hostGroups))
+	for index, group := range state.hostGroups {
+		if group.Name != "" && hostGroupParent(group.Name) == parent && group.Pinned == pinned {
+			siblings = append(siblings, index)
+		}
+	}
+	sourceAt, targetAt := -1, -1
+	for position, index := range siblings {
+		switch state.hostGroups[index].Name {
+		case path:
+			sourceAt = position
+		case target:
+			targetAt = position
+		}
+	}
+	if sourceAt < 0 || targetAt < 0 || sourceAt == targetAt {
+		return
+	}
+	moved := siblings[sourceAt]
+	siblings = append(siblings[:sourceAt], siblings[sourceAt+1:]...)
+	targetAt = -1
+	for position, index := range siblings {
+		if state.hostGroups[index].Name == target {
+			targetAt = position
+			break
+		}
+	}
+	if targetAt < 0 {
+		return
+	}
+	insert := targetAt
+	if after {
+		insert++
+	}
+	siblings = append(siblings, 0)
+	copy(siblings[insert+1:], siblings[insert:])
+	siblings[insert] = moved
+	for position, index := range siblings {
+		state.hostGroups[index].Order = position + 1
+	}
+	state.refreshHostGroups()
+	state.save()
+}
+
 func (state *State) deleteHostGroup(path string, ungroup bool) bool {
 	if path == "" || state.hostGroupIndex(path) < 0 {
 		state.dialogError = state.messages.HostGroupActions.Missing
@@ -71,6 +174,7 @@ func (state *State) deleteHostGroup(path string, ungroup bool) bool {
 	if state.hostFilterOn && hostGroupWithin(state.hostFilter, path) {
 		state.hostFilterOn = false
 	}
+	state.queueNoteGroupChange(path, "", true)
 	state.hostDataChanged()
 	state.save()
 	return true
@@ -85,6 +189,9 @@ func (state *State) pinHostGroup(path string) {
 }
 
 func (state *State) hostGroupOrderNeighbor(path string, step int) int {
+	if state.hostOrder != hostOrderManual {
+		return -1
+	}
 	index := state.hostGroupIndex(path)
 	if index < 0 || path == "" {
 		return -1
@@ -120,7 +227,7 @@ func (state *State) reorderHostGroup(path string, step int) {
 }
 
 // The first differing sibling decides the order of two entire subtrees.
-func orderedHostGroupLess(left, right string, groups map[string]hostGroup) bool {
+func orderedHostGroupLess(collator *collation.Collator, left, right string, groups map[string]hostGroup) bool {
 	lpath, rpath := left, right
 	for {
 		l, lrest, lmore := strings.Cut(left, "/")
@@ -149,7 +256,7 @@ func orderedHostGroupLess(left, right string, groups map[string]hostGroup) bool 
 				}
 				return lg.Order < rg.Order
 			}
-			return hostGroupLess(left, right)
+			return hostGroupLess(collator, left, right)
 		}
 		if !lmore || !rmore {
 			return !lmore && rmore
@@ -170,18 +277,18 @@ func (state *State) groupDeleteChoices() [2]components.RadioOption {
 	}
 }
 
-func (state *State) paintHostGroupDeleteDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintHostGroupDeleteDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	m := state.messages.HostGroupActions
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope, DismissID: hitMoveGroupDismiss, CloseID: hitMoveGroupClose,
-		InitialFocusID: hitGroupDeleteParent, ContentSize: ui.Size{Width: 480}, FitBody: true, BodyHeight: 130,
+		InitialFocusID: hitGroupDeleteParent, ContentSize: gfx.Size{Width: 480}, FitBody: true, BodyHeight: 130,
 	})
-	description := elide(canvas, state.groupActions.path, state.Theme().Metrics.FontSizeM, ui.WeightRegular, dialog.Layout("").Header.Width)
+	description := elide(canvas, state.groupActions.path, state.Theme().Metrics.FontSizeM, gfx.WeightRegular, dialog.Layout("").Header.Width)
 	layout := dialog.Begin(m.Delete, description)
 	choices := state.groupDeleteChoices()
 	fullLabels := [2]string{choices[0].Label, choices[1].Label}
 	for index := range choices {
-		choices[index].Label = elide(canvas, choices[index].Label, state.Theme().Metrics.FontSizeM, ui.WeightMedium, layout.Body.Width-32)
+		choices[index].Label = elide(canvas, choices[index].Label, state.Theme().Metrics.FontSizeM, gfx.WeightMedium, layout.Body.Width-32)
 	}
 	selected := hitGroupDeleteParent
 	if state.groupActions.ungroup {
@@ -203,7 +310,7 @@ func (state *State) paintHostGroupDeleteDialog(canvas *ui.Canvas, viewport ui.Re
 	dialog.End()
 }
 
-func (state *State) paintHostGroupParentSelect(canvas *ui.Canvas, bounds, viewport ui.Rect) {
+func (state *State) paintHostGroupParentSelect(canvas *gfx.Canvas, bounds, viewport gfx.Rect) {
 	a, m := &state.groupActions, state.messages.HostGroupActions
 	value := state.hostGroupEditor.String()
 	if value == "" {
@@ -217,7 +324,7 @@ func (state *State) paintHostGroupParentSelect(canvas *ui.Canvas, bounds, viewpo
 	}
 	control := components.BeginSelect(canvas, state.Theme(), bounds, components.SelectOptions{
 		TriggerID: hitMoveGroupField, Label: m.Parent, Value: value, Open: a.parentOpen,
-		Content: ui.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: bounds.Width, Height: float32(8 + min(count, 8)*32)},
+		Content: gfx.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: bounds.Width, Height: float32(8 + min(count, 8)*32)},
 		Layer:   dialogLayer + 1, Scope: dialogScope, DismissID: hitGroupParentDismiss, Viewport: viewport,
 		Scroll: state.selectScroll(a.parentOpen, hitGroupParentDismiss),
 	})

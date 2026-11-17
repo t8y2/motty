@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func TestRemoteProcessTableFillsTheViewportAfterScrolling(t *testing.T) {
@@ -22,20 +22,20 @@ func TestRemoteProcessTableFillsTheViewportAfterScrolling(t *testing.T) {
 	state.remote.rows = rows
 	state.remote.processScroll = 1_000_000
 
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	state.remote.processScroll = state.remote.processScrollBar.MaxOffsetY
-	canvas = ui.Canvas{}
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	canvas = gfx.Canvas{}
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 
-	last, found := hitByID(&canvas, hitRemoteRowList.At(len(rows)-1))
-	if !found {
-		t.Fatal("the last process row is not painted at the bottom of the viewport")
-	}
 	viewport := state.remote.processScrollBar.Viewport
 	_, rowHeight := state.remoteProcessTableMetrics()
-	if last.Bounds.Y < viewport.Y-rowHeight ||
-		last.Bounds.Bottom() < viewport.Bottom()-1 {
-		t.Fatalf("last row bounds=%+v do not reach the viewport bottom=%v", last.Bounds, viewport.Bottom())
+	if state.remote.processScrollBar.MaxOffsetY <= 0 {
+		t.Fatal("the scrolled snapshot has no scroll range")
+	}
+	first := state.remote.tableBodyFirst
+	visible := int(viewport.Height/rowHeight) + 2
+	if first <= 0 || first+visible < len(rows) {
+		t.Fatalf("the last rows are not painted at the bottom: first=%d visible=%d rows=%d", first, visible, len(rows))
 	}
 }

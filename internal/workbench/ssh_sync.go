@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconfig"
 )
 
@@ -324,7 +324,7 @@ func (hash *fnvHash) text(value string) {
 }
 
 // clickSSHSync handles the controls of the setting.
-func (state *State) clickSSHSync(id ui.ID) {
+func (state *State) clickSSHSync(id gfx.ID) {
 	if leader := state.syncLeader(); leader != state {
 		leader.clickSSHSync(id)
 		state.status = leader.status

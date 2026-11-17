@@ -12,7 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/keymap"
+	"github.com/vivaui/viva/text"
 	"motty/internal/configstore"
 	"motty/internal/i18n"
 	"motty/internal/monitoring"
@@ -32,34 +34,53 @@ const shortcutSchemaVersion = 1
 type savedState struct {
 	RecentConnectSort bool                 `json:"recent_connect_sort,omitempty"`
 	RecentConnections map[string]time.Time `json:"recent_connections,omitempty"`
+	// LocalShellsExpanded keeps the new-tab picker listing the shells under the
+	// Local Terminal row once the user has opened it there.
+	LocalShellsExpanded bool `json:"local_shells_expanded,omitempty"`
 
-	MonitorPanels              []monitoring.Panel `json:"monitor_panels,omitempty"`
-	MonitorActive              string             `json:"monitor_active,omitempty"`
-	Version                    int                `json:"version"`
-	Language                   string             `json:"language,omitempty"`
-	Theme                      string             `json:"theme,omitempty"`
-	BackgroundOutputAlerts     bool               `json:"background_output_alerts,omitempty"`
-	TabOrientation             string             `json:"tab_orientation,omitempty"`
-	VerticalTabsAutoHide       bool               `json:"vertical_tabs_auto_hide,omitempty"`
-	VerticalTabsGrouping       bool               `json:"vertical_tabs_grouping,omitempty"`
-	NetworkProxy               string             `json:"network_proxy,omitempty"`
-	TerminalOption             string             `json:"terminalOption,omitempty"`
-	LocalShell                 string             `json:"local_shell,omitempty"`
-	SSHAgent                   string             `json:"ssh_agent,omitempty"`
-	SSHAgentPath               string             `json:"ssh_agent_path,omitempty"`
-	TerminalFontSize           int                `json:"terminal_font_size,omitempty"`
-	TextScale                  string             `json:"text_scale,omitempty"`
-	InterfaceFont              string             `json:"interface_font,omitempty"`
-	TerminalFontFace           string             `json:"terminal_font_face,omitempty"`
-	TerminalFontFamily         string             `json:"terminal_font_family,omitempty"`
-	TerminalFontFallbacks      []string           `json:"terminal_font_fallbacks,omitempty"`
-	TerminalScrollback         int                `json:"terminal_scrollback,omitempty"`
-	TerminalCursor             string             `json:"terminal_cursor,omitempty"`
-	ConnectionTimeoutSeconds   int                `json:"connection_timeout_seconds,omitempty"`
-	ConnectionKeepAliveSeconds int                `json:"connection_keepalive_seconds,omitempty"`
-	ConnectionReconnect        string             `json:"connection_reconnect,omitempty"`
-	RestoreConnect             string             `json:"restore_connect,omitempty"`
-	ShareConnections           string             `json:"share_connections,omitempty"`
+	MonitorPanels              []monitoring.Panel      `json:"monitor_panels,omitempty"`
+	MonitorActive              string                  `json:"monitor_active,omitempty"`
+	Version                    int                     `json:"version"`
+	Language                   string                  `json:"language,omitempty"`
+	Theme                      string                  `json:"theme,omitempty"`
+	BackgroundOutputAlerts     bool                    `json:"background_output_alerts,omitempty"`
+	TabOrientation             string                  `json:"tab_orientation,omitempty"`
+	TabNumbers                 bool                    `json:"tab_numbers,omitempty"`
+	HiddenNav                  []string                `json:"hidden_nav,omitempty"`
+	VerticalTabsAutoHide       bool                    `json:"vertical_tabs_auto_hide,omitempty"`
+	VerticalTabsGrouping       bool                    `json:"vertical_tabs_grouping,omitempty"`
+	NetworkProxy               string                  `json:"network_proxy,omitempty"`
+	TerminalOption             string                  `json:"terminalOption,omitempty"`
+	LocalShell                 string                  `json:"local_shell,omitempty"`
+	HiddenShells               []string                `json:"hidden_shells,omitempty"`
+	LocalStart                 string                  `json:"local_start,omitempty"`
+	LastLocalDirectory         string                  `json:"last_local_directory,omitempty"`
+	SSHAgent                   string                  `json:"ssh_agent,omitempty"`
+	SSHAgentPath               string                  `json:"ssh_agent_path,omitempty"`
+	TerminalFontSize           int                     `json:"terminal_font_size,omitempty"`
+	TextScale                  string                  `json:"text_scale,omitempty"` // read only: before the size was kept in pixels
+	InterfaceTextSize          int                     `json:"interface_text_size,omitempty"`
+	InterfaceFont              string                  `json:"interface_font,omitempty"`
+	InterfaceFontMain          int                     `json:"interface_font_main_weight,omitempty"`
+	InterfaceFontBold          int                     `json:"interface_font_bold_weight,omitempty"`
+	TerminalFontFace           string                  `json:"terminal_font_face,omitempty"`
+	TerminalFontFamily         string                  `json:"terminal_font_family,omitempty"`
+	TerminalFontMain           int                     `json:"terminal_font_main_weight,omitempty"`
+	TerminalFontBold           int                     `json:"terminal_font_bold_weight,omitempty"`
+	TerminalFontFallbacks      []string                `json:"terminal_font_fallbacks,omitempty"`
+	TerminalFind               terminalFindPreferences `json:"terminal_find,omitzero"`
+	TerminalScrollback         int                     `json:"terminal_scrollback,omitempty"`
+	TerminalCursor             string                  `json:"terminal_cursor,omitempty"`
+	ConnectionTimeoutSeconds   int                     `json:"connection_timeout_seconds,omitempty"`
+	ConnectionKeepAliveSeconds int                     `json:"connection_keepalive_seconds,omitempty"`
+	// ConnectionKeepAliveOff records the user's "off" choice. The interval
+	// above cannot: zero is dropped from the file, so it would be
+	// indistinguishable from never having chosen, and a state file that says
+	// nothing gets the default interval.
+	ConnectionKeepAliveOff bool   `json:"connection_keepalive_off,omitempty"`
+	ConnectionReconnect    string `json:"connection_reconnect,omitempty"`
+	RestoreConnect         string `json:"restore_connect,omitempty"`
+	ShareConnections       string `json:"share_connections,omitempty"`
 	// StartupLocal and StartupHosts are what a launch opens: a local terminal,
 	// and the saved hosts to connect, by their catalog ids.
 	StartupLocal bool     `json:"startup_local,omitempty"`
@@ -75,12 +96,15 @@ type savedState struct {
 	TerminalCursorSteady    bool                `json:"terminal_cursor_steady,omitempty"`
 	TerminalCursorThickness string              `json:"terminal_cursor_thickness,omitempty"`
 	TerminalCopyOnSelect    bool                `json:"terminal_copy_on_select,omitempty"`
+	TerminalWordSeparators  string              `json:"terminal_word_separators,omitempty"`
 	TerminalRightClickPaste bool                `json:"terminal_right_click_paste,omitempty"`
+	TabTitleMode            tabTitleMode        `json:"tab_title_mode,omitempty"`
 	TerminalTabTitle        bool                `json:"terminal_tab_title,omitempty"`
 	TerminalShowLatency     bool                `json:"terminal_show_latency,omitempty"`
 	TerminalToolbarPosition string              `json:"terminal_toolbar_position,omitempty"`
 	TerminalToolbarSize     string              `json:"terminal_toolbar_size,omitempty"`
 	TerminalBellOff         bool                `json:"terminal_bell_off,omitempty"`
+	TerminalInputClickOff   bool                `json:"terminal_input_click_off,omitempty"`
 	TerminalLinkPlainClick  bool                `json:"terminal_link_plain_click,omitempty"`
 	AIPanelWidth            float32             `json:"ai_panel_width,omitempty"`
 	AIComposerHeight        float32             `json:"ai_composer_height,omitempty"`
@@ -106,17 +130,21 @@ type savedState struct {
 	SFTPTerminalFollow      bool                `json:"sftp_terminal_follow,omitempty"`
 	SFTPPathInput           bool                `json:"sftp_path_input,omitempty"`
 	SFTPPanelAutoOpen       bool                `json:"sftp_panel_auto_open,omitempty"`
+	SFTPDirectoryTree       bool                `json:"sftp_directory_tree,omitempty"`
 	SFTPPanelSide           string              `json:"sftp_panel_side,omitempty"`
 	SFTPPanelWidth          float32             `json:"sftp_panel_width,omitempty"`
 	SFTPWindowOrder         string              `json:"sftp_window_order,omitempty"`
 	SFTPOpenMode            string              `json:"sftp_open_mode,omitempty"`
 	SFTPColumns             string              `json:"sftp_columns,omitempty"`
 	SFTPDownloadDirectory   string              `json:"sftp_download_directory,omitempty"`
+	SFTPTransferFilter      int                 `json:"sftp_transfer_filter,omitempty"`
 	DefaultEditor           string              `json:"default_editor,omitempty"` // this computer's editor for remote folders
 	CustomEditorPath        string              `json:"custom_editor_path,omitempty"`
 	Toolbars                *savedToolbars      `json:"toolbars,omitempty"`
 	UpdateCheck             string              `json:"update_check,omitempty"`
 	CloseAction             string              `json:"close_action,omitempty"`
+	RelaunchAction          string              `json:"relaunch_action,omitempty"`
+	TrayHintShown           bool                `json:"tray_hint_shown,omitempty"`
 	UpdateSkipped           string              `json:"update_skipped,omitempty"`
 	SFTPBookmarks           []savedBookmark     `json:"sftp_bookmarks,omitempty"`
 	SFTPLocalBookmarks      []string            `json:"sftp_local_bookmarks,omitempty"`
@@ -126,8 +154,18 @@ type savedState struct {
 	Snippets                []savedSnippet      `json:"snippets,omitempty"`
 	SnippetShortcuts        []savedSnippetKey   `json:"snippet_shortcuts,omitempty"`
 	Autofill                []savedAutofill     `json:"autofill_rules,omitempty"`
+	Credentials             []savedCredential   `json:"credentials,omitempty"`
 	CommandHistory          bool                `json:"command_history,omitempty"`
 	CommandSuggestOff       bool                `json:"command_suggest_off,omitempty"`
+	CommandAcceptHintOff    bool                `json:"command_accept_hint_off,omitempty"`
+	// CommandCompletionMode is the completion mode as one value: "off", "list"
+	// (automatic) or "inline". It is absent in a file written before the modes
+	// were named; the two booleans are then read instead.
+	CommandCompletionMode string             `json:"command_completion_mode,omitempty"`
+	NoteSidebars          *savedNoteSidebars `json:"note_sidebars,omitempty"`
+	NoteView              savedNoteView      `json:"notes_view,omitempty"`
+	Notes                 []savedNote        `json:"notes,omitempty"`
+	NoteFolders           []savedNoteFolder  `json:"note_folders,omitempty"`
 	// SessionLogsOff stops the local session journal. Unset means capture is on;
 	// it belongs to this computer and is never synced.
 	SessionLogsOff          bool                  `json:"session_logs_off,omitempty"`
@@ -135,31 +173,56 @@ type savedState struct {
 	CommandInlineSuggestOff bool                  `json:"command_inline_suggest_off,omitempty"`
 	LocalProxyPort          int                   `json:"local_proxy_port,omitempty"`
 	ShortcutVersion         int                   `json:"shortcut_version,omitempty"`
-	Shortcuts               []savedShortcut       `json:"shortcuts,omitempty"`
-	Workspace               string                `json:"workspace,omitempty"`
-	ActiveSession           int                   `json:"active_session,omitempty"`
-	HostCatalogVersion      int                   `json:"host_catalog_version"`
-	Hosts                   []savedHost           `json:"hosts"`
-	HostGroups              []savedHostGroup      `json:"host_groups,omitempty"`
-	WorkspaceTemplates      []WorkspaceTemplate   `json:"workspace_templates,omitempty"`
-	IdentityFiles           []string              `json:"identity_files,omitempty"`
+	// ShortcutDefaultsGeneration is the generation of default chords this
+	// device last reconciled its table against. A build that changes a default
+	// migrates the chords still holding the old one once, and records that it
+	// did, so a chord the user later sets back to the old default stays put.
+	ShortcutDefaultsGeneration int                 `json:"shortcut_defaults_generation,omitempty"`
+	Shortcuts                  []savedShortcut     `json:"shortcuts,omitempty"`
+	Workspace                  string              `json:"workspace,omitempty"`
+	ActiveSession              int                 `json:"active_session,omitempty"`
+	HostCatalogVersion         int                 `json:"host_catalog_version"`
+	Hosts                      []savedHost         `json:"hosts"`
+	HostGroups                 []savedHostGroup    `json:"host_groups,omitempty"`
+	WorkspaceTemplates         []WorkspaceTemplate `json:"workspace_templates,omitempty"`
+	IdentityFiles              []string            `json:"identity_files,omitempty"`
 	// AgentHosts are the catalog ids of the hosts an agent may use without a
-	// window. It belongs to this computer, not to the hosts that sync, so a host
-	// that arrives from another device starts out closed to agents.
-	AgentHosts []string            `json:"agent_hosts,omitempty"`
-	Forwards   []savedForward      `json:"forwards,omitempty"`
-	Proxies    []savedProxy        `json:"proxies,omitempty"`
-	Sessions   []savedSession      `json:"sessions,omitempty"`
-	Deck       *layoutcore.DeckDTO `json:"deck,omitempty"`
+	// window. AgentHostMode records the last bulk choice and the default for new
+	// hosts. Both belong to this computer, not to the hosts that sync.
+	AgentHosts    []string            `json:"agent_hosts,omitempty"`
+	AgentHostMode string              `json:"agent_host_mode,omitempty"`
+	Forwards      []savedForward      `json:"forwards,omitempty"`
+	Proxies       []savedProxy        `json:"proxies,omitempty"`
+	Sessions      []savedSession      `json:"sessions,omitempty"`
+	Deck          *layoutcore.DeckDTO `json:"deck,omitempty"`
 	// An empty array distinguishes a new snapshot with no managed workspaces
 	// from an older snapshot that never recorded workspace identity.
 	WorkspaceLayouts []savedWorkspaceLayout `json:"workspace_layouts,omitzero"`
 	Sync             *savedSync             `json:"sync,omitempty"`
-	HostView         string                 `json:"host_view,omitempty"`
-	Background       *savedBackground       `json:"background,omitempty"`
+	// SyncExcluded is this computer's selection of what cloud sync exchanges,
+	// stored as the closed categories. It is device-local: it never becomes a
+	// shared record, and a computer without it syncs everything.
+	SyncExcluded           []syncCategory   `json:"sync_excluded,omitempty"`
+	HostView               string           `json:"host_view,omitempty"`
+	HostOrder              string           `json:"host_order,omitempty"`
+	HostSideWidth          float32          `json:"host_side_width,omitempty"`
+	HostTreeOpen           bool             `json:"host_tree_open,omitempty"`
+	HiddenHostTags         []string         `json:"hidden_host_tags,omitempty"`
+	HostPrivacy            bool             `json:"host_privacy,omitempty"`
+	HostPrivacyShowName    bool             `json:"host_privacy_show_name,omitempty"`
+	HostPrivacyShowAddress bool             `json:"host_privacy_show_address,omitempty"`
+	HostPrivacyShowUser    bool             `json:"host_privacy_show_user,omitempty"`
+	Background             *savedBackground `json:"background,omitempty"`
 	// Provider collections are nil while the assistant's database is unread.
 	AIProviders    *[]savedAIProvider `json:"ai_providers,omitempty"`
 	AICLIProviders *[]savedAIProvider `json:"ai_cli_providers,omitempty"`
+
+	// The bottom command bar's own layout: whether it is hidden, the snippet
+	// groups it filters out (keyed by lowercased name; "" means ungrouped), and
+	// the order of its chips. A fresh state shows every group in list order.
+	CommandsShown        bool     `json:"commands_shown,omitempty"`
+	CommandsHiddenGroups []string `json:"commands_hidden_groups,omitempty"`
+	CommandsSort         string   `json:"commands_sort,omitempty"`
 }
 
 type savedOutboundProxy struct {
@@ -183,6 +246,8 @@ type savedSnippet struct {
 	Name    string `json:"name"`
 	Command string `json:"command"`
 	Run     bool   `json:"run,omitempty"`
+	Group   string `json:"group,omitempty"`
+	Order   int    `json:"order,omitempty"`
 }
 
 // savedSnippetKey is the shortcut of the snippet of that name. It lives apart
@@ -241,12 +306,22 @@ type savedForward struct {
 	// again. It is off unless chosen, so a forward saved before it existed
 	// stops on a lost connection as it always did.
 	Resume bool `json:"resume,omitempty"`
+	// ViaShell and Relay carry each connection through a relay program run in a
+	// shell on the host, for a server that refuses forwarded channels. Both are
+	// absent unless chosen.
+	ViaShell bool   `json:"via_shell,omitempty"`
+	Relay    string `json:"relay_command,omitempty"`
 }
 
 type savedProxy struct {
 	// ID is the number this route is known by in a window, written for the same
 	// reason as savedForward.ID. Zero means a record older than this field.
-	ID            uint32 `json:"id,omitempty"`
+	ID uint32 `json:"id,omitempty"`
+	// TargetID and JumpID are the catalog IDs of the two hosts. The addresses
+	// are written too, for a build that predates them and for a route saved
+	// without them; they cannot tell apart hosts that share a destination.
+	TargetID      string `json:"target_id,omitempty"`
+	JumpID        string `json:"jump_id,omitempty"`
 	TargetAddress string `json:"target_address"`
 	TargetUser    string `json:"target_user,omitempty"`
 	TargetPort    uint16 `json:"target_port"`
@@ -259,15 +334,28 @@ type savedProxy struct {
 }
 
 type savedSession struct {
-	Label     string `json:"label,omitempty"`
+	WorkspaceCommand WorkspaceCommand `json:"workspace_command,omitzero"`
+	Label            string           `json:"label,omitempty"`
+	// Mention is the session's unique @ name; absent in older files and then
+	// derived from Label when the session is restored.
+	Mention   string `json:"mention,omitempty"`
 	Address   string `json:"address"`
 	User      string `json:"user,omitempty"`
 	Port      uint16 `json:"port,omitempty"`
 	System    string `json:"system,omitempty"`
 	SavedHost bool   `json:"saved_host,omitempty"`
+	// CatalogID is the saved host this tab was opened on. It is what finds the
+	// host again, because several hosts may share one address (a bastion host
+	// with a target behind it each); a tab saved before it existed is found by its
+	// destination.
+	CatalogID string `json:"catalog_id,omitempty"`
 	// Local marks a shell on this computer: it has no address to dial.
-	Local          bool   `json:"local,omitempty"`
+	Local bool `json:"local,omitempty"`
+	// LocalDirectory is the local shell's last trusted directory.
 	LocalDirectory string `json:"local_directory,omitempty"`
+	// RemoteDirectory is the remote shell's last trusted directory, which the
+	// next integrated shell starts in.
+	RemoteDirectory string `json:"remote_directory,omitempty"`
 	// LocalShell is the shell this local tab was opened with; empty follows the default.
 	LocalShell string `json:"local_shell,omitempty"`
 	savedTransport
@@ -420,6 +508,7 @@ func writeFileAtomic(path string, data []byte) error {
 
 // snapshot is the state as it should be saved right now.
 func (state *State) snapshot() savedState {
+	state.flushNoteDraft()
 	savedAgent, savedAgentPath := state.sshAgent.saved()
 	saved := savedState{
 		MonitorPanels:              state.dashboard.panelDefinitions(),
@@ -429,25 +518,37 @@ func (state *State) snapshot() savedState {
 		Theme:                      state.appearanceMode.saved(),
 		BackgroundOutputAlerts:     state.backgroundOutputAlerts,
 		TabOrientation:             state.tabOrientation.String(),
+		TabNumbers:                 state.tabNumbers,
+		HiddenNav:                  state.hiddenNav.savedKeys(),
 		VerticalTabsAutoHide:       state.verticalTabs.autoHide,
 		VerticalTabsGrouping:       state.verticalTabs.grouping,
 		NetworkProxy:               state.networkProxy.String(),
 		TerminalOption:             state.terminalOption.String(),
 		LocalShell:                 state.localShell,
+		HiddenShells:               slices.Clone(state.hiddenShells),
+		LocalStart:                 state.localStart.String(),
+		LastLocalDirectory:         state.lastLocalDirectory,
 		RecentConnectSort:          state.recentConnectSort,
+		LocalShellsExpanded:        state.localShellsExpanded,
 		RecentConnections:          maps.Clone(state.recentConnections),
 		SSHAgent:                   savedAgent,
 		SSHAgentPath:               savedAgentPath,
 		TerminalFontSize:           int(state.terminalFontSize),
-		TextScale:                  state.textScale.String(),
+		InterfaceTextSize:          int(state.interfaceTextSize),
 		InterfaceFont:              state.uiFont.family,
+		InterfaceFontMain:          state.uiFont.main,
+		InterfaceFontBold:          state.uiFont.bold,
 		TerminalFontFace:           terminalFontFaceString(state.fonts.classic),
 		TerminalFontFamily:         state.fonts.family,
+		TerminalFontMain:           state.fonts.main,
+		TerminalFontBold:           state.fonts.bold,
 		TerminalFontFallbacks:      slices.Clone(state.fonts.fallbacks),
+		TerminalFind:               state.terminalFindPrefs,
 		TerminalScrollback:         state.terminalScrollback,
 		TerminalCursor:             state.terminalCursorStyle.String(),
 		ConnectionTimeoutSeconds:   int(state.connectionTimeout / time.Second),
 		ConnectionKeepAliveSeconds: int(state.connectionKeepAlive / time.Second),
+		ConnectionKeepAliveOff:     state.connectionKeepAlive == 0,
 		ConnectionReconnect:        state.connectionReconnect.String(),
 		RestoreConnect:             state.restoreConnect.String(),
 		ShareConnections:           state.shareConnections.String(),
@@ -460,12 +561,14 @@ func (state *State) snapshot() savedState {
 		TerminalCursorSteady:       state.terminalCursorSteady,
 		TerminalCursorThickness:    state.terminalCursorThickness.String(),
 		TerminalCopyOnSelect:       state.terminalCopyOnSelect,
+		TerminalWordSeparators:     state.terminalWordSeparators,
 		TerminalRightClickPaste:    state.terminalRightClickPaste,
-		TerminalTabTitle:           state.terminalTabTitle,
+		TabTitleMode:               state.tabTitleMode,
 		TerminalShowLatency:        state.terminalShowLatency,
 		TerminalToolbarPosition:    state.terminalToolbarPosition.String(),
 		TerminalToolbarSize:        state.terminalToolbarSize.String(),
 		TerminalBellOff:            state.terminalBellOff,
+		TerminalInputClickOff:      state.terminalInputClickOff,
 		TerminalLinkPlainClick:     state.terminalLinkPlainClick,
 		AIPanelWidth:               state.ai.panelWidth,
 		AIComposerHeight:           state.ai.composerHeight,
@@ -482,6 +585,8 @@ func (state *State) snapshot() savedState {
 		TerminalCloseConfirm:       notifyString(state.closeConfirmOff),
 		CommandHistory:             state.history.on,
 		CommandSuggestOff:          state.history.suggestOff,
+		CommandCompletionMode:      state.completionMode().persistName(),
+		CommandAcceptHintOff:       state.history.acceptHintOff,
 		SessionLogsOff:             state.sessionLogsOff,
 		SessionLogsView:            state.snapshotSessionLogsView(),
 		CommandInlineSuggestOff:    state.history.inlineOff,
@@ -491,25 +596,30 @@ func (state *State) snapshot() savedState {
 		SFTPTerminalFollow:         state.sftpTerminalFollow,
 		SFTPPathInput:              state.sftpPathInput,
 		SFTPPanelAutoOpen:          state.sftpPanelAutoOpen,
+		SFTPDirectoryTree:          state.sftpDirectoryTree,
 		SFTPPanelSide:              sftpPanelSideString(state.sftpPanelSide),
 		SFTPPanelWidth:             state.sftpPanelWidth,
 		SFTPWindowOrder:            state.sftpWindowOrder.String(),
 		SFTPOpenMode:               state.sftpOpenMode.String(),
 		SFTPColumns:                state.sftpColumns.String(),
 		SFTPDownloadDirectory:      savedSFTPDownloadDirectory(state.sftpDownloadDirectory),
+		SFTPTransferFilter:         state.transfers.filter,
 		DefaultEditor:              string(state.defaultEditor),
 		CustomEditorPath:           state.customEditorPath,
 		Toolbars:                   state.toolbars.snapshot(),
 		UpdateCheck:                updateCheckString(state.updateAtStart),
 		CloseAction:                state.closeAction.String(),
+		RelaunchAction:             state.relaunchAction.String(),
+		TrayHintShown:              state.trayHintShown,
 		UpdateSkipped:              state.update.skipped,
 		ShortcutVersion:            shortcutSchemaVersion,
+		ShortcutDefaultsGeneration: shortcutDefaultsGeneration,
 		Shortcuts:                  make([]savedShortcut, 0, shortcutActionCount-1),
 		Workspace:                  state.workspaceName(),
 		HostCatalogVersion:         hostCatalogSchemaVersion,
 		Hosts:                      make([]savedHost, 0, len(state.hosts)),
 		HostGroups:                 make([]savedHostGroup, 0, len(state.hostGroups)),
-		WorkspaceTemplates:         slices.Clone(state.templates),
+		WorkspaceTemplates:         cloneWorkspaceTemplates(state.templates),
 		IdentityFiles:              make([]string, 0, len(state.identities)),
 		Forwards:                   make([]savedForward, 0, len(state.forwards)),
 		Proxies:                    make([]savedProxy, 0, len(state.proxies)),
@@ -533,13 +643,23 @@ func (state *State) snapshot() savedState {
 		})
 	}
 	saved.Autofill = state.savedAutofillRules()
-	for _, entry := range state.snippets.list {
-		saved.Snippets = append(saved.Snippets, savedSnippet{Name: entry.Name, Command: entry.Command, Run: entry.Run})
-		if entry.Shortcut.valid() {
+	saved.Credentials = state.savedCredentials()
+	saved.NoteView = state.savedNotesView()
+	saved.NoteSidebars = state.savedNoteSidebars()
+	saved.Notes = append([]savedNote(nil), state.notes.list...)
+	saved.NoteFolders = append([]savedNoteFolder(nil), state.notes.folders...)
+	for index, entry := range state.snippets.list {
+		saved.Snippets = append(saved.Snippets, savedSnippet{Name: entry.Name, Command: entry.Command, Run: entry.Run, Group: entry.Group, Order: index})
+		if entry.Shortcut.Valid() {
 			saved.SnippetShortcuts = append(saved.SnippetShortcuts, savedSnippetKey{
-				Name: entry.Name, Key: string([]byte{entry.Shortcut.Key}), Modifiers: uint8(entry.Shortcut.Modifiers),
+				Name: entry.Name, Key: string([]byte{entry.Shortcut.Char}), Modifiers: uint8(entry.Shortcut.Modifiers),
 			})
 		}
+	}
+	saved.CommandsShown = state.commands.shown
+	saved.CommandsSort = state.commands.sort.String()
+	for key := range state.commands.hiddenGroups {
+		saved.CommandsHiddenGroups = append(saved.CommandsHiddenGroups, key)
 	}
 	if state.proxy.kind != sshconn.ProxyNone || state.proxy.bypass != "" {
 		saved.OutboundProxy = &savedOutboundProxy{
@@ -547,11 +667,12 @@ func (state *State) snapshot() savedState {
 		}
 	}
 	for action := shortcutAction(1); action < shortcutActionCount; action++ {
-		chord := state.shortcuts.chords[action]
+		chord := state.shortcuts.chords.Chord(action)
 		saved.Shortcuts = append(saved.Shortcuts, savedShortcut{
-			Action: action.String(), Key: chord.savedKey(), Modifiers: uint8(chord.Modifiers),
+			Action: action.String(), Key: chord.Name(), Modifiers: uint8(chord.Modifiers),
 		})
 	}
+	saved.AgentHostMode = state.agentHostMode.saved()
 	for _, host := range state.hosts {
 		saved.Hosts = append(saved.Hosts, savedHost{
 			ID: host.CatalogID, Label: host.Label, Group: host.Group, Tags: splitHostTags(host), Icon: host.Icon.String(), Color: host.Color,
@@ -572,7 +693,7 @@ func (state *State) snapshot() savedState {
 		}
 	}
 	for _, bookmark := range state.sftpBookmarks {
-		saved.SFTPBookmarks = append(saved.SFTPBookmarks, savedBookmark{Host: bookmark.host, Path: bookmark.path, Name: bookmark.name, Local: bookmark.local, Shared: bookmark.shared})
+		saved.SFTPBookmarks = append(saved.SFTPBookmarks, savedBookmark{Host: bookmark.host, Path: bookmark.path, Name: bookmark.name, Local: bookmark.local, Shared: bookmark.shared, Sync: bookmark.sync})
 	}
 	saved.SFTPLocalBookmarks = slices.Clone(state.sftpLocalBookmarks)
 	for _, group := range state.hostGroups {
@@ -588,7 +709,7 @@ func (state *State) snapshot() savedState {
 			ID: forward.ID, Label: forward.Label, Mode: forward.savedMode(), HostLabel: forward.HostLabel, HostAddress: forward.HostAddress,
 			HostUser: forward.HostUser, HostPort: forward.HostPort, LocalPort: forward.LocalPort,
 			DestinationHost: forward.DestinationHost, DestinationPort: forward.DestinationPort,
-			Resume: forward.Resume,
+			Resume: forward.Resume, ViaShell: forward.ViaShell, Relay: forward.Relay,
 		})
 	}
 	for _, route := range state.proxies {
@@ -598,7 +719,7 @@ func (state *State) snapshot() savedState {
 			continue
 		}
 		saved.Proxies = append(saved.Proxies, savedProxy{
-			ID: route.ID, TargetAddress: target.Address, TargetUser: target.User, TargetPort: target.Port,
+			ID: route.ID, TargetID: target.CatalogID, JumpID: jump.CatalogID, TargetAddress: target.Address, TargetUser: target.User, TargetPort: target.Port,
 			JumpAddress: jump.Address, JumpUser: jump.User, JumpPort: jump.Port, Stopped: route.Stopped,
 			ViaShell: route.ViaShell, RelayCommand: route.Relay,
 		})
@@ -609,16 +730,18 @@ func (state *State) snapshot() savedState {
 			continue
 		}
 		if session.isLocal() {
-			saved.Sessions = append(saved.Sessions, savedSession{Label: session.Title, Local: true, LocalDirectory: session.localDirectory, LocalShell: session.host.localShell})
+			saved.Sessions = append(saved.Sessions, savedSession{Label: session.Title, Mention: session.Mention, Local: true, LocalDirectory: session.localDirectory, LocalShell: session.host.localShell})
 			if session.ID == state.activeSessionID {
 				saved.ActiveSession = len(saved.Sessions)
 			}
 			continue
 		}
 		saved.Sessions = append(saved.Sessions, savedSession{
-			Label: session.Title, Address: session.host.Address, User: session.host.User,
+			Label: session.Title, Mention: session.Mention, Address: session.host.Address, User: session.host.User,
 			Port: session.host.Port, System: session.host.System.String(), SavedHost: session.HostID != 0,
-			savedTransport: session.host.transport(),
+			CatalogID: session.savedCatalogID(), RemoteDirectory: session.startDirectory,
+			WorkspaceCommand: session.workspaceCommand,
+			savedTransport:   session.host.transport(),
 		})
 		if session.ID == state.activeSessionID {
 			saved.ActiveSession = len(saved.Sessions)
@@ -627,7 +750,16 @@ func (state *State) snapshot() savedState {
 	saved.AIProviders = state.savedAIProviders()
 	saved.AICLIProviders = state.savedAICLIProviders()
 	saved.Sync = state.savedSyncValue()
+	saved.SyncExcluded = state.syncScope.excludedCopy()
 	saved.HostView = state.hostView.saved()
+	saved.HostOrder = state.hostOrder.saved()
+	saved.HostSideWidth = state.hostSide.width
+	saved.HostTreeOpen = state.hostSide.open
+	saved.HiddenHostTags = state.hiddenHostTags
+	saved.HostPrivacy = state.hostPrivacy.enabled
+	saved.HostPrivacyShowName = !state.hostPrivacy.maskName
+	saved.HostPrivacyShowAddress = !state.hostPrivacy.maskAddress
+	saved.HostPrivacyShowUser = !state.hostPrivacy.maskUser
 	saved.Background = state.savedBackgroundValue()
 	if len(state.workspaceTabs) > 0 {
 		deck := state.savedWorkspaceDeck()
@@ -660,14 +792,51 @@ func (state *State) saveWithResult() error {
 // file stays as it is and the notice comes back on each change. flushSync is
 // false for a caller that schedules the sync itself.
 func (state *State) saveWithResultMode(flushSync bool) (saveErr error) {
+	return state.saveWithResultModeRecovery(flushSync, true, true)
+}
+
+// saveWithResultWithoutRefresh is for a save made while another store holds a
+// lock that must not be re-entered. A conflict is returned to the caller, which
+// can reload shared state after releasing that lock.
+func (state *State) saveWithResultWithoutRefresh() (saveErr error) {
+	return state.saveWithResultModeRecovery(false, false, true)
+}
+
+func (state *State) saveWithResultModeRecovery(flushSync, refreshConflict, notify bool) (saveErr error) {
+	defer func() {
+		message := state.noteSaveFailure()
+		unsaved := state.hasUnsavedNotes()
+		// Pending note text is not by itself a failure: a draft inside an IME
+		// composition is deliberately left unflushed by flushNoteBuffer, and a
+		// save made through pauseSave never reached the store. Only a write the
+		// store actually refused may claim the notes could not be saved.
+		failed := saveErr != nil && unsaved && state.config != nil && state.pauseSave == 0
+		for id, d := range state.noteDrafts() {
+			if state.noteIndex(id) < 0 {
+				continue
+			}
+			if !failed && d.problem == message {
+				d.problem = ""
+			}
+			if failed && d.problem == "" {
+				d.problem = message
+			}
+		}
+		if !failed && state.notes.error == message {
+			state.notes.error = ""
+		}
+		if failed && state.notes.error == "" {
+			state.notes.error = message
+		}
+	}()
 	defer func() {
 		if flushSync && saveErr == nil {
 			state.sshSyncFlush()
 		}
 	}()
 	previous := state.status
-	err := state.persistSnapshot(flushSync)
-	if err == nil || !errors.Is(err, configstore.ErrConflict) || state.saveRetrying {
+	err := state.persistSnapshot(flushSync, notify)
+	if err == nil || !errors.Is(err, configstore.ErrConflict) || state.saveRetrying || !refreshConflict {
 		return err
 	}
 	// Another window changed what this save was built on. Its shared records win,
@@ -702,7 +871,9 @@ func (state *State) saveWithResultMode(flushSync bool) (saveErr error) {
 	// This save replaced the store the other windows were built on, so the ones
 	// showing configuration it changed have to read it back, exactly as a save
 	// that did not have to retry does.
-	state.configurationSaved(changedSavedFields(state.lastSaved, snapshot), false, flushSync)
+	if notify {
+		state.configurationSaved(changedSavedFields(state.lastSaved, snapshot), false, flushSync)
+	}
 	state.lastSaved, state.hasSaved = snapshot, true
 	state.status = previous
 	return nil
@@ -710,7 +881,7 @@ func (state *State) saveWithResultMode(flushSync bool) (saveErr error) {
 
 // persistSnapshot writes what changed since the last save and reports why it
 // could not be written.
-func (state *State) persistSnapshot(flushSync bool) error {
+func (state *State) persistSnapshot(flushSync, notify bool) error {
 	if state.saveBlocked {
 		if state.modal == modalNone {
 			state.modal = modalStateNotice
@@ -737,7 +908,9 @@ func (state *State) persistSnapshot(flushSync bool) error {
 				return err
 			}
 			state.lastSaved, state.hasSaved = snapshot, true
-			state.configurationSaved(changes, shared, flushSync)
+			if notify {
+				state.configurationSaved(changes, shared, flushSync)
+			}
 			return nil
 		}
 	}
@@ -747,7 +920,9 @@ func (state *State) persistSnapshot(flushSync bool) error {
 		return err
 	}
 	state.lastSaved, state.hasSaved = snapshot, true
-	state.configurationSaved(changes, shared, flushSync)
+	if notify {
+		state.configurationSaved(changes, shared, flushSync)
+	}
 	return nil
 }
 
@@ -768,12 +943,31 @@ func (state *State) configurationSaved(changes []savedFieldChange, shared, flush
 // sessions and the layout it left open.
 func (state *State) restore(saved savedState) {
 	state.restoreSettings(saved)
+	// A build that changed a default chord migrates the bindings still holding
+	// the old one, once. It runs here rather than in restoreSettings because only
+	// a start writes back: another window's change, and a reload, must leave the
+	// table as it is. The chords a snippet already holds keep their owner, and a
+	// table with nothing saved has no stale default to migrate — its defaults are
+	// this build's already, so a first run writes nothing.
+	staleDefaults := saved.ShortcutDefaultsGeneration < shortcutDefaultsGeneration && len(saved.Shortcuts) > 0
+	if staleDefaults {
+		state.shortcuts.migrateChangedDefaults(func(chord keymap.Chord) bool {
+			return state.snippetNamed(chord) != ""
+		})
+	}
 	state.stopAppearanceWatch = state.options.WatchSystemAppearance(state.systemAppearanceChanged)
 	sourceSessions := state.restoreSessions(saved.Sessions, saved.ActiveSession)
 	state.restoreWorkspaceDeck(saved.Deck, sourceSessions)
 	state.restoreWorkspaceLayouts(saved.WorkspaceLayouts)
 	state.rebuildTabOptions()
 	state.restoreWorkspace(saved.Workspace)
+	state.restoreNoteSidebars(saved.NoteSidebars, saved.NoteView.Panel)
+	if state.mergedHosts || staleDefaults {
+		// What was folded into another host is still in the store, and so is the
+		// generation this table was reconciled against: record both so the next
+		// start, and every other device, need not do it again.
+		state.save()
+	}
 }
 
 // restoreSettings applies the settings and the catalogs of a saved state, and
@@ -827,17 +1021,25 @@ func (state *State) reloadSettings() error {
 // restoreLocal applies what belongs to this computer: the language and look, the
 // fonts, what it does at start, the keys it has, the cloud account, the picture.
 func (state *State) restoreLocal(saved savedState) {
+	state.restoreNotesView(saved.NoteView)
+	state.notes.selected = saved.NoteView.Selected
+	state.notes.folder = saved.NoteView.Folder
 	state.restoreDashboard(saved.MonitorPanels, saved.MonitorActive)
 	state.backgroundOutputAlerts = saved.BackgroundOutputAlerts
 	state.setTabOrientation(tabOrientationFromString(saved.TabOrientation))
+	state.setTabNumbers(saved.TabNumbers)
+	state.hiddenNav = hiddenNavPages(saved.HiddenNav)
 	state.setVerticalTabsAutoHide(saved.VerticalTabsAutoHide)
 	state.setVerticalTabsGrouping(saved.VerticalTabsGrouping)
 	state.restoreSFTPLocalFavorites(saved.SFTPLocalBookmarks)
 	state.toolbars.restore(saved.Toolbars)
+	state.terminalFindPrefs = saved.TerminalFind.normalized()
 	state.terminalToolbarPosition = terminalToolbarPositionFromString(saved.TerminalToolbarPosition)
 	state.terminalToolbarSize = terminalToolbarSizeFromString(saved.TerminalToolbarSize)
 	state.localShell = saved.LocalShell
+	state.hiddenShells = cleanShellPaths(saved.HiddenShells)
 	state.recentConnectSort = saved.RecentConnectSort
+	state.localShellsExpanded = saved.LocalShellsExpanded
 	state.recentConnections = maps.Clone(saved.RecentConnections)
 	state.sessionLogsOff = saved.SessionLogsOff
 	state.restoreSessionLogsView(saved.SessionLogsView)
@@ -869,23 +1071,37 @@ func (state *State) restoreLocal(saved savedState) {
 	state.networkProxy = networkProxyModeFromString(saved.NetworkProxy)
 	state.syncNativeAppearance()
 	// The theme setAppearance builds copies the metrics by value, so the saved
-	// text scale must be in effect before it runs.
-	state.textScale = textScaleFromString(saved.TextScale)
-	applyTextMetrics(state.textScale.factor())
+	// text size must be in effect before it runs.
+	state.interfaceTextSize = normalizeInterfaceTextSize(saved.InterfaceTextSize)
+	if saved.InterfaceTextSize == 0 {
+		// A state from before the size was kept in pixels names one of three
+		// steps only: it becomes the body size that step drew.
+		if legacy, ok := interfaceTextSizeFromLegacy(saved.TextScale); ok {
+			state.interfaceTextSize = legacy
+		}
+	}
+	applyTextMetrics(state.interfaceTextSize.factor())
 	state.setAppearance(state.resolveAppearance())
 	state.setTerminalFontSize(float32(saved.TerminalFontSize))
 	// Only the choice: what is in effect is decided once the window starts, when
 	// the platform has been asked what it can follow (validateInterfaceFont).
 	state.uiFont.family = strings.TrimSpace(saved.InterfaceFont)
-	state.fonts.family, state.fonts.classic = "", terminalFontFaceFromString(saved.TerminalFontFace) == ui.MonoClassic
-	if family := strings.TrimSpace(saved.TerminalFontFamily); family != "" && ui.MonoFamily(family) != ui.MonoSystem {
+	state.uiFont.main, state.uiFont.bold = saved.InterfaceFontMain, saved.InterfaceFontBold
+	state.fonts.family, state.fonts.classic = "", terminalFontFaceFromString(saved.TerminalFontFace) == gfx.MonoClassic
+	if family := strings.TrimSpace(saved.TerminalFontFamily); family != "" && gfx.MonoFamily(family) != gfx.MonoSystem {
 		state.fonts.family, state.fonts.classic = family, false
 	}
+	state.fonts.main, state.fonts.bold = saved.TerminalFontMain, saved.TerminalFontBold
 	// Kept as saved, whatever this computer has installed: a copy carried to another
 	// computer comes back with the choice it was given.
 	state.fonts.fallbacks = cleanFallbackFonts(saved.TerminalFontFallbacks, state.fonts.family)
 	state.applyTerminalFace()
 	state.restoreConnect = restoreConnectPolicyFromString(saved.RestoreConnect)
+	state.localStart = localStartPolicyFromString(saved.LocalStart)
+	state.lastLocalDirectory = ""
+	if validLocalDirectory(saved.LastLocalDirectory) {
+		state.lastLocalDirectory = filepath.Clean(saved.LastLocalDirectory)
+	}
 	state.shareConnections = shareConnectionsPolicyFromString(saved.ShareConnections)
 	state.startupLocal = saved.StartupLocal
 	state.startupShell = saved.StartupShell
@@ -904,10 +1120,20 @@ func (state *State) restoreLocal(saved savedState) {
 	}
 	state.restoreIdentities(saved.IdentityFiles)
 	state.agentHosts = agentHostSet(saved.AgentHosts)
+	state.agentHostMode = agentHostModeFromSaved(saved.AgentHostMode)
 	state.restoreSync(saved.Sync)
+	state.syncScope = newSyncScope(saved.SyncExcluded)
 	state.hostView = hostViewFromString(saved.HostView)
+	if saved.HostSideWidth >= hostSideMinWidth && saved.HostSideWidth <= hostSideMaxWidth {
+		state.hostSide.width = saved.HostSideWidth
+	}
+	state.hostSide.open = saved.HostTreeOpen
+	state.hostPrivacy.enabled = saved.HostPrivacy
+	state.hostPrivacy.maskName = !saved.HostPrivacyShowName
+	state.hostPrivacy.maskAddress = !saved.HostPrivacyShowAddress
+	state.hostPrivacy.maskUser = !saved.HostPrivacyShowUser
 	if saved.WindowWidth > 0 && saved.WindowHeight > 0 {
-		state.restoreWindowFrame(ui.Rect{
+		state.restoreWindowFrame(gfx.Rect{
 			X: float32(saved.WindowX), Y: float32(saved.WindowY),
 			Width: float32(saved.WindowWidth), Height: float32(saved.WindowHeight),
 		})
@@ -920,6 +1146,14 @@ func (state *State) restoreLocal(saved savedState) {
 // its place for the sessions that use it, and a forward that is still wanted
 // keeps running.
 func (state *State) restoreShared(saved savedState) {
+	state.hostOrder = hostOrderFromString(saved.HostOrder)
+	state.hiddenHostTags = normalizeHiddenHostTags(saved.HiddenHostTags)
+	if state.hostOrder != hostOrderManual {
+		state.hostSort.enabled = false
+		state.hostSort.grid.Cancel()
+	}
+	state.restoreNotes(saved.Notes, saved.NoteFolders)
+	state.noteLinksRestored()
 	state.terminalOption = terminalOptionModeFromString(saved.TerminalOption)
 	state.shortcuts = restoreShortcuts(saved.Shortcuts)
 	state.setTerminalScrollback(normalizeTerminalScrollback(saved.TerminalScrollback))
@@ -931,16 +1165,27 @@ func (state *State) restoreShared(saved savedState) {
 	state.terminalCursorSteady = saved.TerminalCursorSteady
 	state.terminalCursorThickness = cursorThicknessFromString(saved.TerminalCursorThickness)
 	state.terminalCopyOnSelect = saved.TerminalCopyOnSelect
+	state.terminalWordSeparators = saved.TerminalWordSeparators
+	state.terminalWordEditor = *text.NewEditor(saved.TerminalWordSeparators)
 	state.terminalRightClickPaste = saved.TerminalRightClickPaste
-	state.terminalTabTitle = saved.TerminalTabTitle
+	state.tabTitleMode = saved.TabTitleMode
+	if state.tabTitleMode == "" && saved.TerminalTabTitle {
+		state.tabTitleMode = tabTitleTerminal
+	}
+	switch state.tabTitleMode {
+	case tabTitleConnection, tabTitleTerminal, tabTitleDirectory:
+	default:
+		state.tabTitleMode = tabTitleConnection
+	}
 	state.terminalShowLatency = saved.TerminalShowLatency
 	state.terminalBellOff = saved.TerminalBellOff
+	state.terminalInputClickOff = saved.TerminalInputClickOff
 	state.terminalLinkPlainClick = saved.TerminalLinkPlainClick
 	if saved.TerminalSchemeDark == "" && saved.TerminalSchemeLight == "" && saved.TerminalScheme != "" {
-		state.terminalSchemes[appearanceDark], state.terminalSchemes[appearanceLight] = migrateTerminalScheme(saved.TerminalScheme)
+		state.terminalSchemes[appearanceDark], state.terminalSchemes[appearanceLight] = state.migrateTerminalScheme(saved.TerminalScheme)
 	} else {
-		state.terminalSchemes[appearanceDark] = normalizeSchemeID(saved.TerminalSchemeDark)
-		state.terminalSchemes[appearanceLight] = normalizeSchemeID(saved.TerminalSchemeLight)
+		state.terminalSchemes[appearanceDark] = state.normalizeSchemeID(saved.TerminalSchemeDark)
+		state.terminalSchemes[appearanceLight] = state.normalizeSchemeID(saved.TerminalSchemeLight)
 	}
 	state.terminalPad = terminalPadFromString(saved.TerminalPadding)
 	state.terminalGutter = terminalGutterFromString(saved.TerminalGutter)
@@ -950,12 +1195,26 @@ func (state *State) restoreShared(saved savedState) {
 	state.passwordHintOff = saved.TerminalPasswordHint == "off"
 	state.closeConfirmOff = saved.TerminalCloseConfirm == "off"
 	state.history.on = saved.CommandHistory
-	state.history.suggestOff = saved.CommandSuggestOff
-	state.history.inlineOff = saved.CommandInlineSuggestOff
+	state.history.acceptHintOff = saved.CommandAcceptHintOff
+	switch saved.CommandCompletionMode {
+	case "off":
+		state.history.suggestOff, state.history.inlineOff = true, true
+	case "list":
+		state.history.suggestOff, state.history.inlineOff = false, true
+	case "inline":
+		state.history.suggestOff, state.history.inlineOff = false, false
+	default:
+		// A file from before the three modes had names: Off and the
+		// shortcut-only list keep their meaning, and the old third mode (list
+		// plus inline text) becomes the automatic list, its closest successor.
+		state.history.suggestOff = saved.CommandSuggestOff
+		state.history.inlineOff = true
+	}
 	state.restoreSFTPSettings(saved)
 	state.proxy = decodeOutboundProxy(saved.OutboundProxy)
 	state.restoreTerminalTools(saved)
 	state.restoreAutofill(saved)
+	state.restoreCredentials(saved)
 
 	// A host keeps the number the sessions and the selection know it by.
 	known := make(map[string]uint32, len(state.hosts))
@@ -967,6 +1226,33 @@ func (state *State) restoreShared(saved savedState) {
 	clear(state.hosts)
 	clear(state.hostGroups)
 	state.hosts, state.nextHostID = decodeHosts(saved.Hosts, known, state.nextHostID)
+	unmerged := state.hosts
+	var merges []hostMerge
+	state.hosts, merges = mergeSameHosts(state.hosts)
+	state.merged, state.mergedHosts = nil, false
+	if len(merges) > 0 {
+		folded, err := state.foldMergedHosts(saved, merges)
+		if err != nil {
+			state.hosts = unmerged
+			// VNC accounts must remain with their original hosts when the
+			// vault cannot carry them over. Unrelated SSH/RDP merges retain
+			// their existing best-effort password migration behavior.
+			merges = slices.DeleteFunc(merges, func(merge hostMerge) bool {
+				return merge.dropped.Protocol == protocolVNC
+			})
+			if len(merges) > 0 {
+				aliases := mergeAliases(merges)
+				state.hosts = slices.DeleteFunc(slices.Clone(unmerged), func(host Host) bool {
+					_, dropped := aliases[host.CatalogID]
+					return dropped
+				})
+				// Non-VNC secret migration ignores Vault errors.
+				folded, _ = state.foldMergedHosts(saved, merges)
+			}
+			state.showActionFailure(state.messages.SettingsVault, err, state.hostPasswordSaveError(err))
+		}
+		saved = folded
+	}
 	state.templates = state.templates[:0]
 	for _, template := range saved.WorkspaceTemplates {
 		if normalized, err := normalizeWorkspaceTemplate(template); err == nil {
@@ -986,13 +1272,8 @@ func (state *State) restoreShared(saved savedState) {
 	if (saved.AIProviders != nil || saved.AICLIProviders != nil) && !state.starting {
 		state.importAIProviderCollections(saved.AIProviders, saved.AICLIProviders)
 	}
-	// The row height follows the font and the line-spacing choice together, so the
-	// saved spacing is reflected here as it is on every painted frame.
-	state.cellWidth, state.cellHeight = (&ui.Canvas{}).MonoCellSize(state.terminalFontSize, state.terminalFontFace)
-	state.cellHeight *= state.terminalLineHeight.factor()
-	// This also runs when a synced setting arrives on a live window, so open
-	// terminals have to take the new row height now, not on the next resize.
-	state.fitTerminals()
+	// The cell follows the font and the line-spacing choice together; the next paint
+	// measures it, and refits open terminals when a synced setting changed it.
 }
 
 func (state *State) workspaceName() string {
@@ -1014,6 +1295,8 @@ func (state *State) workspaceName() string {
 		return "forwards"
 	case sectionProxies:
 		return "proxies"
+	case sectionNotes:
+		return "notes"
 	case sectionSnippets:
 		return "snippets"
 	case sectionSettings:
@@ -1035,7 +1318,7 @@ func (state *State) workspaceName() string {
 // its default back.
 func restoreShortcuts(saved []savedShortcut) shortcutMap {
 	defaults := defaultShortcuts()
-	var shortcuts shortcutMap
+	shortcuts := newShortcutMap()
 	var specified [shortcutActionCount]bool
 	for _, entry := range saved {
 		action := shortcutActionFromString(entry.Action)
@@ -1047,7 +1330,7 @@ func restoreShortcuts(saved []savedShortcut) shortcutMap {
 			specified[action] = true
 			continue
 		}
-		chord, ok := chordFromSaved(ui.Modifiers(entry.Modifiers), entry.Key)
+		chord, ok := keymap.Parse(gfx.Modifiers(entry.Modifiers), entry.Key)
 		if !ok {
 			continue
 		}
@@ -1056,10 +1339,10 @@ func restoreShortcuts(saved []savedShortcut) shortcutMap {
 		}
 	}
 	for action := shortcutAction(1); action < shortcutActionCount; action++ {
-		if specified[action] || shortcuts.chords[action].valid() {
+		if specified[action] || shortcuts.chords.Chord(action).Valid() {
 			continue
 		}
-		shortcuts.bind(action, defaults.chords[action])
+		shortcuts.bind(action, defaults.chords.Chord(action))
 	}
 	shortcuts.refreshLabels()
 	return shortcuts
@@ -1086,6 +1369,8 @@ func (state *State) restoreWorkspace(workspace string) {
 		state.activeSection = sectionForwards
 	case "proxies":
 		state.activeSection = sectionProxies
+	case "notes":
+		state.activeSection = sectionNotes
 	case "snippets":
 		state.activeSection = sectionSnippets
 	case "settings":
@@ -1123,6 +1408,9 @@ func highestProxyNumber(routes []proxyRecord) uint32 {
 }
 
 func (state *State) restoreSessions(entries []savedSession, active int) []uint32 {
+	// Replacing the tab list can end every live session this window had; the
+	// watcher must not outlive the ones that remain.
+	defer state.syncLinkWatch()
 	clear(state.sessions)
 	state.sessions = state.sessions[:0]
 	state.activeSessionID = 0
@@ -1138,16 +1426,28 @@ func (state *State) restoreSessions(entries []savedSession, active int) []uint32
 		}
 		title := entry.Label
 		if title == "" {
-			title = host.Label
+			// A file without a label predates saved titles: invent a distinct
+			// one, as opening the host would.
+			title = state.uniqueSessionTitle(host.Label)
+		} else {
+			title = cleanSessionTitle(title)
 		}
 		state.sessions = append(state.sessions, Session{
-			ID: state.nextSessionID, HostID: host.ID, Title: state.uniqueSessionTitle(title, 0),
+			ID: state.nextSessionID, HostID: host.ID, Title: title, Mention: entry.Mention,
 			Address: state.sessionAddress(host),
 			host:    host, phase: sshconn.PhaseClosed, restored: true, paneSlot: state.claimPaneSlot(),
 		})
 		session := &state.sessions[len(state.sessions)-1]
-		if entry.Local && validLocalDirectory(entry.LocalDirectory) {
-			session.localDirectory = filepath.Clean(entry.LocalDirectory)
+		if workspaceCommandHost(host) {
+			session.workspaceCommand = entry.WorkspaceCommand.normalized()
+		}
+		if session.Mention == "" {
+			session.Mention = state.uniqueMentionName(session.Title, session.ID)
+		}
+		if entry.Local {
+			session.setStartDirectory(entry.LocalDirectory)
+		} else {
+			session.setStartDirectory(entry.RemoteDirectory)
 		}
 		sourceSessions[sourceIndex] = session.ID
 		state.nextSessionID++
@@ -1160,6 +1460,15 @@ func (state *State) restoreSessions(entries []savedSession, active int) []uint32
 	}
 	state.rebuildTabOptions()
 	return sourceSessions
+}
+
+// savedCatalogID is the catalog ID of the saved host the session was opened on,
+// or empty for a typed target.
+func (session *Session) savedCatalogID() string {
+	if session.HostID == 0 {
+		return ""
+	}
+	return session.host.CatalogID
 }
 
 func (state *State) restoreSessionHost(entry savedSession) (Host, bool) {
@@ -1182,6 +1491,17 @@ func (state *State) restoreSessionHost(entry savedSession) (Host, bool) {
 	}
 	host.normalizeEndpoint()
 	if entry.SavedHost {
+		if entry.CatalogID != "" {
+			entry.CatalogID = state.resolveMerged(entry.CatalogID)
+			// Another host at the same address is not this one: a tab whose host is
+			// gone is dropped rather than reopened on its neighbour.
+			for _, saved := range state.hosts {
+				if saved.CatalogID == entry.CatalogID {
+					return saved, true
+				}
+			}
+			return Host{}, false
+		}
 		for _, saved := range state.hosts {
 			if sameEndpoint(saved, host) {
 				return saved, true

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/update"
 )
@@ -54,10 +55,12 @@ type LoginStart struct {
 }
 
 // launchText turns a command line into the text a connection is parsed from, and
-// says whether it is a link. It understands what ssh and PuTTY users type:
+// says whether it is a link. It understands what ssh, PuTTY and bastion
+// launchers type:
 //
 //	user@host            ssh://user@host:2222/       telnet://host
 //	ssh -p 2222 host     -ssh -P 2222 -l user host
+//	xshell -url ssh://user:password@host:22          sftp://user@host:22
 func launchText(args []string) (text string, link bool) {
 	words := make([]string, 0, len(args))
 	for _, arg := range args {
@@ -66,6 +69,8 @@ func launchText(args []string) (text string, link bool) {
 			continue
 		case "-ssh":
 			continue // PuTTY's protocol switch; ssh is the default
+		case "-url":
+			continue // Xshell's switch; a bastion's external-tool template uses it
 		case "-P":
 			arg = "-p"
 		case "--background":
@@ -78,7 +83,11 @@ func launchText(args []string) (text string, link bool) {
 	}
 	text = strings.Join(words, " ")
 	lower := strings.ToLower(text)
-	link = strings.HasPrefix(lower, "ssh://") || strings.HasPrefix(lower, "telnet://")
+	link = strings.HasPrefix(lower, "ssh://") || strings.HasPrefix(lower, "telnet://") ||
+		strings.HasPrefix(lower, "sftp://") || strings.HasPrefix(lower, "rdp://") ||
+		strings.HasPrefix(lower, "vnc://") || strings.HasPrefix(lower, "rdp+ssh://") ||
+		strings.HasPrefix(lower, "vnc+ssh://") || strings.HasPrefix(lower, "xshell://") ||
+		strings.HasPrefix(lower, "xftp://")
 	return text, link
 }
 
@@ -96,7 +105,7 @@ func (state *State) Launch(args []string) {
 // afterEvent starts requests that were waiting for a dialog the event closed. A
 // closed dialog does not wake the window, so without this they would sit until
 // something else did.
-func (state *State) afterEvent(result *ui.EventResult) {
+func (state *State) afterEvent(result *gfx.EventResult) {
 	if state.runLaunches() {
 		result.Repaint = true
 	}
@@ -128,7 +137,18 @@ func (state *State) openLaunch(args []string) {
 		state.openXshellFile(path)
 		return
 	}
+	if paths, ok := markdownLaunchPaths(args); ok {
+		if state.options.Raise != nil {
+			state.options.Raise()
+		}
+		state.openMarkdownFiles(paths)
+		return
+	}
 	text, link := launchText(args)
+	if len(args) == 0 && state.relaunchAction == relaunchNewWindow && state.options.NewWindow != nil {
+		state.openNewWindow()
+		return
+	}
 	// A second start of the program brings the window forward even with nothing
 	// to open; without it the user who double-clicks the icon of a program hidden
 	// in the tray sees nothing happen. A start at login (--background) does not.
@@ -141,7 +161,11 @@ func (state *State) openLaunch(args []string) {
 	parsed, err := parseConnection(text)
 	if err != nil {
 		state.activeSection = sectionHosts
-		state.status = fmt.Sprintf(state.messages.ErrBadTargetFmt, text)
+		if errors.Is(err, errUnsupportedLink) {
+			state.status = state.messages.Tools.LaunchFTPUnsupported
+		} else {
+			state.status = fmt.Sprintf(state.messages.ErrBadTargetFmt, redactLaunchText(text))
+		}
 		return
 	}
 	if !link {
@@ -152,55 +176,74 @@ func (state *State) openLaunch(args []string) {
 	state.modal = modalOpenLink
 }
 
-// launchDescription names what the link asks to open.
+// launchDescription names what the link asks to open. It never includes the
+// password the link carries.
 func (state *State) launchDescription() string {
 	target := state.launchTarget
 	where := net.JoinHostPort(target.host, strconv.Itoa(int(target.port)))
 	if target.user != "" {
 		where = target.user + "@" + where
 	}
+	if target.files {
+		return fmt.Sprintf(state.messages.Tools.LaunchFilesDescriptionFmt, where)
+	}
 	return fmt.Sprintf(state.messages.Tools.LaunchDescriptionFmt, protocolName(target.protocol), where)
 }
 
-func (state *State) clickLaunchDialog(id ui.ID) {
+func (state *State) clickLaunchDialog(id gfx.ID) {
 	switch id {
 	case hitLaunchDismiss, hitLaunchClose, hitLaunchCancel:
+		// Drop the link, and with it the password, as soon as it is not needed.
+		state.launchTarget = connection{}
 		state.modal = modalNone
 	case hitLaunchConnect:
+		target := state.launchTarget
+		state.launchTarget = connection{}
 		state.modal = modalNone
-		state.connectParsed(state.launchTarget)
+		state.connectParsed(target)
 	}
 }
 
-func (state *State) launchKey(event ui.KeyEvent) (ui.EventResult, bool) {
-	if state.modal != modalOpenLink || event.Key != ui.KeyEnter || event.Target != hitLaunchConnect || event.Repeat {
-		return ui.EventResult{}, false
+func (state *State) launchKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if state.modal != modalOpenLink || event.Key != gfx.KeyEnter || event.Target != hitLaunchConnect || event.Repeat {
+		return gfx.EventResult{}, false
 	}
 	state.clickLaunchDialog(hitLaunchConnect)
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
-func (state *State) paintLaunchDialog(canvas *ui.Canvas, viewport ui.Rect) {
+// declareLaunchDialog declares the link confirmation as a dialog of the
+// workbench page.
+func (state *State) declareLaunchDialog(c ui.C) {
 	m := state.messages
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitLaunchDismiss, CloseID: hitLaunchClose, InitialFocusID: hitLaunchCancel,
-		ContentSize: ui.Size{Width: 520}, FitBody: true, BodyHeight: 3 * 18, // the warning's lines
+	viewport := dialogViewport(c)
+	lines := 3
+	if state.launchTarget.password != "" {
+		lines += 3 // the link carries a password, and that is worth saying
+	}
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 520, state.launchDescription(), float32(lines*18))
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.Tools.LaunchTitle, Description: state.launchDescription(),
+		Width: 520, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitLaunchDismiss, CloseID: hitLaunchClose, InitialFocusID: hitLaunchCancel,
 	})
-	layout := dialog.Begin(m.Tools.LaunchTitle, state.launchDescription())
-	f := state.settingsRow.Begin(canvas, state.Theme(), layout.Body)
-	f.Column().Fill().Children(func() {
-		f.Paragraph(m.Tools.LaunchWarning, 3).FontSize(metrics.FontSizeS).Color(state.pal.muted).LineHeight(18)
+	dialog.Body(func() {
+		ui.Column(c).Fill().Children(func() {
+			ui.Paragraph(c, m.Tools.LaunchWarning, 3).FontSize(metrics.FontSizeS).Color(state.pal.muted).LineHeight(18)
+			if state.launchTarget.password != "" {
+				ui.Paragraph(c, m.Tools.LaunchPasswordWarning, 3).FontSize(metrics.FontSizeS).Color(state.pal.muted).LineHeight(18)
+			}
+		})
 	})
-	f.End()
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitLaunchCancel, Label: m.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitLaunchConnect, Label: m.Tools.LaunchConnect},
-	)
-	dialog.End()
+	dialog.Footer(func() {
+		state.dialogActionFooter(c,
+			components.ButtonAction{ID: hitLaunchCancel, Label: m.Cancel, Variant: components.ButtonSecondary},
+			components.ButtonAction{ID: hitLaunchConnect, Label: m.Tools.LaunchConnect},
+		)
+	})
 }
 
-func (state *State) clickUpdateDialog(id ui.ID) {
+func (state *State) clickUpdateDialog(id gfx.ID) {
 	if index, ok := id.In(hitUpdateNotesLinks); ok {
 		if dest := state.update.notes.view.Link(index); dest != "" {
 			state.openExternal(dest)
@@ -224,7 +267,7 @@ func (state *State) clickUpdateDialog(id ui.ID) {
 	state.showNextPrompt()
 }
 
-// ---- the General settings: starting at login and updates ----
+// ---- updates, and the General settings about starting at login ----
 
 // updateState is what the updates row shows.
 // The automatic check: a first look shortly after a window wakes, then one every
@@ -264,31 +307,37 @@ func (state *State) paintLoginSetting(page *settingsPage) {
 	page.toggleRow(m.GeneralLogin, m.GeneralLoginDescription, state.loginOn, hitSettingsLoginToggle)
 }
 
-func (state *State) paintUpdateSettings(page *settingsPage) {
+// paintUpdateRows declares the update controls as rows of a settings card. They
+// are the About page's, beside the version facts they act on.
+func (state *State) paintUpdateRows(page *settingsPage) {
 	m := state.messages.Tools
-	page.group("", func() {
-		page.toggleRow(m.GeneralUpdateStartup, m.GeneralUpdateStartupDescription, state.updateAtStart, hitSettingsUpdateStartToggle)
-		description := m.GeneralUpdateDescription
-		if state.update.text != "" {
-			description = state.update.text
+	page.toggleRow(m.GeneralUpdateStartup, m.GeneralUpdateStartupDescription, state.updateAtStart, hitSettingsUpdateStartToggle)
+	description := m.GeneralUpdateDescription
+	if state.update.text != "" {
+		description = state.update.text
+	}
+	actions := []components.ButtonAction{{ID: hitSettingsUpdateCheck, Label: m.GeneralUpdateCheck, Variant: components.ButtonOutline, Disabled: state.update.checking}}
+	if state.update.available {
+		label := m.GeneralUpdateDownload
+		if state.canInstallUpdate() {
+			label = m.GeneralUpdateInstall
 		}
-		actions := []components.ButtonAction{{ID: hitSettingsUpdateCheck, Label: m.GeneralUpdateCheck, Variant: components.ButtonOutline, Disabled: state.update.checking}}
-		if state.update.available {
-			label := m.GeneralUpdateDownload
-			if state.canInstallUpdate() {
-				label = m.GeneralUpdateInstall
-			}
-			actions = append(actions, components.ButtonAction{ID: hitSettingsUpdateDownload, Label: label})
-		}
-		page.actionRow(m.GeneralUpdate, description, false, actions...)
-	})
+		actions = append(actions, components.ButtonAction{ID: hitSettingsUpdateDownload, Label: label})
+	}
+	page.actionRow(m.GeneralUpdate, description, false, actions...)
+}
+
+// paintDiagnosticsSetting is the exported report of what this copy is doing,
+// among the other General page rows about how the application runs.
+func (state *State) paintDiagnosticsSetting(page *settingsPage) {
+	m := state.messages.Tools
 	page.group("", func() {
 		page.actionRow(m.DiagnosticsRow, m.DiagnosticsDescription, false, components.ButtonAction{ID: hitSettingsDiagnostics, Label: m.DiagnosticsExport, Variant: components.ButtonOutline})
 	})
 }
 
 // clickLaunchSettings handles the presses of those settings.
-func (state *State) clickLaunchSettings(id ui.ID) bool {
+func (state *State) clickLaunchSettings(id gfx.ID) bool {
 	switch id {
 	case hitSettingsLoginToggle:
 		if state.options.StartAtLogin == nil {

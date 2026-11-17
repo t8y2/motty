@@ -20,9 +20,8 @@ import (
 	"motty/internal/vault"
 )
 
-// Document is what a backup holds. Everything in it carries the stamp of its
-// version, so two documents from two computers can be merged: for each record
-// and each secret the later one wins.
+// Document is what a backup holds. Records and secrets carry stamps for
+// cross-device merging; file backups may also hold device-local preferences.
 type Document struct {
 	// Created is when the backup was made.
 	Created time.Time `json:"created"`
@@ -39,7 +38,19 @@ type Document struct {
 	KnownHosts string `json:"known_hosts,omitempty"`
 	// Secrets are the saved passwords and keys' passphrases, deleted ones
 	// included as tombstones.
-	Secrets []vault.Secret `json:"secrets,omitempty"`
+	Secrets             []vault.Secret       `json:"secrets,omitempty"`
+	ShortcutPreferences *ShortcutPreferences `json:"shortcut_preferences,omitempty"`
+}
+
+type ShortcutPreferences struct {
+	DefaultsGeneration int        `json:"defaults_generation"`
+	Shortcuts          []Shortcut `json:"shortcuts"`
+}
+
+type Shortcut struct {
+	Action    string `json:"action"`
+	Key       string `json:"key"`
+	Modifiers uint8  `json:"modifiers"`
 }
 
 const (

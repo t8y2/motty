@@ -11,26 +11,37 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/keymap"
 	"motty/internal/i18n"
 	"motty/internal/sftpclient"
 )
 
-func dualClickID(t *testing.T, view *headless.Session, id ui.ID) {
+func dualClickID(t *testing.T, view *headless.Session, id gfx.ID) {
 	t.Helper()
+	for side, pathID := range sftpWindowPath {
+		if id == pathID {
+			if edit, ok := hitByIDSnapshot(view.Snapshot().Hits, sftpWindowPathEdit[side]); ok {
+				if err := view.Click(edit.Bounds.X+edit.Bounds.Width-3, edit.Bounds.Y+edit.Bounds.Height/2); err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+		}
+	}
 	hit := dualHit(t, view, id)
 	if err := view.Click(hit.X+hit.Width/2, hit.Y+hit.Height/2); err != nil {
 		t.Fatal(err)
 	}
 }
-func dualFind(t *testing.T, view *headless.Session, w *sftpWindow, local bool) ui.ID {
+func dualFind(t *testing.T, view *headless.Session, w *sftpWindow, local bool) gfx.ID {
 	t.Helper()
 	folder := w.folder(local)
 	if len(folder.rows) > 0 {
 		dualClickID(t, view, sftpWindowRows[sideIndex(local)].At(0))
 	}
-	if _, err := view.Driver().ShortcutChord(defaultShortcutModifier(), 'f'); err != nil {
+	if _, err := view.Driver().ShortcutChord(keymap.Primary, 'f'); err != nil {
 		t.Fatal(err)
 	}
 	focused := view.Snapshot().Focused
@@ -42,7 +53,7 @@ func dualFind(t *testing.T, view *headless.Session, w *sftpWindow, local bool) u
 }
 func dualReplaceFilter(t *testing.T, view *headless.Session, value string) {
 	t.Helper()
-	if _, err := view.Driver().ShortcutChord(defaultShortcutModifier(), 'a'); err != nil {
+	if _, err := view.Driver().ShortcutChord(keymap.Primary, 'a'); err != nil {
 		t.Fatal(err)
 	}
 	if err := view.Type(value); err != nil {
@@ -123,7 +134,7 @@ func TestSFTPWindowNativeFiltersIndependentAndVisibilitySafe(t *testing.T) {
 		t.Fatal("second Esc did not dismiss only filter")
 	}
 	dualClickID(t, view, localInput)
-	if _, err := view.Driver().ShortcutChord(defaultShortcutModifier(), 'l'); err != nil {
+	if _, err := view.Driver().ShortcutChord(keymap.Primary, 'l'); err != nil {
 		t.Fatal(err)
 	}
 	if view.Snapshot().Focused != sftpWindowPath[0] {
@@ -218,37 +229,31 @@ func TestSFTPWindowMoreMenuHiddenAndClearArePerSide(t *testing.T) {
 	}
 }
 
-func TestSFTPPanelMoreSortPreservesAnchorAndRefresh(t *testing.T) {
+func TestSFTPPanelHeaderSortPreservesAnchorAndRefresh(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	view := session.files
 	entries := []sftpclient.Entry{{Name: "z.txt", Size: 10, ModTime: time.Unix(1, 0)}, {Name: "a.txt", Size: 30, ModTime: time.Unix(3, 0)}, {Name: "m.txt", Size: 20, ModTime: time.Unix(2, 0)}, {Name: "folder", Mode: os.ModeDir | 0755}}
 	state.showSFTPListing(view, view.path, entries)
 	pressSFTPRow(state, view, sftpRowIndex(t, view, "m.txt"), 0)
-	sortBy := func(label string) {
+	// The header is the panel's only sort control: its labels open the order,
+	// and a second click on the active column turns it around.
+	sortBy := func(column int) {
 		t.Helper()
-		state.Click(contextID(hitSFTPHeaderMore))
-		canvas, _ := paintedTexts(state)
-		for _, hit := range canvas.Hits() {
-			if hit.Label == label && !hit.Block {
-				state.Click(hit.ID)
-				return
-			}
-		}
-		t.Fatalf("panel More has no sort %q", label)
+		state.Click(hitSFTPColumnList.At(column))
 	}
-	sortBy(state.messages.SFTPWindow.Size)
+	sortBy(int(sftpColumnSize))
 	if got := fmt.Sprint(rowNames(view.rows)); got != "[folder z.txt m.txt a.txt]" {
 		t.Fatalf("size order=%s", got)
 	}
 	if view.anchor < 0 || view.selected < 0 || view.rows[view.anchor].entry.Name != "m.txt" || view.rows[view.selected].entry.Name != "m.txt" || !view.rows[view.selected].selected {
 		t.Fatal("sort lost selection anchor")
 	}
-	sortBy(state.messages.SFTPWindow.Modified)
+	sortBy(int(sftpColumnModified))
 	state.showSFTPListing(view, view.path, entries)
 	if got := fmt.Sprint(rowNames(view.rows)); got != "[folder z.txt m.txt a.txt]" {
 		t.Fatalf("refresh lost modified order=%s", got)
 	}
-	sortBy(state.messages.SFTPWindow.Name)
+	sortBy(int(sftpColumnName))
 	if got := fmt.Sprint(rowNames(view.rows)); got != "[folder a.txt m.txt z.txt]" {
 		t.Fatalf("name order=%s", got)
 	}
@@ -261,7 +266,7 @@ func TestSFTPWindowHeaderMenuHasUniqueHitsAndNarrowTransfers(t *testing.T) {
 		t.Fatal(err)
 	}
 	dualClickID(t, view, sftpWindowMore[1])
-	seen := make(map[ui.ID]bool)
+	seen := make(map[gfx.ID]bool)
 	for _, hit := range view.Snapshot().Hits {
 		if hit.Block || hit.ID.IsZero() {
 			continue
@@ -271,7 +276,7 @@ func TestSFTPWindowHeaderMenuHasUniqueHitsAndNarrowTransfers(t *testing.T) {
 		}
 		seen[hit.ID] = true
 	}
-	for _, id := range []ui.ID{sftpWindowFilterToggle[1], hitSFTPWindowUpload, hitSFTPWindowDownload, sftpWindowNewFolder[1], hitSFTPNewLink} {
+	for _, id := range []gfx.ID{sftpWindowFilterToggle[1], hitSFTPWindowUpload, hitSFTPWindowDownload, sftpWindowNewFolder[1], hitSFTPNewLink} {
 		dualHit(t, view, id)
 	}
 	if err := view.Keys("escape"); err != nil {
@@ -308,7 +313,7 @@ func TestSFTPWindowFilterCaretKeepsPreciseScrollAndIME(t *testing.T) {
 		t.Fatalf("native preedit=%+v err=%v", next, err)
 	}
 	before := w.view.filterEditor.String()
-	w.key(ui.KeyEvent{Target: id, Key: ui.KeyEscape})
+	w.key(gfx.KeyEvent{Target: id, Key: gfx.KeyEscape})
 	if w.view.filterEditor.String() != before || !w.view.filterOpen {
 		t.Fatal("Escape destroyed composing text")
 	}
@@ -393,9 +398,9 @@ func BenchmarkSFTPWindowFilter(b *testing.B) {
 func TestSFTPWindowFilterShortcutUsesFocusedSideToolbar(t *testing.T) {
 	_, w, _, _, _ := dualSFTPFixture(t, 1)
 	for side := range 2 {
-		for _, id := range []ui.ID{sftpWindowRefresh[side], sftpWindowUp[side], sftpWindowActions[side].At(0)} {
+		for _, id := range []gfx.ID{sftpWindowRefresh[side], sftpWindowUp[side], sftpWindowActions[side].At(0)} {
 			w.activeLocal, w.view.local = side != 0, side != 0
-			got := w.shortcut(ui.KeyEvent{Target: id, Modifiers: defaultShortcutModifier(), Text: "f"})
+			got := w.shortcut(gfx.KeyEvent{Target: id, Modifiers: keymap.Primary, Text: "f"})
 			if !got.Handled || got.Focus != sftpWindowFilter[side] {
 				t.Fatalf("toolbar %v opened wrong side filter: %+v", id, got)
 			}
@@ -412,7 +417,7 @@ func TestSFTPPanelDefaultOrderingPreservesExistingListing(t *testing.T) {
 }
 
 func TestSFTPWindowNativeFindFromRemoteToolbarAfterTab(t *testing.T) {
-	for _, target := range []ui.ID{hitSFTPWindowUpload, hitSFTPWindowDownload, hitSFTPBookmarkList, hitSFTPBookmarkToggle} {
+	for _, target := range []gfx.ID{hitSFTPWindowUpload, hitSFTPWindowDownload, hitSFTPBookmarkList, hitSFTPBookmarkToggle} {
 		t.Run(tree.Text(target), func(t *testing.T) {
 			_, w, _, host, _ := dualSFTPFixture(t, 1)
 			view := host.windows[0].view
@@ -422,14 +427,14 @@ func TestSFTPWindowNativeFindFromRemoteToolbarAfterTab(t *testing.T) {
 				if steps >= 80 {
 					t.Fatal("remote control not keyboard reachable")
 				}
-				if err := view.Driver().Key(ui.KeyTab, 0); err != nil {
+				if err := view.Driver().Key(gfx.KeyTab, 0); err != nil {
 					t.Fatal(err)
 				}
 			}
 			if !w.activeLocal {
 				t.Fatal("fixture passed remote path editor instead of exercising toolbar focus")
 			}
-			if _, err := view.Driver().ShortcutChord(defaultShortcutModifier(), 'f'); err != nil {
+			if _, err := view.Driver().ShortcutChord(keymap.Primary, 'f'); err != nil {
 				t.Fatal(err)
 			}
 			if view.Snapshot().Focused != sftpWindowFilter[1] || !w.view.filterOpen || w.view.lfolder.filterOpen {

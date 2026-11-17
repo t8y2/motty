@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/cmdhistory"
 )
 
@@ -12,6 +12,9 @@ import (
 func ghostWorld(t *testing.T, commands ...string) *historyWorld {
 	t.Helper()
 	h := newHistoryWorld(t, true)
+	// Inline suggestions are the subject here; the automatic list has its own
+	// tests.
+	h.state.history.suggestOff, h.state.history.inlineOff = false, false
 	store := h.state.historyStore()
 	key := historyKey(&h.state.sessions[0])
 	base := time.Now()
@@ -33,8 +36,8 @@ func ghostWorld(t *testing.T, commands ...string) *historyWorld {
 
 func (h *historyWorld) ghost() (string, bool) { return h.state.commandGhost(&h.state.sessions[0]) }
 
-func (h *historyWorld) key(event ui.KeyEvent) {
-	event.Target = hitTerminalList.At(int(h.state.sessions[0].ID))
+func (h *historyWorld) key(event gfx.KeyEvent) {
+	event.Target = terminalTestHit(h.state, &h.state.sessions[0])
 	h.state.Key(event)
 	h.state.Wake()
 }
@@ -50,7 +53,7 @@ func TestTypingTheStartOfAKnownCommandSuggestsTheRestAndRightArrowTakesIt(t *tes
 		t.Fatalf("suggestion = %q, %v", rest, ok)
 	}
 	before := len(h.shell.input)
-	h.key(ui.KeyEvent{Key: ui.KeyRight})
+	h.key(gfx.KeyEvent{Key: gfx.KeyRight})
 	if got := string(h.shell.input[before:]); got != "eckout main" {
 		t.Fatalf("the shell got %q, want the rest of the command and no arrow key", got)
 	}
@@ -69,11 +72,11 @@ func TestAltRightTakesOneWordOfTheSuggestion(t *testing.T) {
 	h.prompt("$ ")
 	h.type_("kubectl ")
 	before := len(h.shell.input)
-	h.key(ui.KeyEvent{Key: ui.KeyRight, Modifiers: ui.ModifierAlt})
+	h.key(gfx.KeyEvent{Key: gfx.KeyRight, Modifiers: gfx.ModifierAlt})
 	if got := string(h.shell.input[before:]); got != "get" {
 		t.Fatalf("the shell got %q, want one word", got)
 	}
-	h.key(ui.KeyEvent{Key: ui.KeyRight, Modifiers: ui.ModifierAlt})
+	h.key(gfx.KeyEvent{Key: gfx.KeyRight, Modifiers: gfx.ModifierAlt})
 	if got := string(h.shell.input[before:]); got != "get pods" {
 		t.Fatalf("the shell got %q, want the second word too", got)
 	}
@@ -84,7 +87,7 @@ func TestRightArrowIsTheShellsWhenNothingIsSuggested(t *testing.T) {
 	h.prompt("$ ")
 	h.type_("ls")
 	before := len(h.shell.input)
-	h.key(ui.KeyEvent{Key: ui.KeyRight})
+	h.key(gfx.KeyEvent{Key: gfx.KeyRight})
 	if got := string(h.shell.input[before:]); got != "\x1b[C" {
 		t.Fatalf("the shell got %q, want the arrow key", got)
 	}
@@ -99,7 +102,7 @@ func TestNothingIsSuggestedWhereTheHistoryDoesNotApply(t *testing.T) {
 	if rest, ok := h.ghost(); ok {
 		t.Fatalf("suggestions are off but %q is offered", rest)
 	}
-	h.state.setCompletionMode(completionBoth)
+	h.state.setCompletionMode(completionInline)
 	h.state.history.on = false
 	if rest, ok := h.ghost(); ok {
 		t.Fatalf("the history is off but %q is offered", rest)
@@ -181,6 +184,29 @@ func (h *historyWorld) awaitHistory(t *testing.T, key string) {
 			t.Fatalf("the history of %q was never read", key)
 		}
 		time.Sleep(time.Millisecond)
+	}
+}
+
+// A re-run moves a command to the front of the cache and updates its use time,
+// so the completion list shows the latest run rather than an older one.
+func TestARerunUpdatesTheCachedUseTime(t *testing.T) {
+	h := newHistoryWorld(t, true)
+	key := historyKey(&h.state.sessions[0])
+	old := time.Now().Add(-48 * time.Hour)
+	h.state.history.ghost = map[string][]cmdhistory.Entry{
+		key: {{Command: "git status", Used: old, Count: 1}},
+		"":  {{Command: "git status", Used: old, Count: 1}},
+	}
+	now := time.Now()
+	h.state.noteGhostCommand(key, "git status", now)
+	for _, cacheKey := range []string{key, ""} {
+		entries := h.state.history.ghost[cacheKey]
+		if len(entries) != 1 {
+			t.Fatalf("cache %q holds %d entries, want 1", cacheKey, len(entries))
+		}
+		if !entries[0].Used.Equal(now) {
+			t.Fatalf("cache %q keeps Used = %v, want the rerun time %v", cacheKey, entries[0].Used, now)
+		}
 	}
 }
 

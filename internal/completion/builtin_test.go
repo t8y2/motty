@@ -64,4 +64,20 @@ func TestBuiltinCompletion(t *testing.T) {
 	if !hasCandidate(result, "container") {
 		t.Fatalf("docker cont = %v", candidateTexts(result))
 	}
+
+	// docker compose is a CLI plugin: carapace finds it at runtime, so the
+	// snapshot keeps it as the separate docker-compose root. The catalog
+	// bridges the two and both spellings must complete the same CLI.
+	result = Complete(catalog, "docker comp")
+	if !hasCandidate(result, "compose") {
+		t.Fatalf("docker comp = %v", candidateTexts(result))
+	}
+	for _, line := range []string{"docker compose ", "docker-compose "} {
+		result = Complete(catalog, line)
+		for _, want := range []string{"up", "down", "ps"} {
+			if !hasCandidate(result, want) {
+				t.Fatalf("%s lacks %q in %v", line, want, candidateTexts(result))
+			}
+		}
+	}
 }

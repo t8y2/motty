@@ -1,7 +1,7 @@
 package workbench
 
 import (
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -29,6 +29,15 @@ var settingsNavHits = tree.Feature("settings-nav")
 
 // hitSettingsCategoryList starts the ids of the category entries.
 var hitSettingsCategoryList = tree.Sub(settingsNavHits, tree.Name("settings-category"))
+
+// hitSettingsPageScroll and hitSettingsNavScroll name the two scrolling areas
+// to the canvas's transitions: the wheel writes their targets, and the
+// declaration asks what to lay out on the way there. Neither is a pointer
+// target.
+var (
+	hitSettingsPageScroll = tree.ID(settingsNavHits, "settings-page-scroll")
+	hitSettingsNavScroll  = tree.ID(settingsNavHits, "settings-nav-scroll")
+)
 
 const settingsNavWidthMax = float32(208)
 
@@ -103,7 +112,9 @@ func (state *State) selectSettingsCategory(category settingsCategory) bool {
 		return false
 	}
 	state.settingsCategory = category
+	state.schemeBrowserOpen = false
 	state.settingsScroll = 0
+	state.settings.pageMotion = gfx.Motion{}
 	state.settings.aboutCopied = false
 	state.revealSettingsCategory()
 	return true
@@ -114,15 +125,15 @@ func (state *State) selectSettingsCategory(category settingsCategory) bool {
 // their own: with enough categories the list is taller than the window, and it
 // must stay usable however short the window is.
 func (page *settingsPage) nav(width float32, searching bool) {
-	state, f := page.state, page.f
+	state, c := page.state, page.c
 	view := &state.settings
 	pal, m := state.pal, state.messages
-	f.Column().Width(width).FillHeight().Children(func() {
-		f.Text(m.SettingsTitle).FontSize(19).Bold().Color(pal.text).LineHeight(28).MarginSides(26, 8, 10, 22).Shrink(0)
-		page.add(settingsControl{kind: controlSearch, slot: f.Slot().Height(38).MarginSides(0, 12, 12, 12).Shrink(0)})
-		page.navList = f.Scroll(view.navScroll).FillWidth().Grow(1).Basis(0)
+	ui.Column(c).Width(width).FillHeight().Children(func() {
+		ui.Text(c, m.SettingsTitle).FontSize(19).Bold().Color(pal.text).LineHeight(28).MarginSides(26, 8, 10, 22).Shrink(0)
+		page.add(settingsControl{kind: controlSearch, slot: ui.Slot(c).Height(38).MarginSides(0, 12, 12, 12).Shrink(0)})
+		page.navList = ui.ScrollAt(c, view.navShown).FillWidth().Grow(1).Basis(0)
 		page.navList.Children(func() {
-			f.Column().Gap(settingsNavEntryGap).MarginSides(0, 0, 8, 0).Shrink(0).Children(func() {
+			ui.Column(c).Gap(settingsNavEntryGap).MarginSides(0, 0, 8, 0).Shrink(0).Children(func() {
 				for category := settingsCategory(0); category < settingsCategoryCount; category++ {
 					page.navEntry(hitSettingsCategoryList.At(int(category)), category.icon(), state.settingsCategoryName(category), !searching && category == state.settingsCategory)
 				}
@@ -135,6 +146,7 @@ func (page *settingsPage) nav(width float32, searching bool) {
 // view, using the room the list had when it was last painted.
 func (state *State) revealSettingsCategory() {
 	view := &state.settings
+	view.navMotion = gfx.Motion{} // a reveal is a jump, not a wheel
 	if view.navView <= 0 {
 		return
 	}
@@ -153,20 +165,20 @@ func (state *State) revealSettingsCategory() {
 // under the pointer, and its icon and name are brighter then. The entry is a
 // pointer target recorded with the page's controls, so the keyboard visits it
 // after the search box above it.
-func (page *settingsPage) navEntry(id ui.ID, icon uint8, label string, active bool) {
-	f, pal := page.f, page.state.pal
-	hovered := f.Canvas().Hovered() == id
-	foreground, background := pal.muted, ui.Color{}
+func (page *settingsPage) navEntry(id gfx.ID, icon uint8, label string, active bool) {
+	c, pal := page.c, page.state.pal
+	hovered := page.canvas().Hovered() == id
+	foreground, background := pal.muted, gfx.Color{}
 	switch {
 	case active:
 		foreground, background = pal.text, pal.surfaceHot
 	case hovered:
 		foreground, background = pal.text, pal.surfaceSoft
 	}
-	entry := f.Row().Height(settingsNavEntryHeight).Shrink(0).MarginX(12).PadSides(0, 8, 0, 12).Gap(12).Items(flex.Center).Radius(radius.control).Background(background)
-	page.hitOn(entry, id, label, ui.HitOptions{Role: ui.RoleMenuItem, Selected: active})
+	entry := ui.Row(c).Height(settingsNavEntryHeight).Shrink(0).MarginX(12).PadSides(0, 8, 0, 12).Gap(12).Items(ui.Center).Radius(radius.control).Background(background)
+	page.hitOn(entry, id, label, gfx.HitOptions{Role: gfx.RoleMenuItem, Selected: active})
 	entry.Children(func() {
-		f.Icon(lucideIcons[icon]).IconTransform(page.state.iconMotion(f.Canvas(), id, icon)).Color(foreground)
-		f.Text(label).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(foreground).LineHeight(22).Grow(1)
+		ui.Icon(c, lucideIcons[icon]).IconTransform(page.state.iconMotion(page.canvas(), id, icon)).Color(foreground)
+		ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(foreground).LineHeight(22).Grow(1).Ellipsis()
 	})
 }

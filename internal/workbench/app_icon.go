@@ -21,6 +21,6 @@ var appIcon = sync.OnceValue(func() app.WindowIcon {
 func AppIcon() app.WindowIcon { return appIcon() }
 
 // TrayIcon is the logo as a status-area icon, in the form the platform expects:
-// the mark alone as a template that macOS tints to its menu bar, the colored tile
-// on Windows and Linux.
+// the mark alone as a template that macOS tints to its menu bar, the colored
+// tile on Windows and Linux, cropped to the mark because the bar draws it tiny.
 func TrayIcon() app.StatusIcon { return appIcon().StatusIcon(64) }

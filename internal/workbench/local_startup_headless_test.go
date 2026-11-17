@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 )
 
 func TestLocalTerminalWaitsForRealShellOutput(test *testing.T) {
@@ -44,7 +44,7 @@ func TestLocalTerminalWaitsForRealShellOutput(test *testing.T) {
 	paints := 0
 	view, err := headless.Open(app.Config{
 		Width: 1400, Height: 900, Invalidator: &invalidator, OnWake: state.Wake,
-		Paint: func(canvas *ui.Canvas, size ui.Size) {
+		Paint: func(canvas *gfx.Canvas, size gfx.Size) {
 			paints++
 			state.Paint(canvas, size)
 		},

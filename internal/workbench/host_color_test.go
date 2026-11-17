@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	layoutcore "motty/internal/workspace"
@@ -68,32 +69,32 @@ func TestConnectionColorPersistsCopiesAndUpdatesOpenSessions(t *testing.T) {
 func TestConnectionColorChoicesFitShortDialog(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.openHostDialog()
-	canvas, _ := paintAt(state, ui.Size{Width: 900, Height: 600})
+	canvas, _ := paintAt(state, gfx.Size{Width: 900, Height: 600})
 	footer, _ := hitByID(canvas, hitDialogSubmit)
 	for i := range hostColors {
 		hit, ok := hitByID(canvas, hitHostColors.At(i))
-		if !ok || hit.Bounds.Y+hit.Bounds.Height > footer.Bounds.Y || hit.Role != ui.RoleRadio {
+		if !ok || hit.Bounds.Y+hit.Bounds.Height > footer.Bounds.Y || hit.Role != gfx.RoleRadio {
 			t.Fatal("color choice missing or outside dialog")
 		}
 	}
-	var hit ui.Hit
+	var hit gfx.Hit
 	for _, h := range canvas.Hits() {
 		if h.ID == hostPickerIDs.Trigger && !h.IsLabel {
 			hit = h
 			break
 		}
 	}
-	if hit.ID.IsZero() || hit.Role != ui.RoleButton || hit.Bounds.Width != 32 || hit.Bounds.Y+hit.Bounds.Height > footer.Bounds.Y {
+	if hit.ID.IsZero() || hit.Role != gfx.RoleButton || hit.Bounds.Width != 32 || hit.Bounds.Y+hit.Bounds.Height > footer.Bounds.Y {
 		t.Fatalf("custom color trigger missing or clipped: %+v", hit)
 	}
 	for _, hit := range canvas.Hits() {
-		if hit.Label == state.messages.FieldColorCustom && hit.Role == ui.RoleTextField {
+		if hit.Label == state.messages.FieldColorCustom && hit.Role == gfx.RoleTextField {
 			t.Fatal("HEX input should only appear inside the picker")
 		}
 	}
-	var name ui.Hit
+	var name gfx.Hit
 	for _, h := range canvas.Hits() {
-		if h.ID == hitDialogLabel && h.Role == ui.RoleTextField {
+		if h.ID == hitDialogLabel && h.Role == gfx.RoleTextField {
 			name = h
 			break
 		}
@@ -111,8 +112,8 @@ func TestConnectionHeaderColorPreservesTerminalPalette(t *testing.T) {
 	for index := range state.sessions {
 		state.sessions[index].host.Color = "#ef4444"
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	headers := 0
 	for _, rectangle := range canvas.Rectangles() {
 		if rectangle.Bounds.Height == infoBarHeight && rectangle.Color == state.pal.workspace {
@@ -130,24 +131,48 @@ func TestConnectionHeaderColorPreservesTerminalPalette(t *testing.T) {
 func TestConnectionColorTintsTabsButKeepsFileHeaderNeutral(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	session.host.Color = "#3b82f6"
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
-	header := state.pal.workspace
-	for _, id := range []ui.ID{contextID(hitSFTPRefresh), hitSFTPOpen} {
-		hit, ok := hitByID(&canvas, id)
+	// The file header is part of the content surface; the terminal rail beside
+	// it is part of the window frame, like the bar above it. Neither takes the
+	// connection color, and on a full-page pane the frame and the pane share the
+	// workspace surface.
+	frame := state.windowFrameColor()
+	if frame != state.pal.workspace {
+		t.Fatalf("full-page frame is %v, want the workspace surface", frame)
+	}
+	for _, check := range [...]struct {
+		id    gfx.ID
+		under gfx.Color
+	}{
+		{contextID(hitSFTPRefresh), state.pal.workspace},
+		{hitSFTPOpen, frame},
+	} {
+		hit, ok := hitByID(&canvas, check.id)
 		if !ok {
-			t.Fatal("missing header action", id)
+			t.Fatal("missing header action", check.id)
 		}
 		found := false
 		for _, rectangle := range canvas.Rectangles() {
-			if rectangle.Color == header && rectangle.Bounds.X <= hit.Bounds.X && rectangle.Bounds.X+rectangle.Bounds.Width >= hit.Bounds.X+hit.Bounds.Width && rectangle.Bounds.Y <= hit.Bounds.Y && rectangle.Bounds.Y+rectangle.Bounds.Height >= hit.Bounds.Y+hit.Bounds.Height {
+			if rectangle.Color == check.under && rectangle.Bounds.X <= hit.Bounds.X && rectangle.Bounds.X+rectangle.Bounds.Width >= hit.Bounds.X+hit.Bounds.Width && rectangle.Bounds.Y <= hit.Bounds.Y && rectangle.Bounds.Y+rectangle.Bounds.Height >= hit.Bounds.Y+hit.Bounds.Height {
 				found = true
 			}
 		}
 		if !found {
-			t.Fatal("file header and terminal rail must stay neutral", id)
+			t.Fatal("file header and terminal rail must stay neutral", check.id)
 		}
+	}
+	// The bar is transparent over the page root, so the root is what the bar and
+	// the rail share: one surface, not two colors meeting at the window's corner.
+	rootPainted := false
+	for _, rectangle := range canvas.Rectangles() {
+		if rectangle.Bounds == (gfx.Rect{Width: size.Width, Height: size.Height}) && rectangle.Color == frame {
+			rootPainted = true
+		}
+	}
+	if !rootPainted {
+		t.Fatal("the window root under the bar is not the frame surface")
 	}
 	foundTab := false
 	for _, tab := range state.chrome.bar.tabs {
@@ -173,11 +198,11 @@ func TestConnectionColorTintsTabsButKeepsFileHeaderNeutral(t *testing.T) {
 	host.Color = "#3b82f6"
 	for _, grid := range []bool{false, true} {
 		canvas.Reset()
-		bounds := ui.Rect{Width: 700, Height: hostRowHeight}
+		bounds := gfx.Rect{Width: 700, Height: hostRowHeight}
 		if grid {
 			state.paintHostCard(&canvas, bounds, host)
 		} else {
-			state.paintHostTreeRow(&canvas, bounds, bounds, host, hitHostList.At(int(host.ID)))
+			state.paintHostTreeRow(&canvas, bounds, bounds, host, false)
 		}
 		found := false
 		for _, rectangle := range canvas.Rectangles() {
@@ -191,12 +216,28 @@ func TestConnectionColorTintsTabsButKeepsFileHeaderNeutral(t *testing.T) {
 	}
 }
 
+// paintEmptyPanelForTest declares the panel's empty view in a page the way the
+// workbench page does, so the test checks the same declaration and painter.
+func paintEmptyPanelForTest(state *State, session *Session) *gfx.Canvas {
+	const width, height = float32(340), float32(800)
+	state.chrome.sftpEmpty = sftpEmptyScratch{session: session}
+	canvas := new(gfx.Canvas)
+	canvas.SetTree(&tree)
+	page := ui.NewPage(ui.PageConfig{Tree: &tree, Root: shellPageRoot, Theme: &state.theme})
+	page.Draw(canvas, gfx.Rect{Width: width, Height: height}, func(c ui.C) {
+		c.Part(contextPanelPart)
+		ui.Column(c).Absolute().Left(0).Top(0).Width(width).Height(height).
+			DrawOver(func(d *ui.DrawContext) { state.paintEmptyContextPanelDetails(d.Canvas) }).
+			Children(func() { state.declareEmptyContextSFTP(c) })
+	})
+	return canvas
+}
+
 func TestConnectionColorKeepsEmptyFilePanelNeutral(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	for _, session := range []*Session{nil, {host: Host{Color: "#a855f7"}}, {}} {
-		var canvas ui.Canvas
-		state.paintEmptyContextSFTP(&canvas, ui.Size{Width: 340, Height: 800}, session)
-		button, ok := hitByID(&canvas, hitSFTPClose)
+		canvas := paintEmptyPanelForTest(state, session)
+		button, ok := hitByID(canvas, hitSFTPClose)
 		if !ok {
 			t.Fatal("empty panel has no close action")
 		}
@@ -217,10 +258,10 @@ func TestConnectionColorKeepsEmptyFilePanelNeutral(t *testing.T) {
 func TestConnectionColorKeepsMonitorHeaderNeutral(t *testing.T) {
 	state, session := monitorFixture(t)
 	session.host.Color = "#3b82f6"
-	bounds := ui.Rect{X: 600, Y: 40, Width: 320, Height: 800}
-	var canvas ui.Canvas
+	bounds := gfx.Rect{X: 600, Y: 40, Width: 320, Height: 800}
+	var canvas gfx.Canvas
 	state.paintMonitor(&canvas, bounds, session)
-	header := ui.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: infoBarHeight}
+	header := gfx.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: infoBarHeight}
 	for _, rectangle := range canvas.Rectangles() {
 		if rectangle.Bounds == header && rectangle.Color == state.pal.workspace {
 			return
@@ -251,9 +292,9 @@ func TestColoredHostsKeepSelectionAndBadgeContrast(t *testing.T) {
 				t.Fatal("connection color does not reach the surface")
 			}
 
-			var canvas ui.Canvas
-			row := ui.Rect{Width: 900, Height: hostRowHeight}
-			state.paintHostTreeRow(&canvas, row, row, host, hitHostList.At(int(host.ID)))
+			var canvas gfx.Canvas
+			row := gfx.Rect{Width: 900, Height: hostRowHeight}
+			state.paintHostTreeRow(&canvas, row, row, host, false)
 			want, hover := tintHostSurface(state.pal.surfaceHot, host.Color, .10), tintHostSurface(state.pal.surfaceSoft, host.Color, .10)
 			selected := false
 			for _, rect := range canvas.Rectangles() {
@@ -272,7 +313,7 @@ func TestColoredHostsKeepSelectionAndBadgeContrast(t *testing.T) {
 			}
 
 			canvas.Reset()
-			state.paintHostCard(&canvas, ui.Rect{Width: 360, Height: 150}, host)
+			state.paintHostCard(&canvas, gfx.Rect{Width: 360, Height: 150}, host)
 			badge := false
 			for _, rect := range canvas.Rectangles() {
 				if rect.Bounds.Width == 36 && rect.Bounds.Height == 36 && rect.Color == state.pal.surface {

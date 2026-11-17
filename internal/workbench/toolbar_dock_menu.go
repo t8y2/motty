@@ -2,7 +2,7 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 var toolbarDockHits = tree.Feature("toolbar-dock")
@@ -21,17 +21,33 @@ var (
 	hitToolbarDockMore        = tree.ID(toolbarDockHits, "more")
 )
 
-func (state *State) paintToolbarDockMenu(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintToolbarDockMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 	dock, m := &state.toolbarDock, state.messages.Toolbars
 	if !dock.menu || state.modal != modalNone {
 		return
 	}
 	var rows menuRows
+	sftp := !dock.overflow && sftpToolbarMenuSource(dock.menuTool)
 	if dock.overflow {
 		var buffer [maxBarTools]barTool
 		tools := state.toolbarDockTools(toolbarDockTop, &buffer)
 		for _, tool := range tools[min(len(tools), state.toolbarTopLimit()-1):] {
-			rows.add(components.ContextMenuItem{ID: tool.id, Label: tool.hint, Icon: lucideIcons[tool.icon], Disabled: tool.disabled})
+			label, disabled := tool.hint, tool.disabled
+			if tool.id == hitToolbarLatency {
+				// The overflow is a rare narrow-window fallback; format the reading
+				// only when the menu is actually open.
+				disabled = true
+				if session, ok := state.terminalSideRailSession(); ok {
+					if text, _, ok := state.latencyInfo(session); ok {
+						label = text
+					}
+				}
+			}
+			rows.add(components.ContextMenuItem{ID: tool.id, Label: label, Icon: lucideIcons[tool.icon], Disabled: disabled})
+		}
+	} else if sftp {
+		if _, ok := sftpToolbarSpec(dock.menuTool); ok {
+			rows.add(components.ContextMenuItem{ID: hitToolbarDockHide, Label: m.Hide, Icon: lucideIcons[iconEyeOff]})
 		}
 	} else {
 		rows.add(components.ContextMenuItem{ID: hitToolbarDockTop, Label: m.MoveTop, Icon: lucideIcons[iconRows2]})
@@ -55,11 +71,11 @@ func (state *State) paintToolbarDockMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	menu.End()
 }
 
-func (state *State) clickToolbarDockMenu(id ui.ID) bool {
+func (state *State) clickToolbarDockMenu(id gfx.ID) bool {
 	dock := &state.toolbarDock
 	if id == hitToolbarDockMore && !dock.menu {
 		dock.menu, dock.overflow = true, true
-		dock.menuAt = ui.Point{X: max(state.viewport.Width-200, 0), Y: windowBarHeight}
+		dock.menuAt = gfx.Point{X: max(state.viewport.Width-200, 0), Y: windowBarHeight}
 		return true
 	}
 	if !dock.menu {
@@ -67,37 +83,55 @@ func (state *State) clickToolbarDockMenu(id ui.ID) bool {
 	}
 	dock.menu = false
 	source := dock.menuTool
+	sftp := !dock.overflow && sftpToolbarMenuSource(source)
 	switch id {
 	case hitToolbarDockTop:
-		state.moveToolbarDockTool(source, toolbarDockTop, ui.ID{})
+		state.moveToolbarDockTool(source, toolbarDockTop, gfx.ID{})
 	case hitToolbarDockSideTop:
-		state.moveToolbarDockTool(source, toolbarDockSideTop, ui.ID{})
+		state.moveToolbarDockTool(source, toolbarDockSideTop, gfx.ID{})
 	case hitToolbarDockSideBottom:
-		state.moveToolbarDockTool(source, toolbarDockSideBottom, ui.ID{})
+		state.moveToolbarDockTool(source, toolbarDockSideBottom, gfx.ID{})
 	case hitToolbarDockLeftTop:
-		state.moveToolbarDockTool(source, toolbarDockLeftTop, ui.ID{})
+		state.moveToolbarDockTool(source, toolbarDockLeftTop, gfx.ID{})
 	case hitToolbarDockLeftBottom:
-		state.moveToolbarDockTool(source, toolbarDockLeftBottom, ui.ID{})
+		state.moveToolbarDockTool(source, toolbarDockLeftBottom, gfx.ID{})
 	case hitToolbarDockBottom:
-		state.moveToolbarDockTool(source, toolbarDockBottom, ui.ID{})
+		state.moveToolbarDockTool(source, toolbarDockBottom, gfx.ID{})
 	case hitToolbarDockBottomRight:
-		state.moveToolbarDockTool(source, toolbarDockBottomRight, ui.ID{})
+		state.moveToolbarDockTool(source, toolbarDockBottomRight, gfx.ID{})
 	case hitToolbarDockHide:
-		if entry, ok := toolbarDockIdentity(source); ok {
+		entry, ok := toolbarDockIdentity(source)
+		if sftp {
+			if spec, found := sftpToolbarSpec(source); found {
+				entry, ok = toolbarDockEntry{Group: toolbarSFTP, Key: spec.key}, true
+			}
+		}
+		if ok {
 			for i := range state.toolbars.customize(entry.Group) {
 				if state.toolbars.layouts[entry.Group][i].Key == entry.Key {
 					state.toolbars.layouts[entry.Group][i].Enabled = false
 				}
 			}
+			// Hiding the readout means turning off the preference that owns it.
+			if entry.Group == toolbarTerminal && entry.Key == "latency" {
+				state.terminalShowLatency = false
+			}
 			state.toolbarDockChanged()
 		}
 	case hitToolbarDockCustomize:
 		group := toolbarWindow
-		if entry, ok := toolbarDockIdentity(source); ok && !dock.overflow {
+		if sftp {
+			group = toolbarSFTP
+		} else if entry, ok := toolbarDockIdentity(source); ok && !dock.overflow {
 			group = entry.Group
 		}
 		state.openToolbarSettings(group)
 	case hitToolbarDockReset:
+		if sftp {
+			state.toolbars.layouts[toolbarSFTP] = nil
+			state.toolbarDockChanged()
+			break
+		}
 		state.toolbars.dock = nil
 		state.toolbars.layouts[toolbarWindow], state.toolbars.layouts[toolbarTerminal] = nil, nil
 		state.terminalToolbarSize = terminalToolbarSmall

@@ -7,6 +7,7 @@ import (
 
 	"motty/internal/cmdhistory"
 	"motty/internal/completion"
+	"motty/internal/pathcomp"
 )
 
 // A suggestion is proof about one echoed line, not permission to type into a
@@ -102,5 +103,31 @@ func (state *State) reconcileSuggestionEcho(session *Session) {
 	}
 	if line == pending.line || t.inputGuard.active && t.inputGuard.known && line == t.inputGuard.prefix {
 		t.suggestionPending = nil
+	}
+}
+
+// sendPathSuggestion types one path suffix into the session. The text came from
+// a directory listing, which a server may shape; pathcomp.SafeInsert is the last
+// check before it becomes input. The owner, line and prompt proof are the same
+// as for a catalog suggestion, so a stale list never types.
+func (state *State) sendPathSuggestion(session *Session, suffix string) {
+	body := suffix
+	if strings.HasPrefix(body, " ") {
+		// A bare path command has no separator after it yet; the completion
+		// supplies the one space and escapes the rest as usual.
+		body = body[1:]
+	}
+	if body == "" || len(body) > pathcomp.MaxLineBytes || !utf8.ValidString(body) {
+		return
+	}
+	if strings.IndexFunc(body, unicode.IsControl) >= 0 || !pathcomp.SafeInsert(body) {
+		return
+	}
+	line, ok := session.term.recorder.Line(cmdhistory.TermScreen{Term: session.term.screen})
+	if !ok {
+		return
+	}
+	if session.term.sendInput([]byte(suffix), false) {
+		session.term.suggestionPending = &suggestionEcho{line: line + suffix, token: session.term.folderToken, epoch: session.term.inputGuard.epoch}
 	}
 }

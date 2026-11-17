@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 )
 
 func TestHostGroupToolbarNativeOverflowAndKeyboard(t *testing.T) {
@@ -33,7 +33,7 @@ func TestHostGroupToolbarNativeOverflowAndKeyboard(t *testing.T) {
 		}
 	}
 	must(view.Rest())
-	click := func(id ui.ID) {
+	click := func(id gfx.ID) {
 		t.Helper()
 		hit, ok := hitByIDSnapshot(view.Snapshot().Hits, id)
 		if !ok || hit.Disabled {
@@ -41,7 +41,7 @@ func TestHostGroupToolbarNativeOverflowAndKeyboard(t *testing.T) {
 		}
 		must(view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2))
 	}
-	focus := func(id ui.ID) {
+	focus := func(id gfx.ID) {
 		t.Helper()
 		for step := 0; step < 64 && view.Snapshot().Focused != id; step++ {
 			must(view.Keys("Shift+Tab"))

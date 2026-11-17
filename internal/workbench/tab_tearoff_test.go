@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func showsHint(state *State, hint string) bool {
@@ -19,8 +19,8 @@ func TestTabMenuMovesATabToAWindowOfItsOwn(t *testing.T) {
 	moving := tabOrder(pair.first)[0]
 
 	rightClickTab(pair.first, hitTabList.At(int(moving)))
-	var canvas ui.Canvas
-	pair.first.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	pair.first.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	hit, ok := hitByID(&canvas, hitTabMenuNewWindow)
 	if !ok || hit.Disabled {
 		t.Fatalf("the menu does not offer a window of its own: %+v, found %v", hit, ok)
@@ -51,8 +51,8 @@ func TestTabMenuKeepsAWindowsOnlyTab(t *testing.T) {
 	only := tabOrder(pair.first)[0]
 
 	rightClickTab(pair.first, hitTabList.At(int(only)))
-	var canvas ui.Canvas
-	pair.first.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	pair.first.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if hit, ok := hitByID(&canvas, hitTabMenuNewWindow); !ok || !hit.Disabled {
 		t.Fatalf("a window's only tab can be moved out of it: %+v, found %v", hit, ok)
 	}
@@ -71,36 +71,36 @@ func TestADragOutOfEveryWindowSaysItOpensANewWindow(t *testing.T) {
 	target := hitTabList.At(int(moving))
 	start := tabCenter(pair.first, moving)
 
-	pair.first.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: target, X: start.X, Y: start.Y, ScreenX: start.X, ScreenY: start.Y, Viewport: pair.first.viewport, ClickCount: 1})
+	pair.first.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: target, X: start.X, Y: start.Y, ScreenX: start.X, ScreenY: start.Y, Viewport: pair.first.viewport, ClickCount: 1})
 	// Inside the window the drag is a reorder or a dock: no talk of windows.
-	pair.first.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Target: target, Captured: true, X: start.X + 40, Y: start.Y, ScreenX: start.X + 40, ScreenY: start.Y, Viewport: pair.first.viewport})
+	pair.first.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Target: target, Captured: true, X: start.X + 40, Y: start.Y, ScreenX: start.X + 40, ScreenY: start.Y, Viewport: pair.first.viewport})
 	if showsHint(pair.first, hint) {
 		t.Fatal("the hint shows while the tab is still inside the window")
 	}
 	// Past the right edge, clear of the second window at x 1500.
-	pair.first.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Target: target, Captured: true, X: 1450, Y: 300, ScreenX: 1450, ScreenY: 300, Viewport: pair.first.viewport})
+	pair.first.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Target: target, Captured: true, X: 1450, Y: 300, ScreenX: 1450, ScreenY: 300, Viewport: pair.first.viewport})
 	if !showsHint(pair.first, hint) {
 		t.Fatal("a drag that left every window does not say it opens a new window")
 	}
 	// Over another window that window takes the tab, so the first has nothing to announce.
-	pair.first.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Target: target, Captured: true, X: 2000, Y: 300, ScreenX: 2000, ScreenY: 300, Viewport: pair.first.viewport})
+	pair.first.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Target: target, Captured: true, X: 2000, Y: 300, ScreenX: 2000, ScreenY: 300, Viewport: pair.first.viewport})
 	if showsHint(pair.first, hint) {
 		t.Fatal("the hint shows while another window is under the pointer")
 	}
-	pair.first.Key(ui.KeyEvent{Key: ui.KeyEscape})
+	pair.first.Key(gfx.KeyEvent{Key: gfx.KeyEscape})
 	if len(pair.torn) != 0 {
 		t.Fatal("cancelling the drag opened a window")
 	}
 }
 
 type fakePreview struct {
-	origins []ui.Point
+	origins []gfx.Point
 	closed  int
-	paint   func(*ui.Canvas, ui.Size)
-	size    ui.Size
+	paint   func(*gfx.Canvas, gfx.Size)
+	size    gfx.Size
 }
 
-func (preview *fakePreview) MoveTo(origin ui.Point) {
+func (preview *fakePreview) MoveTo(origin gfx.Point) {
 	preview.origins = append(preview.origins, origin)
 }
 func (preview *fakePreview) Close() { preview.closed++ }
@@ -109,8 +109,8 @@ func (preview *fakePreview) Close() { preview.closed++ }
 // every one it opened.
 func previewing(state *State) *[]*fakePreview {
 	opened := &[]*fakePreview{}
-	state.options.OpenDragPreview = func(size ui.Size, origin ui.Point, paint func(*ui.Canvas, ui.Size)) (DragPreview, error) {
-		preview := &fakePreview{origins: []ui.Point{origin}, paint: paint, size: size}
+	state.options.OpenDragPreview = func(size gfx.Size, origin gfx.Point, paint func(*gfx.Canvas, gfx.Size)) (DragPreview, error) {
+		preview := &fakePreview{origins: []gfx.Point{origin}, paint: paint, size: size}
 		*opened = append(*opened, preview)
 		return preview, nil
 	}
@@ -127,12 +127,12 @@ func TestADragOutOfEveryWindowIsFollowedByAPictureOfTheTab(t *testing.T) {
 	target := hitTabList.At(int(moving))
 	start := tabCenter(pair.first, moving)
 	move := func(x, y float32) {
-		pair.first.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Target: target, Captured: true, X: x, Y: y, ScreenX: x, ScreenY: y, Viewport: pair.first.viewport})
+		pair.first.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Target: target, Captured: true, X: x, Y: y, ScreenX: x, ScreenY: y, Viewport: pair.first.viewport})
 	}
 
-	pair.first.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: target, X: start.X, Y: start.Y, ScreenX: start.X, ScreenY: start.Y, Viewport: pair.first.viewport, ClickCount: 1})
+	pair.first.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: target, X: start.X, Y: start.Y, ScreenX: start.X, ScreenY: start.Y, Viewport: pair.first.viewport, ClickCount: 1})
 	move(start.X+40, start.Y)
-	pair.first.Paint(&ui.Canvas{}, ui.Size{Width: 1400, Height: 900})
+	pair.first.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
 	if len(*opened) != 0 {
 		t.Fatal("a picture was opened while the drag was still in the window")
 	}
@@ -146,7 +146,7 @@ func TestADragOutOfEveryWindowIsFollowedByAPictureOfTheTab(t *testing.T) {
 		t.Fatalf("the picture is %v, not a tab", preview.size)
 	}
 	// The pointer stays inside the picture, wherever the window puts its corner.
-	pointer := ui.Point{X: 1450, Y: 300}
+	pointer := gfx.Point{X: 1450, Y: 300}
 	at := preview.origins[len(preview.origins)-1]
 	if pointer.X < at.X || pointer.X > at.X+preview.size.Width || pointer.Y < at.Y || pointer.Y > at.Y+preview.size.Height {
 		t.Fatalf("the pointer %v is outside the picture at %v of %v", pointer, at, preview.size)
@@ -155,7 +155,7 @@ func TestADragOutOfEveryWindowIsFollowedByAPictureOfTheTab(t *testing.T) {
 		t.Fatal("the window also writes its hint while a picture says it")
 	}
 	// The picture draws the tab with the dragged tab's name.
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	preview.paint(&canvas, preview.size)
 	found := false
 	for _, text := range canvas.Texts() {
@@ -177,7 +177,7 @@ func TestADragOutOfEveryWindowIsFollowedByAPictureOfTheTab(t *testing.T) {
 	// Out again, then let go: the picture goes and a window opens.
 	move(1450, 300)
 	again := (*opened)[len(*opened)-1]
-	pair.first.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: target, Captured: true, X: 1450, Y: 300, ScreenX: 1450, ScreenY: 300, Viewport: pair.first.viewport, ClickCount: 1})
+	pair.first.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: target, Captured: true, X: 1450, Y: 300, ScreenX: 1450, ScreenY: 300, Viewport: pair.first.viewport, ClickCount: 1})
 	if again.closed != 1 || len(pair.torn) != 1 {
 		t.Fatalf("after the drop the picture closed %d times and %d windows opened", again.closed, len(pair.torn))
 	}
@@ -191,12 +191,12 @@ func TestEscapeTakesTheDragPictureAway(t *testing.T) {
 	moving := tabOrder(pair.first)[0]
 	target := hitTabList.At(int(moving))
 	start := tabCenter(pair.first, moving)
-	pair.first.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: target, X: start.X, Y: start.Y, ScreenX: start.X, ScreenY: start.Y, Viewport: pair.first.viewport, ClickCount: 1})
-	pair.first.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Target: target, Captured: true, X: 1450, Y: 300, ScreenX: 1450, ScreenY: 300, Viewport: pair.first.viewport})
+	pair.first.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: target, X: start.X, Y: start.Y, ScreenX: start.X, ScreenY: start.Y, Viewport: pair.first.viewport, ClickCount: 1})
+	pair.first.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Target: target, Captured: true, X: 1450, Y: 300, ScreenX: 1450, ScreenY: 300, Viewport: pair.first.viewport})
 	if len(*opened) != 1 {
 		t.Fatalf("%d pictures", len(*opened))
 	}
-	pair.first.Key(ui.KeyEvent{Key: ui.KeyEscape})
+	pair.first.Key(gfx.KeyEvent{Key: gfx.KeyEscape})
 	if (*opened)[0].closed != 1 || len(pair.torn) != 0 {
 		t.Fatalf("picture closed %d times, %d windows opened", (*opened)[0].closed, len(pair.torn))
 	}
@@ -204,7 +204,7 @@ func TestEscapeTakesTheDragPictureAway(t *testing.T) {
 
 func TestAPlatformWithoutADragPictureStillGetsTheWindowHint(t *testing.T) {
 	pair := newTwoWindows(t)
-	pair.first.options.OpenDragPreview = func(ui.Size, ui.Point, func(*ui.Canvas, ui.Size)) (DragPreview, error) {
+	pair.first.options.OpenDragPreview = func(gfx.Size, gfx.Point, func(*gfx.Canvas, gfx.Size)) (DragPreview, error) {
 		return nil, errors.New("unsupported")
 	}
 	liveTab(t, pair.first, pair.firstW, 0)
@@ -212,10 +212,10 @@ func TestAPlatformWithoutADragPictureStillGetsTheWindowHint(t *testing.T) {
 	moving := tabOrder(pair.first)[0]
 	target := hitTabList.At(int(moving))
 	start := tabCenter(pair.first, moving)
-	pair.first.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: target, X: start.X, Y: start.Y, ScreenX: start.X, ScreenY: start.Y, Viewport: pair.first.viewport, ClickCount: 1})
-	pair.first.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Target: target, Captured: true, X: 1450, Y: 300, ScreenX: 1450, ScreenY: 300, Viewport: pair.first.viewport})
+	pair.first.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: target, X: start.X, Y: start.Y, ScreenX: start.X, ScreenY: start.Y, Viewport: pair.first.viewport, ClickCount: 1})
+	pair.first.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Target: target, Captured: true, X: 1450, Y: 300, ScreenX: 1450, ScreenY: 300, Viewport: pair.first.viewport})
 	if !showsHint(pair.first, pair.first.messages.TabTearOffHint) {
 		t.Fatal("a refused picture leaves the drag with no cue at all")
 	}
-	pair.first.Key(ui.KeyEvent{Key: ui.KeyEscape})
+	pair.first.Key(gfx.KeyEvent{Key: gfx.KeyEscape})
 }

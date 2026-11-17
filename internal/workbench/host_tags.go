@@ -1,14 +1,11 @@
 package workbench
 
 import (
-	"slices"
 	"strings"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
-
-	"motty/internal/i18n"
 )
 
 var (
@@ -25,7 +22,7 @@ type hostTagPicker struct {
 	control    components.MultiSelectState
 	serialized string
 	ready      bool
-	popup      ui.Rect
+	popup      gfx.Rect
 }
 
 func validHostTag(value string) bool {
@@ -39,17 +36,11 @@ func (state *State) hostTagPicker() *hostTagPicker {
 	if !p.ready {
 		p.control.AllowCreate, p.control.MatchCaseInsensitive, p.control.Limit = true, true, maxHostTags
 		p.control.SetValidateCreate(validHostTag)
-		options := []components.MultiSelectOption{{Value: "开发"}, {Value: "测试"}, {Value: "生产"}}
-		if state.language == i18n.TraditionalChinese {
-			options = []components.MultiSelectOption{{Value: "開發"}, {Value: "測試"}, {Value: "生產"}}
-		}
-		for _, host := range state.hosts {
-			tags, _ := parseHostTags(host.Tags)
-			for _, tag := range tags {
-				if !slices.ContainsFunc(options, func(o components.MultiSelectOption) bool { return strings.EqualFold(o.Value, tag) }) {
-					options = append(options, components.MultiSelectOption{Value: tag})
-				}
-			}
+		// The suggestions are the tags Settings > Host tags lists: the built-in
+		// ones not deleted there, then every tag a host has.
+		var options []components.MultiSelectOption
+		for _, entry := range state.hostTagInventory() {
+			options = append(options, components.MultiSelectOption{Value: entry.name})
 		}
 		p.control.SetOptions(options)
 		p.ready = true
@@ -119,15 +110,16 @@ func (state *State) commitHostTagQuery() bool {
 	return true
 }
 
-func (state *State) clickHostTags(id ui.ID) bool {
+func (state *State) clickHostTags(id gfx.ID) bool {
 	p := state.hostTagPicker()
 	switch {
 	case id == hitDialogTags:
+		state.closeOtherHostPickers()
 		p.control.Open = true
-		state.editor.groupPicker.control.Open = false
 	case id == hitHostTagsTrigger:
-		p.control.Open = !p.control.Open
-		state.editor.groupPicker.control.Open = false
+		open := !p.control.Open
+		state.closeOtherHostPickers()
+		p.control.Open = open
 	case id == hitHostTagsDismiss:
 		p.control.Open = false
 	case id.Scope() == hitHostTagOptions:
@@ -142,26 +134,26 @@ func (state *State) clickHostTags(id ui.ID) bool {
 	return true
 }
 
-func (state *State) hostTagsKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) hostTagsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalNewHost {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	p := state.hostTagPicker()
-	if event.Target != hitDialogTags && (!p.control.Open || event.Key != ui.KeyEscape && event.Key != ui.KeyTab) {
-		return ui.EventResult{}, false
+	if event.Target != hitDialogTags && (!p.control.Open || event.Key != gfx.KeyEscape && event.Key != gfx.KeyTab) {
+		return gfx.EventResult{}, false
 	}
-	if event.Key == ui.KeyEnter && !event.Release && !event.Repeat && event.Modifiers == 0 {
+	if event.Key == gfx.KeyEnter && !event.Release && !event.Repeat && event.Modifiers == 0 {
 		if _, composing := p.control.Query.Composition(); !composing {
 			if query := strings.TrimSpace(p.control.Query.String()); query != "" {
 				if _, ok := pendingHostTags(query); !ok {
 					state.dialogError = state.messages.ErrHostTagsInvalid
-					return ui.EventResult{Handled: true, Repaint: true}, true
+					return gfx.EventResult{Handled: true, Repaint: true}, true
 				}
 				// A comma-separated query is several tags, and the component's
 				// create row is disabled for it, so commit the list here.
 				if strings.Contains(query, ",") {
 					state.commitHostTagQuery()
-					return ui.EventResult{Handled: true, Repaint: true}, true
+					return gfx.EventResult{Handled: true, Repaint: true}, true
 				}
 			}
 		}
@@ -171,7 +163,7 @@ func (state *State) hostTagsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	return result, result.Handled || result.Repaint
 }
 
-func (state *State) paintHostTags(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintHostTags(canvas *gfx.Canvas, bounds gfx.Rect) {
 	p := state.hostTagPicker()
 	input := components.BeginField(canvas, state.Theme(), bounds).For(hitDialogTags).Paint(state.messages.FieldTags, "", "")
 	query := strings.TrimSpace(p.control.Query.String())
@@ -181,7 +173,7 @@ func (state *State) paintHostTags(canvas *ui.Canvas, bounds ui.Rect) {
 		Placeholder: state.messages.FieldTagsPlaceholder, EmptyLabel: state.messages.HostTagsEmpty, CreatePrefix: state.messages.HostTagsCreatePrefix,
 		// The popup may cover the dialog footer, while the input stays clipped to
 		// the scrollable form. Viva bounds the floating list to this window.
-		Viewport: ui.Rect{Width: state.viewport.Width, Height: state.viewport.Height}, Layer: dialogLayer + 2,
+		Viewport: gfx.Rect{Width: state.viewport.Width, Height: state.viewport.Height}, Layer: dialogLayer + 2,
 		Invalid: query != "" && !validHostTag(query),
 	})
 	p.popup = layout.Popup

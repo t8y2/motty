@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // iconAnswers stands in for the system: it answers a bundle by name and counts
@@ -20,14 +20,14 @@ type iconAnswers struct {
 	failed map[string]error
 }
 
-func (answers *iconAnswers) icon(path string, pixels int) (ui.Bitmap, error) {
+func (answers *iconAnswers) icon(path string, pixels int) (gfx.Bitmap, error) {
 	answers.mu.Lock()
 	defer answers.mu.Unlock()
 	answers.asked = append(answers.asked, filepath.Base(path))
 	if err := answers.failed[filepath.Base(path)]; err != nil {
-		return ui.Bitmap{}, err
+		return gfx.Bitmap{}, err
 	}
-	return ui.Bitmap{Pix: make([]byte, pixels*pixels*4), Width: pixels, Height: pixels, Stride: pixels * 4}, nil
+	return gfx.Bitmap{Pix: make([]byte, pixels*pixels*4), Width: pixels, Height: pixels, Stride: pixels * 4}, nil
 }
 
 func (answers *iconAnswers) askedCount() int {
@@ -93,8 +93,8 @@ func TestLocalListShowsApplicationBundlesWithTheirSystemIcon(t *testing.T) {
 	if localRow(t, view, "Broken.app").appIcon.ready() {
 		t.Error("a bundle the system had no icon for shows a picture")
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if got := len(canvas.Images()); got != 1 {
 		t.Fatalf("pictures on the page = %d, want the one application icon", got)
 	}

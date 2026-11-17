@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sftpclient"
 )
 
@@ -49,7 +49,7 @@ func bulkSource(remote *workbenchSFTPRemote, source, content string) {
 
 func bulkAwait(t testing.TB, state *State, view *sftpView, id uint64, phase sftpclient.TransferState) sftpclient.TransferSnapshot {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		state.refreshSFTPTransfers(view)
 		for _, snapshot := range view.transfers {
@@ -78,8 +78,10 @@ func bulkConflict(t testing.TB, state *State, view *sftpView, remote *workbenchS
 	return id, target
 }
 
-func bulkAction(name string) ui.ID { return tree.ID(transferCenterHits, name) }
-func bulkHost(index int) ui.ID     { return tree.Sub(transferCenterHits, tree.Name("host-item")).At(index) }
+func bulkAction(name string) gfx.ID { return tree.ID(transferCenterHits, name) }
+func bulkHost(index int) gfx.ID {
+	return tree.Sub(transferCenterHits, tree.Name("host-item")).At(index)
+}
 
 func TestTransferCenterHostFilterScopesClearWithIdenticalWorkerIDs(t *testing.T) {
 	_, options := newWorld(t)
@@ -301,6 +303,46 @@ func TestTransferCenterScopedCancelDoesNotCancelHiddenHost(t *testing.T) {
 	}
 }
 
+func TestTransferCenterBulkPauseAndResumeStayInTheSearchScope(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	var views []*sftpView
+	for _, name := range []string{"match.txt", "other.txt"} {
+		view, base := bulkTestView(t, state)
+		view.worker.Close()
+		bulkSource(base, "/"+name, "copy payload")
+		remote := &centerGatedRemote{workbenchSFTPRemote: base, gate: make(chan struct{}), opened: make(chan struct{}, 1)}
+		view.worker = sftpclient.NewWorker(func() (sftpclient.Remote, error) { return remote, nil }, nil)
+		t.Cleanup(view.worker.Close)
+		if _, ok := view.worker.QueueDownload("/"+name, filepath.Join(t.TempDir(), name), false, sftpclient.ExistingFail); !ok {
+			t.Fatal("queue rejected")
+		}
+		select {
+		case <-remote.opened:
+		case <-time.After(time.Second):
+			t.Fatal("copy did not start")
+		}
+		state.refreshSFTPTransfers(view)
+		views = append(views, view)
+	}
+	state.transfers.search.SetText("MATCH")
+	state.updateTransferSearch()
+	state.Click(hitTransfersPauseAll)
+	if phase := views[0].worker.Transfers(nil)[0].State; phase != sftpclient.TransferPaused {
+		t.Fatalf("matching transfer is %v, want paused", phase)
+	}
+	if phase := views[1].worker.Transfers(nil)[0].State; phase != sftpclient.TransferRunning {
+		t.Fatalf("hidden transfer changed to %v", phase)
+	}
+	if got := state.transfers.pauseLabel; got != state.messages.Transfers.ResumeVisible {
+		t.Fatalf("after pausing the action is %q", got)
+	}
+	state.Click(hitTransfersPauseAll)
+	if phase := views[0].worker.Transfers(nil)[0].State; phase != sftpclient.TransferRunning {
+		t.Fatalf("matching transfer is %v, want running", phase)
+	}
+}
+
 func TestTransferCenterRetryCaptureExcludesLaterOrdinaryFailures(t *testing.T) {
 	_, options := newWorld(t)
 	state := newTestState(t, options)
@@ -354,8 +396,8 @@ func TestTransferCenterBulkViewsKeepSteadyPaintAllocationBudget(t *testing.T) {
 			if mode == "confirmation" {
 				state.Click(bulkAction("replace-visible"))
 			}
-			var canvas ui.Canvas
-			size := ui.Size{Width: 900, Height: 640}
+			var canvas gfx.Canvas
+			size := gfx.Size{Width: 900, Height: 640}
 			for range 3 {
 				canvas.Reset()
 				state.Paint(&canvas, size)

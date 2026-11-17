@@ -70,7 +70,7 @@ func TestFollowingTheSystemIsWrittenSoItKeepsFollowing(t *testing.T) {
 	options := system.options(freshOptions(t))
 	first := newTestState(t, options)
 	first.Click(hitSettings)
-	first.Click(hitSettingsAppearanceSystem)
+	clickSettingsChoice(t, first, first.messages.SettingsAppearanceSystem)
 	if first.appearance != appearanceLight {
 		t.Fatalf("the chosen system is light but the look is %v", first.appearance)
 	}
@@ -95,7 +95,7 @@ func TestTheWindowFollowsASwitchOfTheSystemWhileRunning(t *testing.T) {
 		t.Fatalf("%d watchers registered, want one", system.watchers)
 	}
 	state.Click(hitSettings)
-	state.Click(hitSettingsAppearanceSystem)
+	clickSettingsChoice(t, state, state.messages.SettingsAppearanceSystem)
 
 	system.switchTo(app.AppearanceLight)
 	if state.appearance != appearanceLight || state.Theme().Background != lightPalette.workspace || repaints != 1 {
@@ -116,7 +116,7 @@ func TestAPinnedLookIgnoresTheSystem(t *testing.T) {
 	options := system.options(freshOptions(t))
 	state := newTestState(t, options)
 	state.Click(hitSettings)
-	state.Click(hitSettingsAppearanceLight)
+	clickSettingsChoice(t, state, state.messages.SettingsAppearanceLight)
 	if state.appearance != appearanceLight || state.appearanceMode != appearancePinnedLight {
 		t.Fatalf("look %v mode %v", state.appearance, state.appearanceMode)
 	}
@@ -156,11 +156,11 @@ func TestChoosingSystemInSettingsFollowsItAtOnce(t *testing.T) {
 	system := &fakeSystem{look: app.AppearanceLight}
 	state := newTestState(t, system.options(freshOptions(t)))
 	state.Click(hitSettings)
-	state.Click(hitSettingsAppearanceDark)
+	clickSettingsChoice(t, state, state.messages.SettingsAppearanceDark)
 	if state.appearance != appearanceDark {
 		t.Fatal("setup: dark was not chosen")
 	}
-	state.Click(hitSettingsAppearanceSystem)
+	clickSettingsChoice(t, state, state.messages.SettingsAppearanceSystem)
 	if state.appearanceMode != appearanceFollowSystem || state.appearance != appearanceLight {
 		t.Fatalf("after choosing the system's: mode %v look %v, want following and light", state.appearanceMode, state.appearance)
 	}
@@ -169,7 +169,7 @@ func TestChoosingSystemInSettingsFollowsItAtOnce(t *testing.T) {
 		t.Fatal("the look no longer follows")
 	}
 	canvas, _ := paintedTexts(state)
-	if _, ok := hitByID(canvas, hitSettingsAppearanceSystem); !ok {
+	if _, ok := settingsChoiceIn(canvas, state.messages.SettingsAppearanceSystem); !ok {
 		t.Fatal("the System choice is not painted")
 	}
 	if saved, _, _ := loadState(state.options.StatePath); saved.Theme != "system" {
@@ -213,7 +213,7 @@ func TestWhatTheSystemDrawsFollowsAPinnedLookAndIsGivenBackWhenFollowing(t *test
 		t.Fatalf("at start the dark default is pinned at the system too: %v", asked)
 	}
 	state.Click(hitSettings)
-	state.Click(hitSettingsAppearanceLight)
+	clickSettingsChoice(t, state, state.messages.SettingsAppearanceLight)
 	if asked[len(asked)-1] != app.AppearanceLight {
 		t.Fatalf("pinned light: %v", asked)
 	}
@@ -221,12 +221,12 @@ func TestWhatTheSystemDrawsFollowsAPinnedLookAndIsGivenBackWhenFollowing(t *test
 	if asked[len(asked)-1] != app.AppearanceDark {
 		t.Fatalf("flipped to dark: %v", asked)
 	}
-	state.Click(hitSettingsAppearanceSystem)
+	clickSettingsChoice(t, state, state.messages.SettingsAppearanceSystem)
 	if asked[len(asked)-1] != app.AppearanceUnknown {
 		t.Fatalf("following the system again: %v", asked)
 	}
 	// A saved pin is applied at the next start.
-	state.Click(hitSettingsAppearanceDark)
+	clickSettingsChoice(t, state, state.messages.SettingsAppearanceDark)
 	asked = nil
 	newTestState(t, options)
 	if len(asked) == 0 || asked[0] != app.AppearanceDark {

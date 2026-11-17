@@ -29,15 +29,24 @@ type recorder struct {
 	erased   bool   // a backspace happened on this line
 	lineOver bool   // current line exceeded maxLineBytes
 
-	echo    [][]byte // expected echoed lines, consumed from the start
-	echoIdx int
+	echo        [][]byte // expected echoed lines, consumed from the start
+	echoIdx     int
+	echoPending []byte
 
-	head      []byte
-	headCap   int
-	tail      []byte
-	tailCap   int
-	total     int // bytes committed to head/tail combined
-	truncated bool
+	head       []byte
+	headCap    int
+	tail       []byte
+	tailCap    int
+	total      int // bytes committed to head/tail combined
+	truncated  bool
+	retained   []byte
+	retainCap  int
+	retainLost bool
+	// retainWindow keeps the newest output instead of giving up when the cap is
+	// exceeded. retained then holds the bytes from retainBase on, and the
+	// offsets reported to a reader stay absolute.
+	retainWindow bool
+	retainBase   int
 }
 
 func newRecorder(maxOutput int) *recorder {
@@ -58,6 +67,7 @@ func (r *recorder) setEcho(sent []byte) {
 		r.echo = append(r.echo, bytes.TrimSpace(l))
 	}
 	r.echoIdx = 0
+	r.echoPending = r.echoPending[:0]
 }
 
 func (r *recorder) write(p []byte) {
@@ -135,6 +145,10 @@ func (r *recorder) csi(final byte) {
 }
 
 func (r *recorder) ground(b byte) {
+	lineLimit := maxLineBytes
+	if r.retainCap > lineLimit && !r.retainLost {
+		lineLimit = r.retainCap
+	}
 	switch {
 	case b == 0x1b:
 		r.state = stEsc
@@ -152,7 +166,7 @@ func (r *recorder) ground(b byte) {
 		case r.col < len(r.cur):
 			r.cur[r.col] = b
 			r.col++
-		case len(r.cur) >= maxLineBytes:
+		case len(r.cur) >= lineLimit:
 			r.lineOver = true
 			r.truncated = true
 		default:
@@ -176,11 +190,25 @@ func (r *recorder) commitLine() {
 
 func (r *recorder) emitLine(line []byte, nl bool) {
 	if r.echoIdx < len(r.echo) {
-		if matchEcho(line, r.echo[r.echoIdx]) {
+		if len(r.echoPending) == 0 && matchEcho(line, r.echo[r.echoIdx]) {
 			r.echoIdx++
 			return
 		}
+		if len(r.echo) > 1 && matchEcho(line, r.echo[len(r.echo)-1]) {
+			r.echoIdx = len(r.echo)
+			r.echoPending = nil
+			return
+		}
+		if len(r.echoPending)+len(line)+1 <= 16<<10 {
+			r.echoPending = append(r.echoPending, line...)
+			if nl {
+				r.echoPending = append(r.echoPending, '\n')
+			}
+			return
+		}
 		r.echoIdx = len(r.echo)
+		r.put(r.echoPending)
+		r.echoPending = nil
 	}
 	r.put(line)
 	if nl {
@@ -209,6 +237,22 @@ func matchEcho(line, exp []byte) bool {
 // put appends committed text to the bounded head/tail store.
 func (r *recorder) put(b []byte) {
 	r.total += len(b)
+	if r.retainWindow {
+		r.retained = append(r.retained, b...)
+		if len(r.retained) > 2*r.retainCap {
+			drop := len(r.retained) - r.retainCap
+			n := copy(r.retained, r.retained[drop:])
+			r.retained = r.retained[:n]
+			r.retainBase += drop
+		}
+	} else if r.retainCap > 0 && !r.retainLost {
+		if len(b) > r.retainCap-len(r.retained) {
+			r.retained = nil
+			r.retainLost = true
+		} else {
+			r.retained = append(r.retained, b...)
+		}
+	}
 	if len(r.head) < r.headCap {
 		n := min(r.headCap-len(r.head), len(b))
 		r.head = append(r.head, b[:n]...)
@@ -239,6 +283,23 @@ func (r *recorder) finish() {
 		r.cur = r.cur[:0]
 		r.col = 0
 	}
+	if len(r.echoPending) > 0 {
+		r.put(r.echoPending)
+		r.echoPending = nil
+	}
+}
+
+// dropPendingLine removes the current unfinished line when it is prompt. A
+// device leaves its prompt as the last, unterminated line, and that line is the
+// signal the command has returned rather than part of its output.
+func (r *recorder) dropPendingLine(prompt string) {
+	if prompt == "" || !bytes.Equal(bytes.TrimRight(r.cur, " "), []byte(prompt)) {
+		return
+	}
+	r.cur = r.cur[:0]
+	r.col = 0
+	r.erased = false
+	r.lineOver = false
 }
 
 // snapshot builds the output text without mutating the recorder.

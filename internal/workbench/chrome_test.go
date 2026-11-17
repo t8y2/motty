@@ -6,17 +6,128 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 )
 
-func hitByID(canvas *ui.Canvas, id ui.ID) (ui.Hit, bool) {
+// windowKeyRoutes and its pointer and wheel peers deliver an event the way the
+// window's Config does: the page's own elements first, then the application's
+// handlers.
+func windowKeyRoutes(state *State, event gfx.KeyEvent) gfx.EventResult {
+	return state.WindowConfig(app.Config{OnKey: state.Key}).OnKey(event)
+}
+
+func windowPointerRoutes(state *State, event gfx.PointerEvent) gfx.EventResult {
+	return state.WindowConfig(app.Config{OnPointer: state.Pointer}).OnPointer(event)
+}
+
+func windowScrollRoutes(state *State, event gfx.ScrollEvent) gfx.EventResult {
+	return state.WindowConfig(app.Config{OnScroll: state.Scroll}).OnScroll(event)
+}
+
+func hitByID(canvas *gfx.Canvas, id gfx.ID) (gfx.Hit, bool) {
 	for _, hit := range canvas.Hits() {
 		if hit.ID == id {
 			return hit, true
 		}
 	}
-	return ui.Hit{}, false
+	return gfx.Hit{}, false
+}
+
+// hitByLabel finds the first painted button with label: a page-owned dialog
+// button is named by its place, not by an application identity. The first
+// match is the dialog's, because the page declares dialogs before the section
+// body is painted; a section can carry a button with the same label.
+func hitByLabel(canvas *gfx.Canvas, label string) (gfx.Hit, bool) {
+	return hitByLabelSnapshot(canvas.Hits(), label)
+}
+
+// hitByLabelSnapshot is hitByLabel over a snapshot's hits.
+func hitByLabelSnapshot(hits []gfx.Hit, label string) (gfx.Hit, bool) {
+	for _, hit := range hits {
+		if hit.Label == label && hit.Role == gfx.RoleButton {
+			return hit, true
+		}
+	}
+	return gfx.Hit{}, false
+}
+
+// The shell is declared by a page of its own, and that page keeps the hit
+// identities the central dispatcher names by hand: the window bar above the
+// navigation rail, the rail's rows under it, and the slot the sections paint
+// into. A bar button never takes focus, so pressing one leaves the keyboard in
+// the terminal it was over.
+func TestShellPageKeepsBarAndNavigationHits(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	canvas, _ := paintedTexts(state)
+	if state.chrome.windowPage == nil {
+		t.Fatal("the shell is not declared by a page")
+	}
+	if state.chrome.probePage == nil {
+		t.Fatal("the window bar was not measured by its page")
+	}
+
+	buttons := []struct {
+		id    gfx.ID
+		label string
+	}{
+		{hitHome, state.messages.NavHosts},
+		{hitNewTab, state.messages.LabelNewTab},
+		{hitWindowLocalTerminal, state.messages.LocalTerminal},
+		{hitWindowSettings, state.messages.NavSettings},
+	}
+	for _, button := range buttons {
+		hit := panelHit(t, canvas, button.id)
+		if hit.Label != button.label {
+			t.Errorf("%q reads %q", button.label, hit.Label)
+		}
+		if hit.Role != gfx.RoleButton {
+			t.Errorf("%q has role %v, want a button", button.label, hit.Role)
+		}
+		if hit.Focusable {
+			t.Errorf("%q takes focus; a bar button must leave the keyboard alone", button.label)
+		}
+		if hit.Bounds.Y < 0 || hit.Bounds.Y+hit.Bounds.Height > windowBarHeight {
+			t.Errorf("%q is outside the window bar: %+v", button.label, hit.Bounds)
+		}
+	}
+
+	rows := []struct {
+		id       gfx.ID
+		label    string
+		selected bool
+	}{
+		{hitHosts, state.messages.NavHosts, true},
+		{hitSettings, state.messages.NavSettings, false},
+		{hitLocalTerminal, state.messages.LocalTerminal, false},
+	}
+	for _, row := range rows {
+		hit := panelHit(t, canvas, row.id)
+		if hit.Label != row.label {
+			t.Errorf("%q reads %q", row.label, hit.Label)
+		}
+		if hit.Role != gfx.RoleMenuItem {
+			t.Errorf("%q has role %v, want a menu item", row.label, hit.Role)
+		}
+		if hit.Selected != row.selected {
+			t.Errorf("%q selected=%t, want %t", row.label, hit.Selected, row.selected)
+		}
+		if hit.Bounds.X < 0 || hit.Bounds.X+hit.Bounds.Width > navigationWidth || hit.Bounds.Y < windowBarHeight {
+			t.Errorf("%q is outside the navigation rail: %+v", row.label, hit.Bounds)
+		}
+	}
+
+	slot := state.chrome.workspaceSlot.Rect()
+	if slot.Width <= 0 || slot.Height <= 0 {
+		t.Fatalf("the shell recorded no workspace slot: %+v", slot)
+	}
+	window := state.windowRect()
+	if slot.X < navigationWidth {
+		t.Errorf("the workspace slot overlaps the navigation rail: %+v", slot)
+	}
+	if slot.X+slot.Width > window.Width || slot.Y+slot.Height > window.Height {
+		t.Errorf("the workspace slot spills out of the window: %+v in %+v", slot, window)
+	}
 }
 
 func TestChromeHasOnlyTheControlsThatDoSomething(t *testing.T) {
@@ -26,16 +137,16 @@ func TestChromeHasOnlyTheControlsThatDoSomething(t *testing.T) {
 	// "Session Logs" is a real page now, so its sidebar row is expected; a
 	// substring check for "Logs" would fail on it, which is why it is gone from
 	// this list of controls nothing answers to.
-	for _, gone := range []string{"Notes", "Vaults", "SFTP", "Scripts"} {
+	for _, gone := range []string{"Vaults", "SFTP", "Scripts"} {
 		if contains(texts, gone) {
 			t.Errorf("%q is still painted", gone)
 		}
 	}
 	// Every painted hit is one the state handles; none is a decoration waiting
 	// for a feature.
-	wanted := map[ui.ID]bool{
+	wanted := map[gfx.ID]bool{
 		hitHosts: true, hitWorkspaces: true, hitKeychain: true, hitProxies: true, hitPortForwarding: true,
-		hitKnownHosts: true, hitSnippets: true, hitSettings: true, hitWindowSettings: true, hitWindowLocalTerminal: true, hitSearch: true, hitConnect: true,
+		hitKnownHosts: true, hitSnippets: true, hitNotes: true, hitSettings: true, hitWindowSettings: true, hitWindowLocalTerminal: true, hitSearch: true, hitConnect: true,
 		hitAddHost: true, hitHostFilterAll: true, hitImportMenu: true, hitTheme: true, hitHome: true, hitNewTab: true,
 		hitGitHub: true,
 	}
@@ -83,7 +194,7 @@ func TestWindowBarGitHubButtonOpensTheRepository(t *testing.T) {
 
 func TestHostActionsAppearOnlyWhileSomethingIsChecked(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	actions := []ui.ID{hitExportHosts, hitEditHost, hitCopyHost, hitMoveHostGroup, hitDeleteHost}
+	actions := []gfx.ID{hitExportHosts, hitEditHost, hitCopyHost, hitMoveHostGroup, hitDeleteHost}
 	canvas, _ := paintedTexts(state)
 	for _, id := range actions {
 		if _, ok := hitByID(canvas, id); ok {
@@ -107,11 +218,11 @@ func TestHostActionsAppearOnlyWhileSomethingIsChecked(t *testing.T) {
 // narrowSection paints the state with the assistant panel as wide as it goes,
 // which leaves the section beside it the least room it promises: about 345px on
 // a 1262-wide window, the narrowest a real window can put a section in.
-func narrowSection(t *testing.T, state *State) (*ui.Canvas, []string) {
+func narrowSection(t *testing.T, state *State) (*gfx.Canvas, []string) {
 	t.Helper()
 	state.ai.open = true
 	state.ai.panelWidth = 5000 // a width dragged on a wider window: it keeps what this one has
-	return paintAt(state, ui.Size{Width: 1262, Height: 900})
+	return paintAt(state, gfx.Size{Width: 1262, Height: 900})
 }
 
 // TestTheHostsToolbarCondensesIntoIcons guards the toolbar's narrow form: a
@@ -121,10 +232,10 @@ func TestTheHostsToolbarCondensesIntoIcons(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	m := state.messages
 	buttons := []struct {
-		id    ui.ID
+		id    gfx.ID
 		label string
 	}{{hitConnect, m.Connect}, {hitImportMenu, m.ImportMenu}, {hitAddHost, m.NewHost}}
-	wide, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+	wide, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	for _, button := range buttons {
 		if hit := panelHit(t, wide, button.id); hit.Hint != "" || hit.Bounds.Width <= toolbarIconButton {
 			t.Errorf("%q is already condensed in a wide section: %+v", button.label, hit)
@@ -154,9 +265,9 @@ func TestTheHostsToolbarCondensesIntoIcons(t *testing.T) {
 
 // headerHit is the control with id nearest the top: a section paints some of its
 // buttons twice, once in its header and once in its empty state.
-func headerHit(t *testing.T, canvas *ui.Canvas, id ui.ID) ui.Hit {
+func headerHit(t *testing.T, canvas *gfx.Canvas, id gfx.ID) gfx.Hit {
 	t.Helper()
-	var found ui.Hit
+	var found gfx.Hit
 	first := true
 	for _, hit := range canvas.Hits() {
 		if hit.ID == id && (first || hit.Bounds.Y < found.Bounds.Y) {
@@ -176,17 +287,17 @@ func TestTheSectionToolbarsCondenseIntoIcons(t *testing.T) {
 	sections := []struct {
 		name string
 		page uint8
-		ids  []ui.ID
+		ids  []gfx.ID
 	}{
-		{"keys", sectionKeys, []ui.ID{hitKeysAdd, hitKeysCopyPublic, hitKeysRemove}},
-		{"proxies", sectionProxies, []ui.ID{hitProxyAdd, hitProxyEdit, hitProxyStartStop, hitProxyRemove}},
-		{"forwards", sectionForwards, []ui.ID{hitForwardAdd, hitForwardEdit, hitForwardStartStop, hitForwardRemove}},
-		{"known hosts", sectionKnownHosts, []ui.ID{hitKnownHostsRefresh, hitKnownHostsRetrust, hitKnownHostsDelete}},
+		{"keys", sectionKeys, []gfx.ID{hitKeysAdd, hitKeysCopyPublic, hitKeysRemove}},
+		{"proxies", sectionProxies, []gfx.ID{hitProxyBatchAdd, hitProxyAdd}},
+		{"forwards", sectionForwards, []gfx.ID{hitForwardAdd, hitForwardEdit, hitForwardStartStop, hitForwardRemove}},
+		{"known hosts", sectionKnownHosts, []gfx.ID{hitKnownHostsRefresh, hitKnownHostsRetrust, hitKnownHostsDelete}},
 	}
 	for _, section := range sections {
 		state := newTestState(t, testOptions(t))
 		state.activeSection = section.page
-		wide, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+		wide, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 		for _, id := range section.ids {
 			if hit := headerHit(t, wide, id); hit.Hint != "" || hit.Bounds.Width <= toolbarIconButton {
 				t.Errorf("%s: %q is already condensed in a wide section: %+v", section.name, hit.Label, hit)
@@ -215,8 +326,8 @@ func TestTheHostActionsCondenseIntoIcons(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.hostSelections = append(state.hostSelections, state.hosts[0].ID)
 	state.selectedHostID = state.hosts[0].ID
-	actions := []ui.ID{hitExportHosts, hitEditHost, hitCopyHost, hitMoveHostGroup, hitDeleteHost}
-	wide, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+	actions := []gfx.ID{hitExportHosts, hitEditHost, hitCopyHost, hitMoveHostGroup, hitDeleteHost}
+	wide, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	for _, id := range actions {
 		if hit := panelHit(t, wide, id); hit.Hint != "" || hit.Bounds.Width <= actionIconSize {
 			t.Errorf("action %d is already condensed in a wide section: %+v", id, hit)
@@ -239,7 +350,7 @@ func TestTheHostActionsCondenseIntoIcons(t *testing.T) {
 // both the name and the status in words keeps the name and shows the light.
 func TestANarrowHostRowKeepsTheName(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	_, wide := paintAt(state, ui.Size{Width: 1400, Height: 900})
+	_, wide := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	if !hasText(wide, state.messages.HostStateIdle) {
 		t.Fatal("a wide row does not say its status")
 	}
@@ -302,7 +413,7 @@ func TestThemeToggleSwitchesPaletteAndComponentTheme(t *testing.T) {
 // Text must stay readable on whatever it sits on. This is a contrast floor, not
 // a design review: it catches a palette entry set to the wrong value.
 func TestPalettesKeepTextReadable(t *testing.T) {
-	luminance := func(c ui.Color) float64 {
+	luminance := func(c gfx.Color) float64 {
 		channel := func(v float32) float64 {
 			x := float64(v)
 			if x <= 0.03928 {
@@ -312,7 +423,7 @@ func TestPalettesKeepTextReadable(t *testing.T) {
 		}
 		return 0.2126*channel(c.Red) + 0.7152*channel(c.Green) + 0.0722*channel(c.Blue)
 	}
-	ratio := func(a, b ui.Color) float64 {
+	ratio := func(a, b gfx.Color) float64 {
 		la, lb := luminance(a), luminance(b)
 		if la < lb {
 			la, lb = lb, la
@@ -322,7 +433,7 @@ func TestPalettesKeepTextReadable(t *testing.T) {
 	for name, pal := range map[string]*palette{"dark": &darkPalette, "light": &lightPalette} {
 		for _, check := range []struct {
 			what    string
-			fg, bg  ui.Color
+			fg, bg  gfx.Color
 			minimum float64
 		}{
 			{"text on workspace", pal.text, pal.workspace, 7},
@@ -368,17 +479,24 @@ func TestDialogButtonsFitTheirLabelsAndSitAtTheRightEdge(t *testing.T) {
 	cases := []struct {
 		name   string
 		open   func(*State, *fakeConn)
-		layout []ui.ID
+		layout func(*State) []string
 	}{
-		{"new host", func(state *State, _ *fakeConn) { state.Click(hitAddHost) }, []ui.ID{hitDialogCancel, hitDialogSubmit}},
+		{"new host", func(state *State, _ *fakeConn) { state.Click(hitAddHost) }, func(state *State) []string {
+			return []string{state.messages.Cancel, state.messages.AddHost}
+		}},
 		{"host key", func(state *State, fake *fakeConn) {
 			fake.set(func(s *sshconn.Status) { s.Phase = sshconn.PhaseHostKeyPrompt; s.HostKey = testHostKey })
 			state.Wake()
-		}, []ui.ID{hitHostKeyReject, hitHostKeyOnce, hitHostKeyTrust}},
+		}, func(state *State) []string {
+			m := state.messages
+			return []string{m.HostKeyReject, m.HostKeyOnce, m.HostKeyTrust}
+		}},
 		{"password", func(state *State, fake *fakeConn) {
 			fake.set(func(s *sshconn.Status) { s.Phase = sshconn.PhasePasswordPrompt; s.Attempt = 1 })
 			state.Wake()
-		}, []ui.ID{hitPasswordCancel, hitPasswordSubmit}},
+		}, func(state *State) []string {
+			return []string{state.messages.Cancel, state.messages.Connect}
+		}},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
@@ -388,15 +506,16 @@ func TestDialogButtonsFitTheirLabelsAndSitAtTheRightEdge(t *testing.T) {
 			test.open(state, fake)
 			canvas, _ := paintedTexts(state)
 			theme := state.Theme()
+			layout := test.layout(state)
 
 			var previousRight float32
-			var last ui.Hit
-			for index, id := range test.layout {
-				hit, ok := hitByID(canvas, id)
+			var last gfx.Hit
+			for index, label := range layout {
+				hit, ok := hitByLabel(canvas, label)
 				if !ok {
-					t.Fatalf("button %d is not painted", id)
+					t.Fatalf("button %q is not painted", label)
 				}
-				fit := components.BeginButton(canvas, theme, ui.ID{}, hit.Bounds).SizeToFit(hit.Label).BoundsWidth()
+				fit := components.BeginButton(canvas, theme, gfx.ID{}, hit.Bounds).SizeToFit(hit.Label).BoundsWidth()
 				if math.Abs(float64(hit.Bounds.Width-fit)) > 0.5 {
 					t.Errorf("%q is %.1f wide, its label fits in %.1f", hit.Label, hit.Bounds.Width, fit)
 				}
@@ -410,7 +529,7 @@ func TestDialogButtonsFitTheirLabelsAndSitAtTheRightEdge(t *testing.T) {
 				last = hit
 			}
 			// The last button ends where the dialog's content ends.
-			var content ui.Rect
+			var content gfx.Rect
 			for _, hit := range canvas.Hits() {
 				if hit.Block {
 					content = hit.Bounds
@@ -437,8 +556,8 @@ func TestPaintDoesNotAllocateInEitherThemeOrWithADialogOpen(t *testing.T) {
 			state := newTestState(t, testOptions(t))
 			state.setAppearance(appearance)
 			open.do(state)
-			var canvas ui.Canvas
-			size := ui.Size{Width: 1400, Height: 900}
+			var canvas gfx.Canvas
+			size := gfx.Size{Width: 1400, Height: 900}
 			state.Paint(&canvas, size)
 			allocations := testing.AllocsPerRun(50, func() {
 				canvas.Reset()
@@ -460,25 +579,87 @@ func TestFieldTextHasTheSameSizeFocusedAndUnfocused(t *testing.T) {
 	state.editor.label.Insert("Production")
 	canvas, _ := paintedTexts(state)
 
-	var hit ui.Hit
+	var hit gfx.Hit
 	for _, candidate := range canvas.Hits() {
 		if candidate.ID == hitDialogLabel {
 			hit = candidate
 		}
 	}
-	var painted ui.Text
+	text := hitText(canvas, &hit)
+	// The field's value is painted at the native editor's text bounds. Another
+	// control may show the same text (the host list can hold a host of the same
+	// name), so pick the paint inside the field, not the last match.
+	var painted gfx.Text
 	for _, candidate := range canvas.Texts() {
-		if candidate.Value == "Production" {
+		if candidate.Value == "Production" && candidate.Bounds.Y == text.Bounds.Y &&
+			candidate.Bounds.X >= text.Bounds.X && candidate.Bounds.X < text.Bounds.X+text.Bounds.Width {
 			painted = candidate
 		}
 	}
 	if hit.ID.IsZero() || painted.Value == "" {
 		t.Fatalf("hit=%+v painted=%+v", hit, painted)
 	}
-	if painted.Style.Size != metrics.FontSizeM || hit.TextSize != painted.Style.Size {
-		t.Fatalf("painted size %v, declared to the native editor %v, want both %v", painted.Style.Size, hit.TextSize, metrics.FontSizeM)
+	if painted.Style.Size != metrics.FontSizeM || text.Size != painted.Style.Size {
+		t.Fatalf("painted size %v, declared to the native editor %v, want both %v", painted.Style.Size, text.Size, metrics.FontSizeM)
 	}
-	if hit.TextBounds.X != painted.Bounds.X {
-		t.Fatalf("native editor would start at x=%v, the painted text at %v", hit.TextBounds.X, painted.Bounds.X)
+	if text.Bounds.X != painted.Bounds.X {
+		t.Fatalf("native editor would start at x=%v, the painted text at %v", text.Bounds.X, painted.Bounds.X)
+	}
+}
+
+// TestPageDeclaredControlsKeepTheirHitSemantics guards the controls that are now
+// page elements: a button keeps its role, its accessible name and its hint, and
+// a disabled one stays out of the Tab order they used to share.
+func TestPageDeclaredControlsKeepTheirHitSemantics(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
+
+	view, ok := canvasHit(canvas.Hits(), hitHostViewList)
+	if !ok {
+		t.Fatal("the hosts view switch is not a hit")
+	}
+	if view.Role != gfx.RoleButton || view.Label != state.messages.Tools.HostViewList ||
+		view.Hint != state.messages.Tools.HostViewList || !view.Focusable || view.Disabled {
+		t.Errorf("the view switch hit = %+v", view)
+	}
+	if view.Bounds.Width != 26 || view.Bounds.Height != 26 {
+		t.Errorf("the view switch is %vx%v, want 26x26", view.Bounds.Width, view.Bounds.Height)
+	}
+
+	chip, ok := canvasHit(canvas.Hits(), hitHostFilterAll)
+	if !ok {
+		t.Fatal("the All chip is not a hit")
+	}
+	if chip.Role != gfx.RoleButton || chip.Label != state.messages.HostFilterAll || !chip.Selected {
+		t.Errorf("the All chip hit = %+v", chip)
+	}
+	if want := state.filterChipWidth(canvas, state.messages.HostFilterAll, state.hostTotalDigits); chip.Bounds.Width != want {
+		t.Errorf("the All chip is %v wide, its label needs %v", chip.Bounds.Width, want)
+	}
+
+	connect, ok := canvasHit(canvas.Hits(), hitConnect)
+	if !ok || connect.Role != gfx.RoleButton || connect.Label != state.messages.Connect {
+		t.Errorf("the Connect button hit = %+v", connect)
+	}
+
+	state.activeSection = sectionKnownHosts
+	canvas, _ = paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	retrust, ok := canvasHit(canvas.Hits(), hitKnownHostsRetrust)
+	if !ok {
+		t.Fatal("the known-hosts Retrust button is not a hit")
+	}
+	if !retrust.Disabled || retrust.Focusable || retrust.Role != gfx.RoleButton {
+		t.Errorf("a disabled Retrust hit = %+v", retrust)
+	}
+
+	state.activeSection = sectionSessionLogs
+	canvas, _ = paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	filter, ok := canvasHit(canvas.Hits(), hitSessionLogsTime)
+	if !ok {
+		t.Fatal("the session-log time filter is not a hit")
+	}
+	if filter.Role != gfx.RoleButton || filter.Label != sessionLogFilterLabel(&state.messages.SessionLogs, sessionLogFilterTimeMenu) ||
+		!filter.Focusable || filter.Expanded || !filter.Expandable {
+		t.Errorf("the time filter hit = %+v", filter)
 	}
 }

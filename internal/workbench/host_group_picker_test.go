@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func TestHostGroupPickerSelectsCreatesClearsAndPersists(t *testing.T) {
@@ -18,7 +18,7 @@ func TestHostGroupPickerSelectsCreatesClearsAndPersists(t *testing.T) {
 		t.Fatal("existing group not preloaded", p.control.Choices())
 	}
 	typeInto(state, hitDialogGroup, "上海机房")
-	state.Key(ui.KeyEvent{Target: hitDialogGroup, Key: ui.KeyEnter})
+	state.Key(gfx.KeyEvent{Target: hitDialogGroup, Key: gfx.KeyEnter})
 	if state.modal != modalNewHost || p.control.Open || state.editor.value(fieldGroup) != "上海机房" {
 		t.Fatal("Enter submitted the form or did not select", state.editor.value(fieldGroup))
 	}
@@ -55,7 +55,7 @@ func TestHostGroupPickerCancelDoesNotCreateCatalogEntries(t *testing.T) {
 	state := newTestState(t, freshOptions(t))
 	state.Click(hitAddHost)
 	typeInto(state, hitDialogGroup, "不保存的分组")
-	state.Key(ui.KeyEvent{Target: hitDialogGroup, Key: ui.KeyEnter})
+	state.Key(gfx.KeyEvent{Target: hitDialogGroup, Key: gfx.KeyEnter})
 	state.Click(hitDialogCancel)
 	if len(state.hosts) != 0 || state.namedHostGroups() != 0 {
 		t.Fatal("canceled group leaked into catalog")
@@ -88,8 +88,8 @@ func BenchmarkPaintHostGroupDialog(b *testing.B) {
 			} else {
 				state.openEditHostID(state.hosts[0].ID)
 			}
-			var canvas ui.Canvas
-			size := ui.Size{Width: 1400, Height: 900}
+			var canvas gfx.Canvas
+			size := gfx.Size{Width: 1400, Height: 900}
 			state.Paint(&canvas, size)
 			b.ReportAllocs()
 			for b.Loop() {
@@ -108,11 +108,11 @@ func TestEnterInAnEmptyGroupFieldSavesTheHost(t *testing.T) {
 	typeInto(state, hitDialogLabel, "box")
 	typeInto(state, hitDialogAddress, "10.0.0.1")
 	state.Click(hitDialogGroup)
-	state.Key(ui.KeyEvent{Target: hitDialogGroup, Key: ui.KeyEnter})
+	state.Key(gfx.KeyEvent{Target: hitDialogGroup, Key: gfx.KeyEnter})
 	if modal := state.modal; modal != modalNewHost || state.hostGroupPicker().control.Open {
 		t.Fatalf("first Enter left modal=%v open=%v", modal, state.hostGroupPicker().control.Open)
 	}
-	state.Key(ui.KeyEvent{Target: hitDialogGroup, Key: ui.KeyEnter})
+	state.Key(gfx.KeyEvent{Target: hitDialogGroup, Key: gfx.KeyEnter})
 	if state.modal != modalNone || len(state.hosts) != 1 || state.hosts[0].Group != "" {
 		t.Fatalf("Enter on an empty group did not save: modal=%v hosts=%d group=%q error=%q",
 			state.modal, len(state.hosts), state.hosts[0].Group, state.dialogError)
@@ -125,7 +125,7 @@ func TestHostGroupPickerMatchesAnExistingGroupIgnoringCase(t *testing.T) {
 	state.refreshHostGroups()
 	state.openEditHostID(state.hosts[0].ID)
 	typeInto(state, hitDialogGroup, "servers")
-	state.Key(ui.KeyEvent{Target: hitDialogGroup, Key: ui.KeyEnter})
+	state.Key(gfx.KeyEvent{Target: hitDialogGroup, Key: gfx.KeyEnter})
 	if got := state.hostGroupPicker().control.Value(); got != "Servers" {
 		t.Fatalf("case-different query created %q, want the existing Servers", got)
 	}

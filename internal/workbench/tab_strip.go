@@ -1,14 +1,14 @@
 package workbench
 
 import (
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	layoutcore "motty/internal/workspace"
 )
 
 // tabStrip keeps the tab list's scroll offset along its layout axis. Nothing
 // animates and nothing runs on a timer.
 type tabStrip struct {
-	area     ui.Rect // where the tabs are painted, as of the last paint
+	area     gfx.Rect // where the tabs are painted, as of the last paint
 	vertical bool
 	origin   float32 // where the first tab starts when not scrolled
 	pitch    float32 // distance from one tab to the next
@@ -25,7 +25,7 @@ type tabStrip struct {
 // layout fits the offset to this paint's room and returns it. The active tab is
 // scrolled into view when it becomes active, and kept visible across geometry
 // changes. A wheel gesture that moves it out again is not undone on a repaint.
-func (strip *tabStrip) layout(area ui.Rect, content float32, tabs []layoutcore.WorkspaceInfo, pitch, width float32, active layoutcore.WorkspaceID) float32 {
+func (strip *tabStrip) layout(area gfx.Rect, content float32, tabs []layoutcore.WorkspaceInfo, pitch, width float32, active layoutcore.WorkspaceID) float32 {
 	activeIndex := -1
 	if active != 0 {
 		for index, tab := range tabs {
@@ -40,7 +40,7 @@ func (strip *tabStrip) layout(area ui.Rect, content float32, tabs []layoutcore.W
 
 // layoutIndex is layout for a strip whose workspace and runtime tabs share one
 // scroll position. activeIndex is -1 when no tab is active.
-func (strip *tabStrip) layoutIndex(area ui.Rect, content float32, count, activeIndex int, pitch, width float32) float32 {
+func (strip *tabStrip) layoutIndex(area gfx.Rect, content float32, count, activeIndex int, pitch, width float32) float32 {
 	extent, previousExtent, origin := area.Width, strip.area.Width, area.X
 	if strip.vertical {
 		extent, previousExtent, origin = area.Height, strip.area.Height, area.Y
@@ -70,9 +70,9 @@ func (strip *tabStrip) layoutIndex(area ui.Rect, content float32, count, activeI
 
 // scroll moves the tabs by a wheel or trackpad gesture over the strip. A mouse
 // wheel scrolls vertically, so that counts as horizontal here.
-func (strip *tabStrip) scroll(event ui.ScrollEvent) (ui.EventResult, bool) {
+func (strip *tabStrip) scroll(event gfx.ScrollEvent) (gfx.EventResult, bool) {
 	if strip.max <= 0 || !pointInRect(event.X, event.Y, strip.area) {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	delta := event.DeltaX
 	if strip.vertical {
@@ -87,8 +87,8 @@ func (strip *tabStrip) scroll(event ui.ScrollEvent) (ui.EventResult, bool) {
 	}
 	moved := min(max(strip.offset+delta, 0), strip.max)
 	if moved == strip.offset {
-		return ui.EventResult{Handled: true}, true
+		return gfx.EventResult{Handled: true}, true
 	}
 	strip.offset = moved
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }

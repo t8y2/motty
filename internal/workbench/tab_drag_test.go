@@ -3,6 +3,7 @@ package workbench
 import (
 	"testing"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	layoutcore "motty/internal/workspace"
 )
@@ -26,29 +27,29 @@ func threeTabs(t *testing.T) (*State, []layoutcore.WorkspaceID) {
 	if len(ids) != 3 {
 		t.Fatalf("%d tabs", len(ids))
 	}
-	state.Paint(&ui.Canvas{}, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
 	return state, ids
 }
 
-func tabCenter(state *State, id layoutcore.WorkspaceID) ui.Point {
+func tabCenter(state *State, id layoutcore.WorkspaceID) gfx.Point {
 	for index, tab := range state.workspaceTabs {
 		if tab.ID == id {
-			return ui.Point{X: state.tabStrip.origin + float32(index)*state.tabStrip.pitch + state.tabStrip.tabWidth/2, Y: windowBarHeight / 2}
+			return gfx.Point{X: state.tabStrip.origin + float32(index)*state.tabStrip.pitch + state.tabStrip.tabWidth/2, Y: windowBarHeight / 2}
 		}
 	}
-	return ui.Point{}
+	return gfx.Point{}
 }
 
-func press(state *State, target ui.ID, at ui.Point) ui.EventResult {
-	return state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: target, X: at.X, Y: at.Y, Viewport: state.viewport, ClickCount: 1})
+func press(state *State, target gfx.ID, at gfx.Point) gfx.EventResult {
+	return state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: target, X: at.X, Y: at.Y, Viewport: state.viewport, ClickCount: 1})
 }
 
-func dragTo(state *State, target ui.ID, at ui.Point) ui.EventResult {
-	return state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Target: target, Captured: true, X: at.X, Y: at.Y, Viewport: state.viewport})
+func dragTo(state *State, target gfx.ID, at gfx.Point) gfx.EventResult {
+	return state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Target: target, Captured: true, X: at.X, Y: at.Y, Viewport: state.viewport})
 }
 
-func release(state *State, target ui.ID, at ui.Point) ui.EventResult {
-	return state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: target, Captured: true, X: at.X, Y: at.Y, Viewport: state.viewport, ClickCount: 1})
+func release(state *State, target gfx.ID, at gfx.Point) gfx.EventResult {
+	return state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: target, Captured: true, X: at.X, Y: at.Y, Viewport: state.viewport, ClickCount: 1})
 }
 
 func tabOrder(state *State) []layoutcore.WorkspaceID {
@@ -66,7 +67,7 @@ func TestAPressThatDoesNotTravelIsStillAClick(t *testing.T) {
 	if result := press(state, target, from); result.Handled {
 		t.Fatalf("the press was taken: %+v", result)
 	}
-	if result := dragTo(state, target, ui.Point{X: from.X + 2, Y: from.Y}); result.Handled || state.tabDrag.active {
+	if result := dragTo(state, target, gfx.Point{X: from.X + 2, Y: from.Y}); result.Handled || state.tabDrag.active {
 		t.Fatalf("a 2 px wobble started a drag: %+v", result)
 	}
 	if result := release(state, target, from); result.Handled {
@@ -87,11 +88,11 @@ func TestDraggingATabAlongTheStripMovesIt(t *testing.T) {
 	if result := dragTo(state, target, last); !result.Handled || !result.Repaint || state.tabDrag.drop.kind != dropReorder || state.tabDrag.drop.boundary != 3 {
 		t.Fatalf("drag %+v, drop %+v", result, state.tabDrag.drop)
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	found := false
 	for _, rectangle := range canvas.Rectangles() {
-		if rectangle.Layer == tabDragLayer && rectangle.Bounds.Width == 2 {
+		if rectangle.Layer == uint16(ui.LayerDrag) && rectangle.Bounds.Width == 2 {
 			found = true
 		}
 	}
@@ -139,7 +140,7 @@ func TestDroppingATabBesideItselfChangesNothing(t *testing.T) {
 	target := hitTabList.At(int(ids[1]))
 	from := tabCenter(state, ids[1])
 	press(state, target, from)
-	dragTo(state, target, ui.Point{X: from.X + 30, Y: from.Y})
+	dragTo(state, target, gfx.Point{X: from.X + 30, Y: from.Y})
 	if state.tabDrag.drop.kind != dropNone {
 		t.Fatalf("drop %+v", state.tabDrag.drop)
 	}
@@ -161,22 +162,22 @@ func TestDraggingATabOntoAPaneEdgeDocksItThere(t *testing.T) {
 	frame := state.workspacePixelBounds(state.viewport)
 
 	// The middle of the pane is not an edge.
-	dragTo(state, target, ui.Point{X: frame.X + frame.Width/2, Y: frame.Y + frame.Height/2})
+	dragTo(state, target, gfx.Point{X: frame.X + frame.Width/2, Y: frame.Y + frame.Height/2})
 	if state.tabDrag.drop.kind != dropNone {
 		t.Fatalf("the middle is a drop: %+v", state.tabDrag.drop)
 	}
 	// The left edge docks to the left: the dragged tab's pane comes first.
-	at := ui.Point{X: frame.X + frame.Width*0.1, Y: frame.Y + frame.Height/2}
+	at := gfx.Point{X: frame.X + frame.Width*0.1, Y: frame.Y + frame.Height/2}
 	dragTo(state, target, at)
 	drop := state.tabDrag.drop
 	if drop.kind != dropDock || drop.edge != dockLeft || drop.zone.X != frame.X || drop.zone.Width != frame.Width/2 {
 		t.Fatalf("drop %+v", drop)
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	highlighted := false
 	for _, rectangle := range canvas.Rectangles() {
-		if rectangle.Layer == tabDragLayer && rectangle.Bounds == drop.zone && rectangle.Color.Alpha < 1 {
+		if rectangle.Layer == uint16(ui.LayerDrag) && rectangle.Bounds == drop.zone && rectangle.Color.Alpha < 1 {
 			highlighted = true
 		}
 	}
@@ -198,8 +199,8 @@ func TestDraggingATabOntoAPaneEdgeDocksItThere(t *testing.T) {
 	if _, ok := state.sessionByIDPointer(uint32(moved)); !ok {
 		t.Fatal("docking lost the session")
 	}
-	var canvasAfter ui.Canvas
-	state.Paint(&canvasAfter, ui.Size{Width: 1400, Height: 900})
+	var canvasAfter gfx.Canvas
+	state.Paint(&canvasAfter, gfx.Size{Width: 1400, Height: 900})
 	saved, _, _ := loadState(state.options.StatePath)
 	if saved.Deck == nil || len(saved.Deck.Workspaces) != 2 {
 		t.Fatal("the dock was not saved")
@@ -215,7 +216,7 @@ func TestEscapeCancelsADragAndNothingChanges(t *testing.T) {
 	if !state.tabDrag.active {
 		t.Fatal("no drag")
 	}
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEscape}); !result.Handled || state.tabDrag.active {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEscape}); !result.Handled || state.tabDrag.active {
 		t.Fatalf("escape: %+v, drag %+v", result, state.tabDrag)
 	}
 	release(state, target, tabCenter(state, ids[2]))
@@ -235,11 +236,11 @@ func TestACrowdedTabCannotBeDockedPastTheLimit(t *testing.T) {
 	if _, err := state.deck.Split(ids[2], state.deck.Panes(ids[2], nil)[0].ID, layoutcore.Horizontal); err != nil {
 		t.Fatal(err)
 	}
-	state.Paint(&ui.Canvas{}, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
 	target := hitTabList.At(int(ids[0]))
 	press(state, target, tabCenter(state, ids[0]))
 	frame := state.workspacePixelBounds(state.viewport)
-	dragTo(state, target, ui.Point{X: frame.X + 5, Y: frame.Y + frame.Height/2})
+	dragTo(state, target, gfx.Point{X: frame.X + 5, Y: frame.Y + frame.Height/2})
 	if state.tabDrag.drop.kind != dropNone {
 		t.Fatalf("a full workspace takes a drop: %+v", state.tabDrag.drop)
 	}
@@ -251,10 +252,10 @@ func TestDraggingAPaneBarToTheTabsPullsItOutAsATab(t *testing.T) {
 	// Dock tab 0 beside the tab on show so the workspace is split.
 	target := hitTabList.At(int(ids[0]))
 	press(state, target, tabCenter(state, ids[0]))
-	at := ui.Point{X: frame.X + frame.Width*0.1, Y: frame.Y + frame.Height/2}
+	at := gfx.Point{X: frame.X + frame.Width*0.1, Y: frame.Y + frame.Height/2}
 	dragTo(state, target, at)
 	release(state, target, at)
-	state.Paint(&ui.Canvas{}, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
 	panes := state.deck.Panes(ids[2], nil)
 	if len(panes) != 2 {
 		t.Fatalf("panes %+v", panes)
@@ -263,15 +264,15 @@ func TestDraggingAPaneBarToTheTabsPullsItOutAsATab(t *testing.T) {
 
 	state.refreshWorkspaceViews()
 	bar := pixelBounds(frame, state.panes[0].Bounds)
-	from := ui.Point{X: bar.X + bar.Width/2, Y: bar.Y + infoBarHeight/2}
+	from := gfx.Point{X: bar.X + bar.Width/2, Y: bar.Y + infoBarHeight/2}
 	ground := hitPaneActivateList.At(0)
 	press(state, ground, from)
 	// A drag over the terminal is not a drop.
-	dragTo(state, ground, ui.Point{X: bar.X + bar.Width/2, Y: bar.Y + bar.Height/2})
+	dragTo(state, ground, gfx.Point{X: bar.X + bar.Width/2, Y: bar.Y + bar.Height/2})
 	if !state.tabDrag.active || state.tabDrag.drop.kind != dropNone {
 		t.Fatalf("drag %+v", state.tabDrag)
 	}
-	end := ui.Point{X: state.tabStrip.origin + state.tabStrip.pitch*0.5, Y: windowBarHeight / 2}
+	end := gfx.Point{X: state.tabStrip.origin + state.tabStrip.pitch*0.5, Y: windowBarHeight / 2}
 	dragTo(state, ground, end)
 	if state.tabDrag.drop.kind != dropReorder {
 		t.Fatalf("no drop among the tabs: %+v", state.tabDrag.drop)
@@ -290,5 +291,99 @@ func TestDraggingAPaneBarToTheTabsPullsItOutAsATab(t *testing.T) {
 	}
 	if _, ok := state.sessionByIDPointer(uint32(moved)); !ok {
 		t.Fatal("the session was lost")
+	}
+}
+
+// hitIDs is the set of identities the canvas registered, for comparing a paint
+// with a drag overlay against one without it.
+func hitIDs(hits []gfx.Hit) map[gfx.ID]int {
+	ids := make(map[gfx.ID]int, len(hits))
+	for _, hit := range hits {
+		ids[hit.ID]++
+	}
+	return ids
+}
+
+// TestTabDragOverlaysAreHitlessPageElementsOnTheDragLayer guards the ghost and
+// the tear-off hint: they paint on the drag layer over the page and add no hit,
+// so the tab and the content under the pointer keep reacting.
+func TestTabDragOverlaysAreHitlessPageElementsOnTheDragLayer(t *testing.T) {
+	state, ids := threeTabs(t)
+	var baseline gfx.Canvas
+	state.Paint(&baseline, gfx.Size{Width: 1400, Height: 900})
+	before := hitIDs(baseline.Hits())
+
+	target := hitTabList.At(int(ids[0]))
+	from := tabCenter(state, ids[0])
+	press(state, target, from)
+	last := tabCenter(state, ids[2])
+	last.X += state.tabStrip.tabWidth / 2
+	dragTo(state, target, last)
+	var dragged gfx.Canvas
+	state.Paint(&dragged, gfx.Size{Width: 1400, Height: 900})
+	if state.tabDrag.title == "" {
+		t.Fatal("the drag has no ghost title")
+	}
+	ghost := false
+	for _, text := range dragged.Texts() {
+		if text.Value == state.tabDrag.title && text.Layer == uint16(ui.LayerDrag) {
+			ghost = true
+		}
+	}
+	if !ghost {
+		t.Fatalf("no ghost %q on the drag layer", state.tabDrag.title)
+	}
+	after := hitIDs(dragged.Hits())
+	if len(before) != len(after) {
+		t.Fatalf("the overlay changed the hit list: %d -> %d", len(before), len(after))
+	}
+	for id, count := range after {
+		if before[id] != count {
+			t.Fatalf("the overlay added or moved the hit %v: %d -> %d", id, before[id], count)
+		}
+	}
+
+	// A tab dragged out of every window shows the ghost and the hint at the
+	// nearest edge, both on the drag layer and neither a hit.
+	state.tabDrag = tabDrag{
+		active: true, outside: true, title: "Dragged", at: gfx.Point{X: 700, Y: 300},
+	}
+	var tearOff gfx.Canvas
+	state.Paint(&tearOff, gfx.Size{Width: 1400, Height: 900})
+	viewport := state.windowRect()
+	width := state.tabPreview.width
+	if width <= 0 {
+		t.Fatal("the ghost has no width")
+	}
+	want := state.popupAt(&tearOff, viewport, gfx.Point{X: 700 - width/2, Y: 300 - barTabHeight/2}, width, barTabHeight, 0)
+	var ghostTitle, hint gfx.Text
+	for _, text := range tearOff.Texts() {
+		switch {
+		case text.Value == "Dragged" && text.Layer == uint16(ui.LayerDrag):
+			ghostTitle = text
+		case text.Value == state.messages.TabTearOffHint && text.Layer == uint16(ui.LayerDrag):
+			hint = text
+		}
+	}
+	if ghostTitle.Value == "" || hint.Value == "" {
+		t.Fatalf("tear-off texts: ghost %q hint %q", ghostTitle.Value, hint.Value)
+	}
+	hintCenter := hint.Bounds.X + hint.Bounds.Width/2
+	if hintCenter < want.X || hintCenter > want.X+want.Width {
+		t.Errorf("the hint at %+v lies outside the ghost at %+v", hint.Bounds, want)
+	}
+	if ghostTitle.Bounds.X < want.X || ghostTitle.Bounds.X+ghostTitle.Bounds.Width > want.X+want.Width {
+		t.Errorf("the ghost title at %+v lies outside the ghost at %+v", ghostTitle.Bounds, want)
+	}
+	if hint.Bounds.Y < ghostTitle.Bounds.Y+ghostTitle.Bounds.Height {
+		t.Errorf("the hint at %+v is not under the ghost title at %+v", hint.Bounds, ghostTitle.Bounds)
+	}
+	for _, hit := range tearOff.Hits() {
+		if hit.Bounds == want {
+			t.Errorf("the ghost registered the hit %v", hit.ID)
+		}
+		if hit.Bounds.X == hint.Bounds.X && hit.Bounds.Width == hint.Bounds.Width && hit.Bounds.Y == hint.Bounds.Y {
+			t.Errorf("the hint registered the hit %v", hit.ID)
+		}
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -33,10 +34,15 @@ type fakeGist struct {
 	commits []string
 }
 
-func (g *fakeGist) json(id string) map[string]any {
+func (g *fakeGist) json(id, base string) map[string]any {
 	files := map[string]any{}
 	for name, content := range g.files {
-		files[name] = map[string]any{"filename": name, "content": content, "size": len(content), "truncated": false}
+		file := map[string]any{"filename": name, "content": content, "size": len(content), "truncated": false, "raw_url": base + "/raw/" + id + "/" + name}
+		if len(content) > 1_000_000 {
+			// The API answers at most 1 MB of a file and says so.
+			file["content"], file["truncated"] = content[:1_000_000], true
+		}
+		files[name] = file
 	}
 	history := []map[string]string{}
 	for i := len(g.commits) - 1; i >= 0; i-- {
@@ -57,6 +63,22 @@ func newFakeGitHub(t *testing.T) (*httptest.Server, *fakeGitHub) {
 		fake.mu.Lock()
 		defer fake.mu.Unlock()
 		fake.requests = append(fake.requests, r.Method+" "+r.URL.RequestURI())
+		if strings.HasPrefix(r.URL.Path, "/raw/") {
+			// A raw URL is a secret address that needs no login; sending the token
+			// to it would leak the token to the file host.
+			if r.Header.Get("Authorization") != "" {
+				http.Error(w, "token sent to a raw URL", http.StatusBadRequest)
+				return
+			}
+			parts := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/raw/"), "/", 2)
+			g, ok := fake.gists[parts[0]]
+			if len(parts) != 2 || !ok || g.files[parts[1]] == "" {
+				http.NotFound(w, r)
+				return
+			}
+			io.WriteString(w, g.files[parts[1]])
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		reply := func(status int, v any) {
 			w.WriteHeader(status)
@@ -98,7 +120,7 @@ func newFakeGitHub(t *testing.T) (*httptest.Server, *fakeGitHub) {
 			}
 			g.commit()
 			fake.gists["abc123"] = g
-			reply(201, g.json("abc123"))
+			reply(201, g.json("abc123", "http://"+r.Host))
 		case strings.HasPrefix(r.URL.Path, "/gists/"):
 			g, ok := fake.gists[id]
 			if !ok {
@@ -107,13 +129,13 @@ func newFakeGitHub(t *testing.T) (*httptest.Server, *fakeGitHub) {
 			}
 			switch r.Method {
 			case http.MethodGet:
-				reply(200, g.json(id))
+				reply(200, g.json(id, "http://"+r.Host))
 			case http.MethodPatch:
 				for name, file := range body.Files {
 					g.files[name] = file.Content
 				}
 				g.commit()
-				reply(200, g.json(id))
+				reply(200, g.json(id, "http://"+r.Host))
 			}
 		default:
 			reply(404, map[string]string{"message": "Not Found"})
@@ -238,15 +260,34 @@ func TestMissingGistAndBadTokenSayWhatIsWrong(t *testing.T) {
 	}
 }
 
-func TestABackupTooBigForAGistFileIsRefusedBeforeItIsSent(t *testing.T) {
-	server, fake := newFakeGitHub(t)
+func TestAGitHubBackupLargerThanOneMegabyteIsReadBackWhole(t *testing.T) {
+	server, _ := newFakeGitHub(t)
 	client := newTestClient(t, server, "")
-	_, err := client.Put(context.Background(), make([]byte, 800_000), "") // 1.07 MB as base64
+	backup := make([]byte, 900_000) // 1.2 MB as base64, past the API's 1 MB answer
+	for i := range backup {
+		backup[i] = byte(i * 7)
+	}
+	if _, err := client.Put(context.Background(), backup, ""); err != nil {
+		t.Fatalf("a GitHub gist takes a backup over 1 MB: %v", err)
+	}
+	got, _, err := client.Get(context.Background())
+	if err != nil {
+		t.Fatalf("reading back a truncated file: %v", err)
+	}
+	if string(got) != string(backup) {
+		t.Fatalf("read back %d bytes, want the %d uploaded", len(got), len(backup))
+	}
+}
+
+func TestAGiteeBackupTooBigForASnippetFileIsRefusedBeforeItIsSent(t *testing.T) {
+	server, fake := newFakeGitHub(t)
+	client, err := New(Config{Provider: Gitee, Token: testToken, APIBase: server.URL}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.Put(context.Background(), make([]byte, 800_000), "") // 1.07 MB as base64
 	if !errors.Is(err, cloudsync.ErrTooLarge) || len(fake.requests) != 0 {
 		t.Fatalf("%v, %d requests", err, len(fake.requests))
-	}
-	if _, err := client.Put(context.Background(), make([]byte, 700_000), ""); err != nil { // 933 KB
-		t.Fatal(err)
 	}
 }
 
@@ -281,5 +322,151 @@ func TestAFirstUploadToAnExistingGistDoesNotReplaceTheFileIfItIsThere(t *testing
 	}
 	if data, _, _ := second.Get(ctx); string(data) != "mine" {
 		t.Fatalf("the gist holds %q", data)
+	}
+}
+
+const testGiteeToken = "gitee_test_token"
+
+// fakeGitee is the snippet part of the Gitee API: the token is a query
+// parameter, a created snippet is returned inside an array, and files are a
+// JSON-encoded string rather than an object.
+type fakeGitee struct {
+	mu       sync.Mutex
+	gists    map[string]*fakeGist
+	requests []string
+}
+
+func (g *fakeGist) giteeJSON(id string) map[string]any {
+	files := map[string]any{}
+	for name, content := range g.files {
+		files[name] = map[string]any{"filename": name, "content": content, "truncated": false}
+	}
+	encoded, _ := json.Marshal(files)
+	return map[string]any{"id": id, "public": false, "updated_at": "2026-01-01T00:00:00Z", "history": "", "files": string(encoded)}
+}
+
+func newFakeGitee(t *testing.T) (*httptest.Server, *fakeGitee) {
+	t.Helper()
+	fake := &fakeGitee{gists: map[string]*fakeGist{}}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		fake.requests = append(fake.requests, r.Method+" "+r.URL.RequestURI())
+		w.Header().Set("Content-Type", "application/json")
+		reply := func(status int, v any) {
+			w.WriteHeader(status)
+			json.NewEncoder(w).Encode(v)
+		}
+		if r.URL.Query().Get("access_token") != testGiteeToken || r.Header.Get("Authorization") != "" {
+			reply(401, map[string]string{"message": "Bad credentials"})
+			return
+		}
+		var body struct {
+			Description string `json:"description"`
+			Public      *bool  `json:"public"`
+			Files       map[string]struct {
+				Content string `json:"content"`
+			} `json:"files"`
+		}
+		if r.Method == http.MethodPost || r.Method == http.MethodPatch {
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				reply(400, map[string]string{"message": "Problems parsing JSON"})
+				return
+			}
+		}
+		id := strings.TrimPrefix(r.URL.Path, "/gists/")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/gists":
+			reply(200, []any{})
+		case r.Method == http.MethodPost && r.URL.Path == "/gists":
+			if body.Public == nil || *body.Public || body.Description == "" || len(body.Files) == 0 {
+				reply(422, map[string]string{"message": "Validation Failed"})
+				return
+			}
+			g := &fakeGist{files: map[string]string{}}
+			for name, file := range body.Files {
+				g.files[name] = file.Content
+			}
+			fake.gists["gitee-123"] = g
+			reply(201, []any{g.giteeJSON("gitee-123")})
+		case strings.HasPrefix(r.URL.Path, "/gists/"):
+			g, ok := fake.gists[id]
+			if !ok {
+				reply(404, map[string]string{"message": "Not Found"})
+				return
+			}
+			switch r.Method {
+			case http.MethodGet:
+				reply(200, g.giteeJSON(id))
+			case http.MethodPatch:
+				for name, file := range body.Files {
+					g.files[name] = file.Content
+				}
+				reply(200, g.giteeJSON(id))
+			}
+		default:
+			reply(404, map[string]string{"message": "Not Found"})
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server, fake
+}
+
+func TestGiteeSnippetsUseTheirAPIShape(t *testing.T) {
+	server, fake := newFakeGitee(t)
+	client, err := New(Config{Provider: Gitee, Token: testGiteeToken, APIBase: server.URL}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := client.Test(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := client.Get(ctx); !errors.Is(err, cloudsync.ErrNotFound) {
+		t.Fatalf("get with no snippet: %v", err)
+	}
+	sealed := []byte{0, 1, 2, 250, 251, 252, '{', '}'}
+	first, err := client.Put(ctx, sealed, "")
+	if err != nil || first == "" || client.ID() != "gitee-123" {
+		t.Fatalf("create: tag %q id %q %v", first, client.ID(), err)
+	}
+	if got := fake.gists["gitee-123"].files[DefaultFile]; got != base64.StdEncoding.EncodeToString(sealed) {
+		t.Fatalf("the snippet holds %q, not the base64 of the backup", got)
+	}
+	data, tag, err := client.Get(ctx)
+	if err != nil || string(data) != string(sealed) || tag != first {
+		t.Fatalf("get: %q %q %v", data, tag, err)
+	}
+	second, err := client.Put(ctx, []byte("newer"), first)
+	if err != nil || second == first {
+		t.Fatalf("update: %q %v", second, err)
+	}
+	if _, err := client.Put(ctx, []byte("stale"), first); !errors.Is(err, cloudsync.ErrChanged) {
+		t.Fatalf("a stale update: %v", err)
+	}
+	data, tag, err = client.Get(ctx)
+	if err != nil || string(data) != "newer" || tag != second {
+		t.Fatalf("after the update: %q %q %v", data, tag, err)
+	}
+	for _, request := range fake.requests {
+		if !strings.Contains(request, "access_token="+testGiteeToken) {
+			t.Fatalf("a request did not carry the token: %s", request)
+		}
+	}
+}
+
+func TestGiteeUsesItsOwnDefaultAPIAndAcceptsItsSnippetIDs(t *testing.T) {
+	client, err := New(Config{Provider: Gitee, Token: "t"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := client.base.String(); got != GiteeAPIBase {
+		t.Fatalf("default API base %q", got)
+	}
+	if _, err := New(Config{Provider: Gitee, Token: "t", ID: "gitee-123_ab"}, nil); err != nil {
+		t.Fatalf("a Gitee snippet id was refused: %v", err)
+	}
+	if _, err := New(Config{Provider: Gitee, Token: "t", ID: "../users"}, nil); err == nil {
+		t.Fatal("a path in the snippet id accepted")
 	}
 }

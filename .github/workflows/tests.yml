@@ -10,6 +10,15 @@ permissions:
   contents: read
   pull-requests: read # the `changes` job lists a pull request's files
 
+# Viva is pinned to one commit so that a run of this workflow tests exactly one
+# Motty tree against exactly one framework tree. Before this pin, every job
+# checked out Viva's default branch, so rerunning the same Motty SHA after a
+# Viva push tested different code and could change a green result to red (or the
+# reverse) without any change on the Motty side. Move the pin in the same commit
+# that needs a newer Viva API; do not check out the default branch here.
+env:
+  VIVA_REF: bd68f9ee30fddc27c7335a6191d2442717ee5151
+
 # A superseded pull-request run is cancelled: the newer push contains everything
 # the older one would have tested, and leaving the older run in place makes the
 # newer one wait for jobs it cannot use.
@@ -105,6 +114,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: vivaui/viva
+          ref: ${{ env.VIVA_REF }}
           path: viva
       - uses: actions/setup-go@v7
         with:
@@ -133,19 +143,65 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: vivaui/viva
+          ref: ${{ env.VIVA_REF }}
           path: viva
       - uses: actions/setup-go@v7
         with:
           go-version-file: motty/go.mod
           cache-dependency-path: motty/go.sum
+      - name: Install mosh for the interop test
+        run: sudo apt-get update && sudo apt-get install -y mosh
       - name: Test release build
         working-directory: motty
-        run: go test ./... -count=1
+        run: |
+          # The workbench package is sharded below: run every other package
+          # here, one parallel build of the whole set.
+          go test $(go list ./... | grep -v '/internal/workbench$') -count=1 -timeout 20m
+
+  # The workbench package is one package that runs one test at a time, and the
+  # suite outgrew the ten-minute per-binary default (and then twenty). It is
+  # sharded by test name with the same toolslice split the Windows and race jobs
+  # use, so each job is bounded and a new test lands in exactly one shard.
+  workbench-linux:
+    name: Workbench (Linux, ${{ matrix.shard }}/4)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: motty
+      - uses: actions/checkout@v7
+        with:
+          repository: vivaui/viva
+          ref: ${{ env.VIVA_REF }}
+          path: viva
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: motty/go.mod
+          cache-dependency-path: motty/go.sum
+      - name: Test the workbench
+        working-directory: motty
+        env:
+          SHARD: ${{ matrix.shard }}
+          SHARDS: 4
+        run: |
+          go run ./tools/testslice -n "$SHARDS" -i "$SHARD" -max-pattern 120000 ./internal/workbench |
+            while IFS= read -r pattern; do
+              go test ./internal/workbench -count=1 -timeout 20m -run "$pattern" || exit 1
+            done
 
   # The dev-tagged suite is a job of its own rather than a second step of the
   # job above: run in sequence the two suites made one job the longest one in
   # the workflow, and neither needs the other's build. It compiles the workbench
   # package again with the dev tag, so it stays cheaper than the release suite.
+  # `make test-dev` runs only the tests the tag adds; repeating the release
+  # suite under the tag was 97% duplicate work.
   dev-tests:
     name: Development components
     needs: changes
@@ -159,6 +215,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: vivaui/viva
+          ref: ${{ env.VIVA_REF }}
           path: viva
       - uses: actions/setup-go@v7
         with:
@@ -166,7 +223,7 @@ jobs:
           cache-dependency-path: motty/go.sum
       - name: Test development components
         working-directory: motty
-        run: go test -tags dev ./cmd/motty ./internal/workbench -count=1
+        run: make test-dev
 
   # The workbench tests above only run on Linux: they build everywhere, but no
   # job runs them on Windows, so what a Windows clone sees never reaches CI.
@@ -219,6 +276,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: vivaui/viva
+          ref: ${{ env.VIVA_REF }}
           path: viva
       # The shards keep a build cache below. setup-go's key carries go.sum
       # alone, so every job sharing it would restore the same cache and only the
@@ -253,6 +311,13 @@ jobs:
         if: matrix.shard == 0
         working-directory: motty
         run: go test ./internal/completion ./internal/sshconfig -count=1
+      - name: Test the Windows local terminal's ConPTY and portable update
+        if: matrix.shard == 0
+        shell: bash
+        working-directory: motty
+        run: |
+          go test ./internal/localshell -run 'TestBundledConPTY' -count=1 -timeout 5m
+          go test ./internal/selfupdate -run 'TestSignedPortableUpgrade|TestPortableUpgradeRejects|TestWindowsPortable' -count=1 -timeout 5m
       - name: Test the workbench
         shell: bash
         working-directory: motty
@@ -260,9 +325,11 @@ jobs:
           SHARD: ${{ matrix.shard }}
           SHARDS: 5
         run: |
-          pattern=$(go run ./tools/testslice -n "$SHARDS" -i "$SHARD" ./internal/workbench)
-          go test ./internal/workbench -count=1 -timeout 20m -run "$pattern" \
-            -skip 'TestPaintingRemoteStatsAllocatesNothingOnceWarm|TestRemoteProcessActionPaintStateDoesNotAllocate|TestSFTPHistorySteadyPaintBudget|TestWindowOpenedAfterAFinishedClearIsNotPausedOrNotified|TestClearPausesJoinedWindowsAndFlushesEveryOldQueue'
+          go run ./tools/testslice -n "$SHARDS" -i "$SHARD" -max-pattern 12000 ./internal/workbench |
+            while IFS= read -r pattern; do
+              go test ./internal/workbench -count=1 -timeout 20m -run "$pattern" \
+                -skip 'TestPaintingRemoteStatsAllocatesNothingOnceWarm|TestRemoteProcessActionPaintStateDoesNotAllocate|TestSFTPHistorySteadyPaintBudget|TestWindowOpenedAfterAFinishedClearIsNotPausedOrNotified|TestClearPausesJoinedWindowsAndFlushesEveryOldQueue' || exit 1
+            done
 
   # The race detector is the long pole on Linux: it runs one package at a time,
   # and it multiplies the memory the tests hold. CI therefore spreads the
@@ -297,6 +364,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: vivaui/viva
+          ref: ${{ env.VIVA_REF }}
           path: viva
       # The race jobs keep a build cache of their own below: setup-go's key is
       # the go.sum hash alone, so the first job to save claims it and the race

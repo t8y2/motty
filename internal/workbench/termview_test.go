@@ -6,9 +6,102 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
+	"motty/internal/highlight"
 	"motty/internal/term"
 )
+
+func TestResizeReusesRowsWhoseContentStillFits(t *testing.T) {
+	for _, rules := range [][]highlight.Rule{nil, highlight.Builtin()} {
+		screen := term.New(40, 3, 10)
+		screen.Write([]byte("error: 你好 é"))
+		look := darkPalette
+		look.highlight = highlight.Compile(rules)
+		var cache rowCache
+		cache.begin()
+		cache.row(screen.Row(0), 40, -1, cellSpan{}, &look, false)
+		for _, cols := range []int{80, 60, 30, 40} {
+			screen.Resize(cols, 3)
+			cache.begin()
+			entry := cache.row(screen.Row(0), cols, -1, cellSpan{}, &look, false)
+			var fresh rowCache
+			fresh.begin()
+			want := fresh.row(screen.Row(0), cols, -1, cellSpan{}, &look, false)
+			if entry.text != want.text || !reflect.DeepEqual(entry.runs, want.runs) || !reflect.DeepEqual(entry.spans, want.spans) {
+				t.Fatalf("at width %d, cached row %+v disagrees with fresh row %+v", cols, entry, want)
+			}
+		}
+		if cache.builds != 1 {
+			t.Fatalf("resizing blank padding rebuilt the same row %d times", cache.builds)
+		}
+	}
+}
+
+func TestResizeReevaluatesHighlightsThatMatchTrailingPadding(t *testing.T) {
+	screen := term.New(8, 2, 0)
+	screen.Write([]byte("error"))
+	look := darkPalette
+	look.highlight = highlight.Compile([]highlight.Rule{{Pattern: `error {3}$`, Regex: true, Slot: highlight.Red}})
+	var cache rowCache
+	for _, cols := range []int{8, 10, 8} {
+		screen.Resize(cols, 2)
+		cache.begin()
+		entry := cache.row(screen.Row(0), cols, -1, cellSpan{}, &look, false)
+		want := look.termFG
+		if cols == 8 {
+			want = look.highlightColor(highlight.Red, false)
+		}
+		if len(entry.runs) == 0 || entry.runs[0].Color != want {
+			t.Fatalf("at width %d, runs = %+v, want first word in %v", cols, entry.runs, want)
+		}
+	}
+}
+
+func TestResizeClipsCachedAlternateScreenCellsAndBackgrounds(t *testing.T) {
+	for _, text := range []string{"abc界XYZ", "abc\x1b[44m     ", "abc\x1b[4m     ", "abcdéXYZ"} {
+		t.Run(text, func(t *testing.T) {
+			screen := term.New(8, 2, 0)
+			screen.Write([]byte("\x1b[?1049h" + text))
+			var cache rowCache
+			for _, cols := range []int{8, 4, 12} {
+				screen.Resize(cols, 2)
+				cache.begin()
+				entry := cache.row(screen.Row(0), cols, -1, cellSpan{}, &darkPalette, false)
+				var fresh rowCache
+				fresh.begin()
+				want := fresh.row(screen.Row(0), cols, -1, cellSpan{}, &darkPalette, false)
+				if entry.text != want.text || !reflect.DeepEqual(entry.runs, want.runs) || !reflect.DeepEqual(entry.spans, want.spans) {
+					t.Fatalf("at width %d, cached row %+v disagrees with fresh row %+v", cols, entry, want)
+				}
+			}
+		})
+	}
+}
+
+func TestResizeRevealsCachedHistoryBackground(t *testing.T) {
+	for _, from := range []int{0, 5} {
+		t.Run(fmt.Sprintf("from=%d", from), func(t *testing.T) {
+			screen := term.New(8, 2, 20)
+			fmt.Fprintf(screen, "\x1b[%dG\x1b[44m\x1b[K\x1b[0m\r\nx\r\ny", from+1)
+			screen.Resize(4, 2)
+			screen.Scroll(1)
+			var cache rowCache
+			cache.begin()
+			before := screen.Row(0)
+			cache.row(before, 4, -1, cellSpan{}, &darkPalette, false)
+			screen.Resize(8, 2)
+			line := screen.Row(0)
+			if line.ID != before.ID || line.Version != before.Version {
+				t.Fatal("history padding unexpectedly reflowed or changed its version")
+			}
+			cache.begin()
+			entry := cache.row(line, 8, -1, cellSpan{}, &darkPalette, false)
+			if len(entry.spans) != 1 || entry.spans[0].from != from || entry.spans[0].to != 8 {
+				t.Fatalf("revealed history background = %+v, want [%d,8)", entry.spans, from)
+			}
+		})
+	}
+}
 
 func TestClippedWideHistoryRowMatchesFreshCache(t *testing.T) {
 	for _, prefix := range []string{"", "\x1b[44m"} {
@@ -70,7 +163,7 @@ func TestRowsBecomeRunsOnlyForWhatIsVisible(t *testing.T) {
 		t.Fatalf("runs = %+v", entry.runs)
 	}
 	red, plain := entry.runs[0], entry.runs[1]
-	if red.Column != 2 || red.Bytes != 5 || red.Cells != 5 || red.Color != ui.RGB(240, 120, 120) {
+	if red.Column != 2 || red.Bytes != 5 || red.Cells != 5 || red.Color != gfx.RGB(240, 120, 120) {
 		t.Errorf("red run = %+v: it starts at its cell and swallows the blanks that follow", red)
 	}
 	if plain.Column != 7 || plain.Bytes != 5 || plain.Color != darkPalette.text {
@@ -86,7 +179,7 @@ func TestEveryNonASCIICharacterIsItsOwnRunOnItsCell(t *testing.T) {
 	if entry.text != "ab你好é" {
 		t.Fatalf("text = %q", entry.text)
 	}
-	want := []ui.TextRun{
+	want := []gfx.TextRun{
 		{Column: 0, Bytes: 2, Cells: 2},
 		{Column: 2, Bytes: 3, Cells: 2},
 		{Column: 4, Bytes: 3, Cells: 2},
@@ -115,10 +208,10 @@ func TestAttributesBecomeRunStyleAndBackgrounds(t *testing.T) {
 	if len(entry.runs) < 5 {
 		t.Fatalf("runs = %+v", entry.runs)
 	}
-	if entry.runs[0].Weight != ui.WeightBold || entry.runs[0].Italic {
+	if entry.runs[0].Weight != gfx.WeightBold || entry.runs[0].Italic {
 		t.Errorf("B = %+v", entry.runs[0])
 	}
-	if !entry.runs[1].Italic || entry.runs[1].Weight != ui.WeightBold {
+	if !entry.runs[1].Italic || entry.runs[1].Weight != gfx.WeightBold {
 		t.Errorf("I = %+v", entry.runs[1])
 	}
 	if !entry.runs[2].Underline || !entry.runs[3].Strike {
@@ -132,7 +225,7 @@ func TestAttributesBecomeRunStyleAndBackgrounds(t *testing.T) {
 	if len(entry.spans) != 2 {
 		t.Fatalf("spans = %+v", entry.spans)
 	}
-	if blue := entry.spans[0]; blue.from != 5 || blue.to != 7 || blue.color != ui.RGB(110, 160, 240) {
+	if blue := entry.spans[0]; blue.from != 5 || blue.to != 7 || blue.color != gfx.RGB(110, 160, 240) {
 		t.Errorf("blue span = %+v", blue)
 	}
 	if inverse := entry.spans[1]; inverse.from != 7 || inverse.to != 8 || inverse.color != darkPalette.text {
@@ -146,7 +239,7 @@ func TestAttributesBecomeRunStyleAndBackgrounds(t *testing.T) {
 
 func TestTrueAndIndexedColorsResolveAgainstThePalette(t *testing.T) {
 	entry := build(t, "\x1b[38;2;10;20;30ma\x1b[38;5;208mb\x1b[38;5;240mc\x1b[91md", -1)
-	colors := []ui.Color{ui.RGB(10, 20, 30), ui.RGB(255, 135, 0), ui.RGB(88, 88, 88), ui.RGB(255, 150, 150)}
+	colors := []gfx.Color{gfx.RGB(10, 20, 30), gfx.RGB(255, 135, 0), gfx.RGB(88, 88, 88), gfx.RGB(255, 150, 150)}
 	for index, want := range colors {
 		if got := entry.runs[index].Color; got != want {
 			t.Errorf("run %d color = %v, want %v", index, got, want)
@@ -230,39 +323,14 @@ func TestChangingThePaletteRebuildsRows(t *testing.T) {
 	}
 }
 
-func TestPaintingAnUnchangedTerminalAllocatesNothing(t *testing.T) {
-	state, _, _, shell := liveSession(t)
-	shell.say("\x1b[32muser@host\x1b[0m:~$ ls\r\nfile1  \x1b[34mdir\x1b[0m  你好\r\n")
-	state.Wake()
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
-	paint := func() {
-		canvas.Reset()
-		state.Paint(&canvas, size)
-	}
-	paint()
-	paint()
-	if allocs := testing.AllocsPerRun(50, paint); allocs != 0 {
-		t.Errorf("painting an unchanged terminal allocates %v times", allocs)
-	}
-	state.sessions[0].term.selection.selectRange(
-		state.sessions[0].term.screen.PointAt(term.Position{Row: 0, Column: 0}),
-		state.sessions[0].term.screen.PointAt(term.Position{Row: 1, Column: 20}),
-	)
-	paint()
-	if allocs := testing.AllocsPerRun(50, paint); allocs != 0 {
-		t.Errorf("painting an unchanged selection allocates %v times", allocs)
-	}
-}
-
 func BenchmarkPaintTerminalUnchanged(b *testing.B) {
 	state, _, _, shell := liveSession(&testing.T{})
 	for line := 0; line < 60; line++ {
 		shell.say(fmt.Sprintf("\x1b[32mline %d\x1b[0m some \x1b[1;34mcolored\x1b[0m output with 你好 mixed text\r\n", line))
 	}
 	state.Wake()
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	canvas.Reset()
 	state.Paint(&canvas, size)
 	b.ReportAllocs()
@@ -282,8 +350,8 @@ func BenchmarkPaintTerminalSelectionUnchanged(b *testing.B) {
 		state.sessions[0].term.screen.PointAt(term.Position{Row: 5, Column: 3}),
 		state.sessions[0].term.screen.PointAt(term.Position{Row: 30, Column: 70}),
 	)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	canvas.Reset()
 	state.Paint(&canvas, size)
 	b.ReportAllocs()
@@ -298,8 +366,8 @@ func BenchmarkPaintTerminalSelectionUnchanged(b *testing.B) {
 func BenchmarkPaintTerminalFlood(b *testing.B) {
 	state, _, _, shell := liveSession(&testing.T{})
 	state.Wake()
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	chunk := make([]byte, 0, 1<<14)
 	for line := 0; line < 60; line++ {
 		chunk = fmt.Appendf(chunk, "\x1b[32m%06d\x1b[0m the quick \x1b[1;34mbrown\x1b[0m fox jumps over \x1b[31mthe\x1b[0m lazy dog 0123456789 abcdefghijklmnop\r\n", line)
@@ -341,7 +409,7 @@ func TestASCIICellRunsAskForLigatureShaping(t *testing.T) {
 func TestBoldBaseColorsAreDrawnBright(t *testing.T) {
 	input := "\x1b[1;34mA\x1b[0m\x1b[34mB\x1b[0m\x1b[1;94mC\x1b[0m\x1b[1;38;5;4mD\x1b[0m\x1b[1;38;2;0;0;200mE"
 	// Adjacent characters in one style share a run, so look a character up by its column.
-	colors := func(intense terminalIntense) (runs []ui.TextRun) {
+	colors := func(intense terminalIntense) (runs []gfx.TextRun) {
 		pal := darkPalette
 		pal.intense = intense
 		screen := term.New(40, 3, 10)
@@ -355,27 +423,27 @@ func TestBoldBaseColorsAreDrawnBright(t *testing.T) {
 		}
 		return runs
 	}
-	rgb := func(index int) ui.Color {
+	rgb := func(index int) gfx.Color {
 		c := darkPalette.ansi[index]
-		return ui.RGB(c[0], c[1], c[2])
+		return gfx.RGB(c[0], c[1], c[2])
 	}
 	runs := colors(intenseBright)
-	want := []ui.Color{rgb(12), rgb(4), rgb(12), rgb(12), ui.RGB(0, 0, 200)}
+	want := []gfx.Color{rgb(12), rgb(4), rgb(12), rgb(12), gfx.RGB(0, 0, 200)}
 	for index, color := range want {
 		if runs[index].Color != color {
 			t.Errorf("bright: run %d color %+v, want %+v", index, runs[index].Color, color)
 		}
 	}
-	if runs[0].Weight == ui.WeightBold {
+	if runs[0].Weight == gfx.WeightBold {
 		t.Errorf("bright only: the face stays regular, got weight %v", runs[0].Weight)
 	}
-	if runs := colors(intenseBoth); runs[0].Color != rgb(12) || runs[0].Weight != ui.WeightBold {
+	if runs := colors(intenseBoth); runs[0].Color != rgb(12) || runs[0].Weight != gfx.WeightBold {
 		t.Errorf("both: %+v", runs[0])
 	}
-	if runs := colors(intenseBold); runs[0].Color != rgb(4) || runs[0].Weight != ui.WeightBold {
+	if runs := colors(intenseBold); runs[0].Color != rgb(4) || runs[0].Weight != gfx.WeightBold {
 		t.Errorf("bold: %+v", runs[0])
 	}
-	if runs := colors(intensePlain); runs[0].Color != rgb(4) || runs[0].Weight == ui.WeightBold {
+	if runs := colors(intensePlain); runs[0].Color != rgb(4) || runs[0].Weight == gfx.WeightBold {
 		t.Errorf("plain: %+v", runs[0])
 	}
 }

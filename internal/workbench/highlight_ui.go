@@ -6,11 +6,13 @@ import (
 	"io"
 	"os"
 	"regexp/syntax"
+	"slices"
 	"strings"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/highlight"
@@ -61,6 +63,14 @@ type highlightUI struct {
 	regex, folded bool // folded: match case
 	slot          highlight.Slot
 	dialogError   string
+	editing       int
+	editRule      highlightRule
+	isEditing     bool
+
+	// field, regexRow and caseRow are the slots the dialog body laid out; the
+	// field and the checkboxes are painted into them after the body, by the
+	// controls that own their editing and focus.
+	field, regexRow, caseRow ui.Box
 }
 
 // recompileHighlights rebuilds the compiled rules after any change to them, and
@@ -88,6 +98,7 @@ func (state *State) setBuiltinHighlight(on bool) bool {
 
 func (state *State) openHighlightDialog() {
 	form := &state.highlighting
+	form.isEditing = false
 	form.pattern = text.Editor{}
 	form.regex, form.folded = false, false
 	form.slot = highlight.Red
@@ -95,7 +106,19 @@ func (state *State) openHighlightDialog() {
 	state.modal = modalHighlightRule
 }
 
-func (state *State) clickHighlightDialog(id ui.ID) {
+func (state *State) openHighlightEdit(index int) {
+	if index < 0 || index >= len(state.highlighting.rules) {
+		return
+	}
+	state.openHighlightDialog()
+	form := &state.highlighting
+	rule := form.rules[index]
+	form.editing, form.editRule, form.isEditing = index, rule, true
+	form.pattern.Insert(rule.Pattern)
+	form.regex, form.folded, form.slot = rule.Regex, rule.CaseSensitive, rule.Slot
+}
+
+func (state *State) clickHighlightDialog(id gfx.ID) {
 	form := &state.highlighting
 	switch {
 	case id == hitHighlightSubmit:
@@ -107,8 +130,6 @@ func (state *State) clickHighlightDialog(id ui.ID) {
 		form.dialogError = ""
 	case id == hitHighlightCase:
 		form.folded = !form.folded
-	case id.Scope() == hitHighlightColorList:
-		form.slot = highlight.Slots()[uint32(item(id))]
 	}
 }
 
@@ -117,7 +138,7 @@ func (state *State) submitHighlightRule() {
 	rule := highlightRule{
 		Pattern: strings.TrimSpace(form.pattern.String()), Regex: form.regex, CaseSensitive: form.folded, Slot: form.slot,
 	}
-	if len(form.rules) >= maxCustomHighlightRules {
+	if !form.isEditing && len(form.rules) >= maxCustomHighlightRules {
 		form.dialogError = m.HighlightErrorTooMany
 		return
 	}
@@ -141,7 +162,21 @@ func (state *State) submitHighlightRule() {
 		form.dialogError = fmt.Sprintf(m.HighlightErrorInvalidFmt, err)
 		return
 	}
-	form.rules = append(form.rules, rule)
+	for index, existing := range form.rules {
+		if existing == rule && (!form.isEditing || index != form.editing) {
+			form.dialogError = state.messages.RuleManagement.Duplicate
+			return
+		}
+	}
+	if form.isEditing {
+		if form.editing < 0 || form.editing >= len(form.rules) || form.rules[form.editing] != form.editRule {
+			state.closeModal()
+			return
+		}
+		form.rules[form.editing] = rule
+	} else {
+		form.rules = append(form.rules, rule)
+	}
 	state.closeModal()
 	state.recompileHighlights()
 	state.save()
@@ -194,17 +229,35 @@ func (state *State) importHighlightRules() {
 		}
 		return
 	}
-	room := max(0, maxCustomHighlightRules-len(state.highlighting.rules))
-	imported := min(len(parsed), room)
-	skipped += len(parsed) - imported
-	if imported == 0 {
-		state.showActionWarning(title, m.HighlightErrorTooMany)
-		return
+	seen := make(map[highlightRule]bool, len(state.highlighting.rules)+len(parsed))
+	for _, rule := range state.highlighting.rules {
+		seen[rule] = true
 	}
-	for _, rule := range parsed[:imported] {
-		state.highlighting.rules = append(state.highlighting.rules, highlightRule{
+	imported, full := 0, false
+	for _, rule := range parsed {
+		candidate := highlightRule{
 			Pattern: rule.Pattern, Regex: rule.Regex, CaseSensitive: rule.CaseSensitive, Slot: rule.Slot,
-		})
+		}
+		if seen[candidate] {
+			skipped++
+			continue
+		}
+		seen[candidate] = true
+		if len(state.highlighting.rules) >= maxCustomHighlightRules {
+			skipped++
+			full = true
+			continue
+		}
+		state.highlighting.rules = append(state.highlighting.rules, candidate)
+		imported++
+	}
+	if imported == 0 {
+		message := fmt.Sprintf(m.HighlightImportAllSkippedFmt, skipped)
+		if full {
+			message = m.HighlightErrorTooMany
+		}
+		state.showActionWarning(title, message)
+		return
 	}
 	state.recompileHighlights()
 	state.save()
@@ -259,112 +312,151 @@ func (state *State) slotName(slot highlight.Slot) string {
 }
 
 // slotColor is the color a slot has in the terminal's scheme, as a swatch shows.
-func (state *State) slotColor(slot highlight.Slot) ui.Color {
+func (state *State) slotColor(slot highlight.Slot) gfx.Color {
 	ansi := state.termPal.ansi[slot.ANSI()]
-	return ui.RGB(ansi[0], ansi[1], ansi[2])
+	return gfx.RGB(ansi[0], ansi[1], ansi[2])
 }
 
-func (state *State) paintHighlightDialog(canvas *ui.Canvas, viewport ui.Rect) {
-	m, pal, theme := state.messages.Tools, state.pal, state.Theme()
+// declareHighlightDialog declares the rule editor as a dialog of the workbench
+// page.
+func (state *State) declareHighlightDialog(c ui.C) {
+	m := state.messages.Tools
 	form := &state.highlighting
+	title, save := m.HighlightDialogTitle, m.HighlightSave
+	if form.isEditing {
+		title, save = state.messages.RuleManagement.HighlightEditTitle, state.messages.Autofill.Save
+	}
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 520, "", withError(198, form.dialogError)) // the pattern, two boxes and the colors
 	// No scrim dismiss: a press beside the form must not discard its input.
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		CloseID: hitHighlightClose, InitialFocusID: hitHighlightPattern,
-		ContentSize: ui.Size{Width: 520}, FitBody: true, BodyHeight: withError(198, form.dialogError), // the pattern, two boxes and the colors
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: title, Width: 520, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, CloseID: hitHighlightClose, InitialFocusID: hitHighlightPattern,
 	})
-	layout := dialog.Begin(m.HighlightDialogTitle, "")
+	dialog.Body(func() { state.declareHighlightDialogBody(c) })
+	dialog.Footer(func() {
+		if dialogButton(c, state.messages.Cancel, components.ButtonSecondary, false).Clicked() {
+			c.After(func() { state.clickHighlightDialog(hitHighlightCancel) })
+		}
+		if dialogButton(c, save, components.ButtonDefault, false).Clicked() {
+			c.After(func() { state.clickHighlightDialog(hitHighlightSubmit) })
+		}
+	})
+}
+
+// declareHighlightDialogBody lays out the rule dialog: the pattern field, the
+// two checkboxes, the colors and the error. The pattern, the checkboxes and
+// their hit regions are painted into the slots after the body, so their focus
+// order and invalid look stay the ones the controls already have.
+func (state *State) declareHighlightDialogBody(c ui.C) {
+	form, m, pal := &state.highlighting, state.messages.Tools, state.pal
 	slots := highlight.Slots()
-	var field, regex, folded flex.Box
-	var colors [6]flex.Box
-	f := state.settingsRow.Begin(canvas, theme, layout.Body)
-	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
-		field = f.Slot().Height(62)
-		regex = state.declareDialogCheckbox(f, m.HighlightRegex, 11, 0)
-		folded = state.declareDialogCheckbox(f, m.HighlightCase, 12, 0)
-		f.Text(m.HighlightColor).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.muted).LineHeight(18).MarginSides(19, 0, 4, 2)
-		f.Row().Gap(8).MarginSides(0, 0, 0, 2).Children(func() {
+	column := ui.Column(c).Fill().PadSides(2, 4, 0, 4)
+	column.Children(func() {
+		form.field = ui.Slot(c).Height(62)
+		form.regexRow = state.declareDialogCheckboxC(c, m.HighlightRegex, 11, 0)
+		form.caseRow = state.declareDialogCheckboxC(c, m.HighlightCase, 12, 0)
+		ui.Text(c, m.HighlightColor).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(18).MarginSides(19, 0, 4, 2)
+		ui.Row(c).Gap(8).MarginSides(0, 0, 0, 2).Children(func() {
 			for index, slot := range slots {
 				selected := form.slot == slot
 				border, width := withAlpha(pal.line, 0.9), float32(1)
 				if selected {
 					border, width = pal.accent, 2
 				}
-				colors[index] = f.Row().Size(50, 28).Shrink(0).Center().Background(pal.terminal).Radius(radius.control).Border(width, border).Children(func() {
-					f.Column().Size(20, 14).Background(state.slotColor(slot)).Radius(7)
+				chip := ui.Row(c).Size(50, 28).Shrink(0).Center().Background(pal.terminal).Radius(radius.control).Border(width, border)
+				chip.HitWith(hitHighlightColorList.At(index), state.slotName(slot), gfx.HitOptions{Role: gfx.RoleButton, Selected: selected})
+				if chip.Clicked() {
+					form.slot = slot
+				}
+				chip.Children(func() {
+					ui.Column(c).Size(20, 14).Background(state.slotColor(slot)).Radius(7)
 				})
 			}
 		})
 		if form.dialogError != "" {
-			f.Text(form.dialogError).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.danger).LineHeight(18).MarginSides(12, 0, 0, 0)
+			ui.Text(c, form.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.danger).LineHeight(18).MarginSides(12, 0, 0, 0)
 		}
 	})
-	f.End()
-	content := components.BeginField(canvas, theme, field.Rect()).Paint(m.HighlightPattern, "", "")
-	value := form.pattern.String()
-	focused := canvas.Focused() == hitHighlightPattern
-	components.PaintInput(canvas, theme, content, components.InputSnapshot{
-		ID: hitHighlightPattern, Label: m.HighlightPattern, Value: value, Placeholder: m.HighlightPatternPlaceholder,
-		Focused: focused, PlatformEditing: focused && value != "", Invalid: form.dialogError != "",
-	})
-	state.paintDialogCheckbox(canvas, hitHighlightRegex, m.HighlightRegex, form.regex, regex)
-	state.paintDialogCheckbox(canvas, hitHighlightCase, m.HighlightCase, form.folded, folded)
-	for index, slot := range slots {
-		canvas.HitWithOptions(hitHighlightColorList.At(index), colors[index].Rect(), state.slotName(slot), ui.HitOptions{Role: ui.RoleButton, Selected: form.slot == slot})
-	}
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitHighlightCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitHighlightSubmit, Label: m.HighlightSave},
-	)
-	dialog.End()
-}
-
-// declareDialogCheckbox declares a checkbox and its label inside a dialog's body,
-// the given room above and below it, and returns the box the checkbox is
-// painted in (paintDialogCheckbox), after the fields above it, so the keyboard
-// visits them in the order they are on the page. It returns the row, which
-// holds the checkbox and its words.
-func (state *State) declareDialogCheckbox(f *flex.Frame, label string, above, below float32) flex.Box {
-	side := components.CheckboxExtent(state.Theme())
-	return f.Row().Height(20).Gap(24-side).Items(flex.Center).MarginSides(above, 0, below, 2).Children(func() {
-		f.Slot().Size(side, side).Shrink(0)
-		f.Text(label).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(state.pal.text).LineHeight(20).Grow(1)
+	column.DrawOver(func(d *ui.DrawContext) {
+		canvas, theme := d.Canvas, *d.Theme
+		content := components.BeginField(canvas, theme, form.field.Rect()).Paint(m.HighlightPattern, "", "")
+		value := form.pattern.String()
+		focused := canvas.Focused() == hitHighlightPattern
+		components.PaintInput(canvas, theme, content, components.InputSnapshot{
+			ID: hitHighlightPattern, Label: m.HighlightPattern, Value: value, Placeholder: m.HighlightPatternPlaceholder,
+			Focused: focused, PlatformEditing: focused && value != "", Invalid: form.dialogError != "",
+		})
+		state.paintDialogCheckbox(canvas, hitHighlightRegex, m.HighlightRegex, form.regex, form.regexRow)
+		state.paintDialogCheckbox(canvas, hitHighlightCase, m.HighlightCase, form.folded, form.caseRow)
 	})
 }
 
-// declareDialogCheckboxHelp is declareDialogCheckbox with a help icon right after
-// the label, which paintHelpIcon fills in.
-func (state *State) declareDialogCheckboxHelp(f *flex.Frame, label string, above, below float32) (row, help flex.Box) {
+// declareDialogCheckboxC declares a checkbox and its label inside a dialog's
+// body declared as a page, the given room above and below it, and returns the
+// box the checkbox is painted in (paintDialogCheckbox), after the fields above
+// it, so the keyboard visits them in the order they are on the page. It returns
+// the row, which holds the checkbox and its words.
+func (state *State) declareDialogCheckboxC(c ui.C, label string, above, below float32) ui.Box {
 	side := components.CheckboxExtent(state.Theme())
-	row = f.Row().Height(20).Gap(24-side).Items(flex.Center).MarginSides(above, 0, below, 2).Children(func() {
-		f.Slot().Size(side, side).Shrink(0)
-		f.Text(label).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(state.pal.text).LineHeight(20)
-		help = f.Slot().Size(16, 16).Shrink(0)
-		f.Spacer().Grow(1)
+	return ui.Row(c).Height(20).Gap(24-side).Items(ui.Center).MarginSides(above, 0, below, 2).Children(func() {
+		ui.Slot(c).Size(side, side).Shrink(0)
+		ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).LineHeight(20).Grow(1)
+	})
+}
+
+// declareDialogCheckboxMutedC is declareDialogCheckboxC with the words dimmed:
+// the row's switch cannot be used, and the dimming says so with the checkbox.
+func (state *State) declareDialogCheckboxMutedC(c ui.C, label string, above, below float32) ui.Box {
+	side := components.CheckboxExtent(state.Theme())
+	return ui.Row(c).Height(20).Gap(24-side).Items(ui.Center).MarginSides(above, 0, below, 2).Children(func() {
+		ui.Slot(c).Size(side, side).Shrink(0)
+		ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.muted).LineHeight(20).Grow(1)
+	})
+}
+
+// declareDialogCheckboxHelpC is declareDialogCheckboxC with a help icon right
+// after the label, which paintHelpIcon fills in.
+func (state *State) declareDialogCheckboxHelpC(c ui.C, label string, above, below float32) (row, help ui.Box) {
+	side := components.CheckboxExtent(state.Theme())
+	row = ui.Row(c).Height(20).Gap(24-side).Items(ui.Center).MarginSides(above, 0, below, 2).Children(func() {
+		ui.Slot(c).Size(side, side).Shrink(0)
+		ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).LineHeight(20)
+		help = ui.Slot(c).Size(16, 16).Shrink(0)
+		ui.Spacer(c).Grow(1)
 	})
 	return row, help
 }
 
 // paintHelpIcon draws a question mark in bounds that shows hint as a tooltip when
 // the pointer rests on it.
-func (state *State) paintHelpIcon(canvas *ui.Canvas, id ui.ID, hint string, bounds ui.Rect) {
+func (state *State) paintHelpIcon(canvas *gfx.Canvas, id gfx.ID, hint string, bounds gfx.Rect) {
 	if hint == "" || bounds.Width <= 0 || bounds.Height <= 0 {
 		return
 	}
-	canvas.HitWithOptions(id, bounds, hint, ui.HitOptions{Role: ui.RoleButton, SkipFocus: true, Hint: hint})
+	canvas.HitWithOptions(id, bounds, hint, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true, Hint: hint})
 	paintIcon(canvas, iconHelp, insetRect(bounds, 0.08), state.pal.muted)
 }
 
 // paintDialogCheckbox paints the checkbox of a declared row and makes the words
 // beside it its label, so pressing them toggles it.
-func (state *State) paintDialogCheckbox(canvas *ui.Canvas, id ui.ID, label string, checked bool, row flex.Box) {
+func (state *State) paintDialogCheckbox(canvas *gfx.Canvas, id gfx.ID, label string, checked bool, row ui.Box) {
 	rect := row.Rect()
 	state.rememberHostControl(id, rect)
 	side := components.CheckboxExtent(state.Theme())
-	components.BeginCheckbox(canvas, state.Theme(), id, ui.Rect{X: rect.X, Y: rect.Y + (rect.Height-side)/2}, checked).Label(label).Paint()
+	components.BeginCheckbox(canvas, state.Theme(), id, gfx.Rect{X: rect.X, Y: rect.Y + (rect.Height-side)/2}, checked).Label(label).Paint()
 	// The checkbox's own hit reaches 12px past its box; the label starts there.
 	words := rect.X + side + 12
-	canvas.HitLabel(id, ui.Rect{X: words, Y: rect.Y, Width: max(rect.X+rect.Width-words, 0), Height: rect.Height}, label, false)
+	canvas.HitLabel(id, gfx.Rect{X: words, Y: rect.Y, Width: max(rect.X+rect.Width-words, 0), Height: rect.Height}, label, false)
+}
+
+// paintDialogCheckboxDisabled paints the checkbox of a declared row dimmed and
+// inert: it is not a tab stop, and its words do not toggle it or reach the
+// protocol's click handler.
+func (state *State) paintDialogCheckboxDisabled(canvas *gfx.Canvas, id gfx.ID, label string, checked bool, row ui.Box) {
+	rect := row.Rect()
+	side := components.CheckboxExtent(state.Theme())
+	components.BeginCheckbox(canvas, state.Theme(), id, gfx.Rect{X: rect.X, Y: rect.Y + (rect.Height-side)/2}, checked).Label(label).Disabled().Paint()
 }
 
 // paintHighlightSettings is the Keyword highlighting group of Settings.
@@ -373,20 +465,9 @@ func (state *State) paintHighlightSettings(page *settingsPage) {
 	rules := state.highlighting.rules
 	page.group(m.HighlightGroup, func() {
 		page.toggleRow(m.HighlightBuiltin, m.HighlightBuiltinDescription, !state.highlighting.builtinOff, hitSettingsHighlightToggle)
-		for index, rule := range rules {
-			kind := m.HighlightKindText
-			switch {
-			case rule.Regex && rule.CaseSensitive:
-				kind = m.HighlightKindRegexCase
-			case rule.Regex:
-				kind = m.HighlightKindRegex
-			case rule.CaseSensitive:
-				kind = m.HighlightKindTextCase
-			}
-			page.actionRow(rule.Pattern, state.slotName(rule.Slot)+" · "+kind, false,
-				components.ButtonAction{ID: hitHighlightDeleteList.At(index), Label: m.HighlightDelete, Variant: components.ButtonOutline})
-		}
-		page.actionRow(m.HighlightCustom, m.HighlightCustomDescription, len(rules) >= maxCustomHighlightRules,
+		page.actionRow(m.HighlightCustom, fmt.Sprintf(state.messages.RuleManagement.CountFmt, len(rules)), false,
+			components.ButtonAction{ID: hitSettingsHighlightManage, Label: state.messages.RuleManagement.Manage, Variant: components.ButtonOutline})
+		page.actionRow(m.HighlightAdd, m.HighlightCustomDescription, len(rules) >= maxCustomHighlightRules,
 			components.ButtonAction{ID: hitSettingsHighlightAdd, Label: m.HighlightAdd, Variant: components.ButtonOutline})
 		page.actionRow(m.HighlightImport, m.HighlightImportDescription, len(rules) >= maxCustomHighlightRules,
 			components.ButtonAction{ID: hitSettingsHighlightImport, Label: m.HighlightImport, Variant: components.ButtonOutline})
@@ -410,8 +491,18 @@ func (state *State) restoreTerminalTools(saved savedState) {
 	}
 	clear(state.snippets.list)
 	state.snippets.list = state.snippets.list[:0]
+	state.snippets.resetSnippetPreview()
+	slices.SortStableFunc(saved.Snippets, func(left, right savedSnippet) int {
+		switch {
+		case left.Order < right.Order:
+			return -1
+		case left.Order > right.Order:
+			return 1
+		}
+		return 0
+	})
 	for _, entry := range saved.Snippets {
-		clean := snippet{Name: cleanSnippetText(entry.Name, maxSnippetName), Command: cleanSnippetText(entry.Command, maxSnippetCommand), Run: entry.Run}
+		clean := snippet{Name: cleanSnippetText(entry.Name, maxSnippetName), Command: cleanSnippetCommand(entry.Command, maxSnippetCommand), Run: entry.Run, Group: cleanSnippetGroup(entry.Group)}
 		if clean.Name == "" || clean.Command == "" || len(state.snippets.list) == maxSnippets {
 			continue
 		}
@@ -421,12 +512,12 @@ func (state *State) restoreTerminalTools(saved savedState) {
 		if len(entry.Key) != 1 {
 			continue
 		}
-		chord := shortcutChord{Modifiers: ui.Modifiers(entry.Modifiers), Key: entry.Key[0]}
+		chord := keymap.Chord{Modifiers: gfx.Modifiers(entry.Modifiers), Char: entry.Key[0]}
 		for index := range state.snippets.list {
 			// The first snippet of that name without a shortcut takes it; a chord
 			// that a built-in action or an earlier snippet has is not given twice.
-			if snippet := &state.snippets.list[index]; snippet.Name == entry.Name && !snippet.Shortcut.valid() {
-				if chord.validForSnippet() && state.chordOwner(chord, index) == "" {
+			if snippet := &state.snippets.list[index]; snippet.Name == entry.Name && !snippet.Shortcut.Valid() {
+				if validForSnippet(chord) && state.chordOwner(chord, index) == "" {
 					snippet.Shortcut = chord
 				}
 				break
@@ -434,5 +525,11 @@ func (state *State) restoreTerminalTools(saved savedState) {
 		}
 	}
 	state.refreshSnippets()
+	state.commands.shown = saved.CommandsShown
+	state.commands.sort = commandsSortFromString(saved.CommandsSort)
+	state.commands.hiddenGroups = make(map[string]bool)
+	for _, group := range saved.CommandsHiddenGroups {
+		state.commands.hiddenGroups[group] = true
+	}
 	state.recompileHighlights()
 }

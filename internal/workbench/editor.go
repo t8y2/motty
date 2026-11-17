@@ -6,10 +6,13 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"motty/internal/charset"
 	"motty/internal/i18n"
 	"motty/internal/otp"
 	"motty/internal/serial"
+	"motty/internal/sshconfig"
 	"motty/internal/sshconn"
 )
 
@@ -35,17 +38,22 @@ type hostEditor struct {
 	groupPicker   hostGroupPicker
 	tags          text.Editor
 	tagPicker     hostTagPicker
-	icon          hostIcon
-	color         text.Editor
-	colorPicker   hostColorPicker
-	form          hostFormScroll
+	// encoding is the remote charset the host's shells use: empty is UTF-8.
+	// encodingPicker is the searchable field that chooses it.
+	encoding       string
+	encodingPicker hostEncodingPicker
+	icon           hostIcon
+	iconPicker     hostIconPicker
+	color          text.Editor
+	colorPicker    hostColorPicker
+	form           hostFormScroll
 	// system is the system the host was last detected to run, whose badge the
 	// automatic icon shows.
 	system sshconn.RemoteSystem
-	// iconOpen is the icon choice's list being open.
-	iconOpen bool
-	// iconReveal says the list has just opened and has to scroll to the chosen icon.
-	iconReveal bool
+	// iconChosen says the user picked an icon, or the host being edited already
+	// has one, so a protocol switch must not replace it with that protocol's
+	// default.
+	iconChosen bool
 	// port is the port of an SSH or Telnet host and the line settings of a serial
 	// one ("115200 8N1").
 	port text.Editor
@@ -54,19 +62,45 @@ type hostEditor struct {
 	algoMode     algoMode
 	auth         hostAuth
 	identity     string
+	sshOptions   *sshconfig.ConnectionOptions
 	authOpen     bool
 	identityOpen bool
-	transfer     transferMode
-	algorithms   text.Editor
+	// identitiesOnly is the automatic-authentication switch that offers the
+	// ssh-agent only keys matching the configured identities.
+	identitiesOnly bool
+	// credential is the saved password the host takes its password from, and
+	// credentialOpen its list being open.
+	credential     string
+	credentialOpen bool
+	// credentialAnchor is where the password field was painted, which the list
+	// of shared passwords opens under.
+	credentialAnchor gfx.Rect
+	transfer         transferMode
+	algorithms       text.Editor
 	// loginCommand is the line typed into the host's shells after login.
 	loginCommand text.Editor
+	// idleKeepAlive is the Advanced section's inactivity probe: the chosen
+	// interval, its custom value and unit, and what the probe sends.
+	idleKeepAlive   idleKeepAlivePreset
+	idleInterval    text.Editor
+	idleUnit        idleIntervalUnit
+	idleInput       idleInputMode
+	idleInputChosen bool
+	idleInputCustom text.Editor
+	// The three lists the probe's selects open, and the interval field.
+	idleKeepAliveOpen, idleUnitOpen, idleInputOpen bool
+	remoteLogPaths                                 []remoteLogPath
 	// forwardX11 is the host's "Forward X11" switch.
 	forwardX11 bool
 	// agentForward is the host's "Forward ssh-agent" switch.
 	agentForward bool
+	// interactiveOnly is the host's "Interactive session only" switch: it keeps
+	// the connection to the pty and shell a gateway permits.
+	interactiveOnly bool
 	// agentAccess is the "Allow MCP agents to use this host" switch. It is not
 	// part of the host: it is kept for this computer (see savedState.AgentHosts).
-	agentAccess bool
+	agentAccess        bool
+	agentAccessChanged bool
 	// noHistory is the host's "Don't record commands" switch.
 	noHistory bool
 	// proxy is nil to inherit the global proxy, ProxyNone to force a direct
@@ -84,11 +118,18 @@ type hostEditor struct {
 	advancedOpen bool
 
 	protocol hostProtocol
-	flow     serial.Flow
+	// terminal is an SSH host's terminal transport: SSH itself or mosh.
+	terminal hostTerminal
+	// connection is the form's connection-type choice (SSH, Mosh, Telnet, ...).
+	// connectionBefore is the type the frame was laid out for: the choice writes
+	// the new one, and applyConnection needs what the form showed before it.
+	connection       hostConnectionType
+	connectionBefore hostConnectionType
+	flow             serial.Flow
 	// viaSSH, clipboard and chromeless are the switches of a VNC or RDP host;
-	// console is RDP's own: it asks the server for its console (administrative)
-	// session.
-	viaSSH, clipboard, console, chromeless bool
+	// console and standardSecurity are RDP's own: the server's console
+	// (administrative) session, and Standard RDP Security without TLS or NLA.
+	viaSSH, clipboard, console, standardSecurity, chromeless bool
 	// ports are the serial ports found when the picker was last opened.
 	ports     []serial.Port
 	portsOpen bool
@@ -109,6 +150,8 @@ const (
 	fieldOTP
 	fieldPassphrase
 	fieldLoginCommand
+	fieldIdleInterval
+	fieldIdleInputCustom
 	fieldCount
 )
 
@@ -137,6 +180,10 @@ func (editor *hostEditor) field(field hostField) *text.Editor {
 		return &editor.passphrase
 	case fieldLoginCommand:
 		return &editor.loginCommand
+	case fieldIdleInterval:
+		return &editor.idleInterval
+	case fieldIdleInputCustom:
+		return &editor.idleInputCustom
 	default:
 		return &editor.port
 	}
@@ -146,6 +193,12 @@ func (editor *hostEditor) field(field hostField) *text.Editor {
 // carry them.
 func (editor *hostEditor) value(field hostField) string {
 	return strings.TrimSpace(editor.field(field).String())
+}
+
+// moshTerminal reports whether the form describes a mosh session, whose
+// settings are narrower than an SSH session's.
+func (editor *hostEditor) moshTerminal() bool {
+	return editor.protocol == protocolSSH && editor.terminal == terminalMosh
 }
 
 // portNumber returns the port the form describes and whether it is valid. An empty
@@ -163,11 +216,18 @@ func (editor *hostEditor) portNumber() (uint16, bool) {
 }
 
 // validate returns the first user-visible error, or empty when the form is
-// submittable. A host is a duplicate only when address, user and port all match
-// an existing one: the same machine under another account is a different host.
+// submittable. A host is a duplicate only when it is the same destination under
+// the same name as an existing one (see sameHost): the same machine under another
+// account, or reached through a bastion under another name, is a different host.
 func (editor *hostEditor) validate(hosts []Host, ignoreID uint32, messages i18n.Messages) string {
-	if editor.value(fieldLabel) == "" || editor.value(fieldAddress) == "" {
+	if editor.value(fieldLabel) == "" {
 		return messages.ErrLabelRequired
+	}
+	if editor.value(fieldAddress) == "" {
+		if editor.protocol == protocolSerial {
+			return messages.ErrDeviceRequired
+		}
+		return messages.ErrAddressRequired
 	}
 	if editor.protocol == protocolSerial {
 		if !validEndpoint(protocolSerial, editor.value(fieldAddress)) {
@@ -207,6 +267,31 @@ func (editor *hostEditor) validate(hosts []Host, ignoreID uint32, messages i18n.
 		editor.advancedOpen = true
 		return messages.Tools.ErrLoginCommand
 	}
+	if editor.moshTerminal() && editor.encoding != "" && editor.encoding != charset.UTF8 {
+		return messages.Tools.ErrMoshEncoding
+	}
+	if editor.moshTerminal() && (editor.forwardX11 || editor.agentForward) {
+		editor.advancedOpen = true
+		return messages.Tools.ErrMoshForwarding
+	}
+	if editor.moshTerminal() && editor.interactiveOnly {
+		editor.advancedOpen = true
+		return messages.Tools.ErrMoshInteractive
+	}
+	if idleKeepAliveProtocol(editor.protocol) {
+		if _, ok := editor.idleKeepAliveDuration(); !ok {
+			editor.advancedOpen = true
+			return messages.Tools.ErrIdleKeepAliveInterval
+		} else if editor.idleInputValue() == idleInputCustom {
+			// The payload is saved whether or not the probe is on, so it is
+			// validated the same way: text the next load would drop must not be
+			// saved just because the interval is off.
+			if _, err := parseIdleEscapes(editor.value(fieldIdleInputCustom)); err != nil {
+				editor.advancedOpen = true
+				return messages.Tools.ErrIdleKeepAliveInput
+			}
+		}
+	}
 	if _, ok := parseHostTags(editor.value(fieldTags)); !ok {
 		return messages.ErrHostTagsInvalid
 	}
@@ -215,7 +300,7 @@ func (editor *hostEditor) validate(hosts []Host, ignoreID uint32, messages i18n.
 	}
 	candidate := editor.host(0)
 	for _, host := range hosts {
-		if host.ID != ignoreID && sameEndpoint(host, candidate) {
+		if host.ID != ignoreID && sameHost(host, candidate) {
 			return messages.ErrAddressTaken
 		}
 	}
@@ -223,6 +308,7 @@ func (editor *hostEditor) validate(hosts []Host, ignoreID uint32, messages i18n.
 }
 
 func (editor *hostEditor) load(host Host) {
+	editor.agentAccessChanged = false
 	editor.form = hostFormScroll{}
 	editor.colorPicker = hostColorPicker{}
 	editor.color = text.Editor{}
@@ -235,21 +321,32 @@ func (editor *hostEditor) load(host Host) {
 	editor.tags = text.Editor{}
 	editor.tagPicker = hostTagPicker{}
 	editor.groupPicker = hostGroupPicker{}
-	editor.icon, editor.iconOpen = hostIconAuto, false
+	editor.encodingPicker = hostEncodingPicker{}
+	editor.iconPicker = hostIconPicker{}
+	editor.encoding = host.Encoding
+	editor.icon = hostIconAuto
 	editor.port = text.Editor{}
 	editor.algorithms = text.Editor{}
 	editor.loginCommand = text.Editor{}
 	editor.loginCommand.Insert(host.LoginCommand)
+	editor.loadIdleKeepAlive(host)
+	editor.remoteLogPaths = host.RemoteLogPaths
 	editor.otp, editor.otpSaved, editor.otpRemove = text.Editor{}, false, false
 	editor.algoMode = host.algoMode()
-	editor.auth, editor.identity = host.Auth, host.Identity
-	editor.authOpen, editor.identityOpen = false, false
+	editor.auth, editor.identity, editor.credential = host.Auth, host.Identity, host.Credential
+	editor.sshOptions = host.SSHOptions.Clone()
+	editor.identitiesOnly = host.IdentitiesOnly
+	editor.authOpen, editor.identityOpen, editor.credentialOpen = false, false, false
 	editor.forwardX11 = host.ForwardX11
 	editor.agentForward = host.AgentForward
+	editor.interactiveOnly = host.InteractiveOnly
 	editor.noHistory = host.NoHistory
 	editor.proxy, editor.proxyPassword = cloneOutboundProxy(host.Proxy), ""
 	editor.transfer = host.Transfer
-	editor.advancedOpen = host.isSSH() && (host.Algo != nil || host.ForwardX11 || host.AgentForward || host.NoHistory || host.LoginCommand != "")
+	editor.advancedOpen = host.isSSH() && (host.Algo != nil || host.ForwardX11 || host.AgentForward || host.InteractiveOnly || host.NoHistory || host.IdentitiesOnly || host.LoginCommand != "")
+	if idleKeepAliveProtocol(host.Protocol) && (host.IdleKeepAlive > 0 || host.IdleInput != idleInputProtocolDefault) {
+		editor.advancedOpen = true
+	}
 	if host.Algo != nil {
 		editor.algorithms.Insert(host.Algo.list)
 	}
@@ -258,10 +355,12 @@ func (editor *hostEditor) load(host Host) {
 	editor.user.Insert(host.User)
 	editor.group.Insert(host.Group)
 	editor.tags.Insert(formatHostTags(host))
-	editor.icon, editor.system = host.Icon, host.System
+	editor.icon, editor.iconChosen, editor.system = host.Icon, true, host.System
 	editor.protocol, editor.flow = host.Protocol, host.Line.Flow
+	editor.terminal = host.Terminal
 	editor.viaSSH, editor.clipboard, editor.chromeless = host.ViaSSH, host.Clipboard, host.Chromeless
 	editor.console = host.Protocol == protocolRDP && host.Console
+	editor.standardSecurity = host.Protocol == protocolRDP && host.StandardSecurity
 	editor.portsOpen = false
 	if host.Protocol == protocolSerial {
 		editor.port.Insert(host.Line.String())
@@ -283,6 +382,7 @@ func (editor *hostEditor) host(id uint32) Host {
 		Address:  editor.value(fieldAddress),
 		User:     editor.value(fieldUser),
 		Protocol: editor.protocol,
+		Encoding: editor.encoding,
 	}
 	if editor.protocol == protocolSerial {
 		host.Line, _ = serial.ParseLine(editor.value(fieldPort), editor.flow)
@@ -294,16 +394,22 @@ func (editor *hostEditor) host(id uint32) Host {
 	}
 	if editor.protocol == protocolRDP {
 		host.Console = editor.console
+		host.StandardSecurity = editor.standardSecurity
 	}
 	if editor.protocol == protocolSSH {
+		host.SSHOptions = editor.sshOptions.Clone()
 		host.Auth, host.Identity = editor.auth, editor.identity
+		host.IdentitiesOnly = editor.identitiesOnly
+		host.Terminal = editor.terminal
 		if host.Auth != authPrivateKey {
 			host.Identity = ""
 		}
 		host.ForwardX11 = editor.forwardX11
 		host.AgentForward = editor.agentForward
+		host.InteractiveOnly = editor.interactiveOnly
 		host.NoHistory = editor.noHistory
 		host.LoginCommand = editor.value(fieldLoginCommand)
+		host.RemoteLogPaths = editor.remoteLogPaths
 		host.Transfer = editor.transfer
 		switch editor.algoMode {
 		case algoCompatible:
@@ -314,6 +420,18 @@ func (editor *hostEditor) host(id uint32) Host {
 	}
 	if editor.protocol != protocolSerial {
 		host.Proxy = cloneOutboundProxy(editor.proxy)
+	}
+	if idleKeepAliveProtocol(editor.protocol) {
+		host.IdleKeepAlive, _ = editor.idleKeepAliveDuration()
+		host.IdleInput = editor.idleInputModeForSave()
+		if host.IdleInput == idleInputCustom {
+			host.IdleInputCustom = editor.value(fieldIdleInputCustom)
+		}
+	}
+	// Only a host that signs in with a password has one to take from a saved one.
+	if editor.protocol == protocolVNC || editor.protocol == protocolRDP ||
+		editor.protocol == protocolSSH && editor.auth.usesPassword() {
+		host.Credential = editor.credential
 	}
 	host.normalizeEndpoint()
 	setHostTags(&host, tags)
@@ -334,20 +452,28 @@ func (editor *hostEditor) reset() {
 	editor.tags = text.Editor{}
 	editor.tagPicker = hostTagPicker{}
 	editor.groupPicker = hostGroupPicker{}
-	editor.icon, editor.system, editor.iconOpen = hostIconAuto, sshconn.SystemUnknown, false
+	editor.encodingPicker = hostEncodingPicker{}
+	editor.iconPicker = hostIconPicker{}
+	editor.encoding = ""
+	editor.icon, editor.iconChosen, editor.system = hostIconAuto, false, sshconn.SystemUnknown
 	editor.port = text.Editor{}
 	editor.algorithms = text.Editor{}
 	editor.loginCommand = text.Editor{}
+	editor.resetIdleKeepAlive()
+	editor.remoteLogPaths = nil
 	editor.otp, editor.otpSaved, editor.otpRemove = text.Editor{}, false, false
-	editor.algoMode, editor.auth, editor.identity = algoDefault, authAutomatic, ""
-	editor.authOpen, editor.identityOpen = false, false
+	editor.algoMode, editor.auth, editor.identity, editor.credential = algoDefault, authAutomatic, "", ""
+	editor.sshOptions = nil
+	editor.identitiesOnly = false
+	editor.authOpen, editor.identityOpen, editor.credentialOpen = false, false, false
 	editor.forwardX11, editor.agentForward, editor.noHistory, editor.transfer = false, false, false, transferAuto
 	editor.agentAccess = false
+	editor.agentAccessChanged = false
 	editor.proxy, editor.proxyPassword = nil, ""
 	editor.advancedOpen = false
 	editor.port.Insert(strconv.Itoa(defaultPort))
-	editor.protocol, editor.flow, editor.portsOpen = protocolSSH, serial.FlowNone, false
-	editor.viaSSH, editor.clipboard, editor.console, editor.chromeless = false, false, false, false
+	editor.protocol, editor.terminal, editor.flow, editor.portsOpen = protocolSSH, terminalSSH, serial.FlowNone, false
+	editor.viaSSH, editor.clipboard, editor.console, editor.standardSecurity, editor.chromeless = false, false, false, false, false
 }
 
 // defaultPortText is what the port field holds for a protocol until the user
@@ -366,14 +492,43 @@ func (editor *hostEditor) setProtocol(protocol hostProtocol) {
 	if protocol == editor.protocol {
 		return
 	}
+	previous := editor.protocol
+	editor.protocol = protocol
+	editor.applyProtocol(previous)
+}
+
+// applyConnection maps the form's connection-type choice to the protocol and
+// terminal transport the rest of the form reads. SSH and Mosh share the same
+// protocol, so switching between them keeps the password and port the user
+// typed; a real protocol change runs applyProtocol.
+func (editor *hostEditor) applyConnection(previous hostConnectionType) {
+	protocol := editor.connection.protocol()
+	terminal := editor.connection.terminal()
+	editor.protocol, editor.terminal = protocol, terminal
+	if protocol != previous.protocol() {
+		editor.applyProtocol(previous.protocol())
+		editor.terminal = terminal // applyProtocol resets it for a non-SSH protocol
+	}
+	if terminal == terminalMosh {
+		// mosh-server needs a UTF-8 locale, and a mosh session carries no X11
+		// or agent forwarding.
+		editor.forwardX11, editor.agentForward = false, false
+		editor.encoding = ""
+	}
+}
+
+// applyProtocol applies the protocol the page's choice already wrote. previous is
+// the protocol the form was showing: what the port and device fields were filled
+// from before the choice replaced it.
+func (editor *hostEditor) applyProtocol(previous hostProtocol) {
+	protocol := editor.protocol
 	// A password typed for one protocol's account is not another's.
 	editor.password, editor.passphrase = text.Editor{}, text.Editor{}
-	previous := defaultPortText(editor.protocol)
-	if value := editor.value(fieldPort); value == "" || value == previous {
+	if value := editor.value(fieldPort); value == "" || value == defaultPortText(previous) {
 		editor.port = text.Editor{}
 		editor.port.Insert(defaultPortText(protocol))
 	}
-	if editor.protocol == protocolSerial {
+	if previous == protocolSerial {
 		// The device the form offered means nothing to another protocol.
 		for _, port := range editor.ports {
 			if editor.value(fieldAddress) == port.Device {
@@ -382,8 +537,20 @@ func (editor *hostEditor) setProtocol(protocol hostProtocol) {
 			}
 		}
 	}
-	editor.protocol, editor.portsOpen, editor.iconOpen = protocol, false, false
-	editor.authOpen, editor.identityOpen = false, false
+	editor.protocol, editor.portsOpen = protocol, false
+	if protocol != protocolSSH {
+		editor.terminal = terminalSSH
+	}
+	editor.iconPicker.control.Open = false
+	if !editor.iconChosen {
+		if protocol == protocolSerial {
+			editor.icon = hostIconSerial
+		} else if editor.icon == hostIconSerial {
+			editor.icon = hostIconAuto
+		}
+	}
+	editor.authOpen, editor.identityOpen, editor.credentialOpen = false, false, false
+	editor.idleKeepAliveOpen, editor.idleUnitOpen, editor.idleInputOpen = false, false, false
 	if protocol == protocolSerial {
 		editor.ports = serial.Ports()
 		if editor.value(fieldAddress) == "" && len(editor.ports) > 0 {

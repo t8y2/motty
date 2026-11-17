@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/monitoring"
 	"motty/internal/remotestats"
 	"motty/internal/sshconn"
@@ -29,6 +29,70 @@ func dashboardTestState(t *testing.T) (*State, *fakeConn, *int) {
 	s.hosts = []Host{{ID: 1, CatalogID: "host", Label: "web", Address: "192.168.1.10", Port: 22, User: "deploy", System: sshconn.SystemUbuntu}}
 	s.activeSection = sectionDashboard
 	return s, f, &dialed
+}
+
+func TestDashboardHostSudoRequiresOwnConfirmationAndStopsOnDisconnect(t *testing.T) {
+	state, fake, _ := dashboardTestState(t)
+	createDashboard(t, state, "Production")
+	state.Click(hitDashboardToggle)
+	waitDashboard(t, state, state.dashboard.active)
+	source := state.dashboard.sources["host"]
+	if source == nil || source.session.sudoCommands {
+		t.Fatal("dashboard was privileged before confirmation")
+	}
+	connection := &sudoRunnerTestConn{fakeConn: fake}
+	connection.stream = fake.StreamCommand
+	connection.run = fake.RunCommand
+	source.session.conn = connection
+	for _, size := range []gfx.Size{{Width: 1400, Height: 900}, {Width: 700, Height: 650}} {
+		var canvas gfx.Canvas
+		state.Paint(&canvas, size)
+		sudo, found := hitByID(&canvas, hitDashboardSudoList.At(1))
+		terminal, terminalFound := hitByID(&canvas, hitDashboardTerminalList.At(1))
+		if !found || !terminalFound || sudo.Bounds.Width <= 0 || sudo.Bounds.X+sudo.Bounds.Width > terminal.Bounds.X {
+			t.Fatalf("dashboard sudo control overlaps the terminal at %+v", size)
+		}
+	}
+	state.Click(hitDashboardSudoList.At(1))
+	if state.modal != modalSudoSFTP || !state.sudoSFTP.dashboard || source.session.sudoCommands {
+		t.Fatal("dashboard did not request independent consent")
+	}
+	state.Click(hitSudoSFTPCancel)
+	if source.session.sudoCommands {
+		t.Fatal("canceled dashboard authorization took effect")
+	}
+	state.Click(hitDashboardSudoList.At(1))
+	state.sudoSFTP.password.Insert("dashboard-secret")
+	state.Click(hitSudoSFTPEnable)
+	if !source.session.sudoCommands || source.session.sudoPassword != "dashboard-secret" {
+		t.Fatal("dashboard authorization was not applied to its source")
+	}
+	state.Wake()
+	waitFor(t, state, func() bool {
+		connection.mu.Lock()
+		defer connection.mu.Unlock()
+		return len(connection.commands) != 0
+	})
+	connection.mu.Lock()
+	password := connection.password
+	connection.mu.Unlock()
+	if password != "dashboard-secret" {
+		t.Fatal("dashboard collector did not use its own authorization")
+	}
+	source.blocked = true
+	state.Click(hitDashboardSudoList.At(1))
+	if source.blocked || source.session.sudoCommands || source.session.sudoPassword != "" {
+		t.Fatal("disabling sudo did not restore ordinary monitoring after an authorization failure")
+	}
+	state.Click(hitDashboardSudoList.At(1))
+	state.sudoSFTP.password.Insert("dashboard-secret")
+	state.Click(hitSudoSFTPEnable)
+	fake.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseClosed })
+	state.Wake()
+	if source.session.sudoCommands || source.session.sudoPassword != "" {
+		t.Fatal("dashboard disconnect retained authorization")
+	}
+	state.closeDashboard()
 }
 func createDashboard(t *testing.T, s *State, name string) string {
 	t.Helper()
@@ -114,8 +178,8 @@ func TestDashboardCollectsWithoutTerminalSharesSourcesAndStopsIndependently(t *t
 		t.Fatal("stopping one panel stopped another")
 	}
 	s.activeSection = sectionHosts
-	var c ui.Canvas
-	s.Paint(&c, ui.Size{Width: 1280, Height: 900})
+	var c gfx.Canvas
+	s.Paint(&c, gfx.Size{Width: 1280, Height: 900})
 	s.Wake()
 	if len(s.dashboard.sources) != 1 {
 		t.Fatal("leaving page stopped sampling")
@@ -391,7 +455,7 @@ func TestDashboardHostViewsSurvivePanelSwitchingAndUseKeyboardTabs(t *testing.T)
 	s, _, _ := dashboardTestState(t)
 	a := createDashboard(t, s, "A")
 	s.Click(hitDashboardSimple)
-	result := s.Key(ui.KeyEvent{Target: hitDashboardSimpleViewList.At(3), Key: ui.KeyDown})
+	result := s.Key(gfx.KeyEvent{Target: hitDashboardSimpleViewList.At(3), Key: gfx.KeyDown})
 	if !result.Handled || result.Focus != hitDashboardSimpleViewList.At(4) {
 		t.Fatal("icon tab did not support arrow keys")
 	}
@@ -430,7 +494,7 @@ func TestDashboardPageKeysScrollThePageFromAnyControl(t *testing.T) {
 	p := s.dashboardPanel()
 	p.Hosts = append(p.Hosts, "host2", "host3", "host4", "host5", "host6")
 	s.dashboard.engine.Set(*p, true)
-	paintAt(s, ui.Size{Width: 900, Height: 520})
+	paintAt(s, gfx.Size{Width: 900, Height: 520})
 	if s.dashboard.content <= s.dashboard.body.Height {
 		t.Fatalf("content %v fits the body %v; the scroll check would prove nothing", s.dashboard.content, s.dashboard.body.Height)
 	}
@@ -439,7 +503,7 @@ func TestDashboardPageKeysScrollThePageFromAnyControl(t *testing.T) {
 	}
 	// The page switch button holds the focus; page keys must still scroll the
 	// panel instead of requiring a Tab stop on the scroll viewport first.
-	result := s.Key(ui.KeyEvent{Key: ui.KeyPageDown, Target: hitDashboardSwitch})
+	result := s.Key(gfx.KeyEvent{Key: gfx.KeyPageDown, Target: hitDashboardSwitch})
 	if !result.Handled || s.dashboard.scroll <= 0 {
 		t.Fatalf("PageDown on a control did not scroll the page: handled=%v scroll=%v", result.Handled, s.dashboard.scroll)
 	}

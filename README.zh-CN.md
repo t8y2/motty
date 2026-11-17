@@ -6,10 +6,10 @@
   </p>
 
   <p>
-    <a href="https://qm.qq.com/cgi-bin/qm/qr?k=&group_code=1131573299"><img src="https://img.shields.io/badge/QQ_群-1131573299-EB1923?style=for-the-badge&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGhlaWdodD0iODYiIHdpZHRoPSI4NiIgdmlld0JveD0iMCAwIDEyMCAxNDUiPjxwYXRoIGZpbGw9IiNmYWFiMDciIGQ9Ik02MC41MDMgMTQyLjIzN2MtMTIuNTMzIDAtMjQuMDM4LTQuMTk1LTMxLjQ0NS0xMC40Ni0zLjc2MiAxLjEyNC04LjU3NCAyLjkzMi0xMS42MSA1LjE3NS0yLjYgMS45MTgtMi4yNzUgMy44NzQtMS44MDcgNC42NjMgMi4wNTYgMy40NyAzNS4yNzMgMi4yMTYgNDQuODYyIDEuMTM2em0wIDBjMTIuNTM1IDAgMjQuMDM5LTQuMTk1IDMxLjQ0Ny0xMC40NiAzLjc2IDEuMTI0IDguNTczIDIuOTMyIDExLjYxIDUuMTc1IDIuNTk4IDEuOTE4IDIuMjc0IDMuODc0IDEuODA1IDQuNjYzLTIuMDU2IDMuNDctMzUuMjcyIDIuMjE2LTQ0Ljg2MiAxLjEzNnptMCAwIi8+PHBhdGggZD0iTTYwLjU3NiA2Ny4xMTljMjAuNjk4LS4xNCAzNy4yODYtNC4xNDcgNDIuOTA3LTUuNjgzIDEuMzQtLjM2NyAyLjA1Ni0xLjAyNCAyLjA1Ni0xLjAyNC4wMDUtLjE4OS4wODUtMy4zNy4wODUtNS4wMUMxMDUuNjI0IDI3Ljc2OCA5Mi41OC4wMDEgNjAuNSAwIDI4LjQyLjAwMSAxNS4zNzUgMjcuNzY5IDE1LjM3NSA1NS40MDFjMCAxLjY0Mi4wOCA0LjgyMi4wODYgNS4wMSAwIDAgLjU4My42MTUgMS42NS45MTMgNS4xOSAxLjQ0NCAyMi4wOSA1LjY1IDQzLjMxMiA1Ljc5NXptNTYuMjQ1IDIzLjAyYy0xLjI4My00LjEyOS0zLjAzNC04Ljk0NC00LjgwOC0xMy41NjggMCAwLTEuMDItLjEyNi0xLjUzNy4wMjMtMTUuOTEzIDQuNjIzLTM1LjIwMiA3LjU3LTQ5LjkgNy4zOTJoLS4xNTNjLTE0LjYxNi4xNzUtMzMuNzc0LTIuNzM3LTQ5LjYzNC03LjMxNS0uNjA2LS4xNzUtMS44MDItLjEtMS44MDItLjEtMS43NzQgNC42MjQtMy41MjUgOS40NC00LjgwOCAxMy41NjgtNi4xMTkgMTkuNjktNC4xMzYgMjcuODM4LTIuNjI3IDI4LjAyIDMuMjM5LjM5MiAxMi42MDYtMTQuODIxIDEyLjYwNi0xNC44MjEgMCAxNS40NTkgMTMuOTU3IDM5LjE5NSA0NS45MTggMzkuNDEzaC44NDhjMzEuOTYtLjIxOCA0NS45MTctMjMuOTU0IDQ1LjkxNy0zOS40MTMgMCAwIDkuMzY4IDE1LjIxMyAxMi42MDcgMTQuODIyIDEuNTA4LS4xODMgMy40OTEtOC4zMzItMi42MjctMjguMDIxIi8+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTQ5LjA4NSA0MC44MjRjLTQuMzUyLjE5Ny04LjA3LTQuNzYtOC4zMDQtMTEuMDYzLS4yMzYtNi4zMDUgMy4wOTgtMTEuNTc2IDcuNDUtMTEuNzczIDQuMzQ3LS4xOTUgOC4wNjQgNC43NiA4LjMgMTEuMDY1LjIzOCA2LjMwNi0zLjA5NyAxMS41NzctNy40NDYgMTEuNzcxbTMxLjEzMy0xMS4wNjNjLS4yMzMgNi4zMDItMy45NTEgMTEuMjYtOC4zMDMgMTEuMDYzLTQuMzUtLjE5NS03LjY4NC01LjQ2NS03LjQ0Ni0xMS43Ny4yMzYtNi4zMDUgMy45NTItMTEuMjYgOC4zLTExLjA2NiA0LjM1Mi4xOTcgNy42ODYgNS40NjggNy40NDkgMTEuNzczIi8+PHBhdGggZmlsbD0iI2ZhYWIwNyIgZD0iTTg3Ljk1MiA0OS43MjVDODYuNzkgNDcuMTUgNzUuMDc3IDQ0LjI4IDYwLjU3OCA0NC4yOGgtLjE1NmMtMTQuNSAwLTI2LjIxMiAyLjg3LTI3LjM3NSA1LjQ0NmEuODYzLjg2MyAwIDAwLS4wODUuMzY3Ljg4Ljg4IDAgMDAuMTYuNDk2Yy45OCAxLjQyNyAxMy45ODUgOC40ODcgMjcuMyA4LjQ4N2guMTU2YzEzLjMxNCAwIDI2LjMxOS03LjA1OCAyNy4yOTktOC40ODdhLjg3My44NzMgMCAwMC4xNi0uNDk4Ljg1Ni44NTYgMCAwMC0uMDg1LS4zNjUiLz48cGF0aCBkPSJNNTQuNDM0IDI5Ljg1NGMuMTk5IDIuNDktMS4xNjcgNC43MDItMy4wNDYgNC45NDMtMS44ODMuMjQyLTMuNTY4LTEuNTgtMy43NjgtNC4wNy0uMTk3LTIuNDkyIDEuMTY3LTQuNzA0IDMuMDQzLTQuOTQ0IDEuODg2LS4yNDQgMy41NzQgMS41OCAzLjc3MSA0LjA3bTExLjk1Ni44MzNjLjM4NS0uNjg5IDMuMDA0LTQuMzEyIDguNDI3LTIuOTkzIDEuNDI1LjM0NyAyLjA4NC44NTcgMi4yMjMgMS4wNTcuMjA1LjI5Ni4yNjIuNzE4LjA1MyAxLjI4Ni0uNDEyIDEuMTI2LTEuMjYzIDEuMDk1LTEuNzM0Ljg3NS0uMzA1LS4xNDItNC4wODItMi42Ni03LjU2MiAxLjA5Ny0uMjQuMjU3LS42NjguMzQ2LTEuMDczLjA0LS40MDctLjMwOC0uNTc0LS45My0uMzM0LTEuMzYyIi8+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTYwLjU3NiA4My4wOGgtLjE1M2MtOS45OTYuMTItMjIuMTE2LTEuMjA0LTMzLjg1NC0zLjUxOC0xLjAwNCA1LjgxOC0xLjYxIDEzLjEzMi0xLjA5IDIxLjg1MyAxLjMxNiAyMi4wNDMgMTQuNDA3IDM1LjkgMzQuNjE0IDM2LjFoLjgyYzIwLjIwOC0uMiAzMy4yOTgtMTQuMDU3IDM0LjYxNi0zNi4xLjUyLTguNzIzLS4wODctMTYuMDM1LTEuMDkyLTIxLjg1NC0xMS43MzkgMi4zMTUtMjMuODYyIDMuNjQtMzMuODYgMy41MTgiLz48cGF0aCBmaWxsPSIjZWIxOTIzIiBkPSJNMzIuMTAyIDgxLjIzNXYyMS42OTNzOS45MzcgMi4wMDQgMTkuODkzLjYxNlY4My41MzVjLTYuMzA3LS4zNTctMTMuMTA5LTEuMTUyLTE5Ljg5My0yLjMiLz48cGF0aCBmaWxsPSIjZWIxOTIzIiBkPSJNMTA1LjUzOSA2MC40MTJzLTE5LjMzIDYuMTAyLTQ0Ljk2MyA2LjI3NWgtLjE1M2MtMjUuNTkxLS4xNzItNDQuODk2LTYuMjU1LTQ0Ljk2Mi02LjI3NUw4Ljk4NyA3Ni41N2MxNi4xOTMgNC44ODIgMzYuMjYxIDguMDI4IDUxLjQzNiA3Ljg0NWguMTUzYzE1LjE3NS4xODMgMzUuMjQyLTIuOTYzIDUxLjQzNy03Ljg0NXptMCAwIi8+PC9zdmc+" alt="QQ 群 1131573299" /></a>
-    <a href="https://docs.qq.com/doc/DVXBGYnFFdm9UWkVP"><img src="https://img.shields.io/badge/微信群-扫码加入-07C160?style=for-the-badge&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0iIzA3YzE2MCIgZD0iTTguNjkxIDIuMTg4QzMuODkxIDIuMTg4IDAgNS40NzYgMCA5LjUzYzAgMi4yMTIgMS4xNyA0LjIwMyAzLjAwMiA1LjU1YS41OS41OSAwIDAgMSAuMjEzLjY2NWwtLjM5IDEuNDhjLS4wMTkuMDctLjA0OC4xNDEtLjA0OC4yMTNjMCAuMTYzLjEzLjI5NS4yOS4yOTVhLjMzLjMzIDAgMCAwIC4xNjctLjA1NGwxLjkwMy0xLjExNGEuODYuODYgMCAwIDEgLjcxNy0uMDk4YTEwLjIgMTAuMiAwIDAgMCAyLjgzNy40MDNjLjI3NiAwIC41NDMtLjAyNy44MTEtLjA1Yy0uODU3LTIuNTc4LjE1Ny00Ljk3MiAxLjkzMi02LjQ0NmMxLjcwMy0xLjQxNSAzLjg4Mi0xLjk4IDUuODUzLTEuODM4Yy0uNTc2LTMuNTgzLTQuMTk2LTYuMzQ4LTguNTk2LTYuMzQ4TTUuNzg1IDUuOTkxYy42NDIgMCAxLjE2Mi41MjkgMS4xNjIgMS4xOGExLjE3IDEuMTcgMCAwIDEtMS4xNjIgMS4xNzhBMS4xNyAxLjE3IDAgMCAxIDQuNjIzIDcuMTdjMC0uNjUxLjUyLTEuMTggMS4xNjItMS4xOHptNS44MTMgMGMuNjQyIDAgMS4xNjIuNTI5IDEuMTYyIDEuMThhMS4xNyAxLjE3IDAgMCAxLTEuMTYyIDEuMTc4YTEuMTcgMS4xNyAwIDAgMS0xLjE2Mi0xLjE3OGMwLS42NTEuNTItMS4xOCAxLjE2Mi0xLjE4bTUuMzQgMi44NjdjLTEuNzk3LS4wNTItMy43NDYuNTEyLTUuMjggMS43ODZjLTEuNzIgMS40MjgtMi42ODcgMy43Mi0xLjc4IDYuMjJjLjk0MiAyLjQ1MyAzLjY2NiA0LjIyOSA2Ljg4NCA0LjIyOWMuODI2IDAgMS42MjItLjEyIDIuMzYxLS4zMzZhLjcyLjcyIDAgMCAxIC41OTguMDgybDEuNTg0LjkyNmEuMy4zIDAgMCAwIC4xNC4wNDdjLjEzNCAwIC4yNC0uMTExLjI0LS4yNDdjMC0uMDYtLjAyMy0uMTItLjAzOC0uMTc3bC0uMzI3LTEuMjMzYS42LjYgMCAwIDEtLjAyMy0uMTU2YS40OS40OSAwIDAgMSAuMjAxLS4zOThDMjMuMDI0IDE4LjQ4IDI0IDE2LjgyIDI0IDE0Ljk4YzAtMy4yMS0yLjkzMS01LjgzNy02LjY1Ni02LjA4OFY4Ljg5Yy0uMTM1LS4wMS0uMjctLjAyNy0uNDA3LS4wM3ptLTIuNTMgMy4yNzRjLjUzNSAwIC45NjkuNDQuOTY5Ljk4MmEuOTc2Ljk3NiAwIDAgMS0uOTY5Ljk4M2EuOTc2Ljk3NiAwIDAgMS0uOTY5LS45ODNjMC0uNTQyLjQzNC0uOTgyLjk3LS45ODJ6bTQuODQ0IDBjLjUzNSAwIC45NjkuNDQuOTY5Ljk4MmEuOTc2Ljk3NiAwIDAgMS0uOTY5Ljk4M2EuOTc2Ljk3NiAwIDAgMS0uOTY5LS45ODNjMC0uNTQyLjQzNC0uOTgyLjk2OS0uOTgyIi8%2BPC9zdmc%2B" alt="微信群" /></a>
-    <a href="https://discord.gg/6s5tn9H4p2"><img src="https://img.shields.io/badge/Motty-JOIN-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord" /></a>
-    <a href="https://linux.do"><img src="https://img.shields.io/badge/LINUX%20DO-Community-blue?style=for-the-badge" alt="LINUX DO" /></a>
+    <a href="https://qm.qq.com/cgi-bin/qm/qr?k=&group_code=1131573299"><img src="assets/badge-qq.svg" alt="QQ 群 1131573299" /></a>
+    <a href="https://docs.qq.com/doc/DVXBGYnFFdm9UWkVP"><img src="assets/badge-wechat.svg" alt="微信群" /></a>
+    <a href="https://discord.gg/6s5tn9H4p2"><img src="assets/badge-discord.svg" alt="Discord" /></a>
+    <a href="https://linux.do/t/topic/3086528/1"><img src="assets/badge-linuxdo.svg" alt="LINUX DO Community" /></a>
   </p>
 
   <p>
@@ -21,41 +21,98 @@
 Motty 是一个桌面 SSH 客户端。终端、SFTP 面板、端口转发、远程桌面和 AI 助手
 放在同一个窗口里，一次会话既不用另开文件工具，也不用开浏览器标签页看屏幕。
 
-## 为什么选择 Motty？
-
-下面四张图是简版，剩下的细节在后面的章节里。
+完整文档在 <https://motty.page/zh/docs>；本文件讲项目本身、安装包和怎么构建。
 
 <table>
   <tr>
     <td width="50%" valign="top">
       <a href="assets/readme-hosts.png"><img src="assets/readme-hosts.png" alt="带分组、标签和颜色的主机列表" /></a>
+    </td>
+    <td width="50%" valign="top">
+      <a href="assets/readme-sftp-light.png"><img src="assets/readme-sftp-light.png" alt="浅色外观下并排的 SFTP 文件面板与终端" /></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="assets/readme-forward-light.png"><img src="assets/readme-forward-light.png" alt="浅色外观下的转发规则列表" /></a>
+    </td>
+    <td width="50%" valign="top">
+      <a href="assets/readme-monitor.png"><img src="assets/readme-monitor.png" alt="分屏终端旁边的资源监控" /></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="assets/readme-desktop.png"><img src="assets/readme-desktop.png" alt="通过 VNC 连接的远程桌面" /></a>
+    </td>
+    <td width="50%" valign="top">
+      <a href="assets/readme-settings-colors.png"><img src="assets/readme-settings-colors.png" alt="浅色外观下设置页里的终端配色方案" /></a>
+    </td>
+  </tr>
+</table>
+
+## 为什么选择 Motty？
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
       <p><strong>主机管理得住。</strong>分组、标签、颜色和图标，可以从 OpenSSH
       config、PuTTY、MobaXterm 等七种来源导入。密码进 AES-256-GCM 保险库，
       密钥放在系统密钥存储里。</p>
     </td>
     <td width="50%" valign="top">
-      <a href="assets/readme-monitor.png"><img src="assets/readme-monitor.png" alt="分屏终端旁边的资源监控" /></a>
       <p><strong>会话看得见。</strong>分屏之后，在占用 CPU 的那个 shell 旁边直接
       读这台机器的 CPU、内存、磁盘和网络。</p>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <a href="assets/readme-desktop.png"><img src="assets/readme-desktop.png" alt="通过 VNC 连接的远程桌面" /></a>
       <p><strong>需要时也有画面。</strong>VNC 和 RDP 都能连，服务器只监听自己的
       回环地址时，还可以借一台 SSH 主机穿过去。</p>
     </td>
     <td width="50%" valign="top">
-      <p><strong>键盘优先。</strong>标签、分屏、SFTP、转发和助手都是命令面板里的
-      命令。鼠标是可选项，不是必需品。</p>
-      <p><strong>对边界说实话。</strong><a href="docs/remote-desktop.md">docs/remote-desktop.md</a>
-      列出 VNC 和 RDP 目前做不到什么，发布说明也会写清楚哪些平台在真实硬件上
-      验证过。</p>
-      <p><strong>不往外发数据。</strong>没有统计上报。更新检查默认关闭，打开后
-      只访问 GitHub Releases。</p>
+      <p><strong>隧道看得见。</strong>本地、远程、SOCKS5 和 HTTP CONNECT 规则只绑定
+      回环地址，显式保存、显式启动；隧道随拥有它的 SSH 标签页一起停止。</p>
     </td>
   </tr>
 </table>
+
+**键盘优先。**标签、分屏、SFTP、转发和助手都是命令面板里的命令，鼠标是可选项。
+**对边界说实话：**[docs/remote-desktop.md](docs/remote-desktop.md) 列出 VNC 和
+RDP 目前做不到什么，发布说明也会写清楚哪些平台在真实硬件上验证过。
+**不往外发数据：**没有统计上报，更新检查默认关闭，打开后只访问 GitHub Releases。
+
+## 安装
+
+从 [Releases](https://github.com/t8y2/motty/releases) 下载对应平台的包：
+
+| 平台 | 包 |
+| --- | --- |
+| macOS（arm64、amd64） | `.dmg`、`.zip` |
+| Windows（amd64、arm64） | 安装程序、便携版 zip（数据保存在 `motty.exe` 旁的 `motty-data`） |
+| Linux（amd64、arm64） | `.deb`、`.tar.gz` |
+
+Windows 安装包需要 Windows 10 或 Windows Server 2016 及更高版本。
+
+macOS 包在发布带证书时签名并公证，Windows 包在配置证书时签名；Linux 包不签名。
+AUR 和 `.AppImage` 暂不提供。
+
+也可以用包管理器安装：
+
+```sh
+brew install --cask t8y2/tap/motty
+```
+
+如果 Homebrew 提示要先信任这个 tap，执行一次 `brew trust t8y2/tap`。
+
+```powershell
+scoop bucket add t8y2 https://github.com/t8y2/scoop-bucket
+scoop install t8y2/motty
+```
+
+cask 安装的是已公证的磁盘映像，并标记为自行更新，安装后的副本会原地升级。自行解压的
+Windows 便携版在有签名更新时也可原地升级，并保留 `motty-data`。旧版便携版需要先手动
+替换一次 ZIP 中的 `motty.exe` 才能使用应用内更新。Scoop 安装的也是便携版，但其版本
+目录由 Scoop 管理：`motty-data` 会在版本间保留，升级走 `scoop update motty`。
 
 ## 快速开始
 
@@ -72,9 +129,10 @@ Motty 是一个桌面 SSH 客户端。终端、SFTP 面板、端口转发、远�
 Windows 下可在 **设置 → 终端 → 本地 Shell**（“行内建议”下方）的下拉框中选择
 本地终端使用的 Shell。Motty 会从 PATH 和常见安装目录中自动检测 PowerShell、
 CMD、Git Bash 等已安装的 Shell，并把每个已安装的 WSL 发行版列为单独的选项。
-选择 WSL 发行版后，文件面板同样会跟随终端所在目录（经由发行版的
-`\\wsl.localhost` 共享访问）。请在这里选择发行版，而不是在 PowerShell 里输入
-`wsl`：只有 Motty 自己启动的 Shell 才能上报所在目录。此配置仅保存在本机，对新建或重连的本地终端生效。
+选择某个 Shell 后，标签页和侧边栏显示它自己的图标，WSL 发行版显示其 logo；
+文件面板直接打开在发行版的文件系统中（经由发行版的 `\\wsl.localhost` 共享访问），
+并跟随终端所在目录，资源监控也读取发行版内部的数据。请在这里选择发行版，而不是在
+PowerShell 里输入 `wsl`：只有 Motty 自己启动的 Shell 才能上报所在目录。此配置仅保存在本机，对新建或重连的本地终端生效。
 
 | 操作 | macOS | Windows / Linux |
 | --- | --- | --- |
@@ -113,7 +171,9 @@ win32-input-mode。连字在固定网格内按单元格整形。标签可以重�
 保留在标签页和主机标记中，终端、文件和监控顶栏使用中性背景。
 
 支持保留历史搜索、HTTP/HTTPS 和 OSC 8 链接、Kitty/iTerm2/SIXEL 图片、片段、
-分屏广播输入和显式录制。终端有十一套配色、关键词高亮和可选的行内命令建议。
+分屏广播输入和显式录制。终端内置两百多套配色、关键词高亮和可选的行内命令建议。
+设置页只展示精选配色，其余从左侧抽屉打开；把 X resources 文件放进数据目录的
+`schemes` 文件夹即可加入列表。
 
 ### 主机与认证
 
@@ -125,10 +185,22 @@ win32-input-mode。连字在固定网格内按单元格整形。标签可以重�
 在案就直接连接；未知证书像未知密钥一样弹出指纹确认。主机还可以把本地 ssh-agent
 转发给远端 shell，按主机开关，默认关闭。
 
+硬件安全密钥（`sk-ssh-ed25519`、`sk-ecdsa-sha2-nistp256`）通过 OpenSSH 的 agent
+和 `ssh-sk-helper` 认证。使用这类密钥连接时，Motty 会为本次连接启动一个临时
+agent，用 `ssh-add` 载入密钥，并在窗口里显示 PIN 或口令提示；密钥列表会把它标为
+「安全密钥」。要求与限制见 [安全密钥](docs/security-keys.md)。
+
 主机可以分组、打标签、搜索，也可以从 OpenSSH config、PuTTY、Xshell、MobaXterm、
-WindTerm、Electerm、Netcatty 导入。TOTP/HOTP 种子可以存入保险库并自动填充。密码和私钥口令
+WindTerm、Electerm、Netcatty、SecureCRT 导入。TOTP/HOTP 种子可以存入保险库并自动填充。密码和私钥口令
 进入 AES-256-GCM 保险库，跟随各自的主机；密钥放在系统密钥存储，没有时（以及便携版）放在保险库旁的密钥文件里。
 Electerm 和 Netcatty 的明文 SSH 密码可在明确确认后导入；重新导入只补齐缺失密码。
+SecureCRT 的保存密码是加密的，导入只包含连接。
+
+OpenSSH 配置导入和同步会保留每台主机的 `ServerAliveInterval`、
+`ServerAliveCountMax`、`IdentitiesOnly` 和指定的身份文件。显式设置间隔为 0
+会关闭该主机的保活；限制身份时仍可使用 SSH agent 中匹配的密钥，但不会尝试其他 agent 密钥。
+使用自动认证的主机也可以在编辑器的“高级选项”里开启同样的限制：agent 只提供与已配置
+身份匹配的密钥，避免 agent 中密钥过多时在本地密钥之前耗尽服务器的认证次数。
 
 ### 文件不用另开应用
 
@@ -173,10 +245,16 @@ Hextile/ZRLE、桌面尺寸变化、指针、键盘和文本剪贴板。RDP 使�
 可选 MCP 服务器把同样的工具交给外部 agent：默认关闭、只监听 loopback、要求
 bearer token，支持 observe 和 ask 两种模式。`motty mcp-serve` 是不开窗口的同类做法：
 agent 通过 stdio 启动它，它只使用你对 agent 开放的主机，没有端口，也没有 token。
+两个 MCP 入口都提供后台任务：`terminal_start` 立即返回任务号，`terminal_poll` 按偏移
+读取已经打印的内容，`terminal_stop` 结束命令，长命令不会阻塞对话。
+`list_hosts` 查询已对 agent 开放的保存 SSH 主机（无需连接），返回稳定的主机 ID、名称和地址；
+窗口版 HTTP MCP 与独立 stdio MCP 都不会列出未授权主机。窗口版 `list_sessions` 只列出
+打开的终端会话，其会话 ID 与主机 ID 不同；独立服务的 `list_sessions` 仍以主机 ID
+列出已授权主机，供其命令和文件工具使用。
 
 ### 备份与同步
 
-支持加密 `.mottybak` 导出，也可以通过 WebDAV、S3 兼容存储或 GitHub Gist 同步。
+支持加密 `.mottybak` 导出，也可以通过 WebDAV、S3 兼容存储、GitHub Gist 或 Gitee 代码片段同步。
 同步按记录合并，使用混合逻辑时钟和 90 天删除墓碑；标签页、窗口布局、快捷键、
 字体、密钥路径和云服务凭据只留在本机。
 
@@ -184,49 +262,11 @@ WebDAV 和 S3 默认要求远程地址使用 HTTPS。使用局域网 HTTP 服务
 表单底部勾选“允许不安全的远程 HTTP”。HTTP 连接不加密，认证信息可能被窃听；
 备份文件仍在本机加密后上传。此选择仅保存在本机。
 
-## 安装
-
-从 [Releases](https://github.com/t8y2/motty/releases) 下载对应平台的包：
-
-| 平台 | 包 |
-| --- | --- |
-| macOS（arm64、amd64） | `.dmg`、`.zip` |
-| Windows（amd64、arm64） | 安装程序、便携版 zip（数据保存在 `motty.exe` 旁的 `motty-data`） |
-| Linux（amd64、arm64） | `.deb`、`.tar.gz` |
-
-macOS 包在发布带证书时签名并公证，Windows 包在配置证书时签名；Linux 包不签名。
-AUR 和 `.AppImage` 暂不提供。
-
-也可以用包管理器安装：
-
-```sh
-brew install --cask t8y2/tap/motty
-```
-
-如果 Homebrew 提示要先信任这个 tap，执行一次 `brew trust t8y2/tap`。
-
-```powershell
-scoop bucket add t8y2 https://github.com/t8y2/scoop-bucket
-scoop install t8y2/motty
-```
-
-cask 安装的是已公证的磁盘映像，并标记为自行更新，安装后的副本会原地升级。Scoop 安装
-的是便携版：`motty-data` 会在版本间保留，升级走 `scoop update motty`。
-
-### Motty 意外退出时
-
-Motty 会在数据目录的 `logs` 文件夹里保存日志，异常退出后还会保存崩溃报告：
-Windows 在 `%APPDATA%\motty\logs`，macOS 在
-`~/Library/Application Support/motty/logs`，Linux 在 `~/.config/motty/logs`
-（便携版在程序旁的 `motty-data\logs`）。反馈问题时请附上 `motty.log` 和最新的
-`crash-*.log`。如果程序根本无法启动，它会用对话框说明原因，并把原因写进日志。
-
-如果程序消失而 `crash.log` 仍是空的，说明进程在 Go 来得及写任何东西之前就被原生错误
-（例如显卡驱动）终止了。Windows 11 22H2 及以上时，Motty 会请求 Windows 错误报告把转储
-保存到 `%LOCALAPPDATA%\Motty\CrashDumps`；事件查看器（Windows 日志 → 应用程序）里的
-"Application Error" 事件会写出出错的模块。要排查常见原因，可在设置环境变量
-`VIVA_SOFTWARE_RENDERING=1`（不用显卡驱动）或 `VIVA_ACCESSIBILITY=0`（不建立 UI Automation
-树）后启动 Motty。转储是程序内存的副本，分享前请先自行确认。
+WebDAV 下载支持 AList/OpenList 的“302 重定向”策略，最多跟随 5 次重定向；
+跨站后不再携带 WebDAV 凭据、Cookie 或来源地址，也不允许从 HTTPS 降级到 HTTP。
+上传和连接测试仍拒绝跨主机重定向。同步使用 WebDAV 文件自身的 ETag 保护并发更新，
+不使用云盘下载地址的 ETag；重定向未提供 ETag 时，会在下载前后查询 WebDAV 文件属性。
+服务器无法提供版本标识时，请将其 WebDAV 策略改为“本机代理（native proxy）”。
 
 ## 从源码构建
 
@@ -266,48 +306,11 @@ go run ./cmd/viva package -C ../motty --target linux --arch amd64 --format tar.g
 
 ### 开发构建
 
-构建并启动一次开发版：
-
-```sh
-make run
-```
-
-该产物带 `dev` 标签，所以原生窗口和托盘显示 `Motty Dev`，Dock 图标右上角带一个
-红色 `DEV` 角标。窗口内的 logo 与正式版用的是同一张图，界面看起来就是发布效果，
-同时在 Dock 上一眼能认出跑的是哪个版本。
-`make dev` 会在本仓库或 `../viva` 的 Go 文件变化时重新构建并重启；监听模式需要
-`fswatch`，单次模式不需要。`tools/dev.sh --once` 与 `make run` 是同一个入口。
-
-开发版默认使用系统配置目录下的 `motty-dev`，正式版仍使用原来的 `motty`。
-系统密钥存储也使用独立命名空间；两个默认副本可以同时运行，不会互相升级数据库。
-未使用的默认开发目录发现正式数据时，首次启动会提供“导入副本”和“空白开始”。
-导入只读原目录，复制主机、共享设置及信任的密钥，并可将已保存的密码重新加密到
-开发密码库；不会复制打开的会话或云同步登录。关闭弹窗表示稍后决定；失败会明确
-显示，未完成的导入可以继续，不覆盖当前主机或密码。已有数据的开发目录及显式
-`MOTTY_DATA_DIR` 不会自动导入，仍可通过“备份与同步”恢复加密备份。
-
-macOS 标准入口会在
-`~/Library/Application Support/motty/development-signing` 创建或复用私有本地开发
-签名身份。首次访问可能需要完成一次系统钥匙串授权；在身份和钥匙串不变且已解锁时，
-之后内容不同的重建会复用这次授权。它不会绕过钥匙串锁定、ACL 变更或显式更换身份。
-签名或验证失败时入口会停止启动，不会静默运行未签名产物。
-
-需要指定证书且不初始化默认身份时，使用
-`MOTTY_DEV_SIGN_IDENTITY='Developer ID Application: …' make run`。只有明确要运行
-未签名产物时才使用 `MOTTY_DEV_SIGN_IDENTITY=none make run`；入口会提示钥匙串授权
-可能重复。普通 `go run ./cmd/motty` 是正式版行为，`go run -tags dev ./cmd/motty`
-会绕过稳定签名入口，仅用于诊断。
-
-`MOTTY_DATA_DIR` 仍可显式覆盖目录。破坏性测试必须使用临时数据和测试凭据；
-同一构建类型内的多个目录仍共享该类型的系统密钥命名空间。除非明确希望共享访问，
-不要将开发版指向正式目录或配置生产云同步。便携开发版识别 `motty-dev-data`，
-不使用正式版的 `motty-data`。
-
-配置兼容代际 23 引入无损字段更新：向 JSON 对象新增兼容字段不再必须提升格式号；
-保存、同步和备份恢复会保留未知字段及记录。冲突修改会明确失败，不覆盖未读取的数据。
-数组仍是整体值，不兼容的元素结构变化仍需提升兼容代际。写入程序版本只用于诊断。
-包括 19–22 在内的旧格式需要一次升级，已发布的旧程序不能读取 23；不要手动修改
-数据库格式号绕过保护。详见[存储兼容说明](tools/README.md#storage-compatibility)。
+`make run` 构建并启动一个开发版：窗口和托盘显示 `Motty Dev`，Dock 图标带红色
+`DEV` 角标，界面本身看起来就是发布效果。`make dev` 在文件变化时重新构建并重启，
+需要 `fswatch`。开发数据放在 `motty-dev` 并使用独立的系统密钥命名空间，开发版和
+正式版可以同时运行、互不影响。macOS 开发签名身份、`MOTTY_DATA_DIR`、目录导入
+以及存储代际 23 的规则见 [docs/development.md](docs/development.md)。
 
 ## 安全
 
@@ -344,6 +347,16 @@ Viva 负责窗口、输入、文本/输入法、焦点、布局、组件和渲�
 | `internal/workbench` | 应用状态、界面、绘制和输入 |
 | `internal/ai` | 助手、工具、风险门和 MCP 服务器 |
 | `assets`、`docs`、`tools` | 品牌、技术说明和开发工具 |
+
+## 故障排查
+
+Motty 会在数据目录的 `logs` 文件夹里保存 `motty.log`，异常退出后还会保存
+`crash-*.log`：Windows 在 `%APPDATA%\motty\logs`，macOS 在
+`~/Library/Application Support/motty/logs`，Linux 在 `~/.config/motty/logs`。
+反馈问题时请附上这两个文件。如果程序消失而 `crash.log` 仍是空的，说明进程在 Go
+来得及写任何东西之前就被终止了——Windows 错误报告转储以及用
+`VIVA_SOFTWARE_RENDERING=1` / `VIVA_ACCESSIBILITY=0` 排查的方法见
+[docs/troubleshooting.md](docs/troubleshooting.md)。
 
 ## 社群
 

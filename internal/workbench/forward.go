@@ -1,14 +1,17 @@
 package workbench
 
 import (
+	"context"
 	"fmt"
-	"github.com/vivaui/viva/ui"
 	"net"
 	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/portforward"
 	"motty/internal/sshconn"
@@ -28,6 +31,12 @@ type forwardRecord struct {
 	// Resume makes the forward wait through an automatic reconnect of its tab
 	// and start again once it is connected, instead of stopping.
 	Resume bool
+	// ViaShell carries each connection through a relay program run in a shell on
+	// the host, for a server that refuses forwarded channels: the shell becomes
+	// the TCP stream. Relay is that program, with the tokens of a proxy command;
+	// empty means defaultRelayCommand.
+	ViaShell bool
+	Relay    string
 
 	runner        *portforward.Forward
 	runnerVersion uint64
@@ -45,6 +54,50 @@ type forwardStartResult struct {
 	startID   uint64
 	runner    *portforward.Forward
 	err       error
+}
+
+// forwardTableSource reads the forwards page's table cells when the table asks
+// for them, one visible cell at a time.
+type forwardTableSource struct {
+	records *[]forwardRecord
+}
+
+func (source *forwardTableSource) Len() int {
+	if source == nil || source.records == nil {
+		return 0
+	}
+	return len(*source.records)
+}
+
+func (source *forwardTableSource) Cell(row, column int) string {
+	if source == nil || source.records == nil {
+		return ""
+	}
+	records := *source.records
+	if row < 0 || row >= len(records) || column < 0 || column >= len(records[row].cells) {
+		return ""
+	}
+	return records[row].cells[column]
+}
+
+// syncForwardTable makes the table show the forward the application selected.
+func (state *State) syncForwardTable() {
+	row := -1
+	for index := range state.forwards {
+		if state.forwards[index].ID == state.selectedForwardID {
+			row = index
+			break
+		}
+	}
+	state.forwardTable.Select(row)
+}
+
+// takeForwardTableSelection adopts the row a key moved the table to.
+func (state *State) takeForwardTableSelection() {
+	row := state.forwardTable.Selected()
+	if row >= 0 && row < len(state.forwards) {
+		state.selectForward(state.forwards[row].ID)
+	}
 }
 
 func (forward *forwardRecord) listenAddress() string {
@@ -94,6 +147,14 @@ func (forward forwardRecord) matchesHost(host Host) bool {
 	return forward.HostAddress == host.Address && forward.HostUser == host.User && forward.HostPort == host.Port
 }
 
+// relayCommand is the program a ViaShell forward runs on the host.
+func (forward *forwardRecord) relayCommand() string {
+	if command := strings.TrimSpace(forward.Relay); command != "" {
+		return command
+	}
+	return defaultRelayCommand
+}
+
 func (forward *forwardRecord) refresh(messages i18n.Messages, hostAvailable bool) {
 	status := messages.ForwardStopped
 	forward.detail = forward.lastError
@@ -111,7 +172,7 @@ func (forward *forwardRecord) refresh(messages i18n.Messages, hostAvailable bool
 		forward.runnerVersion = runtime.Version
 		if runtime.LastError != nil {
 			forward.lastError = runtime.LastError.Error()
-			forward.detail = forward.lastError
+			forward.detail = forwardFailureText(messages, *forward, runtime.LastError)
 			status = messages.ForwardRunningError
 		} else {
 			forward.lastError = ""
@@ -122,6 +183,19 @@ func (forward *forwardRecord) refresh(messages i18n.Messages, hostAvailable bool
 		status = messages.ForwardStoppedError
 	}
 	forward.cells = [5]string{forward.Label, forward.HostLabel, forward.displayListener(messages), forward.displayDestination(messages), status}
+}
+
+// forwardFailureText is what a failed connection says in the page: a server
+// that refuses the channel gets an explanation naming the way out instead of
+// the protocol's own words.
+func forwardFailureText(messages i18n.Messages, forward forwardRecord, err error) string {
+	if !sshconn.IsChannelRefused(err) {
+		return err.Error()
+	}
+	if forward.ViaShell {
+		return messages.ForwardRelayRefused
+	}
+	return messages.ForwardRefusedHint
 }
 
 func (forward *forwardRecord) stop() {
@@ -157,12 +231,28 @@ type forwardEditor struct {
 	destinationHost text.Editor
 	destinationPort text.Editor
 	hostID          uint32
-	hostOpen        bool
-	hostOffset      int
-	mode            portforward.Mode
-	resume          bool
-	editing         bool
-	forwardID       uint32
+	// hostSelect is the searchable host picker. Its query stays here so typing
+	// filters the list without opening a second surface.
+	hostSelect components.SingleSelectState
+	hostPopup  gfx.Rect
+	mode       portforward.Mode
+	resume     bool
+	viaShell   bool
+	relay      text.Editor
+	editing    bool
+	forwardID  uint32
+	// dialogBody is where the dialog body laid out the controls painted by hand.
+	dialogBody forwardDialogBody
+}
+
+// forwardDialogBody is where the forward editor's body put each control it
+// paints by hand.
+type forwardDialogBody struct {
+	name, host, port             ui.Box
+	destination, destinationPort ui.Box
+	viaShell, viaShellHelp       ui.Box
+	relay                        ui.Box
+	resume, resumeHelp           ui.Box
 }
 
 type forwardField uint8
@@ -172,6 +262,7 @@ const (
 	forwardFieldLocalPort
 	forwardFieldDestinationHost
 	forwardFieldDestinationPort
+	forwardFieldRelay
 )
 
 func (editor *forwardEditor) field(field forwardField) *text.Editor {
@@ -182,6 +273,8 @@ func (editor *forwardEditor) field(field forwardField) *text.Editor {
 		return &editor.localPort
 	case forwardFieldDestinationHost:
 		return &editor.destinationHost
+	case forwardFieldRelay:
+		return &editor.relay
 	default:
 		return &editor.destinationPort
 	}
@@ -198,6 +291,7 @@ func (editor *forwardEditor) reset(hostID uint32) {
 	editor.destinationPort.Restrict(digits, 5)
 	editor.localPort.Insert("8080")
 	editor.destinationPort.Insert("80")
+	editor.relay.Insert(defaultRelayCommand)
 }
 
 func (editor *forwardEditor) load(forward forwardRecord, hostID uint32) {
@@ -205,6 +299,7 @@ func (editor *forwardEditor) load(forward forwardRecord, hostID uint32) {
 		hostID:    hostID,
 		mode:      forward.Mode,
 		resume:    forward.Resume,
+		viaShell:  forward.ViaShell,
 		editing:   true,
 		forwardID: forward.ID,
 	}
@@ -219,10 +314,33 @@ func (editor *forwardEditor) load(forward forwardRecord, hostID uint32) {
 	if forward.DestinationPort != 0 {
 		editor.destinationPort.Insert(strconv.Itoa(int(forward.DestinationPort)))
 	}
+	editor.relay.Insert(forward.relayCommand())
 }
 
 func (editor *forwardEditor) usesClientDestination() bool {
-	return editor.mode == portforward.ModeSOCKS5 || editor.mode == portforward.ModeHTTPConnect
+	return modeUsesClientDestination(editor.mode)
+}
+
+// relayCommand is the program a ViaShell forward runs on the host, as typed.
+func (editor *forwardEditor) relayCommand() string {
+	if command := strings.TrimSpace(editor.relay.String()); command != "" {
+		return command
+	}
+	return defaultRelayCommand
+}
+
+// modeUsesClientDestination reports whether a forward of this kind ends at the
+// client, so the destination fields are not shown.
+func modeUsesClientDestination(mode portforward.Mode) bool {
+	return mode == portforward.ModeSOCKS5 || mode == portforward.ModeHTTPConnect
+}
+
+// modeUsesServerDestination reports whether a forward of this kind dials its
+// destination through the SSH server, which is when relaying through the host's
+// shell can stand in for a forwarded channel. A remote forward listens on the
+// server and dials locally, so it cannot.
+func modeUsesServerDestination(mode portforward.Mode) bool {
+	return mode != portforward.ModeRemote
 }
 
 func (editor *forwardEditor) port(field forwardField) (uint16, bool) {
@@ -237,15 +355,13 @@ func (editor *forwardEditor) validate(state *State) string {
 	if editor.value(forwardFieldLabel) == "" {
 		return state.messages.ErrForwardNameRequired
 	}
-	host, ok := state.hostByID(editor.hostID)
-	if !ok {
+	if _, ok := state.hostByID(editor.hostID); !ok {
 		if editor.editing {
 			return state.messages.ErrForwardHostMissing
 		}
 		return state.messages.ErrForwardHostRequired
 	}
-	localPort, localOK := editor.port(forwardFieldLocalPort)
-	if !localOK {
+	if _, ok := editor.port(forwardFieldLocalPort); !ok {
 		return state.messages.ErrForwardPortInvalid
 	}
 	if !editor.usesClientDestination() {
@@ -257,21 +373,19 @@ func (editor *forwardEditor) validate(state *State) string {
 			return state.messages.ErrForwardDestinationRequired
 		}
 	}
+	if editor.viaShell && modeUsesServerDestination(editor.mode) {
+		if err := sshconn.CheckRelay(sshconn.Relay{Command: editor.relayCommand()}); err != nil {
+			return fmt.Sprintf(state.messages.ErrForwardRelayFmt, err.Error())
+		}
+	}
+	// A port may sit on several forwards: the catalog keeps only names unique,
+	// and which of them gets to listen is decided when a forward starts.
 	for _, forward := range state.forwards {
 		if editor.editing && forward.ID == editor.forwardID {
 			continue
 		}
 		if strings.EqualFold(forward.Label, editor.value(forwardFieldLabel)) {
 			return state.messages.ErrForwardNameTaken
-		}
-		if editor.mode == portforward.ModeRemote {
-			if forward.Mode == portforward.ModeRemote && forward.LocalPort == localPort && forward.matchesHost(host) {
-				return state.messages.ErrForwardRemoteTaken
-			}
-			continue
-		}
-		if forward.Mode != portforward.ModeRemote && forward.LocalPort == localPort {
-			return state.messages.ErrForwardLocalTaken
 		}
 	}
 	return ""
@@ -284,11 +398,27 @@ func (editor *forwardEditor) record(id uint32, host Host) forwardRecord {
 		HostLabel: host.Label, HostAddress: host.Address, HostUser: host.User, HostPort: host.Port,
 		LocalPort: localPort, Resume: editor.resume,
 	}
+	if editor.viaShell && modeUsesServerDestination(editor.mode) {
+		forward.ViaShell, forward.Relay = true, editor.relayCommand()
+	}
 	if !editor.usesClientDestination() {
 		forward.DestinationHost = editor.value(forwardFieldDestinationHost)
 		forward.DestinationPort, _ = editor.port(forwardFieldDestinationPort)
 	}
 	return forward
+}
+
+// syncForwardHostSelect rebuilds the host picker from the catalog and shows the
+// host the editor currently holds. It runs when the dialog opens, not while
+// painting, so an unchanged dialog allocates nothing for its list.
+func (state *State) syncForwardHostSelect() {
+	editor := &state.forwardEditor
+	options := make([]components.SingleSelectOption, 0, len(state.hosts))
+	for _, host := range state.hosts {
+		options = append(options, hostSelectOption(host, !host.isSSH() || host.mosh()))
+	}
+	editor.hostSelect.SetOptions(options)
+	editor.hostSelect.SetValue(hostSelectValue(editor.hostID))
 }
 
 func (state *State) openForwardDialog() {
@@ -297,10 +427,10 @@ func (state *State) openForwardDialog() {
 		return
 	}
 	hostID := state.selectedHostID
-	if host, ok := state.hostByID(hostID); !ok || !host.isSSH() {
+	if host, ok := state.hostByID(hostID); !ok || !host.isSSH() || host.mosh() {
 		hostID = 0
 		for _, host := range state.hosts {
-			if host.isSSH() {
+			if host.isSSH() && !host.mosh() {
 				hostID = host.ID
 				break
 			}
@@ -311,6 +441,7 @@ func (state *State) openForwardDialog() {
 		return
 	}
 	state.forwardEditor.reset(hostID)
+	state.syncForwardHostSelect()
 	state.forwardDialogError = ""
 	state.modal = modalNewForward
 }
@@ -336,83 +467,110 @@ func (state *State) openEditForwardID(id uint32) {
 		hostID = host.ID
 	}
 	state.forwardEditor.load(forward, hostID)
+	state.syncForwardHostSelect()
 	state.forwardDialogError = ""
 	state.modal = modalNewForward
 }
 
-func (state *State) clickForwardDialog(id ui.ID) {
-	if state.forwardEditor.hostOpen {
+func (state *State) clickForwardDialog(id gfx.ID) {
+	editor := &state.forwardEditor
+	if editor.hostSelect.Open {
 		switch {
 		case id == hitForwardDialogClose || id == hitForwardDialogCancel:
 			state.closeForwardDialog()
 			state.status = state.messages.StatusEditCanceled
-			return
 		case id == hitForwardDialogSubmit:
-			state.forwardEditor.hostOpen = false
+			editor.hostSelect.Open = false
 			state.submitForwardDialog()
-			return
-		case id == hitForwardDialogHost:
-			state.forwardEditor.hostOpen = false
-			return
+		case id == hitForwardDialogHost || id == hitForwardHostTrigger:
+			editor.hostSelect.Open = true
 		case id == hitForwardHostDismiss:
-			state.forwardEditor.hostOpen = false
-			return
-		case id == hitForwardHostScrollUp:
-			if state.forwardEditor.hostOffset > 0 {
-				state.forwardEditor.hostOffset--
-			}
-			return
-		case id == hitForwardHostScrollDown:
-			if state.forwardEditor.hostOffset+forwardHostPageSize < len(state.hosts) {
-				state.forwardEditor.hostOffset++
-			}
-			return
+			editor.hostSelect.Open = false
+		case id == hitForwardHostScroll:
+			// The scrollbar drag belongs to the pointer handler.
 		case id.Scope() == hitForwardHostItemList:
-			hostID := uint32(item(id))
-			if _, ok := state.hostByID(hostID); ok {
-				state.forwardEditor.hostID = hostID
-				state.forwardEditor.hostOpen = false
+			if index, ok := id.In(hitForwardHostItemList); ok && editor.hostSelect.Choose(index) {
+				if hostID, ok := hostSelectID(editor.hostSelect.Value()); ok {
+					editor.hostID = hostID
+				}
 			}
-			return
 		default:
-			state.forwardEditor.hostOpen = false
-			return
+			editor.hostSelect.Open = false
 		}
+		return
 	}
 	switch id {
 	case hitForwardDialogClose, hitForwardDialogCancel:
 		state.closeForwardDialog()
 		state.status = state.messages.StatusEditCanceled
-	case hitForwardDialogHost:
-		state.forwardEditor.hostOpen = true
-		// Open at the page that holds the chosen host, as Base UI reveals the
-		// selected item when its select opens.
-		for index, host := range state.hosts {
-			if host.ID == state.forwardEditor.hostID {
-				state.forwardEditor.hostOffset = index / forwardHostPageSize * forwardHostPageSize
-				break
-			}
-		}
-	case hitForwardModeLocal:
-		state.forwardEditor.mode = portforward.ModeLocal
-		state.forwardDialogError = ""
-	case hitForwardModeRemote:
-		state.forwardEditor.mode = portforward.ModeRemote
-		state.forwardDialogError = ""
-	case hitForwardModeSOCKS5:
-		state.forwardEditor.mode = portforward.ModeSOCKS5
-		state.forwardDialogError = ""
-	case hitForwardModeHTTPConnect:
-		state.forwardEditor.mode = portforward.ModeHTTPConnect
-		state.forwardDialogError = ""
+	case hitForwardDialogHost, hitForwardHostTrigger:
+		editor.hostSelect.Open = true
 	case hitForwardDialogResume:
 		state.forwardEditor.resume = !state.forwardEditor.resume
+	case hitForwardDialogViaShell:
+		state.forwardEditor.viaShell = !state.forwardEditor.viaShell
 	case hitForwardDialogSubmit:
 		state.submitForwardDialog()
 	}
 }
 
+// forwardDialogKey routes arrows, Enter, Escape and Tab to the open host
+// picker, so Enter chooses a host instead of submitting the form.
+func (state *State) forwardDialogKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if state.modal != modalNewForward {
+		return gfx.EventResult{}, false
+	}
+	editor := &state.forwardEditor
+	var result gfx.EventResult
+	switch {
+	case event.Target == hitForwardDialogHost || event.Target == hitForwardHostTrigger:
+		result = editor.hostSelect.Key(event)
+	case event.Key == gfx.KeyEscape && editor.hostSelect.Open:
+		result = editor.hostSelect.Key(event)
+	case event.Key == gfx.KeyTab && editor.hostSelect.Open:
+		result = editor.hostSelect.Key(event)
+	default:
+		return gfx.EventResult{}, false
+	}
+	if result.Handled || result.Repaint {
+		// A host chosen with Enter changes the picker's value; a picker that is
+		// still open is a search in progress, not a choice.
+		if !editor.hostSelect.Open {
+			if hostID, ok := hostSelectID(editor.hostSelect.Value()); ok {
+				editor.hostID = hostID
+			}
+		}
+	}
+	return result, result.Handled || result.Repaint
+}
+
+func (state *State) forwardPickerPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	editor := &state.forwardEditor
+	if !editor.hostSelect.Open {
+		return gfx.EventResult{}, false
+	}
+	inside := event.Target == hitForwardDialogHost || event.Target == hitForwardHostTrigger ||
+		event.Target == hitForwardHostScroll || event.Target.Scope() == hitForwardHostItemList
+	if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary && !inside {
+		editor.hostSelect.Open = false
+		return gfx.EventResult{Handled: true, Repaint: true}, true
+	}
+	if result := editor.hostSelect.Pointer(event); result.Handled {
+		return result, true
+	}
+	return gfx.EventResult{}, false
+}
+
+func (state *State) scrollForwardDialog(event gfx.ScrollEvent) gfx.EventResult {
+	editor := &state.forwardEditor
+	if !editor.hostSelect.Open {
+		return gfx.EventResult{}
+	}
+	return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, editor.hostPopup) && editor.hostSelect.Wheel(event)}
+}
+
 func (state *State) submitForwardDialog() {
+	state.forwardEditor.hostSelect.Open = false
 	if state.forwardDialogError = state.forwardEditor.validate(state); state.forwardDialogError != "" {
 		return
 	}
@@ -423,6 +581,7 @@ func (state *State) submitForwardDialog() {
 				continue
 			}
 			f := &state.forwards[index]
+			tunnelID := f.sessionID
 			f.stop()
 			localPort, _ := state.forwardEditor.port(forwardFieldLocalPort)
 			f.Label = state.forwardEditor.value(forwardFieldLabel)
@@ -433,6 +592,10 @@ func (state *State) submitForwardDialog() {
 			f.HostPort = host.Port
 			f.LocalPort = localPort
 			f.Resume = state.forwardEditor.resume
+			f.ViaShell, f.Relay = false, ""
+			if state.forwardEditor.viaShell && modeUsesServerDestination(state.forwardEditor.mode) {
+				f.ViaShell, f.Relay = true, state.forwardEditor.relayCommand()
+			}
 			f.lastError = ""
 			if !state.forwardEditor.usesClientDestination() {
 				f.DestinationHost = state.forwardEditor.value(forwardFieldDestinationHost)
@@ -442,6 +605,7 @@ func (state *State) submitForwardDialog() {
 				f.DestinationPort = 0
 			}
 			f.refresh(state.messages, state.forwardHostAvailable(*f))
+			state.releaseForwardTunnel(tunnelID)
 			state.status = state.messages.ForwardUpdated + f.Label
 			state.closeForwardDialog()
 			state.save()
@@ -469,7 +633,7 @@ func (state *State) closeForwardDialog() {
 	state.forwardEditor = forwardEditor{}
 }
 
-func (state *State) clickForwards(id ui.ID) {
+func (state *State) clickForwards(id gfx.ID) {
 	if state.activeSection != sectionForwards || state.modal != modalNone {
 		return
 	}
@@ -502,6 +666,7 @@ func (state *State) removeSelectedForward() {
 		removed := state.forwards[index]
 		state.forwards[index].stop()
 		state.forwards = slices.Delete(state.forwards, index, index+1)
+		state.releaseForwardTunnel(removed.sessionID)
 		state.selectedForwardID = 0
 		if len(state.forwards) > 0 {
 			state.selectedForwardID = state.forwards[min(index, len(state.forwards)-1)].ID
@@ -519,9 +684,11 @@ func (state *State) toggleSelectedForward() {
 		return
 	}
 	if forward.runner != nil || forward.pending || forward.starting {
+		tunnelID := forward.sessionID
 		forward.stop()
 		forward.lastError = ""
 		forward.refresh(state.messages, state.forwardHostAvailable(*forward))
+		state.releaseForwardTunnel(tunnelID)
 		state.status = state.messages.ForwardStoppedStatus + forward.Label
 		return
 	}
@@ -532,39 +699,105 @@ func (state *State) toggleSelectedForward() {
 		state.status = state.messages.ForwardHostUnavailable
 		return
 	}
+	// A running forward already holds the port: say so before dialing anything.
+	if message := state.forwardPortConflict(*forward); message != "" {
+		state.failForward(forward, message)
+		return
+	}
 	if session := state.connectedSessionForHost(host); session != nil {
 		state.startForward(forward, session)
 		return
 	}
+	if tunnel := state.connectedForwardTunnel(host); tunnel != nil {
+		state.startForward(forward, &tunnel.session)
+		return
+	}
+	// No tab carries a connection to this host: dial one for the forwards alone,
+	// so a tunnel never costs a terminal window.
+	tunnel := state.forwardTunnelForHost(host)
+	fresh := tunnel == nil
+	if fresh {
+		tunnel = state.newForwardTunnel(host)
+	}
 	forward.pending = true
 	forward.lastError = ""
+	forward.sessionID = tunnel.id
 	forward.refresh(state.messages, true)
-	session := state.openHostSession(host)
-	forward.sessionID = session.ID
-	state.activeSection = sectionForwards
 	state.status = fmt.Sprintf(state.messages.ForwardConnectingFmt, host.Label)
+	if fresh {
+		state.dialForwardTunnel(tunnel)
+	}
 	state.save()
+}
+
+// forwardPortConflict reports the message of a running forward that already
+// listens on this forward's port, or "" when the port is free. A port can be
+// saved on several forwards; the listener decides which of them runs, so the
+// second one to start is told which port it lost.
+func (state *State) forwardPortConflict(forward forwardRecord) string {
+	for index := range state.forwards {
+		other := &state.forwards[index]
+		if other.ID == forward.ID || other.runner == nil || other.LocalPort != forward.LocalPort {
+			continue
+		}
+		if forward.Mode == portforward.ModeRemote {
+			if other.Mode == portforward.ModeRemote &&
+				other.HostAddress == forward.HostAddress && other.HostUser == forward.HostUser && other.HostPort == forward.HostPort {
+				return state.messages.ErrForwardRemoteTaken
+			}
+			continue
+		}
+		if other.Mode != portforward.ModeRemote {
+			return state.messages.ErrForwardLocalTaken
+		}
+	}
+	return ""
+}
+
+// failForward leaves a forward that could not start stopped, with the reason on
+// its row and the status line.
+func (state *State) failForward(forward *forwardRecord, message string) {
+	tunnelID := forward.sessionID
+	forward.sessionID = 0
+	forward.pending = false
+	forward.starting = false
+	forward.startID = 0
+	forward.lastError = message
+	forward.refresh(state.messages, state.forwardHostAvailable(*forward))
+	state.releaseForwardTunnel(tunnelID)
+	state.status = fmt.Sprintf(state.messages.ForwardStartFailedFmt, message)
 }
 
 func (state *State) startForward(forward *forwardRecord, session *Session) {
 	forward.pending = false
 	forward.lastError = ""
+	if message := state.forwardPortConflict(*forward); message != "" {
+		state.failForward(forward, message)
+		return
+	}
 	if forward.Mode == portforward.ModeRemote {
 		state.startRemoteForward(forward, session)
 		return
+	}
+	dial := session.conn.DialContext
+	if forward.ViaShell {
+		// The server refuses forwarded channels but gives a shell: each accepted
+		// connection starts the relay program there, and that shell's input and
+		// output are the stream.
+		command := forward.relayCommand()
+		dial = func(ctx context.Context, network, address string) (net.Conn, error) {
+			return session.conn.DialShellContext(ctx, command, address)
+		}
 	}
 	runner, err := portforward.Start(portforward.Config{
 		ListenAddress: forward.listenAddress(),
 		Destination:   forward.destination(),
 		Mode:          forward.Mode,
-		Dial:          session.conn.DialContext,
+		Dial:          dial,
 		Notify:        state.options.Invalidate,
 	})
 	if err != nil {
-		forward.sessionID = 0
-		forward.lastError = err.Error()
-		forward.refresh(state.messages, true)
-		state.status = fmt.Sprintf(state.messages.ForwardStartFailedFmt, err)
+		state.failForward(forward, err.Error())
 		return
 	}
 	forward.runner = runner
@@ -603,6 +836,9 @@ func (state *State) startRemoteForward(forward *forwardRecord, session *Session)
 }
 
 func (state *State) startPendingForwards(session *Session) {
+	if !session.hasServer() {
+		return // a mosh, Telnet, serial or local session has no SSH server to forward through
+	}
 	for index := range state.forwards {
 		forward := &state.forwards[index]
 		if forward.pending && forward.sessionID == session.ID {
@@ -662,6 +898,13 @@ func (state *State) releaseWaitingForwards() {
 		if !forward.pending || forward.sessionID == 0 {
 			continue
 		}
+		// A tunnel owns the wait for its own connection, retries included; only
+		// a tunnel that is already gone leaves the forward to stop here.
+		if tunnel := state.forwardTunnelByID(forward.sessionID); tunnel != nil {
+			if !tunnel.closed {
+				continue
+			}
+		}
 		session, ok := state.sessionByIDPointer(forward.sessionID)
 		if ok && (session.reconnectPending || session.phase != sshconn.PhaseClosed && session.phase != sshconn.PhaseFailed) {
 			continue
@@ -702,10 +945,7 @@ func (state *State) pumpForwardStarts() {
 			forward.starting = false
 			forward.startID = 0
 			if result.err != nil {
-				forward.sessionID = 0
-				forward.lastError = result.err.Error()
-				forward.refresh(state.messages, true)
-				state.status = fmt.Sprintf(state.messages.ForwardStartFailedFmt, result.err)
+				state.failForward(forward, result.err.Error())
 				continue
 			}
 			forward.runner = result.runner
@@ -746,7 +986,10 @@ func (state *State) restoreForwards(saved []savedForward) {
 		forward := forwardRecord{
 			ID: numbers[index], Label: entry.Label, Mode: mode,
 			HostLabel: entry.HostLabel, HostAddress: entry.HostAddress, HostUser: entry.HostUser, HostPort: entry.HostPort,
-			LocalPort: entry.LocalPort, Resume: entry.Resume,
+			LocalPort: entry.LocalPort, Resume: entry.Resume, ViaShell: entry.ViaShell, Relay: entry.Relay,
+		}
+		if !modeUsesServerDestination(mode) {
+			forward.ViaShell, forward.Relay = false, ""
 		}
 		if mode == portforward.ModeLocal || mode == portforward.ModeRemote {
 			forward.DestinationHost = entry.DestinationHost
@@ -803,7 +1046,8 @@ func highestRecordNumber(forwards []forwardRecord) uint32 {
 func (forward forwardRecord) sameAs(other forwardRecord) bool {
 	return forward.Mode == other.Mode && forward.HostAddress == other.HostAddress && forward.HostUser == other.HostUser &&
 		forward.HostPort == other.HostPort && forward.LocalPort == other.LocalPort &&
-		forward.DestinationHost == other.DestinationHost && forward.DestinationPort == other.DestinationPort
+		forward.DestinationHost == other.DestinationHost && forward.DestinationPort == other.DestinationPort &&
+		forward.ViaShell == other.ViaShell && forward.relayCommand() == other.relayCommand()
 }
 
 func restoreForwardMode(saved string) (portforward.Mode, bool) {
@@ -879,7 +1123,7 @@ func (state *State) forwardLabel(id uint32) string {
 	return forward.Label
 }
 
-func forwardDialogField(id ui.ID) forwardField {
+func forwardDialogField(id gfx.ID) forwardField {
 	switch id {
 	case hitForwardDialogLocalPort:
 		return forwardFieldLocalPort
@@ -887,6 +1131,8 @@ func forwardDialogField(id ui.ID) forwardField {
 		return forwardFieldDestinationHost
 	case hitForwardDialogDestinationPort:
 		return forwardFieldDestinationPort
+	case hitForwardDialogRelay:
+		return forwardFieldRelay
 	default:
 		return forwardFieldLabel
 	}

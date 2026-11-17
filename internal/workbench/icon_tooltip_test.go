@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // Icon-only buttons name themselves: every toolbar icon declares a hint, and
@@ -15,20 +15,20 @@ func TestToolbarIconsDeclareHintsAndShowThemAsTooltips(t *testing.T) {
 	for index := range state.toolbars.customize(toolbarTerminal) {
 		state.toolbars.customize(toolbarTerminal)[index].Enabled = true
 	}
-	size := ui.Size{Width: 1400, Height: 900}
-	paint := func(now time.Duration, hovered ui.ID) *ui.Canvas {
-		var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	paint := func(now time.Duration, hovered gfx.ID) *gfx.Canvas {
+		var canvas gfx.Canvas
 		canvas.SetClock(func() time.Duration { return now })
 		canvas.BeginFrame()
-		canvas.SetInteraction(hovered, ui.ID{}, ui.ID{}, false)
+		canvas.SetInteraction(hovered, gfx.ID{}, gfx.ID{}, false)
 		state.Paint(&canvas, size)
 		canvas.EndFrame()
 		return &canvas
 	}
 
-	canvas := paint(0, ui.ID{})
+	canvas := paint(0, gfx.ID{})
 	for _, test := range []struct {
-		id   ui.ID
+		id   gfx.ID
 		hint string
 	}{
 		{hitSFTPOpen, state.messages.TipFiles},
@@ -47,7 +47,7 @@ func TestToolbarIconsDeclareHintsAndShowThemAsTooltips(t *testing.T) {
 	}
 
 	files := state.messages.TipFiles
-	showsTooltip := func(canvas *ui.Canvas) bool {
+	showsTooltip := func(canvas *gfx.Canvas) bool {
 		for _, text := range canvas.Texts() {
 			if text.Value == files && text.Layer == tooltipLayer {
 				return true
@@ -61,7 +61,7 @@ func TestToolbarIconsDeclareHintsAndShowThemAsTooltips(t *testing.T) {
 	if !showsTooltip(paint(20*time.Second, hitSFTPOpen)) {
 		t.Fatal("the tooltip did not appear on the button")
 	}
-	if showsTooltip(paint(21*time.Second, ui.ID{})) {
+	if showsTooltip(paint(21*time.Second, gfx.ID{})) {
 		t.Fatal("the tooltip stayed after the pointer left")
 	}
 }
@@ -70,11 +70,11 @@ func TestToolbarIconsDeclareHintsAndShowThemAsTooltips(t *testing.T) {
 // pointer to rest on it.
 func TestToolbarIconTooltipShowsOnKeyboardFocus(t *testing.T) {
 	state, _, _, _ := liveSession(t)
-	size := ui.Size{Width: 1400, Height: 900}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
 	canvas.SetClock(func() time.Duration { return 0 })
 	canvas.BeginFrame()
-	canvas.SetInteraction(ui.ID{}, ui.ID{}, hitSFTPOpen, true)
+	canvas.SetInteraction(gfx.ID{}, gfx.ID{}, hitSFTPOpen, true)
 	state.Paint(&canvas, size)
 	canvas.EndFrame()
 	for _, text := range canvas.Texts() {

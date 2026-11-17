@@ -42,7 +42,16 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 	}
 	// The handshake has its own timeout; cancelling the context must end it too.
 	stop := context.AfterFunc(ctx, func() { conn.Close() })
-	client, err := rfb.Connect(conn, rfb.Config{Password: opts.Password, AskPassword: opts.AskPassword})
+	config := rfb.Config{
+		Username: opts.Username, Password: opts.Password,
+		AskPassword: opts.AskPassword, AskCredentials: opts.AskCredentials,
+	}
+	if opts.VerifyServerKey != nil {
+		config.VerifyServerKey = func(publicKeyDER []byte) error {
+			return opts.VerifyServerKey(address, publicKeyDER)
+		}
+	}
+	client, err := rfb.Connect(conn, config)
 	if !stop() && err == nil {
 		err = ctx.Err() // cancelled just as the handshake finished
 	}
@@ -55,7 +64,7 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 	}
 	session := &Session{client: client, opts: opts, done: make(chan struct{})}
 	session.frame = desktop.NewFrame(opts.Notify)
-	session.info = desktop.Info{Protocol: "VNC", Name: client.Name, Encrypted: opts.Encrypted}
+	session.info = desktop.Info{Protocol: "VNC", Name: client.Name, Encrypted: opts.Encrypted || client.Encrypted}
 	go session.run(conn)
 	return session, nil
 }

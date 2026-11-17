@@ -3,14 +3,14 @@ package workbench
 import (
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // Double clicking a split pane's bar asks for that pane's name, whichever pane
 // had the keyboard; a single click only activates the pane.
 func TestDoubleClickingAPaneBarRenamesThatPane(t *testing.T) {
 	state, _, _ := twoLivePanes(t)
-	size := ui.Size{Width: 1400, Height: 900}
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Resize(size)
 	driver := paneDriver(t, state, size)
 	first, second := &state.sessions[0], &state.sessions[1]

@@ -5,7 +5,7 @@ import (
 	"slices"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 var (
@@ -22,7 +22,7 @@ type editorSelect struct {
 	choices []ExternalEditor
 	loaded  bool
 	open    bool
-	bounds  ui.Rect
+	bounds  gfx.Rect
 }
 
 // refreshEditors lists every editor this build knows. Some applications, such as
@@ -81,7 +81,7 @@ func (state *State) paintEditorSetting(page *settingsPage) {
 }
 
 // Paint the select in the menu pass, outside the settings page's clip.
-func (state *State) paintEditorSelect(canvas *ui.Canvas) {
+func (state *State) paintEditorSelect(canvas *gfx.Canvas) {
 	menu, m := &state.editorMenu, state.messages.Tools
 	bounds := menu.bounds
 	if !menu.loaded && bounds.Width > 0 {
@@ -102,7 +102,7 @@ func (state *State) paintEditorSelect(canvas *ui.Canvas) {
 	below := max(state.viewport.Height-8-bounds.Y-bounds.Height-4, 0)
 	above := max(bounds.Y-windowBarHeight-8, 0)
 	height := min(float32(8+len(menu.choices)*32), max(above, below))
-	content := ui.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: bounds.Width, Height: height}
+	content := gfx.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: bounds.Width, Height: height}
 	if below < height {
 		content.Y = bounds.Y - height - 4
 	}
@@ -126,7 +126,7 @@ func (state *State) paintEditorSelect(canvas *ui.Canvas) {
 	}
 }
 
-func (state *State) clickEditorSelect(id ui.ID) bool {
+func (state *State) clickEditorSelect(id gfx.ID) bool {
 	if state.settingsCategory != settingsFiles || state.settingsSearching() {
 		return false
 	}

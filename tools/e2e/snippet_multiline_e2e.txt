@@ -1,0 +1,23 @@
+click "Search"
+type tester@127.0.0.1:2222
+click "Connect"
+waitfor "Trust" 3000
+click "Trust and Save"
+waitfor "Password" 3000
+type secret
+key enter
+waitfor "tester@e2e" 8000
+click "Hosts"
+click "Snippets"
+click "Add snippet"
+waitfor "Add a snippet" 3000
+type Two lines
+key tab
+type echo first-line-574
+key enter
+type echo second-line-574
+click "Save"
+click "Send to terminal"
+expect text "first-line-574" within 4000
+expect text "second-line-574" within 4000
+texts

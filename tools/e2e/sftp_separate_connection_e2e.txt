@@ -1,0 +1,44 @@
+# End to end: a server that allows one session channel per SSH connection. The
+# terminal's shell owns the transport, so the file panel's first attempt is
+# refused; the panel then opens a connection of its own and lists the files
+# there, while the terminal stays connected.
+#
+#   cd tools/e2esshd && go build -o /tmp/e2esshd . && cd ../..
+#   E2E_ONE_SESSION=1 /tmp/e2esshd 2336 >/tmp/e2esshd.log 2>&1 &
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/sftp_separate_connection_e2e.txt
+#
+# Afterwards /tmp/e2esshd.log has one `session-refused session` line (the panel
+# asking the terminal's transport) and one `sftp subsystem opened` line on the
+# connection the panel made for itself. The refresh at the end asks nothing and
+# opens nothing new.
+
+click "Search"
+type tester@127.0.0.1:2336
+click "Connect"
+waitfor "Trust this host" 3000
+click "Connect Once"
+waitfor "Password" 3000
+type secret
+key enter
+settle 2500
+
+# The panel opens on the terminal's transport and is refused another session,
+# so it connects separately. This fixture trusts the key once, so the second
+# connection asks for it and for the account password again.
+key cmd+shift+s
+waitfor "Trust this host" 4000
+click "Connect Once"
+waitfor "Password" 3000
+type secret
+key enter
+waitfor "alpha.txt" 5000
+settle 500
+texts alpha.txt
+layout
+
+# Later refreshes use the panel's own connection: no third connection and no
+# further questions.
+click "Refresh"
+settle 1000
+waitfor "alpha.txt" 3000

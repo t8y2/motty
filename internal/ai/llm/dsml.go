@@ -28,6 +28,11 @@ import (
 //	    { "or a bare JSON body": true }
 //	  </｜DSML｜ invoke>
 //	</｜DSML｜ calls>
+//
+// A corrupted structural token can lose or misspell a parameter's closer. Its
+// value then ends at the next parameter opener or the invoke's end, and any
+// DSML closer in between still terminates it, so one damaged tag never swallows
+// the parameters that follow.
 const (
 	// dsmlHoldLimit is how long a candidate tag may be withheld; a real
 	// opener is a few dozen bytes, so a longer run is prose that merely
@@ -55,8 +60,16 @@ const (
 
 // dsmlFilter is the streaming half of the recovery: it is fed one content
 // delta at a time and returns the text that is safe to publish.
+//
+// Stripping and recovery are separate policies. Markup is protocol, never
+// prose, so every streaming channel strips it, including the turns that offer
+// no tools. Recovery turns a complete block into tool calls, and only runs when
+// the request declared tools: a call fabricated in a turn that cannot run it
+// would either be dropped or fail the turn, and a model quoting the markup in
+// its reasoning must not start a command.
 type dsmlFilter struct {
-	enabled bool
+	strip   bool
+	recover bool
 	// held is text withheld because it may still grow into a tag.
 	held string
 	// region is the markup buffered since an opener, and scan is how much of
@@ -70,12 +83,23 @@ type dsmlFilter struct {
 	calls  int
 }
 
-func newDSMLFilter(enabled bool) dsmlFilter { return dsmlFilter{enabled: enabled} }
+func newDSMLFilter(strip, recover bool) dsmlFilter {
+	return dsmlFilter{strip: strip, recover: recover}
+}
+
+// reset discards an unfinished region. A channel that only strips markup uses
+// it to drop a runaway block without ending a turn that can still answer.
+func (f *dsmlFilter) reset() {
+	f.held = ""
+	f.region = f.region[:0]
+	f.kind = dsmlNone
+	f.scan = 0
+}
 
 // push consumes one content delta and returns the text to publish plus any
 // tool calls the delta completed.
 func (f *dsmlFilter) push(delta string) (string, []ToolCall, error) {
-	if !f.enabled || delta == "" {
+	if !f.strip || delta == "" {
 		return delta, nil, nil
 	}
 	work := delta
@@ -147,7 +171,7 @@ func (f *dsmlFilter) push(delta string) (string, []ToolCall, error) {
 // invokes of a markup region the provider never closed, and reports markup
 // that yielded no call.
 func (f *dsmlFilter) flush() (string, []ToolCall, error) {
-	if !f.enabled {
+	if !f.strip {
 		return "", nil, nil
 	}
 	var calls []ToolCall
@@ -160,7 +184,7 @@ func (f *dsmlFilter) flush() (string, []ToolCall, error) {
 		// A truncated tag: protocol output, never prose.
 		text = ""
 	}
-	if f.blocks > 0 && f.calls == 0 {
+	if f.recover && f.blocks > 0 && f.calls == 0 {
 		return text, calls, errDSMLUnrecovered
 	}
 	return text, calls, nil
@@ -176,7 +200,10 @@ func (f *dsmlFilter) openRegion(kind dsmlKind, opener string) {
 
 // closeRegion ends the open region at end, recovering its calls.
 func (f *dsmlFilter) closeRegion(end int) []ToolCall {
-	found := recoverDSMLCalls(string(f.region[:end]))
+	var found []ToolCall
+	if f.recover {
+		found = recoverDSMLCalls(string(f.region[:end]))
+	}
 	f.calls += len(found)
 	f.region = f.region[:0]
 	f.scan = 0
@@ -326,7 +353,10 @@ func dsmlClassify(tag string) (kind dsmlKind, closer bool, name string) {
 		return dsmlNone, closer, ""
 	}
 	switch body {
-	case "calls", "tool_calls", "function_calls":
+	// "toolcalls" and "tool" are spellings production lanes have emitted for
+	// "tool_calls"; recognizing them as a block keeps their contents out of the
+	// text channel even when the call cannot be recovered.
+	case "calls", "tool_calls", "function_calls", "toolcalls", "tool":
 		return dsmlBlock, closer, ""
 	case "invoke":
 		return dsmlInvoke, closer, ""
@@ -400,8 +430,17 @@ func dsmlAttribute(attrs, key string) string {
 }
 
 var (
-	dsmlInvokeRe = regexp.MustCompile(`(?s)<\s*[｜|][\s｜|]*DSML[\s｜|]*invoke\b([^>]*)>(.*?)</\s*[｜|][\s｜|]*DSML[\s｜|]*invoke\s*>`)
-	dsmlParamRe  = regexp.MustCompile(`(?s)<\s*[｜|][\s｜|]*DSML[\s｜|]*parameter\b([^>]*)>(.*?)</\s*[｜|][\s｜|]*DSML[\s｜|]*parameter\s*>`)
+	// The closers accept a space between "<" and "/" because dsmlTag does: a
+	// lane may write the closing tag as "< / ｜ DSML ｜ invoke>", and the
+	// scanner must not recognize a block whose calls it then cannot recover.
+	dsmlInvokeRe = regexp.MustCompile(`(?s)<\s*[｜|][\s｜|]*DSML[\s｜|]*invoke\b([^>]*)>(.*?)<[ \t]*/[ \t]*[｜|][\s｜|]*DSML[\s｜|]*invoke[ \t]*>`)
+	// dsmlParamOpenRe matches a parameter's opening tag only. A corrupted
+	// structural token can lose or misspell the closing tag, so a value is
+	// bounded by the next opener or the invoke's end, never by a paired match.
+	dsmlParamOpenRe = regexp.MustCompile(`(?s)<\s*[｜|][\s｜|]*DSML[\s｜|]*parameter\b([^>]*)>`)
+	// dsmlParamCloseRe matches any DSML closing tag: a closer whose name was
+	// corrupted still ends the value it closes.
+	dsmlParamCloseRe = regexp.MustCompile(`(?s)<[ \t]*/[ \t]*[｜|][\s｜|]*DSML\b[^>]*>`)
 )
 
 // recoverDSMLCalls turns the complete invokes of a markup region into calls.
@@ -423,9 +462,13 @@ func recoverDSMLCalls(markup string) []ToolCall {
 
 // dsmlArguments builds the JSON object an invoke's parameters describe. An
 // invoke without parameters carries the object itself.
+//
+// A parameter's value ends at its closer, at the next parameter's opener, or at
+// the end of the invoke body. The middle case is how a lane that lost a closer
+// still yields intact arguments: the damaged parameter cannot swallow the ones
+// that follow it.
 func dsmlArguments(body string) (string, bool) {
-	params := dsmlParamRe.FindAllStringSubmatchIndex(body, -1)
-	if len(params) == 0 {
+	if !dsmlParamOpenRe.MatchString(body) {
 		raw := strings.TrimSpace(body)
 		if raw == "" {
 			return "{}", true
@@ -435,21 +478,40 @@ func dsmlArguments(body string) (string, bool) {
 	}
 	var b strings.Builder
 	b.WriteByte('{')
-	first := true
-	for _, m := range params {
-		attrs := body[m[2]:m[3]]
-		name := dsmlAttribute(attrs, "name")
-		if name == "" {
-			continue
+	comma := false
+	for pos := 0; pos < len(body); {
+		m := dsmlParamOpenRe.FindStringSubmatchIndex(body[pos:])
+		if m == nil {
+			break
 		}
-		if !first {
-			b.WriteByte(',')
+		attrs := body[pos+m[2] : pos+m[3]]
+		rest := pos + m[1]
+		next := dsmlParamOpenRe.FindStringIndex(body[rest:])
+		close := dsmlParamCloseRe.FindStringIndex(body[rest:])
+		var value string
+		switch {
+		case close != nil && (next == nil || close[0] < next[0]):
+			value = body[rest : rest+close[0]]
+			pos = rest + close[1]
+		case next != nil:
+			// The closer was lost or misspelled: the value ends at the next
+			// opener, and the line break that formatted it is not part of it.
+			value = strings.TrimRight(body[rest:rest+next[0]], " \t\r\n")
+			pos = rest + next[0]
+		default:
+			value = strings.TrimRight(body[rest:], " \t\r\n")
+			pos = len(body)
 		}
-		first = false
-		key, _ := json.Marshal(name)
-		b.Write(key)
-		b.WriteByte(':')
-		b.WriteString(dsmlValue(body[m[4]:m[5]], dsmlAttribute(attrs, "string") == "true"))
+		if name := dsmlAttribute(attrs, "name"); name != "" {
+			if comma {
+				b.WriteByte(',')
+			}
+			comma = true
+			key, _ := json.Marshal(name)
+			b.Write(key)
+			b.WriteByte(':')
+			b.WriteString(dsmlValue(value, dsmlAttribute(attrs, "string") == "true"))
+		}
 	}
 	b.WriteByte('}')
 	args, err := validateArgs(b.String())

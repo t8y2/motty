@@ -4,6 +4,7 @@ package sshconn
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"net"
@@ -272,4 +273,58 @@ func TestClosingARelayedConnectionEndsTheRelayProgram(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+}
+
+// The shell relay carries a stream that is not an SSH session too: a forward
+// through a server that refuses forwarded channels runs its relay program in a
+// shell and reads and writes the stream on the terminal's bytes.
+func TestDialShellCarriesAStreamThroughAShell(t *testing.T) {
+	needBash(t)
+	gateway := relayGateway(t)
+	target := echoTCPListener(t)
+	h := connect(t, gateway)
+	socket, err := h.conn.DialShellContext(context.Background(),
+		`bash -c 'exec 3<>/dev/tcp/%h/%p; cat <&3 & cat >&3'`, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer socket.Close()
+	payload := []byte("through the shell\n")
+	if _, err := socket.Write(payload); err != nil {
+		t.Fatal(err)
+	}
+	got := make([]byte, len(payload))
+	if err := socket.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.ReadFull(socket, got); err != nil {
+		t.Fatalf("read back %d bytes: %v", len(got), err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Fatalf("the relay carried %q, want %q", got, payload)
+	}
+}
+
+// echoTCPListener answers every connection with the bytes it is sent, and
+// returns its address.
+func echoTCPListener(t *testing.T) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { listener.Close() })
+	go func() {
+		for {
+			connection, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer connection.Close()
+				_, _ = io.Copy(connection, connection)
+			}()
+		}
+	}()
+	return listener.Addr().String()
 }

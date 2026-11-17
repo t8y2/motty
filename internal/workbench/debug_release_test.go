@@ -2,7 +2,12 @@
 
 package workbench
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/keymap"
+)
 
 // A release build has no component gallery: a state file that saved it falls
 // back to the hosts, and neither the sidebar nor the command palette offers it.
@@ -24,5 +29,14 @@ func TestReleaseBuildHasNoDebugGallery(t *testing.T) {
 		if palette.entries[index].label == state.messages.NavDebug {
 			t.Fatalf("the command palette still offers %q", state.messages.NavDebug)
 		}
+	}
+}
+
+// The inspector is a development tool: its chord means nothing in a release build.
+func TestReleaseBuildHasNoInspector(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	chord := gfx.KeyEvent{Modifiers: keymap.Primary | gfx.ModifierAlt | gfx.ModifierShift, Text: "i"}
+	if result := state.Shortcut(chord); result.Handled {
+		t.Fatalf("the inspector chord was taken in a release build: %+v", result)
 	}
 }

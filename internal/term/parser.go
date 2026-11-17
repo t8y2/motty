@@ -61,6 +61,9 @@ func (t *Terminal) Write(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
+	// Everything written from this buffer arrived together, so it shares one
+	// stamped time; see clockNow.
+	t.clockValid = false
 	for i := 0; i < len(p); {
 		if t.state == stGround && t.utf8n == 0 && t.charsets[t.gl] == charsetASCII {
 			// The run check stays ahead of the scan: behind it, the scan's
@@ -511,6 +514,8 @@ func (t *Terminal) endOSC() {
 		own := t.promptToken != ""
 		value := string(text)
 		if value == "A"+suffix {
+			t.inputStartSet = false
+			t.markPromptStart(own)
 			if own {
 				t.ReclaimApplicationModes()
 			}
@@ -518,13 +523,24 @@ func (t *Terminal) endOSC() {
 				t.promptStartFn()
 			}
 		}
-		if value == "B"+suffix && t.promptReadyFn != nil {
-			t.promptReadyFn()
+		if value == "B"+suffix {
+			t.markInputStart(own)
+			if t.promptReadyFn != nil {
+				t.promptReadyFn()
+			}
 		}
-		if value == "C"+suffix && t.commandStartFn != nil {
-			t.commandStartFn()
+		if value == "C"+suffix {
+			t.inputStartSet = false
+			t.promptActive, t.promptStale = false, false
+			t.dropPromptRows()
+			if t.commandStartFn != nil {
+				t.commandStartFn()
+			}
 		}
 		if strings.HasPrefix(value, "D;") && strings.HasSuffix(value, suffix) {
+			t.inputStartSet = false
+			t.promptActive, t.promptStale = false, false
+			t.dropPromptRows()
 			status := strings.TrimSuffix(value[2:], suffix)
 			if code, err := strconv.Atoi(status); err == nil && code >= 0 && code <= 255 && strconv.Itoa(code) == status {
 				if own {
@@ -537,6 +553,7 @@ func (t *Terminal) endOSC() {
 		}
 	case 777:
 		t.inputEnvironmentReport(text)
+		t.homeDirectoryReport(text)
 		t.osc777(text)
 	case 10, 11:
 		if len(text) == 1 && text[0] == '?' && t.haveDefaults {

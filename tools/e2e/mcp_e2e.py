@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""End to end for the MCP server (Settings > AI > External access) and its stdio
+"""End to end for the MCP server (Settings > MCP) and its stdio
 bridge, against the loopback SSH fixture on port 2222:
 
     cd tools/e2esshd && go build -o /tmp/e2esshd . && /tmp/e2esshd 2222 &
@@ -44,7 +44,7 @@ def cmd(c):
         out.append(line)
 
 
-for c in ['click "设置"', 'click "AI 助手"', 'scroll 800 600 0 3000', 'click 1259 641', 'settle 500', 'click 1219 769', 'settle 300']:
+for c in ['click "设置"', 'click "MCP"', 'click 1230 224', 'settle 500', 'click "复制配置"', 'settle 300']:
     cmd(c)
 _, reply = cmd("clip")
 m = re.search(r"(http://127\.0\.0\.1:\d+/mcp)", reply)
@@ -52,15 +52,21 @@ t = re.search(r"Bearer ([^\"\s]+)", reply)
 if not (m and t):
     sys.exit("no address/token in the copied client command")
 url, token = m.group(1), t.group(1).rstrip("\\")
+mcp_session = ""
 
 
 def rpc(method, params=None, tok=token, timeout=30):
+    global mcp_session
     body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}}).encode()
     headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
     if tok:
         headers["Authorization"] = "Bearer " + tok
+    if mcp_session and method != "initialize":
+        headers["Mcp-Session-Id"] = mcp_session
     try:
         with urllib.request.urlopen(urllib.request.Request(url, body, headers), timeout=timeout) as r:
+            if method == "initialize" and tok == token:
+                mcp_session = r.headers.get("Mcp-Session-Id", "")
             return r.status, r.read().decode()
     except urllib.error.HTTPError as e:
         return e.code, e.read().decode()
@@ -87,7 +93,9 @@ check("a wrong token is refused", rpc("initialize", tok="x" * 30)[0] == 401)
 status, data = rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t", "version": "1"}})
 check("initialize", status == 200 and "motty" in data, data[:100])
 names = [x["name"] for x in json.loads(rpc("tools/list")[1])["result"]["tools"]]
-check("tools are listed", "terminal_exec" in names and "sftp_list" in names, names)
+check("tools are listed", "terminal_exec" in names and "sftp_list" in names and "list_hosts" in names, names)
+err, text = pumped("list_hosts", {})
+check("no unapproved hosts are exposed", not err and text == "no hosts are open to agents", text)
 
 for c in ['click "主机"', 'click 462 68', 'type tester@127.0.0.1:2222', 'click "连接"', 'waitfor "信任" 5000', 'click "信任并保存"',
           'waitfor "密码" 5000', 'type secret', 'key enter', 'waitfor "tester@e2e" 8000']:
@@ -103,15 +111,43 @@ err, text = pumped("sftp_list", {"session": sid, "path": "."})
 check("sftp_list works read-only", not err and "alpha.txt" in text, text)
 
 # ask mode: low risk runs at once, risky waits for the window
-for c in ['click "设置"', 'click "AI 助手"', 'scroll 800 600 0 3000', 'click 1222 705']:
+for c in ['click "设置"', 'click "MCP"', 'click 1150 318']:
     cmd(c)
+check("ask mode establishes a fresh MCP session", rpc("initialize", {"protocolVersion": "2025-06-18"})[0] == 200 and bool(mcp_session))
 err, text = pumped("terminal_exec", {"session": sid, "command": "echo hi-$((6*7))"})
 check("a low-risk command runs without asking", not err and "hi-42" in text, text)
 
+line = "0" * 64 + " 中文日志"
+command = "seq 1500|awk '{printf \"M:%04d:%064d 中文日志\\n\",$1,0}'"
+result = pumped("terminal_exec", {"session": sid, "command": command}, ms=3000)
+if result:
+    failed, preview = result
+    match = re.search(r"output_id: ([^;]+); total_bytes: (\d+)", preview)
+    check("large SSH output keeps a bounded preview and a readback handle",
+          not failed and match is not None and "M:0750:" not in preview and "[exit status 0]" in preview, preview[:300])
+    if match:
+        output_id = match.group(1)
+        collected = ""
+        offset = 0
+        for _ in range(5):
+            page = pumped("tool_output_read", {"output_id": output_id, "offset": offset, "max_bytes": 65536}, ms=500)
+            if not page or page[0]:
+                break
+            page = json.loads(page[1])
+            collected += page["data"]
+            offset = page["next_offset"]
+            if page["eof"]:
+                break
+        expected = "\n".join(f"M:{i:04d}:{line}" for i in range(1, 1501))
+        check("SSH output pages restore the middle without rerunning the command", collected == expected,
+              f"recovered {len(collected)} of {len(expected)} characters; prefix {collected[:190]!r}; suffix {collected[-130:]!r}")
+else:
+    check("large SSH output keeps a bounded preview and a readback handle", False, "no response")
 
-def risky(decision):
+
+def risky(decision, command="mkdir -p /tmp/motty-mcp-t && rm -rf /tmp/motty-mcp-t"):
     box = {}
-    th = threading.Thread(target=lambda: box.update(r=call("terminal_exec", {"session": sid, "command": "mkdir -p /tmp/motty-mcp-t && rm -rf /tmp/motty-mcp-t"})))
+    th = threading.Thread(target=lambda: box.update(r=call("terminal_exec", {"session": sid, "command": command})))
     th.start(); time.sleep(0.5); cmd("settle 1500")
     waiting = th.is_alive()
     texts, _ = cmd("texts")
@@ -130,6 +166,29 @@ check("Approve runs it", result and result[0] is False and "exit status 0" in re
 waiting, asked, result = risky("拒绝")
 check("Deny is reported to the agent", result and result[0] is True and "exit status" not in result[1], result)
 
+original_command = "python3 -c 'for i in range(1,1501): print(\"MCPLOG:%04d:ERROR connection_timeout 中文日志 %s\" % (i,\"x\"*64))'"
+waiting, asked, result = risky("批准", original_command)
+match = re.search(r"output_id: ([^;]+); total_bytes: (\d+)", result[1]) if result else None
+check("original issue command returns a readback handle after approval", waiting and asked and result[0] is False and match is not None,
+      str(result)[:300])
+if match:
+    collected = ""
+    offset = 0
+    for _ in range(5):
+        page = pumped("tool_output_read", {"output_id": match.group(1), "offset": offset, "max_bytes": 65536}, ms=500)
+        if not page or page[0]:
+            break
+        page = json.loads(page[1])
+        collected += page["data"]
+        offset = page["next_offset"]
+        if page["eof"]:
+            break
+    numbers = [int(n) for n in re.findall(r"^MCPLOG:(\d{4}):", collected, re.MULTILINE)]
+    check("original issue command restores all 1500 numbered lines",
+          numbers == list(range(1, 1501)), f"complete lines={len(numbers)}, first={numbers[:2]}, last={numbers[-2:]}")
+    check("original issue command does not expose its shell wrapper",
+          collected.startswith("MCPLOG:0001:") and "GOPAI_" not in collected, repr(collected[:220]))
+
 # the stdio bridge
 bridge = subprocess.Popen(["/tmp/motty-bin", "mcp-bridge", "--url", url], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE, env=dict(os.environ, MOTTY_MCP_TOKEN=token), text=True)
@@ -140,7 +199,7 @@ bridge.stdin.flush()
 first = json.loads(bridge.stdout.readline())
 second = json.loads(bridge.stdout.readline())
 check("the stdio bridge initializes", first.get("result", {}).get("serverInfo", {}).get("name") == "motty", first)
-check("the stdio bridge lists tools", len(second.get("result", {}).get("tools", [])) == 8, second)
+check("the stdio bridge lists tools", len(second.get("result", {}).get("tools", [])) == 9, second)
 bridge.stdin.close(); bridge.wait(timeout=5)
 bad = subprocess.run(["/tmp/motty-bin", "mcp-bridge", "--url", url], env=dict(os.environ, MOTTY_MCP_TOKEN="x" * 30),
                      input=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}) + "\n", capture_output=True, text=True, timeout=15)

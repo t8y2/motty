@@ -2,7 +2,7 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 const (
@@ -20,14 +20,14 @@ type monitorChart struct {
 	gradient [2]components.ChartAreaGradient
 }
 
-var monitorChartHits = [...]ui.ID{
+var monitorChartHits = [...]gfx.ID{
 	tree.ID(monitorHits, "cpu-trend"), tree.ID(monitorHits, "memory-trend"),
 	tree.ID(monitorHits, "disk-trend"), tree.ID(monitorHits, "network-trend"),
 }
 
 // Every metric shares the same real 60-second domain. Missing points are NaN;
 // neither startup nor reconnect is padded with invented historical readings.
-func (s *State) paintMonitorTrend(c *ui.Canvas, p *monitorView, b ui.Rect, metric int, label string, color ui.Color) {
+func (s *State) paintMonitorTrend(c *gfx.Canvas, p *monitorView, b gfx.Rect, metric int, label string, color gfx.Color) {
 	if p.count < 2 || b.Width <= 0 || b.Height <= 0 {
 		return
 	}
@@ -67,7 +67,7 @@ func (s *State) paintMonitorTrend(c *ui.Canvas, p *monitorView, b ui.Rect, metri
 		axis.Max = 100
 	}
 	theme := s.Theme()
-	theme.Border = ui.Color{}
+	theme.Border = gfx.Color{}
 	c.Clip(b)
 	components.PaintAreaChart(c, theme, b, monitorChartHits[metric], components.AreaChart{
 		Series: cache.series[:count], X: p.x[start:p.count], Values: cache.values[:count],

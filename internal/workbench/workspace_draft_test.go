@@ -2,13 +2,14 @@ package workbench
 
 import (
 	"encoding/json"
+	layoutcore "motty/internal/workspace"
 	"reflect"
 	"slices"
 	"testing"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 func TestWorkspaceDraftCreatesTemporaryAndFixedWorkspaces(t *testing.T) {
@@ -17,7 +18,7 @@ func TestWorkspaceDraftCreatesTemporaryAndFixedWorkspaces(t *testing.T) {
 		state := newTestState(t, options)
 		state.activeSection = sectionWorkspaces
 
-		canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+		canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 		panelHit(t, canvas, hitWorkspaceNew)
 		state.Click(hitWorkspaceNew)
 		if state.modal != modalWorkspaceDraft || state.workspaceDraft.mode != workspaceDraftTemporary {
@@ -47,7 +48,7 @@ func TestWorkspaceDraftCreatesTemporaryAndFixedWorkspaces(t *testing.T) {
 		state := newTestState(t, options)
 		state.activeSection = sectionWorkspaces
 		state.Click(hitWorkspaceNew)
-		state.Click(hitWorkspaceDraftFixed)
+		clickSettingsChoice(t, state, state.messages.WorkspaceDraftFixed)
 		state.workspaceDraft.name.Insert("Production pair")
 		state.Click(workspaceDraftHostID(1))
 		state.Click(workspaceDraftHostID(0))
@@ -58,14 +59,14 @@ func TestWorkspaceDraftCreatesTemporaryAndFixedWorkspaces(t *testing.T) {
 		}
 		template := state.templates[0]
 		wantHosts := []string{state.hosts[0].CatalogID, state.hosts[1].CatalogID}
-		if template.Name != "Production pair" || !slices.Equal(template.HostIDs, wantHosts) || template.Columns != 2 {
+		if template.Name != "Production pair" || !slices.Equal(template.HostIDs, wantHosts) || !isGrid(template.Layout, 2) {
 			t.Fatalf("template = %+v, want hosts %v", template, wantHosts)
 		}
 		if state.modal != modalNone || state.activeSection != sectionWorkspaces ||
 			state.selectedWorkspaceTemplateID != template.ID {
 			t.Fatalf("modal=%d section=%d selected=%q", state.modal, state.activeSection, state.selectedWorkspaceTemplateID)
 		}
-		canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+		canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 		panelHit(t, canvas, hitWorkspaceTemplateRowList.At(0))
 	})
 }
@@ -75,11 +76,11 @@ func TestWorkspaceDraftSavesAndReappliesACompositionOnlyTemplate(t *testing.T) {
 	state := newTestState(t, options)
 	state.activeSection = sectionWorkspaces
 	state.Click(hitWorkspaceNew)
-	state.Click(hitWorkspaceDraftFixed)
+	clickSettingsChoice(t, state, state.messages.WorkspaceDraftFixed)
 	state.workspaceDraft.name.Insert("Production pair")
 	state.Click(workspaceDraftHostID(1))
 	state.Click(workspaceDraftHostID(0))
-	state.Click(hitWorkspaceDraftColumns3)
+	state.Click(hitWorkspaceDraftPresets.At(2))
 	state.Click(hitWorkspaceDraftSubmit)
 
 	if len(world.configs) != 0 {
@@ -90,7 +91,7 @@ func TestWorkspaceDraftSavesAndReappliesACompositionOnlyTemplate(t *testing.T) {
 	}
 	template := state.templates[0]
 	wantHosts := []string{state.hosts[0].CatalogID, state.hosts[1].CatalogID}
-	if template.Name != "Production pair" || !slices.Equal(template.HostIDs, wantHosts) || template.Columns != 3 {
+	if template.Name != "Production pair" || !slices.Equal(template.HostIDs, wantHosts) || !isGrid(template.Layout, 3) {
 		t.Fatalf("template = %+v, want hosts %v", template, wantHosts)
 	}
 
@@ -102,7 +103,7 @@ func TestWorkspaceDraftSavesAndReappliesACompositionOnlyTemplate(t *testing.T) {
 	if err := json.Unmarshal(raw, &fields); err != nil {
 		t.Fatal(err)
 	}
-	allowed := map[string]bool{"id": true, "name": true, "host_ids": true, "columns": true}
+	allowed := map[string]bool{"id": true, "name": true, "host_ids": true, "layout": true}
 	for field := range fields {
 		if !allowed[field] {
 			t.Fatalf("the saved template carries unexpected field %q: %s", field, raw)
@@ -117,7 +118,7 @@ func TestWorkspaceDraftSavesAndReappliesACompositionOnlyTemplate(t *testing.T) {
 		t.Fatalf("loaded templates = %+v, want %+v", loaded.WorkspaceTemplates, template)
 	}
 
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	state.Click(hitWorkspaceTemplateOpen.At(0))
 	if len(world.configs) != 2 || world.configs[0].Host != "prod.example.com" || world.configs[1].Host != "staging.example.com" {
 		t.Fatalf("dials = %+v, want saved host-list order", world.configs)
@@ -133,23 +134,23 @@ func TestWorkspaceDraftSwitchingModesKeepsTheSharedSelection(t *testing.T) {
 	state.Click(hitWorkspaceNew)
 	state.Click(workspaceDraftHostID(1))
 	state.Click(workspaceDraftHostID(0))
-	state.Click(hitWorkspaceDraftColumns3)
+	state.Click(hitWorkspaceDraftPresets.At(2))
 	want := hostCatalogIDs(state.hosts[:2])
 
-	state.Click(hitWorkspaceDraftFixed)
+	clickSettingsChoice(t, state, state.messages.WorkspaceDraftFixed)
 	if got := state.workspaceDraftSelectedCatalogIDs(); !slices.Equal(got, want) {
 		t.Fatalf("fixed mode selection = %v, want %v", got, want)
 	}
-	if state.workspaceDraft.columns != 3 {
-		t.Fatalf("fixed mode columns = %d", state.workspaceDraft.columns)
+	if !isGrid(state.workspaceDraft.layout, 3) {
+		t.Fatalf("fixed mode columns = %+v", state.workspaceDraft.layout)
 	}
 
-	state.Click(hitWorkspaceDraftTemporary)
+	clickSettingsChoice(t, state, state.messages.WorkspaceDraftTemporary)
 	if got := state.workspaceDraftSelectedCatalogIDs(); !slices.Equal(got, want) {
 		t.Fatalf("temporary mode selection = %v, want %v", got, want)
 	}
-	if state.workspaceDraft.columns != 3 {
-		t.Fatalf("temporary mode columns = %d", state.workspaceDraft.columns)
+	if !isGrid(state.workspaceDraft.layout, 3) {
+		t.Fatalf("temporary mode columns = %+v", state.workspaceDraft.layout)
 	}
 }
 
@@ -159,7 +160,7 @@ func TestWorkspaceDraftSearchAndClicksStillUseHostListOrder(t *testing.T) {
 	state.activeSection = sectionWorkspaces
 	state.Click(hitWorkspaceNew)
 	state.EditorFor(hitWorkspaceDraftSearch).Insert("example.com")
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	state.Click(hitWorkspaceDraftHostList.At(1))
 	state.Click(hitWorkspaceDraftHostList.At(0))
 	state.Click(hitWorkspaceDraftSubmit)
@@ -217,11 +218,11 @@ func TestWorkspaceDraftOffersThisComputerAndOnlyEligibleSSHHosts(t *testing.T) {
 	}
 }
 
-func TestWorkspaceDraftEnforcesTheEightHostLimitAndCatalogOrder(t *testing.T) {
+func TestWorkspaceDraftEnforcesTheTwelveHostLimitAndCatalogOrder(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.activeSection = sectionWorkspaces
 	state.hosts = nil
-	for index := 0; index < 9; index++ {
+	for index := 0; index <= maxWorkspaceTemplateHosts; index++ {
 		host := Host{
 			ID: uint32(index + 1), CatalogID: "host_" + string(rune('a'+index)),
 			Label: "Host " + string(rune('A'+index)), Address: "host-" + string(rune('a'+index)) + ".example.com", Port: 22,
@@ -230,17 +231,17 @@ func TestWorkspaceDraftEnforcesTheEightHostLimitAndCatalogOrder(t *testing.T) {
 		state.hosts = append(state.hosts, host)
 	}
 	state.Click(hitWorkspaceNew)
-	for index := 0; index < 8; index++ {
+	for index := 0; index < maxWorkspaceTemplateHosts; index++ {
 		state.Click(workspaceDraftHostID(index))
 	}
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
-	state.workspaceDraftScroll(ui.ScrollEvent{X: state.workspaceDraft.bounds.X + 20, Y: state.workspaceDraft.bounds.Y + 20, DeltaY: 1000})
-	canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
-	if !panelHit(t, canvas, workspaceDraftHostID(8)).Disabled {
-		t.Fatal("the ninth unselected host is not disabled")
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	state.workspaceDraftScroll(gfx.ScrollEvent{X: state.workspaceDraft.bounds.X + 20, Y: state.workspaceDraft.bounds.Y + 20, DeltaY: 1000})
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	if !panelHit(t, canvas, workspaceDraftHostID(maxWorkspaceTemplateHosts)).Disabled {
+		t.Fatal("the first host past the limit is not disabled")
 	}
-	state.Click(workspaceDraftHostID(8))
-	if !reflect.DeepEqual(state.workspaceDraftSelectedCatalogIDs(), hostCatalogIDs(state.hosts[:8])) {
+	state.Click(workspaceDraftHostID(maxWorkspaceTemplateHosts))
+	if !reflect.DeepEqual(state.workspaceDraftSelectedCatalogIDs(), hostCatalogIDs(state.hosts[:maxWorkspaceTemplateHosts])) {
 		t.Fatalf("selection = %v", state.workspaceDraftSelectedCatalogIDs())
 	}
 }
@@ -273,7 +274,7 @@ func TestWorkspaceDraftEditCopiesTemplateAndPreservesMissingReferences(t *testin
 		t.Fatalf("edit opened modal=%d mode=%d", state.modal, state.workspaceDraft.mode)
 	}
 	if state.workspaceDraft.editID != template.ID || state.workspaceDraft.name.String() != template.Name ||
-		state.workspaceDraft.columns != template.Columns || !slices.Equal(state.workspaceDraft.order, template.HostIDs) {
+		!state.workspaceDraft.layout.Equal(template.Layout) || !slices.Equal(state.workspaceDraft.order, template.HostIDs) {
 		t.Fatalf("edit draft = %+v, want template %+v", state.workspaceDraft, template)
 	}
 
@@ -307,7 +308,7 @@ func TestWorkspaceDraftEditRejectsInvalidBoundariesWithoutChangingTheTemplate(t 
 		{name: "duplicate members", setup: func() { state.workspaceDraft.order = append(state.workspaceDraft.order, state.workspaceDraft.order[0]) }},
 		{name: "too many members", setup: func() {
 			state.workspaceDraft.order = []string{
-				"host_1", "host_2", "host_3", "host_4", "host_5", "host_6", "host_7", "host_8", "host_9",
+				"host_1", "host_2", "host_3", "host_4", "host_5", "host_6", "host_7", "host_8", "host_9", "host_10", "host_11", "host_12", "host_13",
 			}
 		}},
 		{name: "zero columns", setup: func() {}, column: &zero},
@@ -319,7 +320,7 @@ func TestWorkspaceDraftEditRejectsInvalidBoundariesWithoutChangingTheTemplate(t 
 			state.openWorkspaceDraftEdit(template.ID)
 			test.setup()
 			if test.column != nil {
-				state.workspaceDraft.columns = *test.column
+				state.workspaceDraft.layout = columnsSpec(*test.column)
 			}
 			state.submitWorkspaceDraft()
 			if state.modal != modalWorkspaceDraft || state.workspaceDraft.error == "" {
@@ -343,20 +344,20 @@ func TestWorkspaceDraftEditUpdatesTheSameTemplateAndPersists(t *testing.T) {
 	state.openWorkspaceDraftEdit(template.ID)
 	state.workspaceDraft.name = *text.NewEditor("Critical")
 	state.workspaceDraftRemoveItem(1)
-	if next, ok := components.SegmentedControlKeyDown(hitWorkspaceDraftColumns2,
+	if next, ok := components.SegmentedControlKeyDown(hitWorkspaceDraftPresets.At(1),
 		[]components.SegmentOption{
-			{ID: hitWorkspaceDraftColumns1}, {ID: hitWorkspaceDraftColumns2}, {ID: hitWorkspaceDraftColumns3},
-		}, components.DirectionLTR, ui.KeyRight); !ok || next != hitWorkspaceDraftColumns3 {
+			{ID: hitWorkspaceDraftPresets.At(0)}, {ID: hitWorkspaceDraftPresets.At(1)}, {ID: hitWorkspaceDraftPresets.At(2)},
+		}, components.DirectionLTR, gfx.KeyRight); !ok || next != hitWorkspaceDraftPresets.At(2) {
 		t.Fatalf("columns test setup = %v, %v", next, ok)
 	}
-	state.Click(hitWorkspaceDraftColumns3)
+	state.Click(hitWorkspaceDraftPresets.At(2))
 	state.submitWorkspaceDraft()
 
 	if state.modal != modalNone || len(state.templates) != 1 {
 		t.Fatalf("edit closed modal=%d templates=%+v", state.modal, state.templates)
 	}
 	got := state.templates[0]
-	if got.ID != template.ID || got.Name != "Critical" || got.Columns != 3 ||
+	if got.ID != template.ID || got.Name != "Critical" || !isGrid(got.Layout, 3) ||
 		!slices.Equal(got.HostIDs, []string{state.hosts[0].CatalogID, state.hosts[1].CatalogID}) {
 		t.Fatalf("edited template = %+v", got)
 	}
@@ -379,7 +380,7 @@ func TestWorkspaceDraftFailedEditRestoresTemplateContents(t *testing.T) {
 	state.openWorkspaceDraftEdit(template.ID)
 	state.workspaceDraft.name = *text.NewEditor("Critical")
 	state.workspaceDraft.order = []string{state.hosts[1].CatalogID}
-	state.workspaceDraft.columns = 3
+	state.workspaceDraft.layout = layoutcore.GridSpec(3)
 	before := cloneWorkspaceTemplates(state.templates)
 	beforeSelected := state.selectedWorkspaceTemplateID
 	beforeExpanded := state.workspaceLibraryExpanded
@@ -432,7 +433,7 @@ func TestWorkspaceDraftEditCancelDoesNotChangeAnOpenWorkspace(t *testing.T) {
 	}{
 		{"cancel", func(state *State) { state.Click(hitWorkspaceDraftCancel) }},
 		{"dismiss", func(state *State) { state.Click(hitWorkspaceDraftDismiss) }},
-		{"escape", func(state *State) { state.Key(ui.KeyEvent{Key: ui.KeyEscape}) }},
+		{"escape", func(state *State) { state.Key(gfx.KeyEvent{Key: gfx.KeyEscape}) }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			world, options := newWorld(t)
@@ -472,7 +473,7 @@ func TestWorkspaceDraftEditTogglesCurrentHostsAtTheEndOfTheSavedOrder(t *testing
 	}, 2)
 	state.templates = []WorkspaceTemplate{template}
 	state.openWorkspaceDraftEdit(template.ID)
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	state.Click(workspaceDraftHostID(0))
 	if want := []string{state.hosts[1].CatalogID, "host_deleted", state.hosts[0].CatalogID}; !slices.Equal(state.workspaceDraft.order, want) {
 		t.Fatalf("adding a host = %v, want %v", state.workspaceDraft.order, want)
@@ -491,7 +492,7 @@ func TestWorkspaceDraftEditPreviewAndReorderKeepMissingReferences(t *testing.T) 
 	}, 2)
 	state.templates = []WorkspaceTemplate{template}
 	state.openWorkspaceDraftEdit(template.ID)
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 
 	items := state.workspaceItemsForRegion(workspaceCardRegion{view: workspaceCardsDraft})
 	if len(items) != 3 || items[1].host != "host_deleted" {
@@ -510,7 +511,7 @@ func TestWorkspaceDraftRejectsAnEmptyNameWithoutClosing(t *testing.T) {
 	state.activeSection = sectionWorkspaces
 	state.Click(hitWorkspaceNew)
 	state.Click(workspaceDraftHostID(0))
-	state.Click(hitWorkspaceDraftFixed)
+	clickSettingsChoice(t, state, state.messages.WorkspaceDraftFixed)
 	state.Click(hitWorkspaceDraftSubmit)
 	if state.modal != modalWorkspaceDraft || state.workspaceDraft.error == "" || len(state.templates) != 0 {
 		t.Fatalf("modal=%d error=%q templates=%d", state.modal, state.workspaceDraft.error, len(state.templates))
@@ -523,44 +524,95 @@ func TestWorkspaceDraftDefaultColumnsFollowSelectionUntilChosen(t *testing.T) {
 	state.Click(hitWorkspaceNew)
 	for index := 0; index < 4; index++ {
 		state.Click(workspaceDraftHostID(index))
-		want := DefaultWorkspaceColumns(index + 1)
-		if got := state.workspaceDraft.columns; got != want {
-			t.Fatalf("%d hosts selected gave %d columns, want %d", index+1, got, want)
+		want := DefaultWorkspaceLayout(index + 1)
+		if got := state.workspaceDraft.layout; !got.Equal(want) {
+			t.Fatalf("%d hosts selected gave %+v, want %+v", index+1, got, want)
 		}
 	}
-	state.Click(hitWorkspaceDraftColumns3)
+	state.Click(hitWorkspaceDraftPresets.At(2))
 	state.Click(workspaceDraftHostID(4))
-	if state.workspaceDraft.columns != 3 {
-		t.Fatalf("explicit columns changed to %d", state.workspaceDraft.columns)
+	if !isGrid(state.workspaceDraft.layout, 3) {
+		t.Fatalf("explicit columns changed to %+v", state.workspaceDraft.layout)
 	}
 	state.Click(workspaceDraftHostID(4))
-	if state.workspaceDraft.columns != 3 {
-		t.Fatalf("explicit columns changed after deselecting to %d", state.workspaceDraft.columns)
+	if !isGrid(state.workspaceDraft.layout, 3) {
+		t.Fatalf("explicit columns changed after deselecting to %+v", state.workspaceDraft.layout)
 	}
 }
 
 func TestWorkspaceLibraryOffersBothCreationModes(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.activeSection = sectionWorkspaces
-	canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	panelHit(t, canvas, hitWorkspaceNew)
 	state.Click(hitWorkspaceNew)
-	canvas, _ = paintAt(state, ui.Size{Width: 1400, Height: 900})
-	panelHit(t, canvas, hitWorkspaceDraftTemporary)
-	panelHit(t, canvas, hitWorkspaceDraftFixed)
+	canvas, _ = paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	if _, ok := settingsChoiceIn(canvas, state.messages.WorkspaceDraftTemporary); !ok {
+		t.Fatal("the draft dialog offers no temporary mode")
+	}
+	if _, ok := settingsChoiceIn(canvas, state.messages.WorkspaceDraftFixed); !ok {
+		t.Fatal("the draft dialog offers no fixed mode")
+	}
 	if state.modal != modalWorkspaceDraft {
 		t.Fatalf("modal = %d", state.modal)
 	}
 	state.Click(hitWorkspaceDraftCancel)
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	state.Click(hitWorkspaceNew)
-	state.Click(hitWorkspaceDraftFixed)
+	clickSettingsChoice(t, state, state.messages.WorkspaceDraftFixed)
 	if state.modal != modalWorkspaceDraft || state.workspaceDraft.mode != workspaceDraftFixed {
 		t.Fatalf("fixed entry opened modal=%d mode=%d", state.modal, state.workspaceDraft.mode)
 	}
 }
 
-func workspaceDraftHostID(index int) ui.ID {
+func TestWorkspaceDraftGroupCheckboxSelectsTheGroup(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	draftGroupedHosts(t, state)
+	state.activeSection = sectionWorkspaces
+	state.Click(hitWorkspaceNew)
+
+	// Half of Servers is chosen by hand: the checkbox reads mixed.
+	state.Click(workspaceDraftHostID(2)) // host_beta in the flat list
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	if check := panelHit(t, canvas, hitWorkspaceDraftGroupCheckList.At(3)); !check.Mixed || check.Checked {
+		t.Fatalf("half-chosen group checkbox = %+v, want mixed", check)
+	}
+
+	// The checkbox completes the group, and a second press clears it.
+	state.Click(hitWorkspaceDraftGroupCheckList.At(3))
+	if !state.workspaceDraft.selected["host_beta"] || !state.workspaceDraft.selected["host_gamma"] {
+		t.Fatalf("group check selected %+v", state.workspaceDraft.selected)
+	}
+	canvas, _ = paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	if check := panelHit(t, canvas, hitWorkspaceDraftGroupCheckList.At(3)); !check.Checked || check.Mixed {
+		t.Fatalf("full group checkbox = %+v, want checked", check)
+	}
+
+	// A folded group still answers its checkbox: pick whole groups without
+	// opening them.
+	state.Click(hitWorkspaceDraftGroupList.At(3)) // fold Servers
+	state.Click(hitWorkspaceDraftGroupCheckList.At(3))
+	if state.workspaceDraft.selected["host_beta"] || state.workspaceDraft.selected["host_gamma"] {
+		t.Fatal("the folded group's checkbox did not clear its members")
+	}
+
+	// A group wider than the twelve-pane limit fills the limit and says so.
+	state.hosts = nil
+	for index := 0; index < maxWorkspaceTemplateHosts+2; index++ {
+		host := Host{
+			ID: uint32(index + 1), CatalogID: "host_big" + string(rune('a'+index)), Label: "Big",
+			Address: "big.example.com", Port: 22, Group: "Big",
+		}
+		host.finish()
+		state.hosts = append(state.hosts, host)
+	}
+	state.Click(hitWorkspaceDraftGroupCheckList.At(1)) // Local, then Big
+	if state.workspaceDraftSelectionCount() != maxWorkspaceTemplateHosts || state.workspaceDraft.error != state.messages.WorkspaceDraftLimit {
+		t.Fatalf("selection = %d, error = %q", state.workspaceDraftSelectionCount(), state.workspaceDraft.error)
+	}
+}
+
+func workspaceDraftHostID(index int) gfx.ID {
 	// Unfiltered choices put this computer before the saved SSH hosts.
 	return hitWorkspaceDraftHostList.At(index + 1)
 }
@@ -571,4 +623,118 @@ func hostCatalogIDs(hosts []Host) []string {
 		ids[index] = hosts[index].CatalogID
 	}
 	return ids
+}
+
+// draftGroupedHosts gives the state one local-shell companion and hosts across
+// three groups, in catalog order, so grouping has something to rearrange.
+func draftGroupedHosts(t *testing.T, state *State) {
+	t.Helper()
+	state.hosts = nil
+	specs := []struct {
+		id    uint32
+		cata  string
+		label string
+		group string
+	}{
+		{1, "host_omega", "Omega", "Zeta"},
+		{2, "host_alpha", "Alpha", ""},
+		{3, "host_beta", "Beta", "Servers"},
+		{4, "host_gamma", "Gamma", "Servers"},
+		{5, "host_delta", "Delta", "Network"},
+	}
+	for _, spec := range specs {
+		host := Host{
+			ID: spec.id, CatalogID: spec.cata, Label: spec.label,
+			Address: spec.cata + ".example.com", Port: 22, Group: spec.group,
+		}
+		host.finish()
+		state.hosts = append(state.hosts, host)
+	}
+}
+
+func TestWorkspaceDraftGroupsTheHostList(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	draftGroupedHosts(t, state)
+	state.activeSection = sectionWorkspaces
+	state.Click(hitWorkspaceNew)
+
+	labels := func(rows []workspaceDraftRow) []string {
+		names := make([]string, 0, len(rows))
+		for _, row := range rows {
+			if row.group != nil {
+				names = append(names, row.group.label)
+			}
+		}
+		return names
+	}
+	hostOrder := func(rows []workspaceDraftRow) []string {
+		ids := make([]string, 0, len(rows))
+		for _, row := range rows {
+			if row.group == nil && row.host.ID != localHostID {
+				ids = append(ids, row.host.CatalogID)
+			}
+		}
+		return ids
+	}
+
+	rows := state.workspaceDraftRows()
+	// Local first, then the unnamed bucket, then the named groups by name.
+	if !slices.Equal(labels(rows), []string{
+		state.messages.WorkspaceDraftLocalGroup, state.messages.HostGroupDefault, "Network", "Servers", "Zeta",
+	}) {
+		t.Fatalf("group order = %v", labels(rows))
+	}
+	openHeight := workspaceDraftListHeight(rows)
+	// Within a group the hosts keep the catalog's order, not the group's.
+	wantOrder := []string{"host_alpha", "host_delta", "host_beta", "host_gamma", "host_omega"}
+	if got := hostOrder(rows); !slices.Equal(got, wantOrder) {
+		t.Fatalf("host order within groups = %v, want %v", got, wantOrder)
+	}
+
+	// Folding hides only the folded group's hosts; the header stays and the
+	// height loses exactly the two Servers rows.
+	state.Click(hitWorkspaceDraftGroupList.At(3)) // Servers
+	rows = state.workspaceDraftRows()
+	if got := hostOrder(rows); !slices.Equal(got, []string{"host_alpha", "host_delta", "host_omega"}) {
+		t.Fatalf("folded hosts = %v", got)
+	}
+	if folded := workspaceDraftListHeight(rows); folded != openHeight-2*workspaceDraftHostRowHeight {
+		t.Fatalf("folded height = %v, want %v minus the two Servers rows", folded, openHeight)
+	}
+
+	// Reopening restores the rows.
+	state.Click(hitWorkspaceDraftGroupList.At(3))
+	if got := hostOrder(state.workspaceDraftRows()); !slices.Equal(got, wantOrder) {
+		t.Fatalf("reopened hosts = %v, want %v", got, wantOrder)
+	}
+
+	// A folded group's hidden host still answers by its flat-list index, so a
+	// click keeps selecting it.
+	state.Click(hitWorkspaceDraftGroupList.At(3)) // fold Servers again
+	state.Click(workspaceDraftHostID(2))          // host_beta, hidden inside Servers
+	if !state.workspaceDraft.selected["host_beta"] {
+		t.Fatal("clicking a folded host's index did not select it")
+	}
+
+	// Searching renders every group regardless of the folds.
+	state.workspaceDraft.query.Insert("example")
+	for _, row := range state.workspaceDraftRows() {
+		if row.group != nil && !row.group.expanded {
+			t.Fatalf("search left %q folded", row.group.label)
+		}
+	}
+	if got := hostOrder(state.workspaceDraftRows()); !slices.Equal(got, wantOrder) {
+		t.Fatalf("search order = %v, want %v", got, wantOrder)
+	}
+
+	// The whole dialog still paints with groups and folds in it, and the
+	// header announces itself as an expandable button.
+	state.workspaceDraft.query = text.Editor{}
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	canvas.SetInteraction(gfx.ID{}, gfx.ID{}, hitWorkspaceDraftGroupList.At(0), true)
+	canvas, _ = paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	header := panelHit(t, canvas, hitWorkspaceDraftGroupList.At(0))
+	if header.Role != gfx.RoleButton || !header.Expanded || header.Label != state.messages.WorkspaceDraftLocalGroup {
+		t.Fatalf("group header semantics = %+v", header)
+	}
 }

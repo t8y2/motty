@@ -3,17 +3,17 @@
 # closed, connects to the first once so that the fixture's host key is trusted
 # (mcp-serve never trusts a key by itself), and lets agents run commands.
 # tools/e2e/run_agent_mcp_e2e.sh runs it, then drives the real `motty mcp-serve`
-# with tools/e2e/agent_mcp_e2e.py. The fields are clicked: a second dialog does
-# not focus its first one.
+# with tools/e2e/agent_mcp_e2e.py. The fields are clicked by id: a second dialog
+# does not focus its first one.
 click "New Host"
 settle 500
-click 500 267
+click id:shell/dialog-label
 type agent-host
-click 600 338
+click id:shell/dialog-address
 type 127.0.0.1
-click 450 408
+click id:shell/dialog-user
 type tester
-click 970 338
+click id:shell/dialog-port
 key backspace
 key backspace
 type 2248
@@ -26,13 +26,13 @@ click "Add Host"
 settle 400
 click "New Host"
 settle 500
-click 500 267
+click id:shell/dialog-label
 type closed-host
-click 600 338
+click id:shell/dialog-address
 type 127.0.0.1
-click 450 408
+click id:shell/dialog-user
 type spare
-click 970 338
+click id:shell/dialog-port
 key backspace
 key backspace
 type 2248
@@ -48,6 +48,8 @@ click "Settings"
 settle 400
 click "MCP"
 settle 400
+scroll 700 600 0 300
+settle 300
 click "Commands"
 settle 300
 shot /tmp/agent-mcp-settings.png

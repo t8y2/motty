@@ -26,6 +26,7 @@ const (
 	FileName = "catalog.bin"
 
 	updateTimeout = 120 * time.Second
+	updateMirror  = "gh-proxy.com"
 )
 
 // Release is a published catalog version resolved to an immutable commit.
@@ -319,11 +320,13 @@ func allowedUpdateHost(host string) bool {
 }
 
 // UpdateClient returns the HTTP client the updater uses: bounded in total
-// time, redirects only to GitHub over https, and no proxy configuration of its
-// own.
+// time, redirects only to GitHub or its fixed fallback over https.
 func UpdateClient() *http.Client {
+	primary := http.DefaultTransport.(*http.Transport).Clone()
+	primary.ResponseHeaderTimeout = 25 * time.Second
 	return &http.Client{
-		Timeout: updateTimeout,
+		Timeout:   updateTimeout,
+		Transport: updateFallbackTransport{primary: primary},
 		CheckRedirect: func(request *http.Request, via []*http.Request) error {
 			if len(via) >= 5 {
 				return errors.New("too many redirects")
@@ -331,10 +334,42 @@ func UpdateClient() *http.Client {
 			if request.URL.Scheme != "https" {
 				return errors.New("only https downloads are followed")
 			}
-			if !allowedUpdateHost(request.URL.Hostname()) {
+			if !allowedUpdateHost(request.URL.Hostname()) && request.URL.Hostname() != updateMirror {
 				return fmt.Errorf("the redirect leaves GitHub for %q", request.URL.Hostname())
 			}
 			return nil
 		},
 	}
+}
+
+// updateFallbackTransport retries only the fixed public catalog's GitHub
+// endpoints. A mirror receives no credentials, and an unsuccessful direct
+// response is closed before retrying.
+type updateFallbackTransport struct{ primary http.RoundTripper }
+
+func (transport updateFallbackTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	response, err := transport.primary.RoundTrip(request)
+	api := request.URL.Hostname() == "api.github.com" &&
+		strings.HasPrefix(request.URL.Path, "/repos/"+RepositoryOwner+"/"+RepositoryName+"/")
+	archive := request.URL.Hostname() == "codeload.github.com" &&
+		strings.HasPrefix(request.URL.Path, "/"+RepositoryOwner+"/"+RepositoryName+"/tar.gz/")
+	if request.Context().Err() != nil || request.URL.Scheme != "https" || (!api && !archive) ||
+		(err == nil && response.StatusCode != http.StatusForbidden && response.StatusCode != http.StatusTooManyRequests && response.StatusCode < 500) {
+		return response, err
+	}
+	if response != nil {
+		response.Body.Close()
+	}
+	mirrorURL, parseErr := url.Parse("https://" + updateMirror + "/" + request.URL.String())
+	if parseErr != nil {
+		return nil, parseErr
+	}
+	mirror := request.Clone(request.Context())
+	mirror.URL = mirrorURL
+	mirror.Header = make(http.Header)
+	mirror.Header.Set("User-Agent", "motty")
+	if request.Header.Get("Accept") != "" {
+		mirror.Header.Set("Accept", request.Header.Get("Accept"))
+	}
+	return transport.primary.RoundTrip(mirror)
 }

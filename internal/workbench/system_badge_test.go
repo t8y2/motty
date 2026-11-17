@@ -3,7 +3,7 @@ package workbench
 import (
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 )
 
@@ -87,18 +87,18 @@ func TestBadgeGlyphsAreCentered(t *testing.T) {
 }
 
 // glyphBounds is the extent of a glyph's geometry, in its own view-box units.
-func glyphBounds(icon ui.Icon) (minX, minY, maxX, maxY float32) {
+func glyphBounds(icon gfx.Icon) (minX, minY, maxX, maxY float32) {
 	minX, minY, maxX, maxY = 0, 0, 0, 0
 	first := true
 	for _, command := range glyphCommands(icon) {
-		if command.Kind == ui.PathCommandClose {
+		if command.Kind == gfx.PathCommandClose {
 			continue
 		}
-		points := []ui.Point{command.Point}
-		if command.Kind == ui.PathCommandQuad || command.Kind == ui.PathCommandCubic {
+		points := []gfx.Point{command.Point}
+		if command.Kind == gfx.PathCommandQuad || command.Kind == gfx.PathCommandCubic {
 			points = append(points, command.Control1)
 		}
-		if command.Kind == ui.PathCommandCubic {
+		if command.Kind == gfx.PathCommandCubic {
 			points = append(points, command.Control2)
 		}
 		for _, point := range points {
