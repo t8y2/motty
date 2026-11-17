@@ -68,8 +68,8 @@ type sftpBookmarkEditor struct {
 // sftpBookmarkBody is what the editor's page leaves for the controls painted by
 // hand once it has been laid out.
 type sftpBookmarkBody struct {
-	browse, list, scope, add            ui.Box
-	save, remove, sync, cancel, proceed ui.Box
+	browse, list, scope ui.Box
+	sync                ui.Box
 }
 
 // pageButtonSlot reserves the room a button takes in a page.
@@ -388,10 +388,9 @@ func (w *sftpWindow) declareBookmarkDialog(c ui.C, viewport gfx.Rect) {
 	dialog.Footer(func() {
 		row := ui.Row(c).Fill().Gap((*c.Theme()).Metrics.GapItem).Justify(ui.End).Items(ui.Center)
 		row.Children(func() {
-			w.bookmark.body.cancel = pageButtonSlot(c, w.owner.messages.Cancel, false)
-			w.bookmark.body.proceed = pageButtonSlot(c, m.ProfileOpen, false)
+			ui.Button(c, w.owner.messages.Cancel).Secondary().Hit(hitSFTPBookmarkCancel, w.owner.messages.Cancel).Shrink(0)
+			ui.Button(c, m.ProfileOpen).Hit(hitSFTPProfileOpen, m.ProfileOpen).Shrink(0)
 		})
-		row.DrawOver(w.ui.bookmarkFooterDraw)
 	})
 }
 
@@ -412,9 +411,14 @@ func (w *sftpWindow) declareBookmarkBody(c ui.C) ui.Box {
 			w.declareBookmarkField(c, 0).Grow(1)
 			scopeWidth := max(canvas.TextWidth(m.ProfileSite, theme.Metrics.FontSizeM), canvas.TextWidth(m.ProfileShared, theme.Metrics.FontSizeM)) + 36
 			body.scope = ui.Slot(c).Width(max(132, scopeWidth)).Height(56)
-			body.add = ui.Slot(c).Width(max(56, canvas.TextWidth(m.ProfileNew, theme.Metrics.FontSizeM)+24)).Height(32)
-			body.save = ui.Slot(c).Width(max(56, canvas.TextWidth(m.BookmarkSave, theme.Metrics.FontSizeM)+24)).Height(32)
-			body.remove = ui.Slot(c).Width(max(56, canvas.TextWidth(m.ProfileDelete, theme.Metrics.FontSizeM)+24)).Height(32)
+			room := func(label string) float32 { return max(56, canvas.TextWidth(label, theme.Metrics.FontSizeM)+24) }
+			bookmarkButtonRoom(c, room(m.ProfileNew), func() { ui.Button(c, m.ProfileNew).Small().Outline().Hit(hitSFTPProfileNew, m.ProfileNew).FillWidth() })
+			bookmarkButtonRoom(c, room(m.BookmarkSave), func() {
+				ui.Button(c, m.BookmarkSave).Small().ButtonRecipe(darkButtonRecipe).Hit(hitSFTPBookmarkSave, m.BookmarkSave).FillWidth()
+			})
+			bookmarkButtonRoom(c, room(m.ProfileDelete), func() {
+				ui.Button(c, m.ProfileDelete).Small().Destructive().Disabled(!b.editing).Hit(hitSFTPProfileDelete, m.ProfileDelete).FillWidth()
+			})
 		})
 		body.sync = ui.Slot(c).Height(32)
 		body.list = ui.Slot(c).Grow(1)
@@ -447,15 +451,6 @@ func (w *sftpWindow) declareBookmarkField(c ui.C, i int) ui.Box {
 func (w *sftpWindow) paintBookmarkBody(d *ui.DrawContext) {
 	canvas, b, theme, m := d.Canvas, &w.bookmark, *d.Theme, w.owner.messages.SFTPWindow
 	body := &b.body
-	components.BeginButton(canvas, theme, hitSFTPProfileNew, body.add.Rect()).Small().Outline(m.ProfileNew)
-	saveTheme := theme
-	saveTheme.Primary, saveTheme.PrimaryForeground = gfx.RGB(24, 24, 27), gfx.RGB(250, 250, 250)
-	components.BeginButton(canvas, saveTheme, hitSFTPBookmarkSave, body.save.Rect()).Small().Default(m.BookmarkSave)
-	deleteButton := components.BeginButton(canvas, theme, hitSFTPProfileDelete, body.remove.Rect()).Small()
-	if !b.editing {
-		deleteButton = deleteButton.Disabled()
-	}
-	deleteButton.Destructive(m.ProfileDelete)
 	syncBounds := body.sync.Rect()
 	checkboxSide := components.CheckboxExtent(theme)
 	components.BeginCheckbox(canvas, theme, hitSFTPBookmarkSync, gfx.Rect{
@@ -469,12 +464,17 @@ func (w *sftpWindow) paintBookmarkBody(d *ui.DrawContext) {
 	w.paintProfileScope(canvas, body.scope.Rect(), b.viewport)
 }
 
-// paintBookmarkFooter paints the editor's dialog buttons into the slots the
-// footer left.
-func (w *sftpWindow) paintBookmarkFooter(d *ui.DrawContext) {
-	canvas, b, theme := d.Canvas, &w.bookmark, *d.Theme
-	components.BeginButton(canvas, theme, hitSFTPBookmarkCancel, b.body.cancel.Rect()).Secondary(w.owner.messages.Cancel)
-	components.BeginButton(canvas, theme, hitSFTPProfileOpen, b.body.proceed.Rect()).Default(w.owner.messages.SFTPWindow.ProfileOpen)
+// darkButtonRecipe is the Save button's look: a near-black primary with a white label, whatever the
+// theme's primary is.
+func darkButtonRecipe(theme gfx.Theme, variant components.ButtonVariant, state gfx.State) components.ButtonLook {
+	theme.Primary, theme.PrimaryForeground = gfx.RGB(24, 24, 27), gfx.RGB(250, 250, 250)
+	return components.ButtonRecipe(theme, variant, state)
+}
+
+// bookmarkButtonRoom declares a button in the room the editor's rows give it: width wide and 32 tall,
+// the button at its own height from the top, as the buttons were painted in their slots.
+func bookmarkButtonRoom(c ui.C, width float32, button func()) {
+	ui.Column(c).Size(width, 32).Shrink(0).Children(button)
 }
 
 func (w *sftpWindow) paintProfileScope(canvas *gfx.Canvas, bounds, viewport gfx.Rect) {

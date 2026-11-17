@@ -67,11 +67,10 @@ type sftpWindowUI struct {
 	// page of its own, and no two windows may name their controls alike.
 	root       string
 	windowPage *ui.Page
-	// bookmarkBodyDraw and bookmarkFooterDraw paint the bookmark editor's
-	// hand-painted controls into the slots its dialog declares. They are made
-	// once so a warm repaint allocates nothing.
-	bookmarkBodyDraw   func(*ui.DrawContext)
-	bookmarkFooterDraw func(*ui.DrawContext)
+	// bookmarkBodyDraw paints the bookmark editor's hand-painted controls (the sync
+	// checkbox, the profile list and the scope select) into the slots its dialog
+	// declares. It is made once so a warm repaint allocates nothing.
+	bookmarkBodyDraw func(*ui.DrawContext)
 	// panes keeps what each pane's declaration leaves for the details painted
 	// after the page: the panes are keyed containers of the window page now, not
 	// pages of their own. body and queue are the rectangles the page laid out
@@ -288,7 +287,6 @@ const (
 func (w *sftpWindow) bookmarkDraws() {
 	if w.ui.bookmarkBodyDraw == nil {
 		w.ui.bookmarkBodyDraw = w.paintBookmarkBody
-		w.ui.bookmarkFooterDraw = w.paintBookmarkFooter
 	}
 }
 
