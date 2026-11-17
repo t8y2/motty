@@ -139,11 +139,9 @@ type fontsUI struct {
 	scroll   float32 // pixel offset of the filtered list
 	built    bool
 
-	// searchSlot is where the body's first slot sits: the search field is
-	// painted into it after the body has laid it out. searchDraw is that paint,
-	// kept once so a warm repaint makes no new method value.
-	searchSlot ui.Box
-	searchDraw func(*ui.DrawContext)
+	// searchField is the picker's page text field over search, bound when first declared.
+	searchField ui.Field
+	searchBound bool
 	// weightMain and weightBold are the picker's pending weights: what Confirm
 	// applies, once the sample's family is taken.
 	weightMain, weightBold int
@@ -743,25 +741,16 @@ func (state *State) declareFontPicker(c ui.C) {
 	})
 }
 
-// paintFontPickerSearch paints the picker's search field into the slot the
-// dialog body laid out. It runs as part of the body's paint, inside the dialog's
-// focus scope, so the field keeps the keys and text the dialog routes.
-func (state *State) paintFontPickerSearch(d *ui.DrawContext) {
-	fonts := &state.fonts
+// fontPickerTitle names the picker for its search field.
+func (state *State) fontPickerTitle() string {
 	m := state.messages.Tools
-	title := m.FontPickerTitle
-	switch fonts.kind {
+	switch state.fonts.kind {
 	case pickFallbackFont:
-		title = m.FontFallbackPickerTitle
+		return m.FontFallbackPickerTitle
 	case pickInterfaceFont:
-		title = state.messages.SettingsInterfaceFont
+		return state.messages.SettingsInterfaceFont
 	}
-	value := fonts.search.String()
-	focused := d.Canvas.Focused() == hitFontPickerSearch
-	components.PaintInput(d.Canvas, *d.Theme, fonts.searchSlot.Rect(), components.InputSnapshot{
-		ID: hitFontPickerSearch, Label: title, Value: value, Placeholder: m.FontPickerPlaceholder,
-		Focused: focused, PlatformEditing: focused && value != "", NavigationKeys: true,
-	})
+	return m.FontPickerTitle
 }
 
 // declareFontPickerBody declares the dialog body: the search field's room, the
@@ -779,12 +768,14 @@ func (state *State) declareFontPickerBody(c ui.C) {
 	}
 	fonts.scroll = min(max(fonts.scroll, 0), fonts.maxScroll())
 	rows := len(fonts.filtered)
-	if fonts.searchDraw == nil {
-		fonts.searchDraw = state.paintFontPickerSearch
-	}
 	column := ui.Column(c).Fill()
 	column.Children(func() {
-		fonts.searchSlot = ui.Slot(c).Height(36)
+		if !fonts.searchBound {
+			fonts.searchField.Bind(&fonts.search)
+			fonts.searchBound = true
+		}
+		ui.TextFieldID(c, hitFontPickerSearch, &fonts.searchField, state.fontPickerTitle(), m.FontPickerPlaceholder).
+			NavigationKeys().Height(36)
 		ui.Column(c).Height(fontPickerListHeight).Shrink(0).MarginSides(10, 0, 0, 0).Children(func() {
 			switch {
 			case state.pickerList().loading:
@@ -805,7 +796,6 @@ func (state *State) declareFontPickerBody(c ui.C) {
 			}
 		}
 	})
-	column.DrawOver(fonts.searchDraw)
 }
 
 // declareFontPickerRows declares the visible rows of the list, translating them
