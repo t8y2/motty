@@ -11,22 +11,22 @@ import (
 )
 
 type proxyBatchAssociateDialog struct {
-	jumpID         uint32
-	jumpChoices    []uint32
-	query          text.Editor
-	search         ui.Field
-	searchBound    bool
-	selected       map[uint32]bool
-	overwrite      bool
-	viaShell       bool
-	relay          text.Editor
-	error          string
-	fromHostList   bool
-	scroll         float32
-	content        float32
-	bounds         gfx.Rect
-	listRect       gfx.Rect
-	dialogBody     proxyBatchDialogBody
+	jumpID       uint32
+	jumpChoices  []uint32
+	query        text.Editor
+	search       ui.Field
+	searchBound  bool
+	selected     map[uint32]bool
+	overwrite    bool
+	viaShell     bool
+	relay        text.Editor
+	error        string
+	fromHostList bool
+	scroll       float32
+	content      float32
+	bounds       gfx.Rect
+	listRect     gfx.Rect
+	dialogBody   proxyBatchDialogBody
 }
 
 type proxyBatchDialogBody struct {
