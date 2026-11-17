@@ -67,6 +67,7 @@ func ChineseVariant(tag string) Language {
 // language means adding one field initialization, not touching call sites.
 type Messages struct {
 	RemoteLogs     RemoteLogMessages
+	HostsPanel     HostsPanelMessages
 	ActionFeedback ActionFeedbackMessages
 	Monitor        MonitorMessages
 	Dashboard      DashboardMessages

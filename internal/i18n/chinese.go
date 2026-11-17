@@ -4,6 +4,7 @@ package i18n
 
 var ChineseMessages = Messages{
 	RemoteLogs:     chineseRemoteLogs,
+	HostsPanel:     chineseHostsPanel,
 	ActionFeedback: chineseActionFeedback,
 	Monitor:        chineseMonitor,
 	Dashboard:      chineseDashboard,

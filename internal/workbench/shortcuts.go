@@ -41,6 +41,7 @@ const (
 	shortcutClearScreen
 	shortcutCompletion
 	shortcutSnippetPicker
+	shortcutHostsPanel
 	shortcutAcceptSuggestion
 	shortcutActionCount
 )
@@ -89,6 +90,7 @@ func defaultShortcuts() shortcutMap {
 	shortcuts.chords.Set(shortcutFilesPath, keymap.Chord{Modifiers: primary, Char: 'l'})
 	shortcuts.chords.Set(shortcutSFTP, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 's'})
 	shortcuts.chords.Set(shortcutAssistant, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 'a'})
+	shortcuts.chords.Set(shortcutHostsPanel, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 'b'})
 	shortcuts.chords.Set(shortcutZoomIn, keymap.Chord{Modifiers: primary, Char: '='})
 	shortcuts.chords.Set(shortcutZoomOut, keymap.Chord{Modifiers: primary, Char: '-'})
 	shortcuts.chords.Set(shortcutZoomReset, keymap.Chord{Modifiers: primary, Char: '0'})
@@ -331,6 +333,8 @@ func (action shortcutAction) String() string {
 		return "sftp"
 	case shortcutAssistant:
 		return "assistant"
+	case shortcutHostsPanel:
+		return "hosts_panel"
 	case shortcutZoomIn:
 		return "zoom_in"
 	case shortcutZoomOut:
@@ -747,6 +751,14 @@ func (state *State) executeShortcut(action shortcutAction) gfx.EventResult {
 		}
 	case shortcutCompletion:
 		state.openCompletions()
+	case shortcutHostsPanel:
+		state.toggleHostsPanel()
+		// Opened, the keyboard goes to the search box; closed, back to the terminal.
+		if state.hostsPanelVisible() {
+			result.Focus = hitHostsPanelSearch
+		} else {
+			result.Focus = state.activeTerminalFocusHit()
+		}
 	case shortcutAssistant:
 		state.toggleAIPanel()
 		// Opened, the keyboard goes to the message box; closed, back to the terminal.

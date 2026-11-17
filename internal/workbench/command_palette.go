@@ -176,6 +176,7 @@ func (state *State) rebuildCommandPalette() {
 	palette.add(messages.SSHConfigImport, hitImportSSHConfig)
 	palette.add(messages.Tools.ImportSessions, hitImportSessions)
 	if state.deck.ActiveWorkspace() != 0 {
+		palette.add(messages.HostsPanel.Toggle, hitHostsPanel)
 		palette.add(messages.AIPanel.Toggle, hitAIToggle)
 	}
 	if _, ok := state.sessionByIDPointer(state.activeSessionID); ok {

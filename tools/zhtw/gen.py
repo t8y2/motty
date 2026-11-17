@@ -22,6 +22,7 @@ SIDE_CATALOGS = [
     "action_feedback.go",
     "code_editor.go",
     "dashboard.go",
+    "hosts_panel.go",
     "local_proxy.go",
     "monitor.go",
     "remote_logs.go",

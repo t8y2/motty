@@ -4,6 +4,7 @@ package i18n
 
 var EnglishMessages = Messages{
 	RemoteLogs:     remoteLogsEnglish,
+	HostsPanel:     hostsPanelEnglish,
 	ActionFeedback: englishActionFeedback,
 	Monitor:        englishMonitor,
 	Dashboard:      englishDashboard,

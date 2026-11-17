@@ -590,6 +590,7 @@ type State struct {
 	hostActionIDs      []uint32
 	hostGroups         []hostGroup
 	hostSide           hostCatalogSide
+	hostsPanel         hostsPanel
 	hostSideRows       []int
 	hostTreeRows       []hostTreeRow
 	hostList           hostCatalogList
@@ -1878,7 +1879,7 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		state.clickLocalProxy(id)
 		return
 	}
-	if state.clickHostOrder(id) || state.clickToolbarDockMenu(id) || state.clickWorkspaceTemplateManagement(id) ||
+	if state.clickHostOrder(id) || state.clickHostsPanel(id) || state.clickToolbarDockMenu(id) || state.clickWorkspaceTemplateManagement(id) ||
 		state.clickHostGroupActions(id) || state.clickTerminalMenu(id) || state.clickGhostMenu(id) || state.clickTabMenu(id) || state.clickHostMenu(id) || state.clickLocalShellPicker(id) || state.clickSnippetMenu(id) || state.clickSFTPMenu(id) {
 		return
 	}
@@ -2549,6 +2550,9 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result := state.toolbarDockPointer(event); result.Handled {
 		return result
 	}
+	if result, handled := state.hostsPanelPointer(event); handled {
+		return result
+	}
 	// A mouse toggle changes input routing; return typing to its source terminal.
 	// Leave the click unhandled so the runtime still activates the switch.
 	if event.Kind == gfx.PointerUp && (event.Target == hitWorkspaceHeaderBroadcast || event.Target == hitWorkspaceHeaderLayoutDismiss) &&
@@ -2960,6 +2964,9 @@ func (state *State) Key(event gfx.KeyEvent) (outcome gfx.EventResult) {
 		return result
 	}
 	if result, handled := state.keyShortcut(event); handled {
+		return result
+	}
+	if result, handled := state.hostsPanelKeyPress(event); handled {
 		return result
 	}
 	if state.tabDrag.active && event.Key == gfx.KeyEscape {

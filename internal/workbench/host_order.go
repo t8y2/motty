@@ -110,13 +110,17 @@ func compareHostAddress(collator *collation.Collator, left, right Host) int {
 	return compareHostName(collator, left, right)
 }
 
-func (state *State) sortVisibleHosts() {
+func (state *State) sortVisibleHosts() { state.sortHostIndexes(state.visible) }
+
+// sortHostIndexes puts the hosts at indexes in the order the user chose for the
+// list; the manual order is the order of the catalog, which they already have.
+func (state *State) sortHostIndexes(indexes []int) {
 	if state.hostOrder == hostOrderManual {
 		return
 	}
 	collator := state.hostNameCollator()
-	sort.Slice(state.visible, func(leftIndex, rightIndex int) bool {
-		left, right := state.hosts[state.visible[leftIndex]], state.hosts[state.visible[rightIndex]]
+	sort.Slice(indexes, func(leftIndex, rightIndex int) bool {
+		left, right := state.hosts[indexes[leftIndex]], state.hosts[indexes[rightIndex]]
 		if state.hostOrder == hostOrderIP {
 			return compareHostAddress(collator, left, right) < 0
 		}

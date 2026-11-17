@@ -152,6 +152,10 @@ func (state *State) windowDockTool(spec toolbarSpec) barTool {
 		if state.transfers.open {
 			tool.style = iconButtonActive
 		}
+	case hitHostsPanel:
+		if state.hostsPanelVisible() {
+			tool.style = iconButtonActive
+		}
 	case hitAIToggle:
 		if state.aiPanelVisible() {
 			tool.style = iconButtonActive

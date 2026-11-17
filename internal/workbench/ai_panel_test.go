@@ -269,8 +269,18 @@ func TestShortcutSettingsPageListsTheAssistantAction(t *testing.T) {
 	state, _ := panelState(t, nil)
 	showShortcutSettings(state)
 	paintAt(state, panelWide)
-	state.scrollSettings(gfx.ScrollEvent{DeltaY: 4000, Precise: true}) // the last rows sit below the fold
+	// The rows below the fold are reached by scrolling to the end and then back
+	// up until the assistant's row is painted: how many rows follow it is the
+	// page's business, not this test's.
+	state.scrollSettings(gfx.ScrollEvent{DeltaY: 4000, Precise: true})
 	canvas, texts := paintAt(state, panelWide)
+	for step := 0; step < 40; step++ {
+		if _, painted := hitByID(canvas, hitShortcutRowList.At(int(shortcutAssistant-1))); painted {
+			break
+		}
+		state.scrollSettings(gfx.ScrollEvent{DeltaY: -60, Precise: true})
+		canvas, texts = paintAt(state, panelWide)
+	}
 	if !hasText(texts, state.messages.AIPanel.Toggle) {
 		t.Fatalf("the shortcut page lacks %q: %q", state.messages.AIPanel.Toggle, texts)
 	}

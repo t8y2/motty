@@ -207,6 +207,8 @@ type savedState struct {
 	HostOrder              string           `json:"host_order,omitempty"`
 	HostSideWidth          float32          `json:"host_side_width,omitempty"`
 	HostTreeOpen           bool             `json:"host_tree_open,omitempty"`
+	HostsPanelOpen         bool             `json:"hosts_panel_open,omitempty"`
+	HostsPanelWidth        float32          `json:"hosts_panel_width,omitempty"`
 	HiddenHostTags         []string         `json:"hidden_host_tags,omitempty"`
 	HostPrivacy            bool             `json:"host_privacy,omitempty"`
 	HostPrivacyShowName    bool             `json:"host_privacy_show_name,omitempty"`
@@ -755,6 +757,8 @@ func (state *State) snapshot() savedState {
 	saved.HostOrder = state.hostOrder.saved()
 	saved.HostSideWidth = state.hostSide.width
 	saved.HostTreeOpen = state.hostSide.open
+	saved.HostsPanelOpen = state.hostsPanel.open
+	saved.HostsPanelWidth = state.hostsPanel.width
 	saved.HiddenHostTags = state.hiddenHostTags
 	saved.HostPrivacy = state.hostPrivacy.enabled
 	saved.HostPrivacyShowName = !state.hostPrivacy.maskName
@@ -1128,6 +1132,10 @@ func (state *State) restoreLocal(saved savedState) {
 		state.hostSide.width = saved.HostSideWidth
 	}
 	state.hostSide.open = saved.HostTreeOpen
+	state.hostsPanel.open, state.hostsPanel.stale = saved.HostsPanelOpen, true
+	if saved.HostsPanelWidth >= hostsPanelMinWidth && saved.HostsPanelWidth <= hostsPanelMaxWidth {
+		state.hostsPanel.width = saved.HostsPanelWidth
+	}
 	state.hostPrivacy.enabled = saved.HostPrivacy
 	state.hostPrivacy.maskName = !saved.HostPrivacyShowName
 	state.hostPrivacy.maskAddress = !saved.HostPrivacyShowAddress

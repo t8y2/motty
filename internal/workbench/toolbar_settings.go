@@ -28,7 +28,7 @@ type toolbarSpec struct {
 // available in a particular connection/split/local-files context.
 var toolbarCatalog = [3][]toolbarSpec{
 	toolbarWindow: {
-		{"transfers", hitTransferCenter, iconTransfer}, {"assistant", hitAIToggle, iconBot},
+		{"transfers", hitTransferCenter, iconTransfer}, {"hosts", hitHostsPanel, iconDirectoryTree}, {"assistant", hitAIToggle, iconBot},
 		{"local-terminal", hitWindowLocalTerminal, iconTerminal}, {"commands", hitCommandPalette, iconSearch},
 		{"theme", hitTheme, iconMoon}, {"github", hitGitHub, iconGitHub}, {"settings", hitWindowSettings, iconSettings},
 	},
@@ -195,6 +195,8 @@ func (state *State) toolbarLabel(id gfx.ID) string {
 	switch id {
 	case hitTransferCenter:
 		return m.Transfers.Title
+	case hitHostsPanel:
+		return m.HostsPanel.Toggle
 	case hitAIToggle:
 		return m.AIPanel.ToggleTip
 	case hitWindowLocalTerminal:

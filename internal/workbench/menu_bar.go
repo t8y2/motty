@@ -39,6 +39,7 @@ func (state *State) MenuBar() []app.Menu {
 		{Title: state.messages.MenuView, Items: []app.MenuBarItem{
 			item(shortcutCommandPalette, false),
 			item(shortcutAssistant, false),
+			item(shortcutHostsPanel, false),
 			item(shortcutSFTP, !hasSession),
 			{Separator: true},
 			item(shortcutZoomIn, false),

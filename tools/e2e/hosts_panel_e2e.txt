@@ -1,0 +1,61 @@
+# End to end: the session manager beside the terminals opens a saved host with a
+# double click, filters by its own search box, and closes with its shortcut.
+#
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   (cd tools/e2esshd && go build -o /tmp/motty-e2esshd .) && /tmp/motty-e2esshd 2244 &
+#   MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/hosts_panel_e2e.txt
+#
+# The shortcut is Command+Shift+B on macOS (Control+Shift+B elsewhere); the
+# headless build of the platform the script runs on takes the matching chord.
+#
+# Two hosts are saved and the first is connected from the hosts page. The panel
+# then lists both, a double click on the second opens a second tab, and the
+# search narrows the list to one row.
+
+# lang: en
+click "New Host"
+waitfor "Test Connection" 3000
+settle 700
+type alpha
+click 450 304
+type 127.0.0.1
+click 450 374
+type tester
+click 960 304
+key cmd+a
+type 2244
+click "Add Host"
+settle 800
+click "New Host"
+waitfor "Test Connection" 3000
+settle 700
+type beta
+click 450 304
+type 127.0.0.1
+click 450 374
+type tester
+click 960 304
+key cmd+a
+type 2244
+click "Add Host"
+settle 800
+dblclick 400 145
+waitfor "Trust" 3000
+click "Trust and Save"
+waitfor "Password" 5000
+type secret
+key enter
+waitfor "tester@e2e" 8000
+click "Session manager"
+settle 500
+expect text "Hosts"
+dblclick 60 160
+settle 1500
+expect text "beta"
+click 120 91
+type alp
+settle 400
+shot /tmp/hosts-panel-filtered.png
+key meta+shift+b
+settle 400
+expect layout clean

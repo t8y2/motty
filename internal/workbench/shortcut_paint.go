@@ -47,6 +47,8 @@ func (state *State) shortcutActionLabel(action shortcutAction) string {
 		return messages.SFTPFiles
 	case shortcutAssistant:
 		return messages.AIPanel.Toggle
+	case shortcutHostsPanel:
+		return messages.HostsPanel.Toggle
 	case shortcutZoomIn:
 		return messages.Tools.ZoomIn
 	case shortcutZoomOut:

@@ -4,6 +4,7 @@ package i18n
 
 var TraditionalMessages = Messages{
 	RemoteLogs:     traditionalRemoteLogs,
+	HostsPanel:     traditionalHostsPanel,
 	ActionFeedback: traditionalActionFeedback,
 	Monitor:        traditionalMonitor,
 	Dashboard:      traditionalDashboard,
@@ -3307,4 +3308,8 @@ var traditionalSSHSync = SSHSyncMessages{
 	WarnChangedMeanwhile: "同步時 SSH 設定發生了變化，將再試一次。",
 	WarnFileMissing:      "SSH 設定檔不存在，因此沒有做任何更改。需要時會重新增立。",
 	WarnNoneLeftFmt:      "SSH 設定中已找不到任何一台已同步的主機(共 %d 台),因此保持原樣。",
+}
+
+var traditionalHostsPanel = HostsPanelMessages{
+	Toggle: "工作階段管理", Close: "關閉工作階段管理", Resize: "調整工作階段管理寬度", Manage: "管理主機",
 }

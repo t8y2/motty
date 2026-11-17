@@ -488,19 +488,29 @@ func (state *State) inHostFilter(host Host) bool {
 }
 
 func (state *State) rebuildHostTreeRows() {
-	state.hostTreeRows = state.hostTreeRows[:0]
 	words := strings.Fields(strings.ToLower(state.visibleQuery))
+	state.hostTreeRows = state.appendHostTreeRows(state.hostTreeRows[:0], state.visible, words, state.hostsFlat(), state.hostFilterOn, state.hostFilter)
+	state.rebuildHostSideRows()
+	state.hostsPanel.stale = true
+}
+
+// appendHostTreeRows lists the group hierarchy over the hosts in visible, in
+// the order given: a group's header, then, while it is open or words filter the
+// tree, its hosts and the groups below it. A group that holds none of the hosts
+// and was not made on purpose is left out. filterOn narrows the tree to the
+// group named filter, whose own header is then not listed; flat leaves the group
+// headers out altogether.
+func (state *State) appendHostTreeRows(rows []hostTreeRow, visible []int, words []string, flat, filterOn bool, filter string) []hostTreeRow {
 	filtering := len(words) != 0
-	flat := state.hostsFlat()
 	filterDepth := 0
-	if state.hostFilterOn {
-		if index := state.hostGroupIndex(state.hostFilter); index >= 0 {
+	if filterOn {
+		if index := state.hostGroupIndex(filter); index >= 0 {
 			filterDepth = int(state.hostGroups[index].Depth) + 1
 		}
 	}
 	hidden := ""
 	for groupIndex, group := range state.hostGroups {
-		if state.hostFilterOn && !hostGroupWithin(group.Name, state.hostFilter) {
+		if filterOn && !hostGroupWithin(group.Name, filter) {
 			continue
 		}
 		if hidden != "" && hostGroupWithin(group.Name, hidden) {
@@ -508,7 +518,7 @@ func (state *State) rebuildHostTreeRows() {
 		}
 		hidden = ""
 		matched := 0
-		for _, hostIndex := range state.visible {
+		for _, hostIndex := range visible {
 			if hostGroupWithin(strings.TrimSpace(state.hosts[hostIndex].Group), group.Name) {
 				matched++
 			}
@@ -525,15 +535,15 @@ func (state *State) rebuildHostTreeRows() {
 		if matched == 0 && !explicit {
 			continue
 		}
-		selected := state.hostFilterOn && group.Name == state.hostFilter
+		selected := filterOn && group.Name == filter
 		if !flat && !selected {
-			state.hostTreeRows = append(state.hostTreeRows, hostTreeRow{Kind: hostTreeGroup, GroupIndex: groupIndex, HostIndex: -1, Depth: uint8(max(0, int(group.Depth)-filterDepth))})
+			rows = append(rows, hostTreeRow{Kind: hostTreeGroup, GroupIndex: groupIndex, HostIndex: -1, Depth: uint8(max(0, int(group.Depth)-filterDepth))})
 		}
 		if !flat && !selected && !group.Expanded && !filtering {
 			hidden = group.Name
 			continue
 		}
-		for _, hostIndex := range state.visible {
+		for _, hostIndex := range visible {
 			if strings.TrimSpace(state.hosts[hostIndex].Group) != group.Name {
 				continue
 			}
@@ -541,10 +551,10 @@ func (state *State) rebuildHostTreeRows() {
 			if flat {
 				depth = 0
 			}
-			state.hostTreeRows = append(state.hostTreeRows, hostTreeRow{Kind: hostTreeHost, GroupIndex: groupIndex, HostIndex: hostIndex, Depth: depth})
+			rows = append(rows, hostTreeRow{Kind: hostTreeHost, GroupIndex: groupIndex, HostIndex: hostIndex, Depth: depth})
 		}
 	}
-	state.rebuildHostSideRows()
+	return rows
 }
 
 func (state *State) toggleHostGroup(index int) {
