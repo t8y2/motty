@@ -291,9 +291,7 @@ func (page *settingsPage) header(title string, searching bool) {
 // headerButton is a page-wide action in the title row. It is recorded like a
 // row's buttons, so the keyboard reaches it and the page paints it in place.
 func (page *settingsPage) headerButton(label string, id gfx.ID) {
-	theme := page.state.Theme()
-	width := components.BeginButton(page.canvas(), theme, gfx.ID{}, gfx.Rect{}).Small().SizeToFit(label).BoundsWidth()
-	slot := ui.Row(page.c).Size(width, 34).Shrink(0).Items(ui.Center).Justify(ui.End)
+	slot := ui.Row(page.c).Height(34).Shrink(0).Items(ui.Center).Justify(ui.End)
 	page.buttons(slot, false, components.ButtonAction{ID: id, Label: label, Variant: components.ButtonOutline})
 }
 
@@ -601,7 +599,12 @@ func (page *settingsPage) lineForLines(labelFor gfx.ID, label, description strin
 			ui.Paragraph(c, description, descLines).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(15).MarginSides(1, 0, 0, 0)
 		})
 		page.labels(labelFor, words, label, false)
-		control = ui.Row(c).Size(controlWidth, 34).Shrink(0).Justify(ui.End).Items(ui.Center)
+		control = ui.Row(c).Height(34).Shrink(0).Justify(ui.End).Items(ui.Center)
+		if controlWidth > 0 {
+			control.Width(controlWidth)
+		} else {
+			control.MaxWidth(page.width * 0.6) // the buttons' own width, as far as the words allow
+		}
 		if inside != nil {
 			control.Children(inside)
 		}
@@ -670,30 +673,19 @@ func (page *settingsPage) toggleRow(label, description string, on bool, id gfx.I
 
 // actionRow is a settings row whose control is buttons, not a choice.
 func (page *settingsPage) actionRow(label, description string, disabled bool, actions ...components.ButtonAction) {
-	page.buttons(page.line(label, description, page.actionWidth(actions)), disabled, actions...)
+	page.buttons(page.line(label, description, page.actionWidth()), disabled, actions...)
 }
 
 // actionRowWrap is actionRow whose description takes as many lines as its room
 // needs: for a row that reports words the application does not write, such as
 // why the last sync failed, the whole of them stays readable.
 func (page *settingsPage) actionRowWrap(label, description string, disabled bool, actions ...components.ButtonAction) {
-	page.buttons(page.lineWrap(label, description, page.actionWidth(actions)), disabled, actions...)
+	page.buttons(page.lineWrap(label, description, page.actionWidth()), disabled, actions...)
 }
 
-// actionWidth is the room the buttons of an action row take: as wide as their
-// labels, and no more, so what is left is for the row's explanation.
-func (page *settingsPage) actionWidth(actions []components.ButtonAction) float32 {
-	theme := page.state.Theme()
-	width := theme.Metrics.GapItem * float32(len(actions)-1)
-	for _, action := range actions {
-		width += components.BeginButton(page.canvas(), theme, gfx.ID{}, gfx.Rect{}).Small().SizeToFit(action.Label).BoundsWidth()
-	}
-	width = min(width, page.width*0.6)
-	if page.controlWidth > 0 {
-		width = page.controlWidth
-	}
-	return width
-}
+// actionWidth is the room the buttons of an action row take: their own, unless the
+// page sets one (a search result's row leaves room for its explanation).
+func (page *settingsPage) actionWidth() float32 { return page.controlWidth }
 
 // valueActionRow is actionRow for a setting whose current value the row names
 // beside the buttons, so the value is read without pressing them: the choice of
@@ -704,23 +696,15 @@ func (page *settingsPage) actionWidth(actions []components.ButtonAction) float32
 func (page *settingsPage) valueActionRow(label, description, value string, disabled bool, actions ...components.ButtonAction) {
 	theme, canvas := page.state.Theme(), page.canvas()
 	gap := theme.Metrics.GapItem
-	buttonsWidth := gap * float32(len(actions)-1)
-	for _, action := range actions {
-		buttonsWidth += components.BeginButton(canvas, theme, gfx.ID{}, gfx.Rect{}).Small().SizeToFit(action.Label).BoundsWidth()
-	}
 	// The value is set in the buttons' own size, not a step under it: it stands
 	// beside them on the same line, and a size down read as something else
 	// entirely. Its quieter colour is what makes it secondary.
 	valueWidth := min(canvas.TextWidthWeight(value, metrics.FontSizeM, gfx.WeightMedium), settingsValueMax)
-	controlWidth := min(buttonsWidth+gap+valueWidth, page.width*0.6)
-	if page.controlWidth > 0 {
-		controlWidth = page.controlWidth
-	}
 	var buttons ui.Box
-	page.lineWith(label, description, controlWidth, func() {
+	page.lineWith(label, description, page.controlWidth, func() {
 		ui.Text(page.c, value).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(page.state.pal.muted).
 			Ellipsis().MaxWidth(valueWidth).Grow(1).TextEnd().MarginSides(0, gap, 0, 0)
-		buttons = ui.Row(page.c).Size(buttonsWidth, 34).Shrink(0).Justify(ui.End).Items(ui.Center)
+		buttons = ui.Row(page.c).Height(34).Shrink(0).Justify(ui.End).Items(ui.Center)
 	})
 	page.buttons(buttons, disabled, actions...)
 }

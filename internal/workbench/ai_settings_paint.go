@@ -233,36 +233,6 @@ const (
 	aiButtonDanger
 )
 
-// aiButtonSize is how large aiButton makes a button with this label.
-func (state *State) aiButtonSize(canvas *gfx.Canvas, label string) (width, height float32) {
-	button := components.BeginButton(canvas, state.Theme(), gfx.ID{}, gfx.Rect{}).Small().SizeToFit(label)
-	return button.BoundsWidth(), button.BoundsHeight()
-}
-
-// aiButtonSlot reserves the room of a button for aiButton to paint into. The
-// keyboard visits controls in the order they are painted, so the settings page
-// records its buttons (settingsPage.button) and paints them after the page.
-func (state *State) aiButtonSlot(c ui.C, label string) ui.Box {
-	width, height := state.aiButtonSize(c.Canvas(), label)
-	return ui.Slot(c).Size(width, height)
-}
-
-// aiButton paints a small button in a slot.
-func (state *State) aiButton(canvas *gfx.Canvas, id gfx.ID, slot gfx.Rect, label string, style aiButtonStyle, disabled bool) {
-	button := components.BeginButton(canvas, state.Theme(), id, gfx.Rect{X: slot.X, Y: slot.Y, Width: slot.Width}).Small()
-	if disabled {
-		button = button.Disabled()
-	}
-	switch style {
-	case aiButtonPrimary:
-		button.Default(label)
-	case aiButtonDanger:
-		button.DestructiveOutline(label)
-	default:
-		button.Outline(label)
-	}
-}
-
 const (
 	aiSwitchWidth  = float32(36)
 	aiSwitchHeight = float32(20)
@@ -525,10 +495,7 @@ func (state *State) paintAIModels(page *settingsPage) {
 		if filteredTotal == 0 && total > 0 {
 			page.aiText(aiModelRowHeight, m.ModelsEmpty, metrics.FontSizeS, gfx.WeightRegular, pal.muted)
 		}
-		defaultColWidth, _ := state.aiButtonSize(c.Canvas(), m.ModelUse)
-		if defaultColWidth < 76 {
-			defaultColWidth = 76
-		}
+		const defaultColWidth = float32(76)
 		const probeColWidth = float32(92)
 		for row := 0; row < shown; row++ {
 			model := filteredModels[cfg.page*aiModelPageSize+row]

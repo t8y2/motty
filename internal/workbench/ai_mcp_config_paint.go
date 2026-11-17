@@ -77,11 +77,6 @@ func (page *settingsPage) mcpFrame(label, description string, color gfx.Color, c
 
 func (page *settingsPage) mcpCopyButton(id gfx.ID, label string, disabled bool) {
 	state, m := page.state, page.state.messages.AISettings
-	width, _ := state.aiButtonSize(page.canvas(), label)
-	for _, value := range []string{m.MCPCopied, m.MCPCopyFailed} {
-		w, _ := state.aiButtonSize(page.canvas(), value)
-		width = max(width, w)
-	}
 	if state.ai.cfg.copyTarget == id {
 		switch state.ai.cfg.copied {
 		case aiCopyDone:
@@ -90,7 +85,7 @@ func (page *settingsPage) mcpCopyButton(id gfx.ID, label string, disabled bool) 
 			label = m.MCPCopyFailed
 		}
 	}
-	page.button(id, label, aiButtonOutline, disabled).Width(width)
+	page.button(id, label, aiButtonOutline, disabled)
 }
 
 // aiMCPPreviewFormat names what the configuration preview holds: a command to
