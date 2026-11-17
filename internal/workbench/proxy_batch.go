@@ -307,9 +307,6 @@ func (state *State) declareProxyBatchDialog(c ui.C) {
 
 			// 3. 候选设备多选列表
 			candidates := state.batchCandidates()
-			theme := *c.Theme()
-			side := components.CheckboxExtent(theme)
-			hitWidth, hitHeight := components.CheckboxHitExtent(theme)
 
 			list := ui.Scroll(c).Grow(1).FillWidth().Gap(2).Border(1, pal.line).Radius(radius.control).Background(pal.surface).Clip().
 				Draw(func(d *ui.DrawContext) {
@@ -335,18 +332,10 @@ func (state *State) declareProxyBatchDialog(c ui.C) {
 
 					row.Children(func() {
 						// 勾选框
-						ui.Slot(c).Size(hitWidth, hitHeight).Draw(func(d *ui.DrawContext) {
-							bounds := gfx.Rect{
-								X:     d.Rect.X + (d.Rect.Width-side)/2,
-								Y:     d.Rect.Y + (d.Rect.Height-side)/2,
-								Width: side, Height: side,
-							}
-							cb := components.BeginCheckbox(d.Canvas, state.Theme(), rowHit, bounds, isSelected).Label(cand.Host.Label)
-							if disabled {
-								cb = cb.Disabled()
-							}
-							cb.Paint()
-						})
+						box := ui.Checkbox(c, state.pageFlag(isSelected), "").Hit(rowHit, cand.Host.Label).Shrink(0)
+						if disabled {
+							box.Disabled(true)
+						}
 
 						// 主机名与地址
 						ui.Text(c, cand.Host.Label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.text).MarginSides(0, 4, 0, 4)
@@ -376,15 +365,7 @@ func (state *State) declareProxyBatchDialog(c ui.C) {
 			ui.Row(c).Height(32).Items(ui.Center).Gap(6).MarginSides(6, 0, 4, 0).
 				HitWith(hitProxyBatchOverwrite, messages.ProxyBatchOverwrite, gfx.HitOptions{Role: gfx.RoleCheckbox, Selected: dialog.overwrite}).
 				Children(func() {
-					ui.Slot(c).Size(hitWidth, hitHeight).Draw(func(d *ui.DrawContext) {
-						bounds := gfx.Rect{
-							X:     d.Rect.X + (d.Rect.Width-side)/2,
-							Y:     d.Rect.Y + (d.Rect.Height-side)/2,
-							Width: side, Height: side,
-						}
-						components.BeginCheckbox(d.Canvas, state.Theme(), hitProxyBatchOverwrite, bounds, dialog.overwrite).
-							Label(messages.ProxyBatchOverwrite).Paint()
-					})
+					ui.Checkbox(c, state.pageFlag(dialog.overwrite), "").Hit(hitProxyBatchOverwrite, messages.ProxyBatchOverwrite).Shrink(0)
 					ui.Text(c, messages.ProxyBatchOverwrite).FontSize(metrics.FontSizeS).Color(pal.text)
 				})
 
