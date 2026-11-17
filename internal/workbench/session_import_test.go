@@ -38,11 +38,7 @@ func TestImportingMobaXtermSessionsAddsGroupedHostsOnceAndSaysWhatItLeftOut(t *t
 	state := newTestState(t, options)
 
 	state.Click(hitImportMenu)
-	canvas, _ := paintedTexts(state)
-	if _, ok := hitByID(canvas, hitImportSessions); !ok {
-		t.Fatal("the hosts page has no button to import sessions")
-	}
-	state.Click(hitImportSessions)
+	clickPageMenuRow(t, state, state.messages.Tools.ImportSessions)
 	if state.modal != modalImportSessions {
 		t.Fatalf("modal = %d", state.modal)
 	}

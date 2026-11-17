@@ -52,7 +52,6 @@ var (
 	hitExportHosts             = tree.ID(shellHits, "export-hosts")
 	hitImportHostCatalog       = tree.ID(shellHits, "import-host-catalog")
 	hitImportMenu              = tree.ID(shellHits, "import-menu")
-	hitImportMenuDismiss       = tree.ID(shellHits, "import-menu-dismiss")
 	hitHostGroupDismiss        = tree.ID(shellHits, "host-group-dismiss")
 	hitHostFilterAll           = tree.ID(shellHits, "host-filter-all")
 	hitHostFilterMore          = tree.ID(shellHits, "host-filter-more")

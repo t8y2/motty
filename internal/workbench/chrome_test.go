@@ -369,11 +369,10 @@ func TestWholeCatalogExportIsInTheImportMenu(t *testing.T) {
 	state := newTestState(t, options)
 	state.Click(hitImportMenu)
 	canvas, _ := paintedTexts(state)
-	hit, ok := hitByID(canvas, hitExportHosts)
-	if !ok || hit.Disabled {
-		t.Fatalf("no usable export in the import menu: %+v, %v", hit, ok)
+	if !canvasHasMenuRow(canvas, state.messages.ExportHosts) {
+		t.Fatal("no export in the import menu")
 	}
-	state.Click(hitExportHosts)
+	clickPageMenuRow(t, state, state.messages.ExportHosts)
 	if state.importMenu {
 		t.Fatal("choosing it left the menu open")
 	}

@@ -1272,9 +1272,6 @@ type chromeLayout struct {
 	newTabAdd   ui.Box
 	newTabAll   ui.Box
 	newTabShown bool
-	// importButton is where the toolbar's Import button was painted: the menu
-	// it opens hangs under it, right-aligned.
-	importButton gfx.Rect
 	// chips are the slots of the group chips of the hosts page, in the order
 	// they are painted: All, the groups that fit, then More. The slice is kept
 	// so a repaint does not allocate.
@@ -1457,9 +1454,6 @@ func (state *State) paintHostMenus(canvas *gfx.Canvas, viewport gfx.Rect) {
 	if state.chipMenu.open {
 		state.paintHostChipMenu(canvas, viewport)
 	}
-	if state.importMenu {
-		state.paintImportMenu(canvas, viewport)
-	}
 }
 
 // hostsHeaderPlan works out the header of the hosts page from the window: the
@@ -1574,6 +1568,7 @@ func (state *State) declareHostsToolbar(c ui.C, width float32, plan hostsHeaderP
 		b.connect = state.declareButtonSized(c, hitConnect, m.Connect, plan.connectIcon, false, false, state.typedQuery() != "", toolbarFont, plan.condensed).Size(plan.connectWidth, toolbarHeight).MarginSides(0, buttonGap, 0, 0)
 		ui.Spacer(c)
 		b.importButton = state.declareButtonSized(c, hitImportMenu, m.ImportMenu, plan.importIcon, false, false, true, toolbarFont, plan.condensed).Size(plan.importWidth, toolbarHeight).MarginSides(0, buttonGap, 0, 0)
+		state.declareImportMenu(c, b.importButton)
 		b.newHost = state.declareButtonSized(c, hitAddHost, m.NewHost, plan.newHostIcon, true, false, true, toolbarFont, plan.condensed).Size(plan.newHostWidth, toolbarHeight)
 	})
 }
@@ -1752,7 +1747,6 @@ func (state *State) paintHostsHeader(canvas *gfx.Canvas) {
 		InlineStart:   components.InputGroupSlot{Kind: components.InputGroupSlotIcon, Icon: lucideIcons[iconSearch]},
 	})
 	// Connect needs something to connect to.
-	chrome.importButton = b.importButton.Rect()
 }
 
 // paintHostsRightHeader paints the list's header controls over the slots the
@@ -1795,21 +1789,36 @@ func (state *State) paintHostsRightHeader(canvas *gfx.Canvas, layout hostsLayout
 	}
 }
 
-// paintImportMenu lists the three ways to bring hosts in under the Import
-// button, right-aligned with it.
-func (state *State) paintImportMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
+// declareImportMenu declares the menu of ways to bring hosts in under the
+// Import button, with the whole catalog's export beside them. A choice runs as
+// if its control had been clicked.
+func (state *State) declareImportMenu(c ui.C, anchor ui.Box) {
+	if !state.importMenu {
+		return
+	}
 	m := state.messages
-	menu := components.BeginDropdownMenu(canvas, state.Theme(), state.popupBelow(canvas, state.chrome.importButton, 200, 4*32+8+9, ui.End),
-		components.DropdownMenuOptions{Layer: dialogLayer, Scope: dialogScope, DismissID: hitImportMenuDismiss, Viewport: viewport, Scroll: state.menuScrollFor(hitImportMenuDismiss)})
-	state.menuPlaced(menu.Bounds())
-	menu.AddItem(components.DropdownMenuItem{ID: hitImportSessions, Label: m.Tools.ImportSessions})
-	menu.AddItem(components.DropdownMenuItem{ID: hitImportHostCatalog, Label: m.ImportCatalog})
-	menu.AddItem(components.DropdownMenuItem{ID: hitImportSSHConfig, Label: m.SSHConfigImport})
-	// With nothing checked the row of actions is away, and exporting the whole
-	// catalog lives next to importing one.
-	menu.AddSeparator()
-	menu.AddItem(components.DropdownMenuItem{ID: hitExportHosts, Label: m.ExportHosts, Disabled: len(state.hosts) == 0})
-	menu.End()
+	ui.PopupLayer(c, dialogLayer)
+	ui.Menu(c, anchor, &state.importMenu, func(menu *ui.MenuItems) {
+		menu.WidthRange(200, 200)
+		for _, source := range [...]struct {
+			id    gfx.ID
+			label string
+		}{
+			{hitImportSessions, m.Tools.ImportSessions},
+			{hitImportHostCatalog, m.ImportCatalog},
+			{hitImportSSHConfig, m.SSHConfigImport},
+		} {
+			if menu.Item(source.label).Clicked() {
+				c.After(func() { state.click(source.id, true) })
+			}
+		}
+		// With nothing checked the row of actions is away, and exporting the whole
+		// catalog lives next to importing one.
+		menu.Separator()
+		if menu.Item(m.ExportHosts).Disabled(len(state.hosts) == 0).Clicked() {
+			c.After(func() { state.click(hitExportHosts, true) })
+		}
+	})
 }
 
 // popupBelow is where a menu width wide and height tall hangs under anchor, 4

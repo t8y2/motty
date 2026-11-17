@@ -28,16 +28,6 @@ func (state *State) clickHostManagement(id gfx.ID) bool {
 	if state.clickHostPrivacy(id) {
 		return true
 	}
-	if state.importMenu {
-		// A choice closes the menu and then runs as if it had been clicked
-		// directly; any other press only dismisses it.
-		state.importMenu = false
-		switch id {
-		case hitImportSSHConfig, hitImportHostCatalog, hitImportSessions, hitExportHosts:
-		default:
-			return true
-		}
-	}
 	if state.hostFilterMenu {
 		switch {
 		case id == hitHostFilterMenuDismiss || id == hitHostFilterMore:
@@ -1021,10 +1011,6 @@ func (state *State) pruneHostSelections() {
 
 func (state *State) hostManagementKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	handled := gfx.EventResult{Handled: true, Repaint: true}
-	if state.hostOrderMenu && event.Key == gfx.KeyEscape {
-		state.hostOrderMenu = false
-		return handled, true
-	}
 	if state.hostSort.enabled && state.activeSection == sectionHosts && state.modal == modalNone {
 		move, result := state.hostSort.grid.Key(event)
 		if result.Handled {
@@ -1078,14 +1064,6 @@ func (state *State) hostManagementKey(event gfx.KeyEvent) (gfx.EventResult, bool
 			return handled, true
 		}
 		return gfx.EventResult{}, false
-	}
-	if state.importMenu && event.Key == gfx.KeyEscape {
-		state.importMenu = false
-		return handled, true
-	}
-	if state.hostPrivacy.menu && event.Key == gfx.KeyEscape {
-		state.hostPrivacy.menu = false
-		return handled, true
 	}
 	if result, ok := state.hostChipMenuKey(event); ok {
 		return result, true
