@@ -6,7 +6,6 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
 	"motty/internal/workbench/icons"
 )
@@ -24,7 +23,6 @@ const (
 
 type transferDetailRow struct {
 	id, entry int
-	box       ui.Box
 }
 
 type transferDetails struct {
@@ -47,11 +45,12 @@ func (details *transferDetails) dismiss() {
 	details.intent.Reset()
 }
 
-func (row transferDetailRow) anchor(center *transferCenter) gfx.Rect {
-	if row.id == 0 || row.entry < 0 || row.entry >= len(center.entries) || center.entries[row.entry].id != row.id || !row.box.Valid() {
+func (row transferDetailRow) anchor(canvas *gfx.Canvas, entries []transferEntry, list gfx.Rect, trigger gfx.Scope) gfx.Rect {
+	if row.id == 0 || row.entry < 0 || row.entry >= len(entries) || entries[row.entry].id != row.id {
 		return gfx.Rect{}
 	}
-	return intersectRect(row.box.Rect(), center.list)
+	bounds, _ := canvas.HitBounds(trigger.At(row.id))
+	return intersectRect(bounds, list)
 }
 
 // Paint outside the List's clip, so the details can sit over the rows below or
@@ -62,23 +61,29 @@ func (state *State) paintTransferDetails(canvas *gfx.Canvas, viewport gfx.Rect) 
 		details.dismiss()
 		return
 	}
+	state.paintTransferDetailCard(canvas, viewport, center.list, details, hitTransfersDetails, hitTransfersDetailCard, hitTransfersDetailDismiss)
+}
+
+func (state *State) paintTransferDetailCard(canvas *gfx.Canvas, viewport, list gfx.Rect, details *transferDetails, trigger gfx.Scope, card, dismiss gfx.ID) {
+	entries := state.transfers.entries
 	ref := details.current
-	anchor := ref.anchor(center)
+	anchor := ref.anchor(canvas, entries, list, trigger)
 	if details.pinned == 0 {
 		hover, now := details.hover, canvas.Now()
 		if details.suppressed != hover.id {
 			details.suppressed = 0
 		}
 		var candidate gfx.ID
-		if hover.id != details.suppressed && canvas.Pressed().IsZero() && hover.anchor(center).Height > 0 {
-			candidate = hitTransfersDetails.At(hover.id)
+		hoverAnchor := hover.anchor(canvas, entries, list, trigger)
+		if hover.id != details.suppressed && canvas.Pressed().IsZero() && hoverAnchor.Height > 0 {
+			candidate = trigger.At(hover.id)
 		}
 		ready, wait := details.intent.Rest(candidate, time.Time{}.Add(now), transferDetailDelay)
 		switch {
 		case !ready.IsZero():
-			ref, anchor = hover, hover.anchor(center)
+			ref, anchor = hover, hoverAnchor
 			details.leftAt = 0
-		case canvas.Hovered() == hitTransfersDetailCard && anchor.Height > 0:
+		case canvas.Hovered() == card && anchor.Height > 0:
 			details.leftAt = 0
 		case anchor.Height > 0 && canvas.Pressed().IsZero():
 			if details.leftAt == 0 {
@@ -103,7 +108,10 @@ func (state *State) paintTransferDetails(canvas *gfx.Canvas, viewport gfx.Rect) 
 		return
 	}
 	details.showing = ref.id
-	state.drawTransferDetails(canvas, viewport, anchor, &center.entries[ref.entry])
+	if details.pinned == 0 {
+		dismiss = gfx.ID{}
+	}
+	state.drawTransferDetails(canvas, viewport, anchor, &entries[ref.entry], &details.lines, card, dismiss)
 }
 
 type transferDetailField struct {
@@ -111,7 +119,7 @@ type transferDetailField struct {
 	icon        gfx.Icon
 }
 
-func (state *State) drawTransferDetails(canvas *gfx.Canvas, viewport, anchor gfx.Rect, entry *transferEntry) {
+func (state *State) drawTransferDetails(canvas *gfx.Canvas, viewport, anchor gfx.Rect, entry *transferEntry, lines *[12][]string, id, dismiss gfx.ID) {
 	m, shell := state.messages.Transfers, state.messages.SFTPWindow
 	theme := state.Theme()
 	snapshot := entry.snapshot
@@ -178,7 +186,6 @@ func (state *State) drawTransferDetails(canvas *gfx.Canvas, viewport, anchor gfx
 	lineHeight := size + 5
 	valueOffset := labelOffset + labelWidth + 8
 	valueWidth := max(1, width-2*pad-valueOffset)
-	lines := &state.transfers.details.lines
 	bodyHeight := float32(0)
 	// Leave at least one line for each field, and spend the free height on
 	// long names and paths. Keep the complete text in the accessibility tree.
@@ -188,12 +195,8 @@ func (state *State) drawTransferDetails(canvas *gfx.Canvas, viewport, anchor gfx
 		extra = max(0, extra-(len(lines[index])-1))
 		bodyHeight += float32(len(lines[index]))*lineHeight + gap
 	}
-	dismiss := gfx.ID{}
-	if state.transfers.details.pinned != 0 {
-		dismiss = hitTransfersDetailDismiss
-	}
 	card := components.BeginHoverCard(canvas, theme, viewport, anchor, components.HoverCardOptions{
-		Layer: hoverCardLayer, ID: hitTransfersDetailCard, DismissID: dismiss,
+		Layer: hoverCardLayer, ID: id, DismissID: dismiss,
 		Side: components.HoverCardBottom, Align: components.HoverCardAlignStart,
 		SideOffset: 3, AlignOffset: max(4, min(anchor.Width*0.55, 190)),
 		ContentSize: gfx.Size{Width: width}, BodyHeight: bodyHeight,

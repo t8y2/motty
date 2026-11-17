@@ -42,10 +42,8 @@ var (
 	hitTransfersResume    = tree.Sub(transferCenterHits, tree.Name("resume"))
 	hitTransfersSkip      = tree.Sub(transferCenterHits, tree.Name("skip"))
 	hitTransfersStatus    = tree.Sub(transferCenterHits, tree.Name("status"))
-	hitTransfersPaths     = tree.Sub(transferCenterHits, tree.Name("paths"))
 )
 
-const transferCardHeight = float32(108)
 const maxTransferHistory = 500
 
 // Keep the saved indices of the original four filters. Waiting is displayed
@@ -80,7 +78,7 @@ type transferEntry struct {
 	snapshot                                          sftpclient.TransferSnapshot
 	server, address                                   string
 	sourceServer, sourceAddress                       string // the other end of a server-to-server copy
-	title, status, amount, speed, clock, paths        string // also used by the SFTP window's cards
+	title, status, amount, speed                      string
 	searchTitle, size, percent, eta, elapsed, outcome string
 	fileIcon                                          *gfx.Icon
 	typeIcon                                          *fileIconSlot
@@ -100,6 +98,7 @@ type transferCenter struct {
 	filter        int
 	nextID        int
 	entries       []transferEntry
+	revision      uint64 // changes when SFTP queues need to refresh their sorted indices
 	byTask        map[transferKey]int
 	summary       string
 	badge         string
@@ -175,13 +174,6 @@ type transferRow struct {
 // transferBody leaves room for the Viva Select triggers, which share the
 // workbench's dropdown focus, menu scrolling and dismissal.
 type transferBody struct{ host, direction, list ui.Box }
-
-// transferCard keeps the layout for the separate SFTP window's queue.
-type transferCard struct {
-	entry                                            *transferEntry
-	bar, pause, cancel, retry, replace, resume, skip ui.Box
-	statusColor                                      gfx.Color
-}
 
 // transferBatchBody is what the batch confirmation's declaration leaves for its
 // buttons.
@@ -533,10 +525,6 @@ func (state *State) describeTransfer(entry *transferEntry) {
 			}
 		}
 	}
-	entry.paths = snapshot.Source + " → " + snapshot.Destination
-	if snapshot.Operation == sftpclient.OperationRemoteCopy && entry.sourceServer != "" {
-		entry.paths = fmt.Sprintf("%s: %s → %s: %s", entry.sourceServer, snapshot.Source, entry.server, snapshot.Destination)
-	}
 	entry.conflict = entry.owner != nil && transferSnapshotConflict(snapshot)
 	started := snapshot.StartedAt
 	if started.IsZero() {
@@ -550,7 +538,6 @@ func (state *State) describeTransfer(entry *transferEntry) {
 	if !started.IsZero() {
 		entry.elapsed = max(ended.Sub(started), 0).Round(time.Second).String()
 	}
-	entry.clock = fmt.Sprintf(m.TimeFmt, snapshot.QueuedAt.Local().Format("01-02 15:04:05"), entry.elapsed)
 	entry.outcome = entry.status
 	switch {
 	case snapshot.State == sftpclient.TransferCompleted && entry.elapsed != "—":
@@ -575,6 +562,7 @@ func (state *State) rebuildTransferCenter() {
 
 func (state *State) describeTransferSummary() {
 	center := &state.transfers
+	center.revision++
 	center.active, center.ended, center.interrupted = 0, 0, 0
 	var rate, done, total, runningDone, runningTotal int64
 	running := 0
@@ -646,6 +634,7 @@ func (state *State) removeTransfer(index int) {
 	if transferActive(entry.snapshot) {
 		return
 	}
+	center.revision++
 	if entry.owner != nil {
 		entry.owner.invalidateDetached()
 	}
@@ -734,7 +723,7 @@ func (state *State) clickTransferCenter(id gfx.ID) bool {
 		}
 		return true
 	}
-	return state.clickTransferTask(id)
+	return state.clickTransferTask(id, nil)
 }
 
 func (center *transferCenter) close() {
@@ -791,11 +780,11 @@ func (state *State) changeTransferQueue(cancel bool) {
 	}
 }
 
-func (state *State) clickTransferTask(id gfx.ID) bool {
+func (state *State) clickTransferTask(id gfx.ID, view *sftpView) bool {
 	center := &state.transfers
 	for index := range center.entries {
 		entry := &center.entries[index]
-		if item(id) != entry.id {
+		if item(id) != entry.id || (view != nil && entry.owner != view) {
 			continue
 		}
 		if id.Scope() == hitTransfersReveal {
