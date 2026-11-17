@@ -11,9 +11,14 @@
 # Light is chosen in Settings before connecting, not with the appearance line:
 # Motty opens pinned to dark and ignores the system appearance until asked.
 #
-# The shell is moved into the fixture root and cleared before the listing, so
+# The shell is moved into the fixture root and cleared before the session, so
 # neither this computer's home directory nor the command echo ends up in the
 # picture. The prompt names the same build@ci-runner account the other shots use.
+#
+# The shell then runs the tree's own log viewer, tailing the deploy log the
+# fixture wrote. A bare listing leaves the terminal (most of the card) blank,
+# which reads as an idle window; the tail fills it to the last row, so the panel
+# and the shell show the same deployment from its two sides.
 #
 # The panel is opened before the prompt is set, and the terminal is then clicked,
 # because opening the panel takes the focus away from it.
@@ -48,8 +53,8 @@ settle 400
 type clear
 key enter
 settle 600
-type ls --color=always
+type ./scripts/logs.sh 50
 key enter
-settle 900
+settle 1200
 shot /tmp/readme-sftp-light.png
 layout
