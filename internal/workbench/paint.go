@@ -3371,6 +3371,15 @@ func (state *State) declareHostGroupDeleteDialog(c ui.C) {
 // declareMoveGroupBody lays out the one field the dialog shows and paints it
 // into its slot.
 func (state *State) declareMoveGroupBody(c ui.C, label string, viewport gfx.Rect) {
+	if state.groupActions.op != hostGroupRelocate {
+		ui.Column(c).Fill().Children(func() {
+			state.groupActions.input.declare(c, state, &state.hostGroupEditor, dialogFieldSpec{
+				ID: hitMoveGroupField, Label: label, Placeholder: state.messages.FieldGroupPlaceholder,
+				Error: state.dialogError, Height: 90,
+			})
+		})
+		return
+	}
 	column := ui.Column(c).Fill()
 	column.Children(func() {
 		state.groupActions.slot = ui.Slot(c).Height(90)
@@ -3383,17 +3392,8 @@ func (state *State) declareMoveGroupBody(c ui.C, label string, viewport gfx.Rect
 			field = field.Invalid()
 		}
 		content := field.Paint(label, "", state.dialogError)
-		value := state.hostGroupEditor.String()
-		focused := canvas.Focused() == hitMoveGroupField
 		content.Height = 32
-		if state.groupActions.op == hostGroupRelocate {
-			state.paintHostGroupParentSelect(canvas, content, viewport)
-		} else {
-			components.PaintInput(canvas, theme, content, components.InputSnapshot{
-				ID: hitMoveGroupField, Label: label, Value: value,
-				Placeholder: state.messages.FieldGroupPlaceholder, Focused: focused, PlatformEditing: focused && value != "",
-			})
-		}
+		state.paintHostGroupParentSelect(canvas, content, viewport)
 	})
 }
 

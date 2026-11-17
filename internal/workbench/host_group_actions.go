@@ -43,6 +43,8 @@ type hostGroupActions struct {
 	page *ui.Page
 	view func(ui.C)
 	slot ui.Box
+	// input is the dialog's text field over the group editor, when the operation names a group.
+	input dialogField
 }
 
 func hostGroupParent(path string) string {
