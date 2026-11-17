@@ -8,48 +8,74 @@ import (
 	"motty/internal/workbench/icons"
 )
 
-const terminalFindButtonSize = float32(24)
+const (
+	terminalFindButtonSize = float32(24)
+	terminalFindMinWidth   = float32(260)
+	terminalFindCountWidth = float32(64)
+	// terminalFindControlsWidth is what the controls at the field's right end
+	// take, with their gaps and the field's inset: the count, four buttons and
+	// the 2 px between each. The field keeps its text clear of it.
+	terminalFindControlsWidth = terminalFindCountWidth + 4*terminalFindButtonSize + 4*2 + 8
+)
 
-// findBarSlots are the places of the find bar's field and count, which
+// findBarSlots are the places of the find field and its count, which
 // declareFindBar lays out and paintFindBarSlots fills.
 type findBarSlots struct {
-	icon, field, count ui.Box
+	field, count, settings ui.Box
 }
 
-// declareFindBar declares the bar of a pane whose search is open: the magnifier,
-// the query field taking what the buttons leave, the match count and the three
-// buttons. The field keeps 120 px however narrow the pane.
+// declareFindBar declares the bar of a pane whose search is open: one field
+// across the row, with the magnifier inside its start and the match count, the
+// settings, previous, next and close buttons inside its end.
 func (state *State) declareFindBar(c ui.C, session *Session) (slots findBarSlots) {
 	find := &session.term.find
 	disabled := len(find.matches) == 0
-	ui.Row(c).Fill().PadSides(0, termPadX, 0, termPadX).Items(ui.Center).Children(func() {
-		slots.icon = ui.Slot(c).Size(16, 16).MarginSides(0, 8, 0, 0)
-		slots.field = ui.Slot(c).Grow(1).MinWidth(120).Height(state.Theme().Metrics.ControlHeight).MarginSides(0, 10, 0, 0)
-		slots.count = ui.Slot(c).Size(92, 22).Shrink(0).MarginSides(0, 8, 0, 0)
-		state.declareFindButton(c, hitTerminalFindPrevious, icons.ArrowUp, state.messages.TerminalFindPrevious, disabled).MarginSides(0, 2, 0, 0)
-		state.declareFindButton(c, hitTerminalFindNext, icons.ArrowDown, state.messages.TerminalFindNext, disabled).MarginSides(0, 4, 0, 0)
-		state.declareFindButton(c, hitTerminalFindClose, icons.X, state.messages.TerminalFindClose, false)
+	// The last pixel row is the bar's divider, which would cover the
+	// field's bottom border.
+	ui.Row(c).Fill().PadSides(0, 0, 1, 0).Children(func() {
+		ui.Stack(c).Grow(1).MinWidth(terminalFindMinWidth).FillHeight().Children(func() {
+			slots.field = ui.Slot(c).Fill().Draw(session.term.findDraw)
+			ui.Row(c).Absolute().Top(0).Bottom(0).Right(4).Items(ui.Center).Children(func() {
+				slots.count = ui.Slot(c).Size(terminalFindCountWidth, 22).Shrink(0).MarginSides(0, 2, 0, 0)
+				slots.settings = state.declareFindButton(c, hitTerminalFindSettings, icons.Settings, state.messages.FindSettings.Title, false).MarginSides(0, 2, 0, 0)
+				state.declareFindButton(c, hitTerminalFindPrevious, icons.ArrowUp, state.messages.TerminalFindPrevious, disabled).MarginSides(0, 2, 0, 0)
+				state.declareFindButton(c, hitTerminalFindNext, icons.ArrowDown, state.messages.TerminalFindNext, disabled).MarginSides(0, 2, 0, 0)
+				state.declareFindButton(c, hitTerminalFindClose, icons.X, state.messages.TerminalFindClose, false)
+			})
+		})
 	})
 	return slots
 }
 
-func (state *State) paintFindBarSlots(canvas *gfx.Canvas, session *Session, slots findBarSlots) {
-	find := &session.term.find
-	canvas.DrawIcon(icons.Search, slots.icon.Rect(), state.pal.muted)
-	value := find.editor.String()
-	focused := canvas.Focused() == hitTerminalFindField
-	layout := components.PaintInputGroup(canvas, state.Theme(), slots.field.Rect(), components.InputGroupSnapshot{
+// drawFindField paints the field in its place in the tree, so the controls
+// declared after it sit over its surface; the count and the settings anchor
+// follow in paintFindBarSlots.
+func (state *State) drawFindField(d *ui.DrawContext, sessionID uint32) {
+	session, ok := state.sessionByIDPointer(sessionID)
+	if !ok || session.term == nil || !session.term.find.open {
+		return
+	}
+	value := session.term.find.editor.String()
+	focused := d.Canvas.Focused() == hitTerminalFindField
+	// The field is square: it fills the bar, whose own edges are square.
+	theme := state.Theme()
+	theme.Metrics.RadiusControl = 0
+	components.PaintInputGroup(d.Canvas, theme, d.Rect, components.InputGroupSnapshot{
 		ID:            hitTerminalFindField,
 		Label:         state.messages.TerminalFindLabel,
 		Value:         value,
 		Placeholder:   state.messages.TerminalFindPlaceholder,
 		Focused:       focused,
 		NativeEditing: focused && value != "",
-		InlineEnd: components.InputGroupSlot{Kind: components.InputGroupSlotButton, ID: hitTerminalFindSettings, Icon: icons.Settings,
-			Label: state.messages.FindSettings.Title, ButtonSize: components.InputGroupButtonIconXS},
+		InlineStart:   components.InputGroupSlot{Kind: components.InputGroupSlotIcon, Icon: icons.Search},
+		// An empty addon only reserves the room the declared controls sit in.
+		InlineEnd: components.InputGroupSlot{Kind: components.InputGroupSlotText, Width: terminalFindControlsWidth},
 	})
-	state.findSettingsUI.anchor = layout.InlineEnd
-	canvas.LabelCenter(find.count, slots.count.Rect(), gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: state.pal.muted})
+}
+
+func (state *State) paintFindBarSlots(canvas *gfx.Canvas, session *Session, slots findBarSlots) {
+	state.findSettingsUI.anchor = slots.settings.Rect()
+	canvas.LabelCenter(session.term.find.count, slots.count.Rect(), gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: state.pal.muted})
 }
 
 // declareFindButton declares one of the bar's icon buttons: quiet until the

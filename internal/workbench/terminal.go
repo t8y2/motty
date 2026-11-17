@@ -147,7 +147,9 @@ type terminal struct {
 	// controlDraw is kept here so a paint builds no method value; handlers is
 	// the terminal control's input, kept with the control's state.
 	controlDraw func(*ui.DrawContext)
-	handlers    ui.Handlers
+	// findDraw paints the find field under the controls declared over it.
+	findDraw func(*ui.DrawContext)
+	handlers ui.Handlers
 	// controlID and parts are the workbench page's identities, made once so
 	// painting and event routing do not rebuild the page's name.
 	controlID gfx.ID
