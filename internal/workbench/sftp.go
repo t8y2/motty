@@ -192,7 +192,6 @@ type sftpView struct {
 	dialogCancelLabel   string
 	dialogSubmitLabel   string
 	dialogSubmitVariant components.ButtonVariant
-	dialogFooterDraw    func(*ui.DrawContext)
 	dialogFirst         ui.Box
 	dialogSecond        ui.Box
 	dialogChmod         [9]ui.Box

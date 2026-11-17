@@ -1040,16 +1040,10 @@ func (state *State) declareSFTPDialog(c ui.C, viewport gfx.Rect, view *sftpView)
 // the application's identities, and the view keeps the draw so the footer is
 // the same when an application modal stands beside the dialog.
 func (state *State) declareSFTPDialogFooter(c ui.C, view *sftpView) {
-	if view.dialogFooterDraw == nil {
-		view.dialogFooterDraw = func(d *ui.DrawContext) {
-			actions := [...]components.ButtonAction{
-				{ID: hitSFTPDialogCancel, Label: view.dialogCancelLabel, Variant: components.ButtonSecondary},
-				{ID: hitSFTPDialogSubmit, Label: view.dialogSubmitLabel, Variant: view.dialogSubmitVariant},
-			}
-			components.BeginButtonRow(d.Canvas, *d.Theme, d.Rect).Size(components.ButtonSizeDefault).Paint(actions[:]...)
-		}
-	}
-	ui.Slot(c).Fill().DrawOver(view.dialogFooterDraw)
+	state.dialogActionFooter(c,
+		components.ButtonAction{ID: hitSFTPDialogCancel, Label: view.dialogCancelLabel, Variant: components.ButtonSecondary},
+		components.ButtonAction{ID: hitSFTPDialogSubmit, Label: view.dialogSubmitLabel, Variant: view.dialogSubmitVariant},
+	)
 }
 
 // paintSFTPDialogDetails paints the open dialog's fields into the slots the

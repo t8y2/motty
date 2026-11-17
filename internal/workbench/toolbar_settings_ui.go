@@ -36,7 +36,6 @@ type toolbarSettingsUI struct {
 	body, footer          func()
 	current               ui.C
 	listDraw              func(*ui.DrawContext)
-	footerDraw            func(*ui.DrawContext)
 	bodyWidth, listHeight float32
 	controlsHeight        float32
 }
@@ -89,7 +88,6 @@ func (state *State) openToolbarSettings(group toolbarGroup) {
 	editor.body = func() { state.declareToolbarSettingsBody(editor.current) }
 	editor.footer = func() { state.declareToolbarSettingsFooter(editor.current) }
 	editor.listDraw = state.drawToolbarSettingsList
-	editor.footerDraw = state.drawToolbarSettingsFooter
 	for i, spec := range toolbarCatalog[group] {
 		editor.handleLabels[i] = fmt.Sprintf(state.messages.Toolbars.DragFmt, state.toolbarLabel(spec.id))
 	}
@@ -321,26 +319,21 @@ func (state *State) declareToolbarSettingsBody(c ui.C) {
 	ui.Slot(c).Grow(1).DrawOver(editor.listDraw)
 }
 
-// declareToolbarSettingsFooter declares the footer the actions are painted into.
+// declareToolbarSettingsFooter declares the dialog's actions in its footer.
 func (state *State) declareToolbarSettingsFooter(c ui.C) {
-	ui.Slot(c).Fill().DrawOver(state.toolbarEditor.footerDraw)
+	m := state.messages.Toolbars
+	state.dialogActionFooter(c,
+		components.ButtonAction{ID: hitToolbarEnableAll, Label: m.EnableAll, Variant: components.ButtonOutline},
+		components.ButtonAction{ID: hitToolbarDisableAll, Label: m.DisableAll, Variant: components.ButtonOutline},
+		components.ButtonAction{ID: hitToolbarReset, Label: m.Reset, Variant: components.ButtonOutline},
+		components.ButtonAction{ID: hitToolbarSettingsClose, Label: m.Close, Variant: components.ButtonSecondary},
+	)
 }
 
 // drawToolbarSettingsList paints the reorder list the dialog body leaves room
 // for: its rows, dock positions and switches, and its scroll bar.
 func (state *State) drawToolbarSettingsList(d *ui.DrawContext) {
 	state.paintToolbarSettingsList(d.Canvas, d.Rect, state.toolbarEditor.listHeight)
-}
-
-// drawToolbarSettingsFooter paints the dialog's actions into the footer slot.
-func (state *State) drawToolbarSettingsFooter(d *ui.DrawContext) {
-	m := state.messages.Toolbars
-	components.BeginButtonRow(d.Canvas, *d.Theme, d.Rect).Size(components.ButtonSizeDefault).Paint(
-		components.ButtonAction{ID: hitToolbarEnableAll, Label: m.EnableAll, Variant: components.ButtonOutline},
-		components.ButtonAction{ID: hitToolbarDisableAll, Label: m.DisableAll, Variant: components.ButtonOutline},
-		components.ButtonAction{ID: hitToolbarReset, Label: m.Reset, Variant: components.ButtonOutline},
-		components.ButtonAction{ID: hitToolbarSettingsClose, Label: m.Close, Variant: components.ButtonSecondary},
-	)
 }
 
 // paintToolbarSettingsList paints the reorder list the dialog body leaves room

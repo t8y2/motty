@@ -1254,9 +1254,6 @@ type chromeLayout struct {
 	// passwordFieldsDraw paints the password dialog's fields into the slots its
 	// body declared; it is kept so a warm repaint allocates nothing.
 	passwordFieldsDraw func(*ui.DrawContext)
-	// dialogFooter is the actions and painter of the open dialog's hand-painted
-	// footer; it is kept so a repaint declares the footer without allocating.
-	dialogFooter dialogFooterScratch
 	// hostDialogTitle labels the host form's scroll viewport. The handlers below
 	// are the form's Draw and DrawOver declarations kept once, so a warm repaint
 	// of the form allocates nothing.
@@ -2819,35 +2816,14 @@ func dialogButton(c ui.C, label string, variant components.ButtonVariant, disabl
 	return button.Disabled(disabled)
 }
 
-// dialogFooterScratch keeps the state a dialog footer paints from: the
-// actions of the open dialog, and the handler that paints them. The handler is
-// made once, so a warm repaint declares the footer without allocating.
-type dialogFooterScratch struct {
-	actions []components.ButtonAction
-	draw    func(*ui.DrawContext)
-}
-
-// dialogActionFooter paints a footer whose buttons keep the application's own
-// identities, for a dialog that opens with one of them focused: DialogSpec's
-// InitialFocusID names a hit, and the page names its own buttons, so these
-// stay hand-painted beside the page's slots as the dialog's other controls are.
-// Their actions stay in the central click dispatcher.
+// dialogActionFooter declares a footer whose buttons keep the application's
+// own identities, for a dialog that opens with one of them focused:
+// DialogSpec's InitialFocusID names a hit. Their actions stay in the central
+// click dispatcher.
 func (state *State) dialogActionFooter(c ui.C, actions ...components.ButtonAction) {
-	scratch := &state.chrome.dialogFooter
-	if cap(scratch.actions) < len(actions) {
-		scratch.actions = make([]components.ButtonAction, len(actions))
+	for _, action := range actions {
+		dialogButton(c, action.Label, action.Variant, action.Disabled).Hit(action.ID, action.Label)
 	}
-	scratch.actions = scratch.actions[:len(actions)]
-	copy(scratch.actions, actions)
-	if scratch.draw == nil {
-		scratch.draw = state.drawDialogActions
-	}
-	ui.Slot(c).Fill().DrawOver(scratch.draw)
-}
-
-// drawDialogActions paints the open dialog's hand-painted footer.
-func (state *State) drawDialogActions(d *ui.DrawContext) {
-	components.BeginButtonRow(d.Canvas, *d.Theme, d.Rect).Size(components.ButtonSizeDefault).Paint(state.chrome.dialogFooter.actions...)
 }
 
 // dialogViewport is the frame the dialogs are centered in.
