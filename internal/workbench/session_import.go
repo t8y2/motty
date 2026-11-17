@@ -6,7 +6,6 @@ import (
 	"slices"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sessionimport"
@@ -310,7 +309,7 @@ func (state *State) declareImportSessions(c ui.C) {
 		{hitImportSecureCRT, "SecureCRT"},
 	}
 	const columns = 2
-	rowHeight := components.BeginButton(nil, theme, gfx.ID{}, gfx.Rect{}).Large().BoundsHeight()
+	rowHeight := ui.ButtonExtent(c, "", ui.ButtonSizeLarge).Height
 	gap := theme.Metrics.GapItem
 	rows := (len(choices) + columns - 1) / columns
 	bodyHeight := float32(rows)*rowHeight + float32(rows-1)*gap
