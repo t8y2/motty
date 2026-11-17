@@ -265,49 +265,13 @@ func orderedHostGroupLess(collator *collation.Collator, left, right string, grou
 	}
 }
 
-func (state *State) groupDeleteChoices() [2]components.RadioOption {
+func (state *State) groupDeleteChoices() [2]string {
 	m := state.messages.HostGroupActions
 	parent := hostGroupParent(state.groupActions.path)
 	if parent == "" {
 		parent = state.messages.HostGroupDefault
 	}
-	return [2]components.RadioOption{
-		{ID: hitGroupDeleteParent, Label: fmt.Sprintf(m.KeepParentFmt, parent)},
-		{ID: hitGroupDeleteUngroup, Label: m.KeepUngrouped},
-	}
-}
-
-func (state *State) paintHostGroupDeleteDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
-	m := state.messages.HostGroupActions
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope, DismissID: hitMoveGroupDismiss, CloseID: hitMoveGroupClose,
-		InitialFocusID: hitGroupDeleteParent, ContentSize: gfx.Size{Width: 480}, FitBody: true, BodyHeight: 130,
-	})
-	description := elide(canvas, state.groupActions.path, state.Theme().Metrics.FontSizeM, gfx.WeightRegular, dialog.Layout("").Header.Width)
-	layout := dialog.Begin(m.Delete, description)
-	choices := state.groupDeleteChoices()
-	fullLabels := [2]string{choices[0].Label, choices[1].Label}
-	for index := range choices {
-		choices[index].Label = elide(canvas, choices[index].Label, state.Theme().Metrics.FontSizeM, gfx.WeightMedium, layout.Body.Width-32)
-	}
-	selected := hitGroupDeleteParent
-	if state.groupActions.ungroup {
-		selected = hitGroupDeleteUngroup
-	}
-	components.BeginRadioGroup(canvas, state.Theme(), layout.Body, choices[:], selected).Paint()
-	for index := range canvas.Hits() {
-		hit := &canvas.Hits()[index]
-		for option := range choices {
-			if hit.ID == choices[option].ID {
-				hit.Label, hit.Value, hit.Hint = fullLabels[option], fullLabels[option], fullLabels[option]
-			}
-		}
-	}
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitMoveGroupCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitMoveGroupSubmit, Label: m.Delete, Variant: components.ButtonDestructive},
-	)
-	dialog.End()
+	return [2]string{fmt.Sprintf(m.KeepParentFmt, parent), m.KeepUngrouped}
 }
 
 func (state *State) paintHostGroupParentSelect(canvas *gfx.Canvas, bounds, viewport gfx.Rect) {

@@ -111,7 +111,7 @@ func TestHostGroupDeleteKeepsHostsInChosenDestinationAndCanCancel(t *testing.T) 
 		}
 		chooseHostGroupAction(t, state, "Team/Prod", "delete")
 		if ungroup {
-			state.Click(tree.ID(tree.Feature("host-group-actions"), "delete-ungroup"))
+			clickPageLabel(t, state, gfx.RoleRadio, state.messages.HostGroupActions.KeepUngrouped)
 		}
 		state.Click(hitMoveGroupSubmit)
 		want := "Team"

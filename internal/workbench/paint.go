@@ -3331,27 +3331,10 @@ func (state *State) declareHostGroupDeleteDialog(c ui.C) {
 		Scope: dialogScope, DismissID: hitMoveGroupDismiss, CloseID: hitMoveGroupClose, InitialFocusID: hitGroupDeleteParent,
 	})
 	dialog.Body(func() {
-		column := ui.Column(c).Fill()
-		column.DrawOver(func(d *ui.DrawContext) {
-			canvas, theme := d.Canvas, *d.Theme
-			choices := state.groupDeleteChoices()
-			fullLabels := [2]string{choices[0].Label, choices[1].Label}
-			for index := range choices {
-				choices[index].Label = elide(canvas, choices[index].Label, theme.Metrics.FontSizeM, gfx.WeightMedium, d.Rect.Width-32)
-			}
-			selected := hitGroupDeleteParent
-			if state.groupActions.ungroup {
-				selected = hitGroupDeleteUngroup
-			}
-			components.BeginRadioGroup(canvas, theme, d.Rect, choices[:], selected).Paint()
-			for index := range canvas.Hits() {
-				hit := &canvas.Hits()[index]
-				for option := range choices {
-					if hit.ID == choices[option].ID {
-						hit.Label, hit.Value, hit.Hint = fullLabels[option], fullLabels[option], fullLabels[option]
-					}
-				}
-			}
+		choices := state.groupDeleteChoices()
+		ui.RadioGroup(c).Children(func() {
+			ui.RadioID(c.Key("parent"), hitGroupDeleteParent, &state.groupActions.ungroup, false, choices[0])
+			ui.RadioID(c.Key("ungroup"), hitGroupDeleteUngroup, &state.groupActions.ungroup, true, choices[1])
 		})
 	})
 	dialog.Footer(func() {

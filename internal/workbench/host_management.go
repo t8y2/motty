@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 
@@ -907,10 +906,6 @@ func (state *State) clickMoveHostGroupDialog(id gfx.ID) {
 		}
 	}
 	switch id {
-	case hitGroupDeleteParent, hitGroupDeleteUngroup:
-		if state.groupActions.op == hostGroupDelete {
-			state.groupActions.ungroup = id == hitGroupDeleteUngroup
-		}
 	case hitMoveGroupDismiss, hitMoveGroupClose, hitMoveGroupCancel:
 		state.modal = modalNone
 		state.dialogError = ""
@@ -1047,13 +1042,6 @@ func (state *State) hostManagementKey(event gfx.KeyEvent) (gfx.EventResult, bool
 		if state.groupActions.parentOpen && event.Key == gfx.KeyEscape {
 			state.groupActions.parentOpen = false
 			return handled, true
-		}
-		if state.groupActions.op == hostGroupDelete && (event.Target == hitGroupDeleteParent || event.Target == hitGroupDeleteUngroup) {
-			choices := state.groupDeleteChoices()
-			if next, ok := components.RadioGroupKeyDown(event.Target, choices[:], components.DirectionLTR, event.Key); ok {
-				state.groupActions.ungroup = next == hitGroupDeleteUngroup
-				return gfx.EventResult{Handled: true, Repaint: true, Focus: next, FocusVisible: true}, true
-			}
 		}
 		editable := state.groupActions.op == hostGroupMoveHosts || state.groupActions.op == hostGroupRename || state.groupActions.op == hostGroupCreateChild
 		if event.Key == gfx.KeyEnter && event.Modifiers == 0 && !event.Release && (editable && event.Target == hitMoveGroupField || event.Target == hitMoveGroupSubmit) {
