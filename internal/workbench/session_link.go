@@ -5,6 +5,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/sessionlog"
 	"motty/internal/sshconn"
 )
@@ -77,13 +78,10 @@ func (state *State) sessionLinkKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
-func (state *State) paintSessionLinkDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
+// declareSessionLinkDialog declares the question before a tab's connection is
+// ended or made again.
+func (state *State) declareSessionLinkDialog(c ui.C) {
 	messages := state.messages
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitSessionLinkDismiss, CloseID: hitSessionLinkClose, InitialFocusID: hitSessionLinkCancel,
-		ContentSize: gfx.Size{Width: 520}, FitBody: true,
-	})
 	title, description, confirm := messages.ReconnectTitleFmt, messages.ReconnectDescription, messages.ReconnectConfirm
 	if state.sessionLink.disconnect {
 		title, description, confirm = messages.DisconnectTitleFmt, messages.DisconnectDescription, messages.DisconnectConfirm
@@ -92,12 +90,18 @@ func (state *State) paintSessionLinkDialog(canvas *gfx.Canvas, viewport gfx.Rect
 	if session, ok := state.sessionByIDPointer(state.sessionLink.session); ok {
 		name = session.Title
 	}
-	layout := dialog.Begin(fmt.Sprintf(title, name), description)
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitSessionLinkCancel, Label: messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitSessionLinkConfirm, Label: confirm, Variant: components.ButtonDestructive},
-	)
-	dialog.End()
+	title = fmt.Sprintf(title, name)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), dialogViewport(c), 520, description, 0)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: title, Description: description, Width: 520, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitSessionLinkDismiss, CloseID: hitSessionLinkClose, InitialFocusID: hitSessionLinkCancel,
+	})
+	dialog.Footer(func() {
+		state.dialogActionFooter(c,
+			components.ButtonAction{ID: hitSessionLinkCancel, Label: messages.Cancel, Variant: components.ButtonSecondary},
+			components.ButtonAction{ID: hitSessionLinkConfirm, Label: confirm, Variant: components.ButtonDestructive},
+		)
+	})
 }
 
 // disconnect ends a session's connection and what runs over it and leaves the

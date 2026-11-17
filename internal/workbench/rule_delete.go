@@ -7,6 +7,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/autofill"
 	"motty/internal/configstore"
 	"motty/internal/vault"
@@ -201,7 +202,9 @@ func (state *State) deleteSelectedRules(ask ruleDelete) {
 	state.sshSyncFlush()
 }
 
-func (state *State) paintDeleteRuleDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
+// declareDeleteRuleDialog declares the question before a rule, a saved
+// password or a host tag is deleted.
+func (state *State) declareDeleteRuleDialog(c ui.C) {
 	m := state.messages.Autofill
 	ask := state.ruleDelete
 	description := fmt.Sprintf(m.DeleteFmt, ask.name)
@@ -229,15 +232,15 @@ func (state *State) paintDeleteRuleDialog(canvas *gfx.Canvas, viewport gfx.Rect)
 			description += " " + fmt.Sprintf(tags.DeleteInUseFmt, ask.uses)
 		}
 	}
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitRuleDeleteDismiss, CloseID: hitRuleDeleteClose, InitialFocusID: hitRuleDeleteCancel,
-		ContentSize: gfx.Size{Width: 520}, FitBody: true,
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), dialogViewport(c), 520, description, 0)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: title, Description: description, Width: 520, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitRuleDeleteDismiss, CloseID: hitRuleDeleteClose, InitialFocusID: hitRuleDeleteCancel,
 	})
-	layout := dialog.Begin(title, description)
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitRuleDeleteCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitRuleDeleteConfirm, Label: m.Delete, Variant: components.ButtonDestructive},
-	)
-	dialog.End()
+	dialog.Footer(func() {
+		state.dialogActionFooter(c,
+			components.ButtonAction{ID: hitRuleDeleteCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
+			components.ButtonAction{ID: hitRuleDeleteConfirm, Label: m.Delete, Variant: components.ButtonDestructive},
+		)
+	})
 }

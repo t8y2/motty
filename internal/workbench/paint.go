@@ -355,10 +355,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintDashboardAddMenu(canvas)
 	case modalDashboard:
 		state.paintDashboardDialog(canvas, viewport)
-	case modalSessionLink:
-		state.paintSessionLinkDialog(canvas, viewport)
-	case modalDeleteRule:
-		state.paintDeleteRuleDialog(canvas, viewport)
 	case modalSFTPColumns:
 		state.paintSFTPColumnSettings(canvas, viewport)
 	}
@@ -2878,6 +2874,10 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareFileProperties(c)
 	case modalLocalProxy:
 		state.declareLocalProxyDialog(c)
+	case modalSessionLink:
+		state.declareSessionLinkDialog(c)
+	case modalDeleteRule:
+		state.declareDeleteRuleDialog(c)
 	case modalUpdate:
 		state.declareUpdateDialog(c)
 	case modalUpdateProgress:

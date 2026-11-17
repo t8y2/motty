@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -18,19 +20,36 @@ import (
 // What a state paints, as text: the rectangles, shadows, texts and hits of one paint, so a
 // change to how a screen is declared shows as a diff of what it draws. The control numbering
 // the page assigns is normalized away: removing or adding an element shifts it without
-// changing anything on screen.
+// changing anything on screen. So is the draw order's counter, which keeps only its rank:
+// what is painted over what stays, and the count of primitives before it does not.
 //
 //	go test ./internal/workbench -run TestPaintGolden            # compare
 //	UPDATE_PAINT_GOLDEN=1 go test ./internal/workbench -run TestPaintGolden   # rewrite
 var hitNumbers = regexp.MustCompile(`^hit \{[0-9]+ [0-9]+\} `)
 
+var drawOrder = regexp.MustCompile(` ([0-9]+)\}$`)
+
+// paintDump leaves the draw order of the rectangles and shadows as ranks.
 func paintDump(canvas *gfx.Canvas) string {
 	var b strings.Builder
+	var shapes []string
+	var orders []int
 	for _, r := range canvas.Rectangles() {
-		fmt.Fprintf(&b, "rect %v\n", r)
+		shapes = append(shapes, fmt.Sprintf("rect %v", r))
 	}
 	for _, s := range canvas.Shadows() {
-		fmt.Fprintf(&b, "shadow %v\n", s)
+		shapes = append(shapes, fmt.Sprintf("shadow %v", s))
+	}
+	for _, line := range shapes {
+		order, _ := strconv.Atoi(drawOrder.FindStringSubmatch(line)[1])
+		orders = append(orders, order)
+	}
+	ranks := slices.Clone(orders)
+	slices.Sort(ranks)
+	ranks = slices.Compact(ranks)
+	for i, line := range shapes {
+		rank, _ := slices.BinarySearch(ranks, orders[i])
+		b.WriteString(drawOrder.ReplaceAllString(line, fmt.Sprintf(" #%d}", rank)) + "\n")
 	}
 	for _, t := range canvas.Texts() {
 		fmt.Fprintf(&b, "text %q %v\n", t.Value, t.Bounds)
