@@ -80,6 +80,17 @@ func TestKerberosHostAuthentication(t *testing.T) {
 	}
 }
 
+func TestKerberosHostOffersNoPassword(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.editor.protocol, state.editor.auth = protocolSSH, authKerberos
+	if state.hostOffersCredential() {
+		t.Fatal("Kerberos host offers a password credential")
+	}
+	if state.editor.auth.usesPassword() {
+		t.Fatal("Kerberos host shows a password field")
+	}
+}
+
 func TestSSHConfigKeepsTargetAndJumpAuthenticationSeparate(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	identityPath := writeWorkbenchIdentity(t, "id_target", "")
