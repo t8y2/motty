@@ -221,3 +221,50 @@ func TestBookmarkSyncCheckboxTogglesByClickAndKey(t *testing.T) {
 		}
 	}
 }
+
+func TestBookmarkScopeSelectKeysChoose(t *testing.T) {
+	w, view := openBookmarkEditor(t)
+	clickBookmarkButton(t, w, view, hitSFTPProfileScope)
+	if !w.bookmark.scopeOpen {
+		t.Fatal("the scope list did not open")
+	}
+	// Down moves to the next option, Enter chooses it: All connections.
+	if err := view.Keys("down"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Keys("enter"); err != nil {
+		t.Fatal(err)
+	}
+	if w.bookmark.scopeOpen || !w.bookmark.shared {
+		t.Fatalf("Down then Enter: open=%v shared=%v, want closed and shared", w.bookmark.scopeOpen, w.bookmark.shared)
+	}
+	// The focus after choosing is the dialog's own initial focus (the local directory field), not
+	// the trigger the code asks for: pinned as it is, so a change is a decision.
+	w.window.Invalidate()
+	view.Driver().Pump()
+	if got := view.Snapshot().Focused; got != hitSFTPBookmarkFields.At(1) {
+		t.Fatalf("after choosing, the focus is %v, want the local directory field %v", got, hitSFTPBookmarkFields.At(1))
+	}
+	// Up and Enter on the open list choose the first option: This connection only.
+	clickBookmarkButton(t, w, view, hitSFTPProfileScope)
+	if err := view.Keys("up"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Keys("enter"); err != nil {
+		t.Fatal(err)
+	}
+	if w.bookmark.scopeOpen || w.bookmark.shared {
+		t.Fatalf("Up then Enter: open=%v shared=%v, want closed and site", w.bookmark.scopeOpen, w.bookmark.shared)
+	}
+}
+
+func TestBookmarkScopeSelectTabClosesTheList(t *testing.T) {
+	w, view := openBookmarkEditor(t)
+	clickBookmarkButton(t, w, view, hitSFTPProfileScope)
+	if err := view.Keys("tab"); err != nil {
+		t.Fatal(err)
+	}
+	if w.bookmark.scopeOpen {
+		t.Fatal("Tab left the scope list open")
+	}
+}
