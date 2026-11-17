@@ -3,6 +3,7 @@ package workbench
 import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 )
 
 // localShellPickerHits is the place of the controls this file paints.
@@ -48,19 +49,7 @@ func (state *State) openLocalShellPickerOn(canvas *gfx.Canvas, id gfx.ID, inPane
 	}
 }
 
-// localShellPickerPointer closes an open menu on a secondary press outside it.
-func (state *State) localShellPickerPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	if event.Kind != gfx.PointerDown || event.Button == gfx.PointerButtonNone || event.Button == gfx.PointerButtonPrimary {
-		return gfx.EventResult{}, false
-	}
-	if state.localShellPicker.open && event.Target == hitLocalShellPickerDismiss {
-		state.localShellPicker.open = false
-		return gfx.EventResult{Handled: true, Repaint: true}, true
-	}
-	return gfx.EventResult{}, false
-}
-
-func (state *State) paintLocalShellPicker(canvas *gfx.Canvas, viewport gfx.Rect) {
+func (state *State) declareLocalShellPicker(c ui.C) {
 	picker := &state.localShellPicker
 	if !picker.open {
 		return
@@ -87,28 +76,16 @@ func (state *State) paintLocalShellPicker(canvas *gfx.Canvas, viewport gfx.Rect)
 	if len(menuState.choices) == 0 {
 		rows.add(components.ContextMenuItem{ID: hitLocalShellPickerItems.At(0), Label: m.SettingsLocalShellEmpty, Icon: icon, Disabled: true})
 	}
-	width, height := rows.size(canvas, state.contextMenuTheme())
-	bounds := state.popupAt(canvas, viewport, picker.at, width, height, 6)
-	menu := components.BeginContextMenu(canvas, state.contextMenuTheme(), bounds, components.ContextMenuOptions{
-		Layer: dialogLayer, Scope: dialogScope, DismissID: hitLocalShellPickerDismiss, Viewport: viewport, Scroll: state.menuScrollFor(hitLocalShellPickerDismiss),
-		RowHeight: contextMenuRow,
-	})
-	state.menuPlaced(menu.Bounds())
-	rows.paint(&menu, nil)
-	menu.End()
+	state.declareRowsMenu(c, &picker.open, picker.at, hitLocalShellPickerDismiss, &rows, state.chooseLocalShell)
 }
 
-// clickLocalShellPicker runs a menu choice. A press anywhere else only closes it.
-func (state *State) clickLocalShellPicker(id gfx.ID) bool {
+// chooseLocalShell runs a choice of the menu, which closed with it.
+func (state *State) chooseLocalShell(id gfx.ID) {
 	picker := state.localShellPicker
-	if !picker.open {
-		return false
-	}
-	state.localShellPicker.open = false
 	index, ok := id.In(hitLocalShellPickerItems)
 	choices := state.localShellMenu.choices
 	if !ok || index < 0 || index >= len(choices) {
-		return true
+		return
 	}
 	if picker.inPane {
 		state.pendingWorkspace = state.deck.ActiveWorkspace()
@@ -117,5 +94,4 @@ func (state *State) clickLocalShellPicker(id gfx.ID) bool {
 		state.pendingWorkspace, state.pendingPane = 0, 0
 	}
 	state.openLocalTerminalWith(choices[index])
-	return true
 }

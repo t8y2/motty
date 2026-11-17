@@ -1889,7 +1889,7 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		return
 	}
 	if state.clickHostOrder(id) || state.clickHostsPanel(id) || state.clickToolbarDockMenu(id) || state.clickWorkspaceTemplateManagement(id) ||
-		state.clickHostGroupActions(id) || state.clickGhostMenu(id) || state.clickTabMenu(id) || state.clickLocalShellPicker(id) || state.clickSnippetMenu(id) || state.clickSFTPMenu(id) {
+		state.clickHostGroupActions(id) || state.clickGhostMenu(id) || state.clickTabMenu(id) || state.clickSFTPMenu(id) {
 		return
 	}
 	if state.clickWorkspaceCommand(id) {
@@ -2659,12 +2659,6 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result, handled := state.hostListPointer(event); handled {
 		return result
 	}
-	if result, handled := state.localShellPickerPointer(event); handled {
-		return result
-	}
-	if result, handled := state.snippetMenuPointer(event); handled {
-		return result
-	}
 	if result, handled := state.sftpMenuDismissPointer(event); handled {
 		return result
 	}
@@ -3157,9 +3151,6 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	if state.ghostMenu.open && event.Key == gfx.KeyEscape {
 		state.ghostMenu.open = false
 		return gfx.EventResult{Handled: true, Repaint: true}
-	}
-	if result, handled := state.workspaceTemplateMenuKey(event); handled {
-		return result
 	}
 	if result, handled := state.workspaceTemplateDeleteKey(event); handled {
 		return result

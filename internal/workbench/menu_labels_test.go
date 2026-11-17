@@ -21,6 +21,7 @@ func init() {
 		hitGroupNewHost, hitGroupNewChild, hitGroupPaste, hitGroupRename, hitGroupMove, hitGroupPin, hitGroupUp, hitGroupDown, hitGroupDelete,
 		hitHostBlankNewHost, hitHostBlankNewGroup, hitHostBlankPaste,
 		hitTerminalMenuCopy, hitTerminalMenuPaste, hitTerminalMenuSelectAll, hitTerminalMenuClearScreen, hitTerminalMenuClear, hitTerminalMenuSave, hitTerminalMenuSplitRight, hitTerminalMenuSplitDown, hitTerminalMenuRename, hitTerminalMenuClosePane, hitTerminalMenuFiles, hitTerminalMenuTransfer, hitTerminalMenuAsk, hitTerminalMenuExplain, hitTerminalMenuHistory, hitTerminalMenuSearch, hitTerminalMenuStats, hitTerminalMenuTools, hitTerminalMenuReconnect, hitTerminalMenuRestart, hitTerminalMenuDisconnect,
+		hitSnippetMenuSend, hitSnippetMenuUp, hitSnippetMenuDown, hitSnippetMenuEdit, hitSnippetMenuDelete, hitWorkspaceTemplateMenuEdit, hitWorkspaceTemplateMenuDelete,
 	} {
 		menuRowIDs[id] = true
 	}
@@ -133,6 +134,20 @@ func menuLabelOf(state *State, id gfx.ID) string {
 		return m.MenuReconnect
 	case hitTerminalMenuDisconnect:
 		return m.MenuDisconnect
+	case hitSnippetMenuSend:
+		return m.Tools.SnippetSend
+	case hitSnippetMenuUp:
+		return m.Tools.SnippetMoveUp
+	case hitSnippetMenuDown:
+		return m.Tools.SnippetMoveDown
+	case hitSnippetMenuEdit:
+		return m.Tools.SnippetEdit
+	case hitSnippetMenuDelete:
+		return m.Tools.SnippetDelete
+	case hitWorkspaceTemplateMenuEdit:
+		return m.WorkspaceTemplateEdit
+	case hitWorkspaceTemplateMenuDelete:
+		return m.WorkspaceTemplateDelete
 	}
 	if index, ok := terminalMenuActionIndex(id); ok {
 		return state.actionLabel(state.terminalMenu.found[index])

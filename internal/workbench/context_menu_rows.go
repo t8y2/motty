@@ -143,7 +143,11 @@ func (rows *menuRows) declare(c ui.C, menu *ui.MenuItems, choose func(gfx.ID)) {
 			continue
 		}
 		row := entry.item
-		item := menu.Item(row.Label).Icon(row.Icon).Disabled(row.Disabled)
+		label := row.Label
+		if row.Shortcut != "" {
+			label += " · " + row.Shortcut
+		}
+		item := menu.Item(label).Icon(row.Icon).Disabled(row.Disabled)
 		if row.Variant == components.ContextMenuItemDestructive {
 			item = item.Destructive()
 		}

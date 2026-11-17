@@ -179,14 +179,14 @@ func TestRightClickingASnippetRowOpensItsMenu(t *testing.T) {
 	if got := pointer(state, secondary); !got.Handled || !state.snippetMenu.open || state.snippetMenu.index != 1 || state.snippets.selected != 1 {
 		t.Fatalf("handled=%v menu=%+v selected=%d", got.Handled, state.snippetMenu, state.snippets.selected)
 	}
-	state.Click(hitSnippetMenuSend)
+	chooseMenu(t, state, hitSnippetMenuSend)
 	if state.snippetMenu.open || state.activeSection != sectionTerminal || shell.typed() != "echo b\r" {
 		t.Fatalf("menu open=%v section=%d, shell heard %q", state.snippetMenu.open, state.activeSection, shell.typed())
 	}
 
 	state.Click(hitSnippets)
 	pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitSnippetRowList.At(0)})
-	state.Click(hitSnippetMenuDelete)
+	chooseMenu(t, state, hitSnippetMenuDelete)
 	if state.modal != modalSnippetDelete || len(state.snippets.list) != 2 {
 		t.Fatalf("the menu delete opened modal %d with %d snippets", state.modal, len(state.snippets.list))
 	}
@@ -219,7 +219,7 @@ func TestSendingASnippetFromThePageAsksWhichTerminalWhenThereAreSeveral(t *testi
 	if !state.snippetMenu.open || !state.snippetMenu.pick || firstShell.typed() != "" || splitShell.typed() != "" {
 		t.Fatalf("menu=%+v, first heard %q, split heard %q: nothing is sent before a terminal is chosen", state.snippetMenu, firstShell.typed(), splitShell.typed())
 	}
-	state.Click(hitSnippetPickList.At(int(firstID)))
+	clickPageMenuRow(t, state, state.sessions[0].Title)
 	if firstShell.typed() != "ls\r" || splitShell.typed() != "" {
 		t.Fatalf("first heard %q, split heard %q", firstShell.typed(), splitShell.typed())
 	}
