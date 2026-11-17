@@ -768,8 +768,9 @@ type State struct {
 	// terminal or host is already open, instead of opening another one.
 	startupReuse  bool
 	startupPicker struct {
-		open   bool
-		bounds gfx.Rect // the chooser's place on the settings page
+		open bool
+		// shown says the last paint declared the menu, so closing it saves once.
+		shown bool
 	}
 	// openStream opens the stream of a Telnet or serial host; tests replace it.
 	openStream func(context.Context, streamRequest) (Shell, error)

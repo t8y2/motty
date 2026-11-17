@@ -33,7 +33,6 @@ const (
 	controlSwatches       // a strip of round color dots
 	controlLabel          // the words of a row, which label the control beside them
 	controlLogo           // the product wordmark in a slot
-	controlStartupHosts   // the hosts a launch connects
 )
 
 // settingsControl is one control of the page, recorded while the page is
@@ -234,8 +233,6 @@ func (state *State) paintSettingsControls(canvas *gfx.Canvas) {
 		control := &state.settings.controls[index]
 		rect := control.slot.Rect()
 		switch control.kind {
-		case controlStartupHosts:
-			state.startupPicker.bounds = rect
 		case controlHit:
 			canvas.HitWithOptions(control.id, rect, control.label, control.hit)
 		case controlLabel:

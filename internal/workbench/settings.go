@@ -455,7 +455,7 @@ func (state *State) clickSettings(id gfx.ID) bool {
 		} else {
 			changed = state.setShareConnections(shareConnectionsOff)
 		}
-	case hitSettingsStartupHosts, hitSettingsStartupLocal, hitSettingsStartupDismiss:
+	case hitSettingsStartupHosts:
 		state.clickStartupHosts(id)
 	case hitSettingsSSHSyncToggle, hitSettingsSSHSyncFile, hitSettingsSSHSyncReset, hitSettingsSSHSyncNow:
 		state.clickSSHSync(id)

@@ -332,7 +332,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	viewport := state.windowRect()
 	state.paintAITargetSelect(canvas)
 	state.paintFindPreferences(canvas)
-	state.paintStartupHostSelect(canvas)
 	state.paintMonitorIntervalMenu(canvas)
 	state.paintDashboardMenu(canvas)
 	state.paintSessionLogFilters(canvas)
