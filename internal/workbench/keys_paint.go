@@ -49,7 +49,7 @@ func (state *State) declareKeysWorkspace(c ui.C) {
 			statusColor, statusValue = pal.danger, selected.Error
 		}
 	}
-	selectedEncrypted := hasSelection && selected.Encrypted
+	selectedEncrypted := hasSelection && selected.Encrypted && !selected.SecurityKey
 	canCopy := hasSelection && selected.Error == ""
 	view := &state.sectionBodies.keys
 	draw := view.draw

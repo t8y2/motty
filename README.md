@@ -224,6 +224,12 @@ unknown certificate is asked about with its fingerprint, like any unknown key.
 A host can also forward the local ssh-agent to its shells, per host and off by
 default.
 
+Hardware security keys (`sk-ssh-ed25519`, `sk-ecdsa-sha2-nistp256`) authenticate
+through OpenSSH's agent and `ssh-sk-helper`. For a connection that uses one,
+Motty starts a short-lived agent, loads the key with `ssh-add`, and shows its
+PIN or passphrase prompt in the window; the key list marks it as a security
+key. See [security keys](docs/security-keys.md) for the requirements and limits.
+
 Hosts can be grouped, tagged, searched and imported from OpenSSH config, PuTTY,
 Xshell, MobaXterm, WindTerm, Electerm, Netcatty or SecureCRT. TOTP/HOTP seeds can be stored in the
 vault and filled automatically. Saved passwords and key passphrases go into an

@@ -109,6 +109,13 @@ type Authentication struct {
 	IdentitiesOnly bool
 }
 
+// SecurityKeyRequest names one hardware security-key identity the connection
+// has to use. Path is a file path, or a StoredKeyPrefix reference.
+type SecurityKeyRequest struct {
+	Path      string
+	PublicKey ssh.PublicKey
+}
+
 // StoredKeyPrefix starts the name of a private key that is not a file but is
 // kept by the application, which Config.StoredKey reads. An absolute path never
 // starts with it.
@@ -173,6 +180,9 @@ type Status struct {
 	ServerVersion string
 	// Method names how the user authenticated, once connected.
 	Method string
+	// SecurityKey is set while an ssh-agent is waiting for the user to touch
+	// or approve a hardware security key.
+	SecurityKey bool
 	// System is detected after authentication without writing to the user's
 	// interactive shell. It remains unknown when command sessions are refused.
 	System RemoteSystem
@@ -243,6 +253,13 @@ type Config struct {
 	// Windows a named pipe such as \\.\pipe\openssh-ssh-agent. Empty uses
 	// SSH_AUTH_SOCK, and on Windows the OpenSSH pipe when that is unset.
 	AgentAddress string
+	// SecurityKeyAgent prepares an agent for a hardware security key (an
+	// OpenSSH sk-* identity). It is called only after the host key is accepted,
+	// once for each security-key identity. The returned release is called when
+	// the connection closes; nil means nothing to release. Nil disables the
+	// preparation, and such a key then uses the default agent or is reported
+	// as skipped.
+	SecurityKeyAgent func(SecurityKeyRequest) (address string, release func(), err error)
 	// Authentication overrides the legacy identity, agent and password policy
 	// for individual endpoints. An endpoint not in the map uses the fields
 	// above and every supported authentication method.

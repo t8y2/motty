@@ -185,6 +185,11 @@ win32-input-mode。连字在固定网格内按单元格整形。标签可以重�
 在案就直接连接；未知证书像未知密钥一样弹出指纹确认。主机还可以把本地 ssh-agent
 转发给远端 shell，按主机开关，默认关闭。
 
+硬件安全密钥（`sk-ssh-ed25519`、`sk-ecdsa-sha2-nistp256`）通过 OpenSSH 的 agent
+和 `ssh-sk-helper` 认证。使用这类密钥连接时，Motty 会为本次连接启动一个临时
+agent，用 `ssh-add` 载入密钥，并在窗口里显示 PIN 或口令提示；密钥列表会把它标为
+「安全密钥」。要求与限制见 [安全密钥](docs/security-keys.md)。
+
 主机可以分组、打标签、搜索，也可以从 OpenSSH config、PuTTY、Xshell、MobaXterm、
 WindTerm、Electerm、Netcatty、SecureCRT 导入。TOTP/HOTP 种子可以存入保险库并自动填充。密码和私钥口令
 进入 AES-256-GCM 保险库，跟随各自的主机；密钥放在系统密钥存储，没有时（以及便携版）放在保险库旁的密钥文件里。

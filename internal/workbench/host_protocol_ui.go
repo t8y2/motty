@@ -482,7 +482,7 @@ func (state *State) hostAsksKeyPassphrase() bool {
 		return false
 	}
 	identity, ok := state.identityForFingerprint(editor.identity)
-	return ok && identity.Encrypted
+	return ok && identity.Encrypted && !identity.SecurityKey
 }
 
 func (state *State) hostPassphraseHint() string {

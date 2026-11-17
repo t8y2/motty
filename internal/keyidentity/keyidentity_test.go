@@ -225,12 +225,15 @@ func TestLoadReadsPPK(t *testing.T) {
 func TestLoadNamesSecurityKeys(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "id_sk")
-	if err := os.WriteFile(path, []byte("-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\ntest body mentioning sk-ssh-ed25519@openssh.com\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, securityKeyFile(t, false), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	_, err := Load(path, nil)
-	if err == nil || !strings.Contains(err.Error(), "hardware security keys") {
-		t.Fatalf("want a named security-key error, got %v", err)
+	if !errors.Is(err, ErrSecurityKeyNeedsAgent) {
+		t.Fatalf("want a security-key error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "ssh-agent") {
+		t.Fatalf("the error does not say where the key can be used: %v", err)
 	}
 }
 

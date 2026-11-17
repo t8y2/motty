@@ -208,7 +208,7 @@ func (state *State) clickHostAuthentication(id gfx.ID) bool {
 // passphrase.
 func (state *State) hostKeyNeedsPassphrase(fingerprint string) bool {
 	for _, identity := range state.identities {
-		if identity.Error == "" && identity.Encrypted && (fingerprint == "" || identity.Fingerprint == fingerprint) {
+		if identity.Error == "" && identity.Encrypted && !identity.SecurityKey && (fingerprint == "" || identity.Fingerprint == fingerprint) {
 			return true
 		}
 	}

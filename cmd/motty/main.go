@@ -39,6 +39,12 @@ func main() {
 	// moved main to another OS thread.
 	runtime.LockOSThread()
 	log.SetOutput(io.MultiWriter(os.Stderr, recentLog))
+	// OpenSSH runs SSH_ASKPASS as a child of ssh-add or ssh-sk-helper. Such a
+	// launch carries this marker and must answer the prompt, not claim the
+	// single instance and open a window.
+	if os.Getenv("MOTTY_FIDO_ASKPASS") == "1" {
+		os.Exit(runFidoAskpass(os.Args[1:]))
+	}
 	if len(os.Args) > 1 && os.Args[1] == "mcp-bridge" {
 		os.Exit(runMCPBridge(os.Args[2:]))
 	}
@@ -78,6 +84,9 @@ func main() {
 		windows.launch(args)
 	}
 	hub := workbench.NewAIHub(aiDatabasePath(datadir.Current().Dir))
+	// Security-key agents started for a connection are stopped on quit; a
+	// connection normally does this itself, but a quit can outrun one.
+	defer workbench.ShutdownSecurityKeyAgents()
 	err := app.RunApplication(func(application *app.Application) error {
 		application.OnQuitRequest(windows.quitWithDocuments)
 		status := newTray(application)
@@ -154,6 +163,9 @@ func main() {
 		return nil
 	})
 	hub.Close()
+	// fatal exits without running deferred functions; stop the agents here as
+	// well so a failed shutdown does not leave one running.
+	workbench.ShutdownSecurityKeyAgents()
 	if err != nil {
 		fatal(err)
 	}
