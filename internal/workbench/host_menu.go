@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"slices"
+	"strings"
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
@@ -12,16 +13,19 @@ var hostMenuHits = tree.Feature("host-menu")
 
 // The host menu's hit identities, beside the tab menu's.
 var (
-	hitHostMenuDismiss = tree.ID(hostMenuHits, "host-menu-dismiss")
-	hitHostMenuConnect = tree.ID(hostMenuHits, "host-menu-connect")
-	hitHostMenuSFTP    = tree.ID(hostMenuHits, "host-menu-sftp")
-	hitHostMenuAddress = tree.ID(hostMenuHits, "host-menu-copy-address")
-	hitHostMenuName    = tree.ID(hostMenuHits, "host-menu-copy-name")
-	hitHostMenuEdit    = tree.ID(hostMenuHits, "host-menu-edit")
-	hitHostMenuCopy    = tree.ID(hostMenuHits, "host-menu-copy")
-	hitHostMenuMove    = tree.ID(hostMenuHits, "host-menu-move")
-	hitHostMenuSetJump = tree.ID(hostMenuHits, "host-menu-set-jump")
-	hitHostMenuDelete  = tree.ID(hostMenuHits, "host-menu-delete")
+	hitHostMenuDismiss  = tree.ID(hostMenuHits, "host-menu-dismiss")
+	hitHostMenuConnect  = tree.ID(hostMenuHits, "host-menu-connect")
+	hitHostMenuSFTP     = tree.ID(hostMenuHits, "host-menu-sftp")
+	hitHostMenuAddress  = tree.ID(hostMenuHits, "host-menu-copy-address")
+	hitHostMenuName     = tree.ID(hostMenuHits, "host-menu-copy-name")
+	hitHostMenuEdit     = tree.ID(hostMenuHits, "host-menu-edit")
+	hitHostMenuCopy     = tree.ID(hostMenuHits, "host-menu-copy")
+	hitHostMenuCopyTo   = tree.ID(hostMenuHits, "host-menu-copy-to")
+	hitHostMenuCopyEdit = tree.ID(hostMenuHits, "host-menu-copy-edit")
+	hitHostMenuPaste    = tree.ID(hostMenuHits, "host-menu-paste")
+	hitHostMenuMove     = tree.ID(hostMenuHits, "host-menu-move")
+	hitHostMenuSetJump  = tree.ID(hostMenuHits, "host-menu-set-jump")
+	hitHostMenuDelete   = tree.ID(hostMenuHits, "host-menu-delete")
 )
 
 // hostMenu is the right-click menu of a host, in the list or the cards: which
@@ -79,6 +83,7 @@ func (state *State) openHostMenuOn(canvas *gfx.Canvas, id gfx.ID, host Host) {
 		return
 	}
 	state.selectedHostID = host.ID
+	state.hostBlankMenu.open = false
 	state.hostMenu = hostMenu{open: true, host: host.ID, checked: state.hostSelected(host.ID), at: gfx.Point{X: event.X, Y: event.Y}}
 	canvas.Consume()
 }
@@ -113,9 +118,12 @@ func (state *State) paintHostMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 	address := connectionAddressAndPort(host)
 	rows.add(components.ContextMenuItem{ID: hitHostMenuAddress, Label: messages.CopyAddressAndPort, Icon: icon(iconCopy), Disabled: several || address == ""})
 	rows.add(components.ContextMenuItem{ID: hitHostMenuName, Label: messages.CopyConnectionName, Icon: icon(iconCopy), Disabled: several || host.Label == ""})
-	rows.add(components.ContextMenuItem{ID: hitHostMenuCopy, Label: messages.CopyHostTitle, Icon: icon(iconCopy), Disabled: several})
+	rows.add(components.ContextMenuItem{ID: hitHostMenuCopy, Label: messages.CopyHost, Icon: icon(iconCopy)})
+	rows.add(components.ContextMenuItem{ID: hitHostMenuPaste, Label: messages.PasteHost, Icon: icon(iconPaste), Disabled: len(state.hostClipboard) == 0})
+	rows.add(components.ContextMenuItem{ID: hitHostMenuCopyTo, Label: messages.CopyHostTo, Icon: icon(iconFolderOpen)})
 	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitHostMenuEdit, Label: messages.EditHost, Icon: icon(iconPencil), Disabled: several})
+	rows.add(components.ContextMenuItem{ID: hitHostMenuCopyEdit, Label: messages.CopyHostAndEdit, Icon: icon(iconPencil), Disabled: several})
 	rows.add(components.ContextMenuItem{ID: hitHostMenuSetJump, Label: messages.HostMenuSetJump, Icon: icon(iconGlobe)})
 	rows.add(components.ContextMenuItem{ID: hitHostMenuMove, Label: messages.MoveHostGroup, Icon: icon(iconFolderOpen)})
 	rows.add(components.ContextMenuItem{ID: hitHostMenuDelete, Label: messages.DeleteHost, Icon: icon(iconTrash), Variant: components.ContextMenuItemDestructive})
@@ -154,6 +162,15 @@ func (state *State) clickHostMenu(id gfx.ID) bool {
 	case hitHostMenuEdit:
 		state.openEditHostID(host.ID)
 	case hitHostMenuCopy:
+		state.captureHostMenuActionIDs(host.ID)
+		state.copyHostsToClipboard(state.hostActionIDs)
+	case hitHostMenuPaste:
+		state.pasteHostsInto(strings.TrimSpace(host.Group))
+	case hitHostMenuCopyTo:
+		state.captureHostMenuActionIDs(host.ID)
+		state.groupMenu = groupMenuAnchor{point: state.hostMenu.at, menu: true}
+		state.openCopyHostGroupMenu()
+	case hitHostMenuCopyEdit:
 		state.openCopyHostID(host.ID)
 	case hitHostMenuMove:
 		state.captureHostMenuActionIDs(host.ID)

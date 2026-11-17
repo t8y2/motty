@@ -157,7 +157,19 @@ func (state *State) hostListCanDrop(from, to int, where ui.TreeDrop) bool {
 		return false
 	}
 	source, target := rows[from], rows[to]
-	if source.Kind != hostTreeGroup || target.Kind != hostTreeGroup {
+	if source.Kind != hostTreeGroup {
+		if source.Kind != hostTreeHost || from == to {
+			return false
+		}
+		switch target.Kind {
+		case hostTreeGroup:
+			return where == ui.TreeDropInside
+		case hostTreeHost:
+			return where != ui.TreeDropInside
+		}
+		return false
+	}
+	if target.Kind != hostTreeGroup {
 		return false
 	}
 	switch where {
@@ -357,9 +369,16 @@ func (state *State) hostListPointer(event gfx.PointerEvent) (gfx.EventResult, bo
 		// workbench maps those to the host as it always did.
 		host, hostOK := state.hostForRow(event.Target)
 		if !hostOK {
+			// A press on the list's own ground starts a catalog at the top level;
+			// an open menu's backdrop has its own target and is left to it.
+			if event.Target.IsZero() && pointInRect(event.X, event.Y, state.chrome.hostList) {
+				state.openHostBlankMenu(gfx.Point{X: event.X, Y: event.Y})
+				return gfx.EventResult{Handled: true, Repaint: true}, true
+			}
 			return gfx.EventResult{}, false
 		}
 		state.selectedHostID = host.ID
+		state.hostBlankMenu.open = false
 		state.hostMenu = hostMenu{open: true, host: host.ID, checked: state.hostSelected(host.ID), at: gfx.Point{X: event.X, Y: event.Y}}
 		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
@@ -369,6 +388,7 @@ func (state *State) hostListPointer(event gfx.PointerEvent) (gfx.EventResult, bo
 	case hostTreeHost:
 		host := state.hosts[entry.HostIndex]
 		state.selectedHostID = host.ID
+		state.hostBlankMenu.open = false
 		state.hostMenu = hostMenu{open: true, host: host.ID, checked: state.hostSelected(host.ID), at: gfx.Point{X: event.X, Y: event.Y}}
 	}
 	return gfx.EventResult{Handled: true, Repaint: true}, true
@@ -518,6 +538,29 @@ func (state *State) hostListChanges(c ui.C, list *hostCatalogList) {
 	}
 	if move, ok := list.tree.Dropped(); ok && move.From >= 0 && move.From < len(rows) && move.To >= 0 && move.To < len(rows) {
 		source, target := rows[move.From], rows[move.To]
+		if source.Kind == hostTreeHost {
+			hostID := state.hosts[source.HostIndex].ID
+			switch target.Kind {
+			case hostTreeGroup:
+				group := state.hostGroups[target.GroupIndex].Name
+				c.After(func() {
+					if state.activeSection != sectionHosts || state.modal != modalNone {
+						return
+					}
+					state.moveHostToGroup(hostID, group)
+				})
+			case hostTreeHost:
+				targetID := state.hosts[target.HostIndex].ID
+				after := move.Where == ui.TreeDropAfter
+				c.After(func() {
+					if state.activeSection != sectionHosts || state.modal != modalNone {
+						return
+					}
+					state.reorderHostBeside(hostID, targetID, after)
+				})
+			}
+			return
+		}
 		if source.Kind == hostTreeGroup && target.Kind == hostTreeGroup {
 			path := state.hostGroups[source.GroupIndex].Name
 			parent := state.hostGroups[target.GroupIndex].Name

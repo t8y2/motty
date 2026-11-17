@@ -15,6 +15,8 @@ type hostMoveGroupMenu struct {
 }
 
 func (state *State) openMoveHostGroupMenu() {
+	state.hostGroupCopy = false
+	state.hostBlankMenu.open = false
 	state.hostGroupMenu = len(state.hostActionIDs) > 0
 	if !state.hostGroupMenu {
 		return
@@ -33,6 +35,15 @@ func (state *State) openMoveHostGroupMenu() {
 	})
 }
 
+// openCopyHostGroupMenu asks the same picker for a destination the captured
+// hosts are copied into, instead of moved into.
+func (state *State) openCopyHostGroupMenu() {
+	state.openMoveHostGroupMenu()
+	if state.hostGroupMenu {
+		state.hostGroupCopy = true
+	}
+}
+
 func (state *State) moveGroupTree() *components.HierarchyMenuState {
 	if state.moveGroups != nil && state.moveGroups.tree.Usable() {
 		return &state.moveGroups.tree
@@ -46,6 +57,7 @@ func (state *State) hostMoveGroupKey(event gfx.KeyEvent) (gfx.EventResult, bool)
 	}
 	if event.Key == gfx.KeyTab {
 		state.hostGroupMenu = false
+		state.hostGroupCopy = false
 		return gfx.EventResult{Handled: true, Repaint: true, ContinueTraversal: true}, true
 	}
 	if menu := state.moveGroupTree(); menu != nil {
@@ -62,6 +74,7 @@ func (state *State) hostMoveGroupKey(event gfx.KeyEvent) (gfx.EventResult, bool)
 	}
 	if event.Key == gfx.KeyEscape {
 		state.hostGroupMenu = false
+		state.hostGroupCopy = false
 		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	return gfx.EventResult{}, false
@@ -80,11 +93,20 @@ func (state *State) paintHostGroupMenu(canvas *gfx.Canvas, bounds, viewport gfx.
 		anchor = gfx.Rect{X: state.groupMenu.point.X, Y: state.groupMenu.point.Y - 6, Width: 202}
 	}
 	picker := state.moveGroups
-	picker.leading[0] = components.HierarchyMenuAction{ID: hitHostGroupNone, Label: state.messages.MoveGroupNone}
-	picker.trailing[0] = components.HierarchyMenuAction{ID: hitHostGroupNew, Label: state.messages.MoveGroupNew}
+	label := state.messages.MoveGroupTitle
+	var leading, trailing []components.HierarchyMenuAction
+	if state.hostGroupCopy {
+		// A copy has no "remove from group" row, and a new group is not a
+		// destination it can make in the same step as the copy.
+		label = state.messages.CopyHostTo
+	} else {
+		picker.leading[0] = components.HierarchyMenuAction{ID: hitHostGroupNone, Label: state.messages.MoveGroupNone}
+		picker.trailing[0] = components.HierarchyMenuAction{ID: hitHostGroupNew, Label: state.messages.MoveGroupNew}
+		leading, trailing = picker.leading[:], picker.trailing[:]
+	}
 	components.PaintHierarchyMenu(canvas, state.Theme(), anchor, menu, components.HierarchyMenuOptions{
 		OptionIDs: hitHostGroupItemList, ScrollID: hitHostMoveGroupScroll, Scope: dialogScope, Layer: dialogLayer,
-		Label: state.messages.MoveHostGroup, Viewport: viewport, Overlay: true, DismissID: hitHostGroupDismiss,
-		Leading: picker.leading[:], Trailing: picker.trailing[:], Typeahead: true,
+		Label: label, Viewport: viewport, Overlay: true, DismissID: hitHostGroupDismiss,
+		Leading: leading, Trailing: trailing, Typeahead: true,
 	})
 }

@@ -1,15 +1,16 @@
 package workbench
 
 import (
+	"strings"
+
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
 
 var (
-	hostSideHits         = tree.Feature("host-side")
-	hitHostSideWidth     = tree.ID(hostSideHits, "width")
-	hitHostSideGroupMore = tree.Sub(hostSideHits, tree.Name("group-more"))
+	hostSideHits     = tree.Feature("host-side")
+	hitHostSideWidth = tree.ID(hostSideHits, "width")
 )
 
 // The hosts page's geometry. The toolbar spans the page; below it the group
@@ -35,11 +36,29 @@ const (
 	hostDragGhostMaxWidth = float32(220)
 	hostDragGhostOffsetX  = float32(8)
 	hostDragGhostOffsetY  = float32(12)
-	hostSideRowHeight     = float32(34)
-	hostSideIndent        = float32(24) // one level's step: the chevron's gutter plus the air after it
+	hostSideRowHeight     = hostsPanelGroupRow
+	hostSideHostRowHeight = hostsPanelHostRow
+	hostSideIndent        = hostsPanelIndent
 	hostSideGutter        = paneDividerHitWidth/2 + 1
 	hostsListTopGap       = float32(8)
 )
+
+// hostSideRowKind says what one row of the group tree is: the all-hosts row,
+// a group, or a host under its group.
+type hostSideRowKind uint8
+
+const (
+	hostSideRowAll hostSideRowKind = iota
+	hostSideRowGroup
+	hostSideRowHost
+)
+
+type hostSideRow struct {
+	Kind       hostSideRowKind
+	GroupIndex int
+	HostIndex  int
+	Depth      uint8
+}
 
 // hostsToolbarHeight is the room the toolbar row keeps: its top margin, the
 // row itself and the air before the panes below it.
@@ -146,7 +165,6 @@ type hostCatalogSide struct {
 	open     bool
 	visible  bool
 	dragging bool
-	rowRects []gfx.Rect
 	drawers  []*hostSideRowDrawer
 	next     int
 	// width is the width the user chose. visibleWidth is the width the layout
@@ -155,8 +173,8 @@ type hostCatalogSide struct {
 	width, visibleWidth float32
 }
 
-// hostSideRowDrawer records where a group row was laid out, so the row's
-// actions menu can open under its own button.
+// hostSideRowDrawer paints a host row's badge and light into the slots its
+// declaration leaves, in the same places the session manager puts them.
 type hostSideRowDrawer struct {
 	owner *State
 	index int
@@ -164,7 +182,7 @@ type hostSideRowDrawer struct {
 }
 
 func (d *hostSideRowDrawer) paint(ctx *ui.DrawContext) {
-	d.owner.recordHostSideRowRect(d.index, ctx.Rect)
+	d.owner.paintHostSideRow(ctx, d.index)
 }
 
 func (state *State) hostSideFns() *hostCatalogSide {
@@ -184,43 +202,66 @@ func (state *State) hostSideFns() *hostCatalogSide {
 	return side
 }
 
-// hostSideKey names a row by its place in the model: the all-hosts row is 0,
-// and a group is twice its index plus two, so rows keep their focus as groups
-// open and close above them.
-func (state *State) hostSideKey(i int) int {
+// hostSideEntry is row i of the tree.
+func (state *State) hostSideEntry(i int) (hostSideRow, bool) {
 	if i < 0 || i >= len(state.hostSideRows) {
+		return hostSideRow{}, false
+	}
+	return state.hostSideRows[i], true
+}
+
+// hostSideKey names a row by its place in the model: the all-hosts row is 0, a
+// group is twice its index plus one and a host twice its index plus two, so
+// rows keep their focus as groups open and close above them and the two kinds
+// never share a key.
+func (state *State) hostSideKey(i int) int {
+	row, ok := state.hostSideEntry(i)
+	if !ok {
 		return 0
 	}
-	if group := state.hostSideRows[i]; group >= 0 {
-		return 2*group + 2
+	switch row.Kind {
+	case hostSideRowGroup:
+		return 2*row.GroupIndex + 1
+	case hostSideRowHost:
+		return 2*row.HostIndex + 2
 	}
 	return 0
 }
 
 func (state *State) hostSideNode(i int) ui.TreeNode {
-	if i < 0 || i >= len(state.hostSideRows) {
+	row, ok := state.hostSideEntry(i)
+	if !ok {
 		return ui.TreeNode{Height: hostSideRowHeight}
 	}
-	group := state.hostSideRows[i]
-	if group < 0 {
-		return ui.TreeNode{Height: hostSideRowHeight, Selected: !state.hostFilterOn}
+	switch row.Kind {
+	case hostSideRowGroup:
+		g := state.hostGroups[row.GroupIndex]
+		return ui.TreeNode{
+			Depth: int(row.Depth), Branch: true,
+			Expanded: g.Expanded || strings.TrimSpace(state.visibleQuery) != "",
+			Selected: state.hostFilterOn && state.hostFilter == g.Name, Height: hostSideRowHeight,
+		}
+	case hostSideRowHost:
+		return ui.TreeNode{
+			Depth: int(row.Depth), Height: hostSideHostRowHeight,
+			Selected: state.selectedHostID == state.hosts[row.HostIndex].ID,
+		}
 	}
-	g := state.hostGroups[group]
-	return ui.TreeNode{
-		Depth: int(g.Depth), Branch: state.hostGroupHasChildren(g.Name), Expanded: g.Expanded,
-		Selected: state.hostFilterOn && state.hostFilter == g.Name, Height: hostSideRowHeight,
-	}
+	return ui.TreeNode{Height: hostSideRowHeight, Selected: !state.hostFilterOn}
 }
 
 func (state *State) hostSideLabel(i int) string {
-	if i < 0 || i >= len(state.hostSideRows) {
+	row, ok := state.hostSideEntry(i)
+	if !ok {
 		return ""
 	}
-	group := state.hostSideRows[i]
-	if group < 0 {
-		return state.messages.HostFilterAll
+	switch row.Kind {
+	case hostSideRowGroup:
+		return state.hostGroupLabel(state.hostGroups[row.GroupIndex])
+	case hostSideRowHost:
+		return state.hostPrivacySemanticLabel(state.hosts[row.HostIndex])
 	}
-	return state.hostGroupLabel(state.hostGroups[group])
+	return state.messages.HostFilterAll
 }
 
 func (state *State) hostSideDeclareRow(i int) {
@@ -230,41 +271,59 @@ func (state *State) hostSideDeclareRow(i int) {
 		return
 	}
 	d := side.drawer(state, i)
-	group := -1
-	if i >= 0 && i < len(state.hostSideRows) {
-		group = state.hostSideRows[i]
+	row, ok := state.hostSideEntry(i)
+	if !ok {
+		return
 	}
 	pal := state.pal
 	dragging := false
 	if from, _, ok := side.tree.DragSource(); ok && from == i {
 		dragging = true
 	}
-	textColor, countColor, pinColor := pal.text, pal.faint, pal.accent
+	textColor, countColor := pal.text, pal.faint
 	if dragging {
 		// The row stays where it is while the ghost carries its name.
 		textColor.Alpha *= 0.5
 		countColor.Alpha *= 0.5
-		pinColor.Alpha *= 0.5
 	}
-	row := ui.Row(c).Fill().Height(hostSideRowHeight).PadSides(0, 0, 0, 12).Gap(6).Items(ui.Center).Draw(d.fn)
-	row.Children(func() {
-		if group < 0 {
-			ui.Text(c, state.messages.HostFilterAll).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(textColor).Ellipsis().Shrink(1)
+	height := hostSideRowHeight
+	if row.Kind == hostSideRowHost {
+		height = hostSideHostRowHeight
+	}
+	line := ui.Row(c).Fill().Height(height).Gap(6).Items(ui.Center)
+	switch row.Kind {
+	case hostSideRowAll:
+		// The all-hosts row has no chevron or folder, so it keeps their gutter;
+		// its name lines up with the groups below it.
+		line = line.PadSides(0, 0, 0, 46)
+	case hostSideRowHost:
+		line = line.PadSides(0, 0, 0, 4).Gap(8).Draw(d.fn)
+	}
+	line.Children(func() {
+		switch row.Kind {
+		case hostSideRowAll:
+			ui.Text(c, state.messages.HostFilterAll).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(textColor).Ellipsis().Shrink(1)
 			ui.Text(c, state.hostTotalDigits).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(countColor).Shrink(0)
-			return
+		case hostSideRowGroup:
+			g := state.hostGroups[row.GroupIndex]
+			label := g.Label
+			if g.Name == "" {
+				label = state.messages.HostGroupDefault
+			}
+			folder := lucideIcons[iconFolderSolid]
+			if g.Expanded || strings.TrimSpace(state.visibleQuery) != "" {
+				folder = lucideIcons[iconFolderSolidOpen]
+			}
+			ui.Icon(c, folder).Size(16, 16).Shrink(0)
+			ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(textColor).Ellipsis().Shrink(1)
+			ui.Text(c, g.Digits).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(countColor).Shrink(0)
+		case hostSideRowHost:
+			host := state.hosts[row.HostIndex]
+			ui.Slot(c).Size(hostsPanelBadge, hostsPanelBadge).Shrink(0)
+			ui.Text(c, state.hostPrivacySemanticLabel(host)).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(textColor).Ellipsis().Shrink(1)
+			ui.Spacer(c)
+			ui.Slot(c).Size(hostsPanelLight, hostsPanelLight).Shrink(0)
 		}
-		g := state.hostGroups[group]
-		if g.Pinned {
-			ui.Icon(c, lucideIcons[iconStar]).Size(12, 12).Color(pinColor).Shrink(0)
-		}
-		label := g.Label
-		if g.Name == "" {
-			label = state.messages.HostGroupDefault
-		}
-		ui.Text(c, label).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(textColor).Ellipsis().Shrink(1)
-		ui.Text(c, g.Digits).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(countColor).Shrink(0)
-		ui.Spacer(c)
-		state.declareIconButton(c, hitHostSideGroupMore.At(group), iconEllipsis, state.messages.HostGroupActions.Actions, dragging, iconButtonQuiet).Size(22, 22)
 	})
 }
 
@@ -280,86 +339,143 @@ func (side *hostCatalogSide) drawer(state *State, index int) *hostSideRowDrawer 
 	return d
 }
 
-func (state *State) recordHostSideRowRect(i int, rect gfx.Rect) {
-	if i < 0 || i >= len(state.hostSideRows) {
+// paintHostSideRow paints a host row's badge and light at the two ends of the
+// row's content, as the session manager does.
+func (state *State) paintHostSideRow(ctx *ui.DrawContext, index int) {
+	row, ok := state.hostSideEntry(index)
+	if !ok || row.Kind != hostSideRowHost {
 		return
 	}
-	group := state.hostSideRows[i]
-	if group >= 0 && group < len(state.hostSide.rowRects) {
-		state.hostSide.rowRects[group] = rect
+	host := state.hosts[row.HostIndex]
+	room := ctx.Rect
+	badge := gfx.Rect{X: room.X + 4, Y: room.Y + (room.Height-hostsPanelBadge)/2, Width: hostsPanelBadge, Height: hostsPanelBadge}
+	state.paintHostCatalogIcon(ctx.Canvas, host, badge, state.pal.workspace)
+	if kind, color := state.hostLight(host); kind != lightIdle {
+		paintLight(ctx.Canvas, room.X+room.Width-hostsPanelLight/2, room.Y+room.Height/2, kind, color, state.pal.workspace)
 	}
 }
 
-// rebuildHostSideRows lists the groups the tree shows: the all-hosts row, then
-// every group whose ancestors are open.
+// rebuildHostSideRows lists the rows the tree shows: the all-hosts row, then
+// every open group with the hosts and child groups under it, in the list's
+// order. The tree shows the whole catalog, so the group filter does not narrow
+// it; the search does, as it narrows the list.
 func (state *State) rebuildHostSideRows() {
 	rows := state.hostSideRows[:0]
-	rows = append(rows, -1)
-	hidden := ""
-	for index, group := range state.hostGroups {
-		if hidden != "" && hostGroupWithin(group.Name, hidden) {
-			continue
+	rows = append(rows, hostSideRow{Kind: hostSideRowAll})
+	visible := make([]int, 0, len(state.hosts))
+	for index := range state.hosts {
+		visible = append(visible, index)
+	}
+	state.sortHostIndexes(visible)
+	words := strings.Fields(strings.ToLower(state.visibleQuery))
+	if len(words) > 0 {
+		kept := visible[:0]
+		for _, index := range visible {
+			if matchesHost(state.hosts[index], words) {
+				kept = append(kept, index)
+			}
 		}
-		hidden = ""
-		rows = append(rows, index)
-		if !group.Expanded {
-			hidden = group.Name
+		visible = kept
+	}
+	treeRows := state.appendHostTreeRows(nil, visible, words, false, false, "")
+	for _, entry := range treeRows {
+		kind := hostSideRowGroup
+		if entry.Kind == hostTreeHost {
+			kind = hostSideRowHost
 		}
+		rows = append(rows, hostSideRow{
+			Kind: kind, GroupIndex: entry.GroupIndex, HostIndex: entry.HostIndex, Depth: entry.Depth,
+		})
 	}
 	state.hostSideRows = rows
 }
 
+// hostSideGroup is the group a row names, or -1 for the all-hosts row and a
+// host row.
 func (state *State) hostSideGroup(i int) int {
-	if i < 0 || i >= len(state.hostSideRows) {
+	row, ok := state.hostSideEntry(i)
+	if !ok || row.Kind != hostSideRowGroup {
 		return -1
 	}
-	return state.hostSideRows[i]
+	return row.GroupIndex
 }
 
 func (state *State) hostSideCanDrop(from, to int, where ui.TreeDrop) bool {
-	if state.hostSort.enabled || state.activeSection != sectionHosts || state.modal != modalNone {
+	if state.hostSort.enabled || state.activeSection != sectionHosts || state.modal != modalNone || from == to {
 		return false
 	}
-	source, target := state.hostSideGroup(from), state.hostSideGroup(to)
-	if source < 0 || target < 0 {
+	source, sourceOK := state.hostSideEntry(from)
+	target, targetOK := state.hostSideEntry(to)
+	if !sourceOK || !targetOK {
 		return false
 	}
-	switch where {
-	case ui.TreeDropInside:
-		return state.hostGroupMoveAllowed(source, target)
-	case ui.TreeDropBefore, ui.TreeDropAfter:
-		return state.hostGroupMoveBesideAllowed(source, target)
+	switch source.Kind {
+	case hostSideRowGroup:
+		if target.Kind != hostSideRowGroup {
+			return false
+		}
+		switch where {
+		case ui.TreeDropInside:
+			return state.hostGroupMoveAllowed(source.GroupIndex, target.GroupIndex)
+		case ui.TreeDropBefore, ui.TreeDropAfter:
+			return state.hostGroupMoveBesideAllowed(source.GroupIndex, target.GroupIndex)
+		}
+	case hostSideRowHost:
+		switch target.Kind {
+		case hostSideRowGroup:
+			return where == ui.TreeDropInside
+		case hostSideRowHost:
+			return where != ui.TreeDropInside
+		}
 	}
 	return false
 }
 
-// hostSideChanges applies what the user did to the group tree in this
-// declaration: choosing a group filters the list, a chevron opens or closes
-// it, and a dragged group moves under its new parent.
+// hostSideChanges applies what the user did to the tree in this declaration:
+// choosing a group opens or closes it, choosing a host selects it, and a
+// dragged row moves where it was dropped.
 func (state *State) hostSideChanges(c ui.C) {
 	side := &state.hostSide
 	if i, ok := side.tree.Toggled(); ok {
-		if group := state.hostSideGroup(i); group >= 0 {
+		if row, found := state.hostSideEntry(i); found && row.Kind == hostSideRowGroup {
+			group := row.GroupIndex
 			c.After(func() { state.toggleHostGroup(group) })
 		}
 	}
 	if i, ok := side.tree.Chosen(); ok {
-		group := state.hostSideGroup(i)
-		if group < 0 {
-			if state.hostFilterOn {
-				c.After(func() { state.setHostFilter(false, "") })
-			}
-		} else {
-			name := state.hostGroups[group].Name
-			if !state.hostFilterOn || state.hostFilter != name {
-				c.After(func() { state.setHostFilter(true, name) })
+		if row, found := state.hostSideEntry(i); found {
+			switch row.Kind {
+			case hostSideRowAll:
+				if state.hostFilterOn {
+					c.After(func() { state.setHostFilter(false, "") })
+				}
+			case hostSideRowGroup:
+				group := row.GroupIndex
+				c.After(func() { state.toggleHostGroup(group) })
+			case hostSideRowHost:
+				host := state.hosts[row.HostIndex]
+				c.After(func() {
+					state.selectedHostID = host.ID
+					if state.hostFilterOn && !state.inHostFilter(host) {
+						state.setHostFilter(false, "")
+					}
+					state.hostRevealID = host.ID
+				})
 			}
 		}
 	}
 	if move, ok := side.tree.Dropped(); ok {
-		source, target := state.hostSideGroup(move.From), state.hostSideGroup(move.To)
-		if source >= 0 && target >= 0 {
-			path, parent := state.hostGroups[source].Name, state.hostGroups[target].Name
+		source, sourceOK := state.hostSideEntry(move.From)
+		target, targetOK := state.hostSideEntry(move.To)
+		if !sourceOK || !targetOK {
+			return
+		}
+		switch source.Kind {
+		case hostSideRowGroup:
+			if target.Kind != hostSideRowGroup {
+				return
+			}
+			path, parent := state.hostGroups[source.GroupIndex].Name, state.hostGroups[target.GroupIndex].Name
 			if path != "" {
 				switch move.Where {
 				case ui.TreeDropInside:
@@ -384,6 +500,27 @@ func (state *State) hostSideChanges(c ui.C) {
 					})
 				}
 			}
+		case hostSideRowHost:
+			hostID := state.hosts[source.HostIndex].ID
+			switch target.Kind {
+			case hostSideRowGroup:
+				group := state.hostGroups[target.GroupIndex].Name
+				c.After(func() {
+					if state.activeSection != sectionHosts || state.modal != modalNone {
+						return
+					}
+					state.moveHostToGroup(hostID, group)
+				})
+			case hostSideRowHost:
+				targetID := state.hosts[target.HostIndex].ID
+				after := move.Where == ui.TreeDropAfter
+				c.After(func() {
+					if state.activeSection != sectionHosts || state.modal != modalNone {
+						return
+					}
+					state.reorderHostBeside(hostID, targetID, after)
+				})
+			}
 		}
 	}
 }
@@ -404,12 +541,6 @@ func (state *State) declareHostsSide(c ui.C, layout hostsLayout) {
 		state.declareIconButton(c, hitHostGroupsExpandAll, iconChevronsExpand, m.HostGroupActions.ExpandAll, !expand, iconButtonQuiet).Size(24, 24)
 		state.declareIconButton(c, hitHostGroupsCollapseAll, iconChevronsCollapse, m.HostGroupActions.CollapseAll, !collapse, iconButtonQuiet).Size(24, 24)
 	})
-	if cap(side.rowRects) < len(state.hostGroups) {
-		side.rowRects = make([]gfx.Rect, len(state.hostGroups))
-	} else {
-		side.rowRects = side.rowRects[:len(state.hostGroups)]
-		clear(side.rowRects)
-	}
 	side.next = 0
 	side.c = c
 	side.tree.RowHeight = hostSideRowHeight
@@ -448,29 +579,22 @@ func (state *State) paintHostsSideSplit(canvas *gfx.Canvas) {
 	state.hostSideResizable(canvas).Paint(state.messages.HostCatalog.ResizeGroups)
 }
 
-// hostSideGroupFromHit maps a pointer target to the group row it names: a row
-// of the tree, its chevron, or the row's actions button.
-func (state *State) hostSideGroupFromHit(id gfx.ID) (int, bool) {
+// hostSideRowFromHit maps a pointer target to the row it names: a row of the
+// tree or its chevron.
+func (state *State) hostSideRowFromHit(id gfx.ID) (hostSideRow, bool) {
 	if id.IsZero() {
-		return 0, false
-	}
-	if id.Scope() == hitHostSideGroupMore {
-		group := item(id)
-		if group >= 0 && group < len(state.hostGroups) {
-			return group, true
-		}
-		return 0, false
+		return hostSideRow{}, false
 	}
 	for i := range state.hostSideRows {
 		if id == state.hostSide.tree.RowID(i) || id == state.hostSide.tree.DisclosureID(i) {
 			return state.hostSideRows[i], true
 		}
 	}
-	return 0, false
+	return hostSideRow{}, false
 }
 
-// hostSidePointer drags the divider and opens a group's actions on a secondary
-// press over a row of the tree.
+// hostSidePointer drags the divider, connects a host on a double click, and
+// opens a group's actions or a host's menu on a secondary press.
 func (state *State) hostSidePointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	side := &state.hostSide
 	if state.activeSection != sectionHosts || state.modal != modalNone || !side.visible {
@@ -492,15 +616,47 @@ func (state *State) hostSidePointer(event gfx.PointerEvent) (gfx.EventResult, bo
 		}
 		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	if event.Kind != gfx.PointerDown || event.Button != gfx.PointerButtonSecondary {
+	if event.Kind != gfx.PointerDown {
 		return gfx.EventResult{}, false
 	}
-	group, ok := state.hostSideGroupFromHit(event.Target)
-	if !ok {
+	at := gfx.Point{X: event.X, Y: event.Y}
+	row, rowOK := state.hostSideRowFromHit(event.Target)
+	if event.Button == gfx.PointerButtonPrimary && event.ClickCount >= 2 {
+		if !rowOK || row.Kind != hostSideRowHost {
+			return gfx.EventResult{}, false
+		}
+		host := state.hosts[row.HostIndex]
+		state.selectedHostID = host.ID
+		if state.hostFilterOn && !state.inHostFilter(host) {
+			state.setHostFilter(false, "")
+		}
+		state.newHostSession(host)
+		return gfx.EventResult{Handled: true, Repaint: true}, true
+	}
+	if event.Button != gfx.PointerButtonSecondary {
 		return gfx.EventResult{}, false
 	}
-	if group >= 0 {
-		state.openHostGroupActions(state.hostGroups[group].Name, gfx.Point{X: event.X, Y: event.Y})
+	if !rowOK {
+		// A press on the tree's own ground starts a catalog at the top level;
+		// a menu's backdrop carries its own target and stays with it.
+		if event.Target.IsZero() {
+			if area := side.area.Rect(); pointInRect(event.X, event.Y, area) {
+				state.openHostBlankMenu(at)
+				return gfx.EventResult{Handled: true, Repaint: true}, true
+			}
+		}
+		return gfx.EventResult{}, false
+	}
+	switch row.Kind {
+	case hostSideRowGroup:
+		state.openHostGroupActions(state.hostGroups[row.GroupIndex].Name, at)
+	case hostSideRowHost:
+		host := state.hosts[row.HostIndex]
+		state.selectedHostID = host.ID
+		state.hostBlankMenu.open = false
+		state.hostMenu = hostMenu{open: true, host: host.ID, checked: state.hostSelected(host.ID), at: at}
+	case hostSideRowAll:
+		return gfx.EventResult{}, false
 	}
 	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
@@ -510,12 +666,16 @@ func (state *State) hostSidePointer(event gfx.PointerEvent) (gfx.EventResult, bo
 func (state *State) hostDragGhostSource() (string, gfx.Point, bool) {
 	side := &state.hostSide
 	if side.visible && side.tree.Dragging() {
-		if row, at, ok := side.tree.DragSource(); ok && row >= 0 && row < len(state.hostSideRows) {
-			group := state.hostSideRows[row]
-			if group < 0 {
+		if row, at, ok := side.tree.DragSource(); ok {
+			if entry, found := state.hostSideEntry(row); found {
+				switch entry.Kind {
+				case hostSideRowGroup:
+					return state.hostGroupChipLabel(state.hostGroups[entry.GroupIndex]), at, true
+				case hostSideRowHost:
+					return state.hostPrivacySemanticLabel(state.hosts[entry.HostIndex]), at, true
+				}
 				return state.messages.HostFilterAll, at, true
 			}
-			return state.hostGroupChipLabel(state.hostGroups[group]), at, true
 		}
 	}
 	if state.hostView != hostViewGrid && state.hostList.tree.Dragging() {

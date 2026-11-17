@@ -46,12 +46,18 @@ func (state *State) endHostSort() {
 	state.hostSort.pickup = hostSortPickup{}
 }
 
-// hostPressPointer turns a press on a host row or card into a drag when the
-// pointer moves far enough. It never handles the press itself: a click that
-// does not move remains the selection or open it always was.
+// hostPressPointer turns a press on a card into a drag when the pointer moves
+// far enough. It never handles the press itself: a click that does not move
+// remains the selection or open it always was. The list is a tree, whose own
+// drag moves and reorders hosts; only the cards use this hold, so the two
+// gestures never own the same press.
 func (state *State) hostPressPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	press := &state.hostSort.press
 	if state.hostSort.enabled {
+		return gfx.EventResult{}, false
+	}
+	if state.hostView != hostViewGrid {
+		press.active = false
 		return gfx.EventResult{}, false
 	}
 	switch event.Kind {

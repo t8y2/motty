@@ -53,11 +53,13 @@ func (state *State) clickHostManagement(id gfx.ID) bool {
 		switch {
 		case id == hitHostGroupDismiss || id == hitMoveHostGroup:
 			state.hostGroupMenu = false
+			state.hostGroupCopy = false
 		case id == hitHostGroupNone:
 			state.hostGroupMenu = false
 			state.applyHostGroup("")
 		case id == hitHostGroupNew:
 			state.hostGroupMenu = false
+			state.hostGroupCopy = false
 			state.hostGroupEditor = text.Editor{}
 			state.groupActions.op = hostGroupMoveHosts
 			state.dialogError = ""
@@ -74,6 +76,7 @@ func (state *State) clickHostManagement(id gfx.ID) bool {
 			}
 		default:
 			state.hostGroupMenu = false
+			state.hostGroupCopy = false
 		}
 		return true
 	}
@@ -940,6 +943,10 @@ func (state *State) clickMoveHostGroupDialog(id gfx.ID) {
 			if !state.createHostChildGroup(state.groupActions.path, group) {
 				return
 			}
+		case hostGroupCreateRoot:
+			if !state.createHostRootGroup(group) {
+				return
+			}
 		default:
 			if group == "" {
 				state.dialogError = state.messages.ErrGroupRequired
@@ -957,6 +964,11 @@ func (state *State) clickMoveHostGroupDialog(id gfx.ID) {
 }
 
 func (state *State) applyHostGroup(group string) {
+	if state.hostGroupCopy {
+		state.hostGroupCopy = false
+		state.copyHostsToGroup(state.hostActionIDs, group)
+		return
+	}
 	count := 0
 	for index := range state.hosts {
 		if !containsHostID(state.hostActionIDs, state.hosts[index].ID) {
@@ -1032,6 +1044,10 @@ func (state *State) hostManagementKey(event gfx.KeyEvent) (gfx.EventResult, bool
 	}
 	if state.groupActions.open && event.Key == gfx.KeyEscape {
 		state.groupActions.open = false
+		return handled, true
+	}
+	if state.hostBlankMenu.open && event.Key == gfx.KeyEscape {
+		state.hostBlankMenu.open = false
 		return handled, true
 	}
 	if state.modal == modalDeleteHost {

@@ -115,6 +115,9 @@ const (
 	// iconArrowUpDown is the command bar's order button.
 	iconArrowUpDown
 	iconLocalProxy
+	// The solid folders mark a group in the host trees, open or closed.
+	iconFolderSolid
+	iconFolderSolidOpen
 )
 
 // terminalPage reports whether the window shows the panes of a workspace rather
@@ -365,6 +368,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	state.paintTabMenu(canvas, viewport)
 	state.paintHostMenu(canvas, viewport)
 	state.paintHostGroupActions(canvas, viewport)
+	state.paintHostBlankMenu(canvas, viewport)
 	state.paintWorkspaceTemplateMenu(canvas, viewport)
 	state.paintLocalShellPicker(canvas, viewport)
 	state.paintSnippetMenu(canvas, viewport)
@@ -1439,7 +1443,10 @@ func (state *State) paintHostsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 func (state *State) paintHostMenus(canvas *gfx.Canvas, viewport gfx.Rect) {
 	bounds := state.hostsBounds
 	if bounds.Width == 0 {
-		return
+		// The session manager opens the same group picker from the terminal page,
+		// where the hosts page was never painted; the picker anchors to the point
+		// its menu was opened at, so any window-wide bounds serve.
+		bounds = state.windowRect()
 	}
 	if state.hostGroupMenu {
 		state.paintHostGroupMenu(canvas, bounds, viewport)
@@ -2293,7 +2300,12 @@ func (state *State) declareHostGroupTreeRow(c ui.C, d *hostRowDrawer, width floa
 		if group.Name == "" {
 			label = state.messages.HostGroupDefault
 		}
-		ui.Text(c, label).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(textColor).LineHeight(23).Ellipsis().Shrink(1)
+		folder := lucideIcons[iconFolderSolid]
+		if group.Expanded || strings.TrimSpace(state.visibleQuery) != "" {
+			folder = lucideIcons[iconFolderSolidOpen]
+		}
+		ui.Icon(c, folder).Size(16, 16).Shrink(0)
+		ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(textColor).LineHeight(23).Ellipsis().Shrink(1)
 		ui.Text(c, group.Count).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(countColor).LineHeight(21)
 	})
 }
@@ -2682,28 +2694,30 @@ var lucideIcons = [...]gfx.Icon{
 	iconCheck:    icons.Check,
 	iconPause:    icons.Pause,
 
-	iconFile:       icons.File,
-	iconLink:       icons.Link,
-	iconUpload:     icons.Upload,
-	iconDownload:   icons.Download,
-	iconFolderUp:   icons.FolderUp,
-	iconFolderPlus: icons.FolderPlus,
-	iconPencil:     icons.Pencil,
-	iconTrash:      icons.Trash2,
-	iconLock:       icons.Lock,
-	iconRefresh:    icons.RotateCw,
-	iconArrowUp:    icons.ArrowUp,
-	iconFolderOpen: icons.FolderOpen,
-	iconActivity:   icons.Activity,
-	iconRecord:     icons.CircleDot,
-	iconRecordStop: icons.CircleStop,
-	iconPlay:       icons.Play,
-	iconStop:       icons.CircleStop,
-	iconFilm:       icons.Film,
-	iconFileDown:   icons.FileDown,
-	iconColumns2:   icons.Columns2,
-	iconRows2:      icons.Rows2,
-	iconGrid2x2:    icons.Grid2x2,
+	iconFile:            icons.File,
+	iconLink:            icons.Link,
+	iconUpload:          icons.Upload,
+	iconDownload:        icons.Download,
+	iconFolderUp:        icons.FolderUp,
+	iconFolderPlus:      icons.FolderPlus,
+	iconPencil:          icons.Pencil,
+	iconTrash:           icons.Trash2,
+	iconLock:            icons.Lock,
+	iconRefresh:         icons.RotateCw,
+	iconArrowUp:         icons.ArrowUp,
+	iconFolderOpen:      icons.FolderOpen,
+	iconFolderSolid:     icons.FolderSolid,
+	iconFolderSolidOpen: icons.FolderSolidOpen,
+	iconActivity:        icons.Activity,
+	iconRecord:          icons.CircleDot,
+	iconRecordStop:      icons.CircleStop,
+	iconPlay:            icons.Play,
+	iconStop:            icons.CircleStop,
+	iconFilm:            icons.Film,
+	iconFileDown:        icons.FileDown,
+	iconColumns2:        icons.Columns2,
+	iconRows2:           icons.Rows2,
+	iconGrid2x2:         icons.Grid2x2,
 
 	iconBot:              icons.Bot,
 	iconHistory:          icons.History,
@@ -3293,6 +3307,8 @@ func (state *State) declareMoveHostGroupDialog(c ui.C) {
 		title, submit, label = state.messages.HostGroupActions.Rename, state.messages.HostGroupActions.Save, state.messages.HostGroupActions.Name
 	case hostGroupCreateChild:
 		title, submit, label = state.messages.HostGroupActions.NewChild, state.messages.HostGroupActions.Create, state.messages.HostGroupActions.Name
+	case hostGroupCreateRoot:
+		title, submit, label = state.messages.NewGroup, state.messages.HostGroupActions.Create, state.messages.HostGroupActions.Name
 	case hostGroupRelocate:
 		title, submit, label = state.messages.HostGroupActions.Move, state.messages.MoveGroupSubmit, state.messages.HostGroupActions.Parent
 	}

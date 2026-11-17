@@ -583,7 +583,12 @@ type State struct {
 	hostTotalDigits        string
 	groupMenu              groupMenuAnchor // where the Move group picker opens
 	moveGroups             *hostMoveGroupMenu
-	hostSelectionText      string
+	// hostGroupCopy makes the group picker's choice a destination for copies
+	// rather than for moves; hostClipboard is what Paste duplicates.
+	hostGroupCopy     bool
+	hostClipboard     []uint32
+	hostBlankMenu     hostBlankMenu
+	hostSelectionText string
 	// inputGapNote is the last terminal input gap reported to the log, so a
 	// paint that keeps asking for a surface that cannot exist logs it once.
 	inputGapNote       string
@@ -593,7 +598,7 @@ type State struct {
 	hostGroups         []hostGroup
 	hostSide           hostCatalogSide
 	hostsPanel         hostsPanel
-	hostSideRows       []int
+	hostSideRows       []hostSideRow
 	hostTreeRows       []hostTreeRow
 	hostList           hostCatalogList
 	hostGridDrag       hostGridDrag
@@ -1892,7 +1897,7 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		return
 	}
 	if state.clickHostOrder(id) || state.clickHostsPanel(id) || state.clickToolbarDockMenu(id) || state.clickWorkspaceTemplateManagement(id) ||
-		state.clickHostGroupActions(id) || state.clickTerminalMenu(id) || state.clickGhostMenu(id) || state.clickTabMenu(id) || state.clickHostMenu(id) || state.clickLocalShellPicker(id) || state.clickSnippetMenu(id) || state.clickSFTPMenu(id) {
+		state.clickHostGroupActions(id) || state.clickHostBlankMenu(id) || state.clickTerminalMenu(id) || state.clickGhostMenu(id) || state.clickTabMenu(id) || state.clickHostMenu(id) || state.clickLocalShellPicker(id) || state.clickSnippetMenu(id) || state.clickSFTPMenu(id) {
 		return
 	}
 	if state.clickWorkspaceCommand(id) {
@@ -2672,6 +2677,9 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 		return result
 	}
 	if result, handled := state.hostGroupActionsPointer(event); handled {
+		return result
+	}
+	if result, handled := state.hostBlankMenuPointer(event); handled {
 		return result
 	}
 	if result, handled := state.localShellPickerPointer(event); handled {

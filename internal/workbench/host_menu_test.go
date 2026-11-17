@@ -127,9 +127,9 @@ func TestHostMenuEditsCopiesAndDeletesTheHostPointedAt(t *testing.T) {
 	state.Click(hitDialogCancel)
 
 	rightClickHost(state, target.ID)
-	state.Click(hitHostMenuCopy)
+	state.Click(hitHostMenuCopyEdit)
 	if state.modal != modalNewHost || state.hostDialogMode != hostDialogCopy {
-		t.Fatalf("Copy: modal %v mode %v", state.modal, state.hostDialogMode)
+		t.Fatalf("Copy and Edit: modal %v mode %v", state.modal, state.hostDialogMode)
 	}
 	state.Click(hitDialogCancel)
 
@@ -169,7 +169,7 @@ func TestRightClickInsideSeveralCheckedHostsKeepsThemAndDisablesTheSingleOnes(t 
 		t.Fatalf("selection = %v, want both kept", state.hostSelections)
 	}
 	canvas, _ := paintedTexts(state)
-	for id, disabled := range map[gfx.ID]bool{hitHostMenuConnect: true, hitHostMenuAddress: true, hitHostMenuName: true, hitHostMenuEdit: true, hitHostMenuCopy: true, hitHostMenuMove: false, hitHostMenuDelete: false} {
+	for id, disabled := range map[gfx.ID]bool{hitHostMenuConnect: true, hitHostMenuAddress: true, hitHostMenuName: true, hitHostMenuEdit: true, hitHostMenuCopyEdit: true, hitHostMenuCopy: false, hitHostMenuCopyTo: false, hitHostMenuMove: false, hitHostMenuDelete: false} {
 		if hit, ok := hitByID(canvas, id); !ok || hit.Disabled != disabled {
 			t.Errorf("item %d: found=%v disabled=%v, want disabled=%v", id, ok, hit.Disabled, disabled)
 		}
@@ -210,7 +210,7 @@ func TestHostMenuIsAsWideAsItsLabelsAskInBothLanguages(t *testing.T) {
 			t.Fatal("no menu")
 		}
 		widest := float32(0)
-		for _, label := range []string{state.messages.Connect, state.messages.CopyAddressAndPort, state.messages.CopyConnectionName, state.messages.EditHost, state.messages.CopyHostTitle, state.messages.MoveHostGroup, state.messages.DeleteHost} {
+		for _, label := range []string{state.messages.Connect, state.messages.CopyAddressAndPort, state.messages.CopyConnectionName, state.messages.EditHost, state.messages.CopyHost, state.messages.PasteHost, state.messages.CopyHostTo, state.messages.CopyHostAndEdit, state.messages.MoveHostGroup, state.messages.DeleteHost} {
 			widest = max(widest, canvas.TextWidth(label, 13))
 		}
 		// A context menu is never narrower than Vega's 9rem, whatever its labels.
