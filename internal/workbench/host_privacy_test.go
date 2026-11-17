@@ -242,17 +242,20 @@ func TestHostPrivacyFieldChoicesPersistIndependently(t *testing.T) {
 	}
 	canvas = hostPrivacyCanvas(t)
 	state.Paint(&canvas, size)
-	if state.popups.owner != hitHostPrivacyDismiss {
-		t.Fatalf("privacy menu scroll owner = %v, want %v", state.popups.owner, hitHostPrivacyDismiss)
-	}
-	for _, id := range []gfx.ID{hitHostPrivacyEnabled, hitHostPrivacyName, hitHostPrivacyAddress, hitHostPrivacyUser} {
-		hit, ok := hitByID(&canvas, id)
-		if !ok || !hit.Checked {
-			t.Fatalf("privacy menu item %v = %+v, found %v", id, hit, ok)
+	m := state.messages.Tools
+	for _, label := range []string{m.HostPrivacy, m.HostPrivacyName, m.HostPrivacyAddress, m.HostPrivacyUser} {
+		var row gfx.Hit
+		for _, hit := range canvas.Hits() {
+			if hit.Role == gfx.RoleMenuItem && hit.Label == label {
+				row = hit
+			}
+		}
+		if row.ID.IsZero() || !row.Checked {
+			t.Fatalf("privacy menu item %q = %+v", label, row)
 		}
 	}
 
-	state.Click(hitHostPrivacyName)
+	clickPageMenuRow(t, state, m.HostPrivacyName)
 	if state.hostPrivacy.maskName || !state.hostPrivacy.maskAddress || !state.hostPrivacy.maskUser {
 		t.Fatalf("field choices = %+v", state.hostPrivacy)
 	}

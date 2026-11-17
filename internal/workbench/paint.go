@@ -1453,10 +1453,6 @@ func (state *State) paintHostMenus(canvas *gfx.Canvas, viewport gfx.Rect) {
 	if state.importMenu {
 		state.paintImportMenu(canvas, viewport)
 	}
-	if state.hostPrivacy.menu {
-		state.paintHostPrivacyMenu(canvas, viewport)
-	}
-	state.paintHostOrder(canvas, viewport)
 }
 
 // hostsHeaderPlan works out the header of the hosts page from the window: the
@@ -1723,6 +1719,8 @@ func (state *State) declareHostViewControls(c ui.C) {
 			// The far-right control is the display-order menu, wearing the
 			// manual-sort mark; manual moves are made by dragging a host.
 			chrome.hostToggle.order = state.declareIconButton(c, hitHostOrder, iconTransfer, m.HostCatalog.Order, false, orderStyle).Size(26, 26).MarginSides(0, 0, 0, 6)
+			state.declareHostPrivacyMenu(c, chrome.hostToggle.privacy)
+			state.declareHostOrderMenu(c, chrome.hostToggle.order)
 		})
 	})
 }

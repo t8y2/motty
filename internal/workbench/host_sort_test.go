@@ -67,7 +67,7 @@ func TestHostOrderButtonKeepsItsMenuAndTheOldSortButtonIsGone(t *testing.T) {
 	state.Click(hitHostOrder)
 	canvas = gfx.Canvas{}
 	state.Paint(&canvas, size)
-	if _, ok := hitByID(&canvas, hitHostOrderManual); !ok {
+	if !canvasHasMenuRow(&canvas, state.messages.HostCatalog.Manual) {
 		t.Fatal("the display-order menu no longer opens")
 	}
 }

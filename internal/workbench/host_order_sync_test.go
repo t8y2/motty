@@ -41,7 +41,7 @@ func TestHostDisplayOrderWebDAVSharesPreferenceAndPreservesManualOrder(t *testin
 		t.Fatal("manual host move was refused")
 	}
 	first.save()
-	chooseDisplayOrder(first, "ip")
+	chooseDisplayOrder(t, first, "ip")
 	syncAndWait(t, first, hitSyncNow, done)
 	syncAndWait(t, second, hitSyncNow, done)
 	if second.hostOrder != hostOrderIP {
@@ -57,13 +57,13 @@ func TestHostDisplayOrderWebDAVSharesPreferenceAndPreservesManualOrder(t *testin
 	if got, want := displayHostIDs(second), []string{"host_c", "host_a", "host_d", "host_b", "host_z", "host_f", "host_e"}; !slices.Equal(got, want) {
 		t.Fatalf("synced IP display = %v, want %v", got, want)
 	}
-	chooseDisplayOrder(first, "name")
+	chooseDisplayOrder(t, first, "name")
 	syncAndWait(t, first, hitSyncNow, done)
 	syncAndWait(t, second, hitSyncNow, done)
 	if got, want := displayHostIDs(second), []string{"host_c", "host_a", "host_d", "host_b", "host_z", "host_e", "host_f"}; !slices.Equal(got, want) {
 		t.Fatalf("synced name display = %v, want %v", got, want)
 	}
-	chooseDisplayOrder(first, "manual")
+	chooseDisplayOrder(t, first, "manual")
 	syncAndWait(t, first, hitSyncNow, done)
 	syncAndWait(t, second, hitSyncNow, done)
 	if second.hostOrder != hostOrderManual || second.hostGroupIndex("Team/Prod/EU") > second.hostGroupIndex("Team/Dev") {

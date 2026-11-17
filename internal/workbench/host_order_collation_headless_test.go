@@ -47,7 +47,12 @@ func TestHostCatalogChineseNameOrderHeadless(t *testing.T) {
 		}
 	}
 	click(hitHostOrder)
-	click(hitHostOrderName)
+	if err := view.ClickLabel(state.messages.HostCatalog.Name); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
 	if state.hostOrder != hostOrderName {
 		t.Fatal("native order menu did not select name order")
 	}

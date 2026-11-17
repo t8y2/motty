@@ -5,9 +5,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text/collation"
+	"github.com/vivaui/viva/ui"
 	textlanguage "golang.org/x/text/language"
 	"motty/internal/i18n"
 )
@@ -21,12 +21,8 @@ const (
 )
 
 var (
-	hostOrderHits       = tree.Feature("host-order")
-	hitHostOrder        = tree.ID(hostOrderHits, "trigger")
-	hitHostOrderDismiss = tree.ID(hostOrderHits, "dismiss")
-	hitHostOrderManual  = tree.ID(hostOrderHits, "manual")
-	hitHostOrderName    = tree.ID(hostOrderHits, "name")
-	hitHostOrderIP      = tree.ID(hostOrderHits, "ip")
+	hostOrderHits = tree.Feature("host-order")
+	hitHostOrder  = tree.ID(hostOrderHits, "trigger")
 )
 
 func hostOrderFromString(value string) hostOrderMode {
@@ -129,56 +125,46 @@ func (state *State) sortHostIndexes(indexes []int) {
 }
 
 func (state *State) clickHostOrder(id gfx.ID) bool {
-	if !state.hostOrderMenu && id != hitHostOrder {
+	if id != hitHostOrder {
 		return false
 	}
 	if state.activeSection != sectionHosts || state.modal != modalNone {
 		state.hostOrderMenu = false
 		return false
 	}
-	if id == hitHostOrder {
-		state.hostOrderMenu = !state.hostOrderMenu
-		state.hostPrivacy.menu = false
-		state.hostMenu.open, state.groupActions.open = false, false
-		state.hostFilterMenu, state.hostGroupMenu, state.importMenu = false, false, false
-		state.chipMenu.open = false
-		return true
-	}
-	state.hostOrderMenu = false
-	switch id {
-	case hitHostOrderManual:
-		state.setHostOrder(hostOrderManual)
-	case hitHostOrderName:
-		state.setHostOrder(hostOrderName)
-	case hitHostOrderIP:
-		state.setHostOrder(hostOrderIP)
-	}
+	state.hostOrderMenu = !state.hostOrderMenu
+	state.hostPrivacy.menu = false
+	state.hostMenu.open, state.groupActions.open = false, false
+	state.hostFilterMenu, state.hostGroupMenu, state.importMenu = false, false, false
+	state.chipMenu.open = false
 	return true
 }
 
-func (state *State) paintHostOrder(canvas *gfx.Canvas, viewport gfx.Rect) {
-	if !state.hostOrderMenu || state.activeSection != sectionHosts || state.modal != modalNone {
+// declareHostOrderMenu declares the display-order menu under the trigger the
+// page declared: the three orders, the current one chosen.
+func (state *State) declareHostOrderMenu(c ui.C, anchor ui.Box) {
+	if !state.hostOrderMenu {
+		return
+	}
+	if state.activeSection != sectionHosts || state.modal != modalNone {
+		state.hostOrderMenu = false
 		return
 	}
 	messages := state.messages.HostCatalog
-	var rows menuRows
-	for _, option := range [...]struct {
-		id    gfx.ID
-		label string
-		mode  hostOrderMode
-	}{
-		{hitHostOrderManual, messages.Manual, hostOrderManual},
-		{hitHostOrderName, messages.Name, hostOrderName},
-		{hitHostOrderIP, messages.IP, hostOrderIP},
-	} {
-		rows.add(components.ContextMenuItem{ID: option.id, Label: option.label, Kind: components.ContextMenuRadio, Selected: state.hostOrder == option.mode})
-	}
-	width, height := rows.size(canvas, state.contextMenuTheme())
-	menu := components.BeginContextMenu(canvas, state.contextMenuTheme(), state.popupBelow(canvas, state.hostOrderButton, width, height, 0), components.ContextMenuOptions{
-		Layer: dialogLayer, Scope: dialogScope, DismissID: hitHostOrderDismiss, Viewport: viewport,
-		Scroll: state.menuScrollFor(hitHostOrderDismiss), RowHeight: contextMenuRow,
+	ui.PopupLayer(c, dialogLayer)
+	ui.Menu(c, anchor, &state.hostOrderMenu, func(menu *ui.MenuItems) {
+		menu.RowHeight(contextMenuRow)
+		for _, option := range [...]struct {
+			label string
+			mode  hostOrderMode
+		}{
+			{messages.Manual, hostOrderManual},
+			{messages.Name, hostOrderName},
+			{messages.IP, hostOrderIP},
+		} {
+			if menu.Item(option.label).Chosen(state.hostOrder == option.mode).Clicked() {
+				c.After(func() { state.setHostOrder(option.mode) })
+			}
+		}
 	})
-	state.menuPlaced(menu.Bounds())
-	rows.paint(&menu, nil)
-	menu.End()
 }

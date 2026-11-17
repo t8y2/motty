@@ -23,7 +23,7 @@ func chineseNameOrderState(t *testing.T) *State {
 		state.hosts[index].finish()
 	}
 	state.hostDataChanged()
-	chooseDisplayOrder(state, "name")
+	chooseDisplayOrder(t, state, "name")
 	return state
 }
 
@@ -47,7 +47,7 @@ func TestHostDisplayOrderSortsTopLevelGroupsByPinyin(t *testing.T) {
 	for _, name := range []string{"个人", "临时", "公司", "合作", "托管", "高校"} {
 		state.hostGroups = append(state.hostGroups, hostGroup{Name: name, Explicit: true, Expanded: true})
 	}
-	chooseDisplayOrder(state, "name")
+	chooseDisplayOrder(t, state, "name")
 	var names []string
 	for _, group := range state.hostGroups {
 		names = append(names, group.Name)
@@ -68,7 +68,7 @@ func TestHostDisplayOrderFollowsALanguageChange(t *testing.T) {
 		state.hosts[index].finish()
 	}
 	state.hostDataChanged()
-	chooseDisplayOrder(state, "name")
+	chooseDisplayOrder(t, state, "name")
 	before := displayHostIDs(state)
 	if slices.Equal(before, []string{"host_fu", "host_quan"}) {
 		t.Fatalf("English order already reads as pinyin: %v", before)
@@ -106,7 +106,7 @@ func TestHostDisplayOrderIsDeterministicForCanonicallyEqualLabels(t *testing.T) 
 		state.hosts[index].finish()
 	}
 	state.hostDataChanged()
-	chooseDisplayOrder(state, "name")
+	chooseDisplayOrder(t, state, "name")
 	first := displayHostIDs(state)
 	slices.Reverse(state.hosts)
 	state.hostDataChanged()
