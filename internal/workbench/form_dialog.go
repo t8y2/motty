@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"context"
 	"math"
 	"unicode/utf8"
 
@@ -55,6 +56,7 @@ type formField struct {
 // the text of an error to show (the form stays open) or "" when the work is done
 // or started, which closes the form.
 type formDialog struct {
+	focusPending       bool
 	title, description string
 	submit             string
 	submitLabel        func(*formDialog) string
@@ -68,7 +70,12 @@ type formDialog struct {
 	testRunning bool
 	// testNote is what a test that went through says in the form; the status
 	// line behind a dialog is not seen.
-	testNote string
+	testNote     string
+	testSuccess  string
+	testValues   [maxFormFields]string
+	testChecked  bool
+	testSnapshot bool
+	testCancel   context.CancelFunc
 	// A form may ask for explicit consent after its fields. The caller owns
 	// the label, explanation and saved value; other forms have no checkbox.
 	checkLabel, checkDescription string
@@ -88,11 +95,15 @@ type formDialog struct {
 // openForm shows a form. The fields are copied in; use the returned form to
 // preset their text.
 func (state *State) openForm(form formDialog, fields ...formField) *formDialog {
+	if state.form.testCancel != nil {
+		state.form.testCancel()
+	}
 	state.formSerial++
 	state.form = form
 	state.form.count = copy(state.form.fields[:], fields)
 	state.form.dialogError = ""
 	state.form.testRunning = false
+	state.form.focusPending = true
 	state.modal = modalForm
 	return &state.form
 }
@@ -206,12 +217,13 @@ func (state *State) startFormTest() string {
 	if state.form.test == nil || state.form.testRunning {
 		return ""
 	}
+	state.form.testValues, state.form.testChecked, state.form.testSnapshot = state.form.values(), state.form.checked, true
 	message := state.form.test(state, &state.form)
 	if message != "" {
 		return message
 	}
 	state.form.testRunning = true
-	state.form.dialogError, state.form.testNote = "", ""
+	state.form.dialogError, state.form.testNote = "", state.messages.Tools.SyncTestRunning
 	state.status = state.messages.Tools.SyncTestRunning
 	return ""
 }
@@ -219,6 +231,10 @@ func (state *State) startFormTest() string {
 // clearFormTestStatus takes "testing" off the status line when no result is
 // going to replace it.
 func (state *State) clearFormTestStatus() {
+	if state.form.testCancel != nil {
+		state.form.testCancel()
+		state.form.testCancel = nil
+	}
 	if state.status == state.messages.Tools.SyncTestRunning {
 		state.status = ""
 	}
@@ -228,7 +244,6 @@ func (state *State) clearFormTestStatus() {
 // or replaced form drops the stale result.
 func (state *State) finishFormTest(serial uint32, err error) {
 	if state.modal != modalForm || state.formSerial != serial {
-		state.clearFormTestStatus()
 		return
 	}
 	state.form.testRunning = false
@@ -238,6 +253,9 @@ func (state *State) finishFormTest(serial uint32, err error) {
 		return
 	}
 	state.form.dialogError, state.form.testNote = "", state.messages.Tools.SyncTestOK
+	if state.form.testSuccess != "" {
+		state.form.testNote = state.form.testSuccess
+	}
 	state.status = state.messages.Tools.SyncTestOK
 }
 
@@ -304,7 +322,7 @@ func (form *formDialog) formProblem() string {
 	if form.dialogError != "" {
 		return form.dialogError
 	}
-	return form.testNote
+	return form.currentTestNote()
 }
 
 // problemWrapC declares a form's error under its fields: its words are the
@@ -341,7 +359,11 @@ func (state *State) declareFormDialog(c ui.C) {
 			actions = append(actions, components.ButtonAction{ID: hitFormBack, Label: form.backLabel, Variant: components.ButtonOutline})
 		}
 		if form.test != nil {
-			actions = append(actions, components.ButtonAction{ID: hitFormTest, Label: state.messages.Tools.SyncTest, Variant: components.ButtonOutline, Disabled: form.testRunning})
+			testLabel := state.messages.Tools.SyncTest
+			if form.testRunning {
+				testLabel = state.messages.Tools.SyncTestRunning
+			}
+			actions = append(actions, components.ButtonAction{ID: hitFormTest, Label: testLabel, Variant: components.ButtonOutline, Disabled: form.testRunning})
 		}
 		variant := components.ButtonDefault
 		if form.danger {
@@ -376,8 +398,8 @@ func (state *State) declareFormDialogBody(c ui.C) {
 			})
 		}
 		state.problemWrapC(c, form.dialogError)
-		if form.dialogError == "" && form.testNote != "" {
-			ui.Paragraph(c, form.testNote, 0).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.success).LineHeight(formProblemLine)
+		if form.dialogError == "" && form.currentTestNote() != "" {
+			ui.Paragraph(c, form.currentTestNote(), 0).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.success).LineHeight(formProblemLine)
 		}
 	})
 	column.DrawOver(func(d *ui.DrawContext) {
@@ -422,4 +444,25 @@ func (state *State) paintFormTextarea(canvas *gfx.Canvas, field *formField, boun
 	}
 	field.rect = bounds
 	components.PaintTextarea(canvas, state.Theme(), bounds, snapshot)
+}
+
+func (form *formDialog) currentTestNote() string {
+	if form.testSnapshot && (form.testValues != form.values() || form.testChecked != form.checked) {
+		return ""
+	}
+	return form.testNote
+}
+
+// Consecutive steps share a modal scope, so InitialFocus alone does not run
+// again. Request focus once after the completed frame has declared the fields.
+func (state *State) paintFormFocus(canvas *gfx.Canvas) {
+	if state.modal != modalForm || !state.form.focusPending {
+		return
+	}
+	state.form.focusPending = false
+	focus := hitFormSubmit
+	if state.form.count > 0 {
+		focus = hitFormFieldList.At(0)
+	}
+	canvas.RequestFocus(focus)
 }

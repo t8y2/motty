@@ -109,10 +109,9 @@ func TestS3NavigationNativeInput(test *testing.T) {
 					test.Fatal("Back/Next lost unsaved credentials")
 				}
 				click(messages.SyncSave)
-				if state.modal != modalNone || state.sync.s3.key != "custom/backup" {
-					test.Fatal("final Save did not apply the S3 settings")
+				if state.modal != modalNone || state.syncProfile(syncServiceS3).s3.key != "custom/backup" || state.sync.configured() {
+					test.Fatal("final Save did not preserve the S3 settings as a disabled profile")
 				}
-				waitFor(test, state, func() bool { return state.status == messages.SyncTestOK })
 			})
 		}
 	}

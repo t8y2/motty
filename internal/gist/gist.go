@@ -87,6 +87,7 @@ type Client struct {
 	config Config
 	base   *url.URL
 	http   *http.Client
+	probe  bool
 }
 
 var _ cloudsync.Store = (*Client)(nil)
@@ -455,7 +456,11 @@ func (client *Client) Put(ctx context.Context, data []byte, previous string) (ta
 	var body any = map[string]any{"files": files}
 	if client.config.ID == "" {
 		method, route = http.MethodPost, "/gists"
-		body = map[string]any{"description": "Motty encrypted backup", "public": false, "files": files}
+		description := "Motty encrypted backup"
+		if client.probe {
+			description = "Motty connection test (temporary)"
+		}
+		body = map[string]any{"description": description, "public": false, "files": files}
 	} else {
 		if client.config.Provider == Gitee {
 			body = map[string]any{"description": "Motty encrypted backup", "files": files}

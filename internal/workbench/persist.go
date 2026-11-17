@@ -200,6 +200,7 @@ type savedState struct {
 	// from an older snapshot that never recorded workspace identity.
 	WorkspaceLayouts []savedWorkspaceLayout `json:"workspace_layouts,omitzero"`
 	Sync             *savedSync             `json:"sync,omitempty"`
+	SyncServices     *savedSyncServices     `json:"sync_services,omitempty"`
 	// SyncHosts selects stable host identities on this device only.
 	SyncHosts syncHostSelection `json:"sync_hosts,omitzero"`
 
@@ -757,6 +758,7 @@ func (state *State) snapshot() savedState {
 	saved.AIProviders = state.savedAIProviders()
 	saved.AICLIProviders = state.savedAICLIProviders()
 	saved.Sync = state.savedSyncValue()
+	saved.SyncServices = state.savedSyncServicesValue()
 	saved.SyncExcluded = state.syncScope.excludedCopy()
 	saved.SyncHosts = state.syncScope.hosts.clone()
 	saved.HostView = state.hostView.saved()
@@ -1131,7 +1133,7 @@ func (state *State) restoreLocal(saved savedState) {
 	state.restoreIdentities(saved.IdentityFiles)
 	state.agentHosts = agentHostSet(saved.AgentHosts)
 	state.agentHostMode = agentHostModeFromSaved(saved.AgentHostMode)
-	state.restoreSync(saved.Sync)
+	state.restoreSyncServices(saved.SyncServices, saved.Sync)
 	state.syncScope = newSyncScope(saved.SyncExcluded)
 	state.syncScope.hosts = saved.SyncHosts.clone()
 	state.hostView = hostViewFromString(saved.HostView)

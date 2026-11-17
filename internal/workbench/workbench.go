@@ -958,10 +958,12 @@ type State struct {
 	formSerial      uint32
 	// syncEpoch changes whenever the cloud service is replaced or cleared, so work
 	// that started against the old one can tell its result no longer belongs here.
-	syncEpoch     uint32
-	closeAsked    bool
-	trayHintShown bool
-	sync          syncState
+	syncEpoch          uint32
+	closeAsked         bool
+	trayHintShown      bool
+	sync               syncState
+	syncProfiles       map[syncServiceID]*savedSync
+	syncLegacyPassword syncServiceID
 	// syncScope is what this computer lets cloud sync exchange. It belongs to
 	// this device, so two computers may sync different sets of content.
 	syncScope syncScope
@@ -1133,7 +1135,10 @@ func (state *State) Close() {
 	state.closeWindowChrome()
 	state.closeAI()
 	state.closeHistory()
-	state.stopSyncTimer()
+	cancelSyncWork(state.sync)
+	if state.form.testCancel != nil {
+		state.form.testCancel()
+	}
 	if state.config != nil {
 		state.config.Close()
 	}

@@ -69,8 +69,12 @@ func (state *State) requestSync() {
 // armSyncTimer starts the one pending sync.
 func (state *State) armSyncTimer(delay time.Duration) {
 	state.stopSyncTimer()
+	epoch := state.syncEpoch
 	state.sync.timer = time.AfterFunc(delay, func() {
 		state.aiPost(func(state *State) {
+			if state.syncEpoch != epoch {
+				return
+			}
 			state.sync.timer = nil
 			state.autoSync()
 		})

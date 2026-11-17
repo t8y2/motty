@@ -37,6 +37,8 @@ func TestSyncSettingsShowProgressAndConnectionTestSuccess(t *testing.T) {
 	state.Click(hitSyncConfigureGist)
 	fillForm(state, "ghp_token", "", "", server.URL, testBackupPassword)
 	state.Click(hitFormSubmit)
+	state.toggleSyncService(syncServiceGitHub)
+	state.testSync()
 	_, progress := state.syncTexts()
 	if progress != state.messages.Tools.SyncTestRunning {
 		t.Fatalf("connection test is invisible: %q", progress)
@@ -91,6 +93,8 @@ func TestS3SetupKeepsCredentialsFormOpenWhenSavingFails(t *testing.T) {
 	if state.modal != modalNone {
 		t.Fatalf("retry did not save: %q", state.form.dialogError)
 	}
+	state.toggleSyncService(syncServiceS3)
+	state.testSync()
 	waitFor(t, state, func() bool { return state.status == state.messages.Tools.SyncTestOK })
 	saved, _, err := loadState(state.options.StatePath)
 	if err != nil || saved.Sync == nil || saved.Sync.S3 == nil || saved.Sync.S3.Bucket != "mybucket" {

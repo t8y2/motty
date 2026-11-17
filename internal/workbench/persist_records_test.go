@@ -66,7 +66,7 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		// Which navigation entries and cloud-sync categories this computer
 		// hides or excludes: restoreLocal applies both, and the sync scope test
 		// holds that one computer's selection never reaches another.
-		"hidden_nav": true, "sync_excluded": true, "sync_hosts": true,
+		"hidden_nav": true, "sync_excluded": true, "sync_hosts": true, "sync_services": true,
 		// The multi-line paste confirmation belongs to this computer. Its
 		// absence in a saved state means on, which a shared setting could not
 		// express when another device turns it back on.

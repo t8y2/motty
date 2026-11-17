@@ -1,7 +1,6 @@
 package workbench
 
 import (
-	"context"
 	"errors"
 	"os"
 	"slices"
@@ -61,8 +60,9 @@ func (state *State) runSync(quiet bool) {
 
 // syncRound downloads the server's file.
 func (state *State) syncRound(store cloudsync.Store, password string, attempt int) {
+	epoch := state.syncEpoch
+	ctx, cancel := state.beginSyncRequest()
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), syncTimeout)
 		defer cancel()
 		var remote backup.Document
 		data, tag, err := store.Get(ctx)
@@ -73,7 +73,11 @@ func (state *State) syncRound(store cloudsync.Store, password string, attempt in
 		case err == nil:
 			remote, err = backup.Open(data, password)
 		}
-		state.aiPost(func(state *State) { state.syncMerge(store, password, attempt, remote, tag, missing, err) })
+		state.aiPost(func(state *State) {
+			if state.syncEpoch == epoch {
+				state.syncMerge(store, password, attempt, remote, tag, missing, err)
+			}
+		})
 	}()
 }
 
@@ -93,8 +97,9 @@ func (state *State) syncMerge(store cloudsync.Store, password string, attempt in
 		state.syncDone(tag, "")
 		return
 	}
+	epoch := state.syncEpoch
+	ctx, cancel := state.beginSyncRequest()
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), syncTimeout)
 		defer cancel()
 		sealed, err := backup.Seal(*upload, password)
 		newTag := ""
@@ -112,6 +117,9 @@ func (state *State) syncMerge(store cloudsync.Store, password string, attempt in
 			created = holder.ID() // a first upload makes the gist; remember where
 		}
 		state.aiPost(func(state *State) {
+			if state.syncEpoch != epoch {
+				return
+			}
 			switch {
 			case errors.Is(err, cloudsync.ErrChanged) && attempt < syncAttempts:
 				state.syncRound(store, password, attempt+1)

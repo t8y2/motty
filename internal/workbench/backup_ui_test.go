@@ -293,7 +293,7 @@ func davTestForm(t *testing.T, state *State, server *httptest.Server, password s
 	if state.modal != modalForm {
 		t.Fatal("the server form did not open")
 	}
-	fillForm(state, server.URL+"/dav", "alice", password, "")
+	fillForm(state, server.URL+"/dav", "alice", password, "", testBackupPassword)
 	state.Click(hitFormTest)
 }
 
@@ -305,10 +305,10 @@ func TestWebDAVFormTestsTheTypedConnectionWithoutSaving(t *testing.T) {
 		t.Fatalf("the test did not start: running %v, status %q", state.form.testRunning, state.status)
 	}
 	waitFor(t, state, func() bool { return !state.form.testRunning })
-	if state.status != state.messages.Tools.SyncTestOK || state.form.dialogError != "" || state.form.testNote != state.messages.Tools.SyncTestOK {
+	if state.status != state.messages.Tools.SyncTestOK || state.form.dialogError != "" || state.form.testNote != state.messages.Tools.SyncReadWriteOK {
 		t.Fatalf("status %q, form error %q, note %q", state.status, state.form.dialogError, state.form.testNote)
 	}
-	if _, texts := paintAt(state, gfx.Size{Width: 1400, Height: 900}); !contains(texts, state.messages.Tools.SyncTestOK) {
+	if _, texts := paintAt(state, gfx.Size{Width: 1400, Height: 900}); !strings.Contains(strings.Join(texts, " "), state.messages.Tools.SyncReadWriteOK) {
 		t.Fatal("the dialog does not say the test went through")
 	}
 	if state.modal != modalForm || state.sync.configured() {
@@ -520,7 +520,7 @@ func TestARemoteRestoreThatFindsNothingOrCannotOpenItChangesNothing(t *testing.T
 	})
 	t.Run("the backup password is wrong", func(t *testing.T) {
 		state, _, _ := restoreTwoComputers(t)
-		if err := state.secrets.vault.Set(backupPasswordSecret, "some other long password"); err != nil {
+		if err := state.secrets.vault.Set(state.sync.serviceID().passwordName(), "some other long password"); err != nil {
 			t.Fatal(err)
 		}
 		restoreRemote(t, state)
@@ -583,9 +583,7 @@ func TestAServerChangedWhileARemoteRestoreDownloadsIsNotRestoredFrom(t *testing.
 	if !state.sync.working {
 		t.Fatal("the restore did not start")
 	}
-	state.Click(hitSyncConfigure)
-	state.form.set(0, "") // an empty address stops syncing
-	state.Click(hitFormSubmit)
+	state.toggleSyncService(syncServiceWebDAV)
 	if state.sync.configured() {
 		t.Fatal("the service was not cleared")
 	}
@@ -728,6 +726,9 @@ func newFakeDAV(t *testing.T) (*httptest.Server, *fakeDAV) {
 			dav.puts++
 			w.Header().Set("ETag", tag())
 			w.WriteHeader(http.StatusCreated)
+		case http.MethodDelete:
+			delete(dav.files, r.URL.Path)
+			w.WriteHeader(http.StatusNoContent)
 		case http.MethodGet:
 			body, ok := dav.files[r.URL.Path]
 			if !ok {
@@ -748,11 +749,18 @@ func configureSync(t *testing.T, state *State, server *httptest.Server) {
 	if state.modal != modalForm {
 		t.Fatal("the server form did not open")
 	}
+	for index := 0; index < state.form.count; index++ {
+		state.form.set(index, "")
+	}
 	fillForm(state, server.URL+"/dav", "alice", "s3cret", "", testBackupPassword)
 	state.Click(hitFormSubmit)
 	if state.modal != modalNone {
 		t.Fatalf("the server was refused: %q", state.form.dialogError)
 	}
+	if state.activeSyncService() != syncServiceWebDAV {
+		state.toggleSyncService(syncServiceWebDAV)
+	}
+	state.testSync()
 	waitFor(t, state, func() bool { return state.status == state.messages.Tools.SyncTestOK })
 }
 
@@ -929,7 +937,7 @@ func TestAWrongBackupPasswordStopsTheSyncWithoutTouchingTheServer(t *testing.T) 
 
 	second, _, _ := backupTestState(t)
 	configureSync(t, second, server)
-	if err := second.secrets.vault.Set(backupPasswordSecret, "another password"); err != nil {
+	if err := second.secrets.vault.Set(second.sync.serviceID().passwordName(), "another password"); err != nil {
 		t.Fatal(err)
 	}
 	syncAndWait(t, second, hitSyncNow, "")

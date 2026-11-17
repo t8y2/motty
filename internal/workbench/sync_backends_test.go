@@ -59,6 +59,9 @@ func newFakeBucket(t *testing.T) (*httptest.Server, *fakeBucket) {
 			bucket.objects[name], _ = io.ReadAll(r.Body)
 			bucket.puts++
 			w.Header().Set("ETag", tag())
+		case http.MethodDelete:
+			delete(bucket.objects, name)
+			w.WriteHeader(http.StatusNoContent)
 		case http.MethodGet:
 			if !exists {
 				fail(404, "NoSuchKey")
@@ -78,6 +81,9 @@ func configureS3(t *testing.T, state *State, server *httptest.Server) {
 	if state.modal != modalForm {
 		t.Fatal("the S3 form did not open")
 	}
+	for index := 0; index < state.form.count; index++ {
+		state.form.set(index, "")
+	}
 	fillForm(state, server.URL, "", "mybucket", "", "")
 	state.Click(hitFormSubmit)
 	waitFor(t, state, func() bool {
@@ -88,6 +94,10 @@ func configureS3(t *testing.T, state *State, server *httptest.Server) {
 	if state.modal != modalNone {
 		t.Fatalf("the S3 settings were refused: %q", state.form.dialogError)
 	}
+	if state.activeSyncService() != syncServiceS3 {
+		state.toggleSyncService(syncServiceS3)
+	}
+	state.testSync()
 	waitFor(t, state, func() bool { return state.status == state.messages.Tools.SyncTestOK })
 }
 
@@ -151,6 +161,8 @@ func TestAWrongS3KeyIsReportedWithTheServicesWords(t *testing.T) {
 	})
 	fillForm(state, "AKIAWRONG", "secret", testBackupPassword)
 	state.Click(hitFormSubmit)
+	state.toggleSyncService(syncServiceS3)
+	state.testSync()
 	waitFor(t, state, func() bool { return strings.Contains(state.status, "AccessDenied") })
 	if !strings.Contains(state.status, state.messages.Tools.SyncErrUnauthorized) {
 		t.Fatalf("status %q", state.status)
@@ -238,11 +250,18 @@ func configureGist(t *testing.T, state *State, server *httptest.Server, id strin
 	if state.modal != modalForm {
 		t.Fatal("the Gist form did not open")
 	}
+	for index := 0; index < state.form.count; index++ {
+		state.form.set(index, "")
+	}
 	fillForm(state, "ghp_token", id, "", server.URL, testBackupPassword)
 	state.Click(hitFormSubmit)
 	if state.modal != modalNone {
 		t.Fatalf("the Gist settings were refused: %q", state.form.dialogError)
 	}
+	if state.activeSyncService() != syncServiceGitHub {
+		state.toggleSyncService(syncServiceGitHub)
+	}
+	state.testSync()
 	waitFor(t, state, func() bool { return state.status == state.messages.Tools.SyncTestOK })
 }
 
@@ -284,10 +303,12 @@ func TestABadGistTokenSaysSo(t *testing.T) {
 	state.Click(hitSyncConfigureGist)
 	fillForm(state, "ghp_wrong", "", "", server.URL, testBackupPassword)
 	state.Click(hitFormSubmit)
+	state.toggleSyncService(syncServiceGitHub)
+	state.testSync()
 	waitFor(t, state, func() bool { return strings.Contains(state.status, "Bad credentials") })
 }
 
-func TestChoosingAnotherServiceReplacesTheFirstAndForgetsItsPassword(t *testing.T) {
+func TestChoosingAnotherServiceRetainsTheFirstProfileAndPassword(t *testing.T) {
 	dav, _ := newFakeDAV(t)
 	bucket, _ := newFakeBucket(t)
 	state, _, _ := backupTestState(t)
@@ -299,8 +320,8 @@ func TestChoosingAnotherServiceReplacesTheFirstAndForgetsItsPassword(t *testing.
 	if state.sync.kind != syncS3 || state.sync.url != "" || state.sync.etag != "" {
 		t.Fatalf("sync %+v", state.sync)
 	}
-	if _, found, _ := state.secrets.vault.Get(webdavPasswordSecret); found {
-		t.Fatal("the WebDAV password stayed after switching")
+	if _, found, _ := state.secrets.vault.Get(webdavPasswordSecret); !found {
+		t.Fatal("switching removed the saved WebDAV password")
 	}
 	document, err := state.backupDocument()
 	if err != nil {
@@ -383,11 +404,18 @@ func configureGitee(t *testing.T, state *State, server *httptest.Server, id stri
 	if state.modal != modalForm {
 		t.Fatal("the Gitee form did not open")
 	}
+	for index := 0; index < state.form.count; index++ {
+		state.form.set(index, "")
+	}
 	fillForm(state, "gitee_token", id, "", server.URL, testBackupPassword)
 	state.Click(hitFormSubmit)
 	if state.modal != modalNone {
 		t.Fatalf("the Gitee settings were refused: %q", state.form.dialogError)
 	}
+	if state.activeSyncService() != syncServiceGitee {
+		state.toggleSyncService(syncServiceGitee)
+	}
+	state.testSync()
 	waitFor(t, state, func() bool { return state.status == state.messages.Tools.SyncTestOK })
 }
 
@@ -415,21 +443,21 @@ func TestGiteeSyncCreatesAndRemembersTheSnippet(t *testing.T) {
 	}
 }
 
-func TestSwitchingBetweenGitHubAndGiteeForgetsTheOtherToken(t *testing.T) {
+func TestSwitchingBetweenGitHubAndGiteeRetainsBothTokens(t *testing.T) {
 	github, _ := newFakeGistAPI(t)
 	gitee, _ := newFakeGiteeAPI(t)
 	state, _, _ := backupTestState(t)
 	configureGist(t, state, github, "")
 	configureGitee(t, state, gitee, "")
-	if _, found, _ := state.secrets.vault.Get(gistTokenSecret); found {
-		t.Fatal("the GitHub token stayed after switching to Gitee")
+	if _, found, _ := state.secrets.vault.Get(gistTokenSecret); !found {
+		t.Fatal("switching to Gitee removed the saved GitHub token")
 	}
 	if _, found, _ := state.secrets.vault.Get(giteeTokenSecret); !found {
 		t.Fatal("the Gitee token was not kept")
 	}
 	configureGist(t, state, github, "")
-	if _, found, _ := state.secrets.vault.Get(giteeTokenSecret); found {
-		t.Fatal("the Gitee token stayed after switching to GitHub")
+	if _, found, _ := state.secrets.vault.Get(giteeTokenSecret); !found {
+		t.Fatal("switching to GitHub removed the saved Gitee token")
 	}
 	if _, found, _ := state.secrets.vault.Get(gistTokenSecret); !found {
 		t.Fatal("the GitHub token was not kept")

@@ -40,6 +40,36 @@ ID empty to create a private snippet on the first upload. The token is kept in t
 saved-passwords vault, and the snippet holds the same encrypted backup as the other
 services.
 
+### Configure, test and enable
+
+WebDAV, S3, GitHub and Gitee each have a row with **Edit** and **Enable / Disable**.
+All four configurations are stored on this device. Only one service is enabled at a
+time; enabling another preserves the previous service's settings, credentials and
+remote backup. With all services disabled, automatic sync, Sync now and Restore remote
+are inactive.
+
+**Save** stores the edited account without enabling it or switching services. Editing
+an enabled account updates the configuration used by subsequent syncs. Blank secret
+fields retain that account's saved values, never another account's credentials. Each
+service has its own backup password.
+
+**Test configuration** checks the current form without saving or enabling it. It checks
+authentication and decrypts any existing remote backup, then writes, reads back and
+removes disposable test data. WebDAV and S3 use a random sibling object; GitHub and Gitee
+use a separate temporary snippet. The real backup is not overwritten and a test snippet's
+ID is never saved as the backup ID. Cleanup is still attempted after cancellation, and
+cleanup failures are reported separately.
+
+The test needs permission to create, read and delete the temporary object. Credentials
+restricted to the exact backup object may fail the probe, while a writable probe cannot
+rule out extra restrictions on the real object. Failed tests do not prevent saving;
+the enabled service's status reports the result of actual syncs.
+
+A successful test does not mean data has synced. Enable a service, then use **Sync now**
+or automatic syncing; a completed sync displays its time. GitHub/Gitee record the backup
+snippet ID only after the first real upload. Other devices need that same ID, file name
+and backup password.
+
 ### Choose which hosts sync
 
 Keep **Hosts and groups** enabled, turn on **Sync only selected hosts**, and select

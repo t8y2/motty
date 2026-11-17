@@ -382,6 +382,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	state.requestInjectionFrames(canvas)
 	state.requestIdleKeepAliveFrames(canvas)
 	state.paintLocalProxyFocus(canvas)
+	state.paintFormFocus(canvas)
 	state.paintTransferProgressCard(canvas)
 	// Last, so a tooltip is never covered by what it describes.
 	if _, formatting := canvas.Hovered().In(hitNoteFormats); !formatting {

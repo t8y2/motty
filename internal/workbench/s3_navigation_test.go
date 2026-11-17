@@ -73,10 +73,13 @@ func TestS3NavigationSavesOnlyAfterReturningFromBucket(test *testing.T) {
 	if state.modal != modalNone {
 		test.Fatalf("final Save failed: %q", state.form.dialogError)
 	}
-	waitFor(test, state, func() bool { return state.status == state.messages.Tools.SyncTestOK })
+	if state.sync.configured() {
+		test.Fatal("saving enabled the service")
+	}
 	restored := newTestState(test, state.options)
-	if restored.sync.kind != syncS3 || restored.sync.s3.key != "revised/backup" || restored.sync.s3.accessKey != "AKIATEST" {
-		test.Fatalf("saved settings = %+v", restored.sync.s3)
+	profile := restored.syncProfile(syncServiceS3)
+	if restored.sync.configured() || profile.s3.key != "revised/backup" || profile.s3.accessKey != "AKIATEST" {
+		test.Fatalf("saved settings = %+v", profile.s3)
 	}
 	if got, found, err := restored.secrets.vault.Get(s3SecretName); err != nil || !found || got != "synthetic-secret" {
 		test.Fatal("final Save did not retain the secret in the vault")
@@ -90,17 +93,21 @@ func TestS3NavigationSavesOnlyAfterReturningFromBucket(test *testing.T) {
 	}
 }
 
-func TestS3EmptyEndpointKeepsStopAction(test *testing.T) {
+func TestS3EmptyEndpointDoesNotDisableTheSavedService(test *testing.T) {
 	state, _, _ := backupTestState(test)
 	state.sync = syncState{kind: syncS3, s3: s3Settings{endpoint: "https://s3.example.com", bucket: "bucket"}}
 	state.openS3Configure()
 	state.form.set(0, "")
-	if state.form.submitLabel(&state.form) != state.messages.Tools.S3Stop {
-		test.Fatal("empty endpoint does not identify the stop-sync action")
+	if state.form.submit != state.messages.Tools.S3Next {
+		test.Fatal("bucket step must offer Next")
 	}
 	state.Click(hitFormSubmit)
-	state.Wake()
-	if state.modal != modalNone || state.sync.configured() {
-		test.Fatal("empty endpoint did not stop sync or opened the next page")
+	if state.modal != modalForm || state.form.dialogError != state.messages.Tools.S3ErrFields || !state.sync.configured() {
+		test.Fatal("empty endpoint changed enabled state")
+	}
+	state.Click(hitFormCancel)
+	state.Click(hitSyncServiceToggle.At(1))
+	if state.sync.configured() || state.syncProfiles[syncServiceS3] == nil {
+		test.Fatal("explicit disable did not preserve the S3 account")
 	}
 }

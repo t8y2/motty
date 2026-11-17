@@ -42,6 +42,14 @@ func TestWebDAVHTTPConsentSurvivesRestartAndCanBeRevoked(t *testing.T) {
 	fillForm(state, server.URL+"/dav", "alice", "s3cret", "", testBackupPassword)
 	state.Click(hitFormCheckbox)
 	state.Click(hitFormSubmit)
+	if state.activeSyncService() == "" {
+		if state.syncProfiles[syncServiceS3] != nil {
+			state.toggleSyncService(syncServiceS3)
+		} else {
+			state.toggleSyncService(syncServiceWebDAV)
+		}
+	}
+	state.testSync()
 	waitFor(t, state, func() bool { return state.status == state.messages.Tools.SyncTestOK })
 	state.Close()
 	restored := newTestState(t, options)
@@ -71,6 +79,7 @@ func TestWebDAVHTTPConsentSurvivesRestartAndCanBeRevoked(t *testing.T) {
 	}
 	restored.Click(hitFormCheckbox)
 	restored.Click(hitFormSubmit)
+	restored.testSync()
 	waitFor(t, restored, func() bool { return restored.status == restored.messages.Tools.SyncTestOK })
 	saved, _, err := loadState(options.StatePath)
 	if err != nil || saved.Sync == nil || saved.Sync.AllowInsecureHTTP {
@@ -95,6 +104,14 @@ func TestS3HTTPConsentReachesTheSecondFormAndSavedClient(t *testing.T) {
 	})
 	fillForm(state, "AKIATEST", "s3-secret-value", testBackupPassword)
 	state.Click(hitFormSubmit)
+	if state.activeSyncService() == "" {
+		if state.syncProfiles[syncServiceS3] != nil {
+			state.toggleSyncService(syncServiceS3)
+		} else {
+			state.toggleSyncService(syncServiceWebDAV)
+		}
+	}
+	state.testSync()
 	waitFor(t, state, func() bool { return state.status == state.messages.Tools.SyncTestOK })
 	saved, _, err := loadState(state.options.StatePath)
 	if err != nil || saved.Sync == nil || !saved.Sync.AllowInsecureHTTP {

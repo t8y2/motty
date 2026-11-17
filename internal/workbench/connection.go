@@ -1337,6 +1337,9 @@ func (state *State) showNextPrompt() {
 }
 
 func (state *State) closeModal() {
+	if state.modal == modalForm {
+		state.clearFormTestStatus()
+	}
 	returnToRules := state.ruleManager.returning && (state.modal == modalHighlightRule || state.modal == modalAutofillRule || state.modal == modalDeleteRule)
 	returnToHost := state.modal == modalCredential && state.credentialReturn != modalNone
 	if state.modal == modalRuleManager {

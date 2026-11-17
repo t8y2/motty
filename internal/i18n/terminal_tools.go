@@ -740,6 +740,18 @@ type ToolsMessages struct {
 	SyncConfigureGist               string
 	SyncConfigureGitee              string
 	SyncErrTooLarge                 string
+	SyncServicesTitle               string
+	SyncServicesHint                string
+	SyncServiceEmpty                string
+	SyncServiceSaved                string
+	SyncServiceActive               string
+	SyncEnable                      string
+	SyncDisable                     string
+	SyncEdit                        string
+	SyncNoActive                    string
+	SyncDraftHint                   string
+	SyncReadWriteOK                 string
+	SyncTestEdited                  string
 	SyncScopeGroup                  string
 	SyncScopeDescription            string
 	SyncErrNothingSelected          string

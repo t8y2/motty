@@ -127,7 +127,7 @@ func TestAFailedSyncIsRetriedLaterAndASettledOneStops(t *testing.T) {
 	}
 
 	// A wrong password does not get better by waiting.
-	if err := first.secrets.vault.Set(backupPasswordSecret, "another password"); err != nil {
+	if err := first.secrets.vault.Set(first.sync.serviceID().passwordName(), "another password"); err != nil {
 		t.Fatal(err)
 	}
 	first.terminalScrollback = 1000

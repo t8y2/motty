@@ -19,7 +19,6 @@ import (
 	"motty/internal/gist"
 	"motty/internal/i18n"
 	"motty/internal/vault"
-	"motty/internal/webdav"
 )
 
 // Backup and sync. A backup is the shared configuration, trusted host keys and
@@ -59,6 +58,7 @@ const (
 // savedSync is the cloud service in the state file: WebDAV by default, or the
 // one Kind names. Its passwords and tokens are in the saved-passwords vault.
 type savedSync struct {
+	Revision uint64     `json:"revision,omitempty"`
 	Kind     string     `json:"kind,omitempty"` // "" is WebDAV
 	URL      string     `json:"url"`
 	User     string     `json:"user,omitempty"`
@@ -74,7 +74,8 @@ type savedSync struct {
 
 // syncState is the cloud service and what is known of the file on it.
 type syncState struct {
-	kind syncKind
+	revision uint64
+	kind     syncKind
 	// url, user and path are the WebDAV server.
 	url, user, path   string
 	allowInsecureHTTP bool
@@ -86,6 +87,7 @@ type syncState struct {
 	last time.Time
 	// working is set while a request is on its way.
 	working bool
+	cancel  context.CancelFunc
 	// testing distinguishes checking credentials from exchanging backup data.
 	testing      bool
 	tested       bool
@@ -124,7 +126,7 @@ func (state *State) restoreSync(saved *savedSync) {
 		state.sync.working, state.sync.again, state.sync.err = work.working, work.again, work.err
 		state.sync.testing, state.sync.tested, state.sync.testSequence = work.testing, work.tested, work.testSequence
 		state.sync.retries, state.sync.waitingForVault, state.sync.holdBack = work.retries, work.waitingForVault, work.holdBack
-		state.sync.timer = work.timer
+		state.sync.timer, state.sync.cancel = work.timer, work.cancel
 		state.sync.rowText, state.sync.runText, state.sync.runFor = work.rowText, work.runText, work.runFor
 		state.sync.textLanguage = work.textLanguage
 	}()
@@ -132,7 +134,7 @@ func (state *State) restoreSync(saved *savedSync) {
 	if saved == nil {
 		return
 	}
-	next := syncState{etag: saved.ETag, manual: saved.Manual, allowInsecureHTTP: saved.AllowInsecureHTTP}
+	next := syncState{revision: saved.Revision, etag: saved.ETag, manual: saved.Manual, allowInsecureHTTP: saved.AllowInsecureHTTP}
 	switch saved.Kind {
 	case savedKindS3:
 		if saved.S3 == nil {
@@ -161,7 +163,7 @@ func (state *State) savedSyncValue() *savedSync {
 	if !view.configured() {
 		return nil
 	}
-	saved := &savedSync{ETag: view.etag, Manual: view.manual, AllowInsecureHTTP: view.allowInsecureHTTP}
+	saved := &savedSync{Revision: view.revision, ETag: view.etag, Manual: view.manual, AllowInsecureHTTP: view.allowInsecureHTTP}
 	switch view.kind {
 	case syncS3:
 		saved.Kind, saved.S3 = savedKindS3, view.s3.saved()
@@ -179,6 +181,9 @@ func (state *State) savedSyncValue() *savedSync {
 // excludedFromBackup says whether a saved secret stays out of backups: the
 // logins that reach the backup itself.
 func excludedFromBackup(name string) bool {
+	if strings.HasPrefix(name, "sync-password:") {
+		return true
+	}
 	switch name {
 	case webdavPasswordSecret, s3SecretName, gistTokenSecret, giteeTokenSecret, backupPasswordSecret:
 		return true
@@ -563,61 +568,36 @@ func (state *State) openRestoreBackup() {
 
 func (state *State) openSyncConfigure() {
 	m := state.messages.Tools
+	current := state.syncProfile(syncServiceWebDAV)
 	form := state.openForm(formDialog{
-		title: m.SyncDialogTitle, description: m.SyncDialogDescription, submit: m.SyncSave,
-		run:        (*State).runSyncConfigure,
-		test:       (*State).runWebdavFormTest,
-		checkLabel: m.SyncAllowInsecureHTTP, checkDescription: m.SyncInsecureHTTPDescription,
-		checked: state.sync.kind == syncWebDAV && state.sync.allowInsecureHTTP,
-	},
-		formField{label: m.SyncURL, placeholder: "https://dav.example.com/dav"},
-		formField{label: m.SyncUser},
-		formField{label: m.SyncPassword, secure: true},
-		formField{label: m.SyncPath, placeholder: defaultSyncPath},
-		formField{label: m.BackupPassword, placeholder: m.BackupPasswordPlaceholder, secure: true},
-	)
-	form.set(0, state.sync.url)
-	form.set(1, state.sync.user)
-	form.set(3, state.sync.path)
+		title: m.SyncDialogTitle, description: m.SyncDialogDescription + "\n" + m.SyncDraftHint, submit: m.SyncSave,
+		run: (*State).runSyncConfigure, test: (*State).runWebdavFormTest,
+		checkLabel: m.SyncAllowInsecureHTTP, checkDescription: m.SyncInsecureHTTPDescription, checked: current.allowInsecureHTTP,
+	}, formField{label: m.SyncURL, placeholder: "https://dav.example.com/dav"}, formField{label: m.SyncUser}, formField{label: m.SyncPassword, secure: true}, formField{label: m.SyncPath, placeholder: defaultSyncPath}, formField{label: m.BackupPassword, placeholder: m.BackupPasswordPlaceholder, secure: true})
+	form.set(0, current.url)
+	form.set(1, current.user)
+	form.set(3, current.path)
 }
-
-func (state *State) runSyncConfigure(form *formDialog) string {
+func (state *State) webdavDraft(form *formDialog) (syncState, string) {
 	m := state.messages.Tools
-	address := strings.TrimSpace(form.value(0))
-	if address == "" {
-		state.clearSync()
-		return ""
+	view := syncState{kind: syncWebDAV, url: strings.TrimSpace(form.value(0)), user: strings.TrimSpace(form.value(1)), path: strings.TrimSpace(form.value(3)), allowInsecureHTTP: form.checked}
+	if view.path == "" {
+		view.path = defaultSyncPath
 	}
-	user, path := strings.TrimSpace(form.value(1)), strings.TrimSpace(form.value(3))
-	if path == "" {
-		path = defaultSyncPath
+	if view.url == "" || view.user == "" {
+		return view, m.SyncErrFields
 	}
-	webdavPassword, backupPassword := form.value(2), form.value(4)
-	configured := state.sync.kind == syncWebDAV && state.sync.url != ""
-	if user == "" || (!configured && (webdavPassword == "" || backupPassword == "")) {
-		return m.SyncErrFields
+	if _, err := view.newStore("x"); err != nil {
+		return view, webdavAddressError(m, err)
 	}
-	if backupPassword != "" && len(backupPassword) < backup.MinPasswordLength {
-		return m.BackupErrPasswordShort
-	}
-	if _, err := webdav.New(webdav.Config{URL: address, User: user, Password: "x", Path: path, AllowInsecureHTTP: form.checked}, nil); err != nil {
-		return webdavAddressError(m, err)
-	}
-	if message := state.keepSyncSecrets(webdavPasswordSecret, webdavPassword, backupPassword); message != "" {
+	return view, ""
+}
+func (state *State) runSyncConfigure(form *formDialog) string {
+	view, message := state.webdavDraft(form)
+	if message != "" {
 		return message
 	}
-	if !configured || address != state.sync.url || path != state.sync.path {
-		state.switchSync(syncState{kind: syncWebDAV, url: address, user: user, path: path})
-	} else {
-		state.sync.user = user
-	}
-	state.sync.allowInsecureHTTP = form.checked
-	state.sync.rowText = ""
-	if err := state.saveWithResult(); err != nil {
-		return fmt.Sprintf(m.SyncFailedFmt, state.backupErrorText(err))
-	}
-	state.testSync()
-	return ""
+	return state.saveSyncProfile(view, form.value(2), form.value(4))
 }
 
 // webdavAddressError says what is wrong with a server address. The error from
@@ -628,17 +608,6 @@ func webdavAddressError(m i18n.ToolsMessages, err error) string {
 		return m.SyncErrInsecure
 	}
 	return m.SyncErrAddress
-}
-
-func (state *State) clearSync() {
-	state.syncEpoch++
-	state.sync = syncState{}
-	if opened := state.secrets.vault; opened != nil {
-		for _, name := range [...]string{webdavPasswordSecret, s3SecretName, gistTokenSecret, backupPasswordSecret} {
-			_ = opened.Delete(name)
-		}
-	}
-	state.save()
 }
 
 // syncLogin builds the store a request to the cloud needs. It reports false,
@@ -670,7 +639,10 @@ func (state *State) syncLogin(retry func(), quiet bool) (store cloudsync.Store, 
 	secret, foundSecret, err := opened.Get(state.sync.secretName())
 	if err == nil {
 		var foundBackup bool
-		backupPassword, foundBackup, err = opened.Get(backupPasswordSecret)
+		backupPassword, foundBackup, err = opened.Get(state.sync.serviceID().passwordName())
+		if err == nil && !foundBackup && (state.syncLegacyPassword == state.sync.serviceID() || state.syncProfiles == nil) {
+			backupPassword, foundBackup, err = opened.Get(backupPasswordSecret)
+		}
 		foundSecret = foundSecret && foundBackup
 	}
 	if err != nil || !foundSecret {
@@ -716,8 +688,8 @@ func (state *State) testSync() {
 	state.sync.working, state.sync.testing, state.sync.tested = true, true, false
 	state.sync.err, state.sync.runText = "", ""
 	state.status = state.messages.Tools.SyncTestRunning
+	ctx, cancel := state.beginSyncRequest()
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), syncTimeout)
 		defer cancel()
 		err := store.Test(ctx)
 		state.aiPost(func(state *State) {
@@ -740,41 +712,11 @@ func (state *State) testSync() {
 // it. A blank password falls back to the saved one, as saving would. The
 // result returns to this open form; stale results after Cancel are dropped.
 func (state *State) runWebdavFormTest(form *formDialog) string {
-	m := state.messages.Tools
-	address := strings.TrimSpace(form.value(0))
-	user, path := strings.TrimSpace(form.value(1)), strings.TrimSpace(form.value(3))
-	if path == "" {
-		path = defaultSyncPath
+	view, message := state.webdavDraft(form)
+	if message != "" {
+		return message
 	}
-	if user == "" {
-		return m.SyncErrFields
-	}
-	password := form.value(2)
-	if password == "" {
-		if state.sync.kind != syncWebDAV || !state.hasSyncSecret(webdavPasswordSecret) {
-			return m.SyncErrFields
-		}
-		secret, found, err := state.secrets.vault.Get(webdavPasswordSecret)
-		if err != nil {
-			return state.backupErrorText(err)
-		}
-		if !found {
-			return m.SyncErrFields
-		}
-		password = secret
-	}
-	client, err := webdav.New(webdav.Config{URL: address, User: user, Password: password, Path: path, AllowInsecureHTTP: form.checked}, nil)
-	if err != nil {
-		return webdavAddressError(m, err)
-	}
-	serial := state.formSerial
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), syncTimeout)
-		defer cancel()
-		err := client.Prepare(ctx)
-		state.aiPost(func(state *State) { state.finishFormTest(serial, err) })
-	}()
-	return ""
+	return state.testSyncDraft(view, form.value(2), form.value(4), form)
 }
 
 // openSyncRestore asks before replacing this computer's shared state with the
@@ -824,8 +766,8 @@ func (state *State) runSyncRestore(store cloudsync.Store, password string, epoch
 	}
 	state.sync.working, state.sync.runText = true, ""
 	state.status = m.SyncWorking
+	ctx, cancel := state.beginSyncRequest()
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), syncTimeout)
 		defer cancel()
 		data, tag, err := store.Get(ctx)
 		var remote backup.Document
@@ -901,6 +843,10 @@ func (state *State) finishSyncRestore(epoch uint32, remote backup.Document, tag 
 // --- settings page -------------------------------------------------------
 
 func (state *State) clickBackupSettings(id gfx.ID) bool {
+	if index, ok := id.In(hitSyncServiceToggle); ok && index >= 0 && index < len(syncServices) {
+		state.toggleSyncService(syncServices[index])
+		return true
+	}
 	if state.clickSyncHostSelection(id) {
 		return true
 	}
@@ -996,7 +942,7 @@ func (state *State) syncTexts() (row, run string) {
 
 func (state *State) paintBackupSettings(page *settingsPage) {
 	m := state.messages.Tools
-	row, run := state.syncTexts()
+	_, run := state.syncTexts()
 	page.groups(func() {
 		page.group(m.BackupGroupFile, func() {
 			page.actionRow(m.BackupExportRow, m.BackupExportDescription, false,
@@ -1005,11 +951,7 @@ func (state *State) paintBackupSettings(page *settingsPage) {
 			)
 		})
 		page.group(m.BackupGroupSync, func() {
-			page.actionRow(m.SyncRow, row, false,
-				components.ButtonAction{ID: hitSyncConfigure, Label: m.SyncConfigure, Variant: components.ButtonOutline},
-				components.ButtonAction{ID: hitSyncConfigureS3, Label: m.SyncConfigureS3, Variant: components.ButtonOutline},
-				components.ButtonAction{ID: hitSyncConfigureGist, Label: m.SyncConfigureGist, Variant: components.ButtonOutline},
-				components.ButtonAction{ID: hitSyncConfigureGitee, Label: m.SyncConfigureGitee, Variant: components.ButtonOutline})
+			state.paintSyncServices(page)
 			page.toggleRow(m.SyncAuto, m.SyncAutoDescription, !state.sync.manual, hitSyncAuto)
 			page.actionRowWrap(m.SyncRunRow, run, !state.sync.configured() || state.sync.working,
 				components.ButtonAction{ID: hitSyncNow, Label: m.SyncNow, Variant: components.ButtonOutline},
