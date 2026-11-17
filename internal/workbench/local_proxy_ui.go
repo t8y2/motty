@@ -59,8 +59,8 @@ type localProxyUI struct {
 	retryCopy      gfx.ID
 	// The dialog's body is part of the window page; these are the slots its
 	// declaration leaves for the hand-painted field, phase line and buttons.
-	portField, phaseLine, dockerButton, moreButton, testButton, restoreButton ui.Box
-	configButton, docsButton, dockerRestoreButton                             ui.Box
+	portField, phaseLine                          ui.Box
+	configButton, docsButton, dockerRestoreButton ui.Box
 	// viewportDraw and controlsDraw are the dialog's kept painters, made once
 	// per open so a repaint declares the body without allocating.
 	viewportDraw, controlsDraw func(*ui.DrawContext)
@@ -571,7 +571,6 @@ func (state *State) declareLocalProxyMainBody(c ui.C, snapshot localProxySnapsho
 	m, pal, theme := state.messages.LocalProxy, state.pal, state.Theme()
 	proxy := &state.localProxyUI
 	proxy.portField, proxy.phaseLine = ui.Box{}, ui.Box{}
-	proxy.dockerButton, proxy.moreButton, proxy.testButton, proxy.restoreButton = ui.Box{}, ui.Box{}, ui.Box{}, ui.Box{}
 	fieldHeight := float32(60)
 	if snapshot.Phase == localProxyConnecting || snapshot.Phase == localProxyConnected {
 		fieldHeight = 90
@@ -589,13 +588,18 @@ func (state *State) declareLocalProxyMainBody(c ui.C, snapshot localProxySnapsho
 		ui.Wrap(c, state.localProxyUI.copyError).FontSize(theme.Metrics.FontSizeS).Color(pal.danger).LineHeight(18)
 	}
 	ui.Row(c).Height(32).Gap(8).Children(func() {
-		proxy.dockerButton = ui.Slot(c).Grow(1)
-		proxy.moreButton = ui.Slot(c).Grow(1)
+		ui.Button(c, m.DockerTitle).Link().Hit(hitLocalProxyDocker, m.DockerTitle).Basis(0).Grow(1)
+		label, icon := m.More, uint8(iconChevronRight)
+		if state.localProxyUI.more {
+			label, icon = m.Less, iconChevronDown
+		}
+		ui.Button(c, label).Link().Icon(lucideIcons[icon]).Hit(hitLocalProxyMore, label).Basis(0).Grow(1)
 	})
 	if state.localProxyUI.more {
 		ui.Row(c).Height(34).Gap(8).Children(func() {
-			proxy.testButton = ui.Slot(c).Grow(1)
-			proxy.restoreButton = ui.Slot(c).Grow(1)
+			ui.Button(c, m.Test).Outline().Disabled(snapshot.Phase != localProxyConnected || snapshot.TestPhase == localProxyTestRunning).
+				Hit(hitLocalProxyTest, m.Test).Basis(0).Grow(1)
+			ui.Button(c, m.DisableCopy).Outline().Hit(hitLocalProxyDisableCopy, m.DisableCopy).Basis(0).Grow(1)
 		})
 		if snapshot.TestPhase != localProxyTestIdle {
 			line, color := state.localProxyTestLine(snapshot)
@@ -621,20 +625,6 @@ func (state *State) paintLocalProxyMainControls(canvas *gfx.Canvas, snapshot loc
 	if snapshot.Phase != localProxyDisconnected || state.localProxyUI.lastStopped {
 		line, color := state.localProxyPhaseLine(snapshot)
 		state.paintLocalProxyPhase(canvas, proxy.phaseLine.Rect(), line, color, theme)
-	}
-	components.BeginButton(canvas, theme, hitLocalProxyDocker, proxy.dockerButton.Rect()).Link(m.DockerTitle)
-	label, icon := m.More, uint8(iconChevronRight)
-	if state.localProxyUI.more {
-		label, icon = m.Less, iconChevronDown
-	}
-	components.BeginButton(canvas, theme, hitLocalProxyMore, proxy.moreButton.Rect()).WithIcon(lucideIcons[icon]).Link(label)
-	if state.localProxyUI.more {
-		button := components.BeginButton(canvas, theme, hitLocalProxyTest, proxy.testButton.Rect())
-		if snapshot.Phase != localProxyConnected || snapshot.TestPhase == localProxyTestRunning {
-			button = button.Disabled()
-		}
-		button.Outline(m.Test)
-		components.BeginButton(canvas, theme, hitLocalProxyDisableCopy, proxy.restoreButton.Rect()).Outline(m.DisableCopy)
 	}
 }
 
