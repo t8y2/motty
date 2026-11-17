@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
@@ -32,13 +33,26 @@ func (l *lender) Share(func()) (Connection, error) {
 		status.HostKey.Fingerprint = fingerprint
 	})
 	l.world.shared = append(l.world.shared, child)
-	return &lender{fakeConn: child, world: l.world}, nil
+	lent := &lender{fakeConn: child, world: l.world}
+	if l.world.slowShells {
+		return &slowLender{lender: lent}, nil
+	}
+	return lent, nil
 }
+
+// slowLender is a lent connection whose shell opens on the network's time, as
+// a real one does.
+type slowLender struct{ *lender }
+
+func (*slowLender) opensShellSlowly() bool { return true }
 
 type sharingWorld struct {
 	*world
 	shared []*fakeConn
 	refuse bool
+	// slowShells lends connections whose shells open in the background, so a
+	// test can hold the request there.
+	slowShells bool
 }
 
 // newSharingWorld dials connections that can be shared.
@@ -375,6 +389,77 @@ func TestAServerThatRefusesAnotherShellOnASharedConnectionGetsASeparateOne(t *te
 	if split.shared || split.err != nil || split.term.ended {
 		t.Fatalf("the tab did not recover: shared %t, err %v, ended %t", split.shared, split.err, split.term.ended)
 	}
+}
+
+// A borrowed connection that neither accepts nor refuses the shell request is
+// the case a bastion produces when it silently drops the channel: without a
+// deadline the tab would stay on the connection page for as long as the
+// connection lived, and only closing every tab would end the wait. The tab
+// gets the connection timeout, then its own connection.
+func TestASharedConnectionThatNeverAnswersItsShellGetsASeparateOne(t *testing.T) {
+	world, options := newSharingWorld(t)
+	world.slowShells = true
+	state := newTestState(t, options)
+	state.connectionTimeout = 20 * time.Millisecond
+	world.connectFirst(t, state)
+
+	state.Click(hitPaneSplitHorizontal)
+	split, _ := state.sessionByIDPointer(state.activeSessionID)
+	if !split.shared {
+		t.Fatal("the split was not shared")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for split.term.shell == nil && time.Now().Before(deadline) {
+		state.Wake()
+		time.Sleep(time.Millisecond)
+	}
+	if split.term.shell == nil {
+		t.Fatal("the split never opened a shell")
+	}
+
+	// The same borrowed connection now takes the request and leaves it there.
+	hold := make(chan struct{})
+	world.shared[0].mu.Lock()
+	world.shared[0].shellHold = hold
+	world.shared[0].mu.Unlock()
+	split.term.shell = nil
+	split.term.ended = false
+	split.avoidShare = false
+	state.openShell(split)
+
+	deadline = time.Now().Add(2 * time.Second)
+	for len(world.conns) < 2 && time.Now().Before(deadline) {
+		state.Wake()
+		time.Sleep(time.Millisecond)
+	}
+	if len(world.conns) != 2 {
+		t.Fatal("the tab waited on the borrowed connection instead of dialing its own")
+	}
+	if split.shared {
+		t.Fatal("the tab kept the borrowed connection")
+	}
+
+	// The borrowed connection may answer after all; that shell has no taker.
+	close(hold)
+	world.shared[0].mu.Lock()
+	shells := append([]*fakeShell(nil), world.shared[0].shells...)
+	world.shared[0].mu.Unlock()
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		world.shared[0].mu.Lock()
+		shells = append([]*fakeShell(nil), world.shared[0].shells...)
+		world.shared[0].mu.Unlock()
+		if len(shells) > 1 {
+			shells[len(shells)-1].mu.Lock()
+			closed := shells[len(shells)-1].closed
+			shells[len(shells)-1].mu.Unlock()
+			if closed {
+				return
+			}
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("the shell that arrived after the timeout was left open")
 }
 
 func TestClosingTheTabThatDialedLeavesTheSharedTabAlive(t *testing.T) {

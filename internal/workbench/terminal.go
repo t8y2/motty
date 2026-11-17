@@ -875,14 +875,47 @@ func (state *State) openShell(session *Session) {
 	result := make(chan shellResult, 1)
 	t.opening = result
 	conn, invalidate := session.conn, state.options.Invalidate
+	// A borrowed connection can run out of room silently: a gateway may leave
+	// the shell request unanswered instead of refusing it, and nothing else
+	// would end that wait, so the tab would sit on the connection page forever.
+	// The borrowed connection gets the connection timeout; past it the tab
+	// takes its own, as it does when the server refuses the channel outright.
+	shared, wait := session.shared, state.connectionTimeout
 	go func() {
-		shell, err := conn.OpenShell(config)
-		result <- shellResult{shell: shell, err: err, cols: config.Cols, rows: config.Rows}
+		opened := make(chan shellResult, 1)
+		go func() {
+			shell, err := conn.OpenShell(config)
+			opened <- shellResult{shell: shell, err: err, cols: config.Cols, rows: config.Rows}
+		}()
+		var outcome shellResult
+		if shared && wait > 0 {
+			timer := time.NewTimer(wait)
+			select {
+			case outcome = <-opened:
+				timer.Stop()
+			case <-timer.C:
+				outcome = shellResult{err: errSharedShellOpenTimeout, cols: config.Cols, rows: config.Rows}
+				// The server may still make the shell later. Nothing will take
+				// it, so it is closed when it arrives.
+				go func() {
+					if late := <-opened; late.shell != nil {
+						late.shell.Close()
+					}
+				}()
+			}
+		} else {
+			outcome = <-opened
+		}
+		result <- outcome
 		if invalidate != nil {
 			invalidate()
 		}
 	}()
 }
+
+// errSharedShellOpenTimeout is a borrowed connection that never answered the
+// shell request. The tab then connects on its own instead of waiting forever.
+var errSharedShellOpenTimeout = errors.New("the shared connection did not open a shell in time")
 
 // collectShell takes the shell opened in the background, once it is there.
 func (state *State) collectShell(session *Session) {
