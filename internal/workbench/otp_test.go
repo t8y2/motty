@@ -177,3 +177,72 @@ func TestSavingASecretNeedsAnUnlockedVault(t *testing.T) {
 		t.Fatalf("modal %d, error %q", state.modal, state.dialogError)
 	}
 }
+
+func TestEditingAHostWithASavedPasswordCanAlsoSaveAnOTPSecret(t *testing.T) {
+	state, _ := otpState(t)
+	if err := state.secrets.vault.Set(prodPasswordName, "already-saved"); err != nil {
+		t.Fatal(err)
+	}
+	editProduction(t, state)
+	if got := state.editor.password.String(); got != "already-saved" {
+		t.Fatalf("the form should show the saved password, got %q", got)
+	}
+	typeInto(state, hitDialogOTP, testOTPSeed)
+	done := make(chan struct{})
+	go func() {
+		state.Click(hitDialogSubmit)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("saving a host with a filled password and a new OTP secret blocked")
+	}
+	if state.modal != modalNone {
+		t.Fatalf("submit failed: %q", state.dialogError)
+	}
+	stored, found, err := state.secrets.vault.Get(prodOTPName)
+	if err != nil || !found || !strings.Contains(stored, testOTPSeed) {
+		t.Fatalf("vault holds %q, %v, %v", stored, found, err)
+	}
+	if password, found, err := state.secrets.vault.Get(prodPasswordName); err != nil || !found || password != "already-saved" {
+		t.Fatalf("password was not kept: %q, %v, %v", password, found, err)
+	}
+	if !strings.Contains(state.status, "deploy@prod.example.com") {
+		t.Fatalf("status %q", state.status)
+	}
+}
+
+func TestEditingAHostWithASavedPasswordCanRemoveItsOTPSecret(t *testing.T) {
+	state, _ := otpState(t)
+	if err := state.secrets.vault.Set(prodPasswordName, "already-saved"); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.secrets.vault.Set(prodOTPName, "otpauth://totp/Prod:deploy?secret="+testOTPSeed); err != nil {
+		t.Fatal(err)
+	}
+	editProduction(t, state)
+	if !state.editor.otpSaved {
+		t.Fatal("the dialog does not say the host has a secret")
+	}
+	state.Click(hitDialogOTPRemove)
+	done := make(chan struct{})
+	go func() {
+		state.Click(hitDialogSubmit)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("removing an OTP secret while a password was filled blocked")
+	}
+	if state.modal != modalNone {
+		t.Fatalf("submit failed: %q", state.dialogError)
+	}
+	if _, found, err := state.secrets.vault.Get(prodOTPName); err != nil || found {
+		t.Fatalf("the secret was not removed: found %v, %v", found, err)
+	}
+	if password, found, err := state.secrets.vault.Get(prodPasswordName); err != nil || !found || password != "already-saved" {
+		t.Fatalf("password was not kept: %q, %v, %v", password, found, err)
+	}
+}

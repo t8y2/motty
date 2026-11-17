@@ -10,6 +10,7 @@ import (
 	"github.com/vivaui/viva/text"
 
 	"motty/internal/otp"
+	"motty/internal/vault"
 )
 
 // One-time code secrets are kept in the saved-passwords vault, one per account,
@@ -50,29 +51,43 @@ func (state *State) otpPrecheck() string {
 	return ""
 }
 
-// commitOTP applies the form's secret to the vault once the host is saved:
-// store a new one, or remove the old one.
-func (state *State) commitOTP(host Host) {
+// hostDialogOTPChanges plans the one-time code secret typed in the form, so it
+// can go into the same vault transaction as the password. The secret is never
+// part of Host. A parse failure is reported here; the vault itself is checked
+// by otpPrecheck before this is called.
+func (state *State) hostDialogOTPChanges(host Host) (changes []vault.Change, failure string) {
 	editor := &state.editor
-	vaultFile := state.secrets.vault
-	if vaultFile == nil || host.Protocol != protocolSSH {
-		return
+	if host.Protocol != protocolSSH || (editor.value(fieldOTP) == "" && !editor.otpRemove) {
+		return nil, ""
+	}
+	if state.secrets.vault == nil {
+		return nil, state.messages.Tools.ErrOTPNoVault
 	}
 	name := otpName(host)
-	label := state.login(host) + "@" + host.Address
 	switch typed := editor.value(fieldOTP); {
 	case typed != "":
 		secret, err := otp.Parse(typed)
 		if err != nil {
-			return
+			return nil, state.messages.Tools.ErrOTPInvalid
 		}
-		if err := vaultFile.Set(name, secret.String()); err != nil {
-			state.status = fmt.Sprintf(state.messages.VaultSaveFailedFmt, state.vaultErrorText(err))
-			return
-		}
-		state.status = fmt.Sprintf(state.messages.Tools.OTPSavedFmt, label)
+		return []vault.Change{{Name: name, Value: secret.String()}}, ""
 	case editor.otpRemove:
-		_ = vaultFile.Delete(name)
+		return []vault.Change{{Name: name, Delete: true}}, ""
+	}
+	return nil, ""
+}
+
+// noteOTPCommit records that the secret was stored or removed, after the vault
+// transaction has released its lock. It does not touch the vault.
+func (state *State) noteOTPCommit(host Host) {
+	if host.Protocol != protocolSSH {
+		return
+	}
+	label := state.login(host) + "@" + host.Address
+	switch {
+	case state.editor.value(fieldOTP) != "":
+		state.status = fmt.Sprintf(state.messages.Tools.OTPSavedFmt, label)
+	case state.editor.otpRemove:
 		state.status = fmt.Sprintf(state.messages.Tools.OTPRemovedFmt, label)
 	}
 }
