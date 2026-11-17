@@ -35,10 +35,10 @@ rect {{171 38.5 558 523} {0.12156863 0.14117648 0.1764706 1} 10 600 {0 0 0 0} fa
 rect {{682 53.5 32 32} {0.06666667 0.08235294 0.105882354 0} 7.5 600 {0 0 0 0} false #39}
 rect {{198 126.5 504 32} {0.9411765 0.47058824 0.47058824 1} 7.5 600 {0 0 0 0} false #41}
 rect {{199 127.5 502 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #42}
-rect {{200 395.5 16 16} {0.8862745 0.90588236 0.93333334 1} 4 600 {0 0 0 0} false #44}
-rect {{201 396.5 14 14} {0.8862745 0.90588236 0.93333334 1} 3 600 {0 0 0 0} false #45}
-rect {{198 194.5 504 64} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #47}
-rect {{199 195.5 502 62} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #48}
+rect {{198 194.5 504 118} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #44}
+rect {{199 195.5 502 116} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #45}
+rect {{200 395.5 16 16} {0.8862745 0.90588236 0.93333334 1} 4 600 {0 0 0 0} false #47}
+rect {{201 396.5 14 14} {0.8862745 0.90588236 0.93333334 1} 3 600 {0 0 0 0} false #48}
 rect {{198 340.5 504 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #50}
 rect {{199 341.5 502 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #51}
 rect {{541.6719 427.5 98.36719 28} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #53}
@@ -55,8 +55,8 @@ shadow {{261 254 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {223 135 651 439} true #21}
 shadow {{267 307 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {223 135 651 439} true #24}
 shadow {{267 371 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {223 135 651 439} true #30}
 shadow {{198 126.5 504 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #40}
-shadow {{200 395.5 16 16} 4 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #43}
-shadow {{198 194.5 504 64} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #46}
+shadow {{198 194.5 504 118} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #43}
+shadow {{200 395.5 16 16} 4 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #46}
 shadow {{198 340.5 504 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #49}
 shadow {{541.6719 427.5 98.36719 28} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #52}
 shadow {{223 51 271.68213 36} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {205 37 687 555} true #57}
@@ -101,11 +101,11 @@ text "Not connected" {765 368 109 22}
 text "Add a snippet" {194 61.5 512 17}
 text "Name" {198 104.5 37.625 18}
 text "deploy" {209 132.5 482 20}
+text "Command" {198 172.5 504 18}
+text "systemctl restart nginx" {209 202.5 492 21}
 text "Press Enter after sending it" {224 393 478 21}
 text "Shortcut" {200 431.5 262 20}
 text "Name the snippet." {198 472.5 504 18}
-text "Command" {198 172.5 65.87109 18}
-text "systemctl restart nginx" {209 202.5 492 21}
 text "Group" {198 318.5 39.757812 18}
 text "Select or create a group" {209 341.5 461 30}
 text "Set shortcut" {551.6719 427.5 98.36719 28}
@@ -166,9 +166,10 @@ hit "Staging" checkbox {255 363 40 32} disabled=false
 hit "" region {170 37.5 560 525} disabled=false
 hit "Close dialog" button {682 53.5 32 32} disabled=false
 hit "Name" textfield {198 126.5 504 32} disabled=false
+hit "Command" button {198 172.5 504 18} disabled=false
+hit "Command" textfield {198 194.5 504 118} disabled=false
 hit "Press Enter after sending it" button {224 393 478 21} disabled=false
 hit "Press Enter after sending it" checkbox {188 387.5 40 32} disabled=false
-hit "Command" textfield {198 194.5 504 64} disabled=false
 hit "Group" button {198 318.5 39.757812 18} disabled=false
 hit "Group" button {198 340.5 504 32} disabled=false
 hit "Group" combobox {209 341.5 461 30} disabled=false

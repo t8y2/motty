@@ -91,22 +91,21 @@ type snippetsUI struct {
 	filterOpen   bool
 
 	// The dialog: which snippet it edits (-1 adds one) and the fields.
-	editing       int
-	name          text.Editor
-	command       text.Editor
-	commandLayout components.TextareaLayout
-	run           bool
-	groupPicker   components.SingleSelectState
-	shortcut      keymap.Chord
-	capturing     bool // the next chord pressed becomes shortcut
-	dialogError   string
+	editing     int
+	name        text.Editor
+	command     text.Editor
+	commandArea dialogArea
+	run         bool
+	groupPicker components.SingleSelectState
+	shortcut    keymap.Chord
+	capturing   bool // the next chord pressed becomes shortcut
+	dialogError string
 
 	// nameForm and nameText are the name field's row and text, bound to name. The boxes are
 	// the slots the dialog body paints the other controls in.
 	nameForm       ui.FormFieldState
 	nameText       ui.Field
 	nameBound      bool
-	dialogCommand  ui.Box
 	dialogGroup    ui.Box
 	dialogShortcut ui.Box
 
@@ -242,7 +241,7 @@ func (state *State) openSnippetDialog(index int) {
 	form := &state.snippets
 	form.editing = index
 	form.name, form.command = text.Editor{}, text.Editor{}
-	form.commandLayout = components.TextareaLayout{}
+	form.commandArea = dialogArea{}
 	form.run = true
 	group := ""
 	form.shortcut, form.capturing = keymap.Chord{}, false
@@ -656,7 +655,9 @@ func (state *State) declareSnippetDialogBody(c ui.C) {
 		ui.FormField(c, &form.nameForm, m.SnippetName).FillWidth().Height(62).MarginSides(0, 0, 6, 0).Children(func() {
 			ui.TextFieldID(c, hitSnippetName, &form.nameText, m.SnippetName, m.SnippetNamePlaceholder)
 		})
-		form.dialogCommand = ui.Slot(c).Height(140).MarginSides(0, 0, 6, 0)
+		ui.Column(c).Height(140).MarginSides(0, 0, 6, 0).Children(func() {
+			form.commandArea.declare(c, hitSnippetCommand, &form.command, m.SnippetCommand, m.SnippetCommandPlaceholder, 140)
+		})
 		form.dialogGroup = ui.Slot(c).Height(62).MarginSides(0, 0, 6, 0)
 		state.declareDialogCheck(c, hitSnippetRun, m.SnippetRun, form.run, 7, 0)
 		ui.Row(c).Height(32).Items(ui.Center).MarginSides(12, 0, 0, 2).Children(func() {
@@ -675,20 +676,6 @@ func (state *State) declareSnippetDialogBody(c ui.C) {
 func (state *State) paintSnippetDialogFields(canvas *gfx.Canvas) {
 	m, theme := state.messages.Tools, state.Theme()
 	form := &state.snippets
-	content := components.BeginField(canvas, theme, form.dialogCommand.Rect()).Paint(m.SnippetCommand, "", "")
-	value := form.command.String()
-	selection := form.command.Selection()
-	snapshot := components.TextareaSnapshot{
-		ID: hitSnippetCommand, Label: m.SnippetCommand, Value: value, Placeholder: m.SnippetCommandPlaceholder,
-		Focused: canvas.Focused() == hitSnippetCommand, HideEditorText: true, ShowCaret: selection.Start == selection.End,
-		Layout: &form.commandLayout, SelectionStart: aiByteOffset(value, selection.Start),
-		SelectionEnd: aiByteOffset(value, selection.End), Caret: aiByteOffset(value, form.command.Caret()),
-	}
-	if marked, composing := form.command.Composition(); composing {
-		snapshot.CompositionStart = aiByteOffset(value, marked.Start)
-		snapshot.CompositionEnd = aiByteOffset(value, marked.End)
-	}
-	components.PaintTextarea(canvas, theme, content, snapshot)
 	state.paintSnippetGroupField(canvas, form.dialogGroup.Rect())
 	label := m.SnippetShortcutNone
 	switch {

@@ -133,3 +133,24 @@ func (state *State) declareDialogCheckHelp(c ui.C, id gfx.ID, label string, chec
 	state.noteCheck(id, row)
 	return row, help
 }
+
+// dialogArea is a labelled text area of a dialog the page declares: its title, and a
+// page text area over an editor the application owns.
+type dialogArea struct {
+	input ui.Field
+	bound bool
+}
+
+// declare declares the area, height tall in all: the title over the rows.
+func (a *dialogArea) declare(c ui.C, id gfx.ID, editor *text.Editor, label, placeholder string, height float32) {
+	if !a.bound {
+		a.input.Bind(editor)
+		a.bound = true
+	}
+	theme := c.Theme()
+	metrics := theme.Metrics
+	ui.Column(c).FillWidth().Height(height).Shrink(0).Gap(metrics.GapItem / 2).Children(func() {
+		ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(theme.Foreground).LineHeight(metrics.FontSizeM + 4).Ellipsis().LabelFor(id)
+		ui.TextAreaID(c, id, &a.input, label, placeholder).FillWidth().Grow(1)
+	})
+}

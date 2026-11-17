@@ -11,7 +11,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unicode/utf8"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
@@ -3288,17 +3287,6 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	if state.modal == modalHighlightRule && event.Key == gfx.KeyEnter && event.Target == hitHighlightPattern && !event.Repeat {
 		state.submitHighlightRule()
 		return gfx.EventResult{Handled: true, Repaint: true}
-	}
-	if state.modal == modalSnippet && event.Target == hitSnippetCommand {
-		if _, composing := state.snippets.command.Composition(); !composing {
-			movement, extend := components.TextareaMovementForKey(event.Key, event.Modifiers)
-			if movement != components.TextareaMoveNone {
-				value := state.snippets.command.String()
-				to := state.snippets.commandLayout.Move(value, aiByteOffset(value, state.snippets.command.Caret()), movement)
-				state.snippets.command.MoveTo(utf8.RuneCountInString(value[:to]), extend)
-				return gfx.EventResult{Handled: true, Repaint: true}
-			}
-		}
 	}
 	if state.modal == modalSnippet && event.Key == gfx.KeyEnter && (event.Target == hitSnippetName || event.Target == hitSnippetGroup) && !event.Repeat {
 		// submitSnippet refuses while either field is composing: that Enter
