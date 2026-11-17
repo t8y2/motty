@@ -4,6 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"motty/internal/ai/llm"
+	"motty/internal/ai/tools"
+	"motty/internal/shellkind"
 	"motty/internal/sshconn"
 	"motty/internal/term"
 )
@@ -43,6 +46,69 @@ func TestInjectionHidesItsEchoAndReleasesQueuedInput(t *testing.T) {
 	}
 	if text := screen.Text(); strings.Contains(text, "echo of the script") {
 		t.Fatalf("the script's echo reached the screen: %q", text)
+	}
+}
+
+// A connection that ends while the injection hides its output must not put
+// that output on screen. The flush that keeps the shell's last words runs
+// around the normal output path, and no ready marker can end the hidden window
+// once the shell is gone, so what is still hidden is dropped there too.
+func TestAConnectionLostDuringInjectionDoesNotShowItsEcho(t *testing.T) {
+	state, _, fake, shell := liveSession(t)
+	session := &state.sessions[0]
+	t0 := session.term
+	const token = "lost-token"
+	t0.folderToken = token
+	t0.injection = terminalInjection{phase: injectionSuppressing, marker: sshconn.IntegrationReadyMarker(token)}
+
+	shell.say("_motty_hist_on=; set +o history\r\n. '/tmp/motty-shell.x/init'\r\n")
+	fake.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseClosed })
+	state.Wake()
+	if text := screenText(state, 0); strings.Contains(text, "_motty_hist_on") {
+		t.Fatalf("the hidden activation echo reached the screen:\n%s", text)
+	}
+}
+
+// The same flush keeps what the shell said after a ready marker that did
+// arrive: that output was never hidden and is the shell's last word.
+func TestAConnectionLostAfterTheReadyMarkerKeepsWhatFollowsIt(t *testing.T) {
+	state, _, fake, shell := liveSession(t)
+	session := &state.sessions[0]
+	t0 := session.term
+	const token = "kept-token"
+	t0.folderToken = token
+	t0.injection = terminalInjection{phase: injectionSuppressing, marker: sshconn.IntegrationReadyMarker(token)}
+
+	shell.say("echo of the activation\r\n" + string(sshconn.IntegrationReadyMarker(token)) + "user@host:~$ ")
+	fake.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseClosed })
+	state.Wake()
+	text := screenText(state, 0)
+	if strings.Contains(text, "echo of the activation") {
+		t.Fatalf("the hidden activation echo reached the screen:\n%s", text)
+	}
+	if !strings.Contains(text, "user@host:~$") {
+		t.Fatalf("the output after the ready marker was lost:\n%s", text)
+	}
+}
+
+// A connection lost while the assistant's command runs ends that command: the
+// next shell's output must not be read as the dead command's capture.
+func TestAConnectionLostEndsTheAssistantCommand(t *testing.T) {
+	state, shell := assistantTestSession(t, &scriptedModel{turn: func(int, llm.Request) []llm.Event { return textTurn("ok") }})
+	session := &state.sessions[0]
+	term := session.term
+	term.shell = kindShell{shell, shellkind.POSIX}
+	if _, err := state.beginExec(tools.TerminalExecArgs{Command: "hostname"}); err != nil {
+		t.Fatalf("beginExec: %v", err)
+	}
+	fake, ok := session.conn.(*fakeConn)
+	if !ok {
+		t.Fatalf("session connection = %T, want *fakeConn", session.conn)
+	}
+	fake.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseClosed })
+	state.Wake()
+	if term.exec != nil {
+		t.Fatal("the lost connection left the assistant's command running")
 	}
 }
 
