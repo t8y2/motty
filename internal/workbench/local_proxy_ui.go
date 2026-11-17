@@ -59,11 +59,14 @@ type localProxyUI struct {
 	retryCopy      gfx.ID
 	// The dialog's body is part of the window page; these are the slots its
 	// declaration leaves for the hand-painted field and phase line.
-	portField, phaseLine ui.Box
-	// viewportDraw and controlsDraw are the dialog's kept painters, made once
+	// portForm and portText are the port field's row and text, bound to port when first declared.
+	portForm  ui.FormFieldState
+	portText  ui.Field
+	portBound bool
+	// viewportDraw is the dialog's kept painter, made once
 	// per open so a repaint declares the body without allocating.
-	viewportDraw, controlsDraw func(*ui.DrawContext)
-	viewportTitle              string
+	viewportDraw  func(*ui.DrawContext)
+	viewportTitle string
 }
 
 func (state *State) openLocalProxy(session *Session) {
@@ -476,7 +479,7 @@ func (state *State) declareLocalProxyDialog(c ui.C) {
 	proxy.scroll = proxy.scrollGeometry.OffsetY
 	proxy.viewportTitle = title
 	if proxy.viewportDraw == nil {
-		proxy.viewportDraw, proxy.controlsDraw = state.drawLocalProxyViewport, state.drawLocalProxyControls
+		proxy.viewportDraw = state.drawLocalProxyViewport
 	}
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: title, Description: description, Width: width, Height: height, Layer: dialogLayer,
@@ -495,7 +498,6 @@ func (state *State) declareLocalProxyDialog(c ui.C) {
 				}
 				state.declareLocalProxyMainBody(c, snapshot)
 			})
-			content.DrawOver(proxy.controlsDraw)
 		})
 	})
 	dialog.Footer(func() {
@@ -511,15 +513,6 @@ func (state *State) drawLocalProxyViewport(d *ui.DrawContext) {
 		return
 	}
 	d.Canvas.HitWithOptions(hitLocalProxyScroll, geometry.Viewport, state.localProxyUI.viewportTitle, gfx.HitOptions{Role: gfx.RoleGroup})
-}
-
-// drawLocalProxyControls paints the main view's port field and phase line into the slots the
-// body's declaration left. The Docker view declares everything in the page.
-func (state *State) drawLocalProxyControls(d *ui.DrawContext) {
-	if state.localProxyUI.docker {
-		return
-	}
-	state.paintLocalProxyMainControls(d.Canvas, state.localProxySnapshot(state.localProxySession()))
 }
 
 // paintLocalProxyScrollbar paints the body's scrollbar over the page: the thumb
@@ -567,16 +560,24 @@ func (state *State) localProxyActions(snapshot localProxySnapshot) []components.
 func (state *State) declareLocalProxyMainBody(c ui.C, snapshot localProxySnapshot) {
 	m, pal, theme := state.messages.LocalProxy, state.pal, state.Theme()
 	proxy := &state.localProxyUI
-	proxy.portField, proxy.phaseLine = ui.Box{}, ui.Box{}
-	fieldHeight := float32(60)
-	if snapshot.Phase == localProxyConnecting || snapshot.Phase == localProxyConnected {
-		fieldHeight = 90
+	locked := snapshot.Phase == localProxyConnecting || snapshot.Phase == localProxyConnected
+	fieldHeight, hint, description := float32(60), m.PortHint, ""
+	if locked {
+		fieldHeight, hint, description = 90, m.PortLockedHint, m.PortLockedHint
 	}
-	ui.Row(c).Height(fieldHeight).Children(func() { proxy.portField = ui.Slot(c).Grow(1) })
+	if !proxy.portBound {
+		proxy.portText.Bind(&proxy.port)
+		proxy.portBound = true
+	}
+	proxy.portForm.For, proxy.portForm.Description = hitLocalProxyPort, description
+	proxy.portText.Disabled, proxy.portText.Hint = locked, hint
+	ui.FormField(c, &proxy.portForm, m.PortLabel).FillWidth().Height(fieldHeight).Children(func() {
+		ui.TextFieldID(c, hitLocalProxyPort, &proxy.portText, m.PortLabel, strconv.Itoa(int(defaultLocalProxyPort)))
+	})
 	ui.Wrap(c, m.ScopeWarning).FontSize(theme.Metrics.FontSizeS).Color(pal.muted).LineHeight(18)
 	ui.Wrap(c, m.AccessWarning).FontSize(theme.Metrics.FontSizeS).Color(pal.muted).LineHeight(18)
 	if snapshot.Phase != localProxyDisconnected || state.localProxyUI.lastStopped {
-		ui.Row(c).Height(24).Children(func() { proxy.phaseLine = ui.Slot(c).Grow(1) })
+		state.declareLocalProxyPhase(c, snapshot)
 	}
 	if snapshot.Phase == localProxyConnected {
 		ui.Wrap(c, m.StopHint).FontSize(theme.Metrics.FontSizeS).Color(pal.muted).LineHeight(18)
@@ -613,16 +614,18 @@ func (state *State) declareLocalProxyMainBody(c ui.C, snapshot localProxySnapsho
 	}
 }
 
-// paintLocalProxyMainControls paints the main view's field, phase line and
-// buttons into the slots its declaration left.
-func (state *State) paintLocalProxyMainControls(canvas *gfx.Canvas, snapshot localProxySnapshot) {
-	m, theme := state.messages.LocalProxy, state.Theme()
-	proxy := &state.localProxyUI
-	state.paintLocalProxyPortField(canvas, proxy.portField.Rect(), snapshot, m.PortLabel, m.PortHint, theme)
-	if snapshot.Phase != localProxyDisconnected || state.localProxyUI.lastStopped {
-		line, color := state.localProxyPhaseLine(snapshot)
-		state.paintLocalProxyPhase(canvas, proxy.phaseLine.Rect(), line, color, theme)
+// declareLocalProxyPhase declares the phase line: an icon, and the line in its color, one row tall.
+func (state *State) declareLocalProxyPhase(c ui.C, snapshot localProxySnapshot) {
+	theme := state.Theme()
+	line, color := state.localProxyPhaseLine(snapshot)
+	icon := uint8(iconCircleCheck)
+	if color == state.pal.warning || color == state.pal.danger || color == state.pal.muted {
+		icon = iconAlert
 	}
+	ui.Row(c).Height(24).Gap(6).Children(func() {
+		ui.Icon(c, lucideIcons[icon]).Size(16, 16).Color(color).Shrink(0).Self(ui.Start).MarginSides(3, 0, 0, 0)
+		ui.Text(c, line).FontSize(theme.Metrics.FontSizeS).Weight(gfx.WeightMedium).Color(color).Ellipsis().Grow(1).Height(24)
+	})
 }
 
 func (state *State) localProxyTestLine(snapshot localProxySnapshot) (string, gfx.Color) {
@@ -634,34 +637,6 @@ func (state *State) localProxyTestLine(snapshot localProxySnapshot) (string, gfx
 	default:
 		return state.localProxyErrorText(snapshot.TestErr), state.pal.danger
 	}
-}
-
-func (state *State) paintLocalProxyPortField(canvas *gfx.Canvas, bounds gfx.Rect, snapshot localProxySnapshot, label, hint string, theme gfx.Theme) {
-	locked := snapshot.Phase == localProxyConnecting || snapshot.Phase == localProxyConnected
-	description := ""
-	if locked {
-		description = state.messages.LocalProxy.PortLockedHint
-		hint = description
-	}
-	field := components.BeginField(canvas, theme, bounds).For(hitLocalProxyPort).Paint(label, description, "")
-	value := state.localProxyUI.port.String()
-	focused := canvas.Focused() == hitLocalProxyPort && !locked
-	components.PaintInput(canvas, theme, field, components.InputSnapshot{
-		ID: hitLocalProxyPort, Label: label, Value: value, Placeholder: strconv.Itoa(int(defaultLocalProxyPort)),
-		Hint: hint, Focused: focused, PlatformEditing: focused && value != "",
-		Disabled: locked,
-	})
-}
-
-func (state *State) paintLocalProxyPhase(canvas *gfx.Canvas, bounds gfx.Rect, line string, color gfx.Color, theme gfx.Theme) {
-	icon := uint8(iconCircleCheck)
-	if color == state.pal.warning || color == state.pal.danger || color == state.pal.muted {
-		icon = iconAlert
-	}
-	canvas.DrawIcon(lucideIcons[icon], gfx.Rect{X: bounds.X, Y: bounds.Y + 3, Width: 16, Height: 16}, color)
-	canvas.Label(canvas.FitLine(line, theme.Metrics.FontSizeS, gfx.WeightMedium, max(bounds.Width-22, 0)), gfx.Rect{
-		X: bounds.X + 22, Y: bounds.Y, Width: max(bounds.Width-22, 0), Height: bounds.Height,
-	}, gfx.TextStyle{Size: theme.Metrics.FontSizeS, Weight: gfx.WeightMedium, Color: color})
 }
 
 func (state *State) localProxyCopyLabel(id gfx.ID, normal, copied string) string {

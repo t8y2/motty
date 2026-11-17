@@ -10,12 +10,12 @@ rect {{0 0 1400 900} {0 0 0 0.5} 0 600 {0 0 0 0} false 1452}
 rect {{440 18 520 864} {0.2 0.23529412 0.2901961 1} 11 600 {0 0 0 0} false 1453}
 rect {{441 19 518 862} {0.12156863 0.14117648 0.1764706 1} 10 600 {0 0 0 0} false 1454}
 rect {{912 34 32 32} {0.06666667 0.08235294 0.105882354 0} 7.5 600 {0 0 0 0} false 1457}
-rect {{470 424 222 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {464 112 472 690} true 1549}
-rect {{471 425 220 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {464 112 472 690} true 1550}
-rect {{700 424 222 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {464 112 472 690} true 1553}
-rect {{701 425 220 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {464 112 472 690} true 1554}
-rect {{470 136 452 32} {0.14133334 0.1557647 0.17741176 1} 7.5 600 {464 112 472 690} true 1570}
-rect {{471 137 450 30} {0.08906667 0.10437648 0.12734118 1} 6.5 600 {464 112 472 690} true 1571}
+rect {{470 136 452 32} {0.14133334 0.1557647 0.17741176 1} 7.5 600 {464 112 472 690} true 1513}
+rect {{471 137 450 30} {0.08906667 0.10437648 0.12734118 1} 6.5 600 {464 112 472 690} true 1514}
+rect {{470 424 222 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {464 112 472 690} true 1682}
+rect {{471 425 220 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {464 112 472 690} true 1683}
+rect {{700 424 222 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {464 112 472 690} true 1686}
+rect {{701 425 220 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {464 112 472 690} true 1687}
 rect {{632.08984 826 147.2373 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false 1700}
 rect {{633.08984 827 145.2373 30} {0.06666667 0.08235294 0.105882354 1} 6.5 600 {0 0 0 0} false 1701}
 rect {{787.32715 826 148.67285 32} {0.8862745 0.90588236 0.93333334 1} 7.5 600 {0 0 0 0} false 1703}
@@ -50,9 +50,9 @@ rect {{540.209 466.12 3.5 3.5} {0.61960787 0.65882355 0.7137255 0.45} 1.75 0 {0 
 rect {{1360 36 40 864} {0.06666667 0.08235294 0.105882354 1} 0 0 {0 0 0 0} false 2308}
 rect {{1364 372 32 32} {0.17254902 0.19607843 0.23529412 0.4} 7.5 0 {1364 40 32 856} true 3137}
 rect {{927 113 8 604.73883} {0.2 0.23529412 0.2901961 1} 4 0 {0 0 0 0} false 3625}
-shadow {{470 424 222 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {464 112 472 690} true 1548}
-shadow {{700 424 222 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {464 112 472 690} true 1552}
-shadow {{470 136 452 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {464 112 472 690} true 1569}
+shadow {{470 136 452 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {464 112 472 690} true 1512}
+shadow {{470 424 222 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {464 112 472 690} true 1681}
+shadow {{700 424 222 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {464 112 472 690} true 1685}
 shadow {{875.5029 526.62 56.49707 32} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 36 1360 864} true 2053}
 text "Production" {148 8 60.216797 20}
 text "Production" {490 296.62 167.17383 23}
@@ -62,9 +62,13 @@ text "Waiting for the first output…" {446 475.62 468 20}
 text "Elapsed 0:00" {428 533.12 352.05762 19}
 text "Use local proxy" {464 42 472 17}
 text "Current server: deploy@prod.example.com:22" {464 67 472 21}
+text "Local HTTP proxy port (127.0.0.1)" {470 114 214.6416 18}
+text "Stop the tunnel to change this port." {470 172 452 21}
+text "PORT" {481 142 430 20}
 text "Motty opens the tunnel. Paste and run the setup command so tools in this terminal" {470 212 452 18}
 text "can use it." {470 230 452 18}
 text "Other users and processes on this server may also use this proxy." {470 256 452 18}
+text "Proxy tunnel is on" {492 282 430 19}
 text "Stopping interrupts downloads using this tunnel. Run the restore command" {470 314 452 18}
 text "afterward." {470 332 452 18}
 text "Could not copy: clipboard unavailable" {470 358 452 18}
@@ -83,10 +87,6 @@ text "local proxy's access policy applies." {470 619 452 18}
 text "HTTP proxy variables do not cover Git over SSH. Use an HTTPS repository URL or" {470 645 452 18}
 text "the tool's own configuration." {470 663 452 18}
 text "Server proxy: http://127.0.0.1:PORT" {470 689 452 18}
-text "Local HTTP proxy port (127.0.0.1)" {470 114 214.6416 18}
-text "Stop the tunnel to change this port." {470 172 452 21}
-text "PORT" {481 142 430 20}
-text "Proxy tunnel is on" {492 282 430 24}
 text "Stop & copy restore" {642.08984 826 147.2373 32}
 text "Copy setup & return" {797.32715 826 148.67285 32}
 text "Show log" {798.0576 526.62 79.44531 32}
@@ -109,12 +109,12 @@ hit "Dismiss dialog" button {0 0 1400 900} disabled=false
 hit "" region {440 18 520 864} disabled=false
 hit "Close dialog" button {912 34 32 32} disabled=false
 hit "Use local proxy" group {464 112 462 690} disabled=false
+hit "Local HTTP proxy port (127.0.0.1)" button {470 114 214.6416 18} disabled=false
+hit "Local HTTP proxy port (127.0.0.1)" textfield {470 136 452 32} disabled=true
 hit "Docker setup" button {470 384 222 32} disabled=false
 hit "Fewer options" button {700 384 222 32} disabled=false
 hit "Test connection" button {470 424 222 32} disabled=false
 hit "Copy restore command" button {700 424 222 32} disabled=false
-hit "Local HTTP proxy port (127.0.0.1)" button {470 114 214.6416 18} disabled=false
-hit "Local HTTP proxy port (127.0.0.1)" textfield {470 136 452 32} disabled=true
 hit "Stop & copy restore" button {632.08984 826 147.2373 32} disabled=false
 hit "Copy setup & return" button {787.32715 826 148.67285 32} disabled=false
 hit "Show log" button {788.0576 526.62 79.44531 32} disabled=false
