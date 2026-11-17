@@ -2604,9 +2604,6 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result, handled := state.windowBarScrollPointer(event); handled {
 		return result
 	}
-	if result := state.sftpColumnSettingsPointer(event); result.Handled {
-		return result
-	}
 	if result, handled := state.transferCenterPointer(event); handled {
 		return result
 	}

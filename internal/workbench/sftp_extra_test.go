@@ -352,12 +352,17 @@ func TestSFTPColumnSettingsReorderFromTheKeyboardAndSave(t *testing.T) {
 	state.Click(hitSettingsConfigureColumns)
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	handle := hitSFTPColumnSettingsHandles.At(int(sftpColumnSize))
-	if _, ok := hitByID(&canvas, handle); !ok {
-		t.Fatal("the size column has no reorder handle")
+	var row gfx.Hit
+	for _, hit := range canvas.Hits() {
+		if hit.Role == gfx.RoleOption && hit.Label == state.sftpColumnLabel(sftpColumnSize) {
+			row = hit
+		}
 	}
-	result := state.Key(gfx.KeyEvent{Target: handle, Key: gfx.KeyDown})
-	if !result.Handled || result.Focus != handle {
+	if row.ID.IsZero() {
+		t.Fatal("the size column is not a row of the list")
+	}
+	result := state.WindowConfig(app.Config{OnKey: state.Key}).OnKey(gfx.KeyEvent{Target: row.ID, Key: gfx.KeyDown, Modifiers: gfx.ModifierAlt})
+	if !result.Handled || result.Focus != row.ID {
 		t.Fatalf("keyboard move = %+v", result)
 	}
 	if got, want := state.sftpColumns.String(), "name:1,modified:1,size:1"; got != want {

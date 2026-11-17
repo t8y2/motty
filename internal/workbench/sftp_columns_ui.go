@@ -1,10 +1,9 @@
 package workbench
 
 import (
-	"fmt"
-
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 )
 
 var sftpColumnSettingsHits = tree.Feature("sftp-column-settings")
@@ -13,13 +12,11 @@ var (
 	hitSFTPColumnSettingsClose   = tree.ID(sftpColumnSettingsHits, "close")
 	hitSFTPColumnSettingsDismiss = tree.ID(sftpColumnSettingsHits, "dismiss")
 	hitSFTPColumnSettingsReset   = tree.ID(sftpColumnSettingsHits, "reset")
-	hitSFTPColumnSettingsHandles = tree.Sub(sftpColumnSettingsHits, tree.Name("handle"))
 	hitSFTPColumnSettingsToggles = tree.Sub(sftpColumnSettingsHits, tree.Name("toggle"))
 )
 
 type sftpColumnSettingsUI struct {
-	list         components.ReorderListState
-	handleLabels [sftpColumnCount]string
+	rows ui.ListState
 }
 
 func (state *State) sftpColumnLabel(key sftpColumnKey) string {
@@ -36,22 +33,17 @@ func (state *State) sftpColumnLabel(key sftpColumnKey) string {
 }
 
 func (state *State) openSFTPColumnSettings() {
-	editor, m := &state.sftpColumnEditor, state.messages.Tools
-	for key := sftpColumnKey(0); key < sftpColumnCount; key++ {
-		editor.handleLabels[key] = fmt.Sprintf(m.FilesColumnDragFmt, state.sftpColumnLabel(key))
-	}
+	state.sftpColumnEditor = sftpColumnSettingsUI{}
 	state.modal = modalSFTPColumns
 }
 
 func (state *State) clickSFTPColumnSettings(id gfx.ID) {
-	editor := &state.sftpColumnEditor
 	switch {
 	case id == hitSFTPColumnSettingsClose || id == hitSFTPColumnSettingsDismiss:
 		state.closeModal()
 		return
 	case id == hitSFTPColumnSettingsReset:
 		state.sftpColumns.reset()
-		editor.list.Cancel()
 	case id.Scope() == hitSFTPColumnSettingsToggles:
 		key := sftpColumnKey(item(id))
 		if key <= sftpColumnName || key >= sftpColumnCount ||
@@ -64,35 +56,23 @@ func (state *State) clickSFTPColumnSettings(id gfx.ID) {
 	state.save()
 }
 
-func (state *State) moveSFTPColumn(move components.ReorderMove) {
-	if !move.Valid() || !state.sftpColumns.moveOptional(move.From, move.To) {
+// moveSFTPColumn puts the column at row from before row to, as ListState.Reorder says;
+// the name column stays first.
+func (state *State) moveSFTPColumn(from, to int) {
+	if to > from {
+		to--
+	}
+	if !state.sftpColumns.moveOptional(from, to) {
 		return
 	}
 	state.save()
-}
-
-func (state *State) sftpColumnSettingsPointer(event gfx.PointerEvent) gfx.EventResult {
-	if state.modal != modalSFTPColumns {
-		return gfx.EventResult{}
-	}
-	move, result := state.sftpColumnEditor.list.Pointer(event)
-	if move.Valid() {
-		state.moveSFTPColumn(move)
-	}
-	return result
 }
 
 func (state *State) sftpColumnSettingsKey(event gfx.KeyEvent) gfx.EventResult {
 	if state.modal != modalSFTPColumns {
 		return gfx.EventResult{}
 	}
-	move, result := state.sftpColumnEditor.list.Key(event)
-	if result.Handled {
-		if move.Valid() {
-			state.moveSFTPColumn(move)
-		}
-		return result
-	}
+	// The columns are a page List: WindowConfig routes its keys.
 	if event.Key == gfx.KeyEscape && !event.Release && !event.Repeat {
 		state.closeModal()
 		return gfx.EventResult{Handled: true, Repaint: true}
@@ -100,42 +80,53 @@ func (state *State) sftpColumnSettingsKey(event gfx.KeyEvent) gfx.EventResult {
 	return gfx.EventResult{}
 }
 
-func (state *State) paintSFTPColumnSettings(canvas *gfx.Canvas, viewport gfx.Rect) {
-	editor, m, theme := &state.sftpColumnEditor, state.messages.Tools, state.Theme()
-	const rowHeight = float32(48)
-	height := float32(len(state.sftpColumns.entries))*rowHeight - 4
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope, DismissID: hitSFTPColumnSettingsDismiss, CloseID: hitSFTPColumnSettingsClose,
-		ContentSize: gfx.Size{Width: 560}, FitBody: true, BodyHeight: height,
-	})
-	layout := dialog.Begin(m.FilesColumnsTitle, m.FilesColumnsHint)
-	list := components.BeginReorderList(canvas, theme, layout.Body, &editor.list).RowHeight(rowHeight)
-	for _, entry := range state.sftpColumns.entries {
-		index := int(entry.Key)
-		label := state.sftpColumnLabel(entry.Key)
-		fixed := entry.Key == sftpColumnName
-		enabled := entry.Enabled || fixed
-		row := list.Row(hitSFTPColumnSettingsHandles.At(index), editor.handleLabels[index], fixed)
-		color := theme.Foreground
-		if !enabled {
-			color = theme.MutedForeground
+// declareSFTPColumnSettings declares the columns editor as a dialog of the page: the
+// columns are a List whose rows are dragged, or moved with Alt and the arrows, and each
+// has a switch; the name column is fixed in front.
+func (state *State) declareSFTPColumnSettings(c ui.C) {
+	editor, m := &state.sftpColumnEditor, state.messages.Tools
+	editor.rows.Key = func(i int) int { return int(state.sftpColumns.entries[i].Key) }
+	editor.rows.Label = func(i int) string { return state.sftpColumnLabel(state.sftpColumns.entries[i].Key) }
+	editor.rows.NoTypeahead = true
+	editor.rows.Reorder = func(rows []int, to int) {
+		if rows[0] > 0 {
+			state.moveSFTPColumn(rows[0], to)
 		}
-		caption := gfx.Rect{
-			X: row.Content.X, Y: row.Content.Y,
-			Width: max(row.Content.Width-58, 0), Height: row.Content.Height,
-		}
-		canvas.Label(canvas.FitLine(label, theme.Metrics.FontSizeM, gfx.WeightRegular, caption.Width), caption, gfx.TextStyle{Size: theme.Metrics.FontSizeM, Color: color})
-		toggle := components.BeginSwitch(canvas, state.switchTheme(), hitSFTPColumnSettingsToggles.At(index),
-			gfx.Rect{X: row.Content.X + row.Content.Width - 38, Y: row.Content.Y + (row.Content.Height-22)/2, Width: 38, Height: 22}, enabled).Label(label)
-		if fixed {
-			toggle = toggle.Disabled()
-		}
-		toggle.Paint()
 	}
-	list.End()
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitSFTPColumnSettingsReset, Label: m.FilesColumnsReset, Variant: components.ButtonOutline},
-		components.ButtonAction{ID: hitSFTPColumnSettingsClose, Label: m.FilesColumnsClose, Variant: components.ButtonSecondary},
-	)
-	dialog.End()
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.FilesColumnsTitle, Description: m.FilesColumnsHint, Width: 560, Layer: dialogLayer, Scope: dialogScope,
+		DismissID: hitSFTPColumnSettingsDismiss, CloseID: hitSFTPColumnSettingsClose,
+	})
+	dialog.Body(func() {
+		ui.List(c, &editor.rows, len(state.sftpColumns.entries), state.declareSFTPColumn).
+			FillWidth().Height(float32(len(state.sftpColumns.entries))*48 - 4).Shrink(0).Label(m.FilesColumnsTitle)
+	})
+	dialog.Footer(func() {
+		state.dialogActionFooter(c,
+			components.ButtonAction{ID: hitSFTPColumnSettingsReset, Label: m.FilesColumnsReset, Variant: components.ButtonOutline},
+			components.ButtonAction{ID: hitSFTPColumnSettingsClose, Label: m.FilesColumnsClose, Variant: components.ButtonSecondary},
+		)
+	})
+}
+
+// declareSFTPColumn declares one column's row: its name and its switch.
+func (state *State) declareSFTPColumn(row ui.ListRow) {
+	c, theme := row.C, state.Theme()
+	entry := state.sftpColumns.entries[row.Index]
+	index := int(entry.Key)
+	label := state.sftpColumnLabel(entry.Key)
+	fixed := entry.Key == sftpColumnName
+	enabled := entry.Enabled || fixed
+	color := theme.Foreground
+	if !enabled {
+		color = theme.MutedForeground
+	}
+	row.Element.Height(44).MarginBottom(4).PadX(10).Gap(10).Items(ui.Center).
+		Radius(theme.Metrics.RadiusControl).Border(1, theme.Border).Background(theme.Background).Children(func() {
+		ui.Text(c, label).FontSize(theme.Metrics.FontSizeM).Color(color).Ellipsis().Grow(1)
+		toggle := ui.Switch(c, state.pageFlag(enabled), "").Hit(hitSFTPColumnSettingsToggles.At(index), label).Shrink(0)
+		if fixed {
+			toggle.Disabled(true)
+		}
+	})
 }

@@ -340,8 +340,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintDashboardAddMenu(canvas)
 	case modalDashboard:
 		state.paintDashboardDialog(canvas, viewport)
-	case modalSFTPColumns:
-		state.paintSFTPColumnSettings(canvas, viewport)
 	}
 	state.paintQueuedSFTPHeaderMenu(canvas)
 	state.paintHostMenus(canvas, viewport)
@@ -2892,6 +2890,8 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareAutofillConfirm(c)
 	case modalToolbarSettings:
 		state.declareToolbarSettings(c)
+	case modalSFTPColumns:
+		state.declareSFTPColumnSettings(c)
 	case modalSidebarSettings:
 		state.declareSidebarSettings(c)
 	case modalHighlightRule:

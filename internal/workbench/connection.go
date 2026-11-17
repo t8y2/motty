@@ -1373,13 +1373,8 @@ func (state *State) closeModal() {
 	if state.modal == modalDashboardAdd {
 		state.dashboard.addHosts = nil
 	}
-	if state.modal == modalToolbarSettings {
-	}
 	if state.modal == modalSidebarSettings {
 		state.sidebarEditor = sidebarSettingsUI{}
-	}
-	if state.modal == modalSFTPColumns {
-		state.sftpColumnEditor.list.Cancel()
 	}
 	if state.modal == modalSudoSFTP {
 		state.sudoSFTP = sudoSFTPDialog{}
