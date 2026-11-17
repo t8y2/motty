@@ -662,7 +662,18 @@ func (state *State) declareSnippetDialogBody(c ui.C) {
 		state.declareDialogCheck(c, hitSnippetRun, m.SnippetRun, form.run, 7, 0)
 		ui.Row(c).Height(32).Items(ui.Center).MarginSides(12, 0, 0, 2).Children(func() {
 			ui.Text(c, m.SnippetShortcut).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).LineHeight(20).Grow(1)
-			form.dialogShortcut = ui.Slot(c).Size(240, 32).Shrink(0)
+			label := m.SnippetShortcutNone
+			switch {
+			case form.capturing:
+				label = m.SnippetShortcutRecording
+			case form.shortcut.Valid():
+				label = chordLabel(form.shortcut)
+			}
+			form.dialogShortcut = ui.Row(c).Size(240, 32).Shrink(0).Justify(ui.End).Gap(8)
+			form.dialogShortcut.Children(func() {
+				ui.Button(c, label).Outline().Hit(hitSnippetShortcut, label)
+				ui.Button(c, m.SnippetShortcutClear).Ghost().Disabled(!form.shortcut.Valid() && !form.capturing).Hit(hitSnippetShortcutOff, m.SnippetShortcutClear)
+			})
 		})
 		if form.dialogError != "" {
 			ui.Text(c, form.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(18).MarginSides(15, 0, 0, 0)
@@ -671,22 +682,9 @@ func (state *State) declareSnippetDialogBody(c ui.C) {
 	column.DrawOver(func(d *ui.DrawContext) { state.paintSnippetDialogFields(d.Canvas) })
 }
 
-// paintSnippetDialogFields paints the snippet editor's controls into the slots
-// the body laid out.
+// paintSnippetDialogFields paints the snippet editor's group picker into the
+// slot the body laid out; the shortcut is page buttons.
 func (state *State) paintSnippetDialogFields(canvas *gfx.Canvas) {
-	m, theme := state.messages.Tools, state.Theme()
 	form := &state.snippets
 	state.paintSnippetGroupField(canvas, form.dialogGroup.Rect())
-	label := m.SnippetShortcutNone
-	switch {
-	case form.capturing:
-		label = m.SnippetShortcutRecording
-	case form.shortcut.Valid():
-		label = chordLabel(form.shortcut)
-	}
-	buttons := [...]components.ButtonAction{
-		{ID: hitSnippetShortcut, Label: label, Variant: components.ButtonOutline},
-		{ID: hitSnippetShortcutOff, Label: m.SnippetShortcutClear, Variant: components.ButtonGhost, Disabled: !form.shortcut.Valid() && !form.capturing},
-	}
-	components.BeginButtonRow(canvas, theme, form.dialogShortcut.Rect()).Paint(buttons[:]...)
 }
