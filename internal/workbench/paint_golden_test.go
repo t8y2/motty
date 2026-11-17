@@ -95,6 +95,11 @@ func paintScenes() []paintScene {
 			state.openXYSetup(session)
 			return state, func(c *gfx.Canvas, size gfx.Size) { state.Paint(c, size) }
 		}},
+		plainScene("highlight-rule", func(t *testing.T, s *State) { s.openHighlightDialog() }),
+		plainScene("highlight-rule-error", func(t *testing.T, s *State) {
+			s.openHighlightDialog()
+			s.highlighting.dialogError = "That pattern is not valid."
+		}),
 		plainScene("sudo-sftp", func(t *testing.T, s *State) { s.sudoSFTP = sudoSFTPDialog{}; s.modal = modalSudoSFTP }),
 		plainScene("moba-encoding", func(t *testing.T, s *State) {
 			s.mobaEncoding = mobaEncodingPrompt{utf8: "abc", gb: "def"}

@@ -67,10 +67,13 @@ type highlightUI struct {
 	editRule      highlightRule
 	isEditing     bool
 
-	// field, regexRow and caseRow are the slots the dialog body laid out; the
-	// field and the checkboxes are painted into them after the body, by the
-	// controls that own their editing and focus.
-	field, regexRow, caseRow ui.Box
+	// regexRow and caseRow are the slots the dialog body laid out; the checkboxes are
+	// painted into them after the body, by the controls that own their editing and focus.
+	regexRow, caseRow ui.Box
+	// patternForm and patternText are the pattern field's row and text, bound to pattern.
+	patternForm  ui.FormFieldState
+	patternText  ui.Field
+	patternBound bool
 }
 
 // recompileHighlights rebuilds the compiled rules after any change to them, and
@@ -345,15 +348,21 @@ func (state *State) declareHighlightDialog(c ui.C) {
 }
 
 // declareHighlightDialogBody lays out the rule dialog: the pattern field, the
-// two checkboxes, the colors and the error. The pattern, the checkboxes and
-// their hit regions are painted into the slots after the body, so their focus
-// order and invalid look stay the ones the controls already have.
+// two checkboxes, the colors and the error. The pattern is a page field; the
+// checkboxes and their hit regions are painted into the slots after the body.
 func (state *State) declareHighlightDialogBody(c ui.C) {
 	form, m, pal := &state.highlighting, state.messages.Tools, state.pal
 	slots := highlight.Slots()
 	column := ui.Column(c).Fill().PadSides(2, 4, 0, 4)
 	column.Children(func() {
-		form.field = ui.Slot(c).Height(62)
+		if !form.patternBound {
+			form.patternText.Bind(&form.pattern)
+			form.patternBound = true
+		}
+		form.patternText.Invalid = form.dialogError != ""
+		ui.FormField(c, &form.patternForm, m.HighlightPattern).FillWidth().Height(62).Children(func() {
+			ui.TextFieldID(c, hitHighlightPattern, &form.patternText, m.HighlightPattern, m.HighlightPatternPlaceholder)
+		})
 		form.regexRow = state.declareDialogCheckboxC(c, m.HighlightRegex, 11, 0)
 		form.caseRow = state.declareDialogCheckboxC(c, m.HighlightCase, 12, 0)
 		ui.Text(c, m.HighlightColor).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(18).MarginSides(19, 0, 4, 2)
@@ -379,14 +388,7 @@ func (state *State) declareHighlightDialogBody(c ui.C) {
 		}
 	})
 	column.DrawOver(func(d *ui.DrawContext) {
-		canvas, theme := d.Canvas, *d.Theme
-		content := components.BeginField(canvas, theme, form.field.Rect()).Paint(m.HighlightPattern, "", "")
-		value := form.pattern.String()
-		focused := canvas.Focused() == hitHighlightPattern
-		components.PaintInput(canvas, theme, content, components.InputSnapshot{
-			ID: hitHighlightPattern, Label: m.HighlightPattern, Value: value, Placeholder: m.HighlightPatternPlaceholder,
-			Focused: focused, PlatformEditing: focused && value != "", Invalid: form.dialogError != "",
-		})
+		canvas := d.Canvas
 		state.paintDialogCheckbox(canvas, hitHighlightRegex, m.HighlightRegex, form.regex, form.regexRow)
 		state.paintDialogCheckbox(canvas, hitHighlightCase, m.HighlightCase, form.folded, form.caseRow)
 	})
