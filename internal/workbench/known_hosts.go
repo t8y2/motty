@@ -33,10 +33,13 @@ type knownHostRecord struct {
 }
 
 type knownHostsView struct {
-	file              *knownhosts.File
-	rows              []knownHostRecord
-	visible           []int
-	search            text.Editor
+	file    *knownhosts.File
+	rows    []knownHostRecord
+	visible []int
+	search  text.Editor
+	// searchField is the page's text field over search, bound when first declared.
+	searchField       ui.Field
+	searchBound       bool
 	visibleQuery      string
 	visibleLanguage   i18n.Language
 	synced            bool

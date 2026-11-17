@@ -9,12 +9,12 @@ import (
 // knownHostsSectionUI is what the known-hosts page's declaration leaves for its
 // paint.
 type knownHostsSectionUI struct {
-	search, content, pagination, refresh, retrust, remove, emptySlot ui.Box
-	refreshWidth, retrustWidth, deleteWidth                          float32
-	refreshIcon, retrustIcon, deleteIcon                             uint8
-	condensed                                                        bool
-	empty                                                            bool
-	emptyIcon                                                        uint8
+	content, pagination, refresh, retrust, remove, emptySlot ui.Box
+	refreshWidth, retrustWidth, deleteWidth                  float32
+	refreshIcon, retrustIcon, deleteIcon                     uint8
+	condensed                                                bool
+	empty                                                    bool
+	emptyIcon                                                uint8
 	// draw is the page hook that paints into these slots. It is kept so a paint
 	// does not build a closure for the hook.
 	draw func(*ui.DrawContext)
@@ -78,7 +78,12 @@ func (state *State) declareKnownHostsWorkspace(c ui.C) {
 			ui.Paragraph(c, messages.KnownHostsDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
 		})
 		ui.Row(c).Height(40).Gap(gap).Items(ui.Center).Children(func() {
-			layout.search = ui.Slot(c).Grow(1).MaxWidth(470).MinWidth(searchLeast).Height(40)
+			if !view.searchBound {
+				view.searchField.Bind(&view.search)
+				view.searchBound = true
+			}
+			ui.TextFieldID(c, hitKnownHostsSearch, &view.searchField, messages.NavSearch, messages.KnownHostsSearchPlaceholder).
+				Icon(lucideIcons[iconSearch]).Grow(1).MaxWidth(470).MinWidth(searchLeast).Height(40)
 			ui.Spacer(c)
 			layout.refresh = state.declareButtonSized(c, hitKnownHostsRefresh, messages.KnownHostsRefresh, refreshIcon, false, false, true, toolbarFont, condensed).Size(refreshWidth, toolbarHeight)
 			layout.retrust = state.declareButtonSized(c, hitKnownHostsRetrust, messages.KnownHostsRetrust, retrustIcon, false, false, view.selected > 0, toolbarFont, condensed).Size(retrustWidth, toolbarHeight)
@@ -111,14 +116,6 @@ func (state *State) declareKnownHostsWorkspace(c ui.C) {
 func (state *State) paintKnownHostsWorkspace(canvas *gfx.Canvas) {
 	view, messages := &state.knownHosts, state.messages
 	layout := &state.sectionBodies.knownHosts
-	value := view.search.String()
-
-	components.PaintInputGroup(canvas, state.Theme(), layout.search.Rect(), components.InputGroupSnapshot{
-		ID: hitKnownHostsSearch, Label: messages.NavSearch, Value: value, Placeholder: messages.KnownHostsSearchPlaceholder,
-		NativeEditing: canvas.Focused() == hitKnownHostsSearch && value != "",
-		InlineStart:   components.InputGroupSlot{Kind: components.InputGroupSlotIcon, Icon: lucideIcons[iconSearch]},
-	})
-
 	if layout.empty {
 		state.drawReservedEmptyPage(canvas, layout.emptySlot, layout.emptyIcon)
 	} else {

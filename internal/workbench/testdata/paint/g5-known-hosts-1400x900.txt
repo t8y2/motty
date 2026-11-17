@@ -1,0 +1,91 @@
+rect {{0 0 1400 900} {0.09411765 0.10980392 0.13725491 1} 0 0 {0 0 0 0} false 1}
+rect {{9 387 186 36} {0.23529412 0.27450982 0.34117648 1} 7.5 0 {0 0 0 0} false 2430}
+rect {{204 36 1189 857} {0.2627451 0.30588236 0.37254903 1} 11 0 {0 0 0 0} false 3197}
+rect {{205 37 1187 855} {0.06666667 0.08235294 0.105882354 1} 10 0 {0 0 0 0} false 3198}
+rect {{223 112 437.68164 40} {0.216 0.22917646 0.24894118 1} 7.5 0 {205 37 1187 855} true 3202}
+rect {{224 113 435.68164 38} {0.11146667 0.1264 0.1488 1} 6.5 0 {205 37 1187 855} true 3203}
+rect {{1114.3633 114 83.20752 36} {0.2 0.23529412 0.2901961 1} 7.5 0 {205 37 1187 855} true 3327}
+rect {{1115.3633 115 81.20752 34} {0.12156863 0.14117648 0.1764706 1} 6.5 0 {205 37 1187 855} true 3328}
+rect {{1205.5708 114 85.59424 36} {0.2 0.23529412 0.2901961 1} 7.5 0 {205 37 1187 855} true 3330}
+rect {{1206.5708 115 83.59424 34} {0.12156863 0.14117648 0.1764706 1} 6.5 0 {205 37 1187 855} true 3331}
+rect {{1299.165 114 74.83496 36} {0.2 0.23529412 0.2901961 1} 7.5 0 {205 37 1187 855} true 3333}
+rect {{1300.165 115 72.83496 34} {0.12156863 0.14117648 0.1764706 1} 6.5 0 {205 37 1187 855} true 3334}
+rect {{223 842 1151 1} {0.2 0.23529412 0.2901961 1} 0 0 {205 37 1187 855} true 3336}
+rect {{223 205 1151 1} {0.2 0.23529412 0.2901961 1} 0 0 {205 37 1187 855} true 3346}
+rect {{223 241 1151 1} {0.2 0.23529412 0.2901961 1} 0 0 {205 37 1187 855} true 3352}
+rect {{236 216 16 16} {0.216 0.22917646 0.24894118 1} 4 0 {205 37 1187 855} true 3354}
+rect {{237 217 14 14} {0.11146667 0.1264 0.1488 1} 3 0 {205 37 1187 855} true 3355}
+rect {{223 277 1151 1} {0.2 0.23529412 0.2901961 1} 0 0 {205 37 1187 855} true 3361}
+rect {{236 252 16 16} {0.216 0.22917646 0.24894118 1} 4 0 {205 37 1187 855} true 3363}
+rect {{237 253 14 14} {0.11146667 0.1264 0.1488 1} 3 0 {205 37 1187 855} true 3364}
+shadow {{223 112 437.68164 40} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {205 37 1187 855} true 3201}
+shadow {{236 216 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {205 37 1187 855} true 3353}
+shadow {{236 252 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {205 37 1187 855} true 3362}
+text "Hosts" {52 114.5 37.180664 21}
+text "Workspaces" {52 154.5 80.37695 21}
+text "Monitor" {52 194.5 49.745117 21}
+text "Session Logs" {52 234.5 85.51758 21}
+text "Keychain" {52 274.5 59.814453 21}
+text "Jump Routes" {52 314.5 84.2666 21}
+text "Port Forwarding" {52 354.5 103.40039 21}
+text "Known Hosts" {52 394.5 85.44238 21}
+text "Snippets" {52 434.5 56.47168 21}
+text "Notes" {52 474.5 37.99414 21}
+text "Local Terminal" {52 815.5 94.36328 21}
+text "Settings" {52 855.5 52.759766 21}
+text "Known Hosts" {223 53 1151 25}
+text "Review the host keys this app trusts. Select one or more entries to delete or re-verify." {223 81 1151 19}
+text "Search host, type, fingerprint, or comment" {254 122 395.68164 20}
+text "Refresh" {1132.3633 122 47.20752 20}
+text "Re-trust" {1223.5708 122 49.59424 20}
+text "Delete" {1317.165 122 38.83496 20}
+text "2 entries" {223 858 168 19}
+text "0 selected" {403 858 138 19}
+text "Loaded 2 known-host entries" {553 858 821 19}
+text "Line" {276.03223 166 26.967773 40}
+text "Host patterns" {319 166 214 40}
+text "Marker / hash" {549 166 89 40}
+text "Key type" {654 166 126 40}
+text "Fingerprint" {796 166 284 40}
+text "Comment" {1096 166 270 40}
+text "1" {297.53125 206 5.46875 36}
+text "plain.example.com" {319 206 214 36}
+text "ssh-ed25519" {654 206 126 36}
+text "SHA256:ZPIj3qUKtwR+RYI1zYZqn+zcm7G…" {796 206 284 36}
+text "primary server" {1096 206 270 36}
+text "2" {294.8037 242 8.196289 36}
+text "other.example.com" {319 242 214 36}
+text "ssh-ed25519" {654 242 126 36}
+text "SHA256:ZPIj3qUKtwR+RYI1zYZqn+zcm7G…" {796 242 284 36}
+text "second" {1096 242 270 36}
+hit "" region {0 0 1400 36} disabled=false
+hit "Hosts" button {82 4 28 28} disabled=false
+hit "New tab" button {116 4 28 28} disabled=false
+hit "Transfers" button {1156 4 28 28} disabled=false
+hit "Session manager" button {1186 4 28 28} disabled=false
+hit "AI assistant" button {1216 4 28 28} disabled=false
+hit "Local Terminal" button {1246 4 28 28} disabled=false
+hit "Command Palette" button {1276 4 28 28} disabled=false
+hit "Switch to light theme" button {1306 4 28 28} disabled=false
+hit "GitHub" button {1336 4 28 28} disabled=false
+hit "Settings" button {1366 4 28 28} disabled=false
+hit "Hosts" menuitem {9 107 186 36} disabled=false
+hit "Workspaces" menuitem {9 147 186 36} disabled=false
+hit "Monitor" menuitem {9 187 186 36} disabled=false
+hit "Session Logs" menuitem {9 227 186 36} disabled=false
+hit "Keychain" menuitem {9 267 186 36} disabled=false
+hit "Jump Routes" menuitem {9 307 186 36} disabled=false
+hit "Port Forwarding" menuitem {9 347 186 36} disabled=false
+hit "Known Hosts" menuitem {9 387 186 36} disabled=false
+hit "Snippets" menuitem {9 427 186 36} disabled=false
+hit "Notes" menuitem {9 467 186 36} disabled=false
+hit "Local Terminal" menuitem {9 808 186 36} disabled=false
+hit "Settings" menuitem {9 848 186 36} disabled=false
+hit "Search" textfield {223 112 437.68164 40} disabled=false
+hit "Refresh" button {1114.3633 114 83.20752 36} disabled=false
+hit "Re-trust" button {1205.5708 114 85.59424 36} disabled=true
+hit "Delete" button {1299.165 114 74.83496 36} disabled=true
+hit "1" button {223 206 1151 36} disabled=false
+hit "plain.example.com · SHA256:ZPIj3qUKtwR+RYI1zYZqn+zcm7GlLmNn/+46IW7kWM4" checkbox {224 208 40 32} disabled=false
+hit "2" button {223 242 1151 36} disabled=false
+hit "other.example.com · SHA256:ZPIj3qUKtwR+RYI1zYZqn+zcm7GlLmNn/+46IW7kWM4" checkbox {224 244 40 32} disabled=false
