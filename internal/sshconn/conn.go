@@ -819,7 +819,7 @@ func (conn *Conn) handshake(endpoint Endpoint, socket net.Conn, known *hostKeys)
 	authentication := conn.authentication(endpoint)
 	if authentication.Methods&AuthKerberos != 0 && !KerberosAvailable {
 		socket.Close()
-		return nil, "", errors.New("Kerberos authentication requires a macOS build with cgo enabled")
+		return nil, "", errors.New("Kerberos authentication is not available in this build")
 	}
 	clientConfig := &ssh.ClientConfig{
 		Config: ssh.Config{KeyExchanges: wanted.KeyExchanges, Ciphers: wanted.Ciphers, MACs: wanted.MACs},
