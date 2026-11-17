@@ -349,6 +349,39 @@ func countFileHeaders(data []byte) int {
 	return bytes.Count(data, []byte{'*', 0x18, 'A', 4}) + bytes.Count(data, []byte{'*', 0x18, 'C', 4})
 }
 
+// A transfer whose protocol bytes the shell will not carry has already counted
+// them as sent. Going on would only drift away from a peer that never receives
+// them, until it gives up: the transfer fails here instead.
+func TestATransferFailsWhenTheShellWillNotTakeItsBytes(t *testing.T) {
+	state, session, shell := transferState(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "up.bin")
+	os.WriteFile(path, []byte("payload"), 0o644)
+	state.options.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return []string{path}, nil }
+
+	target := &collect{}
+	remote := zmodem.NewReceiver(target)
+	shell.onWrite = func(p []byte) { remote.Feed(p); shell.say(string(remote.TakeOutput(nil))) }
+	remote.Feed([]byte(zrqinit))
+	shell.say("waiting\r\n" + string(remote.TakeOutput(nil)))
+	waitUntil(t, state, "the offer", func() bool { return state.modal == modalFileTransfer })
+
+	shell.mu.Lock()
+	shell.refuse = true
+	shell.mu.Unlock()
+	state.Click(hitTransferChoose)
+	waitUntil(t, state, "the transfer to end", func() bool { return session.transfer.phase == transferNone })
+	if len(target.files) != 0 {
+		t.Fatalf("the receiver got %v", target.files)
+	}
+	if !strings.Contains(screenText(state, 0), "failed") {
+		t.Fatalf("screen = %q", screenText(state, 0))
+	}
+	if strings.Contains(screenText(state, 0), "Sent") {
+		t.Fatalf("a transfer that never reached the other end was reported as sent: %q", screenText(state, 0))
+	}
+}
+
 func TestCancellingARunningTransferEndsItAndRemovesTheUnfinishedFile(t *testing.T) {
 	state, session, shell := transferState(t)
 	dir := t.TempDir()
