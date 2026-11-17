@@ -1198,7 +1198,10 @@ func (state *State) applyOutput(session *Session, data []byte, wasExec bool) {
 	if t.injection.phase == injectionWaiting {
 		t.injection.lastOutput, t.injection.outputSeen = state.now(), true
 	}
-	state.goLive(session)
+	// The first prompt is redrawn by injection, so reveal only the settled one.
+	if !t.injection.holding() {
+		state.goLive(session)
+	}
 }
 
 // shellEnded tells the screen the session is over and lets the connection go.

@@ -73,3 +73,55 @@ func TestInjectionFailsOpenWhenTheMarkerNeverComes(t *testing.T) {
 		t.Fatalf("queued input = %q, want it released on failure", got)
 	}
 }
+
+func TestInjectionRevealsOnlyTheSettledPrompt(t *testing.T) {
+	const token = "inject-token"
+	screen := term.New(80, 24, 0)
+	t0 := &terminal{screen: screen, folderToken: token}
+	session := &Session{term: t0}
+	state := &State{}
+	t0.injection = terminalInjection{phase: injectionWaiting}
+
+	state.applyOutput(session, []byte("Last login: today\r\nprompt$ "), false)
+	if t0.live {
+		t.Fatal("the prompt that injection will redraw was revealed")
+	}
+	if text := screen.Text(); !strings.Contains(text, "Last login: today") || !strings.Contains(text, "prompt$") {
+		t.Fatalf("startup output was not parsed while hidden: %q", text)
+	}
+
+	t0.injection.phase = injectionSuppressing
+	t0.injection.marker = sshconn.IntegrationReadyMarker(token)
+	state.applyOutput(session, []byte("echo of the script\r\n"), false)
+	if t0.live {
+		t.Fatal("the activation echo revealed the terminal")
+	}
+	output := append(t0.injection.marker, []byte("prompt$ ")...)
+	state.applyOutput(session, output, false)
+	if !t0.live {
+		t.Fatal("the settled prompt was not revealed")
+	}
+	if text := screen.Text(); strings.Count(text, "prompt$") != 1 || strings.Contains(text, "echo of the script") {
+		t.Fatalf("settled screen = %q, want one prompt and no activation echo", text)
+	}
+}
+
+func TestInjectionFailureRevealsStartupOutput(t *testing.T) {
+	screen := term.New(80, 24, 0)
+	t0 := &terminal{screen: screen, integrated: true}
+	session := &Session{term: t0}
+	state := &State{}
+	t0.injection = terminalInjection{phase: injectionWaiting}
+
+	state.applyOutput(session, []byte("prompt$ "), false)
+	if t0.live {
+		t.Fatal("the unsettled prompt was revealed")
+	}
+	state.failInjection(session)
+	if !t0.live {
+		t.Fatal("a failed injection hid the usable shell")
+	}
+	if text := screen.Text(); !strings.Contains(text, "prompt$") {
+		t.Fatalf("startup output was lost on failure: %q", text)
+	}
+}

@@ -226,6 +226,9 @@ func (state *State) failInjection(session *Session) {
 	injection.buf = injection.buf[:0]
 	t.integrated = false
 	t.flushInjectionInput()
+	if injection.outputSeen {
+		state.goLive(session)
+	}
 }
 
 // flushInjectionInput writes what was typed while the injection was settling.
