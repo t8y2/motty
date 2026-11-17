@@ -20,11 +20,17 @@ Motty 支持：
 一轮问答里有多个问题时（例如同一个 PAM 栈同时要密码和一次性验证码），会合并成一个
 对话框，每个问题一个输入框。
 
-### macOS 上的 Kerberos
+### Kerberos（GSSAPI）
 
 在主机的「认证方式」里选择「Kerberos（GSSAPI）」，即可登录支持 `gssapi-with-mic`
-的服务器。Motty 使用 macOS 上已有的 Kerberos 凭据。票据过期后，请按平常的
-Kerberos 登录流程续期。凭据委派处于关闭状态。
+的服务器。macOS、Linux 和 Windows 都支持此选项：
+
+- **macOS**：使用系统中已有的 Kerberos 凭据。
+- **Linux**：连接开始时加载系统的 `libgssapi_krb5`，因此需要安装发行版的 Kerberos
+  客户端库，并用 `kinit` 获取票据。Motty 读取默认凭据缓存，或 `KRB5CCNAME` 指定的缓存。
+- **Windows**：通过 SSPI 使用当前已登录 Windows 账户的 Kerberos 票据。
+
+票据过期后，请按平常的 Kerberos 登录流程续期。凭据委派处于关闭状态。
 
 ### 私钥
 
