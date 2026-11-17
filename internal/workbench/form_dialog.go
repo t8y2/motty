@@ -42,10 +42,12 @@ type formField struct {
 	secure             bool
 	multiline          bool
 	editor             text.Editor
-	// pageField and pageBound are the page field the tools window declares over
-	// the editor; the main window paints and edits it directly.
+	// pageField and pageBound are the page field declared over the editor; row is its
+	// labelled row and shown reveals a secret one. A multiline field is painted by hand.
 	pageField ui.Field
 	pageBound bool
+	row       ui.FormFieldState
+	shown     bool
 	// layout and rect are the rows and place of a multiline field as last painted.
 	layout components.TextareaLayout
 	rect   gfx.Rect
@@ -91,6 +93,10 @@ func (state *State) openForm(form formDialog, fields ...formField) *formDialog {
 	state.formSerial++
 	state.form = form
 	state.form.count = copy(state.form.fields[:], fields)
+	for index := range state.form.fields {
+		// A field copied from another form is bound to that form's editor.
+		state.form.fields[index].pageBound, state.form.fields[index].shown = false, false
+	}
 	state.form.dialogError = ""
 	state.form.testRunning = false
 	state.modal = modalForm
@@ -363,7 +369,11 @@ func (state *State) declareFormDialogBody(c ui.C) {
 	column := ui.Column(c).Fill().PadSides(4, 4, 0, 4)
 	column.Children(func() {
 		for index := 0; index < form.count; index++ {
-			form.slots[index] = ui.Slot(c).Height(form.slotHeight(index)-4).MarginSides(0, 0, 4, 0)
+			if form.fields[index].multiline {
+				form.slots[index] = ui.Slot(c).Height(form.slotHeight(index)-4).MarginSides(0, 0, 4, 0)
+			} else {
+				state.declareFormField(c, index)
+			}
 		}
 		if form.checkLabel != "" {
 			ui.Column(c).Height(72).Gap(2).PadSides(8, 0, 4, 0).Children(func() {
@@ -384,25 +394,43 @@ func (state *State) declareFormDialogBody(c ui.C) {
 		canvas, theme := d.Canvas, *d.Theme
 		for index := 0; index < form.count; index++ {
 			field := &form.fields[index]
+			if !field.multiline {
+				continue
+			}
 			id := hitFormFieldList.At(index)
 			slot := form.slots[index].Rect()
 			content := components.BeginField(canvas, theme, slot).Paint(field.label, "", "")
-			value := field.editor.String()
-			focused := canvas.Focused() == id
-			if field.multiline {
-				state.paintFormTextarea(canvas, field, gfx.Rect{X: content.X, Y: content.Y, Width: content.Width, Height: slot.Y + slot.Height - content.Y}, id, focused)
-				continue
-			}
-			state.paintSecretInput(canvas, content, components.InputSnapshot{
-				ID: id, Label: field.label, Value: value, Placeholder: field.placeholder, Secure: field.secure,
-				Focused: focused, PlatformEditing: focused && value != "",
-			})
+			state.paintFormTextarea(canvas, field, gfx.Rect{X: content.X, Y: content.Y, Width: content.Width, Height: slot.Y + slot.Height - content.Y}, id, canvas.Focused() == id)
 		}
 		if form.checkLabel != "" {
 			rect := form.checkBox.Rect()
 			side := components.CheckboxExtent(theme)
 			components.BeginCheckbox(canvas, theme, hitFormCheckbox, gfx.Rect{X: rect.X, Y: rect.Y + (rect.Height-side)/2}, form.checked).Label(form.checkLabel).Paint()
 			canvas.HitLabel(hitFormCheckbox, gfx.Rect{X: rect.X + 28, Y: rect.Y, Width: max(rect.Width-28, 0), Height: rect.Height}, form.checkLabel, false)
+		}
+	})
+}
+
+// declareFormField declares a single-line field i of the form: a labelled row around a page
+// text bound to the field's editor. A secret one has a button that reveals it.
+func (state *State) declareFormField(c ui.C, i int) {
+	field, m := &state.form.fields[i], state.messages
+	if !field.pageBound {
+		field.pageField.Bind(&field.editor)
+		field.pageBound = true
+	}
+	field.pageField.Secure = field.secure && !field.shown
+	ui.FormField(c, &field.row, field.label).FillWidth().Height(62).MarginSides(0, 0, 4, 0).Children(func() {
+		box := ui.TextFieldID(c, hitFormFieldList.At(i), &field.pageField, field.label, field.placeholder)
+		if field.secure {
+			icon, name := lucideIcons[iconEye], m.ShowSecret
+			if field.shown {
+				icon, name = lucideIcons[iconEyeOff], m.HideSecret
+			}
+			box.Action(icon, name)
+			if box.ActionClicked() {
+				field.shown = !field.shown
+			}
 		}
 	})
 }
