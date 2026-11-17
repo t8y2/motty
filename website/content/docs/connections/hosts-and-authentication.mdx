@@ -40,6 +40,11 @@ Credential delegation is disabled.
 
 ### Private keys
 
+Selecting **Private Key** keeps authentication limited to the chosen key. If the
+server accepts that key and then requests an OTP or another keyboard-interactive
+factor, Motty continues with a prompt or a saved one-time code. A rejected or
+unavailable key fails authentication without falling back to an interactive login.
+
 **Keychain > Add Key** offers three ways to bring a key in: **Import from File**
 (the file stays where it is), **Paste Private Key** (no file needed) and
 **Generate New Key** (an Ed25519 pair; the public key is copied so you can add it

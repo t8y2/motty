@@ -96,6 +96,10 @@ type Authentication struct {
 	// Methods limits the SSH authentication methods offered. Zero uses the
 	// default methods. Kerberos is opt-in.
 	Methods AuthMethods
+	// RequirePublicKey permits other methods only after the server reports
+	// partial success for publickey. A rejected or unavailable key cannot fall
+	// back to a password or keyboard-interactive login.
+	RequirePublicKey bool
 	// IdentityFiles lists private keys to try. Nil means the default OpenSSH
 	// identities; an empty slice disables identity files.
 	IdentityFiles []string
@@ -834,6 +838,10 @@ func (conn *Conn) handshake(endpoint Endpoint, socket net.Conn, known *hostKeys)
 		},
 		HostKeyAlgorithms: hostKeyAlgorithms(known.algorithms(address), wanted.HostKeys),
 		ClientVersion:     "SSH-2.0-Motty",
+	}
+
+	if authentication.RequirePublicKey {
+		clientConfig.AuthCallback = requirePublicKey
 	}
 
 	// Closing the socket is the only way to interrupt a handshake that is

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 
 	"golang.org/x/crypto/ssh"
@@ -42,6 +43,19 @@ func (conn *Conn) authMethods(host string, authentication Authentication) []ssh.
 		auth = append(auth, ssh.RetryableAuthMethod(ssh.PasswordCallback(conn.passwordPrompt), maxPasswordAttempts))
 	}
 	return auth
+}
+
+// requirePublicKey lets the usual method order continue only while publickey
+// can still be tried, or after it has succeeded as the first authentication
+// factor. Signing a key alone does not prove the server accepted it.
+func requirePublicKey(auth *ssh.ClientAuthContext) (ssh.AuthMethod, error) {
+	if slices.Contains(auth.PartialSuccessMethods, "publickey") {
+		return nil, nil
+	}
+	if slices.Contains(auth.TriedMethods, "publickey") || !slices.Contains(auth.AllowedMethods, "publickey") {
+		return nil, fmt.Errorf("%w: public key authentication did not succeed", ErrAuthFailed)
+	}
+	return nil, nil
 }
 
 // publicKeySigners runs only after the server's host key is accepted. That
