@@ -438,6 +438,51 @@ func TestCopyOnSelectCopiesWhenTheMouseLetsGo(t *testing.T) {
 	}
 }
 
+func TestMiddleClickPastesClipboard(t *testing.T) {
+	state, session, geometry := selectionState()
+	shell := &fakeShell{done: make(chan struct{})}
+	session.term.shell = shell
+	session.term.screen.Write([]byte("\x1b[?2004h"))
+	state.options.ClipboardText = func() (string, error) { return "ls -la", nil }
+	x, y := cellPoint(geometry, 0, 3, state.cellWidth, state.cellHeight)
+
+	result := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonMiddle,
+		Target: terminalTestHit(state, session), X: x, Y: y, Viewport: state.viewport,
+	})
+
+	if !result.Handled || !result.Repaint {
+		t.Fatalf("middle click = %+v", result)
+	}
+	if got, want := shell.typed(), "\x1b[200~ls -la\x1b[201~"; got != want {
+		t.Fatalf("middle click pasted %q, want %q", got, want)
+	}
+	if state.terminalMenu.open {
+		t.Fatal("middle click opened the terminal menu")
+	}
+}
+
+func TestMiddleClickPastesWithTerminalMouseReporting(t *testing.T) {
+	state, session, geometry := selectionState()
+	shell := &fakeShell{done: make(chan struct{})}
+	session.term.shell = shell
+	session.term.screen.Write([]byte("\x1b[?1002h\x1b[?1006h"))
+	state.options.ClipboardText = func() (string, error) { return "ls -la", nil }
+	x, y := cellPoint(geometry, 0, 3, state.cellWidth, state.cellHeight)
+
+	result := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonMiddle,
+		Target: terminalTestHit(state, session), X: x, Y: y, Viewport: state.viewport,
+	})
+
+	if !result.Handled {
+		t.Fatalf("middle click = %+v", result)
+	}
+	if got := shell.typed(); got != "ls -la" {
+		t.Fatalf("middle click sent %q, want a clipboard paste", got)
+	}
+}
+
 func TestRightClickPastesOnlyWhenChosenAndShiftKeepsTheMenu(t *testing.T) {
 	state, session, geometry := selectionState()
 	shell := &fakeShell{done: make(chan struct{})}
