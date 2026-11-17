@@ -95,25 +95,6 @@ func chooseSelectOption(t testing.TB, state *State, selectLabel, optionLabel str
 	clickPageLabel(t, state, gfx.RoleOption, optionLabel)
 }
 
-// clickPageMenuRowIn is clickPageMenuRow in the settings-sized window a tall page needs.
-func clickPageMenuRowIn(t testing.TB, state *State, label string) {
-	t.Helper()
-	size := gfx.Size{Width: 1400, Height: 2400}
-	var canvas gfx.Canvas
-	state.Paint(&canvas, size)
-	for _, hit := range canvas.Hits() {
-		if hit.Role == gfx.RoleMenuItem && hit.Label == label {
-			canvas = gfx.Canvas{}
-			canvas.BeginEventPass(hit.ID, gfx.ClickInfo{})
-			state.Paint(&canvas, size)
-			canvas.EndEventPass()
-			canvas.RunAfterPaint()
-			return
-		}
-	}
-	t.Fatalf("no menu row %q is painted", label)
-}
-
 // clickPageMenuRow chooses the row of the open page menu named label: the click
 // is delivered in the event pass of a paint, where the page reads it, and what
 // the page deferred runs after it, as the runtime does.

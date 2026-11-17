@@ -66,7 +66,7 @@ func TestStartupSettingsRespondToClicks(t *testing.T) {
 	if state.startupLocal {
 		t.Fatal("nothing is chosen before a click")
 	}
-	clickPageMenuRowIn(t, state, state.messages.LocalTerminal)
+	clickPageMenuRow(t, state, state.messages.LocalTerminal)
 	if !state.startupLocal || !state.startupPicker.open {
 		t.Fatal("the local terminal must be chosen and the menu stay open")
 	}
@@ -76,14 +76,14 @@ func TestStartupSettingsRespondToClicks(t *testing.T) {
 	if !canvasHasMenuRow(&canvas, host.Label) {
 		t.Fatal("the chooser lists no hosts")
 	}
-	clickPageMenuRowIn(t, state, host.Label)
+	clickPageMenuRow(t, state, host.Label)
 	if len(state.startupHosts) != 1 || state.startupHosts[0] != host.CatalogID {
 		t.Fatalf("startup hosts %v: choosing a host must record its catalog id", state.startupHosts)
 	}
 	if !state.startupPicker.open {
 		t.Fatal("choosing a host must keep the menu open for another choice")
 	}
-	clickPageMenuRowIn(t, state, state.messages.LocalTerminal)
+	clickPageMenuRow(t, state, state.messages.LocalTerminal)
 	if state.startupLocal {
 		t.Fatal("clicking the local terminal again must unchoose it")
 	}
