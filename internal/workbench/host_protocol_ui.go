@@ -688,11 +688,7 @@ func (state *State) paintAlgorithmRows(canvas *gfx.Canvas) {
 		state.paintDialogField(canvas, hitDialogAlgorithms, fieldAlgorithms, m.AlgoCustomField, m.AlgoCustomPlaceholder, b.custom.Rect())
 	}
 	state.paintDialogField(canvas, hitDialogLoginCommand, fieldLoginCommand, m.LoginCommandField, m.LoginCommandPlaceholder, b.login.Rect())
-	var removeRect gfx.Rect
-	if editor.otpSaved {
-		removeRect = b.remove.Rect()
-	}
-	state.paintOTPRow(canvas, b.otp.Rect(), b.scan.Rect(), b.paste.Rect(), removeRect)
+	state.paintOTPRow(canvas, b.otp.Rect(), b.scan.Rect(), b.paste.Rect(), b.remove)
 	if editor.auth == authAutomatic {
 		state.paintHelpIcon(canvas, hitDialogIdentitiesOnlyHelp, m.IdentitiesOnlyNote, b.identitiesOnlyHelp.Rect())
 	}
@@ -719,9 +715,15 @@ func (state *State) declareHostAlgoRows(c ui.C) {
 			b.otp = ui.Slot(c).Grow(1)
 		})
 		ui.Row(c).Height(otpButtonsRow).Gap(8).Children(func() {
-			b.scan = ui.Slot(c).Size(algoScanWidth, 30).Self(ui.Start)
-			b.paste = ui.Slot(c).Size(algoPasteWidth, 30).Self(ui.Start)
-			b.remove = ui.Slot(c).Size(algoRemoveWidth, 30).Self(ui.Start)
+			b.scan = ui.Button(c, m.OTPScan).Small().Outline().Hit(hitDialogOTPScan, m.OTPScan).Size(algoScanWidth, 30).Self(ui.Start)
+			b.paste = ui.Button(c, m.OTPPaste).Small().Outline().Hit(hitDialogOTPPaste, m.OTPPaste).Size(algoPasteWidth, 30).Self(ui.Start)
+			if editor.otpSaved {
+				label := m.OTPRemove
+				if editor.otpRemove {
+					label = m.OTPKeep
+				}
+				b.remove = ui.Button(c, label).Small().Outline().Hit(hitDialogOTPRemove, label).Size(algoRemoveWidth, 30).Self(ui.Start)
+			}
 		})
 		heading := func(title string) {
 			ui.Column(c).Height(groupHeadingHeight).Children(func() {
@@ -747,7 +749,7 @@ func (state *State) declareHostAlgoRows(c ui.C) {
 // read it from a QR code image, and for a
 // saved one a button, in its own rectangle, to take it away. The secret itself
 // is never drawn.
-func (state *State) paintOTPRow(canvas *gfx.Canvas, field, scan, paste, remove gfx.Rect) {
+func (state *State) paintOTPRow(canvas *gfx.Canvas, field, scan, paste gfx.Rect, remove ui.Box) {
 	m, editor := state.messages.Tools, &state.editor
 	placeholder := m.OTPPlaceholder
 	if editor.otpSaved {
@@ -757,17 +759,10 @@ func (state *State) paintOTPRow(canvas *gfx.Canvas, field, scan, paste, remove g
 		}
 	}
 	state.paintDialogField(canvas, hitDialogOTP, fieldOTP, m.OTPField, placeholder, field)
-	components.BeginButton(canvas, state.Theme(), hitDialogOTPScan, scan).Small().Outline(m.OTPScan)
 	state.rememberHostControl(hitDialogOTPScan, scan)
-	components.BeginButton(canvas, state.Theme(), hitDialogOTPPaste, paste).Small().Outline(m.OTPPaste)
 	state.rememberHostControl(hitDialogOTPPaste, paste)
 	if editor.otpSaved {
-		label := m.OTPRemove
-		if editor.otpRemove {
-			label = m.OTPKeep
-		}
-		components.BeginButton(canvas, state.Theme(), hitDialogOTPRemove, remove).Small().Outline(label)
-		state.rememberHostControl(hitDialogOTPRemove, remove)
+		state.rememberHostControl(hitDialogOTPRemove, remove.Rect())
 	}
 }
 
