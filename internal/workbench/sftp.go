@@ -176,6 +176,10 @@ type sftpView struct {
 	dialog             sftpDialogKind
 	dialogEditor       text.Editor
 	dialogEditor2      text.Editor
+	// dialogRows and dialogTexts are the dialog's page fields, the texts bound to the editors above.
+	dialogRows  [2]ui.FormFieldState
+	dialogTexts [2]ui.Field
+	dialogBound bool
 	// dialogFieldLabel is the field title the open dialog's body declared; the
 	// window paints the field under it after the body, inside the dialog's focus
 	// scope. dialogDraw is that paint, kept once so a repaint makes no closure.
