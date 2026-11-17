@@ -39,18 +39,10 @@ func (state *State) declareTransferBatchBody(c ui.C) {
 		ui.Spacer(c)
 		ui.Row(c).Height(32).Shrink(0).Gap(8).Items(ui.Center).Children(func() {
 			ui.Spacer(c)
-			center.batchBody.cancel = pageButtonSlot(c, state.messages.Cancel, false)
-			center.batchBody.confirm = pageButtonSlot(c, center.batch.action, false)
+			ui.Button(c, state.messages.Cancel).Secondary().Hit(hitTransfersBulkCancel, state.messages.Cancel)
+			ui.Button(c, center.batch.action).Destructive().Hit(hitTransfersBulkConfirm, center.batch.action)
 		})
 	})
-}
-
-// paintTransferBatchControls paints the confirmation's buttons into the slots
-// its page left.
-func (state *State) paintTransferBatchControls(canvas *gfx.Canvas, theme gfx.Theme) {
-	center := &state.transfers
-	components.BeginButton(canvas, theme, hitTransfersBulkCancel, center.batchBody.cancel.Rect()).Secondary(state.messages.Cancel)
-	components.BeginButton(canvas, theme, hitTransfersBulkConfirm, center.batchBody.confirm.Rect()).Destructive(center.batch.action)
 }
 
 // paintTransferEmpty paints the message shown when no transfer matches, in the

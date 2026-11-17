@@ -62,7 +62,6 @@ type fileDocumentUI struct {
 	// painted by hand goes where the page laid it out. compare keeps the
 	// comparison page's slots for the same reason.
 	contentBox, encodingBox, saveBox          ui.Box
-	compare                                   comparisonBody
 	code                                      components.CodeEditor
 	diff                                      components.CodeDiff
 	input                                     app.TextInput
@@ -80,12 +79,6 @@ type fileDocumentUI struct {
 	// caret is the phase of the caret both views draw: the one in the editor and
 	// the one in the comparison, which never shows together.
 	caret components.CaretBlink
-}
-
-// comparisonBody is what the comparison page leaves for the buttons painted by
-// hand after it is laid out.
-type comparisonBody struct {
-	retry, returnToEdit, upload ui.Box
 }
 
 func (d *fileDocument) paint(canvas *gfx.Canvas, size gfx.Size) {
@@ -224,9 +217,7 @@ func (d *fileDocument) paintComparison(canvas *gfx.Canvas, size gfx.Size) {
 	}
 	theme, m := d.owner.Theme(), d.owner.messages.FileWindow
 	canvas.Fill(gfx.Rect{Width: size.Width, Height: size.Height}, theme.Background)
-	uiState.compare = comparisonBody{}
 	d.comparisonPage().Draw(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, uiState.compareView)
-	d.paintComparisonButtons(canvas, theme)
 
 	uiState.editorBounds = uiState.contentBox.Rect()
 	value := d.editor.String()
@@ -292,7 +283,6 @@ func (d *fileDocument) declareComparisonWindow(c ui.C) {
 	uiState := &d.comparison.ui
 	theme, m := *c.Theme(), d.owner.messages.FileWindow
 	uiState.contentBox = ui.Box{}
-	uiState.compare = comparisonBody{}
 	ui.Column(c).Fill().Children(func() {
 		declareWindowTitlebar(c, d.owner.pal, m.CompareSave, d.name)
 		ui.Column(c).Grow(1).Shrink(1).Pad(12).Gap(8).Children(func() {
@@ -316,36 +306,13 @@ func (d *fileDocument) declareComparisonWindow(c ui.C) {
 				ui.Text(c, status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(22).Grow(1).
 					HitWith(hitDocumentStatus, status, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: status})
 				if d.comparison.conflict {
-					uiState.compare.retry = pageButtonSlot(c, m.CompareRetry, true)
+					ui.Button(c, m.CompareRetry).Small().Outline().Hit(hitDocumentCompareRetry, m.CompareRetry).Disabled(d.busy)
 				}
-				uiState.compare.returnToEdit = pageButtonSlot(c, m.ReturnToEdit, true)
-				uiState.compare.upload = pageButtonSlot(c, m.Save, true)
+				ui.Button(c, m.ReturnToEdit).Small().Outline().Hit(hitDocumentReturnToEdit, m.ReturnToEdit).Disabled(d.busy || d.comparison.saving)
+				ui.Button(c, m.Save).Small().Hit(hitDocumentConfirmUpload, m.Save).Disabled(!d.canUploadComparison())
 			})
 		})
 	})
-}
-
-// paintComparisonButtons paints the footer's buttons into the page's slots.
-func (d *fileDocument) paintComparisonButtons(canvas *gfx.Canvas, theme gfx.Theme) {
-	uiState := &d.comparison.ui
-	m := d.owner.messages.FileWindow
-	if d.comparison.conflict {
-		button := components.BeginButton(canvas, theme, hitDocumentCompareRetry, uiState.compare.retry.Rect()).Small()
-		if d.busy {
-			button = button.Disabled()
-		}
-		button.Outline(m.CompareRetry)
-	}
-	back := components.BeginButton(canvas, theme, hitDocumentReturnToEdit, uiState.compare.returnToEdit.Rect()).Small()
-	if d.busy || d.comparison.saving {
-		back = back.Disabled()
-	}
-	back.Outline(m.ReturnToEdit)
-	upload := components.BeginButton(canvas, theme, hitDocumentConfirmUpload, uiState.compare.upload.Rect()).Small()
-	if !d.canUploadComparison() {
-		upload = upload.Disabled()
-	}
-	upload.Default(m.Save)
 }
 
 func (d *fileDocument) footerStatus() string {

@@ -234,7 +234,6 @@ func (state *State) paintTransferCenterBody(d *ui.DrawContext) {
 	center.surface = gfx.Rect{X: d.Rect.X - pad, Y: d.Rect.Y - pad, Width: d.Rect.Width + 2*pad, Height: d.Rect.Height + 2*pad}
 	if len(center.batch.targets) > 0 {
 		center.list = gfx.Rect{}
-		state.paintTransferBatchControls(canvas, theme)
 		return
 	}
 	center.list = center.body.list.Rect()

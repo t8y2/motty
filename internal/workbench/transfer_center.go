@@ -126,7 +126,6 @@ type transferCenter struct {
 	listState     ui.ListState
 	listBox       ui.Box
 	body          transferBody
-	batchBody     transferBatchBody
 	rowDecl       func(ui.ListRow)
 	bodyDraw      func(*ui.DrawContext)
 	listWidth     float32
@@ -174,10 +173,6 @@ type transferRow struct {
 // transferBody leaves room for the Viva Select triggers, which share the
 // workbench's dropdown focus, menu scrolling and dismissal.
 type transferBody struct{ host, direction, list ui.Box }
-
-// transferBatchBody is what the batch confirmation's declaration leaves for its
-// buttons.
-type transferBatchBody struct{ cancel, confirm ui.Box }
 
 // handlers makes the page handlers the transfer center uses, once.
 func (center *transferCenter) handlers(state *State) {
