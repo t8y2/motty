@@ -181,12 +181,21 @@ func (state *State) feedTransfer(session *Session, rx []byte) []byte {
 	return nil
 }
 
+// errTransferOutputRefused is a transfer whose protocol bytes the shell would
+// not take: the shell has ended, or its input backlog is full.
+var errTransferOutputRefused = errors.New("the shell would not take the transfer's bytes")
+
 // afterTransferFeed sends what the engine produced and notices its end.
 func (state *State) afterTransferFeed(session *Session) {
 	transfer := &session.transfer
 	engine := transfer.engine
-	if out := engine.TakeOutput(nil); len(out) > 0 && session.term.shell != nil {
-		session.term.shell.Write(out)
+	if out := engine.TakeOutput(nil); len(out) > 0 {
+		if session.term.shell == nil || !session.term.shell.Write(out) {
+			// The engine has already counted these bytes as sent. Going on would
+			// only drift away from a peer that never receives them, until it
+			// gives up: the transfer fails here instead.
+			engine.Abort(errTransferOutputRefused)
+		}
 	}
 	transfer.progress = engine.Progress()
 	state.noteRZSZ(session)

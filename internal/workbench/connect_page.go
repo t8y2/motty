@@ -192,6 +192,8 @@ func (state *State) describe(session *Session) {
 		session.details[stageLogin] = m.ConnDetailPasswordAsk
 	case session.phase == sshconn.PhaseKeyPassphrasePrompt:
 		session.details[stageLogin] = fmt.Sprintf(m.ConnDetailKeyPassphraseFmt, state.identityLabel(session.identity))
+	case session.securityKey:
+		session.details[stageLogin] = m.SecurityKeyWaiting
 	case session.phase == sshconn.PhaseConnected && session.method != "":
 		session.details[stageLogin] = fmt.Sprintf(m.ConnDetailMethodFmt, session.method)
 	case session.stage == stageLogin:

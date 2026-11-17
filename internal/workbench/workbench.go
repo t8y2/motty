@@ -1159,6 +1159,7 @@ func (state *State) Close() {
 		state.forwards[index].stop()
 	}
 	state.closeForwardTunnels()
+	state.keepAwakeForTransfers(false)
 	memoryTrim.request()
 }
 

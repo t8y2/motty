@@ -124,6 +124,10 @@ func (b *base) abort(err error) {
 	}
 }
 
+// Abort ends the transfer because its bytes could not be delivered to the
+// other end: a cancellation the terminal would not carry is not worth writing.
+func (b *base) Abort(err error) { b.fail(err) }
+
 // cancelled counts a CAN byte and reports whether two in a row have arrived.
 func (b *base) cancelled(value byte) bool {
 	if value != can {

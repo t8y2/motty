@@ -71,8 +71,11 @@ type identityRecord struct {
 	// Stored marks a key kept in the vault (see stored_keys.go): Path is then its
 	// reference, not a file.
 	Stored bool
-	Error  string
-	cells  [4]string
+	// SecurityKey marks a FIDO2/U2F key. It signs through an ssh-agent that
+	// reaches the device; the passphrase is asked by ssh-add, not saved here.
+	SecurityKey bool
+	Error       string
+	cells       [4]string
 }
 
 func inspectIdentity(id uint32, path string, messages keyMessages) identityRecord {
@@ -93,6 +96,7 @@ func inspectIdentity(id uint32, path string, messages keyMessages) identityRecor
 	record.Fingerprint = info.Fingerprint
 	record.PublicKey = info.PublicKey
 	record.Encrypted = info.Encrypted
+	record.SecurityKey = info.SecurityKey
 	record.refreshCells(messages)
 	return record
 }
@@ -103,7 +107,9 @@ func (record *identityRecord) refreshCells(messages keyMessages) {
 		return
 	}
 	protection := messages.Unencrypted
-	if record.Encrypted {
+	if record.SecurityKey {
+		protection = messages.SecurityKey
+	} else if record.Encrypted {
 		protection = messages.Passphrase
 	}
 	algorithm := record.Algorithm
@@ -117,6 +123,7 @@ type keyMessages struct {
 	Unavailable      string
 	Unencrypted      string
 	Passphrase       string
+	SecurityKey      string
 	EncryptedUnknown string
 }
 
@@ -127,6 +134,7 @@ func keyMessagesIn(messages i18n.Messages) keyMessages {
 		Unavailable:      messages.KeyUnavailable,
 		Unencrypted:      messages.KeyUnencrypted,
 		Passphrase:       messages.KeyPassphraseProtected,
+		SecurityKey:      messages.KeySecurityKey,
 		EncryptedUnknown: messages.KeyEncryptedUnknown,
 	}
 }
@@ -243,7 +251,7 @@ func (state *State) importKeys() {
 // connection looks it up under.
 func (state *State) openKeyPassphraseForm() {
 	identity, ok := state.identityByID(state.selectedIdentityID)
-	if !ok || !identity.Encrypted {
+	if !ok || !identity.Encrypted || identity.SecurityKey {
 		return
 	}
 	m := state.messages

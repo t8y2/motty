@@ -1,8 +1,10 @@
 package workbench
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -15,6 +17,9 @@ var (
 	hitTransfersHost            = tree.ID(transferCenterHits, "host")
 	hitTransfersHostDismiss     = tree.ID(transferCenterHits, "host-dismiss")
 	hitTransfersHostItems       = tree.Sub(transferCenterHits, tree.Name("host-item"))
+	hitTransfersDirection       = tree.ID(transferCenterHits, "direction")
+	hitTransfersDirectionClose  = tree.ID(transferCenterHits, "direction-dismiss")
+	hitTransfersDirectionItems  = tree.Sub(transferCenterHits, tree.Name("direction-item"))
 	hitTransfersRetryFailed     = tree.ID(transferCenterHits, "retry-failed")
 	hitTransfersSkipVisible     = tree.ID(transferCenterHits, "skip-visible")
 	hitTransfersReplaceVisible  = tree.ID(transferCenterHits, "replace-visible")
@@ -58,11 +63,12 @@ func sameTransferHost(a, b *transferHost) bool {
 }
 
 type transferTarget struct {
-	entry  int
-	owner  *sftpView
-	worker *sftpclient.Worker
-	id     uint64
-	queued time.Time
+	entry   int
+	owner   *sftpView
+	worker  *sftpclient.Worker
+	id      uint64
+	attempt uint64
+	queued  time.Time
 }
 
 type transferBatch struct {
@@ -74,18 +80,44 @@ type transferBatch struct {
 }
 
 func transferFilterShows(filter int, snapshot sftpclient.TransferSnapshot) bool {
-	return filter == 0 || filter == 1 && transferActive(snapshot) || filter == 2 && !transferActive(snapshot) || filter == 3 && snapshot.State == sftpclient.TransferFailed
+	return filter == transferFilterAll || filter == transferGroupOf(snapshot.State)
 }
 
-// openTransferCenterForQueued shows the center for a transfer just queued, but
-// only when the selected filter lists active work. With a saved Ended or Failed
-// filter the user asked not to watch transfers run; opening an empty popover
-// over that choice is worse than leaving the badge to report progress.
+func transferGroupOf(phase sftpclient.TransferState) int {
+	switch phase {
+	case sftpclient.TransferRunning:
+		return transferFilterRunning
+	case sftpclient.TransferQueued, sftpclient.TransferPaused:
+		return transferFilterWaiting
+	case sftpclient.TransferFailed:
+		return transferFilterFailed
+	default:
+		return transferFilterEnded
+	}
+}
+
+// Leave the badge to report progress when a saved status or an explicit
+// search would otherwise open the center with the newly queued job hidden.
 func (state *State) openTransferCenterForQueued() {
-	if !transferFilterShows(state.transfers.filter, sftpclient.TransferSnapshot{State: sftpclient.TransferQueued}) {
+	center := &state.transfers
+	if center.open || center.query != "" || center.direction != transferAnyDirection ||
+		center.groups[transferFilterWaiting].collapsed ||
+		!transferFilterShows(center.filter, sftpclient.TransferSnapshot{State: sftpclient.TransferQueued}) {
 		return
 	}
-	state.transfers.open, state.transfers.scroll = true, 0
+	center.open, center.scroll = true, 0
+}
+
+func (state *State) showTransferConflict() {
+	center := &state.transfers
+	center.filter, center.host, center.direction = transferFilterFailed, nil, transferAnyDirection
+	center.query = ""
+	center.search.SetText("")
+	center.selectOpen = gfx.ID{}
+	center.details.dismiss()
+	center.groups[transferFilterFailed].collapsed = false
+	center.open, center.scroll = true, 0
+	state.describeTransferScope()
 }
 
 func transferRetryEligible(entry *transferEntry, conflict bool) bool {
@@ -96,18 +128,39 @@ func transferRetryEligible(entry *transferEntry, conflict bool) bool {
 func (state *State) describeTransferScope() {
 	center, m := &state.transfers, state.messages.Transfers
 	center.hosts = center.hosts[:0]
+	center.hasEntries = false
 	center.count, center.visibleActive, center.visibleEnded, center.retryCount, center.conflictCount = 0, 0, 0, 0, 0
+	center.pausable, center.paused = 0, 0
+	for _, group := range transferGroups {
+		center.groups[group].members = center.groups[group].members[:0]
+	}
+	matched := 0
 	for index := range center.entries {
 		entry := &center.entries[index]
-		if !entry.removed && entry.host != nil && !slices.ContainsFunc(center.hosts, func(host *transferHost) bool { return sameTransferHost(host, entry.host) }) {
+		if entry.removed {
+			continue
+		}
+		center.hasEntries = true
+		if entry.host != nil && !slices.ContainsFunc(center.hosts, func(host *transferHost) bool { return sameTransferHost(host, entry.host) }) {
 			center.hosts = append(center.hosts, entry.host)
 		}
-		if !center.shows(entry) {
+		if !center.matches(entry) {
+			continue
+		}
+		matched++
+		group := transferGroupOf(entry.snapshot.State)
+		center.groups[group].members = append(center.groups[group].members, index)
+		if center.filter != transferFilterAll && center.filter != group {
 			continue
 		}
 		center.count++
 		if transferActive(entry.snapshot) {
 			center.visibleActive++
+			if entry.snapshot.State == sftpclient.TransferPaused {
+				center.paused++
+			} else {
+				center.pausable++
+			}
 		} else {
 			center.visibleEnded++
 		}
@@ -125,14 +178,107 @@ func (state *State) describeTransferScope() {
 	if center.host != nil {
 		center.hostLabel = center.host.label
 	}
-	labels := [4]string{m.All, m.Active, m.Ended, m.Failed}
-	center.scopeLabel = fmt.Sprintf(m.ScopeFmt, center.hostLabel, labels[center.filter], center.count)
+	labels := state.transferFilterLabels()
+	center.groups[transferFilterAll].count = strconv.Itoa(matched)
+	for _, group := range transferGroups {
+		section := &center.groups[group]
+		section.count = strconv.Itoa(len(section.members))
+		section.label = labels[group] + " (" + section.count + ")"
+		slices.SortFunc(section.members, func(a, b int) int {
+			return compareTransferOrder(group, &center.entries[a], &center.entries[b])
+		})
+	}
+	scope := center.hostLabel
+	if center.direction != transferAnyDirection {
+		scope += " · " + state.transferDirectionLabel(center.direction)
+	}
+	if center.query != "" {
+		scope += " · " + strings.TrimSpace(center.search.Text())
+	}
+	center.scopeLabel = fmt.Sprintf(m.ScopeFmt, scope, labels[center.filter], center.count)
 	center.cancelLabel, center.clearLabel = m.CancelAll, m.Clear
-	if center.host != nil || center.filter != 0 {
+	center.pauseLabel = m.PauseAll
+	if center.pausable == 0 && center.paused > 0 {
+		center.pauseLabel = m.ResumeAll
+	}
+	if center.host != nil || center.filter != transferFilterAll || center.direction != transferAnyDirection || center.query != "" {
 		center.cancelLabel, center.clearLabel = m.CancelVisible, m.ClearVisible
+		center.pauseLabel = m.PauseVisible
+		if center.pausable == 0 && center.paused > 0 {
+			center.pauseLabel = m.ResumeVisible
+		}
 	}
 	center.retryLabel = fmt.Sprintf(m.RetryFailedFmt, center.retryCount)
 	center.conflictLabel = fmt.Sprintf(m.ConflictCountFmt, center.conflictCount)
+	center.rebuildRows()
+}
+
+func compareTransferOrder(group int, a, b *transferEntry) int {
+	left, right := transferOrderTime(group, &a.snapshot), transferOrderTime(group, &b.snapshot)
+	// Unknown times should not jump ahead of records with real times in either order.
+	if left.IsZero() != right.IsZero() {
+		if left.IsZero() {
+			return 1
+		}
+		return -1
+	}
+	order := left.Compare(right)
+	if order == 0 && group == transferFilterWaiting {
+		order = cmp.Compare(a.snapshot.QueueOrder, b.snapshot.QueueOrder)
+	}
+	if order == 0 {
+		order = cmp.Compare(a.id, b.id)
+	}
+	if group == transferFilterWaiting {
+		return order
+	}
+	return -order
+}
+
+func transferOrderTime(group int, snapshot *sftpclient.TransferSnapshot) time.Time {
+	if (group == transferFilterEnded || group == transferFilterFailed) && !snapshot.FinishedAt.IsZero() {
+		return snapshot.FinishedAt
+	}
+	if group != transferFilterWaiting && !snapshot.StartedAt.IsZero() {
+		return snapshot.StartedAt
+	}
+	return snapshot.QueuedAt
+}
+
+func (center *transferCenter) rebuildRows() {
+	center.rows = center.rows[:0]
+	for _, group := range transferGroups {
+		section := &center.groups[group]
+		if len(section.members) == 0 || center.filter != transferFilterAll && center.filter != group {
+			continue
+		}
+		center.rows = append(center.rows, transferRow{group: group, entry: -1})
+		if !section.collapsed {
+			for _, index := range section.members {
+				center.rows = append(center.rows, transferRow{group: group, entry: index})
+			}
+		}
+	}
+}
+
+func (state *State) transferFilterLabels() [transferFilterCount]string {
+	m := state.messages.Transfers
+	return [transferFilterCount]string{m.All, m.Active, m.Ended, m.Failed, m.Waiting}
+}
+
+func (state *State) transferDirectionLabel(direction transferDirection) string {
+	m := state.messages.Transfers
+	return [transferDirectionCount]string{m.AllDirections, m.Upload, m.Download, m.RemoteCopy}[direction]
+}
+
+func (state *State) updateTransferSearch() {
+	center := &state.transfers
+	query := strings.ToLower(strings.TrimSpace(center.search.Text()))
+	if center.query != query {
+		center.query, center.scroll = query, 0
+		center.details.dismiss()
+		state.describeTransferScope()
+	}
 }
 
 func (state *State) captureTransferBatch(policy sftpclient.ExistingPolicy) transferBatch {
@@ -141,7 +287,10 @@ func (state *State) captureTransferBatch(policy sftpclient.ExistingPolicy) trans
 	for index := range center.entries {
 		entry := &center.entries[index]
 		if center.shows(entry) && transferRetryEligible(entry, policy != sftpclient.ExistingFail) {
-			batch.targets = append(batch.targets, transferTarget{entry.id, entry.owner, entry.owner.worker, entry.snapshot.ID, entry.snapshot.QueuedAt})
+			batch.targets = append(batch.targets, transferTarget{
+				entry.id, entry.owner, entry.owner.worker, entry.snapshot.ID,
+				entry.snapshot.QueueOrder, entry.snapshot.QueuedAt,
+			})
 		}
 	}
 	m := state.messages.Transfers
@@ -167,12 +316,16 @@ func (state *State) dispatchTransferBatch(batch transferBatch) {
 	}
 	for _, target := range batch.targets {
 		entry := state.transfers.capturedEntry(target)
-		if entry == nil || entry.snapshot.QueuedAt != target.queued || !state.transfers.shows(entry) ||
+		if entry == nil || entry.snapshot.QueueOrder != target.attempt || !state.transfers.shows(entry) ||
 			!transferFilterShows(batch.filter, entry.snapshot) || batch.host != nil && !sameTransferHost(entry.host, batch.host) ||
 			!transferRetryEligible(entry, batch.policy != sftpclient.ExistingFail) {
 			continue
 		}
-		if target.worker.Retry(target.id, batch.policy) {
+		policy := batch.policy
+		if policy == sftpclient.ExistingFail {
+			policy = transferRetryPolicy(entry.snapshot)
+		}
+		if target.worker.Retry(target.id, policy) {
 			target.owner.errorText = ""
 			if target.owner.detached != nil && entry.snapshot.Operation == sftpclient.OperationDownload {
 				target.owner.detached.localRefresh = true
@@ -212,17 +365,21 @@ func (state *State) clickTransferBulk(id gfx.ID) bool {
 			center.batch = transferBatch{}
 			state.dispatchTransferBatch(batch)
 		case hitTransfersDismiss, hitTransfersClose, hitTransferCenter:
-			center.batch = transferBatch{}
-			center.open = false
+			center.close()
 		}
 		return true
 	}
 	switch id {
-	case hitTransfersHost:
-		center.hostOpen = !center.hostOpen
+	case hitTransfersHost, hitTransfersDirection:
+		if center.selectOpen == id {
+			center.selectOpen = gfx.ID{}
+		} else {
+			center.selectOpen = id
+		}
+		center.details.dismiss()
 		return true
-	case hitTransfersHostDismiss:
-		center.hostOpen = false
+	case hitTransfersHostDismiss, hitTransfersDirectionClose:
+		center.selectOpen = gfx.ID{}
 		return true
 	case hitTransfersRetryFailed, hitTransfersSkipVisible, hitTransfersReplaceVisible, hitTransfersResumeVisible:
 		policy := sftpclient.ExistingFail
@@ -238,7 +395,8 @@ func (state *State) clickTransferBulk(id gfx.ID) bool {
 		if len(batch.targets) == 0 {
 			return true
 		}
-		center.hostOpen = false
+		center.selectOpen = gfx.ID{}
+		center.details.dismiss()
 		if policy == sftpclient.ExistingReplace || policy == sftpclient.ExistingResume {
 			center.batch = batch
 		} else {
@@ -254,7 +412,18 @@ func (state *State) clickTransferBulk(id gfx.ID) bool {
 		if index > 0 {
 			center.host = center.hosts[index-1]
 		}
-		center.hostOpen, center.scroll = false, 0
+		center.selectOpen, center.scroll = gfx.ID{}, 0
+		center.details.dismiss()
+		state.describeTransferScope()
+		return true
+	}
+	if index, ok := id.In(hitTransfersDirectionItems); ok {
+		if index < 0 || index >= int(transferDirectionCount) {
+			return true
+		}
+		center.direction = transferDirection(index)
+		center.selectOpen, center.scroll = gfx.ID{}, 0
+		center.details.dismiss()
 		state.describeTransferScope()
 		return true
 	}

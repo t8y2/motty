@@ -282,6 +282,53 @@ func TestCanceledQueuedTaskCanRetryOrBeForgottenImmediately(t *testing.T) {
 	}
 }
 
+func TestRetryEntersTheTailOfTheQueue(t *testing.T) {
+	remote := newGateRemote(1, "retry", "running", "waiting")
+	worker := NewWorker(func() (Remote, error) { return remote, nil }, nil)
+	defer func() { worker.Close(); <-worker.Done() }()
+	worker.SetParallel(1)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "retry"), []byte("existing"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	queue := func(name string) uint64 {
+		t.Helper()
+		id, ok := worker.QueueDownload("/"+name, filepath.Join(dir, name), false, ExistingFail)
+		if !ok {
+			t.Fatalf("%s did not queue", name)
+		}
+		return id
+	}
+	retry := queue("retry")
+	if result := waitResult(t, worker); result.TransferID != retry || !errors.Is(result.Err, ErrDestinationExists) {
+		t.Fatalf("first attempt: %+v", result)
+	}
+	running, waiting := queue("running"), queue("waiting")
+	if !worker.Retry(retry, ExistingReplace) {
+		t.Fatal("retry was rejected")
+	}
+	if again, ahead := snapshotOf(worker, retry), snapshotOf(worker, waiting); again.State != TransferQueued || ahead.State != TransferQueued || again.QueueOrder <= ahead.QueueOrder {
+		t.Fatalf("retry did not queue behind waiting: retry=%+v waiting=%+v", again, ahead)
+	}
+	remote.release("running", 1)
+	if result := waitResult(t, worker); result.TransferID != running || result.Err != nil {
+		t.Fatalf("running: %+v", result)
+	}
+	waitFor(t, "older waiting job to run before the retry", func() bool {
+		return snapshotOf(worker, waiting).State == TransferRunning
+	})
+	if snapshotOf(worker, retry).State != TransferQueued {
+		t.Fatal("retry got the slot before the older waiting job")
+	}
+	remote.release("waiting", 1)
+	remote.release("retry", 1)
+	for _, id := range []uint64{waiting, retry} {
+		if result := waitResult(t, worker); result.TransferID != id || result.Err != nil {
+			t.Fatalf("job %d result: %+v", id, result)
+		}
+	}
+}
+
 func TestFullQueueDoesNotForgetACancelUntilItsCopySettles(t *testing.T) {
 	remote := newGateRemote(1, "a", "b")
 	worker := NewWorker(func() (Remote, error) { return remote, nil }, nil)

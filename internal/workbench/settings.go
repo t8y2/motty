@@ -289,6 +289,7 @@ func (state *State) openSettings() {
 	state.activeSection = sectionSettings
 	state.settingsScroll = 0
 	state.settings.navScroll = 0
+	state.settings.pageMotion, state.settings.navMotion = gfx.Motion{}, gfx.Motion{}
 	state.settings.aboutCopied = false
 	state.schemeBrowserOpen = false
 	state.revealSettingsCategory()
@@ -296,11 +297,22 @@ func (state *State) openSettings() {
 	state.save()
 }
 
+// settingsWheelMotion eases a mouse wheel notch's jump. A notch moves the page
+// by a fixed distance in one frame, which reads as a step; a short ease-out
+// turns a burst of notches into one glide. A trackpad's precise delta is the
+// distance the fingers moved and does not need it.
+var settingsWheelMotion = gfx.Motion{Duration: 140 * time.Millisecond, Easing: gfx.EaseOut}
+
 // scrollSettings moves the settings page. As everywhere in Viva a positive
 // delta reveals content below. A wheel notch is worth at least a row's height
 // of travel; a trackpad moves it by exactly what it reports.
 func (state *State) scrollSettings(event gfx.ScrollEvent) gfx.EventResult {
 	step := event.StepY(24)
+	// The page keeps the target; the declaration eases the value it lays out.
+	motion := gfx.Motion{}
+	if !event.Precise {
+		motion = settingsWheelMotion
+	}
 	if state.schemeBrowserOpen {
 		// The drawer is part of the workbench page: WindowConfig gives a wheel
 		// over its body to the page's drawer area, and a wheel anywhere else
@@ -313,10 +325,16 @@ func (state *State) scrollSettings(event gfx.ScrollEvent) gfx.EventResult {
 	if nav.Width > 0 && event.X >= nav.X && event.X < nav.X+nav.Width && event.Y >= nav.Y && event.Y < nav.Y+nav.Height {
 		before := view.navScroll
 		view.navScroll = min(max(before+step, 0), max(view.navContent-nav.Height, 0))
+		if view.navScroll != before {
+			view.navMotion = motion
+		}
 		return gfx.EventResult{Handled: true, Repaint: view.navScroll != before}
 	}
 	before := state.settingsScroll
 	state.settingsScroll = min(max(before+step, 0), max(state.settingsContent-view.pageView, 0))
+	if state.settingsScroll != before {
+		view.pageMotion = motion
+	}
 	return gfx.EventResult{Handled: true, Repaint: state.settingsScroll != before}
 }
 

@@ -524,7 +524,7 @@ func iconMotionFor(icon uint8) (iconMotion, bool) {
 		return iconMotionBlink, true
 	case iconPlug:
 		return iconMotionPlug, true
-	case iconColumns2, iconNote, iconNotebook, iconInfo, iconBug, iconFileClock:
+	case iconColumns2, iconSnippets, iconNotebook, iconInfo, iconBug, iconFileClock, iconLocalProxy:
 		return iconMotionSquash, true
 	}
 	return iconMotion{}, false

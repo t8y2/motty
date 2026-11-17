@@ -75,14 +75,20 @@ func TestConflictDialogCanSkipWhatExists(t *testing.T) {
 	target := filepath.Join(t.TempDir(), "notes.txt")
 	os.WriteFile(target, []byte("mine"), 0o600)
 	state.options.SaveFile = func(app.SaveFileOptions) (string, error) { return target, nil }
-	state.transfers.filter = 1 // a saved Active filter must not hide the blocked transfer
+	// A filter or collapsed section must not hide a conflict that needs action.
+	state.transfers.filter = transferFilterRunning
+	state.transfers.direction = transferUpload
+	state.transfers.search.SetText("hidden")
+	state.updateTransferSearch()
+	state.transfers.groups[transferFilterFailed].collapsed = true
 	clickSFTPRow(t, state, view, "notes.txt")
 	state.Click(hitSFTPDownload)
 	waitSFTP(t, state, session, func(view *sftpView) bool {
 		return state.transfers.open && len(state.transfers.entries) == 1 && state.transfers.entries[0].conflict
 	})
-	if state.transfers.filter != 0 {
-		t.Fatalf("conflict opened with filter %d, want All so the blocked entry is visible", state.transfers.filter)
+	if center := &state.transfers; center.filter != transferFilterFailed || center.direction != transferAnyDirection ||
+		center.query != "" || center.groups[transferFilterFailed].collapsed {
+		t.Fatalf("conflict is still filtered: status=%d direction=%d query=%q", center.filter, center.direction, center.query)
 	}
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})

@@ -30,6 +30,15 @@ var settingsNavHits = tree.Feature("settings-nav")
 // hitSettingsCategoryList starts the ids of the category entries.
 var hitSettingsCategoryList = tree.Sub(settingsNavHits, tree.Name("settings-category"))
 
+// hitSettingsPageScroll and hitSettingsNavScroll name the two scrolling areas
+// to the canvas's transitions: the wheel writes their targets, and the
+// declaration asks what to lay out on the way there. Neither is a pointer
+// target.
+var (
+	hitSettingsPageScroll = tree.ID(settingsNavHits, "settings-page-scroll")
+	hitSettingsNavScroll  = tree.ID(settingsNavHits, "settings-nav-scroll")
+)
+
 const settingsNavWidthMax = float32(208)
 
 // The category rows are a fixed height, so what it takes to reveal one is known
@@ -105,6 +114,7 @@ func (state *State) selectSettingsCategory(category settingsCategory) bool {
 	state.settingsCategory = category
 	state.schemeBrowserOpen = false
 	state.settingsScroll = 0
+	state.settings.pageMotion = gfx.Motion{}
 	state.settings.aboutCopied = false
 	state.revealSettingsCategory()
 	return true
@@ -121,7 +131,7 @@ func (page *settingsPage) nav(width float32, searching bool) {
 	ui.Column(c).Width(width).FillHeight().Children(func() {
 		ui.Text(c, m.SettingsTitle).FontSize(19).Bold().Color(pal.text).LineHeight(28).MarginSides(26, 8, 10, 22).Shrink(0)
 		page.add(settingsControl{kind: controlSearch, slot: ui.Slot(c).Height(38).MarginSides(0, 12, 12, 12).Shrink(0)})
-		page.navList = ui.ScrollAt(c, view.navScroll).FillWidth().Grow(1).Basis(0)
+		page.navList = ui.ScrollAt(c, view.navShown).FillWidth().Grow(1).Basis(0)
 		page.navList.Children(func() {
 			ui.Column(c).Gap(settingsNavEntryGap).MarginSides(0, 0, 8, 0).Shrink(0).Children(func() {
 				for category := settingsCategory(0); category < settingsCategoryCount; category++ {
@@ -136,6 +146,7 @@ func (page *settingsPage) nav(width float32, searching bool) {
 // view, using the room the list had when it was last painted.
 func (state *State) revealSettingsCategory() {
 	view := &state.settings
+	view.navMotion = gfx.Motion{} // a reveal is a jump, not a wheel
 	if view.navView <= 0 {
 		return
 	}

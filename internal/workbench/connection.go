@@ -703,6 +703,10 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 // has no host to dial.
 func (state *State) sshConfigFor(session *Session, host Host) (config sshconn.Config, valid bool) {
 	config, route, valid := state.hostCatalog.sshConfigFor(host, session.host, state.connectionEnv(state.notifyFor(session)))
+	// A hardware security key signs through an agent. The window prepares one
+	// lazily, only when an identity turns out to be an sk-* key, and releases
+	// it with the connection.
+	config.SecurityKeyAgent = newSecurityKeyAgent(state).Agent
 	session.proxyRoute, session.jumpPath = route.proxyKey, route.jumpPath
 	return config, valid
 }
@@ -899,6 +903,7 @@ func (state *State) apply(session *Session, status sshconn.Status) {
 	session.version = status.Version
 	session.phase = status.Phase
 	session.attempt = status.Attempt
+	session.securityKey = status.SecurityKey
 	session.busy = false
 	session.hostKey = status.HostKey
 	session.questions = status.Questions

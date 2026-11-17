@@ -443,7 +443,7 @@ func (state *State) hostOffersCredential() bool {
 	editor := &state.editor
 	switch editor.protocol {
 	case protocolSSH:
-		return editor.auth != authPrivateKey && editor.auth != authAgent
+		return editor.auth.usesPassword()
 	case protocolVNC, protocolRDP:
 		return true
 	}

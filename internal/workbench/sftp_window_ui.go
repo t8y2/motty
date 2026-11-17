@@ -55,7 +55,11 @@ var (
 	hitSFTPWindowMenuDismiss     = tree.ID(sftpWindowHits, "menu-dismiss")
 	hitSFTPWindowMenuCopy        = tree.ID(sftpWindowHits, "menu-copy")
 	hitSFTPWindowQueueBar        = tree.ID(sftpWindowHits, "queue-scroll")
+	sftpWindowQueueActions       = tree.Sub(sftpWindowHits, tree.Name("queue-actions"))
 	sftpWindowQueueRows          = tree.Sub(sftpWindowHits, tree.Name("queue-rows"))
+	sftpWindowQueueStatus        = tree.Sub(sftpWindowHits, tree.Name("queue-status"))
+	hitSFTPQueueDetails          = tree.ID(sftpWindowHits, "queue-details")
+	hitSFTPQueueDetailsDismiss   = tree.ID(sftpWindowHits, "queue-details-dismiss")
 )
 
 type sftpWindowUI struct {
@@ -92,26 +96,24 @@ type sftpWindowUI struct {
 	// columnDragging, columnDrag and the fit fields are the file lists' column
 	// dividers. The area and widths the panes last painted are kept for the
 	// pointer, which has no canvas of its own.
-	columnDragging   [2]bool
-	columnDrag       [2]int
-	columnFitPending [2]bool
-	columnFitDivider [2]int
-	columnArea       [2]gfx.Rect
-	columnWidths     [2][3]float32
-	fraction         float32
-	split            components.Resizable
-	splitting        bool
-	tooltip          components.HoverTooltip
-	menuOpen         bool
-	menuAt           gfx.Point
-	queueBounds      gfx.Rect
-	queueOffset      float32
-	queueBar         components.ScrollAreaGeometry
-	// The queue's cards are page elements now; these are the entries drawn and
-	// the scratch their hand-painted parts go into.
-	queueItems          int
-	queueVisible        []*transferEntry
-	queueCards          []transferCard
+	columnDragging      [2]bool
+	columnDrag          [2]int
+	columnFitPending    [2]bool
+	columnFitDivider    [2]int
+	columnArea          [2]gfx.Rect
+	columnWidths        [2][3]float32
+	fraction            float32
+	split               components.Resizable
+	splitting           bool
+	tooltip             components.HoverTooltip
+	menuOpen            bool
+	menuAt              gfx.Point
+	queueBounds         gfx.Rect
+	queueOffset         float32
+	queueBar            components.ScrollAreaGeometry
+	queueEntries        []int
+	queueRevision       uint64
+	queueDetails        transferDetails
 	sort                [2]sftpWindowSort
 	menuScroll          components.MenuScroll
 	headerAnchor        [2]gfx.Rect
@@ -223,12 +225,7 @@ func (w *sftpWindow) paint(canvas *gfx.Canvas, size gfx.Size) {
 			w.paintColumnDividers(canvas, side)
 		}
 	}
-	if w.queueCount() > 0 {
-		w.paintQueueDetails(canvas, w.ui.queue)
-	} else {
-		w.ui.queueBounds = gfx.Rect{}
-		w.ui.queueOffset = 0
-	}
+	w.paintQueue(canvas, w.ui.queue, w.ui.bounds)
 	if w.view.bookmarksOpen {
 		w.paintDirectoryPlaces(canvas)
 	}
@@ -286,10 +283,6 @@ const (
 	sftpWindowStatusHeight = float32(20)
 )
 
-func sftpQueueHeight(size gfx.Size) float32 {
-	return min(244, max(108, size.Height*.28))
-}
-
 // bookmarkDraws makes the handlers that paint the bookmark editor's fields,
 // buttons and lists, once.
 func (w *sftpWindow) bookmarkDraws() {
@@ -327,7 +320,7 @@ func (w *sftpWindow) declareWindowBody(c ui.C) {
 	}
 	size := w.ui.size
 	bounds := w.windowBodyBounds()
-	queue := w.queueCount() > 0
+	queue := w.queueCount()
 	body, queueRect, status := sftpTabPaneRects(bounds, queue)
 	w.ui.body, w.ui.queue = body, queueRect
 	w.ui.split = components.BeginResizable(nil, w.owner.Theme(), hitSFTPWindowSplit, body, w.ui.fraction).LimitsPx(220, 220)
@@ -340,7 +333,7 @@ func (w *sftpWindow) declareWindowBody(c ui.C) {
 			Left(status.X - bounds.X).Top(status.Y - bounds.Y).Width(status.Width).Height(status.Height).
 			Children(func() { w.declareStatusLine(c) })
 	})
-	if queue {
+	if queue > 0 {
 		w.declareQueue(c, queueRect, gfx.Rect{})
 	}
 	if w.bookmark.open {
@@ -801,64 +794,6 @@ func (w *sftpWindow) dateWidth(width float32) float32 {
 		return 76
 	}
 	return 118
-}
-
-func (w *sftpWindow) queueCount() int {
-	count := 0
-	for i := range w.owner.transfers.entries {
-		e := &w.owner.transfers.entries[i]
-		if e.owner == w.view && !e.removed {
-			count++
-		}
-	}
-	return count
-}
-
-// declareQueue declares the transfer queue's cards in the window page. The
-// queue is scrolled by the window's own offset, so only the cards on screen are
-// declared.
-func (w *sftpWindow) declareQueue(c ui.C, bounds, origin gfx.Rect) {
-	state := w.owner
-	w.ui.queueBounds = gfx.Rect{X: bounds.X, Y: bounds.Y + 24, Width: bounds.Width, Height: max(bounds.Height-24, 0)}
-	w.ui.queueVisible = appendTransferOrder(w.ui.queueVisible[:0], state.transfers.entries, func(e *transferEntry) bool {
-		return e.owner == w.view && !e.removed
-	})
-	w.ui.queueItems = len(w.ui.queueVisible)
-	if cap(w.ui.queueCards) < w.ui.queueItems {
-		w.ui.queueCards = make([]transferCard, w.ui.queueItems)
-	} else {
-		w.ui.queueCards = w.ui.queueCards[:w.ui.queueItems]
-		for index := range w.ui.queueCards {
-			w.ui.queueCards[index] = transferCard{}
-		}
-	}
-	maxOffset := max(float32(w.ui.queueItems)*transferCardHeight-w.ui.queueBounds.Height, 0)
-	w.ui.queueOffset = min(max(w.ui.queueOffset, 0), maxOffset)
-	row := 0
-	for _, e := range w.ui.queueVisible {
-		box := gfx.Rect{X: bounds.X, Y: w.ui.queueBounds.Y + float32(row)*transferCardHeight - w.ui.queueOffset, Width: bounds.Width - 12, Height: transferCardHeight - 8}
-		index := row
-		row++
-		if box.Y+box.Height < w.ui.queueBounds.Y || box.Y > w.ui.queueBounds.Y+w.ui.queueBounds.Height {
-			continue
-		}
-		card := &w.ui.queueCards[index]
-		*card = transferCard{entry: e}
-		container := ui.Column(c.KeyInt(e.id)).Absolute().
-			Left(box.X - origin.X).Top(box.Y - origin.Y).Width(box.Width).Height(box.Height)
-		container.HitWith(sftpWindowQueueRows.At(index), e.title, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: e.paths})
-		state.declareTransferCard(c, container, e, card)
-	}
-}
-
-// paintQueueDetails paints the queue's header, scrollbar and the hand-painted
-// parts of its cards. The cards themselves are the page's.
-func (w *sftpWindow) paintQueueDetails(canvas *gfx.Canvas, bounds gfx.Rect) {
-	theme, m := w.owner.Theme(), w.owner.messages
-	canvas.Label(m.SFTPTransferQueue, gfx.Rect{X: bounds.X + 4, Y: bounds.Y, Width: bounds.Width - 8, Height: 20}, gfx.TextStyle{Size: theme.Metrics.FontSizeS, Weight: gfx.WeightSemibold, Color: theme.Foreground})
-	area := components.BeginScrollArea(canvas, theme, w.ui.queueBounds, gfx.Size{Height: float32(w.ui.queueItems) * transferCardHeight}).Offset(0, w.ui.queueOffset).VerticalScrollbar(hitSFTPWindowQueueBar, m.SFTPTransferQueue, "")
-	w.owner.paintTransferCardsFor(canvas, theme, w.ui.queueCards)
-	w.ui.queueBar = area.EndContent()
 }
 
 func (w *sftpWindow) paintMenu(canvas *gfx.Canvas) {

@@ -73,6 +73,17 @@ type settingsUI struct {
 	// paint both clamp to it, so the end of the page is reachable either way.
 	pageView float32
 
+	// pageMotion and navMotion are how the next target change is presented: a
+	// wheel notch eases over settingsWheelMotion, while a trackpad's precise
+	// delta and a programmatic jump leave the zero motion, which lands at once.
+	// The last wheel's motion stays in the view between frames, so the whole
+	// move keeps its curve; every programmatic move clears it.
+	pageMotion, navMotion gfx.Motion
+	// pageShown and navShown are the offsets the last declaration laid out at:
+	// on the way to a target they are the animated values, and the search anchor
+	// is measured from the page's.
+	pageShown, navShown float32
+
 	// aboutCopied says the About page's build facts have been put on the
 	// clipboard in this visit, so its button says so.
 	aboutCopied bool
@@ -329,6 +340,7 @@ func (state *State) openSettingsResult(index int) {
 	view.built, view.count, view.raw = false, 0, ""
 	state.selectSettingsCategory(entry.category)
 	state.settingsScroll = 0
+	view.pageMotion = gfx.Motion{}
 	view.jump = entry.anchor
 }
 
@@ -347,6 +359,7 @@ func (state *State) clickSettingsCategory(id gfx.ID) bool {
 		state.settings.jump = ""
 		state.selectSettingsCategory(settingsCategory(uint32(item(id))))
 		state.settingsScroll = 0
+		state.settings.pageMotion = gfx.Motion{}
 		return true
 	}
 	return false

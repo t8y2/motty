@@ -668,6 +668,45 @@ func (t *Terminal) recycle(l *line) *line {
 	return l
 }
 
+// pushScreenToHistory moves the content a main-screen erase would wipe into the
+// history, up to the last row that holds any. The blank rows below it would only
+// add empty lines to the scrollback for every clear. Each screen row takes a
+// fresh identity afterwards, so the history keeps its images and the caches
+// built from the old rows cannot paint over the new blank ones.
+func (t *Terminal) pushScreenToHistory() {
+	lines := t.scr.lines
+	last := -1
+	for y, l := range lines {
+		if t.lineHasContent(l) {
+			last = y
+		}
+	}
+	for y := 0; y <= last; y++ {
+		l := lines[y]
+		t.pushHistory(l)
+		lines[y] = t.recycle(l)
+	}
+}
+
+// lineHasContent reports whether a row holds something a clear would destroy: a
+// character other than a space, a combining mark, or an image anchored to it.
+// A background color alone is not content, as in Windows Terminal.
+func (t *Terminal) lineHasContent(l *line) bool {
+	cells := l.cells
+	if len(cells) > t.cols {
+		cells = cells[:t.cols]
+	}
+	for _, c := range cells {
+		if c.R != 0 && c.R != ' ' {
+			return true
+		}
+	}
+	if len(l.marks) != 0 {
+		return true
+	}
+	return t.images != nil && t.images.hasLine(l.id)
+}
+
 // pushHistory appends a copy of l, without its trailing blanks, to the
 // history. When the ring is full the oldest line's storage is reused; when the
 // byte budget is reached the oldest lines are dropped.
@@ -1150,6 +1189,19 @@ func (t *Terminal) SetClock(now func() int64) {
 // history drops its oldest lines, and is not meaningful on the alternate
 // screen.
 func (t *Terminal) LineNumber(i int) uint64 { return t.scrolled - uint64(t.view) + uint64(i) + 1 }
+
+// LineID returns the ID of the retained line numbered line, in the numbering
+// LineNumber and RetainedFrom use. Unlike Row it finds lines in the history as
+// well as on the screen, so an owner can follow a run of lines it wrote while
+// the reader looks somewhere else. ok is false for a line number the retained
+// buffer no longer holds.
+func (t *Terminal) LineID(line uint64) (uint64, bool) {
+	base := t.lineBase()
+	if line < base || line-base >= uint64(t.bufferLineCount()) {
+		return 0, false
+	}
+	return t.bufferLine(int(line - base)).id, true
+}
 
 // clockNow is the time stamped on lines written by the current Write. Asking
 // the clock once keeps a burst of lines on the same second and keeps the clock

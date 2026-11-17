@@ -210,6 +210,25 @@ func TestResizeDropsPlacementsForDiscardedRows(t *testing.T) {
 	}
 }
 
+// An image on a row with no text is still content: clearing the main screen
+// moves it into the scrollback with the rest of the row instead of dropping it.
+func TestEraseDisplayKeepsAnImageInTheScrollback(t *testing.T) {
+	terminal := New(8, 3, 10)
+	feed(terminal, "\x1bPq#1;2;100;0;0~\x1b\\")
+	terminal.WaitImages()
+	line := terminal.Images()[0].LineID
+	feed(terminal, "\x1b[H\x1b[2J")
+	if _, ok := terminal.ImageRow(line); !ok {
+		t.Fatal("clearing the screen dropped the image")
+	}
+	if !terminal.Scroll(1) {
+		t.Fatal("the cleared row holding the image is not in the scrollback")
+	}
+	if row, ok := terminal.ImageRow(line); !ok || row != 0 {
+		t.Fatalf("scrolled image row = %d,%v, want 0", row, ok)
+	}
+}
+
 func TestMalformedImagesAndDecompressionBombsAreRejected(t *testing.T) {
 	terminal := New(10, 4, 0)
 	feed(terminal, "\x1b_Ga=T,f=100,i=1;%%%\x1b\\")

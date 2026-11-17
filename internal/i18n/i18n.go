@@ -510,6 +510,7 @@ type Messages struct {
 	AuthPassword            string
 	AuthPrivateKey          string
 	AuthAgent               string
+	AuthKerberos            string
 	FieldIdentity           string
 	AuthAllKeys             string
 	AuthKeyUnavailable      string
@@ -860,6 +861,15 @@ type Messages struct {
 	KeyPassphraseSavedFmt       string
 	KeyPassphraseRemovedFmt     string
 	KeyPassphraseHostHint       string
+	KeySecurityKey              string
+	SecurityKeyPromptTitle      string
+	SecurityKeyPromptLabel      string
+	SecurityKeyPromptSubmit     string
+	SecurityKeyPromptRequired   string
+	SecurityKeyCancelled        string
+	SecurityKeyWaiting          string
+	SecurityKeyAgentRequired    string
+	SecurityKeyAgentFailedFmt   string
 	VaultForgetKeysFmt          string
 	KeyAdd                      string
 	KeyPaste                    string

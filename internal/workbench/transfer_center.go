@@ -4,10 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"path"
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/vivaui/viva/components"
@@ -27,7 +29,10 @@ var (
 	hitTransfersBar       = tree.ID(transferCenterHits, "scrollbar")
 	hitTransfersClear     = tree.ID(transferCenterHits, "clear")
 	hitTransfersCancelAll = tree.ID(transferCenterHits, "cancel-all")
+	hitTransfersPauseAll  = tree.ID(transferCenterHits, "pause-all")
+	hitTransfersSearch    = tree.ID(transferCenterHits, "search")
 	hitTransfersFilter    = tree.Sub(transferCenterHits, tree.Name("filter"))
+	hitTransfersGroup     = tree.Sub(transferCenterHits, tree.Name("group"))
 	hitTransfersPause     = tree.Sub(transferCenterHits, tree.Name("pause"))
 	hitTransfersCancel    = tree.Sub(transferCenterHits, tree.Name("cancel"))
 	hitTransfersReveal    = tree.Sub(transferCenterHits, tree.Name("show-location"))
@@ -37,25 +42,50 @@ var (
 	hitTransfersResume    = tree.Sub(transferCenterHits, tree.Name("resume"))
 	hitTransfersSkip      = tree.Sub(transferCenterHits, tree.Name("skip"))
 	hitTransfersStatus    = tree.Sub(transferCenterHits, tree.Name("status"))
-	hitTransfersPaths     = tree.Sub(transferCenterHits, tree.Name("paths"))
 )
 
-const transferCardHeight = float32(108)
 const maxTransferHistory = 500
+
+// Keep the saved indices of the original four filters. Waiting is displayed
+// between Running and Ended, regardless of its persisted value.
+const (
+	transferFilterAll = iota
+	transferFilterRunning
+	transferFilterEnded
+	transferFilterFailed
+	transferFilterWaiting
+	transferFilterCount
+)
+
+var transferGroups = [...]int{transferFilterRunning, transferFilterWaiting, transferFilterEnded, transferFilterFailed}
+
+type transferDirection int
+
+const (
+	transferAnyDirection transferDirection = iota
+	transferUpload
+	transferDownload
+	transferRemoteCopy
+	transferDirectionCount
+)
 
 // transferEntry keeps the identity independent of worker-local IDs and tabs.
 // A closed connection releases its view; its finished snapshot remains readable.
 type transferEntry struct {
-	id                                         int
-	owner                                      *sftpView
-	host                                       *transferHost
-	snapshot                                   sftpclient.TransferSnapshot
-	server, address                            string
-	sourceServer, sourceAddress                string // the other end of a server-to-server copy
-	title, status, amount, speed, clock, paths string
-	removed                                    bool
-	conflict                                   bool
-	seen                                       uint64
+	id                                                int
+	owner                                             *sftpView
+	host                                              *transferHost
+	snapshot                                          sftpclient.TransferSnapshot
+	server, address                                   string
+	sourceServer, sourceAddress                       string // the other end of a server-to-server copy
+	title, status, amount, speed                      string
+	searchTitle, size, percent, eta, elapsed, outcome string
+	fileIcon                                          *gfx.Icon
+	typeIcon                                          *fileIconSlot
+	monoIcon                                          bool
+	removed                                           bool
+	conflict                                          bool
+	seen                                              uint64
 }
 
 type transferKey struct {
@@ -68,34 +98,37 @@ type transferCenter struct {
 	filter        int
 	nextID        int
 	entries       []transferEntry
+	revision      uint64 // changes when SFTP queues need to refresh their sorted indices
 	byTask        map[transferKey]int
 	summary       string
 	badge         string
 	buttonLabel   string
 	active, ended int
+	// interrupted counts rows a lost connection stopped, so a view that comes
+	// back does not scan the history when there is nothing to continue.
+	interrupted int
+	hasEntries  bool
 	// done and total are the bytes the running transfers have moved and the
 	// bytes they announced, summed the way the summary bar draws them. They
-	// are kept beside fraction because a fraction cannot be added up across
-	// windows, and the icon the desktop shows belongs to all of them.
+	// cannot be added up as fractions across windows, and the icon the desktop
+	// shows belongs to all of them. The panel overview describes only running
+	// transfers through its own overview value.
 	done, total int64
-	fraction    float32
-	// The cards are a List of the popover's page: visible is the entries the
-	// filter shows in order, cards the room each row's hand-painted parts take,
-	// and listState the List's own scroll. bodyDraw paints what the page only
-	// lays out.
-	visible       []*transferEntry
-	cards         []transferCard
+	overview    transferOverview
+	// Rows/sections are rebuilt when the transfer snapshots or filters change.
+	// The List declares only rows near the viewport and gives them stable IDs.
+	rows          []transferRow
+	groups        [transferFilterCount]transferGroup
+	direction     transferDirection
+	search        ui.Field
+	query         string
+	details       transferDetails
 	listState     ui.ListState
 	listBox       ui.Box
 	body          transferBody
 	batchBody     transferBatchBody
-	rowKey        func(int) int
 	rowDecl       func(ui.ListRow)
 	bodyDraw      func(*ui.DrawContext)
-	headerLines   []string
-	headerHeight  float32
-	bodyHeight    float32
-	headerMargin  float32
 	listWidth     float32
 	anchor        gfx.Rect
 	scrollSynced  float32
@@ -108,12 +141,13 @@ type transferCenter struct {
 
 	host                        *transferHost
 	hosts                       []*transferHost
-	hostOpen                    bool
-	hostBounds                  gfx.Rect
+	selectOpen                  gfx.ID
 	hostLabel, scopeLabel       string
 	cancelLabel, clearLabel     string
+	pauseLabel                  string
 	retryLabel, conflictLabel   string
 	visibleActive, visibleEnded int
+	pausable, paused            int
 	retryCount, conflictCount   int
 	batch                       transferBatch
 	// awake says this window already asked the process to stay awake for its
@@ -121,22 +155,25 @@ type transferCenter struct {
 	awake bool
 }
 
-// transferBody is what the popover body's declaration leaves for the controls
-// painted by hand once it is laid out.
-type transferBody struct {
-	summaryBar                                                 ui.Box
-	filter                                                     [4]ui.Box
-	hostBox                                                    ui.Box
-	cancelAll, clear, retryFailed, skip, replace, resume, list ui.Box
+type transferOverview struct {
+	title, amount, rate, percent string
+	fraction                     float32
 }
 
-// transferCard is what one List row's declaration leaves for its progress bar
-// and buttons.
-type transferCard struct {
-	entry                                            *transferEntry
-	bar, pause, cancel, retry, replace, resume, skip ui.Box
-	statusColor                                      gfx.Color
+type transferGroup struct {
+	members      []int
+	label, count string
+	collapsed    bool
 }
+
+type transferRow struct {
+	group int
+	entry int // index in entries, or -1 for a group header
+}
+
+// transferBody leaves room for the Viva Select triggers, which share the
+// workbench's dropdown focus, menu scrolling and dismissal.
+type transferBody struct{ host, direction, list ui.Box }
 
 // transferBatchBody is what the batch confirmation's declaration leaves for its
 // buttons.
@@ -144,25 +181,37 @@ type transferBatchBody struct{ cancel, confirm ui.Box }
 
 // handlers makes the page handlers the transfer center uses, once.
 func (center *transferCenter) handlers(state *State) {
-	if center.rowKey != nil {
+	if center.rowDecl != nil {
 		return
 	}
-	center.rowKey = center.keyOf
-	center.listState.Key = center.rowKey
-	center.rowDecl = state.declareTransferCardRow
+	center.listState.Key = center.keyOf
+	center.rowDecl = state.declareTransferRow
 	center.bodyDraw = state.paintTransferCenterBody
 }
 
-// keyOf names a List row by its transfer's identity.
+// The low keys name section headers; all other keys follow the transfer.
 func (center *transferCenter) keyOf(index int) int {
-	if index < 0 || index >= len(center.visible) {
-		return 0
+	row := center.rows[index]
+	if row.entry < 0 {
+		return row.group
 	}
-	return center.visible[index].id
+	return center.entries[row.entry].id + transferFilterCount
 }
 
 func transferActive(snapshot sftpclient.TransferSnapshot) bool {
 	return snapshot.State == sftpclient.TransferQueued || snapshot.State == sftpclient.TransferRunning || snapshot.State == sftpclient.TransferPaused
+}
+
+// transferRetryPolicy is what "Retry" means for a failed transfer. An upload or
+// download continues from the partial file it kept, so a network failure does
+// not send the whole file again; anything else asks for the request again.
+func transferRetryPolicy(snapshot sftpclient.TransferSnapshot) sftpclient.ExistingPolicy {
+	switch snapshot.Operation {
+	case sftpclient.OperationUpload, sftpclient.OperationDownload:
+		return sftpclient.ExistingResume
+	default:
+		return sftpclient.ExistingFail
+	}
 }
 
 func transferCanReveal(snapshot sftpclient.TransferSnapshot) bool {
@@ -322,6 +371,55 @@ func (state *State) archiveTransfers(view *sftpView) {
 	state.describeTransferSummary()
 }
 
+// resumeInterruptedTransfers continues the uploads and downloads a lost
+// connection stopped. A view for the same host is the connection they were
+// waiting for: the partial files stayed, so the new worker verifies them and
+// goes on from their end. The row keeps its identity and moves to the new
+// worker's task; server-to-server copies are not continued.
+func (state *State) resumeInterruptedTransfers(view *sftpView) {
+	if view == nil || view.worker == nil || view.transferHost == nil {
+		return
+	}
+	center := &state.transfers
+	if center.interrupted == 0 {
+		return
+	}
+	resumed := false
+	for index := range center.entries {
+		entry := &center.entries[index]
+		if entry.removed || entry.owner != nil || entry.snapshot.State != sftpclient.TransferInterrupted {
+			continue
+		}
+		if !sameTransferHost(entry.host, view.transferHost) {
+			continue
+		}
+		snapshot := entry.snapshot
+		var id uint64
+		var queued bool
+		switch snapshot.Operation {
+		case sftpclient.OperationUpload:
+			id, queued = view.worker.QueueUpload(snapshot.Source, snapshot.Destination, snapshot.Recursive, sftpclient.ExistingResume)
+		case sftpclient.OperationDownload:
+			id, queued = view.worker.QueueDownload(snapshot.Source, snapshot.Destination, snapshot.Recursive, sftpclient.ExistingResume)
+		default:
+			continue
+		}
+		if !queued {
+			continue
+		}
+		if center.byTask == nil {
+			center.byTask = make(map[transferKey]int)
+		}
+		center.byTask[transferKey{view, id}] = index
+		entry.owner = view
+		entry.seen = view.transferScan
+		resumed = true
+	}
+	if resumed {
+		state.describeTransferSummary()
+	}
+}
+
 func (state *State) trimTransferHistory() {
 	center := &state.transfers
 	for len(center.entries) > maxTransferHistory {
@@ -384,6 +482,13 @@ func (state *State) describeTransfer(entry *transferEntry) {
 	if snapshot.Operation == sftpclient.OperationDownload || snapshot.Operation == sftpclient.OperationRemoteCopy {
 		entry.title = path.Base(snapshot.Source)
 	}
+	mode := fs.FileMode(0)
+	if snapshot.Recursive {
+		mode = fs.ModeDir
+	}
+	entry.fileIcon, entry.monoIcon = sftpFileIcon(entry.title, mode)
+	entry.typeIcon = state.attachTypeIcon(entry.title, mode.IsDir())
+	entry.searchTitle = strings.ToLower(entry.title)
 	entry.status = m.Queued
 	switch snapshot.State {
 	case sftpclient.TransferRunning:
@@ -399,16 +504,26 @@ func (state *State) describeTransfer(entry *transferEntry) {
 		entry.status = m.Failed
 	case sftpclient.TransferCanceled:
 		entry.status = m.Canceled
+	case sftpclient.TransferInterrupted:
+		entry.status = m.Interrupted
 	}
 	total := "—"
 	if snapshot.BytesTotal > 0 || snapshot.State == sftpclient.TransferCompleted {
 		total = formatBytes(snapshot.BytesTotal)
 	}
 	entry.amount = fmt.Sprintf(m.ProgressFmt, formatBytes(snapshot.BytesDone), total)
+	entry.size = total
 	entry.speed = fmt.Sprintf(state.messages.Tools.TransferSpeedFmt, formatBytes(snapshot.BytesPerSecond))
-	entry.paths = snapshot.Source + " → " + snapshot.Destination
-	if snapshot.Operation == sftpclient.OperationRemoteCopy && entry.sourceServer != "" {
-		entry.paths = fmt.Sprintf("%s: %s → %s: %s", entry.sourceServer, snapshot.Source, entry.server, snapshot.Destination)
+	entry.percent, entry.eta = "—", ""
+	if snapshot.State == sftpclient.TransferRunning && snapshot.BytesTotal > 0 {
+		entry.percent = transferPercent(transferFraction(snapshot))
+		remaining := snapshot.BytesTotal - max(0, snapshot.BytesDone)
+		if remaining > 0 && snapshot.BytesPerSecond > 0 {
+			seconds := (remaining-1)/snapshot.BytesPerSecond + 1
+			if seconds <= int64(math.MaxInt64)/int64(time.Second) {
+				entry.eta = fmt.Sprintf(m.RemainingFmt, (time.Duration(seconds) * time.Second).String())
+			}
+		}
 	}
 	entry.conflict = entry.owner != nil && transferSnapshotConflict(snapshot)
 	started := snapshot.StartedAt
@@ -419,8 +534,23 @@ func (state *State) describeTransfer(entry *transferEntry) {
 	if ended.IsZero() {
 		ended = time.Now()
 	}
-	duration := max(ended.Sub(started), 0).Round(time.Second)
-	entry.clock = fmt.Sprintf(m.TimeFmt, snapshot.QueuedAt.Local().Format("01-02 15:04:05"), duration.String())
+	entry.elapsed = "—"
+	if !started.IsZero() {
+		entry.elapsed = max(ended.Sub(started), 0).Round(time.Second).String()
+	}
+	entry.outcome = entry.status
+	switch {
+	case snapshot.State == sftpclient.TransferCompleted && entry.elapsed != "—":
+		entry.outcome += " · " + fmt.Sprintf(m.DurationFmt, entry.elapsed)
+	case entry.conflict:
+		entry.outcome += " · " + m.Conflict
+	case snapshot.State == sftpclient.TransferFailed && snapshot.Error != "":
+		entry.outcome += " · " + snapshot.Error
+	}
+}
+
+func transferPercent(fraction float32) string {
+	return strconv.Itoa(int(fraction*100+0.001)) + "%"
 }
 
 func (state *State) rebuildTransferCenter() {
@@ -432,19 +562,27 @@ func (state *State) rebuildTransferCenter() {
 
 func (state *State) describeTransferSummary() {
 	center := &state.transfers
-	center.active, center.ended = 0, 0
-	var rate, done, total int64
+	center.revision++
+	center.active, center.ended, center.interrupted = 0, 0, 0
+	var rate, done, total, runningDone, runningTotal int64
 	running := 0
+	knownSize := true
 	for _, entry := range center.entries {
 		if entry.removed {
 			continue
+		}
+		if entry.snapshot.State == sftpclient.TransferInterrupted {
+			center.interrupted++
 		}
 		if transferActive(entry.snapshot) {
 			center.active++
 			if entry.snapshot.State == sftpclient.TransferRunning {
 				running++
+				rate += entry.snapshot.BytesPerSecond
+				runningDone += entry.snapshot.BytesDone
+				runningTotal += entry.snapshot.BytesTotal
+				knownSize = knownSize && entry.snapshot.BytesTotal > 0
 			}
-			rate += entry.snapshot.BytesPerSecond
 			done += entry.snapshot.BytesDone
 			total += entry.snapshot.BytesTotal
 		} else {
@@ -454,26 +592,36 @@ func (state *State) describeTransferSummary() {
 	// A transfer that moves bytes keeps the machine out of idle sleep; one that
 	// is queued or paused does not.
 	state.keepAwakeForTransfers(running > 0)
-	center.summary = state.messages.Transfers.Idle
+	m := state.messages.Transfers
+	center.summary = m.Idle
 	center.badge = ""
 	if center.active > 0 {
 		center.badge = strconv.Itoa(center.active)
 		if center.active > 99 {
 			center.badge = "99+"
 		}
+		center.summary = fmt.Sprintf(m.SummaryFmt, center.active, formatBytes(rate))
 	}
-	if center.active > 0 {
-		center.summary = fmt.Sprintf(state.messages.Transfers.SummaryFmt, center.active, formatBytes(rate))
-	}
-	center.buttonLabel = state.messages.Transfers.Title
+	center.buttonLabel = m.Title
 	if center.active > 0 {
 		center.buttonLabel += " · " + center.summary
 	}
 	center.done, center.total = done, total
-	center.fraction = 0
-	if total > 0 {
-		center.fraction = min(0.99, float32(done)/float32(total))
+	overview := transferOverview{title: m.Idle, percent: "—"}
+	if running > 0 {
+		overview.title = fmt.Sprintf(m.RunningCountFmt, running)
+		overview.rate = fmt.Sprintf(state.messages.Tools.TransferSpeedFmt, formatBytes(rate))
+		totalText := "—"
+		if knownSize && runningTotal > 0 {
+			totalText = formatBytes(runningTotal)
+			overview.fraction = min(0.99, max(0, float32(runningDone)/float32(runningTotal)))
+			overview.percent = transferPercent(overview.fraction)
+		}
+		overview.amount = fmt.Sprintf(m.ProgressFmt, formatBytes(runningDone), totalText)
+	} else if center.active > 0 {
+		overview.title = fmt.Sprintf(m.WaitingCountFmt, center.active)
 	}
+	center.overview = overview
 	state.describeTransferScope()
 	// Every change to a transfer ends here, so this is where the desktop hears
 	// about it: the icon it draws stands for the window and for its siblings.
@@ -486,6 +634,7 @@ func (state *State) removeTransfer(index int) {
 	if transferActive(entry.snapshot) {
 		return
 	}
+	center.revision++
 	if entry.owner != nil {
 		entry.owner.invalidateDetached()
 	}
@@ -523,11 +672,15 @@ func (state *State) clickTransferCenter(id gfx.ID) bool {
 		center.open = !center.open
 		if center.open {
 			state.rebuildTransferCenter()
+		} else {
+			center.close()
 		}
 		return true
 	case hitTransfersDismiss, hitTransfersClose:
-		center.open, center.dragging = false, false
-		center.hostOpen, center.batch = false, transferBatch{}
+		center.close()
+		return true
+	case hitTransfersDetailDismiss:
+		center.details.dismiss()
 		return true
 	case hitTransfersClear:
 		for index := len(center.entries) - 1; index >= 0; index-- {
@@ -538,29 +691,100 @@ func (state *State) clickTransferCenter(id gfx.ID) bool {
 		state.describeTransferSummary()
 		return true
 	case hitTransfersCancelAll:
-		for index := range center.entries {
-			entry := &center.entries[index]
-			if center.shows(entry) && transferActive(entry.snapshot) && entry.owner != nil {
-				entry.owner.worker.CancelTransfer(entry.snapshot.ID)
-			}
-		}
-		state.refreshAllTransfers()
+		state.changeTransferQueue(true)
+		return true
+	case hitTransfersPauseAll:
+		state.changeTransferQueue(false)
 		return true
 	}
 	if filter, ok := id.In(hitTransfersFilter); ok {
-		center.filter, center.scroll = min(max(filter, 0), 3), 0
-		state.describeTransferScope()
-		state.save()
+		if filter >= transferFilterAll && filter < transferFilterCount && filter != center.filter {
+			center.filter, center.scroll = filter, 0
+			center.details.dismiss()
+			state.describeTransferScope()
+			state.save()
+		}
 		return true
 	}
-	return state.clickTransferTask(id)
+	if group, ok := id.In(hitTransfersGroup); ok {
+		if group > transferFilterAll && group < transferFilterCount {
+			section := &center.groups[group]
+			section.collapsed = !section.collapsed
+			center.details.dismiss()
+			center.rebuildRows()
+		}
+		return true
+	}
+	if entry, ok := id.In(hitTransfersDetails); ok {
+		if center.details.pinned == entry {
+			center.details.dismiss()
+		} else {
+			center.details.pinned = entry
+		}
+		return true
+	}
+	return state.clickTransferTask(id, nil)
 }
 
-func (state *State) clickTransferTask(id gfx.ID) bool {
+func (center *transferCenter) close() {
+	center.open, center.dragging = false, false
+	center.selectOpen, center.batch = gfx.ID{}, transferBatch{}
+	center.details.dismiss()
+}
+
+// Bulk controls apply to the current filters, including tasks in collapsed
+// groups. Refresh each affected worker only after walking the current entries.
+func (state *State) changeTransferQueue(cancel bool) {
+	center := &state.transfers
+	resume := !cancel && center.pausable == 0
+	var changed map[*sftpView]struct{}
+	apply := func(index int) {
+		entry := &center.entries[index]
+		if !center.shows(entry) || !transferActive(entry.snapshot) || entry.owner == nil || entry.owner.worker == nil {
+			return
+		}
+		worker, id := entry.owner.worker, entry.snapshot.ID
+		var ok bool
+		switch {
+		case cancel:
+			ok = worker.CancelTransfer(id)
+		case resume:
+			ok = worker.Resume(id)
+		default:
+			ok = worker.Pause(id)
+		}
+		if ok {
+			if changed == nil {
+				changed = make(map[*sftpView]struct{})
+			}
+			changed[entry.owner] = struct{}{}
+		}
+	}
+	if resume {
+		// Resume can immediately start a job. Give the older waiting jobs
+		// the first chance even when a retry has reused an early record ID.
+		for _, index := range center.groups[transferFilterWaiting].members {
+			apply(index)
+		}
+	} else {
+		for index := range center.entries {
+			apply(index)
+		}
+	}
+	for owner := range changed {
+		if owner.worker == nil {
+			continue
+		}
+		state.refreshSFTPTransfers(owner)
+		owner.invalidateDetached()
+	}
+}
+
+func (state *State) clickTransferTask(id gfx.ID, view *sftpView) bool {
 	center := &state.transfers
 	for index := range center.entries {
 		entry := &center.entries[index]
-		if item(id) != entry.id {
+		if item(id) != entry.id || (view != nil && entry.owner != view) {
 			continue
 		}
 		if id.Scope() == hitTransfersReveal {
@@ -577,7 +801,7 @@ func (state *State) clickTransferTask(id gfx.ID) bool {
 			state.describeTransferSummary()
 			return true
 		}
-		if entry.owner == nil {
+		if entry.owner == nil || entry.owner.worker == nil {
 			continue
 		}
 		worker, snapshot := entry.owner.worker, entry.snapshot
@@ -592,7 +816,7 @@ func (state *State) clickTransferTask(id gfx.ID) bool {
 				worker.Pause(snapshot.ID)
 			}
 		case hitTransfersRetry:
-			retrying = worker.Retry(snapshot.ID, sftpclient.ExistingFail)
+			retrying = worker.Retry(snapshot.ID, transferRetryPolicy(snapshot))
 		case hitTransfersReplace:
 			retrying = worker.Retry(snapshot.ID, sftpclient.ExistingReplace)
 		case hitTransfersResume:
@@ -615,19 +839,23 @@ func (state *State) clickTransferTask(id gfx.ID) bool {
 	return id.Scope() == transferCenterHits
 }
 
-func (state *State) refreshAllTransfers() {
-	for _, window := range state.sftpWindows {
-		if !window.closed && window.view.worker != nil {
-			state.refreshSFTPTransfers(window.view)
-		}
-	}
-	for index := range state.sessions {
-		if view := state.sessions[index].files; view != nil && view.worker != nil {
-			state.refreshSFTPTransfers(view)
-		}
-	}
+func (center *transferCenter) shows(entry *transferEntry) bool {
+	return center.matches(entry) && transferFilterShows(center.filter, entry.snapshot)
 }
 
-func (center *transferCenter) shows(entry *transferEntry) bool {
-	return !entry.removed && (center.host == nil || sameTransferHost(center.host, entry.host)) && transferFilterShows(center.filter, entry.snapshot)
+func (center *transferCenter) matches(entry *transferEntry) bool {
+	return !entry.removed && (center.host == nil || sameTransferHost(center.host, entry.host)) &&
+		(center.direction == transferAnyDirection || center.direction == transferDirectionOf(entry.snapshot.Operation)) &&
+		(center.query == "" || strings.Contains(entry.searchTitle, center.query))
+}
+
+func transferDirectionOf(operation sftpclient.Operation) transferDirection {
+	switch operation {
+	case sftpclient.OperationUpload:
+		return transferUpload
+	case sftpclient.OperationRemoteCopy:
+		return transferRemoteCopy
+	default:
+		return transferDownload
+	}
 }

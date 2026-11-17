@@ -38,12 +38,12 @@ var toolbarCatalog = [3][]toolbarSpec{
 		{"latency", hitToolbarLatency, iconActivity},
 		{"notes", hitNotesPanel, iconNotebook},
 		{"close-pane", hitPaneClose, iconClose}, {"broadcast", hitBroadcast, iconRadio},
-		{"snippets", hitTerminalSnippets, iconNote},
+		{"snippets", hitTerminalSnippets, iconSnippets},
 		{"split-horizontal", hitPaneSplitHorizontal, iconColumns2}, {"split-vertical", hitPaneSplitVertical, iconRows2},
 		{"record", hitTerminalRecord, iconRecord}, {"export-recording", hitTerminalRecordingExport, iconFilm},
 		{"save-output", hitTerminalSaveOutput, iconSave},
 		{"export-log", hitConnExport, iconFileDown}, {"resources", hitRemoteStats, iconActivity},
-		{"files", hitSFTPOpen, iconFolderOpen}, {"local-proxy", hitLocalProxyOpen, iconGlobe},
+		{"files", hitSFTPOpen, iconFolderOpen}, {"local-proxy", hitLocalProxyOpen, iconLocalProxy},
 		{"file-transfer", hitSFTPDetach, iconSFTPTransfer},
 		{"remote-tools", hitProcessToolsOpen, iconProcess},
 		{"remote-logs", hitServerLogs, iconFileClock},
@@ -54,7 +54,6 @@ var toolbarCatalog = [3][]toolbarSpec{
 		{"local-remote", hitSFTPPaneToggle, iconHosts}, {"refresh", hitSFTPRefresh, iconRefresh},
 		{"follow-folder", hitSFTPFollowToggle, iconFollowFolder},
 		{"locate-terminal", hitSFTPLocateTerminal, iconTerminal},
-		{"panel-side", hitSFTPPanelSide, iconColumns2}, {"close", hitSFTPClose, iconClose},
 	},
 }
 
@@ -260,10 +259,6 @@ func (state *State) toolbarLabel(id gfx.ID) string {
 		return m.Tools.FilesFollow
 	case hitSFTPLocateTerminal:
 		return m.Tools.FilesLocateTerminal
-	case hitSFTPPanelSide:
-		return m.Toolbars.PanelSide
-	case hitSFTPClose:
-		return m.TipSFTPClose
 	}
 	return ""
 }

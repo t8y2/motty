@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 
 	"motty/internal/keyidentity"
 )
@@ -20,12 +21,15 @@ var defaultIdentities = []string{"id_ed25519", "id_ecdsa", "id_rsa"}
 // authMethods builds the client's authentication order: keys first, then the
 // account password through keyboard-interactive and password. Prompts for the
 // password block the connection goroutine and show up as Status.
-func (conn *Conn) authMethods(authentication Authentication) []ssh.AuthMethod {
+func (conn *Conn) authMethods(host string, authentication Authentication) []ssh.AuthMethod {
 	methods := authentication.Methods
 	if methods == 0 {
 		methods = AuthAll
 	}
 	auth := make([]ssh.AuthMethod, 0, 3)
+	if methods&AuthKerberos != 0 && KerberosAvailable {
+		auth = append(auth, conn.kerberosAuth(host))
+	}
 	if methods&AuthPublicKey != 0 {
 		auth = append(auth, ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
 			return conn.publicKeySigners(authentication)
@@ -46,25 +50,244 @@ func (conn *Conn) authMethods(authentication Authentication) []ssh.AuthMethod {
 func (conn *Conn) publicKeySigners(authentication Authentication) ([]ssh.Signer, error) {
 	conn.method("publickey")
 	var agents []ssh.Signer
+	var skipped []string
 	if authentication.Agent {
 		agentSigners, err := conn.agentSigners()
 		switch {
 		case err == nil:
-			agents = agentSigners
+			agents = append(agents, agentSigners...)
 		case conn.config.AgentAddress != "":
 			// The user pointed at this agent; saying nothing would leave a
 			// failed login with no hint that the agent was never reached.
-			conn.update(func(status *Status) { status.Skipped = append(status.Skipped, fmt.Sprintf("ssh-agent (%v)", err)) })
+			skipped = append(skipped, fmt.Sprintf("ssh-agent (%v)", err))
 		}
 	}
-	signers, skipped, err := conn.loadIdentities(authentication, agents)
+	if !authentication.Agent && conn.config.SecurityKeyAgent == nil && conn.hasSecurityKeyIdentity(authentication) {
+		// A security key can only sign through an agent. Ask the default
+		// agent even when the host's policy did not offer agent auth, so a key
+		// the user already loaded can be used without preparing another one.
+		if agentSigners, err := conn.agentSigners(); err == nil {
+			agents = append(agents, agentSigners...)
+		}
+	}
+	agents = conn.wrapSecurityKeySigners(agents)
+	signers, loadSkipped, err := conn.loadIdentities(authentication, agents, authentication.Agent)
 	if err != nil {
 		return nil, err
 	}
+	skipped = append(skipped, loadSkipped...)
 	if len(skipped) > 0 {
 		conn.update(func(status *Status) { status.Skipped = append(status.Skipped, skipped...) })
 	}
 	return signers, nil
+}
+
+// identityFiles is the identity list one endpoint tries, in order: the
+// configured files, or the default OpenSSH names when none were configured,
+// followed by the additional ones.
+func identityFiles(authentication Authentication) []string {
+	paths := authentication.IdentityFiles
+	if paths == nil {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			for _, name := range defaultIdentities {
+				paths = append(paths, filepath.Join(home, ".ssh", name))
+			}
+		}
+	}
+	return append(append([]string(nil), paths...), authentication.AdditionalIdentityFiles...)
+}
+
+// hasSecurityKeyIdentity reports whether one of the endpoint's identities is a
+// hardware security key. Its public half is readable without the device.
+func (conn *Conn) hasSecurityKeyIdentity(authentication Authentication) bool {
+	for _, path := range identityFiles(authentication) {
+		if path == "none" {
+			continue
+		}
+		if keyidentity.IsSecurityKey(conn.identityPublicKey(path)) {
+			return true
+		}
+	}
+	return false
+}
+
+// pendingSecurityKeySigner offers a security key to the server before the
+// device is involved. The server probes the public key first; only a key it
+// accepts is signed with, so the agent is prepared when Sign runs, not for
+// every key in the list.
+type pendingSecurityKeySigner struct {
+	conn   *Conn
+	path   string
+	public ssh.PublicKey
+
+	mu       sync.Mutex
+	resolved ssh.Signer
+	err      error
+}
+
+func (signer *pendingSecurityKeySigner) PublicKey() ssh.PublicKey { return signer.public }
+
+func (signer *pendingSecurityKeySigner) Algorithms() []string {
+	return []string{signer.public.Type()}
+}
+
+func (signer *pendingSecurityKeySigner) resolve() (ssh.Signer, error) {
+	signer.mu.Lock()
+	defer signer.mu.Unlock()
+	if signer.resolved != nil || signer.err != nil {
+		return signer.resolved, signer.err
+	}
+	signer.resolved, signer.err = signer.conn.securityKeyAgentSigner(signer.path, signer.public)
+	if signer.err != nil {
+		path, err := signer.path, signer.err
+		signer.conn.update(func(status *Status) {
+			status.Skipped = append(status.Skipped, fmt.Sprintf("%s (%v)", path, err))
+		})
+	}
+	return signer.resolved, signer.err
+}
+
+func (signer *pendingSecurityKeySigner) Sign(rand io.Reader, data []byte) (*ssh.Signature, error) {
+	resolved, err := signer.resolve()
+	if err != nil {
+		return nil, err
+	}
+	return resolved.Sign(rand, data)
+}
+
+func (signer *pendingSecurityKeySigner) SignWithAlgorithm(rand io.Reader, data []byte, algorithm string) (*ssh.Signature, error) {
+	resolved, err := signer.resolve()
+	if err != nil {
+		return nil, err
+	}
+	if algorithmSigner, ok := resolved.(ssh.AlgorithmSigner); ok {
+		return algorithmSigner.SignWithAlgorithm(rand, data, algorithm)
+	}
+	return resolved.Sign(rand, data)
+}
+
+// securityKeyAgentSigner prepares the agent that can hold the key and returns
+// its signer. When preparation fails, a key already in the default agent still
+// works.
+func (conn *Conn) securityKeyAgentSigner(path string, public ssh.PublicKey) (ssh.Signer, error) {
+	var preparedErr error
+	if conn.config.SecurityKeyAgent != nil {
+		address, release, err := conn.config.SecurityKeyAgent(SecurityKeyRequest{Path: path, PublicKey: public})
+		switch {
+		case err != nil:
+			preparedErr = err
+		case address == "":
+			if release != nil {
+				release()
+			}
+		default:
+			if release != nil {
+				conn.addCloser(closerFunc(release))
+			}
+			signer, err := conn.agentSignerAt(address, public)
+			if err == nil {
+				return signer, nil
+			}
+			preparedErr = err
+		}
+	}
+	signer, err := conn.defaultAgentSigner(public)
+	if err == nil {
+		return signer, nil
+	}
+	if preparedErr != nil {
+		return nil, preparedErr
+	}
+	return nil, fmt.Errorf("security key %s is not available through ssh-agent", ssh.FingerprintSHA256(public))
+}
+
+// agentSignerAt reads the signer for one key from an agent at address.
+func (conn *Conn) agentSignerAt(address string, public ssh.PublicKey) (ssh.Signer, error) {
+	link, err := dialAgent(address)
+	if err != nil {
+		return nil, agentUnreachable(address, err)
+	}
+	conn.addCloser(link)
+	signers, err := agent.NewClient(link).Signers()
+	if err != nil {
+		return nil, err
+	}
+	for _, signer := range signers {
+		if bytes.Equal(signer.PublicKey().Marshal(), public.Marshal()) {
+			return conn.wrapSecurityKeySigners([]ssh.Signer{signer})[0], nil
+		}
+	}
+	return nil, errors.New("the prepared ssh-agent does not offer the key")
+}
+
+// defaultAgentSigner reads the signer for one key from the connection's own
+// agent, without preparing anything.
+func (conn *Conn) defaultAgentSigner(public ssh.PublicKey) (ssh.Signer, error) {
+	signers, err := conn.agentSigners()
+	if err != nil {
+		return nil, err
+	}
+	for _, signer := range signers {
+		if bytes.Equal(signer.PublicKey().Marshal(), public.Marshal()) {
+			return conn.wrapSecurityKeySigners([]ssh.Signer{signer})[0], nil
+		}
+	}
+	return nil, errors.New("the ssh-agent does not offer the key")
+}
+
+// wrapSecurityKeySigners makes the wait for a hardware key visible in the
+// connection status: the agent's signature call blocks until the user touches
+// the device.
+func (conn *Conn) wrapSecurityKeySigners(signers []ssh.Signer) []ssh.Signer {
+	wrapped := make([]ssh.Signer, len(signers))
+	for index, signer := range signers {
+		if keyidentity.IsSecurityKey(signer.PublicKey()) {
+			wrapped[index] = &securityKeySigner{Signer: signer, conn: conn}
+			continue
+		}
+		wrapped[index] = signer
+	}
+	return wrapped
+}
+
+// securityKeySigner reports the device wait around the agent's blocking sign.
+type securityKeySigner struct {
+	ssh.Signer
+	conn *Conn
+}
+
+func (signer *securityKeySigner) Sign(rand io.Reader, data []byte) (*ssh.Signature, error) {
+	signer.conn.update(func(status *Status) { status.SecurityKey = true })
+	signature, err := signer.Signer.Sign(rand, data)
+	signer.conn.update(func(status *Status) { status.SecurityKey = false })
+	return signature, err
+}
+
+func (signer *securityKeySigner) SignWithAlgorithm(rand io.Reader, data []byte, algorithm string) (*ssh.Signature, error) {
+	algorithmSigner, ok := signer.Signer.(ssh.AlgorithmSigner)
+	if !ok {
+		return signer.Sign(rand, data)
+	}
+	signer.conn.update(func(status *Status) { status.SecurityKey = true })
+	signature, err := algorithmSigner.SignWithAlgorithm(rand, data, algorithm)
+	signer.conn.update(func(status *Status) { status.SecurityKey = false })
+	return signature, err
+}
+
+func (signer *securityKeySigner) Algorithms() []string {
+	if multi, ok := signer.Signer.(ssh.MultiAlgorithmSigner); ok {
+		return multi.Algorithms()
+	}
+	return []string{signer.Signer.PublicKey().Type()}
+}
+
+// closerFunc adapts a release callback to io.Closer.
+type closerFunc func()
+
+func (release closerFunc) Close() error {
+	release()
+	return nil
 }
 
 // method remembers the authentication method being tried; the one tried last
@@ -153,46 +376,63 @@ func (conn *Conn) askPassword(question string) (string, error) {
 // key. A key the user declines is skipped without canceling the connection, so
 // agent and password authentication can still proceed. A key that is present
 // but unusable is skipped too, with the reason in skipped.
-func (conn *Conn) loadIdentities(authentication Authentication, agents []ssh.Signer) (signers []ssh.Signer, skipped []string, err error) {
-	paths := authentication.IdentityFiles
-	if paths == nil {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, nil, nil
-		}
-		for _, name := range defaultIdentities {
-			paths = append(paths, filepath.Join(home, ".ssh", name))
-		}
-	}
-	paths = append(append([]string(nil), paths...), authentication.AdditionalIdentityFiles...)
+func (conn *Conn) loadIdentities(authentication Authentication, agents []ssh.Signer, offerAgents bool) (signers []ssh.Signer, skipped []string, err error) {
+	paths := identityFiles(authentication)
 	usedAgents := make([]bool, len(agents))
+	usedKeys := make(map[string]bool, len(agents))
 	var preferred []ssh.Signer
 	for _, path := range paths {
 		if path == "none" {
 			continue
 		}
-		var public ssh.PublicKey
-		publicRead := len(agents) > 0
-		if publicRead {
-			public = conn.identityPublicKey(path)
-		}
+		public := conn.identityPublicKey(path)
+		securityKey := keyidentity.IsSecurityKey(public)
 		matched := false
-		for index, signer := range agents {
-			if public != nil && bytes.Equal(public.Marshal(), signer.PublicKey().Marshal()) {
-				certified := signer
-				var certErr error
-				if !IsStoredKey(path) {
-					certified, certErr = certificateSigner(path, signer)
+		// A security key with an application-supplied agent is prepared only
+		// when the server accepts its public key; the agent is not started for
+		// every key in the list. Without that helper, the default agent is the
+		// only place such a key can live.
+		if !securityKey || conn.config.SecurityKeyAgent == nil {
+			for index, signer := range agents {
+				if public != nil && bytes.Equal(public.Marshal(), signer.PublicKey().Marshal()) {
+					if usedAgents[index] || usedKeys[string(public.Marshal())] {
+						matched = true
+						continue
+					}
+					certified := signer
+					var certErr error
+					if !IsStoredKey(path) {
+						certified, certErr = certificateSigner(path, signer)
+					}
+					if certErr != nil {
+						skipped = append(skipped, certErr.Error())
+					} else if !usedAgents[index] {
+						preferred = append(preferred, certified)
+					}
+					usedAgents[index], matched = true, true
+					usedKeys[string(public.Marshal())] = true
 				}
-				if certErr != nil {
-					skipped = append(skipped, certErr.Error())
-				} else if !usedAgents[index] {
-					preferred = append(preferred, certified)
-				}
-				usedAgents[index], matched = true, true
 			}
 		}
 		if matched {
+			continue
+		}
+		if securityKey && conn.config.SecurityKeyAgent != nil {
+			if usedKeys[string(public.Marshal())] {
+				continue
+			}
+			usedKeys[string(public.Marshal())] = true
+			pending := &pendingSecurityKeySigner{conn: conn, path: path, public: public}
+			if IsStoredKey(path) {
+				signers = append(signers, pending)
+				continue
+			}
+			certified, err := certificateSigner(path, pending)
+			if err != nil {
+				skipped = append(skipped, err.Error())
+				continue
+			}
+			signers = append(signers, certified)
 			continue
 		}
 		signer, err := conn.loadKey(path, nil)
@@ -206,9 +446,6 @@ func (conn *Conn) loadIdentities(authentication Authentication, agents []ssh.Sig
 					skipped = append(skipped, fmt.Sprintf("%s (%v)", path, err))
 				}
 				continue
-			}
-			if !publicRead {
-				public = conn.identityPublicKey(path)
 			}
 			if public == nil {
 				// Without the public half the key cannot be offered until it
@@ -239,10 +476,10 @@ func (conn *Conn) loadIdentities(authentication Authentication, agents []ssh.Sig
 		}
 		signers = append(signers, certified)
 	}
-	if !authentication.IdentitiesOnly {
+	if offerAgents && !authentication.IdentitiesOnly {
 		unmatched := make([]ssh.Signer, 0, len(agents))
 		for index, signer := range agents {
-			if !usedAgents[index] {
+			if !usedAgents[index] && !usedKeys[string(signer.PublicKey().Marshal())] {
 				unmatched = append(unmatched, signer)
 			}
 		}

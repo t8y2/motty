@@ -39,6 +39,9 @@ var (
 	// ErrUploadFinalizeTimeout reports that the server stopped answering while
 	// an upload was being committed. The partial file is kept for a resume.
 	ErrUploadFinalizeTimeout = errors.New("sftp: upload finalization timed out")
+	// ErrInterrupted reports a transfer a lost connection stopped. Its partial
+	// file is kept, and a worker opened on the same server can continue it.
+	ErrInterrupted = errors.New("sftp: connection interrupted the transfer")
 )
 
 type ConflictError struct {
@@ -100,6 +103,9 @@ const (
 	// TransferPaused is a transfer the user stopped, started or not; it keeps its
 	// place and resumes where it was.
 	TransferPaused
+	// TransferInterrupted is a transfer a lost connection stopped. Its partial
+	// file stays, and a worker on the same server continues it.
+	TransferInterrupted
 )
 
 type TransferSnapshot struct {
@@ -120,9 +126,13 @@ type TransferSnapshot struct {
 	Error          string
 	Retryable      bool
 	QueuedAt       time.Time
-	StartedAt      time.Time
-	FinishedAt     time.Time
+	// QueueOrder breaks timestamp ties across workers. A retry enters again.
+	QueueOrder uint64
+	StartedAt  time.Time
+	FinishedAt time.Time
 }
+
+var transferQueueOrder atomic.Uint64
 
 // Entry is one remote directory item prepared for presentation.
 type Entry struct {
@@ -263,6 +273,13 @@ type transferRecord struct {
 	// the transfer up. Cancel and Close end a transfer too, but they are about
 	// the connection, and what the transfer left behind is kept for a retry.
 	canceledByUser bool
+	// interrupted is set by Interrupt, which a lost connection calls before it
+	// closes the worker. The goroutine that was running the transfer finishes
+	// without overwriting the state, so a new worker can continue it.
+	interrupted bool
+	// conflict marks a failure that needs the user's overwrite decision. Such a
+	// failure is not turned into an interrupted transfer.
+	conflict bool
 	// source is the live subsystem of a remote copy, so a cancel can close the
 	// read it is waiting on. It is nil for every other operation, and for a
 	// remote copy between attempts.
@@ -579,7 +596,7 @@ func (worker *Worker) enqueueTransfer(next request) (uint64, bool) {
 		snapshot: TransferSnapshot{
 			ID: next.id, Operation: next.operation, Source: source,
 			Destination: destination, Recursive: next.recursive, State: TransferQueued,
-			QueuedAt: worker.clock(),
+			QueuedAt: worker.clock(), QueueOrder: transferQueueOrder.Add(1),
 		},
 	})
 	worker.mu.Unlock()
@@ -775,7 +792,7 @@ func (worker *Worker) makeTransferRoomLocked() bool {
 	for index := range worker.transfers {
 		record := &worker.transfers[index]
 		state := record.snapshot.State
-		if record.settled && !record.active && (state == TransferCompleted || state == TransferFailed || state == TransferCanceled) {
+		if record.settled && !record.active && (state == TransferCompleted || state == TransferFailed || state == TransferCanceled || state == TransferInterrupted) {
 			worker.transfers = slices.Delete(worker.transfers, index, index+1)
 			return true
 		}
@@ -808,7 +825,7 @@ func (worker *Worker) ForgetTransfer(id uint64) bool {
 	for index := range worker.transfers {
 		record := &worker.transfers[index]
 		if record.snapshot.ID == id {
-			if record.active || (record.snapshot.State != TransferCompleted && record.snapshot.State != TransferFailed && record.snapshot.State != TransferCanceled) {
+			if record.active || (record.snapshot.State != TransferCompleted && record.snapshot.State != TransferFailed && record.snapshot.State != TransferCanceled && record.snapshot.State != TransferInterrupted) {
 				return false
 			}
 			worker.transfers = slices.Delete(worker.transfers, index, index+1)
@@ -837,8 +854,13 @@ func (worker *Worker) Transfers(dst []TransferSnapshot) []TransferSnapshot {
 // Retry requeues a failed or canceled transfer with an explicit destination policy.
 func (worker *Worker) Retry(id uint64, policy ExistingPolicy) bool {
 	worker.mu.Lock()
-	record := worker.transferLocked(id)
-	if record == nil || !record.settled || (record.snapshot.State != TransferFailed && record.snapshot.State != TransferCanceled) {
+	index := worker.transferIndexLocked(id)
+	if index < 0 {
+		worker.mu.Unlock()
+		return false
+	}
+	record := &worker.transfers[index]
+	if worker.closedLocked() || !record.settled || (record.snapshot.State != TransferFailed && record.snapshot.State != TransferCanceled) {
 		worker.mu.Unlock()
 		return false
 	}
@@ -850,11 +872,18 @@ func (worker *Worker) Retry(id uint64, policy ExistingPolicy) bool {
 	record.snapshot.Resumed = 0
 	record.snapshot.Retryable = false
 	record.snapshot.QueuedAt = worker.clock()
+	record.snapshot.QueueOrder = transferQueueOrder.Add(1)
 	record.snapshot.StartedAt, record.snapshot.FinishedAt = time.Time{}, time.Time{}
 	record.snapshot.BytesPerSecond, record.rate = 0, 0
 	record.settled = false
 	record.paused = false
 	record.canceledByUser = false
+	record.conflict = false
+	// schedule walks this slice in order. Keep a retry behind tasks that
+	// were already waiting rather than letting its old slot cut the queue.
+	retried := *record
+	copy(worker.transfers[index:], worker.transfers[index+1:])
+	worker.transfers[len(worker.transfers)-1] = retried
 	worker.mu.Unlock()
 	worker.schedule()
 	worker.changed()
@@ -875,7 +904,7 @@ func (worker *Worker) CancelTransfer(id uint64) bool {
 	record.snapshot.BytesPerSecond, record.rate = 0, 0
 	record.paused = false
 	record.canceledByUser = true
-	active := record.active
+	active, operation := record.active, record.request.operation
 	if !active {
 		// A queued task has no copy goroutine to finish its cancellation.
 		record.settled, record.snapshot.Retryable = true, true
@@ -894,7 +923,7 @@ func (worker *Worker) CancelTransfer(id uint64) bool {
 	if source != nil {
 		_ = source.Close()
 	}
-	if active && others == 0 && record.request.operation != OperationUpload && record.request.operation != OperationRemoteCopy {
+	if active && others == 0 && operation != OperationUpload && operation != OperationRemoteCopy {
 		// Nothing else is using the subsystem, and a read that is waiting on the
 		// network only ends when it goes. An upload is given a moment to stop on
 		// its own first, because the subsystem is also what removes its partial
@@ -908,13 +937,57 @@ func (worker *Worker) CancelTransfer(id uint64) bool {
 	return true
 }
 
+// Interrupt marks the uploads and downloads a lost connection is about to stop
+// as interrupted instead of canceled. Their partial files stay where they are,
+// and a worker opened on the same server later continues them.
+//
+// A transfer the user gave up on is left canceled, and a failure that needs an
+// overwrite decision is left failed: both are decisions, not accidents of the
+// connection. Server-to-server copies are not marked: continuing one needs both
+// endpoints, which is outside what a single reconnected worker can promise.
+//
+// Call it before Close. Close discards the subsystem, and the goroutine of a
+// transfer that was running ends soon after; finishTransfer keeps the
+// interrupted state rather than turning it into a cancellation.
+func (worker *Worker) Interrupt() {
+	worker.mu.Lock()
+	now := worker.clock()
+	for index := range worker.transfers {
+		record := &worker.transfers[index]
+		if record.canceledByUser || record.interrupted {
+			continue
+		}
+		if operation := record.request.operation; operation != OperationUpload && operation != OperationDownload {
+			continue
+		}
+		switch record.snapshot.State {
+		case TransferQueued, TransferRunning, TransferPaused:
+		case TransferFailed:
+			if !record.snapshot.Retryable || record.conflict {
+				continue
+			}
+		default:
+			continue
+		}
+		record.interrupted = true
+		record.snapshot.State = TransferInterrupted
+		record.snapshot.Error = ErrInterrupted.Error()
+		record.snapshot.Retryable = false
+		record.snapshot.BytesPerSecond, record.rate = 0, 0
+		record.snapshot.FinishedAt = now
+		record.paused = false
+	}
+	worker.mu.Unlock()
+	worker.changed()
+}
+
 // Cancel interrupts everything under way and discards the current subsystem.
 func (worker *Worker) Cancel() {
 	worker.mu.Lock()
 	var sources []io.Closer
 	for index := range worker.transfers {
 		record := &worker.transfers[index]
-		if record.active && record.snapshot.State != TransferCanceled {
+		if record.active && record.snapshot.State != TransferCanceled && record.snapshot.State != TransferInterrupted {
 			record.snapshot.State = TransferCanceled
 			record.snapshot.FinishedAt = worker.clock()
 			record.snapshot.Error = ErrCanceled.Error()
@@ -958,12 +1031,19 @@ func (worker *Worker) Close() {
 }
 
 func (worker *Worker) transferLocked(id uint64) *transferRecord {
-	for index := range worker.transfers {
-		if worker.transfers[index].snapshot.ID == id {
-			return &worker.transfers[index]
-		}
+	if index := worker.transferIndexLocked(id); index >= 0 {
+		return &worker.transfers[index]
 	}
 	return nil
+}
+
+func (worker *Worker) transferIndexLocked(id uint64) int {
+	for index := range worker.transfers {
+		if worker.transfers[index].snapshot.ID == id {
+			return index
+		}
+	}
+	return -1
 }
 
 func (worker *Worker) closedLocked() bool {
@@ -1045,6 +1125,12 @@ func (worker *Worker) finishTransfer(id uint64, result Result) {
 		record.snapshot.BytesDone = result.Bytes
 		record.snapshot.Resumed = result.Resumed
 		switch {
+		case record.interrupted:
+			// The connection ended the transfer after Interrupt already told the
+			// caller to keep it; the reason it stopped here is the lost link.
+			record.snapshot.State = TransferInterrupted
+			record.snapshot.Error = ErrInterrupted.Error()
+			record.snapshot.Retryable = false
 		case errors.Is(result.Err, ErrCanceled):
 			record.snapshot.State = TransferCanceled
 			record.snapshot.Error = ErrCanceled.Error()
@@ -1053,6 +1139,7 @@ func (worker *Worker) finishTransfer(id uint64, result Result) {
 			record.snapshot.State = TransferFailed
 			record.snapshot.Error = result.Err.Error()
 			record.snapshot.Retryable = true
+			record.conflict = errors.Is(result.Err, ErrDestinationExists)
 		default:
 			record.snapshot.State = TransferCompleted
 			record.snapshot.Retryable = false

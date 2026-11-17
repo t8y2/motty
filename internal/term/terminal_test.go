@@ -114,6 +114,50 @@ func TestEraseInLineAndDisplay(t *testing.T) {
 	expectText(t, term, "")
 }
 
+// A full-screen program on the main screen clears the screen before it draws
+// over it (top does this at startup). The cleared screen stays reachable in the
+// scrollback, as it does in Windows Terminal, VTE, Terminal.app and iTerm2, so
+// running such a program does not leave the session with nothing to go back to.
+func TestEraseDisplayKeepsTheClearedScreenInScrollback(t *testing.T) {
+	term := New(10, 4, 100)
+	feed(term, "one\r\ntwo\r\n\r\n$ ")
+	feed(term, "\x1b[H\x1b[2J")
+	expectText(t, term, "")
+	if got := term.Scrollback(); got != 4 {
+		t.Fatalf("scrollback = %d, want the four cleared rows", got)
+	}
+	if !term.Scroll(4) {
+		t.Fatal("the cleared screen is not reachable with the wheel")
+	}
+	for y, want := range []string{"one", "two", "", "$"} {
+		if got := term.RowText(y); got != want {
+			t.Errorf("history row %d = %q, want %q", y, got, want)
+		}
+	}
+}
+
+func TestEraseDisplayDoesNotKeepTheBlankRowsBelowTheContent(t *testing.T) {
+	term := New(10, 6, 100)
+	feed(term, "one")
+	feed(term, "\x1b[H\x1b[2J")
+	if got := term.Scrollback(); got != 1 {
+		t.Fatalf("scrollback = %d, want only the row that held content", got)
+	}
+}
+
+func TestEraseDisplayOnTheAlternateScreenLeavesTheScrollbackAlone(t *testing.T) {
+	term := New(10, 4, 100)
+	feed(term, "one\r\ntwo\r\nthree\r\nfour\r\nfive")
+	history := term.Scrollback()
+	feed(term, "\x1b[?1049hfull screen\x1b[2J")
+	if got := term.Scrollback(); got != history {
+		t.Fatalf("scrollback = %d after clearing the alternate screen, want %d", got, history)
+	}
+	expectText(t, term, "")
+	feed(term, "\x1b[?1049l")
+	expectText(t, term, "two\nthree\nfour\nfive")
+}
+
 func TestErasePaintsTheCurrentBackground(t *testing.T) {
 	term := newTerm(6, 2)
 	feed(term, "\x1b[44m\x1b[2K")

@@ -252,8 +252,13 @@ type terminal struct {
 	// aiRows holds the screen line IDs whose command was started by the
 	// assistant. The line ID survives scrolling and resizing, so its gutter mark
 	// stays with the command in scrollback.
-	aiRows    map[uint64]struct{}
-	aiStartID uint64
+	aiRows map[uint64]struct{}
+	// aiFront is the first line the open AI block has not marked yet, and
+	// aiGeneration the buffer generation it was counted in. Lines are marked by
+	// number rather than by what is on screen, so output that scrolled past
+	// between two writes keeps its mark.
+	aiFront      uint64
+	aiGeneration uint64
 
 	mouseReport        [64]byte
 	mouseButton        term.MouseEventButton
@@ -511,9 +516,6 @@ func (t *terminal) clearScreen(messages i18n.Messages) {
 	t.selection.clear()
 	t.find.refreshIfChanged(t.screen, messages, 0)
 	kept := t.screen.Row(0).ID
-	if t.aiStartID != kept {
-		t.aiStartID = 0
-	}
 	for id := range t.aiRows {
 		if id != kept {
 			delete(t.aiRows, id)
@@ -873,14 +875,47 @@ func (state *State) openShell(session *Session) {
 	result := make(chan shellResult, 1)
 	t.opening = result
 	conn, invalidate := session.conn, state.options.Invalidate
+	// A borrowed connection can run out of room silently: a gateway may leave
+	// the shell request unanswered instead of refusing it, and nothing else
+	// would end that wait, so the tab would sit on the connection page forever.
+	// The borrowed connection gets the connection timeout; past it the tab
+	// takes its own, as it does when the server refuses the channel outright.
+	shared, wait := session.shared, state.connectionTimeout
 	go func() {
-		shell, err := conn.OpenShell(config)
-		result <- shellResult{shell: shell, err: err, cols: config.Cols, rows: config.Rows}
+		opened := make(chan shellResult, 1)
+		go func() {
+			shell, err := conn.OpenShell(config)
+			opened <- shellResult{shell: shell, err: err, cols: config.Cols, rows: config.Rows}
+		}()
+		var outcome shellResult
+		if shared && wait > 0 {
+			timer := time.NewTimer(wait)
+			select {
+			case outcome = <-opened:
+				timer.Stop()
+			case <-timer.C:
+				outcome = shellResult{err: errSharedShellOpenTimeout, cols: config.Cols, rows: config.Rows}
+				// The server may still make the shell later. Nothing will take
+				// it, so it is closed when it arrives.
+				go func() {
+					if late := <-opened; late.shell != nil {
+						late.shell.Close()
+					}
+				}()
+			}
+		} else {
+			outcome = <-opened
+		}
+		result <- outcome
 		if invalidate != nil {
 			invalidate()
 		}
 	}()
 }
+
+// errSharedShellOpenTimeout is a borrowed connection that never answered the
+// shell request. The tab then connects on its own instead of waiting forever.
+var errSharedShellOpenTimeout = errors.New("the shared connection did not open a shell in time")
 
 // collectShell takes the shell opened in the background, once it is there.
 func (state *State) collectShell(session *Session) {
@@ -1446,6 +1481,11 @@ func (state *State) fitTerminal(session *Session) {
 	t.prediction.reset()
 	t.sync = nil
 	t.screen.Resize(geometry.cols, geometry.rows)
+	if t.exec != nil {
+		// Reflow moves the lines above the cursor, so the command's block goes on
+		// from the line it last wrote; everything before that is already marked.
+		t.aiFront = t.cursorLine()
+	}
 	t.selection.clear()
 	t.find.refreshIfChanged(t.screen, state.messages, 0)
 	if t.shell != nil {

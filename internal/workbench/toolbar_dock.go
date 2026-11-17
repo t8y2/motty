@@ -127,9 +127,6 @@ func (prefs *toolbarPreferences) restoreDock(saved []toolbarDockEntry) {
 }
 
 func toolbarDockIdentity(id gfx.ID) (toolbarDockEntry, bool) {
-	if id == hitServerLogs {
-		return toolbarDockEntry{}, false
-	}
 	for group := toolbarWindow; group <= toolbarTerminal; group++ {
 		for _, spec := range toolbarCatalog[group] {
 			if spec.id == id {
@@ -247,7 +244,7 @@ func (state *State) toolbarDockTools(zone toolbarDockZone, dst *[maxBarTools]bar
 	if zone == state.defaultToolbarDockZone(toolbarTerminal) && !state.toolbarVisible(toolbarTerminal, hitLocalProxyOpen) {
 		if session, ok := state.terminalSideRailSession(); ok {
 			if snapshot := state.localProxySnapshot(session); snapshot.Phase == localProxyConnecting || snapshot.Phase == localProxyConnected || snapshot.Phase == localProxyFailed {
-				tool := barTool{id: hitLocalProxyOpen, icon: iconGlobe, hint: state.messages.LocalProxy.Title, style: iconButtonActive}
+				tool := barTool{id: hitLocalProxyOpen, icon: iconLocalProxy, hint: state.messages.LocalProxy.Title, style: iconButtonActive}
 				if snapshot.Phase == localProxyConnected && snapshot.RemotePort != 0 {
 					tool.hint = fmt.Sprintf(state.messages.LocalProxy.ConnectedFmt, snapshot.RemotePort)
 				}
@@ -314,9 +311,6 @@ func (state *State) toolbarTopLimit() int {
 }
 
 func (state *State) toolbarDockZoneFor(group toolbarGroup, key string) toolbarDockZone {
-	if group == toolbarTerminal && key == "remote-logs" {
-		return toolbarDockSideBottom
-	}
 	for _, entry := range state.toolbars.dock {
 		if entry.Group == group && entry.Key == key {
 			return entry.Zone

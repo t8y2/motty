@@ -31,8 +31,10 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		// against: which defaults a build ships is not another device's business.
 		"shortcut_defaults_generation": true,
 		"host_view":                    true, "host_privacy": true, "host_privacy_show_name": true,
-		"host_side_width": true, "host_tree_open": true,
 		"host_privacy_show_address": true, "host_privacy_show_user": true,
+		// The host tree's width and whether it is open are this computer's own
+		// layout, like the file panel's width below.
+		"host_side_width": true, "host_tree_open": true,
 		"background": true, "snippet_shortcuts": true,
 		"background_output_alerts": true,
 		"tab_orientation":          true, "vertical_tabs_auto_hide": true,

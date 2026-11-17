@@ -309,19 +309,19 @@ func (state *State) fileTabHit(id gfx.ID) bool {
 // sftpTabPaneRects lays the tab out as the window's view always did: padding
 // around the body, a gap between the body, the transfer queue and the status
 // line. The body takes the room the fixed children leave.
-func sftpTabPaneRects(bounds gfx.Rect, queue bool) (body, queueRect, status gfx.Rect) {
+func sftpTabPaneRects(bounds gfx.Rect, queue int) (body, queueRect, status gfx.Rect) {
 	size := gfx.Size{Width: bounds.Width, Height: bounds.Height}
 	inner := gfx.Rect{X: bounds.X + sftpWindowPad, Y: bounds.Y + sftpWindowPad,
 		Width: max(size.Width-2*sftpWindowPad, 0), Height: max(size.Height-2*sftpWindowPad, 0)}
 	children := 2
 	queueHeight := float32(0)
-	if queue {
+	if queue > 0 {
 		children = 3
-		queueHeight = sftpQueueHeight(size)
+		queueHeight = sftpQueueHeight(size, queue)
 	}
 	body = gfx.Rect{X: inner.X, Y: inner.Y, Width: inner.Width,
 		Height: max(inner.Height-sftpWindowGap*float32(children-1)-queueHeight-sftpWindowStatusHeight, 0)}
-	if queue {
+	if queue > 0 {
 		queueRect = gfx.Rect{X: inner.X, Y: body.Y + body.Height + sftpWindowGap, Width: inner.Width, Height: queueHeight}
 		status = gfx.Rect{X: inner.X, Y: queueRect.Y + queueRect.Height + sftpWindowGap, Width: inner.Width, Height: sftpWindowStatusHeight}
 	} else {
@@ -369,10 +369,10 @@ func (state *State) declareSFTPTab(c ui.C) {
 // declareSFTPTabContent declares the window's body, transfer queue and status
 // line in the tab's container.
 func (state *State) declareSFTPTabContent(c ui.C, w *sftpWindow, bounds gfx.Rect) {
-	queue := w.queueCount() > 0
+	queue := w.queueCount()
 	body, queueRect, status := sftpTabPaneRects(bounds, queue)
 	state.declareSFTPTabPanes(c, w, bounds, body)
-	if queue {
+	if queue > 0 {
 		w.ui.tabQueue = queueRect
 		w.declareQueue(c, queueRect, bounds)
 	}
@@ -452,12 +452,7 @@ func (w *sftpWindow) paintTabDetails(canvas *gfx.Canvas, bounds gfx.Rect) {
 	if s := &w.ui.tabPanes[sideIndex(!firstLocal)]; s.list.Valid() {
 		w.paintPaneDetails(canvas, s, !firstLocal)
 	}
-	if w.ui.tabQueue.Width > 0 {
-		w.paintQueueDetails(canvas, w.ui.tabQueue)
-	} else {
-		w.ui.queueBounds = gfx.Rect{}
-		w.ui.queueOffset = 0
-	}
+	w.paintQueue(canvas, w.ui.tabQueue, bounds)
 	if w.view.bookmarksOpen {
 		w.paintDirectoryPlaces(canvas)
 	}

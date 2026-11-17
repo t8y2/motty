@@ -114,6 +114,10 @@ func TestWindowAndHeadlessCatalogResolveEveryHostToTheSameConnection(t *testing.
 		session := &Session{host: host}
 		want, wantValid := state.sshConfigFor(session, host)
 		want.Notify = nil
+		if want.SecurityKeyAgent == nil {
+			t.Fatalf("%s: the window's connection cannot prepare security keys", host.Label)
+		}
+		want.SecurityKeyAgent = nil
 		// The window reads stored keys from its vault; this headless catalog has none.
 		if want.StoredKey == nil {
 			t.Fatalf("%s: the window's connection cannot read stored keys", host.Label)

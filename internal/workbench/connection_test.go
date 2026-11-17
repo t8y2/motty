@@ -33,22 +33,25 @@ type fakeConn struct {
 	canceled          int
 	shells            []*fakeShell
 	shellErr          error
-	configs           []sshconn.ShellConfig
-	sftp              sftpclient.Remote
-	sftpErr           error
-	sftpOpens         int
-	scp               sftpclient.Remote
-	scpOpens          int
-	dial              func(context.Context, string, string) (net.Conn, error)
-	dialCalls         []fakeDialCall
-	shellDial         func(context.Context, string, string) (net.Conn, error)
-	shellDialCalls    []fakeShellDialCall
-	listen            func(string, string) (net.Listener, error)
-	listenCalls       []fakeListenCall
-	runCommand        func(context.Context, string, int) ([]byte, error)
-	exec              func(context.Context, string, int) (sshconn.ExecResult, error)
-	streamCommand     func(context.Context, string, int, func([]byte) bool) error
-	commandCalls      []string
+	// shellHold, when set, keeps every shell request unanswered until it is
+	// closed: a gateway that silently drops the channel request.
+	shellHold      chan struct{}
+	configs        []sshconn.ShellConfig
+	sftp           sftpclient.Remote
+	sftpErr        error
+	sftpOpens      int
+	scp            sftpclient.Remote
+	scpOpens       int
+	dial           func(context.Context, string, string) (net.Conn, error)
+	dialCalls      []fakeDialCall
+	shellDial      func(context.Context, string, string) (net.Conn, error)
+	shellDialCalls []fakeShellDialCall
+	listen         func(string, string) (net.Listener, error)
+	listenCalls    []fakeListenCall
+	runCommand     func(context.Context, string, int) ([]byte, error)
+	exec           func(context.Context, string, int) (sshconn.ExecResult, error)
+	streamCommand  func(context.Context, string, int, func([]byte) bool) error
+	commandCalls   []string
 	// verifies counts link checks, and verifyErr is what they answer. A link
 	// change asks every established connection; the fake lets a test see that.
 	verifies  int
@@ -88,9 +91,16 @@ func (fake *fakeConn) verifyCount() int {
 
 func (fake *fakeConn) OpenShell(config sshconn.ShellConfig) (Shell, error) {
 	fake.mu.Lock()
+	hold := fake.shellHold
+	shellErr := fake.shellErr
+	fake.mu.Unlock()
+	if hold != nil {
+		<-hold // a gateway that leaves the request unanswered
+	}
+	fake.mu.Lock()
 	defer fake.mu.Unlock()
-	if fake.shellErr != nil {
-		return nil, fake.shellErr
+	if shellErr != nil {
+		return nil, shellErr
 	}
 	shell := &fakeShell{done: make(chan struct{})}
 	fake.shells = append(fake.shells, shell)

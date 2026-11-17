@@ -142,6 +142,9 @@ func (state *State) sftpPrivilegeDocumentBusy(view *sftpView) bool {
 }
 
 func (state *State) switchSudoSFTP(session *Session, view *sftpView, password string, elevated bool) {
+	// The transfer transport changes under the view; an upload or download that
+	// was under way continues from its partial once the new worker is usable.
+	view.worker.Interrupt()
 	view.worker.Close()
 	state.refreshSFTPTransfers(view)
 	state.archiveTransfers(view)

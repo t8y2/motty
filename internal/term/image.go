@@ -297,6 +297,20 @@ func (store *imageStore) retainPlacements(kept []ImagePlacement) {
 	store.placements = kept
 }
 
+// hasLine reports whether an image is anchored to one of the line's cells. Its
+// caller keeps the line alive through a clear, so the placement stays visible.
+func (store *imageStore) hasLine(lineID uint64) bool {
+	if store == nil || lineID == 0 {
+		return false
+	}
+	for _, placement := range store.placements {
+		if placement.LineID == lineID {
+			return true
+		}
+	}
+	return false
+}
+
 func (store *imageStore) dropLine(lineID uint64) {
 	if store == nil || lineID == 0 {
 		return

@@ -192,6 +192,9 @@ type Handler struct {
 	inFrame         bool
 	frameDirtyRects []dirtyRect
 	frameH264       []*H264Frame // H.264 frames batched during StartFrame..EndFrame
+	// frameProgressiveTiles is the set of tiles decoded in this frame. A region
+	// split over several PDUs reuses these tiles, never tiles from an older frame.
+	frameProgressiveTiles map[uint16]map[[2]int]struct{}
 
 	// Asynchronous frame ACK — decouples ACK sending from writeMu
 	// contention so the receive goroutine isn't blocked waiting to write.
@@ -209,14 +212,15 @@ type Handler struct {
 // sendFn is called to write data on the RDPGFX dynamic virtual channel.
 func NewHandler(sendFn func([]byte) error, log *slog.Logger) *Handler {
 	h := &Handler{
-		log:         log,
-		sendFn:      sendFn,
-		surfaces:    make(map[uint16]*Surface),
-		outputMap:   make(map[uint16][2]int),
-		cache:       make(map[uint16]*cacheEntry),
-		progressive: rfx.NewDecoder(log),
-		ackCh:       make(chan []byte, 32),
-		done:        make(chan struct{}),
+		log:                   log,
+		sendFn:                sendFn,
+		surfaces:              make(map[uint16]*Surface),
+		outputMap:             make(map[uint16][2]int),
+		cache:                 make(map[uint16]*cacheEntry),
+		progressive:           rfx.NewDecoder(log),
+		frameProgressiveTiles: make(map[uint16]map[[2]int]struct{}),
+		ackCh:                 make(chan []byte, 32),
+		done:                  make(chan struct{}),
 	}
 	// Send frame ACKs asynchronously — decoupled from writeMu so the
 	// receive goroutine isn't blocked waiting for a write slot.
@@ -774,8 +778,17 @@ func (h *Handler) handleStartFrame(data []byte) {
 	h.frameStartMs = time.Now().UnixMilli()
 	h.inFrame = true
 	h.frameDirtyRects = h.frameDirtyRects[:0]
+	h.forgetFrameTiles()
 	clear(h.frameH264)
 	h.frameH264 = h.frameH264[:0]
+}
+
+// forgetFrameTiles empties the per-frame tile sets. It keeps their maps so the
+// next frame does not allocate them again.
+func (h *Handler) forgetFrameTiles() {
+	for _, tiles := range h.frameProgressiveTiles {
+		clear(tiles)
+	}
 }
 
 func (h *Handler) handleEndFrame(data []byte) {
@@ -1124,19 +1137,27 @@ func (h *Handler) handleWireToSurface2(data []byte) {
 	// clipped to avoid overwriting adjacent content (e.g. window pixels placed
 	// by a prior SurfaceToSurface).
 	//
-	// Per MS-RDPEGFX 3.3.8.1, ALL cached tiles overlapping region rects must
-	// be rendered — not only tiles decoded in this PDU. The server may split
-	// a progressive region across multiple WTS2 PDUs within a frame, sending
-	// each tile once but expecting the client to blit cached tiles from prior
-	// decodes against later region rects (e.g. tile at tileX=832 decoded in
-	// the first WTS2 must also be blitted for the second WTS2's region rect
-	// that covers x=852..896).
+	// The server may split a progressive region across WTS2 PDUs in one frame.
+	// Later PDUs re-blit tiles decoded earlier in that frame, but historical
+	// tiles must not overwrite newer drawing commands. A PDU outside
+	// StartFrame/EndFrame has no frame to share, so it reuses only the tiles it
+	// decodes itself.
+	if !h.inFrame {
+		h.forgetFrameTiles()
+	}
+	frameTiles := h.frameProgressiveTiles[surfId]
+	if frameTiles == nil {
+		frameTiles = make(map[[2]int]struct{})
+		h.frameProgressiveTiles[surfId] = frameTiles
+	}
 	dstStride := int(surf.Width) * 4
 	for _, region := range regions {
 		// Blit freshly decoded tiles and track which tile positions were decoded.
 		decodedSet := make(map[[2]int]struct{}, len(region.Tiles))
 		for _, tile := range region.Tiles {
-			decodedSet[[2]int{tile.X / 64, tile.Y / 64}] = struct{}{}
+			key := [2]int{tile.X / 64, tile.Y / 64}
+			decodedSet[key] = struct{}{}
+			frameTiles[key] = struct{}{}
 			tileRight := tile.X + 64
 			tileBottom := tile.Y + 64
 			for _, r := range region.Rects {
@@ -1190,6 +1211,9 @@ func (h *Handler) handleWireToSurface2(data []byte) {
 		cached := h.progressive.GetCachedTiles(uint32(surfId), bbL, bbT, bbR, bbB)
 		for _, ct := range cached {
 			key := [2]int{ct.X / 64, ct.Y / 64}
+			if _, ok := frameTiles[key]; !ok {
+				continue
+			}
 			if _, ok := decodedSet[key]; ok {
 				continue // already blitted from freshly decoded tiles
 			}
@@ -1271,6 +1295,7 @@ func (h *Handler) handleResetGraphics(data []byte) {
 	}
 	clear(h.surfaces)
 	clear(h.outputMap)
+	clear(h.frameProgressiveTiles)
 	h.frameDirtyRects = h.frameDirtyRects[:0]
 	clear(h.frameH264)
 	h.frameH264 = h.frameH264[:0]

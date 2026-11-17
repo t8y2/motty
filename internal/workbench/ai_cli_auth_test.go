@@ -160,6 +160,10 @@ func TestCLILoginErrorProvidesExplicitProviderActionWithoutAutoLogin(t *testing.
 	}
 	s.options.CLIAuthStart = func(localshell.Config) (Shell, error) { return &fakeShell{done: make(chan struct{})}, nil }
 	s.Click(hitAISetup)
+	// The login reservation is process-wide. Wait until the local process owns
+	// it, then release it before another test reuses the same test executable.
+	waitForCLILoginStart(t, s)
+	t.Cleanup(s.aiStopCLILogin)
 	if s.ai.login == nil || s.ai.login.provider.ID != p.ID || s.ai.cfg.selected != p.ID {
 		t.Fatal("login action did not target failed provider")
 	}

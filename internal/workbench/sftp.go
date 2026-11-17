@@ -358,6 +358,11 @@ func (state *State) closeSFTP(session *Session) {
 		session.files.cancelExtract()
 	}
 	if session.files.worker != nil {
+		// The connection is what is going away. An upload or download that was
+		// under way keeps its partial file and its row, and a worker opened for
+		// this host again continues it (ADR 0028); only a transfer the user
+		// ended stays canceled.
+		session.files.worker.Interrupt()
 		session.files.worker.Close()
 		state.refreshSFTPTransfers(session.files)
 		state.archiveTransfers(session.files)
@@ -2168,6 +2173,11 @@ func (state *State) pumpSFTP(session *Session) {
 	if view.worker == nil {
 		return
 	}
+	if !view.busy {
+		// A view that is ready again is what an interrupted upload or download
+		// was waiting for; its partial file is verified before it continues.
+		state.resumeInterruptedTransfers(view)
+	}
 	state.refreshSFTPTransfers(view)
 	for {
 		select {
@@ -2224,12 +2234,9 @@ func (state *State) pumpSFTP(session *Session) {
 						view.status = state.messages.SFTPCanceled
 					} else if errors.Is(result.Err, sftpclient.ErrDestinationExists) {
 						if view.detached == nil {
-							// Opening here asks for a decision, so show every
-							// transfer: a saved Active filter would hide the entry
-							// that needs Replace, Skip or Resume.
-							state.transfers.filter = 0
-							state.transfers.host = nil
-							state.transfers.open, state.transfers.scroll = true, 0
+							// Open failures directly so long active or completed
+							// groups cannot push the conflict out of sight.
+							state.showTransferConflict()
 						}
 					} else {
 						view.errorText = state.formatSFTPError(result.Err)

@@ -5,6 +5,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"motty/internal/sshconn"
 )
 
 // hostAuth is the authentication policy of one SSH host. The zero value keeps
@@ -16,6 +17,7 @@ const (
 	authPassword
 	authPrivateKey
 	authAgent
+	authKerberos
 	authCount
 )
 
@@ -33,6 +35,10 @@ var (
 	hitDialogIdentityItemList = tree.Sub(hostAuthUiHits, tree.Name("dialog-identity-item"))
 )
 
+func (authentication hostAuth) usesPassword() bool {
+	return authentication == authAutomatic || authentication == authPassword
+}
+
 func (authentication hostAuth) saved() string {
 	switch authentication {
 	case authPassword:
@@ -41,6 +47,8 @@ func (authentication hostAuth) saved() string {
 		return "key"
 	case authAgent:
 		return "agent"
+	case authKerberos:
+		return "kerberos"
 	default:
 		return ""
 	}
@@ -56,6 +64,8 @@ func parseHostAuth(value string) (hostAuth, bool) {
 		return authPrivateKey, true
 	case "agent":
 		return authAgent, true
+	case "kerberos":
+		return authKerberos, true
 	default:
 		return authAutomatic, false
 	}
@@ -69,6 +79,8 @@ func (state *State) authLabel(authentication hostAuth) string {
 		return state.messages.AuthPrivateKey
 	case authAgent:
 		return state.messages.AuthAgent
+	case authKerberos:
+		return state.messages.AuthKerberos
 	default:
 		return state.messages.AuthAutomatic
 	}
@@ -80,7 +92,11 @@ func (state *State) paintHostAuthenticationChoice(canvas *gfx.Canvas, bounds gfx
 	state.rememberHostControl(hitDialogAuth, content)
 	portal := state.beginHostFormPopup(canvas, editor.authOpen)
 	defer state.endHostFormPopup(canvas, portal)
-	list := state.hostAuthListBounds(content, int(authCount))
+	count := authCount
+	if !sshconn.KerberosAvailable {
+		count = authKerberos
+	}
+	list := state.hostAuthListBounds(content, int(count))
 	selectControl := components.BeginSelect(canvas, theme, content, components.SelectOptions{
 		TriggerID: hitDialogAuth, Label: state.messages.FieldAuthentication, Value: state.authLabel(editor.auth),
 		Open: editor.authOpen, Content: list,
@@ -90,7 +106,7 @@ func (state *State) paintHostAuthenticationChoice(canvas *gfx.Canvas, bounds gfx
 	if editor.authOpen {
 		state.menuPlaced(list)
 	}
-	for authentication := authAutomatic; authentication < authCount; authentication++ {
+	for authentication := authAutomatic; authentication < count; authentication++ {
 		selectControl.AddItem(components.SelectItem{
 			ID: hitDialogAuthItemList.At(int(authentication)), Label: state.authLabel(authentication), Selected: editor.auth == authentication,
 		})
@@ -165,7 +181,7 @@ func (state *State) clickHostAuthentication(id gfx.ID) bool {
 		editor.authOpen = false
 	case id.Scope() == hitDialogAuthItemList:
 		authentication := hostAuth(item(id))
-		if authentication >= authCount {
+		if authentication >= authCount || (authentication == authKerberos && !sshconn.KerberosAvailable) {
 			return false
 		}
 		editor.auth = authentication
@@ -208,7 +224,7 @@ func (state *State) clickHostAuthentication(id gfx.ID) bool {
 // passphrase.
 func (state *State) hostKeyNeedsPassphrase(fingerprint string) bool {
 	for _, identity := range state.identities {
-		if identity.Error == "" && identity.Encrypted && (fingerprint == "" || identity.Fingerprint == fingerprint) {
+		if identity.Error == "" && identity.Encrypted && !identity.SecurityKey && (fingerprint == "" || identity.Fingerprint == fingerprint) {
 			return true
 		}
 	}

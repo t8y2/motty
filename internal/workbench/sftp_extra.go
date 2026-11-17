@@ -572,7 +572,7 @@ func (state *State) restoreSFTPSettings(saved savedState) {
 	}
 	state.sftpColumns = restoreSFTPColumnPreferences(saved.SFTPColumns)
 	state.sftpDownloadDirectory = restoreSFTPDownloadDirectory(saved.SFTPDownloadDirectory)
-	if saved.SFTPTransferFilter >= 0 && saved.SFTPTransferFilter <= 3 {
+	if saved.SFTPTransferFilter >= transferFilterAll && saved.SFTPTransferFilter < transferFilterCount {
 		state.transfers.filter = saved.SFTPTransferFilter
 	}
 	state.sftpPanelSide = layoutcore.ContextLeft

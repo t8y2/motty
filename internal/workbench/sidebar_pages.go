@@ -129,7 +129,7 @@ var sidebarPages = [...]sidebarPage{
 	{navPageProxies, hitProxies, iconGlobe, sectionProxies},
 	{navPageForwards, hitPortForwarding, iconForward, sectionForwards},
 	{navPageKnownHosts, hitKnownHosts, iconKnown, sectionKnownHosts},
-	{navPageSnippets, hitSnippets, iconNote, sectionSnippets},
+	{navPageSnippets, hitSnippets, iconSnippets, sectionSnippets},
 	{navPageNotes, hitNotes, iconNotebook, sectionNotes},
 }
 

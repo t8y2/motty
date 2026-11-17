@@ -91,12 +91,10 @@ type Endpoint struct {
 	User string
 }
 
-// Authentication describes which credentials one endpoint may use. A zero
-// Methods value enables every supported SSH method; identity files and agent
-// use remain explicit fields.
+// Authentication describes which credentials one endpoint may use.
 type Authentication struct {
-	// Methods limits the SSH authentication methods offered. Zero enables every
-	// supported method for compatibility with callers that do not set a policy.
+	// Methods limits the SSH authentication methods offered. Zero uses the
+	// default methods. Kerberos is opt-in.
 	Methods AuthMethods
 	// IdentityFiles lists private keys to try. Nil means the default OpenSSH
 	// identities; an empty slice disables identity files.
@@ -107,6 +105,13 @@ type Authentication struct {
 	// Agent controls whether the running ssh-agent is offered.
 	Agent          bool
 	IdentitiesOnly bool
+}
+
+// SecurityKeyRequest names one hardware security-key identity the connection
+// has to use. Path is a file path, or a StoredKeyPrefix reference.
+type SecurityKeyRequest struct {
+	Path      string
+	PublicKey ssh.PublicKey
 }
 
 // StoredKeyPrefix starts the name of a private key that is not a file but is
@@ -125,6 +130,7 @@ const (
 	AuthPublicKey AuthMethods = 1 << iota
 	AuthKeyboardInteractive
 	AuthPassword
+	AuthKerberos
 	AuthAll = AuthPublicKey | AuthKeyboardInteractive | AuthPassword
 )
 
@@ -173,6 +179,9 @@ type Status struct {
 	ServerVersion string
 	// Method names how the user authenticated, once connected.
 	Method string
+	// SecurityKey is set while an ssh-agent is waiting for the user to touch
+	// or approve a hardware security key.
+	SecurityKey bool
 	// System is detected after authentication without writing to the user's
 	// interactive shell. It remains unknown when command sessions are refused.
 	System RemoteSystem
@@ -243,6 +252,13 @@ type Config struct {
 	// Windows a named pipe such as \\.\pipe\openssh-ssh-agent. Empty uses
 	// SSH_AUTH_SOCK, and on Windows the OpenSSH pipe when that is unset.
 	AgentAddress string
+	// SecurityKeyAgent prepares an agent for a hardware security key (an
+	// OpenSSH sk-* identity). It is called only after the host key is accepted,
+	// once for each security-key identity. The returned release is called when
+	// the connection closes; nil means nothing to release. Nil disables the
+	// preparation, and such a key then uses the default agent or is reported
+	// as skipped.
+	SecurityKeyAgent func(SecurityKeyRequest) (address string, release func(), err error)
 	// Authentication overrides the legacy identity, agent and password policy
 	// for individual endpoints. An endpoint not in the map uses the fields
 	// above and every supported authentication method.
@@ -337,8 +353,13 @@ type Conn struct {
 	terminated    bool
 	listenPending chan struct{}
 	doneOnce      sync.Once
-	// pingPending is set while a keepalive probe sent by Ping is unanswered.
+	// pingPending is set while one global request of this transport is waiting
+	// for its answer, whichever code sent it. The SSH client answers global
+	// requests one at a time, so a second one would only queue behind the first.
 	pingPending atomic.Bool
+	// probeSince is when that request was sent, in Unix nanoseconds, so a probe
+	// can be judged by its own age rather than by how long a later one waited.
+	probeSince atomic.Int64
 
 	// probes tracks the optional command sessions opened beside the user's
 	// shell. It is shared by every tab on this transport, because the server's
@@ -796,10 +817,14 @@ func (conn *Conn) handshake(endpoint Endpoint, socket net.Conn, known *hostKeys)
 	address := endpoint.address()
 	wanted := conn.config.Algorithms[address]
 	authentication := conn.authentication(endpoint)
+	if authentication.Methods&AuthKerberos != 0 && !KerberosAvailable {
+		socket.Close()
+		return nil, "", errors.New("Kerberos authentication is not available in this build")
+	}
 	clientConfig := &ssh.ClientConfig{
 		Config: ssh.Config{KeyExchanges: wanted.KeyExchanges, Ciphers: wanted.Ciphers, MACs: wanted.MACs},
 		User:   endpoint.User,
-		Auth:   conn.authMethods(authentication),
+		Auth:   conn.authMethods(endpoint.Host, authentication),
 		HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
 			return conn.verifyHostKey(known, hostname, remote, key)
 		},

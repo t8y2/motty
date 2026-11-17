@@ -197,6 +197,7 @@ func (w *sftpWindow) pump() {
 	if !w.connected() {
 		if w.view.sudo {
 			w.owner.forgetSFTPDocumentAccess(w.view)
+			w.view.worker.Interrupt()
 			w.view.worker.Close()
 			w.owner.refreshSFTPTransfers(w.view)
 			w.owner.archiveTransfers(w.view)
@@ -331,6 +332,10 @@ func (w *sftpWindow) onClosed() {
 		w.owner.forgetSFTPDocumentAccess(w.view)
 	}
 	if w.view.worker != nil {
+		// The window's connection is going away with it. Its unfinished uploads
+		// and downloads keep their partial files and wait for a view of the same
+		// host (ADR 0028).
+		w.view.worker.Interrupt()
 		w.view.worker.Close()
 		w.owner.refreshSFTPTransfers(w.view)
 		w.owner.archiveTransfers(w.view)

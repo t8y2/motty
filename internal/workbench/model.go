@@ -204,11 +204,13 @@ type Session struct {
 	transfer fileTransfer
 	rzsz     *rzszJob
 	// desk is the remote desktop a VNC tab shows; nil for every other kind.
-	desk     *desktopView
-	version  uint64
-	phase    sshconn.Phase
-	attempt  int
-	answered uint64
+	desk    *desktopView
+	version uint64
+	phase   sshconn.Phase
+	attempt int
+	// securityKey is set while the agent waits for a hardware key.
+	securityKey bool
+	answered    uint64
 	// otpSent is set once a one-time code was typed for this connection, so a
 	// refused one is never sent again by itself.
 	otpSent   bool

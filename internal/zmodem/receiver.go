@@ -65,6 +65,10 @@ type Engine interface {
 	// last needed, so one lost frame does not end a transfer. After enough
 	// timeouts in a row the transfer fails.
 	Timeout()
+	// Abort ends the transfer because its bytes could not be delivered to the
+	// other end. The engine has already counted them as sent, so there is
+	// nothing to say again: the transfer fails with err.
+	Abort(err error)
 	// Cancel ends the transfer and produces the bytes that tell the other end.
 	Cancel()
 	// Close releases whatever the engine holds open, without telling anyone.
@@ -116,6 +120,9 @@ func (b *base) fail(err error) {
 		b.finished, b.settled = true, true
 	}
 }
+
+// Abort ends the transfer with err; the bytes it produced are not sent again.
+func (b *base) Abort(err error) { b.fail(err) }
 
 func (b *base) bad() bool {
 	b.badRun++

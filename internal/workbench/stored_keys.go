@@ -82,6 +82,7 @@ func inspectStoredIdentity(id uint32, ref string, key storedKey, messages keyMes
 		record.Error = err.Error()
 	} else {
 		record.Algorithm, record.Fingerprint, record.PublicKey, record.Encrypted = info.Algorithm, info.Fingerprint, info.PublicKey, info.Encrypted
+		record.SecurityKey = info.SecurityKey
 	}
 	record.refreshCells(messages)
 	return record

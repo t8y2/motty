@@ -75,3 +75,20 @@ func TestSFTPTypeIconsAreNotAskedForOnAPlatformWithoutThem(t *testing.T) {
 		t.Fatalf("a failed extension was asked again: %d calls", calls)
 	}
 }
+
+func TestTransferCenterSharesSystemFileIconsWithTheFileList(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	answers := &iconAnswers{failed: map[string]error{}}
+	state.options.FileIcon = answers.icon
+	rows := prepareSFTPRows(nil, []sftpclient.Entry{{Name: "report.txt", Mode: 0o644}})
+	state.loadTypeIcons(nil, rows)
+	entry := transferEntry{snapshot: sftpclient.TransferSnapshot{Source: "/home/test/report.txt"}}
+	state.describeTransfer(&entry)
+	if entry.typeIcon == nil || entry.typeIcon != rows[0].typeIcon {
+		t.Fatal("transfer center and file list do not share the file type icon")
+	}
+	waitAppIcons(t, state, func() bool { return entry.typeIcon.ready() })
+	if answers.askedCount() != 1 {
+		t.Fatalf("system icon questions = %d, want one shared question", answers.askedCount())
+	}
+}
