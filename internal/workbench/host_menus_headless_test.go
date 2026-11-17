@@ -53,3 +53,38 @@ func TestHostsToolbarMenusCloseWithEscape(t *testing.T) {
 		}
 	}
 }
+
+// A terminal is renamed by typing into the dialog's field and pressing Enter.
+func TestTerminalRenameDialogTakesTypedNameWithEnter(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	world.connectFirst(t, state)
+	session, _ := state.sessionByIDPointer(state.activeSessionID)
+	state.openTerminalRename(session)
+	view, err := headless.Open(state.WindowConfig(app.Config{
+		Title: "Rename", Width: 900, Height: 600, Tree: Tree(),
+		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut,
+	}), nil, headless.Options{Scale: 1, ReferenceText: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Wait(300 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Keys("cmd+a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Type("web-logs"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Keys("Enter"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if state.modal != modalNone || session.Title != "web-logs" {
+		t.Fatalf("modal %d, title %q", state.modal, session.Title)
+	}
+}

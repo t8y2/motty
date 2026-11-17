@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/text"
 )
 
 func init() {
@@ -25,9 +26,28 @@ func init() {
 			s.hiddenNav = s.hiddenNav.set(navPageNotes, true)
 			s.openSidebarSettings()
 		}),
+		connectedScene("g6-tab-rename", func(s *State, session *Session) { s.openTerminalRename(session) }),
+		connectedScene("g6-tab-rename-error", func(s *State, session *Session) {
+			s.openTerminalRename(session)
+			s.tabRename.editor.SetSelection(text.Range{End: s.tabRename.editor.RuneCount()})
+			s.tabRename.editor.Insert("")
+			s.clickTabRenameDialog(hitTabRenameSubmit)
+		}),
 		sessionLinkScene("g6-session-reconnect", false),
 		sessionLinkScene("g6-session-disconnect", true),
 	)
+}
+
+// connectedScene is a scene over a window with one connected session.
+func connectedScene(name string, setup func(*State, *Session)) paintScene {
+	return paintScene{name: name, sizes: []gfx.Size{paintDesktop, paintSmall}, open: func(t *testing.T) (*State, func(*gfx.Canvas, gfx.Size)) {
+		world, options := newSharingWorld(t)
+		state := newTestState(t, options)
+		world.connectFirst(t, state)
+		session, _ := state.sessionByIDPointer(state.activeSessionID)
+		setup(state, session)
+		return state, func(c *gfx.Canvas, size gfx.Size) { state.Paint(c, size) }
+	}}
 }
 
 func sessionLinkScene(name string, disconnect bool) paintScene {
