@@ -459,7 +459,13 @@ func (state *State) declareProxyDialogBody(c ui.C) {
 		b.jump = ui.Slot(c).Height(rowHeight)
 		b.via, b.viaHelp = state.declareDialogCheckboxHelpC(c, messages.ProxyFieldViaShell, 4, 6)
 		if viaShell {
-			b.relay = ui.Slot(c).Height(rowHeight)
+			if !editor.relayBound {
+				editor.relayText.Bind(&editor.relay)
+				editor.relayBound = true
+			}
+			ui.FormField(c, &editor.relayRow, messages.ProxyFieldRelay).FillWidth().Height(rowHeight).Children(func() {
+				ui.TextFieldID(c, hitProxyDialogRelay, &editor.relayText, messages.ProxyFieldRelay, messages.ProxyRelayPlaceholder)
+			})
 			ui.Paragraph(c, state.proxyRelayNote(), 2).FontSize(metrics.FontSizeS).Color(state.pal.muted).MarginSides(0, 6, 0, 6)
 		}
 		if state.proxyDialogError != "" {
@@ -472,21 +478,12 @@ func (state *State) declareProxyDialogBody(c ui.C) {
 // paintProxyDialogFields paints the route editor's controls into the slots the
 // body laid out.
 func (state *State) paintProxyDialogFields(canvas *gfx.Canvas) {
-	messages, theme := state.messages, state.Theme()
+	messages := state.messages
 	b := &state.proxyEditor.dialogBody
 	state.paintProxyHostField(canvas, b.target.Rect(), true)
 	state.paintProxyHostField(canvas, b.jump.Rect(), false)
 	state.paintDialogCheckbox(canvas, hitProxyDialogViaShell, messages.ProxyFieldViaShell, state.proxyEditor.viaShell, b.via)
 	state.paintHelpIcon(canvas, hitProxyDialogViaHelp, messages.ProxyViaShellHelp, b.viaHelp.Rect())
-	if state.proxyEditor.viaShell {
-		content := components.BeginField(canvas, theme, b.relay.Rect()).Paint(messages.ProxyFieldRelay, "", "")
-		value := state.proxyEditor.relay.String()
-		focused := canvas.Focused() == hitProxyDialogRelay
-		components.PaintInput(canvas, theme, content, components.InputSnapshot{
-			ID: hitProxyDialogRelay, Label: messages.ProxyFieldRelay, Value: value, Placeholder: messages.ProxyRelayPlaceholder,
-			Focused: focused, PlatformEditing: focused && value != "",
-		})
-	}
 }
 
 // proxyDialogBodyHeight is the height of the dialog's fields: the two hosts, the

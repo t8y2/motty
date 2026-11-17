@@ -22,5 +22,11 @@ func init() {
 			s.openForwardDialog()
 			s.forwardEditor.mode = portforward.ModeRemote
 		}),
+		plainScene("g2-proxy-route", func(t *testing.T, s *State) { s.openProxyDialog() }),
+		plainScene("g2-proxy-route-relay-error", func(t *testing.T, s *State) {
+			s.openProxyDialog()
+			s.proxyEditor.viaShell = true
+			s.proxyDialogError = "Pick a jump host."
+		}),
 	)
 }

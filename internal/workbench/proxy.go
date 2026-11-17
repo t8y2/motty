@@ -179,12 +179,17 @@ type proxyEditor struct {
 	fromHostForm bool
 	// dialogBody is where the dialog body laid out the controls painted by hand.
 	dialogBody proxyDialogBody
+	// The relay command is a page field: a labelled row and a text bound to relay, which the
+	// dialog binds when it is first declared.
+	relayRow   ui.FormFieldState
+	relayText  ui.Field
+	relayBound bool
 }
 
 // proxyDialogBody is where the route dialog's body put each control it paints
 // by hand.
 type proxyDialogBody struct {
-	target, jump, via, viaHelp, relay ui.Box
+	target, jump, via, viaHelp ui.Box
 }
 
 func (editor *proxyEditor) reset(targetID, jumpID uint32) {
