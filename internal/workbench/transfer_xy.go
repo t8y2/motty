@@ -70,18 +70,13 @@ const xyDialogBodyHeight = 138
 // choices take the window's keys and pointer as any other page control does.
 func (state *State) declareXYDialog(c ui.C) {
 	m := state.messages.Tools
-	viewport := dialogViewport(c)
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
-		ContentSize: gfx.Size{Width: 540}, FitBody: true,
-	}).Layout(m.XYDescription)
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: m.XYTitle, Description: m.XYDescription, Width: 540,
-		Height: layout.Content.Height + xyDialogBodyHeight,
-		Layer:  dialogLayer, Scope: dialogScope,
+		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitXYDismiss, CloseID: hitXYClose, InitialFocusID: hitXYStart,
 	})
 	dialog.Body(func() {
-		ui.Column(c).Fill().PadSides(4, 4, 0, 4).Gap(8).Children(func() {
+		ui.Column(c).Height(xyDialogBodyHeight).PadSides(4, 4, 0, 4).Gap(8).Children(func() {
 			hostFormChoice(c, m.XYProtocol, 62, &state.xy.mode, xyModeChoices[:], state.xyModeChoiceLabel)
 			hostFormChoice(c, m.XYDirection, 62, &state.xy.sending, xyDirectionChoices[:], state.xyDirectionChoiceLabel)
 		})

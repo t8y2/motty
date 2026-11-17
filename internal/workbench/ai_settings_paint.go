@@ -834,15 +834,12 @@ func (state *State) aiConfirmTexts() (title, body, action string) {
 
 // declareAIConfirm declares a destructive confirmation in the window page. The
 // alert recipe has no ui.Dialog counterpart, so the confirm keeps its wording,
-// its cancel emphasis and its destructive action on the dialog's footer.
+// its cancel emphasis and its destructive action on the dialog's footer. The
+// dialog is as tall as its description and footer need.
 func (state *State) declareAIConfirm(c ui.C, title, body, action string) {
 	const width float32 = 480
-	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
-		ContentSize: gfx.Size{Width: width}, FitBody: true,
-	}).Layout(body)
 	dialog := ui.Dialog(c, ui.DialogSpec{
-		Title: title, Description: body, Width: width, Height: layout.Content.Height,
+		Title: title, Description: body, Width: width,
 		Layer: dialogLayer, Scope: dialogScope, NoClose: true,
 		CloseID: hitAISetConfirmCancel,
 	})

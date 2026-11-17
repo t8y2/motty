@@ -3,7 +3,6 @@ package workbench
 import (
 	"strings"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
@@ -92,16 +91,11 @@ func (state *State) declareAIProviderFormDialog(c ui.C) {
 	cfg.bindAIFormFields()
 	title, description, submit, bodyHeight := state.aiProviderFormGeometry()
 	const width float32 = 500
-	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
-		ContentSize: gfx.Size{Width: width}, FitBody: true,
-	}).Layout(description)
 	dialog := ui.Dialog(c, ui.DialogSpec{
-		Title: title, Description: description, Width: width,
-		Height: layout.Content.Height + withError(bodyHeight, cfg.formErr), Layer: dialogLayer,
+		Title: title, Description: description, Width: width, Layer: dialogLayer,
 		Scope: dialogScope, CloseID: hitAISetFormClose, InitialFocusID: hitAISetFormName,
 	})
-	dialog.Body(func() { state.declareAIProviderForm(c) })
+	dialog.Body(func() { state.declareAIProviderForm(c, withError(bodyHeight, cfg.formErr)) })
 	dialog.Footer(func() {
 		if ui.Button(c, state.messages.Cancel).Secondary().Shrink(0).Clicked() {
 			c.After(func() { state.aiDialogClick(hitAISetFormCancel) })
@@ -117,12 +111,12 @@ func (state *State) declareAIProviderFormDialog(c ui.C) {
 
 // declareAIProviderForm declares the provider form: the preset a new provider
 // starts from, then the fields and choices that provider kind needs.
-func (state *State) declareAIProviderForm(c ui.C) {
+func (state *State) declareAIProviderForm(c ui.C, height float32) {
 	cfg, m := &state.ai.cfg, state.messages.AISettings
 	cli := store.IsCLIKind(cfg.kind)
 	kind := cfg.kind
 	cfg.formPreset = ui.Box{}
-	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
+	ui.Column(c).Height(height).PadSides(2, 4, 0, 4).Children(func() {
 		if cfg.editID == "" {
 			cfg.formPreset = ui.Slot(c).Height(60)
 			// The preset list is a Select on the page; its open list paints on a

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
@@ -171,6 +170,10 @@ func (state *State) workspaceSaveHostCatalogIDs(workspace layoutcore.WorkspaceID
 	return hostIDs, nil
 }
 
+// workspaceSaveBodyHeight is the dialog's body: the name field with its label
+// and the room for the error under it.
+const workspaceSaveBodyHeight = 92
+
 // declareWorkspaceSave declares the save-as-template dialog in the window
 // page: the name field and its buttons are page controls, so the page reads
 // their clicks, the field serves the platform editor and the close/backdrop
@@ -187,20 +190,16 @@ func (state *State) declareWorkspaceSave(c ui.C) {
 			len(state.deck.Panes(save.workspace, nil)))
 	}
 	const width float32 = 500
-	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
-		ContentSize: gfx.Size{Width: width}, FitBody: true,
-	}).Layout(description)
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: messages.WorkspaceSaveTitle, Description: description,
-		Width: width, Height: layout.Content.Height + 92, Layer: dialogLayer,
+		Width: width, Layer: dialogLayer,
 		Scope: dialogScope, DismissID: hitWorkspaceSaveDismiss, CloseID: hitWorkspaceSaveClose,
 		InitialFocusID: hitWorkspaceSaveName,
 	})
 	dialog.Body(func() {
 		theme, metrics := c.Theme(), c.Theme().Metrics
 		gap := metrics.GapItem / 2
-		ui.Column(c).Fill().Children(func() {
+		ui.Column(c).Height(workspaceSaveBodyHeight).Children(func() {
 			ui.Column(c).Height(62).Children(func() {
 				ui.Text(c, messages.WorkspaceDraftName).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).
 					Color(theme.Foreground).LineHeight(metrics.FontSizeM + 4).Ellipsis()

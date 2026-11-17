@@ -679,19 +679,15 @@ func (state *State) declareWorkspaceDraft(c ui.C) {
 		description = m.WorkspaceDraftEditDescription
 	}
 	const width float32 = 860
-	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
-	bodyHeight := min(440, max(0, viewport.Height-236))
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
-		ContentSize: gfx.Size{Width: width}, FitBody: true,
-	}).Layout(description)
+	bodyHeight := min(440, max(0, c.Bounds().Height-236))
 	dialog := ui.Dialog(c, ui.DialogSpec{
-		Title: title, Description: description, Width: width, Height: layout.Content.Height + bodyHeight,
+		Title: title, Description: description, Width: width,
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitWorkspaceDraftDismiss, CloseID: hitWorkspaceDraftCancel, InitialFocusID: initial,
 	})
 	bodyWidth := width - 2*(c.Theme().Metrics.PadSurface+c.Theme().Metrics.GapItem)
 	dialog.Body(func() {
-		ui.Column(c).Fill().Children(func() {
+		ui.Column(c).Height(bodyHeight).Children(func() {
 			if mode != workspaceDraftEdit {
 				ui.Row(c).Height(32).Width(min(300, bodyWidth)).MarginSides(0, 0, 12, 0).Children(func() {
 					choice := ui.Choice(c, &draft.mode, workspaceDraftModeChoices[:], state.workspaceDraftModeName).Fill()

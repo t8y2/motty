@@ -318,17 +318,13 @@ func (state *State) declareCredentialDialog(c ui.C) {
 	}
 	const width float32 = 520
 	bodyHeight := withError(float32(68*3+8), form.dialogError)
-	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
-		ContentSize: gfx.Size{Width: width}, FitBody: true,
-	}).Layout("")
 	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := ui.Dialog(c, ui.DialogSpec{
-		Title: title, Width: width, Height: layout.Content.Height + bodyHeight, Layer: dialogLayer,
+		Title: title, Width: width, Layer: dialogLayer,
 		Scope: dialogScope, CloseID: hitCredentialClose, InitialFocusID: hitCredentialName,
 	})
 	dialog.Body(func() {
-		ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
+		ui.Column(c).Height(bodyHeight).PadSides(2, 4, 0, 4).Children(func() {
 			state.credentialField(c, hitCredentialName, &form.nameField, m.Name, m.NamePlaceholder, 62, false)
 			state.credentialField(c, hitCredentialUser, &form.userField, m.User, m.UserPlaceholder, 62, false)
 			placeholder := ""
