@@ -29,8 +29,8 @@ func TestSidebarHidesOnlyThePageRow(t *testing.T) {
 	if state.modal != modalSidebarSettings {
 		t.Fatal("the Sidebar row did not open the page picker")
 	}
-	toggle := hitSidebarSettingsToggles.At(int(navPageWorkspaces))
-	state.Click(toggle)
+	toggle := state.navPageLabel(navPageWorkspaces)
+	clickPageLabel(t, state, gfx.RoleSwitch, toggle)
 	if !state.hiddenNav.has(navPageWorkspaces) {
 		t.Fatal("the picker's switch did not hide Workspaces")
 	}
@@ -53,7 +53,7 @@ func TestSidebarHidesOnlyThePageRow(t *testing.T) {
 	}
 
 	state.Click(hitSidebarSettingsOpen)
-	state.Click(toggle)
+	clickPageLabel(t, state, gfx.RoleSwitch, toggle)
 	state.Click(hitSidebarSettingsClose)
 	if state.hiddenNav.has(navPageWorkspaces) {
 		t.Fatal("the picker's switch did not show Workspaces again")
@@ -63,7 +63,7 @@ func TestSidebarHidesOnlyThePageRow(t *testing.T) {
 	}
 
 	state.Click(hitSidebarSettingsOpen)
-	state.Click(hitSidebarSettingsToggles.At(int(navPageNotes)))
+	clickPageLabel(t, state, gfx.RoleSwitch, state.navPageLabel(navPageNotes))
 	state.Click(hitSidebarSettingsShowAll)
 	if state.hiddenNav != 0 {
 		t.Fatal("Show all left a page hidden")

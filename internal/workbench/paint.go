@@ -502,7 +502,7 @@ func (state *State) windowPage() *ui.Page {
 	if chrome.windowPage == nil {
 		chrome.windowPage = ui.NewPage(ui.PageConfig{
 			Tree: &tree, Root: shellPageRoot, Theme: &state.theme, View: state.declareShell,
-			ScrollbarSize: catalogBarGutter,
+			ScrollbarSize: catalogBarGutter, Styles: &ui.Styles{Switch: state.switchLook},
 		})
 	}
 	return chrome.windowPage
@@ -2919,7 +2919,7 @@ func (state *State) declareDialogs(c ui.C) {
 	case modalToolbarSettings:
 		state.declareToolbarSettings(c)
 	case modalSidebarSettings:
-		state.paintSidebarSettings(c.Canvas(), c.Bounds())
+		state.declareSidebarSettings(c)
 	case modalHighlightRule:
 		state.declareHighlightDialog(c)
 	case modalRuleManager:

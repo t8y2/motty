@@ -27,6 +27,33 @@ func canvasHasMenuRow(canvas *gfx.Canvas, label string) bool {
 	return false
 }
 
+// clickPageLabel clicks the page element that has the role and is named label,
+// in the event pass of a paint, where the page reads it, and runs what the page
+// deferred, as the runtime does after an event pass.
+func clickPageLabel(t testing.TB, state *State, role gfx.Role, label string) {
+	t.Helper()
+	size := state.viewport
+	if size.Width == 0 {
+		size = gfx.Size{Width: 1400, Height: 900}
+	}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, size)
+	var target gfx.Hit
+	for _, hit := range canvas.Hits() {
+		if hit.Role == role && hit.Label == label {
+			target = hit
+		}
+	}
+	if target.ID.IsZero() {
+		t.Fatalf("no %v named %q is painted", role, label)
+	}
+	canvas = gfx.Canvas{}
+	canvas.BeginEventPass(target.ID, gfx.ClickInfo{})
+	state.Paint(&canvas, size)
+	canvas.EndEventPass()
+	canvas.RunAfterPaint()
+}
+
 // clickPageMenuRow chooses the row of the open page menu named label: the click
 // is delivered in the event pass of a paint, where the page reads it, and what
 // the page deferred runs after it, as the runtime does.

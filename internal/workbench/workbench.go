@@ -2614,9 +2614,6 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result := state.toolbarSettingsPointer(event); result.Handled {
 		return result
 	}
-	if result := state.sidebarSettingsPointer(event); result.Handled {
-		return result
-	}
 	if result := state.ruleManagerPointer(event); result.Handled {
 		return result
 	}
@@ -3148,9 +3145,6 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		return result
 	}
 	if result := state.toolbarSettingsKey(event); result.Handled {
-		return result
-	}
-	if result := state.sidebarSettingsKey(event); result.Handled {
 		return result
 	}
 	if result := state.sftpColumnSettingsKey(event); result.Handled {

@@ -20,6 +20,11 @@ func init() {
 			s.ruleDelete = ruleDelete{kind: ruleDeleteHighlight, selectedHighlights: make([]selectedHighlightRule, 2)}
 			s.modal = modalDeleteRule
 		}),
+		plainScene("g6-sidebar-settings", func(t *testing.T, s *State) { s.openSidebarSettings() }),
+		plainScene("g6-sidebar-settings-some-hidden", func(t *testing.T, s *State) {
+			s.hiddenNav = s.hiddenNav.set(navPageNotes, true)
+			s.openSidebarSettings()
+		}),
 		sessionLinkScene("g6-session-reconnect", false),
 		sessionLinkScene("g6-session-disconnect", true),
 	)

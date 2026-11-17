@@ -5,6 +5,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 )
 
 // The Sidebar group of Settings is one row, like the toolbar groups: it names
@@ -18,15 +19,12 @@ var (
 	hitSidebarSettingsClose   = tree.ID(sidebarSettingsHits, "close")
 	hitSidebarSettingsDismiss = tree.ID(sidebarSettingsHits, "dismiss")
 	hitSidebarSettingsShowAll = tree.ID(sidebarSettingsHits, "show-all")
-	hitSidebarSettingsScroll  = tree.ID(sidebarSettingsHits, "scroll")
-	hitSidebarSettingsToggles = tree.Sub(sidebarSettingsHits, tree.Name("toggle"))
 )
 
 type sidebarSettingsUI struct {
-	scroll      float32
-	geometry    components.ScrollAreaGeometry
-	scrollDrag  bool
-	thumbOffset float32
+	// shown is what each page's switch shows and writes while the dialog is
+	// open: the switches are bound to it, and a change is applied to hiddenNav.
+	shown [navPageCount]bool
 	// summary is the switch count under the settings row; the counts and the
 	// format it was built from keep a paint from formatting it again.
 	summary       string
@@ -67,80 +65,24 @@ func (state *State) openSidebarSettings() {
 	state.modal = modalSidebarSettings
 }
 
-// clickSidebarSettings handles the dialog's buttons and its rows' switches.
+// clickSidebarSettings handles the dialog's buttons.
 func (state *State) clickSidebarSettings(id gfx.ID) {
-	switch {
-	case id == hitSidebarSettingsClose || id == hitSidebarSettingsDismiss:
+	switch id {
+	case hitSidebarSettingsClose, hitSidebarSettingsDismiss:
 		state.closeModal()
 		return
-	case id == hitSidebarSettingsShowAll:
+	case hitSidebarSettingsShowAll:
 		state.hiddenNav = 0
-	case id.Scope() == hitSidebarSettingsToggles:
-		page := navPage(item(id))
-		if page == navPageHosts || page >= navPageCount {
-			return
-		}
-		state.hiddenNav = state.hiddenNav.set(page, !state.hiddenNav.has(page))
 	default:
 		return
 	}
 	state.save()
 }
 
-func (state *State) sidebarSettingsPointer(event gfx.PointerEvent) gfx.EventResult {
-	if state.modal != modalSidebarSettings {
-		return gfx.EventResult{}
-	}
-	editor := &state.sidebarEditor
-	if event.Target == hitSidebarSettingsScroll || editor.scrollDrag {
-		if event.Kind == gfx.PointerExit {
-			editor.scrollDrag = false
-			return gfx.EventResult{Handled: true}
-		}
-		switch event.Kind {
-		case gfx.PointerDown:
-			if event.Button != gfx.PointerButtonPrimary {
-				return gfx.EventResult{}
-			}
-			editor.scrollDrag = true
-			editor.thumbOffset = event.Y - editor.geometry.VerticalThumb.Y
-			if editor.thumbOffset < 0 || editor.thumbOffset > editor.geometry.VerticalThumb.Height {
-				editor.thumbOffset = editor.geometry.VerticalThumb.Height / 2
-			}
-		case gfx.PointerUp:
-			editor.scrollDrag = false
-		}
-		editor.scroll = editor.geometry.VerticalOffsetForThumb(event.Y - editor.thumbOffset)
-		return gfx.EventResult{Handled: true, Repaint: true}
-	}
-	return gfx.EventResult{}
-}
-
-func (state *State) sidebarSettingsKey(event gfx.KeyEvent) gfx.EventResult {
-	if state.modal != modalSidebarSettings {
-		return gfx.EventResult{}
-	}
-	if event.Key == gfx.KeyEscape && !event.Release && !event.Repeat {
-		state.closeModal()
-		return gfx.EventResult{Handled: true, Repaint: true}
-	}
-	return gfx.EventResult{}
-}
-
-func (state *State) sidebarSettingsScroll(event gfx.ScrollEvent) gfx.EventResult {
-	editor := &state.sidebarEditor
-	if !pointInRect(event.X, event.Y, editor.geometry.Viewport) {
-		return gfx.EventResult{Handled: true}
-	}
-	before := editor.scroll
-	editor.scroll = min(max(before+event.DeltaY, 0), editor.geometry.MaxOffsetY)
-	return gfx.EventResult{Handled: true, Repaint: before != editor.scroll}
-}
-
-// paintSidebarSettings paints the dialog: one switch per page the sidebar may
-// leave out, in the sidebar's order.
-func (state *State) paintSidebarSettings(canvas *gfx.Canvas, viewport gfx.Rect) {
-	editor, m, theme := &state.sidebarEditor, state.messages, state.Theme()
+// declareSidebarSettings declares the dialog: one switch per page the sidebar
+// may leave out, in the sidebar's order.
+func (state *State) declareSidebarSettings(c ui.C) {
+	editor, m, theme := &state.sidebarEditor, state.messages, c.Theme()
 	const (
 		rowHeight = float32(48)
 		rowGap    = float32(4)
@@ -152,41 +94,42 @@ func (state *State) paintSidebarSettings(canvas *gfx.Canvas, viewport gfx.Rect) 
 		}
 	}
 	contentHeight := float32(rows)*rowHeight + float32(rows-1)*rowGap
+	viewport := dialogViewport(c)
 	bodyHeight := min(contentHeight, max(viewport.Height-250, 96))
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitSidebarSettingsDismiss, CloseID: hitSidebarSettingsClose,
-		ContentSize: gfx.Size{Width: 520}, FitBody: true, BodyHeight: bodyHeight,
+	height := dialogContentHeight(c.Canvas(), *theme, viewport, 520, m.SettingsSidebarHint, bodyHeight)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.SettingsSidebar, Description: m.SettingsSidebarHint, Width: 520, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitSidebarSettingsDismiss, CloseID: hitSidebarSettingsClose,
 	})
-	layout := dialog.Begin(m.SettingsSidebar, m.SettingsSidebarHint)
-	area := components.BeginScrollArea(canvas, theme, layout.Body, gfx.Size{Width: layout.Body.Width, Height: contentHeight}).
-		Offset(0, editor.scroll).VerticalScrollbar(hitSidebarSettingsScroll, "", "")
-	geometry := area.BeginContent()
-	editor.geometry, editor.scroll = geometry, geometry.OffsetY
-	bounds := geometry.Content
-	if geometry.MaxOffsetY > 0 {
-		bounds.Width = max(bounds.Width-14, 0)
-	}
-	row := 0
-	for _, item := range sidebarPages {
-		if item.page == navPageHosts {
-			continue
-		}
-		bounds := gfx.Rect{X: bounds.X, Y: bounds.Y + float32(row)*(rowHeight+rowGap), Width: bounds.Width, Height: rowHeight}
-		row++
-		canvas.RoundedBorder(bounds, theme.Metrics.RadiusControl, 1, theme.Border, theme.Background)
-		icon := gfx.Rect{X: bounds.X + 12, Y: bounds.Y + (rowHeight-18)/2, Width: 18, Height: 18}
-		canvas.DrawIcon(lucideIcons[item.icon], icon, theme.Foreground)
-		label := state.navPageLabel(item.page)
-		caption := gfx.Rect{X: bounds.X + 40, Y: bounds.Y, Width: max(bounds.Width-40-58, 0), Height: rowHeight}
-		canvas.Label(canvas.FitLine(label, theme.Metrics.FontSizeM, gfx.WeightRegular, caption.Width), caption, gfx.TextStyle{Size: theme.Metrics.FontSizeM, Color: theme.Foreground})
-		components.BeginSwitch(canvas, state.switchTheme(), hitSidebarSettingsToggles.At(int(item.page)),
-			gfx.Rect{X: bounds.X + bounds.Width - 50, Y: bounds.Y + (rowHeight-22)/2, Width: 38, Height: 22}, !state.hiddenNav.has(item.page)).Label(label).Paint()
-	}
-	area.EndContent()
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitSidebarSettingsShowAll, Label: m.SettingsSidebarShowAll, Variant: components.ButtonOutline},
-		components.ButtonAction{ID: hitSidebarSettingsClose, Label: m.Toolbars.Close, Variant: components.ButtonSecondary},
-	)
-	dialog.End()
+	dialog.Body(func() {
+		ui.Scroll(c).Fill().Scrollbars().Children(func() {
+			ui.Column(c).FillWidth().Gap(rowGap).Children(func() {
+				for _, item := range sidebarPages {
+					if item.page == navPageHosts {
+						continue
+					}
+					label := state.navPageLabel(item.page)
+					editor.shown[item.page] = !state.hiddenNav.has(item.page)
+					ui.Row(c.KeyInt(int(item.page))).FillWidth().Height(rowHeight).Shrink(0).Items(ui.Center).Gap(10).PadSides(0, 12, 0, 12).
+						Background(theme.Background).Border(1, theme.Border).Radius(theme.Metrics.RadiusControl).Children(func() {
+						ui.Icon(c, lucideIcons[item.icon]).Size(18, 18).Color(theme.Foreground).Shrink(0)
+						ui.Text(c, label).FontSize(theme.Metrics.FontSizeM).Color(theme.Foreground).Grow(1).Shrink(1).Ellipsis()
+						if toggle := ui.Switch(c, &editor.shown[item.page], "").Label(label); toggle.Changed() {
+							page, hidden := item.page, !editor.shown[item.page]
+							c.After(func() {
+								state.hiddenNav = state.hiddenNav.set(page, hidden)
+								state.save()
+							})
+						}
+					})
+				}
+			})
+		})
+	})
+	dialog.Footer(func() {
+		state.dialogActionFooter(c,
+			components.ButtonAction{ID: hitSidebarSettingsShowAll, Label: m.SettingsSidebarShowAll, Variant: components.ButtonOutline},
+			components.ButtonAction{ID: hitSidebarSettingsClose, Label: m.Toolbars.Close, Variant: components.ButtonSecondary},
+		)
+	})
 }
