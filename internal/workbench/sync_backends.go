@@ -311,10 +311,11 @@ func (state *State) runS3Bucket(form *formDialog, draft *s3Setup) string {
 		}
 		return m.SyncErrAddress
 	}
-	// The second form opens once this one has closed, in a frame of its own, so
-	// that its first field takes the focus like any newly opened dialog.
+	// This is a local form transition, not background work. submitForm keeps a
+	// replacement form open when its serial changes, including on a native loop.
 	draft.settings, draft.allowInsecureHTTP = settings, form.checked
-	state.aiPost(func(state *State) { state.openS3Login(draft) })
+	state.closeModal()
+	state.openS3Login(draft)
 	return ""
 }
 
@@ -328,7 +329,7 @@ func (state *State) openS3Login(draft *s3Setup) {
 		backLabel: m.S3Back,
 		back: func(state *State, form *formDialog) {
 			draft.accessKey, draft.secret, draft.backupPassword = form.value(0), form.value(1), form.value(2)
-			state.aiPost(func(state *State) { state.openS3Bucket(draft) })
+			state.openS3Bucket(draft)
 		},
 	},
 		formField{label: m.S3AccessKey},
@@ -362,7 +363,9 @@ func (state *State) runS3Login(form *formDialog, settings s3Settings, allowInsec
 	}
 	state.sync.allowInsecureHTTP = allowInsecureHTTP
 	state.sync.rowText = ""
-	state.save()
+	if err := state.saveWithResult(); err != nil {
+		return fmt.Sprintf(m.SyncFailedFmt, state.backupErrorText(err))
+	}
 	state.testSync()
 	return ""
 }
@@ -434,7 +437,9 @@ func (state *State) runSnippetConfigure(provider gist.Provider, form *formDialog
 		state.switchSync(syncState{kind: syncGist, gist: settings})
 	}
 	state.sync.rowText = ""
-	state.save()
+	if err := state.saveWithResult(); err != nil {
+		return fmt.Sprintf(m.SyncFailedFmt, state.backupErrorText(err))
+	}
 	state.testSync()
 	return ""
 }

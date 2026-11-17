@@ -200,6 +200,9 @@ type savedState struct {
 	// from an older snapshot that never recorded workspace identity.
 	WorkspaceLayouts []savedWorkspaceLayout `json:"workspace_layouts,omitzero"`
 	Sync             *savedSync             `json:"sync,omitempty"`
+	// SyncHosts selects stable host identities on this device only.
+	SyncHosts syncHostSelection `json:"sync_hosts,omitzero"`
+
 	// SyncExcluded is this computer's selection of what cloud sync exchanges,
 	// stored as the closed categories. It is device-local: it never becomes a
 	// shared record, and a computer without it syncs everything.
@@ -755,6 +758,7 @@ func (state *State) snapshot() savedState {
 	saved.AICLIProviders = state.savedAICLIProviders()
 	saved.Sync = state.savedSyncValue()
 	saved.SyncExcluded = state.syncScope.excludedCopy()
+	saved.SyncHosts = state.syncScope.hosts.clone()
 	saved.HostView = state.hostView.saved()
 	saved.HostOrder = state.hostOrder.saved()
 	saved.HostSideWidth = state.hostSide.width
@@ -1129,6 +1133,7 @@ func (state *State) restoreLocal(saved savedState) {
 	state.agentHostMode = agentHostModeFromSaved(saved.AgentHostMode)
 	state.restoreSync(saved.Sync)
 	state.syncScope = newSyncScope(saved.SyncExcluded)
+	state.syncScope.hosts = saved.SyncHosts.clone()
 	state.hostView = hostViewFromString(saved.HostView)
 	if saved.HostSideWidth >= hostSideMinWidth && saved.HostSideWidth <= hostSideMaxWidth {
 		state.hostSide.width = saved.HostSideWidth

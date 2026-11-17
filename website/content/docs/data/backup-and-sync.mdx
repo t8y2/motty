@@ -40,6 +40,25 @@ ID empty to create a private snippet on the first upload. The token is kept in t
 saved-passwords vault, and the snippet holds the same encrypted backup as the other
 services.
 
+### Choose which hosts sync
+
+Keep **Hosts and groups** enabled, turn on **Sync only selected hosts**, and select
+which connections to exchange. Leaving this option off continues to sync all hosts.
+Selecting a group selects its current hosts and those in its subgroups; hosts added
+later must be selected separately. The selection belongs to this device and does not
+change another computer's scope.
+
+Unselected local connections and their own passwords, one-time codes and proxy
+passwords are neither uploaded nor overwritten by remote edits, deletions or
+**Restore remote**. Selected hosts carry the group metadata they need, and deleting
+a selected host still propagates to other devices. A manual full backup continues
+to include unselected connections.
+
+Deselecting stops subsequent exchanges; previously uploaded copies remain on the
+server. Shared credentials, SSH keys, jump routes, forwarding rules and trusted host
+keys follow their own sync switches. They may contain information related to
+unselected connections, so disable those categories separately when needed.
+
 ## What stays local
 
 Tabs, window layout, shortcuts, fonts, key paths and cloud credentials are never

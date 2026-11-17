@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"encoding/json"
 	"slices"
 	"strings"
 
@@ -101,6 +102,8 @@ func secretSyncCategory(name string) (syncCategory, bool) {
 // on the other computers. The zero value allows everything.
 type syncScope struct {
 	excluded []syncCategory // sorted; unknown words kept as they came
+	hosts    syncHostSelection
+	groups   map[string]bool // resolved for one exchange; never persisted
 }
 
 // newSyncScope builds a scope from saved exclusions. Unknown words are kept so
@@ -131,7 +134,15 @@ func (scope syncScope) allowsRecord(kind string) bool {
 // allowsSecret says whether a saved password is exchanged.
 func (scope syncScope) allowsSecret(name string) bool {
 	category, known := secretSyncCategory(name)
-	return !known || scope.allows(category)
+	if known && !scope.allows(category) {
+		return false
+	}
+	if category == syncCategoryHosts && scope.hosts.OnlySelected {
+		_, rest, _ := strings.Cut(name, ":")
+		id, _, ok := strings.Cut(rest, ":")
+		return ok && scope.hosts.hasHost(id)
+	}
+	return true
 }
 
 // allowsKnownHosts says whether the trusted host keys are exchanged.
@@ -143,7 +154,7 @@ func (scope syncScope) allowsKnownHosts() bool {
 // engine must not contact the service at all.
 func (scope syncScope) empty() bool {
 	for _, category := range syncCategories {
-		if scope.allows(category) {
+		if scope.allows(category) && (category != syncCategoryHosts || !scope.hosts.OnlySelected || len(scope.hosts.IDs)+len(scope.hosts.Groups) > 0) {
 			return false
 		}
 	}
@@ -158,7 +169,8 @@ func (scope syncScope) toggled(category syncCategory) syncScope {
 	} else {
 		next = append(next, category)
 	}
-	return newSyncScope(next)
+	scope.excluded = newSyncScope(next).excluded
+	return scope
 }
 
 // excludedCopy is what this scope saves: the closed categories, in a stable
@@ -173,12 +185,12 @@ func (scope syncScope) excludedCopy() []syncCategory {
 // filterRecords keeps the records a scope exchanges. It returns the input slice
 // itself when nothing is closed, so an all-open scope costs no allocation.
 func (scope syncScope) filterRecords(records []configstore.Record) []configstore.Record {
-	if len(scope.excluded) == 0 {
+	if len(scope.excluded) == 0 && !scope.hosts.OnlySelected {
 		return records
 	}
 	kept := make([]configstore.Record, 0, len(records))
 	for _, record := range records {
-		if scope.allowsRecord(record.Kind) {
+		if scope.allowsRecordKey(record.Kind, record.ID) {
 			kept = append(kept, record)
 		}
 	}
@@ -187,7 +199,7 @@ func (scope syncScope) filterRecords(records []configstore.Record) []configstore
 
 // filterSecrets keeps the saved passwords a scope exchanges.
 func (scope syncScope) filterSecrets(secrets []vault.Secret) []vault.Secret {
-	if len(scope.excluded) == 0 {
+	if len(scope.excluded) == 0 && !scope.hosts.OnlySelected {
 		return secrets
 	}
 	kept := make([]vault.Secret, 0, len(secrets))
@@ -197,4 +209,74 @@ func (scope syncScope) filterSecrets(secrets []vault.Secret) []vault.Secret {
 		}
 	}
 	return kept
+}
+
+// syncHostSelection is local to this device. A group is a bulk selection of its
+// current hosts, not a rule that silently shares hosts added there later. IDs
+// survive moves, renames and deletions, so selected tombstones still travel.
+type syncHostSelection struct {
+	OnlySelected bool     `json:"only_selected,omitempty"`
+	IDs          []string `json:"ids,omitempty"`
+	Groups       []string `json:"groups,omitempty"`
+}
+
+func (selection syncHostSelection) hasHost(id string) bool {
+	return id != "" && slices.Contains(selection.IDs, id)
+}
+
+func (selection syncHostSelection) clone() syncHostSelection {
+	selection.IDs = slices.Clone(selection.IDs)
+	selection.Groups = slices.Clone(selection.Groups)
+	return selection
+}
+
+// allowsRecordKey refines the category gate with the stable record identity.
+// A tombstone has no payload, so membership must never depend on its payload.
+func (scope syncScope) allowsRecordKey(kind, id string) bool {
+	if !scope.allowsRecord(kind) {
+		return false
+	}
+	if !scope.hosts.OnlySelected {
+		return true
+	}
+	switch kind {
+	case "host":
+		return scope.hosts.hasHost(id)
+	case "group":
+		return scope.groups[id]
+	default:
+		return true
+	}
+}
+
+// withHostGroups resolves just the group metadata needed by selected hosts.
+// Both sides contribute ancestors: a host moving or a group being renamed must
+// carry the old group's tombstone as well as the new group's metadata.
+func (scope syncScope) withHostGroups(collections ...[]configstore.Record) syncScope {
+	if !scope.hosts.OnlySelected {
+		return scope
+	}
+	scope.groups = make(map[string]bool)
+	add := func(path string) {
+		for path != "" {
+			scope.groups[path] = true
+			path = hostGroupParent(path)
+		}
+	}
+	for _, group := range scope.hosts.Groups {
+		add(group)
+	}
+	for _, records := range collections {
+		for _, record := range records {
+			if record.Kind != "host" || record.Deleted || !scope.hosts.hasHost(record.ID) {
+				continue
+			}
+			var payload recordPayload
+			var host savedHost
+			if json.Unmarshal(record.Payload, &payload) == nil && json.Unmarshal(payload.Data, &host) == nil {
+				add(host.Group)
+			}
+		}
+	}
+	return scope
 }

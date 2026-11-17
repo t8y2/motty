@@ -86,6 +86,10 @@ type syncState struct {
 	last time.Time
 	// working is set while a request is on its way.
 	working bool
+	// testing distinguishes checking credentials from exchanging backup data.
+	testing      bool
+	tested       bool
+	testSequence uint32
 	// manual is set when syncing only happens when the user asks for it.
 	manual bool
 	// err is why the last sync did not go through, in words, or "".
@@ -118,6 +122,7 @@ func (state *State) restoreSync(saved *savedSync) {
 	work := state.sync
 	defer func() {
 		state.sync.working, state.sync.again, state.sync.err = work.working, work.again, work.err
+		state.sync.testing, state.sync.tested, state.sync.testSequence = work.testing, work.tested, work.testSequence
 		state.sync.retries, state.sync.waitingForVault, state.sync.holdBack = work.retries, work.waitingForVault, work.holdBack
 		state.sync.timer = work.timer
 		state.sync.rowText, state.sync.runText, state.sync.runFor = work.rowText, work.runText, work.runFor
@@ -299,6 +304,11 @@ func (state *State) applyBackupScope(document backup.Document, scope syncScope) 
 	if _, refused := holdableRecords(document.Records); refused > 0 {
 		return 0, backup.ErrNotBackup
 	}
+	records, err := state.config.Records()
+	if err != nil {
+		return 0, err
+	}
+	scope = scope.withHostGroups(records, document.Records)
 	var entries, applied []configstore.Entry
 	seen := map[configstore.Key]bool{}
 	hasCLICollection := false
@@ -312,7 +322,7 @@ func (state *State) applyBackupScope(document backup.Document, scope syncScope) 
 		if !record.Deleted {
 			entry := configstore.Entry{Kind: record.Kind, ID: record.ID, Payload: record.Payload}
 			entries = append(entries, entry)
-			if scope.allowsRecord(record.Kind) {
+			if scope.allowsRecordKey(record.Kind, record.ID) {
 				applied = append(applied, entry)
 			}
 		}
@@ -339,7 +349,7 @@ func (state *State) applyBackupScope(document backup.Document, scope syncScope) 
 	change := configstore.Change{Writer: configWriter(), Put: applied}
 	for _, entry := range current {
 		key := configstore.Key{Kind: entry.Kind, ID: entry.ID}
-		if !scope.allowsRecord(key.Kind) {
+		if !scope.allowsRecordKey(key.Kind, key.ID) {
 			continue // a closed category is not this restore's to replace
 		}
 		if key.Kind == kindAICLIProvider && !hasCLICollection {
@@ -387,7 +397,7 @@ func (state *State) applyBackupScope(document backup.Document, scope syncScope) 
 			}
 			secretsSet = true
 		}
-		if secretsSet || len(scope.excluded) == 0 {
+		if !scope.hosts.OnlySelected && (secretsSet || len(scope.excluded) == 0) {
 			// A backup made before secrets were kept under hosts has them under logins.
 			// A restore of everything keeps doing this even when the backup carries no
 			// password; a partial restore only when it actually wrote one.
@@ -603,7 +613,9 @@ func (state *State) runSyncConfigure(form *formDialog) string {
 	}
 	state.sync.allowInsecureHTTP = form.checked
 	state.sync.rowText = ""
-	state.save()
+	if err := state.saveWithResult(); err != nil {
+		return fmt.Sprintf(m.SyncFailedFmt, state.backupErrorText(err))
+	}
 	state.testSync()
 	return ""
 }
@@ -630,7 +642,7 @@ func (state *State) clearSync() {
 }
 
 // syncLogin builds the store a request to the cloud needs. It reports false,
-// with the reason on the status line, when the passwords cannot be read; a
+// with the reason on the settings page, when the passwords cannot be read; a
 // locked vault asks for its password and runs retry once it is given. A quiet
 // login, for a sync nobody asked for, never opens a dialog: it keeps the reason
 // for the settings page and waits for the vault to be unlocked.
@@ -638,9 +650,8 @@ func (state *State) syncLogin(retry func(), quiet bool) (store cloudsync.Store, 
 	m := state.messages.Tools
 	opened := state.secrets.vault
 	fail := func(text string) (cloudsync.Store, string, bool) {
-		if quiet {
-			state.sync.err, state.sync.runText = text, ""
-		} else {
+		state.sync.err, state.sync.runText = text, ""
+		if !quiet {
 			state.status = text
 		}
 		return nil, "", false
@@ -680,7 +691,7 @@ func (state *State) syncLogin(retry func(), quiet bool) (store cloudsync.Store, 
 // settings page; a failure that waiting could cure (the network) is tried again
 // later, one that needs the user (a wrong password) is not.
 func (state *State) syncFailed(err error) {
-	state.sync.working = false
+	state.sync.working, state.sync.testing, state.sync.tested = false, false, false
 	state.sync.err = state.backupErrorText(err)
 	state.status = fmt.Sprintf(state.messages.Tools.SyncFailedFmt, state.sync.err)
 	state.sync.runText = ""
@@ -691,22 +702,34 @@ func (state *State) syncFailed(err error) {
 	state.armSyncTimer(min(state.syncRetryBase<<(state.sync.retries-1), syncRetryMax))
 }
 
-// testSync checks the server in the background and says so on the status line.
+// testSync checks credentials in the background and reports progress on the settings page.
 func (state *State) testSync() {
+	if state.sync.working && !state.sync.testing {
+		return
+	}
 	store, _, ok := state.syncLogin(state.testSync, false)
 	if !ok {
 		return
 	}
-	state.status = state.messages.Tools.SyncWorking
+	state.sync.testSequence++
+	epoch, sequence := state.syncEpoch, state.sync.testSequence
+	state.sync.working, state.sync.testing, state.sync.tested = true, true, false
+	state.sync.err, state.sync.runText = "", ""
+	state.status = state.messages.Tools.SyncTestRunning
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), syncTimeout)
 		defer cancel()
 		err := store.Test(ctx)
 		state.aiPost(func(state *State) {
+			if epoch != state.syncEpoch || sequence != state.sync.testSequence {
+				return // a different account or a later test owns the status
+			}
+			state.sync.working, state.sync.testing = false, false
 			if err != nil {
 				state.syncFailed(err)
 				return
 			}
+			state.sync.tested, state.sync.runText, state.sync.retries = true, "", 0
 			state.status = state.messages.Tools.SyncTestOK
 			state.scheduleSync() // a service just set up has not been synced yet
 		})
@@ -878,6 +901,9 @@ func (state *State) finishSyncRestore(epoch uint32, remote backup.Document, tag 
 // --- settings page -------------------------------------------------------
 
 func (state *State) clickBackupSettings(id gfx.ID) bool {
+	if state.clickSyncHostSelection(id) {
+		return true
+	}
 	switch id {
 	case hitBackupExport:
 		state.openExportBackup()
@@ -946,12 +972,21 @@ func (state *State) syncTexts() (row, run string) {
 			view.rowText = fmt.Sprintf(m.SyncRowFmt, view.location())
 		}
 	}
+	if view.working {
+		if view.testing {
+			return view.rowText, m.SyncTestRunning
+		}
+		return view.rowText, m.SyncWorking
+	}
 	if view.runText == "" || !view.runFor.Equal(view.last) {
 		view.runFor = view.last
 		if view.err != "" {
 			view.runText = fmt.Sprintf(m.SyncRunFailedFmt, view.err)
 		} else if view.last.IsZero() {
 			view.runText = m.SyncRunNever
+			if view.tested {
+				view.runText = m.SyncTestOK + " " + view.runText
+			}
 		} else {
 			view.runText = fmt.Sprintf(m.SyncRunLastFmt, view.last.Local().Format("2006-01-02 15:04"))
 		}
@@ -988,6 +1023,7 @@ func (state *State) paintBackupSettings(page *settingsPage) {
 				page.toggleRow(label, description, state.syncScope.allows(category), hitSyncCategories.At(index))
 			}
 		})
+		state.paintSyncHostSelection(page)
 	})
 }
 

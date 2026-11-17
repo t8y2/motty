@@ -745,6 +745,12 @@ type ToolsMessages struct {
 	SyncErrNothingSelected          string
 	SyncScopeHosts                  string
 	SyncScopeHostsDescription       string
+	SyncHostSelection               string
+	SyncOnlySelectedHosts           string
+	SyncSelectedHostsDescription    string
+	SyncHostSelectionNotice         string
+	SyncHostSelectionCount          string
+	SyncHostGroupDescription        string
 	SyncScopeSettings               string
 	SyncScopeSettingsDescription    string
 	SyncScopeNotes                  string

@@ -235,6 +235,7 @@ func (state *State) remapHostGroup(path, target string) bool {
 	if state.hostFilterOn && hostGroupWithin(state.hostFilter, path) {
 		state.hostFilter = target + strings.TrimPrefix(state.hostFilter, path)
 	}
+	state.remapSyncHostGroups(path, target)
 	state.queueNoteGroupChange(path, target, false)
 	state.hostGroupDataChanged()
 	state.save()

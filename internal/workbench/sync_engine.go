@@ -44,6 +44,7 @@ func (state *State) runSync(quiet bool) {
 	if state.syncScope.empty() {
 		if !quiet {
 			state.status = state.messages.Tools.SyncErrNothingSelected
+			state.sync.err, state.sync.runText = state.status, ""
 		}
 		return
 	}
@@ -151,7 +152,11 @@ func (state *State) mergeRemote(remote backup.Document, missing bool) (*backup.D
 	// The selection is a snapshot of this round: changing it on the settings page
 	// while the file is on its way must not make half of a round follow one rule
 	// and half the other.
-	scope := state.syncScope
+	records, err := state.config.Records()
+	if err != nil {
+		return nil, err
+	}
+	scope := state.syncScope.withHostGroups(records, remote.Records)
 
 	// Passwords saved before they were versioned get a stamp now, so that they are
 	// compared with the server's by when they were last changed here and not
@@ -178,7 +183,7 @@ func (state *State) mergeRemote(remote backup.Document, missing bool) (*backup.D
 	// The same for the records of a closed category: they are not merged, but
 	// their versions are seen and the next edit here must outrank them.
 	for _, record := range remote.Records {
-		if !scope.allowsRecord(record.Kind) {
+		if !scope.allowsRecordKey(record.Kind, record.ID) {
 			stamps = append(stamps, record.Stamp)
 		}
 	}
@@ -244,7 +249,7 @@ func (state *State) mergeRemote(remote backup.Document, missing bool) (*backup.D
 	// to a computer that could not read it (a locked vault, a newer build). The
 	// server's records of a closed category are part of that: this computer does
 	// not send its own, but it must not delete the other computers' copies either.
-	records, err := state.config.Records()
+	records, err = state.config.Records()
 	if err != nil {
 		return nil, err
 	}
