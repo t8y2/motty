@@ -32,9 +32,15 @@ func canvasHasMenuRow(canvas *gfx.Canvas, label string) bool {
 // deferred, as the runtime does after an event pass.
 func clickPageLabel(t testing.TB, state *State, role gfx.Role, label string) {
 	t.Helper()
+	clickPageLabelIn(t, state, state.viewport, role, label)
+}
+
+// clickPageLabelIn is clickPageLabel in a window of the given size.
+func clickPageLabelIn(t testing.TB, state *State, window gfx.Size, role gfx.Role, label string) {
+	t.Helper()
 	// A page taller than the window has controls below its fold, which a window
 	// does not paint: the second try is a window as tall as a page.
-	for _, size := range []gfx.Size{state.viewport, {Width: 1000, Height: 6000}} {
+	for _, size := range []gfx.Size{window, {Width: 1000, Height: 6000}} {
 		if size.Width == 0 {
 			size = gfx.Size{Width: 1400, Height: 900}
 		}

@@ -150,6 +150,10 @@ func clickRemoteToolsHeader(t testing.TB, state *State, id gfx.ID) {
 // clickRemoteToolsDetailTab activates a painted tab inside an open details
 // dialog. The dialog's body is a painted slot, so the tab is not a page control.
 func clickRemoteToolsDetailTab(t testing.TB, state *State, id gfx.ID) {
+	if id == hitRemoteContainerDetailsOverview || id == hitRemoteContainerDetailsEnvironment {
+		clickPageLabelIn(t, state, remoteToolsPageSize, gfx.RoleTab, state.remoteContainerDetailTabLabel(id))
+		return
+	}
 	clickRemoteToolsHeader(t, state, id)
 }
 
