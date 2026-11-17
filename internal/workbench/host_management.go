@@ -354,8 +354,14 @@ func (state *State) submitHostDialog() {
 		state.dialogError = failure
 		return
 	}
+	otpChanges, failure := state.hostDialogOTPChanges(candidate)
+	if failure != "" {
+		state.dialogError = failure
+		return
+	}
 	changes := append(passwordChanges, proxyChanges...)
 	changes = append(changes, passphraseChanges...)
+	changes = append(changes, otpChanges...)
 	if state.hostDialogMode == hostDialogEdit {
 		previousAgentMode := state.agentHostMode
 		previousAgentAccess, hadAgentAccess := state.agentHosts[candidate.CatalogID]
@@ -407,6 +413,9 @@ func (state *State) submitHostDialog() {
 			}
 			return
 		}
+		// The secret is already in the vault transaction. Say so only after
+		// that call has released the lock.
+		state.noteOTPCommit(candidate)
 		state.editor.password, state.editor.passphrase = text.Editor{}, text.Editor{}
 		state.editor.proxyPassword = ""
 		state.cancelHostTest()
@@ -460,9 +469,7 @@ func (state *State) submitHostDialog() {
 	} else {
 		state.status = state.messages.StatusHostAdded + host.Label
 	}
-	if state.editor.value(fieldOTP) != "" {
-		state.commitOTP(host) // after the host's own line, so the secret's is the one read
-	}
+	state.noteOTPCommit(host)
 	state.appendStatusNote(proxyNote)
 	state.hostDataChanged()
 	state.restoreAfterHostDialog()
@@ -562,7 +569,6 @@ func (state *State) saveEditedHost(updated, previous Host, refreshConflict bool,
 		return &hostConfigCommitError{err: err}
 	}
 	state.status = state.messages.HostUpdated + updated.Label
-	state.commitOTP(updated)
 	for _, note := range notes {
 		state.appendStatusNote(note)
 	}
