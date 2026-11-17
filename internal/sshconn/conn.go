@@ -353,8 +353,13 @@ type Conn struct {
 	terminated    bool
 	listenPending chan struct{}
 	doneOnce      sync.Once
-	// pingPending is set while a keepalive probe sent by Ping is unanswered.
+	// pingPending is set while one global request of this transport is waiting
+	// for its answer, whichever code sent it. The SSH client answers global
+	// requests one at a time, so a second one would only queue behind the first.
 	pingPending atomic.Bool
+	// probeSince is when that request was sent, in Unix nanoseconds, so a probe
+	// can be judged by its own age rather than by how long a later one waited.
+	probeSince atomic.Int64
 
 	// probes tracks the optional command sessions opened beside the user's
 	// shell. It is shared by every tab on this transport, because the server's

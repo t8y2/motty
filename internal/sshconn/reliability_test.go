@@ -319,6 +319,55 @@ func TestKeepAliveTimeoutReportsDisconnected(t *testing.T) {
 	}
 }
 
+// One global request at a time is all the transport answers. A keepalive round
+// that starts while a latency probe is still out must not measure the wait for
+// that probe as the transport's silence: a slow but answering link stays up.
+func TestAKeepAliveQueuedBehindASlowProbeDoesNotCloseTheConnection(t *testing.T) {
+	server := startServer(t, func(server *testServer) {
+		server.password = "secret"
+		server.request = func(_ *ssh.ServerConn, request *ssh.Request) {
+			time.Sleep(120 * time.Millisecond)
+			_ = request.Reply(false, nil)
+		}
+	})
+	harness := connectWithKeepAlive(t, server, 5*time.Millisecond, 200*time.Millisecond)
+	pinged := make(chan struct{})
+	go func() {
+		_, _ = harness.conn.Ping(context.Background())
+		close(pinged)
+	}()
+	select {
+	case <-pinged:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the latency probe never finished")
+	}
+	time.Sleep(400 * time.Millisecond)
+	status := harness.conn.Status()
+	if status.Phase != PhaseConnected || status.Err != nil {
+		t.Fatalf("a slow but answering transport was closed: %+v", status.Err)
+	}
+}
+
+// A request that is never answered is the failure the keepalive looks for, even
+// when a caller gave up on it first: the request itself keeps the transport
+// watched.
+func TestAProbeLeftUnansweredStillClosesTheConnection(t *testing.T) {
+	server := startServer(t, func(server *testServer) {
+		server.password = "secret"
+		server.request = func(*ssh.ServerConn, *ssh.Request) {}
+	})
+	harness := connectWithKeepAlive(t, server, 5*time.Millisecond, 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	if _, err := harness.conn.Ping(ctx); err == nil {
+		t.Fatal("Ping succeeded against a server that never answers")
+	}
+	status := harness.phase(PhaseClosed)
+	if !errors.Is(status.Err, ErrDisconnected) || !errors.Is(status.Err, ErrKeepAliveTimeout) {
+		t.Fatalf("error = %v, want disconnected keepalive timeout", status.Err)
+	}
+}
+
 func TestKeepAliveSendFailureReportsDisconnected(t *testing.T) {
 	server := startServer(t, func(server *testServer) {
 		server.password = "secret"

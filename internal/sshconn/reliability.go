@@ -230,6 +230,27 @@ func (conn *Conn) keepAlive(client *ssh.Client, stop <-chan struct{}) {
 }
 
 func (conn *Conn) sendKeepAlive(client *ssh.Client) bool {
+	owner := conn
+	if conn.owner != nil {
+		owner = conn.owner
+	}
+	// The SSH client answers global requests one at a time, so a probe sent
+	// while another is still out only waits behind it. Measuring this probe's
+	// timeout from here would then measure that wait and call a transport that
+	// answers as needed dead. Instead the transport is judged by the age of the
+	// oldest unanswered request: skipping the round costs nothing while the
+	// request is young, and an old one is the same failure this probe looks for.
+	claimed, busy := owner.beginProbe()
+	if !claimed {
+		if busy >= conn.config.KeepAlive.Timeout {
+			if conn.recordDisconnect(fmt.Errorf("%w: %w", ErrDisconnected, ErrKeepAliveTimeout)) {
+				_ = client.Close()
+			}
+			return false
+		}
+		return true
+	}
+	defer owner.endProbe()
 	timedOut := make(chan struct{})
 	timer := time.AfterFunc(conn.config.KeepAlive.Timeout, func() {
 		if conn.recordDisconnect(fmt.Errorf("%w: %w", ErrDisconnected, ErrKeepAliveTimeout)) {
@@ -249,6 +270,28 @@ func (conn *Conn) sendKeepAlive(client *ssh.Client) bool {
 		_ = client.Close()
 	}
 	return false
+}
+
+// beginProbe claims the one global request a transport may have outstanding.
+// It reports false when an earlier request is still waiting for its answer, and
+// busy is then how long that request has been out (zero if its start was not
+// recorded, which only leaves it to the round after).
+func (conn *Conn) beginProbe() (claimed bool, busy time.Duration) {
+	if conn.pingPending.CompareAndSwap(false, true) {
+		conn.probeSince.Store(time.Now().UnixNano())
+		return true, 0
+	}
+	started := conn.probeSince.Load()
+	if started == 0 {
+		return false, 0
+	}
+	return false, time.Since(time.Unix(0, started))
+}
+
+// endProbe releases the request beginProbe claimed.
+func (conn *Conn) endProbe() {
+	conn.probeSince.Store(0)
+	conn.pingPending.Store(false)
 }
 
 func (conn *Conn) recordDisconnect(err error) bool {
@@ -323,13 +366,13 @@ func (conn *Conn) Verify(ctx context.Context) error {
 		ctx, cancel = context.WithTimeout(ctx, verifyTimeout)
 		defer cancel()
 	}
-	if !owner.pingPending.CompareAndSwap(false, true) {
+	if claimed, _ := owner.beginProbe(); !claimed {
 		return ErrPingPending
 	}
 	replied := make(chan error, 1)
 	go func() {
 		_, _, err := client.SendRequest(keepAliveRequest, true, nil)
-		owner.pingPending.Store(false)
+		owner.endProbe()
 		replied <- err
 	}()
 	var err error
@@ -393,14 +436,14 @@ func (conn *Conn) Ping(ctx context.Context) (time.Duration, error) {
 	if conn.owner != nil {
 		owner = conn.owner
 	}
-	if !owner.pingPending.CompareAndSwap(false, true) {
+	if claimed, _ := owner.beginProbe(); !claimed {
 		return 0, ErrPingPending
 	}
 	ch := make(chan pingResult, 1)
 	start := time.Now()
 	go func() {
 		_, _, err := client.SendRequest(keepAliveRequest, true, nil)
-		owner.pingPending.Store(false)
+		owner.endProbe()
 		ch <- pingResult{rtt: time.Since(start), err: err}
 	}()
 	select {
