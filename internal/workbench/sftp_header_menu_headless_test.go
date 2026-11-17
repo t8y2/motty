@@ -26,10 +26,10 @@ func TestSFTPToolbarCustomizationFromContextMenu(t *testing.T) {
 			state.toolbars.customize(toolbarWindow)[0].Enabled = false
 			state.toolbars.customize(toolbarTerminal)[1].Enabled = false
 			other := state.toolbars.snapshot()
-			view, err := headless.Open(app.Config{
+			view, err := headless.Open(state.WindowConfig(app.Config{
 				Title: "files toolbar customization", Width: 1400, Height: 900, Tree: Tree(),
 				Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnResize: state.Resize,
-			}, nil, headless.Options{Scale: scale})
+			}), nil, headless.Options{Scale: scale})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -105,6 +105,7 @@ func TestSFTPToolbarCustomizationFromContextMenu(t *testing.T) {
 			saved, _, err := loadState(state.options.StatePath)
 			must(err)
 			restored := newTestState(t, state.options)
+			menuLabelState = state // the window is the one whose language names the menu's rows
 			if !reflect.DeepEqual(restored.toolbars.snapshot(), saved.Toolbars) {
 				t.Fatal("toolbar visibility did not survive reopening")
 			}

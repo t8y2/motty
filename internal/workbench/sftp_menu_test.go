@@ -21,8 +21,8 @@ func TestLocalSFTPMenuShowsAndUploadsToServerDirectory(t *testing.T) {
 			}
 			state.sftpMenu = sftpMenu{open: true, session: session.ID, at: gfx.Point{X: 400.4, Y: 200.4}}
 			canvas, _ := paintedTexts(state)
-			send, ok := hitByID(canvas, hitSFTPMenuSend)
-			if !ok || send.Value != view.path || send.Hint != view.path || send.Disabled {
+			send, ok := menuHit(canvas, state, hitSFTPMenuSend)
+			if !ok || send.Disabled {
 				t.Fatalf("upload target missing from action: %+v", send)
 			}
 			var label, directory gfx.Rect
@@ -37,7 +37,7 @@ func TestLocalSFTPMenuShowsAndUploadsToServerDirectory(t *testing.T) {
 			if directory.Width <= 0 || directory.Y < label.Y+label.Height || directory.Y+directory.Height > send.Bounds.Y+send.Bounds.Height {
 				t.Fatalf("target is not the action's second line: label=%+v directory=%+v row=%+v", label, directory, send.Bounds)
 			}
-			state.Click(hitSFTPMenuSend)
+			chooseMenu(t, state, hitSFTPMenuSend)
 			waitSFTP(t, state, session, func(view *sftpView) bool {
 				return len(view.transfers) == 1 && view.transfers[0].State == sftpclient.TransferCompleted
 			})
@@ -69,12 +69,9 @@ func TestLocalSFTPMenuFitsFractionalPositionsAndLongPaths(t *testing.T) {
 			if _, ok := hitByID(&canvas, hitMenuScrollBar); ok {
 				t.Fatalf("scale=%v at=%+v: fitting menu has a scrollbar", scale, at)
 			}
-			send, ok := hitByID(&canvas, hitSFTPMenuSend)
+			send, ok := menuHit(&canvas, state, hitSFTPMenuSend)
 			if !ok || send.Bounds.X < 0 || send.Bounds.Y < 0 || send.Bounds.X+send.Bounds.Width > 1000 || send.Bounds.Y+send.Bounds.Height > 700 {
 				t.Fatalf("menu outside viewport: %+v", send)
-			}
-			if send.Hint != view.path {
-				t.Fatal("long path hint was truncated")
 			}
 			found := false
 			for _, text := range canvas.Texts() {

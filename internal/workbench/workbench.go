@@ -1889,7 +1889,7 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		return
 	}
 	if state.clickHostOrder(id) || state.clickHostsPanel(id) || state.clickToolbarDockMenu(id) || state.clickWorkspaceTemplateManagement(id) ||
-		state.clickHostGroupActions(id) || state.clickGhostMenu(id) || state.clickTabMenu(id) || state.clickSFTPMenu(id) {
+		state.clickHostGroupActions(id) || state.clickGhostMenu(id) || state.clickTabMenu(id) {
 		return
 	}
 	if state.clickWorkspaceCommand(id) {
@@ -2657,9 +2657,6 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 		return result
 	}
 	if result, handled := state.hostListPointer(event); handled {
-		return result
-	}
-	if result, handled := state.sftpMenuDismissPointer(event); handled {
 		return result
 	}
 	if result, handled := state.sftpPlacesPointer(event); handled {

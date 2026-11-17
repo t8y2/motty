@@ -857,10 +857,6 @@ func (state *State) toolbarDockDropAt(at gfx.Point) toolbarDockDrop {
 func (state *State) toolbarDockPointer(event gfx.PointerEvent) gfx.EventResult {
 	dock := &state.toolbarDock
 	if dock.menu {
-		if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonSecondary && event.Target == hitToolbarDockDismiss {
-			dock.menu = false
-			return gfx.EventResult{Handled: true, Repaint: true}
-		}
 		return gfx.EventResult{}
 	}
 	if state.modal != modalNone {

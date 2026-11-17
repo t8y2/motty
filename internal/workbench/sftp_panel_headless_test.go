@@ -50,7 +50,7 @@ func TestSFTPPanelBackgroundMenuOpensNewFolder(t *testing.T) {
 				t.Fatal("right-click did not open the menu for the current directory")
 			}
 			for _, hit := range preview.Snapshot().Hits {
-				if hit.Layer != dialogLayer || hit.ID != hitSFTPNewDirectory || hit.Disabled {
+				if hit.Role != gfx.RoleMenuItem || hit.Label != state.messages.SFTPNewDirectory || hit.Disabled {
 					continue
 				}
 				if err := preview.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {

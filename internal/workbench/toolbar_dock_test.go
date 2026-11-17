@@ -161,7 +161,7 @@ func TestToolbarDockSizesKeepMixedActionsReachableAcrossScales(t *testing.T) {
 			state.closeModal()
 			state.setTerminalToolbarSize(terminalToolbarLarge)
 			state.toolbarDock.menu = true
-			state.Click(hitToolbarDockReset)
+			chooseMenu(t, state, hitToolbarDockReset)
 			if state.terminalToolbarSize != terminalToolbarSmall {
 				t.Fatal("dock menu reset retained a custom size")
 			}
@@ -1310,9 +1310,8 @@ func TestToolbarDockDisabledToolMenuAndDrag(t *testing.T) {
 	if !state.toolbarDock.menu || state.toolbarDock.menuTool != hitTerminalRecordingExport {
 		t.Fatalf("right-clicking disabled tool did not open its menu: menu=%v tool=%v", state.toolbarDock.menu, state.toolbarDock.menuTool)
 	}
-	if !state.clickToolbarDockMenu(hitToolbarDockTop) {
-		t.Fatal("clickToolbarDockMenu failed")
-	}
+	state.toolbarDock.menu = false
+	state.chooseToolbarDockMenu(hitToolbarDockTop)
 	if zone := state.toolbarDockZoneFor(toolbarTerminal, "export-recording"); zone != toolbarDockTop {
 		t.Fatalf("moved zone = %s, want %s", zone, toolbarDockTop)
 	}

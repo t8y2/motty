@@ -183,7 +183,7 @@ func TestDocumentKeepsUnsavedEditsWhenSwitchingToPrivilegedSFTP(t *testing.T) {
 		app.TextEvent{Kind: app.TextCommandEvent, Command: app.TextSelectAll}.Apply(&document.editor)
 		document.editor.Insert("privileged edit\n")
 		state.sftpMenu = sftpMenu{open: true, session: session.ID}
-		state.Click(hitSFTPMenuSudo)
+		chooseMenu(t, state, hitSFTPMenuSudo)
 		if state.modal != modalSudoSFTP {
 			t.Fatal("document blocked privilege confirmation while idle")
 		}
@@ -238,7 +238,7 @@ func TestSFTPPrivilegeRequiresAnExplicitSessionChoice(t *testing.T) {
 		t.Fatal("SFTP started privileged without consent")
 	}
 	state.sftpMenu = sftpMenu{open: true, session: session.ID}
-	state.Click(hitSFTPMenuSudo)
+	chooseMenu(t, state, hitSFTPMenuSudo)
 	_, opens = privileged.snapshot()
 	if state.modal != modalSudoSFTP || opens != 0 || view.sudo {
 		t.Fatal("opening the prompt elevated files before confirmation")
@@ -249,7 +249,7 @@ func TestSFTPPrivilegeRequiresAnExplicitSessionChoice(t *testing.T) {
 		t.Fatal("canceling the prompt elevated files")
 	}
 	state.sftpMenu = sftpMenu{open: true, session: session.ID}
-	state.Click(hitSFTPMenuSudo)
+	chooseMenu(t, state, hitSFTPMenuSudo)
 	state.sudoSFTP.password.Insert("secret")
 	state.Click(hitSudoSFTPEnable)
 	waitSFTP(t, state, session, func(view *sftpView) bool {
@@ -261,7 +261,7 @@ func TestSFTPPrivilegeRequiresAnExplicitSessionChoice(t *testing.T) {
 		t.Fatal("privileged SFTP did not list the same files after authorization")
 	}
 	state.sftpMenu = sftpMenu{open: true, session: session.ID}
-	state.Click(hitSFTPMenuSudo)
+	chooseMenu(t, state, hitSFTPMenuSudo)
 	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.sudo && !view.busy })
 	_, opens = privileged.snapshot()
 	if opens != 1 {

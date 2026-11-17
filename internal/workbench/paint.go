@@ -348,9 +348,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintSFTPColumnSettings(canvas, viewport)
 	}
 	state.paintGhostMenu(canvas, viewport)
-	state.paintToolbarDockMenu(canvas, viewport)
 	state.paintTabMenu(canvas, viewport)
-	state.paintSFTPMenu(canvas, viewport)
 	state.paintQueuedSFTPHeaderMenu(canvas)
 	state.paintHostMenus(canvas, viewport)
 	state.endMenus()

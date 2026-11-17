@@ -3,6 +3,7 @@ package workbench
 import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 )
 
 // sftpMenuHits is the place of the controls this file paints.
@@ -81,19 +82,6 @@ type sftpMenu struct {
 	at      gfx.Point
 }
 
-// sftpMenuDismissPointer closes an open menu on a secondary press outside it; the
-// backdrop swallows the press, and only a primary one is also a click.
-func (state *State) sftpMenuDismissPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	if event.Kind != gfx.PointerDown || event.Button == gfx.PointerButtonNone || event.Button == gfx.PointerButtonPrimary {
-		return gfx.EventResult{}, false
-	}
-	if state.sftpMenu.open && event.Target == hitSFTPMenuDismiss {
-		state.sftpMenu.open = false
-		return gfx.EventResult{Handled: true, Repaint: true}, true
-	}
-	return gfx.EventResult{}, false
-}
-
 // sftpMenuPointer opens the file list menu on a secondary press. On the
 // background the menu acts on the current directory.
 func (state *State) sftpMenuPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
@@ -158,22 +146,17 @@ func (state *State) sftpMenuView() (*Session, *sftpView, bool) {
 	return session, session.files, true
 }
 
-func (state *State) paintSFTPMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
+func (state *State) declareSFTPMenu(c ui.C) {
+	if !state.sftpMenu.open {
+		return
+	}
 	session, view, ok := state.sftpMenuView()
 	if !ok {
 		state.sftpMenu.open = false
 		return
 	}
 	rows := state.sftpMenuRows(session, view)
-	width, height := rows.size(canvas, state.contextMenuTheme())
-	width = min(width, 480)
-	bounds := state.popupAt(canvas, viewport, state.sftpMenu.at, width, height, 6)
-	menu := components.BeginContextMenu(canvas, state.contextMenuTheme(), bounds, components.ContextMenuOptions{
-		Layer: dialogLayer, Scope: dialogScope, DismissID: hitSFTPMenuDismiss, Viewport: viewport, Scroll: state.menuScrollFor(hitSFTPMenuDismiss), RowHeight: contextMenuRow,
-	})
-	state.menuPlaced(menu.Bounds())
-	rows.paint(&menu, nil)
-	menu.End()
+	state.declareRowsMenu(c, &state.sftpMenu.open, state.sftpMenu.at, hitSFTPMenuDismiss, &rows, state.chooseSFTPMenu)
 }
 
 func (state *State) sftpMenuRows(session *Session, view *sftpView) menuRows {
@@ -266,14 +249,9 @@ func (state *State) sftpMenuRows(session *Session, view *sftpView) menuRows {
 	return rows
 }
 
-// clickSFTPMenu runs a menu choice. A press anywhere else only closes the menu.
-func (state *State) clickSFTPMenu(id gfx.ID) bool {
-	if !state.sftpMenu.open {
-		return false
-	}
-	state.sftpMenu.open = false
+// chooseSFTPMenu runs a choice of the menu, which closed with it.
+func (state *State) chooseSFTPMenu(id gfx.ID) {
 	if action, ok := sftpMenuAction(id); ok {
 		state.clickSFTP(action)
 	}
-	return true
 }

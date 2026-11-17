@@ -22,6 +22,8 @@ func init() {
 		hitHostBlankNewHost, hitHostBlankNewGroup, hitHostBlankPaste,
 		hitTerminalMenuCopy, hitTerminalMenuPaste, hitTerminalMenuSelectAll, hitTerminalMenuClearScreen, hitTerminalMenuClear, hitTerminalMenuSave, hitTerminalMenuSplitRight, hitTerminalMenuSplitDown, hitTerminalMenuRename, hitTerminalMenuClosePane, hitTerminalMenuFiles, hitTerminalMenuTransfer, hitTerminalMenuAsk, hitTerminalMenuExplain, hitTerminalMenuHistory, hitTerminalMenuSearch, hitTerminalMenuStats, hitTerminalMenuTools, hitTerminalMenuReconnect, hitTerminalMenuRestart, hitTerminalMenuDisconnect,
 		hitSnippetMenuSend, hitSnippetMenuUp, hitSnippetMenuDown, hitSnippetMenuEdit, hitSnippetMenuDelete, hitWorkspaceTemplateMenuEdit, hitWorkspaceTemplateMenuDelete,
+		hitToolbarDockTop, hitToolbarDockSideTop, hitToolbarDockSideBottom, hitToolbarDockLeftTop, hitToolbarDockLeftBottom, hitToolbarDockBottom, hitToolbarDockBottomRight, hitToolbarDockHide, hitToolbarDockCustomize, hitToolbarDockReset,
+		hitSFTPMenuOpen, hitSFTPMenuDownload, hitSFTPMenuDownloadHere, hitSFTPMenuSend, hitSFTPMenuInsertPath, hitSFTPMenuEdit, hitSFTPMenuRename, hitSFTPMenuMove, hitSFTPMenuChmod, hitSFTPMenuChown, hitSFTPMenuExtract, hitSFTPMenuCompress, hitSFTPMenuDelete, hitSFTPMenuSudo, hitSFTPMenuCopyFiles, hitSFTPMenuPasteFiles,
 	} {
 		menuRowIDs[id] = true
 	}
@@ -31,10 +33,15 @@ func init() {
 }
 
 // menuRowLabel is the label the page paints for a row the application names id.
-func menuRowLabel(id gfx.ID) (string, bool) {
+func menuRowLabel(id gfx.ID) (label string, ok bool) {
 	if !menuRowIDs[id] || menuLabelState == nil {
 		return "", false
 	}
+	defer func() {
+		if recover() != nil {
+			label, ok = "", false
+		}
+	}()
 	return menuLabelOf(menuLabelState, id), true
 }
 
@@ -148,6 +155,77 @@ func menuLabelOf(state *State, id gfx.ID) string {
 		return m.WorkspaceTemplateEdit
 	case hitWorkspaceTemplateMenuDelete:
 		return m.WorkspaceTemplateDelete
+	case hitToolbarDockTop:
+		return m.Toolbars.MoveTop
+	case hitToolbarDockSideTop:
+		return m.Toolbars.MoveSideTop
+	case hitToolbarDockSideBottom:
+		return m.Toolbars.MoveSideBottom
+	case hitToolbarDockLeftTop:
+		return m.Toolbars.MoveLeftTop
+	case hitToolbarDockLeftBottom:
+		return m.Toolbars.MoveLeftBottom
+	case hitToolbarDockBottom:
+		return m.Toolbars.MoveBottom
+	case hitToolbarDockBottomRight:
+		return m.Toolbars.MoveBottomRight
+	case hitToolbarDockHide:
+		return m.Toolbars.Hide
+	case hitToolbarDockCustomize:
+		return m.Toolbars.Customize
+	case hitToolbarDockReset:
+		return m.Toolbars.ResetLayout
+	}
+	t := m.Tools
+	w := m.SFTPWindow
+	switch id {
+	case hitSFTPMenuOpen:
+		return m.SFTPOpen
+	case hitSFTPMenuDownload:
+		return m.SFTPDownload
+	case hitSFTPMenuDownloadHere:
+		return t.DownloadHere
+	case hitSFTPMenuSend:
+		return t.SendToServer
+	case hitSFTPMenuInsertPath:
+		return m.SFTPInsertPath
+	case hitSFTPMenuEdit:
+		return t.ExtEditButton
+	case hitSFTPMenuRename:
+		return m.SFTPRename
+	case hitSFTPMenuMove:
+		return m.SFTPMove
+	case hitSFTPMenuChmod:
+		return m.SFTPPermissions
+	case hitSFTPMenuChown:
+		return m.SFTPOwnership
+	case hitSFTPMenuExtract:
+		return t.Extract
+	case hitSFTPMenuCompress:
+		return t.Compress
+	case hitSFTPMenuDelete:
+		return m.SFTPDelete
+	case hitSFTPMenuSudo:
+		if menuHasRow(state, m.SFTPSudoDisable) {
+			return m.SFTPSudoDisable
+		}
+		return m.SFTPSudoEnable
+	case hitSFTPMenuCopyFiles:
+		return w.CopyFiles
+	case hitSFTPMenuPasteFiles:
+		return w.PasteFiles
+	case hitSFTPNewDirectory:
+		return m.SFTPNewDirectory
+	case hitSFTPUpload:
+		return m.SFTPUpload
+	case hitSFTPUploadDirectory:
+		return m.SFTPUploadDirectory
+	case hitSFTPNewLink:
+		return t.TipNewLink
+	case hitSFTPCopyPath:
+		return w.CopyPath
+	case hitSFTPProperties:
+		return w.PropertiesTitle
 	}
 	if index, ok := terminalMenuActionIndex(id); ok {
 		return state.actionLabel(state.terminalMenu.found[index])
