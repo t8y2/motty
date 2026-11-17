@@ -73,3 +73,33 @@ func TestInjectionFailsOpenWhenTheMarkerNeverComes(t *testing.T) {
 		t.Fatalf("queued input = %q, want it released on failure", got)
 	}
 }
+
+// The terminal never erases the first prompt line on its own: the shell's next
+// prompt clears the line in the same write that draws it. A ready marker that
+// arrives alone must leave the screen as it was, and the shell's prefix must
+// replace the first prompt exactly once.
+func TestTheShellReplacesTheFirstPromptLine(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	session := &state.sessions[0]
+	t0 := session.term
+	const token = "blink-token"
+	t0.folderToken = token
+	marker := sshconn.IntegrationReadyMarker(token)
+
+	shell.say("user@host:~$ ")
+	state.Wake()
+	t0.injection = terminalInjection{phase: injectionSuppressing, marker: marker}
+
+	shell.say(string(marker))
+	state.Wake()
+	if count := strings.Count(screenText(state, 0), "user@host:~$"); count != 1 {
+		t.Fatalf("the marker changed the screen (prompt shown %d times):\n%s", count, screenText(state, 0))
+	}
+
+	// The one-shot prefix the integration puts before that prompt.
+	shell.say("\r\x1b[2Kuser@host:~$ ")
+	state.Wake()
+	if count := strings.Count(screenText(state, 0), "user@host:~$"); count != 1 {
+		t.Fatalf("the redrawn prompt shows %d times, want exactly one:\n%s", count, screenText(state, 0))
+	}
+}

@@ -99,9 +99,9 @@ func (conn *Conn) UploadIntegration(ctx context.Context, shellPath, token, direc
 	var body string
 	if name == "bash" {
 		body = "_motty_runtime=$(mktemp -d \"${TMPDIR:-/tmp}/motty-inject.XXXXXXXX\") || _motty_runtime=\n" +
-			start + bashHooks(directoryReportFunction, false) + "\n"
+			start + bashHooks(directoryReportFunction, false) + "\n" + firstPromptEraseBash + "\n"
 	} else {
-		body = start + zshIntegration(directoryReportFunction) + "\n"
+		body = start + zshIntegration(directoryReportFunction) + "\n" + firstPromptEraseZsh + "\n"
 	}
 	body = strings.ReplaceAll(body, "__MOTTY_INPUT_TOKEN__", token)
 	body = strings.ReplaceAll(body, "__MOTTY_SUFFIX__", integrationSuffix+token)
@@ -372,6 +372,26 @@ __motty_home_report() {
 }
 `
 
+// firstPromptEraseBash and firstPromptEraseZsh arm the one-shot prefix the
+// report function puts in front of the first prompt after injection. The
+// terminal hides the activation line's echo, so the screen never saw the
+// newline that ended that command line: without the prefix the redrawn prompt
+// would land after the first one, and a terminal that erases the line itself
+// would paint a frame with it empty (issue #960). The value is PS1 syntax, so
+// it differs per shell; the report function applies it in the prompt's own
+// write, which makes the replacement atomic, and drops it again before the
+// next prompt.
+//
+// Zsh additionally has to keep PROMPT_SP off for that prompt. With it on, zsh
+// marks the partial line the hidden activation line left by writing a row of
+// spaces from the cursor; the cursor is still after the first prompt, so the
+// spaces wrap and the redrawn prompt lands on the next row, leaving the old
+// one behind. The option is put back before the prompt after it.
+const (
+	firstPromptEraseBash = `_motty_first_prompt_erase='\[\r\e[2K\]'; _motty_first_prompt=1`
+	firstPromptEraseZsh  = `_motty_first_prompt_erase=$'%{\r\033[2K%}'; _motty_first_prompt=1; _motty_prompt_sp_was=; [[ -o prompt_sp ]] && _motty_prompt_sp_was=1; unsetopt prompt_sp; _motty_prompt_sp_hold=1`
+)
+
 // Encode bytes, not characters: file URI reserved characters and non-ASCII
 // paths must round-trip through the terminal parser without shell evaluation.
 const directoryReportFunction = `__motty_report() {
@@ -382,6 +402,14 @@ const directoryReportFunction = `__motty_report() {
     printf '\033]133;A__MOTTY_SUFFIX__\007'
     __motty_home_report "$HOME"
     printf '\033]7;file://%s%s\007' "${HOSTNAME:-${HOST:-}}" "$_motty_path"
+    if [[ -n ${_motty_first_prompt-} ]]; then
+        PS1=$_motty_first_prompt_erase$PS1
+        unset _motty_first_prompt
+        _motty_first_prompt_shown=1
+    elif [[ -n ${_motty_first_prompt_shown-} ]]; then
+        unset _motty_first_prompt_shown
+        PS1=${PS1#"$_motty_first_prompt_erase"}
+    fi
     case $PS1 in
         *"$_motty_prompt_marker") ;;
         *) PS1=$PS1$_motty_prompt_marker ;;
@@ -490,6 +518,22 @@ else
     precmd() { __motty_command_finished; return 0; }
 fi
 precmd_functions+=(__motty_report)
+# The injection hides the activation line, so the first prompt is drawn with
+# the cursor still after the first one. PROMPT_SP would mark that partial line
+# with a full row of spaces, which wraps from there and leaves the old prompt
+# on its own row, so it stays off for that one prompt and the user's setting
+# comes back before the prompt after it.
+__motty_prompt_sp() {
+    if [[ -n ${_motty_prompt_sp_hold-} ]]; then
+        unset _motty_prompt_sp_hold
+        _motty_prompt_sp_restore=1
+    elif [[ -n ${_motty_prompt_sp_restore-} ]]; then
+        unset _motty_prompt_sp_restore
+        [[ -n ${_motty_prompt_sp_was-} ]] && setopt PROMPT_SP
+        unset _motty_prompt_sp_was
+    fi
+}
+precmd_functions+=(__motty_prompt_sp)
 __motty_command_start() { printf '\033]133;C__MOTTY_SUFFIX__\007'; }
 typeset -ga preexec_functions
 preexec_functions=(__motty_command_start "${preexec_functions[@]}")

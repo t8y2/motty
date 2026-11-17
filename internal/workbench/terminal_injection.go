@@ -202,9 +202,10 @@ func (state *State) applyInjection(session *Session, data []byte) (rest []byte, 
 		rest = append([]byte(nil), injection.buf[index+len(injection.marker):]...)
 		injection.buf = injection.buf[:0]
 		injection.phase = injectionDone
-		// The echo that was hidden included the newline that ended the first
-		// prompt line. Erase that line so the redrawn prompt takes its place.
-		t.writeScreen([]byte("\r\x1b[2K"))
+		// The hidden echo ended the first prompt line, and the shell's next
+		// prompt clears and redraws that line itself (the first-prompt prefix
+		// the integration installs). Erasing here would paint a frame with the
+		// line empty when the redrawn prompt arrives in a later write.
 		t.flushInjectionInput()
 		return rest, true
 	}

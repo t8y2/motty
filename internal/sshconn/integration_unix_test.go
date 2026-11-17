@@ -103,6 +103,12 @@ func TestIntegrationRealSSHPTYTracksCD(t *testing.T) {
 				w.until(what, func(out string) bool { output = out; parse(out); return done() })
 			}
 			wait("integrated SSH prompt", func() bool { return ready > 0 })
+			// The first prompt clears the line the hidden activation line
+			// occupied, in the prompt's own write, so the terminal never has to
+			// paint that line empty (issue #960).
+			if !strings.Contains(output, "\r\x1b[2K") {
+				t.Fatalf("the first prompt did not clear the hidden activation line: %q", output)
+			}
 			if cwd, ok := screen.WorkingDirectory(); !ok || cwd.Path != start {
 				t.Fatalf("the first prompt reports %q (ok %v), want the start directory %q", cwd.Path, ok, start)
 			}
@@ -121,6 +127,9 @@ func TestIntegrationRealSSHPTYTracksCD(t *testing.T) {
 				cwd, ok := screen.WorkingDirectory()
 				return ready > before && ok && cwd.Path == target
 			})
+			if got := strings.Count(output, "\r\x1b[2K"); got != 1 {
+				t.Fatalf("the first-prompt clear ran %d times, want once: %q", got, output)
+			}
 			w.shell.Write([]byte("exit\r"))
 			w.waitDone()
 		})
