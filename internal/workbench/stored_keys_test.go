@@ -19,7 +19,7 @@ func addKeyByHand(t *testing.T, state *State, text, name string) {
 	if !state.keysMenu {
 		t.Fatal("Add Key did not open its menu")
 	}
-	state.Click(hitKeysPaste)
+	clickPageMenuRow(t, state, state.messages.KeyPaste)
 	if state.keysMenu || state.modal != modalForm || !state.form.fields[0].multiline {
 		t.Fatalf("Paste did not open a form with a multiline key field: modal %d", state.modal)
 	}

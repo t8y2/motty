@@ -169,7 +169,6 @@ var (
 // Key management: its page and the rows of its table.
 var (
 	hitKeysAdd         = tree.ID(keysHits, "keys-add")
-	hitKeysMenuDismiss = tree.ID(keysHits, "keys-menu-dismiss")
 	hitKeysImport      = tree.ID(keysHits, "keys-import")
 	hitKeysPaste       = tree.ID(keysHits, "keys-paste")
 	hitKeysGenerate    = tree.ID(keysHits, "keys-generate")
@@ -621,10 +620,8 @@ type State struct {
 	hostsContent    float32
 	hostGroupMenu   bool
 	importMenu      bool
-	// keysMenu is the open menu under the Keychain page's Add Key button, and
-	// keysAddButton where that button was painted.
+	// keysMenu is the open menu under the Keychain page's Add Key button.
 	keysMenu          bool
-	keysAddButton     gfx.Rect
 	hostsBounds       gfx.Rect // the hosts page as last painted; the menus anchor to it
 	hostsGridViewport gfx.Rect // the card grid's absolute viewport as last painted
 	terminalMenu      terminalMenu
@@ -3228,9 +3225,6 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		return result
 	}
 	if result, handled := state.hostManagementKey(event); handled {
-		return result
-	}
-	if result, handled := state.keysKey(event); handled {
 		return result
 	}
 	if state.modal == modalNewHost && event.Key == gfx.KeyEnter && event.Modifiers == 0 && state.EditorFor(event.Target) != nil {

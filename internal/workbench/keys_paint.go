@@ -73,6 +73,7 @@ func (state *State) declareKeysWorkspace(c ui.C) {
 			view.passphraseButton = state.declareButtonSized(c, hitKeysPassphrase, messages.KeySavePassphrase, passphraseIcon, false, false, selectedEncrypted, toolbarFont, condensed).Size(passphraseWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
 			view.removeButton = state.declareButtonSized(c, hitKeysRemove, messages.KeyRemove, removeIcon, false, false, state.selectedIdentityID != 0, toolbarFont, condensed).Size(removeWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
 			view.addButton = state.declareButtonSized(c, hitKeysAdd, messages.KeyAdd, addIcon, true, false, true, toolbarFont, condensed).Size(addWidth, toolbarHeight).Shrink(0)
+			state.declareKeysMenu(c, view.addButton)
 		})
 		if len(state.identities) == 0 {
 			view.empty = state.reserveEmptyPage(c, bounds, messages.KeyEmpty, messages.KeyEmptySub, messages.KeyAdd, hitKeysAdd, iconKey, true)
@@ -105,25 +106,28 @@ func (state *State) declareKeysWorkspace(c ui.C) {
 // the slots its declaration left. A table is painted by the page itself.
 func (state *State) paintKeysWorkspace(canvas *gfx.Canvas) {
 	view := &state.sectionBodies.keys
-	state.keysAddButton = view.addButton.Rect()
 	if len(state.identities) == 0 {
 		state.drawReservedEmptyPage(canvas, view.empty, iconKey)
 	}
-	state.paintKeysMenu(canvas)
 }
 
-// paintKeysMenu lists the three ways to add a key under the Add Key button,
-// right-aligned with it.
-func (state *State) paintKeysMenu(canvas *gfx.Canvas) {
+// declareKeysMenu declares the ways to add a key under the Add Key button. A
+// choice runs as if its control had been clicked.
+func (state *State) declareKeysMenu(c ui.C, anchor ui.Box) {
 	if !state.keysMenu {
 		return
 	}
 	m := state.messages
-	menu := components.BeginDropdownMenu(canvas, state.Theme(), state.popupBelow(canvas, state.keysAddButton, 220, 3*32+8, ui.End),
-		components.DropdownMenuOptions{Layer: dialogLayer, Scope: dialogScope, DismissID: hitKeysMenuDismiss, Viewport: state.windowRect(), Scroll: state.menuScrollFor(hitKeysMenuDismiss)})
-	state.menuPlaced(menu.Bounds())
-	menu.AddItem(components.DropdownMenuItem{ID: hitKeysImport, Label: m.KeyImport})
-	menu.AddItem(components.DropdownMenuItem{ID: hitKeysPaste, Label: m.KeyPaste})
-	menu.AddItem(components.DropdownMenuItem{ID: hitKeysGenerate, Label: m.KeyGenerate})
-	menu.End()
+	ui.PopupLayer(c, dialogLayer)
+	ui.Menu(c, anchor, &state.keysMenu, func(menu *ui.MenuItems) {
+		menu.WidthRange(220, 220)
+		for _, way := range [...]struct {
+			id    gfx.ID
+			label string
+		}{{hitKeysImport, m.KeyImport}, {hitKeysPaste, m.KeyPaste}, {hitKeysGenerate, m.KeyGenerate}} {
+			if menu.Item(way.label).Clicked() {
+				c.After(func() { state.click(way.id, true) })
+			}
+		}
+	})
 }
