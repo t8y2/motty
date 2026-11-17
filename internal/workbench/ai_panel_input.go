@@ -73,7 +73,7 @@ type aiBody struct {
 	close, history, newChat                  ui.Box
 	setup, list                              ui.Box
 	approvalDetails                          ui.Box
-	confirm, decline, approve                ui.Box
+	decline, approve                         ui.Box
 	box, modelChip, scopeChip, reasoningChip ui.Box
 }
 
@@ -416,7 +416,11 @@ func (state *State) declareAIApproval(c ui.C, body *aiBody) {
 			}
 			ui.Column(c).MarginSides(0, 0, aiConfirmFoot, 0).Children(func() {
 				ui.Text(c, panel.confirmText).FontSize(aiSizes.small).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(aiConfirmLabel).MarginSides(0, 0, aiConfirmGap, 0)
-				body.confirm = ui.Slot(c).Height(aiConfirmField)
+				if !panel.confirmBound {
+					panel.confirmField.Bind(&ai.confirm)
+					panel.confirmBound = true
+				}
+				ui.TextFieldID(c, hitAIConfirm, &panel.confirmField, m.ConfirmField, request.Confirm).Height(aiConfirmField)
 			})
 		}
 		ui.Row(c).Height(aiButtonHeight).Gap(8).Items(ui.Center).Children(func() {
@@ -486,12 +490,6 @@ func (state *State) paintAIBottom(canvas *gfx.Canvas, body *aiBody) {
 		allowed := true
 		if request.NeedsText {
 			allowed = strings.TrimSpace(ai.confirm.String()) == request.Confirm
-			value := ai.confirm.String()
-			focused := canvas.Focused() == hitAIConfirm
-			components.PaintInput(canvas, theme, body.confirm.Rect(), components.InputSnapshot{
-				ID: hitAIConfirm, Label: m.ConfirmField, Value: value, Placeholder: request.Confirm,
-				Focused: focused, PlatformEditing: focused && value != "",
-			})
 		}
 		approveLabel, declineLabel := m.Approve, m.Decline
 		if approval.escalation {

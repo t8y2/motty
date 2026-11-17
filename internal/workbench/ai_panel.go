@@ -447,6 +447,8 @@ type aiPanel struct {
 	storeNotice                   string
 	storeNoticeFor                error
 	confirmFor                    *aiApproval
+	confirmField                  ui.Field // the confirmation word's page field, bound to ai.confirm
+	confirmBound                  bool
 	confirmFormat, confirmText    string
 	moreCount                     int
 	moreFormat, moreText          string
