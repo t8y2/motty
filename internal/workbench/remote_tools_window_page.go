@@ -482,17 +482,13 @@ func (w *remoteToolsWindow) declareFormDialog(c ui.C) {
 		return
 	}
 	form := &w.ui.form
-	viewport := c.Bounds()
 	bodyHeight := form.bodyHeight() + w.ui.formProblemHeight(c.Canvas(), form.formProblem())
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), gfx.Rect{Width: viewport.Width, Height: viewport.Height}, components.DialogOptions{
-		ContentSize: gfx.Size{Width: formWidth}, FitBody: true, BodyHeight: bodyHeight,
-	}).Layout(form.description)
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: form.title, Description: form.description, Width: formWidth,
-		Height: layout.Content.Height, Layer: dialogLayer, Scope: dialogScope, CloseID: hitFormClose,
+		Layer: dialogLayer, Scope: dialogScope, CloseID: hitFormClose,
 	})
 	dialog.Body(func() {
-		ui.Column(c).Fill().PadSides(4, 4, 0, 4).Children(func() {
+		ui.Column(c).Height(bodyHeight).PadSides(4, 4, 0, 4).Children(func() {
 			for index := 0; index < form.count; index++ {
 				field := &form.fields[index]
 				if !field.pageBound {
@@ -565,17 +561,13 @@ func (w *remoteToolsWindow) declareSudoDialog(c ui.C) {
 		dialogState.field.Bind(&dialogState.password)
 		dialogState.bound = true
 	}
-	viewport := c.Bounds()
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), gfx.Rect{Width: viewport.Width, Height: viewport.Height}, components.DialogOptions{
-		ContentSize: gfx.Size{Width: 540}, FitBody: true, BodyHeight: w.ui.secretFieldBody(""),
-	}).Layout(hint)
 	dialog := ui.Dialog(c, ui.DialogSpec{
-		Title: title, Description: hint, Width: 540, Height: layout.Content.Height,
+		Title: title, Description: hint, Width: 540,
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitSudoSFTPDismiss, CloseID: hitSudoSFTPCancel, InitialFocusID: hitSudoSFTPPassword,
 	})
 	dialog.Body(func() {
-		ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
+		ui.Column(c).Height(w.ui.secretFieldBody("")).PadSides(2, 4, 0, 4).Children(func() {
 			ui.TextFieldID(c, hitSudoSFTPPassword, &dialogState.field, m.SFTPSudoPassword, "").
 				Height(62).FillWidth().Secure().AutoFocus()
 		})
