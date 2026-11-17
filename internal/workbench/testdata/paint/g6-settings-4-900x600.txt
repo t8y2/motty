@@ -1,0 +1,114 @@
+rect {{0 0 900 600} {0.09411765 0.10980392 0.13725491 1} 0 0 {0 0 0 0} false #0}
+rect {{9 548 186 36} {0.23529412 0.27450982 0.34117648 1} 7.5 0 {0 0 0 0} false #1}
+rect {{204 36 689 557} {0.2627451 0.30588236 0.37254903 1} 11 0 {0 0 0 0} false #2}
+rect {{205 37 687 555} {0.06666667 0.08235294 0.105882354 1} 10 0 {0 0 0 0} false #3}
+rect {{217 101 154.62 38} {0.216 0.22917646 0.24894118 1} 7.5 0 {205 37 687 555} true #5}
+rect {{218 102 152.62 36} {0.11146667 0.1264 0.1488 1} 6.5 0 {205 37 687 555} true #6}
+rect {{217 311 154.62 36} {0.23529412 0.27450982 0.34117648 1} 7.5 0 {205 151 178.62 441} true #7}
+rect {{383.62 37 1 555} {0.2 0.23529412 0.2901961 0.8} 0 0 {205 37 687 555} true #8}
+rect {{416.62 153 443.38 64} {0.2 0.23529412 0.2901961 0.85} 11 0 {384.62 37 507.38 555} true #9}
+rect {{417.62 154 441.38 62} {0.12156863 0.14117648 0.1764706 1} 10 0 {384.62 37 507.38 555} true #10}
+rect {{744.34375 171 97.65625 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {384.62 37 507.38 555} true #12}
+rect {{745.34375 172 95.65625 26} {0.11146667 0.1264 0.1488 1} 6.5 0 {384.62 37 507.38 555} true #13}
+rect {{416.62 269 443.38 128} {0.2 0.23529412 0.2901961 0.85} 11 0 {384.62 37 507.38 555} true #14}
+rect {{417.62 270 441.38 126} {0.12156863 0.14117648 0.1764706 1} 10 0 {384.62 37 507.38 555} true #15}
+rect {{798 291.8 32 18.4} {0.38431373 0.80784315 0.53333336 1} 9.2 0 {384.62 37 507.38 555} true #17}
+rect {{813 293 16 16} {0.8862745 0.90588236 0.93333334 1} 8 0 {384.62 37 507.38 555} true #18}
+rect {{417.62 333 441.38 1} {0.2 0.23529412 0.2901961 0.7} 0 0 {384.62 37 507.38 555} true #19}
+rect {{630.416 351 131.64453 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {384.62 37 507.38 555} true #21}
+rect {{631.416 352 129.64453 26} {0.11146667 0.1264 0.1488 1} 6.5 0 {384.62 37 507.38 555} true #22}
+rect {{770.06055 351 71.93945 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {384.62 37 507.38 555} true #24}
+rect {{771.06055 352 69.93945 26} {0.11146667 0.1264 0.1488 1} 6.5 0 {384.62 37 507.38 555} true #25}
+rect {{416.62 449 443.38 64} {0.2 0.23529412 0.2901961 0.85} 11 0 {384.62 37 507.38 555} true #26}
+rect {{417.62 450 441.38 62} {0.12156863 0.14117648 0.1764706 1} 10 0 {384.62 37 507.38 555} true #27}
+rect {{761.9873 467 80.012695 28} {0.14133334 0.1557647 0.17741176 1} 7.5 0 {384.62 37 507.38 555} true #29}
+rect {{762.9873 468 78.012695 26} {0.08906667 0.10437648 0.12734118 1} 6.5 0 {384.62 37 507.38 555} true #30}
+shadow {{217 101 154.62 38} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {205 37 687 555} true #4}
+shadow {{744.34375 171 97.65625 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {384.62 37 507.38 555} true #11}
+shadow {{798 291.8 32 18.4} 9.2 {0 0 0 0.05} {0 1 2 0} 0 {384.62 37 507.38 555} true #16}
+shadow {{630.416 351 131.64453 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {384.62 37 507.38 555} true #20}
+shadow {{770.06055 351 71.93945 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {384.62 37 507.38 555} true #23}
+shadow {{761.9873 467 80.012695 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {384.62 37 507.38 555} true #28}
+text "Hosts" {52 114.5 37.180664 21}
+text "Workspaces" {52 154.5 80.37695 21}
+text "Monitor" {52 194.5 49.745117 21}
+text "Session Logs" {52 234.5 85.51758 21}
+text "Keychain" {52 274.5 59.814453 21}
+text "Jump Routes" {52 314.5 84.2666 21}
+text "Port Forwarding" {52 354.5 103.40039 21}
+text "Known Hosts" {52 394.5 85.44238 21}
+text "Snippets" {52 434.5 56.47168 21}
+text "Notes" {52 474.5 37.99414 21}
+text "Local Terminal" {52 515.5 94.36328 21}
+text "Settings" {52 555.5 52.759766 21}
+text "Settings" {227 63 148.62 28}
+text "Search settings" {248 110 112.619995 20}
+text "General" {257 158 106.619995 22}
+text "Terminal" {257 198 106.619995 22}
+text "Connection" {257 238 106.619995 22}
+text "Files" {257 278 106.619995 22}
+text "Security" {257 318 106.619995 22}
+text "Backup & sync" {257 358 106.619995 22}
+text "AI assistant" {257 398 106.619995 22}
+text "MCP" {257 438 106.619995 22}
+text "Keyboard sho…" {257 478 106.619995 22}
+text "About" {257 518 106.619995 22}
+text "Security" {416.62 71 100.762695 34}
+text "Identities" {420.62 125 435.38 22}
+text "Identities" {434.62 159 285.72375 21}
+text "Keep a login name and password once and let" {434.62 181 285.72375 15}
+text "several hosts use them. Change them here and ev…" {434.62 196 285.72375 15}
+text "Add identity" {754.34375 171 97.65625 28}
+text "Session logs" {420.62 241 435.38 22}
+text "Keep local session logs" {434.62 275 347.38 21}
+text "Record which host a session reached, when it started and how" {434.62 297 347.38 15}
+text "it ended on this computer. Terminal contents and passwords…" {434.62 312 347.38 15}
+text "Records" {434.62 346.5 171.79602 21}
+text "Reading sessions…" {434.62 368.5 171.79602 15}
+text "Clear unfavorited" {640.416 351 131.64453 28}
+text "Clear all" {780.06055 351 71.93945 28}
+text "Saved passwords" {420.62 421 435.38 22}
+text "Saved passwords" {434.62 455 303.3673 21}
+text "None saved. Tick \"Save password\" when a server asks" {434.62 477 303.3673 15}
+text "for one." {434.62 492 303.3673 15}
+text "Forget all" {771.9873 467 80.012695 28}
+hit "" region {0 0 900 36} disabled=false
+hit "Hosts" button {82 4 28 28} disabled=false
+hit "New tab" button {116 4 28 28} disabled=false
+hit "Transfers" button {656 4 28 28} disabled=false
+hit "Session manager" button {686 4 28 28} disabled=false
+hit "AI assistant" button {716 4 28 28} disabled=false
+hit "Local Terminal" button {746 4 28 28} disabled=false
+hit "Command Palette" button {776 4 28 28} disabled=false
+hit "Switch to light theme" button {806 4 28 28} disabled=false
+hit "GitHub" button {836 4 28 28} disabled=false
+hit "Settings" button {866 4 28 28} disabled=false
+hit "Hosts" menuitem {9 107 186 36} disabled=false
+hit "Workspaces" menuitem {9 147 186 36} disabled=false
+hit "Monitor" menuitem {9 187 186 36} disabled=false
+hit "Session Logs" menuitem {9 227 186 36} disabled=false
+hit "Keychain" menuitem {9 267 186 36} disabled=false
+hit "Jump Routes" menuitem {9 307 186 36} disabled=false
+hit "Port Forwarding" menuitem {9 347 186 36} disabled=false
+hit "Known Hosts" menuitem {9 387 186 36} disabled=false
+hit "Snippets" menuitem {9 427 186 36} disabled=false
+hit "Notes" menuitem {9 467 186 36} disabled=false
+hit "Local Terminal" menuitem {9 508 186 36} disabled=false
+hit "Settings" menuitem {9 548 186 36} disabled=false
+hit "Search settings" textfield {217 101 154.62 38} disabled=false
+hit "Add identity" button {744.34375 171 97.65625 28} disabled=false
+hit "Keep local session logs" switch {786 283.8 56 34.399994} disabled=false
+hit "Clear unfavorited" button {630.416 351 131.64453 28} disabled=false
+hit "Clear all" button {770.06055 351 71.93945 28} disabled=false
+hit "Forget all" button {761.9873 467 80.012695 28} disabled=true
+hit "General" menuitem {217 151 154.62 36} disabled=false
+hit "Terminal" menuitem {217 191 154.62 36} disabled=false
+hit "Connection" menuitem {217 231 154.62 36} disabled=false
+hit "Files" menuitem {217 271 154.62 36} disabled=false
+hit "Security" menuitem {217 311 154.62 36} disabled=false
+hit "Backup & sync" menuitem {217 351 154.62 36} disabled=false
+hit "AI assistant" menuitem {217 391 154.62 36} disabled=false
+hit "MCP" menuitem {217 431 154.62 36} disabled=false
+hit "Keyboard shortcuts" menuitem {217 471 154.62 36} disabled=false
+hit "About" menuitem {217 511 154.62 36} disabled=false
+hit "Keep local session logs" button {434.62 275 347.38 52} disabled=false

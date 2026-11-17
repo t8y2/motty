@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/vivaui/viva/gfx"
@@ -9,6 +10,12 @@ import (
 )
 
 func init() {
+	for category := settingsGeneral; category < settingsCategoryCount; category++ {
+		extraPaintScenes = append(extraPaintScenes, plainScene(fmt.Sprintf("g6-settings-%d", category), func(t *testing.T, s *State) {
+			s.openSettings()
+			s.selectSettingsCategory(category)
+		}))
+	}
 	extraPaintScenes = append(extraPaintScenes,
 		plainScene("g6-rule-delete-autofill", func(t *testing.T, s *State) {
 			s.ruleDelete = ruleDelete{kind: ruleDeleteAutofill, name: "Deploy", text: true}

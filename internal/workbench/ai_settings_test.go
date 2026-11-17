@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -1119,16 +1120,19 @@ func TestAISettingsFocusOrderFollowsThePage(t *testing.T) {
 		return hit.ID
 	}
 	order := stops(canvas)
-	// The page declares its Choices while it is laid out; the controls still
-	// painted by the Frame recipe are visited after every page Choice. Until the
-	// rest of the category is a page too, the Choices therefore lead the keyboard
-	// order, while their own order is the page's.
+	// Every control of the category is a page element, so the keyboard visits them
+	// as the page reads: top to bottom, left to right. The provider rows, the model-name
+	// field and the step count's value are still painted after the page, and are stops too.
 	want := []gfx.ID{
-		choice(state.messages.AISettings.RiskLow), choice("60"), choice("4 MiB"),
-		hitAISetProviderRow.At(0), hitAISetProviderSwitch.At(0), hitAISetProviderEdit.At(0), hitAISetProviderDelete.At(0), hitAISetProviderAdd,
-		hitAISetFetchModels, hitAISetModelUse.At(1), hitAISetModelSwitch.At(1), hitAISetModelInput, hitAISetModelAdd,
-		hitAISetStepsMinus, hitAISetStepsValue, hitAISetStepsPlus,
+		hitAISetProviderSwitch.At(0), hitAISetProviderEdit.At(0), hitAISetProviderDelete.At(0), hitAISetProviderAdd,
+		hitAISetFetchModels, hitAISetModelUse.At(1), hitAISetModelSwitch.At(1), hitAISetModelAdd,
+		choice(state.messages.AISettings.RiskLow), hitAISetStepsMinus, hitAISetStepsPlus, choice("60"), choice("4 MiB"),
 		hitAISetRedact, hitAISetHistory, hitAISetClearHistory,
+	}
+	for _, id := range []gfx.ID{hitAISetProviderRow.At(0), hitAISetModelInput, hitAISetStepsValue} {
+		if !slices.Contains(order, id) {
+			t.Errorf("hit %d is not a focus stop; stops: %v", id, order)
+		}
 	}
 	position := -1
 	for _, id := range want {
@@ -1163,7 +1167,7 @@ func TestAISettingsFocusOrderFollowsThePage(t *testing.T) {
 	}
 	next := 0
 	for _, got := range order {
-		if next < 4 && got == []gfx.ID{mcpObserve.ID, agentObserve.ID, hitAISetMCPEnabled, hitAISetMCPReset}[next] {
+		if next < 4 && got == []gfx.ID{hitAISetMCPEnabled, mcpObserve.ID, hitAISetMCPReset, agentObserve.ID}[next] {
 			next++
 		}
 	}

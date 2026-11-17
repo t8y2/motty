@@ -25,10 +25,7 @@ const (
 type settingsControlKind uint8
 
 const (
-	controlSwitch     settingsControlKind = iota // a two-state switch
-	controlButtons                               // buttons against the right edge of the slot
-	controlButton                                // one small button filling the slot
-	controlHit                                   // the slot is a pointer target
+	controlHit        settingsControlKind = iota // the slot is a pointer target
 	controlModelInput                            // the assistant's model-name field
 	controlStepsValue                            // the assistant's step-count field between its − and + buttons
 	controlFindPreference
@@ -58,7 +55,7 @@ type settingsControl struct {
 	disabled bool
 	style    aiButtonStyle
 	hit      gfx.HitOptions
-	// first and count name the control's options or actions in the page's arenas.
+	// first and count name the control's swatches in the page's arena.
 	first, count int
 }
 
@@ -163,6 +160,7 @@ func (state *State) declareSettingsWorkspace(c ui.C) {
 	}
 
 	view.controls, view.actions, view.colors = view.controls[:0], view.actions[:0], view.colors[:0]
+	view.switchesUsed = 0
 	page := settingsPage{state: state, c: c, width: min(settingsColumnMax, max(areaWidth-64, 0)), rowHeight: settingsRowHeight}
 	// The wheel in settings.go owns the targets; each area starts at the value
 	// the page shows on the way to one, and the paint clamps the target
@@ -237,7 +235,6 @@ func (state *State) paintSettingsDetails(canvas *gfx.Canvas) {
 // paintSettingsControls paints the controls the page recorded into their slots,
 // in the order they were declared.
 func (state *State) paintSettingsControls(canvas *gfx.Canvas) {
-	theme := state.Theme()
 	for index := range state.settings.controls {
 		control := &state.settings.controls[index]
 		rect := control.slot.Rect()
@@ -252,16 +249,6 @@ func (state *State) paintSettingsControls(canvas *gfx.Canvas) {
 			state.editorMenu.bounds = rect
 		case controlStartupHosts:
 			state.startupPicker.bounds = rect
-		case controlSwitch:
-			state.aiSwitch(canvas, control.id, rect, control.on, control.disabled, control.label)
-		case controlButtons:
-			row := components.BeginButtonRow(canvas, theme, rect)
-			if control.disabled {
-				row = row.Disabled()
-			}
-			row.Paint(state.settings.actions[control.first : control.first+control.count]...)
-		case controlButton:
-			state.aiButton(canvas, control.id, rect, control.label, control.style, control.disabled)
 		case controlHit:
 			canvas.HitWithOptions(control.id, rect, control.label, control.hit)
 		case controlLabel:
@@ -734,7 +721,7 @@ func (page *settingsPage) valueActionRow(label, description, value string, disab
 	page.lineWith(label, description, controlWidth, func() {
 		ui.Text(page.c, value).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(page.state.pal.muted).
 			Ellipsis().MaxWidth(valueWidth).Grow(1).TextEnd().MarginSides(0, gap, 0, 0)
-		buttons = ui.Slot(page.c).Size(buttonsWidth, 34).Shrink(0)
+		buttons = ui.Row(page.c).Size(buttonsWidth, 34).Shrink(0).Justify(ui.End).Items(ui.Center)
 	})
 	page.buttons(buttons, disabled, actions...)
 }
@@ -753,29 +740,71 @@ func (page *settingsPage) add(control settingsControl) {
 	view.controls = append(view.controls, control)
 }
 
+// buttons declares the actions as small page buttons against the right edge of
+// slot, in the order given, so the last one sits at the corner. They keep the
+// application's identities: a press is the central click handler's.
 func (page *settingsPage) buttons(slot ui.Box, disabled bool, actions ...components.ButtonAction) {
+	c := page.c
+	slot.Children(func() {
+		ui.Row(c).Gap(page.state.Theme().Metrics.GapItem).Items(ui.Center).Children(func() {
+			for _, action := range actions {
+				button := ui.Button(c, action.Label).Small().Hit(action.ID, action.Label)
+				button = settingsButtonVariant(button, action.Variant)
+				button.Disabled(disabled || action.Disabled)
+			}
+		})
+	})
+}
+
+// settingsButtonVariant dresses a page button as the variant a ButtonAction names.
+func settingsButtonVariant(button ui.Box, variant components.ButtonVariant) ui.Box {
+	switch variant {
+	case components.ButtonSecondary:
+		return button.Secondary()
+	case components.ButtonOutline:
+		return button.Outline()
+	case components.ButtonGhost:
+		return button.Ghost()
+	case components.ButtonDestructive:
+		return button.Destructive()
+	case components.ButtonDestructiveOutline:
+		return button.DestructiveOutline()
+	}
+	return button
+}
+
+// switchOn is the value a page switch is declared over: the application keeps
+// the setting, and a press is the central click handler's, so the switch only
+// shows it. The array is the settings view's, reused by every paint.
+func (page *settingsPage) switchOn(on bool) *bool {
 	view := &page.state.settings
-	view.actions = append(view.actions, actions...)
-	page.add(settingsControl{kind: controlButtons, slot: slot, disabled: disabled, first: len(view.actions) - len(actions), count: len(actions)})
+	if view.switchesUsed == len(view.switches) {
+		return new(bool)
+	}
+	flag := &view.switches[view.switchesUsed]
+	view.switchesUsed++
+	*flag = on
+	return flag
 }
 
-func (page *settingsPage) switchIn(slot ui.Box, id gfx.ID, on, disabled bool, label string) {
-	page.add(settingsControl{kind: controlSwitch, slot: slot, id: id, on: on, disabled: disabled, label: label})
-}
-
-// button declares a small button and records it.
-func (page *settingsPage) button(id gfx.ID, label string, style aiButtonStyle, disabled bool) ui.Box {
-	width, height := page.state.aiButtonSize(page.canvas(), label)
-	slot := ui.Slot(page.c).Size(width, height)
-	page.add(settingsControl{kind: controlButton, slot: slot, id: id, label: label, style: style, disabled: disabled})
-	return slot
-}
-
-// switchSlot declares a switch and records it.
+// switchSlot declares a switch with the application's identity and returns it.
 func (page *settingsPage) switchSlot(id gfx.ID, on, disabled bool, label string) ui.Box {
-	slot := ui.Slot(page.c).Size(aiSwitchWidth, aiSwitchHeight).Shrink(0)
-	page.switchIn(slot, id, on, disabled, label)
-	return slot
+	flag := page.switchOn(on)
+	*flag = on
+	return ui.Switch(page.c, flag, "").Label(label).Hit(id, label).Disabled(disabled).Shrink(0)
+}
+
+// button declares a small button with the application's identity and returns it.
+func (page *settingsPage) button(id gfx.ID, label string, style aiButtonStyle, disabled bool) ui.Box {
+	button := ui.Button(page.c, label).Small().Hit(id, label)
+	switch style {
+	case aiButtonPrimary:
+	case aiButtonDanger:
+		button = button.DestructiveOutline()
+	default:
+		button = button.Outline()
+	}
+	return button.Disabled(disabled)
 }
 
 // hitOn makes the box a pointer target once the page has been laid out.
