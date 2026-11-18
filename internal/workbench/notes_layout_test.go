@@ -257,8 +257,10 @@ func TestUnselectedMoreMenuFallbackAndLayer(t *testing.T) {
 			if text.Bounds.X < 200 {
 				t.Fatalf("Rename menu rendered at X=%.1f, overlapping workbench!", text.Bounds.X)
 			}
-			if text.Layer != dialogLayer {
-				t.Fatalf("Rename menu layer = %d, want dialogLayer (%d)", text.Layer, dialogLayer)
+			// The menu is a page menu: it paints on a widget layer above the
+			// page rather than on the old canvas overlay's fixed layer.
+			if text.Layer == 0 {
+				t.Fatal("Rename menu painted under the page")
 			}
 		}
 	}
@@ -290,8 +292,8 @@ func TestUnselectedMoreMenuFallbackAndLayer(t *testing.T) {
 			if text.Bounds.X < 200 {
 				t.Fatalf("folder Delete menu rendered at X=%.1f, overlapping workbench!", text.Bounds.X)
 			}
-			if text.Layer != dialogLayer {
-				t.Fatalf("folder menu layer = %d, want dialogLayer (%d)", text.Layer, dialogLayer)
+			if text.Layer == 0 {
+				t.Fatal("folder menu painted under the page")
 			}
 		}
 	}
