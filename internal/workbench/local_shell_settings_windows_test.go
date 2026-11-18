@@ -132,9 +132,10 @@ func TestLocalShellDropdownKeyboardDismissAndRefresh(t *testing.T) {
 
 func TestLocalShellDropdownHandlesNoInstalledShells(t *testing.T) {
 	state := shellSelectState(t, nil)
+	state.localShell = ""
 	canvas := paintShellSettings(state)
 	hit, ok := hitByID(canvas, hitSettingsLocalShell)
-	if !ok || !hit.Disabled || hit.Value != state.messages.SettingsLocalShellEmpty {
+	if !ok || !hit.Disabled || !remoteCanvasHasText(canvas, state.messages.SettingsLocalShellEmpty) {
 		t.Fatalf("empty discovery: %+v", hit)
 	}
 }

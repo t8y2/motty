@@ -111,7 +111,8 @@ func (state *State) declareRemoteProcessDetailsBody(c ui.C, width float32, proce
 			})
 		}
 		tab := state.remoteProcessDetailTab()
-		if ui.Tabs(c, &tab, remoteProcessDetailTabIDs[:], state.remoteProcessDetailTabLabel).Width(min(float32(300), width)).Height(34).Shrink(0).MarginSides(2, 0, 0, 0).Changed() {
+		tabs := ui.Tabs(c, &tab, remoteProcessDetailTabIDs[:], state.remoteProcessDetailTabLabel).Width(min(float32(300), width)).Height(34).Shrink(0).MarginSides(2, 0, 0, 0)
+		if _, clicked := tabs.TabClicked(); clicked {
 			c.After(func() { state.selectRemoteProcessDetailTab(tab) })
 		}
 		ui.Slot(c).Grow(1).Draw(func(d *ui.DrawContext) {

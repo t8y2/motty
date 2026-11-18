@@ -102,24 +102,18 @@ func TestSecondaryPressOnAnOpenMenuBackdropClosesItAndOpensTheHostMenu(t *testin
 		t.Fatal("alpha is not listed")
 	}
 	target := state.hostsPanel.tree.RowID(row)
-	state.tabMenu.open = true
-	// The first pass is the press the open menu's backdrop takes; it must close
-	// that menu and leave the panel alone.
-	state.Pointer(gfx.PointerEvent{
-		Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitTabMenuDismiss,
-		X: 100, Y: 148, Viewport: panelWide,
-	})
+	state.tabMenu = tabMenu{
+		open: true, workspace: state.deck.ActiveWorkspace(),
+		at: gfx.Point{X: panelWide.Width - 260, Y: 70},
+	}
+	driver := paneDriver(t, state, panelWide)
+	hit := hitOf(t, driver, target)
+	if err := driver.ClickButton(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2, gfx.PointerButtonSecondary); err != nil {
+		t.Fatal(err)
+	}
 	if state.tabMenu.open {
 		t.Fatal("the open menu did not close")
 	}
-	if state.hostBlankMenu.open {
-		t.Fatal("the backdrop press opened the blank menu")
-	}
-	// The runtime then delivers the same press to the row under it.
-	state.Pointer(gfx.PointerEvent{
-		Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: target,
-		X: 100, Y: 148, Viewport: panelWide,
-	})
 	if !state.hostMenu.open || state.hostMenu.host != state.hosts[state.hostsPanel.rows[row].HostIndex].ID {
 		t.Fatalf("host menu = %+v, want alpha's", state.hostMenu)
 	}

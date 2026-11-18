@@ -238,7 +238,8 @@ func (state *State) declareRemoteContainerDetailsDialog(c ui.C) {
 	dialog.Body(func() {
 		ui.Column(c).Fill().Pad(8).Gap(8).Children(func() {
 			tab := state.remoteContainerDetailTab()
-			if ui.Tabs(c, &tab, remoteContainerDetailTabIDs[:], state.remoteContainerDetailTabLabel).Width(min(float32(320), viewport.Width)).Height(34).Shrink(0).Changed() {
+			tabs := ui.Tabs(c, &tab, remoteContainerDetailTabIDs[:], state.remoteContainerDetailTabLabel).Width(min(float32(320), viewport.Width)).Height(34).Shrink(0)
+			if _, clicked := tabs.TabClicked(); clicked {
 				c.After(func() { state.selectRemoteContainerDetailTab(tab) })
 			}
 			ui.Slot(c).Grow(1).Draw(func(d *ui.DrawContext) {

@@ -30,6 +30,7 @@ func liveRecordingSession(t testing.TB, now *time.Duration) (*State, *fakeConn, 
 func TestTerminalRecordingCapturesAcceptedSplitInputAndOutputDeterministically(t *testing.T) {
 	now := time.Second
 	state, _, shell := liveRecordingSession(t, &now)
+	state.pasteConfirmOff = true // Exercise direct multiline paste recording.
 	session := &state.sessions[0]
 	state.toggleTerminalRecording(session)
 
