@@ -713,6 +713,9 @@ type Messages struct {
 	PaneNext            string
 	PaneSplitHorizontal string
 	PaneSplitVertical   string
+	PaneMaximize        string
+	PaneRestore         string
+	PaneMaximizeToggle  string
 	PaneClose           string
 	PaneResize          string
 

@@ -661,6 +661,8 @@ type State struct {
 	workspaceTemplateFocusPending gfx.ID
 	// workspaceHeaderFocusPending is where the keyboard returns after a header
 	// menu closes; the pane painter applies it once the page has painted.
+	paneMaximizeHints           [5]string
+	focusTabs                   workspaceFocusTabs
 	workspaceHeaderFocusPending gfx.ID
 	workspaceDraft              workspaceDraft
 	// workspaceHeaderPlan and workspaceHeaderSlots are what the managed
@@ -2049,6 +2051,12 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		state.splitWithCurrentHost(layoutcore.Horizontal)
 	case id == hitPaneSplitVertical:
 		state.splitWithCurrentHost(layoutcore.Vertical)
+	case id.Scope() == hitWorkspaceFocusTab:
+		state.selectWorkspaceFocusTab(layoutcore.PaneID(item(id)), true)
+	case id == hitPaneMaximize:
+		state.togglePaneMaximized(0)
+	case id.Scope() == hitPaneMaximizeList:
+		state.togglePaneMaximized(layoutcore.PaneID(item(id)))
 	case id == hitPaneClose:
 		state.closeActivePane()
 	case id == hitPaneRename:
@@ -2910,6 +2918,9 @@ func (state *State) Key(event gfx.KeyEvent) (outcome gfx.EventResult) {
 		return result
 	}
 	if result, handled := state.keyShortcut(event); handled {
+		return result
+	}
+	if result := state.workspaceFocusTabsKey(event); result.Handled {
 		return result
 	}
 	if result, handled := state.hostsPanelKeyPress(event); handled {

@@ -26,7 +26,7 @@ func (state *State) workspaceTabbed(workspaceID layoutcore.WorkspaceID) bool {
 // choice, and the paint that found a new choice makes that pane active.
 func (state *State) declareWorkspacePaneTabs(c ui.C, frame gfx.Rect) {
 	workspaceID := state.deck.ActiveWorkspace()
-	if !state.workspaceTabbed(workspaceID) || state.activeSection != sectionTerminal {
+	if state.deck.PaneMaximized(workspaceID) || !state.workspaceTabbed(workspaceID) || state.activeSection != sectionTerminal {
 		return
 	}
 	labels, indices := state.workspacePaneTabLabels[:0], state.workspacePaneTabIndices[:0]

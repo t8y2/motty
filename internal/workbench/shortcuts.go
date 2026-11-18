@@ -43,6 +43,7 @@ const (
 	shortcutSnippetPicker
 	shortcutHostsPanel
 	shortcutAcceptSuggestion
+	shortcutPaneMaximize
 	shortcutActionCount
 )
 
@@ -86,6 +87,7 @@ func defaultShortcuts() shortcutMap {
 	splitHorizontal, splitVertical := defaultPaneSplitChords()
 	shortcuts.chords.Set(shortcutPaneSplitHorizontal, splitHorizontal)
 	shortcuts.chords.Set(shortcutPaneSplitVertical, splitVertical)
+	shortcuts.chords.Set(shortcutPaneMaximize, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 'm'})
 	shortcuts.chords.Set(shortcutPaneClose, keymap.Chord{Modifiers: primary | gfx.ModifierAlt, Char: 'w'})
 	shortcuts.chords.Set(shortcutFilesPath, keymap.Chord{Modifiers: primary, Char: 'l'})
 	shortcuts.chords.Set(shortcutSFTP, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 's'})
@@ -325,6 +327,8 @@ func (action shortcutAction) String() string {
 		return "pane_split_horizontal"
 	case shortcutPaneSplitVertical:
 		return "pane_split_vertical"
+	case shortcutPaneMaximize:
+		return "pane_maximize"
 	case shortcutPaneClose:
 		return "pane_close"
 	case shortcutFilesPath:
@@ -728,6 +732,8 @@ func (state *State) executeShortcut(action shortcutAction) gfx.EventResult {
 		state.Click(hitPaneSplitHorizontal)
 	case shortcutPaneSplitVertical:
 		state.Click(hitPaneSplitVertical)
+	case shortcutPaneMaximize:
+		state.Click(hitPaneMaximize)
 	case shortcutPaneClose:
 		state.Click(hitPaneClose)
 	case shortcutSFTP:
