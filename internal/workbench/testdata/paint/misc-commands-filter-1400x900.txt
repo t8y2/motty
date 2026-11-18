@@ -21,7 +21,7 @@ shadow {{12 683 190 177} 10 {0 0 0 0.1} {0 4 6 -1} 12 {0 0 0 0} false #8}
 shadow {{12 683 190 177} 10 {0 0 0 0.1} {0 2 4 -2} 12 {0 0 0 0} false #9}
 text "Connect to" {480 369 440 26}
 text "Local Terminal" {536 426 94.36328 22}
-text "skylerdeMacBook-Pro.local" {733.63086 427 150.36914 20}
+text "test-host.local" {805.94727 427 78.052734 20}
 text "Add Host" {500.15234 467.5 51.65625 19}
 text "All hosts" {599.96533 467.5 48.10547 19}
 text "Filter by group" {24 687 166 32}

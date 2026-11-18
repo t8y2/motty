@@ -291,6 +291,7 @@ hit "Port" textfield {666 219 84 32} disabled=false
 hit "User" button {138 267 30.276367 18} disabled=false
 hit "User" textfield {138 289 198.66669 32} disabled=false
 hit "Authentication" combobox {344.6667 289 198.66669 32} disabled=false
+hit "Password" button {551.3334 267 63.492188 18} disabled=false
 hit "Icon" combobox {138 429 198.66669 32} disabled=false
 hit "Auto" radio {344.6667 429 66.22223 32} disabled=false
 hit "SFTP" radio {410.88892 429 66.22223 32} disabled=false

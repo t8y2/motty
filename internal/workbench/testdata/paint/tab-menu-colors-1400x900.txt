@@ -48,7 +48,7 @@ text "New tab" {496 8 45.679688 20}
 text "New tab" {670 8 45.679688 20}
 text "Connect to" {480 314 440 26}
 text "Local Terminal" {536 371 94.36328 22}
-text "skylerdeMacBook-Pro.local" {733.63086 372 150.36914 20}
+text "test-host.local" {805.94727 372 78.052734 20}
 text "Production" {536 419 70.25293 22}
 text "deploy@prod.example.com:22" {716.8262 420 167.17383 20}
 text "Staging" {536 467 49.006836 22}

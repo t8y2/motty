@@ -15,5 +15,8 @@ func TestMain(m *testing.M) {
 	// A real trim firing seconds after one test's close would collect the heap
 	// in the middle of another test's allocation measurement.
 	memoryTrim.trim = func() {}
+	// The local terminal names this computer in what it paints; the goldens
+	// cannot depend on the machine that runs them.
+	localMachineName = func() (string, error) { return "test-host.local", nil }
 	os.Exit(leaks.Main(m))
 }
