@@ -9,20 +9,20 @@ import (
 // knownHostsSectionUI is what the known-hosts page's declaration leaves for its
 // paint.
 type knownHostsSectionUI struct {
-	refresh, retrust, remove, emptySlot     ui.Box
-	refreshWidth, retrustWidth, deleteWidth float32
-	refreshIcon, retrustIcon, deleteIcon    uint8
-	condensed                               bool
-	empty                                   bool
-	emptyIcon                               uint8
-	// draw is the page hook that paints the empty state. It is kept so a paint
+	tableBox, refresh, retrust, remove, emptySlot ui.Box
+	refreshWidth, retrustWidth, deleteWidth       float32
+	refreshIcon, retrustIcon, deleteIcon          uint8
+	condensed                                     bool
+	empty                                         bool
+	emptyIcon                                     uint8
+	// draw is the page hook that paints into these slots. It is kept so a paint
 	// does not build a closure for the hook.
 	draw func(*ui.DrawContext)
 }
 
 // declareKnownHostsWorkspace declares the known-hosts page in the workbench
 // page: its header, its search row, its table or empty state, and its footer.
-// The table's rows are a page list; its empty state is painted by the hook.
+// The checks are painted over the table's first column in the draw pass.
 func (state *State) declareKnownHostsWorkspace(c ui.C) {
 	state.syncKnownHostsVisible()
 	canvas := c.Canvas()
@@ -46,7 +46,8 @@ func (state *State) declareKnownHostsWorkspace(c ui.C) {
 	if view.errorText != "" {
 		statusColor = pal.danger
 	}
-	paginated := len(view.visible) > knownHostsPageSize
+	pageSize := state.knownHostsPageSize()
+	paginated := len(view.visible) > pageSize
 	emptyTitle, emptyDescription, emptyIconKind := "", "", uint8(iconKnown)
 	emptyDescriptionColor := pal.muted
 	empty := view.errorText != "" || len(view.rows) == 0 || len(view.visible) == 0
@@ -100,46 +101,48 @@ func (state *State) declareKnownHostsWorkspace(c ui.C) {
 				messages.KnownHostsColumnType, messages.KnownHostsColumnFingerprint, messages.KnownHostsColumnComment,
 			}
 			components.FitTableHeadings(canvas, state.Theme(), view.columns[:], view.headings[:])
-			state.fitKnownHostsColumns(bounds.Width - 2*knownHostsSidePad)
-			theme := state.Theme()
-			headerHeight := components.TableHeaderHeight(theme)
-			headerPad := theme.Metrics.GapItem
-			ui.Column(c).Grow(1).Shrink(1).MarginSides(14, 0, 0, 0).Children(func() {
-				ui.Row(c).Height(headerHeight).Shrink(0).FillWidth().Gap(0).Items(ui.Center).Children(func() {
-					ui.Slot(c).Width(view.columns[0].Width).Height(headerHeight).Shrink(0)
-					for column := 1; column < knownHostsColumns; column++ {
-						width := view.columns[column].Width
-						if width <= 0 {
-							break
-						}
-						cell := ui.Text(c, view.headings[column]).Weight(gfx.WeightMedium).PadX(headerPad).Width(width).Shrink(0)
-						if view.columns[column].Alignment == components.TableAlignRight {
-							cell = cell.TextEnd()
-						}
-						cell.Ellipsis()
-					}
-					ui.Slot(c).Absolute().Left(0).Right(0).Bottom(0).Height(1).Background(theme.Border)
-				})
-				start, end := state.knownHostsPageRange()
-				ui.List(c, &view.list, end-start, view.rowDecl).Grow(1).Shrink(1).MinHeight(0).FillWidth().
-					Scrollbars().Label(messages.KnownHostsTitle)
-			})
+			layout.tableBox = ui.Table(c, &view.table, ui.TableSpec{
+				Rows:            hitKnownHostRowList,
+				Columns:         view.columns[:],
+				Headers:         view.headings[:],
+				Source:          &view.tableSource,
+				Scrollbar:       hitKnownHostsScrollThumb,
+				ScrollbarLabel:  messages.KnownHostsListScroll,
+				ScrollbarSize:   catalogBarGutter,
+				ScrollbarGutter: catalogBarGutter,
+			}).Grow(1).Shrink(1).MarginSides(14, 0, 0, 0)
+			if row, ok := layout.tableBox.RowClicked(); ok && state.modal == modalNone {
+				view.table.Select(row)
+			}
 		}
 		ui.Divider(c).Background(pal.line)
-		// The footer's columns narrow with the card so the status keeps its room.
-		countWidth := min(168, (bounds.Width-2*knownHostsSidePad)*0.30)
-		selectionWidth := min(138, (bounds.Width-2*knownHostsSidePad)*0.22)
-		ui.Row(c).Height(49).Gap(12).Items(ui.Center).Children(func() {
+		// The footer's columns narrow with the card so the status, page-size switcher and pagination keep their room.
+		countWidth := min(136, (bounds.Width-2*knownHostsSidePad)*0.22)
+		selectionWidth := min(116, (bounds.Width-2*knownHostsSidePad)*0.18)
+		ui.Row(c).Height(49).Gap(10).Items(ui.Center).Children(func() {
 			ui.Text(c, view.countText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Width(countWidth).Ellipsis()
 			ui.Text(c, view.selectionText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).Width(selectionWidth).Ellipsis()
 			ui.Text(c, view.status).FontSize(metrics.FontSizeS).Color(statusColor).Grow(1).Ellipsis()
+			if len(view.rows) > 0 {
+				ui.Row(c).Height(30).Gap(6).Items(ui.Center).Shrink(0).Children(func() {
+					ui.Text(c, messages.KnownHostsPerPage).FontSize(metrics.FontSizeS).Color(pal.muted).Shrink(0)
+					if ui.Choice(c, &view.pageSize, knownHostsPageSizes[:], view.pageSizeLabelFn).Height(30).Shrink(0).Changed() {
+						newSize := view.pageSize
+						view.pageSize = 0
+						state.setKnownHostsPageSize(newSize)
+						pageSize = state.knownHostsPageSize()
+						paginated = len(view.visible) > pageSize
+					}
+				})
+			}
 			if paginated {
-				pages := (len(view.visible) + knownHostsPageSize - 1) / knownHostsPageSize
-				ui.Row(c).Size(242, 30).Shrink(0).Gap(4).Items(ui.Center).Children(func() {
+				pages := (len(view.visible) + pageSize - 1) / pageSize
+				pageLabelW := canvas.TextWidthWeight(view.pageText, metrics.FontSizeM, gfx.WeightMedium) + 16
+				ui.Row(c).Height(30).Shrink(0).Gap(6).Items(ui.Center).Children(func() {
 					ui.Button(c, messages.KnownHostsPrevious).Hit(hitKnownHostsPrevious, messages.KnownHostsPrevious).
 						Outline().Small().Disabled(view.page == 0).Shrink(0)
 					ui.Text(c, view.pageText).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text).
-						Grow(1).TextCenter().Ellipsis()
+						Width(pageLabelW).TextCenter().Shrink(0)
 					ui.Button(c, messages.KnownHostsNext).Hit(hitKnownHostsNext, messages.KnownHostsNext).
 						Outline().Small().Disabled(view.page+1 >= pages).Shrink(0)
 				})
@@ -149,69 +152,70 @@ func (state *State) declareKnownHostsWorkspace(c ui.C) {
 	body.Clip().DrawOver(layout.draw)
 }
 
-// paintKnownHostsWorkspace paints the known-hosts page's empty state into the
-// slot its declaration left. The table is declared by the page itself.
+// paintKnownHostsWorkspace paints the known-hosts page's row checkboxes and
+// empty state into the slots its declaration left.
 func (state *State) paintKnownHostsWorkspace(canvas *gfx.Canvas) {
 	layout := &state.sectionBodies.knownHosts
+
 	if layout.empty {
 		state.drawReservedEmptyPage(canvas, layout.emptySlot, layout.emptyIcon)
+	} else {
+		state.paintKnownHostsCheckboxes(canvas, layout.tableBox.Rect())
 	}
 }
 
-// declareKnownHostRow declares one row of the known-hosts table: its checkbox,
-// then the record's cells at the table's column widths. A press on the row or on
-// its checkbox is the central click handler's under their identities.
-func (state *State) declareKnownHostRow(row ui.ListRow) {
-	view := &state.knownHosts
-	theme := state.Theme()
-	start, end := state.knownHostsPageRange()
-	at := start + row.Index
-	if at >= end || at >= len(view.visible) {
+// paintKnownHostsCheckboxes paints the visible rows' checkboxes in the table's
+// first column, clipped to the scrollable table body so rows never overlap the
+// header or footer.
+func (state *State) paintKnownHostsCheckboxes(canvas *gfx.Canvas, tableRect gfx.Rect) {
+	if tableRect.Width <= 0 || tableRect.Height <= 0 {
 		return
 	}
-	index := view.visible[at]
-	record := &view.rows[index]
-	height := components.TableRowHeight(theme)
-	pad := theme.Metrics.GapItem
-	c := row.C
-	element := row.Element.Height(height).Shrink(0).FillWidth().Gap(0).Items(ui.Center)
-	if record.selected {
-		element = element.Background(theme.Muted)
+	view := &state.knownHosts
+	start, end := state.knownHostsPageRange()
+	count := end - start
+	if count <= 0 {
+		return
 	}
-	element.Children(func() {
-		ui.Row(c).Width(view.columns[0].Width).Height(height).Shrink(0).Items(ui.Center).Children(func() {
-			ui.Checkbox(c, state.pageFlag(record.selected), "").Hit(hitKnownHostCheckList.At(index), record.selectLabel)
-		})
-		for column := 1; column < knownHostsColumns; column++ {
-			width := view.columns[column].Width
-			if width <= 0 {
-				break
-			}
-			cell := ui.Text(c, record.cells[column]).PadX(pad).Width(width).Shrink(0)
-			if view.columns[column].Alignment == components.TableAlignRight {
-				cell = cell.TextEnd()
-			}
-			cell.Ellipsis()
-		}
-		ui.Slot(c).Absolute().Left(0).Right(0).Bottom(0).Height(1).Background(theme.Border)
-	})
-	element.Hit(hitKnownHostRowList.At(index), record.cells[1])
-}
+	theme := state.Theme()
+	rowHeight := components.TableRowHeight(theme)
+	headerHeight := components.TableHeaderHeight(theme)
+	body := gfx.Rect{
+		X:      tableRect.X,
+		Y:      tableRect.Y + headerHeight,
+		Width:  tableRect.Width,
+		Height: max(tableRect.Height-headerHeight, 0),
+	}
+	if body.Height <= 0 {
+		return
+	}
+	if body.Height+0.5 < float32(count)*rowHeight {
+		body.Width = max(body.Width-float32(catalogBarGutter), 0)
+	}
+	side := components.CheckboxExtent(theme)
+	offset := view.table.Scroll.Offset
+	first := max(0, int(offset/rowHeight))
+	last := min(count, int((offset+body.Height)/rowHeight)+1)
 
-// fitKnownHostsColumns narrows the columns to the room the table has, as the
-// canvas table does: each column keeps its width while it fits, and the ones
-// after it take what is left, so a narrow page ellipsizes rather than overflows.
-func (state *State) fitKnownHostsColumns(width float32) {
-	remaining := max(width, 0)
-	for index := range state.knownHosts.columns {
-		column := &state.knownHosts.columns[index]
-		columnWidth := column.Width
-		if columnWidth <= 0 || index == knownHostsColumns-1 && columnWidth > remaining {
-			columnWidth = remaining
+	canvas.Clip(body)
+	defer canvas.Unclip()
+	for row := first; row < last; row++ {
+		index := view.visible[start+row]
+		record := &view.rows[index]
+		rowY := body.Y + float32(row)*rowHeight - offset
+		rowRect := gfx.Rect{X: body.X, Y: rowY, Width: body.Width, Height: rowHeight}
+		view.rowCells = components.TableCellBounds(view.columns[:], rowRect, view.rowCells[:0])
+		if len(view.rowCells) == 0 {
+			continue
 		}
-		columnWidth = min(columnWidth, remaining)
-		column.Width = columnWidth
-		remaining -= columnWidth
+		c0 := view.rowCells[0]
+		boxRect := gfx.Rect{
+			X:      c0.X + (c0.Width-side)/2,
+			Y:      c0.Y + (c0.Height-side)/2,
+			Width:  side,
+			Height: side,
+		}
+		components.BeginCheckbox(canvas, theme, hitKnownHostCheckList.At(index), boxRect, record.selected).Label(record.selectLabel).Paint()
 	}
 }
 
