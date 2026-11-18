@@ -71,8 +71,8 @@ shadow {{495 43 83.333336 26} 7.5 {0 0 0 0.1} {0 1 3 0} 12 {0 0 0 0} false #17}
 shadow {{495 43 83.333336 26} 7.5 {0 0 0 0.1} {0 1 2 -1} 12 {0 0 0 0} false #18}
 text "Production" {148 8 60.216797 20}
 text "" {496 16 248 21}
-text "监控" {512 6.5 28 21}
-text "2 秒" {568 7.5 22.171875 19}
+text "监控" {515 6.5 28 21}
+text "2 秒" {587.41406 7.5 22.171875 19}
 text "概览" {522.6667 43 83.333336 26}
 text "磁盘" {606 43 83.333336 26}
 text "网络" {689.3334 43 83.333336 26}
@@ -140,16 +140,17 @@ hit "新标签页" button {0 36 720 764} disabled=false
 hit "终端 deploy@prod.example.com:22" terminal {0 36 720 764} disabled=false
 hit "Dismiss drawer" button {0 0 760 800} disabled=false
 hit "" region {480 0 280 800} disabled=false
-hit "刷新间隔" button {544 4 65.171875 26} disabled=false
-hit "暂停监控" button {613.1719 5 24 24} disabled=false
-hit "关闭标签页" button {696 5 24 24} disabled=false
-hit "将监控移到左侧" button {724 5 24 24} disabled=false
+hit "刷新间隔" button {555 4 82 26} disabled=false
+hit "暂停监控" button {641 5 24 24} disabled=false
+hit "将监控移到左侧" button {696 5 24 24} disabled=false
+hit "关闭标签页" button {726 5 24 24} disabled=false
 hit "概览" tab {495 43 83.333336 26} disabled=false
 hit "磁盘" tab {578.3333 43 83.333336 26} disabled=false
 hit "网络" tab {661.6667 43 83.333336 26} disabled=false
 hit "Production" status {502 84 55.382324 26} disabled=false
 hit "复制地址" button {566.3628 84 102.20996 26} disabled=false
 hit "deploy" status {677.5532 84 34.913086 26} disabled=false
+hit "监控" group {480 118 280 658} disabled=false
 hit "CPU" group {494 206 119 44} disabled=false
 hit "内存" group {627 206 119 44} disabled=false
 hit "主磁盘" group {494 344 119 44} disabled=false

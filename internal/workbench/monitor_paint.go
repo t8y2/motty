@@ -80,7 +80,12 @@ func (state *State) declareIndependentMonitor(c ui.C) {
 		}
 		open := true
 		ui.Drawer(c, &open, "", ui.DrawerSpec{Side: side, Size: base.Width, InitialFocus: hitMonitorClose}, func() {
-			ui.Column(c).Fill().Draw(func(d *ui.DrawContext) { state.paintMonitorSurface(d.Canvas, d.Rect) }).Children(func() {
+			ui.Column(c).Fill().Draw(func(d *ui.DrawContext) {
+				// The drawer's content is the panel: its own header, body and
+				// footer, not the chrome and padding the drawer adds beside it.
+				state.monitorRect = d.Rect
+				state.paintMonitorSurface(d.Canvas, d.Rect)
+			}).Children(func() {
 				state.declareMonitorContent(c, base.Width, base.Height)
 			})
 		}, nil)
@@ -90,7 +95,10 @@ func (state *State) declareIndependentMonitor(c ui.C) {
 		return
 	}
 	ui.Column(c).Absolute().Left(base.X).Top(base.Y).Size(base.Width, base.Height).
-		Draw(func(d *ui.DrawContext) { state.paintMonitorSurface(d.Canvas, d.Rect) }).
+		Draw(func(d *ui.DrawContext) {
+			state.monitorRect = d.Rect
+			state.paintMonitorSurface(d.Canvas, d.Rect)
+		}).
 		Children(func() { state.declareMonitorContent(c, base.Width, base.Height) })
 }
 
@@ -112,7 +120,18 @@ func (state *State) paintMonitorSurface(canvas *gfx.Canvas, b gfx.Rect) {
 	canvas.Fill(b, colors.background)
 	canvas.Fill(gfx.Rect{X: b.X, Y: b.Y, Width: b.Width, Height: infoBarHeight}, state.pal.workspace)
 	canvas.Fill(gfx.Rect{X: b.X, Y: b.Y + infoBarHeight - 1, Width: b.Width, Height: 1}, state.pal.line)
-	canvas.Fill(gfx.Rect{X: b.X, Y: b.Y + b.Height - 24, Width: b.Width, Height: 24}, colors.background)
+	if monitorShowsBody(state.contextSession()) {
+		// The footer band is the sections' freshness line. A panel with nothing
+		// to report has no footer, as the hand-painted one returned before it.
+		canvas.Fill(gfx.Rect{X: b.X, Y: b.Y + b.Height - 24, Width: b.Width, Height: 24}, colors.background)
+	}
+}
+
+// monitorShowsBody reports whether the panel shows its scrolling sections
+// rather than its loading, empty, paused or unsupported state.
+func monitorShowsBody(session *Session) bool {
+	return session != nil && session.stats != nil &&
+		session.stats.state < remoteStatsUnsupported && session.stats.panel.count > 0
 }
 
 // declareMonitorContent declares the panel's header, navigation, host
@@ -122,30 +141,32 @@ func (state *State) declareMonitorContent(c ui.C, width, height float32) {
 	m := state.messages.Monitor
 	state.monitorUI = monitorPageUI{}
 	ui.Column(c).Fill().Children(func() {
-		ui.Row(c).Height(infoBarHeight).PadSides(0, 12, 0, 12).Gap(4).Items(ui.Center).Children(func() {
+		ui.Row(c).Height(infoBarHeight).PadSides(0, 10, 0, 12).Items(ui.Center).Children(func() {
 			ui.Icon(c, lucideIcons[iconActivity]).Size(16, 16).Color(state.pal.muted).Shrink(0)
-			ui.Text(c, m.Title).FontSize(14).Weight(gfx.WeightSemibold).Color(state.pal.text).Shrink(0)
+			ui.Text(c, m.Title).FontSize(14).Weight(gfx.WeightSemibold).Color(state.pal.text).Shrink(0).MarginLeft(7)
 			if session == nil || session.stats == nil {
 				ui.Spacer(c)
 			} else {
 				p := &session.stats.panel
 				live := session.stats.state == remoteStatsReady
 				interval := state.declareMonitorInterval(c, p, live)
+				interval.Width(82).Height(26).Shrink(0).MarginLeft(12)
 				state.declareMonitorMenu(c, interval)
 				pause, hint := uint8(iconPause), m.Pause
 				if p.paused {
 					pause, hint = iconPlay, m.Resume
 				}
-				state.declareIconButton(c, hitMonitorPause, pause, hint, false, iconButtonQuiet).Size(24, 24)
+				state.declareIconButton(c, hitMonitorPause, pause, hint, false, iconButtonQuiet).Size(24, 24).MarginLeft(4)
 				ui.Spacer(c)
 			}
-			state.declareIconButton(c, hitMonitorClose, iconClose, state.messages.LabelCloseTab, false, iconButtonQuiet).Size(24, 24)
 			context, _ := state.deck.Context(state.deck.ActiveWorkspace())
 			moveIcon, moveHint := uint8(iconChevronRight), m.MoveRight
 			if !context.MonitorLeft {
 				moveIcon, moveHint = iconChevronLeft, m.MoveLeft
 			}
 			state.declareIconButton(c, hitMonitorSide, moveIcon, moveHint, false, iconButtonQuiet).Size(24, 24)
+			state.declareIconButton(c, hitMonitorClose, iconClose, state.messages.LabelCloseTab, false, iconButtonQuiet).
+				Size(24, 24).MarginLeft(6)
 		})
 		if session == nil || session.stats == nil {
 			ui.Column(c).Grow(1).Items(ui.Center).Justify(ui.Center).Children(func() {
@@ -166,7 +187,9 @@ func (state *State) declareMonitorContent(c ui.C, width, height float32) {
 			state.paintMonitorHostInfo(d.Canvas, gfx.Rect{X: d.Rect.X, Y: d.Rect.Y, Width: d.Rect.Width, Height: monitorHostInfoHeight}, session)
 		})
 		state.declareMonitorBody(c, session, p, width, height)
-		state.declareMonitorFooter(c, session, p)
+		if monitorShowsBody(session) {
+			state.declareMonitorFooter(c, session, p)
+		}
 	})
 }
 
@@ -190,7 +213,7 @@ func (state *State) declareMonitorInterval(c ui.C, p *monitorView, live bool) ui
 		ui.Slot(c).Size(16, 16).Draw(func(d *ui.DrawContext) {
 			state.paintMonitorRefreshClock(d.Canvas, p, d.Rect, live)
 		})
-		ui.Text(c, p.intervalText).FontSize(12).Weight(gfx.WeightMedium).Color(state.Theme().Foreground).Shrink(0)
+		ui.Text(c, p.intervalText).FontSize(12).Weight(gfx.WeightMedium).Color(state.Theme().Foreground).Ellipsis().Shrink(1)
 		ui.Icon(c, lucideIcons[iconChevronDown]).Size(11, 11).Color(state.Theme().MutedForeground).Shrink(0)
 	})
 	return button
@@ -285,11 +308,15 @@ func (state *State) declareMonitorBody(c ui.C, session *Session, p *monitorView,
 		}
 		loading := session.stats.state == remoteStatsMeasuring && !p.paused && !unsupported
 		retry := session.stats.state >= remoteStatsUnsupported && !unsupported
-		ui.Column(c).Grow(1).Basis(0).Items(ui.Center).Children(func() {
+		ui.Column(c).Grow(1).Basis(0).Items(ui.Center).Justify(ui.Center).Children(func() {
 			if loading {
 				ui.Spinner(c).Size(16, 16)
 			}
-			ui.Text(c, message).FontSize(13).Color(state.monitorColors().muted).TextCenter()
+			line := ui.Paragraph(c, message, 4).FontSize(13).LineHeight(18).Width(max(width-32, 0)).
+				TextCenter().Color(state.monitorColors().muted)
+			if loading {
+				line.MarginTop(16)
+			}
 			if retry {
 				ui.Button(c, m.Retry).Hit(hitMonitorRetry, m.Retry).Secondary().Size(min(width-32, 200), 32).MarginTop(12)
 			}
@@ -297,7 +324,8 @@ func (state *State) declareMonitorBody(c ui.C, session *Session, p *monitorView,
 		return
 	}
 	p.contentHeight = monitorContentHeight(p)
-	scroll := ui.Scroll(c).Grow(1).Basis(0).MinHeight(0).Scrollbars().ScrollbarSize(catalogBarGutter).Label(m.Title)
+	scroll := ui.Scroll(c).Grow(1).Basis(0).MinHeight(0).Scrollbars().ScrollbarSize(catalogBarGutter).
+		HitWith(hitMonitorScroll, m.Title, gfx.HitOptions{Role: gfx.RoleGroup})
 	if area := scroll.ScrollState(); area != nil {
 		if p.scroll != p.scrollSynced {
 			area.ScrollTo(p.scroll)

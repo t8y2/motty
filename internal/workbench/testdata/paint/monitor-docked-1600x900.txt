@@ -96,8 +96,8 @@ text "notes.txt" {44 206.5 140 21}
 text "11 B" {217.84961 207.5 54 19}
 text "11/15 06:13" {262.02148 207.5 82 19}
 text "2 items" {12 870.5 316 19}
-text "监控" {1272 42.5 28 21}
-text "2 秒" {1328 43.5 22.171875 19}
+text "监控" {1275 42.5 28 21}
+text "2 秒" {1347.4141 43.5 22.171875 19}
 text "概览" {1289.3334 79 96.666664 26}
 text "磁盘" {1386 79 96.666664 26}
 text "网络" {1482.6667 79 96.666664 26}
@@ -196,16 +196,17 @@ hit "docs" option {12 172 316 30} disabled=false
 hit "notes.txt" option {12 202 316 30} disabled=false
 hit "调整列宽" separator {182.5 144 4 28} disabled=false
 hit "调整列宽" separator {236.5 144 4 28} disabled=false
-hit "刷新间隔" button {1304 40 65.171875 26} disabled=false
-hit "暂停监控" button {1373.1719 41 24 24} disabled=false
-hit "关闭标签页" button {1496 41 24 24} disabled=false
-hit "将监控移到左侧" button {1524 41 24 24} disabled=false
+hit "刷新间隔" button {1315 40 82 26} disabled=false
+hit "暂停监控" button {1401 41 24 24} disabled=false
+hit "将监控移到左侧" button {1496 41 24 24} disabled=false
+hit "关闭标签页" button {1526 41 24 24} disabled=false
 hit "概览" tab {1255 79 96.666664 26} disabled=false
 hit "磁盘" tab {1351.6666 79 96.666664 26} disabled=false
 hit "网络" tab {1448.3334 79 96.666664 26} disabled=false
 hit "Production" status {1262 120 55.382324 26} disabled=false
 hit "复制地址" button {1326.3628 120 102.20996 26} disabled=false
 hit "deploy" status {1437.5532 120 34.913086 26} disabled=false
+hit "监控" group {1240 154 320 722} disabled=false
 hit "CPU" group {1254 242 139 44} disabled=false
 hit "内存" group {1407 242 139 44} disabled=false
 hit "主磁盘" group {1254 380 139 44} disabled=false
