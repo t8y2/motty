@@ -152,6 +152,25 @@ func TestOpeningTerminalFindTakesTheSelectionAndSelectsTheQuery(t *testing.T) {
 	}
 }
 
+func TestAFindShortcutReplacesTheQueryWithANewSelection(t *testing.T) {
+	state, session, _ := selectionState()
+	session.term.write([]byte("alpha beta gamma\r\n"))
+	state.openTerminalFind(session)
+	find := &session.term.find
+	find.setQuery("old")
+	session.term.selection.selectRange(
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 6}),
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 9}),
+	)
+	state.openTerminalFind(session)
+	if find.editor.String() != "beta" {
+		t.Fatalf("query = %q, want the new selection, not the retained text", find.editor.String())
+	}
+	if selected := find.editor.Selection(); selected.Start != 0 || selected.End != find.editor.RuneCount() {
+		t.Fatalf("query selection = %+v, want all %d runes", selected, find.editor.RuneCount())
+	}
+}
+
 func TestReopeningTerminalFindSelectsItsRetainedQuery(t *testing.T) {
 	state, session, _ := selectionState()
 	state.openTerminalFind(session)

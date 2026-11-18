@@ -237,13 +237,14 @@ func (find *terminalFind) selectQuery() {
 // openTerminalFind opens the search bar of a pane. The bar takes a strip above
 // the grid, as a macOS terminal does, and leaves the shared rail its width, so
 // only the row count changes and only the columns stay put. A terminal
-// selection fills the field when it is one line, and the field's text is
-// selected in either case, so pasting a new query replaces what is there.
+// selection fills the field when it is one line, even if the bar is already
+// open or still holds a previous query, and the field's text is selected in
+// either case, so pasting a new query replaces what is there.
 func (state *State) openTerminalFind(session *Session) gfx.EventResult {
 	find := &session.term.find
 	opening := !find.open
 	find.open = true
-	if opening && session.term.selection.selected {
+	if session.term.selection.selected {
 		if query := terminalFindQuery(session.term.selection.text(session.term.screen)); query != "" {
 			find.setQuery(query)
 		}
