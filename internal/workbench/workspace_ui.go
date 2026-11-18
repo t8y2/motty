@@ -240,6 +240,10 @@ func (state *State) declareEmptyPane(c ui.C, frame, bounds gfx.Rect, index int, 
 
 func (state *State) paintWorkspacePanes(canvas *gfx.Canvas, size gfx.Size) {
 	state.refreshWorkspaceViews()
+	if !state.workspaceHeaderFocusPending.IsZero() {
+		canvas.RequestFocus(state.workspaceHeaderFocusPending)
+		state.workspaceHeaderFocusPending = gfx.ID{}
+	}
 	state.workspacePaneTools.count = 0
 	frame := state.workspacePixelBounds(size)
 	headerOpen := state.paintWorkspaceHeader(canvas, size)
@@ -949,32 +953,6 @@ func (state *State) activeTerminalFocusHit() gfx.ID {
 	}
 	session.term.pageIdentity(session.ID)
 	return state.paneIdentity(session, session.term.controlID)
-}
-
-func paneSplitRatioLimits(layout *layoutcore.Layout, splitID layoutcore.NodeID, bounds gfx.Rect) (float32, float32, bool) {
-	if layout == nil {
-		return 0, 0, false
-	}
-	split, ok := layout.Node(splitID)
-	if !ok || split.Kind != layoutcore.KindSplit {
-		return 0, 0, false
-	}
-	extent := bounds.Width
-	if split.Axis == layoutcore.Vertical {
-		extent = bounds.Height
-	}
-	usable := extent - 1
-	if usable <= 0 {
-		return 0, 0, false
-	}
-	first := minimumPaneExtent(layout, split.First, split.Axis)
-	second := minimumPaneExtent(layout, split.Second, split.Axis)
-	if first <= 0 || second <= 0 || usable < first+second {
-		return 0, 0, false
-	}
-	minimum := max(layoutcore.MinPaneRatio, first/usable)
-	maximum := min(layoutcore.MaxPaneRatio, 1-second/usable)
-	return minimum, maximum, minimum <= maximum
 }
 
 func minimumPaneExtent(layout *layoutcore.Layout, nodeID layoutcore.NodeID, axis layoutcore.Axis) float32 {

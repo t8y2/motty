@@ -3,7 +3,6 @@ package workbench
 import (
 	"strings"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
@@ -32,6 +31,21 @@ func (draft *workspaceDraft) commandEditor(id string) *text.Editor {
 	return draft.commandEditors[id]
 }
 
+// commandField is the page field on the command editor of one host, made once
+// and bound to the editor the dialog reads.
+func (draft *workspaceDraft) commandField(id string) *ui.Field {
+	if draft.commandFields == nil {
+		draft.commandFields = make(map[string]*ui.Field)
+	}
+	field := draft.commandFields[id]
+	if field == nil {
+		field = new(ui.Field)
+		field.Bind(draft.commandEditor(id))
+		draft.commandFields[id] = field
+	}
+	return field
+}
+
 func (state *State) workspaceDraftCommands() (map[string]WorkspaceCommand, bool) {
 	draft := &state.workspaceDraft
 	var commands map[string]WorkspaceCommand
@@ -54,15 +68,6 @@ func (state *State) workspaceDraftCommands() (map[string]WorkspaceCommand, bool)
 		}
 	}
 	return commands, true
-}
-
-func (state *State) paintWorkspaceCommandFields(canvas *gfx.Canvas, host Host, bounds gfx.Rect) {
-	draft, m := &state.workspaceDraft, state.messages
-	editor := draft.commandEditor(host.CatalogID)
-	id := hitWorkspaceCommandField.At(int(host.ID))
-	monitorLabel(canvas, elide(canvas, m.WorkspaceCommandOrderHint, 12, gfx.WeightRegular, bounds.Width), gfx.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: 22}, 12, state.pal.text, gfx.WeightRegular)
-	control := gfx.Rect{X: bounds.X, Y: bounds.Y + 26, Width: bounds.Width, Height: 32}
-	components.PaintInput(canvas, state.Theme(), control, components.InputSnapshot{ID: id, Label: m.WorkspaceCommandField, Value: editor.String(), Placeholder: m.Tools.LoginCommandPlaceholder, Focused: canvas.Focused() == id, PlatformEditing: canvas.Focused() == id && editor.String() != ""})
 }
 
 func workspaceCommandPending(session *Session) bool {

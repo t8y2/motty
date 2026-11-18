@@ -652,6 +652,7 @@ type State struct {
 	workspaceLibraryExpanded      bool
 	workspaceLibraryPointerID     string
 	workspaceLibraryScroll        float32
+	workspaceLibraryScrollSynced  float32
 	workspaceLibraryBounds        gfx.Rect
 	workspaceLibraryContent       float32
 	workspaceTemplateMoreBounds   []gfx.Rect
@@ -659,7 +660,10 @@ type State struct {
 	workspaceTemplateDelete       workspaceTemplateDelete
 	workspaceCommandEdit          workspaceCommandInline
 	workspaceTemplateFocusPending gfx.ID
-	workspaceDraft                workspaceDraft
+	// workspaceHeaderFocusPending is where the keyboard returns after a header
+	// menu closes; the pane painter applies it once the page has painted.
+	workspaceHeaderFocusPending gfx.ID
+	workspaceDraft              workspaceDraft
 	// workspaceHeaderPlan and workspaceHeaderSlots are what the managed
 	// workspace's header declaration leaves for its painter.
 	workspaceHeaderPlan  workspaceHeaderPlan

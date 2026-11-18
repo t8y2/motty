@@ -6,6 +6,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -17,35 +18,88 @@ var (
 	hitWorkspaceDraftPresets    = tree.Sub(workspaceHits, tree.Name("draft-preset"))
 )
 
-func (state *State) paintWorkspaceLayoutMenu(canvas *gfx.Canvas, size gfx.Size, anchor gfx.Rect) {
+// declareWorkspaceLayoutPanel declares the arrangement editor under the
+// header's layout button: an application overlay (no focus scope of its own, so
+// closing it does not take the keyboard from the terminal), the preset strip,
+// and the workspace's cards in a page scroll area.
+func (state *State) declareWorkspaceLayoutPanel(c ui.C, size gfx.Size, plan workspaceHeaderPlan) {
 	draft, m := &state.workspaceLayoutDraft, state.messages
-	popup := components.BeginPopover(canvas, state.Theme(), state.windowRect(), anchor, components.PopoverOptions{
-		Layer: dialogLayer, Scope: dialogScope, DismissID: hitWorkspaceHeaderLayoutDismiss,
-		AnchorDismiss: true, ConsumeOutsidePress: true, Align: components.PopoverAlignEnd, SideOffset: 6,
-		ContentSize:    gfx.Size{Width: min(640, max(0, size.Width-24)), Height: min(180+workspacePresetStripHeight(min(640, max(0, size.Width-24))-40)-workspacePresetHeight+workspaceCardContentHeight(len(draft.items), draft.layout), min(540, max(0, size.Height-windowBarHeight-workspaceHeaderHeight-16)))},
-		InitialFocusID: hitWorkspaceHeaderPresets.At(max(0, workspacePresetIndex(draft.layout))), TitleWeight: gfx.WeightSemibold,
+	theme := c.Theme()
+	pad, gap := theme.Metrics.PadSurface, theme.Metrics.GapItem
+	contentWidth := min(640, max(0, size.Width-24))
+	strip := workspacePresetStripHeight(contentWidth)
+	cards := workspaceCardContentHeight(len(draft.items), draft.layout)
+	lineHeight := theme.Metrics.FontSizeM + 7
+	titleHeight := lineHeight
+	descriptionHeight := float32(0)
+	if m.WorkspaceLayoutHint != "" {
+		var scratch [3]string
+		lines := c.Canvas().WrapLines(scratch[:0], m.WorkspaceLayoutHint, theme.Metrics.FontSizeM, gfx.WeightRegular, contentWidth, 3)
+		descriptionHeight = gap + float32(len(lines))*lineHeight
+	}
+	errorHeight := float32(0)
+	if draft.err != "" {
+		errorHeight = gap + 20
+	}
+	room := max(0, size.Height-windowBarHeight-workspaceHeaderHeight-16)
+	scrollHeight := min(cards, max(float32(48), room-2*pad-titleHeight-descriptionHeight-2*gap-strip-errorHeight))
+	panelWidth := contentWidth + 2*pad
+	panelHeight := 2*pad + titleHeight + descriptionHeight + gap + strip + gap + scrollHeight + errorHeight
+	anchor := gfx.Rect{
+		X: plan.bounds.X + plan.bounds.Width - 10 - plan.layoutWidth,
+		Y: plan.bounds.Y + 4, Width: plan.layoutWidth, Height: 30,
+	}
+	x := min(max(anchor.X+anchor.Width-panelWidth, 8), max(size.Width-panelWidth-8, 8))
+	y := anchor.Y + anchor.Height + 6
+	if y+panelHeight > size.Height-8 {
+		y = max(anchor.Y-6-panelHeight, 8)
+	}
+	window := gfx.Rect{Width: size.Width, Height: size.Height}
+	overlay := ui.Overlay(c, ui.OverlaySpec{Band: ui.LayerPaneChrome, Bounds: window})
+	overlay.Children(func() {
+		ui.Slot(c).Absolute().Inset(0).HitWith(hitWorkspaceHeaderLayoutDismiss, m.WorkspaceHeaderLayout,
+			gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true, Backdrop: true, PassSecondary: true})
+		panel := ui.Column(c).Absolute().Left(x).Top(y).Width(panelWidth).Height(panelHeight).
+			Pad(pad).Gap(gap).Background(theme.Popover).Border(1, theme.Border).Radius(theme.Metrics.RadiusControl).Shadow(gfx.ShadowLG)
+		panel.Children(func() {
+			ui.Text(c, m.WorkspaceHeaderLayout).FontSize(theme.Metrics.FontSizeM).Weight(gfx.WeightSemibold).
+				Color(theme.PopoverForeground).LineHeight(lineHeight).Ellipsis()
+			if m.WorkspaceLayoutHint != "" {
+				ui.Paragraph(c, m.WorkspaceLayoutHint, 3).FontSize(theme.Metrics.FontSizeM).LineHeight(lineHeight).Color(theme.MutedForeground)
+			}
+			ui.Slot(c).FillWidth().Height(strip).Shrink(0).Draw(func(d *ui.DrawContext) {
+				state.paintWorkspaceLayoutPresets(d.Canvas, d.Rect, hitWorkspaceHeaderPresets, 0, draft.layout)
+			})
+			scroll := ui.Scroll(c).FillWidth().Height(scrollHeight).Shrink(0).Scrollbars()
+			area := scroll.ScrollState()
+			if draft.scroll != draft.scrollSynced {
+				area.ScrollTo(draft.scroll)
+				draft.scrollSynced = draft.scroll
+				c.Canvas().RequestFrame()
+			}
+			scroll.Children(func() {
+				if cards <= 0 {
+					return
+				}
+				ui.Slot(c).FillWidth().Height(cards).Draw(func(d *ui.DrawContext) {
+					state.paintWorkspaceCards(d.Canvas, d.Rect, d.Rect, draft.items, draft.layout, workspaceCardsRuntime, "", 0)
+				})
+			})
+			scroll.DrawOver(func(d *ui.DrawContext) {
+				draft.bounds = d.Rect
+				draft.scroll = area.Offset
+				draft.scrollSynced = area.Offset
+			})
+			if draft.err != "" {
+				ui.Text(c, draft.err).FontSize(12).Color(state.pal.danger).LineHeight(20).Ellipsis()
+			}
+		})
 	})
-	layout := popup.Begin(m.WorkspaceHeaderLayout, m.WorkspaceLayoutHint)
-	body := layout.Body
-	strip := workspacePresetStripHeight(body.Width)
-	state.paintWorkspaceLayoutPresets(canvas, gfx.Rect{X: body.X, Y: body.Y, Width: body.Width, Height: strip}, hitWorkspaceHeaderPresets, 0, draft.layout)
-	draft.bounds = gfx.Rect{X: body.X, Y: body.Y + strip + 12, Width: body.Width, Height: max(0, body.Height-strip-12)}
-	if draft.err != "" {
-		draft.bounds.Height = max(0, draft.bounds.Height-28)
+	if id, ok := c.Canvas().ClickTarget(); ok && id == hitWorkspaceHeaderLayoutDismiss {
+		// The dismiss press closes the panel; the keyboard goes back to the
+		// terminal it was opened over.
+		state.workspaceHeaderFocusPending = state.activeTerminalFocusHit()
 	}
-	contentHeight := workspaceCardContentHeight(len(draft.items), draft.layout)
-	area := components.BeginScrollArea(canvas, state.Theme(), draft.bounds, gfx.Size{Width: max(0, body.Width-10), Height: contentHeight}).
-		Offset(0, draft.scroll).ReserveScrollbars().Viewport(hitWorkspaceLayoutScroll, m.WorkspaceHeaderLayout).
-		VerticalScrollbar(hitWorkspaceLayoutScrollbar, m.WorkspaceHeaderLayout, "")
-	geometry := area.BeginContent()
-	draft.scroll = geometry.OffsetY
-	state.paintWorkspaceCards(canvas, gfx.Rect{X: geometry.Content.X, Y: geometry.Content.Y, Width: max(0, body.Width-10), Height: contentHeight}, geometry.Viewport,
-		draft.items, draft.layout, workspaceCardsRuntime, "", 0)
-	area.EndContent()
-	if draft.err != "" {
-		monitorLabel(canvas, elide(canvas, draft.err, 12, gfx.WeightRegular, body.Width), gfx.Rect{X: body.X, Y: body.Y + body.Height - 20, Width: body.Width, Height: 20}, 12, state.pal.danger, gfx.WeightRegular)
-	}
-	popup.End()
 }
 
 // workspacePresets is every arrangement offered as one click, in the order the
@@ -122,6 +176,8 @@ func (state *State) clickWorkspaceArrangement(id gfx.ID) bool {
 	case id == hitWorkspaceHeaderLayoutDismiss:
 		state.workspaceHeaderMenu = workspaceHeaderMenuNone
 		state.workspaceCardDrag = workspaceCardDrag{}
+		// The keyboard goes back to the terminal the editor was opened over.
+		state.workspaceHeaderFocusPending = state.activeTerminalFocusHit()
 	case id.Scope() == hitWorkspaceHeaderPresets:
 		state.chooseWorkspaceRuntimePreset(id)
 	case id.Scope() == hitWorkspaceTemplatePresets:
@@ -222,12 +278,10 @@ func (state *State) workspaceArrangementScroll(event gfx.ScrollEvent) (gfx.Event
 	if state.workspaceHeaderMenu != workspaceHeaderMenuLayout {
 		return gfx.EventResult{}, false
 	}
-	draft := &state.workspaceLayoutDraft
-	if pointInRect(event.X, event.Y, draft.bounds) {
-		area := components.BeginScrollArea(nil, state.Theme(), draft.bounds, gfx.Size{Width: draft.bounds.Width, Height: workspaceCardContentHeight(len(draft.items), draft.layout)}).Offset(0, draft.scroll)
-		before := draft.scroll
-		draft.scroll = min(max(0, before+event.StepY(32)), area.Geometry().MaxOffsetY)
-		return gfx.EventResult{Handled: true, Repaint: draft.scroll != before}, true
+	if pointInRect(event.X, event.Y, state.workspaceLayoutDraft.bounds) {
+		result := state.windowPage().Wheel(event)
+		result.Handled = true
+		return result, true
 	}
 	return gfx.EventResult{Handled: true}, true
 }

@@ -3,10 +3,10 @@ package workbench
 import (
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
@@ -193,13 +193,15 @@ func (state *State) expandedWorkspaceTemplateIndex() int {
 // workspaceLibrarySectionUI is what the workspace library's declaration leaves
 // for its paint.
 type workspaceLibrarySectionUI struct {
-	content, create, empty ui.Box
-	newWidth               float32
-	newIcon                uint8
-	condensed              bool
-	// draw is the page hook that paints into these slots. It is kept so a paint
-	// does not build a closure for the hook.
-	draw func(*ui.DrawContext)
+	create, empty, scroll ui.Box
+	newWidth              float32
+	newIcon               uint8
+	condensed             bool
+	contentWidth          float32
+	contentHeight         float32
+	// emptyDraw paints the icon of the reserved empty page once it is laid out.
+	// It is kept so a paint does not build a closure for the hook.
+	emptyDraw func(*ui.DrawContext)
 }
 
 // declareWorkspaceLibrary declares the workspace library in the workbench page:
@@ -209,12 +211,7 @@ func (state *State) declareWorkspaceLibrary(c ui.C) {
 	bounds := state.catalogSectionBounds()
 	newWidth, newIcon := toolbarButtonLayout(c.Canvas(), m.WorkspaceNew, iconPlus, iconPlus, bounds.Width < 520)
 	view := &state.sectionBodies.workspaceLibrary
-	draw := view.draw
 	*view = workspaceLibrarySectionUI{newWidth: newWidth, newIcon: newIcon, condensed: bounds.Width < 520}
-	if draw == nil {
-		draw = func(d *ui.DrawContext) { state.paintWorkspaceLibrary(d.Canvas) }
-	}
-	view.draw = draw
 	padding := float32(22)
 	if bounds.Width < 340 {
 		padding = 12
@@ -237,24 +234,120 @@ func (state *State) declareWorkspaceLibrary(c ui.C) {
 		}
 		if len(state.templates) == 0 {
 			view.empty = state.reserveEmptyPage(c, bounds, m.WorkspaceLibraryEmpty, m.WorkspaceLibraryEmptySub, m.WorkspaceNew, hitWorkspaceNew, iconColumns2, true)
+			if view.emptyDraw == nil {
+				view.emptyDraw = func(d *ui.DrawContext) { state.drawReservedEmptyPage(d.Canvas, view.empty, iconColumns2) }
+			}
 		} else {
-			view.content = ui.Slot(c).Grow(1).MarginSides(0, 0, 14, 0)
+			state.declareWorkspaceLibraryList(c, view, bounds, padding)
 		}
 		ui.Divider(c).Background(pal.line)
 	})
-	body.Clip().DrawOver(view.draw)
+	if len(state.templates) == 0 {
+		body.Clip().DrawOver(view.emptyDraw)
+	}
 }
 
-// paintWorkspaceLibrary paints the workspace library's create button, rows and
-// empty state into the slots its declaration left.
-func (state *State) paintWorkspaceLibrary(canvas *gfx.Canvas) {
-	view := &state.sectionBodies.workspaceLibrary
-	if len(state.templates) == 0 {
-		state.drawReservedEmptyPage(canvas, view.empty, iconColumns2)
+// declareWorkspaceLibraryList declares the template rows in a page scroll area:
+// the rows and their cards are painted into a slot, while their open buttons and
+// the inline command editor are page controls over them.
+func (state *State) declareWorkspaceLibraryList(c ui.C, view *workspaceLibrarySectionUI, bounds gfx.Rect, padding float32) {
+	contentWidth := max(0, bounds.Width-18-padding-workspaceLibraryScrollbarReserve)
+	rows, contentHeight := state.workspaceLibraryRowLayout(contentWidth, state.expandedWorkspaceTemplateIndex())
+	view.contentWidth, view.contentHeight = contentWidth, contentHeight
+	scroll := ui.Scroll(c).Grow(1).MarginSides(0, 0, 14, 0).Scrollbars()
+	view.scroll = scroll
+	area := scroll.ScrollState()
+	if state.workspaceLibraryScroll != state.workspaceLibraryScrollSynced {
+		area.ScrollTo(state.workspaceLibraryScroll)
+		state.workspaceLibraryScrollSynced = state.workspaceLibraryScroll
+		c.Canvas().RequestFrame()
+	}
+	scroll.Children(func() {
+		content := ui.Stack(c).FillWidth().Height(contentHeight)
+		content.Children(func() {
+			ui.Slot(c).Absolute().Inset(0).Draw(func(d *ui.DrawContext) {
+				state.drawWorkspaceLibraryRows(d.Canvas, d.Rect, contentWidth, contentHeight)
+			})
+			state.declareWorkspaceLibraryRowActions(c, contentWidth, rows)
+			state.declareWorkspaceInlineEditor(c, contentWidth, rows)
+		})
+	})
+	scroll.DrawOver(func(d *ui.DrawContext) {
+		state.workspaceLibraryBounds = d.Rect
+		state.workspaceLibraryContent = contentHeight
+		state.workspaceLibraryScroll = area.Offset
+		state.workspaceLibraryScrollSynced = area.Offset
+	})
+}
+
+// workspaceLibraryOpenWidth is how wide a row's Enter button is: enough for its
+// icon and label, and 32 for the compact one-icon form.
+func workspaceLibraryOpenWidth(canvas *gfx.Canvas, label string, compact bool) float32 {
+	if compact {
+		return 32
+	}
+	return min(max(canvas.TextWidthWeight(label, metrics.FontSizeS, gfx.WeightMedium)+52, 96), 156)
+}
+
+// workspaceLibraryRowButtons is where a row's open and more buttons go.
+func workspaceLibraryRowButtons(bounds gfx.Rect, openWidth float32) (open, more gfx.Rect) {
+	more = gfx.Rect{X: bounds.X + bounds.Width - 16 - 28, Y: bounds.Y + 22, Width: 28, Height: 32}
+	open = gfx.Rect{X: more.X - 8 - openWidth, Y: bounds.Y + 22, Width: openWidth, Height: 32}
+	return open, more
+}
+
+// declareWorkspaceLibraryRowActions declares the Enter button of every template
+// row; the more button stays painted with the rest of the row.
+func (state *State) declareWorkspaceLibraryRowActions(c ui.C, contentWidth float32, rows []workspaceLibraryRow) {
+	m := state.messages
+	for _, row := range rows {
+		bounds := gfx.Rect{Width: contentWidth, Height: row.bounds.Height, Y: row.bounds.Y}
+		compact := bounds.Width < 340
+		openBounds, _ := workspaceLibraryRowButtons(bounds, workspaceLibraryOpenWidth(c.Canvas(), m.WorkspaceEnter, compact))
+		button := ui.Button(c, m.WorkspaceEnter).Small().Icon(lucideIcons[iconPlay]).
+			Hit(hitWorkspaceTemplateOpen.At(row.index), m.WorkspaceEnter).
+			Absolute().Left(openBounds.X).Top(openBounds.Y)
+		if compact {
+			button.IconOnly().Size(32, 32)
+		} else {
+			button.Size(openBounds.Width, 32)
+		}
+	}
+}
+
+// declareWorkspaceInlineEditor declares the command editor of the template card
+// it was opened on, over the cards in the scroll content.
+func (state *State) declareWorkspaceInlineEditor(c ui.C, contentWidth float32, rows []workspaceLibraryRow) {
+	edit, m := &state.workspaceCommandEdit, state.messages
+	if edit.template == "" {
 		return
 	}
-
-	state.paintWorkspaceLibraryRows(canvas, view.content.Rect(), state.expandedWorkspaceTemplateIndex())
+	templateIndex := slices.IndexFunc(state.templates, func(template WorkspaceTemplate) bool {
+		return template.ID == edit.template
+	})
+	if templateIndex < 0 || templateIndex >= len(rows) || !rows[templateIndex].expanded {
+		return
+	}
+	template := state.templates[templateIndex]
+	hostIndex := slices.Index(template.HostIDs, edit.host)
+	cells := workspaceLayoutCells(len(template.HostIDs), template.Layout)
+	if hostIndex < 0 || hostIndex >= len(cells) {
+		return
+	}
+	row := rows[templateIndex].bounds
+	bounds := gfx.Rect{Width: contentWidth, Height: row.Height, Y: row.Y}
+	panel := gfx.Rect{X: bounds.X + 12, Y: bounds.Y + workspaceLibraryHeaderHeight, Width: max(0, bounds.Width-24)}
+	content := gfx.Rect{X: panel.X, Y: panel.Y + workspaceLibraryLayoutHeight(bounds.Width), Width: panel.Width, Height: workspaceTemplateCardHeight(template)}
+	box := pixelBounds(content, cells[hostIndex]).Inset(gfx.All(4))
+	editor := gfx.Rect{X: box.X + 10, Y: box.Y + 88, Width: max(0, box.Width-20), Height: 52}
+	edit.field.Invalid = edit.error != ""
+	ui.Row(c).Absolute().Left(editor.X).Top(editor.Y).Width(editor.Width).Height(52).Gap(8).Children(func() {
+		ui.TextFieldID(c, hitWorkspaceInlineField, &edit.field, m.WorkspaceCommandField, "").Height(32).Grow(1)
+		ui.Button(c, m.WorkspaceCommandSave).XSmall().Outline().Shrink(0).
+			Hit(hitWorkspaceInlineSave, m.WorkspaceCommandSave)
+		ui.Button(c, m.Cancel).XSmall().Secondary().Shrink(0).
+			Hit(hitWorkspaceInlineCancel, m.Cancel)
+	})
 }
 
 type workspaceLibraryRow struct {
@@ -263,36 +356,26 @@ type workspaceLibraryRow struct {
 	bounds   gfx.Rect
 }
 
-func (state *State) paintWorkspaceLibraryRows(canvas *gfx.Canvas, bounds gfx.Rect, expandedIndex int) {
-	if bounds.Width <= 0 || bounds.Height <= 0 {
+func (state *State) drawWorkspaceLibraryRows(canvas *gfx.Canvas, content gfx.Rect, contentWidth, contentHeight float32) {
+	if contentWidth <= 0 || contentHeight <= 0 {
 		return
 	}
-	contentWidth := max(0, bounds.Width-workspaceLibraryScrollbarReserve)
-	rows, contentHeight := state.workspaceLibraryRowLayout(contentWidth, expandedIndex)
-	scroll := components.BeginScrollArea(canvas, state.Theme(), bounds, gfx.Size{
-		Width: contentWidth, Height: contentHeight,
-	}).
-		Offset(0, state.workspaceLibraryScroll).
-		ReserveScrollbars().
-		Viewport(hitWorkspaceLibraryScroll, state.messages.WorkspaceLibraryTitle).
-		VerticalScrollbar(gfx.ID{}, "", "")
-	geometry := scroll.BeginContent()
-	state.workspaceLibraryScroll = geometry.OffsetY
-	state.workspaceLibraryBounds = bounds
-	state.workspaceLibraryContent = contentHeight
+	rows, _ := state.workspaceLibraryRowLayout(contentWidth, state.expandedWorkspaceTemplateIndex())
+	// The cards are painted from this paint's slot: give them the content rect
+	// as the viewport so the whole grid is drawn, not only what the previous
+	// paint's scroll bounds said.
+	state.workspaceLibraryBounds, state.workspaceLibraryContent = content, contentHeight
 	state.workspaceTemplateMoreBounds = state.workspaceTemplateMoreBounds[:0]
-
 	for _, row := range rows {
 		rect := row.bounds
-		rect.X += geometry.Content.X
-		rect.Y += geometry.Content.Y
-		if rect.Y+rect.Height < geometry.Viewport.Y || rect.Y > geometry.Viewport.Y+geometry.Viewport.Height {
+		rect.X += content.X
+		rect.Y += content.Y
+		if rect.Y+rect.Height < content.Y || rect.Y > content.Y+contentHeight {
 			continue
 		}
 		template := state.templates[row.index]
 		state.paintWorkspaceLibraryRow(canvas, rect, row.index, template, row.expanded)
 	}
-	scroll.EndContent()
 }
 
 func (state *State) workspaceLibraryRowLayout(width float32, expandedIndex int) ([]workspaceLibraryRow, float32) {
@@ -389,13 +472,8 @@ func (state *State) paintWorkspaceLibraryRow(canvas *gfx.Canvas, bounds gfx.Rect
 		X: bounds.X + 16, Y: bounds.Y + 30, Width: 16, Height: 16,
 	}, chevronColor, transform)
 
-	openWidth := components.BeginButton(canvas, state.Theme(), gfx.ID{}, gfx.Rect{}).Small().WithIcon(lucideIcons[iconPlay]).SizeToFit(m.WorkspaceEnter).BoundsWidth()
 	compact := bounds.Width < 340
-	if compact {
-		openWidth = 32
-	}
-	moreBounds := gfx.Rect{X: bounds.X + bounds.Width - 16 - 28, Y: bounds.Y + 22, Width: 28, Height: 32}
-	openBounds := gfx.Rect{X: moreBounds.X - 8 - openWidth, Y: bounds.Y + 22, Width: openWidth, Height: 32}
+	openBounds, moreBounds := workspaceLibraryRowButtons(bounds, workspaceLibraryOpenWidth(canvas, m.WorkspaceEnter, compact))
 	for len(state.workspaceTemplateMoreBounds) <= index {
 		state.workspaceTemplateMoreBounds = append(state.workspaceTemplateMoreBounds, gfx.Rect{})
 	}
@@ -411,11 +489,7 @@ func (state *State) paintWorkspaceLibraryRow(canvas *gfx.Canvas, bounds gfx.Rect
 		metaColor = state.workspaceStatusInk(pal.warning)
 	}
 	canvas.Label(elide(canvas, meta, 12, gfx.WeightRegular, titleWidth), gfx.Rect{X: titleX, Y: bounds.Y + 39, Width: titleWidth, Height: 20}, gfx.TextStyle{Size: 12, Color: metaColor})
-	button := components.BeginButton(canvas, state.Theme(), hitWorkspaceTemplateOpen.At(index), openBounds).Small().WithIcon(lucideIcons[iconPlay])
-	if compact {
-		button = button.Size(components.ButtonSizeIconSmall)
-	}
-	button.Default(m.WorkspaceEnter)
+	// The row's Enter button is a page control declared over the painted row.
 
 	if !expanded {
 		return
@@ -439,12 +513,7 @@ func (state *State) scrollWorkspaceLibrary(event gfx.ScrollEvent) gfx.EventResul
 		!pointInRect(event.X, event.Y, state.workspaceLibraryBounds) {
 		return gfx.EventResult{}
 	}
-	area := components.BeginScrollArea(nil, state.Theme(), state.workspaceLibraryBounds, gfx.Size{
-		Width:  max(0, state.workspaceLibraryBounds.Width-workspaceLibraryScrollbarReserve),
-		Height: state.workspaceLibraryContent,
-	}).Offset(0, state.workspaceLibraryScroll).ReserveScrollbars()
-	geometry := area.Geometry()
-	before := state.workspaceLibraryScroll
-	state.workspaceLibraryScroll = min(max(0, before+event.StepY(36)), geometry.MaxOffsetY)
-	return gfx.EventResult{Handled: true, Repaint: before != state.workspaceLibraryScroll}
+	result := state.windowPage().Wheel(event)
+	result.Handled = true
+	return result
 }

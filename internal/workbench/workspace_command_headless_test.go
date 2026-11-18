@@ -41,6 +41,11 @@ func clickWorkspaceCommandHit(t *testing.T, view *headless.Session, id gfx.ID) {
 	if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
 		t.Fatal(err)
 	}
+	// A page control that opens more content lays it out in the repaint the
+	// click schedules; let that frame land before reading the next target.
+	if err := view.Wait(5 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestWorkspaceCommandThroughWindowDriver(t *testing.T) {
