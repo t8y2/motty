@@ -492,16 +492,17 @@ func TestSessionLogsSearchAndStaleResult(t *testing.T) {
 	state.refreshSessionLogs()
 	sessionLogsWait(t, state)
 
-	// Status and time-range filters reach the query.
+	// Status and time-range filters reach the query. The open filter is a page
+	// menu: its rows are chosen by their labels, the identities the application
+	// keeps for them.
 	state.Click(hitSessionLogsStatus)
 	if view.filterMenu != sessionLogFilterStatusMenu {
 		t.Fatalf("status filter menu = %d", view.filterMenu)
 	}
-	canvas := paintedCanvas(t, state)
-	if hit, ok := sessionLogHit(canvas, hitSessionLogsFilterList.At(5)); !ok || hit.Label != state.messages.SessionLogs.StatusFailed {
-		t.Fatalf("status filter option = %+v, ok=%v", hit, ok)
+	if !canvasHasMenuRow(paintedCanvas(t, state), state.messages.SessionLogs.StatusFailed) {
+		t.Fatalf("the status filter does not offer %q", state.messages.SessionLogs.StatusFailed)
 	}
-	state.Click(hitSessionLogsFilterList.At(5))
+	clickPageMenuRow(t, state, state.messages.SessionLogs.StatusFailed)
 	sessionLogsWait(t, state)
 	if view.query.Status == nil || *view.query.Status != sessionlog.StatusFailed {
 		t.Fatalf("status query = %v", view.query.Status)
@@ -512,14 +513,13 @@ func TestSessionLogsSearchAndStaleResult(t *testing.T) {
 
 	// A time range narrows by the record's start, computed from the wall clock.
 	state.Click(hitSessionLogsStatus)
-	state.Click(hitSessionLogsFilterList.At(0))
+	clickPageMenuRow(t, state, state.messages.SessionLogs.StatusAll)
 	sessionLogsWait(t, state)
 	state.Click(hitSessionLogsTime)
-	canvas = paintedCanvas(t, state)
-	if hit, ok := sessionLogHit(canvas, hitSessionLogsFilterList.At(1)); !ok || hit.Label != state.messages.SessionLogs.TimeToday {
-		t.Fatalf("time filter option = %+v, ok=%v", hit, ok)
+	if !canvasHasMenuRow(paintedCanvas(t, state), state.messages.SessionLogs.TimeToday) {
+		t.Fatalf("the time filter does not offer %q", state.messages.SessionLogs.TimeToday)
 	}
-	state.Click(hitSessionLogsFilterList.At(1))
+	clickPageMenuRow(t, state, state.messages.SessionLogs.TimeToday)
 	sessionLogsWait(t, state)
 	if got := sessionLogRowIDs(state); len(got) != 3 {
 		t.Fatalf("today's rows = %v, want the three started after local midnight", got)
@@ -660,19 +660,38 @@ func TestSessionLogsKeyboardAndDeletionFocus(t *testing.T) {
 	view := &state.sessionLogs.view
 
 	// Enter on a row opens the detail panel; Escape closes it and returns the
-	// keyboard to the row.
-	if result := state.Key(gfx.KeyEvent{Target: hitSessionLogsRowList.At(0), Key: gfx.KeyEnter}); !result.Handled {
+	// keyboard to the row. The rows are the page List's: its keys are routed
+	// before the application's handler, as the window's config does.
+	paintedCanvas(t, state)
+	var target gfx.ID
+	for index := range view.items {
+		if view.items[index].row >= 0 {
+			target = view.rowsList.RowID(index)
+			break
+		}
+	}
+	if target.IsZero() {
+		t.Fatal("the record list declared no record row")
+	}
+	onKey := state.WindowConfig(app.Config{OnKey: state.Key}).OnKey
+	if result := onKey(gfx.KeyEvent{Target: target, Key: gfx.KeyEnter}); !result.Handled {
 		t.Fatal("Enter on a row is not handled")
 	}
+	if index, ok := view.rowsList.Submitted(); !ok || index < 0 {
+		t.Fatalf("the list did not take Enter: %v %v", index, ok)
+	}
+	// The list delivers its submission to the paint that follows the key; the
+	// record is opened after that paint, as the runtime runs what it deferred.
+	paintedCanvas(t, state).RunAfterPaint()
 	if view.selected != "log-00" || !view.detailOpen {
 		t.Fatalf("Enter selected %q, detail open=%v", view.selected, view.detailOpen)
 	}
 	sessionLogsWait(t, state)
-	result := state.Key(gfx.KeyEvent{Target: hitSessionLogsDetailClose, Key: gfx.KeyEscape})
+	result := onKey(gfx.KeyEvent{Target: hitSessionLogsDetailClose, Key: gfx.KeyEscape})
 	if !result.Handled || view.detailOpen {
 		t.Fatalf("Escape did not close the detail panel: handled=%v open=%v", result.Handled, view.detailOpen)
 	}
-	if result.Focus != hitSessionLogsRowList.At(0) || !result.FocusVisible {
+	if item := state.sessionLogSelectedItemIndex(); item < 0 || result.Focus != view.rowsList.RowID(item) || !result.FocusVisible {
 		t.Fatalf("Escape returned focus to %v", result.Focus)
 	}
 
@@ -720,7 +739,17 @@ func TestSessionLogsKeyboardAndDeletionFocus(t *testing.T) {
 		t.Fatalf("selection after the delete = %q", view.selected)
 	}
 	canvas := paintedCanvas(t, state)
-	if got := canvas.FocusRequest(); got.Scope() != hitSessionLogsRowList {
+	item := state.sessionLogSelectedItemIndex()
+	if item < 0 {
+		for index := range view.items {
+			if view.items[index].row >= 0 {
+				item = index
+				break
+			}
+		}
+	}
+	rowID := view.rowsList.RowID(item)
+	if got := canvas.FocusRequest(); rowID.IsZero() || got.Scope() != rowID.Scope() {
 		t.Fatalf("focus after the delete = %v, want a row of the page", got)
 	}
 
@@ -869,6 +898,38 @@ func sessionLogsAwaitStoredFavorite(t testing.TB, state *State, id string) {
 			t.Fatalf("favorite mark for %q was not written", id)
 		}
 		time.Sleep(time.Millisecond)
+	}
+}
+
+// A heading sorts by the column it names: the started column and the duration
+// column are the two orders the store offers, and clicking the one already
+// chosen reverses it.
+func TestSessionLogsHeaderSortsTheJournal(t *testing.T) {
+	state := sessionLogsState(t, true)
+	view := &state.sessionLogs.view
+	m := state.messages.SessionLogs
+	if view.query.Sort != sessionlog.SortStartedDesc {
+		t.Fatalf("the journal does not start newest first: %v", view.query.Sort)
+	}
+	clickPageLabel(t, state, gfx.RoleButton, m.ColumnWhen)
+	sessionLogsWait(t, state)
+	if view.query.Sort != sessionlog.SortStartedAsc {
+		t.Fatalf("clicking the started heading sorted %v", view.query.Sort)
+	}
+	clickPageLabel(t, state, gfx.RoleButton, m.ColumnWhen)
+	sessionLogsWait(t, state)
+	if view.query.Sort != sessionlog.SortStartedDesc {
+		t.Fatalf("clicking the started heading again sorted %v", view.query.Sort)
+	}
+	clickPageLabel(t, state, gfx.RoleButton, m.ColumnDuration)
+	sessionLogsWait(t, state)
+	if view.query.Sort != sessionlog.SortDurationAsc {
+		t.Fatalf("clicking the duration heading sorted %v", view.query.Sort)
+	}
+	clickPageLabel(t, state, gfx.RoleButton, m.ColumnDuration)
+	sessionLogsWait(t, state)
+	if view.query.Sort != sessionlog.SortDurationDesc {
+		t.Fatalf("clicking the duration heading again sorted %v", view.query.Sort)
 	}
 }
 

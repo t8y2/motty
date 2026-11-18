@@ -34,10 +34,9 @@ var (
 	hitSessionLogsProtocol       = tree.ID(sessionLogHits, "protocol-filter")
 	hitSessionLogsOutcome        = tree.ID(sessionLogHits, "outcome-filter")
 	hitSessionLogsSort           = tree.ID(sessionLogHits, "sort")
+	hitSessionLogsSortHeader     = tree.Sub(sessionLogHits, tree.Name("sort-header"))
 	hitSessionLogsMore           = tree.ID(sessionLogHits, "more-actions")
-	hitSessionLogsMoreDismiss    = tree.ID(sessionLogHits, "more-dismiss")
 	hitSessionLogsFavoriteFilter = tree.ID(sessionLogHits, "favorite-filter")
-	hitSessionLogsFilterDismiss  = tree.ID(sessionLogHits, "filter-dismiss")
 	hitSessionLogsFilterList     = tree.Sub(sessionLogHits, tree.Name("filter-option"))
 	hitSessionLogsFavorite       = tree.ID(sessionLogHits, "favorite")
 	hitSessionLogsDelete         = tree.ID(sessionLogHits, "delete")
@@ -45,16 +44,11 @@ var (
 	hitSessionLogsClearAll       = tree.ID(sessionLogHits, "clear-all")
 	hitSessionLogsClearFilters   = tree.ID(sessionLogHits, "clear-filters")
 	hitSessionLogsLoadMore       = tree.ID(sessionLogHits, "load-more")
-	hitSessionLogsScroll         = tree.ID(sessionLogHits, "scroll")
-	hitSessionLogsThumb          = tree.ID(sessionLogHits, "thumb")
-	hitSessionLogsRowList        = tree.Sub(sessionLogHits, tree.Name("row"))
 	hitSessionLogsRowFavorite    = tree.Sub(sessionLogHits, tree.Name("row-favorite"))
 	hitSessionLogsDetailClose    = tree.ID(sessionLogHits, "detail-close")
 	hitSessionLogsLive           = tree.ID(sessionLogHits, "open-session")
 	hitSessionLogsCopy           = tree.ID(sessionLogHits, "copy-metadata")
 	hitSessionLogsLocate         = tree.ID(sessionLogHits, "locate-host")
-	hitSessionLogsEventsScroll   = tree.ID(sessionLogHits, "events-scroll")
-	hitSessionLogsEventsThumb    = tree.ID(sessionLogHits, "events-thumb")
 )
 
 // sessionLogTimeRange is the time-range filter's choice.
@@ -80,15 +74,6 @@ const (
 	sessionLogFilterProtocolMenu
 	sessionLogFilterOutcomeMenu
 	sessionLogFilterSortMenu
-)
-
-// sessionLogDragging is the scrollbar being dragged, if any.
-type sessionLogDragging uint8
-
-const (
-	sessionLogDragNone sessionLogDragging = iota
-	sessionLogDragRows
-	sessionLogDragEvents
 )
 
 // sessionLogRow is one painted row: its stable record ID, its favorite mark
@@ -168,9 +153,6 @@ const (
 	sessionLogEventHeight = float32(22)
 	// sessionLogFieldHeight is one detail field row.
 	sessionLogFieldHeight = float32(22)
-	// sessionLogEventsRoom is what a detail panel keeps for the event list and
-	// the session-jump action before it paints another field.
-	sessionLogEventsRoom = float32(140)
 	// sessionLogToolbarGap is the space between the toolbar's controls.
 	sessionLogToolbarGap = float32(8)
 )
@@ -826,20 +808,19 @@ func sessionLogFilterFor(id gfx.ID) sessionLogFilterMenu {
 }
 
 // sessionLogsSectionUI is what the session journal's declaration leaves for its
-// paint.
+// paint: the empty state's icon, and the focus move an event asked for.
 type sessionLogsSectionUI struct {
-	timeSlot, statusSlot, protocolSlot, outcomeSlot, sortSlot, favoriteFilterBox ui.Box
-	moreButton, content, detailSlot, loadMore, emptySlot                         ui.Box
-	condensed                                                                    bool
-	empty, sideDetail, detailOnly                                                bool
-	// draw is the page hook that paints into these slots. It is kept so a paint
-	// does not build a closure for the hook.
-	draw func(*ui.DrawContext)
+	empty      ui.Box
+	emptyShown bool
+	// draw is the page hook that paints the empty state's icon and delivers a
+	// requested focus move; eventsDraw paints the detail panel's event rows.
+	// Both are kept so a paint does not build a closure.
+	draw, eventsDraw func(*ui.DrawContext)
 }
 
 // declareSessionLogsWorkspace declares the session journal in the workbench
-// page: its header, search and filters, its table or empty state, and the list
-// of its last records.
+// page: its header, search and filters, its table and detail panel, its empty
+// state, and the menus its triggers open.
 func (state *State) declareSessionLogsWorkspace(c ui.C) {
 	canvas := c.Canvas()
 	view, m, pal := &state.sessionLogs.view, &state.messages.SessionLogs, state.pal
@@ -865,13 +846,14 @@ func (state *State) declareSessionLogsWorkspace(c ui.C) {
 		searchWidth = min(sessionLogSearchMost, max(sessionLogSearchLeast, inner-toolbarHeight-2*sessionLogToolbarGap))
 	}
 	layout := &state.sectionBodies.sessionLogs
-	draw := layout.draw
-	*layout = sessionLogsSectionUI{condensed: condensed, empty: empty, sideDetail: sideDetail, detailOnly: detailOnly}
+	draw, eventsDraw := layout.draw, layout.eventsDraw
+	*layout = sessionLogsSectionUI{}
 	if draw == nil {
 		draw = func(d *ui.DrawContext) { state.paintSessionLogsWorkspace(d.Canvas) }
 	}
-	layout.draw = draw
+	layout.draw, layout.eventsDraw = draw, eventsDraw
 
+	var timeTrigger, statusTrigger, protocolTrigger, outcomeTrigger, sortTrigger ui.Box
 	body := ui.Column(c).Fill().PadSides(12, 18, 0, 18)
 	body.Children(func() {
 		ui.Row(c).Height(36).Gap(8).Items(ui.Center).Children(func() {
@@ -881,7 +863,8 @@ func (state *State) declareSessionLogsWorkspace(c ui.C) {
 			if view.moreMenu {
 				moreStyle = iconButtonActive
 			}
-			layout.moreButton = state.declareIconButton(c, hitSessionLogsMore, iconEllipsis, m.More, false, moreStyle).Size(30, 30)
+			moreButton := state.declareIconButton(c, hitSessionLogsMore, iconEllipsis, m.More, false, moreStyle).Size(30, 30)
+			state.declareSessionLogMoreMenu(c, moreButton)
 		})
 		if !narrow {
 			ui.Text(c, m.Description).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18).Ellipsis().MarginSides(0, 0, 8, 0)
@@ -895,50 +878,57 @@ func (state *State) declareSessionLogsWorkspace(c ui.C) {
 				Icon(lucideIcons[iconSearch]).Size(searchWidth, toolbarHeight)
 			if !separateFilters {
 				ui.Spacer(c)
-				layout.timeSlot = state.declareSessionLogFilterTrigger(c, hitSessionLogsTime, sessionLogFilterTimeMenu, filterWidth).Size(filterWidth, toolbarHeight)
-				layout.statusSlot = state.declareSessionLogFilterTrigger(c, hitSessionLogsStatus, sessionLogFilterStatusMenu, filterWidth).Size(filterWidth, toolbarHeight)
-				layout.protocolSlot = state.declareSessionLogFilterTrigger(c, hitSessionLogsProtocol, sessionLogFilterProtocolMenu, filterWidth).Size(filterWidth, toolbarHeight)
-				layout.outcomeSlot = state.declareSessionLogFilterTrigger(c, hitSessionLogsOutcome, sessionLogFilterOutcomeMenu, filterWidth).Size(filterWidth, toolbarHeight)
-				layout.sortSlot = state.declareSessionLogFilterTrigger(c, hitSessionLogsSort, sessionLogFilterSortMenu, filterWidth).Size(filterWidth, toolbarHeight)
-				layout.favoriteFilterBox = state.declareSessionLogFavoriteFilter(c).Size(toolbarHeight, toolbarHeight)
+				timeTrigger = state.declareSessionLogFilterTrigger(c, hitSessionLogsTime, sessionLogFilterTimeMenu, filterWidth).Size(filterWidth, toolbarHeight)
+				statusTrigger = state.declareSessionLogFilterTrigger(c, hitSessionLogsStatus, sessionLogFilterStatusMenu, filterWidth).Size(filterWidth, toolbarHeight)
+				protocolTrigger = state.declareSessionLogFilterTrigger(c, hitSessionLogsProtocol, sessionLogFilterProtocolMenu, filterWidth).Size(filterWidth, toolbarHeight)
+				outcomeTrigger = state.declareSessionLogFilterTrigger(c, hitSessionLogsOutcome, sessionLogFilterOutcomeMenu, filterWidth).Size(filterWidth, toolbarHeight)
+				sortTrigger = state.declareSessionLogFilterTrigger(c, hitSessionLogsSort, sessionLogFilterSortMenu, filterWidth).Size(filterWidth, toolbarHeight)
+				state.declareSessionLogFavoriteFilter(c).Size(toolbarHeight, toolbarHeight)
 			} else {
 				ui.Spacer(c)
-				layout.favoriteFilterBox = state.declareSessionLogFavoriteFilter(c).Size(toolbarHeight, toolbarHeight)
+				state.declareSessionLogFavoriteFilter(c).Size(toolbarHeight, toolbarHeight)
 			}
 		})
 		if separateFilters {
 			ui.Row(c).Height(38).Gap(sessionLogToolbarGap).Items(ui.Center).Children(func() {
-				layout.timeSlot = state.declareSessionLogFilterTrigger(c, hitSessionLogsTime, sessionLogFilterTimeMenu, filterWidth).Size(filterWidth, toolbarHeight)
-				layout.statusSlot = state.declareSessionLogFilterTrigger(c, hitSessionLogsStatus, sessionLogFilterStatusMenu, filterWidth).Size(filterWidth, toolbarHeight)
-				layout.protocolSlot = state.declareSessionLogFilterTrigger(c, hitSessionLogsProtocol, sessionLogFilterProtocolMenu, filterWidth).Size(filterWidth, toolbarHeight)
+				timeTrigger = state.declareSessionLogFilterTrigger(c, hitSessionLogsTime, sessionLogFilterTimeMenu, filterWidth).Size(filterWidth, toolbarHeight)
+				statusTrigger = state.declareSessionLogFilterTrigger(c, hitSessionLogsStatus, sessionLogFilterStatusMenu, filterWidth).Size(filterWidth, toolbarHeight)
+				protocolTrigger = state.declareSessionLogFilterTrigger(c, hitSessionLogsProtocol, sessionLogFilterProtocolMenu, filterWidth).Size(filterWidth, toolbarHeight)
 				if !stackedFilters {
-					layout.outcomeSlot = state.declareSessionLogFilterTrigger(c, hitSessionLogsOutcome, sessionLogFilterOutcomeMenu, filterWidth).Size(filterWidth, toolbarHeight)
-					layout.sortSlot = state.declareSessionLogFilterTrigger(c, hitSessionLogsSort, sessionLogFilterSortMenu, filterWidth).Size(filterWidth, toolbarHeight)
+					outcomeTrigger = state.declareSessionLogFilterTrigger(c, hitSessionLogsOutcome, sessionLogFilterOutcomeMenu, filterWidth).Size(filterWidth, toolbarHeight)
+					sortTrigger = state.declareSessionLogFilterTrigger(c, hitSessionLogsSort, sessionLogFilterSortMenu, filterWidth).Size(filterWidth, toolbarHeight)
 				}
 			})
 			if stackedFilters {
 				ui.Row(c).Height(38).Gap(sessionLogToolbarGap).Items(ui.Center).Children(func() {
-					layout.outcomeSlot = state.declareSessionLogFilterTrigger(c, hitSessionLogsOutcome, sessionLogFilterOutcomeMenu, filterWidth).Size(filterWidth, toolbarHeight)
-					layout.sortSlot = state.declareSessionLogFilterTrigger(c, hitSessionLogsSort, sessionLogFilterSortMenu, filterWidth).Size(filterWidth, toolbarHeight)
+					outcomeTrigger = state.declareSessionLogFilterTrigger(c, hitSessionLogsOutcome, sessionLogFilterOutcomeMenu, filterWidth).Size(filterWidth, toolbarHeight)
+					sortTrigger = state.declareSessionLogFilterTrigger(c, hitSessionLogsSort, sessionLogFilterSortMenu, filterWidth).Size(filterWidth, toolbarHeight)
 				})
 			}
 		}
+		state.declareSessionLogFilterMenu(c, timeTrigger, statusTrigger, protocolTrigger, outcomeTrigger, sortTrigger)
 		switch {
 		case empty:
 			descriptionColor := pal.muted
 			if view.emptyDanger {
 				descriptionColor = pal.danger
 			}
-			layout.emptySlot = state.reserveEmptyPageWithColor(c, bounds, view.emptyTitle, view.emptyText, view.emptyAction, descriptionColor, hitSessionLogsClearFilters, view.emptyIcon, true)
+			layout.empty = state.reserveEmptyPageWithColor(c, bounds, view.emptyTitle, view.emptyText, view.emptyAction, descriptionColor, hitSessionLogsClearFilters, view.emptyIcon, true)
+			layout.emptyShown = true
 		case sideDetail:
 			ui.Row(c).Grow(1).Basis(0).Gap(14).Children(func() {
-				layout.content = ui.Slot(c).Grow(1).Basis(0)
-				layout.detailSlot = ui.Slot(c).Width(min(sessionLogDetailWidth, inner*0.46))
+				detailWidth := min(sessionLogDetailWidth, inner*0.46)
+				ui.Column(c).Grow(1).Basis(0).Children(func() {
+					view.tableWidth = max(inner-14-detailWidth, 0)
+					state.declareSessionLogTable(c)
+				})
+				state.declareSessionLogDetails(c, false, detailWidth)
 			})
 		case detailOnly:
-			layout.detailSlot = ui.Slot(c).Grow(1).Basis(0)
+			state.declareSessionLogDetails(c, true, inner)
 		default:
-			layout.content = ui.Slot(c).Grow(1).Basis(0).MarginSides(4, 0, 0, 0)
+			view.tableWidth = inner
+			state.declareSessionLogTable(c)
 		}
 		ui.Divider(c).Background(pal.line)
 		ui.Row(c).Height(46).Gap(12).Items(ui.Center).Children(func() {
@@ -949,36 +939,79 @@ func (state *State) declareSessionLogsWorkspace(c ui.C) {
 				if view.loadingMore {
 					label = m.Loading
 				}
-				layout.loadMore = state.declareButtonSized(c, hitSessionLogsLoadMore, label, iconChevronDown, false, false, !view.loadingMore, toolbarFont, condensed).Size(loadMoreWidth, toolbarHeight)
+				state.declareButtonSized(c, hitSessionLogsLoadMore, label, iconChevronDown, false, false, !view.loadingMore, toolbarFont, condensed).Size(loadMoreWidth, toolbarHeight)
 			}
 		})
 	})
 	body.Clip().DrawOver(layout.draw)
 }
 
-// paintSessionLogsWorkspace paints the session journal's controls, table,
-// details and empty state into the slots its declaration left.
-func (state *State) paintSessionLogsWorkspace(canvas *gfx.Canvas) {
+// declareSessionLogMoreMenu declares the journal actions under the More
+// trigger while it is open. A choice runs as if its control had been clicked.
+func (state *State) declareSessionLogMoreMenu(c ui.C, anchor ui.Box) {
+	if !state.sessionLogs.view.moreMenu {
+		return
+	}
+	m := &state.messages.SessionLogs
+	var rows menuRows
+	rows.add(components.ContextMenuItem{ID: hitSessionLogsClearFavorite, Label: m.ClearUnfavorited, Icon: lucideIcons[iconEraser], Disabled: !state.sessionLogsCanClear(), Variant: components.ContextMenuItemDestructive})
+	rows.add(components.ContextMenuItem{ID: hitSessionLogsClearAll, Label: m.ClearAll, Icon: lucideIcons[iconTrash], Disabled: !state.sessionLogsCanClear(), Variant: components.ContextMenuItemDestructive})
+	ui.Menu(c, anchor, &state.sessionLogs.view.moreMenu, func(menu *ui.MenuItems) {
+		rows.declare(c, menu, func(id gfx.ID) { state.click(id, true) })
+	})
+}
+
+// declareSessionLogFilterMenu declares the open filter's choices under its
+// trigger. A choice runs the filter it belonged to, which the popup carries in
+// its closure: the menu closes as the choice is delivered.
+func (state *State) declareSessionLogFilterMenu(c ui.C, triggers ...ui.Box) {
 	view := &state.sessionLogs.view
-	layout := &state.sectionBodies.sessionLogs
+	filter := view.filterMenu
+	if !view.filterOpen || filter == sessionLogFilterNone {
+		return
+	}
+	index := int(filter) - 1
+	if index < 0 || index >= len(triggers) || !triggers[index].Valid() {
+		view.filterMenu, view.filterOpen = sessionLogFilterNone, false
+		return
+	}
+	var labels [8]string
+	var checked [8]bool
+	count := state.sessionLogFilterChoices(filter, &labels, &checked)
+	if count == 0 {
+		view.filterMenu, view.filterOpen = sessionLogFilterNone, false
+		return
+	}
+	rows := make([]components.ContextMenuItem, count)
+	for index := 0; index < count; index++ {
+		rows[index] = components.ContextMenuItem{
+			ID: hitSessionLogsFilterList.At(index), Label: labels[index],
+			Kind: components.ContextMenuRadio, Selected: checked[index],
+		}
+	}
+	ui.Menu(c, triggers[index], &view.filterOpen, func(menu *ui.MenuItems) {
+		menu.WidthRange(220, 0)
+		for choice := range rows {
+			row := &rows[choice]
+			item := menu.Item(row.Label).Chosen(row.Selected)
+			if item.Clicked() {
+				chosen := choice
+				c.After(func() { state.chooseSessionLogFilterIn(filter, chosen) })
+			}
+		}
+	})
+	if !view.filterOpen {
+		// Escape, Tab or a press away closed the page menu.
+		view.filterMenu = sessionLogFilterNone
+	}
+}
 
-	// The triggers' places are kept: the open menu opens under its own trigger
-	// in the frame's menu pass, outside the card's clip.
-	view.filterBounds[0], view.filterBounds[1], view.filterBounds[2] = layout.timeSlot.Rect(), layout.statusSlot.Rect(), layout.protocolSlot.Rect()
-	view.filterBounds[3] = layout.outcomeSlot.Rect()
-	view.filterBounds[4] = layout.sortSlot.Rect()
-	view.moreBounds = layout.moreButton.Rect()
-
-	switch {
-	case layout.empty:
-		state.drawReservedEmptyPage(canvas, layout.emptySlot, view.emptyIcon)
-	case layout.sideDetail:
-		state.paintSessionLogTable(canvas, layout.content.Rect())
-		state.paintSessionLogDetails(canvas, layout.detailSlot.Rect(), false)
-	case layout.detailOnly:
-		state.paintSessionLogDetails(canvas, layout.detailSlot.Rect(), true)
-	default:
-		state.paintSessionLogTable(canvas, layout.content.Rect())
+// paintSessionLogsWorkspace paints the empty state's icon and delivers a focus
+// move an event handler asked for into the slots its declaration left.
+func (state *State) paintSessionLogsWorkspace(canvas *gfx.Canvas) {
+	view, layout := &state.sessionLogs.view, &state.sectionBodies.sessionLogs
+	if layout.emptyShown {
+		state.drawReservedEmptyPage(canvas, layout.empty, view.emptyIcon)
 	}
 	// A focus move an event handler asked for is honored by the next paint: a
 	// click has no return value to carry it, so it waits here for the one place
@@ -1110,272 +1143,305 @@ func (state *State) declareSessionLogFavoriteFilter(c ui.C) ui.Box {
 	return toggle
 }
 
-// paintSessionLogFilters paints the open filter's popup in the frame's menu
-// pass, outside the workspace clip, so it can leave the card. Its items are radio
-// choices: the keyboard walks them with menuKey, as it does every popup menu of
-// the workbench.
-func (state *State) paintSessionLogFilters(canvas *gfx.Canvas) {
-	view := &state.sessionLogs.view
-	if state.activeSection != sectionSessionLogs || state.modal != modalNone {
+// declareSessionLogTable declares the journal's record table: its fixed
+// heading row and the page List under it. The list's rows are the date headings
+// and the records; a click, Enter or typing chooses a record, and the arrows,
+// page keys and wheel are the page's, which owns the list's scroll offset.
+func (state *State) declareSessionLogTable(c ui.C) {
+	view, m, theme := &state.sessionLogs.view, &state.messages.SessionLogs, state.Theme()
+	if view.tableWidth < 80 {
 		return
 	}
-	if view.moreMenu {
-		m := &state.messages.SessionLogs
-		var rows menuRows
-		rows.add(components.ContextMenuItem{ID: hitSessionLogsClearFavorite, Label: m.ClearUnfavorited, Icon: lucideIcons[iconEraser], Disabled: !state.sessionLogsCanClear(), Variant: components.ContextMenuItemDestructive})
-		rows.add(components.ContextMenuItem{ID: hitSessionLogsClearAll, Label: m.ClearAll, Icon: lucideIcons[iconTrash], Disabled: !state.sessionLogsCanClear(), Variant: components.ContextMenuItemDestructive})
-		width, height := rows.size(canvas, state.contextMenuTheme())
-		bounds := state.popupBelow(canvas, view.moreBounds, width, height, ui.End)
-		menu := components.BeginContextMenu(canvas, state.contextMenuTheme(), bounds, components.ContextMenuOptions{Layer: dialogLayer, Scope: dialogScope, DismissID: hitSessionLogsMoreDismiss, Viewport: state.windowRect(), Scroll: state.menuScrollFor(hitSessionLogsMoreDismiss), RowHeight: contextMenuRow})
-		state.menuPlaced(menu.Bounds())
-		rows.paint(&menu, nil)
-		menu.End()
-		return
+	if !view.rowsInit {
+		view.rowsInit = true
+		view.rowsList.Label = state.sessionLogItemLabel
+		view.rowsList.Header = state.sessionLogItemHeader
+		view.rowsList.NoTypeahead = true
+		view.rowDecl = state.declareSessionLogItem
 	}
-	if view.filterMenu == sessionLogFilterNone {
-		return
-	}
-	anchor := view.filterBounds[view.filterMenu-1]
-	if anchor.Width <= 0 || anchor.Height <= 0 {
-		return
-	}
-	var labels [8]string
-	var checked [8]bool
-	count := state.sessionLogFilterChoices(view.filterMenu, &labels, &checked)
-	if count == 0 {
-		return
-	}
-	height := float32(count*32 + 8)
-	width := max(float32(220), anchor.Width)
-	bounds := state.popupBelow(canvas, anchor, width, height, ui.Start)
-	menu := components.BeginDropdownMenu(canvas, state.Theme(), bounds, components.DropdownMenuOptions{
-		Layer: dialogLayer, Scope: dialogScope, DismissID: hitSessionLogsFilterDismiss,
-		Viewport: state.windowRect(), Scroll: state.selectScroll(true, hitSessionLogsFilterDismiss),
+	_, headings, count := state.sessionLogColumns(view.tableWidth)
+	headerHeight := theme.Metrics.ControlHeight + 8
+	view.rowClicked = false
+	ui.Row(c).Height(headerHeight).Shrink(0).FillWidth().Children(func() {
+		widths, _, _ := state.sessionLogColumns(view.tableWidth)
+		for column := 0; column < count; column++ {
+			cell := ui.Row(c).Width(widths[column]).Height(headerHeight).Shrink(0).Items(ui.Center)
+			if headings[column] != "" && state.sessionLogHeaderSortable(column, count) {
+				cell = cell.HitWith(hitSessionLogsSortHeader.At(column), headings[column], gfx.HitOptions{Role: gfx.RoleButton})
+			}
+			cell.Children(func() {
+				ui.Text(c, headings[column]).FontSize(theme.Metrics.FontSizeM).Weight(gfx.WeightMedium).
+					Color(theme.Foreground).LineHeight(headerHeight).PadSides(0, theme.Metrics.GapItem, 0, theme.Metrics.GapItem).Ellipsis()
+			})
+		}
 	})
-	state.menuPlaced(menu.Bounds())
-	for index := 0; index < count; index++ {
-		menu.AddItem(components.DropdownMenuItem{
-			ID: hitSessionLogsFilterList.At(index), Label: labels[index],
-			Kind: components.DropdownMenuRadio, Checked: checked[index],
+	if len(view.items) == 0 {
+		return
+	}
+	list := ui.List(c, &view.rowsList, len(view.items), view.rowDecl).
+		Grow(1).Basis(0).FillWidth().Scrollbars().ScrollbarSize(catalogBarGutter).Label(m.Title)
+	if scroll := list.ScrollState(); scroll != nil {
+		view.scrollRows = scroll.Offset
+	}
+	state.takeSessionLogListChoice()
+}
+
+// takeSessionLogListChoice turns the list's choice into the page's selection.
+// A click or Enter opens the record's detail panel; the arrows only move the
+// list's current row, whose detail stays as it was until one of them opens it.
+func (state *State) takeSessionLogListChoice() {
+	view := &state.sessionLogs.view
+	open := -1
+	if index, ok := view.rowsList.Submitted(); ok {
+		open = index
+	}
+	if view.rowsList.Changed() {
+		if view.rowClicked {
+			if index := view.rowsList.Selected(); index >= 0 {
+				open = index
+			}
+		}
+	} else if open < 0 {
+		view.rowsList.Select(state.sessionLogSelectedItemIndex())
+	}
+	if open < 0 || open >= len(view.items) || view.items[open].row < 0 {
+		return
+	}
+	state.selectSessionLogRecord(view.page[view.items[open].row].id)
+}
+
+// sessionLogHeaderSortable says whether clicking column's heading sorts: the
+// when column and the duration column are the store's two orders, and a
+// narrowest table shows the duration in the when column only while one of the
+// duration orders is chosen.
+func (state *State) sessionLogHeaderSortable(column, count int) bool {
+	switch column {
+	case 4:
+		return count == 6
+	case 1:
+		return count != 3 || state.sessionLogs.view.query.Sort >= sessionlog.SortDurationDesc
+	}
+	return false
+}
+
+// sessionLogItemHeader says which rows of the record list are date headings.
+func (state *State) sessionLogItemHeader(index int) bool {
+	items := state.sessionLogs.view.items
+	return index >= 0 && index < len(items) && items[index].row < 0
+}
+
+// sessionLogItemLabel is a row's text for typeahead and assistive technology:
+// the heading, or the record's target and account.
+func (state *State) sessionLogItemLabel(index int) string {
+	view := &state.sessionLogs.view
+	if index < 0 || index >= len(view.items) {
+		return ""
+	}
+	item := view.items[index]
+	if item.row < 0 {
+		return item.heading
+	}
+	if item.row >= len(view.page) {
+		return ""
+	}
+	return view.page[item.row].cells[0]
+}
+
+// declareSessionLogItem declares one row of the record list: a date heading, or
+// a record's cells at the table's column widths with its favorite star at the
+// end. The star is a page button of its own, so pressing it does not choose the
+// record, as the table's separate cell did.
+func (state *State) declareSessionLogItem(row ui.ListRow) {
+	view, pal, theme := &state.sessionLogs.view, state.pal, state.Theme()
+	if row.Index < 0 || row.Index >= len(view.items) {
+		return
+	}
+	item := view.items[row.Index]
+	if item.row < 0 {
+		row.Element.Height(sessionLogGroupHeight).Shrink(0).FillWidth().PadX(8).Items(ui.Center).Children(func() {
+			ui.Text(row.C, item.heading).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.muted).Ellipsis()
 		})
-	}
-	menu.End()
-}
-
-// paintSessionLogTable paints the fixed header and the scrollable body of the
-// record table.
-func (state *State) paintSessionLogTable(canvas *gfx.Canvas, bounds gfx.Rect) {
-	view, m := &state.sessionLogs.view, &state.messages.SessionLogs
-	if bounds.Width < 80 || bounds.Height < 60 {
 		return
 	}
-	theme := state.Theme()
-	var columns [6]components.TableColumn
-	var headings [6]string
-	count := state.sessionLogColumns(bounds.Width, &columns, &headings)
-	rowHeight := components.TableRowHeight(theme)
-	headerHeight := components.TableHeaderHeight(theme)
-	body := gfx.Rect{X: bounds.X, Y: bounds.Y + headerHeight, Width: bounds.Width, Height: max(bounds.Height-headerHeight, 0)}
-	view.tableBody = body
-	if body.Height <= 0 {
+	if item.row >= len(view.page) {
 		return
 	}
-	components.FitTableHeadings(canvas, theme, columns[:count], headings[:count])
-	head := components.BeginTable(canvas, theme, gfx.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: headerHeight}, columns[:count])
-	head.Header(headings[:count])
-
-	content := gfx.Size{Width: bounds.Width, Height: state.sessionLogListHeight(rowHeight)}
-	area := components.BeginScrollArea(canvas, theme, body, content).
-		Offset(0, view.scrollRows).Viewport(hitSessionLogsScroll, m.ListScroll).
-		VerticalScrollbar(hitSessionLogsThumb, m.ListScroll, "")
-	geo := area.BeginContent()
-	view.scrollRows = geo.OffsetY
-	if len(view.page) > 0 {
-		if cap(view.rowCells) < count {
-			view.rowCells = make([]gfx.Rect, count)
-		}
-		y := geo.Content.Y
-		for _, item := range view.items {
-			if item.row < 0 {
-				paintSessionLogText(canvas, item.heading, gfx.Rect{X: geo.Content.X + 8, Y: y, Width: max(geo.Content.Width-16, 0), Height: sessionLogGroupHeight}, metrics.FontSizeS, gfx.WeightSemibold, state.pal.muted)
-				y += sessionLogGroupHeight
-				continue
-			}
-			index := item.row
-			row := &view.page[index]
-			table := components.BeginTable(canvas, theme, gfx.Rect{X: geo.Content.X, Y: y, Width: geo.Content.Width, Height: rowHeight}, columns[:count])
-			y += rowHeight
-			var rowCells []string
-			switch count {
-			case 6:
-				rowCells = row.cells[:]
-			case 4:
-				rowCells = row.compact[:]
-			default:
-				rowCells = row.minimal[:]
-			}
-			layout := table.RowLayout(hitSessionLogsRowList.At(index), rowCells, components.TableRowState{Selected: row.id == view.selected}, view.rowCells[:0])
-			if layout.Bounds.Width <= 0 || count > len(layout.Cells) {
-				continue
-			}
-			star := layout.Cells[count-1]
-			if star.Width < 12 {
-				continue
-			}
-			icon := iconStar
-			if row.favorite {
-				icon = iconStarSolid
-			}
-			style := iconButtonQuiet
-			if row.favorite {
-				style = iconButtonActive
-			}
-			state.paintIconButton(canvas, hitSessionLogsRowFavorite.At(index), icon, star, row.favoriteLabel, view.favoritePending != "", style, state.pal.surface)
-		}
+	view.rowScope = row.ID.Scope()
+	if row.C.Canvas().Clicked(row.ID) {
+		view.rowClicked = true
 	}
-	area.EndContent()
+	record := &view.page[item.row]
+	widths, _, count := state.sessionLogColumns(view.tableWidth)
+	rowHeight := theme.Metrics.ControlHeight + 4
+	row.Element.Height(rowHeight).Shrink(0).FillWidth().Items(ui.Center)
+	if row.Selected() {
+		row.Element = row.Element.Background(theme.Muted)
+	} else {
+		row.Element = row.Element.Hover(ui.Look{}.Background(theme.Hover))
+	}
+	row.Element.Children(func() {
+		cells := record.cells[:]
+		switch count {
+		case 4:
+			cells = record.compact[:]
+		case 3:
+			cells = record.minimal[:]
+		}
+		for column := 0; column < count-1; column++ {
+			ui.Text(row.C, cells[column]).Width(widths[column]).Height(rowHeight).
+				PadSides(0, theme.Metrics.GapItem, 0, theme.Metrics.GapItem).
+				FontSize(theme.Metrics.FontSizeM).Color(theme.Foreground).Ellipsis()
+		}
+		icon, style := iconStar, iconButtonQuiet
+		if record.favorite {
+			icon, style = iconStarSolid, iconButtonActive
+		}
+		state.declareIconButton(row.C, hitSessionLogsRowFavorite.At(item.row), icon, record.favoriteLabel,
+			view.favoritePending != "", style).Size(widths[count-1], rowHeight)
+	})
 }
 
-// sessionLogColumns lays out the table for a card width and returns how many of
-// the six cells it paints. The target column takes what the others leave. The
-// widths are what the longest localized value needs: a time (100), a status
-// (140), a protocol (84) and a duration (80). A card too narrow for six columns
-// drops protocol and duration, and the narrowest drops the status too; the detail
-// panel still shows everything the row leaves out.
-func (state *State) sessionLogColumns(width float32, columns *[6]components.TableColumn, headings *[6]string) int {
+// sessionLogColumns lays out the table for a card width. The target column
+// takes what the others leave. The widths are what the longest localized value
+// needs: a time (100), a status (140), a protocol (84) and a duration (80). A
+// card too narrow for six columns drops protocol and duration, and the
+// narrowest drops the status too; the detail panel still shows everything the
+// row leaves out.
+func (state *State) sessionLogColumns(width float32) (widths [6]float32, headings [6]string, count int) {
 	m := &state.messages.SessionLogs
 	favorite := float32(30)
 	if width >= sessionLogFullColumns {
 		when, protocol, status, duration := float32(104), float32(84), float32(200), float32(80)
-		target := max(width-when-protocol-status-duration-favorite, 140)
-		columns[0] = components.TableColumn{Width: target}
-		columns[1] = components.TableColumn{Width: when}
-		columns[2] = components.TableColumn{Width: protocol}
-		columns[3] = components.TableColumn{Width: status}
-		columns[4] = components.TableColumn{Width: duration}
-		columns[5] = components.TableColumn{Width: favorite, Alignment: components.TableAlignCenter}
+		widths[0] = max(width-when-protocol-status-duration-favorite, 140)
+		widths[1], widths[2], widths[3], widths[4], widths[5] = when, protocol, status, duration, favorite
 		headings[0], headings[1], headings[2] = m.ColumnTarget, m.ColumnWhen, m.ColumnProtocol
-		headings[3], headings[4], headings[5] = m.ColumnStatus, m.ColumnDuration, ""
-		return 6
+		headings[3], headings[4] = m.ColumnStatus, m.ColumnDuration
+		return widths, headings, 6
 	}
 	if width >= sessionLogCompactColumns {
 		when, status := float32(100), float32(190)
-		target := max(width-when-status-favorite, 100)
-		columns[0] = components.TableColumn{Width: target}
-		columns[1] = components.TableColumn{Width: when}
-		columns[2] = components.TableColumn{Width: status}
-		columns[3] = components.TableColumn{Width: favorite, Alignment: components.TableAlignCenter}
-		headings[0], headings[1], headings[2], headings[3] = m.ColumnTarget, m.ColumnWhen, m.ColumnStatus, ""
+		widths[0] = max(width-when-status-favorite, 100)
+		widths[1], widths[2], widths[3] = when, status, favorite
+		headings[0], headings[1], headings[2] = m.ColumnTarget, m.ColumnWhen, m.ColumnStatus
 		if state.sessionLogs.view.query.Sort >= sessionlog.SortDurationDesc {
 			headings[1] = m.ColumnDuration
 		}
-		return 4
+		return widths, headings, 4
 	}
 	when := float32(100)
-	target := max(width-when-favorite, 80)
-	columns[0] = components.TableColumn{Width: target}
-	columns[1] = components.TableColumn{Width: when}
-	columns[2] = components.TableColumn{Width: favorite, Alignment: components.TableAlignCenter}
-	headings[0], headings[1], headings[2] = m.ColumnTarget, m.ColumnStatus, ""
+	widths[0] = max(width-when-favorite, 80)
+	widths[1], widths[2] = when, favorite
+	headings[0], headings[1] = m.ColumnTarget, m.ColumnStatus
 	if state.sessionLogs.view.query.Sort >= sessionlog.SortDurationDesc {
 		headings[1] = m.ColumnDuration
 	}
-	return 3
+	return widths, headings, 3
 }
 
-// paintSessionLogDetails paints the selected record: its fields, the lifecycle
-// events that were recorded, and the way to the still-open session when there is
-// one. Nothing here writes, and no replay is offered because no recording exists.
-func (state *State) paintSessionLogDetails(canvas *gfx.Canvas, bounds gfx.Rect, stacked bool) {
+// declareSessionLogDetails declares the selected record: its fields, the
+// lifecycle events that were recorded on a page scroll area, and the way to the
+// still-open session when there is one. Nothing here writes, and no replay is
+// offered because no recording exists.
+func (state *State) declareSessionLogDetails(c ui.C, stacked bool, width float32) {
 	detail, m, pal := &state.sessionLogs.view.detail, &state.messages.SessionLogs, state.pal
-	if bounds.Width < 160 || bounds.Height < 120 {
+	if width <= 0 {
 		return
 	}
+	inner := max(width-28, 0)
+	if inner <= 0 {
+		return
+	}
+	panel := ui.Column(c).Fill().Width(width).Clip().Radius(radius.surface).Border(1, pal.line).Background(pal.surface).
+		PadSides(12, 14, 12, 14).Gap(0)
+	panel.Children(func() {
+		closeHint := m.CloseDetail
+		if stacked {
+			closeHint = m.BackToList
+		}
+		ui.Row(c).Height(28).Shrink(0).Items(ui.Center).Children(func() {
+			ui.Text(c, detail.title).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).Grow(1).Ellipsis()
+			state.declareIconButton(c, hitSessionLogsDetailClose, iconClose, closeHint, false, iconButtonQuiet).Size(28, 28)
+		})
+		if detail.count > 0 {
+			// Fields are two columns: a muted label and its value. The prepared
+			// order puts the outcome first and the snapshot details last, so a
+			// panel that clips keeps what matters.
+			labelWidth := min(max(inner*0.34, 64), 110)
+			for index := 0; index < detail.count; index++ {
+				field := &detail.fields[index]
+				valueColor := pal.text
+				if index == detail.statusIndex {
+					valueColor = state.sessionLogToneColor(detail.statusTone)
+				}
+				ui.Row(c).Height(sessionLogFieldHeight).Shrink(0).FillWidth().Items(ui.Center).Children(func() {
+					ui.Text(c, field.label).Width(labelWidth).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).
+						Color(pal.muted).Ellipsis()
+					ui.Text(c, field.value).Grow(1).FontSize(metrics.FontSizeS).Weight(gfx.WeightRegular).
+						Color(valueColor).Ellipsis()
+				})
+			}
+		}
+		if detail.noInfo != "" {
+			ui.Text(c, detail.noInfo).Height(18).Shrink(0).FillWidth().FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis()
+		}
+		headingWidth := min(inner*0.42, 96)
+		ui.Row(c).Height(24).Shrink(0).FillWidth().Items(ui.Center).Children(func() {
+			ui.Text(c, m.Events).Width(headingWidth).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
+			ui.Text(c, detail.eventsText).Grow(1).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis()
+		})
+		if detail.truncatedText != "" {
+			ui.Text(c, detail.truncatedText).Height(18).Shrink(0).FillWidth().FontSize(metrics.FontSizeS).Color(pal.warning).Ellipsis()
+		}
+		state.declareSessionLogEvents(c)
+		ui.Row(c).Height(toolbarHeight).Shrink(0).FillWidth().MarginTop(6).Children(func() {
+			state.declareButtonSized(c, hitSessionLogsLive, detail.actionLabel, iconTerminal, false, false, true, toolbarFont, false).Grow(1).Basis(0).Shrink(1)
+		})
+		ui.Row(c).Height(toolbarHeight).Shrink(0).FillWidth().MarginTop(6).Gap(6).Children(func() {
+			state.declareButtonSized(c, hitSessionLogsCopy, m.CopyMetadata, iconCopy, false, false, detail.copyEnabled, toolbarFont, true).Grow(1).Basis(0).Shrink(1)
+			state.declareButtonSized(c, hitSessionLogsLocate, m.LocateHost, iconSearch, false, false, detail.hasHost, toolbarFont, true).Grow(1).Basis(0).Shrink(1)
+			state.declareButtonSized(c, hitSessionLogsDelete, m.Delete, iconTrash, false, false, true, toolbarFont, true).Grow(1).Basis(0).Shrink(1)
+		})
+	})
+}
+
+// declareSessionLogEvents declares the recorded-events list of the detail
+// panel: a page scroll area around a slot that paints the rows, so the wheel
+// and the scrollbar are the page's while the prepared rows stay a no-allocation
+// paint.
+func (state *State) declareSessionLogEvents(c ui.C) {
 	view := &state.sessionLogs.view
-	canvas.RoundedBorder(bounds, radius.surface, 1, pal.line, pal.surface)
-	inner := gfx.Rect{X: bounds.X + 14, Y: bounds.Y + 12, Width: max(bounds.Width-28, 0), Height: max(bounds.Height-24, 0)}
-	if inner.Width <= 0 || inner.Height <= 0 {
-		return
-	}
-	y := inner.Y
-	// The panel's own header: the record's host and the way back to the list.
-	closeHint := m.CloseDetail
-	if stacked {
-		closeHint = m.BackToList
-	}
-	closeSize := float32(28)
-	titleWidth := max(inner.Width-closeSize-8, 0)
-	paintSessionLogText(canvas, detail.title, gfx.Rect{X: inner.X, Y: y, Width: titleWidth, Height: 22}, metrics.FontSizeM, gfx.WeightSemibold, pal.text)
-	state.paintIconButton(canvas, hitSessionLogsDetailClose, iconClose, gfx.Rect{X: inner.X + inner.Width - closeSize, Y: y - 2, Width: closeSize, Height: closeSize}, closeHint, false, iconButtonQuiet, pal.surface)
-	y += 26
-	if detail.count > 0 {
-		// Fields are two columns: a muted label and its value. A panel too short
-		// for all of them keeps the first ones, which is why the prepared order
-		// puts the outcome first and the snapshot details last.
-		labelWidth := min(max(inner.Width*0.34, 64), 110)
-		room := int((inner.Height - 26 - sessionLogEventsRoom) / sessionLogFieldHeight)
-		fields := min(detail.count, max(room, 3))
-		for index := 0; index < fields; index++ {
-			field := &detail.fields[index]
-			if y+sessionLogFieldHeight > inner.Y+inner.Height {
-				break
-			}
-			valueColor := pal.text
-			if index == detail.statusIndex {
-				valueColor = state.sessionLogToneColor(detail.statusTone)
-			}
-			paintSessionLogText(canvas, field.label, gfx.Rect{X: inner.X, Y: y, Width: max(labelWidth-6, 0), Height: sessionLogFieldHeight}, metrics.FontSizeS, gfx.WeightMedium, pal.muted)
-			paintSessionLogText(canvas, field.value, gfx.Rect{X: inner.X + labelWidth, Y: y, Width: max(inner.Width-labelWidth, 0), Height: sessionLogFieldHeight}, metrics.FontSizeS, gfx.WeightRegular, valueColor)
-			y += sessionLogFieldHeight
+	detail := &view.detail
+	layout := &state.sectionBodies.sessionLogs
+	scroll := ui.Scroll(c).Grow(1).Basis(0).MinHeight(0).FillWidth().Scrollbars().ScrollbarSize(catalogBarGutter)
+	if view.resetEvents {
+		if area := scroll.ScrollState(); area != nil {
+			area.ScrollTo(0)
 		}
+		view.resetEvents = false
 	}
-	if detail.noInfo != "" {
-		if y+18 <= inner.Y+inner.Height {
-			paintSessionLogText(canvas, detail.noInfo, gfx.Rect{X: inner.X, Y: y, Width: inner.Width, Height: 18}, metrics.FontSizeS, gfx.WeightRegular, pal.muted)
-			y += 20
+	content := float32(len(detail.events)) * sessionLogEventHeight
+	scroll.Children(func() {
+		if content <= 0 {
+			return
 		}
+		if layout.eventsDraw == nil {
+			layout.eventsDraw = func(d *ui.DrawContext) { state.paintSessionLogEventRows(d.Canvas, d.Rect) }
+		}
+		ui.Slot(c).FillWidth().Height(content).Draw(layout.eventsDraw)
+	})
+}
+
+// paintSessionLogEventRows paints the prepared event rows into the slot the
+// events scroll area moved.
+func (state *State) paintSessionLogEventRows(canvas *gfx.Canvas, bounds gfx.Rect) {
+	detail, pal := &state.sessionLogs.view.detail, state.pal
+	whenWidth := float32(64)
+	for index := range detail.events {
+		event := &detail.events[index]
+		y := bounds.Y + float32(index)*sessionLogEventHeight
+		paintSessionLogText(canvas, event.when, gfx.Rect{X: bounds.X, Y: y, Width: whenWidth - 6, Height: sessionLogEventHeight}, metrics.FontSizeS, gfx.WeightRegular, pal.muted)
+		paintSessionLogText(canvas, event.label, gfx.Rect{X: bounds.X + whenWidth, Y: y, Width: max(bounds.Width-whenWidth, 0), Height: sessionLogEventHeight}, metrics.FontSizeS, gfx.WeightRegular, pal.text)
 	}
-	// The session-jump action sits at the bottom; above it the recorded events
-	// scroll on their own so a long timeline stays readable.
-	action := gfx.Rect{X: inner.X, Y: inner.Y + inner.Height - 2*toolbarHeight - 6, Width: inner.Width, Height: toolbarHeight}
-	eventsTop := y
-	eventsBottom := action.Y - 10
-	headingWidth := min(inner.Width*0.42, 96)
-	view.eventsBody = gfx.Rect{}
-	if eventsBottom-eventsTop > 34 {
-		paintSessionLogText(canvas, m.Events, gfx.Rect{X: inner.X, Y: eventsTop, Width: headingWidth, Height: 18}, metrics.FontSizeS, gfx.WeightSemibold, pal.text)
-		paintSessionLogText(canvas, detail.eventsText, gfx.Rect{X: inner.X + headingWidth, Y: eventsTop, Width: max(inner.Width-headingWidth, 0), Height: 18}, metrics.FontSizeS, gfx.WeightRegular, pal.muted)
-		eventsTop += 24
-		if detail.truncatedText != "" && eventsTop+16 <= eventsBottom {
-			paintSessionLogText(canvas, detail.truncatedText, gfx.Rect{X: inner.X, Y: eventsTop, Width: inner.Width, Height: 16}, metrics.FontSizeS, gfx.WeightRegular, pal.warning)
-			eventsTop += 18
-		}
-		events := gfx.Rect{X: inner.X, Y: eventsTop, Width: inner.Width, Height: max(eventsBottom-eventsTop, 0)}
-		if events.Height > 0 {
-			view.eventsBody = events
-			content := gfx.Size{Width: events.Width, Height: float32(len(detail.events)) * sessionLogEventHeight}
-			area := components.BeginScrollArea(canvas, state.Theme(), events, content).
-				Offset(0, view.scrollEvents).Viewport(hitSessionLogsEventsScroll, m.Events).
-				VerticalScrollbar(hitSessionLogsEventsThumb, m.Events, "")
-			geo := area.BeginContent()
-			view.scrollEvents = geo.OffsetY
-			whenWidth := float32(64)
-			for index := range detail.events {
-				event := &detail.events[index]
-				row := gfx.Rect{X: geo.Content.X, Y: geo.Content.Y + float32(index)*sessionLogEventHeight, Width: geo.Content.Width, Height: sessionLogEventHeight}
-				paintSessionLogText(canvas, event.when, gfx.Rect{X: row.X, Y: row.Y, Width: whenWidth - 6, Height: row.Height}, metrics.FontSizeS, gfx.WeightRegular, pal.muted)
-				paintSessionLogText(canvas, event.label, gfx.Rect{X: row.X + whenWidth, Y: row.Y, Width: max(row.Width-whenWidth, 0), Height: row.Height}, metrics.FontSizeS, gfx.WeightRegular, pal.text)
-			}
-			area.EndContent()
-		}
-	}
-	state.paintToolbarButtonIn(canvas, hitSessionLogsLive, action, detail.actionLabel, iconTerminal, false, true, false)
-	tools := gfx.Rect{X: action.X, Y: action.Y + toolbarHeight + 6, Width: (action.Width - 12) / 3, Height: toolbarHeight}
-	state.paintToolbarButtonIn(canvas, hitSessionLogsCopy, tools, m.CopyMetadata, iconCopy, false, detail.copyEnabled, true)
-	tools.X += tools.Width + 6
-	state.paintToolbarButtonIn(canvas, hitSessionLogsLocate, tools, m.LocateHost, iconSearch, false, detail.hasHost, true)
-	tools.X += tools.Width + 6
-	state.paintToolbarButtonIn(canvas, hitSessionLogsDelete, tools, m.Delete, iconTrash, false, true, true)
 }
 
 // paintSessionLogText is one label with a one-line ellipsis that a warm paint

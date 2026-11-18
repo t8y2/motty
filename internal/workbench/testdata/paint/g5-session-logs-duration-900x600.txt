@@ -1,0 +1,94 @@
+rect {{0 0 900 600} {0.09411765 0.10980392 0.13725491 1} 0 0 {0 0 0 0} false #0}
+rect {{9 227 186 36} {0.23529412 0.27450982 0.34117648 1} 7.5 0 {0 0 0 0} false #1}
+rect {{204 36 689 557} {0.2627451 0.30588236 0.37254903 1} 11 0 {0 0 0 0} false #2}
+rect {{205 37 687 555} {0.06666667 0.08235294 0.105882354 1} 10 0 {0 0 0 0} false #3}
+rect {{223 87 440 36} {0.216 0.22917646 0.24894118 1} 7.5 0 {205 37 687 555} true #5}
+rect {{224 88 438 34} {0.11146667 0.1264 0.1488 1} 6.5 0 {205 37 687 555} true #6}
+rect {{223 545 651 1} {0.2 0.23529412 0.2901961 1} 0 0 {205 37 687 555} true #7}
+shadow {{223 87 440 36} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {205 37 687 555} true #4}
+text "Hosts" {52 114.5 37.180664 21}
+text "Workspaces" {52 154.5 80.37695 21}
+text "Monitor" {52 194.5 49.745117 21}
+text "Session Logs" {52 234.5 85.51758 21}
+text "Keychain" {52 274.5 59.814453 21}
+text "Jump Routes" {52 314.5 84.2666 21}
+text "Port Forwarding" {52 354.5 103.40039 21}
+text "Known Hosts" {52 394.5 85.44238 21}
+text "Snippets" {52 434.5 56.47168 21}
+text "Notes" {52 474.5 37.99414 21}
+text "Local Terminal" {52 515.5 94.36328 21}
+text "Settings" {52 555.5 52.759766 21}
+text "Session Logs" {223 54.5 245 25}
+text "Loaded 6 / 6 · Total 6" {719.1992 57.5 360 19}
+text "Search host name, address or account" {254 95 398 20}
+text "All time" {254.5 134.5 40.85742 19}
+text "All statuses" {386.5 134.5 63.73242 19}
+text "All protocols" {518.5 134.5 69.16992 19}
+text "All outcomes" {254.5 172.5 71.666016 19}
+text "Longest first" {386.5 172.5 69.35742 19}
+text "Target" {231 201 42.396484 40}
+text "Duration" {562 201 54.776367 40}
+text "Status" {662 201 40.783203 40}
+text "lab · ops" {231 241 315 21}
+text "1h 00m" {562 241 84 21}
+text "Ended · Closed by you" {662 241 174 21}
+text "web-01 · alice" {231 277 315 21}
+text "30m 00s" {562 277 84 21}
+text "Ended · Closed by you" {662 277 174 21}
+text "db-01 · bob" {231 313 315 21}
+text "5m 00s" {562 313 84 21}
+text "Failed · Authentication fai…" {662 313 174 21}
+text "rack-02 · ops" {231 349 315 21}
+text "1m 00s (un…" {562 349 84 21}
+text "Interrupted" {662 349 174 21}
+text "old-box · ops" {231 385 315 21}
+text "1m 00s" {562 385 84 21}
+text "Failed · Timed out" {662 385 174 21}
+text "archive · ops" {231 421 315 21}
+text "1m 00s" {562 421 84 21}
+text "Ended · Closed by you" {662 421 174 21}
+hit "" region {0 0 900 36} disabled=false
+hit "Hosts" button {82 4 28 28} disabled=false
+hit "New tab" button {116 4 28 28} disabled=false
+hit "Transfers" button {656 4 28 28} disabled=false
+hit "Session manager" button {686 4 28 28} disabled=false
+hit "AI assistant" button {716 4 28 28} disabled=false
+hit "Local Terminal" button {746 4 28 28} disabled=false
+hit "Command Palette" button {776 4 28 28} disabled=false
+hit "Switch to light theme" button {806 4 28 28} disabled=false
+hit "GitHub" button {836 4 28 28} disabled=false
+hit "Settings" button {866 4 28 28} disabled=false
+hit "Hosts" menuitem {9 107 186 36} disabled=false
+hit "Workspaces" menuitem {9 147 186 36} disabled=false
+hit "Monitor" menuitem {9 187 186 36} disabled=false
+hit "Session Logs" menuitem {9 227 186 36} disabled=false
+hit "Keychain" menuitem {9 267 186 36} disabled=false
+hit "Jump Routes" menuitem {9 307 186 36} disabled=false
+hit "Port Forwarding" menuitem {9 347 186 36} disabled=false
+hit "Known Hosts" menuitem {9 387 186 36} disabled=false
+hit "Snippets" menuitem {9 427 186 36} disabled=false
+hit "Notes" menuitem {9 467 186 36} disabled=false
+hit "Local Terminal" menuitem {9 508 186 36} disabled=false
+hit "Settings" menuitem {9 548 186 36} disabled=false
+hit "More session log actions" button {844 52 30 30} disabled=false
+hit "Search sessions" textfield {223 87 440 36} disabled=false
+hit "Show favorites only" button {838 87 36 36} disabled=false
+hit "Filter by time range" button {223 126 124 36} disabled=false
+hit "Filter by status" button {355 126 124 36} disabled=false
+hit "Filter by protocol" button {487 126 124 36} disabled=false
+hit "Filter by outcome" button {223 164 124 36} disabled=false
+hit "Sort sessions" button {355 164 124 36} disabled=false
+hit "Duration" button {554 201 100 40} disabled=false
+hit "Session Logs" listbox {223 241 651 304} disabled=false
+hit "lab · ops" option {223 241 651 36} disabled=false
+hit "Favorite lab · ops" button {844 241 30 36} disabled=false
+hit "web-01 · alice" option {223 277 651 36} disabled=false
+hit "Favorite web-01 · alice" button {844 277 30 36} disabled=false
+hit "db-01 · bob" option {223 313 651 36} disabled=false
+hit "Favorite db-01 · bob" button {844 313 30 36} disabled=false
+hit "rack-02 · ops" option {223 349 651 36} disabled=false
+hit "Favorite rack-02 · ops" button {844 349 30 36} disabled=false
+hit "old-box · ops" option {223 385 651 36} disabled=false
+hit "Favorite old-box · ops" button {844 385 30 36} disabled=false
+hit "archive · ops" option {223 421 651 36} disabled=false
+hit "Favorite archive · ops" button {844 421 30 36} disabled=false

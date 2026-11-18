@@ -334,7 +334,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	state.paintFindPreferences(canvas)
 	state.paintMonitorIntervalMenu(canvas)
 	state.paintDashboardMenu(canvas)
-	state.paintSessionLogFilters(canvas)
 	switch state.modal {
 	case modalDashboardAdd:
 		state.paintDashboardAddMenu(canvas)

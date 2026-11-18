@@ -2572,9 +2572,6 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result, handled := state.dashboardPointer(event); handled {
 		return result
 	}
-	if result, handled := state.sessionLogsPointer(event); handled {
-		return result
-	}
 	if state.modal == modalFileProperties {
 		if event.Target == hitFilePropertiesClose || event.Target == hitFilePropertiesDismiss {
 			return gfx.EventResult{}

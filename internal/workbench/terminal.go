@@ -2198,9 +2198,6 @@ func (state *State) scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if state.activeSection == sectionHosts && state.modal == modalNone && (state.hostsContent > 0 || state.hostSide.visible) {
 		return state.scrollHosts(event)
 	}
-	if state.activeSection == sectionSessionLogs && state.modal == modalNone {
-		return state.scrollSessionLogs(event)
-	}
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	paged := false
 	if hovered := state.terminalPageSession(event.Target); hovered != nil {
