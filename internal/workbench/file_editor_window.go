@@ -83,7 +83,6 @@ func (m *fileWindowManager) activate(key string) {
 	m.pending = ""
 	if previous := m.activeDocument(); previous != nil && previous != d && previous.note != nil {
 		previous.note.content.view.previewSelect.EndDrag()
-		previous.note.content.view.previewDragging = false
 		previous.note.content.view.pointerValid = false
 	}
 	m.active = key

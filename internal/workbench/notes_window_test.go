@@ -11,6 +11,7 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
+	"github.com/vivaui/viva/ui"
 )
 
 func TestNoteWindowSharesTabsAndReadsLiveDraftWithoutFileIO(t *testing.T) {
@@ -36,8 +37,25 @@ func TestNoteWindowSharesTabsAndReadsLiveDraftWithoutFileIO(t *testing.T) {
 			t.Fatal("note did not share the existing window")
 		}
 		m.activate(file.cacheKey)
+		s.activeSection = sectionTerminal
+		s.Click(hitNotesPanel)
+		s.noteSidebarState().content.sideAll = true
 		s.noteTokens()
-		s.noteSidebarPointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hitNoteRows.At(s.notes.view.noteTokens["note"]), ClickCount: 2})
+		s.viewport = gfx.Size{Width: 1200, Height: 800}
+		var rowCanvas gfx.Canvas
+		sidebarPage := ui.NewPage(ui.PageConfig{Tree: Tree(), Root: "note-sidebar-test", Theme: &s.theme, View: s.declareNoteSidebar})
+		sidebarPage.Draw(&rowCanvas, gfx.Rect{Width: 1200, Height: 800}, s.declareNoteSidebar)
+		content := &s.noteSidebarState().content
+		rowIndex := -1
+		for i, row := range content.view.treeScratch.rows {
+			if row.id == "note" {
+				rowIndex = i
+			}
+		}
+		if rowIndex < 0 {
+			t.Fatalf("sidebar row missing: section=%v open=%v visible=%v rows=%d target=%v", s.activeSection, s.notesPanelOpen(), s.noteSidebarVisible(), len(content.view.treeScratch.rows), s.noteTarget != nil)
+		}
+		s.noteSidebarPointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: content.page.tree.RowID(rowIndex), ClickCount: 2})
 		if m.activeDocument() != d {
 			t.Fatal("double click did not activate note")
 		}
@@ -178,20 +196,19 @@ func TestNotesSidebarEmptyPreviewAndOpenEntry(t *testing.T) {
 	paint := func() { c.Reset(); s.Paint(&c, gfx.Size{Width: 1200, Height: 800}) }
 	paint()
 	v := s.noteSidebarState()
-	full := v.content.listBounds.Height
-	if _, ok := hitByID(&c, hitNoteSideSplit); ok {
+	if hasSeparator(&c, s.noteText("Resize note browser sections", "调整笔记上下区域")) {
 		t.Fatal("empty preview has split handle")
 	}
 	if _, ok := hitByID(&c, hitNoteSideOpen); ok {
 		t.Fatal("empty preview has open action")
 	}
-	s.Click(hitNoteRows.At(s.notes.view.noteTokens[id]))
+	clickNoteTreeRow(t, s, &v.content, id)
 	v.fraction = .4
 	paint()
 	if _, ok := hitByID(&c, hitNoteSideOpen); !ok {
 		t.Fatal("missing open action")
 	}
-	if v.content.listBounds.Height >= full || v.content.previewBounds.Height == 0 {
+	if !hasSeparator(&c, s.noteText("Resize note browser sections", "调整笔记上下区域")) || v.content.previewBounds.Height == 0 {
 		t.Fatal("preview did not restore split")
 	}
 	v.content.query.Insert("no match")
@@ -201,11 +218,10 @@ func TestNotesSidebarEmptyPreviewAndOpenEntry(t *testing.T) {
 	}
 	s.notes.list = nil
 	paint()
-	if v.content.previewBounds.Height != 0 || v.fraction != .4 || v.content.listBounds.Height != full {
+	if v.content.previewBounds.Height != 0 || v.fraction != .4 {
 		t.Fatal("delete did not restore full directory")
 	}
 }
-
 func TestNoteWindowDiscardsQueuedImageResultsAfterChangeAndClose(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusBadGateway) }))
 	defer server.Close()

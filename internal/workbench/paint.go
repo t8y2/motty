@@ -145,7 +145,6 @@ func (state *State) paintsHostsPage() bool {
 // Paint renders the application from state using stable hit identities.
 func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	defer state.devEndPaint(canvas, size)
-	defer state.paintNoteExit(canvas, gfx.Rect{Width: size.Width, Height: size.Height})
 	canvas.SetTree(&tree)
 	state.autosaveNotes(canvas)
 	state.syncNoteWindows()
@@ -289,7 +288,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 
 	if terminal {
 		state.paintWorkspacePanes(canvas, size)
-		state.paintNotesPanel(canvas, size)
 		state.paintIndependentMonitor(canvas, size)
 		state.paintWorkspaceSideRail(canvas, size)
 		// Assistant popovers may intentionally extend to the window edge; paint
@@ -308,8 +306,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 			switch state.activeSection {
 			case sectionSettings:
 				state.paintSettingsDetails(canvas)
-			case sectionNotes:
-				state.paintNotesWorkspace(canvas, workspace)
 			default:
 				// The other catalog sections are painted by their own
 				// declarations in the page; only the hosts page is left for the
@@ -535,6 +531,14 @@ func (state *State) scrollWindow(event gfx.ScrollEvent) gfx.EventResult {
 		}
 		return state.Scroll(event)
 	}
+	// The notes panel's preview is an overlay of the panes: its scroll area is
+	// laid out outside the page's flow, so the wheel is applied here to keep it
+	// where the pointer is.
+	if state.noteSidebarVisible() {
+		if result, handled := state.noteSidebarWheel(event); handled {
+			return result
+		}
+	}
 	return state.windowPage().Wheel(event)
 }
 
@@ -620,6 +624,7 @@ func (state *State) declareShell(c ui.C) {
 			state.declareRemoteLogs(c)
 			state.declareContextPanel(c)
 			state.declareHostsPanel(c)
+			state.declareNoteSidebar(c)
 		} else {
 			// The file-manager tab is part of the page like the panes.
 			state.declareSFTPTab(c)
@@ -660,6 +665,7 @@ func (state *State) declareShell(c ui.C) {
 	// them.
 	state.declareDialogs(c)
 	state.declareKnownHostsDialog(c)
+	state.declareNoteExit(c)
 	state.declareMenus(c)
 	// The command drawer's filter and order dropdowns are page menus too; the
 	// bar under them is the window's.

@@ -15,8 +15,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/configstore"
 )
 
@@ -479,28 +479,19 @@ func (s *State) noteLinkNotice(id string) (noteLinkNotice, bool) {
 	return noteLinkNotice{}, false
 }
 
-// paintNoteLinkNotice shows what a linked note needs, with the choices, and
-// returns the height it used.
-func (s *State) paintNoteLinkNotice(c *gfx.Canvas, x, y, width float32) float32 {
-	n := s.noteContent()
+// declareNoteLinkNotice shows what a linked note needs, with the choices, in
+// the page's flow: the sentence, then the actions that wrap under it.
+func (s *State) declareNoteLinkNotice(c ui.C, n *notesUI, width, left, right float32) {
 	notice, ok := s.noteLinkNotice(n.selected)
 	if !ok {
-		return 0
+		return
 	}
-	used := float32(0)
-	c.Label(notice.text, gfx.Rect{X: x, Y: y, Width: width, Height: 20}, gfx.TextStyle{Size: 12, Color: s.pal.danger})
-	used += 24
-	bx, by := x, y+used
-	for _, action := range notice.actions {
-		button := components.BeginButton(c, s.Theme(), action.id, gfx.Rect{X: bx, Y: by, Height: 28}).Small().SizeToFit(action.label)
-		if bx > x && bx+button.BoundsWidth() > x+width {
-			bx, by = x, by+32
-			button = components.BeginButton(c, s.Theme(), action.id, gfx.Rect{X: bx, Y: by, Height: 28}).Small().SizeToFit(action.label)
+	ui.Text(c, notice.text).FontSize(12).Color(s.pal.danger).MarginSides(0, right, 0, left)
+	ui.Flow(c).Gap(8).LineGap(4).FillWidth().MarginSides(4, right, 0, left).Children(func() {
+		for _, action := range notice.actions {
+			ui.Button(c, action.label).Small().Outline().Shrink(0).Hit(action.id, action.label)
 		}
-		button.Outline(action.label)
-		bx += button.BoundsWidth() + 8
-	}
-	return by + 28 + 8 - y
+	})
 }
 
 // clickNoteLink handles the choices a linked note's notice offers.

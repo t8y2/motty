@@ -16,14 +16,15 @@ func TestNotesNativeEditorPreviewAndComposition(t *testing.T) {
 	s.Click(hitNotes)
 	s.Click(hitNoteAdd)
 	var input app.TextInput
-	v, err := headless.Open(app.Config{Title: "Notes", Width: 1200, Height: 800, Tree: Tree(), Paint: s.Paint, OnPointer: s.Pointer, OnKey: s.Key, OnScroll: s.Scroll, OnResize: s.Resize, TextInput: func(c app.TextInputContext) *app.TextInput {
+	config := s.WindowConfig(app.Config{Title: "Notes", Width: 1200, Height: 800, Tree: Tree(), Paint: s.Paint, OnPointer: s.Pointer, OnKey: s.Key, OnScroll: s.Scroll, OnResize: s.Resize, TextInput: func(c app.TextInputContext) *app.TextInput {
 		e := s.EditorFor(c.ID)
 		if e == nil {
 			return nil
 		}
 		input = app.TextInput{Editor: e}
 		return &input
-	}}, nil, headless.Options{})
+	}})
+	v, err := headless.Open(config, nil, headless.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,11 +66,11 @@ func TestNotesNativeEditorPreviewAndComposition(t *testing.T) {
 	if err = v.Rest(); err != nil {
 		t.Fatal(err)
 	}
-	row, ok := hitByIDSnapshot(v.Snapshot().Hits, hitNoteRows.At(0))
+	row, ok := hitByLabelSnapshot(v.Snapshot().Hits, "Runbook")
 	if !ok {
 		t.Fatal("note row missing")
 	}
-	folder, ok := hitByIDSnapshot(v.Snapshot().Hits, hitNoteFolderRows.At(0))
+	folder, ok := hitByLabelSnapshot(v.Snapshot().Hits, "Archive")
 	if !ok {
 		t.Fatal("folder missing")
 	}
@@ -130,9 +131,13 @@ func TestNoteExitDialogPointer(t *testing.T) {
 				s.selectNote("a")
 				s.save()
 				paint, pointer := s.Paint, s.Pointer
+				config := s.WindowConfig(app.Config{})
 				if window == "document" {
 					d := noteEditingWindow(t, s, "a")
 					paint, pointer = d.paint, d.pointer
+					config = d.config()
+				} else {
+					config.Width, config.Height, config.Tree = 1200, 800, Tree()
 				}
 				s.pauseSave = 1
 				s.notes.body.Insert(" pending")
@@ -140,7 +145,8 @@ func TestNoteExitDialogPointer(t *testing.T) {
 				if !s.ConfirmDocumentClose(func() { allowed = true }) || s.noteExit == nil {
 					t.Fatal("missing unsaved notes dialog")
 				}
-				v, err := headless.Open(app.Config{Title: "Notes", Width: 1200, Height: 800, Tree: Tree(), Paint: paint, OnPointer: pointer}, nil, headless.Options{})
+				config.Paint, config.OnPointer = paint, pointer
+				v, err := headless.Open(config, nil, headless.Options{})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -152,8 +158,9 @@ func TestNoteExitDialogPointer(t *testing.T) {
 				}
 				var hit gfx.Hit
 				ok := false
+				wantLabel := map[string]string{"cancel": "Cancel exit", "close": "Close dialog", "retry": "Retry", "discard": "Discard changes"}[action.name]
 				for _, candidate := range v.Snapshot().Hits {
-					if candidate.ID == action.id && (candidate.Label == "Close dialog") == (action.name == "close") {
+					if candidate.ID == action.id && candidate.Role == gfx.RoleButton && candidate.Label == wantLabel {
 						hit, ok = candidate, true
 						break
 					}
