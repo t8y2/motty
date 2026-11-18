@@ -251,6 +251,9 @@ func (state *State) paintRemoteDetailScroll(d *ui.DrawContext, text *remoteDetai
 	}
 	theme := state.Theme()
 	text.canvas, text.bounds, text.scrollBounds = d.Canvas, bounds, bounds
+	if text.mode == remoteDetailTable {
+		fitRemoteEnvironmentColumns(text.columns, bounds.Width)
+	}
 	contentHeight := components.TableHeaderHeight(theme) + float32(len(text.rows))*components.TableRowHeight(theme)
 	var content gfx.Size
 	if text.mode == remoteDetailTable {
@@ -731,17 +734,26 @@ func (state *State) remoteDetailNotice(loading, failed bool, status, empty strin
 	return "", gfx.Color{}
 }
 
+// fitRemoteEnvironmentColumns gives the environment table's first column the
+// share of the table's real width it had when the dialog painted the table
+// itself. The declaration cannot know that width; the paint can.
+func fitRemoteEnvironmentColumns(columns []components.TableColumn, width float32) {
+	if len(columns) > 0 {
+		columns[0].Width = min(float32(300), max(width*0.36, 140))
+	}
+}
+
 // remoteEnvironmentTable is the environment list as the detail table's columns,
 // header and rows.
 func remoteEnvironmentTable(
 	variables []remotetools.ProcessEnvironmentVariable,
 	header [2]string,
-	width float32,
 ) ([]components.TableColumn, []string, [][]string) {
-	firstColumnWidth := min(float32(300), max(width*0.36, 140))
 	rows := make([][]string, len(variables))
 	for index, variable := range variables {
 		rows[index] = []string{variable.Name, variable.Value}
 	}
-	return []components.TableColumn{{Width: firstColumnWidth}, {Width: 0}}, header[:], rows
+	// paintRemoteDetailScroll sizes the first column from the room the table
+	// actually has, which the declaration cannot know.
+	return []components.TableColumn{{Width: 0}, {Width: 0}}, header[:], rows
 }

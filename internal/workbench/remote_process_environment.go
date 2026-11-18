@@ -111,39 +111,48 @@ func (state *State) declareRemoteProcessDetailsBody(c ui.C, width float32, proce
 			})
 		}
 		tab := state.remoteProcessDetailTab()
-		if ui.Tabs(c, &tab, remoteProcessDetailTabIDs[:], state.remoteProcessDetailTabLabel).Width(min(float32(300), width)).Height(34).Shrink(0).MarginSides(2, 0, 0, 0).Changed() {
-			c.After(func() { state.selectRemoteProcessDetailTab(tab) })
+		strip := ui.Tabs(c, &tab, remoteProcessDetailTabIDs[:], state.remoteProcessDetailTabLabel).Width(min(float32(300), width)).Height(34).Shrink(0).MarginSides(2, 0, 0, 0)
+		// A click on the active tab asks for that read again, so retry a failed
+		// command or environment load rather than only switching tabs.
+		if index, clicked := strip.TabClicked(); clicked && index >= 0 && index < len(remoteProcessDetailTabIDs) {
+			id := remoteProcessDetailTabIDs[index]
+			c.After(func() { state.selectRemoteProcessDetailTab(id) })
 		}
-		if state.remoteProcessDetailTab() != hitRemoteProcessDetailsEnv {
-			if details.commandStatus != "" {
-				color := pal.muted
-				if details.commandFailed {
-					color = pal.danger
+		// The tab's panel is one slot, as it was when the dialog painted it: the
+		// command status takes its 28 pixels from the panel and the text follows
+		// directly under it, without the outer column's gap.
+		ui.Column(c).Grow(1).Shrink(1).FillWidth().Children(func() {
+			if state.remoteProcessDetailTab() != hitRemoteProcessDetailsEnv {
+				if details.commandStatus != "" {
+					color := pal.muted
+					if details.commandFailed {
+						color = pal.danger
+					}
+					ui.Text(c, details.commandStatus).Height(28).Shrink(0).FontSize(theme.Metrics.FontSizeM).Color(color).Ellipsis()
 				}
-				ui.Text(c, details.commandStatus).Height(28).Shrink(0).FontSize(theme.Metrics.FontSizeM).Color(color).Ellipsis()
+				state.declareRemoteDetail(c, &details.text, remoteDetailSpec{
+					textID: hitRemoteProcessDetailsText, textIDLabel: m.RemoteProcessDetailsTitle,
+					scrollbarID: hitRemoteProcessDetailsScroll, scrollbarLabel: m.RemoteProcessDetailsTitle,
+					source: remoteDetailSource(processText(details.commandValue)),
+				})
+				return
 			}
-			state.declareRemoteDetail(c, &details.text, remoteDetailSpec{
-				textID: hitRemoteProcessDetailsText, textIDLabel: m.RemoteProcessDetailsTitle,
-				scrollbarID: hitRemoteProcessDetailsScroll, scrollbarLabel: m.RemoteProcessDetailsTitle,
-				source: remoteDetailSource(processText(details.commandValue)),
-			})
-			return
-		}
-		empty := ""
-		if len(details.environment) == 0 {
-			empty = m.RemoteProcessEnvironmentEmpty
-		}
-		notice, tone := state.remoteDetailNotice(details.loading, details.failed, details.status, empty)
-		spec := remoteDetailSpec{
-			textID: hitRemoteProcessDetailsText, textIDLabel: m.RemoteProcessEnvironment,
-			scrollbarID: hitRemoteProcessDetailsScroll, scrollbarLabel: m.RemoteProcessEnvironment,
-			notice: notice, noticeTone: tone,
-		}
-		if notice == "" {
-			spec.columns, spec.header, spec.rows = remoteEnvironmentTable(details.environment,
-				[2]string{m.RemoteProcessEnvironmentName, m.RemoteProcessEnvironmentValue}, width-16)
-		}
-		state.declareRemoteDetail(c, &details.text, spec)
+			empty := ""
+			if len(details.environment) == 0 {
+				empty = m.RemoteProcessEnvironmentEmpty
+			}
+			notice, tone := state.remoteDetailNotice(details.loading, details.failed, details.status, empty)
+			spec := remoteDetailSpec{
+				textID: hitRemoteProcessDetailsText, textIDLabel: m.RemoteProcessEnvironment,
+				scrollbarID: hitRemoteProcessDetailsScroll, scrollbarLabel: m.RemoteProcessEnvironment,
+				notice: notice, noticeTone: tone,
+			}
+			if notice == "" {
+				spec.columns, spec.header, spec.rows = remoteEnvironmentTable(details.environment,
+					[2]string{m.RemoteProcessEnvironmentName, m.RemoteProcessEnvironmentValue})
+			}
+			state.declareRemoteDetail(c, &details.text, spec)
+		})
 	})
 }
 

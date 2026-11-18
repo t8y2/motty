@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 )
 
@@ -139,6 +140,19 @@ func TestSnippetHoverPreviewOpensAfterARestAndStaysOnTheCard(t *testing.T) {
 	if !hasTextValue(&canvas, "echo first") || !hasTextValue(&canvas, "  echo second") {
 		t.Fatalf("the preview does not show the command: %v", canvas.Texts())
 	}
+	// The card is still headed by the snippet's name, at the popover's title
+	// weight, as components.HoverCard's title was.
+	titled := false
+	for _, painted := range canvas.Texts() {
+		if painted.Value == "Two lines" && painted.Style.Weight == gfx.WeightMedium &&
+			painted.Style.Size == state.Theme().Metrics.FontSizeM {
+			titled = true
+			break
+		}
+	}
+	if !titled {
+		t.Fatalf("the preview has no medium name title: %v", canvas.Texts())
+	}
 
 	// The pointer reaches the card: the preview stays while it is there.
 	canvas.SetInteraction(hitSnippetHoverCard, gfx.ID{}, gfx.ID{}, false)
@@ -243,5 +257,230 @@ func TestSnippetHoverCardSteadyPaintDoesNotAllocate(t *testing.T) {
 	})
 	if allocations != 0 {
 		t.Fatalf("the preview's steady paint allocations = %v", allocations)
+	}
+}
+
+// hasPaintedRect reports whether a rectangle of color and exactly bounds was
+// painted, which is how the snippet page's bands, rules and accents are drawn.
+func hasPaintedRect(canvas *gfx.Canvas, color gfx.Color, bounds gfx.Rect) bool {
+	for _, rectangle := range canvas.Rectangles() {
+		if rectangle.Color == color && rectangle.Bounds == bounds {
+			return true
+		}
+	}
+	return false
+}
+
+// snippetTextIn finds the label with value whose box starts inside bounds.
+func snippetTextIn(canvas *gfx.Canvas, value string, bounds gfx.Rect) (gfx.Text, bool) {
+	for _, painted := range canvas.Texts() {
+		if painted.Value != value {
+			continue
+		}
+		if painted.Bounds.Y >= bounds.Y && painted.Bounds.Y < bounds.Y+bounds.Height {
+			return painted, true
+		}
+	}
+	return gfx.Text{}, false
+}
+
+// The expanded command keeps the table's detail band: the theme background, a
+// three pixel primary accent at the leading edge, and one hairline between the
+// row and the detail. Ordinary rows have no rule, and the header has no
+// divider.
+func TestExpandedSnippetKeepsTheTablesDetailBand(t *testing.T) {
+	state := snippetTestState(t,
+		snippet{Name: "First", Command: "echo first\n  echo second"},
+		snippet{Name: "Second", Command: "ls"})
+	state.snippets.expanded = 1
+	var canvas gfx.Canvas
+	paintSnippetsPage(state, &canvas)
+	theme := state.Theme()
+	row, ok := hitByID(&canvas, state.snippets.rows.RowID(0))
+	if !ok {
+		t.Fatal("the expanded row was not painted")
+	}
+	detailTop := row.Bounds.Y + components.TableRowHeight(theme)
+	detailHeight := state.snippets.detailHeight
+	if detailHeight <= 0 {
+		t.Fatal("the expanded row has no measured detail")
+	}
+	band := gfx.Rect{X: row.Bounds.X, Y: detailTop, Width: row.Bounds.Width, Height: detailHeight}
+	if !hasPaintedRect(&canvas, theme.Background, band) {
+		var backgrounds []gfx.Rect
+		for _, rectangle := range canvas.Rectangles() {
+			if rectangle.Color == theme.Background {
+				backgrounds = append(backgrounds, rectangle.Bounds)
+			}
+		}
+		t.Fatalf("no theme background band at %v (row %v, height %v); backgrounds %v",
+			band, row.Bounds, detailHeight, backgrounds)
+	}
+	accent := theme.Primary
+	accent.Alpha *= 0.7
+	if !hasPaintedRect(&canvas, accent, gfx.Rect{X: band.X, Y: band.Y, Width: 3, Height: band.Height}) {
+		t.Fatal("the detail has no three pixel primary accent")
+	}
+	if !hasPaintedRect(&canvas, theme.Border, gfx.Rect{X: band.X, Y: detailTop - 1, Width: band.Width, Height: 1}) {
+		t.Fatal("the row and its detail have no hairline between them")
+	}
+	second, ok := hitByID(&canvas, state.snippets.rows.RowID(1))
+	if !ok {
+		t.Fatal("the collapsed row was not painted")
+	}
+	if hasPaintedRect(&canvas, theme.Border, gfx.Rect{X: second.Bounds.X, Y: second.Bounds.Bottom() - 1, Width: second.Bounds.Width, Height: 1}) {
+		t.Fatal("a collapsed row has a hairline")
+	}
+	header, ok := hitByID(&canvas, hitSnippetSort.At(0))
+	if !ok {
+		t.Fatal("the header was not painted")
+	}
+	for _, rectangle := range canvas.Rectangles() {
+		if rectangle.Color == theme.Border && rectangle.Bounds.Y == header.Bounds.Bottom()-1 &&
+			rectangle.Bounds.Width >= row.Bounds.Width {
+			t.Fatal("the header still has a divider under it")
+		}
+	}
+}
+
+// The sortable snippet headings keep components.Table's look: the foreground
+// label, an arrow in every sort state, the hover surface, the focus ring and
+// the sort description.
+func TestSnippetHeaderKeepsTheTablesSortAffordances(t *testing.T) {
+	state := snippetTestState(t,
+		snippet{Name: "First", Group: "Ops", Command: "echo first"},
+		snippet{Name: "Second", Group: "Ops", Command: "echo second"})
+	theme, m := state.Theme(), state.messages.Tools
+	var canvas gfx.Canvas
+	paintSnippetsPage(state, &canvas)
+	id := hitSnippetSort.At(0)
+	header, ok := hitByID(&canvas, id)
+	if !ok {
+		t.Fatal("the name heading was not painted")
+	}
+	if header.Description != m.SnippetSortAction {
+		t.Fatalf("the unsorted heading description = %q", header.Description)
+	}
+	label, ok := snippetTextIn(&canvas, m.SnippetColumnName, header.Bounds)
+	if !ok {
+		t.Fatal("the heading label was not painted")
+	}
+	if label.Style.Color != theme.Foreground || label.Style.Weight != gfx.WeightMedium ||
+		label.Style.Size != theme.Metrics.FontSizeM {
+		t.Fatalf("the heading label style = %+v, want medium foreground", label.Style)
+	}
+	if remotePaintedTriangles(&canvas, theme.Foreground, header.Bounds) == 0 {
+		t.Fatal("an unsorted heading has no sort arrow")
+	}
+
+	canvas.SetInteraction(id, gfx.ID{}, gfx.ID{}, false)
+	paintSnippetsPage(state, &canvas)
+	if !hasPaintedRect(&canvas, theme.Hover, header.Bounds) {
+		t.Fatal("a hovered heading has no hover surface")
+	}
+
+	canvas.SetInteraction(gfx.ID{}, gfx.ID{}, id, true)
+	paintSnippetsPage(state, &canvas)
+	if remotePaintedTriangles(&canvas, theme.Ring, header.Bounds) == 0 {
+		t.Fatal("a focused heading has no focus ring")
+	}
+
+	state.Click(id)
+	paintSnippetsPage(state, &canvas)
+	header, ok = hitByID(&canvas, id)
+	if !ok {
+		t.Fatal("the sorted heading was not painted")
+	}
+	if header.Description != m.SnippetSortAscending {
+		t.Fatalf("the ascending heading description = %q", header.Description)
+	}
+	if remotePaintedTriangles(&canvas, theme.Foreground, header.Bounds) == 0 {
+		t.Fatal("a sorted heading has no sort arrow")
+	}
+}
+
+// Manual order keeps the reorder grid's 24 pixel grip seven pixels into the
+// row, the 24 pixel name inset, and the command cell's leading keycap room and
+// trailing expander inset.
+func TestSnippetManualOrderKeepsTheHandleAndCommandInsets(t *testing.T) {
+	state := snippetTestState(t,
+		snippet{Name: "Deploy", Group: "Ops", Command: "kubectl apply -f staging/\nwatch pods", Run: true},
+		snippet{Name: "Tail", Command: "journalctl -fu app"})
+	var canvas gfx.Canvas
+	paintSnippetsPage(state, &canvas)
+	theme, view := state.Theme(), &state.sectionBodies.snippets
+	pad := theme.Metrics.GapItem
+	rowHeight := components.TableRowHeight(theme)
+	row, ok := hitByID(&canvas, state.snippets.rows.RowID(0))
+	if !ok {
+		t.Fatal("the first row was not painted")
+	}
+	handle, ok := hitByID(&canvas, hitSnippetHandles.At(0))
+	if !ok {
+		t.Fatal("the first row has no reorder handle")
+	}
+	wantHandle := gfx.Rect{X: row.Bounds.X + 7, Y: row.Bounds.Y + (rowHeight-24)/2, Width: 24, Height: 24}
+	if handle.Bounds != wantHandle || handle.Role != gfx.RoleButton || handle.Cursor != gfx.PointerCursorHand ||
+		handle.Label != "Deploy" {
+		t.Fatalf("handle = %+v, want the reorder grid's 24 pixel grip at %v", handle, wantHandle)
+	}
+	name, ok := snippetTextIn(&canvas, "Deploy", row.Bounds)
+	if !ok {
+		t.Fatal("the first row has no name")
+	}
+	if got, want := name.Bounds.X, row.Bounds.X+pad+24; got != want {
+		t.Fatalf("the name starts at %v, want the handle's 24 pixel inset at %v", got, want)
+	}
+
+	columnX := row.Bounds.X + view.columns[0].Width + view.columns[1].Width + view.columns[2].Width
+	commandX := columnX + pad + view.keyWidth + 6
+	commandCellWidth := row.Bounds.Width - (view.columns[0].Width + view.columns[1].Width + view.columns[2].Width)
+	commandWidth := commandCellWidth - 2*pad - (view.keyWidth + 6) - (snippetExpandSize + pad)
+	for index, value := range []string{"kubectl apply -f staging/ ↵ watch pods", "journalctl -fu app"} {
+		at, ok := hitByID(&canvas, state.snippets.rows.RowID(index))
+		if !ok {
+			t.Fatalf("row %d was not painted", index)
+		}
+		text, ok := snippetTextIn(&canvas, value, at.Bounds)
+		if !ok {
+			t.Fatalf("the command %q was not painted in row %d", value, index)
+		}
+		wantX := at.Bounds.X + (commandX - row.Bounds.X)
+		if text.Bounds.X != wantX {
+			t.Fatalf("the command starts at %v, want the keycap inset %v", text.Bounds.X, wantX)
+		}
+		if text.Bounds.Width != commandWidth {
+			t.Fatalf("the command width = %v, want the table cell's %v", text.Bounds.Width, commandWidth)
+		}
+	}
+	expander, ok := hitByID(&canvas, hitSnippetExpandList.At(0))
+	if !ok {
+		t.Fatal("the first row has no expander")
+	}
+	if want := row.Bounds.X + row.Bounds.Width - pad - snippetExpandSize; expander.Bounds.X != want {
+		t.Fatalf("the expander starts at %v, want %v", expander.Bounds.X, want)
+	}
+
+	if snippetExpanderFits(20, rowHeight) || !snippetExpanderFits(24, rowHeight) {
+		t.Fatal("the expander is not omitted for a narrow command cell")
+	}
+
+	// Sorting leaves the manual order, and with it the handle and the name
+	// inset, as the table did.
+	state.Click(hitSnippetSort.At(0))
+	paintSnippetsPage(state, &canvas)
+	if _, ok := hitByID(&canvas, hitSnippetHandles.At(0)); ok {
+		t.Fatal("a sorted row still has the manual order's handle")
+	}
+	row, ok = hitByID(&canvas, state.snippets.rows.RowID(0))
+	if !ok {
+		t.Fatal("the sorted row was not painted")
+	}
+	name, ok = snippetTextIn(&canvas, "Deploy", row.Bounds)
+	if !ok {
+		t.Fatalf("the sorted row has no name: %v", canvas.Texts())
+	}
+	if got, want := name.Bounds.X, row.Bounds.X+pad; got != want {
+		t.Fatalf("the sorted name starts at %v, want %v without the handle inset", got, want)
 	}
 }

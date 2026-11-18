@@ -190,6 +190,10 @@ type remoteToolsView struct {
 	headerDraw func(*ui.DrawContext)
 	fillDraw   func(*ui.DrawContext)
 	borderDraw func(*ui.DrawContext)
+	// emptyDraw and loadingDraw paint the placeholders the old table control
+	// painted: components.Empty and the centered spinner over its label.
+	emptyDraw   func(*ui.DrawContext)
+	loadingDraw func(*ui.DrawContext)
 	// paintTab is the tab the table declaration laid out; the row and header
 	// hooks read it rather than the tab a click may have switched to mid-paint.
 	paintTab remoteTab
