@@ -39,23 +39,23 @@ rect {{171 67 558 466} {0.12156863 0.14117648 0.1764706 1} 10 600 {0 0 0 0} fals
 rect {{682 82 32 32} {0.06666667 0.08235294 0.105882354 0} 7.5 600 {0 0 0 0} false #45}
 rect {{198 184 504 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #47}
 rect {{199 185 502 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #48}
-rect {{198 300 504 32} {0.2 0.23529412 0.2901961 1} 7.5 600 {0 0 0 0} false #49}
-rect {{199 301 502 30} {0.14509805 0.16862746 0.20784314 1} 6.5 600 {0 0 0 0} false #50}
-rect {{200 302 122 28} {0.14509805 0.16862746 0.20784314 1} 5.5 600 {0 0 0 0} false #51}
-rect {{326 302 122 28} {0.14509805 0.16862746 0.20784314 1} 5.5 600 {0 0 0 0} false #52}
-rect {{452 302 122 28} {0.24886276 0.27184314 0.30941176 1} 5.5 600 {0 0 0 0} false #53}
-rect {{578 302 122 28} {0.14509805 0.16862746 0.20784314 1} 5.5 600 {0 0 0 0} false #54}
-rect {{323.5 308.96 1 14.08} {0.2 0.23529412 0.2901961 1} 0 600 {0 0 0 0} false #55}
-rect {{449.5 308.96 1 14.08} {0.2 0.23529412 0.2901961 0} 0 600 {0 0 0 0} false #56}
-rect {{575.5 308.96 1 14.08} {0.2 0.23529412 0.2901961 0} 0 600 {0 0 0 0} false #57}
-rect {{198 358 120.96 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #59}
-rect {{199 359 118.96 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #60}
-rect {{200 400 16 16} {0.216 0.22917646 0.24894118 1} 4 600 {0 0 0 0} false #62}
-rect {{201 401 14 14} {0.11146667 0.1264 0.1488 1} 3 600 {0 0 0 0} false #63}
-rect {{200 430 16 16} {0.216 0.22917646 0.24894118 1} 4 600 {0 0 0 0} false #65}
-rect {{201 431 14 14} {0.11146667 0.1264 0.1488 1} 3 600 {0 0 0 0} false #66}
-rect {{198 242 504 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #68}
-rect {{199 243 502 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #69}
+rect {{198 242 504 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #50}
+rect {{199 243 502 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #51}
+rect {{198 300 504 32} {0.2 0.23529412 0.2901961 1} 7.5 600 {0 0 0 0} false #52}
+rect {{199 301 502 30} {0.14509805 0.16862746 0.20784314 1} 6.5 600 {0 0 0 0} false #53}
+rect {{200 302 122 28} {0.14509805 0.16862746 0.20784314 1} 5.5 600 {0 0 0 0} false #54}
+rect {{326 302 122 28} {0.14509805 0.16862746 0.20784314 1} 5.5 600 {0 0 0 0} false #55}
+rect {{452 302 122 28} {0.24886276 0.27184314 0.30941176 1} 5.5 600 {0 0 0 0} false #56}
+rect {{578 302 122 28} {0.14509805 0.16862746 0.20784314 1} 5.5 600 {0 0 0 0} false #57}
+rect {{323.5 308.96 1 14.08} {0.2 0.23529412 0.2901961 1} 0 600 {0 0 0 0} false #58}
+rect {{449.5 308.96 1 14.08} {0.2 0.23529412 0.2901961 0} 0 600 {0 0 0 0} false #59}
+rect {{575.5 308.96 1 14.08} {0.2 0.23529412 0.2901961 0} 0 600 {0 0 0 0} false #60}
+rect {{198 358 120.96 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #62}
+rect {{199 359 118.96 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #63}
+rect {{200 400 16 16} {0.216 0.22917646 0.24894118 1} 4 600 {0 0 0 0} false #65}
+rect {{201 401 14 14} {0.11146667 0.1264 0.1488 1} 3 600 {0 0 0 0} false #66}
+rect {{200 430 16 16} {0.216 0.22917646 0.24894118 1} 4 600 {0 0 0 0} false #68}
+rect {{201 431 14 14} {0.11146667 0.1264 0.1488 1} 3 600 {0 0 0 0} false #69}
 rect {{530.1543 478 64.61133 32} {0.23529412 0.27450982 0.34117648 1} 7.5 600 {0 0 0 0} false #70}
 rect {{602.7656 478 103.234375 32} {0.8862745 0.90588236 0.93333334 1} 7.5 600 {0 0 0 0} false #71}
 shadow {{247 105 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {0 0 0 0} false #4}
@@ -66,10 +66,10 @@ shadow {{267 307 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {223 135 651 439} true #24}
 shadow {{267 371 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {223 135 651 439} true #30}
 shadow {{223 51 271.68213 36} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 0 0 0} false #33}
 shadow {{198 184 504 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #46}
-shadow {{198 358 120.96 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #58}
-shadow {{200 400 16 16} 4 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #61}
-shadow {{200 430 16 16} 4 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #64}
-shadow {{198 242 504 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #67}
+shadow {{198 242 504 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #49}
+shadow {{198 358 120.96 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #61}
+shadow {{200 400 16 16} 4 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #64}
+shadow {{200 430 16 16} 4 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #67}
 text "Hosts" {52 114.5 37.180664 21}
 text "Workspaces" {52 154.5 80.37695 21}
 text "Monitor" {52 194.5 49.745117 21}
@@ -112,6 +112,8 @@ text "New Port Forward" {194 90 512 17}
 text "Traffic binds to 127.0.0.1 and travels through the selected SSH host." {194 115 512 21}
 text "Name" {198 162 37.625 18}
 text "" {209 190 482 20}
+text "SSH host" {198 220 58.973633 18}
+text "Production" {209 243 461 30}
 text "Forward type" {198 278 504 18}
 text "Local" {243.75293 300 126 32}
 text "Remote" {362.43506 300 126 32}
@@ -122,8 +124,6 @@ text "8080" {209 364 98.96 20}
 text "Clients choose each destination through the proxy." {339.12 358 362.88 19}
 text "Relay through the host's shell" {224 397.5 190.16211 21}
 text "Resume after reconnect" {224 427.5 154.69043 21}
-text "SSH host" {198 220 58.973633 18}
-text "Production" {209 243 461 30}
 text "Cancel" {540.1543 478 64.61133 32}
 text "Add Forward" {612.7656 478 103.234375 32}
 hit "" region {0 0 900 36} disabled=false
@@ -181,6 +181,8 @@ hit "New Host" button {755.36035 51 118.63965 36} disabled=false
 hit "" region {170 66 560 468} disabled=false
 hit "Close dialog" button {682 82 32 32} disabled=false
 hit "Name" textfield {198 184 504 32} disabled=false
+hit "SSH host" button {198 242 504 32} disabled=false
+hit "SSH host" combobox {209 243 461 30} disabled=false
 hit "Local" radio {198 300 126 32} disabled=false
 hit "Remote" radio {324 300 126 32} disabled=false
 hit "SOCKS5" radio {450 300 126 32} disabled=false
@@ -190,8 +192,6 @@ hit "Relay through the host's shell" button {224 397.5 190.16211 21} disabled=fa
 hit "Relay through the host's shell" checkbox {188 392 40 32} disabled=false
 hit "Resume after reconnect" button {224 427.5 154.69043 21} disabled=false
 hit "Resume after reconnect" checkbox {188 422 40 32} disabled=false
-hit "SSH host" button {198 242 504 32} disabled=false
-hit "SSH host" combobox {209 243 461 30} disabled=false
 hit "For a server that refuses forwarded channels but gives a shell, such as a bastion that only allows an interactive session. Each connection opens a terminal on the host, runs the relay command there, and carries the stream through it. Needs the relay program on the host; %h and %p become this forward's destination host and port." button {422.1621 400 16 16} disabled=false
 hit "When the SSH connection drops unexpectedly, start this forward again once it has reconnected. Turn on Automatic reconnect in Settings → Connection first." button {386.69043 430 16 16} disabled=false
 hit "Cancel" button {530.1543 478 64.61133 32} disabled=false

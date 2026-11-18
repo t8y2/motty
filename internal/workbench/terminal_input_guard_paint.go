@@ -10,7 +10,10 @@ import (
 
 const inputNoticeHeight = float32(36)
 
-func (state *State) paintTerminalInputNotice(canvas *gfx.Canvas, session *Session, bounds gfx.Rect) {
+// declareTerminalInputNotice declares the locale notice in the terminal pane's
+// row: the words that explain the problem, the fix button and the dismiss
+// button. The page routes their presses; the notice is not painted by hand.
+func (state *State) declareTerminalInputNotice(c ui.C, session *Session, width float32) {
 	m := state.messages.TerminalInput
 	label := m.LocaleWarning
 	ready := state.inputLocaleRepairReady(session)
@@ -23,17 +26,22 @@ func (state *State) paintTerminalInputNotice(canvas *gfx.Canvas, session *Sessio
 	if session.term.inputGuard.environment.Locale == "" {
 		label = m.LocaleUnavailable
 	}
-	canvas.Fill(bounds, state.pal.surface)
-	buttonWidth := min(float32(108), bounds.Width/3)
-	textBounds := gfx.Rect{X: bounds.X + 10, Y: bounds.Y, Width: max(0, bounds.Width-buttonWidth-46), Height: bounds.Height}
-	canvas.HitWithOptions(hitInputNotice, textBounds, label, gfx.HitOptions{Role: gfx.RoleStatus, Hint: m.LocaleWarning, SkipTab: true})
-	canvas.Clip(textBounds)
-	canvas.Label(label, gfx.Rect{X: textBounds.X, Y: textBounds.Y + 10, Width: textBounds.Width, Height: 20}, gfx.TextStyle{Size: metrics.FontSizeS, Color: state.pal.warning})
-	canvas.Unclip()
-	components.BeginButtonRow(canvas, state.Theme(), gfx.Rect{X: bounds.X + bounds.Width - buttonWidth - 32, Y: bounds.Y + 5, Width: buttonWidth, Height: 26}).Size(components.ButtonSizeXSmall).Paint(
-		components.ButtonAction{ID: hitInputLocaleFix, Label: m.LocaleFix, Variant: components.ButtonOutline, Disabled: !ready},
-	)
-	state.paintIconButton(canvas, hitInputLocaleDismiss, iconClose, gfx.Rect{X: bounds.X + bounds.Width - 27, Y: bounds.Y + 6, Width: 24, Height: 24}, m.LocaleDismiss, false, iconButtonQuiet, state.pal.surface)
+	pal := state.pal
+	buttonWidth := min(float32(108), width/3)
+	row := ui.Row(c).Height(inputNoticeHeight).FillWidth().Shrink(0).Background(pal.surface).Items(ui.Center)
+	row.Children(func() {
+		ui.Row(c).Grow(1).Height(inputNoticeHeight).MarginSides(0, 4, 0, 10).Items(ui.Start).
+			HitWith(hitInputNotice, label, gfx.HitOptions{Role: gfx.RoleStatus, Hint: m.LocaleWarning, SkipTab: true}).
+			Children(func() {
+				ui.Text(c, label).FontSize(metrics.FontSizeS).Color(pal.warning).LineHeight(20).MarginTop(10).Ellipsis()
+			})
+		ui.Row(c).Width(buttonWidth).Height(inputNoticeHeight).Shrink(0).Items(ui.Center).Justify(ui.End).
+			MarginSides(0, 5, 0, 0).Children(func() {
+			ui.Button(c, m.LocaleFix).XSmall().Outline().Hit(hitInputLocaleFix, m.LocaleFix).Disabled(!ready)
+		})
+		state.declareIconButton(c, hitInputLocaleDismiss, iconClose, m.LocaleDismiss, false, iconButtonQuiet).
+			Size(24, 24).MarginSides(0, 3, 0, 0)
+	})
 }
 
 var hitInputNotice = tree.ID(inputGuardHits, "notice")

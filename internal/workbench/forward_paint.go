@@ -168,7 +168,14 @@ func (state *State) declareForwardDialogBody(c ui.C) {
 	column := ui.Column(c).Fill().PadSides(2, 4, 0, 4)
 	column.Children(func() {
 		state.declareForwardDialogField(c, hitForwardDialogLabel, forwardFieldLabel, messages.ForwardFieldName, "").FillWidth()
-		b.host = ui.Slot(c).Height(rowHeight)
+		ui.FormField(c, &editor.hostRow, messages.ForwardFieldHost).Height(rowHeight).Children(func() {
+			ui.Combobox(c, &editor.hostChoice, state.forwardHostChoices(), state.hostPickerName, messages.ForwardFieldHost).
+				Placeholder(messages.HostPickerSearch).Empty(messages.HostPickerNoMatches).FillWidth()
+		})
+		if editor.hostChoice != editor.hostID {
+			state.applyForwardHostChoice(editor.hostChoice)
+			editor.hostChoice = editor.hostID
+		}
 		ui.Column(c).Height(rowHeight).Children(func() { state.declareForwardMode(c) })
 		ui.Row(c).Height(rowHeight).Children(func() {
 			portTitle := messages.ForwardFieldLocalPort
@@ -205,12 +212,11 @@ func (state *State) declareForwardDialogBody(c ui.C) {
 	column.DrawOver(func(d *ui.DrawContext) { state.paintForwardDialogFields(d.Canvas, mode) })
 }
 
-// paintForwardDialogFields paints the forward editor's fields into the slots the
-// body laid out.
+// paintForwardDialogFields paints the forward editor's help icons into the
+// slots the body laid out.
 func (state *State) paintForwardDialogFields(canvas *gfx.Canvas, mode portforward.Mode) {
 	messages := state.messages
 	b := &state.forwardEditor.dialogBody
-	state.paintForwardHostField(canvas, b.host.Rect())
 	if modeUsesServerDestination(mode) {
 		state.paintHelpIcon(canvas, hitForwardDialogViaShellHelp, messages.ForwardViaShellHelp, b.viaShellHelp.Rect())
 	}
@@ -262,20 +268,4 @@ func (state *State) declareForwardDialogField(c ui.C, id gfx.ID, field forwardFi
 	return ui.FormField(c, &editor.rows[field], title).Height(58).Children(func() {
 		ui.TextFieldID(c, id, &editor.texts[field], title, placeholder)
 	})
-}
-
-// paintForwardHostField paints the searchable host picker. Typing filters by
-// name, address, account and group, which is what makes a long host list
-// navigable without paging.
-func (state *State) paintForwardHostField(canvas *gfx.Canvas, bounds gfx.Rect) {
-	theme := state.Theme()
-	content := components.BeginField(canvas, theme, bounds).Paint(state.messages.ForwardFieldHost, "", "")
-	layout := components.PaintSingleSelect(canvas, theme, content, &state.forwardEditor.hostSelect, components.SingleSelectOptions{
-		InputID: hitForwardDialogHost, TriggerID: hitForwardHostTrigger, DismissID: hitForwardHostDismiss,
-		Scope: hitForwardHostPickerScope, ScrollID: hitForwardHostScroll, OptionIDs: hitForwardHostItemList,
-		Label: state.messages.ForwardFieldHost, Placeholder: state.messages.HostPickerSearch,
-		EmptyLabel: state.messages.HostPickerNoMatches,
-		Viewport:   state.windowRect(), Layer: dialogLayer + 1,
-	})
-	state.forwardEditor.hostPopup = layout.Popup
 }

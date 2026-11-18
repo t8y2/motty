@@ -149,7 +149,8 @@ func openPickerView(t *testing.T, state *State, scale float64) *headless.Session
 	var invalidator app.Invalidator
 	state.options.Invalidate = invalidator.Invalidate
 	state.options.Invalidator = &invalidator
-	view, err := headless.Open(app.Config{Width: 1200, Height: 900, Tree: Tree(), Invalidator: &invalidator, OnWake: state.Wake, Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize}, nil, headless.Options{Scale: scale})
+	config := state.WindowConfig(app.Config{Width: 1200, Height: 900, Tree: Tree(), Invalidator: &invalidator, OnWake: state.Wake, Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize})
+	view, err := headless.Open(config, nil, headless.Options{Scale: scale})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,24 +172,33 @@ func TestPaletteScrollbarDragsAndKeepsTheHoverOffTheRows(t *testing.T) {
 			state.openSnippetPicker()
 			view := openPickerView(t, state, scale)
 			palette := &state.commandPalette
+			scroll := palette.scrollState
+			if scroll == nil {
+				t.Fatal("the palette has no scroll area")
+			}
 			last := palette.maxScroll()
 
-			bar := dualHit(t, view, hitCommandPaletteBar)
 			rows := dualHit(t, view, hitCommandPaletteItems.At(0))
-			if bar.X < rows.X+rows.Width {
-				t.Fatalf("the scrollbar at x=%v overlaps the rows, which end at %v", bar.X, rows.X+rows.Width)
+			if err := view.Move(rows.X+40, rows.Y+rows.Height/2); err != nil {
+				t.Fatal(err)
 			}
-			thumb := palette.bar.VerticalThumb
-			x, y := thumb.X+thumb.Width/2, thumb.Y+thumb.Height/2
-			if err := view.Press(x, y); err != nil {
+			bar, ok := findSnapshotLabel(view.Snapshot(), "Vertical scrollbar")
+			if !ok {
+				t.Fatal("the palette list has no scrollbar")
+			}
+			if bar.Bounds.X < rows.X+rows.Width {
+				t.Fatalf("the scrollbar at x=%v overlaps the rows, which end at %v", bar.Bounds.X, rows.X+rows.Width)
+			}
+			x := bar.Bounds.X + bar.Bounds.Width/2
+			if err := view.Press(x, bar.Bounds.Y+2); err != nil {
 				t.Fatal(err)
 			}
 			hover := palette.selected
-			if err := view.Move(x, bar.Y+bar.Height-2); err != nil {
+			if err := view.Move(x, bar.Bounds.Y+bar.Bounds.Height-2); err != nil {
 				t.Fatal(err)
 			}
-			if palette.scroll != last {
-				t.Fatalf("dragging the thumb to the end left the offset at %g, want %g", palette.scroll, last)
+			if scroll.Offset != last {
+				t.Fatalf("dragging the thumb to the end left the offset at %g, want %g", scroll.Offset, last)
 			}
 			// Across the rows with the button held: the hover stays.
 			if err := view.Move(rows.X+40, rows.Y+rows.Height/2); err != nil {
@@ -200,9 +210,6 @@ func TestPaletteScrollbarDragsAndKeepsTheHoverOffTheRows(t *testing.T) {
 			if err := view.Release(rows.X+40, rows.Y+rows.Height/2); err != nil {
 				t.Fatal(err)
 			}
-			if palette.dragging {
-				t.Fatal("the drag outlived the release")
-			}
 			// Released, the rows answer the pointer again.
 			second := dualHit(t, view, hitCommandPaletteItems.At(int(palette.scroll/commandPaletteRowStep)+3))
 			if err := view.Move(second.X+40, second.Y+second.Height/2); err != nil {
@@ -213,11 +220,14 @@ func TestPaletteScrollbarDragsAndKeepsTheHoverOffTheRows(t *testing.T) {
 			}
 
 			// A press on the track away from the thumb takes the thumb there.
-			bar = dualHit(t, view, hitCommandPaletteBar)
-			if err := view.Press(bar.X+bar.Width/2, bar.Y+4); err != nil {
+			bar, ok = findSnapshotLabel(view.Snapshot(), "Vertical scrollbar")
+			if !ok {
+				t.Fatal("the scrollbar disappeared after the release")
+			}
+			if err := view.Press(bar.Bounds.X+bar.Bounds.Width/2, bar.Bounds.Y+4); err != nil {
 				t.Fatal(err)
 			}
-			if err := view.Release(bar.X+bar.Width/2, bar.Y+4); err != nil {
+			if err := view.Release(bar.Bounds.X+bar.Bounds.Width/2, bar.Bounds.Y+4); err != nil {
 				t.Fatal(err)
 			}
 			if palette.scroll > 2*commandPaletteRowStep {
