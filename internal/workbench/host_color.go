@@ -74,7 +74,7 @@ func (state *State) declareHostColorChoice(c ui.C, parent ui.Box, rowHeight floa
 		ui.FormField(c, &form.colorField, m.FieldColor).FillWidth().Height(rowHeight).Children(func() {
 			ui.Row(c).Fill().Items(ui.Center).Gap(3).Children(func() {
 				for index, color := range hostColors {
-					swatch := ui.ColorSwatchID(c, hitHostColors.At(index), hostAccent(color), strings.EqualFold(selected, color), labels[index]).Size(32, 32)
+					swatch := ui.ColorSwatch(c, hostAccent(color), strings.EqualFold(selected, color), labels[index]).Hit(hitHostColors.At(index), labels[index]).Size(32, 32)
 					form.colorSwatchBoxes[index] = swatch
 					if swatch.Clicked() {
 						editor.color = text.Editor{}

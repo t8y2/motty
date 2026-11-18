@@ -190,7 +190,7 @@ func (state *State) declareTabColorRow(c ui.C, bounds gfx.Rect) {
 	ui.Row(c).FillWidth().Height(bounds.Height).Items(ui.Center).Justify(ui.Center).Gap(gap).Children(func() {
 		for i, color := range tabColors {
 			checked := strings.EqualFold(selected, color) || selected == "" && color == tabColorNone
-			ui.ColorSwatchID(c, hitTabColors.At(i), hostAccent(color), checked, labels[i]).
+			ui.ColorSwatch(c, hostAccent(color), checked, labels[i]).Hit(hitTabColors.At(i), labels[i]).
 				Size(size, size).Shrink(0).Flush().TabStop(checked)
 		}
 	})
