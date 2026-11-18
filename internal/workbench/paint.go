@@ -670,6 +670,7 @@ func (state *State) declareShell(c ui.C) {
 	state.declareAIDialogs(c)
 	state.declareCredentialDialog(c)
 	state.declareImportSessions(c)
+	state.declareXterminalImport(c)
 	state.declareMobaEncoding(c)
 	state.declareSessionImportPreview(c)
 	state.declareDevelopmentImport(c)

@@ -50,11 +50,13 @@ rect {{704 471.5 212 36} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false
 rect {{705 472.5 210 34} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #60}
 rect {{484 515.5 212 36} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #62}
 rect {{485 516.5 210 34} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #63}
-rect {{851.3887 575.5 64.61133 32} {0.23529412 0.27450982 0.34117648 1} 7.5 600 {0 0 0 0} false #64}
-rect {{223 51 485 36} {0.216 0.22917646 0.24894118 1} 7.5 0 {205 37 1187 855} true #66}
-rect {{224 52 483 34} {0.11146667 0.1264 0.1488 1} 6.5 0 {205 37 1187 855} true #67}
-rect {{247 105 16 16} {0.216 0.22917646 0.24894118 1} 4 0 {205 37 1187 855} true #69}
-rect {{248 106 14 14} {0.11146667 0.1264 0.1488 1} 3 0 {205 37 1187 855} true #70}
+rect {{704 515.5 212 36} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #65}
+rect {{705 516.5 210 34} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #66}
+rect {{851.3887 575.5 64.61133 32} {0.23529412 0.27450982 0.34117648 1} 7.5 600 {0 0 0 0} false #67}
+rect {{223 51 485 36} {0.216 0.22917646 0.24894118 1} 7.5 0 {205 37 1187 855} true #69}
+rect {{224 52 483 34} {0.11146667 0.1264 0.1488 1} 6.5 0 {205 37 1187 855} true #70}
+rect {{247 105 16 16} {0.216 0.22917646 0.24894118 1} 4 0 {205 37 1187 855} true #72}
+rect {{248 106 14 14} {0.11146667 0.1264 0.1488 1} 3 0 {205 37 1187 855} true #73}
 shadow {{261 148 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {223 135 1151 739} true #12}
 shadow {{267 201 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {223 135 1151 739} true #15}
 shadow {{261 254 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {223 135 1151 739} true #22}
@@ -67,8 +69,9 @@ shadow {{704 427.5 212 36} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #52}
 shadow {{484 471.5 212 36} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #55}
 shadow {{704 471.5 212 36} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #58}
 shadow {{484 515.5 212 36} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #61}
-shadow {{223 51 485 36} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {205 37 1187 855} true #65}
-shadow {{247 105 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {205 37 1187 855} true #68}
+shadow {{704 515.5 212 36} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #64}
+shadow {{223 51 485 36} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {205 37 1187 855} true #68}
+shadow {{247 105 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {205 37 1187 855} true #71}
 text "Hosts" {52 114.5 37.180664 21}
 text "Workspaces" {52 154.5 80.37695 21}
 text "Monitor" {52 194.5 49.745117 21}
@@ -110,8 +113,8 @@ text "staging.example.com" {670.87 368 287.75 22}
 text "SSH" {1000.14996 369.5 23.460938 19}
 text "Not connected" {1265 368 109 22}
 text "Import sessions" {484 292.5 432 17}
-text "Choose a client, then pick the files or folder that hold its saved" {484 317.5 432 21}
-text "sessions." {484 338.5 432 21}
+text "Choose a client, then select its export or paste its exported" {484 317.5 432 21}
+text "connections." {484 338.5 432 21}
 text "PuTTY" {568.18994 383.5 212 36}
 text "Xshell" {790.2954 383.5 212 36}
 text "MobaXterm" {552.33057 427.5 212 36}
@@ -119,20 +122,21 @@ text "WindTerm" {776.4697 427.5 212 36}
 text "Electerm" {561.62744 471.5 212 36}
 text "Netcatty" {782.5503 471.5 212 36}
 text "SecureCRT" {553.5713 515.5 212 36}
+text "xterminal" {780.2158 515.5 212 36}
 text "Import guide" {518 575.5 81.375 32}
 text "Cancel" {861.3887 575.5 64.61133 32}
 text "Search hosts or ssh user@hostname…" {254 59 443 20}
 hit "" region {0 0 1400 36} disabled=false
-hit "Hosts" button {82 4 28 28} disabled=false
-hit "New tab" button {116 4 28 28} disabled=false
-hit "Transfers" button {1156 4 28 28} disabled=false
-hit "Session manager" button {1186 4 28 28} disabled=false
-hit "AI assistant" button {1216 4 28 28} disabled=false
-hit "Local Terminal" button {1246 4 28 28} disabled=false
-hit "Command Palette" button {1276 4 28 28} disabled=false
-hit "Switch to light theme" button {1306 4 28 28} disabled=false
-hit "GitHub" button {1336 4 28 28} disabled=false
-hit "Settings" button {1366 4 28 28} disabled=false
+hit "Hosts" button {12 4 28 28} disabled=false
+hit "New tab" button {46 4 28 28} disabled=false
+hit "Transfers" button {1012 4 28 28} disabled=false
+hit "Session manager" button {1042 4 28 28} disabled=false
+hit "AI assistant" button {1072 4 28 28} disabled=false
+hit "Local Terminal" button {1102 4 28 28} disabled=false
+hit "Command Palette" button {1132 4 28 28} disabled=false
+hit "Switch to light theme" button {1162 4 28 28} disabled=false
+hit "GitHub" button {1192 4 28 28} disabled=false
+hit "Settings" button {1222 4 28 28} disabled=false
 hit "Hosts" menuitem {9 107 186 36} disabled=false
 hit "Workspaces" menuitem {9 147 186 36} disabled=false
 hit "Monitor" menuitem {9 187 186 36} disabled=false
@@ -182,6 +186,7 @@ hit "WindTerm" button {704 427.5 212 36} disabled=false
 hit "Electerm" button {484 471.5 212 36} disabled=false
 hit "Netcatty" button {704 471.5 212 36} disabled=false
 hit "SecureCRT" button {484 515.5 212 36} disabled=false
+hit "xterminal" button {704 515.5 212 36} disabled=false
 hit "Import guide" button {484 575.5 125.375 32} disabled=false
 hit "Cancel" button {851.3887 575.5 64.61133 32} disabled=false
 hit "Search" textfield {248 51 460 36} disabled=false

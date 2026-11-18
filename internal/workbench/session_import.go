@@ -39,6 +39,7 @@ var (
 	hitImportWindTerm        = tree.ID(sessionImportHits, "import-wind-term")
 	hitImportElecterm        = tree.ID(sessionImportHits, "import-electerm")
 	hitImportNetcatty        = tree.ID(sessionImportHits, "import-netcatty")
+	hitImportXterminal       = tree.ID(sessionImportHits, "import-xterminal")
 	hitImportSecureCRT       = tree.ID(sessionImportHits, "import-secure-crt")
 	hitImportGuide           = tree.ID(sessionImportHits, "import-guide")
 	hitImportPreviewCancel   = tree.ID(sessionImportHits, "import-preview-cancel")
@@ -78,6 +79,8 @@ func importClientName(client sessionimport.Client) string {
 		return "Electerm"
 	case sessionimport.Netcatty:
 		return "Netcatty"
+	case sessionimport.Xterminal:
+		return "xterminal"
 	case sessionimport.SecureCRT:
 		return "SecureCRT"
 	}
@@ -86,6 +89,10 @@ func importClientName(client sessionimport.Client) string {
 
 func (state *State) clickImportSessions(id gfx.ID) {
 	switch id {
+	case hitImportXterminal:
+		state.xterminal = xterminalImportDialog{}
+		state.dialogError = ""
+		state.modal = modalXterminalImport
 	case hitImportPuTTY:
 		state.importSessions(sessionimport.PuTTY)
 	case hitImportXshell:
@@ -185,6 +192,11 @@ func (state *State) readSessionImport(client sessionimport.Client, paths []strin
 		state.showFileReadFailure(fmt.Sprintf(m.ImportPickerFmt, importClientName(client)), err, fallback)
 		return
 	}
+	state.acceptSessionImport(client, result)
+}
+
+func (state *State) acceptSessionImport(client sessionimport.Client, result sessionimport.Result) {
+	m := state.messages.Tools
 	plan := state.sessionImportPlan(result)
 	if result.Keys > 0 {
 		plan.warnings = append(plan.warnings, fmt.Sprintf(m.ImportWarningKeysFmt, result.Keys))
@@ -308,6 +320,7 @@ func (state *State) declareImportSessions(c ui.C) {
 		{hitImportElecterm, "Electerm"},
 		{hitImportNetcatty, "Netcatty"},
 		{hitImportSecureCRT, "SecureCRT"},
+		{hitImportXterminal, "xterminal"},
 	}
 	const columns = 2
 	rowHeight := components.BeginButton(nil, theme, gfx.ID{}, gfx.Rect{}).Large().BoundsHeight()
