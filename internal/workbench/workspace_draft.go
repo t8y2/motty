@@ -854,8 +854,11 @@ func (state *State) declareWorkspaceDraftHostPane(c ui.C, width, paneHeight floa
 			LineHeight(24).TextCenter().MarginSides(24, 0, 0, 0)
 		return
 	}
+	// The hand-painted list kept a 10px gutter for its scrollbar; the page bar
+	// floats over the edge, so the room is kept as padding to keep the rows at
+	// their old width.
 	list := ui.List(c, &draft.rows, len(rows), state.declareWorkspaceDraftRow).
-		Grow(1).MinHeight(0).FillWidth().Scrollbars().Label(m.WorkspaceDraftHosts)
+		Grow(1).MinHeight(0).FillWidth().PadRight(10).Scrollbars().Label(m.WorkspaceDraftHosts)
 	area := list.ScrollState()
 	if draft.scroll != draft.scrollSynced {
 		area.ScrollTo(draft.scroll)
@@ -902,7 +905,9 @@ func (state *State) declareWorkspaceDraftRow(row ui.ListRow) {
 	if r.group != nil {
 		group, index := *r.group, r.group.groupIndex
 		id := hitWorkspaceDraftGroupList.At(index)
-		row.Element.Height(workspaceDraftGroupRowHeight).Items(ui.Center).
+		// The hand-painted group row was 38 high inside its 42px slot; the margin
+		// keeps the list's stride while the row, its hit and its contents are 38.
+		row.Element.Height(workspaceDraftGroupRowHeight-4).MarginSides(0, 0, 4, 0).Items(ui.Center).
 			HitWith(id, group.label, gfx.HitOptions{Role: gfx.RoleButton, Expanded: group.expanded}).
 			Draw(func(d *ui.DrawContext) { state.paintWorkspaceDraftGroup(d.Canvas, group, d.Rect, id) }).
 			Children(func() {
