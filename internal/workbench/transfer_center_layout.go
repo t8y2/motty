@@ -257,9 +257,11 @@ func (state *State) paintTransferCenterBody(d *ui.DrawContext) {
 	}
 	center.list = center.body.list.Rect()
 	if scroll := center.listBox.ScrollState(); scroll != nil {
-		// The List owns its offset; remember where the user left it so a reset
-		// (a filter change or a new upload) can put it back at the top.
-		center.scrollSynced = scroll.Offset
+		// The List owns its offset while the user moves it; adopt that offset so
+		// the next paint does not scroll back to where the application last put
+		// it. A reset (a filter change or a new upload) still goes through
+		// center.scroll.
+		center.scroll, center.scrollSynced = scroll.Offset, scroll.Offset
 	}
 	if center.count == 0 && center.list.Height >= 30 {
 		state.paintTransferEmpty(d.Canvas, center.list, theme)
