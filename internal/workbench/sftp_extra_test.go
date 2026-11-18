@@ -185,6 +185,24 @@ func TestBookmarksFromAFileAreCleanedAndBounded(t *testing.T) {
 	}
 }
 
+func TestTheAutomaticUpdateCheckRestoresOnlyWhenSavedOn(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	for _, tc := range []struct {
+		saved string
+		want  bool
+	}{
+		{"", false},
+		{"off", false},
+		{"on", true},
+	} {
+		state.updateAtStart = !tc.want
+		state.restoreSFTPSettings(savedState{UpdateCheck: tc.saved})
+		if state.updateAtStart != tc.want {
+			t.Fatalf("update_check=%q restored %v, want %v", tc.saved, state.updateAtStart, tc.want)
+		}
+	}
+}
+
 func TestTheFolderTheShellReportsMovesThePanelUnlessTurnedOff(t *testing.T) {
 	state, session, fake, _ := openTestSFTP(t)
 	view := session.files
