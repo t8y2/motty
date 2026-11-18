@@ -33,6 +33,9 @@ var (
 	hitTransferClose     = tree.ID(transferHits, "transfer-close")
 	hitTransferDismiss   = tree.ID(transferHits, "transfer-dismiss")
 	hitTransferCancel    = tree.ID(transferHits, "transfer-cancel")
+	// hitTransferProgress is the card's blank surface, which keeps a press from
+	// reaching the page under the card.
+	hitTransferProgress = tree.ID(transferHits, "transfer-progress")
 	// hitTransferCancelFor is one cancel button per session, so two progress
 	// cards do not share a click.
 	hitTransferCancelFor = tree.Sub(transferHits, tree.Name("transfer-cancel-for"))
@@ -738,13 +741,10 @@ func (state *State) declareFileTransferDialog(c ui.C) {
 	})
 }
 
-// paintTransferProgressCard is the running transfer. It sits in a corner and
-// does not take the window: clicking elsewhere leaves the transfer going, and
-// only its cancel button stops it.
-func (state *State) paintTransferProgressCard(canvas *gfx.Canvas) {
-	if canvas == nil {
-		return
-	}
+// declareTransferProgressCards declares the running transfers' floating cards
+// in the page. Each sits in a corner and does not take the window: clicking
+// elsewhere leaves the transfer going, and only its cancel button stops it.
+func (state *State) declareTransferProgressCards(c ui.C) {
 	running := 0
 	for index := range state.sessions {
 		if state.sessions[index].transfer.phase == transferRunning {
@@ -754,19 +754,19 @@ func (state *State) paintTransferProgressCard(canvas *gfx.Canvas) {
 	if running == 0 {
 		return
 	}
-	canvas.RequestFrameIn(time.Second)
+	c.Canvas().RequestFrameIn(time.Second)
 	slot := 0
 	for index := range state.sessions {
 		session := &state.sessions[index]
 		if session.transfer.phase != transferRunning {
 			continue
 		}
-		state.paintOneTransferCard(canvas, session, slot)
+		state.declareOneTransferCard(c, session, slot)
 		slot++
 	}
 }
 
-func (state *State) paintOneTransferCard(canvas *gfx.Canvas, session *Session, slot int) {
+func (state *State) declareOneTransferCard(c ui.C, session *Session, slot int) {
 	transfer := &session.transfer
 	viewport := state.windowRect()
 	const (
@@ -807,38 +807,29 @@ func (state *State) paintOneTransferCard(canvas *gfx.Canvas, session *Session, s
 			transfer.text.line = formatBytes(progress.Done)
 		}
 	}
-	canvas.PushLayer(transferProgressLayer)
-	canvas.Block(card)
-	canvas.Elevate(card, radius.popup, gfx.ShadowMD)
-	canvas.RoundedBorder(card, radius.popup, 1, pal.line, pal.surface)
-	const pad, gap = float32(12), float32(6)
-	x, y := card.X+pad, card.Y+pad
-	inner := card.Width - 2*pad
-	state.paintTransferCardLine(canvas, title, gfx.Rect{X: x, Y: y, Width: inner, Height: 20}, metrics.FontSizeS, gfx.WeightSemibold, pal.text)
-	y += 20 + gap
-	if address != "" {
-		state.paintTransferCardLine(canvas, address, gfx.Rect{X: x, Y: y, Width: inner, Height: 18}, metrics.FontSizeS, gfx.WeightRegular, pal.muted)
-		y += 18 + gap
-	}
-	state.paintTransferCardLine(canvas, name, gfx.Rect{X: x, Y: y, Width: inner, Height: 20}, metrics.FontSizeM, gfx.WeightMedium, pal.text)
-	y += 20 + gap
-	bar := gfx.Rect{X: x, Y: y, Width: inner, Height: 8}
-	y += 8 + gap
-	row := gfx.Rect{X: x, Y: y, Width: inner, Height: 28}
-	cancel := state.messages.Cancel
-	cancelWidth := components.BeginButton(canvas, state.Theme(), gfx.ID{}, row).Small().SizeToFit(cancel).BoundsWidth()
-	state.paintTransferCardLine(canvas, transfer.text.line, gfx.Rect{X: row.X, Y: row.Y, Width: max(row.Width-cancelWidth-8, 0), Height: row.Height}, metrics.FontSizeS, gfx.WeightRegular, pal.muted)
-	components.BeginButtonRow(canvas, state.Theme(), row).Size(components.ButtonSizeSmall).Paint(
-		components.ButtonAction{ID: hitTransferCancelFor.At(int(session.ID)), Label: cancel, Variant: components.ButtonSecondary},
-	)
 	fraction := float32(0)
 	if progress.Size > 0 {
 		fraction = float32(float64(progress.Done) / float64(progress.Size))
 	}
-	components.Progress(canvas, state.Theme(), bar, fraction)
-	canvas.PopLayer()
-}
-
-func (state *State) paintTransferCardLine(canvas *gfx.Canvas, value string, bounds gfx.Rect, size, weight float32, color gfx.Color) {
-	canvas.Label(elide(canvas, value, size, weight, bounds.Width), bounds, gfx.TextStyle{Size: size, Weight: weight, Color: color})
+	const pad, gap = float32(12), float32(6)
+	cancel := state.messages.Cancel
+	ui.Overlay(c, ui.OverlaySpec{Band: ui.Band(transferProgressLayer), Bounds: card}).
+		Pad(pad).Gap(gap).Radius(radius.popup).Border(1, pal.line).Background(pal.surface).Shadow(gfx.ShadowMD).
+		HitWith(hitTransferProgress, "", gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, SkipTab: true}).
+		Children(func() {
+			ui.Text(c, title).Height(20).FillWidth().Ellipsis().
+				FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.text)
+			if address != "" {
+				ui.Text(c, address).Height(18).FillWidth().Ellipsis().
+					FontSize(metrics.FontSizeS).Color(pal.muted)
+			}
+			ui.Text(c, name).Height(20).FillWidth().Ellipsis().
+				FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text)
+			ui.Progress(c, fraction).Height(8).FillWidth()
+			ui.Row(c).Height(28).FillWidth().Gap(8).Items(ui.Center).Children(func() {
+				ui.Text(c, transfer.text.line).Grow(1).Ellipsis().
+					FontSize(metrics.FontSizeS).Color(pal.muted)
+				ui.Button(c, cancel).Small().Secondary().Hit(hitTransferCancelFor.At(int(session.ID)), cancel)
+			})
+		})
 }

@@ -2084,9 +2084,6 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if result, handled := state.remoteProcessWheel(event); handled {
 		return result
 	}
-	if result, handled := state.transferCenterScroll(event); handled {
-		return result
-	}
 	if result, handled := state.menuWheel(event); handled {
 		return result
 	}
@@ -2103,7 +2100,11 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 		return state.scrollCommandPalette(event)
 	}
 	if state.modal == modalForm {
-		return state.scrollForm(event)
+		// The form's multiline fields are page text areas: the page scrolls them,
+		// and the dialog keeps the wheel from the window behind it.
+		result := state.windowPage().Wheel(event)
+		result.Handled = true
+		return result
 	}
 	if state.modal == modalUpdate {
 		return state.scrollUpdateNotes(event)
@@ -2193,9 +2194,6 @@ func (state *State) scroll(event gfx.ScrollEvent) gfx.EventResult {
 	}
 	if state.activeSection == sectionHosts && state.modal == modalNone && (state.hostsContent > 0 || state.hostSide.visible) {
 		return state.scrollHosts(event)
-	}
-	if state.activeSection == sectionSessionLogs && state.modal == modalNone {
-		return state.scrollSessionLogs(event)
 	}
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	paged := false

@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/sessionlog"
 )
 
@@ -55,7 +55,7 @@ func (state *State) syncSessionLogs() {
 		view.appliedSearch = query
 		view.query.Search = query
 		view.query.Cursor = sessionlog.Cursor{}
-		view.scrollRows = 0
+		state.resetSessionLogsScroll()
 		view.detailOpen = false
 		view.selected = ""
 		state.refreshSessionLogs()
@@ -131,8 +131,9 @@ func (state *State) refreshSessionLogFilters() bool {
 		view.query.Since, view.query.Until = since, until
 	}
 	view.query.Cursor = sessionlog.Cursor{}
-	view.scrollRows = 0
+	state.resetSessionLogsScroll()
 	view.filterMenu = sessionLogFilterNone
+	view.filterOpen = false
 	view.clockStamp = state.sessionLogClockStamp()
 	state.refreshSessionLogs()
 	return true
@@ -140,10 +141,17 @@ func (state *State) refreshSessionLogFilters() bool {
 
 // chooseSessionLogFilter applies one choice of the open filter menu.
 func (state *State) chooseSessionLogFilter(index int) {
+	state.chooseSessionLogFilterIn(state.sessionLogs.view.filterMenu, index)
+}
+
+// chooseSessionLogFilterIn applies one choice of menu. The menu closes as the
+// choice is delivered, so the page menu carries the filter it belonged to
+// instead of reading it back after the popup has gone.
+func (state *State) chooseSessionLogFilterIn(menu sessionLogFilterMenu, index int) {
 	view := &state.sessionLogs.view
-	menu := view.filterMenu
+	view.filterMenu = sessionLogFilterNone
+	view.filterOpen = false
 	if index < 0 {
-		view.filterMenu = sessionLogFilterNone
 		return
 	}
 	switch menu {
@@ -175,6 +183,40 @@ func (state *State) chooseSessionLogFilter(index int) {
 	state.applySessionLogFilters()
 }
 
+// toggleSessionLogHeaderSort sorts by the column whose heading was clicked: the
+// started column and the duration column, the two orders the store offers. A
+// narrow table shows the duration in the started column while the order is one
+// of the duration orders, so clicking it keeps sorting by what it shows.
+func (state *State) toggleSessionLogHeaderSort(column int) {
+	view := &state.sessionLogs.view
+	_, _, count := state.sessionLogColumns(view.tableWidth)
+	duration := view.query.Sort >= sessionlog.SortDurationDesc
+	started := view.query.Sort <= sessionlog.SortStartedAsc
+	switch {
+	case column == 4:
+		if duration && view.query.Sort == sessionlog.SortDurationAsc {
+			view.query.Sort = sessionlog.SortDurationDesc
+		} else {
+			view.query.Sort = sessionlog.SortDurationAsc
+		}
+	case column == 1 && count < 6 && duration:
+		if view.query.Sort == sessionlog.SortDurationAsc {
+			view.query.Sort = sessionlog.SortDurationDesc
+		} else {
+			view.query.Sort = sessionlog.SortDurationAsc
+		}
+	case column == 1:
+		if started && view.query.Sort == sessionlog.SortStartedAsc {
+			view.query.Sort = sessionlog.SortStartedDesc
+		} else {
+			view.query.Sort = sessionlog.SortStartedAsc
+		}
+	default:
+		return
+	}
+	state.applySessionLogFilters()
+}
+
 // clearSessionLogFilters returns the page to its widest query.
 func (state *State) clearSessionLogFilters() {
 	view := &state.sessionLogs.view
@@ -187,6 +229,7 @@ func (state *State) clearSessionLogFilters() {
 	view.favoriteOnly = false
 	view.query.Outcome = sessionlog.OutcomeAll
 	view.filterMenu = sessionLogFilterNone
+	view.filterOpen = false
 	view.statusText = ""
 	view.statusDanger = false
 	state.applySessionLogFilters()
@@ -202,10 +245,18 @@ func (state *State) clearSessionLogSearch() {
 	view.appliedSearch = ""
 	view.query.Search = ""
 	view.query.Cursor = sessionlog.Cursor{}
-	view.scrollRows = 0
+	state.resetSessionLogsScroll()
 	view.detailOpen = false
 	view.selected = ""
 	state.refreshSessionLogs()
+}
+
+// resetSessionLogsScroll asks the record list to show its first row at the next
+// declaration and forgets the offset the paint last recorded.
+func (state *State) resetSessionLogsScroll() {
+	view := &state.sessionLogs.view
+	view.rowsList.ScrollTo(0, ui.ListStart)
+	view.scrollRows = 0
 }
 
 // selectSessionLogRecord opens one record: it becomes the selected row and its
@@ -217,7 +268,7 @@ func (state *State) selectSessionLogRecord(id string) {
 	}
 	view.selected = id
 	view.detailOpen = true
-	view.scrollEvents = 0
+	view.resetEvents = true
 	view.statusText = ""
 	view.statusDanger = false
 	state.loadSessionLogEvents(id)
@@ -231,12 +282,27 @@ func (state *State) closeSessionLogDetail() {
 	view := &state.sessionLogs.view
 	view.detailOpen = false
 	view.focusPending = hitSessionLogsSearch
-	for index := range view.page {
-		if view.page[index].id == view.selected {
-			view.focusPending = hitSessionLogsRowList.At(index)
-			break
+	if item := state.sessionLogSelectedItemIndex(); item >= 0 {
+		if id := view.rowsList.RowID(item); !id.IsZero() {
+			view.focusPending = id
 		}
 	}
+}
+
+// sessionLogSelectedItemIndex is the record list's row for the selected record,
+// or -1: the list interleaves the date headings with the records, so a record's
+// index in the page is not its row.
+func (state *State) sessionLogSelectedItemIndex() int {
+	view := &state.sessionLogs.view
+	if view.selected == "" {
+		return -1
+	}
+	for index, item := range view.items {
+		if item.row >= 0 && item.row < len(view.page) && view.page[item.row].id == view.selected {
+			return index
+		}
+	}
+	return -1
 }
 
 // toggleSessionLogFavorite waits for the writer before claiming success. A
@@ -405,20 +471,20 @@ func (state *State) clickSessionLogs(id gfx.ID) bool {
 	case hitSessionLogsMore:
 		view.moreMenu = !view.moreMenu
 		view.filterMenu = sessionLogFilterNone
+		view.filterOpen = false
 		return true
 	case hitSessionLogsSearch:
 		return true
 	case hitSessionLogsTime, hitSessionLogsStatus, hitSessionLogsProtocol, hitSessionLogsOutcome, hitSessionLogsSort:
 		view.moreMenu = false
 		filter := sessionLogFilterFor(id)
-		if view.filterMenu == filter {
+		if view.filterMenu == filter && view.filterOpen {
 			view.filterMenu = sessionLogFilterNone
+			view.filterOpen = false
 		} else {
 			view.filterMenu = filter
+			view.filterOpen = true
 		}
-		return true
-	case hitSessionLogsFilterDismiss:
-		view.filterMenu = sessionLogFilterNone
 		return true
 	case hitSessionLogsFavoriteFilter:
 		view.favoriteOnly = !view.favoriteOnly
@@ -455,6 +521,10 @@ func (state *State) clickSessionLogs(id gfx.ID) bool {
 		state.locateSessionLogHost(view.selected)
 		return true
 	}
+	if column, ok := id.In(hitSessionLogsSortHeader); ok {
+		state.toggleSessionLogHeaderSort(column)
+		return true
+	}
 	if index, ok := id.In(hitSessionLogsRowFavorite); ok {
 		if index >= 0 && index < len(view.page) {
 			state.toggleSessionLogFavoriteID(view.page[index].id)
@@ -466,24 +536,18 @@ func (state *State) clickSessionLogs(id gfx.ID) bool {
 			state.chooseSessionLogFilter(index)
 			return true
 		}
-		// A press anywhere else belongs to the page again; the popup closes as
-		// any workbench menu does.
+		// A press anywhere else belongs to the page again; a page menu closes
+		// itself on a press away, and the declaration clears the filter.
 		view.filterMenu = sessionLogFilterNone
+		view.filterOpen = false
 		return true
-	}
-	if index, ok := id.In(hitSessionLogsRowList); ok {
-		if index >= 0 && index < len(view.page) {
-			state.selectSessionLogRecord(view.page[index].id)
-			return true
-		}
-		return false
 	}
 	return false
 }
 
-// sessionLogsKey handles the page's keys: Escape, row activation, a row's
-// context keys and the scrolling keys of the two lists. Arrow keys walk the rows
-// so the timeline stays reachable without tabbing through every record.
+// sessionLogsKey handles the page's keys: Escape, and Delete on a row or on the
+// open record. The record list and the event list are page controls, so their
+// arrows, page keys, Home and End are the page's, routed before this handler.
 func (state *State) sessionLogsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	view := &state.sessionLogs.view
 	if state.modal != modalNone || state.activeSection != sectionSessionLogs || event.Repeat {
@@ -494,9 +558,6 @@ func (state *State) sessionLogsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 		case view.moreMenu:
 			view.moreMenu = false
 			return gfx.EventResult{Handled: true, Repaint: true, Focus: hitSessionLogsMore, FocusVisible: true}, true
-		case view.filterMenu != sessionLogFilterNone:
-			view.filterMenu = sessionLogFilterNone
-			return gfx.EventResult{Handled: true, Repaint: true}, true
 		case event.Target == hitSessionLogsSearch && view.search.RuneCount() > 0:
 			state.clearSessionLogSearch()
 			return gfx.EventResult{Handled: true, Repaint: true}, true
@@ -506,131 +567,17 @@ func (state *State) sessionLogsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 		}
 		return gfx.EventResult{}, false
 	}
-	if index, ok := event.Target.In(hitSessionLogsRowList); ok && index >= 0 && index < len(view.page) {
-		switch event.Key {
-		case gfx.KeyEnter, gfx.KeySpace:
-			state.selectSessionLogRecord(view.page[index].id)
-			return gfx.EventResult{Handled: true, Repaint: true}, true
-		case gfx.KeyDelete:
-			state.selectSessionLogRecord(view.page[index].id)
+	if event.Key == gfx.KeyDelete {
+		if index, ok := event.Target.In(view.rowScope); ok && view.rowScope != (gfx.Scope(0)) &&
+			index >= 0 && index < len(view.items) && view.items[index].row >= 0 {
+			state.selectSessionLogRecord(view.page[view.items[index].row].id)
 			state.askDeleteSessionLog()
 			return gfx.EventResult{Handled: true, Repaint: true}, true
-		case gfx.KeyUp, gfx.KeyDown:
-			next := index - 1
-			if event.Key == gfx.KeyDown {
-				next = index + 1
-			}
-			if next >= 0 && next < len(view.page) {
-				rowHeight := components.TableRowHeight(state.Theme())
-				top := state.sessionLogRowTop(next, rowHeight)
-				if top < view.scrollRows {
-					view.scrollRows = top
-				}
-				if top+rowHeight > view.scrollRows+view.tableBody.Height {
-					view.scrollRows = max(0, top+rowHeight-view.tableBody.Height)
-				}
-				view.focusPending = hitSessionLogsRowList.At(next)
-				return gfx.EventResult{Handled: true, Repaint: true, Focus: hitSessionLogsRowList.At(next), FocusVisible: true}, true
-			}
-			return gfx.EventResult{Handled: true}, true
 		}
-	}
-	if event.Key == gfx.KeyDelete && view.selected != "" {
-		state.askDeleteSessionLog()
-		return gfx.EventResult{Handled: true, Repaint: true}, true
-	}
-	if event.Target == hitSessionLogsScroll {
-		if _, y, ok := state.sessionLogsTableArea().ScrollForKey(0, view.scrollRows, event.Key, sessionLogEventHeight+14); ok {
-			view.scrollRows = y
+		if view.selected != "" {
+			state.askDeleteSessionLog()
 			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
-	}
-	if event.Target == hitSessionLogsEventsScroll {
-		if _, y, ok := state.sessionLogsEventsArea().ScrollForKey(0, view.scrollEvents, event.Key, sessionLogEventHeight); ok {
-			view.scrollEvents = y
-			return gfx.EventResult{Handled: true, Repaint: true}, true
-		}
-	}
-	return gfx.EventResult{}, false
-}
-
-// sessionLogsTableArea is the record list's scroll geometry. Paint records where
-// it painted the body; before the first paint the area is empty and inert.
-func (state *State) sessionLogsTableArea() components.ScrollArea {
-	view := &state.sessionLogs.view
-	rowHeight := components.TableRowHeight(state.Theme())
-	return components.BeginScrollArea(nil, state.Theme(), view.tableBody,
-		gfx.Size{Width: view.tableBody.Width, Height: state.sessionLogListHeight(rowHeight)}).Offset(0, view.scrollRows)
-}
-
-// sessionLogsEventsArea is the detail panel's event list geometry.
-func (state *State) sessionLogsEventsArea() components.ScrollArea {
-	view := &state.sessionLogs.view
-	return components.BeginScrollArea(nil, state.Theme(), view.eventsBody,
-		gfx.Size{Width: view.eventsBody.Width, Height: float32(len(view.detail.events)) * sessionLogEventHeight}).Offset(0, view.scrollEvents)
-}
-
-// scrollSessionLogs moves the list under the pointer, or the event list of an
-// open detail panel. The page behind an open filter menu stays still.
-func (state *State) scrollSessionLogs(event gfx.ScrollEvent) gfx.EventResult {
-	view := &state.sessionLogs.view
-	if state.modal != modalNone || state.activeSection != sectionSessionLogs {
-		return gfx.EventResult{}
-	}
-	if view.filterMenu != sessionLogFilterNone {
-		return gfx.EventResult{Handled: true}
-	}
-	if pointInRect(event.X, event.Y, view.eventsBody) {
-		before := view.scrollEvents
-		maximum := state.sessionLogsEventsArea().Geometry().MaxOffsetY
-		view.scrollEvents = min(max(0, before+event.DeltaY), maximum)
-		return gfx.EventResult{Handled: true, Repaint: view.scrollEvents != before}
-	}
-	if pointInRect(event.X, event.Y, view.tableBody) {
-		before := view.scrollRows
-		maximum := state.sessionLogsTableArea().Geometry().MaxOffsetY
-		view.scrollRows = min(max(0, before+event.DeltaY), maximum)
-		return gfx.EventResult{Handled: true, Repaint: view.scrollRows != before}
-	}
-	return gfx.EventResult{}
-}
-
-// sessionLogsPointer drags the scrollbar of either list.
-func (state *State) sessionLogsPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	view := &state.sessionLogs.view
-	if state.activeSection != sectionSessionLogs || state.modal != modalNone {
-		return gfx.EventResult{}, false
-	}
-	if view.dragging != sessionLogDragNone {
-		switch event.Kind {
-		case gfx.PointerMove, gfx.PointerUp:
-			rows := view.dragging == sessionLogDragRows
-			if rows {
-				view.scrollRows = state.sessionLogsTableArea().Geometry().VerticalOffsetForThumb(event.Y - view.dragGrab)
-			} else {
-				view.scrollEvents = state.sessionLogsEventsArea().Geometry().VerticalOffsetForThumb(event.Y - view.dragGrab)
-			}
-			if event.Kind == gfx.PointerUp {
-				view.dragging = sessionLogDragNone
-			}
-			return gfx.EventResult{Handled: true, Repaint: true}, true
-		case gfx.PointerExit:
-			view.dragging = sessionLogDragNone
-		}
-		return gfx.EventResult{Handled: true}, true
-	}
-	if event.Kind != gfx.PointerDown || event.Button != gfx.PointerButtonPrimary {
-		return gfx.EventResult{}, false
-	}
-	switch event.Target {
-	case hitSessionLogsThumb:
-		view.dragging = sessionLogDragRows
-		view.dragGrab = event.Y - state.sessionLogsTableArea().Geometry().VerticalThumb.Y
-		return gfx.EventResult{Handled: true, Focus: hitSessionLogsScroll}, true
-	case hitSessionLogsEventsThumb:
-		view.dragging = sessionLogDragEvents
-		view.dragGrab = event.Y - state.sessionLogsEventsArea().Geometry().VerticalThumb.Y
-		return gfx.EventResult{Handled: true, Focus: hitSessionLogsEventsScroll}, true
 	}
 	return gfx.EventResult{}, false
 }

@@ -97,8 +97,6 @@ type monitorView struct {
 	processLabel, noProcessLabel                              string
 	diskValue                                                 float64
 	diskAvailable                                             bool
-	dragging                                                  bool
-	grab                                                      float32
 	copiedAddress                                             string
 	addressCopiedUntil                                        time.Duration
 
@@ -108,7 +106,7 @@ type monitorView struct {
 	haveDetails, detailsFailed, paused                       bool
 	interval                                                 int
 	disksOpen, hardwareOpen, loginsClosed, loginsUnsupported bool
-	scroll, contentHeight                                    float32
+	scroll, scrollSynced, contentHeight                      float32
 	count                                                    int
 	origin                                                   time.Time
 	x, cpu, memory, disk, down, up                           [61]float32

@@ -57,9 +57,8 @@ rect {{223 51 330 36} {0.216 0.22917646 0.24894118 1} 7.5 0 {205 37 800 855} tru
 rect {{224 52 328 34} {0.11146667 0.1264 0.1488 1} 6.5 0 {205 37 800 855} true #65}
 rect {{247 105 16 16} {0.216 0.22917646 0.24894118 1} 4 0 {205 37 800 855} true #67}
 rect {{248 106 14 14} {0.11146667 0.1264 0.1488 1} 3 0 {205 37 800 855} true #68}
-rect {{1009 36 1 857} {0 0 0 0} 0 0 {0 0 0 0} false #69}
-rect {{1030 760 171.75586 24} {0.34313726 0.37058824 0.40980393 1} 7.5 0 {0 0 0 0} false #71}
-rect {{1031 761 169.75586 22} {0.14960785 0.16882354 0.19705883 1} 6.5 0 {0 0 0 0} false #72}
+rect {{1030 760 171.75586 24} {0.34313726 0.37058824 0.40980393 1} 7.5 0 {0 0 0 0} false #70}
+rect {{1031 761 169.75586 22} {0.14960785 0.16882354 0.19705883 1} 6.5 0 {0 0 0 0} false #71}
 shadow {{261 148 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {223 135 764 739} true #13}
 shadow {{267 201 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {223 135 764 739} true #16}
 shadow {{261 254 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {223 135 764 739} true #23}
@@ -70,7 +69,7 @@ shadow {{1176 706 92 30} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {1013 36 380 857} true #53
 shadow {{1022 754 362 130} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {1013 36 380 857} true #57}
 shadow {{223 51 330 36} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {205 37 800 855} true #63}
 shadow {{247 105 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {205 37 800 855} true #66}
-shadow {{1030 760 171.75586 24} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 0 0 0} false #70}
+shadow {{1030 760 171.75586 24} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 0 0 0} false #69}
 text "Hosts" {52 114.5 37.180664 21}
 text "Workspaces" {52 154.5 80.37695 21}
 text "Monitor" {52 194.5 49.745117 21}
@@ -203,7 +202,7 @@ hit "Model: gpt-x. Choose another" button {1079.8125 851 84.91797 24} disabled=f
 hit "Attach files or images" button {1311 849 28 28} disabled=false
 hit "Send" button {1344 849 28 28} disabled=true
 hit "Resize the message box" slider {1030 751 346 7} disabled=false
+hit "Resize the assistant panel" separator {1005.5 36 7 857} disabled=false
 hit "Search" textfield {248 51 305 36} disabled=false
 hit "Select all matching hosts" checkbox {235 99 40 28} disabled=false
-hit "Resize the assistant panel" separator {1006 36 7 857} disabled=false
 hit "Target connection" combobox {1030 760 171.75586 24} disabled=false

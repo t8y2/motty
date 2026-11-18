@@ -4,10 +4,8 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/monitoring"
-	"motty/internal/sshconn"
 )
 
 // The second column belongs to each host. Mixed views can share one compact
@@ -16,18 +14,11 @@ func (s *State) paintDashboardSimpleRow(c *gfx.Canvas, p *monitoring.Panel, h Ho
 	tabs, data := dashboardSimpleColumns(b)
 	s.paintDashboardIdentity(c, h, gfx.Rect{X: b.X + 8, Y: b.Y + 17, Width: tabs - b.X - 20, Height: 55})
 	s.paintDashboardProblem(c, p, h, r, gfx.Rect{X: b.X + 54, Y: b.Y + 75, Width: tabs - b.X - 64, Height: 18})
-	s.paintDashboardSimpleTabs(c, h, r, gfx.Rect{X: tabs, Y: b.Y + 7, Width: 40, Height: 90})
 	metrics := gfx.Rect{X: data, Y: b.Y, Width: b.X + b.Width - data - 48, Height: b.Height}
 	if r.simplePage == 0 {
 		s.paintDashboardSimpleMetrics(c, r, metrics)
 	} else {
 		s.paintDashboardSimpleDeviceMetrics(c, r, metrics)
-	}
-	if h.ID != 0 {
-		components.BeginButton(c, s.Theme(), hitDashboardTerminalList.At(int(h.ID)), gfx.Rect{X: b.X + b.Width - 38, Y: b.Y + 24, Width: 32}).WithIcon(lucideIcons[iconTerminal]).Icon().Ghost(s.messages.Dashboard.Terminal)
-		if source := s.dashboard.sources[h.CatalogID]; source != nil && source.session.phase == sshconn.PhaseConnected && source.session.host.System != sshconn.SystemWindows {
-			s.paintDashboardSudo(c, h.ID, source, gfx.Rect{X: b.X + b.Width - 74, Y: b.Y + 24, Width: 32})
-		}
 	}
 	c.Fill(gfx.Rect{X: b.X, Y: b.Y + b.Height - 1, Width: b.Width, Height: 1}, s.pal.line)
 }
@@ -58,7 +49,7 @@ func (s *State) paintDashboardSimpleMetrics(c *gfx.Canvas, r *dashboardRow, b gf
 		x := b.X + float32(i)*w
 		monitorLabel(c, labels[i], gfx.Rect{X: x, Y: b.Y + 8, Width: w - 18, Height: 18}, 12, pal.muted, gfx.WeightMedium)
 		monitorLabel(c, texts[i], gfx.Rect{X: x, Y: b.Y + 29, Width: w - 18, Height: 27}, 18, pal.text, gfx.WeightSemibold)
-		dashboardBar(c, s.Theme(), gfx.Rect{X: x, Y: b.Y + 61, Width: w - 20, Height: 5}, values[i], colors[i], pal.line)
+		dashboardBar(c, gfx.Rect{X: x, Y: b.Y + 61, Width: w - 20, Height: 5}, values[i], colors[i], pal.line)
 		monitorLabel(c, notes[i], gfx.Rect{X: x, Y: b.Y + 72, Width: w - 18, Height: 20}, 11, pal.muted, gfx.WeightRegular)
 	}
 	x := b.X + 3*w

@@ -816,8 +816,8 @@ type State struct {
 	defaultEditor           ExternalEditor // hands remote folders to this computer's editor
 	customEditorPath        string
 	monitorRect             gfx.Rect
+	monitorUI               monitorPageUI
 	monitorMenu             bool
-	monitorMenuRect         gfx.Rect
 	monitorResizing         bool
 	monitorResizeGrab       float32
 	monitorResizeWorkspace  layoutcore.WorkspaceID
@@ -2569,12 +2569,6 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result, handled := state.workspaceLibraryPointer(event); handled {
 		return result
 	}
-	if result, handled := state.dashboardPointer(event); handled {
-		return result
-	}
-	if result, handled := state.sessionLogsPointer(event); handled {
-		return result
-	}
 	if state.modal == modalFileProperties {
 		if event.Target == hitFilePropertiesClose || event.Target == hitFilePropertiesDismiss {
 			return gfx.EventResult{}
@@ -2594,9 +2588,6 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 		defer func() { outcome.Repaint = true }()
 	}
 	if result, handled := state.windowBarScrollPointer(event); handled {
-		return result
-	}
-	if result, handled := state.transferCenterPointer(event); handled {
 		return result
 	}
 	if state.aiTrackPointer(event) {
@@ -2622,9 +2613,6 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	}
 	state.hostPressPointer(event)
 	if result, handled := state.hostSortPointer(event); handled {
-		return result
-	}
-	if result, handled := state.snippetReorderPointer(event); handled {
 		return result
 	}
 	if result, handled := state.hostListBarPointer(event); handled {
@@ -3084,9 +3072,6 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	if result, handled := state.snippetGroupKey(event); handled {
 		return result
 	}
-	if result, handled := state.snippetReorderKey(event); handled {
-		return result
-	}
 	if result := state.toolbarSettingsKey(event); result.Handled {
 		return result
 	}
@@ -3239,11 +3224,6 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		(event.Target == hitOutboundProxyAddress || event.Target == hitOutboundProxyUser || event.Target == hitOutboundProxyPassword || event.Target == hitOutboundProxyBypass) {
 		state.submitOutboundProxy()
 		return gfx.EventResult{Handled: true, Repaint: true}
-	}
-	if state.modal == modalForm {
-		if result, handled := state.formKey(event); handled {
-			return result
-		}
 	}
 	if state.modal == modalForm && event.Key == gfx.KeyEnter && !event.Repeat && state.formEditor(event.Target) != nil && state.multilineField(event.Target) == nil {
 		state.submitForm()

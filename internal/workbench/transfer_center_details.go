@@ -6,6 +6,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
 	"motty/internal/workbench/icons"
 )
@@ -26,11 +27,15 @@ type transferDetailRow struct {
 }
 
 type transferDetails struct {
-	hover, current              transferDetailRow
-	pinned, showing, suppressed int
-	leftAt                      time.Duration
-	intent                      components.HoverIntent
-	lines                       [12][]string
+	hover, current transferDetailRow
+	// hoverBox and currentBox are the trigger boxes those rows were declared
+	// with this paint: the page hangs the details popover off one of them.
+	hoverBox, currentBox ui.Box
+	pinned, showing      int
+	suppressed           int
+	leftAt               time.Duration
+	intent               components.HoverIntent
+	open                 bool
 }
 
 func (details *transferDetails) dismiss() {
@@ -42,50 +47,52 @@ func (details *transferDetails) dismiss() {
 		details.suppressed = id
 	}
 	details.pinned, details.showing, details.leftAt = 0, 0, 0
+	details.open = false
 	details.intent.Reset()
 }
 
-func (row transferDetailRow) anchor(canvas *gfx.Canvas, entries []transferEntry, list gfx.Rect, trigger gfx.Scope) gfx.Rect {
-	if row.id == 0 || row.entry < 0 || row.entry >= len(entries) || entries[row.entry].id != row.id {
-		return gfx.Rect{}
-	}
-	bounds, _ := canvas.HitBounds(trigger.At(row.id))
-	return intersectRect(bounds, list)
+// beginPaint forgets the rows the last paint saw. pinned, showing and the
+// hover intent stay: they are what the preview is open for.
+func (details *transferDetails) beginPaint() {
+	details.hover, details.current = transferDetailRow{}, transferDetailRow{}
+	details.hoverBox, details.currentBox = ui.Box{}, ui.Box{}
 }
 
-// Paint outside the List's clip, so the details can sit over the rows below or
-// flip above a row near the bottom of the window.
-func (state *State) paintTransferDetails(canvas *gfx.Canvas, viewport gfx.Rect) {
-	center, details := &state.transfers, &state.transfers.details
-	if !center.open || !state.transferCenterAvailable() || !center.selectOpen.IsZero() || center.dragging || len(center.batch.targets) > 0 {
+// declareTransferDetails declares the details card of the transfer center.
+func (state *State) declareTransferDetails(c ui.C) {
+	center := &state.transfers
+	allowed := center.open && state.transferCenterAvailable() && len(center.batch.targets) == 0
+	state.declareTransferDetailCard(c, &center.details, hitTransfersDetails, hitTransfersDetailCard, hitTransfersDetailDismiss, allowed)
+}
+
+// declareTransferDetailCard declares the pointer preview of a transfer row as a
+// page popover anchored to the row's trigger. details.hover, details.current and
+// their boxes are filled by declareTransferTaskRow during this paint; allowed
+// says whether the surface around them shows a preview at all.
+func (state *State) declareTransferDetailCard(c ui.C, details *transferDetails, trigger gfx.Scope, card, dismiss gfx.ID, allowed bool) {
+	if !allowed {
 		details.dismiss()
 		return
 	}
-	state.paintTransferDetailCard(canvas, viewport, center.list, details, hitTransfersDetails, hitTransfersDetailCard, hitTransfersDetailDismiss)
-}
-
-func (state *State) paintTransferDetailCard(canvas *gfx.Canvas, viewport, list gfx.Rect, details *transferDetails, trigger gfx.Scope, card, dismiss gfx.ID) {
-	entries := state.transfers.entries
-	ref := details.current
-	anchor := ref.anchor(canvas, entries, list, trigger)
+	canvas := c.Canvas()
+	ref, anchor := details.current, details.currentBox
 	if details.pinned == 0 {
 		hover, now := details.hover, canvas.Now()
 		if details.suppressed != hover.id {
 			details.suppressed = 0
 		}
 		var candidate gfx.ID
-		hoverAnchor := hover.anchor(canvas, entries, list, trigger)
-		if hover.id != details.suppressed && canvas.Pressed().IsZero() && hoverAnchor.Height > 0 {
+		if hover.id != details.suppressed && canvas.Pressed().IsZero() && hover.id != 0 && details.hoverBox.Valid() {
 			candidate = trigger.At(hover.id)
 		}
 		ready, wait := details.intent.Rest(candidate, time.Time{}.Add(now), transferDetailDelay)
 		switch {
 		case !ready.IsZero():
-			ref, anchor = hover, hoverAnchor
+			ref, anchor = hover, details.hoverBox
 			details.leftAt = 0
-		case canvas.Hovered() == card && anchor.Height > 0:
+		case canvas.Hovered() == card && details.showing != 0:
 			details.leftAt = 0
-		case anchor.Height > 0 && canvas.Pressed().IsZero():
+		case details.showing != 0 && canvas.Pressed().IsZero():
 			if details.leftAt == 0 {
 				details.leftAt = now + transferDetailLinger
 			}
@@ -94,24 +101,34 @@ func (state *State) paintTransferDetailCard(canvas *gfx.Canvas, viewport, list g
 					wait = linger
 				}
 			} else {
-				anchor = gfx.Rect{}
+				ref, anchor = transferDetailRow{}, ui.Box{}
 			}
 		default:
-			anchor = gfx.Rect{}
+			ref, anchor = transferDetailRow{}, ui.Box{}
 		}
 		if wait > 0 {
 			canvas.RequestFrameIn(wait)
 		}
 	}
-	if anchor.Width <= 0 || anchor.Height <= 0 {
+	if ref.id == 0 || ref.entry < 0 || ref.entry >= len(state.transfers.entries) ||
+		state.transfers.entries[ref.entry].id != ref.id || !anchor.Valid() {
 		details.pinned, details.showing, details.leftAt = 0, 0, 0
+		details.open = false
 		return
 	}
 	details.showing = ref.id
-	if details.pinned == 0 {
-		dismiss = gfx.ID{}
+	details.open = true
+	entry := &state.transfers.entries[ref.entry]
+	width := min(492, c.Bounds().Width-24)
+	spec := ui.PopoverSpec{
+		Side: components.PopoverBottom, Align: ui.Start, Offset: 1, Width: width,
+		DismissID: dismiss, KeepOpenOnAnchor: true,
 	}
-	state.drawTransferDetails(canvas, viewport, anchor, &entries[ref.entry], &details.lines, card, dismiss)
+	if ui.PopoverWith(c, anchor, spec, &details.open, func() {
+		state.declareTransferDetailBody(c, entry, card)
+	}) {
+		details.dismiss()
+	}
 }
 
 type transferDetailField struct {
@@ -119,7 +136,7 @@ type transferDetailField struct {
 	icon        gfx.Icon
 }
 
-func (state *State) drawTransferDetails(canvas *gfx.Canvas, viewport, anchor gfx.Rect, entry *transferEntry, lines *[12][]string, id, dismiss gfx.ID) {
+func (state *State) declareTransferDetailBody(c ui.C, entry *transferEntry, card gfx.ID) {
 	m, shell := state.messages.Transfers, state.messages.SFTPWindow
 	theme := state.Theme()
 	snapshot := entry.snapshot
@@ -178,50 +195,35 @@ func (state *State) drawTransferDetails(canvas *gfx.Canvas, viewport, anchor gfx
 		add(m.Error, snapshot.Error, icons.CircleAlert)
 	}
 
-	width := min(492, viewport.Width-24)
-	pad := theme.Metrics.PadSurface
+	width := min(492, c.Bounds().Width-24)
 	labelWidth := min(106, width*0.25)
-	labelOffset, gap := float32(22), float32(5)
+	labelOffset := float32(22)
 	size := theme.Metrics.FontSizeS
 	lineHeight := size + 5
-	valueOffset := labelOffset + labelWidth + 8
-	valueWidth := max(1, width-2*pad-valueOffset)
-	bodyHeight := float32(0)
-	// Leave at least one line for each field, and spend the free height on
-	// long names and paths. Keep the complete text in the accessibility tree.
-	extra := max(0, int((viewport.Height-70-float32(n)*(lineHeight+gap))/lineHeight))
-	for index, field := range fields[:n] {
-		lines[index] = canvas.WrapLines(lines[index][:0], field.value, size, gfx.WeightRegular, valueWidth, 1+min(extra, 5))
-		extra = max(0, extra-(len(lines[index])-1))
-		bodyHeight += float32(len(lines[index]))*lineHeight + gap
-	}
-	card := components.BeginHoverCard(canvas, theme, viewport, anchor, components.HoverCardOptions{
-		Layer: hoverCardLayer, ID: id, DismissID: dismiss,
-		Side: components.HoverCardBottom, Align: components.HoverCardAlignStart,
-		SideOffset: 3, AlignOffset: max(4, min(anchor.Width*0.55, 190)),
-		ContentSize: gfx.Size{Width: width}, BodyHeight: bodyHeight,
-	})
-	layout := card.Begin(m.Details, "")
-	canvas.Clip(layout.Body)
-	y := layout.Body.Y
-	for index, field := range fields[:n] {
-		x := layout.Body.X
-		if field.icon.ViewBox > 0 {
-			canvas.DrawIcon(field.icon, gfx.Rect{X: x, Y: y + (lineHeight-14)/2, Width: 14, Height: 14}, theme.MutedForeground)
-		}
-		canvas.Label(field.name, gfx.Rect{X: x + labelOffset, Y: y, Width: labelWidth, Height: lineHeight},
-			gfx.TextStyle{Size: size, Color: theme.MutedForeground})
-		for line, value := range lines[index] {
-			canvas.Label(value, gfx.Rect{X: x + valueOffset, Y: y + float32(line)*lineHeight, Width: valueWidth, Height: lineHeight},
-				gfx.TextStyle{Size: size, Color: theme.PopoverForeground})
-		}
-		height := float32(len(lines[index])) * lineHeight
-		canvas.ContainerWithOptions(gfx.Rect{X: x, Y: y, Width: layout.Body.Width, Height: height},
-			gfx.RoleGroup, field.name, gfx.HitOptions{Description: field.value})
-		y += height + gap
-	}
-	canvas.Unclip()
-	card.End()
+	// Leave at least one line for each field, and spend the free height on long
+	// names and paths. Keep the complete text in the accessibility tree.
+	extra := max(0, int((c.Bounds().Height-70-float32(n)*(lineHeight+5))/lineHeight))
+	maxLines := 1 + min(extra, 5)
+	fieldsScope := tree.Sub(card.Scope(), tree.Name("detail-field"))
+	ui.Column(c).Width(width).Gap(5).
+		HitWith(card, m.Details, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, SkipTab: true}).
+		Children(func() {
+			for index, field := range fields[:n] {
+				ui.Row(c).Items(ui.Start).Gap(3).
+					HitWith(fieldsScope.At(index), field.name, gfx.HitOptions{
+						Role: gfx.RoleGroup, Description: field.value, SkipFocus: true, SkipTab: true,
+					}).
+					Children(func() {
+						if field.icon.ViewBox > 0 {
+							ui.Icon(c, field.icon).Size(14, 14).Color(theme.MutedForeground).Shrink(0).
+								MarginTop((lineHeight - 14) / 2)
+						}
+						ui.Text(c, field.name).Width(labelWidth).Shrink(0).FontSize(size).
+							Color(theme.MutedForeground).MarginLeft(labelOffset - 14)
+						ui.Paragraph(c, field.value, maxLines).Grow(1).FontSize(size).Color(theme.PopoverForeground)
+					})
+			}
+		})
 }
 
 func transferDetailHost(server, address string) string {

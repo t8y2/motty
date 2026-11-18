@@ -115,13 +115,9 @@ func (state *State) declareAIProviderForm(c ui.C, height float32) {
 	cfg, m := &state.ai.cfg, state.messages.AISettings
 	cli := store.IsCLIKind(cfg.kind)
 	kind := cfg.kind
-	cfg.formPreset = ui.Box{}
 	ui.Column(c).Height(height).PadSides(2, 4, 0, 4).Children(func() {
 		if cfg.editID == "" {
-			cfg.formPreset = ui.Slot(c).Height(60)
-			// The preset list is a Select on the page; its open list paints on a
-			// higher layer, over the fields under it.
-			cfg.formPreset.Draw(func(d *ui.DrawContext) { state.paintAIPresetField(d.Canvas, d.Rect) })
+			state.declareAIPresetField(c)
 		}
 		state.aiFormField(c, hitAISetFormName, &cfg.formName, m.FormName, m.FormNamePH, "", 60, aiFormFocusName)
 		if cli {
@@ -182,8 +178,27 @@ func (state *State) declareAIProviderForm(c ui.C, height float32) {
 	})
 }
 
+// declareAIPresetField declares the list of providers a new provider can start
+// from, as the page's own Select: picking one fills the form after the paint.
+func (state *State) declareAIPresetField(c ui.C) {
+	cfg, m := &state.ai.cfg, state.messages.AISettings
+	theme := c.Theme()
+	metrics := theme.Metrics
+	gap := metrics.GapItem / 2
+	ui.Column(c).Height(60).Children(func() {
+		ui.Text(c, m.FormPreset).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(theme.Foreground).LineHeight(metrics.FontSizeM + 4).Ellipsis()
+		previous := cfg.preset
+		selector := ui.SelectIcon(c, &cfg.preset, aiPresetChoices, state.aiPresetLabel, aiPresetIcon).
+			Label(m.FormPreset).Height(metrics.ControlHeight).MarginSides(gap, 0, 0, 0)
+		if selector.Changed() {
+			preset := cfg.preset
+			c.After(func() { state.aiChoosePresetFrom(previous, preset) })
+		}
+	})
+}
+
 // aiFormField declares one labelled text field of the form: the title row, the
-// control, and the hint under it, in the rhythm components.BeginField gives.
+// control, and the hint under it, in the form's rhythm.
 func (state *State) aiFormField(c ui.C, id gfx.ID, field *ui.Field, title, placeholder, hint string, height float32, focus aiFormFocus) {
 	theme := c.Theme()
 	m := theme.Metrics

@@ -6,11 +6,73 @@ import (
 	layoutcore "motty/internal/workspace"
 )
 
-func (state *State) monitorScrollArea(p *monitorView) components.ScrollArea {
+// monitorScroll is the scroll region of a hand-painted monitor panel: its
+// viewport and the height of what is inside it.
+type monitorScroll struct {
+	body    gfx.Rect
+	content float32
+}
+
+// monitorScrollGeometry is the region's geometry: where it shows and how far it
+// can move.
+type monitorScrollGeometry struct {
+	Viewport        gfx.Rect
+	MaxOffsetY      float32
+	MaxOffsetX      float32
+	HorizontalTrack gfx.Rect
+	HorizontalThumb gfx.Rect
+}
+
+func (state *State) monitorScrollArea(p *monitorView) monitorScroll {
 	b := state.monitorRect
 	b.Y += infoBarHeight + monitorControlsHeight + monitorHostInfoHeight
 	b.Height = max(0, b.Height-infoBarHeight-monitorControlsHeight-monitorHostInfoHeight-24)
-	return components.BeginScrollArea(nil, state.Theme(), b, gfx.Size{Width: b.Width, Height: p.contentHeight}).Offset(0, p.scroll)
+	return monitorScroll{body: b, content: p.contentHeight}
+}
+
+func (scroll monitorScroll) Geometry() monitorScrollGeometry {
+	return monitorScrollGeometry{Viewport: scroll.body, MaxOffsetY: max(scroll.content-scroll.body.Height, 0)}
+}
+
+// ScrollForKey moves offset as the key asks, reporting the offset and whether
+// the key did anything.
+func (scroll monitorScroll) ScrollForKey(offset float32, key gfx.Key, step float32) (float32, bool) {
+	maxOffset := max(scroll.content-scroll.body.Height, 0)
+	next := offset
+	switch key {
+	case gfx.KeyDown:
+		next += step
+	case gfx.KeyUp:
+		next -= step
+	case gfx.KeyPageDown:
+		next += scroll.body.Height
+	case gfx.KeyPageUp:
+		next -= scroll.body.Height
+	case gfx.KeyHome:
+		next = 0
+	case gfx.KeyEnd:
+		next = maxOffset
+	default:
+		return offset, false
+	}
+	next = min(max(next, 0), maxOffset)
+	return next, next != offset
+}
+
+// scrollMonitor moves the docked panel's body by the wheel.
+func (state *State) scrollMonitor(e gfx.ScrollEvent) (gfx.EventResult, bool) {
+	if state.activeSection != sectionTerminal || !state.monitorShown(state.deck.ActiveWorkspace()) || !pointInRect(e.X, e.Y, state.monitorRect) {
+		return gfx.EventResult{}, false
+	}
+	s := state.contextSession()
+	if s == nil || s.stats == nil {
+		return gfx.EventResult{Handled: true}, true
+	}
+	p := &s.stats.panel
+	next := min(max(p.scroll+e.DeltaY, 0), state.monitorScrollArea(p).Geometry().MaxOffsetY)
+	changed := next != p.scroll
+	p.scroll = next
+	return gfx.EventResult{Handled: true, Repaint: changed}, true
 }
 
 func (state *State) monitorPointer(e gfx.PointerEvent) (gfx.EventResult, bool) {
@@ -47,35 +109,7 @@ func (state *State) monitorPointer(e gfx.PointerEvent) (gfx.EventResult, bool) {
 		}
 		return gfx.EventResult{Handled: true}, true
 	}
-	s := state.contextSession()
-	if s == nil || s.stats == nil {
-		return gfx.EventResult{}, false
-	}
-	p := &s.stats.panel
-	if e.Kind == gfx.PointerDown && e.Target == hitMonitorThumb {
-		if e.Button != gfx.PointerButtonPrimary {
-			return gfx.EventResult{}, false
-		}
-		p.dragging = true
-		p.grab = e.Y - state.monitorScrollArea(p).Geometry().VerticalThumb.Y
-		return gfx.EventResult{Handled: true, Focus: hitMonitorScroll}, true
-	}
-	if !p.dragging {
-		return gfx.EventResult{}, false
-	}
-	if e.Kind == gfx.PointerExit {
-		p.dragging = false
-		return gfx.EventResult{Handled: true}, true
-	}
-	if e.Kind == gfx.PointerMove || e.Kind == gfx.PointerUp {
-		g := state.monitorScrollArea(p).Geometry()
-		p.scroll = g.VerticalOffsetForThumb(e.Y - p.grab)
-		if e.Kind == gfx.PointerUp {
-			p.dragging = false
-		}
-		return gfx.EventResult{Handled: true, Repaint: true}, true
-	}
-	return gfx.EventResult{Handled: true}, true
+	return gfx.EventResult{}, false
 }
 
 func (state *State) monitorKey(e gfx.KeyEvent) (gfx.EventResult, bool) {
@@ -115,15 +149,7 @@ func (state *State) monitorKey(e gfx.KeyEvent) (gfx.EventResult, bool) {
 		state.save()
 		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	if state.monitorMenu {
-		if e.Key == gfx.KeyTab {
-			state.monitorMenu = false
-			return gfx.EventResult{Handled: true, Repaint: true, ContinueTraversal: true}, true
-		}
-		if id, ok := state.selectScroll(true, hitMonitorMenuDismiss).Navigate(e.Key, e.Target, true); ok {
-			return gfx.EventResult{Handled: true, Repaint: true, Focus: id, FocusVisible: true}, true
-		}
-	} else if e.Target == hitMonitorInterval && e.Key == gfx.KeyDown {
+	if !state.monitorMenu && e.Target == hitMonitorInterval && e.Key == gfx.KeyDown {
 		state.monitorMenu = true
 		state.monitorMenuSession = state.activeSessionID
 		return gfx.EventResult{Handled: true, Repaint: true, Focus: hitMonitorEvery1, FocusVisible: true}, true
@@ -147,12 +173,11 @@ func (state *State) monitorKey(e gfx.KeyEvent) (gfx.EventResult, bool) {
 		return gfx.EventResult{}, false
 	}
 	p := &s.stats.panel
-	_, y, ok := state.monitorScrollArea(p).ScrollForKey(0, p.scroll, e.Key, 28)
-	if !ok {
-		return gfx.EventResult{}, false
+	if next, ok := state.monitorScrollArea(p).ScrollForKey(p.scroll, e.Key, 28); ok {
+		p.scroll = next
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	p.scroll = y
-	return gfx.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{}, false
 }
 
 func (state *State) monitorDividerX() float32 {

@@ -1367,9 +1367,6 @@ func (state *State) closeModal() {
 	if state.modal == modalPasteReview {
 		state.pasteReview = pasteReviewUI{}
 	}
-	if state.modal == modalDashboard {
-		state.dashboard.editor.order.Cancel()
-	}
 	if state.modal == modalDashboardAdd {
 		state.dashboard.addHosts = nil
 	}

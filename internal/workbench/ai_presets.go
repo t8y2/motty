@@ -44,6 +44,16 @@ var aiPresets = [...]aiPreset{
 
 const aiPresetCustom = len(aiPresets) - 1
 
+// aiPresetChoices numbers aiPresets for the form's Select, whose value is the
+// preset's index.
+var aiPresetChoices = func() []int {
+	choices := make([]int, len(aiPresets))
+	for index := range choices {
+		choices[index] = index
+	}
+	return choices
+}()
+
 func (preset aiPreset) address(language i18n.Language) string {
 	if language == i18n.Chinese && preset.urlZH != "" {
 		return preset.urlZH
@@ -59,16 +69,22 @@ func (state *State) aiPresetLabel(index int) string {
 	return aiPresets[index].label
 }
 
-// aiChoosePreset fills the form from a preset. The name follows the preset
-// only while it is still what a preset put there, so a name typed by hand
-// stays.
+// aiChoosePreset fills the form from a preset, the form's preset being the one
+// it came from.
 func (state *State) aiChoosePreset(index int) {
+	state.aiChoosePresetFrom(state.ai.cfg.preset, index)
+}
+
+// aiChoosePresetFrom fills the form from a preset, from being the preset the
+// form was showing before. The name follows the preset only while it is still
+// what a preset put there, so a name typed by hand stays.
+func (state *State) aiChoosePresetFrom(from, index int) {
 	cfg := &state.ai.cfg
 	if index < 0 || index >= len(aiPresets) {
 		return
 	}
 	preset := aiPresets[index]
-	if name := cfg.name.String(); name == "" || name == state.aiPresetName(cfg.preset) {
+	if name := cfg.name.String(); name == "" || name == state.aiPresetName(from) {
 		cfg.name.SetSelection(text.Range{Start: 0, End: cfg.name.RuneCount()})
 		cfg.name.Insert(state.aiPresetName(index))
 	}
@@ -77,7 +93,7 @@ func (state *State) aiChoosePreset(index int) {
 	cfg.modelsURL.SetSelection(text.Range{Start: 0, End: cfg.modelsURL.RuneCount()})
 	cfg.modelsURL.Insert("")
 	if store.IsCLIKind(preset.kind) {
-		if cfg.preset != index {
+		if from != index {
 			// A path belongs to one CLI executable, not to the preset slot.
 			cfg.cliPath = text.Editor{}
 			cfg.cliPath.Restrict(printableLine, 4096)
@@ -86,7 +102,7 @@ func (state *State) aiChoosePreset(index int) {
 		cfg.apiKey = text.Editor{}
 		cfg.hadKey = false
 	}
-	cfg.kind, cfg.preset, cfg.presetOpen = preset.kind, index, false
+	cfg.kind, cfg.preset = preset.kind, index
 	state.aiDiscoverCLIPath()
 }
 

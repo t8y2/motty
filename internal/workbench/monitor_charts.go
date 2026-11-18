@@ -1,7 +1,6 @@
 package workbench
 
 import (
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 )
 
@@ -13,11 +12,8 @@ const (
 )
 
 type monitorChart struct {
-	state    components.ChartState
-	series   [2]components.ChartSeries
-	values   [2][]float32
-	style    [2]components.ChartAreaStyle
-	gradient [2]components.ChartAreaGradient
+	series [2]monitorChartSeries
+	values [2][]float32
 }
 
 var monitorChartHits = [...]gfx.ID{
@@ -48,32 +44,18 @@ func (s *State) paintMonitorTrend(c *gfx.Canvas, p *monitorView, b gfx.Rect, met
 			tint = s.monitorColors().cpu
 			name = s.messages.SFTPUpload
 		}
-		cache.gradient[i].From, cache.gradient[i].To = tint, tint
-		cache.gradient[i].To.Alpha = 0
-		cache.style[i] = components.ChartAreaStyle{Opacity: .22, Gradient: &cache.gradient[i]}
-		if s.pal.dark {
-			cache.style[i].Opacity = .28
-		}
-		cache.series[i] = components.ChartSeries{Key: name, Label: name, Color: tint, AreaStyle: &cache.style[i]}
+		cache.series[i].color, cache.series[i].label = tint, name
 	}
-	cache.values[0] = values[metric][start:p.count]
+	cache.series[0].values = values[metric][start:p.count]
 	if count == 2 {
-		cache.values[1] = p.up[start:p.count]
+		cache.series[1].values = p.up[start:p.count]
 	}
-	axis := components.ChartAxis{Hidden: true}
+	options := monitorChartOptions{hiddenAxes: true, label: label, focused: c.Focused() == monitorChartHits[metric]}
 	if metric <= monitorDisk {
-		axis.Fixed = true
-		axis.Min = 0
-		axis.Max = 100
+		options.fixedY, options.yMin, options.yMax = true, 0, 100
 	}
-	theme := s.Theme()
-	theme.Border = gfx.Color{}
+	options.xMin, options.xMax = last-60, last
 	c.Clip(b)
-	components.PaintAreaChart(c, theme, b, monitorChartHits[metric], components.AreaChart{
-		Series: cache.series[:count], X: p.x[start:p.count], Values: cache.values[:count],
-		Curve: components.ChartCurveMonotone, Fill: components.ChartFillGradient, StrokeWidth: 1.5,
-		XAxis: components.ChartAxis{Hidden: true, Linear: true, Fixed: true, Min: last - 60, Max: last},
-		YAxis: axis, HideTooltip: true, Label: label, Version: p.version,
-	}, &cache.state)
+	paintMonitorTrend(c, b, monitorChartHits[metric], p.x[start:p.count], cache.series[:count], options)
 	c.Unclip()
 }

@@ -131,11 +131,13 @@ func (world *settingsWorld) paint() (*gfx.Canvas, []string) {
 func setAISteps(t *testing.T, state *State, steps int) {
 	t.Helper()
 	state.Click(hitAISetStepsValue)
-	editor := state.EditorFor(hitAISetStepsValue)
-	if editor == nil {
-		t.Fatalf("the step field has no editor")
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 3200})
+	input := state.WindowConfig(app.Config{}).TextInput(app.TextInputContext{ID: hitAISetStepsValue})
+	if input == nil {
+		t.Fatalf("the step field has no page editor")
 	}
-	editor.Insert(strconv.Itoa(steps))
+	input.Editor.Insert(strconv.Itoa(steps))
 	state.Key(gfx.KeyEvent{Target: hitAISetStepsValue, Key: gfx.KeyEnter})
 }
 
@@ -1320,29 +1322,22 @@ func TestAProviderCanStartFromAPresetAndKeepsAnyNameTypedByHand(t *testing.T) {
 	world := newSettingsWorld(t, newLister())
 	state := world.state
 	state.Click(hitAISetProviderAdd)
-	world.paint()
-	state.Click(hitAISetFormPreset)
-	if !state.ai.cfg.presetOpen {
-		t.Fatal("the list of presets did not open")
-	}
-	world.paint()
+	m := state.messages.AISettings
 	deepseek := 3
-	state.Click(hitAISetFormPresetItems.At(deepseek))
+	chooseSelectOption(t, state, m.FormPreset, state.aiPresetLabel(deepseek))
 	cfg := &state.ai.cfg
-	if cfg.presetOpen || cfg.baseURL.String() != aiPresets[deepseek].url || cfg.name.String() != "DeepSeek" || cfg.kind != store.KindOpenAI {
-		t.Fatalf("form after choosing DeepSeek: open=%v url=%q name=%q kind=%q", cfg.presetOpen, cfg.baseURL.String(), cfg.name.String(), cfg.kind)
+	if cfg.baseURL.String() != aiPresets[deepseek].url || cfg.name.String() != "DeepSeek" || cfg.kind != store.KindOpenAI {
+		t.Fatalf("form after choosing DeepSeek: url=%q name=%q kind=%q", cfg.baseURL.String(), cfg.name.String(), cfg.kind)
 	}
 	// Choosing another preset replaces what the first one put there, and Claude speaks the other API.
-	state.Click(hitAISetFormPreset)
-	state.Click(hitAISetFormPresetItems.At(0))
+	chooseSelectOption(t, state, m.FormPreset, state.aiPresetLabel(0))
 	if cfg.name.String() != "Claude" || cfg.kind != store.KindAnthropic || cfg.baseURL.String() != aiPresets[0].url {
 		t.Fatalf("form after choosing Claude: url=%q name=%q kind=%q", cfg.baseURL.String(), cfg.name.String(), cfg.kind)
 	}
 	// A name the user typed is not overwritten.
 	cfg.name.SetSelection(text.Range{Start: 0, End: cfg.name.RuneCount()})
 	cfg.name.Insert("Work")
-	state.Click(hitAISetFormPreset)
-	state.Click(hitAISetFormPresetItems.At(1))
+	chooseSelectOption(t, state, m.FormPreset, state.aiPresetLabel(1))
 	if cfg.name.String() != "Work" || cfg.baseURL.String() != aiPresets[1].url {
 		t.Fatalf("form after choosing OpenAI: url=%q name=%q", cfg.baseURL.String(), cfg.name.String())
 	}
@@ -1365,7 +1360,7 @@ func TestEditingAProviderOffersNoPresets(t *testing.T) {
 	provider := world.addOpenAI(t, "Mine", "https://example.test/v1", "k")
 	world.state.aiOpenProviderForm(provider.ID)
 	canvas, _ := world.paint()
-	if _, ok := hitByID(canvas, hitAISetFormPreset); ok {
+	if hasLabel(canvas, world.state.messages.AISettings.FormPreset, gfx.RoleCombobox) {
 		t.Fatal("the preset list is offered while editing")
 	}
 }

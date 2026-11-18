@@ -97,15 +97,15 @@ func TestCatalogPagesScrollLongLists(t *testing.T) {
 			t.Fatal("the snippets page has no scroll area")
 		}
 		rowHeight := components.TableRowHeight(state.Theme())
-		if scroll.Content <= float32(count)*rowHeight {
-			t.Fatalf("expanded detail did not add height to the list: %v <= %v",
-				scroll.Content, float32(count)*rowHeight)
+		if state.snippets.rows.RowHeightAt(0) <= rowHeight {
+			t.Fatalf("the expanded row kept its height: %v <= %v",
+				state.snippets.rows.RowHeightAt(0), rowHeight)
 		}
-		first, ok := findSnapshotHit(view.Snapshot(), hitSnippetRowList.At(0))
+		first, ok := findSnapshotHit(view.Snapshot(), state.snippets.rows.RowID(0))
 		if !ok {
 			t.Fatal("the first row is not painted")
 		}
-		if _, ok := findSnapshotHit(view.Snapshot(), hitSnippetRowList.At(count-1)); ok {
+		if _, ok := findSnapshotHit(view.Snapshot(), state.snippets.rows.RowID(count-1)); ok {
 			t.Fatal("the list fits every row without scrolling")
 		}
 		at := gfx.Point{X: first.Bounds.X + first.Bounds.Width/2, Y: first.Bounds.Y + first.Bounds.Height/2}
@@ -127,10 +127,10 @@ func TestCatalogPagesScrollLongLists(t *testing.T) {
 		if offset := state.sectionBodies.snippets.rows.ScrollState().Offset; offset <= 0 {
 			t.Fatalf("wheel left the list at offset %v", offset)
 		}
-		if _, ok := findSnapshotHit(view.Snapshot(), hitSnippetRowList.At(count-1)); !ok {
+		if _, ok := findSnapshotHit(view.Snapshot(), state.snippets.rows.RowID(count-1)); !ok {
 			t.Fatal("the last row is still unreachable at the end of the list")
 		}
-		if _, ok := findSnapshotHit(view.Snapshot(), hitSnippetRowList.At(0)); ok {
+		if _, ok := findSnapshotHit(view.Snapshot(), state.snippets.rows.RowID(0)); ok {
 			t.Fatal("the first row is still painted at the end of the list")
 		}
 		if err := view.Scroll(gfx.ScrollEvent{X: at.X, Y: at.Y, DeltaY: -10000, Precise: true}); err != nil {

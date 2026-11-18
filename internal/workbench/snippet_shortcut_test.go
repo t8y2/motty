@@ -160,7 +160,9 @@ func TestASnippetWithoutAShortcutIsSentFromItsPage(t *testing.T) {
 	}
 
 	state.Click(hitSnippets)
-	if got := doubleClick(state, hitSnippetRowList.At(0)); !got.Handled || state.activeSection != sectionTerminal || shell.typed() != "ls --all\rls --all\r" {
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	if got := doubleClick(state, state.snippets.rows.RowID(0)); !got.Handled || state.activeSection != sectionTerminal || shell.typed() != "ls --all\rls --all\r" {
 		t.Fatalf("double click: handled=%v section=%d, shell heard %q", got.Handled, state.activeSection, shell.typed())
 	}
 }
@@ -175,7 +177,9 @@ func TestRightClickingASnippetRowOpensItsMenu(t *testing.T) {
 	shell := world.conns[0].shell(t)
 
 	state.Click(hitSnippets)
-	secondary := gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitSnippetRowList.At(1)}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	secondary := gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: state.snippets.rows.RowID(1)}
 	if got := pointer(state, secondary); !got.Handled || !state.snippetMenu.open || state.snippetMenu.index != 1 || state.snippets.selected != 1 {
 		t.Fatalf("handled=%v menu=%+v selected=%d", got.Handled, state.snippetMenu, state.snippets.selected)
 	}
@@ -185,7 +189,9 @@ func TestRightClickingASnippetRowOpensItsMenu(t *testing.T) {
 	}
 
 	state.Click(hitSnippets)
-	pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitSnippetRowList.At(0)})
+	var rowCanvas gfx.Canvas
+	state.Paint(&rowCanvas, gfx.Size{Width: 1400, Height: 900})
+	pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: state.snippets.rows.RowID(0)})
 	chooseMenu(t, state, hitSnippetMenuDelete)
 	if state.modal != modalSnippetDelete || len(state.snippets.list) != 2 {
 		t.Fatalf("the menu delete opened modal %d with %d snippets", state.modal, len(state.snippets.list))

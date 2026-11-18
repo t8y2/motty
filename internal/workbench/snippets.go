@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -69,8 +70,6 @@ var (
 )
 
 var (
-	hitSnippetRowList    = tree.Sub(snippetsHits, tree.Name("snippet-row")) // + snippet index
-	hitSnippetHandles    = tree.Sub(snippetsHits, tree.Name("snippet-handle"))
 	hitSnippetExpandList = tree.Sub(snippetsHits, tree.Name("snippet-expand")) // + snippet index
 	hitSnippetSort       = tree.Sub(snippetsHits, tree.Name("snippet-sort"))   // + column index
 	hitSnippetSendList   = tree.Sub(snippetsHits, tree.Name("snippet-send"))   // the command palette's entries
@@ -113,8 +112,19 @@ type snippetsUI struct {
 	// The page: the selected row and the count under the table.
 	selected  int
 	sort      components.TableSortState
-	grid      components.ReorderGridState
 	countText string
+	// selectedRow is the place selected occupies in visible as of this paint,
+	// so the first paint shows a choice the list has not been told yet.
+	selectedRow int
+	// rows is the page's list: its rows are the snippets the filter shows, and
+	// are dragged or moved with Alt and the arrows while the page shows its
+	// manual order. rowDecl, reorder and the row hooks are made once, so a paint
+	// does not allocate them again.
+	rows      ui.ListState
+	rowDecl   func(ui.ListRow)
+	reorder   func(rows []int, to int)
+	rowRule   func(*ui.DrawContext)
+	detailCut func(*ui.DrawContext)
 	// detailHeight and detailLineHeight are the band the expanded command takes,
 	// measured when the page declares the scroll area.
 	detailHeight     float32
@@ -139,9 +149,22 @@ type snippetsUI struct {
 	hoverSince  time.Duration
 	hoverOpen   bool
 	hoverRow    int
-	hoverAnchor gfx.Rect
+	hoverAnchor ui.Box
 	cardLines   []string
 	cardCache   gfx.EllipsisCache
+	// hoverCandidate and hoverCandidateAnchor are the row the pointer is on in
+	// this paint, before the rest has opened the card. hoverName, hoverLineHeight
+	// and hoverBody are what the popover shows.
+	hoverCandidate       int
+	hoverCandidateAnchor ui.Box
+	hoverC               ui.C
+	hoverName            string
+	hoverLineHeight      float32
+	hoverBody            func()
+	// detailName and detailCommand name the expanded row for assistive
+	// technology, without a closure per paint.
+	detailName    string
+	detailCommand string
 }
 
 // resetSnippetPreview closes the expanded row and the command preview after the
@@ -149,7 +172,35 @@ type snippetsUI struct {
 func (form *snippetsUI) resetSnippetPreview() {
 	form.expanded = 0
 	form.hoverTarget, form.hoverOpen, form.hoverRow = gfx.ID{}, false, 0
-	form.hoverAnchor = gfx.Rect{}
+	form.hoverAnchor = ui.Box{}
+}
+
+// syncRowSelection makes the list's keyboard row follow selected after the list
+// or its order changed; a user's own choice is read back from the list instead.
+func (form *snippetsUI) syncRowSelection() {
+	row := slices.Index(form.visible, form.selected)
+	form.rows.Select(row)
+}
+
+// prepareSnippetRows makes the list's callbacks once, so a paint reuses them.
+func (form *snippetsUI) prepareSnippetRows(state *State) {
+	if form.rowDecl != nil {
+		return
+	}
+	form.rowDecl = state.declareSnippetRow
+	form.reorder = func(rows []int, to int) { state.moveSnippetRows(rows, to) }
+	form.rowRule = state.paintSnippetRowRule
+	form.detailCut = state.paintSnippetDetailRegion
+	form.rows.NoTypeahead = true
+	// Rows are named by their place, not by the snippet's index: reordering
+	// changes an index's owner, and the list's Alt+arrow focus follows the place.
+	form.rows.Key = nil
+	form.rows.Label = func(i int) string {
+		if i < 0 || i >= len(form.visible) {
+			return ""
+		}
+		return form.list[form.visible[i]].Name
+	}
 }
 
 // cleanSnippetText makes one line of what was typed: a snippet is sent as
@@ -444,53 +495,46 @@ func (state *State) moveSnippet(index, direction int) bool {
 	return true
 }
 
-func (state *State) moveSnippetTo(source, target int) bool {
+// moveSnippetTo puts the snippet at source before position to in the manual
+// order, as ListState.Reorder says: to is the row it goes before, len(list) for
+// the end. It is the page's reorder callback.
+func (state *State) moveSnippetTo(source, to int) bool {
 	form := &state.snippets
-	if source < 0 || target < 0 || source >= len(form.list) || target >= len(form.list) || source == target ||
+	n := len(form.list)
+	if source < 0 || source >= n || to < 0 || to > n || source == to ||
 		form.sort.Direction != components.TableSortNone || !form.filter.all() {
 		return false
 	}
 	entry := form.list[source]
-	if source < target {
-		copy(form.list[source:target], form.list[source+1:target+1])
+	if source < to {
+		to--
+		if to == source {
+			return false
+		}
+		copy(form.list[source:to], form.list[source+1:to+1])
 	} else {
-		copy(form.list[target+1:source+1], form.list[target:source])
+		copy(form.list[to+1:source+1], form.list[to:source])
 	}
-	form.list[target] = entry
-	form.selected = target
+	form.list[to] = entry
+	form.selected = to
 	form.resetSnippetPreview()
 	state.refreshSnippets()
 	state.save()
 	return true
 }
 
-func (state *State) snippetReorderPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+// moveSnippetRows is the ListState.Reorder callback: it moves the rows the list
+// carries, given by their place in visible, to before place to.
+func (state *State) moveSnippetRows(rows []int, to int) {
 	form := &state.snippets
-	if state.activeSection != sectionSnippets || state.modal != modalNone || form.sort.Direction != components.TableSortNone || !form.filter.all() {
-		form.grid.Cancel()
-		return gfx.EventResult{}, false
+	if len(rows) == 0 || form.sort.Direction != components.TableSortNone || !form.filter.all() {
+		return
 	}
-	move, result := form.grid.Pointer(event)
-	if move.Valid() && move.ID.Scope() == hitSnippetHandles && move.Target.Scope() == hitSnippetHandles {
-		if state.moveSnippetTo(item(move.ID), item(move.Target)) {
-			result.Focus = hitSnippetHandles.At(item(move.Target))
-		}
+	source := rows[0]
+	if source < 0 || source >= len(form.visible) {
+		return
 	}
-	return result, result.Handled
-}
-
-func (state *State) snippetReorderKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
-	form := &state.snippets
-	if state.activeSection != sectionSnippets || state.modal != modalNone || form.sort.Direction != components.TableSortNone || !form.filter.all() {
-		return gfx.EventResult{}, false
-	}
-	move, result := form.grid.Key(event)
-	if move.Valid() && move.ID.Scope() == hitSnippetHandles && move.Target.Scope() == hitSnippetHandles {
-		if state.moveSnippetTo(item(move.ID), item(move.Target)) {
-			result.Focus = hitSnippetHandles.At(item(move.Target))
-		}
-	}
-	return result, result.Handled
+	state.moveSnippetTo(form.visible[source], to)
 }
 
 // sendSnippet types a snippet into the active terminal, and into the other panes
@@ -672,8 +716,10 @@ func (state *State) declareSnippetDialogBody(c ui.C) {
 			}
 			form.dialogShortcut = ui.Row(c).Size(240, 32).Shrink(0).Justify(ui.End).Gap(8)
 			form.dialogShortcut.Children(func() {
-				ui.Button(c, label).Outline().Hit(hitSnippetShortcut, label)
-				ui.Button(c, m.SnippetShortcutClear).Ghost().Disabled(!form.shortcut.Valid() && !form.capturing).Hit(hitSnippetShortcutOff, m.SnippetShortcutClear)
+				// The shortcut row's buttons keep the height they had when the
+				// row was painted by hand.
+				ui.Button(c, label).Outline().Height(28).Hit(hitSnippetShortcut, label)
+				ui.Button(c, m.SnippetShortcutClear).Ghost().Height(28).Disabled(!form.shortcut.Valid() && !form.capturing).Hit(hitSnippetShortcutOff, m.SnippetShortcutClear)
 			})
 		})
 		if form.dialogError != "" {

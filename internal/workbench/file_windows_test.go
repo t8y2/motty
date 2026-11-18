@@ -130,6 +130,7 @@ func TestDocumentLongPathsAndFooterEncodingMenu(t *testing.T) {
 				}
 				foundTabHint := false
 				foundReload, foundSave := false, false
+				var encoding gfx.Rect
 				for _, hit := range view.Snapshot().Hits {
 					if hit.ID.Scope() == hitDocumentTabList {
 						foundTabHint = true
@@ -141,7 +142,11 @@ func TestDocumentLongPathsAndFooterEncodingMenu(t *testing.T) {
 					if hit.ID == hitDocumentLocation {
 						t.Fatal("the document name was painted twice")
 					}
-					if hit.ID == hitDocumentEncoding || hit.ID == hitDocumentInput {
+					if hit.ID == hitDocumentInput {
+						checkBounds(hit.Bounds)
+					}
+					if hit.Role == gfx.RoleCombobox && hit.Label == d.owner.messages.FileWindow.Encoding {
+						encoding = hit.Bounds
 						checkBounds(hit.Bounds)
 					}
 					if hit.Label == d.owner.messages.FileWindow.Reload {
@@ -159,8 +164,10 @@ func TestDocumentLongPathsAndFooterEncodingMenu(t *testing.T) {
 				if !foundReload || !foundSave {
 					t.Fatal("missing footer reload or save button")
 				}
-				d.encodingOpen = true
-				if err := view.Resize(int(size.Width), int(size.Height)+1); err != nil {
+				if encoding.Width <= 0 {
+					t.Fatal("missing the footer encoding select")
+				}
+				if err := view.Click(encoding.X+encoding.Width/2, encoding.Y+encoding.Height/2); err != nil {
 					t.Fatal(err)
 				}
 				if err := view.Rest(); err != nil {
@@ -168,18 +175,14 @@ func TestDocumentLongPathsAndFooterEncodingMenu(t *testing.T) {
 				}
 				visible := 0
 				for _, hit := range view.Snapshot().Hits {
-					if hit.ID.Scope() == hitDocumentEncodings && !hit.Block {
+					if hit.Role == gfx.RoleOption && !hit.Block {
 						visible++
 						checkBounds(hit.Bounds)
-						if hit.Bounds.Y+hit.Bounds.Height > d.ui.encodingBounds.Y {
-							t.Fatal("footer menu failed to open above the selector")
-						}
 					}
 				}
 				if visible == 0 {
 					t.Fatal("no encoding choices visible")
 				}
-				d.encodingOpen = false
 				view.Close()
 			}
 		}

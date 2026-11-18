@@ -55,22 +55,6 @@ func (state *State) selectTypeaheadOptions(target gfx.ID) ([]components.MenuType
 			items = append(items, components.MenuTypeaheadItem{ID: option.ID, Label: option.Label, Disabled: option.Disabled})
 		}
 		return items, state.aiChooseOnlyTarget, true
-	case target == hitAISetFormPreset && !state.ai.cfg.presetOpen:
-		items := make([]components.MenuTypeaheadItem, 0, len(aiPresets))
-		for index := range aiPresets {
-			items = append(items, components.MenuTypeaheadItem{
-				ID: hitAISetFormPresetItems.At(index), Label: state.aiPresetLabel(index),
-			})
-		}
-		return items, func(id gfx.ID) bool {
-			index, ok := id.In(hitAISetFormPresetItems)
-			if !ok || index < 0 || index >= len(aiPresets) {
-				return false
-			}
-			state.ai.cfg.preset = index
-			return true
-		}, true
-
 	case state.modal == modalNewHost && target == hitDialogPortsTrigger && !state.editor.portsOpen:
 		items := make([]components.MenuTypeaheadItem, 0, len(state.editor.ports))
 		for index, port := range state.editor.ports {
