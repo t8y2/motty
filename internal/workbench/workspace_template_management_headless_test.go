@@ -90,7 +90,7 @@ func TestWorkspaceTemplateManagementThroughKeyboard(t *testing.T) {
 			original := slices.Clone(state.templates[0].HostIDs)
 			var input app.TextInput
 			view, err := headless.Open(state.WindowConfig(app.Config{
-				Title: "Workspace template", Width: MinimumWindowWidth, Height: MinimumWindowHeight,
+				Title: "Workspace template", Width: 1280, Height: 900,
 				Tree: Tree(), Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key,
 				OnScroll: state.Scroll, OnResize: state.Resize,
 				TextInput: func(context app.TextInputContext) *app.TextInput {

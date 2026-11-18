@@ -506,7 +506,11 @@ type State struct {
 	tabOptions        []components.TabOption
 	workspaceTabs     []layoutcore.WorkspaceInfo
 	// workspacePaneTabLabels is the tab strip's labels, reused every frame.
-	workspacePaneTabLabels []string
+	workspacePaneTabLabels  []string
+	workspacePaneTabIndices []int
+	// workspacePaneTabChoice is the page Tabs' chosen pane, which a click or
+	// the arrows move; the paint that finds it changed makes that pane active.
+	workspacePaneTabChoice int
 	tabStrip               tabStrip
 	windowBarScroll        windowBarScroll
 	tabOrientation         tabOrientation
@@ -648,6 +652,7 @@ type State struct {
 	workspaceLibraryExpanded      bool
 	workspaceLibraryPointerID     string
 	workspaceLibraryScroll        float32
+	workspaceLibraryScrollSynced  float32
 	workspaceLibraryBounds        gfx.Rect
 	workspaceLibraryContent       float32
 	workspaceTemplateMoreBounds   []gfx.Rect
@@ -655,7 +660,10 @@ type State struct {
 	workspaceTemplateDelete       workspaceTemplateDelete
 	workspaceCommandEdit          workspaceCommandInline
 	workspaceTemplateFocusPending gfx.ID
-	workspaceDraft                workspaceDraft
+	// workspaceHeaderFocusPending is where the keyboard returns after a header
+	// menu closes; the pane painter applies it once the page has painted.
+	workspaceHeaderFocusPending gfx.ID
+	workspaceDraft              workspaceDraft
 	// workspaceHeaderPlan and workspaceHeaderSlots are what the managed
 	// workspace's header declaration leaves for its painter.
 	workspaceHeaderPlan  workspaceHeaderPlan
@@ -888,26 +896,21 @@ type State struct {
 	// was none), so wheel events can tell which view they are over. The panel is
 	// declared inside the workbench page now, so contextPanelScope is the page
 	// container its elements live in, and contextPanelMode says which view it
-	// declared. contextDrawer is the page's drawer chrome while the panel is a
-	// narrow overlay; its description is kept for the paint that opens it.
-	contextRect              gfx.Rect
-	contextPanelScope        gfx.Scope
-	contextPanelMode         contextPanelMode
-	contextPanelDocked       bool
-	contextDrawer            components.Drawer
-	contextDrawerDescription string
-	contextDrawerOpen        bool
-	// The panel's Draw callbacks are method values made once: a paint that made
-	// them again would allocate.
-	contextPanelDraw   func(*ui.DrawContext)
-	contextDrawerBegin func(*ui.DrawContext)
-	contextDrawerEnd   func(*ui.DrawContext)
-	shortcuts          shortcutMap
-	shortcutCapture    shortcutAction
-	shortcutError      string
-	reconnectWaiters   int
-	pal                *palette
-	theme              gfx.Theme
+	// declared. contextDrawerOpen is the narrow overlay's open state.
+	contextRect        gfx.Rect
+	contextPanelScope  gfx.Scope
+	contextPanelMode   contextPanelMode
+	contextPanelDocked bool
+	contextDrawerOpen  bool
+	// The panel's Draw callback is a method value made once: a paint that made
+	// it again would allocate.
+	contextPanelDraw func(*ui.DrawContext)
+	shortcuts        shortcutMap
+	shortcutCapture  shortcutAction
+	shortcutError    string
+	reconnectWaiters int
+	pal              *palette
+	theme            gfx.Theme
 	// termPal is the terminal's own look: pal with the chosen color scheme and
 	// the highlight rules applied. termEpoch counts its rebuilds.
 	termPal   palette
@@ -1024,9 +1027,9 @@ type State struct {
 	cellWidth, cellHeight float32
 	panes                 []Pane
 	paneSplits            []PaneSplit
+	paneSplitters         []paneSplitterUI
 	terminalDrop          terminalDrop // the terminal that files being dragged over would be uploaded from
 	terminalUploads       []terminalUploadBatch
-	draggedPaneSplit      uint32
 	draggedContextDivider bool
 	deck                  layoutcore.Deck
 	workspaceViewCacheID  layoutcore.WorkspaceID
@@ -2649,9 +2652,6 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 		return result
 	}
 	if result, handled := state.monitorPointer(event); handled {
-		return result
-	}
-	if result, handled := state.paneDividerPointer(event); handled {
 		return result
 	}
 	// A press on a pane's own ground switches to that pane, and the keyboard goes

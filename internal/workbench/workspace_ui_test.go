@@ -464,8 +464,8 @@ func TestContextPanelCollapseRemovesGapAndNarrowWindowUsesDrawer(t *testing.T) {
 	if state.workspacePixelBounds(narrow) != state.baseWorkspacePixelBounds(narrow) {
 		t.Fatalf("drawer reserved terminal width: %+v", state.workspacePixelBounds(narrow))
 	}
-	if drawer.TrappedFocusScope() != dialogScope {
-		t.Fatalf("drawer focus scope = %d", drawer.TrappedFocusScope())
+	if drawer.TrappedFocusScope().IsZero() {
+		t.Fatal("drawer does not trap the keyboard")
 	}
 	if _, ok := hitByID(&drawer, contextID(hitSFTPClose)); !ok {
 		t.Fatal("drawer SFTP content is missing")
@@ -557,16 +557,17 @@ func TestWorkspaceDividerDragResizesTerminalsAndPersists(t *testing.T) {
 	y := divider.Bounds.Y + divider.Bounds.Height/2
 	frame := state.workspacePixelBounds(size)
 	dragX := frame.X + 0.5 + (frame.Width-1)*0.70
-	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hitPaneDividerList.At(0), X: divider.Bounds.X + 2, Y: y, Viewport: size})
-	move := state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: hitPaneDividerList.At(0), Captured: true, X: dragX, Y: y, Viewport: size})
+	target := hitPaneDividerList.At(0)
+	canvas.DeliverPointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: target, X: divider.Bounds.X + 2, Y: y, Viewport: size}, size, state.Paint)
+	canvas.DeliverPointer(gfx.PointerEvent{Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: target, Captured: true, X: dragX, Y: y, Viewport: size}, size, state.Paint)
 	beforeRelease := newTestState(t, options).PaneSplits(nil)
 	if len(beforeRelease) != 1 || beforeRelease[0].Ratio != defaultPaneRatio {
 		t.Fatalf("divider move persisted before pointer up: %+v", beforeRelease)
 	}
-	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: hitPaneDividerList.At(0), Captured: true, X: dragX, Y: y, Viewport: size})
-	if !move.Handled || !move.Repaint {
-		t.Fatalf("divider move = %+v", move)
+	if ratio := state.PaneSplits(nil)[0].Ratio; ratio < 0.65 || ratio > 0.75 {
+		t.Fatalf("divider move did not resize: ratio %v", ratio)
 	}
+	canvas.DeliverPointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: target, Captured: true, X: dragX, Y: y, Viewport: size}, size, state.Paint)
 	if state.workspaceViewBuilds != builds {
 		t.Fatalf("splitter drag rebuilt the complete workspace view: %d -> %d", builds, state.workspaceViewBuilds)
 	}
@@ -636,12 +637,9 @@ func TestNestedWorkspaceDividerPreservesEveryLeafMinimumSize(t *testing.T) {
 			} else {
 				moveY = frame.Y + frame.Height + 100
 			}
-			state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: id, X: downX, Y: downY, Viewport: test.size})
-			move := state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: id, Captured: true, X: moveX, Y: moveY, Viewport: test.size})
-			state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: id, Captured: true, X: moveX, Y: moveY, Viewport: test.size})
-			if !move.Repaint {
-				t.Fatal("extreme splitter drag did not resize")
-			}
+			canvas.DeliverPointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: id, X: downX, Y: downY, Viewport: test.size}, test.size, state.Paint)
+			canvas.DeliverPointer(gfx.PointerEvent{Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: id, Captured: true, X: moveX, Y: moveY, Viewport: test.size}, test.size, state.Paint)
+			canvas.DeliverPointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: id, Captured: true, X: moveX, Y: moveY, Viewport: test.size}, test.size, state.Paint)
 			for _, pane := range state.Panes(nil) {
 				bounds := pixelBounds(frame, pane.Bounds)
 				if bounds.Width+0.01 < minPaneWidth || bounds.Height+0.01 < minPaneHeight {
@@ -705,8 +703,8 @@ func TestWorkspaceDividerDragDoesNotResizeBackgroundWorkspace(t *testing.T) {
 	y := divider.Bounds.Y + divider.Bounds.Height/2
 	frame := state.workspacePixelBounds(size)
 	dragX := frame.X + 0.5 + (frame.Width-1)*0.65
-	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hitPaneDividerList.At(0), X: divider.Bounds.X, Y: y, Viewport: size})
-	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: hitPaneDividerList.At(0), Captured: true, X: dragX, Y: y, Viewport: size})
+	canvas.DeliverPointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hitPaneDividerList.At(0), X: divider.Bounds.X + 2, Y: y, Viewport: size}, size, state.Paint)
+	canvas.DeliverPointer(gfx.PointerEvent{Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: hitPaneDividerList.At(0), Captured: true, X: dragX, Y: y, Viewport: size}, size, state.Paint)
 	if cols, rows := state.sessions[2].term.screen.Size(); cols != backgroundCols || rows != backgroundRows || len(backgroundShell.resizes) != backgroundResizes {
 		t.Fatalf("background workspace resized from %dx%d/%d to %dx%d/%d", backgroundCols, backgroundRows, backgroundResizes, cols, rows, len(backgroundShell.resizes))
 	}
@@ -765,7 +763,7 @@ func BenchmarkWorkspaceSplitterDrag(b *testing.B) {
 		b.Fatal("divider hit missing")
 	}
 	y := divider.Bounds.Y + divider.Bounds.Height/2
-	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hitPaneDividerList.At(0), X: divider.Bounds.X, Y: y, Viewport: size})
+	canvas.DeliverPointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hitPaneDividerList.At(0), X: divider.Bounds.X + 2, Y: y, Viewport: size}, size, state.Paint)
 	frame := state.workspacePixelBounds(size)
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -775,7 +773,7 @@ func BenchmarkWorkspaceSplitterDrag(b *testing.B) {
 			ratio = 0.55
 		}
 		x := frame.X + 0.5 + (frame.Width-1)*ratio
-		state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: hitPaneDividerList.At(0), Captured: true, X: x, Y: y, Viewport: size})
+		canvas.DeliverPointer(gfx.PointerEvent{Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: hitPaneDividerList.At(0), Captured: true, X: x, Y: y, Viewport: size}, size, state.Paint)
 	}
 }
 

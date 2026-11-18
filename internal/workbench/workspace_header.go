@@ -151,6 +151,9 @@ func (state *State) declareWorkspaceHeader(c ui.C, size gfx.Size) {
 					Hit(hitWorkspaceHeaderLayout, plan.layoutLabel).Size(plan.layoutWidth, 30).Shrink(0)
 			}
 		})
+		if state.workspaceHeaderMenu == workspaceHeaderMenuLayout {
+			state.declareWorkspaceLayoutPanel(c, size, plan)
+		}
 	})
 	state.workspaceHeaderSlots = slots
 }
@@ -172,11 +175,9 @@ func (state *State) paintWorkspaceHeader(canvas *gfx.Canvas, size gfx.Size) (ope
 	}
 	state.paintWorkspaceBroadcast(canvas, slots.broadcast.Rect(), plan.broadcastLabel, plan.status, plan.broadcasting)
 
-	if state.workspaceHeaderMenu == workspaceHeaderMenuLayout {
-		state.paintWorkspaceLayoutMenu(canvas, size, slots.layout.Rect())
-		open = true
-	}
-	return open || state.workspaceHeaderMenu == workspaceHeaderMenuTools
+	// The layout popover is part of the page; the header only reports the menus
+	// it still owns so a window that stops managing the workspace drops them.
+	return state.workspaceHeaderMenu != workspaceHeaderMenuNone
 }
 
 // Broadcast uses a warning treatment because it changes where keystrokes go.
@@ -308,7 +309,11 @@ func (state *State) workspaceHeaderKey(event gfx.KeyEvent) gfx.EventResult {
 	}
 	if event.Key == gfx.KeyEscape && !event.Repeat {
 		state.workspaceHeaderMenu = workspaceHeaderMenuNone
-		return gfx.EventResult{Handled: true, Repaint: true, Focus: state.activeTerminalFocusHit()}
+		state.workspaceCardDrag = workspaceCardDrag{}
+		// The repaint applies this after the page popover gives its own focus
+		// back, so the keyboard ends on the terminal rather than its trigger.
+		state.workspaceHeaderFocusPending = state.activeTerminalFocusHit()
+		return gfx.EventResult{Handled: true, Repaint: true, Focus: state.workspaceHeaderFocusPending}
 	}
 	if result, handled := state.menuKey(event); handled {
 		return result
