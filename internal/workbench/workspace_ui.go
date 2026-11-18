@@ -674,7 +674,7 @@ func (state *State) paintContextPanel(canvas *gfx.Canvas, size gfx.Size, workspa
 		}
 		hit := gfx.Rect{X: handleX - (paneDividerHitWidth-1)/2, Y: base.Y, Width: paneDividerHitWidth, Height: base.Height}
 		canvas.HitWithOptions(hitContextDivider, hit, state.messages.SFTPFiles, gfx.HitOptions{
-			Role: gfx.RoleSlider, Cursor: gfx.PointerCursorResizeHorizontal,
+			Role: gfx.RoleSeparator, Cursor: gfx.PointerCursorResizeHorizontal,
 		})
 	}
 }
