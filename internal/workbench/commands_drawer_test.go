@@ -407,3 +407,45 @@ func TestCommandBarOptInSurvivesRestart(t *testing.T) {
 		t.Fatal("a new profile must start with the bar hidden")
 	}
 }
+
+// The bar is the content area's bottom strip, so a file panel docked beside the
+// terminal must not narrow it: the corners beside the terminal column are the
+// bar's, not blank. This is #981 — the strip used to stop at the terminal column
+// and leave a gap under each side panel.
+func TestCommandBarSpansTheContentWidthBesideAFilePanel(t *testing.T) {
+	state, _, _, _ := openTestSFTP(t)
+	state.snippets.list = []snippet{{Name: "pwd", Command: "pwd"}}
+	state.commands.shown = true
+	size := gfx.Size{Width: 1444, Height: 808}
+	canvas, _ := paintAt(state, size)
+	context, ok := state.deck.Context(state.deck.ActiveWorkspace())
+	if !ok || !context.Open || context.Side != layoutcore.ContextLeft {
+		t.Fatalf("the files panel is not docked left: %+v", context)
+	}
+	frame := state.toolbarDockFrame(size, true)
+	bar := state.commands.bar
+	if bar.Width <= 0 || bar.Height <= 0 {
+		t.Fatalf("the bar was not painted: %+v", bar)
+	}
+	if bar.X != frame.X || bar.Width != frame.Width {
+		t.Fatalf("bar spans %v..%v, want the content frame %v..%v", bar.X, bar.X+bar.Width, frame.X, frame.X+frame.Width)
+	}
+	// Both bottom corners of the content frame are painted by the strip: the top
+	// rectangle at each corner is the bar's own fill, so no side panel covers it
+	// and no gap is left beside it.
+	want := withAlpha(state.pal.shell, 0.6)
+	mid := bar.Y + commandsBarHeight/2
+	for _, corner := range []gfx.Point{{X: frame.X + 2, Y: mid}, {X: frame.X + frame.Width - 3, Y: mid}} {
+		var top gfx.Rectangle
+		found := false
+		for _, r := range canvas.Rectangles() {
+			if corner.X >= r.Bounds.X && corner.X < r.Bounds.X+r.Bounds.Width &&
+				corner.Y >= r.Bounds.Y && corner.Y < r.Bounds.Y+r.Bounds.Height {
+				top, found = r, true
+			}
+		}
+		if !found || top.Color != want {
+			t.Fatalf("bottom corner %v is %+v, want the bar fill %+v", corner, top.Color, want)
+		}
+	}
+}

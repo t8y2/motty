@@ -175,8 +175,12 @@ func (state *State) commandsBarRect() gfx.Rect {
 	if state.commandsDrawerHeight() <= 0 {
 		return gfx.Rect{}
 	}
-	wb := state.workspaceBoundsAboveLogs(state.deck.ActiveWorkspace(), state.viewport)
-	return gfx.Rect{X: wb.X, Y: wb.Y + wb.Height, Width: wb.Width, Height: commandsBarHeight}
+	// The strip is the content area's own bottom, so it spans the full width the
+	// panes and their side panels share, not just the terminal column between
+	// them. A side panel ends above the strip; spanning it here means nothing is
+	// left unpainted in the corners beside the bar (#981).
+	frame := state.toolbarDockFrame(state.viewport, true)
+	return gfx.Rect{X: frame.X, Y: frame.Y + frame.Height, Width: frame.Width, Height: commandsBarHeight}
 }
 
 // paintCommandsDrawer draws the single command bar beneath the terminal panes.
