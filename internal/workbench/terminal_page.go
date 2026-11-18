@@ -290,7 +290,6 @@ func (state *State) declareTerminalPane(c ui.C, session *Session, bounds gfx.Rec
 	t.paintFinding, t.paintInSplit, t.paintInactive = finding, inSplit, inactive
 	t.paintNoticeShown = showingInputNotice
 	t.paintCommandNoticeShown = state.workspaceCommandNoticeInWorkspace(session) && (inSplit || !finding)
-	t.paintCommandNotice = ui.Box{}
 	t.paintBarBackground = barBackground
 	t.paintGeometry = geometry
 	t.paintFind = findBarSlots{}
@@ -315,7 +314,7 @@ func (state *State) declareTerminalPane(c ui.C, session *Session, bounds gfx.Rec
 		c.Part(terminalBodyPart)
 		ui.Column(c).Grow(1).FillHeight().Children(func() {
 			if t.paintCommandNoticeShown {
-				t.paintCommandNotice = ui.Slot(c).Height(inputNoticeHeight).FillWidth().Shrink(0)
+				state.declareWorkspaceCommandNotice(c, session)
 			}
 			switch {
 			case showingInputNotice:

@@ -6,6 +6,7 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -87,19 +88,21 @@ func (state *State) workspaceCommandNoticeInWorkspace(session *Session) bool {
 	return false
 }
 
-func (state *State) paintWorkspaceCommandNotice(canvas *gfx.Canvas, session *Session, bounds gfx.Rect) {
+// declareWorkspaceCommandNotice declares the pending login command's strip in
+// the terminal pane: its words and the two page buttons that run or drop it.
+func (state *State) declareWorkspaceCommandNotice(c ui.C, session *Session) {
 	if !workspaceCommandPending(session) {
 		return
 	}
 	m := state.messages
-	canvas.Fill(bounds, state.pal.surface)
-	buttons := min(float32(144), bounds.Width*.55)
-	label := gfx.Rect{X: bounds.X + 8, Y: bounds.Y + 8, Width: max(0, bounds.Width-buttons-20), Height: 22}
-	monitorLabel(canvas, elide(canvas, m.WorkspaceCommandPending, 12, gfx.WeightRegular, label.Width), label, 12, state.pal.muted, gfx.WeightRegular)
-	components.BeginButtonRow(canvas, state.Theme(), gfx.Rect{X: bounds.X + bounds.Width - buttons - 4, Y: bounds.Y + 5, Width: buttons, Height: 26}).Size(components.ButtonSizeXSmall).Paint(
-		components.ButtonAction{ID: hitWorkspaceCommandRun.At(int(session.ID)), Label: m.WorkspaceCommandRun, Variant: components.ButtonOutline},
-		components.ButtonAction{ID: hitWorkspaceCommandCancel.At(int(session.ID)), Label: m.WorkspaceCommandCancel, Variant: components.ButtonSecondary},
-	)
+	ui.Row(c).Height(inputNoticeHeight).FillWidth().Shrink(0).Background(state.pal.surface).
+		PadSides(8, 4, 5, 4).Gap(6).Items(ui.Center).Children(func() {
+		ui.Text(c, m.WorkspaceCommandPending).FontSize(12).Color(state.pal.muted).Grow(1).Ellipsis()
+		ui.Button(c, m.WorkspaceCommandRun).XSmall().Outline().
+			Hit(hitWorkspaceCommandRun.At(int(session.ID)), m.WorkspaceCommandRun)
+		ui.Button(c, m.WorkspaceCommandCancel).XSmall().Secondary().
+			Hit(hitWorkspaceCommandCancel.At(int(session.ID)), m.WorkspaceCommandCancel)
+	})
 }
 
 func (state *State) clickWorkspaceCommand(id gfx.ID) bool {

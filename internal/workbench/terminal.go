@@ -163,7 +163,6 @@ type terminal struct {
 	// declaration made, which the bar's slots are painted in after the page.
 	paintFinding, paintInSplit, paintInactive bool
 	paintCommandNoticeShown                   bool
-	paintCommandNotice                        ui.Box
 	paintNoticeShown                          bool
 	paintBarBackground                        gfx.Color
 	paintGeometry                             terminalGeometry
