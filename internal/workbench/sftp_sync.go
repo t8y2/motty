@@ -66,6 +66,7 @@ func (state *State) recordTerminalDirectory(sessionID uint32, cwd term.Cwd, repl
 		return
 	}
 	session.term.followPath = cwd.Path
+	session.term.followSeq++
 }
 
 func (state *State) navigateSFTPDirectory(view *sftpView, directory string) {
@@ -269,18 +270,140 @@ func (state *State) followTerminalDirectory(session *Session) {
 		state.followLocalTerminalDirectory(session, view)
 		return
 	}
-	if view == nil || view.worker == nil || view.local || view.detached != nil || view.busy ||
-		view.dialog != sftpDialogNone || view.editPath != "" || view.pathEditing || view.dropping {
+	directory := t.followPath
+	if !state.followSFTPViews(session, directory) {
+		// Nothing can take the folder yet (a listing, a dialog, an edit is in
+		// the way). Keep the report for the next pump instead of dropping it.
 		return
+	}
+	t.followPath = ""
+}
+
+// followSFTPViews moves every open file panel for the session to directory: the
+// docked panel and, when the session also has a detached file-transfer window
+// or tab, that window's own view. Both are real panels the user can be looking
+// at, and the detached one was previously never moved at all. It reports
+// whether every panel took the folder now, so a panel that is busy keeps the
+// report for the next pump instead of the other panel's move dropping it.
+func (state *State) followSFTPViews(session *Session, directory string) bool {
+	seq := uint64(0)
+	if session.term != nil {
+		seq = session.term.followSeq
+	}
+	followed := false
+	pending := false
+	if view := session.files; view != nil && view.detached == nil {
+		if state.followSFTPView(session, view, directory, seq) {
+			followed = true
+		} else {
+			pending = true
+		}
+	}
+	if window := state.sftpWindows[session.ID]; window != nil && !window.closed {
+		if state.followSFTPView(session, window.view, directory, seq) {
+			followed = true
+		} else {
+			pending = true
+		}
+	}
+	return followed && !pending
+}
+
+// followSFTPView moves one panel to directory unless it is busy or the user is
+// working inside it. seq names the report so a kept report is not applied to a
+// panel twice, which would drag it back after the user browsed away. It reports
+// whether the panel has taken the folder now.
+func (state *State) followSFTPView(session *Session, view *sftpView, directory string, seq uint64) bool {
+	// A detached window keeps its local and remote panes in one view and
+	// view.local names the active one; it can still navigate its remote pane,
+	// so only the docked panel is held back while its local side is shown.
+	if view == nil || view.worker == nil || (view.detached == nil && view.local) {
+		return false
+	}
+	// Remember where this panel stood when the report first reached it, so a
+	// report blocked by the user can be told apart from one the user has since
+	// walked away from.
+	if seq != 0 && view.followBaseSeq != seq {
+		// Remember both where the panel is and where its pending listing is
+		// heading: a report that arrives mid-load ends up at one of them, and
+		// neither means the user walked away. A failed or cancelled listing
+		// leaves the panel at the shown folder, so its report is kept.
+		shown, pending := view.path, view.navigation.path
+		if pending == "" {
+			// A paired window can have the far side's target queued only in
+			// the browse request while this side is already listing.
+			if window := view.detached; window != nil && window.browse.pending != nil {
+				pending = window.browse.pending.paths[1-window.browse.pending.side]
+			}
+		}
+		if shown != "" || pending != "" {
+			view.followBaseSeq, view.followBase, view.followPending = seq, shown, pending
+		}
+	}
+	// A drag in progress is short-lived: keep the report until it ends instead
+	// of navigating away and dropping whatever the drag was about to move.
+	if window := view.detached; window != nil && (window.drag.armed || window.drag.active || window.foreign.active) {
+		return false
+	}
+	// The user is working in this panel (a dialog, a path being edited, a
+	// conflict to settle). Keep the report for now; the branch below decides
+	// whether the user has since moved the panel somewhere else.
+	if state.followSFTPUserBusy(session, view) {
+		return false
+	}
+	// The panel moved while the user was busy: the report names a place the
+	// user has left, so settle it instead of dragging them back there now.
+	if seq != 0 && !view.busy && view.followSeq != seq && view.followBaseSeq == seq &&
+		view.path != view.followBase && view.path != view.followPending {
+		view.followSeq = seq
+		return true
+	}
+	if view.dropping {
+		return false
+	}
+	// A detached window carries its own dialogs and conflicts; navigation
+	// readiness knows them, and also that the server is still there.
+	if !state.sftpNavigationReady(view, false) {
+		return false
 	}
 	if state.sftpPathInput && view.pathField.path == view.path && view.pathField.editor.String() != view.path {
-		return
+		return false
 	}
-	directory := t.followPath
-	t.followPath = ""
+	if seq != 0 && view.followSeq == seq {
+		return true
+	}
 	if path.Clean(view.path) != path.Clean(directory) {
-		state.openSFTPDirectory(view, directory)
+		// A detached window navigates through its own entry so the dual-pane
+		// sync underneath it keeps the local side in step (and can stop with
+		// its warning when the folder leaves the paired roots). The docked
+		// panel has no such pair and moves directly.
+		if window := view.detached; window != nil {
+			window.startBrowseNavigationHistory(false, directory, sftpNavigationPassive, 0)
+		} else {
+			state.openSFTPDirectory(view, directory)
+		}
 	}
+	if seq != 0 {
+		view.followSeq = seq
+	}
+	return true
+}
+
+// followSFTPUserBusy reports whether the user is working inside the panel, as
+// opposed to it merely being busy with a listing or a connection.
+func (state *State) followSFTPUserBusy(session *Session, view *sftpView) bool {
+	if view.dialog != sftpDialogNone || view.editPath != "" || view.pathEditing || view.lfolder.pathEditing || view.bookmarksOpen ||
+		view.sftpFolder.headerMenuOpen || view.lfolder.headerMenuOpen {
+		return true
+	}
+	if state.sftpMenu.open && state.sftpMenu.session == session.ID {
+		return true
+	}
+	window := view.detached
+	if window == nil {
+		return false
+	}
+	return window.listBlocked() || window.ui.profileQuickOpen
 }
 
 // followLocalTerminalDirectory moves a local terminal's panel to the folder its

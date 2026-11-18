@@ -172,6 +172,10 @@ type sftpView struct {
 	refreshAfterListing string
 	followUpPath        string // a follow-up that arrived before those rows were ready
 	followUpEntries     []sftpclient.Entry
+	followSeq           uint64 // the terminal folder report this panel last took
+	followBaseSeq       uint64 // the report whose arrival set followBase
+	followBase          string // the folder this panel showed when that report arrived
+	followPending       string // the folder that report's panel was already heading for
 	busy                bool
 	localBusy           bool // a local deletion is walking the disk; the server side stays usable
 	approximate         bool // the listing came from `ls` over SCP

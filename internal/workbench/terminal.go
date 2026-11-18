@@ -113,6 +113,7 @@ type terminal struct {
 	shellOpened           time.Duration    // when the shell was asked for, to give a silent one up
 	opening               chan shellResult // a shell being opened in the background, until pump collects it
 	followPath            string           // latest shell directory awaiting a safe attached file panel
+	followSeq             uint64           // names that report, so a kept one is applied once
 	reportedHome          string           // home reported by this shell, in the same path form as cwd
 	reportedDirectory     term.Cwd         // last report accepted from this shell, rather than a running program
 	promptReady           bool
@@ -487,6 +488,8 @@ func (t *terminal) resetFolderSync() {
 	t.folderIntegrationSeen, t.commandReporting = false, false
 	t.reportedDirectory = term.Cwd{}
 	t.reportedHome = ""
+	// followSeq is left alone: it names reports, and a reconnect must not make
+	// an old number look new to a panel that already took it.
 	t.submittedLines, t.followPath = 0, ""
 	t.promptVersion++
 }
