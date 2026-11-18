@@ -77,13 +77,13 @@ func (backend *aiBackend) UploadSelected(ctx context.Context, args tools.Selecte
 			return
 		}
 		for _, snapshot := range worker.Transfers(nil) {
-			if snapshot.State != sftpclient.TransferRunning {
+			// A transfer that is running before its size is known reports no
+			// progress: "0 B" without a total is not what the user is waiting for,
+			// and the first sized snapshot follows.
+			if snapshot.State != sftpclient.TransferRunning || snapshot.BytesTotal <= 0 {
 				continue
 			}
-			progress := formatBytes(snapshot.BytesDone)
-			if snapshot.BytesTotal > 0 {
-				progress += " / " + formatBytes(snapshot.BytesTotal)
-			}
+			progress := formatBytes(snapshot.BytesDone) + " / " + formatBytes(snapshot.BytesTotal)
 			backend.state.aiPost(func(state *State) {
 				if state.ai.run != backend.uploadRun {
 					return
