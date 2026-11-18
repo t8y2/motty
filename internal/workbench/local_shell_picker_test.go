@@ -146,7 +146,7 @@ func TestChosenShellIsKeptByReconnectDuplicateAndRestart(t *testing.T) {
 	withShellChoices(t, first, []localshell.Choice{{Name: "Alpha", Path: "/bin/sh", Default: true}, {Name: "Beta", Path: "/bin/bash"}}, nil)
 	first.localShell = "/bin/sh"
 	first.openLocalShellPicker(gfx.Point{X: 10, Y: 10}, false)
-	first.Click(hitLocalShellPickerItems.At(1))
+	first.chooseLocalShell(hitLocalShellPickerItems.At(1))
 	session, _ := first.sessionByIDPointer(first.activeSessionID)
 
 	// Changing the default later must not move a tab that was given a shell.

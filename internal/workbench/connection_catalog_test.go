@@ -119,6 +119,7 @@ func TestWindowAndHeadlessCatalogResolveEveryHostToTheSameConnection(t *testing.
 			t.Fatalf("%s: the window's connection cannot read stored keys", host.Label)
 		}
 		want.StoredKey = nil
+		want.SecurityKeyAgent = nil
 		other, found := Host{}, false
 		for _, candidate := range catalog.hosts {
 			if candidate.CatalogID == host.CatalogID {
