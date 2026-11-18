@@ -25,9 +25,22 @@ type tabsClose struct {
 }
 
 // sessionRunning reports whether closing the session would end something live: a
-// shell that has not ended.
+// shell that has not ended and, for a local shell, a program in front of it.
+// A local shell sitting at its prompt has nothing to interrupt, so closing it
+// needs no confirmation; remote shells (whose foreground program is not on this
+// machine) keep the conservative answer.
 func sessionRunning(session *Session) bool {
-	return session != nil && session.term != nil && session.term.shell != nil && !session.term.ended
+	if session == nil || session.term == nil || session.term.shell == nil || session.term.ended {
+		return false
+	}
+	if session.isLocal() {
+		if idler, ok := session.term.shell.(interface{ Idle() (bool, bool) }); ok {
+			if idle, known := idler.Idle(); known && idle {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (state *State) runningLabel(session *Session) string {

@@ -124,3 +124,46 @@ func TestMiddleClickRespectsRunningAndLockedTabConfirmations(t *testing.T) {
 		t.Fatal("confirming did not close the locked tab")
 	}
 }
+
+// idleShell wraps a Shell to report a foreground state, the way a local shell
+// does when it is sitting at its prompt or running a program.
+type idleShell struct {
+	Shell
+	idle, known bool
+}
+
+func (shell idleShell) Idle() (bool, bool) { return shell.idle, shell.known }
+
+// TestALocalShellAtItsPromptClosesWithoutAsking covers #966: a local tab with no
+// command running closes on its close button, while a foreground program (or an
+// unreadable foreground) still asks first.
+func TestALocalShellAtItsPromptClosesWithoutAsking(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		idle      bool
+		known     bool
+		wantModal bool
+	}{
+		{"a prompt is not a running command", true, true, false},
+		{"a program in front still asks", false, true, true},
+		{"an unreadable foreground still asks", false, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			state, _, _, shell := liveSession(t)
+			session := &state.sessions[0]
+			id := session.ID
+			// A local tab: its foreground program lives on this machine.
+			session.HostID = localHostID
+			session.term.shell = idleShell{Shell: shell, idle: tc.idle, known: tc.known}
+			state.Click(hitTabCloseList.At(int(id)))
+			if got := state.modal == modalCloseTabs; got != tc.wantModal {
+				t.Fatalf("asked = %v, want %v (running %v)", got, tc.wantModal, state.tabsClose.running)
+			}
+			if !tc.wantModal {
+				if _, ok := state.sessionByIDPointer(id); ok {
+					t.Fatal("a local shell at its prompt was not closed")
+				}
+			}
+		})
+	}
+}

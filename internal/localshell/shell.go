@@ -309,6 +309,18 @@ func (shell *Shell) ForegroundArgs() ([]string, bool) {
 	return shell.b.foreground()
 }
 
+// Idle reports whether the shell is only waiting at its prompt: the program in
+// front is a shell itself (bash, zsh, pwsh, cmd, ...), not something the user
+// started. known is false when the platform cannot name the foreground program,
+// so callers that must not be wrong can treat that as "not idle".
+func (shell *Shell) Idle() (idle bool, known bool) {
+	args, ok := shell.ForegroundArgs()
+	if !ok || len(args) == 0 {
+		return false, false
+	}
+	return shellkind.FromProgram(args[0]) != shellkind.Unknown, true
+}
+
 // Resize queues the terminal size in cells without blocking the caller.
 // Updates within one frame interval collapse into the latest size.
 func (shell *Shell) Resize(cols, rows int) {
