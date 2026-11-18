@@ -170,9 +170,18 @@ func (state *State) declareDashboardIntervalSelect(c ui.C, p *monitoring.Panel) 
 	d, m := &state.dashboard, state.messages.Dashboard
 	choice := p.Interval
 	d.intervalChoice = choice
-	ui.SelectIcon(c, &d.intervalChoice, dashboardIntervals[:], func(seconds int) string {
+	selector := ui.SelectIcon(c, &d.intervalChoice, dashboardIntervals[:], func(seconds int) string {
 		return fmt.Sprintf(m.Every, seconds)
 	}, func(int) gfx.Icon { return remoteRefreshClock }).Label(m.Sampling).Height(36).Width(152)
+	// The hands of the sampling clock move over the icon the trigger paints, as
+	// they did over the hand-painted trigger: a live sweep asks for the next
+	// frame, an idle or reduced-motion one does not.
+	selector.Draw(func(part *ui.DrawContext) {
+		frame := monitorRefreshFrame(part.Canvas, &d.refresh, d.refresh.count > 0)
+		part.Canvas.DrawIcon(remoteRefreshHands[frame], gfx.Rect{
+			X: part.Rect.X + 11, Y: part.Rect.Y + (part.Rect.Height-16)/2, Width: 16, Height: 16,
+		}, part.Theme.Foreground)
+	})
 	if d.intervalChoice != choice {
 		p.Interval = d.intervalChoice
 		d.refresh.refreshReset = true
