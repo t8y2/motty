@@ -27,16 +27,11 @@ var (
 	// hitCommandsSort opens the order dropdown beside the filter, so the bar's
 	// own order lives with the bar instead of in the settings page.
 	hitCommandsSort = tree.ID(commandsHits, "sort")
-	// hitCommandsSortDismiss is that dropdown's backdrop.
-	hitCommandsSortDismiss = tree.ID(commandsHits, "sort-dismiss")
 	// hitCommandsSortChoice names an order in the dropdown; its index is the
 	// position of the order in settingsCommandsSortChoices.
 	hitCommandsSortChoice = tree.Sub(commandsHits, tree.Name("sort-choice"))
 	// hitCommandsFilter opens the group-filter dropdown at the bar's left.
 	hitCommandsFilter = tree.ID(commandsHits, "filter")
-	// hitCommandsFilterDismiss is the backdrop of that dropdown: a press anywhere
-	// but the menu reports it, closing the dropdown without changing the filter.
-	hitCommandsFilterDismiss = tree.ID(commandsHits, "filter-dismiss")
 	// hitCommandsGroupUngrouped toggles the ungrouped commands in the filter.
 	hitCommandsGroupUngrouped = tree.ID(commandsHits, "group-ungrouped")
 	// hitCommandsGroupAll / None show or hide every group at once.
@@ -173,21 +168,27 @@ func (state *State) commandDisplayOrder() []int {
 	return order
 }
 
-// paintCommandsDrawer draws the single command bar beneath the terminal panes,
-// and its filter or order dropdown when open. A filter button and an order
-// button sit at the left; the add and close buttons are grouped on the right;
-// command chips fill the middle and scroll when they do not fit.
-func (state *State) paintCommandsDrawer(canvas *gfx.Canvas, size gfx.Size) {
-	height := state.commandsDrawerHeight()
-	if height <= 0 {
+// commandsBarRect is where the single command bar sits: the bottom strip of the
+// active workspace, under its panes. Both the page's menus and the canvas'
+// chips are placed from it.
+func (state *State) commandsBarRect() gfx.Rect {
+	if state.commandsDrawerHeight() <= 0 {
+		return gfx.Rect{}
+	}
+	wb := state.workspaceBoundsAboveLogs(state.deck.ActiveWorkspace(), state.viewport)
+	return gfx.Rect{X: wb.X, Y: wb.Y + wb.Height, Width: wb.Width, Height: commandsBarHeight}
+}
+
+// paintCommandsDrawer draws the single command bar beneath the terminal panes.
+// The filter and order dropdowns are page menus, declared over it.
+func (state *State) paintCommandsDrawer(canvas *gfx.Canvas) {
+	bar := state.commandsBarRect()
+	state.commands.bar = bar
+	if bar.Width <= 0 {
 		// Nothing is painted, so a wheel must not think the old strip is there.
-		state.commands.bar = gfx.Rect{}
 		state.commands.maxOffset = 0
 		return
 	}
-	wb := state.workspaceBoundsAboveLogs(state.deck.ActiveWorkspace(), size)
-	bar := gfx.Rect{X: wb.X, Y: wb.Y + wb.Height, Width: wb.Width, Height: height}
-	state.commands.bar = bar
 	// A faint fill and a top hairline set the strip apart from the terminal.
 	canvas.Fill(bar, withAlpha(state.pal.shell, 0.6))
 	canvas.Fill(gfx.Rect{X: bar.X, Y: bar.Y, Width: bar.Width, Height: 1}, state.pal.line)
@@ -233,13 +234,6 @@ func (state *State) paintCommandsDrawer(canvas *gfx.Canvas, size gfx.Size) {
 	contentW := addX - commandsFilterGap - contentX
 	if contentW > 0 {
 		state.paintCommandChips(canvas, bar, contentX, contentW)
-	}
-
-	if state.commands.filterOpen {
-		state.paintCommandsFilterMenu(canvas, bar, filterBtn)
-	}
-	if state.commands.sortOpen {
-		state.paintCommandsSortMenu(canvas, bar, sortBtn)
 	}
 }
 
@@ -313,48 +307,57 @@ func (state *State) commandsMenuWidth(canvas *gfx.Canvas, items []components.Dro
 	return min(width, max(160, state.windowRect().Width-24))
 }
 
-// commandsMenuBounds places a dropdown above the bar, level with its trigger.
-// The bar sits at the window's bottom, so its menus always open upwards; the
-// menu's Side makes its entrance come from that same edge.
-func (state *State) commandsMenuBounds(canvas *gfx.Canvas, bar, anchor gfx.Rect, width, height float32) gfx.Rect {
-	viewport := state.windowRect()
-	bounds := state.popupBelow(canvas, anchor, width, height, ui.Start)
-	bounds.Y = max(12, bar.Y-height-6)
-	// Line the surface up with the trigger's hover pill, not the glyph inside it.
-	bounds.X = max(12, bounds.X-4)
-	if bounds.X+width > viewport.Width-12 {
-		bounds.X = max(12, viewport.Width-12-width)
-	}
-	return bounds
-}
-
-// commandsMenuHeight counts the rows and the divider, plus the surface's own
-// padding. The heading is a plain (disabled) row like every other row, so it is
-// one of rows; leaving any of them out clips the menu's last row.
-func commandsMenuHeight(rows int, divider bool) float32 {
-	const rowHeight = float32(32) // the dropdown component's standard row
-	height := float32(rows)*rowHeight + 2*components.DropdownMenuPadding
-	if divider {
-		height += components.DropdownMenuSeparatorHeight
-	}
-	return height
-}
-
-// commandsMenuHeading is a muted, non-interactive first row. It uses AddItem,
-// not AddLabel: a dropdown label is smaller and indented, which would make the
-// menu's type uneven and its rows start at two different left edges.
+// commandsMenuHeading is a muted, non-interactive first row. It is a disabled
+// item, not a menu label: a dropdown label is smaller and indented, which would
+// make the menu's type uneven and its rows start at two different left edges.
 func commandsMenuHeading(label string) components.DropdownMenuItem {
 	return components.DropdownMenuItem{Label: label, Disabled: true}
 }
 
-// paintCommandsFilterMenu draws the group-filter dropdown: a heading, a checkbox
-// per group (and one for ungrouped), then Show all / Hide all. It is the project's
-// standard dropdown menu, opened upwards from the bar's left-hand button. Every
-// label starts at the same x and uses the same size; only the check marks sit on
-// the right.
-func (state *State) paintCommandsFilterMenu(canvas *gfx.Canvas, bar gfx.Rect, anchor gfx.Rect) {
+// declareCommandsMenus declares the bar's open dropdown as a page menu. The
+// bar itself is still painted by the window; the menu is an overlay of the
+// page, so its rows keep the page's own hit, focus and keyboard behaviour.
+func (state *State) declareCommandsMenus(c ui.C) {
+	bar := state.commandsBarRect()
+	if bar.Width <= 0 {
+		return
+	}
+	state.commands.bar = bar
+	cy := bar.Y + (commandsBarHeight-commandsIconSize)/2
+	filterButton := gfx.Rect{X: bar.X + commandsDrawerPadding, Y: cy, Width: commandsIconSize, Height: commandsIconSize}
+	sortButton := gfx.Rect{X: filterButton.X + filterButton.Width + commandsLeadGap, Y: cy, Width: commandsIconSize, Height: commandsIconSize}
+	if state.commands.filterOpen {
+		state.declareCommandsFilterMenu(c, bar, filterButton)
+	}
+	if state.commands.sortOpen {
+		state.declareCommandsSortMenu(c, bar, sortButton)
+	}
+}
+
+// declareCommandsMenu anchors an open dropdown above the bar, level with its
+// trigger's hover pill, at the width its labels asked for, and declares its
+// rows. ui.Menu opens 4px over its anchor; the bar's menus have always kept 6px
+// from the strip, so the zero-size anchor sits 2px above the bar's top.
+func (state *State) declareCommandsMenu(c ui.C, bar, trigger gfx.Rect, open *bool, width float32, rows func(*ui.MenuItems)) {
+	viewport := state.windowRect()
+	x := max(12, trigger.X-4)
+	if x+width > viewport.Width-12 {
+		x = max(12, viewport.Width-12-width)
+	}
+	anchor := ui.Slot(c).Absolute().Left(x).Top(bar.Y-2).Size(0, 0)
+	ui.Menu(c, anchor, open, func(menu *ui.MenuItems) {
+		menu.WidthRange(width, width)
+		rows(menu)
+	})
+}
+
+// declareCommandsFilterMenu declares the group-filter dropdown: a heading, a
+// checkbox per group (and one for ungrouped), then Show all / Hide all. Its rows
+// are states, not one-shot choices, so the application reopens the menu after a
+// row is chosen: the page closes a menu on any choice, while the canvas menu kept
+// this one open for the next toggle.
+func (state *State) declareCommandsFilterMenu(c ui.C, bar, trigger gfx.Rect) {
 	m := state.messages.Tools
-	heading := commandsMenuHeading(m.CommandsFilter)
 	groups, hasUngrouped := state.commandGroups()
 	choices := make([]components.DropdownMenuItem, 0, len(groups)+1)
 	if hasUngrouped {
@@ -380,35 +383,42 @@ func (state *State) paintCommandsFilterMenu(canvas *gfx.Canvas, bar gfx.Rect, an
 		}
 	}
 	items := make([]components.DropdownMenuItem, 0, 1+len(choices)+len(actions))
-	items = append(items, heading)
+	items = append(items, commandsMenuHeading(m.CommandsFilter))
 	items = append(items, choices...)
 	items = append(items, actions...)
-	width := state.commandsMenuWidth(canvas, items, 190)
-	height := commandsMenuHeight(len(items), !empty)
-	menu := components.BeginDropdownMenu(canvas, state.Theme(), state.commandsMenuBounds(canvas, bar, anchor, width, height), components.DropdownMenuOptions{
-		Layer: dialogLayer, Scope: dialogScope, DismissID: hitCommandsFilterDismiss,
-		Viewport: state.windowRect(), Scroll: state.menuScrollFor(hitCommandsFilterDismiss),
-		Side: components.OverlayTop,
+	width := state.commandsMenuWidth(c.Canvas(), items, 190)
+	choose := func(id gfx.ID) {
+		c.After(func() {
+			state.clickCommandsDrawer(id)
+			if state.commands.shown {
+				state.commands.filterOpen = true
+			}
+		})
+	}
+	state.declareCommandsMenu(c, bar, trigger, &state.commands.filterOpen, width, func(menu *ui.MenuItems) {
+		menu.Item(m.CommandsFilter).Disabled(true)
+		for _, choice := range choices {
+			item := menu.Item(choice.Label).Checked(choice.Checked)
+			if item.Clicked() {
+				choose(choice.ID)
+			}
+		}
+		if !empty {
+			menu.Separator()
+		}
+		for _, action := range actions {
+			item := menu.Item(action.Label).Disabled(action.Disabled)
+			if item.Clicked() {
+				choose(action.ID)
+			}
+		}
 	})
-	state.menuPlaced(menu.Bounds())
-	menu.AddItem(heading)
-	for _, choice := range choices {
-		menu.AddItem(choice)
-	}
-	if !empty {
-		menu.AddSeparator()
-	}
-	for _, action := range actions {
-		menu.AddItem(action)
-	}
-	menu.End()
 }
 
-// paintCommandsSortMenu draws the order dropdown: a heading and one radio item
-// per order. It is the same standard menu as the filter's, opened upwards from
-// the order button. Picking an order closes it, since the bar behind already
-// shows the result.
-func (state *State) paintCommandsSortMenu(canvas *gfx.Canvas, bar gfx.Rect, anchor gfx.Rect) {
+// declareCommandsSortMenu declares the order dropdown: a heading and one radio
+// item per order. Picking an order closes it, since the bar behind already shows
+// the result.
+func (state *State) declareCommandsSortMenu(c ui.C, bar, trigger gfx.Rect) {
 	items := []components.DropdownMenuItem{commandsMenuHeading(state.messages.Tools.CommandsSortRow)}
 	for i, order := range settingsCommandsSortChoices {
 		current := state.commands.sort == order
@@ -417,18 +427,17 @@ func (state *State) paintCommandsSortMenu(canvas *gfx.Canvas, bar gfx.Rect, anch
 			Kind: components.DropdownMenuRadio, Checked: current, Selected: current,
 		})
 	}
-	width := state.commandsMenuWidth(canvas, items, 180)
-	height := commandsMenuHeight(len(items), false)
-	menu := components.BeginDropdownMenu(canvas, state.Theme(), state.commandsMenuBounds(canvas, bar, anchor, width, height), components.DropdownMenuOptions{
-		Layer: dialogLayer, Scope: dialogScope, DismissID: hitCommandsSortDismiss,
-		Viewport: state.windowRect(), Scroll: state.menuScrollFor(hitCommandsSortDismiss),
-		Side: components.OverlayTop,
+	width := state.commandsMenuWidth(c.Canvas(), items, 180)
+	state.declareCommandsMenu(c, bar, trigger, &state.commands.sortOpen, width, func(menu *ui.MenuItems) {
+		menu.Item(state.messages.Tools.CommandsSortRow).Disabled(true)
+		for i, order := range settingsCommandsSortChoices {
+			item := menu.Item(state.settingsCommandsSortLabel(order)).Chosen(state.commands.sort == order)
+			if item.Clicked() {
+				id := hitCommandsSortChoice.At(i)
+				c.After(func() { state.clickCommandsDrawer(id) })
+			}
+		}
 	})
-	state.menuPlaced(menu.Bounds())
-	for _, item := range items {
-		menu.AddItem(item)
-	}
-	menu.End()
 }
 
 // scrollCommandsBar moves the chips under a wheel that turns over the bar. A
@@ -504,13 +513,9 @@ func (state *State) clickCommandsDrawer(id gfx.ID) bool {
 	case id == hitCommandsFilter:
 		state.commands.filterOpen = !state.commands.filterOpen
 		state.commands.sortOpen = false
-	case id == hitCommandsFilterDismiss:
-		state.commands.filterOpen = false
 	case id == hitCommandsSort:
 		state.commands.sortOpen = !state.commands.sortOpen
 		state.commands.filterOpen = false
-	case id == hitCommandsSortDismiss:
-		state.commands.sortOpen = false
 	case id.Scope() == hitCommandsSortChoice:
 		if index := item(id); index >= 0 && index < len(settingsCommandsSortChoices) {
 			state.commands.sort = settingsCommandsSortChoices[index]

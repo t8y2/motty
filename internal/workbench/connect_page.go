@@ -305,12 +305,20 @@ type sessionPaneUI struct {
 	rail, railTarget, railIcon   ui.Box
 	// closeKeys and connectKeys are the restored pane's key hints.
 	closeKeys, connectKeys [6]string
-	// light, tools, capture and latency are the desktop bars' slots, and
-	// desktopTools the controls they hold.
-	light, tools, capture, latency ui.Box
-	desktopTools                   []components.ButtonAction
-	latencyBadge                   desktopLatencyUI
-	latencyShown                   bool
+	// light, capture and latency are the desktop bars' slots; pictureDraw paints
+	// the picture inside the page, under the controls that sit over it; the
+	// fullscreen fields are the latency badge of the fullscreen bar, declared in
+	// the page and painted over it.
+	light, capture, latency ui.Box
+	pictureDraw             func(*ui.DrawContext)
+	pictureSession          uint32
+	latencyBadge            desktopLatencyUI
+	latencyShown            bool
+	fullscreenLatency       gfx.Rect
+	fullscreenText          string
+	fullscreenColor         gfx.Color
+	fullscreenHint          string
+	fullscreenBarDraw       func(*ui.DrawContext)
 }
 
 // declareSessionPane declares a session the terminal control does not show: its

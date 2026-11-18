@@ -1,0 +1,60 @@
+rect {{0 0 900 600} {0.06666667 0.08235294 0.105882354 1} 0 0 {0 0 0 0} false #0}
+rect {{0 36 900 530} {0.06666667 0.08235294 0.105882354 1} 0 0 {0 36 900 530} true #1}
+rect {{230 263 440 48} {0.2 0.23529412 0.2901961 1} 10 0 {0 36 900 530} true #2}
+rect {{231 264 438 46} {0.12156863 0.14117648 0.1764706 1} 9 0 {0 36 900 530} true #3}
+rect {{230 311 91.96094 32} {0.2 0.23529412 0.2901961 1} 7.5 0 {0 36 900 530} true #4}
+rect {{231 312 89.96094 30} {0.12156863 0.14117648 0.1764706 1} 6.5 0 {0 36 900 530} true #5}
+rect {{329.96094 311 88.11426 32} {0.2 0.23529412 0.2901961 1} 7.5 0 {0 36 900 530} true #6}
+rect {{330.96094 312 86.11426 30} {0.12156863 0.14117648 0.1764706 1} 6.5 0 {0 36 900 530} true #7}
+rect {{30 424 180 136} {0.2 0.23529412 0.2901961 1} 10 12 {0 0 0 0} false #10}
+rect {{31 425 178 134} {0.12156863 0.14117648 0.1764706 1} 9 12 {0 0 0 0} false #11}
+rect {{246 273 28 28} {0.14117648 0.16078432 0.21960784 1} 6.72 0 {0 0 0 0} false #12}
+rect {{0 566 900 34} {0.09411765 0.10980392 0.13725491 0.6} 0 0 {0 0 0 0} false #13}
+rect {{0 566 900 1} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #14}
+rect {{30 571 24 24} {0.8862745 0.90588236 0.93333334 0.16} 6 0 {0 0 0 0} false #15}
+rect {{62 571 44 24} {0.2 0.23529412 0.2901961 0.9} 8 0 {62 566 786 34} true #16}
+rect {{63 572 42 22} {0.23529412 0.27450982 0.34117648 1} 7 0 {62 566 786 34} true #17}
+rect {{112 571 47.789062 24} {0.2 0.23529412 0.2901961 0.9} 8 0 {62 566 786 34} true #18}
+rect {{113 572 45.789062 22} {0.23529412 0.27450982 0.34117648 1} 7 0 {62 566 786 34} true #19}
+shadow {{30 424 180 136} 10 {0 0 0 0.1} {0 4 6 -1} 12 {0 0 0 0} false #8}
+shadow {{30 424 180 136} 10 {0 0 0 0.1} {0 2 4 -2} 12 {0 0 0 0} false #9}
+text "Connect to" {230 219 440 26}
+text "Local Terminal" {286 276 94.36328 22}
+text "skylerdeMacBook-Pro.local" {483.63086 277 150.36914 20}
+text "Add Host" {250.15234 317.5 51.65625 19}
+text "All hosts" {349.96533 317.5 48.10547 19}
+text "Command order" {42 428 156 32}
+text "Creation order" {42 460 132 32}
+text "Alphabetical" {42 492 132 32}
+text "By group" {42 524 132 32}
+text "ls" {74 571 20 24}
+text "pwd" {124 571 23.789062 24}
+hit "" region {0 0 900 36} disabled=false
+hit "Hosts" button {82 4 28 28} disabled=false
+hit "New tab" button {116 4 28 28} disabled=false
+hit "Transfers" button {656 4 28 28} disabled=false
+hit "Session manager" button {686 4 28 28} disabled=false
+hit "AI assistant" button {716 4 28 28} disabled=false
+hit "Local Terminal" button {746 4 28 28} disabled=false
+hit "Command Palette" button {776 4 28 28} disabled=false
+hit "Switch to light theme" button {806 4 28 28} disabled=false
+hit "GitHub" button {836 4 28 28} disabled=false
+hit "Settings" button {866 4 28 28} disabled=false
+hit "New tab" button {0 36 900 530} disabled=false
+hit "Local Terminal" button {230 263 440 48} disabled=false
+hit "Choose a shell" button {634 273 28 28} disabled=false
+hit "Add Host" button {230 311 91.96094 32} disabled=false
+hit "All hosts" button {329.96094 311 88.11426 32} disabled=false
+hit "Dismiss menu" button {0 0 900 600} disabled=false
+hit "" region {30 424 180 136} disabled=false
+hit "" menu {30 424 180 136} disabled=false
+hit "Command order" menuitem {34 428 172 32} disabled=true
+hit "Creation order" menuitem {34 460 172 32} disabled=false
+hit "Alphabetical" menuitem {34 492 172 32} disabled=false
+hit "By group" menuitem {34 524 172 32} disabled=false
+hit "Filter by group" button {8 575 16 16} disabled=false
+hit "Command order" button {34 575 16 16} disabled=false
+hit "Add command" button {856 575 16 16} disabled=false
+hit "Hide snippets (tick the box in the Snippets picker to show them again)" button {876 575 16 16} disabled=false
+hit "ls" button {62 571 44 24} disabled=false
+hit "pwd" button {112 571 47.789062 24} disabled=false

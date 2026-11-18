@@ -297,7 +297,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintAIPanel(canvas, size)
 		// The bottom command drawer sits beneath the panes, in the space the
 		// panes gave up for it.
-		state.paintCommandsDrawer(canvas, size)
+		state.paintCommandsDrawer(canvas)
 	} else if fileManager {
 		state.paintSFTPTab(canvas, state.fileManagerPixelBounds(size))
 		state.paintAIPanel(canvas, size)
@@ -661,6 +661,9 @@ func (state *State) declareShell(c ui.C) {
 	state.declareDialogs(c)
 	state.declareKnownHostsDialog(c)
 	state.declareMenus(c)
+	// The command drawer's filter and order dropdowns are page menus too; the
+	// bar under them is the window's.
+	state.declareCommandsMenus(c)
 	// The dashboard's own dialog and its hosts-page add menu are page controls
 	// too: they are open over whatever section asked for them.
 	state.declareDashboardDialog(c)
