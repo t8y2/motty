@@ -23,7 +23,6 @@ var (
 	hitDialogStandardSecurityHelp = tree.ID(hostProtocolUiHits, "dialog-standard-security-help")
 	hitDialogChromeless           = tree.ID(hostProtocolUiHits, "dialog-chromeless")
 	hitDialogPortsTrigger         = tree.ID(hostProtocolUiHits, "dialog-ports-trigger")
-	hitDialogPortsDismiss         = tree.ID(hostProtocolUiHits, "dialog-ports-dismiss")
 	hitDialogAlgorithms           = tree.ID(hostProtocolUiHits, "dialog-algorithms")
 	hitDialogLoginCommand         = tree.ID(hostProtocolUiHits, "dialog-login-command")
 	hitDialogAdvanced             = tree.ID(hostProtocolUiHits, "dialog-advanced")
@@ -39,7 +38,6 @@ var (
 	hitDialogOTPRemove            = tree.ID(hostProtocolUiHits, "dialog-otp-remove")
 	hitDialogOTPScan              = tree.ID(hostProtocolUiHits, "dialog-otp-scan")
 	hitDialogOTPPaste             = tree.ID(hostProtocolUiHits, "dialog-otp-paste")
-	hitDialogPortsItemList        = tree.Sub(hostProtocolUiHits, tree.Name("dialog-ports-item")) // + index of a detected port
 )
 
 // maxListedPorts bounds the picker: a machine with more serial devices than
@@ -362,6 +360,12 @@ func (state *State) declareHostAuthenticationChoice(c ui.C, parent ui.Box, rowHe
 // under the form's board. A choice writes the device into the device field.
 func (state *State) declareHostPortsSelect(c ui.C, parent ui.Box, rowHeight float32) {
 	editor, form := &state.editor, &state.editor.form
+	// A serial device can be plugged in while the form is open: the old picker
+	// looked the machine's ports up each time it was opened, and the page select
+	// reads them again on the press that opens it.
+	if canvas := c.Canvas(); canvas != nil && canvas.Clicked(hitDialogPortsTrigger) {
+		editor.ports = serialPorts()
+	}
 	form.portChoices = form.portChoices[:0]
 	count := min(len(editor.ports), maxListedPorts)
 	for index := 0; index < count; index++ {

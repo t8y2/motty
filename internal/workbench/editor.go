@@ -128,8 +128,7 @@ type hostEditor struct {
 	// without TLS or NLA.
 	viaSSH, clipboard, console, noAudio, standardSecurity, chromeless bool
 	// ports are the serial ports found when the picker was last opened.
-	ports     []serial.Port
-	portsOpen bool
+	ports []serial.Port
 }
 
 type hostField uint8
@@ -304,6 +303,10 @@ func (editor *hostEditor) validate(hosts []Host, ignoreID uint32, messages i18n.
 	return ""
 }
 
+// serialPorts lists the machine's serial ports, for the serial host form and the
+// picker that reloads them when it opens. A test replaces it.
+var serialPorts = serial.Ports
+
 func (editor *hostEditor) load(host Host) {
 	editor.agentAccessChanged = false
 	editor.form = hostFormScroll{}
@@ -356,9 +359,9 @@ func (editor *hostEditor) load(host Host) {
 	editor.console = host.Protocol == protocolRDP && host.Console
 	editor.noAudio = host.Protocol == protocolRDP && host.NoAudio
 	editor.standardSecurity = host.Protocol == protocolRDP && host.StandardSecurity
-	editor.portsOpen = false
 	if host.Protocol == protocolSerial {
 		editor.port.Insert(host.Line.String())
+		editor.ports = serialPorts()
 		return
 	}
 	editor.port.Insert(strconv.Itoa(int(host.Port)))
@@ -465,7 +468,7 @@ func (editor *hostEditor) reset() {
 	editor.proxy, editor.proxyPassword = nil, ""
 	editor.advancedOpen = false
 	editor.port.Insert(strconv.Itoa(defaultPort))
-	editor.protocol, editor.terminal, editor.flow, editor.portsOpen = protocolSSH, terminalSSH, serial.FlowNone, false
+	editor.protocol, editor.terminal, editor.flow = protocolSSH, terminalSSH, serial.FlowNone
 	editor.viaSSH, editor.clipboard, editor.console, editor.noAudio, editor.standardSecurity, editor.chromeless = false, false, false, false, false, false
 }
 
@@ -530,7 +533,7 @@ func (editor *hostEditor) applyProtocol(previous hostProtocol) {
 			}
 		}
 	}
-	editor.protocol, editor.portsOpen = protocol, false
+	editor.protocol = protocol
 	if protocol != protocolSSH {
 		editor.terminal = terminalSSH
 	}
@@ -544,7 +547,7 @@ func (editor *hostEditor) applyProtocol(previous hostProtocol) {
 	editor.authOpen, editor.identityOpen, editor.credentialOpen = false, false, false
 	editor.idleKeepAliveOpen, editor.idleUnitOpen, editor.idleInputOpen = false, false, false
 	if protocol == protocolSerial {
-		editor.ports = serial.Ports()
+		editor.ports = serialPorts()
 		if editor.value(fieldAddress) == "" && len(editor.ports) > 0 {
 			editor.address.Insert(editor.ports[0].Device)
 		}
