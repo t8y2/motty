@@ -81,13 +81,11 @@ func (state *State) declareHostColorChoice(c ui.C, parent ui.Box, rowHeight floa
 						editor.color.Insert(color)
 					}
 				}
-				form.colorPickerBox = ui.ColorPickerWith(c, &form.colorState, ui.ColorPickerSpec{
-					Label: m.FieldColor, Round: true, Icon: &icons.Pipette, Empty: empty,
-					Labels: components.ColorPickerLabels{
+				form.colorPickerBox = ui.ColorPicker(c, &form.colorState, &form.colorValue, m.FieldColor).RoundTrigger().TriggerIcon(&icons.Pipette).NoColor(empty).
+					PanelLabels(components.ColorPickerLabels{
 						Color: m.ColorPickerChoose, Saturation: m.ColorPickerSV, Hue: m.ColorPickerHue,
 						Hex: m.FieldColorCustom, Clear: m.ColorPickerClear, Cancel: m.Cancel, Apply: m.ColorPickerApply,
-					},
-				}, &form.colorValue)
+					})
 				if form.colorState.Applied() {
 					editor.color = text.Editor{}
 					if form.colorValue.Alpha > 0 {

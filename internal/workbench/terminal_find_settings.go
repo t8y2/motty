@@ -202,14 +202,11 @@ func (state *State) declareFindColor(c ui.C, foreground bool) ui.Box {
 	row := ui.Row(c).Grow(1).Gap(8).Items(ui.Center)
 	row.Children(func() {
 		ui.Text(c, hex).FontSize(metrics.FontSizeS).Mono().Color(state.pal.muted).Grow(1).Ellipsis()
-		ui.ColorPickerWith(c, picker, ui.ColorPickerSpec{
-			ID:    pickerID,
-			Label: label,
-			Labels: components.ColorPickerLabels{
+		ui.ColorPickerID(c, pickerID, picker, target, label).
+			PanelLabels(components.ColorPickerLabels{
 				Color: label, Saturation: m.ColorPickerSV, Hue: m.ColorPickerHue,
 				Hex: m.FieldColorCustom, Clear: m.FindSettings.Reset, Cancel: m.Cancel, Apply: m.ColorPickerApply,
-			},
-		}, target).Size(34, 34).Shrink(0)
+			}).Size(34, 34).Shrink(0)
 	})
 	return row
 }
