@@ -39,14 +39,10 @@ type hostEditor struct {
 	tags          text.Editor
 	tagPicker     hostTagPicker
 	// encoding is the remote charset the host's shells use: empty is UTF-8.
-	// encodingPicker is the searchable field that chooses it.
-	encoding       string
-	encodingPicker hostEncodingPicker
-	icon           hostIcon
-	iconPicker     hostIconPicker
-	color          text.Editor
-	colorPicker    hostColorPicker
-	form           hostFormScroll
+	encoding string
+	icon     hostIcon
+	color    text.Editor
+	form     hostFormScroll
 	// system is the system the host was last detected to run, whose badge the
 	// automatic icon shows.
 	system sshconn.RemoteSystem
@@ -311,7 +307,6 @@ func (editor *hostEditor) validate(hosts []Host, ignoreID uint32, messages i18n.
 func (editor *hostEditor) load(host Host) {
 	editor.agentAccessChanged = false
 	editor.form = hostFormScroll{}
-	editor.colorPicker = hostColorPicker{}
 	editor.color = text.Editor{}
 	editor.color.Insert(host.Color)
 	editor.label = text.Editor{}
@@ -322,8 +317,6 @@ func (editor *hostEditor) load(host Host) {
 	editor.tags = text.Editor{}
 	editor.tagPicker = hostTagPicker{}
 	editor.groupPicker = hostGroupPicker{}
-	editor.encodingPicker = hostEncodingPicker{}
-	editor.iconPicker = hostIconPicker{}
 	editor.encoding = host.Encoding
 	editor.icon = hostIconAuto
 	editor.port = text.Editor{}
@@ -445,7 +438,6 @@ func (editor *hostEditor) host(id uint32) Host {
 // reset clears every field back to defaults for a fresh dialog session.
 func (editor *hostEditor) reset() {
 	editor.form = hostFormScroll{}
-	editor.colorPicker = hostColorPicker{}
 	editor.color = text.Editor{}
 	editor.label = text.Editor{}
 	editor.address = text.Editor{}
@@ -455,8 +447,6 @@ func (editor *hostEditor) reset() {
 	editor.tags = text.Editor{}
 	editor.tagPicker = hostTagPicker{}
 	editor.groupPicker = hostGroupPicker{}
-	editor.encodingPicker = hostEncodingPicker{}
-	editor.iconPicker = hostIconPicker{}
 	editor.encoding = ""
 	editor.icon, editor.iconChosen, editor.system = hostIconAuto, false, sshconn.SystemUnknown
 	editor.port = text.Editor{}
@@ -544,7 +534,6 @@ func (editor *hostEditor) applyProtocol(previous hostProtocol) {
 	if protocol != protocolSSH {
 		editor.terminal = terminalSSH
 	}
-	editor.iconPicker.control.Open = false
 	if !editor.iconChosen {
 		if protocol == protocolSerial {
 			editor.icon = hostIconSerial

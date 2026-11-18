@@ -79,7 +79,7 @@ func TestConnectionColorChoicesFitShortDialog(t *testing.T) {
 	}
 	var hit gfx.Hit
 	for _, h := range canvas.Hits() {
-		if h.ID == hostPickerIDs.Trigger && !h.IsLabel {
+		if h.Role == gfx.RoleButton && h.Label == state.messages.ColorPickerChoose && !h.IsLabel {
 			hit = h
 			break
 		}

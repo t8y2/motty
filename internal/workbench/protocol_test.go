@@ -297,13 +297,17 @@ func TestHostDialogPaintsEachProtocolWithItsOwnFields(t *testing.T) {
 		wantFlow string
 		absent   []gfx.ID
 	}{
-		{state.messages.Tools.ProtocolSSH, []gfx.ID{hitDialogUser, hitDialogPort}, "", []gfx.ID{hitDialogPortsTrigger}},
+		{state.messages.Tools.ProtocolSSH, []gfx.ID{hitDialogUser, hitDialogPort}, "", nil},
 		{state.messages.Tools.ProtocolTelnet, []gfx.ID{hitDialogPort}, "", []gfx.ID{hitDialogUser}},
-		{state.messages.Tools.ProtocolSerial, []gfx.ID{hitDialogPort, hitDialogPortsTrigger}, state.messages.Tools.FlowNone, []gfx.ID{hitDialogUser}},
+		{state.messages.Tools.ProtocolSerial, []gfx.ID{hitDialogPort}, state.messages.Tools.FlowNone, []gfx.ID{hitDialogUser}},
 	} {
 		clickHostChoice(t, state, test.protocol)
 		var canvas gfx.Canvas
 		state.Paint(&canvas, hostChoicePaint)
+		serial := test.protocol == state.messages.Tools.ProtocolSerial
+		if painted := hasLabel(&canvas, state.messages.Tools.PortsPicker, gfx.RoleCombobox); painted != serial {
+			t.Errorf("protocol %q: ports picker painted=%v, want %v", test.protocol, painted, serial)
+		}
 		for _, id := range test.want {
 			if _, ok := hitByID(&canvas, id); !ok {
 				t.Errorf("protocol %q: hit %d is not painted", test.protocol, id)

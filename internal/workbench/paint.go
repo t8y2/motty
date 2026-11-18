@@ -1215,6 +1215,9 @@ type chromeLayout struct {
 	passwordSave ui.Box
 	// flags are the values the page's checkboxes and switches are declared over.
 	flags pageFlags
+	// searchField is the hosts toolbar's page search field over state.search.
+	searchField ui.Field
+	searchBound bool
 	// hostDialogTitle labels the host form's scroll viewport. The handlers below
 	// are the form's Draw and DrawOver declarations kept once, so a warm repaint
 	// of the form allocates nothing.
@@ -1222,9 +1225,15 @@ type chromeLayout struct {
 	hostDialogCancelLabel string
 	hostDialogSubmitLabel string
 	hostFormViewportDraw  func(*ui.DrawContext)
-	hostFormScrollbarDraw func(*ui.DrawContext)
 	hostFormFieldsDraw    func(*ui.DrawContext)
-	hostDialogFooterDraw  func(*ui.DrawContext)
+	// hostTestButton, hostTestMessage, hostCancelButton and hostSubmitButton are
+	// the host form footer's page controls; the message slot's Draw keeps the
+	// controls in the form's tab ring and paints what the last test found.
+	hostTestButton      ui.Box
+	hostTestMessage     ui.Box
+	hostCancelButton    ui.Box
+	hostSubmitButton    ui.Box
+	hostTestMessageDraw func(*ui.DrawContext)
 	// newTabAdd and newTabAll are the empty tab's footer buttons.
 	newTabAdd   ui.Box
 	newTabAll   ui.Box
@@ -1350,7 +1359,6 @@ func (state *State) paintHostsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 	layout := state.hostsLayout(bounds.Width, bounds.Height)
 	state.hostSide.visible = layout.sideVisible
 	state.hostSide.visibleWidth = layout.side.Width
-	state.paintHostsHeader(canvas)
 	state.paintHostsRightHeader(canvas, layout)
 	state.hostSide.bounds = gfx.Rect{
 		X: bounds.X + layout.sideTree.X, Y: bounds.Y + layout.sideTree.Y,
@@ -1392,14 +1400,12 @@ func (state *State) paintHostsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 	state.hostsBounds = bounds
 }
 
-// paintHostMenus draws the hosts page's dropdowns above everything else, with
-// the whole window as their viewport, so a press anywhere closes them.
+// paintHostMenus draws the hosts page's hierarchy menus above everything else:
+// the move/copy destination and a chip's nested groups, which a page menu cannot
+// express as panels yet.
 func (state *State) paintHostMenus(canvas *gfx.Canvas, viewport gfx.Rect) {
 	bounds := state.hostsBounds
 	if bounds.Width == 0 {
-		// The session manager opens the same group picker from the terminal page,
-		// where the hosts page was never painted; the picker anchors to the point
-		// its menu was opened at, so any window-wide bounds serve.
 		bounds = state.windowRect()
 	}
 	if state.hostGroupMenu {
@@ -1522,12 +1528,45 @@ func (state *State) declareHostsToolbar(c ui.C, width float32, plan hostsHeaderP
 	searchWidth := min(max(width*0.41, 330), 485)
 	ui.Row(c).Absolute().Left(hostsBodyMargin).Right(hostsBodyMargin).Top(hostsToolbarTop).Height(toolbarHeight).Items(ui.Center).Children(func() {
 		b.search = ui.Slot(c).Basis(searchWidth).Shrink(1).MinWidth(searchLeast).Height(toolbarHeight).MarginSides(0, buttonGap, 0, 0)
+		b.search.Children(func() {
+			if !state.chrome.searchBound {
+				state.chrome.searchField.Bind(&state.search)
+				state.chrome.searchBound = true
+			}
+			state.chrome.searchField.Disabled = state.hostSort.enabled
+			ui.TextFieldID(c, hitSearch, &state.chrome.searchField, m.NavSearch, m.SearchPlaceholder).
+				Icon(lucideIcons[iconSearch]).FillWidth().Height(toolbarHeight).Disabled(state.hostSort.enabled)
+		})
 		b.connect = state.declareButtonSized(c, hitConnect, m.Connect, plan.connectIcon, false, false, state.typedQuery() != "", toolbarFont, plan.condensed).Size(plan.connectWidth, toolbarHeight).MarginSides(0, buttonGap, 0, 0)
 		ui.Spacer(c)
 		b.importButton = state.declareButtonSized(c, hitImportMenu, m.ImportMenu, plan.importIcon, false, false, true, toolbarFont, plan.condensed).Size(plan.importWidth, toolbarHeight).MarginSides(0, buttonGap, 0, 0)
 		state.declareImportMenu(c, b.importButton)
 		b.newHost = state.declareButtonSized(c, hitAddHost, m.NewHost, plan.newHostIcon, true, false, true, toolbarFont, plan.condensed).Size(plan.newHostWidth, toolbarHeight)
 	})
+}
+
+// declareHostBatchAction declares one of the batch actions over the checked
+// hosts: a ghost button of the width the header measured, or its icon alone in a
+// row too narrow for words.
+func (state *State) declareHostBatchAction(c ui.C, action hostsHeaderAction, width float32, condensed bool) ui.Box {
+	var button ui.Box
+	if condensed {
+		button = ui.Button(c, action.label).Ghost().Icon(lucideIcons[action.icon]).IconOnly().
+			Size(actionIconSize, hostHeaderRowHeight)
+	} else {
+		button = ui.Button(c, action.label).Ghost().XSmall().Size(width, hostHeaderRowHeight)
+	}
+	if action.danger {
+		button = button.ButtonRecipe(hostsDangerButtonRecipe)
+	}
+	return button.Hit(action.id, action.label).Disabled(!action.enabled)
+}
+
+// hostsDangerButtonRecipe is a button whose label is the danger colour, as the
+// batch row marks a destructive action without making it the loudest control.
+func hostsDangerButtonRecipe(t gfx.Theme, variant components.ButtonVariant, state gfx.State) components.ButtonLook {
+	t.Foreground = t.Danger
+	return components.ButtonRecipe(t, variant, state)
 }
 
 // declareHostsRightHeader declares the controls over the host list or grid:
@@ -1556,6 +1595,7 @@ func (state *State) declareHostsRightHeader(c ui.C, layout hostsLayout, plan hos
 			})
 			ui.Row(c).Height(hostHeaderRowHeight).MarginSides(hostHeaderRowGap, 0, 0, 0).PadSides(0, rowPad, 0, leftPad).Gap(12).Items(ui.Center).Children(func() {
 				b.selectAll = ui.Slot(c).Size(40, hostHeaderRowHeight).Shrink(0)
+				state.declareHostScopeCheck(c, b.selectAll, hitHostSelectAll, state.hostScopeSelection.all.label, state.hostScopeSelection.all, state.hostScopeSelection.all.total == 0 || state.hostSort.enabled)
 				state.declareHostGroupControls(c, plan)
 				ui.Spacer(c)
 				state.declareHostViewControls(c)
@@ -1563,6 +1603,7 @@ func (state *State) declareHostsRightHeader(c ui.C, layout hostsLayout, plan hos
 		} else {
 			ui.Row(c).Height(hostHeaderRowHeight).PadSides(0, rowPad, 0, leftPad).Gap(12).Items(ui.Center).Children(func() {
 				b.selectAll = ui.Slot(c).Size(40, hostHeaderRowHeight).Shrink(0)
+				state.declareHostScopeCheck(c, b.selectAll, hitHostSelectAll, state.hostScopeSelection.all.label, state.hostScopeSelection.all, state.hostScopeSelection.all.total == 0 || state.hostSort.enabled)
 				if plan.showChips {
 					state.declareHostChips(c)
 				}
@@ -1578,8 +1619,8 @@ func (state *State) declareHostsRightHeader(c ui.C, layout hostsLayout, plan hos
 					actionsLeft = 0
 				}
 				ui.Row(c).Gap(actionGap).MarginSides(0, 0, 0, actionsLeft).Children(func() {
-					for index := range b.buttons {
-						b.buttons[index] = ui.Slot(c).Size(plan.actionWidths[index], hostHeaderRowHeight)
+					for index, action := range plan.actions {
+						b.buttons[index] = state.declareHostBatchAction(c, action, plan.actionWidths[index], plan.actionsCondensed)
 					}
 				})
 				ui.Spacer(c)
@@ -1684,28 +1725,6 @@ func (state *State) declareHostViewControls(c ui.C) {
 	})
 }
 
-// paintHostsHeader paints the search field into the slot the toolbar's
-// declaration left. The buttons are the page's own.
-func (state *State) paintHostsHeader(canvas *gfx.Canvas) {
-	m := state.messages
-	chrome := &state.chrome
-	b := &chrome.headerBoxes
-	if b.search.Rect().Width <= 0 {
-		return
-	}
-	// The box filters the list as you type and is what Connect opens, so it is
-	// a real field: a magnifier addon, the placeholder when empty, and the
-	// platform editor once it holds text.
-	value := state.search.String()
-	components.PaintInputGroup(canvas, state.Theme(), b.search.Rect(), components.InputGroupSnapshot{
-		ID: hitSearch, Label: m.NavSearch, Value: value, Placeholder: m.SearchPlaceholder,
-		Disabled:      state.hostSort.enabled,
-		NativeEditing: !state.hostSort.enabled && canvas.Focused() == hitSearch && value != "",
-		InlineStart:   components.InputGroupSlot{Kind: components.InputGroupSlotIcon, Icon: lucideIcons[iconSearch]},
-	})
-	// Connect needs something to connect to.
-}
-
 // paintHostsRightHeader paints the list's header controls over the slots the
 // page left: the select-all checkbox, the fallback chips, and the batch
 // actions.
@@ -1718,24 +1737,11 @@ func (state *State) paintHostsRightHeader(canvas *gfx.Canvas, layout hostsLayout
 	}
 	state.hostOrderButton = chrome.hostToggle.order.Rect()
 	state.hostPrivacy.button = chrome.hostToggle.privacy.Rect()
-	state.paintHostScopeCheckbox(canvas, hitHostSelectAll, b.selectAll.Rect(), state.hostScopeSelection.all)
 	if plan.showChips {
 		state.paintHostFilterChips(canvas, chrome.chips)
 	}
 	if plan.anySelected {
 		for index, action := range plan.actions {
-			theme := state.Theme().WithControlHeight(hostHeaderRowHeight).WithFontSize(metrics.FontSizeS)
-			if action.danger {
-				theme.Foreground = theme.Danger
-			}
-			button := components.BeginButton(canvas, theme, action.id, b.buttons[index].Rect())
-			if plan.actionsCondensed {
-				button = button.WithIcon(lucideIcons[action.icon]).Icon()
-			}
-			if !action.enabled {
-				button = button.Disabled()
-			}
-			button.Ghost(action.label)
 			if action.id == hitDashboardAddHosts {
 				state.dashboard.addAnchor = b.buttons[index].Rect()
 			}
@@ -1921,7 +1927,9 @@ func (state *State) paintHostFilterChips(canvas *gfx.Canvas, chips []ui.Box) {
 	}
 }
 
-// paintHostFilterMenu lists the groups whose chips did not fit.
+// paintHostFilterMenu lists the groups whose chips did not fit. The menu keeps
+// its own rows' secondary presses (they open the group's actions), which a page
+// menu cannot express yet.
 func (state *State) paintHostFilterMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 	hidden := len(state.hostChips) - state.hostFilterHidden
 	if hidden <= 0 {
@@ -2215,15 +2223,6 @@ func (state *State) paintHostListTable(canvas *gfx.Canvas, treeBounds gfx.Rect) 
 		state.focusHostListRow(canvas, state.hostRevealID)
 		state.hostRevealID = 0
 	}
-	// The bar is the one the list has always painted: it keeps its strip out of
-	// the rows and shows the Tree's offset over the list's content.
-	state.paintHostListBar(canvas, treeBounds, content)
-}
-
-// paintHostListBar paints the bar the list view keeps beside its rows.
-func (state *State) paintHostListBar(canvas *gfx.Canvas, treeBounds gfx.Rect, content float32) {
-	bar, _ := hostListScrollArea(canvas, state.Theme(), treeBounds, content, state.hostsScroll, state.hostListBarRevealed())
-	bar.EndContent()
 }
 
 // declareHostListRowContent declares the content of a list row in the page: the
@@ -2259,6 +2258,9 @@ func (state *State) declareHostGroupTreeRow(c ui.C, d *hostRowDrawer, width floa
 	}
 	ui.Row(c).Width(width).Height(hostGroupRowHeight).PadSides(0, 0, 0, 2).Gap(6).Items(ui.Center).Children(func() {
 		d.groupCheck = ui.Slot(c).Size(40, 28).Shrink(0)
+		groupIndex := state.hostTreeRows[d.index].GroupIndex
+		selection := state.hostScopeSelection.groups[groupIndex]
+		state.declareHostScopeCheck(c, d.groupCheck, hitHostGroupCheck.At(groupIndex), selection.label, selection, selection.total == 0 || state.hostSort.enabled)
 		if group.Pinned {
 			ui.Icon(c, lucideIcons[iconStar]).Size(14, 14).Color(pinColor)
 		}
@@ -2325,6 +2327,7 @@ func (state *State) declareHostTreeRow(c ui.C, d *hostRowDrawer, rowWidth, left 
 					d.grip = ui.Slot(c).Size(checkWidth, checkHeight).MarginSides(0, checkMargin, 0, 10)
 				} else {
 					d.check = ui.Slot(c).Size(checkWidth, checkHeight).MarginSides(0, checkMargin, 0, 10)
+					state.declareHostRowCheck(c, d.check, hitHostCheckList.At(int(host.ID)), state.hostPrivacySemanticLabel(host), state.hostSelected(host.ID))
 				}
 				d.avatar = ui.Slot(c).Size(36, 36).MarginSides(0, 10, 0, 0)
 				ui.Column(c).Width(nameWidth).Shrink(0).Gap(2).Children(func() {
@@ -2413,7 +2416,6 @@ func (state *State) paintHostGroupTreeRow(canvas *gfx.Canvas, row, content gfx.R
 	state.groupActions.rows[groupIndex] = row
 	button := gfx.Rect{X: row.X + row.Width - 34, Y: row.Y + (row.Height-28)/2, Width: 28, Height: 28}
 	state.paintIconButton(canvas, hitHostGroupMore.At(groupIndex), iconEllipsis, button, state.messages.HostGroupActions.Actions, false, iconButtonQuiet, pal.workspace)
-	state.paintHostScopeCheckbox(canvas, hitHostGroupCheck.At(groupIndex), d.groupCheck.Rect(), state.hostScopeSelection.groups[groupIndex])
 }
 
 const (
@@ -2529,12 +2531,6 @@ func (state *State) paintHostTreeRow(canvas *gfx.Canvas, row, content gfx.Rect, 
 // avatar and its connection light into the slots the page declared, and hands
 // the row to the hand-drawn sort overlay.
 func (state *State) paintHostTreeRowControls(canvas *gfx.Canvas, row gfx.Rect, host Host, d *hostRowDrawer, background gfx.Color) {
-	if d.check.Valid() {
-		side := components.CheckboxExtent(state.Theme())
-		box := d.check.Rect()
-		bounds := gfx.Rect{X: box.X + (box.Width-side)/2, Y: box.Y + (box.Height-side)/2, Width: side, Height: side}
-		components.BeginCheckbox(canvas, state.Theme(), hitHostCheckList.At(int(host.ID)), bounds, state.hostSelected(host.ID)).Label(state.hostPrivacySemanticLabel(host)).Paint()
-	}
 	if state.hostSort.enabled && d.grip.Valid() {
 		state.declareHostSortItem(host, row, d.grip.Rect())
 	}
@@ -2954,36 +2950,39 @@ func (state *State) declareHostDialog(c ui.C) {
 func (state *State) declareHostDialogFooter(c ui.C, cancel, submit string) {
 	chrome := &state.chrome
 	chrome.hostDialogCancelLabel, chrome.hostDialogSubmitLabel = cancel, submit
-	if chrome.hostDialogFooterDraw == nil {
-		chrome.hostDialogFooterDraw = state.drawHostDialogFooter
+	if chrome.hostTestMessageDraw == nil {
+		chrome.hostTestMessageDraw = state.drawHostTestMessage
 	}
-	ui.Slot(c).Fill().DrawOver(chrome.hostDialogFooterDraw)
+	m, gap := state.messages, c.Theme().Metrics.GapItem
+	chrome.hostTestButton, chrome.hostTestMessage = ui.Box{}, ui.Box{}
+	chrome.hostCancelButton, chrome.hostSubmitButton = ui.Box{}, ui.Box{}
+	ui.Row(c).Fill().Items(ui.Center).Gap(gap).Children(func() {
+		if state.hostTestAvailable() {
+			chrome.hostTestButton = ui.Button(c, m.HostTest).Outline().
+				Hit(hitDialogTest, m.HostTest).Disabled(state.hostTest.outcome == hostTestRunning)
+		}
+		chrome.hostTestMessage = ui.Slot(c).Grow(1)
+		chrome.hostTestMessage.Draw(chrome.hostTestMessageDraw)
+		chrome.hostCancelButton = ui.Button(c, cancel).Secondary().Hit(hitDialogCancel, cancel)
+		chrome.hostSubmitButton = ui.Button(c, submit).Hit(hitDialogSubmit, submit)
+	})
 }
 
-// drawHostDialogFooter paints the footer the page laid out: the buttons against
-// the right edge and the test control at the left.
-func (state *State) drawHostDialogFooter(d *ui.DrawContext) {
+// drawHostTestMessage paints what the last test found into its slot and keeps
+// the footer's controls in the form's tab ring.
+func (state *State) drawHostTestMessage(d *ui.DrawContext) {
 	chrome := &state.chrome
-	actions := [...]components.ButtonAction{
-		{ID: hitDialogCancel, Label: chrome.hostDialogCancelLabel, Variant: components.ButtonSecondary},
-		{ID: hitDialogSubmit, Label: chrome.hostDialogSubmitLabel},
-	}
-	components.BeginButtonRow(d.Canvas, *d.Theme, d.Rect).Size(components.ButtonSizeDefault).Paint(actions[:]...)
-	state.paintHostTest(d.Canvas, *d.Theme, d.Rect, chrome.hostDialogCancelLabel, chrome.hostDialogSubmitLabel)
 	form := &state.editor.form
-	if state.hostTestAvailable() {
-		form.addStop(hitDialogTest, d.Rect, false)
+	if chrome.hostTestButton.Valid() {
+		form.addStop(hitDialogTest, chrome.hostTestButton.Rect(), false)
 	}
-	form.addStop(hitDialogCancel, d.Rect, false)
-	form.addStop(hitDialogSubmit, d.Rect, false)
-}
-
-// hostFormScrollGeometry is where the form's scroll area lies inside the dialog
-// body, for the body rect the dialog's layout gives.
-func (state *State) hostFormScrollGeometry(body gfx.Rect) components.ScrollAreaGeometry {
-	area := components.BeginScrollArea(nil, state.Theme(), body, gfx.Size{Height: state.hostFormHeight()}).
-		Offset(0, state.editor.form.offset)
-	return area.Geometry()
+	if chrome.hostCancelButton.Valid() {
+		form.addStop(hitDialogCancel, chrome.hostCancelButton.Rect(), false)
+	}
+	if chrome.hostSubmitButton.Valid() {
+		form.addStop(hitDialogSubmit, chrome.hostSubmitButton.Rect(), false)
+	}
+	state.paintHostTestMessage(d.Canvas, d.Rect)
 }
 
 // hostFormChoice declares one labelled Choice of a form page: the field title
@@ -2999,11 +2998,11 @@ func hostFormChoice[T comparable](c ui.C, title string, height float32, value *T
 	return choice
 }
 
-// declareHostFormBody lays out the host form: the protocol choice, the fields,
-// and the sections whose controls are painted into the slots by hand. The
-// controls stay painted by hand so their focus order, clip and invalid looks
-// are the ones they already have. The body scrolls in the dialog's own height,
-// as the form's scroll area did.
+// declareHostFormBody lays out the host form as one page: the protocol choice,
+// the endpoint fields, the pickers and the sections, all inside the body's own
+// scroll area. The fields and selects are page controls; the controls whose
+// popup carries content a page select cannot (the group, tag and icon pickers,
+// the shared-password field) are painted into the slots their rows leave.
 func (state *State) declareHostFormBody(c ui.C, title string) {
 	editor := &state.editor
 	form := &editor.form
@@ -3019,115 +3018,137 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 	form.layoutProtocol = editor.protocol
 	form.algoLayout = editor.algoMode
 	*b = hostFormBody{}
-	scroll := state.hostFormScrollGeometry(state.hostFormBodyRect(c))
-	if scroll.Viewport != form.geometry.Viewport {
-		form.lastFocus = gfx.ID{}
+	// The page controls this form declared last paint are stale now; a box is
+	// valid only until the end of the paint that made it.
+	form.passwordControl = ui.Box{}
+	form.authBox, form.portsBox = ui.Box{}, ui.Box{}
+	form.encodingBox, form.iconBox = ui.Box{}, ui.Box{}
+	form.idleIntervalBox, form.idleUnitBox, form.idleInputBox = ui.Box{}, ui.Box{}, ui.Box{}
+	for index := range form.colorSwatchBoxes {
+		form.colorSwatchBoxes[index] = ui.Box{}
 	}
-	form.geometry, form.offset = scroll, scroll.OffsetY
+	form.colorPickerBox = ui.Box{}
 	chrome := &state.chrome
 	chrome.hostDialogTitle = title
 	if chrome.hostFormViewportDraw == nil {
 		chrome.hostFormViewportDraw = state.drawHostFormViewport
-		chrome.hostFormScrollbarDraw = state.drawHostFormScrollbar
 		chrome.hostFormFieldsDraw = state.drawHostFormFields
 	}
-	viewport := ui.Column(c).Fill().Clip()
-	viewport.Draw(chrome.hostFormViewportDraw)
-	viewport.DrawOver(chrome.hostFormScrollbarDraw)
+	body := state.hostFormBodyRect(c)
+	if form.viewport != body {
+		form.lastFocus = gfx.ID{}
+	}
+	viewport := ui.Column(c).Fill()
 	viewport.Children(func() {
-		content := ui.Column(c).FillWidth().Height(state.hostFormHeight()).MarginTop(-scroll.OffsetY).PadSides(2, 4, 0, 4)
-		if scroll.MaxOffsetY > 0 {
-			content = content.MarginRight(12)
-		}
-		content.Children(func() {
-			b.protocol = ui.Slot(c).Height(34).MarginSides(0, 0, 10, 0)
-			if editor.moshTerminal() {
-				ui.Paragraph(c, state.messages.Tools.MoshHint, 2).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.muted).LineHeight(16)
+		scroller := ui.Scroll(c).Fill().Scrollbars().ScrollbarSize(hostFormBarWidth)
+		form.pageScroll = scroller.ScrollState()
+		form.scroller = scroller
+		scroller.Draw(chrome.hostFormViewportDraw)
+		scroller.Children(func() {
+			content := ui.Column(c).FillWidth().MinHeight(state.hostFormHeight()).PadSides(2, 4, 0, 4)
+			if state.hostFormHeight() > body.Height {
+				content = content.MarginRight(12)
 			}
-			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
-				b.label = ui.Slot(c).Grow(1)
-				b.colorField = ui.Slot(c).Grow(1)
-			})
-			b.endpoint = ui.Slot(c).Height(float32(state.hostEndpointRows()) * rowHeight)
-			state.declareHostEndpointSlots(c, b.endpoint, rowHeight)
-			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
-				b.group = ui.Slot(c).Grow(1)
-				b.tags = ui.Slot(c).Grow(1)
-			})
-			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
-				b.iconField = ui.Slot(c).Grow(1)
-				if ssh && !editor.moshTerminal() {
-					b.transfer = ui.Slot(c).Grow(1)
+			content.Children(func() {
+				b.protocol = ui.Slot(c).Height(34).MarginSides(0, 0, 10, 0)
+				if editor.moshTerminal() {
+					ui.Paragraph(c, state.messages.Tools.MoshHint, 2).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.muted).LineHeight(16)
 				}
-				if state.hostShowsEncoding() {
-					b.encoding = ui.Slot(c).Grow(1)
-				}
-			})
-			if networkHost {
-				// The proxy is its own row: sharing the icon row clipped both the
-				// icon value and the proxy summary on VNC, RDP and Telnet.
-				b.proxy = state.declareHostProxyRow(c)
-			}
-			if ssh || vncHost {
-				b.jump = state.declareHostJumpRow(c)
-			}
-			if terminalHost {
-				b.advanced = ui.Slot(c).Height(state.advancedSectionHeight())
-				advanced := b.advanced
-				advanced.Children(func() {
-					b.advancedHeader, b.advancedHeaderIcon = state.declareHostAdvancedHeader(c)
-					if editor.advancedOpen {
-						if ssh {
-							// The rows and the choice are declared as the same overlay:
-							// the choice keeps its press for after the rows laid out.
-							ui.Column(c).Absolute().Left(0).Right(0).Top(advancedHeaderHeight).Children(func() {
-								state.declareHostAlgoRows(c)
-							})
-							ui.Column(c).Absolute().Left(0).Right(0).Top(advancedHeaderHeight).Height(rowHeight).Children(func() {
-								b.algo = state.declareHostAlgoChoice(c)
-							})
-						} else {
-							ui.Column(c).Absolute().Left(0).Right(0).Top(advancedHeaderHeight).Children(func() {
-								state.declareHostIdleKeepAliveRows(c)
-							})
-						}
+				ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+					b.label = ui.Slot(c).Grow(1)
+					b.label.Children(func() {
+						form.fieldLabel.declare(c, state, &editor.label, dialogFieldSpec{
+							ID: hitDialogLabel, Label: state.messages.FieldLabel, Placeholder: state.messages.FieldLabelPlaceholder, Height: rowHeight,
+						})
+					})
+					b.addField(hitDialogLabel, &form.fieldLabel)
+					b.colorField = ui.Slot(c).Grow(1)
+					state.declareHostColorChoice(c, b.colorField, rowHeight)
+				})
+				b.endpoint = ui.Slot(c).Height(float32(state.hostEndpointRows()) * rowHeight)
+				state.declareHostEndpointSlots(c, b.endpoint, rowHeight)
+				ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+					b.group = ui.Slot(c).Grow(1)
+					b.tags = ui.Slot(c).Grow(1)
+				})
+				ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+					b.iconField = ui.Slot(c).Grow(1)
+					state.declareHostIconPicker(c, b.iconField, rowHeight)
+					if ssh && !editor.moshTerminal() {
+						b.transfer = ui.Slot(c).Grow(1)
+					}
+					if state.hostShowsEncoding() {
+						b.encoding = ui.Slot(c).Grow(1)
+						state.declareHostEncodingPicker(c, b.encoding, rowHeight)
 					}
 				})
-			}
-			if vncHost {
-				b.vncRows = ui.Slot(c).Height(state.desktopRowsHeight())
-				b.vncRows.Children(func() { state.declareHostVNCRows(c) })
-			}
-			if state.dialogError != "" {
-				// The serial line's error is long: up to two lines.
-				ui.Paragraph(c, state.dialogError, 2).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(16)
-			}
-			// The choices are declared after the rows they sit in: the frame that
-			// delivers a click lays out what it did before it, the choice writes
-			// its value at the end, and the next frame draws it.
-			if editor.protocol == protocolSerial {
-				// The device and line rows are painted by hand; the flow control
-				// takes the row under them.
-				endpoint := b.endpoint
-				endpoint.Children(func() {
-					ui.Column(c).Absolute().Left(0).Right(0).Top(2 * rowHeight).Height(rowHeight).Children(func() {
-						b.flow = state.declareHostFlowChoice(c)
+				if networkHost {
+					// The proxy is its own row: sharing the icon row clipped both the
+					// icon value and the proxy summary on VNC, RDP and Telnet.
+					b.proxy = state.declareHostProxyRow(c)
+				}
+				if ssh || vncHost {
+					b.jump = state.declareHostJumpRow(c)
+				}
+				if terminalHost {
+					b.advanced = ui.Slot(c).Height(state.advancedSectionHeight())
+					advanced := b.advanced
+					advanced.Children(func() {
+						b.advancedHeader, b.advancedHeaderIcon = state.declareHostAdvancedHeader(c)
+						if editor.advancedOpen {
+							if ssh {
+								// The rows and the choice are declared as the same overlay:
+								// the choice keeps its press for after the rows laid out.
+								ui.Column(c).Absolute().Left(0).Right(0).Top(advancedHeaderHeight).Children(func() {
+									state.declareHostAlgoRows(c)
+								})
+								ui.Column(c).Absolute().Left(0).Right(0).Top(advancedHeaderHeight).Height(rowHeight).Children(func() {
+									b.algo = state.declareHostAlgoChoice(c)
+								})
+							} else {
+								ui.Column(c).Absolute().Left(0).Right(0).Top(advancedHeaderHeight).Children(func() {
+									state.declareHostIdleKeepAliveRows(c)
+								})
+							}
+						}
 					})
+				}
+				if vncHost {
+					b.vncRows = ui.Slot(c).Height(state.desktopRowsHeight())
+					b.vncRows.Children(func() { state.declareHostVNCRows(c) })
+				}
+				if state.dialogError != "" {
+					// The serial line's error is long: up to two lines.
+					ui.Paragraph(c, state.dialogError, 2).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(16)
+				}
+				// The choices are declared after the rows they sit in: the frame that
+				// delivers a click lays out what it did before it, the choice writes
+				// its value at the end, and the next frame draws it.
+				if editor.protocol == protocolSerial {
+					// The device and line rows are the page's fields; the flow control
+					// takes the row under them.
+					endpoint := b.endpoint
+					endpoint.Children(func() {
+						ui.Column(c).Absolute().Left(0).Right(0).Top(2 * rowHeight).Height(rowHeight).Children(func() {
+							b.flow = state.declareHostFlowChoice(c)
+						})
+					})
+				}
+				if ssh && !editor.moshTerminal() {
+					transfer := b.transfer
+					transfer.Children(func() {
+						b.transfer = state.declareHostTransferChoice(c)
+					})
+				}
+				protocol := b.protocol
+				protocol.Children(func() {
+					b.protocol = state.declareHostProtocolChoice(c)
 				})
-			}
-			if ssh && !editor.moshTerminal() {
-				transfer := b.transfer
-				transfer.Children(func() {
-					b.transfer = state.declareHostTransferChoice(c)
-				})
-			}
-			protocol := b.protocol
-			protocol.Children(func() {
-				b.protocol = state.declareHostProtocolChoice(c)
 			})
+			content.DrawOver(chrome.hostFormFieldsDraw)
 		})
-		content.DrawOver(chrome.hostFormFieldsDraw)
 	})
+	state.declareHostCredentialMenu(c)
 }
 
 // drawHostFormViewport names the scroll viewport of the host form, whose title
@@ -3138,31 +3159,21 @@ func (state *State) drawHostFormViewport(d *ui.DrawContext) {
 	}
 }
 
-// drawHostFormScrollbar paints the form's scrollbar over the viewport.
-func (state *State) drawHostFormScrollbar(d *ui.DrawContext) {
-	state.paintHostFormScrollbar(d.Canvas)
-}
-
 // drawHostFormFields paints the form's controls into the slots the page laid
 // out.
 func (state *State) drawHostFormFields(d *ui.DrawContext) {
 	state.paintHostFormFields(d.Canvas)
 }
 
+// hostFormBarWidth is the form's scroll bar: it keeps a strip the same width as
+// the hosts list's bar.
+const hostFormBarWidth = float32(10)
+
 // hostFormBodyRect is where the dialog lays the form's body, as the dialog
 // declaration lays it out.
 func (state *State) hostFormBodyRect(c ui.C) gfx.Rect {
 	layout := dialogContentRect(c.Canvas(), *c.Theme(), dialogViewport(c), 680, "", state.hostFormHeight())
 	return layout.Body
-}
-
-// paintHostFormScrollbar paints the form's scrollbar beside its content after
-// the page laid the body out.
-func (state *State) paintHostFormScrollbar(canvas *gfx.Canvas) {
-	form := &state.editor.form
-	area := components.BeginScrollArea(canvas, state.Theme(), form.geometry.Bounds, gfx.Size{Height: state.hostFormHeight()}).
-		Offset(0, form.offset).VerticalScrollbar(hitHostFormScrollbar, state.hostDialogTitle(), "")
-	area.EndContent()
 }
 
 // hostDialogTitle is the form's title, by the mode the dialog is open in.
@@ -3176,30 +3187,50 @@ func (state *State) hostDialogTitle() string {
 	return state.messages.DialogTitle
 }
 
-// paintHostFormFields paints the form's controls into the slots the page laid
-// out.
+// paintHostFormFields keeps the page's controls in the form's tab ring and
+// paints the controls whose popup carries content a page select cannot.
 func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
 	editor := &state.editor
-	m := state.messages
+	form := &editor.form
+	if form.scroller.Valid() {
+		form.viewport = form.scroller.Rect()
+	}
+	if form.pageScroll != nil {
+		form.offset, form.maxOffset = form.pageScroll.Offset, form.pageScroll.Max()
+	}
+	editor.form.clipped = true
+	defer func() { editor.form.clipped = false }()
+	// The endpoint's page text fields, and the label, are stops even while they
+	// lie outside the clipped viewport.
+	for i := 0; i < form.body.fieldCount; i++ {
+		ref := form.body.fields[i]
+		state.revealHostField(canvas, ref.id, ref.field.box.Rect())
+	}
+	if form.authBox.Valid() {
+		state.rememberHostPageSelect(canvas, form.authBox, hitDialogAuth)
+	}
+	if form.portsBox.Valid() {
+		state.rememberHostPageSelect(canvas, form.portsBox, hitDialogPortsTrigger)
+	}
+	if form.encodingBox.Valid() {
+		state.rememberHostPageSelect(canvas, form.encodingBox, hitDialogEncoding)
+	}
+	if form.iconBox.Valid() {
+		state.rememberHostPageSelect(canvas, form.iconBox, hitDialogIcon)
+	}
+	state.rememberHostIdleSelects(canvas)
+	state.rememberHostColor(canvas)
 	// Which sections this frame's body laid out is fixed before the page's
 	// protocol choice writes the protocol a click chose; paint those sections,
 	// as the hand-painted endpoint rows paint the protocol now in effect.
-	protocol := editor.form.layoutProtocol
+	protocol := form.layoutProtocol
 	ssh := protocol == protocolSSH
 	networkHost := protocol != protocolSerial
 	vncHost := protocol == protocolVNC || protocol == protocolRDP
 	b := &editor.form.body
-	editor.form.clipped = true
-	defer func() { editor.form.clipped = false }()
-	state.paintDialogField(canvas, hitDialogLabel, fieldLabel, m.FieldLabel, m.FieldLabelPlaceholder, b.label.Rect())
 	state.paintHostEndpointRows(canvas)
 	state.paintHostGroupPicker(canvas, b.group.Rect())
 	state.paintHostTags(canvas, b.tags.Rect())
-	if b.encoding.Valid() {
-		state.paintHostEncodingPicker(canvas, b.encoding.Rect())
-	}
-	state.paintHostIconPicker(canvas, b.iconField.Rect())
-	state.paintHostColorChoice(canvas, b.colorField.Rect())
 	if networkHost {
 		state.paintHostProxyRow(canvas)
 	}
@@ -3225,11 +3256,6 @@ func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
 	if b.algo.Valid() {
 		state.rememberHostChoice(canvas, b.algo.Rect(), &editor.form.choiceIDs.algo, state.hostAlgoChoiceLabel(editor.algoMode))
 	}
-	// The picker's backdrop must reach the whole window, not the scrolling body
-	// the form's clip covers.
-	portal := state.beginHostFormPopup(canvas, state.editor.colorPicker.open)
-	state.paintHostColorPicker(canvas)
-	state.endHostFormPopup(canvas, portal)
 }
 
 // declareDeleteHostDialog declares the delete confirmation as a dialog of the
@@ -3365,10 +3391,6 @@ func (state *State) declareMoveGroupBody(c ui.C, label string, viewport gfx.Rect
 	})
 }
 
-// paintDialogField paints one label + input row wired to its editor. The
-// focused field hands text rendering to the platform editor; the others paint
-// their value statically. The placeholder says what the field takes; there is
-// no second caption.
 // hostSystemChoices are the systems whose badge a host can be given, in the order
 // the list shows them. The names are the systems' own, the same in every language.
 var hostSystemChoices = [...]struct {
@@ -3464,35 +3486,6 @@ func hostIconChoices() []hostIcon {
 		choices = append(choices, hostIconOf(choice.system))
 	}
 	return append(choices, hostIconServer, hostIconTerminal, hostIconSerial, hostIconGlobe, hostIconKey, hostIconDesktop)
-}
-
-func (state *State) paintDialogField(canvas *gfx.Canvas, id gfx.ID, field hostField, title, placeholder string, bounds gfx.Rect) {
-	state.paintDialogFieldWithSecurity(canvas, id, field, title, placeholder, bounds, false)
-}
-
-func (state *State) paintSecureDialogField(canvas *gfx.Canvas, id gfx.ID, field hostField, title, placeholder string, bounds gfx.Rect) {
-	state.paintDialogFieldWithSecurity(canvas, id, field, title, placeholder, bounds, true)
-}
-
-func (state *State) paintDialogFieldWithSecurity(canvas *gfx.Canvas, id gfx.ID, field hostField, title, placeholder string, bounds gfx.Rect, secure bool) {
-	theme := state.Theme()
-	content := components.BeginField(canvas, theme, bounds).For(id).Paint(title, "", "")
-	state.revealHostField(canvas, id, content)
-	if id == hitDialogPassword && state.hostOffersCredential() {
-		state.paintHostPasswordWithCredential(canvas, content, title, placeholder)
-		return
-	}
-	value := state.editor.field(field).String()
-	focused := canvas.Focused() == id
-	state.paintSecretInput(canvas, content, components.InputSnapshot{
-		ID:              id,
-		Label:           title,
-		Value:           value,
-		Placeholder:     placeholder,
-		Secure:          secure,
-		Focused:         focused,
-		PlatformEditing: focused && value != "",
-	})
 }
 
 // declareHostKeyDialog declares the host-key question as a dialog of the

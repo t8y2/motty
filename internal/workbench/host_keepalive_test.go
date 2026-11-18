@@ -675,11 +675,11 @@ func TestChoosingTheProtocolDefaultDoesNotPinTheSendMode(t *testing.T) {
 	editor := &state.editor
 	editor.reset()
 	editor.protocol = protocolSSH
-	state.clickHostIdleKeepAlive(hitDialogIdleInputItemList.At(1)) // NUL, the SSH default
+	editor.chooseIdleInput(idleInputNUL) // the SSH default
 	if editor.idleInput != idleInputNUL || editor.idleInputChosen {
 		t.Fatalf("input = %v chosen=%v, want the default left unpinned", editor.idleInput, editor.idleInputChosen)
 	}
-	state.clickHostIdleKeepAlive(hitDialogIdleInputItemList.At(0)) // CR
+	editor.chooseIdleInput(idleInputCR)
 	if editor.idleInput != idleInputCR || !editor.idleInputChosen {
 		t.Fatalf("input = %v chosen=%v, want CR pinned", editor.idleInput, editor.idleInputChosen)
 	}

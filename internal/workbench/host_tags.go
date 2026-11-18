@@ -166,6 +166,7 @@ func (state *State) hostTagsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 func (state *State) paintHostTags(canvas *gfx.Canvas, bounds gfx.Rect) {
 	p := state.hostTagPicker()
 	input := components.BeginField(canvas, state.Theme(), bounds).For(hitDialogTags).Paint(state.messages.FieldTags, "", "")
+	state.revealHostField(canvas, hitDialogTags, input)
 	query := strings.TrimSpace(p.control.Query.String())
 	layout := components.PaintMultiSelect(canvas, state.Theme(), input, &p.control, components.MultiSelectOptions{
 		InputID: hitDialogTags, TriggerID: hitHostTagsTrigger, DismissID: hitHostTagsDismiss, Scope: hostTagsScope, ScrollID: hitHostTagsScroll,

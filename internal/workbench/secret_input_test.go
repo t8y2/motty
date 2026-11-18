@@ -59,8 +59,7 @@ func TestHostFormSavesTheKeyPassphraseUnderTheKeyAndRefusesAWrongOne(t *testing.
 	typeInto(state, hitDialogLabel, "Vault")
 	typeInto(state, hitDialogAddress, "vault.example.com")
 	typeInto(state, hitDialogUser, "ops")
-	state.Click(hitDialogAuth)
-	state.Click(hitDialogAuthItemList.At(int(authPrivateKey)))
+	chooseSelectOption(t, state, state.messages.FieldAuthentication, state.messages.AuthPrivateKey)
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitDialogPassphrase); ok {
