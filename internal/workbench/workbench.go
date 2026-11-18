@@ -2624,9 +2624,6 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result, handled := state.hostSortPointer(event); handled {
 		return result
 	}
-	if result, handled := state.snippetReorderPointer(event); handled {
-		return result
-	}
 	if result, handled := state.hostListBarPointer(event); handled {
 		return result
 	}
@@ -3082,9 +3079,6 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		}
 	}
 	if result, handled := state.snippetGroupKey(event); handled {
-		return result
-	}
-	if result, handled := state.snippetReorderKey(event); handled {
 		return result
 	}
 	if result := state.toolbarSettingsKey(event); result.Handled {
