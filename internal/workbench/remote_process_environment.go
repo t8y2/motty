@@ -146,7 +146,7 @@ func (state *State) declareRemoteProcessDetailsBody(c ui.C, width float32, proce
 		}
 		if notice == "" {
 			spec.columns, spec.header, spec.rows = remoteEnvironmentTable(details.environment,
-				[2]string{m.RemoteProcessEnvironmentName, m.RemoteProcessEnvironmentValue}, width-16)
+				[2]string{m.RemoteProcessEnvironmentName, m.RemoteProcessEnvironmentValue})
 		}
 		state.declareRemoteDetail(c, &details.text, spec)
 	})
