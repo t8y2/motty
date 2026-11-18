@@ -503,6 +503,7 @@ var (
 	settingsToolbarPositionChoices = [...]terminalToolbarPosition{terminalToolbarLeft, terminalToolbarRight}
 	settingsTabOrientationChoices  = [...]tabOrientation{tabsHorizontal, tabsVertical}
 	settingsCloseChoices           = [...]closeAction{closeToTray, closeQuits}
+	settingsCloseQuitOnly          = [...]closeAction{closeQuits}
 	settingsRelaunchChoices        = [...]relaunchAction{relaunchRaise, relaunchNewWindow}
 )
 

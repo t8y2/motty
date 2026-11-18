@@ -342,8 +342,17 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 				state.paintTrayIconSetting(page)
 			}
 			if state.closeActionVisible() {
-				settingsChoiceRow(page, messages.Tools.GeneralClose, messages.Tools.GeneralCloseDescription, &state.closeAction, settingsCloseChoices[:], state.settingsCloseLabel,
-					func() { state.save() }, nil)
+				closeChoice := state.closeAction
+				choices := settingsCloseChoices[:]
+				if !state.trayStayAvailable() {
+					// Without an icon there is nothing to stay behind, so the row
+					// states the only thing closing can do instead of offering a
+					// tray it cannot keep.
+					closeChoice = closeQuits
+					choices = settingsCloseQuitOnly[:]
+				}
+				settingsChoiceRow(page, messages.Tools.GeneralClose, messages.Tools.GeneralCloseDescription, &closeChoice, choices, state.settingsCloseLabel,
+					func() { state.closeAction = closeChoice; state.save() }, nil)
 			}
 			if state.options.NewWindow != nil {
 				settingsChoiceRow(page, messages.Tools.GeneralRelaunch, messages.Tools.GeneralRelaunchDescription, &state.relaunchAction, settingsRelaunchChoices[:], state.settingsRelaunchLabel,

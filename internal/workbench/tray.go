@@ -128,10 +128,18 @@ func productText(text string) string {
 	return strings.ReplaceAll(text, "Motty", buildinfo.ProductName)
 }
 
-// closeActionVisible reports whether closing a window can leave the application
-// in the status area, so the choice of what it does is worth showing.
+// closeActionVisible reports whether the close-action row is worth showing. It
+// is shown whenever the tray feature is wired, even with the icon turned off:
+// the row then states the only thing closing can do, quit, rather than vanish.
 func (state *State) closeActionVisible() bool {
-	return state.options.StatusArea != nil && state.options.StatusArea()
+	return state.options.SetTrayIcon != nil || state.options.StatusArea != nil
+}
+
+// trayStayAvailable reports whether staying in the status area on close is
+// currently possible: the icon must be on and the desktop must have a status
+// area. When it is not, closing can only quit and the choice is locked to that.
+func (state *State) trayStayAvailable() bool {
+	return !state.trayIconOff && state.options.StatusArea != nil && state.options.StatusArea()
 }
 
 // StaysInTray reports whether closing the last window, or a window that has

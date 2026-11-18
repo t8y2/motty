@@ -358,6 +358,10 @@ func (state *State) clickLaunchSettings(id gfx.ID) bool {
 		}
 	case hitSettingsTrayIconToggle:
 		state.trayIconOff = !state.trayIconOff
+		if state.trayIconOff {
+			// No icon means nothing to stay behind: closing can only quit.
+			state.closeAction = closeQuits
+		}
 		if state.options.SetTrayIcon != nil {
 			state.options.SetTrayIcon(!state.trayIconOff)
 		}

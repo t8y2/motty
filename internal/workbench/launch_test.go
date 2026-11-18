@@ -595,6 +595,61 @@ func TestTrayIconHiddenReadsTheSavedChoiceAndDefaultsToShow(t *testing.T) {
 	}
 }
 
+// The close-action row stays on the page whether the icon is up or hidden. With
+// the icon hidden there is nothing to stay behind, so the row locks to quitting;
+// with the icon back the tray/quit choice is the user's again.
+func TestCloseActionRowStaysVisibleAndLocksToQuitWithoutTheIcon(t *testing.T) {
+	_, options := newWorld(t)
+	icon := true
+	options.SetTrayIcon = func(visible bool) { icon = visible }
+	options.StatusArea = func() bool { return icon }
+	state := newTestState(t, options)
+	openGeneralSettings(state)
+	_, texts := paintedTexts(state)
+	if !contains(texts, state.messages.Tools.GeneralClose) {
+		t.Fatalf("no close row with the icon up: %q", texts)
+	}
+	clickSettingsChoice(t, state, state.messages.Tools.GeneralCloseTray)
+	if !state.StaysInTray() {
+		t.Fatal("choosing the tray with the icon up did not stick")
+	}
+
+	state.Click(hitSettingsTrayIconToggle) // hide the icon
+	if !state.trayIconOff || state.StaysInTray() || state.closeAction != closeQuits {
+		t.Fatalf("off %v stays %v action %v", state.trayIconOff, state.StaysInTray(), state.closeAction)
+	}
+	_, texts = paintedTexts(state)
+	if !contains(texts, state.messages.Tools.GeneralClose) {
+		t.Fatal("the close row vanished when the icon was hidden")
+	}
+	if contains(texts, state.messages.Tools.GeneralCloseTray) {
+		t.Fatal("a tray choice is offered while there is no icon to stay behind")
+	}
+
+	state.Click(hitSettingsTrayIconToggle) // bring the icon back
+	clickSettingsChoice(t, state, state.messages.Tools.GeneralCloseTray)
+	if !state.StaysInTray() {
+		t.Fatal("the tray choice was not free again once the icon returned")
+	}
+}
+
+// A store that hides the icon but still carries a tray close preference (an
+// older build, or a hand-edited file) must not stay in a tray that is not there.
+func TestRestoringAHiddenIconOverridesATrayClosePreference(t *testing.T) {
+	_, options := newWorld(t)
+	options.SetTrayIcon = func(bool) {}
+	if err := saveState(options.StatePath, savedState{Hosts: sampleHosts, TrayIconOff: true, CloseAction: closeToTray.String()}); err != nil {
+		t.Fatal(err)
+	}
+	state := newTestState(t, options)
+	if !state.trayIconOff {
+		t.Fatal("the restore did not read the hidden icon")
+	}
+	if state.StaysInTray() || state.closeAction != closeQuits {
+		t.Fatalf("stays %v action %v", state.StaysInTray(), state.closeAction)
+	}
+}
+
 func TestAWaitingRequestStartsWhenTheDialogIsClosedByAKey(t *testing.T) {
 	state, world, _ := launchState(t)
 	state.Launch([]string{"ssh://one@one.example.com/"})
