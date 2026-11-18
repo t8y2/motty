@@ -1,34 +1,32 @@
 package workbench
 
 import (
-	"time"
-
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/workbench/icons"
 )
 
-// tableSortIconSize and tableSortIconGap are components.Table's
+// remoteTableSortIconSize and remoteTableSortIconGap are components.Table's
 // sort glyph geometry, so the page's header keeps the arrow where the canvas
 // table painted it.
 const (
-	tableSortIconSize = float32(14)
-	tableSortIconGap  = float32(4)
+	remoteTableSortIconSize = float32(14)
+	remoteTableSortIconGap  = float32(4)
 )
 
 // The sort arrows are components.Table's own glyphs, kept here because the page
 // paints the header itself and Viva does not export them.
 var (
-	tableSortUnsortedIcon = gfx.Icon{ViewBox: 24, Stroke: 2, Cap: gfx.CapRound, Join: gfx.JoinRound, Commands: []gfx.PathCommand{
+	remoteTableUnsortedIcon = gfx.Icon{ViewBox: 24, Stroke: 2, Cap: gfx.CapRound, Join: gfx.JoinRound, Commands: []gfx.PathCommand{
 		gfx.MoveTo(8, 9), gfx.LineTo(12, 5), gfx.LineTo(16, 9),
 		gfx.MoveTo(8, 15), gfx.LineTo(12, 19), gfx.LineTo(16, 15),
 	}}
-	tableSortAscendingIcon = gfx.Icon{ViewBox: 24, Stroke: 2, Cap: gfx.CapRound, Join: gfx.JoinRound, Commands: []gfx.PathCommand{
+	remoteTableAscendingIcon = gfx.Icon{ViewBox: 24, Stroke: 2, Cap: gfx.CapRound, Join: gfx.JoinRound, Commands: []gfx.PathCommand{
 		gfx.MoveTo(12, 19), gfx.LineTo(12, 5),
 		gfx.MoveTo(7, 10), gfx.LineTo(12, 5), gfx.LineTo(17, 10),
 	}}
-	tableSortDescendingIcon = gfx.Icon{ViewBox: 24, Stroke: 2, Cap: gfx.CapRound, Join: gfx.JoinRound, Commands: []gfx.PathCommand{
+	remoteTableDescendingIcon = gfx.Icon{ViewBox: 24, Stroke: 2, Cap: gfx.CapRound, Join: gfx.JoinRound, Commands: []gfx.PathCommand{
 		gfx.MoveTo(12, 5), gfx.LineTo(12, 19),
 		gfx.MoveTo(7, 14), gfx.LineTo(12, 19), gfx.LineTo(17, 14),
 	}}
@@ -46,8 +44,6 @@ func (state *State) ensureRemoteTableHooks() {
 	view.headerDraw = state.paintRemoteTableHeader
 	view.fillDraw = state.paintRemoteTableFill
 	view.borderDraw = state.paintRemoteTableBorder
-	view.emptyDraw = state.paintRemoteEmpty
-	view.loadingDraw = state.paintRemoteLoading
 	view.menuRow = -1
 }
 
@@ -323,7 +319,7 @@ func (state *State) paintRemoteTableHeader(d *ui.DrawContext) {
 		}
 		cell := gfx.Rect{X: x, Y: bounds.Y, Width: width, Height: bounds.Height}
 		header := view.tableHeaderCells[column]
-		if !header.Disabled && (canvas.Hovered() == header.ID || canvas.Pressed() == header.ID) {
+		if canvas.Hovered() == header.ID || canvas.Pressed() == header.ID {
 			canvas.Fill(cell, theme.Hover)
 		}
 		if !header.Disabled && canvas.FocusVisible() == header.ID {
@@ -334,9 +330,9 @@ func (state *State) paintRemoteTableHeader(d *ui.DrawContext) {
 			color.Alpha *= 0.5
 		}
 		textBounds := cell.Inset(gfx.Insets{Left: pad, Right: pad})
-		label := canvas.FitLine(header.Label, size, gfx.WeightMedium, max(textBounds.Width-tableSortIconSize-tableSortIconGap, 0))
-		labelWidth := min(canvas.TextWidthWeight(label, size, gfx.WeightMedium), max(textBounds.Width-tableSortIconSize-tableSortIconGap, 0))
-		groupWidth := min(labelWidth+tableSortIconGap+tableSortIconSize, max(textBounds.Width, 0))
+		label := canvas.FitLine(header.Label, size, gfx.WeightMedium, max(textBounds.Width-remoteTableSortIconSize-remoteTableSortIconGap, 0))
+		labelWidth := min(canvas.TextWidthWeight(label, size, gfx.WeightMedium), max(textBounds.Width-remoteTableSortIconSize-remoteTableSortIconGap, 0))
+		groupWidth := min(labelWidth+remoteTableSortIconGap+remoteTableSortIconSize, max(textBounds.Width, 0))
 		switch spec.Alignment {
 		case components.TableAlignRight:
 			textBounds.X += max(textBounds.Width-groupWidth, 0)
@@ -346,17 +342,17 @@ func (state *State) paintRemoteTableHeader(d *ui.DrawContext) {
 		textBounds.Width = labelWidth
 		canvas.Clip(cell)
 		canvas.Label(label, textBounds, gfx.TextStyle{Size: size, Weight: gfx.WeightMedium, Color: color})
-		icon := tableSortUnsortedIcon
+		icon := remoteTableUnsortedIcon
 		switch header.Sort {
 		case components.TableSortAscending:
-			icon = tableSortAscendingIcon
+			icon = remoteTableAscendingIcon
 		case components.TableSortDescending:
-			icon = tableSortDescendingIcon
+			icon = remoteTableDescendingIcon
 		}
 		canvas.DrawIcon(icon, gfx.Rect{
-			X:     textBounds.X + labelWidth + tableSortIconGap,
-			Y:     bounds.Y + (bounds.Height-tableSortIconSize)/2,
-			Width: tableSortIconSize, Height: tableSortIconSize,
+			X:     textBounds.X + labelWidth + remoteTableSortIconGap,
+			Y:     bounds.Y + (bounds.Height-remoteTableSortIconSize)/2,
+			Width: remoteTableSortIconSize, Height: remoteTableSortIconSize,
 		}, color)
 		canvas.Unclip()
 		x += width
@@ -368,16 +364,31 @@ func (state *State) paintRemoteTableHeader(d *ui.DrawContext) {
 // state in the page instead of a list.
 func (state *State) declareRemoteTablePlaceholder(c ui.C, tab remoteTab) {
 	view, m, pal := &state.remote, state.messages.Tools, state.pal
-	centered := func(body func()) {
-		ui.Column(c).Grow(1).FillWidth().Justify(ui.Center).Items(ui.Center).Gap(6).Children(body)
-	}
+	theme := state.Theme()
 	if tab != remoteProcesses {
 		if view.noDocker && view.collectedAt.IsZero() {
-			ui.Slot(c).Grow(1).FillWidth().Draw(view.emptyDraw)
+			// components.Empty's bare-icon state: a 32px glyph in the
+			// foreground, the large medium title, and the body-size muted
+			// description in a 384px column.
+			titleSize := theme.Metrics.FontSizeM + 5
+			ui.Column(c).Grow(1).FillWidth().Justify(ui.Center).Items(ui.Center).Children(func() {
+				ui.Icon(c, icons.LinuxDocker).Size(32, 32).Color(theme.Foreground).
+					MarginBottom(theme.Metrics.GapItem * 2)
+				ui.Text(c, m.RemoteDockerMissing).Height(titleSize + 10).FontSize(titleSize).
+					Weight(gfx.WeightMedium).Color(theme.Foreground)
+				ui.Paragraph(c, m.RemoteDockerMissingHint, 6).FontSize(theme.Metrics.FontSizeM).
+					LineHeight(theme.Metrics.FontSizeM * 1.625).MaxWidth(384).
+					Color(theme.MutedForeground).TextCenter().MarginTop(theme.Metrics.GapItem)
+			})
 			return
 		}
 		if view.loading && len(view.rows) == 0 {
-			ui.Slot(c).Grow(1).FillWidth().Draw(view.loadingDraw)
+			// The spinner sat 24 above the center and the label started at it.
+			ui.Column(c).Grow(1).FillWidth().Justify(ui.Center).Items(ui.Center).Children(func() {
+				ui.Spinner(c).Size(16, 16)
+				ui.Slot(c).Height(theme.Metrics.GapItem * 2).Shrink(0)
+				ui.Text(c, m.RemoteLoading).Height(24).FontSize(theme.Metrics.FontSizeM).Color(pal.muted)
+			})
 			return
 		}
 	}
@@ -388,38 +399,9 @@ func (state *State) declareRemoteTablePlaceholder(c ui.C, tab remoteTab) {
 			message = state.remoteTabLabel(tab)
 		}
 	}
-	centered(func() {
-		ui.Text(c, message).FontSize(state.Theme().Metrics.FontSizeM).Color(color)
+	ui.Column(c).Grow(1).FillWidth().Justify(ui.Center).Items(ui.Center).Children(func() {
+		ui.Text(c, message).FontSize(theme.Metrics.FontSizeM).Color(color)
 	})
-}
-
-// paintRemoteEmpty paints the missing-Docker placeholder exactly as
-// components.Empty did when the old table control owned the body.
-func (state *State) paintRemoteEmpty(d *ui.DrawContext) {
-	m := state.messages.Tools
-	components.Empty(d.Canvas, state.Theme(), d.Rect, components.EmptyData{
-		Media: components.EmptyMediaDefault, Icon: icons.LinuxDocker,
-		Title: m.RemoteDockerMissing, Description: m.RemoteDockerMissingHint,
-	})
-}
-
-// paintRemoteLoading paints the spinner over its label at the old table
-// control's geometry: the spinner 16 pixels on the center line less 24, the
-// label below it.
-func (state *State) paintRemoteLoading(d *ui.DrawContext) {
-	canvas, bounds := d.Canvas, d.Rect
-	center := bounds.Y + bounds.Height/2
-	phase := components.SpinnerPhase(0)
-	if !canvas.ReduceMotion() {
-		phase = components.SpinnerPhase(canvas.Now() / (80 * time.Millisecond) % 8)
-		canvas.RequestFrameIn(80 * time.Millisecond)
-	}
-	components.PaintSpinner(canvas, state.Theme(), gfx.Rect{
-		X: bounds.X + bounds.Width/2 - 8, Y: center - 24, Width: 16, Height: 16,
-	}, phase)
-	canvas.LabelCenter(state.messages.Tools.RemoteLoading,
-		gfx.Rect{X: bounds.X, Y: center, Width: bounds.Width, Height: 24},
-		gfx.TextStyle{Size: state.Theme().Metrics.FontSizeM, Color: state.pal.muted})
 }
 
 // selectedRowIndex is the index of the page's selected key, or -1.

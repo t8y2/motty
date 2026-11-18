@@ -57,14 +57,14 @@ text "Snippets" {223 53 467 25}
 text "Keep commands in your preferred order with Move up/down in the row menu, or" {223 81 467 19}
 text "click a heading to sort temporarily. Double-click to send." {223 100 467 19}
 text "All groups" {234 131 178 36}
-text "NAME" {255 176 40.06543 40}
-text "GROUP" {431 176 47.625977 40}
-text "SHORTCUT" {571 176 75.05859 40}
-text "COMM…" {748 176 56.916016 40}
+text "NAME" {255 185.5 142.3003 21}
+text "GROUP" {427.3003 185.5 107.4102 21}
+text "SHORTCUT" {564.7105 185.5 117.22522 21}
+text "COMMA…" {738.9357 185.5 71.064285 21}
 text "Deploy staging" {255 223.5 117.22601 21}
 text "Ops" {388.226 223.5 94.058205 21}
-text "↵" {621.20374 224.5 11.466797 19}
 text "kubectl apply -f staging/…" {643.20374 223.5 180.79628 21}
+text "↵" {621.20374 224.5 11.466797 19}
 text "Tail logs" {255 259.5 150.1887 21}
 text "Ops" {421.18872 259.5 117.132095 21}
 text "journalctl -fu…" {723.96234 259.5 100.03769 21}
@@ -103,20 +103,16 @@ hit "Edit" button {746 49 36 36} disabled=false
 hit "Send to terminal" button {792 49 36 36} disabled=false
 hit "Add snippet" button {838 49 36 36} disabled=false
 hit "Group" combobox {223 131 220 36} disabled=false
-hit "NAME" button {223 176 200 40} disabled=false
-hit "GROUP" button {423 176 140 40} disabled=false
-hit "SHORTCUT" button {563 176 150 40} disabled=false
-hit "COMMAND" button {713 176 151 40} disabled=false
+hit "NAME" button {223 176 196.3003 40} disabled=false
+hit "GROUP" button {419.3003 176 137.41022 40} disabled=false
+hit "SHORTCUT" button {556.7105 176 147.22522 40} disabled=false
+hit "COMMAND" button {703.9357 176 160.06427 40} disabled=false
 hit "Snippets" listbox {223 216 651 325} disabled=false
 hit "Deploy staging" option {223 216 641 36} disabled=false
 hit "Show the full command" button {832 222 24 24} disabled=false
-hit "Deploy staging" button {230 222 24 24} disabled=false
 hit "Tail logs" option {223 252 641 36} disabled=false
 hit "Show the full command" button {832 258 24 24} disabled=false
-hit "Tail logs" button {230 258 24 24} disabled=false
 hit "Open editor" option {223 288 641 36} disabled=false
 hit "Show the full command" button {832 294 24 24} disabled=false
-hit "Open editor" button {230 294 24 24} disabled=false
 hit "Cleanup" option {223 324 641 36} disabled=false
 hit "Show the full command" button {832 330 24 24} disabled=false
-hit "Cleanup" button {230 330 24 24} disabled=false

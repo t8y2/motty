@@ -75,41 +75,41 @@ text "09-20 18:00" {530 487 88 21}
 text "SSH" {634 487 68 21}
 text "Ended · Closed by you" {718 487 184 21}
 text "1m 00s" {918 487 64 21}
-text "Session details" {1049 205.5 282 21}
-text "Target" {1049 231.5 106.08 19}
-text "web-01 · alice" {1155.08 231.5 203.92 19}
-text "Started" {1049 253.5 106.08 19}
-text "2026-10-30 17:00:00" {1155.08 253.5 203.92 19}
-text "Ended" {1049 275.5 106.08 19}
-text "2026-10-30 17:30:00" {1155.08 275.5 203.92 19}
-text "Duration" {1049 297.5 106.08 19}
-text "30m 00s" {1155.08 297.5 203.92 19}
-text "Status" {1049 319.5 106.08 19}
-text "Ended" {1155.08 319.5 203.92 19}
-text "Result" {1049 341.5 106.08 19}
-text "Closed by you" {1155.08 341.5 203.92 19}
-text "Address" {1049 363.5 106.08 19}
-text "10.0.0.1" {1155.08 363.5 203.92 19}
-text "Account" {1049 385.5 106.08 19}
-text "alice" {1155.08 385.5 203.92 19}
-text "Protocol" {1049 407.5 106.08 19}
-text "SSH" {1155.08 407.5 203.92 19}
-text "Reconnects" {1049 429.5 106.08 19}
-text "0" {1155.08 429.5 203.92 19}
-text "Favorite" {1049 451.5 106.08 19}
-text "No" {1155.08 451.5 203.92 19}
-text "Events" {1049 474.5 96 19}
-text "5 events" {1145 474.5 214 19}
-text "17:00:00" {1049 496 58 22}
-text "Session started" {1113 496 246 22}
-text "17:00:01" {1049 518 58 22}
-text "Connected" {1113 518 246 22}
-text "17:00:01" {1049 540 58 22}
-text "Shell opened" {1113 540 246 22}
-text "17:00:01" {1049 562 58 22}
-text "Disconnected" {1113 562 246 22}
-text "17:30:00" {1049 584 58 22}
-text "Session ended · Closed by you" {1113 584 246 22}
+text "Session details" {1049 202 282 21}
+text "Target" {1049 229.5 106.08 19}
+text "web-01 · alice" {1155.08 229.5 203.92 19}
+text "Started" {1049 251.5 106.08 19}
+text "2026-10-30 17:00:00" {1155.08 251.5 203.92 19}
+text "Ended" {1049 273.5 106.08 19}
+text "2026-10-30 17:30:00" {1155.08 273.5 203.92 19}
+text "Duration" {1049 295.5 106.08 19}
+text "30m 00s" {1155.08 295.5 203.92 19}
+text "Status" {1049 317.5 106.08 19}
+text "Ended" {1155.08 317.5 203.92 19}
+text "Result" {1049 339.5 106.08 19}
+text "Closed by you" {1155.08 339.5 203.92 19}
+text "Address" {1049 361.5 106.08 19}
+text "10.0.0.1" {1155.08 361.5 203.92 19}
+text "Account" {1049 383.5 106.08 19}
+text "alice" {1155.08 383.5 203.92 19}
+text "Protocol" {1049 405.5 106.08 19}
+text "SSH" {1155.08 405.5 203.92 19}
+text "Reconnects" {1049 427.5 106.08 19}
+text "0" {1155.08 427.5 203.92 19}
+text "Favorite" {1049 449.5 106.08 19}
+text "No" {1155.08 449.5 203.92 19}
+text "Events" {1049 472.5 96 19}
+text "5 events" {1145 472.5 214 19}
+text "17:00:00" {1049 494 58 22}
+text "Session started" {1113 494 246 22}
+text "17:00:01" {1049 516 58 22}
+text "Connected" {1113 516 246 22}
+text "17:00:01" {1049 538 58 22}
+text "Shell opened" {1113 538 246 22}
+text "17:00:01" {1049 560 58 22}
+text "Disconnected" {1113 560 246 22}
+text "17:30:00" {1049 582 58 22}
+text "Session ended · Closed by you" {1113 582 246 22}
 text "Choose host" {1176.041 762 75.91797 20}
 hit "" region {0 0 1400 36} disabled=false
 hit "Hosts" button {82 4 28 28} disabled=false
@@ -142,8 +142,6 @@ hit "Filter by status" button {355 152 124 36} disabled=false
 hit "Filter by protocol" button {487 152 124 36} disabled=false
 hit "Filter by outcome" button {619 152 124 36} disabled=false
 hit "Sort sessions" button {751 152 124 36} disabled=false
-hit "Started" button {522 189 104 40} disabled=false
-hit "Duration" button {910 189 80 40} disabled=false
 hit "Session Logs" listbox {223 229 797 616} disabled=false
 hit "web-01 · alice" option {223 255 797 36} disabled=false
 hit "Favorite web-01 · alice" button {990 255 30 36} disabled=false
@@ -157,7 +155,7 @@ hit "old-box · ops" option {223 451 797 36} disabled=false
 hit "Favorite old-box · ops" button {990 451 30 36} disabled=false
 hit "archive · ops" option {223 487 797 36} disabled=false
 hit "Favorite archive · ops" button {990 487 30 36} disabled=false
-hit "Close details" button {1331 202 28 28} disabled=false
+hit "Close details" button {1331 200 28 28} disabled=false
 hit "Choose host" button {1049 754 310 36} disabled=false
 hit "Copy metadata summary" button {1049 796 99.333374 36} disabled=false
 hit "Locate host" button {1154.3334 796 99.333374 36} disabled=true

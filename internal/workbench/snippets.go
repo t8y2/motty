@@ -71,7 +71,6 @@ var (
 
 var (
 	hitSnippetExpandList = tree.Sub(snippetsHits, tree.Name("snippet-expand")) // + snippet index
-	hitSnippetHandles    = tree.Sub(snippetsHits, tree.Name("snippet-handle")) // + snippet index: the manual order's grip
 	hitSnippetSort       = tree.Sub(snippetsHits, tree.Name("snippet-sort"))   // + column index
 	hitSnippetSendList   = tree.Sub(snippetsHits, tree.Name("snippet-send"))   // the command palette's entries
 	hitSnippetPickList   = tree.Sub(snippetsHits, tree.Name("snippet-pick"))   // + session ID: the terminals to send to
@@ -121,10 +120,11 @@ type snippetsUI struct {
 	// are dragged or moved with Alt and the arrows while the page shows its
 	// manual order. rowDecl, reorder and the row hooks are made once, so a paint
 	// does not allocate them again.
-	rows      ui.ListState
-	rowDecl   func(ui.ListRow)
-	reorder   func(rows []int, to int)
-	detailCut func(*ui.DrawContext)
+	rows         ui.ListState
+	rowDecl      func(ui.ListRow)
+	reorder      func(rows []int, to int)
+	handleDraw   func(*ui.DrawContext)
+	detailAccent func(*ui.DrawContext)
 	// detailHeight and detailLineHeight are the band the expanded command takes,
 	// measured when the page declares the scroll area.
 	detailHeight     float32
@@ -189,7 +189,8 @@ func (form *snippetsUI) prepareSnippetRows(state *State) {
 	}
 	form.rowDecl = state.declareSnippetRow
 	form.reorder = func(rows []int, to int) { state.moveSnippetRows(rows, to) }
-	form.detailCut = state.paintSnippetDetailRegion
+	form.handleDraw = state.paintSnippetHandle
+	form.detailAccent = state.paintSnippetDetailAccent
 	form.rows.NoTypeahead = true
 	// Rows are named by their place, not by the snippet's index: reordering
 	// changes an index's owner, and the list's Alt+arrow focus follows the place.

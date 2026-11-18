@@ -194,6 +194,29 @@ func TestRemoteDockerPlaceholderRecoversAndDoesNotHideOtherErrors(t *testing.T) 
 	if !state.remote.noDocker || !remoteCanvasHasText(&canvas, state.messages.Tools.RemoteDockerMissing) {
 		t.Fatal("missing Docker has no illustrated empty state")
 	}
+	// components.Empty's look: the large medium title and the body-size muted
+	// description no wider than its 384px column.
+	theme := state.Theme()
+	var title gfx.Text
+	foundTitle := false
+	for _, text := range canvas.Texts() {
+		if text.Value == state.messages.Tools.RemoteDockerMissing {
+			title, foundTitle = text, true
+		}
+	}
+	if !foundTitle || title.Style.Size != theme.Metrics.FontSizeM+5 || title.Style.Weight != gfx.WeightMedium {
+		t.Fatalf("Docker title = %+v, want the large medium empty-state title", title.Style)
+	}
+	foundDescription := false
+	for _, text := range canvas.Texts() {
+		if text.Bounds.Y > title.Bounds.Y && text.Bounds.Y < title.Bounds.Y+80 &&
+			text.Style.Size == theme.Metrics.FontSizeM && text.Bounds.Width <= 384 {
+			foundDescription = true
+		}
+	}
+	if !foundDescription {
+		t.Fatalf("Docker empty state has no body-size description within 384px: %v", canvas.Texts())
+	}
 	server.mu.Lock()
 	requests := len(server.commands)
 	server.mu.Unlock()

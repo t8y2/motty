@@ -61,14 +61,14 @@ text "Edit" {1021.5332 57 23.016602 20}
 text "Send to terminal" {1112.5498 57 98.52832 20}
 text "Add snippet" {1281.0781 57 72.921875 20}
 text "All groups" {234 131 178 36}
-text "NAME" {255 176 40.06543 40}
-text "GROUP" {431 176 47.625977 40}
-text "SHORTCUT" {571 176 75.05859 40}
-text "COMMAND" {748 176 74.081055 40}
+text "NAME" {255 185.5 146 21}
+text "GROUP" {431 185.5 110 21}
+text "SHORTCUT" {571 185.5 120 21}
+text "COMMAND" {748 185.5 562 21}
 text "Deploy staging" {255 223.5 160 21}
 text "Ops" {431 223.5 124 21}
-text "↵" {726 224.5 11.466797 19}
 text "kubectl apply -f staging/ ↵ watch pods" {748 223.5 576 21}
+text "↵" {726 224.5 11.466797 19}
 text "Tail logs" {255 259.5 160 21}
 text "Ops" {431 259.5 124 21}
 text "journalctl -fu app" {748 259.5 576 21}
@@ -114,13 +114,9 @@ hit "COMMAND" button {713 176 651 40} disabled=false
 hit "Snippets" listbox {223 216 1151 625} disabled=false
 hit "Deploy staging" option {223 216 1141 36} disabled=false
 hit "Show the full command" button {1332 222 24 24} disabled=false
-hit "Deploy staging" button {230 222 24 24} disabled=false
 hit "Tail logs" option {223 252 1141 36} disabled=false
 hit "Show the full command" button {1332 258 24 24} disabled=false
-hit "Tail logs" button {230 258 24 24} disabled=false
 hit "Open editor" option {223 288 1141 36} disabled=false
 hit "Show the full command" button {1332 294 24 24} disabled=false
-hit "Open editor" button {230 294 24 24} disabled=false
 hit "Cleanup" option {223 324 1141 36} disabled=false
 hit "Show the full command" button {1332 330 24 24} disabled=false
-hit "Cleanup" button {230 330 24 24} disabled=false

@@ -220,5 +220,5 @@ hit "Model: gpt-x. Choose another" button {529.8125 559 84.91797 24} disabled=fa
 hit "Attach files or images" button {719 557 28 28} disabled=false
 hit "Send" button {752 557 28 28} disabled=true
 hit "Resize the message box" slider {480 459 304 7} disabled=false
-hit "Resize the assistant panel" separator {460 36 8 564} disabled=false
+hit "Resize the assistant panel" separator {460.5 36 8 564} disabled=false
 hit "Target connection" combobox {480 468 171.75586 24} disabled=false

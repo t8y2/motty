@@ -24,6 +24,7 @@ var (
 	hitDocumentReload        = tree.ID(documentHits, "reload")
 	hitDocumentInput         = tree.ID(documentHits, "editor")
 	hitDocumentEncoding      = tree.ID(documentHits, "encoding")
+	hitDocumentEncodingLabel = tree.ID(documentHits, "encoding-label")
 	hitDocumentScroll        = tree.ID(documentHits, "editor-scroll")
 	hitDocumentFit           = tree.ID(documentHits, "fit")
 	hitDocumentActual        = tree.ID(documentHits, "actual")
@@ -65,9 +66,12 @@ type fileDocumentUI struct {
 	// written back by it when the user picks another.
 	encodingChoice  string
 	encodingChoices []string
-	editorBounds    gfx.Rect
-	imageBounds     gfx.Rect
-	size            gfx.Size
+	// focusEncoding asks the page to put the keyboard on the encoding select
+	// after its label was clicked, as the old label inside the trigger did.
+	focusEncoding bool
+	editorBounds  gfx.Rect
+	imageBounds   gfx.Rect
+	size          gfx.Size
 	// saveMenuTrigger is the chevron the save menu hangs under, saveMenuDeclared
 	// whether the page declared it in this paint, and saveMenuOpen whether the
 	// menu is open.
@@ -199,10 +203,15 @@ func (d *fileDocument) declareEncoding(c ui.C, bounds gfx.Rect) {
 		d.ui.encodingChoices = append([]string{""}, filecontent.Encodings...)
 	}
 	ui.Row(c).Width(min(220, bounds.Width*.4)).Height(32).Gap(4).Items(ui.Center).Shrink(0).Children(func() {
-		ui.Text(c, m.Encoding+":").FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).LineHeight(22).Shrink(0)
+		ui.Text(c, m.Encoding+":").FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).LineHeight(22).Shrink(0).
+			Hit(hitDocumentEncodingLabel, m.Encoding)
 		selector := ui.Select(c, &d.ui.encodingChoice, d.ui.encodingChoices, d.encodingLabel).
 			Label(m.Encoding).Hit(hitDocumentEncoding, m.Encoding).Height(32).Grow(1).
 			Disabled(d.busy || d.comparison.active)
+		if d.ui.focusEncoding {
+			selector.AutoFocus()
+			d.ui.focusEncoding = false
+		}
 		if selector.Changed() {
 			name := d.ui.encodingChoice
 			c.After(func() { d.chooseEncoding(name) })
@@ -435,9 +444,10 @@ func (d *fileDocument) declareComparisonConfirmation(c ui.C) {
 		Scope: dialogScope, CloseID: hitDocumentCancel, InitialFocusID: hitDocumentCancel, NoClose: true,
 	})
 	dialog.Footer(func() {
-		// The alert dialog these replace gave both actions a 72px least width.
-		ui.Button(c, m.Cancel).Outline().MinWidth(72).Hit(hitDocumentCancel, m.Cancel)
-		ui.Button(c, m.Save).MinWidth(72).Hit(hitDocumentUploadConfirm, m.Save)
+		// The alert dialog these replace gave both actions a 72px least width
+		// and the small button height.
+		ui.Button(c, m.Cancel).Small().Outline().MinWidth(72).Hit(hitDocumentCancel, m.Cancel)
+		ui.Button(c, m.Save).Small().MinWidth(72).Hit(hitDocumentUploadConfirm, m.Save)
 	})
 }
 
@@ -451,9 +461,10 @@ func (d *fileDocument) declareConfirmation(c ui.C) {
 			Scope: dialogScope, CloseID: hitDocumentCancel, InitialFocusID: hitDocumentCancel, NoClose: true,
 		})
 		dialog.Footer(func() {
-			// The alert dialog this replaces gave both actions a 72px least width.
-			ui.Button(c, m.Cancel).Outline().MinWidth(72).Hit(hitDocumentCancel, m.Cancel)
-			ui.Button(c, m.Discard).Destructive().MinWidth(72).Hit(hitDocumentDiscard, m.Discard)
+			// The alert dialog this replaces gave both actions a 72px least width
+			// and the small button height.
+			ui.Button(c, m.Cancel).Small().Outline().MinWidth(72).Hit(hitDocumentCancel, m.Cancel)
+			ui.Button(c, m.Discard).Small().Destructive().MinWidth(72).Hit(hitDocumentDiscard, m.Discard)
 		})
 		return
 	}
@@ -463,7 +474,7 @@ func (d *fileDocument) declareConfirmation(c ui.C) {
 			Scope: dialogScope, CloseID: hitDocumentCancel, InitialFocusID: hitDocumentCancel, NoClose: true,
 		})
 		dialog.Footer(func() {
-			d.owner.dialogActionFooter(c,
+			d.owner.dialogActionFooterSmall(c,
 				components.ButtonAction{ID: hitDocumentCancel, Label: m.Cancel, Variant: components.ButtonOutline},
 				components.ButtonAction{ID: hitDocumentSaveDirect, Label: m.SaveDirect},
 			)
@@ -475,7 +486,7 @@ func (d *fileDocument) declareConfirmation(c ui.C) {
 		Scope: dialogScope, CloseID: hitDocumentCancel, InitialFocusID: hitDocumentCancel, NoClose: true,
 	})
 	dialog.Footer(func() {
-		d.owner.dialogActionFooter(c,
+		d.owner.dialogActionFooterSmall(c,
 			components.ButtonAction{ID: hitDocumentDiscard, Label: m.Discard, Variant: components.ButtonDestructive},
 			components.ButtonAction{ID: hitDocumentCancel, Label: m.Cancel, Variant: components.ButtonOutline},
 			components.ButtonAction{ID: hitDocumentSaveClose, Label: m.SaveClose},
@@ -559,6 +570,8 @@ func (d *fileDocument) click(id gfx.ID) {
 		d.zoom(1.25)
 	case id == hitDocumentZoomOut:
 		d.zoom(.8)
+	case id == hitDocumentEncodingLabel:
+		d.ui.focusEncoding = true
 	}
 }
 

@@ -651,20 +651,46 @@ func (state *State) declareAIResize(c ui.C, origin gfx.Point) {
 	}
 	x := window.X + (window.Width-1)*panel.resize.ratio
 	handle := panel.resize.handle
+	theme := state.Theme()
 	line := gfx.Color{}
 	if panel.mode == aiPanelDocked {
-		line = state.Theme().Border
+		line = theme.Border
 	}
+	// The hit strip starts half a pixel left of the resting line, as the
+	// Resizable it replaces did, so the line sits at its first whole pixel.
+	left := x - origin.X - (handle-1)/2
+	edge := (handle - 1) / 2
+	focused := c.Canvas() != nil && c.Canvas().FocusVisible() == hitAIDivider
+	pressed := c.Canvas() != nil && c.Canvas().Pressed() == hitAIDivider
+	hovered := c.Canvas() != nil && c.Canvas().Hovered() == hitAIDivider
 	ui.Column(c).Absolute().
-		Left(x-origin.X-handle/2).
+		Left(left).
 		Top(window.Y-origin.Y).
 		Width(handle).Height(window.Height).
-		Items(ui.Center).
 		HitWith(hitAIDivider, state.messages.AIPanel.ResizePanel, gfx.HitOptions{
 			Role: gfx.RoleSeparator, Cursor: gfx.PointerCursorResizeHorizontal,
 		}).Children(func() {
+		// The old handle painted the focus ring first, the separator over it,
+		// then the hover or press line: the same order here.
+		if focused {
+			focus := theme.Ring
+			focus.Alpha *= 0.50
+			ui.Slot(c).Absolute().Left(-1).Top(-1).
+				Width(handle + 2).Height(window.Height + 2).
+				Radius(2).Background(focus)
+		}
 		if line.Alpha > 0 {
-			ui.Slot(c).Width(1).Height(window.Height).Background(line)
+			ui.Slot(c).Absolute().Left(edge).Top(0).
+				Width(1).Height(window.Height).Background(line)
+		}
+		if !focused && (hovered || pressed) {
+			accent := theme.Ring
+			if pressed {
+				accent = theme.Primary
+			}
+			ui.Slot(c).Absolute().Left(edge - 1).Top(-1).
+				Width(3).Height(window.Height + 2).
+				Radius(1).Background(accent)
 		}
 	})
 }

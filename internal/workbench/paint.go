@@ -328,6 +328,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	state.paintQueuedSFTPHeaderMenu(canvas)
 	state.paintHostMenus(canvas, viewport)
 	state.endMenus()
+	state.paintTransferDetails(canvas, viewport)
 	state.requestReconnectFrames(canvas)
 	state.requestAutofillFrames(canvas)
 	state.requestLoginCommandFrames(canvas)
@@ -2787,6 +2788,15 @@ func dialogButton(c ui.C, label string, variant components.ButtonVariant, disabl
 func (state *State) dialogActionFooter(c ui.C, actions ...components.ButtonAction) {
 	for _, action := range actions {
 		dialogButton(c, action.Label, action.Variant, action.Disabled).Hit(action.ID, action.Label)
+	}
+}
+
+// dialogActionFooterSmall is dialogActionFooter with the small button size the
+// alert dialogs and the old Dialog.Actions gave their footer buttons, so a
+// footer whose surface was measured with 28px buttons keeps them 28px high.
+func (state *State) dialogActionFooterSmall(c ui.C, actions ...components.ButtonAction) {
+	for _, action := range actions {
+		dialogButton(c, action.Label, action.Variant, action.Disabled).Small().Hit(action.ID, action.Label)
 	}
 }
 
