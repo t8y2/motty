@@ -563,3 +563,27 @@ func TestMonitorRemembersResizedWidthAcrossWorkspacesAndRestores(t *testing.T) {
 		t.Fatalf("restored.monitorWidth = %v, want 450", restored.monitorWidth)
 	}
 }
+
+func TestMonitorPlaceholderIsCentredWithoutStats(t *testing.T) {
+	state, session := monitorFixture(t)
+	session.stats = nil
+	state.Resize(gfx.Size{Width: 1600, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, state.viewport)
+	panel := state.monitorRect
+	want := gfx.Point{
+		X: panel.X + panel.Width/2,
+		Y: panel.Y + infoBarHeight + (panel.Height-infoBarHeight)/2,
+	}
+	for _, painted := range canvas.Texts() {
+		if painted.Value != state.messages.Monitor.NotConnected {
+			continue
+		}
+		got := gfx.Point{X: painted.Bounds.X + painted.Bounds.Width/2, Y: painted.Bounds.Y + painted.Bounds.Height/2}
+		if math.Abs(float64(got.X-want.X)) > 1 || math.Abs(float64(got.Y-want.Y)) > 1 {
+			t.Fatalf("the placeholder is at %v, want the centre of its panel %v", got, want)
+		}
+		return
+	}
+	t.Fatal("the panel did not paint its placeholder")
+}

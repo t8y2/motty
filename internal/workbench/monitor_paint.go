@@ -52,7 +52,7 @@ func (state *State) paintIndependentMonitor(canvas *gfx.Canvas, size gfx.Size) {
 		return
 	}
 	dividerX := base.X + base.Width
-	if c, _ := state.deck.Context(state.deck.ActiveWorkspace()); c.MonitorLeft {
+	if c, _ := state.deck.Context(state.deck.ActiveWorkspace()); !c.MonitorLeft {
 		dividerX = base.X - 1
 	}
 	canvas.Fill(gfx.Rect{X: dividerX, Y: base.Y, Width: 1, Height: base.Height}, state.pal.line)
@@ -80,7 +80,9 @@ func (state *State) declareIndependentMonitor(c ui.C) {
 		}
 		open := true
 		ui.Drawer(c, &open, "", ui.DrawerSpec{Side: side, Size: base.Width, InitialFocus: hitMonitorClose}, func() {
-			state.declareMonitorContent(c, base.Width, base.Height)
+			ui.Column(c).Fill().Draw(func(d *ui.DrawContext) { state.paintMonitorSurface(d.Canvas, d.Rect) }).Children(func() {
+				state.declareMonitorContent(c, base.Width, base.Height)
+			})
 		}, nil)
 		if !open {
 			c.After(func() { state.closeMonitor() })
@@ -146,7 +148,7 @@ func (state *State) declareMonitorContent(c ui.C, width, height float32) {
 			state.declareIconButton(c, hitMonitorSide, moveIcon, moveHint, false, iconButtonQuiet).Size(24, 24)
 		})
 		if session == nil || session.stats == nil {
-			ui.Row(c).Grow(1).Children(func() {
+			ui.Column(c).Grow(1).Items(ui.Center).Justify(ui.Center).Children(func() {
 				ui.Text(c, m.NotConnected).FontSize(13).Color(state.pal.muted)
 			})
 			return
@@ -157,7 +159,7 @@ func (state *State) declareMonitorContent(c ui.C, width, height float32) {
 		if p.language != state.language.String() {
 			state.formatMonitor(session.stats)
 		}
-		ui.Row(c).Height(monitorControlsHeight).PadSides(0, 12, 0, 12).Children(func() {
+		ui.Row(c).Height(monitorControlsHeight).PadSides(6, 12, 0, 12).Children(func() {
 			state.declareMonitorNavigation(c, p, width-24)
 		})
 		ui.Slot(c).Height(monitorHostInfoHeight).MarginSides(0, 12, 0, 12).Draw(func(d *ui.DrawContext) {
@@ -171,7 +173,7 @@ func (state *State) declareMonitorContent(c ui.C, width, height float32) {
 // declareMonitorNavigation declares the overview/disks/network strip.
 func (state *State) declareMonitorNavigation(c ui.C, p *monitorView, width float32) {
 	labels := [3]string{state.messages.Monitor.Overview, state.messages.Monitor.Disks, state.messages.Monitor.Network}
-	ui.Tabs(c, &p.page, []int{0, 1, 2}, func(index int) string { return labels[index] }).Size(max(width, 120), 34)
+	ui.Tabs(c, &p.page, []int{0, 1, 2}, func(index int) string { return labels[index] }).Size(max(width, 120), 32)
 }
 
 // declareMonitorInterval declares the refresh interval as a page button with
