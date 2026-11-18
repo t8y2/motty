@@ -2627,6 +2627,11 @@ func (state *State) sftpKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if !ok || session.files == nil || state.modal != modalNone || event.Repeat {
 		return gfx.EventResult{}, false
 	}
+	// The transfer center is an overlay above the file panel: while it is open
+	// the keys, Escape included, are the center's.
+	if state.transfers.open {
+		return gfx.EventResult{}, false
+	}
 	view := session.files
 	if view.dialog != sftpDialogNone {
 		switch event.Key {
