@@ -217,7 +217,7 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 				if overflow {
 					list = list.PadSides(0, catalogBarGutter, 0, 0)
 				}
-				list.Scrollbars().ScrollbarSize(catalogBarGutter).Label(messages.ProxyListScroll).
+				list.AlwaysScrollbars().ScrollbarSize(catalogBarGutter).Label(messages.ProxyListScroll).
 					DrawOver(view.cardOver)
 				view.listScroll = list.ScrollState()
 				if state.proxyList.Changed() {
@@ -297,7 +297,10 @@ func (state *State) declareProxyRow(row ui.ListRow) {
 			ui.Text(c, route.cells[column-1]).PadX(theme.Metrics.GapItem).Width(width).Shrink(0).Ellipsis()
 		}
 		ui.Row(c).Width(state.proxyColumns[3].Width).Height(height).Shrink(0).Gap(8).Items(ui.Center).Children(func() {
+			// The page dresses its switches differently from these rows' old
+			// hand-painted switch: this one keeps the components' own look.
 			ui.Switch(c, state.pageFlag(!route.Stopped), "").Label(route.label).Small().Size(24, 14).
+				SwitchRecipe(components.SwitchRecipe).
 				MarginSides(0, 0, 0, theme.Metrics.GapItem).Shrink(0).
 				Hit(hitProxyRowSwitchList.At(int(route.ID)), route.label)
 			statusText, statusColor := messages.ProxyRunning, pal.accent

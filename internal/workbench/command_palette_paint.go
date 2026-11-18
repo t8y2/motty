@@ -140,7 +140,7 @@ func (state *State) declareCommandPaletteBody(c ui.C) {
 			list := ui.Scroll(c).Width(palette.bodyWidth+commandPaletteBarGap+commandPaletteBarWidth).
 				Height(commandPaletteListHeight).Shrink(0).MarginSides(12, 0, 0, 0).
 				PadSides(0, commandPaletteBarGap+commandPaletteBarWidth, 0, 0).
-				Scrollbars().ScrollbarSize(commandPaletteBarWidth)
+				AlwaysScrollbars().ScrollbarSize(commandPaletteBarWidth)
 			palette.scrollState = list.ScrollState()
 			// The bar the page owns wrote the offset since the last paint; the
 			// keyboard wrote palette.scroll through the same state.

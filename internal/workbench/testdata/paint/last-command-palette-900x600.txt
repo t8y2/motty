@@ -40,6 +40,7 @@ rect {{712 79 32 32} {0.06666667 0.08235294 0.105882354 0} 7.5 600 {0 0 0 0} fal
 rect {{164 128 572 36} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #47}
 rect {{165 129 570 34} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #48}
 rect {{164 176 572 30} {0.8862745 0.90588236 0.93333334 1} 5.5 600 {164 176 586 336} true #49}
+rect {{745 177 4 76.97119} {0.2 0.23529412 0.2901961 1} 2 600 {164 176 586 336} true #50}
 shadow {{247 105 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {0 0 0 0} false #4}
 shadow {{261 148 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {223 135 651 439} true #9}
 shadow {{267 201 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {223 135 651 439} true #15}
@@ -165,3 +166,4 @@ hit "Port Forwarding" button {164 378 572 34} disabled=false
 hit "Known Hosts" button {164 412 572 34} disabled=false
 hit "Snippets" button {164 446 572 34} disabled=false
 hit "Notes" button {164 480 572 32} disabled=false
+hit "Vertical scrollbar" separator {744 176 6 336} disabled=false
