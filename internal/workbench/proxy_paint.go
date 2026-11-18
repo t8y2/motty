@@ -40,7 +40,7 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 
 	const (
 		titleLeast = float32(220)
-		gap        = float32(8)
+		gap        = float32(10)
 	)
 	bounds := state.catalogSectionBounds()
 	_, hubSelected := state.selectedBastionHub()
@@ -100,14 +100,16 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 	view.draw, view.cardOver = draw, cardOver
 	body := ui.Column(c).Fill().PadSides(12, 18, 0, 18)
 	body.Children(func() {
-		ui.Row(c).MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(ui.Center).Children(func() {
+		// Keep the header aligned with the forwards/snippets pages (top-aligned
+		// buttons, same footer band) so switching tabs does not shift content.
+		ui.Row(c).MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(ui.Start).Children(func() {
 			ui.Column(c).Grow(1).Gap(3).MarginSides(4, 0, 0, 0).Children(func() {
 				ui.Text(c, messages.ProxyTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
 				desc := messages.ProxyDescription
 				if checkedCount > 0 {
 					desc = fmt.Sprintf(messages.ProxyBatchSelectedCountFmt, checkedCount)
 				}
-				ui.Paragraph(c, desc, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
+				state.declareCatalogDescription(c, desc)
 			})
 
 			if checkedCount > 0 {
@@ -225,7 +227,7 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 			})
 		}
 		ui.Divider(c).Background(pal.line)
-		ui.Row(c).Height(40).PadSides(8, 0, 16, 0).Items(ui.Center).Children(func() {
+		ui.Row(c).Height(50).PadSides(8, 0, 20, 0).Items(ui.Center).Children(func() {
 			ui.Text(c, state.proxyCountText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint)
 		})
 	})

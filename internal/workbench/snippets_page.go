@@ -561,7 +561,7 @@ func (state *State) declareSnippetsWorkspace(c ui.C) {
 			ui.Row(c).MinHeight(58).Gap(10).MarginSides(0, 0, 12, 0).Items(ui.Start).Children(func() {
 				ui.Column(c).Grow(1).Gap(3).MarginSides(4, 0, 0, 0).Children(func() {
 					ui.Text(c, m.SnippetsTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
-					ui.Paragraph(c, m.SnippetsPageDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
+					state.declareCatalogDescription(c, m.SnippetsPageDescription)
 				})
 				addWidth := toolbarButtonWidth(c.Canvas(), m.SnippetAdd, true)
 				state.declareButtonSized(c, hitSnippetAdd, m.SnippetAdd, iconPlus, true, false, true, toolbarFont, false).Size(addWidth, toolbarHeight)

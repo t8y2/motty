@@ -65,7 +65,7 @@ func (state *State) declareForwardsWorkspace(c ui.C) {
 		ui.Row(c).MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(ui.Start).Children(func() {
 			ui.Column(c).Grow(1).Gap(3).MarginSides(4, 0, 0, 0).Children(func() {
 				ui.Text(c, messages.ForwardTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
-				ui.Paragraph(c, messages.ForwardDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
+				state.declareCatalogDescription(c, messages.ForwardDescription)
 			})
 			view.add = state.declareButtonSized(c, hitForwardAdd, messages.ForwardAdd, addIcon, true, false, canAdd, toolbarFont, condensed).Size(addWidth, toolbarHeight)
 		})
