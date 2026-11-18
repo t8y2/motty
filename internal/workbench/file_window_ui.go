@@ -433,10 +433,9 @@ func (d *fileDocument) declareComparisonConfirmation(c ui.C) {
 		Scope: dialogScope, CloseID: hitDocumentCancel, InitialFocusID: hitDocumentCancel, NoClose: true,
 	})
 	dialog.Footer(func() {
-		d.owner.dialogActionFooter(c,
-			components.ButtonAction{ID: hitDocumentCancel, Label: m.Cancel, Variant: components.ButtonOutline},
-			components.ButtonAction{ID: hitDocumentUploadConfirm, Label: m.Save},
-		)
+		// The alert dialog these replace gave both actions a 72px least width.
+		ui.Button(c, m.Cancel).Outline().MinWidth(72).Hit(hitDocumentCancel, m.Cancel)
+		ui.Button(c, m.Save).MinWidth(72).Hit(hitDocumentUploadConfirm, m.Save)
 	})
 }
 
@@ -450,10 +449,9 @@ func (d *fileDocument) declareConfirmation(c ui.C) {
 			Scope: dialogScope, CloseID: hitDocumentCancel, InitialFocusID: hitDocumentCancel, NoClose: true,
 		})
 		dialog.Footer(func() {
-			d.owner.dialogActionFooter(c,
-				components.ButtonAction{ID: hitDocumentCancel, Label: m.Cancel, Variant: components.ButtonOutline},
-				components.ButtonAction{ID: hitDocumentDiscard, Label: m.Discard, Variant: components.ButtonDestructive},
-			)
+			// The alert dialog this replaces gave both actions a 72px least width.
+			ui.Button(c, m.Cancel).Outline().MinWidth(72).Hit(hitDocumentCancel, m.Cancel)
+			ui.Button(c, m.Discard).Destructive().MinWidth(72).Hit(hitDocumentDiscard, m.Discard)
 		})
 		return
 	}
