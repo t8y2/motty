@@ -611,5 +611,7 @@ hit "AI assistant" menuitem {217 391 184 36} disabled=false
 hit "MCP" menuitem {217 431 184 36} disabled=false
 hit "Keyboard shortcuts" menuitem {217 471 184 36} disabled=false
 hit "About" menuitem {217 511 184 36} disabled=false
+hit "Highlight text" button {541 501 596 22} disabled=false
+hit "Highlight background" button {541 565 596 22} disabled=false
 hit "Background opacity" button {541 629 518 22} disabled=false
 hit "First match from" button {541 693 508 22} disabled=false

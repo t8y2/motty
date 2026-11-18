@@ -69,6 +69,8 @@ var (
 	hitFindSettingsReset   = tree.ID(findSettingsHits, "reset")
 	hitFindSettingsOpacity = tree.ID(findSettingsHits, "opacity")
 	hitFindSettingsOrigin  = tree.ID(findSettingsHits, "origin")
+	hitFindForeground      = tree.ID(findSettingsHits, "foreground")
+	hitFindBackground      = tree.ID(findSettingsHits, "background")
 )
 
 // findPreference names one row of the find preferences.
@@ -171,9 +173,10 @@ func (state *State) declareFindColor(c ui.C, foreground bool) ui.Box {
 	v, m := &state.findSettingsUI, state.messages
 	label, value := m.FindSettings.Foreground, state.terminalFindPrefs.Foreground
 	picker, target := &v.foregroundPicker, &v.foreground
+	pickerID := hitFindForeground
 	if !foreground {
 		label, value = m.FindSettings.Background, state.terminalFindPrefs.Background
-		picker, target = &v.backgroundPicker, &v.background
+		picker, target, pickerID = &v.backgroundPicker, &v.background, hitFindBackground
 	}
 	// The picker reports what it applied once, after the paint that applied it.
 	// A cleared color is no color, which the preference keeps as its default.
@@ -200,6 +203,7 @@ func (state *State) declareFindColor(c ui.C, foreground bool) ui.Box {
 	row.Children(func() {
 		ui.Text(c, hex).FontSize(metrics.FontSizeS).Mono().Color(state.pal.muted).Grow(1).Ellipsis()
 		ui.ColorPickerWith(c, picker, ui.ColorPickerSpec{
+			ID:    pickerID,
 			Label: label,
 			Labels: components.ColorPickerLabels{
 				Color: label, Saturation: m.ColorPickerSV, Hue: m.ColorPickerHue,
@@ -372,8 +376,8 @@ func (state *State) paintTerminalFindSettingsGroup(page *settingsPage) {
 			width float32
 			id    gfx.ID
 		}{
-			{findPreferenceForeground, m.Foreground, 104, gfx.ID{}},
-			{findPreferenceBackground, m.Background, 104, gfx.ID{}},
+			{findPreferenceForeground, m.Foreground, 104, hitFindForeground},
+			{findPreferenceBackground, m.Background, 104, hitFindBackground},
 			{findPreferenceOpacity, m.Opacity, 182, hitFindSettingsOpacity},
 			{findPreferenceOrigin, m.Origin, 192, hitFindSettingsOrigin},
 		} {
