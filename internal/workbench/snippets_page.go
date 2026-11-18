@@ -56,9 +56,6 @@ func (state *State) clickSnippetsPage(id gfx.ID) bool {
 	if state.activeSection != sectionSnippets || state.modal != modalNone {
 		return false
 	}
-	if state.clickSnippetFilter(id) {
-		return true
-	}
 	if id.Scope() == hitSnippetExpandList {
 		index := item(id)
 		if index >= 0 && index < len(state.snippets.list) {
@@ -177,9 +174,7 @@ func (state *State) declareSnippetsWorkspace(c ui.C) {
 			view.empty = state.reserveEmptyPage(c, bounds, m.SnippetEmpty, m.SnippetEmptySub, m.SnippetAdd, hitSnippetAdd, iconSnippets, canAdd)
 		} else {
 			if len(form.groups) > 0 {
-				ui.Row(c).Height(toolbarHeight).MarginSides(0, 0, 9, 0).Children(func() {
-					view.filter = ui.Slot(c).Size(220, toolbarHeight)
-				})
+				view.filter = state.declareSnippetFilter(c).Size(220, toolbarHeight).MarginSides(0, 0, 9, 0).Shrink(0)
 			}
 			theme := state.Theme()
 			view.keyHeight = theme.Metrics.FontSizeS + 9
@@ -251,9 +246,6 @@ func (state *State) paintSnippetsWorkspace(canvas *gfx.Canvas) {
 	}
 	head := components.BeginTable(canvas, state.Theme(), view.header.Rect(), view.columns[:])
 	head.SortableHeader(view.headers[:])
-	if view.filter.Valid() {
-		state.paintSnippetFilter(canvas, view.filter.Rect())
-	}
 }
 
 // paintSnippetRows paints the rows inside the scroll area's content slot. Only

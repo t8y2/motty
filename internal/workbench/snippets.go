@@ -83,12 +83,13 @@ type snippetsUI struct {
 	list []snippet
 
 	// The page's group filter: the groups there are, the list indices it shows
-	// in the order it shows them, and the filter's popup.
-	groups       []string
-	hasUngrouped bool
-	visible      []int
-	filter       snippetFilter
-	filterOpen   bool
+	// in the order it shows them, and the integer choices its Select is over.
+	groups        []string
+	hasUngrouped  bool
+	visible       []int
+	filter        snippetFilter
+	filterChoice  int
+	filterChoices []int
 
 	// The dialog: which snippet it edits (-1 adds one) and the fields.
 	editing     int

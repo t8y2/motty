@@ -7,6 +7,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 )
 
 // A snippet may belong to one group, a name the user types once and picks after
@@ -17,11 +18,7 @@ import (
 const maxSnippetGroup = 80
 
 var (
-	hitSnippetFilter        = tree.ID(snippetsHits, "snippet-filter")
-	hitSnippetFilterDismiss = tree.ID(snippetsHits, "snippet-filter-dismiss")
-	hitSnippetFilterAll     = tree.ID(snippetsHits, "snippet-filter-all")
-	hitSnippetFilterNone    = tree.ID(snippetsHits, "snippet-filter-none")
-	hitSnippetFilterList    = tree.Sub(snippetsHits, tree.Name("snippet-filter-group")) // + index into snippetsUI.groups
+	hitSnippetFilter = tree.ID(snippetsHits, "snippet-filter")
 
 	hitSnippetGroup        = tree.ID(snippetsHits, "snippet-group")
 	hitSnippetGroupTrigger = tree.ID(snippetsHits, "snippet-group-trigger")
@@ -132,88 +129,72 @@ func (form *snippetsUI) showSnippet(index int) {
 	}
 }
 
-// filterLabel is what the filter's trigger shows.
-func (form *snippetsUI) filterLabel(all, none string) string {
+// The page's group filter is a Select over the groups there are: a negative
+// choice is all groups or the ones in none, and a group's index is itself.
+const (
+	snippetFilterAllChoice       = -2
+	snippetFilterUngroupedChoice = -1
+)
+
+// declareSnippetFilter declares the select that narrows the table to one group.
+func (state *State) declareSnippetFilter(c ui.C) ui.Box {
+	form := &state.snippets
+	label := state.messages.FieldGroup
+	choices := append(form.filterChoices[:0], snippetFilterAllChoice)
+	if form.hasUngrouped {
+		choices = append(choices, snippetFilterUngroupedChoice)
+	}
+	for index := range form.groups {
+		choices = append(choices, index)
+	}
+	form.filterChoices = choices
+	form.filterChoice = snippetFilterAllChoice
 	switch {
 	case form.filter.ungrouped:
-		return none
+		form.filterChoice = snippetFilterUngroupedChoice
 	case form.filter.group != "":
-		return form.filter.group
-	}
-	return all
-}
-
-// clickSnippetFilter handles the group filter of the page.
-func (state *State) clickSnippetFilter(id gfx.ID) bool {
-	form := &state.snippets
-	switch {
-	case id == hitSnippetFilter:
-		form.filterOpen = !form.filterOpen
-	case id == hitSnippetFilterDismiss:
-		form.filterOpen = false
-	case id == hitSnippetFilterAll:
-		form.filter, form.filterOpen = snippetFilter{}, false
-	case id == hitSnippetFilterNone:
-		form.filter, form.filterOpen = snippetFilter{ungrouped: true}, false
-	case id.Scope() == hitSnippetFilterList:
-		index := item(id)
-		if index < 0 || index >= len(form.groups) {
-			return true
-		}
-		form.filter, form.filterOpen = snippetFilter{group: form.groups[index]}, false
-	default:
-		return false
-	}
-	state.refreshSnippets()
-	return true
-}
-
-// paintSnippetFilter is the select that narrows the table to one group.
-func (state *State) paintSnippetFilter(canvas *gfx.Canvas, bounds gfx.Rect) {
-	form, m := &state.snippets, state.messages.Tools
-	viewport := state.windowRect()
-	rows := 1 + len(form.groups)
-	if form.hasUngrouped {
-		rows++
-	}
-	height := min(float32(8+rows*32), min(264, viewport.Height-32))
-	content := gfx.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: max(bounds.Width, 200), Height: height}
-	if content.Y+height > viewport.Height-12 {
-		content.Y = max(12, bounds.Y-height-4)
-	}
-	opening := form.filterOpen && state.popups.owner != hitSnippetFilterDismiss
-	control := components.BeginSelect(canvas, state.Theme(), bounds, components.SelectOptions{
-		TriggerID: hitSnippetFilter, Label: state.messages.FieldGroup, Value: form.filterLabel(m.SnippetFilterAll, m.SnippetFilterNone),
-		Open: form.filterOpen, Content: content, Size: components.SelectSizeSmall,
-		Layer: dialogLayer + 1, Scope: hitSnippetFilterDismiss, DismissID: hitSnippetFilterDismiss,
-		Viewport: viewport, Scroll: state.selectScroll(form.filterOpen, hitSnippetFilterDismiss),
-	})
-	defer control.End()
-	if !form.filterOpen {
-		return
-	}
-	state.menuPlaced(control.ContentBounds())
-	if opening {
-		focus := hitSnippetFilterAll
-		switch {
-		case form.filter.ungrouped:
-			focus = hitSnippetFilterNone
-		case form.filter.group != "":
-			for index, group := range form.groups {
-				if sameSnippetGroup(group, form.filter.group) {
-					focus = hitSnippetFilterList.At(index)
-				}
+		for index, group := range form.groups {
+			if sameSnippetGroup(group, form.filter.group) {
+				form.filterChoice = index
 			}
 		}
-		canvas.SetInitialFocus(focus)
 	}
-	control.AddItem(components.SelectItem{ID: hitSnippetFilterAll, Label: m.SnippetFilterAll, Selected: form.filter.all()})
-	if form.hasUngrouped {
-		control.AddItem(components.SelectItem{ID: hitSnippetFilterNone, Label: m.SnippetFilterNone, Selected: form.filter.ungrouped})
+	selector := ui.Select(c, &form.filterChoice, choices, state.snippetFilterChoiceLabel).
+		Label(label).Hit(hitSnippetFilter, label)
+	if selector.Changed() {
+		choice := form.filterChoice
+		c.After(func() { state.chooseSnippetFilter(choice) })
 	}
-	for index, group := range form.groups {
-		control.AddItem(components.SelectItem{ID: hitSnippetFilterList.At(index), Label: group, Hint: group, Selected: form.filter.group != "" && sameSnippetGroup(group, form.filter.group)})
+	return selector
+}
+
+// snippetFilterChoiceLabel names one choice of the filter.
+func (state *State) snippetFilterChoiceLabel(choice int) string {
+	form, m := &state.snippets, state.messages.Tools
+	switch {
+	case choice == snippetFilterAllChoice:
+		return m.SnippetFilterAll
+	case choice == snippetFilterUngroupedChoice:
+		return m.SnippetFilterNone
+	case choice >= 0 && choice < len(form.groups):
+		return form.groups[choice]
 	}
+	return ""
+}
+
+// chooseSnippetFilter narrows the page to the chosen group, once the paint that
+// delivered the choice is over.
+func (state *State) chooseSnippetFilter(choice int) {
+	form := &state.snippets
+	switch {
+	case choice == snippetFilterUngroupedChoice:
+		form.filter = snippetFilter{ungrouped: true}
+	case choice >= 0 && choice < len(form.groups):
+		form.filter = snippetFilter{group: form.groups[choice]}
+	default:
+		form.filter = snippetFilter{}
+	}
+	state.refreshSnippets()
 }
 
 // The group field of the dialog: pick one of the groups, or type a new one.

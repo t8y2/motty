@@ -262,16 +262,11 @@ func TestSnippetFilterIsChosenFromThePage(t *testing.T) {
 		snippet{Name: "a", Command: "a", Group: "Ops"},
 		snippet{Name: "b", Command: "b"},
 	)
-	state.Click(hitSnippetFilter)
-	if !state.snippets.filterOpen {
-		t.Fatal("the filter did not open")
+	chooseSelectOption(t, state, state.messages.FieldGroup, "Ops")
+	if state.snippets.filter.group != "Ops" || len(state.snippets.visible) != 1 {
+		t.Fatalf("filter = %+v visible=%v", state.snippets.filter, state.snippets.visible)
 	}
-	state.Click(hitSnippetFilterList.At(0))
-	if state.snippets.filterOpen || state.snippets.filter.group != "Ops" || len(state.snippets.visible) != 1 {
-		t.Fatalf("filter = %+v open=%v visible=%v", state.snippets.filter, state.snippets.filterOpen, state.snippets.visible)
-	}
-	state.Click(hitSnippetFilter)
-	state.Click(hitSnippetFilterAll)
+	chooseSelectOption(t, state, state.messages.FieldGroup, state.messages.Tools.SnippetFilterAll)
 	if !state.snippets.filter.all() || len(state.snippets.visible) != 2 {
 		t.Fatalf("All groups left filter %+v", state.snippets.filter)
 	}
