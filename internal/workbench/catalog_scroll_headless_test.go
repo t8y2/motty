@@ -307,8 +307,15 @@ func assertTableScrolls(t *testing.T, state *State, view *headless.Session, tabl
 	if !ok {
 		t.Fatal("the scrollbar disappeared before the drag")
 	}
-	atRow := gfx.Point{X: row.Bounds.X + 20, Y: row.Bounds.Y + row.Bounds.Height/2}
-	if err := view.Driver().Press(bar.Bounds.X+bar.Bounds.Width/2, atRow.Y, gfx.PointerButtonPrimary); err != nil {
+	// Grab the thumb itself, at its centre while the list is at its end, so the
+	// drag holds the offset steady as the pointer crosses into the rows. The
+	// thumb shrinks with the body, so a fixed point near the body's bottom edge
+	// can land on the track instead and page the list away from the last row.
+	body := bar.Bounds.Height
+	thumb := body * body / (table.Scroll.Max() + body)
+	grabY := bar.Bounds.Y + body - thumb/2
+	atRow := gfx.Point{X: row.Bounds.X + 20, Y: grabY}
+	if err := view.Driver().Press(bar.Bounds.X+bar.Bounds.Width/2, grabY, gfx.PointerButtonPrimary); err != nil {
 		t.Fatal(err)
 	}
 	if err := view.Driver().Move(atRow.X, atRow.Y); err != nil {
