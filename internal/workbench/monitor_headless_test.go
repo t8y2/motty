@@ -27,10 +27,10 @@ func TestMonitorHostAddressCopyFeedback(t *testing.T) {
 		copied = append(copied, value)
 		return nil
 	}
-	view, err := headless.Open(app.Config{
+	view, err := headless.Open(state.WindowConfig(app.Config{
 		Title: "Monitor", Width: 1280, Height: 900, Tree: Tree(), Paint: state.Paint,
 		OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll, OnResize: state.Resize,
-	}, nil, headless.Options{Scale: 1.5})
+	}), nil, headless.Options{Scale: 1.5})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestMonitorNativePanelAtDifferentScales(t *testing.T) {
 	for _, scale := range []float64{1, 1.25, 1.5, 1.75, 2} {
 		t.Run(fmt.Sprint(scale), func(t *testing.T) {
 			state, _ := monitorFixture(t)
-			view, err := headless.Open(app.Config{Title: "Monitor", Width: 1280, Height: 900, Tree: Tree(), Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize}, nil, headless.Options{Scale: scale})
+			view, err := headless.Open(state.WindowConfig(app.Config{Title: "Monitor", Width: 1280, Height: 900, Tree: Tree(), Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize}), nil, headless.Options{Scale: scale})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -237,7 +237,7 @@ func TestMonitorLoginSessionsScrollAndCollapse(t *testing.T) {
 		{User: "bob", Terminal: "pts/1", Since: "2026-11-09 11:20 (10.0.0.23)"},
 	}
 	state.setAppearance(appearanceDark)
-	view, err := headless.Open(app.Config{Title: "Monitor", Width: 1280, Height: 900, Tree: Tree(), Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll, OnResize: state.Resize}, nil, headless.Options{})
+	view, err := headless.Open(state.WindowConfig(app.Config{Title: "Monitor", Width: 1280, Height: 900, Tree: Tree(), Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll, OnResize: state.Resize}), nil, headless.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,7 +288,7 @@ func TestMonitorSpecialServerNativeStates(t *testing.T) {
 				session.stats.state = remoteStatsUnsupported
 			}
 			state.formatMonitor(session.stats)
-			view, err := headless.Open(app.Config{Title: "Monitor", Width: 1100, Height: 760, Tree: Tree(), Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize}, nil, headless.Options{Scale: 1.75})
+			view, err := headless.Open(state.WindowConfig(app.Config{Title: "Monitor", Width: 1100, Height: 760, Tree: Tree(), Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize}), nil, headless.Options{Scale: 1.75})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -336,7 +336,7 @@ func TestMonitorIdleHostNativeRendering(t *testing.T) {
 	state.formatMonitor(session.stats)
 	session.stats.parts = remoteStatsParts(p.sample)
 	session.stats.text = formatRemoteStats(p.sample)
-	view, err := headless.Open(app.Config{Title: "Monitor", Width: 1400, Height: 900, Tree: Tree(), Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize}, nil, headless.Options{Scale: 1.5})
+	view, err := headless.Open(state.WindowConfig(app.Config{Title: "Monitor", Width: 1400, Height: 900, Tree: Tree(), Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize}), nil, headless.Options{Scale: 1.5})
 	if err != nil {
 		t.Fatal(err)
 	}

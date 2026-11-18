@@ -11,9 +11,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/monitoring"
 	"motty/internal/remotestats"
 	"motty/internal/sshconn"
@@ -58,20 +58,29 @@ var dashboardIntervals = [...]int{2, 5, 10, 30, 60}
 var dashboardRetentions = [...]int{15, 60, 360, 1440}
 
 type dashboardEditor struct {
-	id                                   string
-	name, note, query                    text.Editor
-	selected                             []string
-	error                                string
-	scroll, content                      float32
-	bounds                               gfx.Rect
-	fromHosts                            bool
-	page                                 int
-	order                                components.ReorderListState
-	groups                               []string
-	group                                string
-	groupFilter, groupOpen, selectedOnly bool
-	orderMode                            hostOrderMode
-	orderOpen                            bool
+	id                            string
+	name, note, query             text.Editor
+	nameField, noteField          dialogField
+	queryBound                    bool
+	queryField                    ui.Field
+	selected                      []string
+	error                         string
+	scroll, scrollSynced, content float32
+	bounds                        gfx.Rect
+	fromHosts                     bool
+	page                          int
+	groups                        []string
+	group                         string
+	groupFilter, selectedOnly     bool
+	orderMode                     hostOrderMode
+	orderModeChoice               int
+	groupChoice                   int
+	groupChoices                  []int
+	orderList                     ui.ListState
+	orderSelected                 []string
+	orderKeys                     map[string]int
+	orderKeyNext                  int
+	orderInit                     bool
 }
 type dashboardState struct {
 	panels          []monitoring.Panel
@@ -81,19 +90,21 @@ type dashboardState struct {
 	sources         map[string]*dashboardSource
 	rows            map[string]*dashboardRow
 	search          text.Editor
+	searchField     ui.Field
+	searchBound     bool
 	editor          dashboardEditor
-	menu            int
-	selectBounds    [3]gfx.Rect
 	body            gfx.Rect
 	scroll, content float32
-	width           int
 	refresh         monitorView
-	scrollX         float32
-	dragging        bool
-	dragX           bool
-	grab            float32
+	scrollSynced    float32
 	addHosts        []string
 	addAnchor       gfx.Rect
+	visibleIDs      []string
+	panelOrder      []int
+	panelChoice     int
+	modeChoice      int
+	intervalChoice  int
+	retentionChoice int
 	// visible reports whether the dashboard is the page the window last
 	// painted, so a background panel does not repaint the window from another
 	// section. Paint writes it; collector goroutines read it.
@@ -453,7 +464,6 @@ func (s *State) openDashboardEditor(edit bool) {
 		}
 	}
 	s.dashboard.editor = e
-	s.dashboard.menu = 0
 	s.modal = modalDashboard
 }
 func (s *State) submitDashboard() {
@@ -553,21 +563,12 @@ func (s *State) clickDashboard(id gfx.ID) bool {
 	}
 	if s.modal == modalDashboard {
 		switch {
-		case id == hitDashboardGroupFilter:
-			d.editor.groupOpen = !d.editor.groupOpen
-			d.editor.orderOpen = false
 		case id == hitDashboardSelectMatches && d.editor.page == 0:
 			s.toggleDashboardMatches()
-		case id == hitDashboardOrderMode && d.editor.page == 1:
-			d.editor.orderOpen = !d.editor.orderOpen
-		case id == hitDashboardOrderDismiss:
-			d.editor.orderOpen = false
 		case id.Scope() == hitDashboardOrderModes && d.editor.page == 1:
 			if mode := hostOrderMode(item(id)); mode <= hostOrderIP {
 				s.sortDashboardHosts(mode)
 			}
-		case id == hitDashboardGroupDismiss:
-			d.editor.groupOpen = false
 		case id == hitDashboardSelectedOnly:
 			d.editor.selectedOnly = !d.editor.selectedOnly
 			d.editor.scroll = 0
@@ -578,13 +579,9 @@ func (s *State) clickDashboard(id gfx.ID) bool {
 				if i > 0 {
 					d.editor.group = d.editor.groups[i-1]
 				}
-				d.editor.groupOpen = false
 				d.editor.scroll = 0
 			}
 		case id == hitDashboardPickTab || id == hitDashboardOrderTab:
-			d.editor.order.Cancel()
-			d.editor.groupOpen = false
-			d.editor.orderOpen = false
 			d.editor.page = 0
 			if id == hitDashboardOrderTab {
 				d.editor.page = 1
@@ -647,40 +644,17 @@ func (s *State) clickDashboard(id gfx.ID) bool {
 
 	case id == hitDashboardNew:
 		s.openDashboardEditor(false)
-	case id == hitDashboardSwitch:
-		if d.menu == 1 {
-			d.menu = 0
-		} else {
-			d.menu = 1
-		}
-	case id == hitDashboardInterval:
-		if d.menu == 2 {
-			d.menu = 0
-		} else {
-			d.menu = 2
-		}
-	case id == hitDashboardRetention:
-		if d.menu == 3 {
-			d.menu = 0
-		} else {
-			d.menu = 3
-		}
-	case id == hitDashboardDismiss:
-		d.menu = 0
 	case id == hitDashboardSort:
 		s.openDashboardOrder()
 	case id == hitDashboardEdit:
-		d.menu = 0
 		s.openDashboardEditor(true)
 	case id == hitDashboardDelete:
-		d.menu = 0
 		s.deleteDashboard()
 	case id.Scope() == hitDashboardPanelList:
 		if i := item(id); i < len(d.panels) {
 			d.active = d.panels[i].ID
 			d.search = text.Editor{}
 			d.scroll = 0
-			d.menu = 0
 			s.save()
 		}
 	case id == hitDashboardToggle && p != nil:
@@ -697,14 +671,12 @@ func (s *State) clickDashboard(id gfx.ID) bool {
 		if i := item(id); i < len(dashboardIntervals) {
 			p.Interval = dashboardIntervals[i]
 			d.refresh.refreshReset = true
-			d.menu = 0
 			s.reconcileDashboard()
 			s.save()
 		}
 	case id.Scope() == hitDashboardRetentionList && p != nil:
 		if i := item(id); i < len(dashboardRetentions) {
 			p.Retention = dashboardRetentions[i]
-			d.menu = 0
 			s.reconcileDashboard()
 			s.save()
 		}

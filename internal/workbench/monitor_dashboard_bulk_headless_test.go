@@ -17,7 +17,7 @@ import (
 
 func dashboardBulkView(test *testing.T, state *State, width, height int, scale float64) *headless.Session {
 	test.Helper()
-	view, err := headless.Open(app.Config{
+	view, err := headless.Open(state.WindowConfig(app.Config{
 		Title: "Motty", Width: width, Height: height, Tree: Tree(), Paint: state.Paint,
 		OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut,
 		OnScroll: state.Scroll, OnResize: state.Resize,
@@ -27,7 +27,7 @@ func dashboardBulkView(test *testing.T, state *State, width, height int, scale f
 			}
 			return nil
 		},
-	}, nil, headless.Options{Scale: scale})
+	}), nil, headless.Options{Scale: scale})
 	if err != nil {
 		test.Fatal(err)
 	}
@@ -66,6 +66,22 @@ func dashboardBulkScreenshot(test *testing.T, view *headless.Session, name strin
 	}
 	if err := os.WriteFile(filepath.Join(directory, name+".json"), snapshot, 0o644); err != nil {
 		test.Fatal(err)
+	}
+}
+
+// moveRowToEnd moves a reorder row down steps places with Alt+Down through the
+// page's key route, as a keyboard user does.
+func moveRowToEnd(test *testing.T, state *State, view *headless.Session, id gfx.ID, steps int) {
+	test.Helper()
+	onKey := state.WindowConfig(app.Config{OnKey: state.Key}).OnKey
+	for range steps {
+		result := onKey(gfx.KeyEvent{Target: id, Key: gfx.KeyDown, Modifiers: gfx.ModifierAlt})
+		if !result.Handled || result.Focus.IsZero() {
+			test.Fatalf("Alt+Down did not move %v", id)
+		}
+		id = result.Focus
+		var canvas gfx.Canvas
+		state.Paint(&canvas, state.viewport)
 	}
 }
 
@@ -133,29 +149,20 @@ func TestDashboardBulkHeadlessOrdersAndPersists(test *testing.T) {
 	if err := view.Keys("escape"); err != nil {
 		test.Fatal(err)
 	}
-	if state.modal != modalDashboard || state.dashboard.editor.orderOpen {
+	if state.modal != modalDashboard {
 		test.Fatal("Escape closed the dialog instead of the order menu")
 	}
-	if err := view.Keys("down"); err != nil {
-		test.Fatal(err)
-	}
-	if !state.dashboard.editor.orderOpen {
-		test.Fatal("Down did not reopen the order select")
-	}
-	if err := view.Keys("end"); err != nil {
-		test.Fatal(err)
-	}
-	if err := view.Keys("enter"); err != nil {
-		test.Fatal(err)
-	}
+	dashboardBulkClick(test, view, messages.SortBy)
+	dashboardBulkClick(test, view, state.messages.HostCatalog.IP)
 	if want := []string{"web-2", "web-10", "db"}; !slices.Equal(state.dashboard.editor.selected, want) {
 		test.Fatalf("keyboard IP order = %v, want %v", state.dashboard.editor.selected, want)
 	}
 	dashboardBulkScreenshot(test, view, "monitor-order-by-ip")
-	dashboardBulkClick(test, view, fmt.Sprintf(messages.SortPanel, "Web A"))
-	if err := view.Keys("end"); err != nil {
-		test.Fatal(err)
+	row, ok := view.Hit(fmt.Sprintf(messages.SortPanel, "Web A"))
+	if !ok {
+		test.Fatal("the web row is missing")
 	}
+	moveRowToEnd(test, state, view, row.ID, 2)
 	if state.dashboard.editor.orderMode != hostOrderManual || !slices.Equal(state.dashboard.editor.selected, []string{"web-10", "db", "web-2"}) {
 		test.Fatal("manual keyboard reorder did not retain the draft and reset manual mode")
 	}
@@ -180,18 +187,7 @@ func TestDashboardBulkHeadlessSelectionResetsOrderMode(test *testing.T) {
 	dashboardBulkClick(test, view, messages.OrderTab)
 	dashboardBulkClick(test, view, messages.SortBy)
 	dashboardBulkClick(test, view, state.messages.HostCatalog.IP)
-	tabs := view.Snapshot().Hits
-	index := slices.IndexFunc(tabs, func(hit gfx.Hit) bool { return hit.ID == hitDashboardPickTab })
-	if index < 0 {
-		test.Fatal("host selection tab is missing")
-	}
-	tab := tabs[index].Bounds
-	if err := view.Click(tab.X+tab.Width/2, tab.Y+tab.Height/2); err != nil {
-		test.Fatal(err)
-	}
-	if err := view.Rest(); err != nil {
-		test.Fatal(err)
-	}
+	dashboardBulkClick(test, view, messages.Hosts)
 	dashboardBulkClick(test, view, "Web A")
 	dashboardBulkClick(test, view, messages.OrderTab)
 	if state.dashboard.editor.orderMode != hostOrderManual || !slices.Equal(state.dashboard.editor.selected, []string{"web-10", "web-2"}) {

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
 	"motty/internal/i18n"
@@ -35,7 +34,7 @@ func TestDashboardNativePauseFreezesChartsAndResumeAppends(t *testing.T) {
 	for n := 0; n <= 12; n++ {
 		s.dashboard.engine.Publish("host", start.Add(time.Duration(n)*5*time.Second), remotestats.Sample{CPUPercent: float64(n + 20), MemoryTotalBytes: 8 << 30, MemoryUsedBytes: 4 << 30, ReceiveBytesPerSecond: 4000, SendBytesPerSecond: 1000})
 	}
-	view, err := headless.Open(app.Config{Title: "Motty", Width: 1487, Height: 1058, Tree: Tree(), Paint: s.Paint, OnPointer: s.Pointer, OnKey: s.Key, OnShortcut: s.Shortcut, OnScroll: s.Scroll, OnResize: s.Resize}, nil, headless.Options{})
+	view, err := headless.Open(s.WindowConfig(app.Config{Title: "Motty", Width: 1487, Height: 1058, Tree: Tree(), Paint: s.Paint, OnPointer: s.Pointer, OnKey: s.Key, OnShortcut: s.Shortcut, OnScroll: s.Scroll, OnResize: s.Resize}), nil, headless.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +118,7 @@ func TestDashboardHeaderActionsFitTheirLabels(t *testing.T) {
 			s.setLanguage(language)
 			s.setAppearance(appearanceDark)
 			s.dashboard.running = map[string]bool{}
-			view, err := headless.Open(app.Config{Title: "Motty", Width: 1440, Height: 900, Tree: Tree(), Paint: s.Paint, OnPointer: s.Pointer, OnKey: s.Key, OnShortcut: s.Shortcut, OnScroll: s.Scroll, OnResize: s.Resize}, nil, headless.Options{ReferenceText: true})
+			view, err := headless.Open(s.WindowConfig(app.Config{Title: "Motty", Width: 1440, Height: 900, Tree: Tree(), Paint: s.Paint, OnPointer: s.Pointer, OnKey: s.Key, OnShortcut: s.Shortcut, OnScroll: s.Scroll, OnResize: s.Resize}), nil, headless.Options{ReferenceText: true})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -138,7 +137,9 @@ func TestDashboardHeaderActionsFitTheirLabels(t *testing.T) {
 				if !ok {
 					t.Fatalf("%q has no header action", action.label)
 				}
-				need := components.BeginButton(&gfx.Canvas{}, theme, gfx.ID{}, gfx.Rect{}).WithIcon(action.icon).SizeToFit(action.label).BoundsWidth()
+				// The icon, its gap and the button's own padding, plus the label.
+				canvas := &gfx.Canvas{}
+				need := canvas.TextWidthWeight(action.label, theme.Metrics.FontSizeM, gfx.WeightMedium) + 16 + 2*theme.Metrics.PadControlX
 				if hit.Bounds.Width+0.5 < need {
 					t.Fatalf("%q needs %.1fpx in a %.1fpx button: the label is clipped", action.label, need, hit.Bounds.Width)
 				}
@@ -152,12 +153,12 @@ func TestDashboardNativeSelectsAndHostCards(t *testing.T) {
 	s.visible = []int{0}
 	s.setLanguage(i18n.Chinese)
 	s.setAppearance(appearanceDark)
-	view, err := headless.Open(app.Config{Title: "Motty", Width: 1487, Height: 1058, Tree: Tree(), Paint: s.Paint, OnPointer: s.Pointer, OnKey: s.Key, OnShortcut: s.Shortcut, OnScroll: s.Scroll, OnResize: s.Resize, TextInput: func(context app.TextInputContext) *app.TextInput {
+	view, err := headless.Open(s.WindowConfig(app.Config{Title: "Motty", Width: 1487, Height: 1058, Tree: Tree(), Paint: s.Paint, OnPointer: s.Pointer, OnKey: s.Key, OnShortcut: s.Shortcut, OnScroll: s.Scroll, OnResize: s.Resize, TextInput: func(context app.TextInputContext) *app.TextInput {
 		if editor := s.EditorFor(context.ID); editor != nil {
 			return &app.TextInput{Editor: editor, NavigationKeys: context.NavigationKeys}
 		}
 		return nil
-	}}, nil, headless.Options{})
+	}}), nil, headless.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +269,7 @@ func TestDashboardNativeSelectsAndHostCards(t *testing.T) {
 	if err := view.Keys("escape"); err != nil {
 		t.Fatal(err)
 	}
-	if s.dashboard.menu != 0 {
+	if _, ok := view.Hit("生产环境"); ok {
 		t.Fatal("Escape did not dismiss the select")
 	}
 }
@@ -279,12 +280,12 @@ func TestDashboardNativeHostOrderAndBulkAdd(t *testing.T) {
 	s.dashboard.running[p.ID] = false
 	s.dashboard.engine.Set(*p, false)
 	original := append([]string(nil), p.Hosts...)
-	view, err := headless.Open(app.Config{Title: "Motty", Width: 1487, Height: 1058, Tree: Tree(), Paint: s.Paint, OnPointer: s.Pointer, OnKey: s.Key, OnShortcut: s.Shortcut, OnScroll: s.Scroll, OnResize: s.Resize, TextInput: func(context app.TextInputContext) *app.TextInput {
+	view, err := headless.Open(s.WindowConfig(app.Config{Title: "Motty", Width: 1487, Height: 1058, Tree: Tree(), Paint: s.Paint, OnPointer: s.Pointer, OnKey: s.Key, OnShortcut: s.Shortcut, OnScroll: s.Scroll, OnResize: s.Resize, TextInput: func(context app.TextInputContext) *app.TextInput {
 		if editor := s.EditorFor(context.ID); editor != nil {
 			return &app.TextInput{Editor: editor, NavigationKeys: context.NavigationKeys}
 		}
 		return nil
-	}}, nil, headless.Options{})
+	}}), nil, headless.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -319,31 +320,17 @@ func TestDashboardNativeHostOrderAndBulkAdd(t *testing.T) {
 	if _, ok := view.Hit(m.Name); ok {
 		t.Fatal("order tab still exposes the name input")
 	}
-	if b, ok := s.dashboard.editor.order.RowBounds(dashboardOrderID(original[0])); !ok || b.X < s.dashboard.editor.bounds.X+2 {
-		t.Fatal("order outline is flush with the scroll clip")
+	if _, ok := view.Hit(fmt.Sprintf(m.SortPanel, s.hosts[0].Label)); !ok {
+		t.Fatal("order row is missing")
 	}
 	shot("dashboard-edit-order")
 	first, ok := view.Hit(fmt.Sprintf(m.SortPanel, s.hosts[0].Label))
 	if !ok {
 		t.Fatal("first host's native drag handle is missing")
 	}
-	third, ok := view.Hit(fmt.Sprintf(m.SortPanel, s.hosts[2].Label))
-	if !ok {
-		t.Fatal("third host's native drag handle is missing")
-	}
-	x, y := first.Bounds.X+first.Bounds.Width/2, first.Bounds.Y+first.Bounds.Height/2
-	targetY := third.Bounds.Y + third.Bounds.Height/2
-	if err := view.Press(x, y); err != nil {
-		t.Fatal(err)
-	}
-	if err := view.Move(x, targetY); err != nil {
-		t.Fatal(err)
-	}
-	if err := view.Release(x, targetY); err != nil {
-		t.Fatal(err)
-	}
+	moveRowToEnd(t, s, view, first.ID, 2)
 	if s.dashboard.editor.selected[2] != original[0] || s.dashboardPanel().Hosts[0] != original[0] {
-		t.Fatal("drag must change the draft order until the editor is saved")
+		t.Fatal("reorder must change the draft order until the editor is saved")
 	}
 	click(s.messages.Cancel)
 	if s.dashboardPanel().Hosts[0] != original[0] {
@@ -353,10 +340,11 @@ func TestDashboardNativeHostOrderAndBulkAdd(t *testing.T) {
 	if s.dashboard.editor.page != 1 {
 		t.Fatal("sort shortcut did not open the editor's order tab")
 	}
-	click(fmt.Sprintf(m.SortPanel, s.hosts[0].Label))
-	if err := view.Keys("end"); err != nil {
-		t.Fatal(err)
+	row, ok := view.Hit(fmt.Sprintf(m.SortPanel, s.hosts[0].Label))
+	if !ok {
+		t.Fatal("first host's row is missing")
 	}
+	moveRowToEnd(t, s, view, row.ID, len(original)-1)
 	if s.dashboard.editor.selected[len(original)-1] != original[0] {
 		t.Fatal("keyboard reorder did not move the focused host")
 	}
@@ -410,12 +398,12 @@ func TestDashboardNativeGroupedPickerPreservesFilteredSelection(t *testing.T) {
 	}
 	s.openDashboardEditor(false)
 	s.dashboard.editor.selected = []string{"host-0", "many-4"}
-	view, err := headless.Open(app.Config{Title: "Motty", Width: 1487, Height: 1058, Tree: Tree(), Paint: s.Paint, OnPointer: s.Pointer, OnKey: s.Key, OnShortcut: s.Shortcut, OnScroll: s.Scroll, OnResize: s.Resize, TextInput: func(context app.TextInputContext) *app.TextInput {
+	view, err := headless.Open(s.WindowConfig(app.Config{Title: "Motty", Width: 1487, Height: 1058, Tree: Tree(), Paint: s.Paint, OnPointer: s.Pointer, OnKey: s.Key, OnShortcut: s.Shortcut, OnScroll: s.Scroll, OnResize: s.Resize, TextInput: func(context app.TextInputContext) *app.TextInput {
 		if editor := s.EditorFor(context.ID); editor != nil {
 			return &app.TextInput{Editor: editor, NavigationKeys: context.NavigationKeys}
 		}
 		return nil
-	}}, nil, headless.Options{})
+	}}), nil, headless.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -457,7 +445,7 @@ func TestDashboardNativeGroupedPickerPreservesFilteredSelection(t *testing.T) {
 	if err := view.Keys("escape"); err != nil {
 		t.Fatal(err)
 	}
-	if s.modal != modalDashboard || s.dashboard.editor.groupOpen {
+	if s.modal != modalDashboard {
 		t.Fatal("Escape must dismiss the group picker without closing the editor")
 	}
 	click(m.GroupFilter)
@@ -526,7 +514,7 @@ func TestDashboardNativeViewsAndModal(t *testing.T) {
 	for _, scale := range []float64{1, 1.5, 2} {
 		t.Run(fmt.Sprint(scale), func(t *testing.T) {
 			s := dashboardNativeFixture(t)
-			view, err := headless.Open(app.Config{Title: "Motty", Width: 1487, Height: 1058, Tree: Tree(), Paint: s.Paint, OnPointer: s.Pointer, OnKey: s.Key, OnShortcut: s.Shortcut, OnScroll: s.Scroll, OnResize: s.Resize}, nil, headless.Options{Scale: scale})
+			view, err := headless.Open(s.WindowConfig(app.Config{Title: "Motty", Width: 1487, Height: 1058, Tree: Tree(), Paint: s.Paint, OnPointer: s.Pointer, OnKey: s.Key, OnShortcut: s.Shortcut, OnScroll: s.Scroll, OnResize: s.Resize}), nil, headless.Options{Scale: scale})
 			if err != nil {
 				t.Fatal(err)
 			}

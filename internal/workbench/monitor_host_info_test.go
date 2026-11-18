@@ -91,7 +91,7 @@ func TestMonitorHostInfoFollowsActiveSession(t *testing.T) {
 	for _, id := range []uint32{firstID, second.ID, firstID} {
 		state.activeSessionID = id
 		canvas := hostPrivacyCanvas(t)
-		state.paintIndependentMonitor(&canvas, gfx.Size{Width: 1280, Height: 900})
+		state.paintMonitorHostInfo(&canvas, gfx.Rect{X: 900 + monitorInset, Y: infoBarHeight + monitorControlsHeight, Width: 380 - 2*monitorInset, Height: monitorHostInfoHeight}, state.contextSession())
 		want := state.monitorHostInfo(state.contextSession())
 		for i, fieldID := range []gfx.ID{hitMonitorHostName, hitMonitorHostAddress, hitMonitorHostUser} {
 			hit, ok := hitByID(&canvas, fieldID)
@@ -118,7 +118,7 @@ func TestMonitorHostInfoLayoutAndScrollAcrossPages(t *testing.T) {
 			p.page = page
 			b := gfx.Rect{X: 20, Y: 40, Width: width, Height: 320}
 			canvas := hostPrivacyCanvas(t)
-			state.paintMonitor(&canvas, b, session)
+			state.paintMonitorHostInfo(&canvas, gfx.Rect{X: b.X + monitorInset, Y: b.Y + infoBarHeight + monitorControlsHeight, Width: b.Width - 2*monitorInset, Height: monitorHostInfoHeight}, session)
 			previousRight := b.X
 			for _, id := range []gfx.ID{hitMonitorHostName, hitMonitorHostAddress, hitMonitorHostUser} {
 				hit, ok := hitByID(&canvas, id)
@@ -133,6 +133,7 @@ func TestMonitorHostInfoLayoutAndScrollAcrossPages(t *testing.T) {
 			if hit, _ := hitByID(&canvas, hitMonitorHostName); hit.Hint != "" || hit.Label != session.host.Label {
 				t.Fatal("truncated name lost its accessible label or kept its tooltip")
 			}
+			state.monitorRect = b
 			geometry := state.monitorScrollArea(p).Geometry()
 			if geometry.Viewport.Y != b.Y+infoBarHeight+monitorControlsHeight+monitorHostInfoHeight {
 				t.Fatalf("scroll viewport overlaps host information: %+v", geometry.Viewport)

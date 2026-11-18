@@ -1,7 +1,6 @@
 package workbench
 
 import (
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/workbench/icons"
 )
@@ -228,11 +227,17 @@ func (s *State) paintMonitorSummary(c *gfx.Canvas, p *monitorView, b gfx.Rect) {
 	}
 }
 
+// monitorMore paints a section's quiet expand/collapse action and its hit.
 func (s *State) monitorMore(c *gfx.Canvas, id gfx.ID, label string, b gfx.Rect) {
 	p := s.monitorColors()
-	theme := s.Theme()
-	theme.Foreground = p.muted
-	components.BeginButton(c, theme, id, b).XSmall().Ghost(label)
+	if b.Width <= 0 || b.Height <= 0 {
+		return
+	}
+	if c.Hovered() == id {
+		c.Rounded(b, radius.control, withAlpha(s.pal.surfaceHot, 0.6))
+	}
+	monitorLabel(c, label, gfx.Rect{X: b.X + 4, Y: b.Y, Width: b.Width - 8, Height: b.Height}, 11, p.muted, gfx.WeightMedium)
+	c.HitWithOptions(id, b, label, gfx.HitOptions{Role: gfx.RoleButton})
 }
 
 func (s *State) paintMonitorCores(c *gfx.Canvas, p *monitorView, b, viewport gfx.Rect) {
@@ -260,10 +265,7 @@ func (s *State) paintMonitorCores(c *gfx.Canvas, p *monitorView, b, viewport gfx
 		}
 		monitorLabel(c, core.label, gfx.Rect{X: left, Y: top, Width: half * .57, Height: 16}, 10, colors.muted, gfx.WeightRegular)
 		monitorRight(c, core.percent, gfx.Rect{X: left + half*.57, Y: top, Width: half * .43, Height: 16}, 10, colors.text, gfx.WeightMedium)
-		theme := s.Theme()
-		theme.Primary = colors.cpu
-		theme.Muted = colors.track
-		components.Progress(c, theme, gfx.Rect{X: left, Y: top + 20, Width: half, Height: 5}, float32(core.value/100))
+		dashboardBar(c, gfx.Rect{X: left, Y: top + 20, Width: half, Height: 5}, core.value, colors.cpu, colors.track)
 	}
 	if len(p.cores) > 8 {
 		text := p.coreMoreText
@@ -302,10 +304,7 @@ func (s *State) paintMonitorGPUs(c *gfx.Canvas, p *monitorView, b, viewport gfx.
 				monitorLabel(c, metric.label, gfx.Rect{X: x, Y: y, Width: w * .15, Height: 16}, 10, colors.muted, gfx.WeightRegular)
 				monitorRight(c, metric.value, gfx.Rect{X: x + w*.15, Y: y, Width: w * .42, Height: 16}, 10, colors.text, gfx.WeightMedium)
 				if metric.valueValue >= 0 {
-					theme := s.Theme()
-					theme.Primary = s.monitorMetricColor(metric.valueValue)
-					theme.Muted = colors.track
-					components.Progress(c, theme, gfx.Rect{X: x + w*.58, Y: y + 5, Width: w * .42, Height: 5}, float32(min(metric.valueValue, 100)/100))
+					dashboardBar(c, gfx.Rect{X: x + w*.58, Y: y + 5, Width: w * .42, Height: 5}, metric.valueValue, s.monitorMetricColor(metric.valueValue), colors.track)
 				}
 			}
 			y += 18
@@ -378,10 +377,7 @@ func (s *State) paintMonitorDisks(c *gfx.Canvas, p *monitorView, b, viewport gfx
 			if d.value >= 95 {
 				tint = s.pal.danger
 			}
-			theme := s.Theme()
-			theme.Primary = tint
-			theme.Muted = colors.track
-			components.Progress(c, theme, gfx.Rect{X: x, Y: y + 24, Width: w - 30, Height: 5}, float32(d.value/100))
+			dashboardBar(c, gfx.Rect{X: x, Y: y + 24, Width: w - 30, Height: 5}, d.value, tint, colors.track)
 			monitorRight(c, d.percent, gfx.Rect{X: x + w - 28, Y: y + 17, Width: 28, Height: 18}, 10, colors.muted, gfx.WeightMedium)
 		}
 		y += 43

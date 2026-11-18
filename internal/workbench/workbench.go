@@ -816,8 +816,8 @@ type State struct {
 	defaultEditor           ExternalEditor // hands remote folders to this computer's editor
 	customEditorPath        string
 	monitorRect             gfx.Rect
+	monitorUI               monitorPageUI
 	monitorMenu             bool
-	monitorMenuRect         gfx.Rect
 	monitorResizing         bool
 	monitorResizeGrab       float32
 	monitorResizeWorkspace  layoutcore.WorkspaceID
@@ -2567,9 +2567,6 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 		return result
 	}
 	if result, handled := state.workspaceLibraryPointer(event); handled {
-		return result
-	}
-	if result, handled := state.dashboardPointer(event); handled {
 		return result
 	}
 	if state.modal == modalFileProperties {

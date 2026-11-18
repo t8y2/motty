@@ -24,6 +24,7 @@ type sectionBodies struct {
 	snippets         snippetsSectionUI
 	sessionLogs      sessionLogsSectionUI
 	workspaceLibrary workspaceLibrarySectionUI
+	dashboard        dashboardSectionUI
 }
 
 // catalogSectionBounds is the room the workspace slot gives a catalog section:
@@ -54,6 +55,8 @@ func (state *State) declareCatalogSection(c ui.C) {
 		state.declareSnippetsWorkspace(c)
 	case sectionSessionLogs:
 		state.declareSessionLogsWorkspace(c)
+	case sectionDashboard:
+		state.declareDashboardWorkspace(c)
 	}
 }
 
