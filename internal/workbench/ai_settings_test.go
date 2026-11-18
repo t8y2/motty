@@ -1382,3 +1382,27 @@ func TestAskAgentModeSurvivesAReload(t *testing.T) {
 		t.Fatalf("stored ai.mode = %q, want ask", got)
 	}
 }
+
+// The step field keeps its digits-only restriction after an edit ends. The editor
+// is made anew each time the edit opens, and a restriction set once on another
+// editor would not follow it.
+func TestAIStepsFieldKeepsItsRestrictionAfterAnEdit(t *testing.T) {
+	world := newSettingsWorld(t, newLister())
+	state := world.state
+	setAISteps(t, state, 7)
+	state.Click(hitAISetStepsValue)
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 3200})
+	input := state.WindowConfig(app.Config{}).TextInput(app.TextInputContext{ID: hitAISetStepsValue})
+	if input == nil {
+		t.Fatal("the step field has no page editor")
+	}
+	input.Editor.Insert("abc12x3")
+	if got := input.Editor.String(); got != "123" {
+		t.Fatalf("the step field accepted %q, want the digits only", got)
+	}
+	state.Key(gfx.KeyEvent{Target: hitAISetStepsValue, Key: gfx.KeyEnter})
+	if got := state.ai.settings.maxSteps; got != 123 {
+		t.Fatalf("typed 123 steps = %d", got)
+	}
+}
