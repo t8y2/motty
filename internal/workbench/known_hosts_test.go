@@ -89,7 +89,7 @@ func TestKnownHostsSearchAndKeyboardSelection(t *testing.T) {
 		t.Fatalf("visible=%v", state.knownHosts.visible)
 	}
 	index := state.knownHosts.visible[0]
-	result := state.Key(gfx.KeyEvent{Target: hitKnownHostRowList.At(index), Key: gfx.KeySpace})
+	result := state.Key(gfx.KeyEvent{Target: hitKnownHostRowList.At(0), Key: gfx.KeySpace})
 	if !result.Handled || !state.knownHosts.rows[index].selected {
 		t.Fatalf("space result=%+v selected=%v", result, state.knownHosts.rows[index].selected)
 	}
@@ -204,7 +204,7 @@ func TestKnownHostsPaginationKeepsEveryEntryReachable(t *testing.T) {
 	options := freshOptions(t)
 	key := workbenchKnownHostKey(t)
 	var data strings.Builder
-	for index := range knownHostsPageSize + 1 {
+	for index := range defaultKnownHostsPageSize + 2 {
 		data.WriteString(sshknownhosts.Line([]string{fmt.Sprintf("host-%02d.example.com", index)}, key))
 		data.WriteByte('\n')
 	}
@@ -213,21 +213,41 @@ func TestKnownHostsPaginationKeepsEveryEntryReachable(t *testing.T) {
 	}
 	state := newTestState(t, options)
 	state.Click(hitKnownHosts)
-	canvas, _ := paintedTexts(state)
+	canvas, texts := paintedTexts(state)
 	if _, ok := hitByID(canvas, hitKnownHostsNext); !ok {
 		t.Fatal("first page has no Next hit")
 	}
-	if _, ok := hitByID(canvas, hitKnownHostRowList.At(int(knownHostsPageSize))); ok {
+	if _, ok := hitByID(canvas, hitKnownHostRowList.At(defaultKnownHostsPageSize)); ok {
 		t.Fatal("second-page row was painted on the first page")
+	}
+	if contains(texts, fmt.Sprintf("host-%02d.example.com", defaultKnownHostsPageSize)) {
+		t.Fatal("second-page host text was painted on the first page")
+	}
+	// 页码文本（如 "第 1 / 2 页"）所在区域不能被截断成 30px 正方形。
+	if !contains(texts, state.knownHosts.pageText) {
+		t.Fatalf("pagination text %q was not painted", state.knownHosts.pageText)
 	}
 
 	state.Click(hitKnownHostsNext)
-	canvas, _ = paintedTexts(state)
-	if _, ok := hitByID(canvas, hitKnownHostRowList.At(int(knownHostsPageSize))); !ok {
+	canvas, texts = paintedTexts(state)
+	if !contains(texts, fmt.Sprintf("host-%02d.example.com", defaultKnownHostsPageSize)) {
 		t.Fatal("last entry is not reachable on the second page")
+	}
+	if _, ok := hitByID(canvas, hitKnownHostRowList.At(0)); !ok {
+		t.Fatal("second page first row has no hit")
 	}
 	if _, ok := hitByID(canvas, hitKnownHostsPrevious); !ok {
 		t.Fatal("second page has no Previous hit")
+	}
+
+	// 切换每页显示数量枚举为 30 后，所有记录应在第一页直接可见且不再分页。
+	state.setKnownHostsPageSize(30)
+	canvas, texts = paintedTexts(state)
+	if _, ok := hitByID(canvas, hitKnownHostsNext); ok {
+		t.Fatal("pagination should be hidden when page size covers all rows")
+	}
+	if !contains(texts, fmt.Sprintf("host-%02d.example.com", defaultKnownHostsPageSize+1)) {
+		t.Fatal("last entry is not visible after increasing page size to 30")
 	}
 }
 

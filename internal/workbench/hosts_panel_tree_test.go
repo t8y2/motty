@@ -103,6 +103,7 @@ func TestSecondaryPressOnAnOpenMenuBackdropClosesItAndOpensTheHostMenu(t *testin
 	}
 	target := state.hostsPanel.tree.RowID(row)
 	state.tabMenu.open = true
+	state.Paint(&gfx.Canvas{}, panelWide)
 	// The first pass is the press the open menu's backdrop takes; it must close
 	// that menu and leave the panel alone.
 	state.Pointer(gfx.PointerEvent{

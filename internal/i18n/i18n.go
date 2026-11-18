@@ -815,9 +815,10 @@ type Messages struct {
 	KnownHostsFilteredCountFmt      string
 	KnownHostsSelectedFmt           string
 	KnownHostsPageFmt               string
+	KnownHostsPerPage               string
+	KnownHostsListScroll            string
 	KnownHostsPrevious              string
 	KnownHostsNext                  string
-	KnownHostsLoadedFmt             string
 	KnownHostsLoadFailedFmt         string
 	KnownHostsDeleteTitle           string
 	KnownHostsDeleteDescriptionFmt  string

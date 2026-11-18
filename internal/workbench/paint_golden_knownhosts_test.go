@@ -31,7 +31,7 @@ func writeKnownHostsPaginationFixture(t *testing.T, s *State) {
 	t.Helper()
 	key := workbenchKnownHostKey(t)
 	var data strings.Builder
-	for index := range knownHostsPageSize + 1 {
+	for index := range defaultKnownHostsPageSize + 1 {
 		data.WriteString(sshknownhosts.Line([]string{fmt.Sprintf("host-%02d.example.com", index)}, key))
 		data.WriteByte('\n')
 	}

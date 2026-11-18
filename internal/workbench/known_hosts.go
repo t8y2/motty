@@ -16,11 +16,13 @@ import (
 )
 
 const (
-	knownHostsPageSize = 15
-	knownHostsColumns  = 7
+	defaultKnownHostsPageSize = 15
+	knownHostsColumns         = 7
 	// knownHostsSidePad is the page's padding beside the table, on each side.
 	knownHostsSidePad = float32(18)
 )
+
+var knownHostsPageSizes = [...]int{15, 30, 50}
 
 type knownHostsAction uint8
 
@@ -38,6 +40,34 @@ type knownHostRecord struct {
 	selectLabel string
 }
 
+type knownHostsTableSource struct {
+	state *State
+}
+
+func (source *knownHostsTableSource) Len() int {
+	if source == nil || source.state == nil {
+		return 0
+	}
+	start, end := source.state.knownHostsPageRange()
+	return max(0, end-start)
+}
+
+func (source *knownHostsTableSource) Cell(row, column int) string {
+	if source == nil || source.state == nil || column < 0 || column >= 7 {
+		return ""
+	}
+	start, end := source.state.knownHostsPageRange()
+	if row < 0 || start+row >= end {
+		return ""
+	}
+	view := &source.state.knownHosts
+	index := view.visible[start+row]
+	if index < 0 || index >= len(view.rows) {
+		return ""
+	}
+	return view.rows[index].cells[column]
+}
+
 type knownHostsView struct {
 	file    *knownhosts.File
 	rows    []knownHostRecord
@@ -50,42 +80,32 @@ type knownHostsView struct {
 	visibleLanguage   i18n.Language
 	synced            bool
 	page              int
+	pageSize          int
 	selected          int
 	countText         string
 	selectionText     string
 	pageText          string
+	pageSizeLabels    [len(knownHostsPageSizes)]string
+	pageSizeLabelFn   func(int) string
 	status            string
 	errorText         string
 	action            knownHostsAction
 	dialogDescription string
 	dialogError       string
-	// header, list and rowDecl are the page's table: its headings, its rows and
-	// the builder that declares one. columns and headings are set on each paint
-	// so the list's cells line up with the header's.
-	list     ui.ListState
-	rowDecl  func(ui.ListRow)
-	columns  [knownHostsColumns]components.TableColumn
-	headings [knownHostsColumns]string
+	table             ui.TableState
+	tableSource       knownHostsTableSource
+	columns           [knownHostsColumns]components.TableColumn
+	headings          [knownHostsColumns]string
+	rowCells          []gfx.Rect
 }
 
 func (state *State) initKnownHosts() {
 	view := &state.knownHosts
 	view.file = knownhosts.New(state.options.KnownHostsPath)
-	view.rowDecl = state.declareKnownHostRow
-	view.list.Key = func(row int) int {
-		start, _ := state.knownHostsPageRange()
-		if at := start + row; at >= 0 && at < len(view.visible) {
-			return view.visible[at]
-		}
-		return row
-	}
-	view.list.Label = func(row int) string {
-		start, _ := state.knownHostsPageRange()
-		if at := start + row; at >= 0 && at < len(view.visible) {
-			return view.rows[view.visible[at]].selectLabel
-		}
-		return ""
-	}
+	view.pageSize = defaultKnownHostsPageSize
+	view.tableSource = knownHostsTableSource{state: state}
+	view.pageSizeLabelFn = state.knownHostsPageSizeLabel
+	state.refreshKnownHostsPageSizeLabels()
 }
 
 func (state *State) openKnownHosts() {
@@ -137,11 +157,12 @@ func (state *State) refreshKnownHosts(report bool) {
 	}
 	view.selected = 0
 	view.page = 0
+	view.table.Scroll.Offset = 0
 	view.synced = false
 	view.errorText = ""
 	state.syncKnownHostsVisible()
 	if report {
-		view.status = fmt.Sprintf(state.messages.KnownHostsLoadedFmt, len(view.rows))
+		view.status = ""
 	}
 }
 
@@ -158,6 +179,7 @@ func (state *State) syncKnownHostsVisible() {
 	view.synced = true
 	if queryChanged {
 		view.page = 0
+		view.table.Scroll.Offset = 0
 		needle := strings.ToLower(strings.TrimSpace(query))
 		view.visible = view.visible[:0]
 		if view.visible == nil {
@@ -170,15 +192,63 @@ func (state *State) syncKnownHostsVisible() {
 		}
 	}
 	state.clampKnownHostsPage()
+	state.refreshKnownHostsPageSizeLabels()
 	state.refreshKnownHostsSummaries()
 	if languageChanged && view.errorText == "" {
-		view.status = fmt.Sprintf(state.messages.KnownHostsLoadedFmt, len(view.rows))
+		view.status = ""
 	}
+}
+
+func (state *State) knownHostsPageSize() int {
+	size := state.knownHosts.pageSize
+	if size <= 0 {
+		return defaultKnownHostsPageSize
+	}
+	return size
+}
+
+func (state *State) setKnownHostsPageSize(size int) {
+	valid := false
+	for _, option := range knownHostsPageSizes {
+		if option == size {
+			valid = true
+			break
+		}
+	}
+	if !valid || state.knownHosts.pageSize == size {
+		return
+	}
+	state.knownHosts.pageSize = size
+	state.knownHosts.page = 0
+	state.knownHosts.table.Scroll.Offset = 0
+	state.clampKnownHostsPage()
+	state.refreshKnownHostsSummaries()
+}
+
+func (state *State) refreshKnownHostsPageSizeLabels() {
+	view := &state.knownHosts
+	for i, size := range knownHostsPageSizes {
+		view.pageSizeLabels[i] = strconv.Itoa(size)
+	}
+}
+
+func (state *State) knownHostsPageSizeLabel(size int) string {
+	view := &state.knownHosts
+	for i, option := range knownHostsPageSizes {
+		if option == size {
+			if view.pageSizeLabels[i] != "" {
+				return view.pageSizeLabels[i]
+			}
+			return strconv.Itoa(size)
+		}
+	}
+	return strconv.Itoa(size)
 }
 
 func (state *State) clampKnownHostsPage() {
 	view := &state.knownHosts
-	pages := max(1, (len(view.visible)+knownHostsPageSize-1)/knownHostsPageSize)
+	pageSize := state.knownHostsPageSize()
+	pages := max(1, (len(view.visible)+pageSize-1)/pageSize)
 	view.page = min(max(0, view.page), pages-1)
 }
 
@@ -190,14 +260,16 @@ func (state *State) refreshKnownHostsSummaries() {
 		view.countText = fmt.Sprintf(state.messages.KnownHostsFilteredCountFmt, len(view.visible), len(view.rows))
 	}
 	view.selectionText = fmt.Sprintf(state.messages.KnownHostsSelectedFmt, view.selected)
-	pages := max(1, (len(view.visible)+knownHostsPageSize-1)/knownHostsPageSize)
+	pageSize := state.knownHostsPageSize()
+	pages := max(1, (len(view.visible)+pageSize-1)/pageSize)
 	view.pageText = fmt.Sprintf(state.messages.KnownHostsPageFmt, view.page+1, pages)
 }
 
 func (state *State) knownHostsPageRange() (int, int) {
 	view := &state.knownHosts
-	start := min(view.page*knownHostsPageSize, len(view.visible))
-	return start, min(start+knownHostsPageSize, len(view.visible))
+	pageSize := state.knownHostsPageSize()
+	start := min(view.page*pageSize, len(view.visible))
+	return start, min(start+pageSize, len(view.visible))
 }
 
 func (state *State) clickKnownHosts(id gfx.ID) bool {
@@ -220,13 +292,16 @@ func (state *State) clickKnownHosts(id gfx.ID) bool {
 	case hitKnownHostsPrevious:
 		if view.page > 0 {
 			view.page--
+			view.table.Scroll.Offset = 0
 			state.refreshKnownHostsSummaries()
 		}
 		return true
 	case hitKnownHostsNext:
-		pages := max(1, (len(view.visible)+knownHostsPageSize-1)/knownHostsPageSize)
+		pageSize := state.knownHostsPageSize()
+		pages := max(1, (len(view.visible)+pageSize-1)/pageSize)
 		if view.page+1 < pages {
 			view.page++
+			view.table.Scroll.Offset = 0
 			state.refreshKnownHostsSummaries()
 		}
 		return true
@@ -239,23 +314,30 @@ func (state *State) clickKnownHosts(id gfx.ID) bool {
 			view.selected--
 		}
 		state.refreshKnownHostsSummaries()
-		view.status = view.selectionText
 		return true
 	}
 	return false
 }
 
 func (state *State) knownHostIndexForHit(id gfx.ID) (int, bool) {
-	var index int
-	switch {
-	case id.Scope() == hitKnownHostRowList:
-		index = item(id)
-	case id.Scope() == hitKnownHostCheckList:
-		index = item(id)
+	view := &state.knownHosts
+	switch id.Scope() {
+	case hitKnownHostRowList:
+		start, end := state.knownHostsPageRange()
+		offset := item(id)
+		if offset < 0 || start+offset >= end {
+			return 0, false
+		}
+		return view.visible[start+offset], true
+	case hitKnownHostCheckList:
+		index := item(id)
+		if index < 0 || index >= len(view.rows) {
+			return 0, false
+		}
+		return index, true
 	default:
 		return 0, false
 	}
-	return int(index), true
 }
 
 func (state *State) openKnownHostsAction(action knownHostsAction) {
@@ -327,8 +409,8 @@ func (state *State) knownHostsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 		state.syncKnownHostsVisible()
 		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	if index, ok := state.knownHostIndexForHit(event.Target); ok && (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) {
-		state.clickKnownHosts(hitKnownHostRowList.At(index))
+	if _, ok := state.knownHostIndexForHit(event.Target); ok && (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) {
+		state.clickKnownHosts(event.Target)
 		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	if event.Key == gfx.KeyDelete && view.selected > 0 {

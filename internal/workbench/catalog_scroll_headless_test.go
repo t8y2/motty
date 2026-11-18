@@ -81,6 +81,27 @@ func TestCatalogPagesScrollLongLists(t *testing.T) {
 			})
 	})
 
+	t.Run("known hosts", func(t *testing.T) {
+		state := newTestState(t, testOptions(t))
+		const pageCount = 50
+		for index := range pageCount {
+			hosts := fmt.Sprintf("kh-%03d.internal", index)
+			state.knownHosts.rows = append(state.knownHosts.rows, knownHostRecord{
+				cells:       [7]string{"", fmt.Sprintf("%d", index+1), hosts, "", "ssh-ed25519", "SHA256:test", ""},
+				searchText:  hosts,
+				selectLabel: hosts,
+			})
+		}
+		state.setKnownHostsPageSize(pageCount)
+		state.knownHosts.synced = false
+		state.activeSection = sectionKnownHosts
+		view := openCatalogWindow(t, state)
+		assertTableScrolls(t, state, view, &state.knownHosts.table, pageCount,
+			hitKnownHostRowList.At(0), hitKnownHostRowList.At(pageCount-1), hitKnownHostsScrollThumb,
+			state.messages.KnownHostsListScroll, state.messages.KnownHostsColumnFingerprint,
+			func(state *State) {})
+	})
+
 	t.Run("snippets", func(t *testing.T) {
 		state := newTestState(t, testOptions(t))
 		for index := range count {
