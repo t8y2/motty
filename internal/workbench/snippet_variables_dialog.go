@@ -21,6 +21,7 @@ type snippetPromptState struct {
 	snippetIndex    int
 	targetSessionID uint32
 	fromPage        bool
+	toComposer      bool
 	defs            []snippetVariableDef
 	editors         []text.Editor
 	fields          []ui.Field
@@ -239,7 +240,12 @@ func (state *State) submitSnippetVariables() {
 
 	sessionID := prompt.targetSessionID
 	fromPage := prompt.fromPage
+	toComposer := prompt.toComposer
 	state.closeModal()
+	if toComposer {
+		state.insertCommandDraft(resolved)
+		return
+	}
 
 	session, ok := state.sessionByIDPointer(sessionID)
 	if !ok || session.term == nil {

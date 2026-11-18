@@ -25,6 +25,7 @@ var (
 	hitTerminalMenuSearch  = tree.ID(terminalMenuHits, "terminal-menu-search")
 	hitTerminalMenuHistory = tree.ID(terminalMenuHits, "terminal-menu-history")
 	hitTerminalMenuRename  = tree.ID(terminalMenuHits, "terminal-menu-rename")
+	hitTerminalMenuSnippet = tree.ID(terminalMenuHits, "terminal-menu-snippet")
 )
 
 // maxMenuActions bounds what the menu offers for the text under the pointer.
@@ -204,6 +205,7 @@ func (state *State) declareTerminalMenu(c ui.C) {
 	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuCopy, Label: messages.MenuCopy, Icon: icon(iconCopy), Disabled: !hasSelection})
 	rows.chord(chord(shortcutCopy))
+	rows.add(components.ContextMenuItem{ID: hitTerminalMenuSnippet, Label: messages.Tools.SidebarFromSelection, Icon: icon(iconPlus), Disabled: !hasSelection})
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuPaste, Label: messages.MenuPaste, Icon: icon(iconPaste), Disabled: !live})
 	rows.chord(chord(shortcutPaste))
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuSelectAll, Label: messages.MenuSelectAll, Icon: icon(iconSelectAll)})
@@ -285,6 +287,8 @@ func (state *State) chooseTerminalMenu(id gfx.ID) {
 		}
 	}
 	switch id {
+	case hitTerminalMenuSnippet:
+		state.openSnippetFromSelection(session)
 	case hitTerminalMenuCopy:
 		if selection := session.term.selection; selection.selected {
 			if err := state.options.SetClipboardText(selection.text(session.term.screen)); err != nil {

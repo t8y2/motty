@@ -35,9 +35,11 @@ func TestMonitorOuterPanelLayoutsAndResizeAtDisplayScales(t *testing.T) {
 					check := func() {
 						t.Helper()
 						m, f, term := state.monitorRect, state.contextRect, state.workspacePixelBounds(state.viewport)
-						ordered := []gfx.Rect{f, term}
+						frame := state.workspacePixelBoundsWithoutCommands(id, state.viewport)
+						command := gfx.Rect{X: term.X + term.Width, Y: term.Y, Width: state.commandSidebarExtent(frame.Width), Height: term.Height}
+						ordered := []gfx.Rect{f, term, command}
 						if side == layoutcore.ContextRight {
-							ordered = []gfx.Rect{term, f}
+							ordered = []gfx.Rect{term, command, f}
 						}
 						if left {
 							ordered = append([]gfx.Rect{m}, ordered...)
@@ -50,10 +52,10 @@ func TestMonitorOuterPanelLayoutsAndResizeAtDisplayScales(t *testing.T) {
 							if ordered[0].X != rail.X+rail.Width {
 								t.Fatalf("panels do not begin inside the left rail: panels=%v rail=%v", ordered, rail)
 							}
-						} else if ordered[2].X+ordered[2].Width != rail.X {
+						} else if ordered[len(ordered)-1].X+ordered[len(ordered)-1].Width != rail.X {
 							t.Fatalf("panels do not end inside the right rail: panels=%v rail=%v", ordered, rail)
 						}
-						for i := 0; i < 2; i++ {
+						for i := 0; i < len(ordered)-1; i++ {
 							if ordered[i].X+ordered[i].Width > ordered[i+1].X {
 								t.Fatalf("overlapping or wrong order: %v", ordered)
 							}

@@ -983,6 +983,7 @@ type State struct {
 	noteExit         *noteExitRequest
 	noteTarget       *notesUI
 	snippets         snippetsUI
+	commandSidebar   commandSidebarUI
 	commands         commandsUI
 	snippetSend      snippetSender
 	snippetPrompt    snippetPromptState
@@ -1414,6 +1415,9 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 	}
 	switch state.modal {
 	case modalNone:
+		if hit == hitCommandComposer && state.commandSidebarVisible() && !state.commandSidebar.ComposerCollapsed {
+			return &state.commandSidebar.editor
+		}
 		if editor := state.sftpEditor(hit); editor != nil {
 			return editor
 		}
@@ -1887,7 +1891,7 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	if state.clickWorkspaceCommand(id) {
 		return
 	}
-	if state.clickCommandsDrawer(id) {
+	if state.clickCommandSidebar(id) || state.clickCommandsDrawer(id) {
 		return
 	}
 	if state.clickFindPreferences(id) || state.clickTerminalFind(id) {
@@ -2915,6 +2919,9 @@ func (state *State) Key(event gfx.KeyEvent) (outcome gfx.EventResult) {
 		return state.noteExitKey(event)
 	}
 	defer state.afterEvent(&outcome)
+	if result, handled := state.commandComposerKey(event); handled {
+		return result
+	}
 	if state.modal == modalNone && state.terminalPage() {
 		if view := state.workspaceRemoteLogs(state.deck.ActiveWorkspace()); view != nil && view.formMode == remoteLogFormNone {
 			if result := view.pathSplit.Key(event); result.Handled {

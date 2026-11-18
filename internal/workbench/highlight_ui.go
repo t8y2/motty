@@ -439,7 +439,7 @@ func (state *State) restoreTerminalTools(saved savedState) {
 		return 0
 	})
 	for _, entry := range saved.Snippets {
-		clean := snippet{Name: cleanSnippetText(entry.Name, maxSnippetName), Command: cleanSnippetCommand(entry.Command, maxSnippetCommand), Run: entry.Run, Group: cleanSnippetGroup(entry.Group)}
+		clean := snippet{Name: cleanSnippetText(entry.Name, maxSnippetName), Command: cleanSnippetCommand(entry.Command, maxSnippetCommand), Run: entry.Run, Group: cleanSnippetGroup(entry.Group), Pinned: entry.Pinned}
 		if clean.Name == "" || clean.Command == "" || len(state.snippets.list) == maxSnippets {
 			continue
 		}
@@ -463,6 +463,7 @@ func (state *State) restoreTerminalTools(saved savedState) {
 	}
 	state.refreshSnippets()
 	state.commands.shown = saved.CommandsShown
+	state.restoreCommandSidebar(saved.CommandSidebar)
 	state.commands.sort = commandsSortFromString(saved.CommandsSort)
 	state.commands.hiddenGroups = make(map[string]bool)
 	for _, group := range saved.CommandsHiddenGroups {

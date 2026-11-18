@@ -142,7 +142,8 @@ func (s *State) paintNoteSidebar(c *gfx.Canvas, b gfx.Rect) {
 	n := &v.content
 	s.syncNoteSidebar()
 	v.bounds = b
-	v.resizeBounds = gfx.Rect{X: s.workspacePixelBounds(s.viewport).X, Y: b.Y, Width: s.workspacePixelBounds(s.viewport).Width + b.Width, Height: b.Height}
+	frame := s.workspacePixelBoundsWithoutCommands(s.deck.ActiveWorkspace(), s.viewport)
+	v.resizeBounds = gfx.Rect{X: frame.X, Y: b.Y, Width: frame.Width + b.Width, Height: b.Height}
 	c.Fill(b, s.pal.workspace)
 	if n.selected == "" {
 		s.paintNoteSidebarTree(c, b.Inset(gfx.Insets{Left: 1, Right: 1, Top: 1, Bottom: 1}))

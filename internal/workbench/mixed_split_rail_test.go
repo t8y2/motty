@@ -158,7 +158,7 @@ func TestRestoredSplitKeepsTheWholeWidth(t *testing.T) {
 		bounds := paneBoundsOf(t, state, size, session)
 		right = max(right, bounds.X+bounds.Width)
 	}
-	if right != size.Width {
+	if right+state.commandSidebarExtent(size.Width) != size.Width {
 		t.Fatalf("restored panes end at %v, want the window's %v: a rail was reserved for no terminal", right, size.Width)
 	}
 }
