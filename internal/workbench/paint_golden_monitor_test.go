@@ -6,26 +6,27 @@ import (
 	"github.com/vivaui/viva/gfx"
 )
 
-// The monitor dashboard is a page of its own: its header controls, its
-// hand-painted host cards and its first-run state. The scenes here pin what it
-// paints, so a change to the declaration is seen as pixel or draw-order drift
-// rather than silently rewiring the page.
+// The monitor panel's own layouts, as separate scenes: its docked and drawer
+// forms, and the empty state of each, so its bands, margins, divider hit and
+// placeholder stay where the hand-painted panel had them.
 func init() {
-	extraPaintScenes = append(extraPaintScenes,
-		monitorPaintScene("monitor-dashboard", func(t *testing.T) *State {
-			return dashboardNativeFixture(t)
-		}),
-		monitorPaintScene("monitor-dashboard-empty", func(t *testing.T) *State {
-			state := newTestState(t, testOptions(t))
-			state.activeSection = sectionDashboard
-			return state
-		}),
-	)
-}
-
-func monitorPaintScene(name string, build func(*testing.T) *State) paintScene {
-	return paintScene{name: name, sizes: []gfx.Size{paintDesktop}, open: func(t *testing.T) (*State, func(*gfx.Canvas, gfx.Size)) {
-		state := build(t)
+	docked := paintScene{name: "monitor-docked", sizes: []gfx.Size{{Width: 1600, Height: 900}, {Width: 1400, Height: 800}}, open: func(t *testing.T) (*State, func(*gfx.Canvas, gfx.Size)) {
+		state, _ := monitorFixture(t)
 		return state, func(c *gfx.Canvas, size gfx.Size) { state.Paint(c, size) }
 	}}
+	drawer := paintScene{name: "monitor-drawer", sizes: []gfx.Size{{Width: 760, Height: 800}}, open: func(t *testing.T) (*State, func(*gfx.Canvas, gfx.Size)) {
+		state, _ := monitorFixture(t)
+		return state, func(c *gfx.Canvas, size gfx.Size) { state.Paint(c, size) }
+	}}
+	emptyDocked := paintScene{name: "monitor-docked-empty", sizes: []gfx.Size{{Width: 1600, Height: 900}}, open: func(t *testing.T) (*State, func(*gfx.Canvas, gfx.Size)) {
+		state, session := monitorFixture(t)
+		session.stats = nil
+		return state, func(c *gfx.Canvas, size gfx.Size) { state.Paint(c, size) }
+	}}
+	emptyDrawer := paintScene{name: "monitor-drawer-empty", sizes: []gfx.Size{{Width: 760, Height: 800}}, open: func(t *testing.T) (*State, func(*gfx.Canvas, gfx.Size)) {
+		state, session := monitorFixture(t)
+		session.stats = nil
+		return state, func(c *gfx.Canvas, size gfx.Size) { state.Paint(c, size) }
+	}}
+	extraPaintScenes = append(extraPaintScenes, docked, drawer, emptyDocked, emptyDrawer)
 }
