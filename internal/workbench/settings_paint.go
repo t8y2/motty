@@ -343,16 +343,25 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 			}
 			if state.closeActionVisible() {
 				closeChoice := state.closeAction
-				choices := settingsCloseChoices[:]
 				if !state.trayStayAvailable() {
-					// Without an icon there is nothing to stay behind, so the row
-					// states the only thing closing can do instead of offering a
-					// tray it cannot keep.
+					// Without an icon closing can only quit, so that is the button
+					// shown selected. Both buttons stay up: choosing the tray again
+					// is allowed and brings the icon back.
 					closeChoice = closeQuits
-					choices = settingsCloseQuitOnly[:]
 				}
-				settingsChoiceRow(page, messages.Tools.GeneralClose, messages.Tools.GeneralCloseDescription, &closeChoice, choices, state.settingsCloseLabel,
-					func() { state.closeAction = closeChoice; state.save() }, nil)
+				settingsChoiceRow(page, messages.Tools.GeneralClose, messages.Tools.GeneralCloseDescription, &closeChoice, settingsCloseChoices[:], state.settingsCloseLabel,
+					func() {
+						state.closeAction = closeChoice
+						if closeChoice == closeToTray && state.trayIconOff {
+							// Staying needs a tray to stay in: choosing it turns the
+							// status-area icon back on.
+							state.trayIconOff = false
+							if state.options.SetTrayIcon != nil {
+								state.options.SetTrayIcon(true)
+							}
+						}
+						state.save()
+					}, nil)
 			}
 			if state.options.NewWindow != nil {
 				settingsChoiceRow(page, messages.Tools.GeneralRelaunch, messages.Tools.GeneralRelaunchDescription, &state.relaunchAction, settingsRelaunchChoices[:], state.settingsRelaunchLabel,

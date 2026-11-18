@@ -595,13 +595,14 @@ func TestTrayIconHiddenReadsTheSavedChoiceAndDefaultsToShow(t *testing.T) {
 	}
 }
 
-// The close-action row stays on the page whether the icon is up or hidden. With
-// the icon hidden there is nothing to stay behind, so the row locks to quitting;
-// with the icon back the tray/quit choice is the user's again.
-func TestCloseActionRowStaysVisibleAndLocksToQuitWithoutTheIcon(t *testing.T) {
+// Both close-action buttons stay on the page whether the icon is up or hidden.
+// With the icon hidden the row selects quit, but choosing the tray is still
+// allowed and turns the icon back on; with the icon up the choice is free.
+func TestCloseActionButtonsStayVisibleAndChoosingTrayRestoresTheIcon(t *testing.T) {
 	_, options := newWorld(t)
 	icon := true
-	options.SetTrayIcon = func(visible bool) { icon = visible }
+	var calls []bool
+	options.SetTrayIcon = func(visible bool) { icon = visible; calls = append(calls, visible) }
 	options.StatusArea = func() bool { return icon }
 	state := newTestState(t, options)
 	openGeneralSettings(state)
@@ -622,14 +623,22 @@ func TestCloseActionRowStaysVisibleAndLocksToQuitWithoutTheIcon(t *testing.T) {
 	if !contains(texts, state.messages.Tools.GeneralClose) {
 		t.Fatal("the close row vanished when the icon was hidden")
 	}
-	if contains(texts, state.messages.Tools.GeneralCloseTray) {
-		t.Fatal("a tray choice is offered while there is no icon to stay behind")
+	// Both buttons remain offered even though quit is the selected one.
+	if !contains(texts, state.messages.Tools.GeneralCloseTray) || !contains(texts, state.messages.Tools.GeneralCloseQuit) {
+		t.Fatalf("both close buttons must stay visible: %q", texts)
 	}
 
-	state.Click(hitSettingsTrayIconToggle) // bring the icon back
+	// Choosing the tray while the icon is hidden turns the icon back on.
+	before := len(calls)
 	clickSettingsChoice(t, state, state.messages.Tools.GeneralCloseTray)
-	if !state.StaysInTray() {
-		t.Fatal("the tray choice was not free again once the icon returned")
+	if state.trayIconOff || !state.StaysInTray() {
+		t.Fatalf("off %v stays %v", state.trayIconOff, state.StaysInTray())
+	}
+	if len(calls) != before+1 || !calls[len(calls)-1] {
+		t.Fatalf("choosing the tray did not show the icon: %v", calls)
+	}
+	if TrayIconHidden(options.StatePath) {
+		t.Fatal("the restored icon was not saved as shown")
 	}
 }
 
