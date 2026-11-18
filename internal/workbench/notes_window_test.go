@@ -64,10 +64,13 @@ func TestNoteWindowSharesTabsAndReadsLiveDraftWithoutFileIO(t *testing.T) {
 		if d.note.content.body.String() != mainBody {
 			t.Fatal("preview missed live draft")
 		}
-		for _, id := range []gfx.ID{hitDocumentInput, hitDocumentSave, hitDocumentReload, hitDocumentEncoding} {
+		for _, id := range []gfx.ID{hitDocumentInput, hitDocumentSave, hitDocumentReload} {
 			if _, ok := hitByID(&c, id); ok {
 				t.Fatalf("file control leaked: %v", id)
 			}
+		}
+		if hasLabel(&c, s.messages.FileWindow.Encoding, gfx.RoleCombobox) {
+			t.Fatal("file control leaked: encoding select")
 		}
 		if _, ok := hitByID(&c, hitNotePreviewText); !ok {
 			t.Fatal("missing selectable Markdown")

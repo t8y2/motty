@@ -94,7 +94,6 @@ type fileDocument struct {
 	image                            *filecontent.Image
 	ready, busy, closed              bool
 	status, problem                  string
-	encodingOpen                     bool
 	confirm                          string
 	allowClose, afterClosed          func()
 	closeCanceled                    func()
@@ -351,7 +350,6 @@ func (d *fileDocument) requestSave(closeAfter bool) {
 	if d.note != nil || d.busy || !d.ready || d.image != nil {
 		return
 	}
-	d.encodingOpen = false
 	d.ui.saveMenuOpen = false
 	if d.comparison.active {
 		if closeAfter {
@@ -392,7 +390,6 @@ func (d *fileDocument) saveDirect(closeAfter bool) {
 		}
 		return
 	}
-	d.encodingOpen = false
 	if !d.dirty() {
 		if closeAfter {
 			d.closeAllowed()
@@ -502,7 +499,6 @@ func (d *fileDocument) reload() {
 	if d.busy || d.comparison.active {
 		return
 	}
-	d.encodingOpen = false
 	d.confirm = ""
 	d.busy = true
 	d.status = d.owner.messages.FileWindow.Loading
@@ -533,7 +529,6 @@ func (d *fileDocument) cancelFailedClose() {
 }
 
 func (d *fileDocument) chooseEncoding(name string) {
-	d.encodingOpen = false
 	if d.busy || d.comparison.active {
 		return
 	}
@@ -554,7 +549,6 @@ func (d *fileDocument) requestClose(allow func()) {
 	if d.note != nil {
 		d.owner.save()
 	}
-	d.encodingOpen = false
 	if d.busy {
 		d.allowClose = allow
 		d.closeAfter = true
@@ -641,7 +635,6 @@ func (d *fileDocument) beginComparison() {
 	if d.worker == nil {
 		return
 	}
-	d.encodingOpen = false
 	d.ui.saveMenuOpen = false
 	d.stopComparison()
 	d.comparison.ui = fileDocumentUI{}
@@ -764,13 +757,16 @@ func (d *fileDocument) openComparisonWindow() error {
 }
 
 func (d *fileDocument) comparisonConfig() app.Config {
-	return app.Config{
+	base := app.Config{
 		Title: fmt.Sprintf(d.owner.messages.FileWindow.CompareWindowTitle, d.name),
 		Icon:  AppIcon(), Width: 1120, Height: 720, MinWidth: fileWindowMinWidth, MinHeight: fileWindowMinHeight, WindowMode: app.WindowCustomTitlebar, TitlebarHeight: TitlebarHeight, ClearColor: windowClearColor(d.owner.Theme().Background), WindowBorderColor: func() app.Color { return windowClearColor(d.owner.Theme().Background) }, Tree: Tree(),
 		Paint: d.paintComparison, TextInput: d.comparisonTextInput, OnPointer: d.comparisonPointer,
 		OnKey: d.comparisonKey, OnShortcut: d.comparisonShortcut, OnScroll: d.comparisonScroll,
 		OnCloseRequest: d.requestComparisonClose, OnClosed: d.onComparisonClosed,
 	}
+	config := d.comparisonPage().Config(base)
+	config.Paint = base.Paint
+	return config
 }
 
 func (d *fileDocument) requestComparisonClose(allow func()) {
@@ -1098,7 +1094,7 @@ func saveLocalDocument(location string, data []byte, revision sftpclient.Revisio
 // the page lays them out.
 func (d *fileDocument) config() app.Config {
 	base := app.Config{Title: d.name + " — " + d.source, Icon: AppIcon(), Width: 1000, Height: 760, MinWidth: fileWindowMinWidth, MinHeight: fileWindowMinHeight, WindowMode: app.WindowCustomTitlebar, TitlebarHeight: TitlebarHeight, ClearColor: windowClearColor(d.owner.Theme().Background), Tree: Tree(), Paint: d.paint, TextInput: d.textInput, OnPointer: d.pointer, OnKey: d.key, OnShortcut: d.shortcut, OnScroll: d.scroll, OnCloseRequest: d.requestClose, OnClosed: d.onClosed}
-	config := d.documentPage().Config(base)
+	config := d.windowPage().Config(base)
 	config.Paint = base.Paint
 	return config
 }
