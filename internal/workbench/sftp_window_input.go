@@ -424,6 +424,15 @@ func (w *sftpWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
 			}
 		}
 	}
+	// A double click on the divider returns the panes to half each, as the
+	// painted Resizable did.
+	if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary &&
+		event.Target == hitSFTPWindowSplit && event.ClickCount >= 2 {
+		span := max(w.ui.body.Width-sftpWindowSplitExtent, 0)
+		w.ui.split.Ratio = .5
+		w.ui.split.Pos = span / 2
+		return handled
+	}
 	if result, handled := w.columnResizePointer(event); handled {
 		return result
 	}
@@ -747,8 +756,8 @@ func (w *sftpWindow) startPathEditing(side int) gfx.EventResult {
 }
 
 // moveSplitter moves the pane divider by the arrow keys, as a focused Resizable
-// did: 16 pixels a press, Home and End to the limits. The share is kept so a
-// window resize keeps the proportion.
+// did: five percent of the group a press, Home and End to the limits. The share
+// is kept so a window resize keeps the proportion.
 func (w *sftpWindow) moveSplitter(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if event.Target != hitSFTPWindowSplit || event.Release {
 		return gfx.EventResult{}, false
@@ -756,12 +765,14 @@ func (w *sftpWindow) moveSplitter(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	width := w.ui.body.Width
 	least := float32(220)
 	most := max(width-sftpWindowSplitExtent-least, least)
+	span := max(width-sftpWindowSplitExtent, 1)
+	step := span * .05
 	pos := w.paneSplitWidth(width)
 	switch event.Key {
 	case gfx.KeyLeft, gfx.KeyUp:
-		pos -= 16
+		pos -= step
 	case gfx.KeyRight, gfx.KeyDown:
-		pos += 16
+		pos += step
 	case gfx.KeyHome:
 		pos = least
 	case gfx.KeyEnd:

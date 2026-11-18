@@ -207,6 +207,11 @@ type sftpView struct {
 	dialogFirst         ui.Box
 	dialogSecond        ui.Box
 	dialogChmod         [9]ui.Box
+	// chownFieldWidth is the width the ownership dialog's fields were laid out
+	// at, read after the layout that placed them, so its suggestion panel is as
+	// wide as the field it hangs from. fieldWidthDraw is the hook that reads it.
+	chownFieldWidth float32
+	fieldWidthDraw  func(*ui.DrawContext)
 	// dialogViewport is the room the owning window gives the open dialog.
 	dialogViewport gfx.Rect
 	ownership      sftpOwnershipUI

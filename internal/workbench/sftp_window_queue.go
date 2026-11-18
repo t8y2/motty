@@ -75,7 +75,10 @@ func (w *sftpWindow) declareQueue(c ui.C, bounds, origin gfx.Rect) {
 	view.queueScroll = area.ScrollState()
 	offset := float32(0)
 	if view.queueScroll != nil {
-		offset = view.queueScroll.Offset
+		// Clamp before declaring the rows, as the painted queue did, so a list
+		// that shrank does not ask for rows past its end.
+		offset = min(max(view.queueScroll.Offset, 0), max(contentHeight-list.Height, 0))
+		view.queueScroll.Offset = offset
 	}
 	area.Children(func() {
 		// The slot gives the area its content height; the rows are placed by it.
@@ -102,6 +105,7 @@ func (w *sftpWindow) declareQueue(c ui.C, bounds, origin gfx.Rect) {
 func (w *sftpWindow) queueDetailsAllowed() bool {
 	view, state := &w.ui, w.owner
 	return !w.drag.armed && !w.drag.active && !view.split.Dragging() &&
+		(view.queueScroll == nil || !view.queueScroll.Dragging()) &&
 		!view.menuOpen && !w.headerMenuOpen() && !view.profileQuickOpen &&
 		!w.view.bookmarksOpen && !w.bookmark.open && !w.fileProperties.open &&
 		w.view.dialog == sftpDialogNone && !w.closeConfirm && w.externalConflict == 0 &&

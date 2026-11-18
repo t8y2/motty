@@ -9,7 +9,10 @@ import (
 // knownHostsSectionUI is what the known-hosts page's declaration leaves for its
 // paint.
 type knownHostsSectionUI struct {
-	refresh, retrust, remove, emptySlot     ui.Box
+	refresh, retrust, remove, emptySlot ui.Box
+	// pagination is the slot the footer paints the page chooser into, as the
+	// page's BeginPagination drew it.
+	pagination                              ui.Box
 	refreshWidth, retrustWidth, deleteWidth float32
 	refreshIcon, retrustIcon, deleteIcon    uint8
 	condensed                               bool
@@ -122,7 +125,7 @@ func (state *State) declareKnownHostsWorkspace(c ui.C) {
 				})
 				start, end := state.knownHostsPageRange()
 				ui.List(c, &view.list, end-start, view.rowDecl).Grow(1).Shrink(1).MinHeight(0).FillWidth().
-					Scrollbars().Label(messages.KnownHostsTitle)
+					Label(messages.KnownHostsTitle)
 			})
 		}
 		ui.Divider(c).Background(pal.line)
@@ -134,27 +137,28 @@ func (state *State) declareKnownHostsWorkspace(c ui.C) {
 			ui.Text(c, view.selectionText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).Width(selectionWidth).Ellipsis()
 			ui.Text(c, view.status).FontSize(metrics.FontSizeS).Color(statusColor).Grow(1).Ellipsis()
 			if paginated {
-				pages := (len(view.visible) + knownHostsPageSize - 1) / knownHostsPageSize
-				ui.Row(c).Size(242, 30).Shrink(0).Gap(4).Items(ui.Center).Children(func() {
-					ui.Button(c, messages.KnownHostsPrevious).Hit(hitKnownHostsPrevious, messages.KnownHostsPrevious).
-						Outline().Small().Disabled(view.page == 0).Shrink(0)
-					ui.Text(c, view.pageText).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text).
-						Grow(1).TextCenter().Ellipsis()
-					ui.Button(c, messages.KnownHostsNext).Hit(hitKnownHostsNext, messages.KnownHostsNext).
-						Outline().Small().Disabled(view.page+1 >= pages).Shrink(0)
-				})
+				layout.pagination = ui.Slot(c).Size(242, 30).Shrink(0)
 			}
 		})
 	})
 	body.Clip().DrawOver(layout.draw)
 }
 
-// paintKnownHostsWorkspace paints the known-hosts page's empty state into the
-// slot its declaration left. The table is declared by the page itself.
+// paintKnownHostsWorkspace paints the known-hosts page's empty state and its
+// pagination into the slots its declaration left. The table is declared by the
+// page itself.
 func (state *State) paintKnownHostsWorkspace(canvas *gfx.Canvas) {
 	layout := &state.sectionBodies.knownHosts
 	if layout.empty {
 		state.drawReservedEmptyPage(canvas, layout.emptySlot, layout.emptyIcon)
+	}
+	if layout.pagination.Valid() {
+		view, messages := &state.knownHosts, state.messages
+		bar := components.BeginPagination(canvas, state.Theme(), layout.pagination.Rect())
+		bar.AddPrevious(hitKnownHostsPrevious, messages.KnownHostsPrevious, view.page == 0)
+		bar.AddPage(gfx.ID{}, view.pageText, true)
+		pages := (len(view.visible) + knownHostsPageSize - 1) / knownHostsPageSize
+		bar.AddNext(hitKnownHostsNext, messages.KnownHostsNext, view.page+1 >= pages)
 	}
 }
 
@@ -177,6 +181,11 @@ func (state *State) declareKnownHostRow(row ui.ListRow) {
 	element := row.Element.Height(height).Shrink(0).FillWidth().Gap(0).Items(ui.Center)
 	if record.selected {
 		element = element.Background(theme.Muted)
+	} else {
+		// The table's row lightened under the pointer; the page List keeps it.
+		element = element.
+			Hover(ui.Look{}.Background(theme.Hover)).
+			Pressed(ui.Look{}.Background(theme.Muted))
 	}
 	element.Children(func() {
 		ui.Row(c).Width(view.columns[0].Width).Height(height).Shrink(0).Items(ui.Center).Children(func() {
@@ -195,7 +204,7 @@ func (state *State) declareKnownHostRow(row ui.ListRow) {
 		}
 		ui.Slot(c).Absolute().Left(0).Right(0).Bottom(0).Height(1).Background(theme.Border)
 	})
-	element.Hit(hitKnownHostRowList.At(index), record.cells[1])
+	element.Hit(hitKnownHostRowList.At(index), record.rowLabel)
 }
 
 // fitKnownHostsColumns narrows the columns to the room the table has, as the

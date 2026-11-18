@@ -396,6 +396,20 @@ func TestSFTPDirectoryTreeWidthKeepsFileListUsable(t *testing.T) {
 	}
 }
 
+func TestSFTPDirectoryTreeIndentsByDisplayDepth(t *testing.T) {
+	w := &sftpWindow{}
+	tree := &w.directoryTree[0]
+	tree.visible = []sftpTreeVisibleRow{{node: &sftpTreeNode{key: 1, name: "deep"}, depth: 12}}
+	w.initDirectoryTreeState(0)
+	tree.contentWidth = sftpDirectoryTreeIndent*4 + directoryTreeLabelReserve
+	if got := tree.tree.Indent; got != sftpDirectoryTreeIndent {
+		t.Fatalf("the tree's indent was squeezed to %v; each row's display depth carries the clamp", got)
+	}
+	if got := tree.tree.Node(0).Depth; got != 4 {
+		t.Fatalf("deep row indents at depth %d, want the four the width allows", got)
+	}
+}
+
 func TestSFTPDirectoryTreeLeafKeepsDisclosureColumn(t *testing.T) {
 	content := gfx.Rect{X: 20, Y: 10, Width: 160, Height: 28}
 	branch := directoryTreeContentBounds(content, true)

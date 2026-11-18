@@ -291,9 +291,9 @@ func (w *sftpWindow) declareWindowBody(c ui.C) {
 }
 
 // sftpWindowSplitExtent is the room ui.Splitter's divider takes between the panes.
-// The page declares it as a fixed 8 pixels; the pane widths are worked out before
-// the layout so a first paint knows the room it has.
-const sftpWindowSplitExtent = float32(8)
+// The page declares it one pixel thick, as the painted separator was; the panes
+// are worked out before the layout so a first paint knows the room it has.
+const sftpWindowSplitExtent = float32(1)
 
 // paneSplitWidth is the width the first pane takes in a body of the given width.
 // The share the divider keeps is used while it has one, so a window resize keeps
@@ -319,7 +319,7 @@ func (w *sftpWindow) declarePanes(c ui.C, body gfx.Rect, firstLocal bool, parts 
 	ui.Column(c).Height(body.Height + 2*sftpWindowPad).Shrink(0).Pad(sftpWindowPad).Children(func() {
 		ui.Row(c).Grow(1).Shrink(1).Children(func() {
 			w.declarePaneSide(c, gfx.Rect{Width: width, Height: body.Height}, firstLocal, parts)
-			ui.Splitter(c, &w.ui.split).Mins(220, 220).Label(w.owner.messages.SFTPWindow.Title).
+			ui.Splitter(c, &w.ui.split).SplitterThickness(sftpWindowSplitExtent).Mins(220, 220).Label(w.owner.messages.SFTPWindow.Title).
 				Hit(hitSFTPWindowSplit, w.owner.messages.SFTPWindow.Title)
 			w.declarePaneSide(c, gfx.Rect{Width: secondWidth, Height: body.Height}, !firstLocal, parts)
 		})
@@ -572,8 +572,11 @@ func (w *sftpWindow) declarePane(c ui.C, s *sftpWindowScratch) {
 				folder.pathEditing = false
 				folder.resetPathInput()
 			}
-			addressWidth := max(bounds.Width-2*sftpPad-2*sftpButton-2, 80)
-			s.address = w.owner.declareSFTPAddress(c, folder, sftpWindowPath[side], sftpWindowPathEdit[side], sftpWindowBreadcrumbs[side], addressWidth, !local && w.view.busy).Height(32).Grow(1)
+			// The path collapses against the room the crumbs actually get: the
+			// pane's padding, the two side buttons and the row's gaps, as the
+			// painted slot was measured.
+			addressWidth := max(bounds.Width-2*8-2*sftpButton-2*2, 80)
+			s.address = w.owner.declareSFTPAddress(c, folder, sftpWindowPath[side], sftpWindowPathEdit[side], sftpWindowBreadcrumbs[side], addressWidth, !local && w.view.busy, folder.path).Height(32).Grow(1)
 			listID, starID, listHint := hitSFTPBookmarkList, hitSFTPBookmarkToggle, m.SFTPWindow.DirectoryFavorites
 			if local {
 				listID, starID, listHint = hitSFTPLocalPlaces, hitSFTPLocalStar, m.SFTPWindow.LocalPlaces

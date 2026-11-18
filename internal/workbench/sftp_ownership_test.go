@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sftpclient"
 )
 
@@ -106,6 +107,24 @@ func TestSFTPOwnershipSuggestionsPickThroughTheEventPass(t *testing.T) {
 	clickPaintedHit(t, driver, hitSFTPDialogField2)
 	if !view.ownership.open[1] {
 		t.Fatal("clicking the group field did not open its suggestions")
+	}
+	// The suggestions hang from the field at its width: the popover this
+	// replaces was as wide as the field, not a fixed panel.
+	var field gfx.Hit
+	for _, hit := range driver.Snapshot().Hits {
+		if hit.ID == hitSFTPDialogField2 && hit.Role == gfx.RoleTextField {
+			field = hit
+		}
+	}
+	if field.Bounds.Width <= 0 {
+		t.Fatal("the group field was not painted")
+	}
+	if view.chownFieldWidth != field.Bounds.Width {
+		t.Fatalf("popup width source = %v, field width = %v", view.chownFieldWidth, field.Bounds.Width)
+	}
+	item, ok := hitByIDInSnapshot(driver.Snapshot(), hitSFTPChownGroupItem.At(0))
+	if !ok || item.Bounds.Width < field.Bounds.Width*.8 {
+		t.Fatalf("suggestion row %+v is not the field's width %v", item.Bounds, field.Bounds.Width)
 	}
 	for index, want := range []string{"admin", "staff"} {
 		hit, ok := hitByIDInSnapshot(driver.Snapshot(), hitSFTPChownGroupItem.At(index))

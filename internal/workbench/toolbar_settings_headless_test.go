@@ -5,6 +5,7 @@ package workbench
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -80,7 +81,26 @@ func TestToolbarSettingsNativeControlsDragKeyboardAndSwitchAcrossScales(t *testi
 				}
 				a, _ := toolbarRowHit(t, state, view, group, original)
 				b, _ := toolbarRowHit(t, state, view, group, lastEntries[lastSlot].Key)
-				a.Width, b.Width = 24, 24 // the row's left edge, clear of the controls
+				// The row starts with a 28px drag-handle button, as the
+				// painted reorder list did.
+				spec, _ := toolbarSpecFor(group, original)
+				label := state.toolbarLabel(spec.id)
+				handle := false
+				var buttons []string
+				for _, h := range view.Snapshot().Hits {
+					if h.Role == gfx.RoleButton {
+						buttons = append(buttons, fmt.Sprintf("%q %v", h.Label, h.Bounds))
+					}
+					if h.Role == gfx.RoleButton && h.Label == label && h.Bounds.Width == 28 &&
+						math.Abs(float64(h.Bounds.X-(a.X+4))) < .75 {
+						handle = true
+					}
+				}
+				if !handle {
+					t.Fatalf("group %d has no 28px drag handle at the row's start: row=%v buttons=%v", group, a, buttons)
+				}
+				// The row's left edge is the drag handle, which is its own
+				// button; the page List still starts its drag on the row body.
 				x, y := a.X+a.Width/2, a.Y+a.Height/2
 				if err := view.Press(x, y); err != nil {
 					t.Fatal(err)

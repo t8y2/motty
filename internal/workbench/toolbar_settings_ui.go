@@ -18,6 +18,7 @@ var (
 	hitToolbarReset           = tree.ID(toolbarSettingsHits, "reset")
 	hitToolbarToggles         = tree.Sub(toolbarSettingsHits, tree.Name("toggle"))
 	hitToolbarPositions       = tree.Sub(toolbarSettingsHits, tree.Name("position"))
+	hitToolbarHandles         = tree.Sub(toolbarSettingsHits, tree.Name("handle"))
 )
 
 type toolbarSettingsUI struct {
@@ -53,6 +54,29 @@ func toolbarEntryIndex(group toolbarGroup, key string) int {
 		}
 	}
 	return -1
+}
+
+// reorderHandle draws the six-dot grip a reorder row starts with: a 28px
+// button at the row's left, as the painted ReorderList's handle was.
+func reorderHandle(c ui.C, id gfx.ID, label string, disabled bool, height float32) ui.Box {
+	handle := ui.Slot(c).Size(28, max(height-8, 0)).Shrink(0).
+		HitWith(id, label, gfx.HitOptions{Role: gfx.RoleButton, Cursor: gfx.PointerCursorHand, Disabled: disabled})
+	handle.Draw(func(d *ui.DrawContext) {
+		if d.Canvas.FocusVisible() == id {
+			d.Canvas.RoundedBorder(d.Rect, d.Theme.Metrics.RadiusControl, 1, d.Theme.Ring, gfx.Color{})
+		}
+		color := d.Theme.MutedForeground
+		if disabled {
+			color.Alpha *= .5
+		}
+		centerX, centerY := d.Rect.X+d.Rect.Width/2, d.Rect.Y+d.Rect.Height/2
+		for y := float32(-4); y <= 4; y += 4 {
+			for _, x := range [...]float32{-2, 2} {
+				d.Canvas.Rounded(gfx.Rect{X: centerX + x - 1, Y: centerY + y - 1, Width: 2, Height: 2}, 1, color)
+			}
+		}
+	})
+	return handle
 }
 
 func (state *State) paintToolbarSettingsRows(page *settingsPage) {
@@ -196,8 +220,9 @@ func (state *State) toolbarSettingsKey(event gfx.KeyEvent) gfx.EventResult {
 	if state.modal != modalToolbarSettings {
 		return gfx.EventResult{}
 	}
-	// The size switch is a page Choice and the entries a page List: WindowConfig
-	// routes their keys.
+	// The size switch is a page Choice and the entries a page List: the page
+	// routes their keys. The List owns the arrows rows and reorders with Alt and
+	// the arrows; it has no plain-key reorder or handle-only drag yet.
 	if event.Key == gfx.KeyEscape && !event.Release && !event.Repeat {
 		state.closeModal()
 		return gfx.EventResult{Handled: true, Repaint: true}
@@ -280,7 +305,8 @@ func (state *State) declareToolbarSettingsBody(c ui.C) {
 		}
 		entries := state.toolbars.entries(editor.group)
 		editor.list = ui.List(c, &editor.rows, len(entries), editor.rowDecl).Grow(1).MinHeight(0).FillWidth().
-			Scrollbars().Label(state.toolbarGroupName(editor.group))
+			PadSides(0, 14, 0, 0).AlwaysScrollbars().ScrollbarSize(14).
+			Label(state.toolbarGroupName(editor.group))
 	})
 }
 
@@ -307,19 +333,22 @@ func (state *State) declareToolbarEntry(row ui.ListRow) {
 	if !entry.Enabled {
 		color = theme.MutedForeground
 	}
-	row.Element.Height(44).MarginBottom(4).PadX(10).Gap(10).Items(ui.Center).
+	row.Element.Height(44).MarginBottom(4).PadSides(0, 7, 0, 3).Gap(8).Items(ui.Center).
 		Radius(theme.Metrics.RadiusControl).Border(1, theme.Border).Background(theme.Background).Children(func() {
-		ui.Icon(c, lucideIcons[spec.icon]).Size(18, 18).Color(color).Shrink(0)
-		ui.Text(c, label).FontSize(theme.Metrics.FontSizeM).Color(color).Ellipsis().Grow(1)
-		if editor.group <= toolbarTerminal {
-			zone := state.toolbarDockZoneLabel(state.toolbarDockZoneFor(editor.group, entry.Key))
-			ui.Button(c, zone).Hit(hitToolbarPositions.At(index), zone).Outline().Shrink(0)
-		}
-		checked := entry.Enabled
-		if editor.group == toolbarTerminal && entry.Key == "latency" {
-			// This switch is the same preference as Settings > Show latency.
-			checked = state.terminalShowLatency
-		}
-		ui.Switch(c, state.pageFlag(checked), "").Hit(hitToolbarToggles.At(index), label).Shrink(0)
+		reorderHandle(c, hitToolbarHandles.At(index), label, false, 44)
+		ui.Row(c).Grow(1).Gap(10).Items(ui.Center).Children(func() {
+			ui.Icon(c, lucideIcons[spec.icon]).Size(18, 18).Color(color).Shrink(0)
+			ui.Text(c, label).FontSize(theme.Metrics.FontSizeM).Color(color).Ellipsis().Grow(1)
+			if editor.group <= toolbarTerminal {
+				zone := state.toolbarDockZoneLabel(state.toolbarDockZoneFor(editor.group, entry.Key))
+				ui.Button(c, zone).Hit(hitToolbarPositions.At(index), zone).Outline().Shrink(0)
+			}
+			checked := entry.Enabled
+			if editor.group == toolbarTerminal && entry.Key == "latency" {
+				// This switch is the same preference as Settings > Show latency.
+				checked = state.terminalShowLatency
+			}
+			ui.Switch(c, state.pageFlag(checked), "").Hit(hitToolbarToggles.At(index), label).Shrink(0)
+		})
 	})
 }
