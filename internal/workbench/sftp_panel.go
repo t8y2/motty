@@ -1,7 +1,6 @@
 package workbench
 
 import (
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	layoutcore "motty/internal/workspace"
 )
@@ -70,23 +69,31 @@ func (state *State) toggleSFTPPanelSide() {
 	state.save()
 }
 
-// Share the same geometry for painting and pointer resize. AI keeps the outer
-// right edge, so a right-docked files panel ends before the AI panel's divider.
-func (state *State) sftpPanelResizable(canvas *gfx.Canvas, size gfx.Size, context layoutcore.ContextState) components.Resizable {
-	base := state.baseWorkspacePixelBounds(size)
-	width := state.contextPanelWidth(base, context)
-	minimum := state.contextPanelExtent(base, layoutcore.MinContextWidth)
-	maximum := state.contextPanelExtent(base, layoutcore.MaxContextWidth)
+// contextPanelLayout is the geometry the docked files panel and its divider
+// share: the workspace the panel sits in, its width and the widths it may take.
+// AI keeps the outer right edge, so a right-docked files panel ends before the
+// AI panel's divider.
+func (state *State) contextPanelLayout(size gfx.Size, context layoutcore.ContextState) (base gfx.Rect, width, minimum, maximum float32) {
+	base = state.baseWorkspacePixelBounds(size)
+	width = state.contextPanelWidth(base, context)
+	minimum = state.contextPanelExtent(base, layoutcore.MinContextWidth)
+	maximum = state.contextPanelExtent(base, layoutcore.MaxContextWidth)
 	base.Width -= state.aiReserve(state.deck.ActiveWorkspace(), size)
 	base.Width -= state.independentMonitorReserve(state.deck.ActiveWorkspace(), size)
 	if context.MonitorLeft {
 		base.X += state.independentMonitorReserve(state.deck.ActiveWorkspace(), size)
 	}
-	usable := max(base.Width-1, 1)
-	fraction, least, most := width/usable, minimum/usable, maximum/usable
-	if context.Side == layoutcore.ContextRight {
-		fraction, least, most = 1-fraction, 1-most, 1-least
+	return base, width, minimum, maximum
+}
+
+// contextPanelRect is where the docked panel sits in base, and handleX is the
+// one-pixel divider between it and the workspace.
+func contextPanelRect(base gfx.Rect, width float32, side layoutcore.ContextSide) (panel gfx.Rect, handleX float32) {
+	panel = gfx.Rect{X: base.X, Y: base.Y, Width: width, Height: base.Height}
+	handleX = base.X + width
+	if side == layoutcore.ContextRight {
+		panel.X = base.X + base.Width - width
+		handleX = base.X + base.Width - 1 - width
 	}
-	return components.BeginResizable(canvas, state.Theme(), hitContextDivider, base, fraction).
-		Limits(least, most).HandleSize(paneDividerHitWidth)
+	return panel, handleX
 }
