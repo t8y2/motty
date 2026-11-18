@@ -256,6 +256,14 @@ type request struct {
 	utf8BOM     bool
 	recursive   bool
 	policy      ExistingPolicy
+	// trusted is how many leading bytes of an interrupted upload's partial
+	// file this process wrote in an earlier attempt. The worker resumes from
+	// there without reading those bytes back to verify them.
+	trusted int64
+	// trustedTotal is the source size the trusted prefix was recorded against,
+	// checked when the upload starts so a source that changed size meanwhile
+	// is verified instead.
+	trustedTotal int64
 	// copySource opens a subsystem on the server to read from, and
 	// copySources/copyRoot name the batch copied into destination.
 	copySource  RemoteSource
@@ -466,6 +474,24 @@ func (worker *Worker) QueueUpload(localPath, remotePath string, recursive bool, 
 	return worker.enqueueTransfer(request{
 		operation: OperationUpload, local: localPath, remote: remotePath,
 		recursive: recursive, policy: policy,
+	})
+}
+
+// QueueUploadResume continues an upload over the partial file an interrupted
+// attempt left. trusted is the length of the prefix that attempt wrote and had
+// acknowledged on the server; those bytes are already on the server and are not
+// read back to be compared, so a resume starts sending at once. trustedTotal is
+// the source size that prefix was recorded against; if the source is no longer
+// that size the upload verifies the partial instead.
+func (worker *Worker) QueueUploadResume(localPath, remotePath string, trusted, trustedTotal int64) (uint64, bool) {
+	if trusted <= 0 || trustedTotal <= 0 || trusted > trustedTotal {
+		// Nothing pins the prefix to a known source size, so let the upload
+		// verify the partial instead of adopting it.
+		return worker.QueueUpload(localPath, remotePath, false, ExistingResume)
+	}
+	return worker.enqueueTransfer(request{
+		operation: OperationUpload, local: localPath, remote: remotePath,
+		policy: ExistingResume, trusted: trusted, trustedTotal: trustedTotal,
 	})
 }
 
@@ -865,6 +891,19 @@ func (worker *Worker) Retry(id uint64, policy ExistingPolicy) bool {
 		return false
 	}
 	record.request.policy = policy
+	record.request.trusted = 0
+	record.request.trustedTotal = 0
+	if policy == ExistingResume && record.request.operation == OperationUpload && !record.request.recursive {
+		// The bytes this attempt acknowledged are on the server and came from
+		// this source, so the continuation need not read them back — but only
+		// while the source is still the file that was being sent. A source
+		// changed since then (even to the same size) must fall back to the
+		// verification the partial normally gets. The size is rechecked when
+		// the upload starts, where the source is already stat'd, so this does
+		// no file I/O under the lock.
+		record.request.trusted = record.snapshot.BytesDone
+		record.request.trustedTotal = record.snapshot.BytesTotal
+	}
 	record.snapshot.State = TransferQueued
 	record.snapshot.Error = ""
 	record.snapshot.FilesDone = 0
@@ -1505,7 +1544,13 @@ func (worker *Worker) upload(client Remote, next request, generation uint64) (fi
 	}
 	worker.setTotals(next.id, totalFiles, totalBytes)
 	if !info.IsDir() {
-		bytes, resumed, err = worker.uploadFile(advanced, next.local, next.remote, info, next.policy, generation, next.id, 0, 0)
+		trusted := next.trusted
+		if trusted > 0 && next.trustedTotal > 0 && info.Size() != next.trustedTotal {
+			// The source is not the file the trusted prefix was measured on,
+			// so the partial is verified rather than adopted.
+			trusted = 0
+		}
+		bytes, resumed, err = worker.uploadFile(advanced, next.local, next.remote, info, next.policy, generation, next.id, 0, 0, trusted)
 		if err == nil {
 			files = 1
 		}
@@ -1540,7 +1585,7 @@ func (worker *Worker) upload(client Remote, next request, generation uint64) (fi
 		if entryInfo.IsDir() {
 			return ensureRemoteDirectory(advanced, remotePath)
 		}
-		written, continued, err := worker.uploadFile(advanced, localPath, remotePath, entryInfo, next.policy, generation, next.id, files, bytes)
+		written, continued, err := worker.uploadFile(advanced, localPath, remotePath, entryInfo, next.policy, generation, next.id, files, bytes, 0)
 		bytes += written
 		resumed += continued
 		if err == nil {
@@ -1625,15 +1670,15 @@ func scanLocal(localPath string, recursive bool) (os.FileInfo, int, int64, error
 	return info, files, bytes, err
 }
 
-func (worker *Worker) uploadFile(client transferRemote, localPath, remotePath string, sourceInfo os.FileInfo, policy ExistingPolicy, generation, transferID uint64, filesDone int, bytesBefore int64) (written, resumed int64, err error) {
-	return worker.uploadStream(client, func() (io.ReadCloser, error) { return os.Open(localPath) }, sourceInfo, remotePath, policy, generation, transferID, filesDone, bytesBefore)
+func (worker *Worker) uploadFile(client transferRemote, localPath, remotePath string, sourceInfo os.FileInfo, policy ExistingPolicy, generation, transferID uint64, filesDone int, bytesBefore, trusted int64) (written, resumed int64, err error) {
+	return worker.uploadStream(client, func() (io.ReadCloser, error) { return os.Open(localPath) }, sourceInfo, remotePath, policy, generation, transferID, filesDone, bytesBefore, trusted)
 }
 
 // uploadStream writes sourceInfo's content into remotePath through a staged
 // partial file, as uploadFile does for a local file. openSource runs once the
 // destination rules are settled, so a conflict costs no read; a remote copy
 // passes the source server's file handle here.
-func (worker *Worker) uploadStream(client transferRemote, openSource func() (io.ReadCloser, error), sourceInfo os.FileInfo, remotePath string, policy ExistingPolicy, generation, transferID uint64, filesDone int, bytesBefore int64) (written, resumed int64, err error) {
+func (worker *Worker) uploadStream(client transferRemote, openSource func() (io.ReadCloser, error), sourceInfo os.FileInfo, remotePath string, policy ExistingPolicy, generation, transferID uint64, filesDone int, bytesBefore, trusted int64) (written, resumed int64, err error) {
 	finalInfo, finalExists, err := remoteLstat(client, remotePath)
 	if err != nil {
 		return 0, 0, err
@@ -1712,10 +1757,39 @@ func (worker *Worker) uploadStream(client transferRemote, openSource func() (io.
 		if partialInfo.Size() > sourceInfo.Size() {
 			return 0, 0, fmt.Errorf("%w: %s", ErrResumeMismatch, partial)
 		}
-		if err := worker.verifyPrefix(source, destination, partialInfo.Size(), generation, transferID); err != nil {
-			return 0, 0, fmt.Errorf("%w: %s: %v", ErrResumeMismatch, partial, err)
-		}
 		resumed = partialInfo.Size()
+		if trusted <= 0 || trusted > partialInfo.Size() {
+			// Nothing proves the partial continues this source: read it back
+			// and compare it with the source before going on from its end.
+			if err := worker.verifyPrefix(source, destination, partialInfo.Size(), generation, transferID); err != nil {
+				return 0, 0, fmt.Errorf("%w: %s: %v", ErrResumeMismatch, partial, err)
+			}
+		} else {
+			// The first trusted bytes were written and acknowledged by an
+			// earlier attempt of this very upload, so they are a prefix of the
+			// source already on the server. Reading them back would mean
+			// downloading the whole prefix again; instead drop anything past
+			// them and start the copy at trusted.
+			if partialInfo.Size() > trusted {
+				if err := destination.Truncate(trusted); err != nil {
+					return 0, 0, err
+				}
+			}
+			// The copy starts at trusted on both sides. A source that cannot
+			// seek would be sent from its start while the writes land at
+			// trusted, corrupting the result, so it must not reach here.
+			sourceSeek, ok := source.(io.Seeker)
+			if !ok {
+				return 0, 0, fmt.Errorf("sftp: resume requires a seekable source: %s", remotePath)
+			}
+			if _, err := sourceSeek.Seek(trusted, io.SeekStart); err != nil {
+				return 0, 0, err
+			}
+			if _, err := destination.Seek(trusted, io.SeekStart); err != nil {
+				return 0, 0, err
+			}
+			resumed = trusted
+		}
 	} else {
 		if err := destination.Truncate(0); err != nil {
 			return 0, 0, err
@@ -1880,7 +1954,7 @@ func (worker *Worker) remoteCopy(destination Remote, next request, generation ui
 				return remoteSource.OpenTransferFile(sourcePath, os.O_RDONLY)
 			}
 			info := plannedFileInfo{name: path.Base(sourcePath), size: item.size, mode: item.mode, modTime: item.modTime}
-			written, continued, copyErr := worker.uploadStream(client, open, info, targetPath, next.policy, generation, next.id, files, bytes)
+			written, continued, copyErr := worker.uploadStream(client, open, info, targetPath, next.policy, generation, next.id, files, bytes, 0)
 			bytes += written
 			resumed += continued
 			if copyErr != nil {

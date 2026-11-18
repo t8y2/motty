@@ -124,8 +124,12 @@ func TestTransferCenterResumesInterruptedUploadAfterReconnect(t *testing.T) {
 
 	state.openSFTP(session)
 	snapshot := waitTransfer(t, state, sftpclient.TransferCompleted)
-	if snapshot.Resumed != int64(len(partial)) {
-		t.Fatalf("resumed %d bytes, want the kept %d", snapshot.Resumed, len(partial))
+	// The resume trusts only the prefix the interrupted attempt had confirmed,
+	// so it may continue from before the end of what reached the disk: bytes
+	// written after the last acknowledgement are not known to be durable, and
+	// they are dropped rather than read back to be compared with the source.
+	if snapshot.Resumed <= 0 || snapshot.Resumed > int64(len(partial)) {
+		t.Fatalf("resumed %d bytes, want a prefix of the kept %d", snapshot.Resumed, len(partial))
 	}
 	remote.mu.Lock()
 	content := append([]byte(nil), remote.files[remotePath]...)
