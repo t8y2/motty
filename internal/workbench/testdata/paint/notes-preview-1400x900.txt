@@ -4,23 +4,23 @@ rect {{204 36 1189 857} {0.2627451 0.30588236 0.37254903 1} 11 0 {0 0 0 0} false
 rect {{205 37 1187 855} {0.06666667 0.08235294 0.105882354 1} 10 0 {0 0 0 0} false #3}
 rect {{213 80 284 1} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #4}
 rect {{211 117 288 30} {0.23529412 0.27450982 0.34117648 1} 7.5 0 {211 87 288 799} true #5}
-rect {{508.5 37 1 855} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #6}
-rect {{571 45 595 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {0 0 0 0} false #8}
-rect {{572 46 593 26} {0.11146667 0.1264 0.1488 1} 6.5 0 {0 0 0 0} false #9}
+rect {{505 37 1 855} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #6}
+rect {{564 45 602 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {0 0 0 0} false #8}
+rect {{565 46 600 26} {0.11146667 0.1264 0.1488 1} 6.5 0 {0 0 0 0} false #9}
 rect {{1280 45 28 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {0 0 0 0} false #11}
 rect {{1281 46 26 26} {0.11146667 0.1264 0.1488 1} 6.5 0 {0 0 0 0} false #12}
 rect {{1312 45 28 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {0 0 0 0} false #14}
 rect {{1313 46 26 26} {0.11146667 0.1264 0.1488 1} 6.5 0 {0 0 0 0} false #15}
 rect {{1344 45 28 28} {0.23529412 0.27450982 0.34117648 1} 7.5 0 {0 0 0 0} false #16}
-rect {{529 80 847 1} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #17}
-rect {{533 90 87.515625 20} {0.23529412 0.27450982 0.34117648 1} 10 0 {0 0 0 0} false #18}
-rect {{626.5156 90 74.55469 20} {0.23529412 0.27450982 0.34117648 1} 10 0 {0 0 0 0} false #19}
-rect {{707.0703 90 104.32617 20} {0.23529412 0.27450982 0.34117648 1} 10 0 {0 0 0 0} false #20}
-rect {{714.0703 93 14 14} {0.17254902 0.19607843 0.23529412 1} 3.36 0 {0 0 0 0} false #21}
-rect {{529 118 847 1} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #22}
-rect {{535 201 835 32} {0.2 0.23529412 0.2901961 1} 7.5 0 {529 127 847 749} true #23}
-rect {{536 202 833 30} {0.14509805 0.16862746 0.20784314 1} 6.5 0 {529 127 847 749} true #24}
-shadow {{571 45 595 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 0 0 0} false #7}
+rect {{522 80 854 1} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #17}
+rect {{526 90 87.515625 20} {0.23529412 0.27450982 0.34117648 1} 10 0 {0 0 0 0} false #18}
+rect {{619.5156 90 74.55469 20} {0.23529412 0.27450982 0.34117648 1} 10 0 {0 0 0 0} false #19}
+rect {{700.0703 90 104.32617 20} {0.23529412 0.27450982 0.34117648 1} 10 0 {0 0 0 0} false #20}
+rect {{707.0703 93 14 14} {0.17254902 0.19607843 0.23529412 1} 3.36 0 {0 0 0 0} false #21}
+rect {{522 118 854 1} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #22}
+rect {{528 201 835 32} {0.2 0.23529412 0.2901961 1} 7.5 0 {522 127 854 749} true #23}
+rect {{529 202 833 30} {0.14509805 0.16862746 0.20784314 1} 6.5 0 {522 127 854 749} true #24}
+shadow {{564 45 602 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 0 0 0} false #7}
 shadow {{1280 45 28 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 0 0 0} false #10}
 shadow {{1312 45 28 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 0 0 0} false #13}
 text "Hosts" {52 114.5 37.180664 21}
@@ -38,25 +38,25 @@ text "Settings" {52 855.5 52.759766 21}
 text "Operations" {255 92 236 20}
 text "Release runbook" {249 117 220 20}
 text "Ideas" {233 152 258 20}
-text "Release runbook" {582 48 573 22}
-text "operations ×" {542 90 87.515625 20}
-text "operations" {542 90 60.515625 20}
-text "runbook ×" {635.5156 90 74.55469 20}
-text "runbook" {635.5156 90 47.554688 20}
-text "     Production ×" {716.0703 90 104.32617 20}
-text "     Production" {716.0703 90 77.32617 20}
-text "Release runbook" {535 133 153.93848 31}
-text "Roll back the" {535 170 81.78516 22}
-text "gateway" {620.5654 170 55.726562 22}
-text "first, then the workers." {680.07227 170 143.64355 22}
-text "motty --version" {545 209 117 16}
-text "•" {545.43945 242 9.560547 22}
-text "[x] drain traffic" {559 242 94.61621 22}
-text "•" {545.43945 269 9.560547 22}
-text "[ ] restore the database" {559 269 148.86621 22}
-text "See" {535 300 24.288086 22}
-text "the dashboard" {563.06836 300 91.90918 22}
-text "for the current state." {658.7578 300 130.66895 22}
+text "Release runbook" {575 48 580 22}
+text "operations ×" {535 90 87.515625 20}
+text "operations" {535 90 60.515625 20}
+text "runbook ×" {628.5156 90 74.55469 20}
+text "runbook" {628.5156 90 47.554688 20}
+text "     Production ×" {709.0703 90 104.32617 20}
+text "     Production" {709.0703 90 77.32617 20}
+text "Release runbook" {528 133 153.93848 31}
+text "Roll back the" {528 170 81.78516 22}
+text "gateway" {613.5654 170 55.726562 22}
+text "first, then the workers." {673.07227 170 143.64355 22}
+text "motty --version" {538 209 117 16}
+text "•" {538.43945 242 9.560547 22}
+text "[x] drain traffic" {552 242 94.61621 22}
+text "•" {538.43945 269 9.560547 22}
+text "[ ] restore the database" {552 269 148.86621 22}
+text "See" {528 300 24.288086 22}
+text "the dashboard" {556.06836 300 91.90918 22}
+text "for the current state." {651.7578 300 130.66895 22}
 hit "" region {0 0 1400 36} disabled=false
 hit "Hosts" button {82 4 28 28} disabled=false
 hit "New tab" button {116 4 28 28} disabled=false
@@ -94,21 +94,21 @@ hit "Operations" button {231 87 268 30} disabled=false
 hit "Release runbook" button {211 117 288 30} disabled=false
 hit "More actions" button {469 118 28 28} disabled=false
 hit "Ideas" button {211 147 288 30} disabled=false
-hit "Resize note library" slider {505 37 8 855} disabled=false
-hit "Toggle library" button {531 45 28 28} disabled=false
-hit "Title" textfield {571 45 595 28} disabled=false
+hit "Resize note library" slider {501.5 37 8 855} disabled=false
+hit "Toggle library" button {524 45 28 28} disabled=false
+hit "Title" textfield {564 45 602 28} disabled=false
 hit "Tags" button {1178 45 28 28} disabled=false
 hit "Linked hosts" button {1212 45 28 28} disabled=false
 hit "Pin note" button {1246 45 28 28} disabled=false
 hit "Source" button {1280 45 28 28} disabled=false
 hit "Split" button {1312 45 28 28} disabled=false
 hit "Preview" button {1344 45 28 28} disabled=false
-hit "Remove tag operations" button {598.5156 86 22 24} disabled=false
-hit "operations" button {533 86 65.515625 24} disabled=false
-hit "Remove tag runbook" button {679.0703 86 22 24} disabled=false
-hit "runbook" button {626.5156 86 52.554688 24} disabled=false
-hit "Remove tag Production\nprod.example.com\ndeploy" button {789.3965 86 22 24} disabled=false
-hit "Production\nprod.example.com\ndeploy" button {707.0703 86 82.32617 24} disabled=false
-hit "Preview text" group {529 127 847 201} disabled=false
-hit "the dashboard" link {563.06836 300 91.90918 22} disabled=false
-hit "Copy code" button {1344 204 22 22} disabled=false
+hit "Remove tag operations" button {591.5156 86 22 24} disabled=false
+hit "operations" button {526 86 65.515625 24} disabled=false
+hit "Remove tag runbook" button {672.0703 86 22 24} disabled=false
+hit "runbook" button {619.5156 86 52.554688 24} disabled=false
+hit "Remove tag Production\nprod.example.com\ndeploy" button {782.3965 86 22 24} disabled=false
+hit "Production\nprod.example.com\ndeploy" button {700.0703 86 82.32617 24} disabled=false
+hit "Preview text" group {522 127 854 201} disabled=false
+hit "the dashboard" link {556.06836 300 91.90918 22} disabled=false
+hit "Copy code" button {1337 204 22 22} disabled=false

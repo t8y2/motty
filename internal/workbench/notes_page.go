@@ -546,7 +546,7 @@ func (s *State) declareNotesWorkspace(c ui.C) {
 		ui.Column(c).Width(v.width).FillHeight().Children(func() {
 			s.declareNoteLibrary(c, n, v.width, false)
 		})
-		ui.Splitter(c, &state.library).Mins(160, 0).Label(s.noteText("Resize note library", "调整目录宽度"))
+		ui.Splitter(c, &state.library).SplitterThickness(1).Mins(160, 0).Label(s.noteText("Resize note library", "调整目录宽度"))
 		ui.Column(c).Grow(1).FillHeight().Children(func() {
 			s.declareNoteEditor(c, n, bounds.Width-v.width-8, false)
 		})

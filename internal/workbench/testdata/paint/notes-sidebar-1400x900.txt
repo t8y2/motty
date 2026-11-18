@@ -8,7 +8,7 @@ rect {{228 377.62 504 126} {0.14509805 0.16862746 0.20784314 0.72} 14 0 {0 36 96
 rect {{228 510.62 504 1} {0.2 0.23529412 0.2901961 1} 0 0 {0 36 960 864} true #7}
 rect {{675.5029 526.62 56.49707 32} {0.216 0.22917646 0.24894118 1} 7.5 0 {0 36 960 864} true #9}
 rect {{676.5029 527.62 54.49707 30} {0.11146667 0.1264 0.1488 1} 6.5 0 {0 36 960 864} true #10}
-rect {{955.5 36 1 864} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #11}
+rect {{959 36 1 864} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #11}
 rect {{960 36 400 864} {0.06666667 0.08235294 0.105882354 1} 0 0 {0 0 0 0} false #12}
 rect {{1003 45 198.3086 30} {0.216 0.22917646 0.24894118 1} 7.5 0 {0 0 0 0} false #14}
 rect {{1004 46 196.3086 28} {0.11146667 0.1264 0.1488 1} 6.5 0 {0 0 0 0} false #15}
@@ -16,10 +16,10 @@ rect {{1207.3086 50.8 32 18.4} {1 1 1 0.128} 9.2 0 {0 0 0 0} false #17}
 rect {{1208.3086 52 16 16} {0.8862745 0.90588236 0.93333334 1} 8 0 {0 0 0 0} false #18}
 rect {{969 82 382 1} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #19}
 rect {{967 89 386 30} {0.23529412 0.27450982 0.34117648 1} 7.5 0 {967 89 386 372.5} true #20}
-rect {{961 471 398 1} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #21}
-rect {{969 513.5 382 1} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #22}
-rect {{975 594.5 370 32} {0.2 0.23529412 0.2901961 1} 7.5 0 {969 520.5 382 370.5} true #23}
-rect {{976 595.5 368 30} {0.14509805 0.16862746 0.20784314 1} 6.5 0 {969 520.5 382 370.5} true #24}
+rect {{961 467.5 398 1} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #21}
+rect {{969 506.5 382 1} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #22}
+rect {{975 587.5 370 32} {0.2 0.23529412 0.2901961 1} 7.5 0 {969 513.5 382 377.5} true #23}
+rect {{976 588.5 368 30} {0.14509805 0.16862746 0.20784314 1} 6.5 0 {969 513.5 382 377.5} true #24}
 rect {{121 8 20 20} {0.17254902 0.19607843 0.23529412 1} 4.7999997 0 {116 4 998 28} true #25}
 rect {{216.2168 14.5 7 7} {0.9098039 0.7529412 0.28235295 1} 3.5 0 {116 4 998 28} true #26}
 rect {{228 295.62 46 46} {0.17254902 0.19607843 0.23529412 1} 11.04 0 {0 36 960 864} true #27}
@@ -63,12 +63,12 @@ text "Search title, body and tags" {1014 50 176.3086 20}
 text "Linked only" {1247.3086 49.5 73.69141 21}
 text "Release runbook" {989 94 356 20}
 text "Ideas" {989 124 356 20}
-text "Release runbook" {969 481.5 354 21}
-text "Release runbook" {975 526.5 153.93848 31}
-text "Roll back the" {975 563.5 81.78516 22}
-text "gateway" {1060.5654 563.5 55.726562 22}
-text "first." {1120.0723 563.5 28.649414 22}
-text "motty --version" {985 602.5 117 16}
+text "Release runbook" {969 474.5 354 21}
+text "Release runbook" {975 519.5 153.93848 31}
+text "Roll back the" {975 556.5 81.78516 22}
+text "gateway" {1060.5654 556.5 55.726562 22}
+text "first." {1120.0723 556.5 28.649414 22}
+text "motty --version" {985 595.5 117 16}
 hit "" region {0 0 1400 36} disabled=false
 hit "Hosts" button {82 4 28 28} disabled=false
 hit "Production" tab {116 0 170 36} disabled=false
@@ -85,7 +85,7 @@ hit "Settings" button {1366 4 28 28} disabled=false
 hit "New tab" button {0 36 960 864} disabled=false
 hit "Show log" button {588.0576 526.62 79.44531 32} disabled=false
 hit "Close" button {675.5029 526.62 56.49707 32} disabled=false
-hit "Resize notes panel" slider {952 36 8 864} disabled=false
+hit "Resize notes panel" slider {955.5 36 8 864} disabled=false
 hit "" group {960 36 400 864} disabled=false
 hit "Expand all" button {969 46 28 28} disabled=true
 hit "Search title, body and tags" textfield {1003 45 198.3086 30} disabled=false
@@ -95,10 +95,10 @@ hit "Close notes sidebar" button {1327 48 24 24} disabled=false
 hit "Scroll notes" group {967 89 386 372.5} disabled=false
 hit "Release runbook" button {967 89 386 30} disabled=false
 hit "Ideas" button {967 119 386 30} disabled=false
-hit "Resize note browser sections" slider {961 467.5 398 8} disabled=false
-hit "Open in window" button {1323 481.5 28 28} disabled=false
-hit "Preview text" group {969 520.5 382 112} disabled=false
-hit "Copy code" button {1319 597.5 22 22} disabled=false
+hit "Resize note browser sections" slider {961 464 398 8} disabled=false
+hit "Open in window" button {1323 474.5 28 28} disabled=false
+hit "Preview text" group {969 513.5 382 112} disabled=false
+hit "Copy code" button {1319 590.5 22 22} disabled=false
 hit "Notes" button {1364 44 32 32} disabled=true
 hit "Send a snippet" button {1364 80 32 32} disabled=true
 hit "Split Right" button {1364 116 32 32} disabled=true
