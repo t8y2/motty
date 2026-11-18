@@ -3199,7 +3199,6 @@ func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
 		form.offset, form.maxOffset = form.pageScroll.Offset, form.pageScroll.Max()
 	}
 	editor.form.clipped = true
-	defer func() { editor.form.clipped = false }()
 	// The endpoint's page text fields, and the label, are stops even while they
 	// lie outside the clipped viewport.
 	for i := 0; i < form.body.fieldCount; i++ {
@@ -3256,6 +3255,7 @@ func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
 	if b.algo.Valid() {
 		state.rememberHostChoice(canvas, b.algo.Rect(), &editor.form.choiceIDs.algo, state.hostAlgoChoiceLabel(editor.algoMode))
 	}
+	editor.form.clipped = false
 }
 
 // declareDeleteHostDialog declares the delete confirmation as a dialog of the
