@@ -85,7 +85,6 @@ type fileDocumentUI struct {
 }
 
 func (d *fileDocument) paint(canvas *gfx.Canvas, size gfx.Size) {
-	defer d.owner.paintNoteExit(canvas, gfx.Rect{Width: size.Width, Height: size.Height})
 	if d.note != nil {
 		d.paintNoteWindow(canvas, size)
 		return
@@ -184,6 +183,9 @@ func (d *fileDocument) declareEditWindow(c ui.C) {
 	if d.confirm != "" {
 		d.declareConfirmation(c)
 	}
+	// A note that could not be saved asks in this window too, not only in the
+	// workbench window behind it.
+	d.owner.declareNoteExit(c)
 }
 
 // declareEncoding declares the footer's encoding select: a label and the page's

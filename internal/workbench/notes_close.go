@@ -40,10 +40,6 @@ func (s *State) confirmNoteClose(allow func()) bool {
 	return true
 }
 
-// paintNoteExit is kept for the document windows' paint order, which no longer
-// paints anything here: the question is part of the window's page.
-func (s *State) paintNoteExit(c *gfx.Canvas, b gfx.Rect) {}
-
 // declareNoteExit declares the question before the window closes with notes
 // that could not be saved: retry, cancel, or discard the changes.
 func (s *State) declareNoteExit(c ui.C) {
