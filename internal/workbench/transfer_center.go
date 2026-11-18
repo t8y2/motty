@@ -133,6 +133,10 @@ type transferCenter struct {
 	anchor        gfx.Rect
 	scrollSynced  float32
 	surface, list gfx.Rect
+
+	// filterPopupOpen marks an open host or direction picker in the panel.
+	filterPopupOpen bool
+
 	// scroll is the offset the application asked the List for; scrollSynced is
 	// the offset the List reported after the last layout.
 	scroll float32

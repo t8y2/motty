@@ -83,9 +83,12 @@ func (state *State) transferCenterKey(event gfx.KeyEvent) (gfx.EventResult, bool
 			center.batch = transferBatch{}
 			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
-		// The page's popovers own Escape here: the open choice list first, then
-		// the details card, then the center itself.
-		return gfx.EventResult{}, false
+		// Give the page a chance to dismiss the innermost overlay first.
+		if center.filterPopupOpen || center.details.open {
+			return gfx.EventResult{}, false
+		}
+		center.close()
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	if len(center.batch.targets) > 0 {
 		if (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) && !event.Repeat && (event.Target == hitTransfersBulkConfirm || event.Target == hitTransfersBulkCancel) {

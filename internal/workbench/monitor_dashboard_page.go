@@ -494,7 +494,7 @@ func (state *State) declareDashboardDialog(c ui.C) {
 	}
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: title, Width: 780, Height: min(620, max(420, dialogViewport(c).Height-160)),
-		Layer: dialogLayer, Scope: dialogScope, NoClose: true, DismissID: hitDashboardDialogCancel,
+		Layer: dialogLayer, Scope: dialogScope, NoClose: true, CloseID: hitDashboardDialogCancel,
 		InitialFocusID: initial,
 	})
 	dialog.Body(func() {

@@ -11,6 +11,7 @@ const transferRowHeight = float32(38)
 func (state *State) declareTransferCenter(c ui.C) {
 	center := &state.transfers
 	center.details.beginPaint()
+	center.filterPopupOpen = false
 	if !center.open || !state.transferCenterAvailable() {
 		return
 	}
@@ -186,6 +187,9 @@ func (state *State) declareTransferFilters(c ui.C, width float32) {
 			direction := ui.Select(c, &center.direction, transferDirections[:], state.transferDirectionLabel).
 				Small().Width(min(134, width*0.23)).Label(m.Direction).
 				Hint(state.transferDirectionLabel(center.direction))
+			_, hostOpen := host.Popup()
+			_, directionOpen := direction.Popup()
+			center.filterPopupOpen = hostOpen || directionOpen
 			if direction.Changed() {
 				center.scroll = 0
 				center.details.dismiss()

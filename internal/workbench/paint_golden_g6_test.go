@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
@@ -108,6 +109,7 @@ func connectedScene(name string, setup func(*State, *Session)) paintScene {
 func sessionLinkScene(name string, disconnect bool) paintScene {
 	return paintScene{name: name, sizes: []gfx.Size{paintDesktop, paintSmall}, open: func(t *testing.T) (*State, func(*gfx.Canvas, gfx.Size)) {
 		world, options := newSharingWorld(t)
+		options.Now = func() time.Duration { return time.Second }
 		state := newTestState(t, options)
 		world.connectFirst(t, state)
 		session, _ := state.sessionByIDPointer(state.activeSessionID)
