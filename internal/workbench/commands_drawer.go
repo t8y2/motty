@@ -291,7 +291,9 @@ func (state *State) paintCommandChips(canvas *gfx.Canvas, bar gfx.Rect, x, width
 	for _, index := range order {
 		w := state.commandTagWidth(canvas, state.snippets.list[index].Name)
 		if x0+w > x && x0 < x+width {
-			state.paintCommandTag(canvas, gfx.Rect{X: x0, Y: y, Width: w, Height: chipH}, state.snippets.list[index].Name, hitCommandsTag.At(index))
+			id := hitCommandsTag.At(index)
+			state.paintCommandTag(canvas, gfx.Rect{X: x0, Y: y, Width: w, Height: chipH}, state.snippets.list[index].Name, id)
+			state.openSnippetBarMenuOn(canvas, id, index)
 		}
 		x0 += w + commandsTagGap
 		if x0 >= x+width {

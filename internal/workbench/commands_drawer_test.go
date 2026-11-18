@@ -161,6 +161,47 @@ func TestSubmittingTheSnippetVariablesDialogReturnsTheKeyboardToTheTerminal(t *t
 	}
 }
 
+// A right click on a chip opens that snippet's own menu, so a command added to the
+// bar can still be edited or removed there (#1005).
+func TestRightClickingACommandChipOpensItsMenu(t *testing.T) {
+	state := openCommandsDrawerTest(t)
+	event := gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitCommandsTag.At(1)}
+	if got := pointer(state, event); !got.Handled || !state.snippetMenu.open || !state.snippetMenu.fromBar || state.snippetMenu.index != 1 {
+		t.Fatalf("secondary: handled=%v menu=%+v", got.Handled, state.snippetMenu)
+	}
+	if menuHasRow(state, state.messages.Tools.SnippetMoveUp) {
+		t.Fatal("a command-bar menu offers Move up, which reorders by the Snippets page")
+	}
+	chooseMenu(t, state, hitSnippetMenuEdit)
+	if state.modal != modalSnippet {
+		t.Fatalf("edit from the bar opened modal %d, want the snippet form", state.modal)
+	}
+	state.modal = modalNone
+	state.snippetMenu = snippetMenu{}
+
+	pointer(state, event)
+	chooseMenu(t, state, hitSnippetMenuDelete)
+	if state.modal != modalSnippetDelete || len(state.snippets.list) != 2 {
+		t.Fatalf("delete from the bar opened modal %d with %d snippets", state.modal, len(state.snippets.list))
+	}
+}
+
+// A rebuilt snippet list no longer holds the snippet the open menu was asked for,
+// so the menu closes instead of editing whatever now sits at its index.
+func TestACommandBarMenuFollowsARebuiltList(t *testing.T) {
+	state := openCommandsDrawerTest(t)
+	event := gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitCommandsTag.At(1)}
+	if got := pointer(state, event); !got.Handled || !state.snippetMenu.open {
+		t.Fatalf("the menu did not open: handled=%v menu=%+v", got.Handled, state.snippetMenu)
+	}
+	state.snippets.list = []snippet{{Name: "other", Command: "echo other"}}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	if state.snippetMenu.open {
+		t.Fatal("the menu stayed open over a rebuilt list")
+	}
+}
+
 // The drawer reserves no space off the terminal page, a fixed single-bar height on
 // the terminal page, and nothing once closed.
 func TestCommandDrawerHeight(t *testing.T) {
