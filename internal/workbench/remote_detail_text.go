@@ -321,9 +321,14 @@ func (text *remoteDetailText) setTableModel(columns []components.TableColumn, he
 	text.header = text.header[:len(header)]
 	copy(text.header, header)
 	text.rows = rows
+	// A repaint of the same table keeps the selection the user dragged over it:
+	// selecting cells repaints on every motion. Entering the table from the text
+	// view is what starts a new selection.
+	if text.mode != remoteDetailTable {
+		text.clearSelection()
+	}
 	text.mode = remoteDetailTable
 	text.source = ""
-	text.clearSelection()
 }
 
 // paintRemoteDetailTableSlot paints the header and all rows at components.Table's
