@@ -176,6 +176,11 @@ func (s *State) notesKey(e gfx.KeyEvent) gfx.EventResult {
 	if !s.notesVisible() {
 		return gfx.EventResult{}
 	}
+	if result := s.noteContent().page.library.Key(e); result.Handled {
+		s.noteLibraryAfterLayout(s.noteContent())
+		s.save()
+		return result
+	}
 	v := &s.noteContent().view
 	if e.Key == gfx.KeyEscape {
 		if v.menu != "" || v.popup != "" {

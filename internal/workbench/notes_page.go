@@ -80,7 +80,7 @@ func (state *State) ensureNotePage(n *notesUI, kind noteSurfaceKind) *notePageUI
 	p.drawSource = func(d *ui.DrawContext) { state.drawNoteSource(d, n) }
 	p.drawPreview = func(d *ui.DrawContext) { state.drawNotePreview(d, n) }
 	if p.library.Pos == 0 {
-		p.library.Pos = n.view.width
+		p.library.Pos = max(160, n.view.width)
 	}
 	switch kind {
 	case noteSurfaceLibrary:
@@ -98,8 +98,8 @@ func (s *State) noteLibraryAfterLayout(n *notesUI) {
 	if p.library.Pos == 0 {
 		return
 	}
-	usable := s.catalogSectionBounds().Width
-	width := min(max(p.library.Pos, 160), min(520, max(160, usable-8)))
+	usable := max(1, s.catalogSectionBounds().Width-1)
+	width := min(max(p.library.Pos, 160), min(520, max(160, usable-480)))
 	if width != p.library.Pos && !p.library.Dragging() {
 		p.library.Pos = width
 	}
@@ -546,9 +546,9 @@ func (s *State) declareNotesWorkspace(c ui.C) {
 		ui.Column(c).Width(v.width).FillHeight().Children(func() {
 			s.declareNoteLibrary(c, n, v.width, false)
 		})
-		ui.Splitter(c, &state.library).SplitterThickness(1).Mins(160, 0).Label(s.noteText("Resize note library", "调整目录宽度"))
+		ui.Splitter(c, &state.library).SplitterThickness(1).Mins(160, 480).Label(s.noteText("Resize note library", "调整目录宽度"))
 		ui.Column(c).Grow(1).FillHeight().Children(func() {
-			s.declareNoteEditor(c, n, bounds.Width-v.width-8, false)
+			s.declareNoteEditor(c, n, bounds.Width-v.width-1, false)
 		})
 	})
 	s.declareNoteOverlays(c, n)

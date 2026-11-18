@@ -100,3 +100,95 @@ func noteTreeRowLabel(n *notesUI, id string) string {
 	}
 	return ""
 }
+
+// noteSplitterHit finds the page Splitter the notes surface declared by its
+// accessibility label.
+func noteSplitterHit(t testing.TB, canvas *gfx.Canvas, label string) gfx.Hit {
+	t.Helper()
+	for _, hit := range canvas.Hits() {
+		if hit.Label == label && (hit.Role == gfx.RoleSlider || hit.Role == gfx.RoleSeparator) {
+			return hit
+		}
+	}
+	t.Fatalf("no splitter labelled %q", label)
+	return gfx.Hit{}
+}
+
+func TestNotesLibrarySplitterKeysResizeAndSave(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.Click(hitNotes)
+	state.Click(hitNoteAdd)
+	size := gfx.Size{Width: 1400, Height: 900}
+	canvas, _ := paintAt(state, size)
+	page := &state.notes.page
+	splitter := noteSplitterHit(t, canvas, state.noteText("Resize note library", "调整目录宽度"))
+	before := page.library.Pos
+	result := state.notesKey(gfx.KeyEvent{Target: splitter.ID, Key: gfx.KeyRight})
+	if !result.Handled || page.library.Pos != before+16 {
+		t.Fatalf("right arrow: handled=%t pos=%v, want %v", result.Handled, page.library.Pos, before+16)
+	}
+	if state.notes.view.width != page.library.Pos {
+		t.Fatalf("saved width %v does not follow the splitter %v", state.notes.view.width, page.library.Pos)
+	}
+	reopened := newTestState(t, state.options)
+	if reopened.notes.view.width != state.notes.view.width {
+		t.Fatalf("library width %v did not persist, reopened %v", state.notes.view.width, reopened.notes.view.width)
+	}
+}
+
+func TestNotesSidebarSplitterKeysMoveBothSplits(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	state.Click(hitNotes)
+	state.Click(hitNoteAdd)
+	selected := state.notes.selected
+	state.activeSection = sectionTerminal
+	state.Click(hitNotesPanel)
+	state.Click(hitNoteSideLinked)
+	size := gfx.Size{Width: 1200, Height: 800}
+	canvas, _ := paintAt(state, size)
+	content := &state.noteSidebarState().content
+	clickNoteTreeRow(t, state, content, selected)
+	canvas, _ = paintAt(state, size)
+	page := &content.page
+	panel := noteSplitterHit(t, canvas, state.noteText("Resize notes panel", "调整笔记侧栏宽度"))
+	side := noteSplitterHit(t, canvas, state.noteText("Resize note browser sections", "调整笔记上下区域"))
+
+	beforeWidth := state.noteSidebarState().width
+	result := state.noteSidebarKey(gfx.KeyEvent{Target: panel.ID, Key: gfx.KeyLeft})
+	if !result.Handled || state.noteSidebarState().width != beforeWidth+16 {
+		t.Fatalf("panel left arrow: handled=%t width=%v, want %v", result.Handled, state.noteSidebarState().width, beforeWidth+16)
+	}
+	beforeSide := page.side.Pos
+	result = state.noteSidebarKey(gfx.KeyEvent{Target: side.ID, Key: gfx.KeyDown})
+	if !result.Handled || page.side.Pos != beforeSide+16 {
+		t.Fatalf("section down arrow: handled=%t pos=%v, want %v", result.Handled, page.side.Pos, beforeSide+16)
+	}
+	if state.noteSidebarState().fraction == 0 {
+		t.Fatal("section fraction was not kept")
+	}
+}
+
+func TestNotesWorkspaceKeepsTheEditorMinimumAndHairlineWidth(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.Click(hitNotes)
+	state.Click(hitNoteAdd)
+	size := gfx.Size{Width: 900, Height: 600}
+	// The section's room is known once the page has laid out; give the
+	// library the most it may take and still leave the editor its 480px.
+	paintAt(state, size)
+	bounds := state.catalogSectionBounds()
+	library := min(float32(520), max(float32(160), bounds.Width-1-480))
+	state.notes.view.width = library
+	state.notes.page.library.Pos = library
+	paintAt(state, size)
+	paintAt(state, size)
+	if state.notes.view.width != library {
+		t.Fatalf("library width %v, want the usable-480 limit %v", state.notes.view.width, library)
+	}
+	if got, want := state.notes.view.documentBounds.Width, bounds.Width-library-1; got != want {
+		t.Fatalf("document width %v, want %v (one-pixel splitter)", got, want)
+	}
+	if state.notes.view.documentBounds.Width < 480 {
+		t.Fatalf("document width %v is below the 480px minimum", state.notes.view.documentBounds.Width)
+	}
+}

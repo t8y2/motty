@@ -43,11 +43,11 @@ func (s *State) declareNoteSidebar(c ui.C) {
 	s.noteTreeRows(n, true)
 	total := max(0, frame.Width+b.Width)
 	if p.panel.Pos == 0 {
-		p.panel.Pos = max(0, total-8-b.Width)
+		p.panel.Pos = max(0, total-1-b.Width)
 	}
-	maxWidth := max(0, base.Width*.7)
-	minFirst := max(0, total-8-maxWidth)
-	row := ui.Row(c).Absolute().Left(base.X).Top(b.Y).Width(total).Height(b.Height)
+	maxWidth := max(0, total*.7)
+	minFirst := max(0, total-1-maxWidth)
+	row := ui.Row(c).Absolute().Left(frame.X).Top(b.Y).Width(total).Height(b.Height)
 	row.Children(func() {
 		ui.Slot(c).Grow(1)
 		ui.Splitter(c, &p.panel).SplitterThickness(1).Mins(minFirst, min(280, maxWidth)).Label(s.noteText("Resize notes panel", "调整笔记侧栏宽度"))
@@ -178,7 +178,8 @@ func (s *State) noteSidebarAfterLayout(n *notesUI) {
 	frame := s.workspacePixelBounds(s.viewport)
 	total := max(0, frame.Width+s.notesPanelWidth(s.viewport))
 	if p.panel.Pos != 0 {
-		width := min(max(total-8-p.panel.Pos, 280), max(0, base.Width*.7))
+		maximum := max(0, total*.7)
+		width := min(max(total-1-p.panel.Pos, min(280, maximum)), maximum)
 		if width != s.notesPanelWidth(s.viewport) {
 			if panel := s.noteSidebars[s.deck.ActiveWorkspace()]; panel != nil {
 				panel.width = width

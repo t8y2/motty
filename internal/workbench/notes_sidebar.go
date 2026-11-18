@@ -236,7 +236,19 @@ func (s *State) noteSidebarScroll(e gfx.ScrollEvent) gfx.EventResult {
 	return gfx.EventResult{}
 }
 func (s *State) noteSidebarKey(e gfx.KeyEvent) gfx.EventResult {
-	n := &s.noteSidebarState().content
+	v := s.noteSidebarState()
+	n := &v.content
+	p := &n.page
+	if result := p.panel.Key(e); result.Handled {
+		s.noteSidebarAfterLayout(n)
+		s.save()
+		return result
+	}
+	if result := p.side.Key(e); result.Handled {
+		s.noteSidebarAfterLayout(n)
+		s.save()
+		return result
+	}
 	if e.Key == gfx.KeyEscape && e.Target == hitNotePreviewText {
 		n.view.clearPreviewSelection()
 		return gfx.EventResult{Handled: true, Repaint: true}
