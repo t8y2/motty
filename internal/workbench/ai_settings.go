@@ -37,53 +37,50 @@ import (
 var aiSettingsHits = tree.Feature("ai-settings")
 
 var (
-	hitAISetProviderAdd       = tree.ID(aiSettingsHits, "ai-set-provider-add")
-	hitAISetProviderImport    = tree.ID(aiSettingsHits, "ai-set-provider-import")
-	hitAISetImportSource      = tree.Sub(aiSettingsHits, tree.Name("ai-set-import-source")) // preview, per source
-	hitAISetImportChoose      = tree.ID(aiSettingsHits, "ai-set-import-choose")
-	hitAISetImportBack        = tree.ID(aiSettingsHits, "ai-set-import-back")
-	hitAISetImportApply       = tree.ID(aiSettingsHits, "ai-set-import-apply")
-	hitAISetImportClose       = tree.ID(aiSettingsHits, "ai-set-import-close")
-	hitAISetImportList        = tree.ID(aiSettingsHits, "ai-set-import-list")            // scroll state and group hit
-	hitAISetImportRow         = tree.Sub(aiSettingsHits, tree.Name("ai-set-import-row")) // select, per candidate
-	hitAISetFormDismiss       = tree.ID(aiSettingsHits, "ai-set-form-dismiss")
-	hitAISetFormClose         = tree.ID(aiSettingsHits, "ai-set-form-close")
-	hitAISetFormCancel        = tree.ID(aiSettingsHits, "ai-set-form-cancel")
-	hitAISetFormSubmit        = tree.ID(aiSettingsHits, "ai-set-form-submit")
-	hitAISetFormPreset        = tree.ID(aiSettingsHits, "ai-set-form-preset")
-	hitAISetFormPresetDismiss = tree.ID(aiSettingsHits, "ai-set-form-preset-dismiss")
-	hitAISetFormPresetItems   = tree.Sub(aiSettingsHits, tree.Name("ai-set-form-preset-item"))
-	hitAISetFormName          = tree.ID(aiSettingsHits, "ai-set-form-name")
-	hitAISetFormURL           = tree.ID(aiSettingsHits, "ai-set-form-url")
-	hitAISetFormModelsURL     = tree.ID(aiSettingsHits, "ai-set-form-models-url")
-	hitAISetFormKey           = tree.ID(aiSettingsHits, "ai-set-form-key")
-	hitAISetFormCLIPath       = tree.ID(aiSettingsHits, "ai-set-form-cli-path")
-	hitAISetConfirmCancel     = tree.ID(aiSettingsHits, "ai-set-confirm-cancel")
-	hitAISetConfirmAction     = tree.ID(aiSettingsHits, "ai-set-confirm-action")
-	hitAISetFetchModels       = tree.ID(aiSettingsHits, "ai-set-fetch-models")
-	hitAISetModelInput        = tree.ID(aiSettingsHits, "ai-set-model-input")
-	hitAISetModelAdd          = tree.ID(aiSettingsHits, "ai-set-model-add")
-	hitAISetModelPrev         = tree.ID(aiSettingsHits, "ai-set-model-prev")
-	hitAISetModelNext         = tree.ID(aiSettingsHits, "ai-set-model-next")
-	hitAISetStepsMinus        = tree.ID(aiSettingsHits, "ai-set-steps-minus")
-	hitAISetStepsValue        = tree.ID(aiSettingsHits, "ai-set-steps-value")
-	hitAISetStepsPlus         = tree.ID(aiSettingsHits, "ai-set-steps-plus")
-	hitAISetFilterAll         = tree.ID(aiSettingsHits, "ai-set-filter-all")
-	hitAISetFilterAvailable   = tree.ID(aiSettingsHits, "ai-set-filter-avail")
-	hitAISetFilterFailed      = tree.ID(aiSettingsHits, "ai-set-filter-failed")
-	hitAISetFilterEnabled     = tree.ID(aiSettingsHits, "ai-set-filter-enabled")
-	hitAISetSortDefault       = tree.ID(aiSettingsHits, "ai-set-sort-default")
-	hitAISetSortLatencyAsc    = tree.ID(aiSettingsHits, "ai-set-sort-latency-asc")
-	hitAISetSortLatencyDesc   = tree.ID(aiSettingsHits, "ai-set-sort-latency-desc")
-	hitAISetSortNameAsc       = tree.ID(aiSettingsHits, "ai-set-sort-name-asc")
-	hitAISetRedact            = tree.ID(aiSettingsHits, "ai-set-redact")
-	hitAISetHistory           = tree.ID(aiSettingsHits, "ai-set-history")
-	hitAISetClearHistory      = tree.ID(aiSettingsHits, "ai-set-clear-history")
-	hitAISetMCPEnabled        = tree.ID(aiSettingsHits, "ai-set-mcp-enabled")
-	hitAISetMCPCopy           = tree.ID(aiSettingsHits, "ai-set-mcp-copy")
-	hitAISetMCPCopyURL        = tree.ID(aiSettingsHits, "ai-set-mcp-copy-url")
-	hitAISetMCPCopyToken      = tree.ID(aiSettingsHits, "ai-set-mcp-copy-token")
-	hitAISetMCPReset          = tree.ID(aiSettingsHits, "ai-set-mcp-reset")
+	hitAISetProviderAdd     = tree.ID(aiSettingsHits, "ai-set-provider-add")
+	hitAISetProviderImport  = tree.ID(aiSettingsHits, "ai-set-provider-import")
+	hitAISetImportSource    = tree.Sub(aiSettingsHits, tree.Name("ai-set-import-source")) // preview, per source
+	hitAISetImportChoose    = tree.ID(aiSettingsHits, "ai-set-import-choose")
+	hitAISetImportBack      = tree.ID(aiSettingsHits, "ai-set-import-back")
+	hitAISetImportApply     = tree.ID(aiSettingsHits, "ai-set-import-apply")
+	hitAISetImportClose     = tree.ID(aiSettingsHits, "ai-set-import-close")
+	hitAISetImportList      = tree.ID(aiSettingsHits, "ai-set-import-list")            // scroll state and group hit
+	hitAISetImportRow       = tree.Sub(aiSettingsHits, tree.Name("ai-set-import-row")) // select, per candidate
+	hitAISetFormDismiss     = tree.ID(aiSettingsHits, "ai-set-form-dismiss")
+	hitAISetFormClose       = tree.ID(aiSettingsHits, "ai-set-form-close")
+	hitAISetFormCancel      = tree.ID(aiSettingsHits, "ai-set-form-cancel")
+	hitAISetFormSubmit      = tree.ID(aiSettingsHits, "ai-set-form-submit")
+	hitAISetFormName        = tree.ID(aiSettingsHits, "ai-set-form-name")
+	hitAISetFormURL         = tree.ID(aiSettingsHits, "ai-set-form-url")
+	hitAISetFormModelsURL   = tree.ID(aiSettingsHits, "ai-set-form-models-url")
+	hitAISetFormKey         = tree.ID(aiSettingsHits, "ai-set-form-key")
+	hitAISetFormCLIPath     = tree.ID(aiSettingsHits, "ai-set-form-cli-path")
+	hitAISetConfirmCancel   = tree.ID(aiSettingsHits, "ai-set-confirm-cancel")
+	hitAISetConfirmAction   = tree.ID(aiSettingsHits, "ai-set-confirm-action")
+	hitAISetFetchModels     = tree.ID(aiSettingsHits, "ai-set-fetch-models")
+	hitAISetModelInput      = tree.ID(aiSettingsHits, "ai-set-model-input")
+	hitAISetModelAdd        = tree.ID(aiSettingsHits, "ai-set-model-add")
+	hitAISetModelPrev       = tree.ID(aiSettingsHits, "ai-set-model-prev")
+	hitAISetModelNext       = tree.ID(aiSettingsHits, "ai-set-model-next")
+	hitAISetStepsMinus      = tree.ID(aiSettingsHits, "ai-set-steps-minus")
+	hitAISetStepsValue      = tree.ID(aiSettingsHits, "ai-set-steps-value")
+	hitAISetStepsPlus       = tree.ID(aiSettingsHits, "ai-set-steps-plus")
+	hitAISetFilterAll       = tree.ID(aiSettingsHits, "ai-set-filter-all")
+	hitAISetFilterAvailable = tree.ID(aiSettingsHits, "ai-set-filter-avail")
+	hitAISetFilterFailed    = tree.ID(aiSettingsHits, "ai-set-filter-failed")
+	hitAISetFilterEnabled   = tree.ID(aiSettingsHits, "ai-set-filter-enabled")
+	hitAISetSortDefault     = tree.ID(aiSettingsHits, "ai-set-sort-default")
+	hitAISetSortLatencyAsc  = tree.ID(aiSettingsHits, "ai-set-sort-latency-asc")
+	hitAISetSortLatencyDesc = tree.ID(aiSettingsHits, "ai-set-sort-latency-desc")
+	hitAISetSortNameAsc     = tree.ID(aiSettingsHits, "ai-set-sort-name-asc")
+	hitAISetRedact          = tree.ID(aiSettingsHits, "ai-set-redact")
+	hitAISetHistory         = tree.ID(aiSettingsHits, "ai-set-history")
+	hitAISetClearHistory    = tree.ID(aiSettingsHits, "ai-set-clear-history")
+	hitAISetMCPEnabled      = tree.ID(aiSettingsHits, "ai-set-mcp-enabled")
+	hitAISetMCPCopy         = tree.ID(aiSettingsHits, "ai-set-mcp-copy")
+	hitAISetMCPCopyURL      = tree.ID(aiSettingsHits, "ai-set-mcp-copy-url")
+	hitAISetMCPCopyToken    = tree.ID(aiSettingsHits, "ai-set-mcp-copy-token")
+	hitAISetMCPReset        = tree.ID(aiSettingsHits, "ai-set-mcp-reset")
 )
 
 // Rows of the provider and model lists have a block of identities each.
@@ -183,10 +180,8 @@ type aiSettingsUI struct {
 	// The provider dialog. editID is empty when a provider is being added.
 	editID string
 	kind   string
-	// preset is the entry of aiPresets the form was last filled from, open
-	// whether its list is showing.
+	// preset is the entry of aiPresets the form was last filled from.
 	preset         int
-	presetOpen     bool
 	name           text.Editor
 	baseURL        text.Editor
 	modelsURL      text.Editor
@@ -208,6 +203,9 @@ type aiSettingsUI struct {
 	modelSort   aiModelSort
 	modelInput  text.Editor
 	stepsInput  text.Editor
+	// modelField and stepsField are the page's handles on those editors, bound
+	// once before the page declares them.
+	modelField, stepsField ui.Field
 	// stepsEditing says the step field is being typed into; the stored setting
 	// changes when the edit is committed.
 	stepsEditing bool
@@ -266,12 +264,10 @@ type aiSettingsUI struct {
 	formBaseURL   ui.Field
 	formModelsURL ui.Field
 	formAPIKey    ui.Field
+	// inputBound says the model-name and step-count fields are bound.
+	inputBound bool
 	// formKeyShown shows the API key instead of its bullets.
 	formKeyShown bool
-	// formPreset is the slot the preset list is painted into. The list is
-	// painted after the page when it is open, so it lies over the fields below
-	// it; closed, it is painted in its place, so Tab reaches it before them.
-	formPreset ui.Box
 	// formKind, formAuth and formFormat are the forms' choices' bound values.
 	formKind, formAuth, formFormat string
 }
@@ -498,20 +494,7 @@ func (state *State) aiDialogClick(id gfx.ID) {
 			state.aiStopCLILogin()
 		}
 	case aiDialogProvider:
-		if cfg.presetOpen {
-			switch {
-			case id == hitAISetFormPreset:
-				cfg.presetOpen = false
-			case id.Scope() == hitAISetFormPresetItems:
-				state.aiChoosePreset(item(id))
-			default:
-				cfg.presetOpen = false
-			}
-			return
-		}
 		switch id {
-		case hitAISetFormPreset:
-			cfg.presetOpen = true
 		case hitAISetFormClose, hitAISetFormCancel:
 			state.aiCloseDialog()
 		case hitAISetFormSubmit:
@@ -613,13 +596,13 @@ func (state *State) aiImportDialogClick(id gfx.ID) {
 // API key first of all.
 func (state *State) aiCloseDialog() {
 	cfg := &state.ai.cfg
-	cfg.dialog, cfg.editID, cfg.deleteID, cfg.formErr, cfg.hadKey, cfg.presetOpen = aiDialogNone, "", "", "", false, false
+	cfg.dialog, cfg.editID, cfg.deleteID, cfg.formErr, cfg.hadKey = aiDialogNone, "", "", "", false
 	cfg.formFocus = aiFormFocusNone
 	cfg.notice = ""
 	cfg.name, cfg.baseURL, cfg.modelsURL, cfg.apiKey = text.Editor{}, text.Editor{}, text.Editor{}, text.Editor{}
 	cfg.cliPath, cfg.authStyle, cfg.apiFormat = text.Editor{}, "", ""
 	cfg.cliAutoPath, cfg.cliPathMissing = "", false
-	cfg.formKeyShown, cfg.formPreset = false, ui.Box{}
+	cfg.formKeyShown = false
 	// The import candidates hold credentials in memory; closing the dialog is
 	// also how they are forgotten.
 	cfg.importStep, cfg.importErr = aiImportSources, ""
@@ -715,15 +698,6 @@ func (state *State) aiSettingsEditor(hit gfx.ID) *text.Editor {
 		return &cfg.modelsURL
 	case cfg.dialog == aiDialogProvider && hit == hitAISetFormKey && !store.IsCLIKind(cfg.kind):
 		return &cfg.apiKey
-	case cfg.dialog == aiDialogNone && hit == hitAISetModelInput:
-		cfg.modelInput.Restrict(modelNameRune, 200)
-		return &cfg.modelInput
-	case cfg.dialog == aiDialogNone && hit == hitAISetStepsValue:
-		// Focus can reach the field by Tab without a click; open the edit then
-		// too, so typing works however the field was reached.
-		state.aiBeginStepsEdit()
-		cfg.stepsInput.Restrict(stepDigit, 3)
-		return &cfg.stepsInput
 	}
 	return nil
 }

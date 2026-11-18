@@ -26,8 +26,6 @@ type settingsControlKind uint8
 
 const (
 	controlHit            settingsControlKind = iota // the slot is a pointer target
-	controlModelInput                                // the assistant's model-name field
-	controlStepsValue                                // the assistant's step-count field between its − and + buttons
 	controlWordSeparators                            // the terminal's word-selection separators
 	controlSwatches                                  // a strip of round color dots
 	controlLabel                                     // the words of a row, which label the control beside them
@@ -236,10 +234,6 @@ func (state *State) paintSettingsControls(canvas *gfx.Canvas) {
 			canvas.HitWithOptions(control.id, rect, control.label, control.hit)
 		case controlLabel:
 			canvas.HitLabel(control.id, rect, control.label, control.disabled)
-		case controlModelInput:
-			state.paintAIModelInput(canvas, rect)
-		case controlStepsValue:
-			state.paintAIStepsValue(canvas, rect)
 		case controlWordSeparators:
 			state.paintWordSeparatorsInput(canvas, rect)
 		case controlSwatches:

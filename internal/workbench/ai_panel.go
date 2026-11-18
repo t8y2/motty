@@ -324,8 +324,6 @@ type aiPanel struct {
 	paintedHistory             []aiPaintedHistoryRow
 	copySlots                  []aiCopySlot
 	statusLabel                string
-	statusActivity             ui.Box
-	statusPainted              bool
 	historyTop                 float32
 
 	// focusBack asks the next paint to put the keyboard back in the terminal
