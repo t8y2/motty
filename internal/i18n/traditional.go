@@ -1968,8 +1968,12 @@ var traditionalTools = ToolsMessages{
 	SearchEmptyFmt:    "沒有符合「%s」的設定。",
 
 	ImportSessions:               "從其他軟體匯入",
+	XterminalPasteTitle:          "匯入 xterminal",
+	XterminalPasteBody:           "貼上 xterminal 匯出的內容，每行一個連線。",
+	XterminalPasteLabel:          "匯出內容",
+	XterminalPasteSubmit:         "匯入",
 	ImportChooserTitle:           "匯入工作階段",
-	ImportChooserBody:            "選擇匯入來源，再選取它儲存工作階段的檔案或資料夾。",
+	ImportChooserBody:            "選擇匯入來源，再選取匯出檔案、資料夾或貼上匯出內容。",
 	ImportEncodingTitle:          "選擇 MobaXterm 檔案編碼",
 	ImportEncodingBody:           "此檔案同時符合 UTF-8 和 GB18030。比較下方連線資訊後再匯入。",
 	ImportEncodingSampleUTF8Fmt:  "UTF-8 範例：%s",

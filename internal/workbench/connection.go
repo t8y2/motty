@@ -524,6 +524,7 @@ const (
 	modalSnippetDelete
 	modalSnippetVariables
 	modalImportSessions
+	modalXterminalImport
 	modalFontPicker
 	modalOutboundProxy
 	modalForm

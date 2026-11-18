@@ -640,6 +640,7 @@ type State struct {
 	proxyCountText    string
 	hostImportResult  hostImportResult
 	sessionImport     sessionImportPreview
+	xterminal         xterminalImportDialog
 	mobaEncoding      mobaEncodingPrompt
 	knownHosts        knownHostsView
 	// selectedWorkspaceTemplateID is the template the library will apply next.

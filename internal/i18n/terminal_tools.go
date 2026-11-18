@@ -332,6 +332,10 @@ type ToolsMessages struct {
 
 	// Importing sessions from other clients.
 	ImportSessions               string
+	XterminalPasteTitle          string
+	XterminalPasteBody           string
+	XterminalPasteLabel          string
+	XterminalPasteSubmit         string
 	ImportChooserTitle           string
 	ImportChooserBody            string
 	ImportEncodingTitle          string

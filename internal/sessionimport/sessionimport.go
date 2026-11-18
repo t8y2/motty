@@ -423,6 +423,7 @@ const (
 	Electerm
 	Netcatty
 	SecureCRT
+	Xterminal
 )
 
 // ---- PuTTY ----

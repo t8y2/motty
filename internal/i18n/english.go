@@ -1968,8 +1968,12 @@ var englishTools = ToolsMessages{
 	SearchEmptyFmt:    "No setting matches “%s”.",
 
 	ImportSessions:               "Import from",
+	XterminalPasteTitle:          "Import xterminal",
+	XterminalPasteBody:           "Paste exported connections, one per line.",
+	XterminalPasteLabel:          "Exported connections",
+	XterminalPasteSubmit:         "Import",
 	ImportChooserTitle:           "Import sessions",
-	ImportChooserBody:            "Choose a client, then pick the files or folder that hold its saved sessions.",
+	ImportChooserBody:            "Choose a client, then select its export or paste its exported connections.",
 	ImportEncodingTitle:          "Choose MobaXterm encoding",
 	ImportEncodingBody:           "This file can be read as UTF-8 or GB18030. Compare the connection text below before importing.",
 	ImportEncodingSampleUTF8Fmt:  "UTF-8: %s",
