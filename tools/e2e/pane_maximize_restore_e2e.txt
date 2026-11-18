@@ -1,0 +1,21 @@
+# lang: zh-CN
+# 使用 pane_maximize_e2e.txt 产生的同一临时 HOME，验证新进程恢复和标签页隔离。
+resize 1400 900
+settle 1500
+expect exists id:shell/pane-focus-tab/#1
+expect exists id:shell/pane-focus-tab/#3
+expect exists id:shell/pane-maximize-button/#3
+expect absent id:shell/pane-maximize-button/#1
+shot /tmp/motty-pane-restarted.png
+key Ctrl+Shift+T
+settle 900
+key Ctrl+Shift+D
+settle 600
+expect absent id:shell/pane-focus-tab/#1
+key Ctrl+Tab
+settle 400
+expect exists id:shell/pane-focus-tab/#3
+expect exists id:shell/pane-maximize-button/#3
+key Ctrl+Tab
+settle 400
+expect absent id:shell/pane-focus-tab/#1
