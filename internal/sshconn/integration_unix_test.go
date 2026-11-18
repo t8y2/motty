@@ -590,3 +590,77 @@ func checkCommandStartReports(t *testing.T, program string, forceTrap bool) {
 		t.Fatalf("session files leaked: %v, %v", files, err)
 	}
 }
+
+// A user who exports PROMPT_COMMAND keeps that export when the integration
+// wraps it, so su/sudo hand the value to a shell that has none of the motty
+// functions (issue #1060). The injected entries must expand to nothing there
+// instead of "command not found", while the user's own entries keep running and
+// the integrated shell keeps reporting statuses.
+func TestIntegrationExportedPromptCommandDoesNotBreakChildShell(t *testing.T) {
+	program, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash unavailable")
+	}
+	home, runtimeDir := t.TempDir(), t.TempDir()
+	profile := "PS1='user-prompt> '\nexport PROMPT_COMMAND='printf \"user-hook\\n\"'\n"
+	if err := os.WriteFile(filepath.Join(home, ".bash_profile"), []byte(profile), 0600); err != nil {
+		t.Fatal(err)
+	}
+	shell, err := localshell.Start(localshell.Config{
+		Shell: "/bin/sh", Args: []string{"-c", integrationScript(program, "leak-token"), "sh", program}, Dir: home,
+		Env:  []string{"HOME=" + home, "SHELL=" + program, "TMPDIR=" + runtimeDir, "LANG=en_US.UTF-8"},
+		Cols: 120, Rows: 24,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(shell.Close)
+	screen := term.New(120, 24, 0)
+	screen.SetPromptToken("leak-token")
+	ready, lastExit, output := 0, -1, ""
+	screen.SetPromptReady(func() { ready++ })
+	screen.SetCommandFinished(func(code int) { lastExit = code })
+	await := func(what string, done func() bool) {
+		t.Helper()
+		deadline := time.Now().Add(8 * time.Second)
+		for time.Now().Before(deadline) {
+			data := shell.Drain(nil)
+			output += string(data)
+			screen.Write(data)
+			if done() {
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		t.Fatalf("waiting for %s: %q", what, output)
+	}
+	await("first prompt", func() bool { return ready > 0 })
+	before := ready
+	shell.Write([]byte("false\r"))
+	await("parent status", func() bool { return ready > before })
+	if lastExit != 1 {
+		t.Fatalf("integrated shell exit status = %d, want 1: %q", lastExit, output)
+	}
+	// A plain child shell inherits the exported PROMPT_COMMAND but defines none
+	// of the integration's functions, the way su's target shell does.
+	childStart := len(output)
+	shell.Write([]byte("bash --norc --noprofile -i\r"))
+	shell.Write([]byte("printf 'CHILD_UP\\n'\r"))
+	await("child shell", func() bool { return strings.Contains(output, "CHILD_UP\r\n") })
+	child := output[childStart:]
+	if strings.Contains(child, "command not found") {
+		t.Fatalf("inherited PROMPT_COMMAND broke the child shell: %q", child)
+	}
+	if !strings.Contains(child, "user-hook\r\n") {
+		t.Fatalf("the user's own PROMPT_COMMAND entry stopped running in the child: %q", child)
+	}
+	before = ready
+	shell.Write([]byte("exit\r"))
+	await("back in parent", func() bool { return ready > before })
+	shell.Write([]byte("exit\r"))
+	select {
+	case <-shell.Done():
+	case <-time.After(8 * time.Second):
+		t.Fatal("the shell did not exit")
+	}
+}
