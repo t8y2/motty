@@ -190,9 +190,9 @@ func (state *State) declareSnippetsWorkspace(c ui.C) {
 			state.declareSnippetHeader(c, theme)
 			form.prepareSnippetRows(state)
 			if view.manualOrder {
-				form.rows.Reorder = form.reorder
+				form.rows.Reorder, form.rows.Handle = form.reorder, hitSnippetHandles
 			} else {
-				form.rows.Reorder = nil
+				form.rows.Reorder, form.rows.Handle = nil, 0
 			}
 			form.selectedRow = slices.Index(form.visible, form.selected)
 			form.hoverCandidate, form.hoverCandidateAnchor = 0, ui.Box{}

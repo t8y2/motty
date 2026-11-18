@@ -19,6 +19,7 @@ import (
 
 // toolbarRowHit is the bounds of the editor's row for the entry key of group, which the
 // page's list names by its label.
+
 func toolbarRowHit(t *testing.T, state *State, view *headless.Session, group toolbarGroup, key string) (gfx.Rect, bool) {
 	t.Helper()
 	spec, _ := toolbarSpecFor(group, key)
@@ -86,6 +87,7 @@ func TestToolbarSettingsNativeControlsDragKeyboardAndSwitchAcrossScales(t *testi
 				spec, _ := toolbarSpecFor(group, original)
 				label := state.toolbarLabel(spec.id)
 				handle := false
+				var handleRect gfx.Rect
 				var buttons []string
 				for _, h := range view.Snapshot().Hits {
 					if h.Role == gfx.RoleButton {
@@ -93,15 +95,14 @@ func TestToolbarSettingsNativeControlsDragKeyboardAndSwitchAcrossScales(t *testi
 					}
 					if h.Role == gfx.RoleButton && h.Label == label && h.Bounds.Width == 28 &&
 						math.Abs(float64(h.Bounds.X-(a.X+4))) < .75 {
-						handle = true
+						handle, handleRect = true, h.Bounds
 					}
 				}
 				if !handle {
 					t.Fatalf("group %d has no 28px drag handle at the row's start: row=%v buttons=%v", group, a, buttons)
 				}
-				// The row's left edge is the drag handle, which is its own
-				// button; the page List still starts its drag on the row body.
-				x, y := a.X+a.Width/2, a.Y+a.Height/2
+				// The drag starts on the handle, as the painted reorder list's did.
+				x, y := handleRect.X+handleRect.Width/2, handleRect.Y+handleRect.Height/2
 				if err := view.Press(x, y); err != nil {
 					t.Fatal(err)
 				}
@@ -134,7 +135,7 @@ func TestToolbarSettingsNativeControlsDragKeyboardAndSwitchAcrossScales(t *testi
 					t.Fatalf("group %d did not reorder on drop: %+v", group, entries)
 				}
 				for range lastSlot {
-					if err := view.Keys("alt+Up"); err != nil {
+					if err := view.Keys("Up"); err != nil {
 						t.Fatal(err)
 					}
 				}

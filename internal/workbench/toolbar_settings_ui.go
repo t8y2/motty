@@ -59,22 +59,24 @@ func toolbarEntryIndex(group toolbarGroup, key string) int {
 // reorderHandle draws the six-dot grip a reorder row starts with: a 28px
 // button at the row's left, as the painted ReorderList's handle was.
 func reorderHandle(c ui.C, id gfx.ID, label string, disabled bool, height float32) ui.Box {
+	color := c.Theme().MutedForeground
+	if disabled {
+		color.Alpha *= .5
+	}
+	// The grip is drawn from elements rather than a Draw callback: a callback
+	// made for each row in each paint allocates.
 	handle := ui.Slot(c).Size(28, max(height-8, 0)).Shrink(0).
-		HitWith(id, label, gfx.HitOptions{Role: gfx.RoleButton, Cursor: gfx.PointerCursorHand, Disabled: disabled})
-	handle.Draw(func(d *ui.DrawContext) {
-		if d.Canvas.FocusVisible() == id {
-			d.Canvas.RoundedBorder(d.Rect, d.Theme.Metrics.RadiusControl, 1, d.Theme.Ring, gfx.Color{})
-		}
-		color := d.Theme.MutedForeground
-		if disabled {
-			color.Alpha *= .5
-		}
-		centerX, centerY := d.Rect.X+d.Rect.Width/2, d.Rect.Y+d.Rect.Height/2
-		for y := float32(-4); y <= 4; y += 4 {
-			for _, x := range [...]float32{-2, 2} {
-				d.Canvas.Rounded(gfx.Rect{X: centerX + x - 1, Y: centerY + y - 1, Width: 2, Height: 2}, 1, color)
+		HitWith(id, label, gfx.HitOptions{Role: gfx.RoleButton, Cursor: gfx.PointerCursorHand, Disabled: disabled}).
+		Focus(ui.Look{}.Ring(1, c.Theme().Ring))
+	handle.Children(func() {
+		ui.Column(c).Fill().Gap(2).Items(ui.Center).Justify(ui.Center).Children(func() {
+			for range 3 {
+				ui.Row(c).Gap(2).Children(func() {
+					ui.Slot(c).Size(2, 2).Radius(1).Background(color)
+					ui.Slot(c).Size(2, 2).Radius(1).Background(color)
+				})
 			}
-		}
+		})
 	})
 	return handle
 }
@@ -116,6 +118,7 @@ func (state *State) openToolbarSettings(group toolbarGroup) {
 	}
 	editor.rows.NoTypeahead = true
 	editor.rows.Reorder = func(rows []int, to int) { state.moveToolbarEntry(rows[0], to) }
+	editor.rows.Handle = hitToolbarHandles
 	state.modal = modalToolbarSettings
 }
 
@@ -335,7 +338,9 @@ func (state *State) declareToolbarEntry(row ui.ListRow) {
 	}
 	row.Element.Height(44).MarginBottom(4).PadSides(0, 7, 0, 3).Gap(8).Items(ui.Center).
 		Radius(theme.Metrics.RadiusControl).Border(1, theme.Border).Background(theme.Background).Children(func() {
-		reorderHandle(c, hitToolbarHandles.At(index), label, false, 44)
+		// The handle is named by its row: the list starts a drag from the handle
+		// the row's index names (ListState.Handle).
+		reorderHandle(c, hitToolbarHandles.At(row.Index), label, false, 44)
 		ui.Row(c).Grow(1).Gap(10).Items(ui.Center).Children(func() {
 			ui.Icon(c, lucideIcons[spec.icon]).Size(18, 18).Color(color).Shrink(0)
 			ui.Text(c, label).FontSize(theme.Metrics.FontSizeM).Color(color).Ellipsis().Grow(1)

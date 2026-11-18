@@ -95,6 +95,7 @@ func (state *State) declareSFTPColumnSettings(c ui.C) {
 			state.moveSFTPColumn(rows[0], to)
 		}
 	}
+	editor.rows.Handle = hitSFTPColumnSettingsHandles
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: m.FilesColumnsTitle, Description: m.FilesColumnsHint, Width: 560, Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitSFTPColumnSettingsDismiss, CloseID: hitSFTPColumnSettingsClose,
@@ -125,7 +126,9 @@ func (state *State) declareSFTPColumn(row ui.ListRow) {
 	}
 	row.Element.Height(48).MarginBottom(4).PadSides(0, 7, 0, 3).Gap(8).Items(ui.Center).
 		Radius(theme.Metrics.RadiusControl).Border(1, theme.Border).Background(theme.Background).Children(func() {
-		reorderHandle(c, hitSFTPColumnSettingsHandles.At(index), label, fixed, 48)
+		// The handle is named by its row, which is what the list's Handle scope
+		// maps back to; the switch and position keep the column's key.
+		reorderHandle(c, hitSFTPColumnSettingsHandles.At(row.Index), label, fixed, 48)
 		ui.Row(c).Grow(1).Gap(10).Items(ui.Center).Children(func() {
 			ui.Text(c, label).FontSize(theme.Metrics.FontSizeM).Color(color).Ellipsis().Grow(1)
 			toggle := ui.Switch(c, state.pageFlag(enabled), "").Hit(hitSFTPColumnSettingsToggles.At(index), label).Shrink(0)
