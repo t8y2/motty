@@ -57,7 +57,7 @@ func (state *State) RemoteToolsInput(context app.TextInputContext) *app.TextInpu
 		before := search.editor.String()
 		event.Apply(&search.editor)
 		if before != search.editor.String() && state.remoteToolsVisible() && state.remote.tab == tab {
-			state.remote.processScroll = 0
+			state.remote.resetScroll = true
 			state.rebuildRemoteRows()
 		}
 		next := app.TextStateOf(&search.editor)
@@ -101,7 +101,7 @@ func (state *State) clearRemoteSearch() {
 	search := &state.remote.searches[state.remote.tab]
 	search.editor = *text.NewEditor("")
 	search.ready = false
-	state.remote.processScroll = 0
+	state.remote.resetScroll = true
 	state.rebuildRemoteRows()
 }
 

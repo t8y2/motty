@@ -238,13 +238,10 @@ func (state *State) declareRemoteProcessDetailsDialog(c ui.C, act func(gfx.ID)) 
 	viewport := c.Bounds()
 	contentWidth := min(float32(980), max(viewport.Width-32, 360))
 	bodyHeight := min(float32(620), max(viewport.Height-132, 320))
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), gfx.Rect{Width: viewport.Width, Height: viewport.Height}, components.DialogOptions{
-		ContentSize: gfx.Size{Width: contentWidth}, FitBody: true, BodyHeight: bodyHeight,
-		ButtonSize: components.ButtonSizeSmall,
-	}).Layout(description)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), dialogViewport(c), contentWidth, description, bodyHeight) - smallDialogFooterAdjust(*c.Theme())
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: m.RemoteProcessDetailsTitle, Description: description, Width: contentWidth,
-		Height: layout.Content.Height, Layer: dialogLayer + 2, Scope: dialogScope,
+		Height: height, Layer: dialogLayer + 2, Scope: dialogScope,
 		DismissID: hitRemoteProcessDetailsDismiss, CloseID: hitRemoteProcessDetailsClose,
 	})
 	dialog.Body(func() {
@@ -406,11 +403,8 @@ func (state *State) remoteProcessDetailsKey(event gfx.KeyEvent) (gfx.EventResult
 		if result, handled := state.remoteDetailTextShortcut(event, &state.remote.processDetails.text); handled {
 			return result, true
 		}
-		details := &state.remote.processDetails
-		if result, handled := state.remoteDetailKeyboardScroll(
-			event, &details.text,
-			hitRemoteProcessDetailsText, hitRemoteProcessDetailsScroll,
-		); handled {
+		if result, handled := state.remoteDetailKeyboardScroll(event, &state.remote.processDetails.text,
+			hitRemoteProcessDetailsText, hitRemoteProcessDetailsScroll); handled {
 			return result, true
 		}
 		if event.Key == gfx.KeyEscape && !event.Repeat {

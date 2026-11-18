@@ -217,15 +217,19 @@ func TestProcessMenuIsThePageControlMenuInTheNativeToolsWindow(t *testing.T) {
 		size := gfx.Size{Width: 1100, Height: 780}
 		var canvas gfx.Canvas
 		w.paint(&canvas, size)
-		table, ok := hitByLabelRole(&canvas, w.ui.messages.Tools.RemoteTabProcesses, gfx.RoleGroup)
-		if !ok {
+		if _, ok := hitByLabelRole(&canvas, w.ui.messages.Tools.RemoteTabProcesses, gfx.RoleListBox); !ok {
 			t.Fatal("the process table is not a page control")
 		}
-		bounds := w.ui.remote.tableBodyBounds
+		rowID := w.ui.remote.lists[remoteProcesses].RowID(0)
+		row, ok := hitByID(&canvas, rowID)
+		if !ok {
+			t.Fatal("the first process row is not painted")
+		}
+		bounds := row.Bounds
 		event := gfx.PointerEvent{
 			Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary,
-			X: bounds.X + bounds.Width/2, Y: bounds.Y + w.ui.remote.tableRowHeight/2,
-			Target: table.ID, Viewport: size,
+			X: bounds.X + bounds.Width/2, Y: bounds.Y + bounds.Height/2,
+			Target: rowID, Viewport: size,
 		}
 		if result := w.config().OnPointer(event); !result.Repaint {
 			t.Fatal("the table control did not take the right click")

@@ -2749,7 +2749,7 @@ func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
 	if result, handled := state.remoteContainerDetailsScrollPointer(event); handled {
 		return result
 	}
-	if result, handled := state.remoteProcessScrollPointer(event); handled {
+	if result, handled := state.remoteProcessDetailsScrollPointer(event); handled {
 		return result
 	}
 	if state.chipMenu.open {

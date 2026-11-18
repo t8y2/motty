@@ -20,22 +20,23 @@ func TestRemoteProcessTableFillsTheViewportAfterScrolling(t *testing.T) {
 		}
 	}
 	state.remote.rows = rows
-	state.remote.processScroll = 1_000_000
 
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	state.remote.processScroll = state.remote.processScrollBar.MaxOffsetY
+	scroll := state.remote.tableScroll
+	if scroll == nil || scroll.Max() <= 0 {
+		t.Fatal("the scrolled snapshot has no scroll range")
+	}
+	scroll.ScrollToEnd()
 	canvas = gfx.Canvas{}
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 
-	viewport := state.remote.processScrollBar.Viewport
-	_, rowHeight := state.remoteProcessTableMetrics()
-	if state.remote.processScrollBar.MaxOffsetY <= 0 {
-		t.Fatal("the scrolled snapshot has no scroll range")
+	list := &state.remote.lists[remoteProcesses]
+	first, last := list.Visible()
+	if first <= 0 || last < len(rows)-1 {
+		t.Fatalf("the last rows are not painted at the bottom: first=%d last=%d rows=%d", first, last, len(rows))
 	}
-	first := state.remote.tableBodyFirst
-	visible := int(viewport.Height/rowHeight) + 2
-	if first <= 0 || first+visible < len(rows) {
-		t.Fatalf("the last rows are not painted at the bottom: first=%d visible=%d rows=%d", first, visible, len(rows))
+	if !remoteCanvasHasText(&canvas, rows[len(rows)-1].cells[0]) {
+		t.Fatal("the last row is not painted after scrolling to the end")
 	}
 }
