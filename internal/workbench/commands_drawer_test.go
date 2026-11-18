@@ -40,6 +40,127 @@ func TestCommandTagClickRoutes(t *testing.T) {
 	}
 }
 
+// Sending a quick command from the bar must hand the keyboard back to the
+// terminal, or the next Enter types wherever the pointer happens to be.
+func TestClickingACommandChipReturnsTheKeyboardToTheTerminal(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	world.connectFirst(t, state)
+	state.activeSection = sectionTerminal
+	state.snippets.list = []snippet{{Name: "ls", Command: "ls", Run: true}}
+	state.commands.shown = true
+	state.Click(hitCommandsTag.At(0))
+	want := state.activeTerminalFocusHit()
+	if want.IsZero() {
+		t.Fatal("no terminal focus target")
+	}
+	if state.pendingFocus != want {
+		t.Fatalf("pending focus = %v, want the terminal %v", state.pendingFocus, want)
+	}
+	canvas, _ := paintAt(state, gfx.Size{Width: 1200, Height: 800})
+	if got := canvas.FocusRequest(); got != want {
+		t.Fatalf("paint asked for focus %v, want the terminal %v", got, want)
+	}
+	if !state.pendingFocus.IsZero() {
+		t.Fatal("the focus request was not consumed")
+	}
+}
+
+// The focus a chip asked for must not be taken while a dialog is up (the
+// dialog keeps its own first field), and must still be cleared so it cannot
+// steal the keyboard later.
+func TestAQuickCommandKeepsADialogsKeyboardAndDropsItsFocus(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	world.connectFirst(t, state)
+	state.activeSection = sectionTerminal
+	state.modal = modalSnippetVariables
+	state.pendingFocus = state.activeTerminalFocusHit()
+	canvas, _ := paintAt(state, gfx.Size{Width: 1200, Height: 800})
+	if got := canvas.FocusRequest(); !got.IsZero() {
+		t.Fatalf("paint asked for %v while a dialog was up", got)
+	}
+	if !state.pendingFocus.IsZero() {
+		t.Fatal("the focus request was not dropped with the dialog up")
+	}
+}
+
+// A page that cannot take the keyboard (the snippets page) must drop the
+// request too, not hold it for a later paint to grab the keyboard.
+func TestAQuickCommandDropsFocusOnANonTerminalPage(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	world.connectFirst(t, state)
+	state.activeSection = sectionSnippets
+	state.pendingFocus = state.activeTerminalFocusHit()
+	canvas, _ := paintAt(state, gfx.Size{Width: 1200, Height: 800})
+	if got := canvas.FocusRequest(); !got.IsZero() {
+		t.Fatalf("paint asked for %v on the snippets page", got)
+	}
+	if !state.pendingFocus.IsZero() {
+		t.Fatal("the focus request was not dropped on a non-terminal page")
+	}
+}
+
+// Cancelling or closing the variables dialog opened from the command bar must
+// also bring the keyboard back to the terminal.
+func TestCancellingTheVariablesDialogReturnsTheKeyboardToTheTerminal(t *testing.T) {
+	for _, id := range []gfx.ID{hitSnippetVarCancel, hitSnippetVarClose} {
+		world, options := newSharingWorld(t)
+		state := newTestState(t, options)
+		world.connectFirst(t, state)
+		state.activeSection = sectionTerminal
+		state.modal = modalSnippetVariables
+		state.snippetPrompt.fromPage = false
+		state.pendingFocus = gfx.ID{}
+		state.clickSnippetVariablesDialog(id)
+		want := state.activeTerminalFocusHit()
+		if want.IsZero() {
+			t.Fatal("no terminal focus target")
+		}
+		if state.pendingFocus != want {
+			t.Fatalf("%v: pending focus = %v, want the terminal %v", id, state.pendingFocus, want)
+		}
+	}
+}
+
+// Cancelling a dialog opened from the snippets page stays on that page: it
+// must not queue a terminal focus request.
+func TestCancellingTheVariablesDialogFromThePageKeepsThePage(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	world.connectFirst(t, state)
+	state.activeSection = sectionSnippets
+	state.modal = modalSnippetVariables
+	state.snippetPrompt.fromPage = true
+	state.pendingFocus = gfx.ID{}
+	state.clickSnippetVariablesDialog(hitSnippetVarCancel)
+	if !state.pendingFocus.IsZero() {
+		t.Fatal("cancelling from the snippets page asked for the terminal")
+	}
+}
+
+// A quick command with variables opens a dialog instead of sending; sending it
+// must bring the keyboard back to the terminal the command went to.
+func TestSubmittingTheSnippetVariablesDialogReturnsTheKeyboardToTheTerminal(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	world.connectFirst(t, state)
+	state.activeSection = sectionTerminal
+	state.modal = modalSnippetVariables
+	state.snippets.list = []snippet{{Name: "ls", Command: "ls", Run: true}}
+	state.snippetPrompt.snippetIndex = 0
+	state.snippetPrompt.targetSessionID = state.sessions[0].ID
+	state.submitSnippetVariables()
+	want := state.activeTerminalFocusHit()
+	if want.IsZero() {
+		t.Fatal("no terminal focus target")
+	}
+	if state.pendingFocus != want {
+		t.Fatalf("pending focus = %v, want the terminal %v", state.pendingFocus, want)
+	}
+}
+
 // The drawer reserves no space off the terminal page, a fixed single-bar height on
 // the terminal page, and nothing once closed.
 func TestCommandDrawerHeight(t *testing.T) {
