@@ -62,6 +62,50 @@ func TestDetailsLoginSessionsAreOptionalBoundedAndSanitized(t *testing.T) {
 	}
 }
 
+// TestDetailsCommandListsNetworkFilesystems guards #995: `df -l` reported only
+// local filesystems, so NFS/SMB/CIFS data volumes never reached the monitor.
+func TestDetailsCommandListsNetworkFilesystems(t *testing.T) {
+	if strings.Contains(detailsCommand, "-Pk -l") || strings.Contains(detailsCommand, "-l 2>") {
+		t.Fatal("df -l restricts the listing to local filesystems, hiding NFS/SMB mounts")
+	}
+	if !strings.Contains(detailsCommand, "df -Pk") {
+		t.Fatal("the disk listing no longer invokes df -Pk")
+	}
+	if !strings.Contains(detailsCommand, `command -v timeout`) || !strings.Contains(detailsCommand, `timeout 2 df -Pk`) {
+		t.Fatal("the disk listing is not bounded, so a stale network mount could stall every sample")
+	}
+}
+
+// TestDetailsKeepsANetworkMount demonstrates that df output for an NFS/CIFS
+// volume parses into a real, non-virtual disk just like a local one.
+func TestDetailsKeepsANetworkMount(t *testing.T) {
+	data := detailsFixture +
+		"disk\t998244352\t917385216\t80859136\t92%\t0\t/data1\n" +
+		"disk\t121831424\t110000000\t11831424\t91%\t0\t/mnt/nas share\n"
+	details, err := parseDetails([]byte(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var foundData, foundShare bool
+	for _, disk := range details.Disks {
+		switch disk.Path {
+		case "/data1":
+			foundData = true
+			if disk.Virtual {
+				t.Fatalf("network mount %q was marked virtual", disk.Path)
+			}
+		case "/mnt/nas share":
+			foundShare = true
+			if disk.Virtual {
+				t.Fatalf("network mount %q was marked virtual", disk.Path)
+			}
+		}
+	}
+	if !foundData || !foundShare {
+		t.Fatalf("network mounts missing: data1=%v share=%v disks=%+v", foundData, foundShare, details.Disks)
+	}
+}
+
 func TestNetworkRatesHandleCounterResetAndNewInterfaces(t *testing.T) {
 	before := Details{Networks: []Network{{Name: "eth0", Received: 1000, Sent: 500}, {Name: "reset", Received: 999, Sent: 999}}}
 	after := Details{Networks: []Network{{Name: "eth0", Received: 3000, Sent: 1500}, {Name: "reset", Received: 1, Sent: 1}, {Name: "new", Received: 5000, Sent: 5000}}}

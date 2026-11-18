@@ -141,7 +141,7 @@ func (state *State) diagnosticReport() string {
 	report.Fact("connection", fmt.Sprintf("timeout=%ds keepalive=%ds reconnect=%s restore=%s share=%s",
 		saved.ConnectionTimeoutSeconds, saved.ConnectionKeepAliveSeconds, saved.ConnectionReconnect, saved.RestoreConnect, saved.ShareConnections))
 	report.Fact("files", fmt.Sprintf("parallel=%d keep-times=%q follow=%q", saved.SFTPParallel, saved.SFTPKeepTimes, saved.SFTPFollow))
-	report.Fact("automatic update check", saved.UpdateCheck != "off")
+	report.Fact("automatic update check", saved.UpdateCheck == "on")
 	if saved.OutboundProxy != nil {
 		report.Fact("outbound proxy", saved.OutboundProxy.Kind)
 	}

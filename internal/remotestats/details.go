@@ -132,6 +132,11 @@ func (w *DetailsWorker) Close() {
 	}
 }
 
+// detailsCommand enumerates every mounted filesystem, not just local ones:
+// `df -l` used to hide NFS/SMB/CIFS mounts, which are exactly the large data
+// volumes on research clusters and NAS hosts. The disk listing is bounded with
+// timeout(1) when available so one stale network mount cannot stall the whole
+// sample; a filesystem already listed keeps its lines even if df is stopped.
 const detailsCommand = `# motty-monitor-details-v1
 LC_ALL=C
 export LC_ALL
@@ -140,7 +145,9 @@ cores=$(awk '/^cpu[0-9]+ / { n++ } END { print n+0 }' /proc/stat)
 read -r load1 load5 load15 _ </proc/loadavg
 read -r uptime _ </proc/uptime
 printf 'info\t%s\t%s\t%s\t%s\t%s\t%s\n' "$cores" "$load1" "$load5" "$load15" "$uptime" "$(uname -r)"
-df -Pk -l 2>/dev/null | awk 'NR>1 && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ {
+dfcmd="df -Pk"
+if command -v timeout >/dev/null 2>&1; then dfcmd="timeout 2 df -Pk"; fi
+$dfcmd 2>/dev/null | awk 'NR>1 && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ {
     mount=$0; for (i=0;i<5;i++) sub(/^[ \t]*[^ \t]+[ \t]+/, "", mount)
     virtual=($1=="tmpfs" || $1=="devtmpfs" || mount ~ /^\/(dev|sys|proc|run)(\/|$)/ || mount ~ /^\/snap\// || mount ~ /^\/etc\/(hosts|hostname|resolv.conf)$/)
     printf "disk\t%s\t%s\t%s\t%s\t%d\t%s\n", $2,$3,$4,$5,virtual,mount

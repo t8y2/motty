@@ -588,7 +588,9 @@ func (state *State) restoreSFTPSettings(saved savedState) {
 	if state.defaultEditor == editorCustom && state.customEditorPath == "" {
 		state.defaultEditor = editorNone
 	}
-	state.updateAtStart = saved.UpdateCheck != "off"
+	// Off unless the user turned it on: README and the website promise the
+	// update check is off by default ("Nothing phones home").
+	state.updateAtStart = saved.UpdateCheck == "on"
 	state.closeAction = closeActionFromString(saved.CloseAction)
 	state.relaunchAction = relaunchActionFromString(saved.RelaunchAction)
 	state.trayHintShown = saved.TrayHintShown

@@ -357,7 +357,7 @@ func TestCheckingForUpdatesSaysSoWhenCurrentOrFailed(t *testing.T) {
 	}
 }
 
-func TestTheAutoCheckIsOnByDefaultRunsAndCanBeTurnedOff(t *testing.T) {
+func TestTheAutoCheckIsOffByDefaultAndRunsWhenTurnedOn(t *testing.T) {
 	_, options := newWorld(t)
 	options.Invalidate = func() {}
 	options.CheckUpdate = func() (update.Release, error) {
@@ -365,10 +365,19 @@ func TestTheAutoCheckIsOnByDefaultRunsAndCanBeTurnedOff(t *testing.T) {
 	}
 	state := New(options)
 	t.Cleanup(state.Close)
-	if !state.updateAtStart {
-		t.Fatal("the automatic check is not on by default")
+	// README and the website promise the update check is off until the user
+	// turns it on, so a fresh profile must not phone home or arm a timer.
+	if state.updateAtStart {
+		t.Fatal("the automatic check is on by default; the documentation promises it is off")
+	}
+	if state.update.timer != nil {
+		t.Fatal("a default-off profile armed an update timer")
 	}
 	state.update.firstDelay, state.update.every = time.Millisecond, time.Hour
+	state.Click(hitSettingsUpdateStartToggle)
+	if !state.updateAtStart {
+		t.Fatal("turning the check on did not enable it")
+	}
 	waitUpdate(t, state, func() bool { return state.update.available })
 	if !strings.Contains(state.status, "99.0.0") {
 		t.Fatalf("status %q does not announce the version", state.status)
@@ -398,6 +407,7 @@ func TestTheAutoCheckAsksAgainAfterItsInterval(t *testing.T) {
 	state := New(options)
 	t.Cleanup(state.Close)
 	state.update.firstDelay, state.update.every = time.Millisecond, 5*time.Millisecond
+	state.updateAtStart = true // the automatic check is off by default now
 	waitUpdate(t, state, func() bool { return calls.Load() >= 2 })
 }
 
