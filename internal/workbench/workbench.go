@@ -3240,11 +3240,6 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		state.submitOutboundProxy()
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	if state.modal == modalForm {
-		if result, handled := state.formKey(event); handled {
-			return result
-		}
-	}
 	if state.modal == modalForm && event.Key == gfx.KeyEnter && !event.Repeat && state.formEditor(event.Target) != nil && state.multilineField(event.Target) == nil {
 		state.submitForm()
 		return gfx.EventResult{Handled: true, Repaint: true}
