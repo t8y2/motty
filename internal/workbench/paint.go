@@ -216,7 +216,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.windowPage().Draw(canvas, bounds, state.declareShell)
 		state.paintDesktopDetails(canvas, session, bounds)
 		state.endMenus()
-		state.paintTransferProgressCard(canvas)
 		state.tooltip.Paint(canvas, state.Theme(), state.windowRect(), components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
 		state.fileNotices.paint(canvas, state.Theme(), state.windowRect())
 		return
@@ -343,14 +342,12 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	state.paintQueuedSFTPHeaderMenu(canvas)
 	state.paintHostMenus(canvas, viewport)
 	state.endMenus()
-	state.paintTransferDetails(canvas, viewport)
 	state.requestReconnectFrames(canvas)
 	state.requestAutofillFrames(canvas)
 	state.requestLoginCommandFrames(canvas)
 	state.requestInjectionFrames(canvas)
 	state.requestIdleKeepAliveFrames(canvas)
 	state.paintLocalProxyFocus(canvas)
-	state.paintTransferProgressCard(canvas)
 	// Last, so a tooltip is never covered by what it describes.
 	if _, formatting := canvas.Hovered().In(hitNoteFormats); !formatting {
 		state.tooltip.Paint(canvas, state.Theme(), viewport, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
@@ -499,16 +496,6 @@ func (state *State) WindowConfig(base app.Config) app.Config {
 // the wheel over its backdrop: the panel keeps still behind it, as it did when
 // its list was painted by hand and the window's own handler saw the event first.
 func (state *State) scrollWindow(event gfx.ScrollEvent) gfx.EventResult {
-	if state.transfers.open && state.transferCenterAvailable() {
-		if !state.transfers.selectOpen.IsZero() {
-			if result, handled := state.menuWheel(event); handled {
-				return result
-			}
-		}
-		if result, handled := state.transferCenterScroll(event); handled {
-			return result
-		}
-	}
 	if state.hostGroupMenu {
 		// The move picker and its backdrop own the wheel over the host list.
 		return state.Scroll(event)
@@ -603,6 +590,7 @@ func (state *State) declareShell(c ui.C) {
 	// and picture area in the same page, with no shell around them.
 	if session := state.fullscreenDesktop(); session != nil {
 		state.declareDesktopBody(c, session, gfx.Rect{Width: state.viewport.Width, Height: state.viewport.Height})
+		state.declareTransferProgressCards(c)
 		return
 	}
 	chrome, pal := &state.chrome, state.pal
@@ -683,6 +671,7 @@ func (state *State) declareShell(c ui.C) {
 	state.declareTabDragOverlays(c)
 	state.declareWorkspaceCardDragOverlay(c)
 	state.declareToolbarDockDragOverlay(c)
+	state.declareTransferProgressCards(c)
 }
 
 // windowBarGeometry lays the bar out once without its contents to find out how

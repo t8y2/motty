@@ -2084,9 +2084,6 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if result, handled := state.remoteProcessWheel(event); handled {
 		return result
 	}
-	if result, handled := state.transferCenterScroll(event); handled {
-		return result
-	}
 	if result, handled := state.menuWheel(event); handled {
 		return result
 	}

@@ -53,10 +53,10 @@ func (state *State) declareTransferTaskRow(c ui.C, row ui.Box, rowID gfx.ID, ind
 		})
 		ref := transferDetailRow{entry: index, id: entry.id}
 		if hover {
-			details.hover = ref
+			details.hover, details.hoverBox = ref, name
 		}
 		if entry.id == details.pinned || details.pinned == 0 && entry.id == details.showing {
-			details.current = ref
+			details.current, details.currentBox = ref, name
 		}
 		direction := transferDirectionOf(entry.snapshot.Operation)
 		state.declareTransferDirection(c, direction, width < 630)

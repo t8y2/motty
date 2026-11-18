@@ -64,10 +64,11 @@ func (w *sftpWindow) declareQueue(c ui.C, bounds, origin gfx.Rect) {
 	view := &w.ui
 	list := gfx.Rect{X: bounds.X, Y: bounds.Y + sftpQueueHeaderHeight, Width: bounds.Width, Height: max(bounds.Height-sftpQueueHeaderHeight, 0)}
 	view.queueBounds = list
-	view.queueDetails.hover, view.queueDetails.current = transferDetailRow{}, transferDetailRow{}
+	view.queueDetails.beginPaint()
 	contentHeight := float32(len(view.queueEntries)) * transferRowHeight
 	view.queueOffset = max(0, min(view.queueOffset, contentHeight-list.Height))
 	if list.Height <= 0 || list.Width <= 12 {
+		view.queueDetails.dismiss()
 		return
 	}
 	ui.Column(c).Absolute().Left(list.X - origin.X).Top(list.Y - origin.Y).
@@ -85,7 +86,19 @@ func (w *sftpWindow) declareQueue(c ui.C, bounds, origin gfx.Rect) {
 				Width(width).Height(transferRowHeight).PadX(8).Gap(9).Items(ui.Center)
 			w.owner.declareTransferTaskRow(c, row, sftpWindowQueueRows.At(id), index, width, &view.queueDetails, true)
 		}
+		w.owner.declareTransferDetailCard(c, &view.queueDetails, sftpWindowQueueRows, hitSFTPQueueDetails, hitSFTPQueueDetailsDismiss, w.queueDetailsAllowed())
 	})
+}
+
+// queueDetailsAllowed reports whether the window's transient states leave the
+// queue's pointer preview alone.
+func (w *sftpWindow) queueDetailsAllowed() bool {
+	view, state := &w.ui, w.owner
+	return view.barDrag == 0 && !w.drag.armed && !w.drag.active && !view.splitting &&
+		!view.menuOpen && !w.headerMenuOpen() && !view.profileQuickOpen &&
+		!w.view.bookmarksOpen && !w.bookmark.open && !w.fileProperties.open &&
+		w.view.dialog == sftpDialogNone && !w.closeConfirm && w.externalConflict == 0 &&
+		!(w.window == nil && (state.transfers.open || !state.transferCenterAvailable()))
 }
 
 func (w *sftpWindow) paintQueue(canvas *gfx.Canvas, bounds, viewport gfx.Rect) {
@@ -102,16 +115,9 @@ func (w *sftpWindow) paintQueue(canvas *gfx.Canvas, bounds, viewport gfx.Rect) {
 		Offset(0, view.queueOffset).VerticalScrollbar(hitSFTPWindowQueueBar, label, "")
 	view.queueBar = area.EndContent()
 
-	_, headerMenuOpen := w.headerMenu()
-	if view.barDrag != 0 || w.drag.armed || w.drag.active || view.splitting || view.menuOpen || headerMenuOpen ||
-		view.profileQuickOpen || w.view.bookmarksOpen || w.bookmark.open || w.fileProperties.open ||
-		w.view.dialog != sftpDialogNone || w.closeConfirm || w.externalConflict != 0 ||
-		(w.window == nil && (state.transfers.open || !state.transferCenterAvailable())) {
+	if !w.queueDetailsAllowed() {
 		view.queueDetails.dismiss()
-		return
 	}
-	state.paintTransferDetailCard(canvas, viewport, view.queueBounds, &view.queueDetails,
-		sftpWindowQueueRows, hitSFTPQueueDetails, hitSFTPQueueDetailsDismiss)
 }
 
 func (w *sftpWindow) clickQueueDetails(id gfx.ID) bool {

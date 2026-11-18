@@ -2593,9 +2593,6 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result, handled := state.windowBarScrollPointer(event); handled {
 		return result
 	}
-	if result, handled := state.transferCenterPointer(event); handled {
-		return result
-	}
 	if state.aiTrackPointer(event) {
 		defer func() { outcome.Repaint = true }()
 	}

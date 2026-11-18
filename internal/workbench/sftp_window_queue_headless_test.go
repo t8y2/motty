@@ -77,7 +77,7 @@ func TestSFTPWindowQueuePreview(t *testing.T) {
 			}
 			var labels strings.Builder
 			for _, label := range view.Snapshot().Texts {
-				if label.Layer == hoverCardLayer {
+				if pointInRect(label.Bounds.X, label.Bounds.Y, card) {
 					labels.WriteString(label.Value)
 					labels.WriteByte('\n')
 				}
@@ -108,7 +108,7 @@ func TestSFTPWindowQueuePreview(t *testing.T) {
 				t.Fatal("click did not keep the failed task's details open")
 			}
 			for _, label := range view.Snapshot().Texts {
-				if label.Layer == hoverCardLayer && label.Value == "连接超时" {
+				if label.Value == "连接超时" {
 					save("-failed")
 					if mode == "tab" {
 						dualClickID(t, view, hitTransferCenter)
