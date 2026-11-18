@@ -107,6 +107,7 @@ type Host struct {
 	NoAudio          bool
 	StandardSecurity bool
 	Chromeless       bool
+	FollowResolution bool // RDP only: request the local pane size from the server.
 
 	// localShell is the shell a local terminal was opened with: a program path,
 	// or a WSL distribution as localshell.WSLShell names it. Empty starts the

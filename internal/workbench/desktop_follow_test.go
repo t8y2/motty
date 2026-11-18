@@ -106,7 +106,7 @@ func (f *frames) paint(size gfx.Size, at time.Duration) {
 	f.canvas.EndFrame()
 }
 
-func followState(t *testing.T, scale float32, can bool, size gfx.Size) (*State, *Session, *followingDesktop, *desktopRequest, *frames) {
+func followState(t *testing.T, scale float32, can, follow bool, size gfx.Size) (*State, *Session, *followingDesktop, *desktopRequest, *frames) {
 	t.Helper()
 	_, options := newWorld(t)
 	state := newTestState(t, options)
@@ -126,7 +126,7 @@ func followState(t *testing.T, scale float32, can bool, size gfx.Size) (*State, 
 	screen := newFrames(state, scale)
 	screen.paint(size, 0)
 	eventCanvases[state] = &screen.canvas // events go through the canvas that knows the scale
-	addStreamHost(state, Host{Label: "Win", Address: "win.example.com", User: "alice", Protocol: protocolRDP})
+	addStreamHost(state, Host{Label: "Win", Address: "win.example.com", User: "alice", Protocol: protocolRDP, FollowResolution: follow})
 	openHost(state)
 	session, _ := state.sessionByIDPointer(state.activeSessionID)
 	waitUntil(t, state, "the picture", func() bool { return session.desk != nil && session.desk.width > 0 })
@@ -135,7 +135,7 @@ func followState(t *testing.T, scale float32, can bool, size gfx.Size) (*State, 
 
 func TestRDPDesktopIsAskedForThePanesPixelsAndFollowsItOnceItSettles(t *testing.T) {
 	size := gfx.Size{Width: 1400, Height: 900}
-	state, session, server, request, screen := followState(t, 1.25, true, size)
+	state, session, server, request, screen := followState(t, 1.25, true, true, size)
 
 	area := desktopLayout(size, false).area
 	wantWidth, wantHeight := int(math.Floor(float64(area.Width)*1.25))&^1, int(math.Floor(float64(area.Height)*1.25))
@@ -206,7 +206,7 @@ func TestRDPDesktopIsAskedForThePanesPixelsAndFollowsItOnceItSettles(t *testing.
 
 func TestDesktopThatCannotFollowIsScaledAndNeverAsked(t *testing.T) {
 	size := gfx.Size{Width: 1400, Height: 900}
-	_, _, server, _, screen := followState(t, 1.25, false, size)
+	_, _, server, _, screen := followState(t, 1.25, false, true, size)
 	screen.paint(size, 10*time.Millisecond)
 	screen.paint(gfx.Size{Width: 900, Height: 700}, 20*time.Millisecond)
 	screen.paint(gfx.Size{Width: 900, Height: 700}, time.Second)

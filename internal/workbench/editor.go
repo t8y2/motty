@@ -131,6 +131,7 @@ type hostEditor struct {
 	// (administrative) session, muting remote sound, and Standard RDP Security
 	// without TLS or NLA.
 	viaSSH, clipboard, console, noAudio, standardSecurity, chromeless bool
+	followResolution                                                  bool
 	// ports are the serial ports found when the picker was last opened.
 	ports     []serial.Port
 	portsOpen bool
@@ -362,6 +363,7 @@ func (editor *hostEditor) load(host Host) {
 	editor.viaSSH, editor.clipboard, editor.chromeless = host.ViaSSH, host.Clipboard, host.Chromeless
 	editor.console = host.Protocol == protocolRDP && host.Console
 	editor.noAudio = host.Protocol == protocolRDP && host.NoAudio
+	editor.followResolution = host.Protocol == protocolRDP && host.FollowResolution
 	editor.standardSecurity = host.Protocol == protocolRDP && host.StandardSecurity
 	editor.portsOpen = false
 	if host.Protocol == protocolSerial {
@@ -397,6 +399,7 @@ func (editor *hostEditor) host(id uint32) Host {
 	if editor.protocol == protocolRDP {
 		host.Console = editor.console
 		host.NoAudio = editor.noAudio
+		host.FollowResolution = editor.followResolution
 		host.StandardSecurity = editor.standardSecurity
 	}
 	if editor.protocol == protocolSSH {
@@ -477,6 +480,7 @@ func (editor *hostEditor) reset() {
 	editor.port.Insert(strconv.Itoa(defaultPort))
 	editor.protocol, editor.terminal, editor.flow, editor.portsOpen = protocolSSH, terminalSSH, serial.FlowNone, false
 	editor.viaSSH, editor.clipboard, editor.console, editor.noAudio, editor.standardSecurity, editor.chromeless = false, false, false, false, false, false
+	editor.followResolution = false
 }
 
 // defaultPortText is what the port field holds for a protocol until the user

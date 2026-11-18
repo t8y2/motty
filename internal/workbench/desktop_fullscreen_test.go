@@ -139,8 +139,48 @@ func hitByIDInSnapshot(snapshot app.Snapshot, id gfx.ID) (gfx.Hit, bool) {
 	return gfx.Hit{}, false
 }
 
+func TestRDPDefaultFitKeepsRemoteResolutionInWindowAndFullscreen(t *testing.T) {
+	size := gfx.Size{Width: 1400, Height: 900}
+	state, session, server, request, screen := followState(t, 1, true, false, size)
+	if request.Width != 0 || request.Height != 0 || request.Scale != 0 {
+		t.Fatalf("default connection used the local pane's resolution: %dx%d at %v", request.Width, request.Height, request.Scale)
+	}
+
+	smaller := gfx.Size{Width: 900, Height: 700}
+	screen.paint(smaller, time.Second)
+	screen.paint(smaller, time.Second+desktopResizeDelay)
+	if _, scale := session.desk.place(session.desk.area); scale >= 1 {
+		t.Fatalf("fixed desktop should scale down to fit the pane, got %v", scale)
+	}
+
+	driver := desktopDriver(t, state)
+	state.toggleDesktopFullscreen(session)
+	if err := repaintDesktopDriver(driver, state); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.Advance(desktopResizeDelay + time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if !driver.Fullscreen() || state.fullscreenDesktop() != session || len(pictureTiles(eventCanvases[state])) == 0 {
+		t.Fatal("the fixed-resolution desktop was not painted fullscreen")
+	}
+	state.toggleDesktopFullscreen(session)
+	if err := repaintDesktopDriver(driver, state); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.Advance(desktopResizeDelay + time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if driver.Fullscreen() || session.desk.fullscreen {
+		t.Fatal("the desktop did not exit fullscreen")
+	}
+	if got := server.asked(); len(got) != 0 {
+		t.Fatalf("window and fullscreen changes requested a remote resize: %v", got)
+	}
+}
+
 func TestRDPFullscreenFollowsMonitorPixelsAndLeavesForDialogs(t *testing.T) {
-	state, session, server, _, _ := followState(t, 1, true, gfx.Size{Width: 1400, Height: 900})
+	state, session, server, _, _ := followState(t, 1, true, true, gfx.Size{Width: 1400, Height: 900})
 	driver := desktopDriver(t, state)
 	state.toggleDesktopFullscreen(session)
 	if err := repaintDesktopDriver(driver, state); err != nil {
@@ -162,7 +202,7 @@ func TestRDPFullscreenFollowsMonitorPixelsAndLeavesForDialogs(t *testing.T) {
 }
 
 func TestDesktopFullscreenFailureHasVisibleFeedbackAndDoesNotChangeLayout(t *testing.T) {
-	state, session, _, _, _ := followState(t, 1, false, gfx.Size{Width: 1400, Height: 900})
+	state, session, _, _, _ := followState(t, 1, false, false, gfx.Size{Width: 1400, Height: 900})
 	state.SetFullscreenControl(func(bool) error { return errors.New("window manager refused") })
 	state.toggleDesktopFullscreen(session)
 	if state.winChrome.fullscreenSession != 0 || session.desk.fullscreen || len(state.fileNotices.items) != 1 {
@@ -181,7 +221,7 @@ func (s *measuredDesktop) NetworkRTT() (time.Duration, time.Time) { return s.rtt
 var _ desktop.LatencySource = (*measuredDesktop)(nil)
 
 func TestRDPLatencyShowsActualSampleOrExplicitlyUnavailableInEveryPresentation(t *testing.T) {
-	state, session, server, _, screen := followState(t, 1, false, gfx.Size{Width: 1400, Height: 900})
+	state, session, server, _, screen := followState(t, 1, false, false, gfx.Size{Width: 1400, Height: 900})
 	measured := &measuredDesktop{followingDesktop: server}
 	session.desk.session = measured
 	state.terminalShowLatency = true
@@ -245,7 +285,7 @@ func TestLiveRDPFullscreenUsesTheRealSession(t *testing.T) {
 	if domain := os.Getenv("MOTTY_RDP_DOMAIN"); domain != "" {
 		account = domain + `\` + account
 	}
-	addStreamHost(state, Host{Label: "Live RDP", Address: host, Port: uint16(port), User: account, Protocol: protocolRDP})
+	addStreamHost(state, Host{Label: "Live RDP", Address: host, Port: uint16(port), User: account, Protocol: protocolRDP, FollowResolution: true})
 	openHost(state)
 	session, _ := state.sessionByIDPointer(state.activeSessionID)
 	waitUntil(t, state, "RDP certificate question", func() bool { return state.modal == modalHostKey })

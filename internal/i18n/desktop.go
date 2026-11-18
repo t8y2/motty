@@ -28,6 +28,7 @@ type DesktopMessages struct {
 	HideBars                  string
 	ConsoleSession            string
 	RemoteAudio               string
+	FollowResolution          string
 	StandardSecurity          string
 	StandardSecurityNote      string
 	VNCPlaintext              string
