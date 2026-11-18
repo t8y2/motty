@@ -111,8 +111,12 @@ func (state *State) declareRemoteProcessDetailsBody(c ui.C, width float32, proce
 			})
 		}
 		tab := state.remoteProcessDetailTab()
-		if ui.Tabs(c, &tab, remoteProcessDetailTabIDs[:], state.remoteProcessDetailTabLabel).Width(min(float32(300), width)).Height(34).Shrink(0).MarginSides(2, 0, 0, 0).Changed() {
-			c.After(func() { state.selectRemoteProcessDetailTab(tab) })
+		strip := ui.Tabs(c, &tab, remoteProcessDetailTabIDs[:], state.remoteProcessDetailTabLabel).Width(min(float32(300), width)).Height(34).Shrink(0).MarginSides(2, 0, 0, 0)
+		// A click on the active tab asks for that read again, as the container
+		// details' strip does.
+		if index, clicked := strip.TabClicked(); clicked && index >= 0 && index < len(remoteProcessDetailTabIDs) {
+			id := remoteProcessDetailTabIDs[index]
+			c.After(func() { state.selectRemoteProcessDetailTab(id) })
 		}
 		if state.remoteProcessDetailTab() != hitRemoteProcessDetailsEnv {
 			// The old panel painted the status over its top 28 pixels and the

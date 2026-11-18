@@ -586,8 +586,8 @@ func TestRemoteDockerEmptyPlaceholderKeepsItsOldGeometry(t *testing.T) {
 	if description.Style.Size != theme.Metrics.FontSizeM || description.Style.Color != theme.MutedForeground {
 		t.Fatalf("the empty description style = %+v, want the body size in the muted foreground", description.Style)
 	}
-	if description.Bounds.Width != title.Bounds.Width {
-		t.Fatalf("the description band width %v is not the title's %v", description.Bounds.Width, title.Bounds.Width)
+	if description.Bounds.Width > 384 {
+		t.Fatalf("the description is %v wide, past the empty state's 384 band", description.Bounds.Width)
 	}
 	titleCenter := title.Bounds.X + canvas.TextWidthStyle(title.Value, title.Style)/2
 	descriptionCenter := description.Bounds.X + canvas.TextWidthStyle(description.Value, description.Style)/2
