@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -20,6 +21,16 @@ func TestPaintGoldenBookmarkDialog(t *testing.T) {
 			_, w, _, host, _ := dualSFTPFixture(t, scale)
 			view := host.windows[0].view
 			w.session.host.CatalogID = "native-bookmark"
+			if runtime.GOOS == "linux" || runtime.GOOS == "windows" {
+				// Keep the bookmark and the breadcrumb width independent of t.TempDir.
+				local := "/fixture/local"
+				if runtime.GOOS == "windows" {
+					local = filepath.FromSlash("C:/fixture/local")
+				}
+				folder := &w.view.lfolder
+				folder.path = local
+				folder.crumbs = prepareLocalCrumbs(folder.crumbs, local)
+			}
 			w.window.Invalidate()
 			view.Driver().Pump()
 			r := dualHit(t, view, hitSFTPLocationProfiles)
@@ -43,7 +54,7 @@ func TestPaintGoldenBookmarkDialog(t *testing.T) {
 				fmt.Fprintf(&b, "hit %q %v %v %v\n", tempNames.ReplaceAllString(h.Label, "TMP"), h.Role, h.Bounds, h.Disabled)
 			}
 			got := b.String()
-			path := filepath.Join("testdata", "paint", name+".txt")
+			path := paintGoldenPath(name)
 			if os.Getenv("UPDATE_PAINT_GOLDEN") != "" {
 				if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
 					t.Fatal(err)

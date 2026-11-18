@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -86,7 +85,7 @@ func TestPaintGoldenLocalProxyConnected(t *testing.T) {
 			var canvas gfx.Canvas
 			state.Paint(&canvas, paintDesktop)
 			got := dumpWithoutPorts(&canvas)
-			path := filepath.Join("testdata", "paint", name+".txt")
+			path := paintGoldenPath(name)
 			if os.Getenv("UPDATE_PAINT_GOLDEN") != "" {
 				if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
 					t.Fatal(err)

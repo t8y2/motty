@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"fmt"
+	"runtime"
 	"testing"
 
 	"github.com/vivaui/viva/gfx"
@@ -15,6 +16,10 @@ func init() {
 			continue // it shows the path of the test binary
 		}
 		extraPaintScenes = append(extraPaintScenes, plainScene(fmt.Sprintf("g6-settings-%d", category), func(t *testing.T, s *State) {
+			s.options.SSHConfigPath = "/fixture/ssh/config"
+			if runtime.GOOS == "windows" || runtime.GOOS == "linux" {
+				s.sftpDownloadDirectory = "/fixture/Downloads"
+			}
 			s.openSettings()
 			s.selectSettingsCategory(category)
 		}))

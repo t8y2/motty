@@ -5,10 +5,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vivaui/viva/gfx"
 
@@ -204,7 +206,28 @@ func basePaintScenes() []paintScene {
 	return scenes
 }
 
+// The workbench includes the titlebar in a snapshot. Viva draws window
+// controls on the trailing edge on Linux and Windows, and macOS reserves room
+// for native controls on the leading edge.
+func paintGoldenPath(name string) string {
+	dir := filepath.Join("testdata", "paint")
+	if runtime.GOOS == "windows" || runtime.GOOS == "linux" {
+		dir = filepath.Join(dir, "viva-chrome")
+	}
+	if runtime.GOOS == "windows" && (strings.HasPrefix(name, "bookmark-") ||
+		strings.HasPrefix(name, "workspace-draft-") || strings.HasPrefix(name, "g6-settings-1-") ||
+		strings.HasPrefix(name, "g6-settings-3-") || strings.HasPrefix(name, "g6-settings-9-")) {
+		dir = filepath.Join(dir, "windows")
+	}
+	return filepath.Join(dir, name+".txt")
+}
+
 func TestPaintGolden(t *testing.T) {
+	if runtime.GOOS == "windows" || runtime.GOOS == "linux" {
+		zone := time.Local
+		time.Local = time.UTC
+		t.Cleanup(func() { time.Local = zone })
+	}
 	update := os.Getenv("UPDATE_PAINT_GOLDEN") != ""
 	for _, scene := range paintScenes() {
 		for _, size := range scene.sizes {
@@ -214,7 +237,7 @@ func TestPaintGolden(t *testing.T) {
 				var canvas gfx.Canvas
 				paint(&canvas, size)
 				got := paintDump(&canvas)
-				path := filepath.Join("testdata", "paint", name+".txt")
+				path := paintGoldenPath(name)
 				if update {
 					if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 						t.Fatal(err)
