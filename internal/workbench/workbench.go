@@ -941,7 +941,10 @@ type State struct {
 	syncEpoch     uint32
 	closeAsked    bool
 	trayHintShown bool
-	sync          syncState
+	// trayIconOff hides the application's status-area icon, a choice of this
+	// computer's General settings. Unset keeps the icon up.
+	trayIconOff bool
+	sync        syncState
 	// syncScope is what this computer lets cloud sync exchange. It belongs to
 	// this device, so two computers may sync different sets of content.
 	syncScope syncScope

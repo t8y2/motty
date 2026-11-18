@@ -2261,6 +2261,8 @@ var englishTools = ToolsMessages{
 	LaunchXshellEmptyFmt:            "%s has no SSH or Telnet session to open.",
 	GeneralLogin:                    "Start at login",
 	GeneralLoginDescription:         "Start Motty in the background after you sign in.",
+	GeneralTrayIcon:                 "Show system tray icon",
+	GeneralTrayIconDescription:      "Show an icon in the system tray to bring windows back and quit.",
 	GeneralClose:                    "Closing the window",
 	GeneralCloseDescription:         "After the last window closes, keep running in the tray or quit.",
 	GeneralCloseTray:                "Stay in tray",

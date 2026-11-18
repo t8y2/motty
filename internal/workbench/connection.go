@@ -229,6 +229,9 @@ type Options struct {
 	// area, which is what makes "stay there on close" a choice. Nil, or false,
 	// hides the setting.
 	StatusArea func() bool
+	// SetTrayIcon shows or hides the application's status-area icon, the choice
+	// the General settings offer beside starting at login. Nil hides the setting.
+	SetTrayIcon func(visible bool)
 	// CheckUpdate asks the release feed for the newest version. Nil asks GitHub.
 	CheckUpdate func() (update.Release, error)
 	// Updater installs a newer release over the running program. Nil, or a nil

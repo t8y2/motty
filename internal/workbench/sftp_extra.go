@@ -592,6 +592,7 @@ func (state *State) restoreSFTPSettings(saved savedState) {
 	state.closeAction = closeActionFromString(saved.CloseAction)
 	state.relaunchAction = relaunchActionFromString(saved.RelaunchAction)
 	state.trayHintShown = saved.TrayHintShown
+	state.trayIconOff = saved.TrayIconOff
 	state.update.skipped = saved.UpdateSkipped
 	clear(state.sftpBookmarks)
 	state.sftpBookmarks = state.sftpBookmarks[:0]
