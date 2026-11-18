@@ -105,7 +105,7 @@ text "Maximum steps" {434.62 447 223.38 21}
 text "How many tool calls the agent may make" {434.62 469 223.38 15}
 text "for one question." {434.62 484 223.38 15}
 text "−" {718.0625 459 28.96875 28}
-text "30" {754.03125 463 42 20}
+text "30" {766.64355 463 42 20}
 text "+" {823.03125 459 28.96875 28}
 text "Terminal context" {434.62 511 193.38 21}
 text "Lines of the visible terminal sent" {434.62 533 193.38 15}

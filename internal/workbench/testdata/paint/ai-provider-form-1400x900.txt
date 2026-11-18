@@ -135,7 +135,7 @@ text "High" {1200.0977 393 100 32}
 text "Maximum steps" {541 454.5 540 21}
 text "How many tool calls the agent may make for one question." {541 476.5 540 15}
 text "−" {1141.0625 459 28.96875 28}
-text "30" {1177.0312 463 42 20}
+text "30" {1189.6436 463 42 20}
 text "+" {1246.0312 459 28.96875 28}
 text "Terminal context" {541 518.5 400 21}
 text "Lines of the visible terminal sent with a question in Ask mode." {541 540.5 400 15}

@@ -647,6 +647,8 @@ func (state *State) bindAIInputFields() {
 		cfg.stepsInput.Insert(strconv.Itoa(state.ai.settings.maxSteps))
 	}
 	cfg.stepsField.Bind(&cfg.stepsInput)
+	// The count was centred in the hand-painted field it replaced.
+	cfg.stepsField.Alignment = gfx.AlignCenter
 }
 
 // declareAIModelField declares the field a model is added by name in.
