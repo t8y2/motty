@@ -332,7 +332,10 @@ func (state *State) declareFormDialogBody(c ui.C) {
 		for index := 0; index < form.count; index++ {
 			field := &form.fields[index]
 			if field.multiline {
-				field.area.declare(c, hitFormFieldList.At(index), &field.editor, field.label, field.placeholder, form.slotHeight(index)-4)
+				height := form.slotHeight(index) - 4
+				ui.Column(c).Height(height).Shrink(0).MarginSides(0, 0, 4, 0).Children(func() {
+					field.area.declare(c, hitFormFieldList.At(index), &field.editor, field.label, field.placeholder, height)
+				})
 			} else {
 				state.declareFormField(c, index)
 			}
