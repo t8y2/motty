@@ -25,6 +25,7 @@ type snippetPromptState struct {
 	editors         []text.Editor
 	fields          []ui.Field
 	fieldBound      []bool
+	rows            []ui.FormFieldState
 	dialogError     string
 	// list is the fields' scroll area, and preview the box the resolved
 	// command is shown in; both are what the last paint laid out, so the
@@ -73,6 +74,7 @@ func (state *State) openSnippetVariablesDialog(index int, targetSessionID uint32
 		editors:         editors,
 		fields:          make([]ui.Field, len(defs)),
 		fieldBound:      make([]bool, len(defs)),
+		rows:            make([]ui.FormFieldState, len(defs)),
 	}
 	state.modal = modalSnippetVariables
 }
@@ -156,8 +158,12 @@ func (state *State) declareSnippetVariablesDialogBody(c ui.C, preview string) {
 				if def.HasDefault {
 					placeholder = fmt.Sprintf(m.SnippetVarDefaultFmt, def.DefaultValue)
 				}
-				ui.TextFieldID(c, hitSnippetVarList.At(i), &prompt.fields[i], def.Name, placeholder).
-					Height(snippetVarFieldHeight).MarginSides(0, 0, snippetVarFieldGap, 0)
+				// A labelled form field, as the hand-painted dialog showed each
+				// variable's name above its input.
+				ui.FormField(c, &prompt.rows[i], def.Name).Height(snippetVarFieldHeight).FillWidth().
+					MarginSides(0, 0, snippetVarFieldGap, 0).Children(func() {
+					ui.TextFieldID(c, hitSnippetVarList.At(i), &prompt.fields[i], def.Name, placeholder).FillWidth()
+				})
 			}
 		})
 		prompt.list, prompt.listSet = list, true
