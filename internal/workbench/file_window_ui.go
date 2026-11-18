@@ -199,7 +199,7 @@ func (d *fileDocument) declareEncoding(c ui.C, bounds gfx.Rect) {
 	ui.Row(c).Width(min(220, bounds.Width*.4)).Height(32).Gap(4).Items(ui.Center).Shrink(0).Children(func() {
 		ui.Text(c, m.Encoding+":").FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).LineHeight(22).Shrink(0)
 		selector := ui.Select(c, &d.ui.encodingChoice, d.ui.encodingChoices, d.encodingLabel).
-			Label(m.Encoding).Hit(hitDocumentEncoding, m.Encoding).Small().Grow(1).
+			Label(m.Encoding).Hit(hitDocumentEncoding, m.Encoding).Height(32).Grow(1).
 			Disabled(d.busy || d.comparison.active)
 		if selector.Changed() {
 			name := d.ui.encodingChoice
@@ -221,10 +221,18 @@ func (d *fileDocument) encodingLabel(name string) string {
 // application's own identities, so the central dispatcher handles their clicks.
 func (d *fileDocument) declareSaveSplit(c ui.C, disabled bool) {
 	m := d.owner.messages.FileWindow
+	theme := d.owner.Theme()
 	ui.Row(c).Gap(0).Shrink(0).Items(ui.Center).Children(func() {
-		ui.Button(c, m.Save).Small().Hit(hitDocumentSave, m.Save).Disabled(disabled)
-		d.ui.saveMenuTrigger = ui.Button(c, m.SaveOptions).Icon(lucideIcons[iconChevronDown]).IconOnly().Height(28).
-			Hit(hitDocumentSaveMenu, m.SaveOptions).Disabled(disabled)
+		// The split button the page replaces kept its halves at the size it was
+		// given: an 80px primary and a 32px trigger, the label in the small type
+		// the size names.
+		ui.Button(c, m.Save).Small().Width(80).Height(32).Hit(hitDocumentSave, m.Save).Disabled(disabled)
+		d.ui.saveMenuTrigger = ui.Button(c, m.SaveOptions).Icon(lucideIcons[iconChevronDown]).IconOnly().
+			Size(32, 32).Hit(hitDocumentSaveMenu, m.SaveOptions).Disabled(disabled).
+			Draw(func(part *ui.DrawContext) {
+				// The hairline the split button drew between its halves.
+				part.Canvas.Fill(gfx.Rect{X: part.Rect.X - 0.5, Y: part.Rect.Y, Width: 1, Height: part.Rect.Height}, theme.Input)
+			})
 		d.ui.saveMenuDeclared = true
 	})
 }
@@ -239,6 +247,7 @@ func (d *fileDocument) declareSaveMenu(c ui.C) {
 	var rows menuRows
 	rows.add(components.ContextMenuItem{ID: hitDocumentCompare, Label: m.CompareSave, Icon: lucideIcons[iconColumns2]})
 	ui.Menu(c, d.ui.saveMenuTrigger, &d.ui.saveMenuOpen, func(menu *ui.MenuItems) {
+		menu.WidthRange(184, 184)
 		rows.declare(c, menu, func(id gfx.ID) { d.click(id) })
 	})
 }
