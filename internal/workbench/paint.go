@@ -300,8 +300,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		// Assistant popovers may intentionally extend to the window edge; paint
 		// the rail first so they can remain above it and nothing is clipped.
 		state.paintAIPanel(canvas, size)
-		// The bottom command drawer sits beneath the panes, in the space the
-		// panes gave up for it.
 		state.paintCommandsDrawer(canvas)
 	} else if fileManager {
 		state.paintSFTPTab(canvas, state.fileManagerPixelBounds(size))

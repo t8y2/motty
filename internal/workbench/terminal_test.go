@@ -564,7 +564,7 @@ func TestTheTerminalHasTheKeyboardWhenItAppears(t *testing.T) {
 	}
 	geometry := state.layout()
 	workspace := state.workspacePixelBounds(state.viewport)
-	if hit.Bounds != geometry.area || hit.Bounds.X != workspace.X || hit.Bounds.X+hit.Bounds.Width != workspace.X+workspace.Width || hit.Bounds.Y+hit.Bounds.Height != 900-state.commandsDrawerHeight() {
+	if hit.Bounds != geometry.area || hit.Bounds.X != workspace.X || hit.Bounds.X+hit.Bounds.Width != workspace.X+workspace.Width || hit.Bounds.Y+hit.Bounds.Height != 900 {
 		t.Fatalf("the terminal %+v does not fill the window below the bars", hit.Bounds)
 	}
 	// Window-bar buttons leave the keyboard where it is.
