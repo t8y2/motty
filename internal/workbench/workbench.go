@@ -1408,9 +1408,6 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 	if _, local, ok := state.decodePaneHit(hit); ok {
 		hit = local
 	}
-	if editor := state.findPreferencesEditor(hit); editor != nil {
-		return editor
-	}
 	if editor := state.aiEditor(hit); editor != nil {
 		return editor
 	}
@@ -2809,9 +2806,6 @@ func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
 	if result := state.hostFormPointer(event); result.Handled {
 		return result
 	}
-	if result := state.findPreferencesPointer(event); result.Handled {
-		return result
-	}
 	if result := state.hostPickerPointer(event); result.Handled {
 		return result
 	}
@@ -3072,9 +3066,6 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		return result
 	}
 	if result, handled := state.hostTagsKey(event); handled {
-		return result
-	}
-	if result := state.findPreferencesKey(event); result.Handled {
 		return result
 	}
 	if result := state.hostPickerKey(event); result.Handled {

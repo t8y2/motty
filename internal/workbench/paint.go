@@ -324,7 +324,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	state.paintToolbarDockBottom(canvas, size)
 	viewport := state.windowRect()
 	state.paintAITargetSelect(canvas)
-	state.paintFindPreferences(canvas)
+	state.settleFindPreferences(canvas)
 	state.paintQueuedSFTPHeaderMenu(canvas)
 	state.paintHostMenus(canvas, viewport)
 	state.endMenus()
