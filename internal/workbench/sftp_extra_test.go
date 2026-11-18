@@ -136,7 +136,7 @@ func TestBookmarksAreKeptPerHostSurviveARestartAndOpenTheirFolder(t *testing.T) 
 	}
 	canvas.Reset()
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if _, ok := hitByID(&canvas, contextID(hitSFTPBookmarkItemList.At(0))); !ok {
+	if !containsCanvasHitLabel(&canvas, gfx.RoleMenuItem, "/home/test/docs") {
 		t.Fatal("the list has no entry")
 	}
 	// The list is a popup above the file rows: its text is on a layer over theirs,

@@ -36,7 +36,7 @@ func TestSFTPToolbarOverflowKeepsDisabledActionsDisabled(t *testing.T) {
 	state.Click(contextID(hitSFTPHeaderMore))
 	canvas.Reset()
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	hit, ok := hitByID(&canvas, contextID(hitSFTPUpload))
+	hit, ok := canvasMenuHit(&canvas, state.panelMenuRowLabel(session.files, contextID(hitSFTPUpload)))
 	if !ok || !hit.Disabled {
 		t.Fatalf("overflowed upload action: %+v, painted=%t want disabled", hit, ok)
 	}
@@ -93,14 +93,15 @@ func TestSFTPToolbarKeepsMoreAtRightAndMovesOverflowIntoMenu(t *testing.T) {
 					case hitSFTPFollowToggle:
 						id = hitSFTPHeaderFollow
 					}
-					if hit, ok := hitByID(&canvas, contextID(id)); !ok || hit.Disabled != tool.disabled {
+					label := state.panelMenuRowLabel(session.files, id)
+					if hit, ok := canvasMenuHit(&canvas, label); !ok || hit.Disabled != tool.disabled {
 						t.Fatalf("side=%v width=%v: overflow action %s missing or has wrong availability: %+v", side, width, tree.Text(id), hit)
 					}
 				}
-				if hit, ok := hitByID(&canvas, contextID(hitSFTPHeaderHidden)); !ok || hit.Checked != hidden {
+				if hit, ok := canvasMenuHit(&canvas, state.panelMenuRowLabel(session.files, hitSFTPHeaderHidden)); !ok || hit.Checked != hidden {
 					t.Fatalf("side=%v width=%v hidden=%v: hidden-files menu entry checked=%t", side, width, hidden, hit.Checked)
 				}
-				state.Click(contextID(hitSFTPHeaderMenuDismiss))
+				session.files.active().headerMenuOpen = false
 			}
 		}
 	}

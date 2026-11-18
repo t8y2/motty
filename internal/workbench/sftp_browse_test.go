@@ -280,8 +280,7 @@ func TestSFTPBrowseBookmarkNativeFieldsAndToggleAtDifferentScales(t *testing.T) 
 			if !w.bookmark.scopeOpen {
 				t.Fatal("scope select did not open")
 			}
-			view.Keys("down")
-			view.Keys("enter")
+			clickBookmarkMenuRow(t, w, view, state.messages.SFTPWindow.ProfileShared)
 			if !w.bookmark.shared || w.bookmark.scopeOpen || w.bookmark.fields[0].String() != originalName {
 				t.Fatal("scope selection discarded the profile draft")
 			}
@@ -291,8 +290,7 @@ func TestSFTPBrowseBookmarkNativeFieldsAndToggleAtDifferentScales(t *testing.T) 
 				t.Fatal("Escape closed the manager instead of its scope popup")
 			}
 			click(hitSFTPProfileScope)
-			view.Keys("up")
-			view.Keys("enter")
+			clickBookmarkMenuRow(t, w, view, state.messages.SFTPWindow.ProfileSite)
 			if w.bookmark.shared {
 				t.Fatal("scope select did not return to this connection")
 			}
@@ -583,9 +581,9 @@ func TestSFTPBrowseIntegratesWithIndependentFiltersAndHeaderMenus(t *testing.T) 
 		t.Fatal(err)
 	}
 	dualClickID(t, view, sftpWindowMore[0])
-	dualHit(t, view, sftpWindowNewFolder[0])
-	dualHit(t, view, sftpWindowFilterToggle[0])
-	dualHit(t, view, sftpWindowHeaderHidden[0])
+	for _, id := range []gfx.ID{sftpWindowNewFolder[0], sftpWindowFilterToggle[0], sftpWindowHeaderHidden[0]} {
+		dualHitLabel(t, view, w.headerMenuRowLabel(0, id))
+	}
 	if err := view.Keys("escape"); err != nil {
 		t.Fatal(err)
 	}
@@ -675,10 +673,11 @@ func TestSFTPLocationProfileListScrollSelectionRenameAndDeletion(t *testing.T) {
 	w.window.Invalidate()
 	view.Driver().Pump()
 	view.Rest()
-	if w.bookmark.area.MaxOffsetY <= 0 {
+	if w.bookmark.scroll == nil || w.bookmark.scroll.Max() <= 0 {
 		t.Fatal("profiles did not scroll")
 	}
-	view.Scroll(gfx.ScrollEvent{X: w.bookmark.list.X + 10, Y: w.bookmark.list.Y + 10, DeltaY: 10000})
+	first := dualHit(t, view, hitSFTPProfileItems.At(0))
+	view.Scroll(gfx.ScrollEvent{X: first.X + 10, Y: first.Y + 10, DeltaY: 10000})
 	w.window.Invalidate()
 	view.Driver().Pump()
 	view.Rest()

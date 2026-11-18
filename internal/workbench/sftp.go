@@ -88,7 +88,6 @@ type sftpFolder struct {
 	first        int
 	visibleRows  int     // rows the last paint had room for
 	wheel        float32 // wheel travel not yet worth a whole row
-	scroll       components.ScrollAreaGeometry
 	scrollOffset float32
 	// The row list is a Viva List: it keeps the scroll offset, the row the
 	// keys are on and the multi-selection. selected/anchor/row.selected stay
@@ -103,20 +102,31 @@ type sftpFolder struct {
 	listScroll       *ui.ScrollState
 	listReady        bool
 	pathField        sftpPathField
-	filterEditor     text.Editor
-	filterInput      app.TextInput
-	filterReady      bool
-	filterOpen       bool
-	showHidden       bool
-	pathEditing      bool
-	headerMenuOpen   bool
-	sortOrder        sftpWindowSort
-	sortChosen       bool
-	localCoverage    localListingCoverage
-	coverageLabel    string // bounded scope, formatted when a listing/filter changes
-	coverageText     string // full semantic warning, independent of ordinary feedback
-	coverageEmpty    string
-	hiddenMatch      bool // the query matches rows this folder hides
+	// pathUI is the page field over pathField's editor, bound where the path is
+	// declared so the platform edits the same draft the model submits. The
+	// bound marks keep binding from resetting what Changed compares.
+	pathUI         ui.Field
+	pathUIEditor   *text.Editor
+	filterEditor   text.Editor
+	filterInput    app.TextInput
+	filterUI       ui.Field
+	filterUIBound  bool
+	filterReady    bool
+	filterOpen     bool
+	showHidden     bool
+	pathEditing    bool
+	headerMenuOpen bool
+	// menuWindow is the window view a docked panel's More menu is declared
+	// through: the page owns the menu, but its rows and actions are the
+	// window's. Made when the menu first opens.
+	menuWindow    *sftpWindow
+	sortOrder     sftpWindowSort
+	sortChosen    bool
+	localCoverage localListingCoverage
+	coverageLabel string // bounded scope, formatted when a listing/filter changes
+	coverageText  string // full semantic warning, independent of ordinary feedback
+	coverageEmpty string
+	hiddenMatch   bool // the query matches rows this folder hides
 	// deep widens the filter to the folders below this one; search is the
 	// reading of them, and searchShown says the list shows its results rather
 	// than rows (see sftp_search.go). reveal is the entry to select in the
@@ -180,31 +190,30 @@ type sftpView struct {
 	dialogRows  [2]ui.FormFieldState
 	dialogTexts [2]ui.Field
 	dialogBound bool
-	// dialogFieldLabel is the field title the open dialog's body declared; the
-	// window paints the field under it after the body, inside the dialog's focus
-	// scope. dialogDraw is that paint, kept once so a repaint makes no closure.
-	// The footer's labels and draw are kept the same way: the dialog can stand
-	// beside an application modal, so it does not share the window's footer
-	// scratch. The boxes are where that body laid out the parts painted by hand:
-	// the one or two fields and the permission grid.
+	// editField is the page text area over editEditor, and chownRows/chownTexts
+	// are the ownership dialog's two fields over the editors its suggestions fill.
+	editField  ui.Field
+	chownRows  [2]ui.FormFieldState
+	chownTexts [2]ui.Field
+	chownBound [2]bool
+	// dialogFieldLabel is the field title the open dialog's body declares. The
+	// footer's labels are kept so the dialog can stand beside an application
+	// modal without sharing the window's footer scratch. The boxes are where
+	// that body laid out the first and second fields.
 	dialogFieldLabel    string
-	dialogDraw          func(*ui.DrawContext)
 	dialogCancelLabel   string
 	dialogSubmitLabel   string
 	dialogSubmitVariant components.ButtonVariant
 	dialogFirst         ui.Box
 	dialogSecond        ui.Box
 	dialogChmod         [9]ui.Box
-	// dialogViewport is the room the owning window gives the open dialog, used
-	// to keep a field's suggestion list on screen.
+	// dialogViewport is the room the owning window gives the open dialog.
 	dialogViewport gfx.Rect
 	ownership      sftpOwnershipUI
 	bookmarksOpen  bool
 	places         sftpPlaceMenu
 	dropping       bool // files are being dragged over the panel
 	dropRow        int  // the folder row they are over, or -1
-	scrollDrag     bool
-	scrollGrab     float32
 	// columnDragging and columnDrag are the divider of this panel the pointer
 	// holds; columnFitPending asks the next paint to fit that divider's left
 	// column to its content after a double click.
@@ -504,32 +513,8 @@ func (state *State) clickSFTP(id gfx.ID) {
 	}
 	folder := view.active()
 	if folder.headerMenuOpen {
-		if state.clickSFTPHistory(view, view.local, id, hitSFTPHistoryBack, hitSFTPHistoryForward, sftpRecentHits) {
-			folder.headerMenuOpen = false
-			return
-		}
-		switch id {
-		case hitSFTPHeaderFilter:
-			folder.headerMenuOpen = false
-			state.clickSFTPFilter(view, hitSFTPFilterToggle)
-		case hitSFTPHeaderEditor:
-			folder.headerMenuOpen = false
-			state.openSFTPInEditor(view)
-		case hitSFTPHeaderHidden:
-			folder.headerMenuOpen = false
-			state.clickSFTPFilter(view, hitSFTPHiddenToggle)
-		case hitSFTPHeaderFollow:
-			folder.headerMenuOpen = false
-			state.toggleSFTPFollow(session)
-		default:
-			folder.headerMenuOpen = false
-			for _, tool := range state.chrome.sftpPanel.overflowTools {
-				if tool.id == id && !tool.disabled {
-					state.clickSFTP(id)
-					break
-				}
-			}
-		}
+		folder.headerMenuOpen = false
+		state.clickSFTPPanelHeaderAction(session, view, id)
 		return
 	}
 	if column, ok := id.In(hitSFTPColumnList); ok && column < int(sftpColumnCount) && state.sftpColumns.enabled(sftpColumnKey(column)) {
@@ -2514,7 +2499,8 @@ func (state *State) scrollSFTP(view *sftpView, event gfx.ScrollEvent) gfx.EventR
 		return gfx.EventResult{Handled: true}
 	}
 	if view.bookmarksOpen {
-		return gfx.EventResult{Handled: true, Repaint: view.places.scroll.Wheel(event)}
+		// The places menu is a page menu; the page owns its wheel.
+		return gfx.EventResult{Handled: true}
 	}
 	if view.editPath != "" && pointInRect(event.X, event.Y, view.editRect) {
 		view.editLayout.ScrollBy(event.DeltaY)
@@ -2618,9 +2604,6 @@ func (state *State) sftpKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if result, handled := state.sftpListActivateKey(event); handled {
 		return result, true
 	}
-	if result, handled := state.sftpPlacesKey(event); handled {
-		return result, true
-	}
 	if result, handled := state.sftpHistoryKey(event); handled {
 		return result, true
 	}
@@ -2630,13 +2613,10 @@ func (state *State) sftpKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	if ok && session.files != nil && state.modal == modalNone && event.Target == hitSFTPEditor && session.files.editPath != "" && session.files.dialog == sftpDialogNone {
 		// Up, Down, Home, End and the page keys move by the rows the editor wrapped
-		// to, and repeat while held.
-		if movement, extend := components.TextareaMovementForKey(event.Key, event.Modifiers); movement != components.TextareaMoveNone {
-			view := session.files
-			value := view.editEditor.String()
-			to := view.editLayout.Move(value, aiByteOffset(value, view.editEditor.Caret()), movement)
-			view.editEditor.MoveTo(utf8.RuneCountInString(value[:to]), extend)
-			return gfx.EventResult{Handled: true, Repaint: true}, true
+		// to; the page field owns that arithmetic now.
+		view := session.files
+		if result := view.editField.Key(event); result.Handled {
+			return result, true
 		}
 	}
 	if !ok || session.files == nil || state.modal != modalNone || event.Repeat {
@@ -2797,4 +2777,31 @@ func (state *State) sftpRowPointer(event gfx.PointerEvent) (gfx.EventResult, boo
 		state.openSelectedSFTP(view)
 	}
 	return gfx.EventResult{Handled: true, Repaint: true}, true
+}
+
+// clickSFTPPanelHeaderAction handles a choice of the panel's More menu. The page
+// menu has already closed it, so the action is taken by identity alone.
+func (state *State) clickSFTPPanelHeaderAction(session *Session, view *sftpView, id gfx.ID) {
+	if state.clickSFTPHistory(view, view.local, id, hitSFTPHistoryBack, hitSFTPHistoryForward, sftpRecentHits) {
+		return
+	}
+	switch id {
+	case hitSFTPHeaderFilter:
+		state.clickSFTPFilter(view, hitSFTPFilterToggle)
+	case hitSFTPHeaderEditor:
+		state.openSFTPInEditor(view)
+	case hitSFTPHeaderHidden:
+		state.clickSFTPFilter(view, hitSFTPHiddenToggle)
+	case hitSFTPHeaderFollow:
+		state.toggleSFTPFollow(session)
+	case hitSFTPCalculateDirectorySize:
+		state.calculateSFTPDirectorySize(view)
+	default:
+		for _, tool := range state.chrome.sftpPanel.overflowTools {
+			if tool.id == id && !tool.disabled {
+				state.clickSFTP(id)
+				break
+			}
+		}
+	}
 }

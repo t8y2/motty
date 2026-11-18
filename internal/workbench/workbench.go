@@ -329,7 +329,6 @@ var (
 	hitSFTPEntryList       = tree.Sub(sftpHits, tree.Name("sftp-entry"))
 	hitSFTPColumnList      = tree.Sub(sftpHits, tree.Name("sftp-column"))
 	hitSFTPListBackground  = tree.ID(sftpHits, "sftp-list-background")
-	hitSFTPListScrollbar   = tree.ID(sftpHits, "sftp-list-scrollbar")
 
 	// hitSFTPDrawerClose is the close button of the drawer a narrow window shows
 	// the panel in. It is a hit of its own, apart from the backdrop that
@@ -2627,9 +2626,6 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result, handled := state.hostListPointer(event); handled {
 		return result
 	}
-	if result, handled := state.sftpPlacesPointer(event); handled {
-		return result
-	}
 	if state.fileTabVerticalRailAt(event.X, event.Y) {
 		repaint := false
 		if w := state.activeSFTPWindow(); w != nil && w.drag.active {
@@ -2842,9 +2838,6 @@ func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
 		return result
 	}
 	if result, handled := state.sftpPathPointer(event); handled {
-		return result
-	}
-	if result, handled := state.sftpListPointer(event); handled {
 		return result
 	}
 	return gfx.EventResult{}

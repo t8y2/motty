@@ -48,6 +48,49 @@ func sameDirectoryTreeTestLocation(local bool, left, right string) bool {
 	return sameDirectoryTreeLocation(local, left, right)
 }
 
+// sftpTreeKey delivers a key to a directory tree row through the page, as the
+// window's config does, then applies the focus or activation it reported and
+// paints once, so the window reads what the Tree delivered.
+func sftpTreeKey(t *testing.T, w *sftpWindow, event gfx.KeyEvent) gfx.EventResult {
+	t.Helper()
+	result := w.windowPage().Key(event)
+	activate := result.Activate
+	if activate.IsZero() && (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) {
+		activate = event.Target
+	}
+	sftpTreePaint(t, w, result.Focus, activate)
+	if activate.IsZero() && result.Focus.IsZero() {
+		return result
+	}
+	return gfx.EventResult{Handled: true, Repaint: true, Focus: result.Focus, FocusVisible: result.FocusVisible}
+}
+
+// sftpTreeActivate delivers a click on a tree row or disclosure through a paint,
+// where the page Tree reads it.
+func sftpTreeActivate(t *testing.T, w *sftpWindow, id gfx.ID) {
+	t.Helper()
+	sftpTreePaint(t, w, gfx.ID{}, id)
+}
+
+// sftpTreePaint paints the window once, focusing focus and, when activate is
+// set, in the event pass a click on it, as the runtime does.
+func sftpTreePaint(t *testing.T, w *sftpWindow, focus, activate gfx.ID) {
+	t.Helper()
+	var canvas gfx.Canvas
+	if !activate.IsZero() {
+		canvas.BeginEventPass(activate, gfx.ClickInfo{})
+	}
+	w.paint(&canvas, w.ui.size)
+	canvas.EndEventPass()
+	canvas.RunAfterPaint()
+	if !focus.IsZero() {
+		// The runtime applies a key's Focus before the repaint that follows it; do
+		// the same so the window's selected row follows the Tree's focus.
+		canvas.SetInteraction(canvas.Hovered(), canvas.Pressed(), focus, true)
+		w.paint(&canvas, w.ui.size)
+	}
+}
+
 func waitDirectoryTree(t *testing.T, state *State, w *sftpWindow, view *headless.Session, ready func() bool) {
 	t.Helper()
 	// Windows CI can start from a slow drive root and must disclose every
@@ -111,7 +154,7 @@ func TestSFTPDirectoryTreeIsOffByDefaultAndLoadsLocalChildrenOnExpand(t *testing
 	if index < 0 {
 		t.Fatal("nested folder is missing from the visible tree")
 	}
-	if result := w.key(gfx.KeyEvent{Target: sftpWindowTreeDisclosures[0].At(index), Key: gfx.KeyEnter}); !result.Handled {
+	if result := sftpTreeKey(t, w, gfx.KeyEvent{Target: w.directoryTree[0].tree.DisclosureID(index), Key: gfx.KeyEnter}); !result.Handled {
 		t.Fatal("keyboard activation of a tree disclosure was not handled")
 	}
 	waitDirectoryTree(t, state, w, view, func() bool {
@@ -144,25 +187,25 @@ func TestSFTPDirectoryTreeKeyboardNavigatesAndLoadsLocalChild(t *testing.T) {
 	if branchIndex < 0 {
 		t.Fatal("directory is not in the visible tree")
 	}
-	if result := window.key(gfx.KeyEvent{Target: sftpWindowTreeRows[0].At(branchIndex), Key: gfx.KeyRight}); !result.Handled || !branch.expanded {
+	if result := sftpTreeKey(t, window, gfx.KeyEvent{Target: window.directoryTree[0].tree.RowID(branchIndex), Key: gfx.KeyRight}); !result.Handled || !branch.expanded {
 		t.Fatal("Right did not expand the branch")
 	}
 	waitDirectoryTree(t, state, window, view, func() bool {
 		return branch.loaded && !branch.loading && directoryTreeIndex(window, true, childDirectory) >= 0
 	})
 	branchIndex = directoryTreeIndex(window, true, branch.path)
-	result := window.key(gfx.KeyEvent{Target: sftpWindowTreeRows[0].At(branchIndex), Key: gfx.KeyRight})
+	result := sftpTreeKey(t, window, gfx.KeyEvent{Target: window.directoryTree[0].tree.RowID(branchIndex), Key: gfx.KeyRight})
 	childIndex := directoryTreeIndex(window, true, childDirectory)
-	if !result.Handled || result.Focus != sftpWindowTreeRows[0].At(childIndex) ||
+	if !result.Handled || result.Focus.IsZero() ||
 		!sameDirectoryTreeTestLocation(true, window.directoryTree[0].selectedPath, childDirectory) {
 		t.Fatalf("Right did not select the child: focus=%+v childIndex=%d selected=%q child=%q", result, childIndex, window.directoryTree[0].selectedPath, childDirectory)
 	}
-	result = window.key(gfx.KeyEvent{Target: result.Focus, Key: gfx.KeyLeft})
-	if !result.Handled || result.Focus != sftpWindowTreeRows[0].At(branchIndex) ||
+	result = sftpTreeKey(t, window, gfx.KeyEvent{Target: result.Focus, Key: gfx.KeyLeft})
+	if !result.Handled || result.Focus.IsZero() ||
 		!sameDirectoryTreePath(true, window.directoryTree[0].selectedPath, branch.path) {
 		t.Fatalf("Left did not select the parent: %+v", result)
 	}
-	result = window.key(gfx.KeyEvent{Target: result.Focus, Key: gfx.KeyLeft})
+	result = sftpTreeKey(t, window, gfx.KeyEvent{Target: result.Focus, Key: gfx.KeyLeft})
 	if !result.Handled || branch.expanded {
 		t.Fatalf("Left did not collapse the parent: %+v", result)
 	}
@@ -193,7 +236,7 @@ func TestSFTPDirectoryTreeLoadsRemoteChildrenOnlyWhenExpanded(t *testing.T) {
 	if index < 0 {
 		t.Fatal("remote folder is missing from the visible tree")
 	}
-	w.click(sftpWindowTreeDisclosures[1].At(index))
+	sftpTreeActivate(t, w, w.directoryTree[1].tree.DisclosureID(index))
 	waitDirectoryTree(t, state, w, view, func() bool {
 		return docs.loaded && !docs.loading
 	})
@@ -413,24 +456,20 @@ func TestSFTPRemoteOnlyLocationProfileDisablesBrowseSync(t *testing.T) {
 	})
 }
 
-func TestSFTPDirectoryTreeRightKeyAtDepthLimitDoesNotPanic(t *testing.T) {
+func TestSFTPDirectoryTreeDepthLimitStopsFlattening(t *testing.T) {
 	_, w, _, _, _ := dualSFTPFixture(t, 1)
 	tree := &w.directoryTree[1]
 	tree.enabled = true
-	tree.visible = make([]sftpTreeVisibleRow, maxDirectoryTreeDepth+1)
-	for index := range tree.visible {
-		node := &sftpTreeNode{name: "node", loaded: true, expanded: index < maxDirectoryTreeDepth}
-		if index == maxDirectoryTreeDepth {
-			node.children = []*sftpTreeNode{{name: "hidden by depth limit"}}
-		}
-		tree.visible[index] = sftpTreeVisibleRow{node: node, depth: uint8(index)}
+	root := &sftpTreeNode{path: "/", name: "/", loaded: true, expanded: true}
+	node := root
+	for depth := 0; depth <= maxDirectoryTreeDepth+1; depth++ {
+		child := &sftpTreeNode{path: "/node", name: "node", loaded: true, expanded: true}
+		node.children = []*sftpTreeNode{child}
+		node = child
 	}
-	result, handled := w.directoryTreeKey(gfx.KeyEvent{
-		Target: sftpWindowTreeRows[1].At(maxDirectoryTreeDepth),
-		Key:    gfx.KeyRight,
-	})
-	if !handled || !result.Handled {
-		t.Fatal("right arrow at the depth limit was not handled")
+	tree.roots = []*sftpTreeNode{root}
+	if rows := w.flattenDirectoryTree(1); len(rows) != maxDirectoryTreeDepth+1 {
+		t.Fatalf("flattened %d rows, want the %d the depth limit allows", len(rows), maxDirectoryTreeDepth+1)
 	}
 }
 
@@ -457,10 +496,16 @@ func TestSFTPLocationProfileQuickMenuAndSync(t *testing.T) {
 	if !w.ui.profileQuickOpen {
 		t.Fatal("profile quick menu did not open")
 	}
-	if w.ui.profileQuickScroll.BarID != hitSFTPProfileQuickBar {
-		t.Fatal("profile quick menu did not expose a draggable scrollbar")
+	// The menu paints the profile as a page menu row.
+	found := false
+	for _, hit := range view.Snapshot().Hits {
+		if hit.Role == gfx.RoleMenuItem && hit.Label == profileQuickLabel(profile) && !hit.Disabled {
+			found = true
+		}
 	}
-	dualHit(t, view, hitSFTPProfileQuickItems.At(0))
+	if !found {
+		t.Fatal("profile quick menu did not paint its profile row")
+	}
 	w.click(hitSFTPProfileQuickItems.At(0))
 	dualWait(t, state, w, view, func() bool { return !w.navigationBusy() })
 	if !w.browse.enabled || w.view.lfolder.path != target || w.view.path != "/home/test/docs" {

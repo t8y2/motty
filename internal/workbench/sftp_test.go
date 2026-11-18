@@ -1486,8 +1486,8 @@ func TestSFTPListScrollsDownWithPositiveDeltaOnlyOverThePanel(t *testing.T) {
 	}
 	scroll(panel.X+panel.Width/2, 1000*sftpRowHeight)
 	state.Paint(&canvas, size)
-	if view.first != int(view.scrollOffset/sftpRowHeight) || view.scrollOffset != view.scroll.MaxOffsetY {
-		t.Fatalf("scrolling far down left offset %f first %d, max %f", view.scrollOffset, view.first, view.scroll.MaxOffsetY)
+	if view.first != int(view.scrollOffset/sftpRowHeight) || view.listScroll == nil || view.scrollOffset != view.listScroll.Max() {
+		t.Fatalf("scrolling far down left offset %f first %d", view.scrollOffset, view.first)
 	}
 
 	// Scrolling far down and painting anchors the list at the bottom. Further
@@ -1541,20 +1541,15 @@ func TestSFTPDragReleaseKeepsASubRowOffsetAndWheelUpReturnsToTheTop(t *testing.T
 	}
 	folder := view.active()
 
-	// As a scrollbar drag would leave it: released 17 pixels into the first row,
-	// past the half-row mark that used to round the row up and snap back.
+	// A scrollbar drag leaves a sub-row offset; the page ScrollArea keeps it as
+	// the pointer left it, and the model mirrors it.
 	folder.listScroll.ScrollTo(17)
-	folder.scrollOffset = 17
-	view.scrollDrag = true
-	if result, handled := state.sftpListPointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Captured: true}); !handled || !result.Repaint {
-		t.Fatal("releasing the scrollbar drag was not handled")
-	}
-	if folder.first != 0 {
-		t.Fatalf("release 17 pixels into the first row put the first row at %d, want 0", folder.first)
-	}
 	state.Paint(&canvas, size)
 	if folder.scrollOffset != 17 {
-		t.Fatalf("release over a partial row snapped the offset to %f, want 17", folder.scrollOffset)
+		t.Fatalf("a sub-row offset was rounded to %f, want 17", folder.scrollOffset)
+	}
+	if folder.first != 0 {
+		t.Fatalf("a sub-row offset put the first row at %d, want 0", folder.first)
 	}
 
 	// Scrolling up from that offset must show the top, not stall on row 0.

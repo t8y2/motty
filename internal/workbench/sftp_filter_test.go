@@ -3,6 +3,7 @@ package workbench
 import (
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -244,11 +245,18 @@ func assertSFTPHiddenToggleLabel(t *testing.T, state *State, want string) {
 		state.Click(contextID(hitSFTPHeaderMore))
 	}
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	id := contextID(hitSFTPHiddenToggle)
 	if want == state.messages.Tools.FilesShowHidden {
-		id = contextID(hitSFTPHeaderHidden)
+		session, ok := state.sessionByIDPointer(state.activeSessionID)
+		if !ok || session.files == nil {
+			t.Fatal("no active session")
+		}
+		hit, ok := canvasMenuHit(&canvas, state.panelMenuRowLabel(session.files, contextID(hitSFTPHeaderHidden)))
+		if !ok || hit.Label != want {
+			t.Fatalf("hidden toggle=%+v, present=%v, want label %q", hit, ok, want)
+		}
+		return
 	}
-	hit, ok := hitByID(&canvas, id)
+	hit, ok := hitByID(&canvas, contextID(hitSFTPHiddenToggle))
 	if !ok || hit.Label != want {
 		t.Fatalf("hidden toggle=%+v, present=%v, want label %q", hit, ok, want)
 	}
@@ -342,10 +350,10 @@ func TestSFTPHeaderOverflowUsesMoreMenuForSecondaryFolderControls(t *testing.T) 
 
 	state.Click(contextID(hitSFTPHeaderMore))
 	canvas, _ = paintedTexts(state)
-	if _, ok := hitByID(canvas, contextID(hitSFTPHeaderFilter)); !ok {
+	if !containsCanvasHitLabel(canvas, gfx.RoleMenuItem, state.messages.Tools.FilesFilterLabel) {
 		t.Fatal("more menu has no filter action")
 	}
-	if _, ok := hitByID(canvas, contextID(hitSFTPHeaderHidden)); !ok {
+	if !containsCanvasHitLabel(canvas, gfx.RoleMenuItem, state.messages.Tools.FilesShowHidden) {
 		t.Fatal("more menu has no hidden-file action")
 	}
 	state.Click(contextID(hitSFTPHeaderFilter))
@@ -361,6 +369,15 @@ func TestSFTPHeaderOverflowUsesMoreMenuForSecondaryFolderControls(t *testing.T) 
 	if _, ok := hitByID(canvas, contextID(hitSFTPHiddenToggle)); !ok {
 		t.Fatal("enabled hidden state is not visible in the header")
 	}
+}
+
+func containsCanvasHitLabel(canvas *gfx.Canvas, role gfx.Role, label string) bool {
+	for _, hit := range canvas.Hits() {
+		if hit.Role == role && strings.HasPrefix(hit.Label, label) {
+			return true
+		}
+	}
+	return false
 }
 
 func containsCanvasText(canvas *gfx.Canvas, value string) bool {
