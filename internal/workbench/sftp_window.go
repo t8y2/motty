@@ -158,7 +158,7 @@ func (w *sftpWindow) config() app.Config {
 	// state. The window keeps Paint (it also paints the toolbar controls, dialogs
 	// and transfer queue the page only lays out) and OnScroll (a wheel notch moves
 	// whole rows, and the window hands the offset to each List).
-	config := w.windowPage().Config(base)
+	config := ui.Configure(w.windowPage(), base)
 	config.Paint = base.Paint
 	config.OnScroll = w.scrollWindow
 	return config

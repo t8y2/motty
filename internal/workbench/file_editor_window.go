@@ -371,7 +371,7 @@ func (m *fileWindowManager) configWithClosed(onClosed func()) app.Config {
 		OnClosed:       onClosed,
 	}
 	base.WindowBorderColor = func() app.Color { return windowClearColor(m.ownerTheme()) }
-	config := m.editPage(m.pageTheme()).Config(base)
+	config := ui.Configure(m.editPage(m.pageTheme()), base)
 	config.Paint = base.Paint
 	return config
 }

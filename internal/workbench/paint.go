@@ -468,7 +468,7 @@ func (state *State) windowPage() *ui.Page {
 // window's Paint stays its own, because it also paints the panes, the docks and
 // the bodies the page only lays out.
 func (state *State) WindowConfig(base app.Config) app.Config {
-	config := state.windowPage().Config(base)
+	config := ui.Configure(state.windowPage(), base)
 	config.Paint = base.Paint
 	// The assistant owns the wheel over its own panel: its lists keep their
 	// offsets in the page, but a modal dialog must still keep them still, which

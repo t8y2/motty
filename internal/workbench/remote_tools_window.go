@@ -114,7 +114,7 @@ func (w *remoteToolsWindow) config() app.Config {
 	base.WindowBorderColor = func() app.Color {
 		return app.Color{Red: float64(w.ui.pal.workspace.Red), Green: float64(w.ui.pal.workspace.Green), Blue: float64(w.ui.pal.workspace.Blue), Alpha: 1}
 	}
-	config := w.windowPage().Config(base)
+	config := ui.Configure(w.windowPage(), base)
 	// The page's Config paints the page; the window's paint keeps the presenters
 	// in step with its owner before the page is declared.
 	config.Paint = w.paint
