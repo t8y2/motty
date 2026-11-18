@@ -125,17 +125,20 @@ type sftpWindowUI struct {
 type sftpWindowScratch struct {
 	// bounds is the pane's rectangle as the page sees it: a pane declared in a
 	// page is not drawn in a page of its own, so it reads its size from here.
-	bounds      gfx.Rect
-	local       bool
-	header      ui.Box
-	address     ui.Box
-	list        ui.Box
-	tree        ui.Box
-	treeSet     bool
-	filter      ui.Box
-	sudoMode    ui.Box
-	buttons     [20]sftpIconButton
-	buttonCount int
+	bounds  gfx.Rect
+	local   bool
+	header  ui.Box
+	address ui.Box
+	// addressWidth is the width the path got in the last paint: the path folds
+	// against the room it actually has, as the painted slot was measured.
+	addressWidth float32
+	list         ui.Box
+	tree         ui.Box
+	treeSet      bool
+	filter       ui.Box
+	sudoMode     ui.Box
+	buttons      [20]sftpIconButton
+	buttonCount  int
 }
 
 // sftpWindowConnectScratch is the room the connecting page leaves for its icon.
@@ -439,6 +442,9 @@ func (w *sftpWindow) paintPaneDetails(canvas *gfx.Canvas, s *sftpWindowScratch, 
 	} else {
 		w.view.places.anchors[0] = s.address.Rect()
 	}
+	if path := s.address.Rect(); path.Width > 0 {
+		s.addressWidth = path.Width
+	}
 	listBounds := s.list.Rect()
 	w.ui.list[side] = listBounds
 	if !s.treeSet {
@@ -576,6 +582,9 @@ func (w *sftpWindow) declarePane(c ui.C, s *sftpWindowScratch) {
 			// pane's padding, the two side buttons and the row's gaps, as the
 			// painted slot was measured.
 			addressWidth := max(bounds.Width-2*8-2*sftpButton-2*2, 80)
+			if s.addressWidth > 0 {
+				addressWidth = s.addressWidth
+			}
 			s.address = w.owner.declareSFTPAddress(c, folder, sftpWindowPath[side], sftpWindowPathEdit[side], sftpWindowBreadcrumbs[side], addressWidth, !local && w.view.busy, folder.path).Height(32).Grow(1)
 			listID, starID, listHint := hitSFTPBookmarkList, hitSFTPBookmarkToggle, m.SFTPWindow.DirectoryFavorites
 			if local {

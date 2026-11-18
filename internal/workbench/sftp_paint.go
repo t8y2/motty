@@ -257,7 +257,11 @@ func (state *State) declareSFTPPanel(c ui.C) {
 			// The path collapses against the room the crumbs actually get: the
 			// panel's padding, the up button, the two side buttons and their
 			// gaps, as the painted slot was measured.
-			addressWidth := max(s.bounds.Width-2*sftpPad-3*sftpButton-10, 80)
+			// The painted row folded against the panel less its header buttons,
+			// as the hand-painted path did; the up button and the side buttons
+			// sit inside that room and the overspill is where the last crumb
+			// goes.
+			addressWidth := max(s.bounds.Width-3*sftpButton-6, 80)
 			s.crumbs = state.declareSFTPAddress(c, folder, hitSFTPPath, hitSFTPPathEdit, hitSFTPBreadcrumbList, addressWidth, !local && view.busy, messages.Tools.FilesPathPlaceholder).Height(height).Grow(1)
 			listID, starID, hint := hitSFTPBookmarkList, hitSFTPBookmarkToggle, messages.SFTPWindow.DirectoryFavorites
 			if local {
@@ -826,7 +830,7 @@ func (state *State) declareSFTPBreadcrumbs(c ui.C, crumbs []sftpCrumb, edit gfx.
 		}
 		total = next
 	}
-	row := ui.Row(c).Height(32).Grow(1).Clip().Gap(10).Items(ui.Center).
+	row := ui.Row(c).Height(32).Grow(1).Clip().Gap(6).Items(ui.Center).
 		HitWith(edit, state.messages.Tools.FilesPathLabel, gfx.HitOptions{Role: gfx.RoleButton, Hint: placeholder})
 	row.Children(func() {
 		if first > 0 {
