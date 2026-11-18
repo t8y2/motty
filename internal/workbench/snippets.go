@@ -716,8 +716,10 @@ func (state *State) declareSnippetDialogBody(c ui.C) {
 			}
 			form.dialogShortcut = ui.Row(c).Size(240, 32).Shrink(0).Justify(ui.End).Gap(8)
 			form.dialogShortcut.Children(func() {
-				ui.Button(c, label).Outline().Hit(hitSnippetShortcut, label)
-				ui.Button(c, m.SnippetShortcutClear).Ghost().Disabled(!form.shortcut.Valid() && !form.capturing).Hit(hitSnippetShortcutOff, m.SnippetShortcutClear)
+				// The shortcut row's buttons keep the height they had when the
+				// row was painted by hand.
+				ui.Button(c, label).Outline().Height(28).Hit(hitSnippetShortcut, label)
+				ui.Button(c, m.SnippetShortcutClear).Ghost().Height(28).Disabled(!form.shortcut.Valid() && !form.capturing).Hit(hitSnippetShortcutOff, m.SnippetShortcutClear)
 			})
 		})
 		if form.dialogError != "" {
