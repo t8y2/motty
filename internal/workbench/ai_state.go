@@ -96,6 +96,10 @@ type aiRun struct {
 	// +=) keeps a long answer linear: item.text is a zero-copy view of the
 	// builder's buffer and stays valid across later appends.
 	text *strings.Builder
+	// stopTimer bounds the wait after a stop: if the transport never answers the
+	// cancel, the run is finished locally so the assistant cannot sit on
+	// "Stopping..." forever. Nil until the user stops.
+	stopTimer *time.Timer
 }
 
 // aiSettings are the assistant's choices, kept in the AI database.
@@ -170,6 +174,10 @@ type aiState struct {
 	run         *aiRun
 	approvals   []*aiApproval
 	notice      string // why the last send did nothing
+	// stopGrace bounds how long a stop waits for the transport to acknowledge
+	// the cancel before the run is finished locally; 0 uses aiStopGrace. Tests
+	// shrink it.
+	stopGrace time.Duration
 
 	// lastUsage is the token accounting of the finished run, totalUsage the
 	// running sum over this conversation while the window is open. The
@@ -979,12 +987,42 @@ func (state *State) aiSend() bool {
 	return true
 }
 
-// aiStop cancels the request in flight.
+// aiStopGrace is how long a stop waits for the transport to return before the
+// run is finished locally. A well-behaved stream aborts well within it.
+const aiStopGrace = 5 * time.Second
+
+// aiStop cancels the request in flight. A watchdog finishes the run locally if
+// the transport never answers, so a stuck request cannot leave the assistant on
+// "Stopping..." indefinitely and block new messages or "Clear history".
 func (state *State) aiStop() {
-	if run := state.ai.run; run != nil {
-		run.stats.phase = aiRunStopping
-		run.cancel()
+	run := state.ai.run
+	if run == nil {
+		return
 	}
+	run.stats.phase = aiRunStopping
+	run.cancel()
+	if run.stopTimer != nil {
+		return // already stopping: one watchdog per run
+	}
+	grace := state.ai.stopGrace
+	if grace <= 0 {
+		grace = aiStopGrace
+	}
+	run.stopTimer = time.AfterFunc(grace, func() {
+		state.aiPost(func(s *State) { s.aiStopExpired(run) })
+	})
+}
+
+// aiStopExpired ends a run whose cancellation never came back. Without it a
+// transport that ignores the context (or a provider that never returns) leaves
+// the assistant stuck on "Stopping..." forever. Finishing reuses the normal
+// end-of-run bookkeeping; the late result, if it ever arrives, is ignored
+// because ai.run is no longer this run.
+func (state *State) aiStopExpired(run *aiRun) {
+	if state.ai.run != run {
+		return
+	}
+	state.aiFinished(run, nil, context.Canceled)
 }
 
 func (state *State) aiEvent(run *aiRun, event agent.Event) {
@@ -1140,6 +1178,9 @@ func (state *State) aiFinished(run *aiRun, messages []llm.Message, err error) {
 	ai := &state.ai
 	if ai.run != run {
 		return
+	}
+	if run.stopTimer != nil {
+		run.stopTimer.Stop()
 	}
 	run.stats.duration = max(state.now()-run.stats.startedAt, 0)
 	run.stats.usageIncomplete = run.stats.usageIncomplete || err != nil

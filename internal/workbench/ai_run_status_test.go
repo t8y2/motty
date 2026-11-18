@@ -354,3 +354,32 @@ func TestAIRunMixedReportedAndUnknownTurnsRemainIncomplete(t *testing.T) {
 		t.Fatalf("mixed reported and unknown turns look complete: %q", usage)
 	}
 }
+
+// TestAStopThatNeverComesBackStillFinishes covers #974: a stop must not wait
+// forever on a transport that ignores the cancellation. After the grace period
+// the run is finished locally, so it leaves "Stopping...", its tool no longer
+// looks active, and the assistant can take a new request again.
+func TestAStopThatNeverComesBackStillFinishes(t *testing.T) {
+	state, _ := panelState(t, nil)
+	state.setLanguage(i18n.English)
+	state.ai.stopGrace = 5 * time.Millisecond
+	run := &aiRun{cancel: func() {}, open: -1} // cancel does nothing: a stuck transport
+	state.ai.run = run
+	state.aiEvent(run, agent.Event{Kind: agent.EventToolStart, Call: llm.ToolCall{ID: "tool", Name: tools.NameTerminalRead}})
+	state.aiStop()
+	if run.stats.phase != aiRunStopping {
+		t.Fatalf("stop did not enter Stopping: %v", run.stats.phase)
+	}
+	pumpUntil(t, state, "the stuck stop to finish", func() bool { return state.ai.run == nil })
+	if run.stats.phase != aiRunStopped {
+		t.Fatalf("final phase = %v, want aiRunStopped", run.stats.phase)
+	}
+	for _, item := range state.ai.items {
+		if item.kind == aiTool && (item.status == aiToolRunning || item.status == aiToolWaiting) {
+			t.Fatal("a cancelled tool still looks active after the watchdog finished it")
+		}
+	}
+	if status, _ := state.aiRunStatusText(); strings.Contains(status, state.messages.AIPanel.RunStopping) {
+		t.Fatalf("status still says stopping after the watchdog: %q", status)
+	}
+}
