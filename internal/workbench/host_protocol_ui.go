@@ -391,6 +391,9 @@ func (state *State) declareHostPortsSelect(c ui.C, parent ui.Box, rowHeight floa
 func (state *State) declareHostPasswordField(c ui.C, parent ui.Box, title string) {
 	form := &state.editor.form
 	parent.Children(func() {
+		// The title labels the hand-painted control: a press on it focuses and
+		// clicks the field, as BeginField's For did.
+		form.passwordField.For = hitDialogPassword
 		ui.FormField(c, &form.passwordField, title).FillWidth().Height(float32(hostFormRowHeight)).Children(func() {
 			form.passwordControl = ui.Slot(c).Fill()
 		})

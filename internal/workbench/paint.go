@@ -2961,7 +2961,9 @@ func (state *State) declareHostDialogFooter(c ui.C, cancel, submit string) {
 			chrome.hostTestButton = ui.Button(c, m.HostTest).Outline().
 				Hit(hitDialogTest, m.HostTest).Disabled(state.hostTest.outcome == hostTestRunning)
 		}
-		chrome.hostTestMessage = ui.Slot(c).Grow(1)
+		// The message starts half an item gap nearer than the row's gap, as the
+		// painted footer's gap*1.5 from the test button did.
+		chrome.hostTestMessage = ui.Slot(c).Grow(1).MarginLeft(gap / 2)
 		chrome.hostTestMessage.Draw(chrome.hostTestMessageDraw)
 		chrome.hostCancelButton = ui.Button(c, cancel).Secondary().Hit(hitDialogCancel, cancel)
 		chrome.hostSubmitButton = ui.Button(c, submit).Hit(hitDialogSubmit, submit)
