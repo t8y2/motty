@@ -66,9 +66,11 @@ type menuEntry struct {
 	separator bool
 	// chord is the shortcut the row shows at its end, when it has one.
 	chord keymap.Chord
-	// content, when set, makes the entry a row the page paints, height tall.
-	content func(*gfx.Canvas, gfx.Rect, gfx.Theme)
-	height  float32
+	// content, when set, makes the entry a row painted by hand, height tall;
+	// pageContent makes it a row whose controls the page declares.
+	content     func(*gfx.Canvas, gfx.Rect, gfx.Theme)
+	pageContent func(ui.C, gfx.Rect)
+	height      float32
 }
 
 // menuRows collects the rows of a context menu before it is painted, so its
@@ -103,6 +105,14 @@ func (rows *menuRows) addContent(height float32, paint func(*gfx.Canvas, gfx.Rec
 	}
 }
 
+// addPageContent adds a row height tall whose controls the page declares in it.
+func (rows *menuRows) addPageContent(height float32, declare func(ui.C, gfx.Rect)) {
+	if rows.count < len(rows.entries) {
+		rows.entries[rows.count] = menuEntry{pageContent: declare, height: height}
+		rows.count++
+	}
+}
+
 func (rows *menuRows) separate() {
 	if rows.count == 0 || rows.entries[rows.count-1].separator || rows.count == len(rows.entries) {
 		return
@@ -119,7 +129,7 @@ func (rows *menuRows) size(canvas *gfx.Canvas, theme gfx.Theme) (width, height f
 			height += contextMenuSeparator
 			continue
 		}
-		if entry.content != nil {
+		if entry.content != nil || entry.pageContent != nil {
 			height += entry.height
 			continue
 		}
@@ -159,6 +169,10 @@ func (rows *menuRows) declare(c ui.C, menu *ui.MenuItems, choose func(gfx.ID)) {
 		}
 		if entry.content != nil {
 			menu.Content(entry.height, entry.content)
+			continue
+		}
+		if entry.pageContent != nil {
+			menu.ContentPage(entry.height, entry.pageContent)
 			continue
 		}
 		row := entry.item
