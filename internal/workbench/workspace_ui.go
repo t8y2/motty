@@ -878,10 +878,7 @@ func (state *State) dragContextDivider(event gfx.PointerEvent) gfx.EventResult {
 	if !ok || !context.Open || event.Viewport.Width < contextDrawerAt {
 		return gfx.EventResult{Handled: true}
 	}
-	base := state.baseWorkspacePixelBounds(event.Viewport)
-	base.Width -= state.aiReserve(workspaceID, event.Viewport)
-	base.Width -= state.independentMonitorReserve(workspaceID, event.Viewport)
-	_, _, minimum, maximum := state.contextPanelLayout(event.Viewport, context)
+	base, _, minimum, maximum := state.contextPanelLayout(event.Viewport, context)
 	width := event.X - base.X
 	if context.Side == layoutcore.ContextRight {
 		width = base.X + base.Width - 1 - event.X
