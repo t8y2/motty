@@ -71,7 +71,7 @@ func (w *sftpWindow) declareQueue(c ui.C, bounds, origin gfx.Rect) {
 		return
 	}
 	area := ui.Scroll(c).Absolute().Left(list.X - origin.X).Top(list.Y - origin.Y).
-		Width(list.Width).Height(list.Height).Clip().Scrollbars()
+		Width(list.Width).Height(list.Height).Clip().AlwaysScrollbars()
 	view.queueScroll = area.ScrollState()
 	offset := float32(0)
 	if view.queueScroll != nil {

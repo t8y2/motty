@@ -668,7 +668,7 @@ func (w *sftpWindow) declareDirectoryTreePane(c ui.C, side int, width float32) u
 			return
 		}
 		tree.c = c
-		ui.Tree(c, &tree.tree, len(rows), tree.label, tree.content).Grow(1).Scrollbars().ScrollbarSize(10)
+		ui.Tree(c, &tree.tree, len(rows), tree.label, tree.content).Grow(1).AlwaysScrollbars().ScrollbarSize(10)
 		w.directoryTreeChanges(side, rows)
 		tree.c = nil
 	})

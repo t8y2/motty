@@ -479,7 +479,7 @@ func (state *State) declareLocalProxyDialog(c ui.C) {
 		Scope: dialogScope, DismissID: hitLocalProxyDismiss, CloseID: closeID, InitialFocusID: initialFocus,
 	})
 	dialog.Body(func() {
-		area := ui.Scroll(c).Fill().Scrollbars()
+		area := ui.Scroll(c).Fill().AlwaysScrollbars()
 		proxy.bodyScroll = area.ScrollState()
 		if proxy.topBody {
 			area.ScrollState().ScrollTo(0)

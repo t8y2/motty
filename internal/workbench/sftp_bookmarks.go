@@ -441,7 +441,7 @@ func (w *sftpWindow) declareBookmarkProfileList(c ui.C) {
 	frame := ui.Column(c).Grow(1).Pad(1).Background(theme.Background).
 		Radius(theme.Metrics.RadiusItem()).Border(1, theme.Border.Mix(theme.MutedForeground, .25))
 	frame.Children(func() {
-		area := ui.Scroll(c).Grow(1).Scrollbars()
+		area := ui.Scroll(c).Grow(1).AlwaysScrollbars()
 		b.scroll = area.ScrollState()
 		if len(profiles) == 0 {
 			if b.emptyDraw == nil {

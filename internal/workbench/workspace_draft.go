@@ -813,7 +813,7 @@ func (state *State) declareWorkspaceDraftPreview(c ui.C, width float32) {
 		})
 		return
 	}
-	scroll := ui.Scroll(c).Grow(1).MinHeight(0).FillWidth().MarginTop(12).Scrollbars().
+	scroll := ui.Scroll(c).Grow(1).MinHeight(0).FillWidth().MarginTop(12).AlwaysScrollbars().
 		HitWith(hitWorkspaceDraftPreviewScroll, m.WorkspaceDraftPreview, gfx.HitOptions{Role: gfx.RoleGroup})
 	area := scroll.ScrollState()
 	if draft.previewScroll != draft.previewScrollSynced {

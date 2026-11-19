@@ -70,7 +70,7 @@ func (state *State) declareWorkspaceLayoutPanel(c ui.C, size gfx.Size, plan work
 			ui.Slot(c).FillWidth().Height(strip).Shrink(0).Draw(func(d *ui.DrawContext) {
 				state.paintWorkspaceLayoutPresets(d.Canvas, d.Rect, hitWorkspaceHeaderPresets, 0, draft.layout)
 			})
-			scroll := ui.Scroll(c).FillWidth().Height(scrollHeight).Shrink(0).Scrollbars()
+			scroll := ui.Scroll(c).FillWidth().Height(scrollHeight).Shrink(0).AlwaysScrollbars()
 			area := scroll.ScrollState()
 			if draft.scroll != draft.scrollSynced {
 				area.ScrollTo(draft.scroll)
