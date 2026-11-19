@@ -9,7 +9,6 @@ import (
 	"github.com/vivaui/viva/text"
 
 	"motty/internal/configstore"
-	"motty/internal/keyidentity"
 	"motty/internal/sshconn"
 	"motty/internal/vault"
 	layoutcore "motty/internal/workspace"
@@ -717,7 +716,7 @@ func (state *State) hostPassphraseChanges() (changes []vault.Change, failure str
 		return nil, state.messages.VaultUnavailable
 	}
 	secret := []byte(typed)
-	_, err := keyidentity.Load(identity.Path, secret)
+	err := state.keyPassphraseOpens(identity, secret)
 	clear(secret)
 	if err != nil {
 		return nil, state.messages.KeyPassphraseWrong

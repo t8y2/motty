@@ -56,21 +56,26 @@ func unmarshalStoredKey(value string) (storedKey, error) {
 	return key, nil
 }
 
+// readStoredKey reads the private key a reference names from the vault.
+func readStoredKey(source passwordReader, ref string) ([]byte, error) {
+	value, found, err := source.Get(ref)
+	switch {
+	case err != nil:
+		return nil, err
+	case !found:
+		return nil, errors.New("it is no longer saved in Motty")
+	}
+	key, err := unmarshalStoredKey(value)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(key.Key), nil
+}
+
 // storedKeyReader is how a connection reads the private key a reference names.
 func storedKeyReader(source passwordReader) func(string) ([]byte, error) {
 	return func(ref string) ([]byte, error) {
-		value, found, err := source.Get(ref)
-		switch {
-		case err != nil:
-			return nil, err
-		case !found:
-			return nil, errors.New("it is no longer saved in Motty")
-		}
-		key, err := unmarshalStoredKey(value)
-		if err != nil {
-			return nil, err
-		}
-		return []byte(key.Key), nil
+		return readStoredKey(source, ref)
 	}
 }
 
