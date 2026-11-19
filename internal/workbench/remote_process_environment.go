@@ -128,7 +128,7 @@ func (state *State) declareRemoteProcessDetailsBody(c ui.C, width float32, proce
 					if details.commandFailed {
 						color = pal.danger
 					}
-					ui.Text(c, details.commandStatus).Height(28).Shrink(0).FontSize(theme.Metrics.FontSizeM).Color(color).Ellipsis()
+					ui.Text(c, details.commandStatus).Height(28).LineHeight(28).Shrink(0).FontSize(theme.Metrics.FontSizeM).Color(color).Ellipsis()
 				}
 				state.declareRemoteDetail(c, &details.text, remoteDetailSpec{
 					textID: hitRemoteProcessDetailsText, textIDLabel: m.RemoteProcessDetailsTitle,

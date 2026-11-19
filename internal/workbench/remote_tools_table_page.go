@@ -374,7 +374,7 @@ func (state *State) declareRemoteTablePlaceholder(c ui.C, tab remoteTab) {
 			ui.Column(c).Grow(1).FillWidth().Justify(ui.Center).Items(ui.Center).Children(func() {
 				ui.Icon(c, icons.LinuxDocker).Size(32, 32).Color(theme.Foreground).
 					MarginBottom(theme.Metrics.GapItem * 2)
-				ui.Text(c, m.RemoteDockerMissing).Height(titleSize + 10).FontSize(titleSize).
+				ui.Text(c, m.RemoteDockerMissing).Height(titleSize + 10).LineHeight(titleSize + 10).FontSize(titleSize).
 					Weight(gfx.WeightMedium).Color(theme.Foreground)
 				ui.Paragraph(c, m.RemoteDockerMissingHint, 6).FontSize(theme.Metrics.FontSizeM).
 					LineHeight(theme.Metrics.FontSizeM * 1.625).MaxWidth(384).
@@ -387,7 +387,7 @@ func (state *State) declareRemoteTablePlaceholder(c ui.C, tab remoteTab) {
 			ui.Column(c).Grow(1).FillWidth().Justify(ui.Center).Items(ui.Center).Children(func() {
 				ui.Spinner(c).Size(16, 16)
 				ui.Slot(c).Height(theme.Metrics.GapItem * 2).Shrink(0)
-				ui.Text(c, m.RemoteLoading).Height(24).FontSize(theme.Metrics.FontSizeM).Color(pal.muted)
+				ui.Text(c, m.RemoteLoading).Height(24).LineHeight(24).FontSize(theme.Metrics.FontSizeM).Color(pal.muted)
 			})
 			return
 		}

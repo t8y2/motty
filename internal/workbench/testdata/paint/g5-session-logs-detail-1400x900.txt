@@ -75,7 +75,7 @@ text "09-20 18:00" {530 487 88 36}
 text "SSH" {634 487 68 36}
 text "Ended · Closed by you" {718 487 184 36}
 text "1m 00s" {918 487 64 36}
-text "Session details" {1049 202 282 21}
+text "Session details" {1049 202 282 22}
 text "Target" {1049 229.5 106.08 19}
 text "web-01 · alice" {1155.08 229.5 203.92 19}
 text "Started" {1049 251.5 106.08 19}

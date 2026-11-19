@@ -597,7 +597,7 @@ func (state *State) declareLocalProxyPhase(c ui.C, snapshot localProxySnapshot) 
 	}
 	ui.Row(c).Height(24).Gap(6).Children(func() {
 		ui.Icon(c, lucideIcons[icon]).Size(16, 16).Color(color).Shrink(0).Self(ui.Start).MarginSides(3, 0, 0, 0)
-		ui.Text(c, line).FontSize(theme.Metrics.FontSizeS).Weight(gfx.WeightMedium).Color(color).Ellipsis().Grow(1).Height(24)
+		ui.Text(c, line).FontSize(theme.Metrics.FontSizeS).Weight(gfx.WeightMedium).Color(color).Ellipsis().Grow(1).Height(24).LineHeight(24)
 	})
 }
 

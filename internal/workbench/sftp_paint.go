@@ -223,7 +223,7 @@ func (state *State) declareSFTPPanel(c ui.C) {
 		// folder actions below so they do not compete with the title for space.
 		s.header = ui.Row(c).FillWidth().Height(infoBarHeight).Shrink(0).MarginSides(0, -sftpPad, 0, -sftpPad).PadX(sftpPad).Background(pal.workspace).Items(ui.Center)
 		s.header.Children(func() {
-			ui.Text(c, title).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis().Grow(1).Height(20).MarginSides(0, 8, 0, 0)
+			ui.Text(c, title).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis().Grow(1).Height(20).LineHeight(20).MarginSides(0, 8, 0, 0)
 			ui.Row(c).Gap(4).Shrink(0).Children(func() {
 				headerIcon(hitSFTPPanelSide, moveIcon, moveHint, false, iconButtonQuiet)
 				headerIcon(hitSFTPClose, iconClose, messages.TipSFTPClose, false, iconButtonQuiet)
@@ -403,7 +403,7 @@ func (state *State) declareSFTPPanel(c ui.C) {
 				if one {
 					details = state.sftpDetailsLine(view, selected)
 				}
-				ui.Text(c, details).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().Height(18).Shrink(0).MarginSides(2, 0, 2, 2)
+				ui.Text(c, details).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().Height(18).LineHeight(18).Shrink(0).MarginSides(2, 0, 2, 2)
 			})
 		}
 

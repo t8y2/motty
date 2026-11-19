@@ -1393,7 +1393,7 @@ func (state *State) declareSessionLogDetails(c ui.C, stacked bool, width, height
 		// The old header row was 26 high and its close button, 28 high, sat two
 		// pixels above it, so the button's top stayed flush with the panel.
 		ui.Row(c).Height(26).Shrink(0).Items(ui.Start).Children(func() {
-			ui.Text(c, detail.title).Height(22).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).
+			ui.Text(c, detail.title).Height(22).LineHeight(22).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).
 				Color(pal.text).Grow(1).Ellipsis()
 			state.declareIconButton(c, hitSessionLogsDetailClose, iconClose, closeHint, false, iconButtonQuiet).
 				Size(28, 28).MarginTop(-2)
@@ -1419,7 +1419,7 @@ func (state *State) declareSessionLogDetails(c ui.C, stacked bool, width, height
 				}
 			}
 			if showNoInfo {
-				ui.Text(c, detail.noInfo).Height(18).Shrink(0).FillWidth().FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis()
+				ui.Text(c, detail.noInfo).Height(18).LineHeight(18).Shrink(0).FillWidth().FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis()
 				ui.Slot(c).Height(2).Shrink(0)
 			}
 			if showEvents {
@@ -1429,7 +1429,7 @@ func (state *State) declareSessionLogDetails(c ui.C, stacked bool, width, height
 					ui.Text(c, detail.eventsText).Grow(1).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis()
 				})
 				if showTruncated {
-					ui.Text(c, detail.truncatedText).Height(16).Shrink(0).FillWidth().FontSize(metrics.FontSizeS).Color(pal.warning).Ellipsis()
+					ui.Text(c, detail.truncatedText).Height(16).LineHeight(16).Shrink(0).FillWidth().FontSize(metrics.FontSizeS).Color(pal.warning).Ellipsis()
 					ui.Slot(c).Height(2).Shrink(0)
 				}
 				state.declareSessionLogEvents(c)

@@ -817,13 +817,13 @@ func (state *State) declareOneTransferCard(c ui.C, session *Session, slot int) {
 		Pad(pad).Gap(gap).Radius(radius.popup).Border(1, pal.line).Background(pal.surface).Shadow(gfx.ShadowMD).
 		HitWith(hitTransferProgress, "", gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, SkipTab: true}).
 		Children(func() {
-			ui.Text(c, title).Height(20).FillWidth().Ellipsis().
+			ui.Text(c, title).Height(20).LineHeight(20).FillWidth().Ellipsis().
 				FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.text)
 			if address != "" {
-				ui.Text(c, address).Height(18).FillWidth().Ellipsis().
+				ui.Text(c, address).Height(18).LineHeight(18).FillWidth().Ellipsis().
 					FontSize(metrics.FontSizeS).Color(pal.muted)
 			}
-			ui.Text(c, name).Height(20).FillWidth().Ellipsis().
+			ui.Text(c, name).Height(20).LineHeight(20).FillWidth().Ellipsis().
 				FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text)
 			ui.Progress(c, fraction).Height(8).FillWidth()
 			ui.Row(c).Height(28).FillWidth().Gap(8).Items(ui.Center).Children(func() {

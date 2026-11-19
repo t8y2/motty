@@ -412,7 +412,7 @@ func (w *sftpWindow) declareBookmarkBody(c ui.C) {
 		})
 		w.declareBookmarkProfileList(c)
 		if b.errorText != "" {
-			ui.Text(c, b.errorText).FontSize(theme.Metrics.FontSizeS).Color(w.owner.pal.danger).Ellipsis().Height(24)
+			ui.Text(c, b.errorText).FontSize(theme.Metrics.FontSizeS).Color(w.owner.pal.danger).Ellipsis().Height(24).LineHeight(24)
 		}
 	})
 }
