@@ -3376,18 +3376,17 @@ func (state *State) declareMoveGroupBody(c ui.C, label string, viewport gfx.Rect
 	}
 	column := ui.Column(c).Fill()
 	column.Children(func() {
-		state.groupActions.slot = ui.Slot(c).Height(90)
+		state.groupActions.parentField.Error = state.dialogError
+		state.groupActions.parentField.Invalid = state.dialogError != ""
+		state.groupActions.parentField.For = hitMoveGroupField
+		ui.FormField(c, &state.groupActions.parentField, label).FillWidth().Height(90).Children(func() {
+			state.groupActions.slot = ui.Slot(c).Fill()
+		})
 	})
 	column.DrawOver(func(d *ui.DrawContext) {
-		canvas, theme := d.Canvas, *d.Theme
-		slot := state.groupActions.slot.Rect()
-		field := components.BeginField(canvas, theme, slot).For(hitMoveGroupField)
-		if state.dialogError != "" {
-			field = field.Invalid()
-		}
-		content := field.Paint(label, "", state.dialogError)
+		content := state.groupActions.slot.Rect()
 		content.Height = 32
-		state.paintHostGroupParentSelect(canvas, content, viewport)
+		state.paintHostGroupParentSelect(d.Canvas, content, viewport)
 	})
 }
 

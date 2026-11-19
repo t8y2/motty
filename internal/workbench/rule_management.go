@@ -112,9 +112,12 @@ func (state *State) declareRuleManager(c ui.C) {
 				if all {
 					label = m.ClearSelection
 				}
+				side := components.CheckboxExtent(*c.Theme())
 				checkbox := ui.Slot(c).Size(22, 24).Shrink(0)
-				checkbox.Draw(func(d *ui.DrawContext) {
-					components.BeginCheckbox(d.Canvas, *d.Theme, hitRuleManagerAll, d.Rect, all).Label(label).Paint()
+				checkbox.Children(func() {
+					// The page control binds a copy: the dialog's dispatcher owns the
+					// real selection, as the component did.
+					ui.Checkbox(c, &all, "").Absolute().Left(0).Top(0).Size(side, side).Hit(hitRuleManagerAll, label)
 				})
 				ui.Text(c, fmt.Sprintf(m.CountFmt, count)).FontSize(metrics.FontSizeM).Color(state.pal.text)
 				ui.Spacer(c).Grow(1)
@@ -176,8 +179,10 @@ func (state *State) declareRuleManagerRow(c ui.C, index int) {
 	}
 	row.Children(func() {
 		selectBox := ui.Slot(c).Size(22, 24).Shrink(0)
-		selectBox.Draw(func(d *ui.DrawContext) {
-			components.BeginCheckbox(d.Canvas, *d.Theme, hitRuleManagerSelect.At(index), d.Rect, manager.selected[index]).Label(name).Paint()
+		selectBox.Children(func() {
+			selected := manager.selected[index]
+			side := components.CheckboxExtent(*c.Theme())
+			ui.Checkbox(c, &selected, "").Absolute().Left(0).Top(0).Size(side, side).Hit(hitRuleManagerSelect.At(index), name)
 		})
 		if manager.kind == ruleDeleteHighlight {
 			ui.Slot(c).Size(10, 24).Shrink(0).Background(state.slotColor(state.highlighting.rules[index].Slot)).Radius(2)
@@ -189,12 +194,14 @@ func (state *State) declareRuleManagerRow(c ui.C, index int) {
 		if manager.kind == ruleDeleteAutofill {
 			rule := state.autofillRules.rules[index]
 			toggle := ui.Slot(c).Size(52, 32).Shrink(0)
-			toggle.Draw(func(d *ui.DrawContext) {
+			toggle.Children(func() {
+				on := rule.Enabled
 				label := m.TurnOn
-				if rule.Enabled {
+				if on {
 					label = m.TurnOff
 				}
-				components.BeginSwitch(d.Canvas, *d.Theme, hitAutofillToggleList.At(index), gfx.Rect{X: d.Rect.X + 10, Y: d.Rect.Y + 7}, rule.Enabled).Label(label + ": " + name).Paint()
+				width, height := components.SwitchExtent(*c.Theme(), false)
+				ui.Switch(c, &on, "").Absolute().Left(10).Top(7).Size(width, height).Hit(hitAutofillToggleList.At(index), label+": "+name)
 			})
 		}
 		state.declareIconButton(c, hitRuleManagerEdit.At(index), iconPencil, m.Edit+": "+name, false, iconButtonQuiet).Size(32, 32)
