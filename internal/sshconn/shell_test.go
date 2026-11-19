@@ -150,6 +150,9 @@ func TestAGatewayThatRejectsLocaleRequestsStillStartsAShell(t *testing.T) {
 	if locale, ok := env["LANG"]; ok {
 		t.Fatalf("the gateway was sent LANG=%q", locale)
 	}
+	if value, ok := env["COLORTERM"]; ok {
+		t.Fatalf("the gateway was sent COLORTERM=%q", value)
+	}
 	if !w.shell.Write([]byte("exit\r")) {
 		t.Fatal("writing to the shell failed")
 	}
@@ -206,6 +209,9 @@ func TestAnInteractiveOnlyHostGetsOnlyPtyAndShell(t *testing.T) {
 	if locale, ok := env["LANG"]; ok {
 		t.Fatalf("an interactive-only host was sent LANG=%q", locale)
 	}
+	if value, ok := env["COLORTERM"]; ok {
+		t.Fatalf("an interactive-only host was sent COLORTERM=%q", value)
+	}
 	if !w.shell.Write([]byte("exit\r")) {
 		t.Fatal("writing to the shell failed")
 	}
@@ -256,6 +262,9 @@ func TestShellRunsOnAPtyAndCarriesDataBothWays(t *testing.T) {
 	if !strings.Contains(strings.ToLower(env["LANG"]), "utf") {
 		t.Errorf("LANG = %q, want a UTF-8 locale", env["LANG"])
 	}
+	if env["COLORTERM"] != "truecolor" {
+		t.Errorf("COLORTERM = %q, want truecolor", env["COLORTERM"])
+	}
 
 	if !w.shell.Write([]byte("ls\r")) {
 		t.Fatal("Write refused")
@@ -284,6 +293,32 @@ func TestShellRunsOnAPtyAndCarriesDataBothWays(t *testing.T) {
 	if w.shell.Write([]byte("x")) {
 		t.Error("Write succeeded after the shell ended")
 	}
+}
+
+// A host with a remote charset keeps the server's own locale, but the color
+// depth belongs to this terminal, not to the charset: COLORTERM still reaches
+// the shell.
+func TestARemoteCharsetHostStillGetsTheColorDepth(t *testing.T) {
+	server := startServer(t, func(server *testServer) {
+		server.password = "secret"
+		// A Windows banner keeps the system probe away from this test.
+		server.version = "SSH-2.0-OpenSSH_for_Windows_9.5"
+		server.shell = echoShell
+	})
+	h := connect(t, server)
+	w := openShellWith(t, h, ShellConfig{Cols: 80, Rows: 24, SkipUTF8Locale: true})
+	w.until("the greeting", func(output string) bool { return strings.Contains(output, "welcome") })
+	_, _, _, env, _ := fakeShellState(server)
+	if locale, ok := env["LANG"]; ok {
+		t.Fatalf("a remote-charset host was sent LANG=%q", locale)
+	}
+	if env["COLORTERM"] != "truecolor" {
+		t.Fatalf("COLORTERM = %q, want truecolor", env["COLORTERM"])
+	}
+	if !w.shell.Write([]byte("exit\r")) {
+		t.Fatal("writing to the shell failed")
+	}
+	w.waitDone()
 }
 
 func TestCommandShellUsesItsOwnPTYAndCarriesInteractiveInput(t *testing.T) {
