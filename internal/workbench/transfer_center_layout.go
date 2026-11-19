@@ -86,6 +86,7 @@ func (state *State) declareTransferBody(c ui.C, height float32) {
 			// The List declared its visible rows at its previous offset.
 			c.Canvas().RequestFrame()
 		}
+		state.declareTransferCenterPreview(c)
 	}).DrawOver(center.bodyDraw)
 }
 
