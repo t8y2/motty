@@ -1061,12 +1061,12 @@ func (state *State) hostManagementKey(event gfx.KeyEvent) (gfx.EventResult, bool
 		return gfx.EventResult{}, false
 	}
 	if event.Target == hitHostSideWidth {
-		if bounds := state.hostSide.splitBounds; bounds.Width > 1 {
-			if fraction, ok := state.hostSideResizable(nil).FractionForKey(event.Key); ok {
-				state.hostSide.width = fraction * (bounds.Width - 1)
-				state.save()
-				return handled, true
+		if result := state.hostSide.split.Key(event); result.Handled {
+			if state.hostSide.split.Pos > 0 {
+				state.hostSide.width = state.hostSide.split.Pos
 			}
+			state.save()
+			return handled, true
 		}
 	}
 	if event.Key == gfx.KeySpace && !event.Release && state.clickHostScopeSelection(event.Target) {

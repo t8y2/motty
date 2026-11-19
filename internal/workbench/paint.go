@@ -1355,13 +1355,6 @@ func (state *State) paintHostsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 		X: bounds.X + layout.sideTree.X, Y: bounds.Y + layout.sideTree.Y,
 		Width: layout.sideTree.Width, Height: layout.sideTree.Height,
 	}
-	state.hostSide.splitBounds = gfx.Rect{
-		X: bounds.X + layout.side.X, Y: bounds.Y + layout.split.Y,
-		Width: layout.side.Width + 1 + hostSidePaneGap + layout.main.Width, Height: layout.split.Height,
-	}
-	if layout.sideVisible {
-		state.paintHostsSideSplit(canvas)
-	}
 	list := gfx.Rect{
 		X: bounds.X + layout.list.X, Y: bounds.Y + layout.list.Y,
 		Width: layout.list.Width, Height: layout.list.Height,

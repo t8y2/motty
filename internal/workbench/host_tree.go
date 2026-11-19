@@ -408,6 +408,11 @@ func (state *State) declareHostsWorkspace(c ui.C) {
 		clear(state.groupActions.rows)
 	}
 	width, height := state.hostsWorkspaceSize()
+	// A drag or a key moved the page Splitter; its position is the width the
+	// panes are laid out with this frame.
+	if state.hostSide.split.Pos > 0 {
+		state.hostSide.width = state.hostSide.split.Pos
+	}
 	layout := state.hostsLayout(width, height)
 	state.hostSide.visible = layout.sideVisible
 	state.hostSide.visibleWidth = layout.side.Width
@@ -415,6 +420,7 @@ func (state *State) declareHostsWorkspace(c ui.C) {
 	state.chrome.headerBoxes = hostsHeaderBoxes{}
 	if layout.sideVisible {
 		state.declareHostsSide(c, layout)
+		state.declareHostsSplit(c, layout)
 	}
 	state.declareHostsRightHeader(c, layout, state.chrome.headerPlan)
 	if len(state.hostTreeRows) == 0 {
