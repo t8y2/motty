@@ -55,6 +55,15 @@ var hitDashboardViewList = tree.Sub(dashboardHits, tree.Name("host-view"))
 var hitDashboardSimpleViewList = tree.Sub(dashboardHits, tree.Name("simple-view"))
 var hitDashboardSudoList = tree.Sub(dashboardHits, tree.Name("sudo"))
 var dashboardIntervals = [...]int{2, 5, 10, 30, 60}
+
+// dashboardIntervalIcons is the refresh globe every interval choice shows.
+var dashboardIntervalIcons = func() []gfx.Icon {
+	icons := make([]gfx.Icon, len(dashboardIntervals))
+	for index := range icons {
+		icons[index] = remoteRefreshClock
+	}
+	return icons
+}()
 var dashboardRetentions = [...]int{15, 60, 360, 1440}
 
 type dashboardEditor struct {

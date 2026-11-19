@@ -249,9 +249,9 @@ func (state *State) declareDashboardIntervalSelect(c ui.C, p *monitoring.Panel) 
 	d, m := &state.dashboard, state.messages.Dashboard
 	choice := p.Interval
 	d.intervalChoice = choice
-	selector := ui.SelectIcon(c, &d.intervalChoice, dashboardIntervals[:], func(seconds int) string {
+	selector := ui.Select(c, &d.intervalChoice, dashboardIntervals[:], func(seconds int) string {
 		return fmt.Sprintf(m.Every, seconds)
-	}, func(int) gfx.Icon { return remoteRefreshClock }).Label(m.Sampling).Height(34).Width(152)
+	}).Icons(dashboardIntervalIcons).Label(m.Sampling).Height(34).Width(152)
 	// The hands of the sampling clock move over the icon the trigger paints, as
 	// they did over the hand-painted trigger: a live sweep asks for the next
 	// frame, an idle or reduced-motion one does not.
