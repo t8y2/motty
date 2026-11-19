@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/localshell"
@@ -218,11 +219,29 @@ func (state *State) paintLocalShellSetting(page *settingsPage) {
 	controlWidth = min(controlWidth, max(page.width-60, 0))
 	c := page.c
 	page.lineWith(m.SettingsLocalShell, m.SettingsLocalShellDescription, controlWidth, func() {
-		trigger := ui.Button(c, value).Outline().Icon(lucideIcons[iconChevronDown]).Width(controlWidth).
+		empty := len(menu.choices) == 0
+		// The trigger is a combobox, not a button: a button control declares
+		// its own role and ignores HitWith's options, which loses the value and
+		// the expanded state assistive technology reads. The container carries
+		// the combobox, and a zero-ID BeginButton paints the button look on it
+		// without adding a hit of its own.
+		controlHeight := components.BeginButton(nil, *c.Theme(), gfx.ID{}, gfx.Rect{}).BoundsHeight()
+		trigger := ui.Row(c).Width(controlWidth).Height(controlHeight).Shrink(0).
 			HitWith(hitSettingsLocalShell, m.SettingsLocalShell, gfx.HitOptions{
-				Role: gfx.RoleCombobox, Value: value, Hint: hint, Expanded: menu.open, Disabled: len(menu.choices) == 0,
-			}).Disabled(len(menu.choices) == 0)
-		if !menu.open || len(menu.choices) == 0 {
+				Role: gfx.RoleCombobox, Value: value, Hint: hint, Expanded: menu.open, Disabled: empty,
+			}).Disabled(empty)
+		trigger.Draw(func(d *ui.DrawContext) {
+			button := components.BeginButton(d.Canvas, *d.Theme, gfx.ID{}, d.Rect).
+				WithIcon(lucideIcons[iconChevronDown]).
+				WithState(components.ButtonState{
+					Hovered: d.State.Hovered, Pressed: d.State.Pressed, Focused: d.State.FocusVisible,
+				}).Height(d.Rect.Height)
+			if empty {
+				button = button.Disabled()
+			}
+			button.Outline(value)
+		})
+		if !menu.open || empty {
 			return
 		}
 		ui.PopupLayer(c, popupLayer)

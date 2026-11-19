@@ -56,7 +56,7 @@ func TestLocalShellDropdownSelectsAndPersists(t *testing.T) {
 	state := shellSelectState(t, choices)
 	canvas := paintShellSettings(state)
 	hit, ok := hitByID(canvas, hitSettingsLocalShell)
-	if !ok || hit.Expanded {
+	if !ok || hit.Role != gfx.RoleCombobox || hit.Value != choices[0].Name || hit.Expanded {
 		t.Fatalf("default select: %+v", hit)
 	}
 	state.Click(hitSettingsLocalShell)
@@ -134,7 +134,7 @@ func TestLocalShellDropdownHandlesNoInstalledShells(t *testing.T) {
 	state := shellSelectState(t, nil)
 	canvas := paintShellSettings(state)
 	hit, ok := hitByID(canvas, hitSettingsLocalShell)
-	if !ok || !hit.Disabled || hit.Value != state.messages.SettingsLocalShellEmpty {
+	if !ok || hit.Role != gfx.RoleCombobox || !hit.Disabled || hit.Value != state.messages.SettingsLocalShellEmpty {
 		t.Fatalf("empty discovery: %+v", hit)
 	}
 }
