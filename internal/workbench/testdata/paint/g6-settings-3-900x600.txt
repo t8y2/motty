@@ -140,7 +140,7 @@ text "2 of 2 optional columns shown" {434.62 608.5 241.13293 15}
 text "Configure columns" {709.7529 591 142.24707 28}
 text "Default download folder" {434.62 643 148.79993 21}
 text "Downloads are saved" {434.62 665 148.79993 15}
-text "directly to /Users/skyler/…" {434.62 680 148.79993 15}
+text "directly to /home/tester/…" {434.62 680 148.79993 15}
 text "Choose folder" {617.4199 655 110.9043 28}
 text "Ask every time" {736.3242 655 115.67578 28}
 text "Default editor" {434.62 707 193.38 21}

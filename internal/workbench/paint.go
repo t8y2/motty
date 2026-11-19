@@ -558,7 +558,7 @@ func (state *State) windowFrameColor() gfx.Color {
 // draws the window controls in the corner, their inset owns the space and the
 // bar keeps its own margin; the rail is left where it is.
 func (state *State) windowBarRightPad() float32 {
-	_, trailing := app.TitlebarInsets()
+	_, trailing := windowTitlebarInsets()
 	centred := state.terminalToolbarMetrics().railExtent/2 - barButtonSize/2
 	if centred <= trailing {
 		return trailing + barMargin
@@ -677,7 +677,7 @@ func (state *State) declareShell(c ui.C) {
 // to share the room left of the buttons.
 func (state *State) windowBarGeometry(canvas *gfx.Canvas, width float32) barGeometry {
 	chrome := &state.chrome
-	leading, trailing := app.TitlebarInsets()
+	leading, trailing := windowTitlebarInsets()
 	padRight := state.windowBarRightPad()
 	buttons := state.windowBarButtons()
 	tabCount := len(state.workspaceTabs) + len(state.sftpTabs)
@@ -731,7 +731,7 @@ func (state *State) declareProbeBar(c ui.C) {
 // window. With probe set only the places are declared, for windowBarGeometry.
 func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool, geometry barGeometry, scroll float32) {
 	m, pal, chrome := state.messages, state.pal, &state.chrome
-	leading, _ := app.TitlebarInsets()
+	leading, _ := windowTitlebarInsets()
 	visibleFileTabs := 0
 	for _, tab := range state.sftpTabs {
 		if tab != nil && !tab.closed {

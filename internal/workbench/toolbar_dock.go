@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 )
 
@@ -310,7 +309,7 @@ func (state *State) toolbarDockChanged() {
 
 // Keep a useful tab area; excess top actions remain available in the menu.
 func (state *State) toolbarTopLimit() int {
-	leading, trailing := app.TitlebarInsets()
+	leading, trailing := windowTitlebarInsets()
 	return max(2, int((state.viewport.Width-leading-trailing-240)/(barButtonSize+2)))
 }
 

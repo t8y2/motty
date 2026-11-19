@@ -193,7 +193,7 @@ text "Sync with SSH config" {434.62 887 347.38 21}
 text "Keeps your OpenSSH config and these hosts in step both" {434.62 909 347.38 15}
 text "ways. Hosts made here go in a marked block of the file, and a…" {434.62 924 347.38 15}
 text "SSH config file" {434.62 958.5 227.46106 21}
-text "/Users/skyler/.ssh/config" {434.62 980.5 227.46106 15}
+text "/home/tester/.ssh/config" {434.62 980.5 227.46106 15}
 text "Choose…" {696.08105 963 81.55078 28}
 text "Default" {785.63184 963 66.368164 28}
 text "Sync now" {434.62 1022.5 300.1886 21}

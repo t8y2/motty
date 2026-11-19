@@ -77,13 +77,13 @@ text "SSH, SFTP, port forwarding, remote desktop and an AI assistant, in one nat
 text "Copy" {1220.9844 159 54.015625 28}
 text "Version info" {527 245 752 22}
 text "Version" {569 298.5 41.583984 15}
-text "v0.4.14" {549 316.5 337 19}
+text "v0.0.0-test" {549 316.5 337 19}
 text "Platform" {940 298.5 45.984375 15}
-text "macOS · arm64" {920 316.5 337 19}
+text "TestOS · testarch" {920 316.5 337 19}
 text "Build" {569 368.5 26.982422 15}
 text "Build information unavailable" {549 386.5 337 19}
 text "Runtime" {940 368.5 44.396484 15}
-text "go1.26.11" {920 386.5 337 19}
+text "go0.0.0" {920 386.5 337 19}
 text "Updates" {527 455 752 22}
 text "Check automatically" {541 489 664 21}
 text "Look for a newer version five seconds after starting, then every hour. The check lets the download host see your" {541 511 664 15}

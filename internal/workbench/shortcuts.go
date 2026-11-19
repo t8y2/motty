@@ -63,8 +63,17 @@ func newShortcutMap() shortcutMap {
 	return shortcutMap{chords: keymap.NewTable[shortcutAction](int(shortcutActionCount))}
 }
 
+// primaryModifier and paneSplitChords are keymap.Primary and
+// defaultPaneSplitChords with a seam for the paint goldens: production takes
+// this platform's chords, while a golden pins one platform's so the same
+// snapshots hold everywhere.
+var (
+	primaryModifier = keymap.Primary
+	paneSplitChords = defaultPaneSplitChords
+)
+
 func defaultShortcuts() shortcutMap {
-	primary := keymap.Primary
+	primary := primaryModifier
 	shortcuts := newShortcutMap()
 	shortcuts.chords.Set(shortcutCommandPalette, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 'p'})
 	shortcuts.chords.Set(shortcutNewWindow, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 'n'})
@@ -83,7 +92,7 @@ func defaultShortcuts() shortcutMap {
 	shortcuts.chords.Set(shortcutTabNumber, keymap.Chord{Modifiers: primary, Char: '1'})
 	shortcuts.chords.Set(shortcutPanePrevious, keymap.Chord{Modifiers: primary | gfx.ModifierAlt, Char: 'j'})
 	shortcuts.chords.Set(shortcutPaneNext, keymap.Chord{Modifiers: primary | gfx.ModifierAlt, Char: 'k'})
-	splitHorizontal, splitVertical := defaultPaneSplitChords()
+	splitHorizontal, splitVertical := paneSplitChords()
 	shortcuts.chords.Set(shortcutPaneSplitHorizontal, splitHorizontal)
 	shortcuts.chords.Set(shortcutPaneSplitVertical, splitVertical)
 	shortcuts.chords.Set(shortcutPaneClose, keymap.Chord{Modifiers: primary | gfx.ModifierAlt, Char: 'w'})
@@ -116,7 +125,7 @@ const shortcutDefaultsGeneration = 1
 // shipped. On macOS Command+Alt+H is the menu bar's Hide Others, which an
 // application's key equivalents never reach, so the chord could not work.
 func legacyPaneSplitChords() (horizontal, vertical keymap.Chord) {
-	primary := keymap.Primary
+	primary := primaryModifier
 	return keymap.Chord{Modifiers: primary | gfx.ModifierAlt, Char: 'h'},
 		keymap.Chord{Modifiers: primary | gfx.ModifierAlt, Char: 'v'}
 }
@@ -127,7 +136,7 @@ func legacyPaneSplitChords() (horizontal, vertical keymap.Chord) {
 // taken reports the chords something other than a built-in action holds.
 func (shortcuts *shortcutMap) migrateChangedDefaults(taken func(keymap.Chord) bool) {
 	previousHorizontal, previousVertical := legacyPaneSplitChords()
-	horizontal, vertical := defaultPaneSplitChords()
+	horizontal, vertical := paneSplitChords()
 	for _, change := range [...]struct {
 		action shortcutAction
 		was    keymap.Chord

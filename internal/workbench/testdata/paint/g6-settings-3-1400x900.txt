@@ -138,7 +138,7 @@ text "File list columns" {541 586.5 557.7529 21}
 text "2 of 2 optional columns shown" {541 608.5 557.7529 15}
 text "Configure columns" {1132.7529 591 142.24707 28}
 text "Default download folder" {541 650.5 465.41992 21}
-text "Downloads are saved directly to /Users/skyler/Downloads." {541 672.5 465.41992 15}
+text "Downloads are saved directly to /home/tester/Downloads." {541 672.5 465.41992 15}
 text "Choose folder" {1040.4199 655 110.9043 28}
 text "Ask every time" {1159.3242 655 115.67578 28}
 text "Default editor" {541 707 400 21}
