@@ -56,6 +56,12 @@ const (
 	codeInvalidRequest = -32600
 	codeMethodNotFound = -32601
 	codeInvalidParams  = -32602
+	// codeSessionNotFound is a server-defined code in the JSON-RPC reserved
+	// range. The MCP spec only assigns the HTTP 404 for a request whose
+	// Mcp-Session-Id the server no longer knows; the reference TypeScript
+	// server pairs that status with this code, and clients that inspect the
+	// body use it to tell an expired session from a wrong address.
+	codeSessionNotFound = -32001
 )
 
 const instructions = "Tools to inspect and operate the terminal sessions the user has open in Motty. " +
@@ -298,7 +304,12 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			// The MCP spec requires 404 for a session the server does not know,
 			// so the client starts a new one; the stdio bridge does that itself.
-			http.Error(w, "MCP session not found", http.StatusNotFound)
+			// The JSON-RPC body names the cause for clients that read it instead
+			// of treating every 404 as a wrong URL.
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
+			w.WriteHeader(http.StatusNotFound)
+			w.Write(errorResponse(nil, codeSessionNotFound, "Session not found"))
 			return
 		}
 		ctx = gate.WithOutputOwner(ctx, id)

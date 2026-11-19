@@ -715,6 +715,34 @@ func TestHTTPSessionsAreIndependentAndUnknownSessionsAreRejected(t *testing.T) {
 	}
 }
 
+func TestHTTPUnknownSessionAnswersAJSONRPCError(t *testing.T) {
+	_, server := newServer(t, okGate(&fakeBackend{}), nil)
+	resp, body := post(t, server.URL, `{"jsonrpc":"2.0","id":7,"method":"tools/list"}`,
+		func(req *http.Request) { req.Header.Set("Mcp-Session-Id", "not-a-session") })
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("unknown session returned %d", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Content-Type"); got != "application/json" {
+		t.Fatalf("unknown session answered content type %q", got)
+	}
+	var reply struct {
+		JSONRPC string          `json:"jsonrpc"`
+		ID      json.RawMessage `json:"id"`
+		Error   struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(body), &reply); err != nil {
+		t.Fatalf("unknown session body is not JSON: %v (%q)", err, body)
+	}
+	// The code is the convention shared with the reference server, not a
+	// spec-assigned one; clients that do not read the body still get the 404.
+	if reply.JSONRPC != "2.0" || string(reply.ID) != "null" || reply.Error.Code != -32001 || reply.Error.Message != "Session not found" {
+		t.Fatalf("unexpected error body %q", body)
+	}
+}
+
 func TestHTTPSessionsKeepTheMostRecentlyUsedWhenFull(t *testing.T) {
 	_, server := newServer(t, okGate(&fakeBackend{}), nil)
 	initialize := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`
