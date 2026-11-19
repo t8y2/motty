@@ -1,11 +1,11 @@
 package workbench
 
 import (
-	"os"
 	"path"
 	"strings"
 
 	"github.com/vivaui/viva/gfx"
+	"motty/internal/sftpclient"
 	"motty/internal/workbench/icons"
 )
 
@@ -69,20 +69,37 @@ var sftpNameIcons = map[string]*gfx.Icon{
 	".gitignore": &icons.MitGit, ".gitattributes": &icons.MitGit, ".gitmodules": &icons.MitGit, ".gitconfig": &icons.MitGit,
 }
 
-// sftpFileIcon picks the glyph of one directory entry from its mode and name.
-// mono reports a glyph that has no colors of its own (the generic file and the
-// link), which the list tints quietly. It runs once when a listing arrives,
-// not on every paint.
-func sftpFileIcon(name string, mode os.FileMode) (icon *gfx.Icon, mono bool) {
+// sftpFileIcon picks the glyph of one directory entry from its type, its name
+// and, for a symbolic link, what it points at. A link takes the kind of its
+// target, as a file manager does, so a folder of links still reads by kind
+// instead of every row showing the same chain; a broken or unresolved link keeps
+// the link glyph, because its target is unknown. mono reports a glyph that has
+// no colors of its own (the generic file and the link), which the list tints
+// quietly. It runs once when a listing arrives, not on every paint.
+func sftpFileIcon(entry sftpclient.Entry) (icon *gfx.Icon, mono bool) {
+	name := entry.Name
 	switch {
-	case mode&os.ModeSymlink != 0:
-		return &icons.Link, true
-	case isApplicationBundle(name, mode):
+	case entry.IsLink():
+		switch {
+		case entry.LinkBroken:
+			return &icons.Link, true
+		case entry.LinkDir:
+			return &icons.FolderSolid, false
+		case entry.LinkTarget == "":
+			// The listing ran out of its per-folder link lookups before this
+			// one: what it points at is unknown, and the link glyph says so
+			// instead of guessing a kind.
+			return &icons.Link, true
+		}
+		// A link to a file takes the type of the file it names: the target's
+		// own name says what it is even when the link's name does not.
+		name = sftpLinkTargetName(entry.LinkTarget, name)
+	case isApplicationBundle(name, entry.Mode):
 		// A bundle is a folder on disk but one thing to the person: a program.
 		// This is its stand-in where the system's own icon for it is out of reach,
 		// as on a server's disk.
 		return &icons.MitExe, false
-	case mode.IsDir():
+	case entry.Mode.IsDir():
 		return &icons.FolderSolid, false
 	}
 	lower := strings.ToLower(name)
@@ -96,4 +113,19 @@ func sftpFileIcon(name string, mode os.FileMode) (icon *gfx.Icon, mono bool) {
 		return &icons.MitSettings, false // dotfiles are configuration
 	}
 	return &icons.File, true
+}
+
+// sftpLinkTargetName is the base name of a link's target, or the link's own name
+// when the target names no file (a bare ".", ".." or root). A local Windows
+// target may use backslashes even though remote targets use slashes.
+func sftpLinkTargetName(target, fallback string) string {
+	trimmed := strings.TrimRight(target, `/\`)
+	if index := strings.LastIndexAny(trimmed, `/\`); index >= 0 {
+		trimmed = trimmed[index+1:]
+	}
+	switch trimmed {
+	case "", ".", "..":
+		return fallback
+	}
+	return trimmed
 }

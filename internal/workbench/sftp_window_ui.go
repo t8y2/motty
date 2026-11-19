@@ -787,7 +787,7 @@ func (w *sftpWindow) declareListRow(row ui.ListRow, side int, paneWidth, rowWidt
 		sizeWidth, modifiedWidth = columns.size, columns.modified
 	}
 	box.Children(func() {
-		declareSFTPRowIcon(c, entry, tint)
+		w.owner.declareSFTPRowIcon(c, entry, tint)
 		name := ui.Text(c, entry.entry.Name).Color(color).Ellipsis().Grow(1)
 		// The row spends its padding, the icon and the gaps before the name text;
 		// a name wider than what is left is the one the tooltip is for.

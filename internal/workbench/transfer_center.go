@@ -497,7 +497,7 @@ func (state *State) describeTransfer(entry *transferEntry) {
 	if snapshot.Recursive {
 		mode = fs.ModeDir
 	}
-	entry.fileIcon, entry.monoIcon = sftpFileIcon(entry.title, mode)
+	entry.fileIcon, entry.monoIcon = sftpFileIcon(sftpclient.Entry{Name: entry.title, Mode: mode})
 	entry.typeIcon = state.attachTypeIcon(entry.title, mode.IsDir())
 	entry.searchTitle = strings.ToLower(entry.title)
 	entry.status = m.Queued

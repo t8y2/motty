@@ -2455,7 +2455,7 @@ func prepareSFTPRows(rows []sftpRow, entries []sftpclient.Entry) []sftpRow {
 		if entry.IsDir() {
 			size = "—"
 		}
-		icon, mono := sftpFileIcon(entry.Name, entry.Mode)
+		icon, mono := sftpFileIcon(entry)
 		rows[index] = sftpRow{
 			entry: entry, icon: icon, mono: mono, hidden: strings.HasPrefix(entry.Name, "."),
 			cells: [5]string{"", entry.Name, size, entry.ModTime.Local().Format("2006/01/02 15:04"), kind},
