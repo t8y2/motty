@@ -231,3 +231,48 @@ func TestSnippetVariablesDialogManyFieldsStayReachable(t *testing.T) {
 		t.Fatalf("the last field %+v is not reachable in the list %+v", slot, list)
 	}
 }
+
+// A long command wraps inside the preview and scrolls there, instead of
+// running off the right edge where only part of it can be read.
+func TestSnippetVariablesPreviewWrapsAndScrolls(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	command := "deploy " + strings.Repeat("--set=some.really.long.value ", 12) + "{{target}}"
+	state.snippets.list = []snippet{
+		{Name: "Long", Command: command, Run: true},
+	}
+	state.openSnippetVariablesDialog(0, 0, false)
+
+	view, err := headless.Open(app.Config{
+		Width: 900, Height: 800, Tree: Tree(), Paint: state.Paint,
+		OnKey: state.Key, OnPointer: state.Pointer, OnShortcut: state.Shortcut,
+		OnScroll: state.Scroll, OnResize: state.Resize,
+		TextInput: func(c app.TextInputContext) *app.TextInput {
+			if e := state.EditorFor(c.ID); e != nil {
+				return &app.TextInput{Editor: e}
+			}
+			return nil
+		},
+	}, nil, headless.Options{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+
+	prompt := &state.snippetPrompt
+	if !prompt.previewSet {
+		t.Fatal("the preview was not declared in a scroll area")
+	}
+	if got := prompt.preview.Rect().Height; got != snippetVarPreviewHeight {
+		t.Fatalf("the preview box is %v tall, want the %v the body reserves", got, snippetVarPreviewHeight)
+	}
+	if prompt.previewScroll == nil {
+		t.Fatal("the preview scroll state was not kept")
+	}
+	scroll := *prompt.previewScroll
+	if scroll.Content <= scroll.Viewport {
+		t.Fatalf("a long command did not wrap: preview content %v, viewport %v", scroll.Content, scroll.Viewport)
+	}
+}
