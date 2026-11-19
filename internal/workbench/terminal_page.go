@@ -330,6 +330,8 @@ func (state *State) declareTerminalPane(c ui.C, session *Session, bounds gfx.Rec
 			terminal.Grow(1).FillWidth().Background(state.ground(state.termPal.terminal)).Draw(t.controlDraw)
 		})
 	})
+	state.declareCompletionList(c, session, bounds, geometry)
+	state.declareAutofillPick(c, session, bounds, geometry)
 }
 
 // drawTerminalControl paints the grid inside the control's rectangle.

@@ -77,8 +77,6 @@ func (state *State) paintTerminalPaneDetails(canvas *gfx.Canvas, session *Sessio
 			paintLight(canvas, spot.X+spot.Width/2, spot.Y+spot.Height/2, kind, dot, t.paintBarBackground)
 		}
 	}
-	state.paintCompletionList(canvas, session, t.paintGeometry)
-	state.paintAutofillPick(canvas, session, t.paintGeometry)
 }
 
 func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools]barTool) []barTool {
