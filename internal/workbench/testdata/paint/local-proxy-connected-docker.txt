@@ -9,51 +9,51 @@ rect {{428 510.62 504 1} {0.2 0.23529412 0.2901961 1} 0 0 {0 36 1360 864} true 1
 rect {{875.5029 526.62 56.49707 32} {0.216 0.22917646 0.24894118 1} 7.5 0 {0 36 1360 864} true 1454}
 rect {{876.5029 527.62 54.49707 30} {0.11146667 0.1264 0.1488 1} 6.5 0 {0 36 1360 864} true 1455}
 rect {{0 0 1400 900} {0 0 0 0.5} 0 600 {0 0 0 0} false 1457}
-rect {{390 42.5 620 815} {0.2 0.23529412 0.2901961 1} 11 600 {0 0 0 0} false 1458}
-rect {{391 43.5 618 813} {0.12156863 0.14117648 0.1764706 1} 10 600 {0 0 0 0} false 1459}
-rect {{962 58.5 32 32} {0.06666667 0.08235294 0.105882354 0} 7.5 600 {0 0 0 0} false 1463}
-rect {{420 336.5 277 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {414 157.5 572 620} true 1525}
-rect {{421 337.5 275 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {414 157.5 572 620} true 1526}
-rect {{705 336.5 277 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {414 157.5 572 620} true 1529}
-rect {{706 337.5 275 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {414 157.5 572 620} true 1530}
-rect {{420 485.5 562 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {414 157.5 572 620} true 1538}
-rect {{421 486.5 560 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {414 157.5 572 620} true 1539}
-rect {{731.459 801.5 112.052734 32} {0.23529412 0.27450982 0.34117648 1} 7.5 600 {0 0 0 0} false 1542}
-rect {{851.5117 801.5 134.48828 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false 1545}
-rect {{852.5117 802.5 132.48828 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false 1546}
-rect {{121 8 20 20} {0.17254902 0.19607843 0.23529412 1} 4.7999997 0 {116 4 998 28} true 1548}
-rect {{216.2168 14.5 7 7} {0.9098039 0.7529412 0.28235295 1} 3.5 0 {116 4 998 28} true 1721}
-rect {{428 295.62 46 46} {0.17254902 0.19607843 0.23529412 1} 11.04 0 {0 36 1360 864} true 1722}
-rect {{464 411.12 414 3} {0.2 0.23529412 0.2901961 0.9} 1.5 0 {0 36 1360 864} true 1895}
-rect {{884 397.62 30 30} {0.23529412 0.27450982 0.34117648 1} 15 0 {0 36 1360 864} true 1896}
-rect {{447 395.62 34 34} {0.14509805 0.16862746 0.20784314 1} 17 0 {0 36 1360 864} true 1953}
-rect {{451 399.62 26 26} {0.17254902 0.19607843 0.23529412 1} 6.24 0 {0 36 1360 864} true 1954}
-rect {{462.5 393.12 3 3} {0.8862745 0.90588236 0.93333334 1} 1.5 0 {0 36 1360 864} true 2127}
-rect {{469.3883 394.49017 3 3} {0.8862745 0.90588236 0.93333334 0.12} 1.5 0 {0 36 1360 864} true 2128}
-rect {{475.22794 398.39206 3 3} {0.8862745 0.90588236 0.93333334 0.12} 1.5 0 {0 36 1360 864} true 2129}
-rect {{479.12982 404.2317 3 3} {0.8862745 0.90588236 0.93333334 0.12} 1.5 0 {0 36 1360 864} true 2130}
-rect {{480.5 411.12 3 3} {0.8862745 0.90588236 0.93333334 0.12} 1.5 0 {0 36 1360 864} true 2131}
-rect {{479.12982 418.0083 3 3} {0.8862745 0.90588236 0.93333334 0.1261111} 1.5 0 {0 36 1360 864} true 2132}
-rect {{475.22794 423.84793 3 3} {0.8862745 0.90588236 0.93333334 0.14444445} 1.5 0 {0 36 1360 864} true 2133}
-rect {{469.3883 427.74982 3 3} {0.8862745 0.90588236 0.93333334 0.175} 1.5 0 {0 36 1360 864} true 2134}
-rect {{462.5 429.12 3 3} {0.8862745 0.90588236 0.93333334 0.21777779} 1.5 0 {0 36 1360 864} true 2135}
-rect {{455.6117 427.74982 3 3} {0.8862745 0.90588236 0.93333334 0.27277777} 1.5 0 {0 36 1360 864} true 2136}
-rect {{449.77206 423.84793 3 3} {0.8862745 0.90588236 0.93333334 0.34} 1.5 0 {0 36 1360 864} true 2137}
-rect {{445.87018 418.0083 3 3} {0.8862745 0.90588236 0.93333334 0.4194444} 1.5 0 {0 36 1360 864} true 2138}
-rect {{444.5 411.12 3 3} {0.8862745 0.90588236 0.93333334 0.51111114} 1.5 0 {0 36 1360 864} true 2139}
-rect {{445.87018 404.2317 3 3} {0.8862745 0.90588236 0.93333334 0.615} 1.5 0 {0 36 1360 864} true 2140}
-rect {{449.77206 398.39206 3 3} {0.8862745 0.90588236 0.93333334 0.7311111} 1.5 0 {0 36 1360 864} true 2141}
-rect {{455.6117 394.49017 3 3} {0.8862745 0.90588236 0.93333334 0.85944444} 1.5 0 {0 36 1360 864} true 2142}
-rect {{526.209 466.12 3.5 3.5} {0.61960787 0.65882355 0.7137255 0.45} 1.75 0 {0 36 1360 864} true 2143}
-rect {{533.209 466.12 3.5 3.5} {0.61960787 0.65882355 0.7137255 0.45} 1.75 0 {0 36 1360 864} true 2144}
-rect {{540.209 466.12 3.5 3.5} {0.61960787 0.65882355 0.7137255 0.45} 1.75 0 {0 36 1360 864} true 2145}
-rect {{1360 36 40 864} {0.06666667 0.08235294 0.105882354 1} 0 0 {0 0 0 0} false 2146}
-rect {{1364 372 32 32} {0.17254902 0.19607843 0.23529412 0.4} 7.5 0 {1364 40 32 856} true 2975}
+rect {{390 16 620 868} {0.2 0.23529412 0.2901961 1} 11 600 {0 0 0 0} false 1458}
+rect {{391 17 618 866} {0.12156863 0.14117648 0.1764706 1} 10 600 {0 0 0 0} false 1459}
+rect {{962 32 32 32} {0.06666667 0.08235294 0.105882354 0} 7.5 600 {0 0 0 0} false 1463}
+rect {{420 468 277 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {414 131 572 673} true 1532}
+rect {{421 469 275 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {414 131 572 673} true 1533}
+rect {{705 468 277 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {414 131 572 673} true 1536}
+rect {{706 469 275 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {414 131 572 673} true 1537}
+rect {{420 623 562 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {414 131 572 673} true 1545}
+rect {{421 624 560 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {414 131 572 673} true 1546}
+rect {{731.459 828 112.052734 32} {0.23529412 0.27450982 0.34117648 1} 7.5 600 {0 0 0 0} false 1549}
+rect {{851.5117 828 134.48828 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false 1552}
+rect {{852.5117 829 132.48828 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false 1553}
+rect {{121 8 20 20} {0.17254902 0.19607843 0.23529412 1} 4.7999997 0 {116 4 998 28} true 1555}
+rect {{216.2168 14.5 7 7} {0.9098039 0.7529412 0.28235295 1} 3.5 0 {116 4 998 28} true 1728}
+rect {{428 295.62 46 46} {0.17254902 0.19607843 0.23529412 1} 11.04 0 {0 36 1360 864} true 1729}
+rect {{464 411.12 414 3} {0.2 0.23529412 0.2901961 0.9} 1.5 0 {0 36 1360 864} true 1902}
+rect {{884 397.62 30 30} {0.23529412 0.27450982 0.34117648 1} 15 0 {0 36 1360 864} true 1903}
+rect {{447 395.62 34 34} {0.14509805 0.16862746 0.20784314 1} 17 0 {0 36 1360 864} true 1960}
+rect {{451 399.62 26 26} {0.17254902 0.19607843 0.23529412 1} 6.24 0 {0 36 1360 864} true 1961}
+rect {{462.5 393.12 3 3} {0.8862745 0.90588236 0.93333334 1} 1.5 0 {0 36 1360 864} true 2134}
+rect {{469.3883 394.49017 3 3} {0.8862745 0.90588236 0.93333334 0.12} 1.5 0 {0 36 1360 864} true 2135}
+rect {{475.22794 398.39206 3 3} {0.8862745 0.90588236 0.93333334 0.12} 1.5 0 {0 36 1360 864} true 2136}
+rect {{479.12982 404.2317 3 3} {0.8862745 0.90588236 0.93333334 0.12} 1.5 0 {0 36 1360 864} true 2137}
+rect {{480.5 411.12 3 3} {0.8862745 0.90588236 0.93333334 0.12} 1.5 0 {0 36 1360 864} true 2138}
+rect {{479.12982 418.0083 3 3} {0.8862745 0.90588236 0.93333334 0.1261111} 1.5 0 {0 36 1360 864} true 2139}
+rect {{475.22794 423.84793 3 3} {0.8862745 0.90588236 0.93333334 0.14444445} 1.5 0 {0 36 1360 864} true 2140}
+rect {{469.3883 427.74982 3 3} {0.8862745 0.90588236 0.93333334 0.175} 1.5 0 {0 36 1360 864} true 2141}
+rect {{462.5 429.12 3 3} {0.8862745 0.90588236 0.93333334 0.21777779} 1.5 0 {0 36 1360 864} true 2142}
+rect {{455.6117 427.74982 3 3} {0.8862745 0.90588236 0.93333334 0.27277777} 1.5 0 {0 36 1360 864} true 2143}
+rect {{449.77206 423.84793 3 3} {0.8862745 0.90588236 0.93333334 0.34} 1.5 0 {0 36 1360 864} true 2144}
+rect {{445.87018 418.0083 3 3} {0.8862745 0.90588236 0.93333334 0.4194444} 1.5 0 {0 36 1360 864} true 2145}
+rect {{444.5 411.12 3 3} {0.8862745 0.90588236 0.93333334 0.51111114} 1.5 0 {0 36 1360 864} true 2146}
+rect {{445.87018 404.2317 3 3} {0.8862745 0.90588236 0.93333334 0.615} 1.5 0 {0 36 1360 864} true 2147}
+rect {{449.77206 398.39206 3 3} {0.8862745 0.90588236 0.93333334 0.7311111} 1.5 0 {0 36 1360 864} true 2148}
+rect {{455.6117 394.49017 3 3} {0.8862745 0.90588236 0.93333334 0.85944444} 1.5 0 {0 36 1360 864} true 2149}
+rect {{526.209 466.12 3.5 3.5} {0.61960787 0.65882355 0.7137255 0.45} 1.75 0 {0 36 1360 864} true 2150}
+rect {{533.209 466.12 3.5 3.5} {0.61960787 0.65882355 0.7137255 0.45} 1.75 0 {0 36 1360 864} true 2151}
+rect {{540.209 466.12 3.5 3.5} {0.61960787 0.65882355 0.7137255 0.45} 1.75 0 {0 36 1360 864} true 2152}
+rect {{1360 36 40 864} {0.06666667 0.08235294 0.105882354 1} 0 0 {0 0 0 0} false 2153}
+rect {{1364 372 32 32} {0.17254902 0.19607843 0.23529412 0.4} 7.5 0 {1364 40 32 856} true 2982}
 shadow {{875.5029 526.62 56.49707 32} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 36 1360 864} true 1453}
-shadow {{420 336.5 277 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {414 157.5 572 620} true 1524}
-shadow {{705 336.5 277 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {414 157.5 572 620} true 1528}
-shadow {{420 485.5 562 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {414 157.5 572 620} true 1537}
-shadow {{851.5117 801.5 134.48828 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false 1544}
+shadow {{420 468 277 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {414 131 572 673} true 1531}
+shadow {{705 468 277 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {414 131 572 673} true 1535}
+shadow {{420 623 562 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {414 131 572 673} true 1544}
+shadow {{851.5117 828 134.48828 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false 1551}
 text "Production" {148 8 60.216797 20}
 text "Production" {490 296.62 167.17383 23}
 text "deploy@prod.example.com:22" {490 321.62 167.17383 19}
@@ -62,28 +62,35 @@ text "Waiting for the first output…" {446 475.62 468 20}
 text "Elapsed 0:00" {428 533.12 352.05762 19}
 text "Show log" {798.0576 526.62 79.44531 32}
 text "Close" {885.5029 526.62 56.49707 32}
-text "Docker setup" {414 66.5 572 17}
-text "Shell proxy variables do not configure image pulls. The Docker daemon makes those" {414 91.5 572 21}
-text "requests." {414 112.5 572 21}
-text "Only for Docker Engine managed by systemd on Linux. Existing daemon.json or service configuration" {420 159.5 562 18}
-text "may take precedence, so inspect it before adding this drop-in. This example does not cover rootless" {420 177.5 562 18}
-text "Docker, Docker Desktop, or a remote Docker context." {420 195.5 562 18}
-text "The example uses sudo and restarts Docker, which may interrupt containers. Motty never runs these" {420 221.5 562 18}
-text "commands. Restore this configuration before stopping the tunnel." {420 239.5 562 18}
-text "Systemd-managed Linux Docker" {420 265.5 562 21}
-text "HTTP_PROXY=http://127.0.0.1:PORT" {420 294.5 562 13}
-text "HTTPS_PROXY=http://127.0.0.1:PORT" {420 315.5 562 13}
-text "Copy command" {507.81494 336.5 277 32}
-text "Open Docker documentation" {751.25244 336.5 277 32}
-text "Remove /etc/systemd/system/docker.service.d/motty-proxy.conf only if you created it, then reload" {420 378.5 562 18}
-text "and restart Docker." {420 396.5 562 18}
-text "sudo rm -f /etc/systemd/system/docker.service.d/motty-proxy.conf" {420 422.5 562 13}
-text "sudo systemctl daemon-reload" {420 443.5 562 13}
-text "sudo systemctl restart docker" {420 464.5 562 13}
-text "Copy command" {650.31494 485.5 562 32}
-text "Could not copy: clipboard unavailable" {420 527.5 562 19}
-text "Proxy settings" {741.459 801.5 112.052734 32}
-text "Return to terminal" {861.5117 801.5 134.48828 32}
+text "Docker setup" {414 40 572 17}
+text "Docker image pulls are initiated by the background Docker daemon and are unaffected" {414 65 572 21}
+text "by terminal environment variables." {414 86 572 21}
+text "Scope: Only for Docker Engine managed by systemd on Linux (not for Docker Desktop or rootless)." {420 133 562 18}
+text "Existing daemon.json or service configuration may take precedence; inspect before adding." {420 151 562 18}
+text "Notice: The example requires sudo and restarts Docker, which may interrupt running containers. Motty" {420 177 562 18}
+text "never runs these commands automatically. Be sure to run the restore command below before stopping" {420 195 562 18}
+text "the tunnel." {420 213 562 18}
+text "Systemd-managed Linux Docker" {420 239 562 21}
+text "Step 1: Configure Docker to use the proxy" {420 268 562 19}
+text "Write proxy settings to systemd drop-in and restart Docker:" {420 295 562 18}
+text "sudo mkdir -p /etc/systemd/system/docker.service.d" {420 321 562 13}
+text "sudo tee /etc/systemd/system/docker.service.d/motty-proxy.conf >/dev/null <<'EOF'" {420 342 562 13}
+text "[Service]" {420 363 562 13}
+text "Environment=\"HTTP_PROXY=http://127.0.0.1:PORT\"" {420 384 562 13}
+text "Environment=\"HTTPS_PROXY=http://127.0.0.1:PORT\"" {420 405 562 13}
+text "EOF" {420 426 562 13}
+text "sudo systemctl daemon-reload && sudo systemctl restart docker" {420 447 562 13}
+text "Copy setup command" {487.97363 468 277 32}
+text "Open official Docker documentation" {727.53174 468 277 32}
+text "Step 2: Restore Docker before stopping the tunnel" {420 510 562 19}
+text "The proxy port stops working when the tunnel closes. Remove the configuration and restart Docker" {420 537 562 18}
+text "before stopping:" {420 555 562 18}
+text "sudo rm -f /etc/systemd/system/docker.service.d/motty-proxy.conf" {420 581 562 13}
+text "sudo systemctl daemon-reload && sudo systemctl restart docker" {420 602 562 13}
+text "Copy restore command" {625.4663 623 562 32}
+text "Could not copy: clipboard unavailable" {420 665 562 19}
+text "Proxy settings" {741.459 828 112.052734 32}
+text "Return to terminal" {861.5117 828 134.48828 32}
 hit "" region {0 0 1400 36} disabled=false
 hit "Hosts" button {82 4 28 28} disabled=false
 hit "Production" tab {116 0 170 36} disabled=false
@@ -101,13 +108,13 @@ hit "New tab" button {0 36 1360 864} disabled=false
 hit "Show log" button {788.0576 526.62 79.44531 32} disabled=false
 hit "Close" button {875.5029 526.62 56.49707 32} disabled=false
 hit "Dismiss dialog" button {0 0 1400 900} disabled=false
-hit "" region {390 42.5 620 815} disabled=false
-hit "Close dialog" button {962 58.5 32 32} disabled=false
-hit "Copy command" button {420 336.5 277 32} disabled=false
-hit "Open Docker documentation" button {705 336.5 277 32} disabled=false
-hit "Copy command" button {420 485.5 562 32} disabled=false
-hit "Proxy settings" button {731.459 801.5 112.052734 32} disabled=false
-hit "Return to terminal" button {851.5117 801.5 134.48828 32} disabled=false
+hit "" region {390 16 620 868} disabled=false
+hit "Close dialog" button {962 32 32 32} disabled=false
+hit "Copy setup command" button {420 468 277 32} disabled=false
+hit "Open official Docker documentation" button {705 468 277 32} disabled=false
+hit "Copy restore command" button {420 623 562 32} disabled=false
+hit "Proxy settings" button {731.459 828 112.052734 32} disabled=false
+hit "Return to terminal" button {851.5117 828 134.48828 32} disabled=false
 hit "Notes" button {1364 44 32 32} disabled=true
 hit "Send a snippet" button {1364 80 32 32} disabled=true
 hit "Split Right" button {1364 116 32 32} disabled=true
