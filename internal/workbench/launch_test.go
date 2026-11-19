@@ -274,6 +274,7 @@ func TestASkippedVersionStaysQuietAtStartupButNotWhenAsked(t *testing.T) {
 	state.Close()
 
 	again := New(options)
+	again.updateAtStart = true
 	again.update.firstDelay = time.Millisecond
 	waitUpdate(t, again, func() bool { return again.update.available })
 	if again.modal == modalUpdate || again.update.offer {
@@ -285,6 +286,7 @@ func TestASkippedVersionStaysQuietAtStartupButNotWhenAsked(t *testing.T) {
 
 	version = "99.1.0"
 	newer := New(options)
+	newer.updateAtStart = true
 	newer.update.firstDelay = time.Millisecond
 	defer newer.Close()
 	waitUpdate(t, newer, func() bool { return newer.update.available })
@@ -357,7 +359,7 @@ func TestCheckingForUpdatesSaysSoWhenCurrentOrFailed(t *testing.T) {
 	}
 }
 
-func TestTheAutoCheckIsOnByDefaultRunsAndCanBeTurnedOff(t *testing.T) {
+func TestTheAutoCheckIsOffByDefaultAndCanBeTurnedOn(t *testing.T) {
 	_, options := newWorld(t)
 	options.Invalidate = func() {}
 	options.CheckUpdate = func() (update.Release, error) {
@@ -365,10 +367,14 @@ func TestTheAutoCheckIsOnByDefaultRunsAndCanBeTurnedOff(t *testing.T) {
 	}
 	state := New(options)
 	t.Cleanup(state.Close)
-	if !state.updateAtStart {
-		t.Fatal("the automatic check is not on by default")
+	if state.updateAtStart {
+		t.Fatal("the automatic check is on by default")
 	}
 	state.update.firstDelay, state.update.every = time.Millisecond, time.Hour
+	state.Click(hitSettingsUpdateStartToggle)
+	if !state.updateAtStart {
+		t.Fatal("the toggle did not turn the automatic check on")
+	}
 	waitUpdate(t, state, func() bool { return state.update.available })
 	if !strings.Contains(state.status, "99.0.0") {
 		t.Fatalf("status %q does not announce the version", state.status)
@@ -397,6 +403,7 @@ func TestTheAutoCheckAsksAgainAfterItsInterval(t *testing.T) {
 	}
 	state := New(options)
 	t.Cleanup(state.Close)
+	state.updateAtStart = true
 	state.update.firstDelay, state.update.every = time.Millisecond, 5*time.Millisecond
 	waitUpdate(t, state, func() bool { return calls.Load() >= 2 })
 }

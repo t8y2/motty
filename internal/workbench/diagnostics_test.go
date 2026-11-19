@@ -68,3 +68,19 @@ func TestExportingDiagnosticsWritesAPrivateFileAndReportsWhereOrWhy(t *testing.T
 		t.Fatalf("a failed save left status %q, want the failure and no success path", state.status)
 	}
 }
+
+func TestTheDiagnosticsReportShowsWhetherTheAutomaticUpdateCheckIsOn(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	for _, tc := range []struct {
+		on   bool
+		want string
+	}{
+		{false, "automatic update check: false"},
+		{true, "automatic update check: true"},
+	} {
+		state.updateAtStart = tc.on
+		if report := state.diagnosticReport(); !strings.Contains(report, tc.want) {
+			t.Fatalf("report lacks %q:\n%s", tc.want, report)
+		}
+	}
+}
