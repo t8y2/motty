@@ -834,11 +834,19 @@ func (state *State) saveWithResultModeRecovery(flushSync, refreshConflict, notif
 				d.problem = message
 			}
 		}
-		if !failed && state.notes.error == message {
-			state.notes.error = ""
-		}
-		if failed && state.notes.error == "" {
+		// The store's own words go beside the notice, so the user and a report
+		// can tell a full disk from a locked or read-only database. They are
+		// cleared with the notice they belong to.
+		switch {
+		case failed && state.notes.error == "":
 			state.notes.error = message
+			state.notes.saveDetail = saveErr.Error()
+			state.logNoteSaveFailure(saveErr)
+		case failed && state.notes.error == message:
+			state.notes.saveDetail = saveErr.Error()
+		case !failed && state.notes.error == message:
+			state.notes.error = ""
+			state.notes.saveDetail = ""
 		}
 	}()
 	defer func() {

@@ -106,26 +106,6 @@ func (state *State) prepareSessionLogItems() {
 	}
 }
 
-func (state *State) sessionLogListHeight(rowHeight float32) float32 {
-	view := &state.sessionLogs.view
-	return float32(len(view.page))*rowHeight + float32(view.groupCount)*sessionLogGroupHeight
-}
-
-func (state *State) sessionLogRowTop(index int, rowHeight float32) float32 {
-	var top float32
-	for _, item := range state.sessionLogs.view.items {
-		if item.row < 0 {
-			top += sessionLogGroupHeight
-			continue
-		}
-		if item.row == index {
-			return top
-		}
-		top += rowHeight
-	}
-	return 0
-}
-
 func (state *State) askSessionLogCustomRange() {
 	view := &state.sessionLogs.view
 	m := &state.messages.SessionLogs

@@ -17,8 +17,8 @@ func TestMCPTransportClientsCopyIndependentlyAndSurviveRestart(t *testing.T) {
 	state.Click(hitAISetMCPEnabled)
 	state.ai.mcpAddr, state.ai.mcpToken = "127.0.0.1:4455", "transport-test-token"
 	before := world.changed
-	state.Click(aiMCPClientID(aiMCPCodex))
-	state.Click(aiAgentClientID(aiMCPCursor))
+	chooseMCPClient(t, state, false, aiMCPCodex)
+	chooseMCPClient(t, state, true, aiMCPCursor)
 	if world.changed != before {
 		t.Fatal("an export preference reconfigured MCP permissions")
 	}
@@ -93,20 +93,15 @@ func TestAgentClientSelectKeyboardAndInvalidPreferences(t *testing.T) {
 	state.selectSettingsCategory(settingsMCP)
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1000, Height: 2400})
-	if hit, ok := hitByID(&canvas, hitAISetAgentSelect); !ok || hit.Role != gfx.RoleCombobox || hit.Value != "Claude Code" {
+	found := false
+	for _, hit := range canvas.Hits() {
+		found = found || hit.Role == gfx.RoleCombobox && hit.Label == state.messages.AISettings.AgentConfig && hit.Value == "Claude Code"
+	}
+	if !found {
 		t.Fatal("stdio has no visible client selector")
 	}
-	result := state.Key(gfx.KeyEvent{Target: hitAISetAgentSelect, Key: gfx.KeyDown})
-	if !result.Handled || !state.ai.cfg.agentSelectOpen || state.ai.cfg.mcpSelectOpen {
-		t.Fatal("the stdio selector did not open independently")
-	}
-	state.Paint(&canvas, gfx.Size{Width: 1000, Height: 2400})
-	result = state.Key(gfx.KeyEvent{Target: aiAgentClientID(aiMCPClaude), Key: gfx.KeyDown})
-	if result.Focus != aiAgentClientID(aiMCPCursor) {
-		t.Fatal("stdio arrow navigation selected an HTTP item")
-	}
-	state.Click(result.Focus)
-	if state.ai.cfg.agentSelectOpen || state.ai.cfg.agentClient != aiMCPCursor || state.ai.cfg.mcpClient != aiMCPClaude {
+	chooseMCPClient(t, state, true, aiMCPCursor)
+	if state.ai.cfg.agentClient != aiMCPCursor || state.ai.cfg.mcpClient != aiMCPClaude {
 		t.Fatal("stdio selection affected HTTP")
 	}
 	for _, key := range []string{aiAgentClientSetting, agentModeSetting} {

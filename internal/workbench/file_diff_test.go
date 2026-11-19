@@ -290,19 +290,26 @@ func TestDocumentSaveConfirmationAndDiffLayoutAtDisplayScales(t *testing.T) {
 					t.Fatal(err)
 				}
 				assertDocumentHitsInside(t, view, 643, 423, hitDocumentSave, hitDocumentSaveMenu)
-				assertDocumentSplitSaveButton(t, view, false)
+				assertDocumentSplitSaveButton(t, view)
 				d.ui.saveMenuOpen = true
 				view.Resize(644, 424)
 				if err := view.Rest(); err != nil {
 					t.Fatal(err)
 				}
-				assertDocumentHitsInside(t, view, 644, 424, hitDocumentSaveMenuDismiss, hitDocumentCompare)
-				assertDocumentSplitSaveButton(t, view, true)
+				compare := false
 				for _, hit := range view.Snapshot().Hits {
-					if hit.ID == hitDocumentCompare && hit.Bounds.Height != 32 {
-						t.Fatalf("save menu row was clipped: %+v", hit.Bounds)
+					if hit.Role != gfx.RoleMenuItem || hit.Label != d.owner.messages.FileWindow.CompareSave {
+						continue
+					}
+					compare = true
+					if hit.Bounds.X < 0 || hit.Bounds.Y < 0 || hit.Bounds.X+hit.Bounds.Width > 644.01 || hit.Bounds.Y+hit.Bounds.Height > 424.01 {
+						t.Fatalf("save menu row escaped the viewport: %+v", hit.Bounds)
 					}
 				}
+				if !compare {
+					t.Fatalf("missing the save menu's compare row: %+v", view.Snapshot().Hits)
+				}
+				assertDocumentSplitSaveButton(t, view)
 				if dir := os.Getenv("MOTTY_DOCUMENT_SCREENSHOT_DIR"); dir != "" {
 					appearance := "dark"
 					if light {
@@ -430,7 +437,7 @@ func assertDocumentHitsInside(t *testing.T, view *headless.Session, width, heigh
 	}
 }
 
-func assertDocumentSplitSaveButton(t *testing.T, view *headless.Session, open bool) {
+func assertDocumentSplitSaveButton(t *testing.T, view *headless.Session) {
 	t.Helper()
 	var primary, menu *gfx.Hit
 	for _, hit := range view.Snapshot().Hits {
@@ -446,12 +453,11 @@ func assertDocumentSplitSaveButton(t *testing.T, view *headless.Session, open bo
 	if primary == nil || menu == nil {
 		t.Fatalf("missing split save actions: primary=%v menu=%v", primary != nil, menu != nil)
 	}
-	if primary.Bounds.Y != menu.Bounds.Y || primary.Bounds.Height != menu.Bounds.Height ||
-		primary.Bounds.X+primary.Bounds.Width != menu.Bounds.X || menu.Bounds.Width != 32 {
-		t.Fatalf("save actions are not one connected split button: primary=%+v menu=%+v", primary.Bounds, menu.Bounds)
+	if primary.Bounds.Height != menu.Bounds.Height || primary.Bounds.Y != menu.Bounds.Y {
+		t.Fatalf("save actions are not one row: primary=%+v menu=%+v", primary.Bounds, menu.Bounds)
 	}
-	if primary.Role != gfx.RoleButton || menu.Role != gfx.RoleButton || !menu.Expandable || menu.Expanded != open {
-		t.Fatalf("split save semantics: primary=%+v menu=%+v", primary, menu)
+	if primary.Role != gfx.RoleButton || menu.Role != gfx.RoleButton {
+		t.Fatalf("split save roles: primary=%+v menu=%+v", primary, menu)
 	}
 }
 
@@ -696,4 +702,88 @@ func TestDocumentComparisonLeavesTheEditorAloneUntilItEnds(t *testing.T) {
 		t.Fatalf("reload or encoding change acted during a comparison: busy=%v status=%q", d.busy, d.status)
 	}
 	d.stopComparison()
+}
+
+// The remote save actions are page buttons now: the chevron opens the page's
+// menu, a press away closes it, and the row keeps the application's action.
+func TestDocumentWindowSaveMenuOpensFromThePage(t *testing.T) {
+	d := documentFixture(t)
+	d.local = false
+	d.editor.Insert("changed\n")
+	view, err := headless.Open(d.config(), nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	chevron, ok := view.Hit(d.owner.messages.FileWindow.SaveOptions)
+	if !ok {
+		t.Fatal("missing the save-menu chevron")
+	}
+	if err := view.Click(chevron.Bounds.X+chevron.Bounds.Width/2, chevron.Bounds.Y+chevron.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if !d.ui.saveMenuOpen {
+		t.Fatal("the chevron did not open the save menu")
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := view.Hit(d.owner.messages.FileWindow.CompareSave); !ok {
+		t.Fatal("the save menu has no compare row")
+	}
+	if err := view.Click(10, 300); err != nil {
+		t.Fatal(err)
+	}
+	if d.ui.saveMenuOpen {
+		t.Fatal("a press away did not close the save menu")
+	}
+}
+
+// The encoding select is the page's: choosing an option runs the document's own
+// encoding change, here refused because the editor has unsaved edits.
+func TestDocumentWindowEncodingSelectPicksFromThePage(t *testing.T) {
+	d := documentFixture(t)
+	before := d.format.Encoding
+	d.editor.Insert("changed\n")
+	view, err := headless.Open(d.config(), nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	encoding, ok := view.Hit(d.owner.messages.FileWindow.Encoding)
+	if !ok {
+		t.Fatal("missing the encoding select")
+	}
+	if err := view.Click(encoding.Bounds.X+encoding.Bounds.Width/2, encoding.Bounds.Y+encoding.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	choice := "Windows-1252"
+	if before == choice {
+		choice = "GB18030"
+	}
+	option, ok := view.Hit(choice)
+	if !ok {
+		t.Fatal("no encoding options")
+	}
+	if err := view.Click(option.Bounds.X+option.Bounds.Width/2, option.Bounds.Y+option.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if d.problem != d.owner.messages.FileWindow.EncodingChanged {
+		t.Fatalf("choosing an encoding did not reach the document: %q", d.problem)
+	}
+	if d.format.Encoding != before {
+		t.Fatalf("an encoding change over unsaved edits was accepted: %q", d.format.Encoding)
+	}
 }

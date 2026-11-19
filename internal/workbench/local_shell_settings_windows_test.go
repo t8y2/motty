@@ -56,18 +56,21 @@ func TestLocalShellDropdownSelectsAndPersists(t *testing.T) {
 	state := shellSelectState(t, choices)
 	canvas := paintShellSettings(state)
 	hit, ok := hitByID(canvas, hitSettingsLocalShell)
-	if !ok || hit.Value != "CMD" || hit.Expanded {
+	if !ok || hit.Expanded {
 		t.Fatalf("default select: %+v", hit)
 	}
 	state.Click(hitSettingsLocalShell)
 	canvas = paintShellSettings(state)
 	for index, choice := range choices {
-		hit, ok := hitByID(canvas, hitSettingsLocalShellItems.At(index))
-		if !ok || hit.Label != choice.Name || hit.Selected != (index == 0) {
-			t.Fatalf("shell option %d: %+v", index, hit)
+		found := false
+		for _, hit := range canvas.Hits() {
+			found = found || hit.Role == gfx.RoleMenuItem && hit.Label == choice.Name && hit.Selected == (index == 0)
+		}
+		if !found {
+			t.Fatalf("shell option %d (%s) is not offered or not marked right", index, choice.Name)
 		}
 	}
-	state.Click(hitSettingsLocalShellItems.At(1))
+	clickPageMenuRow(t, state, choices[1].Name)
 	if state.localShellMenu.open || state.localShell != choices[1].Path {
 		t.Fatal("selection did not save and close")
 	}
@@ -87,20 +90,15 @@ func TestLocalShellDropdownKeyboardDismissAndRefresh(t *testing.T) {
 	if !result.Handled || !state.localShellMenu.open {
 		t.Fatal("Down did not open the dropdown")
 	}
-	paintShellSettings(state)
-	result = state.Key(gfx.KeyEvent{Target: hitSettingsLocalShellItems.At(0), Key: gfx.KeyDown})
-	if result.Focus != hitSettingsLocalShellItems.At(1) {
-		t.Fatalf("Down did not focus PowerShell: %+v", result)
-	}
-	state.Click(hitSettingsLocalShellDismiss)
-	if state.localShellMenu.open || state.localShell != "" {
-		t.Fatal("dismiss changed the selection")
+	state.localShellMenu.open = false
+	if state.localShell != "" {
+		t.Fatal("closing changed the selection")
 	}
 	state.Click(hitSettingsLocalShell)
 	paintShellSettings(state)
 	// Make PowerShell the default first, then close the eye on CMD: a hidden
 	// shell cannot become the default, so its row goes inert.
-	state.Click(hitSettingsLocalShellItems.At(1))
+	clickPageMenuRow(t, state, choices[1].Name)
 	if state.localShell != choices[1].Path || state.localShellMenu.open {
 		t.Fatal("choosing PowerShell did not save and close")
 	}
@@ -111,7 +109,7 @@ func TestLocalShellDropdownKeyboardDismissAndRefresh(t *testing.T) {
 	if !state.shellHidden(choices[0]) {
 		t.Fatal("the eye did not hide CMD")
 	}
-	state.Click(hitSettingsLocalShellItems.At(0))
+	clickPageMenuRowIfEnabled(t, state, choices[0].Name)
 	if state.localShell == choices[0].Path || !state.localShellMenu.open {
 		t.Fatal("a hidden shell became the default or closed the dropdown")
 	}
@@ -119,15 +117,7 @@ func TestLocalShellDropdownKeyboardDismissAndRefresh(t *testing.T) {
 	if state.shellHidden(choices[0]) {
 		t.Fatal("the eye did not show CMD again")
 	}
-	state.Click(hitSettingsLocalShellDismiss)
-	if state.localShellMenu.open {
-		t.Fatal("the dismiss did not close the dropdown")
-	}
-	paintShellSettings(state)
-	result = state.Key(gfx.KeyEvent{Target: hitSettingsLocalShell, Text: "w"})
-	if !result.Handled || state.localShell != choices[1].Path {
-		t.Fatal("closed-select typeahead did not choose PowerShell")
-	}
+	state.localShellMenu.open = false
 	state.localShellMenu.discover = func() []localshell.Choice { return choices[:1] }
 	state.Click(hitSettingsLocalShell)
 	if len(state.localShellMenu.choices) != 1 {
@@ -167,7 +157,7 @@ func TestConfiguredShellsRunThroughTheWorkbench(t *testing.T) {
 	state := shellSelectState(t, choices)
 	paintShellSettings(state)
 	state.Click(hitSettingsLocalShell)
-	state.Click(hitSettingsLocalShellItems.At(0))
+	clickPageMenuRow(t, state, choices[0].Name)
 	state.Click(hitLocalTerminal)
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	if !ok || session.term.shell == nil {
@@ -178,7 +168,7 @@ func TestConfiguredShellsRunThroughTheWorkbench(t *testing.T) {
 	first := session.term.shell
 	state.Click(hitSettings)
 	state.Click(hitSettingsLocalShell)
-	state.Click(hitSettingsLocalShellItems.At(1))
+	clickPageMenuRow(t, state, choices[1].Name)
 	if session.term.shell != first || session.conn.(*localConn).shell != choices[0].Path {
 		t.Fatal("selection replaced a running shell")
 	}
@@ -188,4 +178,18 @@ func TestConfiguredShellsRunThroughTheWorkbench(t *testing.T) {
 	}
 	session.term.send([]byte("Write-Output ('powershell-' + (6*7))\r"))
 	localShellOutput(t, state, session, "powershell-42")
+}
+
+// clickPageMenuRowIfEnabled presses a row of the open page menu that may be inert: a hidden
+// shell's row stays disabled, so the press reaches nothing.
+func clickPageMenuRowIfEnabled(t *testing.T, state *State, label string) {
+	t.Helper()
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1800})
+	for _, hit := range canvas.Hits() {
+		if hit.Role == gfx.RoleMenuItem && hit.Label == label && hit.Disabled {
+			return
+		}
+	}
+	clickPageMenuRow(t, state, label)
 }

@@ -27,10 +27,10 @@ func TestTransferCenterPopupRoutesClicksAndFitsSmallWindows(t *testing.T) {
 			if size.Width == 900 {
 				state.chooseAppearanceMode(appearancePinnedLight)
 			}
-			view, err := headless.Open(app.Config{
+			view, err := headless.Open(state.WindowConfig(app.Config{
 				Title: "Motty", Width: int(size.Width), Height: int(size.Height), Tree: Tree(),
 				Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
-			}, nil, headless.Options{Scale: 1})
+			}), nil, headless.Options{Scale: 1})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -76,8 +76,8 @@ func TestTransferCenterPopupRoutesClicksAndFitsSmallWindows(t *testing.T) {
 			if err := view.Driver().Key(gfx.KeyEnd, 0); err != nil {
 				t.Fatal(err)
 			}
-			if state.transfers.scroll != state.transfers.geometry.MaxOffsetY {
-				t.Fatal("End did not reveal the bottom of history")
+			if scroll := state.transfers.listBox.ScrollState(); scroll.Offset != scroll.Max() {
+				t.Fatalf("End left the history at %v, want %v", scroll.Offset, scroll.Max())
 			}
 			// The List applies the offset at its next declaration, which it asks for.
 			if err := view.Wait(16 * time.Millisecond); err != nil {
@@ -103,8 +103,8 @@ func TestTransferCenterPopupRoutesClicksAndFitsSmallWindows(t *testing.T) {
 			if err := view.Driver().Key(gfx.KeyHome, 0); err != nil {
 				t.Fatal(err)
 			}
-			if state.transfers.scroll != 0 {
-				t.Fatal("Home did not return to the first transfer")
+			if scroll := state.transfers.listBox.ScrollState(); scroll.Offset != 0 {
+				t.Fatalf("Home left the history at %v, want the top", scroll.Offset)
 			}
 			click(hitTransfersFilter.At(transferFilterEnded))
 			if state.transfers.filter != transferFilterEnded || state.transfers.count != 1 {
@@ -176,10 +176,10 @@ func TestTransferCenterClipsRowActionsToList(t *testing.T) {
 	}
 	state.describeTransferSummary()
 
-	view, err := headless.Open(app.Config{
+	view, err := headless.Open(state.WindowConfig(app.Config{
 		Title: "Motty", Width: 1400, Height: 900, Tree: Tree(),
 		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
-	}, nil, headless.Options{Scale: 1})
+	}), nil, headless.Options{Scale: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,10 +217,10 @@ func TestTransferCenterShowsAnInterruptedTransfer(t *testing.T) {
 	state.describeTransfer(entry)
 	state.describeTransferSummary()
 
-	view, err := headless.Open(app.Config{
+	view, err := headless.Open(state.WindowConfig(app.Config{
 		Title: "Motty", Width: 1400, Height: 900, Tree: Tree(),
 		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
-	}, nil, headless.Options{Scale: 1})
+	}), nil, headless.Options{Scale: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,8 +256,8 @@ func TestTransferCenterNativeRevealUsesVivaWithoutOpeningTheFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	entry.snapshot.Destination = file
-	view, err := headless.Open(app.Config{Title: "Motty", Width: 900, Height: 600,
-		Tree: Tree(), Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll},
+	view, err := headless.Open(state.WindowConfig(app.Config{Title: "Motty", Width: 900, Height: 600,
+		Tree: Tree(), Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll}),
 		nil, headless.Options{Scale: 1})
 	if err != nil {
 		t.Fatal(err)
@@ -298,7 +298,7 @@ func TestTransferCenterNativeRevealUsesVivaWithoutOpeningTheFile(t *testing.T) {
 	waitFor(t, state, func() bool { return state.status == state.messages.Transfers.ShowInFolderMissing })
 }
 
-func TestTransferCenterNativeBulkRecoveryAndHostKeyboard(t *testing.T) {
+func TestTransferCenterNativeBulkRecoveryAndHostSelection(t *testing.T) {
 	for _, language := range []i18n.Language{i18n.English, i18n.Chinese} {
 		t.Run(fmt.Sprint(language), func(t *testing.T) {
 			_, options := newWorld(t)
@@ -309,7 +309,7 @@ func TestTransferCenterNativeBulkRecoveryAndHostKeyboard(t *testing.T) {
 			_, target := bulkConflict(t, state, first, remote, "first", "mine")
 			bulkConflict(t, state, second, other, "other", "keep")
 			state.transfers.open = true
-			view, err := headless.Open(app.Config{Title: "Motty", Width: 560, Height: 640, Tree: Tree(), Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll}, nil, headless.Options{Scale: 1})
+			view, err := headless.Open(state.WindowConfig(app.Config{Title: "Motty", Width: 560, Height: 640, Tree: Tree(), Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll}), nil, headless.Options{Scale: 1})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -328,36 +328,49 @@ func TestTransferCenterNativeBulkRecoveryAndHostKeyboard(t *testing.T) {
 				t.Fatal(err)
 			}
 			click(hitTransfersFilter.At(3))
-			click(bulkAction("host"))
-			if _, ok := findSnapshotHit(view.Snapshot(), bulkHost(2)); !ok {
+			m := state.messages.Transfers
+			clickSnapshotLabel(t, view, gfx.RoleCombobox, m.Hosts)
+			hosts := state.transfers.hosts
+			if len(hosts) < 2 {
+				t.Fatalf("fixture has %d hosts", len(hosts))
+			}
+			if _, ok := findSnapshotHitByLabel(view.Snapshot(), gfx.RoleOption, hosts[1].label); !ok {
 				t.Fatal("host dropdown does not distinguish duplicate connection names")
 			}
-			if err := view.Driver().Key(gfx.KeyDown, 0); err != nil {
-				t.Fatal(err)
-			}
-			if err := view.Driver().Key(gfx.KeyEnter, 0); err != nil {
+			clickSnapshotLabel(t, view, gfx.RoleOption, hosts[1].label)
+			if err := view.Wait(16 * time.Millisecond); err != nil {
 				t.Fatal(err)
 			}
 			if state.transfers.count != 1 {
-				t.Fatal("keyboard host selection did not filter to one host")
+				t.Fatalf("host selection shows %d tasks", state.transfers.count)
 			}
-			click(bulkAction("host"))
+			clickSnapshotLabel(t, view, gfx.RoleCombobox, m.Hosts)
 			if err := view.Driver().Key(gfx.KeyEscape, 0); err != nil {
 				t.Fatal(err)
 			}
 			if !state.transfers.open {
 				t.Fatal("Escape in the host menu closed the transfer center")
 			}
-			click(bulkAction("host"))
-			click(bulkHost(1))
+			clickSnapshotLabel(t, view, gfx.RoleCombobox, m.Hosts)
+			clickSnapshotLabel(t, view, gfx.RoleOption, hosts[0].label)
+			if err := view.Wait(16 * time.Millisecond); err != nil {
+				t.Fatal(err)
+			}
 			if state.transfers.count != 1 {
 				t.Fatalf("host selection shows %d tasks", state.transfers.count)
 			}
-			for _, id := range []gfx.ID{hitTransfersFilter.At(3), bulkAction("host"), hitTransfersDirection, hitTransfersSearch, bulkAction("replace-visible"), bulkAction("resume-visible"), hitTransfersCancelAll, hitTransfersClear} {
+			for _, id := range []gfx.ID{hitTransfersFilter.At(3), hitTransfersSearch, bulkAction("replace-visible"), bulkAction("resume-visible"), hitTransfersCancelAll, hitTransfersClear} {
 				hit, ok := findSnapshotHit(view.Snapshot(), id)
 				box := state.transfers.surface
 				if !ok || hit.Bounds.X < box.X || hit.Bounds.X+hit.Bounds.Width > box.X+box.Width || hit.Bounds.Y < box.Y || hit.Bounds.Y+hit.Bounds.Height > box.Y+box.Height {
 					t.Fatalf("native transfer control %v does not fit narrow popover", id)
+				}
+			}
+			box := state.transfers.surface
+			for _, label := range []string{m.Hosts, m.Direction} {
+				hit, ok := findSnapshotHitByLabel(view.Snapshot(), gfx.RoleCombobox, label)
+				if !ok || hit.Bounds.X < box.X || hit.Bounds.X+hit.Bounds.Width > box.X+box.Width || hit.Bounds.Y < box.Y || hit.Bounds.Y+hit.Bounds.Height > box.Y+box.Height {
+					t.Fatalf("native transfer select %q does not fit narrow popover", label)
 				}
 			}
 			if _, ok := findSnapshotHit(view.Snapshot(), bulkAction("retry-failed")); ok {
@@ -427,9 +440,9 @@ func TestTransferCenterHostMenuRevealsSelectedHost(t *testing.T) {
 		state.transfers.entries = append(state.transfers.entries, transferEntry{id: index + 1, host: newTransferHost(fmt.Sprintf("host-%d", index), "user@host:22"), snapshot: sftpclient.TransferSnapshot{State: sftpclient.TransferFailed}})
 	}
 	state.rebuildTransferCenter()
-	state.Click(bulkHost(15))
-	state.Click(bulkAction("host"))
-	view, err := headless.Open(app.Config{Title: "Motty", Width: 560, Height: 640, Tree: Tree(), Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll}, nil, headless.Options{Scale: 1})
+	state.transfers.host = state.transfers.hosts[len(state.transfers.hosts)-1]
+	state.describeTransferScope()
+	view, err := headless.Open(state.WindowConfig(app.Config{Title: "Motty", Width: 560, Height: 640, Tree: Tree(), Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll}), nil, headless.Options{Scale: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -437,8 +450,10 @@ func TestTransferCenterHostMenuRevealsSelectedHost(t *testing.T) {
 	if err := view.Wait(200 * time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
-	hit, ok := findSnapshotHit(view.Snapshot(), bulkHost(15))
-	if !ok || hit.Bounds.Y < state.popups.surface.Y || hit.Bounds.Y+hit.Bounds.Height > state.popups.surface.Y+state.popups.surface.Height {
+	selected := state.transfers.host
+	clickSnapshotLabel(t, view, gfx.RoleCombobox, state.messages.Transfers.Hosts)
+	hit, ok := findSnapshotHitByLabel(view.Snapshot(), gfx.RoleOption, selected.label)
+	if !ok || hit.Bounds.Y < 0 || hit.Bounds.Y+hit.Bounds.Height > 640 {
 		t.Fatal("selected host opens outside the visible dropdown scroll range")
 	}
 }
@@ -518,7 +533,7 @@ func TestTransferCenterPreviewAndFilters(t *testing.T) {
 	}
 	var detailText strings.Builder
 	for _, label := range view.Snapshot().Texts {
-		if label.Layer == hoverCardLayer {
+		if pointInRect(label.Bounds.X, label.Bounds.Y, card.Bounds) {
 			detailText.WriteString(label.Value)
 			detailText.WriteByte('\n')
 		}
@@ -530,8 +545,9 @@ func TestTransferCenterPreviewAndFilters(t *testing.T) {
 	}
 	writeTransferPreview(t, view, state.transfers.surface, "transfer-center-hover.png")
 
-	click(hitTransfersDirection)
-	click(hitTransfersDirectionItems.At(int(transferDownload)))
+	clickSnapshotLabel(t, view, gfx.RoleCombobox, state.messages.Transfers.Direction)
+	clickSnapshotLabel(t, view, gfx.RoleOption, state.transferDirectionLabel(transferDownload))
+	wait(16 * time.Millisecond)
 	if state.transfers.count != 3 {
 		t.Fatalf("download filter matched %d entries", state.transfers.count)
 	}
@@ -559,6 +575,7 @@ func TestTransferCenterPreviewAndFilters(t *testing.T) {
 		t.Fatal("Enter in the filename search closed the center or changed its results")
 	}
 	click(hitTransfersDetails.At(2))
+	wait(16 * time.Millisecond)
 	hit(hitTransfersDetailCard)
 	if err := view.Driver().Key(gfx.KeyEscape, 0); err != nil {
 		t.Fatal(err)
@@ -691,4 +708,24 @@ func findSnapshotHit(snapshot app.Snapshot, id gfx.ID) (gfx.Hit, bool) {
 		}
 	}
 	return gfx.Hit{}, false
+}
+
+func findSnapshotHitByLabel(snapshot app.Snapshot, role gfx.Role, label string) (gfx.Hit, bool) {
+	for _, hit := range snapshot.Hits {
+		if hit.Role == role && hit.Label == label {
+			return hit, true
+		}
+	}
+	return gfx.Hit{}, false
+}
+
+func clickSnapshotLabel(t *testing.T, view *headless.Session, role gfx.Role, label string) {
+	t.Helper()
+	hit, ok := findSnapshotHitByLabel(view.Snapshot(), role, label)
+	if !ok || hit.Block || hit.Bounds.Width <= 0 || hit.Bounds.Height <= 0 {
+		t.Fatalf("missing %v %q", role, label)
+	}
+	if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
 }

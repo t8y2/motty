@@ -60,18 +60,16 @@ func (state *State) tickRemoteRefresh(now time.Duration) {
 func (state *State) drawRemoteRefreshControl(d *ui.DrawContext) {
 	canvas, theme := d.Canvas, *d.Theme
 	theme.Metrics.ControlHeight = d.Rect.Height
-	button := components.BeginButton(canvas, theme, gfx.ID{}, d.Rect).WithState(components.ButtonState{
-		Hovered: d.State.Hovered, Pressed: d.State.Pressed, Focused: d.State.Focused,
+	loading := state.remote.loading
+	paintRemoteButtonSurface(canvas, theme, d.Rect, components.ButtonGhost, gfx.State{
+		Hovered: d.State.Hovered, Pressed: d.State.Pressed, FocusVisible: d.State.Focused,
+		Disabled: loading,
 	})
-	if state.remote.loading {
-		button = button.Disabled()
-	}
-	button.Ghost("")
 	foreground := state.pal.muted
 	if d.State.Hovered || d.State.Pressed {
 		foreground = state.pal.text
 	}
-	if state.remote.loading {
+	if loading {
 		foreground.Alpha *= 0.4
 	}
 	size := min(d.Rect.Width, d.Rect.Height) * .375
@@ -79,6 +77,39 @@ func (state *State) drawRemoteRefreshControl(d *ui.DrawContext) {
 		X: d.Rect.X + (d.Rect.Width-size)/2, Y: d.Rect.Y + (d.Rect.Height-size)/2,
 		Width: size, Height: size,
 	}, foreground)
+}
+
+// paintRemoteButtonSurface paints a page control's button surface with the look
+// components.ButtonRecipe gives the same variant and state. The tools controls
+// paint their own glyphs over it, so they need the surface without a label; the
+// recipe keeps that surface identical to the buttons declared with ui.Button.
+func paintRemoteButtonSurface(canvas *gfx.Canvas, theme gfx.Theme, bounds gfx.Rect, variant components.ButtonVariant, state gfx.State) {
+	look := components.ButtonRecipe(theme, variant, state)
+	if look.Shadow != gfx.ShadowNone {
+		canvas.Elevate(bounds, look.Radius, look.Shadow)
+	}
+	if look.RingWidth > 0 {
+		ring := gfx.Rect{
+			X: bounds.X - look.RingWidth, Y: bounds.Y - look.RingWidth,
+			Width: bounds.Width + 2*look.RingWidth, Height: bounds.Height + 2*look.RingWidth,
+		}
+		if look.RingOutline {
+			canvas.RoundedOutline(ring, look.RingRadius, 2, look.Ring)
+		} else {
+			canvas.Rounded(ring, look.RingRadius, look.Ring)
+		}
+	}
+	switch {
+	case look.Bordered && look.Filled && theme.Background.Alpha < 1:
+		canvas.Rounded(bounds, look.Radius, look.Background)
+		canvas.RoundedOutline(bounds, look.Radius, 1, look.Border)
+	case look.Bordered && look.Filled:
+		canvas.RoundedBorder(bounds, look.Radius, 1, look.Border.Over(theme.Background), look.Background.Over(theme.Background))
+	case look.Filled:
+		canvas.Rounded(bounds, look.Radius, look.Background)
+	case look.Bordered:
+		canvas.RoundedOutline(bounds, look.Radius, 1, look.Border)
+	}
 }
 
 // drawRemoteAutoControl paints the auto-refresh button, including its countdown
@@ -102,15 +133,14 @@ func (state *State) drawRemoteAutoControl(d *ui.DrawContext) {
 	label, foreground := auto.label, theme.MutedForeground
 	buttonTheme := theme
 	buttonTheme.Metrics.ControlHeight = d.Rect.Height
-	button := components.BeginButton(canvas, buttonTheme, gfx.ID{}, d.Rect).WithState(components.ButtonState{
-		Hovered: d.State.Hovered, Pressed: d.State.Pressed, Focused: d.State.Focused,
-	})
+	variant := components.ButtonOutline
 	if auto.enabled {
-		button.Secondary("")
+		variant = components.ButtonSecondary
 		foreground = theme.Primary
-	} else {
-		button.Outline("")
 	}
+	paintRemoteButtonSurface(canvas, buttonTheme, d.Rect, variant, gfx.State{
+		Hovered: d.State.Hovered, Pressed: d.State.Pressed, FocusVisible: d.State.Focused,
+	})
 	clock := gfx.Rect{X: d.Rect.X + 9, Y: d.Rect.Y + (d.Rect.Height-18)/2, Width: 18, Height: 18}
 	phase := 0
 	if auto.enabled && !canvas.ReduceMotion() {
@@ -245,25 +275,6 @@ func (state *State) remoteRefreshControlKey(event gfx.KeyEvent) gfx.EventResult 
 	}
 	state.refreshRemoteToolsExplicit()
 	return gfx.EventResult{Handled: true, Repaint: true}
-}
-
-func (state *State) paintRemoteDockerEmpty(canvas *gfx.Canvas, bounds gfx.Rect) {
-	m := state.messages.Tools
-	components.Empty(canvas, state.Theme(), bounds, components.EmptyData{
-		Media: components.EmptyMediaDefault, Icon: icons.LinuxDocker,
-		Title: m.RemoteDockerMissing, Description: m.RemoteDockerMissingHint,
-	})
-}
-
-func (state *State) paintRemoteToolsLoading(canvas *gfx.Canvas, bounds gfx.Rect) {
-	center := bounds.Y + bounds.Height/2
-	phase := components.SpinnerPhase(0)
-	if !canvas.ReduceMotion() {
-		phase = components.SpinnerPhase(canvas.Now() / (80 * time.Millisecond) % 8)
-		canvas.RequestFrameIn(80 * time.Millisecond)
-	}
-	components.PaintSpinner(canvas, state.Theme(), gfx.Rect{X: bounds.X + bounds.Width/2 - 8, Y: center - 24, Width: 16, Height: 16}, phase)
-	canvas.LabelCenter(state.messages.Tools.RemoteLoading, gfx.Rect{X: bounds.X, Y: center, Width: bounds.Width, Height: 24}, gfx.TextStyle{Size: state.Theme().Metrics.FontSizeM, Color: state.pal.muted})
 }
 
 // Small, bounded vector frames keep fractional-DPI rendering crisp and avoid

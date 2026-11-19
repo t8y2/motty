@@ -19,7 +19,6 @@ var (
 	hitRuleManagerAll          = tree.ID(ruleManagerHits, "all")
 	hitRuleManagerAdd          = tree.ID(ruleManagerHits, "add")
 	hitRuleManagerDelete       = tree.ID(ruleManagerHits, "delete")
-	hitRuleManagerScroll       = tree.ID(ruleManagerHits, "scroll")
 	hitRuleManagerSelect       = tree.Sub(ruleManagerHits, tree.Name("select"))
 	hitRuleManagerEdit         = tree.Sub(ruleManagerHits, tree.Name("edit"))
 )
@@ -28,12 +27,8 @@ type ruleManagerUI struct {
 	kind      ruleDeleteKind
 	selected  map[int]bool
 	returning bool
-	offset    float32
 	list      *ui.ScrollState
 	bounds    gfx.Rect
-	geometry  components.ScrollAreaGeometry
-	dragging  bool
-	grab      float32
 }
 
 func (state *State) openRuleManager(kind ruleDeleteKind) {
@@ -125,7 +120,9 @@ func (state *State) declareRuleManager(c ui.C) {
 				ui.Spacer(c).Grow(1)
 				ui.Text(c, fmt.Sprintf(m.SelectedFmt, len(manager.selected))).FontSize(metrics.FontSizeS).Color(state.pal.muted)
 			})
-			list := ui.ScrollAt(c, manager.offset).FillWidth().Grow(1).Basis(0).PadSides(0, 14, 0, 0)
+			list := ui.Scroll(c).FillWidth().Grow(1).Basis(0).PadSides(0, 14, 0, 0).
+				AlwaysScrollbars().ScrollbarSize(10)
+			manager.list = list.ScrollState()
 			list.Children(func() {
 				if count == 0 {
 					ui.Text(c, m.Empty).FontSize(metrics.FontSizeM).Color(state.pal.muted).Margin(16)
@@ -134,14 +131,7 @@ func (state *State) declareRuleManager(c ui.C) {
 					state.declareRuleManagerRow(c, index)
 				}
 			})
-			list.DrawOver(func(d *ui.DrawContext) {
-				manager.bounds, manager.list = d.Rect, list.ScrollState()
-				manager.offset = manager.list.Offset
-				area := components.BeginScrollArea(d.Canvas, *d.Theme, d.Rect, gfx.Size{Width: d.Rect.Width, Height: manager.list.Content}).
-					Offset(0, manager.offset).ScrollbarSize(10).VerticalScrollbar(hitRuleManagerScroll, "Vertical scrollbar", "")
-				manager.geometry = area.Geometry()
-				area.EndContent()
-			})
+			list.DrawOver(func(d *ui.DrawContext) { manager.bounds = d.Rect })
 		})
 	})
 	dialog.Footer(func() {
@@ -150,41 +140,6 @@ func (state *State) declareRuleManager(c ui.C) {
 			components.ButtonAction{ID: hitRuleManagerAdd, Label: add, Variant: components.ButtonOutline, Disabled: full},
 			components.ButtonAction{ID: hitRuleManagerClose, Label: m.Close, Variant: components.ButtonSecondary})
 	})
-}
-
-func (state *State) ruleManagerPointer(event gfx.PointerEvent) gfx.EventResult {
-	manager := &state.ruleManager
-	if state.modal != modalRuleManager || event.Target != hitRuleManagerScroll && !manager.dragging {
-		return gfx.EventResult{}
-	}
-	if event.Kind == gfx.PointerExit {
-		manager.dragging = false
-		return gfx.EventResult{Handled: true}
-	}
-	switch event.Kind {
-	case gfx.PointerDown:
-		if event.Button != gfx.PointerButtonPrimary {
-			return gfx.EventResult{}
-		}
-		manager.dragging = true
-		manager.grab = event.Y - manager.geometry.VerticalThumb.Y
-		if manager.grab < 0 || manager.grab > manager.geometry.VerticalThumb.Height {
-			manager.grab = manager.geometry.VerticalThumb.Height / 2
-		}
-	case gfx.PointerMove:
-		if !manager.dragging {
-			return gfx.EventResult{}
-		}
-	case gfx.PointerUp:
-		if !manager.dragging || event.Button != gfx.PointerButtonPrimary {
-			return gfx.EventResult{}
-		}
-		manager.dragging = false
-	default:
-		return gfx.EventResult{}
-	}
-	manager.offset = manager.geometry.VerticalOffsetForThumb(event.Y - manager.grab)
-	return gfx.EventResult{Handled: true, Repaint: true}
 }
 
 func (state *State) declareRuleManagerRow(c ui.C, index int) {
@@ -246,13 +201,13 @@ func (state *State) declareRuleManagerRow(c ui.C, index int) {
 	})
 }
 
+// scrollRuleManager gives the wheel over the list to the page's scroll area, and keeps it
+// from reaching what lies behind the dialog.
 func (state *State) scrollRuleManager(event gfx.ScrollEvent) gfx.EventResult {
-	manager := &state.ruleManager
-	if manager.list == nil || !pointInRect(event.X, event.Y, manager.bounds) {
-		return gfx.EventResult{Handled: true}
+	result := gfx.EventResult{Handled: true}
+	if pointInRect(event.X, event.Y, state.ruleManager.bounds) {
+		result = state.windowPage().Wheel(event)
+		result.Handled = true
 	}
-	result := manager.list.Wheel(event)
-	manager.offset = manager.list.Offset
-	result.Handled = true
 	return result
 }

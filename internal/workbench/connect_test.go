@@ -414,8 +414,10 @@ func TestSearchFieldDeclaresTheGeometryOfItsOwnText(t *testing.T) {
 	var magnifierRight float32
 	for _, triangle := range triangles {
 		for _, point := range triangle.Points {
+			// The field's own hit covers its addons too: the magnifier sits
+			// left of the text, inside it.
 			inRow := point.Y >= hit.Bounds.Y && point.Y <= hit.Bounds.Y+hit.Bounds.Height
-			if inRow && point.X < hit.Bounds.X {
+			if inRow && point.X < text.Bounds.X && point.X >= hit.Bounds.X {
 				magnifierRight = max(magnifierRight, point.X)
 			}
 		}

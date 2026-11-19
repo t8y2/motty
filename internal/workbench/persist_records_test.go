@@ -33,8 +33,10 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		"host_view":                    true, "host_privacy": true, "host_privacy_show_name": true,
 		"host_privacy_show_address": true, "host_privacy_show_user": true,
 		// The host tree's width and whether it is open are this computer's own
-		// layout, like the file panel's width below.
+		// layout, like the file panel's width below. The session manager beside
+		// the terminals is the same kind of layout.
 		"host_side_width": true, "host_tree_open": true,
+		"hosts_panel_open": true, "hosts_panel_width": true,
 		"background": true, "snippet_shortcuts": true,
 		"background_output_alerts": true,
 		"tab_orientation":          true, "vertical_tabs_auto_hide": true,

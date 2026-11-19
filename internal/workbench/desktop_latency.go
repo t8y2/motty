@@ -3,8 +3,8 @@ package workbench
 import (
 	"fmt"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/desktop"
 )
 
@@ -65,13 +65,16 @@ func (state *State) paintDesktopLatency(canvas *gfx.Canvas, bounds gfx.Rect, bad
 		gfx.HitOptions{Role: gfx.RoleStatus, SkipFocus: true, Hint: badge.hint})
 }
 
-func (state *State) paintDesktopFullscreenControls(canvas *gfx.Canvas, view *desktopView, session *Session, area gfx.Rect) {
-	canvas.PushLayer(popupLayer)
-	defer canvas.PopLayer()
+// declareDesktopFullscreenControls declares the fullscreen view's bar in the
+// page: the exit button, the keyboard switch, and the room the latency badge
+// takes, over the top-left corner of the picture. The badge's text is painted
+// after the page, as the status strip's own badge is.
+func (state *State) declareDesktopFullscreenControls(c ui.C, view *desktopView, session *Session) {
 	m := state.messages.Desktop
+	canvas := c.Canvas()
 	label := m.ExitFullscreen + " · " + desktopFullscreenChord
 	width := canvas.TextWidthWeight(label, metrics.FontSizeS, gfx.WeightMedium) + 24
-	bar := gfx.Rect{X: area.X + 8, Y: area.Y + 8, Width: width + barToolSize + 12, Height: barToolSize + 8}
+	bar := gfx.Rect{X: 8, Y: 8, Width: width + barToolSize + 12, Height: barToolSize + 8}
 	latency, color, hint := "", gfx.Color{}, ""
 	if state.terminalShowLatency {
 		latency, color, hint = state.desktopLatency(view)
@@ -79,22 +82,45 @@ func (state *State) paintDesktopFullscreenControls(canvas *gfx.Canvas, view *des
 			bar.Width += canvas.TextWidthWeight(latency, metrics.FontSizeS, gfx.WeightMedium) + 20
 		}
 	}
-	canvas.RoundedBorder(bar, radius.item, 1, state.pal.line, withAlpha(state.pal.shell, 0.95))
-	button := gfx.Rect{X: bar.X + 4, Y: bar.Y + 4, Width: width, Height: barToolSize}
-	components.BeginButtonRow(canvas, state.theme, button).Size(components.ButtonSizeXSmall).Paint(
-		components.ButtonAction{ID: state.paneIdentity(session, hitDesktopFullscreen), Label: label, Variant: components.ButtonGhost})
-	capture := gfx.Rect{X: button.X + button.Width + 4, Y: button.Y, Width: barToolSize, Height: barToolSize}
+	s := state.paneBody(session)
+	s.fullscreenText, s.fullscreenColor, s.fullscreenHint = latency, color, hint
+	s.fullscreenLatency = gfx.Rect{}
+	if latency != "" {
+		x := bar.X + 4 + width + 4 + barToolSize + 4
+		s.fullscreenLatency = gfx.Rect{X: x, Y: bar.Y + 4, Width: bar.Width - (x - bar.X) - barToolSize - 8, Height: barToolSize}
+	}
+	if s.fullscreenBarDraw == nil {
+		s.fullscreenBarDraw = state.paintDesktopFullscreenBar
+	}
+	ui.Slot(c).Absolute().Left(bar.X).Top(bar.Y).Width(bar.Width).Height(bar.Height).Draw(s.fullscreenBarDraw)
+	ui.Row(c).Absolute().Left(bar.X + 4).Top(bar.Y + 4).Width(width).Height(barToolSize).Items(ui.Center).Justify(ui.End).Children(func() {
+		ui.Button(c, label).XSmall().Ghost().Hit(state.paneIdentity(session, hitDesktopFullscreen), label)
+	})
 	captureHint, style := fmt.Sprintf(m.TipCapture, desktopEscapeChord), iconButtonActive
 	if view.released {
 		captureHint, style = fmt.Sprintf(m.TipRelease, desktopEscapeChord), iconButtonQuiet
 	}
+	state.declareIconButton(c, state.paneIdentity(session, hitDesktopCapture), iconKeyboard, captureHint, view.ended, style).
+		Absolute().Left(bar.X+4+width+4).Top(bar.Y+4).Size(barToolSize, barToolSize)
+}
 
-	state.paintIconButton(canvas, state.paneIdentity(session, hitDesktopCapture), iconKeyboard, capture, captureHint, view.ended, style, state.pal.shell)
-	if latency != "" {
-		bounds := gfx.Rect{X: capture.X + capture.Width + 4, Y: button.Y, Width: bar.Width - (capture.X - bar.X) - capture.Width - 8, Height: barToolSize}
-		canvas.Label(latency, bounds, gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: color})
-		canvas.HitWithOptions(state.paneIdentity(session, hitDesktopLatency), bounds, latency, gfx.HitOptions{Hint: hint})
+// paintDesktopFullscreenBar paints the fullscreen bar's surface under its
+// controls: the same rounded border the canvas drew before the controls were
+// page elements.
+func (state *State) paintDesktopFullscreenBar(d *ui.DrawContext) {
+	d.Canvas.RoundedBorder(d.Rect, radius.item, 1, state.pal.line, withAlpha(state.pal.shell, 0.95))
+}
+
+// paintDesktopFullscreenLatency paints the fullscreen bar's latency badge in
+// the room its declaration reserved, over the page's bar.
+func (state *State) paintDesktopFullscreenLatency(canvas *gfx.Canvas, session *Session) {
+	s := state.paneBody(session)
+	if s.fullscreenText == "" {
+		return
 	}
+	bounds := s.fullscreenLatency
+	canvas.Label(s.fullscreenText, bounds, gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: s.fullscreenColor})
+	canvas.HitWithOptions(state.paneIdentity(session, hitDesktopLatency), bounds, s.fullscreenText, gfx.HitOptions{Hint: s.fullscreenHint})
 }
 
 func (state *State) paintChromelessLatency(canvas *gfx.Canvas, view *desktopView, session *Session, area gfx.Rect) {

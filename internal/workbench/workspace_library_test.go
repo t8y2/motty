@@ -341,3 +341,22 @@ func hostIndexByCatalogID(t testing.TB, state *State, catalogID string) int {
 	t.Fatalf("test host %q is not loaded", catalogID)
 	return -1
 }
+
+func TestWorkspaceLibraryKeepsTheScrollbarGutterAndSmallOpenButton(t *testing.T) {
+	state := templateManagementState(t, 1)
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	bounds := state.catalogSectionBounds()
+	padding := float32(22)
+	if bounds.Width < 340 {
+		padding = 12
+	}
+	view := state.sectionBodies.workspaceLibrary
+	if want := bounds.Width - 2*padding - workspaceLibraryScrollbarReserve; view.contentWidth != want {
+		t.Fatalf("library content width %v, want %v", view.contentWidth, want)
+	}
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	open := panelHit(t, canvas, hitWorkspaceTemplateOpen.At(0))
+	if open.Bounds.Height != 28 {
+		t.Fatalf("open button height %v, want the 28px small button", open.Bounds.Height)
+	}
+}

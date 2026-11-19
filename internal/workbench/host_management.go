@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 
@@ -28,16 +27,6 @@ func (state *State) clickHostManagement(id gfx.ID) bool {
 	if state.clickHostPrivacy(id) {
 		return true
 	}
-	if state.importMenu {
-		// A choice closes the menu and then runs as if it had been clicked
-		// directly; any other press only dismisses it.
-		state.importMenu = false
-		switch id {
-		case hitImportSSHConfig, hitImportHostCatalog, hitImportSessions, hitExportHosts:
-		default:
-			return true
-		}
-	}
 	if state.hostFilterMenu {
 		switch {
 		case id == hitHostFilterMenuDismiss || id == hitHostFilterMore:
@@ -53,11 +42,13 @@ func (state *State) clickHostManagement(id gfx.ID) bool {
 		switch {
 		case id == hitHostGroupDismiss || id == hitMoveHostGroup:
 			state.hostGroupMenu = false
+			state.hostGroupCopy = false
 		case id == hitHostGroupNone:
 			state.hostGroupMenu = false
 			state.applyHostGroup("")
 		case id == hitHostGroupNew:
 			state.hostGroupMenu = false
+			state.hostGroupCopy = false
 			state.hostGroupEditor = text.Editor{}
 			state.groupActions.op = hostGroupMoveHosts
 			state.dialogError = ""
@@ -74,6 +65,7 @@ func (state *State) clickHostManagement(id gfx.ID) bool {
 			}
 		default:
 			state.hostGroupMenu = false
+			state.hostGroupCopy = false
 		}
 		return true
 	}
@@ -280,9 +272,6 @@ func (state *State) singleHostAction() (Host, bool) {
 
 func (state *State) submitHostDialog() {
 	if !state.commitHostGroupQuery() {
-		return
-	}
-	if !state.commitHostEncodingQuery() {
 		return
 	}
 	if !state.commitHostTagQuery() {
@@ -914,10 +903,6 @@ func (state *State) clickMoveHostGroupDialog(id gfx.ID) {
 		}
 	}
 	switch id {
-	case hitGroupDeleteParent, hitGroupDeleteUngroup:
-		if state.groupActions.op == hostGroupDelete {
-			state.groupActions.ungroup = id == hitGroupDeleteUngroup
-		}
 	case hitMoveGroupDismiss, hitMoveGroupClose, hitMoveGroupCancel:
 		state.modal = modalNone
 		state.dialogError = ""
@@ -940,6 +925,10 @@ func (state *State) clickMoveHostGroupDialog(id gfx.ID) {
 			if !state.createHostChildGroup(state.groupActions.path, group) {
 				return
 			}
+		case hostGroupCreateRoot:
+			if !state.createHostRootGroup(group) {
+				return
+			}
 		default:
 			if group == "" {
 				state.dialogError = state.messages.ErrGroupRequired
@@ -957,6 +946,11 @@ func (state *State) clickMoveHostGroupDialog(id gfx.ID) {
 }
 
 func (state *State) applyHostGroup(group string) {
+	if state.hostGroupCopy {
+		state.hostGroupCopy = false
+		state.copyHostsToGroup(state.hostActionIDs, group)
+		return
+	}
 	count := 0
 	for index := range state.hosts {
 		if !containsHostID(state.hostActionIDs, state.hosts[index].ID) {
@@ -1009,10 +1003,6 @@ func (state *State) pruneHostSelections() {
 
 func (state *State) hostManagementKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	handled := gfx.EventResult{Handled: true, Repaint: true}
-	if state.hostOrderMenu && event.Key == gfx.KeyEscape {
-		state.hostOrderMenu = false
-		return handled, true
-	}
 	if state.hostSort.enabled && state.activeSection == sectionHosts && state.modal == modalNone {
 		move, result := state.hostSort.grid.Key(event)
 		if result.Handled {
@@ -1034,6 +1024,10 @@ func (state *State) hostManagementKey(event gfx.KeyEvent) (gfx.EventResult, bool
 		state.groupActions.open = false
 		return handled, true
 	}
+	if state.hostBlankMenu.open && event.Key == gfx.KeyEscape {
+		state.hostBlankMenu.open = false
+		return handled, true
+	}
 	if state.modal == modalDeleteHost {
 		if event.Key == gfx.KeyEnter && event.Target == hitHostDeleteConfirm && !event.Repeat {
 			state.confirmDeleteHosts()
@@ -1046,13 +1040,6 @@ func (state *State) hostManagementKey(event gfx.KeyEvent) (gfx.EventResult, bool
 			state.groupActions.parentOpen = false
 			return handled, true
 		}
-		if state.groupActions.op == hostGroupDelete && (event.Target == hitGroupDeleteParent || event.Target == hitGroupDeleteUngroup) {
-			choices := state.groupDeleteChoices()
-			if next, ok := components.RadioGroupKeyDown(event.Target, choices[:], components.DirectionLTR, event.Key); ok {
-				state.groupActions.ungroup = next == hitGroupDeleteUngroup
-				return gfx.EventResult{Handled: true, Repaint: true, Focus: next, FocusVisible: true}, true
-			}
-		}
 		editable := state.groupActions.op == hostGroupMoveHosts || state.groupActions.op == hostGroupRename || state.groupActions.op == hostGroupCreateChild
 		if event.Key == gfx.KeyEnter && event.Modifiers == 0 && !event.Release && (editable && event.Target == hitMoveGroupField || event.Target == hitMoveGroupSubmit) {
 			if _, composing := state.hostGroupEditor.Composition(); event.Repeat || editable && composing {
@@ -1062,14 +1049,6 @@ func (state *State) hostManagementKey(event gfx.KeyEvent) (gfx.EventResult, bool
 			return handled, true
 		}
 		return gfx.EventResult{}, false
-	}
-	if state.importMenu && event.Key == gfx.KeyEscape {
-		state.importMenu = false
-		return handled, true
-	}
-	if state.hostPrivacy.menu && event.Key == gfx.KeyEscape {
-		state.hostPrivacy.menu = false
-		return handled, true
 	}
 	if result, ok := state.hostChipMenuKey(event); ok {
 		return result, true
@@ -1082,12 +1061,12 @@ func (state *State) hostManagementKey(event gfx.KeyEvent) (gfx.EventResult, bool
 		return gfx.EventResult{}, false
 	}
 	if event.Target == hitHostSideWidth {
-		if bounds := state.hostSide.splitBounds; bounds.Width > 1 {
-			if fraction, ok := state.hostSideResizable(nil).FractionForKey(event.Key); ok {
-				state.hostSide.width = fraction * (bounds.Width - 1)
-				state.save()
-				return handled, true
+		if result := state.hostSide.split.Key(event); result.Handled {
+			if state.hostSide.split.Pos > 0 {
+				state.hostSide.width = state.hostSide.split.Pos
 			}
+			state.save()
+			return handled, true
 		}
 	}
 	if event.Key == gfx.KeySpace && !event.Release && state.clickHostScopeSelection(event.Target) {

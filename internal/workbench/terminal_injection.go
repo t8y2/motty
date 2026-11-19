@@ -72,9 +72,18 @@ type terminalInjection struct {
 	probe  shellProbe
 	probed bool
 
+	// token binds the ready marker, the command-start reports and the
+	// activation line's echo tag to this shell.
+	token  string
 	marker []byte
-	buf    []byte
-	queued [][]byte
+	// echoTag identifies the activation line in the shell's output; it outlives
+	// a failed window, because the line may be echoed long after the deadline.
+	echoTag []byte
+	// lateEcho marks a window reopened by a recognized echo, so its own failure
+	// gives up instead of looking for an echo that will not come again.
+	lateEcho bool
+	buf      []byte
+	queued   [][]byte
 
 	since      time.Duration // when the shell opened
 	lastOutput time.Duration // when it last wrote while this was waiting
@@ -111,7 +120,7 @@ func (state *State) startInjection(session *Session, shell Shell) {
 	}
 	token, directory := t.folderToken, session.startDirectory
 	result := make(chan shellProbe, 1)
-	t.injection = terminalInjection{phase: injectionWaiting, result: result, since: state.now()}
+	t.injection = terminalInjection{phase: injectionWaiting, result: result, token: token, since: state.now()}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 		defer cancel()
@@ -170,7 +179,8 @@ func (state *State) beginInjection(session *Session) {
 		state.failInjection(session)
 		return
 	}
-	injection.marker = sshconn.IntegrationReadyMarker(t.folderToken)
+	injection.marker = sshconn.IntegrationReadyMarker(injection.token)
+	injection.echoTag = sshconn.IntegrationEchoTag(injection.token)
 	injection.phase = injectionSuppressing
 	injection.started = state.now()
 	injection.buf = injection.buf[:0]
@@ -195,13 +205,19 @@ func (state *State) applyInjection(session *Session, data []byte) (rest []byte, 
 	if index := bytes.Index(injection.buf, injection.marker); index >= 0 {
 		// Bash reports command-start support while the activation output is
 		// still hidden. Retain that capability so the first prompt can own input.
-		commandStart := sshconn.IntegrationCommandStartMarker(t.folderToken)
+		commandStart := sshconn.IntegrationCommandStartMarker(injection.token)
 		if bytes.Contains(injection.buf[:index], commandStart) {
 			t.commandReporting = true
 		}
 		rest = append([]byte(nil), injection.buf[index+len(injection.marker):]...)
 		injection.buf = injection.buf[:0]
 		injection.phase = injectionDone
+		// The echo arrived, however late: the shell is integrated after all.
+		injection.echoTag = nil
+		injection.lateEcho = false
+		if !t.integrated {
+			t.integrated = true
+		}
 		// The hidden echo ended the first prompt line, and the shell's next
 		// prompt clears and redraws that line itself (the first-prompt prefix
 		// the integration installs). Erasing here would paint a frame with the
@@ -215,6 +231,27 @@ func (state *State) applyInjection(session *Session, data []byte) (rest []byte, 
 	return nil, false
 }
 
+// catchLateEcho recognizes the activation line's echo in a failed window's
+// output. A server that received the line after the window closed echoes it
+// now; the line's tag, which a shell echoes as ordinary text, identifies it
+// wherever the line editor drew it. Finding it reopens the window, because the
+// shell is about to execute the line and print its ready marker: everything
+// between the tag and the marker belongs to the installation, not to the user.
+// A chunk without the tag is the user's output and passes unchanged.
+func (state *State) catchLateEcho(session *Session, data []byte) (emit []byte, caught bool) {
+	injection := &session.term.injection
+	index := bytes.Index(data, injection.echoTag)
+	if index < 0 {
+		return data, false
+	}
+	// The echo stays out of the screen: only what preceded it is shown now.
+	injection.buf = append(injection.buf[:0], data[index:]...)
+	injection.phase = injectionSuppressing
+	injection.lateEcho = true
+	injection.started = state.now()
+	return append([]byte(nil), data[:index]...), true
+}
+
 // failInjection releases a hidden window that will not finish. The shell keeps
 // running without integration, as an unsupported shell does.
 func (state *State) failInjection(session *Session) {
@@ -225,6 +262,13 @@ func (state *State) failInjection(session *Session) {
 	}
 	injection.phase = injectionFailed
 	injection.buf = injection.buf[:0]
+	// The first failure keeps looking for the activation line's echo: a link
+	// that stalled past the deadline delivers it later. A window reopened by
+	// that echo has seen it already, so its failure stops the search.
+	if injection.lateEcho {
+		injection.echoTag = nil
+		injection.lateEcho = false
+	}
 	t.integrated = false
 	t.flushInjectionInput()
 }

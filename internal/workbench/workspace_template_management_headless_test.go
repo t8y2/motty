@@ -89,8 +89,8 @@ func TestWorkspaceTemplateManagementThroughKeyboard(t *testing.T) {
 			state := templateManagementState(t, 1)
 			original := slices.Clone(state.templates[0].HostIDs)
 			var input app.TextInput
-			view, err := headless.Open(app.Config{
-				Title: "Workspace template", Width: MinimumWindowWidth, Height: MinimumWindowHeight,
+			view, err := headless.Open(state.WindowConfig(app.Config{
+				Title: "Workspace template", Width: 1280, Height: 900,
 				Tree: Tree(), Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key,
 				OnScroll: state.Scroll, OnResize: state.Resize,
 				TextInput: func(context app.TextInputContext) *app.TextInput {
@@ -100,7 +100,7 @@ func TestWorkspaceTemplateManagementThroughKeyboard(t *testing.T) {
 					}
 					return &input
 				},
-			}, nil, headless.Options{})
+			}), nil, headless.Options{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -125,9 +125,7 @@ func TestWorkspaceTemplateManagementThroughKeyboard(t *testing.T) {
 
 			focus(hitWorkspaceTemplateMore.At(0))
 			press(gfx.KeyEnter)
-			if got := view.Snapshot().Focused; got != hitWorkspaceTemplateMenuEdit {
-				t.Fatalf("menu focus = %v", got)
-			}
+			press(gfx.KeyDown) // the keyboard goes into the menu, onto its first row
 			press(gfx.KeyEnter)
 			if state.modal != modalWorkspaceDraft || view.Snapshot().Focused != hitWorkspaceDraftName {
 				t.Fatalf("edit modal=%d focus=%v", state.modal, view.Snapshot().Focused)
@@ -147,6 +145,7 @@ func TestWorkspaceTemplateManagementThroughKeyboard(t *testing.T) {
 				t.Fatalf("edit escape modal=%d focus=%v", state.modal, view.Snapshot().Focused)
 			}
 			press(gfx.KeySpace)
+			press(gfx.KeyDown)
 			press(gfx.KeyDown)
 			press(gfx.KeyEnter)
 			if state.modal != modalWorkspaceTemplateDelete || view.Snapshot().Focused != hitWorkspaceTemplateDeleteCancel {

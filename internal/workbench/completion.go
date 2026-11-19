@@ -10,6 +10,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/cmdhistory"
 	"motty/internal/completion"
 	"motty/internal/i18n"
@@ -241,6 +242,15 @@ type completionPopup struct {
 	// as if a choice was already made.
 	selected int
 	top      int
+	// The page Popover that carries the list: open is its visibility, kept
+	// between paints so its scope and presence stay stable. body/draw are
+	// stored so an open list allocates no closures.
+	open        bool
+	c           ui.C
+	body        func()
+	draw        func(*ui.DrawContext)
+	slotHeight  float32
+	visibleRows int
 }
 
 // completionCatalog only reads a prepared snapshot. Wake owns background work;
@@ -1225,14 +1235,17 @@ func (state *State) clickCompletion(id gfx.ID) bool {
 	return true
 }
 
-// paintCompletionList draws the open list over the grid, anchored to the cursor
-// cell and flipped above it when the terminal has no room below.
-func (state *State) paintCompletionList(canvas *gfx.Canvas, session *Session, geometry terminalGeometry) {
+// declareCompletionList declares the open list as a page Popover over the grid,
+// anchored to the cursor cell and flipped above it when the terminal has no room
+// below. The rows themselves stay hand-painted in the popover's body slot.
+func (state *State) declareCompletionList(c ui.C, session *Session, bounds gfx.Rect, geometry terminalGeometry) {
 	list := &state.completion.list
 	if !list.active || list.sessionID != session.ID || state.modal != modalNone {
+		list.open = false
 		return
 	}
 	if !state.completionEligible(session) || len(list.candidates) == 0 && !list.loading {
+		list.open = false
 		return
 	}
 	cursor := session.term.presentedCursor()
@@ -1242,31 +1255,60 @@ func (state *State) paintCompletionList(canvas *gfx.Canvas, session *Session, ge
 	area := geometry.area
 	x = min(max(x, area.X+2), area.X+max(area.Width-2, 2))
 	y = min(max(y, area.Y+2), area.Y+max(area.Height-2, 2))
-	anchor := gfx.Rect{X: x, Y: y, Width: max(cellWidth, 2), Height: max(cellHeight, 2)}
+	anchorRect := gfx.Rect{X: x, Y: y, Width: max(cellWidth, 2), Height: max(cellHeight, 2)}
 
 	visible := min(len(list.candidates), completionRows)
-	width := state.completionWidth(canvas)
-	bodyHeight := float32(max(visible, 1))*completionRowHeight + 4
-	popover := components.BeginPopover(canvas, state.Theme(), area, anchor, components.PopoverOptions{
-		Layer:       dialogLayer,
-		Scope:       completionScope.ID(tree.Name("popover")),
-		DismissID:   hitCompletionDismiss,
-		Side:        components.PopoverBottom,
-		Align:       components.PopoverAlignStart,
-		SideOffset:  2,
-		Headerless:  true,                           // the rows are the content; a title would only take room
-		Padding:     components.DropdownMenuPadding, // the rows line up with the app's menus
-		Instant:     true,                           // it appears under the cursor as the user types
-		ContentSize: gfx.Size{Width: width},
-		BodyHeight:  bodyHeight,
-	})
-	layout := popover.Begin("", "")
-	if len(list.candidates) == 0 {
-		state.paintCompletionNote(canvas, layout.Body)
-	} else {
-		state.paintCompletionRows(canvas, layout.Body, visible)
+	width := state.completionWidth(c.Canvas())
+	// The page Popover reserves its border in the layout; the old card painted
+	// it inside. Shortening the slot by the two border pixels makes the surface
+	// and the body land where the old popover put them.
+	list.visibleRows = visible
+	list.slotHeight = float32(max(visible, 1))*completionRowHeight + 4 - 2
+	list.c = c
+	if list.body == nil {
+		list.body = state.declareCompletionListBody
 	}
-	popover.End()
+	if list.draw == nil {
+		list.draw = state.drawCompletionListBody
+	}
+	anchor := ui.Slot(c).Absolute().Left(anchorRect.X-bounds.X).Top(anchorRect.Y-bounds.Y).
+		Size(anchorRect.Width, anchorRect.Height)
+	list.open = true
+	spec := ui.PopoverSpec{
+		Scope:            completionScope.ID(tree.Name("popover")),
+		DismissID:        hitCompletionDismiss,
+		Side:             components.PopoverBottom,
+		Align:            ui.Start,
+		Offset:           2,
+		Width:            width,
+		Padding:          components.DropdownMenuPadding, // the rows line up with the app's menus
+		KeepOpenOnAnchor: true,
+		// The hand-painted list appeared at once; the page popover would otherwise
+		// play its entrance.
+		Instant: true,
+	}
+	if ui.PopoverWith(c, anchor, spec, &list.open, list.body) {
+		list.open = false
+	}
+}
+
+// declareCompletionListBody declares the one slot that paints the list's rows.
+func (state *State) declareCompletionListBody() {
+	list := &state.completion.list
+	ui.Slot(list.c).FillWidth().Height(list.slotHeight).Draw(list.draw)
+}
+
+// drawCompletionListBody paints the rows into the old popover's body box. The
+// page insets the slot by its border, so expanding it by that pixel restores the
+// old content rectangle.
+func (state *State) drawCompletionListBody(d *ui.DrawContext) {
+	list := &state.completion.list
+	body := gfx.Rect{X: d.Rect.X - 1, Y: d.Rect.Y - 1, Width: d.Rect.Width + 2, Height: d.Rect.Height + 2}
+	if len(list.candidates) == 0 {
+		state.paintCompletionNote(d.Canvas, body)
+		return
+	}
+	state.paintCompletionRows(d.Canvas, body, list.visibleRows)
 }
 
 // paintCompletionNote draws the one row of a list whose directory is still

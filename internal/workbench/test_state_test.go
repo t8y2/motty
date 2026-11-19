@@ -86,6 +86,7 @@ func newTestState(t testing.TB, options Options) *State {
 		options.Invalidator = new(app.Invalidator)
 	}
 	state := New(options)
+	menuLabelState = state
 	// The shells a Windows computer offers are whatever is installed on it, and
 	// naming WSL distributions starts wsl.exe: a test sees one shell and no
 	// distributions, the way a computer with only a default shell would. On a

@@ -14,7 +14,7 @@ func TestTabMenuRenamesTheTabInPlaceAndKeepsTheNameAcrossRestarts(t *testing.T) 
 	workspace := state.workspaceTabs[0].ID
 
 	openTabMenu(state, workspace)
-	state.Click(hitTabMenuRename)
+	chooseMenu(t, state, hitTabMenuRename)
 	if !state.tabInlineActive() || state.tabInline.workspace != workspace {
 		t.Fatalf("the name field is not open on the tab: %+v", state.tabInline)
 	}
@@ -55,7 +55,7 @@ func TestTabRenameEmptyNameKeepsTheOldOne(t *testing.T) {
 	before := state.workspaceTabs[0].Title
 
 	openTabMenu(state, workspace)
-	state.Click(hitTabMenuRename)
+	chooseMenu(t, state, hitTabMenuRename)
 	state.tabInline.editor.Insert("   ")
 	state.commitTabInline()
 	if state.tabInlineActive() {

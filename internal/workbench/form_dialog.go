@@ -3,7 +3,6 @@ package workbench
 import (
 	"context"
 	"math"
-	"unicode/utf8"
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
@@ -43,13 +42,14 @@ type formField struct {
 	secure             bool
 	multiline          bool
 	editor             text.Editor
-	// pageField and pageBound are the page field the tools window declares over
-	// the editor; the main window paints and edits it directly.
+	// pageField and pageBound are the page field declared over the editor; row is its
+	// labelled row and shown reveals a secret one. A multiline field is a page text
+	// area, area, bound to the same editor.
 	pageField ui.Field
 	pageBound bool
-	// layout and rect are the rows and place of a multiline field as last painted.
-	layout components.TextareaLayout
-	rect   gfx.Rect
+	row       ui.FormFieldState
+	shown     bool
+	area      dialogArea
 }
 
 // formDialog is the open form. run is called when the user submits: it returns
@@ -87,9 +87,6 @@ type formDialog struct {
 	// cancel, if set, runs instead of closing when the user cancels; a form that
 	// stands between two screens uses it to go back.
 	cancel func(*State)
-	// slots and checkBox are where the body laid the controls out.
-	slots    [maxFormFields]ui.Box
-	checkBox ui.Box
 }
 
 // openForm shows a form. The fields are copied in; use the returned form to
@@ -101,6 +98,10 @@ func (state *State) openForm(form formDialog, fields ...formField) *formDialog {
 	state.formSerial++
 	state.form = form
 	state.form.count = copy(state.form.fields[:], fields)
+	for index := range state.form.fields {
+		// A field copied from another form is bound to that form's editor.
+		state.form.fields[index].pageBound, state.form.fields[index].shown = false, false
+	}
 	state.form.dialogError = ""
 	state.form.testRunning = false
 	state.form.focusPending = true
@@ -139,40 +140,6 @@ func (state *State) multilineField(hit gfx.ID) *formField {
 		return field
 	}
 	return nil
-}
-
-// formKey moves the caret of a multiline field by the rows it wrapped to, which
-// the native editor does not know. Enter in such a field is a new line, which the
-// native editor makes; every other form field submits.
-func (state *State) formKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
-	field := state.multilineField(event.Target)
-	if field == nil {
-		return gfx.EventResult{}, false
-	}
-	if _, composing := field.editor.Composition(); composing {
-		return gfx.EventResult{}, false
-	}
-	movement, extend := components.TextareaMovementForKey(event.Key, event.Modifiers)
-	if movement == components.TextareaMoveNone {
-		return gfx.EventResult{}, false
-	}
-	value := field.editor.String()
-	to := field.layout.Move(value, aiByteOffset(value, field.editor.Caret()), movement)
-	field.editor.MoveTo(utf8.RuneCountInString(value[:to]), extend)
-	return gfx.EventResult{Handled: true, Repaint: true}, true
-}
-
-// scrollForm scrolls the multiline field under the pointer. The wheel never
-// reaches what is behind a dialog.
-func (state *State) scrollForm(event gfx.ScrollEvent) gfx.EventResult {
-	for index := 0; index < state.form.count; index++ {
-		field := &state.form.fields[index]
-		if field.multiline && pointInRect(event.X, event.Y, field.rect) {
-			field.layout.ScrollBy(event.DeltaY)
-			return gfx.EventResult{Handled: true, Repaint: true}
-		}
-	}
-	return gfx.EventResult{Handled: true}
 }
 
 func (state *State) formEditor(hit gfx.ID) *text.Editor {
@@ -385,14 +352,20 @@ func (state *State) declareFormDialogBody(c ui.C) {
 	column := ui.Column(c).Fill().PadSides(4, 4, 0, 4)
 	column.Children(func() {
 		for index := 0; index < form.count; index++ {
-			form.slots[index] = ui.Slot(c).Height(form.slotHeight(index)-4).MarginSides(0, 0, 4, 0)
+			field := &form.fields[index]
+			if field.multiline {
+				height := form.slotHeight(index) - 4
+				ui.Column(c).Height(height).Shrink(0).MarginSides(0, 0, 4, 0).Children(func() {
+					field.area.declare(c, hitFormFieldList.At(index), &field.editor, field.label, field.placeholder, height)
+				})
+			} else {
+				state.declareFormField(c, index)
+			}
 		}
 		if form.checkLabel != "" {
 			ui.Column(c).Height(72).Gap(2).PadSides(8, 0, 4, 0).Children(func() {
-				form.checkBox = ui.Row(c).Height(24).Items(ui.Center)
-				form.checkBox.Children(func() {
-					ui.Slot(c).Width(28)
-					ui.Text(c, form.checkLabel).FontSize(metrics.FontSizeM).Color(state.pal.text)
+				ui.Row(c).Height(24).Items(ui.Center).Children(func() {
+					ui.Checkbox(c, state.pageFlag(form.checked), form.checkLabel).Hit(hitFormCheckbox, form.checkLabel)
 				})
 				ui.Paragraph(c, form.checkDescription, 2).FontSize(metrics.FontSizeS).LineHeight(16).Color(state.pal.muted).MarginSides(0, 0, 0, 28)
 			})
@@ -402,48 +375,30 @@ func (state *State) declareFormDialogBody(c ui.C) {
 			ui.Paragraph(c, form.currentTestNote(), 0).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.success).LineHeight(formProblemLine)
 		}
 	})
-	column.DrawOver(func(d *ui.DrawContext) {
-		canvas, theme := d.Canvas, *d.Theme
-		for index := 0; index < form.count; index++ {
-			field := &form.fields[index]
-			id := hitFormFieldList.At(index)
-			slot := form.slots[index].Rect()
-			content := components.BeginField(canvas, theme, slot).Paint(field.label, "", "")
-			value := field.editor.String()
-			focused := canvas.Focused() == id
-			if field.multiline {
-				state.paintFormTextarea(canvas, field, gfx.Rect{X: content.X, Y: content.Y, Width: content.Width, Height: slot.Y + slot.Height - content.Y}, id, focused)
-				continue
-			}
-			state.paintSecretInput(canvas, content, components.InputSnapshot{
-				ID: id, Label: field.label, Value: value, Placeholder: field.placeholder, Secure: field.secure,
-				Focused: focused, PlatformEditing: focused && value != "",
-			})
-		}
-		if form.checkLabel != "" {
-			rect := form.checkBox.Rect()
-			side := components.CheckboxExtent(theme)
-			components.BeginCheckbox(canvas, theme, hitFormCheckbox, gfx.Rect{X: rect.X, Y: rect.Y + (rect.Height-side)/2}, form.checked).Label(form.checkLabel).Paint()
-			canvas.HitLabel(hitFormCheckbox, gfx.Rect{X: rect.X + 28, Y: rect.Y, Width: max(rect.Width-28, 0), Height: rect.Height}, form.checkLabel, false)
-		}
-	})
 }
 
-func (state *State) paintFormTextarea(canvas *gfx.Canvas, field *formField, bounds gfx.Rect, id gfx.ID, focused bool) {
-	value := field.editor.String()
-	selection := field.editor.Selection()
-	snapshot := components.TextareaSnapshot{
-		ID: id, Label: field.label, Value: value, Placeholder: field.placeholder,
-		Focused: focused, HideEditorText: true, ShowCaret: selection.Start == selection.End,
-		Layout:         &field.layout,
-		SelectionStart: aiByteOffset(value, selection.Start), SelectionEnd: aiByteOffset(value, selection.End),
-		Caret: aiByteOffset(value, field.editor.Caret()),
+// declareFormField declares a single-line field i of the form: a labelled row around a page
+// text bound to the field's editor. A secret one has a button that reveals it.
+func (state *State) declareFormField(c ui.C, i int) {
+	field, m := &state.form.fields[i], state.messages
+	if !field.pageBound {
+		field.pageField.Bind(&field.editor)
+		field.pageBound = true
 	}
-	if marked, composing := field.editor.Composition(); composing {
-		snapshot.CompositionStart, snapshot.CompositionEnd = aiByteOffset(value, marked.Start), aiByteOffset(value, marked.End)
-	}
-	field.rect = bounds
-	components.PaintTextarea(canvas, state.Theme(), bounds, snapshot)
+	field.pageField.Secure = field.secure && !field.shown
+	ui.FormField(c, &field.row, field.label).FillWidth().Height(62).MarginSides(0, 0, 4, 0).Children(func() {
+		box := ui.TextFieldID(c, hitFormFieldList.At(i), &field.pageField, field.label, field.placeholder)
+		if field.secure {
+			icon, name := lucideIcons[iconEye], m.ShowSecret
+			if field.shown {
+				icon, name = lucideIcons[iconEyeOff], m.HideSecret
+			}
+			box.Action(icon, name)
+			if box.ActionClicked() {
+				field.shown = !field.shown
+			}
+		}
+	})
 }
 
 func (form *formDialog) currentTestNote() string {

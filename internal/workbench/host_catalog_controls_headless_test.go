@@ -99,7 +99,8 @@ func TestHostCatalogControlsNativeSelectionOrderingAndExport(t *testing.T) {
 						must(view.Keys("Space"))
 						click(hitHostOrder)
 						shot("order-menu")
-						click(hitHostOrderIP)
+						must(view.ClickLabel(state.messages.HostCatalog.IP))
+						must(view.Rest())
 						if got, want := displayHostIDs(state), []string{"host_f", "host_b", "host_z", "host_c", "host_a", "host_e", "host_d"}; !slices.Equal(got, want) {
 							t.Fatalf("native IP order = %v", got)
 						}
@@ -107,7 +108,8 @@ func TestHostCatalogControlsNativeSelectionOrderingAndExport(t *testing.T) {
 							t.Fatal("the display-order control is missing")
 						}
 						click(hitHostOrder)
-						click(hitHostOrderName)
+						must(view.ClickLabel(state.messages.HostCatalog.Name))
+						must(view.Rest())
 						click(hitSearch)
 						must(view.Type("Alpha"))
 						click(hitHostSelectAll)
@@ -173,7 +175,7 @@ func TestHostCatalogControlsNativeCompactPanel(t *testing.T) {
 			}
 		}
 	}
-	for _, id := range []gfx.ID{hitHostSelectAll, hitHostOrder, hitHostOrderName} {
+	for _, id := range []gfx.ID{hitHostSelectAll, hitHostOrder} {
 		hit, ok := hitByIDSnapshot(view.Snapshot().Hits, id)
 		if !ok {
 			t.Fatalf("compact interaction omitted %s", tree.Text(id))
@@ -181,6 +183,9 @@ func TestHostCatalogControlsNativeCompactPanel(t *testing.T) {
 		if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if err := view.ClickLabel(state.messages.HostCatalog.Name); err != nil {
+		t.Fatal(err)
 	}
 	if len(state.hostSelections) != 3 || state.hostOrder != hostOrderName {
 		t.Fatal("compact selection/order controls did not activate")

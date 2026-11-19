@@ -11,7 +11,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
@@ -942,12 +941,13 @@ func (state *State) clickDesktop(id gfx.ID) bool {
 }
 
 // declareDesktopBody declares the bars of a remote desktop in its pane: the
-// title and state over the picture, and the strip that names the escape chord
-// under it. The controls painted by hand go into the slots it leaves.
+// title and state over the picture, the controls that act on it, and the strip
+// that names the escape chord under it. The picture itself is a slot the page
+// paints, so the controls declared over it are page elements too.
 func (state *State) declareDesktopBody(c ui.C, session *Session, bounds gfx.Rect) {
 	view, s := session.desk, state.paneBody(session)
 	s.declared = true
-	pal, m := state.pal, state.messages
+	pal := state.pal
 	canvas := c.Canvas()
 	view.present()
 	view.pixelScale = canvas.PixelScale()
@@ -958,117 +958,210 @@ func (state *State) declareDesktopBody(c ui.C, session *Session, bounds gfx.Rect
 	}
 	status, _ := state.sessionStatus(session)
 	showStatus := session.phase != sshconn.PhaseConnected || view.ended
-	s.light, s.tools, s.capture, s.latency = ui.Box{}, ui.Box{}, ui.Box{}, ui.Box{}
+	s.light, s.capture, s.latency = ui.Box{}, ui.Box{}, ui.Box{}
 	s.latencyShown = false
 	if !view.chromeless && !view.fullscreen {
-		var tools []components.ButtonAction
 		s.latencyBadge, s.latencyShown = state.desktopLatencyBadge(canvas, view)
-		// The controls on the right: the scaling choice, Ctrl+Alt+Del where there is
-		// room, and the keyboard switch.
-		tools = []components.ButtonAction{
-			{ID: state.paneIdentity(session, hitDesktopFit), Label: m.Desktop.Fit, Variant: components.ButtonGhost},
-			{ID: state.paneIdentity(session, hitDesktopActual), Label: m.Desktop.Actual, Variant: components.ButtonGhost},
-			{ID: state.paneIdentity(session, hitDesktopFullscreen), Label: m.Desktop.Fullscreen, Variant: components.ButtonGhost, Disabled: view.ended},
-		}
-		if view.fit {
-			tools[0].Variant = components.ButtonSecondary
-		} else {
-			tools[1].Variant = components.ButtonSecondary
-		}
-		if bounds.Width >= 760 {
-			tools = append([]components.ButtonAction{{ID: state.paneIdentity(session, hitDesktopCtrlAltDel), Label: m.Desktop.CtrlAltDel, Variant: components.ButtonGhost, Disabled: view.ended}}, tools...)
-		}
-		s.desktopTools = append(s.desktopTools[:0], tools...)
-	} else {
-		s.desktopTools = s.desktopTools[:0]
 	}
-	toolsWidth := float32(0)
-	for _, tool := range s.desktopTools {
-		toolsWidth += canvas.TextWidthWeight(tool.Label, metrics.FontSizeS, gfx.WeightMedium) + 24 + 4
+	if s.pictureDraw == nil || s.pictureSession != session.ID {
+		// A pane slot outlives the session it showed: bind the draw to this
+		// session's identity and look it up by it, so a later one in the same
+		// slot paints its own picture.
+		id := session.ID
+		s.pictureSession = id
+		s.pictureDraw = func(d *ui.DrawContext) {
+			if session, ok := state.sessionByIDPointer(id); ok && session.desk != nil {
+				state.paintDesktopPicture(d, session)
+			}
+		}
+	}
+	if view.chromeless || view.fullscreen {
+		// These views show the picture alone: no controls. The bars are still
+		// declared under the picture, as they always were, so the layout that
+		// gives the picture its area is the same one; fullscreen keeps its
+		// controls over it.
+		ui.Stack(c).Fill().Background(pal.workspace).Children(func() {
+			state.declareDesktopInfoBar(c, session, view, s, bounds, title, status, showStatus, false)
+			state.declareDesktopStrip(c, session, view, s, true)
+			ui.Slot(c).Absolute().Left(0).Right(0).Top(infoBarHeight).Bottom(desktopStripHeight).
+				Background(state.ground(state.termPal.terminal)).Draw(s.pictureDraw)
+			if view.fullscreen {
+				state.declareDesktopFullscreenControls(c, view, session)
+			}
+		})
+		return
 	}
 	ui.Column(c).Fill().Background(pal.workspace).Children(func() {
-		ui.Stack(c).Height(infoBarHeight).Shrink(0).Background(pal.workspace).Children(func() {
-			ui.Row(c).Fill().PadSides(0, termPadX, 0, termPadX-2).Items(ui.Center).Children(func() {
-				ui.Row(c).Grow(1).Gap(8).MarginSides(0, 10, 0, 0).Items(ui.Center).Children(func() {
-					s.light = ui.Slot(c).Size(16, 16)
-					ui.Text(c, title).FontSize(barTitleSize).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(22).
-						Width(canvas.TextWidthWeight(title, barTitleSize, gfx.WeightSemibold)+2).Ellipsis().MarginSides(0, 4, 0, 0)
-					if showStatus {
-						ui.Text(c, status).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(22).
-							Width(canvas.TextWidthWeight(status, metrics.FontSizeS, gfx.WeightMedium) + 2)
-					}
-				})
-				ui.Row(c).Gap(barToolGap).Shrink(0).Items(ui.Center).Children(func() {
-					s.tools = ui.Slot(c).Size(toolsWidth, 24).Shrink(0)
-					if view.chromeless || view.fullscreen {
-						// These views paint the picture alone; their capture control is
-						// the corner note or the fullscreen bar, not this one.
-						s.capture = ui.Slot(c).Size(barToolSize, barToolSize).Shrink(0)
-					} else {
-						captureStyle, captureHint := iconButtonActive, fmt.Sprintf(m.Desktop.TipCapture, desktopEscapeChord)
-						if view.released {
-							captureStyle, captureHint = iconButtonQuiet, fmt.Sprintf(m.Desktop.TipRelease, desktopEscapeChord)
-						}
-						s.capture = state.declareIconButton(c, state.paneIdentity(session, hitDesktopCapture), iconKeyboard, captureHint, view.ended, captureStyle).Size(barToolSize, barToolSize).Shrink(0)
-					}
-				})
-			})
-			ui.Row(c).FillWidth().Height(1).Self(ui.End).Background(pal.line)
+		state.declareDesktopInfoBar(c, session, view, s, bounds, title, status, showStatus, true)
+		ui.Stack(c).Grow(1).Children(func() {
+			ui.Slot(c).Fill().Background(state.ground(state.termPal.terminal)).Draw(s.pictureDraw)
+			state.declareDesktopReconnect(c, session, view)
 		})
-		ui.Row(c).Grow(1).Background(state.ground(state.termPal.terminal))
-		ui.Stack(c).Height(desktopStripHeight).Shrink(0).Background(pal.workspace).Children(func() {
-			ui.Row(c).FillWidth().Height(1).Self(ui.Start).Background(pal.line)
-			ui.Row(c).Fill().PadX(termPadX).Items(ui.Center).Children(func() {
-				ui.Text(c, state.desktopStripLeft(view, session)).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).LineHeight(16).Grow(1).Ellipsis()
-				if s.latencyShown {
-					s.latency = ui.Slot(c).Size(s.latencyBadge.width+12, 16).MarginSides(0, 8, 0, 0).Shrink(0)
+		state.declareDesktopStrip(c, session, view, s, false)
+	})
+}
+
+// declareDesktopInfoBar declares the line over the picture: the light, the
+// title and state, the controls that act on the desktop, and the keyboard
+// switch. withTools is off where the view shows the picture alone.
+func (state *State) declareDesktopInfoBar(c ui.C, session *Session, view *desktopView, s *sessionPaneUI, bounds gfx.Rect, title, status string, showStatus, withTools bool) {
+	pal, m := state.pal, state.messages
+	canvas := c.Canvas()
+	bar := ui.Stack(c).Height(infoBarHeight).Shrink(0).Background(pal.workspace)
+	if !withTools {
+		bar = bar.Absolute().Left(0).Right(0).Top(0)
+	}
+	bar.Children(func() {
+		ui.Row(c).Fill().PadSides(0, termPadX, 0, termPadX-2).Items(ui.Center).Children(func() {
+			ui.Row(c).Grow(1).Gap(8).MarginSides(0, 10, 0, 0).Items(ui.Center).Children(func() {
+				s.light = ui.Slot(c).Size(16, 16)
+				if withTools && session.busy {
+					// The page's spinner paints the light's place while the
+					// connection is busy and asks for frames itself.
+					s.light = s.light.Children(func() { ui.Spinner(c).Size(16, 16) })
 				}
-				chordText := m.Desktop.StripCaptured
-				colour := pal.muted
-				if view.released {
-					chordText, colour = m.Desktop.StripReleased, pal.accent
+				ui.Text(c, title).FontSize(barTitleSize).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(22).
+					Width(canvas.TextWidthWeight(title, barTitleSize, gfx.WeightSemibold)+2).Ellipsis().MarginSides(0, 4, 0, 0)
+				if showStatus {
+					ui.Text(c, status).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(22).
+						Width(canvas.TextWidthWeight(status, metrics.FontSizeS, gfx.WeightMedium) + 2)
 				}
-				chordText = fmt.Sprintf(chordText, desktopEscapeChord)
-				ui.Text(c, chordText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(colour).LineHeight(16).
-					Width(canvas.TextWidthWeight(chordText, metrics.FontSizeS, gfx.WeightMedium) + 2).Shrink(0)
 			})
+			ui.Row(c).Gap(barToolGap).Shrink(0).Items(ui.Center).Children(func() {
+				if withTools {
+					state.declareDesktopTools(c, session, view, bounds)
+					captureStyle, captureHint := iconButtonActive, fmt.Sprintf(m.Desktop.TipCapture, desktopEscapeChord)
+					if view.released {
+						captureStyle, captureHint = iconButtonQuiet, fmt.Sprintf(m.Desktop.TipRelease, desktopEscapeChord)
+					}
+					s.capture = state.declareIconButton(c, state.paneIdentity(session, hitDesktopCapture), iconKeyboard, captureHint, view.ended, captureStyle).Size(barToolSize, barToolSize).Shrink(0)
+				}
+			})
+		})
+		ui.Row(c).FillWidth().Height(1).Self(ui.End).Background(pal.line)
+	})
+}
+
+// declareDesktopTools declares the scaling choice, Ctrl+Alt+Del where the pane
+// has room for it, and the keyboard switch along the right of the info bar. The
+// row sizes itself to its labels; the app's identities are kept, so the central
+// click handler still runs the actions.
+func (state *State) declareDesktopTools(c ui.C, session *Session, view *desktopView, bounds gfx.Rect) {
+	m := state.messages.Desktop
+	ui.Row(c).Gap(state.theme.Metrics.GapItem).Shrink(0).Items(ui.Center).Children(func() {
+		if bounds.Width >= 760 {
+			label := m.CtrlAltDel
+			button := ui.Button(c, label).XSmall().Ghost().Hit(state.paneIdentity(session, hitDesktopCtrlAltDel), label)
+			if view.ended {
+				button = button.Disabled(true)
+			}
+		}
+		fitLabel, actualLabel, fullscreenLabel := m.Fit, m.Actual, m.Fullscreen
+		fit := ui.Button(c, fitLabel).XSmall().Ghost().Hit(state.paneIdentity(session, hitDesktopFit), fitLabel)
+		if view.fit {
+			fit = fit.Secondary()
+		}
+		actual := ui.Button(c, actualLabel).XSmall().Ghost().Hit(state.paneIdentity(session, hitDesktopActual), actualLabel)
+		if !view.fit {
+			actual = actual.Secondary()
+		}
+		fullscreen := ui.Button(c, fullscreenLabel).XSmall().Ghost().Hit(state.paneIdentity(session, hitDesktopFullscreen), fullscreenLabel)
+		if view.ended {
+			fullscreen = fullscreen.Disabled(true)
+		}
+	})
+}
+
+// declareDesktopReconnect declares the button the ended page offers over the
+// dimmed picture. It is the same width the canvas row gave it: a 28px button at
+// the right of a width the picture's own width bounds.
+func (state *State) declareDesktopReconnect(c ui.C, session *Session, view *desktopView) {
+	if !view.ended || !state.canReconnect(session) {
+		return
+	}
+	m := state.messages.Desktop
+	area := view.area
+	width := min(max(area.Width-32, 120), 420)
+	left := (area.Width - width) / 2
+	top := max((area.Height-132)/2, 8) + 78
+	label := m.Reconnect
+	ui.Row(c).Absolute().Left(left).Top(top).Width(width).Height(28).Items(ui.Center).Justify(ui.End).Children(func() {
+		ui.Button(c, label).Small().Hit(state.paneIdentity(session, hitDesktopReconnect), label)
+	})
+}
+
+// declareDesktopStrip declares the status line under the picture: what the
+// picture shows, the escape chord, and the latency badge. absolute puts it on
+// the bottom edge of the stack that holds the picture, for a fullscreen view.
+func (state *State) declareDesktopStrip(c ui.C, session *Session, view *desktopView, s *sessionPaneUI, absolute bool) {
+	pal, m := state.pal, state.messages
+	canvas := c.Canvas()
+	strip := ui.Stack(c).Height(desktopStripHeight).Shrink(0).Background(pal.workspace)
+	if absolute {
+		strip = strip.Absolute().Left(0).Right(0).Bottom(0)
+	}
+	strip.Children(func() {
+		ui.Row(c).FillWidth().Height(1).Self(ui.Start).Background(pal.line)
+		ui.Row(c).Fill().PadX(termPadX).Items(ui.Center).Children(func() {
+			ui.Text(c, state.desktopStripLeft(view, session)).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).LineHeight(16).Grow(1).Ellipsis()
+			if s.latencyShown {
+				s.latency = ui.Slot(c).Size(s.latencyBadge.width+12, 16).MarginSides(0, 8, 0, 0).Shrink(0)
+			}
+			chordText := m.Desktop.StripCaptured
+			colour := pal.muted
+			if view.released {
+				chordText, colour = m.Desktop.StripReleased, pal.accent
+			}
+			chordText = fmt.Sprintf(chordText, desktopEscapeChord)
+			ui.Text(c, chordText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(colour).LineHeight(16).
+				Width(canvas.TextWidthWeight(chordText, metrics.FontSizeS, gfx.WeightMedium) + 2).Shrink(0)
 		})
 	})
 }
 
-// paintDesktopDetails paints a remote desktop: the picture, the controls the
-// bars declared slots for, and the status line. A chromeless host drops both bars
-// for the picture's sake; the keyboard note then takes a corner of the picture,
-// and the controls live in the tab's menu.
+// paintDesktopDetails paints what a remote desktop's page leaves by hand: the
+// light or spinner in the info bar, the latency badge on the status strip, and
+// the badges a fullscreen or chromeless view shows over the picture. The
+// picture itself and the bars' controls are page elements.
 func (state *State) paintDesktopDetails(canvas *gfx.Canvas, session *Session, bounds gfx.Rect) {
-	pal, m := state.pal, state.messages
+	pal := state.pal
 	view, s := session.desk, state.paneBody(session)
-	geometry := state.desktopGeometry(session)
-	view.pixelScale = canvas.PixelScale()
-	view.area = geometry.area
-	state.followDesktop(canvas, view)
 
 	if !view.chromeless && !view.fullscreen {
 		if s.latencyShown {
 			state.paintDesktopLatency(canvas, s.latency.Rect(), s.latencyBadge, state.paneIdentity(session, hitDesktopLatency))
 		}
-
-		if session.busy {
-			components.PaintSpinner(canvas, state.Theme(), s.light.Rect(), components.SpinnerPhase(canvas.Now()/spinnerStep))
-			canvas.RequestFrameIn(spinnerStep)
-		} else {
+		// The busy spinner is a page leaf in the light's place; the resting
+		// light is the window's own dot.
+		if !session.busy {
 			kind, _ := state.sessionLight(session)
 			_, dot := state.sessionStatus(session)
 			spot := s.light.Rect()
 			paintLight(canvas, spot.X+spot.Width/2, spot.Y+spot.Height/2, kind, dot, pal.workspace)
 		}
-		components.BeginButtonRow(canvas, state.theme, s.tools.Rect()).Size(components.ButtonSizeXSmall).Paint(s.desktopTools...)
 	}
-	// The picture, clipped to its area. The area behind it is the terminal's
-	// ground, so a picture that does not fill the pane sits on a quiet surface.
-	// The bars lay that ground in their flex stack; a chromeless session drops
-	// the stack, so the ground is painted here instead.
-	area := geometry.area
+	if view.fullscreen {
+		state.paintDesktopFullscreenLatency(canvas, session)
+	} else if view.chromeless {
+		state.paintChromelessLatency(canvas, view, session, view.area)
+	}
+}
+
+// paintDesktopPicture paints the picture in the slot the page declared for it:
+// the ground, the picture clipped to its area, the end notice over it, the
+// chromeless capture note, and the hit and focus of the picture itself.
+func (state *State) paintDesktopPicture(d *ui.DrawContext, session *Session) {
+	m := state.messages
+	view := session.desk
+	canvas := d.Canvas
+	area := view.area
+	view.pixelScale = canvas.PixelScale()
+	view.area = area
+	state.followDesktop(canvas, view)
+	// The area behind the picture is the terminal's ground, so a picture that
+	// does not fill the pane sits on a quiet surface. The bars lay that ground
+	// in their flex stack; a chromeless or fullscreen session drops the stack,
+	// so the ground is painted here instead.
 	if view.chromeless || view.fullscreen {
 		canvas.Fill(area, state.ground(state.termPal.terminal))
 	}
@@ -1097,11 +1190,6 @@ func (state *State) paintDesktopDetails(canvas *gfx.Canvas, session *Session, bo
 	if view.focusPending {
 		canvas.RequestFocus(hitTerminalList.At(int(session.ID)))
 		view.focusPending = false
-	}
-	if view.fullscreen {
-		state.paintDesktopFullscreenControls(canvas, view, session, area)
-	} else if view.chromeless {
-		state.paintChromelessLatency(canvas, view, session, area)
 	}
 }
 
@@ -1228,8 +1316,8 @@ func (state *State) desktopStripLeft(view *desktopView, session *Session) string
 	return strings.Join(parts, " · ")
 }
 
-// paintDesktopEnded dims the last picture and says the connection ended, with the
-// way to start it again.
+// paintDesktopEnded dims the last picture and says the connection ended; the
+// page declares the way to start it again over it.
 func (state *State) paintDesktopEnded(canvas *gfx.Canvas, area gfx.Rect, session *Session) {
 	pal, m := state.pal, state.messages
 	canvas.Fill(area, withAlpha(pal.shell, 0.78))
@@ -1245,8 +1333,6 @@ func (state *State) paintDesktopEnded(canvas *gfx.Canvas, area gfx.Rect, session
 		canvas.Label(fmt.Sprintf(m.Desktop.DisconnectedFmt, reason), gfx.Rect{X: x, Y: y + 30, Width: width, Height: 40}, gfx.TextStyle{Size: metrics.FontSizeS, Color: pal.muted})
 	}
 	if state.canReconnect(session) {
-		components.BeginButtonRow(canvas, state.theme, gfx.Rect{X: x, Y: y + 78, Width: width, Height: 28}).Paint(
-			components.ButtonAction{ID: state.paneIdentity(session, hitDesktopReconnect), Label: m.Desktop.Reconnect})
 		canvas.Label(m.Desktop.ReconnectHint, gfx.Rect{X: x, Y: y + 112, Width: width, Height: 18}, gfx.TextStyle{Size: metrics.FontSizeS, Color: pal.faint})
 	}
 }

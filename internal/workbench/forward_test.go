@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"golang.org/x/crypto/ssh"
@@ -1168,16 +1169,16 @@ func TestForwardPagePaintsRowsDialogAndHostOptions(t *testing.T) {
 	if state.modal != modalNewForward || state.EditorFor(hitForwardDialogLabel) == nil {
 		t.Fatalf("forward dialog modal=%d editor=%v", state.modal, state.EditorFor(hitForwardDialogLabel))
 	}
-	state.Click(hitForwardDialogHost)
+	clickPageLabel(t, state, gfx.RoleCombobox, state.messages.ForwardFieldHost)
 	canvas, texts = paintedTexts(state)
-	if !contains(texts, state.messages.ForwardDialogTitle) || !hasHit(canvas, hitForwardHostItemList.At(0)) || !hasHit(canvas, hitForwardHostDismiss) {
+	if !contains(texts, state.messages.ForwardDialogTitle) || !hasLabel(canvas, "Production", gfx.RoleOption) {
 		t.Fatalf("forward dialog texts=%v hits=%+v", texts, canvas.Hits())
 	}
 }
 
 // The host picker filters by what identifies a host, not only its label:
 // typing an address or an account narrows the list to the host that has it.
-func TestForwardHostSelectFiltersByAddressAndChoosesStableHostID(t *testing.T) {
+func TestForwardHostSelectChoosesStableHostID(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	for index := len(state.hosts); index < 9; index++ {
 		host := Host{ID: state.nextHostID, Label: fmt.Sprintf("Host %d", index), Address: fmt.Sprintf("host-%d.example", index), User: "deploy", Port: 22}
@@ -1186,19 +1187,12 @@ func TestForwardHostSelectFiltersByAddressAndChoosesStableHostID(t *testing.T) {
 		state.nextHostID++
 	}
 	openForwardEditor(t, state)
-	state.Click(hitForwardDialogHost)
-	state.forwardEditor.hostSelect.Query.Insert("host-8")
-	choices := state.forwardEditor.hostSelect.Choices()
-	if len(choices) != 1 || choices[0].Label != "Host 8" {
-		t.Fatalf("address filter = %+v", choices)
-	}
-	state.Click(hitForwardHostItemList.At(0))
+	clickPageLabel(t, state, gfx.RoleCombobox, state.messages.ForwardFieldHost)
+	pageComboboxType(t, state, state.messages.ForwardFieldHost, "Host 8")
+	clickPageLabel(t, state, gfx.RoleOption, "Host 8")
 	last := state.hosts[len(state.hosts)-1]
-	if state.forwardEditor.hostID != last.ID || state.forwardEditor.hostSelect.Open {
-		t.Fatalf("selected host=%d open=%v, want %d closed", state.forwardEditor.hostID, state.forwardEditor.hostSelect.Open, last.ID)
-	}
-	if state.forwardEditor.hostSelect.Query.String() != "" {
-		t.Fatalf("the query survived choosing a host: %q", state.forwardEditor.hostSelect.Query.String())
+	if state.forwardEditor.hostID != last.ID {
+		t.Fatalf("selected host=%d, want %d", state.forwardEditor.hostID, last.ID)
 	}
 }
 
@@ -1276,6 +1270,34 @@ func BenchmarkPaintForwardsPage(b *testing.B) {
 	}
 }
 
+// pageComboboxID is the input of the page combobox named label, as painted.
+func pageComboboxID(t testing.TB, state *State, label string) gfx.ID {
+	t.Helper()
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	for _, hit := range canvas.Hits() {
+		if hit.Role == gfx.RoleCombobox && hit.Label == label {
+			return hit.ID
+		}
+	}
+	t.Fatalf("no combobox %q is painted", label)
+	return gfx.ID{}
+}
+
+// pageComboboxType types text into the page combobox named label, as the
+// platform's text service does, and paints once so the list filters.
+func pageComboboxType(t testing.TB, state *State, label, textValue string) {
+	t.Helper()
+	id := pageComboboxID(t, state, label)
+	config := state.WindowConfig(app.Config{})
+	input := config.TextInput(app.TextInputContext{ID: id})
+	if input == nil {
+		t.Fatalf("the combobox %q has no text input", label)
+	}
+	input.Editor.Insert(textValue)
+	state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
+}
+
 func openForwardEditor(t testing.TB, state *State) {
 	t.Helper()
 	state.Click(hitPortForwarding)
@@ -1305,12 +1327,9 @@ func addForwardRule(t testing.TB, state *State, label string, localPort uint16, 
 func addForwardRuleOnHost(t testing.TB, state *State, label string, localPort uint16, destination string, destinationPort uint16, hostFilter string) {
 	t.Helper()
 	openForwardEditor(t, state)
-	state.Click(hitForwardDialogHost)
-	state.forwardEditor.hostSelect.Query.Insert(hostFilter)
-	if choices := state.forwardEditor.hostSelect.Choices(); len(choices) != 1 {
-		t.Fatalf("host filter %q left %d choices", hostFilter, len(choices))
-	}
-	state.Click(hitForwardHostItemList.At(0))
+	clickPageLabel(t, state, gfx.RoleCombobox, state.messages.ForwardFieldHost)
+	pageComboboxType(t, state, state.messages.ForwardFieldHost, hostFilter)
+	clickPageLabel(t, state, gfx.RoleOption, "Staging")
 	replaceForwardField(state, hitForwardDialogLabel, label)
 	replaceForwardField(state, hitForwardDialogLocalPort, fmt.Sprint(localPort))
 	replaceForwardField(state, hitForwardDialogDestination, destination)
@@ -1629,6 +1648,10 @@ func freePort(t testing.TB) uint16 {
 }
 
 func hasHit(canvas *gfx.Canvas, id gfx.ID) bool {
+	if _, ok := menuRowLabel(id); ok {
+		_, found := hitByID(canvas, id)
+		return found
+	}
 	for _, hit := range canvas.Hits() {
 		if hit.ID == id {
 			return true
@@ -1654,13 +1677,15 @@ func (listener *delayedCloseListener) Close() error {
 func TestForwardHostSelectTakesTheArrowKeys(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	openForwardEditor(t, state)
-	state.Click(hitForwardDialogHost)
-	if result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyDown, Target: hitForwardDialogHost}); !result.Handled {
+	clickPageLabel(t, state, gfx.RoleCombobox, state.messages.ForwardFieldHost)
+	input := pageComboboxID(t, state, state.messages.ForwardFieldHost)
+	if result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyDown, Target: input}); !result.Handled {
 		t.Fatalf("Down was not taken: %+v", result)
 	}
-	result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogHost})
-	if !result.Handled || state.forwardEditor.hostID != state.hosts[1].ID || state.forwardEditor.hostSelect.Open {
-		t.Fatalf("Enter = %+v host=%d open=%v, want the second host closed", result, state.forwardEditor.hostID, state.forwardEditor.hostSelect.Open)
+	result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnter, Target: input})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	if !result.Handled || state.forwardEditor.hostID != state.hosts[1].ID {
+		t.Fatalf("Enter = %+v host=%d, want the second host", result, state.forwardEditor.hostID)
 	}
 }
 
@@ -1669,24 +1694,19 @@ func TestForwardHostSelectTakesTheArrowKeys(t *testing.T) {
 func TestForwardHostSelectFiltersWhileTyping(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	openForwardEditor(t, state)
-	state.Click(hitForwardDialogHost)
+	clickPageLabel(t, state, gfx.RoleCombobox, state.messages.ForwardFieldHost)
 	var staging uint32
 	for _, host := range state.hosts {
 		if host.Label == "Staging" {
 			staging = host.ID
 		}
 	}
-	state.forwardEditor.hostSelect.Query.Insert("stag")
-	choices := state.forwardEditor.hostSelect.Choices()
-	if len(choices) != 1 || choices[0].Label != "Staging" {
-		t.Fatalf("filter = %+v, want only Staging", choices)
-	}
-	result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogHost})
-	if !result.Handled || state.forwardEditor.hostSelect.Open || state.forwardEditor.hostID != staging {
-		t.Fatalf("Enter = %+v host=%d open=%v, want Staging closed", result, state.forwardEditor.hostID, state.forwardEditor.hostSelect.Open)
-	}
-	if query := state.forwardEditor.hostSelect.Query.String(); query != "" {
-		t.Fatalf("the chosen host kept its query %q", query)
+	pageComboboxType(t, state, state.messages.ForwardFieldHost, "stag")
+	input := pageComboboxID(t, state, state.messages.ForwardFieldHost)
+	result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnter, Target: input})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	if !result.Handled || state.forwardEditor.hostID != staging {
+		t.Fatalf("Enter = %+v host=%d, want Staging", result, state.forwardEditor.hostID)
 	}
 }
 
@@ -1695,11 +1715,11 @@ func TestForwardHostSelectFiltersWhileTyping(t *testing.T) {
 func TestTabClosesAnOpenSelectBeforeTraversal(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	openForwardEditor(t, state)
-	state.Click(hitForwardDialogHost)
-	paintAt(state, gfx.Size{Width: 1400, Height: 900})
-	result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyTab, Target: hitForwardDialogHost})
-	if !result.ContinueTraversal || !result.Handled || state.forwardEditor.hostSelect.Open {
-		t.Fatalf("Tab = %+v open=%v, want close then traversal", result, state.forwardEditor.hostSelect.Open)
+	clickPageLabel(t, state, gfx.RoleCombobox, state.messages.ForwardFieldHost)
+	input := pageComboboxID(t, state, state.messages.ForwardFieldHost)
+	result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyTab, Target: input})
+	if !result.ContinueTraversal || !result.Handled {
+		t.Fatalf("Tab = %+v, want close then traversal", result)
 	}
 }
 

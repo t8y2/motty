@@ -64,7 +64,7 @@ func TestWorkspaceTemplateMenuSelectsEditAndDelete(t *testing.T) {
 	state := templateManagementState(t, 1)
 
 	state.Click(hitWorkspaceTemplateMore.At(0))
-	state.Click(hitWorkspaceTemplateMenuEdit)
+	chooseMenu(t, state, hitWorkspaceTemplateMenuEdit)
 	if state.modal != modalWorkspaceDraft || state.workspaceDraft.mode != workspaceDraftEdit ||
 		state.workspaceDraft.editID != state.templates[0].ID {
 		t.Fatalf("edit menu: modal=%d draft=%+v", state.modal, state.workspaceDraft)
@@ -73,7 +73,7 @@ func TestWorkspaceTemplateMenuSelectsEditAndDelete(t *testing.T) {
 	state.closeModal()
 	state.workspaceTemplateMenu = workspaceTemplateMenu{}
 	state.Click(hitWorkspaceTemplateMore.At(0))
-	state.Click(hitWorkspaceTemplateMenuDelete)
+	chooseMenu(t, state, hitWorkspaceTemplateMenuDelete)
 	if state.modal != modalWorkspaceTemplateDelete ||
 		state.workspaceTemplateDelete.templateID != state.templates[0].ID {
 		t.Fatalf("delete menu: modal=%d delete=%+v", state.modal, state.workspaceTemplateDelete)
@@ -96,25 +96,22 @@ func TestWorkspaceTemplateMenuKeyboardAndFocusRestore(t *testing.T) {
 	state.Click(hitWorkspaceTemplateMore.At(0))
 	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 
-	result := state.Key(gfx.KeyEvent{Key: gfx.KeyDown, Target: hitWorkspaceTemplateMenuEdit})
-	if !result.Handled || result.Focus != hitWorkspaceTemplateMenuDelete {
-		t.Fatalf("menu Down = %+v", result)
+	chooseMenu(t, state, hitWorkspaceTemplateMenuDelete)
+	if state.modal != modalWorkspaceTemplateDelete {
+		t.Fatalf("menu choice: modal=%d", state.modal)
 	}
-	result = state.Key(gfx.KeyEvent{
-		Key: gfx.KeySpace, Target: hitWorkspaceTemplateMenuDelete, Text: " ",
-	})
-	if !result.Handled || state.modal != modalWorkspaceTemplateDelete {
-		t.Fatalf("menu Space = %+v modal=%d", result, state.modal)
-	}
-	result = state.Key(gfx.KeyEvent{Key: gfx.KeyEscape})
+	result := state.Key(gfx.KeyEvent{Key: gfx.KeyEscape})
 	if !result.Handled || state.workspaceTemplateFocusPending != hitWorkspaceTemplateMore.At(0) {
 		t.Fatalf("delete Escape = %+v pending=%v", result, state.workspaceTemplateFocusPending)
 	}
 
+	// A menu that closes without a choice hands the keyboard back to its launcher.
 	state.Click(hitWorkspaceTemplateMore.At(0))
-	result = state.Key(gfx.KeyEvent{Key: gfx.KeyEscape})
-	if !result.Handled || state.workspaceTemplateFocusPending != hitWorkspaceTemplateMore.At(0) {
-		t.Fatalf("menu Escape = %+v pending=%v", result, state.workspaceTemplateFocusPending)
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	state.workspaceTemplateMenu.open = false
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	if canvas.FocusRequest() != hitWorkspaceTemplateMore.At(0) {
+		t.Fatalf("closing the menu asked for the focus on %v", canvas.FocusRequest())
 	}
 }
 
@@ -148,7 +145,7 @@ func TestWorkspaceTemplateMenuDoesNotFocusTheHiddenLibraryAfterNavigation(t *tes
 func TestWorkspaceTemplateEditDoesNotRequestFocusForAClosedMenu(t *testing.T) {
 	state := templateManagementState(t, 1)
 	state.Click(hitWorkspaceTemplateMore.At(0))
-	state.Click(hitWorkspaceTemplateMenuEdit)
+	chooseMenu(t, state, hitWorkspaceTemplateMenuEdit)
 	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	if canvas.InitialFocus() != hitWorkspaceDraftName || !canvas.FocusRequest().IsZero() {
 		t.Fatalf("edit initial focus=%v requested focus=%v", canvas.InitialFocus(), canvas.FocusRequest())
@@ -170,7 +167,7 @@ func TestWorkspaceTemplateDeleteCancelAndConfirmUseKeyboard(t *testing.T) {
 	state := templateManagementState(t, 2)
 	first, second := state.templates[0], state.templates[1]
 	state.Click(hitWorkspaceTemplateMore.At(0))
-	state.Click(hitWorkspaceTemplateMenuDelete)
+	chooseMenu(t, state, hitWorkspaceTemplateMenuDelete)
 
 	result := state.Key(gfx.KeyEvent{Key: gfx.KeySpace, Target: hitWorkspaceTemplateDeleteCancel})
 	if !result.Handled || state.modal != modalNone || !reflect.DeepEqual(state.templates, []WorkspaceTemplate{first, second}) {
@@ -181,7 +178,7 @@ func TestWorkspaceTemplateDeleteCancelAndConfirmUseKeyboard(t *testing.T) {
 	}
 
 	state.Click(hitWorkspaceTemplateMore.At(0))
-	state.Click(hitWorkspaceTemplateMenuDelete)
+	chooseMenu(t, state, hitWorkspaceTemplateMenuDelete)
 	result = state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitWorkspaceTemplateDeleteSubmit})
 	if !result.Handled || state.modal != modalNone || !reflect.DeepEqual(state.templates, []WorkspaceTemplate{second}) {
 		t.Fatalf("confirm = %+v modal=%d templates=%+v", result, state.modal, state.templates)
@@ -229,7 +226,7 @@ func TestWorkspaceTemplateDeleteFailureRestoresEverything(t *testing.T) {
 	state.config = nil
 
 	state.Click(hitWorkspaceTemplateMore.At(0))
-	state.Click(hitWorkspaceTemplateMenuDelete)
+	chooseMenu(t, state, hitWorkspaceTemplateMenuDelete)
 	state.submitWorkspaceTemplateDelete()
 
 	if state.modal != modalWorkspaceTemplateDelete ||
@@ -248,7 +245,7 @@ func TestWorkspaceTemplateDeleteMissingTargetDoesNotChangeTemplates(t *testing.T
 	state := templateManagementState(t, 2)
 	other := state.templates[1]
 	state.Click(hitWorkspaceTemplateMore.At(0))
-	state.Click(hitWorkspaceTemplateMenuDelete)
+	chooseMenu(t, state, hitWorkspaceTemplateMenuDelete)
 	state.templates = []WorkspaceTemplate{other}
 
 	state.submitWorkspaceTemplateDelete()
@@ -401,7 +398,7 @@ func TestWorkspaceTemplateEditUnchangedRuntimeAndPersistsStableID(t *testing.T) 
 
 	state.activeSection = sectionWorkspaces
 	state.Click(hitWorkspaceTemplateMore.At(0))
-	state.Click(hitWorkspaceTemplateMenuEdit)
+	chooseMenu(t, state, hitWorkspaceTemplateMenuEdit)
 	state.workspaceDraft.name = *text.NewEditor("Production Changed")
 	state.Click(workspaceDraftHostID(2))
 	state.Click(hitWorkspaceDraftPresets.At(2))
@@ -455,7 +452,7 @@ func TestWorkspaceTemplateDeletePersistsTombstoneWithoutChangingRuntime(t *testi
 
 	state.activeSection = sectionWorkspaces
 	state.Click(hitWorkspaceTemplateMore.At(0))
-	state.Click(hitWorkspaceTemplateMenuDelete)
+	chooseMenu(t, state, hitWorkspaceTemplateMenuDelete)
 	state.Click(hitWorkspaceTemplateDeleteSubmit)
 
 	if !reflect.DeepEqual(state.templates, []WorkspaceTemplate{other}) {
@@ -506,6 +503,6 @@ func templateManagementState(t testing.TB, templateCount int) *State {
 func (state *State) submitDeleteTemplate(t testing.TB, index int) {
 	t.Helper()
 	state.Click(hitWorkspaceTemplateMore.At(index))
-	state.Click(hitWorkspaceTemplateMenuDelete)
+	chooseMenu(t, state, hitWorkspaceTemplateMenuDelete)
 	state.Click(hitWorkspaceTemplateDeleteSubmit)
 }

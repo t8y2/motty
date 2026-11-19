@@ -11,6 +11,7 @@ import (
 
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/sessionlog"
 	"motty/internal/sshconn"
@@ -86,7 +87,10 @@ type sessionLogsView struct {
 	selectedLive    bool
 
 	// The page.
-	search         text.Editor
+	search text.Editor
+	// searchField is the page's text field over search, bound when first declared.
+	searchField    ui.Field
+	searchBound    bool
 	appliedSearch  string
 	page           []sessionLogRow
 	loaded         bool
@@ -115,22 +119,32 @@ type sessionLogsView struct {
 	customEndDate   string
 	customRangeHint string
 	filterMenu      sessionLogFilterMenu
-	moreMenu        bool
-	moreBounds      gfx.Rect
-	// filterBounds are the three filter triggers' places, recorded while the page
-	// paints; the popup opens under the one whose menu is open.
-	filterBounds [5]gfx.Rect
+	// filterOpen is the open state of the page menu the open filter declares.
+	// The page closes it on Escape, Tab or a press away; the declaration then
+	// clears filterMenu.
+	filterOpen bool
+	moreMenu   bool
 
-	// Scrolling and the geometry the wheel is aimed at, recorded while painting.
-	scrollRows   float32
-	scrollEvents float32
-	dragging     sessionLogDragging
-	dragGrab     float32
-	tableBody    gfx.Rect
-	eventsBody   gfx.Rect
-	// rowCells holds one row's cell rectangles so painting a row does not
-	// allocate: the table appends its geometry to this reused slice.
-	rowCells []gfx.Rect
+	// The record list is a page List: it owns its rows' identities, its scroll
+	// offset and its selection. rowsInit is set once the row functions are made,
+	// so a warm paint builds no closures; rowDecl is the record rows' builder.
+	// rowScope is the scope of the rows the last paint declared, which tells a
+	// key aimed at one of them from the page's other keys.
+	rowsList   ui.ListState
+	rowsInit   bool
+	rowDecl    func(ui.ListRow)
+	rowScope   gfx.Scope
+	tableWidth float32
+	// rowClicked records that the paint delivered a click on a record row, which
+	// opens it. The arrows and typing move the list's current row without
+	// opening the record.
+	rowClicked bool
+	// scrollRows mirrors the list's offset, recorded by the paint. It is not
+	// the authority: the List is, and a new query asks it to scroll to the top.
+	scrollRows float32
+	// resetEvents asks the detail panel's event list to scroll to the top at
+	// its next declaration.
+	resetEvents bool
 	// focusPending is a focus move requested by an event handler and delivered
 	// by the next paint, which is the only place a focus request may be made.
 	focusPending gfx.ID
@@ -281,7 +295,9 @@ func (state *State) sessionLogWriteSettled(operation sessionlog.Operation, err e
 					} else {
 						view.selected = view.rows[next].ID
 					}
-					view.focusPending = hitSessionLogsRowList.At(next)
+					if id := view.rowsList.RowID(state.sessionLogSelectedItemIndex()); !id.IsZero() {
+						view.focusPending = id
+					}
 				}
 				view.detailOpen = false
 				view.events = nil
@@ -563,7 +579,7 @@ func (state *State) refreshSessionLogsKeepingScroll() {
 func (state *State) refreshSessionLogsAt(resetScroll bool) {
 	view := &state.sessionLogs.view
 	if resetScroll {
-		view.scrollRows = 0
+		state.resetSessionLogsScroll()
 	}
 	view.dirty = false
 	state.sessionLogs.requestGeneration++

@@ -182,15 +182,17 @@ type savedTransport struct {
 	// ViaSSH and Clipboard are a remote desktop host's (VNC or RDP): reached
 	// through an SSH connection to the same machine, and sharing the clipboard
 	// with the remote desktop. Console is an RDP host's: connect to the server's
-	// console session instead of a new one, as mstsc /admin does.
-	// StandardSecurity is an RDP host's too: use Standard RDP Security alone,
-	// with no TLS or NLA. Chromeless is a desktop host's: its page shows the
-	// picture without the bars around it.
+	// console session instead of a new one, as mstsc /admin does. NoAudio is an
+	// RDP host's too: ask the server for no audio. StandardSecurity is an RDP
+	// host's as well: use Standard RDP Security alone, with no TLS or NLA.
+	// Chromeless is a desktop host's: its page shows the picture without the
+	// bars around it.
 	// The password is never here: it is asked for, and kept in the vault only if
 	// the user says so.
 	ViaSSH           bool `json:"via_ssh,omitempty"`
 	Clipboard        bool `json:"clipboard,omitempty"`
 	Console          bool `json:"console,omitempty"`
+	NoAudio          bool `json:"no_audio,omitempty"`
 	StandardSecurity bool `json:"standard_security,omitempty"`
 	Chromeless       bool `json:"chromeless,omitempty"`
 }
@@ -221,6 +223,7 @@ func (host Host) transport() savedTransport {
 	case protocolRDP:
 		transport.Protocol, transport.ViaSSH, transport.Clipboard, transport.Chromeless = "rdp", host.ViaSSH, host.Clipboard, host.Chromeless
 		transport.Console = host.Console
+		transport.NoAudio = host.NoAudio
 		transport.StandardSecurity = host.StandardSecurity
 		return transport
 	case protocolSerial:
@@ -312,6 +315,7 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 	case "rdp":
 		host.Protocol, host.ViaSSH, host.Clipboard, host.Chromeless = protocolRDP, transport.ViaSSH, transport.Clipboard, transport.Chromeless
 		host.Console = transport.Console
+		host.NoAudio = transport.NoAudio
 		host.StandardSecurity = transport.StandardSecurity
 	case "serial":
 		host.Proxy, host.Credential = nil, ""

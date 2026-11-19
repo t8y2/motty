@@ -3,7 +3,6 @@ package workbench
 import (
 	"strings"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
@@ -92,16 +91,11 @@ func (state *State) declareAIProviderFormDialog(c ui.C) {
 	cfg.bindAIFormFields()
 	title, description, submit, bodyHeight := state.aiProviderFormGeometry()
 	const width float32 = 500
-	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
-		ContentSize: gfx.Size{Width: width}, FitBody: true,
-	}).Layout(description)
 	dialog := ui.Dialog(c, ui.DialogSpec{
-		Title: title, Description: description, Width: width,
-		Height: layout.Content.Height + withError(bodyHeight, cfg.formErr), Layer: dialogLayer,
+		Title: title, Description: description, Width: width, Layer: dialogLayer,
 		Scope: dialogScope, CloseID: hitAISetFormClose, InitialFocusID: hitAISetFormName,
 	})
-	dialog.Body(func() { state.declareAIProviderForm(c) })
+	dialog.Body(func() { state.declareAIProviderForm(c, withError(bodyHeight, cfg.formErr)) })
 	dialog.Footer(func() {
 		if ui.Button(c, state.messages.Cancel).Secondary().Shrink(0).Clicked() {
 			c.After(func() { state.aiDialogClick(hitAISetFormCancel) })
@@ -117,17 +111,13 @@ func (state *State) declareAIProviderFormDialog(c ui.C) {
 
 // declareAIProviderForm declares the provider form: the preset a new provider
 // starts from, then the fields and choices that provider kind needs.
-func (state *State) declareAIProviderForm(c ui.C) {
+func (state *State) declareAIProviderForm(c ui.C, height float32) {
 	cfg, m := &state.ai.cfg, state.messages.AISettings
 	cli := store.IsCLIKind(cfg.kind)
 	kind := cfg.kind
-	cfg.formPreset = ui.Box{}
-	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
+	ui.Column(c).Height(height).PadSides(2, 4, 0, 4).Children(func() {
 		if cfg.editID == "" {
-			cfg.formPreset = ui.Slot(c).Height(60)
-			// The preset list is a Select on the page; its open list paints on a
-			// higher layer, over the fields under it.
-			cfg.formPreset.Draw(func(d *ui.DrawContext) { state.paintAIPresetField(d.Canvas, d.Rect) })
+			state.declareAIPresetField(c)
 		}
 		state.aiFormField(c, hitAISetFormName, &cfg.formName, m.FormName, m.FormNamePH, "", 60, aiFormFocusName)
 		if cli {
@@ -188,8 +178,27 @@ func (state *State) declareAIProviderForm(c ui.C) {
 	})
 }
 
+// declareAIPresetField declares the list of providers a new provider can start
+// from, as the page's own Select: picking one fills the form after the paint.
+func (state *State) declareAIPresetField(c ui.C) {
+	cfg, m := &state.ai.cfg, state.messages.AISettings
+	theme := c.Theme()
+	metrics := theme.Metrics
+	gap := metrics.GapItem / 2
+	ui.Column(c).Height(60).Children(func() {
+		ui.Text(c, m.FormPreset).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(theme.Foreground).LineHeight(metrics.FontSizeM + 4).Ellipsis()
+		previous := cfg.preset
+		selector := ui.SelectIcon(c, &cfg.preset, aiPresetChoices, state.aiPresetLabel, aiPresetIcon).
+			Label(m.FormPreset).Height(metrics.ControlHeight).MarginSides(gap, 0, 0, 0)
+		if selector.Changed() {
+			preset := cfg.preset
+			c.After(func() { state.aiChoosePresetFrom(previous, preset) })
+		}
+	})
+}
+
 // aiFormField declares one labelled text field of the form: the title row, the
-// control, and the hint under it, in the rhythm components.BeginField gives.
+// control, and the hint under it, in the form's rhythm.
 func (state *State) aiFormField(c ui.C, id gfx.ID, field *ui.Field, title, placeholder, hint string, height float32, focus aiFormFocus) {
 	theme := c.Theme()
 	m := theme.Metrics

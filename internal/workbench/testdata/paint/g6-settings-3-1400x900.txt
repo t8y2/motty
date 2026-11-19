@@ -1,0 +1,217 @@
+rect {{0 0 1400 900} {0.09411765 0.10980392 0.13725491 1} 0 0 {0 0 0 0} false #0}
+rect {{9 848 186 36} {0.23529412 0.27450982 0.34117648 1} 7.5 0 {0 0 0 0} false #1}
+rect {{204 36 1189 857} {0.2627451 0.30588236 0.37254903 1} 11 0 {0 0 0 0} false #2}
+rect {{205 37 1187 855} {0.06666667 0.08235294 0.105882354 1} 10 0 {0 0 0 0} false #3}
+rect {{217 101 184 38} {0.216 0.22917646 0.24894118 1} 7.5 0 {205 37 1187 855} true #5}
+rect {{218 102 182 36} {0.11146667 0.1264 0.1488 1} 6.5 0 {205 37 1187 855} true #6}
+rect {{217 271 184 36} {0.23529412 0.27450982 0.34117648 1} 7.5 0 {205 151 208 741} true #7}
+rect {{413 37 1 855} {0.2 0.23529412 0.2901961 0.8} 0 0 {205 37 1187 855} true #8}
+rect {{523 125 760 960} {0.2 0.23529412 0.2901961 0.85} 11 0 {414 37 978 855} true #9}
+rect {{524 126 758 958} {0.12156863 0.14117648 0.1764706 1} 10 0 {414 37 978 855} true #10}
+rect {{1221 147.8 32 18.4} {1 1 1 0.128} 9.2 0 {414 37 978 855} true #12}
+rect {{1222 149 16 16} {0.8862745 0.90588236 0.93333334 1} 8 0 {414 37 978 855} true #13}
+rect {{524 189 758 1} {0.2 0.23529412 0.2901961 0.7} 0 0 {414 37 978 855} true #14}
+rect {{965 205 300 32} {0.2 0.23529412 0.2901961 1} 7.5 0 {414 37 978 855} true #15}
+rect {{966 206 298 30} {0.14509805 0.16862746 0.20784314 1} 6.5 0 {414 37 978 855} true #16}
+rect {{967 207 146 28} {0.24886276 0.27184314 0.30941176 1} 5.5 0 {414 37 978 855} true #17}
+rect {{1117 207 146 28} {0.14509805 0.16862746 0.20784314 1} 5.5 0 {414 37 978 855} true #18}
+rect {{1114.5 213.96 1 14.08} {0.2 0.23529412 0.2901961 0} 0 0 {414 37 978 855} true #19}
+rect {{524 253 758 1} {0.2 0.23529412 0.2901961 0.7} 0 0 {414 37 978 855} true #20}
+rect {{965 269 300 32} {0.2 0.23529412 0.2901961 1} 7.5 0 {414 37 978 855} true #21}
+rect {{966 270 298 30} {0.14509805 0.16862746 0.20784314 1} 6.5 0 {414 37 978 855} true #22}
+rect {{967 271 146 28} {0.24886276 0.27184314 0.30941176 1} 5.5 0 {414 37 978 855} true #23}
+rect {{1117 271 146 28} {0.14509805 0.16862746 0.20784314 1} 5.5 0 {414 37 978 855} true #24}
+rect {{1114.5 277.96 1 14.08} {0.2 0.23529412 0.2901961 0} 0 0 {414 37 978 855} true #25}
+rect {{524 317 758 1} {0.2 0.23529412 0.2901961 0.7} 0 0 {414 37 978 855} true #26}
+rect {{894.19336 333 370.80664 32} {0.2 0.23529412 0.2901961 1} 7.5 0 {414 37 978 855} true #27}
+rect {{895.19336 334 368.80664 30} {0.14509805 0.16862746 0.20784314 1} 6.5 0 {414 37 978 855} true #28}
+rect {{896.19336 335 181.40332 28} {0.24886276 0.27184314 0.30941176 1} 5.5 0 {414 37 978 855} true #29}
+rect {{1081.5967 335 181.40332 28} {0.14509805 0.16862746 0.20784314 1} 5.5 0 {414 37 978 855} true #30}
+rect {{1079.0967 341.96 1 14.08} {0.2 0.23529412 0.2901961 0} 0 0 {414 37 978 855} true #31}
+rect {{524 381 758 1} {0.2 0.23529412 0.2901961 0.7} 0 0 {414 37 978 855} true #32}
+rect {{965 397 300 32} {0.2 0.23529412 0.2901961 1} 7.5 0 {414 37 978 855} true #33}
+rect {{966 398 298 30} {0.14509805 0.16862746 0.20784314 1} 6.5 0 {414 37 978 855} true #34}
+rect {{967 399 146 28} {0.24886276 0.27184314 0.30941176 1} 5.5 0 {414 37 978 855} true #35}
+rect {{1117 399 146 28} {0.14509805 0.16862746 0.20784314 1} 5.5 0 {414 37 978 855} true #36}
+rect {{1114.5 405.96 1 14.08} {0.2 0.23529412 0.2901961 0} 0 0 {414 37 978 855} true #37}
+rect {{524 445 758 1} {0.2 0.23529412 0.2901961 0.7} 0 0 {414 37 978 855} true #38}
+rect {{1221 467.8 32 18.4} {1 1 1 0.128} 9.2 0 {414 37 978 855} true #40}
+rect {{1222 469 16 16} {0.8862745 0.90588236 0.93333334 1} 8 0 {414 37 978 855} true #41}
+rect {{524 509 758 1} {0.2 0.23529412 0.2901961 0.7} 0 0 {414 37 978 855} true #42}
+rect {{965 525 300 32} {0.2 0.23529412 0.2901961 1} 7.5 0 {414 37 978 855} true #43}
+rect {{966 526 298 30} {0.14509805 0.16862746 0.20784314 1} 6.5 0 {414 37 978 855} true #44}
+rect {{967 527 96 28} {0.14509805 0.16862746 0.20784314 1} 5.5 0 {414 37 978 855} true #45}
+rect {{1067 527 96 28} {0.24886276 0.27184314 0.30941176 1} 5.5 0 {414 37 978 855} true #46}
+rect {{1167 527 96 28} {0.14509805 0.16862746 0.20784314 1} 5.5 0 {414 37 978 855} true #47}
+rect {{1064.5 533.96 1 14.08} {0.2 0.23529412 0.2901961 0} 0 0 {414 37 978 855} true #48}
+rect {{1164.5 533.96 1 14.08} {0.2 0.23529412 0.2901961 0} 0 0 {414 37 978 855} true #49}
+rect {{524 573 758 1} {0.2 0.23529412 0.2901961 0.7} 0 0 {414 37 978 855} true #50}
+rect {{1122.7529 591 142.24707 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {414 37 978 855} true #52}
+rect {{1123.7529 592 140.24707 26} {0.11146667 0.1264 0.1488 1} 6.5 0 {414 37 978 855} true #53}
+rect {{524 637 758 1} {0.2 0.23529412 0.2901961 0.7} 0 0 {414 37 978 855} true #54}
+rect {{1030.4199 655 110.9043 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {414 37 978 855} true #56}
+rect {{1031.4199 656 108.9043 26} {0.11146667 0.1264 0.1488 1} 6.5 0 {414 37 978 855} true #57}
+rect {{524 701 758 1} {0.2 0.23529412 0.2901961 0.7} 0 0 {414 37 978 855} true #58}
+rect {{965 717 300 32} {0.216 0.22917646 0.24894118 1} 7.5 0 {414 37 978 855} true #60}
+rect {{966 718 298 30} {0.11146667 0.1264 0.1488 1} 6.5 0 {414 37 978 855} true #61}
+rect {{524 765 758 1} {0.2 0.23529412 0.2901961 0.7} 0 0 {414 37 978 855} true #62}
+rect {{1195.6787 783 69.32129 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {414 37 978 855} true #64}
+rect {{1196.6787 784 67.32129 26} {0.11146667 0.1264 0.1488 1} 6.5 0 {414 37 978 855} true #65}
+rect {{524 829 758 1} {0.2 0.23529412 0.2901961 0.7} 0 0 {414 37 978 855} true #66}
+rect {{1221 851.8 32 18.4} {0.38431373 0.80784315 0.53333336 1} 9.2 0 {414 37 978 855} true #68}
+rect {{1236 853 16 16} {0.8862745 0.90588236 0.93333334 1} 8 0 {414 37 978 855} true #69}
+rect {{524 893 758 1} {0.2 0.23529412 0.2901961 0.7} 0 0 {414 37 978 855} true #70}
+rect {{1221 915.8 32 18.4} {0.38431373 0.80784315 0.53333336 1} 9.2 0 {414 37 978 855} true #72}
+rect {{1236 917 16 16} {0.8862745 0.90588236 0.93333334 1} 8 0 {414 37 978 855} true #73}
+rect {{524 957 758 1} {0.2 0.23529412 0.2901961 0.7} 0 0 {414 37 978 855} true #74}
+rect {{1221 979.8 32 18.4} {1 1 1 0.128} 9.2 0 {414 37 978 855} true #76}
+rect {{1222 981 16 16} {0.8862745 0.90588236 0.93333334 1} 8 0 {414 37 978 855} true #77}
+rect {{524 1021 758 1} {0.2 0.23529412 0.2901961 0.7} 0 0 {414 37 978 855} true #78}
+rect {{1143.6299 1039 121.37012 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {414 37 978 855} true #80}
+rect {{1144.6299 1040 119.37012 26} {0.11146667 0.1264 0.1488 1} 6.5 0 {414 37 978 855} true #81}
+shadow {{217 101 184 38} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {205 37 1187 855} true #4}
+shadow {{1221 147.8 32 18.4} 9.2 {0 0 0 0.05} {0 1 2 0} 0 {414 37 978 855} true #11}
+shadow {{1221 467.8 32 18.4} 9.2 {0 0 0 0.05} {0 1 2 0} 0 {414 37 978 855} true #39}
+shadow {{1122.7529 591 142.24707 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {414 37 978 855} true #51}
+shadow {{1030.4199 655 110.9043 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {414 37 978 855} true #55}
+shadow {{965 717 300 32} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {414 37 978 855} true #59}
+shadow {{1195.6787 783 69.32129 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {414 37 978 855} true #63}
+shadow {{1221 851.8 32 18.4} 9.2 {0 0 0 0.05} {0 1 2 0} 0 {414 37 978 855} true #67}
+shadow {{1221 915.8 32 18.4} 9.2 {0 0 0 0.05} {0 1 2 0} 0 {414 37 978 855} true #71}
+shadow {{1221 979.8 32 18.4} 9.2 {0 0 0 0.05} {0 1 2 0} 0 {414 37 978 855} true #75}
+shadow {{1143.6299 1039 121.37012 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {414 37 978 855} true #79}
+text "Hosts" {52 114.5 37.180664 21}
+text "Workspaces" {52 154.5 80.37695 21}
+text "Monitor" {52 194.5 49.745117 21}
+text "Session Logs" {52 234.5 85.51758 21}
+text "Keychain" {52 274.5 59.814453 21}
+text "Jump Routes" {52 314.5 84.2666 21}
+text "Port Forwarding" {52 354.5 103.40039 21}
+text "Known Hosts" {52 394.5 85.44238 21}
+text "Snippets" {52 434.5 56.47168 21}
+text "Notes" {52 474.5 37.99414 21}
+text "Local Terminal" {52 815.5 94.36328 21}
+text "Settings" {52 855.5 52.759766 21}
+text "Settings" {227 63 178 28}
+text "Search settings" {248 110 142 20}
+text "General" {257 158 136 22}
+text "Terminal" {257 198 136 22}
+text "Connection" {257 238 136 22}
+text "Files" {257 278 136 22}
+text "Security" {257 318 136 22}
+text "Backup & sync" {257 358 136 22}
+text "AI assistant" {257 398 136 22}
+text "MCP" {257 438 136 22}
+text "Keyboard shortcuts" {257 478 136 22}
+text "About" {257 518 136 22}
+text "Files" {523 71 56.22754 34}
+text "Show file transfer panel by default" {541 138.5 664 21}
+text "Open the panel in new workspaces and those restored at startup. It can still be closed at any time." {541 160.5 664 15}
+text "Default panel position" {541 195 400 21}
+text "Used for new or restored workspaces. The panel header can move it" {541 217 400 15}
+text "without changing this default." {541 232 400 15}
+text "Left" {1027.415 205 150 32}
+text "Right" {1173.4604 205 150 32}
+text "SFTP panel path field" {541 259 400 21}
+text "Controls only the SFTP panel in the terminal page. Choose breadcrumbs" {541 281 400 15}
+text "or an input field; in the input field, edit the path and press Enter." {541 296 400 15}
+text "Breadcrumbs" {996.81396 269 150 32}
+text "Input field" {1157.8164 269 150 32}
+text "Pane order" {541 323 329.19336 21}
+text "Controls which side of the two-column file transfer is shown" {541 345 329.19336 15}
+text "first. All open transfer windows and tabs change immediat…" {541 360 329.19336 15}
+text "This computer on the left" {906.19336 333 185.40332 32}
+text "Server on the left" {1116.7734 333 185.40332 32}
+text "Open file transfers in" {541 387 400 21}
+text "This choice applies to file transfers opened afterwards. Existing windows" {541 409 400 15}
+text "and tabs stay where they are." {541 424 400 15}
+text "Separate window" {984.21533 397 150 32}
+text "Top tab" {1165.353 397 150 32}
+text "Show the directory tree in dual-pane file transfer by default" {541 451 664 21}
+text "Show a directory tree beside the local and server file lists. Folders load only when expanded, and each transfer window" {541 473 664 15}
+text "can override this setting." {541 488 664 15}
+text "Parallel transfers" {541 530 400 21}
+text "1" {1012.21094 525 100 32}
+text "2" {1110.8574 525 100 32}
+text "4" {1210.5908 525 100 32}
+text "File list columns" {541 586.5 557.7529 21}
+text "2 of 2 optional columns shown" {541 608.5 557.7529 15}
+text "Configure columns" {1132.7529 591 142.24707 28}
+text "Default download folder" {541 650.5 465.41992 21}
+text "Downloads are saved directly to /Users/skyler/Downloads." {541 672.5 465.41992 15}
+text "Choose folder" {1040.4199 655 110.9043 28}
+text "Ask every time" {1159.3242 655 115.67578 28}
+text "Default editor" {541 707 400 21}
+text "The system default app opens local files and downloaded remote files;" {541 729 400 15}
+text "VS Code or Zed can open remote folders directly from the file panel. T…" {541 744 400 15}
+text "System default app" {976 717 258 32}
+text "Custom executable" {541 778.5 630.6787 21}
+text "No executable selected" {541 800.5 630.6787 15}
+text "Choose" {1205.6787 783 69.32129 28}
+text "Keep modification times" {541 842.5 664 21}
+text "A copied file gets the time of the original. Permissions are always kept." {541 864.5 664 15}
+text "Follow the terminal's folder" {541 899 664 21}
+text "The file panel follows the folder the terminal reports (OSC 7), over SSH and on this computer. Bash and zsh are set up" {541 921 664 15}
+text "automatically when they start." {541 936 664 15}
+text "Terminal follows file navigation" {541 963 664 21}
+text "Off by default. Entering a remote folder also changes the same terminal's folder at a verified empty prompt. Requires the" {541 985 664 15}
+text "Bash or zsh integration Motty starts automatically." {541 1000 664 15}
+text "Folder reporting for bash and zsh" {541 1034.5 578.6299 21}
+text "Makes the prompt report its folder. Paste it into the remote shell, or its startup file." {541 1056.5 578.6299 15}
+text "Copy command" {1153.6299 1039 121.37012 28}
+hit "" region {0 0 1400 36} disabled=false
+hit "Hosts" button {82 4 28 28} disabled=false
+hit "New tab" button {116 4 28 28} disabled=false
+hit "Transfers" button {1156 4 28 28} disabled=false
+hit "Session manager" button {1186 4 28 28} disabled=false
+hit "AI assistant" button {1216 4 28 28} disabled=false
+hit "Local Terminal" button {1246 4 28 28} disabled=false
+hit "Command Palette" button {1276 4 28 28} disabled=false
+hit "Switch to light theme" button {1306 4 28 28} disabled=false
+hit "GitHub" button {1336 4 28 28} disabled=false
+hit "Settings" button {1366 4 28 28} disabled=false
+hit "Hosts" menuitem {9 107 186 36} disabled=false
+hit "Workspaces" menuitem {9 147 186 36} disabled=false
+hit "Monitor" menuitem {9 187 186 36} disabled=false
+hit "Session Logs" menuitem {9 227 186 36} disabled=false
+hit "Keychain" menuitem {9 267 186 36} disabled=false
+hit "Jump Routes" menuitem {9 307 186 36} disabled=false
+hit "Port Forwarding" menuitem {9 347 186 36} disabled=false
+hit "Known Hosts" menuitem {9 387 186 36} disabled=false
+hit "Snippets" menuitem {9 427 186 36} disabled=false
+hit "Notes" menuitem {9 467 186 36} disabled=false
+hit "Local Terminal" menuitem {9 808 186 36} disabled=false
+hit "Settings" menuitem {9 848 186 36} disabled=false
+hit "Search settings" textfield {217 101 184 38} disabled=false
+hit "Show file transfer panel by default" switch {1209 139.8 56 34.40001} disabled=false
+hit "Left" radio {965 205 150 32} disabled=false
+hit "Right" radio {1115 205 150 32} disabled=false
+hit "Breadcrumbs" radio {965 269 150 32} disabled=false
+hit "Input field" radio {1115 269 150 32} disabled=false
+hit "This computer on the left" radio {894.19336 333 185.40332 32} disabled=false
+hit "Server on the left" radio {1079.5967 333 185.40332 32} disabled=false
+hit "Separate window" radio {965 397 150 32} disabled=false
+hit "Top tab" radio {1115 397 150 32} disabled=false
+hit "Show the directory tree in dual-pane file transfer by default" switch {1209 459.8 56 34.399994} disabled=false
+hit "1" radio {965 525 100 32} disabled=false
+hit "2" radio {1065 525 100 32} disabled=false
+hit "4" radio {1165 525 100 32} disabled=false
+hit "Configure columns" button {1122.7529 591 142.24707 28} disabled=false
+hit "Choose folder" button {1030.4199 655 110.9043 28} disabled=false
+hit "Ask every time" button {1149.3242 655 115.67578 28} disabled=false
+hit "Default editor" combobox {965 717 300 32} disabled=false
+hit "Choose" button {1195.6787 783 69.32129 28} disabled=false
+hit "Keep modification times" switch {1209 843.8 56 34.400024} disabled=false
+hit "General" menuitem {217 151 184 36} disabled=false
+hit "Terminal" menuitem {217 191 184 36} disabled=false
+hit "Connection" menuitem {217 231 184 36} disabled=false
+hit "Files" menuitem {217 271 184 36} disabled=false
+hit "Security" menuitem {217 311 184 36} disabled=false
+hit "Backup & sync" menuitem {217 351 184 36} disabled=false
+hit "AI assistant" menuitem {217 391 184 36} disabled=false
+hit "MCP" menuitem {217 431 184 36} disabled=false
+hit "Keyboard shortcuts" menuitem {217 471 184 36} disabled=false
+hit "About" menuitem {217 511 184 36} disabled=false
+hit "Show file transfer panel by default" button {541 138.5 664 37} disabled=false
+hit "Show the directory tree in dual-pane file transfer by default" button {541 451 664 52} disabled=false
+hit "Keep modification times" button {541 842.5 664 37} disabled=false

@@ -28,7 +28,7 @@ func chooseHostGroupAction(t *testing.T, state *State, path, action string) {
 	}
 	feature := tree.Feature("host-group-actions")
 	state.Click(tree.Sub(feature, tree.Name("more")).At(index))
-	state.Click(tree.ID(feature, action))
+	chooseMenu(t, state, tree.ID(feature, action))
 }
 
 func submitHostGroupName(state *State, name string) {
@@ -179,7 +179,7 @@ func TestHostGroupRightClickNewHostPrefillsClickedGroup(t *testing.T) {
 		if _, ok := hitByID(canvas, newHost); !ok {
 			t.Fatalf("view %d did not offer New Host on group right click", view)
 		}
-		state.Click(newHost)
+		chooseMenu(t, state, newHost)
 		if state.modal != modalNewHost || state.editor.value(fieldGroup) != "Team/Prod/EU" {
 			t.Fatalf("group not prefilled: modal=%d group=%q", state.modal, state.editor.value(fieldGroup))
 		}

@@ -118,9 +118,9 @@ func TestWorkspacePaneToolsThroughWindowDriver(t *testing.T) {
 	for _, connection := range world.conns {
 		finishWorkspaceConnection(t, state, connection)
 	}
-	view, err := headless.Open(app.Config{Title: "Workspace actions", Width: 960, Height: 600,
+	view, err := headless.Open(state.WindowConfig(app.Config{Title: "Workspace actions", Width: 960, Height: 600,
 		Tree: Tree(), Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key,
-		OnResize: state.Resize}, nil, headless.Options{})
+		OnResize: state.Resize}), nil, headless.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,12 @@ func TestWorkspacePaneToolsThroughWindowDriver(t *testing.T) {
 		t.Fatal("split action missing")
 	}
 	before := len(state.Panes(nil))
-	click(hitWorkspacePaneToolList.At(index))
+	if err := view.ClickLabel(state.workspacePaneTools.items[index].hint); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
 	if len(state.Panes(nil)) != before+1 || state.workspaceHeaderMenu != workspaceHeaderMenuNone {
 		t.Fatal("menu split did not reach the active session")
 	}

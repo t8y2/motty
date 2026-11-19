@@ -3,6 +3,7 @@ package workbench
 import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 )
 
 var toolbarDockHits = tree.Feature("toolbar-dock")
@@ -21,7 +22,7 @@ var (
 	hitToolbarDockMore        = tree.ID(toolbarDockHits, "more")
 )
 
-func (state *State) paintToolbarDockMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
+func (state *State) declareToolbarDockMenu(c ui.C) {
 	dock, m := &state.toolbarDock, state.messages.Toolbars
 	if !dock.menu || state.modal != modalNone {
 		return
@@ -63,25 +64,23 @@ func (state *State) paintToolbarDockMenu(canvas *gfx.Canvas, viewport gfx.Rect) 
 	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitToolbarDockCustomize, Label: m.Customize, Icon: lucideIcons[iconSliders]})
 	rows.add(components.ContextMenuItem{ID: hitToolbarDockReset, Label: m.ResetLayout, Icon: lucideIcons[iconRefresh]})
-	width, height := rows.size(canvas, state.contextMenuTheme())
-	bounds := state.popupAt(canvas, viewport, dock.menuAt, width, height, 6)
-	menu := components.BeginContextMenu(canvas, state.contextMenuTheme(), bounds, components.ContextMenuOptions{Layer: dialogLayer, Scope: dialogScope, DismissID: hitToolbarDockDismiss, Viewport: viewport, Scroll: state.menuScrollFor(hitToolbarDockDismiss), RowHeight: contextMenuRow})
-	state.menuPlaced(menu.Bounds())
-	rows.paint(&menu, nil)
-	menu.End()
+	state.declareRowsMenu(c, &dock.menu, dock.menuAt, hitToolbarDockDismiss, &rows, state.chooseToolbarDockMenu)
 }
 
+// clickToolbarDockMenu opens the overflow menu from the More button.
 func (state *State) clickToolbarDockMenu(id gfx.ID) bool {
 	dock := &state.toolbarDock
-	if id == hitToolbarDockMore && !dock.menu {
-		dock.menu, dock.overflow = true, true
-		dock.menuAt = gfx.Point{X: max(state.viewport.Width-200, 0), Y: windowBarHeight}
-		return true
-	}
-	if !dock.menu {
+	if id != hitToolbarDockMore || dock.menu {
 		return false
 	}
-	dock.menu = false
+	dock.menu, dock.overflow = true, true
+	dock.menuAt = gfx.Point{X: max(state.viewport.Width-200, 0), Y: windowBarHeight}
+	return true
+}
+
+// chooseToolbarDockMenu runs a choice of the menu, which closed with it.
+func (state *State) chooseToolbarDockMenu(id gfx.ID) {
+	dock := &state.toolbarDock
 	source := dock.menuTool
 	sftp := !dock.overflow && sftpToolbarMenuSource(source)
 	switch id {
@@ -136,11 +135,9 @@ func (state *State) clickToolbarDockMenu(id gfx.ID) bool {
 		state.toolbars.layouts[toolbarWindow], state.toolbars.layouts[toolbarTerminal] = nil, nil
 		state.terminalToolbarSize = terminalToolbarSmall
 		state.toolbarDockChanged()
-	case hitToolbarDockDismiss:
 	default:
 		if dock.overflow {
-			return false
+			state.click(id, true)
 		}
 	}
-	return true
 }

@@ -83,9 +83,12 @@ func TestSFTPLocalPlacesNavigationAndMissingFavoritesUseGlobalNotices(t *testing
 	w.navigate(true, filepath.Join(dir, "tree"))
 	dualWait(t, state, w, view, func() bool { return !w.navigationBusy() })
 	dualClickID(t, view, hitSFTPLocalPlaces)
+	if err := view.Driver().Pump(); err != nil {
+		t.Fatal(err)
+	}
 	dualText(t, view, state.messages.SFTPWindow.CommonFolders)
 	dualText(t, view, state.messages.SFTPWindow.DirectoryFavorites)
-	dualClickID(t, view, sftpLocalFavorites.At(0))
+	dualClickMenuLabel(t, view, dir)
 	dualWait(t, state, w, view, func() bool { return !w.navigationBusy() })
 	if w.view.lfolder.path != dir || w.view.path != "/home/test" || w.view.bookmarksOpen {
 		t.Fatal("local favorite did not navigate only its own pane")
@@ -93,7 +96,7 @@ func TestSFTPLocalPlacesNavigationAndMissingFavoritesUseGlobalNotices(t *testing
 	missing := filepath.Join(dir, "missing-directory")
 	state.sftpLocalBookmarks = append(state.sftpLocalBookmarks, missing)
 	dualClickID(t, view, hitSFTPLocalPlaces)
-	dualClickID(t, view, sftpLocalFavorites.At(1))
+	dualClickMenuLabel(t, view, missing)
 	if w.view.lfolder.path != dir || len(w.notices.items) == 0 || w.view.errorText != "" {
 		t.Fatal("missing local favorite did not preserve its pane and show a global notice")
 	}
@@ -108,7 +111,7 @@ func TestSFTPLocalPlacesNavigationAndMissingFavoritesUseGlobalNotices(t *testing
 	w.window.Invalidate()
 	view.Driver().Pump()
 	view.Rest()
-	dualClickID(t, view, sftpLocalPlaces.At(0))
+	dualClickMenuLabel(t, view, state.messages.SFTPWindow.LocalDocuments)
 	dualWait(t, state, w, view, func() bool { return !w.navigationBusy() })
 	if w.browse.enabled || w.view.lfolder.path != outside || w.view.path != "/home/test" || len(w.notices.items) == 0 {
 		t.Fatal("jumping outside a paired root did not pause synchronization")

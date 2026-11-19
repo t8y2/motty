@@ -156,12 +156,15 @@ func (state *State) declareRemoteProcessMenuItems(menu *ui.MenuItems, after func
 	}
 }
 
-func (state *State) remoteProcessDetailTabs() [2]components.TabOption {
+// remoteProcessDetailTabIDs are the dialog's tabs, in order.
+var remoteProcessDetailTabIDs = [2]gfx.ID{hitRemoteProcessDetailsCommand, hitRemoteProcessDetailsEnv}
+
+func (state *State) remoteProcessDetailTabLabel(tab gfx.ID) string {
 	m := state.messages.Tools
-	return [2]components.TabOption{
-		{ID: hitRemoteProcessDetailsCommand, Label: m.RemoteProcessCommand, Icon: lucideIcons[iconTerminal]},
-		{ID: hitRemoteProcessDetailsEnv, Label: m.RemoteProcessEnvironment, Icon: lucideIcons[iconSliders]},
+	if tab == hitRemoteProcessDetailsEnv {
+		return m.RemoteProcessEnvironment
 	}
+	return m.RemoteProcessCommand
 }
 
 func (state *State) remoteProcessDetailTab() gfx.ID {
@@ -235,28 +238,15 @@ func (state *State) declareRemoteProcessDetailsDialog(c ui.C, act func(gfx.ID)) 
 	viewport := c.Bounds()
 	contentWidth := min(float32(980), max(viewport.Width-32, 360))
 	bodyHeight := min(float32(620), max(viewport.Height-132, 320))
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), gfx.Rect{Width: viewport.Width, Height: viewport.Height}, components.DialogOptions{
-		ContentSize: gfx.Size{Width: contentWidth}, FitBody: true, BodyHeight: bodyHeight,
-		ButtonSize: components.ButtonSizeSmall,
-	}).Layout(description)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), dialogViewport(c), contentWidth, description, bodyHeight) - smallDialogFooterAdjust(*c.Theme())
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: m.RemoteProcessDetailsTitle, Description: description, Width: contentWidth,
-		Height: layout.Content.Height, Layer: dialogLayer + 2, Scope: dialogScope,
+		Height: height, Layer: dialogLayer + 2, Scope: dialogScope,
 		DismissID: hitRemoteProcessDetailsDismiss, CloseID: hitRemoteProcessDetailsClose,
 	})
 	dialog.Body(func() {
-		ui.Slot(c).Fill().Draw(func(d *ui.DrawContext) {
-			state.paintRemoteProcessDetailsBody(d.Canvas, d.Rect, process, details.collectedAt)
-		})
+		state.declareRemoteProcessDetailsBody(c, contentWidth-16, process, details.collectedAt)
 	})
-	if canvas := c.Canvas(); canvas != nil {
-		switch {
-		case canvas.Clicked(hitRemoteProcessDetailsCommand):
-			c.After(func() { state.selectRemoteProcessDetailTab(hitRemoteProcessDetailsCommand) })
-		case canvas.Clicked(hitRemoteProcessDetailsEnv):
-			c.After(func() { state.selectRemoteProcessDetailTab(hitRemoteProcessDetailsEnv) })
-		}
-	}
 	blocked := state.remoteProcessActionsBlocked(process)
 	dialog.Footer(func() {
 		action := func(id gfx.ID, label string, variant components.ButtonVariant) {
@@ -413,25 +403,9 @@ func (state *State) remoteProcessDetailsKey(event gfx.KeyEvent) (gfx.EventResult
 		if result, handled := state.remoteDetailTextShortcut(event, &state.remote.processDetails.text); handled {
 			return result, true
 		}
-		details := &state.remote.processDetails
-		if result, handled := state.remoteDetailKeyboardScroll(
-			event, &details.text,
-			hitRemoteProcessDetailsText, hitRemoteProcessDetailsScroll,
-		); handled {
+		if result, handled := state.remoteDetailKeyboardScroll(event, &state.remote.processDetails.text,
+			hitRemoteProcessDetailsText, hitRemoteProcessDetailsScroll); handled {
 			return result, true
-		}
-		options := state.remoteProcessDetailTabs()
-		if event.Target == hitRemoteProcessDetailsCommand || event.Target == hitRemoteProcessDetailsEnv {
-			if (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) && !event.Repeat {
-				state.selectRemoteProcessDetailTab(event.Target)
-				return gfx.EventResult{Handled: true, Repaint: true}, true
-			}
-			if next, handled := components.TabsKeyDown(
-				event.Target, options[:], components.TabsHorizontal, components.DirectionLTR, event.Key,
-			); handled {
-				state.selectRemoteProcessDetailTab(next)
-				return gfx.EventResult{Focus: next, FocusVisible: true, Handled: true, Repaint: true}, true
-			}
 		}
 		if event.Key == gfx.KeyEscape && !event.Repeat {
 			state.closeRemoteProcessDetails()

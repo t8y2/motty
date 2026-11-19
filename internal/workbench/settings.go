@@ -388,10 +388,6 @@ func (state *State) applyLanguage() {
 	state.refreshForwards()
 	state.refreshProxies()
 	state.refreshSnippets()
-	// The host dialog's encoding options carry a localised UTF-8 label, and its
-	// icon options localised labels for the generic icons.
-	state.resetHostEncodingPicker()
-	state.resetHostIconPicker()
 	for index := range state.sessions {
 		state.sessions[index].reconnectText = ""
 		state.describe(&state.sessions[index])
@@ -413,7 +409,7 @@ func (state *State) clickSettings(id gfx.ID) bool {
 	if state.modal != modalNone || state.activeSection != sectionSettings {
 		return false
 	}
-	if state.clickLocalShell(id) || state.clickEditorSelect(id) || state.clickStartupHosts(id) {
+	if state.clickLocalShell(id) || state.clickStartupHosts(id) {
 		return true
 	}
 	for group, hit := range hitToolbarSettingsOpen {
@@ -455,7 +451,7 @@ func (state *State) clickSettings(id gfx.ID) bool {
 		} else {
 			changed = state.setShareConnections(shareConnectionsOff)
 		}
-	case hitSettingsStartupHosts, hitSettingsStartupLocal, hitSettingsStartupDismiss:
+	case hitSettingsStartupHosts:
 		state.clickStartupHosts(id)
 	case hitSettingsSSHSyncToggle, hitSettingsSSHSyncFile, hitSettingsSSHSyncReset, hitSettingsSSHSyncNow:
 		state.clickSSHSync(id)
@@ -734,12 +730,7 @@ func (state *State) settingsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 			return gfx.EventResult{}, false
 		}
 		state.localShellMenu.open = true
-		return gfx.EventResult{Focus: hitSettingsLocalShellItems.At(max(0, state.localShellSelected())), FocusVisible: true, Handled: true, Repaint: true}, true
-	}
-	if event.Target == hitSettingsEditor && !state.editorMenu.open && (event.Key == gfx.KeyDown || event.Key == gfx.KeyUp) {
-		state.refreshEditors()
-		state.editorMenu.open = true
-		return gfx.EventResult{Focus: hitSettingsEditorItems.At(max(0, state.editorSelected())), FocusVisible: true, Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	return gfx.EventResult{}, false
 }

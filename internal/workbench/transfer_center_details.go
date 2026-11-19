@@ -6,6 +6,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
 	"motty/internal/workbench/icons"
 )
@@ -26,11 +27,33 @@ type transferDetailRow struct {
 }
 
 type transferDetails struct {
-	hover, current              transferDetailRow
-	pinned, showing, suppressed int
-	leftAt                      time.Duration
-	intent                      components.HoverIntent
-	lines                       [12][]string
+	hover, current transferDetailRow
+	// hoverBox and currentBox are the trigger boxes those rows were declared
+	// with this paint. The card is a page Popover anchored on them.
+	hoverBox, currentBox ui.Box
+	// hoverWidth and currentWidth are the trigger widths the last paint laid
+	// out. AlignOffset is read while the page is declared, before the frame's
+	// layout, so it uses the widths a previous paint measured for those rows.
+	hoverWidth, currentWidth float32
+	pinned, showing          int
+	suppressed               int
+	leftAt                   time.Duration
+	intent                   components.HoverIntent
+	open                     bool
+	// The body is a Draw slot that paints the fields in the old card's places.
+	fields                        [12]transferDetailField
+	fieldCount                    int
+	lines                         [12][]string
+	size, lineHeight              float32
+	labelWidth, valueWidth        float32
+	labelOffset, valueOffset, gap float32
+	bodyHeight                    float32
+	// slotHeight is the body slot's layout height: the title line and the
+	// padding the page's header would have taken, without its border.
+	slotHeight float32
+	c          ui.C
+	body       func()
+	draw       func(*ui.DrawContext)
 }
 
 func (details *transferDetails) dismiss() {
@@ -42,9 +65,19 @@ func (details *transferDetails) dismiss() {
 		details.suppressed = id
 	}
 	details.pinned, details.showing, details.leftAt = 0, 0, 0
+	details.open = false
 	details.intent.Reset()
 }
 
+// beginPaint forgets the rows the last paint saw. pinned, showing and the
+// hover intent stay: they are what the preview is open for.
+func (details *transferDetails) beginPaint() {
+	details.hover, details.current = transferDetailRow{}, transferDetailRow{}
+	details.hoverBox, details.currentBox = ui.Box{}, ui.Box{}
+}
+
+// anchor is the rectangle the row's trigger took in this paint, clipped to the
+// list. The old hover card hung off exactly this rectangle.
 func (row transferDetailRow) anchor(canvas *gfx.Canvas, entries []transferEntry, list gfx.Rect, trigger gfx.Scope) gfx.Rect {
 	if row.id == 0 || row.entry < 0 || row.entry >= len(entries) || entries[row.entry].id != row.id {
 		return gfx.Rect{}
@@ -53,39 +86,54 @@ func (row transferDetailRow) anchor(canvas *gfx.Canvas, entries []transferEntry,
 	return intersectRect(bounds, list)
 }
 
-// Paint outside the List's clip, so the details can sit over the rows below or
-// flip above a row near the bottom of the window.
-func (state *State) paintTransferDetails(canvas *gfx.Canvas, viewport gfx.Rect) {
+// recordTransferDetailAnchors measures the rows the page declared this paint,
+// after its layout. The card opens on the next paint, and AlignOffset follows
+// the trigger width the row actually got.
+func (state *State) recordTransferDetailAnchors(canvas *gfx.Canvas) {
 	center, details := &state.transfers, &state.transfers.details
-	if !center.open || !state.transferCenterAvailable() || !center.selectOpen.IsZero() || center.dragging || len(center.batch.targets) > 0 {
+	if !center.open || !state.transferCenterAvailable() || len(center.batch.targets) > 0 {
+		details.dismiss()
+		details.hoverWidth, details.currentWidth = 0, 0
+		return
+	}
+	entries := center.entries
+	hit := details.hover.anchor(canvas, entries, center.list, hitTransfersDetails)
+	details.hoverWidth = hit.Width
+	details.currentWidth = details.current.anchor(canvas, entries, center.list, hitTransfersDetails).Width
+}
+
+// declareTransferCenterPreview declares the pointer preview of a transfer row
+// outside the list's clip, as a page Popover anchored on the row's trigger.
+func (state *State) declareTransferCenterPreview(c ui.C) {
+	center, details := &state.transfers, &state.transfers.details
+	if !center.open || !state.transferCenterAvailable() || len(center.batch.targets) > 0 {
 		details.dismiss()
 		return
 	}
-	state.paintTransferDetailCard(canvas, viewport, center.list, details, hitTransfersDetails, hitTransfersDetailCard, hitTransfersDetailDismiss)
-}
-
-func (state *State) paintTransferDetailCard(canvas *gfx.Canvas, viewport, list gfx.Rect, details *transferDetails, trigger gfx.Scope, card, dismiss gfx.ID) {
-	entries := state.transfers.entries
-	ref := details.current
-	anchor := ref.anchor(canvas, entries, list, trigger)
+	canvas := c.Canvas()
+	ref, anchor, width := details.current, details.currentBox, details.currentWidth
+	if width <= 0 {
+		// The clicked row was measured as the hovered one on the paint that
+		// pinned it; its current width is measured after this frame's layout.
+		width = details.hoverWidth
+	}
 	if details.pinned == 0 {
 		hover, now := details.hover, canvas.Now()
 		if details.suppressed != hover.id {
 			details.suppressed = 0
 		}
 		var candidate gfx.ID
-		hoverAnchor := hover.anchor(canvas, entries, list, trigger)
-		if hover.id != details.suppressed && canvas.Pressed().IsZero() && hoverAnchor.Height > 0 {
-			candidate = trigger.At(hover.id)
+		if hover.id != details.suppressed && canvas.Pressed().IsZero() && hover.id != 0 && details.hoverBox.Valid() {
+			candidate = hitTransfersDetails.At(hover.id)
 		}
 		ready, wait := details.intent.Rest(candidate, time.Time{}.Add(now), transferDetailDelay)
 		switch {
 		case !ready.IsZero():
-			ref, anchor = hover, hoverAnchor
+			ref, anchor, width = hover, details.hoverBox, details.hoverWidth
 			details.leftAt = 0
-		case canvas.Hovered() == card && anchor.Height > 0:
+		case canvas.Hovered() == hitTransfersDetailCard && details.showing != 0:
 			details.leftAt = 0
-		case anchor.Height > 0 && canvas.Pressed().IsZero():
+		case details.showing != 0 && canvas.Pressed().IsZero():
 			if details.leftAt == 0 {
 				details.leftAt = now + transferDetailLinger
 			}
@@ -94,24 +142,58 @@ func (state *State) paintTransferDetailCard(canvas *gfx.Canvas, viewport, list g
 					wait = linger
 				}
 			} else {
-				anchor = gfx.Rect{}
+				ref, anchor, width = transferDetailRow{}, ui.Box{}, 0
 			}
 		default:
-			anchor = gfx.Rect{}
+			ref, anchor, width = transferDetailRow{}, ui.Box{}, 0
 		}
 		if wait > 0 {
 			canvas.RequestFrameIn(wait)
 		}
 	}
-	if anchor.Width <= 0 || anchor.Height <= 0 {
+	entries := center.entries
+	if ref.id == 0 || ref.entry < 0 || ref.entry >= len(entries) ||
+		entries[ref.entry].id != ref.id || !anchor.Valid() || width <= 0 {
 		details.pinned, details.showing, details.leftAt = 0, 0, 0
+		details.open = false
 		return
 	}
 	details.showing = ref.id
-	if details.pinned == 0 {
-		dismiss = gfx.ID{}
+	viewport := state.windowRect()
+	state.prepareTransferDetailBody(canvas, &entries[ref.entry], viewport)
+	details.open = true
+	dismiss := gfx.ID{}
+	if details.pinned != 0 {
+		dismiss = hitTransfersDetailDismiss
 	}
-	state.drawTransferDetails(canvas, viewport, anchor, &entries[ref.entry], &details.lines, card, dismiss)
+	details.c = c
+	if details.body == nil {
+		details.body = state.declareTransferCenterBody
+	}
+	if details.draw == nil {
+		details.draw = state.drawTransferDetailBody
+	}
+	spec := ui.PopoverSpec{
+		Side: components.PopoverBottom, Align: ui.Start, Offset: 3,
+		AlignOffset: max(4, min(width*0.55, 190)),
+		Width:       min(492, viewport.Width-24),
+		// The old hover card was a popup surface, not a button-styled popover:
+		// it kept the popup radius and had no press-outside target of its own.
+		Radius:    state.Theme().Metrics.RadiusPopup(),
+		NoDismiss: dismiss.IsZero(),
+		DismissID: dismiss, KeepOpenOnAnchor: true,
+	}
+	if ui.PopoverWith(c, anchor, spec, &details.open, details.body) {
+		details.dismiss()
+	}
+}
+
+// declareTransferCenterBody declares the card's one body slot, which paints the
+// title and the fields itself: the old card put them at the surface's inner
+// edge, while the page's border and header would inset them a pixel more.
+func (state *State) declareTransferCenterBody() {
+	details := &state.transfers.details
+	ui.Slot(details.c).FillWidth().Height(details.slotHeight).Draw(details.draw)
 }
 
 type transferDetailField struct {
@@ -119,7 +201,10 @@ type transferDetailField struct {
 	icon        gfx.Icon
 }
 
-func (state *State) drawTransferDetails(canvas *gfx.Canvas, viewport, anchor gfx.Rect, entry *transferEntry, lines *[12][]string, id, dismiss gfx.ID) {
+// prepareTransferDetailBody fills the fields, their wrapped lines and the
+// geometry the body paints at, exactly as the old card measured them.
+func (state *State) prepareTransferDetailBody(canvas *gfx.Canvas, entry *transferEntry, bounds gfx.Rect) {
+	details := &state.transfers.details
 	m, shell := state.messages.Transfers, state.messages.SFTPWindow
 	theme := state.Theme()
 	snapshot := entry.snapshot
@@ -136,14 +221,13 @@ func (state *State) drawTransferDetails(canvas *gfx.Canvas, viewport, anchor gfx
 			host = source + " → " + host
 		}
 	}
-	fields := [12]transferDetailField{}
-	n := 0
+	details.fieldCount = 0
 	add := func(name, value string, icon gfx.Icon) {
 		if value == "" {
 			value = "—"
 		}
-		fields[n] = transferDetailField{name, value, icon}
-		n++
+		details.fields[details.fieldCount] = transferDetailField{name, value, icon}
+		details.fieldCount++
 	}
 	fileIcon, folder := lucideIcons[iconFile], lucideIcons[iconFolderOpen]
 	clock := lucideIcons[iconClock]
@@ -178,50 +262,76 @@ func (state *State) drawTransferDetails(canvas *gfx.Canvas, viewport, anchor gfx
 		add(m.Error, snapshot.Error, icons.CircleAlert)
 	}
 
-	width := min(492, viewport.Width-24)
+	width := min(492, bounds.Width-24)
 	pad := theme.Metrics.PadSurface
-	labelWidth := min(106, width*0.25)
-	labelOffset, gap := float32(22), float32(5)
-	size := theme.Metrics.FontSizeS
-	lineHeight := size + 5
-	valueOffset := labelOffset + labelWidth + 8
-	valueWidth := max(1, width-2*pad-valueOffset)
-	bodyHeight := float32(0)
+	details.labelWidth = min(106, width*0.25)
+	details.labelOffset, details.gap = float32(22), float32(5)
+	details.size = theme.Metrics.FontSizeS
+	details.lineHeight = details.size + 5
+	details.valueOffset = details.labelOffset + details.labelWidth + 8
+	details.valueWidth = max(1, width-2*pad-details.valueOffset)
+	details.bodyHeight = 0
 	// Leave at least one line for each field, and spend the free height on
 	// long names and paths. Keep the complete text in the accessibility tree.
-	extra := max(0, int((viewport.Height-70-float32(n)*(lineHeight+gap))/lineHeight))
-	for index, field := range fields[:n] {
-		lines[index] = canvas.WrapLines(lines[index][:0], field.value, size, gfx.WeightRegular, valueWidth, 1+min(extra, 5))
-		extra = max(0, extra-(len(lines[index])-1))
-		bodyHeight += float32(len(lines[index]))*lineHeight + gap
+	n := details.fieldCount
+	extra := max(0, int((bounds.Height-70-float32(n)*(details.lineHeight+details.gap))/details.lineHeight))
+	for index := 0; index < n; index++ {
+		field := &details.fields[index]
+		details.lines[index] = canvas.WrapLines(details.lines[index][:0], field.value,
+			details.size, gfx.WeightRegular, details.valueWidth, 1+min(extra, 5))
+		extra = max(0, extra-(len(details.lines[index])-1))
+		details.bodyHeight += float32(len(details.lines[index]))*details.lineHeight + details.gap
 	}
-	card := components.BeginHoverCard(canvas, theme, viewport, anchor, components.HoverCardOptions{
-		Layer: hoverCardLayer, ID: id, DismissID: dismiss,
-		Side: components.HoverCardBottom, Align: components.HoverCardAlignStart,
-		SideOffset: 3, AlignOffset: max(4, min(anchor.Width*0.55, 190)),
-		ContentSize: gfx.Size{Width: width}, BodyHeight: bodyHeight,
-	})
-	layout := card.Begin(m.Details, "")
-	canvas.Clip(layout.Body)
-	y := layout.Body.Y
-	for index, field := range fields[:n] {
-		x := layout.Body.X
+	// The single body slot is what the page measures; the surface's 1px border
+	// takes two pixels of the height the old card's padding used.
+	details.slotHeight = pad + (theme.Metrics.FontSizeM + 7) + details.bodyHeight - 2
+}
+
+// drawTransferDetailBody paints the fields into the card body the page placed.
+func (state *State) drawTransferDetailBody(d *ui.DrawContext) {
+	details := &state.transfers.details
+	canvas, theme := d.Canvas, state.Theme()
+	// The page's Popover lays its border inside the surface and reserves the
+	// space, while the old card painted the same border within the surface and
+	// inset its content by the padding alone. Expanding the slot by the border
+	// reproduces the old content box, title and body exactly.
+	const border = float32(1)
+	pad := theme.Metrics.PadSurface
+	titleLine := theme.Metrics.FontSizeM + 7
+	content := d.Rect
+	inner := gfx.Rect{X: content.X - border, Y: content.Y - border, Width: content.Width + 2*border, Height: content.Height + 2*border}
+	// The old card was one group hit over its whole surface, so the pointer can
+	// move off the row onto the preview and keep it open.
+	card := gfx.Rect{
+		X: content.X - border - pad, Y: content.Y - border - pad,
+		Width: content.Width + 2*(border+pad), Height: content.Height + 2*(border+pad),
+	}
+	canvas.HitWithOptions(hitTransfersDetailCard, card, state.messages.Transfers.Details,
+		gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true})
+	canvas.Label(state.messages.Transfers.Details,
+		gfx.Rect{X: inner.X, Y: inner.Y, Width: inner.Width, Height: titleLine},
+		gfx.TextStyle{Size: theme.Metrics.FontSizeM, Weight: gfx.WeightMedium, Color: theme.PopoverForeground})
+	body := gfx.Rect{X: inner.X, Y: inner.Y + titleLine + pad, Width: inner.Width, Height: details.bodyHeight}
+	canvas.Clip(body)
+	y := body.Y
+	for index := 0; index < details.fieldCount; index++ {
+		field := &details.fields[index]
+		x := body.X
 		if field.icon.ViewBox > 0 {
-			canvas.DrawIcon(field.icon, gfx.Rect{X: x, Y: y + (lineHeight-14)/2, Width: 14, Height: 14}, theme.MutedForeground)
+			canvas.DrawIcon(field.icon, gfx.Rect{X: x, Y: y + (details.lineHeight-14)/2, Width: 14, Height: 14}, theme.MutedForeground)
 		}
-		canvas.Label(field.name, gfx.Rect{X: x + labelOffset, Y: y, Width: labelWidth, Height: lineHeight},
-			gfx.TextStyle{Size: size, Color: theme.MutedForeground})
-		for line, value := range lines[index] {
-			canvas.Label(value, gfx.Rect{X: x + valueOffset, Y: y + float32(line)*lineHeight, Width: valueWidth, Height: lineHeight},
-				gfx.TextStyle{Size: size, Color: theme.PopoverForeground})
+		canvas.Label(field.name, gfx.Rect{X: x + details.labelOffset, Y: y, Width: details.labelWidth, Height: details.lineHeight},
+			gfx.TextStyle{Size: details.size, Color: theme.MutedForeground})
+		for line, value := range details.lines[index] {
+			canvas.Label(value, gfx.Rect{X: x + details.valueOffset, Y: y + float32(line)*details.lineHeight, Width: details.valueWidth, Height: details.lineHeight},
+				gfx.TextStyle{Size: details.size, Color: theme.PopoverForeground})
 		}
-		height := float32(len(lines[index])) * lineHeight
-		canvas.ContainerWithOptions(gfx.Rect{X: x, Y: y, Width: layout.Body.Width, Height: height},
+		height := float32(len(details.lines[index])) * details.lineHeight
+		canvas.ContainerWithOptions(gfx.Rect{X: x, Y: y, Width: body.Width, Height: height},
 			gfx.RoleGroup, field.name, gfx.HitOptions{Description: field.value})
-		y += height + gap
+		y += height + details.gap
 	}
 	canvas.Unclip()
-	card.End()
 }
 
 func transferDetailHost(server, address string) string {

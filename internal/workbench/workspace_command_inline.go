@@ -5,9 +5,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -22,7 +22,9 @@ var (
 type workspaceCommandInline struct {
 	template, host string
 	editor         text.Editor
-	error          string
+	// field is the page's handle on the same editor.
+	field ui.Field
+	error string
 }
 
 func workspaceInlineOwns(id gfx.ID) bool {
@@ -52,15 +54,8 @@ func (state *State) paintWorkspaceInline(canvas *gfx.Canvas, region workspaceCar
 	edit := &state.workspaceCommandEdit
 	if edit.template == region.template && edit.host == hostID {
 		canvas.HitWithOptions(hitWorkspaceInlineBody, bounds, state.messages.WorkspaceCommandField, gfx.HitOptions{SkipTab: true})
-		buttons := min(float32(116), bounds.Width*.45)
-		field := bounds
-		field.Width = max(0, bounds.Width-buttons-8)
-		field.Height = 32
-		components.PaintInput(canvas, state.Theme(), field, components.InputSnapshot{ID: hitWorkspaceInlineField, Label: state.messages.WorkspaceCommandField, Value: edit.editor.String(), Focused: canvas.Focused() == hitWorkspaceInlineField, PlatformEditing: canvas.Focused() == hitWorkspaceInlineField && edit.editor.String() != "", Invalid: edit.error != ""})
-		components.BeginButtonRow(canvas, state.Theme(), gfx.Rect{X: bounds.X + bounds.Width - buttons, Y: bounds.Y + 3, Width: buttons, Height: 26}).Size(components.ButtonSizeXSmall).Paint(
-			components.ButtonAction{ID: hitWorkspaceInlineSave, Label: state.messages.WorkspaceCommandSave, Variant: components.ButtonOutline},
-			components.ButtonAction{ID: hitWorkspaceInlineCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-		)
+		// The field and its buttons are page elements, declared by the library
+		// when it lays the card out; only the error stays painted here.
 		if edit.error != "" {
 			monitorLabel(canvas, elide(canvas, edit.error, 11, gfx.WeightRegular, bounds.Width), gfx.Rect{X: bounds.X, Y: bounds.Y + 36, Width: bounds.Width, Height: 18}, 11, state.pal.danger, gfx.WeightRegular)
 		}
@@ -93,6 +88,7 @@ func (state *State) clickWorkspaceInline(id gfx.ID) bool {
 			return true
 		}
 		state.workspaceCommandEdit = workspaceCommandInline{template: template.ID, host: hostID, editor: *text.NewEditor(command.Command)}
+		state.workspaceCommandEdit.field.Bind(&state.workspaceCommandEdit.editor)
 		state.workspaceCommandEdit.editor.SetSelection(text.Range{End: state.workspaceCommandEdit.editor.RuneCount()})
 		state.workspaceTemplateFocusPending = hitWorkspaceInlineField
 		return true

@@ -82,6 +82,14 @@ func TestClickingTheHomeButtonWithATabMenuOpenOnlyClosesTheMenu(t *testing.T) {
 }
 
 func hitByIDSnapshot(hits []gfx.Hit, id gfx.ID) (gfx.Hit, bool) {
+	if label, ok := menuRowLabel(id); ok {
+		for index := len(hits) - 1; index >= 0; index-- {
+			if hits[index].Role == gfx.RoleMenuItem && hits[index].Label == label {
+				return hits[index], true
+			}
+		}
+		return gfx.Hit{}, false
+	}
 	for index := len(hits) - 1; index >= 0; index-- {
 		if hits[index].ID == id {
 			return hits[index], true

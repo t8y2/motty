@@ -12,11 +12,12 @@ only (`go list -deps` shows nothing else).
 This is a fork; it does not track upstream. Every change is listed, and marked
 "Motty" in a comment where it is in code:
 
-Removed (no Motty use): `client/`, `display/`, `util/ppm.go`, and the protocol
-packages `audin`, `rdpdr`, `rdpecam`, `rdpsnd`, `urbdrc` (audio, drive, printer,
+Removed: `client/`, `display/`, `util/ppm.go`, and the protocol packages
+`audin`, `rdpdr`, `rdpecam`, `rdpsnd`, `urbdrc` (audio input, drive, printer,
 serial, parallel, smartcard, USB and camera redirection), with the options and
 code in `client.go` that used them, and `Dump*` debugging functions that wrote
-files.
+files. Audio output came back as a new `protocol/rdpsnd` package (PCM only)
+after the copy was taken; see `docs/remote-desktop.md`.
 
 Changed:
 

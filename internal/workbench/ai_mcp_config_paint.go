@@ -1,51 +1,10 @@
 package workbench
 
 import (
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
-
-// Paint after the workspace clip and inside the menu pass, as other selects do.
-func (state *State) paintMCPClientSelect(canvas *gfx.Canvas) {
-	cfg := &state.ai.cfg
-	state.paintMCPExportSelect(canvas, cfg.mcpSelectBounds, &cfg.mcpSelectOpen, cfg.mcpClient, hitAISetMCPSelect, hitAISetMCPSelectDismiss, aiMCPClientOptions())
-	state.paintMCPExportSelect(canvas, cfg.agentSelectBounds, &cfg.agentSelectOpen, cfg.agentClient, hitAISetAgentSelect, hitAISetAgentSelectDismiss, aiAgentClientOptions())
-}
-
-func (state *State) paintMCPExportSelect(canvas *gfx.Canvas, bounds gfx.Rect, open *bool, client aiMCPClient, trigger, dismiss gfx.ID, options [aiMCPClientCount]components.SelectItem) {
-	if bounds.Width <= 0 || bounds.Y < windowBarHeight || bounds.Y+bounds.Height > state.viewport.Height {
-		*open = false
-		return
-	}
-	below := max(state.viewport.Height-8-bounds.Y-bounds.Height-4, 0)
-	above := max(bounds.Y-windowBarHeight-8, 0)
-	height := min(float32(8+len(options)*32), max(above, below))
-	content := gfx.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: bounds.Width, Height: height}
-	if below < height {
-		content.Y = bounds.Y - height - 4
-	}
-	opening := *open && state.popups.owner != dismiss
-	scroll := state.selectScroll(*open, dismiss)
-	if opening {
-		scroll.Offset = max(0, min(float32(client)*32, float32(len(options)*32)+8-height))
-		canvas.SetInitialFocus(options[client].ID)
-	}
-	selectControl := components.BeginSelect(canvas, state.Theme(), bounds, components.SelectOptions{
-		TriggerID: trigger, Label: state.messages.AISettings.MCPClientLabel, Value: options[client].Label,
-		Open: *open, Content: content, Layer: popupLayer,
-		Scope: dismiss, DismissID: dismiss, Viewport: state.windowRect(), Scroll: scroll,
-	})
-	defer selectControl.End()
-	if *open {
-		state.menuPlaced(selectControl.ContentBounds())
-	}
-	for index, option := range options {
-		option.Selected = index == int(client)
-		selectControl.AddItem(option)
-	}
-}
 
 // Keep explanations and actions readable when the settings navigation leaves
 // too little room for a two-column row.
@@ -77,11 +36,6 @@ func (page *settingsPage) mcpFrame(label, description string, color gfx.Color, c
 
 func (page *settingsPage) mcpCopyButton(id gfx.ID, label string, disabled bool) {
 	state, m := page.state, page.state.messages.AISettings
-	width, _ := state.aiButtonSize(page.canvas(), label)
-	for _, value := range []string{m.MCPCopied, m.MCPCopyFailed} {
-		w, _ := state.aiButtonSize(page.canvas(), value)
-		width = max(width, w)
-	}
 	if state.ai.cfg.copyTarget == id {
 		switch state.ai.cfg.copied {
 		case aiCopyDone:
@@ -90,7 +44,7 @@ func (page *settingsPage) mcpCopyButton(id gfx.ID, label string, disabled bool) 
 			label = m.MCPCopyFailed
 		}
 	}
-	page.button(id, label, aiButtonOutline, disabled).Width(width)
+	page.button(id, label, aiButtonOutline, disabled)
 }
 
 // aiMCPPreviewFormat names what the configuration preview holds: a command to
@@ -145,15 +99,15 @@ func (state *State) paintAIMCPConfig(page *settingsPage, endpoint string, ready 
 	page.separator()
 	state.paintMCPConfigBlock(page, aiMCPConfigView{
 		title: m.MCPConfig, description: m.MCPConfigDesc, hint: hint, footer: m.MCPPreviewHint,
-		client: cfg.mcpClient, selectKind: controlMCPSelect, copyID: hitAISetMCPCopy,
+		client: &cfg.mcpClient, copyID: hitAISetMCPCopy,
 		ready: ready, preview: preview, lines: &cfg.mcpPreviewLines,
 	})
 }
 
 type aiMCPConfigView struct {
 	title, description, hint, footer, preview string
-	client                                    aiMCPClient
-	selectKind                                settingsControlKind
+	client                                    *aiMCPClient
+	agent                                     bool
 	copyID                                    gfx.ID
 	ready                                     bool
 	lines                                     *[]string
@@ -166,7 +120,10 @@ func (state *State) paintMCPConfigBlock(page *settingsPage, view aiMCPConfigView
 	column.Children(func() {
 		ui.Text(c, view.title).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text)
 		ui.Wrap(c, view.description).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18)
-		page.add(settingsControl{kind: view.selectKind, slot: ui.Slot(c).FillWidth().Height(36)})
+		if ui.Select(c, view.client, aiMCPClients[:], aiMCPClientName).Label(view.title).FillWidth().Height(36).Changed() {
+			agent := view.agent
+			c.After(func() { state.aiChooseMCPClient(*view.client, agent) })
+		}
 		if view.hint != "" {
 			ui.Wrap(c, view.hint).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18)
 		}
@@ -174,7 +131,7 @@ func (state *State) paintMCPConfigBlock(page *settingsPage, view aiMCPConfigView
 			// The header names what the block holds, so the room the copy
 			// button takes says something instead of staying blank.
 			ui.Row(c).PadSides(10, 14, 10, 14).Items(ui.Center).Children(func() {
-				ui.Text(c, aiMCPPreviewFormat(view.client, m)).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted)
+				ui.Text(c, aiMCPPreviewFormat(*view.client, m)).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted)
 				ui.Spacer(c)
 				page.mcpCopyButton(view.copyID, m.MCPCopy, !view.ready)
 			})

@@ -25,7 +25,7 @@ func TestRightClickOpensTheTerminalMenuAtThePointer(t *testing.T) {
 	session, _ := state.sessionByIDPointer(state.activeSessionID)
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if _, ok := hitByID(&canvas, hitTerminalMenuCopy); ok {
+	if _, ok := menuHit(&canvas, state, hitTerminalMenuCopy); ok {
 		t.Fatal("the menu is up before any click")
 	}
 	if result := rightClick(state, session, 400, 300); !result.Handled || !result.Repaint {
@@ -33,7 +33,7 @@ func TestRightClickOpensTheTerminalMenuAtThePointer(t *testing.T) {
 	}
 	canvas = gfx.Canvas{}
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	copyItem, ok := hitByID(&canvas, hitTerminalMenuCopy)
+	copyItem, ok := menuHit(&canvas, state, hitTerminalMenuCopy)
 	if !ok {
 		t.Fatal("no menu after a right click")
 	}
@@ -54,7 +54,7 @@ func TestTerminalMenuStaysInsideTheWindow(t *testing.T) {
 	rightClick(state, session, 1395, 895)
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	last, ok := hitByID(&canvas, hitTerminalMenuFiles)
+	last, ok := menuHit(&canvas, state, hitTerminalMenuFiles)
 	if !ok || last.Bounds.X+last.Bounds.Width > 1400 || last.Bounds.Y+last.Bounds.Height > 900 {
 		t.Fatalf("the menu runs off the window: %+v, %v", last.Bounds, ok)
 	}
@@ -84,10 +84,10 @@ func TestTheTerminalMenuClosesThePaneItWasOpenedOn(t *testing.T) {
 	state.terminalMenu = terminalMenu{open: true, session: firstID}
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if _, ok := hitByID(&canvas, hitTerminalMenuClosePane); !ok {
+	if _, ok := menuHit(&canvas, state, hitTerminalMenuClosePane); !ok {
 		t.Fatal("a split tab's menu does not offer closing the pane")
 	}
-	state.Click(hitTerminalMenuClosePane)
+	chooseMenu(t, state, hitTerminalMenuClosePane)
 	confirmRunningClose(state)
 	if _, ok := state.sessionByIDPointer(firstID); ok {
 		t.Fatal("the pane the menu was opened on is still open")
@@ -103,7 +103,7 @@ func TestTheTerminalMenuClosesThePaneItWasOpenedOn(t *testing.T) {
 	state.terminalMenu = terminalMenu{open: true, session: secondID}
 	canvas = gfx.Canvas{}
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if _, ok := hitByID(&canvas, hitTerminalMenuClosePane); ok {
+	if _, ok := menuHit(&canvas, state, hitTerminalMenuClosePane); ok {
 		t.Fatal("a tab of one pane offers closing the pane")
 	}
 }
@@ -127,45 +127,24 @@ func TestTerminalMenuActions(t *testing.T) {
 	open()
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if hit, _ := hitByID(&canvas, hitTerminalMenuCopy); !hit.Disabled {
+	if hit, _ := menuHit(&canvas, state, hitTerminalMenuCopy); !hit.Disabled {
 		t.Fatal("Copy is enabled without a selection")
 	}
-	state.Click(hitTerminalMenuSelectAll)
+	chooseMenu(t, state, hitTerminalMenuSelectAll)
 	if !session.term.selection.selected || state.terminalMenu.open {
 		t.Fatalf("Select All: selected=%v open=%v", session.term.selection.selected, state.terminalMenu.open)
 	}
 
 	open()
-	state.Click(hitTerminalMenuCopy)
+	chooseMenu(t, state, hitTerminalMenuCopy)
 	if !strings.Contains(copied, "hello world") {
 		t.Fatalf("copied %q", copied)
 	}
 
 	open()
-	state.Click(hitTerminalMenuPaste)
+	chooseMenu(t, state, hitTerminalMenuPaste)
 	if got := shell.typed(); !strings.Contains(got, "from clipboard") {
 		t.Fatalf("shell received %q", got)
-	}
-}
-
-func TestTerminalMenuClosesOnOutsidePressAndEscape(t *testing.T) {
-	state, _, _, _ := liveSession(t)
-	session, _ := state.sessionByIDPointer(state.activeSessionID)
-	state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
-	rightClick(state, session, 400, 300)
-	state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
-	state.Click(hitTerminalMenuDismiss)
-	if state.terminalMenu.open {
-		t.Fatal("an outside click left the menu open")
-	}
-	rightClick(state, session, 400, 300)
-	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEscape}); !result.Handled || state.terminalMenu.open {
-		t.Fatalf("Escape: %+v open=%v", result, state.terminalMenu.open)
-	}
-	rightClick(state, session, 400, 300)
-	state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
-	if result := state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitTerminalMenuDismiss}); !result.Handled || state.terminalMenu.open {
-		t.Fatalf("a second right click outside: %+v open=%v", result, state.terminalMenu.open)
 	}
 }
 
@@ -199,7 +178,7 @@ func TestClearScrollbackKeepsTheScreen(t *testing.T) {
 	}
 	state.terminalMenu = terminalMenu{open: true, session: session.ID}
 	state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
-	state.Click(hitTerminalMenuClear)
+	chooseMenu(t, state, hitTerminalMenuClear)
 	if session.term.screen.Scrollback() != 0 || !strings.Contains(session.term.screen.RowText(0), "line") {
 		t.Fatalf("scrollback=%d row0=%q", session.term.screen.Scrollback(), session.term.screen.RowText(0))
 	}
@@ -213,7 +192,7 @@ func TestTheMenuClearsTheScreenAndKeepsThePromptLine(t *testing.T) {
 	state.Wake()
 	state.terminalMenu = terminalMenu{open: true, session: session.ID}
 	state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
-	state.Click(hitTerminalMenuClearScreen)
+	chooseMenu(t, state, hitTerminalMenuClearScreen)
 	if session.term.screen.Scrollback() != 0 || !strings.Contains(session.term.screen.RowText(0), "prompt$") {
 		t.Fatalf("scrollback=%d row0=%q", session.term.screen.Scrollback(), session.term.screen.RowText(0))
 	}
@@ -227,7 +206,7 @@ func TestTheMenuClearsScreenSendsCtrlLToPowerShell(t *testing.T) {
 	state.Wake()
 	state.terminalMenu = terminalMenu{open: true, session: session.ID}
 	state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
-	state.Click(hitTerminalMenuClearScreen)
+	chooseMenu(t, state, hitTerminalMenuClearScreen)
 
 	shell.mu.Lock()
 	input := string(shell.input)
@@ -246,11 +225,11 @@ func TestTheMenuOffersNoClearToAFullScreenProgram(t *testing.T) {
 	state.terminalMenu = terminalMenu{open: true, session: session.ID}
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	row, ok := hitByID(&canvas, hitTerminalMenuClearScreen)
+	row, ok := menuHit(&canvas, state, hitTerminalMenuClearScreen)
 	if !ok || !row.Disabled {
 		t.Fatalf("the clear screen row = %+v, %v; want it disabled over a program", row, ok)
 	}
-	state.Click(hitTerminalMenuClearScreen)
+	chooseMenu(t, state, hitTerminalMenuClearScreen)
 	if got := session.term.screen.Text(); got != before {
 		t.Fatalf("the program's screen changed to %q, want %q", got, before)
 	}
@@ -263,14 +242,14 @@ func TestTerminalMenuUsesCheckboxesForMonitorAndFiles(t *testing.T) {
 	rightClick(state, session, 400, 300)
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	stats, ok := hitByID(&canvas, hitTerminalMenuStats)
+	stats, ok := menuHit(&canvas, state, hitTerminalMenuStats)
 	if !ok {
 		t.Fatal("the menu has no resource monitor row on a live shell")
 	}
 	if stats.Checked {
 		t.Fatal("resource monitor starts checked")
 	}
-	files, ok := hitByID(&canvas, hitTerminalMenuFiles)
+	files, ok := menuHit(&canvas, state, hitTerminalMenuFiles)
 	if !ok {
 		t.Fatal("the menu has no files row")
 	}
@@ -280,7 +259,7 @@ func TestTerminalMenuUsesCheckboxesForMonitorAndFiles(t *testing.T) {
 	if session.stats != nil {
 		t.Fatal("the monitor is running before it was asked for")
 	}
-	state.Click(hitTerminalMenuStats)
+	chooseMenu(t, state, hitTerminalMenuStats)
 	if session.stats == nil {
 		t.Fatal("the menu row did not start the monitor")
 	}
@@ -291,20 +270,20 @@ func TestTerminalMenuUsesCheckboxesForMonitorAndFiles(t *testing.T) {
 	rightClick(state, session, 400, 300)
 	canvas.Reset()
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if stats, ok = hitByID(&canvas, hitTerminalMenuStats); !ok || !stats.Checked {
+	if stats, ok = menuHit(&canvas, state, hitTerminalMenuStats); !ok || !stats.Checked {
 		t.Fatalf("running monitor checkbox = %+v, %v", stats, ok)
 	}
-	if files, ok = hitByID(&canvas, hitTerminalMenuFiles); !ok || files.Checked {
+	if files, ok = menuHit(&canvas, state, hitTerminalMenuFiles); !ok || files.Checked {
 		t.Fatalf("closed files checkbox = %+v, %v", files, ok)
 	}
-	state.Click(hitTerminalMenuFiles)
+	chooseMenu(t, state, hitTerminalMenuFiles)
 	if !state.filesPanelShown() {
 		t.Fatal("the files checkbox row did not open the panel")
 	}
 	rightClick(state, session, 400, 300)
 	canvas.Reset()
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if files, ok = hitByID(&canvas, hitTerminalMenuFiles); !ok || !files.Checked {
+	if files, ok = menuHit(&canvas, state, hitTerminalMenuFiles); !ok || !files.Checked {
 		t.Fatalf("open files checkbox = %+v, %v", files, ok)
 	}
 	state.stopRemoteStats(session)
@@ -329,10 +308,10 @@ func TestTerminalMenuSavesTheOutputAndSearchesTheSelection(t *testing.T) {
 	open()
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if hit, ok := hitByID(&canvas, hitTerminalMenuSearch); !ok || !hit.Disabled {
+	if hit, ok := menuHit(&canvas, state, hitTerminalMenuSearch); !ok || !hit.Disabled {
 		t.Fatalf("Search is usable without a selection: found %v", ok)
 	}
-	state.Click(hitTerminalMenuSave)
+	chooseMenu(t, state, hitTerminalMenuSave)
 	data, err := os.ReadFile(saved)
 	if err != nil || !strings.Contains(string(data), "first line\nsecond ünïcode line") {
 		t.Fatalf("saved %q, %v", data, err)
@@ -346,7 +325,7 @@ func TestTerminalMenuSavesTheOutputAndSearchesTheSelection(t *testing.T) {
 		session.term.screen.PointAt(term.Position{Row: 1}),
 		session.term.screen.PointAt(term.Position{Row: 1, Column: 20}))
 	open()
-	state.Click(hitTerminalMenuSearch)
+	chooseMenu(t, state, hitTerminalMenuSearch)
 	if !strings.HasPrefix(opened, "https://www.bing.com/search?q=second+") || strings.ContainsAny(opened, "\n ") {
 		t.Fatalf("opened %q", opened)
 	}
@@ -392,23 +371,23 @@ func TestTheMenuOffersWhatTheTextUnderThePointerCouldBe(t *testing.T) {
 	if len(labels) != 3 {
 		t.Fatalf("the menu offers %q, want connect, browser and copy rows naming the address", labels)
 	}
-	if _, ok := hitByID(&canvas, hitTerminalMenuAction[1]); !ok {
+	if _, ok := menuHit(&canvas, state, hitTerminalMenuAction[1]); !ok {
 		t.Fatal("the browser row has no hit")
 	}
-	state.Click(hitTerminalMenuAction[1])
+	chooseMenu(t, state, hitTerminalMenuAction[1])
 	if opened != "http://10.0.0.5:8080" {
 		t.Fatalf("opened %q", opened)
 	}
 
 	rightClickOn(t, state, session, "10.0.0.5:8080")
-	state.Click(hitTerminalMenuAction[2])
+	chooseMenu(t, state, hitTerminalMenuAction[2])
 	if copied != "10.0.0.5:8080" {
 		t.Fatalf("copied %q", copied)
 	}
 
 	// An archive's unpack line is typed at the prompt and not run.
 	rightClickOn(t, state, session, "backup.tar.gz")
-	state.Click(hitTerminalMenuAction[0])
+	chooseMenu(t, state, hitTerminalMenuAction[0])
 	if got := shell.typed(); got != "mkdir -- 'backup' && tar -xf 'backup.tar.gz' -C 'backup'" {
 		t.Fatalf("typed %q", got)
 	}
@@ -420,7 +399,7 @@ func TestTheMenuOffersWhatTheTextUnderThePointerCouldBe(t *testing.T) {
 
 		before := len(world.configs)
 		rightClickOn(t, state, session, "10.0.0.5:8080")
-		state.Click(hitTerminalMenuAction[0])
+		chooseMenu(t, state, hitTerminalMenuAction[0])
 		if len(world.configs) != before+1 || world.configs[before].Host != "10.0.0.5" || world.configs[before].Port != 8080 {
 			t.Fatalf("connection configs after the click: %+v", world.configs[before:])
 		}

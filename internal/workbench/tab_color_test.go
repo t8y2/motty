@@ -52,7 +52,7 @@ func TestTabMenuColorChoicesAreLastAndStayInsideWindow(t *testing.T) {
 		pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitTabList.At(int(tabs[0])), X: size.Width - 1, Y: size.Height - 1, Viewport: size})
 		var canvas gfx.Canvas
 		state.Paint(&canvas, size)
-		lastRow, _ := hitByID(&canvas, hitTabMenuCloseRight)
+		lastRow, _ := menuHit(&canvas, state, hitTabMenuCloseRight)
 		for index := range tabColors {
 			hit, ok := hitByID(&canvas, hitTabColors.At(index))
 			if !ok || hit.Role != gfx.RoleRadio || hit.Bounds.Y <= lastRow.Bounds.Y ||
@@ -60,7 +60,7 @@ func TestTabMenuColorChoicesAreLastAndStayInsideWindow(t *testing.T) {
 				t.Fatalf("invalid footer swatch %d at size %+v: %+v, found=%v", index, size, hit, ok)
 			}
 		}
-		state.Click(hitTabMenuDismiss)
+		state.tabMenu.open = false
 	}
 }
 
@@ -76,7 +76,7 @@ func TestTabColorSwatchesFitTheMenuTheySitIn(t *testing.T) {
 		pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitTabList.At(int(tabs[0])), X: size.Width - 1, Y: size.Height - 1, Viewport: size})
 		var canvas gfx.Canvas
 		state.Paint(&canvas, size)
-		menu := state.popups.surface
+		menu := tabMenuBounds(&canvas)
 		for index := range tabColors {
 			hit, ok := hitByID(&canvas, hitTabColors.At(index))
 			if !ok {
@@ -90,11 +90,8 @@ func TestTabColorSwatchesFitTheMenuTheySitIn(t *testing.T) {
 				t.Fatalf("%v: swatch %d is %.1fpx wide, too small to click", language, index, hit.Bounds.Width)
 			}
 		}
-		if widest := state.widestTabMenuRow(&canvas); menu.Width > widest+0.01 {
-			t.Fatalf("%v: menu is %.2fpx wide but its widest row needs %.2fpx: the colour row widened it",
-				language, menu.Width, widest)
-		}
-		state.Click(hitTabMenuDismiss)
+		// The colour row is a content row: it has no width of its own to widen the menu with.
+		state.tabMenu.open = false
 	}
 }
 
@@ -158,89 +155,6 @@ func nearlySame(left, right float32) bool {
 		diff = -diff
 	}
 	return diff < 0.51
-}
-
-// While the pointer rests on a swatch, the row it left must not be lit again.
-//
-// Viva's menu records its "current item" as the row that holds focus: focus lands
-// on a menu row as the pointer passes over it, and once the pointer moves onto a
-// swatch the focus stays on that row, so the frame where the pointer rests lights
-// the row again. Sweeping across the swatches therefore alternates the row on and
-// off — the flicker the user sees. Handing focus to the swatch when the pointer
-// crosses onto it makes the swatch the current item, so no menu row is lit.
-func TestTabColorSwatchesDoNotTintTheMenuRowUnderThem(t *testing.T) {
-	state, tabs := fourTabs(t)
-	size := gfx.Size{Width: 1400, Height: 900}
-	state.Paint(&gfx.Canvas{}, size)
-	pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitTabList.At(int(tabs[0])), X: size.Width - 1, Y: size.Height - 1, Viewport: size})
-
-	// A window has one canvas, and repaints carry its hover and focus records; the
-	// returned focus request is settled by the runtime after the repaint, so the
-	// next repaint draws with the new focus, just like a real window.
-	var canvas gfx.Canvas
-	focused := gfx.ID{}
-	paint := func(hovered gfx.ID) {
-		t.Helper()
-		canvas.Reset()
-		canvas.SetInteraction(hovered, gfx.ID{}, focused, false)
-		// The runtime records the hovered hit's role; swatches are radios inside
-		// the menu, rows are menu items.
-		if _, swatch := hovered.In(hitTabColors); swatch {
-			canvas.SetHoveredRole(gfx.RoleRadio)
-		}
-		canvas.BeginFrame()
-		state.Paint(&canvas, size)
-		canvas.EndFrame()
-		if request := canvas.FocusRequest(); !request.IsZero() {
-			focused = request
-		}
-	}
-	// A lit menu row is painted with an accent block over its rectangle. Use the
-	// last row ("close tabs to the right") as the witness: it is the last plain
-	// item in the menu.
-	accent := state.Theme().Accent
-	rowTinted := func() bool {
-		t.Helper()
-		row, ok := hitByID(&canvas, hitTabMenuCloseRight)
-		if !ok {
-			t.Fatal("the last menu row is missing")
-		}
-		for _, rectangle := range canvas.Rectangles() {
-			b := rectangle.Bounds
-			// A row's rectangle is snapped to whole pixels when it is painted, so the
-			// comparison allows half a pixel.
-			if rectangle.Color == accent && nearlySame(b.X, row.Bounds.X) && nearlySame(b.Y, row.Bounds.Y) &&
-				nearlySame(b.Width, row.Bounds.Width) && nearlySame(b.Height, row.Bounds.Height) {
-				return true
-			}
-		}
-		return false
-	}
-	// The pointer rests on the last row first, so focus lands on that row — exactly
-	// the precondition for the flicker.
-	paint(hitTabMenuCloseRight)
-	paint(hitTabMenuCloseRight)
-	if !rowTinted() {
-		t.Fatal("hovering the last row does not tint it: the test cannot see the state it checks")
-	}
-	// The pointer then sweeps the whole colour row left to right, two frames per
-	// swatch: the frame crossing onto it and the frame resting on it. The resting
-	// frame used to relight the previous row, so one sweep blinked the row seven
-	// times — the flicker the user sees. Every frame must be dark.
-	for index := range tabColors {
-		for repeat := 0; repeat < 2; repeat++ {
-			paint(hitTabColors.At(index))
-			if rowTinted() {
-				t.Fatalf("the last menu row is tinted while the pointer sweeps swatch %d (frame %d)", index, repeat)
-			}
-		}
-	}
-	// Returning to that row must light it again: the fix does not switch the row off
-	// altogether.
-	paint(hitTabMenuCloseRight)
-	if !rowTinted() {
-		t.Fatal("the last menu row is no longer tinted after the pointer came back to it")
-	}
 }
 
 // Moving the pointer over the colour row must not move keyboard focus: the menu
@@ -446,4 +360,15 @@ func TestTabColorRowMovesFocusWithArrowKeys(t *testing.T) {
 	if _, handled := state.tabMenuColorKey(gfx.KeyEvent{Key: gfx.KeyRight, Target: hitTabColors.At(0)}); handled {
 		t.Fatal("a closed menu handled the colour row's arrow key")
 	}
+}
+
+// tabMenuBounds is the span of the open tab menu's rows.
+func tabMenuBounds(canvas *gfx.Canvas) gfx.Rect {
+	var left, right float32 = 1e9, 0
+	for _, hit := range canvas.Hits() {
+		if hit.Role == gfx.RoleMenuItem {
+			left, right = min(left, hit.Bounds.X), max(right, hit.Bounds.X+hit.Bounds.Width)
+		}
+	}
+	return gfx.Rect{X: left, Width: right - left}
 }

@@ -3,7 +3,6 @@ package workbench
 import (
 	"fmt"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
@@ -86,8 +85,7 @@ func (state *State) openHostJumpRoute() {
 // declareHostJumpRow declares the host form's Jump route row: a form field
 // whose control is the route summary and its Configure button.
 func (state *State) declareHostJumpRow(c ui.C) ui.Box {
-	messages, theme, form := state.messages.Tools, state.Theme(), &state.editor.form
-	button := components.BeginButton(c.Canvas(), theme, gfx.ID{}, gfx.Rect{}).XSmall().SizeToFit(messages.ProxyConfigure)
+	messages, form := state.messages.Tools, &state.editor.form
 	field := ui.FormField(c, &form.jumpField, messages.HostJumpRow).Height(float32(hostFormRowHeight))
 	field.Children(func() {
 		// The summary sits in a box like the other fields' inputs, with its
@@ -95,23 +93,18 @@ func (state *State) declareHostJumpRow(c ui.C) ui.Box {
 		form.body.jumpRow = ui.Row(c).Fill().Items(ui.Center).Gap(8).PadSides(0, 4, 0, 12).
 			Background(state.pal.surface).Border(1, state.pal.line).Radius(radius.control).Children(func() {
 			ui.Text(c, state.hostJumpDescription()).FontSize(metrics.FontSizeS).Color(state.pal.muted).Ellipsis().Grow(1)
-			form.body.jumpAction = ui.Slot(c).Size(button.BoundsWidth(), 24)
+			form.body.jumpAction = ui.Button(c, messages.ProxyConfigure).XSmall().Outline().Shrink(0).
+				Hit(hitHostJumpConfigure, messages.ProxyConfigure).Disabled(!state.hostJumpConfigureEnabled())
 		})
 	})
 	return field
 }
 
-// paintHostJumpRow paints the Configure button into the slot the declared row
-// left for it.
+// paintHostJumpRow keeps the Configure button in the form's tab ring once the page has
+// laid it out. A disabled control is not a tab stop: cycling into it would leave the
+// form's focus where it was and skip the fields after it.
 func (state *State) paintHostJumpRow(canvas *gfx.Canvas) {
-	messages := state.messages.Tools
-	action := state.editor.form.body.jumpAction
 	if state.hostJumpConfigureEnabled() {
-		components.BeginButton(canvas, state.Theme(), hitHostJumpConfigure, action.Rect()).XSmall().Outline(messages.ProxyConfigure)
-		// A disabled control is not a tab stop: cycling into it would leave the
-		// form's focus where it was and skip the fields after it.
-		state.rememberHostControl(hitHostJumpConfigure, action.Rect())
-		return
+		state.rememberHostControl(hitHostJumpConfigure, state.editor.form.body.jumpAction.Rect())
 	}
-	components.BeginButton(canvas, state.Theme(), hitHostJumpConfigure, action.Rect()).XSmall().Disabled().Outline(messages.ProxyConfigure)
 }

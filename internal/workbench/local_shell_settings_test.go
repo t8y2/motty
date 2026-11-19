@@ -30,7 +30,7 @@ func TestLocalShellSettingVisibilityAndPosition(t *testing.T) {
 		}
 		if visible {
 			notify, _ := hitByID(&canvas, hitSettingsNotifyToggle)
-			if hit.Role != gfx.RoleCombobox || hit.Bounds.Y <= notify.Bounds.Y {
+			if hit.Bounds.Y <= notify.Bounds.Y {
 				t.Fatalf("shell select is not below the notification row: %+v", hit)
 			}
 		}

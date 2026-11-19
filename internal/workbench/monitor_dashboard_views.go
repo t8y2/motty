@@ -33,6 +33,15 @@ func dashboardHeadingHeight(w float32) float32 {
 	return 44
 }
 
+// paintDashboardHeading paints a card's identity, its status and its freshness.
+// The view tabs and the terminal, sudo and retry actions are page controls
+// drawn over the same place.
+func (s *State) paintDashboardIdentity(c *gfx.Canvas, h Host, b gfx.Rect) {
+	s.paintHostCatalogIcon(c, h, gfx.Rect{X: b.X, Y: b.Y + 9, Width: 34, Height: 34}, s.pal.workspace)
+	monitorLabel(c, h.Label, gfx.Rect{X: b.X + 46, Y: b.Y + 3, Width: b.Width - 50, Height: 27}, 16, s.pal.text, gfx.WeightSemibold)
+	monitorLabel(c, h.Address, gfx.Rect{X: b.X + 46, Y: b.Y + 30, Width: b.Width - 50, Height: 22}, 12, s.pal.muted, gfx.WeightRegular)
+}
+
 func (s *State) paintDashboardHeading(c *gfx.Canvas, p *monitoring.Panel, h Host, r *dashboardRow, b gfx.Rect) float32 {
 	pal := s.pal
 	source := s.dashboard.sources[h.CatalogID]
@@ -40,6 +49,7 @@ func (s *State) paintDashboardHeading(c *gfx.Canvas, p *monitoring.Panel, h Host
 	header := dashboardHeadingHeight(b.Width)
 	y := b.Y
 	s.paintHostCatalogIcon(c, h, gfx.Rect{X: b.X + 4, Y: y + 7, Width: 28, Height: 28}, pal.workspace)
+	rects := s.dashboardHeadingRects(c, h, b)
 	nameW := min(float32(190), c.TextWidthWeight(h.Label, 15, gfx.WeightSemibold)+4)
 	monitorLabel(c, h.Label, gfx.Rect{X: b.X + 42, Y: y, Width: nameW, Height: 42}, 15, pal.text, gfx.WeightSemibold)
 	port := h.Port
@@ -57,31 +67,9 @@ func (s *State) paintDashboardHeading(c *gfx.Canvas, p *monitoring.Panel, h Host
 		addrW = min(addrW, max(90, b.Width-nameW-reserve))
 	}
 	monitorLabel(c, address, gfx.Rect{X: addrX, Y: y, Width: addrW, Height: 42}, 12, pal.muted, gfx.WeightRegular)
-	tabsX, tabsY := addrX+addrW+16, y+5
-	if b.Width < 900 {
-		tabsX = b.X + 4
-		tabsY = y + 40
-	}
-	options := s.dashboardViewOptions(h.ID, false)
-	tabsW := float32(210)
-	for _, option := range options {
-		tabsW = max(tabsW, (c.TextWidthWeight(option.Label, 12, gfx.WeightMedium)+44)*3)
-	}
-	theme := s.Theme().WithFontSize(12).WithControlHeight(30)
-	components.BeginTabs(c, theme, gfx.Rect{X: tabsX, Y: tabsY, Width: tabsW, Height: 30}, options[:], options[r.page].ID).Paint()
-
-	statusX := tabsX + tabsW + 8
-	if b.Width < 900 {
-		statusX = addrX + addrW + 12
-	}
-	statusEnd := b.X + b.Width - 44
-	if canSudo {
-		statusEnd -= 36
-	}
-	statusW := min(float32(125), max(0, statusEnd-statusX))
-	s.paintDashboardState(c, p, h, r, gfx.Rect{X: statusX, Y: y + 7, Width: statusW, Height: 28})
+	s.paintDashboardState(c, p, h, r, rects.retry)
 	if b.Width > 1120 {
-		left := max(b.X+b.Width-302, statusX+statusW+12)
+		left := max(b.X+b.Width-302, rects.tabs.X+rects.tabs.Width+12+125+12)
 		width := b.X + b.Width - 50 - left
 		if canSudo {
 			width -= 36
@@ -90,22 +78,32 @@ func (s *State) paintDashboardHeading(c *gfx.Canvas, p *monitoring.Panel, h Host
 			monitorRight(c, s.messages.Dashboard.Updated+" "+r.updated, gfx.Rect{X: left, Y: y + 7, Width: width, Height: 28}, 11, pal.muted, gfx.WeightRegular)
 		}
 	}
-	if h.ID != 0 {
-		components.BeginButton(c, s.Theme(), hitDashboardTerminalList.At(int(h.ID)), gfx.Rect{X: b.X + b.Width - 38, Y: y + 5, Width: 32}).WithIcon(lucideIcons[iconTerminal]).Icon().Ghost(s.messages.Dashboard.Terminal)
-		if canSudo {
-			s.paintDashboardSudo(c, h.ID, source, gfx.Rect{X: b.X + b.Width - 74, Y: y + 5, Width: 32})
-		}
-	}
 	return header
 }
 
-func (s *State) paintDashboardSudo(c *gfx.Canvas, hostID uint32, source *dashboardSource, bounds gfx.Rect) {
-	label := s.messages.DashboardSudoEnable
-	if source.session.sudoCommands {
-		label = s.messages.DashboardSudoDisable
+func (s *State) paintDashboardState(c *gfx.Canvas, p *monitoring.Panel, h Host, r *dashboardRow, b gfx.Rect) {
+	dashboardGreen, _, _ := s.dashboardColors()
+	running := s.dashboard.running[p.ID]
+	if !running && r.snapshot.Status != monitoring.Missing {
+		return
 	}
-	components.BeginButton(c, s.Theme(), hitDashboardSudoList.At(int(hostID)), bounds).WithIcon(lucideIcons[iconLock]).Icon().Ghost(label)
+	if dashboardRetryShown(s, p, h, r) {
+		return
+	}
+	label := s.dashboardStatus(r.snapshot.Status, running, r.snapshot.HasSample)
+	if r.snapshot.Status == monitoring.Missing {
+		label = s.messages.Dashboard.Missing
+	}
+	color := s.pal.muted
+	if running && r.snapshot.Status == monitoring.Live {
+		color = dashboardGreen
+	}
+	if running && r.snapshot.Status >= monitoring.Failed {
+		color = s.pal.warning
+	}
+	monitorLabel(c, label, b, 12, color, gfx.WeightMedium)
 }
+
 func dashboardSimpleHeight(r *dashboardRow) float32 {
 	n := 0
 	if r.simplePage == 1 {
@@ -114,34 +112,12 @@ func dashboardSimpleHeight(r *dashboardRow) float32 {
 	if r.simplePage == 2 {
 		n = len(r.snapshot.Details.Networks)
 	}
-	return max(104, 40+float32(n)*30)
+	return max(116, 40+float32(n)*30)
 }
 func dashboardSimpleColumns(b gfx.Rect) (float32, float32) {
 	host := min(float32(260), b.Width*.24)
 	return b.X + host, b.X + host + 58
 }
-func (s *State) paintDashboardSimpleHead(c *gfx.Canvas, b gfx.Rect) {
-	c.Fill(b, s.pal.surfaceSoft)
-	tabs, data := dashboardSimpleColumns(b)
-	for _, cell := range []struct {
-		x, w  float32
-		label string
-	}{{b.X + 8, tabs - b.X - 16, s.messages.Dashboard.Host}, {tabs, 48, s.messages.Dashboard.View}, {data, b.X + b.Width - data - 8, s.messages.Dashboard.Metrics}} {
-		monitorLabel(c, cell.label, gfx.Rect{X: cell.x, Y: b.Y, Width: cell.w, Height: b.Height}, 12, s.pal.muted, gfx.WeightMedium)
-	}
-}
-func (s *State) paintDashboardSimpleTabs(c *gfx.Canvas, h Host, r *dashboardRow, b gfx.Rect) {
-	options := s.dashboardViewOptions(h.ID, true)
-	for i := range options {
-		options[i].IconOnly = true
-	}
-	theme := s.Theme()
-	theme.Muted = withAlpha(s.pal.surfaceSoft, .12)
-	theme.Background = withAlpha(s.pal.accent, .12)
-	theme.Input = withAlpha(s.pal.accent, .24)
-	components.BeginTabs(c, theme, b, options[:], options[r.simplePage].ID).Vertical().Paint()
-}
-
 func dashboardDeviceColumns(x, w float32) [7]float32 {
 	return [7]float32{x + 8, x + w*.26, x + w*.45, x + w*.59, x + w*.73, x + w*.86, x + w - 8}
 }
@@ -217,6 +193,8 @@ func (s *State) paintDashboardDeviceView(c *gfx.Canvas, p *monitoring.Panel, h H
 	c.Fill(gfx.Rect{X: b.X, Y: b.Y + b.Height - 6, Width: b.Width, Height: 1}, pal.line)
 }
 
+// dashboardViewOptions is the host view strip; the page declares it as ui.Tabs
+// and the window's key handler still uses Viva's tab navigation.
 func (s *State) dashboardViewOptions(host uint32, simple bool) [3]components.TabOption {
 	labels := [3]string{s.messages.Monitor.Overview, s.messages.Monitor.Disks, s.messages.Monitor.Network}
 	var out [3]components.TabOption

@@ -4,14 +4,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/gfx"
-)
-
-var (
-	hitSettingsEditor        = tree.ID(settingsHits, "settings-editor")
-	hitSettingsEditorDismiss = tree.ID(settingsHits, "settings-editor-dismiss")
-	hitSettingsEditorItems   = tree.Sub(settingsHits, tree.Name("settings-editor-item"))
+	"github.com/vivaui/viva/ui"
 )
 
 // editorSelect is the setting that picks the editor a folder is handed to.
@@ -21,8 +14,6 @@ type editorSelect struct {
 	// does not make the editor appear unsupported.
 	choices []ExternalEditor
 	loaded  bool
-	open    bool
-	bounds  gfx.Rect
 }
 
 // refreshEditors lists every editor this build knows. Some applications, such as
@@ -76,89 +67,33 @@ func (state *State) settingsEditorDescription() string {
 }
 
 func (state *State) paintEditorSetting(page *settingsPage) {
-	m := state.messages.Tools
-	page.add(settingsControl{kind: controlEditorSelect, slot: page.rowFrame(m.FilesEditor, state.settingsEditorDescription())})
-}
-
-// Paint the select in the menu pass, outside the settings page's clip.
-func (state *State) paintEditorSelect(canvas *gfx.Canvas) {
-	menu, m := &state.editorMenu, state.messages.Tools
-	bounds := menu.bounds
-	if !menu.loaded && bounds.Width > 0 {
+	m, menu := state.messages.Tools, &state.editorMenu
+	if !menu.loaded {
 		state.refreshEditors()
 	}
-	if state.modal != modalNone || bounds.Width <= 0 || bounds.Y < windowBarHeight || bounds.Y+bounds.Height > state.viewport.Height {
-		menu.open = false
-		return
+	previous, previousPath := state.defaultEditor, state.customEditorPath
+	hint := ""
+	if state.editorSelected() >= 0 && !state.editorInstalled(state.defaultEditor) {
+		hint = m.FilesEditorNotFound
 	}
-	selected := state.editorSelected()
-	value, hint := string(state.defaultEditor), ""
-	if selected >= 0 {
-		value = state.editorChoiceName(menu.choices[selected])
-		if !state.editorInstalled(state.defaultEditor) {
-			hint = m.FilesEditorNotFound
-		}
-	}
-	below := max(state.viewport.Height-8-bounds.Y-bounds.Height-4, 0)
-	above := max(bounds.Y-windowBarHeight-8, 0)
-	height := min(float32(8+len(menu.choices)*32), max(above, below))
-	content := gfx.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: bounds.Width, Height: height}
-	if below < height {
-		content.Y = bounds.Y - height - 4
-	}
-	opening := menu.open && state.popups.owner != hitSettingsEditorDismiss
-	scroll := state.selectScroll(menu.open, hitSettingsEditorDismiss)
-	if opening && selected >= 0 {
-		scroll.Offset = max(0, min(float32(selected)*32, float32(len(menu.choices)*32)+8-height))
-		canvas.SetInitialFocus(hitSettingsEditorItems.At(selected))
-	}
-	control := components.BeginSelect(canvas, state.Theme(), bounds, components.SelectOptions{
-		TriggerID: hitSettingsEditor, Label: m.FilesEditor, Value: value, Hint: hint,
-		Open: menu.open, Content: content, Layer: popupLayer,
-		Scope: hitSettingsEditorDismiss, DismissID: hitSettingsEditorDismiss, Viewport: state.windowRect(), Scroll: scroll,
-	})
-	defer control.End()
-	if menu.open {
-		state.menuPlaced(control.ContentBounds())
-		for index, editor := range menu.choices {
-			control.AddItem(components.SelectItem{ID: hitSettingsEditorItems.At(index), Label: state.editorChoiceName(editor), Selected: index == selected})
-		}
-	}
-}
-
-func (state *State) clickEditorSelect(id gfx.ID) bool {
-	if state.settingsCategory != settingsFiles || state.settingsSearching() {
-		return false
-	}
-	menu := &state.editorMenu
-	switch id {
-	case hitSettingsEditor:
-		if !menu.open {
-			state.refreshEditors()
-		}
-		menu.open = !menu.open
-		return true
-	case hitSettingsEditorDismiss:
-		menu.open = false
-		return true
-	}
-	index, ok := id.In(hitSettingsEditorItems)
-	if !ok || index < 0 || index >= len(menu.choices) {
-		return false
-	}
-	editor := menu.choices[index]
-	menu.open = false
-	if editor == editorCustom && state.defaultEditor != editorCustom {
-		previousEditor, previousPath := state.defaultEditor, state.customEditorPath
-		state.chooseCustomEditor()
-		if state.defaultEditor != editorCustom {
-			state.defaultEditor, state.customEditorPath = previousEditor, previousPath
-		}
-		return true
-	}
-	if state.defaultEditor != editor {
-		state.defaultEditor = editor
-		state.save()
-	}
-	return true
+	settingsSelectRow(page, m.FilesEditor, state.settingsEditorDescription(), &state.defaultEditor, menu.choices, state.editorChoiceName,
+		func(selector ui.Box) ui.Box {
+			if state.editorSelected() < 0 {
+				selector = selector.Placeholder(string(state.defaultEditor))
+			}
+			return selector.Hint(hint)
+		},
+		func() {
+			// The custom editor asks for a program first; without one the choice is undone.
+			if state.defaultEditor == editorCustom && previous != editorCustom {
+				state.chooseCustomEditor()
+				if state.defaultEditor != editorCustom {
+					state.defaultEditor, state.customEditorPath = previous, previousPath
+				}
+				return
+			}
+			if state.defaultEditor != previous {
+				state.save()
+			}
+		})
 }

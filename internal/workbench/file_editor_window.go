@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/base"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
@@ -83,7 +84,6 @@ func (m *fileWindowManager) activate(key string) {
 	m.pending = ""
 	if previous := m.activeDocument(); previous != nil && previous != d && previous.note != nil {
 		previous.note.content.view.previewSelect.EndDrag()
-		previous.note.content.view.previewDragging = false
 		previous.note.content.view.pointerValid = false
 	}
 	m.active = key
@@ -372,7 +372,7 @@ func (m *fileWindowManager) configWithClosed(onClosed func()) app.Config {
 		OnClosed:       onClosed,
 	}
 	base.WindowBorderColor = func() app.Color { return windowClearColor(m.ownerTheme()) }
-	config := m.editPage(m.pageTheme()).Config(base)
+	config := ui.Configure(m.editPage(m.pageTheme()), base)
 	config.Paint = base.Paint
 	return config
 }
@@ -671,7 +671,9 @@ func (m *fileWindowManager) paintTabsScrollbar(canvas *gfx.Canvas) {
 	}).Offset(m.tabStrip.offset, 0).
 		HorizontalScrollbar(hitDocumentTabBar, active.owner.messages.FileWindow.TabsScrollbar, "").
 		HoverScrollbars(m.tabs.hovered || m.tabs.dragging)
-	m.tabs.geometry = area.EndContent()
+	m.tabs.geometry = base.LayoutScrollArea(bounds, gfx.Size{Width: m.tabs.contentWidth, Height: bounds.Height},
+		base.ScrollAreaLayout{OffsetX: m.tabStrip.offset, BarSize: scrollbarHoverSize})
+	area.EndContent()
 }
 
 func (m *fileWindowManager) trackTabPointer(event gfx.PointerEvent) bool {

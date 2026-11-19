@@ -29,12 +29,7 @@ Host imported
 	}
 	state := newTestState(t, options)
 	state.Click(hitImportMenu)
-	canvas, _ := paintedTexts(state)
-	if hit, ok := hitByID(canvas, hitImportSSHConfig); !ok || hit.Disabled {
-		t.Fatalf("import hit = %+v, %v", hit, ok)
-	}
-
-	state.Click(hitImportSSHConfig)
+	clickPageMenuRow(t, state, state.messages.SSHConfigImport)
 	if request.Title != state.messages.SSHConfigPickerTitle || request.AllowMultiple {
 		t.Fatalf("OpenFiles request = %+v", request)
 	}
@@ -239,10 +234,12 @@ func mustHostLabel(t testing.TB, state *State, label string) Host {
 // press anywhere else, or Escape, closes it without running one.
 func TestImportMenuOpensListsEverySourceAndCloses(t *testing.T) {
 	state := newTestState(t, testOptions(t))
+	m := state.messages
+	sources := []string{m.Tools.ImportSessions, m.ImportCatalog, m.SSHConfigImport, m.ExportHosts}
 	canvas, _ := paintedTexts(state)
-	for _, id := range []gfx.ID{hitImportSSHConfig, hitImportHostCatalog, hitImportSessions} {
-		if _, ok := hitByID(canvas, id); ok {
-			t.Fatalf("source %d is painted while the menu is closed", id)
+	for _, label := range sources {
+		if canvasHasMenuRow(canvas, label) {
+			t.Fatalf("source %q is painted while the menu is closed", label)
 		}
 	}
 	state.Click(hitImportMenu)
@@ -250,29 +247,29 @@ func TestImportMenuOpensListsEverySourceAndCloses(t *testing.T) {
 		t.Fatal("the Import button did not open its menu")
 	}
 	canvas, _ = paintedTexts(state)
-	for _, id := range []gfx.ID{hitImportSSHConfig, hitImportHostCatalog, hitImportSessions} {
-		if hit, ok := hitByID(canvas, id); !ok || hit.Disabled {
-			t.Fatalf("menu source %d = %+v, %v", id, hit, ok)
+	for _, label := range sources[:3] {
+		if !canvasHasMenuRow(canvas, label) {
+			t.Fatalf("menu source %q is not listed", label)
 		}
 	}
 
-	state.Key(gfx.KeyEvent{Key: gfx.KeyEscape})
-	if state.importMenu {
-		t.Fatal("Escape left the menu open")
-	}
-
-	state.Click(hitImportMenu)
 	canvas, _ = paintedTexts(state)
-	if hit, ok := hitByID(canvas, hitImportMenuDismiss); !ok || hit.Bounds.Width < 1000 {
-		t.Fatalf("the open menu has no window-wide backdrop to press: %+v, %v", hit, ok)
+	var backdrop gfx.Hit
+	for _, hit := range canvas.Hits() {
+		if hit.Backdrop && hit.Bounds.Width >= 1000 {
+			backdrop = hit
+		}
 	}
-	state.Click(hitImportMenuDismiss)
+	if backdrop.ID.IsZero() {
+		t.Fatal("the open menu has no window-wide backdrop to press")
+	}
+	clickAIPanelPageAt(t, state, state.viewport, backdrop.ID)
 	if state.importMenu || state.modal != modalNone {
 		t.Fatalf("an outside press: menu=%v modal=%d", state.importMenu, state.modal)
 	}
 
 	state.Click(hitImportMenu)
-	state.Click(hitImportSessions)
+	clickPageMenuRow(t, state, m.Tools.ImportSessions)
 	if state.importMenu || state.modal != modalImportSessions {
 		t.Fatalf("choosing a source: menu=%v modal=%d", state.importMenu, state.modal)
 	}

@@ -7,16 +7,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/localshell"
 )
 
 var (
-	hitSettingsLocalShell        = tree.ID(settingsHits, "settings-local-shell")
-	hitSettingsLocalShellDismiss = tree.ID(settingsHits, "settings-local-shell-dismiss")
-	hitSettingsLocalShellItems   = tree.Sub(settingsHits, tree.Name("settings-local-shell-item"))
-	hitSettingsShellEyes         = tree.Sub(settingsHits, tree.Name("settings-shell-eye"))
+	hitSettingsLocalShell = tree.ID(settingsHits, "settings-local-shell")
+	hitSettingsShellEyes  = tree.Sub(settingsHits, tree.Name("settings-shell-eye"))
 )
 
 type localShellSelect struct {
@@ -25,7 +23,6 @@ type localShellSelect struct {
 	distros  []localshell.Choice
 	loaded   bool
 	open     bool
-	bounds   gfx.Rect
 	discover func() []localshell.Choice // nil uses the Windows discovery
 	// discoverWSL lists the WSL distributions; nil asks wsl.exe. It starts a
 	// process, so it runs on its own goroutine and answers through listing.
@@ -205,20 +202,8 @@ func (state *State) paintLocalShellSetting(page *settingsPage) {
 	if !localShellSettingVisible() {
 		return
 	}
-	page.add(settingsControl{kind: controlLocalShellSelect, slot: page.rowFrame(state.messages.SettingsLocalShell, state.messages.SettingsLocalShellDescription)})
-}
-
-// Paint the select in the menu pass, outside the settings page's clip. The
-// trigger stays the settings' select; the list is a menu surface of the app's,
-// so every row can carry the eye that hides or shows it.
-func (state *State) paintLocalShellSelect(canvas *gfx.Canvas) {
+	m, menu := state.messages, &state.localShellMenu
 	state.adoptWSLDistros()
-	menu, m := &state.localShellMenu, state.messages
-	bounds := menu.bounds
-	if !localShellSettingVisible() || state.modal != modalNone || bounds.Width <= 0 || bounds.Y < windowBarHeight || bounds.Y+bounds.Height > state.viewport.Height {
-		menu.open = false
-		return
-	}
 	selected := state.localShellSelected()
 	value, hint := m.SettingsLocalShellEmpty, ""
 	if selected >= 0 {
@@ -229,44 +214,38 @@ func (state *State) paintLocalShellSelect(canvas *gfx.Canvas) {
 			value = localshell.WSLName(distro) // chosen, but not listed yet
 		}
 	}
-	control := components.BeginSelect(canvas, state.Theme(), bounds, components.SelectOptions{
-		TriggerID: hitSettingsLocalShell, Label: m.SettingsLocalShell, Value: value, Hint: hint,
-		Disabled: len(menu.choices) == 0, Layer: popupLayer,
-		Scope: hitSettingsLocalShellDismiss, DismissID: hitSettingsLocalShellDismiss, Viewport: state.windowRect(),
-	})
-	defer control.End()
-	if !menu.open {
-		return
-	}
-
-	var rows menuRows
-	for index, choice := range menu.choices {
-		rows.add(components.ContextMenuItem{
-			ID: hitSettingsLocalShellItems.At(index), Label: choice.Name, Icon: lucideIcons[iconTerminal],
-			Kind: components.ContextMenuRadio, Selected: index == selected,
-			// A hidden shell cannot become the default: the row is inert and
-			// only its eye answers.
-			Disabled:      state.shellHidden(choice),
-			TrailingWidth: 30,
-		})
-	}
-	if len(menu.choices) == 0 {
-		rows.add(components.ContextMenuItem{ID: hitSettingsLocalShellItems.At(0), Label: m.SettingsLocalShellEmpty, Icon: lucideIcons[iconTerminal], Disabled: true})
-	}
-	width, height := rows.size(canvas, state.contextMenuTheme())
-	bounds2 := state.popupAt(canvas, state.windowRect(), gfx.Point{X: bounds.X, Y: bounds.Y + bounds.Height + 4}, width, height, 4)
-	list := components.BeginContextMenu(canvas, state.contextMenuTheme(), bounds2, components.ContextMenuOptions{
-		Layer: popupLayer, Scope: hitSettingsLocalShellDismiss, DismissID: hitSettingsLocalShellDismiss,
-		Viewport: state.windowRect(), Scroll: state.menuScrollFor(hitSettingsLocalShellDismiss), RowHeight: contextMenuRow,
-	})
-	state.menuPlaced(list.Bounds())
-	rows.paint(&list, func(item components.ContextMenuItem, slot gfx.Rect) {
-		if index, ok := item.ID.In(hitSettingsLocalShellItems); ok {
-			state.paintShellEye(canvas, hitSettingsShellEyes.At(index), slot)
+	controlWidth := max(min(float32(300), max(float32(190), page.width*0.40)), 0)
+	controlWidth = min(controlWidth, max(page.width-60, 0))
+	c := page.c
+	page.lineWith(m.SettingsLocalShell, m.SettingsLocalShellDescription, controlWidth, func() {
+		trigger := ui.Button(c, value).Outline().Icon(lucideIcons[iconChevronDown]).Width(controlWidth).
+			HitWith(hitSettingsLocalShell, m.SettingsLocalShell, gfx.HitOptions{
+				Role: gfx.RoleCombobox, Value: value, Hint: hint, Expanded: menu.open, Disabled: len(menu.choices) == 0,
+			}).Disabled(len(menu.choices) == 0)
+		if !menu.open || len(menu.choices) == 0 {
 			return
 		}
+		ui.PopupLayer(c, popupLayer)
+		ui.Menu(c, trigger, &menu.open, func(items *ui.MenuItems) {
+			items.RowHeight(contextMenuRow)
+			for index, choice := range menu.choices {
+				id := hitSettingsShellEyes.At(index)
+				item := items.Item(choice.Name).Icon(lucideIcons[iconTerminal]).Chosen(index == selected).
+					// A hidden shell cannot become the default: the row is inert and only its eye answers.
+					Disabled(state.shellHidden(choice)).
+					Trailing(30, func(canvas *gfx.Canvas, slot gfx.Rect, _ gfx.Theme) { state.paintShellEye(canvas, id, slot) })
+				if item.Clicked() {
+					program := choice.Path
+					c.After(func() {
+						if state.localShell != program {
+							state.localShell = program
+							state.save()
+						}
+					})
+				}
+			}
+		})
 	})
-	list.End()
 }
 
 // paintShellEye paints the trailing eye of a shell row: open where the pickers
@@ -304,27 +283,11 @@ func (state *State) clickLocalShell(id gfx.ID) bool {
 		}
 		menu.open = !menu.open && len(menu.choices) > 0
 		return true
-	case hitSettingsLocalShellDismiss:
-		menu.open = false
-		return true
 	}
 	if index, ok := id.In(hitSettingsShellEyes); ok && index >= 0 && index < len(menu.choices) {
 		choice := menu.choices[index]
 		state.hideShell(choice.Path, !state.shellHidden(choice))
 		return true
 	}
-	index, ok := id.In(hitSettingsLocalShellItems)
-	if !ok || index < 0 || index >= len(menu.choices) {
-		return false
-	}
-	program := menu.choices[index].Path
-	if state.shellHidden(menu.choices[index]) {
-		return true // a hidden shell stays hidden: it cannot become the default
-	}
-	menu.open = false
-	if state.localShell != program {
-		state.localShell = program
-		state.save()
-	}
-	return true
+	return false
 }

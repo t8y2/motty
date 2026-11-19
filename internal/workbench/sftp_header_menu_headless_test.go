@@ -26,10 +26,10 @@ func TestSFTPToolbarCustomizationFromContextMenu(t *testing.T) {
 			state.toolbars.customize(toolbarWindow)[0].Enabled = false
 			state.toolbars.customize(toolbarTerminal)[1].Enabled = false
 			other := state.toolbars.snapshot()
-			view, err := headless.Open(app.Config{
+			view, err := headless.Open(state.WindowConfig(app.Config{
 				Title: "files toolbar customization", Width: 1400, Height: 900, Tree: Tree(),
 				Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnResize: state.Resize,
-			}, nil, headless.Options{Scale: scale})
+			}), nil, headless.Options{Scale: scale})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -88,7 +88,12 @@ func TestSFTPToolbarCustomizationFromContextMenu(t *testing.T) {
 					t.Fatal("the More menu still offers toolbar customization")
 				}
 			}
-			click(hitSFTPHeaderMenuDismiss)
+			// A press outside the page menu closes it.
+			must(view.Click(900, 600))
+			must(view.Rest())
+			if session.files.active().headerMenuOpen {
+				t.Fatal("a press outside the files menu left it open")
+			}
 			rightClick(hitSFTPUploadDirectory)
 			click(hitToolbarDockCustomize)
 			if session.files.active().headerMenuOpen || state.modal != modalToolbarSettings || state.toolbarEditor.group != toolbarSFTP {
@@ -105,6 +110,7 @@ func TestSFTPToolbarCustomizationFromContextMenu(t *testing.T) {
 			saved, _, err := loadState(state.options.StatePath)
 			must(err)
 			restored := newTestState(t, state.options)
+			menuLabelState = state // the window is the one whose language names the menu's rows
 			if !reflect.DeepEqual(restored.toolbars.snapshot(), saved.Toolbars) {
 				t.Fatal("toolbar visibility did not survive reopening")
 			}
@@ -218,7 +224,7 @@ func TestSFTPToolbarOverflowActionsAfterNativeResize(t *testing.T) {
 				t.Fatal("the hidden-files indicator left the toolbar after narrowing")
 			}
 			click(contextID(hitSFTPHeaderMore))
-			click(contextID(hitSFTPHeaderHidden))
+			dualClickMenuLabel(t, view, state.panelMenuRowLabel(session.files, contextID(hitSFTPHeaderHidden)))
 			if session.files.active().headerMenuOpen || session.files.active().showHidden {
 				t.Fatal("overflow hidden-files action did not close the menu and toggle visibility")
 			}
@@ -232,7 +238,7 @@ func TestSFTPToolbarOverflowActionsAfterNativeResize(t *testing.T) {
 			if !session.files.active().headerMenuOpen {
 				t.Fatal("More cannot be opened after narrowing")
 			}
-			click(contextID(hitSFTPNewDirectory))
+			dualClickMenuLabel(t, view, state.panelMenuRowLabel(session.files, contextID(hitSFTPNewDirectory)))
 			if session.files.active().headerMenuOpen || session.files.dialog != sftpDialogCreateDirectory {
 				t.Fatal("overflow New Folder did not close the menu and open its dialog")
 			}
@@ -283,12 +289,8 @@ func TestSettingsButtonWithFilesMenuOpenOnlyClosesTheMenu(t *testing.T) {
 		t.Fatal("the More menu did not open")
 	}
 
-	// The backdrop is the menu's, and it covers the window, not just the panel.
-	window := state.windowRect()
-	backdrop := hitOf(contextID(hitSFTPHeaderMenuDismiss))
-	if backdrop.Bounds != window {
-		t.Fatalf("backdrop covers %+v, want the whole window %+v", backdrop.Bounds, window)
-	}
+	// The page menu's backdrop covers the window, not just the panel: a press on
+	// the bar under it closes the menu instead of moving or navigating.
 	gear := hitOf(hitWindowSettings)
 	if kind := view.PressAt(gear.Bounds.X+gear.Bounds.Width/2, gear.Bounds.Y+gear.Bounds.Height/2); kind == app.PressMove {
 		t.Fatal("a press on the bar under the backdrop starts a window move")

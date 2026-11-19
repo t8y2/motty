@@ -58,7 +58,8 @@ func (state *State) compactWorkspacePaneTools(tools []barTool, session uint32, w
 	return tools
 }
 
-func (state *State) paintWorkspacePaneTools(canvas *gfx.Canvas) {
+// declareWorkspacePaneTools declares the compact pane-tools menu under its button.
+func (state *State) declareWorkspacePaneTools(c ui.C) {
 	menu := &state.workspacePaneTools
 	if state.workspaceHeaderMenu != workspaceHeaderMenuTools {
 		return
@@ -67,22 +68,22 @@ func (state *State) paintWorkspacePaneTools(canvas *gfx.Canvas) {
 		state.workspaceHeaderMenu = workspaceHeaderMenuNone
 		return
 	}
-	width := float32(240)
-	for index := 0; index < menu.count; index++ {
-		width = max(width, canvas.TextWidth(menu.items[index].hint, metrics.FontSizeM)+64)
-	}
-	width = min(width, max(0, state.viewport.Width-16))
-	at := state.popupBelow(canvas, menu.anchor, width, float32(menu.count*32+8), ui.End)
-	popup := components.BeginDropdownMenu(canvas, state.Theme(), at, components.DropdownMenuOptions{
-		Layer: dialogLayer, Scope: dialogScope, DismissID: hitWorkspacePaneToolsDismiss,
-		Viewport: state.windowRect(), Scroll: state.menuScrollFor(hitWorkspacePaneToolsDismiss),
-	})
-	state.menuPlaced(popup.Bounds())
+	var rows menuRows
 	for index := menu.count - 1; index >= 0; index-- {
 		tool := menu.items[index]
-		popup.AddItem(components.DropdownMenuItem{ID: hitWorkspacePaneToolList.At(index), Label: tool.hint, Icon: lucideIcons[tool.icon], Disabled: tool.disabled})
+		rows.add(components.ContextMenuItem{ID: hitWorkspacePaneToolList.At(index), Label: tool.hint, Icon: lucideIcons[tool.icon], Disabled: tool.disabled})
 	}
-	popup.End()
+	open := true
+	state.declareMenuAt(c, &open, menu.anchor, false, hitWorkspacePaneToolsDismiss, &rows, func(id gfx.ID) {
+		if index, ok := id.In(hitWorkspacePaneToolList); ok {
+			state.runWorkspacePaneTool(index)
+		}
+	})
+	if !open {
+		state.workspaceHeaderMenu = workspaceHeaderMenuNone
+		// The keyboard goes back to the terminal the menu acted on.
+		c.Canvas().RequestFocus(state.activeTerminalFocusHit())
+	}
 }
 
 func (state *State) clickWorkspacePaneTools(id gfx.ID) bool {
@@ -96,27 +97,19 @@ func (state *State) clickWorkspacePaneTools(id gfx.ID) bool {
 		} else {
 			state.workspaceHeaderMenu = workspaceHeaderMenuTools
 		}
-	case id == hitWorkspacePaneToolsDismiss:
-		state.workspaceHeaderMenu = workspaceHeaderMenuNone
-	case id.Scope() == hitWorkspacePaneToolList:
-		index, ok := id.In(hitWorkspacePaneToolList)
-		if ok {
-			state.activateWorkspacePaneTool(index)
-		}
 	default:
 		return false
 	}
 	return true
 }
 
-func (state *State) activateWorkspacePaneTool(index int) {
+// runWorkspacePaneTool runs a choice of the menu, which closed with it.
+func (state *State) runWorkspacePaneTool(index int) {
 	menu := &state.workspacePaneTools
-	if state.workspaceHeaderMenu != workspaceHeaderMenuTools || menu.session != state.activeSessionID || index < 0 || index >= menu.count {
+	if menu.session != state.activeSessionID || index < 0 || index >= menu.count {
 		return
 	}
-	tool := menu.items[index]
-	state.workspaceHeaderMenu = workspaceHeaderMenuNone
-	if !tool.disabled {
+	if tool := menu.items[index]; !tool.disabled {
 		state.Click(tool.id)
 	}
 }

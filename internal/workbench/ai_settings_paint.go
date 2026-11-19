@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/gate"
 	"motty/internal/ai/probe"
@@ -233,36 +233,6 @@ const (
 	aiButtonDanger
 )
 
-// aiButtonSize is how large aiButton makes a button with this label.
-func (state *State) aiButtonSize(canvas *gfx.Canvas, label string) (width, height float32) {
-	button := components.BeginButton(canvas, state.Theme(), gfx.ID{}, gfx.Rect{}).Small().SizeToFit(label)
-	return button.BoundsWidth(), button.BoundsHeight()
-}
-
-// aiButtonSlot reserves the room of a button for aiButton to paint into. The
-// keyboard visits controls in the order they are painted, so the settings page
-// records its buttons (settingsPage.button) and paints them after the page.
-func (state *State) aiButtonSlot(c ui.C, label string) ui.Box {
-	width, height := state.aiButtonSize(c.Canvas(), label)
-	return ui.Slot(c).Size(width, height)
-}
-
-// aiButton paints a small button in a slot.
-func (state *State) aiButton(canvas *gfx.Canvas, id gfx.ID, slot gfx.Rect, label string, style aiButtonStyle, disabled bool) {
-	button := components.BeginButton(canvas, state.Theme(), id, gfx.Rect{X: slot.X, Y: slot.Y, Width: slot.Width}).Small()
-	if disabled {
-		button = button.Disabled()
-	}
-	switch style {
-	case aiButtonPrimary:
-		button.Default(label)
-	case aiButtonDanger:
-		button.DestructiveOutline(label)
-	default:
-		button.Outline(label)
-	}
-}
-
 const (
 	aiSwitchWidth  = float32(36)
 	aiSwitchHeight = float32(20)
@@ -270,15 +240,6 @@ const (
 	aiStepsValueWidth   = float32(64)
 	aiStepsControlWidth = float32(160)
 )
-
-// aiSwitch paints a switch in a slot.
-func (state *State) aiSwitch(canvas *gfx.Canvas, id gfx.ID, slot gfx.Rect, on, disabled bool, label string) {
-	control := components.BeginSwitch(canvas, state.switchTheme(), id, slot, on).Label(label)
-	if disabled {
-		control = control.Disabled()
-	}
-	control.Paint()
-}
 
 // paintAISettings paints the assistant's category: providers, models and how
 // it behaves.
@@ -525,10 +486,7 @@ func (state *State) paintAIModels(page *settingsPage) {
 		if filteredTotal == 0 && total > 0 {
 			page.aiText(aiModelRowHeight, m.ModelsEmpty, metrics.FontSizeS, gfx.WeightRegular, pal.muted)
 		}
-		defaultColWidth, _ := state.aiButtonSize(c.Canvas(), m.ModelUse)
-		if defaultColWidth < 76 {
-			defaultColWidth = 76
-		}
+		const defaultColWidth = float32(76)
 		const probeColWidth = float32(92)
 		for row := 0; row < shown; row++ {
 			model := filteredModels[cfg.page*aiModelPageSize+row]
@@ -653,37 +611,68 @@ func (state *State) paintAIModels(page *settingsPage) {
 
 		// A model can be added by name, for providers that do not list theirs.
 		page.rowOf(aiAddRowHeight).PadX(18).Gap(10).Children(func() {
-			page.add(settingsControl{kind: controlModelInput, slot: ui.Slot(c).Grow(1).MinWidth(40).Height(32)})
+			state.declareAIModelField(c)
 			page.button(hitAISetModelAdd, m.ModelAdd, aiButtonOutline, false)
 		})
 	})
 }
 
-// paintAIModelInput paints the field a model is added by name in.
-func (state *State) paintAIModelInput(canvas *gfx.Canvas, bounds gfx.Rect) {
-	m := state.messages.AISettings
-	value := state.ai.cfg.modelInput.String()
-	focused := canvas.Focused() == hitAISetModelInput
-	components.PaintInput(canvas, state.Theme(), bounds, components.InputSnapshot{
-		ID: hitAISetModelInput, Label: m.ModelAddPH, Value: value, Placeholder: m.ModelAddPH,
-		Focused: focused, PlatformEditing: focused && value != "",
-	})
+// bindAIInputFields binds the page's handles to the editors the application
+// reads. The editors keep their addresses for the config's life, so this runs
+// once.
+func (state *State) bindAIInputFields() {
+	cfg := &state.ai.cfg
+	if cfg.inputBound {
+		return
+	}
+	cfg.inputBound = true
+	cfg.modelInput.Restrict(modelNameRune, 200)
+	cfg.stepsInput.Restrict(stepDigit, 3)
+	cfg.modelField.Bind(&cfg.modelInput)
+	// Seed the count before binding, so the first paint shows the stored value
+	// instead of reporting the seed as an edit. An edit already open (a press
+	// before the first paint) keeps what it selected.
+	if !cfg.stepsEditing {
+		cfg.stepsInput.SetSelection(text.Range{Start: 0, End: cfg.stepsInput.RuneCount()})
+		cfg.stepsInput.Insert(strconv.Itoa(state.ai.settings.maxSteps))
+	}
+	cfg.stepsField.Bind(&cfg.stepsInput)
+	// The count was centred in the hand-painted field it replaced.
+	cfg.stepsField.Alignment = gfx.AlignCenter
 }
 
-// paintAIStepsValue paints the step count between its − and + buttons. While
-// the field is being typed into it shows the edit, otherwise the stored value.
-func (state *State) paintAIStepsValue(canvas *gfx.Canvas, bounds gfx.Rect) {
+// declareAIModelField declares the field a model is added by name in.
+func (state *State) declareAIModelField(c ui.C) ui.Box {
+	state.bindAIInputFields()
+	m := state.messages.AISettings
+	return ui.TextFieldID(c, hitAISetModelInput, &state.ai.cfg.modelField, m.ModelAddPH, m.ModelAddPH).
+		Grow(1).MinWidth(40).Height(32)
+}
+
+// declareAIStepsField declares the step count between its − and + buttons,
+// bound to the editor the application reads. While the field has the keyboard
+// it opens an edit seeded with the stored count and selected whole, so typing
+// replaces the number.
+func (state *State) declareAIStepsField(c ui.C) ui.Box {
 	cfg := &state.ai.cfg
-	value := strconv.Itoa(state.ai.settings.maxSteps)
-	if cfg.stepsEditing {
-		value = cfg.stepsInput.String()
+	state.bindAIInputFields()
+	focused := false
+	if canvas := c.Canvas(); canvas != nil {
+		focused = canvas.Focused() == hitAISetStepsValue
 	}
-	focused := canvas.Focused() == hitAISetStepsValue
-	components.PaintInput(canvas, state.Theme(), bounds, components.InputSnapshot{
-		ID: hitAISetStepsValue, Label: state.messages.AISettings.MaxSteps,
-		Value: value, Alignment: gfx.AlignCenter,
-		Focused: focused, PlatformEditing: focused && cfg.stepsEditing,
-	})
+	if focused {
+		if !cfg.stepsEditing {
+			state.aiBeginStepsEdit()
+		}
+	} else if !cfg.stepsEditing {
+		stored := strconv.Itoa(state.ai.settings.maxSteps)
+		if cfg.stepsInput.String() != stored {
+			cfg.stepsInput.SetSelection(text.Range{Start: 0, End: cfg.stepsInput.RuneCount()})
+			cfg.stepsInput.Insert(stored)
+		}
+	}
+	return ui.TextFieldID(c, hitAISetStepsValue, &cfg.stepsField, state.messages.AISettings.MaxSteps, "").
+		Size(aiStepsValueWidth, 32)
 }
 
 func (state *State) paintAIBehaviour(page *settingsPage) {
@@ -705,7 +694,7 @@ func (state *State) paintAIBehaviour(page *settingsPage) {
 		page.lineWith(m.MaxSteps, m.MaxStepsDesc, aiStepsControlWidth, func() {
 			ui.Row(page.c).Gap(6).Shrink(0).Items(ui.Center).Children(func() {
 				page.button(hitAISetStepsMinus, "−", aiButtonOutline, steps <= aiStepsMin)
-				page.add(settingsControl{kind: controlStepsValue, slot: ui.Slot(page.c).Size(aiStepsValueWidth, 32)})
+				state.declareAIStepsField(page.c)
 				page.button(hitAISetStepsPlus, "+", aiButtonOutline, steps >= aiStepsMax)
 			})
 		})
@@ -834,15 +823,12 @@ func (state *State) aiConfirmTexts() (title, body, action string) {
 
 // declareAIConfirm declares a destructive confirmation in the window page. The
 // alert recipe has no ui.Dialog counterpart, so the confirm keeps its wording,
-// its cancel emphasis and its destructive action on the dialog's footer.
+// its cancel emphasis and its destructive action on the dialog's footer. The
+// dialog is as tall as its description and footer need.
 func (state *State) declareAIConfirm(c ui.C, title, body, action string) {
 	const width float32 = 480
-	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
-		ContentSize: gfx.Size{Width: width}, FitBody: true,
-	}).Layout(body)
 	dialog := ui.Dialog(c, ui.DialogSpec{
-		Title: title, Description: body, Width: width, Height: layout.Content.Height,
+		Title: title, Description: body, Width: width,
 		Layer: dialogLayer, Scope: dialogScope, NoClose: true,
 		CloseID: hitAISetConfirmCancel,
 	})
@@ -859,18 +845,17 @@ func (state *State) declareAIConfirm(c ui.C, title, body, action string) {
 	}
 }
 
+// aiProbeBodyHeight is the probe dialog's body: its two labelled choices.
+const aiProbeBodyHeight = 140
+
 // declareAIProbe declares the model-probe dialog in the window page; its two
 // choices are page controls.
 func (state *State) declareAIProbe(c ui.C) {
 	m := state.messages.AISettings
 	const width float32 = 460
-	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
-		ContentSize: gfx.Size{Width: width}, FitBody: true,
-	}).Layout(m.ProbeDialogDesc)
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: m.ProbeDialogTitle, Description: m.ProbeDialogDesc, Width: width,
-		Height: layout.Content.Height + 140, Layer: dialogLayer, Scope: dialogScope,
+		Layer: dialogLayer, Scope: dialogScope,
 		CloseID: hitAISetFormClose,
 	})
 	dialog.Body(func() { state.declareAIProbeBody(c) })
@@ -902,16 +887,12 @@ func (state *State) declareAIReasoning(c ui.C) {
 	}
 	const width float32 = 520
 	description := fmt.Sprintf("%s (%s)", m.ModelReasoningDesc, cfg.reasoningModelName)
-	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
-		ContentSize: gfx.Size{Width: width}, FitBody: true,
-	}).Layout(description)
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: m.ModelReasoningTitle, Description: description, Width: width,
-		Height: layout.Content.Height + bodyHeight, Layer: dialogLayer, Scope: dialogScope,
+		Layer: dialogLayer, Scope: dialogScope,
 		CloseID: hitAISetFormClose,
 	})
-	dialog.Body(func() { state.declareAIReasoningBody(c) })
+	dialog.Body(func() { state.declareAIReasoningBody(c, bodyHeight) })
 	dialog.Footer(func() {
 		if ui.Button(c, state.messages.Cancel).Secondary().Shrink(0).Clicked() {
 			c.After(func() { state.aiDialogClick(hitAISetReasoningCancel) })
@@ -930,7 +911,7 @@ func (state *State) declareAIReasoning(c ui.C) {
 // chosen before anything was stored.
 func (state *State) declareAIProbeBody(c ui.C) {
 	pal, m, cfg := state.pal, state.messages.AISettings, &state.ai.cfg
-	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Gap(10).Children(func() {
+	ui.Column(c).Height(aiProbeBodyHeight).PadSides(2, 4, 0, 4).Gap(10).Children(func() {
 		ui.Text(c, m.ProbeConcurrency).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text)
 		concurrency := state.aiProbeConcurrency()
 		ui.Row(c).FillWidth().Children(func() {
@@ -950,9 +931,9 @@ func (state *State) declareAIProbeBody(c ui.C) {
 
 // declareAIReasoningBody declares the reasoning dialog: the mode, and the effort
 // preset only while the mode gives the model a manual choice.
-func (state *State) declareAIReasoningBody(c ui.C) {
+func (state *State) declareAIReasoningBody(c ui.C, height float32) {
 	pal, m, cfg := state.pal, state.messages.AISettings, &state.ai.cfg
-	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Gap(10).Children(func() {
+	ui.Column(c).Height(height).PadSides(2, 4, 0, 4).Gap(10).Children(func() {
 		ui.Text(c, m.ModelReasoningMode).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text)
 		mode := cfg.reasoningMode
 		ui.Row(c).FillWidth().Children(func() {
@@ -975,23 +956,5 @@ func (state *State) declareAIReasoningBody(c ui.C) {
 	})
 }
 
-// paintAIPresetField paints the list of providers a new provider can start from.
-func (state *State) paintAIPresetField(canvas *gfx.Canvas, bounds gfx.Rect) {
-	cfg, m, theme := &state.ai.cfg, state.messages.AISettings, state.Theme()
-	content := components.BeginField(canvas, theme, bounds).Paint(m.FormPreset, "", "")
-	selectControl := components.BeginSelect(canvas, theme, content, components.SelectOptions{
-		TriggerID: hitAISetFormPreset, Label: m.FormPreset, Value: state.aiPresetLabel(cfg.preset), Icon: aiPresets[cfg.preset].icon, Open: cfg.presetOpen,
-		Content: gfx.Rect{X: content.X, Y: content.Y + content.Height + 4, Width: content.Width, Height: float32(8 + len(aiPresets)*32)},
-		Layer:   dialogLayer + 1, Scope: dialogScope, DismissID: hitAISetFormPresetDismiss, Viewport: state.windowRect(),
-		Scroll: state.selectScroll(cfg.presetOpen, hitAISetFormPresetDismiss),
-	})
-	defer selectControl.End()
-	if cfg.presetOpen {
-		state.menuPlaced(selectControl.ContentBounds())
-	}
-	for index := range aiPresets {
-		selectControl.AddItem(components.SelectItem{
-			ID: hitAISetFormPresetItems.At(index), Label: state.aiPresetLabel(index), Icon: aiPresets[index].icon, Selected: index == cfg.preset,
-		})
-	}
-}
+// aiPresetIcon is the mark of a preset in the form's select.
+func aiPresetIcon(index int) gfx.Icon { return aiPresets[index].icon }

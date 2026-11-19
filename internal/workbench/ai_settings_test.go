@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -130,11 +131,13 @@ func (world *settingsWorld) paint() (*gfx.Canvas, []string) {
 func setAISteps(t *testing.T, state *State, steps int) {
 	t.Helper()
 	state.Click(hitAISetStepsValue)
-	editor := state.EditorFor(hitAISetStepsValue)
-	if editor == nil {
-		t.Fatalf("the step field has no editor")
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 3200})
+	input := state.WindowConfig(app.Config{}).TextInput(app.TextInputContext{ID: hitAISetStepsValue})
+	if input == nil {
+		t.Fatalf("the step field has no page editor")
 	}
-	editor.Insert(strconv.Itoa(steps))
+	input.Editor.Insert(strconv.Itoa(steps))
 	state.Key(gfx.KeyEvent{Target: hitAISetStepsValue, Key: gfx.KeyEnter})
 }
 
@@ -1119,16 +1122,19 @@ func TestAISettingsFocusOrderFollowsThePage(t *testing.T) {
 		return hit.ID
 	}
 	order := stops(canvas)
-	// The page declares its Choices while it is laid out; the controls still
-	// painted by the Frame recipe are visited after every page Choice. Until the
-	// rest of the category is a page too, the Choices therefore lead the keyboard
-	// order, while their own order is the page's.
+	// Every control of the category is a page element, so the keyboard visits them
+	// as the page reads: top to bottom, left to right. The provider rows, the model-name
+	// field and the step count's value are still painted after the page, and are stops too.
 	want := []gfx.ID{
-		choice(state.messages.AISettings.RiskLow), choice("60"), choice("4 MiB"),
-		hitAISetProviderRow.At(0), hitAISetProviderSwitch.At(0), hitAISetProviderEdit.At(0), hitAISetProviderDelete.At(0), hitAISetProviderAdd,
-		hitAISetFetchModels, hitAISetModelUse.At(1), hitAISetModelSwitch.At(1), hitAISetModelInput, hitAISetModelAdd,
-		hitAISetStepsMinus, hitAISetStepsValue, hitAISetStepsPlus,
+		hitAISetProviderSwitch.At(0), hitAISetProviderEdit.At(0), hitAISetProviderDelete.At(0), hitAISetProviderAdd,
+		hitAISetFetchModels, hitAISetModelUse.At(1), hitAISetModelSwitch.At(1), hitAISetModelAdd,
+		choice(state.messages.AISettings.RiskLow), hitAISetStepsMinus, hitAISetStepsPlus, choice("60"), choice("4 MiB"),
 		hitAISetRedact, hitAISetHistory, hitAISetClearHistory,
+	}
+	for _, id := range []gfx.ID{hitAISetProviderRow.At(0), hitAISetModelInput, hitAISetStepsValue} {
+		if !slices.Contains(order, id) {
+			t.Errorf("hit %d is not a focus stop; stops: %v", id, order)
+		}
 	}
 	position := -1
 	for _, id := range want {
@@ -1163,7 +1169,7 @@ func TestAISettingsFocusOrderFollowsThePage(t *testing.T) {
 	}
 	next := 0
 	for _, got := range order {
-		if next < 4 && got == []gfx.ID{mcpObserve.ID, agentObserve.ID, hitAISetMCPEnabled, hitAISetMCPReset}[next] {
+		if next < 4 && got == []gfx.ID{hitAISetMCPEnabled, mcpObserve.ID, hitAISetMCPReset, agentObserve.ID}[next] {
 			next++
 		}
 	}
@@ -1316,29 +1322,22 @@ func TestAProviderCanStartFromAPresetAndKeepsAnyNameTypedByHand(t *testing.T) {
 	world := newSettingsWorld(t, newLister())
 	state := world.state
 	state.Click(hitAISetProviderAdd)
-	world.paint()
-	state.Click(hitAISetFormPreset)
-	if !state.ai.cfg.presetOpen {
-		t.Fatal("the list of presets did not open")
-	}
-	world.paint()
+	m := state.messages.AISettings
 	deepseek := 3
-	state.Click(hitAISetFormPresetItems.At(deepseek))
+	chooseSelectOption(t, state, m.FormPreset, state.aiPresetLabel(deepseek))
 	cfg := &state.ai.cfg
-	if cfg.presetOpen || cfg.baseURL.String() != aiPresets[deepseek].url || cfg.name.String() != "DeepSeek" || cfg.kind != store.KindOpenAI {
-		t.Fatalf("form after choosing DeepSeek: open=%v url=%q name=%q kind=%q", cfg.presetOpen, cfg.baseURL.String(), cfg.name.String(), cfg.kind)
+	if cfg.baseURL.String() != aiPresets[deepseek].url || cfg.name.String() != "DeepSeek" || cfg.kind != store.KindOpenAI {
+		t.Fatalf("form after choosing DeepSeek: url=%q name=%q kind=%q", cfg.baseURL.String(), cfg.name.String(), cfg.kind)
 	}
 	// Choosing another preset replaces what the first one put there, and Claude speaks the other API.
-	state.Click(hitAISetFormPreset)
-	state.Click(hitAISetFormPresetItems.At(0))
+	chooseSelectOption(t, state, m.FormPreset, state.aiPresetLabel(0))
 	if cfg.name.String() != "Claude" || cfg.kind != store.KindAnthropic || cfg.baseURL.String() != aiPresets[0].url {
 		t.Fatalf("form after choosing Claude: url=%q name=%q kind=%q", cfg.baseURL.String(), cfg.name.String(), cfg.kind)
 	}
 	// A name the user typed is not overwritten.
 	cfg.name.SetSelection(text.Range{Start: 0, End: cfg.name.RuneCount()})
 	cfg.name.Insert("Work")
-	state.Click(hitAISetFormPreset)
-	state.Click(hitAISetFormPresetItems.At(1))
+	chooseSelectOption(t, state, m.FormPreset, state.aiPresetLabel(1))
 	if cfg.name.String() != "Work" || cfg.baseURL.String() != aiPresets[1].url {
 		t.Fatalf("form after choosing OpenAI: url=%q name=%q", cfg.baseURL.String(), cfg.name.String())
 	}
@@ -1361,7 +1360,7 @@ func TestEditingAProviderOffersNoPresets(t *testing.T) {
 	provider := world.addOpenAI(t, "Mine", "https://example.test/v1", "k")
 	world.state.aiOpenProviderForm(provider.ID)
 	canvas, _ := world.paint()
-	if _, ok := hitByID(canvas, hitAISetFormPreset); ok {
+	if hasLabel(canvas, world.state.messages.AISettings.FormPreset, gfx.RoleCombobox) {
 		t.Fatal("the preset list is offered while editing")
 	}
 }
@@ -1381,5 +1380,29 @@ func TestAskAgentModeSurvivesAReload(t *testing.T) {
 	state.setAIMode(agent.ModeAsk)
 	if got := settingValue(t, world.db(t), "ai.mode"); got != "ask" {
 		t.Fatalf("stored ai.mode = %q, want ask", got)
+	}
+}
+
+// The step field keeps its digits-only restriction after an edit ends. The editor
+// is made anew each time the edit opens, and a restriction set once on another
+// editor would not follow it.
+func TestAIStepsFieldKeepsItsRestrictionAfterAnEdit(t *testing.T) {
+	world := newSettingsWorld(t, newLister())
+	state := world.state
+	setAISteps(t, state, 7)
+	state.Click(hitAISetStepsValue)
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 3200})
+	input := state.WindowConfig(app.Config{}).TextInput(app.TextInputContext{ID: hitAISetStepsValue})
+	if input == nil {
+		t.Fatal("the step field has no page editor")
+	}
+	input.Editor.Insert("abc12x3")
+	if got := input.Editor.String(); got != "123" {
+		t.Fatalf("the step field accepted %q, want the digits only", got)
+	}
+	state.Key(gfx.KeyEvent{Target: hitAISetStepsValue, Key: gfx.KeyEnter})
+	if got := state.ai.settings.maxSteps; got != 123 {
+		t.Fatalf("typed 123 steps = %d", got)
 	}
 }

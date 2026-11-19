@@ -67,10 +67,17 @@ func TestRemoteSortCoversWholeSnapshotAndKeepsConfirmationTarget(t *testing.T) {
 	state.remote.procs[0].StartIdentity = "linux:12345678-1234-1234-1234-123456789abc:100001"
 	state.rebuildRemoteRows()
 	state.remote.selected = remotetools.ProcessKey(state.remote.procs[0])
-	state.remote.processScroll = 100
+	remoteToolsPaint(t, state)
+	if scroll := state.remote.tableScroll; scroll != nil {
+		scroll.ScrollTo(100)
+	}
 	clickRemoteToolsHeader(t, state, remoteTableHeaderID(remoteProcesses, 0))
-	if state.remote.rows[0].key != "971" || state.remote.processScroll != 0 {
-		t.Fatal("PID sorted lexically, sorted only visible rows, or did not return to the top")
+	if state.remote.rows[0].key != "971" {
+		t.Fatal("PID sorted lexically or sorted only visible rows")
+	}
+	remoteToolsPaint(t, state)
+	if scroll := state.remote.tableScroll; scroll != nil && scroll.Offset != 0 {
+		t.Fatalf("sort did not return the table to the top: offset %g", scroll.Offset)
 	}
 	clickRemoteToolsAction(t, state, hitRemoteKill)
 	if state.modal != modalForm || !strings.Contains(state.form.description, "1000") {

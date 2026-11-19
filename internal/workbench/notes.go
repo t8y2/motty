@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -103,23 +104,25 @@ type notesUI struct {
 	query                                   text.Editor
 	sideAll                                 bool
 	error                                   string
+	saveDetail                              string
 	code                                    components.CodeEditor
 	doc                                     markdown.Document
 	rendered                                components.MarkdownView
 	previewScroll                           float32
 	confirm                                 string
-	dragID                                  string
-	dragFolder                              bool
-	dragStart                               gfx.Point
-	dragging                                bool
-	rows                                    []noteRow
 	listBounds, sourceBounds, previewBounds gfx.Rect
 	previewHeight                           float32
-	images                                  []noteImage
-	imageSource                             string
-	imageToken                              uint64
-	followConflict                          string
-	imageCancel                             context.CancelFunc
+	// previewSeek applies previewScroll to the page's scroll area once, after a
+	// program changed the position; the page owns the wheel.
+	previewSeek bool
+	// page is the views the page declares for this note: its tree, its
+	// splitters and the fields bound to the editors above.
+	page           notePageUI
+	images         []noteImage
+	imageSource    string
+	imageToken     uint64
+	followConflict string
+	imageCancel    context.CancelFunc
 }
 type noteRow struct {
 	id     string
@@ -164,6 +167,17 @@ func (s *State) noteText(en, zh string) string {
 func (s *State) noteSaveFailure() string {
 	return s.noteText("Unable to save notes; changes retained in this window.", "无法保存笔记，更改已保留在此窗口中。")
 }
+
+// logNoteSaveFailure puts the store's refusal in the diagnostics log. The
+// notice names the cause on screen, but a report that arrives after the window
+// is gone can only be traced through the log.
+func (s *State) logNoteSaveFailure(err error) {
+	if s.options.Log == nil {
+		return
+	}
+	fmt.Fprintf(s.options.Log, "motty: notes: save refused: %v\n", err)
+}
+
 func noteID() string {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -314,11 +328,11 @@ func (s *State) selectNote(id string) bool {
 	if !s.flushNoteDraft() {
 		return false
 	}
+	// A store that refuses this save must not lock the library. The flush above
+	// moved every draft into the list, each note keeps its own draft, and the
+	// notice over the editor names the refusal and its cause. Switching still
+	// lets the user work and retry instead of leaving every entry dead.
 	s.save()
-	if s.hasUnsavedNotes() {
-		s.notes.error = s.noteSaveFailure()
-		return false
-	}
 	if s.notes.selected != id {
 		s.selectNoteWithoutSave(id)
 	}
@@ -417,13 +431,7 @@ func (s *State) selectNoteWithoutSave(id string) {
 	if s.notes.selected != id {
 		s.notes.view.tagsExpanded = false
 	}
-	s.notes.view.tagPopupScroll = 0
-	s.notes.view.resetPopupScrollbar()
-	s.notes.view.previewBar = noteScrollbar{}
-	s.notes.view.treeBar = noteScrollbar{}
 	s.notes.view.clearPreviewSelection()
-	s.notes.view.previewDragging = false
-	s.notes.view.scrollDrag = false
 	s.notes.view.tagTokens = nil
 	s.notes.view.tokenTags = nil
 	s.notes.view.popup = ""

@@ -285,3 +285,66 @@ func TestTypingARemoteDesktopLinkOpensTheSavedHostThere(t *testing.T) {
 		t.Fatalf("opened %+v, want the saved RDP host %+v", request.Host, host)
 	}
 }
+
+// Remote audio is an RDP-only switch and is on unless the host turns it off:
+// the zero value of the saved record means sound plays, so old hosts keep it.
+func TestRDPRemoteAudioIsAnRDPOnlySwitch(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.openHostDialog()
+	state.editor.setProtocol(protocolVNC)
+	canvas, _ := paintAt(state, gfx.Size{Width: 1200, Height: 1000})
+	if _, ok := hitByID(canvas, hitDialogRemoteAudio); ok {
+		t.Fatal("a VNC host was offered remote audio")
+	}
+
+	// A new RDP host plays the server's sound.
+	state.editor.setProtocol(protocolRDP)
+	canvas, _ = paintAt(state, gfx.Size{Width: 1200, Height: 1000})
+	if _, ok := hitByID(canvas, hitDialogRemoteAudio); !ok {
+		t.Fatal("an RDP host was not offered remote audio")
+	}
+	typeInto(state, hitDialogLabel, "Loud")
+	typeInto(state, hitDialogAddress, "loud.example.com")
+	typeInto(state, hitDialogUser, `CORP\alice`)
+	state.Click(hitDialogSubmit)
+	if state.modal != modalNone || state.dialogError != "" {
+		t.Fatalf("submit: modal=%d error=%q", state.modal, state.dialogError)
+	}
+	index := state.hostIndexByEndpoint(Host{Protocol: protocolRDP, Address: "loud.example.com", User: `CORP\alice`, Port: 3389})
+	if index < 0 {
+		t.Fatal("the RDP host was not added")
+	}
+	if loud := state.hosts[index]; loud.NoAudio {
+		t.Fatal("a new RDP host was muted by default")
+	} else {
+		var restored Host
+		if !restored.applyTransport(loud.transport()) || restored.NoAudio {
+			t.Fatalf("restored = %+v", restored)
+		}
+	}
+
+	// Turning it off is saved with the host.
+	state.openHostDialog()
+	state.editor.setProtocol(protocolRDP)
+	canvas, _ = paintAt(state, gfx.Size{Width: 1200, Height: 1000})
+	state.Click(hitDialogRemoteAudio)
+	typeInto(state, hitDialogLabel, "Quiet")
+	typeInto(state, hitDialogAddress, "quiet.example.com")
+	typeInto(state, hitDialogUser, `CORP\alice`)
+	state.Click(hitDialogSubmit)
+	if state.modal != modalNone || state.dialogError != "" {
+		t.Fatalf("submit: modal=%d error=%q", state.modal, state.dialogError)
+	}
+	index = state.hostIndexByEndpoint(Host{Protocol: protocolRDP, Address: "quiet.example.com", User: `CORP\alice`, Port: 3389})
+	if index < 0 {
+		t.Fatal("the quiet RDP host was not added")
+	}
+	quiet := state.hosts[index]
+	if !quiet.NoAudio {
+		t.Fatal("the remote audio switch was not saved with the host")
+	}
+	var restored Host
+	if !restored.applyTransport(quiet.transport()) || !restored.NoAudio {
+		t.Fatalf("restored = %+v", restored)
+	}
+}

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -413,15 +414,15 @@ func TestSFTPWindowMultiSelectQueueScrollAndSystemDrop(t *testing.T) {
 		t.Fatal(err)
 	}
 	view.Rest()
-	if w.ui.queueBar.MaxOffsetY <= 0 {
+	if w.ui.queueScroll == nil || w.ui.queueScroll.Max() <= 0 {
 		t.Fatal("batch queue has no scrollbar")
 	}
 	bounds := w.ui.queueBounds
 	if err := view.Scroll(gfx.ScrollEvent{X: bounds.X + 20, Y: bounds.Y + 20, DeltaY: 10000}); err != nil {
 		t.Fatal(err)
 	}
-	if w.ui.queueOffset != w.ui.queueBar.MaxOffsetY {
-		t.Fatal("queue failed to reach older/later items")
+	if w.ui.queueScroll.Offset != w.ui.queueScroll.Max() {
+		t.Fatalf("queue failed to reach older/later items: offset %.1f max %.1f", w.ui.queueScroll.Offset, w.ui.queueScroll.Max())
 	}
 	oldest := w.ui.queueEntries[len(w.ui.queueEntries)-1]
 	dualHit(t, view, sftpWindowQueueRows.At(state.transfers.entries[oldest].id))
@@ -652,12 +653,12 @@ func TestSFTPWindowListScrollbarOffset(t *testing.T) {
 	w.navigate(true, dir)
 	dualWait(t, state, w, view, func() bool { return !w.view.busy && w.pendingLocal == "" && len(w.view.lfolder.rows) >= 60 })
 	folder := &w.view.lfolder
-	if w.ui.bars[0].MaxOffsetY <= 0 {
-		t.Fatal("long folder has no scrollbar")
-	}
 	scroll := folder.listScroll
 	if scroll == nil {
 		t.Fatal("the list has no scroll state")
+	}
+	if scroll.Max() <= 0 {
+		t.Fatal("long folder has no scrollbar")
 	}
 	center := w.ui.list[0]
 	if err := view.Scroll(gfx.ScrollEvent{X: center.X + 20, Y: center.Y + 20, DeltaY: 10000}); err != nil {
@@ -669,15 +670,30 @@ func TestSFTPWindowListScrollbarOffset(t *testing.T) {
 	if w.ui.offset[0] <= 0 {
 		t.Fatal("wheel did not move the list")
 	}
-	thumb := w.ui.bars[0].VerticalThumb
+	// Hover the list so the page reveals its scrollbar, then drag the thumb up.
+	if err := view.Move(center.X+center.Width-4, center.Y+20); err != nil {
+		t.Fatal(err)
+	}
+	view.Rest()
+	var bar gfx.Rect
+	for _, hit := range view.Snapshot().Hits {
+		if hit.Label == "Vertical scrollbar" && pointInRect(hit.Bounds.X+1, hit.Bounds.Y+1, center) {
+			bar = hit.Bounds
+			break
+		}
+	}
+	if bar.Width <= 0 {
+		t.Fatal("the file list has no vertical scrollbar")
+	}
 	before := scroll.Offset
-	if err := view.Press(thumb.X+thumb.Width/2, thumb.Y+thumb.Height/2); err != nil {
+	x, y := bar.X+bar.Width/2, bar.Y+bar.Height/2
+	if err := view.Press(x, y); err != nil {
 		t.Fatal(err)
 	}
-	if err := view.Move(thumb.X+thumb.Width/2, thumb.Y+thumb.Height/2-30); err != nil {
+	if err := view.Move(x, y-30); err != nil {
 		t.Fatal(err)
 	}
-	if err := view.Release(thumb.X+thumb.Width/2, thumb.Y+thumb.Height/2-30); err != nil {
+	if err := view.Release(x, y-30); err != nil {
 		t.Fatal(err)
 	}
 	if scroll.Offset >= before || w.ui.offset[0] != scroll.Offset {
@@ -707,4 +723,98 @@ func (h *sftpNativeHost) Post(fn func()) {
 	if fn != nil {
 		fn()
 	}
+}
+
+// snapshotMenuHit is the painted row of an open page menu named label.
+func snapshotMenuHit(view *headless.Session, label string) (gfx.Hit, bool) {
+	if label == "" {
+		return gfx.Hit{}, false
+	}
+	for _, hit := range view.Snapshot().Hits {
+		if hit.Role == gfx.RoleMenuItem && strings.HasPrefix(hit.Label, label) {
+			return hit, true
+		}
+	}
+	return gfx.Hit{}, false
+}
+
+// dualHitLabel is dualHit for a page menu row, which the page names by its label.
+func dualHitLabel(t *testing.T, view *headless.Session, label string) gfx.Rect {
+	t.Helper()
+	if err := view.Driver().Pump(); err != nil {
+		t.Fatal(err)
+	}
+	hit, ok := snapshotMenuHit(view, label)
+	if !ok {
+		t.Fatalf("no menu row named %q is painted", label)
+	}
+	return hit.Bounds
+}
+
+// dualClickMenuLabel clicks the painted row of an open page menu named label,
+// as a user does.
+func dualClickMenuLabel(t *testing.T, view *headless.Session, label string) {
+	t.Helper()
+	// The page declares an open menu in the repaint its opener asks for.
+	if err := view.Driver().Pump(); err != nil {
+		t.Fatal(err)
+	}
+	hit, ok := snapshotMenuHit(view, label)
+	if !ok {
+		var labels []string
+		for _, h := range view.Snapshot().Hits {
+			if h.Role == gfx.RoleMenuItem {
+				labels = append(labels, h.Label)
+			}
+		}
+		t.Fatalf("no menu row named %q is painted; have %q", label, labels)
+	}
+	if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// menuRowsLabel is the label of the row a menu would paint for id.
+func menuRowsLabel(rows menuRows, id gfx.ID) (string, bool) {
+	for index := range rows.entries[:rows.count] {
+		entry := &rows.entries[index]
+		if entry.separator || entry.content != nil {
+			continue
+		}
+		if entry.item.ID == id {
+			return entry.item.Label, true
+		}
+	}
+	return "", false
+}
+
+// windowMenuRowLabel is the label of the file list's context menu row for id.
+func (w *sftpWindow) windowMenuRowLabel(id gfx.ID) string {
+	label, _ := menuRowsLabel(w.windowMenuRows(), id)
+	return label
+}
+
+// headerMenuRowLabel is the label of one pane's More menu row for id.
+func (w *sftpWindow) headerMenuRowLabel(side int, id gfx.ID) string {
+	label, _ := menuRowsLabel(w.headerMenuRows(side, w.ui.panes[side].bounds.Width), id)
+	return label
+}
+
+// panelMenuRowLabel is the label of the docked panel's More menu row for id.
+func (state *State) panelMenuRowLabel(view *sftpView, id gfx.ID) string {
+	label, _ := menuRowsLabel(state.panelHeaderMenuRows(view.active(), view), id)
+	return label
+}
+
+// canvasMenuHit is the painted row of an open page menu named label.
+func canvasMenuHit(canvas *gfx.Canvas, label string) (gfx.Hit, bool) {
+	if label == "" {
+		return gfx.Hit{}, false
+	}
+	for _, hit := range canvas.Hits() {
+		if hit.Role == gfx.RoleMenuItem && strings.HasPrefix(hit.Label, label) {
+			return hit, true
+		}
+	}
+	return gfx.Hit{}, false
 }

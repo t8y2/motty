@@ -10,7 +10,7 @@ const transferRowHeight = float32(38)
 
 func (state *State) declareTransferCenter(c ui.C) {
 	center := &state.transfers
-	center.details.hover, center.details.current = transferDetailRow{}, transferDetailRow{}
+	center.details.beginPaint()
 	if !center.open || !state.transferCenterAvailable() {
 		return
 	}
@@ -78,7 +78,7 @@ func (state *State) declareTransferBody(c ui.C, height float32) {
 		state.declareTransferRecovery(c)
 
 		center.listBox = ui.List(c, &center.listState, len(center.rows), center.rowDecl).Grow(1).MinHeight(0).FillWidth().
-			Label(m.Title).HitWith(hitTransfersList, m.Title, gfx.HitOptions{Role: gfx.RoleGroup})
+			Label(m.Title).AlwaysScrollbars().ScrollbarSize(10).HitWith(hitTransfersList, m.Title, gfx.HitOptions{Role: gfx.RoleGroup})
 		center.body.list = center.listBox
 		if scroll := center.listBox.ScrollState(); scroll != nil && center.scroll != center.scrollSynced {
 			scroll.ScrollTo(center.scroll)
@@ -86,6 +86,7 @@ func (state *State) declareTransferBody(c ui.C, height float32) {
 			// The List declared its visible rows at its previous offset.
 			c.Canvas().RequestFrame()
 		}
+		state.declareTransferCenterPreview(c)
 	}).DrawOver(center.bodyDraw)
 }
 
@@ -170,8 +171,26 @@ func (state *State) declareTransferFilters(c ui.C, width float32) {
 	ui.Row(c).Height(30).Shrink(0).FillWidth().Gap(8).Items(ui.Center).
 		HitWith(hitTransfersScopeLabel, center.scopeLabel, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: center.scopeLabel}).
 		Children(func() {
-			center.body.host = ui.Slot(c).Width(min(172, width*0.23)).Height(30)
-			center.body.direction = ui.Slot(c).Width(min(134, width*0.23)).Height(30)
+			host := ui.Select(c, &center.host, center.hostChoices, func(host *transferHost) string {
+				if host == nil {
+					return m.AllHosts
+				}
+				return host.label
+			}).Small().Width(min(172, width*0.23)).Height(30).Label(m.Hosts).Hint(center.hostLabel).
+				Placeholder(center.hostLabel)
+			if host.Changed() {
+				center.scroll = 0
+				center.details.dismiss()
+				state.describeTransferScope()
+			}
+			direction := ui.Select(c, &center.direction, transferDirections[:], state.transferDirectionLabel).
+				Small().Width(min(134, width*0.23)).Height(30).Label(m.Direction).
+				Hint(state.transferDirectionLabel(center.direction))
+			if direction.Changed() {
+				center.scroll = 0
+				center.details.dismiss()
+				state.describeTransferScope()
+			}
 			input := ui.TextFieldID(c, hitTransfersSearch, &center.search, m.Search, m.Search).
 				Icon(lucideIcons[iconSearch]).FontSize(metrics.FontSizeS).Height(30).MinWidth(52).MaxWidth(340).Grow(5)
 			if input.Changed() {
@@ -229,83 +248,22 @@ func (state *State) declareTransferAction(c ui.C, id gfx.ID, icon uint8, label s
 }
 
 func (state *State) paintTransferCenterBody(d *ui.DrawContext) {
-	center, m, theme := &state.transfers, state.messages.Transfers, *d.Theme
-	pad, canvas := theme.Metrics.PadSurface, d.Canvas
+	center, theme := &state.transfers, *d.Theme
+	pad := theme.Metrics.PadSurface
 	center.surface = gfx.Rect{X: d.Rect.X - pad, Y: d.Rect.Y - pad, Width: d.Rect.Width + 2*pad, Height: d.Rect.Height + 2*pad}
 	if len(center.batch.targets) > 0 {
 		center.list = gfx.Rect{}
-		state.paintTransferBatchControls(canvas, theme)
 		return
 	}
 	center.list = center.body.list.Rect()
 	if scroll := center.listBox.ScrollState(); scroll != nil {
+		// The List owns its offset while the user moves it; adopt that offset so
+		// the next paint does not scroll back to where the application last put
+		// it. A reset (a filter change or a new upload) still goes through
+		// center.scroll.
 		center.scroll, center.scrollSynced = scroll.Offset, scroll.Offset
 	}
-	area := components.BeginScrollArea(canvas, theme, center.list, gfx.Size{Height: float32(len(center.rows)) * transferRowHeight}).
-		Offset(0, center.scroll).VerticalScrollbar(hitTransfersBar, m.Title, "")
-	center.geometry = area.EndContent()
 	if center.count == 0 && center.list.Height >= 30 {
-		state.paintTransferEmpty(canvas, center.list, theme)
-	}
-	state.paintTransferSelect(canvas, center.body.host.Rect(), hitTransfersHost)
-	state.paintTransferSelect(canvas, center.body.direction.Rect(), hitTransfersDirection)
-}
-
-func (state *State) paintTransferSelect(canvas *gfx.Canvas, bounds gfx.Rect, trigger gfx.ID) {
-	center, m := &state.transfers, state.messages.Transfers
-	viewport := state.windowRect()
-	var label, value string
-	var dismiss gfx.ID
-	var items gfx.Scope
-	selected, count, menuWidth := 0, 0, float32(200)
-	if trigger == hitTransfersHost {
-		label, value, dismiss, items = m.Hosts, center.hostLabel, hitTransfersHostDismiss, hitTransfersHostItems
-		count, menuWidth = len(center.hosts)+1, 354
-	} else {
-		label, value, dismiss, items = m.Direction, state.transferDirectionLabel(center.direction), hitTransfersDirectionClose, hitTransfersDirectionItems
-		count, selected = int(transferDirectionCount), int(center.direction)
-	}
-	open := center.selectOpen == trigger
-	opening := open && state.popups.owner != dismiss
-	scroll := state.selectScroll(open, dismiss)
-	height := min(float32(8+count*32), min(264, viewport.Height-32))
-	content := gfx.Rect{
-		X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: max(bounds.Width, min(menuWidth, viewport.Width-32)), Height: height,
-	}
-	content.X = min(content.X, viewport.Width-content.Width-12)
-	if content.Y+height > viewport.Height-12 {
-		content.Y = max(12, bounds.Y-height-4)
-	}
-	if opening {
-		if trigger == hitTransfersHost && center.host != nil {
-			for index, host := range center.hosts {
-				if sameTransferHost(center.host, host) {
-					selected = index + 1
-					break
-				}
-			}
-		}
-		scroll.Offset = max(0, min(float32(selected)*32, float32(count*32)+8-height))
-		canvas.SetInitialFocus(items.At(selected))
-	}
-	control := components.BeginSelect(canvas, state.Theme(), bounds, components.SelectOptions{
-		TriggerID: trigger, Label: label, Value: value, Hint: value,
-		Open: open, Content: content, Size: components.SelectSizeSmall,
-		Layer: dialogLayer + 1, Scope: dismiss, DismissID: dismiss, Viewport: viewport, Scroll: scroll,
-	})
-	defer control.End()
-	if !open {
-		return
-	}
-	state.menuPlaced(control.ContentBounds())
-	if trigger == hitTransfersHost {
-		control.AddItem(components.SelectItem{ID: items.At(0), Label: m.AllHosts, Selected: center.host == nil})
-		for index, host := range center.hosts {
-			control.AddItem(components.SelectItem{ID: items.At(index + 1), Label: host.label, Hint: host.label, Selected: sameTransferHost(center.host, host)})
-		}
-		return
-	}
-	for index := range count {
-		control.AddItem(components.SelectItem{ID: items.At(index), Label: state.transferDirectionLabel(transferDirection(index)), Selected: index == selected})
+		state.paintTransferEmpty(d.Canvas, center.list, theme)
 	}
 }

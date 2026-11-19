@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
@@ -26,7 +25,6 @@ var (
 	hitTransfersClose     = tree.ID(transferCenterHits, "close")
 	hitTransfersScope     = tree.ID(transferCenterHits, "scope")
 	hitTransfersList      = tree.ID(transferCenterHits, "list")
-	hitTransfersBar       = tree.ID(transferCenterHits, "scrollbar")
 	hitTransfersClear     = tree.ID(transferCenterHits, "clear")
 	hitTransfersCancelAll = tree.ID(transferCenterHits, "cancel-all")
 	hitTransfersPauseAll  = tree.ID(transferCenterHits, "pause-all")
@@ -68,6 +66,9 @@ const (
 	transferRemoteCopy
 	transferDirectionCount
 )
+
+// transferDirections are the choices of the direction picker, in its order.
+var transferDirections = [...]transferDirection{transferAnyDirection, transferUpload, transferDownload, transferRemoteCopy}
 
 // transferEntry keeps the identity independent of worker-local IDs and tabs.
 // A closed connection releases its view; its finished snapshot remains readable.
@@ -126,22 +127,20 @@ type transferCenter struct {
 	listState     ui.ListState
 	listBox       ui.Box
 	body          transferBody
-	batchBody     transferBatchBody
 	rowDecl       func(ui.ListRow)
 	bodyDraw      func(*ui.DrawContext)
 	listWidth     float32
 	anchor        gfx.Rect
 	scrollSynced  float32
 	surface, list gfx.Rect
-	geometry      components.ScrollAreaGeometry
-	scroll        float32
-	count         int
-	dragging      bool
-	dragOffset    float32
+	// scroll is the offset the application asked the List for; scrollSynced is
+	// the offset the List reported after the last layout.
+	scroll float32
+	count  int
 
 	host                        *transferHost
 	hosts                       []*transferHost
-	selectOpen                  gfx.ID
+	hostChoices                 []*transferHost // nil (all hosts) followed by hosts
 	hostLabel, scopeLabel       string
 	cancelLabel, clearLabel     string
 	pauseLabel                  string
@@ -171,13 +170,8 @@ type transferRow struct {
 	entry int // index in entries, or -1 for a group header
 }
 
-// transferBody leaves room for the Viva Select triggers, which share the
-// workbench's dropdown focus, menu scrolling and dismissal.
-type transferBody struct{ host, direction, list ui.Box }
-
-// transferBatchBody is what the batch confirmation's declaration leaves for its
-// buttons.
-type transferBatchBody struct{ cancel, confirm ui.Box }
+// transferBody keeps the page List that shows the rows.
+type transferBody struct{ list ui.Box }
 
 // handlers makes the page handlers the transfer center uses, once.
 func (center *transferCenter) handlers(state *State) {
@@ -727,8 +721,8 @@ func (state *State) clickTransferCenter(id gfx.ID) bool {
 }
 
 func (center *transferCenter) close() {
-	center.open, center.dragging = false, false
-	center.selectOpen, center.batch = gfx.ID{}, transferBatch{}
+	center.open = false
+	center.batch = transferBatch{}
 	center.details.dismiss()
 }
 

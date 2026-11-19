@@ -32,7 +32,7 @@ func openSessionLogsWindow(t *testing.T, state *State, size gfx.Size) *headless.
 
 func openSessionLogsWindowWithInvalidator(t *testing.T, state *State, size gfx.Size, invalidator *app.Invalidator) *headless.Session {
 	t.Helper()
-	view, err := headless.Open(app.Config{
+	view, err := headless.Open(state.WindowConfig(app.Config{
 		Title: "Session Logs", Width: int(size.Width), Height: int(size.Height), Tree: Tree(),
 		Invalidator: invalidator,
 		Paint:       state.Paint, OnPointer: state.Pointer, OnKey: state.Key,
@@ -43,7 +43,7 @@ func openSessionLogsWindowWithInvalidator(t *testing.T, state *State, size gfx.S
 			}
 			return nil
 		},
-	}, nil, headless.Options{Scale: 1})
+	}), nil, headless.Options{Scale: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -363,10 +363,8 @@ func TestSessionLogsNativeP1Actions(t *testing.T) {
 			t.Fatal("open menu disabled its trigger")
 		}
 	}
-	// The popup's dismiss layer owns presses outside its scope, including the
-	// trigger; use its painted coordinates for the native outside-click path.
-	anchor := state.sessionLogs.view.moreBounds
-	if err := view.Click(anchor.X+anchor.Width/2, anchor.Y+anchor.Height/2); err != nil {
+	// Escape closes the popup; its own trigger then opens it again.
+	if err := view.Keys("escape"); err != nil {
 		t.Fatal(err)
 	}
 	if err := view.Rest(); err != nil {
@@ -543,13 +541,19 @@ func TestSessionLogsNativeKeyboardFlow(t *testing.T) {
 	if err := view.Rest(); err != nil {
 		t.Fatal(err)
 	}
-	// Arrow navigation puts the keyboard in the list: the first Down reaches
+	// Arrow navigation puts the keyboard in the menu: the first Down reaches
 	// the first choice.
 	if err := view.Rest(); err != nil {
 		t.Fatal(err)
 	}
 	focused = view.Snapshot().Focused
-	if index, ok := focused.In(hitSessionLogsFilterList); !ok || index != 0 {
+	var focusedRow gfx.Hit
+	for _, hit := range view.Snapshot().Hits {
+		if hit.ID == focused {
+			focusedRow = hit
+		}
+	}
+	if focusedRow.Role != gfx.RoleMenuItem || focusedRow.Label != state.messages.SessionLogs.StatusAll {
 		t.Fatalf("Down did not reach the filter's first choice: %v", focused)
 	}
 	if err := view.ClickLabel(state.messages.SessionLogs.StatusFailed); err != nil {

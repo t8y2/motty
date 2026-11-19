@@ -44,6 +44,7 @@ func (state *State) declareFindBar(c ui.C, session *Session) (slots findBarSlots
 			})
 		})
 	})
+	state.declareFindSettingsPopover(c, slots.settings)
 	return slots
 }
 
@@ -74,7 +75,6 @@ func (state *State) drawFindField(d *ui.DrawContext, sessionID uint32) {
 }
 
 func (state *State) paintFindBarSlots(canvas *gfx.Canvas, session *Session, slots findBarSlots) {
-	state.findSettingsUI.anchor = slots.settings.Rect()
 	canvas.LabelCenter(session.term.find.count, slots.count.Rect(), gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: state.pal.muted})
 }
 

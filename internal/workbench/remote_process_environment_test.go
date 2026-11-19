@@ -11,6 +11,7 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/remotetools"
 	"motty/internal/sshconn"
 )
@@ -179,20 +180,15 @@ func TestEnvironmentTableCopiesCompleteMarkupLookingValues(t *testing.T) {
 	}
 	var text remoteDetailText
 	var canvas gfx.Canvas
-	state.paintRemoteEnvironmentView(
-		&canvas,
-		gfx.Rect{Width: 700, Height: 240},
-		&text,
-		false, false, "", state.messages.Tools.RemoteProcessEnvironmentEmpty,
-		variables, header,
-		state.messages.Tools.RemoteProcessEnvironment,
-		state.messages.Tools.RemoteProcessEnvironment,
-		hitRemoteProcessDetailsText, hitRemoteProcessDetailsScroll,
-	)
+	columns, headings, rows := remoteEnvironmentTable(variables, header)
+	text.bounds = gfx.Rect{Width: 700, Height: 240}
+	fitRemoteEnvironmentColumns(columns, text.bounds.Width)
+	text.setTableModel(columns, headings, rows)
+	state.paintRemoteDetailTableSlot(&canvas, &text)
 	if text.mode != remoteDetailTable {
 		t.Fatalf("environment mode = %v, want table", text.mode)
 	}
-	text.selection.Select(components.TextPoint{}, components.TextPoint{Offset: text.table.TextLen()})
+	text.selection.Select(components.TextPoint{}, components.TextPoint{Offset: text.textLen()})
 	selected, ok := text.selectedText()
 	want := header[0] + "\t" + header[1] + "\n" +
 		"PIPE\tleft|right\n" +
@@ -213,15 +209,12 @@ func TestEnvironmentTableCopiesDelimitedValuesAsLosslessTSV(t *testing.T) {
 	header := [2]string{"Variable", "Value"}
 	var text remoteDetailText
 	var canvas gfx.Canvas
-	state.paintRemoteEnvironmentView(
-		&canvas, gfx.Rect{Width: 700, Height: 240}, &text,
-		false, false, "", state.messages.Tools.RemoteProcessEnvironmentEmpty,
-		variables, header,
-		state.messages.Tools.RemoteProcessEnvironment,
-		state.messages.Tools.RemoteProcessEnvironment,
-		hitRemoteProcessDetailsText, hitRemoteProcessDetailsScroll,
-	)
-	text.selection.Select(components.TextPoint{}, components.TextPoint{Offset: text.table.TextLen()})
+	columns, headings, rows := remoteEnvironmentTable(variables, header)
+	text.bounds = gfx.Rect{Width: 700, Height: 240}
+	fitRemoteEnvironmentColumns(columns, text.bounds.Width)
+	text.setTableModel(columns, headings, rows)
+	state.paintRemoteDetailTableSlot(&canvas, &text)
+	text.selection.Select(components.TextPoint{}, components.TextPoint{Offset: text.textLen()})
 	selected, ok := text.selectedText()
 	if !ok {
 		t.Fatal("environment table produced no selectable text")
@@ -364,32 +357,20 @@ func TestProcessEnvironmentCanRetryAfterFailure(t *testing.T) {
 
 func TestRemoteDetailTextRelayoutsWhenAsynchronousSourceChanges(t *testing.T) {
 	state, _, _ := openRemoteToolsDialog(t)
-	var text remoteDetailText
+	text := remoteDetailText{}
 	bounds := gfx.Rect{X: 100, Y: 100, Width: 700, Height: 420}
 	var canvas gfx.Canvas
-	state.paintRemoteDetailText(
-		&canvas, bounds, &text,
-		state.messages.Tools.RemoteProcessEnvironmentLoading,
-		state.messages.Tools.RemoteProcessDetailsTitle,
-		state.messages.Tools.RemoteProcessEnvironment,
-		hitRemoteProcessDetailsText,
-		hitRemoteProcessDetailsScroll,
-	)
-	if !remoteCanvasHasText(&canvas, state.messages.Tools.RemoteProcessEnvironmentLoading) {
-		t.Fatal("loading state is not painted")
+	text.mode, text.source = remoteDetailMarkdown, remoteDetailSource("first source")
+	state.paintRemoteDetailScroll(&ui.DrawContext{Canvas: &canvas, Rect: bounds}, &text)
+	if !remoteCanvasHasText(&canvas, "first source") {
+		t.Fatal("first source is not painted")
 	}
 
 	canvas.Reset()
-	state.paintRemoteDetailText(
-		&canvas, bounds, &text,
-		"PATH=/usr/local/bin\nSERVICE=web",
-		state.messages.Tools.RemoteProcessDetailsTitle,
-		state.messages.Tools.RemoteProcessEnvironment,
-		hitRemoteProcessDetailsText,
-		hitRemoteProcessDetailsScroll,
-	)
-	if !remoteCanvasHasText(&canvas, "PATH=/usr/local/bin") ||
-		remoteCanvasHasText(&canvas, state.messages.Tools.RemoteProcessEnvironmentLoading) {
+	text.mode, text.source = remoteDetailMarkdown, remoteDetailSource("PATH=/usr/local/bin\nSERVICE=web")
+	text.layoutWidth = 0
+	state.paintRemoteDetailScroll(&ui.DrawContext{Canvas: &canvas, Rect: bounds}, &text)
+	if !remoteCanvasHasText(&canvas, "PATH=/usr/local/bin") || remoteCanvasHasText(&canvas, "first source") {
 		t.Fatal("asynchronous detail text was not relaid out after the source changed")
 	}
 }
@@ -407,26 +388,32 @@ func TestRemoteProcessEnvironmentScrollsIndependently(t *testing.T) {
 	}
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if state.remote.processDetails.text.scrollBar.MaxOffsetY <= 0 {
-		t.Fatal("long environment table has no independent scroll range")
+	text := &state.remote.processDetails.text
+	if text.scrollBar.MaxOffsetY <= 0 {
+		t.Fatalf("long environment table has no independent scroll range: mode=%v max=%g", text.mode, text.scrollBar.MaxOffsetY)
 	}
-	bounds := state.remote.processDetails.text.bounds
-	before := state.remote.processDetails.text.scroll
+	bar, ok := hitByID(&canvas, hitRemoteProcessDetailsScroll)
+	if !ok || bar.Role != gfx.RoleSeparator ||
+		bar.Label != state.messages.Tools.RemoteProcessEnvironment || bar.Value != "0%" {
+		t.Fatalf("the detail scrollbar is not the old always-visible named percentage bar: %+v found=%v", bar, ok)
+	}
+	bounds := text.viewport
+	before := text.scroll
 	result := state.Scroll(gfx.ScrollEvent{
 		X: bounds.X + bounds.Width/2, Y: bounds.Y + min(bounds.Height/2, 40),
 		DeltaY: 20, Precise: true, Viewport: gfx.Size{Width: 1400, Height: 900},
 	})
-	if !result.Handled || state.remote.processDetails.text.scroll <= before {
+	if !result.Handled || text.scroll <= before {
 		t.Fatalf("environment wheel did not move independently: handled=%v before=%g after=%g",
-			result.Handled, before, state.remote.processDetails.text.scroll)
+			result.Handled, before, text.scroll)
 	}
-	before = state.remote.processDetails.text.scroll
+	before = text.scroll
 	keyResult := state.Key(gfx.KeyEvent{
 		Key: gfx.KeyPageDown, Target: hitRemoteProcessDetailsText,
 	})
-	if !keyResult.Handled || state.remote.processDetails.text.scroll <= before {
+	if !keyResult.Handled || text.scroll <= before {
 		t.Fatalf("environment keyboard scroll did not move: handled=%v before=%g after=%g",
-			keyResult.Handled, before, state.remote.processDetails.text.scroll)
+			keyResult.Handled, before, text.scroll)
 	}
 }
 
@@ -444,16 +431,17 @@ func TestCommandTabDoesNotScrollTheHiddenEnvironmentTable(t *testing.T) {
 
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	bounds := state.remote.processDetails.text.bounds
-	before := state.remote.processDetails.text.scroll
+	bounds := state.remote.processDetails.text.viewport
 	clickRemoteToolsDetailTab(t, state, hitRemoteProcessDetailsCommand)
-	result := state.Scroll(gfx.ScrollEvent{
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	state.Scroll(gfx.ScrollEvent{
 		X: bounds.X + bounds.Width/2, Y: bounds.Y + min(bounds.Height/2, 40),
 		DeltaY: 20, Precise: true, Viewport: gfx.Size{Width: 1400, Height: 900},
 	})
-	if !result.Handled || state.remote.processDetails.text.scroll != before {
-		t.Fatalf("hidden environment text moved: handled=%v before=%g after=%g",
-			result.Handled, before, state.remote.processDetails.text.scroll)
+	canvas.Reset()
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	if remoteCanvasHasText(&canvas, "VARIABLE_00") {
+		t.Fatal("the hidden environment table is still painted after switching tabs")
 	}
 }
 
@@ -506,4 +494,72 @@ func remoteCanvasExactTextBounds(canvas *gfx.Canvas, value string) (gfx.Rect, bo
 		}
 	}
 	return gfx.Rect{}, false
+}
+
+// The command's status line takes its 28 pixels from the tab panel and the
+// command text starts directly under it, as it did when the dialog painted the
+// panel itself: no column gap sits between them.
+func TestProcessCommandStatusSharesThePanelWithoutAGap(t *testing.T) {
+	state, server, _ := openRemoteToolsDialog(t)
+	server.failures["command"] = errors.New("exit status 1")
+	doubleClickRemoteToolsRow(t, state, 0)
+	waitFor(t, state, func() bool {
+		return state.remote.processDetails.commandLoaded && !state.remote.processDetails.commandLoading
+	})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, remoteToolsPageSize)
+	m := state.messages.Tools
+	status, ok := remoteCanvasText(&canvas, m.RemoteProcessCommandSummary)
+	if !ok {
+		t.Fatal("the command status was not painted")
+	}
+	if status.Bounds.Height > 28 {
+		t.Fatalf("the command status line height = %v, want at most the row's 28", status.Bounds.Height)
+	}
+	tab, ok := hitByLabelRole(&canvas, state.remoteProcessDetailTabLabel(hitRemoteProcessDetailsCommand), gfx.RoleTab)
+	if !ok {
+		t.Fatal("the command tab was not painted")
+	}
+	detail, ok := hitByID(&canvas, hitRemoteProcessDetailsText)
+	if !ok {
+		t.Fatal("the command text was not painted")
+	}
+	if status.Bounds.Y < tab.Bounds.Bottom() {
+		t.Fatalf("the status %v overlaps the tab %v", status.Bounds, tab.Bounds)
+	}
+	// The line's box is the 28 pixel row, and the command starts where that row
+	// ends; any gap here is the outer column's GapItem back again.
+	if detail.Bounds.Y != status.Bounds.Y+28 {
+		t.Fatalf("the command text starts at %v, not at the status row's bottom %v: a gap came back",
+			detail.Bounds.Y, status.Bounds.Y+28)
+	}
+}
+
+// The environment table sizes its first column from the room it is actually
+// given, not from the dialog's declared width.
+func TestEnvironmentTableSizesItsFirstColumnFromItsSlot(t *testing.T) {
+	state, _, _ := openRemoteToolsDialog(t)
+	doubleClickRemoteToolsRow(t, state, 0)
+	size := gfx.Size{Width: 900, Height: 600}
+	clickPageLabelIn(t, state, size, gfx.RoleTab, state.remoteProcessDetailTabLabel(hitRemoteProcessDetailsEnv))
+	waitFor(t, state, func() bool { return !state.remote.processDetails.loading })
+	var canvas gfx.Canvas
+	state.Paint(&canvas, size)
+	m := state.messages.Tools
+	name, ok := remoteCanvasExactTextBounds(&canvas, m.RemoteProcessEnvironmentName)
+	if !ok {
+		t.Fatal("the environment table has no name heading")
+	}
+	value, ok := remoteCanvasExactTextBounds(&canvas, m.RemoteProcessEnvironmentValue)
+	if !ok {
+		t.Fatal("the environment table has no value heading")
+	}
+	detail, ok := hitByID(&canvas, hitRemoteProcessDetailsText)
+	if !ok {
+		t.Fatal("the environment table has no viewport")
+	}
+	want := min(float32(300), max(detail.Bounds.Width*0.36, 140))
+	if got := value.X - name.X; got != want {
+		t.Fatalf("the first column is %v wide, want %v from the %v slot", got, want, detail.Bounds.Width)
+	}
 }

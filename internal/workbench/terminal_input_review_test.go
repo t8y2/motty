@@ -23,7 +23,7 @@ func TestTerminalInputPublicPasteRoutesRequireChoice(t *testing.T) {
 				state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
 				rightClick(state, session, 400, 300)
 				state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
-				state.Click(hitTerminalMenuPaste)
+				chooseMenu(t, state, hitTerminalMenuPaste)
 			} else {
 				chord := state.shortcuts.chords.Chord(shortcutPaste)
 				result := state.Shortcut(gfx.KeyEvent{Target: terminalHit(state, 0), Text: string(chord.Char), Modifiers: chord.Modifiers})

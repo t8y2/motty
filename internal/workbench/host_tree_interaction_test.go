@@ -190,3 +190,159 @@ func TestHostListTabOrderFollowsThePageDeclaration(t *testing.T) {
 		}
 	}
 }
+
+// Dropping a host on a group row puts it in that group; the group's count and
+// the row order follow the move.
+func TestHostListDragMovesAHostIntoAGroup(t *testing.T) {
+	state := nestedHostGroupState(t)
+	size := gfx.Size{Width: 1400, Height: 900}
+	canvas, _ := paintAt(state, size)
+	host := state.hosts[1]
+	row, ok := hostListHostHit(canvas, state, host.ID)
+	if !ok {
+		t.Fatal("the host row is not painted")
+	}
+	group := state.hostGroupIndex("Team/Prod")
+	header, ok := hostListGroupHit(canvas, state, group)
+	if !ok {
+		t.Fatal("the target group row is not painted")
+	}
+	canvas = dragHostGroup(state, size, row, header)
+	releaseHostGroup(state, size, canvas, row, header)
+	for _, moved := range state.hosts {
+		if moved.ID == host.ID {
+			if moved.Group != "Team/Prod" {
+				t.Fatalf("the dragged host is in %q, want Team/Prod", moved.Group)
+			}
+			return
+		}
+	}
+	t.Fatal("the dragged host disappeared")
+}
+
+// Dropping a host on another host puts it beside that host, in that host's
+// group: the list's one drag both moves between groups and orders the rows.
+func TestHostListDragOrdersAHostBesideAnother(t *testing.T) {
+	state := nestedHostGroupState(t)
+	size := gfx.Size{Width: 1400, Height: 900}
+	canvas, _ := paintAt(state, size)
+	source := state.hosts[1]
+	target := state.hosts[0]
+	from, ok := hostListHostHit(canvas, state, source.ID)
+	if !ok {
+		t.Fatal("the source row is not painted")
+	}
+	to, ok := hostListHostHit(canvas, state, target.ID)
+	if !ok {
+		t.Fatal("the target row is not painted")
+	}
+	canvas = dragHostGroup(state, size, from, to)
+	releaseHostGroup(state, size, canvas, from, to)
+	sourceAt, targetAt := state.hostIndex(source.ID), state.hostIndex(target.ID)
+	if sourceAt != targetAt+1 {
+		t.Fatalf("source is at %d, target at %d: want the source right after the target", sourceAt, targetAt)
+	}
+	for _, moved := range state.hosts {
+		if moved.ID == source.ID && moved.Group != "Team/Prod/EU" {
+			t.Fatalf("the dropped host is in %q, want the target's group", moved.Group)
+		}
+	}
+}
+
+// A secondary press on the list's own ground offers the catalog's top-level
+// actions; a press on a row or an open menu's backdrop does not.
+func TestHostsPageBlankPressOffersTopLevelActions(t *testing.T) {
+	state := nestedHostGroupState(t)
+	size := gfx.Size{Width: 1400, Height: 900}
+	paintAt(state, size)
+	area := state.chrome.hostList
+	if area.Height <= 0 {
+		t.Fatal("the list has no room")
+	}
+	result := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: gfx.ID{},
+		X: area.X + 20, Y: area.Y + area.Height - 10, Viewport: size,
+	})
+	if !result.Handled || !state.hostBlankMenu.open {
+		t.Fatalf("blank press result=%+v menu=%v", result, state.hostBlankMenu.open)
+	}
+	canvas, _ := paintAt(state, size)
+	for _, id := range []gfx.ID{hitHostBlankNewHost, hitHostBlankNewGroup} {
+		if _, ok := hitByID(canvas, id); !ok {
+			t.Errorf("blank menu row %s is not painted", tree.Text(id))
+		}
+	}
+}
+
+// The group tree is the whole catalog, not just its folders: hosts sit under
+// their groups as rows and choosing one selects it.
+func TestHostTreePaneShowsAndSelectsHosts(t *testing.T) {
+	state := nestedHostGroupState(t)
+	state.hostSide.open = true
+	state.setHostFilter(true, "Team")
+	size := gfx.Size{Width: 1400, Height: 900}
+	_, texts := paintAt(state, size)
+	if !state.hostSide.visible {
+		t.Fatal("the tree pane is not shown")
+	}
+	hostRow, groupRow := -1, -1
+	for i, row := range state.hostSideRows {
+		if row.Kind == hostSideRowHost && hostRow < 0 {
+			hostRow = i
+		}
+		if row.Kind == hostSideRowGroup && state.hostGroups[row.GroupIndex].Name == "Team" {
+			groupRow = i
+		}
+	}
+	if hostRow < 0 || groupRow < 0 {
+		t.Fatalf("rows = %+v, want a host under Team", state.hostSideRows)
+	}
+	if state.hostSideRows[hostRow].Depth <= state.hostSideRows[groupRow].Depth {
+		t.Fatalf("the host row is not under its group: %+v", state.hostSideRows)
+	}
+	host := state.hosts[state.hostSideRows[hostRow].HostIndex]
+	if !contains(texts, host.Label) {
+		t.Fatalf("the tree does not paint %q: %v", host.Label, texts)
+	}
+	clickRow(state, size, state.hostSide.tree.RowID(hostRow))
+	if state.selectedHostID != host.ID {
+		t.Fatalf("choosing the host selected %d, want %d", state.selectedHostID, host.ID)
+	}
+}
+
+// A host dragged onto a group row in the tree moves into that group.
+func TestHostTreePaneDragsAHostIntoAGroup(t *testing.T) {
+	state := nestedHostGroupState(t)
+	state.hostSide.open = true
+	state.setHostFilter(true, "Team")
+	size := gfx.Size{Width: 1400, Height: 900}
+	canvas, _ := paintAt(state, size)
+	hostRow, groupRow := -1, -1
+	for i, row := range state.hostSideRows {
+		if row.Kind == hostSideRowHost && hostRow < 0 {
+			hostRow = i
+		}
+		if row.Kind == hostSideRowGroup && state.hostGroups[row.GroupIndex].Name == "Team/Prod" {
+			groupRow = i
+		}
+	}
+	if hostRow < 0 || groupRow < 0 {
+		t.Fatalf("rows = %+v, want a host under the tree", state.hostSideRows)
+	}
+	host := state.hosts[state.hostSideRows[hostRow].HostIndex]
+	from, ok := hitByID(canvas, state.hostSide.tree.RowID(hostRow))
+	if !ok {
+		t.Fatal("the host row is not painted")
+	}
+	to, ok := hitByID(canvas, state.hostSide.tree.RowID(groupRow))
+	if !ok {
+		t.Fatal("the group row is not painted")
+	}
+	canvas = dragHostGroup(state, size, from, to)
+	releaseHostGroup(state, size, canvas, from, to)
+	for _, moved := range state.hosts {
+		if moved.ID == host.ID && moved.Group != "Team/Prod" {
+			t.Fatalf("the dragged host is in %q, want Team/Prod", moved.Group)
+		}
+	}
+}

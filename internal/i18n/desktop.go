@@ -27,6 +27,7 @@ type DesktopMessages struct {
 	ShareClipboard            string
 	HideBars                  string
 	ConsoleSession            string
+	RemoteAudio               string
 	StandardSecurity          string
 	StandardSecurityNote      string
 	VNCPlaintext              string

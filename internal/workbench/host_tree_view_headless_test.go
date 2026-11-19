@@ -49,8 +49,8 @@ func TestHostTreePaneSelectsGroupsAndKeepsBothLayouts(t *testing.T) {
 		if !state.hostSide.visible {
 			t.Fatal("the group tree is not shown")
 		}
-		for row, group := range state.hostSideRows {
-			if group >= 0 && state.hostGroups[group].Name == name {
+		for row, entry := range state.hostSideRows {
+			if entry.Kind == hostSideRowGroup && state.hostGroups[entry.GroupIndex].Name == name {
 				return row
 			}
 		}
@@ -67,11 +67,18 @@ func TestHostTreePaneSelectsGroupsAndKeepsBothLayouts(t *testing.T) {
 		t.Fatal("the tree pane still shows the group chips")
 	}
 
-	click(state.hostSide.tree.RowID(groupRow("Team")))
+	group := groupRow("Team")
+	expanded := state.hostGroups[state.hostSideRows[group].GroupIndex].Expanded
+	click(state.hostSide.tree.RowID(group))
 	must(view.Rest())
-	if !state.hostFilterOn || state.hostFilter != "Team" {
-		t.Fatalf("choosing Team left the filter at %q (on %v)", state.hostFilter, state.hostFilterOn)
+	if state.hostGroups[state.hostSideRows[group].GroupIndex].Expanded == expanded {
+		t.Fatal("choosing the group did not open or close it")
 	}
+	if state.hostFilterOn {
+		t.Fatal("choosing the group also filtered the list")
+	}
+	state.setHostFilter(true, "Team")
+	must(view.Rest())
 	click(state.hostSide.tree.RowID(0))
 	must(view.Rest())
 	if state.hostFilterOn {
@@ -84,9 +91,6 @@ func TestHostTreePaneSelectsGroupsAndKeepsBothLayouts(t *testing.T) {
 	must(view.Rest())
 	if state.hostView != hostViewGrid || !state.hostSide.visible {
 		t.Fatalf("grid with the tree: layout %d, tree shown %v", state.hostView, state.hostSide.visible)
-	}
-	if !state.hostFilterOn || state.hostFilter != "Team" {
-		t.Fatalf("switching to grid lost the tree's choice: %q (on %v)", state.hostFilter, state.hostFilterOn)
 	}
 	click(hitHostViewList)
 	must(view.Rest())
@@ -102,8 +106,8 @@ func TestHostTreePaneSelectsGroupsAndKeepsBothLayouts(t *testing.T) {
 	if _, ok := hitByIDSnapshot(view.Snapshot().Hits, hitHostFilterAll); !ok {
 		t.Fatal("the chips do not return when the tree closes")
 	}
-	if !state.hostFilterOn || state.hostFilter != "Team" {
-		t.Fatalf("closing the tree lost its choice: %q (on %v)", state.hostFilter, state.hostFilterOn)
+	if state.hostFilterOn {
+		t.Fatalf("closing the tree left the filter on %q", state.hostFilter)
 	}
 
 	state.hostSide.open, state.hostView, state.hostSide.width = true, hostViewGrid, 300

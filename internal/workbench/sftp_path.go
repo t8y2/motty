@@ -85,20 +85,6 @@ func (state *State) sftpPathShortcut(target gfx.ID) (gfx.EventResult, bool) {
 	return result, true
 }
 
-func (state *State) paintSFTPPathInput(canvas *gfx.Canvas, bounds gfx.Rect, view *sftpView) {
-	value := view.active().pathInput().String()
-	focused := canvas.Focused() == hitSFTPPath
-	readOnly := !view.local && view.busy
-	m := state.messages.Tools
-	components.PaintInput(canvas, state.Theme(), bounds, components.InputSnapshot{
-		ID: hitSFTPPath, Label: m.FilesPathLabel, Value: value,
-		Placeholder: m.FilesPathPlaceholder, Hint: m.FilesPathPlaceholder,
-		Focused: focused, PlatformEditing: focused && !readOnly && value != "",
-		// A pending request must not turn server latency into focus loss.
-		ReadOnly: readOnly,
-	})
-}
-
 func (state *State) sftpPathKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if event.Target != hitSFTPPath || state.activeSection != sectionTerminal || state.modal != modalNone {
 		return gfx.EventResult{}, false

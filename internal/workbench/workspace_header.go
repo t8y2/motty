@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	layoutcore "motty/internal/workspace"
@@ -140,16 +139,21 @@ func (state *State) declareWorkspaceHeader(c ui.C, size gfx.Size) {
 				if plan.compact {
 					slots.save = state.declareIconButton(c, hitWorkspaceHeaderSave, iconFolderPlus, m.WorkspaceSaveMenu, false, iconButtonQuiet).Size(plan.saveWidth, 30).Shrink(0)
 				} else {
-					slots.save = ui.Slot(c).Size(plan.saveWidth, 30).Shrink(0)
+					slots.save = ui.Button(c, m.WorkspaceDraftSave).Small().Ghost().Icon(lucideIcons[iconFolderPlus]).FontSize(workspaceHeaderLabelSize).
+						Hit(hitWorkspaceHeaderSave, m.WorkspaceDraftSave).Size(plan.saveWidth, 30).Shrink(0)
 				}
 			}
 			slots.broadcast = ui.Slot(c).Size(plan.broadcastWidth, 30).Shrink(0)
 			if plan.compact {
 				slots.layout = state.declareIconButton(c, hitWorkspaceHeaderLayout, iconColumns2, m.WorkspaceHeaderLayout, false, iconButtonQuiet).Size(plan.layoutWidth, 30).Shrink(0)
 			} else {
-				slots.layout = ui.Slot(c).Size(plan.layoutWidth, 30).Shrink(0)
+				slots.layout = ui.Button(c, plan.layoutLabel).Small().Ghost().Icon(lucideIcons[iconColumns2]).FontSize(workspaceHeaderLabelSize).
+					Hit(hitWorkspaceHeaderLayout, plan.layoutLabel).Size(plan.layoutWidth, 30).Shrink(0)
 			}
 		})
+		if state.workspaceHeaderMenu == workspaceHeaderMenuLayout {
+			state.declareWorkspaceLayoutPanel(c, size, plan)
+		}
 	})
 	state.workspaceHeaderSlots = slots
 }
@@ -159,7 +163,7 @@ func (state *State) paintWorkspaceHeader(canvas *gfx.Canvas, size gfx.Size) (ope
 	if plan.bounds.Width <= 0 || plan.bounds.Height <= 0 {
 		return false
 	}
-	pal, m := state.pal, state.messages
+	pal := state.pal
 	bounds, slots := plan.bounds, state.workspaceHeaderSlots
 	background := pal.workspace
 	canvas.Fill(gfx.Rect{X: bounds.X, Y: bounds.Y + bounds.Height - 1, Width: bounds.Width, Height: 1}, pal.line)
@@ -170,20 +174,10 @@ func (state *State) paintWorkspaceHeader(canvas *gfx.Canvas, size gfx.Size) (ope
 			gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: plan.color})
 	}
 	state.paintWorkspaceBroadcast(canvas, slots.broadcast.Rect(), plan.broadcastLabel, plan.status, plan.broadcasting)
-	if plan.temporary && !plan.compact {
-		components.BeginButton(canvas, state.Theme(), hitWorkspaceHeaderSave, slots.save.Rect()).Small().FontSize(workspaceHeaderLabelSize).
-			WithIcon(lucideIcons[iconFolderPlus]).Ghost(m.WorkspaceDraftSave)
-	}
-	if !plan.compact {
-		components.BeginButton(canvas, state.Theme(), hitWorkspaceHeaderLayout, slots.layout.Rect()).Small().FontSize(workspaceHeaderLabelSize).
-			WithIcon(lucideIcons[iconColumns2]).Ghost(plan.layoutLabel)
-	}
 
-	if state.workspaceHeaderMenu == workspaceHeaderMenuLayout {
-		state.paintWorkspaceLayoutMenu(canvas, size, slots.layout.Rect())
-		open = true
-	}
-	return open || state.workspaceHeaderMenu == workspaceHeaderMenuTools
+	// The layout popover is part of the page; the header only reports the menus
+	// it still owns so a window that stops managing the workspace drops them.
+	return state.workspaceHeaderMenu != workspaceHeaderMenuNone
 }
 
 // Broadcast uses a warning treatment because it changes where keystrokes go.
@@ -315,7 +309,11 @@ func (state *State) workspaceHeaderKey(event gfx.KeyEvent) gfx.EventResult {
 	}
 	if event.Key == gfx.KeyEscape && !event.Repeat {
 		state.workspaceHeaderMenu = workspaceHeaderMenuNone
-		return gfx.EventResult{Handled: true, Repaint: true, Focus: state.activeTerminalFocusHit()}
+		state.workspaceCardDrag = workspaceCardDrag{}
+		// The repaint applies this after the page popover gives its own focus
+		// back, so the keyboard ends on the terminal rather than its trigger.
+		state.workspaceHeaderFocusPending = state.activeTerminalFocusHit()
+		return gfx.EventResult{Handled: true, Repaint: true, Focus: state.workspaceHeaderFocusPending}
 	}
 	if result, handled := state.menuKey(event); handled {
 		return result

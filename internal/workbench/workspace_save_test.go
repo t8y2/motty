@@ -50,7 +50,7 @@ func TestTemporaryWorkspaceCanBeSavedFromItsTabMenu(t *testing.T) {
 	if !menuHas(state, hitTabMenuSaveWorkspace) {
 		t.Fatal("a temporary workspace tab does not offer Save as Workspace Template")
 	}
-	state.Click(hitTabMenuSaveWorkspace)
+	chooseMenu(t, state, hitTabMenuSaveWorkspace)
 	if state.modal != modalWorkspaceSave || state.workspaceSave.workspace != workspaceID {
 		t.Fatalf("save dialog = modal %d workspace %d", state.modal, state.workspaceSave.workspace)
 	}
@@ -77,7 +77,7 @@ func TestOnlyTemporaryWorkspaceTabsOfferSave(t *testing.T) {
 		rightClickTab(state, hitTabList.At(int(workspaceID)))
 		var canvas gfx.Canvas
 		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-		if _, ok := hitByID(&canvas, hitTabMenuSaveWorkspace); ok {
+		if _, ok := menuHit(&canvas, state, hitTabMenuSaveWorkspace); ok {
 			t.Fatal("an ordinary session tab offers Save as Workspace Template")
 		}
 	})
@@ -97,7 +97,7 @@ func TestOnlyTemporaryWorkspaceTabsOfferSave(t *testing.T) {
 		rightClickTab(state, hitTabList.At(int(workspaceID)))
 		var canvas gfx.Canvas
 		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-		if _, ok := hitByID(&canvas, hitTabMenuSaveWorkspace); ok {
+		if _, ok := menuHit(&canvas, state, hitTabMenuSaveWorkspace); ok {
 			t.Fatal("a fixed-template tab offers Save as Workspace Template")
 		}
 	})

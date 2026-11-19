@@ -73,7 +73,6 @@ type aiBody struct {
 	close, history, newChat                  ui.Box
 	setup, list                              ui.Box
 	approvalDetails                          ui.Box
-	confirm, decline, approve                ui.Box
 	box, modelChip, scopeChip, reasoningChip ui.Box
 }
 
@@ -416,7 +415,11 @@ func (state *State) declareAIApproval(c ui.C, body *aiBody) {
 			}
 			ui.Column(c).MarginSides(0, 0, aiConfirmFoot, 0).Children(func() {
 				ui.Text(c, panel.confirmText).FontSize(aiSizes.small).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(aiConfirmLabel).MarginSides(0, 0, aiConfirmGap, 0)
-				body.confirm = ui.Slot(c).Height(aiConfirmField)
+				if !panel.confirmBound {
+					panel.confirmField.Bind(&ai.confirm)
+					panel.confirmBound = true
+				}
+				ui.TextFieldID(c, hitAIConfirm, &panel.confirmField, m.ConfirmField, request.Confirm).Height(aiConfirmField)
 			})
 		}
 		ui.Row(c).Height(aiButtonHeight).Gap(8).Items(ui.Center).Children(func() {
@@ -430,8 +433,16 @@ func (state *State) declareAIApproval(c ui.C, body *aiBody) {
 			} else {
 				ui.Spacer(c)
 			}
-			body.decline = ui.Slot(c).Size(92, aiButtonHeight)
-			body.approve = ui.Slot(c).Size(92, aiButtonHeight)
+			approveLabel, declineLabel := m.Approve, m.Decline
+			if approval.escalation {
+				approveLabel, declineLabel = m.EscalationApprove, m.EscalationDecline
+			}
+			allowed := !request.NeedsText || strings.TrimSpace(ai.confirm.String()) == request.Confirm
+			ui.Button(c, declineLabel).Small().Outline().Hit(hitAIDecline, declineLabel).Size(92, aiButtonHeight)
+			approve := ui.Button(c, approveLabel).Small().Hit(hitAIApprove, approveLabel).Size(92, aiButtonHeight).Disabled(!allowed)
+			if !approval.escalation && request.Assessment.Level >= risk.High {
+				approve.Destructive()
+			}
 		})
 	})
 }
@@ -475,41 +486,9 @@ func (state *State) declareAIApprovalDetails(c ui.C, approval *aiApproval) {
 // only keeps the geometry the wheel, the target selector and the menus read.
 func (state *State) paintAIBottom(canvas *gfx.Canvas, body *aiBody) {
 	ai, panel := &state.ai, &state.ai.panel
-	m := state.messages.AIPanel
-	theme := state.Theme()
-
 	if len(ai.approvals) > 0 {
 		panel.approvalLay.bounds = body.approvalDetails.Rect()
 		panel.approvalLay.scroll = body.approvalDetails.ScrollState()
-		approval := ai.approvals[0]
-		request := &approval.request
-		allowed := true
-		if request.NeedsText {
-			allowed = strings.TrimSpace(ai.confirm.String()) == request.Confirm
-			value := ai.confirm.String()
-			focused := canvas.Focused() == hitAIConfirm
-			components.PaintInput(canvas, theme, body.confirm.Rect(), components.InputSnapshot{
-				ID: hitAIConfirm, Label: m.ConfirmField, Value: value, Placeholder: request.Confirm,
-				Focused: focused, PlatformEditing: focused && value != "",
-			})
-		}
-		approveLabel, declineLabel := m.Approve, m.Decline
-		if approval.escalation {
-			approveLabel, declineLabel = m.EscalationApprove, m.EscalationDecline
-		}
-		approve := components.BeginButton(canvas, theme, hitAIApprove, body.approve.Rect()).Small()
-		decline := components.BeginButton(canvas, theme, hitAIDecline, body.decline.Rect()).Small()
-		decline.Outline(declineLabel)
-		if !allowed {
-			approve = approve.Disabled()
-		}
-		if approval.escalation {
-			approve.Default(approveLabel)
-		} else if request.Assessment.Level >= risk.High {
-			approve.Destructive(approveLabel)
-		} else {
-			approve.Default(approveLabel)
-		}
 	}
 
 	// The message box, with the model chip and Send inside it.

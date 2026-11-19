@@ -14,12 +14,6 @@ import (
 )
 
 var (
-	hitTransfersHost            = tree.ID(transferCenterHits, "host")
-	hitTransfersHostDismiss     = tree.ID(transferCenterHits, "host-dismiss")
-	hitTransfersHostItems       = tree.Sub(transferCenterHits, tree.Name("host-item"))
-	hitTransfersDirection       = tree.ID(transferCenterHits, "direction")
-	hitTransfersDirectionClose  = tree.ID(transferCenterHits, "direction-dismiss")
-	hitTransfersDirectionItems  = tree.Sub(transferCenterHits, tree.Name("direction-item"))
 	hitTransfersRetryFailed     = tree.ID(transferCenterHits, "retry-failed")
 	hitTransfersSkipVisible     = tree.ID(transferCenterHits, "skip-visible")
 	hitTransfersReplaceVisible  = tree.ID(transferCenterHits, "replace-visible")
@@ -113,7 +107,6 @@ func (state *State) showTransferConflict() {
 	center.filter, center.host, center.direction = transferFilterFailed, nil, transferAnyDirection
 	center.query = ""
 	center.search.SetText("")
-	center.selectOpen = gfx.ID{}
 	center.details.dismiss()
 	center.groups[transferFilterFailed].collapsed = false
 	center.open, center.scroll = true, 0
@@ -174,6 +167,8 @@ func (state *State) describeTransferScope() {
 	if center.host != nil && !slices.ContainsFunc(center.hosts, func(host *transferHost) bool { return sameTransferHost(host, center.host) }) {
 		center.hosts = append(center.hosts, center.host)
 	}
+	center.hostChoices = append(center.hostChoices[:0], nil)
+	center.hostChoices = append(center.hostChoices, center.hosts...)
 	center.hostLabel = m.AllHosts
 	if center.host != nil {
 		center.hostLabel = center.host.label
@@ -370,17 +365,6 @@ func (state *State) clickTransferBulk(id gfx.ID) bool {
 		return true
 	}
 	switch id {
-	case hitTransfersHost, hitTransfersDirection:
-		if center.selectOpen == id {
-			center.selectOpen = gfx.ID{}
-		} else {
-			center.selectOpen = id
-		}
-		center.details.dismiss()
-		return true
-	case hitTransfersHostDismiss, hitTransfersDirectionClose:
-		center.selectOpen = gfx.ID{}
-		return true
 	case hitTransfersRetryFailed, hitTransfersSkipVisible, hitTransfersReplaceVisible, hitTransfersResumeVisible:
 		policy := sftpclient.ExistingFail
 		switch id {
@@ -395,36 +379,12 @@ func (state *State) clickTransferBulk(id gfx.ID) bool {
 		if len(batch.targets) == 0 {
 			return true
 		}
-		center.selectOpen = gfx.ID{}
 		center.details.dismiss()
 		if policy == sftpclient.ExistingReplace || policy == sftpclient.ExistingResume {
 			center.batch = batch
 		} else {
 			state.dispatchTransferBatch(batch)
 		}
-		return true
-	}
-	if index, ok := id.In(hitTransfersHostItems); ok {
-		if index < 0 || index > len(center.hosts) {
-			return true
-		}
-		center.host = nil
-		if index > 0 {
-			center.host = center.hosts[index-1]
-		}
-		center.selectOpen, center.scroll = gfx.ID{}, 0
-		center.details.dismiss()
-		state.describeTransferScope()
-		return true
-	}
-	if index, ok := id.In(hitTransfersDirectionItems); ok {
-		if index < 0 || index >= int(transferDirectionCount) {
-			return true
-		}
-		center.direction = transferDirection(index)
-		center.selectOpen, center.scroll = gfx.ID{}, 0
-		center.details.dismiss()
-		state.describeTransferScope()
 		return true
 	}
 	return false

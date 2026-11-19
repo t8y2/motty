@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
@@ -105,12 +106,17 @@ func TestSnippetManualOrderPersistsThroughSortingAndFiltering(t *testing.T) {
 	state.refreshSnippets()
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if _, ok := canvasHit(canvas.Hits(), hitSnippetHandles.At(0)); !ok {
-		t.Fatal("manual ordering did not expose a drag handle")
+	if state.snippets.rows.RowID(0).IsZero() {
+		t.Fatal("manual ordering did not declare the list rows")
 	}
-	result, handled := state.snippetReorderKey(gfx.KeyEvent{Target: hitSnippetHandles.At(0), Key: gfx.KeyDown})
-	if !handled || result.Focus != hitSnippetHandles.At(1) || state.snippets.list[1].Name != "beta" {
-		t.Fatalf("keyboard reorder: handled=%v focus=%s order=%v", handled, tree.Text(result.Focus), state.snippets.list)
+	first := state.snippets.rows.RowID(0)
+	config := state.WindowConfig(app.Config{
+		Title: "Motty", Width: 1400, Height: 900, Tree: Tree(),
+		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
+	})
+	result := config.OnKey(gfx.KeyEvent{Target: first, Key: gfx.KeyDown, Modifiers: gfx.ModifierAlt})
+	if !result.Handled || result.Focus != state.snippets.rows.RowID(1) || state.snippets.list[1].Name != "beta" {
+		t.Fatalf("keyboard reorder: handled=%v focus=%s order=%v", result.Handled, tree.Text(result.Focus), state.snippets.list)
 	}
 	if err := state.saveWithResult(); err != nil {
 		t.Fatalf("persist keyboard reorder: %v", err)
@@ -262,16 +268,11 @@ func TestSnippetFilterIsChosenFromThePage(t *testing.T) {
 		snippet{Name: "a", Command: "a", Group: "Ops"},
 		snippet{Name: "b", Command: "b"},
 	)
-	state.Click(hitSnippetFilter)
-	if !state.snippets.filterOpen {
-		t.Fatal("the filter did not open")
+	chooseSelectOption(t, state, state.messages.FieldGroup, "Ops")
+	if state.snippets.filter.group != "Ops" || len(state.snippets.visible) != 1 {
+		t.Fatalf("filter = %+v visible=%v", state.snippets.filter, state.snippets.visible)
 	}
-	state.Click(hitSnippetFilterList.At(0))
-	if state.snippets.filterOpen || state.snippets.filter.group != "Ops" || len(state.snippets.visible) != 1 {
-		t.Fatalf("filter = %+v open=%v visible=%v", state.snippets.filter, state.snippets.filterOpen, state.snippets.visible)
-	}
-	state.Click(hitSnippetFilter)
-	state.Click(hitSnippetFilterAll)
+	chooseSelectOption(t, state, state.messages.FieldGroup, state.messages.Tools.SnippetFilterAll)
 	if !state.snippets.filter.all() || len(state.snippets.visible) != 2 {
 		t.Fatalf("All groups left filter %+v", state.snippets.filter)
 	}

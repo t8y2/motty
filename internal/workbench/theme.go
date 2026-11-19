@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/highlight"
 )
@@ -75,6 +76,14 @@ func (state *State) switchTheme() gfx.Theme {
 	// dark theme turns it dark on a light green track, which reads as a hole.
 	theme.PrimaryForeground = theme.Foreground
 	return theme
+}
+
+// switchLook is how every switch the page declares is dressed: the track and
+// thumb of switchTheme.
+func (state *State) switchLook(theme gfx.Theme, switchState gfx.State, progress float32) components.SwitchLook {
+	theme.Primary = state.pal.success
+	theme.PrimaryForeground = theme.Foreground
+	return components.SwitchRecipe(theme, switchState, progress)
 }
 
 // palette is every color the workbench paints with. Switching the theme swaps

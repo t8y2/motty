@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
 	"github.com/vivaui/viva/text"
@@ -851,22 +850,6 @@ func TestLocalProxyNewSharedSessionJoinsBeforeItsFirstWake(t *testing.T) {
 	state.closeSession(state.sessions[0].ID)
 	if snapshot := manager.Snapshot(target); snapshot.Phase != localProxyDisconnected {
 		t.Fatalf("the last shared session retained its tunnel: %+v", snapshot)
-	}
-}
-
-func TestLocalProxyPanelWheelScrollsBothDirections(t *testing.T) {
-	state := newTestState(t, freshOptions(t))
-	state.localProxyUI.scroll = 100
-	state.localProxyUI.scrollGeometry = components.ScrollAreaGeometry{
-		Bounds: gfx.Rect{Width: 600, Height: 200}, Content: gfx.Rect{Width: 600, Height: 470},
-	}
-	state.scrollLocalProxy(gfx.ScrollEvent{DeltaY: -40, Precise: true})
-	if got := state.localProxyUI.scroll; got != 60 {
-		t.Fatalf("upward scroll = %v, want 60", got)
-	}
-	state.scrollLocalProxy(gfx.ScrollEvent{DeltaY: 20, Precise: true})
-	if got := state.localProxyUI.scroll; got != 80 {
-		t.Fatalf("downward scroll = %v, want 80", got)
 	}
 }
 

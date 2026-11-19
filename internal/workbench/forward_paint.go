@@ -167,16 +167,31 @@ func (state *State) declareForwardDialogBody(c ui.C) {
 	const rowHeight = 58
 	column := ui.Column(c).Fill().PadSides(2, 4, 0, 4)
 	column.Children(func() {
-		b.name = ui.Slot(c).Height(rowHeight)
-		b.host = ui.Slot(c).Height(rowHeight)
+		state.declareForwardDialogField(c, hitForwardDialogLabel, forwardFieldLabel, messages.ForwardFieldName, "").FillWidth()
+		ui.FormField(c, &editor.hostRow, messages.ForwardFieldHost).Height(rowHeight).Children(func() {
+			ui.Combobox(c, &editor.hostChoice, state.forwardHostChoices(), state.hostPickerName, messages.ForwardFieldHost).
+				Placeholder(messages.HostPickerSearch).Empty(messages.HostPickerNoMatches).FillWidth()
+		})
+		if editor.hostChoice != editor.hostID {
+			state.applyForwardHostChoice(editor.hostChoice)
+			editor.hostChoice = editor.hostID
+		}
 		ui.Column(c).Height(rowHeight).Children(func() { state.declareForwardMode(c) })
 		ui.Row(c).Height(rowHeight).Children(func() {
-			b.port = ui.Slot(c).Grow(24)
+			portTitle := messages.ForwardFieldLocalPort
+			if mode == portforward.ModeRemote {
+				portTitle = messages.ForwardFieldRemotePort
+			}
+			state.declareForwardDialogField(c, hitForwardDialogLocalPort, forwardFieldLocalPort, portTitle, "").Grow(24)
 			ui.Spacer(c).Grow(4)
 			if !modeUsesClientDestination(mode) {
-				b.destination = ui.Slot(c).Grow(44)
+				placeholder := messages.ForwardDestinationPlaceholder
+				if mode == portforward.ModeRemote {
+					placeholder = messages.ForwardLocalDestinationHint
+				}
+				state.declareForwardDialogField(c, hitForwardDialogDestination, forwardFieldDestinationHost, messages.ForwardFieldDestination, placeholder).Grow(44)
 				ui.Spacer(c).Grow(4)
-				b.destinationPort = ui.Slot(c).Grow(24)
+				state.declareForwardDialogField(c, hitForwardDialogDestinationPort, forwardFieldDestinationPort, messages.ForwardFieldDestinationPort, "").Grow(24)
 			} else {
 				ui.Column(c).Grow(72).Basis(0).PadSides(22, 0, 0, 0).Children(func() {
 					ui.Text(c, hint).FontSize(metrics.FontSizeS).Color(state.pal.muted)
@@ -184,12 +199,12 @@ func (state *State) declareForwardDialogBody(c ui.C) {
 			}
 		})
 		if modeUsesServerDestination(mode) {
-			b.viaShell, b.viaShellHelp = state.declareDialogCheckboxHelpC(c, messages.ForwardFieldViaShell, 4, 6)
+			_, b.viaShellHelp = state.declareDialogCheckHelp(c, hitForwardDialogViaShell, messages.ForwardFieldViaShell, state.forwardEditor.viaShell, 4, 6)
 			if editor.viaShell {
-				b.relay = ui.Slot(c).Height(rowHeight)
+				state.declareForwardDialogField(c, hitForwardDialogRelay, forwardFieldRelay, messages.ForwardFieldRelay, messages.ForwardRelayPlaceholder).FillWidth()
 			}
 		}
-		b.resume, b.resumeHelp = state.declareDialogCheckboxHelpC(c, messages.ForwardFieldResume, 4, 6)
+		_, b.resumeHelp = state.declareDialogCheckHelp(c, hitForwardDialogResume, messages.ForwardFieldResume, state.forwardEditor.resume, 4, 6)
 		if state.forwardDialogError != "" {
 			ui.Text(c, state.forwardDialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).MarginSides(6, 0, 0, 0)
 		}
@@ -197,34 +212,14 @@ func (state *State) declareForwardDialogBody(c ui.C) {
 	column.DrawOver(func(d *ui.DrawContext) { state.paintForwardDialogFields(d.Canvas, mode) })
 }
 
-// paintForwardDialogFields paints the forward editor's fields into the slots the
-// body laid out.
+// paintForwardDialogFields paints the forward editor's help icons into the
+// slots the body laid out.
 func (state *State) paintForwardDialogFields(canvas *gfx.Canvas, mode portforward.Mode) {
 	messages := state.messages
 	b := &state.forwardEditor.dialogBody
-	state.paintForwardDialogField(canvas, hitForwardDialogLabel, forwardFieldLabel, messages.ForwardFieldName, "", b.name.Rect())
-	state.paintForwardHostField(canvas, b.host.Rect())
-	portTitle := messages.ForwardFieldLocalPort
-	if mode == portforward.ModeRemote {
-		portTitle = messages.ForwardFieldRemotePort
-	}
-	state.paintForwardDialogField(canvas, hitForwardDialogLocalPort, forwardFieldLocalPort, portTitle, "", b.port.Rect())
-	if !modeUsesClientDestination(mode) {
-		placeholder := messages.ForwardDestinationPlaceholder
-		if mode == portforward.ModeRemote {
-			placeholder = messages.ForwardLocalDestinationHint
-		}
-		state.paintForwardDialogField(canvas, hitForwardDialogDestination, forwardFieldDestinationHost, messages.ForwardFieldDestination, placeholder, b.destination.Rect())
-		state.paintForwardDialogField(canvas, hitForwardDialogDestinationPort, forwardFieldDestinationPort, messages.ForwardFieldDestinationPort, "", b.destinationPort.Rect())
-	}
 	if modeUsesServerDestination(mode) {
-		state.paintDialogCheckbox(canvas, hitForwardDialogViaShell, messages.ForwardFieldViaShell, state.forwardEditor.viaShell, b.viaShell)
 		state.paintHelpIcon(canvas, hitForwardDialogViaShellHelp, messages.ForwardViaShellHelp, b.viaShellHelp.Rect())
-		if state.forwardEditor.viaShell {
-			state.paintForwardDialogField(canvas, hitForwardDialogRelay, forwardFieldRelay, messages.ForwardFieldRelay, messages.ForwardRelayPlaceholder, b.relay.Rect())
-		}
 	}
-	state.paintDialogCheckbox(canvas, hitForwardDialogResume, messages.ForwardFieldResume, state.forwardEditor.resume, b.resume)
 	state.paintHelpIcon(canvas, hitForwardDialogResumeHelp, messages.ForwardResumeHelp, b.resumeHelp.Rect())
 }
 
@@ -260,33 +255,17 @@ func (state *State) declareForwardMode(c ui.C) {
 	}
 }
 
-func (state *State) paintForwardDialogField(canvas *gfx.Canvas, id gfx.ID, field forwardField, title, placeholder string, bounds gfx.Rect) {
-	theme := state.Theme()
-	content := components.BeginField(canvas, theme, bounds).Paint(title, "", "")
-	value := state.forwardEditor.field(field).String()
-	focused := canvas.Focused() == id
-	components.PaintInput(canvas, theme, content, components.InputSnapshot{
-		ID:              id,
-		Label:           title,
-		Value:           value,
-		Placeholder:     placeholder,
-		Focused:         focused,
-		PlatformEditing: focused && value != "",
+// declareForwardDialogField declares one of the editor's text fields: a labelled row around a page text
+// bound to the field's editor. The caller sizes the row.
+func (state *State) declareForwardDialogField(c ui.C, id gfx.ID, field forwardField, title, placeholder string) ui.Box {
+	editor := &state.forwardEditor
+	if !editor.bound {
+		for index := range editor.texts {
+			editor.texts[index].Bind(editor.field(forwardField(index)))
+		}
+		editor.bound = true
+	}
+	return ui.FormField(c, &editor.rows[field], title).Height(58).Children(func() {
+		ui.TextFieldID(c, id, &editor.texts[field], title, placeholder)
 	})
-}
-
-// paintForwardHostField paints the searchable host picker. Typing filters by
-// name, address, account and group, which is what makes a long host list
-// navigable without paging.
-func (state *State) paintForwardHostField(canvas *gfx.Canvas, bounds gfx.Rect) {
-	theme := state.Theme()
-	content := components.BeginField(canvas, theme, bounds).Paint(state.messages.ForwardFieldHost, "", "")
-	layout := components.PaintSingleSelect(canvas, theme, content, &state.forwardEditor.hostSelect, components.SingleSelectOptions{
-		InputID: hitForwardDialogHost, TriggerID: hitForwardHostTrigger, DismissID: hitForwardHostDismiss,
-		Scope: hitForwardHostPickerScope, ScrollID: hitForwardHostScroll, OptionIDs: hitForwardHostItemList,
-		Label: state.messages.ForwardFieldHost, Placeholder: state.messages.HostPickerSearch,
-		EmptyLabel: state.messages.HostPickerNoMatches,
-		Viewport:   state.windowRect(), Layer: dialogLayer + 1,
-	})
-	state.forwardEditor.hostPopup = layout.Popup
 }

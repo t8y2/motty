@@ -122,6 +122,17 @@ func (conn *Conn) UploadIntegration(ctx context.Context, shellPath, token, direc
 	return integrationActivation(name, token, dir+"/init", dir), nil
 }
 
+// integrationEchoTag starts the activation line, after its leading space. The
+// terminal matches it when the line's echo arrives only after its hidden window
+// has closed (a link that delivered the line past the window's deadline), so
+// the echo is still recognized as ours and not shown.
+const integrationEchoTag = ": motty-"
+
+// IntegrationEchoTag identifies the activation line's echo: the same token
+// binds it to this shell, as the ready marker does. A shell echoes the tag as
+// ordinary text, so it survives whatever the line editor draws around it.
+func IntegrationEchoTag(token string) []byte { return []byte(integrationEchoTag + token) }
+
 // integrationActivation is the short, history-guarded line written into the
 // running shell. The ready marker is on the last line that is still under the
 // history guard, so restoring history can never record it.
@@ -132,18 +143,21 @@ func integrationActivation(name, token, file, dir string) string {
 	// marker. Bash may prompt between physical lines, so keeping the install on
 	// one line leaves at most one prompt before the marker.
 	install := ". " + shellQuote(file) + "; rm -rf -- " + shellQuote(dir)
+	// The tag is a no-op command whose only purpose is the echo above; it runs
+	// before the history guard, under the same first line.
+	tag := integrationEchoTag + token + "; "
 	switch name {
 	case "bash":
 		// The first line turns history off; the shell records it before it
 		// runs. The last entry is deleted only when it is that line, so a shell
 		// that never recorded it (HISTCONTROL=ignorespace) keeps its history.
 		prune := `_motty_hist=$(HISTTIMEFORMAT= history 1); case $_motty_hist in *"_motty_hist_on="*) history -d "$(printf '%s\n' "$_motty_hist" | awk '{print $1}')" 2>/dev/null ;; esac; set -o history; unset _motty_hist`
-		return " _motty_hist_on=; if [[ -o history ]]; then _motty_hist_on=1; set +o history; fi\n" +
+		return " " + tag + "_motty_hist_on=; if [[ -o history ]]; then _motty_hist_on=1; set +o history; fi\n" +
 			install + "; if [[ -n ${_motty_hist_on-} ]]; then " + prune + "; fi; unset _motty_hist_on; " + ready + "\n"
 	case "zsh":
 		// The leading space lets a shell with HIST_IGNORE_SPACE keep the one
 		// line it records out of its history; Zsh offers no entry deletion.
-		return " fc -p 2>/dev/null\n" + install + "; " + ready + "; fc -P 2>/dev/null\n"
+		return " " + tag + "fc -p 2>/dev/null\n" + install + "; " + ready + "; fc -P 2>/dev/null\n"
 	}
 	return ""
 }

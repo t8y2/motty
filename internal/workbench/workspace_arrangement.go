@@ -22,8 +22,11 @@ type workspaceArrangement struct {
 	items     []workspaceArrangementItem
 	revision  uint64
 	scroll    float32
-	bounds    gfx.Rect
-	err       string
+	// scrollSynced is the offset the page scroll area was last given, so a
+	// programmatic move (a preset, a card drag's edge) reaches it next paint.
+	scrollSynced float32
+	bounds       gfx.Rect
+	err          string
 }
 
 func workspaceTemplateItems(template WorkspaceTemplate) []workspaceArrangementItem {

@@ -67,10 +67,10 @@ type highlightUI struct {
 	editRule      highlightRule
 	isEditing     bool
 
-	// field, regexRow and caseRow are the slots the dialog body laid out; the
-	// field and the checkboxes are painted into them after the body, by the
-	// controls that own their editing and focus.
-	field, regexRow, caseRow ui.Box
+	// patternForm and patternText are the pattern field's row and text, bound to pattern.
+	patternForm  ui.FormFieldState
+	patternText  ui.Field
+	patternBound bool
 }
 
 // recompileHighlights rebuilds the compiled rules after any change to them, and
@@ -345,17 +345,23 @@ func (state *State) declareHighlightDialog(c ui.C) {
 }
 
 // declareHighlightDialogBody lays out the rule dialog: the pattern field, the
-// two checkboxes, the colors and the error. The pattern, the checkboxes and
-// their hit regions are painted into the slots after the body, so their focus
-// order and invalid look stay the ones the controls already have.
+// two checkboxes, the colors and the error. The pattern is a page field; the
+// checkboxes and their hit regions are painted into the slots after the body.
 func (state *State) declareHighlightDialogBody(c ui.C) {
 	form, m, pal := &state.highlighting, state.messages.Tools, state.pal
 	slots := highlight.Slots()
 	column := ui.Column(c).Fill().PadSides(2, 4, 0, 4)
 	column.Children(func() {
-		form.field = ui.Slot(c).Height(62)
-		form.regexRow = state.declareDialogCheckboxC(c, m.HighlightRegex, 11, 0)
-		form.caseRow = state.declareDialogCheckboxC(c, m.HighlightCase, 12, 0)
+		if !form.patternBound {
+			form.patternText.Bind(&form.pattern)
+			form.patternBound = true
+		}
+		form.patternText.Invalid = form.dialogError != ""
+		ui.FormField(c, &form.patternForm, m.HighlightPattern).FillWidth().Height(62).Children(func() {
+			ui.TextFieldID(c, hitHighlightPattern, &form.patternText, m.HighlightPattern, m.HighlightPatternPlaceholder)
+		})
+		state.declareDialogCheck(c, hitHighlightRegex, m.HighlightRegex, form.regex, 11, 0)
+		state.declareDialogCheck(c, hitHighlightCase, m.HighlightCase, form.folded, 12, 0)
 		ui.Text(c, m.HighlightColor).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(18).MarginSides(19, 0, 4, 2)
 		ui.Row(c).Gap(8).MarginSides(0, 0, 0, 2).Children(func() {
 			for index, slot := range slots {
@@ -378,54 +384,6 @@ func (state *State) declareHighlightDialogBody(c ui.C) {
 			ui.Text(c, form.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.danger).LineHeight(18).MarginSides(12, 0, 0, 0)
 		}
 	})
-	column.DrawOver(func(d *ui.DrawContext) {
-		canvas, theme := d.Canvas, *d.Theme
-		content := components.BeginField(canvas, theme, form.field.Rect()).Paint(m.HighlightPattern, "", "")
-		value := form.pattern.String()
-		focused := canvas.Focused() == hitHighlightPattern
-		components.PaintInput(canvas, theme, content, components.InputSnapshot{
-			ID: hitHighlightPattern, Label: m.HighlightPattern, Value: value, Placeholder: m.HighlightPatternPlaceholder,
-			Focused: focused, PlatformEditing: focused && value != "", Invalid: form.dialogError != "",
-		})
-		state.paintDialogCheckbox(canvas, hitHighlightRegex, m.HighlightRegex, form.regex, form.regexRow)
-		state.paintDialogCheckbox(canvas, hitHighlightCase, m.HighlightCase, form.folded, form.caseRow)
-	})
-}
-
-// declareDialogCheckboxC declares a checkbox and its label inside a dialog's
-// body declared as a page, the given room above and below it, and returns the
-// box the checkbox is painted in (paintDialogCheckbox), after the fields above
-// it, so the keyboard visits them in the order they are on the page. It returns
-// the row, which holds the checkbox and its words.
-func (state *State) declareDialogCheckboxC(c ui.C, label string, above, below float32) ui.Box {
-	side := components.CheckboxExtent(state.Theme())
-	return ui.Row(c).Height(20).Gap(24-side).Items(ui.Center).MarginSides(above, 0, below, 2).Children(func() {
-		ui.Slot(c).Size(side, side).Shrink(0)
-		ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).LineHeight(20).Grow(1)
-	})
-}
-
-// declareDialogCheckboxMutedC is declareDialogCheckboxC with the words dimmed:
-// the row's switch cannot be used, and the dimming says so with the checkbox.
-func (state *State) declareDialogCheckboxMutedC(c ui.C, label string, above, below float32) ui.Box {
-	side := components.CheckboxExtent(state.Theme())
-	return ui.Row(c).Height(20).Gap(24-side).Items(ui.Center).MarginSides(above, 0, below, 2).Children(func() {
-		ui.Slot(c).Size(side, side).Shrink(0)
-		ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.muted).LineHeight(20).Grow(1)
-	})
-}
-
-// declareDialogCheckboxHelpC is declareDialogCheckboxC with a help icon right
-// after the label, which paintHelpIcon fills in.
-func (state *State) declareDialogCheckboxHelpC(c ui.C, label string, above, below float32) (row, help ui.Box) {
-	side := components.CheckboxExtent(state.Theme())
-	row = ui.Row(c).Height(20).Gap(24-side).Items(ui.Center).MarginSides(above, 0, below, 2).Children(func() {
-		ui.Slot(c).Size(side, side).Shrink(0)
-		ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).LineHeight(20)
-		help = ui.Slot(c).Size(16, 16).Shrink(0)
-		ui.Spacer(c).Grow(1)
-	})
-	return row, help
 }
 
 // paintHelpIcon draws a question mark in bounds that shows hint as a tooltip when
@@ -436,27 +394,6 @@ func (state *State) paintHelpIcon(canvas *gfx.Canvas, id gfx.ID, hint string, bo
 	}
 	canvas.HitWithOptions(id, bounds, hint, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true, Hint: hint})
 	paintIcon(canvas, iconHelp, insetRect(bounds, 0.08), state.pal.muted)
-}
-
-// paintDialogCheckbox paints the checkbox of a declared row and makes the words
-// beside it its label, so pressing them toggles it.
-func (state *State) paintDialogCheckbox(canvas *gfx.Canvas, id gfx.ID, label string, checked bool, row ui.Box) {
-	rect := row.Rect()
-	state.rememberHostControl(id, rect)
-	side := components.CheckboxExtent(state.Theme())
-	components.BeginCheckbox(canvas, state.Theme(), id, gfx.Rect{X: rect.X, Y: rect.Y + (rect.Height-side)/2}, checked).Label(label).Paint()
-	// The checkbox's own hit reaches 12px past its box; the label starts there.
-	words := rect.X + side + 12
-	canvas.HitLabel(id, gfx.Rect{X: words, Y: rect.Y, Width: max(rect.X+rect.Width-words, 0), Height: rect.Height}, label, false)
-}
-
-// paintDialogCheckboxDisabled paints the checkbox of a declared row dimmed and
-// inert: it is not a tab stop, and its words do not toggle it or reach the
-// protocol's click handler.
-func (state *State) paintDialogCheckboxDisabled(canvas *gfx.Canvas, id gfx.ID, label string, checked bool, row ui.Box) {
-	rect := row.Rect()
-	side := components.CheckboxExtent(state.Theme())
-	components.BeginCheckbox(canvas, state.Theme(), id, gfx.Rect{X: rect.X, Y: rect.Y + (rect.Height-side)/2}, checked).Label(label).Disabled().Paint()
 }
 
 // paintHighlightSettings is the Keyword highlighting group of Settings.

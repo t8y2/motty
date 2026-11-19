@@ -6,7 +6,6 @@ import (
 	"slices"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sessionimport"
@@ -310,25 +309,20 @@ func (state *State) declareImportSessions(c ui.C) {
 		{hitImportSecureCRT, "SecureCRT"},
 	}
 	const columns = 2
-	rowHeight := components.BeginButton(nil, theme, gfx.ID{}, gfx.Rect{}).Large().BoundsHeight()
 	gap := theme.Metrics.GapItem
 	rows := (len(choices) + columns - 1) / columns
-	bodyHeight := float32(rows)*rowHeight + float32(rows-1)*gap
 	const width float32 = 480
-	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
-	layout := components.BeginDialog(c.Canvas(), theme, viewport, components.DialogOptions{
-		ContentSize: gfx.Size{Width: width}, FitBody: true,
-	}).Layout(m.ImportChooserBody)
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: m.ImportChooserTitle, Description: m.ImportChooserBody,
-		Width: width, Height: layout.Content.Height + bodyHeight, Layer: dialogLayer,
+		Width: width, Layer: dialogLayer,
 		Scope: dialogScope, DismissID: hitImportSessionsDismiss, CloseID: hitImportSessionsClose,
 	})
 	dialog.Body(func() {
-		cellWidth := (layout.Body.Width - gap*(columns-1)) / columns
-		ui.Column(c).Fill().Gap(gap).Children(func() {
+		// The buttons' own Large height and the gap size the grid; the dialog
+		// fits itself to the body rather than taking a height measured beforehand.
+		ui.Column(c).Gap(gap).Children(func() {
 			for row := 0; row < rows; row++ {
-				ui.Row(c).Height(rowHeight).Gap(gap).Children(func() {
+				ui.Row(c).Gap(gap).Children(func() {
 					for column := 0; column < columns; column++ {
 						index := row*columns + column
 						if index >= len(choices) {
@@ -336,7 +330,7 @@ func (state *State) declareImportSessions(c ui.C) {
 							continue
 						}
 						choice := choices[index]
-						button := ui.Button(c, choice.label).Large().Outline().Width(cellWidth).Shrink(0)
+						button := ui.Button(c, choice.label).Large().Outline().Basis(0).Grow(1).Shrink(0)
 						if index == 0 {
 							button = button.AutoFocus()
 						}
@@ -370,17 +364,13 @@ func (state *State) declareMobaEncoding(c ui.C) {
 	}
 	m := state.messages.Tools
 	const width float32 = 520
-	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
-		ContentSize: gfx.Size{Width: width}, FitBody: true,
-	}).Layout(m.ImportEncodingBody)
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: m.ImportEncodingTitle, Description: m.ImportEncodingBody,
-		Width: width, Height: layout.Content.Height + 52, Layer: dialogLayer,
+		Width: width, Layer: dialogLayer,
 		Scope: dialogScope, DismissID: hitMobaEncodingCancel, CloseID: hitMobaEncodingClose,
 	})
 	dialog.Body(func() {
-		ui.Column(c).Fill().Gap(6).Children(func() {
+		ui.Column(c).Height(52).Gap(6).Children(func() {
 			ui.Text(c, fmt.Sprintf(m.ImportEncodingSampleUTF8Fmt, state.mobaEncoding.utf8)).
 				FontSize(metrics.FontSizeS).Color(state.pal.muted).LineHeight(20).Ellipsis()
 			ui.Text(c, fmt.Sprintf(m.ImportEncodingSampleGBFmt, state.mobaEncoding.gb)).
@@ -416,17 +406,13 @@ func (state *State) declareSessionImportPreview(c ui.C) {
 	}
 	const width float32 = 550
 	description := fmt.Sprintf(m.ImportPasswordPreviewBodyFmt, len(state.sessionImport.plan.hosts), len(state.sessionImport.passwords), state.sessionImport.eligible)
-	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
-		ContentSize: gfx.Size{Width: width}, FitBody: true,
-	}).Layout(description)
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: m.ImportPasswordPreviewTitle, Description: description,
-		Width: width, Height: layout.Content.Height + bodyHeight, Layer: dialogLayer,
+		Width: width, Layer: dialogLayer,
 		Scope: dialogScope, DismissID: hitImportPreviewCancel, CloseID: hitImportPreviewClose,
 	})
 	dialog.Body(func() {
-		ui.Column(c).Fill().Children(func() {
+		ui.Column(c).Height(bodyHeight).Children(func() {
 			if state.dialogError != "" {
 				ui.Text(c, state.dialogError).FontSize(metrics.FontSizeS).Color(state.pal.danger).LineHeight(24)
 			}

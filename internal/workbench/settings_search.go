@@ -44,6 +44,9 @@ type settingsEntry struct {
 // settingsUI is the state of searching, and of scrolling to a result.
 type settingsUI struct {
 	search text.Editor
+	// searchField is the page text field over search, bound when first declared.
+	searchField ui.Field
+	searchBound bool
 
 	// results are what the query found, built when the query or the language
 	// last changed.
@@ -406,15 +409,5 @@ func (state *State) paintSettingsResults(page *settingsPage) {
 				})
 			}
 		})
-	})
-}
-
-// paintSettingsSearchBox paints the search box at the top of the category list.
-func (state *State) paintSettingsSearchBox(canvas *gfx.Canvas, box gfx.Rect) {
-	value := state.settings.search.String()
-	components.PaintInputGroup(canvas, state.Theme(), box, components.InputGroupSnapshot{
-		ID: hitSettingsSearch, Label: state.messages.Tools.SearchPlaceholder, Value: value, Placeholder: state.messages.Tools.SearchPlaceholder,
-		NativeEditing: canvas.Focused() == hitSettingsSearch && value != "",
-		InlineStart:   components.InputGroupSlot{Kind: components.InputGroupSlotIcon, Icon: lucideIcons[iconSearch]},
 	})
 }

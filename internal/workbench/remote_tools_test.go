@@ -242,7 +242,7 @@ func openRemoteToolsDialog(t *testing.T) (*State, *remoteServer, *fakeShell) {
 	state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
 	rightClick(state, session, 400, 300)
 	state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
-	state.Click(hitTerminalMenuTools)
+	chooseMenu(t, state, hitTerminalMenuTools)
 	if state.modal != modalRemoteTools {
 		t.Fatalf("the dialog did not open: modal %d", state.modal)
 	}
@@ -271,7 +271,7 @@ func TestRemoteToolsListProcessesOnceAndNeverPoll(t *testing.T) {
 			t.Errorf("control %q is not painted", label)
 		}
 	}
-	if _, ok := hitByLabelRole(&canvas, m.RemoteTabProcesses, gfx.RoleGroup); !ok {
+	if _, ok := hitByLabelRole(&canvas, m.RemoteTabProcesses, gfx.RoleListBox); !ok {
 		t.Error("the process table is not a page control")
 	}
 	if _, ok := settingsChoiceIn(&canvas, state.messages.Tools.RemoteTabProcesses); !ok {
@@ -319,10 +319,14 @@ func TestRemoteProcessFooterSeparatesCollectionTimeFromSearchSummary(t *testing.
 	if !found {
 		t.Fatalf("footer does not show %q", count)
 	}
-	if countBounds.Y < state.remote.processTableBounds.Bottom()-1 ||
-		snapshot.Bounds.Y < state.remote.processTableBounds.Bottom()-1 {
+	table, ok := hitByLabelRole(&canvas, state.messages.Tools.RemoteTabProcesses, gfx.RoleListBox)
+	if !ok {
+		t.Fatal("the process table is not painted")
+	}
+	if countBounds.Y < table.Bounds.Bottom()-1 ||
+		snapshot.Bounds.Y < table.Bounds.Bottom()-1 {
 		t.Fatalf("footer is not below the process table: count=%+v snapshot=%+v table=%+v",
-			countBounds, snapshot.Bounds, state.remote.processTableBounds)
+			countBounds, snapshot.Bounds, table.Bounds)
 	}
 }
 

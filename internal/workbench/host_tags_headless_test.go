@@ -99,7 +99,7 @@ func TestHostTagsNativeQueryKeepsFocusAndDoesNotSubmitTheHost(t *testing.T) {
 		if p.control.Open {
 			t.Fatal("Shift+Tab did not leave the popup")
 		}
-		for tries := 0; view.Snapshot().Focused != hitHostTagRemove.At(1) && tries < 24; tries++ {
+		for tries := 0; view.Snapshot().Focused != hitHostTagRemove.At(1) && tries < 2*state.editor.form.count+8; tries++ {
 			if err := view.Keys("Tab"); err != nil {
 				t.Fatal(err)
 			}
@@ -172,7 +172,7 @@ func TestHostTagPopupCanSelectOutsideScrolledForm(t *testing.T) {
 			break
 		}
 	}
-	clip := state.editor.form.geometry.Viewport
+	clip := state.editor.form.viewport
 	var option gfx.Hit
 	for _, hit := range view.Snapshot().Hits {
 		if hit.ID == hitHostTagOptions.At(3) {

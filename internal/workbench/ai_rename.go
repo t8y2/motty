@@ -14,10 +14,11 @@ import (
 type aiRenameDialog struct {
 	id     int64
 	editor text.Editor
-	// field is the slot the dialog's field is painted into, and draw the painter
-	// kept so a repaint declares no closure.
-	field ui.Box
-	draw  func(*ui.DrawContext)
+	// form and input are the dialog's field: its labelled row and its text,
+	// bound to editor when first declared.
+	form  ui.FormFieldState
+	input ui.Field
+	bound bool
 }
 
 // openAIRename asks for a new title for a saved conversation, starting from
@@ -29,7 +30,6 @@ func (state *State) openAIRename(index int) {
 	}
 	conversation := ai.conversations[index]
 	ai.rename = aiRenameDialog{id: conversation.ID}
-	ai.rename.draw = state.drawAIRenameField
 	ai.rename.editor.Insert(conversation.Title)
 	ai.rename.editor.SetSelection(text.Range{End: ai.rename.editor.RuneCount()})
 	state.dialogError = ""
@@ -84,37 +84,20 @@ func (state *State) declareAIRenameDialog(c ui.C) {
 		Scope: dialogScope, CloseID: hitAIRenameClose, InitialFocusID: hitAIRenameField,
 	})
 	dialog.Body(func() {
-		column := ui.Column(c).Fill()
-		column.Children(func() {
-			state.ai.rename.field = ui.Slot(c).Height(62)
-		})
-		if state.ai.rename.draw == nil {
-			state.ai.rename.draw = state.drawAIRenameField
+		rename := &state.ai.rename
+		if !rename.bound {
+			rename.input.Bind(&rename.editor)
+			rename.bound = true
 		}
-		column.DrawOver(state.ai.rename.draw)
+		rename.form.For, rename.form.Error, rename.form.Invalid = hitAIRenameField, state.dialogError, state.dialogError != ""
+		ui.FormField(c, &rename.form, m.RenameField).FillWidth().Height(62).Children(func() {
+			ui.TextFieldID(c, hitAIRenameField, &rename.input, m.RenameField, m.RenamePlaceholder)
+		})
 	})
 	dialog.Footer(func() {
 		state.dialogActionFooter(c,
 			components.ButtonAction{ID: hitAIRenameCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
 			components.ButtonAction{ID: hitAIRenameSubmit, Label: m.RenameSubmit},
 		)
-	})
-}
-
-// drawAIRenameField paints the rename dialog's field into the slot the body
-// laid out.
-func (state *State) drawAIRenameField(d *ui.DrawContext) {
-	m := state.messages.AIPanel
-	field := components.BeginField(d.Canvas, *d.Theme, state.ai.rename.field.Rect())
-	if state.dialogError != "" {
-		field = field.Invalid()
-	}
-	content := field.Paint(m.RenameField, "", state.dialogError)
-	value := state.ai.rename.editor.String()
-	focused := d.Canvas.Focused() == hitAIRenameField
-	content.Height = 32
-	components.PaintInput(d.Canvas, *d.Theme, content, components.InputSnapshot{
-		ID: hitAIRenameField, Label: m.RenameField, Value: value,
-		Placeholder: m.RenamePlaceholder, Focused: focused, PlatformEditing: focused && value != "",
 	})
 }

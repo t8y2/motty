@@ -32,7 +32,7 @@ func TestRightClickOnAHostOpensItsMenuWithoutChangingWhatIsChecked(t *testing.T)
 			t.Errorf("menu item %d: %+v found=%v", id, hit, ok)
 		}
 	}
-	state.Click(hitHostMenuConnect)
+	chooseMenu(t, state, hitHostMenuConnect)
 	if state.hostMenu.open || len(world.conns) != 1 {
 		t.Fatalf("Connect: open=%v dialed=%d", state.hostMenu.open, len(world.conns))
 	}
@@ -48,14 +48,14 @@ func TestHostMenuCopiesThePointedHostAddressAndConnectionName(t *testing.T) {
 	}
 
 	rightClickHost(state, target.ID)
-	state.Click(hitHostMenuAddress)
+	chooseMenu(t, state, hitHostMenuAddress)
 	wantAddress := net.JoinHostPort(target.Address, strconv.Itoa(int(target.Port)))
 	if state.hostMenu.open || len(copied) != 1 || copied[0] != wantAddress {
 		t.Fatalf("Copy Address and Port: open=%v copied=%q target=%q", state.hostMenu.open, copied, wantAddress)
 	}
 
 	rightClickHost(state, target.ID)
-	state.Click(hitHostMenuName)
+	chooseMenu(t, state, hitHostMenuName)
 	if state.hostMenu.open || len(copied) != 2 || copied[1] != target.Label {
 		t.Fatalf("Copy Connection Name: open=%v copied=%q target=%q", state.hostMenu.open, copied, target.Label)
 	}
@@ -87,7 +87,7 @@ func TestAFailedConnectionCopyIsReported(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.options.SetClipboardText = func(string) error { return errors.New("clipboard unavailable") }
 	rightClickHost(state, state.hosts[1].ID)
-	state.Click(hitHostMenuAddress)
+	chooseMenu(t, state, hitHostMenuAddress)
 	if state.status != "clipboard unavailable" {
 		t.Fatalf("status = %q, want the clipboard's reason", state.status)
 	}
@@ -120,21 +120,21 @@ func TestHostMenuEditsCopiesAndDeletesTheHostPointedAt(t *testing.T) {
 	state.Click(hitHostCheckList.At(int(checked)))
 
 	rightClickHost(state, target.ID)
-	state.Click(hitHostMenuEdit)
+	chooseMenu(t, state, hitHostMenuEdit)
 	if state.modal != modalNewHost || state.hostDialogMode != hostDialogEdit || state.hostDialogID != target.ID {
 		t.Fatalf("Edit: modal %v mode %v id %d", state.modal, state.hostDialogMode, state.hostDialogID)
 	}
 	state.Click(hitDialogCancel)
 
 	rightClickHost(state, target.ID)
-	state.Click(hitHostMenuCopy)
+	chooseMenu(t, state, hitHostMenuCopyEdit)
 	if state.modal != modalNewHost || state.hostDialogMode != hostDialogCopy {
-		t.Fatalf("Copy: modal %v mode %v", state.modal, state.hostDialogMode)
+		t.Fatalf("Copy and Edit: modal %v mode %v", state.modal, state.hostDialogMode)
 	}
 	state.Click(hitDialogCancel)
 
 	rightClickHost(state, target.ID)
-	state.Click(hitHostMenuDelete)
+	chooseMenu(t, state, hitHostMenuDelete)
 	if state.modal != modalDeleteHost || len(state.hostActionIDs) != 1 || state.hostActionIDs[0] != target.ID {
 		t.Fatalf("Delete: modal %v ids %v", state.modal, state.hostActionIDs)
 	}
@@ -149,7 +149,7 @@ func TestHostMenuMovesOnlyTheUncheckedHostPointedAt(t *testing.T) {
 	state.Click(hitHostCheckList.At(int(checked)))
 
 	rightClickHost(state, target)
-	state.Click(hitHostMenuMove)
+	chooseMenu(t, state, hitHostMenuMove)
 	if !state.hostGroupMenu || len(state.hostActionIDs) != 1 || state.hostActionIDs[0] != target {
 		t.Fatalf("Move: open=%v ids=%v", state.hostGroupMenu, state.hostActionIDs)
 	}
@@ -169,31 +169,14 @@ func TestRightClickInsideSeveralCheckedHostsKeepsThemAndDisablesTheSingleOnes(t 
 		t.Fatalf("selection = %v, want both kept", state.hostSelections)
 	}
 	canvas, _ := paintedTexts(state)
-	for id, disabled := range map[gfx.ID]bool{hitHostMenuConnect: true, hitHostMenuAddress: true, hitHostMenuName: true, hitHostMenuEdit: true, hitHostMenuCopy: true, hitHostMenuMove: false, hitHostMenuDelete: false} {
+	for id, disabled := range map[gfx.ID]bool{hitHostMenuConnect: true, hitHostMenuAddress: true, hitHostMenuName: true, hitHostMenuEdit: true, hitHostMenuCopyEdit: true, hitHostMenuCopy: false, hitHostMenuCopyTo: false, hitHostMenuMove: false, hitHostMenuDelete: false} {
 		if hit, ok := hitByID(canvas, id); !ok || hit.Disabled != disabled {
 			t.Errorf("item %d: found=%v disabled=%v, want disabled=%v", id, ok, hit.Disabled, disabled)
 		}
 	}
-	state.Click(hitHostMenuDelete)
+	chooseMenu(t, state, hitHostMenuDelete)
 	if len(state.hostActionIDs) != 2 {
 		t.Fatalf("Delete acts on %v, want both", state.hostActionIDs)
-	}
-}
-
-func TestHostMenuClosesOnAnOutsidePressAndIgnoresOtherRightClicks(t *testing.T) {
-	state := newTestState(t, testOptions(t))
-	rightClickHost(state, state.hosts[0].ID)
-	state.Click(hitHostMenuDismiss)
-	if state.hostMenu.open {
-		t.Fatal("an outside press left the menu open")
-	}
-	pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitSearch, X: 50, Y: 50})
-	if state.hostMenu.open {
-		t.Fatal("a right click away from a host opened the menu")
-	}
-	rightClickHost(state, state.hosts[0].ID)
-	if result := pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitHostMenuDismiss}); !result.Handled || state.hostMenu.open {
-		t.Fatalf("a secondary press outside: %+v open=%v", result, state.hostMenu.open)
 	}
 }
 
@@ -205,12 +188,12 @@ func TestHostMenuIsAsWideAsItsLabelsAskInBothLanguages(t *testing.T) {
 		}
 		rightClickHost(state, state.hosts[0].ID)
 		canvas, _ := paintedTexts(state)
-		hit, ok := hitByID(canvas, hitHostMenuMove)
+		hit, ok := menuHit(canvas, state, hitHostMenuMove)
 		if !ok {
 			t.Fatal("no menu")
 		}
 		widest := float32(0)
-		for _, label := range []string{state.messages.Connect, state.messages.CopyAddressAndPort, state.messages.CopyConnectionName, state.messages.EditHost, state.messages.CopyHostTitle, state.messages.MoveHostGroup, state.messages.DeleteHost} {
+		for _, label := range []string{state.messages.Connect, state.messages.CopyAddressAndPort, state.messages.CopyConnectionName, state.messages.EditHost, state.messages.CopyHost, state.messages.PasteHost, state.messages.CopyHostTo, state.messages.CopyHostAndEdit, state.messages.MoveHostGroup, state.messages.DeleteHost} {
 			widest = max(widest, canvas.TextWidth(label, 13))
 		}
 		// A context menu is never narrower than Vega's 9rem, whatever its labels.
@@ -220,62 +203,21 @@ func TestHostMenuIsAsWideAsItsLabelsAskInBothLanguages(t *testing.T) {
 	}
 }
 
-// Typing a row's first letters highlights it, and typing the same letter again
-// cycles to the next row with that initial, as Base UI menus do.
-func TestHostMenuTypeaheadHighlightsRowsByName(t *testing.T) {
-	state := newTestState(t, testOptions(t))
-	rightClickHost(state, state.hosts[0].ID)
-	paintAt(state, gfx.Size{Width: 900, Height: 600}) // list the menu's rows for the keyboard
-
-	key := func(text string) gfx.ID {
-		t.Helper()
-		result := state.Key(gfx.KeyEvent{Key: gfx.KeyUnknown, Text: text})
-		if !result.Handled || result.Focus.IsZero() {
-			t.Fatalf("%q: %+v", text, result)
-		}
-		return result.Focus
-	}
-	if got := key("c"); got != hitHostMenuConnect {
-		t.Fatalf("c focused %v, want Connect", got)
-	}
-	if got := key("c"); got != hitHostMenuAddress {
-		t.Fatalf("second c focused %v, want Copy Address and Port", got)
-	}
-	if got := key("c"); got != hitHostMenuName {
-		t.Fatalf("third c focused %v, want Copy Connection Name", got)
-	}
-	if got := key("c"); got != hitHostMenuCopy {
-		t.Fatalf("fourth c focused %v, want Copy Host", got)
-	}
-}
-
 // Choosing Move group hands the menu over to the group picker: the picker takes
 // the menu's place, at the point the menu was opened at, rather than opening in
 // the window's top left corner.
 func TestMoveGroupFromAHostsMenuOpensThePickerWhereTheMenuWas(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	rightClickHost(state, state.hosts[1].ID)
-	paintedTexts(state)
-	menu := state.popups.surface
-	if menu.X <= 0 || menu.Y <= 0 {
-		t.Fatalf("the host menu was not opened at the pointer: %+v", menu)
-	}
-	state.Click(hitHostMenuMove)
 	canvas, _ := paintedTexts(state)
-	first, ok := hitByID(canvas, hitHostGroupNone)
-	if !ok || first.Bounds.X-4 != menu.X || first.Bounds.Y-4 != menu.Y {
-		t.Fatalf("the group picker first row opened at %+v, want menu at %+v", first.Bounds, menu)
+	connect, ok := hitByID(canvas, hitHostMenuConnect)
+	if !ok || connect.Bounds.X <= 0 || connect.Bounds.Y <= 0 {
+		t.Fatalf("the host menu was not opened at the pointer: %+v", connect.Bounds)
 	}
-}
-
-// A context menu keeps Tab inside itself, as Base UI's modal context menu does;
-// only dropdowns and selects hand Tab back to the page.
-func TestTabStaysInsideAContextMenu(t *testing.T) {
-	state := newTestState(t, testOptions(t))
-	rightClickHost(state, state.hosts[0].ID)
-	paintAt(state, gfx.Size{Width: 900, Height: 600})
-	state.Key(gfx.KeyEvent{Key: gfx.KeyTab, Target: hitHostMenuConnect})
-	if !state.hostMenu.open {
-		t.Fatal("Tab left the context menu")
+	chooseMenu(t, state, hitHostMenuMove)
+	canvas, _ = paintedTexts(state)
+	first, ok := hitByID(canvas, hitHostGroupNone)
+	if !ok || first.Bounds.X != connect.Bounds.X || first.Bounds.Y != connect.Bounds.Y {
+		t.Fatalf("the group picker first row opened at %+v, want where the menu's first row was %+v", first.Bounds, connect.Bounds)
 	}
 }

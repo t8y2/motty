@@ -1,7 +1,6 @@
 package workbench
 
 import (
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
@@ -217,17 +216,13 @@ func (state *State) declareSudoSFTPDialog(c ui.C) {
 		dialogState.field.Bind(&dialogState.password)
 		dialogState.bound = true
 	}
-	viewport := dialogViewport(c)
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
-		ContentSize: gfx.Size{Width: 540}, FitBody: true, BodyHeight: state.secretFieldBody(""),
-	}).Layout(hint)
 	dialog := ui.Dialog(c, ui.DialogSpec{
-		Title: title, Description: hint, Width: 540, Height: layout.Content.Height,
+		Title: title, Description: hint, Width: 540,
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitSudoSFTPDismiss, CloseID: hitSudoSFTPCancel, InitialFocusID: hitSudoSFTPPassword,
 	})
 	dialog.Body(func() {
-		ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
+		ui.Column(c).Height(state.secretFieldBody("")).PadSides(2, 4, 0, 4).Children(func() {
 			ui.TextFieldID(c, hitSudoSFTPPassword, &dialogState.field, m.SFTPSudoPassword, "").
 				Height(62).FillWidth().Secure().AutoFocus()
 		})

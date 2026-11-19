@@ -297,13 +297,17 @@ func TestHostDialogPaintsEachProtocolWithItsOwnFields(t *testing.T) {
 		wantFlow string
 		absent   []gfx.ID
 	}{
-		{state.messages.Tools.ProtocolSSH, []gfx.ID{hitDialogUser, hitDialogPort}, "", []gfx.ID{hitDialogPortsTrigger}},
+		{state.messages.Tools.ProtocolSSH, []gfx.ID{hitDialogUser, hitDialogPort}, "", nil},
 		{state.messages.Tools.ProtocolTelnet, []gfx.ID{hitDialogPort}, "", []gfx.ID{hitDialogUser}},
-		{state.messages.Tools.ProtocolSerial, []gfx.ID{hitDialogPort, hitDialogPortsTrigger}, state.messages.Tools.FlowNone, []gfx.ID{hitDialogUser}},
+		{state.messages.Tools.ProtocolSerial, []gfx.ID{hitDialogPort}, state.messages.Tools.FlowNone, []gfx.ID{hitDialogUser}},
 	} {
 		clickHostChoice(t, state, test.protocol)
 		var canvas gfx.Canvas
 		state.Paint(&canvas, hostChoicePaint)
+		serial := test.protocol == state.messages.Tools.ProtocolSerial
+		if painted := hasLabel(&canvas, state.messages.Tools.PortsPicker, gfx.RoleCombobox); painted != serial {
+			t.Errorf("protocol %q: ports picker painted=%v, want %v", test.protocol, painted, serial)
+		}
 		for _, id := range test.want {
 			if _, ok := hitByID(&canvas, id); !ok {
 				t.Errorf("protocol %q: hit %d is not painted", test.protocol, id)
@@ -433,25 +437,35 @@ func TestImportedTelnetAndSerialSessionsBecomeHostsOnce(t *testing.T) {
 	}
 }
 
-// With the ports picker open, a press outside it closes the picker and not the
-// host dialog behind it.
-func TestPortsPickerClosesOnAnOutsidePressWithoutClosingTheDialog(t *testing.T) {
+// The serial form offers the ports the machine reports, looked up again when the
+// picker opens, and choosing one writes it into the device field.
+func TestPortsPickerOffersTheDetectedPorts(t *testing.T) {
+	previous := serialPorts
+	serialPorts = func() []serial.Port {
+		return []serial.Port{{Device: "/dev/ttyUSB7", Description: "USB serial"}, {Device: "/dev/ttyS0"}}
+	}
+	t.Cleanup(func() { serialPorts = previous })
 	state := newTestState(t, testOptions(t))
+	state.editor.ports = nil
 	state.Click(hitAddHost)
 	clickHostChoice(t, state, state.messages.Tools.ProtocolSerial)
-	state.Click(hitDialogPortsTrigger)
-	if !state.editor.portsOpen {
-		t.Fatal("the ports picker did not open")
+	clickPageLabel(t, state, gfx.RoleCombobox, state.messages.Tools.PortsPicker)
+	canvas, _ := paintedTexts(state)
+	found := false
+	for _, hit := range canvas.Hits() {
+		if hit.Role == gfx.RoleOption && hit.Label == "/dev/ttyUSB7" {
+			found = true
+		}
 	}
-	var canvas gfx.Canvas
-	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	backdrop, ok := hitByID(&canvas, hitDialogPortsDismiss)
-	if !ok || backdrop.Bounds.Width != 1400 || backdrop.Bounds.Height != 900 {
-		t.Fatalf("the open picker has no window-wide backdrop: %+v, %v", backdrop, ok)
+	if !found {
+		t.Fatal("the open picker does not offer the detected port")
 	}
-	state.Click(hitDialogPortsDismiss)
-	if state.editor.portsOpen || state.modal != modalNewHost {
-		t.Fatalf("after the outside press: portsOpen=%v modal=%d", state.editor.portsOpen, state.modal)
+	clickPageLabel(t, state, gfx.RoleOption, "/dev/ttyUSB7")
+	if got := state.editor.value(fieldAddress); got != "/dev/ttyUSB7" {
+		t.Fatalf("the chosen port is %q, want the device field to hold it", got)
+	}
+	if state.modal != modalNewHost {
+		t.Fatal("choosing a port closed the host dialog")
 	}
 }
 

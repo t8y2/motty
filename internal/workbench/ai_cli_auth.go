@@ -10,7 +10,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/cli"
@@ -333,16 +332,13 @@ func (s *State) declareAICLILogin(c ui.C) {
 	width := min(float32(920), max(float32(320), viewport.Width-40))
 	height := min(float32(420), max(float32(180), viewport.Height-230))
 	description := m.CLIAuthSensitive
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
-		ContentSize: gfx.Size{Width: width}, FitBody: true,
-	}).Layout(description)
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: m.CLIAuthTitle + " · " + login.provider.Name, Description: description, Width: width,
-		Height: layout.Content.Height + height, Layer: dialogLayer, Scope: dialogScope,
+		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitAISetFormDismiss, CloseID: hitAISetFormClose, InitialFocusID: hitAICLILoginTerminal,
 	})
 	dialog.Body(func() {
-		ui.Slot(c).Fill().Draw(func(d *ui.DrawContext) {
+		ui.Slot(c).Height(height).Draw(func(d *ui.DrawContext) {
 			// Dismissing the dialog stops the login, and the body is painted
 			// after that decision in the same pass. A stopped login has released
 			// its terminal, so there is nothing left to draw.

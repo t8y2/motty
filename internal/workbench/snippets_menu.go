@@ -3,6 +3,7 @@ package workbench
 import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 )
 
 var (
@@ -23,19 +24,6 @@ type snippetMenu struct {
 	at    gfx.Point
 }
 
-// snippetMenuPointer closes an open menu on a secondary press outside it. Opening
-// it is the paint of a row (openSnippetMenuOn), where the row is declared.
-func (state *State) snippetMenuPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	if event.Kind != gfx.PointerDown || event.Button == gfx.PointerButtonNone || event.Button == gfx.PointerButtonPrimary {
-		return gfx.EventResult{}, false
-	}
-	if state.snippetMenu.open && event.Target == hitSnippetMenuDismiss {
-		state.snippetMenu.open = false
-		return gfx.EventResult{Handled: true, Repaint: true}, true
-	}
-	return gfx.EventResult{}, false
-}
-
 // openSnippetMenuOn is called while painting a snippet row: when this paint is the
 // event pass of a secondary press on that row it selects the row and opens its
 // menu there.
@@ -49,7 +37,7 @@ func (state *State) openSnippetMenuOn(canvas *gfx.Canvas, id gfx.ID, index int) 
 	canvas.Consume()
 }
 
-func (state *State) paintSnippetMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
+func (state *State) declareSnippetMenu(c ui.C) {
 	menu := &state.snippetMenu
 	if !menu.open {
 		return
@@ -76,15 +64,7 @@ func (state *State) paintSnippetMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 	} else {
 		state.snippetActionRows(&rows)
 	}
-	width, height := rows.size(canvas, state.contextMenuTheme())
-	bounds := state.popupAt(canvas, viewport, menu.at, width, height, 6)
-	popup := components.BeginContextMenu(canvas, state.contextMenuTheme(), bounds, components.ContextMenuOptions{
-		Layer: dialogLayer, Scope: dialogScope, DismissID: hitSnippetMenuDismiss, Viewport: viewport, Scroll: state.menuScrollFor(hitSnippetMenuDismiss),
-		RowHeight: contextMenuRow,
-	})
-	state.menuPlaced(popup.Bounds())
-	rows.paint(&popup, nil)
-	popup.End()
+	state.declareRowsMenu(c, &menu.open, menu.at, hitSnippetMenuDismiss, &rows, state.chooseSnippetMenu)
 }
 
 // snippetActionRows is what a snippet row's menu offers.
@@ -100,19 +80,15 @@ func (state *State) snippetActionRows(rows *menuRows) {
 	rows.add(components.ContextMenuItem{ID: hitSnippetMenuDelete, Label: m.SnippetDelete, Icon: icon(iconTrash), Variant: components.ContextMenuItemDestructive})
 }
 
-// clickSnippetMenu runs a menu choice. A press anywhere else only closes the menu.
-func (state *State) clickSnippetMenu(id gfx.ID) bool {
-	if !state.snippetMenu.open {
-		return false
-	}
+// chooseSnippetMenu runs a choice of the menu, which closed with it.
+func (state *State) chooseSnippetMenu(id gfx.ID) {
 	menu := state.snippetMenu
 	index := menu.index
-	state.snippetMenu.open = false
 	if id.Scope() == hitSnippetPickList {
 		if session, ok := state.sessionByIDPointer(uint32(item(id))); ok && session.term != nil {
 			state.sendSnippetPicked(index, session)
 		}
-		return true
+		return
 	}
 	switch id {
 	case hitSnippetMenuSend:
@@ -126,5 +102,4 @@ func (state *State) clickSnippetMenu(id gfx.ID) bool {
 	case hitSnippetMenuDelete:
 		state.openSnippetDelete(index)
 	}
-	return true
 }

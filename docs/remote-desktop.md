@@ -257,8 +257,9 @@ drew the logon screen before any Motty code was written.
 commit `bfc357b`, licence kept): the library hard-codes `net.DialTimeout` (no SSH
 tunnel or proxy) and `InsecureSkipVerify: true` with no hook to see the certificate
 (no pinning), starts 14 logon attempts for one wrong password (account lockout), and
-carries 20,000 lines for audio/drive/printer/USB redirection that Motty does not
-expose. 37,000 lines remain in the tree (24,000 of code, the rest tests). It is
+carries 20,000 lines for audio input, drive, printer, camera and USB redirection
+that Motty does not expose; the audio output channel was reimplemented
+(`internal/rdpcore/protocol/rdpsnd`). 37,000 lines remain in the tree (24,000 of code, the rest tests). It is
 a fork that does not track upstream; `NOTICE.md` lists every change. The cost of
 the copy in the stripped macOS binary is +1.04 MB (19.53 MB to 20.57 MB), with no new
 module in `go.mod`.
@@ -301,7 +302,17 @@ that switch and feed a method reach the remote, which composes with its own),
 pointer with three
 buttons and horizontal/vertical wheel. Clipboard text and images, and files in
 both directions (CLIPRDR, see "Copying files to the server" and "Copying files from the server"), per host, off
-by default. Suppress Output while the tab is hidden. The initial desktop matches
+by default. Audio output over rdpsnd — the static channel, or the
+AUDIO_PLAYBACK_DVC dynamic channel that Windows 11 opens: the server's 16-bit
+PCM, mono or stereo, played on this computer's default output device. The
+compressed formats Windows also offers (ADPCM and others) are declined, so the
+server sends PCM; the lossy dynamic channel is refused. Audio is on by default
+for every RDP connection; the host's **Play remote audio** switch turns it off,
+in which case the client asks the server for no audio channel at all and this
+computer opens no output device. The system's own output volume and mute decide
+whether what is played is heard. The sound is written on the session's receive
+path, so an output device that stops consuming pauses the session's other
+channel data for at most the sound buffer, a fifth of a second. Suppress Output while the tab is hidden. The initial desktop matches
 the pane's device pixels and display scale (1600x900 only when the caller supplies
 no size). A server with the RDPEDISP display-control channel follows the pane
 in Fit mode, including fullscreen transitions; otherwise the picture is scaled.
@@ -411,8 +422,9 @@ than leaving a paste that looks complete.
 
 ### Limits
 
-No audio, drive/printer/smartcard/USB redirection, multiple monitors, dynamic
-resolution change from the client, RD Gateway, Kerberos or certificate-based logon
+Audio input (microphone redirection), drive/printer/smartcard/USB redirection,
+multiple monitors, dynamic resolution change from the client, RD Gateway,
+Kerberos or certificate-based logon
 (NTLM only), network-level authentication to a domain server that disables NTLM,
 H.264, clipboard formats other than text, images and files. A fresh Windows logon
 that finds the user signed in elsewhere asks the usual "sign out the other user?"
@@ -450,7 +462,11 @@ locked, read back into the client and compared by SHA-256
 on this computer (`TestLiveTextCopiedOnTheServerArrivesHere`); and the Windows
 file-list writer's result read back by PowerShell's
 `Get-Clipboard -Format FileDropList` as the same paths
-(`TestSetClipboardFilesRoundTrip` in `../viva`). On
+(`TestSetClipboardFilesRoundTrip` in `../viva`). Audio output was exercised
+from this Mac against the same Windows 11 machine: the test opens Run in the
+remote desktop, plays a system WAV, and checks that 16-bit PCM at 44.1 kHz
+stereo arrives (`TestLiveAudio`, `MOTTY_RDP_AUDIO=1`); the static rdpsnd
+channel's PDUs are covered by unit tests. On
 **xrdp** in Docker (amd64 under Rosetta): TLS without NLA, pixels via the RDPGFX
 path, keys typed as scancodes with Shift (`echo Key-Typed_1` shown in the xterm),
 and the headless Motty application end to end (`tools/e2e/rdp_e2e.txt`: add the host,

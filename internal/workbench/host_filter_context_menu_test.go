@@ -31,7 +31,7 @@ func TestHostFilterContextMenuTargetsThePointedGroup(t *testing.T) {
 				if !state.hostFilterOn || state.hostFilter != "Servers" || state.search.String() != "Production" || state.selectedHostID != selected {
 					t.Fatal("right-click changed the active filter, search or selected host")
 				}
-				state.Click(hitGroupNewHost)
+				chooseMenu(t, state, hitGroupNewHost)
 				if state.modal != modalNewHost || state.editor.value(fieldGroup) != target {
 					t.Fatal("New Host did not prefill the right-clicked group")
 				}

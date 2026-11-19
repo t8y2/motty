@@ -70,11 +70,13 @@ type autofillUI struct {
 	send                        autofill.Send
 	enter                       bool
 	dialogError                 string
-	// The slots are where the dialog body paints the controls.
-	nameBox, patternBox ui.Box
-	fixedBox, scopeBox  ui.Box
-	enterRow            ui.Box
-	sendChoices         [3]ui.Box
+	// The dialog's fields are page fields: a row and a text for each, the text bound to the
+	// editor above; fixedShown reveals the fixed text.
+	rows        [4]ui.FormFieldState
+	texts       [4]ui.Field
+	bound       bool
+	fixedShown  bool
+	sendChoices [3]ui.Box
 
 	ask  autofillAsk
 	pick autofillPick
@@ -313,7 +315,7 @@ func (state *State) openAutofillDialog(rule *autofill.Rule) {
 	form.editing = rule
 	form.name, form.pattern, form.fixed, form.scope = text.Editor{}, text.Editor{}, text.Editor{}, text.Editor{}
 	form.send, form.enter = autofill.SendPassword, true
-	form.dialogError = ""
+	form.dialogError, form.fixedShown = "", false
 	if rule != nil {
 		form.name.Insert(rule.Name)
 		form.pattern.Insert(rule.Pattern)
@@ -558,8 +560,8 @@ func (state *State) declareAutofillBody(c ui.C) {
 	form := &state.autofillRules
 	column := ui.Column(c).Fill().PadSides(2, 4, 0, 4)
 	column.Children(func() {
-		form.nameBox = ui.Slot(c).Height(62).MarginSides(0, 0, 6, 0)
-		form.patternBox = ui.Slot(c).Height(62).MarginSides(0, 0, 6, 0)
+		state.declareAutofillField(c, 0, hitAutofillName, m.Name, m.NamePlaceholder, false)
+		state.declareAutofillField(c, 1, hitAutofillPattern, m.Pattern, m.PatternPlaceholder, false)
 		ui.Text(c, m.Send).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(18).MarginSides(0, 0, 4, 2)
 		ui.Row(c).Gap(8).Height(30).MarginSides(0, 0, 8, 0).Children(func() {
 			for index, kind := range autofillSendKinds {
@@ -574,38 +576,53 @@ func (state *State) declareAutofillBody(c ui.C) {
 			}
 		})
 		if form.send == autofill.SendText {
-			form.fixedBox = ui.Slot(c).Height(62).MarginSides(0, 0, 6, 0)
+			placeholder := ""
+			if form.editing != nil && form.editing.Send == autofill.SendText {
+				placeholder = m.FixedTextHint
+			}
+			state.declareAutofillField(c, 2, hitAutofillFixed, m.FixedText, placeholder, true)
 		}
-		form.scopeBox = ui.Slot(c).Height(62).MarginSides(0, 0, 6, 0)
-		form.enterRow = state.declareDialogCheckboxC(c, m.Enter, 4, 0)
+		state.declareAutofillField(c, 3, hitAutofillScope, m.Scope, m.ScopePlaceholder, false)
+		state.declareDialogCheck(c, hitAutofillEnter, m.Enter, form.enter, 4, 0)
 		if form.dialogError != "" {
 			ui.Text(c, form.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.danger).LineHeight(18).MarginSides(15, 0, 0, 0)
 		}
 	})
 	column.DrawOver(func(d *ui.DrawContext) {
-		canvas, theme := d.Canvas, *d.Theme
-		field := func(box ui.Box, id gfx.ID, label, placeholder, value string, secret bool) {
-			content := components.BeginField(canvas, theme, box.Rect()).Paint(label, "", "")
-			focused := canvas.Focused() == id
-			state.paintSecretInput(canvas, content, components.InputSnapshot{
-				ID: id, Label: label, Value: value, Placeholder: placeholder, Secure: secret,
-				Focused: focused, PlatformEditing: focused && value != "", Invalid: form.dialogError != "",
-			})
-		}
-		field(form.nameBox, hitAutofillName, m.Name, m.NamePlaceholder, form.name.String(), false)
-		field(form.patternBox, hitAutofillPattern, m.Pattern, m.PatternPlaceholder, form.pattern.String(), false)
+		canvas := d.Canvas
 		for index, kind := range autofillSendKinds {
 			canvas.HitWithOptions(kind.id, form.sendChoices[index].Rect(), state.sendKindName(kind.send), gfx.HitOptions{Role: gfx.RoleButton, Selected: form.send == kind.send})
 		}
-		if form.send == autofill.SendText {
-			placeholder := ""
-			if form.editing != nil && form.editing.Send == autofill.SendText {
-				placeholder = m.FixedTextHint
+	})
+}
+
+// declareAutofillField declares field i of the rule dialog: a labelled row around a page text
+// bound to the rule's editor, in the invalid look while the dialog shows an error. A secret one has a
+// button that reveals it.
+func (state *State) declareAutofillField(c ui.C, i int, id gfx.ID, label, placeholder string, secret bool) {
+	form, m := &state.autofillRules, state.messages
+	if !form.bound {
+		form.texts[0].Bind(&form.name)
+		form.texts[1].Bind(&form.pattern)
+		form.texts[2].Bind(&form.fixed)
+		form.texts[3].Bind(&form.scope)
+		form.bound = true
+	}
+	field := &form.texts[i]
+	field.Invalid = form.dialogError != ""
+	field.Secure = secret && !form.fixedShown
+	ui.FormField(c, &form.rows[i], label).FillWidth().Height(62).MarginSides(0, 0, 6, 0).Children(func() {
+		box := ui.TextFieldID(c, id, field, label, placeholder)
+		if secret {
+			icon, name := lucideIcons[iconEye], m.ShowSecret
+			if form.fixedShown {
+				icon, name = lucideIcons[iconEyeOff], m.HideSecret
 			}
-			field(form.fixedBox, hitAutofillFixed, m.FixedText, placeholder, form.fixed.String(), true)
+			box.Action(icon, name)
+			if box.ActionClicked() {
+				form.fixedShown = !form.fixedShown
+			}
 		}
-		field(form.scopeBox, hitAutofillScope, m.Scope, m.ScopePlaceholder, form.scope.String(), false)
-		state.paintDialogCheckbox(canvas, hitAutofillEnter, m.Enter, form.enter, form.enterRow)
 	})
 }
 

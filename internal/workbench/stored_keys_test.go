@@ -4,7 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/headless"
 	"golang.org/x/crypto/ssh"
 	"motty/internal/keyidentity"
 	"motty/internal/sshconn"
@@ -19,7 +21,7 @@ func addKeyByHand(t *testing.T, state *State, text, name string) {
 	if !state.keysMenu {
 		t.Fatal("Add Key did not open its menu")
 	}
-	state.Click(hitKeysPaste)
+	clickPageMenuRow(t, state, state.messages.KeyPaste)
 	if state.keysMenu || state.modal != modalForm || !state.form.fields[0].multiline {
 		t.Fatalf("Paste did not open a form with a multiline key field: modal %d", state.modal)
 	}
@@ -302,18 +304,30 @@ func TestEnterInTheKeyFieldIsANewLineAndArrowsMoveByRow(t *testing.T) {
 	state.Click(hitKeysPaste)
 	field := &state.form.fields[0]
 	field.editor.Insert("first\nsecond\nthird")
-	canvas, _ := paintAt(state, gfx.Size{Width: 1000, Height: 800})
-	if _, ok := hitByID(canvas, hitFormFieldList.At(0)); !ok {
-		t.Fatal("the key field was not painted")
+	config := state.WindowConfig(app.Config{
+		Width: 1000, Height: 800, Tree: Tree(), Paint: state.Paint,
+		OnResize: state.Resize, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut,
+	})
+	view, err := headless.Open(config, nil, headless.Options{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
 	}
-	target := hitFormFieldList.At(0)
+	defer view.Close()
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
 	end := field.editor.Caret()
-	state.Key(gfx.KeyEvent{Key: gfx.KeyUp, Target: target})
+	// The arrows are the page text area's: they move by the rows the text wrapped to.
+	if err := view.Driver().Key(gfx.KeyUp, 0); err != nil {
+		t.Fatal(err)
+	}
 	if up := field.editor.Caret(); up >= end || up == 0 {
 		t.Fatalf("Up moved the caret from %d to %d", end, up)
 	}
 	// Enter is the native editor's new line; the form must not take it as Submit.
-	state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: target})
+	if err := view.Driver().Key(gfx.KeyEnter, 0); err != nil {
+		t.Fatal(err)
+	}
 	if state.modal != modalForm {
 		t.Fatal("Enter in the key field submitted the form")
 	}

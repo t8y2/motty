@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -69,8 +70,6 @@ var (
 )
 
 var (
-	hitSnippetRowList    = tree.Sub(snippetsHits, tree.Name("snippet-row")) // + snippet index
-	hitSnippetHandles    = tree.Sub(snippetsHits, tree.Name("snippet-handle"))
 	hitSnippetExpandList = tree.Sub(snippetsHits, tree.Name("snippet-expand")) // + snippet index
 	hitSnippetSort       = tree.Sub(snippetsHits, tree.Name("snippet-sort"))   // + column index
 	hitSnippetSendList   = tree.Sub(snippetsHits, tree.Name("snippet-send"))   // the command palette's entries
@@ -83,35 +82,49 @@ type snippetsUI struct {
 	list []snippet
 
 	// The page's group filter: the groups there are, the list indices it shows
-	// in the order it shows them, and the filter's popup.
-	groups       []string
-	hasUngrouped bool
-	visible      []int
-	filter       snippetFilter
-	filterOpen   bool
+	// in the order it shows them, and the integer choices its Select is over.
+	groups        []string
+	hasUngrouped  bool
+	visible       []int
+	filter        snippetFilter
+	filterChoice  int
+	filterChoices []int
 
 	// The dialog: which snippet it edits (-1 adds one) and the fields.
-	editing       int
-	name          text.Editor
-	command       text.Editor
-	commandLayout components.TextareaLayout
-	run           bool
-	groupPicker   components.SingleSelectState
-	shortcut      keymap.Chord
-	capturing     bool // the next chord pressed becomes shortcut
-	dialogError   string
+	editing     int
+	name        text.Editor
+	command     text.Editor
+	commandArea dialogArea
+	run         bool
+	groupPicker components.SingleSelectState
+	shortcut    keymap.Chord
+	capturing   bool // the next chord pressed becomes shortcut
+	dialogError string
 
-	// The boxes are the slots the dialog body's controls are painted in.
-	dialogFields   [2]ui.Box
+	// nameForm and nameText are the name field's row and text, bound to name. The boxes are
+	// the slots the dialog body paints the other controls in.
+	nameForm       ui.FormFieldState
+	nameText       ui.Field
+	nameBound      bool
 	dialogGroup    ui.Box
-	dialogRun      ui.Box
 	dialogShortcut ui.Box
 
 	// The page: the selected row and the count under the table.
 	selected  int
 	sort      components.TableSortState
-	grid      components.ReorderGridState
 	countText string
+	// selectedRow is the place selected occupies in visible as of this paint,
+	// so the first paint shows a choice the list has not been told yet.
+	selectedRow int
+	// rows is the page's list: its rows are the snippets the filter shows, and
+	// are dragged or moved with Alt and the arrows while the page shows its
+	// manual order. rowDecl, reorder and the row hooks are made once, so a paint
+	// does not allocate them again.
+	rows         ui.ListState
+	rowDecl      func(ui.ListRow)
+	reorder      func(rows []int, to int)
+	handleDraw   func(*ui.DrawContext)
+	detailAccent func(*ui.DrawContext)
 	// detailHeight and detailLineHeight are the band the expanded command takes,
 	// measured when the page declares the scroll area.
 	detailHeight     float32
@@ -136,9 +149,22 @@ type snippetsUI struct {
 	hoverSince  time.Duration
 	hoverOpen   bool
 	hoverRow    int
-	hoverAnchor gfx.Rect
+	hoverAnchor ui.Box
 	cardLines   []string
 	cardCache   gfx.EllipsisCache
+	// hoverCandidate and hoverCandidateAnchor are the row the pointer is on in
+	// this paint, before the rest has opened the card. hoverName, hoverLineHeight
+	// and hoverBody are what the popover shows.
+	hoverCandidate       int
+	hoverCandidateAnchor ui.Box
+	hoverC               ui.C
+	hoverName            string
+	hoverLineHeight      float32
+	hoverBody            func()
+	// detailName and detailCommand name the expanded row for assistive
+	// technology, without a closure per paint.
+	detailName    string
+	detailCommand string
 }
 
 // resetSnippetPreview closes the expanded row and the command preview after the
@@ -146,7 +172,35 @@ type snippetsUI struct {
 func (form *snippetsUI) resetSnippetPreview() {
 	form.expanded = 0
 	form.hoverTarget, form.hoverOpen, form.hoverRow = gfx.ID{}, false, 0
-	form.hoverAnchor = gfx.Rect{}
+	form.hoverAnchor = ui.Box{}
+}
+
+// syncRowSelection makes the list's keyboard row follow selected after the list
+// or its order changed; a user's own choice is read back from the list instead.
+func (form *snippetsUI) syncRowSelection() {
+	row := slices.Index(form.visible, form.selected)
+	form.rows.Select(row)
+}
+
+// prepareSnippetRows makes the list's callbacks once, so a paint reuses them.
+func (form *snippetsUI) prepareSnippetRows(state *State) {
+	if form.rowDecl != nil {
+		return
+	}
+	form.rowDecl = state.declareSnippetRow
+	form.reorder = func(rows []int, to int) { state.moveSnippetRows(rows, to) }
+	form.handleDraw = state.paintSnippetHandle
+	form.detailAccent = state.paintSnippetDetailAccent
+	form.rows.NoTypeahead = true
+	// Rows are named by their place, not by the snippet's index: reordering
+	// changes an index's owner, and the list's Alt+arrow focus follows the place.
+	form.rows.Key = nil
+	form.rows.Label = func(i int) string {
+		if i < 0 || i >= len(form.visible) {
+			return ""
+		}
+		return form.list[form.visible[i]].Name
+	}
 }
 
 // cleanSnippetText makes one line of what was typed: a snippet is sent as
@@ -239,7 +293,7 @@ func (state *State) openSnippetDialog(index int) {
 	form := &state.snippets
 	form.editing = index
 	form.name, form.command = text.Editor{}, text.Editor{}
-	form.commandLayout = components.TextareaLayout{}
+	form.commandArea = dialogArea{}
 	form.run = true
 	group := ""
 	form.shortcut, form.capturing = keymap.Chord{}, false
@@ -441,53 +495,46 @@ func (state *State) moveSnippet(index, direction int) bool {
 	return true
 }
 
-func (state *State) moveSnippetTo(source, target int) bool {
+// moveSnippetTo puts the snippet at source before position to in the manual
+// order, as ListState.Reorder says: to is the row it goes before, len(list) for
+// the end. It is the page's reorder callback.
+func (state *State) moveSnippetTo(source, to int) bool {
 	form := &state.snippets
-	if source < 0 || target < 0 || source >= len(form.list) || target >= len(form.list) || source == target ||
+	n := len(form.list)
+	if source < 0 || source >= n || to < 0 || to > n || source == to ||
 		form.sort.Direction != components.TableSortNone || !form.filter.all() {
 		return false
 	}
 	entry := form.list[source]
-	if source < target {
-		copy(form.list[source:target], form.list[source+1:target+1])
+	if source < to {
+		to--
+		if to == source {
+			return false
+		}
+		copy(form.list[source:to], form.list[source+1:to+1])
 	} else {
-		copy(form.list[target+1:source+1], form.list[target:source])
+		copy(form.list[to+1:source+1], form.list[to:source])
 	}
-	form.list[target] = entry
-	form.selected = target
+	form.list[to] = entry
+	form.selected = to
 	form.resetSnippetPreview()
 	state.refreshSnippets()
 	state.save()
 	return true
 }
 
-func (state *State) snippetReorderPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+// moveSnippetRows is the ListState.Reorder callback: it moves the rows the list
+// carries, given by their place in visible, to before place to.
+func (state *State) moveSnippetRows(rows []int, to int) {
 	form := &state.snippets
-	if state.activeSection != sectionSnippets || state.modal != modalNone || form.sort.Direction != components.TableSortNone || !form.filter.all() {
-		form.grid.Cancel()
-		return gfx.EventResult{}, false
+	if len(rows) == 0 || form.sort.Direction != components.TableSortNone || !form.filter.all() {
+		return
 	}
-	move, result := form.grid.Pointer(event)
-	if move.Valid() && move.ID.Scope() == hitSnippetHandles && move.Target.Scope() == hitSnippetHandles {
-		if state.moveSnippetTo(item(move.ID), item(move.Target)) {
-			result.Focus = hitSnippetHandles.At(item(move.Target))
-		}
+	source := rows[0]
+	if source < 0 || source >= len(form.visible) {
+		return
 	}
-	return result, result.Handled
-}
-
-func (state *State) snippetReorderKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
-	form := &state.snippets
-	if state.activeSection != sectionSnippets || state.modal != modalNone || form.sort.Direction != components.TableSortNone || !form.filter.all() {
-		return gfx.EventResult{}, false
-	}
-	move, result := form.grid.Key(event)
-	if move.Valid() && move.ID.Scope() == hitSnippetHandles && move.Target.Scope() == hitSnippetHandles {
-		if state.moveSnippetTo(item(move.ID), item(move.Target)) {
-			result.Focus = hitSnippetHandles.At(item(move.Target))
-		}
-	}
-	return result, result.Handled
+	state.moveSnippetTo(form.visible[source], to)
 }
 
 // sendSnippet types a snippet into the active terminal, and into the other panes
@@ -645,13 +692,35 @@ func (state *State) declareSnippetDialogBody(c ui.C) {
 	form, m := &state.snippets, state.messages.Tools
 	column := ui.Column(c).Fill().PadSides(2, 4, 0, 4)
 	column.Children(func() {
-		form.dialogFields[0] = ui.Slot(c).Height(62).MarginSides(0, 0, 6, 0)
-		form.dialogFields[1] = ui.Slot(c).Height(140).MarginSides(0, 0, 6, 0)
+		if !form.nameBound {
+			form.nameText.Bind(&form.name)
+			form.nameBound = true
+		}
+		form.nameText.Invalid = form.dialogError != ""
+		ui.FormField(c, &form.nameForm, m.SnippetName).FillWidth().Height(62).MarginSides(0, 0, 6, 0).Children(func() {
+			ui.TextFieldID(c, hitSnippetName, &form.nameText, m.SnippetName, m.SnippetNamePlaceholder)
+		})
+		ui.Column(c).Height(140).MarginSides(0, 0, 6, 0).Children(func() {
+			form.commandArea.declare(c, hitSnippetCommand, &form.command, m.SnippetCommand, m.SnippetCommandPlaceholder, 140)
+		})
 		form.dialogGroup = ui.Slot(c).Height(62).MarginSides(0, 0, 6, 0)
-		form.dialogRun = state.declareDialogCheckboxC(c, m.SnippetRun, 7, 0)
+		state.declareDialogCheck(c, hitSnippetRun, m.SnippetRun, form.run, 7, 0)
 		ui.Row(c).Height(32).Items(ui.Center).MarginSides(12, 0, 0, 2).Children(func() {
 			ui.Text(c, m.SnippetShortcut).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).LineHeight(20).Grow(1)
-			form.dialogShortcut = ui.Slot(c).Size(240, 32).Shrink(0)
+			label := m.SnippetShortcutNone
+			switch {
+			case form.capturing:
+				label = m.SnippetShortcutRecording
+			case form.shortcut.Valid():
+				label = chordLabel(form.shortcut)
+			}
+			form.dialogShortcut = ui.Row(c).Size(240, 32).Shrink(0).Justify(ui.End).Gap(8)
+			form.dialogShortcut.Children(func() {
+				// The shortcut row's buttons keep the height they had when the
+				// row was painted by hand.
+				ui.Button(c, label).Outline().Height(28).Hit(hitSnippetShortcut, label)
+				ui.Button(c, m.SnippetShortcutClear).Ghost().Height(28).Disabled(!form.shortcut.Valid() && !form.capturing).Hit(hitSnippetShortcutOff, m.SnippetShortcutClear)
+			})
 		})
 		if form.dialogError != "" {
 			ui.Text(c, form.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(18).MarginSides(15, 0, 0, 0)
@@ -660,55 +729,9 @@ func (state *State) declareSnippetDialogBody(c ui.C) {
 	column.DrawOver(func(d *ui.DrawContext) { state.paintSnippetDialogFields(d.Canvas) })
 }
 
-// paintSnippetDialogFields paints the snippet editor's controls into the slots
-// the body laid out.
+// paintSnippetDialogFields paints the snippet editor's group picker into the
+// slot the body laid out; the shortcut is page buttons.
 func (state *State) paintSnippetDialogFields(canvas *gfx.Canvas) {
-	m, theme := state.messages.Tools, state.Theme()
 	form := &state.snippets
-	entries := [...]struct {
-		id          gfx.ID
-		label       string
-		placeholder string
-		value       string
-	}{
-		{hitSnippetName, m.SnippetName, m.SnippetNamePlaceholder, form.name.String()},
-		{hitSnippetCommand, m.SnippetCommand, m.SnippetCommandPlaceholder, form.command.String()},
-	}
-	for index, entry := range entries {
-		content := components.BeginField(canvas, theme, form.dialogFields[index].Rect()).Paint(entry.label, "", "")
-		focused := canvas.Focused() == entry.id
-		if entry.id == hitSnippetCommand {
-			selection := form.command.Selection()
-			snapshot := components.TextareaSnapshot{
-				ID: entry.id, Label: entry.label, Value: entry.value, Placeholder: entry.placeholder,
-				Focused: focused, HideEditorText: true, ShowCaret: selection.Start == selection.End,
-				Layout: &form.commandLayout, SelectionStart: aiByteOffset(entry.value, selection.Start),
-				SelectionEnd: aiByteOffset(entry.value, selection.End), Caret: aiByteOffset(entry.value, form.command.Caret()),
-			}
-			if marked, composing := form.command.Composition(); composing {
-				snapshot.CompositionStart = aiByteOffset(entry.value, marked.Start)
-				snapshot.CompositionEnd = aiByteOffset(entry.value, marked.End)
-			}
-			components.PaintTextarea(canvas, theme, content, snapshot)
-			continue
-		}
-		components.PaintInput(canvas, theme, content, components.InputSnapshot{
-			ID: entry.id, Label: entry.label, Value: entry.value, Placeholder: entry.placeholder,
-			Focused: focused, PlatformEditing: focused && entry.value != "", Invalid: form.dialogError != "",
-		})
-	}
 	state.paintSnippetGroupField(canvas, form.dialogGroup.Rect())
-	state.paintDialogCheckbox(canvas, hitSnippetRun, m.SnippetRun, form.run, form.dialogRun)
-	label := m.SnippetShortcutNone
-	switch {
-	case form.capturing:
-		label = m.SnippetShortcutRecording
-	case form.shortcut.Valid():
-		label = chordLabel(form.shortcut)
-	}
-	buttons := [...]components.ButtonAction{
-		{ID: hitSnippetShortcut, Label: label, Variant: components.ButtonOutline},
-		{ID: hitSnippetShortcutOff, Label: m.SnippetShortcutClear, Variant: components.ButtonGhost, Disabled: !form.shortcut.Valid() && !form.capturing},
-	}
-	components.BeginButtonRow(canvas, theme, form.dialogShortcut.Rect()).Paint(buttons[:]...)
 }

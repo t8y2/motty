@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
@@ -14,7 +15,12 @@ import (
 	"motty/internal/knownhosts"
 )
 
-const knownHostsPageSize = 15
+const (
+	knownHostsPageSize = 15
+	knownHostsColumns  = 7
+	// knownHostsSidePad is the page's padding beside the table, on each side.
+	knownHostsSidePad = float32(18)
+)
 
 type knownHostsAction uint8
 
@@ -30,13 +36,34 @@ type knownHostRecord struct {
 	cells       [7]string
 	searchText  string
 	selectLabel string
+	// rowLabel names the row in assistive technology by all its non-empty cells.
+	rowLabel string
+}
+
+// knownHostRowLabel joins the cells the row shows into one spoken name. It runs
+// when the file is read, not in the paint.
+func knownHostRowLabel(cells [7]string) string {
+	var b strings.Builder
+	for _, cell := range cells {
+		if cell == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteString(" · ")
+		}
+		b.WriteString(cell)
+	}
+	return b.String()
 }
 
 type knownHostsView struct {
-	file              *knownhosts.File
-	rows              []knownHostRecord
-	visible           []int
-	search            text.Editor
+	file    *knownhosts.File
+	rows    []knownHostRecord
+	visible []int
+	search  text.Editor
+	// searchField is the page's text field over search, bound when first declared.
+	searchField       ui.Field
+	searchBound       bool
 	visibleQuery      string
 	visibleLanguage   i18n.Language
 	synced            bool
@@ -50,12 +77,33 @@ type knownHostsView struct {
 	action            knownHostsAction
 	dialogDescription string
 	dialogError       string
-	// checks are the table's checkbox slots, declared in the section's page.
-	checks [knownHostsPageSize]ui.Box
+	// header, list and rowDecl are the page's table: its headings, its rows and
+	// the builder that declares one. columns and headings are set on each paint
+	// so the list's cells line up with the header's.
+	list     ui.ListState
+	rowDecl  func(ui.ListRow)
+	columns  [knownHostsColumns]components.TableColumn
+	headings [knownHostsColumns]string
 }
 
 func (state *State) initKnownHosts() {
-	state.knownHosts.file = knownhosts.New(state.options.KnownHostsPath)
+	view := &state.knownHosts
+	view.file = knownhosts.New(state.options.KnownHostsPath)
+	view.rowDecl = state.declareKnownHostRow
+	view.list.Key = func(row int) int {
+		start, _ := state.knownHostsPageRange()
+		if at := start + row; at >= 0 && at < len(view.visible) {
+			return view.visible[at]
+		}
+		return row
+	}
+	view.list.Label = func(row int) string {
+		start, _ := state.knownHostsPageRange()
+		if at := start + row; at >= 0 && at < len(view.visible) {
+			return view.rows[view.visible[at]].selectLabel
+		}
+		return ""
+	}
 }
 
 func (state *State) openKnownHosts() {
@@ -94,15 +142,15 @@ func (state *State) refreshKnownHosts(report bool) {
 			flags += "|1|"
 		}
 		line := strconv.Itoa(entry.Line)
+		cells := [7]string{"", line, hosts, flags, entry.KeyType, entry.Fingerprint, entry.Comment}
 		view.rows[index] = knownHostRecord{
 			entry: entry,
-			cells: [7]string{
-				"", line, hosts, flags, entry.KeyType, entry.Fingerprint, entry.Comment,
-			},
+			cells: cells,
 			searchText: strings.ToLower(strings.Join([]string{
 				hosts, entry.KeyType, entry.Fingerprint, entry.Comment,
 			}, " ")),
 			selectLabel: hosts + " · " + entry.Fingerprint,
+			rowLabel:    knownHostRowLabel(cells),
 		}
 	}
 	view.selected = 0

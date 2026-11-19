@@ -318,17 +318,13 @@ func (state *State) declareCredentialDialog(c ui.C) {
 	}
 	const width float32 = 520
 	bodyHeight := withError(float32(68*3+8), form.dialogError)
-	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
-		ContentSize: gfx.Size{Width: width}, FitBody: true,
-	}).Layout("")
 	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := ui.Dialog(c, ui.DialogSpec{
-		Title: title, Width: width, Height: layout.Content.Height + bodyHeight, Layer: dialogLayer,
+		Title: title, Width: width, Layer: dialogLayer,
 		Scope: dialogScope, CloseID: hitCredentialClose, InitialFocusID: hitCredentialName,
 	})
 	dialog.Body(func() {
-		ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
+		ui.Column(c).Height(bodyHeight).PadSides(2, 4, 0, 4).Children(func() {
 			state.credentialField(c, hitCredentialName, &form.nameField, m.Name, m.NamePlaceholder, 62, false)
 			state.credentialField(c, hitCredentialUser, &form.userField, m.User, m.UserPlaceholder, 62, false)
 			placeholder := ""
@@ -509,30 +505,41 @@ func (state *State) paintHostPasswordWithCredential(canvas *gfx.Canvas, content 
 	})
 }
 
-// paintHostCredentialMenu is the list of shared passwords under the field.
-func (state *State) paintHostCredentialMenu(canvas *gfx.Canvas) {
+// declareHostCredentialMenu declares the list of shared passwords under the
+// password field as a page menu.
+func (state *State) declareHostCredentialMenu(c ui.C) {
 	editor, m := &state.editor, state.messages.Credentials
 	if !editor.credentialOpen || !state.hostOffersCredential() {
 		return
 	}
-	portal := state.beginHostFormPopup(canvas, true)
-	defer state.endHostFormPopup(canvas, portal)
-	list := state.hostAuthListBounds(editor.credentialAnchor, len(state.credentials)+2)
-	state.menuPlaced(list)
-	menu := components.BeginDropdownMenu(canvas, state.Theme(), list, components.DropdownMenuOptions{
-		Layer: dialogLayer + 1, Scope: dialogScope, DismissID: hitDialogCredentialDismiss, Viewport: state.windowRect(),
-		Scroll: state.menuScrollFor(hitDialogCredentialDismiss),
-	})
-	defer menu.End()
-	menu.AddItem(components.DropdownMenuItem{
-		ID: hitDialogCredentialOwn, Label: m.SourceOwn, Kind: components.DropdownMenuRadio, Checked: !state.hostTakesCredential(), Selected: !state.hostTakesCredential(),
+	anchor := editor.credentialAnchor
+	if anchor.Width <= 0 {
+		return
+	}
+	var rows menuRows
+	rows.add(components.ContextMenuItem{
+		ID: hitDialogCredentialOwn, Label: m.SourceOwn, Kind: components.ContextMenuRadio, Checked: !state.hostTakesCredential(), Selected: !state.hostTakesCredential(),
 	})
 	for index, entry := range state.credentials {
-		menu.AddItem(components.DropdownMenuItem{
-			ID: hitDialogCredentialItemList.At(index), Label: entry.Name, Kind: components.DropdownMenuRadio, Checked: entry.ID == editor.credential, Selected: entry.ID == editor.credential,
+		rows.add(components.ContextMenuItem{
+			ID: hitDialogCredentialItemList.At(index), Label: entry.Name, Kind: components.ContextMenuRadio,
+			Checked: entry.ID == editor.credential, Selected: entry.ID == editor.credential,
 		})
 	}
-	menu.AddItem(components.DropdownMenuItem{ID: hitDialogCredentialNew, Label: m.Add})
+	rows.add(components.ContextMenuItem{ID: hitDialogCredentialNew, Label: m.Add})
+	ui.PopupLayer(c, dialogLayer)
+	anchorBox := ui.Slot(c).Absolute().Left(anchor.X).Top(anchor.Y).Size(anchor.Width, anchor.Height).
+		HitWith(hitDialogCredentialDismiss, "", gfx.HitOptions{SkipFocus: true, SkipTab: true})
+	ui.Menu(c, anchorBox, &editor.credentialOpen, func(menu *ui.MenuItems) {
+		menu.WidthRange(anchor.Width, anchor.Width)
+		rows.declare(c, menu, state.chooseHostCredential)
+	})
+}
+
+// chooseHostCredential runs a choice of the shared-password menu, which closed
+// with it.
+func (state *State) chooseHostCredential(id gfx.ID) {
+	state.clickHostCredential(id)
 }
 
 func (state *State) clickHostCredential(id gfx.ID) bool {

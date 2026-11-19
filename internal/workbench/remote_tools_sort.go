@@ -56,7 +56,7 @@ func (state *State) clickRemoteTableSort(id gfx.ID) bool {
 			return true
 		}
 		view.ordering[view.tab] = view.tableSort().Toggle(column)
-		view.processScroll = 0
+		view.resetScroll = true
 		// The searchable snapshot is independent of the chosen sort order.
 		// Header changes never issue another remote query.
 		if view.tab == remoteProcesses && (column == 2 || column == 3) {

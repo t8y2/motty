@@ -334,6 +334,11 @@ type Options struct {
 	// Clipboard allows the clipboard to cross in both directions. Off, the
 	// backend neither sends the local clipboard nor keeps the remote's.
 	Clipboard bool
+	// Audio plays the remote system's sound on this computer's default output
+	// device. Off, the backend asks the server for no audio at all. A machine
+	// whose device cannot be opened, or whose server offers no PCM format,
+	// simply plays nothing; the connection is unaffected.
+	Audio bool
 	// Console asks an RDP server for its console (administrative) session
 	// instead of a new one, as mstsc /admin does. Windows decides whether the
 	// request is granted: the account still needs the right to log on, and what

@@ -119,9 +119,7 @@ func (state *State) applyRemoteTab() {
 	m := state.messages.Tools
 	view.selected = ""
 	view.rows = nil
-	view.processScroll = 0
-	view.processScrollBar = components.ScrollAreaGeometry{}
-	view.processTableBounds = gfx.Rect{}
+	view.resetScroll = true
 	view.procs, view.containers, view.compose, view.resources = nil, nil, nil, nil
 	view.collectedAt, view.stale, view.snapshotStatus = time.Time{}, false, ""
 	view.processesTruncated, view.commandsTruncated = false, false
@@ -173,18 +171,6 @@ type remoteToolsView struct {
 	resources              []remotetools.Resource
 	rows                   []remoteRow
 	selected               string
-	processScroll          float32
-	processScrollBar       components.ScrollAreaGeometry
-	processScrollDragging  bool
-	processScrollGrab      float32
-	processScrollValue     string
-	processScrollFirst     int
-	processScrollCount     int
-	processTableBounds     gfx.Rect
-	tableBodyBounds        gfx.Rect
-	tableBodyFirst         int
-	tableBodyRemainder     float32
-	tableRowHeight         float32
 	processColumns         [6]components.TableColumn
 	searches               [6]remoteSearch
 	processDetails         remoteProcessDetails
@@ -196,6 +182,35 @@ type remoteToolsView struct {
 	tableHandlers   ui.Handlers
 	refreshHandlers ui.Handlers
 	autoHandlers    ui.Handlers
+	// The table is a page List: one ListState per tab keeps each tab's choice
+	// and scroll, and rowDecl declares a visible row. They are made once.
+	lists      [6]ui.ListState
+	rowDecl    func(ui.ListRow)
+	rowMenu    func(*ui.MenuItems)
+	headerDraw func(*ui.DrawContext)
+	fillDraw   func(*ui.DrawContext)
+	borderDraw func(*ui.DrawContext)
+	// emptyDraw and loadingDraw paint the placeholders the old table control
+	// painted: components.Empty and the centered spinner over its label.
+	emptyDraw   func(*ui.DrawContext)
+	loadingDraw func(*ui.DrawContext)
+	// paintTab is the tab the table declaration laid out; the row and header
+	// hooks read it rather than the tab a click may have switched to mid-paint.
+	paintTab remoteTab
+	// tableColumns, tableHeadings, tableHeaderCells and tableCount are what the
+	// current declaration fitted, so the header paint and row cells share them.
+	tableColumns     [6]components.TableColumn
+	tableHeadings    [6]string
+	tableHeaderCells [6]components.TableHeader
+	tableCount       int
+	tableRowHeight   float32
+	tableScroll      *ui.ScrollState
+	resetScroll      bool
+	// menuRow and rowMenuAt are the row a secondary press opened the context
+	// menu for; rowMenuOpen is the menu's own dismissal state.
+	menuRow     int
+	rowMenuOpen bool
+	rowMenuAt   gfx.Point
 	// The page's declaration functions are made once too: method values and
 	// closures made in each paint allocate.
 	tabLabel      func(remoteTab) string

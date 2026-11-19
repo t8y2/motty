@@ -324,9 +324,10 @@ type aiPanel struct {
 	paintedHistory             []aiPaintedHistoryRow
 	copySlots                  []aiCopySlot
 	statusLabel                string
-	statusActivity             ui.Box
-	statusPainted              bool
 	historyTop                 float32
+	// drawerOpen is the page Drawer's visibility in drawer mode, kept between
+	// paints so its scope and presence stay stable.
+	drawerOpen bool
 
 	// focusBack asks the next paint to put the keyboard back in the terminal
 	// after the panel closed from inside itself, which a trapped drawer used to
@@ -447,6 +448,8 @@ type aiPanel struct {
 	storeNotice                   string
 	storeNoticeFor                error
 	confirmFor                    *aiApproval
+	confirmField                  ui.Field // the confirmation word's page field, bound to ai.confirm
+	confirmBound                  bool
 	confirmFormat, confirmText    string
 	moreCount                     int
 	moreFormat, moreText          string
@@ -1172,13 +1175,16 @@ func (state *State) aiPanelScrollbarKey(event gfx.KeyEvent) (gfx.EventResult, bo
 	if scroll == nil {
 		return gfx.EventResult{}, false
 	}
-	offset, maximum := scroll.Offset, scroll.Max()
-	area := components.BeginScrollArea(nil, state.Theme(), panel.list, gfx.Size{Width: panel.list.Width, Height: panel.list.Height + maximum}).Offset(0, offset)
-	_, next, ok := area.ScrollForKey(0, offset, event.Key, 24)
-	if !ok {
+	result := scroll.Key(event, 24)
+	if !result.Handled {
 		return gfx.EventResult{}, false
 	}
-	return state.aiPanelScrollTo(next), true
+	if history {
+		panel.historyTop = scroll.Offset
+	} else if scroll.AtEnd() {
+		panel.followSuppressed = false
+	}
+	return gfx.EventResult{Handled: true, Repaint: result.Repaint}, true
 }
 
 // aiPanelScrollBy moves the list by step pixels. Reaching the end of the

@@ -44,27 +44,28 @@ var (
 )
 
 type localProxyUI struct {
-	session        uint32
-	port           text.Editor
-	docker         bool
-	more           bool
-	copyTarget     localProxyTarget
-	returnFocus    gfx.ID
-	scroll         float32
-	scrollGeometry components.ScrollAreaGeometry
+	session     uint32
+	port        text.Editor
+	docker      bool
+	more        bool
+	copyTarget  localProxyTarget
+	returnFocus gfx.ID
+	// topBody asks the next declaration to show the body from its top: the
+	// view or the extra section changed.
+	topBody bool
+	// bodyScroll is the body's scroll position, as of the last declaration.
+	bodyScroll     *ui.ScrollState
 	lastRemotePort uint16
 	lastStopped    bool
 	copied         gfx.ID
 	copyError      string
 	retryCopy      gfx.ID
 	// The dialog's body is part of the window page; these are the slots its
-	// declaration leaves for the hand-painted field, phase line and buttons.
-	portField, phaseLine, dockerButton, moreButton, testButton, restoreButton ui.Box
-	configButton, docsButton, dockerRestoreButton                             ui.Box
-	// viewportDraw and controlsDraw are the dialog's kept painters, made once
-	// per open so a repaint declares the body without allocating.
-	viewportDraw, controlsDraw func(*ui.DrawContext)
-	viewportTitle              string
+	// declaration leaves for the hand-painted field and phase line.
+	// portForm and portText are the port field's row and text, bound to port when first declared.
+	portForm  ui.FormFieldState
+	portText  ui.Field
+	portBound bool
 }
 
 func (state *State) openLocalProxy(session *Session) {
@@ -148,13 +149,13 @@ func (state *State) clickLocalProxy(id gfx.ID) {
 	case hitLocalProxyDocker:
 		state.localProxyUI.copyTarget = localProxyTarget{}
 		state.localProxyUI.docker = true
-		state.localProxyUI.scroll = 0
+		state.localProxyUI.topBody = true
 	case hitLocalProxyDockerBack:
 		state.localProxyUI.docker = false
-		state.localProxyUI.scroll = 0
+		state.localProxyUI.topBody = true
 	case hitLocalProxyMore:
 		state.localProxyUI.more = !state.localProxyUI.more
-		state.localProxyUI.scroll = 0
+		state.localProxyUI.topBody = true
 	case hitLocalProxyDockerDocs:
 		if err := state.options.OpenURL(dockerProxyDocsURL); err != nil {
 			state.localProxyUI.copyError = state.messages.LocalProxy.OpenDocsFailed
@@ -319,7 +320,7 @@ func (state *State) localProxyKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if event.Key == gfx.KeyEscape {
 		if state.localProxyUI.docker {
 			state.localProxyUI.docker = false
-			state.localProxyUI.scroll = 0
+			state.localProxyUI.topBody = true
 			return gfx.EventResult{Handled: true, Repaint: true}, true
 		} else {
 			state.closeModal()
@@ -347,25 +348,30 @@ func (state *State) localProxyKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
 	}
-	area := components.BeginScrollArea(nil, state.Theme(), state.localProxyUI.scrollGeometry.Bounds, state.localProxyContentSize())
-	x, y, handled := area.ScrollForKey(0, state.localProxyUI.scroll, event.Key, 32)
-	if handled {
-		state.localProxyUI.scroll = y
-		return gfx.EventResult{Handled: true, Repaint: x != 0 || y != 0}, true
+	if scroll := state.localProxyUI.bodyScroll; scroll != nil {
+		const step = 32
+		offset, page := scroll.Offset, max(scroll.Viewport*0.9, step)
+		switch event.Key {
+		case gfx.KeyUp:
+			offset -= step
+		case gfx.KeyDown:
+			offset += step
+		case gfx.KeyPageUp:
+			offset -= page
+		case gfx.KeyPageDown:
+			offset += page
+		case gfx.KeyHome:
+			offset = 0
+		case gfx.KeyEnd:
+			offset = scroll.Max()
+		default:
+			return gfx.EventResult{}, false
+		}
+		before := scroll.Offset
+		scroll.ScrollTo(offset)
+		return gfx.EventResult{Handled: true, Repaint: scroll.Offset != before}, true
 	}
 	return gfx.EventResult{}, false
-}
-
-func (state *State) scrollLocalProxy(event gfx.ScrollEvent) gfx.EventResult {
-	before := state.localProxyUI.scroll
-	area := components.BeginScrollArea(nil, state.Theme(), state.localProxyUI.scrollGeometry.Bounds, state.localProxyContentSize())
-	state.localProxyUI.scroll = area.Offset(0, before+event.DeltaY).Geometry().OffsetY
-	return gfx.EventResult{Handled: true, Repaint: before != state.localProxyUI.scroll}
-}
-
-func (state *State) localProxyContentSize() gfx.Size {
-	geometry := state.localProxyUI.scrollGeometry
-	return gfx.Size{Width: geometry.Content.Width, Height: max(geometry.Content.Height, localProxyMainHeight)}
 }
 
 func (state *State) localProxyContentHeight(snapshot localProxySnapshot) float32 {
@@ -467,28 +473,20 @@ func (state *State) declareLocalProxyDialog(c ui.C) {
 	width = min(width, max(float32(360), viewport.Width-32))
 	bodyHeight := min(contentHeight, max(float32(180), viewport.Height-210))
 	height := dialogContentHeight(c.Canvas(), theme, viewport, width, description, bodyHeight)
-	// The body scrolls inside the dialog; its geometry is what the declared
-	// content and the scrollbar painted after the page both use.
-	body := dialogContentRect(c.Canvas(), theme, viewport, width, description, bodyHeight).Body
-	contentSize := gfx.Size{Width: max(body.Width-10, 0), Height: contentHeight}
-	area := components.BeginScrollArea(nil, theme, body, contentSize).Offset(0, state.localProxyUI.scroll).ReserveScrollbars()
 	proxy := &state.localProxyUI
-	proxy.scrollGeometry = area.Geometry()
-	proxy.scroll = proxy.scrollGeometry.OffsetY
-	proxy.viewportTitle = title
-	if proxy.viewportDraw == nil {
-		proxy.viewportDraw, proxy.controlsDraw = state.drawLocalProxyViewport, state.drawLocalProxyControls
-	}
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: title, Description: description, Width: width, Height: height, Layer: dialogLayer,
 		Scope: dialogScope, DismissID: hitLocalProxyDismiss, CloseID: closeID, InitialFocusID: initialFocus,
 	})
 	dialog.Body(func() {
-		bodyViewport := ui.Column(c).Fill().Clip()
-		bodyViewport.Draw(proxy.viewportDraw)
-		bodyViewport.Children(func() {
-			content := ui.Column(c).Width(proxy.scrollGeometry.Content.Width).Height(contentHeight).
-				MarginTop(-proxy.scrollGeometry.OffsetY).PadSides(2, 4, 10, 6).Gap(8)
+		area := ui.Scroll(c).Fill().Scrollbars()
+		proxy.bodyScroll = area.ScrollState()
+		if proxy.topBody {
+			area.ScrollState().ScrollTo(0)
+			proxy.topBody = false
+		}
+		area.Children(func() {
+			content := ui.Column(c).FillWidth().PadSides(2, 4, 10, 6).Gap(8)
 			content.Children(func() {
 				if proxy.docker {
 					state.declareLocalProxyDockerBody(c, snapshot)
@@ -496,46 +494,11 @@ func (state *State) declareLocalProxyDialog(c ui.C) {
 				}
 				state.declareLocalProxyMainBody(c, snapshot)
 			})
-			content.DrawOver(proxy.controlsDraw)
 		})
 	})
 	dialog.Footer(func() {
 		state.dialogActionFooter(c, state.localProxyActions(snapshot)...)
 	})
-}
-
-// drawLocalProxyViewport names the dialog body's scroll viewport for the
-// keyboard and the wheel, under the controls the page paints into it.
-func (state *State) drawLocalProxyViewport(d *ui.DrawContext) {
-	geometry := state.localProxyUI.scrollGeometry
-	if geometry.Viewport.Width <= 0 || geometry.Viewport.Height <= 0 {
-		return
-	}
-	d.Canvas.HitWithOptions(hitLocalProxyScroll, geometry.Viewport, state.localProxyUI.viewportTitle, gfx.HitOptions{Role: gfx.RoleGroup})
-}
-
-// drawLocalProxyControls paints the field, phase line and buttons into the slots
-// the body's declaration left.
-func (state *State) drawLocalProxyControls(d *ui.DrawContext) {
-	snapshot := state.localProxySnapshot(state.localProxySession())
-	if state.localProxyUI.docker {
-		state.paintLocalProxyDockerControls(d.Canvas, snapshot)
-		return
-	}
-	state.paintLocalProxyMainControls(d.Canvas, snapshot)
-}
-
-// paintLocalProxyScrollbar paints the body's scrollbar over the page: the thumb
-// is a hit of its own, outside the content.
-func (state *State) paintLocalProxyScrollbar(canvas *gfx.Canvas) {
-	proxy := &state.localProxyUI
-	geometry := proxy.scrollGeometry
-	if geometry.Bounds.Width <= 0 || geometry.Bounds.Height <= 0 {
-		return
-	}
-	area := components.BeginScrollArea(canvas, state.Theme(), geometry.Bounds, state.localProxyContentSize()).
-		Offset(0, proxy.scroll).VerticalScrollbar(hitLocalProxyScroll, proxy.viewportTitle, "").ReserveScrollbars()
-	area.EndContent()
 }
 
 func (state *State) localProxyActions(snapshot localProxySnapshot) []components.ButtonAction {
@@ -570,17 +533,24 @@ func (state *State) localProxyActions(snapshot localProxySnapshot) []components.
 func (state *State) declareLocalProxyMainBody(c ui.C, snapshot localProxySnapshot) {
 	m, pal, theme := state.messages.LocalProxy, state.pal, state.Theme()
 	proxy := &state.localProxyUI
-	proxy.portField, proxy.phaseLine = ui.Box{}, ui.Box{}
-	proxy.dockerButton, proxy.moreButton, proxy.testButton, proxy.restoreButton = ui.Box{}, ui.Box{}, ui.Box{}, ui.Box{}
-	fieldHeight := float32(60)
-	if snapshot.Phase == localProxyConnecting || snapshot.Phase == localProxyConnected {
-		fieldHeight = 90
+	locked := snapshot.Phase == localProxyConnecting || snapshot.Phase == localProxyConnected
+	fieldHeight, hint, description := float32(60), m.PortHint, ""
+	if locked {
+		fieldHeight, hint, description = 90, m.PortLockedHint, m.PortLockedHint
 	}
-	ui.Row(c).Height(fieldHeight).Children(func() { proxy.portField = ui.Slot(c).Grow(1) })
+	if !proxy.portBound {
+		proxy.portText.Bind(&proxy.port)
+		proxy.portBound = true
+	}
+	proxy.portForm.For, proxy.portForm.Description = hitLocalProxyPort, description
+	proxy.portText.Disabled, proxy.portText.Hint = locked, hint
+	ui.FormField(c, &proxy.portForm, m.PortLabel).FillWidth().Height(fieldHeight).Children(func() {
+		ui.TextFieldID(c, hitLocalProxyPort, &proxy.portText, m.PortLabel, strconv.Itoa(int(defaultLocalProxyPort)))
+	})
 	ui.Wrap(c, m.ScopeWarning).FontSize(theme.Metrics.FontSizeS).Color(pal.muted).LineHeight(18)
 	ui.Wrap(c, m.AccessWarning).FontSize(theme.Metrics.FontSizeS).Color(pal.muted).LineHeight(18)
 	if snapshot.Phase != localProxyDisconnected || state.localProxyUI.lastStopped {
-		ui.Row(c).Height(24).Children(func() { proxy.phaseLine = ui.Slot(c).Grow(1) })
+		state.declareLocalProxyPhase(c, snapshot)
 	}
 	if snapshot.Phase == localProxyConnected {
 		ui.Wrap(c, m.StopHint).FontSize(theme.Metrics.FontSizeS).Color(pal.muted).LineHeight(18)
@@ -589,13 +559,18 @@ func (state *State) declareLocalProxyMainBody(c ui.C, snapshot localProxySnapsho
 		ui.Wrap(c, state.localProxyUI.copyError).FontSize(theme.Metrics.FontSizeS).Color(pal.danger).LineHeight(18)
 	}
 	ui.Row(c).Height(32).Gap(8).Children(func() {
-		proxy.dockerButton = ui.Slot(c).Grow(1)
-		proxy.moreButton = ui.Slot(c).Grow(1)
+		ui.Button(c, m.DockerTitle).Link().Hit(hitLocalProxyDocker, m.DockerTitle).Basis(0).Grow(1)
+		label, icon := m.More, uint8(iconChevronRight)
+		if state.localProxyUI.more {
+			label, icon = m.Less, iconChevronDown
+		}
+		ui.Button(c, label).Link().Icon(lucideIcons[icon]).Hit(hitLocalProxyMore, label).Basis(0).Grow(1)
 	})
 	if state.localProxyUI.more {
 		ui.Row(c).Height(34).Gap(8).Children(func() {
-			proxy.testButton = ui.Slot(c).Grow(1)
-			proxy.restoreButton = ui.Slot(c).Grow(1)
+			ui.Button(c, m.Test).Outline().Disabled(snapshot.Phase != localProxyConnected || snapshot.TestPhase == localProxyTestRunning).
+				Hit(hitLocalProxyTest, m.Test).Basis(0).Grow(1)
+			ui.Button(c, m.DisableCopy).Outline().Hit(hitLocalProxyDisableCopy, m.DisableCopy).Basis(0).Grow(1)
 		})
 		if snapshot.TestPhase != localProxyTestIdle {
 			line, color := state.localProxyTestLine(snapshot)
@@ -612,30 +587,18 @@ func (state *State) declareLocalProxyMainBody(c ui.C, snapshot localProxySnapsho
 	}
 }
 
-// paintLocalProxyMainControls paints the main view's field, phase line and
-// buttons into the slots its declaration left.
-func (state *State) paintLocalProxyMainControls(canvas *gfx.Canvas, snapshot localProxySnapshot) {
-	m, theme := state.messages.LocalProxy, state.Theme()
-	proxy := &state.localProxyUI
-	state.paintLocalProxyPortField(canvas, proxy.portField.Rect(), snapshot, m.PortLabel, m.PortHint, theme)
-	if snapshot.Phase != localProxyDisconnected || state.localProxyUI.lastStopped {
-		line, color := state.localProxyPhaseLine(snapshot)
-		state.paintLocalProxyPhase(canvas, proxy.phaseLine.Rect(), line, color, theme)
+// declareLocalProxyPhase declares the phase line: an icon, and the line in its color, one row tall.
+func (state *State) declareLocalProxyPhase(c ui.C, snapshot localProxySnapshot) {
+	theme := state.Theme()
+	line, color := state.localProxyPhaseLine(snapshot)
+	icon := uint8(iconCircleCheck)
+	if color == state.pal.warning || color == state.pal.danger || color == state.pal.muted {
+		icon = iconAlert
 	}
-	components.BeginButton(canvas, theme, hitLocalProxyDocker, proxy.dockerButton.Rect()).Link(m.DockerTitle)
-	label, icon := m.More, uint8(iconChevronRight)
-	if state.localProxyUI.more {
-		label, icon = m.Less, iconChevronDown
-	}
-	components.BeginButton(canvas, theme, hitLocalProxyMore, proxy.moreButton.Rect()).WithIcon(lucideIcons[icon]).Link(label)
-	if state.localProxyUI.more {
-		button := components.BeginButton(canvas, theme, hitLocalProxyTest, proxy.testButton.Rect())
-		if snapshot.Phase != localProxyConnected || snapshot.TestPhase == localProxyTestRunning {
-			button = button.Disabled()
-		}
-		button.Outline(m.Test)
-		components.BeginButton(canvas, theme, hitLocalProxyDisableCopy, proxy.restoreButton.Rect()).Outline(m.DisableCopy)
-	}
+	ui.Row(c).Height(24).Gap(6).Children(func() {
+		ui.Icon(c, lucideIcons[icon]).Size(16, 16).Color(color).Shrink(0).Self(ui.Start).MarginSides(3, 0, 0, 0)
+		ui.Text(c, line).FontSize(theme.Metrics.FontSizeS).Weight(gfx.WeightMedium).Color(color).Ellipsis().Grow(1).Height(24)
+	})
 }
 
 func (state *State) localProxyTestLine(snapshot localProxySnapshot) (string, gfx.Color) {
@@ -649,34 +612,6 @@ func (state *State) localProxyTestLine(snapshot localProxySnapshot) (string, gfx
 	}
 }
 
-func (state *State) paintLocalProxyPortField(canvas *gfx.Canvas, bounds gfx.Rect, snapshot localProxySnapshot, label, hint string, theme gfx.Theme) {
-	locked := snapshot.Phase == localProxyConnecting || snapshot.Phase == localProxyConnected
-	description := ""
-	if locked {
-		description = state.messages.LocalProxy.PortLockedHint
-		hint = description
-	}
-	field := components.BeginField(canvas, theme, bounds).For(hitLocalProxyPort).Paint(label, description, "")
-	value := state.localProxyUI.port.String()
-	focused := canvas.Focused() == hitLocalProxyPort && !locked
-	components.PaintInput(canvas, theme, field, components.InputSnapshot{
-		ID: hitLocalProxyPort, Label: label, Value: value, Placeholder: strconv.Itoa(int(defaultLocalProxyPort)),
-		Hint: hint, Focused: focused, PlatformEditing: focused && value != "",
-		Disabled: locked,
-	})
-}
-
-func (state *State) paintLocalProxyPhase(canvas *gfx.Canvas, bounds gfx.Rect, line string, color gfx.Color, theme gfx.Theme) {
-	icon := uint8(iconCircleCheck)
-	if color == state.pal.warning || color == state.pal.danger || color == state.pal.muted {
-		icon = iconAlert
-	}
-	canvas.DrawIcon(lucideIcons[icon], gfx.Rect{X: bounds.X, Y: bounds.Y + 3, Width: 16, Height: 16}, color)
-	canvas.Label(canvas.FitLine(line, theme.Metrics.FontSizeS, gfx.WeightMedium, max(bounds.Width-22, 0)), gfx.Rect{
-		X: bounds.X + 22, Y: bounds.Y, Width: max(bounds.Width-22, 0), Height: bounds.Height,
-	}, gfx.TextStyle{Size: theme.Metrics.FontSizeS, Weight: gfx.WeightMedium, Color: color})
-}
-
 func (state *State) localProxyCopyLabel(id gfx.ID, normal, copied string) string {
 	if state.localProxyUI.copied == id {
 		return copied
@@ -685,11 +620,9 @@ func (state *State) localProxyCopyLabel(id gfx.ID, normal, copied string) string
 }
 
 // declareLocalProxyDockerBody declares the Docker view's rows in the dialog body
-// and keeps the slots its hand-painted buttons go in.
+// with its buttons.
 func (state *State) declareLocalProxyDockerBody(c ui.C, snapshot localProxySnapshot) {
 	m, pal, theme := state.messages.LocalProxy, state.pal, state.Theme()
-	proxy := &state.localProxyUI
-	proxy.configButton, proxy.docsButton, proxy.dockerRestoreButton = ui.Box{}, ui.Box{}, ui.Box{}
 	port := state.localProxyCommandPort()
 	ui.Wrap(c, m.DockerScope).FontSize(theme.Metrics.FontSizeS).Color(pal.warning).LineHeight(18)
 	ui.Wrap(c, m.DockerWarning).FontSize(theme.Metrics.FontSizeS).Color(pal.danger).LineHeight(18)
@@ -700,30 +633,25 @@ func (state *State) declareLocalProxyDockerBody(c ui.C, snapshot localProxySnaps
 		}
 	}
 	ui.Row(c).Height(34).Gap(8).Children(func() {
-		proxy.configButton = ui.Slot(c).Grow(1)
-		proxy.docsButton = ui.Slot(c).Grow(1)
+		if port != 0 {
+			label := state.localProxyCopyLabel(hitLocalProxyDockerConfig, m.DockerCopy, m.DockerCopied)
+			ui.Button(c, label).Outline().Hit(hitLocalProxyDockerConfig, label).Basis(0).Grow(1)
+		} else {
+			ui.Spacer(c).Basis(0).Grow(1)
+		}
+		ui.Button(c, m.OpenDockerDocs).Outline().Hit(hitLocalProxyDockerDocs, m.OpenDockerDocs).Basis(0).Grow(1)
 	})
 	ui.Wrap(c, m.DockerRestoreFmt).FontSize(theme.Metrics.FontSizeS).Color(pal.muted).LineHeight(18)
 	for _, line := range strings.Split(localProxyDockerRestoreCommand(), "\n") {
 		ui.Text(c, line).Mono().FontSize(11).Color(pal.text).LineHeight(16)
 	}
-	ui.Row(c).Height(34).Children(func() { proxy.dockerRestoreButton = ui.Slot(c).Grow(1) })
+	ui.Row(c).Height(34).Children(func() {
+		label := state.localProxyCopyLabel(hitLocalProxyDockerRestore, m.DockerCopy, m.DockerCopied)
+		ui.Button(c, label).Outline().Hit(hitLocalProxyDockerRestore, label).Grow(1)
+	})
 	if state.localProxyUI.copyError != "" {
 		ui.Text(c, state.localProxyUI.copyError).FontSize(theme.Metrics.FontSizeS).Color(pal.danger)
 	}
-}
-
-// paintLocalProxyDockerControls paints the Docker view's buttons into the slots
-// its declaration left.
-func (state *State) paintLocalProxyDockerControls(canvas *gfx.Canvas, snapshot localProxySnapshot) {
-	m, theme := state.messages.LocalProxy, state.Theme()
-	proxy := &state.localProxyUI
-	port := state.localProxyCommandPort()
-	if port != 0 {
-		components.BeginButton(canvas, theme, hitLocalProxyDockerConfig, proxy.configButton.Rect()).Outline(state.localProxyCopyLabel(hitLocalProxyDockerConfig, m.DockerCopy, m.DockerCopied))
-	}
-	components.BeginButton(canvas, theme, hitLocalProxyDockerDocs, proxy.docsButton.Rect()).Outline(m.OpenDockerDocs)
-	components.BeginButton(canvas, theme, hitLocalProxyDockerRestore, proxy.dockerRestoreButton.Rect()).Outline(state.localProxyCopyLabel(hitLocalProxyDockerRestore, m.DockerCopy, m.DockerCopied))
 }
 
 func localProxyDockerConfigCommand(port uint16) string {

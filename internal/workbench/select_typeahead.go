@@ -5,7 +5,6 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
-	"github.com/vivaui/viva/text"
 )
 
 // selectTypeahead is the typed prefix of one closed select trigger. The owner
@@ -48,18 +47,6 @@ func (state *State) selectTypeaheadKey(event gfx.KeyEvent) (gfx.EventResult, boo
 // currently showing its value rather than its list.
 func (state *State) selectTypeaheadOptions(target gfx.ID) ([]components.MenuTypeaheadItem, func(gfx.ID) bool, bool) {
 	switch {
-	case localShellSettingVisible() && state.modal == modalNone && state.activeSection == sectionSettings && state.settingsCategory == settingsTerminal && target == hitSettingsLocalShell && !state.localShellMenu.open:
-		items := make([]components.MenuTypeaheadItem, 0, len(state.localShellMenu.choices))
-		for index, choice := range state.localShellMenu.choices {
-			items = append(items, components.MenuTypeaheadItem{ID: hitSettingsLocalShellItems.At(index), Label: choice.Name})
-		}
-		return items, state.clickLocalShell, true
-	case state.modal == modalNone && state.activeSection == sectionSettings && state.settingsCategory == settingsFiles && target == hitSettingsEditor && !state.editorMenu.open:
-		items := make([]components.MenuTypeaheadItem, 0, len(state.editorMenu.choices))
-		for index, editor := range state.editorMenu.choices {
-			items = append(items, components.MenuTypeaheadItem{ID: hitSettingsEditorItems.At(index), Label: state.editorChoiceName(editor)})
-		}
-		return items, state.clickEditorSelect, true
 	case state.aiPanelVisible() && target == hitAITarget && !state.ai.panel.targetOpen && state.ai.run == nil:
 		options := state.aiTargetOptions()
 		items := make([]components.MenuTypeaheadItem, 0, len(options))
@@ -67,53 +54,6 @@ func (state *State) selectTypeaheadOptions(target gfx.ID) ([]components.MenuType
 			items = append(items, components.MenuTypeaheadItem{ID: option.ID, Label: option.Label, Disabled: option.Disabled})
 		}
 		return items, state.aiChooseOnlyTarget, true
-	case state.aiSettingsVisible() && state.settingsCategory == settingsMCP && target == hitAISetMCPSelect && !state.ai.cfg.mcpSelectOpen:
-		options := aiMCPClientOptions()
-		items := make([]components.MenuTypeaheadItem, 0, len(options))
-		for _, option := range options {
-			items = append(items, components.MenuTypeaheadItem{ID: option.ID, Label: option.Label})
-		}
-		return items, state.aiSettingsClick, true
-	case state.aiSettingsVisible() && state.settingsCategory == settingsMCP && target == hitAISetAgentSelect && !state.ai.cfg.agentSelectOpen:
-		options := aiAgentClientOptions()
-		items := make([]components.MenuTypeaheadItem, 0, len(options))
-		for _, option := range options {
-			items = append(items, components.MenuTypeaheadItem{ID: option.ID, Label: option.Label})
-		}
-		return items, state.aiSettingsClick, true
-
-	case target == hitAISetFormPreset && !state.ai.cfg.presetOpen:
-		items := make([]components.MenuTypeaheadItem, 0, len(aiPresets))
-		for index := range aiPresets {
-			items = append(items, components.MenuTypeaheadItem{
-				ID: hitAISetFormPresetItems.At(index), Label: state.aiPresetLabel(index),
-			})
-		}
-		return items, func(id gfx.ID) bool {
-			index, ok := id.In(hitAISetFormPresetItems)
-			if !ok || index < 0 || index >= len(aiPresets) {
-				return false
-			}
-			state.ai.cfg.preset = index
-			return true
-		}, true
-
-	case state.modal == modalNewHost && target == hitDialogPortsTrigger && !state.editor.portsOpen:
-		items := make([]components.MenuTypeaheadItem, 0, len(state.editor.ports))
-		for index, port := range state.editor.ports {
-			items = append(items, components.MenuTypeaheadItem{
-				ID: hitDialogPortsItemList.At(index), Label: port.Device,
-			})
-		}
-		return items, func(id gfx.ID) bool {
-			index, ok := id.In(hitDialogPortsItemList)
-			if !ok || index < 0 || index >= len(state.editor.ports) {
-				return false
-			}
-			state.editor.address = text.Editor{}
-			state.editor.address.Insert(state.editor.ports[index].Device)
-			return true
-		}, true
 	}
 	return nil, nil, false
 }

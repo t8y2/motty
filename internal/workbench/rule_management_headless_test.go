@@ -4,6 +4,7 @@ package workbench
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,7 +20,7 @@ import (
 
 func ruleManagerNativeView(t *testing.T, state *State, width, height int, scale float64) *headless.Session {
 	t.Helper()
-	view, err := headless.Open(app.Config{
+	view, err := headless.Open(state.WindowConfig(app.Config{
 		Title: "Motty", Width: width, Height: height, Tree: Tree(), Paint: state.Paint,
 		OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize,
 		TextInput: func(context app.TextInputContext) *app.TextInput {
@@ -28,7 +29,7 @@ func ruleManagerNativeView(t *testing.T, state *State, width, height int, scale 
 			}
 			return nil
 		},
-	}, nil, headless.Options{Scale: scale})
+	}), nil, headless.Options{Scale: scale})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,15 +146,19 @@ func TestRuleManagerNativeHighlightScrollEditAndDelete(t *testing.T) {
 				t.Fatal("long list has no bounded scroll area")
 			}
 			clickRuleNative(t, view, hitRuleManagerSelect.At(0))
+			// The list keeps its scrollbar at rest, not only under the pointer.
+			if _, ok := view.Hit("Vertical scrollbar"); !ok {
+				t.Fatal("long list has no scrollbar before the pointer reaches it")
+			}
 			bounds := state.ruleManager.bounds
-			beforeHover := state.ruleManager.offset
+			beforeHover := state.ruleManager.list.Offset
 			if err := view.Move(bounds.X+bounds.Width-4, bounds.Y+40); err != nil {
 				t.Fatal(err)
 			}
 			if err := view.Rest(); err != nil {
 				t.Fatal(err)
 			}
-			if state.ruleManager.offset != beforeHover {
+			if state.ruleManager.list.Offset != beforeHover {
 				t.Fatal("hovering over the scrollbar changed its offset without a press")
 			}
 			bar, ok := view.Hit("Vertical scrollbar")
@@ -169,7 +174,7 @@ func TestRuleManagerNativeHighlightScrollEditAndDelete(t *testing.T) {
 			if err := view.Release(bar.Bounds.X+bar.Bounds.Width/2, bar.Bounds.Y+bar.Bounds.Height/2+100); err != nil {
 				t.Fatal(err)
 			}
-			if state.ruleManager.offset <= 0 {
+			if state.ruleManager.list.Offset <= 0 {
 				t.Fatal("dragging the visible scrollbar did not move the list")
 			}
 			if err := view.Scroll(gfx.ScrollEvent{X: bounds.X + bounds.Width/2, Y: bounds.Y + bounds.Height/2, DeltaY: -10000, Precise: true}); err != nil {
@@ -238,6 +243,13 @@ func TestRuleManagerNativeAutofillKeepsSecretsAndArming(t *testing.T) {
 	w.addRule(t, "Sudo password", sudoPromptPattern, "", autofill.SendPassword, "")
 	view := ruleManagerNativeView(t, state, 1400, 900, 1)
 	openRuleManagerNative(t, state, view, hitSettingsAutofillManage)
+	// The switch sits in its own 52x32 slot ten pixels in and seven down; its
+	// painted hit reaches eight pixels above it, one above the edit button.
+	edit := dualHit(t, view, hitRuleManagerEdit.At(0))
+	toggle := dualHit(t, view, hitAutofillToggleList.At(0))
+	if math.Abs(float64(toggle.Y-(edit.Y-1))) > .75 {
+		t.Fatalf("switch slot geometry = %+v beside edit %+v", toggle, edit)
+	}
 	for _, value := range view.Texts() {
 		if strings.Contains(value, "never-render-this-secret") {
 			t.Fatal("manager rendered vault text")

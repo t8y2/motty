@@ -288,15 +288,6 @@ func (state *State) panePartFor(session *Session) string {
 	return s.part
 }
 
-// sessionButton is one button of a session pane: its identity as the pane paints
-// it, label, size and variant, painted into the slot the declaration left.
-type sessionButton struct {
-	id      gfx.ID
-	label   string
-	size    components.ButtonSize
-	variant components.ButtonVariant
-}
-
 // sessionPaneUI is the declaration scratch of one session's pane body: the boxes
 // the page laid out and the window paints into.
 type sessionPaneUI struct {
@@ -308,24 +299,26 @@ type sessionPaneUI struct {
 	// ran; its body appears on the repaint, and until then the window must not
 	// paint boxes from an older paint.
 	declared bool
-	// buttons and buttonBoxes are the footer's buttons and their slots, reset
-	// when the body is declared.
-	buttons     []sessionButton
-	buttonBoxes []ui.Box
 	// avatar and failing are the connection card's badges; track and dots its
 	// rail; rail, railTarget and railIcon the rail's own layout.
 	avatar, failing, track, dots ui.Box
 	rail, railTarget, railIcon   ui.Box
-	// keysClose and keysConnect are the restored pane's key hints.
-	keysClose, keysConnect ui.Box
-	closeHint, connectHint []string
+	// closeKeys and connectKeys are the restored pane's key hints.
 	closeKeys, connectKeys [6]string
-	// light, tools, capture and latency are the desktop bars' slots, and
-	// desktopTools the controls they hold.
-	light, tools, capture, latency ui.Box
-	desktopTools                   []components.ButtonAction
-	latencyBadge                   desktopLatencyUI
-	latencyShown                   bool
+	// light, capture and latency are the desktop bars' slots; pictureDraw paints
+	// the picture inside the page, under the controls that sit over it; the
+	// fullscreen fields are the latency badge of the fullscreen bar, declared in
+	// the page and painted over it.
+	light, capture, latency ui.Box
+	pictureDraw             func(*ui.DrawContext)
+	pictureSession          uint32
+	latencyBadge            desktopLatencyUI
+	latencyShown            bool
+	fullscreenLatency       gfx.Rect
+	fullscreenText          string
+	fullscreenColor         gfx.Color
+	fullscreenHint          string
+	fullscreenBarDraw       func(*ui.DrawContext)
 }
 
 // declareSessionPane declares a session the terminal control does not show: its
@@ -366,7 +359,6 @@ func (state *State) paintConnectionDetails(canvas *gfx.Canvas, session *Session)
 		step = stepFailed
 	}
 	state.paintSessionBadge(canvas, session, s.avatar.Rect())
-	state.paintSessionButtons(canvas, session)
 	if step == stepFailed {
 		paintIcon(canvas, iconAlert, s.failing.Rect(), pal.danger)
 	}
@@ -467,19 +459,15 @@ func (state *State) declareConnectionBody(c ui.C, session *Session, frame gfx.Re
 
 	// Generous buttons when the card has room for them; the row shrinks them
 	// when it must, as it does for the four buttons of a pending reconnect.
-	size := components.ButtonSizeDefault
-	switch {
-	case footerHeight < 52:
-		size = components.ButtonSizeXSmall
-	case footerHeight < 64 || session.reconnectPending:
-		size = components.ButtonSizeSmall
-	}
-	s.buttonBoxes, s.buttons = s.buttonBoxes[:0], s.buttons[:0]
 	addButton := func(id gfx.ID, label string, variant components.ButtonVariant) {
-		probe := components.BeginButton(canvas, *c.Theme(), gfx.ID{}, gfx.Rect{}).Size(size).SizeToFit(label)
-		box := ui.Slot(c).Size(probe.BoundsWidth(), probe.BoundsHeight()).Shrink(1)
-		s.buttonBoxes = append(s.buttonBoxes, box)
-		s.buttons = append(s.buttons, sessionButton{id: id, label: label, size: size, variant: variant})
+		button := ui.Button(c, label).Hit(state.paneIdentity(session, id), label).Shrink(1)
+		switch {
+		case footerHeight < 52:
+			button = button.XSmall()
+		case footerHeight < 64 || session.reconnectPending:
+			button = button.Small()
+		}
+		sessionButtonLook(button, variant)
 	}
 	ui.Column(c).Fill().Background(pal.workspace).Items(ui.Center).Children(func() {
 		ui.Spacer(c).Grow(0.42)
@@ -794,9 +782,6 @@ func paintBouncingDots(canvas *gfx.Canvas, box gfx.Rect, color gfx.Color) {
 func (state *State) paintRestoredSessionDetails(canvas *gfx.Canvas, session *Session) {
 	s := state.paneBody(session)
 	state.paintSessionBadge(canvas, session, s.avatar.Rect())
-	state.paintSessionButtons(canvas, session)
-	state.paintKeyHint(canvas, s.keysClose.Rect(), s.closeHint)
-	state.paintKeyHint(canvas, s.keysConnect.Rect(), s.connectHint)
 }
 
 // declareRestoredSessionBody declares the body of a session that has to be
@@ -806,8 +791,7 @@ func (state *State) declareRestoredSessionBody(c ui.C, session *Session, area gf
 	pal, messages := state.pal, state.messages
 	s := state.paneBody(session)
 	s.declared = true
-	s.avatar, s.keysClose, s.keysConnect = ui.Box{}, ui.Box{}, ui.Box{}
-	s.closeHint, s.connectHint = nil, nil
+	s.avatar = ui.Box{}
 
 	// No card: the page is the window's own space, with one column down its
 	// middle (who, what happened, what to do) and the keys that do it.
@@ -824,17 +808,11 @@ func (state *State) declareRestoredSessionBody(c ui.C, session *Session, area gf
 
 	// Under each button the keys that press it, as wide as their keycaps; they hang
 	// below the button without taking room from the page's centring.
-	s.closeHint = state.shortcuts.chords.Chord(shortcutCloseTab).Keycaps(s.closeKeys[:0])
-	s.connectHint = append(s.connectKeys[:0], "↵")
+	closeHint := state.shortcuts.chords.Chord(shortcutCloseTab).Keycaps(s.closeKeys[:0])
+	connectHint := append(s.connectKeys[:0], "↵")
 	hintHeight := state.Theme().Metrics.FontSizeS + 9
-	closeHintWidth, connectHintWidth := state.keyHintWidth(canvas, s.closeHint, hintHeight), state.keyHintWidth(canvas, s.connectHint, hintHeight)
-
-	s.buttonBoxes, s.buttons = s.buttonBoxes[:0], s.buttons[:0]
 	addButton := func(id gfx.ID, label string, variant components.ButtonVariant) {
-		probe := components.BeginButton(canvas, *c.Theme(), gfx.ID{}, gfx.Rect{}).SizeToFit(label)
-		box := ui.Slot(c).Size(max(probe.BoundsWidth(), 96), probe.BoundsHeight())
-		s.buttonBoxes = append(s.buttonBoxes, box)
-		s.buttons = append(s.buttons, sessionButton{id: id, label: label, size: components.ButtonSizeDefault, variant: variant})
+		sessionButtonLook(ui.Button(c, label).Hit(state.paneIdentity(session, id), label).MinWidth(96), variant)
 	}
 
 	ui.Column(c).Fill().Background(pal.workspace).PadSides(max(24, area.Height*0.34), 0, 0, 0).Items(ui.Center).Children(func() {
@@ -854,53 +832,26 @@ func (state *State) declareRestoredSessionBody(c ui.C, session *Session, area gf
 		ui.Row(c).Gap(14).MarginSides(22, 0, 0, 0).Children(func() {
 			ui.Column(c).Items(ui.Center).Children(func() {
 				addButton(hitConnClose, messages.ConnClose, components.ButtonOutline)
-				s.keysClose = ui.Slot(c).Size(closeHintWidth, hintHeight).MarginSides(10, 0, -(10 + hintHeight), 0)
+				ui.Kbd(c, closeHint...).MarginSides(10, 0, -(10 + hintHeight), 0)
 			})
 			ui.Column(c).Items(ui.Center).Children(func() {
 				addButton(hitConnRetry, messages.SessionReconnect, components.ButtonDefault)
-				s.keysConnect = ui.Slot(c).Size(connectHintWidth, hintHeight).MarginSides(10, 0, -(10 + hintHeight), 0)
+				ui.Kbd(c, connectHint...).MarginSides(10, 0, -(10 + hintHeight), 0)
 			})
 		})
 	})
 }
 
-// paintSessionButtons paints the footer buttons the session body declared into
-// their slots, keeping the application's identities for the central dispatcher.
-// A split mounts each pane's identities, so the buttons are that pane's own.
-func (state *State) paintSessionButtons(canvas *gfx.Canvas, session *Session) {
-	s := state.paneBody(session)
-	for index, action := range s.buttons {
-		id := state.paneIdentity(session, action.id)
-		button := components.BeginButton(canvas, state.Theme(), id, s.buttonBoxes[index].Rect()).Size(action.size)
-		switch action.variant {
-		case components.ButtonGhost:
-			button.Ghost(action.label)
-		case components.ButtonOutline:
-			button.Outline(action.label)
-		default:
-			button.Default(action.label)
-		}
+// sessionButtonLook gives a footer button its variant: the application keeps the
+// identity and the central dispatcher the click.
+func sessionButtonLook(button ui.Box, variant components.ButtonVariant) ui.Box {
+	switch variant {
+	case components.ButtonGhost:
+		return button.Ghost()
+	case components.ButtonOutline:
+		return button.Outline()
 	}
-}
-
-// keyHintWidth is how wide the keycaps of a hint are, side by side.
-func (state *State) keyHintWidth(canvas *gfx.Canvas, keys []string, height float32) float32 {
-	width := float32(0)
-	for index, key := range keys {
-		width += max(canvas.TextWidth(key, state.Theme().Metrics.FontSizeS)+8, height)
-		if index > 0 {
-			width += 4
-		}
-	}
-	return width
-}
-
-// paintKeyHint draws keycaps in the box that was kept for them.
-func (state *State) paintKeyHint(canvas *gfx.Canvas, box gfx.Rect, keys []string) {
-	group := components.BeginKbdGroup(canvas, state.Theme(), box)
-	for _, key := range keys {
-		group.Add(key)
-	}
+	return button
 }
 
 // elapsedText is how long the connection has taken, kept between paints so a

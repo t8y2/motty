@@ -55,6 +55,11 @@ type hostsPanel struct {
 	// page keeps its selection for its own list.
 	selected uint32
 	search   ui.Field
+	// body is the room below the header and search box; bounds is the whole
+	// panel, where a secondary press off a row offers the catalog's top-level
+	// actions.
+	body   gfx.Rect
+	bounds gfx.Rect
 	// stale says the rows no longer follow the catalog or the search.
 	stale     bool
 	filtering bool
@@ -66,6 +71,7 @@ type hostsPanel struct {
 	label   func(int) string
 	key     func(int) int
 	content func(int)
+	canDrop func(int, int, ui.TreeDrop) bool
 	// c is the declaration in progress while the Tree asks for its rows.
 	c       ui.C
 	drawers []*hostsPanelRowDrawer
@@ -143,8 +149,10 @@ func (state *State) hostsPanelFns() *hostsPanel {
 	panel.label = state.hostsPanelLabel
 	panel.key = state.hostsPanelKey
 	panel.content = state.hostsPanelDeclareRow
+	panel.canDrop = state.hostsPanelCanDrop
 	panel.tree.Node = panel.node
 	panel.tree.Key = panel.key
+	panel.tree.CanDrop = panel.canDrop
 	panel.tree.Indent = hostsPanelIndent
 	return panel
 }
@@ -231,8 +239,17 @@ func (state *State) hostsPanelDeclareRow(i int) {
 	pal := state.pal
 	if entry.Kind == hostTreeGroup {
 		group := state.hostGroups[entry.GroupIndex]
+		label := group.Label
+		if group.Name == "" {
+			label = state.messages.HostGroupDefault
+		}
 		ui.Row(c).Fill().Gap(6).Items(ui.Center).Children(func() {
-			ui.Text(c, state.hostGroupLabel(group)).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis().Shrink(1)
+			folder := lucideIcons[iconFolderSolid]
+			if group.Expanded || panel.filtering {
+				folder = lucideIcons[iconFolderSolidOpen]
+			}
+			ui.Icon(c, folder).Size(16, 16).Shrink(0)
+			ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis().Shrink(1)
 			ui.Text(c, group.Digits).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Shrink(0)
 		})
 		return
@@ -241,7 +258,7 @@ func (state *State) hostsPanelDeclareRow(i int) {
 	d := panel.drawer(state, i)
 	ui.Row(c).Fill().Gap(8).Items(ui.Center).PadSides(0, 0, 0, 4).Draw(d.fn).Children(func() {
 		ui.Slot(c).Size(hostsPanelBadge, hostsPanelBadge).Shrink(0)
-		ui.Text(c, host.Label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.text).Ellipsis().Shrink(1)
+		ui.Text(c, host.Label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text).Ellipsis().Shrink(1)
 		ui.Spacer(c)
 		ui.Slot(c).Size(hostsPanelLight, hostsPanelLight).Shrink(0)
 	})
@@ -319,6 +336,11 @@ func (state *State) declareHostsPanel(c ui.C) {
 		if panel.stale {
 			state.rebuildHostsPanelRows()
 		}
+		panel.bounds = gfx.Rect{X: frame.X, Y: frame.Y, Width: width, Height: frame.Height}
+		panel.body = gfx.Rect{
+			X: frame.X, Y: frame.Y + hostsPanelHeader + hostsPanelSearch,
+			Width: width, Height: max(frame.Height-hostsPanelHeader-hostsPanelSearch, 0),
+		}
 		state.declareHostsPanelBody(c, panel)
 	})
 	ui.Slot(c).Absolute().Left(frame.X+width).Top(frame.Y).Size(hostsPanelEdge, frame.Height).
@@ -349,6 +371,7 @@ func (state *State) declareHostsPanelBody(c ui.C, panel *hostsPanel) {
 	panel.next = 0
 	panel.c = c
 	panel.tree.RowHeight = hostsPanelHostRow
+	panel.tree.CanDrop = panel.canDrop
 	ui.Tree(c, &panel.tree, len(panel.rows), panel.label, panel.content).Grow(1).FillWidth().Scrollbars().ScrollbarSize(hostListBarWidth)
 	panel.c = nil
 	state.hostsPanelChanges(c, panel)
@@ -376,6 +399,111 @@ func (state *State) hostsPanelChanges(c ui.C, panel *hostsPanel) {
 			}
 		}
 	}
+	if move, ok := panel.tree.Dropped(); ok {
+		state.hostsPanelDrop(c, panel, move)
+	}
+}
+
+// hostsPanelCanDrop accepts the drags the panel shows: a group into a group, a
+// host into a group, and a host beside another host. Dropping a group beside a
+// host would mix the two kinds in the row order, so only groups order against
+// groups.
+func (state *State) hostsPanelCanDrop(from, to int, where ui.TreeDrop) bool {
+	panel := &state.hostsPanel
+	if state.modal != modalNone || !state.terminalPage() || !panel.open {
+		return false
+	}
+	source, sourceOK := state.hostsPanelEntry(from)
+	target, targetOK := state.hostsPanelEntry(to)
+	if !sourceOK || !targetOK || from == to {
+		return false
+	}
+	if source.Kind == hostTreeGroup {
+		if target.Kind != hostTreeGroup {
+			return false
+		}
+		switch where {
+		case ui.TreeDropInside:
+			return state.hostGroupMoveAllowed(source.GroupIndex, target.GroupIndex)
+		case ui.TreeDropBefore, ui.TreeDropAfter:
+			return state.hostGroupMoveBesideAllowed(source.GroupIndex, target.GroupIndex)
+		}
+		return false
+	}
+	switch target.Kind {
+	case hostTreeGroup:
+		return where == ui.TreeDropInside
+	case hostTreeHost:
+		return where != ui.TreeDropInside
+	}
+	return false
+}
+
+// hostsPanelDrop applies a drop to the catalog after the paint that declared
+// the rows: the row indices and the hosts are read before the move, which may
+// rebuild them.
+func (state *State) hostsPanelDrop(c ui.C, panel *hostsPanel, move ui.TreeMove) {
+	source, sourceOK := state.hostsPanelEntry(move.From)
+	target, targetOK := state.hostsPanelEntry(move.To)
+	if !sourceOK || !targetOK {
+		return
+	}
+	if source.Kind == hostTreeGroup {
+		path := state.hostGroups[source.GroupIndex].Name
+		if path == "" || target.Kind != hostTreeGroup {
+			return
+		}
+		parent := state.hostGroups[target.GroupIndex].Name
+		switch move.Where {
+		case ui.TreeDropInside:
+			c.After(func() {
+				if !state.hostsPanelLive() {
+					return
+				}
+				if !state.moveHostGroup(path, parent) {
+					state.status, state.dialogError = state.dialogError, ""
+				}
+			})
+		case ui.TreeDropBefore, ui.TreeDropAfter:
+			after := move.Where == ui.TreeDropAfter
+			c.After(func() {
+				if !state.hostsPanelLive() {
+					return
+				}
+				sourceAt, targetAt := state.hostGroupIndex(path), state.hostGroupIndex(parent)
+				if sourceAt < 0 || targetAt < 0 || !state.moveHostGroupBeside(sourceAt, targetAt, after) {
+					state.status, state.dialogError = state.dialogError, ""
+				}
+			})
+		}
+		return
+	}
+	hostID := state.hosts[source.HostIndex].ID
+	switch target.Kind {
+	case hostTreeGroup:
+		group := state.hostGroups[target.GroupIndex].Name
+		c.After(func() {
+			if !state.hostsPanelLive() {
+				return
+			}
+			state.moveHostToGroup(hostID, group)
+		})
+	case hostTreeHost:
+		targetID := state.hosts[target.HostIndex].ID
+		after := move.Where == ui.TreeDropAfter
+		c.After(func() {
+			if !state.hostsPanelLive() {
+				return
+			}
+			state.reorderHostBeside(hostID, targetID, after)
+		})
+	}
+}
+
+// hostsPanelLive says the session manager is still the page's to change when a
+// drop's deferred move runs: a modal or another page took over in between.
+func (state *State) hostsPanelLive() bool {
+	return state.terminalPage() && state.hostsPanel.open && state.modal == modalNone
 }
 
 // manageHostsFromPanel leaves the terminals for the hosts page, where the
@@ -401,6 +529,24 @@ func (state *State) hostsPanelHostFromHit(id gfx.ID) (Host, bool) {
 		return Host{}, false
 	}
 	return Host{}, false
+}
+
+// hostsPanelGroupFromHit maps a pointer target to the group row it names.
+func (state *State) hostsPanelGroupFromHit(id gfx.ID) (int, bool) {
+	panel := &state.hostsPanel
+	if id.IsZero() || !panel.open {
+		return 0, false
+	}
+	for i := range panel.rows {
+		if id != panel.tree.RowID(i) && id != panel.tree.DisclosureID(i) {
+			continue
+		}
+		if entry, ok := state.hostsPanelEntry(i); ok && entry.Kind == hostTreeGroup {
+			return entry.GroupIndex, true
+		}
+		return 0, false
+	}
+	return 0, false
 }
 
 // connectHostsPanelHost opens the host in a tab of its own, as the hosts page
@@ -443,17 +589,33 @@ func (state *State) hostsPanelPointer(event gfx.PointerEvent) (gfx.EventResult, 
 	if event.Kind != gfx.PointerDown {
 		return gfx.EventResult{}, false
 	}
-	host, ok := state.hostsPanelHostFromHit(event.Target)
-	if !ok {
+	at := gfx.Point{X: event.X, Y: event.Y}
+	if host, ok := state.hostsPanelHostFromHit(event.Target); ok {
+		switch {
+		case event.Button == gfx.PointerButtonPrimary && event.ClickCount >= 2:
+			return state.connectHostsPanelHost(host), true
+		case event.Button == gfx.PointerButtonSecondary:
+			panel.selected = host.ID
+			state.selectedHostID = host.ID
+			state.hostBlankMenu.open = false
+			state.hostMenu = hostMenu{open: true, host: host.ID, checked: state.hostSelected(host.ID), at: at}
+			return gfx.EventResult{Handled: true, Repaint: true}, true
+		}
 		return gfx.EventResult{}, false
 	}
-	switch {
-	case event.Button == gfx.PointerButtonPrimary && event.ClickCount >= 2:
-		return state.connectHostsPanelHost(host), true
-	case event.Button == gfx.PointerButtonSecondary:
-		panel.selected = host.ID
-		state.selectedHostID = host.ID
-		state.hostMenu = hostMenu{open: true, host: host.ID, checked: state.hostSelected(host.ID), at: gfx.Point{X: event.X, Y: event.Y}}
+	if group, ok := state.hostsPanelGroupFromHit(event.Target); ok {
+		if event.Button == gfx.PointerButtonSecondary {
+			state.openHostGroupActions(state.hostGroups[group].Name, at)
+			return gfx.EventResult{Handled: true, Repaint: true}, true
+		}
+		return gfx.EventResult{}, false
+	}
+	// A secondary press on the panel's own background starts a catalog at the
+	// top level. A press with any other target belongs to a control, a row, or
+	// an open menu's backdrop: the backdrop's own handler must dismiss that menu
+	// first, and the runtime delivers the press again to the row underneath.
+	if event.Button == gfx.PointerButtonSecondary && event.Target.IsZero() && pointInRect(event.X, event.Y, panel.bounds) {
+		state.openHostBlankMenu(at)
 		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	return gfx.EventResult{}, false

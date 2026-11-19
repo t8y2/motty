@@ -161,16 +161,6 @@ func (state *State) clickKeys(id gfx.ID) {
 	if state.activeSection != sectionKeys || state.modal != modalNone {
 		return
 	}
-	if state.keysMenu {
-		// A choice closes the menu and then runs as if it had been clicked
-		// directly; any other press only dismisses it.
-		state.keysMenu = false
-		switch id {
-		case hitKeysImport, hitKeysPaste, hitKeysGenerate:
-		default:
-			return
-		}
-	}
 	switch {
 	case id == hitKeysAdd:
 		state.keysMenu = true
@@ -187,15 +177,6 @@ func (state *State) clickKeys(id gfx.ID) {
 	case id == hitKeysPassphrase:
 		state.openKeyPassphraseForm()
 	}
-}
-
-// keysKey closes the Add Key menu on Escape.
-func (state *State) keysKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
-	if state.keysMenu && event.Key == gfx.KeyEscape {
-		state.keysMenu = false
-		return gfx.EventResult{Handled: true, Repaint: true}, true
-	}
-	return gfx.EventResult{}, false
 }
 
 // selectIdentity makes a key the selected one. The table calls it from the paint

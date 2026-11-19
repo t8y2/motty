@@ -22,6 +22,9 @@ type workspaceTemplateMenu struct {
 	open       bool
 	templateID string
 	at         gfx.Point
+	// shown says the last paint declared it, so one that closed without a choice
+	// can hand the keyboard back to the launcher it came from.
+	shown bool
 }
 
 type workspaceTemplateDelete struct {
@@ -44,38 +47,6 @@ func (state *State) openWorkspaceTemplateMenu(templateID string, at gfx.Point) {
 	state.workspaceTemplateFocusPending = hitWorkspaceTemplateMenuEdit
 }
 
-func (state *State) workspaceTemplateMenuKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
-	if !state.workspaceTemplateMenu.open || event.Release {
-		return gfx.EventResult{}, false
-	}
-	scroll := state.openMenuScroll()
-	if scroll == nil {
-		return gfx.EventResult{}, false
-	}
-	if event.Key == gfx.KeyEscape {
-		templateID := state.workspaceTemplateMenu.templateID
-		state.workspaceTemplateMenu.open = false
-		state.workspaceTemplateFocusPending = state.workspaceTemplateLauncherFocus(templateID)
-		return gfx.EventResult{Handled: true, Repaint: true}, true
-	}
-	if event.Target != hitWorkspaceTemplateMenuEdit && event.Target != hitWorkspaceTemplateMenuDelete {
-		return gfx.EventResult{}, false
-	}
-	switch event.Key {
-	case gfx.KeyEnter, gfx.KeySpace:
-		if event.Repeat {
-			return gfx.EventResult{Handled: true}, true
-		}
-		state.clickWorkspaceTemplateManagement(event.Target)
-		return gfx.EventResult{Handled: true, Repaint: true}, true
-	}
-	id, ok := scroll.Navigate(event.Key, event.Target, true)
-	if !ok {
-		return gfx.EventResult{}, false
-	}
-	return gfx.EventResult{Handled: true, Repaint: true, Focus: id, FocusVisible: true}, true
-}
-
 func (state *State) workspaceTemplateLauncherKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.activeSection != sectionWorkspaces || state.modal != modalNone || event.Release ||
 		event.Repeat || event.Modifiers != 0 ||
@@ -91,24 +62,6 @@ func (state *State) workspaceTemplateLauncherKey(event gfx.KeyEvent) (gfx.EventR
 }
 
 func (state *State) clickWorkspaceTemplateManagement(id gfx.ID) bool {
-	menu := &state.workspaceTemplateMenu
-	if menu.open {
-		template, index, exists := state.workspaceTemplateByID(menu.templateID)
-		menu.open = false
-		state.workspaceTemplateFocusPending = gfx.ID{}
-		if state.modal != modalNone || state.activeSection != sectionWorkspaces || !exists {
-			return true
-		}
-		switch id {
-		case hitWorkspaceTemplateMenuEdit:
-			state.openWorkspaceDraftEdit(template.ID)
-		case hitWorkspaceTemplateMenuDelete:
-			state.openWorkspaceTemplateDelete(template.ID)
-		case hitWorkspaceTemplateMenuDismiss:
-			state.workspaceTemplateFocusPending = hitWorkspaceTemplateMore.At(index)
-		}
-		return true
-	}
 	if id.Scope() != hitWorkspaceTemplateMore || state.activeSection != sectionWorkspaces || state.modal != modalNone {
 		return false
 	}
@@ -129,11 +82,16 @@ func (state *State) workspaceTemplateMenuAnchor(index int) gfx.Point {
 	return gfx.Point{X: bounds.X + bounds.Width, Y: bounds.Y + bounds.Height}
 }
 
-func (state *State) paintWorkspaceTemplateMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
+func (state *State) declareWorkspaceTemplateMenu(c ui.C) {
 	menu := &state.workspaceTemplateMenu
 	if !menu.open {
+		if menu.shown {
+			menu.shown = false
+			state.workspaceTemplateFocusPending = state.workspaceTemplateLauncherFocus(menu.templateID)
+		}
 		return
 	}
+	menu.shown = true
 	if state.activeSection != sectionWorkspaces || state.modal != modalNone {
 		menu.open = false
 		state.workspaceTemplateFocusPending = gfx.ID{}
@@ -154,16 +112,23 @@ func (state *State) paintWorkspaceTemplateMenu(canvas *gfx.Canvas, viewport gfx.
 		ID: hitWorkspaceTemplateMenuDelete, Label: state.messages.WorkspaceTemplateDelete,
 		Icon: lucideIcons[iconTrash], Variant: components.ContextMenuItemDestructive,
 	})
-	width, height := rows.size(canvas, state.contextMenuTheme())
-	bounds := state.popupAt(canvas, viewport, menu.at, width, height, 6)
-	dismiss := state.menuScrollFor(hitWorkspaceTemplateMenuDismiss)
-	popup := components.BeginContextMenu(canvas, state.contextMenuTheme(), bounds, components.ContextMenuOptions{
-		Layer: dialogLayer, Scope: dialogScope, DismissID: hitWorkspaceTemplateMenuDismiss,
-		Viewport: viewport, Scroll: dismiss, RowHeight: contextMenuRow,
-	})
-	state.menuPlaced(popup.Bounds())
-	rows.paint(&popup, nil)
-	popup.End()
+	state.declareRowsMenu(c, &menu.open, menu.at, hitWorkspaceTemplateMenuDismiss, &rows, state.chooseWorkspaceTemplateMenu)
+}
+
+// chooseWorkspaceTemplateMenu runs a choice of the menu, which closed with it.
+func (state *State) chooseWorkspaceTemplateMenu(id gfx.ID) {
+	template, _, exists := state.workspaceTemplateByID(state.workspaceTemplateMenu.templateID)
+	state.workspaceTemplateMenu.shown = false
+	state.workspaceTemplateFocusPending = gfx.ID{}
+	if state.modal != modalNone || state.activeSection != sectionWorkspaces || !exists {
+		return
+	}
+	switch id {
+	case hitWorkspaceTemplateMenuEdit:
+		state.openWorkspaceDraftEdit(template.ID)
+	case hitWorkspaceTemplateMenuDelete:
+		state.openWorkspaceTemplateDelete(template.ID)
+	}
 }
 
 func (state *State) openWorkspaceTemplateDelete(templateID string) {

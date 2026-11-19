@@ -43,14 +43,17 @@ type secretsUI struct {
 	// slice of its own.
 	actions [3]components.ButtonAction
 	// The save box of the password and passphrase dialogs is declared in their
-	// page; the checkbox and help icon are painted into the slots it leaves.
-	saveBoxDraw               func(*ui.DrawContext)
-	saveBoxID, saveBoxHintID  gfx.ID
-	saveBoxLabel, saveBoxHint string
-	saveBoxCheck, saveBoxHelp ui.Box
-	// unlockField is the slot the unlock field is painted into, forgetText the
-	// description the forget body wraps.
-	unlockField ui.Box
+	// page; the help icon is painted into the slot it leaves.
+	saveBoxDraw   func(*ui.DrawContext)
+	saveBoxHintID gfx.ID
+	saveBoxHint   string
+	saveBoxHelp   ui.Box
+	// unlockForm and unlockText are the unlock dialog's field row and its text, bound to
+	// unlock; unlockShown reveals it. forgetText is the description the forget body wraps.
+	unlockForm  ui.FormFieldState
+	unlockText  ui.Field
+	unlockBound bool
+	unlockShown bool
 	forgetText  string
 	forgetLines int
 }
@@ -384,21 +387,26 @@ func (state *State) declareVaultUnlockDialog(c ui.C) {
 // painted by paintSecretInput into the slot it reserves, and the error under it.
 func (state *State) declareVaultUnlockBody(c ui.C) {
 	secrets := &state.secrets
-	column := ui.Column(c).Fill().PadSides(2, 4, 0, 4).Gap(12)
-	column.Children(func() {
-		secrets.unlockField = ui.Slot(c).Height(62)
-		state.problemLineC(c, secrets.dialogError)
-	})
-	column.DrawOver(func(d *ui.DrawContext) {
-		canvas, theme := d.Canvas, *d.Theme
-		m := state.messages
-		content := components.BeginField(canvas, theme, secrets.unlockField.Rect()).Paint(m.VaultUnlockLabel, "", "")
-		value := secrets.unlock.String()
-		focused := canvas.Focused() == hitVaultUnlockField
-		state.paintSecretInput(canvas, content, components.InputSnapshot{
-			ID: hitVaultUnlockField, Label: m.VaultUnlockLabel, Value: value, Secure: true,
-			Focused: focused, PlatformEditing: focused && value != "", Invalid: secrets.dialogError != "",
+	m := state.messages
+	if !secrets.unlockBound {
+		secrets.unlockText.Bind(&secrets.unlock)
+		secrets.unlockBound = true
+	}
+	secrets.unlockText.Secure = !secrets.unlockShown
+	secrets.unlockText.Invalid = secrets.dialogError != ""
+	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Gap(12).Children(func() {
+		ui.FormField(c, &secrets.unlockForm, m.VaultUnlockLabel).FillWidth().Height(62).Children(func() {
+			box := ui.TextFieldID(c, hitVaultUnlockField, &secrets.unlockText, m.VaultUnlockLabel, "")
+			icon, label := lucideIcons[iconEye], m.ShowSecret
+			if secrets.unlockShown {
+				icon, label = lucideIcons[iconEyeOff], m.HideSecret
+			}
+			box.Action(icon, label)
+			if box.ActionClicked() {
+				secrets.unlockShown = !secrets.unlockShown
+			}
 		})
+		state.problemLineC(c, secrets.dialogError)
 	})
 }
 
@@ -535,17 +543,16 @@ func (state *State) secretFieldBody(problem string) float32 {
 // declareSaveBox declares the box that offers to save a secret in the page of a
 // dialog that has one: a checkbox, its label and, where there is a hint, the room
 // its help icon takes. The checkbox keeps its application identity, so the
-// window's dispatcher still handles its click.
+// window's dispatcher still handles its click; the help icon is the one part the
+// page leaves to the window.
 func (state *State) declareSaveBox(c ui.C, id gfx.ID, label, hint string, hintID gfx.ID) {
 	s := &state.secrets
-	s.saveBoxID, s.saveBoxLabel, s.saveBoxHint, s.saveBoxHintID = id, label, hint, hintID
-	s.saveBoxCheck, s.saveBoxHelp = ui.Box{}, ui.Box{}
-	width, height := components.CheckboxHitExtent(*c.Theme())
+	s.saveBoxHint, s.saveBoxHintID = hint, hintID
 	row := ui.Row(c).Fill().PadX(0).Gap(2).Items(ui.Center)
 	row.Children(func() {
-		// The checkbox slot is its hit extent; the square is centered in it.
-		// Pull the slot left so the box starts where the password field border does.
-		s.saveBoxCheck = ui.Slot(c).Width(width).Height(height).MarginSides(0, 0, 0, -8)
+		// The checkbox is its hit extent; the square is centered in it. Pull it
+		// left so the box starts where the password field border does.
+		ui.Checkbox(c, state.pageFlag(s.save), "").Hit(id, label).MarginSides(0, 0, 0, -8)
 		ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).LineHeight(20).MarginSides(0, 0, 0, -6)
 		if hint != "" {
 			s.saveBoxHelp = ui.Slot(c).Size(16, 16).MarginSides(0, 6, 0, 0).Shrink(0)
@@ -555,21 +562,14 @@ func (state *State) declareSaveBox(c ui.C, id gfx.ID, label, hint string, hintID
 		ui.Spacer(c).Grow(1)
 	})
 	if s.saveBoxDraw == nil {
-		s.saveBoxDraw = state.paintSaveBoxSlots
+		s.saveBoxDraw = state.paintSaveBoxHelp
 	}
 	row.DrawOver(s.saveBoxDraw)
 }
 
-// paintSaveBoxSlots paints the declared save box's checkbox and help icon into
-// the slots the page left.
-func (state *State) paintSaveBoxSlots(d *ui.DrawContext) {
+// paintSaveBoxHelp paints the help icon the declared save box leaves room for.
+func (state *State) paintSaveBoxHelp(d *ui.DrawContext) {
 	s := &state.secrets
-	canvas, theme := d.Canvas, *d.Theme
-	r := s.saveBoxCheck.Rect()
-	side := components.CheckboxExtent(theme)
-	components.BeginCheckbox(canvas, theme, s.saveBoxID, gfx.Rect{
-		X: r.X + (r.Width-side)/2, Y: r.Y + (r.Height-side)/2, Width: side, Height: side,
-	}, s.save).Label(s.saveBoxLabel).Paint()
 	if s.saveBoxHint == "" {
 		return
 	}
@@ -577,8 +577,8 @@ func (state *State) paintSaveBoxSlots(d *ui.DrawContext) {
 	if help.Width <= 0 || help.Height <= 0 {
 		return
 	}
-	canvas.HitWithOptions(s.saveBoxHintID, help, s.saveBoxHint, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true, Hint: s.saveBoxHint})
-	paintIcon(canvas, iconHelp, insetRect(help, 0.08), state.pal.muted)
+	d.Canvas.HitWithOptions(s.saveBoxHintID, help, s.saveBoxHint, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true, Hint: s.saveBoxHint})
+	paintIcon(d.Canvas, iconHelp, insetRect(help, 0.08), state.pal.muted)
 }
 
 // problemLineC declares the one-line error under a dialog's fields, when

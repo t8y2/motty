@@ -116,7 +116,11 @@ func TestSnippetHoverPreviewOpensAfterARestAndStaysOnTheCard(t *testing.T) {
 	var canvas gfx.Canvas
 	now := time.Duration(0)
 	canvas.SetClock(func() time.Duration { return now })
-	row := hitSnippetRowList.At(0)
+	// A throwaway paint names the rows without leaving its frame request on the
+	// canvas whose frame deadline this test reads.
+	var ids gfx.Canvas
+	state.Paint(&ids, gfx.Size{Width: 1400, Height: 900})
+	row := state.snippets.rows.RowID(0)
 
 	canvas.SetInteraction(row, gfx.ID{}, gfx.ID{}, false)
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
@@ -158,15 +162,16 @@ func TestSnippetHoverPreviewSkipsRowsItWouldNotHelp(t *testing.T) {
 	var canvas gfx.Canvas
 	now := snippetHoverDelay
 	canvas.SetClock(func() time.Duration { return now })
+	paintSnippetsPage(state, &canvas)
 
-	canvas.SetInteraction(hitSnippetRowList.At(1), gfx.ID{}, gfx.ID{}, false)
+	canvas.SetInteraction(state.snippets.rows.RowID(1), gfx.ID{}, gfx.ID{}, false)
 	paintSnippetsPage(state, &canvas)
 	if state.snippets.hoverOpen {
 		t.Fatal("a single-line command got a preview")
 	}
 
 	state.snippets.expanded = 1
-	canvas.SetInteraction(hitSnippetRowList.At(0), gfx.ID{}, gfx.ID{}, false)
+	canvas.SetInteraction(state.snippets.rows.RowID(0), gfx.ID{}, gfx.ID{}, false)
 	paintSnippetsPage(state, &canvas)
 	if state.snippets.hoverOpen {
 		t.Fatal("the expanded row got a preview on top of its detail")
@@ -174,10 +179,30 @@ func TestSnippetHoverPreviewSkipsRowsItWouldNotHelp(t *testing.T) {
 
 	state.snippets.expanded = 0
 	state.modal = modalSnippet
-	canvas.SetInteraction(hitSnippetRowList.At(0), gfx.ID{}, gfx.ID{}, false)
+	canvas.SetInteraction(state.snippets.rows.RowID(0), gfx.ID{}, gfx.ID{}, false)
 	paintSnippetsPage(state, &canvas)
 	if state.snippets.hoverOpen {
 		t.Fatal("the preview opened under a dialog")
+	}
+}
+
+func TestClickingASnippetRowSelectsIt(t *testing.T) {
+	state := snippetTestState(t,
+		snippet{Name: "First", Command: "echo first"},
+		snippet{Name: "Second", Command: "echo second"})
+	view := openCatalogWindow(t, state)
+	row, ok := findSnapshotHit(view.Snapshot(), state.snippets.rows.RowID(1))
+	if !ok {
+		t.Fatal("the second row is not painted")
+	}
+	if err := view.Driver().Click(row.Bounds.X+row.Bounds.Width/2, row.Bounds.Y+row.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if state.snippets.selected != 1 {
+		t.Fatalf("selected = %d, want the second snippet", state.snippets.selected)
+	}
+	if state.snippets.rows.Selected() != 1 {
+		t.Fatalf("the list's row = %d, want the second", state.snippets.rows.Selected())
 	}
 }
 
@@ -202,7 +227,8 @@ func TestSnippetHoverCardSteadyPaintDoesNotAllocate(t *testing.T) {
 	size := gfx.Size{Width: 1400, Height: 900}
 	now := time.Duration(0)
 	canvas.SetClock(func() time.Duration { return now })
-	canvas.SetInteraction(hitSnippetRowList.At(0), gfx.ID{}, gfx.ID{}, false)
+	paintSnippetsPage(state, &canvas)
+	canvas.SetInteraction(state.snippets.rows.RowID(0), gfx.ID{}, gfx.ID{}, false)
 	state.Paint(&canvas, size)
 	now = snippetHoverDelay
 	paintSnippetsPage(state, &canvas)
@@ -217,5 +243,77 @@ func TestSnippetHoverCardSteadyPaintDoesNotAllocate(t *testing.T) {
 	})
 	if allocations != 0 {
 		t.Fatalf("the preview's steady paint allocations = %v", allocations)
+	}
+}
+
+// The pointer's command preview is titled with the snippet, opens 4px under
+// the row and 4px in from the command cell, and shows the command's own lines.
+func TestSnippetHoverCardKeepsItsTitleAndOffset(t *testing.T) {
+	state := snippetTestState(t,
+		snippet{Name: "Two lines", Command: "echo first\n  echo second"})
+	size := gfx.Size{Width: 1400, Height: 900}
+	paint := func(now time.Duration) *gfx.Canvas {
+		var canvas gfx.Canvas
+		canvas.SetClock(func() time.Duration { return now })
+		canvas.BeginFrame()
+		state.Paint(&canvas, size)
+		canvas.EndFrame()
+		return &canvas
+	}
+	canvas := paint(0)
+	row, found := hitByLabelRoleLast(canvas, "Two lines", gfx.RoleOption)
+	if !found {
+		t.Fatal("the snippet row is not painted")
+	}
+	hover := func(now time.Duration) *gfx.Canvas {
+		var canvas gfx.Canvas
+		canvas.SetClock(func() time.Duration { return now })
+		canvas.BeginFrame()
+		canvas.SetInteraction(row.ID, gfx.ID{}, gfx.ID{}, false)
+		state.Paint(&canvas, size)
+		canvas.EndFrame()
+		return &canvas
+	}
+	hover(0)
+	canvas = hover(500 * time.Millisecond)
+	if !state.snippets.hoverOpen {
+		t.Fatal("resting on the row did not open its command preview")
+	}
+	if !hasTextValue(canvas, "echo first") || !hasTextValue(canvas, "  echo second") {
+		t.Fatalf("the preview lacks the command's lines: %v", canvas.Texts())
+	}
+	names := 0
+	for _, text := range canvas.Texts() {
+		if text.Value == "Two lines" {
+			names++
+		}
+	}
+	if names < 2 {
+		t.Fatalf("the preview is not titled with the snippet: %d names painted", names)
+	}
+	card, found := hitByID(canvas, hitSnippetHoverCard)
+	if !found {
+		t.Fatal("the preview has no card")
+	}
+	var panel gfx.Hit
+	foundPanel := false
+	at := gfx.Point{X: card.Bounds.X + 1, Y: card.Bounds.Y + 1}
+	for _, hit := range canvas.Hits() {
+		b := hit.Bounds
+		if hit.Block && at.X >= b.X && at.X < b.X+b.Width && at.Y >= b.Y && at.Y < b.Y+b.Height {
+			panel, foundPanel = hit, true
+			break
+		}
+	}
+	if !foundPanel {
+		t.Fatal("the preview has no panel")
+	}
+	anchor := state.snippets.hoverAnchor.Rect()
+	t.Logf("snippet anchor=%+v panel=%+v", anchor, panel.Bounds)
+	if want := anchor.Y + anchor.Height + 4; panel.Bounds.Y != want {
+		t.Fatalf("preview top = %v, want %v (4px under the row)", panel.Bounds.Y, want)
+	}
+	if panel.Bounds.X != anchor.X {
+		t.Fatalf("preview starts at %v, want the command cell's edge %v plus 4", panel.Bounds.X, anchor.X)
 	}
 }

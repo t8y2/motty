@@ -968,10 +968,10 @@ func TestTerminalMenuAsksTheAssistantWithoutSending(t *testing.T) {
 		t.Fatal("asking about the selection is enabled without one")
 	}
 	panelHit(t, canvas, hitTerminalMenuExplain)
-	state.Click(hitTerminalMenuSelectAll)
+	chooseMenu(t, state, hitTerminalMenuSelectAll)
 	rightClick(state, session, 300, 300)
 	paintAt(state, panelWide)
-	state.Click(hitTerminalMenuAsk)
+	chooseMenu(t, state, hitTerminalMenuAsk)
 	if !state.ai.open || !strings.Contains(state.ai.input.String(), "error: disk full") || !strings.Contains(state.ai.input.String(), "```") {
 		t.Fatalf("open=%v input=%q", state.ai.open, state.ai.input.String())
 	}
@@ -981,7 +981,7 @@ func TestTerminalMenuAsksTheAssistantWithoutSending(t *testing.T) {
 	state.ai.input = text.Editor{}
 	rightClick(state, session, 300, 300)
 	paintAt(state, panelWide)
-	state.Click(hitTerminalMenuExplain)
+	chooseMenu(t, state, hitTerminalMenuExplain)
 	if state.ai.input.String() != state.messages.AIPanel.PromptExplain || state.ai.mode != agent.ModeAsk {
 		t.Fatalf("input = %q mode=%v", state.ai.input.String(), state.ai.mode)
 	}
@@ -1488,5 +1488,25 @@ func TestNarrowAIDrawerTakesTheComposerAndHandsFocusBack(t *testing.T) {
 	}
 	if focused := view.Snapshot().Focused; focused.IsZero() || focused == hitAIInput {
 		t.Fatalf("focus after dismissing = %v, want the terminal", focused)
+	}
+}
+
+// The panel divider's hit strip starts half a pixel left of its line, as the
+// old Resizable's did: the line sits at the first whole pixel the strip covers.
+func TestThePanelDividerKeepsTheResizableHitEdge(t *testing.T) {
+	state, _ := panelState(t, nil)
+	withModel(t, state)
+	state.ai.open = true
+	canvas, _ := paintAt(state, panelWide)
+	divider := panelHit(t, canvas, hitAIDivider)
+	panel := state.ai.panel
+	window := panel.resize.window
+	line := window.X + (window.Width-1)*panel.resize.ratio
+	want := line - (panel.resize.handle-1)/2
+	if math.Abs(float64(divider.Bounds.X-want)) > 0.01 {
+		t.Fatalf("divider hit starts at %v, want %v (%v shifted by (handle-1)/2)", divider.Bounds.X, want, line)
+	}
+	if divider.Bounds.Width != panel.resize.handle {
+		t.Fatalf("divider hit is %v wide, want %v", divider.Bounds.Width, panel.resize.handle)
 	}
 }

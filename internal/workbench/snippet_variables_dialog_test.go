@@ -220,9 +220,14 @@ func TestSnippetVariablesDialogManyFieldsStayReachable(t *testing.T) {
 		t.Fatalf("the wheel never moved the list: offset %v", scroll.Offset)
 	}
 	last := len(prompt.defs) - 1
-	slot := prompt.slots[last].Rect()
 	list = prompt.list.Rect()
-	if slot.Y < list.Y || slot.Y+slot.Height > list.Y+list.Height {
+	var slot gfx.Rect
+	for _, candidate := range view.Snapshot().Hits {
+		if candidate.ID == hitSnippetVarList.At(last) {
+			slot = candidate.Bounds
+		}
+	}
+	if slot.Width == 0 || slot.Y < list.Y || slot.Y+slot.Height > list.Y+list.Height {
 		t.Fatalf("the last field %+v is not reachable in the list %+v", slot, list)
 	}
 }

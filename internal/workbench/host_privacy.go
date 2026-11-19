@@ -4,7 +4,6 @@ import (
 	"math"
 	"strings"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
@@ -12,12 +11,7 @@ import (
 var hostPrivacyHits = tree.Feature("host-privacy")
 
 var (
-	hitHostPrivacy        = tree.ID(hostPrivacyHits, "toggle-menu")
-	hitHostPrivacyDismiss = tree.ID(hostPrivacyHits, "dismiss")
-	hitHostPrivacyEnabled = tree.ID(hostPrivacyHits, "enabled")
-	hitHostPrivacyName    = tree.ID(hostPrivacyHits, "name")
-	hitHostPrivacyAddress = tree.ID(hostPrivacyHits, "address")
-	hitHostPrivacyUser    = tree.ID(hostPrivacyHits, "user")
+	hitHostPrivacy = tree.ID(hostPrivacyHits, "toggle-menu")
 )
 
 type hostPrivacyState struct {
@@ -66,63 +60,42 @@ func (state *State) hostPrivacySemanticLabel(host Host) string {
 	return host.Label
 }
 
-func (state *State) paintHostPrivacyMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
+// declareHostPrivacyMenu declares the privacy menu under its trigger: the
+// switch and the fields it masks, each a checkbox row.
+func (state *State) declareHostPrivacyMenu(c ui.C, anchor ui.Box) {
+	privacy := &state.hostPrivacy
+	if !privacy.menu {
+		return
+	}
 	m := state.messages.Tools
-	menu := components.BeginDropdownMenu(
-		canvas,
-		state.Theme(),
-		state.popupBelow(canvas, state.hostPrivacy.button, 220, 176, ui.End),
-		components.DropdownMenuOptions{
-			Layer: dialogLayer, Scope: dialogScope, DismissID: hitHostPrivacyDismiss,
-			Viewport: viewport, Scroll: state.menuScrollFor(hitHostPrivacyDismiss),
-		},
-	)
-	state.menuPlaced(menu.Bounds())
-	menu.AddItem(components.DropdownMenuItem{
-		ID: hitHostPrivacyEnabled, Label: m.HostPrivacy, Icon: lucideIcons[iconEyeOff],
-		Kind: components.DropdownMenuCheckbox, Checked: state.hostPrivacy.enabled,
+	ui.PopupLayer(c, dialogLayer)
+	ui.Menu(c, anchor, &privacy.menu, func(menu *ui.MenuItems) {
+		menu.WidthRange(220, 220)
+		toggle := func(item ui.MenuItem, flag *bool) {
+			if item.Checked(*flag).Clicked() {
+				c.After(func() {
+					*flag = !*flag
+					state.save()
+				})
+			}
+		}
+		toggle(menu.Item(m.HostPrivacy).Icon(lucideIcons[iconEyeOff]), &privacy.enabled)
+		menu.Separator()
+		menu.Label(m.HostPrivacyFields)
+		toggle(menu.Item(m.HostPrivacyName), &privacy.maskName)
+		toggle(menu.Item(m.HostPrivacyAddress), &privacy.maskAddress)
+		toggle(menu.Item(m.HostPrivacyUser), &privacy.maskUser)
 	})
-	menu.AddSeparator()
-	menu.AddLabel(m.HostPrivacyFields, false)
-	menu.AddItem(components.DropdownMenuItem{
-		ID: hitHostPrivacyName, Label: m.HostPrivacyName, Inset: true,
-		Kind: components.DropdownMenuCheckbox, Checked: state.hostPrivacy.maskName,
-	})
-	menu.AddItem(components.DropdownMenuItem{
-		ID: hitHostPrivacyAddress, Label: m.HostPrivacyAddress, Inset: true,
-		Kind: components.DropdownMenuCheckbox, Checked: state.hostPrivacy.maskAddress,
-	})
-	menu.AddItem(components.DropdownMenuItem{
-		ID: hitHostPrivacyUser, Label: m.HostPrivacyUser, Inset: true,
-		Kind: components.DropdownMenuCheckbox, Checked: state.hostPrivacy.maskUser,
-	})
-	menu.End()
 }
 
 func (state *State) clickHostPrivacy(id gfx.ID) bool {
-	if state.hostPrivacy.menu {
-		state.hostPrivacy.menu = false
-		switch id {
-		case hitHostPrivacyEnabled:
-			state.hostPrivacy.enabled = !state.hostPrivacy.enabled
-		case hitHostPrivacyName:
-			state.hostPrivacy.maskName = !state.hostPrivacy.maskName
-		case hitHostPrivacyAddress:
-			state.hostPrivacy.maskAddress = !state.hostPrivacy.maskAddress
-		case hitHostPrivacyUser:
-			state.hostPrivacy.maskUser = !state.hostPrivacy.maskUser
-		case hitHostPrivacy, hitHostPrivacyDismiss:
-			return true
-		default:
-			return true
-		}
-		state.save()
-		return true
-	}
 	if id != hitHostPrivacy {
 		return false
 	}
-	state.hostPrivacy.menu = true
+	state.hostPrivacy.menu = !state.hostPrivacy.menu
+	if !state.hostPrivacy.menu {
+		return true
+	}
 	state.hostOrderMenu = false
 	state.importMenu = false
 	state.hostFilterMenu = false
