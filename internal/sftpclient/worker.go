@@ -1,6 +1,7 @@
 package sftpclient
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"github.com/vivaui/viva/leaks"
@@ -1695,14 +1696,14 @@ func scanLocal(localPath string, recursive bool) (os.FileInfo, int, int64, error
 }
 
 func (worker *Worker) uploadFile(client transferRemote, localPath, remotePath string, sourceInfo os.FileInfo, policy ExistingPolicy, generation, transferID uint64, filesDone int, bytesBefore, trusted int64) (written, resumed int64, err error) {
-	return worker.uploadStream(client, func() (io.ReadCloser, error) { return os.Open(localPath) }, sourceInfo, remotePath, policy, generation, transferID, filesDone, bytesBefore, trusted)
+	return worker.uploadStream(client, func() (io.ReadCloser, error) { return os.Open(localPath) }, sourceInfo, localPath, remotePath, policy, generation, transferID, filesDone, bytesBefore, trusted)
 }
 
 // uploadStream writes sourceInfo's content into remotePath through a staged
 // partial file, as uploadFile does for a local file. openSource runs once the
 // destination rules are settled, so a conflict costs no read; a remote copy
 // passes the source server's file handle here.
-func (worker *Worker) uploadStream(client transferRemote, openSource func() (io.ReadCloser, error), sourceInfo os.FileInfo, remotePath string, policy ExistingPolicy, generation, transferID uint64, filesDone int, bytesBefore, trusted int64) (written, resumed int64, err error) {
+func (worker *Worker) uploadStream(client transferRemote, openSource func() (io.ReadCloser, error), sourceInfo os.FileInfo, sourceIdentity, remotePath string, policy ExistingPolicy, generation, transferID uint64, filesDone int, bytesBefore, trusted int64) (written, resumed int64, err error) {
 	finalInfo, finalExists, err := remoteLstat(client, remotePath)
 	if err != nil {
 		return 0, 0, err
@@ -1723,7 +1724,7 @@ func (worker *Worker) uploadStream(client transferRemote, openSource func() (io.
 			return sourceInfo.Size(), sourceInfo.Size(), nil
 		}
 	}
-	partial := remotePartialPath(remotePath)
+	partial := remotePartialPath(remotePath, sourceIdentity)
 	partialInfo, partialExists, err := remoteLstat(client, partial)
 	if err != nil {
 		return 0, 0, err
@@ -1978,7 +1979,7 @@ func (worker *Worker) remoteCopy(destination Remote, next request, generation ui
 				return remoteSource.OpenTransferFile(sourcePath, os.O_RDONLY)
 			}
 			info := plannedFileInfo{name: path.Base(sourcePath), size: item.size, mode: item.mode, modTime: item.modTime}
-			written, continued, copyErr := worker.uploadStream(client, open, info, targetPath, next.policy, generation, next.id, files, bytes, 0)
+			written, continued, copyErr := worker.uploadStream(client, open, info, sourcePath, targetPath, next.policy, generation, next.id, files, bytes, 0)
 			bytes += written
 			resumed += continued
 			if copyErr != nil {
@@ -2985,8 +2986,16 @@ func localLstat(localPath string) (os.FileInfo, bool, error) {
 	return nil, false, err
 }
 
-func remotePartialPath(remotePath string) string {
-	return path.Join(path.Dir(remotePath), transferPartialName(path.Base(remotePath), false))
+// remotePartialPath names the partial of an upload. The source identity keeps
+// two different sources that target the same remote path from adopting each
+// other's partial: the destination alone cannot tell them apart.
+func remotePartialPath(remotePath, sourceIdentity string) string {
+	name := path.Base(remotePath)
+	if sourceIdentity != "" {
+		digest := sha256.Sum256([]byte(sourceIdentity))
+		name = fmt.Sprintf("%x.%s", digest[:4], name)
+	}
+	return path.Join(path.Dir(remotePath), transferPartialName(name, false))
 }
 
 func localPartialPath(localPath string) string {

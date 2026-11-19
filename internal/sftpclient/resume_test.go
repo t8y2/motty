@@ -68,7 +68,7 @@ func TestTrustedResumeDoesNotReadThePartialBack(t *testing.T) {
 	}
 	trusted := int64(32 << 10)
 	stale := append(append([]byte(nil), payload[:trusted]...), []byte("stale tail the failed attempt left")...)
-	partial := filepath.Join(root, remotePartialPath("trusted.bin"))
+	partial := filepath.Join(root, remotePartialPath("trusted.bin", local))
 	if err := os.WriteFile(partial, stale, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestUntrustedResumeVerifiesThePartialBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	prefix := int64(32 << 10)
-	partial := filepath.Join(root, remotePartialPath("untrusted.bin"))
+	partial := filepath.Join(root, remotePartialPath("untrusted.bin", local))
 	if err := os.WriteFile(partial, payload[:prefix], 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestATrustLongerThanThePartialStillVerifies(t *testing.T) {
 		t.Fatal(err)
 	}
 	prefix := int64(24 << 10)
-	partial := filepath.Join(root, remotePartialPath("overflow.bin"))
+	partial := filepath.Join(root, remotePartialPath("overflow.bin", local))
 	if err := os.WriteFile(partial, payload[:prefix], 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestATrustFromAChangedSourceStillVerifies(t *testing.T) {
 		t.Fatal(err)
 	}
 	prefix := int64(32 << 10)
-	partial := filepath.Join(root, remotePartialPath("changed.bin"))
+	partial := filepath.Join(root, remotePartialPath("changed.bin", local))
 	if err := os.WriteFile(partial, payload[:prefix], 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func TestATrustFromASameSizeEditStillVerifies(t *testing.T) {
 		t.Fatal(err)
 	}
 	prefix := int64(32 << 10)
-	partial := filepath.Join(root, remotePartialPath("edited.bin"))
+	partial := filepath.Join(root, remotePartialPath("edited.bin", local))
 	if err := os.WriteFile(partial, payload[:prefix], 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -222,4 +222,40 @@ func sourceModTime(t *testing.T, path string) time.Time {
 		t.Fatal(err)
 	}
 	return info.ModTime()
+}
+
+// The partial belongs to the source that started it: another source uploading
+// to the same destination gets its own partial instead of adopting these bytes.
+func TestAnUploadDoesNotAdoptAnotherSourcesPartial(t *testing.T) {
+	worker, root := newProtocolWorker(t)
+	sourceA := filepath.Join(t.TempDir(), "a.bin")
+	sourceB := filepath.Join(t.TempDir(), "b.bin")
+	payloadA := bytes.Repeat([]byte("source A "), 1<<12)
+	payloadB := bytes.Repeat([]byte("source B "), 1<<12)
+	if len(payloadA) != len(payloadB) {
+		t.Fatal("the sources must have the same size for this test")
+	}
+	if err := os.WriteFile(sourceA, payloadA, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sourceB, payloadB, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	partialA := filepath.Join(root, filepath.FromSlash(remotePartialPath("dest.bin", sourceA)))
+	if err := os.WriteFile(partialA, payloadA[:16<<10], 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	id, queued := worker.QueueUpload(sourceB, "dest.bin", false, ExistingResume)
+	result := queueResult(t, id, queued, worker)
+	if result.Err != nil || result.Resumed != 0 || result.Bytes != int64(len(payloadB)) {
+		t.Fatalf("upload from another source = %+v, want a fresh %d-byte send", result, len(payloadB))
+	}
+	final, err := os.ReadFile(filepath.Join(root, "dest.bin"))
+	if err != nil || !bytes.Equal(final, payloadB) {
+		t.Fatalf("destination = %d bytes, err %v, want source B", len(final), err)
+	}
+	if _, err := os.Stat(partialA); err != nil {
+		t.Fatalf("the other source's partial was removed: %v", err)
+	}
 }

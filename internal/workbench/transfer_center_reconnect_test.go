@@ -3,6 +3,7 @@ package workbench
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -23,6 +24,7 @@ type reconnectGateRemote struct {
 	*workbenchSFTPRemote
 	after   int64
 	written atomic.Int64
+	reads   atomic.Int64
 	reached chan struct{}
 	release chan struct{}
 	once    sync.Once
@@ -37,10 +39,34 @@ func newReconnectGateRemote(remote *workbenchSFTPRemote, after int64) *reconnect
 
 func (remote *reconnectGateRemote) OpenTransferFile(remotePath string, flags int) (sftpclient.TransferFile, error) {
 	file, err := remote.workbenchSFTPRemote.OpenTransferFile(remotePath, flags)
-	if err != nil || flags == os.O_RDONLY {
+	if err != nil {
 		return file, err
 	}
+	if flags == os.O_RDONLY {
+		return &reconnectReadFile{TransferFile: file, remote: remote}, nil
+	}
 	return &reconnectGateFile{TransferFile: file, remote: remote}, nil
+}
+
+type reconnectReadFile struct {
+	sftpclient.TransferFile
+	remote *reconnectGateRemote
+}
+
+func (file *reconnectReadFile) Read(p []byte) (int, error) {
+	n, err := file.TransferFile.Read(p)
+	file.remote.reads.Add(int64(n))
+	return n, err
+}
+
+func (file *reconnectReadFile) ReadAt(p []byte, off int64) (int, error) {
+	at, ok := file.TransferFile.(io.ReaderAt)
+	if !ok {
+		return 0, io.ErrNoProgress
+	}
+	n, err := at.ReadAt(p, off)
+	file.remote.reads.Add(int64(n))
+	return n, err
 }
 
 type reconnectGateFile struct {
@@ -133,6 +159,9 @@ func TestTransferCenterResumesInterruptedUploadAfterReconnect(t *testing.T) {
 	// they are dropped rather than read back to be compared with the source.
 	if snapshot.Resumed <= 0 || snapshot.Resumed > int64(len(partial)) {
 		t.Fatalf("resumed %d bytes, want a prefix of the kept %d", snapshot.Resumed, len(partial))
+	}
+	if got := gated.reads.Load(); got != 0 {
+		t.Fatalf("the resume read %d bytes of the partial back, want the trusted prefix", got)
 	}
 	remote.mu.Lock()
 	content := append([]byte(nil), remote.files[remotePath]...)
