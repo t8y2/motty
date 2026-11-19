@@ -2027,11 +2027,6 @@ func (state *State) copySelection(session *Session) gfx.EventResult {
 // Scroll turns the wheel into scrollback, or arrow keys on the alternate
 // screen, where a pager or editor owns the display and has no scrollback.
 func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
-	if state.pageWheel {
-		// The page fell back to this handler for a wheel it could not use; the
-		// dialog above already owns it.
-		return gfx.EventResult{}
-	}
 	if state.noteExit != nil {
 		return gfx.EventResult{Handled: true}
 	}
@@ -2110,16 +2105,14 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if state.modal == modalNewProxy || state.modal == modalNewForward {
 		// The host pickers are page comboboxes: their open lists take the wheel,
 		// and the dialog keeps it from the window behind it.
-		state.pageWheel = true
-		result := state.windowPage().Wheel(event)
-		state.pageWheel = false
+		result := state.windowPage().RouteWheel(event)
 		result.Handled = true
 		return result
 	}
 	if state.modal == modalForm {
 		// The form's multiline fields are page text areas: the page scrolls them,
 		// and the dialog keeps the wheel from the window behind it.
-		result := state.windowPage().Wheel(event)
+		result := state.windowPage().RouteWheel(event)
 		result.Handled = true
 		return result
 	}

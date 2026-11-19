@@ -522,26 +522,23 @@ type State struct {
 	forwards           []forwardRecord
 	// forwardTunnels are the SSH transports forwards use when no open tab
 	// carries one. They have no terminal and are never saved.
-	forwardTunnels       []*forwardTunnel
-	selectedIdentityID   uint32
-	selectedForwardID    uint32
-	selectedProxyID      uint32
-	forwardTable         ui.TableState
-	keysTable            ui.TableState
-	proxyList            ui.ListState
-	proxyRowDecl         func(ui.ListRow)
-	forwardRows          forwardTableSource
-	keysRows             keyTableSource
-	forwardColumns       [5]components.TableColumn
-	forwardHeadings      [5]string
-	keysColumns          [4]components.TableColumn
-	keysHeadings         [4]string
-	proxyColumns         [6]components.TableColumn
-	proxyHeadings        [6]string
-	proxyFilteredIndices []int
-	// pageWheel says the page is routing a wheel the application forwarded to
-	// it, so the page does not fall back to this handler again.
-	pageWheel              bool
+	forwardTunnels         []*forwardTunnel
+	selectedIdentityID     uint32
+	selectedForwardID      uint32
+	selectedProxyID        uint32
+	forwardTable           ui.TableState
+	keysTable              ui.TableState
+	proxyList              ui.ListState
+	proxyRowDecl           func(ui.ListRow)
+	forwardRows            forwardTableSource
+	keysRows               keyTableSource
+	forwardColumns         [5]components.TableColumn
+	forwardHeadings        [5]string
+	keysColumns            [4]components.TableColumn
+	keysHeadings           [4]string
+	proxyColumns           [6]components.TableColumn
+	proxyHeadings          [6]string
+	proxyFilteredIndices   []int
 	selectedBastionJumpID  uint32
 	selectedBastionTargets map[uint32]bool
 	proxyChecked           map[uint32]bool

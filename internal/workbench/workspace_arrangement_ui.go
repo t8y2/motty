@@ -280,7 +280,7 @@ func (state *State) workspaceArrangementScroll(event gfx.ScrollEvent) (gfx.Event
 		return gfx.EventResult{}, false
 	}
 	if pointInRect(event.X, event.Y, state.workspaceLayoutDraft.bounds) {
-		result := state.windowPage().Wheel(event)
+		result := state.windowPage().RouteWheel(event)
 		result.Handled = true
 		return result, true
 	}

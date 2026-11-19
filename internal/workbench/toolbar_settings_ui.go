@@ -238,7 +238,7 @@ func (state *State) toolbarSettingsKey(event gfx.KeyEvent) gfx.EventResult {
 func (state *State) toolbarSettingsScroll(event gfx.ScrollEvent) gfx.EventResult {
 	result := gfx.EventResult{Handled: true}
 	if pointInRect(event.X, event.Y, state.toolbarEditor.list.Rect()) {
-		result = state.windowPage().Wheel(event)
+		result = state.windowPage().RouteWheel(event)
 		result.Handled = true
 	}
 	return result

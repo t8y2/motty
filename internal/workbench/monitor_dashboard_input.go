@@ -56,7 +56,7 @@ func (s *State) dashboardScroll(e gfx.ScrollEvent) gfx.EventResult {
 	if s.modal != modalNone && s.modal != modalDashboard && s.modal != modalDashboardAdd {
 		return gfx.EventResult{}
 	}
-	result := s.windowPage().Wheel(e)
+	result := s.windowPage().RouteWheel(e)
 	if s.modal != modalNone {
 		result.Handled = true
 	}

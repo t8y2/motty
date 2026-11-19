@@ -213,7 +213,7 @@ func (state *State) declareRuleManagerRow(c ui.C, index int) {
 func (state *State) scrollRuleManager(event gfx.ScrollEvent) gfx.EventResult {
 	result := gfx.EventResult{Handled: true}
 	if pointInRect(event.X, event.Y, state.ruleManager.bounds) {
-		result = state.windowPage().Wheel(event)
+		result = state.windowPage().RouteWheel(event)
 		result.Handled = true
 	}
 	return result

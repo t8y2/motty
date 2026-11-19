@@ -512,7 +512,7 @@ func (state *State) scrollWindow(event gfx.ScrollEvent) gfx.EventResult {
 	if state.aiMenuShown() {
 		// An open chip menu is the page's popup and owns the wheel; its own
 		// scroll route (and its backdrop) decide where the event goes.
-		return state.windowPage().Wheel(event)
+		return state.windowPage().RouteWheel(event)
 	}
 	panel := &state.ai.panel
 	if panel.rect.Width > 0 && pointInRect(event.X, event.Y, panel.rect) && state.aiBackgroundScrollBlocked() {
@@ -528,7 +528,7 @@ func (state *State) scrollWindow(event gfx.ScrollEvent) gfx.EventResult {
 	if state.modal != modalNone {
 		if state.modal == modalProxyBatchAssociate {
 			// The jump picker's open list and the candidates are the page's.
-			result := state.windowPage().Wheel(event)
+			result := state.windowPage().RouteWheel(event)
 			result.Handled = true
 			return result
 		}
