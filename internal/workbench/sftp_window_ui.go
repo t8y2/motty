@@ -674,7 +674,7 @@ func (w *sftpWindow) declarePane(c ui.C, s *sftpWindowScratch) {
 				folder.seedSFTPListChoice()
 				s.list = ui.List(c, &folder.list, len(folder.rows), func(row ui.ListRow) {
 					w.declareListRow(row, side, bounds.Width, rowWidth, columns)
-				}).Grow(1).Label(m.SFTPFiles).AlwaysScrollbars()
+				}).Grow(1).Label(m.SFTPFiles).AlwaysScrollbars().ScrollbarLabels(m.SFTPFiles, "")
 				folder.seedSFTPListCurrent()
 				if folder.list.Changed() {
 					folder.takeSFTPListChoice()

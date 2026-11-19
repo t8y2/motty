@@ -70,8 +70,9 @@ func (w *sftpWindow) declareQueue(c ui.C, bounds, origin gfx.Rect) {
 		view.queueDetails.dismiss()
 		return
 	}
-	area := ui.Scroll(c).Absolute().Left(list.X - origin.X).Top(list.Y - origin.Y).
-		Width(list.Width).Height(list.Height).Clip().AlwaysScrollbars()
+	area := ui.Scroll(c).Absolute().Left(list.X-origin.X).Top(list.Y-origin.Y).
+		Width(list.Width).Height(list.Height).Clip().AlwaysScrollbars().
+		ScrollbarLabels(w.owner.messages.SFTPTransferQueue, "")
 	view.queueScroll = area.ScrollState()
 	offset := float32(0)
 	if view.queueScroll != nil {

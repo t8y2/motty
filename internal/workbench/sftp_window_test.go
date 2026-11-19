@@ -677,7 +677,7 @@ func TestSFTPWindowListScrollbarOffset(t *testing.T) {
 	view.Rest()
 	var bar gfx.Rect
 	for _, hit := range view.Snapshot().Hits {
-		if hit.Label == "Vertical scrollbar" && pointInRect(hit.Bounds.X+1, hit.Bounds.Y+1, center) {
+		if hit.Role == gfx.RoleSeparator && hit.Bounds.X+hit.Bounds.Width >= center.X+center.Width-1 && pointInRect(hit.Bounds.X+1, hit.Bounds.Y+1, center) {
 			bar = hit.Bounds
 			break
 		}
