@@ -189,6 +189,26 @@ func TestNewPointerAlphaZeroIsTransparent(t *testing.T) {
 	}
 }
 
+// Debian 13 native desktop (gnome-remote-desktop) sends a 32bpp cursor with
+// per-pixel alpha and an empty AND mask (lengthAndMask = 0). It must not be
+// decoded as completely transparent.
+func TestNewPointerEmptyAndMask(t *testing.T) {
+	xorMask := []byte{
+		0x00, 0x00, 0x00, 0x00, // black, alpha 0 → transparent
+		0xFF, 0xFF, 0xFF, 0xFF, // white, alpha 255 → opaque
+	}
+	pu, _, err := DecodeNewPointer(slog.Default(), nil, newPointerData(2, 1, 32, xorMask, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := pu.Data[3]; a != 0 {
+		t.Fatalf("pixel 0 alpha: got %d, want 0 (transparent)", a)
+	}
+	if r, g, b, a := pu.Data[4], pu.Data[5], pu.Data[6], pu.Data[7]; r != 0xFF || g != 0xFF || b != 0xFF || a != 0xFF {
+		t.Fatalf("pixel 1: got RGBA(%d,%d,%d,%d), want (255,255,255,255)", r, g, b, a)
+	}
+}
+
 // A 32bpp cursor whose XOR mask has no alpha channel still gets its
 // transparency from the AND mask.
 func TestNewPointerWithoutAlphaUsesMasks(t *testing.T) {
@@ -269,6 +289,37 @@ func TestDecodeLargePointer(t *testing.T) {
 	binary.LittleEndian.PutUint32(data[16:], uint32(len(xorMask)))
 	copy(data[20:], xorMask)
 	copy(data[20+len(xorMask):], andMask)
+
+	pu, _, err := DecodeLargePointer(slog.Default(), nil, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pu.CacheIndex != 7 {
+		t.Fatalf("cache index: got %d, want 7", pu.CacheIndex)
+	}
+	// Pixel: R=0, G=255, B=0, A=255
+	r, g, b, a := pu.Data[0], pu.Data[1], pu.Data[2], pu.Data[3]
+	if r != 0 || g != 0xFF || b != 0 || a != 0xFF {
+		t.Fatalf("pixel: got RGBA(%d,%d,%d,%d), want (0,255,0,255)", r, g, b, a)
+	}
+}
+
+func TestDecodeLargePointerEmptyAndMask(t *testing.T) {
+	// 1x1 32bpp large pointer with empty AND mask (lengthAndMask = 0)
+	w, h := 1, 1
+	xorMask := []byte{0x00, 0xFF, 0x00, 0xFF} // B=0, G=255, R=0, A=255
+
+	// Wire: xorBpp(2) + cacheIndex(2) hotX(2) hotY(2) w(2) h(2) andLen(4) xorLen(4) xor
+	data := make([]byte, 2+10+8+len(xorMask))
+	binary.LittleEndian.PutUint16(data[0:], 32) // xorBpp
+	binary.LittleEndian.PutUint16(data[2:], 7)  // cacheIndex
+	binary.LittleEndian.PutUint16(data[4:], 0)
+	binary.LittleEndian.PutUint16(data[6:], 0)
+	binary.LittleEndian.PutUint16(data[8:], uint16(w))
+	binary.LittleEndian.PutUint16(data[10:], uint16(h))
+	binary.LittleEndian.PutUint32(data[12:], 0) // andLen = 0
+	binary.LittleEndian.PutUint32(data[16:], uint32(len(xorMask)))
+	copy(data[20:], xorMask)
 
 	pu, _, err := DecodeLargePointer(slog.Default(), nil, data)
 	if err != nil {

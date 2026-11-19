@@ -155,8 +155,8 @@ func decodeColorFields(log *slog.Logger, buf, data []byte, xorBpp int, large boo
 // halo into surrounding transparent pixels. This keeps cursors like the
 // Windows I-beam visible on both light and dark backgrounds.
 // 32bpp special: when the XOR mask carries an alpha channel it is the
-// authority on transparency, with the AND mask able only to hide a pixel; a
-// server that sends 32bpp with no alpha channel at all falls back to the masks.
+// authority on transparency directly; a server that sends 32bpp with no
+// alpha channel at all falls back to the masks.
 func convertMasksToRGBA(buf []byte, w, h, bpp int, xorMask, andMask []byte) (rgba []byte, outBuf []byte) {
 	needed := w * h * 4
 	if cap(buf) < needed {
@@ -236,11 +236,7 @@ func convertMasksToRGBA(buf []byte, w, h, bpp int, xorMask, andMask []byte) (rgb
 				b = xorRow[x*4]
 				g = xorRow[x*4+1]
 				r = xorRow[x*4+2]
-				if andBit == 0 {
-					a = xorRow[x*4+3] // per-pixel alpha
-				} else {
-					a = 0 // transparent
-				}
+				a = xorRow[x*4+3] // per-pixel alpha
 			case bpp == 32 && xorRow != nil && x*4+3 < len(xorRow):
 				// 32bpp data without an alpha channel: the masks decide, as a
 				// 24bpp cursor's do.

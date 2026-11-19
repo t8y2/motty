@@ -79,11 +79,12 @@ Changed:
   expected silence was being read as a dead link and ended the connection about
   ten seconds after switching away; the keepalive is skipped meanwhile because
   a suppressed server must not answer it.
-* A 32bpp pointer's alpha channel decides transparency, with the AND mask able
-  only to hide a pixel; 32bpp data with no alpha at all still falls back to the
-  masks. xrdp sends X cursors at 32bpp with per-pixel alpha and a zero AND
-  mask, which upstream's rule rendered as an opaque black square around the
-  pointer.
+* A 32bpp pointer's alpha channel decides transparency directly; 32bpp data with
+  no alpha at all still falls back to the masks. xrdp sends X cursors at 32bpp
+  with per-pixel alpha and a zero AND mask, which upstream's rule rendered as an
+  opaque black square around the pointer. Debian 13 (gnome-remote-desktop) sends
+  32bpp with alpha and an empty AND mask (lengthAndMask = 0), which must not be
+  decoded as transparent.
 * The EGFX `ResetGraphics` PDU clears surfaces, output maps and frame state but
   keeps the progressive-codec decoder. Its tile context (SYNC, CONTEXT and
   simple tiles) is not part of the graphics output; Windows sends only UPGRADE
