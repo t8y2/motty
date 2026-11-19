@@ -235,7 +235,7 @@ var TraditionalMessages = Messages{
 	TrayTooltipFmt:                       "Motty %s · %d 個開啟的工作階段",
 	TrayTooltipEmpty:                     "Motty %s",
 	TrayHintTitle:                        "Motty 仍在執行",
-	TrayHintBody:                         "關閉視窗不會中斷工作階段。系統匣圖示可以重新開啟視窗，也可以在那裡退出。",
+	TrayHintBody:                         "關閉視窗後應用仍在背景執行，工作階段不會中斷。可透過系統匣圖示重新開啟視窗，或再次啟動應用找回視窗。",
 
 	SettingsTitle:                          "設定",
 	SettingsDescription:                    "選擇 Motty 的外觀與終端機輸入行為。",
@@ -2262,7 +2262,7 @@ var traditionalTools = ToolsMessages{
 	GeneralLogin:                    "開機時啟動",
 	GeneralLoginDescription:         "登入後在背景啟動。",
 	GeneralTrayIcon:                 "顯示系統托盤圖示",
-	GeneralTrayIconDescription:      "在系統托盤顯示圖示，用於開啟視窗和結束。",
+	GeneralTrayIconDescription:      "關閉後，托盤圖示將被隱藏，但應用仍會在背景正常執行，再次啟動應用即可找回視窗",
 	GeneralClose:                    "關閉視窗時",
 	GeneralCloseDescription:         "關閉最後一個視窗後，留在系統匣繼續執行，或直接退出。",
 	GeneralCloseTray:                "留在系統匣",

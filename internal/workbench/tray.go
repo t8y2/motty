@@ -130,20 +130,16 @@ func productText(text string) string {
 
 // closeActionVisible reports whether the close-action row is worth showing. It
 // is shown whenever the tray feature is wired, even with the icon turned off:
-// the row then states the only thing closing can do, quit, rather than vanish.
+// closing can still keep the application running in the background, so the
+// choice of what it does is the user's either way.
 func (state *State) closeActionVisible() bool {
 	return state.options.SetTrayIcon != nil || state.options.StatusArea != nil
 }
 
-// trayStayAvailable reports whether staying in the status area on close is
-// currently possible: the icon must be on and the desktop must have a status
-// area. When it is not, closing can only quit and the choice is locked to that.
-func (state *State) trayStayAvailable() bool {
-	return !state.trayIconOff && state.options.StatusArea != nil && state.options.StatusArea()
-}
-
 // StaysInTray reports whether closing the last window, or a window that has
-// sessions, hides it into the status area instead of closing it.
+// sessions, hides it and keeps the application running in the background
+// instead of closing it. The window comes back from the tray icon, or from
+// starting the application again when the icon is hidden.
 func (state *State) StaysInTray() bool { return state.closeAction == closeToTray }
 
 // WantsToStay reports whether a window with sessions should hide rather than

@@ -235,7 +235,7 @@ var ChineseMessages = Messages{
 	TrayTooltipFmt:                       "Motty %s · %d 个打开的会话",
 	TrayTooltipEmpty:                     "Motty %s",
 	TrayHintTitle:                        "Motty 仍在运行",
-	TrayHintBody:                         "关闭窗口不会断开会话。托盘图标可以重新打开窗口，也可以在那里退出。",
+	TrayHintBody:                         "关闭窗口后应用仍在后台运行，会话不会断开。可通过托盘图标重新打开窗口，或再次启动应用找回窗口。",
 
 	SettingsTitle:                          "设置",
 	SettingsDescription:                    "选择 Motty 的外观与终端输入行为。",
@@ -2262,7 +2262,7 @@ var chineseTools = ToolsMessages{
 	GeneralLogin:                    "开机自启",
 	GeneralLoginDescription:         "登录后在后台启动。",
 	GeneralTrayIcon:                 "显示系统托盘图标",
-	GeneralTrayIconDescription:      "在系统托盘显示图标，用于打开窗口和退出。",
+	GeneralTrayIconDescription:      "关闭后，托盘图标将被隐藏，但应用仍会在后台正常运行，再次启动应用即可找回窗口",
 	GeneralClose:                    "关闭窗口时",
 	GeneralCloseDescription:         "关闭最后一个窗口后，留在托盘继续运行，或直接退出。",
 	GeneralCloseTray:                "留在托盘",

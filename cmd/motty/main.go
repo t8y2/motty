@@ -370,19 +370,19 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 	invalidate := invalidator.Invalidate
 	var state *workbench.State
 	var mainWindow *app.Window
-	// The close button and Command+W end up here. With a tray, a window that
-	// has sessions hides (the connections go on, and the icon brings the window
-	// back), and so does the last window, so that closing it leaves the
-	// application in the status area instead of quitting it. Any other window
-	// with nothing in it just closes, and so does every window when the user
-	// chose in Settings that closing quits.
+	// The close button and Command+W end up here. A window that has sessions
+	// hides (the connections go on), and so does the last window when the user
+	// chose that closing stays: the application keeps running in the background
+	// whether or not the tray icon is shown, and the window comes back from the
+	// icon or from starting the application again. Any other window with nothing
+	// in it just closes, and so does every window when closing quits.
 	requestClose := func(allow func()) {
-		if status.hasStatusArea() && state.StaysInTray() && (state.WantsToStay() || status.list.WindowCount() <= 1) {
-			log.Print("motty: window hidden to the status area; the program keeps running")
+		if state.StaysInTray() && (state.WantsToStay() || status.list.WindowCount() <= 1) {
+			log.Print("motty: window hidden; the program keeps running in the background")
 			mainWindow.Hide()
-			// A window that disappears into the status area is otherwise
-			// indistinguishable from one that ended the program, so the first
-			// time this happens the user is told the sessions are still there.
+			// A window that disappears is otherwise indistinguishable from one
+			// that ended the program, so the first time this happens the user is
+			// told the sessions are still there.
 			state.NoteHiddenToTray()
 			return
 		}

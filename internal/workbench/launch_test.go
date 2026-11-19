@@ -595,10 +595,11 @@ func TestTrayIconHiddenReadsTheSavedChoiceAndDefaultsToShow(t *testing.T) {
 	}
 }
 
-// Both close-action buttons stay on the page whether the icon is up or hidden.
-// With the icon hidden the row selects quit, but choosing the tray is still
-// allowed and turns the icon back on; with the icon up the choice is free.
-func TestCloseActionButtonsStayVisibleAndChoosingTrayRestoresTheIcon(t *testing.T) {
+// Both close-action buttons stay on the page and stay free whether the icon is
+// up or hidden: hiding the icon no longer forces quitting, because closing can
+// keep the application running in the background and a relaunch brings the
+// window back. Choosing the tray while the icon is hidden leaves the icon off.
+func TestCloseActionIsFreeWhetherOrNotTheIconIsShown(t *testing.T) {
 	_, options := newWorld(t)
 	icon := true
 	var calls []bool
@@ -616,35 +617,40 @@ func TestCloseActionButtonsStayVisibleAndChoosingTrayRestoresTheIcon(t *testing.
 	}
 
 	state.Click(hitSettingsTrayIconToggle) // hide the icon
-	if !state.trayIconOff || state.StaysInTray() || state.closeAction != closeQuits {
-		t.Fatalf("off %v stays %v action %v", state.trayIconOff, state.StaysInTray(), state.closeAction)
+	if !state.trayIconOff {
+		t.Fatal("the icon was not hidden")
+	}
+	if !state.StaysInTray() {
+		t.Fatal("hiding the icon forced closing to quit")
 	}
 	_, texts = paintedTexts(state)
 	if !contains(texts, state.messages.Tools.GeneralClose) {
 		t.Fatal("the close row vanished when the icon was hidden")
 	}
-	// Both buttons remain offered even though quit is the selected one.
 	if !contains(texts, state.messages.Tools.GeneralCloseTray) || !contains(texts, state.messages.Tools.GeneralCloseQuit) {
 		t.Fatalf("both close buttons must stay visible: %q", texts)
 	}
 
-	// Choosing the tray while the icon is hidden turns the icon back on.
+	// The choice stays free with the icon hidden, and picking either button
+	// leaves the icon as it is.
 	before := len(calls)
+	clickSettingsChoice(t, state, state.messages.Tools.GeneralCloseQuit)
+	if state.StaysInTray() {
+		t.Fatal("choosing quit with the icon hidden did not stick")
+	}
 	clickSettingsChoice(t, state, state.messages.Tools.GeneralCloseTray)
-	if state.trayIconOff || !state.StaysInTray() {
-		t.Fatalf("off %v stays %v", state.trayIconOff, state.StaysInTray())
+	if !state.StaysInTray() {
+		t.Fatal("choosing the tray with the icon hidden did not stick")
 	}
-	if len(calls) != before+1 || !calls[len(calls)-1] {
-		t.Fatalf("choosing the tray did not show the icon: %v", calls)
-	}
-	if TrayIconHidden(options.StatePath) {
-		t.Fatal("the restored icon was not saved as shown")
+	if !state.trayIconOff || len(calls) != before {
+		t.Fatalf("choosing a close action changed the icon: off %v calls %v", state.trayIconOff, calls)
 	}
 }
 
-// A store that hides the icon but still carries a tray close preference (an
-// older build, or a hand-edited file) must not stay in a tray that is not there.
-func TestRestoringAHiddenIconOverridesATrayClosePreference(t *testing.T) {
+// A hidden icon and a tray close preference coexist: closing keeps the
+// application in the background and a relaunch brings the window back, so the
+// restore must not overwrite the user's close choice.
+func TestRestoringAHiddenIconKeepsTheClosePreference(t *testing.T) {
 	_, options := newWorld(t)
 	options.SetTrayIcon = func(bool) {}
 	if err := saveState(options.StatePath, savedState{Hosts: sampleHosts, TrayIconOff: true, CloseAction: closeToTray.String()}); err != nil {
@@ -654,8 +660,8 @@ func TestRestoringAHiddenIconOverridesATrayClosePreference(t *testing.T) {
 	if !state.trayIconOff {
 		t.Fatal("the restore did not read the hidden icon")
 	}
-	if state.StaysInTray() || state.closeAction != closeQuits {
-		t.Fatalf("stays %v action %v", state.StaysInTray(), state.closeAction)
+	if !state.StaysInTray() {
+		t.Fatal("the restore overwrote the tray close preference")
 	}
 }
 
