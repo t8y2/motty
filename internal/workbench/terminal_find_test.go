@@ -152,6 +152,64 @@ func TestOpeningTerminalFindTakesTheSelectionAndSelectsTheQuery(t *testing.T) {
 	}
 }
 
+func TestAFindShortcutReplacesTheQueryWithANewSelection(t *testing.T) {
+	state, session, _ := selectionState()
+	session.term.write([]byte("alpha beta gamma\r\n"))
+	openFindForTest(t, state)
+	find := &session.term.find
+	find.setQuery("old")
+	session.term.selection.selectRange(
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 6}),
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 9}),
+	)
+	if result := state.Shortcut(gfx.KeyEvent{Modifiers: keymap.Primary, Text: "f"}); !result.Handled {
+		t.Fatalf("find shortcut result = %+v", result)
+	}
+	if find.editor.String() != "beta" {
+		t.Fatalf("query = %q, want the new selection, not the retained text", find.editor.String())
+	}
+	if selected := find.editor.Selection(); selected.Start != 0 || selected.End != find.editor.RuneCount() {
+		t.Fatalf("query selection = %+v, want all %d runes", selected, find.editor.RuneCount())
+	}
+}
+
+func TestAFindShortcutKeepsTheTypedQueryWhenTheSelectionHasNotChanged(t *testing.T) {
+	state, session, _ := selectionState()
+	session.term.write([]byte("alpha beta gamma\r\n"))
+	session.term.selection.selectRange(
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 6}),
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 9}),
+	)
+	_, find := openFindForTest(t, state)
+	if find.editor.String() != "beta" {
+		t.Fatalf("query = %q, want the selected text", find.editor.String())
+	}
+	find.setQuery("typed")
+	if result := state.Shortcut(gfx.KeyEvent{Modifiers: keymap.Primary, Text: "f"}); !result.Handled {
+		t.Fatalf("find shortcut result = %+v", result)
+	}
+	if find.editor.String() != "typed" {
+		t.Fatalf("query = %q, want the typed query, not the selection already taken", find.editor.String())
+	}
+}
+
+func TestReopeningTheFindBarTakesTheSameSelectionAgain(t *testing.T) {
+	state, session, _ := selectionState()
+	session.term.write([]byte("alpha beta gamma\r\n"))
+	session.term.selection.selectRange(
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 6}),
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 9}),
+	)
+	_, find := openFindForTest(t, state)
+	if find.editor.String() != "beta" {
+		t.Fatalf("query = %q, want the selected text", find.editor.String())
+	}
+	state.closeTerminalFind(session)
+	if _, reopened := openFindForTest(t, state); reopened.editor.String() != "beta" {
+		t.Fatalf("reopened query = %q, want the selection again", reopened.editor.String())
+	}
+}
+
 func TestReopeningTerminalFindSelectsItsRetainedQuery(t *testing.T) {
 	state, session, _ := selectionState()
 	state.openTerminalFind(session)
