@@ -86,6 +86,11 @@ type aiRun struct {
 	references []gate.SessionInfo // the connections this request may act on, default excluded
 	targetKey  string
 	cancel     context.CancelFunc
+	// backend is the run's own tool backend. The watchdog closes it when the
+	// transport never returns, so a stop that gives up on the request also
+	// releases the SFTP connections it opened instead of keeping them until the
+	// process exits.
+	backend    *aiBackend
 	providerID string
 	// attachments are what the question in flight was sent with, to be saved
 	// with it.
@@ -961,6 +966,7 @@ func (state *State) aiSend() bool {
 	run := &aiRun{
 		stats: stats, usageBase: usageBase, cancel: cancel, open: -1, providerID: provider.ID,
 		target: target, extras: extras, references: references, targetKey: targetKey, attachments: refs,
+		backend: backend,
 	}
 	ai.run = run
 	ai.requestNoteReferences = append([]aiNoteReference(nil), noteRefs...)
@@ -994,9 +1000,11 @@ const aiStopGrace = 5 * time.Second
 // aiStop cancels the request in flight. A watchdog finishes the run locally if
 // the transport never answers, so a stuck request cannot leave the assistant on
 // "Stopping..." indefinitely and block new messages or "Clear history".
-func (state *State) aiStop() {
-	run := state.ai.run
-	if run == nil {
+// aiCancelRun cancels a run and bounds the wait with the stop watchdog, so
+// every way a run can be cancelled — the Stop button or the target going away —
+// finishes locally if the transport never answers.
+func (state *State) aiCancelRun(run *aiRun) {
+	if run == nil || state.ai.run != run {
 		return
 	}
 	run.stats.phase = aiRunStopping
@@ -1013,6 +1021,10 @@ func (state *State) aiStop() {
 	})
 }
 
+func (state *State) aiStop() {
+	state.aiCancelRun(state.ai.run)
+}
+
 // aiStopExpired ends a run whose cancellation never came back. Without it a
 // transport that ignores the context (or a provider that never returns) leaves
 // the assistant stuck on "Stopping..." forever. Finishing reuses the normal
@@ -1021,6 +1033,12 @@ func (state *State) aiStop() {
 func (state *State) aiStopExpired(run *aiRun) {
 	if state.ai.run != run {
 		return
+	}
+	// The request's goroutine may never return, so its deferred closeAll never
+	// runs either. Release what the abandoned request opened here; closeAll is
+	// idempotent, so a goroutine that does return later closes nothing twice.
+	if run.backend != nil {
+		run.backend.closeAll()
 	}
 	state.aiFinished(run, nil, context.Canceled)
 }

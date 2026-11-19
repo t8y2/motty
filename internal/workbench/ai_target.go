@@ -24,7 +24,7 @@ func (state *State) aiWatchTarget(ctx context.Context, run *aiRun, done <-chan s
 		state.aiPost(func(s *State) {
 			if s.ai.run == run {
 				s.ai.notice = s.messages.AIPanel.TargetUnavailable
-				run.cancel()
+				s.aiCancelRun(run)
 			}
 		})
 	}
