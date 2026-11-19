@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"math"
 	"testing"
 
 	"github.com/vivaui/viva/gfx"
@@ -123,9 +124,12 @@ func TestNotesLibrarySplitterKeysResizeAndSave(t *testing.T) {
 	page := &state.notes.page
 	splitter := noteSplitterHit(t, canvas, state.noteText("Resize note library", "调整目录宽度"))
 	before := page.library.Pos
+	// The old handle moved 5% of its room per arrow; the page splitter keeps
+	// that step with StepFraction.
+	step := (page.library.Span - 1) * .05
 	result := state.notesKey(gfx.KeyEvent{Target: splitter.ID, Key: gfx.KeyRight})
-	if !result.Handled || page.library.Pos != before+16 {
-		t.Fatalf("right arrow: handled=%t pos=%v, want %v", result.Handled, page.library.Pos, before+16)
+	if !result.Handled || math.Abs(float64(page.library.Pos-(before+step))) > .5 {
+		t.Fatalf("right arrow: handled=%t pos=%v, want %v", result.Handled, page.library.Pos, before+step)
 	}
 	if state.notes.view.width != page.library.Pos {
 		t.Fatalf("saved width %v does not follow the splitter %v", state.notes.view.width, page.library.Pos)
@@ -153,15 +157,15 @@ func TestNotesSidebarSplitterKeysMoveBothSplits(t *testing.T) {
 	panel := noteSplitterHit(t, canvas, state.noteText("Resize notes panel", "调整笔记侧栏宽度"))
 	side := noteSplitterHit(t, canvas, state.noteText("Resize note browser sections", "调整笔记上下区域"))
 
-	beforeWidth := state.noteSidebarState().width
+	beforeWidth, panelStep := state.noteSidebarState().width, (page.panel.Span-1)*.05
 	result := state.noteSidebarKey(gfx.KeyEvent{Target: panel.ID, Key: gfx.KeyLeft})
-	if !result.Handled || state.noteSidebarState().width != beforeWidth+16 {
-		t.Fatalf("panel left arrow: handled=%t width=%v, want %v", result.Handled, state.noteSidebarState().width, beforeWidth+16)
+	if !result.Handled || math.Abs(float64(state.noteSidebarState().width-(beforeWidth+panelStep))) > .5 {
+		t.Fatalf("panel left arrow: handled=%t width=%v, want %v", result.Handled, state.noteSidebarState().width, beforeWidth+panelStep)
 	}
-	beforeSide := page.side.Pos
+	beforeSide, sideStep := page.side.Pos, (page.side.Span-1)*.05
 	result = state.noteSidebarKey(gfx.KeyEvent{Target: side.ID, Key: gfx.KeyDown})
-	if !result.Handled || page.side.Pos != beforeSide+16 {
-		t.Fatalf("section down arrow: handled=%t pos=%v, want %v", result.Handled, page.side.Pos, beforeSide+16)
+	if !result.Handled || math.Abs(float64(page.side.Pos-(beforeSide+sideStep))) > .5 {
+		t.Fatalf("section down arrow: handled=%t pos=%v, want %v", result.Handled, page.side.Pos, beforeSide+sideStep)
 	}
 	if state.noteSidebarState().fraction == 0 {
 		t.Fatal("section fraction was not kept")

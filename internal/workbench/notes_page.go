@@ -546,6 +546,8 @@ func (s *State) declareNotesWorkspace(c ui.C) {
 		ui.Column(c).Width(v.width).FillHeight().Children(func() {
 			s.declareNoteLibrary(c, n, v.width, false)
 		})
+		// The old handle's FractionForKey moved it 5% of the room per arrow.
+		state.library.StepFraction = .05
 		ui.Splitter(c, &state.library).SplitterThickness(1).Mins(160, 480).Label(s.noteText("Resize note library", "调整目录宽度"))
 		ui.Column(c).Grow(1).FillHeight().Children(func() {
 			s.declareNoteEditor(c, n, bounds.Width-v.width-1, false)

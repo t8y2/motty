@@ -50,6 +50,8 @@ func (s *State) declareNoteSidebar(c ui.C) {
 	row := ui.Row(c).Absolute().Left(frame.X).Top(b.Y).Width(total).Height(b.Height)
 	row.Children(func() {
 		ui.Slot(c).Grow(1)
+		// The old handles' FractionForKey moved them 5% of the room per arrow.
+		p.panel.StepFraction = .05
 		ui.Splitter(c, &p.panel).SplitterThickness(1).Mins(minFirst, min(280, maxWidth)).Label(s.noteText("Resize notes panel", "调整笔记侧栏宽度"))
 		panel := ui.Column(c).Width(min(b.Width, maxWidth)).FillHeight().Background(s.pal.workspace).
 			HitWith(hitNoteSidebarSurface, "", gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, SkipTab: true})
@@ -74,6 +76,7 @@ func (s *State) declareNoteSidebar(c ui.C) {
 				ui.Column(c).Height(top).FillWidth().Children(func() {
 					s.declareNoteSidebarTree(c, n, b.Width-2, top)
 				})
+				p.side.StepFraction = .05
 				ui.Splitter(c, &p.side).SplitterThickness(1).Mins(minTop, minBottom).Label(s.noteText("Resize note browser sections", "调整笔记上下区域"))
 				ui.Column(c).Grow(1).FillWidth().Children(func() {
 					s.declareNoteSidebarPreview(c, n, b.Width-2)

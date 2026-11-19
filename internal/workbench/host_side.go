@@ -572,6 +572,8 @@ func (state *State) declareHostsSplit(c ui.C, layout hostsLayout) {
 	ui.Row(c).Absolute().Left(layout.side.X).Top(layout.side.Y).
 		Width(span).Height(layout.side.Height).Children(func() {
 		ui.Slot(c).Width(layout.side.Width).Height(layout.side.Height).Shrink(0)
+		// The old handle's FractionForKey moved it 5% of the room per arrow.
+		side.split.StepFraction = .05
 		ui.Splitter(c, &side.split).SplitterThickness(1).Mins(hostSideMinWidth, hostListMinWidth).
 			HitWith(hitHostSideWidth, state.messages.HostCatalog.ResizeGroups,
 				gfx.HitOptions{Role: gfx.RoleSeparator, Cursor: gfx.PointerCursorResizeHorizontal})
