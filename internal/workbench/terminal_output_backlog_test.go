@@ -4,6 +4,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // floodChunk is one read's worth of the plain monitoring lines a program like
@@ -114,5 +115,36 @@ func TestPumpBacklogStaysBoundedUnderFlood(t *testing.T) {
 	if peak > bound {
 		t.Fatalf("unparsed backlog grew to %d bytes (%.1f MB), want <= %d: the pump drains faster than it parses with no bound",
 			peak, float64(peak)/(1<<20), bound)
+	}
+}
+
+// A frame that leaves output in the shell's bounded buffer must request another
+// wake even when it happens to parse all of rx: the shell is not drained on
+// that frame, so nothing else would schedule the next one.
+func TestABackloggedPumpRequestsAnotherWake(t *testing.T) {
+	state, _, _, inner := liveSession(t)
+	session := &state.sessions[0]
+	shell := newFloodShell(inner)
+	session.term.shell = shell
+	t.Cleanup(func() { shell.Close() })
+
+	session.term.rx = append(session.term.rx, floodChunk(maxPumpBacklog)...)
+	invalidates := 0
+	previous := state.options.Invalidate
+	state.options.Invalidate = func() {
+		invalidates++
+		if previous != nil {
+			previous()
+		}
+	}
+
+	// A budget past the whole slice parses all of rx, so the only reason to
+	// invalidate is that the drain was skipped and the shell still holds output.
+	state.pumpFor(session, time.Hour)
+	if len(session.term.rx) != 0 {
+		t.Fatalf("rx holds %d bytes after a full budget", len(session.term.rx))
+	}
+	if invalidates != 1 {
+		t.Fatalf("invalidates = %d, want one for the skipped drain", invalidates)
 	}
 }
