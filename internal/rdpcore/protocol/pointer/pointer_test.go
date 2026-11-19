@@ -354,3 +354,15 @@ func TestBufferReuse(t *testing.T) {
 		t.Fatal("buffer was not reused")
 	}
 }
+
+// GNOME sends 32bpp cursors with an alpha channel and no AND mask.
+func TestGNOMEAlphaPointerWithoutANDMask(t *testing.T) {
+	xor := []byte{30, 20, 10, 255, 0, 0, 0, 0, 60, 50, 40, 128}
+	rgba, _ := convertMasksToRGBA(nil, 3, 1, 32, xor, nil)
+	want := []byte{10, 20, 30, 255, 0, 0, 0, 0, 40, 50, 60, 128}
+	for i := range want {
+		if rgba[i] != want[i] {
+			t.Fatalf("byte %d: got %d, want %d", i, rgba[i], want[i])
+		}
+	}
+}
