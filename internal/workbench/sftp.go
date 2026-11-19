@@ -241,6 +241,7 @@ type sftpView struct {
 	dialogEntries         []sftpclient.Entry
 	deleteRemaining       []sftpclient.Entry
 	deleteCompleted       int
+	deleteRemoved         []string // names the results confirmed removed, for the row drop
 	dialogError           string
 	moveAfterRename       bool
 	transfers             []sftpclient.TransferSnapshot
@@ -1635,20 +1636,26 @@ func (state *State) queueNextSFTPDelete(view *sftpView) bool {
 func (state *State) finishSFTPDelete(view *sftpView, result sftpclient.Result) {
 	if result.Err == nil {
 		view.deleteCompleted++
+		view.deleteRemoved = append(view.deleteRemoved, path.Base(result.Path))
 	}
 	if result.Err == nil && len(view.deleteRemaining) > 0 && state.queueNextSFTPDelete(view) {
 		return
 	}
 	remaining := len(view.deleteRemaining)
 	completed := view.deleteCompleted
+	removed := view.deleteRemoved
 	failedPath := result.Path
 	if result.Err == nil && remaining > 0 {
 		failedPath = path.Join(view.path, view.deleteRemaining[0].Name)
 	}
 	view.deleteRemaining = nil
 	view.deleteCompleted = 0
-	view.forgetListings()
+	view.deleteRemoved = nil
 	if result.Err != nil || remaining > 0 {
+		// A removal that stopped part-way may have emptied a folder without
+		// removing it, and no result describes what it left; only reading the
+		// folder again can say what is there now.
+		view.forgetListings()
 		detail := state.messages.SFTPDeleteSelectionPartial
 		if result.Err != nil {
 			detail = fmt.Sprintf("%s: %s %s", failedPath, fmt.Sprintf(state.messages.SFTPErrorFmt, result.Err), detail)
@@ -1656,12 +1663,61 @@ func (state *State) finishSFTPDelete(view *sftpView, result sftpclient.Result) {
 			detail = fmt.Sprintf("%s: %s %s", failedPath, state.messages.SFTPUnavailable, detail)
 		}
 		state.fileOpenNotice(view.detached, state.messages.SFTPDeleteSelectionTitle, detail, components.ToastError)
-	} else if completed > 1 {
-		view.refreshStatus = fmt.Sprintf(state.messages.SFTPDeletedCountFmt, completed)
-	} else {
-		view.refreshStatus = fmt.Sprintf(state.messages.SFTPDeletedFmt, result.Path)
+		state.listSFTP(view, view.path)
+		return
 	}
-	state.listSFTP(view, view.path)
+	// Every removal succeeded, so the answer already describes the folder: the
+	// rows go without reading it again.
+	view.forgetRemovedSFTPEntries()
+	view.busy = false
+	state.dropSFTPDeletedRows(view, &view.sftpFolder, removed)
+	if completed > 1 {
+		view.status = fmt.Sprintf(state.messages.SFTPDeletedCountFmt, completed)
+	} else {
+		view.status = fmt.Sprintf(state.messages.SFTPDeletedFmt, result.Path)
+	}
+}
+
+// forgetRemovedSFTPEntries makes what was remembered about the server unusable
+// after entries left it: a cached reading still holds them, and a listing read
+// before the delete may still arrive. Dropping the cache costs a round trip to
+// the next folder opened; keeping any of it could put a deleted row back.
+func (view *sftpView) forgetRemovedSFTPEntries() {
+	view.forgetListings()
+	// A listing read before the delete may still arrive. A follow-up is
+	// dropped because it would belong to no accepted listing, and a large
+	// listing still being prepared is dropped by the sequence bump; its slot
+	// goes too, so no later result thinks it is still being prepared.
+	view.acceptedListID = 0
+	view.remoteSeq++
+	view.preparingID, view.preparingPath = 0, ""
+	view.followUpPath, view.followUpEntries = "", nil
+}
+
+// dropSFTPDeletedRows takes names a confirmed delete removed out of a folder's
+// rows and rebuilds the list in place, so the place, the scroll position and
+// the checked rows that stayed keep the state they had.
+func (state *State) dropSFTPDeletedRows(view *sftpView, folder *sftpFolder, names []string) {
+	if len(names) == 0 {
+		return
+	}
+	gone := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		gone[name] = struct{}{}
+	}
+	folder.allRows = slices.DeleteFunc(folder.allRows, func(row sftpRow) bool {
+		_, deleted := gone[row.entry.Name]
+		return deleted
+	})
+	state.applySFTPFilter(view, folder, false)
+	if view.detached != nil {
+		entries := make([]sftpclient.Entry, len(folder.allRows))
+		for index := range folder.allRows {
+			entries[index] = folder.allRows[index].entry
+		}
+		view.detached.observeDirectoryTreeListing(folder == &view.lfolder, folder.path, entries)
+	}
+	view.invalidateDetached()
 }
 
 func (state *State) clickSFTPDialog(view *sftpView, id gfx.ID) {
@@ -2387,9 +2443,9 @@ func (state *State) pumpSFTP(session *Session) {
 				view.moveAfterRename = false
 				state.listSFTP(view, view.path)
 			case sftpclient.OperationRemoveFile, sftpclient.OperationRemoveDirectory:
-				view.forgetListings()
-				view.refreshStatus = fmt.Sprintf(state.messages.SFTPDeletedFmt, result.Path)
-				state.listSFTP(view, view.path)
+				view.forgetRemovedSFTPEntries()
+				state.dropSFTPDeletedRows(view, &view.sftpFolder, []string{path.Base(result.Path)})
+				view.status = fmt.Sprintf(state.messages.SFTPDeletedFmt, result.Path)
 			case sftpclient.OperationSymlink:
 				view.forgetListings()
 				view.refreshStatus = fmt.Sprintf(state.messages.Tools.LinkCreatedFmt, path.Base(result.Path), result.Destination)
