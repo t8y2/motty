@@ -204,11 +204,11 @@ func (state *State) declareMonitorNavigation(c ui.C, p *monitorView, width float
 func (state *State) declareMonitorInterval(c ui.C, p *monitorView, live bool) ui.Box {
 	m := state.messages.Monitor
 	hint := m.Interval
-	button := ui.ButtonBase(c, hint).Height(26).PadX(4).Gap(4).Radius(radius.control).
+	// The interval was a ghost button: the recipe owns its hover, press and
+	// focus ring, exactly as components.BeginButton drew it.
+	button := ui.ButtonBase(c, hint).Height(26).PadX(4).Gap(4).Radius(radius.control).Ghost().
 		HitWith(hitMonitorInterval, hint, gfx.HitOptions{Role: gfx.RoleButton, Expandable: true, Expanded: state.monitorMenu, Value: p.intervalText}).
-		Hover(ui.Look{}.Background(withAlpha(state.pal.surfaceHot, 0.7))).
-		Pressed(ui.Look{}.Background(state.pal.surfaceHot)).
-		Focus(ui.Look{}.Ring(1.5, withAlpha(state.pal.accent, 0.5))).Shrink(0)
+		Shrink(0)
 	button.Children(func() {
 		ui.Slot(c).Size(16, 16).Draw(func(d *ui.DrawContext) {
 			state.paintMonitorRefreshClock(d.Canvas, p, d.Rect, live)

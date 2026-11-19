@@ -128,7 +128,9 @@ func (s *State) declareNoteSidebarTree(c ui.C, n *notesUI, width, height float32
 	linked := s.noteText("Linked only", "只看关联")
 	ui.Column(c).FillWidth().Height(height).Children(func() {
 		ui.Row(c).Height(30).MarginSides(8, 8, 0, 8).Gap(6).Items(ui.Center).Children(func() {
-			s.noteIconButton(c, hitNoteSideExpand, expandIcon, expandLabel, 28, true).
+			// The expand control was a ghost button, not a quiet icon: its
+			// hover and focus are the button recipe's, as before.
+			s.noteIconButton(c, hitNoteSideExpand, expandIcon, expandLabel, 28, false).
 				Disabled(disabled)
 			p.query.Bind(&n.query)
 			field := ui.TextFieldID(c, hitNoteSearch, &p.query, s.noteText("Search title, body and tags", "搜索标题、正文和标签"), s.noteText("Search title, body and tags", "搜索标题、正文和标签")).
