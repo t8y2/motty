@@ -1878,7 +1878,8 @@ func (state *State) declareFilterChip(c ui.C, chip filterChip) ui.Box {
 		if chip.pinned {
 			ui.Icon(c, lucideIcons[iconStar]).Size(12, 12).Color(pal.accent).Shrink(0)
 		}
-		ui.Text(c, chip.label).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(foreground)
+		ui.Text(c, chip.label).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(foreground).
+			StateFrom(chipBox).Hover(ui.Look{}.Color(pal.text))
 		if chip.digits != "" {
 			ui.Text(c, chip.digits).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint)
 		}

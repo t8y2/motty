@@ -1122,15 +1122,17 @@ func (state *State) declareSessionLogFilterTrigger(c ui.C, id gfx.ID, filter ses
 	// The chevron is what a trigger past 96 pixels can afford; a narrower one
 	// keeps the value legible and says it opens with its accessible name.
 	chevron := width >= 96
-	trigger := ui.ButtonBase(c, label).Radius(radius.control).Border(1.5, border).
+	trigger := ui.ButtonBase(c, label).Radius(radius.control).Border(1, border).
 		HitWith(id, label, gfx.HitOptions{Role: gfx.RoleButton, Hint: hint, Selected: active, Expanded: open, Expandable: true}).
-		Focus(ui.Look{}.Border(pal.accent))
+		Focus(ui.Look{}.Ring(1.5, pal.accent))
 	if !open && !active {
 		trigger = trigger.Hover(ui.Look{}.Color(pal.text)).Pressed(ui.Look{}.Background(pal.surfaceHot))
 	}
 	trigger.Children(func() {
-		ui.Icon(c, lucideIcons[sessionLogFilterIcon(filter)]).Color(foreground).MarginSides(0, 6, 0, 8)
-		ui.Text(c, value).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(foreground).Ellipsis()
+		ui.Icon(c, lucideIcons[sessionLogFilterIcon(filter)]).Color(foreground).MarginSides(0, 6, 0, 8).
+			StateFrom(trigger).Hover(ui.Look{}.Color(pal.text))
+		ui.Text(c, value).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(foreground).Ellipsis().
+			StateFrom(trigger).Hover(ui.Look{}.Color(pal.text))
 		if chevron {
 			ui.Spacer(c)
 			ui.Icon(c, lucideIcons[iconChevronDown]).Color(pal.faint)
@@ -1150,13 +1152,13 @@ func (state *State) declareSessionLogFavoriteFilter(c ui.C) ui.Box {
 	if view.favoriteOnly {
 		icon, foreground, border = iconStarSolid, pal.warning, withAlpha(pal.warning, 0.55)
 	}
-	toggle := ui.ButtonBase(c, m.FilterFavorite).Radius(radius.control).Border(1.5, border).
+	toggle := ui.ButtonBase(c, m.FilterFavorite).Radius(radius.control).Border(1, border).
 		HitWith(hitSessionLogsFavoriteFilter, m.FilterFavorite, gfx.HitOptions{Role: gfx.RoleButton, Hint: m.FilterFavorite, Selected: view.favoriteOnly}).
-		Focus(ui.Look{}.Border(pal.accent)).
+		Focus(ui.Look{}.Ring(1.5, pal.accent)).
 		Hover(ui.Look{}.Color(pal.text)).
 		Pressed(ui.Look{}.Background(pal.surfaceHot))
 	toggle.Children(func() {
-		ui.Icon(c, lucideIcons[icon]).Color(foreground)
+		ui.Icon(c, lucideIcons[icon]).Color(foreground).StateFrom(toggle).Hover(ui.Look{}.Color(pal.text))
 	})
 	return toggle
 }

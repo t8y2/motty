@@ -32,11 +32,11 @@ text "Session Logs" {223 54.5 745 25}
 text "Loaded 6 / 6 · Total 6" {1219.1992 57.5 360 19}
 text "Connections opened from the workbench, when they started and how they ended. Stored locally, without terminal contents." {223 85 1151 18}
 text "Search host name, address or account" {254 121 398 20}
-text "All time" {254.5 160.5 40.85742 19}
-text "All statuses" {386.5 160.5 63.73242 19}
-text "All protocols" {518.5 160.5 69.16992 19}
-text "All outcomes" {650.5 160.5 71.666016 19}
-text "Newest first" {782.5 160.5 66.84375 19}
+text "All time" {254 160.5 40.85742 19}
+text "All statuses" {386 160.5 63.73242 19}
+text "All protocols" {518 160.5 69.16992 19}
+text "All outcomes" {650 160.5 71.666016 19}
+text "Newest first" {782 160.5 66.84375 19}
 text "Target" {231 189 42.396484 40}
 text "Started" {530 189 46.853516 40}
 text "Protocol" {634 189 53.89453 40}

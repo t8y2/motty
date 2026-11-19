@@ -32,11 +32,11 @@ text "Settings" {52 555.5 52.759766 21}
 text "Session Logs" {223 54.5 245 25}
 text "Loaded 6 / 6 · Total 6" {719.1992 57.5 360 19}
 text "Search host name, address or account" {254 95 398 20}
-text "All time" {254.5 134.5 40.85742 19}
-text "All statuses" {386.5 134.5 63.73242 19}
-text "All protocols" {518.5 134.5 69.16992 19}
-text "All outcomes" {254.5 172.5 71.666016 19}
-text "Newest first" {386.5 172.5 66.84375 19}
+text "All time" {254 134.5 40.85742 19}
+text "All statuses" {386 134.5 63.73242 19}
+text "All protocols" {518 134.5 69.16992 19}
+text "All outcomes" {254 172.5 71.666016 19}
+text "Newest first" {386 172.5 66.84375 19}
 text "Session details" {238 214 593 22}
 text "Target" {238 241.5 110 19}
 text "web-01 · alice" {348 241.5 511 19}
