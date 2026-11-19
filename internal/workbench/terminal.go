@@ -22,6 +22,7 @@ import (
 	"motty/internal/shellkind"
 	"motty/internal/sshconn"
 	"motty/internal/term"
+	"motty/internal/termsize"
 	layoutcore "motty/internal/workspace"
 	"motty/internal/x11fwd"
 )
@@ -33,8 +34,10 @@ type Shell interface {
 	Drain(dst []byte) []byte
 	// Write queues input for the shell and reports whether it was accepted.
 	Write(p []byte) bool
-	// Resize tells the remote pty the terminal size in cells.
-	Resize(cols, rows int)
+	// Resize tells the pty the terminal size: the grid in cells and the text
+	// area in device pixels. A transport whose protocol carries only cells, as
+	// mosh and telnet do, ignores the pixels.
+	Resize(size termsize.Size)
 	// Done is closed once the shell has ended and all its output is drainable.
 	Done() <-chan struct{}
 	// Err says why the shell ended; nil for a clean exit.
@@ -73,12 +76,14 @@ type terminal struct {
 	screen *term.Terminal
 	shell  Shell
 	rx     []byte // scratch for draining output
-	// shellCols and shellRows are the size the shell was last told, wantCols
-	// and wantRows the size a prompt's redraw is waiting for; see resizeShell.
-	shellCols, shellRows int
-	wantCols, wantRows   int
-	shellWaiting         bool
-	shellWaitAt          time.Time
+	// shellSize is the size the shell was last told, wantCols and wantRows the
+	// grid a prompt's redraw is waiting for; see resizeShell. The pixels are
+	// computed when the size is told, so a font or display-scale change is
+	// carried even when the grid stays the same.
+	shellSize          termsize.Size
+	wantCols, wantRows int
+	shellWaiting       bool
+	shellWaitAt        time.Time
 	// encoding is the remote charset of this shell; empty is UTF-8. decoder
 	// streams its bytes to UTF-8, keeping a partial multibyte character until
 	// the next read completes it. It is nil for a UTF-8 shell.
@@ -839,9 +844,9 @@ func (t *terminal) recordingNow() time.Duration {
 
 // shellResult is the outcome of a shell opened away from the window's thread.
 type shellResult struct {
-	shell      Shell
-	err        error
-	cols, rows int // the PTY size requested before opening began
+	shell Shell
+	err   error
+	size  termsize.Size // the PTY size requested before opening began
 }
 
 // openShell starts the remote shell once the connection is up. Over SSH that
@@ -852,8 +857,8 @@ func (state *State) openShell(session *Session) {
 	if t.shell != nil || t.opening != nil || t.ended || session.conn == nil {
 		return
 	}
-	cols, rows := t.screen.Size()
-	config := sshconn.ShellConfig{Cols: cols, Rows: rows, Notify: state.notifyFor(session), Command: session.containerCommand}
+	size := state.terminalSize(t.screen.Size())
+	config := sshconn.ShellConfig{Cols: size.Cols, Rows: size.Rows, PixelWidth: size.PixelWidth, PixelHeight: size.PixelHeight, Notify: state.notifyFor(session), Command: session.containerCommand}
 	// Local directory restoration needs reports even with file-panel following
 	// off. SSH also needs reports for automatic completion, independently of
 	// file-panel following and path tabs. A host confined to the interactive
@@ -898,7 +903,7 @@ func (state *State) openShell(session *Session) {
 		opened := make(chan shellResult, 1)
 		go func() {
 			shell, err := conn.OpenShell(config)
-			opened <- shellResult{shell: shell, err: err, cols: config.Cols, rows: config.Rows}
+			opened <- shellResult{shell: shell, err: err, size: size}
 		}()
 		var outcome shellResult
 		if shared && wait > 0 {
@@ -907,7 +912,7 @@ func (state *State) openShell(session *Session) {
 			case outcome = <-opened:
 				timer.Stop()
 			case <-timer.C:
-				outcome = shellResult{err: errSharedShellOpenTimeout, cols: config.Cols, rows: config.Rows}
+				outcome = shellResult{err: errSharedShellOpenTimeout, size: size}
 				// The server may still make the shell later. Nothing will take
 				// it, so it is closed when it arrives.
 				go func() {
@@ -943,9 +948,8 @@ func (state *State) collectShell(session *Session) {
 			// Layout may have changed while OpenShell waited for the server.
 			// fitTerminal already resized the local screen without a shell, so
 			// its size comparison cannot detect the stale PTY after attachment.
-			cols, rows := t.screen.Size()
-			if cols != result.cols || rows != result.rows {
-				result.shell.Resize(cols, rows)
+			if current := state.terminalSize(t.screen.Size()); current != result.size {
+				result.shell.Resize(current)
 			}
 		}
 		state.shellOpened(session, result.shell, result.err)
@@ -1012,7 +1016,7 @@ func (state *State) shellOpened(session *Session, shell Shell, err error) {
 		t.decoder.Reset()
 	}
 	t.shell = shell
-	t.shellCols, t.shellRows = t.screen.Size()
+	t.shellSize = state.terminalSize(t.screen.Size())
 	t.shellWaiting = false
 	t.shellOpened = state.now()
 	t.idleLastInput = t.shellOpened
@@ -1053,6 +1057,7 @@ func (state *State) shellOpened(session *Session, shell Shell, err error) {
 	t.screen.SetReply(func(reply []byte) {
 		t.sendProtocol(reply)
 	})
+	t.screen.SetCellPixels(state.cellPixelWidth, state.cellPixelHeight)
 	t.armInitialization(session)
 	state.startInjection(session, shell)
 	state.describe(session)
@@ -1560,11 +1565,15 @@ func (state *State) resizeShell(session *Session, cols, rows int) {
 	if t.shell == nil {
 		return
 	}
+	size := state.terminalSize(cols, rows)
 	if !state.pointerHeld && !t.screen.AtPrompt() {
-		state.tellShellSize(t, cols, rows)
+		// The pane's fit is authoritative: a program that draws its own screen
+		// is told even when the size reads as the one it has, as it always has
+		// been, and the pixels are current either way.
+		state.tellShellSize(t, size)
 		return
 	}
-	if t.shellCols == cols && t.shellRows == rows {
+	if size == t.shellSize {
 		return
 	}
 	t.wantCols, t.wantRows, t.shellWaiting, t.shellWaitAt = cols, rows, true, state.options.WallNow()
@@ -1583,8 +1592,10 @@ func (state *State) settleShellResize(canvas *gfx.Canvas, session *Session) {
 		return
 	}
 	t.shellWaiting = false
-	if t.shellCols != t.wantCols || t.shellRows != t.wantRows {
-		state.tellShellSize(t, t.wantCols, t.wantRows)
+	// The pixels are taken now rather than when the wait began: a font or
+	// display-scale change during the delay belongs in this size too.
+	if size := state.terminalSize(t.wantCols, t.wantRows); size != t.shellSize {
+		state.tellShellSize(t, size)
 	}
 }
 
@@ -1597,15 +1608,15 @@ func (state *State) flushShellSizes() {
 			continue
 		}
 		t.shellWaiting = false
-		if t.shellCols != t.wantCols || t.shellRows != t.wantRows {
-			state.tellShellSize(t, t.wantCols, t.wantRows)
+		if size := state.terminalSize(t.wantCols, t.wantRows); size != t.shellSize {
+			state.tellShellSize(t, size)
 		}
 	}
 }
 
-func (state *State) tellShellSize(t *terminal, cols, rows int) {
-	t.shellCols, t.shellRows = cols, rows
-	t.shell.Resize(cols, rows)
+func (state *State) tellShellSize(t *terminal, size termsize.Size) {
+	t.shellSize = size
+	t.shell.Resize(size)
 }
 
 // Resize is the window-size callback: the terminals follow the window.

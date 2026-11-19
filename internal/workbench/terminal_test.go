@@ -12,6 +12,7 @@ import (
 	"github.com/vivaui/viva/keymap"
 	"motty/internal/sshconn"
 	"motty/internal/term"
+	"motty/internal/termsize"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -152,13 +153,43 @@ func TestTheWindowSizeDecidesTheTerminalSizeOfEverySession(t *testing.T) {
 		}
 	}
 	firstGeometry := state.layoutForSession(state.sessions[0].ID)
-	if len(shell.resizes) == 0 || shell.resizes[len(shell.resizes)-1] != [2]int{firstGeometry.cols, firstGeometry.rows} {
+	if len(shell.resizes) == 0 || shell.lastResize() != [2]int{firstGeometry.cols, firstGeometry.rows} {
 		t.Fatalf("the pty was told %v, want its final %dx%d", shell.resizes, firstGeometry.cols, firstGeometry.rows)
 	}
 	resizeCount := len(shell.resizes)
 	state.Resize(gfx.Size{Width: 1000, Height: 700})
 	if len(shell.resizes) != resizeCount {
 		t.Fatalf("an unchanged size resized the pty %d more times", len(shell.resizes)-resizeCount)
+	}
+}
+
+// A font or display-scale change moves the cell in pixels even when the grid
+// stays the same, and the shell hears about it: a program that lays images out
+// by the cell would otherwise keep drawing them at the old one until the next
+// window resize.
+func TestACellChangeReachesTheShellAtTheSameGrid(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	var canvas gfx.Canvas
+	canvas.SetCellMeasurer(func(size float32, _ gfx.MonoFace) (float32, float32) { return 8, 16 })
+	// Paint copies the display scale into the state before measuring.
+	state.pixelScale = 1
+	state.measureTerminalCell(&canvas)
+	cols, rows := state.sessions[0].term.screen.Size()
+	if got, want := shell.lastSize(), (termsize.Size{Cols: cols, Rows: rows, PixelWidth: cols * 8, PixelHeight: rows * 16}); got != want {
+		t.Fatalf("pty size = %+v, want %+v", got, want)
+	}
+
+	// The same logical cell at twice the device resolution: the grid and the
+	// layout do not move, the pixels do.
+	before := shell.resizeCount()
+	canvas.SetPixelScale(2)
+	state.pixelScale = 2
+	state.measureTerminalCell(&canvas)
+	if got, want := shell.lastSize(), (termsize.Size{Cols: cols, Rows: rows, PixelWidth: cols * 16, PixelHeight: rows * 32}); got != want {
+		t.Fatalf("pty size at 2x = %+v, want %+v", got, want)
+	}
+	if shell.resizeCount() != before+1 {
+		t.Fatalf("the display change sent %d window changes, want exactly one", shell.resizeCount()-before)
 	}
 }
 

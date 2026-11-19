@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"motty/internal/shellkind"
+	"motty/internal/termsize"
 )
 
 // Parity is how a frame's parity bit is chosen.
@@ -264,7 +265,7 @@ func (session *Session) Write(p []byte) bool {
 }
 
 // Resize does nothing: a serial line has no notion of the terminal's size.
-func (session *Session) Resize(cols, rows int) {}
+func (session *Session) Resize(termsize.Size) {}
 
 // Done is closed once the port has gone and its output is complete.
 func (session *Session) Done() <-chan struct{} { return session.done }

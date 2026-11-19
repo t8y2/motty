@@ -192,17 +192,20 @@ type Terminal struct {
 	imageBytes int
 	imageWake  func()
 
-	replyFn       func([]byte)
-	clipboardFn   func(ClipboardWrite)
-	notifyFn      func(Notification)
-	bellFn        func()
-	cwdFn         func(Cwd)
-	cwdReportFn   func(Cwd)
-	promptReadyFn func()
-	promptStartFn func()
-	promptToken   string
-	inputStart    Point // where the shell's editable line begins; see InputMove
-	inputStartSet bool
+	replyFn func([]byte)
+	// cellPixelsW and cellPixelsH are one character cell in device pixels, as
+	// the owner measured it; see SetCellPixels. Zero means not measured yet.
+	cellPixelsW, cellPixelsH int
+	clipboardFn              func(ClipboardWrite)
+	notifyFn                 func(Notification)
+	bellFn                   func()
+	cwdFn                    func(Cwd)
+	cwdReportFn              func(Cwd)
+	promptReadyFn            func()
+	promptStartFn            func()
+	promptToken              string
+	inputStart               Point // where the shell's editable line begins; see InputMove
+	inputStartSet            bool
 
 	// promptLine is the buffer line the shell's prompt began on (OSC 133 A), and
 	// promptActive whether the cursor is still on that prompt; see
@@ -290,6 +293,15 @@ func (t *Terminal) Modes() Modes { return t.modes }
 // with (device attributes, cursor position reports, color queries). The slice
 // is only valid during the call; the function must not block.
 func (t *Terminal) SetReply(reply func([]byte)) { t.replyFn = reply }
+
+// SetCellPixels records the size of one character cell in device pixels, as the
+// owner's font measured it. The terminal answers the size reports that name
+// pixels (XTWINOPS 14 t, 15 t and 16 t) from this cell and its own grid. Zero
+// leaves them unanswered: a program then uses its own fallback cell instead of
+// sizing images to a cell the terminal does not have.
+func (t *Terminal) SetCellPixels(width, height int) {
+	t.cellPixelsW, t.cellPixelsH = max(width, 0), max(height, 0)
+}
 
 // SetSyncHold installs the receiver for DECSET 2026 transitions. The callback
 // runs during Write, after the mode changes and before the bytes that follow

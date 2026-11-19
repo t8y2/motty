@@ -7,6 +7,8 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"motty/internal/termsize"
 )
 
 type resizeTestIO struct{ write func([]byte) }
@@ -21,23 +23,24 @@ func (stream resizeTestIO) Write(data []byte) (int, error) {
 }
 
 func resizeTestShell(b backend) *Shell {
+	size := termsize.Size{Cols: 80, Rows: 24}
 	return &Shell{
 		b: b, input: make(chan []byte, 16), done: make(chan struct{}),
 		resizeWake: make(chan struct{}, 1),
-		wantCols:   80, wantRows: 24, curCols: 80, curRows: 24,
+		want:       size, cur: size,
 	}
 }
 
 func TestContinuousResizeKeepsUpdatingTheProgram(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		var sizes [][2]int
-		shell := resizeTestShell(backend{resize: func(cols, rows int) {
-			sizes = append(sizes, [2]int{cols, rows})
+		var sizes []termsize.Size
+		shell := resizeTestShell(backend{resize: func(size termsize.Size) {
+			sizes = append(sizes, size)
 		}})
 		go shell.resizeLoop()
 		defer close(shell.resizeWake)
 		for cols := 81; cols <= 100; cols++ {
-			shell.Resize(cols, 24)
+			shell.Resize(termsize.Size{Cols: cols, Rows: 24})
 			synctest.Wait()
 			time.Sleep(resizeInterval / 4)
 		}
@@ -48,7 +51,7 @@ func TestContinuousResizeKeepsUpdatingTheProgram(t *testing.T) {
 		// The last requested size must reach the program even with no more events.
 		time.Sleep(resizeInterval)
 		synctest.Wait()
-		if got := sizes[len(sizes)-1]; got != [2]int{100, 24} {
+		if got := sizes[len(sizes)-1]; got != (termsize.Size{Cols: 100, Rows: 24}) {
 			t.Fatalf("final size = %v, want [100 24]", got)
 		}
 	})
@@ -58,11 +61,13 @@ func TestInputFlushesTheLatestSizeOnTheWriter(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var events []string
 		shell := resizeTestShell(backend{
-			resize: func(cols, rows int) { events = append(events, fmt.Sprintf("resize %d %d", cols, rows)) },
-			io:     resizeTestIO{write: func(data []byte) { events = append(events, string(data)) }},
+			resize: func(size termsize.Size) {
+				events = append(events, fmt.Sprintf("resize %d %d", size.Cols, size.Rows))
+			},
+			io: resizeTestIO{write: func(data []byte) { events = append(events, string(data)) }},
 		})
-		shell.Resize(90, 24)
-		shell.Resize(100, 30)
+		shell.Resize(termsize.Size{Cols: 90, Rows: 24})
+		shell.Resize(termsize.Size{Cols: 100, Rows: 30})
 		if !shell.Write([]byte("input")) {
 			t.Fatal("Write refused input")
 		}
@@ -90,9 +95,9 @@ func TestSlowResizeDoesNotBlockOrOverlapNewInput(t *testing.T) {
 		entered, release := make(chan struct{}), make(chan struct{})
 		var events []string
 		shell := resizeTestShell(backend{
-			resize: func(cols, rows int) {
-				events = append(events, fmt.Sprintf("resize %d %d", cols, rows))
-				if cols == 90 {
+			resize: func(size termsize.Size) {
+				events = append(events, fmt.Sprintf("resize %d %d", size.Cols, size.Rows))
+				if size.Cols == 90 {
 					close(entered)
 					<-release
 					events = append(events, "resize complete")
@@ -104,10 +109,10 @@ func TestSlowResizeDoesNotBlockOrOverlapNewInput(t *testing.T) {
 		defer close(shell.input)
 		go shell.resizeLoop()
 		defer close(shell.resizeWake)
-		shell.Resize(90, 24)
+		shell.Resize(termsize.Size{Cols: 90, Rows: 24})
 		<-entered
-		shell.Resize(100, 30)
-		shell.Resize(110, 40)
+		shell.Resize(termsize.Size{Cols: 100, Rows: 30})
+		shell.Resize(termsize.Size{Cols: 110, Rows: 40})
 		if !shell.Write([]byte("input")) {
 			t.Fatal("Write refused input while resize was in flight")
 		}
@@ -128,15 +133,15 @@ func TestPendingResizeIsDroppedWhenShellEnds(t *testing.T) {
 		t.Run(fmt.Sprintf("finished=%v", finished), func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				calls := 0
-				shell := resizeTestShell(backend{resize: func(int, int) { calls++ }})
+				shell := resizeTestShell(backend{resize: func(termsize.Size) { calls++ }})
 				go shell.resizeLoop()
 				defer close(shell.resizeWake)
-				shell.Resize(90, 24)
+				shell.Resize(termsize.Size{Cols: 90, Rows: 24})
 				synctest.Wait()
 				shell.mu.Lock()
 				shell.closed, shell.finished = !finished, finished
 				shell.mu.Unlock()
-				shell.Resize(100, 30)
+				shell.Resize(termsize.Size{Cols: 100, Rows: 30})
 				if shell.Write([]byte("input")) {
 					t.Fatal("ended shell accepted input")
 				}
@@ -153,11 +158,11 @@ func TestPendingResizeIsDroppedWhenShellEnds(t *testing.T) {
 func TestResizeBackToCurrentSizeDoesNotRedrawTheProgram(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		calls := 0
-		shell := resizeTestShell(backend{resize: func(int, int) { calls++ }})
+		shell := resizeTestShell(backend{resize: func(termsize.Size) { calls++ }})
 		go shell.resizeLoop()
 		defer close(shell.resizeWake)
-		shell.Resize(90, 24)
-		shell.Resize(80, 24)
+		shell.Resize(termsize.Size{Cols: 90, Rows: 24})
+		shell.Resize(termsize.Size{Cols: 80, Rows: 24})
 		synctest.Wait()
 		time.Sleep(2 * resizeInterval)
 		synctest.Wait()
@@ -170,9 +175,9 @@ func TestResizeBackToCurrentSizeDoesNotRedrawTheProgram(t *testing.T) {
 func TestResizeKeepsUpdatingWhileInputIsBackpressured(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		entered, release := make(chan struct{}), make(chan struct{})
-		var sizes [][2]int
+		var sizes []termsize.Size
 		shell := resizeTestShell(backend{
-			resize: func(cols, rows int) { sizes = append(sizes, [2]int{cols, rows}) },
+			resize: func(size termsize.Size) { sizes = append(sizes, size) },
 			io: resizeTestIO{write: func([]byte) {
 				close(entered)
 				<-release
@@ -187,15 +192,15 @@ func TestResizeKeepsUpdatingWhileInputIsBackpressured(t *testing.T) {
 			t.Fatal("Write refused input")
 		}
 		<-entered
-		shell.Resize(100, 30)
+		shell.Resize(termsize.Size{Cols: 100, Rows: 30})
 		synctest.Wait()
 		time.Sleep(resizeInterval)
 		synctest.Wait()
-		shell.Resize(120, 40)
+		shell.Resize(termsize.Size{Cols: 120, Rows: 40})
 		synctest.Wait()
 		time.Sleep(resizeInterval)
 		synctest.Wait()
-		if want := [][2]int{{100, 30}, {120, 40}}; !reflect.DeepEqual(sizes, want) {
+		if want := []termsize.Size{{Cols: 100, Rows: 30}, {Cols: 120, Rows: 40}}; !reflect.DeepEqual(sizes, want) {
 			t.Fatalf("resizes during a blocked input write = %v, want %v", sizes, want)
 		}
 	})

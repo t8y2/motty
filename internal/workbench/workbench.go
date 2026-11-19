@@ -1005,19 +1005,22 @@ type State struct {
 	// paint saw it; zero before the first.
 	pixelScale            float32
 	cellWidth, cellHeight float32
-	panes                 []Pane
-	paneSplits            []PaneSplit
-	paneSplitters         []paneSplitterUI
-	terminalDrop          terminalDrop // the terminal that files being dragged over would be uploaded from
-	terminalUploads       []terminalUploadBatch
-	draggedContextDivider bool
-	deck                  layoutcore.Deck
-	workspaceViewCacheID  layoutcore.WorkspaceID
-	workspaceViewRevision uint64
-	workspaceViewBuilds   uint64
-	workspaceStatusPanes  [layoutcore.MaxPanes]layoutcore.Pane
-	pendingWorkspace      layoutcore.WorkspaceID
-	pendingPane           layoutcore.PaneID
+	// cellPixelWidth and cellPixelHeight are one cell in device pixels as last
+	// handed to the screens and shells; see syncCellPixels.
+	cellPixelWidth, cellPixelHeight int
+	panes                           []Pane
+	paneSplits                      []PaneSplit
+	paneSplitters                   []paneSplitterUI
+	terminalDrop                    terminalDrop // the terminal that files being dragged over would be uploaded from
+	terminalUploads                 []terminalUploadBatch
+	draggedContextDivider           bool
+	deck                            layoutcore.Deck
+	workspaceViewCacheID            layoutcore.WorkspaceID
+	workspaceViewRevision           uint64
+	workspaceViewBuilds             uint64
+	workspaceStatusPanes            [layoutcore.MaxPanes]layoutcore.Pane
+	pendingWorkspace                layoutcore.WorkspaceID
+	pendingPane                     layoutcore.PaneID
 	// pendingDirectory is where the shell of the next session starts: set by a
 	// split from the directory of the pane it came from, taken by the session
 	// that opens in the new pane.

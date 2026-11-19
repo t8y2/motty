@@ -315,12 +315,13 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 	x11 := newX11Relay(sshConn)
 	defer x11.Close()
 	var (
-		term       = "xterm"
-		cols, rows = 80, 24
-		env        []string
-		ptmx       *os.File
-		once       sync.Once
-		ptyAsked   bool
+		term                    = "xterm"
+		cols, rows              = 80, 24
+		pixelWidth, pixelHeight int
+		env                     []string
+		ptmx                    *os.File
+		once                    sync.Once
+		ptyAsked                bool
 	)
 	for request := range requests {
 		switch request.Type {
@@ -338,6 +339,7 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 			}
 			ssh.Unmarshal(request.Payload, &payload)
 			term, cols, rows = payload.Term, int(payload.Columns), int(payload.Rows)
+			pixelWidth, pixelHeight = int(payload.Width), int(payload.Height)
 			ptyAsked = true
 			request.Reply(true, nil)
 		case "x11-req":
@@ -350,7 +352,10 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 			var payload struct{ Columns, Rows, Width, Height uint32 }
 			ssh.Unmarshal(request.Payload, &payload)
 			if ptmx != nil {
-				pty.Setsize(ptmx, &pty.Winsize{Cols: uint16(payload.Columns), Rows: uint16(payload.Rows)})
+				pty.Setsize(ptmx, &pty.Winsize{
+					Cols: uint16(payload.Columns), Rows: uint16(payload.Rows),
+					X: uint16(payload.Width), Y: uint16(payload.Height),
+				})
 			}
 		case "shell":
 			request.Reply(true, nil)
@@ -375,7 +380,7 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 					command.Dir = os.TempDir()
 				}
 				var err error
-				ptmx, err = pty.StartWithSize(command, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
+				ptmx, err = pty.StartWithSize(command, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows), X: uint16(pixelWidth), Y: uint16(pixelHeight)})
 				if err != nil {
 					fmt.Fprintf(channel, "cannot start shell: %v\r\n", err)
 					channel.Close()
@@ -438,7 +443,7 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 					command.Env = append(command.Env, x11.Env()...)
 					command.Dir = os.TempDir()
 					var err error
-					ptmx, err = pty.StartWithSize(command, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
+					ptmx, err = pty.StartWithSize(command, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows), X: uint16(pixelWidth), Y: uint16(pixelHeight)})
 					if err != nil {
 						fmt.Fprintf(channel, "cannot start command: %v\r\n", err)
 						channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{1}))

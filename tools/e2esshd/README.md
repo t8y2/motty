@@ -3,7 +3,10 @@
 A throwaway SSH server for end-to-end checks of the terminal. Password `secret`
 for any user, loopback only, runs `/bin/bash --norc` on a real pty (so colors,
 `stty size`, `less`, Ctrl+C and resizing all behave as on a real server), and
-serves an SFTP fixture containing `alpha.txt` and `docs/guide.txt`. The fixture
+serves an SFTP fixture containing `alpha.txt` and `docs/guide.txt`. The pty's
+window size carries the pixel fields a `pty-req` or `window-change` names, so a
+program on the far side reads back the same text area in pixels a real sshd
+would pass on (`TIOCGWINSZ`, as `tools/e2e/pixel_size_e2e.txt` checks). The fixture
 root is a fresh temporary directory and is writable so upload, recursive
 transfer, atomic replacement, cancellation, and resume paths can be exercised;
 the entire root is removed when the server exits.

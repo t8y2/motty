@@ -497,7 +497,7 @@ func (conn *streamConn) OpenShell(config sshconn.ShellConfig) (Shell, error) {
 	if shell == nil {
 		return nil, errors.New("workbench: the connection has no stream")
 	}
-	shell.Resize(config.Cols, config.Rows)
+	shell.Resize(config.Size())
 	return shell, nil
 }
 

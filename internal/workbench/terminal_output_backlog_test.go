@@ -5,6 +5,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"motty/internal/termsize"
 )
 
 // floodChunk is one read's worth of the plain monitoring lines a program like
@@ -60,10 +62,10 @@ func (shell *floodShell) Drain(dst []byte) []byte {
 	return dst
 }
 
-func (shell *floodShell) Write(p []byte) bool   { return shell.inner.Write(p) }
-func (shell *floodShell) Resize(cols, rows int) { shell.inner.Resize(cols, rows) }
-func (shell *floodShell) Done() <-chan struct{} { return shell.inner.Done() }
-func (shell *floodShell) Err() error            { return shell.inner.Err() }
+func (shell *floodShell) Write(p []byte) bool       { return shell.inner.Write(p) }
+func (shell *floodShell) Resize(size termsize.Size) { shell.inner.Resize(size) }
+func (shell *floodShell) Done() <-chan struct{}     { return shell.inner.Done() }
+func (shell *floodShell) Err() error                { return shell.inner.Err() }
 func (shell *floodShell) Close() {
 	shell.mu.Lock()
 	shell.ended = true
