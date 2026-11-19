@@ -221,7 +221,7 @@ func TestLocalScopeReviewNativeHiddenLoadedItemsRemainReadable(t *testing.T) {
 		defer preview.Close()
 		assertHiddenScopeEmpty(t, preview)
 		dualClickID(t, preview, contextID(hitSFTPHeaderMore))
-		dualClickID(t, preview, contextID(hitSFTPHeaderHidden))
+		dualClickMenuLabel(t, preview, state.messages.Tools.FilesShowHidden)
 		if len(view.lfolder.rows) != 1 || view.lfolder.rows[0].entry.Name != ".hidden" {
 			t.Fatal("show hidden did not restore the readable loaded row")
 		}
@@ -241,7 +241,7 @@ func TestLocalScopeReviewNativeHiddenLoadedItemsRemainReadable(t *testing.T) {
 		}
 		assertHiddenScopeEmpty(t, preview)
 		dualClickID(t, preview, sftpWindowMore[0])
-		dualClickID(t, preview, sftpWindowHeaderHidden[0])
+		dualClickMenuLabel(t, preview, state.messages.Tools.FilesShowHidden)
 		if len(w.view.lfolder.rows) != 1 || w.view.lfolder.rows[0].entry.Name != ".hidden" {
 			t.Fatal("window show hidden did not restore the readable loaded row")
 		}
