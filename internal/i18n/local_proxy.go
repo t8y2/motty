@@ -43,9 +43,21 @@ type LocalProxyMessages struct {
 	DockerRestore     string
 	DockerCopy        string
 	DockerCopied      string
-	DockerScope       string
-	DockerConfigFmt   string
-	DockerRestoreFmt  string
+	DockerScope          string
+	DockerStepSetup      string
+	DockerStepRestore    string
+	DockerStepRestoreOff string
+	DockerTunnelOff      string
+	DockerTunnelOffDesc  string
+	DockerConfigDesc     string
+	DockerRestoreDesc    string
+	DockerRestoreOffDesc string
+	DockerCopyConfig     string
+	DockerCopiedConfig   string
+	DockerCopyRestore    string
+	DockerCopiedRestore  string
+	DockerConfigFmt      string
+	DockerRestoreFmt     string
 	GitSSHWarning     string
 	CopyFailedFmt     string
 	InvalidPort       string
@@ -95,16 +107,28 @@ var englishLocalProxy = LocalProxyMessages{
 	ProtocolHint:      "Use an HTTP-capable proxy port. VPN routing or a SOCKS-only port is insufficient. Tool settings and no_proxy/NO_PROXY may bypass the proxy; the local proxy's access policy applies.",
 	RemoteAddressFmt:  "Server proxy: http://127.0.0.1:%d",
 	CopyUnavailable:   "Clipboard is unavailable. Try copying again.",
-	DockerTitle:       "Docker setup",
-	DockerHint:        "Shell proxy variables do not configure image pulls. The Docker daemon makes those requests.",
-	DockerWarning:     "The example uses sudo and restarts Docker, which may interrupt containers. Motty never runs these commands. Restore this configuration before stopping the tunnel.",
-	DockerSteps:       "Systemd-managed Linux Docker",
-	DockerRestore:     "Restore Docker configuration",
-	DockerCopy:        "Copy command",
-	DockerCopied:      "Command copied",
-	DockerScope:       "Only for Docker Engine managed by systemd on Linux. Existing daemon.json or service configuration may take precedence, so inspect it before adding this drop-in. This example does not cover rootless Docker, Docker Desktop, or a remote Docker context.",
-	DockerConfigFmt:   "HTTP_PROXY=http://127.0.0.1:%d\nHTTPS_PROXY=http://127.0.0.1:%d",
-	DockerRestoreFmt:  "Remove /etc/systemd/system/docker.service.d/motty-proxy.conf only if you created it, then reload and restart Docker.",
+	DockerTitle:          "Docker setup",
+	DockerHint:           "Docker image pulls are initiated by the background Docker daemon and are unaffected by terminal environment variables.",
+	DockerWarning:        "Notice: The example requires sudo and restarts Docker, which may interrupt running containers. Motty never runs these commands automatically. Be sure to run the restore command below before stopping the tunnel.",
+	DockerSteps:          "Systemd-managed Linux Docker",
+	DockerStepSetup:      "Step 1: Configure Docker to use the proxy",
+	DockerStepRestore:    "Step 2: Restore Docker before stopping the tunnel",
+	DockerStepRestoreOff: "Clean up / restore existing configuration",
+	DockerTunnelOff:      "⚠️ Proxy tunnel is not connected",
+	DockerTunnelOffDesc:  "Return to proxy settings to start the tunnel first. Once connected, the setup command with the active port will appear here.",
+	DockerConfigDesc:     "Write proxy settings to systemd drop-in and restart Docker:",
+	DockerRestoreDesc:    "The proxy port stops working when the tunnel closes. Remove the configuration and restart Docker before stopping:",
+	DockerRestoreOffDesc: "If you previously configured the Motty proxy file and have not cleaned it up, run the command below to restore:",
+	DockerCopyConfig:     "Copy setup command",
+	DockerCopiedConfig:   "Setup command copied",
+	DockerCopyRestore:    "Copy restore command",
+	DockerCopiedRestore:  "Restore command copied",
+	DockerRestore:        "Restore Docker configuration",
+	DockerCopy:           "Copy command",
+	DockerCopied:         "Command copied",
+	DockerScope:          "Scope: Only for Docker Engine managed by systemd on Linux (not for Docker Desktop or rootless). Existing daemon.json or service configuration may take precedence; inspect before adding.",
+	DockerConfigFmt:      "HTTP_PROXY=http://127.0.0.1:%d\nHTTPS_PROXY=http://127.0.0.1:%d",
+	DockerRestoreFmt:     "The proxy port stops working when the tunnel closes. Remove the configuration and restart Docker before stopping:",
 	GitSSHWarning:     "HTTP proxy variables do not cover Git over SSH. Use an HTTPS repository URL or the tool's own configuration.",
 	CopyFailedFmt:     "Could not copy: %v",
 	InvalidPort:       "Enter a port from 1 to 65535.",
@@ -116,7 +140,7 @@ var englishLocalProxy = LocalProxyMessages{
 	ProxyAuthRequired: "The local proxy requires authentication, which this version does not support.",
 	ProtocolMismatch:  "The selected endpoint does not provide a compatible HTTP proxy.",
 	TestFailed:        "The connection test failed through the tunnel.",
-	OpenDockerDocs:    "Open Docker documentation",
+	OpenDockerDocs:    "Open official Docker documentation",
 	OpenDocsFailed:    "Could not open Docker documentation.",
 }
 
@@ -154,16 +178,28 @@ var chineseLocalProxy = LocalProxyMessages{
 	ProtocolHint:      "需使用支持 HTTP 的代理端口，仅有 VPN 路由或 SOCKS5 端口不够。工具自身设置及 no_proxy/NO_PROXY 可能绕过代理；访问范围受本机代理规则限制。",
 	RemoteAddressFmt:  "服务器代理：http://127.0.0.1:%d",
 	CopyUnavailable:   "无法使用剪贴板，请重试复制。",
-	DockerTitle:       "Docker 设置",
-	DockerHint:        "终端代理变量不会配置镜像拉取；拉取请求由 Docker daemon 发出。",
-	DockerWarning:     "示例会使用 sudo 并重启 Docker，可能中断容器。Motty 不会执行这些命令。停止隧道前请恢复此配置。",
-	DockerSteps:       "systemd 管理的 Linux Docker",
-	DockerRestore:     "恢复 Docker 配置",
-	DockerCopy:        "复制命令",
-	DockerCopied:      "命令已复制",
-	DockerScope:       "仅适用于 Linux 上由 systemd 管理的 Docker Engine；已有 daemon.json 或服务配置可能优先，添加此 drop-in 前请先检查。不适用于 rootless Docker、Docker Desktop 或远程 Docker context。",
-	DockerConfigFmt:   "示例环境变量：\nHTTP_PROXY=http://127.0.0.1:%d\nHTTPS_PROXY=http://127.0.0.1:%d",
-	DockerRestoreFmt:  "仅删除你自己创建的 /etc/systemd/system/docker.service.d/motty-proxy.conf，然后重新加载并重启 Docker。",
+	DockerTitle:          "Docker 设置",
+	DockerHint:           "Docker 镜像拉取由后台守护进程（Docker daemon）发起，不受终端环境变量影响。",
+	DockerWarning:        "注意事项：示例命令需使用 sudo 并会重启 Docker，可能中断运行中的容器。Motty 不会自动执行这些命令。关闭隧道前请务必执行下方的恢复命令。",
+	DockerSteps:          "systemd 管理的 Linux Docker",
+	DockerStepSetup:      "步骤 1：配置 Docker 使用当前代理",
+	DockerStepRestore:    "步骤 2：停止代理前恢复 Docker 配置",
+	DockerStepRestoreOff: "清理 / 恢复已有的配置",
+	DockerTunnelOff:      "⚠️ 代理隧道尚未开启",
+	DockerTunnelOffDesc:  "请先返回「代理设置」开启隧道。隧道连接成功后，此处将自动生成包含当前动态端口的配置命令。",
+	DockerConfigDesc:     "将代理地址写入 Docker 的 systemd 配置文件并重启服务：",
+	DockerRestoreDesc:    "隧道断开后该代理端口将失效。停止隧道前，请删除上述配置文件并重启恢复：",
+	DockerRestoreOffDesc: "如果你之前配置过 Motty 代理文件未及时清理，可执行下方命令恢复：",
+	DockerCopyConfig:     "复制配置命令",
+	DockerCopiedConfig:   "配置命令已复制",
+	DockerCopyRestore:    "复制恢复命令",
+	DockerCopiedRestore:  "恢复命令已复制",
+	DockerRestore:        "恢复 Docker 配置",
+	DockerCopy:           "复制命令",
+	DockerCopied:         "命令已复制",
+	DockerScope:          "适用范围：仅适用于 Linux 上由 systemd 管理的 Docker Engine（不适用于 Docker Desktop 或 rootless）。已有 daemon.json 或服务配置可能优先，添加前请先检查。",
+	DockerConfigFmt:      "示例环境变量：\nHTTP_PROXY=http://127.0.0.1:%d\nHTTPS_PROXY=http://127.0.0.1:%d",
+	DockerRestoreFmt:     "隧道断开后该代理端口将失效。停止隧道前请删除配置文件并重启恢复：",
 	GitSSHWarning:     "HTTP 代理变量不会覆盖 Git SSH；请使用 HTTPS 仓库地址或该工具自身的代理配置。",
 	CopyFailedFmt:     "复制失败：%v",
 	InvalidPort:       "请输入 1 到 65535 之间的端口。",
@@ -175,6 +211,6 @@ var chineseLocalProxy = LocalProxyMessages{
 	ProxyAuthRequired: "本机代理要求身份验证，当前版本不支持。",
 	ProtocolMismatch:  "所选端点不是兼容的 HTTP 代理。",
 	TestFailed:        "经隧道进行的连接测试失败。",
-	OpenDockerDocs:    "打开 Docker 文档",
+	OpenDockerDocs:    "打开 Docker 官方文档",
 	OpenDocsFailed:    "无法打开 Docker 文档。",
 }
