@@ -587,22 +587,21 @@ func (state *State) declareAIDrawer(c ui.C, size gfx.Size) {
 	bounds := gfx.Rect{X: viewport.X + viewport.Width - contentWidth, Y: viewport.Y, Width: contentWidth, Height: viewport.Height}
 	panel.rect = bounds
 	panel.resize = aiPanelResize{window: viewport, ratio: (bounds.X - viewport.X) / max(viewport.Width-1, 1), handle: 8}
-	dismiss := ui.ID(c)
-	if canvas := c.Canvas(); canvas != nil && canvas.Clicked(dismiss) {
+	// The page Drawer covers the window less its inset, so its scrim and dismiss
+	// target stop at the visible workspace, as the old drawer's viewport did.
+	inset := gfx.Insets{
+		Top: viewport.Y, Left: viewport.X,
+		Right:  size.Width - (viewport.X + viewport.Width),
+		Bottom: size.Height - (viewport.Y + viewport.Height),
+	}
+	panel.drawerOpen = true
+	spec := ui.DrawerSpec{Side: ui.DrawerRight, Size: contentWidth, Inset: inset, NonModal: true}
+	if ui.Drawer(c, &panel.drawerOpen, "", spec, func() {
+		state.declareAIPanelBody(c)
+		state.declareAIResize(c, gfx.Point{X: bounds.X, Y: bounds.Y})
+	}, nil) {
 		c.After(state.closeAIPanel)
 	}
-	drawer := components.BeginDrawer(c.Canvas(), state.Theme(), viewport, components.DrawerOptions{
-		Layer: drawerLayer, DismissID: dismiss,
-		Side: components.DrawerRight, ContentExtent: contentWidth,
-	})
-	ui.Stack(c).Absolute().Left(viewport.X).Top(viewport.Y).Size(viewport.Width, viewport.Height).
-		Draw(func(*ui.DrawContext) { drawer.Begin("", "") }).Children(func() {
-		ui.Column(c).Absolute().Left(bounds.X-viewport.X).Top(0).Size(bounds.Width, bounds.Height).Children(func() {
-			state.declareAIPanelBody(c)
-		})
-		state.declareAIResize(c, gfx.Point{X: viewport.X, Y: viewport.Y})
-		ui.Slot(c).Absolute().Size(0, 0).Draw(func(*ui.DrawContext) { drawer.End() })
-	})
 }
 
 // paintAIPanel paints what the declared panel needs outside the page: the

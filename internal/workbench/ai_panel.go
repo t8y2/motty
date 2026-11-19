@@ -325,6 +325,9 @@ type aiPanel struct {
 	copySlots                  []aiCopySlot
 	statusLabel                string
 	historyTop                 float32
+	// drawerOpen is the page Drawer's visibility in drawer mode, kept between
+	// paints so its scope and presence stay stable.
+	drawerOpen bool
 
 	// focusBack asks the next paint to put the keyboard back in the terminal
 	// after the panel closed from inside itself, which a trapped drawer used to
