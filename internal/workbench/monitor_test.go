@@ -64,7 +64,7 @@ func TestMonitorUsesTheWindowsSamplerWithoutProcfsCommands(t *testing.T) {
 	session := state.contextSession()
 	session.host.System = sshconn.SystemWindows
 	fake.streamCommand = func(ctx context.Context, command string, limit int, line func([]byte) bool) error {
-		if !strings.HasPrefix(command, "powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand ") {
+		if command != remotestats.WindowsCommand(2) {
 			t.Error("Windows server received a non-PowerShell sampler")
 		}
 		return streamReadings(`gop-stats-win-v1 {"cpu":25,"total":8589934592,"free":4294967296,"uptime":100,"networkAvailable":false,"cores":[{"id":"0","percent":25}],"meta":{"count":1,"kernel":"Windows","disks":[{"path":"C:\\","total":1000,"free":400}]}}`)(ctx, command, limit, line)

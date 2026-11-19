@@ -414,7 +414,7 @@ func TestDashboardWindowsCollectorReusesPowerShellAndEmbeddedDetails(t *testing.
 	s.hosts[0].System = sshconn.SystemWindows
 	f.status.System = sshconn.SystemWindows
 	f.streamCommand = func(ctx context.Context, cmd string, limit int, line func([]byte) bool) error {
-		if !strings.HasPrefix(cmd, "powershell.exe ") {
+		if !strings.HasPrefix(cmd, `cmd.exe /d /s /c "echo `) {
 			t.Error("Windows host received Linux command")
 		}
 		line([]byte(`gop-stats-win-v1 {"cpu":25,"total":8589934592,"free":4294967296,"uptime":100,"networkAvailable":false,"cores":[{"id":"0","percent":25}],"meta":{"count":1,"kernel":"Windows","disks":[{"path":"C:\\","total":1000,"free":400}]}}`))

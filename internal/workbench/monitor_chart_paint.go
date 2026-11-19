@@ -92,12 +92,12 @@ func paintMonitorTrend(canvas *gfx.Canvas, bounds gfx.Rect, id gfx.ID, x []float
 		yMax += (yMax - yMin) * 0.08
 	}
 	py := func(value float32) float32 {
-		return plot.Y + plot.Height - (value-yMin)/(yMax-yMin)*plot.Height
+		return plot.Height - (value-yMin)/(yMax-yMin)*plot.Height
 	}
 	px := func(value float32) float32 {
-		return plot.X + (value-xMin)/(xMax-xMin)*plot.Width
+		return (value - xMin) / (xMax - xMin) * plot.Width
 	}
-	baseline := plot.Y + plot.Height
+	baseline := plot.Height
 	for _, s := range series {
 		if len(s.values) == 0 {
 			continue
@@ -141,7 +141,7 @@ func paintMonitorTrend(canvas *gfx.Canvas, bounds gfx.Rect, id gfx.ID, x []float
 				fill.LineTo(px(x[end-1]), baseline)
 				fill.Close()
 				gradient := gfx.LinearGradient{
-					Start: gfx.Point{X: 0, Y: plot.Y}, End: gfx.Point{X: 0, Y: baseline},
+					Start: gfx.Point{X: 0, Y: 0}, End: gfx.Point{X: 0, Y: baseline},
 					From: withAlpha(s.color, .22), To: withAlpha(s.color, 0),
 				}
 				canvas.DrawPath(fill.Path(plot.Width, plot.Height), plot, gfx.PathStyle{

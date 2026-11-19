@@ -4,7 +4,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
@@ -52,7 +51,7 @@ func TestMonitorHostInfoPrivacyAndNoTooltips(t *testing.T) {
 	for mask := 0; mask < 8; mask++ {
 		state.hostPrivacy = hostPrivacyState{enabled: true, maskName: mask&1 != 0, maskAddress: mask&2 != 0, maskUser: mask&4 != 0}
 		canvas := hostPrivacyCanvas(t)
-		state.paintMonitorHostInfo(&canvas, gfx.Rect{Width: 640, Height: monitorHostInfoHeight}, session)
+		state.paintHostInfoText(&canvas, gfx.Rect{Width: 640, Height: 18}, session)
 		for i, value := range values {
 			hit, ok := hitByID(&canvas, ids[i])
 			if !ok {
@@ -91,7 +90,7 @@ func TestMonitorHostInfoFollowsActiveSession(t *testing.T) {
 	for _, id := range []uint32{firstID, second.ID, firstID} {
 		state.activeSessionID = id
 		canvas := hostPrivacyCanvas(t)
-		state.paintMonitorHostInfo(&canvas, gfx.Rect{X: 900 + monitorInset, Y: infoBarHeight + monitorControlsHeight, Width: 380 - 2*monitorInset, Height: monitorHostInfoHeight}, state.contextSession())
+		state.paintHostInfoText(&canvas, gfx.Rect{X: 900 + monitorInset, Y: infoBarHeight + monitorControlsHeight, Width: 380 - 2*monitorInset, Height: 18}, state.contextSession())
 		want := state.monitorHostInfo(state.contextSession())
 		for i, fieldID := range []gfx.ID{hitMonitorHostName, hitMonitorHostAddress, hitMonitorHostUser} {
 			hit, ok := hitByID(&canvas, fieldID)
@@ -118,14 +117,14 @@ func TestMonitorHostInfoLayoutAndScrollAcrossPages(t *testing.T) {
 			p.page = page
 			b := gfx.Rect{X: 20, Y: 40, Width: width, Height: 320}
 			canvas := hostPrivacyCanvas(t)
-			state.paintMonitorHostInfo(&canvas, gfx.Rect{X: b.X + monitorInset, Y: b.Y + infoBarHeight + monitorControlsHeight, Width: b.Width - 2*monitorInset, Height: monitorHostInfoHeight}, session)
+			state.paintHostInfoText(&canvas, gfx.Rect{X: b.X + monitorInset, Y: b.Y + infoBarHeight + monitorControlsHeight, Width: b.Width - 2*monitorInset, Height: 18}, session)
 			previousRight := b.X
 			for _, id := range []gfx.ID{hitMonitorHostName, hitMonitorHostAddress, hitMonitorHostUser} {
 				hit, ok := hitByID(&canvas, id)
 				if !ok || hit.Bounds.X < previousRight || hit.Bounds.X+hit.Bounds.Width > b.X+b.Width-monitorInset+1 {
 					t.Fatalf("width %g, page %d: overlapping or missing field: %+v", width, page, hit)
 				}
-				if hit.Bounds.Y != b.Y+infoBarHeight+monitorControlsHeight+6 {
+				if hit.Bounds.Y != b.Y+infoBarHeight+monitorControlsHeight {
 					t.Fatalf("host information is not below navigation: %+v", hit)
 				}
 				previousRight = hit.Bounds.X + hit.Bounds.Width
@@ -135,7 +134,7 @@ func TestMonitorHostInfoLayoutAndScrollAcrossPages(t *testing.T) {
 			}
 			state.monitorRect = b
 			geometry := state.monitorScrollArea(p).Geometry()
-			if geometry.Viewport.Y != b.Y+infoBarHeight+monitorControlsHeight+monitorHostInfoHeight {
+			if geometry.Viewport.Y != b.Y+infoBarHeight+monitorControlsHeight {
 				t.Fatalf("scroll viewport overlaps host information: %+v", geometry.Viewport)
 			}
 			state.scrollMonitor(gfx.ScrollEvent{X: b.X + 100, Y: b.Y + 200, DeltaY: 10000})
@@ -150,22 +149,16 @@ func TestMonitorHostInfoSeparatorsRequireVisibleFields(t *testing.T) {
 	for _, test := range []struct {
 		name           string
 		width          float32
-		copied         bool
 		wantFields     int
 		wantSeparators int
 	}{
-		{name: "no field space", width: 21},
-		{name: "only copy feedback", width: 21, copied: true},
+		{name: "no field space", width: 2},
 		{name: "all fields", width: 640, wantFields: 3, wantSeparators: 2},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			state, session := monitorFixture(t)
-			if test.copied {
-				session.stats.panel.copiedAddress = session.host.Address
-				session.stats.panel.addressCopiedUntil = state.now() + 2*time.Second
-			}
 			canvas := hostPrivacyCanvas(t)
-			state.paintMonitorHostInfo(&canvas, gfx.Rect{Width: test.width, Height: monitorHostInfoHeight}, session)
+			state.paintHostInfoText(&canvas, gfx.Rect{Width: test.width, Height: 18}, session)
 			fields := 0
 			for _, id := range []gfx.ID{hitMonitorHostName, hitMonitorHostAddress, hitMonitorHostUser} {
 				if _, ok := hitByID(&canvas, id); ok {
@@ -201,8 +194,8 @@ func TestMonitorHostAddressCopyReportsSuccessAndFailure(t *testing.T) {
 	if copied != address {
 		t.Fatalf("copied %q, want the complete address %q without user or port", copied, address)
 	}
-	if session.stats.panel.copiedAddress != address || len(state.fileNotices.items) != 0 {
-		t.Fatalf("copy did not set inline feedback or still showed an alert: %+v", state.fileNotices.items)
+	if len(state.fileNotices.items) != 1 || state.fileNotices.items[0].title != state.messages.Monitor.AddressCopied || state.fileNotices.items[0].kind != components.ToastSuccess {
+		t.Fatalf("copy did not show a success toast: %+v", state.fileNotices.items)
 	}
 	state.fileNotices = fileNotices{}
 	state.options.SetClipboardText = func(string) error { return errors.New("clipboard unavailable") }
@@ -218,37 +211,26 @@ func TestMonitorHostAddressCopyReportsSuccessAndFailure(t *testing.T) {
 	}
 }
 
-func TestMonitorHostAddressCopyColorRestoresAfterTwoSeconds(t *testing.T) {
+func TestMonitorHostAddressCopyLeavesTheAddressLineUnchanged(t *testing.T) {
 	state, session := monitorFixture(t)
-	now := 10 * time.Second
-	state.options.Now = func() time.Duration { return now }
 	state.options.SetClipboardText = func(string) error { return nil }
 	session.host.Address = "192.0.2.10"
-	for _, dark := range []bool{false, true} {
-		if dark {
-			state.setAppearance(appearanceDark)
-		}
-		state.Click(hitMonitorHostAddress)
-		for _, elapsed := range []time.Duration{0, 1999 * time.Millisecond, 2 * time.Second} {
-			now = session.stats.panel.addressCopiedUntil - 2*time.Second + elapsed
-			canvas := hostPrivacyCanvas(t)
-			state.paintMonitorHostInfo(&canvas, gfx.Rect{Width: 280, Height: monitorHostInfoHeight}, session)
-			wantColor := state.pal.success
-			if elapsed == 2*time.Second {
-				wantColor = state.monitorColors().cpu
-			}
-			found := false
-			for _, text := range canvas.Texts() {
-				if text.Value == session.host.Address {
-					found = true
-					if text.Style.Color != wantColor {
-						t.Fatalf("dark=%v, elapsed=%v: IP color did not match feedback state", dark, elapsed)
-					}
-				}
-			}
-			if !found || canvasContainsText(&canvas, state.messages.Monitor.AddressCopied) != (elapsed < 2*time.Second) {
-				t.Fatalf("dark=%v, elapsed=%v: missing IP or incorrect inline feedback", dark, elapsed)
+	state.Click(hitMonitorHostAddress)
+	canvas := hostPrivacyCanvas(t)
+	state.paintHostInfoText(&canvas, gfx.Rect{Width: 280, Height: 18}, session)
+	found := false
+	for _, text := range canvas.Texts() {
+		if text.Value == session.host.Address {
+			found = true
+			if text.Style.Color != state.monitorColors().cpu {
+				t.Fatal("address copy feedback changed the address text color")
 			}
 		}
+	}
+	if !found {
+		t.Fatal("address disappeared after copying")
+	}
+	if canvasContainsText(&canvas, state.messages.Monitor.AddressCopied) {
+		t.Fatal("copy feedback was appended to the host information line")
 	}
 }
