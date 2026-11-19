@@ -43,6 +43,7 @@ const (
 	shortcutSnippetPicker
 	shortcutHostsPanel
 	shortcutAcceptSuggestion
+	shortcutSettings
 	shortcutActionCount
 )
 
@@ -53,6 +54,9 @@ const (
 type shortcutMap struct {
 	chords keymap.Table[shortcutAction]
 	labels [shortcutActionCount]string
+	// revision changes whenever a chord is bound or unbound, so the macOS menu
+	// bar (which shows those chords) rebuilds when the table changes.
+	revision uint64
 	// acceptKeys is the Keyboard shortcuts page's keys text for the
 	// accept-suggestion row, rebuilt with the labels so that painting it
 	// allocates nothing.
@@ -111,6 +115,7 @@ func defaultShortcuts() shortcutMap {
 	// shell itself leaves it. It is a binding of its own because the badge beside
 	// the suggestion names it and the user can choose another one there.
 	shortcuts.chords.Set(shortcutAcceptSuggestion, keymap.Chord{Key: gfx.KeyRight})
+	shortcuts.chords.Set(shortcutSettings, keymap.Chord{Modifiers: primary, Char: ','})
 	shortcuts.refreshLabels()
 	return shortcuts
 }
@@ -286,6 +291,7 @@ func (shortcuts *shortcutMap) bind(action shortcutAction, chord keymap.Chord) (s
 	if action == shortcutAcceptSuggestion {
 		shortcuts.refreshAcceptKeys()
 	}
+	shortcuts.revision++
 	return shortcutNone, true
 }
 
@@ -299,6 +305,7 @@ func (shortcuts *shortcutMap) unbind(action shortcutAction) bool {
 	if action == shortcutAcceptSuggestion {
 		shortcuts.acceptKeys = "—"
 	}
+	shortcuts.revision++
 	return true
 }
 
@@ -360,6 +367,8 @@ func (action shortcutAction) String() string {
 		return "snippet_picker"
 	case shortcutAcceptSuggestion:
 		return "accept_suggestion"
+	case shortcutSettings:
+		return "settings"
 	default:
 		return ""
 	}
@@ -776,6 +785,8 @@ func (state *State) executeShortcut(action shortcutAction) gfx.EventResult {
 		} else {
 			result.Focus = state.activeTerminalFocusHit()
 		}
+	case shortcutSettings:
+		state.openSettings()
 	}
 	return result
 }
