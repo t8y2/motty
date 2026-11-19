@@ -87,6 +87,8 @@ func (state *State) clickSnippetsPage(id gfx.ID) bool {
 	switch {
 	case id == hitSnippetAdd:
 		state.openSnippetDialog(-1)
+	case id == hitSnippetGroups:
+		state.openSnippetGroupsManager()
 	case id == hitSnippetSend:
 		state.sendSnippetFromPage(state.snippets.selected, state.snippets.sendAt)
 	case id == hitSnippetEdit:
@@ -102,10 +104,10 @@ func (state *State) clickSnippetsPage(id gfx.ID) bool {
 // snippetsSectionUI is what the snippets page's declaration leaves for its
 // paint.
 type snippetsSectionUI struct {
-	rows, filter, remove, edit, send, add, empty ui.Box
-	removeWidth, sendWidth, editWidth, addWidth  float32
-	removeIcon, sendIcon, editIcon, addIcon      uint8
-	condensed                                    bool
+	rows, filter, groups, remove, edit, send, add, empty ui.Box
+	removeWidth, sendWidth, editWidth, addWidth          float32
+	removeIcon, sendIcon, editIcon, addIcon              uint8
+	condensed                                            bool
 	// widths are the three fixed columns' widths; the command column takes the
 	// rest. The header and the rows are declared with the same numbers.
 	widths      [3]float32
@@ -168,7 +170,12 @@ func (state *State) declareSnippetsWorkspace(c ui.C) {
 			view.empty = state.reserveEmptyPage(c, bounds, m.SnippetEmpty, m.SnippetEmptySub, m.SnippetAdd, hitSnippetAdd, iconSnippets, canAdd)
 		} else {
 			if len(form.groups) > 0 {
-				view.filter = state.declareSnippetFilter(c).Size(220, toolbarHeight).MarginSides(0, 0, 9, 0).Shrink(0)
+				ui.Row(c).Height(toolbarHeight).MarginSides(0, 0, 9, 0).Gap(9).Children(func() {
+					view.filter = state.declareSnippetFilter(c).Size(220, toolbarHeight).Shrink(0)
+					groupsWidth := toolbarButtonWidth(canvas, m.SnippetGroupsManage, false)
+					view.groups = state.declareButtonSized(c, hitSnippetGroups, m.SnippetGroupsManage, 0, false, false, true, toolbarFont, false).
+						Size(groupsWidth, toolbarHeight)
+				})
 			}
 			theme := state.Theme()
 			view.manualOrder = form.sort.Direction == components.TableSortNone && form.filter.all() && len(form.list) > 1

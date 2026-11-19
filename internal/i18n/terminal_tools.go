@@ -77,6 +77,25 @@ type ToolsMessages struct {
 	SnippetColumnGroup        string
 	SnippetFilterAll          string
 	SnippetFilterNone         string
+	SnippetGroupsManage       string
+	SnippetGroupsTitle        string
+	SnippetGroupsDescription  string
+	SnippetGroupCountFmt      string
+	SnippetGroupEmpty         string
+	SnippetGroupRename        string
+	SnippetGroupRenameTitle   string
+	SnippetGroupRenameField   string
+	SnippetGroupRenameSave    string
+	SnippetGroupRenameInvalid string
+	SnippetGroupConflict      string
+	SnippetGroupMissing       string
+	SnippetGroupDelete        string
+	SnippetGroupDeleteTitle   string
+	SnippetGroupDeleteBodyFmt string
+	SnippetGroupDeleteConfirm string
+	SnippetGroupsClose        string
+	StatusGroupRenamedFmt     string
+	StatusGroupDeletedFmt     string
 	SnippetCountFilteredFmt   string
 	SnippetColumnCommand      string
 	SnippetSortAction         string

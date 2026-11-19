@@ -966,6 +966,7 @@ type State struct {
 	noteExit         *noteExitRequest
 	noteTarget       *notesUI
 	snippets         snippetsUI
+	snippetGroups    snippetGroupsUI
 	commands         commandsUI
 	snippetSend      snippetSender
 	snippetPrompt    snippetPromptState
@@ -1535,6 +1536,10 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 		case hitSnippetGroup:
 			return &state.snippets.groupPicker.Query
 		}
+	case modalSnippetGroupRename:
+		if hit == hitSnippetGroupRenameField {
+			return &state.snippetGroups.editor
+		}
 	case modalSnippetVariables:
 		if idx, ok := hit.In(hitSnippetVarList); ok && idx >= 0 && idx < len(state.snippetPrompt.editors) {
 			return &state.snippetPrompt.editors[idx]
@@ -1758,6 +1763,12 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		return
 	case modalSnippetDelete:
 		state.clickSnippetDeleteDialog(id)
+		return
+	case modalSnippetGroups:
+		state.clickSnippetGroups(id)
+		return
+	case modalSnippetGroupRename, modalSnippetGroupDelete:
+		state.clickSnippetGroupDialog(id)
 		return
 	case modalSnippetVariables:
 		state.clickSnippetVariablesDialog(id)
@@ -3142,6 +3153,10 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		// submitSnippet refuses while either field is composing: that Enter
 		// belongs to the input method, and the preedit is not the text to save.
 		state.submitSnippet()
+		return gfx.EventResult{Handled: true, Repaint: true}
+	}
+	if state.modal == modalSnippetGroupRename && event.Key == gfx.KeyEnter && event.Target == hitSnippetGroupRenameField && !event.Repeat {
+		state.submitSnippetGroupRename()
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if state.modal == modalSnippetVariables && event.Key == gfx.KeyEnter && event.Target.Scope() == hitSnippetVarList && !event.Repeat {
