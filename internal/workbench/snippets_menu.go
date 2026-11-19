@@ -18,10 +18,12 @@ var (
 // snippetMenu is the right-click menu of a row of the Snippets page: which
 // snippet, and where it was asked for. Closed, it costs nothing.
 type snippetMenu struct {
-	open  bool
-	pick  bool // lists the terminals to send to, instead of the row's actions
-	index int
-	at    gfx.Point
+	open    bool
+	pick    bool // lists the terminals to send to, instead of the row's actions
+	fromBar bool // opened from a chip of the command bar, not from the page
+	index   int
+	name    string // the snippet the menu was opened on, to notice a rebuilt list
+	at      gfx.Point
 }
 
 // openSnippetMenuOn is called while painting a snippet row: when this paint is the
@@ -33,7 +35,19 @@ func (state *State) openSnippetMenuOn(canvas *gfx.Canvas, id gfx.ID, index int) 
 		return
 	}
 	state.snippets.selected = index
-	state.snippetMenu = snippetMenu{open: true, index: index, at: gfx.Point{X: event.X, Y: event.Y}}
+	state.snippetMenu = snippetMenu{open: true, index: index, name: state.snippets.list[index].Name, at: gfx.Point{X: event.X, Y: event.Y}}
+	canvas.Consume()
+}
+
+// openSnippetBarMenuOn is the same for a chip of the command bar: a secondary
+// press opens the snippet's own menu there, so a command added to the bar can
+// still be edited or removed without leaving the terminal page.
+func (state *State) openSnippetBarMenuOn(canvas *gfx.Canvas, id gfx.ID, index int) {
+	event, ok := canvas.PointerOn(id)
+	if !ok || event.Kind != gfx.PointerDown || event.Button != gfx.PointerButtonSecondary || state.modal != modalNone {
+		return
+	}
+	state.snippetMenu = snippetMenu{open: true, fromBar: true, index: index, name: state.snippets.list[index].Name, at: gfx.Point{X: event.X, Y: event.Y}}
 	canvas.Consume()
 }
 
@@ -42,7 +56,9 @@ func (state *State) declareSnippetMenu(c ui.C) {
 	if !menu.open {
 		return
 	}
-	if menu.index >= len(state.snippets.list) || state.modal != modalNone || state.activeSection != sectionSnippets {
+	if menu.index < 0 || menu.index >= len(state.snippets.list) || state.snippets.list[menu.index].Name != menu.name || state.modal != modalNone ||
+		(!menu.fromBar && state.activeSection != sectionSnippets) ||
+		(menu.fromBar && (!state.terminalPage() || !state.commands.shown || !state.commandsBarAvailable())) {
 		menu.open = false
 		return
 	}
@@ -62,19 +78,23 @@ func (state *State) declareSnippetMenu(c ui.C) {
 			rows.add(components.ContextMenuItem{ID: hitSnippetPickList.At(int(session.ID)), Label: session.Title, Icon: icon(iconTerminal), Shortcut: current})
 		}
 	} else {
-		state.snippetActionRows(&rows)
+		state.snippetActionRows(&rows, !menu.fromBar)
 	}
 	state.declareRowsMenu(c, &menu.open, menu.at, hitSnippetMenuDismiss, &rows, state.chooseSnippetMenu)
 }
 
-// snippetActionRows is what a snippet row's menu offers.
-func (state *State) snippetActionRows(rows *menuRows) {
+// snippetActionRows is what a snippet row's menu offers. Moving reorders by the
+// Snippets page's own filter and sort, so from the command bar only the actions
+// that make sense without the page are offered.
+func (state *State) snippetActionRows(rows *menuRows, moves bool) {
 	m := state.messages.Tools
 	icon := func(kind uint8) gfx.Icon { return lucideIcons[kind] }
 	rows.add(components.ContextMenuItem{ID: hitSnippetMenuSend, Label: m.SnippetSend, Icon: icon(iconPlay)})
-	rows.separate()
-	rows.add(components.ContextMenuItem{ID: hitSnippetMenuUp, Label: m.SnippetMoveUp, Icon: icon(iconArrowUp), Disabled: state.snippetNeighbor(state.snippetMenu.index, -1) < 0})
-	rows.add(components.ContextMenuItem{ID: hitSnippetMenuDown, Label: m.SnippetMoveDown, Icon: icon(iconChevronDown), Disabled: state.snippetNeighbor(state.snippetMenu.index, 1) < 0})
+	if moves {
+		rows.separate()
+		rows.add(components.ContextMenuItem{ID: hitSnippetMenuUp, Label: m.SnippetMoveUp, Icon: icon(iconArrowUp), Disabled: state.snippetNeighbor(state.snippetMenu.index, -1) < 0})
+		rows.add(components.ContextMenuItem{ID: hitSnippetMenuDown, Label: m.SnippetMoveDown, Icon: icon(iconChevronDown), Disabled: state.snippetNeighbor(state.snippetMenu.index, 1) < 0})
+	}
 	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitSnippetMenuEdit, Label: m.SnippetEdit, Icon: icon(iconPencil)})
 	rows.add(components.ContextMenuItem{ID: hitSnippetMenuDelete, Label: m.SnippetDelete, Icon: icon(iconTrash), Variant: components.ContextMenuItemDestructive})
@@ -92,7 +112,11 @@ func (state *State) chooseSnippetMenu(id gfx.ID) {
 	}
 	switch id {
 	case hitSnippetMenuSend:
-		state.sendSnippetFromPage(index, menu.at)
+		if menu.fromBar {
+			state.sendSnippet(index)
+		} else {
+			state.sendSnippetFromPage(index, menu.at)
+		}
 	case hitSnippetMenuEdit:
 		state.openSnippetDialog(index)
 	case hitSnippetMenuUp:

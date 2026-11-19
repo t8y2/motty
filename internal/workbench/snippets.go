@@ -602,7 +602,7 @@ func (state *State) sendSnippetFromPage(index int, at gfx.Point) {
 	case terminals == 1:
 		state.sendSnippetPicked(index, only)
 	default:
-		state.snippetMenu = snippetMenu{open: true, pick: true, index: index, at: at}
+		state.snippetMenu = snippetMenu{open: true, pick: true, index: index, name: state.snippets.list[index].Name, at: at}
 	}
 }
 
