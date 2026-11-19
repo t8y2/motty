@@ -51,6 +51,9 @@ func TestTerminalTextStaysWithItsSessionAfterListCompaction(t *testing.T) {
 	ownerID := state.sessions[1].ID
 	otherShell := liveTab(t, state, world, 2).shell(t)
 	firstID := state.sessions[0].ID
+	// This test checks where text goes, not the multi-line paste review, which
+	// is tested separately in paste_review_test.go.
+	state.pasteConfirmOff = true
 	state.ActivatePane(ownerID)
 	input := state.TerminalInput(app.TextInputContext{ID: state.activeTerminalFocusHit(), Terminal: true})
 	if input == nil {
