@@ -87,16 +87,16 @@ text "Image" {463 240.5 39.450195 40}
 text "State" {683 240.5 33.35254 40}
 text "Status" {773 240.5 40.783203 40}
 text "ID" {973 240.5 13.364258 40}
-text "web" {263 280.5 184 21}
-text "nginx:latest" {463 280.5 204 21}
-text "running" {683 280.5 74 21}
-text "Up 2 hours" {773 280.5 184 21}
-text "0f1e2d3c4b5a" {973 280.5 164 21}
-text "old-job" {263 316.5 184 21}
-text "alpine:3.19" {463 316.5 204 21}
-text "exited" {683 316.5 74 21}
-text "Exited (0) 3 days ago" {773 316.5 184 21}
-text "a1b2c3d4e5f6" {973 316.5 164 21}
+text "web" {263 280.5 184 36}
+text "nginx:latest" {463 280.5 204 36}
+text "running" {683 280.5 74 36}
+text "Up 2 hours" {773 280.5 184 36}
+text "0f1e2d3c4b5a" {973 280.5 164 36}
+text "old-job" {263 316.5 184 36}
+text "alpine:3.19" {463 316.5 204 36}
+text "exited" {683 316.5 74 36}
+text "Exited (0) 3 days ago" {773 316.5 184 36}
+text "a1b2c3d4e5f6" {973 316.5 164 36}
 text "2 entries." {254 724.5 532 19}
 text "Collected 2026-11-18 12:34:56" {786 724.5 360 19}
 text "Close" {566.2383 775.5 56.49707 32}

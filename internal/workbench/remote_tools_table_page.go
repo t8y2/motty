@@ -263,7 +263,7 @@ func (state *State) declareRemoteTableRow(row ui.ListRow) {
 		for column := 0; column < view.tableCount; column++ {
 			spec := view.tableColumns[column]
 			cell := ui.Text(row.C, record.cells[column]).Height(height).Shrink(0).
-				FontSize(theme.Metrics.FontSizeM).Color(theme.Foreground).Ellipsis().
+				FontSize(theme.Metrics.FontSizeM).Color(theme.Foreground).Ellipsis().LineHeight(height).
 				PadX(theme.Metrics.GapItem)
 			if spec.Alignment == components.TableAlignRight {
 				cell = cell.TextEnd()

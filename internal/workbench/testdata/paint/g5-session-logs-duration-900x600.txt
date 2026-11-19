@@ -29,24 +29,24 @@ text "Longest first" {386.5 172.5 69.35742 19}
 text "Target" {231 205 42.396484 40}
 text "Duration" {562 205 54.776367 40}
 text "Status" {662 205 40.783203 40}
-text "lab · ops" {231 245 315 21}
-text "1h 00m" {562 245 84 21}
-text "Ended · Closed by you" {662 245 174 21}
-text "web-01 · alice" {231 281 315 21}
-text "30m 00s" {562 281 84 21}
-text "Ended · Closed by you" {662 281 174 21}
-text "db-01 · bob" {231 317 315 21}
-text "5m 00s" {562 317 84 21}
-text "Failed · Authentication fai…" {662 317 174 21}
-text "rack-02 · ops" {231 353 315 21}
-text "1m 00s (un…" {562 353 84 21}
-text "Interrupted" {662 353 174 21}
-text "old-box · ops" {231 389 315 21}
-text "1m 00s" {562 389 84 21}
-text "Failed · Timed out" {662 389 174 21}
-text "archive · ops" {231 425 315 21}
-text "1m 00s" {562 425 84 21}
-text "Ended · Closed by you" {662 425 174 21}
+text "lab · ops" {231 245 315 36}
+text "1h 00m" {562 245 84 36}
+text "Ended · Closed by you" {662 245 174 36}
+text "web-01 · alice" {231 281 315 36}
+text "30m 00s" {562 281 84 36}
+text "Ended · Closed by you" {662 281 174 36}
+text "db-01 · bob" {231 317 315 36}
+text "5m 00s" {562 317 84 36}
+text "Failed · Authentication fai…" {662 317 174 36}
+text "rack-02 · ops" {231 353 315 36}
+text "1m 00s (un…" {562 353 84 36}
+text "Interrupted" {662 353 174 36}
+text "old-box · ops" {231 389 315 36}
+text "1m 00s" {562 389 84 36}
+text "Failed · Timed out" {662 389 174 36}
+text "archive · ops" {231 425 315 36}
+text "1m 00s" {562 425 84 36}
+text "Ended · Closed by you" {662 425 174 36}
 hit "" region {0 0 900 36} disabled=false
 hit "Hosts" button {82 4 28 28} disabled=false
 hit "New tab" button {116 4 28 28} disabled=false

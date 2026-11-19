@@ -1302,7 +1302,7 @@ func (state *State) declareSessionLogItem(row ui.ListRow) {
 		}
 		for column := 0; column < count-1; column++ {
 			ui.Text(row.C, cells[column]).Width(widths[column]).Height(rowHeight).
-				PadSides(0, theme.Metrics.GapItem, 0, theme.Metrics.GapItem).
+				PadSides(0, theme.Metrics.GapItem, 0, theme.Metrics.GapItem).LineHeight(rowHeight).
 				FontSize(theme.Metrics.FontSizeM).Color(theme.Foreground).Ellipsis()
 		}
 		icon, style := iconStar, iconButtonQuiet

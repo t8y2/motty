@@ -33,38 +33,38 @@ text "Protocol" {988 193 53.89453 40}
 text "Status" {1072 193 40.783203 40}
 text "Duration" {1272 193 54.776367 40}
 text "Today" {231 236.5 35.203125 19}
-text "web-01 · alice" {231 259 637 21}
-text "10-30 17:00" {884 259 88 21}
-text "SSH" {988 259 68 21}
-text "Ended · Closed by you" {1072 259 184 21}
-text "30m 00s" {1272 259 64 21}
-text "rack-02 · ops" {231 295 637 21}
-text "10-30 16:00" {884 295 88 21}
-text "Serial" {988 295 68 21}
-text "Interrupted" {1072 295 184 21}
-text "1m 00s…" {1272 295 64 21}
-text "db-01 · bob" {231 331 637 21}
-text "10-30 15:00" {884 331 88 21}
-text "SSH" {988 331 68 21}
-text "Failed · Authentication failed" {1072 331 184 21}
-text "5m 00s" {1272 331 64 21}
+text "web-01 · alice" {231 259 637 36}
+text "10-30 17:00" {884 259 88 36}
+text "SSH" {988 259 68 36}
+text "Ended · Closed by you" {1072 259 184 36}
+text "30m 00s" {1272 259 64 36}
+text "rack-02 · ops" {231 295 637 36}
+text "10-30 16:00" {884 295 88 36}
+text "Serial" {988 295 68 36}
+text "Interrupted" {1072 295 184 36}
+text "1m 00s…" {1272 295 64 36}
+text "db-01 · bob" {231 331 637 36}
+text "10-30 15:00" {884 331 88 36}
+text "SSH" {988 331 68 36}
+text "Failed · Authentication failed" {1072 331 184 36}
+text "5m 00s" {1272 331 64 36}
 text "Yesterday" {231 370.5 57.398438 19}
-text "lab · ops" {231 393 637 21}
-text "10-29 12:00" {884 393 88 21}
-text "Local shell" {988 393 68 21}
-text "Ended · Closed by you" {1072 393 184 21}
-text "1h 00m" {1272 393 64 21}
+text "lab · ops" {231 393 637 36}
+text "10-29 12:00" {884 393 88 36}
+text "Local shell" {988 393 68 36}
+text "Ended · Closed by you" {1072 393 184 36}
+text "1h 00m" {1272 393 64 36}
 text "Earlier" {231 432.5 35.578125 19}
-text "old-box · ops" {231 455 637 21}
-text "10-22 18:00" {884 455 88 21}
-text "Telnet" {988 455 68 21}
-text "Failed · Timed out" {1072 455 184 21}
-text "1m 00s" {1272 455 64 21}
-text "archive · ops" {231 491 637 21}
-text "09-20 18:00" {884 491 88 21}
-text "SSH" {988 491 68 21}
-text "Ended · Closed by you" {1072 491 184 21}
-text "1m 00s" {1272 491 64 21}
+text "old-box · ops" {231 455 637 36}
+text "10-22 18:00" {884 455 88 36}
+text "Telnet" {988 455 68 36}
+text "Failed · Timed out" {1072 455 184 36}
+text "1m 00s" {1272 455 64 36}
+text "archive · ops" {231 491 637 36}
+text "09-20 18:00" {884 491 88 36}
+text "SSH" {988 491 68 36}
+text "Ended · Closed by you" {1072 491 184 36}
+text "1m 00s" {1272 491 64 36}
 hit "" region {0 0 1400 36} disabled=false
 hit "Hosts" button {82 4 28 28} disabled=false
 hit "New tab" button {116 4 28 28} disabled=false

@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -329,5 +330,44 @@ func TestRemoteToolsModalScrollsThroughAllDockerObjects(t *testing.T) {
 				t.Fatal("the last resource is not reachable by scrolling")
 			}
 		})
+	}
+}
+
+// A resource row's cells are centered in the row: the page List row's height is
+// also the cell's line height, so the text sits in the middle of its highlight
+// rather than at its top edge.
+func TestRemoteToolsRowsCenterTheirCells(t *testing.T) {
+	state, _, _ := openRemoteToolsDialog(t)
+	state.remote.tab = remoteContainers
+	state.remote.rows = make([]remoteRow, 4)
+	for index := range state.remote.rows {
+		state.remote.rows[index] = remoteRow{
+			key:   fmt.Sprintf("resource-%02d", index),
+			cells: [6]string{fmt.Sprintf("resource-%02d", index)},
+		}
+	}
+	canvas := remoteToolsPaint(t, state)
+	checked := 0
+	for index := range state.remote.rows {
+		hit, ok := hitByID(canvas, remoteToolsRowID(state, index))
+		if !ok {
+			continue
+		}
+		target := state.remote.rows[index].cells[0]
+		for _, text := range canvas.Texts() {
+			if text.Value != target {
+				continue
+			}
+			center := text.Bounds.Y + text.Bounds.Height/2
+			rowCenter := hit.Bounds.Y + hit.Bounds.Height/2
+			if math.Abs(float64(center-rowCenter)) > .5 {
+				t.Fatalf("row %d's cell is centered at %v in a row centered at %v", index, center, rowCenter)
+			}
+			checked++
+			break
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no resource row was painted; the test checks nothing")
 	}
 }

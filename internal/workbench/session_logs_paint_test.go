@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"testing"
@@ -978,5 +979,41 @@ func TestShortSessionLogDetailKeepsItsActions(t *testing.T) {
 		if _, found := hitByLabelRoleLast(&canvas, label, gfx.RoleButton); !found {
 			t.Errorf("600px panel lost its %q action", label)
 		}
+	}
+}
+
+// A record row's cells are centered in the row, as the component table drew
+// them: the page List gives each cell the row's height, and its line must fill
+// that height rather than sit at the row's top edge.
+func TestSessionLogRowsCenterTheirCells(t *testing.T) {
+	state := sessionLogsState(t, true)
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	view := &state.sessionLogs.view
+	checked := 0
+	for index, item := range view.items {
+		if item.row < 0 || item.row >= len(view.page) {
+			continue
+		}
+		hit, ok := hitByID(&canvas, view.rowsList.RowID(index))
+		if !ok {
+			continue // scrolled out of sight
+		}
+		target := view.page[item.row].cells[0]
+		for _, text := range canvas.Texts() {
+			if text.Value != target {
+				continue
+			}
+			center := text.Bounds.Y + text.Bounds.Height/2
+			rowCenter := hit.Bounds.Y + hit.Bounds.Height/2
+			if math.Abs(float64(center-rowCenter)) > .5 {
+				t.Fatalf("row %d's cell is centered at %v in a row centered at %v", index, center, rowCenter)
+			}
+			checked++
+			break
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no record row was painted; the test checks nothing")
 	}
 }
