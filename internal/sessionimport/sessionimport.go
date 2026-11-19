@@ -1,13 +1,13 @@
 // Package sessionimport reads the saved sessions of other clients, PuTTY,
-// Xshell, MobaXterm, WindTerm, Electerm, Netcatty and SecureCRT, into the host
-// fields Motty keeps. It reads files or folders the user chose and never
-// executes, resolves or contacts anything in them.
+// Xshell, MobaXterm, WindTerm, Electerm, Netcatty, SecureCRT and FinalShell,
+// into the host fields Motty keeps. It reads files or folders the user chose
+// and never executes, resolves or contacts anything in them.
 //
 // Only connection fields and readable SSH login password candidates from
 // Electerm and Netcatty are taken. The caller decides whether to save those
 // candidates in a vault. Other clients' encrypted credentials and key files
-// are not imported; SecureCRT in particular stores every saved password
-// encrypted, so a SecureCRT import never carries one.
+// are not imported; SecureCRT and FinalShell store every saved password
+// encrypted, so their imports never carry one.
 package sessionimport
 
 import (
@@ -391,6 +391,8 @@ func ParseWithOptions(client Client, paths []string, options ParseOptions) (Resu
 			part, err = ParseNetcatty(path)
 		case SecureCRT:
 			part, err = ParseSecureCRT(path)
+		case FinalShell:
+			part, err = ParseFinalShell(path)
 		default:
 			err = fmt.Errorf("unknown client %d", client)
 		}
@@ -423,6 +425,7 @@ const (
 	Electerm
 	Netcatty
 	SecureCRT
+	FinalShell
 )
 
 // ---- PuTTY ----
@@ -1392,4 +1395,242 @@ func secureCRTPort(value string) int {
 		return 0
 	}
 	return number
+}
+
+// ---- FinalShell ----
+
+// FinalShell keeps its data in a directory: config.json at the top, and under
+// conn/ a folder.json for every folder and an <id>_connect_config.json for
+// every host. The folder and host records name each other by id, so the tree is
+// rebuilt from parent_id rather than from the paths on disk. Passwords are
+// encrypted by FinalShell and are not read; keys named by secret_key_id are
+// counted but not imported. A record's conection_type is 100 for SSH and 101
+// for Windows remote desktop, which is skipped like any other unread protocol.
+const (
+	finalShellRoot = "root"
+	finalShellSSH  = 100
+)
+
+// finalShellIgnored keeps historical copies and deleted entries out of the
+// import; FinalShell writes both with the same shape as live records.
+var finalShellIgnored = map[string]bool{
+	"backup": true, "deleted": true, "temp": true, "blur_image_cache": true,
+}
+
+// finalShellFolder is one conn/<id>/folder.json.
+type finalShellFolder struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	ParentID string `json:"parent_id"`
+}
+
+// finalShellHost is one *_connect_config.json. FinalShell spells "connection"
+// as "conection" on disk, and an edited file may hold a number as text.
+type finalShellHost struct {
+	ID          string        `json:"id"`
+	Name        string        `json:"name"`
+	Host        string        `json:"host"`
+	Port        finalShellInt `json:"port"`
+	UserName    string        `json:"user_name"`
+	AuthType    finalShellInt `json:"authentication_type"`
+	SecretKeyID string        `json:"secret_key_id"`
+	ConnType    finalShellInt `json:"conection_type"`
+	ParentID    string        `json:"parent_id"`
+
+	source string // where it was read, for warnings
+}
+
+type finalShellInt int
+
+func (value *finalShellInt) UnmarshalJSON(data []byte) error {
+	text := strings.Trim(strings.TrimSpace(string(data)), `"`)
+	number, err := strconv.Atoi(text)
+	if err != nil {
+		*value = 0
+		return nil
+	}
+	*value = finalShellInt(number)
+	return nil
+}
+
+// ParseFinalShell reads the FinalShell data directory the user chose. On
+// Windows that is the folder FinalShell was installed in, on macOS
+// ~/Library/FinalShell, and on Linux ~/.finalshell.
+func ParseFinalShell(path string) (Result, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return Result{}, err
+	}
+	if !info.IsDir() {
+		return Result{}, errors.New("not a FinalShell data folder: choose the folder that holds config.json and conn")
+	}
+	return parseFinalShellFolder(path)
+}
+
+func parseFinalShellFolder(root string) (Result, error) {
+	var (
+		result    Result
+		folders   = map[string]finalShellFolder{}
+		seenHosts = map[string]bool{}
+		hosts     []finalShellHost
+		hostFiles int
+		totalSize uint64
+		shortened bool
+	)
+	walkErr := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			if path == root {
+				return err
+			}
+			result.warn("%s: %v", filepath.Base(path), err)
+			return nil
+		}
+		if entry.IsDir() || entry.Type()&fs.ModeSymlink != 0 {
+			return nil
+		}
+		lower := strings.ToLower(entry.Name())
+		isFolder := lower == "folder.json"
+		isHost := strings.HasSuffix(lower, "_connect_config.json")
+		if !isFolder && !isHost {
+			return nil
+		}
+		relative, relativeErr := filepath.Rel(root, path)
+		if relativeErr != nil {
+			relative = entry.Name()
+		}
+		relative = filepath.ToSlash(relative)
+		if finalShellIgnoredPath(relative) {
+			return nil
+		}
+		if len(hosts) >= MaxEntries {
+			result.warn("%s: more than %d sessions; the rest were not read", filepath.Base(root), MaxEntries)
+			return filepath.SkipAll
+		}
+		if info, infoErr := entry.Info(); infoErr == nil {
+			totalSize += uint64(info.Size())
+			if totalSize > maxArchiveSize {
+				result.warn("%s: too large; the rest of the folder was not read", filepath.Base(root))
+				return filepath.SkipAll
+			}
+		}
+		text, readErr := readFile(path)
+		if readErr != nil {
+			result.warn("%s: %v", relative, readErr)
+			return nil
+		}
+		if isFolder {
+			var folder finalShellFolder
+			if err := json.Unmarshal([]byte(text), &folder); err != nil {
+				result.warn("%s: not valid JSON; skipped", relative)
+				return nil
+			}
+			if folder.ID == "" {
+				result.warn("%s: no folder id; skipped", relative)
+				return nil
+			}
+			if _, seen := folders[folder.ID]; !seen {
+				folders[folder.ID] = folder
+			}
+			return nil
+		}
+		hostFiles++
+		var host finalShellHost
+		if err := json.Unmarshal([]byte(text), &host); err != nil {
+			result.warn("%s: not valid JSON; skipped", relative)
+			return nil
+		}
+		if host.ID == "" {
+			result.warn("%s: no host id; skipped", relative)
+			return nil
+		}
+		if seenHosts[host.ID] {
+			return nil
+		}
+		seenHosts[host.ID] = true
+		host.source = relative
+		hosts = append(hosts, host)
+		return nil
+	})
+	if walkErr != nil {
+		return result, walkErr
+	}
+	if hostFiles == 0 {
+		return result, errors.New("not a FinalShell data folder: it holds no host configurations")
+	}
+	orphans := 0
+	for _, host := range hosts {
+		group := ""
+		if host.ParentID != "" && host.ParentID != finalShellRoot {
+			var cut bool
+			group, cut = finalShellGroupPath(folders, host.ParentID)
+			shortened = shortened || cut
+			if _, known := folders[host.ParentID]; !known {
+				orphans++
+			}
+		}
+		switch int(host.ConnType) {
+		case 0, finalShellSSH:
+		default:
+			result.Skipped++
+			continue
+		}
+		if host.SecretKeyID != "" {
+			result.Keys++
+		}
+		result.add(Entry{
+			Name: host.Name, Group: group, Protocol: SSH, Host: host.Host,
+			Port: int(host.Port), User: host.UserName, Source: host.source,
+		})
+	}
+	if orphans > 0 {
+		result.warn("%d sessions are in folders outside the chosen folder and were imported without one; choose the FinalShell data folder to keep their groups", orphans)
+	}
+	if shortened {
+		result.warn("%s: folders nested more than %d levels deep were shortened", filepath.Base(root), maxGroupDepth)
+	}
+	return result, nil
+}
+
+// finalShellIgnoredPath reports whether a record sits under backup/, deleted/,
+// temp/ or blur_image_cache/, which hold history rather than saved sessions.
+func finalShellIgnoredPath(relative string) bool {
+	parts := strings.Split(relative, "/")
+	for _, part := range parts[:len(parts)-1] {
+		if finalShellIgnored[strings.ToLower(part)] {
+			return true
+		}
+	}
+	return false
+}
+
+// finalShellGroupPath is the folder a record sits in followed by its own name,
+// joined with "/" the way the other imports join nested folders, and whether
+// the path had to be cut at maxGroupDepth levels. A folder that is its own
+// ancestor, as a damaged file can make it, stops the climb where it would come
+// round to itself.
+func finalShellGroupPath(folders map[string]finalShellFolder, id string) (string, bool) {
+	var ids []string
+	cut := false
+	for current := id; ; {
+		folder, known := folders[current]
+		if !known || slices.Contains(ids, current) {
+			break
+		}
+		if len(ids) == maxGroupDepth {
+			cut = true
+			break
+		}
+		ids = append(ids, current)
+		if folder.ParentID == "" || folder.ParentID == finalShellRoot {
+			break
+		}
+		current = folder.ParentID
+	}
+	titles := make([]string, 0, len(ids))
+	for _, folderID := range slices.Backward(ids) {
+		if name := clean(folders[folderID].Name, maxNameLength); name != "" {
+			titles = append(titles, name)
+		}
+	}
+	return strings.Join(titles, "/"), cut
 }

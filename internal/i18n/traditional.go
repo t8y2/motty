@@ -1979,6 +1979,7 @@ var traditionalTools = ToolsMessages{
 	ImportGuideURL:               "https://motty.page/zh/docs/connections/hosts-and-authentication#匯入",
 	ImportPickerFmt:              "匯入 %s 工作階段",
 	ImportFolderPickerFmt:        "選擇 %s 的 Sessions 資料夾",
+	ImportConfigFolderPickerFmt:  "選擇 %s 的資料夾",
 	ImportCanceled:               "已取消匯入。",
 	ImportFailedFmt:              "無法匯入：%v",
 	ImportSummaryFmt:             "已從 %[2]s 匯入 %[1]d 台主機；跳過 %[3]d 台已儲存的主機。",

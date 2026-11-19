@@ -94,7 +94,8 @@ Hosts can be grouped, tagged and searched.
 
 ### Import
 
-Open **Import > Import from** and choose the client, then the file it saved.
+Open **Import > Import from** and choose the client, then the file or folder it
+saved.
 Motty takes each session's name, folder, address, port and user; protocols it
 cannot open are counted as skipped. Electerm and Netcatty exports may also
 contain readable SSH login passwords. When they do, Motty asks whether to save
@@ -112,6 +113,7 @@ fill an empty saved password, but never replace one already saved.
 | WindTerm | `user.sessions` in the `terminal` folder of WindTerm's profile. |
 | Electerm | The bookmarks JSON exported from Electerm's bookmark manager. |
 | Netcatty | The CSV from the **Export** button on Netcatty's hosts page. Netcatty keeps its own vault encrypted, so only this export can be read. |
+| FinalShell | The FinalShell data folder: `~/.finalshell` on Linux, `~/Library/FinalShell` on macOS, or usually the FinalShell install folder on Windows. |
 
 Electerm and Netcatty write saved passwords into the export in clear text.
 Choosing to save passwords encrypts eligible SSH passwords in Motty's vault,
