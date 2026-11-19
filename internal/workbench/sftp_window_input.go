@@ -321,10 +321,10 @@ func (w *sftpWindow) listOffset(side int) float32 {
 func (w *sftpWindow) setListOffset(side int, offset float32) float32 {
 	folder := w.folder(side == 0)
 	offset = max(offset, 0)
-	if room := w.ui.bars[side].MaxOffsetY; room > 0 && offset > room {
-		offset = room
-	}
 	if scroll := folder.listScroll; scroll != nil {
+		if room := scroll.Max(); room > 0 && offset > room {
+			offset = room
+		}
 		scroll.ScrollTo(offset)
 		offset = scroll.Offset
 	}
@@ -399,48 +399,22 @@ func (w *sftpWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
 		return gfx.EventResult{}
 	}
 	if w.bookmark.open {
-		return w.profilePointer(event)
-	}
-	if w.ui.profileQuickOpen {
-		if w.ui.profileQuickScroll.Drag(event) {
-			return handled
-		}
-		if event.Kind == gfx.PointerDown && event.Target == hitSFTPProfileQuickDismiss {
-			w.closeProfileQuickMenu()
-			return handled
-		}
-		return gfx.EventResult{}
-	}
-	if w.headerMenuOpen() {
-		if w.ui.headerScroll.Drag(event) {
-			return handled
-		}
-		if event.Kind == gfx.PointerDown && event.Target == hitSFTPWindowHeaderDismiss {
-			w.closeHeaderMenu()
-			return handled
-		}
-		return gfx.EventResult{}
-	}
-	if w.ui.menuOpen {
-		if w.ui.menuScroll.Drag(event) {
-			return handled
-		}
-		if event.Kind == gfx.PointerDown && event.Target == hitSFTPWindowMenuDismiss {
-			w.ui.menuOpen = false
-			return handled
+		// The dialog's lists, scrollbars and menus are page controls; only the
+		// double click that opens a profile is the window's.
+		if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary && event.ClickCount == 2 {
+			if index, ok := event.Target.In(hitSFTPProfileItems); ok {
+				profiles := w.visibleProfiles()
+				if index < len(profiles) {
+					w.selectProfile(profiles[index])
+					w.openProfileDraft()
+					return handled
+				}
+			}
 		}
 		return gfx.EventResult{}
 	}
 	if w.view.bookmarksOpen {
-		wasDragging := w.view.places.scroll.Dragging()
-		changed := w.view.places.scroll.Drag(event)
-		if wasDragging || changed || w.view.places.scroll.Dragging() {
-			return gfx.EventResult{Handled: true, Repaint: changed}
-		}
-		if event.Kind == gfx.PointerDown && event.Target == hitSFTPBookmarkDismiss {
-			w.view.bookmarksOpen = false
-			return handled
-		}
+		// The places menu is a page menu; the page owns its pointer.
 		return gfx.EventResult{}
 	}
 	if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary {
@@ -450,74 +424,17 @@ func (w *sftpWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
 			}
 		}
 	}
-	if w.ui.splitting {
-		if event.Kind == gfx.PointerMove {
-			w.ui.fraction = w.ui.split.FractionAt(event.X)
-		} else if event.Kind == gfx.PointerUp || event.Kind == gfx.PointerExit {
-			w.ui.splitting = false
-		}
-		return handled
-	}
-	if event.Kind == gfx.PointerDown && event.Target == hitSFTPWindowSplit {
-		if fraction, ok := w.ui.split.FractionForClick(event.ClickCount); ok {
-			w.ui.fraction = fraction
-		} else {
-			w.ui.splitting = true
-		}
+	// A double click on the divider returns the panes to half each, as the
+	// painted Resizable did.
+	if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary &&
+		event.Target == hitSFTPWindowSplit && event.ClickCount >= 2 {
+		span := max(w.ui.body.Width-sftpWindowSplitExtent, 0)
+		w.ui.split.Ratio = .5
+		w.ui.split.Pos = span / 2
 		return handled
 	}
 	if result, handled := w.columnResizePointer(event); handled {
 		return result
-	}
-	if result, ok := w.directoryTreePointer(event); ok {
-		return result
-	}
-	if w.ui.barDrag > 0 {
-		side := w.ui.barDrag - 1
-		if event.Kind == gfx.PointerMove {
-			if !event.Captured {
-				return gfx.EventResult{Handled: true}
-			}
-			var before, after float32
-			if side == 2 {
-				before = w.ui.queueOffset
-				w.ui.queueOffset = w.ui.queueBar.VerticalOffsetForThumb(event.Y - w.ui.barGrab)
-				after = w.ui.queueOffset
-			} else {
-				before = w.listOffset(side)
-				after = w.setListOffset(side, w.ui.bars[side].VerticalOffsetForThumb(event.Y-w.ui.barGrab))
-			}
-			return gfx.EventResult{Handled: true, Repaint: before != after}
-		} else if event.Kind == gfx.PointerUp {
-			w.ui.barDrag = 0
-		} else if event.Kind == gfx.PointerExit && !event.Captured {
-			w.ui.barDrag = 0
-		}
-		return gfx.EventResult{Handled: true}
-	}
-	if event.Kind == gfx.PointerDown && event.Target == hitSFTPWindowQueueBar {
-		geometry := w.ui.queueBar
-		before := w.ui.queueOffset
-		w.ui.barGrab = geometry.VerticalThumb.Height / 2
-		if event.Y >= geometry.VerticalThumb.Y && event.Y < geometry.VerticalThumb.Y+geometry.VerticalThumb.Height {
-			w.ui.barGrab = event.Y - geometry.VerticalThumb.Y
-		}
-		w.ui.barDrag = 3
-		w.ui.queueOffset = geometry.VerticalOffsetForThumb(event.Y - w.ui.barGrab)
-		return gfx.EventResult{Handled: true, Repaint: before != w.ui.queueOffset}
-	}
-	for side, id := range sftpWindowBar {
-		if event.Kind == gfx.PointerDown && event.Target == id {
-			geometry := w.ui.bars[side]
-			before := w.listOffset(side)
-			w.ui.barGrab = geometry.VerticalThumb.Height / 2
-			if event.Y >= geometry.VerticalThumb.Y && event.Y < geometry.VerticalThumb.Y+geometry.VerticalThumb.Height {
-				w.ui.barGrab = event.Y - geometry.VerticalThumb.Y
-			}
-			w.ui.barDrag = side + 1
-			w.setListOffset(side, geometry.VerticalOffsetForThumb(event.Y-w.ui.barGrab))
-			return gfx.EventResult{Handled: true, Repaint: before != w.ui.offset[side]}
-		}
 	}
 	if w.drag.armed || w.drag.active {
 		w.drag.at = gfx.Point{X: event.X, Y: event.Y}
@@ -660,36 +577,13 @@ func (w *sftpWindow) click(id gfx.ID) {
 			return
 		}
 	}
-	if w.clickDirectoryTree(id) {
-		return
-	}
 	if id == hitSFTPWindowMenuDismiss {
 		w.ui.menuOpen = false
 		return
 	}
 	if w.ui.menuOpen {
 		w.ui.menuOpen = false
-		if id == hitSFTPMenuSudo {
-			w.owner.toggleSudoSFTP(&w.session, w.view)
-			return
-		}
-		if index, ok := id.In(sftpWindowMenuActions); ok && index < len(sftpWindowActionIDs) {
-			w.fileAction(w.activeLocal, sftpWindowActionIDs[index])
-			return
-		}
-		if id == hitSFTPWindowMenuCopy {
-			if err := w.owner.copySFTPPaths(w.folder(w.activeLocal), w.activeLocal); err != nil {
-				w.notices.show(w.owner.messages.SFTPWindow.Title, err.Error(), components.ToastError)
-			}
-		}
-		if id == hitSFTPMenuCopyFiles {
-			if _, err := w.owner.copySFTPSelection(w.view); err != nil {
-				w.notices.show(w.owner.messages.SFTPWindow.Title, err.Error(), components.ToastError)
-			}
-		}
-		if id == hitSFTPMenuPasteFiles {
-			w.pasteClipboard()
-		}
+		w.clickFileMenuAction(id)
 		return
 	}
 	if w.view.bookmarksOpen {
@@ -861,6 +755,39 @@ func (w *sftpWindow) startPathEditing(side int) gfx.EventResult {
 	return gfx.EventResult{Handled: true, Repaint: true, Focus: sftpWindowPath[side], FocusVisible: true}
 }
 
+// moveSplitter moves the pane divider by the arrow keys, as a focused Resizable
+// did: five percent of the group a press, Home and End to the limits. The share
+// is kept so a window resize keeps the proportion.
+func (w *sftpWindow) moveSplitter(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if event.Target != hitSFTPWindowSplit || event.Release {
+		return gfx.EventResult{}, false
+	}
+	width := w.ui.body.Width
+	least := float32(220)
+	most := max(width-sftpWindowSplitExtent-least, least)
+	span := max(width-sftpWindowSplitExtent, 1)
+	step := span * .05
+	pos := w.paneSplitWidth(width)
+	switch event.Key {
+	case gfx.KeyLeft, gfx.KeyUp:
+		pos -= step
+	case gfx.KeyRight, gfx.KeyDown:
+		pos += step
+	case gfx.KeyHome:
+		pos = least
+	case gfx.KeyEnd:
+		pos = most
+	default:
+		return gfx.EventResult{}, false
+	}
+	pos = min(max(pos, least), most)
+	w.ui.split.Pos = pos
+	if span := width - sftpWindowSplitExtent; span > 0 {
+		w.ui.split.Ratio = pos / span
+	}
+	return gfx.EventResult{Handled: true, Repaint: true}, true
+}
+
 func (w *sftpWindow) key(event gfx.KeyEvent) gfx.EventResult {
 	if event.Release {
 		return gfx.EventResult{}
@@ -886,8 +813,10 @@ func (w *sftpWindow) key(event gfx.KeyEvent) gfx.EventResult {
 		return result
 	}
 	if w.bookmark.open && !w.closeConfirm {
-		if result, handled := w.profileScopeKey(event); handled {
-			return result
+		if w.bookmark.scopeOpen && event.Key == gfx.KeyEscape {
+			// The open scope menu's focus trap owns Escape: let it fall through so
+			// the runtime dismisses the list and leaves the editor open.
+			return gfx.EventResult{}
 		}
 		if event.Target == hitSFTPBookmarkSync && !event.Repeat && event.Modifiers == 0 && (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) {
 			w.clickBookmarkEditor(hitSFTPBookmarkSync)
@@ -938,9 +867,13 @@ func (w *sftpWindow) key(event gfx.KeyEvent) gfx.EventResult {
 			if len(profiles) > 0 {
 				next = max(0, min(next, len(profiles)-1))
 				w.selectProfile(profiles[next])
-				w.bookmark.offset = max(0, min(w.bookmark.offset, float32(next)*52))
-				if bottom := float32(next+1) * 52; bottom > w.bookmark.offset+w.bookmark.list.Height {
-					w.bookmark.offset = bottom - w.bookmark.list.Height
+				if scroll := w.bookmark.scroll; scroll != nil {
+					top, bottom := float32(next)*52, float32(next+1)*52
+					if top < scroll.Offset {
+						scroll.ScrollTo(top)
+					} else if bottom > scroll.Offset+scroll.Viewport {
+						scroll.ScrollTo(bottom - scroll.Viewport)
+					}
 				}
 				handled.Focus, handled.FocusVisible = hitSFTPProfileItems.At(next), true
 			}
@@ -996,22 +929,12 @@ func (w *sftpWindow) key(event gfx.KeyEvent) gfx.EventResult {
 		w.owner.submitSFTPDialog(w.view)
 		return handled
 	}
-	if w.headerMenuOpen() {
-		if next, ok := w.ui.headerScroll.Navigate(event.Key, event.Target, true); ok {
-			handled.Focus, handled.FocusVisible = next, true
-			return handled
-		}
+	if w.headerMenuOpen() || w.ui.menuOpen {
+		// The page owns the keys of its open menus.
 		return gfx.EventResult{}
 	}
-	if w.ui.menuOpen || w.view.bookmarksOpen {
-		scroll := &w.ui.menuScroll
-		if w.view.bookmarksOpen {
-			scroll = &w.view.places.scroll
-		}
-		if next, ok := scroll.Navigate(event.Key, event.Target, true); ok {
-			handled.Focus, handled.FocusVisible = next, true
-			return handled
-		}
+	if w.view.bookmarksOpen {
+		// The places menu is a page menu; the page owns its keys.
 		return gfx.EventResult{}
 	}
 	if w.fileProperties.open || w.closeConfirm || w.externalConflict != 0 || w.view.dialog != sftpDialogNone {
@@ -1023,9 +946,6 @@ func (w *sftpWindow) key(event gfx.KeyEvent) gfx.EventResult {
 				return w.startPathEditing(side)
 			}
 		}
-	}
-	if result, handled := w.directoryTreeKey(event); handled {
-		return result
 	}
 	if delta, ok := sftpHistoryChord(event); ok {
 		isText := false
@@ -1042,11 +962,10 @@ func (w *sftpWindow) key(event gfx.KeyEvent) gfx.EventResult {
 			return gfx.EventResult{}
 		}
 	}
-	if event.Target == hitSFTPWindowSplit {
-		if fraction, ok := w.ui.split.FractionForKey(event.Key); ok {
-			w.ui.fraction = fraction
-			return handled
-		}
+	// The splitter is the page's ui.Splitter; its keyboard moves take the same
+	// keys a Resizable took.
+	if result, ok := w.moveSplitter(event); ok {
+		return result
 	}
 	for side, id := range sftpWindowPath {
 		if event.Target == id {
@@ -1239,34 +1158,23 @@ func (w *sftpWindow) shortcut(event gfx.KeyEvent) gfx.EventResult {
 
 func (w *sftpWindow) scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if w.bookmark.open {
-		b := &w.bookmark
-		if b.scopeOpen {
-			return gfx.EventResult{Handled: true, Repaint: b.scopeMenu.Wheel(event)}
-		}
-		if pointInRect(event.X, event.Y, b.list) {
-			before := b.offset
-			b.offset = max(0, min(b.area.MaxOffsetY, b.offset+event.DeltaY))
-			return gfx.EventResult{Handled: true, Repaint: before != b.offset}
+		// The dialog's profile list is a page ScrollArea and its scope choice a
+		// page menu; the page owns the wheel over both.
+		if result := w.bookmarkPage().Wheel(event); result.Handled {
+			return result
 		}
 		return gfx.EventResult{Handled: true}
 	}
-	if w.ui.profileQuickOpen {
-		return gfx.EventResult{Handled: true, Repaint: w.ui.profileQuickScroll.Wheel(event)}
-	}
-	if w.headerMenuOpen() {
-		return gfx.EventResult{Handled: true, Repaint: w.ui.headerScroll.Wheel(event)}
-	}
-	if w.ui.menuOpen {
-		return gfx.EventResult{Handled: true, Repaint: w.ui.menuScroll.Wheel(event)}
+	if w.ui.profileQuickOpen || w.headerMenuOpen() || w.ui.menuOpen {
+		// The page owns the wheel over its open menus (they are modal there).
+		return gfx.EventResult{}
 	}
 	if w.view.bookmarksOpen {
-		return gfx.EventResult{Handled: true, Repaint: w.view.places.scroll.Wheel(event)}
+		// The places menu is a page menu; the page owns its wheel.
+		return gfx.EventResult{}
 	}
 	if w.fileProperties.open || w.view.dialog != sftpDialogNone || w.bookmark.open || w.closeConfirm || w.externalConflict != 0 {
 		return gfx.EventResult{Handled: true}
-	}
-	if result, handled := w.directoryTreeScroll(event); handled {
-		return result
 	}
 	for side, bounds := range w.ui.list {
 		if pointInRect(event.X, event.Y, bounds) {
@@ -1286,15 +1194,18 @@ func (w *sftpWindow) scroll(event gfx.ScrollEvent) gfx.EventResult {
 			return gfx.EventResult{Handled: true, Repaint: before != w.ui.offset[side]}
 		}
 	}
-	if pointInRect(event.X, event.Y, w.ui.queueBounds) {
-		before := w.ui.queueOffset
-		w.ui.queueOffset = max(0, min(w.ui.queueBar.MaxOffsetY, w.ui.queueOffset+event.DeltaY))
-		if before != w.ui.queueOffset {
-			w.ui.queueDetails.dismiss()
-		}
-		return gfx.EventResult{Handled: true, Repaint: before != w.ui.queueOffset}
-	}
+	// The transfer queue is a page ScrollArea now: a wheel over it is the page's.
 	return gfx.EventResult{}
+}
+
+// scrollWindow gives the wheel to the window's own surfaces first (its lists move
+// whole rows, and its dialogs keep the wheel to themselves), then to the page's
+// scroll areas.
+func (w *sftpWindow) scrollWindow(event gfx.ScrollEvent) gfx.EventResult {
+	if result := w.scroll(event); result.Handled {
+		return result
+	}
+	return w.windowPage().Wheel(event)
 }
 
 func (w *sftpWindow) fileDrop(event gfx.FileDropEvent) gfx.EventResult {
@@ -1318,4 +1229,30 @@ func (w *sftpWindow) fileDrop(event gfx.FileDropEvent) gfx.EventResult {
 	w.cancelDrag()
 	w.queueLocalPaths(event.Paths, target)
 	return gfx.EventResult{Handled: true, Repaint: true}
+}
+
+// clickFileMenuAction runs a choice of the file list's context menu. The page menu
+// has already closed it, so the choice is taken by identity alone.
+func (w *sftpWindow) clickFileMenuAction(id gfx.ID) {
+	if id == hitSFTPMenuSudo {
+		w.owner.toggleSudoSFTP(&w.session, w.view)
+		return
+	}
+	if index, ok := id.In(sftpWindowMenuActions); ok && index < len(sftpWindowActionIDs) {
+		w.fileAction(w.activeLocal, sftpWindowActionIDs[index])
+		return
+	}
+	if id == hitSFTPWindowMenuCopy {
+		if err := w.owner.copySFTPPaths(w.folder(w.activeLocal), w.activeLocal); err != nil {
+			w.notices.show(w.owner.messages.SFTPWindow.Title, err.Error(), components.ToastError)
+		}
+	}
+	if id == hitSFTPMenuCopyFiles {
+		if _, err := w.owner.copySFTPSelection(w.view); err != nil {
+			w.notices.show(w.owner.messages.SFTPWindow.Title, err.Error(), components.ToastError)
+		}
+	}
+	if id == hitSFTPMenuPasteFiles {
+		w.pasteClipboard()
+	}
 }

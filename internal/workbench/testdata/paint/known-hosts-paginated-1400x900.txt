@@ -15,14 +15,10 @@ rect {{235 216 16 16} {0.216 0.22917646 0.24894118 1} 4 0 {223 206 1151 636} tru
 rect {{236 217 14 14} {0.11146667 0.1264 0.1488 1} 3 0 {223 206 1151 636} true #16}
 rect {{223 241 1151 1} {0.2 0.23529412 0.2901961 1} 0 0 {223 206 1151 636} true #17}
 rect {{223 842 1151 1} {0.2 0.23529412 0.2901961 1} 0 0 {205 37 1187 855} true #18}
-rect {{1132 853.5 76.2666 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {205 37 1187 855} true #20}
-rect {{1133 854.5 74.2666 26} {0.11146667 0.1264 0.1488 1} 6.5 0 {205 37 1187 855} true #21}
-rect {{1323.8809 853.5 50.11914 28} {0.14133334 0.1557647 0.17741176 1} 7.5 0 {205 37 1187 855} true #23}
-rect {{1324.8809 854.5 48.11914 26} {0.08906667 0.10437648 0.12734118 1} 6.5 0 {205 37 1187 855} true #24}
+rect {{1232.2666 852.5 30 30} {0.2 0.23529412 0.2901961 1} 5.5 0 {205 37 1187 855} true #19}
+rect {{1233.2666 853.5 28 28} {0.06666667 0.08235294 0.105882354 1} 4.5 0 {205 37 1187 855} true #20}
 shadow {{223 112 437.68164 40} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {205 37 1187 855} true #4}
 shadow {{235 216 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {223 206 1151 636} true #14}
-shadow {{1132 853.5 76.2666 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {205 37 1187 855} true #19}
-shadow {{1323.8809 853.5 50.11914 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {205 37 1187 855} true #22}
 text "Hosts" {52 114.5 37.180664 21}
 text "Workspaces" {52 154.5 80.37695 21}
 text "Monitor" {52 194.5 49.745117 21}
@@ -54,9 +50,9 @@ text "SHA256:ZPIj3qUKtwR+RYI1zYZqn+zcm7G…" {796 213.5 284 21}
 text "16 entries" {223 858 168 19}
 text "0 selected" {403 858 138 19}
 text "Loaded 16 known-host entries" {553 858 567 19}
-text "Previous" {1142 853.5 76.2666 28}
-text "Page 2 / 2" {1233.6953 857 107.61426 21}
-text "Next" {1333.8809 853.5 50.11914 28}
+text "Previous" {1162 852.5 56.2666 30}
+text "Page 2 / 2" {1232.2666 852.5 30 30}
+text "Next" {1276.2666 852.5 30.11914 30}
 hit "" region {0 0 1400 36} disabled=false
 hit "Hosts" button {82 4 28 28} disabled=false
 hit "New tab" button {116 4 28 28} disabled=false
@@ -85,7 +81,6 @@ hit "Refresh" button {1114.3633 114 83.20752 36} disabled=false
 hit "Re-trust" button {1205.5708 114 85.59424 36} disabled=true
 hit "Delete" button {1299.165 114 74.83496 36} disabled=true
 hit "Known Hosts" listbox {223 206 1151 636} disabled=false
-hit "16" option {223 206 1151 36} disabled=false
+hit "16 · host-15.example.com · ssh-ed25519 · SHA256:ZPIj3qUKtwR+RYI1zYZqn+zcm7GlLmNn/+46IW7kWM4" option {223 206 1151 36} disabled=false
 hit "host-15.example.com · SHA256:ZPIj3qUKtwR+RYI1zYZqn+zcm7GlLmNn/+46IW7kWM4" checkbox {223 208 40 32} disabled=false
-hit "Previous" button {1132 853.5 76.2666 28} disabled=false
-hit "Next" button {1323.8809 853.5 50.11914 28} disabled=true
+hit "Previous" button {1132 852.5 96.2666 30} disabled=false

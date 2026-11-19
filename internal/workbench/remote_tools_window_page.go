@@ -35,12 +35,11 @@ func (w *remoteToolsWindow) pageRoot() string {
 // windowPage is the page the tools window declares its chrome and dialogs in.
 func (w *remoteToolsWindow) windowPage() *ui.Page {
 	if w.page == nil {
-		w.tableHandlers = ui.Handlers{Role: gfx.RoleGroup, Key: w.processTableKey, Pointer: w.tablePointer}
 		w.refreshHandlers = ui.Handlers{Role: gfx.RoleButton, Key: w.ui.remoteRefreshControlKey, Pointer: w.ui.remoteRefreshControlPointer}
 		w.autoHandlers = ui.Handlers{Role: gfx.RoleButton, Key: w.ui.remoteAutoControlKey, Pointer: w.ui.remoteAutoControlPointer}
+		w.ui.remote.processMenu = w.declareProcessMenu
+		w.ui.remote.containerMenu = w.declareContainerMenu
 		w.footerFlow.gap = remoteToolsActionGap
-		w.tableDraw = w.drawTableControl
-		w.tableHeaderDraw = w.drawTableHeader
 		w.refreshDraw = w.ui.drawRemoteRefreshControl
 		w.autoDraw = w.ui.drawRemoteAutoControl
 		w.page = ui.NewPage(ui.PageConfig{
@@ -105,7 +104,6 @@ func (w *remoteToolsWindow) declareToolbar(c ui.C, size gfx.Size) remoteTab {
 	stacked := size.Width < 800
 	ui.Row(c).Height(remoteToolbarHeight).Shrink(0).Gap(remoteToolsToolbarGap).Children(func() {
 		if ui.Choice(c, &view.tab, remoteTabChoices[:], w.ui.remoteTabLabel).Width(600).Shrink(1).FillHeight().Changed() {
-			w.tableHoverRow = -1
 			w.ui.applyRemoteTab()
 		}
 		ui.Spacer(c)
@@ -161,7 +159,7 @@ func (w *remoteToolsWindow) declareSearch(c ui.C) {
 			field = field.Action(lucideIcons[iconClose], m.RemoteSearchClear)
 		}
 		if field.Changed() {
-			view.processScroll = 0
+			view.resetScroll = true
 			w.ui.rebuildRemoteRows()
 		}
 		if field.ActionClicked() {
@@ -174,26 +172,14 @@ func (w *remoteToolsWindow) declareSearch(c ui.C) {
 	})
 }
 
-// declareTable declares the table the current tab lists. A table is one page
-// Control: its cells are painted exactly as the table component lays them out,
-// and the control takes the row selection, the wheel and the row's context menu.
+// declareTable declares the table the current tab lists. The header is a page
+// row of sortable cells and the rows are a page List: the list takes the row
+// selection, the wheel and the row's context menu, and paints only the rows on
+// screen.
 func (w *remoteToolsWindow) declareTable(c ui.C, tab remoteTab) {
-	theme := w.ui.Theme()
-	w.paintTab = tab
-	headerHeight := components.TableHeaderHeight(theme)
-	ui.Column(c).Grow(1).Shrink(1).MinHeight(headerHeight+components.TableRowHeight(theme)).
-		MarginSides(remoteToolsTableMargin, 0, 0, 0).Border(1, w.ui.pal.line).Radius(radius.control).Children(func() {
-		ui.Slot(c).Height(headerHeight).Shrink(0).Draw(w.tableHeaderDraw)
-		body := ui.Control(c, w.ui.remoteTabLabel(tab), &w.tableHandlers).
-			Grow(1).Shrink(1).Draw(w.tableDraw)
-		if tab == remoteProcesses {
-			w.menuCtx = c
-			ui.ContextMenu(c, body, w.declareProcessMenu)
-		} else if tab == remoteContainers {
-			w.menuCtx = c
-			ui.ContextMenu(c, body, w.declareContainerMenu)
-		}
-	})
+	w.menuCtx = c
+	fallback := w.ui.viewport.Width - 2*remoteToolsContentPad - remoteToolsTableMargin - 2
+	w.ui.declareRemoteToolsTable(c, tab, fallback)
 }
 
 func (w *remoteToolsWindow) declareStatus(c ui.C, tab remoteTab) {
@@ -315,128 +301,6 @@ func (f *remoteToolsButtonFlow) lineAt(i int) int {
 		return 0
 	}
 	return f.line[i]
-}
-
-// drawTableControl paints the current tab's virtual rows inside its control.
-func (w *remoteToolsWindow) drawTableControl(d *ui.DrawContext) {
-	w.paintRows(d.Canvas, d.Rect)
-}
-
-func (w *remoteToolsWindow) drawTableHeader(d *ui.DrawContext) {
-	view, theme, m := &w.ui.remote, *d.Theme, w.ui.messages.Tools
-	view.processTableBounds = gfx.Rect{X: d.Rect.X, Y: d.Rect.Y, Width: d.Rect.Width, Height: d.Rect.Height}
-	if w.paintTab != remoteProcesses && (view.noDocker && view.collectedAt.IsZero() || view.loading && len(view.rows) == 0) {
-		return
-	}
-	columns, headings := w.ui.processTableSchema(d.Rect.Width)
-	if w.paintTab != remoteProcesses {
-		columns, headings = w.ui.objectTableSchema(w.paintTab)
-	}
-	var cells [6]components.TableHeader
-	order := view.tableSort()
-	for index, heading := range headings {
-		id := remoteTableHeaderID(w.paintTab, index)
-		cells[index] = components.TableHeader{
-			ID: id, Label: heading, Disabled: view.loading, FocusableWhenDisabled: true,
-			Description: m.RemoteSortAction,
-		}
-		if order.Direction != components.TableSortNone && order.Column == index {
-			cells[index].Sort = order.Direction
-			if order.Direction == components.TableSortAscending {
-				cells[index].Description = m.RemoteSortAscending
-			} else {
-				cells[index].Description = m.RemoteSortDescending
-			}
-		}
-		if d.Canvas.Clicked(id) {
-			d.Canvas.AfterPaint(func() { w.ui.clickRemoteTableSort(id) })
-		}
-	}
-	components.FitSortableTableHeadings(d.Canvas, theme, columns, cells[:len(headings)])
-	table := components.BeginTable(d.Canvas, theme, d.Rect, columns).
-		HeaderHeight(d.Rect.Height).
-		RowHeight(components.TableRowHeight(theme))
-	table.SortableHeader(cells[:len(headings)])
-}
-
-// paintRows paints the visible slice of the selected snapshot. The snapshot
-// stays complete in memory; only the rows intersecting the viewport become text runs.
-func (w *remoteToolsWindow) paintRows(canvas *gfx.Canvas, bounds gfx.Rect) {
-	view, theme, pal := &w.ui.remote, w.ui.Theme(), w.ui.pal
-	_, rowHeight := w.ui.remoteProcessTableMetrics()
-	headerHeight := components.TableHeaderHeight(theme)
-	view.processTableBounds = gfx.Rect{X: bounds.X, Y: bounds.Y - headerHeight, Width: bounds.Width, Height: bounds.Height + headerHeight}
-	view.tableBodyBounds = bounds
-	view.tableRowHeight = rowHeight
-	view.tableBodyRemainder = 0
-	if bounds.Width <= 0 || bounds.Height <= 0 {
-		return
-	}
-	if w.paintTab != remoteProcesses {
-		if view.noDocker && view.collectedAt.IsZero() {
-			w.ui.paintRemoteDockerEmpty(canvas, bounds)
-			return
-		}
-		if view.loading && len(view.rows) == 0 {
-			w.ui.paintRemoteToolsLoading(canvas, bounds)
-			return
-		}
-	}
-	columns, headings := w.ui.processTableSchema(bounds.Width)
-	if w.paintTab != remoteProcesses {
-		columns, headings = w.ui.objectTableSchema(w.paintTab)
-	}
-	contentHeight := max(float32(len(view.rows))*rowHeight, bounds.Height)
-	firstVisible := min(len(view.rows), 1+int(view.processScroll/rowHeight))
-	if view.processScrollFirst != firstVisible || view.processScrollCount != len(view.rows) {
-		view.processScrollFirst, view.processScrollCount = firstVisible, len(view.rows)
-		view.processScrollValue = fmt.Sprint(firstVisible) + "/" + fmt.Sprint(len(view.rows))
-	}
-	area := components.BeginScrollArea(canvas, theme, bounds, gfx.Size{Width: bounds.Width, Height: contentHeight}).
-		Offset(0, view.processScroll).
-		VerticalScrollbar(hitRemoteProcessScroll, w.ui.remoteTabLabel(w.paintTab), view.processScrollValue)
-	geometry := area.Geometry()
-	view.processScroll = geometry.OffsetY
-	view.processScrollBar = geometry
-	geometry = area.BeginContent()
-	view.processScroll = geometry.OffsetY
-
-	if len(view.rows) == 0 {
-		message := w.ui.messages.Tools.RemoteLoading
-		color := pal.muted
-		if !view.loading {
-			message = view.status
-			if message == "" {
-				message = w.ui.remoteTabLabel(w.paintTab)
-			}
-		}
-		canvas.LabelCenter(message, geometry.Viewport, gfx.TextStyle{Size: theme.Metrics.FontSizeM, Color: color})
-		area.EndContent()
-		return
-	}
-
-	first := min(max(int(geometry.OffsetY/rowHeight), 0), len(view.rows))
-	visible := int(geometry.Viewport.Height/rowHeight) + 2
-	last := min(first+visible, len(view.rows))
-	rowRemainder := geometry.OffsetY - float32(first)*rowHeight
-	tableBounds := gfx.Rect{
-		X: geometry.Viewport.X, Y: geometry.Viewport.Y - rowRemainder,
-		Width: geometry.Viewport.Width, Height: min(geometry.Viewport.Height+rowHeight, float32(last-first)*rowHeight),
-	}
-	view.tableBodyFirst = first
-	view.tableBodyRemainder = rowRemainder
-	table := components.BeginTable(canvas, theme, tableBounds, columns).RowHeight(rowHeight)
-	for index := first; index < last; index++ {
-		row := &view.rows[index]
-		if index == w.tableHoverRow && row.key != view.selected {
-			canvas.Fill(gfx.Rect{
-				X: tableBounds.X, Y: tableBounds.Y + float32(index-first)*rowHeight,
-				Width: tableBounds.Width, Height: rowHeight,
-			}, theme.Hover)
-		}
-		table.Row(gfx.ID{}, row.cells[:len(headings)], row.key == view.selected)
-	}
-	area.EndContent()
 }
 
 // declareProcessMenu declares the process context menu: the row the table's
@@ -583,92 +447,4 @@ func (w *remoteToolsWindow) declareSudoDialog(c ui.C) {
 	if dialog.Dismissed() {
 		c.After(func() { w.ui.clickSudoSFTP(hitSudoSFTPCancel) })
 	}
-}
-
-// processTableKey moves the process selection with the arrow, Home, End and
-// page keys, and opens the selected process on Enter.
-func (w *remoteToolsWindow) processTableKey(event gfx.KeyEvent) gfx.EventResult {
-	if w.closed || w.ui.remote.tab != remoteProcesses {
-		return gfx.EventResult{}
-	}
-	result := w.ui.remoteProcessTableNavigate(event)
-	result.Focus, result.FocusVisible = gfx.ID{}, false
-	return result
-}
-
-// tablePointer selects a row on press, opens process or container details on
-// double-click, and leaves a secondary press to the context menu.
-func (w *remoteToolsWindow) tablePointer(event gfx.PointerEvent) gfx.EventResult {
-	if w.closed {
-		return gfx.EventResult{Handled: true}
-	}
-	view := &w.ui.remote
-	// Context-menu items are control parts; leave their events to the menu.
-	if !event.Target.IsZero() && event.Target.Scope() == w.tableHandlers.Parts() {
-		return gfx.EventResult{}
-	}
-	if event.Kind == gfx.PointerDown && (event.Button == gfx.PointerButtonPrimary || event.Button == gfx.PointerButtonSecondary) {
-		w.tablePressRow = -1
-		index := w.tableRowAt(event.X, event.Y)
-		if index >= 0 && index < len(view.rows) {
-			view.selected = view.rows[index].key
-			w.tablePressRow, w.tableHoverRow = index, index
-			if event.Button == gfx.PointerButtonSecondary {
-				return gfx.EventResult{Repaint: true}
-			}
-			return gfx.EventResult{Handled: true, Repaint: true}
-		}
-		return gfx.EventResult{Handled: true}
-	}
-	if event.Kind == gfx.PointerMove && !event.Captured {
-		index := w.tableRowAt(event.X, event.Y)
-		if index != w.tableHoverRow {
-			w.tableHoverRow = index
-			return gfx.EventResult{Repaint: true}
-		}
-		return gfx.EventResult{}
-	}
-	if event.Kind == gfx.PointerExit && !event.Captured {
-		if w.tableHoverRow != -1 {
-			w.tableHoverRow = -1
-			return gfx.EventResult{Repaint: true}
-		}
-		return gfx.EventResult{}
-	}
-	if event.Kind == gfx.PointerUp && event.Button == gfx.PointerButtonPrimary {
-		index := w.tableRowAt(event.X, event.Y)
-		defer func() { w.tablePressRow = -1 }()
-		if index < 0 || index != w.tablePressRow || index >= len(view.rows) {
-			return gfx.EventResult{Handled: true}
-		}
-		view.selected = view.rows[index].key
-		if view.tab == remoteProcesses && event.ClickCount == 2 {
-			if process, found := w.ui.remoteProcessByKey(view.selected); found {
-				w.ui.openRemoteProcessDetails(process)
-			}
-		} else if view.tab == remoteContainers && event.ClickCount == 2 {
-			if container, found := w.ui.selectedContainer(); found {
-				w.ui.openRemoteContainerDetails(container)
-			}
-		}
-		return gfx.EventResult{Handled: true, Repaint: true}
-	}
-	return gfx.EventResult{}
-}
-
-// tableRowAt is the row index under a point in the table's body, or -1.
-func (w *remoteToolsWindow) tableRowAt(x, y float32) int {
-	view := &w.ui.remote
-	if view.tableRowHeight <= 0 || !pointInRect(x, y, view.tableBodyBounds) {
-		return -1
-	}
-	// Rows are painted from the content origin, which sits a partial row above
-	// the body viewport after a precise scroll. Measure from there, not from the
-	// viewport, or a click lands on the row above the one under the pointer.
-	top := view.tableBodyBounds.Y - view.tableBodyRemainder
-	index := view.tableBodyFirst + int((y-top)/view.tableRowHeight)
-	if index < 0 || index >= len(view.rows) {
-		return -1
-	}
-	return index
 }

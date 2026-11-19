@@ -5,6 +5,7 @@ prim 0 {21 155 570 512} {0.06666667 0.08235294 0.105882354 1}
 prim 0 {22 156 558 30} {0.06666667 0.08235294 0.105882354 1}
 prim 0 {22 186 558 30} {0.06666667 0.08235294 0.105882354 1}
 prim 0 {22 216 558 30} {0.06666667 0.08235294 0.105882354 1}
+prim 0 {600 48 1 712} {0.2 0.23529412 0.2901961 1}
 prim 0 {1120 56 28 28} {0.17254902 0.19607843 0.23529412 1}
 prim 0 {609 154 572 514} {0.36784315 0.40470588 0.45960784 1}
 prim 0 {610 155 570 512} {0.06666667 0.08235294 0.105882354 1}
@@ -24,25 +25,21 @@ prim 0 {245 294 710 30} {0.11146667 0.1264 0.1488 0}
 prim 2 {244 357 361 32} {0 0 0 0}
 prim 0 {244 357 361 32} {0 0 0 0}
 prim 0 {245 358 359 30} {0.11146667 0.1264 0.1488 0}
+prim 2 {613 357 133 32} {0 0 0 0}
+prim 0 {613 357 133 32} {0 0 0 0}
+prim 0 {614 358 131 30} {0.11146667 0.1264 0.1488 0}
 prim 2 {754 359 56 28} {0 0 0 0}
 prim 0 {754 359 56 28} {0 0 0 0}
 prim 0 {755 360 54 26} {0.11146667 0.1264 0.1488 0}
 prim 0 {818 359 56 28} {0.09411765 0.09411765 0.105882354 0}
 prim 0 {882 359 74 28} {0.9411765 0.47058824 0.47058824 0}
-prim 2 {248 407 16 16} {0 0 0 0}
-prim 0 {248 407 16 16} {0 0 0 0}
-prim 0 {249 408 14 14} {0.11146667 0.1264 0.1488 0}
+prim 2 {244 407 16 16} {0 0 0 0}
+prim 0 {244 407 16 16} {0 0 0 0}
+prim 0 {245 408 14 14} {0.11146667 0.1264 0.1488 0}
 prim 0 {244 439 712 168} {0 0 0 0}
 prim 0 {245 440 710 166} {0.06666667 0.08235294 0.105882354 0}
-prim 2 {613 357 133 32} {0 0 0 0}
-prim 0 {613 357 133 32} {0 0 0 0}
-prim 0 {614 358 131 30} {0.11146667 0.1264 0.1488 0}
 prim 0 {832 631 62 32} {0.23529412 0.27450982 0.34117648 0}
 prim 0 {901 631 55 32} {0.8862745 0.90588236 0.93333334 0}
-prim 0 {600 48 1 712} {0.2 0.23529412 0.2901961 1}
-prim 2 {892 56 64 28} {0 0 0 0.05}
-prim 0 {892 56 64 28} {0.216 0.22917646 0.24894118 1}
-prim 0 {893 57 62 26} {0.06666667 0.08235294 0.105882354 1}
 prim 0 {400 128 1 20} {0.2 0.23529412 0.2901961 1}
 prim 0 {472 128 1 20} {0.2 0.23529412 0.2901961 1}
 prim 0 {988 128 1 20} {0.2 0.23529412 0.2901961 1}
@@ -50,6 +47,9 @@ prim 0 {1060 128 1 20} {0.2 0.23529412 0.2901961 1}
 text "File transfer" {16 8.5 64.14258 19}
 text "Production · deploy@prod.example.com:22" {94.14258 8.5 951.8574 19}
 text "Local" {20 59.5 347.5 21}
+text "C:\\" {20 96 15.792969 20}
+text "fixture" {60.79297 96 36.26416 20}
+text "local" {122.05713 96 26.533203 20}
 text "Name ↑" {28 128.5 367.5 19}
 text "Size" {446.51758 128.5 64 19}
 text "Modified" {475.5 128.5 108 19}
@@ -64,6 +64,10 @@ text "13 B" {432.39648 221.5 64 19}
 text "TMP" {463.5 221.5 108 19}
 text "3 items" {20 674 571.5 20}
 text "Server" {608.5 59.5 279.5 21}
+text "sudo" {911.00977 60.5 25.980469 19}
+text "/" {608.5 96 5.0654297 20}
+text "home" {638.5654 96 32.969727 20}
+text "test" {696.53516 96 21.125 20}
 text "Name ↑" {616.5 128.5 367.5 19}
 text "Size" {1035.0176 128.5 64 19}
 text "Modified" {1064 128.5 108 19}
@@ -83,22 +87,15 @@ text "Server directory" {244 271 101.62988 18}
 text "/home/test" {255 299 690 20}
 text "Profile name" {244 335 80.11035 18}
 text "test" {255 363 339.4375 20}
+text "Available to" {613.4375 335 74.61426 18}
+text "This connection" {629.9507 357 132.98828 32}
 text "New" {768.04297 359 56 28}
 text "Save" {831.7456 359 56 28}
 text "Remove" {893.7251 359 73.57422 28}
-text "Enable synchronized browsing when opened" {276 399 680 32}
+text "Enable synchronized browsing when opened" {268 404.5 688 21}
 text "No location profiles yet" {538.2041 441 708 164}
-text "Available to" {613.4375 335 74.61426 18}
-text "This connection" {624.4375 357 90.98828 32}
 text "Cancel" {841.52637 631 61.84961 32}
 text "Open" {911.376 631 54.624023 32}
-text "C:\\" {20 90 15.792969 32}
-text "fixture" {68.79297 90 36.26416 32}
-text "local" {138.05713 90 26.533203 32}
-text "sudo" {908.4995 56 64 28}
-text "/" {608.5 90 5.0654297 32}
-text "home" {646.5654 90 32.969727 32}
-text "test" {712.53516 90 21.125 32}
 hit "" region {0 0 1200 36} false
 hit "Show directory tree" button {371.5 56 28 28} false
 hit "Up" button {403.5 56 28 28} false
@@ -107,6 +104,9 @@ hit "Location profiles" button {467.5 56 28 28} false
 hit "Choose a location profile" button {499.5 56 28 28} true
 hit "Synchronized browsing" button {531.5 56 28 28} false
 hit "More file actions" button {563.5 56 28 28} false
+hit "Folder path" button {20 90 511.5 32} false
+hit "C:\\" link {20 96 15.792969 20} false
+hit "fixture" link {60.79297 96 36.26416 20} false
 hit "Favorites and places" button {533.5 92 28 28} false
 hit "Bookmark current folder" button {563.5 92 28 28} false
 hit "Name ↑" button {28 128.5 367.5 19} false
@@ -117,6 +117,8 @@ hit "Files" listbox {22 156 567.5 510} false
 hit "destination" option {22 156 557.5 30} false
 hit "tree" option {22 186 557.5 30} false
 hit "中文上传.yml" option {22 216 557.5 30} false
+hit "File transfer" slider {596 48 8 712} false
+hit "sudo" button {892 56 64 28} false
 hit "Show directory tree" button {960 56 28 28} false
 hit "Upload →" button {992 56 28 28} true
 hit "← Download" button {1024 56 28 28} true
@@ -124,6 +126,9 @@ hit "Up" button {1056 56 28 28} false
 hit "Refresh" button {1088 56 28 28} false
 hit "Hide hidden files" button {1120 56 28 28} false
 hit "More file actions" button {1152 56 28 28} false
+hit "Folder path" button {608.5 90 511.5 32} false
+hit "/" link {608.5 96 5.0654297 20} false
+hit "home" link {638.5654 96 32.969727 20} false
 hit "Folder favorites" button {1122 92 28 28} false
 hit "Bookmark current folder" button {1152 92 28 28} false
 hit "Name ↑" button {616.5 128.5 367.5 19} false
@@ -142,24 +147,15 @@ hit "Server directory" button {244 271 101.62988 18} false
 hit "Server directory" textfield {244 293 712 32} false
 hit "Profile name" button {244 335 80.11035 18} false
 hit "Profile name" textfield {244 357 361.4375 32} false
+hit "Available to" button {613.4375 335 74.61426 18} false
+hit "This connection" button {613.4375 357 132.98828 32} false
 hit "New" button {754.4258 359 56 28} false
 hit "Save" button {818.4258 359 56 28} false
 hit "Remove" button {882.4258 359 73.57422 28} true
-hit "Enable synchronized browsing when opened" checkbox {244 399 712 32} false
-hit "Location profiles" listbox {246 441 708 164} false
-hit "Location profiles" group {246 441 708 164} false
-hit "Available to" button {613.4375 335 74.61426 18} false
-hit "Available to" combobox {613.4375 357 132.98828 32} false
+hit "Enable synchronized browsing when opened" button {268 404.5 688 21} false
+hit "Enable synchronized browsing when opened" checkbox {232 399 40 32} false
 hit "Cancel" button {831.52637 631 61.84961 32} false
 hit "Open" button {901.376 631 54.624023 32} false
-hit "File transfer" separator {598 48 4 712} false
-hit "Folder path" button {20 90 511.5 32} false
-hit "C:\\" link {20 90 15.792969 32} false
-hit "fixture" link {68.79297 90 36.26416 32} false
-hit "sudo" button {892 56 64 28} false
-hit "Folder path" button {608.5 90 511.5 32} false
-hit "/" link {608.5 90 5.0654297 32} false
-hit "home" link {646.5654 90 32.969727 32} false
 hit "Resize column" separator {398 128 4 20} false
 hit "Resize column" separator {470 128 4 20} false
 hit "Resize column" separator {986.5 128 4 20} false

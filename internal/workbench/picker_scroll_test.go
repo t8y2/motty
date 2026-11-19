@@ -47,6 +47,16 @@ func TestPickerPixelScrolling(t *testing.T) {
 			if maximum <= step {
 				t.Fatal("fixture must scroll")
 			}
+			// The palette's rows are the page's scroll area: the offset the test
+			// drives is mirrored there, as the keyboard and the bar drive it.
+			setOffset := func(value float32) {
+				*offset = value
+				if kind != "fonts" {
+					if scroll := state.commandPalette.scrollState; scroll != nil {
+						scroll.ScrollTo(value)
+					}
+				}
+			}
 			var canvas gfx.Canvas
 			size := gfx.Size{Width: 1400, Height: 900}
 			paint := func() { canvas.Reset(); state.Paint(&canvas, size) }
@@ -70,17 +80,17 @@ func TestPickerPixelScrolling(t *testing.T) {
 			near(1.1)
 			scroll(0, true)
 			near(1.1)
-			*offset = 0
+			setOffset(0)
 			for range 10 {
 				scroll(0.1, true)
 			}
 			near(1)
-			*offset = 0
+			setOffset(0)
 			scroll(1, true)
 			near(1)
 			paint()
 			near(1)
-			*offset = 0
+			setOffset(0)
 			scroll(0.1, false)
 			near(step)
 			scroll(100000, true)
@@ -98,7 +108,7 @@ func TestPickerPixelScrolling(t *testing.T) {
 
 			// Scroll past the first row. The second logical row is now clipped at the
 			// viewport edge, and the first must have no hit region at all.
-			*offset = step + 15
+			setOffset(step + 15)
 			paint()
 			list := hitCommandPaletteItems
 			viewportHeight := commandPaletteListHeight
@@ -144,7 +154,7 @@ func TestPickerPixelScrolling(t *testing.T) {
 				state.shellsListed()
 				near(step + 15)
 			}
-			*offset = step + 15
+			setOffset(step + 15)
 			paint()
 			if kind == "fonts" {
 				selected := state.fonts.selected

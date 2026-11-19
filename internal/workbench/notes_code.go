@@ -4,10 +4,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/markdown"
-	"motty/internal/workbench/icons"
 )
 
 var hitNoteCodeCopies = tree.Sub(notesHits, tree.Name("code-copy"))
@@ -57,16 +55,16 @@ func (s *State) paintNoteCodeCopies(c *gfx.Canvas, n *notesUI, origin gfx.Point,
 			continue
 		}
 		label := s.noteText("Copy code", "复制代码")
-		icon := icons.Copy
+		icon := iconCopy
 		copied := copies.copied == id && s.now()-copies.copiedAt < noteCodeCopiedFor
 		if copied {
-			icon = icons.Check
+			icon = iconCheck
 			label = s.noteText("Copied", "已复制")
 			c.RequestFrameIn(noteCodeCopiedFor - (s.now() - copies.copiedAt))
 		}
 		hovered := v.pointerValid && pointInRect(v.pointer.X, v.pointer.Y, b) && pointInRect(v.pointer.X, v.pointer.Y, clip)
 		if hovered || c.Focused() == id || copied {
-			components.BeginButton(c, s.Theme(), id, button).Height(22).WithIcon(icon).IconSmall().Ghost(label)
+			s.paintIconButtonSized(c, id, icon, button, label, false, iconButtonQuiet, s.Theme().Background, 16)
 		} else {
 			// Keep keyboard traversal available while the pointer-only affordance is hidden.
 			c.HitWithOptions(id, button, label, gfx.HitOptions{Role: gfx.RoleButton, Hint: label})

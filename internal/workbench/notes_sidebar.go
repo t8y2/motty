@@ -1,20 +1,14 @@
 package workbench
 
 import (
-	"slices"
-	"strings"
 	"time"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"motty/internal/workbench/icons"
 	layoutcore "motty/internal/workspace"
 )
 
 var (
-	hitNoteSideWidth   = tree.ID(notesHits, "side-width")
-	hitNoteSideSplit   = tree.ID(notesHits, "side-split")
 	hitNoteSideOpen    = tree.ID(notesHits, "side-open")
 	hitNoteSideClose   = tree.ID(notesHits, "side-close")
 	hitNoteSideLinked  = tree.ID(notesHits, "side-linked")
@@ -32,7 +26,7 @@ type noteSidebar struct {
 	content                      notesUI
 	width, fraction              float32
 	lastQuery                    string
-	bounds, resizeBounds         gfx.Rect
+	bounds                       gfx.Rect
 	widthDragging, splitDragging bool
 }
 
@@ -71,7 +65,6 @@ func (s *State) notePreviewState() *notesUI {
 func (v *noteSidebar) stopCapture() {
 	v.inputVersion++
 	v.widthDragging, v.splitDragging = false, false
-	v.content.view.scrollDrag, v.content.view.previewDragging = false, false
 	v.content.view.previewSelect.EndDrag()
 	v.content.view.pointerValid = false
 }
@@ -116,252 +109,6 @@ func (s *State) syncNoteSidebarContent(n *notesUI) {
 		n.imageSource = ""
 	}
 	n.draft = note
-}
-func (s *State) noteSideWidthResizable(c *gfx.Canvas) components.Resizable {
-	v := s.noteSidebarState()
-	b := v.resizeBounds
-	usable := max(1, b.Width-1)
-	maximum := max(0, b.Width*.7)
-	minimum := min(float32(280), maximum)
-	return components.BeginResizable(c, s.Theme(), hitNoteSideWidth, b, 1-v.bounds.Width/usable).Limits(1-maximum/usable, 1-minimum/usable).HandleSize(paneDividerHitWidth)
-}
-func (s *State) noteSideSplitResizable(c *gfx.Canvas) components.Resizable {
-	v := s.noteSidebarState()
-	bounds := v.bounds.Inset(gfx.Insets{Left: 1, Right: 1, Top: 1, Bottom: 1})
-	usable := max(1, bounds.Height-1)
-	first, second := float32(120), float32(160)
-	if usable < first+second {
-		first = usable * 120 / 280
-		second = usable - first
-	}
-	return components.BeginResizable(c, s.Theme(), hitNoteSideSplit, bounds, v.fraction).Vertical().Limits(first/usable, 1-second/usable).HandleSize(paneDividerHitWidth)
-}
-func (s *State) paintNoteSidebar(c *gfx.Canvas, b gfx.Rect) {
-	s.noteTokens()
-	v := s.noteSidebarState()
-	n := &v.content
-	s.syncNoteSidebar()
-	v.bounds = b
-	v.resizeBounds = gfx.Rect{X: s.workspacePixelBounds(s.viewport).X, Y: b.Y, Width: s.workspacePixelBounds(s.viewport).Width + b.Width, Height: b.Height}
-	c.Fill(b, s.pal.workspace)
-	if n.selected == "" {
-		s.paintNoteSidebarTree(c, b.Inset(gfx.Insets{Left: 1, Right: 1, Top: 1, Bottom: 1}))
-		n.previewBounds = gfx.Rect{}
-		v.splitDragging = false
-	} else {
-		split := s.noteSideSplitResizable(c).Paint(s.noteText("Resize note browser sections", "调整笔记上下区域"))
-		s.paintNoteSidebarTree(c, split.First)
-		body := split.Second.Inset(gfx.Insets{Left: 8, Right: 8, Top: 6, Bottom: 8})
-		title := n.draft.Title
-		if strings.TrimSpace(title) == "" {
-			title = s.noteText("Untitled", "无标题")
-		}
-		w := body.Width - 34
-		components.BeginButton(c, s.Theme(), hitNoteSideOpen, gfx.Rect{X: body.X + body.Width - 28, Y: body.Y, Width: 28, Height: 28}).Height(28).WithIcon(icons.ExternalLink).Icon().Ghost(s.noteText("Open in window", "在窗口中打开"))
-		if len(noteImageURLs(n.body.String())) > 0 {
-			w -= 34
-			components.BeginButton(c, s.Theme(), hitNoteLoadImages, gfx.Rect{X: body.X + body.Width - 62, Y: body.Y, Width: 28, Height: 28}).Height(28).WithIcon(icons.Image).Icon().Ghost(s.noteText("Load images", "加载图片"))
-		}
-		c.Clip(gfx.Rect{X: body.X, Y: body.Y, Width: max(0, w), Height: 28})
-		c.Label(title, gfx.Rect{X: body.X, Y: body.Y, Width: max(0, w), Height: 28}, gfx.TextStyle{Size: 14, Color: s.pal.text})
-		c.Unclip()
-		components.PaintSeparator(c, s.Theme(), gfx.Rect{X: body.X, Y: body.Y + 32, Width: body.Width, Height: 1}, components.SeparatorHorizontal)
-		body.Y += 39
-		body.Height = max(0, body.Height-39)
-		n.previewBounds = body
-		s.paintNotePreviewContent(c, body, n)
-		if n.error != "" {
-			c.Label(n.error, gfx.Rect{X: body.X, Y: body.Y, Width: body.Width, Height: 24}, gfx.TextStyle{Size: 11, Color: s.pal.danger})
-		}
-	}
-	s.noteSideWidthResizable(c).Paint(s.noteText("Resize notes panel", "调整笔记侧栏宽度"))
-}
-
-func (s *State) noteSidebarCanExpandAll() bool {
-	for _, folder := range s.notes.folders {
-		if !s.noteSidebarState().content.view.expanded[folder.ID] {
-			return true
-		}
-	}
-	return false
-}
-
-func (s *State) paintNoteSidebarTree(c *gfx.Canvas, b gfx.Rect) {
-	v := s.noteSidebarState()
-	n := &v.content
-	theme := s.Theme()
-	top := b.Inset(gfx.Insets{Left: 8, Right: 8, Top: 8})
-	label := s.noteText("Linked only", "只看关联")
-	top.Width = max(0, top.Width)
-	closeWidth := min(float32(24), top.Width)
-	closeX := top.X + top.Width - closeWidth
-	switchRight := max(top.X, closeX-8)
-	switchWidth := min(aiSwitchWidth, switchRight-top.X)
-	switchX := switchRight - switchWidth
-	expandWidth := min(float32(28), max(0, switchX-top.X-6))
-	labelWidth := min(c.TextWidth(label, 12), max(0, switchX-top.X-expandWidth-12))
-	labelX := switchX
-	if labelWidth > 0 {
-		labelX -= labelWidth + 6
-	}
-	switchW := switchRight - labelX
-	searchWidth := max(0, labelX-top.X-42)
-	search := gfx.Rect{X: top.X + 34, Y: top.Y, Width: searchWidth, Height: 30}
-	headerExtra := float32(0)
-	if searchWidth < 96 {
-		headerExtra = 36
-		search = gfx.Rect{X: top.X, Y: top.Y + headerExtra, Width: top.Width, Height: 30}
-	}
-	expandIcon, expandLabel := icons.ListX, s.noteText("Collapse all", "收起全部")
-	if s.noteSidebarCanExpandAll() || len(s.notes.folders) == 0 {
-		expandIcon, expandLabel = icons.ListTree, s.noteText("Expand all", "展开全部")
-	}
-	expandButton := components.BeginButton(c, theme, hitNoteSideExpand, gfx.Rect{X: top.X, Y: top.Y + 1, Width: expandWidth, Height: 28}).Height(28).WithIcon(expandIcon).Icon()
-	if len(s.notes.folders) == 0 || n.query.String() != "" {
-		expandButton = expandButton.Disabled()
-	}
-	expandButton.Ghost(expandLabel)
-	s.noteInputAt(c, hitNoteSearch, search, s.noteText("Search title, body and tags", "搜索标题、正文和标签"), n.query.String())
-	c.Clip(gfx.Rect{X: labelX, Y: top.Y, Width: labelWidth, Height: 30})
-	c.Label(label, gfx.Rect{X: labelX, Y: top.Y, Width: labelWidth, Height: 30}, gfx.TextStyle{Size: 12, Color: s.pal.text})
-	c.Unclip()
-	s.aiSwitch(c, hitNoteSideLinked, gfx.Rect{X: switchX, Y: top.Y + (30-aiSwitchHeight)/2, Width: switchWidth, Height: aiSwitchHeight}, !n.sideAll, false, label)
-	// One native switch hit covers its caption too, without adding a tab stop.
-	hits := c.Hits()
-	if len(hits) > 0 && hits[len(hits)-1].ID == hitNoteSideLinked {
-		hits[len(hits)-1].Bounds = gfx.Rect{X: labelX, Y: top.Y, Width: switchW, Height: 30}
-	}
-
-	s.paintIconButton(c, hitNoteSideClose, iconClose, gfx.Rect{X: closeX, Y: top.Y + 3, Width: closeWidth, Height: 24}, s.noteText("Close notes sidebar", "关闭笔记侧栏"), false, iconButtonQuiet, s.pal.workspace)
-
-	components.PaintSeparator(c, theme, gfx.Rect{X: top.X, Y: top.Y + headerExtra + 36, Width: top.Width, Height: 1}, components.SeparatorHorizontal)
-	body := gfx.Rect{X: b.X + 6, Y: top.Y + headerExtra + 43, Width: max(0, b.Width-12), Height: max(0, b.Y+b.Height-top.Y-headerExtra-49)}
-	n.listBounds = body
-	query := strings.ToLower(n.query.String())
-	if query != v.lastQuery {
-		n.view.treeScroll = 0
-		v.lastQuery = query
-	}
-	sc := &n.view.treeScratch
-	sc.reset()
-	matches, parents := sc.matches, sc.parents
-	host := ""
-	if session, ok := s.sessionByIDPointer(s.activeSessionID); ok {
-		host = session.host.CatalogID
-	}
-	notes := sc.notes
-	for _, stored := range s.notes.list {
-		note := s.noteBrowserNote(stored)
-		notes = append(notes, note)
-		if !n.sideAll && !note.Pinned && (host == "" || !s.noteMatchesHost(note.Tags, host)) {
-			continue
-		}
-		if !s.noteMatchesSearch(note, query) {
-			continue
-		}
-		matches[note.ID] = true
-		seen := sc.seen
-		for parent := note.Folder; parent != "" && !seen[parent]; {
-			seen[parent] = true
-			parents[parent] = true
-			f, ok := s.noteFolder(parent)
-			if !ok {
-				break
-			}
-			parent = f.Parent
-		}
-		clear(seen)
-	}
-	folders := append(sc.folders, s.notes.folders...)
-	slices.SortStableFunc(folders, func(a, b savedNoteFolder) int { return a.Order - b.Order })
-	sc.folders = folders
-	slices.SortStableFunc(notes, func(a, b savedNote) int {
-		if a.Pinned != b.Pinned {
-			if a.Pinned {
-				return -1
-			}
-			return 1
-		}
-		return a.Order - b.Order
-	})
-	sc.notes = notes
-	seen := sc.walked
-	rows := sc.rows
-	var walk func(string, int)
-	walk = func(parent string, depth int) {
-		for _, f := range folders {
-			if f.Parent != parent || seen[f.ID] || ((query != "" || !n.sideAll) && !parents[f.ID]) {
-				continue
-			}
-			seen[f.ID] = true
-			rows = append(rows, noteTreeEntry{id: f.ID, label: f.Name, folder: true, depth: depth})
-			if n.view.expanded[f.ID] || query != "" {
-				walk(f.ID, depth+1)
-			}
-		}
-		for _, note := range notes {
-			p := note.Folder
-			if _, ok := s.noteFolder(p); !ok {
-				p = ""
-			}
-			if matches[note.ID] && p == parent {
-				label := note.Title
-				if strings.TrimSpace(label) == "" {
-					label = s.noteText("Untitled", "无标题")
-				}
-				rows = append(rows, noteTreeEntry{id: note.ID, label: label, pinned: note.Pinned, depth: depth})
-			}
-		}
-	}
-	walk("", 0)
-	sc.rows = rows
-	n.view.listArea = s.noteHoverScrollArea(c, body, gfx.Size{Width: body.Width, Height: float32(len(rows)) * noteTreeRowHeight}, n.view.treeScroll, hitNoteListScroll, hitNoteListThumb, s.noteText("Scroll notes", "滚动笔记"), &n.view.treeBar, n.view.scrollDrag, n.view.pointerValid && pointInRect(n.view.pointer.X, n.view.pointer.Y, body))
-	geo := n.view.listArea.BeginContent()
-	n.view.treeScroll = geo.OffsetY
-	first, last := noteTreeVisibleRange(geo.OffsetY, geo.Viewport.Height, len(rows))
-	treeBounds := geo.Content
-	treeBounds.Y += float32(first) * noteTreeRowHeight
-	tv := components.BeginTree(c, theme, treeBounds).RowHeight(noteTreeRowHeight)
-	for _, e := range rows[first:last] {
-		id := e.id
-		label := e.label
-		icon := icons.MitMarkdown
-		rowID := hitNoteRows.At(s.notes.view.noteTokens[id])
-		disclosure := gfx.ID{}
-		if e.pinned {
-			icon = icons.StarSolid
-		}
-		if e.folder {
-			rowID = hitNoteFolderRows.At(s.notes.view.folderTokens[id])
-			disclosure = hitNoteDisclosures.At(s.notes.view.folderTokens[id])
-			icon = icons.FolderSolid
-			if n.view.expanded[id] || query != "" {
-				icon = icons.FolderSolidOpen
-			}
-		}
-		row := tv.Item(components.TreeItem{ID: rowID, DisclosureID: disclosure, Label: label, Depth: uint8(min(e.depth, 31)), Branch: e.folder, Expanded: n.view.expanded[id] || query != "", Selected: !e.folder && id == n.selected})
-		content := row.Content
-		content.X += 4
-		content.Width = max(0, content.Width-4)
-		c.DrawIcon(icon, gfx.Rect{X: content.X, Y: content.Y + 7, Width: 16, Height: 16}, gfx.Color{Alpha: 1})
-		content.X += 22
-		content.Width = max(0, content.Width-22)
-		openID := hitNoteSideRowOpen.At(s.notes.view.noteTokens[id])
-		showOpen := !e.folder && (c.Hovered() == rowID || c.Hovered() == openID || c.FocusVisible() == rowID || c.FocusVisible() == openID)
-		if showOpen {
-			content.Width = max(0, content.Width-32)
-		}
-		c.Clip(content)
-		c.Label(label, content, gfx.TextStyle{Size: 13, Color: s.pal.text})
-		c.Unclip()
-		if showOpen {
-			components.BeginButton(c, theme, openID, gfx.Rect{X: row.Bounds.X + row.Bounds.Width - 30, Y: row.Bounds.Y + 1, Width: 28, Height: 28}).Height(28).WithIcon(icons.ExternalLink).Icon().Ghost(s.noteText("Open in window", "在窗口中打开"))
-		}
-	}
-	if len(rows) == 0 {
-		c.Label(s.noteText("No matching notes.", "没有匹配的笔记。"), gfx.Rect{X: geo.Content.X + 6, Y: geo.Content.Y + 8, Width: max(0, body.Width-12), Height: 40}, gfx.TextStyle{Size: 12, Color: s.pal.muted})
-	}
-	n.view.listArea.EndContent()
 }
 func (s *State) clickNoteSidebar(id gfx.ID) bool {
 	if id == hitNoteSideClose {
@@ -410,7 +157,6 @@ func (s *State) clickNoteSidebar(id gfx.ID) bool {
 	}
 	if id == hitNoteSideLinked {
 		n.sideAll = !n.sideAll
-		n.view.treeScroll = 0
 		return true
 	}
 	if id == hitNoteLoadImages {
@@ -444,7 +190,6 @@ func (s *State) clickNoteSidebar(id gfx.ID) bool {
 			n.view.codeActions.targets = nil
 			n.selected = key
 			n.previewScroll = 0
-			n.view.previewBar = noteScrollbar{}
 			n.view.clearPreviewSelection()
 			s.syncNoteSidebar()
 		}
@@ -466,54 +211,14 @@ func (s *State) noteSidebarPointer(e gfx.PointerEvent) gfx.EventResult {
 	n := &v.content
 	n.view.pointer = gfx.Point{X: e.X, Y: e.Y}
 	n.view.pointerValid = e.Kind != gfx.PointerExit
-	if e.Kind == gfx.PointerDown && (e.Button == gfx.PointerButtonPrimary || e.Button == gfx.PointerButtonNone) {
-		if e.ClickCount == 2 {
-			if token, ok := e.Target.In(hitNoteRows); ok {
-				s.openNoteWindow(s.notes.view.tokenNotes[token])
+	if e.Kind == gfx.PointerDown && (e.Button == gfx.PointerButtonPrimary || e.Button == gfx.PointerButtonNone) && e.ClickCount == 2 {
+		rows := n.view.treeScratch.rows
+		first, last := n.page.tree.Visible()
+		for i := max(first, 0); i <= last && i < len(rows); i++ {
+			if n.page.tree.RowID(i) == e.Target && !rows[i].folder && rows[i].id != "" {
+				s.openNoteWindow(rows[i].id)
 				return gfx.EventResult{Handled: true, Repaint: true}
 			}
-		}
-		v.widthDragging = e.Target == hitNoteSideWidth
-		v.splitDragging = e.Target == hitNoteSideSplit
-	}
-	if v.widthDragging || v.splitDragging {
-		if e.Kind == gfx.PointerMove || e.Kind == gfx.PointerDown || e.Kind == gfx.PointerUp {
-			if v.widthDragging {
-				v.width = (1 - s.noteSideWidthResizable(nil).FractionAt(e.X)) * max(1, v.resizeBounds.Width-1)
-				s.fitWorkspaceTerminals(s.deck.ActiveWorkspace())
-			}
-			if v.splitDragging {
-				v.fraction = s.noteSideSplitResizable(nil).FractionAt(e.Y)
-			}
-		}
-		if e.Kind == gfx.PointerUp || e.Kind == gfx.PointerExit {
-			v.stopCapture()
-			s.save()
-		}
-		return gfx.EventResult{Handled: true, Repaint: true}
-	}
-	for _, bar := range []struct {
-		id           gfx.ID
-		area         components.ScrollArea
-		dragging     *bool
-		grab, offset *float32
-	}{{hitNoteListThumb, n.view.listArea, &n.view.scrollDrag, &n.view.scrollGrab, &n.view.treeScroll}, {hitNotePreviewThumb, n.view.previewArea, &n.view.previewDragging, &n.view.previewGrab, &n.previewScroll}} {
-		geo := bar.area.Geometry()
-		if e.Kind == gfx.PointerDown && e.Target == bar.id && (e.Button == gfx.PointerButtonPrimary || e.Button == gfx.PointerButtonNone) && geo.MaxOffsetY > 0 {
-			*bar.dragging = true
-			*bar.grab = geo.VerticalThumb.Height / 2
-			if e.Y >= geo.VerticalThumb.Y && e.Y < geo.VerticalThumb.Y+geo.VerticalThumb.Height {
-				*bar.grab = e.Y - geo.VerticalThumb.Y
-			}
-		}
-		if *bar.dragging {
-			if e.Kind == gfx.PointerDown || e.Kind == gfx.PointerMove || e.Kind == gfx.PointerUp {
-				*bar.offset = geo.VerticalOffsetForThumb(e.Y - *bar.grab)
-			}
-			if e.Kind == gfx.PointerUp || e.Kind == gfx.PointerExit {
-				*bar.dragging = false
-			}
-			return gfx.EventResult{Handled: true, Repaint: true}
 		}
 	}
 	if r := s.notePreviewSelectionPointer(e); r.Handled {
@@ -526,54 +231,27 @@ func (s *State) noteSidebarPointer(e gfx.PointerEvent) gfx.EventResult {
 	return gfx.EventResult{}
 }
 func (s *State) noteSidebarScroll(e gfx.ScrollEvent) gfx.EventResult {
-	n := &s.noteSidebarState().content
-	if pointInRect(e.X, e.Y, n.listBounds) {
-		n.view.treeScroll = min(max(0, n.view.treeScroll+e.DeltaY), n.view.listArea.Geometry().MaxOffsetY)
-		n.view.treeBar.activity = true
-		return gfx.EventResult{Handled: true, Repaint: true}
-	}
-	if pointInRect(e.X, e.Y, n.previewBounds) {
-		n.previewScroll = min(max(0, n.previewScroll+e.DeltaY), n.view.previewArea.Geometry().MaxOffsetY)
-		n.view.previewBar.activity = true
-		return gfx.EventResult{Handled: true, Repaint: true}
-	}
+	// The tree and the preview are the page's scroll areas: WindowConfig gives
+	// the wheel to them before it reaches here.
 	return gfx.EventResult{}
 }
 func (s *State) noteSidebarKey(e gfx.KeyEvent) gfx.EventResult {
 	v := s.noteSidebarState()
 	n := &v.content
-	if e.Target == hitNoteSideWidth {
-		if ratio, ok := s.noteSideWidthResizable(nil).FractionForKey(e.Key); ok {
-			v.width = (1 - ratio) * max(1, v.resizeBounds.Width-1)
-			s.fitWorkspaceTerminals(s.deck.ActiveWorkspace())
-			s.save()
-			return gfx.EventResult{Handled: true, Repaint: true}
-		}
+	p := &n.page
+	if result := p.panel.Key(e); result.Handled {
+		s.noteSidebarAfterLayout(n)
+		s.save()
+		return result
 	}
-	if e.Target == hitNoteSideSplit {
-		if ratio, ok := s.noteSideSplitResizable(nil).FractionForKey(e.Key); ok {
-			v.fraction = ratio
-			s.save()
-			return gfx.EventResult{Handled: true, Repaint: true}
-		}
+	if result := p.side.Key(e); result.Handled {
+		s.noteSidebarAfterLayout(n)
+		s.save()
+		return result
 	}
 	if e.Key == gfx.KeyEscape && e.Target == hitNotePreviewText {
 		n.view.clearPreviewSelection()
 		return gfx.EventResult{Handled: true, Repaint: true}
-	}
-	if !e.Release && !e.Repeat && (e.Key == gfx.KeyEnter || e.Key == gfx.KeySpace) {
-		_, row := e.Target.In(hitNoteRows)
-		_, folder := e.Target.In(hitNoteFolderRows)
-		_, disclosure := e.Target.In(hitNoteDisclosures)
-		_, copyCode := e.Target.In(hitNoteCodeCopies)
-		_, rowOpen := e.Target.In(hitNoteSideRowOpen)
-		if e.Target == hitNoteSideClose || copyCode || row || rowOpen || folder || disclosure || e.Target == hitNoteSideExpand || e.Target == hitNoteSideLinked || e.Target == hitNoteSideOpen || e.Target == hitNoteLoadImages {
-			s.clickNoteSidebar(e.Target)
-			return gfx.EventResult{Handled: true, Repaint: true}
-		}
-	}
-	if tree.Within(e.Target.Scope(), notesHits) && e.Target != hitNoteSearch && e.Key != gfx.KeyTab {
-		return gfx.EventResult{Handled: true}
 	}
 	return gfx.EventResult{}
 }

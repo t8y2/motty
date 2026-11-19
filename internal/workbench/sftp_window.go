@@ -9,6 +9,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
@@ -98,7 +99,7 @@ func (state *State) newSFTPWindow(source *Session) *sftpWindow {
 	w.view.transferHost = transferHostFor(source)
 	w.view.selected, w.view.lfolder.selected = -1, -1
 	w.session = Session{ID: source.ID, HostID: source.HostID, Title: source.Title, Address: source.Address, host: source.host, conn: source.conn, phase: source.phase, files: w.view}
-	w.ui.fraction = .5
+	w.ui.split = ui.SplitterState{Ratio: .5}
 	w.initialLocal = state.localSideStart()
 	if source.files != nil {
 		w.initialRemote = source.files.path
@@ -157,9 +158,9 @@ func (w *sftpWindow) config() app.Config {
 	// state. The window keeps Paint (it also paints the toolbar controls, dialogs
 	// and transfer queue the page only lays out) and OnScroll (a wheel notch moves
 	// whole rows, and the window hands the offset to each List).
-	config := w.windowPage().Config(base)
+	config := ui.Configure(w.windowPage(), base)
 	config.Paint = base.Paint
-	config.OnScroll = base.OnScroll
+	config.OnScroll = w.scrollWindow
 	return config
 }
 

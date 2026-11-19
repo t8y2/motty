@@ -194,6 +194,29 @@ func TestRemoteDockerPlaceholderRecoversAndDoesNotHideOtherErrors(t *testing.T) 
 	if !state.remote.noDocker || !remoteCanvasHasText(&canvas, state.messages.Tools.RemoteDockerMissing) {
 		t.Fatal("missing Docker has no illustrated empty state")
 	}
+	// components.Empty's look: the large medium title and the body-size muted
+	// description no wider than its 384px column.
+	theme := state.Theme()
+	var title gfx.Text
+	foundTitle := false
+	for _, text := range canvas.Texts() {
+		if text.Value == state.messages.Tools.RemoteDockerMissing {
+			title, foundTitle = text, true
+		}
+	}
+	if !foundTitle || title.Style.Size != theme.Metrics.FontSizeM+5 || title.Style.Weight != gfx.WeightMedium {
+		t.Fatalf("Docker title = %+v, want the large medium empty-state title", title.Style)
+	}
+	foundDescription := false
+	for _, text := range canvas.Texts() {
+		if text.Bounds.Y > title.Bounds.Y && text.Bounds.Y < title.Bounds.Y+80 &&
+			text.Style.Size == theme.Metrics.FontSizeM && text.Bounds.Width <= 384 {
+			foundDescription = true
+		}
+	}
+	if !foundDescription {
+		t.Fatalf("Docker empty state has no body-size description within 384px: %v", canvas.Texts())
+	}
 	server.mu.Lock()
 	requests := len(server.commands)
 	server.mu.Unlock()
@@ -458,6 +481,39 @@ func remoteCanvasHasText(canvas *gfx.Canvas, text string) bool {
 	return false
 }
 
+// remoteCanvasText finds the label painted with exactly value.
+func remoteCanvasText(canvas *gfx.Canvas, value string) (gfx.Text, bool) {
+	for _, painted := range canvas.Texts() {
+		if painted.Value == value {
+			return painted, true
+		}
+	}
+	return gfx.Text{}, false
+}
+
+// remotePaintedTriangles counts the vector triangles of one color whose points
+// fall inside bounds: an icon's tessellated strokes are the triangles here.
+func remotePaintedTriangles(canvas *gfx.Canvas, color gfx.Color, bounds gfx.Rect) int {
+	count := 0
+	for _, triangle := range canvas.Triangles() {
+		if triangle.Color != color {
+			continue
+		}
+		inside := true
+		for _, point := range triangle.Points {
+			if point.X < bounds.X || point.X > bounds.X+bounds.Width ||
+				point.Y < bounds.Y || point.Y > bounds.Y+bounds.Height {
+				inside = false
+				break
+			}
+		}
+		if inside {
+			count++
+		}
+	}
+	return count
+}
+
 // remoteContentHasText is remoteCanvasHasText for the area under the window's
 // titlebar: that bar carries the tool's own name, so only a repeat inside the
 // content says the redundant header is back.
@@ -495,5 +551,104 @@ func TestRemoteDockerRefreshFromAnotherTabProbesAgain(t *testing.T) {
 	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 2 })
 	if state.remote.noDocker {
 		t.Fatal("installed Docker was still reported missing")
+	}
+}
+
+// The missing-Docker state is components.Empty's, as when the old table control
+// painted it: a 32 pixel icon over the theme's foreground, a medium title five
+// points above the body size, and a wrapped muted description within 384.
+func TestRemoteDockerEmptyPlaceholderKeepsItsOldGeometry(t *testing.T) {
+	state, _, _ := openRemoteToolsDialog(t)
+	state.messages.Tools.RemoteDockerMissingHint = "Short hint"
+	state.remote.tab = remoteContainers
+	state.remote.rows = nil
+	state.remote.loading = false
+	state.remote.noDocker = true
+	state.remote.collectedAt = time.Time{}
+	canvas := remoteToolsPaint(t, state)
+	theme, m := state.Theme(), state.messages.Tools
+
+	title, ok := remoteCanvasText(canvas, m.RemoteDockerMissing)
+	if !ok {
+		t.Fatal("the empty state has no title")
+	}
+	if title.Style.Size != theme.Metrics.FontSizeM+5 || title.Style.Weight != gfx.WeightMedium ||
+		title.Style.Color != theme.Foreground {
+		t.Fatalf("the empty title style = %+v, want the theme's large medium foreground", title.Style)
+	}
+	if title.Bounds.Width <= 0 || title.Bounds.Width > 384 {
+		t.Fatalf("the empty state's text width = %v, want no more than 384", title.Bounds.Width)
+	}
+	description, ok := remoteCanvasText(canvas, m.RemoteDockerMissingHint)
+	if !ok {
+		t.Fatal("the empty state has no description")
+	}
+	if description.Style.Size != theme.Metrics.FontSizeM || description.Style.Color != theme.MutedForeground {
+		t.Fatalf("the empty description style = %+v, want the body size in the muted foreground", description.Style)
+	}
+	if description.Bounds.Width > 384 {
+		t.Fatalf("the description is %v wide, past the empty state's 384 band", description.Bounds.Width)
+	}
+	titleCenter := title.Bounds.X + canvas.TextWidthStyle(title.Value, title.Style)/2
+	descriptionCenter := description.Bounds.X + canvas.TextWidthStyle(description.Value, description.Style)/2
+	if descriptionCenter != titleCenter {
+		t.Fatalf("the description center %v is not the title's %v", descriptionCenter, titleCenter)
+	}
+	if description.Bounds.Y <= title.Bounds.Y {
+		t.Fatal("the description is not under the title")
+	}
+	icon := gfx.Rect{
+		X: titleCenter - 16, Y: title.Bounds.Y - 52,
+		Width: 32, Height: 32,
+	}
+	if remotePaintedTriangles(canvas, theme.Foreground, icon) == 0 {
+		t.Fatal("the empty state has no 32 pixel icon over the title")
+	}
+}
+
+// The first-read spinner keeps the old table control's geometry: 16 pixels on
+// the center line less 24, with the label starting on the center line.
+func TestRemoteToolsLoadingPlaceholderKeepsItsOldGeometry(t *testing.T) {
+	state, _, _ := openRemoteToolsDialog(t)
+	state.remote.tab = remoteContainers
+	state.remote.rows = nil
+	state.remote.loading = true
+	state.remote.noDocker = false
+	state.remote.collectedAt = time.Unix(1, 0)
+	var canvas gfx.Canvas
+	canvas.SetClock(func() time.Duration { return 0 })
+	state.Paint(&canvas, remoteToolsPageSize)
+	theme, m := state.Theme(), state.messages.Tools
+
+	label, ok := remoteCanvasText(&canvas, m.RemoteLoading)
+	if !ok {
+		t.Fatal("the loading state has no label")
+	}
+	if label.Style.Size != theme.Metrics.FontSizeM || label.Style.Color != state.pal.muted ||
+		label.Bounds.Height != 24 {
+		t.Fatalf("the loading label = %+v, want the body size and a 24 pixel line", label)
+	}
+	centerX := label.Bounds.X + canvas.TextWidthStyle(label.Value, label.Style)/2
+	spinner := gfx.Rect{
+		X: centerX - 8, Y: label.Bounds.Y - 24, Width: 16, Height: 16,
+	}
+	found := false
+	for _, rectangle := range canvas.Rectangles() {
+		bounds := rectangle.Bounds
+		if bounds.X >= spinner.X && bounds.X+bounds.Width <= spinner.X+spinner.Width &&
+			bounds.Y >= spinner.Y && bounds.Y+bounds.Height <= spinner.Y+spinner.Height &&
+			bounds.Width > 0 && bounds.Height > 0 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		var near []gfx.Rectangle
+		for _, rectangle := range canvas.Rectangles() {
+			if rectangle.Bounds.Y > spinner.Y-16 && rectangle.Bounds.Y < spinner.Y+spinner.Height+16 {
+				near = append(near, rectangle)
+			}
+		}
+		t.Fatalf("no spinner spoke in %v above the label %v; near %+v", spinner, label.Bounds, near)
 	}
 }

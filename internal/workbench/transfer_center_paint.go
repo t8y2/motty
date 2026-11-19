@@ -83,12 +83,15 @@ func (state *State) transferCenterKey(event gfx.KeyEvent) (gfx.EventResult, bool
 			center.batch = transferBatch{}
 			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
-		// Give the page a chance to dismiss the innermost overlay first.
-		if center.filterPopupOpen || center.details.open {
-			return gfx.EventResult{}, false
+		// A pinned preview is the topmost transient surface: it closes before
+		// the center, as the page's choice lists do before both.
+		if center.details.pinned != 0 {
+			center.details.dismiss()
+			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
-		center.close()
-		return gfx.EventResult{Handled: true, Repaint: true}, true
+		// The page's popovers own the rest: the open choice list first, then
+		// the center itself.
+		return gfx.EventResult{}, false
 	}
 	if len(center.batch.targets) > 0 {
 		if (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) && !event.Repeat && (event.Target == hitTransfersBulkConfirm || event.Target == hitTransfersBulkCancel) {

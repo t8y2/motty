@@ -8,6 +8,19 @@ import (
 	"motty/internal/monitoring"
 )
 
+// paintDashboardSimpleHead paints the simple view's column headings. It is part
+// of the scrolled content, at the same place the hand-painted table put it.
+func (s *State) paintDashboardSimpleHead(c *gfx.Canvas, b gfx.Rect) {
+	c.Fill(b, s.pal.surfaceSoft)
+	tabs, data := dashboardSimpleColumns(b)
+	for _, cell := range []struct {
+		x, w  float32
+		label string
+	}{{b.X + 8, tabs - b.X - 16, s.messages.Dashboard.Host}, {tabs, 48, s.messages.Dashboard.View}, {data, b.X + b.Width - data - 8, s.messages.Dashboard.Metrics}} {
+		monitorLabel(c, cell.label, gfx.Rect{X: cell.x, Y: b.Y, Width: cell.w, Height: b.Height}, 12, s.pal.muted, gfx.WeightMedium)
+	}
+}
+
 // The second column belongs to each host. Mixed views can share one compact
 // list without changing another host's selection or its collection lifetime.
 func (s *State) paintDashboardSimpleRow(c *gfx.Canvas, p *monitoring.Panel, h Host, r *dashboardRow, b gfx.Rect) {

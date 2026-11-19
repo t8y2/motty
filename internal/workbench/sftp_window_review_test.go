@@ -16,6 +16,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
 )
 
@@ -94,7 +95,7 @@ func TestSFTPWindowWheelMatchesPanelAndPreservesPreciseDeltas(t *testing.T) {
 	if math.Abs(float64(w.ui.offset[0]-before-.25)) > .001 {
 		t.Fatal("precise scroll was rounded")
 	}
-	w.ui.offset[0] = w.ui.bars[0].MaxOffsetY
+	w.ui.offset[0] = w.folder(true).listScroll.Max()
 	if w.scroll(gfx.ScrollEvent{X: list.X + 20, Y: list.Y + 20, DeltaY: 1, Precise: true}).Repaint {
 		t.Fatal("edge scroll requested unnecessary repaint")
 	}
@@ -217,7 +218,7 @@ func TestSFTPWindowToolbarAndNativeFileActions(t *testing.T) {
 	w.click(hitSFTPBookmarkList)
 	view.Driver().Pump()
 	view.Rest()
-	mark := dualHit(t, view, hitSFTPBookmarkItemList.At(0))
+	mark := dualHitLabel(t, view, "/home/test")
 	view.Click(mark.X+10, mark.Y+10)
 	dualWait(t, state, w, view, func() bool { return !w.view.busy && w.view.path == "/home/test" })
 }
@@ -344,7 +345,7 @@ func BenchmarkSFTPWindowScroll(b *testing.B) {
 		b.Run(fmt.Sprint(count), func(b *testing.B) {
 			state, session, _, _ := openTestSFTP(b)
 			w := &sftpWindow{owner: state, session: *session, view: session.files}
-			w.ui.fraction = .5
+			w.ui.split = ui.SplitterState{Ratio: .5}
 			entries := make([]sftpclient.Entry, count)
 			for i := range entries {
 				entries[i] = sftpclient.Entry{Name: fmt.Sprintf("配置文件-%05d.yml", i), Size: 123, ModTime: time.Unix(100, 0)}
@@ -465,7 +466,7 @@ func TestSFTPWindowMovesSelectionThroughContextMenu(t *testing.T) {
 			if err := preview.RightClickLabel("notes.txt"); err != nil {
 				t.Fatal(err)
 			}
-			dualClickID(t, preview, sftpWindowMenuActions.At(sftpWindowActionIndex(hitSFTPMove)))
+			dualClickMenuLabel(t, preview, w.windowMenuRowLabel(sftpWindowMenuActions.At(sftpWindowActionIndex(hitSFTPMove))))
 			if w.view.dialog != sftpDialogMove || len(w.view.dialogEntries) != 2 {
 				t.Fatal("Move to did not capture both selected entries")
 			}

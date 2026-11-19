@@ -8,6 +8,8 @@ import (
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/text/find"
+	"github.com/vivaui/viva/ui"
+	"motty/internal/workbench/icons"
 )
 
 var (
@@ -153,10 +155,11 @@ func (s *State) noteEditingKey(e gfx.KeyEvent) gfx.EventResult {
 	return gfx.EventResult{}
 }
 
-func (s *State) paintNoteFind(c *gfx.Canvas, n *notesUI, b gfx.Rect) gfx.Rect {
-	if !n.editing.findOpen {
-		return b
-	}
+// declareNoteFindBar declares the find bar over the note's source: its query
+// field and the three actions. The bar is a control of the page, so its keys
+// and text reach the application through the page's routing.
+func (s *State) declareNoteFindBar(c ui.C, n *notesUI) {
+	p := &n.page
 	f := &n.editing.find
 	f.Update(n.body.String())
 	current, total := f.Position(&n.body)
@@ -165,17 +168,25 @@ func (s *State) paintNoteFind(c *gfx.Canvas, n *notesUI, b gfx.Rect) gfx.Rect {
 		status = fmt.Sprintf("%d / %d", current, total)
 	}
 	height := components.FindBarHeight(s.Theme(), false)
-	components.PaintFindBar(c, s.Theme(), gfx.Rect{X: b.X, Y: b.Y, Width: b.Width, Height: height}, components.FindBarSnapshot{
-		Find:       editorField(c, hitNoteFind, s.noteText("Find in note", "在当前笔记中查找"), s.noteText("Find in note", "在当前笔记中查找"), &f.Query, false),
-		PreviousID: hitNoteFindPrevious, NextID: hitNoteFindNext, CloseID: hitNoteFindClose,
-		Status: status, NoResults: !f.Empty() && total == 0, Disabled: total == 0,
-		Labels: components.FindBarLabels{Previous: s.noteText("Previous match", "上一个匹配"), Next: s.noteText("Next match", "下一个匹配"), Close: s.noteText("Close find", "关闭查找")},
+	ui.Row(c).Height(height).FillWidth().MarginSides(0, 16, 6, 16).Gap(6).Items(ui.Center).Children(func() {
+		p.find.Bind(&f.Query)
+		field := ui.TextFieldID(c, hitNoteFind, &p.find, s.noteText("Find in note", "在当前笔记中查找"), s.noteText("Find in note", "在当前笔记中查找")).
+			Height(height - 6).Grow(1)
+		if field.Submitted() {
+			s.stepNoteFind(n, true)
+		}
+		ui.Button(c, s.noteText("Previous match", "上一个匹配")).Icon(icons.ChevronUp).IconOnly().Ghost().Size(28, 28).
+			Hit(hitNoteFindPrevious, s.noteText("Previous match", "上一个匹配")).Disabled(total == 0)
+		ui.Button(c, s.noteText("Next match", "下一个匹配")).Icon(icons.ChevronDown).IconOnly().Ghost().Size(28, 28).
+			Hit(hitNoteFindNext, s.noteText("Next match", "下一个匹配")).Disabled(total == 0)
+		ui.Button(c, s.noteText("Close find", "关闭查找")).Icon(lucideIcons[iconClose]).IconOnly().Ghost().Size(28, 28).
+			Hit(hitNoteFindClose, s.noteText("Close find", "关闭查找"))
+		if status != "" {
+			ui.Text(c, status).FontSize(11).Color(s.pal.muted)
+		}
 	})
 	if n.editing.findFocus {
-		c.RequestFocus(hitNoteFind)
+		c.Canvas().RequestFocus(hitNoteFind)
 		n.editing.findFocus = false
 	}
-	b.Y += height + 6
-	b.Height = max(0, b.Height-height-6)
-	return b
 }

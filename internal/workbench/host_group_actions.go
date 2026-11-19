@@ -38,6 +38,11 @@ type hostGroupActions struct {
 	rows       []gfx.Rect
 	ungroup    bool
 	parentOpen bool
+	// parentChoice and parentChoices are the move dialog's destination select;
+	// parentField is its form field.
+	parentChoice  string
+	parentChoices []string
+	parentField   ui.FormFieldState
 	// page declares the move/rename dialog's body, with view kept so a paint
 	// makes no new method value; slot is where the field is laid out.
 	page *ui.Page

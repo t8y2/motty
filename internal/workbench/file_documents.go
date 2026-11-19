@@ -764,7 +764,7 @@ func (d *fileDocument) comparisonConfig() app.Config {
 		OnKey: d.comparisonKey, OnShortcut: d.comparisonShortcut, OnScroll: d.comparisonScroll,
 		OnCloseRequest: d.requestComparisonClose, OnClosed: d.onComparisonClosed,
 	}
-	config := d.comparisonPage().Config(base)
+	config := ui.Configure(d.comparisonPage(), base)
 	config.Paint = base.Paint
 	return config
 }
@@ -1094,7 +1094,7 @@ func saveLocalDocument(location string, data []byte, revision sftpclient.Revisio
 // the page lays them out.
 func (d *fileDocument) config() app.Config {
 	base := app.Config{Title: d.name + " — " + d.source, Icon: AppIcon(), Width: 1000, Height: 760, MinWidth: fileWindowMinWidth, MinHeight: fileWindowMinHeight, WindowMode: app.WindowCustomTitlebar, TitlebarHeight: TitlebarHeight, ClearColor: windowClearColor(d.owner.Theme().Background), Tree: Tree(), Paint: d.paint, TextInput: d.textInput, OnPointer: d.pointer, OnKey: d.key, OnShortcut: d.shortcut, OnScroll: d.scroll, OnCloseRequest: d.requestClose, OnClosed: d.onClosed}
-	config := d.windowPage().Config(base)
+	config := ui.Configure(d.windowPage(), base)
 	config.Paint = base.Paint
 	return config
 }

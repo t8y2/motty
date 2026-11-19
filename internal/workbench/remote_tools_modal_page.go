@@ -1,8 +1,6 @@
 package workbench
 
 import (
-	"strconv"
-
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
@@ -10,6 +8,15 @@ import (
 )
 
 const remoteToolsModalWidth = float32(940)
+
+// smallDialogFooterAdjust is how much shorter a dialog's footer is when its
+// buttons are Small: components.Dialog's FitBody then fits a body four pixels
+// lower than its default footer does. The detail dialogs sized their old
+// bodies with ButtonSizeSmall, so the page's fixed height keeps it.
+func smallDialogFooterAdjust(theme gfx.Theme) float32 {
+	height := theme.Metrics.ControlHeight
+	return max(height, 20) - max(height-4, 20)
+}
 
 // declareRemoteToolsModal declares the in-window remote tools surface as a
 // dialog of the workbench page: its tabs, search, refresh controls, tables,
@@ -52,12 +59,10 @@ func (state *State) declareRemoteToolsModal(c ui.C) {
 // paint: a method value made in a paint allocates.
 func (state *State) ensureRemoteToolsModalControls() {
 	view := &state.remote
-	if view.tableHandlers.Pointer != nil {
+	if view.refreshHandlers.Pointer != nil {
 		return
 	}
-	view.tableHandlers = ui.Handlers{
-		Role: gfx.RoleGroup, Key: state.remoteTableControlKey, Pointer: state.remoteTableControlPointer,
-	}
+	state.ensureRemoteTableHooks()
 	view.refreshHandlers = ui.Handlers{
 		Role: gfx.RoleButton, Key: state.remoteRefreshControlKey, Pointer: state.remoteRefreshControlPointer,
 	}
@@ -67,7 +72,6 @@ func (state *State) ensureRemoteToolsModalControls() {
 	view.tabLabel = state.remoteTabLabel
 	view.autoMenu = state.declareRemoteAutoMenu
 	view.autoDraw = state.drawRemoteAutoControl
-	view.tableDraw = state.drawRemoteTableControl
 	view.body = func() { state.declareRemoteToolsBody(view.ctx) }
 	view.footer = func() { state.declareRemoteToolActions(view.ctx) }
 	view.detailsAct = state.clickRemoteTools
@@ -152,7 +156,7 @@ func (state *State) declareRemoteToolsSearch(c ui.C) {
 			field = field.Action(lucideIcons[iconClose], m.RemoteSearchClear)
 		}
 		if field.Changed() {
-			view.processScroll = 0
+			view.resetScroll = true
 			state.rebuildRemoteRows()
 		}
 		if field.ActionClicked() {
@@ -165,22 +169,15 @@ func (state *State) declareRemoteToolsSearch(c ui.C) {
 	})
 }
 
-// declareRemoteTable declares the selected snapshot as one page Control: its
-// control draws the table exactly as the component lays it out, and takes the
-// row selection, the wheel and the process context menu.
+// declareRemoteTable declares the selected snapshot as the page's sortable
+// header and List. The list takes the row selection, the wheel and the row's
+// context menu, and paints only the rows on screen.
 func (state *State) declareRemoteTable(c ui.C) {
-	theme, view := state.Theme(), &state.remote
-	headerHeight := components.TableHeaderHeight(theme)
-	ui.Column(c).Grow(1).Shrink(1).MinHeight(headerHeight+components.TableRowHeight(theme)).
-		MarginSides(4, 0, 0, 0).Children(func() {
-		table := ui.Control(c, state.remoteTabLabel(view.tab), &view.tableHandlers).
-			Grow(1).Shrink(1).Draw(view.tableDraw)
-		if view.tab == remoteProcesses {
-			ui.ContextMenu(c, table, view.processMenu)
-		} else if view.tab == remoteContainers {
-			ui.ContextMenu(c, table, view.containerMenu)
-		}
-	})
+	view, theme := &state.remote, state.Theme()
+	padding := theme.Metrics.PadSurface + theme.Metrics.GapItem
+	fallback := remoteToolsModalWidth - 2*padding - remoteToolsTableMargin
+	view.ctx = c
+	state.declareRemoteToolsTable(c, view.tab, fallback)
 }
 
 // declareRemoteToolsStatus declares the line under the table: what the last
@@ -234,207 +231,31 @@ func (state *State) declareRemoteToolActions(c ui.C) {
 	}
 }
 
-// drawRemoteTableControl paints the selected snapshot inside its page control:
-// the sortable header, the scrollbar, and the rows intersecting the viewport.
-// The snapshot stays complete in memory.
-func (state *State) drawRemoteTableControl(d *ui.DrawContext) {
-	view, theme, pal, m := &state.remote, *d.Theme, state.pal, state.messages.Tools
-	bounds := d.Rect
-	if bounds.Width <= 0 || bounds.Height <= 0 {
-		return
-	}
-	canvas := d.Canvas
-	view.processTableBounds = bounds
-	canvas.RoundedBorder(bounds, radius.control, 1, pal.line, pal.workspace)
-	if view.tab != remoteProcesses {
-		if view.noDocker && view.collectedAt.IsZero() {
-			state.paintRemoteDockerEmpty(canvas, bounds)
-			return
-		}
-		if view.loading && len(view.rows) == 0 {
-			state.paintRemoteToolsLoading(canvas, bounds)
-			return
-		}
-	}
-
-	headerHeight, rowHeight := state.remoteProcessTableMetrics()
-	headerBounds := gfx.Rect{X: bounds.X + 1, Y: bounds.Y + 1, Width: max(bounds.Width-2, 0), Height: headerHeight}
-	bodyBounds := gfx.Rect{
-		X: bounds.X + 1, Y: headerBounds.Bottom(),
-		Width: max(bounds.Width-2, 0), Height: max(bounds.Height-headerHeight-1, 0),
-	}
-	columns, headings := state.processTableSchema(bounds.Width - 2)
-	if view.tab != remoteProcesses {
-		columns, headings = state.objectTableSchema(view.tab)
-	}
-	var headerCells [6]components.TableHeader
-	order := view.tableSort()
-	for index, heading := range headings {
-		id := remoteTableHeaderID(view.tab, index)
-		headerCells[index] = components.TableHeader{
-			ID: id, Label: heading, Disabled: view.loading, FocusableWhenDisabled: true,
-			Description: m.RemoteSortAction,
-		}
-		if order.Direction != components.TableSortNone && order.Column == index {
-			headerCells[index].Sort = order.Direction
-			if order.Direction == components.TableSortAscending {
-				headerCells[index].Description = m.RemoteSortAscending
-			} else {
-				headerCells[index].Description = m.RemoteSortDescending
-			}
-		}
-		if canvas.Clicked(id) {
-			canvas.AfterPaint(func() { state.clickRemoteTableSort(id) })
-		}
-	}
-	components.FitSortableTableHeadings(canvas, theme, columns, headerCells[:len(headings)])
-	header := components.BeginTable(canvas, theme, headerBounds, columns).
-		HeaderHeight(headerHeight).
-		RowHeight(rowHeight)
-	header.SortableHeader(headerCells[:len(headings)])
-
-	contentHeight := max(float32(len(view.rows))*rowHeight, bodyBounds.Height)
-	firstVisible := min(len(view.rows), 1+int(view.processScroll/rowHeight))
-	if view.processScrollFirst != firstVisible || view.processScrollCount != len(view.rows) {
-		view.processScrollFirst, view.processScrollCount = firstVisible, len(view.rows)
-		view.processScrollValue = strconv.Itoa(firstVisible) + "/" + strconv.Itoa(len(view.rows))
-	}
-	area := components.BeginScrollArea(canvas, theme, bodyBounds, gfx.Size{Width: bodyBounds.Width, Height: contentHeight}).
-		Offset(0, view.processScroll).
-		VerticalScrollbar(hitRemoteProcessScroll, state.remoteTabLabel(view.tab), view.processScrollValue)
-	geometry := area.Geometry()
-	view.processScroll = geometry.OffsetY
-	view.processScrollBar = geometry
-	geometry = area.BeginContent()
-	view.processScroll = geometry.OffsetY
-	view.tableBodyBounds = bodyBounds
-	view.tableRowHeight = rowHeight
-	view.tableBodyFirst = 0
-	view.tableBodyRemainder = 0
-
-	if len(view.rows) == 0 {
-		message := m.RemoteLoading
-		color := pal.muted
-		if !view.loading {
-			message = view.status
-			if message == "" {
-				message = state.remoteTabLabel(view.tab)
-			}
-		}
-		canvas.LabelCenter(message, geometry.Viewport, gfx.TextStyle{Size: theme.Metrics.FontSizeM, Color: color})
-		area.EndContent()
-		return
-	}
-
-	first := min(max(int(geometry.OffsetY/rowHeight), 0), len(view.rows))
-	visible := int(geometry.Viewport.Height/rowHeight) + 2
-	last := min(first+visible, len(view.rows))
-	rowRemainder := geometry.OffsetY - float32(first)*rowHeight
-	tableBounds := gfx.Rect{
-		X: geometry.Viewport.X, Y: geometry.Viewport.Y - rowRemainder,
-		Width: geometry.Viewport.Width, Height: min(geometry.Viewport.Height+rowHeight, float32(last-first)*rowHeight),
-	}
-	view.tableBodyFirst = first
-	view.tableBodyRemainder = rowRemainder
-	table := components.BeginTable(canvas, theme, tableBounds, columns).RowHeight(rowHeight)
-	for index := first; index < last; index++ {
-		row := &view.rows[index]
-		table.Row(gfx.ID{}, row.cells[:len(headings)], row.key == view.selected)
-	}
-	area.EndContent()
-}
-
-// objectTableSchema is the Docker table's columns and headings by tab.
+// objectTableSchema is the Docker table's columns and headings by tab. It
+// fills the view's own column storage, so a paint neither allocates the schema
+// nor loses it before the rows are declared.
 func (state *State) objectTableSchema(tab remoteTab) ([]components.TableColumn, []string) {
 	m, view := state.messages.Tools, &state.remote
 	switch tab {
 	case remoteCompose:
 		view.columns = [6]string{m.RemoteColName, m.RemoteColStatus, m.RemoteColConfig}
-		return []components.TableColumn{{Width: 220}, {Width: 200}, {Width: 0}}, view.columns[:3]
+		view.processColumns = [6]components.TableColumn{{Width: 220}, {Width: 200}, {Width: 0}}
+		return view.processColumns[:3], view.columns[:3]
 	case remoteImages:
 		view.columns = [6]string{m.RemoteColName, m.RemoteColID, m.RemoteColSize, m.RemoteColCreated}
-		return []components.TableColumn{{Width: 470}, {Width: 150}, {Width: 100, Alignment: components.TableAlignRight}, {Width: 0}}, view.columns[:4]
+		view.processColumns = [6]components.TableColumn{{Width: 470}, {Width: 150}, {Width: 100, Alignment: components.TableAlignRight}, {Width: 0}}
+		return view.processColumns[:4], view.columns[:4]
 	case remoteVolumes:
 		view.columns = [6]string{m.RemoteColName, m.RemoteColDriver, m.RemoteColScope}
-		return []components.TableColumn{{Width: 470}, {Width: 150}, {Width: 0}}, view.columns[:3]
+		view.processColumns = [6]components.TableColumn{{Width: 470}, {Width: 150}, {Width: 0}}
+		return view.processColumns[:3], view.columns[:3]
 	case remoteNetworks:
 		view.columns = [6]string{m.RemoteColName, m.RemoteColID, m.RemoteColDriver, m.RemoteColScope}
-		return []components.TableColumn{{Width: 300}, {Width: 160}, {Width: 150}, {Width: 0}}, view.columns[:4]
+		view.processColumns = [6]components.TableColumn{{Width: 300}, {Width: 160}, {Width: 150}, {Width: 0}}
+		return view.processColumns[:4], view.columns[:4]
 	default:
 		view.columns = [6]string{m.RemoteColName, m.RemoteColImage, m.RemoteColState, m.RemoteColStatus, m.RemoteColID}
-		return []components.TableColumn{{Width: 200}, {Width: 220}, {Width: 90}, {Width: 200}, {Width: 0}}, view.columns[:5]
+		view.processColumns = [6]components.TableColumn{{Width: 200}, {Width: 220}, {Width: 90}, {Width: 200}, {Width: 0}}
+		return view.processColumns[:5], view.columns[:5]
 	}
-}
-
-// remoteTableControlPointer selects a row on press, opens process or container
-// details on double-click, and leaves a secondary press to the context menu.
-func (state *State) remoteTableControlPointer(event gfx.PointerEvent) gfx.EventResult {
-	view := &state.remote
-	// Context-menu items are control parts; leave their events to the menu.
-	if !event.Target.IsZero() && event.Target.Scope() == view.tableHandlers.Parts() {
-		return gfx.EventResult{}
-	}
-	if event.Kind == gfx.PointerDown && (event.Button == gfx.PointerButtonPrimary || event.Button == gfx.PointerButtonSecondary) {
-		view.tablePressRow = -1
-		index := state.remoteTableRowAt(event.X, event.Y)
-		if index >= 0 && index < len(view.rows) {
-			view.selected = view.rows[index].key
-			view.tablePressRow = index
-			if event.Button == gfx.PointerButtonSecondary {
-				return gfx.EventResult{Repaint: true}
-			}
-			return gfx.EventResult{Handled: true, Repaint: true}
-		}
-		return gfx.EventResult{Handled: true}
-	}
-	if event.Kind == gfx.PointerUp && event.Button == gfx.PointerButtonPrimary {
-		index := state.remoteTableRowAt(event.X, event.Y)
-		pressed := view.tablePressRow
-		view.tablePressRow = -1
-		if index >= 0 && index == pressed && index < len(view.rows) {
-			view.selected = view.rows[index].key
-			if view.tab == remoteProcesses && event.ClickCount == 2 {
-				if process, found := state.remoteProcessByKey(view.selected); found {
-					state.openRemoteProcessDetails(process)
-				}
-			} else if view.tab == remoteContainers && event.ClickCount == 2 {
-				if container, found := state.selectedContainer(); found {
-					state.openRemoteContainerDetails(container)
-				}
-			}
-			return gfx.EventResult{Handled: true, Repaint: true}
-		}
-		return gfx.EventResult{Handled: true}
-	}
-	return gfx.EventResult{}
-}
-
-// remoteTableControlKey moves the process selection with the arrow, Home, End
-// and page keys, and opens the selected process on Enter. The control keeps the
-// focus; the row identities are painted, not focused.
-func (state *State) remoteTableControlKey(event gfx.KeyEvent) gfx.EventResult {
-	view := &state.remote
-	if view.tab != remoteProcesses {
-		return gfx.EventResult{}
-	}
-	result := state.remoteProcessTableNavigate(event)
-	result.Focus, result.FocusVisible = gfx.ID{}, false
-	return result
-}
-
-// remoteTableRowAt is the row index under a point in the table's body, or -1.
-func (state *State) remoteTableRowAt(x, y float32) int {
-	view := &state.remote
-	if view.tableRowHeight <= 0 || !pointInRect(x, y, view.tableBodyBounds) {
-		return -1
-	}
-	// Rows are painted from the content origin, which sits a partial row above
-	// the body viewport after a precise scroll. Measure from there, not from the
-	// viewport, or a click lands on the row above the one under the pointer.
-	top := view.tableBodyBounds.Y - view.tableBodyRemainder
-	index := view.tableBodyFirst + int((y-top)/view.tableRowHeight)
-	if index < 0 || index >= len(view.rows) {
-		return -1
-	}
-	return index
 }

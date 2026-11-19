@@ -231,17 +231,17 @@ func TestDualPanePropertiesDialogConsumesPointerInput(t *testing.T) {
 	}
 	w.fileProperties = properties
 
-	bar := w.ui.bars[0].VerticalThumb
+	list := w.ui.list[0]
 	w.drag = sftpWindowDrag{armed: true, fromLocal: true}
 	result := w.pointer(gfx.PointerEvent{
 		Kind: gfx.PointerDown, Target: hitSFTPWindowSplit,
-		X: bar.X + bar.Width/2, Y: bar.Y + bar.Height/2,
+		X: list.X + list.Width/2, Y: list.Y + list.Height/2,
 	})
 	if !result.Handled || !w.fileProperties.open {
 		t.Fatalf("pointer input escaped the dual-pane properties dialog: handled=%t properties=%t", result.Handled, w.fileProperties.open)
 	}
-	if w.ui.barDrag != 0 || w.ui.splitting || !w.drag.armed || !w.drag.fromLocal {
-		t.Fatalf("pointer input changed controls behind the dialog: bar=%d split=%t drag=%+v", w.ui.barDrag, w.ui.splitting, w.drag)
+	if w.ui.split.Dragging() || !w.drag.armed || !w.drag.fromLocal {
+		t.Fatalf("pointer input changed controls behind the dialog: split=%t drag=%+v", w.ui.split.Dragging(), w.drag)
 	}
 }
 

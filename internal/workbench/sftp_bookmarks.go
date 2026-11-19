@@ -50,35 +50,19 @@ type sftpBookmarkEditor struct {
 	original                    sftpBookmark
 	fields                      [3]text.Editor // name, local directory, remote directory
 	// fieldRows and fieldTexts are the page fields over fields, bound when first declared.
-	fieldRows                          [3]ui.FormFieldState
-	fieldTexts                         [3]ui.Field
-	fieldBound                         [3]bool
-	body                               sftpBookmarkBody
-	viewport                           gfx.Rect
-	errorText                          string
-	list                               gfx.Rect
-	area                               components.ScrollAreaGeometry
-	offset, grab                       float32
-	dragging                           bool
-	scopeOpen, focusScope, focusOption bool
-	scopeMenu                          components.MenuScroll
-	scopeBounds                        gfx.Rect
-}
-
-// sftpBookmarkBody is what the editor's page leaves for the controls painted by
-// hand once it has been laid out.
-type sftpBookmarkBody struct {
-	browse, list, scope ui.Box
-}
-
-// pageButtonSlot reserves the room a button takes in a page.
-func pageButtonSlot(c ui.C, label string, small bool) ui.Box {
-	button := components.BeginButton(c.Canvas(), *c.Theme(), gfx.ID{}, gfx.Rect{})
-	if small {
-		button = button.Small()
-	}
-	button = button.SizeToFit(label)
-	return ui.Slot(c).Width(button.BoundsWidth()).Height(button.BoundsHeight())
+	fieldRows  [3]ui.FormFieldState
+	fieldTexts [3]ui.Field
+	fieldBound [3]bool
+	// scopeRow is the “Available to” field around the scope trigger, as the
+	// editor painted it before the profile list became a page scroll area.
+	scopeRow  ui.FormFieldState
+	viewport  gfx.Rect
+	errorText string
+	scroll    *ui.ScrollState
+	// emptyDraw paints the centered empty state over the list's viewport; it is
+	// made once so a paint does not allocate a closure.
+	emptyDraw             func(*ui.DrawContext)
+	scopeOpen, focusScope bool
 }
 
 func cleanBookmarkName(name string) string {
@@ -298,8 +282,6 @@ func (w *sftpWindow) clickBookmarkEditor(id gfx.ID) {
 		}
 	case hitSFTPProfileScope:
 		w.bookmark.scopeOpen = !w.bookmark.scopeOpen
-		w.bookmark.scopeMenu = components.MenuScroll{}
-		w.bookmark.focusOption = w.bookmark.scopeOpen
 	case hitSFTPProfileScopeDismiss:
 		w.bookmark.scopeOpen = false
 		w.bookmark.focusScope = true
@@ -369,20 +351,16 @@ func (w *sftpWindow) declareBookmarkDialog(c ui.C, viewport gfx.Rect) {
 	if b.focusScope {
 		focus, b.focusScope = hitSFTPProfileScope, false
 	}
-	// The surface is as tall as the body the editor asks for; components.Dialog
-	// computes the header and footer it adds around it.
-	geometry := components.BeginDialog(c.Canvas(), theme, viewport, components.DialogOptions{
-		ContentSize: gfx.Size{Width: 760}, FitBody: true, BodyHeight: bodyHeight,
-	}).Layout(m.BookmarkDescription)
-	w.bookmarkDraws()
-	b.viewport, b.body = viewport, sftpBookmarkBody{}
+	// The surface is as tall as the body the editor asks for; the dialog layout
+	// adds the header and footer around it.
+	b.viewport = viewport
 	dialog := ui.Dialog(c, ui.DialogSpec{
-		Title: m.BookmarkTitle, Description: m.BookmarkDescription, Width: 760, Height: geometry.Content.Height,
-		Layer: dialogLayer, Scope: hitSFTPBookmarkScope, CloseID: hitSFTPBookmarkCancel, InitialFocusID: focus,
+		Title: m.BookmarkTitle, Description: m.BookmarkDescription, Width: 760,
+		Height: dialogContentHeight(c.Canvas(), theme, viewport, 760, m.BookmarkDescription, bodyHeight),
+		Layer:  dialogLayer, Scope: hitSFTPBookmarkScope, CloseID: hitSFTPBookmarkCancel, InitialFocusID: focus,
 	})
 	dialog.Body(func() {
-		column := w.declareBookmarkBody(c)
-		column.DrawOver(w.ui.bookmarkBodyDraw)
+		w.declareBookmarkBody(c)
 	})
 	dialog.Footer(func() {
 		row := ui.Row(c).Fill().Gap((*c.Theme()).Metrics.GapItem).Justify(ui.End).Items(ui.Center)
@@ -393,23 +371,33 @@ func (w *sftpWindow) declareBookmarkDialog(c ui.C, viewport gfx.Rect) {
 	})
 }
 
-// declareBookmarkBody declares the editor's fields, the actions beside them and
-// the room the profile list takes.
-func (w *sftpWindow) declareBookmarkBody(c ui.C) ui.Box {
+// declareBookmarkBody declares the editor's fields, the actions beside them, the
+// scope choice and the profile list. They are page controls now: the window's
+// click handler keeps their identities, and the page owns their keys and wheel.
+func (w *sftpWindow) declareBookmarkBody(c ui.C) {
 	b, theme, m := &w.bookmark, *c.Theme(), w.owner.messages.SFTPWindow
 	canvas := c.Canvas()
-	body := &b.body
 	column := ui.Column(c).Fill().Gap(8)
 	column.Children(func() {
 		ui.Row(c).Height(56).Gap(8).Items(ui.End).Children(func() {
 			w.declareBookmarkField(c, 1).Grow(1)
-			body.browse = w.owner.declareIconButton(c, hitSFTPBookmarkBrowse, iconFolderOpen, m.BookmarkChooseLocal, false, iconButtonQuiet).Size(32, 32)
+			w.owner.declareIconButton(c, hitSFTPBookmarkBrowse, iconFolderOpen, m.BookmarkChooseLocal, false, iconButtonQuiet).Size(32, 32)
 		})
 		w.declareBookmarkField(c, 2)
 		ui.Row(c).Height(56).Gap(8).Items(ui.End).Children(func() {
 			w.declareBookmarkField(c, 0).Grow(1)
 			scopeWidth := max(canvas.TextWidth(m.ProfileSite, theme.Metrics.FontSizeM), canvas.TextWidth(m.ProfileShared, theme.Metrics.FontSizeM)) + 36
-			body.scope = ui.Slot(c).Width(max(132, scopeWidth)).Height(56)
+			value := m.ProfileSite
+			if b.shared {
+				value = m.ProfileShared
+			}
+			b.scopeRow.For = hitSFTPProfileScope
+			scopeField := ui.FormField(c, &b.scopeRow, m.ProfileScope).
+				Width(max(132, scopeWidth)).Height(56).Shrink(0)
+			scopeField.Children(func() {
+				trigger := ui.Button(c, value).Small().Outline().Hit(hitSFTPProfileScope, value).Height(32)
+				w.declareBookmarkScopeMenu(c, trigger)
+			})
 			room := func(label string) float32 { return max(56, canvas.TextWidth(label, theme.Metrics.FontSizeM)+24) }
 			bookmarkButtonRoom(c, room(m.ProfileNew), func() { ui.Button(c, m.ProfileNew).Small().Outline().Hit(hitSFTPProfileNew, m.ProfileNew).FillWidth() })
 			bookmarkButtonRoom(c, room(m.BookmarkSave), func() {
@@ -419,23 +407,92 @@ func (w *sftpWindow) declareBookmarkBody(c ui.C) ui.Box {
 				ui.Button(c, m.ProfileDelete).Small().Destructive().Disabled(!b.editing).Hit(hitSFTPProfileDelete, m.ProfileDelete).FillWidth()
 			})
 		})
-		// The box and its words are one control, the window's own router toggles it by the fixed
-		// identity; the box's value is the editor's, so the page writes nothing of its own.
-		side := components.CheckboxExtent(theme)
-		row := ui.Row(c).Height(32).Items(ui.Center).Gap(32-4-side).PadSides(0, 0, 0, 4).
-			HitWith(hitSFTPBookmarkSync, m.ProfileSync, gfx.HitOptions{Role: gfx.RoleCheckbox, Checked: b.sync})
-		row.Children(func() {
-			ui.Slot(c).Size(side, side).Shrink(0).Draw(func(d *ui.DrawContext) {
-				components.BeginCheckbox(d.Canvas, *d.Theme, gfx.ID{}, d.Rect, b.sync).Paint()
-			})
-			ui.Text(c, m.ProfileSync).FontSize(theme.Metrics.FontSizeM).Color(theme.Foreground).Grow(1).Height(32)
+		ui.Row(c).Height(32).Items(ui.Center).Children(func() {
+			ui.Checkbox(c, w.owner.pageFlag(b.sync), m.ProfileSync).Hit(hitSFTPBookmarkSync, m.ProfileSync).Grow(1)
 		})
-		body.list = ui.Slot(c).Grow(1)
+		w.declareBookmarkProfileList(c)
 		if b.errorText != "" {
 			ui.Text(c, b.errorText).FontSize(theme.Metrics.FontSizeS).Color(w.owner.pal.danger).Ellipsis().Height(24)
 		}
 	})
-	return column
+}
+
+// declareBookmarkScopeMenu declares the scope choice's popup under its trigger:
+// this connection's profiles, or the shared ones.
+func (w *sftpWindow) declareBookmarkScopeMenu(c ui.C, trigger ui.Box) {
+	b, m := &w.bookmark, w.owner.messages.SFTPWindow
+	var rows menuRows
+	rows.add(components.ContextMenuItem{ID: hitSFTPProfileSite, Label: m.ProfileSite, Kind: components.ContextMenuRadio, Selected: !b.shared, Disabled: w.session.host.CatalogID == ""})
+	rows.add(components.ContextMenuItem{ID: hitSFTPProfileShared, Label: m.ProfileShared, Kind: components.ContextMenuRadio, Selected: b.shared})
+	ui.Menu(c, trigger, &b.scopeOpen, func(menu *ui.MenuItems) {
+		rows.declare(c, menu, func(id gfx.ID) { w.clickBookmarkEditor(id) })
+	})
+}
+
+// declareBookmarkProfileList declares the saved profiles as a page scroll area:
+// one row each, named by the identity the editor's handler knows. Scrolling,
+// the wheel and the scrollbar are the page's.
+func (w *sftpWindow) declareBookmarkProfileList(c ui.C) {
+	b, theme, m := &w.bookmark, *c.Theme(), w.owner.messages.SFTPWindow
+	profiles := w.visibleProfiles()
+	// The archive list keeps the border and the two-pixel inset the editor was
+	// painted with, so the list does not sit bare inside the dialog. The border
+	// eats one pixel of the inset on each side.
+	frame := ui.Column(c).Grow(1).Pad(1).Background(theme.Background).
+		Radius(theme.Metrics.RadiusItem()).Border(1, theme.Border.Mix(theme.MutedForeground, .25))
+	frame.Children(func() {
+		area := ui.Scroll(c).Grow(1).Scrollbars()
+		b.scroll = area.ScrollState()
+		if len(profiles) == 0 {
+			if b.emptyDraw == nil {
+				b.emptyDraw = func(d *ui.DrawContext) {
+					d.Canvas.LabelCenter(m.ProfileEmpty, d.Rect, gfx.TextStyle{Size: theme.Metrics.FontSizeS, Color: theme.MutedForeground})
+				}
+			}
+			area = area.DrawOver(b.emptyDraw)
+		}
+		area.Children(func() {
+			if len(profiles) == 0 {
+				return
+			}
+			for index, profile := range profiles {
+				name := profile.name
+				if name == "" {
+					name = profile.path
+				}
+				description := profile.path
+				if profile.local != "" {
+					description = elideMiddleRunes(profile.local, 34) + "  ⇄  " + elideMiddleRunes(profile.path, 34)
+				}
+				if profile.sync {
+					description += " · " + m.ProfileQuickSync
+				}
+				selected := b.editing && b.original == profile
+				// The row is inset four pixels from the list's left and keeps the
+				// scrollbar's room on the right, as the painted row did.
+				row := ui.Row(c.KeyInt(index)).Height(52).MarginSides(0, 14, 0, 4).PadX(8).Gap(8).Items(ui.Center).
+					HitWith(hitSFTPProfileItems.At(index), name, gfx.HitOptions{Role: gfx.RoleOption, Selected: selected}).
+					Hover(ui.Look{}.Background(theme.Accent))
+				if selected {
+					row = row.Background(theme.Accent)
+				}
+				row.Children(func() {
+					ui.Column(c).Grow(1).Gap(2).Children(func() {
+						ui.Text(c, name).FontSize(theme.Metrics.FontSizeM).Weight(gfx.WeightMedium).Color(theme.Foreground).Ellipsis()
+						ui.Text(c, description).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis()
+					})
+					badge := m.ProfileSite
+					background, foreground, border := theme.Background, theme.Foreground, theme.Border
+					if profile.shared {
+						badge, background, foreground = m.ProfileShared, theme.Secondary, theme.SecondaryForeground
+					}
+					ui.Text(c, badge).FontSize(theme.Metrics.FontSizeS).Weight(gfx.WeightMedium).
+						Color(foreground).Background(background).Border(1, border).Radius(999).
+						PadSides(6, 6, 2, 2).Shrink(0)
+				})
+			}
+		})
+	})
 }
 
 // declareBookmarkField declares text field i of the editor (name, local directory, remote
@@ -455,15 +512,6 @@ func (w *sftpWindow) declareBookmarkField(c ui.C, i int) ui.Box {
 	return field
 }
 
-// paintBookmarkBody paints the editor's profile list and scope select into the slots its
-// dialog left.
-func (w *sftpWindow) paintBookmarkBody(d *ui.DrawContext) {
-	canvas, b := d.Canvas, &w.bookmark
-	body := &b.body
-	w.paintProfileList(canvas, body.list.Rect())
-	w.paintProfileScope(canvas, body.scope.Rect(), b.viewport)
-}
-
 // darkButtonRecipe is the Save button's look: a near-black primary with a white label, whatever the
 // theme's primary is.
 func darkButtonRecipe(theme gfx.Theme, variant components.ButtonVariant, state gfx.State) components.ButtonLook {
@@ -477,154 +525,11 @@ func bookmarkButtonRoom(c ui.C, width float32, button func()) {
 	ui.Column(c).Size(width, 32).Shrink(0).Children(button)
 }
 
-func (w *sftpWindow) paintProfileScope(canvas *gfx.Canvas, bounds, viewport gfx.Rect) {
-	b, theme, m := &w.bookmark, w.owner.Theme(), w.owner.messages.SFTPWindow
-	b.scopeBounds = components.BeginField(canvas, theme, bounds).For(hitSFTPProfileScope).Paint(m.ProfileScope, "", "")
-	content := gfx.Rect{X: b.scopeBounds.X, Y: b.scopeBounds.Y + b.scopeBounds.Height + 4, Width: b.scopeBounds.Width, Height: 72}
-	if content.Y+content.Height > viewport.Y+viewport.Height-8 {
-		content.Y = b.scopeBounds.Y - content.Height - 4
+// bookmarkPage is the page that declares the bookmark dialog: the window's own,
+// or the workbench page when the file manager is a tab.
+func (w *sftpWindow) bookmarkPage() *ui.Page {
+	if w.window == nil {
+		return w.owner.windowPage()
 	}
-	value := m.ProfileSite
-	if b.shared {
-		value = m.ProfileShared
-	}
-	control := components.BeginSelect(canvas, theme, b.scopeBounds, components.SelectOptions{TriggerID: hitSFTPProfileScope, Label: m.ProfileScope, Value: value, Open: b.scopeOpen, Content: content, Layer: dialogLayer + 2, Scope: hitSFTPProfileScope, DismissID: hitSFTPProfileScopeDismiss, Viewport: viewport, Scroll: &b.scopeMenu})
-	control.AddItem(components.SelectItem{ID: hitSFTPProfileSite, Label: m.ProfileSite, Selected: !b.shared, Disabled: w.session.host.CatalogID == ""})
-	control.AddItem(components.SelectItem{ID: hitSFTPProfileShared, Label: m.ProfileShared, Selected: b.shared})
-	control.End()
-	if b.scopeOpen && b.focusOption {
-		focus := hitSFTPProfileSite
-		if b.shared || w.session.host.CatalogID == "" {
-			focus = hitSFTPProfileShared
-		}
-		canvas.RequestFocus(focus)
-		b.focusOption = false
-	}
-}
-
-func (w *sftpWindow) paintProfileList(canvas *gfx.Canvas, bounds gfx.Rect) {
-	b, theme, m := &w.bookmark, w.owner.Theme(), w.owner.messages.SFTPWindow
-	profiles := w.visibleProfiles()
-	canvas.RoundedBorder(bounds, theme.Metrics.RadiusItem(), 1, theme.Border.Mix(theme.MutedForeground, .25), theme.Background)
-	b.list = bounds.Inset(gfx.All(2))
-	canvas.Container(b.list, gfx.RoleListBox, m.BookmarkTitle)
-	area := components.BeginScrollArea(canvas, theme, b.list, gfx.Size{Width: b.list.Width, Height: float32(len(profiles)) * 52}).Offset(0, b.offset).Viewport(hitSFTPProfileList, m.BookmarkTitle).VerticalScrollbar(hitSFTPProfileBar, m.BookmarkTitle, "")
-	b.area = area.BeginContent()
-	b.offset = b.area.OffsetY
-	if len(profiles) == 0 {
-		canvas.LabelCenter(m.ProfileEmpty, b.list, gfx.TextStyle{Size: theme.Metrics.FontSizeS, Color: theme.MutedForeground})
-	}
-	for i, profile := range profiles {
-		row := gfx.Rect{X: b.list.X + 4, Y: b.list.Y + float32(i)*52 - b.offset, Width: max(0, b.list.Width-18), Height: 52}
-		if row.Y+row.Height < b.list.Y || row.Y > b.list.Y+b.list.Height {
-			continue
-		}
-		id := hitSFTPProfileItems.At(i)
-		selected := b.editing && b.original == profile
-		if selected || canvas.Hovered() == id {
-			canvas.Rounded(row, theme.Metrics.RadiusItem(), theme.Accent)
-		}
-		name := profile.name
-		if name == "" {
-			name = profile.path
-		}
-		scopeLabel, variant := m.ProfileSite, components.BadgeOutline
-		if profile.shared {
-			scopeLabel, variant = m.ProfileShared, components.BadgeSecondary
-		}
-		badgeWidth, _ := components.BadgeExtent(canvas, theme, scopeLabel)
-		components.PaintBadge(canvas, theme, gfx.Rect{X: row.X + row.Width - badgeWidth - 8, Y: row.Y + 5}, scopeLabel, variant)
-		description := profile.path
-		if profile.local != "" {
-			description = elideMiddleRunes(profile.local, 34) + "  ⇄  " + elideMiddleRunes(profile.path, 34)
-		}
-		if profile.sync {
-			description += " · " + m.ProfileQuickSync
-		}
-		nameWidth := max(0, row.Width-badgeWidth-32)
-		canvas.Label(canvas.FitLine(name, theme.Metrics.FontSizeM, gfx.WeightMedium, nameWidth), gfx.Rect{X: row.X + 8, Y: row.Y + 4, Width: nameWidth, Height: 22}, gfx.TextStyle{Size: theme.Metrics.FontSizeM, Weight: gfx.WeightMedium, Color: theme.Foreground})
-		canvas.Label(canvas.FitLine(description, theme.Metrics.FontSizeS, gfx.WeightRegular, row.Width-16), gfx.Rect{X: row.X + 8, Y: row.Y + 26, Width: row.Width - 16, Height: 20}, gfx.TextStyle{Size: theme.Metrics.FontSizeS, Color: theme.MutedForeground})
-		canvas.HitWithOptions(id, row, name, gfx.HitOptions{Role: gfx.RoleOption, Selected: selected})
-	}
-	area.EndContent()
-}
-
-func (w *sftpWindow) profilePointer(event gfx.PointerEvent) gfx.EventResult {
-	b := &w.bookmark
-	if b.scopeOpen {
-		return gfx.EventResult{}
-	}
-	if b.dragging {
-		if event.Kind == gfx.PointerMove {
-			b.offset = b.area.VerticalOffsetForThumb(event.Y - b.grab)
-		} else if event.Kind == gfx.PointerUp || event.Kind == gfx.PointerExit {
-			b.dragging = false
-		}
-		return gfx.EventResult{Handled: true, Repaint: true}
-	}
-	if event.Kind == gfx.PointerDown && event.Target == hitSFTPProfileBar {
-		b.grab = b.area.VerticalThumb.Height / 2
-		if event.Y >= b.area.VerticalThumb.Y && event.Y < b.area.VerticalThumb.Y+b.area.VerticalThumb.Height {
-			b.grab = event.Y - b.area.VerticalThumb.Y
-		}
-		b.dragging = true
-		b.offset = b.area.VerticalOffsetForThumb(event.Y - b.grab)
-		return gfx.EventResult{Handled: true, Repaint: true}
-	}
-	if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary && event.ClickCount == 2 {
-		if index, ok := event.Target.In(hitSFTPProfileItems); ok {
-			profiles := w.visibleProfiles()
-			if index < len(profiles) {
-				w.selectProfile(profiles[index])
-				w.openProfileDraft()
-				return gfx.EventResult{Handled: true, Repaint: true}
-			}
-		}
-	}
-	return gfx.EventResult{}
-}
-
-func (w *sftpWindow) profileScopeKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
-	b := &w.bookmark
-	if !b.scopeOpen && event.Target != hitSFTPProfileScope {
-		return gfx.EventResult{}, false
-	}
-	result := gfx.EventResult{Handled: true, Repaint: true}
-	if b.scopeOpen {
-		switch event.Key {
-		case gfx.KeyEscape:
-			if !event.Repeat {
-				b.scopeOpen = false
-				b.focusScope = true
-			}
-			return result, true
-		case gfx.KeyTab:
-			b.scopeOpen = false
-			result.ContinueTraversal = true
-			return result, true
-		}
-		if event.Modifiers == 0 {
-			if next, ok := b.scopeMenu.Navigate(event.Key, event.Target, true); ok {
-				result.Focus, result.FocusVisible = next, true
-				return result, true
-			}
-			if (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) && !event.Repeat {
-				id := event.Target
-				if id != hitSFTPProfileSite && id != hitSFTPProfileShared {
-					id = hitSFTPProfileSite
-					if b.shared {
-						id = hitSFTPProfileShared
-					}
-				}
-				w.clickBookmarkEditor(id)
-				return result, true
-			}
-		}
-		return gfx.EventResult{}, false
-	}
-	if event.Modifiers == 0 && !event.Repeat && (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace || event.Key == gfx.KeyDown || event.Key == gfx.KeyUp) {
-		w.clickBookmarkEditor(hitSFTPProfileScope)
-		return result, true
-	}
-	return gfx.EventResult{}, false
+	return w.windowPage()
 }

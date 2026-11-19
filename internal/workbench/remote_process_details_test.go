@@ -217,15 +217,19 @@ func TestProcessMenuIsThePageControlMenuInTheNativeToolsWindow(t *testing.T) {
 		size := gfx.Size{Width: 1100, Height: 780}
 		var canvas gfx.Canvas
 		w.paint(&canvas, size)
-		table, ok := hitByLabelRole(&canvas, w.ui.messages.Tools.RemoteTabProcesses, gfx.RoleGroup)
-		if !ok {
+		if _, ok := hitByLabelRole(&canvas, w.ui.messages.Tools.RemoteTabProcesses, gfx.RoleListBox); !ok {
 			t.Fatal("the process table is not a page control")
 		}
-		bounds := w.ui.remote.tableBodyBounds
+		rowID := w.ui.remote.lists[remoteProcesses].RowID(0)
+		row, ok := hitByID(&canvas, rowID)
+		if !ok {
+			t.Fatal("the first process row is not painted")
+		}
+		bounds := row.Bounds
 		event := gfx.PointerEvent{
 			Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary,
-			X: bounds.X + bounds.Width/2, Y: bounds.Y + w.ui.remote.tableRowHeight/2,
-			Target: table.ID, Viewport: size,
+			X: bounds.X + bounds.Width/2, Y: bounds.Y + bounds.Height/2,
+			Target: rowID, Viewport: size,
 		}
 		if result := w.config().OnPointer(event); !result.Repaint {
 			t.Fatal("the table control did not take the right click")
@@ -272,5 +276,36 @@ func TestProcessDetailStateLabelsAndUnknownValues(t *testing.T) {
 	}
 	if processText("") != "—" || processInteger(0) != "—" || processBytes(0) != "—" || processCollectedAt(state.remote.collectedAt) == "" {
 		t.Fatal("missing process values are not represented consistently")
+	}
+}
+
+// The command tab's status row sits inside the same panel as the command, with
+// no gap before the text: the tab strip's own gap is the only one.
+func TestRemoteCommandStatusSharesThePanelWithItsText(t *testing.T) {
+	state, _, _ := openRemoteToolsDialog(t)
+	doubleClickRemoteToolsRow(t, state, 0)
+	details := &state.remote.processDetails
+	status := details.commandStatus
+	if status == "" {
+		t.Fatal("the command tab has no status row to place")
+	}
+	canvas := remoteToolsPaint(t, state)
+	var statusText gfx.Text
+	foundStatus := false
+	for _, text := range canvas.Texts() {
+		if text.Value == status {
+			statusText, foundStatus = text, true
+			break
+		}
+	}
+	if !foundStatus {
+		t.Fatalf("the command status %q is not painted", status)
+	}
+	detail, found := hitByID(canvas, hitRemoteProcessDetailsText)
+	if !found {
+		t.Fatal("the command text area is not painted")
+	}
+	if detail.Bounds.Y != statusText.Bounds.Y+28 {
+		t.Fatalf("command text starts at %v, want %v: the 28px status row and no gap", detail.Bounds.Y, statusText.Bounds.Y+28)
 	}
 }

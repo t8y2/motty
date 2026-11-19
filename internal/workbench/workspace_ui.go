@@ -477,11 +477,8 @@ func (state *State) declareContextPanel(c ui.C) {
 		}
 		return
 	}
-	layout := state.sftpPanelResizable(nil, size, context).Paint(state.messages.SFTPFiles)
-	panel := layout.First
-	if context.Side == layoutcore.ContextRight {
-		panel = layout.Second
-	}
+	base, width, _, _ := state.contextPanelLayout(size, context)
+	panel, _ := contextPanelRect(base, width, context.Side)
 	state.contextPanelDocked = true
 	state.declareContextPanelBody(c, panel, gfx.Point{}, session)
 	state.contextPanelScope = tree.Sub(tree.Feature(shellPageRoot), tree.Name(contextPanelPart))
@@ -661,7 +658,24 @@ func (state *State) paintContextPanel(canvas *gfx.Canvas, size gfx.Size, workspa
 	if size.Width >= contextDrawerAt {
 		// The divider between the panel and the workspace is the window's, not
 		// the panel's: paint its line and its drag target here, after the page.
-		state.sftpPanelResizable(canvas, size, context).Paint(state.messages.SFTPFiles)
+		base, width, _, _ := state.contextPanelLayout(size, context)
+		_, handleX := contextPanelRect(base, width, context.Side)
+		thickness, color := float32(1), state.pal.line
+		if canvas.Pressed() == hitContextDivider {
+			thickness, color = 3, state.pal.accent
+		} else if canvas.Hovered() == hitContextDivider {
+			thickness, color = 3, state.pal.accent
+		}
+		line := gfx.Rect{X: handleX + (1-thickness)/2, Y: base.Y, Width: thickness, Height: base.Height}
+		if thickness > 1 {
+			canvas.Rounded(line, 1, color)
+		} else {
+			canvas.Fill(line, color)
+		}
+		hit := gfx.Rect{X: handleX - (paneDividerHitWidth-1)/2, Y: base.Y, Width: paneDividerHitWidth, Height: base.Height}
+		canvas.HitWithOptions(hitContextDivider, hit, state.messages.SFTPFiles, gfx.HitOptions{
+			Role: gfx.RoleSeparator, Cursor: gfx.PointerCursorResizeHorizontal,
+		})
 	}
 }
 
@@ -781,7 +795,7 @@ func (state *State) declarePaneSplitter(c ui.C, frame, bounds gfx.Rect, split Pa
 		Left(bounds.X - frame.X).Top(bounds.Y - frame.Y).
 		Width(bounds.Width).Height(bounds.Height).Children(func() {
 		ui.Slot(c).Width(entry.state.Pos).Shrink(0)
-		ui.Splitter(c, &entry.state).Mins(minFirst, minSecond).
+		ui.Splitter(c, &entry.state).SplitterThickness(1).Mins(minFirst, minSecond).
 			Hit(hitPaneDividerList.At(splitterIndex(state.paneSplits, split.NodeID)), state.messages.PaneResize)
 		ui.Slot(c).Grow(1)
 	})
@@ -798,6 +812,11 @@ func (state *State) declarePaneSplitter(c ui.C, frame, bounds gfx.Rect, split Pa
 			}
 			if splitter.dragging {
 				state.save()
+				// The drag took the keyboard: give it back to the terminal the
+				// workspace was typing in, as the old divider did on release.
+				if id := state.activeTerminalFocusHit(); !id.IsZero() {
+					c.Canvas().RequestFocus(id)
+				}
 			}
 			splitter.dragging = false
 		})
@@ -864,15 +883,12 @@ func (state *State) dragContextDivider(event gfx.PointerEvent) gfx.EventResult {
 	if !ok || !context.Open || event.Viewport.Width < contextDrawerAt {
 		return gfx.EventResult{Handled: true}
 	}
-	base := state.baseWorkspacePixelBounds(event.Viewport)
-	base.Width -= state.aiReserve(workspaceID, event.Viewport)
-	base.Width -= state.independentMonitorReserve(workspaceID, event.Viewport)
-	resizable := state.sftpPanelResizable(nil, event.Viewport, context)
-	ratio := resizable.FractionAt(event.X)
+	base, _, minimum, maximum := state.contextPanelLayout(event.Viewport, context)
+	width := event.X - base.X
 	if context.Side == layoutcore.ContextRight {
-		ratio = 1 - ratio
+		width = base.X + base.Width - 1 - event.X
 	}
-	width := (base.Width - 1) * ratio
+	width = min(max(width, minimum), maximum)
 	if width == context.Width {
 		return gfx.EventResult{Handled: true}
 	}

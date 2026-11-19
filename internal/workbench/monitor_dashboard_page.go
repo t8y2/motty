@@ -39,20 +39,76 @@ func (state *State) declareDashboardWorkspace(c ui.C) {
 	p := state.dashboardPanel()
 	layout := &state.sectionBodies.dashboard
 	*layout = dashboardSectionUI{}
+	inner := max(state.catalogSectionBounds().Width-36, 0)
 	if p == nil {
-		state.declareDashboardEmpty(c)
-		layout.draw = func(d *ui.DrawContext) { state.paintEmptyPage(d.Canvas, iconActivity) }
+		// The icon is painted by hand into the slot the empty state declared, as
+		// the other catalog sections do, so a first run shows it too.
+		if empty := state.declareDashboardEmpty(c); empty.Valid() {
+			empty.DrawOver(func(d *ui.DrawContext) { state.paintEmptyPage(d.Canvas, iconActivity) })
+		}
 		return
 	}
+	state.fillDashboardRefreshClock(p, int(inner))
 	layout.draw = func(d *ui.DrawContext) { state.paintDashboardBody(d.Canvas, d.Rect) }
 	body := ui.Column(c).Fill().PadSides(14, 18, 0, 18)
 	body.Children(func() {
 		state.declareDashboardHeader(c, p)
-		state.declareDashboardBody(c, p, max(state.catalogSectionBounds().Width-36, 0))
-		state.declareDashboardFooter(c, p)
+		ui.Slot(c).Height(10)
+		ui.Slot(c).Height(1).FillWidth().Draw(func(d *ui.DrawContext) {
+			d.Canvas.Fill(d.Rect, state.pal.line)
+		})
+		ui.Slot(c).Height(7)
+		state.declareDashboardBody(c, p, inner)
+		ui.Slot(c).Height(5)
+		state.declareDashboardFooter(c, p, inner)
+		ui.Slot(c).Height(2)
 	})
 	body.Clip()
 	body.DrawOver(func(d *ui.DrawContext) { state.syncDashboardScroll() })
+}
+
+// fillDashboardRefreshClock records what the sampling clock's hands sweep
+// against, as the hand-painted header did: the interval, whether collection is
+// paused and whether any host is live.
+func (state *State) fillDashboardRefreshClock(p *monitoring.Panel, width int) {
+	d, m := &state.dashboard, state.messages.Dashboard
+	running := d.running[p.ID]
+	d.refresh.interval = p.Interval
+	d.refresh.intervalText = fmt.Sprintf(m.Every, p.Interval)
+	d.refresh.paused = !running
+	d.refresh.count = 0
+	for _, id := range p.Hosts {
+		r := state.dashboardRow(p, id, width)
+		if r.snapshot.Status == monitoring.Live {
+			d.refresh.count = 1
+			d.refresh.version = uint32(r.snapshot.Updated.UnixMilli())
+			break
+		}
+	}
+}
+
+// Dashboard header actions keep one height and one gap, and each is at least as
+// wide as its label needs. A single fixed width cannot hold every language:
+// Chinese "开始监控" fits 112 and English "Start monitoring" needs more.
+const (
+	dashboardActionHeight = float32(36)
+	dashboardActionGap    = float32(12)
+	dashboardActionLeast  = float32(112)
+	dashboardActionIcon   = float32(36)
+	// The selector's least width, its gap, and the three icon buttons beside
+	// it: the room the actions must leave before they are worth their labels.
+	dashboardHeaderLeast = float32(120 + 8 + 112 + 12)
+)
+
+// dashboardActionWidths is the width of each header action. A label wider than
+// the designed width widens its button instead of being clipped.
+func dashboardActionWidths(canvas *gfx.Canvas, theme gfx.Theme, newLabel string, newIcon gfx.Icon, toggleLabel string, toggleIcon gfx.Icon, iconOnly bool) (newWidth, toggleWidth float32) {
+	if iconOnly {
+		return dashboardActionIcon, dashboardActionIcon
+	}
+	measure := components.BeginButton(canvas, theme, gfx.ID{}, gfx.Rect{})
+	return max(dashboardActionLeast, measure.WithIcon(newIcon).SizeToFit(newLabel).BoundsWidth()),
+		max(dashboardActionLeast, measure.WithIcon(toggleIcon).SizeToFit(toggleLabel).BoundsWidth())
 }
 
 // declareDashboardHeader declares the panel selector, the manage actions and
@@ -61,8 +117,26 @@ func (state *State) declareDashboardWorkspace(c ui.C) {
 func (state *State) declareDashboardHeader(c ui.C, p *monitoring.Panel) {
 	d, m := &state.dashboard, state.messages.Dashboard
 	inner := max(state.catalogSectionBounds().Width-36, 0)
-	compact := inner < 720
-	ui.Row(c).Height(40).Gap(8).Items(ui.Center).Children(func() {
+	running := d.running[p.ID]
+	toggleLabel, toggleIcon := m.Start, iconPlay
+	if running {
+		toggleLabel, toggleIcon = m.Stop, iconPause
+	}
+	actionTheme := state.Theme()
+	actionTheme.Metrics.ControlHeight = dashboardActionHeight
+	newW, toggleW := dashboardActionWidths(c.Canvas(), actionTheme, m.New, lucideIcons[iconPlus], toggleLabel, lucideIcons[toggleIcon], false)
+	// A long label must not push the actions over the panel selector and its
+	// three icon buttons; two icon buttons fit wherever the labels do not.
+	iconOnly := inner < 720
+	if !iconOnly && inner-newW-toggleW-dashboardActionGap < dashboardHeaderLeast {
+		iconOnly = true
+	}
+	if iconOnly {
+		newW, toggleW = dashboardActionWidths(c.Canvas(), actionTheme, m.New, lucideIcons[iconPlus], toggleLabel, lucideIcons[toggleIcon], true)
+	}
+	newBoxX := inner - newW - toggleW - dashboardActionGap
+	panelWidth := min(float32(240), max(float32(120), newBoxX-132))
+	ui.Row(c).Height(dashboardActionHeight).Items(ui.Start).Children(func() {
 		choices := d.panelOrder[:0]
 		for index := range d.panels {
 			choices = append(choices, index)
@@ -75,47 +149,52 @@ func (state *State) declareDashboardHeader(c ui.C, p *monitoring.Panel) {
 			}
 		}
 		d.panelChoice = choice
-		panelWidth := min(float32(240), max(float32(120), inner*0.3))
 		ui.Select(c, &d.panelChoice, d.panelOrder, func(index int) string {
 			if index < 0 || index >= len(d.panels) {
 				return ""
 			}
 			return d.panels[index].Name
-		}).Label(m.Title).Hint(p.Name).MinWidth(min(panelWidth, 120)).MaxWidth(panelWidth).Height(36)
+		}).Label(m.Title).Hint(p.Name).Width(panelWidth).Height(36)
 		if d.panelChoice != choice && d.panelChoice >= 0 && d.panelChoice < len(d.panels) {
 			d.active = d.panels[d.panelChoice].ID
 			d.search = text.Editor{}
 			d.scroll = 0
 			state.save()
 		}
-		state.declareIconButton(c, hitDashboardEdit, iconPencil, m.Edit, false, iconButtonQuiet).Size(32, 32)
-		state.declareIconButton(c, hitDashboardSort, iconArrowUpDown, m.Sort, len(p.Hosts) < 2, iconButtonQuiet).Size(32, 32)
-		state.declareIconButton(c, hitDashboardDelete, iconTrash, m.Delete, false, iconButtonQuiet).Size(32, 32)
+		state.declareIconButton(c, hitDashboardEdit, iconPencil, m.Edit, false, iconButtonQuiet).
+			Size(32, 32).MarginLeft(8).MarginTop(2)
+		state.declareIconButton(c, hitDashboardSort, iconArrowUpDown, m.Sort, len(p.Hosts) < 2, iconButtonQuiet).
+			Size(32, 32).MarginLeft(4).MarginTop(2)
+		state.declareIconButton(c, hitDashboardDelete, iconTrash, m.Delete, false, iconButtonQuiet).
+			Size(32, 32).MarginLeft(4).MarginTop(2)
+		// The collection state sits left of the actions on a wide panel; a narrow
+		// one keeps it in the footer.
+		if inner >= 1000 {
+			_, stateText := state.dashboardLiveState(p, running, int(inner))
+			ui.Slot(c).Absolute().Left(newBoxX-174).Top(0).Size(160, 36).Draw(func(draw *ui.DrawContext) {
+				monitorRight(draw.Canvas, stateText, draw.Rect, 12, state.dashboardLiveColor(running), gfx.WeightMedium)
+			})
+		}
 		ui.Spacer(c)
 		newButton := ui.Button(c, m.New).Hit(hitDashboardNew, m.New).Icon(lucideIcons[iconPlus]).Shrink(0)
-		if compact {
-			newButton.IconOnly()
-		}
-		running := d.running[p.ID]
-		toggleLabel, toggleIcon := m.Start, iconPlay
-		if running {
-			toggleLabel, toggleIcon = m.Stop, iconPause
-		}
 		toggle := ui.Button(c, toggleLabel).Hit(hitDashboardToggle, toggleLabel).Icon(lucideIcons[toggleIcon]).Shrink(0)
-		if compact {
+		if iconOnly {
+			newButton.IconOnly()
 			toggle.IconOnly()
 		}
+		newButton.Size(newW, dashboardActionHeight)
+		toggle.Size(toggleW, dashboardActionHeight).MarginLeft(dashboardActionGap)
 		if running {
 			toggle.Outline()
 		}
 	})
-	state.declareDashboardModeAndSearch(c, p, inner, compact)
+	state.declareDashboardModeAndSearch(c, p, inner)
 }
 
 // declareDashboardModeAndSearch declares the view mode, the host search and the
-// panel's sampling settings, wrapping the search onto its own row when the card
-// is too narrow to hold them side by side.
-func (state *State) declareDashboardModeAndSearch(c ui.C, p *monitoring.Panel, inner float32, compact bool) {
+// panel's sampling settings, wrapping the settings onto their own row when the
+// panel is too narrow to hold them beside the search.
+func (state *State) declareDashboardModeAndSearch(c ui.C, p *monitoring.Panel, inner float32) {
 	d, m := &state.dashboard, state.messages.Dashboard
 	declareMode := func() {
 		mode := 0
@@ -128,51 +207,51 @@ func (state *State) declareDashboardModeAndSearch(c ui.C, p *monitoring.Panel, i
 				return m.Simple
 			}
 			return m.Detailed
-		}).Size(160, 36)
+		}).Size(136, 34)
 		if d.modeChoice != mode {
 			p.Simple = d.modeChoice == 0
 			d.scroll = 0
 			state.save()
 		}
 	}
-	declareSearch := func() {
+	declareSearch := func(width float32) ui.Box {
 		if !d.searchBound {
 			d.searchField.Bind(&d.search)
 			d.searchBound = true
 		}
-		ui.TextFieldID(c, hitDashboardSearch, &d.searchField, m.Search, m.Search).
-			Icon(lucideIcons[iconSearch]).Height(36).MinWidth(90).Grow(1)
+		return ui.TextFieldID(c, hitDashboardSearch, &d.searchField, m.Search, m.Search).
+			Icon(lucideIcons[iconSearch]).Height(34).Width(width)
 	}
-	declareSettings := func() {
-		state.declareDashboardIntervalSelect(c, p)
-		state.declareDashboardRetentionSelect(c, p)
-	}
-	if !compact {
-		ui.Row(c).Height(40).Gap(8).Items(ui.Center).Children(func() {
+	if inner < 860 {
+		ui.Row(c).Height(42).MarginTop(22).Items(ui.Start).Children(func() {
 			declareMode()
-			declareSearch()
-			ui.Spacer(c)
-			declareSettings()
+			declareSearch(max(inner-152, 0)).MarginLeft(16)
+		})
+		ui.Row(c).Height(44).Items(ui.Start).Justify(ui.End).Children(func() {
+			state.declareDashboardIntervalSelect(c, p)
+			state.declareDashboardRetentionSelect(c, p).MarginLeft(10)
 		})
 		return
 	}
-	ui.Row(c).Height(40).Gap(8).Items(ui.Center).Children(declareMode)
-	ui.Row(c).Height(40).Gap(8).Items(ui.Center).Children(declareSearch)
-	ui.Row(c).Height(40).Gap(8).Items(ui.Center).Children(func() {
+	searchW := max(100, inner-136-16-316)
+	ui.Row(c).Height(42).MarginTop(22).Items(ui.Start).Children(func() {
+		declareMode()
+		declareSearch(searchW).MarginLeft(16)
 		ui.Spacer(c)
-		declareSettings()
+		state.declareDashboardIntervalSelect(c, p)
+		state.declareDashboardRetentionSelect(c, p).MarginLeft(10)
 	})
 }
 
 // declareDashboardIntervalSelect declares the sampling cadence as a page
 // Select, with the refresh globe as the icon of every choice.
-func (state *State) declareDashboardIntervalSelect(c ui.C, p *monitoring.Panel) {
+func (state *State) declareDashboardIntervalSelect(c ui.C, p *monitoring.Panel) ui.Box {
 	d, m := &state.dashboard, state.messages.Dashboard
 	choice := p.Interval
 	d.intervalChoice = choice
 	selector := ui.SelectIcon(c, &d.intervalChoice, dashboardIntervals[:], func(seconds int) string {
 		return fmt.Sprintf(m.Every, seconds)
-	}, func(int) gfx.Icon { return remoteRefreshClock }).Label(m.Sampling).Height(36).Width(152)
+	}, func(int) gfx.Icon { return remoteRefreshClock }).Label(m.Sampling).Height(34).Width(152)
 	// The hands of the sampling clock move over the icon the trigger paints, as
 	// they did over the hand-painted trigger: a live sweep asks for the next
 	// frame, an idle or reduced-motion one does not.
@@ -188,21 +267,23 @@ func (state *State) declareDashboardIntervalSelect(c ui.C, p *monitoring.Panel) 
 		state.reconcileDashboard()
 		state.save()
 	}
+	return selector
 }
 
 // declareDashboardRetentionSelect declares how long samples are kept.
-func (state *State) declareDashboardRetentionSelect(c ui.C, p *monitoring.Panel) {
+func (state *State) declareDashboardRetentionSelect(c ui.C, p *monitoring.Panel) ui.Box {
 	d, m := &state.dashboard, state.messages.Dashboard
 	choice := p.Retention
 	d.retentionChoice = choice
-	ui.Select(c, &d.retentionChoice, dashboardRetentions[:], func(minutes int) string {
+	selector := ui.Select(c, &d.retentionChoice, dashboardRetentions[:], func(minutes int) string {
 		return state.dashboardRetention(minutes)
-	}).Label(m.Retention).Hint(m.Retention + ": " + state.dashboardRetention(p.Retention)).Height(36).Width(142)
+	}).Label(m.Retention).Hint(m.Retention + ": " + state.dashboardRetention(p.Retention)).Height(34).Width(142)
 	if d.retentionChoice != choice {
 		p.Retention = d.retentionChoice
 		state.reconcileDashboard()
 		state.save()
 	}
+	return selector
 }
 
 // declareDashboardBody declares the scrolling host list: the page Scroll owns
@@ -219,7 +300,8 @@ func (state *State) declareDashboardBody(c ui.C, p *monitoring.Panel, inner floa
 	ids := d.visibleIDs[:0]
 	d.content = 0
 	if p.Simple {
-		state.declareDashboardSimpleHead(c, inner)
+		// The simple view's column headings are part of the scrolled content, not
+		// a fixed band: they move with the rows they head.
 		d.content = 38
 	}
 	for _, id := range p.Hosts {
@@ -239,12 +321,12 @@ func (state *State) declareDashboardBody(c ui.C, p *monitoring.Panel, inner floa
 	}
 	d.visibleIDs = ids
 	if len(ids) == 0 {
-		ui.Row(c).Height(40).PadX(18).Children(func() {
-			ui.Text(c, state.messages.KnownHostsNoMatches).Color(state.pal.muted).FontSize(14)
-		})
-		return
+		// The no-match line is painted inside the scroll content, under the
+		// simple view's headings. Give it the room a zero-row list does not.
+		d.content += 70
 	}
-	scroll := ui.Scroll(c).Grow(1).Basis(0).MinHeight(0).Scrollbars().ScrollbarSize(catalogBarGutter).Label(m.Title)
+	scroll := ui.Scroll(c).Grow(1).Basis(0).MinHeight(0).Sideways().Scrollbars().ScrollbarSize(catalogBarGutter).
+		HitWith(hitDashboardScroll, m.Hosts, gfx.HitOptions{Role: gfx.RoleGroup})
 	if area := scroll.ScrollState(); area != nil {
 		if d.scroll != d.scrollSynced {
 			area.ScrollTo(d.scroll)
@@ -254,22 +336,10 @@ func (state *State) declareDashboardBody(c ui.C, p *monitoring.Panel, inner floa
 	}
 	state.sectionBodies.dashboard.scroll = scroll
 	scroll.Children(func() {
-		ui.Column(c).FillWidth().Height(d.content).Children(func() {
+		ui.Column(c).Width(rowW).Height(d.content).Children(func() {
 			ui.Slot(c).FillWidth().Height(d.content).Draw(state.sectionBodies.dashboard.draw)
 			state.declareDashboardRowControls(c, p, ids, rowW, inner)
 		})
-	})
-}
-
-// declareDashboardSimpleHead declares the simple view's column headings.
-func (state *State) declareDashboardSimpleHead(c ui.C, inner float32) {
-	m := state.messages.Dashboard
-	host := min(float32(260), inner*.24)
-	tabs, data := host+8, host+58
-	ui.Row(c).Height(38).FillWidth().Children(func() {
-		ui.Text(c, m.Host).Width(tabs - 16).PadX(8).FontSize(12).Color(state.pal.muted).Weight(gfx.WeightMedium)
-		ui.Text(c, m.View).Width(48).FontSize(12).Color(state.pal.muted).Weight(gfx.WeightMedium)
-		ui.Text(c, m.Metrics).Width(max(inner-data-64, 0)).FontSize(12).Color(state.pal.muted).Weight(gfx.WeightMedium)
 	})
 }
 
@@ -348,9 +418,13 @@ func (state *State) dashboardRowControlRects(canvas *gfx.Canvas, p *monitoring.P
 		controls.retry = gfx.Rect{X: 54, Y: 75, Width: max(tabs-64, 40), Height: 24}
 		return controls
 	}
-	out := state.dashboardHeadingRects(canvas, h, row)
+	// The detailed card's heading rects are the paint layout's, which already
+	// carries the row's Y; the controls are placed relative to the row, so ask
+	// for them at the row's own origin and add the row's Y once.
+	rowForRects := row
+	rowForRects.Y = 0
+	out := state.dashboardHeadingRects(canvas, h, rowForRects)
 	out.retryShown = dashboardRetryShown(state, p, h, r)
-	out.retry = out.tabs
 	return out
 }
 
@@ -360,14 +434,31 @@ func dashboardRetryShown(state *State, p *monitoring.Panel, h Host, r *dashboard
 	return state.dashboard.running[p.ID] && r.snapshot.Status == monitoring.Failed && h.ID != 0
 }
 
-// declareDashboardFooter declares the count and collection state under the
-// list.
-func (state *State) declareDashboardFooter(c ui.C, p *monitoring.Panel) {
+// declareDashboardFooter declares the count under the list and, on a narrow
+// panel, the collection state. The wide panel shows the state in the header.
+func (state *State) declareDashboardFooter(c ui.C, p *monitoring.Panel, inner float32) {
 	d, m := &state.dashboard, state.messages.Dashboard
 	running := d.running[p.ID]
+	_, stateText := state.dashboardLiveState(p, running, int(inner))
+	footer := ui.Row(c).Height(34).FillWidth().Items(ui.Center)
+	footer.Draw(func(draw *ui.DrawContext) {
+		draw.Canvas.Fill(gfx.Rect{X: draw.Rect.X, Y: draw.Rect.Y, Width: draw.Rect.Width, Height: 1}, state.pal.line)
+	})
+	footer.Children(func() {
+		ui.Text(c, fmt.Sprintf(m.Count, len(p.Hosts))).FontSize(12).Color(state.pal.muted).Grow(1).Ellipsis()
+		if inner < 1000 {
+			ui.Text(c, stateText).FontSize(12).Color(state.pal.muted).Ellipsis()
+		}
+	})
+}
+
+// dashboardLiveState counts live hosts across the whole panel, before the host
+// search filters the cards, and names the collection state as the footer did.
+func (state *State) dashboardLiveState(p *monitoring.Panel, running bool, width int) (int, string) {
+	m := state.messages.Dashboard
 	live := 0
-	for _, id := range d.visibleIDs {
-		r := state.dashboardRow(p, id, int(d.body.Width))
+	for _, id := range p.Hosts {
+		r := state.dashboardRow(p, id, width)
 		if r.snapshot.Status == monitoring.Live && running {
 			live++
 		}
@@ -377,16 +468,13 @@ func (state *State) declareDashboardFooter(c ui.C, p *monitoring.Panel) {
 		stateText = fmt.Sprintf(m.Collecting, live, len(p.Hosts))
 	} else {
 		for _, id := range p.Hosts {
-			if state.dashboardRow(p, id, int(d.body.Width)).snapshot.HasSample {
+			if state.dashboardRow(p, id, width).snapshot.HasSample {
 				stateText = m.Stopped
 				break
 			}
 		}
 	}
-	ui.Row(c).Height(36).FillWidth().Gap(12).Items(ui.Center).Children(func() {
-		ui.Text(c, fmt.Sprintf(m.Count, len(p.Hosts))).FontSize(12).Color(state.pal.muted).Grow(1).Ellipsis()
-		ui.Text(c, stateText).FontSize(12).Color(state.dashboardLiveColor(running)).Weight(gfx.WeightMedium).Ellipsis()
-	})
+	return live, stateText
 }
 
 // paintDashboardBody paints the host cards into the scroll slot: every visible
@@ -400,15 +488,22 @@ func (state *State) paintDashboardBody(canvas *gfx.Canvas, content gfx.Rect) {
 	layout := &state.sectionBodies.dashboard
 	if layout.scroll.Valid() {
 		scroll := layout.scroll.ScrollState()
-		d.body = gfx.Rect{X: content.X, Y: content.Y + scroll.Offset, Width: content.Width, Height: scroll.Viewport}
+		d.body = gfx.Rect{
+			X:      content.X + scroll.OffsetX,
+			Y:      content.Y + scroll.Offset,
+			Width:  scroll.ViewportWidth,
+			Height: scroll.Viewport,
+		}
 		d.content = scroll.Content
 		d.scroll = scroll.Offset
 		d.scrollSynced = scroll.Offset
 	}
 	rowW := content.Width
-	width := int(rowW)
+	width := int(max(state.catalogSectionBounds().Width-36, 0))
 	y := content.Y
 	if p.Simple {
+		// The headings scroll with the rows, inside the content.
+		state.paintDashboardSimpleHead(canvas, gfx.Rect{X: content.X, Y: content.Y, Width: content.Width - 12, Height: 36})
 		y += 38
 	}
 	for _, id := range d.visibleIDs {
@@ -431,6 +526,9 @@ func (state *State) paintDashboardBody(canvas *gfx.Canvas, content gfx.Rect) {
 			}
 		}
 		y += h
+	}
+	if len(d.visibleIDs) == 0 {
+		monitorLabel(canvas, state.messages.KnownHostsNoMatches, gfx.Rect{X: content.X + 18, Y: y + 30, Width: rowW - 36, Height: 40}, 14, state.pal.muted, gfx.WeightRegular)
 	}
 }
 

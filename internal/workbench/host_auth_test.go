@@ -17,15 +17,14 @@ func TestHostDialogSelectsAPrivateKey(t *testing.T) {
 
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if _, ok := hitByID(&canvas, hitDialogAuth); !ok {
+	if !hasLabel(&canvas, state.messages.FieldAuthentication, gfx.RoleCombobox) {
 		t.Fatal("SSH form has no authentication choice")
 	}
 	if _, ok := hitByID(&canvas, hitDialogPassword); !ok {
 		t.Fatal("automatic authentication does not offer an optional password")
 	}
 
-	state.Click(hitDialogAuth)
-	state.Click(hitDialogAuthItemList.At(int(authPrivateKey)))
+	chooseSelectOption(t, state, state.messages.FieldAuthentication, state.messages.AuthPrivateKey)
 	canvas.Reset()
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitDialogIdentity); !ok {
@@ -136,8 +135,7 @@ func TestAgentAuthenticationHidesAndDoesNotSaveAPassword(t *testing.T) {
 	}
 	state.Click(hitAddHost)
 	typeInto(state, hitDialogPassword, "discard me")
-	state.Click(hitDialogAuth)
-	state.Click(hitDialogAuthItemList.At(int(authAgent)))
+	chooseSelectOption(t, state, state.messages.FieldAuthentication, state.messages.AuthAgent)
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitDialogPassword); ok {

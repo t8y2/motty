@@ -39,7 +39,7 @@ func TestNoteSidebarWorkspaceGeometryAndIsolation(t *testing.T) {
 	a.content.query.Insert("query A")
 	a.content.sideAll = true
 	a.content.view.expanded["folder"] = true
-	a.content.view.treeScroll, a.content.previewScroll = 17, 29
+	a.content.previewScroll = 29
 	a.widthDragging = true
 	s.activateWorkspace(first)
 	a.widthDragging = true
@@ -77,7 +77,7 @@ func TestNoteSidebarWorkspaceGeometryAndIsolation(t *testing.T) {
 			}
 		}
 	}
-	if a.content.query.String() != "query A" || a.content.view.treeScroll != 17 || a.content.previewScroll != 29 {
+	if a.content.query.String() != "query A" || a.content.previewScroll != 29 {
 		t.Fatal("switch lost browsing state")
 	}
 	s.Click(hitNotesPanel)
@@ -116,7 +116,7 @@ func TestNoteSidebarWorkspacePersistenceAndMigration(t *testing.T) {
 	a.content.selected = "one"
 	a.content.sideAll = true
 	a.content.view.expanded["folder"] = true
-	a.content.view.treeScroll, a.content.previewScroll = 23, 41
+	a.content.previewScroll = 41
 	saved := s.snapshot()
 	raw, err := json.Marshal(saved)
 	if err != nil {
@@ -132,7 +132,7 @@ func TestNoteSidebarWorkspacePersistenceAndMigration(t *testing.T) {
 	if !got.open || got.width != 440 || got.fraction != .6 || got.content.query.String() != "saved search" || !got.content.sideAll || !got.content.view.expanded["folder"] || got.content.selected != "one" {
 		t.Fatal("sidebar state not restored")
 	}
-	if got.content.previewScroll != 0 || got.content.view.treeScroll != 0 {
+	if got.content.previewScroll != 0 {
 		t.Fatal("scroll position persisted")
 	}
 	if restored.notesPanelOpenFor(second) {

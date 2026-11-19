@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"strings"
@@ -20,11 +21,11 @@ func TestNotesWorkspaceGivesTheDocumentItsWidth(t *testing.T) {
 	if _, ok := hitByID(&c, hitNoteInline); ok {
 		t.Fatal("folder form is permanently visible")
 	}
-	row, ok := hitByID(&c, hitNoteRows.At(0))
+	row, ok := noteTreeRowHit(&c, &s.notes, s.notes.selected)
 	if !ok || !row.Selected {
 		t.Fatal("selected note is not visible as a selected tree row")
 	}
-	more, ok := hitByID(&c, hitNoteRowMore.At(0))
+	more, ok := hitByID(&c, hitNoteRowMore.At(s.notes.view.noteTokens[s.notes.selected]))
 	if !ok || more.Bounds.Y+more.Bounds.Height/2 != row.Bounds.Y+row.Bounds.Height/2 {
 		t.Fatal("tree action is not vertically centered in its row")
 	}
@@ -42,12 +43,12 @@ func TestNotesModesAndDirectoryPreferencesSurviveReopening(t *testing.T) {
 	s.Click(hitNoteModes.At(2))
 	var c gfx.Canvas
 	s.Paint(&c, gfx.Size{Width: 1400, Height: 900})
-	if _, ok := hitByID(&c, hitNotePreviewScroll); !ok {
+	if s.notes.previewBounds.Width <= 0 {
 		t.Fatal("split preview missing")
 	}
 	c.Reset()
 	s.Paint(&c, gfx.Size{Width: 800, Height: 700})
-	if _, ok := hitByID(&c, hitNotePreviewScroll); ok {
+	if s.notes.previewBounds.Width > 0 {
 		t.Fatal("narrow document still splits")
 	}
 	if _, ok := hitByID(&c, hitNoteBody); !ok {
@@ -94,10 +95,10 @@ func TestNotesTreeTargetsRemainStableAfterDeletingAnotherNote(t *testing.T) {
 	s.Click(hitNoteAdd)
 	second := s.notes.selected
 	s.Click(hitNoteAdd)
-	s.Click(hitNoteRows.At(0))
+	clickNoteTreeRow(t, s, &s.notes, first)
 	s.Click(hitNoteDelete)
 	s.Click(hitNoteConfirm)
-	s.Click(hitNoteRows.At(1))
+	clickNoteTreeRow(t, s, &s.notes, second)
 	if s.notes.selected != second || s.noteIndex(first) >= 0 {
 		t.Fatal("tree token selected a shifted array item")
 	}
@@ -114,15 +115,17 @@ func TestNotesSidePanelScrollBelongsToTheVisibleDocument(t *testing.T) {
 	s.Click(hitNoteSideLinked)
 	var c gfx.Canvas
 	s.Paint(&c, gfx.Size{Width: 1200, Height: 800})
-	s.Click(hitNoteRows.At(0))
+	clickNoteTreeRow(t, s, &s.noteSidebarState().content, s.notes.selected)
 	c.Reset()
 	s.Paint(&c, gfx.Size{Width: 1200, Height: 800})
 	n := &s.noteSidebarState().content
 	b := n.previewBounds
-	before := n.view.treeScroll
-	s.Scroll(gfx.ScrollEvent{X: b.X + 20, Y: b.Y + 40, DeltaY: 100, Viewport: gfx.Size{Width: 1200, Height: 800}})
-	if n.previewScroll <= 0 || n.view.treeScroll != before {
-		t.Fatal("document wheel scrolled the hidden directory")
+	config := s.WindowConfig(app.Config{OnScroll: s.Scroll})
+	config.OnScroll(gfx.ScrollEvent{X: b.X + 20, Y: b.Y + 40, DeltaY: 100, Viewport: gfx.Size{Width: 1200, Height: 800}})
+	c.Reset()
+	s.Paint(&c, gfx.Size{Width: 1200, Height: 800})
+	if n.previewScroll <= 0 {
+		t.Fatal("document wheel did not scroll the preview")
 	}
 }
 
@@ -254,8 +257,10 @@ func TestUnselectedMoreMenuFallbackAndLayer(t *testing.T) {
 			if text.Bounds.X < 200 {
 				t.Fatalf("Rename menu rendered at X=%.1f, overlapping workbench!", text.Bounds.X)
 			}
-			if text.Layer != dialogLayer {
-				t.Fatalf("Rename menu layer = %d, want dialogLayer (%d)", text.Layer, dialogLayer)
+			// The menu is a page menu: it paints on a widget layer above the
+			// page rather than on the old canvas overlay's fixed layer.
+			if text.Layer == 0 {
+				t.Fatal("Rename menu painted under the page")
 			}
 		}
 	}
@@ -287,8 +292,8 @@ func TestUnselectedMoreMenuFallbackAndLayer(t *testing.T) {
 			if text.Bounds.X < 200 {
 				t.Fatalf("folder Delete menu rendered at X=%.1f, overlapping workbench!", text.Bounds.X)
 			}
-			if text.Layer != dialogLayer {
-				t.Fatalf("folder menu layer = %d, want dialogLayer (%d)", text.Layer, dialogLayer)
+			if text.Layer == 0 {
+				t.Fatal("folder menu painted under the page")
 			}
 		}
 	}

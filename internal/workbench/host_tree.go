@@ -408,14 +408,19 @@ func (state *State) declareHostsWorkspace(c ui.C) {
 		clear(state.groupActions.rows)
 	}
 	width, height := state.hostsWorkspaceSize()
+	// A drag or a key moved the page Splitter; its position is the width the
+	// panes are laid out with this frame.
+	if state.hostSide.split.Pos > 0 {
+		state.hostSide.width = state.hostSide.split.Pos
+	}
 	layout := state.hostsLayout(width, height)
 	state.hostSide.visible = layout.sideVisible
 	state.hostSide.visibleWidth = layout.side.Width
 	state.chrome.headerPlan = state.hostsHeaderPlan(c.Canvas(), layout)
 	state.chrome.headerBoxes = hostsHeaderBoxes{}
-	state.declareHostsToolbar(c, width, state.chrome.headerPlan)
 	if layout.sideVisible {
 		state.declareHostsSide(c, layout)
+		state.declareHostsSplit(c, layout)
 	}
 	state.declareHostsRightHeader(c, layout, state.chrome.headerPlan)
 	if len(state.hostTreeRows) == 0 {
@@ -428,10 +433,14 @@ func (state *State) declareHostsWorkspace(c ui.C) {
 		case len(state.visible) == 0:
 			state.declareEmptyPageRegion(c, layout.list, m.NoMatches, m.NoMatchesSub, "", state.pal.muted, gfx.ID{}, 0, false)
 		}
+		// The toolbar is declared after the rows so Tab walks them first, as it did
+		// when the window painted the toolbar by hand after the page.
+		state.declareHostsToolbar(c, width, state.chrome.headerPlan)
 	}
 	if state.hostView == hostViewGrid && len(state.hostTreeRows) > 0 {
 		state.declareHostGrid(c, layout.list)
 		list.scrollLive = false
+		state.declareHostsToolbar(c, width, state.chrome.headerPlan)
 		return
 	}
 	if len(state.hostTreeRows) == 0 {
@@ -442,9 +451,12 @@ func (state *State) declareHostsWorkspace(c ui.C) {
 	// viewport is the rest of the list's room.
 	room := layout.list
 	content := state.hostListHeight(room.Width)
-	_, geometry := hostListScrollArea(nil, state.Theme(), room, content, state.hostsScroll, state.hostListBarRevealed())
-	right := width - room.X - geometry.Viewport.Width
-	list.rowWidth = geometry.Viewport.Width
+	if content > room.Height {
+		list.rowWidth = max(room.Width-hostListBarWidth, 0)
+	} else {
+		list.rowWidth = room.Width
+	}
+	right := width - room.X - list.rowWidth
 	state.applyHostListScroll(c.Canvas(), content)
 	list.tree.RowHeight = hostRowHeight
 	// The rows are not draggable while they are being sorted by hand: the sort
@@ -457,7 +469,8 @@ func (state *State) declareHostsWorkspace(c ui.C) {
 	list.next = 0
 	list.c = c
 	area := ui.Tree(c, &list.tree, len(state.hostTreeRows), list.label, list.content).
-		Absolute().Left(room.X).Right(right).Top(room.Y).Bottom(hostsBodyBottom)
+		Absolute().Left(room.X).Right(right).Top(room.Y).Bottom(hostsBodyBottom).
+		Scrollbars().ScrollbarSize(hostListBarWidth)
 	list.c = nil
 	// The sort overlay is not a page element: it starts before the rows paint
 	// their handles and ends after them, as the list has always painted it.
@@ -466,6 +479,7 @@ func (state *State) declareHostsWorkspace(c ui.C) {
 	list.scroll = area.ScrollState()
 	list.scrollLive = true
 	state.hostListChanges(c, list)
+	state.declareHostsToolbar(c, width, state.chrome.headerPlan)
 }
 
 // drawHostSortUnder starts the reorder overlay in the Tree's room, and

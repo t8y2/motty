@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
@@ -241,15 +240,6 @@ const (
 	aiStepsValueWidth   = float32(64)
 	aiStepsControlWidth = float32(160)
 )
-
-// aiSwitch paints a switch in a slot.
-func (state *State) aiSwitch(canvas *gfx.Canvas, id gfx.ID, slot gfx.Rect, on, disabled bool, label string) {
-	control := components.BeginSwitch(canvas, state.switchTheme(), id, slot, on).Label(label)
-	if disabled {
-		control = control.Disabled()
-	}
-	control.Paint()
-}
 
 // paintAISettings paints the assistant's category: providers, models and how
 // it behaves.

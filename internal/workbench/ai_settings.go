@@ -301,6 +301,25 @@ func aiClampSteps(steps int) int {
 // stepDigit accepts the characters a step count may hold.
 func stepDigit(r rune) bool { return r >= '0' && r <= '9' }
 
+// newStepsInput is the step count's editor, holding value, with the digits and
+// length the field accepts. An editor is restricted when it is made: clearing one
+// with the zero editor would drop the restriction for the rest of the config's
+// life.
+func newStepsInput(value string) text.Editor {
+	var editor text.Editor
+	editor.Restrict(stepDigit, 3)
+	editor.Insert(value)
+	return editor
+}
+
+// newModelInput is an empty model name's editor with the characters and length the
+// field accepts.
+func newModelInput() text.Editor {
+	var model text.Editor
+	model.Restrict(modelNameRune, 200)
+	return model
+}
+
 // aiSetSteps stores a step count, clamped to the range the field accepts.
 func (state *State) aiSetSteps(steps int) {
 	steps = aiClampSteps(steps)
@@ -322,8 +341,7 @@ func (state *State) aiBeginStepsEdit() {
 	if cfg.stepsEditing {
 		return
 	}
-	cfg.stepsInput = text.Editor{}
-	cfg.stepsInput.Insert(strconv.Itoa(state.ai.settings.maxSteps))
+	cfg.stepsInput = newStepsInput(strconv.Itoa(state.ai.settings.maxSteps))
 	cfg.stepsInput.SetSelection(text.Range{Start: 0, End: cfg.stepsInput.RuneCount()})
 	cfg.stepsEditing = true
 }
@@ -337,7 +355,7 @@ func (state *State) aiCommitSteps() {
 	}
 	cfg.stepsEditing = false
 	value := strings.TrimSpace(cfg.stepsInput.String())
-	cfg.stepsInput = text.Editor{}
+	cfg.stepsInput = newStepsInput("")
 	steps, err := strconv.Atoi(value)
 	if err != nil {
 		return
@@ -757,7 +775,7 @@ func (state *State) aiSelectProvider(index int) {
 	if cfg.selected != state.ai.providers[index].ID {
 		cfg.selected, cfg.page, cfg.modelErr = state.ai.providers[index].ID, 0, ""
 		cfg.fetched, cfg.fetchErr = false, ""
-		cfg.modelInput = text.Editor{}
+		cfg.modelInput = newModelInput()
 		cfg.modelFilter, cfg.modelSort = aiModelFilterAll, aiModelSortDefault
 	}
 }
@@ -1263,7 +1281,7 @@ func (state *State) aiAddModel() {
 			cfg.notice = state.aiScrub(err.Error(), provider.APIKey)
 		}
 	}
-	cfg.modelInput = text.Editor{}
+	cfg.modelInput = newModelInput()
 	state.aiWrote()
 }
 

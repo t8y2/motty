@@ -167,7 +167,6 @@ func (state *State) applyRemoteContainerEnvironment(
 	details.failed, details.status = false, ""
 	details.environment = environment
 	details.text.clearSelection()
-	details.text.scroll = 0
 }
 
 func (state *State) clickRemoteContainerDetails(id gfx.ID) bool {
@@ -226,25 +225,23 @@ func (state *State) declareRemoteContainerDetailsDialog(c ui.C) {
 	viewport := c.Bounds()
 	contentWidth := min(float32(940), max(viewport.Width-32, 360))
 	bodyHeight := min(float32(620), max(viewport.Height-132, 320))
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), gfx.Rect{Width: viewport.Width, Height: viewport.Height}, components.DialogOptions{
-		ContentSize: gfx.Size{Width: contentWidth}, FitBody: true, BodyHeight: bodyHeight,
-		ButtonSize: components.ButtonSizeSmall,
-	}).Layout(details.container.Name)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), dialogViewport(c), contentWidth, details.container.Name, bodyHeight) - smallDialogFooterAdjust(*c.Theme())
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: m.RemoteContainerDetailsTitle, Description: details.container.Name, Width: contentWidth,
-		Height: layout.Content.Height, Layer: dialogLayer + 2, Scope: dialogScope,
+		Height: height, Layer: dialogLayer + 2, Scope: dialogScope,
 		DismissID: hitRemoteContainerDetailsDismiss, CloseID: hitRemoteContainerDetailsClose,
 	})
 	dialog.Body(func() {
 		ui.Column(c).Fill().Pad(8).Gap(8).Children(func() {
 			tab := state.remoteContainerDetailTab()
-			tabs := ui.Tabs(c, &tab, remoteContainerDetailTabIDs[:], state.remoteContainerDetailTabLabel).Width(min(float32(320), viewport.Width)).Height(34).Shrink(0)
-			if _, clicked := tabs.TabClicked(); clicked {
-				c.After(func() { state.selectRemoteContainerDetailTab(tab) })
+			strip := ui.Tabs(c, &tab, remoteContainerDetailTabIDs[:], state.remoteContainerDetailTabLabel).Width(min(float32(320), viewport.Width)).Height(34).Shrink(0)
+			// A click on the active tab asks for that read again, as it does for
+			// the process details.
+			if index, clicked := strip.TabClicked(); clicked && index >= 0 && index < len(remoteContainerDetailTabIDs) {
+				id := remoteContainerDetailTabIDs[index]
+				c.After(func() { state.selectRemoteContainerDetailTab(id) })
 			}
-			ui.Slot(c).Grow(1).Draw(func(d *ui.DrawContext) {
-				state.paintRemoteContainerDetailsBody(d.Canvas, d.Rect, details.container)
-			})
+			state.declareRemoteContainerDetailsText(c)
 		})
 	})
 	dialog.Footer(func() {
@@ -257,27 +254,31 @@ func (state *State) declareRemoteContainerDetailsDialog(c ui.C) {
 	}
 }
 
-func (state *State) paintRemoteContainerDetailsBody(canvas *gfx.Canvas, panelBounds gfx.Rect, container remotetools.Container) {
-	if panelBounds.Height <= 0 {
-		return
-	}
+func (state *State) declareRemoteContainerDetailsText(c ui.C) {
 	details, m := &state.remote.containerDetails, state.messages.Tools
 	if state.remoteContainerDetailTab() != hitRemoteContainerDetailsEnvironment {
-		state.paintRemoteDetailCode(
-			canvas, panelBounds, &details.text, state.remoteContainerOverviewBody(container),
-			m.RemoteContainerDetailsTitle, m.RemoteContainerDetailsTitle,
-			hitRemoteContainerDetailsText, hitRemoteContainerDetailsScroll,
-		)
+		state.declareRemoteDetail(c, &details.text, remoteDetailSpec{
+			textID: hitRemoteContainerDetailsText, textIDLabel: m.RemoteContainerDetailsTitle,
+			scrollbarID: hitRemoteContainerDetailsScroll, scrollbarLabel: m.RemoteContainerDetailsTitle,
+			source: remoteDetailSource(state.remoteContainerOverviewBody(details.container)),
+		})
 		return
 	}
-	state.paintRemoteEnvironmentView(
-		canvas, panelBounds, &details.text,
-		details.loading, details.failed, details.status, m.RemoteContainerEnvironmentEmpty,
-		details.environment,
-		[2]string{m.RemoteProcessEnvironmentName, m.RemoteProcessEnvironmentValue},
-		m.RemoteProcessEnvironment, m.RemoteProcessEnvironment,
-		hitRemoteContainerDetailsText, hitRemoteContainerDetailsScroll,
-	)
+	empty := ""
+	if len(details.environment) == 0 {
+		empty = m.RemoteContainerEnvironmentEmpty
+	}
+	notice, tone := state.remoteDetailNotice(details.loading, details.failed, details.status, empty)
+	spec := remoteDetailSpec{
+		textID: hitRemoteContainerDetailsText, textIDLabel: m.RemoteProcessEnvironment,
+		scrollbarID: hitRemoteContainerDetailsScroll, scrollbarLabel: m.RemoteProcessEnvironment,
+		notice: notice, noticeTone: tone,
+	}
+	if notice == "" {
+		spec.columns, spec.header, spec.rows = remoteEnvironmentTable(details.environment,
+			[2]string{m.RemoteProcessEnvironmentName, m.RemoteProcessEnvironmentValue})
+	}
+	state.declareRemoteDetail(c, &details.text, spec)
 }
 
 func (state *State) remoteContainerDetailsTextPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
@@ -286,6 +287,32 @@ func (state *State) remoteContainerDetailsTextPointer(event gfx.PointerEvent) (g
 		return gfx.EventResult{}, false
 	}
 	return state.remoteDetailTextPointer(event, &details.text, hitRemoteContainerDetailsText)
+}
+
+func (state *State) remoteContainerDetailsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if !state.remoteToolsVisible() || !state.remote.containerDetails.open {
+		return gfx.EventResult{}, false
+	}
+	details := &state.remote.containerDetails
+	if result, handled := state.remoteDetailTextShortcut(event, &details.text); handled {
+		return result, true
+	}
+	if result, handled := state.remoteDetailKeyboardScroll(event, &details.text,
+		hitRemoteContainerDetailsText, hitRemoteContainerDetailsScroll); handled {
+		return result, true
+	}
+	if event.Key == gfx.KeyEscape && !event.Repeat {
+		state.closeRemoteContainerDetails()
+		return gfx.EventResult{Handled: true, Repaint: true}, true
+	}
+	if (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) && !event.Repeat && event.Target == hitRemoteContainerDetailsClose {
+		state.closeRemoteContainerDetails()
+		return gfx.EventResult{Handled: true, Repaint: true}, true
+	}
+	// The dialog is the page's: its focus trap and the Router's activation of the
+	// focused footer button take every key this handler leaves empty, while none
+	// of the page's own shortcuts may act underneath it.
+	return gfx.EventResult{}, true
 }
 
 func (state *State) remoteContainerDetailsScrollPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
@@ -302,32 +329,4 @@ func (state *State) remoteContainerDetailsWheel(event gfx.ScrollEvent) (gfx.Even
 		return gfx.EventResult{}, false
 	}
 	return state.remoteDetailWheel(event, &details.text, hitRemoteContainerDetailsText, hitRemoteContainerDetailsScroll)
-}
-
-func (state *State) remoteContainerDetailsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
-	if !state.remoteToolsVisible() || !state.remote.containerDetails.open {
-		return gfx.EventResult{}, false
-	}
-	details := &state.remote.containerDetails
-	if result, handled := state.remoteDetailTextShortcut(event, &details.text); handled {
-		return result, true
-	}
-	if result, handled := state.remoteDetailKeyboardScroll(
-		event, &details.text,
-		hitRemoteContainerDetailsText, hitRemoteContainerDetailsScroll,
-	); handled {
-		return result, true
-	}
-	if event.Key == gfx.KeyEscape && !event.Repeat {
-		state.closeRemoteContainerDetails()
-		return gfx.EventResult{Handled: true, Repaint: true}, true
-	}
-	if (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) && !event.Repeat && event.Target == hitRemoteContainerDetailsClose {
-		state.closeRemoteContainerDetails()
-		return gfx.EventResult{Handled: true, Repaint: true}, true
-	}
-	// The dialog is the page's: its focus trap and the Router's activation of the
-	// focused footer button take every key this handler leaves empty, while none
-	// of the page's own shortcuts may act underneath it.
-	return gfx.EventResult{}, true
 }

@@ -1,0 +1,68 @@
+rect {{0 0 900 600} {0.06666667 0.08235294 0.105882354 1} 0 0 {0 0 0 0} false #0}
+rect {{12 48 170 28} {0.2627451 0.30588236 0.37254903 1} 5.5 0 {12 48 876 28} true #1}
+rect {{13 49 168 26} {0.2 0.23529412 0.28627452 1} 4.5 0 {12 48 876 28} true #2}
+rect {{12 84 876 1} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #3}
+rect {{12 127 876 413} {0.216 0.22917646 0.24894118 1} 7.5 0 {0 0 0 0} false #5}
+rect {{13 128 874 411} {0.11146667 0.1264 0.1488 1} 6.5 0 {0 0 0 0} false #6}
+rect {{13 282 852 21} {0.8862745 0.90588236 0.93333334 0.05} 0 0 {13 135 852 397} true #7}
+rect {{12 548 876 1} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #8}
+rect {{18 560 660 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {0 0 0 0} false #10}
+rect {{19 561 658 26} {0.11146667 0.1264 0.1488 1} 6.5 0 {0 0 0 0} false #11}
+rect {{792 560 28 28} {0.23529412 0.27450982 0.34117648 1} 7.5 0 {0 0 0 0} false #12}
+rect {{824 560 28 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {0 0 0 0} false #14}
+rect {{825 561 26 26} {0.11146667 0.1264 0.1488 1} 6.5 0 {0 0 0 0} false #15}
+rect {{856 560 28 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {0 0 0 0} false #17}
+rect {{857 561 26 26} {0.11146667 0.1264 0.1488 1} 6.5 0 {0 0 0 0} false #18}
+shadow {{12 127 876 413} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 0 0 0} false #4}
+shadow {{18 560 660 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 0 0 0} false #9}
+shadow {{824 560 28 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 0 0 0} false #13}
+shadow {{856 560 28 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 0 0 0} false #16}
+text "Release runbook" {86 8.5 92.2793 19}
+text "Release runbook" {44 52 92.2793 20}
+text "Heading" {12 93 28 26}
+text "Bold" {44 93 28 26}
+text "Inline code" {106 93 28 26}
+text "Code block" {138 93 28 26}
+text "Bullet list" {170 93 28 26}
+text "Numbered list" {202 93 28 26}
+text "Task list" {234 93 28 26}
+text "Quote" {266 93 28 26}
+text "Link" {298.70752 93 28 26}
+text "Updated 2026-01-02 11:04" {754.292 97 133.70801 18}
+text "1" {39.8 137 8.400001 17}
+text "2" {39.8 158 8.400001 17}
+text "3" {39.8 179 8.400001 17}
+text "4" {39.8 200 8.400001 17}
+text "5" {39.8 221 8.400001 17}
+text "6" {39.8 242 8.400001 17}
+text "7" {39.8 263 8.400001 17}
+text "8" {39.8 284 8.400001 17}
+text "# Release runbook" {56.600002 137 142.8 17}
+text "Roll back the **gateway** first." {56.600002 179 268.80002 17}
+text "```sh" {56.600002 221 42.000004 17}
+text "motty --version" {56.600002 242 126.00001 17}
+text "```" {56.600002 263 25.2 17}
+text "Release runbook" {29 563 638 22}
+hit "" region {0 0 900 36} disabled=false
+hit "Release runbook" tab {12 48 170 28} disabled=false
+hit "Close Release runbook" button {158 52 20 20} disabled=false
+hit "Heading" button {12 93 28 26} disabled=false
+hit "Bold" button {44 93 28 26} disabled=false
+hit "Italic" button {76 93 26 26} disabled=false
+hit "Inline code" button {106 93 28 26} disabled=false
+hit "Code block" button {138 93 28 26} disabled=false
+hit "Bullet list" button {170 93 28 26} disabled=false
+hit "Numbered list" button {202 93 28 26} disabled=false
+hit "Task list" button {234 93 28 26} disabled=false
+hit "Quote" button {266 93 28 26} disabled=false
+hit "Link" button {298 93 28 26} disabled=false
+hit "Table" button {330 93 26 26} disabled=false
+hit "Horizontal rule" button {360 93 26 26} disabled=false
+hit "Markdown source" textfield {12 127 876 413} disabled=false
+hit "Title" textfield {18 560 660 28} disabled=false
+hit "Tags" button {690 560 28 28} disabled=false
+hit "Linked hosts" button {724 560 28 28} disabled=false
+hit "Pin note" button {758 560 28 28} disabled=false
+hit "Source" button {792 560 28 28} disabled=false
+hit "Split" button {824 560 28 28} disabled=false
+hit "Preview" button {856 560 28 28} disabled=false

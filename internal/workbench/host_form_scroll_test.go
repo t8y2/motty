@@ -53,7 +53,7 @@ func TestHostFormScrollKeepsFooterAndReachesEveryField(t *testing.T) {
 				return gfx.Hit{}
 			}
 			footer := find(hitDialogSubmit).Bounds
-			if state.editor.form.geometry.MaxOffsetY <= 0 {
+			if state.editor.form.maxOffset <= 0 {
 				t.Fatal("short form should scroll")
 			}
 			seen := map[gfx.ID]bool{}
@@ -61,7 +61,7 @@ func TestHostFormScrollKeepsFooterAndReachesEveryField(t *testing.T) {
 				id := view.Snapshot().Focused
 				seen[id] = true
 				h := find(id)
-				if id != hitDialogTest && id != hitDialogCancel && id != hitDialogSubmit && (h.Bounds.Y < state.editor.form.geometry.Viewport.Y || h.Bounds.Y+h.Bounds.Height > footer.Y) {
+				if id != hitDialogTest && id != hitDialogCancel && id != hitDialogSubmit && (h.Bounds.Y < state.editor.form.viewport.Y || h.Bounds.Y+h.Bounds.Height > footer.Y) {
 					t.Fatalf("focus is clipped: %+v", h)
 				}
 				if find(hitDialogSubmit).Bounds != footer {
@@ -70,7 +70,7 @@ func TestHostFormScrollKeepsFooterAndReachesEveryField(t *testing.T) {
 				must(view.Keys("Tab"))
 				must(view.Rest())
 			}
-			for _, id := range []gfx.ID{hostPickerIDs.Trigger, hitHostProxyConfigure, hitDialogAlgorithms, hitDialogOTP, hitDialogForwardX11, hitDialogCancel, hitDialogSubmit} {
+			for _, id := range []gfx.ID{hitHostProxyConfigure, hitDialogAlgorithms, hitDialogOTP, hitDialogForwardX11, hitDialogCancel, hitDialogSubmit} {
 				if !seen[id] {
 					t.Fatalf("Tab skipped %v", id)
 				}
@@ -83,23 +83,16 @@ func TestHostFormScrollKeepsFooterAndReachesEveryField(t *testing.T) {
 			must(view.Keys("Shift+Tab"))
 			must(view.Rest())
 			find(view.Snapshot().Focused)
-			// Wheel and a captured scrollbar drag use the same clamped geometry.
-			b := state.editor.form.geometry.Viewport
+			// The wheel moves the body's own scroll area to its end.
+			b := state.editor.form.viewport
 			must(view.Driver().Scroll(gfx.ScrollEvent{X: b.X + 4, Y: b.Y + 4, DeltaY: 10000}))
 			must(view.Rest())
-			if state.editor.form.offset != state.editor.form.geometry.MaxOffsetY {
+			if state.editor.form.offset != state.editor.form.maxOffset {
 				t.Fatal("wheel failed to reach bottom")
 			}
-			bar := state.editor.form.geometry.VerticalThumb
-			must(view.Driver().Press(bar.X+bar.Width/2, bar.Y+bar.Height/2, gfx.PointerButtonPrimary))
-			must(view.Driver().Move(bar.X+bar.Width/2, b.Y-40))
-			must(view.Driver().Release(bar.X+bar.Width/2, b.Y-40, gfx.PointerButtonPrimary))
-			must(view.Rest())
-			if state.editor.form.offset != 0 {
-				t.Fatal("captured scrollbar did not reach top")
-			}
 			// The open selector owns scrolling; its content escapes the form clip.
-			state.Click(hitDialogIcon)
+			state.editor.form.scrollTo(0)
+			clickPageLabel(t, state, gfx.RoleCombobox, state.messages.FieldIcon)
 			must(view.Driver().Resize(900, 600))
 			must(view.Rest())
 			before := state.editor.form.offset
@@ -108,7 +101,7 @@ func TestHostFormScrollKeepsFooterAndReachesEveryField(t *testing.T) {
 			}
 			must(view.Keys("Escape"))
 			must(view.Rest())
-			if state.modal != modalNewHost || state.editor.iconPicker.control.Open {
+			if state.modal != modalNewHost {
 				t.Fatal("Escape closed the parent form")
 			}
 		})
@@ -139,10 +132,10 @@ func TestHostFormRoomierLayoutAndReset(t *testing.T) {
 	if nextLabel.Y-(input.Y+input.Height) < 12 {
 		t.Fatal("rows are still crowded", input, nextLabel)
 	}
-	if state.editor.form.geometry.MaxOffsetY != 0 {
+	if state.editor.form.maxOffset != 0 {
 		t.Fatal("large default form should fit without scrolling")
 	}
-	state.editor.form.offset = 100
+	state.editor.form.scrollTo(100)
 	state.Click(hitDialogCancel)
 	state.openHostDialog()
 	if state.editor.form.offset != 0 {
@@ -179,7 +172,8 @@ func TestWheelBehindADialogKeepsTheHostListStill(t *testing.T) {
 		t.Fatal("the list did not get a scroll position")
 	}
 	clickHostAction(state, hitAddHost)
-	state.Click(hitDialogIcon)
+	paintedTexts(state)
+	clickPageLabel(t, state, gfx.RoleCombobox, state.messages.FieldIcon)
 	paintedTexts(state)
 	before := state.hostList.scroll.Offset
 	if result := state.scrollWindow(gfx.ScrollEvent{X: 250, Y: 500, DeltaY: 120}); !result.Handled {

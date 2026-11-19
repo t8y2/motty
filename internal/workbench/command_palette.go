@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
@@ -20,7 +19,6 @@ var (
 	hitCommandPaletteClose   = tree.ID(commandPaletteHits, "command-palette-close")
 	hitCommandPaletteSearch  = tree.ID(commandPaletteHits, "command-palette-search")
 	hitCommandPaletteItems   = tree.Sub(commandPaletteHits, tree.Name("command-palette-items"))
-	hitCommandPaletteBar     = tree.ID(commandPaletteHits, "command-palette-scrollbar")
 	// The group headings of the new-tab picker are places too: the pointer over
 	// one shows no choice lit, and a press on one chooses nothing.
 	hitCommandPaletteHeaders = tree.Sub(commandPaletteHits, tree.Name("command-palette-group"))
@@ -68,15 +66,12 @@ type commandPalette struct {
 	// long as the saved snippets or hosts costs nothing once it is closed.
 	entries []commandPaletteEntry
 	visible []int
-	// selected is a logical row in visible; scroll is the pixel offset.
-	selected int
-	scroll   float32
-	listRect gfx.Rect
-	// bar is the scrollbar as last painted, and barGrab where on its thumb a
-	// drag took hold; dragging is set from the press on the bar to its release.
-	bar      components.ScrollAreaGeometry
-	barGrab  float32
-	dragging bool
+	// selected is a logical row in visible; scroll is the pixel offset the
+	// rows are shown at, and scrollState the page scroll area that holds it.
+	selected    int
+	scroll      float32
+	scrollState *ui.ScrollState
+	listRect    gfx.Rect
 	// connect makes the list a picker of where a new tab connects, instead of
 	// the palette of commands.
 	connect    bool
@@ -96,8 +91,9 @@ type commandPalette struct {
 	// declares the dialog into it, kept so a paint makes no closure.
 	ctx  ui.C
 	body func()
-	// listOver paints the list's scrollbar and chromeOver the send form, after
-	// the page laid the boxes they use out. They are kept for the same reason.
+	// listOver records the list's rectangle and chromeOver paints the send
+	// form after the page laid the boxes they use out. They are kept so a paint
+	// makes no closure.
 	listOver, chromeOver func(*ui.DrawContext)
 	// sort is the switch's value, derived from workspaces and recentConnectSort
 	// before every paint and written back by its choice.
@@ -109,7 +105,6 @@ type commandPalette struct {
 	searchBound  bool
 	searchLabel  string
 	searchPlace  string
-	listBox      ui.Box
 	sendInputBox ui.Box
 	emptyText    string
 	bodyWidth    float32
@@ -138,7 +133,6 @@ func (state *State) closeCommandPalette() {
 	state.commandPalette.filtered = false
 	state.commandPalette.entries = nil
 	state.commandPalette.visible = nil
-	state.commandPalette.dragging = false
 	state.commandPalette.selected = 0
 	state.commandPalette.scroll = 0
 }
@@ -291,6 +285,9 @@ func (state *State) refreshCommandPalette() {
 	}
 	palette.selected = max(palette.choiceAt(0, 1), 0)
 	palette.scroll = 0
+	if palette.scrollState != nil {
+		palette.scrollState.ScrollTo(0)
+	}
 }
 
 // choiceAt returns the first choice from index and in direction, stepping over
@@ -321,6 +318,9 @@ func (palette *commandPalette) follow() {
 	top := float32(palette.selected) * commandPaletteRowStep
 	palette.scroll = min(max(palette.scroll, top+30-commandPaletteListHeight), top)
 	palette.scroll = min(max(palette.scroll, 0), palette.maxScroll())
+	if palette.scrollState != nil {
+		palette.scrollState.ScrollTo(palette.scroll)
+	}
 }
 
 func (state *State) scrollCommandPalette(event gfx.ScrollEvent) gfx.EventResult {
@@ -328,9 +328,12 @@ func (state *State) scrollCommandPalette(event gfx.ScrollEvent) gfx.EventResult 
 	palette := &state.commandPalette
 	before, selected := palette.scroll, palette.selected
 	palette.scroll = min(max(palette.scroll+event.StepY(commandPaletteRowStep), 0), palette.maxScroll())
+	if palette.scrollState != nil {
+		palette.scrollState.ScrollTo(palette.scroll)
+	}
 	// The new-tab picker keeps its selection while scrolling, like the font picker.
 	// Other palettes resolve the row at the pointer after moving content.
-	if !palette.connect && !palette.dragging && event.DeltaY != 0 && pointInRect(event.X, event.Y, palette.listRect) {
+	if !palette.connect && event.DeltaY != 0 && pointInRect(event.X, event.Y, palette.listRect) {
 		row := int((event.Y - palette.listRect.Y + palette.scroll + 2) / commandPaletteRowStep)
 		if row >= 0 && row < len(palette.visible) && !palette.entries[palette.visible[row]].isLabel() {
 			palette.selected = row
@@ -399,42 +402,15 @@ func (state *State) executeCommandPalette(visible int) {
 	state.click(target, false)
 }
 
-// dragBar keeps scrollbar dragging as precise as trackpad scrolling.
-func (palette *commandPalette) dragBar(y float32) {
-	palette.scroll = min(max(palette.bar.VerticalOffsetForThumb(y-palette.barGrab), 0), palette.maxScroll())
-}
-
 func (state *State) commandPalettePointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	if state.modal != modalCommandPalette {
 		return gfx.EventResult{}, false
 	}
 	palette := &state.commandPalette
-	// WindowConfig gives the page's controls, the sort switch and the dialog's
-	// own backdrop and close button their presses first. The identities this file
-	// names by hand (the rows, the scrollbar) are outside the page, so those
-	// presses reach the gestures below.
-	// A press on the scrollbar takes the pointer for the drag: until it is
-	// released the rows under it must not take the hover, or the highlight
-	// stays on whichever row the drag started over.
-	switch {
-	case event.Kind == gfx.PointerDown && event.Target == hitCommandPaletteBar && event.Button == gfx.PointerButtonPrimary:
-		thumb := palette.bar.VerticalThumb
-		palette.barGrab = thumb.Height / 2
-		if event.Y >= thumb.Y && event.Y < thumb.Y+thumb.Height {
-			palette.barGrab = event.Y - thumb.Y
-		}
-		palette.dragging = true
-		palette.dragBar(event.Y)
-		return gfx.EventResult{Handled: true, Repaint: true}, true
-	case palette.dragging:
-		switch event.Kind {
-		case gfx.PointerMove:
-			palette.dragBar(event.Y)
-		case gfx.PointerUp, gfx.PointerExit:
-			palette.dragging = false
-		}
-		return gfx.EventResult{Handled: true, Repaint: true}, true
-	}
+	// WindowConfig gives the page's controls, the sort switch, the list's own
+	// scrollbar and the dialog's backdrop and close button their presses first.
+	// The identities this file names by hand are the rows, so those presses
+	// reach the gesture below.
 	visible, ok := event.Target.In(hitCommandPaletteItems)
 	if !ok {
 		return gfx.EventResult{}, false

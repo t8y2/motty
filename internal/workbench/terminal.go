@@ -163,11 +163,10 @@ type terminal struct {
 	// declaration made, which the bar's slots are painted in after the page.
 	paintFinding, paintInSplit, paintInactive bool
 	paintCommandNoticeShown                   bool
-	paintNoticeShown                          bool
 	paintBarBackground                        gfx.Color
 	paintGeometry                             terminalGeometry
 	paintFind                                 findBarSlots
-	paintSpinner, paintLight, paintNotice     ui.Box
+	paintSpinner, paintLight                  ui.Box
 
 	// preedit is the input-method composition, shown at the cursor.
 	preedit    app.TextState
@@ -2009,6 +2008,11 @@ func (state *State) copySelection(session *Session) gfx.EventResult {
 // Scroll turns the wheel into scrollback, or arrow keys on the alternate
 // screen, where a pager or editor owns the display and has no scrollback.
 func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
+	if state.pageWheel {
+		// The page fell back to this handler for a wheel it could not use; the
+		// dialog above already owns it.
+		return gfx.EventResult{}
+	}
 	if state.noteExit != nil {
 		return gfx.EventResult{Handled: true}
 	}
@@ -2050,12 +2054,6 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 		// The menu is modal: only its own panels scroll.
 		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, state.chipMenu.popup) && state.chipMenu.tree.Wheel(event)}
 	}
-	if result := state.scrollProxyDialog(event); result.Handled {
-		return result
-	}
-	if result := state.scrollForwardDialog(event); result.Handled {
-		return result
-	}
 	if state.hostGroupMenu {
 		if menu := state.moveGroupTree(); menu != nil {
 			return gfx.EventResult{Handled: true, Repaint: menu.Wheel(event)}
@@ -2063,14 +2061,6 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	}
 	if state.modal == modalNewHost && state.editor.groupPicker.control.Open {
 		p := &state.editor.groupPicker
-		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}
-	}
-	if state.modal == modalNewHost && state.editor.encodingPicker.control.Open {
-		p := &state.editor.encodingPicker
-		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}
-	}
-	if state.modal == modalNewHost && state.editor.iconPicker.control.Open {
-		p := &state.editor.iconPicker
 		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}
 	}
 	if state.modal == modalToolbarSettings {
@@ -2097,6 +2087,15 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	}
 	if state.modal == modalCommandPalette {
 		return state.scrollCommandPalette(event)
+	}
+	if state.modal == modalNewProxy || state.modal == modalNewForward {
+		// The host pickers are page comboboxes: their open lists take the wheel,
+		// and the dialog keeps it from the window behind it.
+		state.pageWheel = true
+		result := state.windowPage().Wheel(event)
+		state.pageWheel = false
+		result.Handled = true
+		return result
 	}
 	if state.modal == modalForm {
 		// The form's multiline fields are page text areas: the page scrolls them,

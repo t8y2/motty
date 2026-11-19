@@ -450,7 +450,9 @@ func TestRemoteNativeWindowResizesWithReachableActionsAndVirtualScroll(t *testin
 		for _, language := range []i18n.Language{i18n.Chinese, i18n.English} {
 			state.setLanguage(language)
 			for _, size := range []gfx.Size{{Width: 600, Height: 500}, {Width: 1100, Height: 780}, {Width: 1400, Height: 900}} {
-				w.ui.remote.processScroll = 0
+				if scroll := w.ui.remote.tableScroll; scroll != nil {
+					scroll.ScrollTo(0)
+				}
 				var canvas gfx.Canvas
 				w.paint(&canvas, size)
 				for _, control := range []struct {
@@ -461,7 +463,6 @@ func TestRemoteNativeWindowResizesWithReachableActionsAndVirtualScroll(t *testin
 					{state.messages.Tools.RemoteRefresh, gfx.ID{}},
 					{state.messages.Tools.RemoteForceKill, gfx.ID{}},
 					{state.messages.Tools.RemoteReniceHigher, gfx.ID{}},
-					{"", hitRemoteProcessScroll},
 				} {
 					var hit gfx.Hit
 					var ok bool
@@ -477,14 +478,18 @@ func TestRemoteNativeWindowResizesWithReachableActionsAndVirtualScroll(t *testin
 				if _, ok := hitByLabelRoleLast(&canvas, state.messages.KnownHostsNext, gfx.RoleButton); ok {
 					t.Fatal("process list still paints pagination controls")
 				}
-				bounds := w.ui.remote.processTableBounds
-				before := w.ui.remote.processScroll
-				result, handled := w.ui.remoteProcessWheel(gfx.ScrollEvent{
+				scroll := w.ui.remote.tableScroll
+				if scroll == nil || scroll.Max() <= 0 {
+					t.Fatalf("language %v viewport %+v: the table has no scroll range", language, size)
+				}
+				bounds := remoteWindowListHit(t, w, size).Bounds
+				before := scroll.Offset
+				result := w.scroll(gfx.ScrollEvent{
 					X: bounds.X + bounds.Width/2, Y: bounds.Y + min(bounds.Height/2, 40),
 					DeltaY: 20, Precise: true, Viewport: size,
 				})
-				if !handled || !result.Handled || w.ui.remote.processScroll <= before {
-					t.Fatalf("language %v viewport %+v: virtual scroll did not move: handled=%v result=%+v", language, size, handled, result)
+				if !result.Handled || scroll.Offset <= before {
+					t.Fatalf("language %v viewport %+v: virtual scroll did not move: %+v", language, size, result)
 				}
 			}
 		}
@@ -513,7 +518,6 @@ func TestRemoteNativeWindowScrollsThroughAllDockerObjects(t *testing.T) {
 					cells: [6]string{fmt.Sprintf("resource-%02d", index)},
 				}
 			}
-			w.ui.remote.processScroll = 0
 			var canvas gfx.Canvas
 			w.paint(&canvas, size)
 			for _, label := range []string{w.ui.messages.KnownHostsPrevious, w.ui.messages.KnownHostsNext} {
@@ -521,19 +525,20 @@ func TestRemoteNativeWindowScrollsThroughAllDockerObjects(t *testing.T) {
 					t.Fatalf("tab %v still paints %q", tab, label)
 				}
 			}
-			if w.ui.remote.processScrollBar.MaxOffsetY <= 0 {
+			scroll := w.ui.remote.tableScroll
+			if scroll == nil || scroll.Max() <= 0 {
 				t.Fatalf("tab %v has no virtual scroll range", tab)
 			}
-			bounds := w.ui.remote.processTableBounds
+			bounds := remoteWindowListHit(t, w, size).Bounds
 			result := w.scroll(gfx.ScrollEvent{
 				X: bounds.X + bounds.Width/2, Y: bounds.Y + bounds.Height/2,
 				DeltaY: 100, Precise: true, Viewport: size,
 			})
-			if !result.Handled || w.ui.remote.processScroll <= 0 {
+			if !result.Handled || scroll.Offset <= 0 {
 				t.Fatalf("tab %v wheel did not scroll: %+v", tab, result)
 			}
-			w.ui.remote.processScroll = w.ui.remote.processScrollBar.MaxOffsetY
-			canvas.Reset()
+			scroll.ScrollToEnd()
+			canvas = gfx.Canvas{}
 			w.paint(&canvas, size)
 			if !remoteCanvasHasText(&canvas, "resource-39") {
 				t.Fatalf("tab %v cannot scroll to its last resource", tab)
@@ -571,39 +576,35 @@ func TestRemoteNativeWindowRowHitTestFollowsPaintedRows(t *testing.T) {
 		if rowHeight <= 0 {
 			t.Fatal("the table has no row height")
 		}
+		scroll := w.ui.remote.tableScroll
+		if scroll == nil || scroll.Max() <= 0 {
+			t.Fatal("the container list has no scroll range")
+		}
 		// Stop more than half a row into the list: an offset that is not a
 		// multiple of the row height, as a precise wheel or dragged scrollbar gives.
-		w.ui.remote.processScroll = 8*rowHeight + 2*rowHeight/3
+		scroll.ScrollTo(8*rowHeight + 2*rowHeight/3)
 		canvas.Reset()
 		w.paint(&canvas, size)
-		if w.ui.remote.tableBodyRemainder == 0 {
-			t.Fatalf("scroll offset %.1f landed on a row boundary", w.ui.remote.processScroll)
-		}
-		viewport := w.ui.remote.processScrollBar.Viewport
 		label := "resource-09"
+		id := w.ui.remote.lists[remoteContainers].RowID(9)
+		hit, ok := hitByID(&canvas, id)
+		if !ok {
+			t.Fatalf("%q is not painted after scrolling", label)
+		}
 		var bounds gfx.Rect
 		for _, painted := range canvas.Texts() {
-			if painted.Value == label && pointInRect(painted.Bounds.X, painted.Bounds.Y, viewport) {
+			if painted.Value == label && pointInRect(painted.Bounds.X, painted.Bounds.Y, hit.Bounds) {
 				bounds = painted.Bounds
 				break
 			}
 		}
 		if bounds.Width == 0 {
-			t.Fatalf("%q is not painted after scrolling to %.1f", label, w.ui.remote.processScroll)
+			t.Fatalf("%q is not painted on its row hit after scrolling", label)
 		}
-		table, ok := hitByLabelRole(&canvas, w.ui.remoteTabLabel(remoteContainers), gfx.RoleGroup)
-		if !ok {
-			t.Fatal("the container table is not a page control")
-		}
-		down := gfx.PointerEvent{
-			Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 1,
-			X: bounds.X + bounds.Width/2, Y: bounds.Y + bounds.Height/2,
-			Target: table.ID, Viewport: size,
-		}
-		pointerPageControl(w, down)
-		up := down
-		up.Kind = gfx.PointerUp
-		pointerPageControl(w, up)
+		canvas.BeginEventPass(id, gfx.ClickInfo{Clicks: 1})
+		w.paint(&canvas, size)
+		canvas.EndEventPass()
+		canvas.RunAfterPaint()
 		if w.ui.remote.selected != label {
 			t.Fatalf("clicking the painted %q selected %q", label, w.ui.remote.selected)
 		}
@@ -624,7 +625,7 @@ func TestRemoteNativeWindowContainerRowDoubleClickOpensDetails(t *testing.T) {
 		host.until(t, func() bool { return !w.ui.remote.loading && len(w.ui.remote.rows) == 2 })
 		driver := nativeWindowDriver(t, host.windows[0].config)
 
-		bounds := w.ui.remote.tableBodyBounds
+		bounds := remoteWindowListHit(t, w, gfx.Size{Width: 1100, Height: 780}).Bounds
 		x, y := bounds.X+bounds.Width/2, bounds.Y+w.ui.remote.tableRowHeight/2
 		if err := driver.Click(x, y); err != nil {
 			t.Fatal(err)
@@ -659,7 +660,7 @@ func TestRemoteNativeWindowContainerContextMenuIncludesFooterActions(t *testing.
 		driver := nativeWindowDriver(t, host.windows[0].config)
 		actions, count := w.ui.remoteToolActions()
 
-		bounds := w.ui.remote.tableBodyBounds
+		bounds := remoteWindowListHit(t, w, gfx.Size{Width: 1100, Height: 780}).Bounds
 		x, y := bounds.X+bounds.Width/2, bounds.Y+w.ui.remote.tableRowHeight/2
 		if err := driver.ClickButton(x, y, gfx.PointerButtonSecondary); err != nil {
 			t.Fatal(err)
@@ -788,6 +789,18 @@ func pointerPageControl(w *remoteToolsWindow, event gfx.PointerEvent) {
 	w.config().OnPointer(event)
 }
 
+// remoteWindowListHit is the window's process/object List as painted at size.
+func remoteWindowListHit(t *testing.T, w *remoteToolsWindow, size gfx.Size) gfx.Hit {
+	t.Helper()
+	var canvas gfx.Canvas
+	w.paint(&canvas, size)
+	hit, ok := hitByLabelRole(&canvas, w.ui.remoteTabLabel(w.ui.remote.tab), gfx.RoleListBox)
+	if !ok {
+		t.Fatalf("no table list labeled %q", w.ui.remoteTabLabel(w.ui.remote.tab))
+	}
+	return hit
+}
+
 // nativeWindowDriver runs a tools window's config in the app runtime, which is
 // where hit testing, the press, and the click pass live. The paint helpers above
 // deliver a click to a control by its identity, so they cannot see a base
@@ -852,7 +865,7 @@ func TestRemoteNativeWindowProcessDetailsTakesPointerAndKeys(t *testing.T) {
 		host.until(t, func() bool { return !w.ui.remote.loading })
 		driver := nativeWindowDriver(t, host.windows[0].config)
 
-		bounds := w.ui.remote.tableBodyBounds
+		bounds := remoteWindowListHit(t, w, gfx.Size{Width: 1100, Height: 780}).Bounds
 		x, y := bounds.X+bounds.Width/2, bounds.Y+w.ui.remote.tableRowHeight/2
 		if err := driver.Click(x, y); err != nil {
 			t.Fatal(err)
@@ -975,14 +988,14 @@ func TestRemoteNativeWindowDialogsArePageControls(t *testing.T) {
 		size := gfx.Size{Width: 1100, Height: 780}
 		var canvas gfx.Canvas
 		w.paint(&canvas, size)
-		table, ok := hitByLabelRole(&canvas, w.ui.messages.Tools.RemoteTabProcesses, gfx.RoleGroup)
-		if !ok {
+		if _, ok := hitByLabelRole(&canvas, w.ui.messages.Tools.RemoteTabProcesses, gfx.RoleListBox); !ok {
 			t.Fatal("the process table is not a page control")
 		}
-		bounds := w.ui.remote.tableBodyBounds
-		x, y := bounds.X+bounds.Width/2, bounds.Y+w.ui.remote.tableRowHeight/2
-		pointerPageControl(w, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 2, X: x, Y: y, Target: table.ID, Viewport: size})
-		pointerPageControl(w, gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, ClickCount: 2, X: x, Y: y, Target: table.ID, Viewport: size})
+		id := w.ui.remote.lists[remoteProcesses].RowID(0)
+		canvas.BeginEventPass(id, gfx.ClickInfo{Clicks: 2})
+		w.paint(&canvas, size)
+		canvas.EndEventPass()
+		canvas.RunAfterPaint()
 		if !w.ui.remote.processDetails.open {
 			t.Fatal("the table control's press did not open the process details dialog")
 		}
@@ -1007,13 +1020,10 @@ func TestRemoteNativeWindowDialogsArePageControls(t *testing.T) {
 		host.until(t, func() bool { return !w.ui.remote.loading && w.ui.remote.tab == remoteContainers })
 		canvas.Reset()
 		w.paint(&canvas, size)
-		table, ok = hitByLabelRole(&canvas, w.ui.messages.Tools.RemoteTabContainers, gfx.RoleGroup)
-		if !ok {
+		if _, ok := hitByLabelRole(&canvas, w.ui.messages.Tools.RemoteTabContainers, gfx.RoleListBox); !ok {
 			t.Fatal("the container table is not a page control")
 		}
-		bounds = w.ui.remote.tableBodyBounds
-		pointerPageControl(w, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary,
-			X: bounds.X + bounds.Width/2, Y: bounds.Y + w.ui.remote.tableRowHeight/2, Target: table.ID, Viewport: size})
+		selectRemoteToolsWindowRow(w, 0)
 		clickPageControl(t, w, &canvas, w.ui.messages.Tools.RemoteContainerDetails, gfx.RoleButton, size)
 		if !w.ui.remote.containerDetails.open {
 			t.Fatal("the container details page button did not open its dialog")

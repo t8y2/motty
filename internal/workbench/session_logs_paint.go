@@ -153,6 +153,9 @@ const (
 	sessionLogEventHeight = float32(22)
 	// sessionLogFieldHeight is one detail field row.
 	sessionLogFieldHeight = float32(22)
+	// sessionLogEventsRoom is what a detail panel keeps for the event list and
+	// its heading, so a short panel drops fields instead of the events.
+	sessionLogEventsRoom = float32(140)
 	// sessionLogToolbarGap is the space between the toolbar's controls.
 	sessionLogToolbarGap = float32(8)
 )
@@ -907,6 +910,19 @@ func (state *State) declareSessionLogsWorkspace(c ui.C) {
 			}
 		}
 		state.declareSessionLogFilterMenu(c, timeTrigger, statusTrigger, protocolTrigger, outcomeTrigger, sortTrigger)
+		// The detail panel takes what the fixed rows leave: its height decides
+		// how many fields it can show and whether the events still fit.
+		detailHeight := bounds.Height - 12 - 36 - 40 - 1 - 46
+		if !narrow {
+			detailHeight -= 26
+		}
+		if separateFilters {
+			detailHeight -= 38
+			if stackedFilters {
+				detailHeight -= 38
+			}
+		}
+		detailHeight = max(detailHeight, 0)
 		switch {
 		case empty:
 			descriptionColor := pal.muted
@@ -922,13 +938,15 @@ func (state *State) declareSessionLogsWorkspace(c ui.C) {
 					view.tableWidth = max(inner-14-detailWidth, 0)
 					state.declareSessionLogTable(c)
 				})
-				state.declareSessionLogDetails(c, false, detailWidth)
+				state.declareSessionLogDetails(c, false, detailWidth, detailHeight)
 			})
 		case detailOnly:
-			state.declareSessionLogDetails(c, true, inner)
+			state.declareSessionLogDetails(c, true, inner, detailHeight)
 		default:
 			view.tableWidth = inner
-			state.declareSessionLogTable(c)
+			ui.Column(c).Grow(1).Basis(0).MarginTop(4).Children(func() {
+				state.declareSessionLogTable(c)
+			})
 		}
 		ui.Divider(c).Background(pal.line)
 		ui.Row(c).Height(46).Gap(12).Items(ui.Center).Children(func() {
@@ -1159,17 +1177,12 @@ func (state *State) declareSessionLogTable(c ui.C) {
 		view.rowsList.NoTypeahead = true
 		view.rowDecl = state.declareSessionLogItem
 	}
-	_, headings, count := state.sessionLogColumns(view.tableWidth)
 	headerHeight := theme.Metrics.ControlHeight + 8
 	view.rowClicked = false
 	ui.Row(c).Height(headerHeight).Shrink(0).FillWidth().Children(func() {
-		widths, _, _ := state.sessionLogColumns(view.tableWidth)
+		widths, headings, count := state.sessionLogColumns(view.tableWidth)
 		for column := 0; column < count; column++ {
-			cell := ui.Row(c).Width(widths[column]).Height(headerHeight).Shrink(0).Items(ui.Center)
-			if headings[column] != "" && state.sessionLogHeaderSortable(column, count) {
-				cell = cell.HitWith(hitSessionLogsSortHeader.At(column), headings[column], gfx.HitOptions{Role: gfx.RoleButton})
-			}
-			cell.Children(func() {
+			ui.Row(c).Width(widths[column]).Height(headerHeight).Shrink(0).Items(ui.Center).Children(func() {
 				ui.Text(c, headings[column]).FontSize(theme.Metrics.FontSizeM).Weight(gfx.WeightMedium).
 					Color(theme.Foreground).LineHeight(headerHeight).PadSides(0, theme.Metrics.GapItem, 0, theme.Metrics.GapItem).Ellipsis()
 			})
@@ -1179,7 +1192,7 @@ func (state *State) declareSessionLogTable(c ui.C) {
 		return
 	}
 	list := ui.List(c, &view.rowsList, len(view.items), view.rowDecl).
-		Grow(1).Basis(0).FillWidth().Scrollbars().ScrollbarSize(catalogBarGutter).Label(m.Title)
+		Grow(1).Basis(0).FillWidth().AlwaysScrollbars().ScrollbarSize(catalogBarGutter).Label(m.Title)
 	if scroll := list.ScrollState(); scroll != nil {
 		view.scrollRows = scroll.Offset
 	}
@@ -1342,7 +1355,7 @@ func (state *State) sessionLogColumns(width float32) (widths [6]float32, heading
 // lifecycle events that were recorded on a page scroll area, and the way to the
 // still-open session when there is one. Nothing here writes, and no replay is
 // offered because no recording exists.
-func (state *State) declareSessionLogDetails(c ui.C, stacked bool, width float32) {
+func (state *State) declareSessionLogDetails(c ui.C, stacked bool, width, height float32) {
 	detail, m, pal := &state.sessionLogs.view.detail, &state.messages.SessionLogs, state.pal
 	if width <= 0 {
 		return
@@ -1351,6 +1364,25 @@ func (state *State) declareSessionLogDetails(c ui.C, stacked bool, width float32
 	if inner <= 0 {
 		return
 	}
+	// The panel is short enough that its fields must give way: the old panel
+	// kept the first fields and the actions at the bottom, and showed the
+	// events only while there was room for them.
+	innerHeight := max(height-24, 0)
+	fields := detail.count
+	if fields > 0 {
+		room := int((innerHeight - 26 - sessionLogEventsRoom) / sessionLogFieldHeight)
+		fields = min(fields, max(room, 3))
+	}
+	y := float32(26)
+	y += float32(fields) * sessionLogFieldHeight
+	showNoInfo := detail.noInfo != "" && y+18 <= innerHeight
+	if showNoInfo {
+		y += 20
+	}
+	eventsBottom := innerHeight - 2*toolbarHeight - 6 - 10
+	showEvents := innerHeight > 0 && eventsBottom-y > 34
+	showTruncated := showEvents && detail.truncatedText != "" && y+24+16 <= eventsBottom
+
 	panel := ui.Column(c).Fill().Width(width).Clip().Radius(radius.surface).Border(1, pal.line).Background(pal.surface).
 		PadSides(12, 14, 12, 14).Gap(0)
 	panel.Children(func() {
@@ -1358,42 +1390,54 @@ func (state *State) declareSessionLogDetails(c ui.C, stacked bool, width float32
 		if stacked {
 			closeHint = m.BackToList
 		}
-		ui.Row(c).Height(28).Shrink(0).Items(ui.Center).Children(func() {
-			ui.Text(c, detail.title).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).Grow(1).Ellipsis()
-			state.declareIconButton(c, hitSessionLogsDetailClose, iconClose, closeHint, false, iconButtonQuiet).Size(28, 28)
+		// The old header row was 26 high and its close button, 28 high, sat two
+		// pixels above it, so the button's top stayed flush with the panel.
+		ui.Row(c).Height(26).Shrink(0).Items(ui.Start).Children(func() {
+			ui.Text(c, detail.title).Height(22).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).
+				Color(pal.text).Grow(1).Ellipsis()
+			state.declareIconButton(c, hitSessionLogsDetailClose, iconClose, closeHint, false, iconButtonQuiet).
+				Size(28, 28).MarginTop(-2)
 		})
-		if detail.count > 0 {
-			// Fields are two columns: a muted label and its value. The prepared
-			// order puts the outcome first and the snapshot details last, so a
-			// panel that clips keeps what matters.
-			labelWidth := min(max(inner*0.34, 64), 110)
-			for index := 0; index < detail.count; index++ {
-				field := &detail.fields[index]
-				valueColor := pal.text
-				if index == detail.statusIndex {
-					valueColor = state.sessionLogToneColor(detail.statusTone)
+		ui.Column(c).Grow(1).Basis(0).MinHeight(0).Clip().Children(func() {
+			if fields > 0 {
+				// Fields are two columns: a muted label and its value. The
+				// prepared order puts the outcome first and the snapshot details
+				// last, so a panel that clips keeps what matters.
+				labelWidth := min(max(inner*0.34, 64), 110)
+				for index := 0; index < fields; index++ {
+					field := &detail.fields[index]
+					valueColor := pal.text
+					if index == detail.statusIndex {
+						valueColor = state.sessionLogToneColor(detail.statusTone)
+					}
+					ui.Row(c).Height(sessionLogFieldHeight).Shrink(0).FillWidth().Items(ui.Center).Children(func() {
+						ui.Text(c, field.label).Width(labelWidth).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).
+							Color(pal.muted).Ellipsis()
+						ui.Text(c, field.value).Grow(1).FontSize(metrics.FontSizeS).Weight(gfx.WeightRegular).
+							Color(valueColor).Ellipsis()
+					})
 				}
-				ui.Row(c).Height(sessionLogFieldHeight).Shrink(0).FillWidth().Items(ui.Center).Children(func() {
-					ui.Text(c, field.label).Width(labelWidth).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).
-						Color(pal.muted).Ellipsis()
-					ui.Text(c, field.value).Grow(1).FontSize(metrics.FontSizeS).Weight(gfx.WeightRegular).
-						Color(valueColor).Ellipsis()
-				})
 			}
-		}
-		if detail.noInfo != "" {
-			ui.Text(c, detail.noInfo).Height(18).Shrink(0).FillWidth().FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis()
-		}
-		headingWidth := min(inner*0.42, 96)
-		ui.Row(c).Height(24).Shrink(0).FillWidth().Items(ui.Center).Children(func() {
-			ui.Text(c, m.Events).Width(headingWidth).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
-			ui.Text(c, detail.eventsText).Grow(1).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis()
+			if showNoInfo {
+				ui.Text(c, detail.noInfo).Height(18).Shrink(0).FillWidth().FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis()
+				ui.Slot(c).Height(2).Shrink(0)
+			}
+			if showEvents {
+				headingWidth := min(inner*0.42, 96)
+				ui.Row(c).Height(24).Shrink(0).FillWidth().Items(ui.Center).Children(func() {
+					ui.Text(c, m.Events).Width(headingWidth).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
+					ui.Text(c, detail.eventsText).Grow(1).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis()
+				})
+				if showTruncated {
+					ui.Text(c, detail.truncatedText).Height(16).Shrink(0).FillWidth().FontSize(metrics.FontSizeS).Color(pal.warning).Ellipsis()
+					ui.Slot(c).Height(2).Shrink(0)
+				}
+				state.declareSessionLogEvents(c)
+			}
 		})
-		if detail.truncatedText != "" {
-			ui.Text(c, detail.truncatedText).Height(18).Shrink(0).FillWidth().FontSize(metrics.FontSizeS).Color(pal.warning).Ellipsis()
-		}
-		state.declareSessionLogEvents(c)
-		ui.Row(c).Height(toolbarHeight).Shrink(0).FillWidth().MarginTop(6).Children(func() {
+		// The actions stay at the bottom of the panel, whatever the room for
+		// the fields above them.
+		ui.Row(c).Height(toolbarHeight).Shrink(0).FillWidth().Children(func() {
 			state.declareButtonSized(c, hitSessionLogsLive, detail.actionLabel, iconTerminal, false, false, true, toolbarFont, false).Grow(1).Basis(0).Shrink(1)
 		})
 		ui.Row(c).Height(toolbarHeight).Shrink(0).FillWidth().MarginTop(6).Gap(6).Children(func() {
@@ -1412,7 +1456,8 @@ func (state *State) declareSessionLogEvents(c ui.C) {
 	view := &state.sessionLogs.view
 	detail := &view.detail
 	layout := &state.sectionBodies.sessionLogs
-	scroll := ui.Scroll(c).Grow(1).Basis(0).MinHeight(0).FillWidth().Scrollbars().ScrollbarSize(catalogBarGutter)
+	scroll := ui.Scroll(c).Grow(1).Basis(0).MinHeight(0).FillWidth().MarginBottom(10).
+		AlwaysScrollbars().ScrollbarSize(catalogBarGutter)
 	if view.resetEvents {
 		if area := scroll.ScrollState(); area != nil {
 			area.ScrollTo(0)

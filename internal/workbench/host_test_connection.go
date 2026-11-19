@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 )
@@ -264,32 +263,18 @@ func (state *State) requestHostTestFrame(canvas *gfx.Canvas) {
 	}
 }
 
-// paintHostTest paints the Test connection button at the footer's left edge and,
-// beside it, what the last test found. The text keeps clear of the footer's own
-// buttons, whose labels decide how much room is left.
-func (state *State) paintHostTest(canvas *gfx.Canvas, theme gfx.Theme, footer gfx.Rect, rightLabels ...string) {
+// paintHostTestMessage paints what the last test found in the footer's message
+// slot, beside the Test connection button the page declares.
+func (state *State) paintHostTestMessage(canvas *gfx.Canvas, bounds gfx.Rect) {
 	if !state.hostTestAvailable() {
 		return
 	}
-	m, test := state.messages, &state.hostTest
-	button := components.BeginButton(canvas, theme, hitDialogTest, footer).Size(components.ButtonSizeDefault).SizeToFit(m.HostTest)
-	buttonWidth := button.BoundsWidth()
-	if test.outcome == hostTestRunning {
-		button = button.Disabled()
-	}
-	button.Outline(m.HostTest)
+	test := &state.hostTest
 	state.requestHostTestFrame(canvas)
 	if test.message == "" || test.outcome != hostTestRunning && test.signature != state.hostTestSignature() {
 		return
 	}
-
-	gap := theme.Metrics.GapItem
-	right := footer.X + footer.Width
-	for _, label := range rightLabels {
-		right -= components.BeginButton(canvas, theme, gfx.ID{}, footer).Size(components.ButtonSizeDefault).SizeToFit(label).BoundsWidth() + gap
-	}
-	left := footer.X + buttonWidth + gap*1.5
-	width := right - gap - left
+	width := bounds.Width
 	if width < 60 {
 		return
 	}
@@ -302,13 +287,13 @@ func (state *State) paintHostTest(canvas *gfx.Canvas, theme gfx.Theme, footer gf
 	case hostTestFailed:
 		color = state.pal.danger
 	}
-	size := theme.Metrics.FontSizeS
+	size := state.Theme().Metrics.FontSizeS
 	const lineHeight = 16
 	var scratch [2]string
 	lines := canvas.WrapLines(scratch[:0], strings.TrimSpace(test.message), size, gfx.WeightMedium, width, len(scratch))
-	top := footer.Y + (footer.Height-float32(len(lines))*lineHeight)/2
+	top := bounds.Y + (bounds.Height-float32(len(lines))*lineHeight)/2
 	for index, line := range lines {
-		canvas.Label(line, gfx.Rect{X: left, Y: top + float32(index)*lineHeight, Width: width, Height: lineHeight},
+		canvas.Label(line, gfx.Rect{X: bounds.X, Y: top + float32(index)*lineHeight, Width: width, Height: lineHeight},
 			gfx.TextStyle{Size: size, Weight: gfx.WeightMedium, Color: color})
 	}
 }

@@ -59,7 +59,7 @@ func (state *State) declareWorkspacePaneTabs(c ui.C, frame gfx.Rect) {
 	strip.Children(func() {
 		ui.Row(c).Fill().PadSides(3, 10, 4, 10).Items(ui.Start).Children(func() {
 			ui.Tabs(c, &state.workspacePaneTabChoice, state.workspacePaneTabIndices, state.workspacePaneTabLabel).
-				Line().MaxWidth(width)
+				Line().Width(width)
 		})
 	})
 	if choice := state.workspacePaneTabChoice; choice != active && choice >= 0 && choice < len(state.panes) {

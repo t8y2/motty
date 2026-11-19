@@ -373,7 +373,6 @@ func (state *State) clickTerminalFind(id gfx.ID) bool {
 		} else {
 			state.findSettingsUI.open = true
 			state.findSettingsUI.session = session.ID
-			state.findSettingsUI.focus = hitFindForeground
 		}
 	case hitTerminalFindPrevious:
 		session.term.find.move(session.term.screen, state.messages, -1)

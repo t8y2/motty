@@ -1,0 +1,160 @@
+rect {{0 0 1400 900} {0.09411765 0.10980392 0.13725491 1} 0 0 {0 0 0 0} false #0}
+rect {{9 467 186 36} {0.23529412 0.27450982 0.34117648 1} 7.5 0 {0 0 0 0} false #1}
+rect {{204 36 1189 857} {0.2627451 0.30588236 0.37254903 1} 11 0 {0 0 0 0} false #2}
+rect {{205 37 1187 855} {0.06666667 0.08235294 0.105882354 1} 10 0 {0 0 0 0} false #3}
+rect {{213 80 284 1} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #4}
+rect {{211 117 288 30} {0.23529412 0.27450982 0.34117648 1} 7.5 0 {211 87 288 799} true #5}
+rect {{505 37 1 855} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #6}
+rect {{564 45 602 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {0 0 0 0} false #8}
+rect {{565 46 600 26} {0.11146667 0.1264 0.1488 1} 6.5 0 {0 0 0 0} false #9}
+rect {{1280 45 28 28} {0.23529412 0.27450982 0.34117648 1} 7.5 0 {0 0 0 0} false #10}
+rect {{1312 45 28 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {0 0 0 0} false #12}
+rect {{1313 46 26 26} {0.11146667 0.1264 0.1488 1} 6.5 0 {0 0 0 0} false #13}
+rect {{1344 45 28 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {0 0 0 0} false #15}
+rect {{1345 46 26 26} {0.11146667 0.1264 0.1488 1} 6.5 0 {0 0 0 0} false #16}
+rect {{522 80 854 1} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #17}
+rect {{526 90 87.515625 20} {0.23529412 0.27450982 0.34117648 1} 10 0 {0 0 0 0} false #18}
+rect {{619.5156 90 74.55469 20} {0.23529412 0.27450982 0.34117648 1} 10 0 {0 0 0 0} false #19}
+rect {{700.0703 90 104.32617 20} {0.23529412 0.27450982 0.34117648 1} 10 0 {0 0 0 0} false #20}
+rect {{707.0703 93 14 14} {0.17254902 0.19607843 0.23529412 1} 3.36 0 {0 0 0 0} false #21}
+rect {{522 118 854 1} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #22}
+rect {{522 158 854 718} {0.216 0.22917646 0.24894118 1} 7.5 0 {0 0 0 0} false #24}
+rect {{523 159 852 716} {0.11146667 0.1264 0.1488 1} 6.5 0 {0 0 0 0} false #25}
+rect {{523 418 830 21} {0.8862745 0.90588236 0.93333334 0.05} 0 0 {523 166 830 702} true #26}
+rect {{0 0 1400 900} {0 0 0 0.5} 0 600 {0 0 0 0} false #27}
+rect {{480 363 440 174} {0.2 0.23529412 0.2901961 1} 11 600 {0 0 0 0} false #28}
+rect {{481 364 438 172} {0.12156863 0.14117648 0.1764706 1} 10 600 {0 0 0 0} false #29}
+rect {{872 379 32 32} {0.06666667 0.08235294 0.105882354 0} 7.5 600 {0 0 0 0} false #30}
+rect {{751.709 481 64.61133 32} {0.23529412 0.27450982 0.34117648 1} 7.5 600 {0 0 0 0} false #31}
+rect {{824.3203 481 71.67969 32} {0.9411765 0.47058824 0.47058824 0.2} 7.5 600 {0 0 0 0} false #32}
+shadow {{564 45 602 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 0 0 0} false #7}
+shadow {{1312 45 28 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 0 0 0} false #11}
+shadow {{1344 45 28 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 0 0 0} false #14}
+shadow {{522 158 854 718} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 0 0 0} false #23}
+text "Hosts" {52 114.5 37.180664 21}
+text "Workspaces" {52 154.5 80.37695 21}
+text "Monitor" {52 194.5 49.745117 21}
+text "Session Logs" {52 234.5 85.51758 21}
+text "Keychain" {52 274.5 59.814453 21}
+text "Jump Routes" {52 314.5 84.2666 21}
+text "Port Forwarding" {52 354.5 103.40039 21}
+text "Known Hosts" {52 394.5 85.44238 21}
+text "Snippets" {52 434.5 56.47168 21}
+text "Notes" {52 474.5 37.99414 21}
+text "Local Terminal" {52 815.5 94.36328 21}
+text "Settings" {52 855.5 52.759766 21}
+text "Operations" {255 92 236 20}
+text "Release runbook" {249 117 220 20}
+text "Ideas" {233 152 258 20}
+text "Release runbook" {575 48 580 22}
+text "operations ×" {535 90 87.515625 20}
+text "operations" {535 90 60.515625 20}
+text "runbook ×" {628.5156 90 74.55469 20}
+text "runbook" {628.5156 90 47.554688 20}
+text "     Production ×" {709.0703 90 104.32617 20}
+text "     Production" {709.0703 90 77.32617 20}
+text "Heading" {524 124 28 26}
+text "Bold" {556 124 28 26}
+text "Inline code" {618 124 28 26}
+text "Code block" {650 124 28 26}
+text "Bullet list" {682 124 28 26}
+text "Numbered list" {714 124 28 26}
+text "Task list" {746 124 28 26}
+text "Quote" {778 124 28 26}
+text "Link" {810.7075 124 28 26}
+text "Updated 2026-01-02 11:04" {1242.292 128 133.70801 18}
+text "1" {549.7999 168 8.400001 17}
+text "2" {549.7999 189 8.400001 17}
+text "3" {549.7999 210 8.400001 17}
+text "4" {549.7999 231 8.400001 17}
+text "5" {549.7999 252 8.400001 17}
+text "6" {549.7999 273 8.400001 17}
+text "7" {549.7999 294 8.400001 17}
+text "8" {549.7999 315 8.400001 17}
+text "9" {549.7999 336 8.400001 17}
+text "10" {541.39996 357 16.800001 17}
+text "11" {541.39996 378 16.800001 17}
+text "12" {541.39996 399 16.800001 17}
+text "13" {541.39996 420 16.800001 17}
+text "# Release runbook" {566.6 168 142.8 17}
+text "Roll back the **gateway** first, then the workers." {566.6 210 420.00003 17}
+text "```sh" {566.6 252 42.000004 17}
+text "motty --version" {566.6 273 126.00001 17}
+text "```" {566.6 294 25.2 17}
+text "- [x] drain traffic" {566.6 336 159.6 17}
+text "- [ ] restore the database" {566.6 357 218.40001 17}
+text "See [the dashboard](https://example.com/status) for the current state." {566.6 399 588.00006 17}
+text "Confirm deletion" {504 387 392 17}
+text "Delete this note?" {504 412 392 21}
+text "Cancel" {761.709 481 64.61133 32}
+text "Confirm" {834.3203 481 71.67969 32}
+hit "" region {0 0 1400 36} disabled=false
+hit "Hosts" button {82 4 28 28} disabled=false
+hit "New tab" button {116 4 28 28} disabled=false
+hit "Transfers" button {1156 4 28 28} disabled=false
+hit "Session manager" button {1186 4 28 28} disabled=false
+hit "AI assistant" button {1216 4 28 28} disabled=false
+hit "Local Terminal" button {1246 4 28 28} disabled=false
+hit "Command Palette" button {1276 4 28 28} disabled=false
+hit "Switch to light theme" button {1306 4 28 28} disabled=false
+hit "GitHub" button {1336 4 28 28} disabled=false
+hit "Settings" button {1366 4 28 28} disabled=false
+hit "Hosts" menuitem {9 107 186 36} disabled=false
+hit "Workspaces" menuitem {9 147 186 36} disabled=false
+hit "Monitor" menuitem {9 187 186 36} disabled=false
+hit "Session Logs" menuitem {9 227 186 36} disabled=false
+hit "Keychain" menuitem {9 267 186 36} disabled=false
+hit "Jump Routes" menuitem {9 307 186 36} disabled=false
+hit "Port Forwarding" menuitem {9 347 186 36} disabled=false
+hit "Known Hosts" menuitem {9 387 186 36} disabled=false
+hit "Snippets" menuitem {9 427 186 36} disabled=false
+hit "Notes" menuitem {9 467 186 36} disabled=false
+hit "Local Terminal" menuitem {9 808 186 36} disabled=false
+hit "Settings" menuitem {9 848 186 36} disabled=false
+hit "Search notes" button {213 45 28 28} disabled=false
+hit "New note" button {243 45 28 28} disabled=false
+hit "New folder" button {273 45 28 28} disabled=false
+hit "Import Markdown" button {303 45 28 28} disabled=false
+hit "Link Markdown file" button {333 45 28 28} disabled=false
+hit "Link Markdown folder" button {363 45 28 28} disabled=false
+hit "Export ZIP" button {393 45 28 28} disabled=false
+hit "Collapse all" button {423 45 28 28} disabled=false
+hit "Scroll notes" group {211 87 288 799} disabled=false
+hit "Operations" button {211 92 20 20} disabled=false
+hit "Operations" button {231 87 268 30} disabled=false
+hit "Release runbook" button {211 117 288 30} disabled=false
+hit "More actions" button {469 118 28 28} disabled=false
+hit "Ideas" button {211 147 288 30} disabled=false
+hit "Resize note library" slider {501.5 37 8 855} disabled=false
+hit "Toggle library" button {524 45 28 28} disabled=false
+hit "Title" textfield {564 45 602 28} disabled=false
+hit "Tags" button {1178 45 28 28} disabled=false
+hit "Linked hosts" button {1212 45 28 28} disabled=false
+hit "Pin note" button {1246 45 28 28} disabled=false
+hit "Source" button {1280 45 28 28} disabled=false
+hit "Split" button {1312 45 28 28} disabled=false
+hit "Preview" button {1344 45 28 28} disabled=false
+hit "Remove tag operations" button {591.5156 86 22 24} disabled=false
+hit "operations" button {526 86 65.515625 24} disabled=false
+hit "Remove tag runbook" button {672.0703 86 22 24} disabled=false
+hit "runbook" button {619.5156 86 52.554688 24} disabled=false
+hit "Remove tag Production\nprod.example.com\ndeploy" button {782.3965 86 22 24} disabled=false
+hit "Production\nprod.example.com\ndeploy" button {700.0703 86 82.32617 24} disabled=false
+hit "Heading" button {524 124 28 26} disabled=false
+hit "Bold" button {556 124 28 26} disabled=false
+hit "Italic" button {588 124 26 26} disabled=false
+hit "Inline code" button {618 124 28 26} disabled=false
+hit "Code block" button {650 124 28 26} disabled=false
+hit "Bullet list" button {682 124 28 26} disabled=false
+hit "Numbered list" button {714 124 28 26} disabled=false
+hit "Task list" button {746 124 28 26} disabled=false
+hit "Quote" button {778 124 28 26} disabled=false
+hit "Link" button {810 124 28 26} disabled=false
+hit "Table" button {842 124 26 26} disabled=false
+hit "Horizontal rule" button {872 124 26 26} disabled=false
+hit "Markdown source" textfield {522 158 854 718} disabled=false
+hit "Dismiss dialog" button {0 0 1400 900} disabled=false
+hit "" region {480 363 440 174} disabled=false
+hit "Close dialog" button {872 379 32 32} disabled=false
+hit "Cancel" button {751.709 481 64.61133 32} disabled=false
+hit "Confirm" button {824.3203 481 71.67969 32} disabled=false

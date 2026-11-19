@@ -195,7 +195,7 @@ func TestCommandGroupFilterToggle(t *testing.T) {
 	state := openCommandsDrawerTest(t)
 	state.commands.filterOpen = true // the menu is open while its checkboxes are clicked
 	// Hide ungrouped first: only the grouped "pwd" should remain.
-	state.Click(hitCommandsGroupUngrouped)
+	clickPageMenuRow(t, state, state.messages.Tools.CommandsUngrouped)
 	if !state.commands.hiddenGroups[""] {
 		t.Fatal("ungrouped checkbox did not hide ungrouped commands")
 	}
@@ -203,7 +203,7 @@ func TestCommandGroupFilterToggle(t *testing.T) {
 		t.Fatalf("hiding ungrouped should leave only the grouped command: %v", order)
 	}
 	// Re-checking ungrouped brings "ls" back; the menu never closed on the click.
-	state.Click(hitCommandsGroupUngrouped)
+	clickPageMenuRow(t, state, state.messages.Tools.CommandsUngrouped)
 	if state.commands.hiddenGroups[""] {
 		t.Fatal("re-checking ungrouped did not show ungrouped commands")
 	}
@@ -219,7 +219,8 @@ func TestCommandGroupFilterToggle(t *testing.T) {
 // named group the snippets name.
 func TestCommandGroupFilterShowAndHideAll(t *testing.T) {
 	state := openCommandsDrawerTest(t)
-	state.Click(hitCommandsGroupNone)
+	state.commands.filterOpen = true
+	clickPageMenuRow(t, state, state.messages.Tools.CommandsHideAll)
 	if !state.commandGroupVisible("does-not-exist") {
 		t.Fatal("Hide all should have hidden every named group")
 	}
@@ -229,7 +230,7 @@ func TestCommandGroupFilterShowAndHideAll(t *testing.T) {
 	if order := state.commandDisplayOrder(); len(order) != 0 {
 		t.Fatalf("Hide all should leave the bar empty: %v", order)
 	}
-	state.Click(hitCommandsGroupAll)
+	clickPageMenuRow(t, state, state.messages.Tools.CommandsShowAll)
 	if len(state.commands.hiddenGroups) != 0 {
 		t.Fatalf("Show all should clear the hidden groups: %v", state.commands.hiddenGroups)
 	}
@@ -292,7 +293,7 @@ func TestCommandSortMenuPicksAnOrder(t *testing.T) {
 	}
 	state.Click(hitCommandsSort)
 	state.commands.offset = 40
-	state.Click(hitCommandsSortChoice.At(1))
+	clickPageMenuRow(t, state, state.settingsCommandsSortLabel(settingsCommandsSortChoices[1]))
 	if state.commands.sort != settingsCommandsSortChoices[1] {
 		t.Fatalf("picking an order set %v", state.commands.sort)
 	}
@@ -309,28 +310,41 @@ func TestCommandSortMenuPicksAnOrder(t *testing.T) {
 // action, which is the easiest way for these menus to look broken.
 func TestCommandMenusKeepTheirLastRowAboveTheBar(t *testing.T) {
 	tests := []struct {
-		name string
-		open func(*State)
-		last gfx.ID
+		name  string
+		open  func(*State)
+		label func(*State) string
 	}{
-		{"filter", func(state *State) { state.commands.filterOpen = true }, hitCommandsGroupNone},
-		{"sort", func(state *State) { state.commands.sortOpen = true }, hitCommandsSortChoice.At(len(settingsCommandsSortChoices) - 1)},
+		{"filter", func(state *State) { state.commands.filterOpen = true }, func(state *State) string {
+			return state.messages.Tools.CommandsHideAll
+		}},
+		{"sort", func(state *State) { state.commands.sortOpen = true }, func(state *State) string {
+			return state.settingsCommandsSortLabel(settingsCommandsSortChoices[len(settingsCommandsSortChoices)-1])
+		}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			state := openCommandsDrawerTest(t)
 			test.open(state)
-			view := openPickerView(t, state, 1)
-			hit, ok := hitByIDSnapshot(view.Snapshot().Hits, test.last)
-			if !ok {
+			var canvas gfx.Canvas
+			state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+			label := test.label(state)
+			var row, surface gfx.Hit
+			for _, hit := range canvas.Hits() {
+				switch {
+				case hit.Role == gfx.RoleMenuItem && hit.Label == label:
+					row = hit
+				case hit.Role == gfx.RoleMenu:
+					surface = hit
+				}
+			}
+			if row.ID.IsZero() {
 				t.Fatal("the menu's last row was not painted")
 			}
-			surface := state.popups.surface
-			if hit.Bounds.Y+hit.Bounds.Height > surface.Y+surface.Height+1 {
-				t.Fatalf("the last row %v falls outside the menu surface %v", hit.Bounds, surface)
+			if row.Bounds.Y+row.Bounds.Height > surface.Bounds.Y+surface.Bounds.Height+1 {
+				t.Fatalf("the last row %v falls outside the menu surface %v", row.Bounds, surface.Bounds)
 			}
-			if hit.Bounds.Y >= state.commands.bar.Y {
-				t.Fatalf("the menu opened below the bar: %v vs %v", hit.Bounds, state.commands.bar)
+			if row.Bounds.Y >= state.commands.bar.Y {
+				t.Fatalf("the menu opened below the bar: %v vs %v", row.Bounds, state.commands.bar)
 			}
 		})
 	}

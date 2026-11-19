@@ -188,7 +188,6 @@ var (
 	hitForwardDialogCancel          = tree.ID(forwardsHits, "forward-dialog-cancel")
 	hitForwardDialogSubmit          = tree.ID(forwardsHits, "forward-dialog-submit")
 	hitForwardDialogLabel           = tree.ID(forwardsHits, "forward-dialog-label")
-	hitForwardDialogHost            = tree.ID(forwardsHits, "forward-dialog-host")
 	hitForwardDialogLocalPort       = tree.ID(forwardsHits, "forward-dialog-local-port")
 	hitForwardDialogDestination     = tree.ID(forwardsHits, "forward-dialog-destination")
 	hitForwardDialogDestinationPort = tree.ID(forwardsHits, "forward-dialog-destination-port")
@@ -197,13 +196,8 @@ var (
 	hitForwardDialogViaShell        = tree.ID(forwardsHits, "forward-dialog-via-shell")
 	hitForwardDialogViaShellHelp    = tree.ID(forwardsHits, "forward-dialog-via-shell-help")
 	hitForwardDialogRelay           = tree.ID(forwardsHits, "forward-dialog-relay")
-	hitForwardHostDismiss           = tree.ID(forwardsHits, "forward-host-dismiss")
-	hitForwardHostTrigger           = tree.ID(forwardsHits, "forward-host-trigger")
-	hitForwardHostScroll            = tree.ID(forwardsHits, "forward-host-scroll")
-	hitForwardHostPickerScope       = tree.ID(forwardsHits, "forward-host-picker-scope")
 	hitForwardScrollThumb           = tree.ID(forwardsHits, "forward-scroll-thumb")
 	hitForwardRowList               = tree.Sub(forwardsHits, tree.Name("forward-row"))
-	hitForwardHostItemList          = tree.Sub(forwardsHits, tree.Name("forward-host-item"))
 )
 
 // Settings: its explicit choices.
@@ -235,23 +229,10 @@ var (
 	hitProxyDialogClose              = tree.ID(proxiesHits, "proxy-dialog-close")
 	hitProxyDialogCancel             = tree.ID(proxiesHits, "proxy-dialog-cancel")
 	hitProxyDialogSubmit             = tree.ID(proxiesHits, "proxy-dialog-submit")
-	hitProxyDialogTarget             = tree.ID(proxiesHits, "proxy-dialog-target")
-	hitProxyDialogJump               = tree.ID(proxiesHits, "proxy-dialog-jump")
 	hitProxyDialogViaShell           = tree.ID(proxiesHits, "proxy-dialog-via-shell")
 	hitProxyDialogViaHelp            = tree.ID(proxiesHits, "proxy-dialog-via-shell-help")
 	hitProxyDialogRelay              = tree.ID(proxiesHits, "proxy-dialog-relay")
-	hitProxyTargetDismiss            = tree.ID(proxiesHits, "proxy-target-dismiss")
-	hitProxyJumpDismiss              = tree.ID(proxiesHits, "proxy-jump-dismiss")
-	hitProxyTargetTrigger            = tree.ID(proxiesHits, "proxy-target-trigger")
-	hitProxyJumpTrigger              = tree.ID(proxiesHits, "proxy-jump-trigger")
-	hitProxyTargetScroll             = tree.ID(proxiesHits, "proxy-target-scroll")
-	hitProxyJumpScroll               = tree.ID(proxiesHits, "proxy-jump-scroll")
-	hitProxyTargetPickerScope        = tree.ID(proxiesHits, "proxy-target-picker-scope")
-	hitProxyJumpPickerScope          = tree.ID(proxiesHits, "proxy-jump-picker-scope")
-	hitProxyScrollThumb              = tree.ID(proxiesHits, "proxy-scroll-thumb")
 	hitProxyRowList                  = tree.Sub(proxiesHits, tree.Name("proxy-row"))
-	hitProxyTargetItemList           = tree.Sub(proxiesHits, tree.Name("proxy-target-item"))
-	hitProxyJumpItemList             = tree.Sub(proxiesHits, tree.Name("proxy-jump-item"))
 	hitProxyBatchAdd                 = tree.ID(proxiesHits, "proxy-batch-add")
 	hitProxyBatchRemove              = tree.ID(proxiesHits, "proxy-batch-remove")
 	hitProxyBatchToggleAll           = tree.ID(proxiesHits, "proxy-batch-toggle-all")
@@ -329,7 +310,6 @@ var (
 	hitSFTPEntryList       = tree.Sub(sftpHits, tree.Name("sftp-entry"))
 	hitSFTPColumnList      = tree.Sub(sftpHits, tree.Name("sftp-column"))
 	hitSFTPListBackground  = tree.ID(sftpHits, "sftp-list-background")
-	hitSFTPListScrollbar   = tree.ID(sftpHits, "sftp-list-scrollbar")
 
 	// hitSFTPDrawerClose is the close button of the drawer a narrow window shows
 	// the panel in. It is a hit of its own, apart from the backdrop that
@@ -541,24 +521,26 @@ type State struct {
 	forwards           []forwardRecord
 	// forwardTunnels are the SSH transports forwards use when no open tab
 	// carries one. They have no terminal and are never saved.
-	forwardTunnels         []*forwardTunnel
-	selectedIdentityID     uint32
-	selectedForwardID      uint32
-	selectedProxyID        uint32
-	forwardTable           ui.TableState
-	keysTable              ui.TableState
-	proxyTable             ui.TableState
-	forwardRows            forwardTableSource
-	keysRows               keyTableSource
-	proxyRows              proxyTableSource
-	forwardColumns         [5]components.TableColumn
-	forwardHeadings        [5]string
-	keysColumns            [4]components.TableColumn
-	keysHeadings           [4]string
-	proxyColumns           [6]components.TableColumn
-	proxyHeadings          [6]string
-	proxyFilteredIndices   []int
-	proxyRowCells          []gfx.Rect
+	forwardTunnels       []*forwardTunnel
+	selectedIdentityID   uint32
+	selectedForwardID    uint32
+	selectedProxyID      uint32
+	forwardTable         ui.TableState
+	keysTable            ui.TableState
+	proxyList            ui.ListState
+	proxyRowDecl         func(ui.ListRow)
+	forwardRows          forwardTableSource
+	keysRows             keyTableSource
+	forwardColumns       [5]components.TableColumn
+	forwardHeadings      [5]string
+	keysColumns          [4]components.TableColumn
+	keysHeadings         [4]string
+	proxyColumns         [6]components.TableColumn
+	proxyHeadings        [6]string
+	proxyFilteredIndices []int
+	// pageWheel says the page is routing a wheel the application forwarded to
+	// it, so the page does not fall back to this handler again.
+	pageWheel              bool
 	selectedBastionJumpID  uint32
 	selectedBastionTargets map[uint32]bool
 	proxyChecked           map[uint32]bool
@@ -1229,8 +1211,8 @@ func New(options Options) *State {
 	// it here makes it part of the defaults, so a computer that changed nothing
 	// writes no record for it.
 	state.history.inlineOff = true
-	state.forwardRows.records, state.keysRows.records, state.proxyRows.records = &state.forwards, &state.identities, &state.proxies
-	state.proxyRows.indices, state.proxyRows.jumpID = &state.proxyFilteredIndices, &state.selectedBastionJumpID
+	state.forwardRows.records, state.keysRows.records = &state.forwards, &state.identities
+	state.initProxyList()
 	state.configDefaults = defaultsOf(state.snapshot())
 	config, saved, configBase, report, err := openConfig(state.options.StatePath, state.windowID)
 	state.config, state.configBase = config, configBase
@@ -1409,9 +1391,6 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 	if _, local, ok := state.decodePaneHit(hit); ok {
 		hit = local
 	}
-	if editor := state.findPreferencesEditor(hit); editor != nil {
-		return editor
-	}
 	if editor := state.aiEditor(hit); editor != nil {
 		return editor
 	}
@@ -1445,20 +1424,8 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 		if hit == hitDialogGroup {
 			return &state.hostGroupPicker().control.Query
 		}
-		if hit == hitDialogEncoding {
-			return &state.hostEncodingPicker().control.Query
-		}
-		if hit == hitDialogIcon {
-			return &state.hostIconPicker().control.Query
-		}
 		if isDialogField(hit) {
-			if state.editor.colorPicker.open {
-				return nil
-			}
 			return state.editor.field(fieldForDialogHit(hit))
-		}
-		if state.editor.colorPicker.open && hit == hostPickerIDs.Hex {
-			return &state.editor.colorPicker.hex
 		}
 		if hit == hitDialogAlgorithms && state.editor.protocol == protocolSSH && state.editor.algoMode == algoCustom {
 			return &state.editor.algorithms
@@ -1482,15 +1449,8 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 			return &state.ai.rename.editor
 		}
 	case modalNewProxy:
-		switch hit {
-		case hitProxyDialogRelay:
-			if state.proxyEditor.viaShell {
-				return &state.proxyEditor.relay
-			}
-		case hitProxyDialogTarget:
-			return &state.proxyEditor.targetSelect.Query
-		case hitProxyDialogJump:
-			return &state.proxyEditor.jumpSelect.Query
+		if hit == hitProxyDialogRelay && state.proxyEditor.viaShell {
+			return &state.proxyEditor.relay
 		}
 	case modalProxyBatchAssociate:
 		switch hit {
@@ -1498,9 +1458,6 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 			return &state.proxyBatch.query
 		}
 	case modalNewForward:
-		if hit == hitForwardDialogHost {
-			return &state.forwardEditor.hostSelect.Query
-		}
 		if hit == hitForwardDialogLabel || hit == hitForwardDialogLocalPort || hit == hitForwardDialogDestination || hit == hitForwardDialogDestinationPort {
 			return state.forwardEditor.field(forwardDialogField(hit))
 		}
@@ -2317,19 +2274,7 @@ func (state *State) clickHostDialog(id gfx.ID) {
 	if state.clickHostGroupPicker(id) {
 		return
 	}
-	if state.clickHostEncodingPicker(id) {
-		return
-	}
-	if state.clickHostIconPicker(id) {
-		return
-	}
 	if state.clickHostTags(id) {
-		return
-	}
-	if state.clickHostColorPicker(id) {
-		return
-	}
-	if state.editor.colorPicker.open {
 		return
 	}
 	switch id {
@@ -2627,9 +2572,6 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result, handled := state.hostListPointer(event); handled {
 		return result
 	}
-	if result, handled := state.sftpPlacesPointer(event); handled {
-		return result
-	}
 	if state.fileTabVerticalRailAt(event.X, event.Y) {
 		repaint := false
 		if w := state.activeSFTPWindow(); w != nil && w.drag.active {
@@ -2753,7 +2695,7 @@ func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
 	if result, handled := state.remoteContainerDetailsScrollPointer(event); handled {
 		return result
 	}
-	if result, handled := state.remoteProcessScrollPointer(event); handled {
+	if result, handled := state.remoteProcessDetailsScrollPointer(event); handled {
 		return result
 	}
 	if state.chipMenu.open {
@@ -2777,20 +2719,6 @@ func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
 			return result
 		}
 	}
-	if state.modal == modalNewHost && state.editor.iconPicker.control.Open {
-		if result := state.editor.iconPicker.control.Pointer(event); result.Handled {
-			return result
-		}
-	}
-	if state.modal == modalNewHost && state.editor.encodingPicker.control.Open {
-		if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary && !isHostEncodingPickerTarget(event.Target) {
-			state.editor.encodingPicker.control.Open = false
-			return gfx.EventResult{Handled: true, Repaint: true}
-		}
-		if result := state.editor.encodingPicker.control.Pointer(event); result.Handled {
-			return result
-		}
-	}
 	if state.modal == modalNewHost && state.editor.tagPicker.control.Open {
 		// A press outside the open tag picker closes only the picker. The
 		// popup is painted inside the form's scroll area, so its dismiss
@@ -2803,21 +2731,6 @@ func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
 		if result := state.editor.tagPicker.control.Pointer(event); result.Handled {
 			return result
 		}
-	}
-	if result, handled := state.proxyPickerPointer(event); handled {
-		return result
-	}
-	if result, handled := state.forwardPickerPointer(event); handled {
-		return result
-	}
-	if result := state.hostFormPointer(event); result.Handled {
-		return result
-	}
-	if result := state.findPreferencesPointer(event); result.Handled {
-		return result
-	}
-	if result := state.hostPickerPointer(event); result.Handled {
-		return result
 	}
 	if result, handled := state.terminalFindPointer(event); handled {
 		return result
@@ -2842,9 +2755,6 @@ func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
 		return result
 	}
 	if result, handled := state.sftpPathPointer(event); handled {
-		return result
-	}
-	if result, handled := state.sftpListPointer(event); handled {
 		return result
 	}
 	return gfx.EventResult{}
@@ -2905,6 +2815,11 @@ func (state *State) Key(event gfx.KeyEvent) (outcome gfx.EventResult) {
 	defer state.afterEvent(&outcome)
 	if state.modal == modalNone && state.terminalPage() {
 		if view := state.workspaceRemoteLogs(state.deck.ActiveWorkspace()); view != nil && view.formMode == remoteLogFormNone {
+			if event.Target == hitRemoteLogOutput {
+				if result := view.keyLogOutput(event); result.Handled {
+					return result
+				}
+			}
 			if result := view.pathSplit.Key(event); result.Handled {
 				return result
 			}
@@ -3039,18 +2954,6 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	if result, handled := state.hostGroupPickerKey(event); handled {
 		return result
 	}
-	if result, handled := state.hostEncodingPickerKey(event); handled {
-		return result
-	}
-	if result, handled := state.hostIconPickerKey(event); handled {
-		return result
-	}
-	if result, handled := state.proxyDialogKey(event); handled {
-		return result
-	}
-	if result, handled := state.forwardDialogKey(event); handled {
-		return result
-	}
 	if state.activeSection == sectionForwards && state.modal == modalNone {
 		if result := state.forwardTable.Key(event); result.Handled {
 			state.takeForwardTableSelection()
@@ -3063,11 +2966,8 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 			return result
 		}
 	}
-	if state.activeSection == sectionProxies && state.modal == modalNone {
-		if result := state.proxyTable.Key(event); result.Handled {
-			state.takeProxyTableSelection()
-			return result
-		}
+	if result, handled := state.proxyListKey(event); handled {
+		return result
 	}
 	if result, handled := state.snippetGroupKey(event); handled {
 		return result
@@ -3079,12 +2979,6 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		return result
 	}
 	if result, handled := state.hostTagsKey(event); handled {
-		return result
-	}
-	if result := state.findPreferencesKey(event); result.Handled {
-		return result
-	}
-	if result := state.hostPickerKey(event); result.Handled {
 		return result
 	}
 	if result := state.hostFormKey(event); result.Handled {

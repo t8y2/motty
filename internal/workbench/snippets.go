@@ -120,11 +120,11 @@ type snippetsUI struct {
 	// are dragged or moved with Alt and the arrows while the page shows its
 	// manual order. rowDecl, reorder and the row hooks are made once, so a paint
 	// does not allocate them again.
-	rows      ui.ListState
-	rowDecl   func(ui.ListRow)
-	reorder   func(rows []int, to int)
-	rowRule   func(*ui.DrawContext)
-	detailCut func(*ui.DrawContext)
+	rows         ui.ListState
+	rowDecl      func(ui.ListRow)
+	reorder      func(rows []int, to int)
+	handleDraw   func(*ui.DrawContext)
+	detailAccent func(*ui.DrawContext)
 	// detailHeight and detailLineHeight are the band the expanded command takes,
 	// measured when the page declares the scroll area.
 	detailHeight     float32
@@ -189,8 +189,8 @@ func (form *snippetsUI) prepareSnippetRows(state *State) {
 	}
 	form.rowDecl = state.declareSnippetRow
 	form.reorder = func(rows []int, to int) { state.moveSnippetRows(rows, to) }
-	form.rowRule = state.paintSnippetRowRule
-	form.detailCut = state.paintSnippetDetailRegion
+	form.handleDraw = state.paintSnippetHandle
+	form.detailAccent = state.paintSnippetDetailAccent
 	form.rows.NoTypeahead = true
 	// Rows are named by their place, not by the snippet's index: reordering
 	// changes an index's owner, and the list's Alt+arrow focus follows the place.

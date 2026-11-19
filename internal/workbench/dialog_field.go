@@ -12,6 +12,7 @@ import (
 type dialogField struct {
 	row   ui.FormFieldState
 	input ui.Field
+	box   ui.Box
 	bound bool
 	shown bool
 }
@@ -41,6 +42,7 @@ func (f *dialogField) declare(c ui.C, state *State, editor *text.Editor, spec di
 	f.row.Invalid = spec.Invalid || spec.Error != ""
 	ui.FormField(c, &f.row, spec.Label).FillWidth().Height(spec.Height).Children(func() {
 		box := ui.TextFieldID(c, spec.ID, &f.input, spec.Label, spec.Placeholder)
+		f.box = box
 		if spec.Secret {
 			icon, name := lucideIcons[iconEye], state.messages.ShowSecret
 			if f.shown {

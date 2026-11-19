@@ -1,0 +1,55 @@
+rect {{0 0 760 800} {0.9411765 0.9411765 0.9529412 1} 0 0 {0 0 0 0} false #0}
+rect {{116 4 170 28} {0.4872549 0.6403922 0.90117645 1} 5.5 0 {116 0 174 36} true #1}
+rect {{117 5 168 26} {0.63160783 0.7596863 0.9731765 1} 4.5 0 {116 0 174 36} true #2}
+rect {{0 36 720 764} {0.95686275 0.95686275 0.96862745 1} 0 0 {0 36 720 764} true #3}
+rect {{14 44 7.8 1} {0.14901961 0.14901961 0.16470589 1} 0 0 {0 36 720 764} true #4}
+rect {{14 59 7.8 1} {0.14901961 0.14901961 0.16470589 1} 0 0 {0 36 720 764} true #5}
+rect {{14 44 1 16} {0.14901961 0.14901961 0.16470589 1} 0 0 {0 36 720 764} true #6}
+rect {{20.8 44 1 16} {0.14901961 0.14901961 0.16470589 1} 0 0 {0 36 720 764} true #7}
+rect {{0 0 760 800} {0 0 0 0.4} 0 12 {0 0 0 0} false #8}
+rect {{480 0 280 800} {0.8627451 0.8627451 0.88235295 1} 11 12 {0 0 0 0} false #9}
+rect {{481 1 278 798} {0.972549 0.972549 0.98039216 1} 10 12 {0 0 0 0} false #10}
+rect {{749 0 11 800} {0.972549 0.972549 0.98039216 1} 0 12 {0 0 0 0} false #11}
+rect {{480 0 280 800} {0.92941177 0.9411765 0.9607843 1} 0 12 {0 0 0 0} false #12}
+rect {{480 0 280 34} {0.9411765 0.9411765 0.9529412 1} 0 12 {0 0 0 0} false #13}
+rect {{480 33 280 1} {0.8627451 0.8627451 0.88235295 1} 0 12 {0 0 0 0} false #14}
+rect {{121 8 20 20} {0.8862745 0.8862745 0.90588236 1} 4.7999997 0 {116 4 358 28} true #15}
+rect {{216.2168 14.5 7 7} {0.08235294 0.5686275 0.2784314 1} 3.5 0 {116 4 358 28} true #16}
+rect {{720 36 40 764} {0.9411765 0.9411765 0.9529412 1} 0 0 {0 0 0 0} false #17}
+rect {{724 372 32 32} {0.8862745 0.8862745 0.90588236 1} 7.5 0 {724 40 32 756} true #18}
+text "Production" {148 8 60.216797 20}
+text "" {496 16 248 21}
+text "监控" {515 6.5 28 21}
+text "连接到服务器后可查看监控。" {535.5 407 169 20}
+hit "" region {0 0 760 36} disabled=false
+hit "主机" button {82 4 28 28} disabled=false
+hit "Production" tab {116 0 170 36} disabled=false
+hit "关闭标签页" button {262 8 20 20} disabled=false
+hit "新标签页" button {290 4 28 28} disabled=false
+hit "传输中心" button {516 4 28 28} disabled=false
+hit "会话管理" button {546 4 28 28} disabled=false
+hit "AI 助手" button {576 4 28 28} disabled=false
+hit "本地终端" button {606 4 28 28} disabled=false
+hit "命令面板" button {636 4 28 28} disabled=false
+hit "切换到深色主题" button {666 4 28 28} disabled=false
+hit "GitHub" button {696 4 28 28} disabled=false
+hit "设置" button {726 4 28 28} disabled=false
+hit "新标签页" button {0 36 720 764} disabled=false
+hit "终端 deploy@prod.example.com:22" terminal {0 36 720 764} disabled=false
+hit "Dismiss drawer" button {0 0 760 800} disabled=false
+hit "" region {480 0 280 800} disabled=false
+hit "将监控移到左侧" button {696 5 24 24} disabled=false
+hit "关闭标签页" button {726 5 24 24} disabled=false
+hit "笔记" button {724 44 32 32} disabled=false
+hit "发送快捷命令" button {724 80 32 32} disabled=false
+hit "向右分屏" button {724 116 32 32} disabled=false
+hit "向下分屏" button {724 152 32 32} disabled=false
+hit "录制此终端会话" button {724 192 32 32} disabled=false
+hit "导出录制" button {724 228 32 32} disabled=true
+hit "将输出保存为文本" button {724 264 32 32} disabled=false
+hit "导出日志" button {724 300 32 32} disabled=false
+hit "显示主机的 CPU、内存、网络和 GPU" button {724 336 32 32} disabled=false
+hit "文件:通过 SFTP 浏览和传输" button {724 372 32 32} disabled=false
+hit "文件传输" button {724 408 32 32} disabled=true
+hit "进程与容器" button {724 444 32 32} disabled=false
+hit "服务器日志" button {724 480 32 32} disabled=false

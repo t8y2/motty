@@ -57,6 +57,8 @@ func (state *State) declareCatalogSection(c ui.C) {
 		state.declareSessionLogsWorkspace(c)
 	case sectionDashboard:
 		state.declareDashboardWorkspace(c)
+	case sectionNotes:
+		state.declareNotesWorkspace(c)
 	}
 }
 
@@ -97,12 +99,13 @@ func (state *State) reserveEmptyPageWithColor(c ui.C, bounds gfx.Rect, title, su
 // declareEmptyPageRegion declares the empty state over a region that holds
 // nothing else, at the region's own origin. The caller paints the icon once the
 // page has laid out, with paintEmptyPage.
-func (state *State) declareEmptyPageRegion(c ui.C, bounds gfx.Rect, title, sub, add string, descriptionColor gfx.Color, action gfx.ID, icon uint8, enabled bool) {
+func (state *State) declareEmptyPageRegion(c ui.C, bounds gfx.Rect, title, sub, add string, descriptionColor gfx.Color, action gfx.ID, icon uint8, enabled bool) ui.Box {
 	state.prepareEmptyPage(bounds, title, sub, add, descriptionColor, action, icon, enabled)
 	body := max(0, bounds.Height-142)
 	column := ui.Column(c).Absolute().Left(bounds.X).Top(bounds.Y).Width(bounds.Width).Height(bounds.Height).
 		MarginSides(0, 0, 9, 0).PadSides(max(20, body*0.40-48), 0, 0, 0).Items(ui.Center)
 	column.Children(func() { state.declareEmptyPageContent(c) })
+	return column
 }
 
 // declareEmptyPageContent declares the empty state's icon tile, title,

@@ -23,7 +23,7 @@ rect {{587.3333 116 7.8 1} {0.8862745 0.90588236 0.93333334 0.45} 0 0 {573.3333 
 rect {{587.3333 131 7.8 1} {0.8862745 0.90588236 0.93333334 0.45} 0 0 {573.3333 108 286.6667 492} true #22}
 rect {{587.3333 116 1 16} {0.8862745 0.90588236 0.93333334 0.45} 0 0 {573.3333 108 286.6667 492} true #23}
 rect {{594.1333 116 1 16} {0.8862745 0.90588236 0.93333334 0.45} 0 0 {573.3333 108 286.6667 492} true #24}
-rect {{287.5 74 1 526} {0.2 0.23529412 0.2901961 1} 0 0 {0 74 860 526} true #25}
+rect {{286.33334 74 1 526} {0.2 0.23529412 0.2901961 1} 0 0 {0 74 860 526} true #25}
 rect {{572.8334 74 1 526} {0.2 0.23529412 0.2901961 1} 0 0 {0 74 860 526} true #26}
 rect {{178 76 672 256} {0.2 0.23529412 0.2901961 1} 7.5 1 {0 0 0 0} false #29}
 rect {{179 77 670 254} {0.12156863 0.14117648 0.1764706 1} 6.5 1 {0 0 0 0} false #30}
@@ -229,7 +229,7 @@ hit "Terminal deploy@staging.example.com:22" terminal {286.6667 108 286.6667 492
 hit "New tab" button {573.3333 74 286.6667 526} disabled=false
 hit "Close pane" button {822 79 24 24} disabled=false
 hit "Terminal admin@192.168.1.1:22" terminal {573.3333 108 286.6667 492} disabled=false
-hit "Resize panes" slider {284 74 8 526} disabled=false
+hit "Resize panes" slider {282.83334 74 8 526} disabled=false
 hit "Resize panes" slider {569.3334 74 8 526} disabled=false
 hit "Layout" button {0 0 900 600} disabled=false
 hit "1 column" radio {195 151 207.33333 54} disabled=false
