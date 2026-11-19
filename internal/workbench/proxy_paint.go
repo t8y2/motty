@@ -279,11 +279,9 @@ func (state *State) declareProxyRow(row ui.ListRow) {
 	c := row.C
 	theme, pal, messages := state.Theme(), state.pal, state.messages
 	const height = float32(52)
+	// The route table never painted a row fill: selection and the pointer show in
+	// the details pane beside it, not on the row itself.
 	element := row.Element.Height(height).Shrink(0).FillWidth().Gap(0).Items(ui.Center)
-	if state.proxyList.Selected() == row.Index {
-		element = element.Background(theme.Muted)
-	}
-	element = element.Hover(ui.Look{}.Background(theme.Hover)).Pressed(ui.Look{}.Background(theme.Muted))
 	element.Children(func() {
 		ui.Row(c).Width(state.proxyColumns[0].Width).Height(height).Shrink(0).Items(ui.Center).Justify(ui.Center).Children(func() {
 			checked := state.proxyChecked != nil && state.proxyChecked[route.ID]
