@@ -405,7 +405,12 @@ func TestSFTPDirectoryTreeIndentsByDisplayDepth(t *testing.T) {
 	if got := tree.tree.Indent; got != sftpDirectoryTreeIndent {
 		t.Fatalf("the tree's indent was squeezed to %v; each row's display depth carries the clamp", got)
 	}
-	if got := tree.tree.Node(0).Depth; got != 4 {
+	// Depth is the folder's own level, which the tree reads for keyboard
+	// movement; DisplayDepth is the compressed indent its name is drawn at.
+	if got := tree.tree.Node(0).Depth; got != 12 {
+		t.Fatalf("deep row reports depth %d, want the folder's own 12", got)
+	}
+	if got := tree.tree.DisplayDepth(tree.tree.Node(0).Depth); got != 4 {
 		t.Fatalf("deep row indents at depth %d, want the four the width allows", got)
 	}
 }

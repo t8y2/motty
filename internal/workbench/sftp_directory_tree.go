@@ -684,6 +684,9 @@ func (w *sftpWindow) initDirectoryTreeState(side int) {
 	}
 	tree.tree.RowHeight = sftpDirectoryTreeRowHeight
 	tree.tree.Indent = sftpDirectoryTreeIndent
+	tree.tree.DisplayDepth = func(depth int) int {
+		return int(directoryTreeDisplayDepth(uint8(min(depth, 255)), tree.contentWidth))
+	}
 	tree.tree.Key = func(index int) int {
 		visible := w.directoryTree[side].visible
 		if index < 0 || index >= len(visible) {
@@ -699,8 +702,11 @@ func (w *sftpWindow) initDirectoryTreeState(side int) {
 		row := tree.visible[index]
 		node := row.node
 		branch := !node.loaded || node.loading || node.err != "" || len(node.children) > 0
+		// Depth is the folder's own level: the tree reads it for keyboard
+		// movement between a parent and its children. DisplayDepth compresses
+		// only the indent a deep path draws with.
 		return ui.TreeNode{
-			Depth: int(min(directoryTreeDisplayDepth(row.depth, tree.contentWidth), 31)), Branch: branch,
+			Depth: int(row.depth), Branch: branch,
 			Expanded: node.expanded, Selected: sameDirectoryTreePath(side == 0, node.path, tree.selectedPath),
 		}
 	}
