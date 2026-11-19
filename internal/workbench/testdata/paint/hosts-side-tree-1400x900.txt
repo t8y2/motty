@@ -72,21 +72,21 @@ text "Production" {271 260.5 70.25293 21}
 text "Staging" {271 292.5 49.006836 21}
 text "Network" {550 144.5 55.34375 23}
 text "(1)" {611.34375 145.5 13.277344 21}
-text "Router" {594 187.5 220.31999 22}
-text "admin" {594 211.5 220.31999 19}
-text "192.168.1.1" {817.66003 198 229.5 22}
+text "Router" {594 187.5 259.19995 22}
+text "admin" {594 211.5 259.19995 19}
+text "192.168.1.1" {837.19995 198 229.5 22}
 text "SSH" {1081.7 199.5 23.460938 19}
 text "Not connected" {1265 198 109 22}
 text "Servers" {550 250.5 50.5791 23}
 text "(2)" {606.5791 251.5 15.597656 21}
-text "Production" {594 293.5 220.31999 22}
-text "deploy" {594 317.5 220.31999 19}
-text "prod.example.com" {817.66003 304 229.5 22}
+text "Production" {594 293.5 259.19995 22}
+text "deploy" {594 317.5 259.19995 19}
+text "prod.example.com" {837.19995 304 229.5 22}
 text "SSH" {1081.7 305.5 23.460938 19}
 text "Not connected" {1265 304 109 22}
-text "Staging" {594 357.5 220.31999 22}
-text "deploy" {594 381.5 220.31999 19}
-text "staging.example.com" {817.66003 368 229.5 22}
+text "Staging" {594 357.5 259.19995 22}
+text "deploy" {594 381.5 259.19995 19}
+text "staging.example.com" {837.19995 368 229.5 22}
 text "SSH" {1081.7 369.5 23.460938 19}
 text "Not connected" {1265 368 109 22}
 text "Search hosts or ssh user@hostname…" {254 59 443 20}

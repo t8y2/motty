@@ -161,19 +161,19 @@ text "Servers" {448.85742 103.5 43.353516 19}
 text "2" {498.21094 103.5 7.1015625 19}
 text "Network" {317 144.5 55.34375 23}
 text "(1)" {378.34375 145.5 13.277344 21}
-text "Router" {361 187.5 170 22}
-text "admin" {361 211.5 170 19}
-text "192.168.1.1" {570 198 162.75 22}
+text "Router" {361 187.5 221.34 22}
+text "admin" {361 211.5 221.34 19}
+text "192.168.1.1" {575 198 162.75 22}
 text "Not connected" {765 198 109 22}
 text "Servers" {317 250.5 50.5791 23}
 text "(2)" {373.5791 251.5 15.597656 21}
-text "Production" {361 293.5 170 22}
-text "deploy" {361 317.5 170 19}
-text "prod.example.com" {570 304 162.75 22}
+text "Production" {361 293.5 221.34 22}
+text "deploy" {361 317.5 221.34 19}
+text "prod.example.com" {575 304 162.75 22}
 text "Not connected" {765 304 109 22}
-text "Staging" {361 357.5 170 22}
-text "deploy" {361 381.5 170 19}
-text "staging.example.com" {570 368 162.75 22}
+text "Staging" {361 357.5 221.34 22}
+text "deploy" {361 381.5 221.34 19}
+text "staging.example.com" {575 368 162.75 22}
 text "Not connected" {765 368 109 22}
 text "Search hosts or ssh user@hostna…" {254 59 229.68213 20}
 text "Connect" {522.6821 59 51.124023 20}
