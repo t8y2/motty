@@ -443,7 +443,7 @@ func (state *State) checkForUpdates(asked bool) {
 			pkg = state.options.Updater.Package()
 		}
 		check = func() (update.Release, error) {
-			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), update.CheckBudget)
 			defer cancel()
 			return update.CheckPackage(ctx, nil, runtime.GOOS, updateArch(), pkg)
 		}
