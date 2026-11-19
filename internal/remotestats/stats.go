@@ -68,6 +68,8 @@ type counters struct {
 
 // linuxShellCommand runs a POSIX sampler independently of the SSH account's
 // login shell. In Zsh, an unmatched GPU sensor glob can otherwise abort it.
+// The host must provide /bin/sh; an Android/Termux-style system without one is
+// not a supported monitor target.
 func linuxShellCommand(script string) string {
 	return "exec /bin/sh -c '" + strings.ReplaceAll(script, "'", `'\''`) + "'"
 }
