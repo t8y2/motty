@@ -135,6 +135,7 @@ var (
 	hitStateNoticeDismiss      = tree.ID(shellHits, "state-notice-dismiss")
 	hitStateNoticeClose        = tree.ID(shellHits, "state-notice-close")
 	hitStateNoticeOK           = tree.ID(shellHits, "state-notice-ok")
+	hitStateNoticeReveal       = tree.ID(shellHits, "state-notice-reveal")
 )
 
 // Lists whose items are numbered by a database or session number: a host row, a

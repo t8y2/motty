@@ -96,17 +96,43 @@ func (state *State) declareStateNoticeDialog(c ui.C) {
 		})
 	})
 	dialog.Footer(func() {
-		state.dialogActionFooter(c, components.ButtonAction{ID: hitStateNoticeOK, Label: state.messages.StateNoticeOK})
+		actions := make([]components.ButtonAction, 0, 2)
+		if state.stateNotice.crashReport != "" {
+			actions = append(actions, components.ButtonAction{
+				ID: hitStateNoticeReveal, Label: state.messages.Tools.PreviousCrashReveal,
+				Variant: components.ButtonSecondary, Disabled: state.revealBusy,
+			})
+		}
+		actions = append(actions, components.ButtonAction{ID: hitStateNoticeOK, Label: state.messages.StateNoticeOK})
+		state.dialogActionFooter(c, actions...)
 	})
 }
 
 func (state *State) clickStateNotice(id gfx.ID) {
-	if id != hitStateNoticeDismiss && id != hitStateNoticeClose && id != hitStateNoticeOK {
+	switch id {
+	case hitStateNoticeReveal:
+		// The report is named in the body; opening its folder is the same next
+		// step as mentioning it there, so the dialog stays up to be read.
+		state.revealCrashReport()
+		return
+	case hitStateNoticeDismiss, hitStateNoticeClose, hitStateNoticeOK:
+	default:
 		return
 	}
 	state.closeModal()
 	state.offerDevelopmentImport()
 	state.showNextPrompt()
+}
+
+// revealCrashReport shows the crash report the dialog names in the system's
+// file manager, selected, so the user can attach it without retyping the path.
+func (state *State) revealCrashReport() {
+	report := state.stateNotice.crashReport
+	if report == "" {
+		return
+	}
+	m := state.messages.Tools
+	state.revealLocalPath(report, m.PreviousCrashReveal, m.PreviousCrashRevealFailed, m.PreviousCrashRevealMissing)
 }
 
 // explainPreviousCrash tells the user, once, that the last run ended abnormally

@@ -668,6 +668,9 @@ type ToolsMessages struct {
 	DiagnosticsFailedFmt            string
 	PreviousCrashTitle              string
 	PreviousCrashBodyFmt            string
+	PreviousCrashReveal             string
+	PreviousCrashRevealFailed       string
+	PreviousCrashRevealMissing      string
 	CatBackup                       string
 	CatMCP                          string
 	BackupGroupFile                 string

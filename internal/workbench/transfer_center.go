@@ -214,11 +214,19 @@ func transferCanReveal(snapshot sftpclient.TransferSnapshot) bool {
 		snapshot.Destination != ""
 }
 
+// revealResult is how a background reveal finished, with the text to report a
+// failure in: the title the notice has, and what to say when the file manager
+// does not start or the target is gone.
 type revealResult struct {
-	err error
+	err                    error
+	title, failed, missing string
 }
 
-func (state *State) revealTransferPath(path string) {
+// revealLocalPath shows path in the system's file manager. A native reveal can
+// wait for the file manager, so it runs away from the window thread and leaves
+// its outcome for pumpRevealResults. One reveal is in flight at a time: a second
+// request while one runs is dropped.
+func (state *State) revealLocalPath(path, title, failed, missing string) {
 	if state.revealBusy {
 		return
 	}
@@ -234,11 +242,16 @@ func (state *State) revealTransferPath(path string) {
 		} else {
 			err = reveal(path)
 		}
-		state.revealResults <- revealResult{err: err}
+		state.revealResults <- revealResult{err: err, title: title, failed: failed, missing: missing}
 		if state.options.Invalidate != nil {
 			state.options.Invalidate()
 		}
 	}()
+}
+
+func (state *State) revealTransferPath(path string) {
+	m := state.messages.Transfers
+	state.revealLocalPath(path, m.ShowInFolder, m.ShowInFolderFailed, m.ShowInFolderMissing)
 }
 
 func (state *State) pumpRevealResults() {
@@ -252,11 +265,11 @@ func (state *State) pumpRevealResults() {
 			if result.err == nil {
 				continue
 			}
-			detail := state.messages.Transfers.ShowInFolderFailed
+			detail := result.failed
 			if errors.Is(result.err, fs.ErrNotExist) {
-				detail = state.messages.Transfers.ShowInFolderMissing
+				detail = result.missing
 			}
-			state.showActionFailure(state.messages.Transfers.ShowInFolder, result.err, detail)
+			state.showActionFailure(result.title, result.err, detail)
 		default:
 			return
 		}
