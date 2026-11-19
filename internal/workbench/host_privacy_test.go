@@ -121,12 +121,14 @@ func TestHostPrivacyMasksVNCUsernamesWithoutHidingAddresses(t *testing.T) {
 	for _, viaSSH := range []bool{false, true} {
 		state := hostPrivacyVNCStateForTest(t, viaSSH)
 		for _, view := range []hostViewMode{hostViewList, hostViewGrid} {
-			state.hostView = view
-			canvas := hostPrivacyCanvas(t)
-			state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-			assertHostSecretsAbsent(t, &canvas, privacyTestUser)
-			if !canvasContainsText(&canvas, privacyTestVNCAddress) {
-				t.Fatalf("viaSSH=%v view=%v hid the address with username-only privacy", viaSSH, view)
+			for _, width := range []float32{1400, 1200} {
+				state.hostView = view
+				canvas := hostPrivacyCanvas(t)
+				state.Paint(&canvas, gfx.Size{Width: width, Height: 900})
+				assertHostSecretsAbsent(t, &canvas, privacyTestUser)
+				if !canvasContainsText(&canvas, privacyTestVNCAddress) {
+					t.Fatalf("viaSSH=%v view=%v width=%v hid the address with username-only privacy", viaSSH, view, width)
+				}
 			}
 		}
 	}

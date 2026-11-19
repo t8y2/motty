@@ -2285,12 +2285,14 @@ func (state *State) declareHostTreeRow(c ui.C, d *hostRowDrawer, rowWidth, left 
 	statusWords := statusWidth > lightWidth
 	statusStart := rowWidth - statusWidth - indent
 	tagsStart := max(rowWidth*0.65, float32(560))
-	// The name column takes a fair share of the row on its own, and the rest of
-	// the room before the address keeps it whole: a long host name must not be
-	// cut short beside columns that have space to spare (#1064).
+	// The name column takes a fair share of the row on its own, but the address
+	// keeps its own share before the tag column: a long host name must not be
+	// cut short beside columns that have space to spare (#1064), and a masked
+	// address must not be squeezed out by that name.
 	addressShare := max(rowWidth*0.45, float32(330))
-	nameWidth := min(max(rowWidth*0.34, nameLeast), max(min(addressShare, statusStart-180)-leadWidth-8, nameLeast))
-	addressStart := min(addressShare, max(statusStart-180, leadWidth+nameWidth+8))
+	addressTarget := min(rowWidth*0.25, max(min(tagsStart, statusStart)-leadWidth-nameLeast-16, 0))
+	addressStart := max(leadWidth+nameLeast+8, min(addressShare, min(tagsStart, statusStart)-8-addressTarget))
+	nameWidth := min(max(rowWidth*0.34, nameLeast), max(addressStart-leadWidth-8, nameLeast))
 	addressWidth := max(min(rowWidth*0.25, min(tagsStart, statusStart)-addressStart-8), 0)
 	tagsWidth := min(rowWidth*0.18, statusStart-tagsStart-8)
 	status, _ := state.hostStatus(host)
