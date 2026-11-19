@@ -3035,7 +3035,9 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 	}
 	viewport := ui.Column(c).Fill()
 	viewport.Children(func() {
-		scroller := ui.Scroll(c).Fill().Scrollbars().ScrollbarSize(hostFormBarWidth)
+		scroller := ui.Scroll(c).Fill().AlwaysScrollbars().ScrollbarSize(hostFormBarWidth).
+			ScrollbarIDs(hitHostFormScrollbar, gfx.ID{}).
+			ScrollbarLabels(state.chrome.hostDialogTitle, "")
 		form.pageScroll = scroller.ScrollState()
 		form.scroller = scroller
 		scroller.Draw(chrome.hostFormViewportDraw)
