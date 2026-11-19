@@ -422,20 +422,64 @@ func TestCommandBarSpansTheContentWidthBesideAFilePanel(t *testing.T) {
 	if !ok || !context.Open || context.Side != layoutcore.ContextLeft {
 		t.Fatalf("the files panel is not docked left: %+v", context)
 	}
+	full := state.fullWorkspacePixelBounds(size)
 	frame := state.toolbarDockFrame(size, true)
 	bar := state.commands.bar
 	if bar.Width <= 0 || bar.Height <= 0 {
 		t.Fatalf("the bar was not painted: %+v", bar)
 	}
-	if bar.X != frame.X || bar.Width != frame.Width {
-		t.Fatalf("bar spans %v..%v, want the content frame %v..%v", bar.X, bar.X+bar.Width, frame.X, frame.X+frame.Width)
+	if bar.X != full.X || bar.Width != full.Width {
+		t.Fatalf("bar spans %v..%v, want the content frame %v..%v", bar.X, bar.X+bar.Width, full.X, full.X+full.Width)
+	}
+	if bar.Y != frame.Y+frame.Height {
+		t.Fatalf("bar top = %v, want the dock frame's bottom %v", bar.Y, frame.Y+frame.Height)
 	}
 	// Both bottom corners of the content frame are painted by the strip: the top
 	// rectangle at each corner is the bar's own fill, so no side panel covers it
 	// and no gap is left beside it.
 	want := withAlpha(state.pal.shell, 0.6)
 	mid := bar.Y + commandsBarHeight/2
-	for _, corner := range []gfx.Point{{X: frame.X + 2, Y: mid}, {X: frame.X + frame.Width - 3, Y: mid}} {
+	for _, corner := range []gfx.Point{{X: full.X + 2, Y: mid}, {X: full.X + full.Width - 3, Y: mid}} {
+		var top gfx.Rectangle
+		found := false
+		for _, r := range canvas.Rectangles() {
+			if corner.X >= r.Bounds.X && corner.X < r.Bounds.X+r.Bounds.Width &&
+				corner.Y >= r.Bounds.Y && corner.Y < r.Bounds.Y+r.Bounds.Height {
+				top, found = r, true
+			}
+		}
+		if !found || top.Color != want {
+			t.Fatalf("bottom corner %v is %+v, want the bar fill %+v", corner, top.Color, want)
+		}
+	}
+}
+
+// A terminal toolbar docked to a side takes its rail width out of the panes,
+// but the command strip still spans the content frame under the rail: the rail
+// ends at the strip's top, so the corner below it belongs to the bar.
+func TestCommandBarSpansTheContentWidthBesideASideRail(t *testing.T) {
+	state, _ := monitorFixture(t)
+	state.snippets.list = []snippet{{Name: "pwd", Command: "pwd"}}
+	state.commands.shown = true
+	state.terminalToolbarPosition = terminalToolbarLeft
+	size := gfx.Size{Width: 1444, Height: 808}
+	canvas, _ := paintAt(state, size)
+
+	full := state.fullWorkspacePixelBounds(size)
+	frame := state.toolbarDockFrame(size, true)
+	if frame.Width >= full.Width {
+		t.Fatalf("the side rail did not narrow the dock frame (%v vs %v); the case proves nothing", frame.Width, full.Width)
+	}
+	bar := state.commands.bar
+	if bar.Width <= 0 || bar.Height <= 0 {
+		t.Fatalf("the bar was not painted: %+v", bar)
+	}
+	if bar.X != full.X || bar.Width != full.Width {
+		t.Fatalf("bar spans %v..%v, want the content frame %v..%v", bar.X, bar.X+bar.Width, full.X, full.X+full.Width)
+	}
+	want := withAlpha(state.pal.shell, 0.6)
+	mid := bar.Y + commandsBarHeight/2
+	for _, corner := range []gfx.Point{{X: full.X + 2, Y: mid}, {X: full.X + full.Width - 3, Y: mid}} {
 		var top gfx.Rectangle
 		found := false
 		for _, r := range canvas.Rectangles() {
