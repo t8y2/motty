@@ -9,10 +9,7 @@ import (
 // knownHostsSectionUI is what the known-hosts page's declaration leaves for its
 // paint.
 type knownHostsSectionUI struct {
-	refresh, retrust, remove, emptySlot ui.Box
-	// pagination is the slot the footer paints the page chooser into, as the
-	// page's BeginPagination drew it.
-	pagination                              ui.Box
+	refresh, retrust, remove, emptySlot     ui.Box
 	refreshWidth, retrustWidth, deleteWidth float32
 	refreshIcon, retrustIcon, deleteIcon    uint8
 	condensed                               bool
@@ -137,28 +134,28 @@ func (state *State) declareKnownHostsWorkspace(c ui.C) {
 			ui.Text(c, view.selectionText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).Width(selectionWidth).Ellipsis()
 			ui.Text(c, view.status).FontSize(metrics.FontSizeS).Color(statusColor).Grow(1).Ellipsis()
 			if paginated {
-				layout.pagination = ui.Slot(c).Size(242, 30).Shrink(0)
+				pages := (len(view.visible) + knownHostsPageSize - 1) / knownHostsPageSize
+				// The items carry the application's identities, so the central
+				// click handler keeps turning the pages as it did for the old
+				// paint-time chooser.
+				ui.Pagination(c, []ui.PaginationItem{
+					{ID: hitKnownHostsPrevious, Label: messages.KnownHostsPrevious, Kind: ui.PaginationPrevious, Disabled: view.page == 0},
+					{Label: view.pageText, Kind: ui.PaginationPage, Current: true},
+					{ID: hitKnownHostsNext, Label: messages.KnownHostsNext, Kind: ui.PaginationNext, Disabled: view.page+1 >= pages},
+				}).Size(242, 30).Shrink(0)
 			}
 		})
 	})
 	body.Clip().DrawOver(layout.draw)
 }
 
-// paintKnownHostsWorkspace paints the known-hosts page's empty state and its
-// pagination into the slots its declaration left. The table is declared by the
+// paintKnownHostsWorkspace paints the known-hosts page's empty state into the
+// slot its declaration left. The table and the page chooser are declared by the
 // page itself.
 func (state *State) paintKnownHostsWorkspace(canvas *gfx.Canvas) {
 	layout := &state.sectionBodies.knownHosts
 	if layout.empty {
 		state.drawReservedEmptyPage(canvas, layout.emptySlot, layout.emptyIcon)
-	}
-	if layout.pagination.Valid() {
-		view, messages := &state.knownHosts, state.messages
-		bar := components.BeginPagination(canvas, state.Theme(), layout.pagination.Rect())
-		bar.AddPrevious(hitKnownHostsPrevious, messages.KnownHostsPrevious, view.page == 0)
-		bar.AddPage(gfx.ID{}, view.pageText, true)
-		pages := (len(view.visible) + knownHostsPageSize - 1) / knownHostsPageSize
-		bar.AddNext(hitKnownHostsNext, messages.KnownHostsNext, view.page+1 >= pages)
 	}
 }
 
