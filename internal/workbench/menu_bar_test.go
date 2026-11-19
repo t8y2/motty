@@ -41,3 +41,22 @@ func TestMenuBarFindReturnsTheFieldFocus(t *testing.T) {
 		t.Fatal("the menu action did not open the bar")
 	}
 }
+
+func TestMenuBarSettingsOpensSettings(t *testing.T) {
+	state := newTestState(t, Options{})
+	menus := state.MenuBar()
+	if len(menus) == 0 || len(menus[0].Items) < 7 {
+		t.Fatalf("menus[0].Items = %+v", menus)
+	}
+	settings := menus[0].Items[6]
+	if settings.Title != state.messages.NavSettings || settings.Disabled || settings.OnSelect == nil {
+		t.Fatalf("settings item = %+v", settings)
+	}
+	if chord := state.shortcuts.chords.Chord(shortcutSettings); settings.Shortcut != chord {
+		t.Fatalf("settings shortcut = %+v, want %+v", settings.Shortcut, chord)
+	}
+	result := settings.OnSelect()
+	if !result.Handled || !result.Repaint || state.activeSection != sectionSettings {
+		t.Fatalf("Settings result = %+v, section = %d", result, state.activeSection)
+	}
+}

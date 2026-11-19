@@ -30,6 +30,8 @@ func (state *State) MenuBar() []app.Menu {
 			item(shortcutLocalTerminal, false),
 			{Separator: true},
 			item(shortcutCloseTab, !hasSession),
+			{Separator: true},
+			item(shortcutSettings, false),
 		}},
 		{Title: state.messages.MenuEdit, Items: []app.MenuBarItem{
 			item(shortcutCopy, !hasSession),

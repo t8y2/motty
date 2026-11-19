@@ -43,6 +43,7 @@ const (
 	shortcutSnippetPicker
 	shortcutHostsPanel
 	shortcutAcceptSuggestion
+	shortcutSettings
 	shortcutActionCount
 )
 
@@ -102,6 +103,7 @@ func defaultShortcuts() shortcutMap {
 	// shell itself leaves it. It is a binding of its own because the badge beside
 	// the suggestion names it and the user can choose another one there.
 	shortcuts.chords.Set(shortcutAcceptSuggestion, keymap.Chord{Key: gfx.KeyRight})
+	shortcuts.chords.Set(shortcutSettings, keymap.Chord{Modifiers: primary, Char: ','})
 	shortcuts.refreshLabels()
 	return shortcuts
 }
@@ -351,6 +353,8 @@ func (action shortcutAction) String() string {
 		return "snippet_picker"
 	case shortcutAcceptSuggestion:
 		return "accept_suggestion"
+	case shortcutSettings:
+		return "settings"
 	default:
 		return ""
 	}
@@ -767,6 +771,8 @@ func (state *State) executeShortcut(action shortcutAction) gfx.EventResult {
 		} else {
 			result.Focus = state.activeTerminalFocusHit()
 		}
+	case shortcutSettings:
+		state.openSettings()
 	}
 	return result
 }
