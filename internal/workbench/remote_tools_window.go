@@ -101,7 +101,7 @@ func (w *remoteToolsWindow) config() app.Config {
 		MinWidth: remoteToolsMinWidth, MinHeight: remoteToolsMinHeight,
 		ClearColor: app.Color{Red: float64(w.ui.pal.workspace.Red), Green: float64(w.ui.pal.workspace.Green), Blue: float64(w.ui.pal.workspace.Blue), Alpha: 1},
 		Paint:      w.paint, OnKey: w.key, OnPointer: w.pointer, OnClosed: w.dispose,
-		OnShortcut: w.shortcut, OnScroll: w.scroll, TextInput: w.textInput,
+		OnShortcut: w.shortcut, TextInput: w.textInput,
 		OnMinimize: func(minimized bool) {
 			if minimized || w.closed || w.ui.remote.loading {
 				return
@@ -118,6 +118,10 @@ func (w *remoteToolsWindow) config() app.Config {
 	// The page's Config paints the page; the window's paint keeps the presenters
 	// in step with its owner before the page is declared.
 	config.Paint = w.paint
+	// The window routes the wheel: its own surfaces first, then the page's. The
+	// page must not have this handler as its fallback, or a wheel no area under
+	// the pointer uses would come back here from Page.Wheel forever.
+	config.OnScroll = w.scroll
 	return config
 }
 
