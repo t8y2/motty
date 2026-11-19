@@ -3,6 +3,8 @@ package workbench
 import (
 	"context"
 	"errors"
+	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -12,7 +14,17 @@ import (
 	"motty/internal/ai/llm"
 	"motty/internal/ai/tools"
 	"motty/internal/i18n"
+	"motty/internal/sftpclient"
 )
+
+// countingRemote is an SFTP connection a test can watch being closed by the
+// watchdog that gives up on a request.
+type countingRemote struct{ closed bool }
+
+func (*countingRemote) Getwd() (string, error)                { return "", nil }
+func (*countingRemote) ReadDir(string) ([]os.FileInfo, error) { return nil, nil }
+func (*countingRemote) Open(string) (io.ReadCloser, error)    { return nil, nil }
+func (r *countingRemote) Close() error                        { r.closed = true; return nil }
 
 func TestAIRunShowsActivityBeforeFirstOutputAndSchedulesRepaint(t *testing.T) {
 	state, _ := panelState(t, nil)
@@ -352,5 +364,47 @@ func TestAIRunMixedReportedAndUnknownTurnsRemainIncomplete(t *testing.T) {
 	_, usage := state.aiRunStatusText()
 	if !strings.Contains(usage, "46") || !strings.Contains(usage, "may be incomplete") {
 		t.Fatalf("mixed reported and unknown turns look complete: %q", usage)
+	}
+}
+
+// TestAStopThatNeverComesBackStillFinishes covers #974: a stop must not wait
+// forever on a transport that ignores the cancellation. After the grace period
+// the run is finished locally, so it leaves "Stopping...", its tool no longer
+// looks active, and the assistant can take a new request again.
+func TestAStopThatNeverComesBackStillFinishes(t *testing.T) {
+	state, _ := panelState(t, nil)
+	state.setLanguage(i18n.English)
+	state.ai.stopGrace = 5 * time.Millisecond
+	remote := &countingRemote{}
+	run := &aiRun{cancel: func() {}, open: -1, backend: &aiBackend{sftp: map[uint32]sftpclient.Remote{1: remote}}}
+	state.ai.run = run
+	state.aiEvent(run, agent.Event{Kind: agent.EventToolStart, Call: llm.ToolCall{ID: "tool", Name: tools.NameTerminalRead}})
+	state.aiStop()
+	if run.stats.phase != aiRunStopping {
+		t.Fatalf("stop did not enter Stopping: %v", run.stats.phase)
+	}
+	pumpUntil(t, state, "the stuck stop to finish", func() bool { return state.ai.run == nil })
+	if run.stats.phase != aiRunStopped {
+		t.Fatalf("final phase = %v, want aiRunStopped", run.stats.phase)
+	}
+	for _, item := range state.ai.items {
+		if item.kind == aiTool && (item.status == aiToolRunning || item.status == aiToolWaiting) {
+			t.Fatal("a cancelled tool still looks active after the watchdog finished it")
+		}
+	}
+	if status, _ := state.aiRunStatusText(); strings.Contains(status, state.messages.AIPanel.RunStopping) {
+		t.Fatalf("status still says stopping after the watchdog: %q", status)
+	}
+	if !remote.closed {
+		t.Fatal("the watchdog did not release the abandoned request's SFTP connection")
+	}
+	// The abandoned request may still answer later. Its event and completion
+	// must not touch the run that has already finished.
+	items := len(state.ai.items)
+	state.aiEvent(run, agent.Event{Kind: agent.EventText, Text: "late"})
+	state.aiFinished(run, nil, nil)
+	if state.ai.run != nil || len(state.ai.items) != items || run.stats.phase != aiRunStopped {
+		t.Fatalf("a late result changed the finished run: run=%t items=%d phase=%v",
+			state.ai.run != nil, len(state.ai.items), run.stats.phase)
 	}
 }
