@@ -119,6 +119,10 @@ type TransferSnapshot struct {
 	FilesTotal  int
 	BytesDone   int64
 	BytesTotal  int64
+	// SourceModTime is the local source's modification time when this attempt
+	// read it. A resume adopts the acknowledged prefix only while the source is
+	// still that file: the size alone cannot tell an in-place edit apart.
+	SourceModTime time.Time
 	// BytesPerSecond is the recent speed of a running transfer, smoothed; zero
 	// until there is something to measure and while paused.
 	BytesPerSecond int64
@@ -264,6 +268,10 @@ type request struct {
 	// checked when the upload starts so a source that changed size meanwhile
 	// is verified instead.
 	trustedTotal int64
+	// trustedModTime is the source modification time the trusted prefix was
+	// recorded against. The size check cannot see an in-place edit, so the
+	// time is compared as well.
+	trustedModTime time.Time
 	// copySource opens a subsystem on the server to read from, and
 	// copySources/copyRoot name the batch copied into destination.
 	copySource  RemoteSource
@@ -481,17 +489,19 @@ func (worker *Worker) QueueUpload(localPath, remotePath string, recursive bool, 
 // attempt left. trusted is the length of the prefix that attempt wrote and had
 // acknowledged on the server; those bytes are already on the server and are not
 // read back to be compared, so a resume starts sending at once. trustedTotal is
-// the source size that prefix was recorded against; if the source is no longer
-// that size the upload verifies the partial instead.
-func (worker *Worker) QueueUploadResume(localPath, remotePath string, trusted, trustedTotal int64) (uint64, bool) {
-	if trusted <= 0 || trustedTotal <= 0 || trusted > trustedTotal {
-		// Nothing pins the prefix to a known source size, so let the upload
-		// verify the partial instead of adopting it.
+// the source size that prefix was recorded against, and sourceModTime the
+// source's modification time; if the source is no longer that file the upload
+// verifies the partial instead.
+func (worker *Worker) QueueUploadResume(localPath, remotePath string, trusted, trustedTotal int64, sourceModTime time.Time) (uint64, bool) {
+	if trusted <= 0 || trustedTotal <= 0 || trusted > trustedTotal || sourceModTime.IsZero() {
+		// Nothing pins the prefix to a known source, so let the upload verify
+		// the partial instead of adopting it.
 		return worker.QueueUpload(localPath, remotePath, false, ExistingResume)
 	}
 	return worker.enqueueTransfer(request{
 		operation: OperationUpload, local: localPath, remote: remotePath,
 		policy: ExistingResume, trusted: trusted, trustedTotal: trustedTotal,
+		trustedModTime: sourceModTime,
 	})
 }
 
@@ -893,16 +903,18 @@ func (worker *Worker) Retry(id uint64, policy ExistingPolicy) bool {
 	record.request.policy = policy
 	record.request.trusted = 0
 	record.request.trustedTotal = 0
+	record.request.trustedModTime = time.Time{}
 	if policy == ExistingResume && record.request.operation == OperationUpload && !record.request.recursive {
 		// The bytes this attempt acknowledged are on the server and came from
 		// this source, so the continuation need not read them back — but only
 		// while the source is still the file that was being sent. A source
-		// changed since then (even to the same size) must fall back to the
-		// verification the partial normally gets. The size is rechecked when
-		// the upload starts, where the source is already stat'd, so this does
-		// no file I/O under the lock.
+		// changed since then, even to the same size, must fall back to the
+		// verification the partial normally gets. The size and modification
+		// time are rechecked when the upload starts, where the source is
+		// already stat'd, so this does no file I/O under the lock.
 		record.request.trusted = record.snapshot.BytesDone
 		record.request.trustedTotal = record.snapshot.BytesTotal
+		record.request.trustedModTime = record.snapshot.SourceModTime
 	}
 	record.snapshot.State = TransferQueued
 	record.snapshot.Error = ""
@@ -1200,6 +1212,16 @@ func (worker *Worker) setTotals(id uint64, files int, bytes int64) {
 	}
 	worker.mu.Unlock()
 	worker.changed()
+}
+
+// setSourceModTime records the local source's modification time when an upload
+// starts, so a later resume can tell whether the source is still that file.
+func (worker *Worker) setSourceModTime(id uint64, mod time.Time) {
+	worker.mu.Lock()
+	if record := worker.transferLocked(id); record != nil {
+		record.snapshot.SourceModTime = mod
+	}
+	worker.mu.Unlock()
 }
 
 func (worker *Worker) setProgress(id uint64, files int, bytes, resumed int64) {
@@ -1544,8 +1566,10 @@ func (worker *Worker) upload(client Remote, next request, generation uint64) (fi
 	}
 	worker.setTotals(next.id, totalFiles, totalBytes)
 	if !info.IsDir() {
+		worker.setSourceModTime(next.id, info.ModTime())
 		trusted := next.trusted
-		if trusted > 0 && next.trustedTotal > 0 && info.Size() != next.trustedTotal {
+		if trusted > 0 && next.trustedTotal > 0 &&
+			(info.Size() != next.trustedTotal || !info.ModTime().Equal(next.trustedModTime)) {
 			// The source is not the file the trusted prefix was measured on,
 			// so the partial is verified rather than adopted.
 			trusted = 0

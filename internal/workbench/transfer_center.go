@@ -393,7 +393,7 @@ func (state *State) resumeInterruptedTransfers(view *sftpView) {
 		switch snapshot.Operation {
 		case sftpclient.OperationUpload:
 			if !snapshot.Recursive && snapshot.BytesDone > 0 && snapshot.BytesTotal > 0 {
-				id, queued = view.worker.QueueUploadResume(snapshot.Source, snapshot.Destination, snapshot.BytesDone, snapshot.BytesTotal)
+				id, queued = view.worker.QueueUploadResume(snapshot.Source, snapshot.Destination, snapshot.BytesDone, snapshot.BytesTotal, snapshot.SourceModTime)
 			} else {
 				id, queued = view.worker.QueueUpload(snapshot.Source, snapshot.Destination, snapshot.Recursive, sftpclient.ExistingResume)
 			}

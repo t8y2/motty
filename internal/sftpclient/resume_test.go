@@ -2,11 +2,13 @@ package sftpclient
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // countingReadRemote wraps the test remote and counts every byte read back
@@ -71,7 +73,7 @@ func TestTrustedResumeDoesNotReadThePartialBack(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	id, queued := worker.QueueUploadResume(local, "trusted.bin", trusted, int64(len(payload)))
+	id, queued := worker.QueueUploadResume(local, "trusted.bin", trusted, int64(len(payload)), sourceModTime(t, local))
 	result := queueResult(t, id, queued, worker)
 	if result.Err != nil || result.Resumed != trusted || result.Bytes != int64(len(payload)) {
 		t.Fatalf("resume result = %+v, want resumed %d of %d", result, trusted, len(payload))
@@ -132,7 +134,7 @@ func TestATrustLongerThanThePartialStillVerifies(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	id, queued := worker.QueueUploadResume(local, "overflow.bin", prefix+1024, int64(len(payload)))
+	id, queued := worker.QueueUploadResume(local, "overflow.bin", prefix+1024, int64(len(payload)), sourceModTime(t, local))
 	result := queueResult(t, id, queued, worker)
 	if result.Err != nil || result.Resumed != prefix || result.Bytes != int64(len(payload)) {
 		t.Fatalf("resume result = %+v, want resumed %d of %d", result, prefix, len(payload))
@@ -157,7 +159,7 @@ func TestATrustFromAChangedSourceStillVerifies(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	id, queued := worker.QueueUploadResume(local, "changed.bin", prefix, int64(len(payload))+1)
+	id, queued := worker.QueueUploadResume(local, "changed.bin", prefix, int64(len(payload))+1, sourceModTime(t, local))
 	result := queueResult(t, id, queued, worker)
 	if result.Err != nil || result.Resumed != prefix || result.Bytes != int64(len(payload)) {
 		t.Fatalf("resume result = %+v, want resumed %d of %d", result, prefix, len(payload))
@@ -165,4 +167,59 @@ func TestATrustFromAChangedSourceStillVerifies(t *testing.T) {
 	if reads.Load() <= 0 {
 		t.Fatal("a trust recorded against another size did not verify the partial")
 	}
+}
+
+// A source edited in place at the same size is not the file the trusted prefix
+// was measured on: the size matches, so only the modification time can tell,
+// and the partial must be verified instead of adopted. The old prefix would
+// otherwise stay on the server and the new tail would be appended to it.
+func TestATrustFromASameSizeEditStillVerifies(t *testing.T) {
+	worker, root, reads := countingWorker(t)
+	payload := bytes.Repeat([]byte("motty same size edit "), 1<<13)
+	local := filepath.Join(t.TempDir(), "edited.bin")
+	if err := os.WriteFile(local, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	prefix := int64(32 << 10)
+	partial := filepath.Join(root, remotePartialPath("edited.bin"))
+	if err := os.WriteFile(partial, payload[:prefix], 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before := sourceModTime(t, local)
+
+	file, err := os.OpenFile(local, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteAt([]byte("X"), 10); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	after := before.Add(2 * time.Second)
+	if err := os.Chtimes(local, after, after); err != nil {
+		t.Fatal(err)
+	}
+
+	id, queued := worker.QueueUploadResume(local, "edited.bin", prefix, int64(len(payload)), before)
+	result := queueResult(t, id, queued, worker)
+	if result.Err == nil || !errors.Is(result.Err, ErrResumeMismatch) {
+		t.Fatalf("same-size edit resume = %+v, want ErrResumeMismatch", result)
+	}
+	if reads.Load() <= 0 {
+		t.Fatal("a same-size edited source did not verify the partial")
+	}
+}
+
+// sourceModTime returns a file's modification time, the identity a resume
+// records for the source.
+func sourceModTime(t *testing.T, path string) time.Time {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return info.ModTime()
 }

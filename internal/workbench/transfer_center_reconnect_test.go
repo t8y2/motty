@@ -117,6 +117,9 @@ func TestTransferCenterResumesInterruptedUploadAfterReconnect(t *testing.T) {
 	if entry.snapshot.State != sftpclient.TransferInterrupted || entry.owner != nil {
 		t.Fatalf("entry = %+v owner=%v, want an interrupted row without a view", entry.snapshot, entry.owner != nil)
 	}
+	if entry.snapshot.SourceModTime.IsZero() {
+		t.Fatal("the interrupted upload did not record the source modification time")
+	}
 	partial := testUploadPartial(t, remote, remoteDir)
 	if len(partial) == 0 || len(partial) >= len(payload) || !bytes.Equal(partial, payload[:len(partial)]) {
 		t.Fatalf("kept partial = %d bytes, want a prefix of the source", len(partial))
