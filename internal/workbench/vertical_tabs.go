@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"github.com/vivaui/viva/base"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
@@ -399,11 +400,13 @@ func (state *State) drawVerticalTabsParts(d *ui.DrawContext) {
 // bar the pointer drags.
 func (state *State) drawVerticalTabsScrollbar(d *ui.DrawContext) {
 	view, m := &state.verticalTabs, state.messages
+	view.barGeometry = base.LayoutScrollArea(d.Rect, gfx.Size{Width: d.Rect.Width, Height: view.content},
+		base.ScrollAreaLayout{OffsetY: view.scroll, BarSize: scrollbarHoverSize})
 	area := components.BeginScrollArea(d.Canvas, state.Theme(), d.Rect, gfx.Size{Width: d.Rect.Width, Height: view.content}).
 		Offset(0, view.scroll).
 		VerticalScrollbar(hitVerticalTabsBar, m.VerticalTabsScrollbar, "").
 		HoverScrollbars(view.over || view.barDrag)
-	view.barGeometry = area.EndContent()
+	area.EndContent()
 }
 
 // drawVerticalTabsSeparator paints the line that parts the sidebar from the rest

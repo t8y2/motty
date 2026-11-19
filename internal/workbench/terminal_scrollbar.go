@@ -4,6 +4,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/vivaui/viva/base"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 )
@@ -67,6 +68,19 @@ func (state *State) terminalBarFade(canvas *gfx.Canvas, session *Session) float3
 	return canvas.Animate(id, 0, target, gfx.DefaultMotion())
 }
 
+// terminalScrollGeometry is the terminal bar's geometry without painting it.
+// The bar is as thick as the full-size scroll area the component draws.
+func (state *State) terminalScrollGeometry(session *Session, area gfx.Rect) base.ScrollAreaGeometry {
+	screen := session.term.screen
+	history := float32(screen.Scrollback()) * state.cellHeight
+	return base.LayoutScrollArea(area, gfx.Size{Width: area.Width, Height: area.Height + history},
+		base.ScrollAreaLayout{
+			OffsetY: float32(screen.Scrollback()-screen.ViewOffset()) * state.cellHeight,
+			BarSize: base.ScrollAreaBarSize,
+		})
+}
+
+// paintTerminalScrollbar paints the bar over the right edge of the grid.
 func (state *State) paintTerminalScrollbar(canvas *gfx.Canvas, session *Session, geometry terminalGeometry) {
 	if !session.term.terminalScrollbarShown() || state.cellHeight <= 0 {
 		return
@@ -89,7 +103,7 @@ func (state *State) terminalScrollbarPointer(session *Session, event gfx.Pointer
 		return gfx.EventResult{}
 	}
 	layout := state.terminalWindowLayout(session.ID)
-	geometry := state.terminalScrollArea(nil, session, layout.area, 1).Geometry()
+	geometry := state.terminalScrollGeometry(session, layout.area)
 	switch event.Kind {
 	case gfx.PointerDown:
 		if event.Button != gfx.PointerButtonPrimary && event.Button != gfx.PointerButtonNone {
