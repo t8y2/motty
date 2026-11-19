@@ -120,3 +120,18 @@ func TestJoinLocalWithinSanitizesWindowsChildren(t *testing.T) {
 		t.Fatal("traversal accepted")
 	}
 }
+
+// An oversized extension is collapsed instead of overflowing the byte budget:
+// the extension alone can be longer than the room left after the digest.
+func TestSafeLocalNameCollapsesAnExtensionLongerThanTheBudget(t *testing.T) {
+	got := SafeLocalName("a:b." + strings.Repeat("e", localNameLimit-7))
+	if len(got) > localNameLimit {
+		t.Fatalf("name %q has %d bytes, exceeds limit %d", got, len(got), localNameLimit)
+	}
+	if !strings.Contains(got, "~") {
+		t.Fatalf("changed name %q lost its digest suffix", got)
+	}
+	if !utf8.ValidString(got) {
+		t.Fatalf("name %q split a rune", got)
+	}
+}

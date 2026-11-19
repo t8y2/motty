@@ -12,7 +12,10 @@ import (
 // localNameLimit is the byte budget for one local name. Most file systems
 // (such as Linux ext4, macOS APFS, and Windows NTFS) allow up to 255 bytes or
 // UTF-16 units per path component. Staying at 255 bytes ensures long filenames
-// are preserved while avoiding filesystem errors.
+// are preserved while avoiding filesystem errors. A mount with a lower per-
+// component limit (an eCryptfs home, some FUSE or SMB mounts) can still reject
+// a name near this budget; the caller reports the write error rather than
+// guessing the mount's limit.
 const localNameLimit = 255
 
 // SafeLocalName turns a remote base name into a name the local file system
