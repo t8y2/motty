@@ -1059,3 +1059,74 @@ func (h *remoteWindowHost) Post(fn func()) {
 		fn()
 	}
 }
+
+func TestRemoteNativeWindowUnhandledWheelReturnsWithoutRecursion(t *testing.T) {
+	withRemoteWindowApplication(t, func(application *app.Application, host *remoteWindowHost) {
+		state, _, fake, _ := liveSession(t)
+		fake.mu.Lock()
+		fake.runCommand = (&remoteServer{}).run
+		fake.mu.Unlock()
+		state.options.OpenContentWindow = application.OpenContentWindow
+		state.Click(hitRemoteToolsOpen)
+		w := state.remoteWindows[0]
+		host.until(t, func() bool { return !w.ui.remote.loading })
+		size := gfx.Size{Width: 1100, Height: 780}
+		var canvas gfx.Canvas
+		host.windows[0].config.Paint(&canvas, size)
+		event := gfx.ScrollEvent{X: -1, Y: -1, DeltaY: 20, Precise: true, Viewport: size}
+		scroll := host.windows[0].config.OnScroll
+		if got := scroll(event); got.Handled || got.Repaint {
+			t.Fatalf("wheel outside the page = %+v", got)
+		}
+		w.ui.remote.auto.open = true
+		if got := scroll(event); !got.Handled {
+			t.Fatal("an open auto-refresh overlay did not consume the wheel")
+		}
+		w.ui.remote.auto.open = false
+		w.ui.remote.processDetails.open = true
+		if got := scroll(event); !got.Handled {
+			t.Fatal("an open detail dialog did not consume the wheel")
+		}
+		w.ui.remote.processDetails.open = false
+		w.closed = true
+		if got := scroll(event); !got.Handled {
+			t.Fatal("a closed window did not consume the wheel")
+		}
+		w.closed = false
+	})
+}
+
+func TestRemoteNativeWindowRowsAreNotCoveredByTheTableFill(t *testing.T) {
+	withRemoteWindowApplication(t, func(application *app.Application, host *remoteWindowHost) {
+		state, _, fake, _ := liveSession(t)
+		fake.mu.Lock()
+		fake.runCommand = (&remoteServer{containers: containerFixture}).run
+		fake.mu.Unlock()
+		state.options.OpenContentWindow = application.OpenContentWindow
+		state.Click(hitRemoteToolsOpen)
+		w := state.remoteWindows[0]
+		host.until(t, func() bool { return !w.ui.remote.loading })
+		clickRemoteTabChoice(t, w, w.ui.remoteTabLabel(remoteContainers))
+		host.until(t, func() bool { return !w.ui.remote.loading && len(w.ui.remote.rows) > 0 })
+		size := gfx.Size{Width: 1100, Height: 780}
+		for frame := 0; frame < 2; frame++ {
+			var canvas gfx.Canvas
+			w.paint(&canvas, size)
+			label := w.ui.remote.rows[0].cells[0]
+			painted, ok := remoteCanvasText(&canvas, label)
+			if !ok {
+				t.Fatalf("row %q was not painted", label)
+			}
+			center := gfx.Point{X: painted.Bounds.X + painted.Bounds.Width/2, Y: painted.Bounds.Y + painted.Bounds.Height/2}
+			for _, rect := range canvas.Rectangles() {
+				if rect.Layer == painted.Layer && rect.Order > painted.Order &&
+					rect.Color.Alpha == 1 && rect.Color == w.ui.pal.workspace &&
+					center.X > rect.Bounds.X && center.X < rect.Bounds.X+rect.Bounds.Width &&
+					center.Y > rect.Bounds.Y && center.Y < rect.Bounds.Y+rect.Bounds.Height {
+					t.Fatalf("frame %d: table fill at order %d covers row %q at order %d",
+						frame, rect.Order, label, painted.Order)
+				}
+			}
+		}
+	})
+}

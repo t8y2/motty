@@ -103,8 +103,8 @@ func (state *State) declareRemoteToolsTable(c ui.C, tab remoteTab, fallbackWidth
 	placeholder := state.remoteTablePlaceholder(tab)
 	showHeader := !state.remoteTableHeaderHidden(tab)
 	ui.Column(c).Grow(1).Shrink(1).MinHeight(headerHeight+view.tableRowHeight).
-		MarginSides(remoteToolsTableMargin, 0, 0, 0).Radius(radius.control).Children(func() {
-		ui.Slot(c).Absolute().Left(0).Right(0).Top(0).Bottom(0).Draw(view.fillDraw)
+		MarginSides(remoteToolsTableMargin, 0, 0, 0).Radius(radius.control).
+		Draw(view.fillDraw).DrawOver(view.borderDraw).Children(func() {
 		// The old control drew its header and rows inside its one-pixel frame,
 		// so the page keeps the same inset.
 		ui.Column(c).Fill().PadSides(1, 1, 0, 1).Children(func() {
@@ -132,7 +132,6 @@ func (state *State) declareRemoteToolsTable(c ui.C, tab remoteTab, fallbackWidth
 			}
 			state.takeRemoteTableChoice(c, tab)
 		})
-		ui.Slot(c).Absolute().Left(0).Right(0).Top(0).Bottom(0).Draw(view.borderDraw)
 	})
 }
 
