@@ -266,8 +266,6 @@ func (state *State) declareMonitorMenu(c ui.C, anchor ui.Box) {
 	ids := [...]gfx.ID{hitMonitorEvery1, hitMonitorEvery2, hitMonitorEvery5, hitMonitorEvery10}
 	open := true
 	ui.Menu(c, anchor, &open, func(menu *ui.MenuItems) {
-		menu.WidthRange(0, 112)
-		menu.RowHeight(28)
 		for index, seconds := range monitorIntervals {
 			item := menu.Item(state.messages.Monitor.IntervalLabels[index]).Chosen(p.interval == seconds)
 			if item.Clicked() {

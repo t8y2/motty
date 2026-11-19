@@ -112,11 +112,33 @@ func TestMonitorGPUIsDefaultAndChartsRenderHeadless(t *testing.T) {
 	if err = view.Rest(); err != nil {
 		t.Fatal(err)
 	}
+	rowHeight := components.DropdownMenuItemHeight(state.Theme(), components.DropdownMenuItem{})
+	var firstRow gfx.Rect
 	for index := range state.messages.Monitor.IntervalLabels {
 		item, ok := view.Hit(state.messages.Monitor.IntervalLabels[index])
-		if !ok || item.Bounds.Width > 112 || item.Bounds.Height > 28 {
+		if !ok || item.Bounds.Width > 128 || item.Bounds.Height != rowHeight {
 			t.Fatalf("interval item %d is not content-sized: %+v", index, item.Bounds)
 		}
+		if index == 0 {
+			firstRow = item.Bounds
+		}
+		if item.Bounds.Y != firstRow.Y+float32(index)*rowHeight {
+			t.Fatalf("interval item %d has excess spacing: %+v", index, item.Bounds)
+		}
+	}
+	menuFound := false
+	for _, hit := range view.Snapshot().Hits {
+		if hit.Role != gfx.RoleMenu {
+			continue
+		}
+		menuFound = true
+		expectedHeight := float32(len(monitorIntervals))*rowHeight + 2*components.DropdownMenuPadding
+		if hit.Bounds.Width > 128 || hit.Bounds.Height != expectedHeight {
+			t.Fatalf("interval menu has excess space: %+v", hit.Bounds)
+		}
+	}
+	if !menuFound {
+		t.Fatal("interval menu surface is missing")
 	}
 	if view.HasText(state.messages.SudoCommandsEnable) {
 		t.Fatal("interval menu still contains the sudo command")
@@ -126,7 +148,8 @@ func TestMonitorGPUIsDefaultAndChartsRenderHeadless(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err = view.ClickLabel(state.messages.Monitor.IntervalLabels[1]); err != nil {
+	// Keep the fixed samples while inspecting the hardware card.
+	if err = view.Keys("escape"); err != nil {
 		t.Fatal(err)
 	}
 	if state.monitorMenu {
@@ -147,8 +170,8 @@ func TestMonitorGPUIsDefaultAndChartsRenderHeadless(t *testing.T) {
 		t.Fatal("interval menu stayed open over the hardware section")
 	}
 	for _, text := range []string{
-		"GameViewer Virtual Display Adapter",
-		"Intel(R) Arc(TM) Graphics",
+		"GameViewer",
+		"Intel(R) Arc(TM)",
 		"9%",
 		"2.9 GiB",
 	} {
@@ -169,6 +192,16 @@ func TestMonitorGPUIsDefaultAndChartsRenderHeadless(t *testing.T) {
 		if err = view.Screenshot(filepath.Join(dir, "monitor-issue1113-hardware.png")); err != nil {
 			t.Fatal(err)
 		}
+	}
+	panel.paused = true
+	if err = view.ClickLabel(state.messages.Monitor.Interval); err != nil {
+		t.Fatal(err)
+	}
+	if err = view.ClickLabel(state.messages.Monitor.IntervalLabels[3]); err != nil {
+		t.Fatal(err)
+	}
+	if panel.interval != 10 || state.monitorMenu || session.stats.worker != nil {
+		t.Fatal("10-second selection failed or started sampling the fixed fixture")
 	}
 }
 
@@ -263,9 +296,10 @@ func TestMonitorNativePanelAtDifferentScales(t *testing.T) {
 			if err = view.ClickLabel(state.messages.Monitor.Interval); err != nil {
 				t.Fatal(err)
 			}
+			rowHeight := components.DropdownMenuItemHeight(state.Theme(), components.DropdownMenuItem{})
 			for _, index := range []int{0, 2, 3} {
 				item, ok := view.Hit(state.messages.Monitor.IntervalLabels[index])
-				if !ok || item.Bounds.Width > 112 || item.Bounds.Height > 28 {
+				if !ok || item.Bounds.Width > 128 || item.Bounds.Height != rowHeight {
 					t.Fatalf("interval item %d is not content-sized: %+v", index, item.Bounds)
 				}
 			}
