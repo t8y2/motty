@@ -396,7 +396,7 @@ func TestSFTPDirectoryTreeWidthKeepsFileListUsable(t *testing.T) {
 	}
 }
 
-func TestSFTPDirectoryTreeIndentsByDisplayDepth(t *testing.T) {
+func TestSFTPDirectoryTreeKeepsDepthForKeyboardNavigation(t *testing.T) {
 	w := &sftpWindow{}
 	tree := &w.directoryTree[0]
 	tree.visible = []sftpTreeVisibleRow{{node: &sftpTreeNode{key: 1, name: "deep"}, depth: 12}}
@@ -405,8 +405,8 @@ func TestSFTPDirectoryTreeIndentsByDisplayDepth(t *testing.T) {
 	if got := tree.tree.Indent; got != sftpDirectoryTreeIndent {
 		t.Fatalf("the tree's indent was squeezed to %v; each row's display depth carries the clamp", got)
 	}
-	if got := tree.tree.Node(0).Depth; got != 4 {
-		t.Fatalf("deep row indents at depth %d, want the four the width allows", got)
+	if got := tree.tree.Node(0).Depth; got != 12 {
+		t.Fatalf("deep row has navigation depth %d, want 12", got)
 	}
 }
 
