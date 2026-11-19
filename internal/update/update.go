@@ -198,6 +198,44 @@ const (
 	PackagePortable
 )
 
+// Source is where an installation reads releases and packages from.
+type Source uint8
+
+const (
+	// SourceOfficial is the project's own mirror: the signed Viva feed on the
+	// official download host, with its mirror and GitHub fallbacks.
+	SourceOfficial Source = iota
+	// SourceCNB is the copy of the same signed feed and the same packages on
+	// CNB, for networks where the official host is slow or unreachable.
+	SourceCNB
+)
+
+// String is the value the setting is saved as.
+func (source Source) String() string {
+	if source == SourceCNB {
+		return "cnb"
+	}
+	return "official"
+}
+
+// ParseSource reads a saved source. Anything unknown is the official one, so a
+// file written by an older or newer version never leaves the app without a
+// source.
+func ParseSource(value string) Source {
+	if value == "cnb" {
+		return SourceCNB
+	}
+	return SourceOfficial
+}
+
+// CNBFeed is the signed Viva feed published beside the packages on CNB. It is
+// the newest release's asset under CNB's "latest" alias, so a check from that
+// source never touches the official host.
+const CNBFeed = "https://cnb.cool/dbxio.com/motty/-/releases/latest/download/latest.json"
+
+// cnbReleases is the directory CNB serves a release's assets from.
+const cnbReleases = "https://cnb.cool/dbxio.com/motty/-/releases/download/"
+
 // CheckPackage selects the package matching the installation on this machine.
 // It prefers the signed Viva feed, which is where patches and the one trust
 // root live; the mirror feed stays for a .deb (the Viva feed has no Debian
@@ -214,6 +252,56 @@ func CheckPackage(ctx context.Context, client *http.Client, goos, goarch string,
 		}
 	}
 	return checkFeedsPackage(ctx, client, MirrorFeed, Feed, goos, goarch, pkg)
+}
+
+// CheckPackageFrom asks the source the user selected. The CNB source reads the
+// same signed feed from the CNB copy and points the package at the CNB release.
+// When that copy cannot answer, the official feeds still decide, so a mirror
+// that is not published yet never makes updates impossible; the returned error
+// is then the CNB one, because that is the source the user chose. A .deb has no
+// asset in the signed feed, so it keeps the official path whatever the source.
+func CheckPackageFrom(ctx context.Context, client *http.Client, goos, goarch string, pkg Package, source Source) (Release, error) {
+	if source != SourceCNB || pkg == PackageDeb {
+		return CheckPackage(ctx, client, goos, goarch, pkg)
+	}
+	attempt, cancel := context.WithTimeout(ctx, feedAttemptTimeout)
+	release, err := checkVivaPackageAt(attempt, client, CNBFeed, []string{VivaPublicKey}, goos, goarch, pkg)
+	cancel()
+	if err == nil {
+		return cnbRelease(release, goos, goarch, pkg), nil
+	}
+	if official, officialErr := CheckPackage(ctx, client, goos, goarch, pkg); officialErr == nil {
+		return official, nil
+	}
+	return Release{}, err
+}
+
+// cnbRelease points the package of a release read from the CNB feed at the CNB
+// copy. The feed's size and SHA-256 still hold the download, and the signed
+// feed still names the asset, so only the host changes. Patches are published
+// to the official mirror only, so this source downloads the full package.
+func cnbRelease(release Release, goos, goarch string, pkg Package) Release {
+	name := cnbAssetName(release.Version, goos, goarch, pkg)
+	if !release.Asset.Has() || name == "" {
+		return release
+	}
+	release.Asset.URL = cnbReleases + "v" + release.Version + "/" + name
+	release.Asset.Patches = nil
+	return release
+}
+
+// cnbAssetName is the name the release's asset has on CNB, which is the name
+// the release published: the stable name with the version in it, and the .deb
+// naming the architecture instead.
+func cnbAssetName(version, goos, goarch string, pkg Package) string {
+	stable := StableNamePackage(goos, goarch, pkg)
+	if stable == "" || version == "" {
+		return ""
+	}
+	if pkg == PackageDeb {
+		return "motty_" + version + "_" + goarch + ".deb"
+	}
+	return strings.Replace(stable, "motty-", "motty-"+version+"-", 1)
 }
 
 // checkVivaPackageAt reads a Viva feed. The feed URL and keys are parameters so

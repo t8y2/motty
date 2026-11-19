@@ -362,3 +362,57 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --ref "$GITHUB_REF_NAME" \
             -f tag="$GITHUB_REF_NAME"
+
+  # The CNB copy follows publication, never leads it: the packages are verified
+  # and public before anything reads them again. A repository without the token
+  # says so and skips this job rather than failing a release over a mirror that
+  # is not set up; an upload that fails still turns the run red.
+  cnb:
+    name: Copy the release to CNB
+    # The destination is fixed to the upstream repository, so a fork must never
+    # publish there, even with the secret mirrored.
+    if: github.repository == 't8y2/motty'
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Check the mirror is configured
+        id: configured
+        env:
+          CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
+        run: |
+          if [ -n "$CNB_TOKEN" ]; then
+            echo "value=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::CNB_TOKEN is not set; this release is not copied to CNB"
+          fi
+
+      - name: Copy the release to CNB
+        if: steps.configured.outputs.value == 'true'
+        env:
+          CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          CNB_UPLOAD_CONCURRENCY: "3"
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/cnb"
+          mkdir -p "$dir/assets"
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --json tagName,name,body,targetCommitish,isPrerelease > "$dir/release.json"
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --dir "$dir/assets"
+          # The signed feed and its signature are what an installation set to
+          # CNB checks; they are not release assets, so take the copy the
+          # announce step just wrote. Refuse a feed that names another version.
+          curl -fsSL https://dl.motty.page/viva/latest.json -o "$dir/assets/latest.json"
+          version=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["latest"]["version"])' "$dir/assets/latest.json")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::the announced feed is for $version, not $GITHUB_REF_NAME"
+            exit 1
+          fi
+          curl -fsSL https://dl.motty.page/viva/latest.json.sig -o "$dir/assets/latest.json.sig"
+          node tools/sync-cnb-release.mjs --github-release "$dir/release.json" --assets-dir "$dir/assets" --make-latest

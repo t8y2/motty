@@ -321,6 +321,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsAbout, about.Runtime, facts.runtime)
 	group(settingsAbout, about.InfoTitle, about.CopyRow, about.CopyDescription)
 	group(settingsAbout, about.UpdateTitle, about.UpdateTitle, "")
+	row(settingsAbout, tools.GeneralUpdateSource, tools.GeneralUpdateSourceDescription)
 	row(settingsAbout, tools.GeneralUpdateStartup, tools.GeneralUpdateStartupDescription)
 	row(settingsAbout, tools.GeneralUpdate, tools.GeneralUpdateDescription)
 	row(settingsAbout, about.QQ, about.QQDescription)

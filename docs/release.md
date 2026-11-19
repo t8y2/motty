@@ -221,6 +221,15 @@ repository is private, add `REED_REPO_TOKEN`, a token that can read it. Because
 `main` moves, a rebuild of an old tag can differ from the original build; tag only
 when Viva's `main` is what you want to ship.
 
+**CNB mirror**
+
+| Secret | What |
+| --- | --- |
+| `CNB_TOKEN` | a CNB access token with write access to `dbxio.com/motty`, used by the code and release mirrors |
+
+Optional: a release without it skips the CNB copy with a notice. The code mirror
+and the repair workflow fail instead, because they exist only to mirror.
+
 ## Building by hand
 
 ```sh
@@ -308,6 +317,35 @@ The mirror steps need `CLOUDFLARE_API_TOKEN` with *Workers R2 Storage: Edit* (th
 Pages token from docs/website.md covers the site only) and `CLOUDFLARE_ACCOUNT_ID`
 (the same value the website workflow uses).
 
+## The CNB mirror
+
+`https://cnb.cool/dbxio.com/motty` is a copy of this repository for readers in
+mainland China. GitHub stays the source of record; the copy only makes the code
+reachable from a faster link. `.github/workflows/sync-cnb.yml` force-pushes every
+branch and tag on each push to `main`, on a tag or a deleted ref, and on a
+three-times-daily schedule that repairs a missed run. A branch or tag deleted on
+GitHub is deleted on the mirror too.
+
+The same host mirrors release packages: the *Copy the release to CNB* job runs
+after *Publish*, and `tools/sync-cnb-release.mjs` copies the GitHub release's
+metadata and every asset to CNB Releases, skipping files that are already there.
+An asset is then downloadable at
+`https://cnb.cool/dbxio.com/motty/-/releases/download/<tag>/<asset>`. The job also
+attaches the signed Viva feed as `latest.json` and `latest.json.sig`, marks the
+release as CNB's latest, and that alias is what the app's CNB update source
+reads. The *Mirror release to CNB* workflow is the repair path: run it with the
+tag to finish a copy that failed or to add a release that predates the mirror.
+It only uploads what CNB does not already hold, and only attaches the feed when
+the tag is the one the feed announces.
+
+Both workflows need `CNB_TOKEN` as a repository secret: a CNB access token with
+write access to `dbxio.com/motty`. The release job reports a missing token as a
+notice and skips the copy so a release does not depend on the mirror being set
+up; the repair workflow fails instead, because nothing was mirrored. `CNB_TOKEN`
+is not needed by the app or the R2 mirror. Without the token the code workflow
+stops with an error rather than syncing nothing. The destinations are fixed in
+the workflows, and the jobs refuse to run from a fork.
+
 ## In-app updates
 
 The app updates itself from the mirror: it reads `https://dl.motty.page/latest.json`
@@ -315,6 +353,16 @@ The app updates itself from the mirror: it reads `https://dl.motty.page/latest.j
 send the user to the page but cannot install). The release notes in the update
 dialog are the `notes` field of that file, which `tools/mirror-release.sh` copies
 from the GitHub release body.
+
+The *Update source* choice on About and in the update dialog says where the
+check and the download go. **Official mirror** is the path above. **CNB** reads
+the same signed feed from
+`https://cnb.cool/dbxio.com/motty/-/releases/latest/download/latest.json`,
+verifies it with the same key, and downloads the package from the CNB copy of
+that release. The signed size and SHA-256 still hold the bytes, so only the host
+changes; CNB has no patches, so that source downloads the full package. A CNB
+check that cannot read the feed falls back to the official feeds, which is why
+the choice cannot leave an installation unable to update.
 
 Every package carries a minisign signature from the release key, and the feed
 copies it into the `signature` field of that file. The signature's signed comment
