@@ -1979,6 +1979,7 @@ var chineseTools = ToolsMessages{
 	ImportGuideURL:               "https://motty.page/zh/docs/connections/hosts-and-authentication#导入",
 	ImportPickerFmt:              "导入 %s 会话",
 	ImportFolderPickerFmt:        "选择 %s 的 Sessions 文件夹",
+	ImportConfigFolderPickerFmt:  "选择 %s 的数据文件夹",
 	ImportCanceled:               "已取消导入。",
 	ImportFailedFmt:              "无法导入：%v",
 	ImportSummaryFmt:             "已从 %[2]s 导入 %[1]d 台主机；跳过 %[3]d 台已保存的主机。",

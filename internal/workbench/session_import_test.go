@@ -678,3 +678,55 @@ func TestImportingSecureCRTSessionsAsksForItsSessionsFolder(t *testing.T) {
 		t.Fatalf("warnings = %q", warnings)
 	}
 }
+
+func TestImportingFinalShellSessionsAsksForItsDataFolder(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "FinalShell")
+	files := map[string]string{
+		"conn/one/folder.json": `{"id":"clients","name":"Clients","parent_id":"root"}`,
+		"conn/one/prod_connect_config.json": `{"id":"h1","name":"prod","host":"prod.example.test",` +
+			`"port":2222,"user_name":"deploy","password":"U2FsdGVkX1+cipher",` +
+			`"authentication_type":1,"conection_type":100,"parent_id":"clients"}`,
+	}
+	for name, content := range files {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	options := freshOptions(t)
+	options.StatePath = filepath.Join(filepath.Dir(options.KnownHostsPath), "state.json")
+	var request app.OpenDirectoryOptions
+	options.OpenDirectory = func(asked app.OpenDirectoryOptions) (string, error) {
+		request = asked
+		return root, nil
+	}
+	state := newTestState(t, options)
+
+	state.Click(hitImportSessions)
+	if _, texts := paintedTexts(state); !contains(texts, "FinalShell") {
+		t.Fatal("the import chooser has no FinalShell button")
+	}
+	state.Click(hitImportFinalShell)
+	if !strings.Contains(request.Title, "FinalShell") || !strings.Contains(request.Title, "data folder") {
+		t.Fatalf("OpenDirectory request = %+v", request)
+	}
+	if state.modal != modalHostImportResult || len(state.hosts) != 1 {
+		t.Fatalf("modal %d, hosts %d", state.modal, len(state.hosts))
+	}
+	host := state.hosts[0]
+	if host.Label != "prod" || host.Group != "Clients" || host.Address != "prod.example.test" ||
+		host.User != "deploy" || host.Port != 2222 {
+		t.Fatalf("host = %+v", host)
+	}
+	result := state.hostImportResult
+	if !strings.Contains(result.summary, "FinalShell") {
+		t.Fatalf("summary = %q", result.summary)
+	}
+	warnings := strings.Join(result.warnings[:result.visible], "\n")
+	if !strings.Contains(warnings, "No readable SSH passwords") {
+		t.Fatalf("warnings = %q", warnings)
+	}
+}

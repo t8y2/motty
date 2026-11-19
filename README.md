@@ -58,7 +58,7 @@ the project, the packages and how to build it.
   <tr>
     <td width="50%" valign="top">
       <p><strong>Hosts stay organised.</strong> Groups, tags, colours and icons, importable from
-      OpenSSH config, PuTTY, MobaXterm and five more. Passwords go to an
+      OpenSSH config, PuTTY, MobaXterm and six more. Passwords go to an
       AES-256-GCM vault; the key lives in the system secret store.</p>
     </td>
     <td width="50%" valign="top">
@@ -231,14 +231,14 @@ PIN or passphrase prompt in the window; the key list marks it as a security
 key. See [security keys](docs/security-keys.md) for the requirements and limits.
 
 Hosts can be grouped, tagged, searched and imported from OpenSSH config, PuTTY,
-Xshell, MobaXterm, WindTerm, Electerm, Netcatty or SecureCRT. TOTP/HOTP seeds can be stored in the
+Xshell, MobaXterm, WindTerm, Electerm, Netcatty, SecureCRT or FinalShell. TOTP/HOTP seeds can be stored in the
 vault and filled automatically. Saved passwords and key passphrases go into an
 AES-256-GCM vault, kept under the host they belong to; the vault key lives in the
 system secret store, or in a key file beside the vault where there is none (and
 in a portable copy).
 Electerm and Netcatty imports can save readable SSH passwords with explicit
-consent; re-import only fills missing passwords. SecureCRT stores its saved
-passwords encrypted, so its import carries connections only.
+consent; re-import only fills missing passwords. SecureCRT and FinalShell store
+their saved passwords encrypted, so those imports carry connections only.
 
 OpenSSH config import and sync retain per-host `ServerAliveInterval`,
 `ServerAliveCountMax`, `IdentitiesOnly` and configured identity files. An explicit

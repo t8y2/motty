@@ -1979,6 +1979,7 @@ var englishTools = ToolsMessages{
 	ImportGuideURL:               "https://motty.page/en/docs/connections/hosts-and-authentication#import",
 	ImportPickerFmt:              "Import %s sessions",
 	ImportFolderPickerFmt:        "Choose the %s Sessions folder",
+	ImportConfigFolderPickerFmt:  "Choose the %s data folder",
 	ImportCanceled:               "Import canceled.",
 	ImportFailedFmt:              "Could not import: %v",
 	ImportSummaryFmt:             "Imported %d hosts from %s; skipped %d already saved.",

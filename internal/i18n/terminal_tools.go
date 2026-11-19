@@ -343,6 +343,7 @@ type ToolsMessages struct {
 	ImportGuideURL               string
 	ImportPickerFmt              string // the client's name
 	ImportFolderPickerFmt        string // the client's name; it keeps sessions in a folder
+	ImportConfigFolderPickerFmt  string // the client's name; it keeps its data in a folder
 	ImportCanceled               string
 	ImportFailedFmt              string
 	ImportSummaryFmt             string // hosts, client, duplicates

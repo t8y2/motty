@@ -691,3 +691,127 @@ func TestSecureCRTSingleFileAndWrongFolder(t *testing.T) {
 		t.Fatal("an empty folder was accepted as a Sessions folder")
 	}
 }
+
+func TestFinalShellDataFolderReadsGroupsAndLeavesPasswordsAndHistoryAlone(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "FinalShell")
+	files := map[string]string{
+		"config.json":          `{"secret_key_list":[{"id":"key1","name":"prod","key_data":"cGVt"}]}`,
+		"conn/one/folder.json": `{"id":"clients","name":"Clients","parent_id":"root"}`,
+		"conn/two/folder.json": `{"id":"acme","name":"Acme","parent_id":"clients"}`,
+		"conn/two/prod_connect_config.json": `{"id":"h1","name":"prod","host":"prod.example.test","port":2222,` +
+			`"user_name":"deploy","password":"U2FsdGVkX1+cipher","authentication_type":1,` +
+			`"secret_key_id":"key1","conection_type":100,"parent_id":"acme"}`,
+		"conn/top_connect_config.json": `{"id":"h2","name":"top","host":"top.example.test","port":"2200",` +
+			`"user_name":"root","conection_type":100,"parent_id":"root"}`,
+		"conn/desktop_connect_config.json": `{"id":"h3","name":"desktop","host":"10.1.1.1",` +
+			`"conection_type":101,"parent_id":"root"}`,
+		"conn/orphan_connect_config.json": `{"id":"h4","name":"orphan","host":"orphan.example.test",` +
+			`"user_name":"me","conection_type":100,"parent_id":"missing"}`,
+		"conn/broken_connect_config.json": `{"id":`,
+		// Historical copies and deleted entries must not come back.
+		"backup/conn/old_connect_config.json":   `{"id":"old","name":"old","host":"old.example.test","conection_type":100}`,
+		"deleted/conn/gone_connect_config.json": `{"id":"gone","name":"gone","host":"gone.example.test","conection_type":100}`,
+		"temp/conn/draft_connect_config.json":   `{"id":"draft","name":"draft","host":"draft.example.test","conection_type":100}`,
+	}
+	for name, content := range files {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result, err := Parse(FinalShell, []string{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Entries) != 3 {
+		t.Fatalf("entries = %+v warnings %v", result.Entries, result.Warnings)
+	}
+	byName := map[string]Entry{}
+	for _, entry := range result.Entries {
+		byName[entry.Name] = entry
+	}
+	prod, found := byName["prod"]
+	if !found || prod.Group != "Clients/Acme" || prod.Host != "prod.example.test" || prod.Port != 2222 || prod.User != "deploy" {
+		t.Errorf("prod = %+v", prod)
+	}
+	if prod.Password != "" {
+		t.Errorf("an encrypted FinalShell password was taken: %q", prod.Password)
+	}
+	if top := byName["top"]; top.Group != "" || top.Port != 2200 || top.User != "root" {
+		t.Errorf("top = %+v", top)
+	}
+	if orphan := byName["orphan"]; orphan.Group != "" || orphan.Host != "orphan.example.test" {
+		t.Errorf("orphan = %+v", orphan)
+	}
+	if _, found := byName["old"]; found {
+		t.Error("a backup copy was imported")
+	}
+	if _, found := byName["gone"]; found {
+		t.Error("a deleted session was imported")
+	}
+	if result.Keys != 1 || result.Skipped != 1 || result.PlainSecrets != 0 {
+		t.Errorf("keys %d skipped %d plain %d", result.Keys, result.Skipped, result.PlainSecrets)
+	}
+	warnings := strings.Join(result.Warnings, "\n")
+	if !strings.Contains(warnings, "not valid JSON") {
+		t.Errorf("warnings = %q", warnings)
+	}
+	if !strings.Contains(warnings, "outside the chosen folder") {
+		t.Errorf("warnings = %q", warnings)
+	}
+}
+
+func TestFinalShellNeedsADataFolder(t *testing.T) {
+	dir := t.TempDir()
+	path := write(t, dir, "prod_connect_config.json", []byte(`{"id":"h1","host":"prod.example.test"}`))
+	if _, err := ParseFinalShell(path); err == nil {
+		t.Fatal("a single host file was accepted instead of the data folder")
+	}
+	empty := filepath.Join(dir, "empty")
+	if err := os.Mkdir(empty, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseFinalShell(empty); err == nil {
+		t.Fatal("an empty folder was accepted as a FinalShell data folder")
+	}
+	configOnly := filepath.Join(dir, "config-only")
+	if err := os.Mkdir(configOnly, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configOnly, "config.json"), []byte(`{"quick_commands":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseFinalShell(configOnly); err == nil {
+		t.Fatal("a folder without host configurations was accepted")
+	}
+}
+
+func TestFinalShellFolderCycleStopsAtItself(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "FinalShell")
+	files := map[string]string{
+		"conn/one/folder.json": `{"id":"a","name":"A","parent_id":"b"}`,
+		"conn/two/folder.json": `{"id":"b","name":"B","parent_id":"a"}`,
+		"conn/one/host_connect_config.json": `{"id":"h1","name":"host","host":"host.example.test",` +
+			`"conection_type":100,"parent_id":"a"}`,
+	}
+	for name, content := range files {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err := ParseFinalShell(root)
+	if err != nil || len(result.Entries) != 1 {
+		t.Fatalf("%+v %v", result, err)
+	}
+	if got := result.Entries[0].Group; got != "A/B" && got != "B/A" {
+		t.Fatalf("group = %q", got)
+	}
+}
