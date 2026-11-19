@@ -56,11 +56,8 @@ func (state *State) paintWindowBarScrollbar(canvas *gfx.Canvas) {
 	strip := state.windowBarStrip()
 	view.geometry = base.LayoutScrollArea(bounds, gfx.Size{Width: bounds.Width + strip.max, Height: bounds.Height},
 		base.ScrollAreaLayout{OffsetX: strip.offset, BarSize: scrollbarHoverSize})
-	area := components.BeginScrollArea(canvas, state.Theme(), bounds, gfx.Size{Width: bounds.Width + strip.max, Height: bounds.Height}).
-		Offset(strip.offset, 0).
-		HorizontalScrollbar(hitWindowBarTabsBar, state.messages.TabStripScrollbar, "").
-		HoverScrollbars(view.over || view.dragging)
-	area.EndContent()
+	paintScrollbarBar(canvas, state.Theme(), view.geometry, false,
+		hitWindowBarTabsBar, state.messages.TabStripScrollbar, "", view.over || view.dragging)
 }
 
 // trackWindowBarScroll records whether the pointer is over the title bar's tabs.

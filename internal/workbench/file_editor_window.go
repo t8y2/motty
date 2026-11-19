@@ -666,14 +666,11 @@ func (m *fileWindowManager) paintTabsScrollbar(canvas *gfx.Canvas) {
 	if active == nil || bounds.Width <= 0 || bounds.Height <= 0 {
 		return
 	}
-	area := components.BeginScrollArea(canvas, active.owner.Theme(), bounds, gfx.Size{
-		Width: m.tabs.contentWidth, Height: bounds.Height,
-	}).Offset(m.tabStrip.offset, 0).
-		HorizontalScrollbar(hitDocumentTabBar, active.owner.messages.FileWindow.TabsScrollbar, "").
-		HoverScrollbars(m.tabs.hovered || m.tabs.dragging)
 	m.tabs.geometry = base.LayoutScrollArea(bounds, gfx.Size{Width: m.tabs.contentWidth, Height: bounds.Height},
 		base.ScrollAreaLayout{OffsetX: m.tabStrip.offset, BarSize: scrollbarHoverSize})
-	area.EndContent()
+	paintScrollbarBar(canvas, active.owner.Theme(), m.tabs.geometry, false,
+		hitDocumentTabBar, active.owner.messages.FileWindow.TabsScrollbar, "",
+		m.tabs.hovered || m.tabs.dragging)
 }
 
 func (m *fileWindowManager) trackTabPointer(event gfx.PointerEvent) bool {

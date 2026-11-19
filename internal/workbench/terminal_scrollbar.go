@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/base"
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 )
 
@@ -19,23 +18,21 @@ func (t *terminal) terminalScrollbarShown() bool {
 	return t.sync == nil && !t.presentedAltScreen() && t.screen.Scrollback() > 0
 }
 
-// terminalScrollArea is the terminal's text as a scroll area: the history above
-// the screen and the screen itself, one cell height per line. It paints only the
-// bar, over the right edge of the grid, in the terminal's own colors since the
-// application theme has no say in what the terminal's ground looks like. A nil
-// canvas gives the geometry alone. fade scales the bar's opacity, 0 being
-// hidden.
-func (state *State) terminalScrollArea(canvas *gfx.Canvas, session *Session, area gfx.Rect, fade float32) components.ScrollArea {
-	screen := session.term.screen
-	history := float32(screen.Scrollback()) * state.cellHeight
+// paintTerminalScrollbar paints the bar over the right edge of the grid, in the
+// terminal's own colors since the application theme has no say in what the
+// terminal's ground looks like. fade scales the bar's opacity, 0 being hidden.
+func (state *State) paintTerminalScrollbar(canvas *gfx.Canvas, session *Session, geometry terminalGeometry) {
+	if !session.term.terminalScrollbarShown() || state.cellHeight <= 0 {
+		return
+	}
+	fade := state.terminalBarFade(canvas, session)
 	theme := state.Theme()
 	theme.Border = withAlpha(state.termPal.termFG, 0.22*fade)
 	theme.MutedForeground = withAlpha(state.termPal.termFG, 0.55*fade)
 	session.term.pageIdentity(session.ID)
 	id := session.term.parts.At(terminalPartScrollbar)
-	return components.BeginScrollArea(canvas, theme, area, gfx.Size{Width: area.Width, Height: area.Height + history}).
-		Offset(0, float32(screen.Scrollback()-screen.ViewOffset())*state.cellHeight).
-		VerticalScrollbar(id, state.messages.Tools.ScrollbarLabel, "")
+	bar := state.terminalScrollGeometry(session, geometry.area)
+	paintScrollbarBar(canvas, theme, bar, true, id, state.messages.Tools.ScrollbarLabel, "", true)
 }
 
 // terminalBarFade is how opaque the scrollbar is in this frame. The bar is lit
@@ -78,16 +75,6 @@ func (state *State) terminalScrollGeometry(session *Session, area gfx.Rect) base
 			OffsetY: float32(screen.Scrollback()-screen.ViewOffset()) * state.cellHeight,
 			BarSize: base.ScrollAreaBarSize,
 		})
-}
-
-// paintTerminalScrollbar paints the bar over the right edge of the grid.
-func (state *State) paintTerminalScrollbar(canvas *gfx.Canvas, session *Session, geometry terminalGeometry) {
-	if !session.term.terminalScrollbarShown() || state.cellHeight <= 0 {
-		return
-	}
-	fade := state.terminalBarFade(canvas, session)
-	area := state.terminalScrollArea(canvas, session, geometry.area, fade)
-	area.EndContent()
 }
 
 // terminalScrollbarPointer drags the thumb and pages when the track beside it is
