@@ -117,6 +117,9 @@ func TestTransferCenterResumesInterruptedUploadAfterReconnect(t *testing.T) {
 	if entry.snapshot.State != sftpclient.TransferInterrupted || entry.owner != nil {
 		t.Fatalf("entry = %+v owner=%v, want an interrupted row without a view", entry.snapshot, entry.owner != nil)
 	}
+	if entry.snapshot.SourceModTime.IsZero() {
+		t.Fatal("the interrupted upload did not record the source modification time")
+	}
 	partial := testUploadPartial(t, remote, remoteDir)
 	if len(partial) == 0 || len(partial) >= len(payload) || !bytes.Equal(partial, payload[:len(partial)]) {
 		t.Fatalf("kept partial = %d bytes, want a prefix of the source", len(partial))
@@ -124,8 +127,12 @@ func TestTransferCenterResumesInterruptedUploadAfterReconnect(t *testing.T) {
 
 	state.openSFTP(session)
 	snapshot := waitTransfer(t, state, sftpclient.TransferCompleted)
-	if snapshot.Resumed != int64(len(partial)) {
-		t.Fatalf("resumed %d bytes, want the kept %d", snapshot.Resumed, len(partial))
+	// The resume trusts only the prefix the interrupted attempt had confirmed,
+	// so it may continue from before the end of what reached the disk: bytes
+	// written after the last acknowledgement are not known to be durable, and
+	// they are dropped rather than read back to be compared with the source.
+	if snapshot.Resumed <= 0 || snapshot.Resumed > int64(len(partial)) {
+		t.Fatalf("resumed %d bytes, want a prefix of the kept %d", snapshot.Resumed, len(partial))
 	}
 	remote.mu.Lock()
 	content := append([]byte(nil), remote.files[remotePath]...)
