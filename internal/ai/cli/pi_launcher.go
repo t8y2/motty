@@ -103,6 +103,8 @@ func piLauncherScript(path string) (string, error) {
 				block = !strings.Contains(trimmed, "#>")
 				continue
 			}
+			line = piPowerShellCode(line)
+			trimmed = strings.TrimSpace(line)
 			if strings.HasPrefix(trimmed, "#") {
 				continue
 			}
@@ -115,6 +117,40 @@ func piLauncherScript(path string) (string, error) {
 		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n"), nil
+}
+
+// piPowerShellCode drops a trailing # comment from a PowerShell line. A #
+// inside a quoted string is text: the launcher's own commands quote their
+// paths, and an old install named in a comment must not look like an active
+// branch.
+func piPowerShellCode(line string) string {
+	var quote byte
+	escaped := false
+	for i := 0; i < len(line); i++ {
+		char := line[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		switch {
+		case char == '`' && quote != '\'':
+			escaped = true
+		case quote != 0:
+			if char != quote {
+				continue
+			}
+			if quote == '\'' && i+1 < len(line) && line[i+1] == '\'' {
+				escaped = true
+				continue
+			}
+			quote = 0
+		case char == '\'' || char == '"':
+			quote = char
+		case char == '#':
+			return line[:i]
+		}
+	}
+	return line
 }
 
 func piScriptEntry(dir, script string) (string, error) {

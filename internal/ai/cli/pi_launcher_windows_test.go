@@ -373,6 +373,21 @@ func TestPiLauncherIgnoresCommentedInstallations(t *testing.T) {
 	}
 }
 
+// A trailing # comment naming another install is not an active branch: the
+// quoted path in the comment must not make a valid launcher ambiguous.
+func TestPiLauncherIgnoresAnInlineComment(t *testing.T) {
+	prefix := t.TempDir()
+	piNodeFixture(t, prefix)
+	piPackageFixture(t, prefix, "@mariozechner/pi-coding-agent", "dist/cli.js")
+	entry := piPackageFixture(t, prefix, "@earendil-works/pi-coding-agent", "dist/bundle/cli.js")
+	launcher := filepath.Join(prefix, "pi.ps1")
+	writePiLauncherFixture(t, launcher, `& node "$basedir/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" $args # "$basedir/node_modules/@mariozechner/pi-coding-agent/dist/cli.js"`)
+	c, err := resolve(store.KindPiCLI, launcher)
+	if err != nil || len(c.args) != 1 || !strings.EqualFold(c.args[0], entry) {
+		t.Fatalf("resolved = %+v, error = %v", c, err)
+	}
+}
+
 func TestPiOfficialDiscoveryWithoutUpdatedPATH(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("USERPROFILE", home)
