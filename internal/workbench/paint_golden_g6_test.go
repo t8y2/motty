@@ -2,7 +2,9 @@ package workbench
 
 import (
 	"fmt"
+	"runtime"
 	"testing"
+	"time"
 
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
@@ -15,6 +17,10 @@ func init() {
 			continue // it shows the path of the test binary
 		}
 		extraPaintScenes = append(extraPaintScenes, plainScene(fmt.Sprintf("g6-settings-%d", category), func(t *testing.T, s *State) {
+			s.options.SSHConfigPath = "/fixture/ssh/config"
+			if runtime.GOOS == "windows" || runtime.GOOS == "linux" {
+				s.sftpDownloadDirectory = "/fixture/Downloads"
+			}
 			s.openSettings()
 			s.selectSettingsCategory(category)
 		}))
@@ -103,6 +109,7 @@ func connectedScene(name string, setup func(*State, *Session)) paintScene {
 func sessionLinkScene(name string, disconnect bool) paintScene {
 	return paintScene{name: name, sizes: []gfx.Size{paintDesktop, paintSmall}, open: func(t *testing.T) (*State, func(*gfx.Canvas, gfx.Size)) {
 		world, options := newSharingWorld(t)
+		options.Now = func() time.Duration { return time.Second }
 		state := newTestState(t, options)
 		world.connectFirst(t, state)
 		session, _ := state.sessionByIDPointer(state.activeSessionID)

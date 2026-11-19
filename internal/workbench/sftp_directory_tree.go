@@ -648,6 +648,13 @@ func (w *sftpWindow) declareDirectoryTreePane(c ui.C, side int, width float32) u
 	// navigation.
 	tree.tree.Indent = sftpDirectoryTreeIndent
 	tree.contentWidth = max(width-14, 0)
+	// Keep hierarchy depth available to Left/Right navigation while fitting
+	// the deepest visible row's indentation inside the label reserve.
+	depth := 1
+	for _, row := range rows {
+		depth = max(depth, int(min(row.depth, 31)))
+	}
+	tree.tree.Indent = min(sftpDirectoryTreeIndent, max(1, (tree.contentWidth-directoryTreeLabelReserve)/float32(depth)))
 	if tree.revealSelected {
 		for index, row := range rows {
 			if sameDirectoryTreePath(side == 0, row.node.path, tree.selectedPath) {
@@ -700,7 +707,7 @@ func (w *sftpWindow) initDirectoryTreeState(side int) {
 		node := row.node
 		branch := !node.loaded || node.loading || node.err != "" || len(node.children) > 0
 		return ui.TreeNode{
-			Depth: int(min(directoryTreeDisplayDepth(row.depth, tree.contentWidth), 31)), Branch: branch,
+			Depth: int(min(row.depth, 31)), Branch: branch,
 			Expanded: node.expanded, Selected: sameDirectoryTreePath(side == 0, node.path, tree.selectedPath),
 		}
 	}

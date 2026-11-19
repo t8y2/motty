@@ -11,8 +11,11 @@ Bitmap updates (RLE, Planar, NSCodec, drawing orders), the RDPGFX pipeline
 (ClearCodec, progressive RemoteFX), fast-path updates and 32-bit colour. H.264 is
 not offered.
 
-The desktop is **1600x900 and fixed**. Motty does not resize the remote desktop to
-the pane; the picture is scaled instead.
+Motty requests **1600 × 900** by default and scales the picture locally when you
+resize the window or toggle fullscreen. Use **Fullscreen** in the session toolbar
+or press **Ctrl+Alt+Enter**. You can enable **Resize remote desktop to fit** in the
+RDP host settings before connecting. With that option enabled, compatible servers
+resize the remote desktop to fit the pane, which can rearrange icons and windows.
 
 ## Certificates
 
@@ -50,8 +53,8 @@ servers send 16-bit PCM; compressed formats such as ADPCM are declined.
 
 ## Not supported
 
-Drive, printer, smartcard and USB redirection, multiple monitors, dynamic
-resolution change from the client, RD Gateway, Kerberos or certificate logon (NTLM
+Drive, printer, smartcard and USB redirection, multiple monitors,
+RD Gateway, Kerberos or certificate logon (NTLM
 only), file transfer, and clipboard formats other than text.
 
 Windows policy can disconnect a console session when the same user signs in

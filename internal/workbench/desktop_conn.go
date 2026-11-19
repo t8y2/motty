@@ -711,8 +711,10 @@ func (state *State) newDesktopConn(session *Session, host Host) *desktopConn {
 			}
 		}
 	}
-	target := state.desktopTargetFor(session)
-	conn.request.Width, conn.request.Height, conn.request.Scale = target.width, target.height, target.scale
+	if host.Protocol == protocolRDP && host.FollowResolution {
+		target := state.desktopTargetFor(session)
+		conn.request.Width, conn.request.Height, conn.request.Scale = target.width, target.height, target.scale
+	}
 	var config sshconn.Config
 	tunneled := false
 	switch {

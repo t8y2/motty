@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/gfx"
+	"motty/internal/localshell"
 )
 
 // The find settings and the tab menu's color row are the surfaces the page
@@ -11,11 +12,17 @@ import (
 func init() {
 	extraPaintScenes = append(extraPaintScenes,
 		settingsScene("terminal-find-settings", func(t *testing.T, w *settingsWorld) {
+			w.state.localShellMenu.discover = func() []localshell.Choice {
+				return []localshell.Choice{{Name: "sh", Path: "/bin/sh", Default: true}}
+			}
 			w.state.selectSettingsCategory(settingsTerminal)
 			w.state.settings.jump = w.state.messages.FindSettings.Title
 			w.state.Paint(&gfx.Canvas{}, paintDesktop)
 		}),
 		settingsScene("terminal-find-settings-colors", func(t *testing.T, w *settingsWorld) {
+			w.state.localShellMenu.discover = func() []localshell.Choice {
+				return []localshell.Choice{{Name: "sh", Path: "/bin/sh", Default: true}}
+			}
 			w.state.selectSettingsCategory(settingsTerminal)
 			w.state.settings.jump = w.state.messages.FindSettings.Title
 			w.state.Paint(&gfx.Canvas{}, paintDesktop)

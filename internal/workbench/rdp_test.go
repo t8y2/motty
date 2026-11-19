@@ -348,3 +348,33 @@ func TestRDPRemoteAudioIsAnRDPOnlySwitch(t *testing.T) {
 		t.Fatalf("restored = %+v", restored)
 	}
 }
+
+func TestRDPFollowResolutionIsOptInAndSavedWithTheHost(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.openHostDialog()
+	state.editor.setProtocol(protocolVNC)
+	size := gfx.Size{Width: 1200, Height: 1000}
+	canvas, _ := paintAt(state, size)
+	if _, ok := hitByID(canvas, hitDialogFollowResolution); ok {
+		t.Fatal("a VNC host was offered dynamic resolution")
+	}
+
+	state.editor.setProtocol(protocolRDP)
+	canvas, _ = paintAt(state, size)
+	if _, ok := hitByID(canvas, hitDialogFollowResolution); !ok || state.editor.followResolution {
+		t.Fatal("a new RDP host should offer dynamic resolution and leave it off")
+	}
+	state.Click(hitDialogFollowResolution)
+	typeInto(state, hitDialogLabel, "Windows")
+	typeInto(state, hitDialogAddress, "win.example.com")
+	typeInto(state, hitDialogUser, "alice")
+	state.Click(hitDialogSubmit)
+	index := state.hostIndexByEndpoint(Host{Protocol: protocolRDP, Address: "win.example.com", User: "alice", Port: 3389})
+	if index < 0 || !state.hosts[index].FollowResolution {
+		t.Fatal("dynamic resolution was not saved with the RDP host")
+	}
+	var restored Host
+	if !restored.applyTransport(state.hosts[index].transport()) || !restored.FollowResolution {
+		t.Fatal("dynamic resolution did not survive restoring the host transport")
+	}
+}

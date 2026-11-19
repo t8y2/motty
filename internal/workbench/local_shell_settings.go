@@ -219,9 +219,7 @@ func (state *State) paintLocalShellSetting(page *settingsPage) {
 	c := page.c
 	page.lineWith(m.SettingsLocalShell, m.SettingsLocalShellDescription, controlWidth, func() {
 		trigger := ui.Button(c, value).Outline().Icon(lucideIcons[iconChevronDown]).Width(controlWidth).
-			HitWith(hitSettingsLocalShell, m.SettingsLocalShell, gfx.HitOptions{
-				Role: gfx.RoleCombobox, Value: value, Hint: hint, Expanded: menu.open, Disabled: len(menu.choices) == 0,
-			}).Disabled(len(menu.choices) == 0)
+			Hit(hitSettingsLocalShell, value).Tooltip(hint).Disabled(len(menu.choices) == 0)
 		if !menu.open || len(menu.choices) == 0 {
 			return
 		}

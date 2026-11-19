@@ -85,7 +85,8 @@ type desktopView struct {
 	width, height int
 	// resizer is the session when its server can change the picture's size to
 	// follow the pane, nil for one that cannot (VNC).
-	resizer desktop.Resizer
+	resizer          desktop.Resizer
+	followResolution bool
 	// pointerKind, pointerShape and pointerVersion are what the remote last
 	// said about its pointer; cursorImage is the shape made for the system to
 	// draw as the pointer, at cursorScale. A session that names no shape
@@ -187,11 +188,10 @@ func applyDesktopMemoryLimit() {
 	memlimit.Apply(memlimit.ForDesktops(sizes))
 }
 
-// pixelPerfect reports whether the picture is shown pixel for pixel: the server
-// can change its size, so the picture is made the size of the pane and scaling
-// it would only blur it.
+// pixelPerfect reports whether a picture is shown at one device pixel per
+// remote pixel, either at 100% or with the server resizing to fit.
 func (view *desktopView) pixelPerfect() bool {
-	return view.resizer != nil && view.resizer.CanResize()
+	return view.resizer != nil && (!view.fit || view.followResolution && view.resizer.CanResize())
 }
 
 // logicalPerPixel is the logical size of one picture pixel shown pixel for pixel.
@@ -410,6 +410,7 @@ func (state *State) openDesktop(session *Session) {
 	}
 	session.desk = newDesktopView(remote, session.host.Clipboard)
 	session.desk.chromeless = session.host.Chromeless
+	session.desk.followResolution = session.host.Protocol == protocolRDP && session.host.FollowResolution
 	session.term.ended = false
 	session.desk.active = state.desktopVisible(session)
 	remote.SetActive(session.desk.active)
@@ -1258,7 +1259,8 @@ func (state *State) setDesktopChromeless(session *Session, chromeless bool) {
 // is asked, and a frame is requested for the end of the wait, so a settled pane
 // costs nothing and a dragged window asks once.
 func (state *State) followDesktop(canvas *gfx.Canvas, view *desktopView) {
-	if view.resizer == nil || view.ended || !view.active || !view.fit || view.width <= 0 || !view.resizer.CanResize() {
+	if !view.followResolution || view.resizer == nil || view.ended || !view.active || !view.fit || view.width <= 0 || !view.resizer.CanResize() {
+		view.settling = false
 		return
 	}
 	if view.asked == (desktopTarget{}) {

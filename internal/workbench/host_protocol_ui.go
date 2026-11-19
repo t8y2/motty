@@ -18,6 +18,7 @@ var (
 	hitDialogViaSSH               = tree.ID(hostProtocolUiHits, "dialog-via-ssh")
 	hitDialogClipboard            = tree.ID(hostProtocolUiHits, "dialog-clipboard")
 	hitDialogConsole              = tree.ID(hostProtocolUiHits, "dialog-console")
+	hitDialogFollowResolution     = tree.ID(hostProtocolUiHits, "dialog-follow-resolution")
 	hitDialogRemoteAudio          = tree.ID(hostProtocolUiHits, "dialog-remote-audio")
 	hitDialogStandardSecurity     = tree.ID(hostProtocolUiHits, "dialog-standard-security")
 	hitDialogStandardSecurityHelp = tree.ID(hostProtocolUiHits, "dialog-standard-security-help")
@@ -452,6 +453,8 @@ func (state *State) clickHostProtocol(id gfx.ID) bool {
 		editor.chromeless = !editor.chromeless
 	case id == hitDialogConsole:
 		editor.console = !editor.console
+	case id == hitDialogFollowResolution:
+		editor.followResolution = !editor.followResolution
 	case id == hitDialogRemoteAudio:
 		editor.noAudio = !editor.noAudio
 	case id == hitDialogStandardSecurity:
@@ -794,9 +797,8 @@ func (state *State) declareHostAlgoRows(c ui.C) {
 // vncRowsHeight is the room of the three switches every remote desktop host has.
 const vncRowsHeight = 4 + 20 + (12 + 20) + (12 + 20) + 16
 
-// rdpRowsHeight adds the three switches only an RDP host has: the console
-// session, remote audio and Standard RDP Security.
-const rdpRowsHeight = vncRowsHeight + 3*(12+20)
+// rdpRowsHeight adds the RDP-only switches.
+const rdpRowsHeight = vncRowsHeight + 4*(12+20)
 
 // desktopRowsHeight is the room paintVNCRows takes for the protocol on screen.
 func (state *State) desktopRowsHeight() float32 {
@@ -828,7 +830,8 @@ func (state *State) paintVNCRows(canvas *gfx.Canvas) {
 // declareHostVNCRows lays out the switches of a VNC or RDP host: connecting
 // through SSH, sharing the clipboard, showing the picture without the bars
 // around it and, for RDP, asking Windows for its console (administrative)
-// session, playing remote sound and choosing Standard RDP Security.
+// session, playing remote sound, following the pane size and choosing Standard
+// RDP Security.
 func (state *State) declareHostVNCRows(c ui.C) {
 	editor, m := &state.editor, state.messages.Desktop
 	b := &editor.form.vncBody
@@ -848,6 +851,7 @@ func (state *State) declareHostVNCRows(c ui.C) {
 		if editor.protocol == protocolRDP {
 			state.declareDialogCheck(c, hitDialogConsole, m.ConsoleSession, editor.console, 12, 0)
 			state.declareDialogCheck(c, hitDialogRemoteAudio, m.RemoteAudio, !editor.noAudio, 12, 0)
+			state.declareDialogCheck(c, hitDialogFollowResolution, m.FollowResolution, editor.followResolution, 12, 0)
 			_, b.standardSecurityHelp = state.declareDialogCheckHelp(c, hitDialogStandardSecurity, m.StandardSecurity, editor.standardSecurity, 12, 0)
 		}
 	})

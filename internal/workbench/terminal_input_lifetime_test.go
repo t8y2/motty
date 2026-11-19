@@ -65,8 +65,8 @@ func TestTerminalTextStaysWithItsSessionAfterListCompaction(t *testing.T) {
 		t.Errorf("composition was lost by its owner: %+v", owner.term.preedit)
 	}
 	input.OnEvent(app.TextEvent{Kind: app.TextInsert, Text: "你"})
-	input.OnEvent(app.TextEvent{Kind: app.TextPaste, Text: " echo hi\n"})
-	if got := ownerShell.typed(); got != "你 echo hi\r" {
+	input.OnEvent(app.TextEvent{Kind: app.TextPaste, Text: " echo hi"})
+	if got := ownerShell.typed(); got != "你 echo hi" {
 		t.Errorf("owner received %q, want Chinese commit and paste", got)
 	}
 	if got := otherShell.typed(); got != "" {

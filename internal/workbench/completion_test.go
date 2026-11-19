@@ -303,10 +303,10 @@ func TestCompletionTypingHandsTheListToTheAutomaticOne(t *testing.T) {
 		t.Fatal("the shortcut did not open its own list")
 	}
 	w.type_("t")
-	list := &w.state.completion.list
-	if !list.active || !list.auto {
-		t.Fatal("typing did not hand the list to the automatic one")
-	}
+	waitFor(t, w.state, func() bool {
+		list := &w.state.completion.list
+		return list.active && list.auto
+	})
 	if got := w.shell.typed(); !strings.HasSuffix(got, "git st") {
 		t.Fatalf("typed %q", got)
 	}

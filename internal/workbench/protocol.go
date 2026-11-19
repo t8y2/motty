@@ -195,6 +195,7 @@ type savedTransport struct {
 	NoAudio          bool `json:"no_audio,omitempty"`
 	StandardSecurity bool `json:"standard_security,omitempty"`
 	Chromeless       bool `json:"chromeless,omitempty"`
+	FollowResolution bool `json:"follow_resolution,omitempty"`
 }
 
 func (host Host) transport() savedTransport {
@@ -224,6 +225,7 @@ func (host Host) transport() savedTransport {
 		transport.Protocol, transport.ViaSSH, transport.Clipboard, transport.Chromeless = "rdp", host.ViaSSH, host.Clipboard, host.Chromeless
 		transport.Console = host.Console
 		transport.NoAudio = host.NoAudio
+		transport.FollowResolution = host.FollowResolution
 		transport.StandardSecurity = host.StandardSecurity
 		return transport
 	case protocolSerial:
@@ -316,6 +318,7 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 		host.Protocol, host.ViaSSH, host.Clipboard, host.Chromeless = protocolRDP, transport.ViaSSH, transport.Clipboard, transport.Chromeless
 		host.Console = transport.Console
 		host.NoAudio = transport.NoAudio
+		host.FollowResolution = transport.FollowResolution
 		host.StandardSecurity = transport.StandardSecurity
 	case "serial":
 		host.Proxy, host.Credential = nil, ""
