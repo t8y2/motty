@@ -437,14 +437,59 @@ func selectVivaAsset(feed *vivaupdate.Feed, goos, goarch string, pkg Package) (v
 // fetchReleaseNotes is releaseNotes, replaceable by tests.
 var fetchReleaseNotes = releaseNotes
 
-// releaseNotes reads the GitHub release body for the update dialog. The Viva
-// feed names the release page but not its text; a failed lookup leaves the
-// dialog saying there are no notes.
+// releaseNotes reads the release notes for the update dialog. It checks the
+// mirror feed first (which carries the notes without GitHub API rate limits),
+// and falls back to the GitHub release body. A failed lookup leaves the dialog
+// saying there are no notes.
 func releaseNotes(ctx context.Context, client *http.Client, version string) string {
+	githubURL := "https://api.github.com/repos/t8y2/motty/releases/tags/v" + version
+	return releaseNotesFrom(ctx, client, MirrorFeed, githubURL, version)
+}
+
+func releaseNotesFrom(ctx context.Context, client *http.Client, mirrorURL, githubURL, version string) string {
 	if client == nil {
 		client = netclient.Client(15 * time.Second)
 	}
-	url := "https://api.github.com/repos/t8y2/motty/releases/tags/v" + version
+	if notes := mirrorNotes(ctx, client, mirrorURL, version); notes != "" {
+		return notes
+	}
+	return githubNotes(ctx, client, githubURL)
+}
+
+func mirrorNotes(ctx context.Context, client *http.Client, feedURL, version string) string {
+	if feedURL == "" {
+		return ""
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
+	if err != nil {
+		return ""
+	}
+	request.Header.Set("User-Agent", "motty/"+Current)
+	response, err := client.Do(request)
+	if err != nil {
+		return ""
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return ""
+	}
+	var body struct {
+		Version string `json:"version"`
+		Notes   string `json:"notes"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, maxFeedBytes)).Decode(&body); err != nil {
+		return ""
+	}
+	if body.Version != version || strings.TrimSpace(body.Notes) == "" {
+		return ""
+	}
+	return cutUTF8(body.Notes, maxNotesBytes)
+}
+
+func githubNotes(ctx context.Context, client *http.Client, url string) string {
+	if url == "" {
+		return ""
+	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return ""
@@ -462,7 +507,7 @@ func releaseNotes(ctx context.Context, client *http.Client, version string) stri
 	var body struct {
 		Body string `json:"body"`
 	}
-	if err := json.NewDecoder(io.LimitReader(response.Body, maxNotesBytes*2)).Decode(&body); err != nil {
+	if err := json.NewDecoder(io.LimitReader(response.Body, maxFeedBytes)).Decode(&body); err != nil {
 		return ""
 	}
 	return cutUTF8(body.Body, maxNotesBytes)

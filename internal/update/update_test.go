@@ -419,3 +419,86 @@ func TestCNBAssetNameIsThePublishedName(t *testing.T) {
 		}
 	}
 }
+func TestReleaseNotesPrefersMirror(t *testing.T) {
+	mirrorCalled := false
+	mirror := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mirrorCalled = true
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"version":"1.2.3","notes":"## Notes from Mirror"}`))
+	}))
+	defer mirror.Close()
+
+	githubCalled := false
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		githubCalled = true
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"body":"## Notes from GitHub"}`))
+	}))
+	defer github.Close()
+
+	notes := releaseNotesFrom(context.Background(), mirror.Client(), mirror.URL, github.URL, "1.2.3")
+	if !mirrorCalled {
+		t.Fatal("mirror was not called")
+	}
+	if githubCalled {
+		t.Fatal("github should not be called when mirror succeeds")
+	}
+	if notes != "## Notes from Mirror" {
+		t.Fatalf("got notes %q, want %q", notes, "## Notes from Mirror")
+	}
+}
+
+func TestReleaseNotesFallsBackToGitHub(t *testing.T) {
+	// Mirror returns an older version so it should be skipped
+	mirror := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"version":"1.2.2","notes":"## Old Notes"}`))
+	}))
+	defer mirror.Close()
+
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"body":"## Fallback Notes"}`))
+	}))
+	defer github.Close()
+
+	notes := releaseNotesFrom(context.Background(), mirror.Client(), mirror.URL, github.URL, "1.2.3")
+	if notes != "## Fallback Notes" {
+		t.Fatalf("got notes %q, want %q", notes, "## Fallback Notes")
+	}
+}
+
+func TestReleaseNotesParsesGitHubPayloadLargerThanOldLimit(t *testing.T) {
+	// A GitHub release JSON with many assets is typically 37KB - 45KB+,
+	// with "body" placed after "assets". The old LimitReader of 32KB truncated
+	// the response and caused unexpected EOF.
+	padding := strings.Repeat("x", 40000)
+	payload := `{"tag_name":"v1.2.3","assets_padding":"` + padding + `","body":"## Large Release Notes"}`
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(payload))
+	}))
+	defer github.Close()
+
+	notes := releaseNotesFrom(context.Background(), github.Client(), "", github.URL, "1.2.3")
+	if notes != "## Large Release Notes" {
+		t.Fatalf("got notes %q, want %q", notes, "## Large Release Notes")
+	}
+}
+
+func TestReleaseNotesEmptyWhenBothFail(t *testing.T) {
+	mirror := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "server error", http.StatusInternalServerError)
+	}))
+	defer mirror.Close()
+
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer github.Close()
+
+	notes := releaseNotesFrom(context.Background(), mirror.Client(), mirror.URL, github.URL, "1.2.3")
+	if notes != "" {
+		t.Fatalf("expected empty notes, got %q", notes)
+	}
+}
