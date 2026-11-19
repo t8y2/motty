@@ -546,7 +546,12 @@ func gpuProbe(command string) string {
 	if begin < 0 || end < begin {
 		return ""
 	}
-	return command[begin:end] + "\ngpu_probe\n"
+	probe := command[begin:end]
+	if strings.HasPrefix(command, "exec /bin/sh -c '") {
+		// The monitor sent the script as a quoted shell argument.
+		probe = strings.ReplaceAll(probe, `'\''`, "'")
+	}
+	return probe + "\ngpu_probe\n"
 }
 
 // statsReading is the counters of a server that is 37.5% busy, uses 3 of 8 GiB
