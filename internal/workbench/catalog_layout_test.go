@@ -57,9 +57,9 @@ func TestForwardsAndProxiesShareHeaderAndFooterGeometry(t *testing.T) {
 		t.Fatalf("empty body jumps between tabs: forwards=%+v proxies=%+v", forwardEmpty, proxyEmpty)
 	}
 
-	// Populated pages: the toolbar stays put and the tables end at the same
-	// footer line. (The proxies table may start lower when its hub filter tabs
-	// are shown; that row is content, not a layout shift.)
+	// Populated pages: the toolbar stays put and the list bodies end at the
+	// same footer line. (The proxies list may start lower when its hub filter
+	// tabs are shown; that row is content, not a layout shift.)
 	addForwardRule(t, state, "Web", freePort(t), "web.internal", 8080)
 	state.proxies = []proxyRecord{{ID: 1, TargetID: state.hosts[1].ID, JumpID: state.hosts[0].ID}}
 	state.nextProxyID = 2
@@ -73,16 +73,16 @@ func TestForwardsAndProxiesShareHeaderAndFooterGeometry(t *testing.T) {
 	state.activeSection = sectionProxies
 	proxyCanvas = paint()
 	proxyAdd = buttonBounds(proxyCanvas, hitProxyAdd)
-	proxyTable := state.sectionBodies.proxies.tableBox.Rect()
+	proxyBody := state.sectionBodies.proxies.listBox.Rect()
 
 	assertToolbarAligned(forwardAdd, proxyAdd)
-	if forwardTable.Width <= 0 || proxyTable.Width <= 0 {
-		t.Fatalf("tables were not laid out: forwards=%+v proxies=%+v", forwardTable, proxyTable)
+	if forwardTable.Width <= 0 || proxyBody.Width <= 0 {
+		t.Fatalf("list bodies were not laid out: forwards=%+v proxies=%+v", forwardTable, proxyBody)
 	}
-	if forwardTable.X != proxyTable.X || forwardTable.Width != proxyTable.Width {
-		t.Fatalf("table columns jump between tabs: forwards=%+v proxies=%+v", forwardTable, proxyTable)
+	if forwardTable.X != proxyBody.X || forwardTable.Width != proxyBody.Width {
+		t.Fatalf("list body edges jump between tabs: forwards=%+v proxies=%+v", forwardTable, proxyBody)
 	}
-	if forwardTable.Y+forwardTable.Height != proxyTable.Y+proxyTable.Height {
-		t.Fatalf("footer line jumps between tabs: forwards=%+v proxies=%+v", forwardTable, proxyTable)
+	if forwardTable.Y+forwardTable.Height != proxyBody.Y+proxyBody.Height {
+		t.Fatalf("footer line jumps between tabs: forwards=%+v proxies=%+v", forwardTable, proxyBody)
 	}
 }
