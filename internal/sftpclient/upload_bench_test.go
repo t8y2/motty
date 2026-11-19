@@ -166,3 +166,86 @@ func BenchmarkUploadOverDelayedSSH(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkUploadManySmallFilesOverDelayedSSH uploads one directory of many
+// KB-sized files, where the per-file round trips, not the sliding window, set
+// the pace. It uses the same server and delay as BenchmarkUploadOverDelayedSSH,
+// with MOTTY_E2E_FILES and MOTTY_E2E_SMALL (bytes per file) naming the load:
+//
+//	MOTTY_E2E_SSHD=127.0.0.1:2395 MOTTY_E2E_DELAY=5ms \
+//	    go test ./internal/sftpclient -run '^$' -bench ManySmall -benchtime 1x
+func BenchmarkUploadManySmallFilesOverDelayedSSH(b *testing.B) {
+	target := os.Getenv("MOTTY_E2E_SSHD")
+	if target == "" {
+		b.Skip("MOTTY_E2E_SSHD is not set")
+	}
+	delay := 5 * time.Millisecond
+	if text := os.Getenv("MOTTY_E2E_DELAY"); text != "" {
+		parsed, err := time.ParseDuration(text)
+		if err != nil {
+			b.Fatal(err)
+		}
+		delay = parsed
+	}
+	files := 100
+	if text := os.Getenv("MOTTY_E2E_FILES"); text != "" {
+		parsed, err := strconv.Atoi(text)
+		if err != nil || parsed <= 0 {
+			b.Fatalf("MOTTY_E2E_FILES = %q", text)
+		}
+		files = parsed
+	}
+	size := 2 << 10
+	if text := os.Getenv("MOTTY_E2E_SMALL"); text != "" {
+		parsed, err := strconv.Atoi(text)
+		if err != nil || parsed <= 0 {
+			b.Fatalf("MOTTY_E2E_SMALL = %q", text)
+		}
+		size = parsed
+	}
+
+	address := delayedProxy(b, target, delay)
+	sshClient, err := ssh.Dial("tcp", address, &ssh.ClientConfig{
+		User:            "bench",
+		Auth:            []ssh.AuthMethod{ssh.Password("secret")},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         10 * time.Second,
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer sshClient.Close()
+	worker := NewWorker(func() (Remote, error) { return Open(sshClient) }, nil)
+	defer worker.Close()
+
+	localRoot := filepath.Join(b.TempDir(), "many")
+	if err := os.MkdirAll(localRoot, 0o755); err != nil {
+		b.Fatal(err)
+	}
+	content := make([]byte, size)
+	for i := range content {
+		content[i] = byte(i * 2654435761 >> 13)
+	}
+	for i := 0; i < files; i++ {
+		if err := os.WriteFile(filepath.Join(localRoot, "file-"+strconv.Itoa(i)+".bin"), content, 0o600); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	b.SetBytes(int64(files * size))
+	b.ReportAllocs()
+	for i := 0; b.Loop(); i++ {
+		name := "many-" + strconv.Itoa(i)
+		if _, queued := worker.QueueUpload(localRoot, name, true, ExistingReplace); !queued {
+			b.Fatal("upload not queued")
+		}
+		select {
+		case result := <-worker.Results():
+			if result.Err != nil {
+				b.Fatal(result.Err)
+			}
+		case <-time.After(5 * time.Minute):
+			b.Fatal("upload did not finish")
+		}
+	}
+}

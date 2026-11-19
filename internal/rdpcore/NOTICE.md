@@ -81,7 +81,10 @@ Changed:
   a suppressed server must not answer it.
 * A 32bpp pointer's alpha channel decides transparency, with the AND mask able
   only to hide a pixel; 32bpp data with no alpha at all still falls back to the
-  masks. xrdp sends X cursors at 32bpp with per-pixel alpha and a zero AND
+  masks. A server that omits the AND mask entirely (`lengthAndMask = 0`) leaves
+  each pixel to its alpha; GNOME Remote Desktop sends Debian 13's cursor this
+  way, and reading the absent mask as "hide" rendered the whole cursor
+  invisible. xrdp sends X cursors at 32bpp with per-pixel alpha and a zero AND
   mask, which upstream's rule rendered as an opaque black square around the
   pointer.
 * The EGFX `ResetGraphics` PDU clears surfaces, output maps and frame state but

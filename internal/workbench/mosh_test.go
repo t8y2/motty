@@ -1,6 +1,32 @@
 package workbench
 
-import "testing"
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"motty/internal/sshconn"
+)
+
+// A mosh host's remote shell is this terminal: mosh-server receives the same
+// color depth the SSH side declares, beside the locale it already carries.
+func TestMoshServerCarriesTheColorDepth(t *testing.T) {
+	fake := &fakeConn{}
+	fake.exec = func(context.Context, string, int) (sshconn.ExecResult, error) {
+		key := strings.Repeat("A", 22)
+		return sshconn.ExecResult{Output: []byte("MOSH CONNECT 60001 " + key + "\n")}, nil
+	}
+	conn := &moshConn{inner: fake}
+	if _, _, err := conn.startServer(context.Background(), "en_US.UTF-8"); err != nil {
+		t.Fatalf("startServer: %v", err)
+	}
+	if len(fake.commandCalls) != 1 {
+		t.Fatalf("executed %d commands, want 1", len(fake.commandCalls))
+	}
+	if command := fake.commandCalls[0]; !strings.Contains(command, "-l COLORTERM=truecolor") {
+		t.Fatalf("mosh-server command %q does not carry COLORTERM", command)
+	}
+}
 
 // A mosh host is still an SSH host: its saved record keeps every SSH field and
 // gains only the terminal transport, and it has no SSH server capabilities.

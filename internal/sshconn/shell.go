@@ -116,8 +116,15 @@ func (conn *Conn) OpenShell(config ShellConfig) (*Shell, error) {
 	// the interactive session. Servers usually accept LANG; without a UTF-8
 	// locale the shell would mangle multibyte input, which the charset handling
 	// then reports, but staying connected comes first. A refusal is harmless.
-	if !conn.config.InteractiveOnly && !config.SkipUTF8Locale && standardImplementation(conn.Status().ServerVersion) {
-		_ = session.Setenv("LANG", utf8Locale())
+	// COLORTERM is how a program learns this terminal draws 24-bit color:
+	// xterm-256color's terminfo still advertises 256 entries. A host that keeps
+	// its own remote charset keeps its locale too, but the charset says nothing
+	// about the color depth, so COLORTERM is asked for either way.
+	if !conn.config.InteractiveOnly && standardImplementation(conn.Status().ServerVersion) {
+		if !config.SkipUTF8Locale {
+			_ = session.Setenv("LANG", utf8Locale())
+		}
+		_ = session.Setenv("COLORTERM", "truecolor")
 	}
 	term := config.Term
 	if term == "" {

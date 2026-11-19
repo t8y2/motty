@@ -495,10 +495,10 @@ func TestLocalProxyDockerPanelPaintsNavigationOnFirstFrame(t *testing.T) {
 		t.Fatalf("Docker first frame navigation = back:%t cancel:%t, hits=%+v", foundBack, foundCancel, canvas.Hits())
 	}
 	for _, text := range canvas.Texts() {
-		if text.Value == "HTTP_PROXY=http://127.0.0.1:43217" {
+		if strings.Contains(text.Value, "HTTP_PROXY=http://127.0.0.1:43217") {
 			foundHTTP = true
 		}
-		if text.Value == "HTTPS_PROXY=http://127.0.0.1:43217" {
+		if strings.Contains(text.Value, "HTTPS_PROXY=http://127.0.0.1:43217") {
 			foundHTTPS = true
 		}
 		if strings.Contains(text.Value, "%!") {

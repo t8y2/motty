@@ -25,7 +25,7 @@ func (state *State) refreshEditors() {
 	for _, info := range editors {
 		menu.choices = append(menu.choices, info.id)
 	}
-	if customEditorSupported() || state.defaultEditor == editorCustom {
+	if customEditorChoice() || state.defaultEditor == editorCustom {
 		menu.choices = append(menu.choices, editorCustom)
 	}
 }

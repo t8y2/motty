@@ -19,7 +19,7 @@ const (
 	defaultLocalProxyPort  uint16  = 7897
 	dockerProxyDocsURL             = "https://docs.docker.com/engine/daemon/proxy/"
 	localProxyMainHeight   float32 = 190
-	localProxyDockerHeight float32 = 620
+	localProxyDockerHeight float32 = 780
 )
 
 var localProxyHits = tree.Feature("local-proxy")
@@ -628,25 +628,36 @@ func (state *State) declareLocalProxyDockerBody(c ui.C, snapshot localProxySnaps
 	ui.Wrap(c, m.DockerWarning).FontSize(theme.Metrics.FontSizeS).Color(pal.danger).LineHeight(18)
 	ui.Text(c, m.DockerSteps).FontSize(theme.Metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text)
 	if port != 0 {
-		for _, line := range strings.Split(fmt.Sprintf(m.DockerConfigFmt, port, port), "\n") {
+		ui.Text(c, m.DockerStepSetup).FontSize(theme.Metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.text)
+		ui.Wrap(c, m.DockerConfigDesc).FontSize(theme.Metrics.FontSizeS).Color(pal.muted).LineHeight(18)
+		for _, line := range strings.Split(localProxyDockerConfigCommand(port), "\n") {
 			ui.Text(c, line).Mono().FontSize(11).Color(pal.text).LineHeight(16)
 		}
+	} else {
+		ui.Text(c, m.DockerTunnelOff).FontSize(theme.Metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.warning)
+		ui.Wrap(c, m.DockerTunnelOffDesc).FontSize(theme.Metrics.FontSizeS).Color(pal.muted).LineHeight(18)
 	}
 	ui.Row(c).Height(34).Gap(8).Children(func() {
 		if port != 0 {
-			label := state.localProxyCopyLabel(hitLocalProxyDockerConfig, m.DockerCopy, m.DockerCopied)
+			label := state.localProxyCopyLabel(hitLocalProxyDockerConfig, m.DockerCopyConfig, m.DockerCopiedConfig)
 			ui.Button(c, label).Outline().Hit(hitLocalProxyDockerConfig, label).Basis(0).Grow(1)
 		} else {
 			ui.Spacer(c).Basis(0).Grow(1)
 		}
 		ui.Button(c, m.OpenDockerDocs).Outline().Hit(hitLocalProxyDockerDocs, m.OpenDockerDocs).Basis(0).Grow(1)
 	})
-	ui.Wrap(c, m.DockerRestoreFmt).FontSize(theme.Metrics.FontSizeS).Color(pal.muted).LineHeight(18)
+	if port != 0 {
+		ui.Text(c, m.DockerStepRestore).FontSize(theme.Metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.text)
+		ui.Wrap(c, m.DockerRestoreDesc).FontSize(theme.Metrics.FontSizeS).Color(pal.muted).LineHeight(18)
+	} else {
+		ui.Text(c, m.DockerStepRestoreOff).FontSize(theme.Metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.text)
+		ui.Wrap(c, m.DockerRestoreOffDesc).FontSize(theme.Metrics.FontSizeS).Color(pal.muted).LineHeight(18)
+	}
 	for _, line := range strings.Split(localProxyDockerRestoreCommand(), "\n") {
 		ui.Text(c, line).Mono().FontSize(11).Color(pal.text).LineHeight(16)
 	}
 	ui.Row(c).Height(34).Children(func() {
-		label := state.localProxyCopyLabel(hitLocalProxyDockerRestore, m.DockerCopy, m.DockerCopied)
+		label := state.localProxyCopyLabel(hitLocalProxyDockerRestore, m.DockerCopyRestore, m.DockerCopiedRestore)
 		ui.Button(c, label).Outline().Hit(hitLocalProxyDockerRestore, label).Grow(1)
 	})
 	if state.localProxyUI.copyError != "" {
@@ -658,9 +669,9 @@ func localProxyDockerConfigCommand(port uint16) string {
 	if port == 0 {
 		return ""
 	}
-	return fmt.Sprintf("sudo mkdir -p /etc/systemd/system/docker.service.d\nsudo tee /etc/systemd/system/docker.service.d/motty-proxy.conf >/dev/null <<'EOF'\n[Service]\nEnvironment=\"HTTP_PROXY=http://127.0.0.1:%d\"\nEnvironment=\"HTTPS_PROXY=http://127.0.0.1:%d\"\nEOF\nsudo systemctl daemon-reload\nsudo systemctl restart docker", port, port)
+	return fmt.Sprintf("sudo mkdir -p /etc/systemd/system/docker.service.d\nsudo tee /etc/systemd/system/docker.service.d/motty-proxy.conf >/dev/null <<'EOF'\n[Service]\nEnvironment=\"HTTP_PROXY=http://127.0.0.1:%d\"\nEnvironment=\"HTTPS_PROXY=http://127.0.0.1:%d\"\nEOF\nsudo systemctl daemon-reload && sudo systemctl restart docker", port, port)
 }
 
 func localProxyDockerRestoreCommand() string {
-	return "sudo rm -f /etc/systemd/system/docker.service.d/motty-proxy.conf\nsudo systemctl daemon-reload\nsudo systemctl restart docker"
+	return "sudo rm -f /etc/systemd/system/docker.service.d/motty-proxy.conf\nsudo systemctl daemon-reload && sudo systemctl restart docker"
 }

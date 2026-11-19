@@ -42,7 +42,6 @@ func (state *State) ensureRemoteTableHooks() {
 	view.rowDecl = state.declareRemoteTableRow
 	view.rowMenu = state.declareRemoteTableMenu
 	view.headerDraw = state.paintRemoteTableHeader
-	view.fillDraw = state.paintRemoteTableFill
 	view.borderDraw = state.paintRemoteTableBorder
 	view.menuRow = -1
 }
@@ -103,8 +102,8 @@ func (state *State) declareRemoteToolsTable(c ui.C, tab remoteTab, fallbackWidth
 	placeholder := state.remoteTablePlaceholder(tab)
 	showHeader := !state.remoteTableHeaderHidden(tab)
 	ui.Column(c).Grow(1).Shrink(1).MinHeight(headerHeight+view.tableRowHeight).
-		MarginSides(remoteToolsTableMargin, 0, 0, 0).Radius(radius.control).Children(func() {
-		ui.Slot(c).Absolute().Left(0).Right(0).Top(0).Bottom(0).Draw(view.fillDraw)
+		MarginSides(remoteToolsTableMargin, 0, 0, 0).Radius(radius.control).
+		Background(state.pal.workspace).Children(func() {
 		// The old control drew its header and rows inside its one-pixel frame,
 		// so the page keeps the same inset.
 		ui.Column(c).Fill().PadSides(1, 1, 0, 1).Children(func() {
@@ -136,13 +135,9 @@ func (state *State) declareRemoteToolsTable(c ui.C, tab remoteTab, fallbackWidth
 	})
 }
 
-// paintRemoteTableFill paints the table surface under its header and rows, as
-// the modal's own control did: the workspace colour inside the rounded frame.
-func (state *State) paintRemoteTableFill(d *ui.DrawContext) {
-	d.Canvas.Rounded(d.Rect, radius.control, state.pal.workspace)
-}
-
-// paintRemoteTableBorder paints the rounded frame over the table's edge.
+// paintRemoteTableBorder paints the rounded frame over the table's edge. It is
+// an overlay so the frame stays above the rows; the surface beneath them is the
+// container's background, which the page paints before its children.
 func (state *State) paintRemoteTableBorder(d *ui.DrawContext) {
 	d.Canvas.RoundedOutline(d.Rect, radius.control, 1, state.pal.line)
 }

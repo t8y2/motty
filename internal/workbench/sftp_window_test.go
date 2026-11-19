@@ -24,6 +24,10 @@ import (
 type sftpNativeHost struct {
 	windows []*sftpNativeWindow
 	scale   float64
+	// referenceText lays the window out with the reference text metrics, which
+	// a paint golden needs so its snapshot does not depend on the platform's
+	// font engine.
+	referenceText bool
 }
 type sftpNativeWindow struct {
 	config app.Config
@@ -34,7 +38,7 @@ type sftpNativeWindow struct {
 }
 
 func (h *sftpNativeHost) OpenWindow(config app.Config, canvas *gfx.Canvas, closed func()) (app.WindowControl, error) {
-	view, err := headless.Open(config, canvas, headless.Options{Scale: h.scale})
+	view, err := headless.Open(config, canvas, headless.Options{Scale: h.scale, ReferenceText: h.referenceText})
 	if err != nil {
 		return nil, err
 	}
@@ -66,8 +70,20 @@ func (w *sftpNativeWindow) Frame() (gfx.Rect, bool) { return gfx.Rect{Width: 120
 
 func dualSFTPFixture(t *testing.T, scale float64) (*State, *sftpWindow, *workbenchSFTPRemote, *sftpNativeHost, string) {
 	t.Helper()
+	return dualSFTPFixtureWith(t, scale, false)
+}
+
+// dualSFTPReferenceFixture is dualSFTPFixture over the reference text metrics,
+// for a golden that must not depend on the platform's font engine.
+func dualSFTPReferenceFixture(t *testing.T, scale float64) (*State, *sftpWindow, *workbenchSFTPRemote, *sftpNativeHost, string) {
+	t.Helper()
+	return dualSFTPFixtureWith(t, scale, true)
+}
+
+func dualSFTPFixtureWith(t *testing.T, scale float64, referenceText bool) (*State, *sftpWindow, *workbenchSFTPRemote, *sftpNativeHost, string) {
+	t.Helper()
 	state, source, _, remote := openTestSFTP(t)
-	host := &sftpNativeHost{scale: scale}
+	host := &sftpNativeHost{scale: scale, referenceText: referenceText}
 	app.UseApplicationRunner(func(start func(app.Host) error) error { return start(host) })
 	t.Cleanup(func() { host.Quit(); app.UseApplicationRunner(nil) })
 	var w *sftpWindow

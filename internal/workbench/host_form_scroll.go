@@ -221,11 +221,36 @@ func (state *State) hostFormPopupOpen() bool {
 }
 
 // scrollHostForm gives the wheel to the body's page scroll area, whose offset the
-// page keeps, or to an open page select over it.
+// page keeps, or to an open page select over it. The dialog owns the wheel over
+// its backdrop: a wheel the body cannot use goes nowhere else, and the page's
+// own routing keeps the same event from falling back to the window's handler.
 func (state *State) scrollHostForm(event gfx.ScrollEvent) gfx.EventResult {
-	result := state.windowPage().Wheel(event)
+	if !state.hostFormPageListOpen() && !hostFormContains(state.editor.form.viewport, event.X, event.Y) {
+		return gfx.EventResult{Handled: true}
+	}
+	result := state.windowPage().RouteWheel(event)
 	result.Handled = true
 	return result
+}
+
+// hostFormPageListOpen reports whether a page select or combobox of the form has
+// its list open: the open list owns the wheel wherever the pointer is.
+func (state *State) hostFormPageListOpen() bool {
+	f := &state.editor.form
+	for _, box := range [...]ui.Box{f.iconBox, f.authBox, f.portsBox, f.idleIntervalBox, f.idleUnitBox, f.idleInputBox} {
+		if !box.Valid() {
+			continue
+		}
+		if _, open := box.Popup(); open {
+			return true
+		}
+	}
+	if f.encodingBox.Valid() {
+		if combo := f.encodingBox.ComboState(); combo != nil && combo.GetList().Open {
+			return true
+		}
+	}
+	return false
 }
 
 func hostFormContains(b gfx.Rect, x, y float32) bool {

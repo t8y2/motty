@@ -195,6 +195,18 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.noteSidebarFocusBack = false
 		canvas.RequestFocus(state.activeTerminalFocusHit())
 	}
+	// A click that acted on the terminal (a quick-command chip, say) asks for
+	// the keyboard back here: it has no editable result of its own to keep it.
+	if !state.pendingFocus.IsZero() {
+		// A dialog opened by the same click (a quick command with variables)
+		// asks for its first field; let it keep the keyboard. The request is
+		// dropped either way so a later paint does not steal it back.
+		// The terminal has to be the page on screen to take the keyboard too.
+		if state.modal == modalNone && state.terminalPage() {
+			canvas.RequestFocus(state.pendingFocus)
+		}
+		state.pendingFocus = gfx.ID{}
+	}
 	// A panel closed from inside itself returns the keyboard to the terminal it
 	// covered. The request is made once: a later click decides focus again.
 	if state.ai.panel.focusBack && !state.aiPanelVisible() {
@@ -500,7 +512,7 @@ func (state *State) scrollWindow(event gfx.ScrollEvent) gfx.EventResult {
 	if state.aiMenuShown() {
 		// An open chip menu is the page's popup and owns the wheel; its own
 		// scroll route (and its backdrop) decide where the event goes.
-		return state.windowPage().Wheel(event)
+		return state.windowPage().RouteWheel(event)
 	}
 	panel := &state.ai.panel
 	if panel.rect.Width > 0 && pointInRect(event.X, event.Y, panel.rect) && state.aiBackgroundScrollBlocked() {
@@ -516,7 +528,7 @@ func (state *State) scrollWindow(event gfx.ScrollEvent) gfx.EventResult {
 	if state.modal != modalNone {
 		if state.modal == modalProxyBatchAssociate {
 			// The jump picker's open list and the candidates are the page's.
-			result := state.windowPage().Wheel(event)
+			result := state.windowPage().RouteWheel(event)
 			result.Handled = true
 			return result
 		}
@@ -558,7 +570,7 @@ func (state *State) windowFrameColor() gfx.Color {
 // draws the window controls in the corner, their inset owns the space and the
 // bar keeps its own margin; the rail is left where it is.
 func (state *State) windowBarRightPad() float32 {
-	_, trailing := app.TitlebarInsets()
+	_, trailing := windowTitlebarInsets()
 	centred := state.terminalToolbarMetrics().railExtent/2 - barButtonSize/2
 	if centred <= trailing {
 		return trailing + barMargin
@@ -677,7 +689,7 @@ func (state *State) declareShell(c ui.C) {
 // to share the room left of the buttons.
 func (state *State) windowBarGeometry(canvas *gfx.Canvas, width float32) barGeometry {
 	chrome := &state.chrome
-	leading, trailing := app.TitlebarInsets()
+	leading, trailing := windowTitlebarInsets()
 	padRight := state.windowBarRightPad()
 	buttons := state.windowBarButtons()
 	tabCount := len(state.workspaceTabs) + len(state.sftpTabs)
@@ -731,7 +743,7 @@ func (state *State) declareProbeBar(c ui.C) {
 // window. With probe set only the places are declared, for windowBarGeometry.
 func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool, geometry barGeometry, scroll float32) {
 	m, pal, chrome := state.messages, state.pal, &state.chrome
-	leading, _ := app.TitlebarInsets()
+	leading, _ := windowTitlebarInsets()
 	visibleFileTabs := 0
 	for _, tab := range state.sftpTabs {
 		if tab != nil && !tab.closed {
@@ -2284,10 +2296,16 @@ func (state *State) declareHostTreeRow(c ui.C, d *hostRowDrawer, rowWidth, left 
 	}
 	statusWords := statusWidth > lightWidth
 	statusStart := rowWidth - statusWidth - indent
-	nameWidth := min(max(rowWidth*0.24, nameLeast), max(statusStart-leadWidth-8, nameLeast/2))
-	addressStart := min(max(rowWidth*0.37, float32(330)), max(statusStart-180, leadWidth+nameWidth+8))
 	tagsStart := max(rowWidth*0.65, float32(560))
-	addressWidth := max(min(rowWidth*0.25, statusStart-addressStart-8), 0)
+	// The name column takes a fair share of the row on its own, but the address
+	// keeps its own share before the tag column: a long host name must not be
+	// cut short beside columns that have space to spare (#1064), and a masked
+	// address must not be squeezed out by that name.
+	addressShare := max(rowWidth*0.45, float32(330))
+	addressTarget := min(rowWidth*0.25, max(min(tagsStart, statusStart)-leadWidth-nameLeast-16, 0))
+	addressStart := max(leadWidth+nameLeast+8, min(addressShare, min(tagsStart, statusStart)-8-addressTarget))
+	nameWidth := min(max(rowWidth*0.34, nameLeast), max(addressStart-leadWidth-8, nameLeast))
+	addressWidth := max(min(rowWidth*0.25, min(tagsStart, statusStart)-addressStart-8), 0)
 	tagsWidth := min(rowWidth*0.18, statusStart-tagsStart-8)
 	status, _ := state.hostStatus(host)
 	checkMargin := 46 - 10 - components.CheckboxExtent(state.Theme())

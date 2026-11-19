@@ -1139,7 +1139,7 @@ func (state *State) workspaceDraftScroll(event gfx.ScrollEvent) gfx.EventResult 
 	}
 	if pointInRect(event.X, event.Y, state.workspaceDraft.previewBounds) ||
 		pointInRect(event.X, event.Y, state.workspaceDraft.bounds) {
-		result := state.windowPage().Wheel(event)
+		result := state.windowPage().RouteWheel(event)
 		result.Handled = true
 		return result
 	}

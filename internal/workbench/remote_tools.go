@@ -188,7 +188,6 @@ type remoteToolsView struct {
 	rowDecl    func(ui.ListRow)
 	rowMenu    func(*ui.MenuItems)
 	headerDraw func(*ui.DrawContext)
-	fillDraw   func(*ui.DrawContext)
 	borderDraw func(*ui.DrawContext)
 	// emptyDraw and loadingDraw paint the placeholders the old table control
 	// painted: components.Empty and the centered spinner over its label.

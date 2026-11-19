@@ -375,14 +375,14 @@ func (state *State) paintFilesSettings(page *settingsPage) {
 			if state.customEditorSettingVisible() {
 				path := state.customEditorPath
 				description := m.FilesCustomEditorNotSet
-				if !customEditorSupported() {
+				if !customEditorChoice() {
 					description = m.FilesCustomEditorUnavailable
 				}
 				if path != "" {
 					description = path
 				}
 				var actions []components.ButtonAction
-				if customEditorSupported() {
+				if customEditorChoice() {
 					actions = append(actions, components.ButtonAction{
 						ID: hitSettingsCustomEditorChoose, Label: m.FilesCustomEditorChoose, Variant: components.ButtonOutline,
 					})
@@ -404,7 +404,7 @@ func (state *State) paintFilesSettings(page *settingsPage) {
 }
 
 func (state *State) customEditorSettingVisible() bool {
-	return customEditorSupported() || state.defaultEditor == editorCustom || state.customEditorPath != ""
+	return customEditorChoice() || state.defaultEditor == editorCustom || state.customEditorPath != ""
 }
 
 // clickFilesSettings handles the presses of the Files settings.

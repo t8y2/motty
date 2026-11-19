@@ -522,7 +522,7 @@ func (state *State) scrollWorkspaceLibrary(event gfx.ScrollEvent) gfx.EventResul
 		!pointInRect(event.X, event.Y, state.workspaceLibraryBounds) {
 		return gfx.EventResult{}
 	}
-	result := state.windowPage().Wheel(event)
+	result := state.windowPage().RouteWheel(event)
 	result.Handled = true
 	return result
 }

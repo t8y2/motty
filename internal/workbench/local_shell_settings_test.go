@@ -28,6 +28,9 @@ func TestLocalShellSettingVisibilityAndPosition(t *testing.T) {
 		if !visible {
 			t.Fatal("the local shell setting is not visible")
 		}
+		if hit.Role != gfx.RoleCombobox {
+			t.Fatalf("the shell trigger has role %v, want a combobox", hit.Role)
+		}
 		if visible {
 			notify, _ := hitByID(&canvas, hitSettingsNotifyToggle)
 			if hit.Bounds.Y <= notify.Bounds.Y {

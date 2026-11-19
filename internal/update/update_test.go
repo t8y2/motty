@@ -211,6 +211,34 @@ func TestGitHubFallbackDoesNotClaimThePackageListWasChecked(t *testing.T) {
 	}
 }
 
+func TestAStalledMirrorLeavesTheFallbackItsOwnTime(t *testing.T) {
+	// The mirror accepts the request and never answers. The GitHub fallback
+	// must still get an attempt of its own, not the dead context a shared
+	// deadline would hand it.
+	unblock := make(chan struct{})
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/mirror" {
+			<-unblock
+			return
+		}
+		w.Write([]byte(`{"tag_name":"v1.2.3","html_url":"https://github.com/t8y2/motty/releases/tag/v1.2.3"}`))
+	}))
+	defer server.Close()
+	defer close(unblock)
+
+	previous := feedAttemptTimeout
+	feedAttemptTimeout = 50 * time.Millisecond
+	defer func() { feedAttemptTimeout = previous }()
+
+	release, err := checkFeeds(context.Background(), server.Client(), server.URL+"/mirror", server.URL+"/github", "darwin", "arm64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if release.Version != "1.2.3" {
+		t.Fatalf("fallback release = %+v", release)
+	}
+}
+
 func TestTheMirrorCarriesTheReleaseSignature(t *testing.T) {
 	signature := base64.StdEncoding.EncodeToString([]byte("minisign armour"))
 	files := func(sig string) string {

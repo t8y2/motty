@@ -65,6 +65,8 @@ func (state *State) shortcutActionLabel(action shortcutAction) string {
 		return messages.Tools.SnippetsTitle
 	case shortcutAcceptSuggestion:
 		return messages.Completion.AcceptHintAction
+	case shortcutSettings:
+		return messages.NavSettings
 	default:
 		return ""
 	}

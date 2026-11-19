@@ -165,8 +165,8 @@ rect {{967 -684 146 28} {0.24886276 0.27184314 0.30941176 1} 5.5 0 {414 37 978 8
 rect {{1117 -684 146 28} {0.14509805 0.16862746 0.20784314 1} 5.5 0 {414 37 978 855} true #185}
 rect {{1114.5 -677.04 1 14.08} {0.2 0.23529412 0.2901961 0} 0 0 {414 37 978 855} true #186}
 rect {{524 -638 758 1} {0.2 0.23529412 0.2901961 0.7} 0 0 {414 37 978 855} true #187}
-rect {{965 -622 300 32} {0.216 0.22917646 0.24894118 1} 7.5 0 {414 37 978 855} true #189}
-rect {{966 -621 298 30} {0.11146667 0.1264 0.1488 1} 6.5 0 {414 37 978 855} true #190}
+rect {{965 -622 300 32} {0.14133334 0.1557647 0.17741176 1} 7.5 0 {414 37 978 855} true #189}
+rect {{966 -621 298 30} {0.08906667 0.10437648 0.12734118 1} 6.5 0 {414 37 978 855} true #190}
 rect {{523 -522 760 282} {0.2 0.23529412 0.2901961 0.85} 11 0 {414 37 978 855} true #191}
 rect {{524 -521 758 280} {0.12156863 0.14117648 0.1764706 1} 10 0 {414 37 978 855} true #192}
 rect {{1127.7979 -428 137.20215 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {414 37 978 855} true #194}
@@ -490,7 +490,7 @@ text "Home folder" {1150.2285 -686 150 32}
 text "Default local shell" {541 -632 400 21}
 text "The shell or WSL distribution that new and reconnected local terminals" {541 -610 400 15}
 text "start with. Right-click Local Terminal, or use the arrow beside it on the…" {541 -595 400 15}
-text "Default local shell" {1070.1011 -622 113.79785 32}
+text "No shells found" {1076.8105 -622 100.37891 32}
 text "Terminal colors" {527 -550 752 22}
 text "The terminal's background, text and the sixteen named colors. The dark and light looks each keep their own, and the terminal" {541 -508 724 20}
 text "switches with the window." {541 -488 724 20}
