@@ -3362,8 +3362,8 @@ func (state *State) declareHostGroupDeleteDialog(c ui.C) {
 	})
 }
 
-// declareMoveGroupBody lays out the one field the dialog shows and paints it
-// into its slot.
+// declareMoveGroupBody declares the one field the dialog shows. The relocate
+// case keeps its custom parent select painted into the field's control slot.
 func (state *State) declareMoveGroupBody(c ui.C, label string, viewport gfx.Rect) {
 	if state.groupActions.op != hostGroupRelocate {
 		ui.Column(c).Fill().Children(func() {
