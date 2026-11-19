@@ -545,7 +545,14 @@ func (state *State) clickCommandsDrawer(id gfx.ID) bool {
 			state.save()
 		}
 	case id.Scope() == hitCommandsTag:
-		state.sendSnippet(item(id))
+		// Sending a command leaves the keyboard on the bar. Ask for the
+		// terminal back so the next keystroke types there, not at whatever
+		// sits under the pointer.
+		if state.sendSnippet(item(id)) {
+			if focus := state.activeTerminalFocusHit(); !focus.IsZero() {
+				state.pendingFocus = focus
+			}
+		}
 	case id == hitCommandsAdd:
 		state.openSnippetDialog(-1)
 	case id == hitCommandsClose:

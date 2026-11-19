@@ -214,9 +214,25 @@ func (state *State) scrollSnippetVariables(event gfx.ScrollEvent) gfx.EventResul
 func (state *State) clickSnippetVariablesDialog(id gfx.ID) {
 	switch id {
 	case hitSnippetVarCancel, hitSnippetVarClose:
+		fromPage := state.snippetPrompt.fromPage
 		state.closeModal()
+		// Opened from the command bar, the dialog sat over the terminal; the
+		// keyboard belongs back there once it is gone. From the snippets page
+		// the user stays on that page.
+		if !fromPage {
+			state.returnKeyboardToTerminal()
+		}
 	case hitSnippetVarSubmit:
 		state.submitSnippetVariables()
+	}
+}
+
+// returnKeyboardToTerminal asks the next paint for the active terminal's own
+// focus. It only has an effect while the terminal page is showing and no modal
+// is up, which the paint enforces before it consumes the request.
+func (state *State) returnKeyboardToTerminal() {
+	if focus := state.activeTerminalFocusHit(); !focus.IsZero() {
+		state.pendingFocus = focus
 	}
 }
 
@@ -265,12 +281,23 @@ func (state *State) submitSnippetVariables() {
 
 	session, ok := state.sessionByIDPointer(sessionID)
 	if !ok || session.term == nil {
+		if !fromPage {
+			state.returnKeyboardToTerminal()
+		}
 		state.showActionWarning(m.SnippetsTitle, m.StatusSnippetNoTerminal)
 		return
 	}
 
-	if state.sendResolvedSnippet(entry, resolved, session) && fromPage {
-		state.ActivatePane(session.ID)
-		state.activeSection = sectionTerminal
+	if state.sendResolvedSnippet(entry, resolved, session) {
+		if fromPage {
+			state.ActivatePane(session.ID)
+			state.activeSection = sectionTerminal
+		}
+		// Ask for the target terminal's focus after any pane switch, so the
+		// keyboard lands on the session the command went to, not the one that
+		// happened to be active when the dialog opened.
+		state.returnKeyboardToTerminal()
+	} else if !fromPage {
+		state.returnKeyboardToTerminal()
 	}
 }

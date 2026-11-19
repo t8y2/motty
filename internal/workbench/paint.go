@@ -195,6 +195,18 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.noteSidebarFocusBack = false
 		canvas.RequestFocus(state.activeTerminalFocusHit())
 	}
+	// A click that acted on the terminal (a quick-command chip, say) asks for
+	// the keyboard back here: it has no editable result of its own to keep it.
+	if !state.pendingFocus.IsZero() {
+		// A dialog opened by the same click (a quick command with variables)
+		// asks for its first field; let it keep the keyboard. The request is
+		// dropped either way so a later paint does not steal it back.
+		// The terminal has to be the page on screen to take the keyboard too.
+		if state.modal == modalNone && state.terminalPage() {
+			canvas.RequestFocus(state.pendingFocus)
+		}
+		state.pendingFocus = gfx.ID{}
+	}
 	// A panel closed from inside itself returns the keyboard to the terminal it
 	// covered. The request is made once: a later click decides focus again.
 	if state.ai.panel.focusBack && !state.aiPanelVisible() {
