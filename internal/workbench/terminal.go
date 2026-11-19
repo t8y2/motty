@@ -1082,9 +1082,10 @@ func (state *State) goLive(session *Session) {
 //
 // While rx holds maxPumpBacklog unparsed bytes, a Wake drains no more: the
 // output stays in the shell's own bounded buffer, whose reader blocks on it
-// and so slows the sender down. Draining everything regardless lets a program
-// that prints faster than the budget parses grow rx without bound until the
-// process is OOM-killed (t8y2/motty#976).
+// and so slows the sender down. sshconn and localshell block their reader at
+// one megabyte; the mosh client bounds its output the same way. Draining
+// everything regardless lets a program that prints faster than the budget
+// parses grow rx without bound until the process is OOM-killed (t8y2/motty#976).
 const (
 	pumpBudget     = time.Second / 240
 	pumpSlice      = 32 << 10
