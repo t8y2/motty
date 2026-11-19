@@ -264,7 +264,9 @@ func (conn *moshConn) startServer(ctx context.Context, locale string) (int, stri
 	if !moshLocaleName.MatchString(locale) {
 		return 0, "", errMoshLocale
 	}
-	command := "mosh-server new -c 256 -l LANG=" + locale + " -l LC_ALL=" + locale
+	// mosh-server carries the client's terminal environment beside the locale:
+	// the remote shell is this terminal, so it draws the same 24-bit color.
+	command := "mosh-server new -c 256 -l LANG=" + locale + " -l LC_ALL=" + locale + " -l COLORTERM=truecolor"
 	result, err := conn.inner.Exec(ctx, command, 256<<10)
 	if err != nil {
 		return 0, "", fmt.Errorf(conn.messages.MoshBootstrapFailedFmt, err)

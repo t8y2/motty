@@ -143,6 +143,7 @@ type savedState struct {
 	CustomEditorPath        string              `json:"custom_editor_path,omitempty"`
 	Toolbars                *savedToolbars      `json:"toolbars,omitempty"`
 	UpdateCheck             string              `json:"update_check,omitempty"`
+	UpdateSource            string              `json:"update_source,omitempty"`
 	CloseAction             string              `json:"close_action,omitempty"`
 	RelaunchAction          string              `json:"relaunch_action,omitempty"`
 	TrayHintShown           bool                `json:"tray_hint_shown,omitempty"`
@@ -612,6 +613,7 @@ func (state *State) snapshot() savedState {
 		CustomEditorPath:           state.customEditorPath,
 		Toolbars:                   state.toolbars.snapshot(),
 		UpdateCheck:                updateCheckString(state.updateAtStart),
+		UpdateSource:               state.update.source.String(),
 		CloseAction:                state.closeAction.String(),
 		RelaunchAction:             state.relaunchAction.String(),
 		TrayHintShown:              state.trayHintShown,

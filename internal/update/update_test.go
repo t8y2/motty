@@ -368,3 +368,137 @@ func TestCheckVivaFeedMapsTheReleaseAndTrustsTheSignedFeed(t *testing.T) {
 		t.Fatalf("portable asset = %+v", portable.Asset)
 	}
 }
+
+func TestSavedSourceReadsWhatTheSettingWrote(t *testing.T) {
+	for _, test := range []struct {
+		value string
+		want  Source
+	}{
+		{"", SourceOfficial}, {"official", SourceOfficial}, {"cnb", SourceCNB}, {"beta", SourceOfficial},
+	} {
+		if got := ParseSource(test.value); got != test.want {
+			t.Errorf("ParseSource(%q) = %v, want %v", test.value, got, test.want)
+		}
+	}
+	if SourceCNB.String() != "cnb" || SourceOfficial.String() != "official" {
+		t.Errorf("sources save as %q and %q", SourceOfficial, SourceCNB)
+	}
+}
+
+func TestCNBSourceMovesThePackageToItsOwnHost(t *testing.T) {
+	release := Release{Version: "1.2.3", Asset: Asset{
+		URL: "https://dl.motty.page/releases/v1.2.3/motty-1.2.3-darwin-arm64.zip", SHA256: goodHash, Size: 100,
+		FeedVerified: true, Patches: []Patch{{FromVersion: "1.2.2"}},
+	}}
+	got := cnbRelease(release, "darwin", "arm64", PackageArchive)
+	want := "https://cnb.cool/dbxio.com/motty/-/releases/download/v1.2.3/motty-1.2.3-darwin-arm64.zip"
+	if got.Asset.URL != want {
+		t.Fatalf("asset URL = %q, want %q", got.Asset.URL, want)
+	}
+	if got.Asset.SHA256 != goodHash || got.Asset.Size != 100 || !got.Asset.FeedVerified {
+		t.Errorf("the signed digest was not kept: %+v", got.Asset)
+	}
+	if len(got.Asset.Patches) != 0 {
+		t.Errorf("a package from CNB kept patches the mirror publishes: %+v", got.Asset.Patches)
+	}
+}
+
+func TestCNBAssetNameIsThePublishedName(t *testing.T) {
+	for _, test := range []struct {
+		goos, goarch string
+		pkg          Package
+		want         string
+	}{
+		{"darwin", "arm64", PackageArchive, "motty-1.2.3-darwin-arm64.zip"},
+		{"windows", "amd64", PackagePortable, "motty-1.2.3-windows-amd64.zip"},
+		{"linux", "amd64", PackageDeb, "motty_1.2.3_amd64.deb"},
+		{"freebsd", "amd64", PackageArchive, ""},
+	} {
+		if got := cnbAssetName("1.2.3", test.goos, test.goarch, test.pkg); got != test.want {
+			t.Errorf("cnbAssetName(%q, %q, %v) = %q, want %q", test.goos, test.goarch, test.pkg, got, test.want)
+		}
+	}
+}
+func TestReleaseNotesPrefersMirror(t *testing.T) {
+	mirrorCalled := false
+	mirror := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mirrorCalled = true
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"version":"1.2.3","notes":"## Notes from Mirror"}`))
+	}))
+	defer mirror.Close()
+
+	githubCalled := false
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		githubCalled = true
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"body":"## Notes from GitHub"}`))
+	}))
+	defer github.Close()
+
+	notes := releaseNotesFrom(context.Background(), mirror.Client(), mirror.URL, github.URL, "1.2.3")
+	if !mirrorCalled {
+		t.Fatal("mirror was not called")
+	}
+	if githubCalled {
+		t.Fatal("github should not be called when mirror succeeds")
+	}
+	if notes != "## Notes from Mirror" {
+		t.Fatalf("got notes %q, want %q", notes, "## Notes from Mirror")
+	}
+}
+
+func TestReleaseNotesFallsBackToGitHub(t *testing.T) {
+	// Mirror returns an older version so it should be skipped
+	mirror := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"version":"1.2.2","notes":"## Old Notes"}`))
+	}))
+	defer mirror.Close()
+
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"body":"## Fallback Notes"}`))
+	}))
+	defer github.Close()
+
+	notes := releaseNotesFrom(context.Background(), mirror.Client(), mirror.URL, github.URL, "1.2.3")
+	if notes != "## Fallback Notes" {
+		t.Fatalf("got notes %q, want %q", notes, "## Fallback Notes")
+	}
+}
+
+func TestReleaseNotesParsesGitHubPayloadLargerThanOldLimit(t *testing.T) {
+	// A GitHub release JSON with many assets is typically 37KB - 45KB+,
+	// with "body" placed after "assets". The old LimitReader of 32KB truncated
+	// the response and caused unexpected EOF.
+	padding := strings.Repeat("x", 40000)
+	payload := `{"tag_name":"v1.2.3","assets_padding":"` + padding + `","body":"## Large Release Notes"}`
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(payload))
+	}))
+	defer github.Close()
+
+	notes := releaseNotesFrom(context.Background(), github.Client(), "", github.URL, "1.2.3")
+	if notes != "## Large Release Notes" {
+		t.Fatalf("got notes %q, want %q", notes, "## Large Release Notes")
+	}
+}
+
+func TestReleaseNotesEmptyWhenBothFail(t *testing.T) {
+	mirror := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "server error", http.StatusInternalServerError)
+	}))
+	defer mirror.Close()
+
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer github.Close()
+
+	notes := releaseNotesFrom(context.Background(), mirror.Client(), mirror.URL, github.URL, "1.2.3")
+	if notes != "" {
+		t.Fatalf("expected empty notes, got %q", notes)
+	}
+}

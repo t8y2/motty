@@ -17,6 +17,7 @@ import (
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
 	"motty/internal/term"
+	"motty/internal/update"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -589,6 +590,7 @@ func (state *State) restoreSFTPSettings(saved savedState) {
 		state.defaultEditor = editorNone
 	}
 	state.updateAtStart = saved.UpdateCheck != "off"
+	state.update.source = update.ParseSource(saved.UpdateSource)
 	state.closeAction = closeActionFromString(saved.CloseAction)
 	state.relaunchAction = relaunchActionFromString(saved.RelaunchAction)
 	state.trayHintShown = saved.TrayHintShown
