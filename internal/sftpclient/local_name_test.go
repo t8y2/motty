@@ -59,9 +59,36 @@ func TestSafeLocalNameTruncatesWholeRunesAndEndsCleanly(t *testing.T) {
 	if strings.HasSuffix(local, ".") || strings.HasSuffix(local, " ") {
 		t.Fatalf("%q ends with a character Windows trims", local)
 	}
-	withExtension := SafeLocalName("/remote/" + strings.Repeat("a", 200) + ".txt")
-	if !strings.HasSuffix(withExtension, ".txt") || len(withExtension) > localNameLimit {
-		t.Fatalf("long name %q lost its extension or limit", withExtension)
+	withExtension := SafeLocalName("/remote/" + strings.Repeat("a", 300) + ".txt")
+	if !strings.HasSuffix(withExtension, ".txt") || len(withExtension) > localNameLimit || !strings.Contains(withExtension, "~") {
+		t.Fatalf("oversized name %q lost its extension, digest or limit", withExtension)
+	}
+}
+
+func TestSafeLocalNamePreservesLongFilenames(t *testing.T) {
+	for _, name := range []string{
+		strings.Repeat("a", 150) + ".txt",
+		strings.Repeat("a", 200) + ".tar.gz",
+		strings.Repeat("a", 251) + ".md",
+		strings.Repeat("测试长文件名", 12) + ".docx",
+	} {
+		got := SafeLocalName("/remote/" + name)
+		if got != name {
+			t.Fatalf("SafeLocalName(%q) = %q, want original name preserved", name, got)
+		}
+	}
+
+	// Names exceeding localNameLimit (255 bytes) must be safely truncated with digest suffix.
+	oversizedChinese := strings.Repeat("测试长文件名", 15) + ".docx"
+	gotOversized := SafeLocalName("/remote/" + oversizedChinese)
+	if len(gotOversized) > localNameLimit {
+		t.Fatalf("oversized name %q has %d bytes, exceeds limit %d", gotOversized, len(gotOversized), localNameLimit)
+	}
+	if !strings.HasSuffix(gotOversized, ".docx") || !strings.Contains(gotOversized, "~") {
+		t.Fatalf("oversized name %q lost extension or digest suffix", gotOversized)
+	}
+	if !utf8.ValidString(gotOversized) {
+		t.Fatalf("oversized name %q split a rune", gotOversized)
 	}
 }
 
