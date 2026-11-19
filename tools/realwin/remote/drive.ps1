@@ -8,6 +8,7 @@
 #   clickw X Y         window-relative, in logical (DPI-independent) pixels
 #   move X Y           move the pointer to physical coordinates without clicking
 #   space              press the space bar (toggles a switch or checkbox)
+#   wheel N            turn the wheel N notches at the pointer (down when positive)
 #   ime MODE           set the window's IME conversion mode: 0 letters pass through,
 #                      1 the user's Chinese IME composes (Normalize-Keyboard restores it)
 #   keys <sendkeys>    SendKeys syntax: ^ Ctrl  + Shift  % Alt  {ENTER}
@@ -36,6 +37,7 @@ foreach ($line in Get-Content $Steps) {
     "click"     { Click-At ([int]$a[0]) ([int]$a[1]) }
     "move"      { [RW]::SetCursorPos([int]$a[0], [int]$a[1]) | Out-Null; Start-Sleep -Milliseconds 400 }
     "space"     { Send-Keys " " 300 }
+    "wheel"     { $n = [int]$a[0]; $d = if ($n -gt 0) { [uint32]4294967176 } else { [uint32]120 }; for ($i = 0; $i -lt [Math]::Abs($n); $i++) { [RW]::mouse_event(0x0800, 0, 0, $d, [UIntPtr]::Zero); Start-Sleep -Milliseconds 80 }; Start-Sleep -Milliseconds 400 }
     "clickw"    { $r = Get-WindowRect $p; Click-At ($r.L + [int]([double]$a[0] * $Scale)) ($r.T + [int]([double]$a[1] * $Scale)) }
     "ime"       { Set-ImeMode $p.MainWindowHandle ([int]$a[0]) | Out-Null }
     "keys"      { Send-Keys $rest }
