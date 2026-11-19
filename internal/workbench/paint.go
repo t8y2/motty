@@ -2284,10 +2284,14 @@ func (state *State) declareHostTreeRow(c ui.C, d *hostRowDrawer, rowWidth, left 
 	}
 	statusWords := statusWidth > lightWidth
 	statusStart := rowWidth - statusWidth - indent
-	nameWidth := min(max(rowWidth*0.24, nameLeast), max(statusStart-leadWidth-8, nameLeast/2))
-	addressStart := min(max(rowWidth*0.37, float32(330)), max(statusStart-180, leadWidth+nameWidth+8))
 	tagsStart := max(rowWidth*0.65, float32(560))
-	addressWidth := max(min(rowWidth*0.25, statusStart-addressStart-8), 0)
+	// The name column takes a fair share of the row on its own, and the rest of
+	// the room before the address keeps it whole: a long host name must not be
+	// cut short beside columns that have space to spare (#1064).
+	addressShare := max(rowWidth*0.45, float32(330))
+	nameWidth := min(max(rowWidth*0.34, nameLeast), max(min(addressShare, statusStart-180)-leadWidth-8, nameLeast))
+	addressStart := min(addressShare, max(statusStart-180, leadWidth+nameWidth+8))
+	addressWidth := max(min(rowWidth*0.25, min(tagsStart, statusStart)-addressStart-8), 0)
 	tagsWidth := min(rowWidth*0.18, statusStart-tagsStart-8)
 	status, _ := state.hostStatus(host)
 	checkMargin := 46 - 10 - components.CheckboxExtent(state.Theme())
