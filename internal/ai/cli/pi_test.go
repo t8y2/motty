@@ -185,3 +185,18 @@ func TestPiStreamErrorIsClassified(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A PowerShell launcher's trailing comment is not code; a # inside a quoted
+// string or written with a backtick escape is.
+func TestPiPowerShellCodeDropsOnlyUnquotedComments(t *testing.T) {
+	for _, tc := range []struct{ line, want string }{
+		{`& node "x.js" $args # "old/pi-launcher.js"`, `& node "x.js" $args `},
+		{`"a#b" # c`, `"a#b" `},
+		{`'it''s # text' # c`, `'it''s # text' `},
+		{"\"a`#b\" # c", "\"a`#b\" "},
+	} {
+		if got := piPowerShellCode(tc.line); got != tc.want {
+			t.Fatalf("piPowerShellCode(%q) = %q, want %q", tc.line, got, tc.want)
+		}
+	}
+}

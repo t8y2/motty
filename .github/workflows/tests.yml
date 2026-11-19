@@ -311,6 +311,10 @@ jobs:
         if: matrix.shard == 0
         working-directory: motty
         run: go test ./internal/completion ./internal/sshconfig -count=1
+      - name: Test the Windows Pi launcher resolution
+        if: matrix.shard == 0
+        working-directory: motty
+        run: go test ./internal/ai/cli -run 'TestPi' -count=1
       - name: Test the Windows local terminal's ConPTY and portable update
         if: matrix.shard == 0
         shell: bash
