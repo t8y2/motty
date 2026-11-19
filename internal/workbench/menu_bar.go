@@ -60,7 +60,7 @@ func (state *State) syncMenuBar() {
 	if state.setMenuBar == nil {
 		return
 	}
-	signature := fmt.Sprintf("%t|%d|%s", state.menuBarHasSession(), state.activeSessionID, state.messages.MenuFile)
+	signature := fmt.Sprintf("%t|%d|%s|%d", state.menuBarHasSession(), state.activeSessionID, state.messages.MenuFile, state.shortcuts.revision)
 	if signature == state.menuBarSig {
 		return
 	}

@@ -54,6 +54,9 @@ const (
 type shortcutMap struct {
 	chords keymap.Table[shortcutAction]
 	labels [shortcutActionCount]string
+	// revision changes whenever a chord is bound or unbound, so the macOS menu
+	// bar (which shows those chords) rebuilds when the table changes.
+	revision uint64
 	// acceptKeys is the Keyboard shortcuts page's keys text for the
 	// accept-suggestion row, rebuilt with the labels so that painting it
 	// allocates nothing.
@@ -279,6 +282,7 @@ func (shortcuts *shortcutMap) bind(action shortcutAction, chord keymap.Chord) (s
 	if action == shortcutAcceptSuggestion {
 		shortcuts.refreshAcceptKeys()
 	}
+	shortcuts.revision++
 	return shortcutNone, true
 }
 
@@ -292,6 +296,7 @@ func (shortcuts *shortcutMap) unbind(action shortcutAction) bool {
 	if action == shortcutAcceptSuggestion {
 		shortcuts.acceptKeys = "—"
 	}
+	shortcuts.revision++
 	return true
 }
 
