@@ -2815,6 +2815,11 @@ func (state *State) Key(event gfx.KeyEvent) (outcome gfx.EventResult) {
 	defer state.afterEvent(&outcome)
 	if state.modal == modalNone && state.terminalPage() {
 		if view := state.workspaceRemoteLogs(state.deck.ActiveWorkspace()); view != nil && view.formMode == remoteLogFormNone {
+			if event.Target == hitRemoteLogOutput {
+				if result := view.keyLogOutput(event); result.Handled {
+					return result
+				}
+			}
 			if result := view.pathSplit.Key(event); result.Handled {
 				return result
 			}
