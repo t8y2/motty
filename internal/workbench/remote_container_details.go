@@ -241,7 +241,7 @@ func (state *State) declareRemoteContainerDetailsDialog(c ui.C) {
 				id := remoteContainerDetailTabIDs[index]
 				c.After(func() { state.selectRemoteContainerDetailTab(id) })
 			}
-			state.declareRemoteContainerDetailsText(c)
+			state.declareRemoteContainerDetailsText(c, contentWidth-32)
 		})
 	})
 	dialog.Footer(func() {
@@ -254,13 +254,13 @@ func (state *State) declareRemoteContainerDetailsDialog(c ui.C) {
 	}
 }
 
-func (state *State) declareRemoteContainerDetailsText(c ui.C) {
+func (state *State) declareRemoteContainerDetailsText(c ui.C, width float32) {
 	details, m := &state.remote.containerDetails, state.messages.Tools
 	if state.remoteContainerDetailTab() != hitRemoteContainerDetailsEnvironment {
 		state.declareRemoteDetail(c, &details.text, remoteDetailSpec{
 			textID: hitRemoteContainerDetailsText, textIDLabel: m.RemoteContainerDetailsTitle,
 			scrollbarID: hitRemoteContainerDetailsScroll, scrollbarLabel: m.RemoteContainerDetailsTitle,
-			source: remoteDetailSource(state.remoteContainerOverviewBody(details.container)),
+			source: remoteDetailSource(state.remoteContainerOverviewBody(details.container)), width: width,
 		})
 		return
 	}
@@ -272,7 +272,7 @@ func (state *State) declareRemoteContainerDetailsText(c ui.C) {
 	spec := remoteDetailSpec{
 		textID: hitRemoteContainerDetailsText, textIDLabel: m.RemoteProcessEnvironment,
 		scrollbarID: hitRemoteContainerDetailsScroll, scrollbarLabel: m.RemoteProcessEnvironment,
-		notice: notice, noticeTone: tone,
+		notice: notice, noticeTone: tone, width: width,
 	}
 	if notice == "" {
 		spec.columns, spec.header, spec.rows = remoteEnvironmentTable(details.environment,

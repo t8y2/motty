@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/vivaui/viva/base"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
@@ -27,13 +28,15 @@ type remoteDetailText struct {
 	lineHeight  float32
 	selection   components.TextSelection
 
-	// The custom canvas scroll area the dialog paints: the old bars stay
-	// always visible with their localized labels and percentage value, so the
-	// application keeps the offset and the bar drag itself.
+	// The page scroll area the dialog declares: the old bars stay always
+	// visible with their localized labels and percentage value, while the
+	// page owns the offset, the bar drag and the wheel.
 	scroll         float32
+	scrollState    *ui.ScrollState
+	contentWidth   float32
+	contentHeight  float32
+	resetScroll    bool
 	scrollBar      components.ScrollAreaGeometry
-	scrollDragging bool
-	scrollGrab     float32
 	draw           func(*ui.DrawContext)
 	notice         string
 	noticeTone     gfx.Color
@@ -180,11 +183,14 @@ type remoteDetailSpec struct {
 	scrollbarID    gfx.ID
 	scrollbarLabel string
 	source         string
-	columns        []components.TableColumn
-	header         []string
-	rows           [][]string
-	notice         string
-	noticeTone     gfx.Color
+	// width is the room the detail body will get, so its content can be
+	// measured before the page lays the scroll area out.
+	width      float32
+	columns    []components.TableColumn
+	header     []string
+	rows       [][]string
+	notice     string
+	noticeTone gfx.Color
 }
 
 // declareRemoteDetail declares the detail body as a page slot the application
@@ -206,21 +212,50 @@ func (state *State) declareRemoteDetail(c ui.C, text *remoteDetailText, spec rem
 	text.notice = ""
 	text.textID, text.textIDLabel = spec.textID, spec.textIDLabel
 	text.scrollbarID, text.scrollbarLabel = spec.scrollbarID, spec.scrollbarLabel
+	canvas, theme := c.Canvas(), *c.Theme()
+	sourceChanged := spec.source != text.source
 	if len(spec.columns) > 0 {
 		text.setTableModel(spec.columns, spec.header, spec.rows)
+		fitRemoteEnvironmentColumns(text.columns, spec.width)
+		text.contentWidth = max(spec.width-8, 80)
+		text.contentHeight = components.TableHeaderHeight(theme) + float32(len(text.rows))*components.TableRowHeight(theme)
+		text.layoutWidth = spec.width
 	} else {
-		if spec.source != text.source {
+		if sourceChanged {
 			text.mode = remoteDetailMarkdown
 			text.source = spec.source
 			text.doc = markdown.Document{}
 			text.view = components.MarkdownView{}
 			text.layoutWidth = 0
 			text.clearSelection()
-			text.scroll = 0
 		}
+		text.layoutMarkdown(canvas, theme, text.source, spec.width)
+		text.contentWidth = max(spec.width-28, 80)
+		text.contentHeight = text.view.Height()
 	}
-	ui.Slot(c).Grow(1).FillWidth().MinHeight(0).Draw(text.draw)
+	// The page owns the offset, the always-visible bar and its drag; the
+	// percentage stays the bar's accessible value, as the old area gave it.
+	scroll := ui.Scroll(c).Grow(1).FillWidth().MinHeight(0).
+		AlwaysScrollbars().ScrollbarSize(remoteDetailBarWidth).
+		ScrollbarIDs(text.scrollbarID, gfx.ID{}).
+		ScrollbarLabels(text.scrollbarLabel, "").
+		HitWith(text.textID, text.textIDLabel, gfx.HitOptions{Role: gfx.RoleGroup})
+	area := scroll.ScrollState()
+	if sourceChanged || text.resetScroll {
+		area.ScrollTo(0)
+		text.resetScroll = false
+	}
+	text.scrollState = area
+	text.scroll = area.Offset
+	percent := remoteScrollPercent(area.Offset, max(text.contentHeight, area.Content), max(area.Viewport, 1))
+	scroll.ScrollbarValues(percent, "")
+	scroll.Children(func() {
+		ui.Slot(c).FillWidth().Height(max(text.contentHeight, 1)).Draw(text.draw)
+	})
 }
+
+// remoteDetailBarWidth is the detail scroll area's bar, as the old area drew it.
+const remoteDetailBarWidth = float32(10)
 
 // layoutMarkdown lays the source out at the width the viewport gives it.
 func (text *remoteDetailText) layoutMarkdown(canvas *gfx.Canvas, theme gfx.Theme, source string, viewportWidth float32) {
@@ -242,53 +277,68 @@ func (text *remoteDetailText) layoutMarkdown(canvas *gfx.Canvas, theme gfx.Theme
 	}
 }
 
-// paintRemoteDetailScroll paints the detail content in the dialog's custom
-// scroll area: the bars are always visible, named, and show the scroll position.
+// paintRemoteDetailScroll paints the detail content in the dialog's page scroll
+// area: the bars are always visible, named, and show the scroll position as their
+// accessible value.
 func (state *State) paintRemoteDetailScroll(d *ui.DrawContext, text *remoteDetailText) {
 	bounds := d.Rect
 	if bounds.Width <= 0 || bounds.Height <= 0 {
 		return
 	}
 	theme := state.Theme()
-	text.canvas, text.bounds, text.scrollBounds = d.Canvas, bounds, bounds
-	if text.mode == remoteDetailTable {
-		fitRemoteEnvironmentColumns(text.columns, bounds.Width)
+	text.canvas = d.Canvas
+	if area := text.scrollState; area != nil {
+		viewport := gfx.Rect{X: bounds.X, Y: bounds.Y + area.Offset, Width: bounds.Width, Height: area.Viewport}
+		text.viewport, text.scrollBounds = viewport, viewport
+		text.scroll = area.Offset
+		text.bounds = gfx.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: text.contentHeight}
+		text.scrollBar = base.LayoutScrollArea(viewport,
+			gfx.Size{Width: max(text.contentWidth, bounds.Width), Height: max(text.contentHeight, area.Viewport)},
+			base.ScrollAreaLayout{OffsetY: area.Offset, BarSize: remoteDetailBarWidth})
+		if text.mode == remoteDetailTable {
+			fitRemoteEnvironmentColumns(text.columns, bounds.Width)
+		}
+		state.paintRemoteDetailContent(d.Canvas, theme, text, bounds, viewport)
+		return
+	}
+	// A painter without a page (the round-trip tests): derive the same geometry
+	// from the old offset field.
+	if text.mode != remoteDetailTable {
+		text.layoutMarkdown(d.Canvas, theme, text.source, bounds.Width)
 	}
 	contentHeight := components.TableHeaderHeight(theme) + float32(len(text.rows))*components.TableRowHeight(theme)
 	var content gfx.Size
 	if text.mode == remoteDetailTable {
+		fitRemoteEnvironmentColumns(text.columns, bounds.Width)
 		content = gfx.Size{Width: max(bounds.Width-8, 80), Height: max(contentHeight, bounds.Height)}
 	} else {
-		width := max(bounds.Width-28, 80)
-		text.layoutMarkdown(d.Canvas, theme, text.source, bounds.Width)
-		content = gfx.Size{Width: width, Height: max(text.view.Height(), bounds.Height)}
+		content = gfx.Size{Width: max(bounds.Width-28, 80), Height: max(text.view.Height(), bounds.Height)}
 	}
-	area := components.BeginScrollArea(d.Canvas, theme, bounds, content).
-		Offset(0, text.scroll).
-		Viewport(text.textID, text.textIDLabel).
-		VerticalScrollbar(text.scrollbarID, text.scrollbarLabel, remoteScrollPercent(text.scroll, content.Height, bounds.Height))
-	geometry := area.Geometry()
+	geometry := base.LayoutScrollArea(bounds, content, base.ScrollAreaLayout{OffsetY: text.scroll, BarSize: remoteDetailBarWidth})
 	text.scroll, text.scrollBar, text.viewport = geometry.OffsetY, geometry, geometry.Viewport
-	geometry = area.BeginContent()
+	text.scrollBounds = bounds
+	text.bounds = gfx.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: content.Height}
+	state.paintRemoteDetailContent(d.Canvas, theme, text, bounds, geometry.Viewport)
+}
+
+// paintRemoteDetailContent paints the table or the markdown in the content rect
+// the page translated by the scroll offset.
+func (state *State) paintRemoteDetailContent(canvas *gfx.Canvas, theme gfx.Theme, text *remoteDetailText, content, viewport gfx.Rect) {
 	if text.mode == remoteDetailTable {
-		text.bounds = gfx.Rect{
-			X: geometry.Viewport.X, Y: geometry.Viewport.Y - geometry.OffsetY,
-			Width: geometry.Viewport.Width, Height: contentHeight,
-		}
-		state.paintRemoteDetailTableSlot(d.Canvas, text)
-	} else {
-		look := components.MarkdownLookFor(theme)
-		look.CodeFill, look.Line = gfx.Color{}, gfx.Color{}
-		look.Selection = theme.Selection
-		text.view.Paint(d.Canvas, components.MarkdownPaint{
-			Look:      look,
-			X:         geometry.Viewport.X + 12,
-			Y:         geometry.Viewport.Y + 10 - geometry.OffsetY,
-			Clip:      geometry.Viewport,
-			Selection: text.selection.In(0),
-		})
+		text.bounds = gfx.Rect{X: content.X, Y: content.Y, Width: content.Width, Height: text.contentHeight}
+		state.paintRemoteDetailTableSlot(canvas, text)
+		return
 	}
-	area.EndContent()
+	look := components.MarkdownLookFor(theme)
+	look.CodeFill, look.Line = gfx.Color{}, gfx.Color{}
+	look.Selection = theme.Selection
+	text.view.Paint(canvas, components.MarkdownPaint{
+		Look:      look,
+		X:         content.X + 12,
+		Y:         content.Y + 10,
+		Clip:      viewport,
+		Selection: text.selection.In(0),
+	})
 }
 
 // remoteScrollPercent is the value an always-visible bar shows.
@@ -594,48 +644,33 @@ func (state *State) remoteDetailTextPointer(event gfx.PointerEvent, text *remote
 	return outcome, true
 }
 
-// remoteDetailScrollPointer drags the always-visible scrollbar with stable
-// pointer capture and thumb geometry.
+// remoteDetailScrollPointer is gone with the custom bar: the page's scroll area
+// declares the bar and drags it during the paint. The dialogs keep the hook
+// returning false so the pointer's other routes run.
 func (state *State) remoteDetailScrollPointer(event gfx.PointerEvent, text *remoteDetailText, scrollbarID gfx.ID) (gfx.EventResult, bool) {
-	if scrollbarID.IsZero() ||
-		(!text.scrollDragging &&
-			!(event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary && event.Target == scrollbarID)) {
-		return gfx.EventResult{}, false
-	}
-	if event.Kind == gfx.PointerDown && event.Button != gfx.PointerButtonPrimary {
-		return gfx.EventResult{}, false
-	}
-	geometry := text.scrollBar
-	before := text.scroll
-	switch event.Kind {
-	case gfx.PointerDown:
-		text.scrollDragging = true
-		text.scrollGrab = geometry.VerticalThumb.Height / 2
-		if event.Y >= geometry.VerticalThumb.Y &&
-			event.Y < geometry.VerticalThumb.Y+geometry.VerticalThumb.Height {
-			text.scrollGrab = event.Y - geometry.VerticalThumb.Y
-		} else {
-			text.scroll = geometry.VerticalOffsetForThumb(event.Y - text.scrollGrab)
-		}
-	case gfx.PointerMove:
-		if !event.Captured {
-			return gfx.EventResult{}, true
-		}
-		text.scroll = geometry.VerticalOffsetForThumb(event.Y - text.scrollGrab)
-	case gfx.PointerUp:
-		text.scrollDragging = false
-	case gfx.PointerExit:
-		if !event.Captured {
-			text.scrollDragging = false
-		}
-	default:
-		return gfx.EventResult{}, false
-	}
-	return gfx.EventResult{Handled: true, Repaint: before != text.scroll}, true
+	return gfx.EventResult{}, false
 }
 
 func (state *State) remoteDetailWheel(event gfx.ScrollEvent, text *remoteDetailText, textID, scrollbarID gfx.ID) (gfx.EventResult, bool) {
-	if textID.IsZero() || text.scrollBar.MaxOffsetY <= 0 {
+	if textID.IsZero() {
+		return gfx.EventResult{}, false
+	}
+	if area := text.scrollState; area != nil {
+		if area.Max() <= 0 {
+			return gfx.EventResult{}, false
+		}
+		inside := pointInRect(event.X, event.Y, text.scrollBounds) ||
+			pointInRect(event.X, event.Y, text.scrollBar.Bounds) ||
+			event.Target == textID || event.Target == scrollbarID
+		if !inside {
+			return gfx.EventResult{}, false
+		}
+		before := area.Offset
+		area.ScrollTo(min(max(before+event.StepY(32), 0), area.Max()))
+		text.scroll = area.Offset
+		return gfx.EventResult{Handled: true, Repaint: area.Offset != before}, true
+	}
+	if text.scrollBar.MaxOffsetY <= 0 {
 		return gfx.EventResult{}, false
 	}
 	inside := pointInRect(event.X, event.Y, text.scrollBounds) ||
@@ -656,6 +691,33 @@ func (state *State) remoteDetailKeyboardScroll(
 ) (gfx.EventResult, bool) {
 	if event.Target != textID && event.Target != scrollbarID {
 		return gfx.EventResult{}, false
+	}
+	if area := text.scrollState; area != nil {
+		if area.Max() <= 0 {
+			return gfx.EventResult{}, false
+		}
+		step := min(max(area.Viewport/2, 32), 96)
+		page := max(area.Viewport-step, step)
+		before := area.Offset
+		switch event.Key {
+		case gfx.KeyUp:
+			area.ScrollTo(area.Offset - step)
+		case gfx.KeyDown:
+			area.ScrollTo(area.Offset + step)
+		case gfx.KeyPageUp:
+			area.ScrollTo(area.Offset - page)
+		case gfx.KeyPageDown:
+			area.ScrollTo(area.Offset + page)
+		case gfx.KeyHome:
+			area.ScrollTo(0)
+		case gfx.KeyEnd:
+			area.ScrollTo(area.Max())
+		default:
+			return gfx.EventResult{}, false
+		}
+		area.ScrollTo(min(max(area.Offset, 0), area.Max()))
+		text.scroll = area.Offset
+		return gfx.EventResult{Handled: true, Repaint: before != area.Offset}, true
 	}
 	if text.scrollBar.MaxOffsetY <= 0 {
 		return gfx.EventResult{}, false

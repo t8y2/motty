@@ -133,7 +133,7 @@ func (state *State) declareRemoteProcessDetailsBody(c ui.C, width float32, proce
 				state.declareRemoteDetail(c, &details.text, remoteDetailSpec{
 					textID: hitRemoteProcessDetailsText, textIDLabel: m.RemoteProcessDetailsTitle,
 					scrollbarID: hitRemoteProcessDetailsScroll, scrollbarLabel: m.RemoteProcessDetailsTitle,
-					source: remoteDetailSource(processText(details.commandValue)),
+					source: remoteDetailSource(processText(details.commandValue)), width: width - 16,
 				})
 			})
 			return
@@ -146,7 +146,7 @@ func (state *State) declareRemoteProcessDetailsBody(c ui.C, width float32, proce
 		spec := remoteDetailSpec{
 			textID: hitRemoteProcessDetailsText, textIDLabel: m.RemoteProcessEnvironment,
 			scrollbarID: hitRemoteProcessDetailsScroll, scrollbarLabel: m.RemoteProcessEnvironment,
-			notice: notice, noticeTone: tone,
+			notice: notice, noticeTone: tone, width: width - 16,
 		}
 		if notice == "" {
 			spec.columns, spec.header, spec.rows = remoteEnvironmentTable(details.environment,
