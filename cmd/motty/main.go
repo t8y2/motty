@@ -326,6 +326,10 @@ func placementWindowID(place placement) int {
 	if place.windowID != 0 {
 		return place.windowID
 	}
+	if place.rememberFrame {
+		windowIDs = max(windowIDs, 1)
+		return 1
+	}
 	return nextWindowID()
 }
 
@@ -408,7 +412,9 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 	if place.rememberFrame {
 		if frame, ok := state.RestoredWindowFrame(); ok {
 			width, height = int(frame.Width), int(frame.Height)
-			origin = &gfx.Point{X: frame.X, Y: frame.Y}
+			if frame.X != 0 || frame.Y != 0 {
+				origin = &gfx.Point{X: frame.X, Y: frame.Y}
+			}
 		}
 	}
 	window := state.WindowColor()
@@ -503,6 +509,9 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 			if !quitting && remaining > 0 {
 				state.DropWindowRecord()
 			}
+			if remaining == 0 {
+				windowIDs = 0
+			}
 			if status != nil {
 				status.list.Remove(state)
 				status.refresh()
@@ -514,6 +523,14 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 	// handlers keep the events it leaves; the workbench's Paint stays its own.
 	mainWindow, err = application.OpenWindow(state.WindowConfig(config), &canvas)
 	if err == nil {
+		if place.rememberFrame {
+			if frame, ok := state.RestoredWindowFrame(); ok {
+				w, h := int(frame.Width), int(frame.Height)
+				w = max(w, workbench.MinimumWindowWidth)
+				h = max(h, workbench.MinimumWindowHeight)
+				_ = mainWindow.SetSize(w, h)
+			}
+		}
 		state.SyncMenuBar()
 		state.SetWindow(mainWindow.Frame, func() bool { return !mainWindow.Hidden() && !mainWindow.Closed() })
 		state.SetShortcutCapture(mainWindow.CaptureSystemShortcuts)

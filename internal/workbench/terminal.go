@@ -1611,6 +1611,7 @@ func (state *State) tellShellSize(t *terminal, cols, rows int) {
 // Resize is the window-size callback: the terminals follow the window.
 func (state *State) Resize(size gfx.Size) {
 	state.viewport = size
+	state.NoteWindowSize(size)
 	state.fitTerminals()
 	state.fitSFTP(size)
 	// Both panels stay open when the window docks them, but a window that grew
