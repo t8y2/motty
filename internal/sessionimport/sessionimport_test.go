@@ -815,3 +815,33 @@ func TestFinalShellFolderCycleStopsAtItself(t *testing.T) {
 		t.Fatalf("group = %q", got)
 	}
 }
+
+// Folder records count toward the same entry limit as hosts: a damaged folder
+// full of folder.json files must not grow the group map without bound.
+func TestFinalShellCountsFolderRecordsTowardTheLimit(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "FinalShell")
+	for index := 0; index < 6; index++ {
+		dir := filepath.Join(root, "conn", fmt.Sprintf("f%d", index))
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		write(t, dir, "folder.json", []byte(fmt.Sprintf(`{"id":"f%d","name":"F%d","parent_id":"root"}`, index, index)))
+	}
+	if err := os.MkdirAll(filepath.Join(root, "conn"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(root, "conn"), "a_connect_config.json",
+		[]byte(`{"id":"h0","name":"host","host":"h.example.test","user_name":"me","conection_type":100,"parent_id":"root"}`))
+
+	result, err := parseFinalShellFolderWithin(root, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Entries) != 1 {
+		t.Fatalf("entries = %+v, want the one host read before the cap", result.Entries)
+	}
+	joined := strings.Join(result.Warnings, "\n")
+	if !strings.Contains(joined, "more than 4 records") {
+		t.Fatalf("warnings = %q, want the record cap warning", joined)
+	}
+}

@@ -1468,6 +1468,12 @@ func ParseFinalShell(path string) (Result, error) {
 }
 
 func parseFinalShellFolder(root string) (Result, error) {
+	return parseFinalShellFolderWithin(root, MaxEntries)
+}
+
+// parseFinalShellFolderWithin reads a data folder with an explicit record
+// limit, so a test can exercise the cap without thousands of files.
+func parseFinalShellFolderWithin(root string, limit int) (Result, error) {
 	var (
 		result    Result
 		folders   = map[string]finalShellFolder{}
@@ -1511,8 +1517,8 @@ func parseFinalShellFolder(root string) (Result, error) {
 		if finalShellIgnoredPath(relative) {
 			return nil
 		}
-		if records >= MaxEntries {
-			result.warn("%s: more than %d records; the rest were not read", filepath.Base(root), MaxEntries)
+		if records >= limit {
+			result.warn("%s: more than %d records; the rest were not read", filepath.Base(root), limit)
 			return filepath.SkipAll
 		}
 		records++
