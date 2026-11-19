@@ -1079,9 +1079,16 @@ func (state *State) goLive(session *Session) {
 // always parsed, so a Wake makes progress however slow the thread is. The shell
 // ending, an exec capture and a caller without an Invalidator keep the old
 // "all at once" behavior.
+//
+// While rx holds maxPumpBacklog unparsed bytes, a Wake drains no more: the
+// output stays in the shell's own bounded buffer, whose reader blocks on it
+// and so slows the sender down. Draining everything regardless lets a program
+// that prints faster than the budget parses grow rx without bound until the
+// process is OOM-killed (t8y2/motty#976).
 const (
-	pumpBudget = time.Second / 240
-	pumpSlice  = 32 << 10
+	pumpBudget     = time.Second / 240
+	pumpSlice      = 32 << 10
+	maxPumpBacklog = 1 << 20
 )
 
 // pump moves the shell's output into the screen and notices the shell's end.
@@ -1105,7 +1112,10 @@ func (state *State) pumpFor(session *Session, budget time.Duration) {
 		return
 	}
 	t.observePredictionInput()
-	t.rx = t.shell.Drain(t.rx) // keep what an earlier frame could not parse
+	backlogged := len(t.rx) >= maxPumpBacklog
+	if !backlogged {
+		t.rx = t.shell.Drain(t.rx) // keep what an earlier frame could not parse
+	}
 	hadOutput := len(t.rx) > 0
 	finished := false
 	select {
@@ -1149,6 +1159,11 @@ func (state *State) pumpFor(session *Session, budget time.Duration) {
 		}
 	default:
 		t.rx = t.rx[:0]
+	}
+	if backlogged && !finished && state.options.Invalidate != nil {
+		// Output was left in the shell's buffer: the next wake must come even
+		// when this one parsed all of rx.
+		state.options.Invalidate()
 	}
 	state.syncAgentIcon(session, hadOutput, finished)
 	if !finished && len(t.rx) == 0 {
