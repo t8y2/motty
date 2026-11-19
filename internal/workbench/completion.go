@@ -1283,6 +1283,9 @@ func (state *State) declareCompletionList(c ui.C, session *Session, bounds gfx.R
 		Width:            width,
 		Padding:          components.DropdownMenuPadding, // the rows line up with the app's menus
 		KeepOpenOnAnchor: true,
+		// The hand-painted list appeared at once; the page popover would otherwise
+		// play its entrance.
+		Instant: true,
 	}
 	if ui.PopoverWith(c, anchor, spec, &list.open, list.body) {
 		list.open = false
