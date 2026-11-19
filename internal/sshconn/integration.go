@@ -474,6 +474,10 @@ _motty_prompt_marker='\[\e]133;B__MOTTY_SUFFIX__\a\]'
 # inherited value expands to nothing there (no "command not found", $? and the
 # user's own entries untouched) while this shell expands it to the real hook.
 _motty_active=1
+# set -a (allexport) exports every assignment, including this flag; with it
+# exported, su's shell would inherit the gate switched on and the wrapped
+# entries would run again. Keep it local whatever the profile asked for.
+export -n _motty_active
 case $(declare -p PROMPT_COMMAND 2>/dev/null) in
     'declare -a '*) PROMPT_COMMAND=('${_motty_active:+__motty_command_finished}' "${PROMPT_COMMAND[@]}" '${_motty_active:+__motty_report}') ;;
     *) PROMPT_COMMAND='${_motty_active:+__motty_command_finished}'$'\n'${PROMPT_COMMAND:+$PROMPT_COMMAND$'\n'}'${_motty_active:+__motty_report}' ;;

@@ -597,12 +597,23 @@ func checkCommandStartReports(t *testing.T, program string, forceTrap bool) {
 // instead of "command not found", while the user's own entries keep running and
 // the integrated shell keeps reporting statuses.
 func TestIntegrationExportedPromptCommandDoesNotBreakChildShell(t *testing.T) {
+	checkExportedPromptCommand(t, "PS1='user-prompt> '\nexport PROMPT_COMMAND='printf \"user-hook\\n\"'\n")
+}
+
+// set -a (allexport) exports the gate along with PROMPT_COMMAND, so the flag
+// has to be kept unexported explicitly; otherwise su's shell inherits it and
+// the wrapped entries run again.
+func TestIntegrationAllexportPromptCommandDoesNotBreakChildShell(t *testing.T) {
+	checkExportedPromptCommand(t, "PS1='user-prompt> '\nset -a\nPROMPT_COMMAND='printf \"user-hook\\n\"'\n")
+}
+
+func checkExportedPromptCommand(t *testing.T, profile string) {
+	t.Helper()
 	program, err := exec.LookPath("bash")
 	if err != nil {
 		t.Skip("bash unavailable")
 	}
 	home, runtimeDir := t.TempDir(), t.TempDir()
-	profile := "PS1='user-prompt> '\nexport PROMPT_COMMAND='printf \"user-hook\\n\"'\n"
 	if err := os.WriteFile(filepath.Join(home, ".bash_profile"), []byte(profile), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -640,6 +651,14 @@ func TestIntegrationExportedPromptCommandDoesNotBreakChildShell(t *testing.T) {
 	await("parent status", func() bool { return ready > before })
 	if lastExit != 1 {
 		t.Fatalf("integrated shell exit status = %d, want 1: %q", lastExit, output)
+	}
+	// The gate itself must not reach a child shell: with it set, the wrapped
+	// entries would expand to functions the child does not have.
+	shell.Write([]byte("bash --norc --noprofile -c 'printf \"CHILD_FLAG %s\\n\" \"${_motty_active-unset}\"'\r"))
+	shell.Write([]byte("printf 'CHILD_PROBE\\r\\n'\r"))
+	await("child flag", func() bool { return strings.Contains(output, "CHILD_PROBE\r\r\n") })
+	if !strings.Contains(output, "CHILD_FLAG unset") {
+		t.Fatalf("a child shell inherited _motty_active: %q", output)
 	}
 	// A plain child shell inherits the exported PROMPT_COMMAND but defines none
 	// of the integration's functions, the way su's target shell does.
