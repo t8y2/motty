@@ -56,7 +56,7 @@ Motty 是一个桌面 SSH 客户端。终端、SFTP 面板、端口转发、远�
   <tr>
     <td width="50%" valign="top">
       <p><strong>主机管理得住。</strong>分组、标签、颜色和图标，可以从 OpenSSH
-      config、PuTTY、MobaXterm 等八种来源导入。密码进 AES-256-GCM 保险库，
+      config、PuTTY、MobaXterm 等九种来源导入。密码进 AES-256-GCM 保险库，
       密钥放在系统密钥存储里。</p>
     </td>
     <td width="50%" valign="top">

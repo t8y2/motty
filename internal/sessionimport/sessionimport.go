@@ -1473,6 +1473,7 @@ func parseFinalShellFolder(root string) (Result, error) {
 		folders   = map[string]finalShellFolder{}
 		seenHosts = map[string]bool{}
 		hosts     []finalShellHost
+		records   int
 		hostFiles int
 		totalSize uint64
 		shortened bool
@@ -1485,7 +1486,15 @@ func parseFinalShellFolder(root string) (Result, error) {
 			result.warn("%s: %v", filepath.Base(path), err)
 			return nil
 		}
-		if entry.IsDir() || entry.Type()&fs.ModeSymlink != 0 {
+		if entry.IsDir() {
+			relative, relativeErr := filepath.Rel(root, path)
+			if relativeErr == nil && relative != "." && finalShellIgnoredDir(filepath.ToSlash(relative)) {
+				// History and cache folders are never imported; do not walk them.
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if entry.Type()&fs.ModeSymlink != 0 {
 			return nil
 		}
 		lower := strings.ToLower(entry.Name())
@@ -1502,10 +1511,11 @@ func parseFinalShellFolder(root string) (Result, error) {
 		if finalShellIgnoredPath(relative) {
 			return nil
 		}
-		if len(hosts) >= MaxEntries {
-			result.warn("%s: more than %d sessions; the rest were not read", filepath.Base(root), MaxEntries)
+		if records >= MaxEntries {
+			result.warn("%s: more than %d records; the rest were not read", filepath.Base(root), MaxEntries)
 			return filepath.SkipAll
 		}
+		records++
 		if info, infoErr := entry.Info(); infoErr == nil {
 			totalSize += uint64(info.Size())
 			if totalSize > maxArchiveSize {
@@ -1595,7 +1605,17 @@ func parseFinalShellFolder(root string) (Result, error) {
 // temp/ or blur_image_cache/, which hold history rather than saved sessions.
 func finalShellIgnoredPath(relative string) bool {
 	parts := strings.Split(relative, "/")
-	for _, part := range parts[:len(parts)-1] {
+	return finalShellIgnoredParts(parts[:len(parts)-1])
+}
+
+// finalShellIgnoredDir reports whether a directory itself belongs to the
+// history and cache trees a FinalShell folder keeps but never imports.
+func finalShellIgnoredDir(relative string) bool {
+	return finalShellIgnoredParts(strings.Split(relative, "/"))
+}
+
+func finalShellIgnoredParts(parts []string) bool {
+	for _, part := range parts {
 		if finalShellIgnored[strings.ToLower(part)] {
 			return true
 		}
