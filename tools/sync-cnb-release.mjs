@@ -12,11 +12,15 @@
 //   release.json  what `gh release view TAG --json tagName,name,body,
 //                 targetCommitish,isPrerelease` prints
 //   DIR           the files `gh release download TAG --dir DIR` wrote
+//   --feed FILE   the signed Viva feed (latest.json) of this release; the delta
+//                 patches it lists are fetched from the official mirror and
+//                 uploaded too, so a CNB install can update incrementally
 //
 // Needs CNB_TOKEN, an access token with write access to dbxio.com/motty.
 // CNB_API_BASE overrides the API host, which is what a local stub serves.
 
-import { createReadStream, readdirSync, readFileSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { createReadStream, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -38,6 +42,9 @@ async function main() {
 	});
 	const release = await client.ensureRelease(tag, githubRelease, { makeLatest: args.makeLatest });
 	const mirrored = new Set((release.assets || []).map((asset) => asset.name));
+	if (args.feed) {
+		await fetchFeedPatches(JSON.parse(readFileSync(args.feed, "utf8")), args.assetsDir, mirrored);
+	}
 	const local = localAssets(args.assetsDir);
 	const missing = local.filter((path) => !mirrored.has(basename(path)));
 	console.log(`CNB release ${tag}: ${mirrored.size} asset(s) already there, ${missing.length} to upload.`);
@@ -52,6 +59,7 @@ function parseArgs(argv) {
 		concurrency: Number.parseInt(process.env.CNB_UPLOAD_CONCURRENCY || `${DEFAULT_CONCURRENCY}`, 10),
 		githubRelease: "",
 		assetsDir: "",
+		feed: "",
 		overwrite: false,
 		makeLatest: false,
 	};
@@ -59,13 +67,14 @@ function parseArgs(argv) {
 		const arg = argv[index];
 		if (arg === "--github-release") args.githubRelease = argv[++index];
 		else if (arg === "--assets-dir") args.assetsDir = argv[++index];
+		else if (arg === "--feed") args.feed = argv[++index];
 		else if (arg === "--overwrite-existing") args.overwrite = true;
 		else if (arg === "--make-latest") args.makeLatest = true;
 		else throw new Error(`unknown argument: ${arg}`);
 	}
 	if (!args.token) throw new Error("CNB_TOKEN is required");
 	if (!args.githubRelease || !args.assetsDir) {
-		throw new Error("usage: sync-cnb-release.mjs --github-release release.json --assets-dir DIR [--overwrite-existing] [--make-latest]");
+		throw new Error("usage: sync-cnb-release.mjs --github-release release.json --assets-dir DIR [--feed latest.json] [--overwrite-existing] [--make-latest]");
 	}
 	if (!Number.isInteger(args.concurrency) || args.concurrency < 1) {
 		throw new Error("CNB_UPLOAD_CONCURRENCY must be a positive integer");
@@ -172,6 +181,50 @@ async function uploadWithRetry(client, releaseId, filePath, overwrite) {
 			await new Promise((resolve) => setTimeout(resolve, delay));
 		}
 	}
+}
+
+// feedPatches lists the delta patches a signed Viva feed offers for its latest
+// release. They are not GitHub release assets: the feed build publishes them to
+// the official mirror only. The file name is the last segment of the patch URL,
+// which is the name the app looks for under the CNB release, so a name that
+// could leave the assets directory or is not a patch is refused.
+export function feedPatches(feed) {
+	const found = new Map();
+	for (const asset of feed?.latest?.assets || []) {
+		for (const patch of asset.patches || []) {
+			const url = new URL(patch.url);
+			if (url.protocol !== "https:") throw new Error(`patch URL is not https: ${patch.url}`);
+			const name = decodeURIComponent(url.pathname.split("/").pop());
+			if (!name.endsWith(".patch") || /[\\/]/.test(name) || name.startsWith(".")) {
+				throw new Error(`patch URL does not name a .patch file: ${patch.url}`);
+			}
+			if (!/^[0-9a-f]{64}$/.test(patch.sha256 || "") || !Number.isInteger(patch.size) || patch.size <= 0) {
+				throw new Error(`patch ${name} has no usable size and SHA-256 in the feed`);
+			}
+			found.set(name, { name, url: url.href, size: patch.size, sha256: patch.sha256 });
+		}
+	}
+	return [...found.values()];
+}
+
+// fetchFeedPatches downloads the patches CNB does not hold yet into dir, so the
+// upload step carries them with the packages. Each file is checked against the
+// size and SHA-256 the signed feed declares, which is also what the app checks
+// after downloading it from CNB, so a bad copy fails here rather than there.
+export async function fetchFeedPatches(feed, dir, mirrored) {
+	const wanted = feedPatches(feed).filter((patch) => !mirrored.has(patch.name));
+	console.log(`Feed patches: ${wanted.length} to fetch from the official mirror.`);
+	await mapWithConcurrency(wanted, DEFAULT_CONCURRENCY, async (patch) => {
+		const response = await fetch(patch.url);
+		if (!response.ok) throw new Error(`${patch.name}: official mirror answered ${response.status}`);
+		const bytes = Buffer.from(await response.arrayBuffer());
+		const digest = createHash("sha256").update(bytes).digest("hex");
+		if (bytes.length !== patch.size || digest !== patch.sha256) {
+			throw new Error(`${patch.name}: the download does not match the size and SHA-256 in the feed`);
+		}
+		writeFileSync(join(dir, patch.name), bytes);
+		console.log(`${patch.name}: fetched`);
+	});
 }
 
 // localAssets sorts the largest file first, so the uploads that take longest

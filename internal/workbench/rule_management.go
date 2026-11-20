@@ -171,7 +171,7 @@ func (state *State) declareRuleManagerRow(c ui.C, index int) {
 		case rule.CaseSensitive:
 			detail = tools.HighlightKindTextCase
 		}
-		detail = state.slotName(rule.Slot) + " · " + detail
+		detail = state.colorName(rule.Color) + " · " + detail
 	}
 	row := ui.Row(c).FillWidth().Height(68).Shrink(0).Items(ui.Center).Gap(14).PadSides(0, 14, 0, 8)
 	if manager.selected[index] {
@@ -185,7 +185,7 @@ func (state *State) declareRuleManagerRow(c ui.C, index int) {
 			ui.Checkbox(c, &selected, "").Absolute().Left(0).Top(0).Size(side, side).Hit(hitRuleManagerSelect.At(index), name)
 		})
 		if manager.kind == ruleDeleteHighlight {
-			ui.Slot(c).Size(10, 24).Shrink(0).Background(state.slotColor(state.highlighting.rules[index].Slot)).Radius(2)
+			ui.Slot(c).Size(10, 24).Shrink(0).Background(state.ruleColor(state.highlighting.rules[index].Color)).Radius(2)
 		}
 		ui.Column(c).Grow(1).Basis(0).Gap(4).Children(func() {
 			ui.Text(c, name).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).MaxLines(1)

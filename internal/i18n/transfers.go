@@ -13,6 +13,7 @@ type TransferCenterMessages struct {
 	ShowInFolder, ShowInFolderFailed, ShowInFolderMissing                                                                 string
 	Hosts, AllHosts, ScopeFmt, CancelVisible, ClearVisible, RetryFailedFmt, ConflictCountFmt                              string
 	ConfirmBatchFmt, BatchScopeFmt                                                                                        string
+	ReplaceAll, SkipAll                                                                                                   string
 	RunningCountFmt, WaitingCountFmt, RemainingFmt, DurationFmt                                                           string
 	PauseAll, ResumeAll, PauseVisible, ResumeVisible                                                                      string
 	Direction, AllDirections, Search, Details, FileName, Size, Speed, Elapsed                                             string

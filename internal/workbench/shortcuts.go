@@ -44,6 +44,7 @@ const (
 	shortcutHostsPanel
 	shortcutAcceptSuggestion
 	shortcutSettings
+	shortcutBroadcast
 	shortcutActionCount
 )
 
@@ -67,13 +68,14 @@ func newShortcutMap() shortcutMap {
 	return shortcutMap{chords: keymap.NewTable[shortcutAction](int(shortcutActionCount))}
 }
 
-// primaryModifier and paneSplitChords are keymap.Primary and
-// defaultPaneSplitChords with a seam for the paint goldens: production takes
-// this platform's chords, while a golden pins one platform's so the same
-// snapshots hold everywhere.
+// primaryModifier, paneSplitChords and broadcastChord are keymap.Primary,
+// defaultPaneSplitChords and defaultBroadcastChord with a seam for the paint
+// goldens: production takes this platform's chords, while a golden pins one
+// platform's so the same snapshots hold everywhere.
 var (
 	primaryModifier = keymap.Primary
 	paneSplitChords = defaultPaneSplitChords
+	broadcastChord  = defaultBroadcastChord
 )
 
 func defaultShortcuts() shortcutMap {
@@ -116,6 +118,7 @@ func defaultShortcuts() shortcutMap {
 	// the suggestion names it and the user can choose another one there.
 	shortcuts.chords.Set(shortcutAcceptSuggestion, keymap.Chord{Key: gfx.KeyRight})
 	shortcuts.chords.Set(shortcutSettings, keymap.Chord{Modifiers: primary, Char: ','})
+	shortcuts.chords.Set(shortcutBroadcast, broadcastChord())
 	shortcuts.refreshLabels()
 	return shortcuts
 }
@@ -369,6 +372,8 @@ func (action shortcutAction) String() string {
 		return "accept_suggestion"
 	case shortcutSettings:
 		return "settings"
+	case shortcutBroadcast:
+		return "broadcast_input"
 	default:
 		return ""
 	}
@@ -787,6 +792,14 @@ func (state *State) executeShortcut(action shortcutAction) gfx.EventResult {
 		}
 	case shortcutSettings:
 		state.openSettings()
+	case shortcutBroadcast:
+		// The command palette and the toolbar button run this same toggle, which
+		// says why a tab cannot broadcast. Outside the terminal there is no tab
+		// in view to toggle, so the key is left to whatever has the keyboard.
+		if state.activeSection != sectionTerminal {
+			return gfx.EventResult{}
+		}
+		state.toggleBroadcast()
 	}
 	return result
 }

@@ -45,6 +45,14 @@ Motty はデスクトップの SSH クライアントです。ターミナル、
   </tr>
   <tr>
     <td width="50%" valign="top">
+      <a href="assets/readme-dashboard.png"><img src="assets/readme-dashboard.png" alt="監視ダッシュボードの詳細ビュー：複数ホストの CPU・メモリ・ネットワークのグラフ" /></a>
+    </td>
+    <td width="50%" valign="top">
+      <a href="assets/readme-transfers.png"><img src="assets/readme-transfers.png" alt="転送センター：実行中と待機中の転送、履歴、失敗した転送" /></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
       <a href="assets/readme-desktop.png"><img src="assets/readme-desktop.png" alt="VNC で接続したリモートデスクトップ" /></a>
     </td>
     <td width="50%" valign="top">

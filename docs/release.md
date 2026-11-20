@@ -360,7 +360,13 @@ the same signed feed from
 `https://cnb.cool/dbxio.com/motty/-/releases/latest/download/latest.json`,
 verifies it with the same key, and downloads the package from the CNB copy of
 that release. The signed size and SHA-256 still hold the bytes, so only the host
-changes; CNB has no patches, so that source downloads the full package. A CNB
+changes. The delta patches the feed lists are on CNB too: the release jobs fetch
+them from the official mirror, check them against the feed's size and SHA-256 and
+upload them beside the packages (`--feed` of `tools/sync-cnb-release.mjs`), and the
+app points each patch at that copy. A patch that is missing or does not apply is
+not a failed update; the full package is downloaded instead. The repair workflow
+adds patches only for the tag the feed announces, because the feed lists patches
+for its latest release alone. A CNB
 check that cannot read the feed falls back to the official feeds, which is why
 the choice cannot leave an installation unable to update.
 

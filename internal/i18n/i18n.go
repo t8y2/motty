@@ -885,6 +885,10 @@ type Messages struct {
 	KeyPaste                    string
 	KeyGenerate                 string
 	KeyCopyPublic               string
+	KeyExport                   string
+	KeyExportTitle              string
+	KeyExportedFmt              string
+	KeyExportReadFailed         string
 	KeyPasteTitle               string
 	KeyPasteDescription         string
 	KeyNameLabel                string

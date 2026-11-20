@@ -415,4 +415,8 @@ jobs:
             exit 1
           fi
           curl -fsSL https://dl.motty.page/viva/latest.json.sig -o "$dir/assets/latest.json.sig"
-          node tools/sync-cnb-release.mjs --github-release "$dir/release.json" --assets-dir "$dir/assets" --make-latest
+          # --feed also copies the delta patches the feed lists, which are
+          # published to the official mirror only, so a CNB install updates
+          # incrementally too.
+          node tools/sync-cnb-release.mjs --github-release "$dir/release.json" --assets-dir "$dir/assets" \
+            --feed "$dir/assets/latest.json" --make-latest

@@ -168,6 +168,7 @@ func pinPaintEnvironment(t *testing.T) {
 	}
 	previousInsets, previousPrimary := windowTitlebarInsets, primaryModifier
 	previousSplits, previousFacts := paneSplitChords, aboutFacts
+	previousBroadcast := broadcastChord
 	previousEditor := customEditorChoice
 	windowTitlebarInsets = func() (float32, float32) { return 70, 0 }
 	primaryModifier = gfx.ModifierMeta
@@ -175,12 +176,14 @@ func pinPaintEnvironment(t *testing.T) {
 		return keymap.Chord{Modifiers: gfx.ModifierMeta, Char: 'd'},
 			keymap.Chord{Modifiers: gfx.ModifierMeta | gfx.ModifierShift, Char: 'd'}
 	}
+	broadcastChord = func() keymap.Chord { return keymap.Chord{Modifiers: gfx.ModifierMeta | gfx.ModifierAlt, Char: 'i'} }
 	aboutFacts = func() aboutBuildInfo { return paintAboutFacts }
 	customEditorChoice = func() bool { return true }
 	t.Cleanup(func() {
 		paintEnvironment = previous
 		windowTitlebarInsets, primaryModifier = previousInsets, previousPrimary
 		paneSplitChords, aboutFacts = previousSplits, previousFacts
+		broadcastChord = previousBroadcast
 		customEditorChoice = previousEditor
 	})
 }

@@ -613,3 +613,37 @@ func TestDashboardNativeViewsAndModal(t *testing.T) {
 		})
 	}
 }
+
+// TestDashboardOverviewMemoryCapacity pins the used and total memory size to
+// the detailed overview's memory card. The card showed only the percentage,
+// so the amount behind the ratio was missing exactly where the charts are,
+// while the simple row carried it.
+func TestDashboardOverviewMemoryCapacity(t *testing.T) {
+	s := dashboardNativeFixture(t)
+	view, err := headless.Open(s.WindowConfig(app.Config{Title: "Motty", Width: 1487, Height: 1058, Tree: Tree(), Paint: s.Paint, OnPointer: s.Pointer, OnKey: s.Key, OnShortcut: s.Shortcut, OnScroll: s.Scroll, OnResize: s.Resize}), nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	row := s.dashboardRow(s.dashboardPanel(), "host-0", int(s.dashboard.body.Width))
+	want := monitorCapacity(row.snapshot.Sample.MemoryUsedBytes, row.snapshot.Sample.MemoryTotalBytes)
+	if want == "" || want == "—" {
+		t.Fatalf("fixture has no memory size to show: %q", want)
+	}
+	if !view.HasText(want) {
+		t.Fatalf("detailed overview does not show the memory capacity %q", want)
+	}
+	// Simple mode already shows it; the two views must agree on the amount.
+	if err := view.ClickLabel(s.messages.Dashboard.Simple); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if !view.HasText(want) {
+		t.Fatalf("simple view does not show the memory capacity %q", want)
+	}
+}

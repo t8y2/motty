@@ -41,7 +41,7 @@ func TestResizeReevaluatesHighlightsThatMatchTrailingPadding(t *testing.T) {
 	screen := term.New(8, 2, 0)
 	screen.Write([]byte("error"))
 	look := darkPalette
-	look.highlight = highlight.Compile([]highlight.Rule{{Pattern: `error {3}$`, Regex: true, Slot: highlight.Red}})
+	look.highlight = highlight.Compile([]highlight.Rule{{Pattern: `error {3}$`, Regex: true, Color: highlight.Red}})
 	var cache rowCache
 	for _, cols := range []int{8, 10, 8} {
 		screen.Resize(cols, 2)
@@ -473,5 +473,22 @@ func TestTheBlankAfterAnIconBelongsToNoRun(t *testing.T) {
 		if owner[icon+1] != -1 {
 			t.Errorf("the cell after the icon in cell %d belongs to run %+v, want no run", icon, entry.runs[owner[icon+1]])
 		}
+	}
+}
+
+// A rule whose color is an explicit RGB value paints the text in that color,
+// not in one of the scheme's slots.
+func TestAnExplicitHighlightColorIsDrawnAsChosen(t *testing.T) {
+	screen := term.New(16, 2, 0)
+	screen.Write([]byte("CUSTOMKEY"))
+	ink := highlight.RGB(0x50, 0xfa, 0x7b)
+	look := darkPalette
+	look.highlight = highlight.Compile([]highlight.Rule{{Pattern: "CUSTOMKEY", Color: ink}})
+	var cache rowCache
+	cache.begin()
+	entry := cache.row(screen.Row(0), 16, -1, cellSpan{}, &look, false)
+	want := gfx.RGB(0x50, 0xfa, 0x7b)
+	if len(entry.runs) == 0 || entry.runs[0].Color != want {
+		t.Fatalf("runs = %+v, want the first word in %v", entry.runs, want)
 	}
 }

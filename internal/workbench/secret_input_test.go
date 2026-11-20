@@ -54,6 +54,7 @@ func TestHostFormSavesTheKeyPassphraseUnderTheKeyAndRefusesAWrongOne(t *testing.
 	state.Click(hitKeychain)
 	state.Click(hitKeysImport)
 	state.Click(hitHosts)
+	locked = state.identities[0].Path // the key is kept in the vault, named by its reference
 
 	state.Click(hitAddHost)
 	typeInto(state, hitDialogLabel, "Vault")

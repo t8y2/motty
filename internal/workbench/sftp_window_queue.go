@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"cmp"
+	"fmt"
 	"slices"
 
 	"github.com/vivaui/viva/gfx"
@@ -9,11 +10,20 @@ import (
 	"motty/internal/sftpclient"
 )
 
-const sftpQueueHeaderHeight = float32(24)
+const (
+	sftpQueueHeaderHeight = float32(24)
+	// sftpQueueConflictHeight is the recovery bar a window's queue shows above
+	// its rows while transfers are waiting on a destination that exists.
+	sftpQueueConflictHeight = float32(31)
+)
 
-func sftpQueueHeight(size gfx.Size, count int) float32 {
+func sftpQueueHeight(size gfx.Size, count, conflicts int) float32 {
 	visible := min(max(2, int(size.Height*0.28/transferRowHeight)), 5, count)
-	return sftpQueueHeaderHeight + float32(visible)*transferRowHeight
+	height := sftpQueueHeaderHeight + float32(visible)*transferRowHeight
+	if conflicts > 0 {
+		height += sftpQueueConflictHeight
+	}
+	return height
 }
 
 // Keep actionable conflicts at the top. The rest of the flat list shows
@@ -45,11 +55,18 @@ func (w *sftpWindow) queueCount() int {
 	center, view := &w.owner.transfers, &w.ui
 	if view.queueRevision != center.revision {
 		view.queueEntries = view.queueEntries[:0]
+		view.queueConflicts = 0
 		for i := range center.entries {
 			e := &center.entries[i]
 			if e.owner == w.view && !e.removed {
 				view.queueEntries = append(view.queueEntries, i)
+				if e.conflict {
+					view.queueConflicts++
+				}
 			}
+		}
+		if view.queueConflicts == 0 {
+			view.queueBatch = transferBatch{}
 		}
 		slices.SortFunc(view.queueEntries, func(a, b int) int {
 			return compareSFTPQueueEntries(&center.entries[a], &center.entries[b])
@@ -61,7 +78,12 @@ func (w *sftpWindow) queueCount() int {
 
 func (w *sftpWindow) declareQueue(c ui.C, bounds, origin gfx.Rect) {
 	view := &w.ui
-	list := gfx.Rect{X: bounds.X, Y: bounds.Y + sftpQueueHeaderHeight, Width: bounds.Width, Height: max(bounds.Height-sftpQueueHeaderHeight, 0)}
+	top := sftpQueueHeaderHeight
+	if view.queueConflicts > 0 {
+		w.declareQueueConflictBar(c, bounds, origin)
+		top += sftpQueueConflictHeight
+	}
+	list := gfx.Rect{X: bounds.X, Y: bounds.Y + top, Width: bounds.Width, Height: max(bounds.Height-top, 0)}
 	view.queueBounds = list
 	view.queueDetails.beginPaint()
 	contentHeight := float32(len(view.queueEntries)) * transferRowHeight
@@ -99,6 +121,67 @@ func (w *sftpWindow) declareQueue(c ui.C, bounds, origin gfx.Rect) {
 		}
 		w.owner.declareTransferDetailCard(c, &view.queueDetails, sftpWindowQueueRows, hitSFTPQueueDetails, hitSFTPQueueDetailsDismiss, w.queueDetailsAllowed())
 	})
+}
+
+// declareQueueConflictBar offers one choice for every conflict this window's
+// queue holds, so a batch that hit an existing destination is not resolved one
+// row at a time. Overwriting asks first, exactly as the transfer center does.
+func (w *sftpWindow) declareQueueConflictBar(c ui.C, bounds, origin gfx.Rect) {
+	view, m := &w.ui, w.owner.messages.Transfers
+	ui.Row(c).Absolute().Left(bounds.X - origin.X).Top(bounds.Y - origin.Y + sftpQueueHeaderHeight).
+		Width(bounds.Width).Height(sftpQueueConflictHeight).PadX(8).Gap(6).Items(ui.Center).Children(func() {
+		if len(view.queueBatch.targets) > 0 {
+			ui.Text(c, view.queueBatch.title).FontSize(w.owner.Theme().Metrics.FontSizeS).Color(w.owner.pal.muted).Ellipsis().Grow(1)
+			w.declareQueueAction(c, hitSFTPQueueReplaceCancel, w.owner.messages.Cancel, false)
+			w.declareQueueAction(c, hitSFTPQueueReplaceConfirm, view.queueBatch.action, true)
+			return
+		}
+		ui.Text(c, fmt.Sprintf(m.ConflictCountFmt, view.queueConflicts)).FontSize(w.owner.Theme().Metrics.FontSizeS).Color(w.owner.pal.muted).Ellipsis().Grow(1)
+		w.declareQueueAction(c, hitSFTPQueueReplaceAll, m.ReplaceAll, true)
+		w.declareQueueAction(c, hitSFTPQueueSkipAll, m.SkipAll, false)
+	})
+}
+
+func (w *sftpWindow) declareQueueAction(c ui.C, id gfx.ID, label string, danger bool) {
+	pal := w.owner.pal
+	ink, fill, edge := pal.text, gfx.Color{}, pal.line
+	if danger {
+		ink, fill, edge = pal.danger, withAlpha(pal.danger, 0.12), withAlpha(pal.danger, 0.6)
+	}
+	ui.ButtonBase(c, label).Height(21).Shrink(0).PadX(8).Radius(radius.control).Background(fill).Border(1, edge).
+		HitWith(id, label, gfx.HitOptions{Role: gfx.RoleButton, Hint: label}).Children(func() {
+		ui.Text(c, label).FontSize(w.owner.Theme().Metrics.FontSizeS).Color(ink)
+	})
+}
+
+// clickQueueConflict handles the window's bulk conflict choice. Confirm and
+// cancel only make sense while a captured replace is pending; the skip path
+// runs straight away, as the center's does.
+func (w *sftpWindow) clickQueueConflict(id gfx.ID) bool {
+	view := &w.ui
+	switch id {
+	case hitSFTPQueueReplaceCancel:
+		view.queueBatch = transferBatch{}
+		return true
+	case hitSFTPQueueReplaceConfirm:
+		batch := view.queueBatch
+		view.queueBatch = transferBatch{}
+		if len(batch.targets) > 0 {
+			w.owner.dispatchTransferBatch(batch)
+		}
+		return true
+	case hitSFTPQueueSkipAll:
+		if batch := w.owner.captureViewTransferBatch(w.view, sftpclient.ExistingSkip); len(batch.targets) > 0 {
+			w.owner.dispatchTransferBatch(batch)
+		}
+		return true
+	case hitSFTPQueueReplaceAll:
+		if batch := w.owner.captureViewTransferBatch(w.view, sftpclient.ExistingReplace); len(batch.targets) > 0 {
+			view.queueBatch = batch
+		}
+		return true
+	}
+	return false
 }
 
 // queueDetailsAllowed reports whether the window's transient states leave the

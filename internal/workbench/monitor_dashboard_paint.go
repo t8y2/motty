@@ -282,7 +282,13 @@ func (s *State) paintDashboardHost(c *gfx.Canvas, p *monitoring.Panel, h Host, r
 			font = 12
 		}
 		monitorRight(c, value, gfx.Rect{X: box.X + 85, Y: box.Y + 6, Width: max(0, box.Width-97), Height: 28}, font, pal.text, gfx.WeightSemibold)
-		plot := gfx.Rect{X: box.X + 4, Y: box.Y + 39, Width: box.Width - 8, Height: box.Height - 43}
+		// The memory card names its used and total size below the percentage,
+		// the way the simple row does, so the amount behind the ratio is on the
+		// same card. Every card starts its plot below that line to stay level.
+		if i == 1 && r.capacity != "" {
+			monitorRight(c, r.capacity, gfx.Rect{X: box.X + 34, Y: box.Y + 33, Width: max(0, box.Width-46), Height: 16}, 11, pal.muted, gfx.WeightRegular)
+		}
+		plot := gfx.Rect{X: box.X + 4, Y: box.Y + 52, Width: box.Width - 8, Height: box.Height - 56}
 		s.paintDashboardChart(c, p, h, r, plot, i, label)
 	}
 	y += 164
