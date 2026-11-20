@@ -2862,6 +2862,8 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareUpdateDialog(c)
 	case modalUpdateProgress:
 		state.declareUpdateProgress(c)
+	case modalProxyProfile:
+		state.declareProxyProfileDialog(c)
 	case modalNewHost:
 		state.declareHostDialog(c)
 	case modalTerminalInput:

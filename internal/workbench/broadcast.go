@@ -186,6 +186,7 @@ func (state *State) clickTerminalTools(id gfx.ID) bool {
 	case id == hitImportSessions:
 		state.modal = modalImportSessions
 	case state.clickCredentialSettings(id):
+	case state.clickProxyProfileSettings(id):
 	case state.clickHostTagSettings(id):
 	case id == hitSettingsHighlightManage:
 		state.openRuleManager(ruleDeleteHighlight)

@@ -96,6 +96,9 @@ type Messages struct {
 	RuleManagement RuleManagementMessages
 	// Credentials holds the saved passwords' texts; see credentials.go.
 	Credentials CredentialMessages
+	// ProxyProfiles holds the saved outbound proxy profiles' texts; see
+	// proxy_profiles.go.
+	ProxyProfiles ProxyProfileMessages
 	// HostTags holds the host tag manager's texts; see host_tags.go.
 	HostTags HostTagMessages
 	// History holds the command history's texts; see history.go.
@@ -1308,6 +1311,7 @@ func For(language Language) Messages {
 		messages.Autofill = chineseAutofill
 		messages.RuleManagement = chineseRuleManagement
 		messages.Credentials = chineseCredentials
+		messages.ProxyProfiles = chineseProxyProfiles
 		messages.HostTags = chineseHostTags
 		messages.History = chineseHistory
 		messages.Completion = chineseCompletion
@@ -1322,6 +1326,7 @@ func For(language Language) Messages {
 		messages.Autofill = traditionalAutofill
 		messages.RuleManagement = traditionalRuleManagement
 		messages.Credentials = traditionalCredentials
+		messages.ProxyProfiles = traditionalProxyProfiles
 		messages.HostTags = traditionalHostTags
 		messages.History = traditionalHistory
 		messages.Completion = traditionalCompletion
@@ -1336,6 +1341,7 @@ func For(language Language) Messages {
 		messages.Autofill = englishAutofill
 		messages.RuleManagement = englishRuleManagement
 		messages.Credentials = englishCredentials
+		messages.ProxyProfiles = englishProxyProfiles
 		messages.HostTags = englishHostTags
 		messages.History = englishHistory
 		messages.Completion = englishCompletion

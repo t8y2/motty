@@ -100,9 +100,12 @@ type hostEditor struct {
 	// noHistory is the host's "Don't record commands" switch.
 	noHistory bool
 	// proxy is nil to inherit the global proxy, ProxyNone to force a direct
-	// connection, or a dedicated proxy. proxyPassword is staged until the outer
-	// host form is saved.
+	// connection, or a dedicated proxy. proxyProfile names a saved proxy profile
+	// instead, with proxyBypass as this host's own direct list. proxyPassword is
+	// staged until the outer host form is saved.
 	proxy         *outboundProxy
+	proxyProfile  string
+	proxyBypass   string
 	proxyPassword string
 	// otp is a new one-time code secret to save with the host. A saved one is
 	// never shown again; otpSaved only says there is one.
@@ -339,7 +342,8 @@ func (editor *hostEditor) load(host Host) {
 	editor.agentForward = host.AgentForward
 	editor.interactiveOnly = host.InteractiveOnly
 	editor.noHistory = host.NoHistory
-	editor.proxy, editor.proxyPassword = cloneOutboundProxy(host.Proxy), ""
+	editor.proxy, editor.proxyProfile, editor.proxyBypass = cloneOutboundProxy(host.Proxy), host.ProxyProfile, host.ProxyBypass
+	editor.proxyPassword = ""
 	editor.transfer = host.Transfer
 	editor.advancedOpen = host.isSSH() && (host.Algo != nil || host.ForwardX11 || host.AgentForward || host.InteractiveOnly || host.NoHistory || host.IdentitiesOnly || host.LoginCommand != "")
 	if idleKeepAliveProtocol(host.Protocol) && (host.IdleKeepAlive > 0 || host.IdleInput != idleInputProtocolDefault) {
@@ -422,6 +426,7 @@ func (editor *hostEditor) host(id uint32) Host {
 	}
 	if editor.protocol != protocolSerial {
 		host.Proxy = cloneOutboundProxy(editor.proxy)
+		host.ProxyProfile, host.ProxyBypass = editor.proxyProfile, editor.proxyBypass
 	}
 	if idleKeepAliveProtocol(editor.protocol) {
 		host.IdleKeepAlive, _ = editor.idleKeepAliveDuration()

@@ -1065,6 +1065,10 @@ type State struct {
 	clipboardRequest         remoteClipboardRequest
 	autofillRules            autofillUI
 	credentialForm           credentialUI
+	proxyProfileForm         proxyProfileUI
+	// proxyProfileReturn is the modal the profile dialog returns to when the
+	// host proxy dialog opened it to make a profile for itself; modalNone otherwise.
+	proxyProfileReturn modalKind
 	// credentialReturn is the modal the identity dialog returns to when the host
 	// form opened it to make an identity for itself; modalNone otherwise.
 	credentialReturn modalKind
@@ -1540,6 +1544,19 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 		case hitCredentialPassword:
 			return &state.credentialForm.password
 		}
+	case modalProxyProfile:
+		switch hit {
+		case hitProxyProfileName:
+			return &state.proxyProfileForm.name
+		case hitProxyProfileAddress:
+			return &state.proxyProfileForm.address
+		case hitProxyProfileUser:
+			return &state.proxyProfileForm.user
+		case hitProxyProfilePassword:
+			return &state.proxyProfileForm.password
+		case hitProxyProfileTarget:
+			return &state.proxyProfileForm.testTarget
+		}
 	case modalAutofillRule:
 		switch hit {
 		case hitAutofillName:
@@ -1790,6 +1807,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		return
 	case modalCredential:
 		state.clickCredentialDialog(id)
+		return
+	case modalProxyProfile:
+		state.clickProxyProfileDialog(id)
 		return
 	case modalAutofillConfirm:
 		state.clickAutofillConfirm(id)
@@ -3211,6 +3231,12 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	if state.modal == modalCredential && event.Key == gfx.KeyEnter && !event.Repeat &&
 		(event.Target == hitCredentialName || event.Target == hitCredentialUser || event.Target == hitCredentialPassword) {
 		state.submitCredential()
+		return gfx.EventResult{Handled: true, Repaint: true}
+	}
+	if state.modal == modalProxyProfile && event.Key == gfx.KeyEnter && !event.Repeat &&
+		(event.Target == hitProxyProfileName || event.Target == hitProxyProfileAddress || event.Target == hitProxyProfileUser ||
+			event.Target == hitProxyProfilePassword || event.Target == hitProxyProfileTarget) {
+		state.submitProxyProfile()
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if state.modal == modalHighlightRule && event.Key == gfx.KeyEnter && event.Target == hitHighlightPattern && !event.Repeat {

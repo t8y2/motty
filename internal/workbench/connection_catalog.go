@@ -52,6 +52,9 @@ type hostCatalog struct {
 	identities []identityRecord
 	// credentials are the saved passwords hosts can share; the secrets are in the vault.
 	credentials []credential
+	// proxyProfiles are the saved outbound proxy routes hosts can share; their
+	// passwords are in the vault.
+	proxyProfiles []proxyProfile
 	// proxy is the outbound proxy every host inherits unless it names its own.
 	proxy             outboundProxy
 	connectionTimeout time.Duration
@@ -404,6 +407,17 @@ var errProxyCommandUnconfirmed = errors.New("the proxy command imported from an 
 func (catalog *hostCatalog) proxyForHost(host Host, env connectEnv) *sshconn.Proxy {
 	if host.Protocol == protocolSerial {
 		return nil
+	}
+	if host.ProxyProfile != "" {
+		profile, ok := catalog.proxyProfileByID(host.ProxyProfile)
+		if !ok {
+			// A profile that is gone must not send the host through another
+			// route: it connects directly, as the host row says.
+			return nil
+		}
+		saved := profile.outboundProxy()
+		saved.bypass = host.ProxyBypass
+		return catalog.proxyWithPassword(saved, proxyProfileSecretName(profile.ID), env)
 	}
 	if host.Proxy == nil {
 		return catalog.proxyWithPassword(catalog.proxy, proxyPasswordSecret, env)

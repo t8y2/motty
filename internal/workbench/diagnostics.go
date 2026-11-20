@@ -98,6 +98,10 @@ func (state *State) diagnosticsRedactor() (*diag.Redactor, map[uint32]string) {
 	if state.proxy.address != "" {
 		hideProxy(&state.proxy)
 	}
+	for _, profile := range state.proxyProfiles {
+		proxy := profile.outboundProxy()
+		hideProxy(&proxy)
+	}
 	if name, err := os.Hostname(); err == nil {
 		redactor.Hide(name, "this-computer")
 	}
@@ -147,8 +151,8 @@ func (state *State) diagnosticReport() string {
 	}
 	report.Fact("sync", saved.Sync != nil)
 	report.Fact("background image", saved.Background != nil)
-	report.Fact("counts", fmt.Sprintf("hosts=%d groups=%d keys=%d forwards=%d routes=%d snippets=%d highlights=%d bookmarks=%d",
-		len(saved.Hosts), len(saved.HostGroups), len(saved.IdentityFiles), len(saved.Forwards), len(saved.Proxies), len(saved.Snippets), len(saved.Highlights), len(saved.SFTPBookmarks)))
+	report.Fact("counts", fmt.Sprintf("hosts=%d groups=%d keys=%d forwards=%d routes=%d snippets=%d highlights=%d bookmarks=%d proxy-profiles=%d",
+		len(saved.Hosts), len(saved.HostGroups), len(saved.IdentityFiles), len(saved.Forwards), len(saved.Proxies), len(saved.Snippets), len(saved.Highlights), len(saved.SFTPBookmarks), len(state.proxyProfiles)))
 
 	report.Section("Hosts")
 	for _, host := range state.hosts {

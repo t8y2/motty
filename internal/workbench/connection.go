@@ -561,6 +561,7 @@ const (
 	modalWorkspaceTemplateDelete
 	modalLocalProxy
 	modalCredential
+	modalProxyProfile
 	modalPasteReview
 	modalIconColorPicker
 )
@@ -1403,6 +1404,11 @@ func (state *State) closeModal() {
 	}
 	if state.modal == modalCredential {
 		state.credentialForm = credentialUI{} // the password does not stay in the form
+	}
+	if state.modal == modalProxyProfile {
+		// The password does not stay in the form; the test generation does, so a
+		// late result cannot land in the next dialog.
+		state.proxyProfileForm = proxyProfileUI{testRun: state.proxyProfileForm.testRun}
 	}
 	if state.modal == modalWorkspaceDraft {
 		state.workspaceDraft.reset()

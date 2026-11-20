@@ -66,6 +66,8 @@ func recordSyncCategory(kind string) (syncCategory, bool) {
 		return syncCategoryWorkspaces, true
 	case "credential":
 		return syncCategoryCredentials, true
+	case "proxy-profile":
+		return syncCategorySettings, true
 	case kindAIProvider, kindAICLIProvider:
 		return syncCategoryAI, true
 	case "bookmark", "highlight", "autofill":
@@ -86,6 +88,8 @@ func secretSyncCategory(name string) (syncCategory, bool) {
 		return syncCategorySettings, true
 	case strings.HasPrefix(name, "credential:"):
 		return syncCategoryCredentials, true
+	case strings.HasPrefix(name, "proxy-profile:"):
+		return syncCategorySettings, true
 	case strings.HasPrefix(name, "sshkey:"), strings.HasPrefix(name, "passphrase:"):
 		return syncCategoryKeys, true
 	case strings.HasPrefix(name, "aikey:"):

@@ -238,6 +238,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsConnection, m.SettingsSSHAgent, m.SettingsSSHAgentDescription)
 	row(settingsConnection, m.SettingsNetworkProxy, m.SettingsNetworkProxyDescription)
 	row(settingsConnection, tools.ProxyRow, tools.ProxyDescriptionNone)
+	group(settingsConnection, state.messages.ProxyProfiles.Group, state.messages.ProxyProfiles.Group, state.messages.ProxyProfiles.RowDescription)
 	row(settingsConnection, state.messages.SSHSync.ToggleRow, state.messages.SSHSync.ToggleDescription)
 	row(settingsConnection, state.messages.SSHSync.FileRow, "")
 	row(settingsConnection, state.messages.SSHSync.NowRow, "")
