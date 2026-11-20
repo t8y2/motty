@@ -70,8 +70,8 @@ func TestMonitorManyDockerMountsPaintOnlyVisibleRows(t *testing.T) {
 		t.Fatalf("expanded disks added horizontal scrolling: %+v", area)
 	}
 	viewport := area.Viewport
-	diskSectionTop := float32(8 + monitorTileHeight + monitorLowerTileHeight + monitorGap*3 +
-		monitorSummaryHeight + monitorCoresHeight(p) + monitorGap)
+	diskSectionTop := float32(8 + monitorTileHeight + monitorLowerTileHeight + monitorGap*2 +
+		monitorHostSummaryHeight + monitorCoresHeight(p) + monitorGap)
 	p.scroll = diskSectionTop
 	canvas.Reset()
 	state.Paint(&canvas, size)

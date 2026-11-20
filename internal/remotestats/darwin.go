@@ -153,6 +153,19 @@ loop() {
 		esac
 	done
 }
+gpu_probe() {
+	/usr/sbin/system_profiler SPDisplaysDataType -timeout 3 2>/dev/null | awk '
+		index($0, "Chipset Model:") {
+			name = $0
+			sub(/^.*Chipset Model:[[:space:]]*/, "", name)
+			gsub(/[[:space:]]+$/, "", name)
+			gsub(/[[:space:]]+/, " ", name)
+			if (name == "" || count >= 16) next
+			printf "gop-gpu-darwin %d\t%s\n", count, name
+			count++
+		}'
+}
+gpu_probe
 top -l 2 -s 1 -n 0 2>/dev/null | loop warm
 top -l 0 -s __INTERVAL__ -n 0 2>/dev/null | loop skip`
 

@@ -9,19 +9,17 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
 	"motty/internal/remotestats"
+	"motty/internal/sshconn"
 )
 
 func TestMonitorHostAddressCopyFeedback(t *testing.T) {
 	state, session := monitorFixture(t)
-	now := 10 * time.Second
-	state.options.Now = func() time.Duration { return now }
-	session.stats.panel.paused = true // expiry must repaint without monitor refreshes
 	var copied []string
 	state.options.SetClipboardText = func(value string) error {
 		copied = append(copied, value)
@@ -38,17 +36,16 @@ func TestMonitorHostAddressCopyFeedback(t *testing.T) {
 	if err = view.ClickLabel("button:" + state.messages.Monitor.AddressCopy); err != nil {
 		t.Fatal(err)
 	}
-	if len(copied) != 1 || copied[0] != session.host.Address || !view.HasText(state.messages.Monitor.AddressCopied) || len(state.fileNotices.items) != 0 {
-		t.Fatalf("copy did not write the address and show feedback: %q", copied)
+	if len(copied) != 1 || copied[0] != session.host.Address {
+		t.Fatalf("copy did not write the address: %q", copied)
 	}
-	now += 1500 * time.Millisecond
-	if err = view.Wait(1500 * time.Millisecond); err != nil {
-		t.Fatal(err)
-	}
-	if !view.HasText(state.messages.Monitor.AddressCopied) {
-		t.Fatal("inline feedback disappeared before two seconds")
+	if len(state.fileNotices.items) != 1 || state.fileNotices.items[0].kind != components.ToastSuccess || !view.HasText(state.messages.Monitor.AddressCopied) {
+		t.Fatalf("copy did not show the Viva toast: %+v", state.fileNotices.items)
 	}
 	if dir := os.Getenv("MOTTY_MONITOR_SCREENSHOTS"); dir != "" {
+		if err = view.Rest(); err != nil {
+			t.Fatal(err)
+		}
 		if err = view.Screenshot(filepath.Join(dir, "monitor-address-copied.png")); err != nil {
 			t.Fatal(err)
 		}
@@ -59,24 +56,152 @@ func TestMonitorHostAddressCopyFeedback(t *testing.T) {
 	if len(copied) != 2 || copied[1] != session.host.Address {
 		t.Fatalf("focused address cannot be copied with Enter: %q", copied)
 	}
-	now += 1500 * time.Millisecond
-	if err = view.Wait(1500 * time.Millisecond); err != nil {
+	if len(state.fileNotices.items) != 1 || state.fileNotices.items[0].kind != components.ToastSuccess {
+		t.Fatalf("copying again did not reuse the success toast: %+v", state.fileNotices.items)
+	}
+}
+
+func TestMonitorGPUIsDefaultAndChartsRenderHeadless(t *testing.T) {
+	state, session := monitorFixture(t)
+	session.host.System = sshconn.SystemWindows
+	panel := &session.stats.panel
+	panel.hardwareOpen = true
+	panel.data.Kernel = "Windows 10.0.26200"
+	panel.data.PrimaryDisk = `C:\`
+	panel.sample.GPUs = []remotestats.GPU{
+		{
+			Vendor: "GameViewer", Index: 0, Name: "GameViewer Virtual Display Adapter",
+			UtilPercent: -1, TemperatureC: -1, PowerWatts: -1, PowerLimitWatts: -1, FanPercent: -1,
+		},
+		{
+			Vendor: "Intel Corporation", Index: 1, Name: "Intel(R) Arc(TM) Graphics",
+			UtilPercent: 9, MemoryUsedBytes: 3149869056,
+			TemperatureC: -1, PowerWatts: -1, PowerLimitWatts: -1, FanPercent: -1,
+		},
+	}
+	state.formatMonitor(session.stats)
+	for index := range panel.disk {
+		panel.disk[index] = float32(55 + (index*7)%19)
+	}
+	state.setAppearance(appearanceDark)
+	view, err := headless.Open(state.WindowConfig(app.Config{
+		Title: "Monitor", Width: 1280, Height: 900, Tree: Tree(), Paint: state.Paint,
+		OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll, OnResize: state.Resize,
+	}), nil, headless.Options{Scale: 1.5})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if !view.HasText(state.messages.Monitor.AddressCopied) {
-		t.Fatal("copying again did not restart the feedback timer")
-	}
-	now += 500 * time.Millisecond
-	if err = view.Wait(500 * time.Millisecond); err != nil {
+	defer view.Close()
+	if err = view.Rest(); err != nil {
 		t.Fatal(err)
 	}
-	if view.HasText(state.messages.Monitor.AddressCopied) {
-		t.Fatal("inline feedback did not disappear after two seconds")
+	if _, ok := view.Hit(state.messages.Monitor.Pause); !ok {
+		t.Fatal("pause control is missing")
+	}
+	if _, ok := view.Hit(state.messages.Monitor.Interval); !ok {
+		t.Fatal("interval control is missing")
 	}
 	if dir := os.Getenv("MOTTY_MONITOR_SCREENSHOTS"); dir != "" {
-		if err = view.Screenshot(filepath.Join(dir, "monitor-address-restored.png")); err != nil {
+		if err = view.Screenshot(filepath.Join(dir, "monitor-issue1113-gpu-default.png")); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if err = view.ClickLabel(state.messages.Monitor.Interval); err != nil {
+		t.Fatal(err)
+	}
+	if err = view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	rowHeight := components.DropdownMenuItemHeight(state.Theme(), components.DropdownMenuItem{})
+	var firstRow gfx.Rect
+	for index := range state.messages.Monitor.IntervalLabels {
+		item, ok := view.Hit(state.messages.Monitor.IntervalLabels[index])
+		if !ok || item.Bounds.Width > 128 || item.Bounds.Height != rowHeight {
+			t.Fatalf("interval item %d is not content-sized: %+v", index, item.Bounds)
+		}
+		if index == 0 {
+			firstRow = item.Bounds
+		}
+		if item.Bounds.Y != firstRow.Y+float32(index)*rowHeight {
+			t.Fatalf("interval item %d has excess spacing: %+v", index, item.Bounds)
+		}
+	}
+	menuFound := false
+	for _, hit := range view.Snapshot().Hits {
+		if hit.Role != gfx.RoleMenu {
+			continue
+		}
+		menuFound = true
+		expectedHeight := float32(len(monitorIntervals))*rowHeight + 2*components.DropdownMenuPadding
+		if hit.Bounds.Width > 128 || hit.Bounds.Height != expectedHeight {
+			t.Fatalf("interval menu has excess space: %+v", hit.Bounds)
+		}
+	}
+	if !menuFound {
+		t.Fatal("interval menu surface is missing")
+	}
+	if view.HasText(state.messages.SudoCommandsEnable) {
+		t.Fatal("interval menu still contains the sudo command")
+	}
+	if dir := os.Getenv("MOTTY_MONITOR_SCREENSHOTS"); dir != "" {
+		if err = view.Screenshot(filepath.Join(dir, "monitor-issue1113-interval-menu.png")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Keep the fixed samples while inspecting the hardware card.
+	if err = view.Keys("escape"); err != nil {
+		t.Fatal(err)
+	}
+	if state.monitorMenu {
+		t.Fatal("interval menu did not close")
+	}
+	if err = view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if err = view.Scroll(gfx.ScrollEvent{
+		X: state.monitorRect.X + 100, Y: state.monitorRect.Y + 300, DeltaY: 10000,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := view.Hit(state.messages.Monitor.Hardware); !ok {
+		t.Fatal("hardware section is not reachable")
+	}
+	if state.monitorMenu {
+		t.Fatal("interval menu stayed open over the hardware section")
+	}
+	for _, text := range []string{
+		"GameViewer",
+		"Intel(R) Arc(TM)",
+		"9%",
+		"2.9 GiB",
+	} {
+		if !view.HasText(text) {
+			t.Fatalf("hardware section is missing %q", text)
+		}
+	}
+	hardware, ok := view.Hit(state.messages.Monitor.Hardware)
+	if !ok {
+		t.Fatal("hardware section is not visible at the bottom")
+	}
+	geometry := state.monitorScrollArea(panel).Geometry()
+	bottomGap := geometry.Viewport.Y + geometry.Viewport.Height - (hardware.Bounds.Y + monitorHardwareHeight(panel))
+	if bottomGap < 20 {
+		t.Fatalf("the final hardware card ends %vpx above the viewport bottom, want at least %vpx", bottomGap, monitorBottomPadding)
+	}
+	if dir := os.Getenv("MOTTY_MONITOR_SCREENSHOTS"); dir != "" {
+		if err = view.Screenshot(filepath.Join(dir, "monitor-issue1113-hardware.png")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	panel.paused = true
+	if err = view.ClickLabel(state.messages.Monitor.Interval); err != nil {
+		t.Fatal(err)
+	}
+	if err = view.ClickLabel(state.messages.Monitor.IntervalLabels[3]); err != nil {
+		t.Fatal(err)
+	}
+	if panel.interval != 10 || state.monitorMenu || session.stats.worker != nil {
+		t.Fatal("10-second selection failed or started sampling the fixed fixture")
 	}
 }
 
@@ -171,10 +296,17 @@ func TestMonitorNativePanelAtDifferentScales(t *testing.T) {
 			if err = view.ClickLabel(state.messages.Monitor.Interval); err != nil {
 				t.Fatal(err)
 			}
-			if err = view.ClickLabel(state.messages.Monitor.IntervalLabels[2]); err != nil {
+			rowHeight := components.DropdownMenuItemHeight(state.Theme(), components.DropdownMenuItem{})
+			for _, index := range []int{0, 2, 3} {
+				item, ok := view.Hit(state.messages.Monitor.IntervalLabels[index])
+				if !ok || item.Bounds.Width > 128 || item.Bounds.Height != rowHeight {
+					t.Fatalf("interval item %d is not content-sized: %+v", index, item.Bounds)
+				}
+			}
+			if err = view.ClickLabel(state.messages.Monitor.IntervalLabels[3]); err != nil {
 				t.Fatal(err)
 			}
-			if state.contextSession().stats.panel.interval != 5 || state.monitorMenu {
+			if state.contextSession().stats.panel.interval != 10 || state.monitorMenu {
 				t.Fatal("refresh menu did not apply")
 			}
 			if err = view.Resize(1280, 900); err != nil {
@@ -216,7 +348,7 @@ func TestMonitorNativePanelAtDifferentScales(t *testing.T) {
 			if err = view.Scroll(gfx.ScrollEvent{X: b.X + 100, Y: b.Y + 250, DeltaY: 10000}); err != nil {
 				t.Fatal(err)
 			}
-			if !view.HasText(state.messages.Monitor.NoHardware) || p.scroll <= 0 {
+			if !view.HasText(p.data.Kernel) || p.scroll <= 0 {
 				t.Fatal("expanded content is unreachable")
 			}
 			if dir := os.Getenv("MOTTY_MONITOR_SCREENSHOTS"); dir != "" {
@@ -247,6 +379,11 @@ func TestMonitorLoginSessionsScrollAndCollapse(t *testing.T) {
 	}
 	if _, ok := view.Hit(state.messages.Monitor.Logins); !ok {
 		t.Fatal("login sessions section is not reachable when scrolling")
+	}
+	for _, text := range []string{state.messages.Monitor.LoginsHint, "alice", "bob"} {
+		if !view.HasText(text) {
+			t.Fatalf("login sessions section is missing %q", text)
+		}
 	}
 	if dir := os.Getenv("MOTTY_MONITOR_SCREENSHOTS"); dir != "" {
 		if err = view.Screenshot(filepath.Join(dir, "monitor-login-sessions.png")); err != nil {

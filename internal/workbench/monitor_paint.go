@@ -150,7 +150,7 @@ func (state *State) declareMonitorContent(c ui.C, width, height float32) {
 				p := &session.stats.panel
 				live := session.stats.state == remoteStatsReady
 				interval := state.declareMonitorInterval(c, p, live)
-				interval.Width(82).Height(26).Shrink(0).MarginLeft(12)
+				interval.Height(26).Shrink(0).MarginLeft(12)
 				state.declareMonitorMenu(c, interval)
 				pause, hint := uint8(iconPause), m.Pause
 				if p.paused {
@@ -182,9 +182,6 @@ func (state *State) declareMonitorContent(c ui.C, width, height float32) {
 		}
 		ui.Row(c).Height(monitorControlsHeight).PadSides(6, 12, 0, 12).Children(func() {
 			state.declareMonitorNavigation(c, p, width-24)
-		})
-		ui.Slot(c).Height(monitorHostInfoHeight).MarginSides(0, 12, 0, 12).Draw(func(d *ui.DrawContext) {
-			state.paintMonitorHostInfo(d.Canvas, gfx.Rect{X: d.Rect.X, Y: d.Rect.Y, Width: d.Rect.Width, Height: monitorHostInfoHeight}, session)
 		})
 		state.declareMonitorBody(c, session, p, width, height)
 		if monitorShowsBody(session) {
@@ -266,24 +263,14 @@ func (state *State) declareMonitorMenu(c ui.C, anchor ui.Box) {
 		return
 	}
 	p := &session.stats.panel
-	ids := [...]gfx.ID{hitMonitorEvery1, hitMonitorEvery2, hitMonitorEvery5}
+	ids := [...]gfx.ID{hitMonitorEvery1, hitMonitorEvery2, hitMonitorEvery5, hitMonitorEvery10}
 	open := true
 	ui.Menu(c, anchor, &open, func(menu *ui.MenuItems) {
-		for index, seconds := range [...]int{1, 2, 5} {
+		for index, seconds := range monitorIntervals {
 			item := menu.Item(state.messages.Monitor.IntervalLabels[index]).Chosen(p.interval == seconds)
 			if item.Clicked() {
 				id := ids[index]
 				c.After(func() { state.click(id, true) })
-			}
-		}
-		if session.hasServer() && session.host.System != sshconn.SystemWindows {
-			label := state.messages.SudoCommandsEnable
-			if session.sudoCommands {
-				label = state.messages.SudoCommandsDisable
-			}
-			item := menu.Item(label)
-			if item.Clicked() {
-				c.After(func() { state.click(hitMonitorSudo, true) })
 			}
 		}
 	})
@@ -342,7 +329,7 @@ func (state *State) declareMonitorBody(c ui.C, session *Session, p *monitorView,
 					viewport = gfx.Rect{X: d.Rect.X, Y: d.Rect.Y + area.Offset, Width: d.Rect.Width, Height: area.Viewport}
 				}
 			}
-			state.paintMonitorSections(d.Canvas, session.stats, d.Rect, viewport)
+			state.paintMonitorSections(d.Canvas, session, session.stats, d.Rect, viewport)
 		})
 	})
 	scroll.DrawOver(func(d *ui.DrawContext) {
