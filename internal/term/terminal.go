@@ -213,6 +213,7 @@ type Terminal struct {
 	// waiting for the shell's own redraw; promptSaved holds those rows and the
 	// cursor column as the shell drew them until it does.
 	promptLine   uint64
+	promptStart  int // the column the prompt began at
 	promptActive bool
 	promptStale  bool
 	promptSaved  []*line
