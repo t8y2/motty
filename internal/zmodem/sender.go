@@ -166,7 +166,15 @@ func (s *Sender) header(h header) {
 			}
 			s.startFile()
 		case sWaitRPOS:
-			s.out = append(s.out, s.last...) // it did not get the file's header
+			// The first file has not been accepted yet. A ready that is still
+			// arriving means the receiver never saw the header, so say it again.
+			// After a file, ready means "send the next one", and a receiver sends
+			// it again when a repeated end-of-file crosses that ready. Saying the
+			// next header again makes the receiver open another file. A header
+			// that was lost is repeated by a timeout or a ZNAK.
+			if s.index == 0 {
+				s.out = append(s.out, s.last...)
+			}
 		case sWaitEOF:
 			s.sent++
 			s.index++

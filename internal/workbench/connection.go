@@ -1048,13 +1048,19 @@ func (state *State) closeDisconnectedShell(session *Session) {
 	if terminal == nil || terminal.shell == nil {
 		return
 	}
-	terminal.rx = terminal.shell.Drain(terminal.rx[:0])
-	if len(terminal.rx) > 0 || terminal.decoder != nil {
+	pending := terminal.shell.Drain(terminal.rx[:0])
+	terminal.rx = terminal.rx[:0]
+	// These bytes belong to the transfer. Drawing them rings the bell for every
+	// 0x07 in a binary file, and that sound runs where the window cannot paint
+	// or read the other sessions.
+	if session.transfer.phase != transferNone && len(pending) > 0 {
+		pending = state.feedTransfer(session, pending)
+	}
+	if len(pending) > 0 || terminal.decoder != nil {
 		// The last read may end mid-character; decode and flush it before the
 		// shell goes away, so a trailing GB18030 character is not lost.
-		output := terminal.decodeRemote(terminal.rx)
+		output := terminal.decodeRemote(pending)
 		output = append(output, terminal.flushRemoteDecoder()...)
-		terminal.rx = terminal.rx[:0]
 		// What a shell says while its integration is hidden is not meant for
 		// the user: the activation line's echo is among that output, and no
 		// ready marker can end the window now. What is still hidden is dropped,
