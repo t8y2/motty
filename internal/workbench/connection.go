@@ -558,6 +558,7 @@ const (
 	modalLocalProxy
 	modalCredential
 	modalPasteReview
+	modalAgentHosts
 )
 
 // tone colors a session's headline.
@@ -1374,6 +1375,9 @@ func (state *State) closeModal() {
 	}
 	if state.modal == modalPasteReview {
 		state.pasteReview = pasteReviewUI{}
+	}
+	if state.modal == modalAgentHosts {
+		state.ai.cfg.agentHostsView = agentHostsViewUI{}
 	}
 	if state.modal == modalDashboardAdd {
 		state.dashboard.addHosts = nil

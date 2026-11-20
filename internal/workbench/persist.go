@@ -690,9 +690,17 @@ func (state *State) snapshot() savedState {
 	}
 	// A host that is gone takes its opening with it: a host added later at the
 	// same address must not come back already open to agents.
-	for id := range state.agentHosts {
-		if !slices.ContainsFunc(state.hosts, func(host Host) bool { return host.isSSH() && host.CatalogID == id }) {
-			delete(state.agentHosts, id)
+	if len(state.agentHosts) > 0 {
+		sshHostIDs := make(map[string]struct{}, len(state.hosts))
+		for _, host := range state.hosts {
+			if host.isSSH() {
+				sshHostIDs[host.CatalogID] = struct{}{}
+			}
+		}
+		for id := range state.agentHosts {
+			if _, ok := sshHostIDs[id]; !ok {
+				delete(state.agentHosts, id)
+			}
 		}
 	}
 	for _, host := range state.hosts {
