@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"math/big"
+	"net"
 	"testing"
 	"testing/iotest"
 )
@@ -139,6 +140,28 @@ func TestARDAsksForAccountAndPassword(t *testing.T) {
 	account := <-accounts
 	if account.username != "bob" || account.password != "hunter2" {
 		t.Fatalf("server read account %q password %q", account.username, account.password)
+	}
+}
+
+// TestARDAsksForCredentialsOnAConnectionWithoutDeadlines is the SSH-forwarded
+// case: the source of the connection is a channel, whose deadline methods
+// report that deadlines are unsupported, and asking the user must still work.
+func TestARDAsksForCredentialsOnAConnectionWithoutDeadlines(t *testing.T) {
+	prime := ardPrime(t)
+	asked := 0
+	client, err := connectOver(t, func(conn net.Conn) net.Conn { return noDeadlineConn{conn} }, Config{
+		AskCredentials: func() (string, string, error) {
+			asked++
+			return "bob", "hunter2", nil
+		},
+	}, func(s *server) {
+		s.ardChallenge(t, prime, 0, "")
+	})
+	if err != nil {
+		t.Fatalf("connect over a transport without deadlines: %v", err)
+	}
+	if asked != 1 || client.Security != 30 {
+		t.Fatalf("asked=%d security=%d", asked, client.Security)
 	}
 }
 
