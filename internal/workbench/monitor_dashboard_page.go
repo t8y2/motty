@@ -380,10 +380,12 @@ func (state *State) declareDashboardRowControlBoxes(c ui.C, p *monitoring.Panel,
 	labels := [3]string{state.messages.Monitor.Overview, state.messages.Monitor.Disks, state.messages.Monitor.Network}
 	view := func(index int) string { return labels[index] }
 	if simple {
-		ui.Tabs(c, &r.simplePage, []int{0, 1, 2}, view).Vertical().
+		// The view column is 40 wide: the strip shows only its icons, and the
+		// labels stay its accessible names and hover hints.
+		ui.Tabs(c, &r.simplePage, []int{0, 1, 2}, view).TabIcons(dashboardViewIcons).TabIconOnly().Vertical().
 			Absolute().Left(controls.tabs.X).Top(y+controls.tabs.Y).Size(controls.tabs.Width, controls.tabs.Height)
 	} else {
-		ui.Tabs(c, &r.page, []int{0, 1, 2}, view).
+		ui.Tabs(c, &r.page, []int{0, 1, 2}, view).TabIcons(dashboardViewIcons).
 			Absolute().Left(controls.tabs.X).Top(y+controls.tabs.Y).Size(controls.tabs.Width, controls.tabs.Height)
 	}
 	if h.ID != 0 {
@@ -409,8 +411,11 @@ func (state *State) declareDashboardRowControlBoxes(c ui.C, p *monitoring.Panel,
 func (state *State) dashboardRowControlRects(canvas *gfx.Canvas, p *monitoring.Panel, h Host, r *dashboardRow, row gfx.Rect, exists, simple bool) dashboardRowControls {
 	if simple {
 		tabs, _ := dashboardSimpleColumns(row)
+		// The strip is inset the same distance at the top and bottom of the
+		// heading band, so it sits centered in a row with no table under it.
 		controls := dashboardRowControls{
-			tabs:     gfx.Rect{X: tabs, Y: 7, Width: 40, Height: 108},
+			tabs: gfx.Rect{X: tabs, Y: dashboardSimpleTabInset, Width: 40,
+				Height: dashboardSimpleRowLeast - 2*dashboardSimpleTabInset},
 			terminal: gfx.Rect{X: row.Width - 38, Y: 24, Width: 32, Height: 32},
 			sudo:     gfx.Rect{X: row.Width - 74, Y: 24, Width: 32, Height: 32},
 		}

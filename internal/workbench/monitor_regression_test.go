@@ -276,6 +276,74 @@ func TestDashboardSimpleViewScrollGeometry(t *testing.T) {
 	}
 }
 
+// The simple view's view column is too narrow for the tabs' labels, so each row
+// shows the three view icons alone; the labels stay the tabs' names.
+func TestDashboardSimpleViewTabsAreIconOnly(t *testing.T) {
+	state := dashboardNativeFixture(t)
+	state.dashboardPanel().Simple = true
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	m := state.messages.Monitor
+	if _, ok := canvasTextByValue(&canvas, m.Overview); ok {
+		t.Fatal("the simple view painted a view label in its 40-wide strip")
+	}
+	for _, label := range []string{m.Overview, m.Disks, m.Network} {
+		if _, ok := canvasHitByLabelRole(&canvas, label, gfx.RoleTab); !ok {
+			t.Fatalf("view tab %q is missing", label)
+		}
+	}
+}
+
+// A chart's series and its fill are built in the plot's own view box, so every
+// triangle stays inside the chart's canvas instead of spilling past the card.
+func TestDashboardChartStaysInsideItsCanvas(t *testing.T) {
+	state := dashboardNativeFixture(t)
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1448, Height: 724})
+	p := state.dashboardPanel()
+	width := int(state.catalogSectionBounds().Width - 36)
+	checked := 0
+	for _, id := range p.Hosts {
+		r := state.dashboardRow(p, id, width)
+		for metric := range 3 {
+			cache := &r.charts[metric]
+			if cache.size.Width <= 0 || cache.size.Height <= 0 {
+				continue
+			}
+			checked++
+			for _, triangle := range cache.canvas.Triangles() {
+				for _, point := range triangle.Points {
+					if point.X < 0 || point.X > cache.size.Width || point.Y < 0 || point.Y > cache.size.Height {
+						t.Fatalf("%s metric %d paints %v outside its %v canvas", id, metric, point, cache.size)
+					}
+				}
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no chart was painted")
+	}
+}
+
+// A simple row's view strip is inset the same distance at its top and bottom,
+// so it is centered in a row that has no disk or network table under it.
+func TestDashboardSimpleViewTabsAreVerticallyCentered(t *testing.T) {
+	state := dashboardNativeFixture(t)
+	p := state.dashboardPanel()
+	r := state.dashboardRow(p, "host-0", 1200)
+	row := gfx.Rect{Width: 1000, Height: dashboardSimpleHeight(r)}
+	var canvas gfx.Canvas
+	controls := state.dashboardRowControlRects(&canvas, p, state.hosts[0], r, row, true, true)
+	top := controls.tabs.Y
+	bottom := row.Height - (controls.tabs.Y + controls.tabs.Height)
+	if top < 6 || bottom < 6 {
+		t.Fatalf("view strip leaves %v above and %v below the row", top, bottom)
+	}
+	if top != bottom {
+		t.Fatalf("view strip is not vertically centered: %v above, %v below", top, bottom)
+	}
+}
+
 // The sampling clock reads the interval, paused state and live count each
 // declaration; an unwritten view left its hands still.
 func TestDashboardRefreshClockTracksCollection(t *testing.T) {
