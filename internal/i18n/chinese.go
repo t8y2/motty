@@ -2004,6 +2004,7 @@ var chineseTools = ToolsMessages{
 	ImportSummaryFmt:             "已从 %[2]s 导入 %[1]d 台主机；跳过 %[3]d 台已保存的主机。",
 	ImportWarningKeysFmt:         "有 %d 个会话使用私钥文件。密钥不会被导入，请在“密钥”页面添加。",
 	ImportWarningSkippedFmt:      "有 %d 个会话的类型不支持导入（远程桌面、文件传输、该软件的串口等），已跳过。",
+	ImportWarningSkippedHostFmt:  "未导入 %s（%s）：列表中已有同名同地址的主机。",
 	ImportWarningPasswords:       "这份导出中没有可读取的 SSH 密码；加密凭据暂不导入。",
 	ImportWarningCleartextFmt:    "有 %d 个会话在导出文件中含明文密码或密钥材料。使用后请妥善保管或删除源文件。",
 	ImportWarningLoopback:        "有会话指向本机（127.0.0.1 / localhost）。这通常是其他客户端打开的一次性隧道，隧道关闭后就无法再连。建议直接打开 .xsh 文件，或手动填写当前端口。",

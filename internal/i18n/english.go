@@ -2004,6 +2004,7 @@ var englishTools = ToolsMessages{
 	ImportSummaryFmt:             "Imported %d hosts from %s; skipped %d already saved.",
 	ImportWarningKeysFmt:         "%d sessions use a private key file. Keys are not imported; add them under Keychain.",
 	ImportWarningSkippedFmt:      "%d sessions are of a kind that is not imported (remote desktop, file transfer, serial ports from this client…) and were skipped.",
+	ImportWarningSkippedHostFmt:  "%s (%s) was not imported: a host with the same name and address is already in the list.",
 	ImportWarningPasswords:       "No readable SSH passwords were found in this export. Encrypted credentials are not imported.",
 	ImportWarningCleartextFmt:    "%d sessions contain readable passwords or key material in this export. Protect or delete the source file when you are done.",
 	ImportWarningLoopback:        "A session points at this computer (127.0.0.1 / localhost). That is usually a one-shot tunnel from another client; it stops working when the tunnel closes. Prefer opening the .xsh file directly, or type the current port by hand.",

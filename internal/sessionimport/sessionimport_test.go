@@ -285,8 +285,8 @@ func TestMobaXtermRejectsDamagedUTF16(t *testing.T) {
 
 func TestWindTermSessionsFileKeepsGroupsAndSkipsOtherProtocols(t *testing.T) {
 	text := `[
-	{"session.group": "Production", "session.icon": "linux", "session.label": "Web", "session.port": 2222, "session.protocol": "SSH", "session.target": "web.example.com", "session.uuid": "a"},
-	{"session.label": "Box", "session.protocol": "SSH", "session.target": "root@10.0.0.9", "session.identityFile": "C:\\k"},
+	{"session.group": "00-admin>01-infini", "session.icon": "linux", "session.label": "Web", "session.port": 2222, "session.protocol": "SSH", "session.target": "web.example.com", "session.uuid": "a"},
+	{"session.label": "Box", "session.protocol": "SSH", "session.target": "root@10.0.0.9", "session.identityFile": "C:\\k", "session.autoExecution": "10.0.0.9"},
 	{"session.label": "Tel", "session.protocol": "Telnet", "session.target": "10.0.0.10"},
 	{"session.label": "Serial", "session.protocol": "Serial"}
 	]`
@@ -295,10 +295,10 @@ func TestWindTermSessionsFileKeepsGroupsAndSkipsOtherProtocols(t *testing.T) {
 	if err != nil || len(result.Entries) != 3 || result.Skipped != 1 || result.Keys != 1 {
 		t.Fatalf("%+v %v", result, err)
 	}
-	if got := result.Entries[0]; got.Name != "Web" || got.Group != "Production" || got.Host != "web.example.com" || got.Port != 2222 {
+	if got := result.Entries[0]; got.Name != "Web" || got.Group != "00-admin/01-infini" || got.Host != "web.example.com" || got.Port != 2222 {
 		t.Fatalf("first = %+v", got)
 	}
-	if got := result.Entries[1]; got.Host != "10.0.0.9" || got.User != "root" {
+	if got := result.Entries[1]; got.Host != "10.0.0.9" || got.User != "root" || got.Command != "10.0.0.9" {
 		t.Fatalf("second = %+v", got)
 	}
 	if _, err := ParseWindTerm(write(t, dir, "x.json", []byte(`{"a":1}`))); err == nil {

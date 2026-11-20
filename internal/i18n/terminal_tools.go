@@ -368,6 +368,7 @@ type ToolsMessages struct {
 	ImportSummaryFmt             string // hosts, client, duplicates
 	ImportWarningKeysFmt         string
 	ImportWarningSkippedFmt      string
+	ImportWarningSkippedHostFmt  string // a skipped repeat: its label and address
 	ImportWarningPasswords       string
 	ImportWarningCleartextFmt    string // sessions whose file held readable passwords or keys
 	ImportWarningLoopback        string // a session aimed at 127.0.0.1 / localhost

@@ -2004,6 +2004,7 @@ var traditionalTools = ToolsMessages{
 	ImportSummaryFmt:             "已從 %[2]s 匯入 %[1]d 台主機；跳過 %[3]d 台已儲存的主機。",
 	ImportWarningKeysFmt:         "有 %d 個工作階段使用私密金鑰檔案。金鑰不會被匯入，請在「金鑰」頁面新增。",
 	ImportWarningSkippedFmt:      "有 %d 個工作階段的類型不支援匯入（遠端桌面、檔案傳輸、該軟體的串列連接埠等），已跳過。",
+	ImportWarningSkippedHostFmt:  "未匯入 %s（%s）：清單中已有同名同位址的主機。",
 	ImportWarningPasswords:       "這份匯出中沒有可讀取的 SSH 密碼；加密認證資訊暫不匯入。",
 	ImportWarningCleartextFmt:    "有 %d 個工作階段在匯出檔案中含明文密碼或金鑰材料。使用後請妥善保管或刪除原始檔。",
 	ImportWarningLoopback:        "有工作階段指向本機（127.0.0.1 / localhost）。這通常是其他用戶端開啟的一次性通道，通道關閉後就無法再連。建議直接開啟 .xsh 檔案，或手動填寫目前連接埠。",

@@ -3,11 +3,11 @@
 // into the host fields Motty keeps. It reads files or folders the user chose
 // and never executes, resolves or contacts anything in them.
 //
-// Only connection fields and readable SSH login password candidates from
-// Electerm and Netcatty are taken. The caller decides whether to save those
-// candidates in a vault. Other clients' encrypted credentials and key files
-// are not imported; SecureCRT and FinalShell store every saved password
-// encrypted, so their imports never carry one.
+// Only connection fields, a session's command after login and readable SSH
+// login password candidates from Electerm and Netcatty are taken. The caller
+// decides whether to save those candidates in a vault. Other clients' encrypted
+// credentials and key files are not imported; SecureCRT and FinalShell store
+// every saved password encrypted, so their imports never carry one.
 package sessionimport
 
 import (
@@ -70,6 +70,9 @@ type Entry struct {
 	Port     int // zero when the file named none
 	User     string
 	Password string // ephemeral candidate; never serialized with a host
+	// Command is typed into a new shell once it is ready, when the source
+	// client saved one.
+	Command string
 	// Source names where the entry came from, for warnings.
 	Source string
 }
@@ -780,15 +783,18 @@ func parseMobaSession(result *Result, name, value, group, source string) {
 
 // windTermSession is one entry of WindTerm's user.sessions, a JSON array it
 // keeps under profiles/<profile>/terminal/. A saved login (session.autoLogin) is
-// encrypted and is not read.
+// encrypted and is not read. session.autoExecution is the command WindTerm types
+// after authentication; its delay has no Motty counterpart because the command
+// waits for the shell's prompt instead.
 type windTermSession struct {
-	Label    string `json:"session.label"`
-	Group    string `json:"session.group"`
-	Target   string `json:"session.target"`
-	Port     int    `json:"session.port"`
-	Protocol string `json:"session.protocol"`
-	User     string `json:"session.user"`
-	Identity string `json:"session.identityFile"`
+	Label         string `json:"session.label"`
+	Group         string `json:"session.group"`
+	Target        string `json:"session.target"`
+	Port          int    `json:"session.port"`
+	Protocol      string `json:"session.protocol"`
+	User          string `json:"session.user"`
+	Identity      string `json:"session.identityFile"`
+	AutoExecution string `json:"session.autoExecution"`
 }
 
 // ParseWindTerm reads a WindTerm user.sessions file.
@@ -802,6 +808,7 @@ func ParseWindTerm(path string) (Result, error) {
 		return Result{}, errors.New("not a WindTerm sessions file: it is not a JSON list of sessions")
 	}
 	var result Result
+	shortened := false
 	source := filepath.Base(path)
 	for _, session := range sessions {
 		if session.Target == "" && session.Protocol == "" && session.Label == "" {
@@ -826,12 +833,39 @@ func ParseWindTerm(path string) (Result, error) {
 		if kind == Telnet {
 			user = ""
 		}
+		group, cut := windTermGroup(session.Group)
+		shortened = shortened || cut
 		result.add(Entry{
-			Name: session.Label, Group: strings.Trim(strings.ReplaceAll(session.Group, `\`, "/"), "/"),
-			Protocol: kind, Host: host, Port: session.Port, User: user, Source: source,
+			Name: session.Label, Group: group,
+			Protocol: kind, Host: host, Port: session.Port, User: user,
+			Command: session.AutoExecution, Source: source,
 		})
 	}
+	if shortened {
+		result.warn("%s: folders nested more than %d levels deep were shortened", source, maxGroupDepth)
+	}
 	return result, nil
+}
+
+// windTermGroup turns a WindTerm group into the "/" path Motty keeps. WindTerm
+// separates nested folders with ">", so "A>B" is the folder B inside A. A
+// backslash, which an older or hand-edited file may use, separates them too.
+// Empty folders go, and a path deeper than maxGroupDepth keeps its innermost
+// folders; it reports whether it cut.
+func windTermGroup(group string) (string, bool) {
+	group = strings.ReplaceAll(group, `\`, "/")
+	group = strings.ReplaceAll(group, ">", "/")
+	var folders []string
+	for _, folder := range strings.Split(group, "/") {
+		if folder = clean(folder, maxNameLength); folder != "" {
+			folders = append(folders, folder)
+		}
+	}
+	cut := len(folders) > maxGroupDepth
+	if cut {
+		folders = folders[len(folders)-maxGroupDepth:]
+	}
+	return strings.Join(folders, "/"), cut
 }
 
 // ---- Electerm ----
