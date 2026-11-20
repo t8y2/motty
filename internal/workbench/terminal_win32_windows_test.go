@@ -7,6 +7,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
+	"motty/internal/term"
 )
 
 func TestWin32InputModeSendsTheConsolePacket(t *testing.T) {
@@ -54,5 +55,43 @@ func TestSuggestionRightIsAcceptedWhileWin32InputIsOn(t *testing.T) {
 	h.key(gfx.KeyEvent{Key: gfx.KeyRight, Release: true, Win32: gfx.Win32Key{VirtualKey: 39, ScanCode: 0x4d}})
 	if got := string(h.shell.input[before:]); got != "eckout main" {
 		t.Fatalf("the release of the accepted press reached the shell: %q", got)
+	}
+}
+
+// ConPTY asks a local shell for win32 input records, so a lone modifier and
+// every release arrive as packets. They carry key state, not typing: pressing
+// Control on the way to Control+Insert must not clear the selection the copy
+// is about to take, and letting go of a key must not move the view.
+func TestBareModifierInWin32InputModeKeepsTheSelectionForCopy(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	shell.say("\x1b[?9001h")
+	state.Wake()
+	shell.say("alpha beta\r\n")
+	state.Wake()
+	session := &state.sessions[0]
+	session.term.selection.selectRange(term.Point{Line: 0, Column: 2}, term.Point{Line: 0, Column: 6})
+
+	control := gfx.KeyEvent{
+		Key: gfx.KeyControlLeft, Modifiers: gfx.ModifierControl,
+		Win32: gfx.Win32Key{VirtualKey: 17, ScanCode: 0x1d},
+	}
+	before := len(shell.input)
+	key(state, 0, control)
+	release := control
+	release.Release = true
+	key(state, 0, release)
+	if len(shell.input) == before {
+		t.Fatal("the shell did not receive the modifier")
+	}
+	if !session.term.selection.selected {
+		t.Fatal("a lone Control press or release cleared the selection")
+	}
+
+	insert := gfx.KeyEvent{
+		Key: gfx.KeyInsert, Modifiers: gfx.ModifierControl,
+		Win32: gfx.Win32Key{VirtualKey: 45, ScanCode: 0x52},
+	}
+	if copied := key(state, 0, insert).ClipboardText; copied != "pha b" {
+		t.Fatalf("Ctrl+Insert copied %q, want %q", copied, "pha b")
 	}
 }
