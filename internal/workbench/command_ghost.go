@@ -134,8 +134,48 @@ func (state *State) commandGhostSource(session *Session) (rest string, fromCatal
 			return rest, false, true
 		}
 	}
+	if !session.host.NoHistory {
+		if rest, ok := state.snippetGhost(line); ok {
+			return rest, false, true
+		}
+	}
 	rest, ok = state.staticGhost(session, line, screenProof)
 	return rest, ok, ok
+}
+
+// snippetGhost is the rest of a configured quick command the line continues
+// into (#1084). Only one candidate is offered, and only when it is a single
+// line that can be typed as it stands: a command with template variables or
+// several lines is not something the user can finish by accepting a hint.
+func (state *State) snippetGhost(line string) (string, bool) {
+	if line == "" || strings.HasPrefix(line, " ") || cmdhistory.Secret(line) {
+		return "", false
+	}
+	match := ""
+	for _, entry := range state.snippets.list {
+		command := entry.Command
+		if len(command) > cmdhistory.MaxCommand || len(command) <= len(line) || !strings.HasPrefix(command, line) {
+			continue
+		}
+		if strings.ContainsAny(command, "\r\n") || cmdhistory.Secret(command) {
+			continue
+		}
+		// A command without "{{" cannot hold a variable: the cheap check keeps
+		// the regexp scan, which allocates, off the every-frame paint path.
+		if strings.Contains(command, "{{") && snippetHasVariables(command) {
+			continue
+		}
+		if match != "" && match != command {
+			// Two quick commands share this start: the hint would have to
+			// guess which one the user means.
+			return "", false
+		}
+		match = command
+	}
+	if match == "" {
+		return "", false
+	}
+	return match[len(line):], true
 }
 
 // acceptGhost types the offered text, or its first word, into the shell. It
