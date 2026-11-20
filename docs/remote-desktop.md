@@ -274,17 +274,23 @@ offers nothing else or whose administrator chose the RDP security layer. Its
 keys come from a server key that is never authenticated, so anyone on the path
 can read and alter the session, including the password: the switch states that,
 and the status line reports the connection as **Not encrypted** (a tunneled host
-still reports the SSH protection). NLA starts with SPNEGO; if token negotiation fails before credentials
-are sent, it reconnects once using raw NTLM tokens for older WinPR servers such
-as GNOME Remote Desktop on Ubuntu 22.04. Both paths keep certificate checks,
-NTLMv2 MIC/channel binding and CredSSP public-key verification. The client
-always signs the SPNEGO mechanism list it offered; Windows 11 24H2 and Server
-2025 reject the public-key binding when that MIC is absent, even though their
-challenge does not request it. The MIC exchange counts as a signed message, so
-both directions seal the binding at sequence one, not zero. When the server asks
-for the MIC, the client verifies the acceptor's MIC and sends its public-key
-binding in a later TSRequest; that is what libfreerdp 3.x (GNOME Remote Desktop
-on Ubuntu 24.04 and later) requires, and sending both in one message makes it
+still reports the SSH protection). Go leaves the TLS suites that use RSA key
+exchange out of its defaults; a server that offers nothing newer is reached by
+the host's **Allow legacy TLS** switch, or by **Retry with legacy TLS** on the
+failure page, which turns that switch on and saves it. Either adds those
+AES-CBC and AES-GCM suites to the offer. It is off by default because RSA key
+exchange has no forward secrecy and CBC has known weaknesses. NLA starts with
+SPNEGO; if token negotiation fails before credentials are sent, it reconnects
+once using raw NTLM tokens for older WinPR servers such as GNOME Remote Desktop
+on Ubuntu 22.04. Both paths keep certificate checks, NTLMv2 MIC/channel binding
+and CredSSP public-key verification. The client always signs the SPNEGO
+mechanism list it offered; Windows 11 24H2 and Server 2025 reject the
+public-key binding when that MIC is absent, even though their challenge does
+not request it. The MIC exchange counts as a signed message, so both directions
+seal the binding at sequence one, not zero. When the server asks for the MIC,
+the client verifies the acceptor's MIC and sends its public-key binding in a
+later TSRequest; that is what libfreerdp 3.x (GNOME Remote Desktop on
+Ubuntu 24.04 and later) requires, and sending both in one message makes it
 echo the client's own binding back. When it does not ask, the Authenticate token
 is the client's last SPNEGO token, and MS-CSSP 3.2.5 requires the binding in
 that same TSRequest; Windows tears the TLS session down with an internal_error

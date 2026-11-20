@@ -470,7 +470,10 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 					}()
 					continue
 				}
-				command.Stdout, command.Stderr = channel, channel
+				// The client's integration upload sends the script on stdin; a
+				// real sshd hands it to the command. Without the channel here the
+				// upload only creates an empty file and integration silently fails.
+				command.Stdin, command.Stdout, command.Stderr = channel, channel, channel
 				status := uint32(0)
 				if err := command.Run(); err != nil {
 					status = 1

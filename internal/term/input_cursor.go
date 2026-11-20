@@ -23,6 +23,7 @@ func (t *Terminal) markPromptStart(own bool) {
 		return
 	}
 	t.promptLine = t.scrolled + uint64(t.cy) + 1
+	t.promptStart = t.cx
 	t.promptActive = true
 }
 

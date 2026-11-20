@@ -14,14 +14,15 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/trzsz"
 	"motty/internal/zmodem"
 )
 
-// File transfer over the terminal's own stream (ZMODEM): a program on the other
-// end, usually sz or rz, starts it, and the terminal answers. Nothing moves until
-// the user has agreed and chosen where files go or which files to send, and the
-// other end never picks a path: names it sends are reduced to a file name inside
-// the folder the user chose.
+// File transfer over the terminal's own stream: ZMODEM (sz and rz) and TRZSZ
+// (tsz and trz). A program on the other end starts it, and the terminal answers.
+// Nothing moves until the user has agreed and chosen where files go or which
+// files to send, and the other end never picks a path: names it sends are
+// reduced to a file name inside the folder the user chose.
 
 // transferHits is the place of the controls this file paints.
 var transferHits = tree.Feature("transfer")
@@ -64,11 +65,25 @@ const (
 	transferClosing // the transfer is over; the sender's closing "OO" is still to come
 )
 
+// transferProtocol is the stream protocol a transfer uses. ZMODEM is the zero
+// value, so a transfer built for it reads as it always did.
+type transferProtocol uint8
+
+const (
+	transferZmodem transferProtocol = iota
+	transferTrzsz
+)
+
 // fileTransfer is one session's transfer. A window runs one per terminal.
 type fileTransfer struct {
 	phase     transferPhase
 	sessionID uint32
 	sending   bool
+	protocol  transferProtocol
+	trigger   trzsz.Trigger
+	// saveDir is where a TRZSZ download goes. Its receiver writes the files
+	// itself, so there is no folderTarget to ask.
+	saveDir string
 	// held is what the other end has sent since it began, kept for the engine.
 	held       []byte
 	engine     zmodem.Engine
@@ -103,6 +118,25 @@ var (
 	zmodemSignatureReceive = []byte("**\x18B01")
 )
 
+// trzszCandidate reports whether the bytes could hold the word a TRZSZ
+// announcement contains or the start of a split one. It keeps a scan of every
+// read from allocating unless the word is really there.
+func trzszCandidate(tail, rx []byte) bool {
+	probe := []byte("TRZSZ")
+	if bytes.Contains(rx, probe) || bytes.Contains(tail, probe) {
+		return true
+	}
+	for at := 1; at < len(probe); at++ {
+		if len(tail) < at || len(rx) < len(probe)-at {
+			continue
+		}
+		if bytes.Equal(tail[len(tail)-at:], probe[:at]) && bytes.Equal(rx[:len(probe)-at], probe[at:]) {
+			return true
+		}
+	}
+	return false
+}
+
 // splitTransferStart looks for the start of a transfer in data, with the last
 // bytes of the output before it in tail. It returns where the transfer begins in
 // data (or -1), and whether this is a receive (the other end sends).
@@ -132,16 +166,70 @@ func (state *State) scanTransfer(session *Session, rx []byte) []byte {
 	if transfer.phase != transferNone {
 		return state.feedTransfer(session, rx)
 	}
-	// Every signature has a ZDLE in it, so output without one (nearly all of it)
-	// costs one scan and nothing else. Another tab's transfer does not hide a
-	// header on this one: each shell has its own stream.
+	// TRZSZ announces itself in text before it sends a protocol byte, and the
+	// announcement can be cut between two reads like a header. Its one word is
+	// checked before the buffer is joined, so ordinary output keeps its fast
+	// path. The announcement is looked for first: its bytes must not reach the
+	// screen, and its line must not be mistaken for a shell prompt.
+	if trzszCandidate(t.zmodemTail, rx) {
+		tailLen := len(t.zmodemTail)
+		combined := make([]byte, 0, tailLen+len(rx))
+		combined = append(append(combined, t.zmodemTail...), rx...)
+		if start, end, trigger, ok, more := trzsz.MatchTrigger(combined); ok || more {
+			if more {
+				// The line is cut between reads. What arrived is shown, as a cut
+				// ZMODEM header is, and the whole announcement so far is kept so
+				// the next read can complete and swallow it.
+				t.zmodemTail = append(t.zmodemTail[:0], combined[start:]...)
+				return rx
+			}
+			t.zmodemTail = t.zmodemTail[:0]
+			from := start - tailLen
+			if from < 0 {
+				from = 0
+			}
+			to := end - tailLen
+			if to < 0 {
+				to = 0
+			}
+			if to > len(rx) {
+				to = len(rx)
+			}
+			*transfer = fileTransfer{
+				phase: transferOffered, sessionID: session.ID,
+				protocol: transferTrzsz, trigger: trigger, sending: trigger.Sending(),
+			}
+			// Anything after the announcement line belongs to the transfer; the
+			// remote writes nothing before it has the answer, so this is
+			// normally empty.
+			transfer.held = append(transfer.held, rx[to:]...)
+			if session.term != nil {
+				// The remote program is reading its standard input, not a shell.
+				session.term.transferHoldsInput = true
+			}
+			state.showNextPrompt()
+			// The remote saved the cursor where it wrote the announcement and
+			// uses it again for its final line. Keep that mark without showing
+			// the announcement itself.
+			out := append(make([]byte, 0, from+3), rx[:from]...)
+			out = append(out, "\x1b[s"...)
+			return out
+		}
+	}
+	// Every ZMODEM signature has a ZDLE in it, so output without one (nearly all
+	// of it) costs one scan and nothing else. Another tab's transfer does not
+	// hide a header on this one: each shell has its own stream.
 	index, receiving := -1, false
 	if bytes.IndexByte(rx, 0x18) >= 0 || bytes.IndexByte(t.zmodemTail, 0x18) >= 0 {
 		index, receiving = splitTransferStart(t.zmodemTail, rx)
 	}
 	if index < 0 {
-		// Keep the last bytes in case a header is cut between two reads.
-		const keep = 5
+		// Keep the last bytes in case a header or an announcement is cut
+		// between two reads.
+		keep := trzsz.TailSize
+		if keep < 5 {
+			keep = 5
+		}
 		if len(rx) >= keep {
 			t.zmodemTail = append(t.zmodemTail[:0], rx[len(rx)-keep:]...)
 		} else {
@@ -234,7 +322,11 @@ func (state *State) reportTransfer(session *Session) {
 	case err == nil && transfer.sending:
 		line = fmt.Sprintf(m.TransferSentFmt, engine.Progress().Files)
 	case err == nil:
-		line = fmt.Sprintf(m.TransferReceivedFmt, engine.Progress().Files, transfer.target.dir)
+		directory := transfer.saveDir
+		if transfer.target != nil {
+			directory = transfer.target.dir
+		}
+		line = fmt.Sprintf(m.TransferReceivedFmt, engine.Progress().Files, directory)
 	case errors.Is(err, zmodem.ErrCancelled):
 		line = m.TransferCancelled
 	default:
@@ -316,6 +408,11 @@ func (state *State) abandonTransfer(session *Session) {
 	if session.transfer.target != nil {
 		session.transfer.target.discard()
 	}
+	if session.transfer.protocol == transferTrzsz && session.transfer.engine != nil {
+		// The transfer cannot continue without its stream. A TRZSZ receiver
+		// removes the tree it created; a finished transfer keeps its files.
+		session.transfer.engine.Abort(errors.New("the shell ended"))
+	}
 	if session.rzsz != nil && session.rzsz.reason == nil {
 		session.rzsz.reason = errors.New("the shell ended")
 	}
@@ -334,10 +431,19 @@ func (state *State) releaseTransferModal(session *Session) {
 
 // declineTransfer turns an offer down: the other end is told to stop.
 func (state *State) declineTransfer(session *Session) {
-	if session != nil && session.term != nil && session.term.shell != nil {
-		session.term.shell.Write([]byte("\x18\x18\x18\x18\x18\x18\x18\x18\b\b\b\b\b\b\b\b\b\b"))
-	}
 	if session != nil && session.term != nil {
+		if session.term.shell != nil {
+			if session.transfer.protocol == transferTrzsz {
+				// A TRZSZ offer is answered, not interrupted: the remote
+				// program is waiting for the same exchange a transfer starts
+				// with, so it can close itself instead of timing out.
+				if out, err := trzsz.Decline(session.transfer.trigger); err == nil {
+					session.term.shell.Write(out)
+				}
+			} else {
+				session.term.shell.Write([]byte("\x18\x18\x18\x18\x18\x18\x18\x18\b\b\b\b\b\b\b\b\b\b"))
+			}
+		}
 		session.term.transferLeftover = nil
 	}
 	state.endTransfer(session)
@@ -358,7 +464,14 @@ func (state *State) startTransfer(session *Session, engine zmodem.Engine) {
 	state.releaseTransferModal(session)
 	held := transfer.held
 	transfer.held = nil
-	engine.Feed(newestTransferStart(held, transfer.sending))
+	if transfer.protocol == transferTrzsz {
+		// TRZSZ has no repeating header to fold: what was held is the bytes
+		// that followed the announcement, and the engine starts with its own
+		// answer to it.
+		engine.Feed(held)
+	} else {
+		engine.Feed(newestTransferStart(held, transfer.sending))
+	}
 	state.afterTransferFeed(session)
 }
 
@@ -476,6 +589,18 @@ func (state *State) chooseFolderToReceive(session *Session, downloads bool) {
 		session.transfer.dialogError = m.TransferNoDownloads
 		return
 	}
+	if session.transfer.protocol == transferTrzsz {
+		engine, err := trzsz.NewReceive(dir, session.transfer.trigger)
+		if err != nil {
+			session.transfer.dialogError = err.Error()
+			return
+		}
+		session.transfer.saveDir = dir
+		state.closeModal()
+		state.startTransfer(session, trzszEngine{engine})
+		state.showNextPrompt()
+		return
+	}
 	session.transfer.target = &folderTarget{dir: dir}
 	state.closeModal()
 	state.startTransfer(session, zmodem.NewReceiver(session.transfer.target))
@@ -483,6 +608,10 @@ func (state *State) chooseFolderToReceive(session *Session, downloads bool) {
 }
 
 func (state *State) chooseFilesToSend(session *Session) {
+	if session.transfer.protocol == transferTrzsz {
+		state.chooseTrzszFilesToSend(session)
+		return
+	}
 	m := state.messages.Tools
 	paths, err := state.options.OpenFiles(app.OpenFileOptions{Title: m.TransferChooseFilesTitle, AllowMultiple: true})
 	if errors.Is(err, app.ErrCanceled) || err == nil && len(paths) == 0 {
@@ -730,7 +859,11 @@ func (state *State) declareFileTransferDialog(c ui.C) {
 	dialog.Footer(func() {
 		switch {
 		case transfer.sending:
-			state.dialogActionFooter(c, decline, components.ButtonAction{ID: hitTransferChoose, Label: m.TransferChooseFiles})
+			label := m.TransferChooseFiles
+			if transfer.protocol == transferTrzsz && transfer.trigger.Directory() {
+				label = m.TransferChooseFolder
+			}
+			state.dialogActionFooter(c, decline, components.ButtonAction{ID: hitTransferChoose, Label: label})
 		case saveFolder != "":
 			state.dialogActionFooter(c, decline,
 				components.ButtonAction{ID: hitTransferChoose, Label: m.TransferChooseFolder, Variant: components.ButtonOutline},

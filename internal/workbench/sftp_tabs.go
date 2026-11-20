@@ -86,7 +86,7 @@ func (state *State) activateSFTPTabAt(index int) bool {
 
 func (state *State) cycleWindowTabs(delta int) bool {
 	state.workspaceTabs = state.deck.Workspaces(state.workspaceTabs[:0])
-	count := len(state.workspaceTabs) + len(state.sftpTabs)
+	count := len(state.workspaceTabs) + state.fileTabCount()
 	if count < 2 {
 		return false
 	}
@@ -103,6 +103,12 @@ func (state *State) cycleWindowTabs(delta int) bool {
 		if index := state.sftpTabIndex(state.activeSFTPTab); index >= 0 {
 			current = len(state.workspaceTabs) + index
 		}
+	case sectionSettings:
+		if state.settingsTabShown() {
+			current = state.settingsTabIndex()
+			break
+		}
+		fallthrough
 	default:
 		for index, tab := range state.workspaceTabs {
 			if tab.ID == state.deck.ActiveWorkspace() {
@@ -118,6 +124,9 @@ func (state *State) cycleWindowTabs(delta int) bool {
 	if next < len(state.workspaceTabs) {
 		return state.activateTab(next)
 	}
+	if file := next - len(state.workspaceTabs); file >= len(state.sftpTabs) {
+		return state.activateSettingsTab()
+	}
 	return state.activateSFTPTabAt(next - len(state.workspaceTabs))
 }
 
@@ -125,7 +134,7 @@ func (state *State) cycleWindowTabs(delta int) bool {
 // tabs on the tab bar, in the order the bar shows them, then the file tabs.
 func (state *State) topTabCount() int {
 	state.workspaceTabs = state.deck.Workspaces(state.workspaceTabs[:0])
-	return len(state.visualWorkspaceTabs()) + len(state.sftpTabs)
+	return len(state.visualWorkspaceTabs()) + state.fileTabCount()
 }
 
 func (state *State) activateTopTab(index int) bool {
@@ -133,6 +142,9 @@ func (state *State) activateTopTab(index int) bool {
 	tabs := state.visualWorkspaceTabs()
 	if index < len(tabs) {
 		return state.activateTab(index)
+	}
+	if file := index - len(tabs); file == len(state.sftpTabs) && state.settingsTabShown() {
+		return state.activateSettingsTab()
 	}
 	return state.activateSFTPTabAt(index - len(tabs))
 }
@@ -307,7 +319,7 @@ func (state *State) fileTabHit(id gfx.ID) bool {
 // sftpTabPaneRects lays the tab out as the window's view always did: padding
 // around the body, a gap between the body, the transfer queue and the status
 // line. The body takes the room the fixed children leave.
-func sftpTabPaneRects(bounds gfx.Rect, queue int) (body, queueRect, status gfx.Rect) {
+func sftpTabPaneRects(bounds gfx.Rect, queue, conflicts int) (body, queueRect, status gfx.Rect) {
 	size := gfx.Size{Width: bounds.Width, Height: bounds.Height}
 	inner := gfx.Rect{X: bounds.X + sftpWindowPad, Y: bounds.Y + sftpWindowPad,
 		Width: max(size.Width-2*sftpWindowPad, 0), Height: max(size.Height-2*sftpWindowPad, 0)}
@@ -315,7 +327,7 @@ func sftpTabPaneRects(bounds gfx.Rect, queue int) (body, queueRect, status gfx.R
 	queueHeight := float32(0)
 	if queue > 0 {
 		children = 3
-		queueHeight = sftpQueueHeight(size, queue)
+		queueHeight = sftpQueueHeight(size, queue, conflicts)
 	}
 	body = gfx.Rect{X: inner.X, Y: inner.Y, Width: inner.Width,
 		Height: max(inner.Height-sftpWindowGap*float32(children-1)-queueHeight-sftpWindowStatusHeight, 0)}
@@ -366,7 +378,6 @@ func (state *State) declareSFTPTab(c ui.C) {
 	w.declareWindowMenu(c)
 	w.declareHeaderMenus(c, &w.ui.headerAnchor)
 	w.declareProfileQuickMenu(c)
-	w.declareProfileHover(c)
 	state.declareSFTPFileProperties(c, bounds, &w.fileProperties)
 }
 
@@ -374,7 +385,7 @@ func (state *State) declareSFTPTab(c ui.C) {
 // line in the tab's container.
 func (state *State) declareSFTPTabContent(c ui.C, w *sftpWindow, bounds gfx.Rect) {
 	queue := w.queueCount()
-	body, queueRect, status := sftpTabPaneRects(bounds, queue)
+	body, queueRect, status := sftpTabPaneRects(bounds, queue, w.ui.queueConflicts)
 	w.ui.body, w.ui.queue = body, queueRect
 	state.declareSFTPTabPanes(c, w, bounds, body)
 	if queue > 0 {
@@ -435,7 +446,7 @@ func (w *sftpWindow) paintTabDetails(canvas *gfx.Canvas, bounds gfx.Rect) {
 		w.paintDrag(canvas)
 	}
 	w.notices.paint(canvas, state.Theme(), bounds)
-	if !w.ui.profileHoverOpen && !w.ui.profileQuickOpen {
+	if !w.ui.profileQuickOpen {
 		w.ui.tooltip.Paint(canvas, state.Theme(), bounds, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
 	}
 	if !w.pendingFocus.IsZero() {

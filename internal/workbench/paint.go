@@ -252,13 +252,16 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		if index := state.sftpTabIndex(state.activeSFTPTab); index >= 0 {
 			activeIndex = len(state.workspaceTabs) + index
 		}
+	} else if state.settingsTabActive() {
+		activeIndex = state.settingsTabIndex()
 	}
 	scroll := float32(0)
 	if state.tabOrientation == tabsHorizontal {
-		topTabCount := len(state.workspaceTabs) + len(state.sftpTabs)
+		topTabCount := len(state.workspaceTabs) + state.fileTabCount()
 		scroll = state.tabStrip.layoutIndex(geometry.area, float32(topTabCount)*(geometry.tabWidth+barGap), topTabCount, activeIndex, geometry.tabWidth+barGap, geometry.tabWidth)
-	} else if len(state.sftpTabs) > 0 {
-		scroll = state.fileTabStrip.layoutIndex(geometry.area, float32(len(state.sftpTabs))*(geometry.tabWidth+barGap), len(state.sftpTabs), activeIndex-len(state.workspaceTabs), geometry.tabWidth+barGap, geometry.tabWidth)
+	} else if state.fileTabCount() > 0 {
+		fileTabs := state.fileTabCount()
+		scroll = state.fileTabStrip.layoutIndex(geometry.area, float32(fileTabs)*(geometry.tabWidth+barGap), fileTabs, activeIndex-len(state.workspaceTabs), geometry.tabWidth+barGap, geometry.tabWidth)
 	} else {
 		state.fileTabStrip.area = gfx.Rect{}
 		state.fileTabStrip.max = 0
@@ -433,8 +436,10 @@ type barTab struct {
 	number       string // the tab's number, empty for a tab no number key reaches
 	workspace    layoutcore.WorkspaceInfo
 	fileSession  uint32
-	id, closeID  gfx.ID
-	background   gfx.Color
+	// settings marks the settings page's tab, which has no session or workspace.
+	settings    bool
+	id, closeID gfx.ID
+	background  gfx.Color
 	// base is the fill before tint colours it; the alert title is backed by it
 	// so its ink keeps the contrast it has on an uncoloured tab. tint is the
 	// tab colour, empty when the tab has none.
@@ -692,7 +697,7 @@ func (state *State) windowBarGeometry(canvas *gfx.Canvas, width float32) barGeom
 	leading, trailing := windowTitlebarInsets()
 	padRight := state.windowBarRightPad()
 	buttons := state.windowBarButtons()
-	tabCount := len(state.workspaceTabs) + len(state.sftpTabs)
+	tabCount := len(state.workspaceTabs) + state.fileTabCount()
 	locked := false
 	for _, tab := range state.workspaceTabs {
 		locked = locked || tab.Locked
@@ -750,6 +755,7 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool
 			visibleFileTabs++
 		}
 	}
+	visibleFileTabs += state.settingsTabCount()
 	bar.tabs = bar.tabs[:0]
 	bar.title = ui.Box{}
 	bar.titleLabel = ""
@@ -910,6 +916,9 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool
 							})
 						})
 						bar.tabs = append(bar.tabs, entry)
+					}
+					if state.settingsTabShown() {
+						bar.tabs = append(bar.tabs, state.declareSettingsTab(c, probe, geometry, scroll))
 					}
 				})
 				state.barButton(c, probe, hitNewTab, iconPlus, m.LabelNewTab)

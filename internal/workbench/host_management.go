@@ -851,6 +851,11 @@ func (state *State) confirmDeleteHosts() {
 			state.unlinkNoteHost(host.CatalogID)
 		}
 	}
+	// The folders were the hosts' homes, not the hosts: deleting a host must
+	// leave the folder behind so the next host can be put in it. Mark every
+	// path the deleted hosts named, and its ancestors, as a folder the catalog
+	// keeps even while it holds no host.
+	state.retainHostGroups(state.hostActionIDs)
 	count := len(state.hostActionIDs)
 	kept := state.hosts[:0]
 	for _, host := range state.hosts {
@@ -867,6 +872,24 @@ func (state *State) confirmDeleteHosts() {
 	state.hostDataChanged()
 	state.status = fmt.Sprintf(state.messages.HostDeletedFmt, count)
 	state.save()
+}
+
+// retainHostGroups makes the folders named by the given hosts part of the
+// catalog before the hosts leave it: a folder the user named by putting a host
+// in it stays after the host is deleted, as an empty folder, until the user
+// deletes the folder itself.
+func (state *State) retainHostGroups(ids []uint32) {
+	for _, id := range ids {
+		host, ok := state.hostByID(id)
+		if !ok {
+			continue
+		}
+		for path := strings.TrimSpace(host.Group); path != ""; path = hostGroupParent(path) {
+			if index := state.hostGroupIndex(path); index >= 0 {
+				state.hostGroups[index].Explicit = true
+			}
+		}
+	}
 }
 
 func containsHostID(ids []uint32, id uint32) bool {

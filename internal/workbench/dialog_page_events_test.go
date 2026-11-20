@@ -88,10 +88,10 @@ func TestPageDialogBodyControlsTakeTheEventPass(t *testing.T) {
 	t.Run("highlight-color", func(t *testing.T) {
 		state := newTestState(t, testOptions(t))
 		state.openHighlightDialog()
-		before := state.highlighting.slot
+		before := state.highlighting.color
 		driver := modalEventDriver(t, state)
 		clickPaintedHit(t, driver, hitHighlightColorList.At(1))
-		if state.highlighting.slot == before {
+		if state.highlighting.color == before {
 			t.Fatal("the color choice did not take the press")
 		}
 	})

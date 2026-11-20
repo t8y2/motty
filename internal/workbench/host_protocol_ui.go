@@ -21,6 +21,8 @@ var (
 	hitDialogRemoteAudio          = tree.ID(hostProtocolUiHits, "dialog-remote-audio")
 	hitDialogStandardSecurity     = tree.ID(hostProtocolUiHits, "dialog-standard-security")
 	hitDialogStandardSecurityHelp = tree.ID(hostProtocolUiHits, "dialog-standard-security-help")
+	hitDialogLegacyTLS            = tree.ID(hostProtocolUiHits, "dialog-legacy-tls")
+	hitDialogLegacyTLSHelp        = tree.ID(hostProtocolUiHits, "dialog-legacy-tls-help")
 	hitDialogChromeless           = tree.ID(hostProtocolUiHits, "dialog-chromeless")
 	hitDialogPortsTrigger         = tree.ID(hostProtocolUiHits, "dialog-ports-trigger")
 	hitDialogAlgorithms           = tree.ID(hostProtocolUiHits, "dialog-algorithms")
@@ -456,6 +458,8 @@ func (state *State) clickHostProtocol(id gfx.ID) bool {
 		editor.noAudio = !editor.noAudio
 	case id == hitDialogStandardSecurity:
 		editor.standardSecurity = !editor.standardSecurity
+	case id == hitDialogLegacyTLS:
+		editor.legacyTLS = !editor.legacyTLS
 	case id == hitDialogAdvanced:
 		editor.advancedOpen = !editor.advancedOpen
 	case id == hitDialogForwardX11:
@@ -700,7 +704,7 @@ const (
 
 // hostVNCRowsBody is where the desktop switches' body put each checkbox row.
 type hostVNCRowsBody struct {
-	standardSecurityHelp ui.Box
+	standardSecurityHelp, legacyTLSHelp ui.Box
 }
 
 // hostAlgoRowsBody is where the SSH algorithm rows put each control.
@@ -794,9 +798,9 @@ func (state *State) declareHostAlgoRows(c ui.C) {
 // vncRowsHeight is the room of the three switches every remote desktop host has.
 const vncRowsHeight = 4 + 20 + (12 + 20) + (12 + 20) + 16
 
-// rdpRowsHeight adds the three switches only an RDP host has: the console
-// session, remote audio and Standard RDP Security.
-const rdpRowsHeight = vncRowsHeight + 3*(12+20)
+// rdpRowsHeight adds the four switches only an RDP host has: the console
+// session, remote audio, Standard RDP Security and legacy TLS.
+const rdpRowsHeight = vncRowsHeight + 4*(12+20)
 
 // desktopRowsHeight is the room paintVNCRows takes for the protocol on screen.
 func (state *State) desktopRowsHeight() float32 {
@@ -809,9 +813,10 @@ func (state *State) desktopRowsHeight() float32 {
 // paintVNCRows paints the switches of a VNC or RDP host in the slots the host
 // form's page laid out: connecting through SSH, sharing the clipboard, showing
 // the picture without the bars around it and, for RDP, asking Windows for its
-// console (administrative) session, playing remote sound and choosing Standard
-// RDP Security. A host whose route carries the connection cannot also use the
-// same-machine tunnel, so that switch is dimmed and inert.
+// console (administrative) session, playing remote sound, choosing Standard
+// RDP Security and allowing the legacy TLS suites. A host whose route carries
+// the connection cannot also use the same-machine tunnel, so that switch is
+// dimmed and inert.
 func (state *State) paintVNCRows(canvas *gfx.Canvas) {
 	editor, m := &state.editor, state.messages.Desktop
 	b := &editor.form.vncBody
@@ -821,6 +826,7 @@ func (state *State) paintVNCRows(canvas *gfx.Canvas) {
 	if editor.form.layoutProtocol == protocolRDP {
 		// After the checkbox, whose words reach to the end of the row, so that
 		// this is the hit on top where the two meet.
+		state.paintHelpIcon(canvas, hitDialogLegacyTLSHelp, m.LegacyTLSNote, b.legacyTLSHelp.Rect())
 		state.paintHelpIcon(canvas, hitDialogStandardSecurityHelp, m.StandardSecurityNote, b.standardSecurityHelp.Rect())
 	}
 }
@@ -828,7 +834,8 @@ func (state *State) paintVNCRows(canvas *gfx.Canvas) {
 // declareHostVNCRows lays out the switches of a VNC or RDP host: connecting
 // through SSH, sharing the clipboard, showing the picture without the bars
 // around it and, for RDP, asking Windows for its console (administrative)
-// session, playing remote sound and choosing Standard RDP Security.
+// session, playing remote sound, choosing Standard RDP Security and allowing
+// the legacy TLS suites.
 func (state *State) declareHostVNCRows(c ui.C) {
 	editor, m := &state.editor, state.messages.Desktop
 	b := &editor.form.vncBody
@@ -848,6 +855,7 @@ func (state *State) declareHostVNCRows(c ui.C) {
 		if editor.protocol == protocolRDP {
 			state.declareDialogCheck(c, hitDialogConsole, m.ConsoleSession, editor.console, 12, 0)
 			state.declareDialogCheck(c, hitDialogRemoteAudio, m.RemoteAudio, !editor.noAudio, 12, 0)
+			_, b.legacyTLSHelp = state.declareDialogCheckHelp(c, hitDialogLegacyTLS, m.LegacyTLS, editor.legacyTLS, 12, 0)
 			_, b.standardSecurityHelp = state.declareDialogCheckHelp(c, hitDialogStandardSecurity, m.StandardSecurity, editor.standardSecurity, 12, 0)
 		}
 	})

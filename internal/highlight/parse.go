@@ -11,9 +11,9 @@ import (
 //	pattern | color | case
 //	pattern | color | regex case
 //
-// where color is a slot's name (red, yellow, green, cyan, blue, magenta) and
-// the flags say the pattern is a regular expression and that it matches case
-// sensitively. The pattern is everything before the color, so it may hold a
+// where color is a named color (red, yellow, green, cyan, blue, magenta) or an
+// explicit #rgb/#rrggbb value, and the flags say the pattern is a regular
+// expression and that it matches case sensitively. The pattern is everything before the color, so it may hold a
 // pipe of its own — an alternation in a regular expression does; a final
 // segment of flags is told from a color by its words. Blank lines and lines
 // opening with # are ignored; a line with no color, an unknown color or flag,
@@ -39,12 +39,12 @@ func ParseRules(text string) (rules []Rule, skipped int) {
 			skipped++
 			continue
 		}
-		slot := SlotFromName(strings.ToLower(words[0]))
-		if slot == None {
+		color := ColorFromName(words[0])
+		if color == None {
 			skipped++
 			continue
 		}
-		rule := Rule{Pattern: pattern, Slot: slot}
+		rule := Rule{Pattern: pattern, Color: color}
 		bad := false
 		for _, flag := range strings.Fields(flags) {
 			switch strings.ToLower(flag) {

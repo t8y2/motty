@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sync"
 	"testing"
@@ -96,22 +97,123 @@ func TestKeysPageImportsPersistsAndRemovesIdentities(t *testing.T) {
 		t.Fatalf("plain metadata = %+v", state.identities[0])
 	}
 
+	// The keys are kept in the vault, not named by their files: the files can go.
+	for _, path := range []string{plain, encrypted} {
+		if err := os.Remove(path); err != nil {
+			t.Fatal(err)
+		}
+	}
 	restarted := newTestState(t, options)
-	if len(restarted.identities) != 2 || restarted.identities[0].Path != plain || restarted.identities[1].Path != encrypted {
+	if len(restarted.identities) != 2 || restarted.identities[0].Name != "id_locked" || restarted.identities[1].Name != "id_plain" {
 		t.Fatalf("restored identities = %+v", restarted.identities)
 	}
+	for _, identity := range restarted.identities {
+		if !identity.Stored || identity.Error != "" || identity.Fingerprint == "" {
+			t.Fatalf("key lost with its file: %+v", identity)
+		}
+	}
 	restarted.Click(hitKeychain)
-	restarted.selectedIdentityID = restarted.identities[0].ID
+	restarted.selectedIdentityID = restarted.identities[1].ID
 	restarted.Click(hitKeysRemove)
-	if len(restarted.identities) != 1 || restarted.identities[0].Path != encrypted {
+	if restarted.modal != modalForm || len(restarted.identities) != 2 {
+		t.Fatalf("removing a key that exists only in Motty did not ask: modal %d", restarted.modal)
+	}
+	restarted.Click(hitFormSubmit)
+	if len(restarted.identities) != 1 || restarted.identities[0].Name != "id_locked" {
 		t.Fatalf("after remove = %+v", restarted.identities)
 	}
-	if _, err := os.Stat(plain); err != nil {
-		t.Fatalf("remove deleted the key file: %v", err)
-	}
 	third := newTestState(t, options)
-	if len(third.identities) != 1 || third.identities[0].Path != encrypted {
+	if len(third.identities) != 1 || third.identities[0].Name != "id_locked" {
 		t.Fatalf("remove was not persisted: %+v", third.identities)
+	}
+}
+
+func TestKeyImportedFromAFileSurvivesItsFileAndStillConnects(t *testing.T) {
+	identity := writeWorkbenchIdentity(t, "id_ed25519", "")
+	original, err := os.ReadFile(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	options := freshOptions(t)
+	options.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return []string{identity}, nil }
+	state := newTestState(t, options)
+	state.Click(hitKeychain)
+	state.Click(hitKeysImport)
+	if err := os.Remove(identity); err != nil {
+		t.Fatal(err)
+	}
+	restarted := newTestState(t, options)
+	if len(restarted.identities) != 1 || restarted.identities[0].Error != "" || !restarted.identities[0].Stored {
+		t.Fatalf("identities after the file is gone = %+v", restarted.identities)
+	}
+	// The same file chosen again is the key already there, not a second copy.
+	if err := os.WriteFile(identity, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	restarted.Click(hitKeychain)
+	restarted.Click(hitKeysImport)
+	if len(restarted.identities) != 1 {
+		t.Fatalf("the same key was added twice: %+v", restarted.identities)
+	}
+}
+
+func TestKeysAddedByPathBeforeAreKeptInTheVaultWhenImportedAgain(t *testing.T) {
+	locked := writeWorkbenchIdentity(t, "id_locked", "secret")
+	options := freshOptions(t)
+	options.Keystore = &memKeys{}
+	options.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return []string{locked}, nil }
+	state := newTestState(t, options)
+	// What an earlier version saved: the key named by its path, with its passphrase.
+	state.identities = []identityRecord{inspectIdentity(1, locked, state.keyMessages())}
+	state.nextIdentityID = 2
+	state.selectedIdentityID = 1
+	if err := state.secrets.vault.Set(passphraseSecretName(locked), "secret"); err != nil {
+		t.Fatal(err)
+	}
+	state.Click(hitKeychain)
+	state.Click(hitKeysImport)
+	if len(state.identities) != 1 || !state.identities[0].Stored || state.identities[0].ID != 1 || state.selectedIdentityID != 1 {
+		t.Fatalf("the listed file was not upgraded in place: %+v", state.identities)
+	}
+	ref := state.identities[0].Path
+	if value, found, _ := state.secrets.vault.Get(passphraseSecretName(ref)); !found || value != "secret" {
+		t.Fatalf("the saved passphrase did not follow the key: %q, %v", value, found)
+	}
+	if _, found, _ := state.secrets.vault.Get(passphraseSecretName(locked)); found {
+		t.Fatal("the passphrase stayed under the file's path")
+	}
+	if saved := state.snapshot(); len(saved.IdentityFiles) != 0 {
+		t.Fatalf("the saved state still names the file: %v", saved.IdentityFiles)
+	}
+}
+
+func TestKeyExportWritesTheKeyAsKeptAndWorksAfterItsFileIsGone(t *testing.T) {
+	locked := writeWorkbenchIdentity(t, "id_locked", "secret")
+	original, err := os.ReadFile(locked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	options := freshOptions(t)
+	options.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return []string{locked}, nil }
+	destination := filepath.Join(t.TempDir(), "exported")
+	var request app.SaveFileOptions
+	options.SaveFile = func(options app.SaveFileOptions) (string, error) { request = options; return destination, nil }
+	state := newTestState(t, options)
+	state.Click(hitKeychain)
+	state.Click(hitKeysImport)
+	if err := os.Remove(locked); err != nil {
+		t.Fatal(err)
+	}
+	state.Click(hitKeysExport)
+	got, err := os.ReadFile(destination)
+	if err != nil || string(got) != string(original) {
+		t.Fatalf("exported key differs from the imported one: %v", err)
+	}
+	if info, err := os.Stat(destination); err != nil || info.Mode().Perm()&0o077 != 0 && runtime.GOOS != "windows" {
+		t.Fatalf("the exported private key is readable by others: %v %v", info, err)
+	}
+	if request.SuggestedName != "id_locked" || request.Title != state.messages.KeyExportTitle {
+		t.Fatalf("save request = %+v", request)
 	}
 }
 
@@ -124,7 +226,7 @@ func TestImportedIdentityPathsReachConnections(t *testing.T) {
 	state.Click(hitKeysImport)
 	state.Click(hitHosts)
 	connect(t, state, world)
-	if len(world.configs) != 1 || !slices.Equal(world.configs[0].AdditionalIdentityFiles, []string{identity}) {
+	if len(world.configs) != 1 || len(state.identities) != 1 || !slices.Equal(world.configs[0].AdditionalIdentityFiles, []string{state.identities[0].Path}) || world.configs[0].StoredKey == nil {
 		t.Fatalf("dial config = %+v", world.configs)
 	}
 }
@@ -273,6 +375,7 @@ func TestKeychainSavesAndForgetsAKeyPassphrase(t *testing.T) {
 	}
 
 	state.selectedIdentityID = state.identities[1].ID
+	locked = state.identities[1].Path
 	state.Click(hitKeysPassphrase)
 	if state.modal != modalForm {
 		t.Fatal("the encrypted key did not open the passphrase form")

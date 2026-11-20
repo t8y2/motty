@@ -344,6 +344,7 @@ func (state *State) openSettings() {
 	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
 		state.releaseIdleSFTP(session)
 	}
+	state.settingsTab = true
 	state.activeSection = sectionSettings
 	state.settingsScroll = 0
 	state.settings.navScroll = 0

@@ -44,6 +44,14 @@ the project, the packages and how to build it.
   </tr>
   <tr>
     <td width="50%" valign="top">
+      <a href="assets/readme-dashboard.png"><img src="assets/readme-dashboard.png" alt="The dashboard's detailed overview: CPU, memory and network charts for several hosts" /></a>
+    </td>
+    <td width="50%" valign="top">
+      <a href="assets/readme-transfers.png"><img src="assets/readme-transfers.png" alt="The transfer centre: running uploads and downloads, waiting items, history and a failed transfer" /></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
       <a href="assets/readme-desktop.png"><img src="assets/readme-desktop.png" alt="A remote desktop over VNC" /></a>
     </td>
     <td width="50%" valign="top">

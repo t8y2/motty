@@ -70,6 +70,7 @@ type transferBatch struct {
 	policy                     sftpclient.ExistingPolicy
 	host                       *transferHost
 	filter                     int
+	view                       *sftpView // a window's own queue, not the center's filtered one
 	title, description, action string
 }
 
@@ -276,6 +277,34 @@ func (state *State) updateTransferSearch() {
 	}
 }
 
+// captureViewTransferBatch captures the conflicting transfers of one transfer
+// window, so its queue can offer the same overwrite/skip choice as the center
+// without depending on the center's filters or another window's tasks.
+func (state *State) captureViewTransferBatch(view *sftpView, policy sftpclient.ExistingPolicy) transferBatch {
+	center := &state.transfers
+	batch := transferBatch{policy: policy, filter: transferFilterAll, view: view}
+	for index := range center.entries {
+		entry := &center.entries[index]
+		if entry.owner != view {
+			continue
+		}
+		if transferRetryEligible(entry, policy != sftpclient.ExistingFail) {
+			batch.targets = append(batch.targets, transferTarget{
+				entry.id, entry.owner, entry.owner.worker, entry.snapshot.ID,
+				entry.snapshot.QueueOrder, entry.snapshot.QueuedAt,
+			})
+		}
+	}
+	m := state.messages.Transfers
+	batch.action = m.Replace
+	if policy == sftpclient.ExistingResume {
+		batch.action = m.Resume
+	}
+	batch.title = fmt.Sprintf(m.ConfirmBatchFmt, batch.action, len(batch.targets))
+	batch.description = fmt.Sprintf(m.BatchScopeFmt, state.messages.SFTPTransferQueue)
+	return batch
+}
+
 func (state *State) captureTransferBatch(policy sftpclient.ExistingPolicy) transferBatch {
 	center := &state.transfers
 	batch := transferBatch{policy: policy, host: center.host, filter: center.filter}
@@ -311,9 +340,16 @@ func (state *State) dispatchTransferBatch(batch transferBatch) {
 	}
 	for _, target := range batch.targets {
 		entry := state.transfers.capturedEntry(target)
-		if entry == nil || entry.snapshot.QueueOrder != target.attempt || !state.transfers.shows(entry) ||
-			!transferFilterShows(batch.filter, entry.snapshot) || batch.host != nil && !sameTransferHost(entry.host, batch.host) ||
+		if entry == nil || entry.snapshot.QueueOrder != target.attempt ||
 			!transferRetryEligible(entry, batch.policy != sftpclient.ExistingFail) {
+			continue
+		}
+		if batch.view != nil {
+			if entry.owner != batch.view {
+				continue
+			}
+		} else if !state.transfers.shows(entry) || !transferFilterShows(batch.filter, entry.snapshot) ||
+			batch.host != nil && !sameTransferHost(entry.host, batch.host) {
 			continue
 		}
 		policy := batch.policy

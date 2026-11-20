@@ -48,6 +48,7 @@ type ToolsMessages struct {
 	HighlightRegex               string
 	HighlightCase                string
 	HighlightColor               string
+	HighlightCustomColor         string
 	HighlightErrorEmpty          string
 	HighlightErrorTooLong        string
 	HighlightErrorEverywhere     string
@@ -421,25 +422,26 @@ type ToolsMessages struct {
 	SerialOpenedFmt        string
 
 	// File transfer over the terminal (ZMODEM).
-	TransferSentFmt           string
-	TransferReceivedFmt       string
-	TransferCancelled         string
-	TransferFailedFmt         string
-	TransferDeclined          string
-	TransferChooseFolderTitle string
-	TransferNoDownloads       string
-	TransferChooseFilesTitle  string
-	TransferTooManyFmt        string
-	TransferNotFileFmt        string
-	TransferTooBigFmt         string
-	TransferReceiveTitle      string
-	TransferSendTitle         string
-	TransferReceiveOfferFmt   string
-	TransferSendOfferFmt      string
-	TransferDecline           string
-	TransferChooseFiles       string
-	TransferChooseFolder      string
-	TransferToFolderFmt       string
+	TransferSentFmt               string
+	TransferReceivedFmt           string
+	TransferCancelled             string
+	TransferFailedFmt             string
+	TransferDeclined              string
+	TransferChooseFolderTitle     string
+	TransferNoDownloads           string
+	TransferChooseFilesTitle      string
+	TransferChooseSendFolderTitle string
+	TransferTooManyFmt            string
+	TransferNotFileFmt            string
+	TransferTooBigFmt             string
+	TransferReceiveTitle          string
+	TransferSendTitle             string
+	TransferReceiveOfferFmt       string
+	TransferSendOfferFmt          string
+	TransferDecline               string
+	TransferChooseFiles           string
+	TransferChooseFolder          string
+	TransferToFolderFmt           string
 
 	// The file panel.
 	CatFiles                        string
@@ -990,6 +992,8 @@ type ToolsMessages struct {
 	ExtEditButton                   string
 	ExtEditOpenedFmt                string
 	ExtEditSentFmt                  string
+	ExtEditUnsentFmt                string
+	ExtEditGoneFmt                  string
 	ExtEditSendFailedFmt            string
 	ExtEditBadFmt                   string
 	ExtEditRefused                  string
