@@ -1384,14 +1384,22 @@ func TestLeavingSFTPStopsItsWorker(t *testing.T) {
 
 func TestSFTPSteadyStatePaintDoesNotAllocate(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
-	// The native .txt icon service is asynchronous on Windows. Like the local
-	// pane allocation test, use a settled fallback slot: this measures idle
-	// painting, while native icon loading has its own platform tests.
-	state.sftpTypeIcons = map[string]*fileIconSlot{".txt": {failed: true}}
 	clickSFTPRow(t, state, session.files, "notes.txt")
-	// The completion catalog loads on a background wake. Settle it before
-	// measuring the allocations of an otherwise idle paint.
-	waitFor(t, state, func() bool { return !state.completion.catalogLoading })
+	// Both completion and native file icons start loading before the first
+	// paint. Rows already hold their icon slots, so replacing the cache cannot
+	// stop those requests. Wait for the actual slots before measuring an idle
+	// paint, keeping the real native bitmap in the view.
+	waitFor(t, state, func() bool {
+		if state.completion.catalogLoading {
+			return false
+		}
+		for _, slot := range state.sftpTypeIcons {
+			if slot.loading {
+				return false
+			}
+		}
+		return true
+	})
 	var canvas gfx.Canvas
 	canvas.SetClock(func() time.Duration { return time.Second })
 	size := gfx.Size{Width: 1400, Height: 900}
@@ -1401,6 +1409,9 @@ func TestSFTPSteadyStatePaintDoesNotAllocate(t *testing.T) {
 		state.Paint(&canvas, size)
 	})
 	if allocations != 0 {
+		for extension, slot := range state.sftpTypeIcons {
+			t.Logf("settled icon %s: loading=%v failed=%v size=%dx%d", extension, slot.loading, slot.failed, slot.bitmap.Width, slot.bitmap.Height)
+		}
 		t.Fatalf("SFTP steady-state paint allocations = %v", allocations)
 	}
 }
