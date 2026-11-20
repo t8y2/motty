@@ -515,7 +515,7 @@ func TestRemoteNativeWindowScrollsThroughAllDockerObjects(t *testing.T) {
 			for index := range w.ui.remote.rows {
 				w.ui.remote.rows[index] = remoteRow{
 					key:   fmt.Sprintf("resource-%02d", index),
-					cells: [6]string{fmt.Sprintf("resource-%02d", index)},
+					cells: [remoteMaxColumns]string{fmt.Sprintf("resource-%02d", index)},
 				}
 			}
 			var canvas gfx.Canvas
@@ -572,7 +572,7 @@ func TestRemoteNativeWindowWheelEndsOutsideTheTable(t *testing.T) {
 		for index := range w.ui.remote.rows {
 			w.ui.remote.rows[index] = remoteRow{
 				key:   fmt.Sprintf("wheel-row-%02d", index),
-				cells: [6]string{fmt.Sprintf("%d", index+1)},
+				cells: [remoteMaxColumns]string{fmt.Sprintf("%d", index+1)},
 			}
 		}
 		remoteWindowListHit(t, w, size)
@@ -611,7 +611,7 @@ func TestRemoteNativeWindowTableSurfacePaintsUnderItsRows(t *testing.T) {
 		state.Click(hitRemoteToolsOpen)
 		w := state.remoteWindows[0]
 		host.until(t, func() bool { return !w.ui.remote.loading })
-		w.ui.remote.rows = []remoteRow{{key: "surface-row", cells: [6]string{"row-0"}}}
+		w.ui.remote.rows = []remoteRow{{key: "surface-row", cells: [remoteMaxColumns]string{"row-0"}}}
 
 		size := gfx.Size{Width: 1100, Height: 780}
 		var canvas gfx.Canvas
@@ -678,7 +678,7 @@ func TestRemoteNativeWindowRowHitTestFollowsPaintedRows(t *testing.T) {
 		for index := range w.ui.remote.rows {
 			w.ui.remote.rows[index] = remoteRow{
 				key:   fmt.Sprintf("resource-%02d", index),
-				cells: [6]string{fmt.Sprintf("resource-%02d", index)},
+				cells: [remoteMaxColumns]string{fmt.Sprintf("resource-%02d", index)},
 			}
 		}
 		var canvas gfx.Canvas
