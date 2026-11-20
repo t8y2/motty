@@ -97,18 +97,70 @@ func TestAConfiguredQuickCommandIsSuggestedInline(t *testing.T) {
 }
 
 func TestAQuickCommandThatCannotBeTypedAsOneLineIsNotSuggested(t *testing.T) {
+	// One snippet per case: sharing a prefix would make the ambiguity rule,
+	// not the rule under test, responsible for the empty suggestion.
+	for _, tc := range []struct {
+		name    string
+		command string
+	}{
+		{"templated", "git {{branch}}"},
+		{"multi-line", "git log\nstatus"},
+		{"secret", "git clone https://user:token@example.com/repo"},
+		{"too long", "git " + strings.Repeat("x", cmdhistory.MaxCommand)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := ghostWorld(t, "ls -la")
+			h.state.snippets.list = []snippet{{Name: tc.name, Command: tc.command}}
+			h.prompt("$ ")
+			h.type_("git ")
+			if rest, ok := h.ghost(); ok {
+				t.Fatalf("an untypable quick command suggests %q", rest)
+			}
+		})
+	}
+}
+
+func TestTwoQuickCommandsWithTheSameStartAreNotGuessed(t *testing.T) {
 	h := ghostWorld(t, "ls -la")
 	h.state.snippets.list = []snippet{
-		{Name: "branch", Command: "git {{branch}}"},
-		{Name: "two lines", Command: "git log\nstatus"},
 		{Name: "fetch one", Command: "git fetch one"},
 		{Name: "fetch two", Command: "git fetch two"},
-		{Name: "too long", Command: "git " + strings.Repeat("x", cmdhistory.MaxCommand)},
 	}
 	h.prompt("$ ")
 	h.type_("git ")
 	if rest, ok := h.ghost(); ok {
-		t.Fatalf("ambiguous or untypable quick commands suggest %q", rest)
+		t.Fatalf("ambiguous quick commands suggest %q", rest)
+	}
+}
+
+func TestHistoryWinsOverAQuickCommandInline(t *testing.T) {
+	h := ghostWorld(t, "git format-patch main")
+	h.state.snippets.list = []snippet{{Name: "fetch", Command: "git fetch --all"}}
+	h.prompt("$ ")
+	h.type_("git f")
+	if rest, ok := h.ghost(); !ok || rest != "ormat-patch main" {
+		t.Fatalf("suggestion = %q, %v; want the history entry", rest, ok)
+	}
+}
+
+func TestInlineSuggestionSettingsHideQuickCommands(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		off  func(*historyWorld)
+	}{
+		{"inline off", func(h *historyWorld) { h.state.history.inlineOff = true }},
+		{"suggest off", func(h *historyWorld) { h.state.history.suggestOff = true }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := ghostWorld(t, "ls -la")
+			tc.off(h)
+			h.state.snippets.list = []snippet{{Name: "fetch", Command: "git fetch --all"}}
+			h.prompt("$ ")
+			h.type_("git f")
+			if rest, ok := h.ghost(); ok {
+				t.Fatalf("a disabled hint suggests %q", rest)
+			}
+		})
 	}
 }
 

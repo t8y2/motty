@@ -157,7 +157,12 @@ func (state *State) snippetGhost(line string) (string, bool) {
 		if len(command) > cmdhistory.MaxCommand || len(command) <= len(line) || !strings.HasPrefix(command, line) {
 			continue
 		}
-		if strings.ContainsAny(command, "\r\n") || snippetHasVariables(command) || cmdhistory.Secret(command) {
+		if strings.ContainsAny(command, "\r\n") || cmdhistory.Secret(command) {
+			continue
+		}
+		// A command without "{{" cannot hold a variable: the cheap check keeps
+		// the regexp scan, which allocates, off the every-frame paint path.
+		if strings.Contains(command, "{{") && snippetHasVariables(command) {
 			continue
 		}
 		if match != "" && match != command {
