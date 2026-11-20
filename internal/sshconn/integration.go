@@ -401,10 +401,14 @@ __motty_home_report() {
 // in front of it, and a front-only removal would never match, so the clear
 // would stay in PS1 and wipe the environment name off every later prompt
 // (issue #1121). The report function therefore removes the first occurrence
-// anywhere in PS1. The injected prefix was written in front of the whole
-// prompt, so no earlier copy of those bytes can exist, and the first match
-// is always the injected one; an identical sequence the user had of their
-// own sits later and is kept.
+// anywhere in PS1.
+//
+// A virtualenv does more than move the clear: it snapshots PS1 and restores
+// that snapshot on deactivate, so a copy of the clear can come back long after
+// the first prompt. The injected clear is therefore tagged with an inert OSC
+// sequence and dropped on every prompt, not just the one after injection. The
+// tag keeps a sequence the user had of their own from being mistaken for the
+// injected one.
 //
 // Zsh additionally has to keep PROMPT_SP off for that prompt. With it on, zsh
 // marks the partial line the hidden activation line left by writing a row of
@@ -412,8 +416,8 @@ __motty_home_report() {
 // spaces wrap and the redrawn prompt lands on the next row, leaving the old
 // one behind. The option is put back before the prompt after it.
 const (
-	firstPromptEraseBash = `_motty_first_prompt_erase='\[\r\e[2K\]'; _motty_first_prompt=1`
-	firstPromptEraseZsh  = `_motty_first_prompt_erase=$'%{\r\033[2K%}'; _motty_first_prompt=1; _motty_prompt_sp_was=; [[ -o prompt_sp ]] && _motty_prompt_sp_was=1; unsetopt prompt_sp; _motty_prompt_sp_hold=1`
+	firstPromptEraseBash = `_motty_first_prompt_erase='\[\e]7777;motty-first-prompt\a\r\e[2K\]'; _motty_first_prompt=1`
+	firstPromptEraseZsh  = `_motty_first_prompt_erase=$'%{\e]7777;motty-first-prompt\a\r\033[2K%}'; _motty_first_prompt=1; _motty_prompt_sp_was=; [[ -o prompt_sp ]] && _motty_prompt_sp_was=1; unsetopt prompt_sp; _motty_prompt_sp_hold=1`
 )
 
 // Encode bytes, not characters: file URI reserved characters and non-ASCII
@@ -429,9 +433,7 @@ const directoryReportFunction = `__motty_report() {
     if [[ -n ${_motty_first_prompt-} ]]; then
         PS1=$_motty_first_prompt_erase$PS1
         unset _motty_first_prompt
-        _motty_first_prompt_shown=1
-    elif [[ -n ${_motty_first_prompt_shown-} ]]; then
-        unset _motty_first_prompt_shown
+    elif [[ -n ${_motty_first_prompt_erase-} ]]; then
         PS1=${PS1/"$_motty_first_prompt_erase"/}
     fi
     case $PS1 in

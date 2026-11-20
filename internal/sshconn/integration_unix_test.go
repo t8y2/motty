@@ -324,6 +324,50 @@ func TestIntegrationFirstPromptEraseSurvivesEnvActivation(t *testing.T) {
 	}
 }
 
+// TestIntegrationFirstPromptEraseSurvivesVenvSnapshotRestore covers the other
+// way a virtualenv keeps the clear alive: activate snapshots PS1 and
+// deactivate restores that snapshot, which still holds the clear. Every
+// prompt has to drop it again, or the environment label of a later prompt is
+// erased (issue #1121).
+func TestIntegrationFirstPromptEraseSurvivesVenvSnapshotRestore(t *testing.T) {
+	for _, name := range []string{"bash", "zsh"} {
+		t.Run(name, func(t *testing.T) {
+			program, err := exec.LookPath(name)
+			if err != nil {
+				t.Skipf("%s unavailable: %v", name, err)
+			}
+			h := integrationPTYServer(t, name, program)
+			s := startIntegratedShell(t, h, "erase-venv", "")
+			if !strings.Contains(s.output, "\r\x1b[2K") {
+				t.Fatalf("the first prompt did not clear the hidden activation line: %q", s.output)
+			}
+			// A real venv activate snapshots PS1 and then prepends its label.
+			rest := s.nextPrompt(t, "the venv activation", `_motty_old_ps1=$PS1; PS1="(motty""-venv) "$PS1`)
+			if !strings.Contains(rest, "(motty-venv) ") || strings.Contains(rest, "\r\x1b[2K") {
+				t.Fatalf("the activated prompt is wrong: %q", rest)
+			}
+			// deactivate restores the snapshot, clear included.
+			rest = s.nextPrompt(t, "the venv deactivation", `PS1=$_motty_old_ps1`)
+			if strings.Contains(rest, "\r\x1b[2K") {
+				t.Fatalf("the restored snapshot kept the clear: %q", rest)
+			}
+			rest = s.nextPrompt(t, "a second activation", `PS1="(motty""-venv2) "$PS1`)
+			if !strings.Contains(rest, "(motty-venv2) ") || strings.Contains(rest, "\r\x1b[2K") {
+				t.Fatalf("the second activated prompt is wrong: %q", rest)
+			}
+			rest = s.nextPrompt(t, "the PS1 erase probe", `printf 'MOTTY_ERASE=%s\n' "$([[ $PS1 == *"$_motty_first_prompt_erase"* ]] && echo yes || echo no)"`)
+			if !strings.Contains(rest, "MOTTY_ERASE=no") {
+				t.Fatalf("the first-prompt clear is still in PS1: %q", rest)
+			}
+			if got := strings.Count(s.output, "\r\x1b[2K"); got != 1 {
+				t.Fatalf("the first-prompt clear ran %d times, want once: %q", got, s.output)
+			}
+			s.w.shell.Write([]byte("exit\r"))
+			s.w.waitDone()
+		})
+	}
+}
+
 func TestIntegrationReportsRealShellDirectoriesWithoutChangingProfiles(t *testing.T) {
 	for _, name := range []string{"bash", "zsh"} {
 		t.Run(name, func(t *testing.T) {
