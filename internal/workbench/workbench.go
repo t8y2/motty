@@ -944,7 +944,7 @@ type State struct {
 	// pasteConfirmOff skips the multi-line paste confirmation; see
 	// paste_review.go.
 	pasteConfirmOff bool
-	// passwordHintOff keeps the saved password from being offered at a sudo prompt.
+	// passwordHintOff disables the saved password picker at account prompts.
 	passwordHintOff bool
 	// closeConfirmOff skips the question before closing a session that still runs.
 	closeConfirmOff bool

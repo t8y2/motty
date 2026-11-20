@@ -6,87 +6,43 @@ import (
 	"github.com/vivaui/viva/gfx"
 )
 
-func passwordHintSession(t *testing.T) (*State, *Session, *fakeShell) {
-	t.Helper()
-	state, _, _, shell := liveSession(t)
-	session := &state.sessions[0]
-	if err := state.secrets.vault.Set(state.passwordName(session), "hunter2"); err != nil {
+func TestSudoUsesThePasswordPickerWithoutSharedIdentities(t *testing.T) {
+	for _, prompt := range []string{"[sudo] password for dev: ", "[sudo: authenticate] Password: "} {
+		t.Run(prompt, func(t *testing.T) {
+			w := liveAutofillSession(t)
+			session := &w.state.sessions[0]
+			session.endpoint.User = "dev"
+			if err := w.state.secrets.vault.Set(w.state.passwordName(session), "host-secret"); err != nil {
+				t.Fatal(err)
+			}
+			if w.state.passwordAssistWantsFrame(session) {
+				t.Fatal("a host password requested a frame without a password prompt")
+			}
+			w.output(prompt)
+			if !w.state.passwordAssistWantsFrame(session) {
+				t.Fatal("the host's own password did not request a prompt scan")
+			}
+			if len(w.state.autofillRules.pick.candidates) != 1 || w.shell.typed() != "" {
+				t.Fatalf("pick %+v, typed %q", w.state.autofillRules.pick, w.shell.typed())
+			}
+			key(w.state, 0, gfx.KeyEvent{Key: gfx.KeyDown})
+			key(w.state, 0, gfx.KeyEvent{Key: gfx.KeyEnter})
+			if got := w.shell.typed(); got != "host-secret\r" {
+				t.Fatalf("typed %q", got)
+			}
+		})
+	}
+}
+
+func TestSudoEnterWithoutSelectingDoesNotSendTheHostPassword(t *testing.T) {
+	w := savedPasswordWorld(t)
+	session := &w.state.sessions[0]
+	if err := w.state.secrets.vault.Set(w.state.passwordName(session), "host-secret"); err != nil {
 		t.Fatal(err)
 	}
-	return state, session, shell
-}
-
-func TestEnterSendsTheSavedPasswordAtASudoPrompt(t *testing.T) {
-	state, session, shell := passwordHintSession(t)
-	shell.say("$ sudo ls\r\n[sudo] password for dev: ")
-	state.Wake()
-	if rest, ok := state.passwordHintGhost(session); !ok || rest != state.messages.Tools.PasswordHintGhost {
-		t.Fatalf("no offer at the prompt: %q %v", rest, ok)
-	}
-	if shell.typed() != "" {
-		t.Fatalf("the password was sent before Enter: %q", shell.typed())
-	}
-	state.terminalKey(session, gfx.KeyEvent{Key: gfx.KeyEnter})
-	if got := shell.typed(); got != "hunter2\r" {
-		t.Fatalf("typed %q", got)
-	}
-	if _, ok := state.passwordHintGhost(session); ok {
-		t.Fatal("the offer outlived the answer")
-	}
-}
-
-func TestEnterSendsTheSavedPasswordAtASudoRsPrompt(t *testing.T) {
-	state, session, shell := passwordHintSession(t)
-	shell.say("$ sudo -i\r\n[sudo: authenticate] Password: ")
-	state.Wake()
-	if rest, ok := state.passwordHintGhost(session); !ok || rest != state.messages.Tools.PasswordHintGhost {
-		t.Fatalf("no offer at the prompt: %q %v", rest, ok)
-	}
-	if shell.typed() != "" {
-		t.Fatalf("the password was sent before Enter: %q", shell.typed())
-	}
-	state.terminalKey(session, gfx.KeyEvent{Key: gfx.KeyEnter})
-	if got := shell.typed(); got != "hunter2\r" {
-		t.Fatalf("typed %q", got)
-	}
-	if _, ok := state.passwordHintGhost(session); ok {
-		t.Fatal("the offer outlived the answer")
-	}
-}
-
-func TestTypingTakesTheSudoOfferBack(t *testing.T) {
-	state, session, shell := passwordHintSession(t)
-	shell.say("[sudo] password for dev: ")
-	state.Wake()
-	state.typed(session, []byte("x"))
-	state.terminalKey(session, gfx.KeyEvent{Key: gfx.KeyEnter})
-	if got := shell.typed(); got != "x\r" {
-		t.Fatalf("typed %q: the saved password was added to what the user typed", got)
-	}
-}
-
-func TestNoOfferWithoutASudoPromptASavedPasswordOrTheSetting(t *testing.T) {
-	state, session, shell := passwordHintSession(t)
-	shell.say("Password: ")
-	state.Wake()
-	if _, ok := state.passwordHintGhost(session); ok {
-		t.Fatal("a bare Password: prompt was offered the host password")
-	}
-
-	state.setPasswordHint(false)
-	shell.say("\r\n[sudo] password for dev: ")
-	state.Wake()
-	if _, ok := state.passwordHintGhost(session); ok {
-		t.Fatal("the offer ignored the setting")
-	}
-
-	state.setPasswordHint(true)
-	if err := state.secrets.vault.Delete(state.passwordName(session)); err != nil {
-		t.Fatal(err)
-	}
-	shell.say("\r\n[sudo] password for dev: ")
-	state.Wake()
-	if _, ok := state.passwordHintGhost(session); ok {
-		t.Fatal("offered a password that is not saved")
+	w.output("[sudo: authenticate] Password: ")
+	key(w.state, 0, gfx.KeyEvent{Key: gfx.KeyEnter})
+	if got := w.shell.typed(); got != "\r" {
+		t.Fatalf("Enter without a selection typed %q", got)
 	}
 }

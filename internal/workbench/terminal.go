@@ -213,9 +213,12 @@ type terminal struct {
 	inputLine bool
 	// autofill is what the autofill rules need to know of this terminal.
 	autofill autofill.Watcher
-	// passwordHint is the sudo prompt line the saved password is on offer at: set
+	// passwordHint is the recognised account password prompt: set
 	// while that line is still under the cursor and nothing was sent since.
 	passwordHint string
+	// passwordOffered is the last prompt whose manual password list was shown.
+	// A new row can offer another password after a refused authentication.
+	passwordOffered terminalPasswordPrompt
 	// recorder decides which typed lines the command history may keep; it is
 	// only fed while historyOn says the history is wanted for this terminal.
 	recorder  cmdhistory.Recorder
@@ -1937,7 +1940,7 @@ func (state *State) terminalKey(session *Session, event gfx.KeyEvent) gfx.EventR
 		}
 	}
 	modes := t.screen.Modes()
-	if t.screen.KeyboardFlags() == 0 && (state.passwordHintKey(session, event) || state.ghostKey(session, event)) {
+	if t.screen.KeyboardFlags() == 0 && state.ghostKey(session, event) {
 		t.noteAcceptedKey(event)
 		return handled
 	}

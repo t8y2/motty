@@ -291,7 +291,6 @@ type ToolsMessages struct {
 	PasswordHintDescription string
 	CloseConfirmRow         string
 	CloseConfirmDescription string
-	PasswordHintGhost       string // drawn after a sudo prompt, beside the cursor
 
 	// The outbound proxy.
 	ProxyRow                    string

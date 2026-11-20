@@ -1947,10 +1947,9 @@ var traditionalTools = ToolsMessages{
 	PasteConfirmDescription: "貼上包含換行的文字時先顯示預覽，可選擇整段或逐行傳送。關閉後按原樣一次貼上。",
 
 	PasswordHintRow:         "密碼提示輔助",
-	PasswordHintDescription: "sudo 要求密碼時提供該主機的已儲存密碼；su 要求密碼時列出該主機和身份的密碼供選擇。按下 Enter 或點選之前不會傳送任何內容。身份在「設定 > 安全 > 身份」中儲存。",
+	PasswordHintDescription: "在 sudo、su 和 SSH/SCP 的帳戶密碼提示處列出已儲存的密碼，支援本機終端和巢狀 SSH 工作階段。用 ↑/↓ 選擇後按 Enter，或點選候選才會傳送。身份在「設定 > 安全 > 身份」中儲存。",
 	CloseConfirmRow:         "關閉執行中的工作階段前確認",
 	CloseConfirmDescription: "關閉仍處於連線狀態的分頁或分割窗格時先詢問。已結束的工作階段直接關閉。",
-	PasswordHintGhost:       "按 Enter 貼上已儲存的密碼",
 
 	NotifyRow:         "桌面通知",
 	NotifyDescription: "終端機裡的程式請求通知時（OSC 9、777、99），顯示系統通知。每個終端機每秒最多一條。",

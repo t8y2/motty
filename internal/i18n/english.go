@@ -1950,10 +1950,9 @@ var englishTools = ToolsMessages{
 	PasteConfirmDescription: "Show a preview before text containing line breaks reaches the shell. Turn off to paste multi-line text at once, as before.",
 
 	PasswordHintRow:         "Password prompt assist",
-	PasswordHintDescription: "When sudo asks for a password, offers the host's saved password; when su asks, lists the host's and identities' passwords to choose from. Nothing is sent until you press Enter or pick one. Save identities in Settings > Security > Identities.",
+	PasswordHintDescription: "Lists saved passwords at sudo, su and SSH/SCP account password prompts, including in local terminals and nested SSH sessions. Use ↑/↓ then Enter, or click a password to send it. Save identities in Settings > Security > Identities.",
 	CloseConfirmRow:         "Confirm before closing running sessions",
 	CloseConfirmDescription: "Asks first when a tab or pane that is still connected is closed. Sessions that have ended close without asking.",
-	PasswordHintGhost:       "Press Enter to paste the saved password",
 
 	ProxyRow:                    "Outbound proxy",
 	ProxyConfigure:              "Configure",
