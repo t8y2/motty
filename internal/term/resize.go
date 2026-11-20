@@ -39,10 +39,10 @@ func (t *Terminal) reflowMain() {
 	total := t.histCount + len(s.lines)
 	// The shell redraws its prompt itself after a resize, from the rows it has
 	// already drawn, so the prompt and the input after it keep their layout. The
-	// rows are dropped when that redraw starts writing, see clearStalePrompt:
-	// what the redraw does not cover would otherwise stay beside it as a copy.
-	// The rows the shell drew are kept aside, so narrowing and widening again
-	// before it answers cannot cut the prompt away.
+	// rows the shell drew are kept aside and painted as display copies, so
+	// narrowing and widening again before it answers cannot cut the prompt away.
+	// They are left in place for the shell's redraw to overwrite, which also keeps
+	// the prompt visible when the user types before that redraw arrives.
 	split, prompt := t.promptSplit()
 	if prompt {
 		row := split - t.histCount
@@ -365,6 +365,7 @@ func (t *Terminal) rewrap(first, last int, anchors *[3]reflowAnchor) {
 	}
 
 	from := 0
+	logical := r.run[0].logical
 	for k, to := range r.ends {
 		var l *line
 		if k < len(r.run) {
@@ -374,6 +375,7 @@ func (t *Terminal) rewrap(first, last int, anchors *[3]reflowAnchor) {
 			t.nextID++
 			l = &line{id: t.nextID, at: r.run[0].at}
 		}
+		l.logical = logical
 		need := to - from
 		if cap(l.cells) < need {
 			l.cells = make([]Cell, need)

@@ -127,6 +127,17 @@ var TraditionalMessages = Messages{
 		Stale:   "終端機已變化，未傳送任何內容；請重新貼上。",
 		Stopped: "終端機無法接收本次貼上的剩餘行；已傳送的行不會重發。",
 	},
+	Blocks: TerminalBlockMessages{
+		CopyCommand: "複製指令", CopyOutput: "複製輸出", CopyBlock: "複製區塊",
+		Running: "執行中", Succeeded: "成功", Failed: "失敗", Interrupted: "已中斷", Finished: "已結束",
+		ExitCodeFmt: "退出碼 %d", Copied: "已複製", OutputUnavailable: "輸出已不在捲動緩衝區內",
+
+		Collapse: "折疊輸出", Expand: "展開輸出", HiddenLinesFmt: "已折疊 %d 行",
+		HiddenOneLine: "已折疊 1 行",
+		SettingsRow:   "指令區塊", SettingsDescription: "將每條指令與其輸出歸為獨立區塊，顯示狀態與耗時，並提供複製、折疊操作。需要 Motty 的 shell 整合。僅影響新開啟的終端機；已開啟的終端機保持建立時的狀態。",
+		MenuRow: "右鍵選單中的區塊操作", MenuDescription: "在啟用了指令區塊的終端機中右鍵點擊區塊時，顯示複製指令、複製輸出與折疊操作。",
+		TruncatedHint: "輸出頭部已超出捲動緩衝區：較早內容已捨棄，展開無法恢復；複製只能取得保留的尾部。",
+	},
 
 	Transfers: TransferCenterMessages{
 		Pending: "待處理", ConflictTitle: "檔案已存在", ConflictPromptFmt: "%s 已存在，是否覆寫？目前連線有 %d 個待處理衝突。",

@@ -255,6 +255,8 @@ var syncedSettings = map[string]bool{
 	"terminal_cursor_steady":       true,
 	"terminal_cursor_thickness":    true,
 	"terminal_copy_on_select":      true,
+	"terminal_command_blocks":      true,
+	"terminal_block_menu_actions":  true,
 	"terminal_word_separators":     true,
 	"terminal_right_click_paste":   true,
 	"terminal_tab_title":           true, // read legacy shared preference

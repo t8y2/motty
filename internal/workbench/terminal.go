@@ -197,6 +197,36 @@ type terminal struct {
 	// image can find its row without scanning the whole scrollback.
 	rowIDs    []uint64
 	selection terminalSelection
+	// blocks are the shell's command blocks in screen order; see
+	// terminal_blocks.go. blockActive is the running block's index, or -1.
+	blocks              []commandBlock
+	nextBlockID         uint64
+	blockActive         int
+	blockPrompt         blockAnchor
+	blockCommand        blockAnchor
+	blockPendingPrompt  bool
+	blockPendingCommand bool
+	blockSelected       int
+	blockCopied         blockAction
+	blockCopiedAt       time.Duration
+	blockAlt            bool
+	// blocksEnabled is the master switch as it stood when this terminal was
+	// configured. Turning the switch on later applies to new terminals only.
+	blocksEnabled bool
+	display       []displayEntry
+	// displayOffset is how many visible display lines the view is scrolled
+	// back from the live bottom. Hidden folded rows never count.
+	displayOffset int
+	// folds is the cached collapsed ranges, in block order. foldsValid is false
+	// after any block, fold or anchor change.
+	folds      []foldRange
+	foldsValid bool
+	foldsBase  uint64
+	foldsEpoch uint64
+	foldRows   int
+	// lineIndex is reused by remapBlocks so a window resize does not allocate a
+	// new map of every retained line identity each frame.
+	lineIndex map[uint64]uint64
 	find      terminalFind
 	links     terminalLinks
 	openLink  func(string)
@@ -340,7 +370,7 @@ func newTerminal(cols, rows int) *terminal {
 }
 
 func newTerminalWithScrollback(cols, rows, scrollback int) *terminal {
-	return &terminal{screen: term.New(cols, rows, scrollback), find: newTerminalFind(), pumpBudget: pumpBudget}
+	return &terminal{screen: term.New(cols, rows, scrollback), find: newTerminalFind(), pumpBudget: pumpBudget, blockActive: -1, blockSelected: -1, blockCopied: blockCopyNone}
 }
 
 // holdSync takes or releases the presentation snapshot at a DECSET 2026
@@ -507,6 +537,10 @@ func (t *terminal) syncRemaining() time.Duration {
 }
 
 func (state *State) configureTerminal(session *Session) {
+	session.term.blocksEnabled = state.terminalCommandBlocks
+	if !session.term.blocksEnabled {
+		clearTerminalCommandBlocks(session.term)
+	}
 	session.outputAlert.commandRunning = false
 	session.outputAlert.completionKnown = false
 	session.outputAlert.promptSeen = false
@@ -567,6 +601,7 @@ func (state *State) configureTerminal(session *Session) {
 			t.keyedSincePrompt = false
 			t.inputLine = false
 			current.outputAlert.promptSeen = true
+			state.blockPromptStart(current)
 		}
 	})
 	session.term.screen.SetPromptReady(func() {
@@ -583,6 +618,7 @@ func (state *State) configureTerminal(session *Session) {
 			}
 			t.inputLine = true
 			t.prediction.newPrompt()
+			state.blockPromptReady(current)
 		}
 	})
 	session.term.screen.SetCommandFinished(func(code int) {
@@ -597,8 +633,11 @@ func (state *State) configureTerminal(session *Session) {
 				current.term.login.noteCommandFinished(current.term, code)
 			}
 			state.finishBackgroundCommand(current, code)
+			state.blockCommandFinished(current, code)
 		}
 	})
+	session.term.screen.SetScreenCleared(func() { state.clearCommandBlocks(sessionID) })
+	session.term.screen.SetScrollbackCleared(func() { state.pruneCommandBlocks(sessionID) })
 	session.term.screen.SetCommandStart(func() {
 		if current, ok := state.sessionByIDPointer(sessionID); ok && current.term != nil {
 			t := current.term
@@ -615,6 +654,7 @@ func (state *State) configureTerminal(session *Session) {
 			if t.submittedLines > 0 {
 				t.submittedLines--
 			}
+			state.blockCommandStart(current)
 		}
 	})
 	session.term.screen.SetInputEnvironment(func(environment term.InputEnvironment) {
@@ -870,7 +910,7 @@ func (t *terminal) sendLogicalInput(p, logical []byte, drain, typing, unknown bo
 	}
 	if typing {
 		t.selection.clear()
-		t.screen.ScrollToBottom()
+		t.scrollToBottomView()
 	}
 	if unknown {
 		t.autofill.UnknownInput()
@@ -930,7 +970,7 @@ func (t *terminal) sendAssistant(p []byte) bool {
 		return false
 	}
 	t.selection.clear()
-	t.screen.ScrollToBottom()
+	t.scrollToBottomView()
 	accepted := t.writeShellInput(p)
 	t.inputSent = t.inputSent || accepted
 	if accepted {
@@ -1788,6 +1828,9 @@ func (state *State) fitTerminal(session *Session) {
 		// from the line it last wrote; everything before that is already marked.
 		t.aiFront = t.cursorLine()
 	}
+	// Any size change can move rows between history and the screen and renumber
+	// them; follow block anchors by line identity after every resize.
+	state.remapBlocks(session)
 	t.selection.clear()
 	t.find.refreshIfChanged(t.screen, state.messages, 0)
 	if t.shell != nil {
@@ -2171,10 +2214,10 @@ func (state *State) terminalKey(session *Session, event gfx.KeyEvent) gfx.EventR
 		_, rows := t.screen.Size()
 		switch event.Key {
 		case gfx.KeyPageUp:
-			t.screen.Scroll(rows - 1)
+			t.scrollDisplay(rows - 1)
 			return gfx.EventResult{Handled: true, Repaint: true}
 		case gfx.KeyPageDown:
-			t.screen.Scroll(-(rows - 1))
+			t.scrollDisplay(-(rows - 1))
 			return gfx.EventResult{Handled: true, Repaint: true}
 		}
 	}
@@ -2574,7 +2617,7 @@ func (state *State) terminalScroll(session *Session, event gfx.ScrollEvent) gfx.
 		}
 		return gfx.EventResult{Handled: true}
 	}
-	if t.screen.Scroll(-lines) {
+	if t.scrollDisplay(-lines) {
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	return gfx.EventResult{Handled: true}

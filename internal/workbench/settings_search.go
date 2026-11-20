@@ -204,6 +204,8 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsTerminal, m.SettingsTerminalScrollback, m.SettingsTerminalScrollbackDescription)
 	row(settingsTerminal, m.SettingsTerminalClipboard, m.SettingsTerminalClipboardDescription)
 	row(settingsTerminal, tools.CopyOnSelectRow, tools.CopyOnSelectDescription)
+	row(settingsTerminal, m.Blocks.SettingsRow, m.Blocks.SettingsDescription)
+	row(settingsTerminal, m.Blocks.MenuRow, m.Blocks.MenuDescription)
 	row(settingsTerminal, tools.WordSeparatorsRow, tools.WordSeparatorsDescription)
 	row(settingsTerminal, tools.RightClickPasteRow, tools.RightClickPasteDescription)
 	row(settingsTerminal, tools.InputClickRow, tools.InputClickDescription)

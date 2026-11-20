@@ -5,12 +5,11 @@ import (
 	"motty/internal/term"
 )
 
-func (state *State) paintTerminalLink(canvas *gfx.Canvas, terminal *terminal, geometry terminalGeometry, row int) {
+func (state *State) paintTerminalLink(canvas *gfx.Canvas, terminal *terminal, geometry terminalGeometry, row, line int) {
 	link, ok := terminal.links.hoveredLink(terminal.screen)
 	if !ok {
 		return
 	}
-	line := terminal.screen.ViewLine(row)
 	from, to, ok := terminalLinkRowSpan(link, line, geometry.cols)
 	if !ok {
 		return

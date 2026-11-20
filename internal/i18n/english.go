@@ -127,6 +127,17 @@ var EnglishMessages = Messages{
 		Stale:   "The terminal changed. Nothing was sent; paste again.",
 		Stopped: "The terminal could not take the rest of this paste. Lines already sent were not repeated.",
 	},
+	Blocks: TerminalBlockMessages{
+		CopyCommand: "Copy command", CopyOutput: "Copy output", CopyBlock: "Copy block",
+		Running: "Running", Succeeded: "Succeeded", Failed: "Failed", Interrupted: "Interrupted", Finished: "Finished",
+		ExitCodeFmt: "exit %d", Copied: "Copied", OutputUnavailable: "Output is no longer in the scrollback",
+
+		Collapse: "Collapse output", Expand: "Expand output", HiddenLinesFmt: "%d lines hidden",
+		HiddenOneLine: "1 line hidden",
+		SettingsRow:   "Command blocks", SettingsDescription: "Group each command with its output, show its status and duration, and offer copy and fold actions. Needs Motty's shell integration. Applies to terminals opened after the change; open terminals keep the mode they started with.",
+		MenuRow: "Block actions in the right-click menu", MenuDescription: "Show copy command, copy output and fold actions when you right-click a block in a terminal that has command blocks.",
+		TruncatedHint: "Output head exceeded the scrollback: older lines were discarded. Expanding cannot restore them; copy only returns the retained tail.",
+	},
 
 	Transfers: TransferCenterMessages{
 		Pending: "Pending", ConflictTitle: "File already exists", ConflictPromptFmt: "%s already exists. Replace it? Pending conflicts in this selection: %d.",
