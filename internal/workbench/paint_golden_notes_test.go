@@ -3,6 +3,7 @@ package workbench
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vivaui/viva/gfx"
 )
@@ -52,8 +53,8 @@ func init() {
 			s := newTestState(t, options)
 			world.connectFirst(t, s)
 			s.restoreNotes([]savedNote{
-				{ID: "runbook", Title: "Release runbook", Body: "# Release runbook\n\nRoll back the **gateway** first.\n\n```sh\nmotty --version\n```\n", Order: 1, Created: "2026-01-02T03:04:05Z", Updated: "2026-01-02T03:04:05Z"},
-				{ID: "ideas", Title: "Ideas", Body: "A shorter note.", Order: 2, Created: "2026-01-03T03:04:05Z", Updated: "2026-01-03T03:04:05Z"},
+				{ID: "runbook", Title: "Release runbook", Body: "# Release runbook\n\nRoll back the **gateway** first.\n\n```sh\nmotty --version\n```\n", Order: 1, Created: notesPaintTimestamp(2), Updated: notesPaintTimestamp(2)},
+				{ID: "ideas", Title: "Ideas", Body: "A shorter note.", Order: 2, Created: notesPaintTimestamp(3), Updated: notesPaintTimestamp(3)},
 			}, nil)
 			s.Click(hitNotesPanel)
 			n := &s.noteSidebarState().content
@@ -73,6 +74,12 @@ func notesPaintScene(name string, setup func(*testing.T, *State)) paintScene {
 		setup(t, state)
 		return state, func(c *gfx.Canvas, size gfx.Size) { state.Paint(c, size) }
 	}}
+}
+
+// The note header formats timestamps in local time. Give every machine the
+// same displayed clock time so these snapshots do not depend on its timezone.
+func notesPaintTimestamp(day int) string {
+	return time.Date(2026, time.January, day, 11, 4, 5, 0, time.Local).Format(time.RFC3339)
 }
 
 // notesPaintLibrary fills the library with a folder and two notes and selects
@@ -101,8 +108,8 @@ func notesPaintLibrary(t *testing.T, s *State, mode noteMode) {
 		"",
 	}, "\n")
 	s.restoreNotes([]savedNote{
-		{ID: "runbook", Title: "Release runbook", Body: body, Tags: tags, Order: 1, Folder: "ops", Created: "2026-01-02T03:04:05Z", Updated: "2026-01-02T03:04:05Z"},
-		{ID: "ideas", Title: "Ideas", Body: "A shorter note.", Order: 2, Created: "2026-01-03T03:04:05Z", Updated: "2026-01-03T03:04:05Z"},
+		{ID: "runbook", Title: "Release runbook", Body: body, Tags: tags, Order: 1, Folder: "ops", Created: notesPaintTimestamp(2), Updated: notesPaintTimestamp(2)},
+		{ID: "ideas", Title: "Ideas", Body: "A shorter note.", Order: 2, Created: notesPaintTimestamp(3), Updated: notesPaintTimestamp(3)},
 	}, []savedNoteFolder{{ID: "ops", Name: "Operations"}})
 	s.selectNote("runbook")
 	s.notes.view.expanded["ops"] = true
@@ -115,7 +122,7 @@ func noteWindowPaintScene(name string, mode noteMode) paintScene {
 	return paintScene{name: name, sizes: []gfx.Size{paintDesktop, paintSmall}, open: func(t *testing.T) (*State, func(*gfx.Canvas, gfx.Size)) {
 		s := newTestState(t, testOptions(t))
 		s.restoreNotes([]savedNote{
-			{ID: "runbook", Title: "Release runbook", Body: "# Release runbook\n\nRoll back the **gateway** first.\n\n```sh\nmotty --version\n```\n", Created: "2026-01-02T03:04:05Z", Updated: "2026-01-02T03:04:05Z"},
+			{ID: "runbook", Title: "Release runbook", Body: "# Release runbook\n\nRoll back the **gateway** first.\n\n```sh\nmotty --version\n```\n", Created: notesPaintTimestamp(2), Updated: notesPaintTimestamp(2)},
 		}, nil)
 		d := noteEditingWindow(t, s, "runbook")
 		d.note.content.view.mode = mode
