@@ -180,3 +180,70 @@ func bracketed(server *testServer) string {
 	host, port := server.host()
 	return "[" + host + "]:" + itoa(port)
 }
+
+// TestStoredCertificateAuthenticates proves a key the application keeps, with
+// the certificate it keeps beside it, is offered as that certificate. The server
+// accepts only the certificate, so the bare key cannot pass.
+func TestStoredCertificateAuthenticates(t *testing.T) {
+	identity, signer := writeKey(t, t.TempDir())
+	private, err := os.ReadFile(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caSigner := newSigner(t)
+	certificate := certificateFor(t, caSigner, signer.PublicKey(), ssh.UserCert, []string{"tester"})
+	certified, err := wrapCertificate(certificate, signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := StoredKeyPrefix + "certified"
+	server := startServer(t, func(server *testServer) {
+		server.authorized = []ssh.PublicKey{certified.PublicKey()}
+	})
+	harness := dial(t, server, func(config *Config) {
+		config.IdentityFiles = []string{ref}
+		config.StoredKey = func(ref string) ([]byte, error) { return append([]byte(nil), private...), nil }
+		config.StoredCertificate = func(ref string) ([]byte, error) {
+			return []byte(CertificateLine(certificate)), nil
+		}
+	})
+	harness.phase(PhaseHostKeyPrompt)
+	harness.conn.TrustHostKey(false)
+	status := harness.until("the stored certificate to authenticate", func(status Status) bool {
+		return status.Phase == PhaseConnected || status.Phase == PhaseFailed
+	})
+	if status.Phase != PhaseConnected || status.Method != "publickey" {
+		t.Fatalf("stored certificate authentication failed: %+v", status)
+	}
+}
+
+// TestStoredCertificateMismatchIsSkipped proves a stored certificate that
+// belongs to another key is reported, not replaced by the bare key.
+func TestStoredCertificateMismatchIsSkipped(t *testing.T) {
+	identity, signer := writeKey(t, t.TempDir())
+	private, err := os.ReadFile(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := newSigner(t)
+	certificate := certificateFor(t, newSigner(t), other.PublicKey(), ssh.UserCert, []string{"tester"})
+	ref := StoredKeyPrefix + "certified"
+	server := startServer(t, func(server *testServer) {
+		server.authorized = []ssh.PublicKey{signer.PublicKey()} // the bare key would pass
+	})
+	harness := dial(t, server, func(config *Config) {
+		config.IdentityFiles = []string{ref}
+		config.StoredKey = func(ref string) ([]byte, error) { return append([]byte(nil), private...), nil }
+		config.StoredCertificate = func(ref string) ([]byte, error) {
+			return []byte(CertificateLine(certificate)), nil
+		}
+	})
+	harness.phase(PhaseHostKeyPrompt)
+	harness.conn.TrustHostKey(false)
+	status := harness.until("the mismatching stored certificate to be refused", func(status Status) bool {
+		return status.Phase == PhaseFailed
+	})
+	if len(status.Skipped) == 0 {
+		t.Fatal("the mismatching stored certificate was not reported as skipped")
+	}
+}

@@ -851,6 +851,13 @@ type Messages struct {
 	KeyColumnName               string
 	KeyColumnType               string
 	KeyColumnProtection         string
+	KeyColumnCertificate        string
+	KeyCertificate              string
+	KeyCertificateTitle         string
+	KeyCertificatePresent       string
+	KeyCertificateAttachedFmt   string
+	KeyCertificateInvalid       string
+	KeyCertificateIgnoredFmt    string
 	KeyColumnFingerprint        string
 	KeyEmpty                    string
 	KeyEmptySub                 string

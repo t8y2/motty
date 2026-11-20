@@ -24,10 +24,14 @@ import (
 // saved state.
 
 // storedKey is what the vault holds under a reference: the name the user gave
-// the key and the text of the key file.
+// the key, the text of the key file, and the user certificate that goes with it,
+// when it has one. The certificate is the authorized_keys line of the -cert.pub
+// file OpenSSH pairs with a key; keeping it beside the key is what lets the key
+// still sign in with its certificate after the files it came from are gone.
 type storedKey struct {
-	Name string `json:"name"`
-	Key  string `json:"key"`
+	Name        string `json:"name"`
+	Key         string `json:"key"`
+	Certificate string `json:"certificate,omitempty"`
 }
 
 // storedKeySource is the part of the vault that lists and reads stored keys.
@@ -44,8 +48,8 @@ func newStoredKeyRef() (string, error) {
 	return sshconn.StoredKeyPrefix + hex.EncodeToString(random[:]), nil
 }
 
-func marshalStoredKey(name string, data []byte) string {
-	encoded, _ := json.Marshal(storedKey{Name: name, Key: string(data)}) // two strings cannot fail to encode
+func marshalStoredKey(key storedKey) string {
+	encoded, _ := json.Marshal(key) // strings cannot fail to encode
 	return string(encoded)
 }
 
@@ -59,18 +63,23 @@ func unmarshalStoredKey(value string) (storedKey, error) {
 
 // readStoredKey reads the private key a reference names from the vault.
 func readStoredKey(source passwordReader, ref string) ([]byte, error) {
-	value, found, err := source.Get(ref)
-	switch {
-	case err != nil:
-		return nil, err
-	case !found:
-		return nil, errors.New("it is no longer saved in Motty")
-	}
-	key, err := unmarshalStoredKey(value)
+	key, err := readStoredKeyRecord(source, ref)
 	if err != nil {
 		return nil, err
 	}
 	return []byte(key.Key), nil
+}
+
+// readStoredKeyRecord reads what the vault holds under a stored key reference.
+func readStoredKeyRecord(source passwordReader, ref string) (storedKey, error) {
+	value, found, err := source.Get(ref)
+	switch {
+	case err != nil:
+		return storedKey{}, err
+	case !found:
+		return storedKey{}, errors.New("it is no longer saved in Motty")
+	}
+	return unmarshalStoredKey(value)
 }
 
 // storedKeyReader is how a connection reads the private key a reference names.
@@ -80,9 +89,39 @@ func storedKeyReader(source passwordReader) func(string) ([]byte, error) {
 	}
 }
 
+// storedCertificateReader is how a connection reads the certificate a stored key
+// carries, if any.
+func storedCertificateReader(source passwordReader) func(string) ([]byte, error) {
+	return func(ref string) ([]byte, error) {
+		key, err := readStoredKeyRecord(source, ref)
+		if err != nil {
+			return nil, err
+		}
+		if key.Certificate == "" {
+			return nil, nil
+		}
+		return []byte(key.Certificate), nil
+	}
+}
+
+// storeCertificate replaces the certificate kept with the stored key ref. The
+// caller has already checked that it belongs to the key.
+func (state *State) storeCertificate(ref, certificate string) error {
+	vaultFile := state.secrets.vault
+	if vaultFile == nil {
+		return vault.ErrUnavailable
+	}
+	key, err := readStoredKeyRecord(vaultFile, ref)
+	if err != nil {
+		return err
+	}
+	key.Certificate = certificate
+	return vaultFile.Set(ref, marshalStoredKey(key))
+}
+
 // inspectStoredIdentity describes one stored key like inspectIdentity does a file.
 func inspectStoredIdentity(id uint32, ref string, key storedKey, messages keyMessages) identityRecord {
-	record := identityRecord{ID: id, Path: ref, Name: key.Name, Stored: true}
+	record := identityRecord{ID: id, Path: ref, Name: key.Name, Stored: true, Certificate: key.Certificate != ""}
 	info, err := keyidentity.InspectData(ref, []byte(key.Key))
 	if err != nil {
 		record.Error = err.Error()
@@ -186,7 +225,7 @@ func (state *State) addStoredKey(name string, data []byte, onAdded func(identity
 		})
 		return ""
 	}
-	record, err := state.sealStoredKey(name, data, nil)
+	record, err := state.sealStoredKey(storedKey{Name: name, Key: string(data)}, nil)
 	if err != nil {
 		return fmt.Sprintf(m.VaultSaveFailedFmt, state.vaultErrorText(err))
 	}
@@ -197,12 +236,13 @@ func (state *State) addStoredKey(name string, data []byte, onAdded func(identity
 	return ""
 }
 
-// sealStoredKey keeps a private key in the vault under a new reference and
-// returns its record, numbered but not yet listed. A key that was listed as a
-// file passes it as replaces: the record takes its ID, so what was selected
-// stays selected, and the passphrase saved for the file's path moves to the new
-// reference in the same write, so the key does not ask for it again.
-func (state *State) sealStoredKey(name string, data []byte, replaces *identityRecord) (identityRecord, error) {
+// sealStoredKey keeps a private key and its certificate, when it has one, in the
+// vault under a new reference and returns its record, numbered but not yet
+// listed. A key that was listed as a file passes it as replaces: the record
+// takes its ID, so what was selected stays selected, and the passphrase saved
+// for the file's path moves to the new reference in the same write, so the key
+// does not ask for it again.
+func (state *State) sealStoredKey(key storedKey, replaces *identityRecord) (identityRecord, error) {
 	vaultFile := state.secrets.vault
 	if vaultFile == nil {
 		return identityRecord{}, vault.ErrUnavailable
@@ -211,7 +251,7 @@ func (state *State) sealStoredKey(name string, data []byte, replaces *identityRe
 	if err != nil {
 		return identityRecord{}, err
 	}
-	changes := []vault.Change{{Name: ref, Value: marshalStoredKey(name, data)}}
+	changes := []vault.Change{{Name: ref, Value: marshalStoredKey(key)}}
 	id := state.nextIdentityID
 	if replaces != nil {
 		id = replaces.ID
@@ -229,7 +269,7 @@ func (state *State) sealStoredKey(name string, data []byte, replaces *identityRe
 	if replaces == nil {
 		state.nextIdentityID++
 	}
-	return inspectStoredIdentity(id, ref, storedKey{Name: name, Key: string(data)}, state.keyMessages()), nil
+	return inspectStoredIdentity(id, ref, key, state.keyMessages()), nil
 }
 
 // defaultKeyName names a key whose adder gave it no name: its type and the start

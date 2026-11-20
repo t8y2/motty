@@ -434,6 +434,7 @@ func (catalog *hostCatalog) sshConfigFor(host, proxyHost Host, env connectEnv) (
 	}
 	if env.Passwords != nil {
 		config.StoredKey = storedKeyReader(env.Passwords)
+		config.StoredCertificate = storedCertificateReader(env.Passwords)
 	}
 	targetEndpoint := sshconn.Endpoint{Host: host.Address, Port: host.Port, User: catalog.login(host)}
 	config.Authentication[targetEndpoint] = catalog.authenticationFor(host)

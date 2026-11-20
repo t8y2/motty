@@ -177,6 +177,7 @@ var (
 	hitKeysExport      = tree.ID(keysHits, "keys-export")
 	hitKeysRemove      = tree.ID(keysHits, "keys-remove")
 	hitKeysPassphrase  = tree.ID(keysHits, "keys-passphrase")
+	hitKeysCertificate = tree.ID(keysHits, "keys-certificate")
 	hitKeysScrollThumb = tree.ID(keysHits, "keys-scroll-thumb")
 	hitKeyRowList      = tree.Sub(keysHits, tree.Name("key-row"))
 )
@@ -540,8 +541,8 @@ type State struct {
 	keysRows               keyTableSource
 	forwardColumns         [5]components.TableColumn
 	forwardHeadings        [5]string
-	keysColumns            [4]components.TableColumn
-	keysHeadings           [4]string
+	keysColumns            [5]components.TableColumn
+	keysHeadings           [5]string
 	proxyColumns           [6]components.TableColumn
 	proxyHeadings          [6]string
 	proxyFilteredIndices   []int
