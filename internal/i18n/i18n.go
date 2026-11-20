@@ -1236,6 +1236,14 @@ type Messages struct {
 	SFTPEditConflictDescription string
 	SFTPEditReloadConfirm       string
 
+	// SFTPDownloadConflictTitle and its descriptions ask what a download whose
+	// local name is taken should do. The count variant names a whole selection.
+	SFTPDownloadConflictTitle          string
+	SFTPDownloadConflictDescriptionFmt string
+	SFTPDownloadConflictCountFmt       string
+	SFTPDownloadReplace                string
+	SFTPDownloadKeepBoth               string
+
 	// Opt-in remote resource monitoring in the terminal info bar.
 	StatsMeasuring   string
 	StatsUnsupported string

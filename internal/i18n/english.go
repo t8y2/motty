@@ -1084,6 +1084,13 @@ var EnglishMessages = Messages{
 	SFTPOverwriteTitle:          "Replace Existing Destination?",
 	SFTPOverwriteDescriptionFmt: "%s already exists. Replace it (a matching partial transfer is resumed), or skip what exists and copy only what is missing.",
 	SFTPOverwriteConfirm:        "Replace / Resume",
+
+	SFTPDownloadConflictTitle:          "Download Conflict",
+	SFTPDownloadConflictDescriptionFmt: "%s already exists in the destination folder. Replace it, or keep both copies?",
+	SFTPDownloadConflictCountFmt:       "%d items already exist in the destination folder. Replace them, or keep both copies?",
+	SFTPDownloadReplace:                "Replace",
+	SFTPDownloadKeepBoth:               "Keep Both",
+
 	SFTPNewDirectoryTitle:       "New Folder",
 	SFTPDirectoryName:           "Folder name",
 	SFTPCreateDirectory:         "Create",

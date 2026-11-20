@@ -1084,6 +1084,13 @@ var ChineseMessages = Messages{
 	SFTPOverwriteTitle:          "替换已有目标？",
 	SFTPOverwriteDescriptionFmt: "%s 已存在。可以替换它（匹配的部分传输会续传），或跳过已有内容、只复制缺少的部分。",
 	SFTPOverwriteConfirm:        "替换 / 续传",
+
+	SFTPDownloadConflictTitle:          "下载冲突",
+	SFTPDownloadConflictDescriptionFmt: "%s 已存在于下载目录。要覆盖它，还是保留两者？",
+	SFTPDownloadConflictCountFmt:       "下载目录中已有 %d 个项目存在。要覆盖它们，还是保留两者？",
+	SFTPDownloadReplace:                "覆盖",
+	SFTPDownloadKeepBoth:               "保留两者",
+
 	SFTPNewDirectoryTitle:       "新建文件夹",
 	SFTPDirectoryName:           "文件夹名称",
 	SFTPCreateDirectory:         "创建",
