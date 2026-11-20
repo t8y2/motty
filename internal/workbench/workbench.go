@@ -443,8 +443,12 @@ type State struct {
 	sftpWindows map[uint32]*sftpWindow
 	// sftpTabs are the file managers hosted in the main window, in tab order.
 	// They are runtime-only and never enter the persisted workspace deck.
-	sftpTabs         []*sftpWindow
-	activeSFTPTab    uint32
+	sftpTabs      []*sftpWindow
+	activeSFTPTab uint32
+	// settingsTab is the settings page's tab on the window bar. It is open from
+	// the moment settings are opened until the tab is closed, and whenever the
+	// settings section is in front it is open.
+	settingsTab      bool
 	fileTabOptions   []components.TabOption
 	windowTabOptions []components.TabOption
 	fileTabStrip     tabStrip
@@ -2103,6 +2107,10 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		}
 	case id.Scope() == fileTabList:
 		state.activateSFTPTab(uint32(item(id)))
+	case id == hitSettingsTabClose:
+		state.closeSettingsTab()
+	case id == hitSettingsTab:
+		state.activateSettingsTab()
 	}
 }
 
@@ -2225,6 +2233,10 @@ func (state *State) closeActivePane() {
 // terminal on show (the host list, with or without tabs open behind it) has
 // nothing of that kind to close, so the window closes instead.
 func (state *State) closeActivePaneOrTab() {
+	if state.settingsTabActive() {
+		state.closeSettingsTab()
+		return
+	}
 	if state.activeSection == sectionSFTP {
 		if manager := state.activeSFTPWindow(); manager != nil {
 			state.requestCloseSFTPTab(manager)
@@ -3185,19 +3197,21 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		return result
 	}
 	tabScope := event.Target.Scope()
-	if tabScope != hitTabList && tabScope != fileTabList {
+	pageTab := tabScope == fileTabList || event.Target == hitSettingsTab
+	if tabScope != hitTabList && !pageTab {
 		return gfx.EventResult{}
 	}
 	options, orientation := state.tabOptions, components.TabsHorizontal
 	switch {
 	case tabScope == hitTabList && state.tabOrientation == tabsVertical:
 		orientation = components.TabsVertical
-	case tabScope == fileTabList && state.tabOrientation == tabsVertical:
-		options = state.fileTabOptions
+	case pageTab && state.tabOrientation == tabsVertical:
+		state.windowTabOptions = append(state.windowTabOptions[:0], state.fileTabOptions...)
+		options = state.appendSettingsTabOption(state.windowTabOptions)
 	default:
 		state.windowTabOptions = append(state.windowTabOptions[:0], state.tabOptions...)
 		state.windowTabOptions = append(state.windowTabOptions, state.fileTabOptions...)
-		options = state.windowTabOptions
+		options = state.appendSettingsTabOption(state.windowTabOptions)
 	}
 	next, handled := components.TabsKeyDown(
 		event.Target,

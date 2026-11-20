@@ -1397,9 +1397,9 @@ func (state *State) restoreWorkspace(workspace string) {
 	case "snippets":
 		state.activeSection = sectionSnippets
 	case "settings":
-		state.activeSection = sectionSettings
+		state.activeSection, state.settingsTab = sectionSettings, true
 	case "shortcuts":
-		state.activeSection = sectionSettings
+		state.activeSection, state.settingsTab = sectionSettings, true
 		state.settingsCategory = settingsShortcuts
 	default:
 		state.activeSection = sectionHosts

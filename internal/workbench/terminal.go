@@ -2151,7 +2151,7 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 		return result
 	}
 	tabScroll := &state.tabStrip
-	if state.tabOrientation == tabsVertical && len(state.sftpTabs) > 0 &&
+	if state.tabOrientation == tabsVertical && state.fileTabCount() > 0 &&
 		pointInRect(event.X, event.Y, state.fileTabStrip.area) {
 		tabScroll = &state.fileTabStrip
 	}

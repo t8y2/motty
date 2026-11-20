@@ -86,7 +86,7 @@ func (state *State) activateSFTPTabAt(index int) bool {
 
 func (state *State) cycleWindowTabs(delta int) bool {
 	state.workspaceTabs = state.deck.Workspaces(state.workspaceTabs[:0])
-	count := len(state.workspaceTabs) + len(state.sftpTabs)
+	count := len(state.workspaceTabs) + state.fileTabCount()
 	if count < 2 {
 		return false
 	}
@@ -103,6 +103,12 @@ func (state *State) cycleWindowTabs(delta int) bool {
 		if index := state.sftpTabIndex(state.activeSFTPTab); index >= 0 {
 			current = len(state.workspaceTabs) + index
 		}
+	case sectionSettings:
+		if state.settingsTabShown() {
+			current = state.settingsTabIndex()
+			break
+		}
+		fallthrough
 	default:
 		for index, tab := range state.workspaceTabs {
 			if tab.ID == state.deck.ActiveWorkspace() {
@@ -118,6 +124,9 @@ func (state *State) cycleWindowTabs(delta int) bool {
 	if next < len(state.workspaceTabs) {
 		return state.activateTab(next)
 	}
+	if file := next - len(state.workspaceTabs); file >= len(state.sftpTabs) {
+		return state.activateSettingsTab()
+	}
 	return state.activateSFTPTabAt(next - len(state.workspaceTabs))
 }
 
@@ -125,7 +134,7 @@ func (state *State) cycleWindowTabs(delta int) bool {
 // tabs on the tab bar, in the order the bar shows them, then the file tabs.
 func (state *State) topTabCount() int {
 	state.workspaceTabs = state.deck.Workspaces(state.workspaceTabs[:0])
-	return len(state.visualWorkspaceTabs()) + len(state.sftpTabs)
+	return len(state.visualWorkspaceTabs()) + state.fileTabCount()
 }
 
 func (state *State) activateTopTab(index int) bool {
@@ -133,6 +142,9 @@ func (state *State) activateTopTab(index int) bool {
 	tabs := state.visualWorkspaceTabs()
 	if index < len(tabs) {
 		return state.activateTab(index)
+	}
+	if file := index - len(tabs); file == len(state.sftpTabs) && state.settingsTabShown() {
+		return state.activateSettingsTab()
 	}
 	return state.activateSFTPTabAt(index - len(tabs))
 }
