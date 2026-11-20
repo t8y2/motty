@@ -22,6 +22,13 @@ func TestPaintGoldenBookmarkDialog(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			_, w, _, host, localDir := dualSFTPReferenceFixture(t, scale)
 			view := host.windows[0].view
+			// This golden tests the dialog, not which random temporary ancestors
+			// fit in the path bar. Force those ancestors to fold before layout;
+			// normalizing their text afterwards cannot stabilize text geometry.
+			crumbs := w.view.lfolder.crumbs
+			for index := 0; index+1 < len(crumbs); index++ {
+				crumbs[index].label = strings.Repeat("temporary-parent-", 32)
+			}
 			w.session.host.CatalogID = "native-bookmark"
 			w.window.Invalidate()
 			view.Driver().Pump()
