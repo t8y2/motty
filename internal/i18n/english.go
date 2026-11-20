@@ -2646,6 +2646,8 @@ var englishTools = ToolsMessages{
 	ExtEditButton:                   "Edit in the system editor",
 	ExtEditOpenedFmt:                "Opened %s in the system editor. Save it there and it is sent back.",
 	ExtEditSentFmt:                  "Sent %s back to the server.",
+	ExtEditUnsentFmt:                "%s still has changes that did not reach the server.",
+	ExtEditGoneFmt:                  "Could not send %s back: the connection is closed. Your changes are still in the local copy.",
 	ExtEditSendFailedFmt:            "Could not send %s back: %s",
 	ExtEditBadFmt:                   "%s is not UTF-8 text now, so it was not sent back.",
 	ExtEditRefused:                  "This kind of file would be run, not edited. Use the built-in editor.",

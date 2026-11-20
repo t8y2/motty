@@ -990,6 +990,8 @@ type ToolsMessages struct {
 	ExtEditButton                   string
 	ExtEditOpenedFmt                string
 	ExtEditSentFmt                  string
+	ExtEditUnsentFmt                string
+	ExtEditGoneFmt                  string
 	ExtEditSendFailedFmt            string
 	ExtEditBadFmt                   string
 	ExtEditRefused                  string

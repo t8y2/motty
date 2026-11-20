@@ -2646,6 +2646,8 @@ var traditionalTools = ToolsMessages{
 	ExtEditButton:                   "用系統編輯器開啟",
 	ExtEditOpenedFmt:                "已用系統編輯器開啟 %s。在那裡儲存後會自動傳回伺服器。",
 	ExtEditSentFmt:                  "已把 %s 傳回伺服器。",
+	ExtEditUnsentFmt:                "%s 還有尚未傳回伺服器的修改。",
+	ExtEditGoneFmt:                  "無法把 %s 傳回伺服器：連線已關閉。修改還留在這份本機副本裡。",
 	ExtEditSendFailedFmt:            "無法把 %s 傳回伺服器：%s",
 	ExtEditBadFmt:                   "%s 現在不是 UTF-8 文字，沒有傳回伺服器。",
 	ExtEditRefused:                  "這類檔案會被直接執行而不是編輯，請使用內建編輯器。",

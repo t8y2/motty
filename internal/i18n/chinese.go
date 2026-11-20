@@ -2646,6 +2646,8 @@ var chineseTools = ToolsMessages{
 	ExtEditButton:                   "用系统编辑器打开",
 	ExtEditOpenedFmt:                "已用系统编辑器打开 %s。在那里保存后会自动传回服务器。",
 	ExtEditSentFmt:                  "已把 %s 传回服务器。",
+	ExtEditUnsentFmt:                "%s 还有尚未传回服务器的修改。",
+	ExtEditGoneFmt:                  "无法把 %s 传回服务器：连接已关闭。修改还留在这份本地副本里。",
 	ExtEditSendFailedFmt:            "无法把 %s 传回服务器：%s",
 	ExtEditBadFmt:                   "%s 现在不是 UTF-8 文本，没有传回服务器。",
 	ExtEditRefused:                  "这类文件会被直接运行而不是编辑，请使用内置编辑器。",
