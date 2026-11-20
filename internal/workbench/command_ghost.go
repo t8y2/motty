@@ -119,10 +119,12 @@ func (state *State) commandGhostSource(session *Session) (rest string, fromCatal
 	// prompt; the ghost stays out of programs just as the list does (#783). The
 	// prompt text is read only when there is no marker to trust: the integrated
 	// path paints on every frame and must not allocate for it.
+	screenProof := false
 	if !t.inputGuard.active {
 		if _, prompt, ok := t.recorder.LinePrompt(cmdhistory.TermScreen{Term: t.screen}); !ok || cmdhistory.ProgramPrompt(prompt) {
 			return "", false, false
 		}
+		screenProof = state.terminalOwnedByShell(session)
 	}
 	if h.on && state.historyAvailable(session) && !session.host.NoHistory {
 		if rest, ok := cmdhistory.Suggest(state.commandGhostEntries(session), line); ok {
@@ -132,7 +134,7 @@ func (state *State) commandGhostSource(session *Session) (rest string, fromCatal
 			return rest, false, true
 		}
 	}
-	rest, ok = state.staticGhost(session, line)
+	rest, ok = state.staticGhost(session, line, screenProof)
 	return rest, ok, ok
 }
 

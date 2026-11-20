@@ -622,14 +622,10 @@ func validCommit(commit string) bool {
 
 // completionEligible reports whether this session may show completions now.
 // The catalog is public data, but a list still needs a live prompt the client
-// can prove: the shell's own marker (an integrated prompt), or, when an
-// interactive child shell has taken the terminal and the markers are gone, the
-// screen line the recorder read (see completionScreenPrompt).
+// can prove: the shell's own marker (an integrated prompt), or the screen line
+// the recorder read (see completionScreenPrompt).
 func (state *State) completionEligible(session *Session) bool {
-	if session == nil || session.term == nil || session.host.NoHistory {
-		return false
-	}
-	if session.term.suggestionPending != nil || session.term.preedit.Composing {
+	if !state.completionReady(session) {
 		return false
 	}
 	if state.inputGuardAvailable(session) {
@@ -638,16 +634,36 @@ func (state *State) completionEligible(session *Session) bool {
 	return state.completionScreenPrompt(session)
 }
 
-// completionScreenPrompt is the prompt proof left when an integrated shell has
-// handed the terminal to an interactive child that does not run the startup
-// hooks — sudo, su, a nested ssh (#783). No marker will come until the child
-// exits, so the proof is the line the recorder read at the first key of this
-// command: quiet terminal, cursor after a non-empty prompt, echo matching what
-// was typed. A prompt shaped like a line editor's own keeps the list out of
-// programs, which echo and draw a prompt just as a shell does.
+// completionReady holds the eligibility conditions that do not depend on how
+// the prompt is proven. A caller that has already read the screen line can
+// reuse that proof through completionEligibleWithScreenProof instead of making
+// the recorder scan the screen again.
+func (state *State) completionReady(session *Session) bool {
+	if session == nil || session.term == nil || session.host.NoHistory {
+		return false
+	}
+	return session.term.suggestionPending == nil && !session.term.preedit.Composing
+}
+
+// completionEligibleWithScreenProof is completionEligible for a caller that
+// already established the screen prompt for this line.
+func (state *State) completionEligibleWithScreenProof(session *Session, screenProof bool) bool {
+	return state.completionReady(session) && (screenProof || state.inputGuardAvailable(session))
+}
+
+// completionScreenPrompt is the prompt proof for a shell that reports no
+// marker right now: an integrated shell that handed the terminal to an
+// interactive child that does not run the startup hooks (sudo, su, a nested
+// ssh, #783), or a shell the client could never integrate (BusyBox ash on
+// OpenWrt, a dash, a shell behind an unrecognized server, #1157). No marker
+// will come until the shell is back, so the proof is the line the recorder read
+// at the first key of this command: quiet terminal, cursor after a non-empty
+// prompt, echo matching what was typed. A prompt shaped like a line editor's
+// own keeps the list out of programs, which echo and draw a prompt just as a
+// shell does.
 func (state *State) completionScreenPrompt(session *Session) bool {
 	t := session.term
-	if !t.folderIntegrationSeen || t.inputGuard.active || !state.terminalOwnedByShell(session) {
+	if t.inputGuard.active || !state.terminalOwnedByShell(session) {
 		return false
 	}
 	line, prompt, ok := t.recorder.LinePrompt(cmdhistory.TermScreen{Term: t.screen})
@@ -1506,8 +1522,9 @@ func humanRelativeTime(now, t time.Time, m i18n.CompletionMessages) string {
 
 // staticGhost is the inline suggestion the catalog adds when history has none:
 // only when exactly one candidate exists, so the ghost never guesses.
-func (state *State) staticGhost(session *Session, line string) (string, bool) {
-	if strings.TrimSpace(line) == "" || cmdhistory.Secret(line) || !state.completionEligible(session) {
+// screenProof is the proof commandGhostSource already read from the screen.
+func (state *State) staticGhost(session *Session, line string, screenProof bool) (string, bool) {
+	if strings.TrimSpace(line) == "" || cmdhistory.Secret(line) || !state.completionEligibleWithScreenProof(session, screenProof) {
 		return "", false
 	}
 	catalog := state.completionCatalog()
