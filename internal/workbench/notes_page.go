@@ -621,7 +621,7 @@ func (s *State) declareNoteLibrary(c ui.C, n *notesUI, width float32, drawer boo
 			if n.query.String() != "" {
 				message = s.noteText("No matching notes.", "没有匹配的笔记。")
 			}
-			ui.Text(c, message).FontSize(12).Color(s.pal.muted).MarginSides(8, 0, 0, 0)
+			ui.Text(c, message).FontSize(12).Color(s.pal.muted).FillWidth().Ellipsis().MarginSides(8, 0, 0, 0)
 		}
 		ui.Tree(c, &p.tree, len(rows), p.label, p.content).Grow(1).FillWidth().Scrollbars().
 			Label(s.noteText("Scroll notes", "滚动笔记"))
