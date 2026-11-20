@@ -136,6 +136,7 @@ type savedState struct {
 	SFTPPanelWidth          float32             `json:"sftp_panel_width,omitempty"`
 	SFTPWindowOrder         string              `json:"sftp_window_order,omitempty"`
 	SFTPOpenMode            string              `json:"sftp_open_mode,omitempty"`
+	FilePreviewMB           int                 `json:"file_preview_mb,omitempty"`
 	SFTPColumns             string              `json:"sftp_columns,omitempty"`
 	SFTPDownloadDirectory   string              `json:"sftp_download_directory,omitempty"`
 	SFTPTransferFilter      int                 `json:"sftp_transfer_filter,omitempty"`
@@ -606,6 +607,7 @@ func (state *State) snapshot() savedState {
 		SFTPPanelWidth:             state.sftpPanelWidth,
 		SFTPWindowOrder:            state.sftpWindowOrder.String(),
 		SFTPOpenMode:               state.sftpOpenMode.String(),
+		FilePreviewMB:              state.filePreviewMB,
 		SFTPColumns:                state.sftpColumns.String(),
 		SFTPDownloadDirectory:      savedSFTPDownloadDirectory(state.sftpDownloadDirectory),
 		SFTPTransferFilter:         state.transfers.filter,

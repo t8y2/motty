@@ -594,6 +594,15 @@ func prepareFixture() (fixture, error) {
 			return fail(err)
 		}
 	}
+	// A document window's preview bound only shows on a file larger than it, so
+	// a test asks for one instead of the fixture carrying 20 MiB every run.
+	if mib, err := strconv.Atoi(os.Getenv("E2ESSHD_LARGE_TEXT_MIB")); err == nil && mib > 0 {
+		line := []byte("0123456789abcdef\n")
+		data := bytes.Repeat(line, (mib<<20)/len(line)+1)[:mib<<20]
+		if err := os.WriteFile(filepath.Join(sftpRoot, "large-preview.txt"), data, 0o644); err != nil {
+			return fail(err)
+		}
+	}
 	_, clientPrivate, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return fail(err)

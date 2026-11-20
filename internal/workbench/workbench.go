@@ -788,7 +788,11 @@ type State struct {
 	sftpDirectoryTree  bool
 	sftpWindowOrder    sftpWindowOrder
 	sftpOpenMode       sftpOpenMode
-	sftpColumns        sftpColumnPreferences
+	// filePreviewMB bounds what a document window loads, in megabytes. The Files
+	// settings choose it with a stepper that has no upper bound.
+	filePreviewMB   int
+	filePreviewEdit filePreviewEdit
+	sftpColumns     sftpColumnPreferences
 	// sftpTypeIcons is the system icon of each file extension, shared by every
 	// row and every listing. A nil map means none has been asked for yet.
 	sftpTypeIcons map[string]*fileIconSlot
@@ -1180,6 +1184,7 @@ func New(options Options) *State {
 		// read: the same ones a state file that says nothing gets.
 		hostCatalog:           hostCatalog{systemUser: systemLogin(), connectionTimeout: 10 * time.Second, connectionKeepAlive: defaultConnectionKeepAlive},
 		sftpParallel:          DefaultSFTPParallel,
+		filePreviewMB:         defaultFilePreviewMB,
 		sftpColumns:           defaultSFTPColumnPreferences(),
 		sftpDownloadDirectory: defaultDownloadDirectory(),
 		terminalClipboard:     defaultTerminalClipboard,
@@ -1628,6 +1633,11 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	// must not close the field the second press just opened.
 	if state.tabInlineActive() && id != hitTabInline && id != hitTabList.At(int(state.tabInline.workspace)) {
 		state.commitTabInline()
+	}
+	// A press anywhere but on the preview stepper settles the number being
+	// typed there, as the assistant page's stepper does.
+	if state.filePreviewEdit.editing && id != hitSettingsPreviewValue && id != hitSettingsPreviewMinus && id != hitSettingsPreviewPlus {
+		state.commitFilePreviewEdit()
 	}
 	if feedback {
 		state.pressIconMotion(id)
@@ -2595,6 +2605,9 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	// An assistant drawer is painted over the page when the window is too narrow
 	// to dock it. It therefore owns pointer input before a full-page file tab.
 	if result, handled := state.aiPointer(event); handled {
+		return result
+	}
+	if result, handled := state.filePreviewPointer(event); handled {
 		return result
 	}
 	if state.modal == modalNone {

@@ -14,6 +14,7 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
 	"motty/internal/term"
@@ -60,6 +61,9 @@ var (
 	hitSettingsConfigureColumns     = tree.ID(sftpHits, "settings-configure-columns")
 	hitSettingsDownloadDirectory    = tree.ID(sftpHits, "settings-download-directory")
 	hitSettingsDownloadAsk          = tree.ID(sftpHits, "settings-download-ask")
+	hitSettingsPreviewMinus         = tree.ID(sftpHits, "settings-preview-minus")
+	hitSettingsPreviewValue         = tree.ID(sftpHits, "settings-preview-value")
+	hitSettingsPreviewPlus          = tree.ID(sftpHits, "settings-preview-plus")
 )
 
 var (
@@ -68,6 +72,11 @@ var (
 )
 
 const (
+	// The preview stepper: a field wide enough for seven digits between its two
+	// buttons, in a control as wide as the other choice rows.
+	filePreviewValueWidth   = float32(84)
+	filePreviewStepperWidth = float32(180)
+
 	maxBookmarksPerHost = 40
 	maxBookmarks        = 500
 	maxExtractOutput    = 4096
@@ -324,6 +333,102 @@ var (
 
 func (state *State) settingsParallelLabel(count int) string { return strconv.Itoa(count) }
 
+// filePreviewPointer keeps a press on the stepper's field from placing a caret:
+// the whole number is selected so typing replaces it.
+func (state *State) filePreviewPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	if state.modal != modalNone || state.activeSection != sectionSettings || state.settingsCategory != settingsFiles {
+		return gfx.EventResult{}, false
+	}
+	if event.Kind == gfx.PointerDown && event.Target == hitSettingsPreviewValue &&
+		(event.Button == gfx.PointerButtonPrimary || event.Button == gfx.PointerButtonNone) {
+		state.beginFilePreviewEdit()
+		return gfx.EventResult{Focus: hitSettingsPreviewValue, FocusVisible: true, Handled: true, Repaint: true}, true
+	}
+	return gfx.EventResult{}, false
+}
+
+// beginFilePreviewEdit opens the stepper's field for typing, seeded with the
+// stored number and selected whole, so the first digit replaces it.
+func (state *State) beginFilePreviewEdit() {
+	edit := &state.filePreviewEdit
+	if edit.editing {
+		return
+	}
+	edit.input = newFilePreviewInput(strconv.Itoa(state.filePreviewMB))
+	edit.input.SetSelection(text.Range{Start: 0, End: edit.input.RuneCount()})
+	edit.editing = true
+}
+
+// commitFilePreviewEdit stores what was typed in the field, if it is a number,
+// and closes the edit. An empty or malformed value leaves the setting alone.
+func (state *State) commitFilePreviewEdit() {
+	edit := &state.filePreviewEdit
+	if !edit.editing {
+		return
+	}
+	edit.editing = false
+	value := strings.TrimSpace(edit.input.String())
+	edit.input = newFilePreviewInput("")
+	mb, err := strconv.Atoi(value)
+	if err != nil {
+		return
+	}
+	state.setFilePreviewMB(mb)
+}
+
+// setFilePreviewMB stores the chosen size and saves the state file.
+func (state *State) setFilePreviewMB(value int) {
+	value = normalizeFilePreviewMB(value)
+	if value == state.filePreviewMB {
+		return
+	}
+	state.filePreviewMB = value
+	state.save()
+}
+
+// stepFilePreview moves the size by delta, committing a field edit first.
+func (state *State) stepFilePreview(delta int) {
+	state.commitFilePreviewEdit()
+	state.setFilePreviewMB(state.filePreviewMB + delta)
+}
+
+// bindFilePreviewField binds the stepper's handle to the editor the application
+// reads. The editor keeps its address for the state's life.
+func (state *State) bindFilePreviewField() {
+	edit := &state.filePreviewEdit
+	if edit.bound {
+		return
+	}
+	edit.bound = true
+	edit.input.Restrict(previewDigit, 7)
+	edit.field.Bind(&edit.input)
+	edit.field.Alignment = gfx.AlignCenter
+}
+
+// declareFilePreviewField declares the number between the − and + buttons,
+// showing the stored size unless an edit is open.
+func (state *State) declareFilePreviewField(c ui.C) ui.Box {
+	edit := &state.filePreviewEdit
+	state.bindFilePreviewField()
+	focused := false
+	if canvas := c.Canvas(); canvas != nil {
+		focused = canvas.Focused() == hitSettingsPreviewValue
+	}
+	if focused {
+		if !edit.editing {
+			state.beginFilePreviewEdit()
+		}
+	} else if !edit.editing {
+		stored := strconv.Itoa(state.filePreviewMB)
+		if edit.input.String() != stored {
+			edit.input.SetSelection(text.Range{Start: 0, End: edit.input.RuneCount()})
+			edit.input.Insert(stored)
+		}
+	}
+	return ui.TextFieldID(c, hitSettingsPreviewValue, &edit.field, state.messages.Tools.FilesPreviewLimit, "").
+		Size(filePreviewValueWidth, 32)
+}
+
 func (state *State) settingsPathLabel(input bool) string {
 	if input {
 		return state.messages.Tools.FilesPathInput
@@ -367,6 +472,14 @@ func (state *State) paintFilesSettings(page *settingsPage) {
 			settingsChoiceRow(page, m.FilesOpenMode, m.FilesOpenModeDescription, &state.sftpOpenMode, settingsSFTPOpenModeChoices[:], state.settingsSFTPOpenModeLabel,
 				func() { state.save() }, nil)
 			page.toggleRow(m.FilesDirectoryTree, m.FilesDirectoryTreeDescription, state.sftpDirectoryTree, hitSettingsDirectoryTree)
+			mb := state.filePreviewMB
+			page.lineWith(m.FilesPreviewLimit, m.FilesPreviewLimitDescription, filePreviewStepperWidth, func() {
+				ui.Row(page.c).Gap(6).Shrink(0).Items(ui.Center).Children(func() {
+					page.button(hitSettingsPreviewMinus, "−", aiButtonOutline, mb <= minFilePreviewMB)
+					state.declareFilePreviewField(page.c)
+					page.button(hitSettingsPreviewPlus, "+", aiButtonOutline, false)
+				})
+			})
 			settingsChoiceRow(page, m.FilesParallel, "", &state.sftpParallel, settingsParallelChoices[:], state.settingsParallelLabel,
 				func() { state.applySFTPSettings(); state.save() }, nil)
 			page.actionRow(m.FilesColumns, state.sftpFilesColumnsSummary(), false,
@@ -411,6 +524,12 @@ func (state *State) customEditorSettingVisible() bool {
 // clickFilesSettings handles the presses of the Files settings.
 func (state *State) clickFilesSettings(id gfx.ID) bool {
 	switch id {
+	case hitSettingsPreviewMinus:
+		state.stepFilePreview(-1)
+	case hitSettingsPreviewPlus:
+		state.stepFilePreview(1)
+	case hitSettingsPreviewValue:
+		state.beginFilePreviewEdit()
 	case hitSettingsPanelAutoOpen:
 		state.sftpPanelAutoOpen = !state.sftpPanelAutoOpen
 		state.save()
@@ -582,6 +701,7 @@ func (state *State) restoreSFTPSettings(saved savedState) {
 	}
 	state.sftpWindowOrder = sftpWindowOrderFromString(saved.SFTPWindowOrder)
 	state.sftpOpenMode = sftpOpenModeFromString(saved.SFTPOpenMode)
+	state.filePreviewMB = normalizeFilePreviewMB(saved.FilePreviewMB)
 	state.customEditorPath = strings.TrimSpace(saved.CustomEditorPath)
 	if !validCustomEditorPath(state.customEditorPath) {
 		state.customEditorPath = ""

@@ -3,10 +3,13 @@ package workbench
 import (
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/update"
 )
@@ -40,6 +43,60 @@ func (state *State) zoomTerminal(delta float32, reset bool) {
 		state.save()
 	}
 	state.status = fmt.Sprintf(state.messages.Tools.StatusFontSizeFmt, int(state.terminalFontSize))
+}
+
+// The preview size is how many megabytes of a file a document window loads at
+// once. It is chosen with a stepper and has no upper bound; only a value too
+// small to open anything is replaced by the default.
+const (
+	minFilePreviewMB     = 1
+	defaultFilePreviewMB = 20
+)
+
+// normalizeFilePreviewMB makes a saved size a usable one: a value below the
+// minimum is the default, so a damaged state file cannot refuse every file.
+func normalizeFilePreviewMB(value int) int {
+	if value < minFilePreviewMB {
+		return defaultFilePreviewMB
+	}
+	return value
+}
+
+// filePreviewBytes converts the setting to the byte bound a window enforces. A
+// value too large for an int is saturated instead of wrapping negative; the
+// stepper cannot produce one, only a damaged state file could.
+func filePreviewBytes(mb int) int {
+	mb = normalizeFilePreviewMB(mb)
+	if mb > int(^uint(0)>>1)>>20 {
+		return int(^uint(0) >> 1)
+	}
+	return mb << 20
+}
+
+// previewLimitMessage says a file is larger than the window's bound.
+func previewLimitMessage(messages i18n.Messages, mb int) string {
+	return fmt.Sprintf(messages.FileWindow.TooLargeFmt, strconv.Itoa(normalizeFilePreviewMB(mb))+" MB")
+}
+
+// filePreviewEdit is the stepper's field editor: the number is typed here while
+// it has the keyboard, and the stored setting follows when the edit commits.
+type filePreviewEdit struct {
+	input   text.Editor
+	field   ui.Field
+	editing bool
+	bound   bool
+}
+
+// previewDigit accepts the characters the field may hold.
+func previewDigit(r rune) bool { return r >= '0' && r <= '9' }
+
+// newFilePreviewInput is the field's editor, holding value with the digits and
+// length the field accepts.
+func newFilePreviewInput(value string) text.Editor {
+	var editor text.Editor
+	editor.Restrict(previewDigit, 7)
+	editor.Insert(value)
+	return editor
 }
 
 func normalizeTerminalScrollback(value int) int {
@@ -733,6 +790,24 @@ func (state *State) settingsNetworkProxyLabel(mode networkProxyMode) string {
 func (state *State) settingsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalNone || state.activeSection != sectionSettings {
 		return gfx.EventResult{}, false
+	}
+	// The preview stepper's field commits on Enter and on leaving the field;
+	// Escape puts the stored number back without changing it.
+	if state.settingsCategory == settingsFiles && state.filePreviewEdit.editing {
+		if event.Target != hitSettingsPreviewValue {
+			state.commitFilePreviewEdit()
+		} else {
+			switch event.Key {
+			case gfx.KeyEnter:
+				state.commitFilePreviewEdit()
+				return gfx.EventResult{Handled: true, Repaint: true}, true
+			case gfx.KeyEscape:
+				state.filePreviewEdit.editing = false
+				return gfx.EventResult{Handled: true, Repaint: true}, true
+			case gfx.KeyTab:
+				state.commitFilePreviewEdit()
+			}
+		}
 	}
 	if event.Target == hitSettingsLocalShell && localShellSettingVisible() && !state.localShellMenu.open && (event.Key == gfx.KeyDown || event.Key == gfx.KeyUp) {
 		state.refreshLocalShells()

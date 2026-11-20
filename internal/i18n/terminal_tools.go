@@ -446,6 +446,8 @@ type ToolsMessages struct {
 	FilesPanelAutoOpenDescription   string
 	FilesDirectoryTree              string
 	FilesDirectoryTreeDescription   string
+	FilesPreviewLimit               string
+	FilesPreviewLimitDescription    string
 	FilesPanelPosition              string
 	FilesPanelPositionDescription   string
 	FilesPanelLeft, FilesPanelRight string
