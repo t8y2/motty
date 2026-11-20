@@ -500,6 +500,15 @@ func (session *Session) SetClipboard(text string) error {
 	return session.client.SetClipboard(text)
 }
 
+// SetClipboardImage offers a picture from this computer's clipboard as what the
+// remote clipboard holds, replacing its text (see desktop.ImageClipboard).
+func (session *Session) SetClipboardImage(png []byte) error {
+	if !session.opts.Clipboard {
+		return nil
+	}
+	return session.client.SetClipboardImage(png)
+}
+
 // SetClipboardFiles offers files of this computer to the server's clipboard, as a
 // clipboard file transfer (see desktop.FileClipboard).
 func (session *Session) SetClipboardFiles(paths []string) (desktop.FileOffer, error) {

@@ -307,8 +307,9 @@ events, such as a terminal in xrdp, shows only some of them; while the desktop i
 focused the host's input method is disabled — `TextInput.DisableIME` — so the keys
 that switch and feed a method reach the remote, which composes with its own),
 pointer with three
-buttons and horizontal/vertical wheel. Clipboard text and images, and files in
-both directions (CLIPRDR, see "Copying files to the server" and "Copying files from the server"), per host, off
+buttons and horizontal/vertical wheel. Clipboard text and pictures from
+this computer, and files in both directions (CLIPRDR, see "Copying a picture to
+the server", "Copying files to the server" and "Copying files from the server"), per host, off
 by default. Audio output over rdpsnd — the static channel, or the
 AUDIO_PLAYBACK_DVC dynamic channel that Windows 11 opens: the server's 16-bit
 PCM, mono or stereo, played on this computer's default output device. The
@@ -400,6 +401,24 @@ counted in the notice. Characters Windows forbids in a name (`\ : * ? " < > |` a
 control characters) become `_`. The list is made on a goroutine of its own, since
 it walks folders; a second copy made meanwhile replaces a waiting one.
 
+### Copying a picture to the server
+
+A picture on this computer's clipboard — a screenshot, one copied from a browser
+or a viewer — pastes on the server the way `mstsc` carries it (MS-RDPECLIP, a
+`CF_DIB` image): copy it here, then press that application's paste shortcut in the
+remote window, or use its own Paste command. Motty reads the system clipboard when
+the remote is about to be pasted into — the pointer pressed in the picture or a
+paste chord typed — and announces the picture when the clipboard holds one and no
+text, so an application that takes pictures gets the image and one that takes only
+text finds nothing. The PNG is turned into a DIB when the server's application asks
+for it, and the same picture is not announced again by every click. Text or files
+copied afterwards replace the picture on the remote clipboard, and copying the
+same picture again offers it again. The host's clipboard sharing must be on.
+
+The picture is read as a PNG of at most 32 MiB (`app.MaxClipboardImageBytes`); a
+larger one is not offered. A picture copied on the server does not come back to
+this computer.
+
 ### Copying files from the server
 
 Files copied on the server come back through the same protocol: the server
@@ -485,11 +504,15 @@ and with raw NTLM (`TestLiveCredSSPTokenLegs`, `MOTTY_RDP_NLA_ADDR`,
 `MOTTY_RDP_NLA_USER`, `MOTTY_RDP_NLA_PASSWORD`). The shadow server cannot carry
 the rest of the session — it answers the network auto-detect PDU with
 `unsupported security flags` — so the full desktop on Ubuntu was not retested.
+On the **Windows 11 test VM** (`tools/winenv`), with clipboard sharing on: a picture
+copied on this computer reached the session's clipboard (`Clipboard.GetImage`
+returned the same 320x200 picture, corner pixels included) and pasted into the
+remote Paint, shown in a capture of the session.
 The workbench's certificate question (new, trusted, changed, rejected) is
 covered by a unit test with a fake server. Not exercised: a domain-joined server,
 Windows Server editions, Windows 10, an RD Gateway, Kerberos, a real window,
 physical keyboards and input-method composition, the macOS and Linux builds of the
-window, resizing, the image clipboard against a real server, a real Windows or
+window, resizing, a picture copied on the server arriving here, a real Windows or
 Linux desktop pasting the file list the other way, reconnect after a
 network loss.
 The console session switch was not exercised either: it needs a Windows host with

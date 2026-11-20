@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"math"
 	"slices"
@@ -70,9 +71,13 @@ type desktopView struct {
 	buttons  desktop.Buttons
 	// held is the keys pressed on the remote side and not yet released, so a
 	// release is sent only for a press that was.
-	held     []heldKey
-	wheel    gfx.Point
-	sentClip string
+	held  []heldKey
+	wheel gfx.Point
+	// sentClip is the text this side last gave the remote clipboard and sentImage
+	// the picture: an unchanged clipboard is not offered again, and whichever
+	// format is offered replaces the other one on the remote side.
+	sentClip  string
+	sentImage imageDigest
 	// files is the transfer of files from this computer to the remote clipboard.
 	files desktopFiles
 	// chromeless is the host's choice to show only the picture: no bar above it
@@ -106,6 +111,10 @@ type desktopView struct {
 	pendingSince   time.Duration
 	settling       bool
 }
+
+// imageDigest identifies the picture a desktop's clipboard was last given, so the
+// same one is not offered by every click; the zero value says none was.
+type imageDigest [sha256.Size]byte
 
 // desktopTarget is the desktop a pane wants of a server that follows it: as
 // many pixels as the pane has, and the scale of the display they are on.
@@ -509,7 +518,8 @@ func (state *State) offerClipboard() {
 }
 
 // syncClipboard gives the remote the local clipboard if it changed since the
-// last time, for a host that shares it.
+// last time, for a host that shares it: its files, or its text, or the picture a
+// clipboard with no words holds.
 func (state *State) syncClipboard(view *desktopView) {
 	if !view.clipboard || view.ended {
 		return
@@ -517,13 +527,53 @@ func (state *State) syncClipboard(view *desktopView) {
 	if view.files.remote != nil && state.syncClipboardFiles(view) {
 		return
 	}
-	text, err := state.options.ClipboardText()
-	if err != nil || text == "" || text == view.sentClip {
+	if text, err := state.options.ClipboardText(); err == nil && text != "" {
+		if text == view.sentClip {
+			return
+		}
+		view.sentClip = text
+		view.sentImage = imageDigest{}
+		view.files.dropped = false
+		_ = view.session.SetClipboard(text)
 		return
 	}
-	view.sentClip = text
+	// The clipboard holds no words, and some systems answer a text request on a
+	// picture with an error. A picture is not an empty clipboard on a host that
+	// takes one: offer it, as a paste in a terminal gives the shell a path to it.
+	state.syncClipboardImage(view)
+}
+
+// syncClipboardImage offers the picture on the system clipboard when it is what
+// the clipboard holds. A host whose protocol carries only text (VNC) is never
+// asked for it.
+func (state *State) syncClipboardImage(view *desktopView) {
+	clipboard, ok := view.session.(desktop.ImageClipboard)
+	if !ok {
+		return
+	}
+	png, digest, ok := state.clipboardImage()
+	if !ok {
+		view.sentImage = imageDigest{}
+		return
+	}
+	if digest == view.sentImage {
+		return
+	}
+	view.sentImage = digest
+	// The picture replaces what the remote clipboard held, not only the words
+	// here: text it still had is not what was copied any more.
+	view.sentClip = ""
 	view.files.dropped = false
-	_ = view.session.SetClipboard(text)
+	_ = clipboard.SetClipboardImage(png)
+}
+
+// clipboardImage reads the picture on the system clipboard, if one is there.
+func (state *State) clipboardImage() (png []byte, digest imageDigest, ok bool) {
+	png, err := state.options.ClipboardImagePNG()
+	if err != nil || len(png) == 0 {
+		return nil, imageDigest{}, false
+	}
+	return png, imageDigest(sha256.Sum256(png)), true
 }
 
 // heldKey is a key the remote side has down: the local key that is holding it

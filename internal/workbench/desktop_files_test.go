@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -28,6 +29,7 @@ type fileDesktop struct {
 	typed    []string
 	keys     []desktop.KeyEvent
 	offers   [][]string
+	images   [][]byte
 	offer    desktop.FileOffer
 	received []desktop.ReceivedFiles
 	err      error
@@ -56,6 +58,13 @@ func (s *fileDesktop) SetClipboardFiles(paths []string) (desktop.FileOffer, erro
 func (s *fileDesktop) SetClipboard(text string) error {
 	s.mu.Lock()
 	s.texts = append(s.texts, text)
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *fileDesktop) SetClipboardImage(png []byte) error {
+	s.mu.Lock()
+	s.images = append(s.images, append([]byte(nil), png...))
 	s.mu.Unlock()
 	return nil
 }
@@ -111,6 +120,12 @@ func (s *fileDesktop) offered() [][]string {
 	return append([][]string(nil), s.offers...)
 }
 
+func (s *fileDesktop) offeredImages() [][]byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([][]byte(nil), s.images...)
+}
+
 // fileDesktopState is a window with one desktop host open on remote, in front.
 // Only the clipboard options of what it is given are used.
 func fileDesktopState(t *testing.T, remote desktop.Session, clipboard bool, options Options) (*State, *Session) {
@@ -123,6 +138,9 @@ func fileDesktopState(t *testing.T, remote desktop.Session, clipboard bool, opti
 	}
 	if options.ClipboardText != nil {
 		state.options.ClipboardText = options.ClipboardText
+	}
+	if options.ClipboardImagePNG != nil {
+		state.options.ClipboardImagePNG = options.ClipboardImagePNG
 	}
 	if options.SetClipboardFiles != nil {
 		state.options.SetClipboardFiles = options.SetClipboardFiles
@@ -491,6 +509,40 @@ func TestDroppedFilesStayTheRemoteClipboardUntilSomethingNewIsCopied(t *testing.
 	}
 	if session.desk.files.dropped {
 		t.Fatal("the drop is still the remote clipboard after something new was copied")
+	}
+}
+
+// A picture copied before files were dropped is not what a click offers over
+// them: the drop stays the remote clipboard until a new picture is copied.
+func TestDroppedFilesStayTheRemoteClipboardOverAnOlderPicture(t *testing.T) {
+	remote := newFileDesktop()
+	remote.offer = desktop.FileOffer{Files: 1}
+	picture := redSquarePNG(t)
+	current := picture
+	state, session := fileDesktopState(t, remote, true, Options{
+		ClipboardFiles:    func() ([]string, error) { return nil, app.ErrNoFiles },
+		ClipboardText:     func() (string, error) { return "", nil },
+		ClipboardImagePNG: func() ([]byte, error) { return current, nil },
+	})
+	dropped := copiedFiles(t, "dropped.txt")
+	x, y := dropPoint(t, state, session)
+	state.FileDrop(gfx.FileDropEvent{Phase: gfx.FileDropDrop, X: x, Y: y, Paths: dropped})
+	waitForOffer(t, remote)
+	waitUntil(t, state, "the drop to be reported", func() bool { return session.desk.files.dropped })
+
+	// Clicking in the remote offers nothing: the clipboard's picture is what was
+	// copied before the drop.
+	state.syncClipboard(session.desk)
+	if images := remote.offeredImages(); len(images) != 0 {
+		t.Fatalf("a click offered the picture copied before the drop: %d pictures", len(images))
+	}
+
+	// A picture copied since is news, and replaces the dropped files.
+	current = append([]byte(nil), picture...)
+	current[len(current)-1] ^= 0xFF
+	state.syncClipboard(session.desk)
+	if images := remote.offeredImages(); len(images) != 1 || !bytes.Equal(images[0], current) {
+		t.Fatalf("the new picture was not offered: %d pictures", len(images))
 	}
 }
 
