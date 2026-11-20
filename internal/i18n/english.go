@@ -236,7 +236,7 @@ var EnglishMessages = Messages{
 	TrayTooltipFmt:                       "Motty %s (%d open)",
 	TrayTooltipEmpty:                     "Motty %s",
 	TrayHintTitle:                        "Motty is still running",
-	TrayHintBody:                         "Closing the window keeps the sessions connected. The tray icon reopens it, or quits from there.",
+	TrayHintBody:                         "Closing the window keeps the app running in the background with sessions connected. Reopen it from the tray icon, or by starting the app again.",
 
 	SettingsTitle:                          "Settings",
 	SettingsDescription:                    "Choose how Motty looks and how terminal input behaves.",
@@ -2290,6 +2290,8 @@ var englishTools = ToolsMessages{
 	LaunchXshellEmptyFmt:            "%s has no SSH or Telnet session to open.",
 	GeneralLogin:                    "Start at login",
 	GeneralLoginDescription:         "Start Motty in the background after you sign in.",
+	GeneralTrayIcon:                 "Show system tray icon",
+	GeneralTrayIconDescription:      "When off, the tray icon is hidden but the app keeps running in the background; start the app again to bring the window back.",
 	GeneralClose:                    "Closing the window",
 	GeneralCloseDescription:         "After the last window closes, keep running in the tray or quit.",
 	GeneralCloseTray:                "Stay in tray",

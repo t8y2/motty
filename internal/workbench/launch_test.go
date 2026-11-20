@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"errors"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync/atomic"
@@ -437,6 +438,230 @@ func TestWithoutALoginHookTheSettingIsAbsent(t *testing.T) {
 	_, texts := paintedTexts(state)
 	if contains(texts, state.messages.Tools.GeneralLogin) {
 		t.Fatal("a login row without a way to change it")
+	}
+}
+
+func TestTrayIconSettingTogglesTheIconAndRemembersTheChoice(t *testing.T) {
+	_, options := newWorld(t)
+	var calls []bool
+	options.SetTrayIcon = func(visible bool) { calls = append(calls, visible) }
+	state := newTestState(t, options)
+	openGeneralSettings(state)
+	_, texts := paintedTexts(state)
+	if !contains(texts, state.messages.Tools.GeneralTrayIcon) {
+		t.Fatalf("no tray icon row: %q", texts)
+	}
+	if state.trayIconOff {
+		t.Fatal("the icon starts hidden")
+	}
+	state.Click(hitSettingsTrayIconToggle)
+	if !state.trayIconOff || len(calls) != 1 || calls[0] {
+		t.Fatalf("off %v, calls %v", state.trayIconOff, calls)
+	}
+	if !TrayIconHidden(options.StatePath) {
+		t.Fatal("hiding the icon was not saved for the next start")
+	}
+	state.Close()
+
+	again := newTestState(t, options)
+	if !again.trayIconOff {
+		t.Fatal("the hidden icon came back on the next start")
+	}
+	openGeneralSettings(again)
+	again.Click(hitSettingsTrayIconToggle)
+	if again.trayIconOff || len(calls) != 2 || !calls[1] {
+		t.Fatalf("off %v, calls %v", again.trayIconOff, calls)
+	}
+	if TrayIconHidden(options.StatePath) {
+		t.Fatal("showing the icon again was not saved")
+	}
+}
+
+// A real window saves once at start, so every later toggle goes through the
+// incremental writer rather than the full one. The choice must survive that
+// path in both directions, including hiding the icon again after showing it.
+func TestTrayIconChoiceSurvivesTheIncrementalSavesOfARunningWindow(t *testing.T) {
+	_, options := newWorld(t)
+	options.SetTrayIcon = func(bool) {}
+	state := newTestState(t, options)
+	state.save() // the start-up save every real window makes first
+	if !state.hasSaved {
+		t.Fatal("the start-up save did not land")
+	}
+	openGeneralSettings(state)
+	state.Click(hitSettingsTrayIconToggle)
+	if !TrayIconHidden(options.StatePath) {
+		t.Fatal("hiding the icon after the start-up save was not stored")
+	}
+	state.Click(hitSettingsTrayIconToggle)
+	if TrayIconHidden(options.StatePath) {
+		t.Fatal("showing the icon after the start-up save was not stored")
+	}
+	state.Click(hitSettingsTrayIconToggle)
+	if !TrayIconHidden(options.StatePath) {
+		t.Fatal("hiding the icon again was not stored")
+	}
+}
+
+// The same walk, but the window starts from a store that already hides the
+// icon: the start-up restore, not a fresh default, is what the first toggle
+// changes.
+func TestTrayIconChoiceSurvivesTogglesAfterARestoreThatHidesTheIcon(t *testing.T) {
+	_, options := newWorld(t)
+	options.SetTrayIcon = func(bool) {}
+	first := newTestState(t, options)
+	openGeneralSettings(first)
+	first.Click(hitSettingsTrayIconToggle)
+	if !TrayIconHidden(options.StatePath) {
+		t.Fatal("hiding the icon was not stored")
+	}
+	first.Close()
+
+	state := newTestState(t, options)
+	if !state.trayIconOff {
+		t.Fatal("the restore did not read the hidden icon")
+	}
+	state.save() // the start-up save every real window makes first
+	openGeneralSettings(state)
+	state.Click(hitSettingsTrayIconToggle)
+	if TrayIconHidden(options.StatePath) {
+		t.Fatal("showing the icon after a restoring start was not stored")
+	}
+	state.Click(hitSettingsTrayIconToggle)
+	if !TrayIconHidden(options.StatePath) {
+		t.Fatal("hiding the icon again after a restoring start was not stored")
+	}
+}
+
+// Every committed save bumps the store's data version, and the assistant hub
+// answers that by reloading the settings of every window — the one that saved
+// included. That reload reads the store afresh and clears hasSaved, so the next
+// save is a full one. The tray choice must survive both the reload and the full
+// save that follows it, in each direction.
+func TestTrayIconChoiceSurvivesTheSettingsReloadThatFollowsASave(t *testing.T) {
+	_, options := newWorld(t)
+	options.SetTrayIcon = func(bool) {}
+	state := newTestState(t, options)
+	state.save()
+	openGeneralSettings(state)
+
+	state.Click(hitSettingsTrayIconToggle) // hide
+	if !TrayIconHidden(options.StatePath) {
+		t.Fatal("hiding the icon was not stored")
+	}
+	if err := state.reloadSettings(); err != nil {
+		t.Fatalf("settings reload: %v", err)
+	}
+	if !state.trayIconOff {
+		t.Fatal("the settings reload after hiding the icon brought it back")
+	}
+	state.save() // the full save the cleared hasSaved now makes
+	if !TrayIconHidden(options.StatePath) {
+		t.Fatal("the full save after the reload dropped the hidden icon")
+	}
+
+	state.Click(hitSettingsTrayIconToggle) // show
+	if TrayIconHidden(options.StatePath) {
+		t.Fatal("showing the icon was not stored")
+	}
+	if err := state.reloadSettings(); err != nil {
+		t.Fatalf("settings reload: %v", err)
+	}
+	if state.trayIconOff {
+		t.Fatal("the settings reload after showing the icon hid it again")
+	}
+	state.save()
+	if TrayIconHidden(options.StatePath) {
+		t.Fatal("the full save after the reload hid the icon again")
+	}
+}
+
+func TestWithoutATrayHookTheSettingIsAbsent(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	openGeneralSettings(state)
+	_, texts := paintedTexts(state)
+	if contains(texts, state.messages.Tools.GeneralTrayIcon) {
+		t.Fatal("a tray icon row without a way to change it")
+	}
+}
+
+func TestTrayIconHiddenReadsTheSavedChoiceAndDefaultsToShow(t *testing.T) {
+	_, options := newWorld(t)
+	if TrayIconHidden(options.StatePath) {
+		t.Fatal("a fresh state hides the icon")
+	}
+	if TrayIconHidden(filepath.Join(t.TempDir(), "absent.db")) {
+		t.Fatal("a store that cannot be read hides the icon")
+	}
+}
+
+// Both close-action buttons stay on the page and stay free whether the icon is
+// up or hidden: hiding the icon no longer forces quitting, because closing can
+// keep the application running in the background and a relaunch brings the
+// window back. Choosing the tray while the icon is hidden leaves the icon off.
+func TestCloseActionIsFreeWhetherOrNotTheIconIsShown(t *testing.T) {
+	_, options := newWorld(t)
+	icon := true
+	var calls []bool
+	options.SetTrayIcon = func(visible bool) { icon = visible; calls = append(calls, visible) }
+	options.StatusArea = func() bool { return icon }
+	state := newTestState(t, options)
+	openGeneralSettings(state)
+	_, texts := paintedTexts(state)
+	if !contains(texts, state.messages.Tools.GeneralClose) {
+		t.Fatalf("no close row with the icon up: %q", texts)
+	}
+	clickSettingsChoice(t, state, state.messages.Tools.GeneralCloseTray)
+	if !state.StaysInTray() {
+		t.Fatal("choosing the tray with the icon up did not stick")
+	}
+
+	state.Click(hitSettingsTrayIconToggle) // hide the icon
+	if !state.trayIconOff {
+		t.Fatal("the icon was not hidden")
+	}
+	if !state.StaysInTray() {
+		t.Fatal("hiding the icon forced closing to quit")
+	}
+	_, texts = paintedTexts(state)
+	if !contains(texts, state.messages.Tools.GeneralClose) {
+		t.Fatal("the close row vanished when the icon was hidden")
+	}
+	if !contains(texts, state.messages.Tools.GeneralCloseTray) || !contains(texts, state.messages.Tools.GeneralCloseQuit) {
+		t.Fatalf("both close buttons must stay visible: %q", texts)
+	}
+
+	// The choice stays free with the icon hidden, and picking either button
+	// leaves the icon as it is.
+	before := len(calls)
+	clickSettingsChoice(t, state, state.messages.Tools.GeneralCloseQuit)
+	if state.StaysInTray() {
+		t.Fatal("choosing quit with the icon hidden did not stick")
+	}
+	clickSettingsChoice(t, state, state.messages.Tools.GeneralCloseTray)
+	if !state.StaysInTray() {
+		t.Fatal("choosing the tray with the icon hidden did not stick")
+	}
+	if !state.trayIconOff || len(calls) != before {
+		t.Fatalf("choosing a close action changed the icon: off %v calls %v", state.trayIconOff, calls)
+	}
+}
+
+// A hidden icon and a tray close preference coexist: closing keeps the
+// application in the background and a relaunch brings the window back, so the
+// restore must not overwrite the user's close choice.
+func TestRestoringAHiddenIconKeepsTheClosePreference(t *testing.T) {
+	_, options := newWorld(t)
+	options.SetTrayIcon = func(bool) {}
+	if err := saveState(options.StatePath, savedState{Hosts: sampleHosts, TrayIconOff: true, CloseAction: closeToTray.String()}); err != nil {
+		t.Fatal(err)
+	}
+	state := newTestState(t, options)
+	if !state.trayIconOff {
+		t.Fatal("the restore did not read the hidden icon")
+	}
+	if !state.StaysInTray() {
+		t.Fatal("the restore overwrote the tray close preference")
 	}
 }
 
