@@ -11,6 +11,8 @@ const monitorHostInfoHeight = float32(40)
 const monitorTileHeight = float32(128)
 const monitorLowerTileHeight = float32(128)
 const monitorGap = float32(10)
+const monitorGPUProcessHeaderHeight = float32(18)
+const monitorGPUProcessRowHeight = float32(42)
 
 type monitorColors struct{ background, surface, border, text, muted, track, cpu, memory, disk, network gfx.Color }
 
@@ -85,7 +87,7 @@ func monitorGPUHeight(p *monitorView) float32 {
 			if len(row.processes) == 0 {
 				height += 24
 			} else {
-				height += 18 + float32(len(row.processes))*26
+				height += monitorGPUProcessHeaderHeight + float32(len(row.processes))*monitorGPUProcessRowHeight
 			}
 		}
 		if index < len(p.gpuRows)-1 {
@@ -282,8 +284,10 @@ func (s *State) paintMonitorCores(c *gfx.Canvas, p *monitorView, b, viewport gfx
 // paintMonitorGPUs draws each accelerator as metric bars, then the compute
 // processes the NVIDIA driver reports against that card.
 func (s *State) paintMonitorGPUs(c *gfx.Canvas, p *monitorView, b, viewport gfx.Rect) float32 {
-	colors := s.monitorColors()
+	colors, tools := s.monitorColors(), s.messages.Tools
+	pal := s.pal
 	x, y, w := b.X+10, b.Y, b.Width-20
+	processIndex := 0
 	for index := range p.gpuRows {
 		row := &p.gpuRows[index]
 		if monitorRowVisible(viewport, y, 18) {
@@ -318,16 +322,54 @@ func (s *State) paintMonitorGPUs(c *gfx.Canvas, p *monitorView, b, viewport gfx.
 			}
 			y += 24
 		} else {
-			if monitorRowVisible(viewport, y, 18) {
-				monitorLabel(c, p.processLabel, gfx.Rect{X: x, Y: y, Width: w, Height: 18}, 10, colors.muted, gfx.WeightSemibold)
+			memoryWidth := min(max(w*.28, 56), 88)
+			if monitorRowVisible(viewport, y, monitorGPUProcessHeaderHeight) {
+				monitorLabel(c, p.processLabel, gfx.Rect{X: x, Y: y, Width: w - memoryWidth - 8, Height: monitorGPUProcessHeaderHeight}, 10, colors.muted, gfx.WeightSemibold)
+				monitorRight(c, p.memoryLabel, gfx.Rect{X: x + w - memoryWidth, Y: y, Width: memoryWidth, Height: monitorGPUProcessHeaderHeight}, 10, colors.muted, gfx.WeightRegular)
 			}
-			y += 18
+			y += monitorGPUProcessHeaderHeight
 			for _, process := range row.processes {
-				if monitorRowVisible(viewport, y, 20) {
-					monitorLabel(c, process.label, gfx.Rect{X: x + 10, Y: y, Width: w - 82, Height: 20}, 10, colors.text, gfx.WeightRegular)
-					monitorRight(c, process.memory, gfx.Rect{X: x + w - 70, Y: y, Width: 60, Height: 20}, 10, colors.muted, gfx.WeightMedium)
+				if monitorRowVisible(viewport, y, monitorGPUProcessRowHeight) {
+					memoryWidth := min(max(w*.28, 56), 88)
+					monitorLabel(c, process.name, gfx.Rect{X: x, Y: y, Width: w - memoryWidth - 8, Height: 18}, 10, colors.text, gfx.WeightMedium)
+					monitorRight(c, process.memory, gfx.Rect{X: x + w - memoryWidth, Y: y, Width: memoryWidth, Height: 18}, 10, colors.muted, gfx.WeightMedium)
+
+					pidID := hitMonitorGPUPID.At(processIndex)
+					commandID := hitMonitorGPUCommand.At(processIndex)
+					if process.command == "" {
+						commandID = gfx.ID{}
+					}
+					pidHot := c.Hovered() == pidID || c.Pressed() == pidID
+					commandHot := commandID != (gfx.ID{}) && (c.Hovered() == commandID || c.Pressed() == commandID)
+
+					pidStyle := gfx.TextStyle{Size: 10, Color: colors.text, Weight: gfx.WeightMedium, Mono: true}
+					pidText := "PID " + process.pid
+					pidWidth := min(max(c.TextWidthStyle(pidText, pidStyle)+6, 54), w*.4)
+					pidRect := gfx.Rect{X: x, Y: y + 18, Width: pidWidth, Height: 20}
+					commandRect := gfx.Rect{X: x + pidWidth + 8, Y: y + 18, Width: max(0, w-pidWidth-8), Height: 20}
+					if pidHot {
+						c.Rounded(gfx.Rect{X: pidRect.X - 2, Y: pidRect.Y, Width: pidRect.Width + 4, Height: pidRect.Height}, 4, s.pal.surfaceSoft)
+						pidStyle.Color = colors.cpu
+					}
+					if commandHot {
+						c.Rounded(gfx.Rect{X: commandRect.X - 2, Y: commandRect.Y, Width: commandRect.Width + 2, Height: commandRect.Height}, 4, s.pal.surfaceSoft)
+					}
+					c.LabelAligned(monitorElideStyled(c, pidText, pidStyle, pidRect.Width), pidRect, pidStyle, gfx.AlignStart)
+					c.HitWithOptions(pidID, pidRect, pidText, gfx.HitOptions{Role: gfx.RoleButton, Cursor: gfx.PointerCursorHand, Hint: tools.RemoteProcessCopyPID, Value: process.pid, SkipFocus: true})
+
+					if process.command == "" {
+						monitorLabel(c, "—", commandRect, 10, colors.muted, gfx.WeightRegular)
+					} else {
+						commandStyle := gfx.TextStyle{Size: 10, Color: colors.muted, Weight: gfx.WeightRegular, Mono: true}
+						if commandHot {
+							commandStyle.Color = pal.text
+						}
+						c.LabelAligned(monitorElideStyled(c, process.command, commandStyle, commandRect.Width), commandRect, commandStyle, gfx.AlignStart)
+						c.HitWithOptions(commandID, commandRect, process.command, gfx.HitOptions{Role: gfx.RoleButton, Cursor: gfx.PointerCursorHand, Hint: tools.RemoteProcessCopyCommand, Value: process.command, SkipFocus: true})
+					}
 				}
-				y += 26
+				y += monitorGPUProcessRowHeight
+				processIndex++
 			}
 		}
 		if index < len(p.gpuRows)-1 {
@@ -335,6 +377,28 @@ func (s *State) paintMonitorGPUs(c *gfx.Canvas, p *monitorView, b, viewport gfx.
 		}
 	}
 	return y
+}
+
+// monitorElideStyled shortens a line by its painted style, so a monospace
+// command ends inside its column instead of being measured as proportional.
+func monitorElideStyled(c *gfx.Canvas, value string, style gfx.TextStyle, width float32) string {
+	if width <= 0 || c.TextWidthStyle(value, style) <= width {
+		return value
+	}
+	runes := []rune(value)
+	fits := 0
+	for low, high := 1, len(runes)-1; low <= high; {
+		middle := (low + high) / 2
+		if c.TextWidthStyle(string(runes[:middle])+"…", style) <= width {
+			fits, low = middle, middle+1
+		} else {
+			high = middle - 1
+		}
+	}
+	if fits == 0 {
+		return "…"
+	}
+	return string(runes[:fits]) + "…"
 }
 
 func (s *State) monitorMetricColor(value float64) gfx.Color {

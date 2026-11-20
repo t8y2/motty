@@ -2,7 +2,9 @@ package workbench
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -309,6 +311,8 @@ func TestHardwareShowsGPUMetricsAndProcesses(t *testing.T) {
 		"gop-gpu-nvidia 0, GPU-A, NVIDIA RTX A6000, 100, 47311, 49140, 87, 291, 300, 74\n",
 		"gop-gpu-nvidia-proc GPU-A, 1698741, /opt/conda/envs/gsdti/bin/python, 21754\n",
 		"gop-gpu-nvidia-proc GPU-A, 1708478, python, 6260\n",
+		gpuCommandLine(1698741, "python train.py --lr 0.001"),
+		gpuCommandLine(1708478, "python serve.py --port 8080"),
 		statsReadings[1])
 	state.Click(hitRemoteStats)
 	waitRemoteStats(t, state, func(view *remoteStatsView) bool { return view.state == remoteStatsReady })
@@ -322,7 +326,9 @@ func TestHardwareShowsGPUMetricsAndProcesses(t *testing.T) {
 	joined := strings.Join(texts, "|")
 	for _, want := range []string{
 		"NVIDIA RTX A6000", "46.2 / 48.0 GiB", "100%", "291 / 300 W", "87°C",
-		"python · PID 1698741", "python · PID 1708478",
+		"21.2 GiB", "6.1 GiB",
+		"PID 1698741", "python train.py --lr 0.001",
+		"PID 1708478", "python serve.py --port 8080",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("hardware UI missing %q; texts=%q", want, joined)
@@ -380,4 +386,78 @@ func TestHardwareDoesNotClaimAMDCardHasNoProcesses(t *testing.T) {
 			t.Fatalf("an AMD card claimed %q; texts=%q", absent, joined)
 		}
 	}
+}
+
+func TestHardwareCopiesGPUProcessPIDAndCommandAcrossGPUs(t *testing.T) {
+	state, session := monitorFixture(t)
+	p := &session.stats.panel
+	p.hardwareOpen = true
+	p.sample.GPUs = []remotestats.GPU{
+		{
+			Vendor: "NVIDIA", Index: 0, Name: "GPU A", UUID: "GPU-A",
+			Processes: []remotestats.GPUProcess{
+				{PID: 101, Name: "python", Command: "python train.py --lr 0.01", MemoryUsedBytes: 1 << 30},
+				{PID: 102, Name: "python", Command: "python eval.py", MemoryUsedBytes: 2 << 30},
+			},
+		},
+		{
+			Vendor: "NVIDIA", Index: 1, Name: "GPU B", UUID: "GPU-B",
+			Processes: []remotestats.GPUProcess{
+				{PID: 201, Name: "python", Command: "python serve.py", MemoryUsedBytes: 3 << 30},
+				{PID: 202, Name: "worker", MemoryUsedBytes: 4 << 30},
+			},
+		},
+	}
+	state.formatMonitor(session.stats)
+
+	var canvas gfx.Canvas
+	canvas.BeginFrame()
+	state.paintMonitorGPUs(&canvas, p, gfx.Rect{Width: 320, Height: monitorGPUHeight(p)}, gfx.Rect{Width: 320, Height: monitorGPUHeight(p)})
+	canvas.EndFrame()
+	pidHits, commandHits := map[int]string{}, map[int]string{}
+	for _, hit := range canvas.Hits() {
+		if index, ok := hit.ID.In(hitMonitorGPUPID); ok {
+			if _, duplicate := pidHits[index]; duplicate {
+				t.Fatalf("duplicate PID hit for process %d", index)
+			}
+			pidHits[index] = hit.Value
+		}
+		if index, ok := hit.ID.In(hitMonitorGPUCommand); ok {
+			commandHits[index] = hit.Value
+		}
+	}
+	for index, want := range []string{"101", "102", "201", "202"} {
+		if pidHits[index] != want {
+			t.Fatalf("PID hit %d = %q, want %q", index, pidHits[index], want)
+		}
+	}
+	if commandHits[2] != "python serve.py" {
+		t.Fatalf("command hits = %+v", commandHits)
+	}
+	if _, ok := commandHits[3]; ok {
+		t.Fatalf("a process without a command had a copy target: %+v", commandHits)
+	}
+
+	copied := ""
+	state.options.SetClipboardText = func(value string) error {
+		copied = value
+		return nil
+	}
+	state.Click(hitMonitorGPUCommand.At(2))
+	if copied != "python serve.py" {
+		t.Fatalf("copied command = %q", copied)
+	}
+	state.Click(hitMonitorGPUPID.At(1))
+	if copied != "102" {
+		t.Fatalf("copied PID = %q", copied)
+	}
+	state.options.SetClipboardText = func(string) error { return errors.New("clipboard busy") }
+	state.Click(hitMonitorGPUPID.At(3))
+	if state.status != p.copyUnavailableLabel {
+		t.Fatalf("clipboard failure status = %q", state.status)
+	}
+}
+
+func gpuCommandLine(pid uint64, command string) string {
+	return fmt.Sprintf("gop-gpu-nvidia-cmd %d %s\n", pid, hex.EncodeToString([]byte(command)))
 }

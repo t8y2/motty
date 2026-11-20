@@ -103,6 +103,14 @@ gpu_probe() {
 		done
 		$gpu_proc_timeout nvidia-smi --query-compute-apps=gpu_uuid,pid,process_name,used_memory --format=csv,noheader,nounits 2>&1 | head -n 1024 | while IFS= read -r row; do
 			printf 'gop-gpu-nvidia-proc %s\n' "$row"
+			pid=${row#*,}
+			pid=${pid# }
+			pid=${pid%%,*}
+			case $pid in '' | *[!0-9]*) continue ;; esac
+			if ! [ -r "/proc/$pid/cmdline" ]; then continue; fi
+			cmdline_hex=$(od -An -tx1 -v -N 2048 "/proc/$pid/cmdline" 2>/dev/null | tr -d ' \n\t\r')
+			case $cmdline_hex in '' ) continue ;; esac
+			printf 'gop-gpu-nvidia-cmd %s %s\n' "$pid" "$cmdline_hex"
 		done
 	fi
 	amd=

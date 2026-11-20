@@ -40,6 +40,8 @@ var (
 	hitMonitorRetry         = tree.ID(monitorHits, "retry")
 	hitMonitorScroll        = tree.ID(monitorHits, "scroll")
 	hitMonitorThumb         = tree.ID(monitorHits, "scroll-thumb")
+	hitMonitorGPUPID        = tree.Sub(monitorHits, tree.Name("gpu-pid"))
+	hitMonitorGPUCommand    = tree.Sub(monitorHits, tree.Name("gpu-command"))
 )
 
 const monitorWidth = layoutcore.DefaultMonitorWidth
@@ -69,7 +71,7 @@ type monitorCoreText struct {
 	value          float64
 }
 type monitorGPUProcessText struct {
-	label, memory string
+	name, pid, command, memory string
 }
 type monitorGPUText struct {
 	name, memory, util, power, temperature               string
@@ -95,6 +97,7 @@ type monitorView struct {
 	gpuRows                                                   []monitorGPUText
 	memoryLabel, utilLabel, powerLabel, temperatureLabel      string
 	processLabel, noProcessLabel                              string
+	copiedLabel, copyUnavailableLabel                         string
 	diskValue                                                 float64
 	diskAvailable                                             bool
 	copiedAddress                                             string
@@ -276,6 +279,14 @@ func (state *State) closeMonitor() {
 }
 
 func (state *State) clickMonitor(id gfx.ID) bool {
+	if index, ok := id.In(hitMonitorGPUPID); ok {
+		state.copyMonitorProcess(index, false)
+		return true
+	}
+	if index, ok := id.In(hitMonitorGPUCommand); ok {
+		state.copyMonitorProcess(index, true)
+		return true
+	}
 	switch id {
 	case hitMonitorSide:
 		state.toggleMonitorSide()
@@ -371,6 +382,47 @@ func (state *State) clickMonitor(id gfx.ID) bool {
 	return true
 }
 
+// copyMonitorProcess places the PID or full command on the clipboard. Process
+// hit IDs are numbered across every GPU, in the order the rows are painted.
+func (state *State) copyMonitorProcess(index int, command bool) {
+	session := state.contextSession()
+	if session == nil || session.stats == nil {
+		return
+	}
+	p := &session.stats.panel
+	var process monitorGPUProcessText
+	found := false
+	for _, gpu := range session.stats.panel.gpuRows {
+		if !gpu.processesKnown {
+			continue
+		}
+		if index < len(gpu.processes) {
+			process, found = gpu.processes[index], true
+			break
+		}
+		index -= len(gpu.processes)
+	}
+	if !found {
+		return
+	}
+	value, label := process.pid, p.copiedLabel+" PID "+process.pid
+	if command {
+		if process.command == "" {
+			return
+		}
+		value, label = process.command, p.copiedLabel+" "+shortCommand(process.command)
+	}
+	if state.options.SetClipboardText == nil {
+		state.status = p.copyUnavailableLabel
+		return
+	}
+	if err := state.options.SetClipboardText(value); err != nil {
+		state.status = p.copyUnavailableLabel
+		return
+	}
+	state.status = label
+}
+
 func (state *State) toggleMonitorSide() {
 	id := state.deck.ActiveWorkspace()
 	c, ok := state.deck.Context(id)
@@ -458,6 +510,7 @@ func (state *State) formatMonitor(v *remoteStatsView) {
 	p.language = state.language.String()
 	p.memoryLabel, p.utilLabel, p.powerLabel, p.temperatureLabel = m.GPUMemory, m.Utilization, m.Power, m.Temperature
 	p.processLabel, p.noProcessLabel = m.Processes, m.NoProcesses
+	p.copiedLabel, p.copyUnavailableLabel = m.CopiedLabel, m.CopyUnavailable
 	p.cpuText = fmt.Sprintf("%.1f%%", p.sample.CPUPercent)
 	if p.sample.CPUUnavailable {
 		p.cpuText = "—"
@@ -612,8 +665,10 @@ func (state *State) formatMonitor(v *remoteStatsView) {
 				memory = monitorBytes(process.MemoryUsedBytes)
 			}
 			row.processes = append(row.processes, monitorGPUProcessText{
-				label:  fmt.Sprintf("%s · PID %d", process.Name, process.PID),
-				memory: memory,
+				name:    process.Name,
+				pid:     fmt.Sprintf("%d", process.PID),
+				command: process.Command,
+				memory:  memory,
 			})
 		}
 		p.gpuRows = append(p.gpuRows, row)
