@@ -244,7 +244,7 @@ real Mac still needs `MOTTY_VNC_ADDR`, `MOTTY_VNC_USERNAME` and
 | Dependencies | pion/dtls, golang.org/x/net, testify, yaml.v3 (MIT/BSD/Apache) | core: standard library only (the Ebiten GUI of its demo is not imported by the library) |
 | Aim | browser/WASM client; its README: "primarily tested with XRDP; Windows servers may have issues", NLA "with limitations" | native client, Windows servers, NLA by default |
 | NLA/CredSSP | NTLMv2, own MD4 | CredSSP v2-v6, NTLMv2 over SPNEGO with EPA channel binding and MIC, own MD4 (`crypto/rc4`, `hmac`, `md5`, `sha256` from the standard library) |
-| Bitmaps | RLE, NSCodec, planar, RemoteFX | RLE (8-32), Planar, NSCodec, RDPGFX with ClearCodec, progressive RemoteFX, ZGFX, MPPC, drawing orders |
+| Bitmaps | RLE, NSCodec, planar, RemoteFX | RLE (8-32), Planar, NSCodec, RDPGFX with RemoteFX (CAVIDEO), ClearCodec, progressive RemoteFX, ZGFX, MPPC, drawing orders |
 | Maintenance | active (July 2026) | active (June 2026) |
 
 The grdp family (x90skysn3k, nakagami, icodeface) is GPL-3.0 and cannot be used in
@@ -297,7 +297,8 @@ that same TSRequest; Windows tears the TLS session down with an internal_error
 when the two are split. After sending an Authenticate
 message, failures stop automatic retries and TLS-only fallback.
 Bitmap updates (RLE, Planar, NSCodec, drawing orders) and the RDPGFX
-pipeline (ClearCodec, progressive RemoteFX, uncompressed; H.264 is not offered),
+pipeline (RemoteFX, ClearCodec, progressive RemoteFX, uncompressed; H.264 is
+not offered),
 fast-path updates, 32-bit colour. Input: keys as scancodes of a US keyboard (the
 remote layout decides characters; Shift is added where the character needs it,
 `internal/desktop/rdp/scancode.go`), the committed text of an input method and
