@@ -8,6 +8,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
+
+	"motty/internal/termsize"
 )
 
 func start(t *testing.T, config Config) (*Shell, chan struct{}) {
@@ -87,9 +91,45 @@ func TestShellSeesChineseFileNamesWhenNoLocaleIsInherited(t *testing.T) {
 
 func TestResizeReachesTheProgram(t *testing.T) {
 	shell, wakes := start(t, Config{Cols: 80, Rows: 24})
-	shell.Resize(132, 43)
+	shell.Resize(termsize.Size{Cols: 132, Rows: 43})
 	shell.Write([]byte("stty size\n"))
 	until(t, shell, wakes, "43 132")
+}
+
+// The window size a program reads back carries the text area in pixels too: a
+// program that lays images out by the character cell, as the kitty graphics
+// protocol does, sizes them to that cell.
+func TestWindowSizeCarriesTheTextAreaPixels(t *testing.T) {
+	shell, _ := start(t, Config{Cols: 80, Rows: 24, PixelWidth: 800, PixelHeight: 408})
+	master, ok := shell.b.io.(*os.File)
+	if !ok {
+		t.Fatalf("the shell's terminal is %T, not a pty", shell.b.io)
+	}
+	size, err := unix.IoctlGetWinsize(int(master.Fd()), unix.TIOCGWINSZ)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if size.Col != 80 || size.Row != 24 || size.Xpixel != 800 || size.Ypixel != 408 {
+		t.Fatalf("window size = %dx%d cells, %dx%d pixels; want 80x24 cells, 800x408 pixels",
+			size.Col, size.Row, size.Xpixel, size.Ypixel)
+	}
+
+	shell.Resize(termsize.Size{Cols: 100, Rows: 30, PixelWidth: 1000, PixelHeight: 510})
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		size, err = unix.IoctlGetWinsize(int(master.Fd()), unix.TIOCGWINSZ)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if size.Col == 100 && size.Row == 30 && size.Xpixel == 1000 && size.Ypixel == 510 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("window size = %dx%d cells, %dx%d pixels; want 100x30 cells, 1000x510 pixels",
+				size.Col, size.Row, size.Xpixel, size.Ypixel)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 func TestForegroundArgsNamesTheRunningCommand(t *testing.T) {
@@ -120,7 +160,7 @@ func TestAnInFlightResizeCanOverlapClosingThePTY(t *testing.T) {
 		// Call the backend directly to exercise a resize that has already
 		// passed Shell's closed check when Close destroys the descriptor.
 		for i := range 1000 {
-			shell.b.resize(80+i%2, 24)
+			shell.b.resize(termsize.Size{Cols: 80 + i%2, Rows: 24})
 		}
 	}()
 	<-started

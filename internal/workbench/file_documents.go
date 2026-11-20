@@ -92,18 +92,22 @@ type fileDocument struct {
 	edit                             documentEditing
 	original, pending                string
 	image                            *filecontent.Image
-	ready, busy, closed              bool
-	status, problem                  string
-	confirm                          string
-	allowClose, afterClosed          func()
-	closeCanceled                    func()
-	closeAfter                       bool
-	confirmCloseAfter                bool
-	notices                          fileNotices
-	origin                           *sftpWindow
-	view                             *sftpView
-	ui                               fileDocumentUI
-	comparison                       fileComparison
+	// previewMB is the preview size this document was opened under. It is
+	// captured when the file opens, so a later settings change does not resize
+	// an open document.
+	previewMB               int
+	ready, busy, closed     bool
+	status, problem         string
+	confirm                 string
+	allowClose, afterClosed func()
+	closeCanceled           func()
+	closeAfter              bool
+	confirmCloseAfter       bool
+	notices                 fileNotices
+	origin                  *sftpWindow
+	view                    *sftpView
+	ui                      fileDocumentUI
+	comparison              fileComparison
 }
 
 func (state *State) postFileEvent(event fileDocumentEvent) {
@@ -135,8 +139,9 @@ func (state *State) openFileWindow(view *sftpView, location string, local bool) 
 	if session == nil {
 		return
 	}
-	if entry, ok := state.selectedSFTPEntry(view); ok && entry.Size > sftpclient.MaxPreviewFileBytes {
-		state.fileOpenNotice(view.detached, state.messages.FileWindow.CannotOpen, state.messages.FileWindow.TooLarge, components.ToastWarning)
+	limit := filePreviewBytes(state.filePreviewMB)
+	if entry, ok := state.selectedSFTPEntry(view); ok && entry.Size > int64(limit) {
+		state.fileOpenNotice(view.detached, state.messages.FileWindow.CannotOpen, previewLimitMessage(state.messages, state.filePreviewMB), components.ToastWarning)
 		return
 	}
 	key := fmt.Sprintf("%d:%t:%s", session.ID, local, location)
@@ -157,13 +162,13 @@ func (state *State) openFileWindow(view *sftpView, location string, local bool) 
 		name = filepath.Base(location)
 		source = state.messages.FileWindow.Local
 	}
-	d := &fileDocument{owner: state, cacheKey: key, location: location, name: name, source: source, local: local, view: view, status: state.messages.FileWindow.Loading}
+	d := &fileDocument{owner: state, cacheKey: key, location: location, name: name, source: source, local: local, view: view, previewMB: state.filePreviewMB, status: state.messages.FileWindow.Loading}
 	d.origin = view.detached
 	state.fileWindows.documents[key] = d
 	state.fileWindows.pending = key
 	if local {
 		go func() {
-			data, err := readLocalDocument(location)
+			data, err := readLocalDocument(location, d.previewLimitBytes())
 			event := decodeFileEvent(d, data, err)
 			state.postFileEvent(event)
 		}()
@@ -175,7 +180,7 @@ func (state *State) openFileWindow(view *sftpView, location string, local bool) 
 		return
 	}
 	d.openRemoteWorker(view.openFiles)
-	if !d.worker.OpenDocument(location) {
+	if !d.worker.OpenDocument(location, d.previewLimitBytes()) {
 		delete(state.fileWindows.documents, key)
 		d.worker.Close()
 		state.fileOpenNotice(view.detached, state.messages.FileWindow.CannotOpen, state.messages.SFTPUnavailable, components.ToastError)
@@ -228,7 +233,7 @@ func decodeFileEvent(document *fileDocument, data []byte, err error) fileDocumen
 		event.err = filecontent.ErrBinary
 		return event
 	}
-	event.decoded, event.err = filecontent.Decode(data, "")
+	event.decoded, event.err = filecontent.Decode(data, "", document.previewLimitBytes())
 	return event
 }
 
@@ -252,7 +257,7 @@ func (state *State) pumpFileWindows() {
 		// Reload keeps an explicitly selected BOM-less encoding. A server-side
 		// BOM is authoritative; undecodable replacement bytes require a new choice.
 		if d.window != nil && d.image == nil && event.image == nil && d.format.Encoding != "" && !event.decoded.Format.BOM && (event.err == nil || errors.Is(event.err, filecontent.ErrChooseEncoding)) {
-			event.decoded, event.err = filecontent.Decode(event.data, d.format.Encoding)
+			event.decoded, event.err = filecontent.Decode(event.data, d.format.Encoding, d.previewLimitBytes())
 			if errors.Is(event.err, filecontent.ErrEncoding) {
 				event.err = filecontent.ErrChooseEncoding
 			}
@@ -266,12 +271,12 @@ func (state *State) pumpFileWindows() {
 				if failedClose {
 					d.cancelFailedClose()
 				}
-				d.problem = state.fileProblem(event.err)
+				d.problem = d.fileProblem(event.err)
 				d.notices.show(d.name, d.problem, components.ToastError)
 				d.invalidateWindows()
 				continue
 			}
-			state.fileOpenNotice(d.origin, state.messages.FileWindow.CannotOpen, d.name+": "+state.fileProblem(event.err), components.ToastWarning)
+			state.fileOpenNotice(d.origin, state.messages.FileWindow.CannotOpen, d.name+": "+d.fileProblem(event.err), components.ToastWarning)
 			delete(m.documents, d.cacheKey)
 			d.closed = true
 			if d.worker != nil {
@@ -302,11 +307,22 @@ func (state *State) pumpFileWindows() {
 	}
 }
 
-func (state *State) fileProblem(err error) string {
-	m := state.messages.FileWindow
+// previewLimitMB is the size this document was opened under. A document built
+// without one (a note window or a test) uses the default.
+func (d *fileDocument) previewLimitMB() int {
+	return normalizeFilePreviewMB(d.previewMB)
+}
+
+// previewLimitBytes is previewLimitMB in the bytes the reads enforce.
+func (d *fileDocument) previewLimitBytes() int {
+	return filePreviewBytes(d.previewMB)
+}
+
+func (d *fileDocument) fileProblem(err error) string {
+	m := d.owner.messages.FileWindow
 	switch {
 	case errors.Is(err, sftpclient.ErrPreviewFileTooLarge), errors.Is(err, filecontent.ErrTooLarge):
-		return m.TooLarge
+		return previewLimitMessage(d.owner.messages, d.previewLimitMB())
 	case errors.Is(err, filecontent.ErrImageTooLarge):
 		return m.ImageTooLarge
 	case errors.Is(err, filecontent.ErrBinary), errors.Is(err, filecontent.ErrUnsupportedImage), errors.Is(err, sftpclient.ErrNotRegularFile):
@@ -331,7 +347,7 @@ func (d *fileDocument) setText(decoded filecontent.Text, err error) {
 		return
 	}
 	if err != nil {
-		d.problem = d.owner.fileProblem(err)
+		d.problem = d.fileProblem(err)
 		return
 	}
 	d.format, d.original = decoded.Format, decoded.Value
@@ -396,7 +412,7 @@ func (d *fileDocument) saveDirect(closeAfter bool) {
 		}
 		return
 	}
-	data, err := filecontent.Encode(d.editor.String(), d.format)
+	data, err := filecontent.Encode(d.editor.String(), d.format, d.previewLimitBytes())
 	if err != nil {
 		d.afterClosed = nil
 		if closeAfter {
@@ -404,7 +420,7 @@ func (d *fileDocument) saveDirect(closeAfter bool) {
 		}
 		d.problem = fmt.Sprintf(d.owner.messages.FileWindow.EncodingLoss, d.format.Encoding)
 		if !errors.Is(err, filecontent.ErrEncoding) {
-			d.problem = d.owner.fileProblem(err)
+			d.problem = d.fileProblem(err)
 		}
 		d.notices.show(d.name, d.problem, components.ToastError)
 		return
@@ -422,7 +438,7 @@ func (d *fileDocument) saveDirect(closeAfter bool) {
 			err := saveLocalDocument(location, data, revision)
 			d.owner.postFileEvent(fileDocumentEvent{document: d, data: data, err: err, saved: true})
 		}()
-	} else if !d.worker.SaveDocument(d.location, data, d.revision) {
+	} else if !d.worker.SaveDocument(d.location, data, d.revision, d.previewLimitBytes()) {
 		d.busy = false
 		d.closeAfter = false
 		d.afterClosed = nil
@@ -453,7 +469,7 @@ func (d *fileDocument) apply(event fileDocumentEvent) {
 		if failedClose {
 			d.cancelFailedClose()
 		}
-		d.problem = d.owner.fileProblem(event.err)
+		d.problem = d.fileProblem(event.err)
 		d.notices.show(d.name, d.problem, components.ToastError)
 		if d.comparison.saving && errors.Is(event.err, sftpclient.ErrRemoteChanged) {
 			d.comparison.saving = false
@@ -475,9 +491,9 @@ func (d *fileDocument) apply(event fileDocumentEvent) {
 		return
 	}
 	d.raw, d.revision = event.data, sftpclient.Revision(sha256.Sum256(event.data))
-	decoded, err := filecontent.Decode(d.raw, d.format.Encoding)
+	decoded, err := filecontent.Decode(d.raw, d.format.Encoding, d.previewLimitBytes())
 	if err != nil {
-		d.problem = d.owner.fileProblem(err)
+		d.problem = d.fileProblem(err)
 		return
 	}
 	d.format, d.original = decoded.Format, d.pending
@@ -505,10 +521,10 @@ func (d *fileDocument) reload() {
 	d.problem = ""
 	if d.local {
 		go func() {
-			data, err := readLocalDocument(d.location)
+			data, err := readLocalDocument(d.location, d.previewLimitBytes())
 			d.owner.postFileEvent(decodeFileEvent(d, data, err))
 		}()
-	} else if !d.worker.OpenDocument(d.location) {
+	} else if !d.worker.OpenDocument(d.location, d.previewLimitBytes()) {
 		d.busy = false
 		d.closeAfter = false
 		d.afterClosed = nil
@@ -540,7 +556,7 @@ func (d *fileDocument) chooseEncoding(name string) {
 	d.busy = true
 	raw := d.raw
 	go func() {
-		decoded, err := filecontent.Decode(raw, name)
+		decoded, err := filecontent.Decode(raw, name, d.previewLimitBytes())
 		d.owner.postFileEvent(fileDocumentEvent{document: d, decoded: decoded, err: err, reinterpret: true})
 	}()
 }
@@ -666,7 +682,7 @@ func (d *fileDocument) applyComparisonRead(event fileDocumentEvent) {
 		return
 	}
 	if event.err != nil {
-		d.problem = d.owner.fileProblem(event.err)
+		d.problem = d.fileProblem(event.err)
 		d.notices.show(d.name, d.problem, components.ToastError)
 		if c.active {
 			c.conflict = true
@@ -678,15 +694,15 @@ func (d *fileDocument) applyComparisonRead(event fileDocumentEvent) {
 		d.resumePendingClose()
 		return
 	}
-	decoded, err := filecontent.Decode(event.data, "")
+	decoded, err := filecontent.Decode(event.data, "", d.previewLimitBytes())
 	if d.format.Encoding != "" && !decoded.Format.BOM && (err == nil || errors.Is(err, filecontent.ErrChooseEncoding)) {
-		decoded, err = filecontent.Decode(event.data, d.format.Encoding)
+		decoded, err = filecontent.Decode(event.data, d.format.Encoding, d.previewLimitBytes())
 		if errors.Is(err, filecontent.ErrEncoding) {
 			err = filecontent.ErrChooseEncoding
 		}
 	}
 	if err != nil {
-		d.problem = d.owner.fileProblem(err)
+		d.problem = d.fileProblem(err)
 		d.notices.show(d.name, d.problem, components.ToastError)
 		if c.active {
 			c.conflict = true
@@ -965,11 +981,11 @@ func (d *fileDocument) uploadComparison() {
 	if d.busy || !d.canUploadComparison() {
 		return
 	}
-	data, err := filecontent.Encode(d.editor.String(), d.comparison.format)
+	data, err := filecontent.Encode(d.editor.String(), d.comparison.format, d.previewLimitBytes())
 	if err != nil {
 		d.problem = fmt.Sprintf(d.owner.messages.FileWindow.EncodingLoss, d.comparison.format.Encoding)
 		if !errors.Is(err, filecontent.ErrEncoding) {
-			d.problem = d.owner.fileProblem(err)
+			d.problem = d.fileProblem(err)
 		}
 		d.notices.show(d.name, d.problem, components.ToastError)
 		return
@@ -980,7 +996,7 @@ func (d *fileDocument) uploadComparison() {
 	d.comparison.saving = true
 	d.status = d.owner.messages.FileWindow.Uploading
 	d.problem = ""
-	if !d.worker.SaveDocument(d.location, data, d.comparison.revision) {
+	if !d.worker.SaveDocument(d.location, data, d.comparison.revision, d.previewLimitBytes()) {
 		d.busy = false
 		d.comparison.saving = false
 		d.problem = d.owner.messages.SFTPUnavailable
@@ -1060,7 +1076,7 @@ func (state *State) fileOpenPathReason(origin *sftpWindow, title, format, locati
 	state.options.Invalidate()
 }
 
-func readLocalDocument(location string) ([]byte, error) {
+func readLocalDocument(location string, limit int) ([]byte, error) {
 	info, err := os.Lstat(location)
 	if err != nil {
 		return nil, err
@@ -1068,7 +1084,7 @@ func readLocalDocument(location string) ([]byte, error) {
 	if !info.Mode().IsRegular() {
 		return nil, filecontent.ErrBinary
 	}
-	if info.Size() > sftpclient.MaxPreviewFileBytes {
+	if info.Size() > int64(limit) {
 		return nil, sftpclient.ErrPreviewFileTooLarge
 	}
 	data, _, err := document.Read(location)

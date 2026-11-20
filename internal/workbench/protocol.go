@@ -497,7 +497,7 @@ func (conn *streamConn) OpenShell(config sshconn.ShellConfig) (Shell, error) {
 	if shell == nil {
 		return nil, errors.New("workbench: the connection has no stream")
 	}
-	shell.Resize(config.Cols, config.Rows)
+	shell.Resize(config.Size())
 	return shell, nil
 }
 
@@ -606,9 +606,10 @@ func sameHost(a Host, b Host) bool {
 }
 
 // hostIndexByEndpoint is where the list has a host that is the same destination
-// as host, or -1. It is what an import from another program is checked against:
-// an entry that is only a name for a server already saved is not worth a second
-// host, and a program's own names say little about it.
+// as host, or -1. The SSH config sync uses it to tell a block that only names a
+// server already saved from a host of its own. A session imported from another
+// client is identified by its name as well (see sameHost), because one bastion
+// address can hold several saved sessions.
 func (state *State) hostIndexByEndpoint(host Host) int {
 	for index, saved := range state.hosts {
 		if sameEndpoint(saved, host) {

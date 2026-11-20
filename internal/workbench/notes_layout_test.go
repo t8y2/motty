@@ -1,6 +1,8 @@
 package workbench
 
 import (
+	"math"
+
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
@@ -34,6 +36,36 @@ func TestNotesWorkspaceGivesTheDocumentItsWidth(t *testing.T) {
 	if !ok || !titleOK || toggle.Bounds.Y+toggle.Bounds.Height/2 != title.Bounds.Y+title.Bounds.Height/2 {
 		t.Fatal("library toggle is not vertically centered beside the title")
 	}
+}
+
+// A note's name is centered in its tree row: the row's icon, name and action
+// button share one vertical centre.
+func TestNotesTreeTitleIsVerticallyCenteredInItsRow(t *testing.T) {
+	s := newTestState(t, testOptions(t))
+	s.notes.list = []savedNote{{ID: "centered", Title: "Centered note", Body: "body"}}
+	s.Click(hitNotes)
+	s.selectNote("centered")
+	var c gfx.Canvas
+	s.Paint(&c, gfx.Size{Width: 1400, Height: 900})
+	row, ok := noteTreeRowHit(&c, &s.notes, "centered")
+	if !ok {
+		t.Fatal("the note row is not painted")
+	}
+	for _, text := range c.Texts() {
+		if text.Value != "Centered note" {
+			continue
+		}
+		if text.Bounds.Y < row.Bounds.Y || text.Bounds.Y+text.Bounds.Height > row.Bounds.Y+row.Bounds.Height {
+			t.Fatalf("note name %+v is not inside its row %+v", text.Bounds, row.Bounds)
+		}
+		nameCenter := text.Bounds.Y + text.Bounds.Height/2
+		rowCenter := row.Bounds.Y + row.Bounds.Height/2
+		if math.Abs(float64(nameCenter-rowCenter)) > 1 {
+			t.Fatalf("note name centre %.1f is not the row centre %.1f", nameCenter, rowCenter)
+		}
+		return
+	}
+	t.Fatal("the note name is not painted")
 }
 
 func TestNotesModesAndDirectoryPreferencesSurviveReopening(t *testing.T) {

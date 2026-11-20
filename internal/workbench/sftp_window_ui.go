@@ -105,13 +105,11 @@ type sftpWindowUI struct {
 	queueRevision       uint64
 	queueDetails        transferDetails
 	sort                [2]sftpWindowSort
-	headerAnchor        [2]gfx.Rect
+	headerAnchor        [2]ui.Box
 	selection           [2]sftpWindowSelection
 	profileQuickOpen    bool
 	profileQuickFocus   bool
-	profileQuickAnchor  gfx.Rect
 	profileHoverOpen    bool
-	profileHoverAnchor  gfx.Rect
 	profileHoverBox     ui.Box
 	profileQuickBox     ui.Box
 	profileHoverTrigger gfx.ID
@@ -288,7 +286,7 @@ func (w *sftpWindow) declareWindowBody(c ui.C) {
 	w.declareConfirmations(c)
 	w.declarePlacesMenu(c)
 	w.declareWindowMenu(c)
-	w.declareHeaderMenus(c, hitSFTPWindowHeaderDismiss, &w.ui.headerAnchor)
+	w.declareHeaderMenus(c, &w.ui.headerAnchor)
 	w.declareProfileQuickMenu(c)
 	w.declareProfileHover(c)
 }
@@ -736,12 +734,10 @@ func (w *sftpWindow) declarePane(c ui.C, s *sftpWindowScratch) {
 	for _, button := range s.buttons[:s.buttonCount] {
 		switch button.id {
 		case sftpWindowMore[side]:
-			w.ui.headerAnchor[side] = button.box.Rect()
+			w.ui.headerAnchor[side] = button.box
 		case hitSFTPLocationProfiles:
-			w.ui.profileHoverAnchor = button.box.Rect()
 			w.ui.profileHoverBox = button.box
 		case hitSFTPProfileQuick:
-			w.ui.profileQuickAnchor = button.box.Rect()
 			w.ui.profileQuickBox = button.box
 		}
 	}
@@ -787,7 +783,7 @@ func (w *sftpWindow) declareListRow(row ui.ListRow, side int, paneWidth, rowWidt
 		sizeWidth, modifiedWidth = columns.size, columns.modified
 	}
 	box.Children(func() {
-		declareSFTPRowIcon(c, entry, tint)
+		w.owner.declareSFTPRowIcon(c, entry, tint)
 		name := ui.Text(c, entry.entry.Name).Color(color).Ellipsis().Grow(1)
 		// The row spends its padding, the icon and the gaps before the name text;
 		// a name wider than what is left is the one the tooltip is for.

@@ -53,8 +53,11 @@ type externalEdit struct {
 	seenSize int64
 	seenTime time.Time
 	dirty    bool
-	// saving says a send is on its way.
+	// saving says a send is on its way; worker is the panel worker it was given
+	// to, so a connection that ends mid-send cannot leave saving set forever and
+	// every later save skipped.
 	saving bool
+	worker *sftpclient.Worker
 	// sending is the content being sent, which becomes synced when it lands.
 	sending [sha256.Size]byte
 	// conflicted says the server's copy changed under a send; asking says the
@@ -67,12 +70,15 @@ type externalEdits struct {
 	next uint32
 	// opening is the read that starts an edit, or, with replace set, the one that
 	// refreshes the revision of an edit the user chose to send over a conflict.
+	// worker is what it was asked of, so a read whose connection ended cannot
+	// keep every later edit of the run waiting for an answer.
 	opening struct {
 		origin  *sftpWindow
 		active  bool
 		session uint32
 		remote  string
 		replace uint32
+		worker  *sftpclient.Worker
 	}
 	watching bool
 	stop     chan struct{}
@@ -109,12 +115,19 @@ func (state *State) startExternalEdit(session *Session, view *sftpView) {
 	if !ok || entry.IsDir() || view.local || view.worker == nil {
 		return
 	}
-	if state.edits.opening.active || view.busy {
+	if !state.externalEditReady() || view.busy {
 		return
 	}
 	remote := path.Join(view.path, entry.Name)
 	if existing := state.editForRemote(session.ID, remote); existing != nil {
 		// Already open: bring the editor back to it instead of making a copy.
+		// When a save from that copy never reached the server, say so: what the
+		// editor shows is then not what the server has.
+		if externalEditHeldLocally(existing) {
+			message := fmt.Sprintf(state.messages.Tools.ExtEditUnsentFmt, existing.name)
+			view.errorText = message
+			state.fileOpenNotice(view.detached, existing.name, message, components.ToastWarning)
+		}
 		if err := state.openWithConfiguredEditor(existing.local); err != nil {
 			view.errorText = fmt.Sprintf(state.messages.Tools.ExtEditOpenFailedFmt, entry.Name, err)
 		}
@@ -126,8 +139,29 @@ func (state *State) startExternalEdit(session *Session, view *sftpView) {
 	}
 	state.edits.opening.active, state.edits.opening.session, state.edits.opening.remote, state.edits.opening.replace = true, session.ID, remote, 0
 	state.edits.opening.origin = view.detached
+	state.edits.opening.worker = view.worker
 	view.status = fmt.Sprintf(state.messages.SFTPEditOpeningFmt, entry.Name)
 	view.errorText = ""
+}
+
+// externalEditReady reports whether a new edit may start. A read whose worker
+// ended without an answer is dropped here: its result is published nowhere, so
+// it would otherwise block every later edit for the rest of the app run.
+func (state *State) externalEditReady() bool {
+	opening := &state.edits.opening
+	if !opening.active {
+		return true
+	}
+	if opening.worker == nil {
+		return false
+	}
+	select {
+	case <-opening.worker.Done():
+		opening.active, opening.worker = false, nil
+		return true
+	default:
+		return false
+	}
 }
 
 // externalEditResult takes the worker results that belong to an external edit.
@@ -137,11 +171,14 @@ func (state *State) externalEditResult(session *Session, view *sftpView, result 
 	opening := &state.edits.opening
 	switch result.Operation {
 	case sftpclient.OperationOpenText:
-		if !opening.active || opening.session != session.ID || opening.remote != result.Path || opening.origin != view.detached {
+		// The session and the path are the identity of the read; the window it
+		// was asked from only decides where the answer is shown, so a tab moving
+		// between windows while the file is read cannot lose the answer.
+		if !opening.active || opening.session != session.ID || opening.remote != result.Path {
 			return false
 		}
 		replace := opening.replace
-		opening.active, opening.replace = false, 0
+		opening.active, opening.replace, opening.worker = false, 0, nil
 		if result.Err != nil {
 			view.errorText = fmt.Sprintf(state.messages.SFTPErrorFmt, result.Err)
 			return true
@@ -157,10 +194,10 @@ func (state *State) externalEditResult(session *Session, view *sftpView, result 
 		return true
 	case sftpclient.OperationSaveText:
 		edit := state.editForRemote(session.ID, result.Path)
-		if edit == nil || !edit.saving || edit.origin != view.detached {
+		if edit == nil || !edit.saving {
 			return false
 		}
-		edit.saving = false
+		edit.saving, edit.worker = false, nil
 		switch {
 		case result.Err == nil:
 			edit.revision, edit.bom, edit.synced = result.Document.Revision, result.Document.UTF8BOM, edit.sending
@@ -175,6 +212,7 @@ func (state *State) externalEditResult(session *Session, view *sftpView, result 
 			edit.conflicted, edit.dirty = true, false
 		default:
 			view.errorText = fmt.Sprintf(m.ExtEditSendFailedFmt, edit.name, result.Err)
+			state.fileOpenNotice(view.detached, edit.name, view.errorText, components.ToastError)
 		}
 		return true
 	}
@@ -262,6 +300,9 @@ func (state *State) stopWatchingExternalEdits() {
 func (state *State) pollExternalEdits() {
 	for index := range state.edits.list {
 		edit := &state.edits.list[index]
+		if edit.saving {
+			state.settleExternalSend(edit)
+		}
 		info, err := os.Stat(edit.local)
 		if err != nil {
 			continue // the editor may be replacing the file; the next look sees it
@@ -280,7 +321,43 @@ func (state *State) pollExternalEdits() {
 	state.askExternalConflict()
 }
 
+// settleExternalSend gives up on a save whose worker ended before answering.
+// The worker publishes nothing once it is closed, so saving would otherwise stay
+// set and the edit would never be sent again; the file is looked at once more
+// instead, which sends it on the same pass.
+func (state *State) settleExternalSend(edit *externalEdit) {
+	if edit.worker == nil {
+		return
+	}
+	select {
+	case <-edit.worker.Done():
+		edit.saving, edit.worker = false, nil
+		edit.dirty = true
+		if info, err := os.Stat(edit.local); err == nil {
+			edit.seenSize, edit.seenTime = info.Size(), info.ModTime()
+		}
+	default:
+	}
+}
+
+// externalEditHeldLocally reports whether the local copy holds content the
+// server does not have and nothing is on its way to it. Comparing the bytes is
+// what makes this true after a save the server refused to take, and after a
+// save the once-a-second look never recognised.
+func externalEditHeldLocally(edit *externalEdit) bool {
+	if edit.dirty || edit.saving {
+		return false // a save is still on its way
+	}
+	data, err := os.ReadFile(edit.local)
+	if err != nil {
+		return false // the editor may be replacing the file; nothing to warn about
+	}
+	return sha256.Sum256(data) != edit.synced
+}
+
 // sendExternalEdit sends the file's current content back, when it is new text.
+// Every way of not sending is reported: a copy the server never received must
+// not look like a save.
 func (state *State) sendExternalEdit(edit *externalEdit) {
 	m := state.messages.Tools
 	session, ok := state.sessionByIDPointer(edit.session)
@@ -288,10 +365,12 @@ func (state *State) sendExternalEdit(edit *externalEdit) {
 		session, ok = &edit.origin.session, !edit.origin.closed
 	}
 	if !ok {
+		state.reportExternalEdit(edit, fmt.Sprintf(m.ExtEditGoneFmt, edit.name))
 		return
 	}
 	data, err := os.ReadFile(edit.local)
 	if err != nil {
+		state.reportExternalEdit(edit, fmt.Sprintf(m.ExtEditSendFailedFmt, edit.name, err))
 		return
 	}
 	sum := sha256.Sum256(data)
@@ -304,7 +383,7 @@ func (state *State) sendExternalEdit(edit *externalEdit) {
 		body = data[3:]
 	}
 	if len(data) > sftpclient.MaxEditFileBytes || !utf8.Valid(body) || bytes.IndexByte(body, 0) >= 0 {
-		state.setExternalStatus(session, fmt.Sprintf(m.ExtEditBadFmt, edit.name), true)
+		state.reportExternalEdit(edit, fmt.Sprintf(m.ExtEditBadFmt, edit.name))
 		return
 	}
 	if session.files == nil {
@@ -312,25 +391,21 @@ func (state *State) sendExternalEdit(edit *externalEdit) {
 	}
 	view := session.files
 	if view == nil || view.worker == nil || !view.worker.SaveText(edit.remote, string(body), edit.revision, bom) {
-		state.setExternalStatus(session, fmt.Sprintf(m.ExtEditSendFailedFmt, edit.name, state.messages.SFTPUnavailable), true)
+		state.reportExternalEdit(edit, fmt.Sprintf(m.ExtEditSendFailedFmt, edit.name, state.messages.SFTPUnavailable))
 		return
 	}
-	edit.saving, edit.sending = true, sum
+	edit.saving, edit.sending, edit.worker = true, sum, view.worker
 }
 
-func (state *State) setExternalStatus(session *Session, message string, failed bool) {
-	if session.files != nil {
-		defer session.files.invalidateDetached()
+// reportExternalEdit says a save did not reach the server, where the user can
+// see it, and leaves the editor and the local copy alone: the user decides
+// whether to fix the cause and save again.
+func (state *State) reportExternalEdit(edit *externalEdit, detail string) {
+	if session, ok := state.sessionByIDPointer(edit.session); ok && session.files != nil {
+		session.files.errorText = detail
+		session.files.invalidateDetached()
 	}
-	if session.files == nil {
-		state.status = message
-		return
-	}
-	if failed {
-		session.files.errorText = message
-		return
-	}
-	session.files.status, session.files.errorText = message, ""
+	state.fileOpenNotice(edit.origin, edit.name, detail, components.ToastError)
 }
 
 // askExternalConflict asks about one edit whose send found the server's copy
@@ -384,12 +459,13 @@ func (state *State) replaceOverConflict(id uint32) {
 	if edit.origin != nil {
 		session, ok = &edit.origin.session, !edit.origin.closed
 	}
-	if !ok || session.files == nil || session.files.worker == nil || state.edits.opening.active || !session.files.worker.OpenText(edit.remote) {
+	if !ok || session.files == nil || session.files.worker == nil || !state.externalEditReady() || !session.files.worker.OpenText(edit.remote) {
 		state.keepAfterConflict(id)
 		return
 	}
 	state.edits.opening.active, state.edits.opening.session, state.edits.opening.remote, state.edits.opening.replace = true, edit.session, edit.remote, id
 	state.edits.opening.origin = edit.origin
+	state.edits.opening.worker = session.files.worker
 	edit.asking, edit.conflicted = false, false
 	if info, err := os.Stat(edit.local); err == nil {
 		edit.seenSize, edit.seenTime = info.Size(), info.ModTime()
@@ -410,7 +486,7 @@ func (state *State) dropExternalEdits(session uint32) {
 	clear(state.edits.list[len(kept):])
 	state.edits.list = kept
 	if state.edits.opening.active && (session == 0 || state.edits.opening.session == session) {
-		state.edits.opening.active = false
+		state.edits.opening.active, state.edits.opening.worker = false, nil
 	}
 	if len(state.edits.list) == 0 {
 		state.stopWatchingExternalEdits()
@@ -431,7 +507,7 @@ func (state *State) dropWindowExternalEdits(window *sftpWindow) {
 	clear(state.edits.list[len(kept):])
 	state.edits.list = kept
 	if state.edits.opening.origin == window {
-		state.edits.opening.active = false
+		state.edits.opening.active, state.edits.opening.worker = false, nil
 		state.edits.opening.origin = nil
 	}
 	if len(kept) == 0 {

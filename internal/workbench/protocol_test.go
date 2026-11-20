@@ -415,25 +415,33 @@ func TestForwardAndJumpPickersSkipHostsThatAreNotSSH(t *testing.T) {
 	}
 }
 
-func TestImportedTelnetAndSerialSessionsBecomeHostsOnce(t *testing.T) {
+func TestImportedTelnetAndSerialSessionsKeepDistinctNamesAndSkipRepeats(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	result := sessionimport.Result{Entries: []sessionimport.Entry{
 		{Name: "Switch", Group: "Lab/Net", Protocol: sessionimport.Telnet, Host: "10.0.0.2"},
 		{Name: "Console", Protocol: sessionimport.Serial, Host: "COM7", Line: "115200 7E2", Flow: "rtscts"},
 		{Name: "Console again", Protocol: sessionimport.Serial, Host: "COM7", Line: "9600 8N1"},
+		{Name: "Console again", Protocol: sessionimport.Serial, Host: "COM7", Line: "9600 8N1"},
 		{Name: "Broken", Protocol: sessionimport.Serial, Host: "COM8", Line: "fast"},
 	}}
 	plan := state.sessionImportPlan(result)
-	if len(plan.hosts) != 2 || plan.duplicateHosts != 2 {
+	if len(plan.hosts) != 3 || plan.duplicateHosts != 2 {
 		t.Fatalf("hosts %+v duplicates %d", plan.hosts, plan.duplicateHosts)
 	}
-	telnetHost, console := plan.hosts[0], plan.hosts[1]
+	telnetHost, console, other := plan.hosts[0], plan.hosts[1], plan.hosts[2]
 	if telnetHost.Protocol != protocolTelnet || telnetHost.Port != 23 || telnetHost.Group != "Lab/Net" {
 		t.Fatalf("Telnet host = %+v", telnetHost)
 	}
 	want := serial.Settings{Baud: 115200, DataBits: 7, StopBits: 2, Parity: serial.ParityEven, Flow: serial.FlowHardware}
 	if console.Protocol != protocolSerial || console.Line != want || console.Address != "COM7" {
 		t.Fatalf("serial host = %+v", console)
+	}
+	if other.Label != "Console again" || other.Protocol != protocolSerial || other.Address != "COM7" || other.Line.Baud != 9600 {
+		t.Fatalf("second serial host at one device was skipped or lost its line: %+v", other)
+	}
+	warnings := strings.Join(plan.warnings, "\n")
+	if !strings.Contains(warnings, "Console again (COM7 · 9600 8N1) was not imported") {
+		t.Fatalf("the repeated session is not named: %q", warnings)
 	}
 }
 

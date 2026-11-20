@@ -788,7 +788,11 @@ type State struct {
 	sftpDirectoryTree  bool
 	sftpWindowOrder    sftpWindowOrder
 	sftpOpenMode       sftpOpenMode
-	sftpColumns        sftpColumnPreferences
+	// filePreviewMB bounds what a document window loads, in megabytes. The Files
+	// settings choose it with a stepper that has no upper bound.
+	filePreviewMB   int
+	filePreviewEdit filePreviewEdit
+	sftpColumns     sftpColumnPreferences
 	// sftpTypeIcons is the system icon of each file extension, shared by every
 	// row and every listing. A nil map means none has been asked for yet.
 	sftpTypeIcons map[string]*fileIconSlot
@@ -966,6 +970,7 @@ type State struct {
 	noteExit         *noteExitRequest
 	noteTarget       *notesUI
 	snippets         snippetsUI
+	snippetGroups    snippetGroupsUI
 	commands         commandsUI
 	snippetSend      snippetSender
 	snippetPrompt    snippetPromptState
@@ -1005,19 +1010,22 @@ type State struct {
 	// paint saw it; zero before the first.
 	pixelScale            float32
 	cellWidth, cellHeight float32
-	panes                 []Pane
-	paneSplits            []PaneSplit
-	paneSplitters         []paneSplitterUI
-	terminalDrop          terminalDrop // the terminal that files being dragged over would be uploaded from
-	terminalUploads       []terminalUploadBatch
-	draggedContextDivider bool
-	deck                  layoutcore.Deck
-	workspaceViewCacheID  layoutcore.WorkspaceID
-	workspaceViewRevision uint64
-	workspaceViewBuilds   uint64
-	workspaceStatusPanes  [layoutcore.MaxPanes]layoutcore.Pane
-	pendingWorkspace      layoutcore.WorkspaceID
-	pendingPane           layoutcore.PaneID
+	// cellPixelWidth and cellPixelHeight are one cell in device pixels as last
+	// handed to the screens and shells; see syncCellPixels.
+	cellPixelWidth, cellPixelHeight int
+	panes                           []Pane
+	paneSplits                      []PaneSplit
+	paneSplitters                   []paneSplitterUI
+	terminalDrop                    terminalDrop // the terminal that files being dragged over would be uploaded from
+	terminalUploads                 []terminalUploadBatch
+	draggedContextDivider           bool
+	deck                            layoutcore.Deck
+	workspaceViewCacheID            layoutcore.WorkspaceID
+	workspaceViewRevision           uint64
+	workspaceViewBuilds             uint64
+	workspaceStatusPanes            [layoutcore.MaxPanes]layoutcore.Pane
+	pendingWorkspace                layoutcore.WorkspaceID
+	pendingPane                     layoutcore.PaneID
 	// pendingDirectory is where the shell of the next session starts: set by a
 	// split from the directory of the pane it came from, taken by the session
 	// that opens in the new pane.
@@ -1176,6 +1184,7 @@ func New(options Options) *State {
 		// read: the same ones a state file that says nothing gets.
 		hostCatalog:           hostCatalog{systemUser: systemLogin(), connectionTimeout: 10 * time.Second, connectionKeepAlive: defaultConnectionKeepAlive},
 		sftpParallel:          DefaultSFTPParallel,
+		filePreviewMB:         defaultFilePreviewMB,
 		sftpColumns:           defaultSFTPColumnPreferences(),
 		sftpDownloadDirectory: defaultDownloadDirectory(),
 		terminalClipboard:     defaultTerminalClipboard,
@@ -1532,6 +1541,10 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 		case hitSnippetGroup:
 			return &state.snippets.groupPicker.Query
 		}
+	case modalSnippetGroupRename:
+		if hit == hitSnippetGroupRenameField {
+			return &state.snippetGroups.editor
+		}
 	case modalSnippetVariables:
 		if idx, ok := hit.In(hitSnippetVarList); ok && idx >= 0 && idx < len(state.snippetPrompt.editors) {
 			return &state.snippetPrompt.editors[idx]
@@ -1620,6 +1633,11 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	// must not close the field the second press just opened.
 	if state.tabInlineActive() && id != hitTabInline && id != hitTabList.At(int(state.tabInline.workspace)) {
 		state.commitTabInline()
+	}
+	// A press anywhere but on the preview stepper settles the number being
+	// typed there, as the assistant page's stepper does.
+	if state.filePreviewEdit.editing && id != hitSettingsPreviewValue && id != hitSettingsPreviewMinus && id != hitSettingsPreviewPlus {
+		state.commitFilePreviewEdit()
 	}
 	if feedback {
 		state.pressIconMotion(id)
@@ -1755,6 +1773,12 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		return
 	case modalSnippetDelete:
 		state.clickSnippetDeleteDialog(id)
+		return
+	case modalSnippetGroups:
+		state.clickSnippetGroups(id)
+		return
+	case modalSnippetGroupRename, modalSnippetGroupDelete:
+		state.clickSnippetGroupDialog(id)
 		return
 	case modalSnippetVariables:
 		state.clickSnippetVariablesDialog(id)
@@ -2583,6 +2607,9 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result, handled := state.aiPointer(event); handled {
 		return result
 	}
+	if result, handled := state.filePreviewPointer(event); handled {
+		return result
+	}
 	if state.modal == modalNone {
 		if result, handled := state.sftpTabPointer(event); handled {
 			return result
@@ -3139,6 +3166,10 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		// submitSnippet refuses while either field is composing: that Enter
 		// belongs to the input method, and the preedit is not the text to save.
 		state.submitSnippet()
+		return gfx.EventResult{Handled: true, Repaint: true}
+	}
+	if state.modal == modalSnippetGroupRename && event.Key == gfx.KeyEnter && event.Target == hitSnippetGroupRenameField && !event.Repeat {
+		state.submitSnippetGroupRename()
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if state.modal == modalSnippetVariables && event.Key == gfx.KeyEnter && event.Target.Scope() == hitSnippetVarList && !event.Repeat {

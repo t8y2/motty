@@ -576,23 +576,32 @@ type fakeShell struct {
 	term    string
 	cols    int
 	rows    int
+	pixelW  int
+	pixelH  int
 	modes   string // the pty request's encoded terminal modes
 	env     map[string]string
-	resizes [][2]int
+	resizes [][4]int // cols, rows, width and height in pixels, per window change
 	x11     *x11Request
 	// agentComments are the key comments the forwarded ssh-agent listed, once
 	// this session asked for agent forwarding and the server queried it.
 	agentComments []string
 }
 
-func (shell *fakeShell) state() (term string, cols, rows int, env map[string]string, resizes [][2]int) {
+func (shell *fakeShell) state() (term string, cols, rows int, env map[string]string, resizes [][4]int) {
 	shell.mu.Lock()
 	defer shell.mu.Unlock()
 	copied := map[string]string{}
 	for key, value := range shell.env {
 		copied[key] = value
 	}
-	return shell.term, shell.cols, shell.rows, copied, append([][2]int(nil), shell.resizes...)
+	return shell.term, shell.cols, shell.rows, copied, append([][4]int(nil), shell.resizes...)
+}
+
+// ptyPixels is the text area the pty request named, in pixels.
+func (shell *fakeShell) ptyPixels() (width, height int) {
+	shell.mu.Lock()
+	defer shell.mu.Unlock()
+	return shell.pixelW, shell.pixelH
 }
 
 // exit ends the session with a status the way sshd does.
@@ -627,6 +636,7 @@ func serveSession(server *testServer, conn ssh.Conn, channel ssh.Channel, reques
 			ssh.Unmarshal(request.Payload, &payload)
 			shell.mu.Lock()
 			shell.term, shell.cols, shell.rows = payload.Term, int(payload.Columns), int(payload.Rows)
+			shell.pixelW, shell.pixelH = int(payload.Width), int(payload.Height)
 			shell.modes = payload.Modes
 			shell.mu.Unlock()
 			request.Reply(true, nil)
@@ -644,7 +654,7 @@ func serveSession(server *testServer, conn ssh.Conn, channel ssh.Channel, reques
 			var payload struct{ Columns, Rows, Width, Height uint32 }
 			ssh.Unmarshal(request.Payload, &payload)
 			shell.mu.Lock()
-			shell.resizes = append(shell.resizes, [2]int{int(payload.Columns), int(payload.Rows)})
+			shell.resizes = append(shell.resizes, [4]int{int(payload.Columns), int(payload.Rows), int(payload.Width), int(payload.Height)})
 			shell.mu.Unlock()
 		case "auth-agent-req@openssh.com":
 			if !server.agentForward {

@@ -77,6 +77,25 @@ type ToolsMessages struct {
 	SnippetColumnGroup        string
 	SnippetFilterAll          string
 	SnippetFilterNone         string
+	SnippetGroupsManage       string
+	SnippetGroupsTitle        string
+	SnippetGroupsDescription  string
+	SnippetGroupCountFmt      string
+	SnippetGroupEmpty         string
+	SnippetGroupRename        string
+	SnippetGroupRenameTitle   string
+	SnippetGroupRenameField   string
+	SnippetGroupRenameSave    string
+	SnippetGroupRenameInvalid string
+	SnippetGroupConflict      string
+	SnippetGroupMissing       string
+	SnippetGroupDelete        string
+	SnippetGroupDeleteTitle   string
+	SnippetGroupDeleteBodyFmt string
+	SnippetGroupDeleteConfirm string
+	SnippetGroupsClose        string
+	StatusGroupRenamedFmt     string
+	StatusGroupDeletedFmt     string
 	SnippetCountFilteredFmt   string
 	SnippetColumnCommand      string
 	SnippetSortAction         string
@@ -349,6 +368,7 @@ type ToolsMessages struct {
 	ImportSummaryFmt             string // hosts, client, duplicates
 	ImportWarningKeysFmt         string
 	ImportWarningSkippedFmt      string
+	ImportWarningSkippedHostFmt  string // a skipped repeat: its label and address
 	ImportWarningPasswords       string
 	ImportWarningCleartextFmt    string // sessions whose file held readable passwords or keys
 	ImportWarningLoopback        string // a session aimed at 127.0.0.1 / localhost
@@ -427,6 +447,8 @@ type ToolsMessages struct {
 	FilesPanelAutoOpenDescription   string
 	FilesDirectoryTree              string
 	FilesDirectoryTreeDescription   string
+	FilesPreviewLimit               string
+	FilesPreviewLimitDescription    string
 	FilesPanelPosition              string
 	FilesPanelPositionDescription   string
 	FilesPanelLeft, FilesPanelRight string
@@ -619,6 +641,10 @@ type ToolsMessages struct {
 	GeneralUpdateDescription        string
 	GeneralUpdateCheck              string
 	GeneralUpdateDownload           string
+	GeneralUpdateSource             string
+	GeneralUpdateSourceDescription  string
+	GeneralUpdateSourceOfficial     string
+	GeneralUpdateSourceCNB          string
 	GeneralUpdateStartup            string
 	GeneralUpdateStartupDescription string
 	UpdateChecking                  string
@@ -964,6 +990,8 @@ type ToolsMessages struct {
 	ExtEditButton                   string
 	ExtEditOpenedFmt                string
 	ExtEditSentFmt                  string
+	ExtEditUnsentFmt                string
+	ExtEditGoneFmt                  string
 	ExtEditSendFailedFmt            string
 	ExtEditBadFmt                   string
 	ExtEditRefused                  string

@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+
+	"motty/internal/termsize"
 )
 
 // A jump host that only offers a shell, such as a bastion that has the user
@@ -197,8 +199,9 @@ func (conn *Conn) openRelayShell(client *ssh.Client, endpoint Endpoint, nonce st
 		_ = session.Setenv("LANG", utf8Locale())
 	}
 	// The terminal is wide so that a long typed line is not wrapped by the
-	// shell's own line editor.
-	if err := session.RequestPty("xterm", 24, 240, ptyModes()); err != nil {
+	// shell's own line editor. Its size is a stream this client only relays, so
+	// it has no pixels to report.
+	if err := requestPty(session, "xterm", termsize.Size{Cols: 240, Rows: 24}, ptyModes()); err != nil {
 		session.Close()
 		return nil, fmt.Errorf("open a terminal on %s: %w", endpoint.address(), err)
 	}

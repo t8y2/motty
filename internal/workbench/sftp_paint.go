@@ -657,7 +657,7 @@ func (state *State) declareSFTPListRow(row ui.ListRow, folder *sftpFolder, view 
 	}
 	focused := row.Focused()
 	contents := func() {
-		declareSFTPRowIcon(c, entry, tint)
+		state.declareSFTPRowIcon(c, entry, tint)
 		label := ui.Row(c).Grow(1).Clip().Items(ui.Center).MarginSides(0, 0, 0, 8)
 		label.Children(func() {
 			if result {

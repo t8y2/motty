@@ -1,0 +1,67 @@
+# Re-copies a release and its assets to CNB Releases, the download host used
+# from inside mainland China. It is the repair path: the release workflow copies
+# every new release itself, and this workflow exists for the one whose copy
+# failed or predates the mirror. The GitHub release stays the source of record;
+# assets already on CNB are skipped, so a rerun only uploads what is missing.
+#
+# Needs CNB_TOKEN, an access token with write access to dbxio.com/motty, as a
+# repository secret.
+name: Mirror release to CNB
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to mirror, e.g. v0.1.0
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cnb-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    name: Copy the release to CNB
+    # The destination is fixed to the upstream repository, so a fork must never
+    # publish there, even with the secret mirrored.
+    if: github.repository == 't8y2/motty'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Copy the release to CNB
+        env:
+          CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          CNB_UPLOAD_CONCURRENCY: "3"
+        run: |
+          set -euo pipefail
+          if [ -z "$CNB_TOKEN" ]; then
+            echo "::error::CNB_TOKEN is not set: add a CNB access token with write access to dbxio.com/motty"
+            exit 1
+          fi
+          dir="$RUNNER_TEMP/cnb"
+          mkdir -p "$dir/assets"
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --json tagName,name,body,targetCommitish,isPrerelease > "$dir/release.json"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$dir/assets"
+          # The signed feed is attached only when this tag is the one the feed
+          # announces: the CNB "latest" alias is what an installation reads it
+          # from, so an older release must not take it.
+          curl -fsSL https://dl.motty.page/viva/latest.json -o "$dir/feed.json"
+          feed_version=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["latest"]["version"])' "$dir/feed.json")
+          latest=""
+          if [ "v$feed_version" = "$TAG" ]; then
+            cp "$dir/feed.json" "$dir/assets/latest.json"
+            curl -fsSL https://dl.motty.page/viva/latest.json.sig -o "$dir/assets/latest.json.sig"
+            latest="--make-latest"
+          fi
+          node tools/sync-cnb-release.mjs --github-release "$dir/release.json" --assets-dir "$dir/assets" $latest

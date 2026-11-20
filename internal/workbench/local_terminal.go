@@ -92,7 +92,10 @@ func (conn *localConn) proxyEnvironment() []string {
 // shellConfig is how the shell starts on goos, with the folder and prompt
 // reporting the shell supports there.
 func (conn *localConn) shellConfig(config sshconn.ShellConfig, goos string) localshell.Config {
-	shell := localshell.Config{Shell: conn.shell, Args: localshell.ArgsFor(conn.shell), Cols: config.Cols, Rows: config.Rows, Dir: conn.dir, Notify: config.Notify}
+	shell := localshell.Config{
+		Shell: conn.shell, Args: localshell.ArgsFor(conn.shell), Cols: config.Cols, Rows: config.Rows,
+		PixelWidth: config.PixelWidth, PixelHeight: config.PixelHeight, Dir: conn.dir, Notify: config.Notify,
+	}
 	shell.Env = conn.proxyEnvironment()
 	if config.IntegrateShell && goos == "windows" {
 		shell.DirectoryToken = config.IntegrationToken

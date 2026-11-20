@@ -364,7 +364,7 @@ func (state *State) declareSFTPTab(c ui.C) {
 	w.declareConfirmations(c)
 	w.declarePlacesMenu(c)
 	w.declareWindowMenu(c)
-	w.declareHeaderMenus(c, hitSFTPWindowHeaderDismiss, &w.ui.headerAnchor)
+	w.declareHeaderMenus(c, &w.ui.headerAnchor)
 	w.declareProfileQuickMenu(c)
 	w.declareProfileHover(c)
 	state.declareSFTPFileProperties(c, bounds, &w.fileProperties)
@@ -435,7 +435,7 @@ func (w *sftpWindow) paintTabDetails(canvas *gfx.Canvas, bounds gfx.Rect) {
 		w.paintDrag(canvas)
 	}
 	w.notices.paint(canvas, state.Theme(), bounds)
-	if !w.ui.profileHoverOpen {
+	if !w.ui.profileHoverOpen && !w.ui.profileQuickOpen {
 		w.ui.tooltip.Paint(canvas, state.Theme(), bounds, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
 	}
 	if !w.pendingFocus.IsZero() {

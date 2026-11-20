@@ -315,12 +315,13 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 	x11 := newX11Relay(sshConn)
 	defer x11.Close()
 	var (
-		term       = "xterm"
-		cols, rows = 80, 24
-		env        []string
-		ptmx       *os.File
-		once       sync.Once
-		ptyAsked   bool
+		term                    = "xterm"
+		cols, rows              = 80, 24
+		pixelWidth, pixelHeight int
+		env                     []string
+		ptmx                    *os.File
+		once                    sync.Once
+		ptyAsked                bool
 	)
 	for request := range requests {
 		switch request.Type {
@@ -338,6 +339,7 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 			}
 			ssh.Unmarshal(request.Payload, &payload)
 			term, cols, rows = payload.Term, int(payload.Columns), int(payload.Rows)
+			pixelWidth, pixelHeight = int(payload.Width), int(payload.Height)
 			ptyAsked = true
 			request.Reply(true, nil)
 		case "x11-req":
@@ -350,7 +352,10 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 			var payload struct{ Columns, Rows, Width, Height uint32 }
 			ssh.Unmarshal(request.Payload, &payload)
 			if ptmx != nil {
-				pty.Setsize(ptmx, &pty.Winsize{Cols: uint16(payload.Columns), Rows: uint16(payload.Rows)})
+				pty.Setsize(ptmx, &pty.Winsize{
+					Cols: uint16(payload.Columns), Rows: uint16(payload.Rows),
+					X: uint16(payload.Width), Y: uint16(payload.Height),
+				})
 			}
 		case "shell":
 			request.Reply(true, nil)
@@ -375,7 +380,7 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 					command.Dir = os.TempDir()
 				}
 				var err error
-				ptmx, err = pty.StartWithSize(command, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
+				ptmx, err = pty.StartWithSize(command, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows), X: uint16(pixelWidth), Y: uint16(pixelHeight)})
 				if err != nil {
 					fmt.Fprintf(channel, "cannot start shell: %v\r\n", err)
 					channel.Close()
@@ -438,7 +443,7 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 					command.Env = append(command.Env, x11.Env()...)
 					command.Dir = os.TempDir()
 					var err error
-					ptmx, err = pty.StartWithSize(command, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
+					ptmx, err = pty.StartWithSize(command, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows), X: uint16(pixelWidth), Y: uint16(pixelHeight)})
 					if err != nil {
 						fmt.Fprintf(channel, "cannot start command: %v\r\n", err)
 						channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{1}))
@@ -465,7 +470,10 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 					}()
 					continue
 				}
-				command.Stdout, command.Stderr = channel, channel
+				// The client's integration upload sends the script on stdin; a
+				// real sshd hands it to the command. Without the channel here the
+				// upload only creates an empty file and integration silently fails.
+				command.Stdin, command.Stdout, command.Stderr = channel, channel, channel
 				status := uint32(0)
 				if err := command.Run(); err != nil {
 					status = 1
@@ -586,6 +594,15 @@ func prepareFixture() (fixture, error) {
 	}
 	for name, content := range files {
 		if err := os.WriteFile(filepath.Join(sftpRoot, name), []byte(content), 0o644); err != nil {
+			return fail(err)
+		}
+	}
+	// A document window's preview bound only shows on a file larger than it, so
+	// a test asks for one instead of the fixture carrying 20 MiB every run.
+	if mib, err := strconv.Atoi(os.Getenv("E2ESSHD_LARGE_TEXT_MIB")); err == nil && mib > 0 {
+		line := []byte("0123456789abcdef\n")
+		data := bytes.Repeat(line, (mib<<20)/len(line)+1)[:mib<<20]
+		if err := os.WriteFile(filepath.Join(sftpRoot, "large-preview.txt"), data, 0o644); err != nil {
 			return fail(err)
 		}
 	}

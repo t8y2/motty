@@ -10,6 +10,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
+	"motty/internal/sftpclient"
 )
 
 // iconAnswers stands in for the system: it answers a bundle by name and counts
@@ -144,13 +145,13 @@ func TestUnsupportedSystemIsAskedForAnApplicationIconOnce(t *testing.T) {
 // A server's disk has no system icon to ask for: a bundle there is a program
 // glyph, not a folder.
 func TestApplicationBundleWithoutASystemIconGetsTheProgramGlyph(t *testing.T) {
-	bundle, _ := sftpFileIcon("Safari.app", os.ModeDir|0o755)
-	folder, _ := sftpFileIcon("Safari", os.ModeDir|0o755)
-	program, _ := sftpFileIcon("setup.exe", 0o755)
+	bundle, _ := sftpFileIcon(sftpclient.Entry{Name: "Safari.app", Mode: os.ModeDir | 0o755})
+	folder, _ := sftpFileIcon(sftpclient.Entry{Name: "Safari", Mode: os.ModeDir | 0o755})
+	program, _ := sftpFileIcon(sftpclient.Entry{Name: "setup.exe", Mode: 0o755})
 	if bundle != program || bundle == folder {
 		t.Fatalf("bundle glyph %p, folder %p, program %p", bundle, folder, program)
 	}
-	if link, _ := sftpFileIcon("Safari.app", os.ModeSymlink|os.ModeDir); link == bundle {
+	if link, _ := sftpFileIcon(sftpclient.Entry{Name: "Safari.app", Mode: os.ModeSymlink | os.ModeDir}); link == bundle {
 		t.Fatal("a link to a bundle is drawn as the bundle")
 	}
 }

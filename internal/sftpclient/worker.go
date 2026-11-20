@@ -261,6 +261,9 @@ type request struct {
 	utf8BOM     bool
 	recursive   bool
 	policy      ExistingPolicy
+	// limit is how many bytes a document read may return; the caller sizes it
+	// from the preview setting.
+	limit int
 	// trusted is how many leading bytes of an interrupted upload's partial
 	// file this process wrote in an earlier attempt. The worker resumes from
 	// there without reading those bytes back to verify them.
@@ -584,8 +587,9 @@ func (worker *Worker) OpenText(remotePath string) bool {
 }
 
 // OpenDocument reads bounded raw bytes without treating an image as UTF-8.
-func (worker *Worker) OpenDocument(remotePath string) bool {
-	return worker.enqueue(request{operation: OperationOpenDocument, remote: remotePath})
+// limit is the caller's bound on the document.
+func (worker *Worker) OpenDocument(remotePath string, limit int) bool {
+	return worker.enqueue(request{operation: OperationOpenDocument, remote: remotePath, limit: limit})
 }
 
 // ReadDocument reads the current bounded text bytes for comparison without
@@ -596,12 +600,11 @@ func (worker *Worker) ReadDocument(remotePath string) bool {
 }
 
 // SaveDocument replaces a revision-checked document without reinterpreting its
-// bytes. Encoding and image/text policy belong to the document editor.
-func (worker *Worker) SaveDocument(remotePath string, data []byte, revision Revision) bool {
-	if len(data) > MaxPreviewFileBytes {
-		return false
-	}
-	return worker.enqueue(request{operation: OperationSaveDocument, remote: remotePath, data: append([]byte(nil), data...), revision: revision})
+// bytes. Encoding and image/text policy belong to the document editor; limit is
+// the bound its window was opened under, checked when the server copy is read
+// back for the revision comparison.
+func (worker *Worker) SaveDocument(remotePath string, data []byte, revision Revision, limit int) bool {
+	return worker.enqueue(request{operation: OperationSaveDocument, remote: remotePath, data: append([]byte(nil), data...), revision: revision, limit: limit})
 }
 
 // SaveText atomically replaces one previously opened remote text file when its
@@ -1334,11 +1337,11 @@ func (worker *Worker) execute(next request) Result {
 	case OperationSaveText:
 		result.Document, result.Err = worker.saveText(client, next.remote, next.text, next.revision, next.utf8BOM, generation)
 	case OperationOpenDocument:
-		result.Data, result.Err = worker.readFileBytes(client, next.remote, generation, MaxPreviewFileBytes)
+		result.Data, result.Err = worker.readFileBytes(client, next.remote, generation, next.limit)
 	case OperationReadDocument:
 		result.Data, result.Err = worker.readFileBytes(client, next.remote, generation, MaxEditFileBytes)
 	case OperationSaveDocument:
-		result.Err = worker.replaceDocumentBytes(client, next.remote, next.data, next.revision, generation)
+		result.Err = worker.replaceDocumentBytes(client, next.remote, next.data, next.revision, next.limit, generation)
 		if result.Err == nil {
 			result.Data = next.data
 		}
@@ -1480,6 +1483,10 @@ func (worker *Worker) resolveLinks(job linkJob) {
 	if worker.canceled(job.generation) {
 		return
 	}
+	// Resolving a link can reveal that it points at a folder. The listing's
+	// order puts folders first, so the follow-up has to be ordered again now
+	// that those links are known.
+	sortEntries(job.entries)
 	worker.publish(Result{
 		ListID:     job.listID,
 		Background: job.background, Operation: OperationList, Path: job.directory,
@@ -1534,6 +1541,15 @@ func entriesFrom(infos []os.FileInfo) []Entry {
 		}
 		entries = append(entries, entry)
 	}
+	sortEntries(entries)
+	return entries
+}
+
+// sortEntries orders a listing the way the file panel shows it: folders first,
+// then by name. A symbolic link counts as a folder once describeLinks found
+// that its target is one, so the follow-up that carries the resolved links is
+// ordered again.
+func sortEntries(entries []Entry) {
 	slices.SortFunc(entries, func(left, right Entry) int {
 		if left.IsDir() != right.IsDir() {
 			if left.IsDir() {
@@ -1543,7 +1559,6 @@ func entriesFrom(infos []os.FileInfo) []Entry {
 		}
 		return strings.Compare(left.Name, right.Name)
 	})
-	return entries
 }
 
 func (worker *Worker) upload(client Remote, next request, generation uint64) (files int, bytes, resumed int64, err error) {

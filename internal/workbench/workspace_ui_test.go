@@ -55,9 +55,7 @@ func TestClosingSplitRestoresPopulatedTerminal(t *testing.T) {
 			if c, r := terminal.screen.Size(); c != cols || r != rows {
 				t.Fatalf("terminal stayed at %dx%d, want %dx%d", c, r, cols, rows)
 			}
-			shell.mu.Lock()
-			lastResize := shell.resizes[len(shell.resizes)-1]
-			shell.mu.Unlock()
+			lastResize := shell.lastResize()
 			if lastResize != [2]int{cols, rows} {
 				t.Fatalf("shell stayed at %v, want %dx%d", lastResize, cols, rows)
 			}

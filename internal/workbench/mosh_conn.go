@@ -503,7 +503,7 @@ func (conn *moshConn) OpenShell(config sshconn.ShellConfig) (Shell, error) {
 		return nil, fmt.Errorf(conn.messages.MoshBootstrapFailedFmt, "mosh client is not ready")
 	}
 	shell := newMoshShell(client, conn.notify, conn.messages)
-	shell.Resize(config.Cols, config.Rows)
+	shell.Resize(config.Size())
 	conn.mu.Lock()
 	conn.shell = shell
 	conn.mu.Unlock()

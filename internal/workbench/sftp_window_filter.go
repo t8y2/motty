@@ -194,19 +194,21 @@ func (w *sftpWindow) headerMenuRows(side int, paneWidth float32) menuRows {
 }
 
 // declareHeaderMenus declares each pane's open More menu over the page, so its
-// backdrop covers the window bar too.
-func (w *sftpWindow) declareHeaderMenus(c ui.C, dismiss gfx.ID, anchors *[2]gfx.Rect) {
+// backdrop covers the window bar too. The menu hangs off the More button's own
+// box: the page places it from the rectangle the control is laid out at, not the
+// one the declaration can read before layout.
+func (w *sftpWindow) declareHeaderMenus(c ui.C, anchors *[2]ui.Box) {
 	for side := range 2 {
 		folder := w.folder(side == 0)
 		if !folder.headerMenuOpen {
 			continue
 		}
-		if !w.owner.sftpHeaderMenuAvailable(w.view) {
+		if !w.owner.sftpHeaderMenuAvailable(w.view) || !anchors[side].Valid() {
 			folder.headerMenuOpen = false
 			continue
 		}
 		rows := w.headerMenuRows(side, w.ui.panes[side].bounds.Width)
-		w.owner.declareMenuAt(c, &folder.headerMenuOpen, anchors[side], false, dismiss, &rows, func(id gfx.ID) {
+		w.owner.declareMenuOn(c, &folder.headerMenuOpen, anchors[side], &rows, func(id gfx.ID) {
 			w.clickFilterControl(id)
 		})
 	}

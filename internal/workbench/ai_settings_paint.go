@@ -300,8 +300,13 @@ func (state *State) paintAIProviders(page *settingsPage) {
 				nameColor = pal.muted
 			}
 			page.separator()
+			// The row is the pointer target of its own area, but the switch and the
+			// edit and delete buttons sit inside it: its hit is declared on the row
+			// itself, before its children paint, so a press on one of them is theirs
+			// (a later hit wins at a point). A deferred page hit would be painted over
+			// them and swallow their presses.
 			row := ui.Column(c).Height(aiProviderRowHeight)
-			page.hitOn(row, hitAISetProviderRow.At(index), provider.Name, gfx.HitOptions{Role: gfx.RoleButton, Selected: isSelected})
+			row.HitWith(hitAISetProviderRow.At(index), provider.Name, gfx.HitOptions{Role: gfx.RoleButton, Selected: isSelected})
 			row.Children(func() {
 				ui.Row(c).Grow(1).MarginSides(4, 6, 4, 6).PadX(12).Gap(18).Items(ui.Center).Background(background).Radius(radius.control).Children(func() {
 					ui.Row(c).Grow(1).Shrink(1).Gap(12).Items(ui.Center).Children(func() {

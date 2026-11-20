@@ -81,9 +81,11 @@ var (
 type snippetsUI struct {
 	list []snippet
 
-	// The page's group filter: the groups there are, the list indices it shows
-	// in the order it shows them, and the integer choices its Select is over.
+	// The page's group filter: the groups there are, how many snippets each
+	// names, the list indices it shows in the order it shows them, and the
+	// integer choices its Select is over.
 	groups        []string
+	groupCounts   map[string]int
 	hasUngrouped  bool
 	visible       []int
 	filter        snippetFilter
@@ -328,6 +330,8 @@ func (state *State) clickSnippetDialog(id gfx.ID) {
 	case hitSnippetShortcutOff:
 		form.shortcut, form.capturing = keymap.Chord{}, false
 		form.dialogError = ""
+	case hitSnippetDialogGroups:
+		state.openSnippetGroupsManagerFor(true)
 	}
 }
 
@@ -703,7 +707,16 @@ func (state *State) declareSnippetDialogBody(c ui.C) {
 		ui.Column(c).Height(140).MarginSides(0, 0, 6, 0).Children(func() {
 			form.commandArea.declare(c, hitSnippetCommand, &form.command, m.SnippetCommand, m.SnippetCommandPlaceholder, 140)
 		})
-		form.dialogGroup = ui.Slot(c).Height(62).MarginSides(0, 0, 6, 0)
+		if len(form.groups) > 0 {
+			ui.Row(c).Height(62).MarginSides(0, 0, 6, 0).Gap(8).Items(ui.Center).Children(func() {
+				form.dialogGroup = ui.Slot(c).Grow(1).Height(62)
+				groupsWidth := toolbarButtonWidth(c.Canvas(), m.SnippetGroupsManage, false)
+				dialogButton(c, m.SnippetGroupsManage, components.ButtonGhost, false).
+					Hit(hitSnippetDialogGroups, m.SnippetGroupsManage).Width(groupsWidth).Height(32)
+			})
+		} else {
+			form.dialogGroup = ui.Slot(c).Height(62).MarginSides(0, 0, 6, 0)
+		}
 		state.declareDialogCheck(c, hitSnippetRun, m.SnippetRun, form.run, 7, 0)
 		ui.Row(c).Height(32).Items(ui.Center).MarginSides(12, 0, 0, 2).Children(func() {
 			ui.Text(c, m.SnippetShortcut).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).LineHeight(20).Grow(1)

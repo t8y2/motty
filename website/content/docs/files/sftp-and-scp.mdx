@@ -56,9 +56,13 @@ fails, the previous file stays intact.
 
 ## The editor
 
-A native editor opens UTF-8 files up to 1 MiB. It hashes the remote file before
-and after staging, so a file that changed on the server in the meantime is
-noticed, and it preserves permissions.
+Double-clicking a file opens it in its own window: text for editing and images
+for reading. A window loads at most 20 MB by default; under
+**Settings → Files → Preview size limit** the stepper sets that size, or type a
+number into it. There is no upper limit. The choice applies to files opened
+afterwards, and images are also limited to 16 megapixels. Saving hashes the
+remote file before and after staging, so a file that changed on the server in
+the meantime is noticed, and the original permissions are preserved.
 
 ## SCP fallback
 

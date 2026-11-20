@@ -242,6 +242,27 @@ func (state *State) openKeyPassphraseForm() {
 	}, formField{label: m.KeyPassphraseLabel, secure: true})
 }
 
+// keyPassphraseOpens reports whether passphrase opens the private key the
+// identity names. A key kept in the vault is read from there, exactly as a
+// connection reads it; a file is read from disk. Callers own the passphrase
+// bytes and can clear them as soon as this returns.
+func (state *State) keyPassphraseOpens(identity identityRecord, passphrase []byte) error {
+	if !identity.Stored {
+		_, err := keyidentity.Load(identity.Path, passphrase)
+		return err
+	}
+	if state.secrets.vault == nil {
+		return vault.ErrUnavailable
+	}
+	data, err := readStoredKey(state.secrets.vault, identity.Path)
+	if err != nil {
+		return err
+	}
+	defer clear(data)
+	_, err = keyidentity.Parse(data, passphrase)
+	return err
+}
+
 // keepKeyPassphrase saves, or with an empty passphrase forgets, the passphrase
 // of identity. A passphrase that does not open the key is refused: it would
 // only fail at the next connection, after the saved one is tried and forgotten.
@@ -253,7 +274,7 @@ func (state *State) keepKeyPassphrase(identity identityRecord, passphrase string
 	}
 	if passphrase != "" {
 		secret := []byte(passphrase)
-		_, err := keyidentity.Load(identity.Path, secret)
+		err := state.keyPassphraseOpens(identity, secret)
 		clear(secret)
 		if err != nil {
 			return m.KeyPassphraseWrong

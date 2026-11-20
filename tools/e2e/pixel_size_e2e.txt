@@ -1,0 +1,63 @@
+# End to end: the terminal reports its real character cell to the programs it
+# runs, over a real loopback SSH pty. Two paths deliver it, and both are
+# checked here:
+#
+# - XTWINOPS asks the terminal itself. `CSI 16 t` must be answered from the
+#   font's measured cell, in device pixels, without the program having to read
+#   the pty's window size.
+# - The pty's window size (TIOCGWINSZ) must carry the text area's pixels, not
+#   the eight-pixels-per-cell placeholder an SSH client fills in by default.
+#
+# Before the fix the query went unanswered (a program then guesses 8x16) and the
+# window size said `cols*8` by `rows*8`, so image-laying programs stretched
+# everything by the difference.
+#
+#   (cd tools/e2esshd && go build -o /tmp/e2esshd-cells .) && /tmp/e2esshd-cells 2253 &
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   MOTTY_LANG=en MOTTY_HEAD=/tmp/motty-head \
+#     python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/pixel_size_e2e.txt
+#
+# What to look for: WINSZ's pixel fields are the grid times a cell whose width
+# and height are the CELLREPLY hex dump's `CSI 6 ; height ; width t` — not the
+# grid times eight. On a 2x display the 13pt cell is 16x30 device pixels, so a
+# 166x56 grid reports 2656x1680 and CELLREPLY carries 1b 5b 36 3b 33 30 3b 31
+# 36 (`ESC [ 6 ; 30 ; 16`).
+
+# lang: en
+
+click "Search"
+type tester@127.0.0.1:2253
+click "Connect"
+waitfor "Trust" 5000
+click "Trust and Save"
+waitfor "Password" 5000
+type secret
+key enter
+waitfor "tester@e2e" 8000
+settle 800
+
+# The window size the program reads back, in struct winsize order: rows, cols,
+# then the text area in pixels, and the cell those divide out to.
+type python3 -c 'import fcntl,termios,struct; r,c,x,y=struct.unpack("4H",fcntl.ioctl(0,termios.TIOCGWINSZ,b"\0"*8)); print("WINSZ",r,c,x,y,"cell",x//c,y//r)'
+key enter
+waitfor "WINSZ" 8000
+settle 500
+
+# The cell the terminal answers for itself. Echo is off so the reply is read
+# rather than displayed; it is hex-dumped because its bytes are a control
+# sequence.
+type stty -echo; printf '\033[16t'; IFS= read -r -t 2 -d t r; stty echo; printf 'CELLREPLY '; printf '%s' "$r" | od -An -tx1
+key enter
+waitfor "CELLREPLY" 8000
+settle 500
+
+# A smaller window fits fewer cells. The cell does not change, so both the
+# window size the program reads and the report the terminal answers must follow
+# the new grid.
+resize 900 600
+settle 1000
+type python3 -c 'import fcntl,termios,struct; r,c,x,y=struct.unpack("4H",fcntl.ioctl(0,termios.TIOCGWINSZ,b"\0"*8)); print("RESIZED",r,c,x,y,"cell",x//c,y//r)'
+key enter
+waitfor "RESIZED" 8000
+settle 500
+texts

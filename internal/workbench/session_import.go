@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
@@ -452,15 +453,15 @@ func (state *State) declareSessionImportPreview(c ui.C) {
 }
 
 func (state *State) sessionImportPasswords(result sessionimport.Result, plan hostImportPlan) ([]sessionImportPassword, int) {
-	hosts := make(map[hostConnection]Host, len(state.hosts)+len(plan.hosts))
+	hosts := make(map[sessionImportHostKey]Host, len(state.hosts)+len(plan.hosts))
 	for _, host := range state.hosts {
 		if host.isSSH() {
-			hosts[connectionKey(host.Address, host.User, host.Port)] = host
+			hosts[sessionImportHostKeyFor(host)] = host
 		}
 	}
 	for _, host := range plan.hosts {
 		if host.isSSH() {
-			hosts[connectionKey(host.Address, host.User, host.Port)] = host
+			hosts[sessionImportHostKeyFor(host)] = host
 		}
 	}
 	byName := make(map[string]sessionImportPassword)
@@ -469,7 +470,9 @@ func (state *State) sessionImportPasswords(result sessionimport.Result, plan hos
 		if entry.Protocol != sessionimport.SSH || entry.Password == "" {
 			continue
 		}
-		host, ok := hosts[connectionKey(entry.Host, entry.User, uint16(entry.Port))]
+		host, ok := hosts[sessionImportHostKeyFor(Host{
+			Label: entry.Name, Address: entry.Host, User: entry.User, Port: uint16(entry.Port),
+		})]
 		if !ok {
 			continue
 		}
@@ -489,6 +492,25 @@ func (state *State) sessionImportPasswords(result sessionimport.Result, plan hos
 		passwords = append(passwords, candidate)
 	}
 	return passwords, len(conflicted)
+}
+
+// sessionImportHostKey is the identity of an imported SSH host as the user sees
+// it: its name and destination. Two sessions at one address with different
+// names are different hosts, and each keeps its own password.
+type sessionImportHostKey struct {
+	label      string
+	connection hostConnection
+	terminal   hostTerminal
+	viaSSH     bool
+}
+
+func sessionImportHostKeyFor(host Host) sessionImportHostKey {
+	return sessionImportHostKey{
+		label:      strings.ToLower(strings.TrimSpace(host.Label)),
+		connection: connectionKey(host.Address, host.User, host.Port),
+		terminal:   host.Terminal,
+		viaSSH:     host.ViaSSH,
+	}
 }
 
 func (state *State) sessionImportPasswordChanges() ([]vault.Change, error) {
@@ -573,22 +595,31 @@ func (state *State) sessionImportPlan(result sessionimport.Result) hostImportPla
 		if port == 0 {
 			port = defaultPort
 		}
-		key := connectionKey(entry.Host, entry.User, port)
-		if _, exists := builder.connections[key]; exists {
-			builder.plan.duplicateHosts++
-			continue
-		}
 		host := Host{
 			ID: builder.plan.nextHostID, Label: entry.Name, Group: entry.Group,
 			Address: entry.Host, User: entry.User, Port: port,
+			LoginCommand: restoredLoginCommand(entry.Command),
+		}
+		host.finish()
+		if state.hostIndexSame(host) >= 0 || planHasSameHost(builder.plan, host) {
+			builder.plan.duplicateHosts++
+			builder.plan.warnings = append(builder.plan.warnings,
+				fmt.Sprintf(state.messages.Tools.ImportWarningSkippedHostFmt, host.Label, hostTarget(host)))
+			continue
 		}
 		host.CatalogID = freshCatalogID(builder.usedIDs)
-		host.finish()
 		builder.plan.nextHostID++
 		builder.plan.hosts = append(builder.plan.hosts, host)
-		builder.connections[key] = host
 	}
 	return builder.plan
+}
+
+// planHasSameHost reports whether the hosts this import has already made
+// include host. Sessions from another client are told apart by their name, so
+// two saved entries at one address both arrive; only the same name and address
+// is a repeat.
+func planHasSameHost(plan hostImportPlan, host Host) bool {
+	return slices.ContainsFunc(plan.hosts, func(planned Host) bool { return sameHost(planned, host) })
 }
 
 func (state *State) planStreamImport(plan *hostImportPlan, usedIDs map[string]struct{}, entry sessionimport.Entry) {
@@ -605,18 +636,14 @@ func (state *State) planStreamImport(plan *hostImportPlan, usedIDs map[string]st
 		host.Protocol = protocolTelnet
 	}
 	host.normalizeEndpoint()
-	host.CatalogID = freshCatalogID(usedIDs)
 	host.finish()
-	if state.hostIndexByEndpoint(host) >= 0 {
+	if state.hostIndexSame(host) >= 0 || planHasSameHost(*plan, host) {
 		plan.duplicateHosts++
+		plan.warnings = append(plan.warnings,
+			fmt.Sprintf(state.messages.Tools.ImportWarningSkippedHostFmt, host.Label, hostTarget(host)))
 		return
 	}
-	for _, planned := range plan.hosts {
-		if sameEndpoint(planned, host) {
-			plan.duplicateHosts++
-			return
-		}
-	}
+	host.CatalogID = freshCatalogID(usedIDs)
 	plan.nextHostID++
 	plan.hosts = append(plan.hosts, host)
 }

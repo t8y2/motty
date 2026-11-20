@@ -2911,6 +2911,12 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareSnippetDialog(c)
 	case modalSnippetDelete:
 		state.declareSnippetDeleteDialog(c)
+	case modalSnippetGroups:
+		state.declareSnippetGroupsDialog(c)
+	case modalSnippetGroupRename:
+		state.declareSnippetGroupRenameDialog(c)
+	case modalSnippetGroupDelete:
+		state.declareSnippetGroupDeleteDialog(c)
 	case modalSnippetVariables:
 		state.declareSnippetVariablesDialog(c)
 	case modalVaultUnlock:
