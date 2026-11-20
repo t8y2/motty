@@ -175,7 +175,8 @@ func (state *State) declareRemoteToolsSearch(c ui.C) {
 func (state *State) declareRemoteTable(c ui.C) {
 	view, theme := &state.remote, state.Theme()
 	padding := theme.Metrics.PadSurface + theme.Metrics.GapItem
-	fallback := remoteToolsModalWidth - 2*padding - remoteToolsTableMargin
+	width := max(min(remoteToolsModalWidth, dialogViewport(c).Width-32), 0)
+	fallback := width - 2*padding - remoteToolsTableMargin - 2
 	view.ctx = c
 	state.declareRemoteToolsTable(c, view.tab, fallback)
 }
