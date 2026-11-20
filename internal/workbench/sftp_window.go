@@ -158,7 +158,7 @@ func (w *sftpWindow) config() app.Config {
 	// state. The window keeps Paint (it also paints the toolbar controls, dialogs
 	// and transfer queue the page only lays out) and OnScroll (a wheel notch moves
 	// whole rows, and the window hands the offset to each List).
-	config := w.windowPage().Config(base)
+	config := ui.Configure(w.windowPage(), base)
 	config.Paint = base.Paint
 	config.OnScroll = w.scrollWindow
 	return config
@@ -521,7 +521,7 @@ func (w *sftpWindow) queueEntries(fromLocal bool, entries []sftpclient.Entry, so
 		if fromLocal {
 			_, accepted = w.view.worker.QueueUpload(filepath.Join(sourceDir, entry.Name), path.Join(targetDir, entry.Name), entry.IsDir() && !entry.IsLink(), sftpclient.ExistingFail)
 		} else {
-			_, accepted = w.view.worker.QueueDownload(path.Join(sourceDir, entry.Name), filepath.Join(targetDir, entry.Name), entry.IsDir(), sftpclient.ExistingFail)
+			_, accepted = w.view.worker.QueueDownload(path.Join(sourceDir, entry.Name), filepath.Join(targetDir, safeLocalName(entry.Name)), entry.IsDir(), sftpclient.ExistingFail)
 		}
 		if accepted {
 			queued++

@@ -69,7 +69,7 @@ text "PORT" {481 142 440 20}
 text "Motty opens the tunnel. Paste and run the setup command so tools in this terminal" {470 212 462 18}
 text "can use it." {470 230 462 18}
 text "Other users and processes on this server may also use this proxy." {470 256 462 18}
-text "Proxy tunnel is on" {492 282 440 19}
+text "Proxy tunnel is on" {492 282 440 24}
 text "Stopping interrupts downloads using this tunnel. Run the restore command" {470 314 462 18}
 text "afterward." {470 332 462 18}
 text "Could not copy: clipboard unavailable" {470 358 462 18}

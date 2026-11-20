@@ -595,26 +595,43 @@ func removeLocalEntry(location string) error {
 	return os.Remove(location)
 }
 
-// finishLocalDelete puts a finished local deletion on screen: the folder on show
-// is read again when it is the one the entries were in, and a failure says that
-// what was removed is gone for good.
+// finishLocalDelete puts a finished local deletion on screen: the rows that
+// left go out of the folder on show without reading it again, while a failure
+// says that what was removed is gone for good and re-reads what is left.
 func (state *State) finishLocalDelete(view *sftpView, result localDeleteResult) {
 	session, ok := state.sftpSession(view)
 	if !ok || session.files != view || !view.localBusy {
 		return
 	}
 	view.localBusy = false
-	// The window shows both sides, so its local pane needs the new listing
-	// whatever side is active; the panel only shows the local side when it is.
-	if (view.local || view.detached != nil) && filepath.Clean(view.lfolder.path) == filepath.Clean(result.dir) {
-		state.listLocal(view, result.dir)
-	}
 	messages := state.messages
 	if result.err != nil {
+		// A walk that stopped part-way may have emptied a folder without
+		// removing it, and no result describes what it left.
 		view.status = fmt.Sprintf(messages.SFTPErrorFmt, result.err)
 		detail := fmt.Sprintf("%s: %s %s", result.failed, fmt.Sprintf(messages.SFTPErrorFmt, result.err), messages.SFTPDeleteSelectionPartial)
 		state.fileOpenNotice(view.detached, messages.SFTPDeleteSelectionTitle, detail, components.ToastError)
-	} else if result.total > 1 {
+		if (view.local || view.detached != nil) && filepath.Clean(view.lfolder.path) == filepath.Clean(result.dir) {
+			state.listLocal(view, result.dir)
+		}
+		view.invalidateDetached()
+		return
+	}
+	// The window shows both sides, so its local pane needs the new rows
+	// whatever side is active; the panel only shows the local side when it is.
+	if (view.local || view.detached != nil) && filepath.Clean(view.lfolder.path) == filepath.Clean(result.dir) {
+		// A reading of the folder that started before the delete would put the
+		// removed names back; it is older than the answer the disk gave, and its
+		// loading message has no reply left to retire it.
+		view.localSeq++
+		state.retireLocalListingStatus(view)
+		names := make([]string, len(result.removed))
+		for index, location := range result.removed {
+			names[index] = filepath.Base(location)
+		}
+		state.dropSFTPDeletedRows(view, &view.lfolder, names)
+	}
+	if result.total > 1 {
 		view.status = fmt.Sprintf(messages.SFTPDeletedCountFmt, len(result.removed))
 	} else {
 		view.status = fmt.Sprintf(messages.SFTPDeletedFmt, result.removed[0])

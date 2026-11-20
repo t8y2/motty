@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
@@ -17,61 +16,6 @@ type proxyHop struct {
 	ID      uint32
 	Label   string
 	Address string
-}
-
-// proxyTableSource reads the jump route page's table cells when the table asks
-// for them, one visible cell at a time.
-type proxyTableSource struct {
-	records *[]proxyRecord
-	indices *[]int
-	jumpID  *uint32
-}
-
-func (source *proxyTableSource) Len() int {
-	if source == nil || source.records == nil {
-		return 0
-	}
-	if source.jumpID != nil && *source.jumpID != 0 && source.indices != nil {
-		return len(*source.indices)
-	}
-	return len(*source.records)
-}
-
-func (source *proxyTableSource) recordAt(row int) (*proxyRecord, bool) {
-	if source == nil || source.records == nil || row < 0 {
-		return nil, false
-	}
-	records := *source.records
-	if source.jumpID != nil && *source.jumpID != 0 && source.indices != nil {
-		indices := *source.indices
-		if row >= len(indices) {
-			return nil, false
-		}
-		idx := indices[row]
-		if idx < 0 || idx >= len(records) {
-			return nil, false
-		}
-		return &records[idx], true
-	}
-	if row >= len(records) {
-		return nil, false
-	}
-	return &records[row], true
-}
-
-func (source *proxyTableSource) Cell(row, column int) string {
-	route, ok := source.recordAt(row)
-	if !ok {
-		return ""
-	}
-	switch column {
-	case 1:
-		return route.cells[0]
-	case 2:
-		return route.cells[1]
-	default:
-		return ""
-	}
 }
 
 // rebuildProxyFilter 依据当前选中的跳板中枢重新构建可见路由索引切片（复用底层数组，零额外分配）
@@ -113,19 +57,82 @@ func (state *State) visibleProxyAt(row int) (*proxyRecord, bool) {
 	return &state.proxies[idx], true
 }
 
-// syncProxyTable keeps table selection within visible bounds without highlighting clicked rows.
-func (state *State) syncProxyTable() {
-	if state.proxyTable.Selected() >= state.visibleProxyCount() {
-		state.proxyTable.Select(-1)
+// initProxyList names the route list's rows by their route numbers, so a row
+// keeps its keyboard place as routes are filtered.
+func (state *State) initProxyList() {
+	state.proxyRowDecl = state.declareProxyRow
+	state.proxyList.Key = func(row int) int {
+		if route, ok := state.visibleProxyAt(row); ok {
+			return int(route.ID)
+		}
+		return row
+	}
+	state.proxyList.Label = func(row int) string {
+		if route, ok := state.visibleProxyAt(row); ok {
+			return route.label
+		}
+		return ""
 	}
 }
 
-// takeProxyTableSelection adopts the row a key moved the table to.
-func (state *State) takeProxyTableSelection() {
-	row := state.proxyTable.Selected()
+// syncProxyList keeps the list's keyboard row within visible bounds.
+func (state *State) syncProxyList() {
+	if state.proxyList.Selected() >= state.visibleProxyCount() {
+		state.proxyList.Select(-1)
+	}
+}
+
+// takeProxyListSelection adopts the row a key moved the list to.
+func (state *State) takeProxyListSelection() {
+	row := state.proxyList.Selected()
 	if route, ok := state.visibleProxyAt(row); ok {
 		state.selectProxy(route.ID)
 	}
+}
+
+// proxyListKey moves the route list's keyboard row: the arrows, Home and End and
+// Page Up and Down, from a row that has the keyboard, as the canvas table did.
+func (state *State) proxyListKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if state.activeSection != sectionProxies || state.modal != modalNone {
+		return gfx.EventResult{}, false
+	}
+	if event.Modifiers&(gfx.ModifierControl|gfx.ModifierMeta|gfx.ModifierAlt) != 0 {
+		return gfx.EventResult{}, false
+	}
+	row, ok := event.Target.In(hitProxyRowList)
+	if !ok {
+		return gfx.EventResult{}, false
+	}
+	last := state.visibleProxyCount() - 1
+	if last < 0 {
+		return gfx.EventResult{}, false
+	}
+	first, lastVisible := state.proxyList.Visible()
+	page := max(lastVisible-first, 1)
+	switch event.Key {
+	case gfx.KeyUp:
+		row--
+	case gfx.KeyDown:
+		row++
+	case gfx.KeyPageUp:
+		row -= page
+	case gfx.KeyPageDown:
+		row += page
+	case gfx.KeyHome:
+		row = 0
+	case gfx.KeyEnd:
+		row = last
+	default:
+		return gfx.EventResult{}, false
+	}
+	row = min(max(row, 0), last)
+	state.proxyList.Select(row)
+	state.proxyList.ScrollIntoView(row)
+	state.takeProxyListSelection()
+	return gfx.EventResult{
+		Handled: true, Repaint: true,
+		Focus: hitProxyRowList.At(row), FocusVisible: true,
+	}, true
 }
 
 type proxyRecord struct {
@@ -164,21 +171,28 @@ func (route proxyRecord) relayCommand() string {
 type proxyEditor struct {
 	targetID uint32
 	jumpID   uint32
-	// targetSelect and jumpSelect are the two searchable host pickers. Their
-	// queries stay here so typing filters without opening a second surface.
-	targetSelect components.SingleSelectState
-	jumpSelect   components.SingleSelectState
-	targetPopup  gfx.Rect
-	jumpPopup    gfx.Rect
-	viaShell     bool
-	relay        text.Editor
-	editing      bool
-	routeID      uint32
+	// targetChoice and jumpChoice are the page comboboxes' values: when the
+	// user picks a host they change, and the dialog adopts the choice through
+	// applyProxyTargetChoice or applyProxyJumpChoice.
+	targetChoice uint32
+	jumpChoice   uint32
+	// targetChoices and jumpChoices are the choices the comboboxes offer,
+	// rebuilt when the dialog is declared.
+	targetChoices, jumpChoices []uint32
+	// focusTarget asks the next declaration to put the keyboard in the target
+	// combobox, as the hand-painted dialog did when it opened.
+	focusTarget bool
+	viaShell    bool
+	relay       text.Editor
+	editing     bool
+	routeID     uint32
 	// fromHostForm remembers that the host form opened this route dialog, so
 	// closing it returns to the form instead of to the page.
 	fromHostForm bool
 	// dialogBody is where the dialog body laid out the controls painted by hand.
 	dialogBody proxyDialogBody
+	// The target and jump hosts are page comboboxes in labelled rows.
+	targetRow, jumpRow ui.FormFieldState
 	// The relay command is a page field: a labelled row and a text bound to relay, which the
 	// dialog binds when it is first declared.
 	relayRow   ui.FormFieldState
@@ -189,55 +203,71 @@ type proxyEditor struct {
 // proxyDialogBody is where the route dialog's body put each control it paints
 // by hand.
 type proxyDialogBody struct {
-	target, jump, via, viaHelp ui.Box
+	viaHelp ui.Box
 }
 
 func (editor *proxyEditor) reset(targetID, jumpID uint32) {
-	*editor = proxyEditor{targetID: targetID, jumpID: jumpID}
+	*editor = proxyEditor{targetID: targetID, jumpID: jumpID, focusTarget: true}
 	editor.relay.Insert(defaultRelayCommand)
+	editor.syncChoices()
 }
 
 func (editor *proxyEditor) load(route proxyRecord) {
 	*editor = proxyEditor{
-		targetID: route.TargetID,
-		jumpID:   route.JumpID,
-		viaShell: route.ViaShell,
-		editing:  true,
-		routeID:  route.ID,
+		targetID:    route.TargetID,
+		jumpID:      route.JumpID,
+		focusTarget: true,
+		viaShell:    route.ViaShell,
+		editing:     true,
+		routeID:     route.ID,
 	}
 	relay := route.Relay
 	if relay == "" {
 		relay = defaultRelayCommand
 	}
 	editor.relay.Insert(relay)
+	editor.syncChoices()
 }
 
-// syncProxyHostSelects rebuilds both host pickers from the catalog and shows
-// the hosts the editor currently holds. It is called when the dialog opens and
-// after a choice changes which hosts are selectable, not while painting.
-func (state *State) syncProxyHostSelects() {
+// syncChoices shows the hosts the editor holds in the page comboboxes.
+func (editor *proxyEditor) syncChoices() {
+	editor.targetChoice, editor.jumpChoice = editor.targetID, editor.jumpID
+}
+
+// proxyTargetChoices are the hosts a route can reach: route targets that no
+// other route has taken.
+func (state *State) proxyTargetChoices() []uint32 {
 	editor := &state.proxyEditor
-	editor.targetSelect.SetOptions(state.proxyHostOptions(true, editor.routeID))
-	editor.jumpSelect.SetOptions(state.proxyHostOptions(false, editor.routeID))
-	editor.targetSelect.SetValue(hostSelectValue(editor.targetID))
-	editor.jumpSelect.SetValue(hostSelectValue(editor.jumpID))
+	choices := editor.targetChoices[:0]
+	for _, host := range state.hosts {
+		if host.isRouteTarget() && !state.proxyTargetConfiguredExcluding(host.ID, editor.routeID) {
+			choices = append(choices, host.ID)
+		}
+	}
+	editor.targetChoices = choices
+	return choices
 }
 
-// proxyHostOptions is the closed list of a jump-route host picker: every host
-// is offered, and the ones that cannot be part of this route are disabled
-// rather than hidden so a search can explain the absence. A target is any host
-// a route can reach; a jump is always an SSH host, the only kind it can sign in
-// to.
-func (state *State) proxyHostOptions(target bool, routeID uint32) []components.SingleSelectOption {
-	options := make([]components.SingleSelectOption, 0, len(state.hosts))
+// proxyJumpChoices are the hosts a route can jump through: the SSH hosts.
+func (state *State) proxyJumpChoices() []uint32 {
+	editor := &state.proxyEditor
+	choices := editor.jumpChoices[:0]
 	for _, host := range state.hosts {
-		disabled := !host.isSSH()
-		if target {
-			disabled = !host.isRouteTarget() || state.proxyTargetConfiguredExcluding(host.ID, routeID)
+		if host.isSSH() {
+			choices = append(choices, host.ID)
 		}
-		options = append(options, hostSelectOption(host, disabled))
 	}
-	return options
+	editor.jumpChoices = choices
+	return choices
+}
+
+// hostPickerName is how a host combobox names a choice: its label, which is
+// what the hand-painted picker showed.
+func (state *State) hostPickerName(id uint32) string {
+	if host, ok := state.hostByID(id); ok {
+		return host.Label
+	}
+	return ""
 }
 
 func (editor *proxyEditor) relayCommand() string {
@@ -344,7 +374,6 @@ func (state *State) openProxyDialogForHost(targetID uint32, fromHostForm bool) {
 	}
 	state.proxyEditor.reset(targetID, jumpID)
 	state.proxyEditor.fromHostForm = fromHostForm
-	state.syncProxyHostSelects()
 	state.proxyDialogError = ""
 	state.modal = modalNewProxy
 }
@@ -374,181 +403,31 @@ func (state *State) openEditProxyID(id uint32) {
 	}
 	state.selectedProxyID = id
 	state.proxyEditor.load(route)
-	state.syncProxyHostSelects()
 	state.proxyDialogError = ""
 	state.modal = modalNewProxy
 }
 
-// applyProxyTargetChoice commits a target row and keeps the two pickers
+// applyProxyTargetChoice commits a target choice and keeps the two pickers
 // distinct: choosing the host that is currently the jump swaps the two.
 func (state *State) applyProxyTargetChoice(id uint32) {
 	if !state.chooseProxyTarget(id) {
 		return
 	}
-	state.syncProxyHostSelects()
+	state.proxyEditor.syncChoices()
 }
 
 func (state *State) applyProxyJumpChoice(id uint32) {
 	if !state.chooseProxyJump(id) {
 		return
 	}
-	state.syncProxyHostSelects()
-}
-
-// closeProxyPickers dismisses both pickers and drops their search text.
-func (state *State) closeProxyPickers() {
-	state.proxyEditor.targetSelect.Dismiss()
-	state.proxyEditor.jumpSelect.Dismiss()
-}
-
-// proxyDialogKey routes arrows, Enter, Escape and Tab to the host picker that
-// has the keyboard. It runs before the dialog's own keys, so Enter chooses the
-// highlighted host instead of submitting the form.
-func (state *State) proxyDialogKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
-	if state.modal != modalNewProxy {
-		return gfx.EventResult{}, false
-	}
-	editor := &state.proxyEditor
-	var result gfx.EventResult
-	switch {
-	case event.Target == hitProxyDialogTarget || event.Target == hitProxyTargetTrigger:
-		editor.jumpSelect.Open = false
-		result = editor.targetSelect.Key(event)
-	case event.Target == hitProxyDialogJump || event.Target == hitProxyJumpTrigger:
-		editor.targetSelect.Open = false
-		result = editor.jumpSelect.Key(event)
-	case event.Key == gfx.KeyEscape && editor.targetSelect.Open:
-		result = editor.targetSelect.Key(event)
-	case event.Key == gfx.KeyEscape && editor.jumpSelect.Open:
-		result = editor.jumpSelect.Key(event)
-	case event.Key == gfx.KeyTab && editor.targetSelect.Open:
-		result = editor.targetSelect.Key(event)
-	case event.Key == gfx.KeyTab && editor.jumpSelect.Open:
-		result = editor.jumpSelect.Key(event)
-	default:
-		return gfx.EventResult{}, false
-	}
-	if result.Handled || result.Repaint {
-		state.syncProxyPickerChoices()
-	}
-	return result, result.Handled || result.Repaint
-}
-
-// syncProxyPickerChoices adopts a host chosen from the keyboard. A picker that
-// is still open is a search in progress, not a choice.
-func (state *State) syncProxyPickerChoices() {
-	editor := &state.proxyEditor
-	if !editor.targetSelect.Open {
-		if hostID, ok := hostSelectID(editor.targetSelect.Value()); ok && hostID != editor.targetID {
-			state.applyProxyTargetChoice(hostID)
-		}
-	}
-	if !editor.jumpSelect.Open {
-		if hostID, ok := hostSelectID(editor.jumpSelect.Value()); ok && hostID != editor.jumpID {
-			state.applyProxyJumpChoice(hostID)
-		}
-	}
-}
-
-// isProxyPickerTarget reports whether a pointer event belongs to either host
-// picker, so a press beside an open list closes only the list.
-func isProxyPickerTarget(id gfx.ID) bool {
-	return id == hitProxyDialogTarget || id == hitProxyTargetTrigger || id == hitProxyTargetScroll ||
-		id.Scope() == hitProxyTargetItemList ||
-		id == hitProxyDialogJump || id == hitProxyJumpTrigger || id == hitProxyJumpScroll ||
-		id.Scope() == hitProxyJumpItemList
-}
-
-// proxyPickerPointer lets an open list own its scrollbar and closes it on a
-// press anywhere else without discarding the dialog.
-func (state *State) proxyPickerPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	editor := &state.proxyEditor
-	if !editor.targetSelect.Open && !editor.jumpSelect.Open {
-		return gfx.EventResult{}, false
-	}
-	if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary && !isProxyPickerTarget(event.Target) {
-		state.closeProxyPickers()
-		return gfx.EventResult{Handled: true, Repaint: true}, true
-	}
-	if result := editor.targetSelect.Pointer(event); result.Handled {
-		return result, true
-	}
-	if result := editor.jumpSelect.Pointer(event); result.Handled {
-		return result, true
-	}
-	return gfx.EventResult{}, false
-}
-
-// scrollProxyDialog gives the wheel to whichever host list is open, and keeps
-// it from moving the page behind the dialog.
-func (state *State) scrollProxyDialog(event gfx.ScrollEvent) gfx.EventResult {
-	editor := &state.proxyEditor
-	switch {
-	case editor.targetSelect.Open:
-		inside := pointInRect(event.X, event.Y, editor.targetPopup) ||
-			event.Target == hitProxyDialogTarget || event.Target == hitProxyTargetTrigger ||
-			event.Target == hitProxyTargetScroll || event.Target.Scope() == hitProxyTargetItemList
-		if inside {
-			return gfx.EventResult{Handled: true, Repaint: editor.targetSelect.Wheel(event)}
-		}
-		return gfx.EventResult{Handled: true}
-	case editor.jumpSelect.Open:
-		inside := pointInRect(event.X, event.Y, editor.jumpPopup) ||
-			event.Target == hitProxyDialogJump || event.Target == hitProxyJumpTrigger ||
-			event.Target == hitProxyJumpScroll || event.Target.Scope() == hitProxyJumpItemList
-		if inside {
-			return gfx.EventResult{Handled: true, Repaint: editor.jumpSelect.Wheel(event)}
-		}
-		return gfx.EventResult{Handled: true}
-	}
-	return gfx.EventResult{}
+	state.proxyEditor.syncChoices()
 }
 
 func (state *State) clickProxyDialog(id gfx.ID) {
-	editor := &state.proxyEditor
-	if editor.targetSelect.Open || editor.jumpSelect.Open {
-		switch {
-		case id == hitProxyDialogClose || id == hitProxyDialogCancel:
-			state.closeProxyDialog()
-			state.status = state.messages.StatusEditCanceled
-		case id == hitProxyDialogSubmit:
-			state.closeProxyPickers()
-			state.submitProxyDialog()
-		case id == hitProxyDialogTarget || id == hitProxyTargetTrigger:
-			editor.jumpSelect.Open = false
-			editor.targetSelect.Open = true
-		case id == hitProxyDialogJump || id == hitProxyJumpTrigger:
-			editor.targetSelect.Open = false
-			editor.jumpSelect.Open = true
-		case id == hitProxyTargetDismiss:
-			editor.targetSelect.Open = false
-		case id == hitProxyJumpDismiss:
-			editor.jumpSelect.Open = false
-		case id.Scope() == hitProxyJumpItemList:
-			if index, ok := id.In(hitProxyJumpItemList); ok && editor.jumpSelect.Choose(index) {
-				if hostID, ok := hostSelectID(editor.jumpSelect.Value()); ok {
-					state.applyProxyJumpChoice(hostID)
-				}
-			}
-		case id.Scope() == hitProxyTargetItemList:
-			if index, ok := id.In(hitProxyTargetItemList); ok && editor.targetSelect.Choose(index) {
-				if hostID, ok := hostSelectID(editor.targetSelect.Value()); ok {
-					state.applyProxyTargetChoice(hostID)
-				}
-			}
-		default:
-			state.closeProxyPickers()
-		}
-		return
-	}
 	switch id {
 	case hitProxyDialogClose, hitProxyDialogCancel:
 		state.closeProxyDialog()
 		state.status = state.messages.StatusEditCanceled
-	case hitProxyDialogTarget, hitProxyTargetTrigger:
-		editor.targetSelect.Open = true
-	case hitProxyDialogJump, hitProxyJumpTrigger:
-		editor.jumpSelect.Open = true
 	case hitProxyDialogViaShell:
 		state.proxyEditor.viaShell = !state.proxyEditor.viaShell
 	case hitProxyDialogSubmit:
@@ -557,7 +436,6 @@ func (state *State) clickProxyDialog(id gfx.ID) {
 }
 
 func (state *State) submitProxyDialog() {
-	state.closeProxyPickers()
 	if state.proxyDialogError = state.proxyEditor.validate(state); state.proxyDialogError != "" {
 		return
 	}
@@ -706,8 +584,10 @@ func (state *State) clickProxies(id gfx.ID) {
 				state.selectedBastionJumpID = hubs[index-1].JumpHost.ID
 			}
 			state.rebuildProxyFilter()
-			state.proxyTable.Scroll.Offset = 0
-			state.proxyTable.Select(-1)
+			if view := &state.sectionBodies.proxies; view.listScroll != nil {
+				view.listScroll.ScrollTo(0)
+			}
+			state.proxyList.Select(-1)
 			if state.visibleProxyCount() > 0 {
 				if first, found := state.visibleProxyAt(0); found {
 					state.selectedProxyID = first.ID
@@ -993,7 +873,7 @@ func (state *State) refreshProxies() {
 			// The selected hub lost its last route: show all routes again
 			// rather than leave the table filtered to nothing.
 			state.selectedBastionJumpID = 0
-			state.proxyTable.Select(-1)
+			state.proxyList.Select(-1)
 			resetHub = true
 		}
 	}

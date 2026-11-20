@@ -61,17 +61,24 @@ func TestMonitorOuterPanelLayoutsAndResizeAtDisplayScales(t *testing.T) {
 					}
 					check()
 					x := state.monitorDividerX()
+					if hit, ok := hitByIDInSnapshot(view.Snapshot(), hitMonitorDivider); !ok {
+						t.Fatal("the monitor divider has no hit")
+					} else if hit.Bounds.X > x || x > hit.Bounds.X+hit.Bounds.Width {
+						t.Fatalf("the divider's hit at %v does not contain the edge at %v", hit.Bounds, x)
+					}
 					delta := float32(40)
 					if !left {
 						delta = -delta
 					}
-					state.monitorPointer(gfx.PointerEvent{Kind: gfx.PointerDown, Target: hitMonitorDivider, Button: gfx.PointerButtonPrimary, X: x, Y: 200})
-					state.monitorPointer(gfx.PointerEvent{Kind: gfx.PointerUp, X: x + delta, Y: 200})
-					if err = view.Rest(); err != nil {
+					// The drag goes through the window's routing, as the pointer does:
+					// a press on the divider, the motion, and the release.
+					if err = view.Press(x, 200); err != nil {
 						t.Fatal(err)
 					}
-					// Rest may have nothing scheduled by direct input; resize explicitly publishes.
-					if err = view.Resize(1600, 900); err != nil {
+					if err = view.Move(x+delta, 200); err != nil {
+						t.Fatal(err)
+					}
+					if err = view.Release(x+delta, 200); err != nil {
 						t.Fatal(err)
 					}
 					if state.monitorRect.Width != monitorWidth+40 {

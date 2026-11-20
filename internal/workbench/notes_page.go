@@ -80,7 +80,7 @@ func (state *State) ensureNotePage(n *notesUI, kind noteSurfaceKind) *notePageUI
 	p.drawSource = func(d *ui.DrawContext) { state.drawNoteSource(d, n) }
 	p.drawPreview = func(d *ui.DrawContext) { state.drawNotePreview(d, n) }
 	if p.library.Pos == 0 {
-		p.library.Pos = n.view.width
+		p.library.Pos = max(160, n.view.width)
 	}
 	switch kind {
 	case noteSurfaceLibrary:
@@ -98,8 +98,8 @@ func (s *State) noteLibraryAfterLayout(n *notesUI) {
 	if p.library.Pos == 0 {
 		return
 	}
-	usable := s.catalogSectionBounds().Width
-	width := min(max(p.library.Pos, 160), min(520, max(160, usable-8)))
+	usable := max(1, s.catalogSectionBounds().Width-1)
+	width := min(max(p.library.Pos, 160), min(520, max(160, usable-480)))
 	if width != p.library.Pos && !p.library.Dragging() {
 		p.library.Pos = width
 	}
@@ -236,7 +236,7 @@ func (s *State) declareNoteTreeRow(n *notesUI, i int) {
 	rowID := p.tree.RowID(i)
 	hovered := c.Canvas().Hovered() == rowID
 	focused := c.Canvas().FocusVisible() == rowID
-	ui.Row(c).Gap(0).FillWidth().Children(func() {
+	ui.Row(c).Gap(0).FillWidth().Items(ui.Center).Children(func() {
 		ui.Icon(c, icon).Size(16, 16).Color(color).Shrink(0).MarginSides(0, 0, 0, 4)
 		label := ui.Text(c, e.label).FontSize(13).Color(color).Grow(1).Ellipsis()
 		if !e.folder {
@@ -546,9 +546,11 @@ func (s *State) declareNotesWorkspace(c ui.C) {
 		ui.Column(c).Width(v.width).FillHeight().Children(func() {
 			s.declareNoteLibrary(c, n, v.width, false)
 		})
-		ui.Splitter(c, &state.library).SplitterThickness(1).Mins(160, 0).Label(s.noteText("Resize note library", "调整目录宽度"))
+		// The old handle's FractionForKey moved it 5% of the room per arrow.
+		state.library.StepFraction = .05
+		ui.Splitter(c, &state.library).SplitterThickness(1).Mins(160, 480).Label(s.noteText("Resize note library", "调整目录宽度"))
 		ui.Column(c).Grow(1).FillHeight().Children(func() {
-			s.declareNoteEditor(c, n, bounds.Width-v.width-8, false)
+			s.declareNoteEditor(c, n, bounds.Width-v.width-1, false)
 		})
 	})
 	s.declareNoteOverlays(c, n)
@@ -871,7 +873,7 @@ func (s *State) declareNoteFormatting(c ui.C, n *notesUI, width float32, window 
 			if len(icon.Commands) > 0 {
 				button = s.noteIconButton(c, hitNoteFormats.At(i), icon, name, 26, false)
 			} else {
-				button = ui.Button(c, label).Ghost().Size(28, 26).Hit(hitNoteFormats.At(i), name)
+				button = ui.Button(c, label).Ghost().Size(28, 26).Hit(hitNoteFormats.At(i), label)
 			}
 			button.Tooltip(name)
 		}

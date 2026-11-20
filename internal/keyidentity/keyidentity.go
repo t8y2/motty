@@ -227,6 +227,14 @@ func Parse(data, passphrase []byte) (ssh.Signer, error) {
 	return ssh.ParsePrivateKeyWithPassphrase(data, passphrase)
 }
 
+// ReadFile returns the bytes of one private key file, as they are on disk. It is
+// for a caller that keeps the key itself, not the path it came from; InspectData
+// says what the bytes are.
+func ReadFile(path string) ([]byte, error) {
+	_, data, _, err := read(path)
+	return data, err
+}
+
 func read(path string) (absolute string, data []byte, info os.FileInfo, err error) {
 	absolute, err = filepath.Abs(filepath.Clean(path))
 	if err != nil {

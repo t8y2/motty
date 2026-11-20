@@ -192,17 +192,20 @@ type Terminal struct {
 	imageBytes int
 	imageWake  func()
 
-	replyFn       func([]byte)
-	clipboardFn   func(ClipboardWrite)
-	notifyFn      func(Notification)
-	bellFn        func()
-	cwdFn         func(Cwd)
-	cwdReportFn   func(Cwd)
-	promptReadyFn func()
-	promptStartFn func()
-	promptToken   string
-	inputStart    Point // where the shell's editable line begins; see InputMove
-	inputStartSet bool
+	replyFn func([]byte)
+	// cellPixelsW and cellPixelsH are one character cell in device pixels, as
+	// the owner measured it; see SetCellPixels. Zero means not measured yet.
+	cellPixelsW, cellPixelsH int
+	clipboardFn              func(ClipboardWrite)
+	notifyFn                 func(Notification)
+	bellFn                   func()
+	cwdFn                    func(Cwd)
+	cwdReportFn              func(Cwd)
+	promptReadyFn            func()
+	promptStartFn            func()
+	promptToken              string
+	inputStart               Point // where the shell's editable line begins; see InputMove
+	inputStartSet            bool
 
 	// promptLine is the buffer line the shell's prompt began on (OSC 133 A), and
 	// promptActive whether the cursor is still on that prompt; see
@@ -210,6 +213,7 @@ type Terminal struct {
 	// waiting for the shell's own redraw; promptSaved holds those rows and the
 	// cursor column as the shell drew them until it does.
 	promptLine   uint64
+	promptStart  int // the column the prompt began at
 	promptActive bool
 	promptStale  bool
 	promptSaved  []*line
@@ -290,6 +294,15 @@ func (t *Terminal) Modes() Modes { return t.modes }
 // with (device attributes, cursor position reports, color queries). The slice
 // is only valid during the call; the function must not block.
 func (t *Terminal) SetReply(reply func([]byte)) { t.replyFn = reply }
+
+// SetCellPixels records the size of one character cell in device pixels, as the
+// owner's font measured it. The terminal answers the size reports that name
+// pixels (XTWINOPS 14 t, 15 t and 16 t) from this cell and its own grid. Zero
+// leaves them unanswered: a program then uses its own fallback cell instead of
+// sizing images to a cell the terminal does not have.
+func (t *Terminal) SetCellPixels(width, height int) {
+	t.cellPixelsW, t.cellPixelsH = max(width, 0), max(height, 0)
+}
 
 // SetSyncHold installs the receiver for DECSET 2026 transitions. The callback
 // runs during Write, after the mode changes and before the bytes that follow
@@ -910,8 +923,14 @@ func (t *Terminal) resizeLines(s *screen, rows int, cursorY *int, useHistory boo
 			*cursorY -= drop
 		}
 	case rows > len(s.lines):
+		// New rows go below the screen, which is what a shrink that dropped
+		// blank rows below the cursor left to put back. History comes back only
+		// when the cursor is on the bottom row, where a shrink had pushed the
+		// rows above it into history; pulling it with the cursor anywhere else
+		// would move the live content, such as a screen a shell has cleared,
+		// back under the reader while a side panel toggles.
 		pulled := 0
-		if useHistory && cursorY != nil {
+		if useHistory && cursorY != nil && *cursorY == len(s.lines)-1 {
 			pulled = min(rows-len(s.lines), t.histCount)
 		}
 		next := make([]*line, 0, rows)

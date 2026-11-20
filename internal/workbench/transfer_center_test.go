@@ -522,3 +522,72 @@ func BenchmarkPaintTransferCenter(b *testing.B) {
 		state.Paint(&canvas, size)
 	}
 }
+
+// The filter selects keep the 30px slot the old controls were given, and the
+// list keeps its 10px scrollbar drawn whether or not the pointer is over it.
+func TestTransferFiltersAndScrollbarKeepTheirOldGeometry(t *testing.T) {
+	state := transferPreviewState(t)
+	extendTransferPreview(state, sftpclient.TransferPaused, 20)
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	m := state.messages.Transfers
+	for _, label := range []string{m.Hosts, m.Direction} {
+		hit, found := hitByLabelRoleLast(&canvas, label, gfx.RoleCombobox)
+		if !found {
+			t.Fatalf("missing filter select %q", label)
+		}
+		if hit.Bounds.Height != 30 {
+			t.Fatalf("filter select %q is %v high, want the old 30px slot", label, hit.Bounds.Height)
+		}
+	}
+	scrollbar, found := hitByLabelRoleLast(&canvas, "Vertical scrollbar", gfx.RoleSeparator)
+	if !found || scrollbar.Bounds.Width != 10 {
+		t.Fatalf("transfer scrollbar = %+v, want an always-drawn 10px bar", scrollbar.Bounds)
+	}
+}
+
+// The hover preview keeps the old card's placement: its "Details" title, a 3px
+// gap under the trigger, and the align offset that shifts it in from the row's
+// leading edge.
+func TestTransferPreviewKeepsTheOldCardPlacement(t *testing.T) {
+	state := transferPreviewState(t)
+	size := gfx.Size{Width: 1400, Height: 900}
+	paint := func(now time.Duration, hovered gfx.ID) *gfx.Canvas {
+		var canvas gfx.Canvas
+		canvas.SetClock(func() time.Duration { return now })
+		canvas.BeginFrame()
+		canvas.SetInteraction(hovered, gfx.ID{}, gfx.ID{}, false)
+		state.Paint(&canvas, size)
+		canvas.EndFrame()
+		return &canvas
+	}
+	first := paint(time.Second, gfx.ID{})
+	title := state.transfers.entries[0].title
+	row, found := hitByLabelRoleLast(first, title, gfx.RoleButton)
+	if !found {
+		t.Fatalf("the first transfer row %q is not painted", title)
+	}
+	paint(time.Second, row.ID)
+	canvas := paint(time.Second+transferDetailDelay+30*time.Millisecond, row.ID)
+	if !state.transfers.details.open {
+		t.Fatal("resting on the row did not open its details")
+	}
+	if !hasTextValue(canvas, state.messages.Transfers.Details) {
+		t.Fatal("the preview does not carry the old Details title")
+	}
+	row, found = hitByLabelRoleLast(canvas, title, gfx.RoleButton)
+	if !found {
+		t.Fatalf("the transfer row %q is not painted in the preview's frame", title)
+	}
+	cardHit, found := hitByID(canvas, hitTransfersDetailCard)
+	if !found {
+		t.Fatal("the preview has no card")
+	}
+	align := max(4, min(row.Bounds.Width*0.55, 190))
+	if wantLeft := row.Bounds.X + align; cardHit.Bounds.X != wantLeft {
+		t.Fatalf("preview starts at %v, want %v (the old align offset)", cardHit.Bounds.X, wantLeft)
+	}
+	if wantTop := row.Bounds.Y + row.Bounds.Height + 3; cardHit.Bounds.Y != wantTop {
+		t.Fatalf("preview top = %v, want %v (3px under the trigger)", cardHit.Bounds.Y, wantTop)
+	}
+}

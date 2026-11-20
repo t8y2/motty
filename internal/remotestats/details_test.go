@@ -80,7 +80,7 @@ func (f detailRunFunc) RunCommand(ctx context.Context, command string, limit int
 func TestDetailsCloseCancelsAnInflightRequest(t *testing.T) {
 	started := make(chan struct{})
 	w := StartDetails(detailRunFunc(func(ctx context.Context, command string, limit int) ([]byte, error) {
-		if command != detailsCommand || limit != 96<<10 {
+		if command != linuxShellCommand(detailsCommand) || limit != 96<<10 {
 			t.Error("unexpected command or output bound")
 		}
 		if _, ok := ctx.Deadline(); !ok {
@@ -109,7 +109,7 @@ func TestDetailsCommandOnLinux(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	data, err := exec.CommandContext(ctx, "sh", "-c", detailsCommand).Output()
+	data, err := exec.CommandContext(ctx, "sh", "-c", linuxShellCommand(detailsCommand)).Output()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestWorkerIntervalAndRouteChanges(t *testing.T) {
 			seconds = 2
 		}
 		w := StartWithInterval(streamFunc(func(ctx context.Context, script string, limit int, line func([]byte) bool) error {
-			if !strings.HasSuffix(script, "sleep "+itoa(seconds)+"\ndone") {
+			if !strings.HasSuffix(script, "sleep "+itoa(seconds)+"\ndone'") {
 				t.Error("wrong sampling interval")
 			}
 			return feed("gop-net-primary eth0", reading(1), "gop-net-primary eth1", reading(2))(ctx, script, limit, line)

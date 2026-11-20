@@ -22,49 +22,49 @@ text "Session Logs" {223 54.5 745 25}
 text "Loaded 6 / 6 · Total 6" {1219.1992 57.5 360 19}
 text "Connections opened from the workbench, when they started and how they ended. Stored locally, without terminal contents." {223 85 1151 18}
 text "Search host name, address or account" {254 121 398 20}
-text "All time" {254.5 160.5 40.85742 19}
-text "All statuses" {386.5 160.5 63.73242 19}
-text "All protocols" {518.5 160.5 69.16992 19}
-text "All outcomes" {650.5 160.5 71.666016 19}
-text "Newest first" {782.5 160.5 66.84375 19}
-text "Target" {231 189 42.396484 40}
-text "Started" {884 189 46.853516 40}
-text "Protocol" {988 189 53.89453 40}
-text "Status" {1072 189 40.783203 40}
-text "Duration" {1272 189 54.776367 40}
-text "Today" {231 232.5 35.203125 19}
-text "web-01 · alice" {231 255 637 21}
-text "10-30 17:00" {884 255 88 21}
-text "SSH" {988 255 68 21}
-text "Ended · Closed by you" {1072 255 184 21}
-text "30m 00s" {1272 255 64 21}
-text "rack-02 · ops" {231 291 637 21}
-text "10-30 16:00" {884 291 88 21}
-text "Serial" {988 291 68 21}
-text "Interrupted" {1072 291 184 21}
-text "1m 00s…" {1272 291 64 21}
-text "db-01 · bob" {231 327 637 21}
-text "10-30 15:00" {884 327 88 21}
-text "SSH" {988 327 68 21}
-text "Failed · Authentication failed" {1072 327 184 21}
-text "5m 00s" {1272 327 64 21}
-text "Yesterday" {231 366.5 57.398438 19}
-text "lab · ops" {231 389 637 21}
-text "10-29 12:00" {884 389 88 21}
-text "Local shell" {988 389 68 21}
-text "Ended · Closed by you" {1072 389 184 21}
-text "1h 00m" {1272 389 64 21}
-text "Earlier" {231 428.5 35.578125 19}
-text "old-box · ops" {231 451 637 21}
-text "10-22 18:00" {884 451 88 21}
-text "Telnet" {988 451 68 21}
-text "Failed · Timed out" {1072 451 184 21}
-text "1m 00s" {1272 451 64 21}
-text "archive · ops" {231 487 637 21}
-text "09-20 18:00" {884 487 88 21}
-text "SSH" {988 487 68 21}
-text "Ended · Closed by you" {1072 487 184 21}
-text "1m 00s" {1272 487 64 21}
+text "All time" {254 160.5 40.85742 19}
+text "All statuses" {386 160.5 63.73242 19}
+text "All protocols" {518 160.5 69.16992 19}
+text "All outcomes" {650 160.5 71.666016 19}
+text "Newest first" {782 160.5 66.84375 19}
+text "Target" {231 193 42.396484 40}
+text "Started" {884 193 46.853516 40}
+text "Protocol" {988 193 53.89453 40}
+text "Status" {1072 193 40.783203 40}
+text "Duration" {1272 193 54.776367 40}
+text "Today" {231 236.5 35.203125 19}
+text "web-01 · alice" {231 259 637 36}
+text "10-30 17:00" {884 259 88 36}
+text "SSH" {988 259 68 36}
+text "Ended · Closed by you" {1072 259 184 36}
+text "30m 00s" {1272 259 64 36}
+text "rack-02 · ops" {231 295 637 36}
+text "10-30 16:00" {884 295 88 36}
+text "Serial" {988 295 68 36}
+text "Interrupted" {1072 295 184 36}
+text "1m 00s…" {1272 295 64 36}
+text "db-01 · bob" {231 331 637 36}
+text "10-30 15:00" {884 331 88 36}
+text "SSH" {988 331 68 36}
+text "Failed · Authentication failed" {1072 331 184 36}
+text "5m 00s" {1272 331 64 36}
+text "Yesterday" {231 370.5 57.398438 19}
+text "lab · ops" {231 393 637 36}
+text "10-29 12:00" {884 393 88 36}
+text "Local shell" {988 393 68 36}
+text "Ended · Closed by you" {1072 393 184 36}
+text "1h 00m" {1272 393 64 36}
+text "Earlier" {231 432.5 35.578125 19}
+text "old-box · ops" {231 455 637 36}
+text "10-22 18:00" {884 455 88 36}
+text "Telnet" {988 455 68 36}
+text "Failed · Timed out" {1072 455 184 36}
+text "1m 00s" {1272 455 64 36}
+text "archive · ops" {231 491 637 36}
+text "09-20 18:00" {884 491 88 36}
+text "SSH" {988 491 68 36}
+text "Ended · Closed by you" {1072 491 184 36}
+text "1m 00s" {1272 491 64 36}
 hit "" region {0 0 1400 36} disabled=false
 hit "Hosts" button {82 4 28 28} disabled=false
 hit "New tab" button {116 4 28 28} disabled=false
@@ -96,18 +96,16 @@ hit "Filter by status" button {355 152 124 36} disabled=false
 hit "Filter by protocol" button {487 152 124 36} disabled=false
 hit "Filter by outcome" button {619 152 124 36} disabled=false
 hit "Sort sessions" button {751 152 124 36} disabled=false
-hit "Started" button {876 189 104 40} disabled=false
-hit "Duration" button {1264 189 80 40} disabled=false
-hit "Session Logs" listbox {223 229 1151 616} disabled=false
-hit "web-01 · alice" option {223 255 1151 36} disabled=false
-hit "Favorite web-01 · alice" button {1344 255 30 36} disabled=false
-hit "rack-02 · ops" option {223 291 1151 36} disabled=false
-hit "Favorite rack-02 · ops" button {1344 291 30 36} disabled=false
-hit "db-01 · bob" option {223 327 1151 36} disabled=false
-hit "Favorite db-01 · bob" button {1344 327 30 36} disabled=false
-hit "lab · ops" option {223 389 1151 36} disabled=false
-hit "Favorite lab · ops" button {1344 389 30 36} disabled=false
-hit "old-box · ops" option {223 451 1151 36} disabled=false
-hit "Favorite old-box · ops" button {1344 451 30 36} disabled=false
-hit "archive · ops" option {223 487 1151 36} disabled=false
-hit "Favorite archive · ops" button {1344 487 30 36} disabled=false
+hit "Session Logs" listbox {223 233 1151 612} disabled=false
+hit "web-01 · alice" option {223 259 1151 36} disabled=false
+hit "Favorite web-01 · alice" button {1344 259 30 36} disabled=false
+hit "rack-02 · ops" option {223 295 1151 36} disabled=false
+hit "Favorite rack-02 · ops" button {1344 295 30 36} disabled=false
+hit "db-01 · bob" option {223 331 1151 36} disabled=false
+hit "Favorite db-01 · bob" button {1344 331 30 36} disabled=false
+hit "lab · ops" option {223 393 1151 36} disabled=false
+hit "Favorite lab · ops" button {1344 393 30 36} disabled=false
+hit "old-box · ops" option {223 455 1151 36} disabled=false
+hit "Favorite old-box · ops" button {1344 455 30 36} disabled=false
+hit "archive · ops" option {223 491 1151 36} disabled=false
+hit "Favorite archive · ops" button {1344 491 30 36} disabled=false

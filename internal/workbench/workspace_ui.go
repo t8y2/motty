@@ -808,7 +808,7 @@ func (state *State) declarePaneSplitter(c ui.C, frame, bounds gfx.Rect, split Pa
 		Left(bounds.X - frame.X).Top(bounds.Y - frame.Y).
 		Width(bounds.Width).Height(bounds.Height).Children(func() {
 		ui.Slot(c).Width(entry.state.Pos).Shrink(0)
-		ui.Splitter(c, &entry.state).Mins(minFirst, minSecond).
+		ui.Splitter(c, &entry.state).SplitterThickness(1).Mins(minFirst, minSecond).
 			Hit(hitPaneDividerList.At(splitterIndex(state.paneSplits, split.NodeID)), state.messages.PaneResize)
 		ui.Slot(c).Grow(1)
 	})
@@ -825,6 +825,11 @@ func (state *State) declarePaneSplitter(c ui.C, frame, bounds gfx.Rect, split Pa
 			}
 			if splitter.dragging {
 				state.save()
+				// The drag took the keyboard: give it back to the terminal the
+				// workspace was typing in, as the old divider did on release.
+				if id := state.activeTerminalFocusHit(); !id.IsZero() {
+					c.Canvas().RequestFocus(id)
+				}
 			}
 			splitter.dragging = false
 		})
@@ -891,10 +896,7 @@ func (state *State) dragContextDivider(event gfx.PointerEvent) gfx.EventResult {
 	if !ok || !context.Open || event.Viewport.Width < contextDrawerAt {
 		return gfx.EventResult{Handled: true}
 	}
-	base := state.baseWorkspacePixelBounds(event.Viewport)
-	base.Width -= state.aiReserve(workspaceID, event.Viewport)
-	base.Width -= state.independentMonitorReserve(workspaceID, event.Viewport)
-	_, _, minimum, maximum := state.contextPanelLayout(event.Viewport, context)
+	base, _, minimum, maximum := state.contextPanelLayout(event.Viewport, context)
 	width := event.X - base.X
 	if context.Side == layoutcore.ContextRight {
 		width = base.X + base.Width - 1 - event.X

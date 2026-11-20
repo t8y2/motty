@@ -71,6 +71,7 @@ type sftpDirectoryTree struct {
 	label          func(int) string
 	content        func(int)
 	bounds         gfx.Rect // the pane width, for how deep a row may indent
+	contentWidth   float32  // the room a row's name is indented against
 	nextKey        int
 	requestID      uint64
 	generation     uint64
@@ -642,23 +643,15 @@ func (w *sftpWindow) declareDirectoryTreePane(c ui.C, side int, width float32) u
 	tree.bounds = gfx.Rect{Width: width}
 	rows := w.flattenDirectoryTree(side)
 	w.initDirectoryTreeState(side)
-	// Keep the deepest row's name in the room the pane gives the tree. The Tree
-	// still receives each row's real depth, so its keys and navigation follow the
-	// tree rather than the indentation.
-	deepest := uint8(0)
-	for index := range rows {
-		deepest = max(deepest, rows[index].depth)
-	}
+	// Indent by each row's display depth against the room the tree actually
+	// has, as the painted tree did; the row keeps its real depth for keys and
+	// navigation.
 	tree.tree.Indent = sftpDirectoryTreeIndent
-	if deepest > 0 {
-		if room := (width - directoryTreeLabelReserve) / float32(deepest); room < tree.tree.Indent {
-			tree.tree.Indent = max(room, 4)
-		}
-	}
+	tree.contentWidth = max(width-14, 0)
 	if tree.revealSelected {
 		for index, row := range rows {
 			if sameDirectoryTreePath(side == 0, row.node.path, tree.selectedPath) {
-				tree.tree.ScrollTo(index, ui.ListCenter)
+				tree.tree.ScrollIntoView(index)
 				break
 			}
 		}
@@ -667,8 +660,16 @@ func (w *sftpWindow) declareDirectoryTreePane(c ui.C, side int, width float32) u
 	frame := ui.Column(c).Width(width).Grow(1).Pad(2).Background(theme.Background).Radius(6).
 		Border(1, theme.Border.Mix(theme.MutedForeground, .35))
 	frame.Children(func() {
+		if len(rows) == 0 {
+			ui.Column(c).Grow(1).Items(ui.Center).Justify(ui.Center).Children(func() {
+				ui.Text(c, w.owner.messages.SFTPWindow.DirectoryTree).
+					FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground)
+			})
+			return
+		}
 		tree.c = c
-		ui.Tree(c, &tree.tree, len(rows), tree.label, tree.content).Grow(1).Scrollbars().ScrollbarSize(10)
+		ui.Tree(c, &tree.tree, len(rows), tree.label, tree.content).Grow(1).AlwaysScrollbars().ScrollbarSize(10).
+			ScrollbarIDs(sftpWindowTreeBar[side], gfx.ID{}).ScrollbarLabels(w.owner.messages.SFTPWindow.DirectoryTree, "")
 		w.directoryTreeChanges(side, rows)
 		tree.c = nil
 	})
@@ -684,6 +685,9 @@ func (w *sftpWindow) initDirectoryTreeState(side int) {
 	}
 	tree.tree.RowHeight = sftpDirectoryTreeRowHeight
 	tree.tree.Indent = sftpDirectoryTreeIndent
+	tree.tree.DisplayDepth = func(depth int) int {
+		return int(directoryTreeDisplayDepth(uint8(min(depth, 255)), tree.contentWidth))
+	}
 	tree.tree.Key = func(index int) int {
 		visible := w.directoryTree[side].visible
 		if index < 0 || index >= len(visible) {
@@ -699,8 +703,11 @@ func (w *sftpWindow) initDirectoryTreeState(side int) {
 		row := tree.visible[index]
 		node := row.node
 		branch := !node.loaded || node.loading || node.err != "" || len(node.children) > 0
+		// Depth is the folder's own level: the tree reads it for keyboard
+		// movement between a parent and its children. DisplayDepth compresses
+		// only the indent a deep path draws with.
 		return ui.TreeNode{
-			Depth: int(min(row.depth, 31)), Branch: branch,
+			Depth: int(row.depth), Branch: branch,
 			Expanded: node.expanded, Selected: sameDirectoryTreePath(side == 0, node.path, tree.selectedPath),
 		}
 	}

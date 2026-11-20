@@ -41,6 +41,7 @@ func dumpWithoutPorts(canvas *gfx.Canvas) string {
 }
 
 func TestPaintGoldenLocalProxyConnected(t *testing.T) {
+	pinPaintEnvironment(t)
 	for _, view := range []string{"main", "more", "docker"} {
 		name := "local-proxy-connected-" + view
 		t.Run(name, func(t *testing.T) {
@@ -97,8 +98,8 @@ func TestPaintGoldenLocalProxyConnected(t *testing.T) {
 			if err != nil {
 				t.Fatal("no golden: run with UPDATE_PAINT_GOLDEN=1")
 			}
-			if got != string(want) {
-				t.Errorf("paints differently from its golden\n%s", firstDifference(string(want), got))
+			if diff := firstDifference(string(want), got); diff != "" {
+				t.Errorf("paints differently from its golden\n%s", diff)
 			}
 		})
 	}

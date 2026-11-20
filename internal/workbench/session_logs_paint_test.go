@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"testing"
@@ -901,35 +902,18 @@ func sessionLogsAwaitStoredFavorite(t testing.TB, state *State, id string) {
 	}
 }
 
-// A heading sorts by the column it names: the started column and the duration
-// column are the two orders the store offers, and clicking the one already
-// chosen reverses it.
-func TestSessionLogsHeaderSortsTheJournal(t *testing.T) {
+// The column headings are labels, as the old table painted them: the journal's
+// order is chosen from the sort filter, not by pressing a heading. A heading
+// that became a button would also put an extra stop in the Tab order.
+func TestSessionLogsHeadersAreLabels(t *testing.T) {
 	state := sessionLogsState(t, true)
-	view := &state.sessionLogs.view
 	m := state.messages.SessionLogs
-	if view.query.Sort != sessionlog.SortStartedDesc {
-		t.Fatalf("the journal does not start newest first: %v", view.query.Sort)
-	}
-	clickPageLabel(t, state, gfx.RoleButton, m.ColumnWhen)
-	sessionLogsWait(t, state)
-	if view.query.Sort != sessionlog.SortStartedAsc {
-		t.Fatalf("clicking the started heading sorted %v", view.query.Sort)
-	}
-	clickPageLabel(t, state, gfx.RoleButton, m.ColumnWhen)
-	sessionLogsWait(t, state)
-	if view.query.Sort != sessionlog.SortStartedDesc {
-		t.Fatalf("clicking the started heading again sorted %v", view.query.Sort)
-	}
-	clickPageLabel(t, state, gfx.RoleButton, m.ColumnDuration)
-	sessionLogsWait(t, state)
-	if view.query.Sort != sessionlog.SortDurationAsc {
-		t.Fatalf("clicking the duration heading sorted %v", view.query.Sort)
-	}
-	clickPageLabel(t, state, gfx.RoleButton, m.ColumnDuration)
-	sessionLogsWait(t, state)
-	if view.query.Sort != sessionlog.SortDurationDesc {
-		t.Fatalf("clicking the duration heading again sorted %v", view.query.Sort)
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	for _, label := range []string{m.ColumnWhen, m.ColumnDuration} {
+		if _, found := hitByLabelRoleLast(&canvas, label, gfx.RoleButton); found {
+			t.Errorf("heading %q is a button", label)
+		}
 	}
 }
 
@@ -966,5 +950,70 @@ func TestSessionLogsLanguageFollowsTheCatalog(t *testing.T) {
 	}
 	if !contains(labels, zh.StatusInterrupted) || !contains(labels, zh.ProtocolSerial) {
 		t.Fatalf("the row values are not localized: %v", labels)
+	}
+}
+
+// A short detail panel keeps its actions at the bottom and gives up its fields
+// and events instead: the old panel dropped the events before the buttons.
+func TestShortSessionLogDetailKeepsItsActions(t *testing.T) {
+	state := sessionLogsState(t, true)
+	state.selectSessionLogRecord("log-00")
+	sessionLogsWait(t, state)
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 900, Height: 420})
+	m := state.messages.SessionLogs
+	for _, label := range []string{m.CopyMetadata, m.LocateHost, m.Delete} {
+		if _, found := hitByLabelRoleLast(&canvas, label, gfx.RoleButton); !found {
+			t.Errorf("short panel lost its %q action", label)
+		}
+	}
+	if hasTextValue(&canvas, m.Events) {
+		t.Fatal("short panel painted events with no room for them")
+	}
+	canvas.Reset()
+	state.Paint(&canvas, gfx.Size{Width: 900, Height: 600})
+	if !hasTextValue(&canvas, m.Events) {
+		t.Fatal("a 600px window has room for the events and did not paint them")
+	}
+	for _, label := range []string{m.CopyMetadata, m.LocateHost, m.Delete} {
+		if _, found := hitByLabelRoleLast(&canvas, label, gfx.RoleButton); !found {
+			t.Errorf("600px panel lost its %q action", label)
+		}
+	}
+}
+
+// A record row's cells are centered in the row, as the component table drew
+// them: the page List gives each cell the row's height, and its line must fill
+// that height rather than sit at the row's top edge.
+func TestSessionLogRowsCenterTheirCells(t *testing.T) {
+	state := sessionLogsState(t, true)
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	view := &state.sessionLogs.view
+	checked := 0
+	for index, item := range view.items {
+		if item.row < 0 || item.row >= len(view.page) {
+			continue
+		}
+		hit, ok := hitByID(&canvas, view.rowsList.RowID(index))
+		if !ok {
+			continue // scrolled out of sight
+		}
+		target := view.page[item.row].cells[0]
+		for _, text := range canvas.Texts() {
+			if text.Value != target {
+				continue
+			}
+			center := text.Bounds.Y + text.Bounds.Height/2
+			rowCenter := hit.Bounds.Y + hit.Bounds.Height/2
+			if math.Abs(float64(center-rowCenter)) > .5 {
+				t.Fatalf("row %d's cell is centered at %v in a row centered at %v", index, center, rowCenter)
+			}
+			checked++
+			break
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no record row was painted; the test checks nothing")
 	}
 }

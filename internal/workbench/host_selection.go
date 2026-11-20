@@ -6,6 +6,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 )
 
 var (
@@ -116,6 +117,38 @@ func (state *State) clickHostScopeSelection(id gfx.ID) bool {
 	return true
 }
 
+// declareHostRowCheck declares a host row's checkbox in the row's page
+// declaration: the square centered in the room the row gave it, its hit that
+// wide, and its selection reported by the central dispatcher.
+func (state *State) declareHostRowCheck(c ui.C, parent ui.Box, id gfx.ID, label string, checked bool) {
+	parent.Children(func() {
+		ui.Row(c).Fill().Center().Children(func() {
+			ui.Checkbox(c, state.pageFlag(checked), "").Hit(id, label)
+		})
+	})
+}
+
+// declareHostScopeCheck declares one of the page's scope checkboxes: the
+// select-all box, a group's box or a host row's. The square is centered in the
+// room the row gave it, and its hit covers that room as the painted checkbox
+// did.
+func (state *State) declareHostScopeCheck(c ui.C, parent ui.Box, id gfx.ID, label string, count hostSelectionCount, disabled bool) {
+	parent.Children(func() {
+		ui.Row(c).Fill().Center().Children(func() {
+			box := ui.Checkbox(c, state.pageFlag(count.total > 0 && count.total == count.selected), "").Hit(id, label)
+			if count.selected > 0 && count.selected < count.total {
+				box = box.Mixed(true)
+			}
+			if disabled {
+				box = box.Disabled(true)
+			}
+		})
+	})
+}
+
+// paintHostScopeCheckbox paints a scope checkbox into the card grid's header,
+// which is still painted by hand. The list and the header declare theirs in the
+// page.
 func (state *State) paintHostScopeCheckbox(canvas *gfx.Canvas, id gfx.ID, bounds gfx.Rect, count hostSelectionCount) {
 	theme := state.Theme()
 	side := components.CheckboxExtent(theme)

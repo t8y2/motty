@@ -182,7 +182,10 @@ func paintSFTPColumnResize(canvas *gfx.Canvas, theme gfx.Theme, area gfx.Rect, w
 			line = gfx.Color{}
 		}
 		if line.Alpha != 0 {
-			canvas.Rounded(gfx.Rect{X: dividers[index].X - 1, Y: dividers[index].Y, Width: 3, Height: dividers[index].Height}, 1, line)
+			// The hovered or pressed line grows a pixel above and below, as the
+			// painted ColumnResize did.
+			divider := dividers[index]
+			canvas.Rounded(gfx.Rect{X: divider.X - 1, Y: divider.Y - 1, Width: 3, Height: divider.Height + 2}, 1, line)
 		}
 		canvas.HitWithOptions(id, hits[index], label, gfx.HitOptions{
 			Role: gfx.RoleSeparator, Cursor: gfx.PointerCursorResizeHorizontal, SkipFocus: true,

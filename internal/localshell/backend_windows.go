@@ -12,6 +12,8 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"motty/internal/termsize"
 )
 
 // setConsoleCtrlHandler is kernel32!SetConsoleCtrlHandler. x/sys does not wrap
@@ -162,11 +164,13 @@ func startBackend(config Config) (backend, error) {
 	return backend{
 		io:         &consoleIO{output: output, input: input, closeConsole: closeConsole},
 		foreground: func() ([]string, bool) { return windowsForeground(shellPID, shellCreated) },
-		resize: func(cols, rows int) {
+		// ConPTY sizes its console in cells only: Windows' console API has no
+		// pixel size to carry, so the size's pixel fields stop here.
+		resize: func(size termsize.Size) {
 			consoleMu.Lock()
 			defer consoleMu.Unlock()
 			if !consoleClosed {
-				_ = consoleBackend.resize(console, windows.Coord{X: int16(cols), Y: int16(rows)})
+				_ = consoleBackend.resize(console, windows.Coord{X: int16(size.Cols), Y: int16(size.Rows)})
 			}
 		},
 		wait: func() (int, error) {

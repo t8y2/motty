@@ -43,7 +43,7 @@ func TestDashboardLongIntervalUsesOneCancellableLinuxStream(t *testing.T) {
 	defer w.Close()
 	select {
 	case cmd := <-r.commands:
-		if !strings.HasSuffix(cmd, "sleep 60\ndone") {
+		if !strings.HasSuffix(cmd, "sleep 60\ndone'") {
 			t.Fatal("Linux sampler ignored requested interval")
 		}
 	case <-time.After(time.Second):

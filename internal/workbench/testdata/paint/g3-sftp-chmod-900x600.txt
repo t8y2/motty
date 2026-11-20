@@ -23,15 +23,15 @@ rect {{191 125 518 350} {0.12156863 0.14117648 0.1764706 1} 10 600 {0 0 0 0} fal
 rect {{662 140 32 32} {0.06666667 0.08235294 0.105882354 0} 7.5 600 {0 0 0 0} false #22}
 rect {{218 246 464 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #24}
 rect {{219 247 462 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #25}
-rect {{300 320 16 16} {0.8862745 0.90588236 0.93333334 1} 3 600 {0 0 0 0} false #26}
-rect {{328 320 16 16} {0.8862745 0.90588236 0.93333334 1} 3 600 {0 0 0 0} false #27}
-rect {{356 320 16 16} {0.06666667 0.08235294 0.105882354 1} 3 600 {0 0 0 0} false #28}
-rect {{300 348 16 16} {0.8862745 0.90588236 0.93333334 1} 3 600 {0 0 0 0} false #29}
-rect {{328 348 16 16} {0.06666667 0.08235294 0.105882354 1} 3 600 {0 0 0 0} false #30}
-rect {{356 348 16 16} {0.06666667 0.08235294 0.105882354 1} 3 600 {0 0 0 0} false #31}
-rect {{300 376 16 16} {0.8862745 0.90588236 0.93333334 1} 3 600 {0 0 0 0} false #32}
-rect {{328 376 16 16} {0.06666667 0.08235294 0.105882354 1} 3 600 {0 0 0 0} false #33}
-rect {{356 376 16 16} {0.06666667 0.08235294 0.105882354 1} 3 600 {0 0 0 0} false #34}
+rect {{298 318 16 16} {0.8862745 0.90588236 0.93333334 1} 3 600 {0 0 0 0} false #26}
+rect {{326 318 16 16} {0.8862745 0.90588236 0.93333334 1} 3 600 {0 0 0 0} false #27}
+rect {{354 318 16 16} {0.06666667 0.08235294 0.105882354 1} 3 600 {0 0 0 0} false #28}
+rect {{298 346 16 16} {0.8862745 0.90588236 0.93333334 1} 3 600 {0 0 0 0} false #29}
+rect {{326 346 16 16} {0.06666667 0.08235294 0.105882354 1} 3 600 {0 0 0 0} false #30}
+rect {{354 346 16 16} {0.06666667 0.08235294 0.105882354 1} 3 600 {0 0 0 0} false #31}
+rect {{298 374 16 16} {0.8862745 0.90588236 0.93333334 1} 3 600 {0 0 0 0} false #32}
+rect {{326 374 16 16} {0.06666667 0.08235294 0.105882354 1} 3 600 {0 0 0 0} false #33}
+rect {{354 374 16 16} {0.06666667 0.08235294 0.105882354 1} 3 600 {0 0 0 0} false #34}
 rect {{556.1328 420 64.61133 32} {0.23529412 0.27450982 0.34117648 1} 7.5 600 {0 0 0 0} false #35}
 rect {{628.74414 420 57.25586 32} {0.8862745 0.90588236 0.93333334 1} 7.5 600 {0 0 0 0} false #36}
 rect {{121 8 20 20} {0.17254902 0.19607843 0.23529412 1} 4.7999997 0 {116 4 498 28} true #37}
@@ -41,7 +41,7 @@ rect {{860 36 40 564} {0.06666667 0.08235294 0.105882354 1} 0 0 {0 0 0 0} false 
 rect {{864 372 32 32} {0.17254902 0.19607843 0.23529412 1} 7.5 0 {864 40 32 556} true #41}
 shadow {{218 246 464 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #23}
 text "Production" {148 8 60.216797 20}
-text "Files" {12 43 256 21}
+text "Files" {12 43 256 20}
 text "/" {44 114 4.4941406 20}
 text "home" {73.49414 114 33.07129 20}
 text "test" {131.56543 114 22.026367 20}
@@ -54,7 +54,7 @@ text "11/15 06:15" {262.1328 177.5 82 19}
 text "notes.txt" {44 206.5 140 21}
 text "11 B" {217.84961 207.5 54 19}
 text "11/15 06:13" {262.02148 207.5 82 19}
-text "-rw-r--r--  ·  11 B" {14 540 314 19}
+text "-rw-r--r--  ·  11 B" {14 540 314 18}
 text "1 items" {12 570.5 316 19}
 text "Change Permissions" {214 148 472 17}
 text "Enter a three-digit octal mode such as 644 or 755." {214 173 472 21}
@@ -121,15 +121,15 @@ hit "Resize column" separator {236.5 144 4 28} disabled=false
 hit "" region {190 124 520 352} disabled=false
 hit "Close dialog" button {662 140 32 32} disabled=false
 hit "Octal mode" textfield {218 246 464 32} disabled=false
-hit "Owner Read" checkbox {298 318 20 20} disabled=false
-hit "Owner Write" checkbox {326 318 20 20} disabled=false
-hit "Owner Execute" checkbox {354 318 20 20} disabled=false
-hit "Group Read" checkbox {298 346 20 20} disabled=false
-hit "Group Write" checkbox {326 346 20 20} disabled=false
-hit "Group Execute" checkbox {354 346 20 20} disabled=false
-hit "Others Read" checkbox {298 374 20 20} disabled=false
-hit "Others Write" checkbox {326 374 20 20} disabled=false
-hit "Others Execute" checkbox {354 374 20 20} disabled=false
+hit "Owner Read" checkbox {294 314 24 24} disabled=false
+hit "Owner Write" checkbox {322 314 24 24} disabled=false
+hit "Owner Execute" checkbox {350 314 24 24} disabled=false
+hit "Group Read" checkbox {294 342 24 24} disabled=false
+hit "Group Write" checkbox {322 342 24 24} disabled=false
+hit "Group Execute" checkbox {350 342 24 24} disabled=false
+hit "Others Read" checkbox {294 370 24 24} disabled=false
+hit "Others Write" checkbox {322 370 24 24} disabled=false
+hit "Others Execute" checkbox {350 370 24 24} disabled=false
 hit "Cancel" button {556.1328 420 64.61133 32} disabled=false
 hit "Apply" button {628.74414 420 57.25586 32} disabled=false
 hit "Files" separator {336.5 36 8 564} disabled=false

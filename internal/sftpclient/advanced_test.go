@@ -150,7 +150,7 @@ func TestWorkerUploadRequiresConfirmationAndResumesMatchingPartial(t *testing.T)
 	if err := os.WriteFile(finalPath, []byte("stable remote"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	partialPath := filepath.Join(root, remotePartialPath("upload.bin"))
+	partialPath := filepath.Join(root, remotePartialPath("upload.bin", localPath))
 	prefix := content[:7]
 	if err := os.WriteFile(partialPath, prefix, 0o600); err != nil {
 		t.Fatal(err)
@@ -364,7 +364,7 @@ func TestUploadCompletesWhenServerDoesNotAdvertisePosixRename(t *testing.T) {
 	if got, err := os.ReadFile(filepath.Join(root, "payload.txt")); err != nil || !bytes.Equal(got, content) {
 		t.Fatalf("uploaded content = %q, err %v", got, err)
 	}
-	requireExists(t, filepath.Join(root, remotePartialPath("payload.txt")), false)
+	requireExists(t, filepath.Join(root, remotePartialPath("payload.txt", source)), false)
 }
 
 func (remote *stalledRenameRemote) PosixRename(string, string) error {
@@ -409,7 +409,7 @@ func TestStalledUploadRenameTimesOutAndKeepsPartial(t *testing.T) {
 	}
 
 	requireExists(t, filepath.Join(root, "payload.txt"), false)
-	partial := filepath.Join(root, remotePartialPath("payload.txt"))
+	partial := filepath.Join(root, remotePartialPath("payload.txt", source))
 	requireExists(t, partial, true)
 	if kept, err := os.ReadFile(partial); err != nil || !bytes.Equal(kept, content) {
 		t.Fatalf("partial = %q, err %v", kept, err)

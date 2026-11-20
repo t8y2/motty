@@ -40,8 +40,6 @@ var (
 	hitSFTPProfileQuickMenu    = tree.ID(sftpWindowHits, "profile-quick-menu")
 	hitSFTPProfileQuickItems   = tree.Sub(sftpWindowHits, tree.Name("profile-quick-items"))
 	hitSFTPProfileQuickBar     = tree.ID(sftpWindowHits, "profile-quick-scroll")
-	hitSFTPProfileHover        = tree.ID(sftpWindowHits, "profile-hover")
-	hitSFTPProfileHoverItems   = tree.Sub(sftpWindowHits, tree.Name("profile-hover-items"))
 )
 
 type sftpBookmarkEditor struct {
@@ -50,12 +48,18 @@ type sftpBookmarkEditor struct {
 	original                    sftpBookmark
 	fields                      [3]text.Editor // name, local directory, remote directory
 	// fieldRows and fieldTexts are the page fields over fields, bound when first declared.
-	fieldRows             [3]ui.FormFieldState
-	fieldTexts            [3]ui.Field
-	fieldBound            [3]bool
-	viewport              gfx.Rect
-	errorText             string
-	scroll                *ui.ScrollState
+	fieldRows  [3]ui.FormFieldState
+	fieldTexts [3]ui.Field
+	fieldBound [3]bool
+	// scopeRow is the “Available to” field around the scope trigger, as the
+	// editor painted it before the profile list became a page scroll area.
+	scopeRow  ui.FormFieldState
+	viewport  gfx.Rect
+	errorText string
+	scroll    *ui.ScrollState
+	// emptyDraw paints the centered empty state over the list's viewport; it is
+	// made once so a paint does not allocate a closure.
+	emptyDraw             func(*ui.DrawContext)
 	scopeOpen, focusScope bool
 }
 
@@ -385,9 +389,13 @@ func (w *sftpWindow) declareBookmarkBody(c ui.C) {
 			if b.shared {
 				value = m.ProfileShared
 			}
-			trigger := ui.Button(c, value).Small().Outline().Hit(hitSFTPProfileScope, value).
-				Width(max(132, scopeWidth)).Height(32)
-			w.declareBookmarkScopeMenu(c, trigger)
+			b.scopeRow.For = hitSFTPProfileScope
+			scopeField := ui.FormField(c, &b.scopeRow, m.ProfileScope).
+				Width(max(132, scopeWidth)).Height(56).Shrink(0)
+			scopeField.Children(func() {
+				trigger := ui.Button(c, value).Small().Outline().Hit(hitSFTPProfileScope, value).Height(32)
+				w.declareBookmarkScopeMenu(c, trigger)
+			})
 			room := func(label string) float32 { return max(56, canvas.TextWidth(label, theme.Metrics.FontSizeM)+24) }
 			bookmarkButtonRoom(c, room(m.ProfileNew), func() { ui.Button(c, m.ProfileNew).Small().Outline().Hit(hitSFTPProfileNew, m.ProfileNew).FillWidth() })
 			bookmarkButtonRoom(c, room(m.BookmarkSave), func() {
@@ -402,7 +410,7 @@ func (w *sftpWindow) declareBookmarkBody(c ui.C) {
 		})
 		w.declareBookmarkProfileList(c)
 		if b.errorText != "" {
-			ui.Text(c, b.errorText).FontSize(theme.Metrics.FontSizeS).Color(w.owner.pal.danger).Ellipsis().Height(24)
+			ui.Text(c, b.errorText).FontSize(theme.Metrics.FontSizeS).Color(w.owner.pal.danger).Ellipsis().Height(24).LineHeight(24)
 		}
 	})
 }
@@ -425,47 +433,63 @@ func (w *sftpWindow) declareBookmarkScopeMenu(c ui.C, trigger ui.Box) {
 func (w *sftpWindow) declareBookmarkProfileList(c ui.C) {
 	b, theme, m := &w.bookmark, *c.Theme(), w.owner.messages.SFTPWindow
 	profiles := w.visibleProfiles()
-	area := ui.Scroll(c).Grow(1).Scrollbars()
-	b.scroll = area.ScrollState()
-	area.Children(func() {
+	// The archive list keeps the border and the two-pixel inset the editor was
+	// painted with, so the list does not sit bare inside the dialog. The border
+	// eats one pixel of the inset on each side.
+	frame := ui.Column(c).Grow(1).Pad(1).Background(theme.Background).
+		Radius(theme.Metrics.RadiusItem()).Border(1, theme.Border.Mix(theme.MutedForeground, .25))
+	frame.Children(func() {
+		area := ui.Scroll(c).Grow(1).AlwaysScrollbars().ScrollbarIDs(hitSFTPProfileBar, gfx.ID{}).ScrollbarLabels(m.BookmarkTitle, "")
+		b.scroll = area.ScrollState()
 		if len(profiles) == 0 {
-			ui.Text(c, m.ProfileEmpty).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).
-				PadSides(8, 8, 0, 8).Height(52)
-			return
-		}
-		for index, profile := range profiles {
-			name := profile.name
-			if name == "" {
-				name = profile.path
-			}
-			description := profile.path
-			if profile.local != "" {
-				description = elideMiddleRunes(profile.local, 34) + "  ⇄  " + elideMiddleRunes(profile.path, 34)
-			}
-			if profile.sync {
-				description += " · " + m.ProfileQuickSync
-			}
-			selected := b.editing && b.original == profile
-			row := ui.Row(c.KeyInt(index)).Height(52).PadX(8).Gap(8).Items(ui.Center).
-				HitWith(hitSFTPProfileItems.At(index), name, gfx.HitOptions{Role: gfx.RoleOption, Selected: selected})
-			if selected {
-				row = row.Background(theme.Accent)
-			}
-			row.Children(func() {
-				ui.Column(c).Grow(1).Gap(2).Children(func() {
-					ui.Text(c, name).FontSize(theme.Metrics.FontSizeM).Weight(gfx.WeightMedium).Color(theme.Foreground).Ellipsis()
-					ui.Text(c, description).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis()
-				})
-				badge := m.ProfileSite
-				background, foreground, border := theme.Background, theme.Foreground, theme.Border
-				if profile.shared {
-					badge, background, foreground = m.ProfileShared, theme.Secondary, theme.SecondaryForeground
+			if b.emptyDraw == nil {
+				b.emptyDraw = func(d *ui.DrawContext) {
+					d.Canvas.LabelCenter(m.ProfileEmpty, d.Rect, gfx.TextStyle{Size: theme.Metrics.FontSizeS, Color: theme.MutedForeground})
 				}
-				ui.Text(c, badge).FontSize(theme.Metrics.FontSizeS).Weight(gfx.WeightMedium).
-					Color(foreground).Background(background).Border(1, border).Radius(999).
-					PadSides(6, 6, 2, 2).Shrink(0)
-			})
+			}
+			area = area.DrawOver(b.emptyDraw)
 		}
+		area.Children(func() {
+			if len(profiles) == 0 {
+				return
+			}
+			for index, profile := range profiles {
+				name := profile.name
+				if name == "" {
+					name = profile.path
+				}
+				description := profile.path
+				if profile.local != "" {
+					description = elideMiddleRunes(profile.local, 34) + "  ⇄  " + elideMiddleRunes(profile.path, 34)
+				}
+				if profile.sync {
+					description += " · " + m.ProfileQuickSync
+				}
+				selected := b.editing && b.original == profile
+				// The row is inset four pixels from the list's left and keeps the
+				// scrollbar's room on the right, as the painted row did.
+				row := ui.Row(c.KeyInt(index)).Height(52).MarginSides(0, 14, 0, 4).PadX(8).Gap(8).Items(ui.Center).
+					HitWith(hitSFTPProfileItems.At(index), name, gfx.HitOptions{Role: gfx.RoleOption, Selected: selected}).
+					Hover(ui.Look{}.Background(theme.Accent))
+				if selected {
+					row = row.Background(theme.Accent)
+				}
+				row.Children(func() {
+					ui.Column(c).Grow(1).Gap(2).Children(func() {
+						ui.Text(c, name).FontSize(theme.Metrics.FontSizeM).Weight(gfx.WeightMedium).Color(theme.Foreground).Ellipsis()
+						ui.Text(c, description).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis()
+					})
+					badge := m.ProfileSite
+					background, foreground, border := theme.Background, theme.Foreground, theme.Border
+					if profile.shared {
+						badge, background, foreground = m.ProfileShared, theme.Secondary, theme.SecondaryForeground
+					}
+					ui.Text(c, badge).FontSize(theme.Metrics.FontSizeS).Weight(gfx.WeightMedium).
+						Color(foreground).Background(background).Border(1, border).Radius(999).
+						PadSides(6, 6, 2, 2).Shrink(0)
+				})
+			}
+		})
 	})
 }
 

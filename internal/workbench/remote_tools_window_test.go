@@ -547,6 +547,117 @@ func TestRemoteNativeWindowScrollsThroughAllDockerObjects(t *testing.T) {
 	})
 }
 
+// The wheel the window's page does not use must still end: the window's own
+// OnScroll is not the page's fallback, so Page.Wheel cannot call back into it.
+// A wheel over the titlebar, the status line or the footer used to bounce
+// between the two until the stack ran out.
+func TestRemoteNativeWindowWheelEndsOutsideTheTable(t *testing.T) {
+	withRemoteWindowApplication(t, func(application *app.Application, host *remoteWindowHost) {
+		state, _, fake, _ := liveSession(t)
+		fake.mu.Lock()
+		fake.runCommand = (&remoteServer{}).run
+		fake.mu.Unlock()
+		state.options.OpenContentWindow = application.OpenContentWindow
+		state.Click(hitRemoteToolsOpen)
+		w := state.remoteWindows[0]
+		host.until(t, func() bool { return !w.ui.remote.loading })
+
+		size := gfx.Size{Width: 1100, Height: 780}
+		wheel := host.windows[0].config.OnScroll
+		if wheel == nil {
+			t.Fatal("the tools window has no wheel handler")
+		}
+		bounds := remoteWindowListHit(t, w, size).Bounds
+		w.ui.remote.rows = make([]remoteRow, 40)
+		for index := range w.ui.remote.rows {
+			w.ui.remote.rows[index] = remoteRow{
+				key:   fmt.Sprintf("wheel-row-%02d", index),
+				cells: [6]string{fmt.Sprintf("%d", index+1)},
+			}
+		}
+		remoteWindowListHit(t, w, size)
+		scroll := w.ui.remote.tableScroll
+		if scroll == nil {
+			t.Fatal("the tools table has no scroll state")
+		}
+		before := scroll.Offset
+		if result := wheel(gfx.ScrollEvent{
+			X: bounds.X + bounds.Width/2, Y: bounds.Y + min(bounds.Height/2, 40),
+			DeltaY: 20, Precise: true, Viewport: size,
+		}); !result.Handled || scroll.Offset <= before {
+			t.Fatalf("the wheel over the table did not move it: %+v", result)
+		}
+		// The titlebar and the footer hold no scroll area: the event reaches the
+		// window's handler from the page's fallback and has to come back.
+		for _, point := range []gfx.Point{
+			{X: size.Width / 2, Y: TitlebarHeight / 2},
+			{X: size.Width / 2, Y: size.Height - 4},
+		} {
+			_ = wheel(gfx.ScrollEvent{X: point.X, Y: point.Y, DeltaY: 120, Viewport: size})
+		}
+	})
+}
+
+// The table's workspace surface belongs under its rows. It was an absolute
+// slot, which the page paints after its flow children, so the surface covered
+// the header and the rows the list had loaded.
+func TestRemoteNativeWindowTableSurfacePaintsUnderItsRows(t *testing.T) {
+	withRemoteWindowApplication(t, func(application *app.Application, host *remoteWindowHost) {
+		state, _, fake, _ := liveSession(t)
+		fake.mu.Lock()
+		fake.runCommand = (&remoteServer{}).run
+		fake.mu.Unlock()
+		state.options.OpenContentWindow = application.OpenContentWindow
+		state.Click(hitRemoteToolsOpen)
+		w := state.remoteWindows[0]
+		host.until(t, func() bool { return !w.ui.remote.loading })
+		w.ui.remote.rows = []remoteRow{{key: "surface-row", cells: [6]string{"row-0"}}}
+
+		size := gfx.Size{Width: 1100, Height: 780}
+		var canvas gfx.Canvas
+		w.paint(&canvas, size)
+		var row gfx.Text
+		found := false
+		for _, text := range canvas.Texts() {
+			if text.Value == "row-0" {
+				row, found = text, true
+				break
+			}
+		}
+		if !found {
+			t.Fatal("the loaded row was not painted")
+		}
+		list := remoteWindowListHit(t, w, size).Bounds
+		surface := gfx.Rectangle{}
+		covered := false
+		for _, rect := range canvas.Rectangles() {
+			if rect.Color != w.ui.pal.workspace || !rectContains(rect.Bounds, row.Bounds) {
+				continue
+			}
+			// The page's own background also contains the row. The table's
+			// surface is the smallest workspace rectangle under it, inset from
+			// the window and containing the list.
+			area := rect.Bounds.Width * rect.Bounds.Height
+			if !covered || area < surface.Bounds.Width*surface.Bounds.Height {
+				surface, covered = rect, true
+			}
+			if rect.Order > row.Order {
+				t.Fatalf("a workspace surface at %+v is painted after the row it holds", rect.Bounds)
+			}
+		}
+		if !covered || !rectContains(surface.Bounds, list) || surface.Bounds.Width >= size.Width || surface.Bounds.Height >= size.Height {
+			t.Fatalf("the table has no surface of its own: %+v", surface.Bounds)
+		}
+	})
+}
+
+// rectContains reports whether inner lies within outer.
+func rectContains(outer, inner gfx.Rect) bool {
+	return outer.X <= inner.X && outer.Y <= inner.Y &&
+		outer.X+outer.Width >= inner.X+inner.Width &&
+		outer.Y+outer.Height >= inner.Y+inner.Height
+}
+
 // A click in the native window's table must select the row painted under the
 // pointer even when a precise scroll stopped between two rows.
 func TestRemoteNativeWindowRowHitTestFollowsPaintedRows(t *testing.T) {

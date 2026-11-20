@@ -251,10 +251,10 @@ func (state *State) declareWorkspaceLibrary(c ui.C) {
 // the rows and their cards are painted into a slot, while their open buttons and
 // the inline command editor are page controls over them.
 func (state *State) declareWorkspaceLibraryList(c ui.C, view *workspaceLibrarySectionUI, bounds gfx.Rect, padding float32) {
-	contentWidth := max(0, bounds.Width-18-padding-workspaceLibraryScrollbarReserve)
+	contentWidth := max(0, bounds.Width-2*padding-workspaceLibraryScrollbarReserve)
 	rows, contentHeight := state.workspaceLibraryRowLayout(contentWidth, state.expandedWorkspaceTemplateIndex())
 	view.contentWidth, view.contentHeight = contentWidth, contentHeight
-	scroll := ui.Scroll(c).Grow(1).MarginSides(0, 0, 14, 0).Scrollbars()
+	scroll := ui.Scroll(c).Grow(1).MarginSides(0, 0, 14, 0)
 	view.scroll = scroll
 	area := scroll.ScrollState()
 	if state.workspaceLibraryScroll != state.workspaceLibraryScrollSynced {
@@ -280,13 +280,14 @@ func (state *State) declareWorkspaceLibraryList(c ui.C, view *workspaceLibrarySe
 	})
 }
 
-// workspaceLibraryOpenWidth is how wide a row's Enter button is: enough for its
-// icon and label, and 32 for the compact one-icon form.
+// workspaceLibraryOpenWidth is how wide a row's Enter button is: the small
+// button's padding and icon around its label, and 28 for the compact
+// one-icon form.
 func workspaceLibraryOpenWidth(canvas *gfx.Canvas, label string, compact bool) float32 {
 	if compact {
-		return 32
+		return 28
 	}
-	return min(max(canvas.TextWidthWeight(label, metrics.FontSizeS, gfx.WeightMedium)+52, 96), 156)
+	return canvas.TextWidthWeight(label, metrics.FontSizeM, gfx.WeightMedium) + 44
 }
 
 // workspaceLibraryRowButtons is where a row's open and more buttons go.
@@ -308,9 +309,9 @@ func (state *State) declareWorkspaceLibraryRowActions(c ui.C, contentWidth float
 			Hit(hitWorkspaceTemplateOpen.At(row.index), m.WorkspaceEnter).
 			Absolute().Left(openBounds.X).Top(openBounds.Y)
 		if compact {
-			button.IconOnly().Size(32, 32)
+			button.IconOnly().Size(28, 28)
 		} else {
-			button.Size(openBounds.Width, 32)
+			button.Size(openBounds.Width, 28)
 		}
 	}
 }
@@ -341,12 +342,15 @@ func (state *State) declareWorkspaceInlineEditor(c ui.C, contentWidth float32, r
 	box := pixelBounds(content, cells[hostIndex]).Inset(gfx.All(4))
 	editor := gfx.Rect{X: box.X + 10, Y: box.Y + 88, Width: max(0, box.Width-20), Height: 52}
 	edit.field.Invalid = edit.error != ""
-	ui.Row(c).Absolute().Left(editor.X).Top(editor.Y).Width(editor.Width).Height(52).Gap(8).Children(func() {
+	buttons := min(float32(116), editor.Width*.45)
+	ui.Row(c).Absolute().Left(editor.X).Top(editor.Y).Width(editor.Width).Height(52).Gap(8).Items(ui.Start).Children(func() {
 		ui.TextFieldID(c, hitWorkspaceInlineField, &edit.field, m.WorkspaceCommandField, "").Height(32).Grow(1)
-		ui.Button(c, m.WorkspaceCommandSave).XSmall().Outline().Shrink(0).
-			Hit(hitWorkspaceInlineSave, m.WorkspaceCommandSave)
-		ui.Button(c, m.Cancel).XSmall().Secondary().Shrink(0).
-			Hit(hitWorkspaceInlineCancel, m.Cancel)
+		ui.Row(c).Width(buttons).Height(26).Shrink(0).MarginTop(3).Gap(8).Items(ui.Center).Justify(ui.End).Children(func() {
+			ui.Button(c, m.WorkspaceCommandSave).XSmall().Outline().Shrink(0).
+				Hit(hitWorkspaceInlineSave, m.WorkspaceCommandSave)
+			ui.Button(c, m.Cancel).XSmall().Secondary().Shrink(0).
+				Hit(hitWorkspaceInlineCancel, m.Cancel)
+		})
 	})
 }
 
@@ -363,14 +367,19 @@ func (state *State) drawWorkspaceLibraryRows(canvas *gfx.Canvas, content gfx.Rec
 	rows, _ := state.workspaceLibraryRowLayout(contentWidth, state.expandedWorkspaceTemplateIndex())
 	// The cards are painted from this paint's slot: give them the content rect
 	// as the viewport so the whole grid is drawn, not only what the previous
-	// paint's scroll bounds said.
+	// paint's scroll bounds said. The rows themselves are culled to the scroll
+	// area's viewport, as the hand-painted list culled them.
+	viewport := state.workspaceLibraryBounds
+	if viewport.Width <= 0 || viewport.Height <= 0 {
+		viewport = content
+	}
 	state.workspaceLibraryBounds, state.workspaceLibraryContent = content, contentHeight
 	state.workspaceTemplateMoreBounds = state.workspaceTemplateMoreBounds[:0]
 	for _, row := range rows {
 		rect := row.bounds
 		rect.X += content.X
 		rect.Y += content.Y
-		if rect.Y+rect.Height < content.Y || rect.Y > content.Y+contentHeight {
+		if rect.Y+rect.Height < viewport.Y || rect.Y >= viewport.Y+viewport.Height {
 			continue
 		}
 		template := state.templates[row.index]
@@ -513,7 +522,7 @@ func (state *State) scrollWorkspaceLibrary(event gfx.ScrollEvent) gfx.EventResul
 		!pointInRect(event.X, event.Y, state.workspaceLibraryBounds) {
 		return gfx.EventResult{}
 	}
-	result := state.windowPage().Wheel(event)
+	result := state.windowPage().RouteWheel(event)
 	result.Handled = true
 	return result
 }

@@ -16,6 +16,7 @@ import (
 	"motty/internal/linkwatch"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
+	"motty/internal/termsize"
 )
 
 // fakeConn stands in for a network connection: tests set its status the way
@@ -228,7 +229,7 @@ type fakeShell struct {
 	mu      sync.Mutex
 	output  []byte
 	input   []byte
-	resizes [][2]int
+	resizes []termsize.Size
 	done    chan struct{}
 	err     error
 	closed  bool
@@ -268,9 +269,9 @@ func (shell *fakeShell) Write(p []byte) bool {
 	return true
 }
 
-func (shell *fakeShell) Resize(cols, rows int) {
+func (shell *fakeShell) Resize(size termsize.Size) {
 	shell.mu.Lock()
-	shell.resizes = append(shell.resizes, [2]int{cols, rows})
+	shell.resizes = append(shell.resizes, size)
 	shell.mu.Unlock()
 }
 
@@ -281,10 +282,16 @@ func (shell *fakeShell) resizeCount() int {
 }
 
 func (shell *fakeShell) lastResize() [2]int {
+	size := shell.lastSize()
+	return [2]int{size.Cols, size.Rows}
+}
+
+// lastSize is the whole size the shell was told last, pixels included.
+func (shell *fakeShell) lastSize() termsize.Size {
 	shell.mu.Lock()
 	defer shell.mu.Unlock()
 	if len(shell.resizes) == 0 {
-		return [2]int{}
+		return termsize.Size{}
 	}
 	return shell.resizes[len(shell.resizes)-1]
 }

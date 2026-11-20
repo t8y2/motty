@@ -24,6 +24,33 @@ func paintNoteWindowAt(t *testing.T, s *State, width float32) *gfx.Canvas {
 	return &c
 }
 
+// The toolbar's visible labels are the compact glyphs it has always shown;
+// the localized names belong in the tooltip and the accessible name. Passing
+// the name to Hit rewrites the button's label, which made the long Chinese
+// names paint over each other (the notes page regression).
+func TestNotesFormattingButtonsShowCompactLabels(t *testing.T) {
+	s := newTestState(t, freshOptions(t))
+	s.Click(hitNotes)
+	s.Click(hitNoteAdd)
+	c := paintNotesPage(s, 800)
+	first, ok := hitByID(c, hitNoteFormats.At(0))
+	if !ok || first.Label != noteFormatLabels[0] {
+		t.Fatalf("heading button label = %q, want %q", first.Label, noteFormatLabels[0])
+	}
+	if !canvasHasText(c, noteFormatLabels[0]) {
+		t.Fatalf("heading button does not paint %q", noteFormatLabels[0])
+	}
+	if canvasHasText(c, s.noteFormatName(0)) || canvasHasText(c, s.noteFormatName(1)) {
+		t.Fatal("formatting buttons paint their accessible names instead of their compact labels")
+	}
+	// An icon-only action keeps the localized name for assistive technology,
+	// but the name must not be painted in place of its icon.
+	italic, ok := hitByID(c, hitNoteFormats.At(2))
+	if !ok || italic.Label != s.noteFormatName(2) || canvasHasText(c, s.noteFormatName(2)) {
+		t.Fatalf("italic action label=%q visible=%v", italic.Label, canvasHasText(c, s.noteFormatName(2)))
+	}
+}
+
 func TestNotesLibraryHeaderIconsKeepModeIdentitiesAndPinState(t *testing.T) {
 	s := newTestState(t, freshOptions(t))
 	s.Click(hitNotes)

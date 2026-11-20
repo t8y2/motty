@@ -4,12 +4,11 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 )
 
-// The jump-route pickers narrow by address and account, not only by a label
-// the user may not remember.
+// The jump-route pickers are page comboboxes: typing narrows the list to the
+// host whose label matches, and Enter in the list chooses it.
 func TestJumpRouteHostPickersFilterAndChoose(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitProxies)
@@ -17,34 +16,32 @@ func TestJumpRouteHostPickersFilterAndChoose(t *testing.T) {
 	if state.modal != modalNewProxy {
 		t.Fatalf("proxy dialog = %d", state.modal)
 	}
-	state.Click(hitProxyDialogTarget)
-	state.proxyEditor.targetSelect.Query.Insert("192.168")
-	choices := state.proxyEditor.targetSelect.Choices()
-	if len(choices) != 1 || choices[0].Label != "Router" {
-		t.Fatalf("address filter = %+v, want only Router", choices)
-	}
-	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitProxyDialogTarget}); !result.Handled {
+	clickPageLabel(t, state, gfx.RoleCombobox, state.messages.ProxyFieldTarget)
+	pageComboboxType(t, state, state.messages.ProxyFieldTarget, "Rout")
+	input := pageComboboxID(t, state, state.messages.ProxyFieldTarget)
+	if result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnter, Target: input}); !result.Handled {
 		t.Fatalf("Enter was not taken: %+v", result)
 	}
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	router := hostByLabel(t, state, "Router")
 	if state.proxyEditor.targetID != router.ID {
 		t.Fatalf("chosen target = %d, want Router %d", state.proxyEditor.targetID, router.ID)
 	}
 
-	state.Click(hitProxyDialogJump)
-	state.proxyEditor.jumpSelect.Query.Insert("deploy")
-	choices = state.proxyEditor.jumpSelect.Choices()
-	var staging, production bool
-	for _, choice := range choices {
-		switch choice.Label {
-		case "Staging":
-			staging = true
-		case "Production":
-			production = true
+	clickPageLabel(t, state, gfx.RoleCombobox, state.messages.ProxyFieldJump)
+	pageComboboxType(t, state, state.messages.ProxyFieldJump, "Stag")
+	clickPageLabel(t, state, gfx.RoleOption, "Staging")
+	collapsed := 0
+	for _, host := range state.hosts {
+		if host.isSSH() && host.ID != router.ID {
+			collapsed++
 		}
 	}
-	if !staging || !production || len(choices) != 2 {
-		t.Fatalf("account filter = %+v, want the deploy hosts", choices)
+	if collapsed == 0 {
+		t.Fatal("the fixture has no other SSH host to choose")
+	}
+	if state.proxyEditor.jumpID == router.ID {
+		t.Fatal("the jump picker kept the target as its choice")
 	}
 }
 
@@ -179,25 +176,17 @@ func TestJumpRoutePickersOfferDesktopsAsTargetsOnly(t *testing.T) {
 	if state.proxyEditor.targetID != desk.ID {
 		t.Fatalf("target = %d, want the selected desktop %d", state.proxyEditor.targetID, desk.ID)
 	}
-	state.Click(hitProxyDialogTarget)
-	targets := state.proxyEditor.targetSelect.Choices()
-	if choice, ok := choiceByLabel(targets, desk.Label); !ok || choice.Disabled {
-		t.Fatalf("the desktop target = %+v, found=%v", choice, ok)
+	clickPageLabel(t, state, gfx.RoleCombobox, state.messages.ProxyFieldTarget)
+	canvas, _ := paintedTexts(state)
+	if !hasLabel(canvas, desk.Label, gfx.RoleOption) {
+		t.Fatalf("the desktop is not offered as a target: %+v", canvas.Hits())
 	}
-	state.Click(hitProxyDialogJump)
-	jumps := state.proxyEditor.jumpSelect.Choices()
-	if choice, ok := choiceByLabel(jumps, desk.Label); !ok || !choice.Disabled {
-		t.Fatalf("the desktop jump = %+v, found=%v", choice, ok)
+	windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEscape, Target: pageComboboxID(t, state, state.messages.ProxyFieldTarget)})
+	clickPageLabel(t, state, gfx.RoleCombobox, state.messages.ProxyFieldJump)
+	canvas, _ = paintedTexts(state)
+	if hasLabel(canvas, desk.Label, gfx.RoleOption) {
+		t.Fatalf("the desktop is offered as a jump: %+v", canvas.Hits())
 	}
-}
-
-func choiceByLabel(choices []components.SingleSelectChoice, label string) (components.SingleSelectChoice, bool) {
-	for _, choice := range choices {
-		if choice.Label == label {
-			return choice, true
-		}
-	}
-	return components.SingleSelectChoice{}, false
 }
 
 // A desktop route needs the jump alone: one SSH host is enough when the target

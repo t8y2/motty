@@ -78,7 +78,7 @@ func (state *State) declareTransferBody(c ui.C, height float32) {
 		state.declareTransferRecovery(c)
 
 		center.listBox = ui.List(c, &center.listState, len(center.rows), center.rowDecl).Grow(1).MinHeight(0).FillWidth().
-			Label(m.Title).Scrollbars().HitWith(hitTransfersList, m.Title, gfx.HitOptions{Role: gfx.RoleGroup})
+			Label(m.Title).AlwaysScrollbars().ScrollbarSize(10).HitWith(hitTransfersList, m.Title, gfx.HitOptions{Role: gfx.RoleGroup})
 		center.body.list = center.listBox
 		if scroll := center.listBox.ScrollState(); scroll != nil && center.scroll != center.scrollSynced {
 			scroll.ScrollTo(center.scroll)
@@ -86,7 +86,7 @@ func (state *State) declareTransferBody(c ui.C, height float32) {
 			// The List declared its visible rows at its previous offset.
 			c.Canvas().RequestFrame()
 		}
-		state.declareTransferDetails(c)
+		state.declareTransferCenterPreview(c)
 	}).DrawOver(center.bodyDraw)
 }
 
@@ -176,7 +176,7 @@ func (state *State) declareTransferFilters(c ui.C, width float32) {
 					return m.AllHosts
 				}
 				return host.label
-			}).Small().Width(min(172, width*0.23)).Label(m.Hosts).Hint(center.hostLabel).
+			}).Small().Width(min(172, width*0.23)).Height(30).Label(m.Hosts).Hint(center.hostLabel).
 				Placeholder(center.hostLabel)
 			if host.Changed() {
 				center.scroll = 0
@@ -184,7 +184,7 @@ func (state *State) declareTransferFilters(c ui.C, width float32) {
 				state.describeTransferScope()
 			}
 			direction := ui.Select(c, &center.direction, transferDirections[:], state.transferDirectionLabel).
-				Small().Width(min(134, width*0.23)).Label(m.Direction).
+				Small().Width(min(134, width*0.23)).Height(30).Label(m.Direction).
 				Hint(state.transferDirectionLabel(center.direction))
 			if direction.Changed() {
 				center.scroll = 0
@@ -257,9 +257,11 @@ func (state *State) paintTransferCenterBody(d *ui.DrawContext) {
 	}
 	center.list = center.body.list.Rect()
 	if scroll := center.listBox.ScrollState(); scroll != nil {
-		// The List owns its offset; remember where the user left it so a reset
-		// (a filter change or a new upload) can put it back at the top.
-		center.scrollSynced = scroll.Offset
+		// The List owns its offset while the user moves it; adopt that offset so
+		// the next paint does not scroll back to where the application last put
+		// it. A reset (a filter change or a new upload) still goes through
+		// center.scroll.
+		center.scroll, center.scrollSynced = scroll.Offset, scroll.Offset
 	}
 	if center.count == 0 && center.list.Height >= 30 {
 		state.paintTransferEmpty(d.Canvas, center.list, theme)

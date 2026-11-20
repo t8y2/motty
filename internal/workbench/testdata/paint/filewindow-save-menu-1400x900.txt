@@ -36,6 +36,7 @@ text "name: 中文" {54.2 58 78 16}
 text "# configuration" {54.2 78 117 16}
 text "enabled: true" {54.2 98 101.4 16}
 hit "" region {0 0 1400 36} disabled=false
+hit "编码" button {12 861 27.316406 22} disabled=false
 hit "编码" combobox {43.316406 856 188.6836 32} disabled=false
 hit "行 1，列 1 · 空格：4 · LF" group {240 861 860 22} disabled=false
 hit "自动换行" button {1108 858 76 28} disabled=false

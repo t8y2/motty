@@ -2,7 +2,6 @@ package workbench
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
@@ -59,6 +58,10 @@ var (
 	sftpWindowQueueStatus        = tree.Sub(sftpWindowHits, tree.Name("queue-status"))
 	hitSFTPQueueDetails          = tree.ID(sftpWindowHits, "queue-details")
 	hitSFTPQueueDetailsDismiss   = tree.ID(sftpWindowHits, "queue-details-dismiss")
+	hitSFTPQueueReplaceAll       = tree.ID(sftpWindowHits, "queue-replace-all")
+	hitSFTPQueueSkipAll          = tree.ID(sftpWindowHits, "queue-skip-all")
+	hitSFTPQueueReplaceConfirm   = tree.ID(sftpWindowHits, "queue-replace-confirm")
+	hitSFTPQueueReplaceCancel    = tree.ID(sftpWindowHits, "queue-replace-cancel")
 )
 
 type sftpWindowUI struct {
@@ -95,28 +98,23 @@ type sftpWindowUI struct {
 	columnWidths     [2][3]float32
 	// split is the divider between the panes. It holds the position in pixels and
 	// keeps the share across a window resize; the page declares it as ui.Splitter.
-	split               ui.SplitterState
-	tooltip             components.HoverTooltip
-	menuOpen            bool
-	menuAt              gfx.Point
-	queueBounds         gfx.Rect
-	queueScroll         *ui.ScrollState
-	queueEntries        []int
-	queueRevision       uint64
-	queueDetails        transferDetails
-	sort                [2]sftpWindowSort
-	headerAnchor        [2]gfx.Rect
-	selection           [2]sftpWindowSelection
-	profileQuickOpen    bool
-	profileQuickFocus   bool
-	profileQuickAnchor  gfx.Rect
-	profileHoverOpen    bool
-	profileHoverAnchor  gfx.Rect
-	profileHoverBox     ui.Box
-	profileQuickBox     ui.Box
-	profileHoverTrigger gfx.ID
-	profileHoverArmed   bool
-	profileHoverSince   time.Duration
+	split             ui.SplitterState
+	tooltip           components.HoverTooltip
+	menuOpen          bool
+	menuAt            gfx.Point
+	queueBounds       gfx.Rect
+	queueScroll       *ui.ScrollState
+	queueEntries      []int
+	queueRevision     uint64
+	queueConflicts    int
+	queueBatch        transferBatch
+	queueDetails      transferDetails
+	sort              [2]sftpWindowSort
+	headerAnchor      [2]ui.Box
+	selection         [2]sftpWindowSelection
+	profileQuickOpen  bool
+	profileQuickFocus bool
+	profileQuickBox   ui.Box
 }
 
 // sftpWindowScratch is the room one pane's declaration leaves for what is
@@ -125,17 +123,20 @@ type sftpWindowUI struct {
 type sftpWindowScratch struct {
 	// bounds is the pane's rectangle as the page sees it: a pane declared in a
 	// page is not drawn in a page of its own, so it reads its size from here.
-	bounds      gfx.Rect
-	local       bool
-	header      ui.Box
-	address     ui.Box
-	list        ui.Box
-	tree        ui.Box
-	treeSet     bool
-	filter      ui.Box
-	sudoMode    ui.Box
-	buttons     [20]sftpIconButton
-	buttonCount int
+	bounds  gfx.Rect
+	local   bool
+	header  ui.Box
+	address ui.Box
+	// addressWidth is the width the path got in the last paint: the path folds
+	// against the room it actually has, as the painted slot was measured.
+	addressWidth float32
+	list         ui.Box
+	tree         ui.Box
+	treeSet      bool
+	filter       ui.Box
+	sudoMode     ui.Box
+	buttons      [20]sftpIconButton
+	buttonCount  int
 }
 
 // sftpWindowConnectScratch is the room the connecting page leaves for its icon.
@@ -215,9 +216,7 @@ func (w *sftpWindow) paint(canvas *gfx.Canvas, size gfx.Size) {
 		w.paintForeignDrag(canvas)
 	}
 	w.notices.paint(canvas, theme, gfx.Rect{Width: size.Width, Height: size.Height})
-	if !w.ui.profileHoverOpen {
-		w.ui.tooltip.Paint(canvas, theme, gfx.Rect{Width: size.Width, Height: size.Height}, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
-	}
+	w.ui.tooltip.Paint(canvas, theme, gfx.Rect{Width: size.Width, Height: size.Height}, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
 	if !w.pendingFocus.IsZero() {
 		canvas.RequestFocus(w.pendingFocus)
 		w.pendingFocus = gfx.ID{}
@@ -263,7 +262,7 @@ func (w *sftpWindow) declareWindowBody(c ui.C) {
 	size := w.ui.size
 	bounds := w.windowBodyBounds()
 	queue := w.queueCount()
-	body, queueRect, status := sftpTabPaneRects(bounds, queue)
+	body, queueRect, status := sftpTabPaneRects(bounds, queue, w.ui.queueConflicts)
 	w.ui.body, w.ui.queue = body, queueRect
 	firstLocal := w.owner.sftpWindowOrder == sftpLocalLeft
 	ui.Column(c).Grow(1).Shrink(1).Children(func() {
@@ -285,15 +284,14 @@ func (w *sftpWindow) declareWindowBody(c ui.C) {
 	w.declareConfirmations(c)
 	w.declarePlacesMenu(c)
 	w.declareWindowMenu(c)
-	w.declareHeaderMenus(c, hitSFTPWindowHeaderDismiss, &w.ui.headerAnchor)
+	w.declareHeaderMenus(c, &w.ui.headerAnchor)
 	w.declareProfileQuickMenu(c)
-	w.declareProfileHover(c)
 }
 
 // sftpWindowSplitExtent is the room ui.Splitter's divider takes between the panes.
-// The page declares it as a fixed 8 pixels; the pane widths are worked out before
-// the layout so a first paint knows the room it has.
-const sftpWindowSplitExtent = float32(8)
+// The page declares it one pixel thick, as the painted separator was; the panes
+// are worked out before the layout so a first paint knows the room it has.
+const sftpWindowSplitExtent = float32(1)
 
 // paneSplitWidth is the width the first pane takes in a body of the given width.
 // The share the divider keeps is used while it has one, so a window resize keeps
@@ -319,7 +317,7 @@ func (w *sftpWindow) declarePanes(c ui.C, body gfx.Rect, firstLocal bool, parts 
 	ui.Column(c).Height(body.Height + 2*sftpWindowPad).Shrink(0).Pad(sftpWindowPad).Children(func() {
 		ui.Row(c).Grow(1).Shrink(1).Children(func() {
 			w.declarePaneSide(c, gfx.Rect{Width: width, Height: body.Height}, firstLocal, parts)
-			ui.Splitter(c, &w.ui.split).Mins(220, 220).Label(w.owner.messages.SFTPWindow.Title).
+			ui.Splitter(c, &w.ui.split).SplitterThickness(sftpWindowSplitExtent).Mins(220, 220).Label(w.owner.messages.SFTPWindow.Title).
 				Hit(hitSFTPWindowSplit, w.owner.messages.SFTPWindow.Title)
 			w.declarePaneSide(c, gfx.Rect{Width: secondWidth, Height: body.Height}, !firstLocal, parts)
 		})
@@ -438,6 +436,9 @@ func (w *sftpWindow) paintPaneDetails(canvas *gfx.Canvas, s *sftpWindowScratch, 
 		w.view.places.anchors[1] = s.address.Rect()
 	} else {
 		w.view.places.anchors[0] = s.address.Rect()
+	}
+	if path := s.address.Rect(); path.Width > 0 {
+		s.addressWidth = path.Width
 	}
 	listBounds := s.list.Rect()
 	w.ui.list[side] = listBounds
@@ -572,8 +573,14 @@ func (w *sftpWindow) declarePane(c ui.C, s *sftpWindowScratch) {
 				folder.pathEditing = false
 				folder.resetPathInput()
 			}
-			addressWidth := max(bounds.Width-2*sftpPad-2*sftpButton-2, 80)
-			s.address = w.owner.declareSFTPAddress(c, folder, sftpWindowPath[side], sftpWindowPathEdit[side], sftpWindowBreadcrumbs[side], addressWidth, !local && w.view.busy).Height(32).Grow(1)
+			// The path collapses against the room the crumbs actually get: the
+			// pane's padding, the two side buttons and the row's gaps, as the
+			// painted slot was measured.
+			addressWidth := max(bounds.Width-2*8-2*sftpButton-2*2, 80)
+			if s.addressWidth > 0 {
+				addressWidth = s.addressWidth
+			}
+			s.address = w.owner.declareSFTPAddress(c, folder, sftpWindowPath[side], sftpWindowPathEdit[side], sftpWindowBreadcrumbs[side], addressWidth, !local && w.view.busy, folder.path).Height(32).Grow(1)
 			listID, starID, listHint := hitSFTPBookmarkList, hitSFTPBookmarkToggle, m.SFTPWindow.DirectoryFavorites
 			if local {
 				listID, starID, listHint = hitSFTPLocalPlaces, hitSFTPLocalStar, m.SFTPWindow.LocalPlaces
@@ -662,7 +669,7 @@ func (w *sftpWindow) declarePane(c ui.C, s *sftpWindowScratch) {
 				folder.seedSFTPListChoice()
 				s.list = ui.List(c, &folder.list, len(folder.rows), func(row ui.ListRow) {
 					w.declareListRow(row, side, bounds.Width, rowWidth, columns)
-				}).Grow(1).Label(m.SFTPFiles).Scrollbars()
+				}).Grow(1).Label(m.SFTPFiles).AlwaysScrollbars().ScrollbarLabels(m.SFTPFiles, "")
 				folder.seedSFTPListCurrent()
 				if folder.list.Changed() {
 					folder.takeSFTPListChoice()
@@ -724,12 +731,8 @@ func (w *sftpWindow) declarePane(c ui.C, s *sftpWindowScratch) {
 	for _, button := range s.buttons[:s.buttonCount] {
 		switch button.id {
 		case sftpWindowMore[side]:
-			w.ui.headerAnchor[side] = button.box.Rect()
-		case hitSFTPLocationProfiles:
-			w.ui.profileHoverAnchor = button.box.Rect()
-			w.ui.profileHoverBox = button.box
+			w.ui.headerAnchor[side] = button.box
 		case hitSFTPProfileQuick:
-			w.ui.profileQuickAnchor = button.box.Rect()
 			w.ui.profileQuickBox = button.box
 		}
 	}
@@ -775,7 +778,7 @@ func (w *sftpWindow) declareListRow(row ui.ListRow, side int, paneWidth, rowWidt
 		sizeWidth, modifiedWidth = columns.size, columns.modified
 	}
 	box.Children(func() {
-		declareSFTPRowIcon(c, entry, tint)
+		w.owner.declareSFTPRowIcon(c, entry, tint)
 		name := ui.Text(c, entry.entry.Name).Color(color).Ellipsis().Grow(1)
 		// The row spends its padding, the icon and the gaps before the name text;
 		// a name wider than what is left is the one the tooltip is for.

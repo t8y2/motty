@@ -21,32 +21,32 @@ text "Settings" {52 555.5 52.759766 21}
 text "Session Logs" {223 54.5 245 25}
 text "Loaded 6 / 6 · Total 6" {719.1992 57.5 360 19}
 text "Search host name, address or account" {254 95 398 20}
-text "All time" {254.5 134.5 40.85742 19}
-text "All statuses" {386.5 134.5 63.73242 19}
-text "All protocols" {518.5 134.5 69.16992 19}
-text "All outcomes" {254.5 172.5 71.666016 19}
-text "Longest first" {386.5 172.5 69.35742 19}
-text "Target" {231 201 42.396484 40}
-text "Duration" {562 201 54.776367 40}
-text "Status" {662 201 40.783203 40}
-text "lab · ops" {231 241 315 21}
-text "1h 00m" {562 241 84 21}
-text "Ended · Closed by you" {662 241 174 21}
-text "web-01 · alice" {231 277 315 21}
-text "30m 00s" {562 277 84 21}
-text "Ended · Closed by you" {662 277 174 21}
-text "db-01 · bob" {231 313 315 21}
-text "5m 00s" {562 313 84 21}
-text "Failed · Authentication fai…" {662 313 174 21}
-text "rack-02 · ops" {231 349 315 21}
-text "1m 00s (un…" {562 349 84 21}
-text "Interrupted" {662 349 174 21}
-text "old-box · ops" {231 385 315 21}
-text "1m 00s" {562 385 84 21}
-text "Failed · Timed out" {662 385 174 21}
-text "archive · ops" {231 421 315 21}
-text "1m 00s" {562 421 84 21}
-text "Ended · Closed by you" {662 421 174 21}
+text "All time" {254 134.5 40.85742 19}
+text "All statuses" {386 134.5 63.73242 19}
+text "All protocols" {518 134.5 69.16992 19}
+text "All outcomes" {254 172.5 71.666016 19}
+text "Longest first" {386 172.5 69.35742 19}
+text "Target" {231 205 42.396484 40}
+text "Duration" {562 205 54.776367 40}
+text "Status" {662 205 40.783203 40}
+text "lab · ops" {231 245 315 36}
+text "1h 00m" {562 245 84 36}
+text "Ended · Closed by you" {662 245 174 36}
+text "web-01 · alice" {231 281 315 36}
+text "30m 00s" {562 281 84 36}
+text "Ended · Closed by you" {662 281 174 36}
+text "db-01 · bob" {231 317 315 36}
+text "5m 00s" {562 317 84 36}
+text "Failed · Authentication fai…" {662 317 174 36}
+text "rack-02 · ops" {231 353 315 36}
+text "1m 00s (un…" {562 353 84 36}
+text "Interrupted" {662 353 174 36}
+text "old-box · ops" {231 389 315 36}
+text "1m 00s" {562 389 84 36}
+text "Failed · Timed out" {662 389 174 36}
+text "archive · ops" {231 425 315 36}
+text "1m 00s" {562 425 84 36}
+text "Ended · Closed by you" {662 425 174 36}
 hit "" region {0 0 900 36} disabled=false
 hit "Hosts" button {82 4 28 28} disabled=false
 hit "New tab" button {116 4 28 28} disabled=false
@@ -78,17 +78,16 @@ hit "Filter by status" button {355 126 124 36} disabled=false
 hit "Filter by protocol" button {487 126 124 36} disabled=false
 hit "Filter by outcome" button {223 164 124 36} disabled=false
 hit "Sort sessions" button {355 164 124 36} disabled=false
-hit "Duration" button {554 201 100 40} disabled=false
-hit "Session Logs" listbox {223 241 651 304} disabled=false
-hit "lab · ops" option {223 241 651 36} disabled=false
-hit "Favorite lab · ops" button {844 241 30 36} disabled=false
-hit "web-01 · alice" option {223 277 651 36} disabled=false
-hit "Favorite web-01 · alice" button {844 277 30 36} disabled=false
-hit "db-01 · bob" option {223 313 651 36} disabled=false
-hit "Favorite db-01 · bob" button {844 313 30 36} disabled=false
-hit "rack-02 · ops" option {223 349 651 36} disabled=false
-hit "Favorite rack-02 · ops" button {844 349 30 36} disabled=false
-hit "old-box · ops" option {223 385 651 36} disabled=false
-hit "Favorite old-box · ops" button {844 385 30 36} disabled=false
-hit "archive · ops" option {223 421 651 36} disabled=false
-hit "Favorite archive · ops" button {844 421 30 36} disabled=false
+hit "Session Logs" listbox {223 245 651 300} disabled=false
+hit "lab · ops" option {223 245 651 36} disabled=false
+hit "Favorite lab · ops" button {844 245 30 36} disabled=false
+hit "web-01 · alice" option {223 281 651 36} disabled=false
+hit "Favorite web-01 · alice" button {844 281 30 36} disabled=false
+hit "db-01 · bob" option {223 317 651 36} disabled=false
+hit "Favorite db-01 · bob" button {844 317 30 36} disabled=false
+hit "rack-02 · ops" option {223 353 651 36} disabled=false
+hit "Favorite rack-02 · ops" button {844 353 30 36} disabled=false
+hit "old-box · ops" option {223 389 651 36} disabled=false
+hit "Favorite old-box · ops" button {844 389 30 36} disabled=false
+hit "archive · ops" option {223 425 651 36} disabled=false
+hit "Favorite archive · ops" button {844 425 30 36} disabled=false

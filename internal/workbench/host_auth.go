@@ -5,7 +5,6 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
-	"motty/internal/sshconn"
 )
 
 // hostAuth is the authentication policy of one SSH host. The zero value keeps
@@ -86,33 +85,6 @@ func (state *State) authLabel(authentication hostAuth) string {
 	}
 }
 
-func (state *State) paintHostAuthenticationChoice(canvas *gfx.Canvas, bounds gfx.Rect) {
-	editor, theme := &state.editor, state.Theme()
-	content := components.BeginField(canvas, theme, bounds).Paint(state.messages.FieldAuthentication, "", "")
-	state.rememberHostControl(hitDialogAuth, content)
-	portal := state.beginHostFormPopup(canvas, editor.authOpen)
-	defer state.endHostFormPopup(canvas, portal)
-	count := authCount
-	if !sshconn.KerberosAvailable {
-		count = authKerberos
-	}
-	list := state.hostAuthListBounds(content, int(count))
-	selectControl := components.BeginSelect(canvas, theme, content, components.SelectOptions{
-		TriggerID: hitDialogAuth, Label: state.messages.FieldAuthentication, Value: state.authLabel(editor.auth),
-		Open: editor.authOpen, Content: list,
-		Layer: dialogLayer + 1, Scope: dialogScope, DismissID: hitDialogAuthDismiss, Viewport: state.windowRect(),
-	})
-	defer selectControl.End()
-	if editor.authOpen {
-		state.menuPlaced(list)
-	}
-	for authentication := authAutomatic; authentication < count; authentication++ {
-		selectControl.AddItem(components.SelectItem{
-			ID: hitDialogAuthItemList.At(int(authentication)), Label: state.authLabel(authentication), Selected: editor.auth == authentication,
-		})
-	}
-}
-
 func (state *State) paintHostIdentityChoice(canvas *gfx.Canvas, bounds gfx.Rect) {
 	editor, theme := &state.editor, state.Theme()
 	value := state.messages.AuthAllKeys
@@ -174,19 +146,6 @@ func (state *State) hostAuthListBounds(content gfx.Rect, rows int) gfx.Rect {
 func (state *State) clickHostAuthentication(id gfx.ID) bool {
 	editor := &state.editor
 	switch {
-	case id == hitDialogAuth:
-		editor.authOpen = !editor.authOpen
-		editor.identityOpen, editor.credentialOpen = false, false
-	case id == hitDialogAuthDismiss:
-		editor.authOpen = false
-	case id.Scope() == hitDialogAuthItemList:
-		authentication := hostAuth(item(id))
-		if authentication >= authCount || (authentication == authKerberos && !sshconn.KerberosAvailable) {
-			return false
-		}
-		editor.auth = authentication
-		editor.authOpen = false
-		editor.identityOpen = false
 	case id == hitDialogIdentity:
 		editor.identityOpen = !editor.identityOpen
 		editor.authOpen, editor.credentialOpen = false, false

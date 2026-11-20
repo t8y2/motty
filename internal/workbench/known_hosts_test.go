@@ -41,6 +41,13 @@ func TestKnownHostsWorkspacePaintsEntriesAndInteractiveHits(t *testing.T) {
 	if hit, _ := hitByID(canvas, hitKnownHostsDelete); !hit.Disabled {
 		t.Fatal("Delete is enabled without a selection")
 	}
+	if hit, _ := hitByID(canvas, hitKnownHostRowList.At(0)); hit.Label != knownHostRowLabel(state.knownHosts.rows[0].cells) {
+		t.Fatalf("row names only part of itself: %q", hit.Label)
+	}
+	// The table is one page tall and has no scrollbar of its own.
+	if _, ok := hitByLabel(canvas, "Vertical scrollbar"); ok {
+		t.Fatal("the known-hosts table added an in-page scrollbar")
+	}
 	for _, text := range []string{
 		"@revoked", "|1|", ssh.KeyAlgoED25519, entries[0].Fingerprint[:20], "primary server", "compromised",
 	} {

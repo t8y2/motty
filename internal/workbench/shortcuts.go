@@ -44,6 +44,8 @@ const (
 	shortcutHostsPanel
 	shortcutAcceptSuggestion
 	shortcutPaneMaximize
+	shortcutSettings
+	shortcutBroadcast
 	shortcutActionCount
 )
 
@@ -54,6 +56,9 @@ const (
 type shortcutMap struct {
 	chords keymap.Table[shortcutAction]
 	labels [shortcutActionCount]string
+	// revision changes whenever a chord is bound or unbound, so the macOS menu
+	// bar (which shows those chords) rebuilds when the table changes.
+	revision uint64
 	// acceptKeys is the Keyboard shortcuts page's keys text for the
 	// accept-suggestion row, rebuilt with the labels so that painting it
 	// allocates nothing.
@@ -64,8 +69,18 @@ func newShortcutMap() shortcutMap {
 	return shortcutMap{chords: keymap.NewTable[shortcutAction](int(shortcutActionCount))}
 }
 
+// primaryModifier, paneSplitChords and broadcastChord are keymap.Primary,
+// defaultPaneSplitChords and defaultBroadcastChord with a seam for the paint
+// goldens: production takes this platform's chords, while a golden pins one
+// platform's so the same snapshots hold everywhere.
+var (
+	primaryModifier = keymap.Primary
+	paneSplitChords = defaultPaneSplitChords
+	broadcastChord  = defaultBroadcastChord
+)
+
 func defaultShortcuts() shortcutMap {
-	primary := keymap.Primary
+	primary := primaryModifier
 	shortcuts := newShortcutMap()
 	shortcuts.chords.Set(shortcutCommandPalette, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 'p'})
 	shortcuts.chords.Set(shortcutNewWindow, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 'n'})
@@ -84,7 +99,7 @@ func defaultShortcuts() shortcutMap {
 	shortcuts.chords.Set(shortcutTabNumber, keymap.Chord{Modifiers: primary, Char: '1'})
 	shortcuts.chords.Set(shortcutPanePrevious, keymap.Chord{Modifiers: primary | gfx.ModifierAlt, Char: 'j'})
 	shortcuts.chords.Set(shortcutPaneNext, keymap.Chord{Modifiers: primary | gfx.ModifierAlt, Char: 'k'})
-	splitHorizontal, splitVertical := defaultPaneSplitChords()
+	splitHorizontal, splitVertical := paneSplitChords()
 	shortcuts.chords.Set(shortcutPaneSplitHorizontal, splitHorizontal)
 	shortcuts.chords.Set(shortcutPaneSplitVertical, splitVertical)
 	shortcuts.chords.Set(shortcutPaneMaximize, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 'm'})
@@ -104,6 +119,8 @@ func defaultShortcuts() shortcutMap {
 	// shell itself leaves it. It is a binding of its own because the badge beside
 	// the suggestion names it and the user can choose another one there.
 	shortcuts.chords.Set(shortcutAcceptSuggestion, keymap.Chord{Key: gfx.KeyRight})
+	shortcuts.chords.Set(shortcutSettings, keymap.Chord{Modifiers: primary, Char: ','})
+	shortcuts.chords.Set(shortcutBroadcast, broadcastChord())
 	shortcuts.refreshLabels()
 	return shortcuts
 }
@@ -118,7 +135,7 @@ const shortcutDefaultsGeneration = 1
 // shipped. On macOS Command+Alt+H is the menu bar's Hide Others, which an
 // application's key equivalents never reach, so the chord could not work.
 func legacyPaneSplitChords() (horizontal, vertical keymap.Chord) {
-	primary := keymap.Primary
+	primary := primaryModifier
 	return keymap.Chord{Modifiers: primary | gfx.ModifierAlt, Char: 'h'},
 		keymap.Chord{Modifiers: primary | gfx.ModifierAlt, Char: 'v'}
 }
@@ -129,7 +146,7 @@ func legacyPaneSplitChords() (horizontal, vertical keymap.Chord) {
 // taken reports the chords something other than a built-in action holds.
 func (shortcuts *shortcutMap) migrateChangedDefaults(taken func(keymap.Chord) bool) {
 	previousHorizontal, previousVertical := legacyPaneSplitChords()
-	horizontal, vertical := defaultPaneSplitChords()
+	horizontal, vertical := paneSplitChords()
 	for _, change := range [...]struct {
 		action shortcutAction
 		was    keymap.Chord
@@ -279,6 +296,7 @@ func (shortcuts *shortcutMap) bind(action shortcutAction, chord keymap.Chord) (s
 	if action == shortcutAcceptSuggestion {
 		shortcuts.refreshAcceptKeys()
 	}
+	shortcuts.revision++
 	return shortcutNone, true
 }
 
@@ -292,6 +310,7 @@ func (shortcuts *shortcutMap) unbind(action shortcutAction) bool {
 	if action == shortcutAcceptSuggestion {
 		shortcuts.acceptKeys = "—"
 	}
+	shortcuts.revision++
 	return true
 }
 
@@ -355,6 +374,10 @@ func (action shortcutAction) String() string {
 		return "snippet_picker"
 	case shortcutAcceptSuggestion:
 		return "accept_suggestion"
+	case shortcutSettings:
+		return "settings"
+	case shortcutBroadcast:
+		return "broadcast_input"
 	default:
 		return ""
 	}
@@ -773,6 +796,16 @@ func (state *State) executeShortcut(action shortcutAction) gfx.EventResult {
 		} else {
 			result.Focus = state.activeTerminalFocusHit()
 		}
+	case shortcutSettings:
+		state.openSettings()
+	case shortcutBroadcast:
+		// The command palette and the toolbar button run this same toggle, which
+		// says why a tab cannot broadcast. Outside the terminal there is no tab
+		// in view to toggle, so the key is left to whatever has the keyboard.
+		if state.activeSection != sectionTerminal {
+			return gfx.EventResult{}
+		}
+		state.toggleBroadcast()
 	}
 	return result
 }

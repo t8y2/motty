@@ -1,11 +1,11 @@
 package workbench
 
 import (
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/serial"
+	"motty/internal/sshconn"
 )
 
 // The protocol part of the host dialog: which way the host is reached, and for
@@ -21,9 +21,10 @@ var (
 	hitDialogRemoteAudio          = tree.ID(hostProtocolUiHits, "dialog-remote-audio")
 	hitDialogStandardSecurity     = tree.ID(hostProtocolUiHits, "dialog-standard-security")
 	hitDialogStandardSecurityHelp = tree.ID(hostProtocolUiHits, "dialog-standard-security-help")
+	hitDialogLegacyTLS            = tree.ID(hostProtocolUiHits, "dialog-legacy-tls")
+	hitDialogLegacyTLSHelp        = tree.ID(hostProtocolUiHits, "dialog-legacy-tls-help")
 	hitDialogChromeless           = tree.ID(hostProtocolUiHits, "dialog-chromeless")
 	hitDialogPortsTrigger         = tree.ID(hostProtocolUiHits, "dialog-ports-trigger")
-	hitDialogPortsDismiss         = tree.ID(hostProtocolUiHits, "dialog-ports-dismiss")
 	hitDialogAlgorithms           = tree.ID(hostProtocolUiHits, "dialog-algorithms")
 	hitDialogLoginCommand         = tree.ID(hostProtocolUiHits, "dialog-login-command")
 	hitDialogAdvanced             = tree.ID(hostProtocolUiHits, "dialog-advanced")
@@ -39,7 +40,6 @@ var (
 	hitDialogOTPRemove            = tree.ID(hostProtocolUiHits, "dialog-otp-remove")
 	hitDialogOTPScan              = tree.ID(hostProtocolUiHits, "dialog-otp-scan")
 	hitDialogOTPPaste             = tree.ID(hostProtocolUiHits, "dialog-otp-paste")
-	hitDialogPortsItemList        = tree.Sub(hostProtocolUiHits, tree.Name("dialog-ports-item")) // + index of a detected port
 )
 
 // maxListedPorts bounds the picker: a machine with more serial devices than
@@ -199,62 +199,104 @@ func (state *State) declareHostAlgoChoice(c ui.C) ui.Box {
 
 // declareHostEndpointSlots lays the endpoint block out in the form's page: the
 // address and the port, and the credentials under them, by the protocol. The
-// painter fills the slots this leaves with the dialog's fields.
+// fields are page controls; the roles a protocol does not use alias one it does,
+// so the event pass of a protocol change can still paint the protocol now in
+// effect.
 func (state *State) declareHostEndpointSlots(c ui.C, parent ui.Box, rowHeight float32) {
 	editor := &state.editor
+	form := &editor.form
 	slots := &editor.form.body.endpointSlots
 	*slots = hostEndpointSlots{}
+	m, tools := state.messages, state.messages.Tools
 	parent.Children(func() {
 		switch editor.protocol {
 		case protocolSerial:
 			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
 				slots.address = ui.Slot(c).Grow(1)
+				state.declareHostTextField(c, slots.address, &form.fieldAddress, hitDialogAddress, &editor.address, tools.FieldDevice, tools.FieldDevicePlaceholder, false, rowHeight)
 				slots.picker = ui.Slot(c).WidthPercent(30)
+				state.declareHostPortsSelect(c, slots.picker, rowHeight)
 			})
 			// The flow control is a three-way choice: it takes the row under
 			// the line settings rather than sharing one with them, where its
 			// labels would be cut.
 			slots.second = ui.Slot(c).Height(rowHeight)
+			state.declareHostTextField(c, slots.second, &form.fieldPort, hitDialogPort, &editor.port, tools.FieldLine, tools.FieldLinePlaceholder, false, rowHeight)
 			slots.third = ui.Slot(c).Height(rowHeight)
 		case protocolTelnet:
 			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
 				slots.address = ui.Slot(c).Grow(1)
+				state.declareHostTextField(c, slots.address, &form.fieldAddress, hitDialogAddress, &editor.address, m.FieldAddress, m.FieldAddressPlaceholder, false, rowHeight)
 				slots.third = ui.Slot(c).Width(hostPortWidth).Shrink(0)
+				state.declareHostTextField(c, slots.third, &form.fieldPort, hitDialogPort, &editor.port, m.FieldPort, "", false, rowHeight)
 			})
 		case protocolVNC:
 			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
 				slots.address = ui.Slot(c).Grow(1)
+				state.declareHostTextField(c, slots.address, &form.fieldAddress, hitDialogAddress, &editor.address, m.FieldAddress, m.FieldAddressPlaceholder, false, rowHeight)
 				slots.third = ui.Slot(c).Width(hostPortWidth).Shrink(0)
+				state.declareHostTextField(c, slots.third, &form.fieldPort, hitDialogPort, &editor.port, m.FieldPort, "", false, rowHeight)
 			})
 			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
 				slots.second = ui.Slot(c).Grow(1)
+				label := state.messages.Desktop.FieldVNCUser
+				hint := state.hostUserHint(state.messages.Desktop.VNCUserHint)
+				if editor.viaSSH {
+					label = state.messages.Desktop.FieldSSHUser
+					hint = state.hostUserHint(m.FieldUserPlaceholder)
+				}
+				state.declareHostTextField(c, slots.second, &form.fieldUser, hitDialogUser, &editor.user, label, hint, false, rowHeight)
 				slots.password = ui.Slot(c).Grow(1)
+				state.declareHostPasswordField(c, slots.password, m.FieldVNCPassword)
 			})
 		case protocolSSH:
 			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
 				slots.address = ui.Slot(c).Grow(1)
+				state.declareHostTextField(c, slots.address, &form.fieldAddress, hitDialogAddress, &editor.address, m.FieldAddress, m.FieldAddressPlaceholder, false, rowHeight)
 				slots.third = ui.Slot(c).Width(hostPortWidth).Shrink(0)
+				state.declareHostTextField(c, slots.third, &form.fieldPort, hitDialogPort, &editor.port, m.FieldPort, "", false, rowHeight)
 			})
 			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
 				slots.second = ui.Slot(c).Grow(1)
+				state.declareHostTextField(c, slots.second, &form.fieldUser, hitDialogUser, &editor.user, m.FieldUser, state.hostUserHint(m.FieldUserPlaceholder), false, rowHeight)
 				slots.authentication = ui.Slot(c).Grow(1)
+				state.declareHostAuthenticationChoice(c, slots.authentication, rowHeight)
 				if editor.auth == authPrivateKey {
 					slots.identity = ui.Slot(c).Grow(1)
 				} else if editor.auth.usesPassword() {
 					slots.password = ui.Slot(c).Grow(1)
+					state.declareHostPasswordField(c, slots.password, m.FieldPassword)
 				}
 			})
 			if state.hostAsksKeyPassphrase() {
 				slots.passphrase = ui.Slot(c).Height(rowHeight)
+				state.declareHostTextField(c, slots.passphrase, &form.fieldPassphrase, hitDialogPassphrase, &editor.passphrase, m.KeyPassphraseLabel, state.hostPassphraseHint(), true, rowHeight)
 			}
-		default:
+		case protocolRDP:
 			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
 				slots.address = ui.Slot(c).Grow(1)
+				state.declareHostTextField(c, slots.address, &form.fieldAddress, hitDialogAddress, &editor.address, m.FieldAddress, m.FieldAddressPlaceholder, false, rowHeight)
 				slots.third = ui.Slot(c).Width(hostPortWidth).Shrink(0)
+				state.declareHostTextField(c, slots.third, &form.fieldPort, hitDialogPort, &editor.port, m.FieldPort, "", false, rowHeight)
 			})
 			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
 				slots.second = ui.Slot(c).Grow(1)
+				state.declareHostTextField(c, slots.second, &form.fieldUser, hitDialogUser, &editor.user, state.messages.Desktop.FieldRDPUser, state.hostUserHint(state.messages.Desktop.RDPUserHint), false, rowHeight)
 				slots.password = ui.Slot(c).Grow(1)
+				state.declareHostPasswordField(c, slots.password, m.FieldPassword)
+			})
+		default:
+			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+				slots.address = ui.Slot(c).Grow(1)
+				state.declareHostTextField(c, slots.address, &form.fieldAddress, hitDialogAddress, &editor.address, m.FieldAddress, m.FieldAddressPlaceholder, false, rowHeight)
+				slots.third = ui.Slot(c).Width(hostPortWidth).Shrink(0)
+				state.declareHostTextField(c, slots.third, &form.fieldPort, hitDialogPort, &editor.port, m.FieldPort, "", false, rowHeight)
+			})
+			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+				slots.second = ui.Slot(c).Grow(1)
+				state.declareHostTextField(c, slots.second, &form.fieldUser, hitDialogUser, &editor.user, m.FieldUser, state.hostUserHint(m.FieldUserPlaceholder), false, rowHeight)
+				slots.password = ui.Slot(c).Grow(1)
+				state.declareHostPasswordField(c, slots.password, m.FieldPassword)
 			})
 		}
 	})
@@ -280,61 +322,108 @@ func (state *State) declareHostEndpointSlots(c ui.C, parent ui.Box, rowHeight fl
 	}
 }
 
-// paintHostEndpointRows draws where the host is: its address and, beside it, the
-// port it is reached on, and on the row below the credentials the protocol takes.
-// A serial port takes the device, its line and, on its own row, the flow
-// control; a Telnet host has no credentials in the form, so it takes one row.
-// The slots were declared with the form's page; the switch reads the protocol now
-// in effect, as the event pass of a protocol click still paints it.
-func (state *State) paintHostEndpointRows(canvas *gfx.Canvas) {
-	m, tools := state.messages, state.messages.Tools
+// declareHostTextField declares one labelled text field of the endpoint block in
+// the page and remembers it for the form's tab ring.
+func (state *State) declareHostTextField(c ui.C, parent ui.Box, field *dialogField, id gfx.ID, editor *text.Editor, label, placeholder string, secret bool, height float32) {
+	parent.Children(func() {
+		field.declare(c, state, editor, dialogFieldSpec{ID: id, Label: label, Placeholder: placeholder, Secret: secret, Height: height})
+	})
+	state.editor.form.body.addField(id, field)
+}
+
+// declareHostAuthenticationChoice declares the authentication policy as a page
+// select over the protocols' fixed choices. A change closes the pickers over the
+// field and refills the secrets the new policy needs.
+func (state *State) declareHostAuthenticationChoice(c ui.C, parent ui.Box, rowHeight float32) {
 	editor := &state.editor
-	slots := &editor.form.body.endpointSlots
-	address, picker, second := slots.address, slots.picker, slots.second
-	password, third := slots.password, slots.third
-	authentication, identity, passphrase := slots.authentication, slots.identity, slots.passphrase
-	switch editor.protocol {
-	case protocolSerial:
-		state.paintDialogField(canvas, hitDialogAddress, fieldAddress, tools.FieldDevice, tools.FieldDevicePlaceholder, address.Rect())
-		state.paintPortsTrigger(canvas, picker.Rect())
-		state.paintDialogField(canvas, hitDialogPort, fieldPort, tools.FieldLine, tools.FieldLinePlaceholder, second.Rect())
-	case protocolTelnet:
-		state.paintDialogField(canvas, hitDialogAddress, fieldAddress, m.FieldAddress, m.FieldAddressPlaceholder, address.Rect())
-		state.paintDialogField(canvas, hitDialogPort, fieldPort, m.FieldPort, "", third.Rect())
-	case protocolRDP:
-		state.paintDialogField(canvas, hitDialogAddress, fieldAddress, m.FieldAddress, m.FieldAddressPlaceholder, address.Rect())
-		state.paintDialogField(canvas, hitDialogUser, fieldUser, state.messages.Desktop.FieldRDPUser, state.hostUserHint(state.messages.Desktop.RDPUserHint), second.Rect())
-		state.paintSecureDialogField(canvas, hitDialogPassword, fieldPassword, m.FieldPassword, state.hostPasswordHint(), password.Rect())
-		state.paintDialogField(canvas, hitDialogPort, fieldPort, m.FieldPort, "", third.Rect())
-	case protocolVNC:
-		state.paintDialogField(canvas, hitDialogAddress, fieldAddress, m.FieldAddress, m.FieldAddressPlaceholder, address.Rect())
-		if editor.viaSSH {
-			state.paintDialogField(canvas, hitDialogUser, fieldUser, state.messages.Desktop.FieldSSHUser, state.hostUserHint(m.FieldUserPlaceholder), second.Rect())
-		} else {
-			state.paintDialogField(canvas, hitDialogUser, fieldUser, state.messages.Desktop.FieldVNCUser, state.hostUserHint(state.messages.Desktop.VNCUserHint), second.Rect())
-		}
-		state.paintSecureDialogField(canvas, hitDialogPassword, fieldPassword, m.FieldVNCPassword, state.hostPasswordHint(), password.Rect())
-		state.paintDialogField(canvas, hitDialogPort, fieldPort, m.FieldPort, "", third.Rect())
-	case protocolSSH:
-		state.paintDialogField(canvas, hitDialogAddress, fieldAddress, m.FieldAddress, m.FieldAddressPlaceholder, address.Rect())
-		state.paintDialogField(canvas, hitDialogUser, fieldUser, m.FieldUser, state.hostUserHint(m.FieldUserPlaceholder), second.Rect())
-		state.paintHostAuthenticationChoice(canvas, authentication.Rect())
-		if editor.auth == authPrivateKey {
-			state.paintHostIdentityChoice(canvas, identity.Rect())
-			if state.hostAsksKeyPassphrase() {
-				state.paintSecureDialogField(canvas, hitDialogPassphrase, fieldPassphrase, m.KeyPassphraseLabel, state.hostPassphraseHint(), passphrase.Rect())
-			}
-		} else if editor.auth.usesPassword() {
-			state.paintSecureDialogField(canvas, hitDialogPassword, fieldPassword, m.FieldPassword, state.hostPasswordHint(), password.Rect())
-		}
-		state.paintDialogField(canvas, hitDialogPort, fieldPort, m.FieldPort, "", third.Rect())
-	default:
-		state.paintDialogField(canvas, hitDialogAddress, fieldAddress, m.FieldAddress, m.FieldAddressPlaceholder, address.Rect())
-		state.paintDialogField(canvas, hitDialogUser, fieldUser, m.FieldUser, state.hostUserHint(m.FieldUserPlaceholder), second.Rect())
-		state.paintSecureDialogField(canvas, hitDialogPassword, fieldPassword, m.FieldPassword, state.hostPasswordHint(), password.Rect())
-		state.paintDialogField(canvas, hitDialogPort, fieldPort, m.FieldPort, "", third.Rect())
+	form := &editor.form
+	var choices [authCount]hostAuth
+	count := authCount
+	if !sshconn.KerberosAvailable {
+		count = authKerberos
 	}
-	state.paintHostCredentialMenu(canvas)
+	for index := authAutomatic; index < count; index++ {
+		choices[int(index)] = index
+	}
+	label := state.messages.FieldAuthentication
+	parent.Children(func() {
+		ui.FormField(c, &form.authField, label).FillWidth().Height(rowHeight).Children(func() {
+			form.authBox = ui.Select(c, &editor.auth, choices[:count], state.authLabel).Label(label).Hit(hitDialogAuth, label)
+			if form.authBox.Changed() {
+				editor.identityOpen, editor.credentialOpen = false, false
+				state.dialogError = ""
+				c.After(func() { state.prefillKeyPassphrase() })
+			}
+		})
+	})
+}
+
+// declareHostPortsSelect declares the detected serial ports as a page select
+// under the form's board. A choice writes the device into the device field.
+func (state *State) declareHostPortsSelect(c ui.C, parent ui.Box, rowHeight float32) {
+	editor, form := &state.editor, &state.editor.form
+	// A serial device can be plugged in while the form is open: the old picker
+	// looked the machine's ports up each time it was opened, and the page select
+	// reads them again on the press that opens it.
+	if canvas := c.Canvas(); canvas != nil && canvas.Clicked(hitDialogPortsTrigger) {
+		editor.ports = serialPorts()
+	}
+	form.portChoices = form.portChoices[:0]
+	count := min(len(editor.ports), maxListedPorts)
+	for index := 0; index < count; index++ {
+		form.portChoices = append(form.portChoices, editor.ports[index].Device)
+	}
+	form.portChoice = editor.value(fieldAddress)
+	label := state.messages.Tools.PortsPicker
+	parent.Children(func() {
+		ui.FormField(c, &form.portsField, label).FillWidth().Height(rowHeight).Children(func() {
+			form.portsBox = ui.Select(c, &form.portChoice, form.portChoices, func(device string) string { return device }).
+				Label(label).Placeholder("…").Small().Hit(hitDialogPortsTrigger, label)
+			if form.portsBox.Changed() {
+				editor.address = text.Editor{}
+				editor.address.Insert(form.portChoice)
+				state.dialogError = ""
+			}
+		})
+	})
+}
+
+// declareHostPasswordField declares the password row's title as a page form
+// field and keeps the slot its hand-painted addons and text go in.
+func (state *State) declareHostPasswordField(c ui.C, parent ui.Box, title string) {
+	form := &state.editor.form
+	parent.Children(func() {
+		// The title labels the hand-painted control: a press on it focuses and
+		// clicks the field, as BeginField's For did.
+		form.passwordField.For = hitDialogPassword
+		ui.FormField(c, &form.passwordField, title).FillWidth().Height(float32(hostFormRowHeight)).Children(func() {
+			form.passwordControl = ui.Slot(c).Fill()
+		})
+	})
+}
+
+// paintHostEndpointRows paints the endpoint controls a page select cannot show:
+// the identity picker's import row and the shared-password field with its
+// addons. Everything else in the endpoint block is the page's.
+func (state *State) paintHostEndpointRows(canvas *gfx.Canvas) {
+	m, editor := state.messages, &state.editor
+	slots := &editor.form.body.endpointSlots
+	password := slots.password.Rect()
+	if editor.form.passwordControl.Valid() {
+		password = editor.form.passwordControl.Rect()
+	}
+	switch editor.protocol {
+	case protocolSSH:
+		if editor.auth == authPrivateKey {
+			state.paintHostIdentityChoice(canvas, slots.identity.Rect())
+		} else if editor.auth.usesPassword() {
+			state.paintHostPasswordWithCredential(canvas, password, m.FieldPassword, state.hostPasswordHint())
+		}
+	case protocolVNC:
+		state.paintHostPasswordWithCredential(canvas, password, m.FieldVNCPassword, state.hostPasswordHint())
+	case protocolRDP:
+		state.paintHostPasswordWithCredential(canvas, password, m.FieldPassword, state.hostPasswordHint())
+	}
 }
 
 func (state *State) hostPasswordHint() string {
@@ -345,42 +434,6 @@ func (state *State) hostPasswordHint() string {
 		return state.messages.FieldPasswordCopyHint
 	default:
 		return state.messages.FieldPasswordHint
-	}
-}
-
-// paintPortsTrigger draws the picker of detected ports: a small select that lists
-// the machine's serial ports and puts the chosen one in the device field.
-func (state *State) paintPortsTrigger(canvas *gfx.Canvas, bounds gfx.Rect) {
-	m, editor := state.messages.Tools, &state.editor
-	content := components.BeginField(canvas, state.Theme(), bounds).Paint(m.PortsPicker, "", "")
-	state.rememberHostControl(hitDialogPortsTrigger, content)
-	portal := state.beginHostFormPopup(canvas, state.editor.portsOpen)
-	defer state.endHostFormPopup(canvas, portal)
-	count := min(len(editor.ports), maxListedPorts)
-	popupWidth := max(content.Width, 340)
-	selectControl := components.BeginSelect(canvas, state.Theme(), content, components.SelectOptions{
-		TriggerID: hitDialogPortsTrigger, Label: m.PortsPicker, Placeholder: "…", Open: editor.portsOpen, Size: components.SelectSizeSmall,
-		Content: gfx.Rect{X: content.X + content.Width - popupWidth, Y: content.Y + content.Height + 4, Width: popupWidth, Height: float32(8 + max(count, 1)*32)},
-		Layer:   dialogLayer + 1, Scope: dialogScope, DismissID: hitDialogPortsDismiss, Viewport: state.windowRect(),
-		Scroll: state.selectScroll(editor.portsOpen, hitDialogPortsDismiss),
-	})
-	defer selectControl.End()
-	if editor.portsOpen {
-		state.menuPlaced(selectControl.ContentBounds())
-	}
-	if !editor.portsOpen {
-		return
-	}
-	if count == 0 {
-		selectControl.AddItem(components.SelectItem{ID: hitDialogPortsItemList.At(0), Label: m.PortsNone, Disabled: true})
-		return
-	}
-	for index := 0; index < count; index++ {
-		port := editor.ports[index]
-		selectControl.AddItem(components.SelectItem{
-			ID: hitDialogPortsItemList.At(index), Label: port.Device, Value: port.Description,
-			Selected: port.Device == editor.value(fieldAddress),
-		})
 	}
 }
 
@@ -405,6 +458,8 @@ func (state *State) clickHostProtocol(id gfx.ID) bool {
 		editor.noAudio = !editor.noAudio
 	case id == hitDialogStandardSecurity:
 		editor.standardSecurity = !editor.standardSecurity
+	case id == hitDialogLegacyTLS:
+		editor.legacyTLS = !editor.legacyTLS
 	case id == hitDialogAdvanced:
 		editor.advancedOpen = !editor.advancedOpen
 	case id == hitDialogForwardX11:
@@ -431,18 +486,6 @@ func (state *State) clickHostProtocol(id gfx.ID) bool {
 	case id == hitDialogOTPPaste:
 		state.pasteOTPImage()
 		return true
-	case id == hitDialogPortsTrigger:
-		editor.ports = serial.Ports()
-		editor.portsOpen = !editor.portsOpen
-	case state.clickHostIdleKeepAlive(id):
-	case id == hitDialogPortsDismiss:
-		editor.portsOpen = false
-	case id.Scope() == hitDialogPortsItemList:
-		if index := item(id); index < len(editor.ports) {
-			editor.address = text.Editor{}
-			editor.address.Insert(editor.ports[index].Device)
-		}
-		editor.portsOpen = false
 	default:
 		return false
 	}
@@ -649,9 +692,6 @@ func (state *State) paintAdvancedSection(canvas *gfx.Canvas) {
 		if state.editor.form.layoutProtocol == protocolSSH {
 			state.paintAlgorithmRows(canvas)
 		}
-		if idleKeepAliveProtocol(state.editor.form.layoutProtocol) {
-			state.paintHostIdleKeepAliveRows(canvas)
-		}
 	}
 }
 
@@ -664,7 +704,7 @@ const (
 
 // hostVNCRowsBody is where the desktop switches' body put each checkbox row.
 type hostVNCRowsBody struct {
-	standardSecurityHelp ui.Box
+	standardSecurityHelp, legacyTLSHelp ui.Box
 }
 
 // hostAlgoRowsBody is where the SSH algorithm rows put each control.
@@ -678,17 +718,12 @@ type hostAlgoRowsBody struct {
 // with the host form's page; this paints into the slots it left.
 func (state *State) paintAlgorithmRows(canvas *gfx.Canvas) {
 	m, editor := state.messages.Tools, &state.editor
-	// The choice may write a new mode while the page's declaration delivered the
-	// click; the rows this frame laid out are the ones before it, so draw the
-	// custom field only when its row was laid out.
-	customMode := editor.form.algoLayout == algoCustom
-
 	b := &editor.form.algoBody
-	if customMode {
-		state.paintDialogField(canvas, hitDialogAlgorithms, fieldAlgorithms, m.AlgoCustomField, m.AlgoCustomPlaceholder, b.custom.Rect())
+	state.rememberHostControl(hitDialogOTPScan, b.scan.Rect())
+	state.rememberHostControl(hitDialogOTPPaste, b.paste.Rect())
+	if editor.otpSaved {
+		state.rememberHostControl(hitDialogOTPRemove, b.remove.Rect())
 	}
-	state.paintDialogField(canvas, hitDialogLoginCommand, fieldLoginCommand, m.LoginCommandField, m.LoginCommandPlaceholder, b.login.Rect())
-	state.paintOTPRow(canvas, b.otp.Rect(), b.scan.Rect(), b.paste.Rect(), b.remove)
 	if editor.auth == authAutomatic {
 		state.paintHelpIcon(canvas, hitDialogIdentitiesOnlyHelp, m.IdentitiesOnlyNote, b.identitiesOnlyHelp.Rect())
 	}
@@ -701,6 +736,7 @@ func (state *State) paintAlgorithmRows(canvas *gfx.Canvas) {
 // login command, the one-time code row and the session and agent switches.
 func (state *State) declareHostAlgoRows(c ui.C) {
 	m, editor, pal := state.messages.Tools, &state.editor, state.pal
+	form := &editor.form
 	b := &editor.form.algoBody
 	*b = hostAlgoRowsBody{}
 	customMode := editor.form.algoLayout == algoCustom
@@ -709,10 +745,20 @@ func (state *State) declareHostAlgoRows(c ui.C) {
 		b.algo = ui.Slot(c).Height(rowHeight)
 		if customMode {
 			b.custom = ui.Slot(c).Height(rowHeight)
+			state.declareHostTextField(c, b.custom, &form.fieldAlgoCustom, hitDialogAlgorithms, &editor.algorithms, m.AlgoCustomField, m.AlgoCustomPlaceholder, false, rowHeight)
 		}
 		b.login = ui.Slot(c).Height(rowHeight)
+		state.declareHostTextField(c, b.login, &form.fieldLoginCommand, hitDialogLoginCommand, &editor.loginCommand, m.LoginCommandField, m.LoginCommandPlaceholder, false, rowHeight)
 		ui.Row(c).Height(otpFieldHeight).Gap(8).Children(func() {
 			b.otp = ui.Slot(c).Grow(1)
+			placeholder := m.OTPPlaceholder
+			if editor.otpSaved {
+				placeholder = m.OTPSavedPlaceholder
+				if editor.otpRemove {
+					placeholder = m.OTPRemovingPlaceholder
+				}
+			}
+			state.declareHostTextField(c, b.otp, &form.fieldOTP, hitDialogOTP, &editor.otp, m.OTPField, placeholder, false, otpFieldHeight)
 		})
 		ui.Row(c).Height(otpButtonsRow).Gap(8).Children(func() {
 			b.scan = ui.Button(c, m.OTPScan).Small().Outline().Hit(hitDialogOTPScan, m.OTPScan).Size(algoScanWidth, 30).Self(ui.Start)
@@ -749,29 +795,12 @@ func (state *State) declareHostAlgoRows(c ui.C) {
 // read it from a QR code image, and for a
 // saved one a button, in its own rectangle, to take it away. The secret itself
 // is never drawn.
-func (state *State) paintOTPRow(canvas *gfx.Canvas, field, scan, paste gfx.Rect, remove ui.Box) {
-	m, editor := state.messages.Tools, &state.editor
-	placeholder := m.OTPPlaceholder
-	if editor.otpSaved {
-		placeholder = m.OTPSavedPlaceholder
-		if editor.otpRemove {
-			placeholder = m.OTPRemovingPlaceholder
-		}
-	}
-	state.paintDialogField(canvas, hitDialogOTP, fieldOTP, m.OTPField, placeholder, field)
-	state.rememberHostControl(hitDialogOTPScan, scan)
-	state.rememberHostControl(hitDialogOTPPaste, paste)
-	if editor.otpSaved {
-		state.rememberHostControl(hitDialogOTPRemove, remove.Rect())
-	}
-}
-
 // vncRowsHeight is the room of the three switches every remote desktop host has.
 const vncRowsHeight = 4 + 20 + (12 + 20) + (12 + 20) + 16
 
-// rdpRowsHeight adds the three switches only an RDP host has: the console
-// session, remote audio and Standard RDP Security.
-const rdpRowsHeight = vncRowsHeight + 3*(12+20)
+// rdpRowsHeight adds the four switches only an RDP host has: the console
+// session, remote audio, Standard RDP Security and legacy TLS.
+const rdpRowsHeight = vncRowsHeight + 4*(12+20)
 
 // desktopRowsHeight is the room paintVNCRows takes for the protocol on screen.
 func (state *State) desktopRowsHeight() float32 {
@@ -784,9 +813,10 @@ func (state *State) desktopRowsHeight() float32 {
 // paintVNCRows paints the switches of a VNC or RDP host in the slots the host
 // form's page laid out: connecting through SSH, sharing the clipboard, showing
 // the picture without the bars around it and, for RDP, asking Windows for its
-// console (administrative) session, playing remote sound and choosing Standard
-// RDP Security. A host whose route carries the connection cannot also use the
-// same-machine tunnel, so that switch is dimmed and inert.
+// console (administrative) session, playing remote sound, choosing Standard
+// RDP Security and allowing the legacy TLS suites. A host whose route carries
+// the connection cannot also use the same-machine tunnel, so that switch is
+// dimmed and inert.
 func (state *State) paintVNCRows(canvas *gfx.Canvas) {
 	editor, m := &state.editor, state.messages.Desktop
 	b := &editor.form.vncBody
@@ -796,6 +826,7 @@ func (state *State) paintVNCRows(canvas *gfx.Canvas) {
 	if editor.form.layoutProtocol == protocolRDP {
 		// After the checkbox, whose words reach to the end of the row, so that
 		// this is the hit on top where the two meet.
+		state.paintHelpIcon(canvas, hitDialogLegacyTLSHelp, m.LegacyTLSNote, b.legacyTLSHelp.Rect())
 		state.paintHelpIcon(canvas, hitDialogStandardSecurityHelp, m.StandardSecurityNote, b.standardSecurityHelp.Rect())
 	}
 }
@@ -803,7 +834,8 @@ func (state *State) paintVNCRows(canvas *gfx.Canvas) {
 // declareHostVNCRows lays out the switches of a VNC or RDP host: connecting
 // through SSH, sharing the clipboard, showing the picture without the bars
 // around it and, for RDP, asking Windows for its console (administrative)
-// session, playing remote sound and choosing Standard RDP Security.
+// session, playing remote sound, choosing Standard RDP Security and allowing
+// the legacy TLS suites.
 func (state *State) declareHostVNCRows(c ui.C) {
 	editor, m := &state.editor, state.messages.Desktop
 	b := &editor.form.vncBody
@@ -823,6 +855,7 @@ func (state *State) declareHostVNCRows(c ui.C) {
 		if editor.protocol == protocolRDP {
 			state.declareDialogCheck(c, hitDialogConsole, m.ConsoleSession, editor.console, 12, 0)
 			state.declareDialogCheck(c, hitDialogRemoteAudio, m.RemoteAudio, !editor.noAudio, 12, 0)
+			_, b.legacyTLSHelp = state.declareDialogCheckHelp(c, hitDialogLegacyTLS, m.LegacyTLS, editor.legacyTLS, 12, 0)
 			_, b.standardSecurityHelp = state.declareDialogCheckHelp(c, hitDialogStandardSecurity, m.StandardSecurity, editor.standardSecurity, 12, 0)
 		}
 	})

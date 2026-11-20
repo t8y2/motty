@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -84,6 +85,7 @@ func plainScene(name string, setup func(t *testing.T, state *State)) paintScene 
 func settingsScene(name string, setup func(t *testing.T, world *settingsWorld)) paintScene {
 	return paintScene{name: name, sizes: []gfx.Size{paintDesktop}, open: func(t *testing.T) (*State, func(*gfx.Canvas, gfx.Size)) {
 		world := newSettingsWorld(t, newLister("m1"))
+		pinPaintState(world.state)
 		setup(t, world)
 		return world.state, func(c *gfx.Canvas, size gfx.Size) { world.state.Paint(c, size) }
 	}}
@@ -205,6 +207,7 @@ func basePaintScenes() []paintScene {
 }
 
 func TestPaintGolden(t *testing.T) {
+	pinPaintEnvironment(t)
 	update := os.Getenv("UPDATE_PAINT_GOLDEN") != ""
 	for _, scene := range paintScenes() {
 		for _, size := range scene.sizes {
@@ -228,8 +231,8 @@ func TestPaintGolden(t *testing.T) {
 				if err != nil {
 					t.Fatalf("no golden for %s: run with UPDATE_PAINT_GOLDEN=1", name)
 				}
-				if got != string(want) {
-					t.Errorf("%s paints differently from its golden (UPDATE_PAINT_GOLDEN=1 rewrites it)\n%s", name, firstDifference(string(want), got))
+				if diff := firstDifference(string(want), got); diff != "" {
+					t.Errorf("%s paints differently from its golden (UPDATE_PAINT_GOLDEN=1 rewrites it)\n%s", name, diff)
 				}
 			})
 		}
@@ -246,9 +249,82 @@ func firstDifference(want, got string) string {
 		if i < len(g) {
 			b = g[i]
 		}
-		if a != b {
-			return fmt.Sprintf("line %d\n  want %s\n  got  %s", i+1, a, b)
+		if a == b || samePaintLine(a, b) {
+			continue
 		}
+		return fmt.Sprintf("line %d\n  want %s\n  got  %s", i+1, a, b)
 	}
 	return ""
+}
+
+// paintNumberTolerance is how far apart two printed numbers may be and still
+// count as the same paint. The dumps print float32 values in full precision,
+// and another architecture can compute the last digit differently: a color
+// mixed through a different instruction lands 1e-8 away. A pixel of layout and
+// one 8-bit color step (1/255, about 0.004) are both larger than this, so a
+// change a person could see still fails.
+const paintNumberTolerance = 0.002
+
+// samePaintLine compares one dump line token by token: numbers within
+// paintNumberTolerance, quoted text and everything else exactly.
+func samePaintLine(a, b string) bool {
+	at, bt := paintTokens(a), paintTokens(b)
+	if len(at) != len(bt) {
+		return false
+	}
+	for i := range at {
+		if at[i] == bt[i] {
+			continue
+		}
+		x, ok := parsePaintNumber(at[i])
+		if !ok {
+			return false
+		}
+		y, ok := parsePaintNumber(bt[i])
+		if !ok || math.Abs(x-y) > paintNumberTolerance {
+			return false
+		}
+	}
+	return true
+}
+
+func parsePaintNumber(token string) (float64, bool) {
+	value, err := strconv.ParseFloat(token, 64)
+	return value, err == nil
+}
+
+// paintTokens splits a dump line into quoted strings, runs of digits and dots,
+// and single characters. A quoted string stays whole, so a number in a label or
+// a path is never read as a coordinate.
+func paintTokens(line string) []string {
+	tokens := make([]string, 0, 16)
+	for i := 0; i < len(line); {
+		switch c := line[i]; {
+		case c == '"':
+			start := i
+			i++
+			for i < len(line) {
+				if line[i] == '\\' {
+					i += 2
+					continue
+				}
+				if line[i] == '"' {
+					i++
+					break
+				}
+				i++
+			}
+			tokens = append(tokens, line[start:min(i, len(line))])
+		case c >= '0' && c <= '9' || c == '.':
+			start := i
+			for i < len(line) && (line[i] >= '0' && line[i] <= '9' || line[i] == '.') {
+				i++
+			}
+			tokens = append(tokens, line[start:i])
+		default:
+			tokens = append(tokens, string(c))
+			i++
+		}
+	}
+	return tokens
 }

@@ -55,5 +55,6 @@ windows
 statusselect 1 2
 windows
 
-# Quit from the menu (entry 8) ends the application and its connections.
-statusselect 1 8
+# Quit from the menu (entry 9 with the two sessions listed) ends the application
+# and its connections.
+statusselect 1 9

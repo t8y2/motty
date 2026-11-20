@@ -68,6 +68,26 @@ func isGoTemplateControlAction(name string) bool {
 	return false
 }
 
+// goTemplateKeyword returns the leading Go template keyword of an action and
+// what follows it. A template may write the keyword without a space before its
+// pipeline ({{range .Items}} and {{range.Items}} both mean the same), so the
+// keyword has to be read off the front before the action is judged.
+func goTemplateKeyword(action string) (keyword, rest string) {
+	for _, kw := range []string{"range", "if", "with", "else", "end", "break", "continue"} {
+		if action == kw {
+			return kw, ""
+		}
+		if !strings.HasPrefix(action, kw) {
+			continue
+		}
+		switch action[len(kw)] {
+		case ' ', '\t', '.', '(':
+			return kw, strings.TrimSpace(action[len(kw):])
+		}
+	}
+	return "", ""
+}
+
 type variableMatchInfo struct {
 	token      string
 	name       string
@@ -126,10 +146,15 @@ func collectVariableMatches(text string) ([]variableMatchInfo, map[int]bool) {
 
 		hasFieldRef := hasGoTemplateFieldReference(action)
 		hasKnownVarRef := hasGoTemplateVariableReference(action, goTemplateVariables)
+		keyword, rest := goTemplateKeyword(action)
+		if keyword != "" {
+			hasFieldRef = hasFieldRef || hasGoTemplateFieldReference(rest)
+			hasKnownVarRef = hasKnownVarRef || hasGoTemplateVariableReference(rest, goTemplateVariables)
+		}
 		insideBlock := blockDepth > 0
-		isBlockStart := (firstWord == "if" || firstWord == "range" || firstWord == "with") &&
+		isBlockStart := (keyword == "if" || keyword == "range" || keyword == "with" || firstWord == "if" || firstWord == "range" || firstWord == "with") &&
 			(hasFieldRef || hasKnownVarRef)
-		isBlockEnd := action == "end"
+		isBlockEnd := keyword == "end"
 		isGoTemplateToken := hasFieldRef ||
 			hasKnownVarRef ||
 			isBlockStart ||

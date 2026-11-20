@@ -8,6 +8,12 @@ import (
 	"github.com/vivaui/viva/app"
 )
 
+// customEditorChoice is customEditorSupported with a seam for the paint
+// goldens: the Files page has a row for a custom executable only where one can
+// be chosen, and a golden renders one platform's page everywhere. Choosing and
+// running a custom editor stays limited to the platform build that supports it.
+var customEditorChoice = customEditorSupported
+
 func (state *State) chooseCustomEditor() {
 	if !customEditorSupported() {
 		state.status = state.messages.Tools.FilesCustomEditorUnavailable

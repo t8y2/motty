@@ -71,14 +71,62 @@ func TestCatalogPagesScrollLongLists(t *testing.T) {
 		state.activeSection = sectionProxies
 		state.selectedProxyID = 1
 		view := openCatalogWindow(t, state)
-		assertTableScrolls(t, state, view, &state.proxyTable, count,
-			hitProxyRowList.At(0), hitProxyRowList.At(count-1), hitProxyScrollThumb,
-			state.messages.ProxyListScroll, state.messages.ProxyColumnRoute,
-			func(state *State) {
-				if state.selectedProxyID != state.proxies[count-1].ID {
-					t.Fatalf("keyboard selection did not reach the last route: %d", state.selectedProxyID)
-				}
-			})
+		list := &state.proxyList
+		scroll := state.sectionBodies.proxies.listScroll
+		if scroll == nil {
+			t.Fatal("the jump routes page has no scroll area")
+		}
+		first, ok := findSnapshotHit(view.Snapshot(), hitProxyRowList.At(0))
+		if !ok {
+			t.Fatal("the first row is not painted")
+		}
+		if _, ok := findSnapshotHit(view.Snapshot(), hitProxyRowList.At(count-1)); ok {
+			t.Fatal("the list fits every row without scrolling")
+		}
+		at := gfx.Point{X: first.Bounds.X + first.Bounds.Width/2, Y: first.Bounds.Y + first.Bounds.Height/2}
+		if err := view.Move(at.X, at.Y); err != nil {
+			t.Fatal(err)
+		}
+		bar, ok := findSnapshotLabel(view.Snapshot(), "Vertical scrollbar")
+		if !ok {
+			t.Fatal("a list taller than its body has no scrollbar under the pointer")
+		}
+		if bar.Bounds.Width != catalogBarGutter {
+			t.Fatalf("scrollbar width = %v, want %v", bar.Bounds.Width, catalogBarGutter)
+		}
+		if err := view.Scroll(gfx.ScrollEvent{X: at.X, Y: at.Y, DeltaY: 10000, Precise: true}); err != nil {
+			t.Fatal(err)
+		}
+		if scroll.Offset <= 0 {
+			t.Fatalf("wheel left the list at offset %v", scroll.Offset)
+		}
+		if _, ok := findSnapshotHit(view.Snapshot(), hitProxyRowList.At(count-1)); !ok {
+			t.Fatal("the last row is unreachable at the end of the list")
+		}
+		if err := view.Scroll(gfx.ScrollEvent{X: at.X, Y: at.Y, DeltaY: -10000, Precise: true}); err != nil {
+			t.Fatal(err)
+		}
+		if scroll.Offset != 0 {
+			t.Fatalf("scrolling back left the list at %v", scroll.Offset)
+		}
+		if err := view.Driver().Click(first.Bounds.X+first.Bounds.Width/2, first.Bounds.Y+first.Bounds.Height/2); err != nil {
+			t.Fatal(err)
+		}
+		if err := view.Driver().Key(gfx.KeyEnd, 0); err != nil {
+			t.Fatal(err)
+		}
+		if got := list.Selected(); got != count-1 {
+			t.Fatalf("End selected row %d of %d", got, count)
+		}
+		if maximum := scroll.Max(); scroll.Offset != maximum {
+			t.Fatalf("End left the list at %v of %v", scroll.Offset, maximum)
+		}
+		if _, ok := findSnapshotHit(view.Snapshot(), hitProxyRowList.At(count-1)); !ok {
+			t.Fatal("End did not reveal the last row")
+		}
+		if state.selectedProxyID != state.proxies[count-1].ID {
+			t.Fatalf("keyboard selection did not reach the last route: %d", state.selectedProxyID)
+		}
 	})
 
 	t.Run("snippets", func(t *testing.T) {

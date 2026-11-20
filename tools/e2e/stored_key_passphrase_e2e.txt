@@ -1,0 +1,58 @@
+# End to end: a private key pasted into Motty (kept in the vault, never a file)
+# whose passphrase is saved on the Keychain page connects without asking for the
+# passphrase again. The fixture accepts only the public key in
+# tools/e2e/fixtures/stored-key.pub and refuses passwords, so reaching the shell
+# proves the passphrase was saved and used by itself.
+#
+#   E2E_EXTRA_PUBKEY=tools/e2e/fixtures/stored-key.pub /tmp/motty-e2esshd 2262
+#   MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/stored_key_passphrase_e2e.txt
+#
+# The key below is a throwaway fixture made with
+# `ssh-keygen -t ed25519 -N key-secret -C motty-e2e`.
+
+click "Keychain"
+settle 300
+click "Add Key"
+click "Paste Private Key"
+settle 300
+type -----BEGIN OPENSSH PRIVATE KEY-----
+key enter
+type b3BlbnNzaC1rZXktdjEAAAAACmFlczI1Ni1jdHIAAAAGYmNyeXB0AAAAGAAAABB3Spdx68
+key enter
+type Zht87pNebMnqUIAAAAGAAAAAEAAAAzAAAAC3NzaC1lZDI1NTE5AAAAIM3Ah3tauVcDHW68
+key enter
+type KVT5cLxrM4I91LPDzRVW9/s7FdIHAAAAkBY8F/B1wJp6DoR1OWIZcAnSNhY0+0bGDDsqqy
+key enter
+type /+WDtI4DV3AKkEOZh8ET5lVEVE/dg5t//MAiu3ehR/SVAkpeOotF06hOWOnTJzngXGpbte
+key enter
+type v8ALUEWdPiUrI5z3lwSSaG2TZaKhiiBm13oB88Q0djiI1RXzfRM03PUbZ2LgiYUeZicyEv
+key enter
+type iSiO0m/JugVhziqw==
+key enter
+type -----END OPENSSH PRIVATE KEY-----
+key enter
+key tab
+type stored e2e
+click "Add"
+settle 400
+texts "stored e2e"
+
+# Save the passphrase it was made with; the page keeps it under the key and the
+# next connection unlocks the key with it. The Keychain page paints no status
+# line, so the form closing and the connection below are what prove it was
+# accepted.
+click "Save Passphrase"
+settle 300
+type key-secret
+click "Save"
+settle 300
+
+click "Hosts"
+settle 300
+click "Search"
+type tester@127.0.0.1:2262
+click "Connect"
+waitfor "Trust" 3000
+click "Trust and Save"
+waitfor "tester@e2e" 8000
+texts

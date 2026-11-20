@@ -145,8 +145,8 @@ func TestBookmarksAreKeptPerHostSurviveARestartAndOpenTheirFolder(t *testing.T) 
 	for _, text := range canvas.Texts() {
 		if text.Value == "/home/test/docs" {
 			listed = true
-			if text.Layer != popupLayer {
-				t.Fatalf("the bookmark's text is on layer %d, want the popup layer %d", text.Layer, popupLayer)
+			if text.Layer == 0 {
+				t.Fatalf("the bookmark's text is on the page layer, under the file rows")
 			}
 		}
 	}

@@ -36,6 +36,24 @@ type knownHostRecord struct {
 	cells       [7]string
 	searchText  string
 	selectLabel string
+	// rowLabel names the row in assistive technology by all its non-empty cells.
+	rowLabel string
+}
+
+// knownHostRowLabel joins the cells the row shows into one spoken name. It runs
+// when the file is read, not in the paint.
+func knownHostRowLabel(cells [7]string) string {
+	var b strings.Builder
+	for _, cell := range cells {
+		if cell == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteString(" · ")
+		}
+		b.WriteString(cell)
+	}
+	return b.String()
 }
 
 type knownHostsView struct {
@@ -124,15 +142,15 @@ func (state *State) refreshKnownHosts(report bool) {
 			flags += "|1|"
 		}
 		line := strconv.Itoa(entry.Line)
+		cells := [7]string{"", line, hosts, flags, entry.KeyType, entry.Fingerprint, entry.Comment}
 		view.rows[index] = knownHostRecord{
 			entry: entry,
-			cells: [7]string{
-				"", line, hosts, flags, entry.KeyType, entry.Fingerprint, entry.Comment,
-			},
+			cells: cells,
 			searchText: strings.ToLower(strings.Join([]string{
 				hosts, entry.KeyType, entry.Fingerprint, entry.Comment,
 			}, " ")),
 			selectLabel: hosts + " · " + entry.Fingerprint,
+			rowLabel:    knownHostRowLabel(cells),
 		}
 	}
 	view.selected = 0

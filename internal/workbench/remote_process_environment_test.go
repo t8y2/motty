@@ -180,8 +180,9 @@ func TestEnvironmentTableCopiesCompleteMarkupLookingValues(t *testing.T) {
 	}
 	var text remoteDetailText
 	var canvas gfx.Canvas
-	columns, headings, rows := remoteEnvironmentTable(variables, header, 700)
+	columns, headings, rows := remoteEnvironmentTable(variables, header)
 	text.bounds = gfx.Rect{Width: 700, Height: 240}
+	fitRemoteEnvironmentColumns(columns, text.bounds.Width)
 	text.setTableModel(columns, headings, rows)
 	state.paintRemoteDetailTableSlot(&canvas, &text)
 	if text.mode != remoteDetailTable {
@@ -208,8 +209,9 @@ func TestEnvironmentTableCopiesDelimitedValuesAsLosslessTSV(t *testing.T) {
 	header := [2]string{"Variable", "Value"}
 	var text remoteDetailText
 	var canvas gfx.Canvas
-	columns, headings, rows := remoteEnvironmentTable(variables, header, 700)
+	columns, headings, rows := remoteEnvironmentTable(variables, header)
 	text.bounds = gfx.Rect{Width: 700, Height: 240}
+	fitRemoteEnvironmentColumns(columns, text.bounds.Width)
 	text.setTableModel(columns, headings, rows)
 	state.paintRemoteDetailTableSlot(&canvas, &text)
 	text.selection.Select(components.TextPoint{}, components.TextPoint{Offset: text.textLen()})
@@ -492,4 +494,72 @@ func remoteCanvasExactTextBounds(canvas *gfx.Canvas, value string) (gfx.Rect, bo
 		}
 	}
 	return gfx.Rect{}, false
+}
+
+// The command's status line takes its 28 pixels from the tab panel and the
+// command text starts directly under it, as it did when the dialog painted the
+// panel itself: no column gap sits between them.
+func TestProcessCommandStatusSharesThePanelWithoutAGap(t *testing.T) {
+	state, server, _ := openRemoteToolsDialog(t)
+	server.failures["command"] = errors.New("exit status 1")
+	doubleClickRemoteToolsRow(t, state, 0)
+	waitFor(t, state, func() bool {
+		return state.remote.processDetails.commandLoaded && !state.remote.processDetails.commandLoading
+	})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, remoteToolsPageSize)
+	m := state.messages.Tools
+	status, ok := remoteCanvasText(&canvas, m.RemoteProcessCommandSummary)
+	if !ok {
+		t.Fatal("the command status was not painted")
+	}
+	if status.Bounds.Height > 28 {
+		t.Fatalf("the command status line height = %v, want at most the row's 28", status.Bounds.Height)
+	}
+	tab, ok := hitByLabelRole(&canvas, state.remoteProcessDetailTabLabel(hitRemoteProcessDetailsCommand), gfx.RoleTab)
+	if !ok {
+		t.Fatal("the command tab was not painted")
+	}
+	detail, ok := hitByID(&canvas, hitRemoteProcessDetailsText)
+	if !ok {
+		t.Fatal("the command text was not painted")
+	}
+	if status.Bounds.Y < tab.Bounds.Bottom() {
+		t.Fatalf("the status %v overlaps the tab %v", status.Bounds, tab.Bounds)
+	}
+	// The line's box is the 28 pixel row, and the command starts where that row
+	// ends; any gap here is the outer column's GapItem back again.
+	if detail.Bounds.Y != status.Bounds.Y+28 {
+		t.Fatalf("the command text starts at %v, not at the status row's bottom %v: a gap came back",
+			detail.Bounds.Y, status.Bounds.Y+28)
+	}
+}
+
+// The environment table sizes its first column from the room it is actually
+// given, not from the dialog's declared width.
+func TestEnvironmentTableSizesItsFirstColumnFromItsSlot(t *testing.T) {
+	state, _, _ := openRemoteToolsDialog(t)
+	doubleClickRemoteToolsRow(t, state, 0)
+	size := gfx.Size{Width: 900, Height: 600}
+	clickPageLabelIn(t, state, size, gfx.RoleTab, state.remoteProcessDetailTabLabel(hitRemoteProcessDetailsEnv))
+	waitFor(t, state, func() bool { return !state.remote.processDetails.loading })
+	var canvas gfx.Canvas
+	state.Paint(&canvas, size)
+	m := state.messages.Tools
+	name, ok := remoteCanvasExactTextBounds(&canvas, m.RemoteProcessEnvironmentName)
+	if !ok {
+		t.Fatal("the environment table has no name heading")
+	}
+	value, ok := remoteCanvasExactTextBounds(&canvas, m.RemoteProcessEnvironmentValue)
+	if !ok {
+		t.Fatal("the environment table has no value heading")
+	}
+	detail, ok := hitByID(&canvas, hitRemoteProcessDetailsText)
+	if !ok {
+		t.Fatal("the environment table has no viewport")
+	}
+	want := min(float32(300), max(detail.Bounds.Width*0.36, 140))
+	if got := value.X - name.X; got != want {
+		t.Fatalf("the first column is %v wide, want %v from the %v slot", got, want, detail.Bounds.Width)
+	}
 }

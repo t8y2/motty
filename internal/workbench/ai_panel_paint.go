@@ -587,22 +587,21 @@ func (state *State) declareAIDrawer(c ui.C, size gfx.Size) {
 	bounds := gfx.Rect{X: viewport.X + viewport.Width - contentWidth, Y: viewport.Y, Width: contentWidth, Height: viewport.Height}
 	panel.rect = bounds
 	panel.resize = aiPanelResize{window: viewport, ratio: (bounds.X - viewport.X) / max(viewport.Width-1, 1), handle: 8}
-	dismiss := ui.ID(c)
-	if canvas := c.Canvas(); canvas != nil && canvas.Clicked(dismiss) {
+	// The page Drawer covers the window less its inset, so its scrim and dismiss
+	// target stop at the visible workspace, as the old drawer's viewport did.
+	inset := gfx.Insets{
+		Top: viewport.Y, Left: viewport.X,
+		Right:  size.Width - (viewport.X + viewport.Width),
+		Bottom: size.Height - (viewport.Y + viewport.Height),
+	}
+	panel.drawerOpen = true
+	spec := ui.DrawerSpec{Side: ui.DrawerRight, Size: contentWidth, Inset: inset, NonModal: true}
+	if ui.Drawer(c, &panel.drawerOpen, "", spec, func() {
+		state.declareAIPanelBody(c)
+		state.declareAIResize(c, gfx.Point{X: bounds.X, Y: bounds.Y})
+	}, nil) {
 		c.After(state.closeAIPanel)
 	}
-	drawer := components.BeginDrawer(c.Canvas(), state.Theme(), viewport, components.DrawerOptions{
-		Layer: drawerLayer, DismissID: dismiss,
-		Side: components.DrawerRight, ContentExtent: contentWidth,
-	})
-	ui.Stack(c).Absolute().Left(viewport.X).Top(viewport.Y).Size(viewport.Width, viewport.Height).
-		Draw(func(*ui.DrawContext) { drawer.Begin("", "") }).Children(func() {
-		ui.Column(c).Absolute().Left(bounds.X-viewport.X).Top(0).Size(bounds.Width, bounds.Height).Children(func() {
-			state.declareAIPanelBody(c)
-		})
-		state.declareAIResize(c, gfx.Point{X: viewport.X, Y: viewport.Y})
-		ui.Slot(c).Absolute().Size(0, 0).Draw(func(*ui.DrawContext) { drawer.End() })
-	})
 }
 
 // paintAIPanel paints what the declared panel needs outside the page: the
@@ -651,20 +650,46 @@ func (state *State) declareAIResize(c ui.C, origin gfx.Point) {
 	}
 	x := window.X + (window.Width-1)*panel.resize.ratio
 	handle := panel.resize.handle
+	theme := state.Theme()
 	line := gfx.Color{}
 	if panel.mode == aiPanelDocked {
-		line = state.Theme().Border
+		line = theme.Border
 	}
+	// The hit strip starts half a pixel left of the resting line, as the
+	// Resizable it replaces did, so the line sits at its first whole pixel.
+	left := x - origin.X - (handle-1)/2
+	edge := (handle - 1) / 2
+	focused := c.Canvas() != nil && c.Canvas().FocusVisible() == hitAIDivider
+	pressed := c.Canvas() != nil && c.Canvas().Pressed() == hitAIDivider
+	hovered := c.Canvas() != nil && c.Canvas().Hovered() == hitAIDivider
 	ui.Column(c).Absolute().
-		Left(x-origin.X-handle/2).
+		Left(left).
 		Top(window.Y-origin.Y).
 		Width(handle).Height(window.Height).
-		Items(ui.Center).
 		HitWith(hitAIDivider, state.messages.AIPanel.ResizePanel, gfx.HitOptions{
 			Role: gfx.RoleSeparator, Cursor: gfx.PointerCursorResizeHorizontal,
 		}).Children(func() {
+		// The old handle painted the focus ring first, the separator over it,
+		// then the hover or press line: the same order here.
+		if focused {
+			focus := theme.Ring
+			focus.Alpha *= 0.50
+			ui.Slot(c).Absolute().Left(-1).Top(-1).
+				Width(handle + 2).Height(window.Height + 2).
+				Radius(2).Background(focus)
+		}
 		if line.Alpha > 0 {
-			ui.Slot(c).Width(1).Height(window.Height).Background(line)
+			ui.Slot(c).Absolute().Left(edge).Top(0).
+				Width(1).Height(window.Height).Background(line)
+		}
+		if !focused && (hovered || pressed) {
+			accent := theme.Ring
+			if pressed {
+				accent = theme.Primary
+			}
+			ui.Slot(c).Absolute().Left(edge - 1).Top(-1).
+				Width(3).Height(window.Height + 2).
+				Radius(1).Background(accent)
 		}
 	})
 }

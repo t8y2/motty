@@ -24,6 +24,19 @@ type completionWorld struct {
 
 func newCompletionWorld(t *testing.T) *completionWorld {
 	t.Helper()
+	return newCompletionWorldWith(t, true)
+}
+
+// newPlainCompletionWorld is a live SSH terminal whose shell never reported
+// shell integration: a shell the client cannot install its startup hooks into,
+// such as the BusyBox ash of OpenWrt (#1157).
+func newPlainCompletionWorld(t *testing.T) *completionWorld {
+	t.Helper()
+	return newCompletionWorldWith(t, false)
+}
+
+func newCompletionWorldWith(t *testing.T, integrated bool) *completionWorld {
+	t.Helper()
 	state, _, conn, shell := liveSession(t)
 	w := &completionWorld{state: state, shell: shell, conn: conn, clock: time.Second}
 	state.options.Now = func() time.Duration { return w.clock }
@@ -37,7 +50,12 @@ func newCompletionWorld(t *testing.T) *completionWorld {
 	if !state.ActivatePane(session.ID) {
 		t.Fatal("the session has no pane")
 	}
-	inputGuardPrompt(state, session, shell, "utf8", "")
+	if integrated {
+		inputGuardPrompt(state, session, shell, "utf8", "")
+	} else {
+		shell.say("\r\ntester@openwrt:~$ ")
+		state.Wake()
+	}
 	catalog, err := completion.Builtin()
 	if err != nil {
 		t.Fatal(err)
@@ -193,6 +211,71 @@ func TestANestedShellOffersNoPaths(t *testing.T) {
 func TestAProgramPromptOpensNeitherTheListNorTheGhost(t *testing.T) {
 	w := newCompletionWorld(t)
 	w.enterNestedShell(">>> ")
+	w.type_("git statu")
+	if w.state.completionEligible(w.session) {
+		t.Fatal("a REPL prompt was taken for a shell prompt")
+	}
+	w.state.openCompletions()
+	if w.state.completion.list.active {
+		t.Fatal("the list opened at a REPL prompt")
+	}
+	if rest, ok := w.state.commandGhost(w.session); ok {
+		t.Fatalf("the ghost offered %q at a REPL prompt", rest)
+	}
+}
+
+// A shell the client could never integrate — OpenWrt's BusyBox ash, a dash, a
+// shell behind an unrecognized server — still draws a prompt the recorder can
+// prove. The list follows the same proof as the inline suggestion (#1157).
+func TestTheListOpensWithoutShellIntegration(t *testing.T) {
+	w := newPlainCompletionWorld(t)
+	w.state.history.inlineOff = true // automatic-list mode
+	w.type_("git s")
+	waitCompletionList(t, w)
+	if !w.state.completion.list.auto {
+		t.Fatal("the unintegrated shell did not open the automatic list")
+	}
+	if got := strings.Join(listTexts(w), ","); !strings.Contains(got, "stage") {
+		t.Fatalf("the unintegrated shell's list = %q, want git stage", got)
+	}
+}
+
+func TestTheShortcutOpensTheListWithoutShellIntegration(t *testing.T) {
+	w := newPlainCompletionWorld(t)
+	w.type_("git s")
+	if !w.state.completionEligible(w.session) {
+		t.Fatal("the unintegrated shell's screen line is not eligible")
+	}
+	w.state.openCompletions()
+	list := &w.state.completion.list
+	if !list.active || len(list.candidates) == 0 || list.candidates[0].Text != "stage" {
+		t.Fatalf("list active=%v candidates=%v", list.active, list.candidates)
+	}
+}
+
+// The ghost and the list must agree on a shell without markers, which is the
+// inconsistency issue #1157 reports.
+func TestTheGhostAndTheListAgreeWithoutShellIntegration(t *testing.T) {
+	w := newPlainCompletionWorld(t)
+	w.state.history.on = true
+	w.state.history.ghost = map[string][]cmdhistory.Entry{
+		historyKey(w.session): {{Command: "git status"}},
+	}
+	w.type_("git s")
+	if rest, ok := w.state.commandGhost(w.session); !ok || rest != "tatus" {
+		t.Fatalf("the unintegrated shell's ghost = %q, %v", rest, ok)
+	}
+	w.state.history.inlineOff = true
+	w.state.openCompletions()
+	if !w.state.completion.list.active {
+		t.Fatal("the list refused a line the ghost accepted")
+	}
+}
+
+func TestAProgramPromptStillRefusesWithoutShellIntegration(t *testing.T) {
+	w := newPlainCompletionWorld(t)
+	w.shell.say("\r\n>>> ")
+	w.state.Wake()
 	w.type_("git statu")
 	if w.state.completionEligible(w.session) {
 		t.Fatal("a REPL prompt was taken for a shell prompt")

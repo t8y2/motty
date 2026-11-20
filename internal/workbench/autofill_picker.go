@@ -6,6 +6,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/autofill"
 )
 
@@ -91,6 +92,16 @@ type autofillPick struct {
 	candidates []passwordCandidate
 	selected   int
 	top        int
+	// The page Popover that carries the offer: open is its visibility, kept
+	// between paints so its scope and presence stay stable. body/draw are
+	// stored so an open offer allocates no closures.
+	open       bool
+	c          ui.C
+	body       func()
+	draw       func(*ui.DrawContext)
+	slotHeight float32
+	pickTop    int
+	visible    int
 }
 
 // openPasswordPick offers the saved passwords for the prompt. The session must
@@ -327,15 +338,18 @@ const (
 	passwordPickMaxWidth        = float32(420)
 )
 
-// paintAutofillPick draws the offer over the grid, anchored to the cursor cell
-// and flipped above it when the terminal has no room below.
-func (state *State) paintAutofillPick(canvas *gfx.Canvas, session *Session, geometry terminalGeometry) {
+// declareAutofillPick declares the offer as a page Popover over the grid,
+// anchored to the cursor cell and flipped above it when the terminal has no room
+// below. The rows stay hand-painted in the popover's body slot.
+func (state *State) declareAutofillPick(c ui.C, session *Session, bounds gfx.Rect, geometry terminalGeometry) {
 	pick := &state.autofillRules.pick
 	if len(pick.candidates) == 0 || pick.sessionID != session.ID || session.ID != state.activeSessionID ||
 		state.modal != modalNone || state.activeSection != sectionTerminal {
+		pick.open = false
 		return
 	}
 	if _, ok := state.autofillPickSession(); !ok {
+		pick.open = false
 		return
 	}
 	cursor := session.term.presentedCursor()
@@ -345,27 +359,61 @@ func (state *State) paintAutofillPick(canvas *gfx.Canvas, session *Session, geom
 	area := geometry.area
 	x = min(max(x, area.X+2), area.X+max(area.Width-2, 2))
 	y = min(max(y, area.Y+2), area.Y+max(area.Height-2, 2))
-	anchor := gfx.Rect{X: x, Y: y, Width: max(cellWidth, 2), Height: max(cellHeight, 2)}
+	anchorRect := gfx.Rect{X: x, Y: y, Width: max(cellWidth, 2), Height: max(cellHeight, 2)}
 
 	top := min(pick.top, len(pick.candidates)-1)
 	visible := min(len(pick.candidates)-top, passwordPickRows)
 	height := 2*passwordPickSurfacePad + passwordPickGroupHeight + 2*passwordPickSeparatorHeight +
 		passwordPickHintHeight + float32(visible)*passwordPickRowHeight
-	popover := components.BeginPopover(canvas, state.Theme(), area, anchor, components.PopoverOptions{
-		Layer:       dialogLayer,
-		Scope:       autofillPickScope.ID(tree.Name("popover")),
-		DismissID:   hitAutofillPickDismiss,
-		Side:        components.PopoverBottom,
-		Align:       components.PopoverAlignStart,
-		SideOffset:  2,
-		ContentSize: gfx.Size{Width: state.passwordPickWidth(canvas, pick.candidates), Height: height},
-	})
-	// The title the popover would paint is empty: the list carries the command
-	// surface's own group heading, separators and rows, so the two headings and
-	// the rows share one grid.
-	layout := popover.Begin("", "")
-	state.paintPasswordPickRows(canvas, layout.Content, pick, top, visible)
-	popover.End()
+	// The page Popover reserves its border and padding in the layout; the old
+	// surface was given a fixed height. Shortening the slot by that inset makes
+	// the surface and the rows land where the old popover put them.
+	const border = float32(1)
+	padding := state.Theme().Metrics.PadSurface
+	pick.pickTop, pick.visible = top, visible
+	pick.slotHeight = height - 2*(border+padding)
+	pick.c = c
+	if pick.body == nil {
+		pick.body = state.declareAutofillPickBody
+	}
+	if pick.draw == nil {
+		pick.draw = state.drawAutofillPickBody
+	}
+	anchor := ui.Slot(c).Absolute().Left(anchorRect.X-bounds.X).Top(anchorRect.Y-bounds.Y).
+		Size(anchorRect.Width, anchorRect.Height)
+	pick.open = true
+	spec := ui.PopoverSpec{
+		Scope:            autofillPickScope.ID(tree.Name("popover")),
+		DismissID:        hitAutofillPickDismiss,
+		Side:             components.PopoverBottom,
+		Align:            ui.Start,
+		Offset:           2,
+		Width:            state.passwordPickWidth(c.Canvas(), pick.candidates),
+		KeepOpenOnAnchor: true,
+	}
+	if ui.PopoverWith(c, anchor, spec, &pick.open, pick.body) {
+		pick.open = false
+	}
+}
+
+// declareAutofillPickBody declares the one slot that paints the offer.
+func (state *State) declareAutofillPickBody() {
+	pick := &state.autofillRules.pick
+	ui.Slot(pick.c).FillWidth().Height(pick.slotHeight).Draw(pick.draw)
+}
+
+// drawAutofillPickBody paints the rows into the surface rectangle the old
+// popover exposed as its Content. Expanding the slot by the page's border and
+// padding recovers that surface.
+func (state *State) drawAutofillPickBody(d *ui.DrawContext) {
+	pick := &state.autofillRules.pick
+	const border = float32(1)
+	padding := state.Theme().Metrics.PadSurface
+	content := gfx.Rect{
+		X: d.Rect.X - (border + padding), Y: d.Rect.Y - (border + padding),
+		Width: d.Rect.Width + 2*(border+padding), Height: d.Rect.Height + 2*(border+padding),
+	}
+	state.paintPasswordPickRows(d.Canvas, content, pick, pick.pickTop, pick.visible)
 }
 
 func (state *State) paintPasswordPickRows(canvas *gfx.Canvas, content gfx.Rect, pick *autofillPick, top, visible int) {

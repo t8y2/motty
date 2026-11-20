@@ -90,3 +90,24 @@ func TestWorkspaceInlineHitDoesNotStartDrag(t *testing.T) {
 		t.Fatal("card no longer starts drag")
 	}
 }
+
+func TestWorkspaceInlineEditorKeepsTheOldButtonBlock(t *testing.T) {
+	state := templateManagementState(t, 1)
+	host := state.templates[0].HostIDs[0]
+	state.templates[0].Commands = map[string]WorkspaceCommand{host: {Command: "cd /srv"}}
+	state.Click(hitWorkspaceInlineEdit.At(0))
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	field := panelHit(t, canvas, hitWorkspaceInlineField)
+	save := panelHit(t, canvas, hitWorkspaceInlineSave)
+	cancel := panelHit(t, canvas, hitWorkspaceInlineCancel)
+	if save.Bounds.Y != field.Bounds.Y+4 || cancel.Bounds.Y != save.Bounds.Y {
+		t.Fatalf("buttons y=%v/%v, want the 3px-inset 24px row beside the field at %v", save.Bounds.Y, cancel.Bounds.Y, field.Bounds.Y)
+	}
+	if save.Bounds.X < field.Bounds.X+field.Bounds.Width+8 {
+		t.Fatalf("buttons start at %v, overlapping the field ending at %v", save.Bounds.X, field.Bounds.X+field.Bounds.Width)
+	}
+	block := cancel.Bounds.X + cancel.Bounds.Width - (field.Bounds.X + field.Bounds.Width + 8)
+	if block < 0 || block > 116 {
+		t.Fatalf("button block %v, want at most the 116px (45%%) reserve", block)
+	}
+}
