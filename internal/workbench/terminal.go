@@ -1074,7 +1074,7 @@ func (state *State) shellOpened(session *Session, shell Shell, err error) {
 		t.answerQuery(reply)
 	})
 	t.screen.SetCellPixels(state.cellPixelWidth, state.cellPixelHeight)
-	t.armInitialization(session)
+	t.armInitialization(state, session)
 	state.startInjection(session, shell)
 	state.describe(session)
 }

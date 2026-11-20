@@ -722,9 +722,16 @@ type State struct {
 	localShellsExpanded bool
 	recentConnections   map[string]time.Time
 	localShell          string // executable on this computer; empty uses the platform default
-	localStart          localStartPolicy
-	lastLocalDirectory  string // where a local shell last was; a new local terminal starts there when no local tab is in front
-	localShellMenu      localShellSelect
+	// localStartupCommands is the line each local shell types once it starts, by
+	// the choice path it was started with (an executable or a WSL distribution).
+	// It is this computer's own: another computer runs other shells, and the
+	// commands set up its character set and the like.
+	localStartupCommands map[string]string
+	// localStartupDialog is the popup that edits one shell's startup command.
+	localStartupDialog localStartupDialog
+	localStart         localStartPolicy
+	lastLocalDirectory string // where a local shell last was; a new local terminal starts there when no local tab is in front
+	localShellMenu     localShellSelect
 	// hiddenShells are the shells the pickers leave out, by their choice path.
 	// An entry whose shell this computer stops detecting simply sits unseen:
 	// lists follow detection, so an uninstalled shell is gone either way, and
@@ -1460,6 +1467,10 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 		if hit == hitTabRenameField {
 			return &state.tabRename.editor
 		}
+	case modalLocalStartupCommand:
+		if hit == hitLocalStartupField {
+			return &state.localStartupDialog.editor
+		}
 	case modalAIRename:
 		if hit == hitAIRenameField {
 			return &state.ai.rename.editor
@@ -1704,6 +1715,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	if state.clickTerminalInput(id) {
 		return
 	}
+	if state.clickLocalShellPickerSetup(id) {
+		return
+	}
 	switch state.modal {
 	case modalPasteReview:
 		state.clickPasteReview(id)
@@ -1719,6 +1733,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		return
 	case modalRenameTab:
 		state.clickTabRenameDialog(id)
+		return
+	case modalLocalStartupCommand:
+		state.clickLocalStartupCommandDialog(id)
 		return
 	case modalAIRename:
 		state.clickAIRenameDialog(id)
@@ -3091,6 +3108,9 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if result, handled := state.aiRenameKey(event); handled {
+		return result
+	}
+	if result, handled := state.localStartupCommandKey(event); handled {
 		return result
 	}
 	if result, handled := state.tabRenameKey(event); handled {
