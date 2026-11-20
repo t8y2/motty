@@ -249,7 +249,7 @@ var ChineseMessages = Messages{
 	SettingsAppearanceDark:                 "深色",
 	SettingsAppearanceLight:                "浅色",
 	SettingsIconColor:                      "Logo 颜色",
-	SettingsIconColorDescription:           "同步更新 Logo、任务栏 / Dock 和托盘图标。macOS 菜单栏图标保持单色。",
+	SettingsIconColorDescription:           "更新 Logo 和支持的系统图标；启动器图标因平台而异，macOS 菜单栏保持单色。",
 	SettingsIconMint:                       "薄荷绿",
 	SettingsIconBlue:                       "科技蓝",
 	SettingsIconSky:                        "浅天蓝",

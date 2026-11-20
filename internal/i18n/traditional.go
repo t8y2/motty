@@ -249,7 +249,7 @@ var TraditionalMessages = Messages{
 	SettingsAppearanceDark:                 "深色",
 	SettingsAppearanceLight:                "淺色",
 	SettingsIconColor:                      "Logo 顏色",
-	SettingsIconColorDescription:           "同步更新 Logo、工作列 / Dock 和系統匣圖示。macOS 選單列圖示保持單色。",
+	SettingsIconColorDescription:           "更新 Logo 和支援的系統圖示；啟動器圖示因平台而異，macOS 選單列保持單色。",
 	SettingsIconMint:                       "薄荷綠",
 	SettingsIconBlue:                       "科技藍",
 	SettingsIconSky:                        "淺天藍",

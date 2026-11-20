@@ -125,8 +125,8 @@ text "System" {637.8301 205 72.05664 32}
 text "Dark" {718.8965 205 72.05664 32}
 text "Light" {789.98584 205 72.05664 32}
 text "Logo color" {434.62 259 236.76965 21}
-text "Updates the logo, taskbar / Dock and tray" {434.62 281 236.76965 15}
-text "icons. macOS keeps its menu bar icon m…" {434.62 296 236.76965 15}
+text "Updates the logo and supported system" {434.62 281 236.76965 15}
+text "icons. Launcher icons vary by platform; t…" {434.62 296 236.76965 15}
 text "Mint green" {695.38965 274.5 69.28906 21}
 text "Choose" {782.6787 271 69.32129 28}
 text "Interface text size" {434.62 323 255.67297 21}

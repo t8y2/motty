@@ -409,6 +409,7 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		StartAtLogin:       loginStart(),
 		StatusArea:         status.hasStatusArea,
 		SetAppIcon: func(icon app.WindowIcon) {
+			icon = desktopWindowIcon(icon)
 			if mainWindow != nil {
 				if err := mainWindow.SetIcon(icon); err != nil {
 					log.Printf("motty: update window icon: %v", err)
@@ -480,7 +481,8 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 	var err error
 	config := app.Config{
 		Title:          mainWindowTitle(),
-		Icon:           state.WindowIcon(),
+		Class:          desktopWindowClass(),
+		Icon:           desktopWindowIcon(state.WindowIcon()),
 		Tree:           workbench.Tree(),
 		Width:          width,
 		Height:         height,

@@ -249,7 +249,7 @@ var EnglishMessages = Messages{
 	SettingsAppearanceDark:                 "Dark",
 	SettingsAppearanceLight:                "Light",
 	SettingsIconColor:                      "Logo color",
-	SettingsIconColorDescription:           "Updates the logo, taskbar / Dock and tray icons. macOS keeps its menu bar icon monochrome.",
+	SettingsIconColorDescription:           "Updates the logo and supported system icons. Launcher icons vary by platform; the macOS menu bar stays monochrome.",
 	SettingsIconMint:                       "Mint green",
 	SettingsIconBlue:                       "Tech blue",
 	SettingsIconSky:                        "Sky blue",
