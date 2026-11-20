@@ -428,6 +428,49 @@ func TestCompletionNeedsAConfirmedPrompt(t *testing.T) {
 	}
 }
 
+// newScreenOnlyCompletionWorld is a terminal whose shell never prints the OSC
+// 133 markers: telnet, OpenWrt, or a shell whose integration is unavailable.
+// Its prompt is only on the screen, as it is for the inline suggestion.
+func newScreenOnlyCompletionWorld(t *testing.T) *completionWorld {
+	t.Helper()
+	state, _, conn, shell := liveSession(t)
+	w := &completionWorld{state: state, shell: shell, conn: conn, clock: time.Second}
+	state.options.Now = func() time.Duration { return w.clock }
+	state.history.suggestOff, state.history.inlineOff = false, true // automatic-list mode
+	shell.onWrite = func(p []byte) {
+		shell.say(strings.ReplaceAll(string(p), "\r", "\r\n"))
+	}
+	session := &state.sessions[0]
+	if !state.ActivatePane(session.ID) {
+		t.Fatal("the session has no pane")
+	}
+	catalog, err := completion.Builtin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.completion.catalog = catalog
+	shell.say("root@OpenWrt:~# ")
+	state.Wake()
+	w.session = &state.sessions[0]
+	return w
+}
+
+func TestTheAutomaticListOpensWithoutShellIntegration(t *testing.T) {
+	w := newScreenOnlyCompletionWorld(t)
+	w.type_("git s")
+	waitCompletionList(t, w)
+}
+
+func TestTheShortcutOpensTheListWithoutShellIntegration(t *testing.T) {
+	w := newScreenOnlyCompletionWorld(t)
+	w.type_("git s")
+	w.state.openCompletions()
+	list := &w.state.completion.list
+	if !list.active || len(list.candidates) == 0 {
+		t.Fatalf("the shortcut left the list active=%v candidates=%d", list.active, len(list.candidates))
+	}
+}
+
 func TestCompletionGhostUsesTheCatalogOnlyWhenUnique(t *testing.T) {
 	w := newCompletionWorld(t)
 	w.type_("git statu")

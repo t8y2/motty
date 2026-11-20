@@ -638,16 +638,17 @@ func (state *State) completionEligible(session *Session) bool {
 	return state.completionScreenPrompt(session)
 }
 
-// completionScreenPrompt is the prompt proof left when an integrated shell has
-// handed the terminal to an interactive child that does not run the startup
-// hooks — sudo, su, a nested ssh (#783). No marker will come until the child
-// exits, so the proof is the line the recorder read at the first key of this
-// command: quiet terminal, cursor after a non-empty prompt, echo matching what
-// was typed. A prompt shaped like a line editor's own keeps the list out of
-// programs, which echo and draw a prompt just as a shell does.
+// completionScreenPrompt is the prompt proof left when no marker is coming: a
+// shell that never prints them (telnet, OpenWrt, integration unavailable), or
+// an integrated shell that has handed the terminal to an interactive child
+// which does not run the startup hooks — sudo, su, a nested ssh (#783). The
+// proof is the line the recorder read at the first key of this command: quiet
+// terminal, cursor after a non-empty prompt, echo matching what was typed. A
+// prompt shaped like a line editor's own keeps the list out of programs, which
+// echo and draw a prompt just as a shell does.
 func (state *State) completionScreenPrompt(session *Session) bool {
 	t := session.term
-	if !t.folderIntegrationSeen || t.inputGuard.active || !state.terminalOwnedByShell(session) {
+	if t.inputGuard.active || !state.terminalOwnedByShell(session) {
 		return false
 	}
 	line, prompt, ok := t.recorder.LinePrompt(cmdhistory.TermScreen{Term: t.screen})
