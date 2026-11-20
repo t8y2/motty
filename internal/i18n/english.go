@@ -93,6 +93,7 @@ var EnglishMessages = Messages{
 		ShowInFolder: "Show in folder", ShowInFolderFailed: "Could not start the file manager. Try again later.", ShowInFolderMissing: "The downloaded file was moved or deleted, so its location cannot be opened.",
 		Hosts: "Host", AllHosts: "All hosts", ScopeFmt: "%s · %s · %d shown", CancelVisible: "Cancel visible", ClearVisible: "Clear visible",
 		RetryFailedFmt: "Retry %d failed", ConflictCountFmt: "Conflicts (%d)", ConfirmBatchFmt: "%s %d conflicting transfers?",
+		ReplaceAll: "Overwrite all", SkipAll: "Skip all",
 		BatchScopeFmt:   "Captured scope: %s. Only the captured eligible failures are included; later arrivals and hidden connections are excluded. This choice does not change transfer defaults.",
 		RunningCountFmt: "Transferring %d items", WaitingCountFmt: "%d items waiting", RemainingFmt: "%s left", DurationFmt: "Took %s",
 		PauseAll: "Pause all", ResumeAll: "Resume all", PauseVisible: "Pause visible", ResumeVisible: "Resume visible",

@@ -609,6 +609,9 @@ func (w *sftpWindow) click(id gfx.ID) {
 			return
 		}
 	}
+	if w.clickQueueConflict(id) {
+		return
+	}
 	if w.clickQueueDetails(id) {
 		return
 	}
@@ -896,6 +899,8 @@ func (w *sftpWindow) key(event gfx.KeyEvent) gfx.EventResult {
 			w.owner.closeSFTPDialog(w.view)
 		} else if w.headerMenuOpen() {
 			w.closeHeaderMenu()
+		} else if len(w.ui.queueBatch.targets) > 0 {
+			w.ui.queueBatch = transferBatch{}
 		} else if w.ui.queueDetails.pinned != 0 {
 			w.ui.queueDetails.dismiss()
 		} else if result, ok := w.filterEscape(event); ok {

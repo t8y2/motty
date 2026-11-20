@@ -93,6 +93,7 @@ var TraditionalMessages = Messages{
 		ShowInFolder: "開啟所在位置", ShowInFolderFailed: "無法啟動檔案管理器，請稍後重試。", ShowInFolderMissing: "下載檔案已移動或刪除，無法開啟所在位置。",
 		Hosts: "主機", AllHosts: "全部主機", ScopeFmt: "%s · %s · 顯示 %d 項", CancelVisible: "取消篩選項目", ClearVisible: "清空篩選記錄",
 		RetryFailedFmt: "重試失敗項 (%d)", ConflictCountFmt: "衝突 (%d)", ConfirmBatchFmt: "%s %d 個衝突任務？",
+		ReplaceAll: "全部覆蓋", SkipAll: "全部跳過",
 		BatchScopeFmt:   "已捕獲範圍：%s。僅處理本批仍符合條件的失敗任務，不含後續失敗或隱藏連線；不會修改後續傳輸的預設行為。",
 		RunningCountFmt: "正在傳輸 %d 項", WaitingCountFmt: "%d 項等待傳輸", RemainingFmt: "剩餘 %s", DurationFmt: "耗時 %s",
 		PauseAll: "全部暫停", ResumeAll: "全部繼續", PauseVisible: "暫停篩選項目", ResumeVisible: "繼續篩選項目",

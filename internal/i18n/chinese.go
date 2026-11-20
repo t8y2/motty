@@ -93,6 +93,7 @@ var ChineseMessages = Messages{
 		ShowInFolder: "打开所在位置", ShowInFolderFailed: "无法启动文件管理器，请稍后重试。", ShowInFolderMissing: "下载文件已移动或删除，无法打开所在位置。",
 		Hosts: "主机", AllHosts: "全部主机", ScopeFmt: "%s · %s · 显示 %d 项", CancelVisible: "取消筛选项", ClearVisible: "清空筛选记录",
 		RetryFailedFmt: "重试失败项 (%d)", ConflictCountFmt: "冲突 (%d)", ConfirmBatchFmt: "%s %d 个冲突任务？",
+		ReplaceAll: "全部覆盖", SkipAll: "全部跳过",
 		BatchScopeFmt:   "已捕获范围：%s。仅处理本批仍符合条件的失败任务，不含后续失败或隐藏连接；不会修改后续传输的默认行为。",
 		RunningCountFmt: "正在传输 %d 项", WaitingCountFmt: "%d 项等待传输", RemainingFmt: "剩余 %s", DurationFmt: "用时 %s",
 		PauseAll: "全部暂停", ResumeAll: "全部继续", PauseVisible: "暂停筛选项", ResumeVisible: "继续筛选项",
