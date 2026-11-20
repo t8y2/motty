@@ -312,6 +312,8 @@ go run ./cmd/viva package -C ../motty --format app,dmg
 go run ./cmd/viva package -C ../motty --target linux --arch amd64 --format tar.gz,deb
 ```
 
+Linux `.deb` 的环境准备、打包、安装验证和发布脚本用法见[打包指南](docs/build-deb.zh-CN.md)。
+
 ### 开发构建
 
 `make run` 构建并启动一个开发版：窗口和托盘显示 `Motty Dev`，Dock 图标带红色
