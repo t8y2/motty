@@ -37,26 +37,26 @@ rect {{1102.8062 52 141.5542 34} {0.12156863 0.14117648 0.1764706 1} 6.5 0 {0 0 
 rect {{1255.3604 51 118.63965 36} {0.8862745 0.90588236 0.93333334 1} 7.5 0 {0 0 0 0} false #43}
 rect {{1256.3604 52 116.63965 34} {0.8862745 0.90588236 0.93333334 1} 6.5 0 {0 0 0 0} false #44}
 rect {{0 0 1400 900} {0 0 0 0.5} 0 600 {0 0 0 0} false #45}
-rect {{420 207 560 486} {0.2 0.23529412 0.2901961 1} 11 600 {0 0 0 0} false #46}
-rect {{421 208 558 484} {0.12156863 0.14117648 0.1764706 1} 10 600 {0 0 0 0} false #47}
-rect {{932 223 32 32} {0.06666667 0.08235294 0.105882354 0} 7.5 600 {0 0 0 0} false #48}
-rect {{448 303 504 34} {0.2 0.23529412 0.2901961 1} 7.5 600 {0 0 0 0} false #49}
-rect {{449 304 502 32} {0.14509805 0.16862746 0.20784314 1} 6.5 600 {0 0 0 0} false #50}
-rect {{450 305 164 30} {0.14509805 0.16862746 0.20784314 1} 5.5 600 {0 0 0 0} false #51}
-rect {{618 305 164 30} {0.24886276 0.27184314 0.30941176 1} 5.5 600 {0 0 0 0} false #52}
-rect {{786 305 164 30} {0.14509805 0.16862746 0.20784314 1} 5.5 600 {0 0 0 0} false #53}
-rect {{615.5 312.52 1 14.96} {0.2 0.23529412 0.2901961 0} 0 600 {0 0 0 0} false #54}
-rect {{783.5 312.52 1 14.96} {0.2 0.23529412 0.2901961 0} 0 600 {0 0 0 0} false #55}
-rect {{448 373 504 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #57}
-rect {{449 374 502 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #58}
-rect {{448 439 504 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #60}
-rect {{449 440 502 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #61}
-rect {{448 505 504 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #63}
-rect {{449 506 502 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #64}
-rect {{448 571 504 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #66}
-rect {{449 572 502 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #67}
-rect {{831.458 637 64.61133 32} {0.23529412 0.27450982 0.34117648 1} 7.5 600 {0 0 0 0} false #68}
-rect {{904.06934 637 51.930664 32} {0.8862745 0.90588236 0.93333334 1} 7.5 600 {0 0 0 0} false #69}
+rect {{390 207 620 486} {0.2 0.23529412 0.2901961 1} 11 600 {0 0 0 0} false #46}
+rect {{391 208 618 484} {0.12156863 0.14117648 0.1764706 1} 10 600 {0 0 0 0} false #47}
+rect {{962 223 32 32} {0.06666667 0.08235294 0.105882354 0} 7.5 600 {0 0 0 0} false #48}
+rect {{418 303 564 34} {0.2 0.23529412 0.2901961 1} 7.5 600 {0 0 0 0} false #49}
+rect {{419 304 562 32} {0.14509805 0.16862746 0.20784314 1} 6.5 600 {0 0 0 0} false #50}
+rect {{420 305 184 30} {0.14509805 0.16862746 0.20784314 1} 5.5 600 {0 0 0 0} false #51}
+rect {{608 305 184 30} {0.24886274 0.27184314 0.30941176 1} 5.5 600 {0 0 0 0} false #52}
+rect {{796 305 184 30} {0.14509805 0.16862746 0.20784314 1} 5.5 600 {0 0 0 0} false #53}
+rect {{605.5 312.52 1 14.96} {0.2 0.23529412 0.2901961 0} 0 600 {0 0 0 0} false #54}
+rect {{793.5 312.52 1 14.96} {0.2 0.23529412 0.2901961 0} 0 600 {0 0 0 0} false #55}
+rect {{418 373 564 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #57}
+rect {{419 374 562 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #58}
+rect {{418 439 564 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #60}
+rect {{419 440 562 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #61}
+rect {{418 505 564 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #63}
+rect {{419 506 562 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #64}
+rect {{418 571 564 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #66}
+rect {{419 572 562 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #67}
+rect {{861.458 637 64.61133 32} {0.23529412 0.27450982 0.34117648 1} 7.5 600 {0 0 0 0} false #68}
+rect {{934.06934 637 51.930664 32} {0.8862745 0.90588236 0.93333334 1} 7.5 600 {0 0 0 0} false #69}
 shadow {{247 105 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {0 0 0 0} false #4}
 shadow {{261 148 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {223 135 1151 739} true #9}
 shadow {{267 201 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {223 135 1151 739} true #15}
@@ -64,10 +64,10 @@ shadow {{261 254 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {223 135 1151 739} true #19}
 shadow {{267 307 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {223 135 1151 739} true #25}
 shadow {{267 371 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {223 135 1151 739} true #32}
 shadow {{223 51 485 36} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 0 0 0} false #36}
-shadow {{448 373 504 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #56}
-shadow {{448 439 504 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #59}
-shadow {{448 505 504 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #62}
-shadow {{448 571 504 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #65}
+shadow {{418 373 564 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #56}
+shadow {{418 439 564 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #59}
+shadow {{418 505 564 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #62}
+shadow {{418 571 564 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #65}
 text "Hosts" {52 114.5 37.180664 21}
 text "Workspaces" {52 154.5 80.37695 21}
 text "Monitor" {52 194.5 49.745117 21}
@@ -109,21 +109,21 @@ text "Search hosts or ssh user@hostname…" {254 59 443 20}
 text "Connect" {736 59 51.124023 20}
 text "Import/Export" {1141.8062 59 83.5542 20}
 text "New Host" {1295.3604 59 58.63965 20}
-text "Outbound proxy" {444 231 512 17}
-text "The proxy resolves host names. Destinations on the direct list skip it." {444 256 512 21}
-text "None" {514.8657 303 168 34}
-text "SOCKS5" {672.46484 303 168 34}
-text "HTTP CONNECT" {814.50195 303 168 34}
-text "Proxy address (host:port)" {448 351 164.3291 18}
-text "10.0.0.1:1080" {459 379 482 20}
-text "User name (optional)" {448 417 134.5039 18}
-text "me" {459 445 482 20}
-text "Password (optional)" {448 483 128.59082 18}
-text "••••••" {459 511 458 20}
-text "Connect directly to" {448 549 122.46582 18}
-text "localhost, 127.0.0.0/8, ::1" {459 577 482 20}
-text "Cancel" {841.458 637 64.61133 32}
-text "Save" {914.06934 637 51.930664 32}
+text "Outbound proxy" {414 231 572 17}
+text "The proxy resolves host names. Destinations on the direct list skip it." {414 256 572 21}
+text "None" {494.86572 303 188 34}
+text "SOCKS5" {672.46484 303 188 34}
+text "HTTP CONNECT" {834.50195 303 188 34}
+text "Proxy address (host:port)" {418 351 164.3291 18}
+text "10.0.0.1:1080" {429 379 542 20}
+text "User name (optional)" {418 417 134.5039 18}
+text "me" {429 445 542 20}
+text "Password (optional)" {418 483 128.59082 18}
+text "••••••" {429 511 518 20}
+text "Connect directly to" {418 549 122.46582 18}
+text "localhost, 127.0.0.0/8, ::1" {429 577 542 20}
+text "Cancel" {871.458 637 64.61133 32}
+text "Save" {944.06934 637 51.930664 32}
 hit "" region {0 0 1400 36} disabled=false
 hit "Hosts" button {82 4 28 28} disabled=false
 hit "New tab" button {116 4 28 28} disabled=false
@@ -176,19 +176,19 @@ hit "Search" textfield {223 51 485 36} disabled=false
 hit "Connect" button {718 51 87.12402 36} disabled=true
 hit "Import/Export" button {1101.8062 51 143.5542 36} disabled=false
 hit "New Host" button {1255.3604 51 118.63965 36} disabled=false
-hit "" region {420 207 560 486} disabled=false
-hit "Close dialog" button {932 223 32 32} disabled=false
-hit "None" radio {448 303 168 34} disabled=false
-hit "SOCKS5" radio {616 303 168 34} disabled=false
-hit "HTTP CONNECT" radio {784 303 168 34} disabled=false
-hit "Proxy address (host:port)" button {448 351 164.3291 18} disabled=false
-hit "Proxy address (host:port)" textfield {448 373 504 32} disabled=false
-hit "User name (optional)" button {448 417 134.5039 18} disabled=false
-hit "User name (optional)" textfield {448 439 504 32} disabled=false
-hit "Password (optional)" button {448 483 128.59082 18} disabled=false
-hit "Password (optional)" textfield {448 505 504 32} disabled=false
-hit "Show password" button {923 509 24 24} disabled=false
-hit "Connect directly to" button {448 549 122.46582 18} disabled=false
-hit "Connect directly to" textfield {448 571 504 32} disabled=false
-hit "Cancel" button {831.458 637 64.61133 32} disabled=false
-hit "Save" button {904.06934 637 51.930664 32} disabled=false
+hit "" region {390 207 620 486} disabled=false
+hit "Close dialog" button {962 223 32 32} disabled=false
+hit "None" radio {418 303 188 34} disabled=false
+hit "SOCKS5" radio {606 303 188 34} disabled=false
+hit "HTTP CONNECT" radio {794 303 188 34} disabled=false
+hit "Proxy address (host:port)" button {418 351 164.3291 18} disabled=false
+hit "Proxy address (host:port)" textfield {418 373 564 32} disabled=false
+hit "User name (optional)" button {418 417 134.5039 18} disabled=false
+hit "User name (optional)" textfield {418 439 564 32} disabled=false
+hit "Password (optional)" button {418 483 128.59082 18} disabled=false
+hit "Password (optional)" textfield {418 505 564 32} disabled=false
+hit "Show password" button {953 509 24 24} disabled=false
+hit "Connect directly to" button {418 549 122.46582 18} disabled=false
+hit "Connect directly to" textfield {418 571 564 32} disabled=false
+hit "Cancel" button {861.458 637 64.61133 32} disabled=false
+hit "Save" button {934.06934 637 51.930664 32} disabled=false
