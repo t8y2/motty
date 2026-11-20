@@ -168,6 +168,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	if state.closeActionVisible() {
 		row(settingsGeneral, tools.GeneralClose, tools.GeneralCloseDescription)
 	}
+	row(settingsGeneral, tools.GeneralKeepWindows, tools.GeneralKeepWindowsDescription)
 	if state.options.NewWindow != nil {
 		row(settingsGeneral, tools.GeneralRelaunch, tools.GeneralRelaunchDescription)
 	}

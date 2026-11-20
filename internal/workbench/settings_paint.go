@@ -342,6 +342,8 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 				settingsChoiceRow(page, messages.Tools.GeneralClose, messages.Tools.GeneralCloseDescription, &state.closeAction, settingsCloseChoices[:], state.settingsCloseLabel,
 					func() { state.save() }, nil)
 			}
+			settingsChoiceRow(page, messages.Tools.GeneralKeepWindows, messages.Tools.GeneralKeepWindowsDescription, &state.keepWindows, settingsKeepWindowsChoices[:], state.settingsKeepWindowsLabel,
+				func() { state.save() }, nil)
 			if state.options.NewWindow != nil {
 				settingsChoiceRow(page, messages.Tools.GeneralRelaunch, messages.Tools.GeneralRelaunchDescription, &state.relaunchAction, settingsRelaunchChoices[:], state.settingsRelaunchLabel,
 					func() { state.save() }, nil)

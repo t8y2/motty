@@ -537,6 +537,7 @@ const (
 	modalRenameTab
 	modalAIRename
 	modalCloseTabs
+	modalQuitKeepWindows
 	modalSessionLink
 	modalAutofillRule
 	modalAutofillConfirm
