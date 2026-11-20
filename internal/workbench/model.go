@@ -91,6 +91,13 @@ type Host struct {
 	// Proxy overrides the global outbound proxy for this host. Nil inherits the
 	// global proxy; an explicit ProxyNone forces a direct connection.
 	Proxy *outboundProxy
+	// ProxyProfile, when set, is the id of a saved proxy profile (see
+	// outbound_proxy_profiles.go) that carries this host instead of Proxy. The
+	// profile wins over Proxy; an id no profile has treats the host as direct.
+	// ProxyBypass is this host's own direct list for that route, since the
+	// profile is shared by several hosts.
+	ProxyProfile string
+	ProxyBypass  string
 	// ViaSSH and Clipboard are a remote desktop host's: its server is reached
 	// through an SSH connection to Address (User is then the SSH account), and
 	// the clipboard is shared with the remote desktop. Console is an RDP host's:

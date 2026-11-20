@@ -161,6 +161,7 @@ type savedState struct {
 	SnippetShortcuts        []savedSnippetKey   `json:"snippet_shortcuts,omitempty"`
 	Autofill                []savedAutofill     `json:"autofill_rules,omitempty"`
 	Credentials             []savedCredential   `json:"credentials,omitempty"`
+	ProxyProfiles           []savedProxyProfile `json:"proxy_profiles,omitempty"`
 	CommandHistory          bool                `json:"command_history,omitempty"`
 	CommandSuggestOff       bool                `json:"command_suggest_off,omitempty"`
 	CommandAcceptHintOff    bool                `json:"command_accept_hint_off,omitempty"`
@@ -657,6 +658,7 @@ func (state *State) snapshot() savedState {
 	}
 	saved.Autofill = state.savedAutofillRules()
 	saved.Credentials = state.savedCredentials()
+	saved.ProxyProfiles = state.savedProxyProfiles()
 	saved.NoteView = state.savedNotesView()
 	saved.NoteSidebars = state.savedNoteSidebars()
 	saved.Notes = append([]savedNote(nil), state.notes.list...)
@@ -1245,6 +1247,7 @@ func (state *State) restoreShared(saved savedState) {
 	state.restoreTerminalTools(saved)
 	state.restoreAutofill(saved)
 	state.restoreCredentials(saved)
+	state.restoreProxyProfiles(saved)
 
 	// A host keeps the number the sessions and the selection know it by.
 	known := make(map[string]uint32, len(state.hosts))

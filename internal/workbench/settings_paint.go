@@ -445,6 +445,7 @@ func (state *State) paintConnectionSettings(page *settingsPage) {
 			state.paintOutboundProxyRow(page)
 			state.paintSSHBrowserSetting(page)
 		})
+		state.paintProxyProfileSettings(page)
 		state.paintSSHSyncSettings(page)
 		state.paintHostTagSettings(page)
 	})

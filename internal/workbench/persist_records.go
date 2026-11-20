@@ -192,6 +192,7 @@ var entityFields = []entityField{
 	}},
 	{field: "autofill_rules", kind: "autofill", key: func(fields map[string]json.RawMessage) string { return fieldText(fields, "id") }},
 	{field: "credentials", kind: "credential", key: func(fields map[string]json.RawMessage) string { return fieldText(fields, "id") }},
+	{field: "proxy_profiles", kind: "proxy-profile", key: func(fields map[string]json.RawMessage) string { return fieldText(fields, "id") }},
 	{field: "sftp_bookmarks", kind: "bookmark", key: func(fields map[string]json.RawMessage) string {
 		if name := fieldText(fields, "name"); name != "" {
 			return joinKey("profile", fieldText(fields, "host"), fieldText(fields, "shared"), name)
