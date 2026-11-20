@@ -1459,9 +1459,9 @@ func (state *State) restoreSessions(entries []savedSession, active int) []uint32
 		}
 		title := entry.Label
 		if title == "" {
-			// A file without a label predates saved titles: invent a distinct
-			// one, as opening the host would.
-			title = state.uniqueSessionTitle(host.Label)
+			// A file without a label predates saved titles: name it as opening
+			// the host would.
+			title = cleanSessionTitle(host.Label)
 		} else {
 			title = cleanSessionTitle(title)
 		}

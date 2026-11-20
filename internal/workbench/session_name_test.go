@@ -11,16 +11,19 @@ func TestSessionNamesMatchTabsAndMentions(t *testing.T) {
 	state := newTestState(t, options)
 	t.Cleanup(state.Close)
 	host := state.hosts[0]
-	titles := []string{host.Label, host.Label + "-2", host.Label + "-3"}
-	for index, expected := range titles {
+	mentions := []string{host.Label, host.Label + "-2", host.Label + "-3"}
+	for index, mention := range mentions {
 		session := state.newHostSession(host)
-		if session == nil || session.Title != expected {
-			t.Fatalf("session %d = %+v, want title %s", index, session, expected)
+		if session == nil || session.Title != host.Label {
+			t.Fatalf("session %d = %+v, want the connection name %s", index, session, host.Label)
+		}
+		if session.Mention != mention {
+			t.Fatalf("session %d @ name = %q, want %q", index, session.Mention, mention)
 		}
 		workspace, _, _ := state.deck.PaneForSession(layoutcore.SessionID(session.ID))
 		tab, _ := state.workspaceTab(workspace)
-		if state.workspaceTabs[tab].Title != expected {
-			t.Fatalf("tab and session differ: %q / %q", state.workspaceTabs[tab].Title, expected)
+		if state.workspaceTabs[tab].Title != host.Label {
+			t.Fatalf("tab and session differ: %q / %q", state.workspaceTabs[tab].Title, host.Label)
 		}
 	}
 	names := state.mentionNames(nil)
@@ -28,26 +31,29 @@ func TestSessionNamesMatchTabsAndMentions(t *testing.T) {
 		t.Fatalf("mention count = %d", len(names))
 	}
 	for index, name := range names {
-		if name.title != state.sessions[index].Title || name.name != titles[index] {
-			t.Fatalf("mention %d = %+v, want %q @%s", index, name, state.sessions[index].Title, titles[index])
+		if name.title != state.sessions[index].Title || name.name != mentions[index] {
+			t.Fatalf("mention %d = %+v, want %q @%s", index, name, state.sessions[index].Title, mentions[index])
 		}
 	}
 	last := state.sessions[2].ID
 	state.closeSession(state.sessions[0].ID)
-	if session, _ := state.sessionByIDPointer(last); session.Title != host.Label+"-3" || session.Mention != host.Label+"-3" {
-		t.Fatal("closing a sibling renumbered a session")
+	if session, _ := state.sessionByIDPointer(last); session.Title != host.Label || session.Mention != host.Label+"-3" {
+		t.Fatal("closing a sibling changed a session's name or @ name")
 	}
 }
 
-func TestOpeningTheSameHostNumbersTheTitleButRenameMayRepeatIt(t *testing.T) {
+func TestOpeningTheSameHostKeepsItsNameButRenameMayRepeatIt(t *testing.T) {
 	_, options := newWorld(t)
 	state := newTestState(t, options)
 	t.Cleanup(state.Close)
 	host := state.hosts[0]
 	first := state.newHostSession(host)
 	second := state.newHostSession(host)
-	if first.Title != host.Label || second.Title != host.Label+"-2" {
+	if first.Title != host.Label || second.Title != host.Label {
 		t.Fatalf("auto titles = %q, %q", first.Title, second.Title)
+	}
+	if first.Mention == second.Mention {
+		t.Fatalf("sessions with the same title share the @ name %q", first.Mention)
 	}
 	state.renameSession(second, first.Title)
 	if first.Title != second.Title {

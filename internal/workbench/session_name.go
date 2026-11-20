@@ -7,41 +7,16 @@ import (
 	layoutcore "motty/internal/workspace"
 )
 
-// cleanSessionTitle cleans a name the user chose. It may repeat another tab's:
-// an explicit rename is kept as written, and the tab's number or position
-// tells equal ones apart. Only the @ name below has to stay distinct.
+// cleanSessionTitle cleans a name, chosen by the user or derived from the
+// connection. It may repeat another tab's: tabs are told apart by their place
+// in the tab strip, and an explicit rename is kept as the user wrote it. Only
+// the @ name below has to stay distinct.
 func cleanSessionTitle(base string) string {
 	base = strings.TrimSpace(base)
 	if base == "" {
 		return "session"
 	}
 	return base
-}
-
-// uniqueSessionTitle numbers an automatically generated title, so tabs opened
-// from the same host stay distinguishable even when tab numbers are hidden. A
-// name the user types goes through cleanSessionTitle instead and may repeat.
-func (state *State) uniqueSessionTitle(base string) string {
-	base = cleanSessionTitle(base)
-	for suffix := 1; ; suffix++ {
-		candidate := base
-		if suffix > 1 {
-			candidate += "-" + strconv.Itoa(suffix)
-		}
-		available := true
-		slug := mentionSlug(candidate)
-		for index := range state.sessions {
-			session := &state.sessions[index]
-			if strings.EqualFold(session.Title, candidate) ||
-				slug != "" && strings.EqualFold(mentionSlug(session.Title), slug) {
-				available = false
-				break
-			}
-		}
-		if available {
-			return candidate
-		}
-	}
 }
 
 // Assign once, rather than numbering while painting: closing or reordering a

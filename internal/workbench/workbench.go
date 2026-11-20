@@ -3320,7 +3320,7 @@ func (state *State) createHostSession(host Host, address string) *Session {
 }
 
 func (state *State) createHostSessionWithConnection(host Host, address string, conn Connection, command string, relay *notifyRelay) *Session {
-	title := state.uniqueSessionTitle(host.Label)
+	title := cleanSessionTitle(host.Label)
 	workspaceID := state.pendingWorkspace
 	paneID := state.pendingPane
 	state.pendingWorkspace, state.pendingPane = 0, 0
@@ -3362,7 +3362,7 @@ func (state *State) createHostSessionWithConnection(host Host, address string, c
 // without dialing. Batch startup installs every structure first, then starts
 // the independent connections.
 func (state *State) bindWorkspaceSession(workspaceID layoutcore.WorkspaceID, paneID layoutcore.PaneID, host Host, address string) *Session {
-	title := state.uniqueSessionTitle(host.Label)
+	title := cleanSessionTitle(host.Label)
 	session := state.bindSessionToPane(workspaceID, paneID, host, address, title, nil, "", nil)
 	if session == nil {
 		return nil
