@@ -278,8 +278,8 @@ func TestChoosingASavedHostOpensItInTheVisibleWindow(t *testing.T) {
 // Choosing a saved workspace opens its terminals in the visible window.
 func TestChoosingASavedWorkspaceOpensItInTheVisibleWindow(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	invalidated := false
-	state.options.Invalidate = func() { invalidated = true }
+	var invalidated atomic.Bool
+	state.options.Invalidate = func() { invalidated.Store(true) }
 	template := mustWorkspaceTemplate(t, "Cluster", workspaceCatalogIDs(state, 0, 1), 2)
 	state.templates = []WorkspaceTemplate{template}
 	view := &fakeTrayWindow{}
@@ -299,7 +299,7 @@ func TestChoosingASavedWorkspaceOpensItInTheVisibleWindow(t *testing.T) {
 	if view.shows != 1 {
 		t.Fatalf("shows = %d", view.shows)
 	}
-	if !invalidated {
+	if !invalidated.Load() {
 		t.Fatal("opening the workspace did not request a repaint")
 	}
 }
