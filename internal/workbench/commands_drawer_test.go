@@ -186,6 +186,23 @@ func TestRightClickingACommandChipOpensItsMenu(t *testing.T) {
 	}
 }
 
+// Sending through the bar's right-click menu is another way the bar acts on
+// the terminal, so it must hand the keyboard back like a chip click does.
+func TestSendingFromACommandChipMenuReturnsTheKeyboardToTheTerminal(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	world.connectFirst(t, state)
+	state.activeSection = sectionTerminal
+	state.snippets.list = []snippet{{Name: "ls", Command: "ls", Run: true}}
+	state.commands.shown = true
+	want := state.activeTerminalFocusHit()
+	pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitCommandsTag.At(0)})
+	chooseMenu(t, state, hitSnippetMenuSend)
+	if state.pendingFocus != want {
+		t.Fatalf("pending focus = %v, want the terminal %v", state.pendingFocus, want)
+	}
+}
+
 // A rebuilt snippet list no longer holds the snippet the open menu was asked for,
 // so the menu closes instead of editing whatever now sits at its index.
 func TestACommandBarMenuFollowsARebuiltList(t *testing.T) {
