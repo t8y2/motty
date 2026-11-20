@@ -1,9 +1,11 @@
 package workbench
 
 import (
+	"bytes"
 	"sync"
 	"testing"
 
+	"github.com/vivaui/viva/app"
 	"motty/internal/desktop"
 )
 
@@ -25,6 +27,41 @@ func (s *clippingDesktop) offered() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]string(nil), s.given...)
+}
+
+// imagingDesktop records the text and the pictures it was given for the remote
+// clipboard.
+type imagingDesktop struct {
+	*followingDesktop
+	mu     sync.Mutex
+	given  []string
+	images [][]byte
+}
+
+func (s *imagingDesktop) SetClipboard(text string) error {
+	s.mu.Lock()
+	s.given = append(s.given, text)
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *imagingDesktop) SetClipboardImage(png []byte) error {
+	s.mu.Lock()
+	s.images = append(s.images, append([]byte(nil), png...))
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *imagingDesktop) offered() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.given...)
+}
+
+func (s *imagingDesktop) offeredImages() [][]byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([][]byte(nil), s.images...)
 }
 
 // clipboardStateWithTwoDesktops is a window with two sharing desktop sessions,
@@ -118,5 +155,102 @@ func TestClipboardChangeSkipsHostsWithoutSharing(t *testing.T) {
 	}
 }
 
-// The fake above only implements what syncClipboard touches.
-var _ desktop.Session = (*clippingDesktop)(nil)
+// A clipboard of a screenshot and no words is offered to the desktop in front as
+// a picture, and only once: a click does not send it again, a new picture does,
+// and text copied since takes its place until a picture is copied again.
+func TestClipboardPictureReachesTheDesktopInFront(t *testing.T) {
+	picture := redSquarePNG(t)
+	other := append([]byte(nil), picture...)
+	other[len(other)-1] ^= 0xFF // another copy, not another valid PNG: only the digest is compared
+	var text string
+	current := picture
+	state, remote := pictureDesktopState(t,
+		func() (string, error) { return text, nil },
+		func() ([]byte, error) { return current, nil })
+	front := &state.sessions[0]
+
+	state.ClipboardChanged()
+	state.Wake()
+	if images := remote.offeredImages(); len(images) != 1 || !bytes.Equal(images[0], picture) {
+		t.Fatalf("the desktop in front was offered %d pictures", len(images))
+	}
+	if offered := remote.offered(); len(offered) != 0 {
+		t.Fatalf("a picture was sent as text too: %v", offered)
+	}
+
+	// The same picture is not offered again by a click.
+	state.syncClipboard(front.desk)
+	if images := remote.offeredImages(); len(images) != 1 {
+		t.Fatalf("an unchanged picture was offered again: %d", len(images))
+	}
+
+	// A different picture is news.
+	current = other
+	state.syncClipboard(front.desk)
+	images := remote.offeredImages()
+	if len(images) != 2 || !bytes.Equal(images[1], other) {
+		t.Fatalf("a new picture was not offered: %d pictures", len(images))
+	}
+
+	// Text copied since replaces the picture on the remote clipboard, so copying
+	// the same picture again is offered again rather than taken as unchanged.
+	text = "words"
+	state.syncClipboard(front.desk)
+	if offered := remote.offered(); len(offered) != 1 || offered[0] != text {
+		t.Fatalf("text after the picture = %v", offered)
+	}
+	text = ""
+	state.syncClipboard(front.desk)
+	if images := remote.offeredImages(); len(images) != 3 || !bytes.Equal(images[2], other) {
+		t.Fatalf("the picture copied again was not offered: %d pictures", len(images))
+	}
+}
+
+// A host whose protocol carries only clipboard text (VNC) never reads the
+// clipboard's picture: there is nothing to offer it to.
+func TestClipboardPictureIsNotReadByAHostThatTakesOnlyText(t *testing.T) {
+	reads := 0
+	state := newTestState(t, Options{
+		ClipboardText:     func() (string, error) { return "", nil },
+		ClipboardImagePNG: func() ([]byte, error) { reads++; return nil, app.ErrNoImage },
+	})
+	remote := &clippingDesktop{followingDesktop: newFollowingDesktop(64, 48, false)}
+	session := &Session{ID: 4, Address: "four:0"}
+	session.desk = newDesktopView(remote, true)
+	state.sessions = append(state.sessions, *session)
+	state.activeSessionID = session.ID
+	state.activeSection = sectionTerminal
+
+	state.ClipboardChanged()
+	state.Wake()
+
+	if reads != 0 {
+		t.Fatalf("the clipboard's picture was read %d times for a text-only host", reads)
+	}
+	if offered := remote.offered(); len(offered) != 0 {
+		t.Fatalf("a text-only host was offered %v", offered)
+	}
+}
+
+// pictureDesktopState is a window with one sharing desktop in front whose system
+// clipboard answers from the functions the test can change.
+func pictureDesktopState(t *testing.T, text func() (string, error), picture func() ([]byte, error)) (*State, *imagingDesktop) {
+	t.Helper()
+	state := newTestState(t, Options{
+		ClipboardText:     text,
+		ClipboardImagePNG: picture,
+	})
+	remote := &imagingDesktop{followingDesktop: newFollowingDesktop(64, 48, false)}
+	session := &Session{ID: 5, Address: "five:0"}
+	session.desk = newDesktopView(remote, true)
+	state.sessions = append(state.sessions, *session)
+	state.activeSessionID = session.ID
+	state.activeSection = sectionTerminal
+	return state, remote
+}
+
+// The fakes above only implement what syncClipboard touches.
+var (
+	_ desktop.Session        = (*clippingDesktop)(nil)
+	_ desktop.ImageClipboard = (*imagingDesktop)(nil)
+)

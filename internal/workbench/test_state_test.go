@@ -68,6 +68,10 @@ func newTestState(t testing.TB, options Options) *State {
 		// Nor does a test read the files the developer last copied.
 		options.ClipboardFiles = func() ([]string, error) { return nil, app.ErrNoFiles }
 	}
+	if options.ClipboardImagePNG == nil {
+		// Nor the picture the developer last copied.
+		options.ClipboardImagePNG = func() ([]byte, error) { return nil, app.ErrNoImage }
+	}
 	if options.SetClipboardFiles == nil {
 		// Nor may a test replace them: the real clipboard belongs to the machine
 		// running the test.

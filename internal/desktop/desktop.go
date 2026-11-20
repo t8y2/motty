@@ -202,6 +202,16 @@ type FileClipboard interface {
 	SetClipboardFiles(paths []string) (FileOffer, error)
 }
 
+// ImageClipboard is a Session that can give the picture on this computer's
+// clipboard to the remote system's clipboard, so that its user pastes it: RDP
+// does; VNC carries text only.
+type ImageClipboard interface {
+	Session
+	// SetClipboardImage makes the PNG picture what the remote clipboard holds,
+	// replacing the text it held before.
+	SetClipboardImage(png []byte) error
+}
+
 // FileReceiver is a Session that can take files the remote system put on its
 // clipboard. The files are saved beside this computer's own clipboard, so the
 // user can paste them where they are working.

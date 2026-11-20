@@ -559,9 +559,10 @@ func (h *Handler) handleMonitorReady() {
 	h.sendFormatList()
 }
 
-// advertisedFormatsLocked returns the format list entries to advertise: the
-// file formats while the clipboard holds copied files, otherwise text and image
-// regardless of the current local content.
+// advertisedFormatsLocked returns what the format list announces: the file
+// formats while the clipboard holds copied files, otherwise the text and the
+// picture it holds. A format in that list is what the server may ask for when its
+// user pastes.
 func (h *Handler) advertisedFormatsLocked() []FormatListEntry {
 	if h.files != nil {
 		return []FormatListEntry{
@@ -569,10 +570,14 @@ func (h *Handler) advertisedFormatsLocked() []FormatListEntry {
 			{FormatID: formatIDFileContents, FormatName: FormatFileContents},
 		}
 	}
-	return []FormatListEntry{
-		{FormatID: CFUnicodeText},
-		{FormatID: CFDIB},
+	formats := make([]FormatListEntry, 0, 2)
+	if h.localText != "" {
+		formats = append(formats, FormatListEntry{FormatID: CFUnicodeText})
 	}
+	if len(h.localImage) > 0 {
+		formats = append(formats, FormatListEntry{FormatID: CFDIB})
+	}
+	return formats
 }
 
 // formatListPDU is the CB_FORMAT_LIST for what the clipboard holds now.
@@ -780,7 +785,9 @@ func (h *Handler) handleFormatDataResponse(flags uint16, payload []byte) {
 	}
 }
 
-// SetLocalClipboard updates the local clipboard text and notifies the server.
+// SetLocalClipboard replaces what this side's clipboard holds with text and
+// tells the server. A picture it held before is no longer what was copied, so it
+// is dropped rather than left for the server to paste.
 func (h *Handler) SetLocalClipboard(text string) error {
 	h.mu.Lock()
 	if !h.enabled {
@@ -788,14 +795,17 @@ func (h *Handler) SetLocalClipboard(text string) error {
 		return nil
 	}
 	h.localText = text
+	h.localImage = nil
 	h.dropFilesLocked()
 	pdu := h.encodeFormatListLocked(h.advertisedFormatsLocked())
 	h.mu.Unlock()
 	return h.sendFn(pdu)
 }
 
-// SetLocalImage updates the local clipboard image (PNG-encoded) and
-// notifies the server that CF_DIB is available.
+// SetLocalImage replaces what this side's clipboard holds with a picture
+// (PNG-encoded, announced as CF_DIB) and tells the server. The text it held
+// before is no longer what was copied, so it is dropped rather than left for the
+// server to paste.
 func (h *Handler) SetLocalImage(pngData []byte) error {
 	h.mu.Lock()
 	if !h.enabled {
@@ -803,6 +813,7 @@ func (h *Handler) SetLocalImage(pngData []byte) error {
 		return nil
 	}
 	h.localImage = pngData
+	h.localText = ""
 	h.dropFilesLocked()
 	pdu := h.encodeFormatListLocked(h.advertisedFormatsLocked())
 	h.mu.Unlock()

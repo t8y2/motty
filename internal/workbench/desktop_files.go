@@ -97,6 +97,9 @@ func (state *State) syncClipboardFiles(view *desktopView) bool {
 		return true
 	}
 	view.files.sentKey, view.files.dropped = key, false
+	// The files replace what the remote clipboard held, so the next text or
+	// picture is offered again even when it is the same as before the files.
+	view.sentClip, view.sentImage = "", imageDigest{}
 	state.offerDesktopFiles(view, fileOfferRequest{paths: paths, key: key})
 	return true
 }
@@ -113,6 +116,12 @@ func (state *State) dropDesktopFiles(view *desktopView, paths []string) {
 		view.files.sentKey = filesKey(copied)
 	} else {
 		view.files.sentKey = ""
+	}
+	// A picture the clipboard holds is taken as already seen too: the text path
+	// above remembers the clipboard's words, but a clipboard of a picture and no
+	// words has none to remember.
+	if view.sentClip == "" {
+		_, view.sentImage, _ = state.clipboardImage()
 	}
 	view.files.dropped = false
 	// No key: what the clipboard sync last saw stays what it saw, so a click does
