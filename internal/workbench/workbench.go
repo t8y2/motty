@@ -173,6 +173,7 @@ var (
 	hitKeysPaste       = tree.ID(keysHits, "keys-paste")
 	hitKeysGenerate    = tree.ID(keysHits, "keys-generate")
 	hitKeysCopyPublic  = tree.ID(keysHits, "keys-copy-public")
+	hitKeysExport      = tree.ID(keysHits, "keys-export")
 	hitKeysRemove      = tree.ID(keysHits, "keys-remove")
 	hitKeysPassphrase  = tree.ID(keysHits, "keys-passphrase")
 	hitKeysScrollThumb = tree.ID(keysHits, "keys-scroll-thumb")

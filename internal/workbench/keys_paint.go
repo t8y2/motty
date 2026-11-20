@@ -8,10 +8,10 @@ import (
 
 // keysSectionUI is what the keychain page's declaration leaves for its paint.
 type keysSectionUI struct {
-	empty, addButton, removeButton, passphraseButton, copyButton ui.Box
-	copyWidth, passphraseWidth, removeWidth, addWidth            float32
-	copyIcon, passphraseIcon, removeIcon, addIcon                uint8
-	condensed                                                    bool
+	empty, addButton, removeButton, passphraseButton, copyButton, exportButton ui.Box
+	copyWidth, exportWidth, passphraseWidth, removeWidth, addWidth             float32
+	copyIcon, exportIcon, passphraseIcon, removeIcon, addIcon                  uint8
+	condensed                                                                  bool
 	// draw is the page hook that paints the empty state and the Add Key menu. It
 	// is kept so a paint does not build a closure for the hook.
 	draw func(*ui.DrawContext)
@@ -31,13 +31,14 @@ func (state *State) declareKeysWorkspace(c ui.C) {
 		titleLeast = float32(220)
 		gap        = float32(10)
 	)
-	labeled := toolbarButtonWidth(canvas, messages.KeyCopyPublic, true) + gap + toolbarButtonWidth(canvas, messages.KeySavePassphrase, true) + gap + toolbarButtonWidth(canvas, messages.KeyRemove, false) + gap + toolbarButtonWidth(canvas, messages.KeyAdd, true) + gap + titleLeast
+	labeled := toolbarButtonWidth(canvas, messages.KeyCopyPublic, true) + gap + toolbarButtonWidth(canvas, messages.KeyExport, true) + gap + toolbarButtonWidth(canvas, messages.KeySavePassphrase, true) + gap + toolbarButtonWidth(canvas, messages.KeyRemove, false) + gap + toolbarButtonWidth(canvas, messages.KeyAdd, true) + gap + titleLeast
 	condensed := labeled > bounds.Width-36
 	copyWidth, copyIcon := toolbarButtonLayout(canvas, messages.KeyCopyPublic, iconCopy, iconCopy, condensed)
+	exportWidth, exportIcon := toolbarButtonLayout(canvas, messages.KeyExport, iconDownload, iconDownload, condensed)
 	passphraseWidth, passphraseIcon := toolbarButtonLayout(canvas, messages.KeySavePassphrase, iconLock, iconLock, condensed)
 	removeWidth, removeIcon := toolbarButtonLayout(canvas, messages.KeyRemove, 0, iconTrash, condensed)
 	addWidth, addIcon := toolbarButtonLayout(canvas, messages.KeyAdd, iconPlus, iconPlus, condensed)
-	titleRoom := max(bounds.Width-36-copyWidth-gap-passphraseWidth-gap-removeWidth-gap-addWidth, 0)
+	titleRoom := max(bounds.Width-36-copyWidth-gap-exportWidth-gap-passphraseWidth-gap-removeWidth-gap-addWidth, 0)
 	statusColor, statusValue := pal.muted, ""
 	selected, hasSelection := state.identityByID(state.selectedIdentityID)
 	if hasSelection {
@@ -54,8 +55,8 @@ func (state *State) declareKeysWorkspace(c ui.C) {
 	view := &state.sectionBodies.keys
 	draw := view.draw
 	*view = keysSectionUI{
-		copyWidth: copyWidth, passphraseWidth: passphraseWidth, removeWidth: removeWidth, addWidth: addWidth,
-		copyIcon: copyIcon, passphraseIcon: passphraseIcon, removeIcon: removeIcon, addIcon: addIcon,
+		copyWidth: copyWidth, exportWidth: exportWidth, passphraseWidth: passphraseWidth, removeWidth: removeWidth, addWidth: addWidth,
+		copyIcon: copyIcon, exportIcon: exportIcon, passphraseIcon: passphraseIcon, removeIcon: removeIcon, addIcon: addIcon,
 		condensed: condensed,
 	}
 	if draw == nil {
@@ -70,6 +71,7 @@ func (state *State) declareKeysWorkspace(c ui.C) {
 				ui.Paragraph(c, messages.KeyDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(22).Width(min(bounds.Width*0.62, titleRoom))
 			})
 			view.copyButton = state.declareButtonSized(c, hitKeysCopyPublic, messages.KeyCopyPublic, copyIcon, false, false, canCopy, toolbarFont, condensed).Size(copyWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
+			view.exportButton = state.declareButtonSized(c, hitKeysExport, messages.KeyExport, exportIcon, false, false, canCopy, toolbarFont, condensed).Size(exportWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
 			view.passphraseButton = state.declareButtonSized(c, hitKeysPassphrase, messages.KeySavePassphrase, passphraseIcon, false, false, selectedEncrypted, toolbarFont, condensed).Size(passphraseWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
 			view.removeButton = state.declareButtonSized(c, hitKeysRemove, messages.KeyRemove, removeIcon, false, false, state.selectedIdentityID != 0, toolbarFont, condensed).Size(removeWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
 			view.addButton = state.declareButtonSized(c, hitKeysAdd, messages.KeyAdd, addIcon, true, false, true, toolbarFont, condensed).Size(addWidth, toolbarHeight).Shrink(0)
