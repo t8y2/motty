@@ -2552,6 +2552,9 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result := state.remoteLogResize(event); result.Handled {
 		return result
 	}
+	if result, handled := state.remoteLogPointer(event); handled {
+		return result
+	}
 	if result := state.notesPointer(event); result.Handled {
 		return result
 	}
@@ -2875,6 +2878,10 @@ func (state *State) Key(event gfx.KeyEvent) (outcome gfx.EventResult) {
 	if state.modal == modalNone && state.terminalPage() {
 		if view := state.workspaceRemoteLogs(state.deck.ActiveWorkspace()); view != nil && view.formMode == remoteLogFormNone {
 			if event.Target == hitRemoteLogOutput {
+				if event.Key == gfx.KeyEscape && !event.Repeat && !view.selection.Empty() {
+					view.selection.Clear()
+					return gfx.EventResult{Handled: true, Repaint: true}
+				}
 				if result := view.keyLogOutput(event); result.Handled {
 					return result
 				}
