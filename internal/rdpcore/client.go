@@ -632,6 +632,32 @@ func (c *Client) negotiateX224(requestedProtos uint32) error {
 	return nil
 }
 
+// legacyTLSCipherSuites is what CipherSuites is set to when LegacyTLS is on:
+// the TLS 1.0-1.2 suites of the default offer plus the RSA key exchange ones a
+// server that predates ECDHE may require. Go leaves the RSA key exchange suites
+// out of its defaults (GODEBUG tlsrsakex) and the CBC-SHA256 one out of every
+// list it builds, so naming them in CipherSuites is what re-enables them. 3DES
+// and RC4 stay out even here: no Windows server that speaks TLS for RDP needs
+// them.
+func legacyTLSCipherSuites() []uint16 {
+	suites := make([]uint16, 0, 16)
+	for _, suite := range tls.CipherSuites() {
+		for _, version := range suite.SupportedVersions {
+			if version == tls.VersionTLS12 {
+				suites = append(suites, suite.ID)
+				break
+			}
+		}
+	}
+	return append(suites,
+		tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
+		tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+		tls.TLS_RSA_WITH_AES_128_CBC_SHA,
+		tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+		tls.TLS_RSA_WITH_AES_128_CBC_SHA256,
+	)
+}
+
 // upgradeTLS upgrades the connection to TLS
 func (c *Client) upgradeTLS() error {
 	c.log.LogAttrs(context.Background(), slog.LevelInfo, "upgrading to TLS")
@@ -668,6 +694,9 @@ func (c *Client) upgradeTLS() error {
 		// Cap TLS at 1.2 when CredSSP/NLA is selected. Some Windows servers
 		// fail to process CredSSP over TLS 1.3 (MS-CSSP was designed for 1.2).
 		tlsConfig.MaxVersion = tls.VersionTLS12
+	}
+	if c.opts.LegacyTLS {
+		tlsConfig.CipherSuites = legacyTLSCipherSuites()
 	}
 
 	tlsConn := tls.Client(c.conn, tlsConfig)

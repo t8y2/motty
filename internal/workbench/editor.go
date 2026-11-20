@@ -123,10 +123,11 @@ type hostEditor struct {
 	connectionBefore hostConnectionType
 	flow             serial.Flow
 	// viaSSH, clipboard and chromeless are the switches of a VNC or RDP host;
-	// console, noAudio and standardSecurity are RDP's own: the server's console
-	// (administrative) session, muting remote sound, and Standard RDP Security
-	// without TLS or NLA.
-	viaSSH, clipboard, console, noAudio, standardSecurity, chromeless bool
+	// console, noAudio, standardSecurity and legacyTLS are RDP's own: the
+	// server's console (administrative) session, muting remote sound, Standard
+	// RDP Security without TLS or NLA, and the RSA key exchange TLS suites an
+	// old server needs.
+	viaSSH, clipboard, console, noAudio, standardSecurity, legacyTLS, chromeless bool
 	// ports are the serial ports found when the picker was last opened.
 	ports []serial.Port
 }
@@ -359,6 +360,7 @@ func (editor *hostEditor) load(host Host) {
 	editor.console = host.Protocol == protocolRDP && host.Console
 	editor.noAudio = host.Protocol == protocolRDP && host.NoAudio
 	editor.standardSecurity = host.Protocol == protocolRDP && host.StandardSecurity
+	editor.legacyTLS = host.Protocol == protocolRDP && host.LegacyTLS
 	if host.Protocol == protocolSerial {
 		editor.port.Insert(host.Line.String())
 		editor.ports = serialPorts()
@@ -394,6 +396,7 @@ func (editor *hostEditor) host(id uint32) Host {
 		host.Console = editor.console
 		host.NoAudio = editor.noAudio
 		host.StandardSecurity = editor.standardSecurity
+		host.LegacyTLS = editor.legacyTLS
 	}
 	if editor.protocol == protocolSSH {
 		host.SSHOptions = editor.sshOptions.Clone()
@@ -469,7 +472,7 @@ func (editor *hostEditor) reset() {
 	editor.advancedOpen = false
 	editor.port.Insert(strconv.Itoa(defaultPort))
 	editor.protocol, editor.terminal, editor.flow = protocolSSH, terminalSSH, serial.FlowNone
-	editor.viaSSH, editor.clipboard, editor.console, editor.noAudio, editor.standardSecurity, editor.chromeless = false, false, false, false, false, false
+	editor.viaSSH, editor.clipboard, editor.console, editor.noAudio, editor.standardSecurity, editor.legacyTLS, editor.chromeless = false, false, false, false, false, false, false
 }
 
 // defaultPortText is what the port field holds for a protocol until the user

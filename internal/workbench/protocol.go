@@ -185,6 +185,8 @@ type savedTransport struct {
 	// console session instead of a new one, as mstsc /admin does. NoAudio is an
 	// RDP host's too: ask the server for no audio. StandardSecurity is an RDP
 	// host's as well: use Standard RDP Security alone, with no TLS or NLA.
+	// LegacyTLS is an RDP host's too: offer the RSA key exchange TLS suites
+	// that an old server requires.
 	// Chromeless is a desktop host's: its page shows the picture without the
 	// bars around it.
 	// The password is never here: it is asked for, and kept in the vault only if
@@ -194,6 +196,7 @@ type savedTransport struct {
 	Console          bool `json:"console,omitempty"`
 	NoAudio          bool `json:"no_audio,omitempty"`
 	StandardSecurity bool `json:"standard_security,omitempty"`
+	LegacyTLS        bool `json:"legacy_tls,omitempty"`
 	Chromeless       bool `json:"chromeless,omitempty"`
 }
 
@@ -225,6 +228,7 @@ func (host Host) transport() savedTransport {
 		transport.Console = host.Console
 		transport.NoAudio = host.NoAudio
 		transport.StandardSecurity = host.StandardSecurity
+		transport.LegacyTLS = host.LegacyTLS
 		return transport
 	case protocolSerial:
 		transport.Proxy, transport.Protocol, transport.Line = nil, "serial", host.Line.String()
@@ -317,6 +321,7 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 		host.Console = transport.Console
 		host.NoAudio = transport.NoAudio
 		host.StandardSecurity = transport.StandardSecurity
+		host.LegacyTLS = transport.LegacyTLS
 	case "serial":
 		host.Proxy, host.Credential = nil, ""
 		flow := serial.FlowNone
