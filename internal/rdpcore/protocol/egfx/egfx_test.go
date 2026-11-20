@@ -362,8 +362,10 @@ func TestResetGraphics(t *testing.T) {
 		t.Fatalf("reset dimensions = %dx%d, want 1920x1080", resetW, resetH)
 	}
 
-	if len(h.surfaces) != 0 {
-		t.Fatalf("surfaces not cleared after reset: %d remain", len(h.surfaces))
+	// The reset only resizes the output: the surface it had stays, because the
+	// server keeps drawing into it until it deletes it itself.
+	if h.surfaces[1] == nil {
+		t.Fatal("the reset dropped surface 1, which the server keeps drawing into")
 	}
 }
 
@@ -817,8 +819,8 @@ func TestProgressiveTilesSurviveResetGraphics(t *testing.T) {
 		t.Fatalf("first pass emitted %d updates, want 1", updates)
 	}
 
-	// ResetGraphics implicitly destroys the surface but not the progressive
-	// tile context that later upgrade passes refine.
+	// ResetGraphics resizes the output but not the progressive tile context that
+	// later upgrade passes refine, and it is not the end of the surface either.
 	reset := make([]byte, 12)
 	binary.LittleEndian.PutUint32(reset[0:4], 64)
 	binary.LittleEndian.PutUint32(reset[4:8], 64)
@@ -829,6 +831,49 @@ func TestProgressiveTilesSurviveResetGraphics(t *testing.T) {
 	if updates != 2 {
 		t.Fatalf("upgrade after reset emitted %d total updates, want 2", updates)
 	}
+}
+
+// Windows keeps drawing into the surfaces it had before a ResetGraphics until it
+// deletes and recreates each of them, and it fills its bitmap cache from them
+// first (SurfaceToCache). Dropping the surfaces on the reset threw those paints
+// away, so the cache the server went on to paste from held something the client
+// never stored: black rectangles and wrong glyphs over the new desktop.
+func TestResetGraphicsKeepsDrawingIntoTheSurfacesTheServerStillUses(t *testing.T) {
+	h := NewHandler(func([]byte) error { return nil }, slog.New(slog.DiscardHandler))
+	defer h.Close()
+
+	painted := 0
+	h.OnStridedBitmap(func(_ uint16, _, _, _, _ int, _ []byte, _ int) { painted++ })
+
+	testCreateSurface(h, 1, 64, 64)
+	h.handleWireToSurface1(wireToSurfacePDU(1, CodecUncompressed, 0, 0, 64, 64, make([]byte, 64*64*4)))
+	h.handleSurfaceToCache(surfaceToCachePDU(1, 7, 0, 0, 64, 64))
+	if painted != 1 || h.cache[7] == nil {
+		t.Fatalf("before the reset: %d updates, cache slot 7 held = %v, want 1 and true", painted, h.cache[7] != nil)
+	}
+
+	reset := make([]byte, 12)
+	binary.LittleEndian.PutUint32(reset[0:4], 128)
+	binary.LittleEndian.PutUint32(reset[4:8], 64)
+	h.handleResetGraphics(reset)
+
+	h.handleCacheToSurface(cacheToSurfacePDU(7, 1, 0, 0))
+	if painted != 2 {
+		t.Fatalf("CacheToSurface after the reset painted %d updates in total, want 2: the server pasted a bitmap into the surface it never deleted and the window never saw it", painted)
+	}
+	if h.surfaces[1] == nil {
+		t.Fatal("the reset dropped surface 1, which the server keeps drawing into")
+	}
+}
+
+func cacheToSurfacePDU(slot, surfaceID, x, y uint16) []byte {
+	data := make([]byte, 10)
+	binary.LittleEndian.PutUint16(data[0:2], slot)
+	binary.LittleEndian.PutUint16(data[2:4], surfaceID)
+	binary.LittleEndian.PutUint16(data[4:6], 1)
+	binary.LittleEndian.PutUint16(data[6:8], x)
+	binary.LittleEndian.PutUint16(data[8:10], y)
+	return data
 }
 
 func TestProgressiveDoesNotReplayTilesFromAnEarlierFrame(t *testing.T) {

@@ -1321,18 +1321,21 @@ func (h *Handler) handleResetGraphics(data []byte) {
 	// monitorCount := binary.LittleEndian.Uint32(data[8:12])
 	// followed by monitor definitions, pad to 340 bytes
 
-	// Clear all surfaces and output maps. The progressive decoder is kept:
-	// its tile context is not part of the graphics output, and Windows keeps
-	// sending UPGRADE tiles for a surface that it recreates after the reset
-	// without repeating the first pass's SYNC and CONTEXT blocks.
-	// NOTE: bitmap cache (h.cache) is NOT cleared — the server expects
-	// cached bitmaps to survive ResetGraphics and uses CacheToSurface
-	// immediately after creating the new surface.
-	for _, surf := range h.surfaces {
-		h.giveSurfaceBytes(len(surf.Data))
-	}
-	clear(h.surfaces)
-	clear(h.outputMap)
+	// Only the per-frame state goes. The surfaces and their output mappings stay:
+	// a graphics reset resets the output, not the surface store. Windows keeps
+	// drawing into the surfaces it had before the reset (WireToSurface1/2,
+	// SolidFill, CacheToSurface) until it deletes and recreates each of them, and
+	// it fills its bitmap cache from them first (SurfaceToCache). Dropping them
+	// here threw those paints away and left the cache holding something the
+	// server no longer agreed with, so the full repaint that follows pasted
+	// stale bitmaps: black rectangles and wrong glyphs over the resized desktop.
+	// A surface created again under the same id replaces the old one, so the byte
+	// budget still follows the server.
+	//
+	// The progressive decoder and the bitmap cache are kept for the same reason:
+	// Windows sends only UPGRADE tiles for a surface it recreates after the
+	// reset, without repeating the first pass's SYNC and CONTEXT blocks, and it
+	// expects cached bitmaps to survive the reset.
 	clear(h.frameProgressiveTiles)
 	h.frameDirtyRects = h.frameDirtyRects[:0]
 	clear(h.frameH264)
