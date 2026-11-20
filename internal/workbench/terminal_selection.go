@@ -302,6 +302,9 @@ func (state *State) terminalPointer(session *Session, event gfx.PointerEvent) gf
 	terminal.screen.SetWordSeparators(state.terminalWordSeparators)
 	selection := &terminal.selection
 	position := state.terminalPositionAt(session, event.X, event.Y)
+	if _, rows := terminal.screen.Size(); rows > 0 {
+		terminal.buildDisplayMap(rows)
+	}
 	if result, handled := state.terminalMousePointer(session, event, position); handled {
 		result.Repaint = terminal.links.clear() || result.Repaint
 		return result
@@ -310,10 +313,11 @@ func (state *State) terminalPointer(session *Session, event gfx.PointerEvent) gf
 	if position.Column < len(row.Cells) && row.Cells[position.Column].Attr&term.WideTail != 0 && position.Column > 0 {
 		position.Column--
 	}
-	linkPosition := terminalLinkPosition(terminal.screen, position)
+	linkPosition := terminalLinkPosition(terminal, position)
 	linksEnabled := terminal.screen.Modes().Mouse == term.MouseOff && state.terminalLinkOpens(event.Modifiers)
 	switch event.Kind {
 	case gfx.PointerDown:
+		selectedChanged := state.selectBlockAt(session, position)
 		if event.Button == gfx.PointerButtonSecondary {
 			if state.terminalRightClickPaste && event.Modifiers&gfx.ModifierShift == 0 && terminal.selection.selected {
 				state.terminalMenu.open = false
@@ -335,7 +339,7 @@ func (state *State) terminalPointer(session *Session, event gfx.PointerEvent) gf
 				state.pasteIntoTerminal(session)
 				return gfx.EventResult{Handled: true, Repaint: true}
 			}
-			state.openTerminalMenu(session)
+			state.openTerminalMenuAt(session, position)
 			state.offerActionsAt(session, position)
 			return gfx.EventResult{Handled: true, Repaint: true}
 		}
@@ -352,7 +356,7 @@ func (state *State) terminalPointer(session *Session, event gfx.PointerEvent) gf
 			if event.ClickCount >= 3 {
 				unit = unitLine
 			}
-			selection.beginUnit(terminal.screen, terminal.screen.PointAt(position), unit)
+			selection.beginUnit(terminal.screen, terminal.displayPoint(position), unit)
 			result := gfx.EventResult{Handled: true, Repaint: true}
 			if state.terminalCopyOnSelect {
 				result.ClipboardText = selection.text(terminal.screen)
@@ -363,8 +367,8 @@ func (state *State) terminalPointer(session *Session, event gfx.PointerEvent) gf
 		if event.Modifiers&gfx.ModifierShift != 0 {
 			// Shift-click stretches the selection to here. It is the terminal's own
 			// selection even when a program has the mouse, which Shift hands back.
-			if changed, ok := selection.extendTo(terminal.screen.PointAt(position)); ok {
-				return gfx.EventResult{Handled: true, Repaint: changed || linkChanged}
+			if changed, ok := selection.extendTo(terminal.displayPoint(position)); ok {
+				return gfx.EventResult{Handled: true, Repaint: changed || linkChanged || selectedChanged}
 			}
 		}
 		// The chord rides on a press the terminal owns: a program using the mouse
@@ -375,12 +379,12 @@ func (state *State) terminalPointer(session *Session, event gfx.PointerEvent) gf
 			if linksEnabled && event.Button == gfx.PointerButtonPrimary {
 				linkChanged = terminal.links.press(terminal.screen, linkPosition) || linkChanged
 			}
-			return gfx.EventResult{Handled: true, Repaint: selection.beginBlock(terminal.screen.PointAt(position)) || linkChanged}
+			return gfx.EventResult{Handled: true, Repaint: selection.beginBlock(terminal.displayPoint(position)) || linkChanged || selectedChanged}
 		}
 		if linksEnabled && event.Button == gfx.PointerButtonPrimary {
 			linkChanged = terminal.links.press(terminal.screen, linkPosition) || linkChanged
 		}
-		return gfx.EventResult{Handled: true, Repaint: selection.begin(terminal.screen.PointAt(position)) || linkChanged}
+		return gfx.EventResult{Handled: true, Repaint: selection.begin(terminal.displayPoint(position)) || linkChanged || selectedChanged}
 	case gfx.PointerMove:
 		if !selection.dragging || !event.Captured {
 			if !linksEnabled {
@@ -390,7 +394,7 @@ func (state *State) terminalPointer(session *Session, event gfx.PointerEvent) gf
 			_, hovered := terminal.links.hoveredLink(terminal.screen)
 			return gfx.EventResult{Handled: hovered, Repaint: changed}
 		}
-		changed := selection.extendUnit(terminal.screen, terminal.screen.PointAt(position))
+		changed := selection.extendUnit(terminal.screen, terminal.displayPoint(position))
 		state.armSelectionScroll(session, event, position.Column)
 		if changed {
 			changed = terminal.links.clear() || changed
@@ -410,7 +414,7 @@ func (state *State) terminalPointer(session *Session, event gfx.PointerEvent) gf
 		}
 		changed := false
 		if event.Kind == gfx.PointerUp {
-			changed = selection.extendUnit(terminal.screen, terminal.screen.PointAt(position))
+			changed = selection.extendUnit(terminal.screen, terminal.displayPoint(position))
 		}
 		selection.dragging = false
 		selection.edge = selectionEdge{}
@@ -454,13 +458,15 @@ func (state *State) armSelectionScroll(session *Session, event gfx.PointerEvent,
 	selection := &session.term.selection
 	geometry := state.terminalWindowLayout(session.ID)
 	_, rows := session.term.screen.Size()
+	total, _ := session.term.displayScroll(rows)
+	maxOffset := max(total-rows, 0)
 	bottom := geometry.top + float32(rows)*state.cellHeight
 	edge := selectionEdge{column: column, last: selection.edge.last, stepped: selection.edge.stepped}
 	var distance float32
 	switch {
-	case event.Y < geometry.top && session.term.screen.ViewOffset() < session.term.screen.Scrollback():
+	case event.Y < geometry.top && session.term.displayOffset < maxOffset:
 		edge.direction, distance = 1, geometry.top-event.Y
-	case event.Y >= bottom && session.term.screen.ViewOffset() > 0:
+	case event.Y >= bottom && session.term.displayOffset > 0:
 		edge.direction, distance = -1, event.Y-bottom
 	default:
 		selection.edge = selectionEdge{}
@@ -495,17 +501,18 @@ func (state *State) stepSelectionScroll(terminal *terminal, now time.Duration) {
 		steps = min(int(elapsed/selectionScrollInterval), selectionScrollMaxSteps)
 		next = edge.last + time.Duration(steps)*selectionScrollInterval
 	}
-	if !terminal.screen.Scroll(edge.direction * edge.lines * steps) {
+	if !terminal.scrollDisplay(edge.direction * edge.lines * steps) {
 		selection.edge = selectionEdge{}
 		return
 	}
-	row := 0
+	row, rows := 0, 0
+	_, rows = terminal.screen.Size()
 	if edge.direction < 0 {
-		_, rows := terminal.screen.Size()
 		row = rows - 1
 	}
+	terminal.buildDisplayMap(rows)
 	selection.edge.last, selection.edge.stepped = next, true
-	selection.extendUnit(terminal.screen, terminal.screen.PointAt(term.Position{Row: row, Column: edge.column}))
+	selection.extendUnit(terminal.screen, terminal.displayPoint(term.Position{Row: row, Column: edge.column}))
 }
 
 func (state *State) terminalMousePointer(session *Session, event gfx.PointerEvent, position term.Position) (gfx.EventResult, bool) {

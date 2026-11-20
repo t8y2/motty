@@ -397,6 +397,8 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 			settingsChoiceRow(page, messages.SettingsTerminalClipboard, messages.SettingsTerminalClipboardDescription, &state.terminalClipboard, settingsClipboardChoices[:], state.settingsClipboardLabel,
 				func() { state.save() }, nil)
 			page.toggleRow(state.messages.Tools.CopyOnSelectRow, state.messages.Tools.CopyOnSelectDescription, state.terminalCopyOnSelect, hitSettingsCopyOnSelect)
+			page.toggleRow(state.messages.Blocks.SettingsRow, state.messages.Blocks.SettingsDescription, state.terminalCommandBlocks, hitSettingsCommandBlocks)
+			page.toggleRow(state.messages.Blocks.MenuRow, state.messages.Blocks.MenuDescription, state.terminalBlockMenuActions, hitSettingsBlockMenuActions)
 			page.wordSeparatorsRow()
 			page.toggleRow(state.messages.Tools.RightClickPasteRow, state.messages.Tools.RightClickPasteDescription, state.terminalRightClickPaste, hitSettingsRightClickPaste)
 			page.toggleRow(state.messages.Tools.InputClickRow, state.messages.Tools.InputClickDescription, !state.terminalInputClickOff, hitSettingsInputClick)
@@ -661,9 +663,15 @@ func settingsSelectRow[T comparable](page *settingsPage, label, description stri
 // id stays the same in both states, so the keyboard's place in the page does not
 // move when it is pressed.
 func (page *settingsPage) toggleRow(label, description string, on bool, id gfx.ID) {
+	page.toggleRowDisabled(label, description, on, false, id)
+}
+
+// toggleRowDisabled is toggleRow with a control that is visibly unavailable:
+// the row still explains why, and the switch cannot be pressed.
+func (page *settingsPage) toggleRowDisabled(label, description string, on, disabled bool, id gfx.ID) {
 	// The control is only a switch: the rest of the row is for the words.
 	page.lineFor(id, label, description, aiSwitchWidth, func() {
-		page.switchSlot(id, on, false, label)
+		page.switchSlot(id, on, disabled, label)
 	})
 }
 

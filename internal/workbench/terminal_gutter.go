@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/gfx"
+	"motty/internal/term"
 )
 
 // terminalGutter is what the strip at the left of the terminal shows for each
@@ -156,10 +157,8 @@ func gutterStyles(size float32, face gfx.MonoFace, pal *palette) (number, writte
 // paintGutter draws the strip for row. entry is the row's cache entry. The
 // number is right-aligned against the rule's side of its block so the digits
 // line up whatever their count; the time starts after it.
-func (state *State) paintGutter(canvas *gfx.Canvas, entry *rowEntry, t *terminal, geometry terminalGeometry, row int, y float32, number, written gfx.TextStyle) {
+func (state *State) paintGutter(canvas *gfx.Canvas, entry *rowEntry, geometry terminalGeometry, line term.Row, lineNumber uint64, y float32, number, written gfx.TextStyle) {
 	mode := state.terminalGutter
-	line := t.screen.Row(row)
-	lineNumber := t.screen.LineNumber(row)
 	cached := &entry.gutter
 	if cached.mode != mode || cached.number != lineNumber || cached.at != line.Written || (cached.line == "" && cached.written == "") {
 		cached.number, cached.at, cached.mode = lineNumber, line.Written, mode

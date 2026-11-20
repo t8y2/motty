@@ -23,6 +23,8 @@ func liveSession(t testing.TB) (*State, *world, *fakeConn, *fakeShell) {
 	world, options := newWorld(t)
 	options.Invalidate = func() {}
 	state := newTestState(t, options)
+	// The block tests feed OSC 133 markers; the shipped default is off.
+	state.terminalCommandBlocks = true
 	fake := connect(t, state, world)
 	fake.set(func(s *sshconn.Status) {
 		s.Phase = sshconn.PhaseConnected

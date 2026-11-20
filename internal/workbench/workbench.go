@@ -208,22 +208,24 @@ var (
 
 // Settings: its explicit choices.
 var (
-	hitSettingsTextSizeDown    = tree.ID(settingsHits, "settings-text-size-down")
-	hitSettingsTextSizeReset   = tree.ID(settingsHits, "settings-text-size-reset")
-	hitSettingsTextSizeUp      = tree.ID(settingsHits, "settings-text-size-up")
-	hitSettingsFontSizeDown    = tree.ID(settingsHits, "settings-font-size-down")
-	hitSettingsFontSizeReset   = tree.ID(settingsHits, "settings-font-size-reset")
-	hitSettingsFontSizeUp      = tree.ID(settingsHits, "settings-font-size-up")
-	hitSettingsCursorToggle    = tree.ID(settingsHits, "settings-cursor-blink")
-	hitSettingsCopyOnSelect    = tree.ID(settingsHits, "settings-copy-on-select")
-	hitSettingsWordSeparators  = tree.ID(settingsHits, "settings-word-separators")
-	hitSettingsRightClickPaste = tree.ID(settingsHits, "settings-right-click-paste")
-	hitSettingsInputClick      = tree.ID(settingsHits, "settings-input-click")
-	hitSettingsLatencyToggle   = tree.ID(settingsHits, "settings-latency")
-	hitSettingsLinkPlainClick  = tree.ID(settingsHits, "settings-link-plain-click")
-	hitSettingsShareToggle     = tree.ID(settingsHits, "settings-share")
-	hitSettingsVaultForget     = tree.ID(settingsHits, "settings-vault-forget")
-	hitSettingsVaultConvert    = tree.ID(settingsHits, "settings-vault-convert")
+	hitSettingsTextSizeDown     = tree.ID(settingsHits, "settings-text-size-down")
+	hitSettingsTextSizeReset    = tree.ID(settingsHits, "settings-text-size-reset")
+	hitSettingsTextSizeUp       = tree.ID(settingsHits, "settings-text-size-up")
+	hitSettingsFontSizeDown     = tree.ID(settingsHits, "settings-font-size-down")
+	hitSettingsFontSizeReset    = tree.ID(settingsHits, "settings-font-size-reset")
+	hitSettingsFontSizeUp       = tree.ID(settingsHits, "settings-font-size-up")
+	hitSettingsCursorToggle     = tree.ID(settingsHits, "settings-cursor-blink")
+	hitSettingsCopyOnSelect     = tree.ID(settingsHits, "settings-copy-on-select")
+	hitSettingsCommandBlocks    = tree.ID(settingsHits, "settings-command-blocks")
+	hitSettingsBlockMenuActions = tree.ID(settingsHits, "settings-block-menu-actions")
+	hitSettingsWordSeparators   = tree.ID(settingsHits, "settings-word-separators")
+	hitSettingsRightClickPaste  = tree.ID(settingsHits, "settings-right-click-paste")
+	hitSettingsInputClick       = tree.ID(settingsHits, "settings-input-click")
+	hitSettingsLatencyToggle    = tree.ID(settingsHits, "settings-latency")
+	hitSettingsLinkPlainClick   = tree.ID(settingsHits, "settings-link-plain-click")
+	hitSettingsShareToggle      = tree.ID(settingsHits, "settings-share")
+	hitSettingsVaultForget      = tree.ID(settingsHits, "settings-vault-forget")
+	hitSettingsVaultConvert     = tree.ID(settingsHits, "settings-vault-convert")
 )
 
 // Jump-host routing: its page and dialog.
@@ -862,8 +864,13 @@ type State struct {
 	// and terminalRightClickPaste makes a right click paste instead of opening
 	// the terminal menu.
 	terminalCopyOnSelect, terminalRightClickPaste bool
-	terminalWordSeparators                        string
-	terminalWordEditor                            text.Editor
+	// terminalCommandBlocks enables the OSC 133 command-block view. It is off by
+	// default; turning it off clears the blocks already built. The menu switch
+	// is subordinate to it and is forced off with it.
+	terminalCommandBlocks    bool
+	terminalBlockMenuActions bool
+	terminalWordSeparators   string
+	terminalWordEditor       text.Editor
 	// hiddenHostTags are the keys of the built-in tag suggestions deleted in
 	// Settings; see host_tag_settings.go.
 	hiddenHostTags []string
