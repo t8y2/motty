@@ -105,13 +105,11 @@ type sftpWindowUI struct {
 	queueRevision       uint64
 	queueDetails        transferDetails
 	sort                [2]sftpWindowSort
-	headerAnchor        [2]gfx.Rect
+	headerAnchor        [2]ui.Box
 	selection           [2]sftpWindowSelection
 	profileQuickOpen    bool
 	profileQuickFocus   bool
-	profileQuickAnchor  gfx.Rect
 	profileHoverOpen    bool
-	profileHoverAnchor  gfx.Rect
 	profileHoverBox     ui.Box
 	profileQuickBox     ui.Box
 	profileHoverTrigger gfx.ID
@@ -288,7 +286,7 @@ func (w *sftpWindow) declareWindowBody(c ui.C) {
 	w.declareConfirmations(c)
 	w.declarePlacesMenu(c)
 	w.declareWindowMenu(c)
-	w.declareHeaderMenus(c, hitSFTPWindowHeaderDismiss, &w.ui.headerAnchor)
+	w.declareHeaderMenus(c, &w.ui.headerAnchor)
 	w.declareProfileQuickMenu(c)
 	w.declareProfileHover(c)
 }
@@ -736,12 +734,10 @@ func (w *sftpWindow) declarePane(c ui.C, s *sftpWindowScratch) {
 	for _, button := range s.buttons[:s.buttonCount] {
 		switch button.id {
 		case sftpWindowMore[side]:
-			w.ui.headerAnchor[side] = button.box.Rect()
+			w.ui.headerAnchor[side] = button.box
 		case hitSFTPLocationProfiles:
-			w.ui.profileHoverAnchor = button.box.Rect()
 			w.ui.profileHoverBox = button.box
 		case hitSFTPProfileQuick:
-			w.ui.profileQuickAnchor = button.box.Rect()
 			w.ui.profileQuickBox = button.box
 		}
 	}

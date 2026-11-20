@@ -231,3 +231,15 @@ func (state *State) declareMenuAt(c ui.C, open *bool, anchor gfx.Rect, above boo
 		rows.declare(c, menu, choose)
 	})
 }
+
+// declareMenuOn declares an open menu hanging off a page control. Unlike
+// declareMenuAt it takes the control's own Box, not a rectangle: the page reads a
+// control's rect only after it has laid the page out, so a rect captured while
+// the page is being declared is empty. The control's Box resolves to the
+// rectangle it ends up at, and is also the menu's keyboard trigger.
+func (state *State) declareMenuOn(c ui.C, open *bool, anchor ui.Box, rows *menuRows, choose func(gfx.ID)) {
+	ui.PopupLayer(c, dialogLayer)
+	ui.Menu(c, anchor, open, func(menu *ui.MenuItems) {
+		rows.declare(c, menu, choose)
+	})
+}

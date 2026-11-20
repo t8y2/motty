@@ -44,6 +44,7 @@ func (w *sftpWindow) toggleProfileQuickMenu() {
 	w.cancelDrag()
 	w.closeHeaderMenu()
 	w.ui.menuOpen, w.view.bookmarksOpen = false, false
+	w.ui.profileHoverOpen = false
 	w.ui.profileQuickOpen = true
 	w.ui.profileQuickFocus = true
 }
@@ -58,22 +59,16 @@ func (w *sftpWindow) clickProfileQuick(id gfx.ID) bool {
 		w.closeProfileQuickMenu()
 		return true
 	}
-	if w.ui.profileQuickOpen {
-		if index, ok := id.In(hitSFTPProfileQuickItems); ok {
-			profiles := w.visibleProfiles()
-			w.closeProfileQuickMenu()
-			if index < len(profiles) {
-				w.openPairedBookmark(profiles[index])
-			}
-			return true
-		}
-		if id == hitSFTPLocationProfiles {
-			w.closeProfileQuickMenu()
-			w.editBookmark(nil)
-			return true
-		}
+	// A page menu closes itself as it delivers the chosen row, so a row is
+	// dispatched by the identity it carries, not by whether the menu still
+	// reports itself open.
+	if index, ok := id.In(hitSFTPProfileQuickItems); ok {
+		profiles := w.visibleProfiles()
 		w.closeProfileQuickMenu()
-		return false
+		if index < len(profiles) {
+			w.openPairedBookmark(profiles[index])
+		}
+		return true
 	}
 	if index, ok := id.In(hitSFTPProfileHoverItems); ok {
 		profiles := w.visibleProfiles()
@@ -83,6 +78,15 @@ func (w *sftpWindow) clickProfileQuick(id gfx.ID) bool {
 		}
 		return true
 	}
+	if w.ui.profileQuickOpen {
+		if id == hitSFTPLocationProfiles {
+			w.closeProfileQuickMenu()
+			w.editBookmark(nil)
+			return true
+		}
+		w.closeProfileQuickMenu()
+		return false
+	}
 	return false
 }
 
@@ -90,7 +94,7 @@ func (w *sftpWindow) clickProfileQuick(id gfx.ID) bool {
 // hanging under the chevron that opened it. The rows keep the actions the
 // window's handler dispatches.
 func (w *sftpWindow) declareProfileQuickMenu(c ui.C) {
-	if !w.ui.profileQuickOpen || w.bookmark.open {
+	if !w.ui.profileQuickOpen || w.bookmark.open || !w.ui.profileQuickBox.Valid() {
 		return
 	}
 	m := w.owner.messages.SFTPWindow
@@ -113,7 +117,7 @@ func (w *sftpWindow) declareProfileQuickMenu(c ui.C) {
 	}
 	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitSFTPLocationProfiles, Label: m.BookmarkTitle, Icon: lucideIcons[iconSFTPProfiles]})
-	w.owner.declareMenuAt(c, &w.ui.profileQuickOpen, w.ui.profileQuickAnchor, false, hitSFTPProfileQuickDismiss, &rows, func(id gfx.ID) {
+	w.owner.declareMenuOn(c, &w.ui.profileQuickOpen, w.ui.profileQuickBox, &rows, func(id gfx.ID) {
 		w.clickProfileQuick(id)
 	})
 }
@@ -123,7 +127,7 @@ func (w *sftpWindow) declareProfileQuickMenu(c ui.C) {
 // window's handler chooses. It also decides whether the card is open, from what
 // the pointer and the keyboard rest on.
 func (w *sftpWindow) declareProfileHover(c ui.C) {
-	if w.bookmark.open || w.view.bookmarksOpen || w.ui.menuOpen || w.headerMenuOpen() || w.view.dialog != sftpDialogNone || w.closeConfirm || w.externalConflict != 0 {
+	if w.bookmark.open || w.view.bookmarksOpen || w.ui.menuOpen || w.headerMenuOpen() || w.ui.profileQuickOpen || w.view.dialog != sftpDialogNone || w.closeConfirm || w.externalConflict != 0 {
 		w.ui.profileHoverOpen = false
 		return
 	}
