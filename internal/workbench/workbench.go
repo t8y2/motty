@@ -701,11 +701,13 @@ type State struct {
 	post func(func())
 	// setMenuBar installs the macOS menu bar; menuBarSig is the state it was
 	// built for, so Wake rebuilds it only when enablement or language changed.
-	setMenuBar     func([]app.Menu) error
-	menuBarSig     string
-	appearance     appearance
-	appearanceMode appearanceMode
-	networkProxy   networkProxyMode
+	setMenuBar      func([]app.Menu) error
+	menuBarSig      string
+	appearance      appearance
+	appearanceMode  appearanceMode
+	iconColor       iconColor
+	iconColorChoice iconColor // the unconfirmed selection in the icon picker
+	networkProxy    networkProxyMode
 	// sshBrowser is the Chromium-family browser the SSH tab's browser opens.
 	// Automatic takes the first one installed.
 	sshBrowser          sshbrowser.Family
@@ -1836,6 +1838,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	case modalFontPicker:
 		state.clickFontPicker(id)
 		return
+	case modalIconColorPicker:
+		state.clickIconColorPicker(id)
+		return
 	case modalOutboundProxy:
 		state.clickOutboundProxy(id)
 		return
@@ -2113,6 +2118,8 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	case state.clickSnippetsPage(id):
 	case id == hitInterfaceFontChoose:
 		state.openInterfaceFontPicker()
+	case id == hitSettingsIconColorChoose:
+		state.openIconColorPicker()
 	case tree.Within(id.Scope(), settingsHits) || tree.Within(id.Scope(), toolbarSettingsHits):
 		state.clickSettings(id)
 	case tree.Within(id.Scope(), forwardsHits):
@@ -3160,6 +3167,9 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		return result
 	}
 	if result, handled := state.fontPickerKey(event); handled {
+		return result
+	}
+	if result, handled := state.iconColorKey(event); handled {
 		return result
 	}
 	if result, handled := state.settingsKey(event); handled {
