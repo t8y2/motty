@@ -66,6 +66,36 @@ func TestDarwinWorkerSamplesFromTheSecondReading(t *testing.T) {
 	}
 }
 
+func TestDarwinWorkerKeepsDefaultGPUIdentityOnEverySample(t *testing.T) {
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	clock := []time.Time{start, start.Add(2 * time.Second)}
+	worker := newWorker(feed(
+		"gop-gpu-darwin 0\tApple M4 Pro\n",
+		"gop-gpu-darwin 1\tAMD Radeon Pro 5500M\n",
+		darwinLine+"1 70.00 1000 2000 16777216 4194304 100 en0\n",
+		darwinLine+"0 40.50 5000 2400 16777216 4194304 102 en0\n",
+	), nil, "script", kindDarwin)
+	worker.now = func() time.Time {
+		at := clock[0]
+		clock = clock[1:]
+		return at
+	}
+	go worker.run(time.Second, time.Second)
+	defer worker.Close()
+	got := nextResult(t, worker)
+	if got.Err != nil || len(got.Sample.GPUs) != 2 {
+		t.Fatalf("result = %+v", got)
+	}
+	if first, second := got.Sample.GPUs[0], got.Sample.GPUs[1]; first.Index != 0 || first.Vendor != "Apple" || first.Name != "Apple M4 Pro" || second.Index != 1 || second.Vendor != "AMD" || second.Name != "AMD Radeon Pro 5500M" {
+		t.Fatalf("GPUs = %+v", got.Sample.GPUs)
+	}
+	for _, gpu := range got.Sample.GPUs {
+		if gpu.UtilPercent != -1 || gpu.MemoryTotalBytes != 0 || gpu.TemperatureC != -1 || gpu.PowerWatts != -1 {
+			t.Fatalf("unsupported metrics were invented: %+v", gpu)
+		}
+	}
+}
+
 func TestDarwinWorkerPublishesNothingFromTheWarmReadingAlone(t *testing.T) {
 	worker := newWorker(streamFunc(func(_ context.Context, _ string, _ int, line func([]byte) bool) error {
 		line([]byte(darwinLine + "1 70.00 1000 2000 16777216 4194304 100 en0\n"))
@@ -111,6 +141,9 @@ func TestDarwinCommandHasTheSamplingIntervalAndNoDoubledBackslashes(t *testing.T
 		if strings.Contains(text, `\\`) {
 			t.Fatal("a command contains a doubled backslash")
 		}
+	}
+	if !strings.Contains(darwinCommand, "system_profiler SPDisplaysDataType") || !strings.Contains(darwinCommand, "gpu_probe\n") {
+		t.Fatal("the default GPU probe is missing")
 	}
 }
 

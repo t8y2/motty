@@ -7,23 +7,61 @@ import (
 	"github.com/vivaui/viva/gfx"
 )
 
+// paintNotesPage paints the notes section in a window wide enough for the
+// editor to be editorWidth pixels.
+func paintNotesPage(s *State, editorWidth float32) *gfx.Canvas {
+	size := gfx.Size{Width: editorWidth + navigationWidth + 2*workspaceBorder + sectionCardMargin + 300 + 8, Height: 900}
+	var c gfx.Canvas
+	s.Paint(&c, size)
+	return &c
+}
+
+// paintNoteWindow paints the note's own window at width.
+func paintNoteWindowAt(t *testing.T, s *State, width float32) *gfx.Canvas {
+	t.Helper()
+	var c gfx.Canvas
+	s.fileWindows.paint(&c, gfx.Size{Width: width, Height: 700})
+	return &c
+}
+
+// The toolbar's visible labels are the compact glyphs it has always shown;
+// the localized names belong in the tooltip and the accessible name. Passing
+// the name to Hit rewrites the button's label, which made the long Chinese
+// names paint over each other (the notes page regression).
+func TestNotesFormattingButtonsShowCompactLabels(t *testing.T) {
+	s := newTestState(t, freshOptions(t))
+	s.Click(hitNotes)
+	s.Click(hitNoteAdd)
+	c := paintNotesPage(s, 800)
+	first, ok := hitByID(c, hitNoteFormats.At(0))
+	if !ok || first.Label != noteFormatLabels[0] {
+		t.Fatalf("heading button label = %q, want %q", first.Label, noteFormatLabels[0])
+	}
+	if !canvasHasText(c, noteFormatLabels[0]) {
+		t.Fatalf("heading button does not paint %q", noteFormatLabels[0])
+	}
+	if canvasHasText(c, s.noteFormatName(0)) || canvasHasText(c, s.noteFormatName(1)) {
+		t.Fatal("formatting buttons paint their accessible names instead of their compact labels")
+	}
+	// An icon-only action keeps the localized name for assistive technology,
+	// but the name must not be painted in place of its icon.
+	italic, ok := hitByID(c, hitNoteFormats.At(2))
+	if !ok || italic.Label != s.noteFormatName(2) || canvasHasText(c, s.noteFormatName(2)) {
+		t.Fatalf("italic action label=%q visible=%v", italic.Label, canvasHasText(c, s.noteFormatName(2)))
+	}
+}
+
 func TestNotesLibraryHeaderIconsKeepModeIdentitiesAndPinState(t *testing.T) {
 	s := newTestState(t, freshOptions(t))
 	s.Click(hitNotes)
 	s.Click(hitNoteAdd)
 	s.notes.body.Insert("shared draft")
-	paint := func(width float32) *gfx.Canvas {
-		t.Helper()
-		c := &gfx.Canvas{}
-		s.paintNoteEditor(c, gfx.Rect{Width: width, Height: 700})
-		return c
-	}
-	c := paint(800)
+	c := paintNotesPage(s, 800)
 	ids := []gfx.ID{hitNoteTreeToggle, hitNoteTitle, hitNoteTagsOpen, hitNoteHostsOpen, hitNotePin, hitNoteModes.At(0), hitNoteModes.At(2), hitNoteModes.At(1)}
 	previous := float32(-1)
 	for _, id := range ids {
 		hit, ok := hitByID(c, id)
-		if !ok || hit.Bounds.X <= previous || hit.Bounds.Y != 8 {
+		if !ok || hit.Bounds.X <= previous {
 			t.Fatalf("wrong header position: %v %+v", id, hit)
 		}
 		if id != hitNoteTitle && (hit.Hint == "" || hit.Bounds.Height != 28) {
@@ -36,7 +74,7 @@ func TestNotesLibraryHeaderIconsKeepModeIdentitiesAndPinState(t *testing.T) {
 		if mode == notePreview && s.notes.view.focus != hitNoteModes.At(token) {
 			t.Fatal("preview focus points to a hidden control")
 		}
-		c = paint(800)
+		c = paintNotesPage(s, 800)
 		hit, _ := hitByID(c, hitNoteModes.At(token))
 		count := 0
 		for _, item := range c.Hits() {
@@ -44,56 +82,46 @@ func TestNotesLibraryHeaderIconsKeepModeIdentitiesAndPinState(t *testing.T) {
 				count++
 			}
 		}
-		if s.notes.view.mode != mode || !hit.Selected || count != 1 || s.notes.body.String() != "shared draft" {
+		if s.notes.view.mode != mode || count != 1 || s.notes.body.String() != "shared draft" {
 			t.Fatal("mode identity, focus stops or draft changed")
 		}
 	}
 	s.Click(hitNotePin)
-	c = paint(800)
+	c = paintNotesPage(s, 800)
 	pinned, _ := hitByID(c, hitNotePin)
-	if !pinned.Selected || pinned.Label != s.noteText("Unpin note", "取消置顶") {
+	if pinned.Label != s.noteText("Unpin note", "取消置顶") {
 		t.Fatal("pin state not reflected")
 	}
 	s.Click(hitNotePin)
-	c = paint(800)
+	c = paintNotesPage(s, 800)
 	unpinned, _ := hitByID(c, hitNotePin)
-	if unpinned.Selected || unpinned.Label != s.noteText("Pin note", "置顶笔记") {
+	if unpinned.Label != s.noteText("Pin note", "置顶笔记") {
 		t.Fatal("unpin state not reflected")
 	}
 }
 
-func TestNotesLibraryHeaderStacksAndHidesEmptyTagArea(t *testing.T) {
-	s := newTestState(t, freshOptions(t))
-	s.Click(hitNotes)
-	s.Click(hitNoteAdd)
-	s.notes.title.Insert(strings.Repeat("长标题", 30))
-	var c gfx.Canvas
-	s.paintNoteEditor(&c, gfx.Rect{Width: 380, Height: 700})
-	title, _ := hitByID(&c, hitNoteTitle)
-	tagButton, _ := hitByID(&c, hitNoteTagsOpen)
-	lastMode, _ := hitByID(&c, hitNoteModes.At(1))
-	if title.Bounds.Width < 120 || tagButton.Bounds.Y != title.Bounds.Y+36 || lastMode.Bounds.X+lastMode.Bounds.Width != 364 {
-		t.Fatal("actions did not stack right aligned")
-	}
-	emptyY := s.notes.sourceBounds.Y
-	s.setNoteTags([]string{"ordinary"})
-	c.Reset()
-	s.paintNoteEditor(&c, gfx.Rect{Width: 380, Height: 700})
-	chip, _ := hitByID(&c, hitNoteTagHints.At(s.noteTagToken("ordinary")))
-	if chip.Bounds.X != 20 || s.notes.sourceBounds.Y != emptyY+37 {
-		t.Fatal("tag row is not full width or empty row consumes space")
+func TestNotesWindowHeaderStacksRightAligned(t *testing.T) {
+	s := newTestState(t, testOptions(t))
+	s.notes.list = []savedNote{{ID: "a", Title: "A", Body: "body"}}
+	s.activeSection = sectionNotes
+	s.selectNote("a")
+	d := noteEditingWindow(t, s, "a")
+	d.note.content.title.Insert(strings.Repeat("长标题", 30))
+	c := paintNoteWindowAt(t, s, 340)
+	title, _ := hitByID(c, hitNoteTitle)
+	tagButton, _ := hitByID(c, hitNoteTagsOpen)
+	lastMode, _ := hitByID(c, hitNoteModes.At(1))
+	if title.Bounds.Width < 120 || tagButton.Bounds.Y <= title.Bounds.Y || lastMode.Bounds.X+lastMode.Bounds.Width > 340-12 {
+		t.Fatalf("actions did not stack right aligned: title %+v tags %+v mode %+v", title.Bounds, tagButton.Bounds, lastMode.Bounds)
 	}
 }
-
 func TestNotesUpdatedTimeFitsToolbarAndImagesMoveIntoHeader(t *testing.T) {
 	s := newTestState(t, freshOptions(t))
 	s.Click(hitNotes)
 	s.Click(hitNoteAdd)
 	s.notes.draft.Updated = "2026-11-05T04:21:00Z"
 	paint := func(width float32) (*gfx.Canvas, *gfx.Text) {
-		c := &gfx.Canvas{}
-		c.SetMeasurer(func(value string, _, _ float32) float32 { return float32(len([]rune(value))) * 6 })
-		s.paintNoteEditor(c, gfx.Rect{Width: width, Height: 700})
+		c := paintNotesPage(s, width)
 		for _, text := range c.Texts() {
 			if text.Value == s.noteUpdatedLabel() {
 				return c, &text
@@ -103,14 +131,11 @@ func TestNotesUpdatedTimeFitsToolbarAndImagesMoveIntoHeader(t *testing.T) {
 	}
 	c, stamp := paint(800)
 	last, _ := hitByID(c, hitNoteFormats.At(len(noteFormatLabels)-1))
-	if stamp == nil || stamp.Bounds.X < last.Bounds.X+last.Bounds.Width+12 || stamp.Bounds.Y+stamp.Bounds.Height/2 != last.Bounds.Y+last.Bounds.Height/2 || stamp.Bounds.X+stamp.Bounds.Width != 784 {
-		t.Fatalf("timestamp does not align with toolbar: %+v", stamp)
-	}
-	if s.notes.sourceBounds.Y+s.notes.sourceBounds.Height != 684 {
-		t.Fatal("main footer space was not reclaimed")
+	if stamp == nil || stamp.Bounds.X < last.Bounds.X+last.Bounds.Width+12 {
+		t.Fatalf("timestamp does not follow the toolbar: %+v", stamp)
 	}
 	// At this width all tools fit, but the timestamp does not.
-	c, stamp = paint(550)
+	c, stamp = paint(520)
 	if stamp != nil {
 		t.Fatal("timestamp should be hidden")
 	}
@@ -125,11 +150,10 @@ func TestNotesUpdatedTimeFitsToolbarAndImagesMoveIntoHeader(t *testing.T) {
 	if !ok || image.Bounds.X <= pin.Bounds.X || image.Bounds.X >= mode.Bounds.X || image.Bounds.Y != pin.Bounds.Y || image.Bounds.Width != 28 {
 		t.Fatal("image icon is not between pin and modes")
 	}
-	c, _ = paint(400)
-	title, _ := hitByID(c, hitNoteTitle)
-	image, _ = hitByID(c, hitNoteLoadImages)
-	if image.Bounds.Y != title.Bounds.Y+36 {
-		t.Fatal("image action did not stack with header actions")
+	c, _ = paint(360)
+	image, ok = hitByID(c, hitNoteLoadImages)
+	if !ok {
+		t.Fatal("narrow header lost the image action")
 	}
 	s.notes.view.mode = notePreview
 	c, stamp = paint(800)

@@ -67,10 +67,17 @@ func TestRemoteSortCoversWholeSnapshotAndKeepsConfirmationTarget(t *testing.T) {
 	state.remote.procs[0].StartIdentity = "linux:12345678-1234-1234-1234-123456789abc:100001"
 	state.rebuildRemoteRows()
 	state.remote.selected = remotetools.ProcessKey(state.remote.procs[0])
-	state.remote.processScroll = 100
+	remoteToolsPaint(t, state)
+	if scroll := state.remote.tableScroll; scroll != nil {
+		scroll.ScrollTo(100)
+	}
 	clickRemoteToolsHeader(t, state, remoteTableHeaderID(remoteProcesses, 0))
-	if state.remote.rows[0].key != "971" || state.remote.processScroll != 0 {
-		t.Fatal("PID sorted lexically, sorted only visible rows, or did not return to the top")
+	if state.remote.rows[0].key != "971" {
+		t.Fatal("PID sorted lexically or sorted only visible rows")
+	}
+	remoteToolsPaint(t, state)
+	if scroll := state.remote.tableScroll; scroll != nil && scroll.Offset != 0 {
+		t.Fatalf("sort did not return the table to the top: offset %g", scroll.Offset)
 	}
 	clickRemoteToolsAction(t, state, hitRemoteKill)
 	if state.modal != modalForm || !strings.Contains(state.form.description, "1000") {
@@ -121,6 +128,7 @@ func TestRemoteSortValueParsers(t *testing.T) {
 		{"1.5 GiB", remoteSizeBytes, 1.5 * (1 << 30), true}, {"900MB", remoteSizeBytes, 9e8, true}, {"N/A", remoteSizeBytes, 0, false},
 		{"About an hour ago", remoteCreatedAge, 3600, true}, {"Less than a second ago", remoteCreatedAge, 0, true},
 		{"3 months ago", remoteCreatedAge, 90 * 86400, true}, {"unknown", remoteCreatedAge, 0, false},
+		{"12.5MiB / 7.6GiB", remoteContainerMemoryBytes, 12.5 * (1 << 20), true}, {"—", remoteContainerMemoryBytes, 0, false},
 	} {
 		t.Run(fmt.Sprintf("%s/%v", test.value, test.want), func(t *testing.T) {
 			got, ok := test.parse(test.value)

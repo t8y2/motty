@@ -10,6 +10,8 @@ import (
 
 	"github.com/creack/pty"
 	"golang.org/x/sys/unix"
+
+	"motty/internal/termsize"
 )
 
 // defaultShell is the user's login shell, else sh.
@@ -39,7 +41,10 @@ func startBackend(config Config) (backend, error) {
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color", "COLORTERM=truecolor")
 	cmd.Env = append(cmd.Env, config.Env...)
 	cmd.Env = withUTF8Locale(cmd.Env)
-	size := &pty.Winsize{Cols: uint16(max(config.Cols, 1)), Rows: uint16(max(config.Rows, 1))}
+	size := &pty.Winsize{
+		Cols: uint16(max(config.Cols, 1)), Rows: uint16(max(config.Rows, 1)),
+		X: pixel16(config.PixelWidth), Y: pixel16(config.PixelHeight),
+	}
 	master, err := pty.StartWithSize(cmd, size)
 	if err != nil {
 		return backend{}, err
@@ -47,7 +52,7 @@ func startBackend(config Config) (backend, error) {
 	return backend{
 		io:         master,
 		foreground: func() ([]string, bool) { return foregroundArgs(master) },
-		resize: func(cols, rows int) {
+		resize: func(size termsize.Size) {
 			control, err := master.SyscallConn()
 			if err != nil {
 				return
@@ -56,7 +61,10 @@ func startBackend(config Config) (backend, error) {
 			// the descriptor until the ioctl returns, so it cannot be destroyed
 			// or recycled for another file while the resize is in flight.
 			_ = control.Control(func(fd uintptr) {
-				_ = unix.IoctlSetWinsize(int(fd), unix.TIOCSWINSZ, &unix.Winsize{Col: uint16(cols), Row: uint16(rows)})
+				_ = unix.IoctlSetWinsize(int(fd), unix.TIOCSWINSZ, &unix.Winsize{
+					Col: uint16(size.Cols), Row: uint16(size.Rows),
+					Xpixel: pixel16(size.PixelWidth), Ypixel: pixel16(size.PixelHeight),
+				})
 			})
 		},
 		wait: func() (int, error) {
@@ -74,3 +82,7 @@ func startBackend(config Config) (backend, error) {
 		kill:   func() { _ = cmd.Process.Kill() },
 	}, nil
 }
+
+// pixel16 is a pixel dimension as the pty window size holds it: a uint16, and
+// nothing the terminal can measure comes near its limit.
+func pixel16(value int) uint16 { return uint16(min(max(value, 0), 65535)) }

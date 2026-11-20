@@ -203,9 +203,9 @@ func (state *State) clickSnippetSend(id gfx.ID) bool {
 	return true
 }
 
-// paintSnippetSend paints the send form's fields into the boxes the palette
-// declared. The target switch is a page Choice declared with the body.
-func (state *State) paintSnippetSend(canvas *gfx.Canvas, input, button, run ui.Box) {
+// paintSnippetSend paints the send form's input into the box the palette
+// declared; its button and its Run box are the page's. The target switch is a page Choice declared with the body.
+func (state *State) paintSnippetSend(canvas *gfx.Canvas, input ui.Box) {
 	m, theme := state.messages.Tools, state.Theme()
 	sender := &state.snippetSend
 	value := sender.input.String()
@@ -214,9 +214,4 @@ func (state *State) paintSnippetSend(canvas *gfx.Canvas, input, button, run ui.B
 		ID: hitSnippetSendInput, Label: m.SendCommandLabel, Value: value,
 		Placeholder: m.SendCommandPlaceholder, Focused: focused, PlatformEditing: focused && value != "",
 	})
-	empty := strings.TrimSpace(value) == ""
-	components.BeginButtonRow(canvas, theme, button.Rect()).Paint(components.ButtonAction{
-		ID: hitSnippetSendButton, Label: m.SendCommandButton, Disabled: empty,
-	})
-	state.paintDialogCheckbox(canvas, hitSendRun, m.SendRun, sender.runs(), run)
 }

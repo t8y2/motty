@@ -136,7 +136,7 @@ func TestBookmarksAreKeptPerHostSurviveARestartAndOpenTheirFolder(t *testing.T) 
 	}
 	canvas.Reset()
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if _, ok := hitByID(&canvas, contextID(hitSFTPBookmarkItemList.At(0))); !ok {
+	if !containsCanvasHitLabel(&canvas, gfx.RoleMenuItem, "/home/test/docs") {
 		t.Fatal("the list has no entry")
 	}
 	// The list is a popup above the file rows: its text is on a layer over theirs,
@@ -145,8 +145,8 @@ func TestBookmarksAreKeptPerHostSurviveARestartAndOpenTheirFolder(t *testing.T) 
 	for _, text := range canvas.Texts() {
 		if text.Value == "/home/test/docs" {
 			listed = true
-			if text.Layer != popupLayer {
-				t.Fatalf("the bookmark's text is on layer %d, want the popup layer %d", text.Layer, popupLayer)
+			if text.Layer == 0 {
+				t.Fatalf("the bookmark's text is on the page layer, under the file rows")
 			}
 		}
 	}
@@ -352,12 +352,17 @@ func TestSFTPColumnSettingsReorderFromTheKeyboardAndSave(t *testing.T) {
 	state.Click(hitSettingsConfigureColumns)
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	handle := hitSFTPColumnSettingsHandles.At(int(sftpColumnSize))
-	if _, ok := hitByID(&canvas, handle); !ok {
-		t.Fatal("the size column has no reorder handle")
+	var row gfx.Hit
+	for _, hit := range canvas.Hits() {
+		if hit.Role == gfx.RoleOption && hit.Label == state.sftpColumnLabel(sftpColumnSize) {
+			row = hit
+		}
 	}
-	result := state.Key(gfx.KeyEvent{Target: handle, Key: gfx.KeyDown})
-	if !result.Handled || result.Focus != handle {
+	if row.ID.IsZero() {
+		t.Fatal("the size column is not a row of the list")
+	}
+	result := state.WindowConfig(app.Config{OnKey: state.Key}).OnKey(gfx.KeyEvent{Target: row.ID, Key: gfx.KeyDown, Modifiers: gfx.ModifierAlt})
+	if !result.Handled || result.Focus != row.ID {
 		t.Fatalf("keyboard move = %+v", result)
 	}
 	if got, want := state.sftpColumns.String(), "name:1,modified:1,size:1"; got != want {

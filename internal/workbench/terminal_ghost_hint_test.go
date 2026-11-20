@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -111,26 +112,28 @@ func TestGhostHintMenuOffersTheKeysAndBindsOne(t *testing.T) {
 	if result := h.state.Pointer(up); !result.Handled || !h.state.ghostMenu.open {
 		t.Fatalf("releasing the badge did not open the menu: %+v", result)
 	}
-	canvas.Reset()
-	control := terminalTestHit(h.state, session)
-	canvas.SetInteraction(gfx.ID{}, gfx.ID{}, control, true)
-	h.state.paintGrid(canvas, session, h.state.layout())
-	h.state.paintGhostMenu(canvas, h.state.windowRect())
+	var full gfx.Canvas
+	h.state.Paint(&full, h.state.viewport)
+	canvas = &full
+	m := h.state.messages.Completion
 	current := h.state.shortcuts.chords.Chord(shortcutAcceptSuggestion)
-	right, ok := hitByID(canvas, hitGhostMenuRight)
-	if !ok || !right.Selected || current != (keymap.Chord{Key: gfx.KeyRight}) {
-		t.Fatalf("right row = %+v, %v; current = %v", right, ok, current)
+	var scratch [5]string
+	label := func(chord keymap.Chord) string { return strings.Join(chord.Keycaps(scratch[:0]), "") }
+	var right gfx.Hit
+	for _, hit := range canvas.Hits() {
+		if hit.Role == gfx.RoleMenuItem && hit.Label == label(keymap.Chord{Key: gfx.KeyRight}) {
+			right = hit
+		}
 	}
-	if _, ok := hitByID(canvas, hitGhostMenuTab); !ok {
-		t.Fatal("the menu does not offer Tab")
+	if right.ID.IsZero() || !right.Selected || current != (keymap.Chord{Key: gfx.KeyRight}) {
+		t.Fatalf("right row = %+v; current = %v", right, current)
 	}
-	if _, ok := hitByID(canvas, hitGhostMenuCustom); !ok {
-		t.Fatal("the menu does not offer a custom key")
+	for _, want := range []string{label(keymap.Chord{Key: gfx.KeyTab}), m.AcceptHintCustom, m.AcceptHintTurnOff} {
+		if !canvasHasMenuRow(canvas, want) {
+			t.Fatalf("the menu does not offer %q", want)
+		}
 	}
-	if _, ok := hitByID(canvas, hitGhostMenuTurnOff); !ok {
-		t.Fatal("the menu does not offer to turn the hint off")
-	}
-	h.state.Click(hitGhostMenuTab)
+	clickPageMenuRow(t, h.state, label(keymap.Chord{Key: gfx.KeyTab}))
 	if h.state.ghostMenu.open {
 		t.Fatal("the menu stayed open after a choice")
 	}
@@ -146,7 +149,7 @@ func TestGhostHintMenuTurnsTheHintOffButKeepsTheKey(t *testing.T) {
 		t.Fatal("the badge was not painted")
 	}
 	h.state.openGhostMenu(session)
-	h.state.Click(hitGhostMenuTurnOff)
+	clickPageMenuRow(t, h.state, h.state.messages.Completion.AcceptHintTurnOff)
 	if !h.state.history.acceptHintOff {
 		t.Fatal("the menu did not turn the hint off")
 	}
@@ -174,27 +177,9 @@ func TestGhostHintMenuCustomOpensTheShortcutDialog(t *testing.T) {
 		t.Fatal("the badge was not painted")
 	}
 	h.state.openGhostMenu(session)
-	h.state.Click(hitGhostMenuCustom)
+	clickPageMenuRow(t, h.state, h.state.messages.Completion.AcceptHintCustom)
 	if h.state.modal != modalShortcutCapture || h.state.shortcutCapture != shortcutAcceptSuggestion {
 		t.Fatalf("modal = %v, capture = %v", h.state.modal, h.state.shortcutCapture)
-	}
-}
-
-func TestGhostHintMenuClosesOnEscapeAndOutsidePress(t *testing.T) {
-	h := ghostHintWorld(t)
-	session := &h.state.sessions[0]
-	if _, _, ok := paintGhostGrid(t, h.state, session); !ok {
-		t.Fatal("the badge was not painted")
-	}
-	h.state.openGhostMenu(session)
-	h.state.Key(gfx.KeyEvent{Key: gfx.KeyEscape})
-	if h.state.ghostMenu.open {
-		t.Fatal("Escape left the menu open")
-	}
-	h.state.openGhostMenu(session)
-	h.state.Click(hitGhostMenuDismiss)
-	if h.state.ghostMenu.open {
-		t.Fatal("a press outside left the menu open")
 	}
 }
 

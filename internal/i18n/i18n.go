@@ -303,6 +303,8 @@ type Messages struct {
 	SettingsNetworkProxyDescription        string
 	SettingsNetworkProxySystem             string
 	SettingsNetworkProxyDirect             string
+	SettingsSSHBrowser                     string
+	SettingsSSHBrowserDescription          string
 	SettingsToolbarPosition                string
 	SettingsToolbarPositionDescription     string
 	SettingsToolbarPositionLeft            string
@@ -654,10 +656,15 @@ type Messages struct {
 	MenuLockTab            string
 	MenuUnlockTab          string
 
-	MenuOpenSSHBrowser    string
-	MenuCloseSSHBrowser   string
-	SSHBrowserNotFound    string
-	SSHBrowserStartFailed string
+	MenuOpenSSHBrowser          string
+	MenuCloseSSHBrowser         string
+	SSHBrowserNotFound          string
+	SSHBrowserStartFailed       string
+	SSHBrowserAuto              string
+	SSHBrowserChrome            string
+	SSHBrowserEdge              string
+	SSHBrowserChromium          string
+	SSHBrowserChosenNotFoundFmt string
 
 	// TabLockedHint is the tab's accessible description while it is protected.
 	TabLockedHint                 string
@@ -885,6 +892,10 @@ type Messages struct {
 	KeyPaste                    string
 	KeyGenerate                 string
 	KeyCopyPublic               string
+	KeyExport                   string
+	KeyExportTitle              string
+	KeyExportedFmt              string
+	KeyExportReadFailed         string
 	KeyPasteTitle               string
 	KeyPasteDescription         string
 	KeyNameLabel                string
@@ -1252,6 +1263,7 @@ type Messages struct {
 	ConnShowProgress           string
 	ConnClose                  string
 	ConnRetry                  string
+	ConnLegacyTLS              string
 	ConnCancelReconnect        string
 	ConnExportLog              string
 	ConnReconnectWaitingFmt    string

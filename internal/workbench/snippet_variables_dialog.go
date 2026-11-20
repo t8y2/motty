@@ -23,15 +23,18 @@ type snippetPromptState struct {
 	fromPage        bool
 	defs            []snippetVariableDef
 	editors         []text.Editor
-	slots           []ui.Box
+	fields          []ui.Field
+	fieldBound      []bool
+	rows            []ui.FormFieldState
 	dialogError     string
 	// list is the fields' scroll area, and preview the box the resolved
 	// command is shown in; both are what the last paint laid out, so the
 	// wheel handler and the tests read them between paints.
 	list, preview ui.Box
-	listBounds    gfx.Rect
 	listScroll    *ui.ScrollState
 	listSet       bool
+	previewScroll *ui.ScrollState
+	previewSet    bool
 }
 
 // The fields step 68px (62px input and a 6px gap); the list holds five of
@@ -42,6 +45,11 @@ const (
 	snippetVarFieldGap      = 6
 	snippetVarFieldStep     = snippetVarFieldHeight + snippetVarFieldGap
 	snippetVarListMaxHeight = 5 * snippetVarFieldStep
+	// The preview box the body reserves; a long command wraps and scrolls
+	// inside it, so the whole of it stays readable instead of running off the
+	// right edge. The scroll area gets what Pad(8) and the 1px border leave.
+	snippetVarPreviewHeight    = 60
+	snippetVarPreviewMaxHeight = snippetVarPreviewHeight - 18
 )
 
 func (state *State) openSnippetVariablesDialog(index int, targetSessionID uint32, fromPage bool) {
@@ -71,7 +79,9 @@ func (state *State) openSnippetVariablesDialog(index int, targetSessionID uint32
 		fromPage:        fromPage,
 		defs:            defs,
 		editors:         editors,
-		slots:           make([]ui.Box, len(defs)),
+		fields:          make([]ui.Field, len(defs)),
+		fieldBound:      make([]bool, len(defs)),
+		rows:            make([]ui.FormFieldState, len(defs)),
 	}
 	state.modal = modalSnippetVariables
 }
@@ -101,7 +111,7 @@ func (state *State) declareSnippetVariablesDialog(c ui.C) {
 		errorExtra = 26
 	}
 	listHeight := min(float32(len(prompt.defs))*snippetVarFieldStep, snippetVarListMaxHeight)
-	bodyHeight := 24 + listHeight + 22 + 60 + errorExtra + 16
+	bodyHeight := 24 + listHeight + 22 + snippetVarPreviewHeight + errorExtra + 16
 
 	viewport := dialogViewport(c)
 	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 520, description, bodyHeight)
@@ -146,25 +156,35 @@ func (state *State) declareSnippetVariablesDialogBody(c ui.C, preview string) {
 		// control scrolled out of a clip leaves the tab ring with its hits.
 		list := ui.Scroll(c).MaxHeight(snippetVarListMaxHeight).FillWidth().Scrollbars()
 		list.Children(func() {
-			for i := range prompt.defs {
-				prompt.slots[i] = ui.Slot(c).Height(snippetVarFieldHeight).MarginSides(0, 0, snippetVarFieldGap, 0)
+			for i, def := range prompt.defs {
+				if !prompt.fieldBound[i] {
+					prompt.fields[i].Bind(&prompt.editors[i])
+					prompt.fieldBound[i] = true
+				}
+				placeholder := m.SnippetVarPlaceholder
+				if def.HasDefault {
+					placeholder = fmt.Sprintf(m.SnippetVarDefaultFmt, def.DefaultValue)
+				}
+				// A labelled form field, as the hand-painted dialog showed each
+				// variable's name above its input.
+				ui.FormField(c, &prompt.rows[i], def.Name).Height(snippetVarFieldHeight).FillWidth().
+					MarginSides(0, 0, snippetVarFieldGap, 0).Children(func() {
+					ui.TextFieldID(c, hitSnippetVarList.At(i), &prompt.fields[i], def.Name, placeholder).FillWidth()
+				})
 			}
-		})
-		// The inputs are painted inside the area's clip, over the slots; the
-		// bounds the wheel handler tests are where the area ended up, which
-		// only the laid-out draw pass knows.
-		list.DrawOver(func(d *ui.DrawContext) {
-			prompt.listBounds = d.Rect
-			state.paintSnippetVariablesDialogFields(d.Canvas)
 		})
 		prompt.list, prompt.listSet = list, true
 		prompt.listScroll = list.ScrollState()
 
 		ui.Text(c, m.SnippetVarPreview).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(18).MarginSides(4, 0, 4, 0)
 
-		prompt.preview = ui.Row(c).Fill().Pad(8).Background(pal.terminal).Radius(radius.control).Border(1, pal.line)
+		prompt.preview = ui.Row(c).Fill().Height(snippetVarPreviewHeight).Pad(8).Background(pal.terminal).Radius(radius.control).Border(1, pal.line)
 		prompt.preview.Children(func() {
-			ui.Text(c, preview).Mono().FontSize(metrics.FontSizeS).Color(pal.text).LineHeight(16)
+			area := ui.Scroll(c).FillWidth().MaxHeight(snippetVarPreviewMaxHeight).Scrollbars()
+			area.Children(func() {
+				ui.Paragraph(c, preview, 0).Mono().FontSize(metrics.FontSizeS).Color(pal.text).LineHeight(16)
+			})
+			prompt.previewScroll, prompt.previewSet = area.ScrollState(), true
 		})
 
 		if prompt.dialogError != "" {
@@ -178,7 +198,12 @@ func (state *State) declareSnippetVariablesDialogBody(c ui.C, preview string) {
 // every modal does, so nothing behind it moves.
 func (state *State) scrollSnippetVariables(event gfx.ScrollEvent) gfx.EventResult {
 	prompt := &state.snippetPrompt
-	if !prompt.listSet || prompt.listScroll == nil || !pointInRect(event.X, event.Y, prompt.listBounds) {
+	if prompt.previewSet && prompt.previewScroll != nil && pointInRect(event.X, event.Y, prompt.preview.Rect()) {
+		result := prompt.previewScroll.Wheel(event)
+		result.Handled = true
+		return result
+	}
+	if !prompt.listSet || prompt.listScroll == nil || !pointInRect(event.X, event.Y, prompt.list.Rect()) {
 		return gfx.EventResult{Handled: true}
 	}
 	result := prompt.listScroll.Wheel(event)
@@ -186,40 +211,28 @@ func (state *State) scrollSnippetVariables(event gfx.ScrollEvent) gfx.EventResul
 	return result
 }
 
-func (state *State) paintSnippetVariablesDialogFields(canvas *gfx.Canvas) {
-	prompt := &state.snippetPrompt
-	m, theme := state.messages.Tools, state.Theme()
-
-	for i, def := range prompt.defs {
-		if i >= len(prompt.slots) {
-			break
-		}
-		label := def.Name
-		placeholder := m.SnippetVarPlaceholder
-		if def.HasDefault {
-			placeholder = fmt.Sprintf(m.SnippetVarDefaultFmt, def.DefaultValue)
-		}
-		slotRect := prompt.slots[i].Rect()
-		if slotRect.Width <= 0 || slotRect.Height <= 0 {
-			continue
-		}
-		content := components.BeginField(canvas, theme, slotRect).Paint(label, "", "")
-		id := hitSnippetVarList.At(i)
-		focused := canvas.Focused() == id
-		val := prompt.editors[i].String()
-		components.PaintInput(canvas, theme, content, components.InputSnapshot{
-			ID: id, Label: label, Value: val, Placeholder: placeholder,
-			Focused: focused, PlatformEditing: focused && val != "",
-		})
-	}
-}
-
 func (state *State) clickSnippetVariablesDialog(id gfx.ID) {
 	switch id {
 	case hitSnippetVarCancel, hitSnippetVarClose:
+		fromPage := state.snippetPrompt.fromPage
 		state.closeModal()
+		// Opened from the command bar, the dialog sat over the terminal; the
+		// keyboard belongs back there once it is gone. From the snippets page
+		// the user stays on that page.
+		if !fromPage {
+			state.returnKeyboardToTerminal()
+		}
 	case hitSnippetVarSubmit:
 		state.submitSnippetVariables()
+	}
+}
+
+// returnKeyboardToTerminal asks the next paint for the active terminal's own
+// focus. It only has an effect while the terminal page is showing and no modal
+// is up, which the paint enforces before it consumes the request.
+func (state *State) returnKeyboardToTerminal() {
+	if focus := state.activeTerminalFocusHit(); !focus.IsZero() {
+		state.pendingFocus = focus
 	}
 }
 
@@ -268,12 +281,23 @@ func (state *State) submitSnippetVariables() {
 
 	session, ok := state.sessionByIDPointer(sessionID)
 	if !ok || session.term == nil {
+		if !fromPage {
+			state.returnKeyboardToTerminal()
+		}
 		state.showActionWarning(m.SnippetsTitle, m.StatusSnippetNoTerminal)
 		return
 	}
 
-	if state.sendResolvedSnippet(entry, resolved, session) && fromPage {
-		state.ActivatePane(session.ID)
-		state.activeSection = sectionTerminal
+	if state.sendResolvedSnippet(entry, resolved, session) {
+		if fromPage {
+			state.ActivatePane(session.ID)
+			state.activeSection = sectionTerminal
+		}
+		// Ask for the target terminal's focus after any pane switch, so the
+		// keyboard lands on the session the command went to, not the one that
+		// happened to be active when the dialog opened.
+		state.returnKeyboardToTerminal()
+	} else if !fromPage {
+		state.returnKeyboardToTerminal()
 	}
 }

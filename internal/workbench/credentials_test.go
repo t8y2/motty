@@ -354,7 +354,7 @@ func TestCredentialDialogPageServesItsFieldsAndSaves(t *testing.T) {
 	state.openCredentialDialog("")
 	view := func(c ui.C) { state.declareCredentialDialog(c) }
 	page, canvas := drawDialogPage(t, state, view)
-	config := page.Config(app.Config{})
+	config := ui.Configure(page, app.Config{})
 	name := config.TextInput(app.TextInputContext{ID: hitCredentialName})
 	if name == nil || name.Editor != &state.credentialForm.name {
 		t.Fatalf("the page does not serve the name field: %+v", name)

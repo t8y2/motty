@@ -33,15 +33,15 @@ func hostSelectTestState(t *testing.T) *State {
 	return state
 }
 
-// The host pickers scroll to the chosen host when they open, keep the keyboard
-// in their search field, and let the wheel move the list only over its own
-// surface.
-func TestProxyHostSelectRevealsTheChosenHostAndScrolls(t *testing.T) {
+// The host pickers are page comboboxes: the target field takes the keyboard when
+// the dialog opens, and the wheel over the open list moves the list while a
+// wheel beside it leaves it where it is.
+func TestProxyHostSelectFocusesTheTargetAndScrolls(t *testing.T) {
 	state := hostSelectTestState(t)
-	view, err := headless.Open(app.Config{
+	view, err := headless.Open(state.WindowConfig(app.Config{
 		Title: "proxy", Width: 1400, Height: 900, Paint: state.Paint, OnPointer: state.Pointer,
 		OnKey: state.Key, OnScroll: state.Scroll,
-	}, nil, headless.Options{})
+	}), nil, headless.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,46 +50,52 @@ func TestProxyHostSelectRevealsTheChosenHostAndScrolls(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	state.Click(hitProxyDialogTarget)
+	input := pageComboboxID(t, state, state.messages.ProxyFieldTarget)
+	if focused := view.Snapshot().Focused; focused != input {
+		t.Fatalf("focus on open = %v, want the target field %v", focused, input)
+	}
+	field, ok := findSnapshotHit(view.Snapshot(), input)
+	if !ok {
+		t.Fatalf("the target field %v is not painted", input)
+	}
+	if err := view.Click(field.Bounds.X+field.Bounds.Width/2, field.Bounds.Y+field.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
 	if err := view.Wait(100 * time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
-	if !state.proxyEditor.targetSelect.Open {
-		t.Fatal("the target picker did not open")
+	last := state.hosts[len(state.hosts)-1]
+	hit, ok := findSnapshotHitByLabel(view.Snapshot(), gfx.RoleOption, last.Label)
+	if !ok {
+		t.Fatalf("the chosen host %q was not revealed: %v", last.Label, view.Snapshot().Hits)
 	}
-	if focused := view.Snapshot().Focused; focused != hitProxyDialogTarget {
-		t.Fatalf("focus on open = %v, want the search field %v", focused, hitProxyDialogTarget)
-	}
-	canvas, _ := paintedTexts(state)
-	last := len(state.hosts) - 1
-	if !hasHit(canvas, hitProxyTargetItemList.At(last)) {
-		t.Fatalf("the chosen host %d was not revealed", last)
-	}
-	if hasHit(canvas, hitProxyTargetItemList.At(0)) {
+	if _, ok := findSnapshotHitByLabel(view.Snapshot(), gfx.RoleOption, state.hosts[0].Label); ok {
 		t.Fatal("the list did not scroll down to the chosen host")
 	}
 
-	// The wheel over the popup scrolls it back to the top.
-	box := state.proxyEditor.targetPopup
-	if err := view.Scroll(gfx.ScrollEvent{X: box.X + box.Width/2, Y: box.Y + box.Height/2, DeltaY: -1000}); err != nil {
+	// The wheel over the open list scrolls it back towards the top.
+	if err := view.Scroll(gfx.ScrollEvent{X: hit.Bounds.X + hit.Bounds.Width/2, Y: hit.Bounds.Y + hit.Bounds.Height/2, DeltaY: -1000}); err != nil {
 		t.Fatal(err)
 	}
 	if err := view.Wait(50 * time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
-	canvas, _ = paintedTexts(state)
-	if !hasHit(canvas, hitProxyTargetItemList.At(0)) || hasHit(canvas, hitProxyTargetItemList.At(last)) {
+	if _, ok := findSnapshotHitByLabel(view.Snapshot(), gfx.RoleOption, state.hosts[0].Label); !ok {
 		t.Fatal("the wheel did not move the list")
 	}
-	// A wheel beside the popup leaves it where it is.
+	// A wheel beside the list leaves it where it is.
+	before := view.Snapshot()
 	if err := view.Scroll(gfx.ScrollEvent{X: 4, Y: 4, DeltaY: 1000}); err != nil {
 		t.Fatal(err)
 	}
 	if err := view.Wait(50 * time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
-	canvas, _ = paintedTexts(state)
-	if !hasHit(canvas, hitProxyTargetItemList.At(0)) || hasHit(canvas, hitProxyTargetItemList.At(last)) {
-		t.Fatal("a wheel beside the popup moved the list")
+	after := view.Snapshot()
+	if _, ok := findSnapshotHitByLabel(after, gfx.RoleOption, last.Label); ok {
+		t.Fatal("a wheel beside the list moved it")
+	}
+	if _, ok := findSnapshotHitByLabel(before, gfx.RoleOption, last.Label); ok {
+		t.Fatal("the list showed its last row before the wheel beside it")
 	}
 }

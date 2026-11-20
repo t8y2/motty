@@ -142,6 +142,9 @@ func TestWorkspaceCommandDraftPersistenceAndSessionSnapshot(t *testing.T) {
 		t.Fatal("no command editor")
 	}
 	editor.Insert("cd /srv && tail -f app.log")
+	// The list places its expanded row in the paint after the host grows; the
+	// next paint shows the field where the reveal scrolled it.
+	paintAt(state, gfx.Size{Width: 1280, Height: 800})
 	canvas, _ := paintAt(state, gfx.Size{Width: 1280, Height: 800})
 	panelHit(t, canvas, hitWorkspaceCommandField.At(int(host.ID)))
 	state.submitWorkspaceDraft()

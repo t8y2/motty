@@ -64,7 +64,7 @@ func TestMonitorUsesTheWindowsSamplerWithoutProcfsCommands(t *testing.T) {
 	session := state.contextSession()
 	session.host.System = sshconn.SystemWindows
 	fake.streamCommand = func(ctx context.Context, command string, limit int, line func([]byte) bool) error {
-		if !strings.HasPrefix(command, "powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand ") {
+		if command != remotestats.WindowsCommand(2) {
 			t.Error("Windows server received a non-PowerShell sampler")
 		}
 		return streamReadings(`gop-stats-win-v1 {"cpu":25,"total":8589934592,"free":4294967296,"uptime":100,"networkAvailable":false,"cores":[{"id":"0","percent":25}],"meta":{"count":1,"kernel":"Windows","disks":[{"path":"C:\\","total":1000,"free":400}]}}`)(ctx, command, limit, line)
@@ -304,13 +304,11 @@ func TestMonitorRefreshAnimationPausesAndRespectsReducedMotion(t *testing.T) {
 		for _, paused := range []bool{false, true} {
 			state, session := monitorFixture(t)
 			p := &session.stats.panel
-			p.paused = paused
+			p.paused, p.interval, p.count = paused, 2, 3
 			var canvas gfx.Canvas
 			canvas.SetReduceMotion(reduced)
 			canvas.SetClock(func() time.Duration { return time.Second })
-			canvas.BeginFrame()
-			state.paintMonitorRefresh(&canvas, p, gfx.Rect{Width: 82, Height: 26}, true)
-			canvas.EndFrame()
+			state.Paint(&canvas, gfx.Size{Width: 1280, Height: 900})
 			delay, scheduled := canvas.NextFrame()
 			if reduced || paused {
 				if scheduled {
@@ -319,8 +317,17 @@ func TestMonitorRefreshAnimationPausesAndRespectsReducedMotion(t *testing.T) {
 			} else if !scheduled || delay <= 0 || delay > time.Duration(p.interval)*time.Second/monitorClockSteps {
 				t.Fatalf("clock cadence=%v/%v", delay, scheduled)
 			}
-			if len(canvas.Hits()) != 1 || !canvas.Hits()[0].Expandable {
-				t.Fatal("refresh has duplicate or inaccessible hit targets")
+			hits := 0
+			for _, hit := range canvas.Hits() {
+				if hit.ID == hitMonitorInterval {
+					hits++
+					if !hit.Expandable {
+						t.Fatal("refresh is not exposed as expandable")
+					}
+				}
+			}
+			if hits != 1 {
+				t.Fatalf("refresh has %d hit targets, want one", hits)
 			}
 		}
 	}
@@ -358,9 +365,11 @@ func TestMonitorTransientControlsDoNotFollowAnotherConnection(t *testing.T) {
 
 func TestMonitorFailureStopsTheCountdownFrames(t *testing.T) {
 	state, session := monitorFixture(t)
+	session.stats.state = remoteStatsFailed
+	session.stats.panel.count = 3
 	var canvas gfx.Canvas
 	canvas.BeginFrame()
-	state.paintMonitorRefresh(&canvas, &session.stats.panel, gfx.Rect{Width: 82, Height: 26}, false)
+	state.Paint(&canvas, gfx.Size{Width: 1280, Height: 900})
 	canvas.EndFrame()
 	if _, scheduled := canvas.NextFrame(); scheduled {
 		t.Fatal("failed sampling keeps animating")
@@ -487,11 +496,11 @@ func TestMonitorAndAICoexistOnWideScreen(t *testing.T) {
 
 func TestNarrowingTheWindowClosesTheAssistantAndKeepsTheMonitorDrawer(t *testing.T) {
 	state, _ := monitorFixture(t)
-	view, err := headless.Open(app.Config{
+	view, err := headless.Open(state.WindowConfig(app.Config{
 		Title: "Panels", Width: 2000, Height: 900, Tree: Tree(),
 		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key,
 		OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize,
-	}, nil, headless.Options{})
+	}), nil, headless.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -552,5 +561,51 @@ func TestMonitorRemembersResizedWidthAcrossWorkspacesAndRestores(t *testing.T) {
 	restored := newTestState(t, state.options)
 	if restored.monitorWidth != 450 {
 		t.Fatalf("restored.monitorWidth = %v, want 450", restored.monitorWidth)
+	}
+}
+
+func TestMonitorPlaceholderIsCentredWithoutStats(t *testing.T) {
+	state, session := monitorFixture(t)
+	session.stats = nil
+	state.Resize(gfx.Size{Width: 1600, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, state.viewport)
+	panel := state.monitorRect
+	want := gfx.Point{
+		X: panel.X + panel.Width/2,
+		Y: panel.Y + infoBarHeight + (panel.Height-infoBarHeight)/2,
+	}
+	for _, painted := range canvas.Texts() {
+		if painted.Value != state.messages.Monitor.NotConnected {
+			continue
+		}
+		got := gfx.Point{X: painted.Bounds.X + painted.Bounds.Width/2, Y: painted.Bounds.Y + painted.Bounds.Height/2}
+		if math.Abs(float64(got.X-want.X)) > 1 || math.Abs(float64(got.Y-want.Y)) > 1 {
+			t.Fatalf("the placeholder is at %v, want the centre of its panel %v", got, want)
+		}
+		return
+	}
+	t.Fatal("the panel did not paint its placeholder")
+}
+
+func TestMonitorHardwareSystemUsesTheSystemsOwnName(t *testing.T) {
+	for _, tc := range []struct {
+		system sshconn.RemoteSystem
+		want   string
+	}{
+		{sshconn.SystemCentOS, "CentOS"},
+		{sshconn.SystemRedHat, "Red Hat"},
+		{sshconn.SystemOpenSUSE, "openSUSE"},
+		{sshconn.SystemNixOS, "NixOS"},
+		{sshconn.SystemPopOS, "Pop!_OS"},
+		{sshconn.SystemUbuntu, "Ubuntu"},
+		{sshconn.SystemLinux, "Linux"},
+		{sshconn.SystemWindows, "Windows"},
+		{sshconn.SystemDarwin, "macOS"},
+		{sshconn.SystemUnknown, "—"},
+	} {
+		if got := monitorSystemName(tc.system); got != tc.want {
+			t.Errorf("monitorSystemName(%v) = %q, want %q", tc.system, got, tc.want)
+		}
 	}
 }

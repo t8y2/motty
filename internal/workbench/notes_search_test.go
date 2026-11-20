@@ -72,16 +72,16 @@ func TestNotesTagSearchKeepsAncestorsAndOrder(t *testing.T) {
 	var c gfx.Canvas
 	s.Paint(&c, gfx.Size{Width: 1400, Height: 800})
 	var labels []string
-	for _, h := range c.Hits() {
-		if _, ok := h.ID.In(hitNoteRows); ok {
-			labels = append(labels, h.Label)
+	for _, row := range s.notes.view.treeScratch.rows {
+		if !row.folder {
+			labels = append(labels, row.label)
 		}
 	}
 	if len(labels) != 2 || labels[0] != "Pinned" || labels[1] != "First" {
 		t.Fatalf("search order %v", labels)
 	}
 	for _, id := range []string{"parent", "child"} {
-		if _, ok := hitByID(&c, hitNoteFolderRows.At(s.notes.view.folderTokens[id])); !ok {
+		if _, ok := noteTreeRowHit(&c, &s.notes, id); !ok {
 			t.Fatalf("missing ancestor %s", id)
 		}
 	}

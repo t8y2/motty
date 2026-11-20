@@ -3,11 +3,15 @@ package workbench
 import (
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
+	"motty/internal/update"
 )
 
 // The terminal's font size is any whole number of points from the smallest that
@@ -39,6 +43,60 @@ func (state *State) zoomTerminal(delta float32, reset bool) {
 		state.save()
 	}
 	state.status = fmt.Sprintf(state.messages.Tools.StatusFontSizeFmt, int(state.terminalFontSize))
+}
+
+// The preview size is how many megabytes of a file a document window loads at
+// once. It is chosen with a stepper and has no upper bound; only a value too
+// small to open anything is replaced by the default.
+const (
+	minFilePreviewMB     = 1
+	defaultFilePreviewMB = 20
+)
+
+// normalizeFilePreviewMB makes a saved size a usable one: a value below the
+// minimum is the default, so a damaged state file cannot refuse every file.
+func normalizeFilePreviewMB(value int) int {
+	if value < minFilePreviewMB {
+		return defaultFilePreviewMB
+	}
+	return value
+}
+
+// filePreviewBytes converts the setting to the byte bound a window enforces. A
+// value too large for an int is saturated instead of wrapping negative; the
+// stepper cannot produce one, only a damaged state file could.
+func filePreviewBytes(mb int) int {
+	mb = normalizeFilePreviewMB(mb)
+	if mb > int(^uint(0)>>1)>>20 {
+		return int(^uint(0) >> 1)
+	}
+	return mb << 20
+}
+
+// previewLimitMessage says a file is larger than the window's bound.
+func previewLimitMessage(messages i18n.Messages, mb int) string {
+	return fmt.Sprintf(messages.FileWindow.TooLargeFmt, strconv.Itoa(normalizeFilePreviewMB(mb))+" MB")
+}
+
+// filePreviewEdit is the stepper's field editor: the number is typed here while
+// it has the keyboard, and the stored setting follows when the edit commits.
+type filePreviewEdit struct {
+	input   text.Editor
+	field   ui.Field
+	editing bool
+	bound   bool
+}
+
+// previewDigit accepts the characters the field may hold.
+func previewDigit(r rune) bool { return r >= '0' && r <= '9' }
+
+// newFilePreviewInput is the field's editor, holding value with the digits and
+// length the field accepts.
+func newFilePreviewInput(value string) text.Editor {
+	var editor text.Editor
+	editor.Restrict(previewDigit, 7)
+	editor.Insert(value)
+	return editor
 }
 
 func normalizeTerminalScrollback(value int) int {
@@ -286,6 +344,7 @@ func (state *State) openSettings() {
 	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
 		state.releaseIdleSFTP(session)
 	}
+	state.settingsTab = true
 	state.activeSection = sectionSettings
 	state.settingsScroll = 0
 	state.settings.navScroll = 0
@@ -388,10 +447,6 @@ func (state *State) applyLanguage() {
 	state.refreshForwards()
 	state.refreshProxies()
 	state.refreshSnippets()
-	// The host dialog's encoding options carry a localised UTF-8 label, and its
-	// icon options localised labels for the generic icons.
-	state.resetHostEncodingPicker()
-	state.resetHostIconPicker()
 	for index := range state.sessions {
 		state.sessions[index].reconnectText = ""
 		state.describe(&state.sessions[index])
@@ -413,7 +468,7 @@ func (state *State) clickSettings(id gfx.ID) bool {
 	if state.modal != modalNone || state.activeSection != sectionSettings {
 		return false
 	}
-	if state.clickLocalShell(id) || state.clickEditorSelect(id) || state.clickStartupHosts(id) {
+	if state.clickLocalShell(id) || state.clickStartupHosts(id) {
 		return true
 	}
 	for group, hit := range hitToolbarSettingsOpen {
@@ -455,7 +510,7 @@ func (state *State) clickSettings(id gfx.ID) bool {
 		} else {
 			changed = state.setShareConnections(shareConnectionsOff)
 		}
-	case hitSettingsStartupHosts, hitSettingsStartupLocal, hitSettingsStartupDismiss:
+	case hitSettingsStartupHosts:
 		state.clickStartupHosts(id)
 	case hitSettingsSSHSyncToggle, hitSettingsSSHSyncFile, hitSettingsSSHSyncReset, hitSettingsSSHSyncNow:
 		state.clickSSHSync(id)
@@ -508,7 +563,16 @@ var (
 	settingsTabOrientationChoices  = [...]tabOrientation{tabsHorizontal, tabsVertical}
 	settingsCloseChoices           = [...]closeAction{closeToTray, closeQuits}
 	settingsRelaunchChoices        = [...]relaunchAction{relaunchRaise, relaunchNewWindow}
+	settingsUpdateSourceChoices    = [...]update.Source{update.SourceOfficial, update.SourceCNB}
 )
+
+// settingsUpdateSourceLabel names an update source for its choice row.
+func (state *State) settingsUpdateSourceLabel(source update.Source) string {
+	if source == update.SourceCNB {
+		return state.messages.Tools.GeneralUpdateSourceCNB
+	}
+	return state.messages.Tools.GeneralUpdateSourceOfficial
+}
 
 func (state *State) settingsLanguageLabel(language i18n.Language) string {
 	switch language {
@@ -728,18 +792,31 @@ func (state *State) settingsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalNone || state.activeSection != sectionSettings {
 		return gfx.EventResult{}, false
 	}
+	// The preview stepper's field commits on Enter and on leaving the field;
+	// Escape puts the stored number back without changing it.
+	if state.settingsCategory == settingsFiles && state.filePreviewEdit.editing {
+		if event.Target != hitSettingsPreviewValue {
+			state.commitFilePreviewEdit()
+		} else {
+			switch event.Key {
+			case gfx.KeyEnter:
+				state.commitFilePreviewEdit()
+				return gfx.EventResult{Handled: true, Repaint: true}, true
+			case gfx.KeyEscape:
+				state.filePreviewEdit.editing = false
+				return gfx.EventResult{Handled: true, Repaint: true}, true
+			case gfx.KeyTab:
+				state.commitFilePreviewEdit()
+			}
+		}
+	}
 	if event.Target == hitSettingsLocalShell && localShellSettingVisible() && !state.localShellMenu.open && (event.Key == gfx.KeyDown || event.Key == gfx.KeyUp) {
 		state.refreshLocalShells()
 		if len(state.localShellMenu.choices) == 0 {
 			return gfx.EventResult{}, false
 		}
 		state.localShellMenu.open = true
-		return gfx.EventResult{Focus: hitSettingsLocalShellItems.At(max(0, state.localShellSelected())), FocusVisible: true, Handled: true, Repaint: true}, true
-	}
-	if event.Target == hitSettingsEditor && !state.editorMenu.open && (event.Key == gfx.KeyDown || event.Key == gfx.KeyUp) {
-		state.refreshEditors()
-		state.editorMenu.open = true
-		return gfx.EventResult{Focus: hitSettingsEditorItems.At(max(0, state.editorSelected())), FocusVisible: true, Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	return gfx.EventResult{}, false
 }

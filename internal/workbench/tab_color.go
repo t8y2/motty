@@ -5,6 +5,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -175,13 +176,9 @@ func (state *State) clickTabColor(workspace layoutcore.WorkspaceID, id gfx.ID) b
 	return true
 }
 
-func (state *State) paintTabColorChoices(canvas *gfx.Canvas, menu *components.ContextMenu) {
-	menu.AddSeparator()
-	footer := menu.NextItemBounds()
-	footer.Height = tabColorFooterHeight
-	for range tabColorFooterRows {
-		menu.AddItem(components.ContextMenuItem{})
-	}
+// declareTabColorRow declares the swatches of the tab menu's last row in the
+// page, centred across the room the menu gave the row.
+func (state *State) declareTabColorRow(c ui.C, bounds gfx.Rect) {
 	index, ok := state.workspaceTab(state.tabMenu.workspace)
 	if !ok {
 		return
@@ -189,38 +186,14 @@ func (state *State) paintTabColorChoices(canvas *gfx.Canvas, menu *components.Co
 	m := state.messages
 	labels := [...]string{m.ColorNone, m.ColorRed, m.ColorGreen, m.ColorYellow, m.ColorBlue, m.ColorPink, m.ColorTeal}
 	selected := state.tabColor(state.workspaceTabs[index])
-	bounds := menu.Bounds()
-	menu.BeginContent()
-	defer menu.EndContent()
-	// Hand-drawn content must honour the menu's scroll clip too, so a small window
-	// cannot receive clicks on a swatch outside the menu.
-	canvas.Clip(gfx.Rect{X: bounds.X, Y: bounds.Y + contextMenuPadding/2, Width: bounds.Width, Height: bounds.Height - contextMenuPadding})
-	defer canvas.Unclip()
-	// The swatches lay themselves out across the row's own width and stay centred:
-	// the labels set the menu's width, and the swatch row never widens it.
-	room := footer.Width - 2*tabColorPaletteInset
-	size, gap := tabColorSwatchLayout(room)
-	palette := float32(len(tabColors))*size + float32(len(tabColors)-1)*gap
-	left := footer.X + (footer.Width-palette)/2
-	for index, color := range tabColors {
-		swatch := gfx.Rect{X: left + float32(index)*(size+gap), Y: footer.Y + (footer.Height-size)/2, Width: size, Height: size}
-		checked := strings.EqualFold(selected, color) || selected == "" && color == tabColorNone
-		state.paintTabColorSwatch(canvas, hitTabColors.At(index), swatch, labels[index], color, checked)
-	}
-}
-
-// paintTabColorSwatch paints one colour choice with Viva's ColorSwatch. The
-// flush disc keeps the colour filling its hairline border instead of leaving a
-// background-coloured ring around it, which at this size reads as a faded
-// colour. The selected border is the foreground colour at the same weight as
-// any other.
-func (state *State) paintTabColorSwatch(canvas *gfx.Canvas, id gfx.ID, bounds gfx.Rect, label, color string, selected bool) {
-	components.BeginColorSwatch(canvas, state.Theme(), id, bounds, hostAccent(color)).
-		Flush().
-		Label(label).
-		Selected(selected).
-		TabStop(selected).
-		Paint()
+	size, gap := tabColorSwatchLayout(bounds.Width - 2*tabColorPaletteInset)
+	ui.Row(c).FillWidth().Height(bounds.Height).Items(ui.Center).Justify(ui.Center).Gap(gap).Children(func() {
+		for i, color := range tabColors {
+			checked := strings.EqualFold(selected, color) || selected == "" && color == tabColorNone
+			ui.ColorSwatch(c, hostAccent(color), checked, labels[i]).Hit(hitTabColors.At(i), labels[i]).
+				Size(size, size).Shrink(0).Flush().TabStop(checked)
+		}
+	})
 }
 
 // tabMenuColorKey moves focus across the colour row with the arrow keys, as a

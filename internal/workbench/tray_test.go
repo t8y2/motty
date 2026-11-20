@@ -35,11 +35,15 @@ type trayFixture struct {
 func newTrayFixture(t *testing.T) *trayFixture {
 	t.Helper()
 	fixture := &trayFixture{firstView: &fakeTrayWindow{}, secondView: &fakeTrayWindow{}}
-	fixture.first = newTestState(t, testOptions(t))
+	firstOptions := testOptions(t)
+	firstOptions.WindowID = 1
+	fixture.first = newTestState(t, firstOptions)
 	fixture.first.options.Invalidate = func() { fixture.invalidated.Add(1) }
 	openHost(fixture.first)
 	openHostInSplit(t, fixture.first, 2, layoutcore.Horizontal)
-	fixture.second = newTestState(t, testOptions(t))
+	secondOptions := testOptions(t)
+	secondOptions.WindowID = 2
+	fixture.second = newTestState(t, secondOptions)
 	fixture.second.options.Invalidate = func() { fixture.invalidated.Add(1) }
 	fixture.second.Click(hitHostList.At(3))
 	openHost(fixture.second)
@@ -75,6 +79,18 @@ func findItem(items []app.MenuItem, prefix string) *app.MenuItem {
 	return nil
 }
 
+// directItem is the entry of exactly this menu with that title, without
+// searching submenus, so an entry and a same-named entry of a submenu stay
+// apart.
+func directItem(items []app.MenuItem, title string) *app.MenuItem {
+	for index := range items {
+		if items[index].Title == title {
+			return &items[index]
+		}
+	}
+	return nil
+}
+
 func TestTrayMenuListsEverySessionOfEveryWindowGroupingSplitWorkspaces(t *testing.T) {
 	fixture := newTrayFixture(t)
 	menu := fixture.tray.Menu()
@@ -82,7 +98,7 @@ func TestTrayMenuListsEverySessionOfEveryWindowGroupingSplitWorkspaces(t *testin
 	// A split workspace is a submenu of its sessions; a workspace of one session
 	// is a single entry; windows keep the order they were added in. The status
 	// of each session follows its name.
-	if len(lines) != 11 || lines[0] != "Sessions · 3" || lines[1] != "Production (2)" || !strings.HasPrefix(lines[4], "Router · ") {
+	if len(lines) == 0 || lines[0] != "Sessions · 3" || lines[1] != "Production (2)" || !strings.HasPrefix(lines[4], "Router · ") {
 		t.Fatalf("menu = %q", lines)
 	}
 	if !menu[0].Disabled || menu[1].Disabled || len(menu[1].Submenu) != 2 {
@@ -93,7 +109,21 @@ func TestTrayMenuListsEverySessionOfEveryWindowGroupingSplitWorkspaces(t *testin
 			t.Fatalf("submenu line %q", line)
 		}
 	}
-	tail := lines[5:]
+	// The saved hosts follow the sessions under their groups: a group is a
+	// submenu of its hosts, named by the last part of its path.
+	hosts := directItem(menu, "Hosts")
+	if hosts == nil || hosts.OnSelect != nil || len(hosts.Submenu) != 2 {
+		t.Fatalf("hosts entry = %+v", hosts)
+	}
+	network := directItem(hosts.Submenu, "Network")
+	if network == nil || network.OnSelect != nil || len(network.Submenu) != 1 || network.Submenu[0].Title != "Router" || network.Submenu[0].OnSelect == nil {
+		t.Fatalf("network group = %+v", network)
+	}
+	servers := directItem(hosts.Submenu, "Servers")
+	if servers == nil || len(servers.Submenu) != 2 || servers.Submenu[0].Title != "Production" || servers.Submenu[1].Title != "Staging" {
+		t.Fatalf("servers group = %+v", servers)
+	}
+	tail := lines[len(lines)-6:]
 	want := []string{"---", "New local terminal", "Show " + buildinfo.ProductName, "Check for Updates…", "---", "Quit " + buildinfo.ProductName}
 	for index := range want {
 		if tail[index] != want[index] {
@@ -102,6 +132,63 @@ func TestTrayMenuListsEverySessionOfEveryWindowGroupingSplitWorkspaces(t *testin
 	}
 	if fixture.tray.SessionCount() != 3 {
 		t.Fatalf("SessionCount = %d", fixture.tray.SessionCount())
+	}
+}
+
+func TestTrayMenuNamesEveryEntryUniquely(t *testing.T) {
+	fixture := newTrayFixture(t)
+	seen := map[string]string{}
+	var walk func([]app.MenuItem)
+	walk = func(items []app.MenuItem) {
+		for _, item := range items {
+			if item.Separator {
+				continue
+			}
+			if item.ID == "" {
+				t.Fatalf("entry %q has no id", item.Title)
+			}
+			if title, duplicate := seen[item.ID]; duplicate {
+				t.Fatalf("id %q names both %q and %q", item.ID, title, item.Title)
+			}
+			seen[item.ID] = item.Title
+			walk(item.Submenu)
+		}
+	}
+	walk(fixture.tray.Menu())
+	// Both windows number their sessions from 1, so a session's id carries its
+	// window's number to name it alone. The three saved hosts and their two
+	// groups add their own entries.
+	if len(seen) != 15 {
+		t.Fatalf("named %d entries, want 15: %v", len(seen), seen)
+	}
+}
+
+func TestTrayEntryIDsSurviveTitlesAndClosedWindows(t *testing.T) {
+	fixture := newTrayFixture(t)
+	heading := fixture.tray.Menu()[0].ID
+	router := findItem(fixture.tray.Menu(), "Router · ")
+	if router == nil {
+		t.Fatal("no Router entry")
+	}
+	routerID := router.ID
+	// The heading says how many sessions there are; its name must not move with
+	// the number.
+	fixture.first.closeSession(fixture.first.sessions[0].ID)
+	if got := fixture.tray.Menu()[0]; got.ID != heading || !strings.HasPrefix(got.Title, "Sessions · 2") {
+		t.Fatalf("heading = %+v, want id %q counting two", got, heading)
+	}
+	// A session's title carries its name and how it is doing; neither is its
+	// name to a host that kept the menu.
+	fixture.second.sessions[0].Title = "Renamed"
+	renamed := findItem(fixture.tray.Menu(), "Renamed · ")
+	if renamed == nil || renamed.ID != routerID {
+		t.Fatalf("renamed entry = %+v, want id %q", renamed, routerID)
+	}
+	// A window that closes leaves the entries of the others where they were.
+	fixture.tray.Remove(fixture.first)
+	last := findItem(fixture.tray.Menu(), "Renamed · ")
+	if last == nil || last.ID != routerID {
+		t.Fatalf("entry after a window closed = %+v, want id %q", last, routerID)
 	}
 }
 
@@ -122,9 +209,127 @@ func TestTrayMenuOfNoSessionsSaysSoAndOfNoWindowsIsEmpty(t *testing.T) {
 		t.Fatalf("a tray with no windows has a menu: %+v", menu)
 	}
 	tray.Add(state, &fakeTrayWindow{})
-	lines := menuTitles(tray.Menu(), "")
-	if lines[0] != "No open sessions" || len(lines) != 7 {
+	menu := tray.Menu()
+	lines := menuTitles(menu, "")
+	if lines[0] != "No open sessions" {
 		t.Fatalf("menu = %q", lines)
+	}
+	// The saved hosts are still there to open, under their groups.
+	if directItem(menu, "Hosts") == nil {
+		t.Fatalf("menu has no saved hosts: %q", lines)
+	}
+	if directItem(menu, "New local terminal") == nil || directItem(menu, "Quit "+buildinfo.ProductName) == nil {
+		t.Fatalf("menu = %q", lines)
+	}
+}
+
+// A window whose catalog holds no host or workspace has nothing to offer under
+// those names, so the menu keeps exactly the entries it always had.
+func TestTrayMenuWithoutSavedHostsOrWorkspacesHasNoConnectionSections(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.hosts, state.hostGroups, state.templates = nil, nil, nil
+	tray := NewTray(nil)
+	tray.Add(state, &fakeTrayWindow{})
+	lines := menuTitles(tray.Menu(), "")
+	want := []string{"No open sessions", "---", "New local terminal", "Show " + buildinfo.ProductName, "Check for Updates…", "---", "Quit " + buildinfo.ProductName}
+	if len(lines) != len(want) {
+		t.Fatalf("menu = %q", lines)
+	}
+	for index := range want {
+		if lines[index] != want[index] {
+			t.Fatalf("menu = %q, want %q", lines, want)
+		}
+	}
+}
+
+// Choosing a saved host opens it in a tab of the window the user can see,
+// whatever window the tray listed the hosts for.
+func TestChoosingASavedHostOpensItInTheVisibleWindow(t *testing.T) {
+	fixture := newTrayFixture(t)
+	fixture.firstView.hidden = true
+	hosts := directItem(fixture.tray.Menu(), "Hosts")
+	network := directItem(hosts.Submenu, "Network")
+	router := directItem(network.Submenu, "Router")
+	if router == nil || router.OnSelect == nil {
+		t.Fatalf("router entry = %+v", router)
+	}
+	before := len(fixture.second.sessions)
+	router.OnSelect()
+	if len(fixture.second.sessions) != before+1 {
+		t.Fatalf("second window sessions = %d, want %d", len(fixture.second.sessions), before+1)
+	}
+	if fixture.secondView.shows != 1 || fixture.firstView.shows != 0 {
+		t.Fatalf("shows: first %d, second %d", fixture.firstView.shows, fixture.secondView.shows)
+	}
+	if fixture.invalidated.Load() == 0 {
+		t.Fatal("the window was not asked to repaint")
+	}
+	var routerHost Host
+	for _, host := range fixture.second.hosts {
+		if host.Label == "Router" {
+			routerHost = host
+		}
+	}
+	if opened := fixture.second.sessions[before]; routerHost.ID == 0 || opened.HostID != routerHost.ID {
+		t.Fatalf("opened host %d, want Router %d", opened.HostID, routerHost.ID)
+	}
+}
+
+// Choosing a saved workspace opens its terminals in the visible window.
+func TestChoosingASavedWorkspaceOpensItInTheVisibleWindow(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	template := mustWorkspaceTemplate(t, "Cluster", workspaceCatalogIDs(state, 0, 1), 2)
+	state.templates = []WorkspaceTemplate{template}
+	view := &fakeTrayWindow{}
+	tray := NewTray(nil)
+	tray.Add(state, view)
+	item := directItem(directItem(tray.Menu(), "Workspaces").Submenu, "Cluster")
+	if item == nil || item.OnSelect == nil {
+		t.Fatalf("workspace entry = %+v", item)
+	}
+	item.OnSelect()
+	if len(state.sessions) != len(template.HostIDs) {
+		t.Fatalf("sessions = %d, want %d", len(state.sessions), len(template.HostIDs))
+	}
+	if len(state.deck.Workspaces(nil)) != 1 {
+		t.Fatalf("workspaces = %d, want one", len(state.deck.Workspaces(nil)))
+	}
+	if view.shows != 1 {
+		t.Fatalf("shows = %d", view.shows)
+	}
+}
+
+// A host entry is named by the host's catalog id, so renaming the host leaves
+// the entry the same entry to a menu that outlives the title.
+func TestTrayHostEntryKeepsItsIDWhenTheLabelChanges(t *testing.T) {
+	fixture := newTrayFixture(t)
+	network := directItem(directItem(fixture.tray.Menu(), "Hosts").Submenu, "Network")
+	id := network.Submenu[0].ID
+	fixture.first.hosts[2].Label = "Gateway"
+	renamed := directItem(directItem(directItem(fixture.tray.Menu(), "Hosts").Submenu, "Network").Submenu, "Gateway")
+	if renamed == nil || renamed.ID != id {
+		t.Fatalf("renamed entry = %+v, want id %q", renamed, id)
+	}
+}
+
+// The saved hosts follow the group tree the hosts page shows: nested groups are
+// nested submenus, and the hosts of the unnamed group come first.
+func TestTrayHostsFollowTheirGroupTree(t *testing.T) {
+	fixture := newTrayFixture(t)
+	fixture.first.hosts[0].Group, fixture.first.hosts[1].Group = "Servers/Web", "Servers/Web"
+	fixture.first.hosts[2].Group = ""
+	fixture.first.refreshHostGroups()
+	hosts := directItem(fixture.tray.Menu(), "Hosts")
+	if hosts == nil || len(hosts.Submenu) != 2 || hosts.Submenu[0].Title != "Router" {
+		t.Fatalf("hosts menu = %+v", hosts)
+	}
+	servers := directItem(hosts.Submenu, "Servers")
+	if servers == nil || len(servers.Submenu) != 1 || servers.Submenu[0].Title != "Web" {
+		t.Fatalf("servers menu = %+v", servers)
+	}
+	web := servers.Submenu[0]
+	if len(web.Submenu) != 2 || web.Submenu[0].Title != "Production" || web.Submenu[1].Title != "Staging" {
+		t.Fatalf("web menu = %+v", web)
 	}
 }
 

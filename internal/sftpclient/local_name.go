@@ -9,10 +9,14 @@ import (
 	"unicode/utf8"
 )
 
-// localNameLimit is the byte budget for one local name. NTFS allows 255 UTF-16
-// units, but staying well below it keeps room for the digest suffix and for
-// tools that append their own suffix.
-const localNameLimit = 120
+// localNameLimit is the byte budget for one local name. Most file systems
+// (such as Linux ext4, macOS APFS, and Windows NTFS) allow up to 255 bytes or
+// UTF-16 units per path component. Staying at 255 bytes ensures long filenames
+// are preserved while avoiding filesystem errors. A mount with a lower per-
+// component limit (an eCryptfs home, some FUSE or SMB mounts) can still reject
+// a name near this budget; the caller reports the write error rather than
+// guessing the mount's limit.
+const localNameLimit = 255
 
 // SafeLocalName turns a remote base name into a name the local file system
 // takes. Windows rejects `<>:"/\|?*` and control characters, trims trailing
@@ -51,7 +55,7 @@ func safeLocalName(name string) string {
 	// application: a_b_c~1a2b3c.txt, not a_b_c.txt~1a2b3c.
 	extension := path.Ext(clean)
 	base := strings.TrimSuffix(clean, extension)
-	if base == "" {
+	if base == "" || len(extension) >= localNameLimit {
 		base, extension = clean, ""
 	}
 	if truncated := truncateLocalName(base, localNameLimit-len(extension)); truncated != base {
@@ -62,6 +66,9 @@ func safeLocalName(name string) string {
 	}
 	digest := sha256.Sum256([]byte(name))
 	suffix := "~" + hex.EncodeToString(digest[:3])
+	if len(extension) >= localNameLimit-len(suffix) {
+		base, extension = clean, ""
+	}
 	base = truncateLocalName(base, localNameLimit-len(suffix)-len(extension))
 	return base + suffix + extension
 }

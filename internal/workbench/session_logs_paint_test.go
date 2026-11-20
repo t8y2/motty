@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"testing"
@@ -492,16 +493,17 @@ func TestSessionLogsSearchAndStaleResult(t *testing.T) {
 	state.refreshSessionLogs()
 	sessionLogsWait(t, state)
 
-	// Status and time-range filters reach the query.
+	// Status and time-range filters reach the query. The open filter is a page
+	// menu: its rows are chosen by their labels, the identities the application
+	// keeps for them.
 	state.Click(hitSessionLogsStatus)
 	if view.filterMenu != sessionLogFilterStatusMenu {
 		t.Fatalf("status filter menu = %d", view.filterMenu)
 	}
-	canvas := paintedCanvas(t, state)
-	if hit, ok := sessionLogHit(canvas, hitSessionLogsFilterList.At(5)); !ok || hit.Label != state.messages.SessionLogs.StatusFailed {
-		t.Fatalf("status filter option = %+v, ok=%v", hit, ok)
+	if !canvasHasMenuRow(paintedCanvas(t, state), state.messages.SessionLogs.StatusFailed) {
+		t.Fatalf("the status filter does not offer %q", state.messages.SessionLogs.StatusFailed)
 	}
-	state.Click(hitSessionLogsFilterList.At(5))
+	clickPageMenuRow(t, state, state.messages.SessionLogs.StatusFailed)
 	sessionLogsWait(t, state)
 	if view.query.Status == nil || *view.query.Status != sessionlog.StatusFailed {
 		t.Fatalf("status query = %v", view.query.Status)
@@ -512,14 +514,13 @@ func TestSessionLogsSearchAndStaleResult(t *testing.T) {
 
 	// A time range narrows by the record's start, computed from the wall clock.
 	state.Click(hitSessionLogsStatus)
-	state.Click(hitSessionLogsFilterList.At(0))
+	clickPageMenuRow(t, state, state.messages.SessionLogs.StatusAll)
 	sessionLogsWait(t, state)
 	state.Click(hitSessionLogsTime)
-	canvas = paintedCanvas(t, state)
-	if hit, ok := sessionLogHit(canvas, hitSessionLogsFilterList.At(1)); !ok || hit.Label != state.messages.SessionLogs.TimeToday {
-		t.Fatalf("time filter option = %+v, ok=%v", hit, ok)
+	if !canvasHasMenuRow(paintedCanvas(t, state), state.messages.SessionLogs.TimeToday) {
+		t.Fatalf("the time filter does not offer %q", state.messages.SessionLogs.TimeToday)
 	}
-	state.Click(hitSessionLogsFilterList.At(1))
+	clickPageMenuRow(t, state, state.messages.SessionLogs.TimeToday)
 	sessionLogsWait(t, state)
 	if got := sessionLogRowIDs(state); len(got) != 3 {
 		t.Fatalf("today's rows = %v, want the three started after local midnight", got)
@@ -660,19 +661,38 @@ func TestSessionLogsKeyboardAndDeletionFocus(t *testing.T) {
 	view := &state.sessionLogs.view
 
 	// Enter on a row opens the detail panel; Escape closes it and returns the
-	// keyboard to the row.
-	if result := state.Key(gfx.KeyEvent{Target: hitSessionLogsRowList.At(0), Key: gfx.KeyEnter}); !result.Handled {
+	// keyboard to the row. The rows are the page List's: its keys are routed
+	// before the application's handler, as the window's config does.
+	paintedCanvas(t, state)
+	var target gfx.ID
+	for index := range view.items {
+		if view.items[index].row >= 0 {
+			target = view.rowsList.RowID(index)
+			break
+		}
+	}
+	if target.IsZero() {
+		t.Fatal("the record list declared no record row")
+	}
+	onKey := state.WindowConfig(app.Config{OnKey: state.Key}).OnKey
+	if result := onKey(gfx.KeyEvent{Target: target, Key: gfx.KeyEnter}); !result.Handled {
 		t.Fatal("Enter on a row is not handled")
 	}
+	if index, ok := view.rowsList.Submitted(); !ok || index < 0 {
+		t.Fatalf("the list did not take Enter: %v %v", index, ok)
+	}
+	// The list delivers its submission to the paint that follows the key; the
+	// record is opened after that paint, as the runtime runs what it deferred.
+	paintedCanvas(t, state).RunAfterPaint()
 	if view.selected != "log-00" || !view.detailOpen {
 		t.Fatalf("Enter selected %q, detail open=%v", view.selected, view.detailOpen)
 	}
 	sessionLogsWait(t, state)
-	result := state.Key(gfx.KeyEvent{Target: hitSessionLogsDetailClose, Key: gfx.KeyEscape})
+	result := onKey(gfx.KeyEvent{Target: hitSessionLogsDetailClose, Key: gfx.KeyEscape})
 	if !result.Handled || view.detailOpen {
 		t.Fatalf("Escape did not close the detail panel: handled=%v open=%v", result.Handled, view.detailOpen)
 	}
-	if result.Focus != hitSessionLogsRowList.At(0) || !result.FocusVisible {
+	if item := state.sessionLogSelectedItemIndex(); item < 0 || result.Focus != view.rowsList.RowID(item) || !result.FocusVisible {
 		t.Fatalf("Escape returned focus to %v", result.Focus)
 	}
 
@@ -720,7 +740,17 @@ func TestSessionLogsKeyboardAndDeletionFocus(t *testing.T) {
 		t.Fatalf("selection after the delete = %q", view.selected)
 	}
 	canvas := paintedCanvas(t, state)
-	if got := canvas.FocusRequest(); got.Scope() != hitSessionLogsRowList {
+	item := state.sessionLogSelectedItemIndex()
+	if item < 0 {
+		for index := range view.items {
+			if view.items[index].row >= 0 {
+				item = index
+				break
+			}
+		}
+	}
+	rowID := view.rowsList.RowID(item)
+	if got := canvas.FocusRequest(); rowID.IsZero() || got.Scope() != rowID.Scope() {
 		t.Fatalf("focus after the delete = %v, want a row of the page", got)
 	}
 
@@ -872,6 +902,21 @@ func sessionLogsAwaitStoredFavorite(t testing.TB, state *State, id string) {
 	}
 }
 
+// The column headings are labels, as the old table painted them: the journal's
+// order is chosen from the sort filter, not by pressing a heading. A heading
+// that became a button would also put an extra stop in the Tab order.
+func TestSessionLogsHeadersAreLabels(t *testing.T) {
+	state := sessionLogsState(t, true)
+	m := state.messages.SessionLogs
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	for _, label := range []string{m.ColumnWhen, m.ColumnDuration} {
+		if _, found := hitByLabelRoleLast(&canvas, label, gfx.RoleButton); found {
+			t.Errorf("heading %q is a button", label)
+		}
+	}
+}
+
 // The page at both window sizes in both languages and themes: the same texts
 // the state says, laid out inside the card.
 func BenchmarkPaintSessionLogs(b *testing.B) {
@@ -905,5 +950,70 @@ func TestSessionLogsLanguageFollowsTheCatalog(t *testing.T) {
 	}
 	if !contains(labels, zh.StatusInterrupted) || !contains(labels, zh.ProtocolSerial) {
 		t.Fatalf("the row values are not localized: %v", labels)
+	}
+}
+
+// A short detail panel keeps its actions at the bottom and gives up its fields
+// and events instead: the old panel dropped the events before the buttons.
+func TestShortSessionLogDetailKeepsItsActions(t *testing.T) {
+	state := sessionLogsState(t, true)
+	state.selectSessionLogRecord("log-00")
+	sessionLogsWait(t, state)
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 900, Height: 420})
+	m := state.messages.SessionLogs
+	for _, label := range []string{m.CopyMetadata, m.LocateHost, m.Delete} {
+		if _, found := hitByLabelRoleLast(&canvas, label, gfx.RoleButton); !found {
+			t.Errorf("short panel lost its %q action", label)
+		}
+	}
+	if hasTextValue(&canvas, m.Events) {
+		t.Fatal("short panel painted events with no room for them")
+	}
+	canvas.Reset()
+	state.Paint(&canvas, gfx.Size{Width: 900, Height: 600})
+	if !hasTextValue(&canvas, m.Events) {
+		t.Fatal("a 600px window has room for the events and did not paint them")
+	}
+	for _, label := range []string{m.CopyMetadata, m.LocateHost, m.Delete} {
+		if _, found := hitByLabelRoleLast(&canvas, label, gfx.RoleButton); !found {
+			t.Errorf("600px panel lost its %q action", label)
+		}
+	}
+}
+
+// A record row's cells are centered in the row, as the component table drew
+// them: the page List gives each cell the row's height, and its line must fill
+// that height rather than sit at the row's top edge.
+func TestSessionLogRowsCenterTheirCells(t *testing.T) {
+	state := sessionLogsState(t, true)
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	view := &state.sessionLogs.view
+	checked := 0
+	for index, item := range view.items {
+		if item.row < 0 || item.row >= len(view.page) {
+			continue
+		}
+		hit, ok := hitByID(&canvas, view.rowsList.RowID(index))
+		if !ok {
+			continue // scrolled out of sight
+		}
+		target := view.page[item.row].cells[0]
+		for _, text := range canvas.Texts() {
+			if text.Value != target {
+				continue
+			}
+			center := text.Bounds.Y + text.Bounds.Height/2
+			rowCenter := hit.Bounds.Y + hit.Bounds.Height/2
+			if math.Abs(float64(center-rowCenter)) > .5 {
+				t.Fatalf("row %d's cell is centered at %v in a row centered at %v", index, center, rowCenter)
+			}
+			checked++
+			break
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no record row was painted; the test checks nothing")
 	}
 }

@@ -163,9 +163,9 @@ func decodeTextWithLimit(data []byte, maxTextBytes int) (string, error) {
 		}
 		return "", ErrUnsupported
 	}
-	decoded, err := filecontent.Decode(data, "Auto")
+	decoded, err := filecontent.Decode(data, "Auto", maxTextBytes)
 	if errors.Is(err, filecontent.ErrChooseEncoding) {
-		decoded, err = filecontent.Decode(data, "GB18030")
+		decoded, err = filecontent.Decode(data, "GB18030", maxTextBytes)
 	}
 	if err != nil {
 		return "", ErrUnsupported

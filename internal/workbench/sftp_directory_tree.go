@@ -11,8 +11,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
 )
 
@@ -36,6 +36,8 @@ const (
 // user expands a node, and the window owns the cache for as long as it stays
 // open.
 type sftpTreeNode struct {
+	// key names the node in the page Tree, stable while rows open above it.
+	key       int
 	path      string
 	name      string
 	children  []*sftpTreeNode
@@ -53,18 +55,24 @@ type sftpTreeVisibleRow struct {
 }
 
 type sftpDirectoryTree struct {
-	enabled        bool
-	overridden     bool
-	rootPath       string
-	roots          []*sftpTreeNode
-	nodes          map[string]*sftpTreeNode
-	requests       map[uint64]string
-	selectedPath   string
-	visible        []sftpTreeVisibleRow
-	navigation     []components.TreeNavigationItem
-	bounds         gfx.Rect
-	offset         float32
-	bar            components.ScrollAreaGeometry
+	enabled      bool
+	overridden   bool
+	rootPath     string
+	roots        []*sftpTreeNode
+	nodes        map[string]*sftpTreeNode
+	requests     map[uint64]string
+	selectedPath string
+	visible      []sftpTreeVisibleRow
+	// tree is the page Tree over visible: it owns the rows, their choice, the
+	// scroll offset and the keys. c, label and content are the paint's context
+	// and the functions it asked for, made once.
+	tree           ui.TreeState
+	c              ui.C
+	label          func(int) string
+	content        func(int)
+	bounds         gfx.Rect // the pane width, for how deep a row may indent
+	contentWidth   float32  // the room a row's name is indented against
+	nextKey        int
 	requestID      uint64
 	generation     uint64
 	revealSelected bool
@@ -125,10 +133,9 @@ func resetDirectoryTree(tree *sftpDirectoryTree) {
 	tree.requests = nil
 	tree.selectedPath = ""
 	tree.visible = nil
-	tree.navigation = nil
+	tree.tree = ui.TreeState{}
+	tree.label, tree.content = nil, nil
 	tree.bounds = gfx.Rect{}
-	tree.offset = 0
-	tree.bar = components.ScrollAreaGeometry{}
 	tree.revealSelected = false
 }
 
@@ -301,10 +308,11 @@ func (w *sftpWindow) syncDirectoryTreeToPath(local bool, location string) {
 		tree.generation++
 		tree.rootPath = rootPath
 		root := &sftpTreeNode{path: rootPath, name: directoryTreeRootLabel(rootPath)}
+		tree.nextKey++
+		root.key = tree.nextKey
 		tree.roots = []*sftpTreeNode{root}
 		tree.nodes = map[string]*sftpTreeNode{directoryTreePathKey(local, rootPath): root}
 		tree.requests = make(map[uint64]string)
-		tree.offset = 0
 	}
 	tree.selectedPath = location
 	tree.revealSelected = true
@@ -603,6 +611,10 @@ func (w *sftpWindow) flattenDirectoryTree(side int) []sftpTreeVisibleRow {
 		if node == nil || depth > maxDirectoryTreeDepth {
 			return
 		}
+		if node.key == 0 {
+			tree.nextKey++
+			node.key = tree.nextKey
+		}
 		tree.visible = append(tree.visible, sftpTreeVisibleRow{node: node, depth: depth})
 		if !node.expanded {
 			return
@@ -617,252 +629,200 @@ func (w *sftpWindow) flattenDirectoryTree(side int) []sftpTreeVisibleRow {
 	return tree.visible
 }
 
-func (w *sftpWindow) paintDirectoryTree(canvas *gfx.Canvas, bounds gfx.Rect, local bool) {
-	side := sideIndex(local)
+// declareDirectoryTreePane declares one side's directory tree in the pane: the
+// frame the window always drew around it, and inside it the page Tree. The page
+// owns the rows, their scroll offset, their choice and their keys; the window
+// reads what it delivered after the declaration and opens, closes or navigates.
+func (w *sftpWindow) declareDirectoryTreePane(c ui.C, side int, width float32) ui.Box {
 	tree := &w.directoryTree[side]
-	tree.bounds = bounds
-	if !tree.enabled || bounds.Width <= 0 || bounds.Height <= 0 {
+	if !tree.enabled {
 		tree.visible = tree.visible[:0]
-		return
+		return ui.Box{}
 	}
-	theme, m := w.owner.Theme(), w.owner.messages.SFTPWindow
-	canvas.RoundedBorder(bounds, 6, 1, theme.Border.Mix(theme.MutedForeground, .35), theme.Background)
-	inner := bounds.Inset(gfx.All(2))
+	theme := w.owner.Theme()
+	tree.bounds = gfx.Rect{Width: width}
 	rows := w.flattenDirectoryTree(side)
-	contentHeight := max(float32(len(rows))*sftpDirectoryTreeRowHeight, inner.Height)
+	w.initDirectoryTreeState(side)
+	// Indent by each row's display depth against the room the tree actually
+	// has, as the painted tree did; the row keeps its real depth for keys and
+	// navigation.
+	tree.tree.Indent = sftpDirectoryTreeIndent
+	tree.contentWidth = max(width-14, 0)
 	if tree.revealSelected {
 		for index, row := range rows {
-			if sameDirectoryTreePath(local, row.node.path, tree.selectedPath) {
-				top := float32(index) * sftpDirectoryTreeRowHeight
-				bottom := top + sftpDirectoryTreeRowHeight
-				if top < tree.offset {
-					tree.offset = top
-				} else if bottom > tree.offset+inner.Height {
-					tree.offset = bottom - inner.Height
-				}
+			if sameDirectoryTreePath(side == 0, row.node.path, tree.selectedPath) {
+				tree.tree.ScrollIntoView(index)
 				break
 			}
 		}
-		tree.offset = max(0, min(tree.offset, max(0, contentHeight-inner.Height)))
 		tree.revealSelected = false
 	}
-	area := components.BeginScrollArea(canvas, theme, inner, gfx.Size{Width: inner.Width, Height: contentHeight}).
-		Offset(0, tree.offset).
-		Viewport(sftpWindowTreeViewport[side], m.DirectoryTree).
-		VerticalScrollbar(sftpWindowTreeBar[side], m.DirectoryTree, "")
-	geometry := area.BeginContent()
-	tree.bar = geometry
-	tree.offset = geometry.OffsetY
-	if len(rows) == 0 {
-		canvas.LabelCenter(m.DirectoryTree, inner, gfx.TextStyle{Size: theme.Metrics.FontSizeS, Color: theme.MutedForeground})
-		area.EndContent()
+	frame := ui.Column(c).Width(width).Grow(1).Pad(2).Background(theme.Background).Radius(6).
+		Border(1, theme.Border.Mix(theme.MutedForeground, .35))
+	frame.Children(func() {
+		if len(rows) == 0 {
+			ui.Column(c).Grow(1).Items(ui.Center).Justify(ui.Center).Children(func() {
+				ui.Text(c, w.owner.messages.SFTPWindow.DirectoryTree).
+					FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground)
+			})
+			return
+		}
+		tree.c = c
+		ui.Tree(c, &tree.tree, len(rows), tree.label, tree.content).Grow(1).AlwaysScrollbars().ScrollbarSize(10).
+			ScrollbarIDs(sftpWindowTreeBar[side], gfx.ID{}).ScrollbarLabels(w.owner.messages.SFTPWindow.DirectoryTree, "")
+		w.directoryTreeChanges(side, rows)
+		tree.c = nil
+	})
+	return frame
+}
+
+// initDirectoryTreeState makes the functions the Tree asks about each row once,
+// so a warm paint allocates nothing.
+func (w *sftpWindow) initDirectoryTreeState(side int) {
+	tree := &w.directoryTree[side]
+	if tree.content != nil {
 		return
 	}
-	first := max(0, int(tree.offset/sftpDirectoryTreeRowHeight))
-	last := min(len(rows), first+int(inner.Height/sftpDirectoryTreeRowHeight)+2)
-	treeBounds := gfx.Rect{
-		X:      inner.X,
-		Y:      inner.Y + float32(first)*sftpDirectoryTreeRowHeight - tree.offset,
-		Width:  max(inner.Width-10, 0),
-		Height: float32(last-first) * sftpDirectoryTreeRowHeight,
+	tree.tree.RowHeight = sftpDirectoryTreeRowHeight
+	tree.tree.Indent = sftpDirectoryTreeIndent
+	tree.tree.DisplayDepth = func(depth int) int {
+		return int(directoryTreeDisplayDepth(uint8(min(depth, 255)), tree.contentWidth))
 	}
-	canvas.Clip(inner)
-	component := components.BeginTree(canvas, theme, treeBounds).RowHeight(sftpDirectoryTreeRowHeight).Indent(sftpDirectoryTreeIndent)
-	for index := first; index < last; index++ {
-		row := rows[index]
+	tree.tree.Key = func(index int) int {
+		visible := w.directoryTree[side].visible
+		if index < 0 || index >= len(visible) {
+			return 0
+		}
+		return visible[index].node.key
+	}
+	tree.tree.Node = func(index int) ui.TreeNode {
+		tree := &w.directoryTree[side]
+		if index < 0 || index >= len(tree.visible) {
+			return ui.TreeNode{}
+		}
+		row := tree.visible[index]
 		node := row.node
 		branch := !node.loaded || node.loading || node.err != "" || len(node.children) > 0
-		accessibleLabel := node.name
-		if node.err != "" {
-			accessibleLabel = fmt.Sprintf(m.DirectoryTreeLoadFailedFmt, node.name, node.err)
-		} else if node.truncated {
-			accessibleLabel = node.name + " · " + m.DirectoryTreeTruncated
+		// Depth is the folder's own level: the tree reads it for keyboard
+		// movement between a parent and its children. DisplayDepth compresses
+		// only the indent a deep path draws with.
+		return ui.TreeNode{
+			Depth: int(row.depth), Branch: branch,
+			Expanded: node.expanded, Selected: sameDirectoryTreePath(side == 0, node.path, tree.selectedPath),
 		}
-		painted := component.Item(components.TreeItem{
-			ID:           sftpWindowTreeRows[side].At(index),
-			DisclosureID: sftpWindowTreeDisclosures[side].At(index),
-			Label:        accessibleLabel,
-			Depth:        directoryTreeDisplayDepth(row.depth, treeBounds.Width),
-			Branch:       branch,
-			Expanded:     node.expanded,
-			Selected:     sameDirectoryTreePath(local, node.path, tree.selectedPath),
-		})
-		content := directoryTreeContentBounds(painted.Content, branch)
-		icon := uint8(iconFolderOpen)
-		iconBounds := gfx.Rect{X: content.X + 2, Y: content.Y + 6, Width: 16, Height: 16}
-		canvas.DrawIcon(lucideIcons[icon], iconBounds, theme.MutedForeground)
-		indicator, indicatorColor := "", theme.MutedForeground
+	}
+	tree.label = func(index int) string {
+		tree := &w.directoryTree[side]
+		if index < 0 || index >= len(tree.visible) {
+			return ""
+		}
+		node := tree.visible[index].node
 		switch {
-		case node.loading:
-			indicator = "…"
 		case node.err != "":
-			indicator, indicatorColor = "!", w.owner.pal.danger
+			return fmt.Sprintf(w.owner.messages.SFTPWindow.DirectoryTreeLoadFailedFmt, node.name, node.err)
 		case node.truncated:
-			indicator, indicatorColor = "…", w.owner.pal.warning
+			return node.name + " · " + w.owner.messages.SFTPWindow.DirectoryTreeTruncated
 		}
-		reserved := float32(26)
-		if indicator != "" {
-			reserved = 40
-		}
-		labelWidth := max(0, content.Width-reserved)
-		label := canvas.FitLine(node.name, theme.Metrics.FontSizeS, gfx.WeightRegular, labelWidth)
-		color := theme.Foreground
-		if node.err != "" {
-			color = w.owner.pal.danger
-		}
-		canvas.Label(label, gfx.Rect{X: iconBounds.X + 20, Y: content.Y, Width: labelWidth, Height: content.Height}, gfx.TextStyle{
-			Size: theme.Metrics.FontSizeS, Weight: gfx.WeightRegular, Color: color,
-		})
-		if indicator != "" {
-			canvas.Label(indicator, gfx.Rect{X: content.X + content.Width - 16, Y: content.Y, Width: 12, Height: content.Height}, gfx.TextStyle{
-				Size: theme.Metrics.FontSizeS, Weight: gfx.WeightMedium, Color: indicatorColor,
-			})
-		}
+		return node.name
 	}
-	canvas.Unclip()
-	area.EndContent()
+	tree.content = func(index int) {
+		tree := &w.directoryTree[side]
+		if index < 0 || index >= len(tree.visible) || tree.c == nil {
+			return
+		}
+		w.declareDirectoryTreeRow(tree.c, side, index)
+	}
 }
 
-func (w *sftpWindow) directoryTreeTarget(id gfx.ID) (local bool, index int, disclosure bool, ok bool) {
-	for side := range 2 {
-		if index, ok := id.In(sftpWindowTreeDisclosures[side]); ok {
-			return side == 0, index, true, true
-		}
-		if index, ok := id.In(sftpWindowTreeRows[side]); ok {
-			return side == 0, index, false, true
-		}
+// declareDirectoryTreeRow declares what one visible row shows after its chevron:
+// a folder, its name, and what a background read is doing.
+func (w *sftpWindow) declareDirectoryTreeRow(c ui.C, side, index int) {
+	tree := &w.directoryTree[side]
+	row := tree.visible[index]
+	node := row.node
+	theme := w.owner.Theme()
+	branch := !node.loaded || node.loading || node.err != "" || len(node.children) > 0
+	if !branch {
+		// A loaded folder with no children has no chevron; keep its icon where a
+		// branch's is.
+		ui.Slot(c).Width(directoryTreeDisclosureWidth).Shrink(0)
 	}
-	return false, 0, false, false
+	ui.Icon(c, lucideIcons[iconFolderOpen]).Size(16, 16).Color(theme.MutedForeground).Shrink(0)
+	color := theme.Foreground
+	if node.err != "" {
+		color = w.owner.pal.danger
+	}
+	ui.Text(c, node.name).FontSize(theme.Metrics.FontSizeS).Color(color).Ellipsis().Grow(1)
+	indicator, indicatorColor := "", theme.MutedForeground
+	switch {
+	case node.loading:
+		indicator = "…"
+	case node.err != "":
+		indicator, indicatorColor = "!", w.owner.pal.danger
+	case node.truncated:
+		indicator, indicatorColor = "…", w.owner.pal.warning
+	}
+	if indicator != "" {
+		ui.Text(c, indicator).FontSize(theme.Metrics.FontSizeS).Weight(gfx.WeightMedium).Color(indicatorColor).Shrink(0)
+	}
 }
 
-func (w *sftpWindow) clickDirectoryTree(id gfx.ID) bool {
-	local, index, disclosure, ok := w.directoryTreeTarget(id)
-	if !ok {
-		return false
+// directoryTreeChanges applies what the page Tree delivered: a chevron opens or
+// closes a branch, choosing a row navigates there, and the focused row is the
+// selected one.
+func (w *sftpWindow) directoryTreeChanges(side int, rows []sftpTreeVisibleRow) {
+	tree := &w.directoryTree[side]
+	if index, ok := tree.tree.Toggled(); ok && index >= 0 && index < len(rows) {
+		w.toggleDirectoryTreeRow(side, index)
 	}
-	side := sideIndex(local)
+	if index, ok := tree.tree.Chosen(); ok && index >= 0 && index < len(rows) {
+		w.chooseDirectoryTreeRow(side, index)
+	}
+	if focused := tree.c.Canvas().Focused(); !focused.IsZero() {
+		for index := range rows {
+			if tree.tree.RowID(index) == focused {
+				tree.selectedPath = rows[index].node.path
+				break
+			}
+		}
+	}
+}
+
+// toggleDirectoryTreeRow opens or closes the branch at a visible row, reading
+// its children the first time it opens.
+func (w *sftpWindow) toggleDirectoryTreeRow(side, index int) {
 	tree := &w.directoryTree[side]
 	if index < 0 || index >= len(tree.visible) {
-		return true
+		return
 	}
 	node := tree.visible[index].node
 	tree.selectedPath = node.path
 	tree.revealSelected = true
-	w.activeLocal, w.view.local = local, local
-	if disclosure {
-		node.expanded = !node.expanded
-		if node.expanded {
-			if node.err != "" {
-				node.loaded, node.err = false, ""
-			}
-			if !node.loaded {
-				w.loadDirectoryTreeNode(side, node)
-			}
+	w.activeLocal, w.view.local = side == 0, side == 0
+	node.expanded = !node.expanded
+	if node.expanded {
+		if node.err != "" {
+			node.loaded, node.err = false, ""
 		}
-		w.invalidate()
-		return true
-	}
-	if !sameDirectoryTreePath(local, w.folder(local).path, node.path) {
-		w.navigate(local, node.path)
+		if !node.loaded {
+			w.loadDirectoryTreeNode(side, node)
+		}
 	}
 	w.invalidate()
-	return true
 }
 
-func (w *sftpWindow) directoryTreeKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
-	local, index, _, ok := w.directoryTreeTarget(event.Target)
-	if !ok {
-		return gfx.EventResult{}, false
-	}
-	side := sideIndex(local)
+// chooseDirectoryTreeRow navigates to the folder at a visible row.
+func (w *sftpWindow) chooseDirectoryTreeRow(side, index int) {
 	tree := &w.directoryTree[side]
-	if len(tree.visible) == 0 {
-		return gfx.EventResult{Handled: true}, true
+	if index < 0 || index >= len(tree.visible) {
+		return
 	}
-	index = max(0, min(index, len(tree.visible)-1))
 	node := tree.visible[index].node
-	result := gfx.EventResult{Handled: true, Repaint: true}
-	switch event.Key {
-	case gfx.KeyEnter, gfx.KeySpace:
-		if !event.Repeat {
-			w.clickDirectoryTree(event.Target)
-		}
-	case gfx.KeyRight, gfx.KeyLeft, gfx.KeyUp, gfx.KeyDown, gfx.KeyHome, gfx.KeyEnd, gfx.KeyPageUp, gfx.KeyPageDown:
-		tree.navigation = tree.navigation[:0]
-		for _, row := range tree.visible {
-			branch := !row.node.loaded || row.node.loading || row.node.err != "" || len(row.node.children) > 0
-			tree.navigation = append(tree.navigation, components.TreeNavigationItem{
-				Depth: row.depth, Branch: branch, Expanded: row.node.expanded,
-			})
-		}
-		next, action, _ := components.NavigateTree(tree.navigation, index, event.Key, int(tree.bounds.Height/sftpDirectoryTreeRowHeight))
-		switch action {
-		case components.TreeNavigationExpand:
-			node.expanded = true
-			if node.err != "" {
-				node.loaded, node.err = false, ""
-			}
-			if !node.loaded {
-				w.loadDirectoryTreeNode(side, node)
-			}
-		case components.TreeNavigationCollapse:
-			node.expanded = false
-		case components.TreeNavigationMove:
-			tree.selectedPath = tree.visible[next].node.path
-			tree.revealSelected = true
-			result.Focus = sftpWindowTreeRows[side].At(next)
-			result.FocusVisible = true
-		}
-	default:
-		return gfx.EventResult{}, false
+	tree.selectedPath = node.path
+	tree.revealSelected = true
+	w.activeLocal, w.view.local = side == 0, side == 0
+	if !sameDirectoryTreePath(side == 0, w.folder(side == 0).path, node.path) {
+		w.navigate(side == 0, node.path)
 	}
-	w.activeLocal, w.view.local = local, local
 	w.invalidate()
-	return result, true
-}
-
-func (w *sftpWindow) directoryTreeScroll(event gfx.ScrollEvent) (gfx.EventResult, bool) {
-	for side, tree := range w.directoryTree {
-		if !tree.enabled || !pointInRect(event.X, event.Y, tree.bounds) {
-			continue
-		}
-		before := tree.offset
-		w.directoryTree[side].offset = max(0, min(tree.bar.MaxOffsetY, tree.offset+event.DeltaY))
-		return gfx.EventResult{Handled: true, Repaint: before != w.directoryTree[side].offset}, true
-	}
-	return gfx.EventResult{}, false
-}
-
-func (w *sftpWindow) directoryTreePointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	if w.ui.treeBarDrag > 0 {
-		side := w.ui.treeBarDrag - 1
-		tree := &w.directoryTree[side]
-		if event.Kind == gfx.PointerMove {
-			if !event.Captured {
-				return gfx.EventResult{Handled: true}, true
-			}
-			before := tree.offset
-			tree.offset = tree.bar.VerticalOffsetForThumb(event.Y - w.ui.treeBarGrab)
-			return gfx.EventResult{Handled: true, Repaint: before != tree.offset}, true
-		}
-		if event.Kind == gfx.PointerUp || event.Kind == gfx.PointerExit && !event.Captured {
-			w.ui.treeBarDrag = 0
-		}
-		return gfx.EventResult{Handled: true}, true
-	}
-	for side, id := range sftpWindowTreeBar {
-		if event.Kind != gfx.PointerDown || event.Target != id {
-			continue
-		}
-		tree := &w.directoryTree[side]
-		w.ui.treeBarGrab = tree.bar.VerticalThumb.Height / 2
-		if event.Y >= tree.bar.VerticalThumb.Y && event.Y < tree.bar.VerticalThumb.Y+tree.bar.VerticalThumb.Height {
-			w.ui.treeBarGrab = event.Y - tree.bar.VerticalThumb.Y
-		}
-		w.ui.treeBarDrag = side + 1
-		before := tree.offset
-		tree.offset = tree.bar.VerticalOffsetForThumb(event.Y - w.ui.treeBarGrab)
-		return gfx.EventResult{Handled: true, Repaint: before != tree.offset}, true
-	}
-	return gfx.EventResult{}, false
 }

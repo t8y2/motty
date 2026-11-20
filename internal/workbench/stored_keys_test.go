@@ -4,7 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/headless"
 	"golang.org/x/crypto/ssh"
 	"motty/internal/keyidentity"
 	"motty/internal/sshconn"
@@ -163,6 +165,47 @@ func TestGeneratedKeyWithAPassphraseIsEncrypted(t *testing.T) {
 	}
 }
 
+func TestThePassphraseOfAGeneratedKeyCanBeSaved(t *testing.T) {
+	options := freshOptions(t)
+	options.SetClipboardText = func(string) error { return nil } // never the machine's clipboard
+	state := newTestState(t, options)
+	state.Click(hitKeychain)
+	state.Click(hitKeysAdd)
+	state.Click(hitKeysGenerate)
+	state.form.set(0, "locked")
+	state.form.set(1, "correct horse")
+	state.Click(hitFormSubmit)
+	key := state.identities[0]
+	if !key.Stored || !key.Encrypted {
+		t.Fatalf("generated key = %+v", key)
+	}
+
+	// A passphrase that does not open the key is refused, as it is for a file.
+	state.Click(hitKeysPassphrase)
+	if state.modal != modalForm {
+		t.Fatalf("the passphrase form did not open: modal %d", state.modal)
+	}
+	state.form.set(0, "not it")
+	state.Click(hitFormSubmit)
+	if state.modal != modalForm || state.form.dialogError != state.messages.KeyPassphraseWrong {
+		t.Fatalf("a wrong passphrase was accepted: modal %d, error %q", state.modal, state.form.dialogError)
+	}
+	if _, found, _ := state.secrets.vault.Get(passphraseSecretName(key.Path)); found {
+		t.Fatal("a wrong passphrase reached the vault")
+	}
+
+	// The one the key was made with is kept under the key's reference, which is
+	// the name a connection looks it up by.
+	state.form.set(0, "correct horse")
+	state.Click(hitFormSubmit)
+	if state.modal != modalNone {
+		t.Fatalf("the form stayed open: %q", state.form.dialogError)
+	}
+	if value, found, err := state.secrets.vault.Get(passphraseSecretName(key.Path)); err != nil || !found || value != "correct horse" {
+		t.Fatalf("saved passphrase = %q, %v, %v", value, found, err)
+	}
+}
+
 func TestStoredKeyReachesTheConnectionByName(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)
@@ -302,18 +345,30 @@ func TestEnterInTheKeyFieldIsANewLineAndArrowsMoveByRow(t *testing.T) {
 	state.Click(hitKeysPaste)
 	field := &state.form.fields[0]
 	field.editor.Insert("first\nsecond\nthird")
-	canvas, _ := paintAt(state, gfx.Size{Width: 1000, Height: 800})
-	if _, ok := hitByID(canvas, hitFormFieldList.At(0)); !ok {
-		t.Fatal("the key field was not painted")
+	config := state.WindowConfig(app.Config{
+		Width: 1000, Height: 800, Tree: Tree(), Paint: state.Paint,
+		OnResize: state.Resize, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut,
+	})
+	view, err := headless.Open(config, nil, headless.Options{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
 	}
-	target := hitFormFieldList.At(0)
+	defer view.Close()
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
 	end := field.editor.Caret()
-	state.Key(gfx.KeyEvent{Key: gfx.KeyUp, Target: target})
+	// The arrows are the page text area's: they move by the rows the text wrapped to.
+	if err := view.Driver().Key(gfx.KeyUp, 0); err != nil {
+		t.Fatal(err)
+	}
 	if up := field.editor.Caret(); up >= end || up == 0 {
 		t.Fatalf("Up moved the caret from %d to %d", end, up)
 	}
 	// Enter is the native editor's new line; the form must not take it as Submit.
-	state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: target})
+	if err := view.Driver().Key(gfx.KeyEnter, 0); err != nil {
+		t.Fatal(err)
+	}
 	if state.modal != modalForm {
 		t.Fatal("Enter in the key field submitted the form")
 	}

@@ -1,8 +1,6 @@
 package workbench
 
 import (
-	"fmt"
-
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
@@ -88,7 +86,7 @@ func (state *State) activateSFTPTabAt(index int) bool {
 
 func (state *State) cycleWindowTabs(delta int) bool {
 	state.workspaceTabs = state.deck.Workspaces(state.workspaceTabs[:0])
-	count := len(state.workspaceTabs) + len(state.sftpTabs)
+	count := len(state.workspaceTabs) + state.fileTabCount()
 	if count < 2 {
 		return false
 	}
@@ -105,6 +103,12 @@ func (state *State) cycleWindowTabs(delta int) bool {
 		if index := state.sftpTabIndex(state.activeSFTPTab); index >= 0 {
 			current = len(state.workspaceTabs) + index
 		}
+	case sectionSettings:
+		if state.settingsTabShown() {
+			current = state.settingsTabIndex()
+			break
+		}
+		fallthrough
 	default:
 		for index, tab := range state.workspaceTabs {
 			if tab.ID == state.deck.ActiveWorkspace() {
@@ -120,6 +124,9 @@ func (state *State) cycleWindowTabs(delta int) bool {
 	if next < len(state.workspaceTabs) {
 		return state.activateTab(next)
 	}
+	if file := next - len(state.workspaceTabs); file >= len(state.sftpTabs) {
+		return state.activateSettingsTab()
+	}
 	return state.activateSFTPTabAt(next - len(state.workspaceTabs))
 }
 
@@ -127,7 +134,7 @@ func (state *State) cycleWindowTabs(delta int) bool {
 // tabs on the tab bar, in the order the bar shows them, then the file tabs.
 func (state *State) topTabCount() int {
 	state.workspaceTabs = state.deck.Workspaces(state.workspaceTabs[:0])
-	return len(state.visualWorkspaceTabs()) + len(state.sftpTabs)
+	return len(state.visualWorkspaceTabs()) + state.fileTabCount()
 }
 
 func (state *State) activateTopTab(index int) bool {
@@ -135,6 +142,9 @@ func (state *State) activateTopTab(index int) bool {
 	tabs := state.visualWorkspaceTabs()
 	if index < len(tabs) {
 		return state.activateTab(index)
+	}
+	if file := index - len(tabs); file == len(state.sftpTabs) && state.settingsTabShown() {
+		return state.activateSettingsTab()
 	}
 	return state.activateSFTPTabAt(index - len(tabs))
 }
@@ -309,7 +319,7 @@ func (state *State) fileTabHit(id gfx.ID) bool {
 // sftpTabPaneRects lays the tab out as the window's view always did: padding
 // around the body, a gap between the body, the transfer queue and the status
 // line. The body takes the room the fixed children leave.
-func sftpTabPaneRects(bounds gfx.Rect, queue int) (body, queueRect, status gfx.Rect) {
+func sftpTabPaneRects(bounds gfx.Rect, queue, conflicts int) (body, queueRect, status gfx.Rect) {
 	size := gfx.Size{Width: bounds.Width, Height: bounds.Height}
 	inner := gfx.Rect{X: bounds.X + sftpWindowPad, Y: bounds.Y + sftpWindowPad,
 		Width: max(size.Width-2*sftpWindowPad, 0), Height: max(size.Height-2*sftpWindowPad, 0)}
@@ -317,7 +327,7 @@ func sftpTabPaneRects(bounds gfx.Rect, queue int) (body, queueRect, status gfx.R
 	queueHeight := float32(0)
 	if queue > 0 {
 		children = 3
-		queueHeight = sftpQueueHeight(size, queue)
+		queueHeight = sftpQueueHeight(size, queue, conflicts)
 	}
 	body = gfx.Rect{X: inner.X, Y: inner.Y, Width: inner.Width,
 		Height: max(inner.Height-sftpWindowGap*float32(children-1)-queueHeight-sftpWindowStatusHeight, 0)}
@@ -345,8 +355,8 @@ func (state *State) declareSFTPTab(c ui.C) {
 	state.fileManagerRect = bounds
 	w.ui.size = gfx.Size{Width: bounds.Width, Height: bounds.Height}
 	w.ui.bounds = bounds
-	w.ui.tabBody, w.ui.tabQueue = gfx.Rect{}, gfx.Rect{}
-	w.ui.tabPanes = [2]sftpWindowScratch{}
+	w.ui.body, w.ui.queue = gfx.Rect{}, gfx.Rect{}
+	w.ui.panes = [2]sftpWindowScratch{}
 	c.Part(fileTabPart)
 	ui.Column(c).Absolute().Left(bounds.X).Top(bounds.Y).Width(bounds.Width).Height(bounds.Height).
 		Clip().Background(state.Theme().Background).Children(func() {
@@ -363,6 +373,11 @@ func (state *State) declareSFTPTab(c ui.C) {
 	if w.view.worker != nil && w.view.dialog != sftpDialogNone {
 		state.declareSFTPDialog(c, bounds, w.view)
 	}
+	w.declareConfirmations(c)
+	w.declarePlacesMenu(c)
+	w.declareWindowMenu(c)
+	w.declareHeaderMenus(c, &w.ui.headerAnchor)
+	w.declareProfileQuickMenu(c)
 	state.declareSFTPFileProperties(c, bounds, &w.fileProperties)
 }
 
@@ -370,10 +385,10 @@ func (state *State) declareSFTPTab(c ui.C) {
 // line in the tab's container.
 func (state *State) declareSFTPTabContent(c ui.C, w *sftpWindow, bounds gfx.Rect) {
 	queue := w.queueCount()
-	body, queueRect, status := sftpTabPaneRects(bounds, queue)
+	body, queueRect, status := sftpTabPaneRects(bounds, queue, w.ui.queueConflicts)
+	w.ui.body, w.ui.queue = body, queueRect
 	state.declareSFTPTabPanes(c, w, bounds, body)
 	if queue > 0 {
-		w.ui.tabQueue = queueRect
 		w.declareQueue(c, queueRect, bounds)
 	}
 	state.declareSFTPTabStatus(c, w, bounds, status)
@@ -383,32 +398,8 @@ func (state *State) declareSFTPTabContent(c ui.C, w *sftpWindow, bounds gfx.Rect
 // window shows them. Each pane is a Part of its own, so its List's generated
 // identities follow the logical side even when the panes swap places.
 func (state *State) declareSFTPTabPanes(c ui.C, w *sftpWindow, bounds, body gfx.Rect) {
-	w.ui.split = components.BeginResizable(nil, state.Theme(), hitSFTPWindowSplit, body, w.ui.fraction).LimitsPx(220, 220)
-	panels := w.ui.split.Paint("")
 	firstLocal := state.sftpWindowOrder == sftpLocalLeft
-	for _, pane := range [2]struct {
-		rect  gfx.Rect
-		local bool
-	}{{panels.First, firstLocal}, {panels.Second, !firstLocal}} {
-		state.declareSFTPTabPane(c, w, bounds, pane.rect, pane.local)
-	}
-}
-
-func (state *State) declareSFTPTabPane(c ui.C, w *sftpWindow, bounds, rect gfx.Rect, local bool) {
-	if rect.Width <= 0 || rect.Height <= 0 {
-		return
-	}
-	part := fileTabRemotePart
-	if local {
-		part = fileTabLocalPart
-	}
-	c.Part(part)
-	pane := ui.Column(c).Absolute().
-		Left(rect.X - bounds.X).Top(rect.Y - bounds.Y).
-		Width(rect.Width).Height(rect.Height)
-	s := &w.ui.tabPanes[sideIndex(local)]
-	*s = sftpWindowScratch{local: local, bounds: rect}
-	pane.Children(func() { w.declarePane(c, s) })
+	w.declarePanes(c, body, firstLocal, true)
 }
 
 // declareSFTPTabStatus declares the line under the panes, as the window's view
@@ -442,48 +433,20 @@ func (state *State) paintSFTPTab(canvas *gfx.Canvas, bounds gfx.Rect) {
 
 // paintTabDetails paints the window's own parts of the tab after the page.
 func (w *sftpWindow) paintTabDetails(canvas *gfx.Canvas, bounds gfx.Rect) {
-	state, m := w.owner, w.owner.messages
-	w.ui.split = components.BeginResizable(canvas, state.Theme(), hitSFTPWindowSplit, w.ui.tabBody, w.ui.fraction).LimitsPx(220, 220)
-	w.ui.split.Paint(m.SFTPWindow.Title)
+	state := w.owner
 	firstLocal := state.sftpWindowOrder == sftpLocalLeft
-	if s := &w.ui.tabPanes[sideIndex(firstLocal)]; s.list.Valid() {
+	if s := &w.ui.panes[sideIndex(firstLocal)]; s.list.Valid() {
 		w.paintPaneDetails(canvas, s, firstLocal)
 	}
-	if s := &w.ui.tabPanes[sideIndex(!firstLocal)]; s.list.Valid() {
+	if s := &w.ui.panes[sideIndex(!firstLocal)]; s.list.Valid() {
 		w.paintPaneDetails(canvas, s, !firstLocal)
 	}
-	w.paintQueue(canvas, w.ui.tabQueue, bounds)
-	if w.view.bookmarksOpen {
-		w.paintDirectoryPlaces(canvas)
-	}
-	if w.closeConfirm {
-		components.BeginAlertDialog(canvas, state.Theme(), bounds, components.AlertDialogOptions{Layer: dialogLayer + 1, Scope: dialogScope, ActionID: hitSFTPWindowCloseConfirm, CancelID: hitSFTPWindowCloseCancel, InitialFocusID: hitSFTPWindowCloseCancel, ActionVariant: components.ButtonDestructive}).Paint(m.SFTPWindow.CloseTitle, w.closeDescription(), m.SFTPWindow.CloseTransfers, m.Cancel)
-	}
-	if w.externalConflict != 0 && !w.closeConfirm && w.view.dialog == sftpDialogNone {
-		if edit := state.editByID(w.externalConflict); edit != nil {
-			tools := m.Tools
-			components.BeginAlertDialog(canvas, state.Theme(), bounds, components.AlertDialogOptions{Layer: dialogLayer + 1, Scope: dialogScope, ActionID: hitSFTPWindowExternalReplace, CancelID: hitSFTPWindowExternalKeep, InitialFocusID: hitSFTPWindowExternalKeep, ActionVariant: components.ButtonDestructive}).Paint(tools.ExtEditConflictTitle, fmt.Sprintf(tools.ExtEditConflictDescriptionFmt, edit.name), tools.ExtEditReplace, m.Cancel)
-		}
-	}
-	if w.ui.menuOpen {
-		w.paintMenu(canvas)
-	}
-	if side, ok := w.headerMenu(); ok {
-		// The tab's view is part of the page, so the page paints this menu over
-		// the whole window; its anchor is already a window rectangle.
-		state.requestSFTPWindowHeaderMenu(w, side, w.ui.headerAnchor[side])
-	}
-	if w.ui.profileQuickOpen && !w.bookmark.open {
-		w.paintProfileQuickMenu(canvas)
-	}
-	if !w.bookmark.open && !w.ui.profileQuickOpen {
-		w.paintProfileQuickPreview(canvas, bounds)
-	}
+	w.paintQueue(canvas, w.ui.queue, bounds)
 	if w.drag.active {
 		w.paintDrag(canvas)
 	}
 	w.notices.paint(canvas, state.Theme(), bounds)
-	if !w.ui.profileHoverOpen {
+	if !w.ui.profileQuickOpen {
 		w.ui.tooltip.Paint(canvas, state.Theme(), bounds, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
 	}
 	if !w.pendingFocus.IsZero() {

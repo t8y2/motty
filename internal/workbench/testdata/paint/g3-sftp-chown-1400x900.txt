@@ -35,7 +35,10 @@ rect {{1364 372 32 32} {0.17254902 0.19607843 0.23529412 1} 7.5 0 {1364 40 32 85
 shadow {{468 414 464 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #23}
 shadow {{468 486 464 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #26}
 text "Production" {148 8 60.216797 20}
-text "Files" {12 43 256 21}
+text "Files" {12 43 256 20}
+text "/" {44 114 4.4941406 20}
+text "home" {73.49414 114 33.07129 20}
+text "test" {131.56543 114 22.026367 20}
 text "Name" {20 144 160 28}
 text "Size" {210.74414 144 50 28}
 text "Modified" {268.01758 144 78 28}
@@ -45,16 +48,14 @@ text "11/15 06:15" {262.1328 177.5 82 19}
 text "notes.txt" {44 206.5 140 21}
 text "11 B" {217.84961 207.5 54 19}
 text "11/15 06:13" {262.02148 207.5 82 19}
-text "-rw-r--r--  ·  11 B" {14 840 314 19}
+text "-rw-r--r--  ·  11 B" {14 840 314 18}
 text "1 items" {12 870.5 316 19}
-text "home" {97 112 33.07129 24}
-text "test" {163.07129 112 22.026367 24}
 text "Change Ownership" {464 316 472 17}
 text "Type or pick the user and group; names and numeric IDs both work." {464 341 472 21}
 text "Owner" {468 392 42.62207 18}
-text "Owner" {479 414 418 32}
+text "" {479 420 442 20}
 text "Group" {468 464 39.757812 18}
-text "Group" {479 486 418 32}
+text "" {479 492 442 20}
 text "Cancel" {816.1328 552 64.61133 32}
 text "Apply" {888.74414 552 57.25586 32}
 hit "" region {0 0 1400 36} disabled=false
@@ -85,6 +86,9 @@ hit "Go to this folder in the terminal" button {208 78 24 24} disabled=false
 hit "Hide hidden files" button {236 78 24 24} disabled=false
 hit "More file actions" button {304 78 24 24} disabled=false
 hit "Up" button {12 110 28 28} disabled=false
+hit "Folder path" button {44 112 222 24} disabled=false
+hit "/" link {44 114 4.4941406 20} disabled=false
+hit "home" link {73.49414 114 33.07129 20} disabled=false
 hit "Folder favorites" button {270 110 28 28} disabled=false
 hit "Bookmark current folder" button {300 110 28 28} disabled=false
 hit "Name" button {20 144 164 28} disabled=false
@@ -102,14 +106,14 @@ hit "Permissions" button {132 810 28 28} disabled=false
 hit "Ownership" button {162 810 28 28} disabled=false
 hit "Move to…" button {192 810 28 28} disabled=false
 hit "Delete" button {222 810 28 28} disabled=false
-hit "Folder path" button {44 112 222 24} disabled=false
-hit "home" link {97 112 33.07129 24} disabled=false
 hit "Resize column" separator {182.5 144 4 28} disabled=false
 hit "Resize column" separator {236.5 144 4 28} disabled=false
 hit "" region {440 292 520 316} disabled=false
 hit "Close dialog" button {912 308 32 32} disabled=false
-hit "Owner" combobox {468 414 464 32} disabled=false
-hit "Group" combobox {468 486 464 32} disabled=false
+hit "Owner" button {468 392 42.62207 18} disabled=false
+hit "Owner" textfield {468 414 464 32} disabled=false
+hit "Group" button {468 464 39.757812 18} disabled=false
+hit "Group" textfield {468 486 464 32} disabled=false
 hit "Cancel" button {806.1328 552 64.61133 32} disabled=false
 hit "Apply" button {878.74414 552 57.25586 32} disabled=false
 hit "Files" separator {336.5 36 8 864} disabled=false

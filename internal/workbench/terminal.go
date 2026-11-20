@@ -22,6 +22,7 @@ import (
 	"motty/internal/shellkind"
 	"motty/internal/sshconn"
 	"motty/internal/term"
+	"motty/internal/termsize"
 	layoutcore "motty/internal/workspace"
 	"motty/internal/x11fwd"
 )
@@ -33,8 +34,10 @@ type Shell interface {
 	Drain(dst []byte) []byte
 	// Write queues input for the shell and reports whether it was accepted.
 	Write(p []byte) bool
-	// Resize tells the remote pty the terminal size in cells.
-	Resize(cols, rows int)
+	// Resize tells the pty the terminal size: the grid in cells and the text
+	// area in device pixels. A transport whose protocol carries only cells, as
+	// mosh and telnet do, ignores the pixels.
+	Resize(size termsize.Size)
 	// Done is closed once the shell has ended and all its output is drainable.
 	Done() <-chan struct{}
 	// Err says why the shell ended; nil for a clean exit.
@@ -73,12 +76,14 @@ type terminal struct {
 	screen *term.Terminal
 	shell  Shell
 	rx     []byte // scratch for draining output
-	// shellCols and shellRows are the size the shell was last told, wantCols
-	// and wantRows the size a prompt's redraw is waiting for; see resizeShell.
-	shellCols, shellRows int
-	wantCols, wantRows   int
-	shellWaiting         bool
-	shellWaitAt          time.Time
+	// shellSize is the size the shell was last told, wantCols and wantRows the
+	// grid a prompt's redraw is waiting for; see resizeShell. The pixels are
+	// computed when the size is told, so a font or display-scale change is
+	// carried even when the grid stays the same.
+	shellSize          termsize.Size
+	wantCols, wantRows int
+	shellWaiting       bool
+	shellWaitAt        time.Time
 	// encoding is the remote charset of this shell; empty is UTF-8. decoder
 	// streams its bytes to UTF-8, keeping a partial multibyte character until
 	// the next read completes it. It is nil for a UTF-8 shell.
@@ -113,6 +118,7 @@ type terminal struct {
 	shellOpened           time.Duration    // when the shell was asked for, to give a silent one up
 	opening               chan shellResult // a shell being opened in the background, until pump collects it
 	followPath            string           // latest shell directory awaiting a safe attached file panel
+	followSeq             uint64           // names that report, so a kept one is applied once
 	reportedHome          string           // home reported by this shell, in the same path form as cwd
 	reportedDirectory     term.Cwd         // last report accepted from this shell, rather than a running program
 	promptReady           bool
@@ -163,12 +169,10 @@ type terminal struct {
 	// declaration made, which the bar's slots are painted in after the page.
 	paintFinding, paintInSplit, paintInactive bool
 	paintCommandNoticeShown                   bool
-	paintCommandNotice                        ui.Box
-	paintNoticeShown                          bool
 	paintBarBackground                        gfx.Color
 	paintGeometry                             terminalGeometry
 	paintFind                                 findBarSlots
-	paintSpinner, paintLight, paintNotice     ui.Box
+	paintSpinner, paintLight                  ui.Box
 
 	// preedit is the input-method composition, shown at the cursor.
 	preedit    app.TextState
@@ -488,6 +492,8 @@ func (t *terminal) resetFolderSync() {
 	t.folderIntegrationSeen, t.commandReporting = false, false
 	t.reportedDirectory = term.Cwd{}
 	t.reportedHome = ""
+	// followSeq is left alone: it names reports, and a reconnect must not make
+	// an old number look new to a panel that already took it.
 	t.submittedLines, t.followPath = 0, ""
 	t.promptVersion++
 }
@@ -821,7 +827,23 @@ func (t *terminal) sendProtocol(p []byte) bool {
 	if t.shell == nil || len(p) == 0 {
 		return false
 	}
-	accepted := t.writeShellInput(p)
+	return t.recordProtocol(p, t.writeShellInput(p))
+}
+
+// answerQuery writes the terminal's answer to a query the program on the far
+// side made (device attributes, colors, mode reports). An answer is not input:
+// the program asked for it now and stops waiting shortly, so it is never held
+// back with the user's typing while the shell integration is installed. A
+// reply that arrived after the window would reach the shell as keystrokes.
+// ASCII, so no charset conversion applies.
+func (t *terminal) answerQuery(p []byte) bool {
+	if t.shell == nil || len(p) == 0 {
+		return false
+	}
+	return t.recordProtocol(p, t.shell.Write(p))
+}
+
+func (t *terminal) recordProtocol(p []byte, accepted bool) bool {
 	if accepted {
 		t.noteInput()
 		t.recording.append(t.recordingNow(), terminalRecordingInput, p)
@@ -838,9 +860,9 @@ func (t *terminal) recordingNow() time.Duration {
 
 // shellResult is the outcome of a shell opened away from the window's thread.
 type shellResult struct {
-	shell      Shell
-	err        error
-	cols, rows int // the PTY size requested before opening began
+	shell Shell
+	err   error
+	size  termsize.Size // the PTY size requested before opening began
 }
 
 // openShell starts the remote shell once the connection is up. Over SSH that
@@ -851,8 +873,8 @@ func (state *State) openShell(session *Session) {
 	if t.shell != nil || t.opening != nil || t.ended || session.conn == nil {
 		return
 	}
-	cols, rows := t.screen.Size()
-	config := sshconn.ShellConfig{Cols: cols, Rows: rows, Notify: state.notifyFor(session), Command: session.containerCommand}
+	size := state.terminalSize(t.screen.Size())
+	config := sshconn.ShellConfig{Cols: size.Cols, Rows: size.Rows, PixelWidth: size.PixelWidth, PixelHeight: size.PixelHeight, Notify: state.notifyFor(session), Command: session.containerCommand}
 	// Local directory restoration needs reports even with file-panel following
 	// off. SSH also needs reports for automatic completion, independently of
 	// file-panel following and path tabs. A host confined to the interactive
@@ -897,7 +919,7 @@ func (state *State) openShell(session *Session) {
 		opened := make(chan shellResult, 1)
 		go func() {
 			shell, err := conn.OpenShell(config)
-			opened <- shellResult{shell: shell, err: err, cols: config.Cols, rows: config.Rows}
+			opened <- shellResult{shell: shell, err: err, size: size}
 		}()
 		var outcome shellResult
 		if shared && wait > 0 {
@@ -906,7 +928,7 @@ func (state *State) openShell(session *Session) {
 			case outcome = <-opened:
 				timer.Stop()
 			case <-timer.C:
-				outcome = shellResult{err: errSharedShellOpenTimeout, cols: config.Cols, rows: config.Rows}
+				outcome = shellResult{err: errSharedShellOpenTimeout, size: size}
 				// The server may still make the shell later. Nothing will take
 				// it, so it is closed when it arrives.
 				go func() {
@@ -942,9 +964,8 @@ func (state *State) collectShell(session *Session) {
 			// Layout may have changed while OpenShell waited for the server.
 			// fitTerminal already resized the local screen without a shell, so
 			// its size comparison cannot detect the stale PTY after attachment.
-			cols, rows := t.screen.Size()
-			if cols != result.cols || rows != result.rows {
-				result.shell.Resize(cols, rows)
+			if current := state.terminalSize(t.screen.Size()); current != result.size {
+				result.shell.Resize(current)
 			}
 		}
 		state.shellOpened(session, result.shell, result.err)
@@ -1011,7 +1032,7 @@ func (state *State) shellOpened(session *Session, shell Shell, err error) {
 		t.decoder.Reset()
 	}
 	t.shell = shell
-	t.shellCols, t.shellRows = t.screen.Size()
+	t.shellSize = state.terminalSize(t.screen.Size())
 	t.shellWaiting = false
 	t.shellOpened = state.now()
 	t.idleLastInput = t.shellOpened
@@ -1050,8 +1071,9 @@ func (state *State) shellOpened(session *Session, shell Shell, err error) {
 		}
 	}
 	t.screen.SetReply(func(reply []byte) {
-		t.sendProtocol(reply)
+		t.answerQuery(reply)
 	})
+	t.screen.SetCellPixels(state.cellPixelWidth, state.cellPixelHeight)
 	t.armInitialization(session)
 	state.startInjection(session, shell)
 	state.describe(session)
@@ -1081,9 +1103,17 @@ func (state *State) goLive(session *Session) {
 // always parsed, so a Wake makes progress however slow the thread is. The shell
 // ending, an exec capture and a caller without an Invalidator keep the old
 // "all at once" behavior.
+//
+// While rx holds maxPumpBacklog unparsed bytes, a Wake drains no more: the
+// output stays in the shell's own bounded buffer, whose reader blocks on it
+// and so slows the sender down. sshconn and localshell block their reader at
+// one megabyte; the mosh client bounds its output the same way. Draining
+// everything regardless lets a program that prints faster than the budget
+// parses grow rx without bound until the process is OOM-killed (t8y2/motty#976).
 const (
-	pumpBudget = time.Second / 240
-	pumpSlice  = 32 << 10
+	pumpBudget     = time.Second / 240
+	pumpSlice      = 32 << 10
+	maxPumpBacklog = 1 << 20
 )
 
 // pump moves the shell's output into the screen and notices the shell's end.
@@ -1107,7 +1137,10 @@ func (state *State) pumpFor(session *Session, budget time.Duration) {
 		return
 	}
 	t.observePredictionInput()
-	t.rx = t.shell.Drain(t.rx) // keep what an earlier frame could not parse
+	backlogged := len(t.rx) >= maxPumpBacklog
+	if !backlogged {
+		t.rx = t.shell.Drain(t.rx) // keep what an earlier frame could not parse
+	}
 	hadOutput := len(t.rx) > 0
 	finished := false
 	select {
@@ -1152,6 +1185,11 @@ func (state *State) pumpFor(session *Session, budget time.Duration) {
 	default:
 		t.rx = t.rx[:0]
 	}
+	if backlogged && !finished && state.options.Invalidate != nil {
+		// Output was left in the shell's buffer: the next wake must come even
+		// when this one parsed all of rx.
+		state.options.Invalidate()
+	}
 	state.syncAgentIcon(session, hadOutput, finished)
 	if !finished && len(t.rx) == 0 {
 		state.reconcileSuggestionEcho(session)
@@ -1174,6 +1212,21 @@ func (state *State) applyOutput(session *Session, data []byte, wasExec bool) {
 			return
 		}
 		data = rest
+		if len(data) == 0 {
+			return
+		}
+	}
+	// A window that gave up keeps looking for its activation line's echo: the
+	// server may deliver the line late, and its echo must not reach the screen
+	// then. Recognizing it reopens the window until its ready marker.
+	if !wasExec && t.injection.phase == injectionFailed && len(t.injection.echoTag) > 0 {
+		emit, caught := state.catchLateEcho(session, data)
+		data = emit
+		if caught {
+			if after, applied := state.applyInjection(session, nil); applied {
+				data = append(data, after...)
+			}
+		}
 		if len(data) == 0 {
 			return
 		}
@@ -1528,11 +1581,15 @@ func (state *State) resizeShell(session *Session, cols, rows int) {
 	if t.shell == nil {
 		return
 	}
+	size := state.terminalSize(cols, rows)
 	if !state.pointerHeld && !t.screen.AtPrompt() {
-		state.tellShellSize(t, cols, rows)
+		// The pane's fit is authoritative: a program that draws its own screen
+		// is told even when the size reads as the one it has, as it always has
+		// been, and the pixels are current either way.
+		state.tellShellSize(t, size)
 		return
 	}
-	if t.shellCols == cols && t.shellRows == rows {
+	if size == t.shellSize {
 		return
 	}
 	t.wantCols, t.wantRows, t.shellWaiting, t.shellWaitAt = cols, rows, true, state.options.WallNow()
@@ -1551,8 +1608,10 @@ func (state *State) settleShellResize(canvas *gfx.Canvas, session *Session) {
 		return
 	}
 	t.shellWaiting = false
-	if t.shellCols != t.wantCols || t.shellRows != t.wantRows {
-		state.tellShellSize(t, t.wantCols, t.wantRows)
+	// The pixels are taken now rather than when the wait began: a font or
+	// display-scale change during the delay belongs in this size too.
+	if size := state.terminalSize(t.wantCols, t.wantRows); size != t.shellSize {
+		state.tellShellSize(t, size)
 	}
 }
 
@@ -1565,15 +1624,15 @@ func (state *State) flushShellSizes() {
 			continue
 		}
 		t.shellWaiting = false
-		if t.shellCols != t.wantCols || t.shellRows != t.wantRows {
-			state.tellShellSize(t, t.wantCols, t.wantRows)
+		if size := state.terminalSize(t.wantCols, t.wantRows); size != t.shellSize {
+			state.tellShellSize(t, size)
 		}
 	}
 }
 
-func (state *State) tellShellSize(t *terminal, cols, rows int) {
-	t.shellCols, t.shellRows = cols, rows
-	t.shell.Resize(cols, rows)
+func (state *State) tellShellSize(t *terminal, size termsize.Size) {
+	t.shellSize = size
+	t.shell.Resize(size)
 }
 
 // Resize is the window-size callback: the terminals follow the window.
@@ -2036,15 +2095,6 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 		// The menu is modal: only its own panels scroll.
 		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, state.chipMenu.popup) && state.chipMenu.tree.Wheel(event)}
 	}
-	if result := state.scrollProxyDialog(event); result.Handled {
-		return result
-	}
-	if result := state.scrollProxyBatchDialog(event); result.Handled {
-		return result
-	}
-	if result := state.scrollForwardDialog(event); result.Handled {
-		return result
-	}
 	if state.hostGroupMenu {
 		if menu := state.moveGroupTree(); menu != nil {
 			return gfx.EventResult{Handled: true, Repaint: menu.Wheel(event)}
@@ -2052,14 +2102,6 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	}
 	if state.modal == modalNewHost && state.editor.groupPicker.control.Open {
 		p := &state.editor.groupPicker
-		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}
-	}
-	if state.modal == modalNewHost && state.editor.encodingPicker.control.Open {
-		p := &state.editor.encodingPicker
-		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}
-	}
-	if state.modal == modalNewHost && state.editor.iconPicker.control.Open {
-		p := &state.editor.iconPicker
 		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}
 	}
 	if state.modal == modalToolbarSettings {
@@ -2070,9 +2112,6 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}
 	}
 	if result, handled := state.remoteProcessWheel(event); handled {
-		return result
-	}
-	if result, handled := state.transferCenterScroll(event); handled {
 		return result
 	}
 	if result, handled := state.menuWheel(event); handled {
@@ -2090,8 +2129,19 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if state.modal == modalCommandPalette {
 		return state.scrollCommandPalette(event)
 	}
+	if state.modal == modalNewProxy || state.modal == modalNewForward {
+		// The host pickers are page comboboxes: their open lists take the wheel,
+		// and the dialog keeps it from the window behind it.
+		result := state.windowPage().RouteWheel(event)
+		result.Handled = true
+		return result
+	}
 	if state.modal == modalForm {
-		return state.scrollForm(event)
+		// The form's multiline fields are page text areas: the page scrolls them,
+		// and the dialog keeps the wheel from the window behind it.
+		result := state.windowPage().RouteWheel(event)
+		result.Handled = true
+		return result
 	}
 	if state.modal == modalUpdate {
 		return state.scrollUpdateNotes(event)
@@ -2101,6 +2151,9 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	}
 	if state.modal == modalRuleManager {
 		return state.scrollRuleManager(event)
+	}
+	if state.modal == modalSnippetGroups {
+		return state.scrollSnippetGroups(event)
 	}
 	// Dialogs own the wheel even over their backdrop. Menus and scrollable
 	// dialogs above have their own handlers; nothing behind them should move.
@@ -2114,7 +2167,7 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 		return result
 	}
 	tabScroll := &state.tabStrip
-	if state.tabOrientation == tabsVertical && len(state.sftpTabs) > 0 &&
+	if state.tabOrientation == tabsVertical && state.fileTabCount() > 0 &&
 		pointInRect(event.X, event.Y, state.fileTabStrip.area) {
 		tabScroll = &state.fileTabStrip
 	}
@@ -2181,9 +2234,6 @@ func (state *State) scroll(event gfx.ScrollEvent) gfx.EventResult {
 	}
 	if state.activeSection == sectionHosts && state.modal == modalNone && (state.hostsContent > 0 || state.hostSide.visible) {
 		return state.scrollHosts(event)
-	}
-	if state.activeSection == sectionSessionLogs && state.modal == modalNone {
-		return state.scrollSessionLogs(event)
 	}
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	paged := false

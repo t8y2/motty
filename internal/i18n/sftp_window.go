@@ -6,7 +6,7 @@ type SFTPWindowMessages struct {
 	LocalMovies, LocalApplications                                                                          string
 	ProfileScope, BrowseRootLabel                                                                           string
 	ProfileSite, ProfileShared, ProfileNew, ProfileDelete, ProfileOpen, ProfileEmpty, ProfileNameExists     string
-	ProfileSync, ProfileQuickTitle, ProfileQuickDescription, ProfileQuickSync, ProfileChoose                string
+	ProfileSync, ProfileQuickSync, ProfileChoose                                                            string
 	DirectoryTree, ShowDirectoryTree, HideDirectoryTree, DirectoryTreeLoadFailedFmt, DirectoryTreeTruncated string
 	DirectoryTreeNeedsWidth                                                                                 string
 	BrowseSync, BrowseHint, BrowseRootsFmt, BrowseOutside, BrowseFailedFmt                                  string

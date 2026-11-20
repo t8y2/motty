@@ -261,7 +261,7 @@ func TestAISettingsImportPreviewListsEveryCandidateAndWritesNothingWhenEmpty(t *
 		t.Fatalf("selection after clearing = %d", got)
 	}
 	canvas, _ = world.paint()
-	if hit, ok := hitByLabel(canvas, state.messages.AISettings.ImportApply); !ok || !hit.Disabled {
+	if hit, ok := hitByLabelRoleLast(canvas, state.messages.AISettings.ImportApply, gfx.RoleButton); !ok || !hit.Disabled {
 		t.Fatalf("Import with an empty selection = %+v, ok=%v", hit, ok)
 	}
 	world.state.Click(hitAISetImportApply)

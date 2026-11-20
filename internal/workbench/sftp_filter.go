@@ -6,7 +6,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
@@ -166,105 +165,11 @@ func (state *State) sftpHeaderMenuOwns(id gfx.ID) bool {
 	return ok && state.sftpHeaderMenuAvailable(session.files)
 }
 
-// requestSFTPHeaderMenu records the docked panel's More menu for the page.
-func (state *State) requestSFTPHeaderMenu(anchor gfx.Rect, folder *sftpFolder, view *sftpView) {
-	state.sftpHeaderMenu = sftpHeaderMenuRequest{queued: true, anchor: anchor, folder: folder, view: view}
-}
-
-// requestSFTPWindowHeaderMenu records a file tab's More menu for the page.
-func (state *State) requestSFTPWindowHeaderMenu(window *sftpWindow, side int, anchor gfx.Rect) {
-	state.sftpHeaderMenu = sftpHeaderMenuRequest{queued: true, window: window, side: side, anchor: anchor}
-}
-
-// paintQueuedSFTPHeaderMenu paints the menu an embedded file panel asked for,
-// over the page, where its backdrop covers the whole window.
+// paintQueuedSFTPHeaderMenu clears the request a file panel made for its More
+// menu. The menu is a page control now, declared where the panel or the tab
+// declares its view, so the page has already painted it.
 func (state *State) paintQueuedSFTPHeaderMenu(canvas *gfx.Canvas) {
-	request := state.sftpHeaderMenu
 	state.sftpHeaderMenu = sftpHeaderMenuRequest{}
-	if !request.queued {
-		return
-	}
-	if request.window == nil {
-		if request.anchor.Width == 0 || state.contextRect.Width == 0 {
-			return
-		}
-		// The panel is part of the workbench page, so its anchor is already a
-		// window rectangle and its identities need no mount.
-		state.sftpHeaderMenu.owner = hitSFTPHeaderMenuDismiss
-		state.paintSFTPHeaderMenu(canvas, state.windowRect(), request.anchor, request.folder, request.view)
-		return
-	}
-	if request.window.closed || request.window.window != nil {
-		return
-	}
-	// The tab's view is part of the workbench page, so its More menu is painted
-	// at the window's coordinates with the window's own identities: no mount.
-	state.sftpHeaderMenu.owner = hitSFTPWindowHeaderDismiss
-	request.window.paintHeaderMenu(canvas, request.side, state.windowRect(), &request.window.ui.headerScroll)
-}
-
-// paintSFTPHeaderMenu paints the docked panel's More menu over the page. Its
-// anchor is already a window rectangle: the panel is part of the workbench page,
-// so its identities are its own.
-func (state *State) paintSFTPHeaderMenu(canvas *gfx.Canvas, viewport gfx.Rect, anchor gfx.Rect, folder *sftpFolder, view *sftpView) {
-	if anchor.Width == 0 || anchor.Height == 0 {
-		return
-	}
-	dismiss := hitSFTPHeaderMenuDismiss
-	const menuWidth = float32(280)
-	// Follow already has a permanent entry below.
-	var overflow []barTool
-	for _, tool := range state.chrome.sftpPanel.overflowTools {
-		if tool.id != hitSFTPFollowToggle {
-			overflow = append(overflow, tool)
-		}
-	}
-	rows := 7 + len(folder.history.recent)
-	rows += len(overflow)
-	if label, _ := state.sftpEditorItem(view, folder); label != "" {
-		rows++
-	}
-	menuHeight := float32(rows*32 + 26)
-	bounds := state.popupBelow(canvas, anchor, menuWidth, menuHeight, ui.End)
-	menu := components.BeginDropdownMenu(canvas, state.Theme(), bounds, components.DropdownMenuOptions{
-		Layer: dialogLayer, Scope: dialogScope, DismissID: dismiss,
-		Viewport: viewport, Scroll: state.menuScrollFor(dismiss),
-	})
-	state.menuPlaced(menu.Bounds())
-	for _, tool := range overflow {
-		menu.AddItem(components.DropdownMenuItem{
-			ID: tool.id, Label: tool.hint, Icon: lucideIcons[tool.icon], Disabled: tool.disabled,
-		})
-	}
-	if len(overflow) > 0 {
-		menu.AddSeparator()
-	}
-	state.paintSFTPHistoryMenu(&menu, view, view.local, hitSFTPHistoryBack, hitSFTPHistoryForward, sftpRecentHits)
-	menu.AddItem(components.DropdownMenuItem{
-		ID: hitSFTPHeaderFilter, Label: state.messages.Tools.FilesFilterLabel, Icon: lucideIcons[iconSearch],
-		Kind: components.DropdownMenuCheckbox, Checked: folder.filterOpen || folder.filterInputEditor().String() != "",
-	})
-	hiddenIcon, hiddenLabel := iconEyeOff, state.messages.Tools.FilesShowHidden
-	if folder.showHidden {
-		hiddenIcon, hiddenLabel = iconEye, state.messages.Tools.FilesHideHidden
-	}
-	menu.AddItem(components.DropdownMenuItem{
-		ID: hitSFTPHeaderHidden, Label: hiddenLabel, Icon: lucideIcons[hiddenIcon],
-		Kind: components.DropdownMenuCheckbox, Checked: folder.showHidden,
-	})
-	menu.AddItem(components.DropdownMenuItem{
-		ID: hitSFTPHeaderFollow, Label: state.messages.Tools.FilesFollow, Icon: lucideIcons[iconFollowFolder],
-		Kind: components.DropdownMenuCheckbox, Checked: !state.sftpFollowOff,
-	})
-	if label, disabled := state.sftpEditorItem(view, folder); label != "" {
-		menu.AddItem(components.DropdownMenuItem{ID: hitSFTPHeaderEditor, Label: label, Icon: lucideIcons[iconExternal], Disabled: disabled})
-	}
-	menu.AddSeparator()
-	menu.AddItem(components.DropdownMenuItem{
-		ID: hitSFTPCalculateDirectorySize, Label: state.messages.SFTPWindow.CalculateDirectorySize, Icon: lucideIcons[iconInfo],
-		Disabled: folder.path == "" || !view.local && view.openFiles == nil,
-	})
-	menu.End()
 }
 
 func (state *State) sftpFilterShortcut(target gfx.ID) (gfx.EventResult, bool) {
@@ -286,31 +191,28 @@ func (state *State) sftpFilterShortcut(target gfx.ID) (gfx.EventResult, bool) {
 	return gfx.EventResult{Handled: true, Repaint: true, Focus: hitSFTPFilter, FocusVisible: true}, true
 }
 
-func (state *State) paintSFTPFilter(canvas *gfx.Canvas, bounds gfx.Rect, folder *sftpFolder) {
-	state.paintSFTPFilterInput(canvas, bounds, folder, hitSFTPFilter, hitSFTPFilterClear)
-}
-
-func (state *State) paintSFTPFilterInput(canvas *gfx.Canvas, bounds gfx.Rect, folder *sftpFolder, id, clearID gfx.ID) {
-	value := folder.filterInputEditor().String()
-	placeholder := state.messages.Tools.FilesFilterPlaceholder
-	if folder.deep {
-		placeholder = state.messages.Tools.FilesSearchPlaceholder
+// declareSFTPFilterField declares the folder filter as a page field over the
+// folder's filter editor: the magnifier at its start and, once it has text, the
+// clear action. onClear clears the query; the caller reads Changed to re-filter.
+func (state *State) declareSFTPFilterField(c ui.C, folder *sftpFolder, id gfx.ID, onClear func()) ui.Box {
+	if !folder.filterUIBound {
+		folder.filterUI.Bind(folder.filterInputEditor())
+		folder.filterUIBound = true
 	}
-	clear := components.InputGroupSlot{}
-	if value != "" {
-		clear = components.InputGroupSlot{
-			Kind: components.InputGroupSlotButton, ID: clearID,
-			Icon: lucideIcons[iconClose], Label: state.messages.Tools.FilesFilterClear,
-			ButtonSize: components.InputGroupButtonIconXS,
+	messages := state.messages.Tools
+	placeholder := messages.FilesFilterPlaceholder
+	if folder.deep {
+		placeholder = messages.FilesSearchPlaceholder
+	}
+	field := ui.TextFieldID(c, id, &folder.filterUI, messages.FilesFilterLabel, placeholder).
+		Icon(lucideIcons[iconSearch])
+	if folder.filterInputEditor().String() != "" {
+		field = field.Action(lucideIcons[iconClose], messages.FilesFilterClear)
+		if field.ActionClicked() && onClear != nil {
+			c.After(onClear)
 		}
 	}
-	components.PaintInputGroup(canvas, state.Theme(), bounds, components.InputGroupSnapshot{
-		ID: id, Label: state.messages.Tools.FilesFilterLabel, Value: value,
-		Placeholder:   placeholder,
-		NativeEditing: canvas.Focused() == id && value != "",
-		InlineStart:   components.InputGroupSlot{Kind: components.InputGroupSlotIcon, Icon: lucideIcons[iconSearch]},
-		InlineEnd:     clear,
-	})
+	return field
 }
 
 func (state *State) applySFTPFilter(view *sftpView, folder *sftpFolder, clearSelection bool) {
@@ -443,8 +345,8 @@ func (state *State) declareLocalCoverage(c ui.C, folder *sftpFolder, id gfx.ID) 
 		return
 	}
 	ui.Column(c).Height(38).Shrink(0).HitWith(id, folder.coverageText, gfx.HitOptions{Role: gfx.RoleStatus, SkipFocus: true, Hint: folder.coverageText}).Children(func() {
-		ui.Text(c, folder.coverageLabel).FontSize(metrics.FontSizeS).Color(state.pal.warning).Ellipsis().Height(18).Shrink(0)
-		ui.Text(c, state.messages.Tools.FilesLoadedFilterOnly).FontSize(metrics.FontSizeS).Color(state.pal.muted).Ellipsis().Height(18).Shrink(0)
+		ui.Text(c, folder.coverageLabel).FontSize(metrics.FontSizeS).Color(state.pal.warning).Ellipsis().Height(18).LineHeight(18).Shrink(0)
+		ui.Text(c, state.messages.Tools.FilesLoadedFilterOnly).FontSize(metrics.FontSizeS).Color(state.pal.muted).Ellipsis().Height(18).LineHeight(18).Shrink(0)
 	})
 }
 

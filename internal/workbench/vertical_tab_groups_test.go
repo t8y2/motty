@@ -187,7 +187,7 @@ func TestVerticalTabGroupingNavigationReorderAndCloseFollowVisualOrder(t *testin
 		t.Fatal("dragging within a server did not reorder its connections")
 	}
 	state.tabMenu = tabMenu{open: true, workspace: ids[2]}
-	state.clickTabMenu(hitTabMenuCloseRight)
+	state.chooseTabMenu(hitTabMenuCloseRight)
 	if state.modal != modalCloseTabs || state.tabsClose.count != 3 {
 		t.Fatalf("close below must include all following visual tabs: %+v", state.tabsClose)
 	}
@@ -206,7 +206,7 @@ func TestVerticalTabGroupingNavigationReorderAndCloseFollowVisualOrder(t *testin
 		t.Fatalf("reordering a child must preserve other servers' slots: %v", got)
 	}
 	state.tabMenu = tabMenu{open: true, workspace: ids[2]}
-	state.clickTabMenu(hitTabMenuCloseRight)
+	state.chooseTabMenu(hitTabMenuCloseRight)
 	if state.tabsClose.count != 2 || !reflect.DeepEqual(state.tabsClose.ids, []layoutcore.WorkspaceID{ids[1], ids[3]}) {
 		t.Fatalf("close below must include the earlier deck tab displayed below the group: %+v", state.tabsClose)
 	}

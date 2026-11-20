@@ -7,6 +7,9 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
+
+	"motty/internal/workbench/icons"
 )
 
 var hitHostColors = tree.Sub(shellHits, tree.Name("host-colors"))
@@ -49,22 +52,75 @@ func (state *State) clickHostColor(id gfx.ID) bool {
 	return true
 }
 
-func (state *State) paintHostColorChoice(canvas *gfx.Canvas, bounds gfx.Rect) {
+// declareHostColorChoice declares the colour row in the page: the palette's
+// swatches and the picker that stages a custom colour. A swatch click writes the
+// preset; the picker writes what it applied.
+func (state *State) declareHostColorChoice(c ui.C, parent ui.Box, rowHeight float32) {
+	editor, form := &state.editor, &state.editor.form
 	m := state.messages
 	labels := [...]string{m.ColorNone, m.ColorGreen, m.ColorYellow, m.ColorOrange, m.ColorRed, m.ColorBlue, m.ColorPurple}
-	palette := bounds
-	palette.Width = 246
-	content := components.BeginField(canvas, state.Theme(), palette).Paint(m.FieldColor, "", "")
-	selected := state.editor.value(fieldColor)
-	for index, color := range hostColors {
-		swatch := gfx.Rect{X: content.X + float32(index)*35, Y: content.Y, Width: 32, Height: 32}
-		components.BeginColorSwatch(canvas, state.Theme(), hitHostColors.At(index), swatch, hostAccent(color)).Label(labels[index]).Selected(strings.EqualFold(selected, color)).Paint()
-		state.rememberHostControl(hitHostColors.At(index), swatch)
+	selected := editor.value(fieldColor)
+	empty := true
+	if _, valid := components.ParseColorHex(selected, false); valid {
+		empty = false
 	}
-	p := &state.editor.colorPicker
-	p.trigger = gfx.Rect{X: content.X + float32(len(hostColors))*35, Y: content.Y, Width: 32, Height: 32}
-	state.rememberHostControl(hostPickerIDs.Trigger, p.trigger)
-	components.BeginColorPicker(canvas, state.Theme(), p.trigger, state.hostPickerOptions(canvas)).PaintTrigger()
+	for _, preset := range hostColors {
+		if strings.EqualFold(selected, preset) {
+			empty = true
+		}
+	}
+	form.colorValue = hostAccent(selected)
+	parent.Children(func() {
+		ui.FormField(c, &form.colorField, m.FieldColor).FillWidth().Height(rowHeight).Children(func() {
+			ui.Row(c).Fill().Items(ui.Center).Gap(3).Children(func() {
+				for index, color := range hostColors {
+					swatch := ui.ColorSwatch(c, hostAccent(color), strings.EqualFold(selected, color), labels[index]).Hit(hitHostColors.At(index), labels[index]).Size(32, 32)
+					form.colorSwatchBoxes[index] = swatch
+					if swatch.Clicked() {
+						editor.color = text.Editor{}
+						editor.color.Insert(color)
+					}
+				}
+				form.colorPickerBox = ui.ColorPicker(c, &form.colorState, &form.colorValue, m.FieldColor).RoundTrigger().TriggerIcon(&icons.Pipette).NoColor(empty).
+					PanelLabels(components.ColorPickerLabels{
+						Color: m.ColorPickerChoose, Saturation: m.ColorPickerSV, Hue: m.ColorPickerHue,
+						Hex: m.FieldColorCustom, Clear: m.ColorPickerClear, Cancel: m.Cancel, Apply: m.ColorPickerApply,
+					})
+				if form.colorState.Applied() {
+					editor.color = text.Editor{}
+					if form.colorValue.Alpha > 0 {
+						var buf [9]byte
+						editor.color.Insert(string(components.ColorPickerValue{}.WithColor(form.colorValue).AppendHex(buf[:0], false)))
+					}
+				}
+			})
+		})
+	})
+}
+
+// rememberHostColor keeps the colour palette in the form's tab ring: the swatches
+// by their own identities, and the picker by the trigger it paints.
+func (state *State) rememberHostColor(canvas *gfx.Canvas) {
+	form := &state.editor.form
+	for index := range form.colorSwatchBoxes {
+		if form.colorSwatchBoxes[index].Valid() {
+			state.rememberHostControl(hitHostColors.At(index), form.colorSwatchBoxes[index].Rect())
+		}
+	}
+	if !form.colorPickerBox.Valid() {
+		return
+	}
+	rect := form.colorPickerBox.Rect()
+	for _, hit := range canvas.Hits() {
+		if hit.Role != gfx.RoleButton || hit.Label != state.messages.ColorPickerChoose {
+			continue
+		}
+		if hit.Bounds.X >= rect.X && hit.Bounds.Y >= rect.Y &&
+			hit.Bounds.X < rect.X+rect.Width && hit.Bounds.Y < rect.Y+rect.Height {
+			state.rememberHostControl(hit.ID, hit.Bounds)
+			return
+		}
+	}
 }
 
 func tintHostSurface(background gfx.Color, color string, amount float32) gfx.Color {

@@ -35,7 +35,10 @@ rect {{864 372 32 32} {0.17254902 0.19607843 0.23529412 1} 7.5 0 {864 40 32 556}
 shadow {{218 249.5 464 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #23}
 shadow {{218 321.5 464 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #26}
 text "Production" {148 8 60.216797 20}
-text "Files" {12 43 256 21}
+text "Files" {12 43 256 20}
+text "/" {44 114 4.4941406 20}
+text "home" {73.49414 114 33.07129 20}
+text "test" {131.56543 114 22.026367 20}
 text "Name" {20 144 160 28}
 text "Size" {210.74414 144 50 28}
 text "Modified" {268.01758 144 78 28}
@@ -45,10 +48,8 @@ text "11/15 06:15" {262.1328 177.5 82 19}
 text "notes.txt" {44 206.5 140 21}
 text "11 B" {217.84961 207.5 54 19}
 text "11/15 06:13" {262.02148 207.5 82 19}
-text "-rw-r--r--  ·  11 B" {14 540 314 19}
+text "-rw-r--r--  ·  11 B" {14 540 314 18}
 text "1 items" {12 570.5 316 19}
-text "home" {97 112 33.07129 24}
-text "test" {163.07129 112 22.026367 24}
 text "New symbolic link" {214 180.5 472 17}
 text "Link name" {218 227.5 65.71387 18}
 text "" {229 255.5 442 20}
@@ -84,6 +85,9 @@ hit "Go to this folder in the terminal" button {208 78 24 24} disabled=false
 hit "Hide hidden files" button {236 78 24 24} disabled=false
 hit "More file actions" button {304 78 24 24} disabled=false
 hit "Up" button {12 110 28 28} disabled=false
+hit "Folder path" button {44 112 222 24} disabled=false
+hit "/" link {44 114 4.4941406 20} disabled=false
+hit "home" link {73.49414 114 33.07129 20} disabled=false
 hit "Folder favorites" button {270 110 28 28} disabled=false
 hit "Bookmark current folder" button {300 110 28 28} disabled=false
 hit "Name" button {20 144 164 28} disabled=false
@@ -101,8 +105,6 @@ hit "Permissions" button {132 510 28 28} disabled=false
 hit "Ownership" button {162 510 28 28} disabled=false
 hit "Move to…" button {192 510 28 28} disabled=false
 hit "Delete" button {222 510 28 28} disabled=false
-hit "Folder path" button {44 112 222 24} disabled=false
-hit "home" link {97 112 33.07129 24} disabled=false
 hit "Resize column" separator {182.5 144 4 28} disabled=false
 hit "Resize column" separator {236.5 144 4 28} disabled=false
 hit "" region {190 156.5 520 287} disabled=false

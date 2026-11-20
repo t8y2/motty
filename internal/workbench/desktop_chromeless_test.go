@@ -103,11 +103,11 @@ func TestChromelessDesktopShowsThePictureAlone(t *testing.T) {
 	workspace := state.deck.ActiveWorkspace()
 	rightClickTab(state, hitTabList.At(int(workspace)))
 	canvas = paintDesk(state)
-	hide, ok := hitByID(canvas, hitTabMenuHideBars)
+	hide, ok := menuHit(canvas, state, hitTabMenuHideBars)
 	if !ok || hide.Disabled {
 		t.Fatal("the tab menu of a desktop does not offer to hide its bars")
 	}
-	state.Click(hitTabMenuHideBars)
+	chooseMenu(t, state, hitTabMenuHideBars)
 	if !session.desk.chromeless || !session.host.Chromeless {
 		t.Fatalf("hiding the bars moved the view (%v) and the host (%v)", session.desk.chromeless, session.host.Chromeless)
 	}
@@ -129,7 +129,7 @@ func TestTheTabMenuHoldsTheDesktopControlsOnlyForADesktop(t *testing.T) {
 	rightClickTab(state, hitTabList.At(int(workspace)))
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if _, ok := hitByID(&canvas, hitTabMenuFit); ok {
+	if _, ok := menuHit(&canvas, state, hitTabMenuFit); ok {
 		t.Fatal("a terminal tab offers the desktop's scaling choice")
 	}
 }

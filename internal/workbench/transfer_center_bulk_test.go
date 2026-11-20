@@ -79,8 +79,18 @@ func bulkConflict(t testing.TB, state *State, view *sftpView, remote *workbenchS
 }
 
 func bulkAction(name string) gfx.ID { return tree.ID(transferCenterHits, name) }
-func bulkHost(index int) gfx.ID {
-	return tree.Sub(transferCenterHits, tree.Name("host-item")).At(index)
+
+// chooseBulkHost scopes the center to host index, 0 meaning every host: the
+// page's host select writes the same field.
+func chooseBulkHost(state *State, index int) {
+	center := &state.transfers
+	center.host = nil
+	if index > 0 {
+		center.host = center.hosts[index-1]
+	}
+	center.scroll = 0
+	center.details.dismiss()
+	state.describeTransferScope()
 }
 
 func TestTransferCenterHostFilterScopesClearWithIdenticalWorkerIDs(t *testing.T) {
@@ -93,7 +103,7 @@ func TestTransferCenterHostFilterScopesClearWithIdenticalWorkerIDs(t *testing.T)
 	if id != otherID {
 		t.Fatal("fixture must exercise colliding worker-local task IDs")
 	}
-	state.Click(bulkHost(1))
+	chooseBulkHost(state, 1)
 	state.Click(hitTransfersFilter.At(3))
 	var shown int
 	for index := range state.transfers.entries {
@@ -129,7 +139,7 @@ func TestTransferCenterBulkRetryDoesNotOverwriteConflictsOrRetryHiddenCanceledTa
 	view.worker.CancelTransfer(canceled)
 	state.refreshSFTPTransfers(view)
 	hiddenID, _ := bulkConflict(t, state, hidden, hiddenRemote, "hidden", "keep")
-	state.Click(bulkHost(1))
+	chooseBulkHost(state, 1)
 	state.Click(hitTransfersFilter.At(3))
 	state.Click(bulkAction("retry-failed"))
 	bulkAwait(t, state, view, id, sftpclient.TransferCompleted)
@@ -256,7 +266,7 @@ func TestTransferCenterHostScopeGroupsCatalogHostAcrossWorkers(t *testing.T) {
 	if len(state.transfers.hosts) != 3 {
 		t.Fatalf("host choices=%d; same catalog+endpoint must group, changed endpoint/catalog must not", len(state.transfers.hosts))
 	}
-	state.Click(bulkHost(1))
+	chooseBulkHost(state, 1)
 	if state.transfers.count != 2 {
 		t.Fatalf("same configured host shows %d, want both owners", state.transfers.count)
 	}
@@ -291,7 +301,7 @@ func TestTransferCenterScopedCancelDoesNotCancelHiddenHost(t *testing.T) {
 		state.refreshSFTPTransfers(view)
 		views = append(views, view)
 	}
-	state.Click(bulkHost(1))
+	chooseBulkHost(state, 1)
 	state.Click(hitTransfersFilter.At(1))
 	state.Click(hitTransfersCancelAll)
 	bulkAwait(t, state, views[0], 1, sftpclient.TransferCanceled)
@@ -389,7 +399,7 @@ func TestTransferCenterBulkViewsKeepSteadyPaintAllocationBudget(t *testing.T) {
 	view, remote := bulkTestView(t, state)
 	bulkConflict(t, state, view, remote, "first", "mine")
 	state.transfers.open = true
-	state.Click(bulkHost(1))
+	chooseBulkHost(state, 1)
 	state.Click(hitTransfersFilter.At(3))
 	for _, mode := range []string{"filtered", "confirmation"} {
 		t.Run(mode, func(t *testing.T) {

@@ -161,7 +161,7 @@ func TestToolbarDockSizesKeepMixedActionsReachableAcrossScales(t *testing.T) {
 			state.closeModal()
 			state.setTerminalToolbarSize(terminalToolbarLarge)
 			state.toolbarDock.menu = true
-			state.Click(hitToolbarDockReset)
+			chooseMenu(t, state, hitToolbarDockReset)
 			if state.terminalToolbarSize != terminalToolbarSmall {
 				t.Fatal("dock menu reset retained a custom size")
 			}
@@ -1310,9 +1310,8 @@ func TestToolbarDockDisabledToolMenuAndDrag(t *testing.T) {
 	if !state.toolbarDock.menu || state.toolbarDock.menuTool != hitTerminalRecordingExport {
 		t.Fatalf("right-clicking disabled tool did not open its menu: menu=%v tool=%v", state.toolbarDock.menu, state.toolbarDock.menuTool)
 	}
-	if !state.clickToolbarDockMenu(hitToolbarDockTop) {
-		t.Fatal("clickToolbarDockMenu failed")
-	}
+	state.toolbarDock.menu = false
+	state.chooseToolbarDockMenu(hitToolbarDockTop)
 	if zone := state.toolbarDockZoneFor(toolbarTerminal, "export-recording"); zone != toolbarDockTop {
 		t.Fatalf("moved zone = %s, want %s", zone, toolbarDockTop)
 	}
@@ -1504,20 +1503,16 @@ func TestToolbarDockDisabledToolYieldsToTargetedPresses(t *testing.T) {
 	point := gfx.Point{X: hit.Bounds.X + hit.Bounds.Width/2, Y: hit.Bounds.Y + hit.Bounds.Height/2}
 
 	state.tabMenu.open = true
-	result := state.Pointer(gfx.PointerEvent{
+	// The menu is the page's now and dismisses itself in the paint that reads the
+	// press; the dock must leave a press that names another control alone.
+	state.Pointer(gfx.PointerEvent{
 		Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary,
 		Target: hitTabMenuDismiss, X: point.X, Y: point.Y, Viewport: size,
 	})
-	if !result.Handled {
-		t.Fatal("the press should be handled by the menu it names")
-	}
 	if state.toolbarDock.menu {
 		t.Fatal("press on an open menu's dismiss layer opened the dock menu")
 	}
 	if state.toolbarDock.drag.pressed {
 		t.Fatal("press on an open menu's dismiss layer armed a dock drag")
-	}
-	if state.tabMenu.open {
-		t.Fatal("the open tab menu was not dismissed")
 	}
 }

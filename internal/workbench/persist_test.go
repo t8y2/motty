@@ -15,6 +15,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/i18n"
+	"motty/internal/sshbrowser"
 	"motty/internal/sshconn"
 )
 
@@ -555,5 +556,18 @@ func TestSavingHostGroupsUsesTheIncrementalPath(t *testing.T) {
 	}
 	if len(saved.HostGroups) != 3 || saved.HostGroups[2].Name != "ops" || !saved.HostGroups[2].Collapsed {
 		t.Fatalf("groups after adding = %+v", saved.HostGroups)
+	}
+}
+
+func TestSSHBrowserChoiceIsSaved(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	state.sshBrowser = sshbrowser.FamilyEdge
+	state.save()
+	saved, _, err := loadState(state.options.StatePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.SSHBrowser != string(sshbrowser.FamilyEdge) {
+		t.Fatalf("saved SSH browser = %q, want %q", saved.SSHBrowser, sshbrowser.FamilyEdge)
 	}
 }

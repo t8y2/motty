@@ -24,7 +24,7 @@ func newCodeDocument(t *testing.T, name, source string) *fileDocument {
 	t.Helper()
 	d := documentFixture(t)
 	d.name = name
-	decoded, err := filecontent.Decode([]byte(source), "")
+	decoded, err := filecontent.Decode([]byte(source), "", 1<<20)
 	if err != nil {
 		t.Fatal(err)
 	}

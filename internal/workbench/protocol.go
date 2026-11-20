@@ -182,16 +182,21 @@ type savedTransport struct {
 	// ViaSSH and Clipboard are a remote desktop host's (VNC or RDP): reached
 	// through an SSH connection to the same machine, and sharing the clipboard
 	// with the remote desktop. Console is an RDP host's: connect to the server's
-	// console session instead of a new one, as mstsc /admin does.
-	// StandardSecurity is an RDP host's too: use Standard RDP Security alone,
-	// with no TLS or NLA. Chromeless is a desktop host's: its page shows the
-	// picture without the bars around it.
+	// console session instead of a new one, as mstsc /admin does. NoAudio is an
+	// RDP host's too: ask the server for no audio. StandardSecurity is an RDP
+	// host's as well: use Standard RDP Security alone, with no TLS or NLA.
+	// LegacyTLS is an RDP host's too: offer the RSA key exchange TLS suites
+	// that an old server requires.
+	// Chromeless is a desktop host's: its page shows the picture without the
+	// bars around it.
 	// The password is never here: it is asked for, and kept in the vault only if
 	// the user says so.
 	ViaSSH           bool `json:"via_ssh,omitempty"`
 	Clipboard        bool `json:"clipboard,omitempty"`
 	Console          bool `json:"console,omitempty"`
+	NoAudio          bool `json:"no_audio,omitempty"`
 	StandardSecurity bool `json:"standard_security,omitempty"`
+	LegacyTLS        bool `json:"legacy_tls,omitempty"`
 	Chromeless       bool `json:"chromeless,omitempty"`
 }
 
@@ -221,7 +226,9 @@ func (host Host) transport() savedTransport {
 	case protocolRDP:
 		transport.Protocol, transport.ViaSSH, transport.Clipboard, transport.Chromeless = "rdp", host.ViaSSH, host.Clipboard, host.Chromeless
 		transport.Console = host.Console
+		transport.NoAudio = host.NoAudio
 		transport.StandardSecurity = host.StandardSecurity
+		transport.LegacyTLS = host.LegacyTLS
 		return transport
 	case protocolSerial:
 		transport.Proxy, transport.Protocol, transport.Line = nil, "serial", host.Line.String()
@@ -312,7 +319,9 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 	case "rdp":
 		host.Protocol, host.ViaSSH, host.Clipboard, host.Chromeless = protocolRDP, transport.ViaSSH, transport.Clipboard, transport.Chromeless
 		host.Console = transport.Console
+		host.NoAudio = transport.NoAudio
 		host.StandardSecurity = transport.StandardSecurity
+		host.LegacyTLS = transport.LegacyTLS
 	case "serial":
 		host.Proxy, host.Credential = nil, ""
 		flow := serial.FlowNone
@@ -493,7 +502,7 @@ func (conn *streamConn) OpenShell(config sshconn.ShellConfig) (Shell, error) {
 	if shell == nil {
 		return nil, errors.New("workbench: the connection has no stream")
 	}
-	shell.Resize(config.Cols, config.Rows)
+	shell.Resize(config.Size())
 	return shell, nil
 }
 
@@ -602,9 +611,10 @@ func sameHost(a Host, b Host) bool {
 }
 
 // hostIndexByEndpoint is where the list has a host that is the same destination
-// as host, or -1. It is what an import from another program is checked against:
-// an entry that is only a name for a server already saved is not worth a second
-// host, and a program's own names say little about it.
+// as host, or -1. The SSH config sync uses it to tell a block that only names a
+// server already saved from a host of its own. A session imported from another
+// client is identified by its name as well (see sameHost), because one bastion
+// address can hold several saved sessions.
 func (state *State) hostIndexByEndpoint(host Host) int {
 	for index, saved := range state.hosts {
 		if sameEndpoint(saved, host) {

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/app"
+	"motty/internal/sftpclient"
 )
 
 // A file's system icon is chosen by its extension, so every remote file of the
@@ -64,7 +65,12 @@ func (state *State) loadTypeIcons(view *sftpView, rows []sftpRow) {
 		if row.entry.IsDir() || row.appIcon != nil {
 			continue
 		}
-		slot, load := state.typeIconSlot(row.entry.Name)
+		if row.entry.IsLink() && (row.entry.LinkBroken || row.entry.LinkTarget == "") {
+			// The row keeps the link glyph: there is no target type to ask an
+			// icon for, so do not put a file icon over the link.
+			continue
+		}
+		slot, load := state.typeIconSlot(sftpTypeIconName(row.entry))
 		if slot == nil {
 			continue
 		}
@@ -74,6 +80,16 @@ func (state *State) loadTypeIcons(view *sftpView, rows []sftpRow) {
 		}
 	}
 	state.loadTypeIconSlots(view, pending)
+}
+
+// sftpTypeIconName is the name whose extension the system icon follows. A link
+// to a file follows the file it names, so a link called "notes" to "readme.md"
+// gets the same system icon as a plain readme.md.
+func sftpTypeIconName(entry sftpclient.Entry) string {
+	if entry.IsLink() && !entry.LinkBroken && entry.LinkTarget != "" {
+		return sftpLinkTargetName(entry.LinkTarget, entry.Name)
+	}
+	return entry.Name
 }
 
 // typeIconSlot returns the shared system-icon slot for a file name. The bool

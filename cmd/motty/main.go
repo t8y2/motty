@@ -318,11 +318,23 @@ func nextWindowID() int {
 	return windowIDs
 }
 
+// placementWindowID is the number a window opens under. A placement without
+// one takes the next number, so a torn-off window never shares the first
+// window's number: its saved record and the tray entries named after it would
+// collide with that window's own.
+func placementWindowID(place placement) int {
+	if place.windowID != 0 {
+		return place.windowID
+	}
+	return nextWindowID()
+}
+
 func openWorkbenchWindow(application *app.Application, status *tray, hub *workbench.AIHub, newWindow func() error, background bool, place placement) error {
 	importSource, sourceErr := developmentImportSource(datadir.Current().Dir)
 	if sourceErr != nil {
 		return sourceErr
 	}
+	windowID := placementWindowID(place)
 	// Connection goroutines wake the window through this; it costs nothing
 	// until a connection reports progress.
 	var invalidator app.Invalidator
@@ -359,7 +371,7 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		OpenContentWindow: application.OpenContentWindow,
 		Group:             windowGroup, Blank: place.blank, Log: recentLog,
 		LogDir: logDirectory(), PreviousCrash: crashNoticeFor(place),
-		WindowID:            place.windowID,
+		WindowID:            windowID,
 		RememberWindowFrame: place.rememberFrame,
 		TearOff: func(origin gfx.Point, adopt func(*workbench.State)) error {
 			return openWorkbenchWindow(application, status, hub, newWindow, false, placement{origin: &origin, adopt: adopt, blank: true})
@@ -420,9 +432,6 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 			return input
 		}
 		if input := state.TerminalFindInput(context); input != nil {
-			return input
-		}
-		if input := state.TerminalFindPreferencesInput(context); input != nil {
 			return input
 		}
 		if input := state.TerminalWordInput(context); input != nil {

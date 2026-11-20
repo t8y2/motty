@@ -21,24 +21,15 @@ type noteViewState struct {
 	codeActions                                          noteCodeActions
 	previewSelect                                        components.TextSelection
 	previewSource                                        string
-	treeBar, previewBar, popupBar                        noteScrollbar
 	pointer                                              gfx.Point
 	pointerValid                                         bool
-	previewArea                                          components.ScrollArea
-	previewDragging                                      bool
-	previewGrab                                          float32
 	tagsExpanded                                         bool
 	hostPickerCollapsed                                  map[string]bool
 	tagTokens                                            map[string]int
 	tokenTags                                            map[int]string
-	tagPopupArea                                         components.ScrollArea
-	tagPopupScroll, tagPopupGrab                         float32
-	tagPopupDragging                                     bool
 	tagQuery                                             string
 	returnFocus                                          gfx.ID
 	treeFolderSelection                                  bool
-	scrollDrag                                           bool
-	scrollGrab                                           float32
 	mode                                                 noteMode
 	width                                                float32
 	collapsed                                            bool
@@ -50,7 +41,6 @@ type noteViewState struct {
 	// the point a context menu was opened at.
 	overlayFrom              gfx.ID
 	listArea                 components.ScrollArea
-	treeScroll               float32
 	treeScratch              noteTreeScratch
 	noteTokens, folderTokens map[string]int
 	tokenNotes, tokenFolders map[int]string
@@ -63,42 +53,32 @@ type noteViewState struct {
 	menuFolder               bool
 	popup                    string
 	picker                   text.Editor
-	resizing                 bool
-	drop                     noteDrop
 	// windowMode is the mode a note window opens in, remembered here because
 	// every window is created fresh while the choice outlives it.
 	windowMode noteMode
 }
-type noteDrop struct {
-	parent, before string
-	valid, folder  bool
-	bounds         gfx.Rect
-	inside         bool
-}
 
 var (
-	hitNoteTreeMore       = tree.ID(notesHits, "tree-more")
-	hitNoteTreeToggle     = tree.ID(notesHits, "tree-toggle")
-	hitNoteSearchToggle   = tree.ID(notesHits, "search-toggle")
-	hitNoteExpandAll      = tree.ID(notesHits, "expand-all")
-	hitNoteRename         = tree.ID(notesHits, "rename")
-	hitNoteInline         = tree.ID(notesHits, "inline")
-	hitNoteDismiss        = tree.ID(notesHits, "dismiss")
-	hitNoteTagsOpen       = tree.ID(notesHits, "tags-open")
-	hitNoteHostsOpen      = tree.ID(notesHits, "hosts-open")
-	hitNotePicker         = tree.ID(notesHits, "picker")
-	hitNoteTagSubmit      = tree.ID(notesHits, "tag-submit")
-	hitNoteDivider        = tree.ID(notesHits, "divider")
-	hitNoteDrawerDismiss  = tree.ID(notesHits, "drawer-dismiss")
-	hitNoteModes          = tree.Sub(notesHits, tree.Name("mode-item"))
-	hitNoteDisclosures    = tree.Sub(notesHits, tree.Name("disclosure"))
-	hitNoteRowMore        = tree.Sub(notesHits, tree.Name("row-more"))
-	hitNoteFolderMore     = tree.Sub(notesHits, tree.Name("folder-more"))
-	hitNoteTagHints       = tree.Sub(notesHits, tree.Name("tag-hint"))
-	hitNoteTagPickerThumb = tree.ID(notesHits, "tag-picker-thumb")
-	hitNoteTagRows        = tree.Sub(notesHits, tree.Name("tag-row"))
-	hitNoteTagRemove      = tree.Sub(notesHits, tree.Name("tag-remove"))
-	hitNoteFormats        = tree.Sub(notesHits, tree.Name("format"))
+	hitNoteTreeMore      = tree.ID(notesHits, "tree-more")
+	hitNoteTreeToggle    = tree.ID(notesHits, "tree-toggle")
+	hitNoteSearchToggle  = tree.ID(notesHits, "search-toggle")
+	hitNoteExpandAll     = tree.ID(notesHits, "expand-all")
+	hitNoteRename        = tree.ID(notesHits, "rename")
+	hitNoteInline        = tree.ID(notesHits, "inline")
+	hitNoteDismiss       = tree.ID(notesHits, "dismiss")
+	hitNoteTagsOpen      = tree.ID(notesHits, "tags-open")
+	hitNoteHostsOpen     = tree.ID(notesHits, "hosts-open")
+	hitNotePicker        = tree.ID(notesHits, "picker")
+	hitNoteTagSubmit     = tree.ID(notesHits, "tag-submit")
+	hitNoteDrawerDismiss = tree.ID(notesHits, "drawer-dismiss")
+	hitNoteModes         = tree.Sub(notesHits, tree.Name("mode-item"))
+	hitNoteDisclosures   = tree.Sub(notesHits, tree.Name("disclosure"))
+	hitNoteRowMore       = tree.Sub(notesHits, tree.Name("row-more"))
+	hitNoteFolderMore    = tree.Sub(notesHits, tree.Name("folder-more"))
+	hitNoteTagHints      = tree.Sub(notesHits, tree.Name("tag-hint"))
+	hitNoteTagRows       = tree.Sub(notesHits, tree.Name("tag-row"))
+	hitNoteTagRemove     = tree.Sub(notesHits, tree.Name("tag-remove"))
+	hitNoteFormats       = tree.Sub(notesHits, tree.Name("format"))
 )
 
 func (s *State) noteTokens() {
@@ -223,22 +203,6 @@ func (s *State) commitNoteInline() bool {
 	return true
 }
 
-// overlayAnchorRect is where the open menu or popup hangs: under the control
-// that opened it, as this paint declared it, or at the point it was opened at.
-func (v *noteViewState) overlayAnchorRect(c *gfx.Canvas) gfx.Rect {
-	if bounds, ok := c.HitBounds(v.overlayFrom); ok && bounds.Width > 0 && bounds.Height > 0 {
-		v.overlayAnchor = bounds
-		return bounds
-	}
-	if v.overlayAnchor.Width > 0 && v.overlayAnchor.Height > 0 {
-		return v.overlayAnchor
-	}
-	if v.treeBounds.Width > 0 && v.treeBounds.Height > 0 {
-		return gfx.Rect{X: v.treeBounds.X + v.treeBounds.Width - 32, Y: v.treeBounds.Y + 40, Width: 28, Height: 28}
-	}
-	return v.overlayAnchor
-}
-
 func (s *State) noteViewClick(id gfx.ID) bool {
 	if s.clickNoteFindActions(id) {
 		return true
@@ -247,7 +211,6 @@ func (s *State) noteViewClick(id gfx.ID) bool {
 	if id == hitNoteDismiss {
 		v.menu = ""
 		v.popup = ""
-		v.resetPopupScrollbar()
 		v.focus = v.returnFocus
 		return true
 	}
@@ -298,8 +261,6 @@ func (s *State) noteViewClick(id gfx.ID) bool {
 		v.tagsExpanded = !v.tagsExpanded
 	case hitNoteTagsOpen:
 		v.overlayFrom = id
-		v.tagPopupScroll = 0
-		v.resetPopupScrollbar()
 		v.tagQuery = ""
 		v.returnFocus = hitNoteTagsOpen
 		v.popup = "tags"
@@ -307,8 +268,6 @@ func (s *State) noteViewClick(id gfx.ID) bool {
 		v.focus = hitNotePicker
 	case hitNoteHostsOpen:
 		v.overlayFrom = id
-		v.tagPopupScroll = 0
-		v.resetPopupScrollbar()
 		v.tagQuery = ""
 		v.returnFocus = hitNoteHostsOpen
 		v.popup = "hosts"
@@ -342,7 +301,6 @@ func (s *State) noteViewClick(id gfx.ID) bool {
 					v.hostPickerCollapsed = map[string]bool{}
 				}
 				v.hostPickerCollapsed[path] = !v.hostPickerCollapsed[path]
-				v.tagPopupScroll = 0
 			}
 			return true
 		}

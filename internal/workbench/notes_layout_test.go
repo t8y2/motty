@@ -1,6 +1,9 @@
 package workbench
 
 import (
+	"math"
+
+	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"strings"
@@ -20,11 +23,11 @@ func TestNotesWorkspaceGivesTheDocumentItsWidth(t *testing.T) {
 	if _, ok := hitByID(&c, hitNoteInline); ok {
 		t.Fatal("folder form is permanently visible")
 	}
-	row, ok := hitByID(&c, hitNoteRows.At(0))
+	row, ok := noteTreeRowHit(&c, &s.notes, s.notes.selected)
 	if !ok || !row.Selected {
 		t.Fatal("selected note is not visible as a selected tree row")
 	}
-	more, ok := hitByID(&c, hitNoteRowMore.At(0))
+	more, ok := hitByID(&c, hitNoteRowMore.At(s.notes.view.noteTokens[s.notes.selected]))
 	if !ok || more.Bounds.Y+more.Bounds.Height/2 != row.Bounds.Y+row.Bounds.Height/2 {
 		t.Fatal("tree action is not vertically centered in its row")
 	}
@@ -48,11 +51,11 @@ func TestNotesLibraryPrimaryActionSpansAboveTheList(t *testing.T) {
 	if add.Role != gfx.RoleButton || add.Label != s.noteText("New note", "新建笔记") {
 		t.Fatalf("new note action lacks button semantics: %+v", add)
 	}
-	tree := s.notes.view.treeBounds
-	if add.Bounds.X != tree.X+8 || add.Bounds.Width != tree.Width-16 || add.Bounds.Height < 36 {
-		t.Fatalf("new note action does not span the library: tree=%+v action=%+v", tree, add.Bounds)
+	search, searchOK := hitByID(&c, hitNoteSearchToggle)
+	if !searchOK || add.Bounds.X != search.Bounds.X || add.Bounds.Width != s.notes.page.library.Pos-16 || add.Bounds.Height < 36 {
+		t.Fatalf("new note action does not span the library: width=%v action=%+v", s.notes.page.library.Pos, add.Bounds)
 	}
-	row, ok := hitByID(&c, hitNoteRows.At(0))
+	row, ok := noteTreeRowHit(&c, &s.notes, s.notes.selected)
 	if !ok || add.Bounds.Y+add.Bounds.Height > row.Bounds.Y {
 		t.Fatalf("new note action is not above the list: action=%+v row=%+v", add.Bounds, row.Bounds)
 	}
@@ -67,13 +70,16 @@ func TestNotesEditorShowsAnInvitingEmptyState(t *testing.T) {
 	foundTitle, foundDescription, foundLibraryPrompt := false, false, false
 	for _, text := range c.Texts() {
 		foundTitle = foundTitle || text.Value == title
-		foundDescription = foundDescription || strings.Contains(text.Value, s.noteText("Select a note", "从左侧选择"))
+		foundDescription = foundDescription || strings.Contains(text.Value, s.noteText("Select a note", "从目录选择"))
 		foundLibraryPrompt = foundLibraryPrompt || text.Value == s.noteText("Your first working note starts here.", "第一条工作记录，从这里开始。")
 	}
 	if !foundTitle || !foundDescription || !foundLibraryPrompt {
 		t.Fatalf("empty state is incomplete: title=%v description=%v library=%v", foundTitle, foundDescription, foundLibraryPrompt)
 	}
 	for _, text := range c.Texts() {
+		if strings.Contains(text.Value, s.noteText("Notes stay on this device.", "笔记只保存在本机。")) {
+			t.Fatal("empty state incorrectly says synced notes stay on this device")
+		}
 		if text.Value == s.noteText("Select a note or create one to begin.", "选择笔记，或新建一篇笔记。") {
 			t.Fatal("legacy one-line empty prompt is still visible")
 		}
@@ -83,6 +89,36 @@ func TestNotesEditorShowsAnInvitingEmptyState(t *testing.T) {
 	}
 }
 
+// A note's name is centered in its tree row: the row's icon, name and action
+// button share one vertical centre.
+func TestNotesTreeTitleIsVerticallyCenteredInItsRow(t *testing.T) {
+	s := newTestState(t, testOptions(t))
+	s.notes.list = []savedNote{{ID: "centered", Title: "Centered note", Body: "body"}}
+	s.Click(hitNotes)
+	s.selectNote("centered")
+	var c gfx.Canvas
+	s.Paint(&c, gfx.Size{Width: 1400, Height: 900})
+	row, ok := noteTreeRowHit(&c, &s.notes, "centered")
+	if !ok {
+		t.Fatal("the note row is not painted")
+	}
+	for _, text := range c.Texts() {
+		if text.Value != "Centered note" {
+			continue
+		}
+		if text.Bounds.Y < row.Bounds.Y || text.Bounds.Y+text.Bounds.Height > row.Bounds.Y+row.Bounds.Height {
+			t.Fatalf("note name %+v is not inside its row %+v", text.Bounds, row.Bounds)
+		}
+		nameCenter := text.Bounds.Y + text.Bounds.Height/2
+		rowCenter := row.Bounds.Y + row.Bounds.Height/2
+		if math.Abs(float64(nameCenter-rowCenter)) > 1 {
+			t.Fatalf("note name centre %.1f is not the row centre %.1f", nameCenter, rowCenter)
+		}
+		return
+	}
+	t.Fatal("the note name is not painted")
+}
+
 func TestNotesModesAndDirectoryPreferencesSurviveReopening(t *testing.T) {
 	s := newTestState(t, freshOptions(t))
 	s.Click(hitNotes)
@@ -90,12 +126,12 @@ func TestNotesModesAndDirectoryPreferencesSurviveReopening(t *testing.T) {
 	s.Click(hitNoteModes.At(2))
 	var c gfx.Canvas
 	s.Paint(&c, gfx.Size{Width: 1400, Height: 900})
-	if _, ok := hitByID(&c, hitNotePreviewScroll); !ok {
+	if s.notes.previewBounds.Width <= 0 {
 		t.Fatal("split preview missing")
 	}
 	c.Reset()
 	s.Paint(&c, gfx.Size{Width: 800, Height: 700})
-	if _, ok := hitByID(&c, hitNotePreviewScroll); ok {
+	if s.notes.previewBounds.Width > 0 {
 		t.Fatal("narrow document still splits")
 	}
 	if _, ok := hitByID(&c, hitNoteBody); !ok {
@@ -142,10 +178,10 @@ func TestNotesTreeTargetsRemainStableAfterDeletingAnotherNote(t *testing.T) {
 	s.Click(hitNoteAdd)
 	second := s.notes.selected
 	s.Click(hitNoteAdd)
-	s.Click(hitNoteRows.At(0))
+	clickNoteTreeRow(t, s, &s.notes, first)
 	s.Click(hitNoteDelete)
 	s.Click(hitNoteConfirm)
-	s.Click(hitNoteRows.At(1))
+	clickNoteTreeRow(t, s, &s.notes, second)
 	if s.notes.selected != second || s.noteIndex(first) >= 0 {
 		t.Fatal("tree token selected a shifted array item")
 	}
@@ -162,15 +198,17 @@ func TestNotesSidePanelScrollBelongsToTheVisibleDocument(t *testing.T) {
 	s.Click(hitNoteSideLinked)
 	var c gfx.Canvas
 	s.Paint(&c, gfx.Size{Width: 1200, Height: 800})
-	s.Click(hitNoteRows.At(0))
+	clickNoteTreeRow(t, s, &s.noteSidebarState().content, s.notes.selected)
 	c.Reset()
 	s.Paint(&c, gfx.Size{Width: 1200, Height: 800})
 	n := &s.noteSidebarState().content
 	b := n.previewBounds
-	before := n.view.treeScroll
-	s.Scroll(gfx.ScrollEvent{X: b.X + 20, Y: b.Y + 40, DeltaY: 100, Viewport: gfx.Size{Width: 1200, Height: 800}})
-	if n.previewScroll <= 0 || n.view.treeScroll != before {
-		t.Fatal("document wheel scrolled the hidden directory")
+	config := s.WindowConfig(app.Config{OnScroll: s.Scroll})
+	config.OnScroll(gfx.ScrollEvent{X: b.X + 20, Y: b.Y + 40, DeltaY: 100, Viewport: gfx.Size{Width: 1200, Height: 800}})
+	c.Reset()
+	s.Paint(&c, gfx.Size{Width: 1200, Height: 800})
+	if n.previewScroll <= 0 {
+		t.Fatal("document wheel did not scroll the preview")
 	}
 }
 
@@ -302,8 +340,10 @@ func TestUnselectedMoreMenuFallbackAndLayer(t *testing.T) {
 			if text.Bounds.X < 200 {
 				t.Fatalf("Rename menu rendered at X=%.1f, overlapping workbench!", text.Bounds.X)
 			}
-			if text.Layer != dialogLayer {
-				t.Fatalf("Rename menu layer = %d, want dialogLayer (%d)", text.Layer, dialogLayer)
+			// The menu is a page menu: it paints on a widget layer above the
+			// page rather than on the old canvas overlay's fixed layer.
+			if text.Layer == 0 {
+				t.Fatal("Rename menu painted under the page")
 			}
 		}
 	}
@@ -335,8 +375,8 @@ func TestUnselectedMoreMenuFallbackAndLayer(t *testing.T) {
 			if text.Bounds.X < 200 {
 				t.Fatalf("folder Delete menu rendered at X=%.1f, overlapping workbench!", text.Bounds.X)
 			}
-			if text.Layer != dialogLayer {
-				t.Fatalf("folder menu layer = %d, want dialogLayer (%d)", text.Layer, dialogLayer)
+			if text.Layer == 0 {
+				t.Fatal("folder menu painted under the page")
 			}
 		}
 	}

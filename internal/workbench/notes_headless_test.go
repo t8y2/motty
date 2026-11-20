@@ -20,14 +20,15 @@ func TestNotesNativeEditorPreviewAndComposition(t *testing.T) {
 	s.Click(hitNotes)
 	s.Click(hitNoteAdd)
 	var input app.TextInput
-	v, err := headless.Open(app.Config{Title: "Notes", Width: 1200, Height: 800, Tree: Tree(), Paint: s.Paint, OnPointer: s.Pointer, OnKey: s.Key, OnScroll: s.Scroll, OnResize: s.Resize, TextInput: func(c app.TextInputContext) *app.TextInput {
+	config := s.WindowConfig(app.Config{Title: "Notes", Width: 1200, Height: 800, Tree: Tree(), Paint: s.Paint, OnPointer: s.Pointer, OnKey: s.Key, OnScroll: s.Scroll, OnResize: s.Resize, TextInput: func(c app.TextInputContext) *app.TextInput {
 		e := s.EditorFor(c.ID)
 		if e == nil {
 			return nil
 		}
 		input = app.TextInput{Editor: e}
 		return &input
-	}}, nil, headless.Options{})
+	}})
+	v, err := headless.Open(config, nil, headless.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,11 +70,11 @@ func TestNotesNativeEditorPreviewAndComposition(t *testing.T) {
 	if err = v.Rest(); err != nil {
 		t.Fatal(err)
 	}
-	row, ok := hitByIDSnapshot(v.Snapshot().Hits, hitNoteRows.At(0))
+	row, ok := hitByLabelSnapshot(v.Snapshot().Hits, "Runbook")
 	if !ok {
 		t.Fatal("note row missing")
 	}
-	folder, ok := hitByIDSnapshot(v.Snapshot().Hits, hitNoteFolderRows.At(0))
+	folder, ok := hitByLabelSnapshot(v.Snapshot().Hits, "Archive")
 	if !ok {
 		t.Fatal("folder missing")
 	}
@@ -110,39 +111,56 @@ func TestNotesNativeEditorPreviewAndComposition(t *testing.T) {
 
 func TestNotesEmptyStateHeadlessScreenshots(t *testing.T) {
 	directory := os.Getenv("MOTTY_NOTES_EMPTY_SCREENSHOTS")
-	if directory == "" {
-		t.Skip("set MOTTY_NOTES_EMPTY_SCREENSHOTS to write the note page captures")
-	}
-	if err := os.MkdirAll(directory, 0o755); err != nil {
-		t.Fatal(err)
+	if directory != "" {
+		if err := os.MkdirAll(directory, 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 	for _, capture := range []struct {
-		name string
-		mode appearanceMode
+		name  string
+		mode  appearanceMode
+		width int
 	}{
-		{"notes-empty-dark.png", appearancePinnedDark},
-		{"notes-empty-light.png", appearancePinnedLight},
+		{"notes-empty-dark.png", appearancePinnedDark, 1400},
+		{"notes-empty-light.png", appearancePinnedLight, 1400},
+		{"notes-empty-narrow.png", appearancePinnedDark, 760},
 	} {
-		state := newTestState(t, freshOptions(t))
-		state.language = i18n.Chinese
-		state.chooseAppearanceMode(capture.mode)
-		state.Click(hitNotes)
-		view, err := headless.Open(app.Config{
-			Title: "Motty notes", Width: 1400, Height: 900, Tree: Tree(),
-			Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
-		}, nil, headless.Options{Scale: 1})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := view.Wait(16 * time.Millisecond); err != nil {
-			view.Close()
-			t.Fatal(err)
-		}
-		err = view.Screenshot(filepath.Join(directory, capture.name))
-		view.Close()
-		if err != nil {
-			t.Fatal(err)
-		}
+		t.Run(capture.name, func(t *testing.T) {
+			state := newTestState(t, freshOptions(t))
+			state.language = i18n.Chinese
+			state.chooseAppearanceMode(capture.mode)
+			state.Click(hitNotes)
+			view, err := headless.Open(state.WindowConfig(app.Config{
+				Title: "Motty notes", Width: capture.width, Height: 900, Tree: Tree(),
+				Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
+			}), nil, headless.Options{Scale: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer view.Close()
+			if err := view.Wait(16 * time.Millisecond); err != nil {
+				t.Fatal(err)
+			}
+			if capture.width < 1000 {
+				if err := view.ClickLabel("显示 / 隐藏目录"); err != nil {
+					t.Fatal(err)
+				}
+				if err := view.Rest(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if directory != "" {
+				if err := view.Screenshot(filepath.Join(directory, capture.name)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := view.ClickLabel("新建笔记"); err != nil {
+				t.Fatal(err)
+			}
+			if len(state.notes.list) != 1 || state.notes.selected == "" {
+				t.Fatal("primary action did not create and select a note")
+			}
+		})
 	}
 }
 
@@ -173,9 +191,13 @@ func TestNoteExitDialogPointer(t *testing.T) {
 				s.selectNote("a")
 				s.save()
 				paint, pointer := s.Paint, s.Pointer
+				config := s.WindowConfig(app.Config{})
 				if window == "document" {
 					d := noteEditingWindow(t, s, "a")
 					paint, pointer = d.paint, d.pointer
+					config = d.config()
+				} else {
+					config.Width, config.Height, config.Tree = 1200, 800, Tree()
 				}
 				s.pauseSave = 1
 				s.notes.body.Insert(" pending")
@@ -183,7 +205,8 @@ func TestNoteExitDialogPointer(t *testing.T) {
 				if !s.ConfirmDocumentClose(func() { allowed = true }) || s.noteExit == nil {
 					t.Fatal("missing unsaved notes dialog")
 				}
-				v, err := headless.Open(app.Config{Title: "Notes", Width: 1200, Height: 800, Tree: Tree(), Paint: paint, OnPointer: pointer}, nil, headless.Options{})
+				config.Paint, config.OnPointer = paint, pointer
+				v, err := headless.Open(config, nil, headless.Options{})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -195,8 +218,9 @@ func TestNoteExitDialogPointer(t *testing.T) {
 				}
 				var hit gfx.Hit
 				ok := false
+				wantLabel := map[string]string{"cancel": "Cancel exit", "close": "Close dialog", "retry": "Retry", "discard": "Discard changes"}[action.name]
 				for _, candidate := range v.Snapshot().Hits {
-					if candidate.ID == action.id && (candidate.Label == "Close dialog") == (action.name == "close") {
+					if candidate.ID == action.id && candidate.Role == gfx.RoleButton && candidate.Label == wantLabel {
 						hit, ok = candidate, true
 						break
 					}

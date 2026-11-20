@@ -4,8 +4,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/workbench/icons"
 )
 
@@ -13,12 +13,19 @@ var hitNoteGroupSelect = tree.Sub(notesHits, tree.Name("host-picker-group-select
 
 var hitNoteHostGroups = tree.Sub(notesHits, tree.Name("host-picker-group"))
 
-func (s *State) notePopupSize(viewport gfx.Rect) (float32, float32) {
-	width := s.noteContent().view.documentBounds.Width / 2
-	if s.noteContent().view.popup == "hosts" {
-		width = s.noteContent().view.documentBounds.Width
+func (s *State) notePopupSize(c ui.C, n *notesUI) (float32, float32) {
+	viewport := c.Bounds()
+	return notePopupExtent(n.view.documentBounds.Width, viewport.Width, viewport.Height, n.view.popup == "hosts")
+}
+
+// notePopupExtent is the size of a notes picker over a document docWidth wide in
+// a window windowWidth by windowHeight.
+func notePopupExtent(docWidth, windowWidth, windowHeight float32, hosts bool) (float32, float32) {
+	width := docWidth / 2
+	if hosts {
+		width = docWidth
 	}
-	return min(max(width, 340), max(1, viewport.Width-24)), viewport.Height * .6
+	return min(max(width, 340), max(1, windowWidth-24)), windowHeight * .6
 }
 
 type noteHostPickerItem struct {
@@ -149,85 +156,104 @@ func (s *State) layoutNoteHostPicker(width float32, query string) ([]noteHostPic
 	return items, max(28, y)
 }
 
-func (s *State) paintNoteHostPopup(c *gfx.Canvas, viewport gfx.Rect) {
-	v := &s.noteContent().view
+// declareNoteHostPopup declares the host picker over its trigger: the search,
+// the group rows and the host cards, as page controls of the popover.
+func (s *State) declareNoteHostPopup(c ui.C, n *notesUI) {
+	v := &n.view
+	p := &n.page
 	theme := s.Theme()
 	pad := theme.Metrics.PadSurface
 	query := strings.ToLower(strings.TrimSpace(v.picker.String()))
-	if query != v.tagQuery {
+	queryChanged := query != v.tagQuery
+	if queryChanged {
 		v.tagQuery = query
-		v.tagPopupScroll = 0
 	}
-	width, maxHeight := s.notePopupSize(viewport)
+	width, maxHeight := s.notePopupSize(c, n)
 	items, height := s.layoutNoteHostPicker(max(1, width-2*pad-12), query)
-	pop := components.BeginPopover(c, theme, viewport, v.overlayAnchorRect(c), components.PopoverOptions{Layer: dialogLayer + 1, Scope: hitNoteDismiss, DismissID: hitNoteDismiss, ConsumeOutsidePress: true, Align: components.PopoverAlignStart, Side: s.notePopoverSide(), ContentSize: gfx.Size{Width: width, Height: min(maxHeight, 2*pad+38+height)}, InitialFocusID: hitNotePicker})
-	layout := pop.Begin("", "")
-	c.TrapFocus(hitNoteDismiss)
-	body := layout.Content.Inset(gfx.All(pad))
-	field := body
-	field.Height = 30
-	s.noteInputAt(c, hitNotePicker, field, s.noteText("Search hosts", "搜索主机"), v.picker.String())
-	list := body
-	list.Y += 38
-	list.Height = max(0, list.Height-38)
-	v.tagPopupArea = s.noteHoverScrollArea(c, list, gfx.Size{Width: list.Width, Height: height}, v.tagPopupScroll, hitNotePickerScroll, hitNoteTagPickerThumb, s.noteText("Scroll results", "滚动结果"), &v.popupBar, v.tagPopupDragging, s.noteScrollHover(list))
-	geo := v.tagPopupArea.BeginContent()
-	v.tagPopupScroll = geo.OffsetY
-	tooltip := ""
-	var tooltipBounds gfx.Rect
-	tags := noteWords(s.noteContent().tags.String())
-	for _, item := range items {
-		rect := item.bounds
-		rect.X += geo.Content.X
-		rect.Y += geo.Content.Y
-		if item.group {
-			if item.bounds.Y > 0 {
-				components.PaintSeparator(c, theme, gfx.Rect{X: rect.X, Y: rect.Y - 6, Width: rect.Width, Height: 1}, components.SeparatorHorizontal)
-			}
-			c.Rounded(rect, 6, s.pal.surfaceSoft)
-			icon := icons.ChevronRight
-			if item.expanded {
-				icon = icons.ChevronDown
-			}
-			id := hitNoteHostGroups.At(s.noteTagToken(item.key))
-			c.DrawIcon(icon, gfx.Rect{X: rect.X + 8, Y: rect.Y + 6, Width: 16, Height: 16}, s.pal.muted)
-			label := c.FitLine(item.label, 16, gfx.WeightSemibold, max(0, rect.Width-68))
-			labelWidth := c.TextWidthWeight(label, 16, gfx.WeightSemibold)
-			c.Label(label, gfx.Rect{X: rect.X + 32, Y: rect.Y, Width: labelWidth, Height: 28}, gfx.TextStyle{Size: 16, Weight: gfx.WeightSemibold, Color: s.pal.text})
-			c.HitWithOptions(id, rect, item.label, gfx.HitOptions{Role: gfx.RoleButton, Expanded: item.expanded, Expandable: true})
-			if item.key != "" {
-				selectID := hitNoteGroupSelect.At(s.noteTagToken(item.key))
-				components.BeginCheckbox(c, theme, selectID, gfx.Rect{X: rect.X + 32 + labelWidth + 10, Y: rect.Y + 6, Width: 16, Height: 16}, noteHasGroup(tags, item.key)).Label(item.key).Paint()
-			}
-			continue
-		}
-		id := hitNoteHostRows.At(s.noteTagToken(item.key))
-		selected := noteHasHost(tags, item.key)
-		cardTheme := theme
-		if selected {
-			cardTheme.Card = theme.Secondary
-		} else if c.Hovered() == id {
-			cardTheme.Card = s.pal.surfaceSoft
-		}
-		components.PaintCard(c, cardTheme, rect, components.CardOptions{Size: components.CardSizeSmall})
-		if c.FocusVisible() == id {
-			c.RoundedOutline(rect, theme.Metrics.RadiusSurface+4, 2, theme.Primary)
-		}
-		s.paintNoteHostIcon(c, item.key, gfx.Rect{X: rect.X + 10, Y: rect.Y + 10, Width: 20, Height: 20}, cardTheme.Card)
-		label := c.FitLine(item.label, theme.Metrics.FontSizeM, gfx.WeightMedium, max(0, rect.Width-76))
-		c.Label(label, gfx.Rect{X: rect.X + 38, Y: rect.Y, Width: max(0, rect.Width-76), Height: 40}, gfx.TextStyle{Size: theme.Metrics.FontSizeM, Weight: gfx.WeightMedium, Color: s.pal.text})
-		components.BeginCheckbox(c, theme, id, gfx.Rect{X: rect.X + rect.Width - 26, Y: rect.Y + 12, Width: 16, Height: 16}, selected).Label(item.label).HitBounds(rect).Paint()
-		if label != item.label && c.Hovered() == id {
-			tooltip = item.label
-			tooltipBounds = rect
-		}
+	contentHeight := min(maxHeight, 2*pad+38+height)
+	anchor, anchored := p.anchorBox(n)
+	if !anchored {
+		v.popup = ""
+		return
 	}
-	if len(items) == 0 {
-		c.Label(s.noteText("No hosts", "暂无主机"), gfx.Rect{X: geo.Content.X, Y: geo.Content.Y, Width: list.Width, Height: 28}, gfx.TextStyle{Size: 12, Color: s.pal.muted})
+	open := true
+	ui.PopoverWith(c, anchor, ui.PopoverSpec{
+		Scope: hitNoteDismiss, DismissID: hitNoteDismiss, ConsumeOutsidePress: true,
+		Side: s.notePopoverSide(), Align: ui.Start, Width: width, InitialFocusID: hitNotePicker,
+	}, &open, func() {
+		ui.Column(c).Children(func() {
+			p.picker.Bind(&v.picker)
+			ui.TextFieldID(c, hitNotePicker, &p.picker, s.noteText("Search hosts", "搜索主机"), s.noteText("Search hosts", "搜索主机")).
+				Height(30).Grow(1)
+		})
+		listHeight := max(0, contentHeight-2*pad-38)
+		var area ui.Box
+		if queryChanged {
+			area = ui.ScrollAt(c, 0)
+		} else {
+			area = ui.Scroll(c)
+		}
+		area.Height(listHeight).FillWidth().Scrollbars()
+		area.Children(func() {
+			stack := ui.Stack(c).FillWidth().Height(max(height, 28))
+			stack.Children(func() {
+				tags := noteWords(n.tags.String())
+				for _, item := range items {
+					rect := item.bounds
+					if item.group {
+						if item.bounds.Y > 0 {
+							ui.Divider(c).Absolute().Left(rect.X).Top(rect.Y - 6).Width(rect.Width).Height(1).Background(s.pal.line)
+						}
+						groupID := hitNoteHostGroups.At(s.noteTagToken(item.key))
+						group := ui.Row(c).Absolute().Left(rect.X).Top(rect.Y).Width(rect.Width).Height(28).
+							Radius(6).Background(s.pal.surfaceSoft).
+							HitWith(groupID, item.label, gfx.HitOptions{Role: gfx.RoleButton, Expanded: item.expanded, Expandable: true})
+						group.Children(func() {
+							icon := icons.ChevronRight
+							if item.expanded {
+								icon = icons.ChevronDown
+							}
+							ui.Icon(c, icon).Size(16, 16).Color(s.pal.muted).MarginSides(0, 0, 0, 8).Shrink(0)
+							ui.Text(c, item.label).FontSize(16).Weight(gfx.WeightSemibold).Color(s.pal.text).Ellipsis().MarginSides(0, 6, 0, 8).Grow(1)
+							if item.key != "" {
+								ui.Checkbox(c, s.pageFlag(noteHasGroup(tags, item.key)), "").
+									Hit(hitNoteGroupSelect.At(s.noteTagToken(item.key)), item.key).Size(16, 16).Shrink(0)
+							}
+						})
+						continue
+					}
+					id := hitNoteHostRows.At(s.noteTagToken(item.key))
+					selected := noteHasHost(tags, item.key)
+					cardColor := theme.Card
+					if selected {
+						cardColor = theme.Secondary
+					} else if c.Canvas().Hovered() == id {
+						cardColor = s.pal.surfaceSoft
+					}
+					card := ui.Row(c).Absolute().Left(rect.X).Top(rect.Y).Width(rect.Width).Height(40).
+						Radius(theme.Metrics.RadiusSurface + 4).Background(cardColor)
+					card.Children(func() {
+						ui.Slot(c).Size(20, 20).Shrink(0).Draw(func(d *ui.DrawContext) {
+							s.paintNoteHostIcon(d.Canvas, item.key, d.Rect, cardColor)
+						})
+						label := ui.Text(c, item.label).FontSize(theme.Metrics.FontSizeM).Weight(gfx.WeightMedium).Color(s.pal.text).
+							Ellipsis().Grow(1).MarginSides(0, 8, 0, 8)
+						if item.label != item.fullLabel() {
+							label.Tooltip(item.label)
+						}
+						ui.Checkbox(c, s.pageFlag(selected), "").Hit(id, item.label).Size(16, 16).Shrink(0).MarginSides(0, 10, 0, 0)
+					})
+				}
+			})
+		})
+		if len(items) == 0 {
+			ui.Text(c, s.noteText("No hosts", "暂无主机")).FontSize(12).Color(s.pal.muted)
+		}
+	})
+	if !open {
+		v.popup = ""
 	}
-	v.tagPopupArea.EndContent()
-	if tooltip != "" {
-		components.BeginTooltip(c, theme, viewport, tooltipBounds, components.TooltipOptions{Layer: tooltipLayer}).Paint(tooltip)
-	}
-	pop.End()
 }
+
+// fullLabel is the label as the host picker measured it, trimmed to its card.
+func (i noteHostPickerItem) fullLabel() string { return i.label }

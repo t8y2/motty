@@ -347,6 +347,17 @@ func TestRemoteLogsSavedPathsAndLivePanel(t *testing.T) {
 	if len(session.remoteLogs.snapshot.lines) != 31 {
 		t.Fatal("stream did not reach the visible panel")
 	}
+	foundBar := false
+	var barWidth float32
+	for _, hit := range view.Snapshot().Hits {
+		if hit.Role == gfx.RoleSeparator && hit.Label == state.messages.RemoteLogs.Title && hit.Bounds.Width > 0 {
+			foundBar, barWidth = true, hit.Bounds.Width
+		}
+	}
+	if !foundBar || barWidth != 7 || session.remoteLogs.scroll == nil || session.remoteLogs.scroll.Max() <= 0 {
+		t.Fatalf("the log output's scrollbar is not the old always-visible 7px named bar: found=%v width=%g max=%g",
+			foundBar, barWidth, session.remoteLogs.scroll.Max())
+	}
 	if !liveRow() {
 		t.Fatal("connected path has no green indicator")
 	}

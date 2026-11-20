@@ -3,6 +3,7 @@ package workbench
 import (
 	"errors"
 	"fmt"
+	"github.com/vivaui/viva/gfx"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -139,15 +140,10 @@ func TestAnSSHConfigAliasIsUsedOnlyForTheSameHost(t *testing.T) {
 // chooseEditor picks an editor in the settings select the way a user does.
 func chooseEditor(t *testing.T, state *State, editor ExternalEditor) {
 	t.Helper()
-	state.Click(hitSettingsEditor)
-	if !state.editorMenu.open {
-		t.Fatal("the editor select did not open")
-	}
-	index := slices.Index(state.editorMenu.choices, editor)
-	if index < 0 {
+	if !slices.Contains(state.editorMenu.choices, editor) {
 		t.Fatalf("%q is not offered: %v", editor, state.editorMenu.choices)
 	}
-	state.Click(hitSettingsEditorItems.At(index))
+	chooseSelectOption(t, state, state.messages.Tools.FilesEditor, state.editorChoiceName(editor))
 }
 
 func TestDefaultEditorIsChosenSavedAndRestored(t *testing.T) {
@@ -160,7 +156,7 @@ func TestDefaultEditorIsChosenSavedAndRestored(t *testing.T) {
 	state.openSettings()
 	state.selectSettingsCategory(settingsFiles)
 	canvas, texts := paintedTexts(state)
-	if !contains(texts, state.messages.Tools.FilesEditor) || !hasHit(canvas, hitSettingsEditor) {
+	if !contains(texts, state.messages.Tools.FilesEditor) || !hasLabel(canvas, state.messages.Tools.FilesEditor, gfx.RoleCombobox) {
 		t.Fatalf("the editor setting is not shown: %v", texts)
 	}
 	chooseEditor(t, state, editorZed)

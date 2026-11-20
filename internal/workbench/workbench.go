@@ -11,7 +11,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unicode/utf8"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
@@ -22,6 +21,7 @@ import (
 	"motty/internal/highlight"
 	"motty/internal/i18n"
 	"motty/internal/sessionlog"
+	"motty/internal/sshbrowser"
 	"motty/internal/sshconn"
 	"motty/internal/systemproxy"
 	layoutcore "motty/internal/workspace"
@@ -136,6 +136,7 @@ var (
 	hitStateNoticeDismiss      = tree.ID(shellHits, "state-notice-dismiss")
 	hitStateNoticeClose        = tree.ID(shellHits, "state-notice-close")
 	hitStateNoticeOK           = tree.ID(shellHits, "state-notice-ok")
+	hitStateNoticeReveal       = tree.ID(shellHits, "state-notice-reveal")
 )
 
 // Lists whose items are numbered by a database or session number: a host row, a
@@ -173,6 +174,7 @@ var (
 	hitKeysPaste       = tree.ID(keysHits, "keys-paste")
 	hitKeysGenerate    = tree.ID(keysHits, "keys-generate")
 	hitKeysCopyPublic  = tree.ID(keysHits, "keys-copy-public")
+	hitKeysExport      = tree.ID(keysHits, "keys-export")
 	hitKeysRemove      = tree.ID(keysHits, "keys-remove")
 	hitKeysPassphrase  = tree.ID(keysHits, "keys-passphrase")
 	hitKeysScrollThumb = tree.ID(keysHits, "keys-scroll-thumb")
@@ -189,7 +191,6 @@ var (
 	hitForwardDialogCancel          = tree.ID(forwardsHits, "forward-dialog-cancel")
 	hitForwardDialogSubmit          = tree.ID(forwardsHits, "forward-dialog-submit")
 	hitForwardDialogLabel           = tree.ID(forwardsHits, "forward-dialog-label")
-	hitForwardDialogHost            = tree.ID(forwardsHits, "forward-dialog-host")
 	hitForwardDialogLocalPort       = tree.ID(forwardsHits, "forward-dialog-local-port")
 	hitForwardDialogDestination     = tree.ID(forwardsHits, "forward-dialog-destination")
 	hitForwardDialogDestinationPort = tree.ID(forwardsHits, "forward-dialog-destination-port")
@@ -198,13 +199,8 @@ var (
 	hitForwardDialogViaShell        = tree.ID(forwardsHits, "forward-dialog-via-shell")
 	hitForwardDialogViaShellHelp    = tree.ID(forwardsHits, "forward-dialog-via-shell-help")
 	hitForwardDialogRelay           = tree.ID(forwardsHits, "forward-dialog-relay")
-	hitForwardHostDismiss           = tree.ID(forwardsHits, "forward-host-dismiss")
-	hitForwardHostTrigger           = tree.ID(forwardsHits, "forward-host-trigger")
-	hitForwardHostScroll            = tree.ID(forwardsHits, "forward-host-scroll")
-	hitForwardHostPickerScope       = tree.ID(forwardsHits, "forward-host-picker-scope")
 	hitForwardScrollThumb           = tree.ID(forwardsHits, "forward-scroll-thumb")
 	hitForwardRowList               = tree.Sub(forwardsHits, tree.Name("forward-row"))
-	hitForwardHostItemList          = tree.Sub(forwardsHits, tree.Name("forward-host-item"))
 )
 
 // Settings: its explicit choices.
@@ -236,23 +232,10 @@ var (
 	hitProxyDialogClose              = tree.ID(proxiesHits, "proxy-dialog-close")
 	hitProxyDialogCancel             = tree.ID(proxiesHits, "proxy-dialog-cancel")
 	hitProxyDialogSubmit             = tree.ID(proxiesHits, "proxy-dialog-submit")
-	hitProxyDialogTarget             = tree.ID(proxiesHits, "proxy-dialog-target")
-	hitProxyDialogJump               = tree.ID(proxiesHits, "proxy-dialog-jump")
 	hitProxyDialogViaShell           = tree.ID(proxiesHits, "proxy-dialog-via-shell")
 	hitProxyDialogViaHelp            = tree.ID(proxiesHits, "proxy-dialog-via-shell-help")
 	hitProxyDialogRelay              = tree.ID(proxiesHits, "proxy-dialog-relay")
-	hitProxyTargetDismiss            = tree.ID(proxiesHits, "proxy-target-dismiss")
-	hitProxyJumpDismiss              = tree.ID(proxiesHits, "proxy-jump-dismiss")
-	hitProxyTargetTrigger            = tree.ID(proxiesHits, "proxy-target-trigger")
-	hitProxyJumpTrigger              = tree.ID(proxiesHits, "proxy-jump-trigger")
-	hitProxyTargetScroll             = tree.ID(proxiesHits, "proxy-target-scroll")
-	hitProxyJumpScroll               = tree.ID(proxiesHits, "proxy-jump-scroll")
-	hitProxyTargetPickerScope        = tree.ID(proxiesHits, "proxy-target-picker-scope")
-	hitProxyJumpPickerScope          = tree.ID(proxiesHits, "proxy-jump-picker-scope")
-	hitProxyScrollThumb              = tree.ID(proxiesHits, "proxy-scroll-thumb")
 	hitProxyRowList                  = tree.Sub(proxiesHits, tree.Name("proxy-row"))
-	hitProxyTargetItemList           = tree.Sub(proxiesHits, tree.Name("proxy-target-item"))
-	hitProxyJumpItemList             = tree.Sub(proxiesHits, tree.Name("proxy-jump-item"))
 	hitProxyBatchAdd                 = tree.ID(proxiesHits, "proxy-batch-add")
 	hitProxyBatchRemove              = tree.ID(proxiesHits, "proxy-batch-remove")
 	hitProxyBatchToggleAll           = tree.ID(proxiesHits, "proxy-batch-toggle-all")
@@ -266,12 +249,6 @@ var (
 	hitProxyBatchOverwrite           = tree.ID(proxiesHits, "proxy-batch-overwrite")
 	hitProxyBatchCheckList           = tree.Sub(proxiesHits, tree.Name("proxy-batch-check"))
 	hitProxyTargetCheckList          = tree.Sub(proxiesHits, tree.Name("proxy-target-check"))
-	hitProxyBatchJumpInput           = tree.ID(proxiesHits, "proxy-batch-jump-input")
-	hitProxyBatchJumpTrigger         = tree.ID(proxiesHits, "proxy-batch-jump-trigger")
-	hitProxyBatchJumpDismiss         = tree.ID(proxiesHits, "proxy-batch-jump-dismiss")
-	hitProxyBatchJumpScroll          = tree.ID(proxiesHits, "proxy-batch-jump-scroll")
-	hitProxyBatchJumpScope           = tree.ID(proxiesHits, "proxy-batch-jump-scope")
-	hitProxyBatchJumpItemList        = tree.Sub(proxiesHits, tree.Name("proxy-batch-jump-item"))
 	hitProxyCheckAll                 = tree.ID(proxiesHits, "proxy-check-all")
 	hitProxyRowCheckList             = tree.Sub(proxiesHits, tree.Name("proxy-row-check"))
 	hitProxyRowSwitchList            = tree.Sub(proxiesHits, tree.Name("proxy-row-switch"))
@@ -336,7 +313,6 @@ var (
 	hitSFTPEntryList       = tree.Sub(sftpHits, tree.Name("sftp-entry"))
 	hitSFTPColumnList      = tree.Sub(sftpHits, tree.Name("sftp-column"))
 	hitSFTPListBackground  = tree.ID(sftpHits, "sftp-list-background")
-	hitSFTPListScrollbar   = tree.ID(sftpHits, "sftp-list-scrollbar")
 
 	// hitSFTPDrawerClose is the close button of the drawer a narrow window shows
 	// the panel in. It is a hit of its own, apart from the backdrop that
@@ -468,8 +444,12 @@ type State struct {
 	sftpWindows map[uint32]*sftpWindow
 	// sftpTabs are the file managers hosted in the main window, in tab order.
 	// They are runtime-only and never enter the persisted workspace deck.
-	sftpTabs         []*sftpWindow
-	activeSFTPTab    uint32
+	sftpTabs      []*sftpWindow
+	activeSFTPTab uint32
+	// settingsTab is the settings page's tab on the window bar. It is open from
+	// the moment settings are opened until the tab is closed, and whenever the
+	// settings section is in front it is open.
+	settingsTab      bool
 	fileTabOptions   []components.TabOption
 	windowTabOptions []components.TabOption
 	fileTabStrip     tabStrip
@@ -513,7 +493,11 @@ type State struct {
 	tabOptions        []components.TabOption
 	workspaceTabs     []layoutcore.WorkspaceInfo
 	// workspacePaneTabLabels is the tab strip's labels, reused every frame.
-	workspacePaneTabLabels []string
+	workspacePaneTabLabels  []string
+	workspacePaneTabIndices []int
+	// workspacePaneTabChoice is the page Tabs' chosen pane, which a click or
+	// the arrows move; the paint that finds it changed makes that pane active.
+	workspacePaneTabChoice int
 	tabStrip               tabStrip
 	windowBarScroll        windowBarScroll
 	tabOrientation         tabOrientation
@@ -550,10 +534,10 @@ type State struct {
 	selectedProxyID        uint32
 	forwardTable           ui.TableState
 	keysTable              ui.TableState
-	proxyTable             ui.TableState
+	proxyList              ui.ListState
+	proxyRowDecl           func(ui.ListRow)
 	forwardRows            forwardTableSource
 	keysRows               keyTableSource
-	proxyRows              proxyTableSource
 	forwardColumns         [5]components.TableColumn
 	forwardHeadings        [5]string
 	keysColumns            [4]components.TableColumn
@@ -561,7 +545,6 @@ type State struct {
 	proxyColumns           [6]components.TableColumn
 	proxyHeadings          [6]string
 	proxyFilteredIndices   []int
-	proxyRowCells          []gfx.Rect
 	selectedBastionJumpID  uint32
 	selectedBastionTargets map[uint32]bool
 	proxyChecked           map[uint32]bool
@@ -655,6 +638,7 @@ type State struct {
 	workspaceLibraryExpanded      bool
 	workspaceLibraryPointerID     string
 	workspaceLibraryScroll        float32
+	workspaceLibraryScrollSynced  float32
 	workspaceLibraryBounds        gfx.Rect
 	workspaceLibraryContent       float32
 	workspaceTemplateMoreBounds   []gfx.Rect
@@ -662,7 +646,10 @@ type State struct {
 	workspaceTemplateDelete       workspaceTemplateDelete
 	workspaceCommandEdit          workspaceCommandInline
 	workspaceTemplateFocusPending gfx.ID
-	workspaceDraft                workspaceDraft
+	// workspaceHeaderFocusPending is where the keyboard returns after a header
+	// menu closes; the pane painter applies it once the page has painted.
+	workspaceHeaderFocusPending gfx.ID
+	workspaceDraft              workspaceDraft
 	// workspaceHeaderPlan and workspaceHeaderSlots are what the managed
 	// workspace's header declaration leaves for its painter.
 	workspaceHeaderPlan  workspaceHeaderPlan
@@ -713,11 +700,14 @@ type State struct {
 	post func(func())
 	// setMenuBar installs the macOS menu bar; menuBarSig is the state it was
 	// built for, so Wake rebuilds it only when enablement or language changed.
-	setMenuBar          func([]app.Menu) error
-	menuBarSig          string
-	appearance          appearance
-	appearanceMode      appearanceMode
-	networkProxy        networkProxyMode
+	setMenuBar     func([]app.Menu) error
+	menuBarSig     string
+	appearance     appearance
+	appearanceMode appearanceMode
+	networkProxy   networkProxyMode
+	// sshBrowser is the Chromium-family browser the SSH tab's browser opens.
+	// Automatic takes the first one installed.
+	sshBrowser          sshbrowser.Family
 	lookupSystemProxy   func() systemproxy.Settings
 	stopAppearanceWatch func()
 	stopLinkWatch       func()
@@ -769,8 +759,9 @@ type State struct {
 	// terminal or host is already open, instead of opening another one.
 	startupReuse  bool
 	startupPicker struct {
-		open   bool
-		bounds gfx.Rect // the chooser's place on the settings page
+		open bool
+		// shown says the last paint declared the menu, so closing it saves once.
+		shown bool
 	}
 	// openStream opens the stream of a Telnet or serial host; tests replace it.
 	openStream func(context.Context, streamRequest) (Shell, error)
@@ -806,7 +797,11 @@ type State struct {
 	sftpDirectoryTree  bool
 	sftpWindowOrder    sftpWindowOrder
 	sftpOpenMode       sftpOpenMode
-	sftpColumns        sftpColumnPreferences
+	// filePreviewMB bounds what a document window loads, in megabytes. The Files
+	// settings choose it with a stepper that has no upper bound.
+	filePreviewMB   int
+	filePreviewEdit filePreviewEdit
+	sftpColumns     sftpColumnPreferences
 	// sftpTypeIcons is the system icon of each file extension, shared by every
 	// row and every listing. A nil map means none has been asked for yet.
 	sftpTypeIcons map[string]*fileIconSlot
@@ -822,8 +817,8 @@ type State struct {
 	defaultEditor           ExternalEditor // hands remote folders to this computer's editor
 	customEditorPath        string
 	monitorRect             gfx.Rect
+	monitorUI               monitorPageUI
 	monitorMenu             bool
-	monitorMenuRect         gfx.Rect
 	monitorResizing         bool
 	monitorResizeGrab       float32
 	monitorResizeWorkspace  layoutcore.WorkspaceID
@@ -894,26 +889,21 @@ type State struct {
 	// was none), so wheel events can tell which view they are over. The panel is
 	// declared inside the workbench page now, so contextPanelScope is the page
 	// container its elements live in, and contextPanelMode says which view it
-	// declared. contextDrawer is the page's drawer chrome while the panel is a
-	// narrow overlay; its description is kept for the paint that opens it.
-	contextRect              gfx.Rect
-	contextPanelScope        gfx.Scope
-	contextPanelMode         contextPanelMode
-	contextPanelDocked       bool
-	contextDrawer            components.Drawer
-	contextDrawerDescription string
-	contextDrawerOpen        bool
-	// The panel's Draw callbacks are method values made once: a paint that made
-	// them again would allocate.
-	contextPanelDraw   func(*ui.DrawContext)
-	contextDrawerBegin func(*ui.DrawContext)
-	contextDrawerEnd   func(*ui.DrawContext)
-	shortcuts          shortcutMap
-	shortcutCapture    shortcutAction
-	shortcutError      string
-	reconnectWaiters   int
-	pal                *palette
-	theme              gfx.Theme
+	// declared. contextDrawerOpen is the narrow overlay's open state.
+	contextRect        gfx.Rect
+	contextPanelScope  gfx.Scope
+	contextPanelMode   contextPanelMode
+	contextPanelDocked bool
+	contextDrawerOpen  bool
+	// The panel's Draw callback is a method value made once: a paint that made
+	// it again would allocate.
+	contextPanelDraw func(*ui.DrawContext)
+	shortcuts        shortcutMap
+	shortcutCapture  shortcutAction
+	shortcutError    string
+	reconnectWaiters int
+	pal              *palette
+	theme            gfx.Theme
 	// termPal is the terminal's own look: pal with the chosen color scheme and
 	// the highlight rules applied. termEpoch counts its rebuilds.
 	termPal   palette
@@ -989,6 +979,7 @@ type State struct {
 	noteExit         *noteExitRequest
 	noteTarget       *notesUI
 	snippets         snippetsUI
+	snippetGroups    snippetGroupsUI
 	commands         commandsUI
 	snippetSend      snippetSender
 	snippetPrompt    snippetPromptState
@@ -1028,19 +1019,22 @@ type State struct {
 	// paint saw it; zero before the first.
 	pixelScale            float32
 	cellWidth, cellHeight float32
-	panes                 []Pane
-	paneSplits            []PaneSplit
-	terminalDrop          terminalDrop // the terminal that files being dragged over would be uploaded from
-	terminalUploads       []terminalUploadBatch
-	draggedPaneSplit      uint32
-	draggedContextDivider bool
-	deck                  layoutcore.Deck
-	workspaceViewCacheID  layoutcore.WorkspaceID
-	workspaceViewRevision uint64
-	workspaceViewBuilds   uint64
-	workspaceStatusPanes  [layoutcore.MaxPanes]layoutcore.Pane
-	pendingWorkspace      layoutcore.WorkspaceID
-	pendingPane           layoutcore.PaneID
+	// cellPixelWidth and cellPixelHeight are one cell in device pixels as last
+	// handed to the screens and shells; see syncCellPixels.
+	cellPixelWidth, cellPixelHeight int
+	panes                           []Pane
+	paneSplits                      []PaneSplit
+	paneSplitters                   []paneSplitterUI
+	terminalDrop                    terminalDrop // the terminal that files being dragged over would be uploaded from
+	terminalUploads                 []terminalUploadBatch
+	draggedContextDivider           bool
+	deck                            layoutcore.Deck
+	workspaceViewCacheID            layoutcore.WorkspaceID
+	workspaceViewRevision           uint64
+	workspaceViewBuilds             uint64
+	workspaceStatusPanes            [layoutcore.MaxPanes]layoutcore.Pane
+	pendingWorkspace                layoutcore.WorkspaceID
+	pendingPane                     layoutcore.PaneID
 	// pendingDirectory is where the shell of the next session starts: set by a
 	// split from the directory of the pane it came from, taken by the session
 	// that opens in the new pane.
@@ -1050,21 +1044,17 @@ type State struct {
 	hostKeyDescription       string
 	passwordFields           []text.Editor
 	sudoSFTP                 sudoSFTPDialog
-	passwordRects            []gfx.Rect
-	passwordBoxes            []ui.Box
+	passwordInputs           []dialogField
 	passwordQuestions        []sshconn.Question
 	passwordError            string
 	passwordDescription      string
 	keyPassphrase            text.Editor
 	keyPassphraseError       string
 	keyPassphraseDescription string
-	// keyPassphraseField is the slot the passphrase dialog's field is painted
-	// into, and keyPassphraseDraw the painter kept so a repaint allocates none.
-	keyPassphraseField ui.Box
-	keyPassphraseDraw  func(*ui.DrawContext)
-	clipboardRequest   remoteClipboardRequest
-	autofillRules      autofillUI
-	credentialForm     credentialUI
+	keyPassphraseInput       dialogField
+	clipboardRequest         remoteClipboardRequest
+	autofillRules            autofillUI
+	credentialForm           credentialUI
 	// credentialReturn is the modal the identity dialog returns to when the host
 	// form opened it to make an identity for itself; modalNone otherwise.
 	credentialReturn modalKind
@@ -1203,6 +1193,7 @@ func New(options Options) *State {
 		// read: the same ones a state file that says nothing gets.
 		hostCatalog:           hostCatalog{systemUser: systemLogin(), connectionTimeout: 10 * time.Second, connectionKeepAlive: defaultConnectionKeepAlive},
 		sftpParallel:          DefaultSFTPParallel,
+		filePreviewMB:         defaultFilePreviewMB,
 		sftpColumns:           defaultSFTPColumnPreferences(),
 		sftpDownloadDirectory: defaultDownloadDirectory(),
 		terminalClipboard:     defaultTerminalClipboard,
@@ -1236,8 +1227,8 @@ func New(options Options) *State {
 	// it here makes it part of the defaults, so a computer that changed nothing
 	// writes no record for it.
 	state.history.inlineOff = true
-	state.forwardRows.records, state.keysRows.records, state.proxyRows.records = &state.forwards, &state.identities, &state.proxies
-	state.proxyRows.indices, state.proxyRows.jumpID = &state.proxyFilteredIndices, &state.selectedBastionJumpID
+	state.forwardRows.records, state.keysRows.records = &state.forwards, &state.identities
+	state.initProxyList()
 	state.configDefaults = defaultsOf(state.snapshot())
 	config, saved, configBase, report, err := openConfig(state.options.StatePath, state.windowID)
 	state.config, state.configBase = config, configBase
@@ -1416,9 +1407,6 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 	if _, local, ok := state.decodePaneHit(hit); ok {
 		hit = local
 	}
-	if editor := state.findPreferencesEditor(hit); editor != nil {
-		return editor
-	}
 	if editor := state.aiEditor(hit); editor != nil {
 		return editor
 	}
@@ -1452,20 +1440,8 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 		if hit == hitDialogGroup {
 			return &state.hostGroupPicker().control.Query
 		}
-		if hit == hitDialogEncoding {
-			return &state.hostEncodingPicker().control.Query
-		}
-		if hit == hitDialogIcon {
-			return &state.hostIconPicker().control.Query
-		}
 		if isDialogField(hit) {
-			if state.editor.colorPicker.open {
-				return nil
-			}
 			return state.editor.field(fieldForDialogHit(hit))
-		}
-		if state.editor.colorPicker.open && hit == hostPickerIDs.Hex {
-			return &state.editor.colorPicker.hex
 		}
 		if hit == hitDialogAlgorithms && state.editor.protocol == protocolSSH && state.editor.algoMode == algoCustom {
 			return &state.editor.algorithms
@@ -1489,27 +1465,15 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 			return &state.ai.rename.editor
 		}
 	case modalNewProxy:
-		switch hit {
-		case hitProxyDialogRelay:
-			if state.proxyEditor.viaShell {
-				return &state.proxyEditor.relay
-			}
-		case hitProxyDialogTarget:
-			return &state.proxyEditor.targetSelect.Query
-		case hitProxyDialogJump:
-			return &state.proxyEditor.jumpSelect.Query
+		if hit == hitProxyDialogRelay && state.proxyEditor.viaShell {
+			return &state.proxyEditor.relay
 		}
 	case modalProxyBatchAssociate:
 		switch hit {
 		case hitProxyBatchSearch:
 			return &state.proxyBatch.query
-		case hitProxyBatchJumpInput:
-			return &state.proxyBatch.jumpQuery
 		}
 	case modalNewForward:
-		if hit == hitForwardDialogHost {
-			return &state.forwardEditor.hostSelect.Query
-		}
 		if hit == hitForwardDialogLabel || hit == hitForwardDialogLocalPort || hit == hitForwardDialogDestination || hit == hitForwardDialogDestinationPort {
 			return state.forwardEditor.field(forwardDialogField(hit))
 		}
@@ -1585,6 +1549,10 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 			return &state.snippets.command
 		case hitSnippetGroup:
 			return &state.snippets.groupPicker.Query
+		}
+	case modalSnippetGroupRename:
+		if hit == hitSnippetGroupRenameField {
+			return &state.snippetGroups.editor
 		}
 	case modalSnippetVariables:
 		if idx, ok := hit.In(hitSnippetVarList); ok && idx >= 0 && idx < len(state.snippetPrompt.editors) {
@@ -1674,6 +1642,11 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	// must not close the field the second press just opened.
 	if state.tabInlineActive() && id != hitTabInline && id != hitTabList.At(int(state.tabInline.workspace)) {
 		state.commitTabInline()
+	}
+	// A press anywhere but on the preview stepper settles the number being
+	// typed there, as the assistant page's stepper does.
+	if state.filePreviewEdit.editing && id != hitSettingsPreviewValue && id != hitSettingsPreviewMinus && id != hitSettingsPreviewPlus {
+		state.commitFilePreviewEdit()
 	}
 	if feedback {
 		state.pressIconMotion(id)
@@ -1810,6 +1783,12 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	case modalSnippetDelete:
 		state.clickSnippetDeleteDialog(id)
 		return
+	case modalSnippetGroups:
+		state.clickSnippetGroups(id)
+		return
+	case modalSnippetGroupRename, modalSnippetGroupDelete:
+		state.clickSnippetGroupDialog(id)
+		return
 	case modalSnippetVariables:
 		state.clickSnippetVariablesDialog(id)
 		return
@@ -1893,7 +1872,7 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		return
 	}
 	if state.clickHostOrder(id) || state.clickHostsPanel(id) || state.clickToolbarDockMenu(id) || state.clickWorkspaceTemplateManagement(id) ||
-		state.clickHostGroupActions(id) || state.clickHostBlankMenu(id) || state.clickTerminalMenu(id) || state.clickGhostMenu(id) || state.clickTabMenu(id) || state.clickHostMenu(id) || state.clickLocalShellPicker(id) || state.clickSnippetMenu(id) || state.clickSFTPMenu(id) {
+		state.clickHostGroupActions(id) || state.clickTabMenu(id) {
 		return
 	}
 	if state.clickWorkspaceCommand(id) {
@@ -2132,6 +2111,10 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		}
 	case id.Scope() == fileTabList:
 		state.activateSFTPTab(uint32(item(id)))
+	case id == hitSettingsTabClose:
+		state.closeSettingsTab()
+	case id == hitSettingsTab:
+		state.activateSettingsTab()
 	}
 }
 
@@ -2254,6 +2237,10 @@ func (state *State) closeActivePane() {
 // terminal on show (the host list, with or without tabs open behind it) has
 // nothing of that kind to close, so the window closes instead.
 func (state *State) closeActivePaneOrTab() {
+	if state.settingsTabActive() {
+		state.closeSettingsTab()
+		return
+	}
 	if state.activeSection == sectionSFTP {
 		if manager := state.activeSFTPWindow(); manager != nil {
 			state.requestCloseSFTPTab(manager)
@@ -2326,19 +2313,7 @@ func (state *State) clickHostDialog(id gfx.ID) {
 	if state.clickHostGroupPicker(id) {
 		return
 	}
-	if state.clickHostEncodingPicker(id) {
-		return
-	}
-	if state.clickHostIconPicker(id) {
-		return
-	}
 	if state.clickHostTags(id) {
-		return
-	}
-	if state.clickHostColorPicker(id) {
-		return
-	}
-	if state.editor.colorPicker.open {
 		return
 	}
 	switch id {
@@ -2581,12 +2556,6 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result, handled := state.workspaceLibraryPointer(event); handled {
 		return result
 	}
-	if result, handled := state.dashboardPointer(event); handled {
-		return result
-	}
-	if result, handled := state.sessionLogsPointer(event); handled {
-		return result
-	}
 	if state.modal == modalFileProperties {
 		if event.Target == hitFilePropertiesClose || event.Target == hitFilePropertiesDismiss {
 			return gfx.EventResult{}
@@ -2608,18 +2577,6 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result, handled := state.windowBarScrollPointer(event); handled {
 		return result
 	}
-	if result := state.toolbarSettingsPointer(event); result.Handled {
-		return result
-	}
-	if result := state.ruleManagerPointer(event); result.Handled {
-		return result
-	}
-	if result := state.sftpColumnSettingsPointer(event); result.Handled {
-		return result
-	}
-	if result, handled := state.transferCenterPointer(event); handled {
-		return result
-	}
 	if state.aiTrackPointer(event) {
 		defer func() { outcome.Repaint = true }()
 	}
@@ -2635,29 +2592,14 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result, handled := state.menuPointer(event); handled {
 		return result
 	}
-	if result, handled := state.terminalMenuPointer(event); handled {
-		return result
-	}
-	if result, handled := state.ghostMenuPointer(event); handled {
-		return result
-	}
-	if result, handled := state.tabMenuPointer(event); handled {
-		return result
-	}
 	if result, handled := state.tabMiddlePointer(event); handled {
 		return result
 	}
 	if result, handled := state.tabDragPointer(event); handled {
 		return result
 	}
-	if result, handled := state.hostMenuPointer(event); handled {
-		return result
-	}
 	state.hostPressPointer(event)
 	if result, handled := state.hostSortPointer(event); handled {
-		return result
-	}
-	if result, handled := state.snippetReorderPointer(event); handled {
 		return result
 	}
 	if result, handled := state.hostListBarPointer(event); handled {
@@ -2667,24 +2609,6 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 		return result
 	}
 	if result, handled := state.hostListPointer(event); handled {
-		return result
-	}
-	if result, handled := state.hostGroupActionsPointer(event); handled {
-		return result
-	}
-	if result, handled := state.hostBlankMenuPointer(event); handled {
-		return result
-	}
-	if result, handled := state.localShellPickerPointer(event); handled {
-		return result
-	}
-	if result, handled := state.snippetMenuPointer(event); handled {
-		return result
-	}
-	if result, handled := state.sftpMenuDismissPointer(event); handled {
-		return result
-	}
-	if result, handled := state.sftpPlacesPointer(event); handled {
 		return result
 	}
 	if state.fileTabVerticalRailAt(event.X, event.Y) {
@@ -2700,6 +2624,9 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result, handled := state.aiPointer(event); handled {
 		return result
 	}
+	if result, handled := state.filePreviewPointer(event); handled {
+		return result
+	}
 	if state.modal == modalNone {
 		if result, handled := state.sftpTabPointer(event); handled {
 			return result
@@ -2709,9 +2636,6 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 		return result
 	}
 	if result, handled := state.monitorPointer(event); handled {
-		return result
-	}
-	if result, handled := state.paneDividerPointer(event); handled {
 		return result
 	}
 	// A press on a pane's own ground switches to that pane, and the keyboard goes
@@ -2813,7 +2737,7 @@ func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
 	if result, handled := state.remoteContainerDetailsScrollPointer(event); handled {
 		return result
 	}
-	if result, handled := state.remoteProcessScrollPointer(event); handled {
+	if result, handled := state.remoteProcessDetailsScrollPointer(event); handled {
 		return result
 	}
 	if state.chipMenu.open {
@@ -2837,20 +2761,6 @@ func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
 			return result
 		}
 	}
-	if state.modal == modalNewHost && state.editor.iconPicker.control.Open {
-		if result := state.editor.iconPicker.control.Pointer(event); result.Handled {
-			return result
-		}
-	}
-	if state.modal == modalNewHost && state.editor.encodingPicker.control.Open {
-		if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary && !isHostEncodingPickerTarget(event.Target) {
-			state.editor.encodingPicker.control.Open = false
-			return gfx.EventResult{Handled: true, Repaint: true}
-		}
-		if result := state.editor.encodingPicker.control.Pointer(event); result.Handled {
-			return result
-		}
-	}
 	if state.modal == modalNewHost && state.editor.tagPicker.control.Open {
 		// A press outside the open tag picker closes only the picker. The
 		// popup is painted inside the form's scroll area, so its dismiss
@@ -2863,24 +2773,6 @@ func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
 		if result := state.editor.tagPicker.control.Pointer(event); result.Handled {
 			return result
 		}
-	}
-	if result, handled := state.proxyPickerPointer(event); handled {
-		return result
-	}
-	if result, handled := state.proxyBatchPickerPointer(event); handled {
-		return result
-	}
-	if result, handled := state.forwardPickerPointer(event); handled {
-		return result
-	}
-	if result := state.hostFormPointer(event); result.Handled {
-		return result
-	}
-	if result := state.findPreferencesPointer(event); result.Handled {
-		return result
-	}
-	if result := state.hostPickerPointer(event); result.Handled {
-		return result
 	}
 	if result, handled := state.terminalFindPointer(event); handled {
 		return result
@@ -2905,9 +2797,6 @@ func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
 		return result
 	}
 	if result, handled := state.sftpPathPointer(event); handled {
-		return result
-	}
-	if result, handled := state.sftpListPointer(event); handled {
 		return result
 	}
 	return gfx.EventResult{}
@@ -2968,6 +2857,11 @@ func (state *State) Key(event gfx.KeyEvent) (outcome gfx.EventResult) {
 	defer state.afterEvent(&outcome)
 	if state.modal == modalNone && state.terminalPage() {
 		if view := state.workspaceRemoteLogs(state.deck.ActiveWorkspace()); view != nil && view.formMode == remoteLogFormNone {
+			if event.Target == hitRemoteLogOutput {
+				if result := view.keyLogOutput(event); result.Handled {
+					return result
+				}
+			}
 			if result := view.pathSplit.Key(event); result.Handled {
 				return result
 			}
@@ -3102,21 +2996,6 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	if result, handled := state.hostGroupPickerKey(event); handled {
 		return result
 	}
-	if result, handled := state.hostEncodingPickerKey(event); handled {
-		return result
-	}
-	if result, handled := state.hostIconPickerKey(event); handled {
-		return result
-	}
-	if result, handled := state.proxyDialogKey(event); handled {
-		return result
-	}
-	if result, handled := state.proxyBatchDialogKey(event); handled {
-		return result
-	}
-	if result, handled := state.forwardDialogKey(event); handled {
-		return result
-	}
 	if state.activeSection == sectionForwards && state.modal == modalNone {
 		if result := state.forwardTable.Key(event); result.Handled {
 			state.takeForwardTableSelection()
@@ -3129,16 +3008,10 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 			return result
 		}
 	}
-	if state.activeSection == sectionProxies && state.modal == modalNone {
-		if result := state.proxyTable.Key(event); result.Handled {
-			state.takeProxyTableSelection()
-			return result
-		}
-	}
-	if result, handled := state.snippetGroupKey(event); handled {
+	if result, handled := state.proxyListKey(event); handled {
 		return result
 	}
-	if result, handled := state.snippetReorderKey(event); handled {
+	if result, handled := state.snippetGroupKey(event); handled {
 		return result
 	}
 	if result := state.toolbarSettingsKey(event); result.Handled {
@@ -3148,12 +3021,6 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		return result
 	}
 	if result, handled := state.hostTagsKey(event); handled {
-		return result
-	}
-	if result := state.findPreferencesKey(event); result.Handled {
-		return result
-	}
-	if result := state.hostPickerKey(event); result.Handled {
 		return result
 	}
 	if result := state.hostFormKey(event); result.Handled {
@@ -3169,17 +3036,6 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	// Escape hides it before it can reach a dialog or the page.
 	if event.Key == gfx.KeyEscape && state.openMenuScroll() == nil && state.tooltip.Dismiss() {
 		return gfx.EventResult{Handled: true, Repaint: true}
-	}
-	if state.terminalMenu.open && event.Key == gfx.KeyEscape {
-		state.terminalMenu.open = false
-		return gfx.EventResult{Handled: true, Repaint: true}
-	}
-	if state.ghostMenu.open && event.Key == gfx.KeyEscape {
-		state.ghostMenu.open = false
-		return gfx.EventResult{Handled: true, Repaint: true}
-	}
-	if result, handled := state.workspaceTemplateMenuKey(event); handled {
-		return result
 	}
 	if result, handled := state.workspaceTemplateDeleteKey(event); handled {
 		return result
@@ -3305,11 +3161,6 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		state.submitOutboundProxy()
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	if state.modal == modalForm {
-		if result, handled := state.formKey(event); handled {
-			return result
-		}
-	}
 	if state.modal == modalForm && event.Key == gfx.KeyEnter && !event.Repeat && state.formEditor(event.Target) != nil && state.multilineField(event.Target) == nil {
 		state.submitForm()
 		return gfx.EventResult{Handled: true, Repaint: true}
@@ -3328,21 +3179,14 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		state.submitHighlightRule()
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	if state.modal == modalSnippet && event.Target == hitSnippetCommand {
-		if _, composing := state.snippets.command.Composition(); !composing {
-			movement, extend := components.TextareaMovementForKey(event.Key, event.Modifiers)
-			if movement != components.TextareaMoveNone {
-				value := state.snippets.command.String()
-				to := state.snippets.commandLayout.Move(value, aiByteOffset(value, state.snippets.command.Caret()), movement)
-				state.snippets.command.MoveTo(utf8.RuneCountInString(value[:to]), extend)
-				return gfx.EventResult{Handled: true, Repaint: true}
-			}
-		}
-	}
 	if state.modal == modalSnippet && event.Key == gfx.KeyEnter && (event.Target == hitSnippetName || event.Target == hitSnippetGroup) && !event.Repeat {
 		// submitSnippet refuses while either field is composing: that Enter
 		// belongs to the input method, and the preedit is not the text to save.
 		state.submitSnippet()
+		return gfx.EventResult{Handled: true, Repaint: true}
+	}
+	if state.modal == modalSnippetGroupRename && event.Key == gfx.KeyEnter && event.Target == hitSnippetGroupRenameField && !event.Repeat {
+		state.submitSnippetGroupRename()
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if state.modal == modalSnippetVariables && event.Key == gfx.KeyEnter && event.Target.Scope() == hitSnippetVarList && !event.Repeat {
@@ -3357,19 +3201,21 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		return result
 	}
 	tabScope := event.Target.Scope()
-	if tabScope != hitTabList && tabScope != fileTabList {
+	pageTab := tabScope == fileTabList || event.Target == hitSettingsTab
+	if tabScope != hitTabList && !pageTab {
 		return gfx.EventResult{}
 	}
 	options, orientation := state.tabOptions, components.TabsHorizontal
 	switch {
 	case tabScope == hitTabList && state.tabOrientation == tabsVertical:
 		orientation = components.TabsVertical
-	case tabScope == fileTabList && state.tabOrientation == tabsVertical:
-		options = state.fileTabOptions
+	case pageTab && state.tabOrientation == tabsVertical:
+		state.windowTabOptions = append(state.windowTabOptions[:0], state.fileTabOptions...)
+		options = state.appendSettingsTabOption(state.windowTabOptions)
 	default:
 		state.windowTabOptions = append(state.windowTabOptions[:0], state.tabOptions...)
 		state.windowTabOptions = append(state.windowTabOptions, state.fileTabOptions...)
-		options = state.windowTabOptions
+		options = state.appendSettingsTabOption(state.windowTabOptions)
 	}
 	next, handled := components.TabsKeyDown(
 		event.Target,

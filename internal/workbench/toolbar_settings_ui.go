@@ -16,28 +16,26 @@ var (
 	hitToolbarEnableAll       = tree.ID(toolbarSettingsHits, "enable-all")
 	hitToolbarDisableAll      = tree.ID(toolbarSettingsHits, "disable-all")
 	hitToolbarReset           = tree.ID(toolbarSettingsHits, "reset")
-	hitToolbarScroll          = tree.ID(toolbarSettingsHits, "scroll")
-	hitToolbarHandles         = tree.Sub(toolbarSettingsHits, tree.Name("handle"))
 	hitToolbarToggles         = tree.Sub(toolbarSettingsHits, tree.Name("toggle"))
 	hitToolbarPositions       = tree.Sub(toolbarSettingsHits, tree.Name("position"))
+	hitToolbarHandles         = tree.Sub(toolbarSettingsHits, tree.Name("handle"))
 )
 
 type toolbarSettingsUI struct {
-	group        toolbarGroup
-	list         components.ReorderListState
-	scroll       float32
-	geometry     components.ScrollAreaGeometry
-	scrollDrag   bool
-	thumbOffset  float32
-	handleLabels []string
+	group toolbarGroup
+	// rows is the entries' list: its rows are dragged, or moved with Alt and the
+	// arrows, to reorder them.
+	rows ui.ListState
 	// body and footer declare the dialog's parts, and current is the C they
 	// declare with. They are made once, when the editor opens, so a paint does
 	// not allocate them again; current is only read while the page declares.
-	body, footer          func()
-	current               ui.C
-	listDraw              func(*ui.DrawContext)
-	bodyWidth, listHeight float32
-	controlsHeight        float32
+	body, footer   func()
+	current        ui.C
+	rowDecl        func(ui.ListRow)
+	bodyWidth      float32
+	controlsHeight float32
+	bodyHeight     float32
+	list           ui.Box
 }
 
 func (state *State) toolbarGroupName(group toolbarGroup) string {
@@ -56,6 +54,31 @@ func toolbarEntryIndex(group toolbarGroup, key string) int {
 		}
 	}
 	return -1
+}
+
+// reorderHandle draws the six-dot grip a reorder row starts with: a 28px
+// button at the row's left, as the painted ReorderList's handle was.
+func reorderHandle(c ui.C, id gfx.ID, label string, disabled bool, height float32) ui.Box {
+	color := c.Theme().MutedForeground
+	if disabled {
+		color.Alpha *= .5
+	}
+	// The grip is drawn from elements rather than a Draw callback: a callback
+	// made for each row in each paint allocates.
+	handle := ui.Slot(c).Size(28, max(height-8, 0)).Shrink(0).
+		HitWith(id, label, gfx.HitOptions{Role: gfx.RoleButton, Cursor: gfx.PointerCursorHand, Disabled: disabled}).
+		Focus(ui.Look{}.Ring(1, c.Theme().Ring))
+	handle.Children(func() {
+		ui.Column(c).Fill().Gap(2).Items(ui.Center).Justify(ui.Center).Children(func() {
+			for range 3 {
+				ui.Row(c).Gap(2).Children(func() {
+					ui.Slot(c).Size(2, 2).Radius(1).Background(color)
+					ui.Slot(c).Size(2, 2).Radius(1).Background(color)
+				})
+			}
+		})
+	})
+	return handle
 }
 
 func (state *State) paintToolbarSettingsRows(page *settingsPage) {
@@ -84,13 +107,18 @@ func (state *State) paintToolbarSettingsRows(page *settingsPage) {
 
 func (state *State) openToolbarSettings(group toolbarGroup) {
 	editor := &state.toolbarEditor
-	*editor = toolbarSettingsUI{group: group, handleLabels: make([]string, len(toolbarCatalog[group]))}
+	*editor = toolbarSettingsUI{group: group}
 	editor.body = func() { state.declareToolbarSettingsBody(editor.current) }
 	editor.footer = func() { state.declareToolbarSettingsFooter(editor.current) }
-	editor.listDraw = state.drawToolbarSettingsList
-	for i, spec := range toolbarCatalog[group] {
-		editor.handleLabels[i] = fmt.Sprintf(state.messages.Toolbars.DragFmt, state.toolbarLabel(spec.id))
+	editor.rowDecl = state.declareToolbarEntry
+	editor.rows.Key = func(i int) int { return toolbarEntryIndex(group, state.toolbars.entries(group)[i].Key) }
+	editor.rows.Label = func(i int) string {
+		spec, _ := toolbarSpecFor(group, state.toolbars.entries(group)[i].Key)
+		return state.toolbarLabel(spec.id)
 	}
+	editor.rows.NoTypeahead = true
+	editor.rows.Reorder = func(rows []int, to int) { state.moveToolbarEntry(rows[0], to) }
+	editor.rows.Handle = hitToolbarHandles
 	state.modal = modalToolbarSettings
 }
 
@@ -106,7 +134,6 @@ func (state *State) clickToolbarSettings(id gfx.ID) {
 		if editor.group == toolbarTerminal {
 			state.terminalToolbarSize = terminalToolbarSmall
 		}
-		editor.list.Cancel()
 	case id.Scope() == hitToolbarPositions && editor.group <= toolbarTerminal:
 		index := item(id)
 		for _, spec := range toolbarCatalog[editor.group] {
@@ -172,70 +199,33 @@ func (state *State) clickToolbarSettings(id gfx.ID) {
 	state.toolbarDockChanged()
 }
 
-func (state *State) moveToolbarEntry(move components.ReorderMove) {
-	if !move.Valid() {
-		return
-	}
+// moveToolbarEntry puts the entry at row from before row to (the number of entries for
+// the end), as ListState.Reorder says.
+func (state *State) moveToolbarEntry(from, to int) {
 	editor := &state.toolbarEditor
 	entries := state.toolbars.customize(editor.group)
-	if move.From >= len(entries) || move.To >= len(entries) || hitToolbarHandles.At(toolbarEntryIndex(editor.group, entries[move.From].Key)) != move.ID {
+	if from < 0 || from >= len(entries) || to < 0 || to > len(entries) {
 		return
 	}
-	entry := entries[move.From]
-	if move.From < move.To {
-		copy(entries[move.From:move.To], entries[move.From+1:move.To+1])
+	entry := entries[from]
+	if from < to {
+		to--
+		copy(entries[from:to], entries[from+1:to+1])
 	} else {
-		copy(entries[move.To+1:move.From+1], entries[move.To:move.From])
+		copy(entries[to+1:from+1], entries[to:from])
 	}
-	entries[move.To] = entry
+	entries[to] = entry
 	state.reorderToolbarDockGroup(editor.group)
-	// Keep the row the move landed on in view. The list knows the row geometry
-	// and the viewport it was painted in, so the caller keeps no stride here.
-	editor.scroll = max(editor.scroll+editor.list.RevealScroll(move.To), 0)
 	state.toolbarDockChanged()
-}
-
-func (state *State) toolbarSettingsPointer(event gfx.PointerEvent) gfx.EventResult {
-	if state.modal != modalToolbarSettings {
-		return gfx.EventResult{}
-	}
-	editor := &state.toolbarEditor
-	if event.Target == hitToolbarScroll || editor.scrollDrag {
-		if event.Kind == gfx.PointerExit {
-			editor.scrollDrag = false
-			return gfx.EventResult{Handled: true}
-		}
-		switch event.Kind {
-		case gfx.PointerDown:
-			if event.Button != gfx.PointerButtonPrimary {
-				return gfx.EventResult{}
-			}
-			editor.scrollDrag = true
-			editor.thumbOffset = event.Y - editor.geometry.VerticalThumb.Y
-			if editor.thumbOffset < 0 || editor.thumbOffset > editor.geometry.VerticalThumb.Height {
-				editor.thumbOffset = editor.geometry.VerticalThumb.Height / 2
-			}
-		case gfx.PointerUp:
-			editor.scrollDrag = false
-		}
-		editor.scroll = editor.geometry.VerticalOffsetForThumb(event.Y - editor.thumbOffset)
-		return gfx.EventResult{Handled: true, Repaint: true}
-	}
-	move, result := editor.list.Pointer(event)
-	state.moveToolbarEntry(move)
-	return result
 }
 
 func (state *State) toolbarSettingsKey(event gfx.KeyEvent) gfx.EventResult {
 	if state.modal != modalToolbarSettings {
 		return gfx.EventResult{}
 	}
-	// The size switch is a page Choice: WindowConfig routes its arrows.
-	move, result := state.toolbarEditor.list.Key(event)
-	if result.Handled {
-		state.moveToolbarEntry(move)
-		return result
-	}
+	// The size switch is a page Choice and the entries a page List: the page
+	// routes their keys. The List owns the arrows rows and reorders with Alt and
+	// the arrows; it has no plain-key reorder or handle-only drag yet.
 	if event.Key == gfx.KeyEscape && !event.Release && !event.Repeat {
 		state.closeModal()
 		return gfx.EventResult{Handled: true, Repaint: true}
@@ -243,14 +233,15 @@ func (state *State) toolbarSettingsKey(event gfx.KeyEvent) gfx.EventResult {
 	return gfx.EventResult{}
 }
 
+// toolbarSettingsScroll gives the wheel over the entries to the page's list and keeps
+// it from reaching what lies behind the dialog.
 func (state *State) toolbarSettingsScroll(event gfx.ScrollEvent) gfx.EventResult {
-	editor := &state.toolbarEditor
-	if !pointInRect(event.X, event.Y, editor.geometry.Viewport) {
-		return gfx.EventResult{Handled: true}
+	result := gfx.EventResult{Handled: true}
+	if pointInRect(event.X, event.Y, state.toolbarEditor.list.Rect()) {
+		result = state.windowPage().RouteWheel(event)
+		result.Handled = true
 	}
-	before := editor.scroll
-	editor.scroll = min(max(before+event.DeltaY, 0), editor.geometry.MaxOffsetY)
-	return gfx.EventResult{Handled: true, Repaint: before != editor.scroll}
+	return result
 }
 
 // toolbarSizeChoices are the three sizes the switch offers.
@@ -286,21 +277,19 @@ func (state *State) declareToolbarSettings(c ui.C) {
 	}
 	editor, m := &state.toolbarEditor, state.messages.Toolbars
 	entries := state.toolbars.entries(editor.group)
-	editor.listHeight = float32(len(entries))*48 - 4
+	listHeight := float32(len(entries))*48 - 4
 	editor.controlsHeight = 0
 	if editor.group == toolbarTerminal {
 		editor.controlsHeight = 48
 	}
 	viewport := dialogViewport(c)
-	bodyHeight := min(editor.listHeight+editor.controlsHeight, max(viewport.Height-250, 96))
-	theme := *c.Theme()
-	surfaceHeight := dialogContentHeight(c.Canvas(), theme, viewport, 560, m.Hint, bodyHeight)
-	layout := dialogContentRect(c.Canvas(), theme, viewport, 560, m.Hint, bodyHeight)
-	editor.bodyWidth = layout.Body.Width
+	bodyHeight := min(listHeight+editor.controlsHeight, max(viewport.Height-250, 96))
+	editor.bodyHeight = bodyHeight
+	editor.bodyWidth = 560 - 2*c.Theme().Metrics.PadSurface
 	editor.current = c
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: state.toolbarGroupName(editor.group), Description: m.Hint,
-		Width: 560, Height: surfaceHeight, Layer: dialogLayer, Scope: dialogScope,
+		Width: 560, Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitToolbarSettingsDismiss, CloseID: hitToolbarSettingsClose,
 	})
 	dialog.Body(editor.body)
@@ -311,12 +300,17 @@ func (state *State) declareToolbarSettings(c ui.C) {
 // switch over the room the reorder list is painted into.
 func (state *State) declareToolbarSettingsBody(c ui.C) {
 	editor := &state.toolbarEditor
-	if editor.group == toolbarTerminal {
-		ui.Row(c).Height(editor.controlsHeight).Shrink(0).Gap(12).Items(ui.Center).Children(func() {
-			state.declareToolbarSize(c, editor.bodyWidth)
-		})
-	}
-	ui.Slot(c).Grow(1).DrawOver(editor.listDraw)
+	ui.Column(c).FillWidth().Height(editor.bodyHeight).Shrink(0).Children(func() {
+		if editor.group == toolbarTerminal {
+			ui.Row(c).Height(editor.controlsHeight).Shrink(0).Gap(12).Items(ui.Center).Children(func() {
+				state.declareToolbarSize(c, editor.bodyWidth)
+			})
+		}
+		entries := state.toolbars.entries(editor.group)
+		editor.list = ui.List(c, &editor.rows, len(entries), editor.rowDecl).Grow(1).MinHeight(0).FillWidth().
+			PadSides(0, 14, 0, 0).AlwaysScrollbars().ScrollbarSize(14).
+			Label(state.toolbarGroupName(editor.group))
+	})
 }
 
 // declareToolbarSettingsFooter declares the dialog's actions in its footer.
@@ -330,54 +324,36 @@ func (state *State) declareToolbarSettingsFooter(c ui.C) {
 	)
 }
 
-// drawToolbarSettingsList paints the reorder list the dialog body leaves room
-// for: its rows, dock positions and switches, and its scroll bar.
-func (state *State) drawToolbarSettingsList(d *ui.DrawContext) {
-	state.paintToolbarSettingsList(d.Canvas, d.Rect, state.toolbarEditor.listHeight)
-}
-
-// paintToolbarSettingsList paints the reorder list the dialog body leaves room
-// for: its rows, dock positions and switches, and its scroll bar.
-func (state *State) paintToolbarSettingsList(canvas *gfx.Canvas, body gfx.Rect, contentHeight float32) {
-	editor, theme := &state.toolbarEditor, state.Theme()
-	entries := state.toolbars.entries(editor.group)
-	area := components.BeginScrollArea(canvas, theme, body, gfx.Size{Width: body.Width, Height: contentHeight}).Offset(0, editor.scroll).VerticalScrollbar(hitToolbarScroll, "", "")
-	geometry := area.BeginContent()
-	editor.geometry, editor.scroll = geometry, geometry.OffsetY
-	bounds := geometry.Content
-	if geometry.MaxOffsetY > 0 {
-		bounds.Width = max(bounds.Width-14, 0)
+// declareToolbarEntry declares one entry of the editor's list: its icon, name, dock
+// position and switch, in a row that is dragged to move it.
+func (state *State) declareToolbarEntry(row ui.ListRow) {
+	c, editor, theme := row.C, &state.toolbarEditor, state.Theme()
+	entry := state.toolbars.entries(editor.group)[row.Index]
+	spec, _ := toolbarSpecFor(editor.group, entry.Key)
+	label := state.toolbarLabel(spec.id)
+	index := toolbarEntryIndex(editor.group, entry.Key)
+	color := theme.Foreground
+	if !entry.Enabled {
+		color = theme.MutedForeground
 	}
-	list := components.BeginReorderList(canvas, theme, bounds, &editor.list).Viewport(geometry.Viewport)
-	first := toolbarEntryIndex(editor.group, toolbarCatalog[editor.group][0].key)
-	for _, entry := range entries {
-		spec, _ := toolbarSpecFor(editor.group, entry.Key)
-		label := state.toolbarLabel(spec.id)
-		index := toolbarEntryIndex(editor.group, entry.Key)
-		row := list.Row(hitToolbarHandles.At(index), editor.handleLabels[index-first], false)
-		color := theme.Foreground
-		if !entry.Enabled {
-			color = theme.MutedForeground
-		}
-		canvas.DrawIcon(lucideIcons[spec.icon], gfx.Rect{X: row.Content.X, Y: row.Content.Y + (row.Content.Height-18)/2, Width: 18, Height: 18}, color)
-		caption := gfx.Rect{X: row.Content.X + 28, Y: row.Content.Y, Width: max(row.Content.Width-80, 0), Height: row.Content.Height}
-		zoneLabel, zoneWidth := "", float32(0)
-		if editor.group <= toolbarTerminal {
-			zoneLabel = state.toolbarDockZoneLabel(state.toolbarDockZoneFor(editor.group, entry.Key))
-			zoneWidth = components.BeginButton(canvas, theme, gfx.ID{}, gfx.Rect{}).SizeToFit(zoneLabel).BoundsWidth()
-			caption.Width = max(caption.Width-zoneWidth-2, 0)
-		}
-		canvas.Label(canvas.FitLine(label, theme.Metrics.FontSizeM, gfx.WeightRegular, caption.Width), caption, gfx.TextStyle{Size: theme.Metrics.FontSizeM, Color: color})
-		if editor.group <= toolbarTerminal {
-			components.BeginButton(canvas, theme, hitToolbarPositions.At(index), gfx.Rect{X: row.Content.X + row.Content.Width - 52 - zoneWidth, Y: row.Content.Y + (row.Content.Height-28)/2, Width: zoneWidth}).Outline(zoneLabel)
-		}
-		checked := entry.Enabled
-		if editor.group == toolbarTerminal && entry.Key == "latency" {
-			// This switch is the same preference as Settings > Show latency.
-			checked = state.terminalShowLatency
-		}
-		components.BeginSwitch(canvas, state.switchTheme(), hitToolbarToggles.At(index), gfx.Rect{X: row.Content.X + row.Content.Width - 42, Y: row.Content.Y + (row.Content.Height-22)/2, Width: 38, Height: 22}, checked).Label(label).Paint()
-	}
-	list.End()
-	area.EndContent()
+	row.Element.Height(44).MarginBottom(4).PadSides(0, 7, 0, 3).Gap(8).Items(ui.Center).
+		Radius(theme.Metrics.RadiusControl).Border(1, theme.Border).Background(theme.Background).Children(func() {
+		// The handle is named by its row: the list starts a drag from the handle
+		// the row's index names (ListState.Handle).
+		reorderHandle(c, hitToolbarHandles.At(row.Index), label, false, 44)
+		ui.Row(c).Grow(1).Gap(10).Items(ui.Center).Children(func() {
+			ui.Icon(c, lucideIcons[spec.icon]).Size(18, 18).Color(color).Shrink(0)
+			ui.Text(c, label).FontSize(theme.Metrics.FontSizeM).Color(color).Ellipsis().Grow(1)
+			if editor.group <= toolbarTerminal {
+				zone := state.toolbarDockZoneLabel(state.toolbarDockZoneFor(editor.group, entry.Key))
+				ui.Button(c, zone).Hit(hitToolbarPositions.At(index), zone).Outline().Shrink(0)
+			}
+			checked := entry.Enabled
+			if editor.group == toolbarTerminal && entry.Key == "latency" {
+				// This switch is the same preference as Settings > Show latency.
+				checked = state.terminalShowLatency
+			}
+			ui.Switch(c, state.pageFlag(checked), "").Hit(hitToolbarToggles.At(index), label).Shrink(0)
+		})
+	})
 }

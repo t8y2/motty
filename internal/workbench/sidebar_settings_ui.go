@@ -102,7 +102,7 @@ func (state *State) declareSidebarSettings(c ui.C) {
 		Scope: dialogScope, DismissID: hitSidebarSettingsDismiss, CloseID: hitSidebarSettingsClose,
 	})
 	dialog.Body(func() {
-		ui.Scroll(c).Fill().Scrollbars().Children(func() {
+		ui.Scroll(c).Fill().AlwaysScrollbars().Children(func() {
 			ui.Column(c).FillWidth().Gap(rowGap).Children(func() {
 				for _, item := range sidebarPages {
 					if item.page == navPageHosts {

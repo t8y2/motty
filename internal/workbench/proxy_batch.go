@@ -11,25 +11,22 @@ import (
 )
 
 type proxyBatchAssociateDialog struct {
-	jumpID         uint32
-	jumpOpen       bool
-	jumpFocusInput bool
-	jumpQuery      text.Editor
-	jumpScroll     components.MenuScroll
-	jumpPopup      gfx.Rect
-	jumpActiveID   gfx.ID
-	query          text.Editor
-	selected       map[uint32]bool
-	overwrite      bool
-	viaShell       bool
-	relay          text.Editor
-	error          string
-	fromHostList   bool
-	scroll         float32
-	content        float32
-	bounds         gfx.Rect
-	listRect       gfx.Rect
-	dialogBody     proxyBatchDialogBody
+	jumpID       uint32
+	jumpChoices  []uint32
+	query        text.Editor
+	search       ui.Field
+	searchBound  bool
+	selected     map[uint32]bool
+	overwrite    bool
+	viaShell     bool
+	relay        text.Editor
+	error        string
+	fromHostList bool
+	scroll       float32
+	content      float32
+	bounds       gfx.Rect
+	listRect     gfx.Rect
+	dialogBody   proxyBatchDialogBody
 }
 
 type proxyBatchDialogBody struct {
@@ -126,25 +123,16 @@ func (state *State) closeProxyBatchAssociate() {
 	state.modal = modalNone
 }
 
-// proxyBatchJumpCandidates 获取当前筛选后的候选跳板主机列表（支持按主机名或 IP 地址模糊搜索）
-func (state *State) proxyBatchJumpCandidates() []Host {
-	dialog := &state.proxyBatch
-	query := strings.ToLower(strings.TrimSpace(dialog.jumpQuery.String()))
-	var candidates []Host
+// proxyBatchJumpChoices are the hosts the jump picker offers: the SSH hosts.
+func (state *State) proxyBatchJumpChoices() []uint32 {
+	choices := state.proxyBatch.jumpChoices[:0]
 	for _, host := range state.hosts {
-		if !host.isSSH() {
-			continue
+		if host.isSSH() {
+			choices = append(choices, host.ID)
 		}
-		if query != "" {
-			match := strings.Contains(strings.ToLower(host.Label), query) ||
-				strings.Contains(strings.ToLower(host.Address), query)
-			if !match {
-				continue
-			}
-		}
-		candidates = append(candidates, host)
 	}
-	return candidates
+	state.proxyBatch.jumpChoices = choices
+	return choices
 }
 
 func (state *State) batchCandidates() []proxyBatchCandidate {
@@ -287,16 +275,21 @@ func (state *State) declareProxyBatchDialog(c ui.C) {
 			// 1. 选择跳板主机选择器（整宽布局，与下方搜索和列表完美对齐）
 			ui.Column(c).FillWidth().Gap(6).MarginSides(0, 0, 10, 0).Children(func() {
 				ui.Text(c, messages.ProxyFieldJump).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.text)
-				ui.Slot(c).FillWidth().Height(34).Draw(func(d *ui.DrawContext) {
-					state.paintProxyBatchJumpSelect(d.Canvas, d.Rect)
-				})
+				before := dialog.jumpID
+				ui.Combobox(c, &dialog.jumpID, state.proxyBatchJumpChoices(), state.proxyBatchJumpName, messages.ProxyFieldJump).
+					FillWidth().Placeholder(messages.HostPickerSearch).Empty(messages.HostPickerNoMatches)
+				if dialog.jumpID != before {
+					delete(dialog.selected, dialog.jumpID)
+				}
 			})
 
 			// 2. 搜索框与全选/清空行
 			ui.Row(c).Height(36).Items(ui.Center).Gap(8).MarginSides(0, 0, 8, 0).Children(func() {
-				ui.Slot(c).Grow(1).Height(32).Draw(func(ctx *ui.DrawContext) {
-					state.paintBatchSearchInput(ctx.Canvas, ctx.Rect)
-				})
+				if !dialog.searchBound {
+					dialog.search.Bind(&dialog.query)
+					dialog.searchBound = true
+				}
+				ui.TextFieldID(c, hitProxyBatchSearch, &dialog.search, "", messages.ProxyBatchSelectPlaceholder).Grow(1)
 				if dialogButton(c, messages.ProxyBatchCheckAll, components.ButtonSecondary, false).Clicked() {
 					state.batchCheckAllEligible()
 				}
@@ -307,9 +300,6 @@ func (state *State) declareProxyBatchDialog(c ui.C) {
 
 			// 3. 候选设备多选列表
 			candidates := state.batchCandidates()
-			theme := *c.Theme()
-			side := components.CheckboxExtent(theme)
-			hitWidth, hitHeight := components.CheckboxHitExtent(theme)
 
 			list := ui.Scroll(c).Grow(1).FillWidth().Gap(2).Border(1, pal.line).Radius(radius.control).Background(pal.surface).Clip().
 				Draw(func(d *ui.DrawContext) {
@@ -335,18 +325,10 @@ func (state *State) declareProxyBatchDialog(c ui.C) {
 
 					row.Children(func() {
 						// 勾选框
-						ui.Slot(c).Size(hitWidth, hitHeight).Draw(func(d *ui.DrawContext) {
-							bounds := gfx.Rect{
-								X:     d.Rect.X + (d.Rect.Width-side)/2,
-								Y:     d.Rect.Y + (d.Rect.Height-side)/2,
-								Width: side, Height: side,
-							}
-							cb := components.BeginCheckbox(d.Canvas, state.Theme(), rowHit, bounds, isSelected).Label(cand.Host.Label)
-							if disabled {
-								cb = cb.Disabled()
-							}
-							cb.Paint()
-						})
+						box := ui.Checkbox(c, state.pageFlag(isSelected), "").Hit(rowHit, cand.Host.Label).Shrink(0)
+						if disabled {
+							box.Disabled(true)
+						}
 
 						// 主机名与地址
 						ui.Text(c, cand.Host.Label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.text).MarginSides(0, 4, 0, 4)
@@ -376,15 +358,7 @@ func (state *State) declareProxyBatchDialog(c ui.C) {
 			ui.Row(c).Height(32).Items(ui.Center).Gap(6).MarginSides(6, 0, 4, 0).
 				HitWith(hitProxyBatchOverwrite, messages.ProxyBatchOverwrite, gfx.HitOptions{Role: gfx.RoleCheckbox, Selected: dialog.overwrite}).
 				Children(func() {
-					ui.Slot(c).Size(hitWidth, hitHeight).Draw(func(d *ui.DrawContext) {
-						bounds := gfx.Rect{
-							X:     d.Rect.X + (d.Rect.Width-side)/2,
-							Y:     d.Rect.Y + (d.Rect.Height-side)/2,
-							Width: side, Height: side,
-						}
-						components.BeginCheckbox(d.Canvas, state.Theme(), hitProxyBatchOverwrite, bounds, dialog.overwrite).
-							Label(messages.ProxyBatchOverwrite).Paint()
-					})
+					ui.Checkbox(c, state.pageFlag(dialog.overwrite), "").Hit(hitProxyBatchOverwrite, messages.ProxyBatchOverwrite).Shrink(0)
 					ui.Text(c, messages.ProxyBatchOverwrite).FontSize(metrics.FontSizeS).Color(pal.text)
 				})
 
@@ -413,110 +387,14 @@ func (state *State) declareProxyBatchDialog(c ui.C) {
 	})
 }
 
-func (state *State) paintProxyBatchJumpSelect(canvas *gfx.Canvas, bounds gfx.Rect) {
-	theme, messages := state.Theme(), state.messages
-	dialog := &state.proxyBatch
-
-	selectedLabel := ""
-	selectedDetail := ""
-	if jhost, ok := state.hostByID(dialog.jumpID); ok {
-		selectedLabel = jhost.Label
-		selectedDetail = jhost.Address
+// proxyBatchJumpName is how the jump host picker names a host: its label and, so a
+// search by address finds it, its address.
+func (state *State) proxyBatchJumpName(id uint32) string {
+	host, ok := state.hostByID(id)
+	if !ok {
+		return ""
 	}
-
-	candidates := state.proxyBatchJumpCandidates()
-	rowHeight := float32(32)
-	displayCount := len(candidates)
-	if displayCount > 6 {
-		displayCount = 6
-	}
-	contentHeight := float32(displayCount)*rowHeight + 8
-	if len(candidates) == 0 {
-		contentHeight = 36 + 8
-	}
-
-	content := gfx.Rect{
-		X:      bounds.X,
-		Y:      bounds.Y + bounds.Height + 4,
-		Width:  bounds.Width,
-		Height: contentHeight,
-	}
-
-	queryStr := dialog.jumpQuery.String()
-
-	if dialog.jumpOpen && dialog.jumpFocusInput {
-		canvas.RequestFocus(hitProxyBatchJumpInput)
-		dialog.jumpFocusInput = false
-	}
-
-	combo := components.BeginCombobox(canvas, theme, bounds, components.ComboboxOptions{
-		InputID:         hitProxyBatchJumpInput,
-		TriggerID:       hitProxyBatchJumpTrigger,
-		Label:           messages.ProxyFieldJump,
-		Value:           selectedLabel,
-		Detail:          selectedDetail,
-		Query:           queryStr,
-		Placeholder:     messages.HostPickerSearch,
-		Open:            dialog.jumpOpen,
-		ShowTrigger:     true,
-		MatchInputWidth: true,
-		Content:         content,
-		Layer:           dialogLayer + 1,
-		Scope:           hitProxyBatchJumpScope,
-		DismissID:       hitProxyBatchJumpDismiss,
-		Viewport:        state.windowRect(),
-		Scroll:          &dialog.jumpScroll,
-	})
-	dialog.jumpPopup = combo.ContentBounds()
-
-	defer combo.End()
-	if !dialog.jumpOpen {
-		return
-	}
-
-	if len(candidates) == 0 {
-		dialog.jumpActiveID = gfx.ID{}
-		combo.AddEmpty(messages.HostPickerNoMatches)
-		return
-	}
-
-	if idx, ok := dialog.jumpActiveID.In(hitProxyBatchJumpItemList); !ok || idx < 0 || idx >= len(candidates) {
-		dialog.jumpActiveID = hitProxyBatchJumpItemList.At(0)
-	}
-
-	hovered := -1
-	for i := range candidates {
-		if canvas.Hovered() == hitProxyBatchJumpItemList.At(i) {
-			hovered = i
-			break
-		}
-	}
-
-	for i, host := range candidates {
-		itemID := hitProxyBatchJumpItemList.At(i)
-		isHighlighted := hovered == i || (hovered < 0 && dialog.jumpActiveID == itemID)
-		combo.AddItem(components.ComboboxItem{
-			ID:          itemID,
-			Label:       host.Label,
-			Detail:      host.Address,
-			Value:       hostSelectValue(host.ID),
-			Selected:    host.ID == dialog.jumpID,
-			Highlighted: isHighlighted,
-		})
-	}
-}
-
-func (state *State) paintBatchSearchInput(canvas *gfx.Canvas, bounds gfx.Rect) {
-	theme, messages := state.Theme(), state.messages
-	val := state.proxyBatch.query.String()
-	focused := canvas.Focused() == hitProxyBatchSearch
-	components.PaintInput(canvas, theme, bounds, components.InputSnapshot{
-		ID:          hitProxyBatchSearch,
-		Label:       "",
-		Value:       val,
-		Placeholder: messages.ProxyBatchSelectPlaceholder,
-		Focused:     focused,
-	})
+	return host.Label + " · " + host.Address
 }
 
 // clickProxyBatchDialog 处理批量弹窗点击事件
@@ -526,49 +404,9 @@ func (state *State) clickProxyBatchDialog(id gfx.ID) bool {
 	}
 	dialog := &state.proxyBatch
 
-	// 当跳板机下拉框处于打开状态时的事件处理
-	if dialog.jumpOpen {
-		switch {
-		case id == hitProxyBatchClose || id == hitProxyBatchCancel:
-			state.closeProxyBatchAssociate()
-			return true
-		case id == hitProxyBatchJumpTrigger:
-			dialog.jumpOpen = false
-			dialog.jumpFocusInput = false
-			return true
-		case id == hitProxyBatchJumpInput:
-			dialog.jumpFocusInput = true
-			return true
-		case id == hitProxyBatchJumpDismiss:
-			dialog.jumpOpen = false
-			dialog.jumpFocusInput = false
-			return true
-		case id.Scope() == hitProxyBatchJumpItemList:
-			if index, ok := id.In(hitProxyBatchJumpItemList); ok {
-				candidates := state.proxyBatchJumpCandidates()
-				if index >= 0 && index < len(candidates) {
-					dialog.jumpID = candidates[index].ID
-					delete(dialog.selected, dialog.jumpID)
-					dialog.jumpOpen = false
-					dialog.jumpFocusInput = false
-					dialog.jumpQuery = text.Editor{}
-				}
-			}
-			return true
-		default:
-			// 点击弹窗内其他控件时关闭下拉框，并继续执行该控件的点击逻辑
-			dialog.jumpOpen = false
-			dialog.jumpFocusInput = false
-		}
-	}
-
 	switch {
 	case id == hitProxyBatchClose || id == hitProxyBatchCancel:
 		state.closeProxyBatchAssociate()
-		return true
-	case id == hitProxyBatchJumpInput || id == hitProxyBatchJumpTrigger:
-		dialog.jumpOpen = true
-		dialog.jumpFocusInput = true
 		return true
 	case id == hitProxyBatchSubmit:
 		state.submitProxyBatchAssociate()
@@ -592,87 +430,4 @@ func (state *State) clickProxyBatchDialog(id gfx.ID) bool {
 		return true
 	}
 	return false
-}
-
-// proxyBatchPickerPointer 捕获跳板机选择器外部点击与内部滚动
-func (state *State) proxyBatchPickerPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	if state.modal != modalProxyBatchAssociate {
-		return gfx.EventResult{}, false
-	}
-	dialog := &state.proxyBatch
-	if !dialog.jumpOpen {
-		return gfx.EventResult{}, false
-	}
-	inside := event.Target == hitProxyBatchJumpInput || event.Target == hitProxyBatchJumpTrigger ||
-		event.Target == hitProxyBatchJumpScroll || event.Target.Scope() == hitProxyBatchJumpItemList ||
-		pointInRect(event.X, event.Y, dialog.jumpPopup)
-	if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary && !inside {
-		dialog.jumpOpen = false
-		return gfx.EventResult{Handled: true, Repaint: true}, true
-	}
-	if event.Kind == gfx.PointerMove && inside {
-		return gfx.EventResult{Handled: true, Repaint: true}, true
-	}
-	return gfx.EventResult{}, false
-}
-
-// scrollProxyBatchDialog 处理批量关联设备弹窗中的跳板机下拉框滚轮滑动
-func (state *State) scrollProxyBatchDialog(event gfx.ScrollEvent) gfx.EventResult {
-	if state.modal != modalProxyBatchAssociate {
-		return gfx.EventResult{}
-	}
-	dialog := &state.proxyBatch
-	if dialog.jumpOpen {
-		inside := pointInRect(event.X, event.Y, dialog.jumpPopup) ||
-			event.Target == hitProxyBatchJumpInput ||
-			event.Target == hitProxyBatchJumpTrigger ||
-			event.Target == hitProxyBatchJumpScroll ||
-			event.Target.Scope() == hitProxyBatchJumpItemList
-		if inside {
-			return gfx.EventResult{Handled: true, Repaint: dialog.jumpScroll.Wheel(event)}
-		}
-		return gfx.EventResult{Handled: true}
-	}
-	return gfx.EventResult{}
-}
-
-// proxyBatchDialogKey 处理跳板机选择器键盘事件
-func (state *State) proxyBatchDialogKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
-	if state.modal != modalProxyBatchAssociate {
-		return gfx.EventResult{}, false
-	}
-	dialog := &state.proxyBatch
-	if !dialog.jumpOpen {
-		return gfx.EventResult{}, false
-	}
-	switch event.Key {
-	case gfx.KeyEscape, gfx.KeyTab:
-		dialog.jumpOpen = false
-		dialog.jumpActiveID = gfx.ID{}
-		return gfx.EventResult{Handled: true, Repaint: true}, true
-	case gfx.KeyEnter:
-		if !event.Release {
-			candidates := state.proxyBatchJumpCandidates()
-			if len(candidates) > 0 {
-				pickIdx := 0
-				if idx, ok := dialog.jumpActiveID.In(hitProxyBatchJumpItemList); ok && idx >= 0 && idx < len(candidates) {
-					pickIdx = idx
-				}
-				dialog.jumpID = candidates[pickIdx].ID
-				delete(dialog.selected, dialog.jumpID)
-				dialog.jumpOpen = false
-				dialog.jumpActiveID = gfx.ID{}
-				dialog.jumpQuery = text.Editor{}
-				return gfx.EventResult{Handled: true, Repaint: true}, true
-			}
-		}
-	case gfx.KeyUp, gfx.KeyDown, gfx.KeyHome, gfx.KeyEnd, gfx.KeyPageUp, gfx.KeyPageDown:
-		if !event.Release {
-			if id, ok := dialog.jumpScroll.Navigate(event.Key, dialog.jumpActiveID, true); ok {
-				dialog.jumpActiveID = id
-				return gfx.EventResult{Handled: true, Repaint: true}, true
-			}
-		}
-	}
-	return gfx.EventResult{}, false
 }

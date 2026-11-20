@@ -5,6 +5,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 )
 
 var noteExitHits = tree.Feature("notes-exit")
@@ -38,18 +39,27 @@ func (s *State) confirmNoteClose(allow func()) bool {
 	s.invalidateNoteViews()
 	return true
 }
-func (s *State) paintNoteExit(c *gfx.Canvas, b gfx.Rect) {
+
+// declareNoteExit declares the question before the window closes with notes
+// that could not be saved: retry, cancel, or discard the changes.
+func (s *State) declareNoteExit(c ui.C) {
 	if s.noteExit == nil {
 		return
 	}
-	dialog := components.BeginDialog(c, s.Theme(), b, components.DialogOptions{Layer: dialogLayer + 10, Scope: hitNoteExitCancel, CloseID: hitNoteExitCancel, InitialFocusID: hitNoteExitCancel, ContentSize: gfx.Size{Width: 480}, FitBody: true, BodyHeight: 40})
-	layout := dialog.Begin(s.noteText("Notes not saved", "笔记尚未保存"), s.noteText("Changes are retained. Retry saving, cancel closing, or discard unsaved note changes.", "更改已保留。可重试保存、取消退出，或放弃尚未保存的笔记更改。"))
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitNoteExitDiscard, Label: s.noteText("Discard changes", "放弃修改"), Variant: components.ButtonDestructive},
-		components.ButtonAction{ID: hitNoteExitCancel, Label: s.noteText("Cancel exit", "取消退出"), Variant: components.ButtonOutline},
-		components.ButtonAction{ID: hitNoteExitRetry, Label: s.noteText("Retry", "重试")})
-	dialog.End()
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title:       s.noteText("Notes not saved", "笔记尚未保存"),
+		Description: s.noteText("Changes are retained. Retry saving, cancel closing, or discard unsaved note changes.", "更改已保留。可重试保存、取消退出，或放弃尚未保存的笔记更改。"),
+		Width:       480, Layer: dialogLayer + 10,
+		Scope: hitNoteExitCancel, DismissID: hitNoteExitCancel, CloseID: hitNoteExitCancel, InitialFocusID: hitNoteExitCancel,
+	})
+	dialog.Footer(func() {
+		s.dialogActionFooter(c,
+			components.ButtonAction{ID: hitNoteExitDiscard, Label: s.noteText("Discard changes", "放弃修改"), Variant: components.ButtonDestructive},
+			components.ButtonAction{ID: hitNoteExitCancel, Label: s.noteText("Cancel exit", "取消退出"), Variant: components.ButtonOutline},
+			components.ButtonAction{ID: hitNoteExitRetry, Label: s.noteText("Retry", "重试")})
+	})
 }
+
 func (s *State) clickNoteExit(id gfx.ID) bool {
 	if s.noteExit == nil {
 		return false

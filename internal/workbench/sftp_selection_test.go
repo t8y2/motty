@@ -105,7 +105,7 @@ func TestRightClickingAFileRowOpensItsMenu(t *testing.T) {
 			t.Fatalf("the menu has no row %s", tree.Text(id))
 		}
 	}
-	state.Click(hitSFTPMenuRename)
+	chooseMenu(t, state, hitSFTPMenuRename)
 	if state.sftpMenu.open || view.dialog != sftpDialogRename {
 		t.Fatalf("after choosing Rename: menu open %v, dialog %v", state.sftpMenu.open, view.dialog)
 	}
@@ -120,10 +120,10 @@ func TestRightClickingASelectedRowKeepsTheSelection(t *testing.T) {
 		t.Fatalf("the menu of a selected row acts on the whole selection: %v", got)
 	}
 	canvas, _ := paintedTexts(state)
-	if _, ok := hitByID(canvas, hitSFTPMenuRename); ok {
+	if _, ok := menuHit(canvas, state, hitSFTPMenuRename); ok {
 		t.Fatal("Rename is offered for several rows at once")
 	}
-	if _, ok := hitByID(canvas, hitSFTPMenuDownload); !ok {
+	if _, ok := menuHit(canvas, state, hitSFTPMenuDownload); !ok {
 		t.Fatal("Download is not offered for the selection")
 	}
 }

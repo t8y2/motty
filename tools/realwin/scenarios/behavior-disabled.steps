@@ -1,0 +1,17 @@
+# Port forwarding with no selection: the toolbar's actions are disabled, so Tab
+# passes over them and Enter changes nothing.
+place 200 100 2000 1300
+focus
+sleep 800
+click 370 836
+sleep 1200
+shot beh-dis-1-open
+keys {TAB}
+sleep 400
+shot beh-dis-2-tab
+keys {TAB}
+sleep 400
+shot beh-dis-3-tab
+keys {TAB}
+sleep 400
+shot beh-dis-4-tab

@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/remotetools"
 )
 
@@ -92,100 +92,68 @@ func (state *State) applyRemoteProcessEnvironment(
 	details.status = ""
 	details.environment = environment
 	details.text.clearSelection()
-	details.text.scroll = 0
 }
 
-func (state *State) paintRemoteProcessDetailsBody(canvas *gfx.Canvas, bounds gfx.Rect, process remotetools.Process, collectedAt time.Time) {
-	theme := state.Theme()
-	const (
-		pad       = float32(8)
-		rowHeight = float32(34)
-	)
-	content := gfx.Rect{
-		X: bounds.X + pad, Y: bounds.Y + pad,
-		Width: max(bounds.Width-pad*2, 0), Height: max(bounds.Height-pad*2, 0),
-	}
-	infoHeight := rowHeight * 5
-	infoBounds := gfx.Rect{X: content.X, Y: content.Y, Width: content.Width, Height: min(infoHeight, content.Height)}
-	labelWidth := min(float32(150), max(content.Width*0.18, 96))
-	valueWidth := max((content.Width-labelWidth*2)/2, 0)
-	columns := []components.TableColumn{
-		{Width: labelWidth}, {Width: valueWidth}, {Width: labelWidth}, {Width: 0},
-	}
-	table := components.BeginTable(canvas, theme, infoBounds, columns).RowHeight(rowHeight)
-	for _, pair := range state.remoteProcessDetailPairRows(process, collectedAt) {
-		table.Row(gfx.ID{}, []string{pair[0].label, pair[0].value, pair[1].label, pair[1].value}, false)
-	}
-
-	tabsY := infoBounds.Bottom() + 10
-	tabsBounds := gfx.Rect{
-		X: content.X, Y: tabsY, Width: min(float32(300), content.Width),
-		Height: min(float32(34), max(content.Bottom()-tabsY, 0)),
-	}
-	if tabsBounds.Height <= 0 {
-		return
-	}
-	options := state.remoteProcessDetailTabs()
-	components.BeginTabs(canvas, theme, tabsBounds, options[:], state.remoteProcessDetailTab()).Paint()
-
-	panelY := tabsBounds.Bottom() + 8
-	panelBounds := gfx.Rect{
-		X: content.X, Y: panelY, Width: content.Width,
-		Height: max(content.Bottom()-panelY, 0),
-	}
-	if panelBounds.Height <= 0 {
-		return
-	}
+// declareRemoteProcessDetailsBody declares the dialog's body: the facts about the
+// process in two columns of pairs, the tabs under them, and the tab's content as
+// a page scroll area.
+func (state *State) declareRemoteProcessDetailsBody(c ui.C, width float32, process remotetools.Process, collectedAt time.Time) {
+	theme, pal := c.Theme(), state.pal
+	labelWidth := min(float32(150), max(width*0.18, 96))
 	details, m := &state.remote.processDetails, state.messages.Tools
-	if state.remoteProcessDetailTab() != hitRemoteProcessDetailsEnv {
-		commandBounds := panelBounds
-		if details.commandStatus != "" && commandBounds.Height > 0 {
-			statusHeight := min(float32(28), commandBounds.Height)
-			color := state.pal.muted
-			if details.commandFailed {
-				color = state.pal.danger
-			}
-			status := canvas.FitLine(
-				details.commandStatus,
-				theme.Metrics.FontSizeM,
-				gfx.WeightRegular,
-				commandBounds.Width,
-			)
-			canvas.Label(status, gfx.Rect{
-				X: commandBounds.X, Y: commandBounds.Y,
-				Width: commandBounds.Width, Height: statusHeight,
-			}, gfx.TextStyle{
-				Size: theme.Metrics.FontSizeM, Weight: gfx.WeightRegular, Color: color,
+	ui.Column(c).Fill().Pad(8).Gap(8).Children(func() {
+		for index, pair := range state.remoteProcessDetailPairRows(process, collectedAt) {
+			ui.Row(c.KeyInt(index)).FillWidth().Height(34).Shrink(0).Items(ui.Center).PadSides(0, 8, 0, 8).Children(func() {
+				ui.Text(c, pair[0].label).Width(labelWidth).Shrink(0).FontSize(theme.Metrics.FontSizeM).Color(pal.muted).Ellipsis()
+				ui.Text(c, pair[0].value).Grow(1).Basis(0).FontSize(theme.Metrics.FontSizeM).Color(pal.text).Ellipsis()
+				ui.Text(c, pair[1].label).Width(labelWidth).Shrink(0).FontSize(theme.Metrics.FontSizeM).Color(pal.muted).Ellipsis()
+				ui.Text(c, pair[1].value).Grow(1).Basis(0).FontSize(theme.Metrics.FontSizeM).Color(pal.text).Ellipsis()
 			})
-			commandBounds.Y += statusHeight
-			commandBounds.Height = max(commandBounds.Height-statusHeight, 0)
 		}
-		if commandBounds.Height <= 0 {
+		tab := state.remoteProcessDetailTab()
+		strip := ui.Tabs(c, &tab, remoteProcessDetailTabIDs[:], state.remoteProcessDetailTabLabel).Width(min(float32(300), width)).Height(34).Shrink(0).MarginSides(2, 0, 0, 0)
+		// A click on the active tab asks for that read again, as the container
+		// details' strip does.
+		if index, clicked := strip.TabClicked(); clicked && index >= 0 && index < len(remoteProcessDetailTabIDs) {
+			id := remoteProcessDetailTabIDs[index]
+			c.After(func() { state.selectRemoteProcessDetailTab(id) })
+		}
+		if state.remoteProcessDetailTab() != hitRemoteProcessDetailsEnv {
+			// The old panel painted the status over its top 28 pixels and the
+			// command under it with no gap; keep them in one column so the gap
+			// between the tabs and the panel is the only one.
+			ui.Column(c).Grow(1).Basis(0).FillWidth().Gap(0).Children(func() {
+				if details.commandStatus != "" {
+					color := pal.muted
+					if details.commandFailed {
+						color = pal.danger
+					}
+					ui.Text(c, details.commandStatus).Height(28).LineHeight(28).Shrink(0).FontSize(theme.Metrics.FontSizeM).Color(color).Ellipsis()
+				}
+				state.declareRemoteDetail(c, &details.text, remoteDetailSpec{
+					textID: hitRemoteProcessDetailsText, textIDLabel: m.RemoteProcessDetailsTitle,
+					scrollbarID: hitRemoteProcessDetailsScroll, scrollbarLabel: m.RemoteProcessDetailsTitle,
+					source: remoteDetailSource(processText(details.commandValue)), width: width - 16,
+				})
+			})
 			return
 		}
-		state.paintRemoteDetailCode(
-			canvas, commandBounds, &details.text, processText(details.commandValue),
-			m.RemoteProcessDetailsTitle, m.RemoteProcessDetailsTitle,
-			hitRemoteProcessDetailsText, hitRemoteProcessDetailsScroll,
-		)
-		return
-	}
-	state.paintRemoteEnvironmentView(
-		canvas, panelBounds, &details.text,
-		details.loading, details.failed, details.status, m.RemoteProcessEnvironmentEmpty,
-		details.environment,
-		[2]string{m.RemoteProcessEnvironmentName, m.RemoteProcessEnvironmentValue},
-		m.RemoteProcessEnvironment, m.RemoteProcessEnvironment,
-		hitRemoteProcessDetailsText, hitRemoteProcessDetailsScroll,
-	)
-}
-
-func (state *State) remoteProcessEnvironmentScrollPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	details := &state.remote.processDetails
-	if !details.open {
-		return gfx.EventResult{}, false
-	}
-	return state.remoteDetailScrollPointer(event, &details.text, hitRemoteProcessDetailsScroll)
+		empty := ""
+		if len(details.environment) == 0 {
+			empty = m.RemoteProcessEnvironmentEmpty
+		}
+		notice, tone := state.remoteDetailNotice(details.loading, details.failed, details.status, empty)
+		spec := remoteDetailSpec{
+			textID: hitRemoteProcessDetailsText, textIDLabel: m.RemoteProcessEnvironment,
+			scrollbarID: hitRemoteProcessDetailsScroll, scrollbarLabel: m.RemoteProcessEnvironment,
+			notice: notice, noticeTone: tone, width: width - 16,
+		}
+		if notice == "" {
+			spec.columns, spec.header, spec.rows = remoteEnvironmentTable(details.environment,
+				[2]string{m.RemoteProcessEnvironmentName, m.RemoteProcessEnvironmentValue})
+		}
+		state.declareRemoteDetail(c, &details.text, spec)
+	})
 }
 
 func (state *State) remoteProcessEnvironmentWheel(event gfx.ScrollEvent) (gfx.EventResult, bool) {

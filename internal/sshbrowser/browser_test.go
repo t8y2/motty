@@ -2,6 +2,7 @@ package sshbrowser
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -16,11 +17,59 @@ import (
 	"motty/internal/portforward"
 )
 
+func TestFindBrowserHonorsTheChosenFamily(t *testing.T) {
+	acceptAll := func(path string) (string, error) { return path, nil }
+	for _, test := range []struct {
+		family Family
+		marker string
+	}{
+		{family: FamilyAuto, marker: "chrome"},
+		{family: FamilyChrome, marker: "chrome"},
+		{family: FamilyEdge, marker: "edge"},
+		{family: FamilyChromium, marker: "chromium"},
+	} {
+		path, err := findBrowserWith(test.family, acceptAll)
+		if err != nil {
+			t.Fatalf("family %q: %v", test.family, err)
+		}
+		if !strings.Contains(strings.ToLower(path), test.marker) {
+			t.Fatalf("family %q resolved %q, want a %s browser", test.family, path, test.marker)
+		}
+	}
+}
+
+func TestFindBrowserDoesNotFallBackToAnotherFamily(t *testing.T) {
+	onlyChrome := func(path string) (string, error) {
+		lower := strings.ToLower(path)
+		if strings.Contains(lower, "chrome") && !strings.Contains(lower, "chromium") {
+			return path, nil
+		}
+		return "", exec.ErrNotFound
+	}
+	if _, err := findBrowserWith(FamilyEdge, onlyChrome); !errors.Is(err, ErrBrowserNotFound) {
+		t.Fatalf("chosen Edge with only Chrome installed = %v, want ErrBrowserNotFound", err)
+	}
+}
+
+func TestParseFamilyFallsBackToAutomatic(t *testing.T) {
+	for value, want := range map[string]Family{
+		"":         FamilyAuto,
+		"chrome":   FamilyChrome,
+		" edge ":   FamilyEdge,
+		"chromium": FamilyChromium,
+		"firefox":  FamilyAuto,
+	} {
+		if got := ParseFamily(value); got != want {
+			t.Fatalf("ParseFamily(%q) = %q, want %q", value, got, want)
+		}
+	}
+}
+
 func TestChromiumRoutesOAuthRedirectThroughSOCKS(t *testing.T) {
 	if os.Getenv("MOTTY_TEST_SSH_BROWSER") != "1" {
 		t.Skip("set MOTTY_TEST_SSH_BROWSER=1 to test with an installed Chromium browser")
 	}
-	path, err := findBrowser()
+	path, err := findBrowser(FamilyAuto)
 	if err != nil {
 		t.Fatal(err)
 	}

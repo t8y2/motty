@@ -1,0 +1,49 @@
+rect {{0 0 900 600} {0.06666667 0.08235294 0.105882354 1} 0 0 {0 0 0 0} false #0}
+rect {{116 4 170 28} {0.2627451 0.30588236 0.37254903 1} 5.5 0 {116 0 174 36} true #1}
+rect {{117 5 168 26} {0.2 0.23529412 0.28627452 1} 4.5 0 {116 0 174 36} true #2}
+rect {{0 36 860 36} {0.12156863 0.14117648 0.1764706 1} 0 0 {0 36 860 564} true #3}
+rect {{736.3086 42 91.69141 24} {0.14133334 0.1557647 0.17741176 1} 7.5 0 {0 36 860 564} true #5}
+rect {{737.3086 43 89.69141 22} {0.08906667 0.10437648 0.12734118 1} 6.5 0 {0 36 860 564} true #6}
+rect {{0 72 860 528} {0.043137256 0.05490196 0.07450981 1} 0 0 {0 36 860 564} true #7}
+rect {{14 80 7.8 1} {0.8862745 0.90588236 0.93333334 1} 0 0 {0 72 860 528} true #8}
+rect {{14 95 7.8 1} {0.8862745 0.90588236 0.93333334 1} 0 0 {0 72 860 528} true #9}
+rect {{14 80 1 16} {0.8862745 0.90588236 0.93333334 1} 0 0 {0 72 860 528} true #10}
+rect {{20.8 80 1 16} {0.8862745 0.90588236 0.93333334 1} 0 0 {0 72 860 528} true #11}
+rect {{121 8 20 20} {0.17254902 0.19607843 0.23529412 1} 4.7999997 0 {116 4 498 28} true #12}
+rect {{216.2168 14.5 7 7} {0.38431373 0.80784315 0.53333336 1} 3.5 0 {116 4 498 28} true #13}
+rect {{860 36 40 564} {0.06666667 0.08235294 0.105882354 1} 0 0 {0 0 0 0} false #14}
+shadow {{736.3086 42 91.69141 24} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 36 860 564} true #4}
+text "Production" {148 8 60.216797 20}
+text "Available at an empty idle shell prompt; existing input is never erased." {10 46 380.1211 20}
+text "Enable UTF-8" {744.3086 42 91.69141 24}
+hit "" region {0 0 900 36} disabled=false
+hit "Hosts" button {82 4 28 28} disabled=false
+hit "Production" tab {116 0 170 36} disabled=false
+hit "Close tab" button {262 8 20 20} disabled=false
+hit "New tab" button {290 4 28 28} disabled=false
+hit "Transfers" button {656 4 28 28} disabled=false
+hit "Session manager" button {686 4 28 28} disabled=false
+hit "AI assistant" button {716 4 28 28} disabled=false
+hit "Local Terminal" button {746 4 28 28} disabled=false
+hit "Command Palette" button {776 4 28 28} disabled=false
+hit "Switch to light theme" button {806 4 28 28} disabled=false
+hit "GitHub" button {836 4 28 28} disabled=false
+hit "Settings" button {866 4 28 28} disabled=false
+hit "New tab" button {0 36 860 564} disabled=false
+hit "Available at an empty idle shell prompt; existing input is never erased." status {10 36 706 36} disabled=false
+hit "Enable UTF-8" button {736.3086 42 91.69141 24} disabled=true
+hit "Hide this warning for this session" button {833 42 24 24} disabled=false
+hit "Terminal deploy@prod.example.com:22" terminal {0 72 860 528} disabled=false
+hit "Notes" button {864 44 32 32} disabled=false
+hit "Send a snippet" button {864 80 32 32} disabled=false
+hit "Split Right" button {864 116 32 32} disabled=false
+hit "Split Down" button {864 152 32 32} disabled=false
+hit "Record this terminal session" button {864 192 32 32} disabled=false
+hit "Export recording" button {864 228 32 32} disabled=true
+hit "Save output as text" button {864 264 32 32} disabled=false
+hit "Export log" button {864 300 32 32} disabled=false
+hit "Show the host's CPU, memory, network and GPU" button {864 336 32 32} disabled=false
+hit "Files: browse and transfer over SFTP" button {864 372 32 32} disabled=false
+hit "File transfer" button {864 408 32 32} disabled=true
+hit "Processes & containers" button {864 444 32 32} disabled=false
+hit "Server logs" button {864 480 32 32} disabled=false

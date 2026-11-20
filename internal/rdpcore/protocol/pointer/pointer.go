@@ -236,7 +236,8 @@ func convertMasksToRGBA(buf []byte, w, h, bpp int, xorMask, andMask []byte) (rgb
 				b = xorRow[x*4]
 				g = xorRow[x*4+1]
 				r = xorRow[x*4+2]
-				if andBit == 0 {
+				// GNOME omits the AND mask for alpha cursors.
+				if len(andMask) == 0 || andBit == 0 {
 					a = xorRow[x*4+3] // per-pixel alpha
 				} else {
 					a = 0 // transparent

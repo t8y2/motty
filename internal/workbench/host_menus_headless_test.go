@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
+	"motty/internal/sshconn"
 )
 
 // The hosts page's menus close with Escape, with a press elsewhere, and with a
@@ -52,6 +54,23 @@ func TestHostsToolbarMenusCloseWithEscape(t *testing.T) {
 			t.Fatalf("Escape left the %s menu open", menu.trigger)
 		}
 	}
+	// A context menu opened at a point of the window closes the same way.
+	state.openHostBlankMenu(gfx.Point{X: 300, Y: 300})
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if !state.hostBlankMenu.open {
+		t.Fatal("the blank-area menu did not open")
+	}
+	if err := view.Keys("Escape"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if state.hostBlankMenu.open {
+		t.Fatal("Escape left the blank-area menu open")
+	}
 }
 
 // A terminal is renamed by typing into the dialog's field and pressing Enter.
@@ -86,5 +105,54 @@ func TestTerminalRenameDialogTakesTypedNameWithEnter(t *testing.T) {
 	}
 	if state.modal != modalNone || session.Title != "web-logs" {
 		t.Fatalf("modal %d, title %q", state.modal, session.Title)
+	}
+}
+
+// A password is typed into the dialog's field, shown by the eye button, and
+// answered with Enter.
+func TestPasswordDialogTakesTypedAnswerAndReveals(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	fake := connect(t, state, world)
+	fake.set(func(status *sshconn.Status) {
+		status.Phase, status.Attempt = sshconn.PhasePasswordPrompt, 1
+		status.Questions = []sshconn.Question{{Text: "Password: ", Secret: true}}
+		status.Endpoint = sshconn.Endpoint{Host: "prod.example.com", Port: 22, User: "deploy"}
+	})
+	state.Wake()
+	view, err := headless.Open(state.WindowConfig(app.Config{
+		Title: "Password", Width: 900, Height: 600, Tree: Tree(),
+		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut,
+	}), nil, headless.Options{Scale: 1, ReferenceText: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Wait(300 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Type("hunter2"); err != nil {
+		t.Fatal(err)
+	}
+	if got := state.passwordFields[0].String(); got != "hunter2" {
+		t.Fatalf("typed answer = %q", got)
+	}
+	if err := view.ClickLabel(state.messages.ShowSecret); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if !state.passwordInputs[0].shown {
+		t.Fatal("the eye button did not show the answer")
+	}
+	if err := view.Keys("Enter"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if state.modal == modalPassword {
+		t.Fatal("Enter did not answer the question")
 	}
 }

@@ -1,14 +1,10 @@
 package workbench
 
 import (
-	"fmt"
 	"slices"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
-	"motty/internal/workbench/icons"
 )
 
 var (
@@ -20,18 +16,6 @@ var (
 	hitDashboardAddDismiss   = tree.ID(dashboardHits, "add-dismiss")
 	hitDashboardAddPanelList = tree.Sub(dashboardHits, tree.Name("add-panel"))
 )
-
-func dashboardOrderID(host string) gfx.ID { return tree.ID(dashboardHits, "order-"+host) }
-
-func (s *State) dashboardModeTabs() [2]components.TabOption {
-	m := s.messages.Dashboard
-	return [2]components.TabOption{{ID: hitDashboardSimple, Label: m.Simple}, {ID: hitDashboardDetailed, Label: m.Detailed}}
-}
-
-func (s *State) dashboardEditorTabs() [2]components.TabOption {
-	m := s.messages.Dashboard
-	return [2]components.TabOption{{ID: hitDashboardPickTab, Label: m.Hosts, Icon: icons.Server}, {ID: hitDashboardOrderTab, Label: m.OrderTab, Icon: icons.ArrowUpDown}}
-}
 
 func (s *State) dashboardCanAddHosts() bool {
 	for _, h := range s.hosts {
@@ -78,7 +62,7 @@ func (s *State) clickDashboardManagement(id gfx.ID) bool {
 				}
 				d.active = p.ID
 				d.search = text.Editor{}
-				d.scroll, d.scrollX = 0, 0
+				d.scroll = 0
 				s.activeSection = sectionDashboard
 				s.closeModal()
 				s.reconcileDashboard()
@@ -102,67 +86,28 @@ func (s *State) clickDashboardManagement(id gfx.ID) bool {
 	return false
 }
 
-func (s *State) paintDashboardAddMenu(c *gfx.Canvas) {
-	d, m := &s.dashboard, s.messages.Dashboard
-	menu := components.BeginDropdownMenu(c, s.Theme(), s.popupBelow(c, d.addAnchor, 260, min(420, float32(len(d.panels)*32+85)), ui.Start),
-		components.DropdownMenuOptions{Layer: dialogLayer, Scope: dialogScope, DismissID: hitDashboardAddDismiss, Viewport: s.windowRect(), Scroll: s.menuScrollFor(hitDashboardAddDismiss)})
-	menu.AddLabel(fmt.Sprintf(m.AddHint, len(d.addHosts)), false)
-	menu.AddItem(components.DropdownMenuItem{ID: hitDashboardAddNew, Label: m.New, Icon: icons.Plus})
-	menu.AddSeparator()
-	for i, p := range d.panels {
-		menu.AddItem(components.DropdownMenuItem{ID: hitDashboardAddPanelList.At(i), Label: p.Name, Icon: icons.Activity})
-	}
-	s.menuPlaced(menu.Bounds())
-	menu.End()
-}
-
 func (s *State) openDashboardOrder() {
 	s.openDashboardEditor(true)
 	s.dashboard.editor.page = 1
 }
 
-func (s *State) moveDashboardHost(move components.ReorderMove) {
+// moveDashboardHost moves the rows ListState.Reorder named before the row at
+// to. The editor's selection is the draft order; saving keeps it.
+func (s *State) moveDashboardHost(rows []int, to int) {
 	e := &s.dashboard.editor
-	if !move.Valid() || move.From >= len(e.selected) || move.To >= len(e.selected) || dashboardOrderID(e.selected[move.From]) != move.ID {
+	if len(rows) == 0 || rows[0] < 0 || rows[0] >= len(e.selected) {
 		return
 	}
-	host := e.selected[move.From]
-	if move.From < move.To {
-		copy(e.selected[move.From:move.To], e.selected[move.From+1:move.To+1])
-	} else {
-		copy(e.selected[move.To+1:move.From+1], e.selected[move.To:move.From])
+	from := rows[0]
+	if to > from {
+		to--
 	}
-	e.selected[move.To] = host
+	to = min(max(to, 0), len(e.selected)-1)
+	if from == to {
+		return
+	}
+	host := e.selected[from]
+	e.selected = slices.Delete(e.selected, from, from+1)
+	e.selected = slices.Insert(e.selected, to, host)
 	e.orderMode = hostOrderManual
-	e.scroll = max(0, e.scroll+e.order.RevealScroll(move.To))
-}
-
-func (s *State) paintDashboardHostOrder(c *gfx.Canvas, geo components.ScrollAreaGeometry) {
-	e, m, theme := &s.dashboard.editor, s.messages.Dashboard, s.Theme()
-	bounds := geo.Content
-	bounds.X += 3
-	bounds.Y += 3
-	bounds.Width = max(0, bounds.Width-6)
-	if geo.MaxOffsetY > 0 {
-		bounds.Width = max(0, bounds.Width-14)
-	}
-	list := components.BeginReorderList(c, theme, bounds, &e.order).Viewport(geo.Viewport)
-	for _, id := range e.selected {
-		h, exists := s.dashboardHost(id)
-		if !exists {
-			h.Label, h.Address = m.Missing, id
-		}
-		row := list.Row(dashboardOrderID(id), fmt.Sprintf(m.SortPanel, h.Label), false)
-		s.paintHostCatalogIcon(c, h, gfx.Rect{X: row.Content.X, Y: row.Content.Y + (row.Content.Height-28)/2, Width: 28, Height: 28}, theme.Card)
-		color := theme.Foreground
-		if !exists {
-			color = s.pal.warning
-		}
-		monitorLabel(c, h.Label, gfx.Rect{X: row.Content.X + 40, Y: row.Content.Y, Width: max(0, row.Content.Width*.55-40), Height: row.Content.Height}, 13, color, gfx.WeightMedium)
-		monitorRight(c, h.Address, gfx.Rect{X: row.Content.X + row.Content.Width*.55, Y: row.Content.Y, Width: row.Content.Width*.45 - 12, Height: row.Content.Height}, 12, theme.MutedForeground, gfx.WeightRegular)
-	}
-	list.End()
-	if len(e.selected) == 0 {
-		components.Empty(c, theme, geo.Viewport, components.EmptyData{Title: m.HostsRequired})
-	}
 }

@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"github.com/vivaui/viva/base"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
@@ -313,7 +314,14 @@ func (state *State) declareVerticalTabsContent(c ui.C, width, height float32, or
 				state.declareVerticalTabsRows(c, list.Width, compact)
 			})
 		})
-		ui.Slot(c).Height(verticalTabsFooter).Shrink(0).Draw(view.footerDraw)
+		if compact {
+			ui.Slot(c).Height(verticalTabsFooter).Shrink(0).Draw(view.footerDraw)
+		} else {
+			label := state.messages.LabelNewTab
+			ui.Column(c).Height(verticalTabsFooter).Shrink(0).PadSides(6, 6, 0, 6).Children(func() {
+				ui.Button(c, label).Secondary().Hit(hitVerticalTabsNew, label).FillWidth().Height(30)
+			})
+		}
 		// Painted after the rows, at the page rectangle they occupy: the row
 		// details the window draws, the hover scrollbar and the rail's line.
 		ui.Slot(c).Absolute().Left(6).Right(8).Top(verticalTabsHeader).Bottom(verticalTabsFooter).Draw(view.partsDraw)
@@ -368,16 +376,13 @@ func (state *State) drawVerticalTabsHeader(d *ui.DrawContext) {
 	}
 }
 
-// drawVerticalTabsFooter paints the sidebar's new-tab button.
+// drawVerticalTabsFooter paints the compact sidebar's new-tab icon button; the wide
+// sidebar's is a page button.
 func (state *State) drawVerticalTabsFooter(d *ui.DrawContext) {
-	view, m := &state.verticalTabs, state.messages
+	m := state.messages
 	bounds := d.Rect
 	button := gfx.Rect{X: bounds.X + 6, Y: bounds.Y + 6, Width: max(bounds.Width-12, 0), Height: 30}
-	if view.pageCompact {
-		state.paintIconButton(d.Canvas, hitVerticalTabsNew, iconPlus, button, m.LabelNewTab, false, iconButtonQuiet, state.pal.shell)
-		return
-	}
-	components.BeginButton(d.Canvas, state.Theme(), hitVerticalTabsNew, button).Secondary(m.LabelNewTab)
+	state.paintIconButton(d.Canvas, hitVerticalTabsNew, iconPlus, button, m.LabelNewTab, false, iconButtonQuiet, state.pal.shell)
 }
 
 // drawVerticalTabsParts paints what follows the rows: the path under a tab's
@@ -395,11 +400,10 @@ func (state *State) drawVerticalTabsParts(d *ui.DrawContext) {
 // bar the pointer drags.
 func (state *State) drawVerticalTabsScrollbar(d *ui.DrawContext) {
 	view, m := &state.verticalTabs, state.messages
-	area := components.BeginScrollArea(d.Canvas, state.Theme(), d.Rect, gfx.Size{Width: d.Rect.Width, Height: view.content}).
-		Offset(0, view.scroll).
-		VerticalScrollbar(hitVerticalTabsBar, m.VerticalTabsScrollbar, "").
-		HoverScrollbars(view.over || view.barDrag)
-	view.barGeometry = area.EndContent()
+	view.barGeometry = base.LayoutScrollArea(d.Rect, gfx.Size{Width: d.Rect.Width, Height: view.content},
+		base.ScrollAreaLayout{OffsetY: view.scroll, BarSize: scrollbarHoverSize})
+	paintScrollbarBar(d.Canvas, state.Theme(), view.barGeometry, true,
+		hitVerticalTabsBar, m.VerticalTabsScrollbar, "", view.over || view.barDrag)
 }
 
 // drawVerticalTabsSeparator paints the line that parts the sidebar from the rest
@@ -449,7 +453,10 @@ func (state *State) paintWorkspaceTabParts(canvas *gfx.Canvas, strip gfx.Rect, t
 			state.paintOutputAlertTitle(canvas, tab, strip)
 		}
 		badge := tab.badge.Rect()
-		if session != nil {
+		if tab.settings {
+			icon := gfx.Rect{X: badge.X + (badge.Width-16)/2, Y: badge.Y + (badge.Height-16)/2, Width: 16, Height: 16}
+			canvas.DrawIcon(lucideIcons[iconSettings], icon, tab.foreground)
+		} else if session != nil {
 			state.paintTabBadge(canvas, session, badge, tab.background)
 		} else if state.tabOrientation == tabsVertical {
 			canvas.DrawIcon(lucideIcons[iconTerminal], badge, state.pal.muted)

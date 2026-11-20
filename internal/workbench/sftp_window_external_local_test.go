@@ -30,7 +30,7 @@ func TestSFTPWindowLocalEditorUsesOriginalPathAndGlobalErrors(t *testing.T) {
 			if err := view.Rest(); err != nil {
 				t.Fatal(err)
 			}
-			dualClickID(t, view, sftpWindowMenuActions.At(sftpWindowActionIndex(hitSFTPEditExternal)))
+			dualClickMenuLabel(t, view, w.windowMenuRowLabel(sftpWindowMenuActions.At(sftpWindowActionIndex(hitSFTPEditExternal))))
 			if opened != filepath.Join(root, "中文上传.yml") || len(state.edits.list) != 0 || state.edits.opening.active || len(w.view.worker.Transfers(nil)) != 0 {
 				t.Fatal("dual-pane local edit started remote editing or opened a copy")
 			}

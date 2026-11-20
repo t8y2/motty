@@ -3,6 +3,7 @@ package workbench
 import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 )
 
 var (
@@ -17,23 +18,12 @@ var (
 // snippetMenu is the right-click menu of a row of the Snippets page: which
 // snippet, and where it was asked for. Closed, it costs nothing.
 type snippetMenu struct {
-	open  bool
-	pick  bool // lists the terminals to send to, instead of the row's actions
-	index int
-	at    gfx.Point
-}
-
-// snippetMenuPointer closes an open menu on a secondary press outside it. Opening
-// it is the paint of a row (openSnippetMenuOn), where the row is declared.
-func (state *State) snippetMenuPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	if event.Kind != gfx.PointerDown || event.Button == gfx.PointerButtonNone || event.Button == gfx.PointerButtonPrimary {
-		return gfx.EventResult{}, false
-	}
-	if state.snippetMenu.open && event.Target == hitSnippetMenuDismiss {
-		state.snippetMenu.open = false
-		return gfx.EventResult{Handled: true, Repaint: true}, true
-	}
-	return gfx.EventResult{}, false
+	open    bool
+	pick    bool // lists the terminals to send to, instead of the row's actions
+	fromBar bool // opened from a chip of the command bar, not from the page
+	index   int
+	name    string // the snippet the menu was opened on, to notice a rebuilt list
+	at      gfx.Point
 }
 
 // openSnippetMenuOn is called while painting a snippet row: when this paint is the
@@ -45,16 +35,30 @@ func (state *State) openSnippetMenuOn(canvas *gfx.Canvas, id gfx.ID, index int) 
 		return
 	}
 	state.snippets.selected = index
-	state.snippetMenu = snippetMenu{open: true, index: index, at: gfx.Point{X: event.X, Y: event.Y}}
+	state.snippetMenu = snippetMenu{open: true, index: index, name: state.snippets.list[index].Name, at: gfx.Point{X: event.X, Y: event.Y}}
 	canvas.Consume()
 }
 
-func (state *State) paintSnippetMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
+// openSnippetBarMenuOn is the same for a chip of the command bar: a secondary
+// press opens the snippet's own menu there, so a command added to the bar can
+// still be edited or removed without leaving the terminal page.
+func (state *State) openSnippetBarMenuOn(canvas *gfx.Canvas, id gfx.ID, index int) {
+	event, ok := canvas.PointerOn(id)
+	if !ok || event.Kind != gfx.PointerDown || event.Button != gfx.PointerButtonSecondary || state.modal != modalNone {
+		return
+	}
+	state.snippetMenu = snippetMenu{open: true, fromBar: true, index: index, name: state.snippets.list[index].Name, at: gfx.Point{X: event.X, Y: event.Y}}
+	canvas.Consume()
+}
+
+func (state *State) declareSnippetMenu(c ui.C) {
 	menu := &state.snippetMenu
 	if !menu.open {
 		return
 	}
-	if menu.index >= len(state.snippets.list) || state.modal != modalNone || state.activeSection != sectionSnippets {
+	if menu.index < 0 || menu.index >= len(state.snippets.list) || state.snippets.list[menu.index].Name != menu.name || state.modal != modalNone ||
+		(!menu.fromBar && state.activeSection != sectionSnippets) ||
+		(menu.fromBar && (!state.terminalPage() || !state.commands.shown || !state.commandsBarAvailable())) {
 		menu.open = false
 		return
 	}
@@ -74,49 +78,45 @@ func (state *State) paintSnippetMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 			rows.add(components.ContextMenuItem{ID: hitSnippetPickList.At(int(session.ID)), Label: session.Title, Icon: icon(iconTerminal), Shortcut: current})
 		}
 	} else {
-		state.snippetActionRows(&rows)
+		state.snippetActionRows(&rows, !menu.fromBar)
 	}
-	width, height := rows.size(canvas, state.contextMenuTheme())
-	bounds := state.popupAt(canvas, viewport, menu.at, width, height, 6)
-	popup := components.BeginContextMenu(canvas, state.contextMenuTheme(), bounds, components.ContextMenuOptions{
-		Layer: dialogLayer, Scope: dialogScope, DismissID: hitSnippetMenuDismiss, Viewport: viewport, Scroll: state.menuScrollFor(hitSnippetMenuDismiss),
-		RowHeight: contextMenuRow,
-	})
-	state.menuPlaced(popup.Bounds())
-	rows.paint(&popup, nil)
-	popup.End()
+	state.declareRowsMenu(c, &menu.open, menu.at, hitSnippetMenuDismiss, &rows, state.chooseSnippetMenu)
 }
 
-// snippetActionRows is what a snippet row's menu offers.
-func (state *State) snippetActionRows(rows *menuRows) {
+// snippetActionRows is what a snippet row's menu offers. Moving reorders by the
+// Snippets page's own filter and sort, so from the command bar only the actions
+// that make sense without the page are offered.
+func (state *State) snippetActionRows(rows *menuRows, moves bool) {
 	m := state.messages.Tools
 	icon := func(kind uint8) gfx.Icon { return lucideIcons[kind] }
 	rows.add(components.ContextMenuItem{ID: hitSnippetMenuSend, Label: m.SnippetSend, Icon: icon(iconPlay)})
-	rows.separate()
-	rows.add(components.ContextMenuItem{ID: hitSnippetMenuUp, Label: m.SnippetMoveUp, Icon: icon(iconArrowUp), Disabled: state.snippetNeighbor(state.snippetMenu.index, -1) < 0})
-	rows.add(components.ContextMenuItem{ID: hitSnippetMenuDown, Label: m.SnippetMoveDown, Icon: icon(iconChevronDown), Disabled: state.snippetNeighbor(state.snippetMenu.index, 1) < 0})
+	if moves {
+		rows.separate()
+		rows.add(components.ContextMenuItem{ID: hitSnippetMenuUp, Label: m.SnippetMoveUp, Icon: icon(iconArrowUp), Disabled: state.snippetNeighbor(state.snippetMenu.index, -1) < 0})
+		rows.add(components.ContextMenuItem{ID: hitSnippetMenuDown, Label: m.SnippetMoveDown, Icon: icon(iconChevronDown), Disabled: state.snippetNeighbor(state.snippetMenu.index, 1) < 0})
+	}
 	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitSnippetMenuEdit, Label: m.SnippetEdit, Icon: icon(iconPencil)})
 	rows.add(components.ContextMenuItem{ID: hitSnippetMenuDelete, Label: m.SnippetDelete, Icon: icon(iconTrash), Variant: components.ContextMenuItemDestructive})
 }
 
-// clickSnippetMenu runs a menu choice. A press anywhere else only closes the menu.
-func (state *State) clickSnippetMenu(id gfx.ID) bool {
-	if !state.snippetMenu.open {
-		return false
-	}
+// chooseSnippetMenu runs a choice of the menu, which closed with it.
+func (state *State) chooseSnippetMenu(id gfx.ID) {
 	menu := state.snippetMenu
 	index := menu.index
-	state.snippetMenu.open = false
 	if id.Scope() == hitSnippetPickList {
 		if session, ok := state.sessionByIDPointer(uint32(item(id))); ok && session.term != nil {
 			state.sendSnippetPicked(index, session)
 		}
-		return true
+		return
 	}
 	switch id {
 	case hitSnippetMenuSend:
-		state.sendSnippetFromPage(index, menu.at)
+		if menu.fromBar {
+			state.sendSnippet(index)
+		} else {
+			state.sendSnippetFromPage(index, menu.at)
+		}
 	case hitSnippetMenuEdit:
 		state.openSnippetDialog(index)
 	case hitSnippetMenuUp:
@@ -126,5 +126,4 @@ func (state *State) clickSnippetMenu(id gfx.ID) bool {
 	case hitSnippetMenuDelete:
 		state.openSnippetDelete(index)
 	}
-	return true
 }

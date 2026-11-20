@@ -7,8 +7,6 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/gfx"
-
-	"motty/internal/charset"
 )
 
 // The encoding is a control of the icon row, next to the file transfer mode,
@@ -33,7 +31,13 @@ func TestHostEncodingSharesTheIconRow(t *testing.T) {
 			canvas, _ := paintAt(state, gfx.Size{Width: 900, Height: 900})
 			body := &state.editor.form.body
 			icon := body.iconField.Rect()
-			hit, painted := hitByID(canvas, hitDialogEncoding)
+			var hit gfx.Hit
+			painted := false
+			for _, candidate := range canvas.Hits() {
+				if candidate.Role == gfx.RoleCombobox && candidate.Label == state.messages.FieldEncoding {
+					hit, painted = candidate, true
+				}
+			}
 			if !c.shown {
 				if body.encoding.Valid() || painted {
 					t.Fatalf("encoding %+v painted on a protocol without a shell", hit.Bounds)
@@ -166,57 +170,19 @@ func TestHostEditorEncodingBinding(t *testing.T) {
 	}
 }
 
-func TestHostEncodingPickerIsSearchableAndFixed(t *testing.T) {
+// The encoding field is a fixed list of choices: a choice writes what Host
+// stores, and the UTF-8 default is stored as the empty string.
+func TestHostEncodingPickerChoosesAndReturnsToTheDefault(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	state.modal = modalNewHost
-	p := state.hostEncodingPicker()
-	// Every offered charset is a choice, including the UTF-8 default.
-	if len(p.control.Choices()) != len(charset.Encodings) {
-		t.Fatalf("picker has %d choices, want %d", len(p.control.Choices()), len(charset.Encodings))
-	}
-	if p.control.AllowCreate {
-		t.Fatal("the encoding picker must not create arbitrary charsets")
-	}
-	// A search alias filters the list, e.g. "gb" for the Chinese encodings.
-	p.control.Query.Insert("gb")
-	choices := p.control.Choices()
-	if len(choices) == 0 || len(choices) >= len(charset.Encodings) {
-		t.Fatalf("query %q did not filter: %d choices", "gb", len(choices))
-	}
-	found := false
-	for _, choice := range choices {
-		if choice.Value == "GB18030" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatal("searching gb did not find GB18030")
-	}
-}
-
-func TestHostEncodingPickerChooseAndClear(t *testing.T) {
-	state := newTestState(t, testOptions(t))
-	state.modal = modalNewHost
-	p := state.hostEncodingPicker()
-	// Choose GBK from the unfiltered list.
-	choices := p.control.Choices()
-	for index, choice := range choices {
-		if choice.Value == "GBK" {
-			if !p.control.Choose(index) {
-				t.Fatal("Choose(GBK) failed")
-			}
-			break
-		}
-	}
-	state.syncHostEncoding()
+	state.openHostDialog()
+	paintedTexts(state)
+	chooseSelectOption(t, state, state.messages.FieldEncoding, "GBK")
 	if state.editor.encoding != "GBK" {
 		t.Fatalf("chosen encoding = %q, want GBK", state.editor.encoding)
 	}
-	// Clear returns to the UTF-8 default.
-	p.control.Clear()
-	state.syncHostEncoding()
+	chooseSelectOption(t, state, state.messages.FieldEncoding, state.messages.EncodingUTF8Default)
 	if state.editor.encoding != "" {
-		t.Fatalf("cleared encoding = %q, want empty (UTF-8)", state.editor.encoding)
+		t.Fatalf("encoding after choosing UTF-8 = %q, want empty", state.editor.encoding)
 	}
 }
 

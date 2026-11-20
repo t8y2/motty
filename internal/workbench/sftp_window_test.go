@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -23,6 +24,10 @@ import (
 type sftpNativeHost struct {
 	windows []*sftpNativeWindow
 	scale   float64
+	// referenceText lays the window out with the reference text metrics, which
+	// a paint golden needs so its snapshot does not depend on the platform's
+	// font engine.
+	referenceText bool
 }
 type sftpNativeWindow struct {
 	config app.Config
@@ -33,7 +38,7 @@ type sftpNativeWindow struct {
 }
 
 func (h *sftpNativeHost) OpenWindow(config app.Config, canvas *gfx.Canvas, closed func()) (app.WindowControl, error) {
-	view, err := headless.Open(config, canvas, headless.Options{Scale: h.scale})
+	view, err := headless.Open(config, canvas, headless.Options{Scale: h.scale, ReferenceText: h.referenceText})
 	if err != nil {
 		return nil, err
 	}
@@ -65,8 +70,20 @@ func (w *sftpNativeWindow) Frame() (gfx.Rect, bool) { return gfx.Rect{Width: 120
 
 func dualSFTPFixture(t *testing.T, scale float64) (*State, *sftpWindow, *workbenchSFTPRemote, *sftpNativeHost, string) {
 	t.Helper()
+	return dualSFTPFixtureWith(t, scale, false)
+}
+
+// dualSFTPReferenceFixture is dualSFTPFixture over the reference text metrics,
+// for a golden that must not depend on the platform's font engine.
+func dualSFTPReferenceFixture(t *testing.T, scale float64) (*State, *sftpWindow, *workbenchSFTPRemote, *sftpNativeHost, string) {
+	t.Helper()
+	return dualSFTPFixtureWith(t, scale, true)
+}
+
+func dualSFTPFixtureWith(t *testing.T, scale float64, referenceText bool) (*State, *sftpWindow, *workbenchSFTPRemote, *sftpNativeHost, string) {
+	t.Helper()
 	state, source, _, remote := openTestSFTP(t)
-	host := &sftpNativeHost{scale: scale}
+	host := &sftpNativeHost{scale: scale, referenceText: referenceText}
 	app.UseApplicationRunner(func(start func(app.Host) error) error { return start(host) })
 	t.Cleanup(func() { host.Quit(); app.UseApplicationRunner(nil) })
 	var w *sftpWindow
@@ -280,6 +297,99 @@ func (r *stalledSFTPRemote) OpenTransferFile(name string, flags int) (sftpclient
 }
 func (r *stalledSFTPRemote) Close() error { r.closeOnce.Do(func() { close(r.release) }); return nil }
 
+// queueHitPainted reports whether a queue control is in the last paint.
+func queueHitPainted(view *headless.Session, id gfx.ID) bool {
+	for _, hit := range view.Snapshot().Hits {
+		if hit.ID == id && !hit.Block {
+			return true
+		}
+	}
+	return false
+}
+
+// A batch upload that meets existing destinations puts one conflict choice in
+// the window's own queue, matching the transfer center's bulk recovery instead
+// of asking for every file separately.
+func TestSFTPWindowQueueResolvesAllConflicts(t *testing.T) {
+	state, w, remote, host, localDir := dualSFTPFixture(t, 1)
+	view := host.windows[0].view
+	for _, name := range []string{"notes.txt", "dup.txt"} {
+		if err := os.WriteFile(filepath.Join(localDir, name), []byte("new "+name), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	remote.mu.Lock()
+	remote.entries["/home/test"] = append(remote.entries["/home/test"], workbenchFileInfo{
+		name: "dup.txt", size: 3, mode: 0o644, when: time.Unix(1_700_000_400, 0),
+	})
+	remote.files["/home/test/dup.txt"] = []byte("old")
+	remote.mu.Unlock()
+	w.queueEntries(true, []sftpclient.Entry{{Name: "notes.txt"}, {Name: "dup.txt"}}, localDir, w.view.path)
+	settled := func() bool {
+		return len(w.view.transfers) == 2 && !sftpTransfersActive(w.view.transfers) &&
+			!w.view.busy && !w.view.refreshAfterTransfers && w.pendingLocal == "" && !w.localRefresh
+	}
+	dualWait(t, state, w, view, settled)
+	if w.queueCount() != 2 || w.ui.queueConflicts != 2 {
+		t.Fatalf("queue did not report both conflicts: count=%d conflicts=%d", w.queueCount(), w.ui.queueConflicts)
+	}
+	view.Rest()
+	if !queueHitPainted(view, hitSFTPQueueReplaceAll) || !queueHitPainted(view, hitSFTPQueueSkipAll) {
+		t.Fatal("the queue did not paint its conflict choices")
+	}
+
+	// Overwriting asks first, the same two-step the transfer center uses.
+	w.click(hitSFTPQueueReplaceAll)
+	if len(w.ui.queueBatch.targets) != 2 {
+		t.Fatalf("replace all captured %d targets", len(w.ui.queueBatch.targets))
+	}
+	if w.ui.queueBatch.action != state.messages.Transfers.Replace {
+		t.Fatalf("replace all described itself as %q", w.ui.queueBatch.action)
+	}
+	w.click(hitSFTPQueueReplaceCancel)
+	if len(w.ui.queueBatch.targets) != 0 {
+		t.Fatal("canceling the confirmation left the batch pending")
+	}
+
+	w.click(hitSFTPQueueReplaceAll)
+	w.click(hitSFTPQueueReplaceConfirm)
+	dualWait(t, state, w, view, func() bool {
+		return settled() && w.ui.queueConflicts == 0
+	})
+	remote.mu.Lock()
+	notes, dup := string(remote.files["/home/test/notes.txt"]), string(remote.files["/home/test/dup.txt"])
+	remote.mu.Unlock()
+	if notes != "new notes.txt" || dup != "new dup.txt" {
+		t.Fatalf("replace all did not upload both files: notes=%q dup=%q", notes, dup)
+	}
+}
+
+func TestSFTPWindowQueueSkipsAllConflicts(t *testing.T) {
+	state, w, remote, host, localDir := dualSFTPFixture(t, 1)
+	view := host.windows[0].view
+	if err := os.WriteFile(filepath.Join(localDir, "notes.txt"), []byte("new notes"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	w.queueEntries(true, []sftpclient.Entry{{Name: "notes.txt"}}, localDir, w.view.path)
+	dualWait(t, state, w, view, func() bool {
+		return len(w.view.transfers) == 1 && !sftpTransfersActive(w.view.transfers) &&
+			!w.view.busy && !w.view.refreshAfterTransfers && w.pendingLocal == "" && !w.localRefresh
+	})
+	if w.queueCount() != 1 || w.ui.queueConflicts != 1 {
+		t.Fatalf("queue did not report the conflict: count=%d conflicts=%d", w.queueCount(), w.ui.queueConflicts)
+	}
+	w.click(hitSFTPQueueSkipAll)
+	dualWait(t, state, w, view, func() bool {
+		return !sftpTransfersActive(w.view.transfers) && w.ui.queueConflicts == 0
+	})
+	remote.mu.Lock()
+	notes := string(remote.files["/home/test/notes.txt"])
+	remote.mu.Unlock()
+	if notes != "hello world" {
+		t.Fatalf("skip all overwrote the destination: %q", notes)
+	}
+}
+
 func TestSFTPWindowCloseConfirmsAndDoesNotCloseSourceConnection(t *testing.T) {
 	state, w, remote, host, dir := dualSFTPFixture(t, 1.5)
 	view := host.windows[0].view
@@ -321,6 +431,39 @@ func TestSFTPWindowCloseConfirmsAndDoesNotCloseSourceConnection(t *testing.T) {
 	conn.mu.Unlock()
 	if canceled != 0 || source.files == nil || source.files.worker == nil {
 		t.Fatal("closing SFTP canceled the shared source connection")
+	}
+}
+
+// A remote name that Windows rejects must not become the local destination:
+// the transfer window used to pass the raw name to the worker, so a file named
+// with a colon failed at CreateFile on Windows. The docked panel, the clipboard
+// and the download command all went through SafeLocalName; this window is the
+// same path and must not be the exception.
+func TestSFTPWindowDownloadKeepsLocalNamesUsable(t *testing.T) {
+	state, w, remote, host, localDir := dualSFTPFixture(t, 1)
+	const name = "CustomerCompany_2026-11-19 18:26:51.xlsx"
+	const content = "report"
+	remote.mu.Lock()
+	remote.entries["/home/test"] = append(remote.entries["/home/test"], workbenchFileInfo{
+		name: name, size: int64(len(content)), mode: 0o644, when: time.Unix(1_700_000_300, 0),
+	})
+	remote.files["/home/test/"+name] = []byte(content)
+	remote.mu.Unlock()
+	w.queueEntries(false, []sftpclient.Entry{{Name: name}}, "/home/test", localDir)
+	dualWait(t, state, w, host.windows[0].view, func() bool {
+		return len(w.view.transfers) == 1 && !sftpTransfersActive(w.view.transfers) &&
+			!w.view.busy && !w.view.refreshAfterTransfers && w.pendingLocal == "" && !w.localRefresh
+	})
+	safe := sftpclient.SafeLocalName(name)
+	if safe == name {
+		t.Fatalf("test name %q is already local-safe", name)
+	}
+	got, err := os.ReadFile(filepath.Join(localDir, safe))
+	if err != nil || string(got) != content {
+		t.Fatalf("download did not land under the safe name %q: %q %v (transfers %+v)", safe, got, err, w.view.transfers)
+	}
+	if _, err := os.Stat(filepath.Join(localDir, name)); err == nil {
+		t.Fatalf("download kept the local-unsafe name %q", name)
 	}
 }
 
@@ -413,15 +556,15 @@ func TestSFTPWindowMultiSelectQueueScrollAndSystemDrop(t *testing.T) {
 		t.Fatal(err)
 	}
 	view.Rest()
-	if w.ui.queueBar.MaxOffsetY <= 0 {
+	if w.ui.queueScroll == nil || w.ui.queueScroll.Max() <= 0 {
 		t.Fatal("batch queue has no scrollbar")
 	}
 	bounds := w.ui.queueBounds
 	if err := view.Scroll(gfx.ScrollEvent{X: bounds.X + 20, Y: bounds.Y + 20, DeltaY: 10000}); err != nil {
 		t.Fatal(err)
 	}
-	if w.ui.queueOffset != w.ui.queueBar.MaxOffsetY {
-		t.Fatal("queue failed to reach older/later items")
+	if w.ui.queueScroll.Offset != w.ui.queueScroll.Max() {
+		t.Fatalf("queue failed to reach older/later items: offset %.1f max %.1f", w.ui.queueScroll.Offset, w.ui.queueScroll.Max())
 	}
 	oldest := w.ui.queueEntries[len(w.ui.queueEntries)-1]
 	dualHit(t, view, sftpWindowQueueRows.At(state.transfers.entries[oldest].id))
@@ -652,12 +795,12 @@ func TestSFTPWindowListScrollbarOffset(t *testing.T) {
 	w.navigate(true, dir)
 	dualWait(t, state, w, view, func() bool { return !w.view.busy && w.pendingLocal == "" && len(w.view.lfolder.rows) >= 60 })
 	folder := &w.view.lfolder
-	if w.ui.bars[0].MaxOffsetY <= 0 {
-		t.Fatal("long folder has no scrollbar")
-	}
 	scroll := folder.listScroll
 	if scroll == nil {
 		t.Fatal("the list has no scroll state")
+	}
+	if scroll.Max() <= 0 {
+		t.Fatal("long folder has no scrollbar")
 	}
 	center := w.ui.list[0]
 	if err := view.Scroll(gfx.ScrollEvent{X: center.X + 20, Y: center.Y + 20, DeltaY: 10000}); err != nil {
@@ -669,15 +812,30 @@ func TestSFTPWindowListScrollbarOffset(t *testing.T) {
 	if w.ui.offset[0] <= 0 {
 		t.Fatal("wheel did not move the list")
 	}
-	thumb := w.ui.bars[0].VerticalThumb
+	// Hover the list so the page reveals its scrollbar, then drag the thumb up.
+	if err := view.Move(center.X+center.Width-4, center.Y+20); err != nil {
+		t.Fatal(err)
+	}
+	view.Rest()
+	var bar gfx.Rect
+	for _, hit := range view.Snapshot().Hits {
+		if hit.Role == gfx.RoleSeparator && hit.Bounds.X+hit.Bounds.Width >= center.X+center.Width-1 && pointInRect(hit.Bounds.X+1, hit.Bounds.Y+1, center) {
+			bar = hit.Bounds
+			break
+		}
+	}
+	if bar.Width <= 0 {
+		t.Fatal("the file list has no vertical scrollbar")
+	}
 	before := scroll.Offset
-	if err := view.Press(thumb.X+thumb.Width/2, thumb.Y+thumb.Height/2); err != nil {
+	x, y := bar.X+bar.Width/2, bar.Y+bar.Height/2
+	if err := view.Press(x, y); err != nil {
 		t.Fatal(err)
 	}
-	if err := view.Move(thumb.X+thumb.Width/2, thumb.Y+thumb.Height/2-30); err != nil {
+	if err := view.Move(x, y-30); err != nil {
 		t.Fatal(err)
 	}
-	if err := view.Release(thumb.X+thumb.Width/2, thumb.Y+thumb.Height/2-30); err != nil {
+	if err := view.Release(x, y-30); err != nil {
 		t.Fatal(err)
 	}
 	if scroll.Offset >= before || w.ui.offset[0] != scroll.Offset {
@@ -707,4 +865,98 @@ func (h *sftpNativeHost) Post(fn func()) {
 	if fn != nil {
 		fn()
 	}
+}
+
+// snapshotMenuHit is the painted row of an open page menu named label.
+func snapshotMenuHit(view *headless.Session, label string) (gfx.Hit, bool) {
+	if label == "" {
+		return gfx.Hit{}, false
+	}
+	for _, hit := range view.Snapshot().Hits {
+		if hit.Role == gfx.RoleMenuItem && strings.HasPrefix(hit.Label, label) {
+			return hit, true
+		}
+	}
+	return gfx.Hit{}, false
+}
+
+// dualHitLabel is dualHit for a page menu row, which the page names by its label.
+func dualHitLabel(t *testing.T, view *headless.Session, label string) gfx.Rect {
+	t.Helper()
+	if err := view.Driver().Pump(); err != nil {
+		t.Fatal(err)
+	}
+	hit, ok := snapshotMenuHit(view, label)
+	if !ok {
+		t.Fatalf("no menu row named %q is painted", label)
+	}
+	return hit.Bounds
+}
+
+// dualClickMenuLabel clicks the painted row of an open page menu named label,
+// as a user does.
+func dualClickMenuLabel(t *testing.T, view *headless.Session, label string) {
+	t.Helper()
+	// The page declares an open menu in the repaint its opener asks for.
+	if err := view.Driver().Pump(); err != nil {
+		t.Fatal(err)
+	}
+	hit, ok := snapshotMenuHit(view, label)
+	if !ok {
+		var labels []string
+		for _, h := range view.Snapshot().Hits {
+			if h.Role == gfx.RoleMenuItem {
+				labels = append(labels, h.Label)
+			}
+		}
+		t.Fatalf("no menu row named %q is painted; have %q", label, labels)
+	}
+	if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// menuRowsLabel is the label of the row a menu would paint for id.
+func menuRowsLabel(rows menuRows, id gfx.ID) (string, bool) {
+	for index := range rows.entries[:rows.count] {
+		entry := &rows.entries[index]
+		if entry.separator || entry.content != nil {
+			continue
+		}
+		if entry.item.ID == id {
+			return entry.item.Label, true
+		}
+	}
+	return "", false
+}
+
+// windowMenuRowLabel is the label of the file list's context menu row for id.
+func (w *sftpWindow) windowMenuRowLabel(id gfx.ID) string {
+	label, _ := menuRowsLabel(w.windowMenuRows(), id)
+	return label
+}
+
+// headerMenuRowLabel is the label of one pane's More menu row for id.
+func (w *sftpWindow) headerMenuRowLabel(side int, id gfx.ID) string {
+	label, _ := menuRowsLabel(w.headerMenuRows(side, w.ui.panes[side].bounds.Width), id)
+	return label
+}
+
+// panelMenuRowLabel is the label of the docked panel's More menu row for id.
+func (state *State) panelMenuRowLabel(view *sftpView, id gfx.ID) string {
+	label, _ := menuRowsLabel(state.panelHeaderMenuRows(view.active(), view), id)
+	return label
+}
+
+// canvasMenuHit is the painted row of an open page menu named label.
+func canvasMenuHit(canvas *gfx.Canvas, label string) (gfx.Hit, bool) {
+	if label == "" {
+		return gfx.Hit{}, false
+	}
+	for _, hit := range canvas.Hits() {
+		if hit.Role == gfx.RoleMenuItem && strings.HasPrefix(hit.Label, label) {
+			return hit, true
+		}
+	}
+	return gfx.Hit{}, false
 }

@@ -122,6 +122,17 @@ func (conn *Conn) UploadIntegration(ctx context.Context, shellPath, token, direc
 	return integrationActivation(name, token, dir+"/init", dir), nil
 }
 
+// integrationEchoTag starts the activation line, after its leading space. The
+// terminal matches it when the line's echo arrives only after its hidden window
+// has closed (a link that delivered the line past the window's deadline), so
+// the echo is still recognized as ours and not shown.
+const integrationEchoTag = ": motty-"
+
+// IntegrationEchoTag identifies the activation line's echo: the same token
+// binds it to this shell, as the ready marker does. A shell echoes the tag as
+// ordinary text, so it survives whatever the line editor draws around it.
+func IntegrationEchoTag(token string) []byte { return []byte(integrationEchoTag + token) }
+
 // integrationActivation is the short, history-guarded line written into the
 // running shell. The ready marker is on the last line that is still under the
 // history guard, so restoring history can never record it.
@@ -132,18 +143,21 @@ func integrationActivation(name, token, file, dir string) string {
 	// marker. Bash may prompt between physical lines, so keeping the install on
 	// one line leaves at most one prompt before the marker.
 	install := ". " + shellQuote(file) + "; rm -rf -- " + shellQuote(dir)
+	// The tag is a no-op command whose only purpose is the echo above; it runs
+	// before the history guard, under the same first line.
+	tag := integrationEchoTag + token + "; "
 	switch name {
 	case "bash":
 		// The first line turns history off; the shell records it before it
 		// runs. The last entry is deleted only when it is that line, so a shell
 		// that never recorded it (HISTCONTROL=ignorespace) keeps its history.
 		prune := `_motty_hist=$(HISTTIMEFORMAT= history 1); case $_motty_hist in *"_motty_hist_on="*) history -d "$(printf '%s\n' "$_motty_hist" | awk '{print $1}')" 2>/dev/null ;; esac; set -o history; unset _motty_hist`
-		return " _motty_hist_on=; if [[ -o history ]]; then _motty_hist_on=1; set +o history; fi\n" +
+		return " " + tag + "_motty_hist_on=; if [[ -o history ]]; then _motty_hist_on=1; set +o history; fi\n" +
 			install + "; if [[ -n ${_motty_hist_on-} ]]; then " + prune + "; fi; unset _motty_hist_on; " + ready + "\n"
 	case "zsh":
 		// The leading space lets a shell with HIST_IGNORE_SPACE keep the one
 		// line it records out of its history; Zsh offers no entry deletion.
-		return " fc -p 2>/dev/null\n" + install + "; " + ready + "; fc -P 2>/dev/null\n"
+		return " " + tag + "fc -p 2>/dev/null\n" + install + "; " + ready + "; fc -P 2>/dev/null\n"
 	}
 	return ""
 }
@@ -382,14 +396,28 @@ __motty_home_report() {
 // write, which makes the replacement atomic, and drops it again before the
 // next prompt.
 //
+// That drop cannot assume the prefix is still first in PS1: an activation
+// (conda, virtualenv) between the two prompts prepends the environment name
+// in front of it, and a front-only removal would never match, so the clear
+// would stay in PS1 and wipe the environment name off every later prompt
+// (issue #1121). The report function therefore removes the first occurrence
+// anywhere in PS1.
+//
+// A virtualenv does more than move the clear: it snapshots PS1 and restores
+// that snapshot on deactivate, so a copy of the clear can come back long after
+// the first prompt. The injected clear is therefore tagged with an inert OSC
+// sequence and dropped on every prompt, not just the one after injection. The
+// tag keeps a sequence the user had of their own from being mistaken for the
+// injected one.
+//
 // Zsh additionally has to keep PROMPT_SP off for that prompt. With it on, zsh
 // marks the partial line the hidden activation line left by writing a row of
 // spaces from the cursor; the cursor is still after the first prompt, so the
 // spaces wrap and the redrawn prompt lands on the next row, leaving the old
 // one behind. The option is put back before the prompt after it.
 const (
-	firstPromptEraseBash = `_motty_first_prompt_erase='\[\r\e[2K\]'; _motty_first_prompt=1`
-	firstPromptEraseZsh  = `_motty_first_prompt_erase=$'%{\r\033[2K%}'; _motty_first_prompt=1; _motty_prompt_sp_was=; [[ -o prompt_sp ]] && _motty_prompt_sp_was=1; unsetopt prompt_sp; _motty_prompt_sp_hold=1`
+	firstPromptEraseBash = `_motty_first_prompt_erase='\[\e]7777;motty-first-prompt\a\r\e[2K\]'; _motty_first_prompt=1`
+	firstPromptEraseZsh  = `_motty_first_prompt_erase=$'%{\e]7777;motty-first-prompt\a\r\033[2K%}'; _motty_first_prompt=1; _motty_prompt_sp_was=; [[ -o prompt_sp ]] && _motty_prompt_sp_was=1; unsetopt prompt_sp; _motty_prompt_sp_hold=1`
 )
 
 // Encode bytes, not characters: file URI reserved characters and non-ASCII
@@ -405,10 +433,8 @@ const directoryReportFunction = `__motty_report() {
     if [[ -n ${_motty_first_prompt-} ]]; then
         PS1=$_motty_first_prompt_erase$PS1
         unset _motty_first_prompt
-        _motty_first_prompt_shown=1
-    elif [[ -n ${_motty_first_prompt_shown-} ]]; then
-        unset _motty_first_prompt_shown
-        PS1=${PS1#"$_motty_first_prompt_erase"}
+    elif [[ -n ${_motty_first_prompt_erase-} ]]; then
+        PS1=${PS1/"$_motty_first_prompt_erase"/}
     fi
     case $PS1 in
         *"$_motty_prompt_marker") ;;
@@ -455,9 +481,18 @@ const commandFinishedFunction = `__motty_command_finished() {
 
 const bashIntegrationTail = `
 _motty_prompt_marker='\[\e]133;B__MOTTY_SUFFIX__\a\]'
+# An exported PROMPT_COMMAND survives su/sudo into a shell that has none of
+# these functions. Gate each injected entry on a non-exported flag so an
+# inherited value expands to nothing there (no "command not found", $? and the
+# user's own entries untouched) while this shell expands it to the real hook.
+_motty_active=1
+# set -a (allexport) exports every assignment, including this flag; with it
+# exported, su's shell would inherit the gate switched on and the wrapped
+# entries would run again. Keep it local whatever the profile asked for.
+export -n _motty_active
 case $(declare -p PROMPT_COMMAND 2>/dev/null) in
-    'declare -a '*) PROMPT_COMMAND=(__motty_command_finished "${PROMPT_COMMAND[@]}" __motty_report) ;;
-    *) PROMPT_COMMAND=__motty_command_finished$'\n'${PROMPT_COMMAND:+$PROMPT_COMMAND$'\n'}__motty_report ;;
+    'declare -a '*) PROMPT_COMMAND=('${_motty_active:+__motty_command_finished}' "${PROMPT_COMMAND[@]}" '${_motty_active:+__motty_report}') ;;
+    *) PROMPT_COMMAND='${_motty_active:+__motty_command_finished}'$'\n'${PROMPT_COMMAND:+$PROMPT_COMMAND$'\n'}'${_motty_active:+__motty_report}' ;;
 esac
 if (( __MOTTY_FORCE__ == 0 && (BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4)) )); then
     PS0=$'\e]133;C__MOTTY_SUFFIX__\a'${PS0-}
@@ -475,12 +510,12 @@ else
             __motty_disarm() { local _motty_status=$?; _motty_armed=0; return "$_motty_status"; }
             __motty_arm() { _motty_armed=1; }
             __motty_debug() {
-                [[ ${_motty_armed-} == 1 && $BASH_COMMAND != __motty_disarm && -z ${COMP_POINT-} ]] || return 0
+                [[ ${_motty_armed-} == 1 && $BASH_COMMAND != *__motty_disarm* && -z ${COMP_POINT-} ]] || return 0
                 _motty_armed=0
                 printf '\033]133;C__MOTTY_SUFFIX__\007'
             }
             _motty_armed=0
-            PROMPT_COMMAND=__motty_disarm$'\n'${PROMPT_COMMAND:+$PROMPT_COMMAND$'\n'}__motty_arm
+            PROMPT_COMMAND='${_motty_active:+__motty_disarm}'$'\n'${PROMPT_COMMAND:+$PROMPT_COMMAND$'\n'}'${_motty_active:+__motty_arm}'
             # Keep the user's own DEBUG trap and run it first, so that it sees
             # the same $?, $_ and BASH_COMMAND as without us. trap -p is read
             # through a file because a command substitution is a subshell.

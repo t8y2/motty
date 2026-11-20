@@ -3,6 +3,7 @@ package workbench
 import (
 	"context"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/vivaui/viva/gfx"
@@ -68,13 +69,16 @@ func TestNewTabPageOpensALocalTerminalWithTheChosenShell(t *testing.T) {
 	canvas, _ = paintedTexts(state)
 	items := []string{"Alpha", "Beta", "WSL: Ubuntu"}
 	for index, name := range items {
-		hit, ok := hitByID(canvas, hitLocalShellPickerItems.At(index))
-		if !ok || hit.Label != name {
-			t.Fatalf("menu item %d = %+v found=%v, want %q", index, hit, ok, name)
+		found := false
+		for _, hit := range canvas.Hits() {
+			found = found || hit.Role == gfx.RoleMenuItem && strings.HasPrefix(hit.Label, name)
+		}
+		if !found {
+			t.Fatalf("menu item %d is not %q", index, name)
 		}
 	}
 
-	state.Click(hitLocalShellPickerItems.At(1))
+	clickPageMenuRow(t, state, "Beta")
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	if !ok || !session.isLocal() || state.localShellPicker.open {
 		t.Fatalf("choosing a shell: session ok=%v open=%v", ok, state.localShellPicker.open)
@@ -102,7 +106,7 @@ func TestSidebarLocalTerminalMenuOpensAnotherShellInANewTab(t *testing.T) {
 	}
 	tabs := len(state.workspaceTabs)
 	paintedTexts(state)
-	state.Click(hitLocalShellPickerItems.At(1))
+	clickPageMenuRow(t, state, "Beta")
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	if !ok || localShellOf(t, session) != "/bin/bash" || len(state.workspaceTabs) != tabs+1 {
 		t.Fatalf("session ok=%v tabs %d -> %d", ok, tabs, len(state.workspaceTabs))
@@ -142,8 +146,12 @@ func TestChosenShellIsKeptByReconnectDuplicateAndRestart(t *testing.T) {
 	withShellChoices(t, first, []localshell.Choice{{Name: "Alpha", Path: "/bin/sh", Default: true}, {Name: "Beta", Path: "/bin/bash"}}, nil)
 	first.localShell = "/bin/sh"
 	first.openLocalShellPicker(gfx.Point{X: 10, Y: 10}, false)
-	first.Click(hitLocalShellPickerItems.At(1))
-	session, _ := first.sessionByIDPointer(first.activeSessionID)
+	paintedTexts(first)
+	clickPageMenuRow(t, first, "Beta")
+	session, ok := first.sessionByIDPointer(first.activeSessionID)
+	if !ok {
+		t.Fatal("choosing Beta started no session")
+	}
 
 	// Changing the default later must not move a tab that was given a shell.
 	first.localShell = "/bin/sh"

@@ -66,7 +66,7 @@ func TestNoteSplitScrollFollowsContentAndKeepsDriver(t *testing.T) {
 		n.images = append(n.images, noteImage{bitmap: gfx.Bitmap{Width: 1, Height: 1, Stride: 4, Pix: []byte{0, 0, 0, 255}}})
 	}
 	paint()
-	n.previewScroll = n.rendered.Height() + 106
+	n.setPreviewScroll(n.rendered.Height() + 106)
 	s.noteScrollDriver(true)
 	paint()
 	paint()
@@ -80,7 +80,7 @@ func TestNoteSplitScrollFollowsContentAndKeepsDriver(t *testing.T) {
 		t.Fatal("image region position lost on resize")
 	}
 	// Both endpoints, including the preview's additional image area.
-	n.previewScroll = n.previewHeight - n.previewBounds.Height
+	n.setPreviewScroll(n.previewHeight - n.previewBounds.Height)
 	s.noteScrollDriver(true)
 	paint()
 	paint()
@@ -108,7 +108,7 @@ func TestNoteSplitScrollFollowsContentAndKeepsDriver(t *testing.T) {
 	if n.view.splitScroll.active {
 		t.Fatal("narrow source fallback still synchronizes")
 	}
-	n.previewScroll = 0
+	n.setPreviewScroll(0)
 	size.Width = 1600
 	paint()
 	if n.previewScroll == 0 {

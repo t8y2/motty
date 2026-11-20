@@ -50,7 +50,7 @@ func TestTerminalWithHistoryShowsAScrollbarThatMovesTheView(t *testing.T) {
 	x := bar.Bounds.X + bar.Bounds.Width/2
 
 	// At the live screen the thumb is at the bottom: dragging it up goes back.
-	area := state.terminalScrollArea(nil, session, actualGeometry.area, 1).Geometry()
+	area := state.terminalScrollGeometry(session, actualGeometry.area)
 	grab := area.VerticalThumb.Y + area.VerticalThumb.Height/2
 	barPointer(state, session, gfx.PointerDown, x, grab)
 	if result := barPointer(state, session, gfx.PointerMove, x, bar.Bounds.Y); !result.Handled || !result.Repaint {
@@ -73,10 +73,10 @@ func TestTerminalScrollbarFollowsTheWheelAndNeedsHistory(t *testing.T) {
 	state, session, geometry := historyState()
 	screen := session.term.screen
 	screen.Scroll(10)
-	before := state.terminalScrollArea(nil, session, geometry.area, 1).Geometry().VerticalThumb.Y
+	before := state.terminalScrollGeometry(session, geometry.area).VerticalThumb.Y
 
 	screen.Scroll(10)
-	after := state.terminalScrollArea(nil, session, geometry.area, 1).Geometry().VerticalThumb.Y
+	after := state.terminalScrollGeometry(session, geometry.area).VerticalThumb.Y
 	if after >= before {
 		t.Fatalf("scrolling back left the thumb at %v, was %v", after, before)
 	}

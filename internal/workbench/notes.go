@@ -110,18 +110,19 @@ type notesUI struct {
 	rendered                                components.MarkdownView
 	previewScroll                           float32
 	confirm                                 string
-	dragID                                  string
-	dragFolder                              bool
-	dragStart                               gfx.Point
-	dragging                                bool
-	rows                                    []noteRow
 	listBounds, sourceBounds, previewBounds gfx.Rect
 	previewHeight                           float32
-	images                                  []noteImage
-	imageSource                             string
-	imageToken                              uint64
-	followConflict                          string
-	imageCancel                             context.CancelFunc
+	// previewSeek applies previewScroll to the page's scroll area once, after a
+	// program changed the position; the page owns the wheel.
+	previewSeek bool
+	// page is the views the page declares for this note: its tree, its
+	// splitters and the fields bound to the editors above.
+	page           notePageUI
+	images         []noteImage
+	imageSource    string
+	imageToken     uint64
+	followConflict string
+	imageCancel    context.CancelFunc
 }
 type noteRow struct {
 	id     string
@@ -430,13 +431,7 @@ func (s *State) selectNoteWithoutSave(id string) {
 	if s.notes.selected != id {
 		s.notes.view.tagsExpanded = false
 	}
-	s.notes.view.tagPopupScroll = 0
-	s.notes.view.resetPopupScrollbar()
-	s.notes.view.previewBar = noteScrollbar{}
-	s.notes.view.treeBar = noteScrollbar{}
 	s.notes.view.clearPreviewSelection()
-	s.notes.view.previewDragging = false
-	s.notes.view.scrollDrag = false
 	s.notes.view.tagTokens = nil
 	s.notes.view.tokenTags = nil
 	s.notes.view.popup = ""

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"motty/internal/netclient"
 	"motty/internal/update"
 )
 
@@ -36,8 +37,9 @@ func Download(ctx context.Context, client *http.Client, asset update.Asset, dir 
 	}
 	if client == nil {
 		// No overall timeout: a large package on a slow link is allowed to take
-		// its time, and the caller's context ends it.
-		client = &http.Client{}
+		// its time, and the caller's context ends it. The requests follow the
+		// desktop's proxy settings.
+		client = netclient.Client(0)
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err

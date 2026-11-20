@@ -3,6 +3,7 @@ package rdp
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"time"
@@ -41,8 +42,9 @@ const (
 //
 // Motty divergence from upstream: Dial and VerifyCertificate replace the
 // hard-coded net.DialTimeout and tls.Config{InsecureSkipVerify: true}; the
-// audio, drive, printer, serial, parallel, smartcard, USB and camera options
-// are gone with their packages. See ../../docs/remote-desktop.md.
+// drive, printer, serial, parallel, smartcard, USB and camera options are gone
+// with their packages. Audio output is the one redirection Motty exposes,
+// through Sound. See ../../docs/remote-desktop.md.
 type Options struct {
 	// Connection
 	Host string // Target hostname or IP (TLS server name, NLA target)
@@ -61,6 +63,13 @@ type Options struct {
 	// Security selects the protocol the client may negotiate. The zero value
 	// refuses Standard RDP Security, whose keys are not authenticated.
 	Security SecurityMode
+
+	// LegacyTLS offers the TLS 1.0-1.2 cipher suites that use RSA key exchange,
+	// including AES-CBC, to a server that offers nothing else. Go leaves those
+	// suites out by default: RSA key exchange has no forward secrecy and CBC
+	// has known weaknesses. Only an old server needs it; modern servers keep
+	// negotiating ECDHE, because the modern suites stay in the offer.
+	LegacyTLS bool
 
 	// Authentication
 	Username string // Login username
@@ -88,6 +97,14 @@ type Options struct {
 
 	// Redirect
 	Clipboard bool // Redirect clipboard (default: true)
+	// Sound, when set, plays the server's audio over the "rdpsnd" static
+	// channel or the AUDIO_PLAYBACK_DVC dynamic channel (Windows 11 uses the
+	// latter). It is called during channel negotiation with the PCM format the
+	// client will accept (16-bit signed little-endian, one or two channels);
+	// the client closes the returned writer when the audio channel or the
+	// connection ends. Nil asks the server for no audio. The server may still
+	// send compressed formats, which are not offered and therefore not used.
+	Sound func(sampleRate uint32, channels uint16) (io.WriteCloser, error)
 
 	// Session
 	ConsoleSession bool // Connect to the console (admin) session

@@ -6,7 +6,6 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 )
 
@@ -97,9 +96,7 @@ func TestToolbarOrderAndResetAreRestoredByANewState(t *testing.T) {
 		state.openToolbarSettings(group)
 		first := state.toolbars.entries(group)[0].Key
 		state.clickToolbarSettings(hitToolbarToggles.At(toolbarEntryIndex(group, first)))
-		state.moveToolbarEntry(components.ReorderMove{
-			ID: hitToolbarHandles.At(toolbarEntryIndex(group, first)), From: 0, To: len(toolbarCatalog[group]) - 1,
-		})
+		state.moveToolbarEntry(0, len(toolbarCatalog[group]))
 	}
 	want := state.toolbars.snapshot()
 	reopened := newTestState(t, options)

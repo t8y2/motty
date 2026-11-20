@@ -27,6 +27,22 @@ func openBookmarkEditor(t *testing.T) (*sftpWindow, *headless.Session) {
 	return w, view
 }
 
+// clickBookmarkMenuRow chooses a row of an open page menu by its visible label.
+func clickBookmarkMenuRow(t *testing.T, w *sftpWindow, view *headless.Session, label string) {
+	t.Helper()
+	w.window.Invalidate()
+	view.Driver().Pump()
+	for _, hit := range view.Snapshot().Hits {
+		if hit.Role == gfx.RoleMenuItem && hit.Label == label {
+			if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+				t.Fatal(err)
+			}
+			return
+		}
+	}
+	t.Fatalf("no menu row named %q is painted", label)
+}
+
 func clickBookmarkButton(t *testing.T, w *sftpWindow, view *headless.Session, id gfx.ID) {
 	t.Helper()
 	w.window.Invalidate()
@@ -35,6 +51,11 @@ func clickBookmarkButton(t *testing.T, w *sftpWindow, view *headless.Session, id
 	if err := view.Click(r.X+r.Width/2, r.Y+r.Height/2); err != nil {
 		t.Fatal(err)
 	}
+	// The page declares an open menu in the repaint the click asks for; the
+	// menu's keys are the page's once it has been declared.
+	w.window.Invalidate()
+	view.Driver().Pump()
+	view.Rest()
 }
 
 func TestBookmarkEditorButtonsReachTheirActions(t *testing.T) {
@@ -169,7 +190,7 @@ func TestBookmarkScopeSelectOpensChoosesAndDismisses(t *testing.T) {
 		t.Fatal("the scope list did not open")
 	}
 	// Choosing All connections closes it and sets the scope.
-	clickBookmarkButton(t, w, view, hitSFTPProfileShared)
+	clickBookmarkMenuRow(t, w, view, w.owner.messages.SFTPWindow.ProfileShared)
 	if w.bookmark.scopeOpen || !w.bookmark.shared {
 		t.Fatalf("after choosing shared: open=%v shared=%v", w.bookmark.scopeOpen, w.bookmark.shared)
 	}
@@ -178,7 +199,10 @@ func TestBookmarkScopeSelectOpensChoosesAndDismisses(t *testing.T) {
 	if !w.bookmark.scopeOpen {
 		t.Fatal("the scope list did not open the second time")
 	}
-	clickBookmarkButton(t, w, view, hitSFTPProfileScopeDismiss)
+	// A press outside the list dismisses it.
+	if err := view.Click(240, 130); err != nil {
+		t.Fatal(err)
+	}
 	if w.bookmark.scopeOpen || !w.bookmark.shared {
 		t.Fatalf("after dismissing: open=%v shared=%v", w.bookmark.scopeOpen, w.bookmark.shared)
 	}
@@ -228,7 +252,11 @@ func TestBookmarkScopeSelectKeysChoose(t *testing.T) {
 	if !w.bookmark.scopeOpen {
 		t.Fatal("the scope list did not open")
 	}
-	// Down moves to the next option, Enter chooses it: All connections.
+	// The menu opens with no row highlighted: the first Down takes the first
+	// option, the second the next, and Enter chooses it: All connections.
+	if err := view.Keys("down"); err != nil {
+		t.Fatal(err)
+	}
 	if err := view.Keys("down"); err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +264,7 @@ func TestBookmarkScopeSelectKeysChoose(t *testing.T) {
 		t.Fatal(err)
 	}
 	if w.bookmark.scopeOpen || !w.bookmark.shared {
-		t.Fatalf("Down then Enter: open=%v shared=%v, want closed and shared", w.bookmark.scopeOpen, w.bookmark.shared)
+		t.Fatalf("Down Down Enter: open=%v shared=%v, want closed and shared", w.bookmark.scopeOpen, w.bookmark.shared)
 	}
 	// The focus after choosing is the dialog's own initial focus (the local directory field), not
 	// the trigger the code asks for: pinned as it is, so a change is a decision.
@@ -247,14 +275,14 @@ func TestBookmarkScopeSelectKeysChoose(t *testing.T) {
 	}
 	// Up and Enter on the open list choose the first option: This connection only.
 	clickBookmarkButton(t, w, view, hitSFTPProfileScope)
-	if err := view.Keys("up"); err != nil {
+	if err := view.Keys("down"); err != nil {
 		t.Fatal(err)
 	}
 	if err := view.Keys("enter"); err != nil {
 		t.Fatal(err)
 	}
 	if w.bookmark.scopeOpen || w.bookmark.shared {
-		t.Fatalf("Up then Enter: open=%v shared=%v, want closed and site", w.bookmark.scopeOpen, w.bookmark.shared)
+		t.Fatalf("Down then Enter: open=%v shared=%v, want closed and site", w.bookmark.scopeOpen, w.bookmark.shared)
 	}
 }
 

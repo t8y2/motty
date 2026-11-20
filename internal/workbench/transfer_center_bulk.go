@@ -14,12 +14,6 @@ import (
 )
 
 var (
-	hitTransfersHost            = tree.ID(transferCenterHits, "host")
-	hitTransfersHostDismiss     = tree.ID(transferCenterHits, "host-dismiss")
-	hitTransfersHostItems       = tree.Sub(transferCenterHits, tree.Name("host-item"))
-	hitTransfersDirection       = tree.ID(transferCenterHits, "direction")
-	hitTransfersDirectionClose  = tree.ID(transferCenterHits, "direction-dismiss")
-	hitTransfersDirectionItems  = tree.Sub(transferCenterHits, tree.Name("direction-item"))
 	hitTransfersRetryFailed     = tree.ID(transferCenterHits, "retry-failed")
 	hitTransfersSkipVisible     = tree.ID(transferCenterHits, "skip-visible")
 	hitTransfersReplaceVisible  = tree.ID(transferCenterHits, "replace-visible")
@@ -76,6 +70,7 @@ type transferBatch struct {
 	policy                     sftpclient.ExistingPolicy
 	host                       *transferHost
 	filter                     int
+	view                       *sftpView // a window's own queue, not the center's filtered one
 	title, description, action string
 }
 
@@ -113,7 +108,6 @@ func (state *State) showTransferConflict() {
 	center.filter, center.host, center.direction = transferFilterFailed, nil, transferAnyDirection
 	center.query = ""
 	center.search.SetText("")
-	center.selectOpen = gfx.ID{}
 	center.details.dismiss()
 	center.groups[transferFilterFailed].collapsed = false
 	center.open, center.scroll = true, 0
@@ -174,6 +168,8 @@ func (state *State) describeTransferScope() {
 	if center.host != nil && !slices.ContainsFunc(center.hosts, func(host *transferHost) bool { return sameTransferHost(host, center.host) }) {
 		center.hosts = append(center.hosts, center.host)
 	}
+	center.hostChoices = append(center.hostChoices[:0], nil)
+	center.hostChoices = append(center.hostChoices, center.hosts...)
 	center.hostLabel = m.AllHosts
 	if center.host != nil {
 		center.hostLabel = center.host.label
@@ -281,6 +277,34 @@ func (state *State) updateTransferSearch() {
 	}
 }
 
+// captureViewTransferBatch captures the conflicting transfers of one transfer
+// window, so its queue can offer the same overwrite/skip choice as the center
+// without depending on the center's filters or another window's tasks.
+func (state *State) captureViewTransferBatch(view *sftpView, policy sftpclient.ExistingPolicy) transferBatch {
+	center := &state.transfers
+	batch := transferBatch{policy: policy, filter: transferFilterAll, view: view}
+	for index := range center.entries {
+		entry := &center.entries[index]
+		if entry.owner != view {
+			continue
+		}
+		if transferRetryEligible(entry, policy != sftpclient.ExistingFail) {
+			batch.targets = append(batch.targets, transferTarget{
+				entry.id, entry.owner, entry.owner.worker, entry.snapshot.ID,
+				entry.snapshot.QueueOrder, entry.snapshot.QueuedAt,
+			})
+		}
+	}
+	m := state.messages.Transfers
+	batch.action = m.Replace
+	if policy == sftpclient.ExistingResume {
+		batch.action = m.Resume
+	}
+	batch.title = fmt.Sprintf(m.ConfirmBatchFmt, batch.action, len(batch.targets))
+	batch.description = fmt.Sprintf(m.BatchScopeFmt, state.messages.SFTPTransferQueue)
+	return batch
+}
+
 func (state *State) captureTransferBatch(policy sftpclient.ExistingPolicy) transferBatch {
 	center := &state.transfers
 	batch := transferBatch{policy: policy, host: center.host, filter: center.filter}
@@ -316,9 +340,16 @@ func (state *State) dispatchTransferBatch(batch transferBatch) {
 	}
 	for _, target := range batch.targets {
 		entry := state.transfers.capturedEntry(target)
-		if entry == nil || entry.snapshot.QueueOrder != target.attempt || !state.transfers.shows(entry) ||
-			!transferFilterShows(batch.filter, entry.snapshot) || batch.host != nil && !sameTransferHost(entry.host, batch.host) ||
+		if entry == nil || entry.snapshot.QueueOrder != target.attempt ||
 			!transferRetryEligible(entry, batch.policy != sftpclient.ExistingFail) {
+			continue
+		}
+		if batch.view != nil {
+			if entry.owner != batch.view {
+				continue
+			}
+		} else if !state.transfers.shows(entry) || !transferFilterShows(batch.filter, entry.snapshot) ||
+			batch.host != nil && !sameTransferHost(entry.host, batch.host) {
 			continue
 		}
 		policy := batch.policy
@@ -370,17 +401,6 @@ func (state *State) clickTransferBulk(id gfx.ID) bool {
 		return true
 	}
 	switch id {
-	case hitTransfersHost, hitTransfersDirection:
-		if center.selectOpen == id {
-			center.selectOpen = gfx.ID{}
-		} else {
-			center.selectOpen = id
-		}
-		center.details.dismiss()
-		return true
-	case hitTransfersHostDismiss, hitTransfersDirectionClose:
-		center.selectOpen = gfx.ID{}
-		return true
 	case hitTransfersRetryFailed, hitTransfersSkipVisible, hitTransfersReplaceVisible, hitTransfersResumeVisible:
 		policy := sftpclient.ExistingFail
 		switch id {
@@ -395,36 +415,12 @@ func (state *State) clickTransferBulk(id gfx.ID) bool {
 		if len(batch.targets) == 0 {
 			return true
 		}
-		center.selectOpen = gfx.ID{}
 		center.details.dismiss()
 		if policy == sftpclient.ExistingReplace || policy == sftpclient.ExistingResume {
 			center.batch = batch
 		} else {
 			state.dispatchTransferBatch(batch)
 		}
-		return true
-	}
-	if index, ok := id.In(hitTransfersHostItems); ok {
-		if index < 0 || index > len(center.hosts) {
-			return true
-		}
-		center.host = nil
-		if index > 0 {
-			center.host = center.hosts[index-1]
-		}
-		center.selectOpen, center.scroll = gfx.ID{}, 0
-		center.details.dismiss()
-		state.describeTransferScope()
-		return true
-	}
-	if index, ok := id.In(hitTransfersDirectionItems); ok {
-		if index < 0 || index >= int(transferDirectionCount) {
-			return true
-		}
-		center.direction = transferDirection(index)
-		center.selectOpen, center.scroll = gfx.ID{}, 0
-		center.details.dismiss()
-		state.describeTransferScope()
 		return true
 	}
 	return false

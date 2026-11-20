@@ -197,7 +197,8 @@ func TestRemoteCopyResumesFromAPartialFile(t *testing.T) {
 	}
 	worker, destinationRoot := newProtocolWorker(t)
 	prefix := content[:8]
-	if err := os.WriteFile(filepath.Join(destinationRoot, ".motty.partial.txt.part"), prefix, 0o644); err != nil {
+	partial := remotePartialPath("partial.txt", "partial.txt")
+	if err := os.WriteFile(filepath.Join(destinationRoot, filepath.FromSlash(partial)), prefix, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	_, queued := worker.QueueRemoteCopy(RemoteCopyRequest{

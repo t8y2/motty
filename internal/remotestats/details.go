@@ -72,7 +72,7 @@ func StartDetails(runner DetailRunner, notify func()) *DetailsWorker {
 
 // StartDetailsWithInterval keeps slow metadata independent of fast streaming.
 func StartDetailsWithInterval(runner DetailRunner, notify func(), seconds int) *DetailsWorker {
-	return startDetails(runner, notify, seconds, detailsCommand)
+	return startDetails(runner, notify, seconds, linuxShellCommand(detailsCommand))
 }
 
 func startDetails(runner DetailRunner, notify func(), seconds int, command string) *DetailsWorker {

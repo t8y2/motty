@@ -3,9 +3,6 @@ package workbench
 import (
 	"encoding/json"
 	"fmt"
-
-	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/gfx"
 )
 
 type aiMCPClient uint8
@@ -27,10 +24,6 @@ const (
 	aiMCPPi
 	aiMCPClientCount
 )
-
-func aiMCPClientID(client aiMCPClient) gfx.ID { return hitAISetMCPClients.At(int(client)) }
-
-func aiAgentClientID(client aiMCPClient) gfx.ID { return hitAISetAgentClients.At(int(client)) }
 
 const (
 	aiMCPClientSetting   = "ai.mcp.client"
@@ -76,22 +69,18 @@ func (state *State) aiChooseMCPClient(client aiMCPClient, agent bool) {
 	}
 }
 
-func aiAgentClientOptions() [aiMCPClientCount]components.SelectItem {
-	options := aiMCPClientOptions()
-	for index := range options {
-		options[index].ID = aiAgentClientID(aiMCPClient(index))
-	}
-	return options
-}
+// aiMCPClientNames name the clients the export select offers, in aiMCPClient order.
+var aiMCPClientNames = [...]string{"Claude Code", "Cursor", "CodeBuddy Code CLI", "ZCode", "TRAE", "VS Code", "Windsurf", "Codex", "DeepSeek Harness", "OpenCode", "Cherry Studio", "Qoder", "WorkBuddy", "Pi Coding Agent"}
 
-func aiMCPClientOptions() [aiMCPClientCount]components.SelectItem {
-	names := [...]string{"Claude Code", "Cursor", "CodeBuddy Code CLI", "ZCode", "TRAE", "VS Code", "Windsurf", "Codex", "DeepSeek Harness", "OpenCode", "Cherry Studio", "Qoder", "WorkBuddy", "Pi Coding Agent"}
-	var options [aiMCPClientCount]components.SelectItem
-	for index, name := range names {
-		options[index] = components.SelectItem{ID: aiMCPClientID(aiMCPClient(index)), Label: name}
+// aiMCPClients are the clients the export select offers.
+var aiMCPClients = func() (clients [aiMCPClientCount]aiMCPClient) {
+	for index := range clients {
+		clients[index] = aiMCPClient(index)
 	}
-	return options
-}
+	return clients
+}()
+
+func aiMCPClientName(client aiMCPClient) string { return aiMCPClientNames[client] }
 
 // The endpoint is a local HTTP URL; the server generates a base64url token.
 // Both are shell-safe in the existing Claude Code command on Windows and Unix.

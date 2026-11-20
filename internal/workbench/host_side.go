@@ -3,7 +3,6 @@ package workbench
 import (
 	"strings"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
@@ -157,16 +156,16 @@ type hostCatalogSide struct {
 	area   ui.Box
 	scroll *ui.ScrollState
 	bounds gfx.Rect
-	// splitBounds is the two panes and the divider between them, in the window:
-	// the geometry a drag of the divider maps through.
-	splitBounds gfx.Rect
+	// split is the page's divider between the tree and the list. Its Pos is
+	// the width the user chose, in pixels; the layout gives the side pane that
+	// width, clamped to the window and the two panes' least widths.
+	split ui.SplitterState
 	// open is the user's choice of the tree pane; visible says the layout could
 	// show it beside the list on this window.
-	open     bool
-	visible  bool
-	dragging bool
-	drawers  []*hostSideRowDrawer
-	next     int
+	open    bool
+	visible bool
+	drawers []*hostSideRowDrawer
+	next    int
 	// width is the width the user chose. visibleWidth is the width the layout
 	// could give it, which a narrow window clamps below width; the divider is
 	// painted and dragged at the visible one.
@@ -559,24 +558,27 @@ func (state *State) declareHostsSide(c ui.C, layout hostsLayout) {
 	state.hostSideChanges(c)
 }
 
-// hostSideResizable is the divider between the group tree and the list. Its
-// bounds are the two panes and the handle, in the window.
-func (state *State) hostSideResizable(canvas *gfx.Canvas) components.Resizable {
-	bounds := state.hostSide.splitBounds
-	usable := max(1, bounds.Width-1)
-	width := state.hostSide.visibleWidth
-	if width <= 0 {
-		width = state.hostSidePaneWidth()
-	}
-	fraction := width / usable
-	maximum := min(hostSideMaxWidth, max(usable-hostListMinWidth, hostSideMinWidth)) / usable
-	return components.BeginResizable(canvas, state.Theme(), hitHostSideWidth, bounds, fraction).
-		Limits(hostSideMinWidth/usable, maximum).
-		LimitsPx(hostSideMinWidth, hostListMinWidth).HandleSize(paneDividerHitWidth)
-}
-
-func (state *State) paintHostsSideSplit(canvas *gfx.Canvas) {
-	state.hostSideResizable(canvas).Paint(state.messages.HostCatalog.ResizeGroups)
+// declareHostsSplit declares the divider between the group tree and the list as
+// a page Splitter. Its one-pixel line sits where the old handle did, its
+// pointer strip is the usual eight pixels, and its least widths are the old
+// LimitsPx: hostSideMinWidth of tree and hostListMinWidth of list.
+func (state *State) declareHostsSplit(c ui.C, layout hostsLayout) {
+	side := &state.hostSide
+	// The Splitter's position is the width the panes were laid out with, so a
+	// drag starts from where the divider is drawn, not from a stale width.
+	side.split.Pos = layout.side.Width
+	side.width = layout.side.Width
+	span := layout.side.Width + 1 + hostSidePaneGap + layout.main.Width
+	ui.Row(c).Absolute().Left(layout.side.X).Top(layout.side.Y).
+		Width(span).Height(layout.side.Height).Children(func() {
+		ui.Slot(c).Width(layout.side.Width).Height(layout.side.Height).Shrink(0)
+		// The old handle's FractionForKey moved it 5% of the room per arrow.
+		side.split.StepFraction = .05
+		ui.Splitter(c, &side.split).SplitterThickness(1).Mins(hostSideMinWidth, hostListMinWidth).
+			HitWith(hitHostSideWidth, state.messages.HostCatalog.ResizeGroups,
+				gfx.HitOptions{Role: gfx.RoleSeparator, Cursor: gfx.PointerCursorResizeHorizontal})
+		ui.Slot(c).Grow(1).Height(layout.side.Height).MarginLeft(hostSidePaneGap).Shrink(0)
+	})
 }
 
 // hostSideRowFromHit maps a pointer target to the row it names: a row of the
@@ -593,28 +595,19 @@ func (state *State) hostSideRowFromHit(id gfx.ID) (hostSideRow, bool) {
 	return hostSideRow{}, false
 }
 
-// hostSidePointer drags the divider, connects a host on a double click, and
-// opens a group's actions or a host's menu on a secondary press.
+// hostSidePointer connects a host on a double click, and opens a group's
+// actions or a host's menu on a secondary press. The divider's drag is the
+// page Splitter's; this only persists the width it left behind.
 func (state *State) hostSidePointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	side := &state.hostSide
 	if state.activeSection != sectionHosts || state.modal != modalNone || !side.visible {
 		return gfx.EventResult{}, false
 	}
-	if event.Kind == gfx.PointerDown && (event.Button == gfx.PointerButtonPrimary || event.Button == gfx.PointerButtonNone) {
-		side.dragging = event.Target == hitHostSideWidth
-	}
-	if side.dragging {
-		if bounds := side.splitBounds; bounds.Width > 1 {
-			switch event.Kind {
-			case gfx.PointerDown, gfx.PointerMove, gfx.PointerUp:
-				side.width = state.hostSideResizable(nil).FractionAt(event.X) * (bounds.Width - 1)
-			}
+	if event.Kind == gfx.PointerUp && side.split.Dragging() {
+		if side.split.Pos > 0 {
+			side.width = side.split.Pos
 		}
-		if event.Kind == gfx.PointerUp || event.Kind == gfx.PointerExit {
-			side.dragging = false
-			state.save()
-		}
-		return gfx.EventResult{Handled: true, Repaint: true}, true
+		state.save()
 	}
 	if event.Kind != gfx.PointerDown {
 		return gfx.EventResult{}, false

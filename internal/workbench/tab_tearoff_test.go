@@ -21,11 +21,11 @@ func TestTabMenuMovesATabToAWindowOfItsOwn(t *testing.T) {
 	rightClickTab(pair.first, hitTabList.At(int(moving)))
 	var canvas gfx.Canvas
 	pair.first.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	hit, ok := hitByID(&canvas, hitTabMenuNewWindow)
+	hit, ok := menuHit(&canvas, pair.first, hitTabMenuNewWindow)
 	if !ok || hit.Disabled {
 		t.Fatalf("the menu does not offer a window of its own: %+v, found %v", hit, ok)
 	}
-	pair.first.Click(hitTabMenuNewWindow)
+	chooseMenu(t, pair.first, hitTabMenuNewWindow)
 
 	if len(pair.torn) != 1 {
 		t.Fatalf("%d windows were opened", len(pair.torn))
@@ -53,10 +53,10 @@ func TestTabMenuKeepsAWindowsOnlyTab(t *testing.T) {
 	rightClickTab(pair.first, hitTabList.At(int(only)))
 	var canvas gfx.Canvas
 	pair.first.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if hit, ok := hitByID(&canvas, hitTabMenuNewWindow); !ok || !hit.Disabled {
+	if hit, ok := menuHit(&canvas, pair.first, hitTabMenuNewWindow); !ok || !hit.Disabled {
 		t.Fatalf("a window's only tab can be moved out of it: %+v, found %v", hit, ok)
 	}
-	pair.first.Click(hitTabMenuNewWindow)
+	chooseMenu(t, pair.first, hitTabMenuNewWindow)
 	if len(pair.torn) != 0 {
 		t.Fatal("a window was opened for the only tab")
 	}

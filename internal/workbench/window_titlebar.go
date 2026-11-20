@@ -16,13 +16,18 @@ const (
 	titlebarGap     = float32(14) // room between the window's name and its context
 )
 
+// windowTitlebarInsets is app.TitlebarInsets, with a seam for the paint
+// goldens: production reads the platform's insets, while a golden pins one set
+// so the same snapshots hold on every platform.
+var windowTitlebarInsets = app.TitlebarInsets
+
 // declareWindowTitlebar declares a custom-titlebar window's strip: the window's
 // name at the leading end, the muted context it names after it, and the rest of
 // the strip as the place the window is dragged from. Every standalone content
 // window uses it, so all of them are titled, moved and kept clear of the
 // platform's window buttons alike.
 func declareWindowTitlebar(c ui.C, pal *palette, title, subtitle string) {
-	leading, trailing := app.TitlebarInsets()
+	leading, trailing := windowTitlebarInsets()
 	fontSize := c.Theme().Metrics.FontSizeS
 	ui.Row(c).Height(TitlebarHeight).Shrink(0).
 		PadSides(0, trailing+titlebarTextPad, 0, leading+titlebarTextPad).

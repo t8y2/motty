@@ -334,6 +334,11 @@ type Options struct {
 	// Clipboard allows the clipboard to cross in both directions. Off, the
 	// backend neither sends the local clipboard nor keeps the remote's.
 	Clipboard bool
+	// Audio plays the remote system's sound on this computer's default output
+	// device. Off, the backend asks the server for no audio at all. A machine
+	// whose device cannot be opened, or whose server offers no PCM format,
+	// simply plays nothing; the connection is unaffected.
+	Audio bool
 	// Console asks an RDP server for its console (administrative) session
 	// instead of a new one, as mstsc /admin does. Windows decides whether the
 	// request is granted: the account still needs the right to log on, and what
@@ -347,6 +352,12 @@ type Options struct {
 	// session; the backend reports the connection as not encrypted. VNC chooses
 	// its security types with the server and ignores this.
 	StandardSecurity bool
+	// LegacyTLS lets an RDP connection offer the TLS suites that use RSA key
+	// exchange (with AES-CBC or AES-GCM) to a server that offers nothing newer.
+	// They have no forward secrecy and CBC has known weaknesses, so this is an
+	// explicit accommodation for an old server, not a default. Modern suites
+	// stay in the offer; VNC ignores this.
+	LegacyTLS bool
 	// Username and Domain are the account a protocol with accounts signs in as.
 	// VNC account authentication uses Username; Domain belongs to RDP.
 	Username, Domain string

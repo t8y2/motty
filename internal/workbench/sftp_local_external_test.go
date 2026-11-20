@@ -23,10 +23,10 @@ func TestLocalSFTPContextMenuOpensOriginalFileWithoutRemoteEditing(t *testing.T)
 			state.options.OpenPath = func(location string) error { opened = location; return nil }
 			state.sftpMenu = sftpMenu{open: true, session: session.ID, at: gfx.Point{X: 300, Y: 200}}
 			canvas, _ := paintedTexts(state)
-			if hit, ok := hitByID(canvas, hitSFTPMenuEdit); !ok || hit.Disabled {
+			if hit, ok := menuHit(canvas, state, hitSFTPMenuEdit); !ok || hit.Disabled {
 				t.Fatal("local editor menu action is missing or disabled")
 			}
-			state.Click(hitSFTPMenuEdit)
+			chooseMenu(t, state, hitSFTPMenuEdit)
 			if opened != filepath.Join(root, "report.txt") || state.edits.opening.active || len(state.edits.list) != 0 || len(view.worker.Transfers(nil)) != 0 {
 				t.Fatal("local editor did not open the original file directly")
 			}
@@ -82,7 +82,7 @@ func TestLocalSFTPDirectoryAndMultipleSelectionHaveNoEditorAction(t *testing.T) 
 		}
 		state.sftpMenu = sftpMenu{open: true, session: session.ID, at: gfx.Point{X: 300, Y: 200}}
 		canvas, _ := paintedTexts(state)
-		if _, ok := hitByID(canvas, hitSFTPMenuEdit); ok {
+		if _, ok := menuHit(canvas, state, hitSFTPMenuEdit); ok {
 			t.Fatal("directory or multi-selection exposed an editor action")
 		}
 		state.sftpMenu.open = false
@@ -100,7 +100,7 @@ func TestLocalSFTPSpecialFileHasNoEditorAction(t *testing.T) {
 	}
 	state.sftpMenu = sftpMenu{open: true, session: session.ID, at: gfx.Point{X: 300, Y: 200}}
 	canvas, _ := paintedTexts(state)
-	if _, ok := hitByID(canvas, hitSFTPMenuEdit); ok {
+	if _, ok := menuHit(canvas, state, hitSFTPMenuEdit); ok {
 		t.Fatal("a special local file exposed an editor action")
 	}
 }

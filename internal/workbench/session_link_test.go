@@ -11,7 +11,7 @@ import (
 func menuHas(state *State, id gfx.ID) bool {
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	_, ok := hitByID(&canvas, id)
+	_, ok := menuHit(&canvas, state, id)
 	return ok
 }
 
@@ -26,7 +26,7 @@ func TestDisconnectEndsALiveSessionButKeepsItsTab(t *testing.T) {
 	if !menuHas(state, hitTabMenuDisconnect) || !menuHas(state, hitTabMenuRestart) || menuHas(state, hitTabMenuReconnect) {
 		t.Fatal("a running session must offer Disconnect and Reconnect, and not the dead-session Connect")
 	}
-	state.Click(hitTabMenuDisconnect)
+	chooseMenu(t, state, hitTabMenuDisconnect)
 	if state.modal != modalSessionLink || fake.canceled != 0 {
 		t.Fatalf("modal=%v canceled=%d: ending a running session must wait for the answer", state.modal, fake.canceled)
 	}
@@ -36,7 +36,7 @@ func TestDisconnectEndsALiveSessionButKeepsItsTab(t *testing.T) {
 	}
 
 	rightClickTab(state, hitTabList.At(int(workspace)))
-	state.Click(hitTabMenuDisconnect)
+	chooseMenu(t, state, hitTabMenuDisconnect)
 	state.Click(hitSessionLinkConfirm)
 	if fake.canceled != 1 || !shell.closed || !session.term.ended || len(state.sessions) != 1 {
 		t.Fatalf("canceled=%d shell closed=%v ended=%v sessions=%d", fake.canceled, shell.closed, session.term.ended, len(state.sessions))
@@ -60,7 +60,7 @@ func TestDisconnectEndsALiveSessionButKeepsItsTab(t *testing.T) {
 	if !menuHas(state, hitTabMenuReconnect) || menuHas(state, hitTabMenuDisconnect) || menuHas(state, hitTabMenuRestart) {
 		t.Fatal("a disconnected tab offers Connect, and nothing to end")
 	}
-	state.Click(hitTabMenuReconnect)
+	chooseMenu(t, state, hitTabMenuReconnect)
 	if state.modal != modalNone {
 		t.Fatal("connecting a dead tab asks nothing: there is nothing to lose")
 	}
@@ -72,7 +72,7 @@ func TestReconnectRestartsALiveSessionInTheSameTabAfterAsking(t *testing.T) {
 	workspace := state.deck.ActiveWorkspace()
 
 	rightClickTab(state, hitTabList.At(int(workspace)))
-	state.Click(hitTabMenuRestart)
+	chooseMenu(t, state, hitTabMenuRestart)
 	if state.modal != modalSessionLink || len(world.conns) != 1 {
 		t.Fatalf("modal=%v conns=%d", state.modal, len(world.conns))
 	}
@@ -82,7 +82,7 @@ func TestReconnectRestartsALiveSessionInTheSameTabAfterAsking(t *testing.T) {
 	}
 
 	rightClickTab(state, hitTabList.At(int(workspace)))
-	state.Click(hitTabMenuRestart)
+	chooseMenu(t, state, hitTabMenuRestart)
 	state.Click(hitSessionLinkConfirm)
 	if len(world.conns) != 2 || fake.canceled != 1 || len(state.sessions) != 1 || state.deck.ActiveWorkspace() != workspace {
 		t.Fatalf("conns=%d canceled=%d sessions=%d", len(world.conns), fake.canceled, len(state.sessions))
@@ -103,7 +103,7 @@ func TestTerminalMenuOffersDisconnectOnlyWhileItIsConnected(t *testing.T) {
 	if !menuHas(state, hitTerminalMenuDisconnect) || !menuHas(state, hitTerminalMenuRestart) {
 		t.Fatal("the terminal menu lacks Disconnect or Reconnect")
 	}
-	state.Click(hitTerminalMenuDisconnect)
+	chooseMenu(t, state, hitTerminalMenuDisconnect)
 	if state.modal != modalSessionLink || !state.sessionLink.disconnect || state.sessionLink.session != session.ID {
 		t.Fatalf("modal=%v link=%+v", state.modal, state.sessionLink)
 	}

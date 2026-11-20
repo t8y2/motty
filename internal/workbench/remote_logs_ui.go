@@ -21,6 +21,8 @@ var (
 	hitRemoteLogDismiss = tree.ID(remoteLogHits, "dismiss")
 	hitRemoteLogName    = tree.ID(remoteLogHits, "name")
 	hitRemoteLogPath    = tree.ID(remoteLogHits, "path")
+	hitRemoteLogOutput  = tree.ID(remoteLogHits, "output")
+	hitRemoteLogBar     = tree.ID(remoteLogHits, "output-bar")
 )
 
 const remoteLogRowHeight = 20
@@ -141,11 +143,6 @@ func (state *State) declareRemoteLogs(c ui.C) {
 	m, p := state.messages.RemoteLogs, state.pal
 	if view.buffer != nil {
 		view.buffer.snapshot(&view.snapshot)
-	}
-	if view.scroll.Scroll == nil {
-		view.scroll.Scroll = view.scrollLog
-		view.scroll.Key = view.keyLog
-		view.scroll.Pointer = view.logScrollbarPointer
 	}
 	c.Part("remote-logs")
 	ui.Column(c).Absolute().Left(frame.X).Top(frame.Y+frame.Height-height).
@@ -280,8 +277,38 @@ func (state *State) declareRemoteLogOutput(c ui.C, session *Session, view *remot
 			state.declareRemoteLogAutoScroll(c, view)
 		})
 		ui.Slot(c).Height(1).FillWidth().Background(p.line)
-		ui.Control(c, m.Title, &view.scroll).Grow(1).FillWidth().Clip().Background(p.terminal).
-			Draw(func(d *ui.DrawContext) { state.drawRemoteLogOutput(d, view) })
+		view.updateMatches()
+		scroll := ui.Scroll(c).Grow(1).FillWidth().Clip().Background(p.terminal).
+			AlwaysScrollbars().ScrollbarSize(7).ScrollbarIDs(hitRemoteLogBar, gfx.ID{}).
+			ScrollbarLabels(m.Title, "").
+			HitWith(hitRemoteLogOutput, m.Title, gfx.HitOptions{Role: gfx.RoleGroup})
+		if area := scroll.ScrollState(); area != nil {
+			if view.resetScroll && !view.follow {
+				area.ScrollTo(0)
+			}
+			view.resetScroll = false
+			if view.follow != view.lastFollow {
+				view.lastFollow = view.follow
+				if view.follow {
+					area.ScrollToEnd()
+				}
+			}
+			if area.Offset != view.lastOffset {
+				// The wheel or a drag moved the log: following follows only
+				// while the view is still at its end, as the old log's switch
+				// showed.
+				view.follow = area.AtEnd()
+				view.lastFollow = view.follow
+				view.lastOffset = area.Offset
+			}
+			view.scroll = area
+		}
+		scroll = scroll.Follow(view.follow)
+		scroll.Children(func() {
+			height := max(float32(view.outputRows())*remoteLogRowHeight, view.viewport, 1)
+			ui.Slot(c).FillWidth().Height(height).
+				Draw(func(d *ui.DrawContext) { state.drawRemoteLogOutput(d, view) })
+		})
 		state.declareRemoteLogStatus(c, session, view)
 	})
 }
@@ -417,29 +444,27 @@ func (state *State) declareRemoteLogForm(c ui.C, session *Session, view *remoteL
 
 func (state *State) drawRemoteLogOutput(d *ui.DrawContext, view *remoteLogView) {
 	p, m := state.pal, state.messages.RemoteLogs
-	box := d.Rect
-	view.visibleRows = max(1, int(box.Height/remoteLogRowHeight))
-	view.updateMatches()
-	last := view.lastTop()
-	if view.follow {
-		view.top = last
-	}
-	view.top = min(max(view.top, view.snapshot.first), last)
-	area := components.BeginScrollArea(d.Canvas, state.Theme(), box, gfx.Size{
-		Width: box.Width, Height: float32(view.outputRows()) * remoteLogRowHeight,
-	}).Offset(0, float32(view.top-view.snapshot.first)*remoteLogRowHeight).
-		ScrollbarSize(7).VerticalScrollbar(view.scroll.Parts().At(0), m.Title, "")
-	view.scrollbar = area.BeginContent()
+	area := view.scroll
+	view.viewport = area.Viewport
+	// The content child is laid out at the area's scroll offset; the viewport
+	// is where the area itself is.
+	box := gfx.Rect{X: d.Rect.X, Y: d.Rect.Y + area.Offset, Width: d.Rect.Width, Height: area.Viewport}
+	visibleRows := max(1, int(area.Viewport/remoteLogRowHeight))
 	style := gfx.TextStyle{Size: metrics.FontSizeM, Color: p.termFG, Mono: true}
-	start := int(view.top - view.snapshot.first)
+	start := int(area.Offset / remoteLogRowHeight)
+	if start < 0 {
+		start = 0
+	}
+	d.Canvas.Clip(box)
 	drawn := 0
-	for row := start; row < view.outputRows() && drawn < view.visibleRows; row++ {
+	// One row past the viewport paints a partially scrolled row; the clip trims it.
+	for row := start; row < view.outputRows() && drawn <= visibleRows; row++ {
 		index := row
 		if view.matchQuery != "" {
 			index = view.matches[row]
 		}
 		line := view.snapshot.lines[index]
-		y := box.Y + float32(drawn)*remoteLogRowHeight
+		y := d.Rect.Y + float32(row)*remoteLogRowHeight
 		number := gfx.Rect{X: box.X + 6, Y: y, Width: 55, Height: remoteLogRowHeight}
 		style.Color = p.muted
 		d.Canvas.LabelAligned(strconv.FormatInt(view.snapshot.first+int64(index)+1, 10), number, style, gfx.AlignRight)
@@ -453,6 +478,7 @@ func (state *State) drawRemoteLogOutput(d *ui.DrawContext, view *remoteLogView) 
 		d.Canvas.Label(line, gfx.Rect{X: box.X + 72, Y: y, Width: max(0, box.Width-84), Height: remoteLogRowHeight}, style)
 		drawn++
 	}
+	d.Canvas.Unclip()
 	if view.buffer == nil || view.matchQuery != "" && drawn == 0 {
 		label := m.SelectPath
 		if view.matchQuery != "" {
@@ -461,45 +487,38 @@ func (state *State) drawRemoteLogOutput(d *ui.DrawContext, view *remoteLogView) 
 		style.Color = p.muted
 		d.Canvas.LabelCenter(label, box, style)
 	}
-	area.EndContent()
 }
 
-func (view *remoteLogView) lastTop() int64 {
-	return view.snapshot.first + int64(max(0, view.outputRows()-view.visibleRows))
-}
-
-func (view *remoteLogView) scrollLog(event gfx.ScrollEvent) gfx.EventResult {
-	delta := event.StepY(remoteLogRowHeight) + view.scrollRemainder
-	lines := int64(delta / remoteLogRowHeight)
-	view.scrollRemainder = delta - float32(lines)*remoteLogRowHeight
-	return view.moveLog(lines)
-}
-
-func (view *remoteLogView) keyLog(event gfx.KeyEvent) gfx.EventResult {
+// keyLogOutput scrolls the log with the arrows while its output holds the
+// keyboard, as the old control did.
+func (view *remoteLogView) keyLogOutput(event gfx.KeyEvent) gfx.EventResult {
+	area := view.scroll
+	if area == nil || view.buffer == nil {
+		return gfx.EventResult{}
+	}
+	if event.Key == gfx.KeyEnd {
+		area.ScrollToEnd()
+		view.follow, view.lastFollow = true, true
+		return gfx.EventResult{Handled: true, Repaint: true}
+	}
+	page := float32(max(1, int(area.Viewport/remoteLogRowHeight))) * remoteLogRowHeight
 	switch event.Key {
 	case gfx.KeyUp:
-		return view.moveLog(-1)
+		area.ScrollTo(area.Offset - remoteLogRowHeight)
 	case gfx.KeyDown:
-		return view.moveLog(1)
+		area.ScrollTo(area.Offset + remoteLogRowHeight)
 	case gfx.KeyPageUp:
-		return view.moveLog(-int64(view.visibleRows))
+		area.ScrollTo(area.Offset - page)
 	case gfx.KeyPageDown:
-		return view.moveLog(int64(view.visibleRows))
+		area.ScrollTo(area.Offset + page)
 	case gfx.KeyHome:
-		return view.moveLog(view.snapshot.first - view.top)
-	case gfx.KeyEnd:
-		return view.moveLog(view.lastTop() - view.top)
+		area.ScrollTo(0)
 	default:
 		return gfx.EventResult{}
 	}
-}
-
-func (view *remoteLogView) moveLog(lines int64) gfx.EventResult {
-	if lines == 0 || view.buffer == nil {
-		return gfx.EventResult{Handled: true}
-	}
-	view.top = min(max(view.top+lines, view.snapshot.first), view.lastTop())
-	view.follow = view.top == view.lastTop()
+	view.follow = area.AtEnd()
+	view.lastFollow = view.follow
+	view.lastOffset = area.Offset
 	return gfx.EventResult{Handled: true, Repaint: true}
 }
 
@@ -509,7 +528,7 @@ func (view *remoteLogView) updateMatches() {
 		return
 	}
 	if query != view.matchQuery {
-		view.top = view.snapshot.first
+		view.resetScroll = true
 	}
 	view.matchQuery, view.matchRevision = query, view.snapshot.revision
 	view.matches = view.matches[:0]
@@ -528,26 +547,4 @@ func (view *remoteLogView) outputRows() int {
 		return len(view.matches)
 	}
 	return len(view.snapshot.lines)
-}
-
-func (view *remoteLogView) logScrollbarPointer(event gfx.PointerEvent) gfx.EventResult {
-	if event.Kind == gfx.PointerDown && event.Target == view.scroll.Parts().At(0) && event.Button == gfx.PointerButtonPrimary {
-		view.scrollDragging = true
-		view.scrollGrab = event.Y - view.scrollbar.VerticalThumb.Y
-	}
-	if !view.scrollDragging {
-		return gfx.EventResult{}
-	}
-	switch event.Kind {
-	case gfx.PointerMove, gfx.PointerUp:
-		offset := view.scrollbar.VerticalOffsetForThumb(event.Y - view.scrollGrab)
-		top := view.snapshot.first + int64(offset/remoteLogRowHeight+.5)
-		if event.Kind == gfx.PointerUp {
-			view.scrollDragging = false
-		}
-		return view.moveLog(top - view.top)
-	case gfx.PointerExit:
-		view.scrollDragging = false
-	}
-	return gfx.EventResult{Handled: true}
 }

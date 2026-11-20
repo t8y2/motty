@@ -3,6 +3,7 @@ package workbench
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/vivaui/viva/app"
@@ -167,28 +168,178 @@ func (state *State) RevealSession(id uint32) bool {
 
 // Menu is the menu the icon opens, built when it opens: how many sessions are
 // open, the sessions of every window (a workspace with several is a submenu of
-// them), then a new local terminal, the windows, and Quit. Choosing a session
-// brings its window forward at that session.
+// them), the saved hosts and workspaces of a window, then a new local terminal,
+// the windows, and Quit. Choosing a session brings its window forward at that
+// session; choosing a saved host or workspace opens it in the window the user is
+// working in. Every entry carries an id for the hosts that remember one: an
+// entry keeps the id it was served with, and so stays choosable, while its title
+// or state changes. Session and workspace numbers count within one window, so
+// their entries carry the window's number too.
 func (tray *Tray) Menu() []app.MenuItem {
 	if len(tray.members) == 0 {
 		return nil
 	}
+	member, _ := tray.visibleMember()
 	messages := tray.members[0].state.messages
-	items := make([]app.MenuItem, 0, 8+tray.SessionCount())
-	if count := tray.SessionCount(); count == 0 {
-		items = append(items, app.MenuItem{Title: messages.TrayEmpty, Disabled: true})
-	} else {
-		items = append(items, app.MenuItem{Title: fmt.Sprintf("%s · %d", messages.TrayTitle, count), Disabled: true})
+	count := tray.SessionCount()
+	items := make([]app.MenuItem, 0, 10+count)
+	heading := messages.TrayEmpty
+	if count > 0 {
+		heading = fmt.Sprintf("%s · %d", messages.TrayTitle, count)
+	}
+	items = append(items, app.MenuItem{ID: "sessions", Title: heading, Disabled: true})
+	if count > 0 {
 		items = tray.appendSessions(items)
+	}
+	if hosts := tray.hostItems(member); len(hosts) > 0 {
+		items = append(items,
+			app.MenuItem{Separator: true},
+			app.MenuItem{ID: "hosts", Title: messages.NavHosts, Submenu: hosts},
+		)
+	}
+	if workspaces := tray.workspaceItems(member); len(workspaces) > 0 {
+		items = append(items, app.MenuItem{ID: "workspaces", Title: messages.NavWorkspaces, Submenu: workspaces})
 	}
 	return append(items,
 		app.MenuItem{Separator: true},
-		app.MenuItem{Title: messages.TrayLocalTerminal, OnSelect: tray.openLocalTerminal},
-		app.MenuItem{Title: productText(messages.TrayShowWindow), OnSelect: tray.ShowWindow},
-		app.MenuItem{Title: messages.TrayCheckUpdates, OnSelect: tray.checkForUpdates, Disabled: tray.checkingForUpdates()},
+		app.MenuItem{ID: "new-local-terminal", Title: messages.TrayLocalTerminal, OnSelect: tray.openLocalTerminal},
+		app.MenuItem{ID: "show-window", Title: productText(messages.TrayShowWindow), OnSelect: tray.ShowWindow},
+		app.MenuItem{ID: "check-updates", Title: messages.TrayCheckUpdates, OnSelect: tray.checkForUpdates, Disabled: tray.checkingForUpdates()},
 		app.MenuItem{Separator: true},
-		app.MenuItem{Title: productText(messages.TrayQuit), OnSelect: tray.quit},
+		app.MenuItem{ID: "quit", Title: productText(messages.TrayQuit), OnSelect: tray.quit},
 	)
+}
+
+// hostItems lists the saved hosts of a window under their groups: the hosts
+// keep the order the hosts page shows, a group with hosts in it is a submenu
+// named after the last part of its path, and a group left with nothing to list
+// is dropped. The unnamed group's hosts sit at the top, as they do on the page.
+func (tray *Tray) hostItems(member trayMember) []app.MenuItem {
+	state := member.state
+	if len(state.hosts) == 0 {
+		return nil
+	}
+	order := make([]int, len(state.hosts))
+	for index := range order {
+		order[index] = index
+	}
+	state.sortHostIndexes(order)
+	groups := newTrayHostGroups()
+	for _, group := range state.hostGroups {
+		groups.group(group.Name)
+	}
+	for _, index := range order {
+		host := state.hosts[index]
+		group := groups.group(strings.TrimSpace(host.Group))
+		group.hosts = append(group.hosts, tray.hostItem(member, host))
+	}
+	return groups.root.items(member.state.windowID)
+}
+
+// hostItem is the entry for one saved host: its name, and opening it in a tab
+// of the window the menu belongs to.
+func (tray *Tray) hostItem(member trayMember, host Host) app.MenuItem {
+	title := host.Label
+	if title == "" {
+		title = host.Address
+	}
+	catalogID := host.CatalogID
+	return app.MenuItem{
+		ID:       trayNamedID(member.state.windowID, "host", catalogID),
+		Title:    title,
+		OnSelect: func() { tray.openHost(member, catalogID) },
+	}
+}
+
+// workspaceItems lists the saved workspace templates of a window, in the order
+// the workspace library shows them.
+func (tray *Tray) workspaceItems(member trayMember) []app.MenuItem {
+	state := member.state
+	if len(state.templates) == 0 {
+		return nil
+	}
+	items := make([]app.MenuItem, 0, len(state.templates))
+	for _, template := range state.templates {
+		templateID := template.ID
+		items = append(items, app.MenuItem{
+			ID:       trayNamedID(state.windowID, "workspace-template", templateID),
+			Title:    template.Name,
+			OnSelect: func() { tray.openWorkspace(member, templateID) },
+		})
+	}
+	return items
+}
+
+// trayHostGroups is the tree a window's saved hosts are filed in. The nodes
+// are made in the order the hosts page lists their groups, so the menu keeps
+// that order too.
+type trayHostGroups struct {
+	root  trayHostGroup
+	nodes map[string]*trayHostGroup
+}
+
+type trayHostGroup struct {
+	path     string
+	hosts    []app.MenuItem
+	children []*trayHostGroup
+}
+
+func newTrayHostGroups() *trayHostGroups {
+	groups := &trayHostGroups{nodes: make(map[string]*trayHostGroup)}
+	groups.nodes[""] = &groups.root
+	return groups
+}
+
+// group returns the node for a group path, making the nodes above it first.
+func (groups *trayHostGroups) group(path string) *trayHostGroup {
+	if node, ok := groups.nodes[path]; ok {
+		return node
+	}
+	parentPath := ""
+	if at := strings.LastIndex(path, "/"); at >= 0 {
+		parentPath = path[:at]
+	}
+	parent := groups.group(parentPath)
+	node := &trayHostGroup{path: path}
+	groups.nodes[path] = node
+	parent.children = append(parent.children, node)
+	return node
+}
+
+// items turns the tree into menu entries: a group's hosts come first, then its
+// child groups. A group with no hosts anywhere below it makes no entry.
+func (group *trayHostGroup) items(windowID int) []app.MenuItem {
+	var items []app.MenuItem
+	items = append(items, group.hosts...)
+	for _, child := range group.children {
+		submenu := child.items(windowID)
+		if len(submenu) == 0 {
+			continue
+		}
+		items = append(items, app.MenuItem{
+			ID:      trayNamedID(windowID, "host-group", child.path),
+			Title:   hostGroupLeaf(child.path),
+			Submenu: submenu,
+		})
+	}
+	return items
+}
+
+// trayEntryID names an entry that stands for one numbered thing in one window.
+// Session and workspace numbers are counted within a window while this menu
+// lists every window, so the window's number is part of the name. A host that
+// keeps the ids it was served keeps the entry while its title or state
+// changes.
+func trayEntryID(windowID int, kind string, id uint32) string {
+	return trayNamedID(windowID, kind, strconv.FormatUint(uint64(id), 10))
+}
+
+// trayNamedID names an entry that stands for one thing in one window by a
+// string key, as trayEntryID does for a number: the window's number keeps two
+// windows' equal keys apart, and the key names the entry while its title
+// changes.
+func trayNamedID(windowID int, kind, key string) string {
+	return fmt.Sprintf("window:%d/%s:%s", windowID, kind, key)
 }
 
 // appendSessions lists the sessions of every window, in window order, then
@@ -213,7 +364,11 @@ func (tray *Tray) appendSessions(items []app.MenuItem) []app.MenuItem {
 			case 1:
 				items = append(items, sessions[0])
 			default:
-				items = append(items, app.MenuItem{Title: fmt.Sprintf("%s (%d)", workspace.Title, len(sessions)), Submenu: sessions})
+				items = append(items, app.MenuItem{
+					ID:      trayEntryID(member.state.windowID, "workspace", uint32(workspace.ID)),
+					Title:   fmt.Sprintf("%s (%d)", workspace.Title, len(sessions)),
+					Submenu: sessions,
+				})
 			}
 		}
 	}
@@ -229,6 +384,7 @@ func (tray *Tray) sessionItem(member trayMember, session *Session) app.MenuItem 
 	status, _ := member.state.sessionStatus(session)
 	id := session.ID
 	return app.MenuItem{
+		ID:       trayEntryID(member.state.windowID, "session", session.ID),
 		Title:    label + " · " + status,
 		OnSelect: func() { tray.reveal(member, id) },
 	}
@@ -241,6 +397,34 @@ func (tray *Tray) reveal(member trayMember, id uint32) {
 	}
 	member.window.Show()
 	member.state.options.Invalidate()
+}
+
+// openHost connects a saved host in a tab of its own, as the hosts page does,
+// and brings the window forward: a menu chosen while the window is hidden
+// should show the session it just opened.
+func (tray *Tray) openHost(member trayMember, catalogID string) {
+	host, ok := member.state.hostByCatalogID(catalogID)
+	if !ok {
+		return
+	}
+	member.state.pendingWorkspace, member.state.pendingPane = 0, 0
+	member.state.newHostSession(host)
+	member.window.Show()
+	member.state.options.Invalidate()
+}
+
+// openWorkspace opens a saved workspace template, as the workspace library
+// does, and brings the window forward. A launch that cannot resolve a host
+// reports it over the window, which is shown either way.
+func (tray *Tray) openWorkspace(member trayMember, templateID string) {
+	state := member.state
+	if _, _, ok := state.workspaceTemplateByID(templateID); !ok {
+		return
+	}
+	state.selectedWorkspaceTemplateID = templateID
+	state.applySelectedWorkspaceTemplate()
+	member.window.Show()
+	state.options.Invalidate()
 }
 
 // visibleMember is the window a new terminal or a request to show the

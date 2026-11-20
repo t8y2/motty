@@ -143,6 +143,32 @@ func TestResizeKeepsTheTopOfAScreenThatIsNotFull(t *testing.T) {
 	expectCursor(t, terminal, 2, 1)
 }
 
+// Erase in display keeps the wiped rows in the scrollback, so they are still
+// there with the wheel. Growing the window with the cursor anywhere but the
+// bottom row adds the rows below the live screen instead of pulling that
+// history back in: toggling a side panel must not put a screen a shell cleared
+// back on display. The bottom row is the exception, because there a shrink had
+// pushed the rows above the cursor into history and growth takes them back.
+func TestResizeDoesNotBringClearedRowsBackOntoTheScreen(t *testing.T) {
+	terminal := New(20, 4, 100)
+	feed(terminal, "one\r\ntwo\r\nthree\r\n$ ")
+	feed(terminal, "\x1b[H\x1b[2J$ ")
+	if got := terminal.Scrollback(); got != 4 {
+		t.Fatalf("scrollback = %d, want the four cleared rows", got)
+	}
+	terminal.Resize(20, 8)
+	expectText(t, terminal, "$")
+	expectCursor(t, terminal, 2, 0)
+	if !terminal.Scroll(4) {
+		t.Fatal("the cleared rows are no longer reachable with the wheel")
+	}
+	for y, want := range []string{"one", "two", "three", "$"} {
+		if got := terminal.RowText(y); got != want {
+			t.Errorf("scrollback row %d = %q, want %q", y, got, want)
+		}
+	}
+}
+
 func TestResizeMovesAWideCharacterThatWouldStraddleTheEdge(t *testing.T) {
 	terminal := newTerm(6, 2)
 	feed(terminal, "ab世")

@@ -212,7 +212,7 @@ func TestRDPLatencyShowsActualSampleOrExplicitlyUnavailableInEveryPresentation(t
 	session.desk.chromeless = false
 	rightClickTab(state, hitTabList.At(int(state.deck.ActiveWorkspace())))
 	screen.paint(gfx.Size{Width: 1400, Height: 900}, time.Second)
-	state.Click(hitTabMenuLatency)
+	chooseMenu(t, state, hitTabMenuLatency)
 	if state.terminalShowLatency {
 		t.Fatal("the desktop menu did not disable RTT display")
 	}

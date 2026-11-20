@@ -375,15 +375,17 @@ func TestJumpRoutePageAndHostSelectorsAreInteractive(t *testing.T) {
 
 	state.Click(hitProxyAdd)
 	canvas, texts = paintedTexts(state)
-	if !contains(texts, state.messages.ProxyDialogTitle) || !hasHit(canvas, hitProxyDialogTarget) || !hasHit(canvas, hitProxyDialogJump) {
+	if !contains(texts, state.messages.ProxyDialogTitle) || !hasLabel(canvas, state.messages.ProxyFieldTarget, gfx.RoleCombobox) || !hasLabel(canvas, state.messages.ProxyFieldJump, gfx.RoleCombobox) {
 		t.Fatalf("proxy dialog texts=%v hits=%+v", texts, canvas.Hits())
 	}
-	state.Click(hitProxyDialogJump)
+	clickPageLabel(t, state, gfx.RoleCombobox, state.messages.ProxyFieldJump)
 	canvas, _ = paintedTexts(state)
-	if !hasHit(canvas, hitProxyJumpItemList.At(0)) || !hasHit(canvas, hitProxyJumpItemList.At(2)) {
-		t.Fatalf("jump options = %+v", canvas.Hits())
+	for _, host := range state.hosts {
+		if !hasLabel(canvas, host.Label, gfx.RoleOption) {
+			t.Fatalf("jump options = %+v, missing %q", canvas.Hits(), host.Label)
+		}
 	}
-	state.Click(hitProxyJumpItemList.At(2))
+	clickPageLabel(t, state, gfx.RoleOption, "Router")
 	state.Click(hitProxyDialogSubmit)
 	canvas, texts = paintedTexts(state)
 	if !contains(texts, "Production") || !contains(texts, "Router") || !contains(texts, state.messages.ProxyRunning) ||
@@ -400,8 +402,8 @@ func TestJumpRouteSelectionsSwapInsteadOfDeadlocking(t *testing.T) {
 	if state.proxyEditor.targetID != state.hosts[1].ID || state.proxyEditor.jumpID != state.hosts[0].ID {
 		t.Fatalf("defaults = %+v", state.proxyEditor)
 	}
-	state.Click(hitProxyDialogTarget)
-	state.Click(hitProxyTargetItemList.At(0))
+	clickPageLabel(t, state, gfx.RoleCombobox, state.messages.ProxyFieldTarget)
+	clickPageLabel(t, state, gfx.RoleOption, "Production")
 	if state.proxyEditor.targetID != state.hosts[0].ID || state.proxyEditor.jumpID != state.hosts[1].ID {
 		t.Fatalf("swapped selection = %+v", state.proxyEditor)
 	}

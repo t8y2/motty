@@ -19,7 +19,6 @@ var (
 	hitRuleManagerAll          = tree.ID(ruleManagerHits, "all")
 	hitRuleManagerAdd          = tree.ID(ruleManagerHits, "add")
 	hitRuleManagerDelete       = tree.ID(ruleManagerHits, "delete")
-	hitRuleManagerScroll       = tree.ID(ruleManagerHits, "scroll")
 	hitRuleManagerSelect       = tree.Sub(ruleManagerHits, tree.Name("select"))
 	hitRuleManagerEdit         = tree.Sub(ruleManagerHits, tree.Name("edit"))
 )
@@ -28,12 +27,8 @@ type ruleManagerUI struct {
 	kind      ruleDeleteKind
 	selected  map[int]bool
 	returning bool
-	offset    float32
 	list      *ui.ScrollState
 	bounds    gfx.Rect
-	geometry  components.ScrollAreaGeometry
-	dragging  bool
-	grab      float32
 }
 
 func (state *State) openRuleManager(kind ruleDeleteKind) {
@@ -117,15 +112,20 @@ func (state *State) declareRuleManager(c ui.C) {
 				if all {
 					label = m.ClearSelection
 				}
+				side := components.CheckboxExtent(*c.Theme())
 				checkbox := ui.Slot(c).Size(22, 24).Shrink(0)
-				checkbox.Draw(func(d *ui.DrawContext) {
-					components.BeginCheckbox(d.Canvas, *d.Theme, hitRuleManagerAll, d.Rect, all).Label(label).Paint()
+				checkbox.Children(func() {
+					// The page control binds a copy: the dialog's dispatcher owns the
+					// real selection, as the component did.
+					ui.Checkbox(c, &all, "").Absolute().Left(0).Top(0).Size(side, side).Hit(hitRuleManagerAll, label)
 				})
 				ui.Text(c, fmt.Sprintf(m.CountFmt, count)).FontSize(metrics.FontSizeM).Color(state.pal.text)
 				ui.Spacer(c).Grow(1)
 				ui.Text(c, fmt.Sprintf(m.SelectedFmt, len(manager.selected))).FontSize(metrics.FontSizeS).Color(state.pal.muted)
 			})
-			list := ui.ScrollAt(c, manager.offset).FillWidth().Grow(1).Basis(0).PadSides(0, 14, 0, 0)
+			list := ui.Scroll(c).FillWidth().Grow(1).Basis(0).PadSides(0, 14, 0, 0).
+				AlwaysScrollbars().ScrollbarSize(10)
+			manager.list = list.ScrollState()
 			list.Children(func() {
 				if count == 0 {
 					ui.Text(c, m.Empty).FontSize(metrics.FontSizeM).Color(state.pal.muted).Margin(16)
@@ -134,14 +134,7 @@ func (state *State) declareRuleManager(c ui.C) {
 					state.declareRuleManagerRow(c, index)
 				}
 			})
-			list.DrawOver(func(d *ui.DrawContext) {
-				manager.bounds, manager.list = d.Rect, list.ScrollState()
-				manager.offset = manager.list.Offset
-				area := components.BeginScrollArea(d.Canvas, *d.Theme, d.Rect, gfx.Size{Width: d.Rect.Width, Height: manager.list.Content}).
-					Offset(0, manager.offset).ScrollbarSize(10).VerticalScrollbar(hitRuleManagerScroll, "Vertical scrollbar", "")
-				manager.geometry = area.Geometry()
-				area.EndContent()
-			})
+			list.DrawOver(func(d *ui.DrawContext) { manager.bounds = d.Rect })
 		})
 	})
 	dialog.Footer(func() {
@@ -150,41 +143,6 @@ func (state *State) declareRuleManager(c ui.C) {
 			components.ButtonAction{ID: hitRuleManagerAdd, Label: add, Variant: components.ButtonOutline, Disabled: full},
 			components.ButtonAction{ID: hitRuleManagerClose, Label: m.Close, Variant: components.ButtonSecondary})
 	})
-}
-
-func (state *State) ruleManagerPointer(event gfx.PointerEvent) gfx.EventResult {
-	manager := &state.ruleManager
-	if state.modal != modalRuleManager || event.Target != hitRuleManagerScroll && !manager.dragging {
-		return gfx.EventResult{}
-	}
-	if event.Kind == gfx.PointerExit {
-		manager.dragging = false
-		return gfx.EventResult{Handled: true}
-	}
-	switch event.Kind {
-	case gfx.PointerDown:
-		if event.Button != gfx.PointerButtonPrimary {
-			return gfx.EventResult{}
-		}
-		manager.dragging = true
-		manager.grab = event.Y - manager.geometry.VerticalThumb.Y
-		if manager.grab < 0 || manager.grab > manager.geometry.VerticalThumb.Height {
-			manager.grab = manager.geometry.VerticalThumb.Height / 2
-		}
-	case gfx.PointerMove:
-		if !manager.dragging {
-			return gfx.EventResult{}
-		}
-	case gfx.PointerUp:
-		if !manager.dragging || event.Button != gfx.PointerButtonPrimary {
-			return gfx.EventResult{}
-		}
-		manager.dragging = false
-	default:
-		return gfx.EventResult{}
-	}
-	manager.offset = manager.geometry.VerticalOffsetForThumb(event.Y - manager.grab)
-	return gfx.EventResult{Handled: true, Repaint: true}
 }
 
 func (state *State) declareRuleManagerRow(c ui.C, index int) {
@@ -213,7 +171,7 @@ func (state *State) declareRuleManagerRow(c ui.C, index int) {
 		case rule.CaseSensitive:
 			detail = tools.HighlightKindTextCase
 		}
-		detail = state.slotName(rule.Slot) + " · " + detail
+		detail = state.colorName(rule.Color) + " · " + detail
 	}
 	row := ui.Row(c).FillWidth().Height(68).Shrink(0).Items(ui.Center).Gap(14).PadSides(0, 14, 0, 8)
 	if manager.selected[index] {
@@ -221,11 +179,13 @@ func (state *State) declareRuleManagerRow(c ui.C, index int) {
 	}
 	row.Children(func() {
 		selectBox := ui.Slot(c).Size(22, 24).Shrink(0)
-		selectBox.Draw(func(d *ui.DrawContext) {
-			components.BeginCheckbox(d.Canvas, *d.Theme, hitRuleManagerSelect.At(index), d.Rect, manager.selected[index]).Label(name).Paint()
+		selectBox.Children(func() {
+			selected := manager.selected[index]
+			side := components.CheckboxExtent(*c.Theme())
+			ui.Checkbox(c, &selected, "").Absolute().Left(0).Top(0).Size(side, side).Hit(hitRuleManagerSelect.At(index), name)
 		})
 		if manager.kind == ruleDeleteHighlight {
-			ui.Slot(c).Size(10, 24).Shrink(0).Background(state.slotColor(state.highlighting.rules[index].Slot)).Radius(2)
+			ui.Slot(c).Size(10, 24).Shrink(0).Background(state.ruleColor(state.highlighting.rules[index].Color)).Radius(2)
 		}
 		ui.Column(c).Grow(1).Basis(0).Gap(4).Children(func() {
 			ui.Text(c, name).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).MaxLines(1)
@@ -234,25 +194,27 @@ func (state *State) declareRuleManagerRow(c ui.C, index int) {
 		if manager.kind == ruleDeleteAutofill {
 			rule := state.autofillRules.rules[index]
 			toggle := ui.Slot(c).Size(52, 32).Shrink(0)
-			toggle.Draw(func(d *ui.DrawContext) {
+			toggle.Children(func() {
+				on := rule.Enabled
 				label := m.TurnOn
-				if rule.Enabled {
+				if on {
 					label = m.TurnOff
 				}
-				components.BeginSwitch(d.Canvas, *d.Theme, hitAutofillToggleList.At(index), gfx.Rect{X: d.Rect.X + 10, Y: d.Rect.Y + 7}, rule.Enabled).Label(label + ": " + name).Paint()
+				width, height := components.SwitchExtent(*c.Theme(), false)
+				ui.Switch(c, &on, "").Absolute().Left(10).Top(7).Size(width, height).Hit(hitAutofillToggleList.At(index), label+": "+name)
 			})
 		}
 		state.declareIconButton(c, hitRuleManagerEdit.At(index), iconPencil, m.Edit+": "+name, false, iconButtonQuiet).Size(32, 32)
 	})
 }
 
+// scrollRuleManager gives the wheel over the list to the page's scroll area, and keeps it
+// from reaching what lies behind the dialog.
 func (state *State) scrollRuleManager(event gfx.ScrollEvent) gfx.EventResult {
-	manager := &state.ruleManager
-	if manager.list == nil || !pointInRect(event.X, event.Y, manager.bounds) {
-		return gfx.EventResult{Handled: true}
+	result := gfx.EventResult{Handled: true}
+	if pointInRect(event.X, event.Y, state.ruleManager.bounds) {
+		result = state.windowPage().RouteWheel(event)
+		result.Handled = true
 	}
-	result := manager.list.Wheel(event)
-	manager.offset = manager.list.Offset
-	result.Handled = true
 	return result
 }

@@ -522,6 +522,9 @@ const (
 	modalRuleManager
 	modalSnippet
 	modalSnippetDelete
+	modalSnippetGroups
+	modalSnippetGroupRename
+	modalSnippetGroupDelete
 	modalSnippetVariables
 	modalImportSessions
 	modalFontPicker
@@ -1052,12 +1055,28 @@ func (state *State) closeDisconnectedShell(session *Session) {
 		output := terminal.decodeRemote(terminal.rx)
 		output = append(output, terminal.flushRemoteDecoder()...)
 		terminal.rx = terminal.rx[:0]
+		// What a shell says while its integration is hidden is not meant for
+		// the user: the activation line's echo is among that output, and no
+		// ready marker can end the window now. What is still hidden is dropped,
+		// and only what follows a marker that did arrive is kept.
+		if terminal.injection.phase == injectionSuppressing {
+			rest, applied := state.applyInjection(session, output)
+			if !applied {
+				output = nil
+			} else {
+				output = rest
+			}
+		}
 		if len(output) > 0 {
 			terminal.recording.append(state.now(), terminalRecordingOutput, output)
 			terminal.write(output)
 			state.goLive(session)
 		}
 	}
+	// The shell is gone: an injection can never finish, and a command the
+	// assistant started can never report.
+	terminal.injection = terminalInjection{}
+	terminal.finishExec(endShell)
 	releaseShell(terminal.shell)
 	terminal.shell = nil
 	terminal.stopIdleKeepAlive()
@@ -1338,9 +1357,14 @@ func (state *State) showNextPrompt() {
 
 func (state *State) closeModal() {
 	returnToRules := state.ruleManager.returning && (state.modal == modalHighlightRule || state.modal == modalAutofillRule || state.modal == modalDeleteRule)
+	returnToSnippetGroups := state.snippetGroups.returning && (state.modal == modalSnippetGroupRename || state.modal == modalSnippetGroupDelete)
+	returnToSnippet := state.modal == modalSnippetGroups && state.snippetGroups.returnToSnippet
 	returnToHost := state.modal == modalCredential && state.credentialReturn != modalNone
 	if state.modal == modalRuleManager {
 		state.ruleManager = ruleManagerUI{}
+	}
+	if state.modal == modalSnippetGroups {
+		state.snippetGroups = snippetGroupsUI{}
 	}
 	if state.modal == modalSnippetVariables {
 		state.snippetPrompt = snippetPromptState{}
@@ -1351,20 +1375,11 @@ func (state *State) closeModal() {
 	if state.modal == modalPasteReview {
 		state.pasteReview = pasteReviewUI{}
 	}
-	if state.modal == modalDashboard {
-		state.dashboard.editor.order.Cancel()
-	}
 	if state.modal == modalDashboardAdd {
 		state.dashboard.addHosts = nil
 	}
-	if state.modal == modalToolbarSettings {
-		state.toolbarEditor.list.Cancel()
-	}
 	if state.modal == modalSidebarSettings {
 		state.sidebarEditor = sidebarSettingsUI{}
-	}
-	if state.modal == modalSFTPColumns {
-		state.sftpColumnEditor.list.Cancel()
 	}
 	if state.modal == modalSudoSFTP {
 		state.sudoSFTP = sudoSFTPDialog{}
@@ -1402,6 +1417,14 @@ func (state *State) closeModal() {
 		state.ruleManager.returning = false
 		state.ruleManager.list = nil
 	}
+	if returnToSnippetGroups {
+		state.modal = modalSnippetGroups
+		state.snippetGroups.returning = false
+	}
+	if returnToSnippet {
+		state.modal = modalSnippet
+		state.refreshSnippetGroupPicker()
+	}
 	if returnToHost {
 		state.modal = state.credentialReturn
 		state.credentialReturn = modalNone
@@ -1409,8 +1432,7 @@ func (state *State) closeModal() {
 	state.modalSession = 0
 	state.reveal.reset()
 	state.passwordFields = nil
-	state.passwordRects = nil
-	state.passwordBoxes = nil
+	state.passwordInputs = nil
 	state.passwordQuestions = nil
 	state.passwordError = ""
 	state.keyPassphrase = text.Editor{}

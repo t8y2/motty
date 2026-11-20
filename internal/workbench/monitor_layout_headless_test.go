@@ -27,7 +27,7 @@ func TestMonitorOuterPanelLayoutsAndResizeAtDisplayScales(t *testing.T) {
 					c.Side = side
 					c.MonitorLeft = left
 					_ = state.deck.SetContext(id, c)
-					view, err := headless.Open(app.Config{Title: "Panels", Width: 1600, Height: 900, Tree: Tree(), Paint: state.Paint, OnResize: state.Resize, OnPointer: state.Pointer, OnKey: state.Key}, nil, headless.Options{Scale: scale})
+					view, err := headless.Open(state.WindowConfig(app.Config{Title: "Panels", Width: 1600, Height: 900, Tree: Tree(), Paint: state.Paint, OnResize: state.Resize, OnPointer: state.Pointer, OnKey: state.Key}), nil, headless.Options{Scale: scale})
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -61,17 +61,24 @@ func TestMonitorOuterPanelLayoutsAndResizeAtDisplayScales(t *testing.T) {
 					}
 					check()
 					x := state.monitorDividerX()
+					if hit, ok := hitByIDInSnapshot(view.Snapshot(), hitMonitorDivider); !ok {
+						t.Fatal("the monitor divider has no hit")
+					} else if hit.Bounds.X > x || x > hit.Bounds.X+hit.Bounds.Width {
+						t.Fatalf("the divider's hit at %v does not contain the edge at %v", hit.Bounds, x)
+					}
 					delta := float32(40)
 					if !left {
 						delta = -delta
 					}
-					state.monitorPointer(gfx.PointerEvent{Kind: gfx.PointerDown, Target: hitMonitorDivider, Button: gfx.PointerButtonPrimary, X: x, Y: 200})
-					state.monitorPointer(gfx.PointerEvent{Kind: gfx.PointerUp, X: x + delta, Y: 200})
-					if err = view.Rest(); err != nil {
+					// The drag goes through the window's routing, as the pointer does:
+					// a press on the divider, the motion, and the release.
+					if err = view.Press(x, 200); err != nil {
 						t.Fatal(err)
 					}
-					// Rest may have nothing scheduled by direct input; resize explicitly publishes.
-					if err = view.Resize(1600, 900); err != nil {
+					if err = view.Move(x+delta, 200); err != nil {
+						t.Fatal(err)
+					}
+					if err = view.Release(x+delta, 200); err != nil {
 						t.Fatal(err)
 					}
 					if state.monitorRect.Width != monitorWidth+40 {
@@ -162,21 +169,20 @@ func TestMonitorMeasuringCentersSpinnerAndText(t *testing.T) {
 	state, s := monitorFixture(t)
 	s.stats.state = remoteStatsMeasuring
 	s.stats.panel.count = 0
-	b := gfx.Rect{X: 600, Y: 40, Width: 320, Height: 800}
+	size := gfx.Size{Width: 1280, Height: 900}
 	var canvas gfx.Canvas
-	state.paintMonitor(&canvas, b, s)
+	state.Paint(&canvas, size)
 	found := false
 	for _, text := range canvas.Texts() {
 		if text.Value == state.remoteStatsText(s.stats) {
 			found = true
+			body := state.monitorScrollArea(&s.stats.panel).Geometry().Viewport
 			center := text.Bounds.X + canvas.TextWidthWeight(text.Value, 13, gfx.WeightRegular)/2
-			if math.Abs(float64(center-(b.X+b.Width/2))) > 1 {
+			if math.Abs(float64(center-(body.X+body.Width/2))) > 1 {
 				t.Fatalf("text not horizontally centered: %v", text.Bounds)
 			}
-			bodyTop := b.Y + infoBarHeight + monitorControlsHeight + monitorHostInfoHeight
-			wantY := (bodyTop+b.Y+b.Height)/2 + 16
-			if math.Abs(float64(text.Bounds.Y+text.Bounds.Height/2-wantY)) > 2 {
-				t.Fatalf("loading group is not vertically centered: %v want %v", text.Bounds, wantY)
+			if text.Bounds.Y+text.Bounds.Height/2 < body.Y || text.Bounds.Y+text.Bounds.Height/2 > body.Y+body.Height {
+				t.Fatalf("loading text is outside the panel body: %v body %v", text.Bounds, body)
 			}
 		}
 	}
@@ -196,7 +202,7 @@ func TestMonitorDrawerFollowsItsOwnSide(t *testing.T) {
 		c.Open = false
 		c.MonitorLeft = left
 		_ = state.deck.SetContext(id, c)
-		view, err := headless.Open(app.Config{Width: 800, Height: 700, Tree: Tree(), Paint: state.Paint, OnResize: state.Resize, OnPointer: state.Pointer}, nil, headless.Options{Scale: 1.25})
+		view, err := headless.Open(state.WindowConfig(app.Config{Width: 800, Height: 700, Tree: Tree(), Paint: state.Paint, OnResize: state.Resize, OnPointer: state.Pointer}), nil, headless.Options{Scale: 1.25})
 		if err != nil {
 			t.Fatal(err)
 		}

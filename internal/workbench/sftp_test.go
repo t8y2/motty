@@ -33,6 +33,7 @@ type workbenchSFTPRemote struct {
 	linkDelay    time.Duration     // how long resolving one link takes
 	links        map[string]string // symbolic links: path to target
 	renameErrAt  map[string]error  // refuses a particular rename source
+	replaceErr   map[string]error  // refuses every rename onto a particular path
 	removeErr    error             // refuses every removal while set
 	removeErrAt  map[string]error  // refuses a particular path
 	unreadable   map[string]bool   // folders whose listing is refused
@@ -295,6 +296,9 @@ func (remote *workbenchSFTPRemote) Rename(oldPath, newPath string) error {
 	remote.mu.Lock()
 	defer remote.mu.Unlock()
 	if err := remote.renameErrAt[oldPath]; err != nil {
+		return err
+	}
+	if err := remote.replaceErr[newPath]; err != nil {
 		return err
 	}
 	entry, ok := remote.removeEntryLocked(path.Dir(oldPath), path.Base(oldPath))
@@ -1486,8 +1490,8 @@ func TestSFTPListScrollsDownWithPositiveDeltaOnlyOverThePanel(t *testing.T) {
 	}
 	scroll(panel.X+panel.Width/2, 1000*sftpRowHeight)
 	state.Paint(&canvas, size)
-	if view.first != int(view.scrollOffset/sftpRowHeight) || view.scrollOffset != view.scroll.MaxOffsetY {
-		t.Fatalf("scrolling far down left offset %f first %d, max %f", view.scrollOffset, view.first, view.scroll.MaxOffsetY)
+	if view.first != int(view.scrollOffset/sftpRowHeight) || view.listScroll == nil || view.scrollOffset != view.listScroll.Max() {
+		t.Fatalf("scrolling far down left offset %f first %d", view.scrollOffset, view.first)
 	}
 
 	// Scrolling far down and painting anchors the list at the bottom. Further
@@ -1541,20 +1545,15 @@ func TestSFTPDragReleaseKeepsASubRowOffsetAndWheelUpReturnsToTheTop(t *testing.T
 	}
 	folder := view.active()
 
-	// As a scrollbar drag would leave it: released 17 pixels into the first row,
-	// past the half-row mark that used to round the row up and snap back.
+	// A scrollbar drag leaves a sub-row offset; the page ScrollArea keeps it as
+	// the pointer left it, and the model mirrors it.
 	folder.listScroll.ScrollTo(17)
-	folder.scrollOffset = 17
-	view.scrollDrag = true
-	if result, handled := state.sftpListPointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Captured: true}); !handled || !result.Repaint {
-		t.Fatal("releasing the scrollbar drag was not handled")
-	}
-	if folder.first != 0 {
-		t.Fatalf("release 17 pixels into the first row put the first row at %d, want 0", folder.first)
-	}
 	state.Paint(&canvas, size)
 	if folder.scrollOffset != 17 {
-		t.Fatalf("release over a partial row snapped the offset to %f, want 17", folder.scrollOffset)
+		t.Fatalf("a sub-row offset was rounded to %f, want 17", folder.scrollOffset)
+	}
+	if folder.first != 0 {
+		t.Fatalf("a sub-row offset put the first row at %d, want 0", folder.first)
 	}
 
 	// Scrolling up from that offset must show the top, not stall on row 0.
@@ -1825,8 +1824,11 @@ func TestSFTPLinksFillInAfterTheListingIsShown(t *testing.T) {
 	if err := remote.Symlink("notes.txt", "/home/test/latest"); err != nil {
 		t.Fatal(err)
 	}
+	if err := remote.Symlink("docs", "/home/test/zzz-docs"); err != nil {
+		t.Fatal(err)
+	}
 	state.Click(hitSFTPRefresh)
-	// The listing arrives first, with the link unresolved.
+	// The listing arrives first, with the links unresolved.
 	waitSFTP(t, state, session, func(view *sftpView) bool {
 		for _, row := range view.rows {
 			if row.entry.Name == "latest" {
@@ -1835,15 +1837,44 @@ func TestSFTPLinksFillInAfterTheListingIsShown(t *testing.T) {
 		}
 		return false
 	})
-	// Its resolution follows and updates the row in place.
+	// Their resolution follows and updates the rows in place. The link to a
+	// folder moves up with the folders; the link to a file stays with the files.
 	waitSFTP(t, state, session, func(view *sftpView) bool {
+		latest, folderLink := false, false
 		for _, row := range view.rows {
-			if row.entry.Name == "latest" {
-				return row.entry.LinkTarget == "notes.txt" && !row.entry.LinkDir
+			switch row.entry.Name {
+			case "latest":
+				latest = row.entry.LinkTarget == "notes.txt" && !row.entry.LinkDir
+			case "zzz-docs":
+				folderLink = row.entry.LinkTarget == "docs" && row.entry.LinkDir
 			}
 		}
-		return false
+		return latest && folderLink
 	})
+	if got := strings.Join(rowNames(session.files.rows), ","); got != "docs,zzz-docs,latest,notes.txt" {
+		t.Fatalf("rows after the links resolved = %s", got)
+	}
+}
+
+func TestSFTPListingComparisonKeepsTheResolvedOrder(t *testing.T) {
+	when := time.Unix(1_700_000_000, 0)
+	rows := []sftpRow{
+		{entry: sftpclient.Entry{Name: "docs", Mode: os.ModeDir | 0o755, ModTime: when}},
+		{entry: sftpclient.Entry{Name: "zzz-docs", Mode: os.ModeSymlink | 0o777, LinkTarget: "docs", LinkDir: true, ModTime: when}},
+		{entry: sftpclient.Entry{Name: "notes.txt", Size: 11, Mode: 0o644, ModTime: when}},
+	}
+	unresolved := []sftpclient.Entry{
+		{Name: "docs", Mode: os.ModeDir | 0o755, ModTime: when},
+		{Name: "notes.txt", Size: 11, Mode: 0o644, ModTime: when},
+		{Name: "zzz-docs", Mode: os.ModeSymlink | 0o777, ModTime: when},
+	}
+	if !sameSFTPListing(rows, unresolved) {
+		t.Fatal("a listing ordered before its links resolved was treated as different")
+	}
+	unresolved[1].Size = 12
+	if sameSFTPListing(rows, unresolved) {
+		t.Fatal("a folder that changed was treated as the same listing")
+	}
 }
 
 func TestSFTPListingCacheHasAByteBudget(t *testing.T) {

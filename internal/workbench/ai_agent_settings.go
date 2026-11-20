@@ -23,11 +23,8 @@ import (
 // client configuration that starts it, and what they did.
 
 var (
-	hitAISetAgentCopy          = tree.ID(aiSettingsHits, "ai-set-agent-copy")
-	hitAISetAgentClear         = tree.ID(aiSettingsHits, "ai-set-agent-clear")
-	hitAISetAgentSelect        = tree.ID(aiSettingsHits, "ai-set-agent-select")
-	hitAISetAgentSelectDismiss = tree.ID(aiSettingsHits, "ai-set-agent-select-dismiss")
-	hitAISetAgentClients       = tree.Sub(aiSettingsHits, tree.Name("ai-set-agent-client"))
+	hitAISetAgentCopy  = tree.ID(aiSettingsHits, "ai-set-agent-copy")
+	hitAISetAgentClear = tree.ID(aiSettingsHits, "ai-set-agent-clear")
 )
 
 // agentAuditShown is how many of the latest calls the page lists.
@@ -62,21 +59,11 @@ func (state *State) aiAgentClick(id gfx.ID) bool {
 	switch id {
 	case hitAISetAgentCopy:
 		state.aiCopyText(hitAISetAgentCopy, state.aiAgentPreview())
-	case hitAISetAgentSelect:
-		state.ai.cfg.agentSelectOpen = !state.ai.cfg.agentSelectOpen
-		state.ai.cfg.mcpSelectOpen = false
-	case hitAISetAgentSelectDismiss:
-		state.ai.cfg.agentSelectOpen = false
 	case hitAISetAgentClear:
 		if db, err := state.aiStore(); err == nil && db.ClearAudit() == nil {
 			state.aiWrote()
 		}
 	default:
-		if index, ok := id.In(hitAISetAgentClients); ok && index >= 0 && index < int(aiMCPClientCount) {
-			state.aiChooseMCPClient(aiMCPClient(index), true)
-			state.ai.cfg.agentSelectOpen = false
-			return true
-		}
 		return false
 	}
 	return true
@@ -214,7 +201,7 @@ func (state *State) paintAIAgents(page *settingsPage) {
 		page.separator()
 		state.paintMCPConfigBlock(page, aiMCPConfigView{
 			title: m.AgentConfig, description: m.AgentConfigDesc,
-			client: state.ai.cfg.agentClient, selectKind: controlAgentSelect,
+			client: &state.ai.cfg.agentClient, agent: true,
 			copyID: hitAISetAgentCopy, ready: true,
 			preview: state.aiAgentPreview(),
 			lines:   &state.ai.cfg.agentPreviewLines,

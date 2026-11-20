@@ -8,22 +8,16 @@ import (
 
 	"motty/internal/localshell"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 )
 
 // The launch row of the connection settings: what opening the app connects,
 // chosen in one menu — a local terminal and the saved hosts.
 var (
-	hitSettingsStartupEnable  = tree.ID(settingsHits, "settings-startup-enable")
-	hitSettingsStartupHosts   = tree.ID(settingsHits, "settings-startup-hosts")
-	hitSettingsStartupDismiss = tree.ID(settingsHits, "settings-startup-dismiss")
-	hitSettingsStartupLocal   = tree.ID(settingsHits, "settings-startup-local")
-	// hitSettingsStartupShells lists this machine's detected shells by place:
-	// picking one opens that shell at a launch instead of the default.
-	hitSettingsStartupShells   = tree.Sub(settingsHits, tree.Name("settings-startup-shell"))
-	hitSettingsStartupReuse    = tree.ID(settingsHits, "settings-startup-reuse")
-	hitSettingsStartupHostList = tree.Sub(settingsHits, tree.Name("settings-startup-host")) // + the row's place
+	hitSettingsStartupEnable = tree.ID(settingsHits, "settings-startup-enable")
+	hitSettingsStartupHosts  = tree.ID(settingsHits, "settings-startup-hosts")
+	hitSettingsStartupReuse  = tree.ID(settingsHits, "settings-startup-reuse")
 )
 
 // cleanStartupHosts keeps the catalog ids that name a host, in order, without
@@ -103,44 +97,67 @@ func (state *State) startupHostsSettingVisible() bool {
 func (state *State) paintStartupSettings(page *settingsPage) {
 	m := state.messages
 	page.toggleRow(m.SettingsStartupEnable, m.SettingsStartupEnableDescription, state.startupEnabled, hitSettingsStartupEnable)
-	page.add(settingsControl{kind: controlStartupHosts, slot: page.rowFrame(m.SettingsStartupRow, m.SettingsStartupDescription)})
+	state.declareStartupPicker(page)
 	page.toggleRow(m.SettingsStartupReuse, m.SettingsStartupReuseDescription, state.startupReuse, hitSettingsStartupReuse)
 }
 
-// paintStartupHostSelect paints the launch select in the menu pass, outside the
-// settings page's clip, so its popup can leave the page.
-func (state *State) paintStartupHostSelect(canvas *gfx.Canvas) {
-	picker, m := &state.startupPicker, state.messages
-	bounds := picker.bounds
-	if !state.startupHostsSettingVisible() || state.modal != modalNone || bounds.Width <= 0 || bounds.Y < windowBarHeight || bounds.Y+bounds.Height > state.viewport.Height {
+// declareStartupPicker declares the launch select: its trigger in the row, and the menu of
+// what a launch connects. A choice toggles and keeps the menu open, a press anywhere else
+// closes it and saves.
+func (state *State) declareStartupPicker(page *settingsPage) {
+	picker, m, c := &state.startupPicker, state.messages, page.c
+	if picker.open && (!state.startupHostsSettingVisible() || state.modal != modalNone || !state.startupEnabled) {
 		picker.open = false
-		return
 	}
-	below := max(state.viewport.Height-8-bounds.Y-bounds.Height-4, 0)
-	above := max(bounds.Y-windowBarHeight-8, 0)
-	rows := 1 + len(state.localShellMenu.choices) + len(state.hosts) // the local terminal, the shells, the hosts
-	height := min(float32(8+rows*32), max(above, below))
-	content := gfx.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: bounds.Width, Height: height}
-	if below < height {
-		content.Y = bounds.Y - height - 4
+	if !picker.open && picker.shown {
+		picker.shown = false
+		state.save()
 	}
-	scroll := state.selectScroll(picker.open, hitSettingsStartupDismiss)
-	control := components.BeginSelect(canvas, state.Theme(), bounds, components.SelectOptions{
-		TriggerID: hitSettingsStartupHosts, Label: m.SettingsStartupRow, Value: state.startupSummary(),
-		Open: picker.open, Content: content, Layer: popupLayer,
-		Scope: hitSettingsStartupDismiss, DismissID: hitSettingsStartupDismiss, Viewport: state.windowRect(), Scroll: scroll,
+	controlWidth := max(min(float32(300), max(float32(190), page.width*0.40)), 0)
+	controlWidth = min(controlWidth, max(page.width-60, 0))
+	page.lineWith(m.SettingsStartupRow, m.SettingsStartupDescription, controlWidth, func() {
+		summary := state.startupSummary()
+		trigger := ui.Button(c, summary).Outline().Icon(lucideIcons[iconChevronDown]).Width(controlWidth).
+			HitWith(hitSettingsStartupHosts, m.SettingsStartupRow, gfx.HitOptions{Role: gfx.RoleCombobox, Value: summary, Expanded: picker.open})
+		if !picker.open {
+			return
+		}
+		picker.shown = true
+		ui.PopupLayer(c, popupLayer)
+		ui.Menu(c, trigger, &picker.open, func(items *ui.MenuItems) {
+			items.RowHeight(contextMenuRow)
+			choose := func(item ui.MenuItem, toggle func()) {
+				if item.Clicked() {
+					// A choice holds while the menu stays open.
+					c.After(func() { toggle(); picker.open = true; state.save() })
+				}
+			}
+			choose(items.Item(m.LocalTerminal).Checked(state.startupLocal), func() {
+				state.startupLocal = !state.startupLocal
+				if state.startupLocal {
+					state.startupShell = "" // the default and a picked shell exclude each other
+				}
+			})
+			for _, shell := range state.localShellMenu.choices {
+				choose(items.Item(shell.Name).Checked(strings.EqualFold(shell.Path, state.startupShell)), func() {
+					if strings.EqualFold(shell.Path, state.startupShell) {
+						state.startupShell = ""
+					} else {
+						state.startupShell, state.startupLocal = shell.Path, false
+					}
+				})
+			}
+			for _, host := range state.hosts {
+				choose(items.Item(host.Label).Checked(state.startupHostSelected(host)), func() {
+					if state.startupHostSelected(host) {
+						state.startupHosts = slices.DeleteFunc(state.startupHosts, func(candidate string) bool { return candidate == host.CatalogID })
+					} else if host.CatalogID != "" {
+						state.startupHosts = cleanStartupHosts(append(state.startupHosts, host.CatalogID))
+					}
+				})
+			}
+		})
 	})
-	defer control.End()
-	if picker.open {
-		state.menuPlaced(control.ContentBounds())
-		control.AddItem(components.SelectItem{ID: hitSettingsStartupLocal, Label: m.LocalTerminal, Selected: state.startupLocal})
-		for index, choice := range state.localShellMenu.choices {
-			control.AddItem(components.SelectItem{ID: hitSettingsStartupShells.At(index), Label: choice.Name, Selected: strings.EqualFold(choice.Path, state.startupShell)})
-		}
-		for index, host := range state.hosts {
-			control.AddItem(components.SelectItem{ID: hitSettingsStartupHostList.At(index), Label: host.Label, Selected: state.startupHostSelected(host)})
-		}
-	}
 }
 
 // clickStartupHosts works the chooser: the trigger opens it, an item toggles
@@ -164,47 +181,12 @@ func (state *State) clickStartupHosts(id gfx.ID) bool {
 		}
 		picker.open = !picker.open
 		return true
-	case hitSettingsStartupDismiss:
-		if picker.open {
-			picker.open = false
-			state.save()
-		}
-		return true
-	case hitSettingsStartupLocal:
-		state.startupLocal = !state.startupLocal
-		if state.startupLocal {
-			state.startupShell = "" // the default and a picked shell exclude each other
-		}
-		state.save() // the choice holds while the menu stays open
-		return true
 	case hitSettingsStartupReuse:
 		state.startupReuse = !state.startupReuse
 		state.save()
 		return true
 	}
-	if index, ok := id.In(hitSettingsStartupShells); ok && index >= 0 && index < len(state.localShellMenu.choices) {
-		choice := state.localShellMenu.choices[index]
-		if strings.EqualFold(choice.Path, state.startupShell) {
-			state.startupShell = ""
-		} else {
-			state.startupShell = choice.Path
-			state.startupLocal = false
-		}
-		state.save()
-		return true
-	}
-	index, ok := id.In(hitSettingsStartupHostList)
-	if !ok || index < 0 || index >= len(state.hosts) {
-		return false
-	}
-	host := state.hosts[index]
-	if state.startupHostSelected(host) {
-		state.startupHosts = slices.DeleteFunc(state.startupHosts, func(candidate string) bool { return candidate == host.CatalogID })
-	} else if host.CatalogID != "" {
-		state.startupHosts = cleanStartupHosts(append(state.startupHosts, host.CatalogID))
-	}
-	state.save() // the choice holds while the menu stays open
-	return true
+	return false
 }
 
 // startupWanted reports whether the first Wake has anything to open: the

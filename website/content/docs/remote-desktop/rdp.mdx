@@ -42,9 +42,15 @@ Works as for [VNC](/en/docs/remote-desktop/vnc#connect-through-ssh).
 
 Text only, per host, off by default.
 
+## Sound
+
+Remote audio plays on this computer. The host's **Play remote audio** switch
+turns it off, and the server is then asked for no audio channel at all. Windows
+servers send 16-bit PCM; compressed formats such as ADPCM are declined.
+
 ## Not supported
 
-Audio, drive, printer, smartcard and USB redirection, multiple monitors, dynamic
+Drive, printer, smartcard and USB redirection, multiple monitors, dynamic
 resolution change from the client, RD Gateway, Kerberos or certificate logon (NTLM
 only), file transfer, and clipboard formats other than text.
 

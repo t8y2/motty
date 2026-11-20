@@ -18,6 +18,7 @@ import (
 	"motty/internal/configstore"
 	"motty/internal/i18n"
 	"motty/internal/monitoring"
+	"motty/internal/sshbrowser"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
 )
@@ -136,6 +137,7 @@ type savedState struct {
 	SFTPPanelWidth          float32             `json:"sftp_panel_width,omitempty"`
 	SFTPWindowOrder         string              `json:"sftp_window_order,omitempty"`
 	SFTPOpenMode            string              `json:"sftp_open_mode,omitempty"`
+	FilePreviewMB           int                 `json:"file_preview_mb,omitempty"`
 	SFTPColumns             string              `json:"sftp_columns,omitempty"`
 	SFTPDownloadDirectory   string              `json:"sftp_download_directory,omitempty"`
 	SFTPTransferFilter      int                 `json:"sftp_transfer_filter,omitempty"`
@@ -143,6 +145,7 @@ type savedState struct {
 	CustomEditorPath        string              `json:"custom_editor_path,omitempty"`
 	Toolbars                *savedToolbars      `json:"toolbars,omitempty"`
 	UpdateCheck             string              `json:"update_check,omitempty"`
+	UpdateSource            string              `json:"update_source,omitempty"`
 	CloseAction             string              `json:"close_action,omitempty"`
 	RelaunchAction          string              `json:"relaunch_action,omitempty"`
 	TrayHintShown           bool                `json:"tray_hint_shown,omitempty"`
@@ -150,6 +153,7 @@ type savedState struct {
 	SFTPBookmarks           []savedBookmark     `json:"sftp_bookmarks,omitempty"`
 	SFTPLocalBookmarks      []string            `json:"sftp_local_bookmarks,omitempty"`
 	OutboundProxy           *savedOutboundProxy `json:"outbound_proxy,omitempty"`
+	SSHBrowser              string              `json:"ssh_browser,omitempty"` // which Chromium-family browser the SSH tab opens
 	HighlightBuiltin        string              `json:"highlight_builtin,omitempty"`
 	Highlights              []savedHighlight    `json:"highlights,omitempty"`
 	Snippets                []savedSnippet      `json:"snippets,omitempty"`
@@ -526,6 +530,7 @@ func (state *State) snapshot() savedState {
 		VerticalTabsAutoHide:       state.verticalTabs.autoHide,
 		VerticalTabsGrouping:       state.verticalTabs.grouping,
 		NetworkProxy:               state.networkProxy.String(),
+		SSHBrowser:                 string(state.sshBrowser),
 		TerminalOption:             state.terminalOption.String(),
 		LocalShell:                 state.localShell,
 		HiddenShells:               slices.Clone(state.hiddenShells),
@@ -605,6 +610,7 @@ func (state *State) snapshot() savedState {
 		SFTPPanelWidth:             state.sftpPanelWidth,
 		SFTPWindowOrder:            state.sftpWindowOrder.String(),
 		SFTPOpenMode:               state.sftpOpenMode.String(),
+		FilePreviewMB:              state.filePreviewMB,
 		SFTPColumns:                state.sftpColumns.String(),
 		SFTPDownloadDirectory:      savedSFTPDownloadDirectory(state.sftpDownloadDirectory),
 		SFTPTransferFilter:         state.transfers.filter,
@@ -612,6 +618,7 @@ func (state *State) snapshot() savedState {
 		CustomEditorPath:           state.customEditorPath,
 		Toolbars:                   state.toolbars.snapshot(),
 		UpdateCheck:                updateCheckString(state.updateAtStart),
+		UpdateSource:               state.update.source.String(),
 		CloseAction:                state.closeAction.String(),
 		RelaunchAction:             state.relaunchAction.String(),
 		TrayHintShown:              state.trayHintShown,
@@ -643,7 +650,7 @@ func (state *State) snapshot() savedState {
 	}
 	for _, rule := range state.highlighting.rules {
 		saved.Highlights = append(saved.Highlights, savedHighlight{
-			Pattern: rule.Pattern, Regex: rule.Regex, CaseSensitive: rule.CaseSensitive, Color: rule.Slot.Name(),
+			Pattern: rule.Pattern, Regex: rule.Regex, CaseSensitive: rule.CaseSensitive, Color: rule.Color.Name(),
 		})
 	}
 	saved.Autofill = state.savedAutofillRules()
@@ -1083,6 +1090,7 @@ func (state *State) restoreLocal(saved savedState) {
 	state.messages = i18n.For(state.language)
 	state.appearanceMode = appearanceModeFromString(saved.Theme)
 	state.networkProxy = networkProxyModeFromString(saved.NetworkProxy)
+	state.sshBrowser = sshbrowser.ParseFamily(saved.SSHBrowser)
 	state.syncNativeAppearance()
 	// The theme setAppearance builds copies the metrics by value, so the saved
 	// text size must be in effect before it runs.
@@ -1393,9 +1401,9 @@ func (state *State) restoreWorkspace(workspace string) {
 	case "snippets":
 		state.activeSection = sectionSnippets
 	case "settings":
-		state.activeSection = sectionSettings
+		state.activeSection, state.settingsTab = sectionSettings, true
 	case "shortcuts":
-		state.activeSection = sectionSettings
+		state.activeSection, state.settingsTab = sectionSettings, true
 		state.settingsCategory = settingsShortcuts
 	default:
 		state.activeSection = sectionHosts

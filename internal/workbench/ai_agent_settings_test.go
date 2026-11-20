@@ -12,9 +12,9 @@ import (
 
 func TestAgentConfigurationStartsMottyMcpServeForEveryClient(t *testing.T) {
 	const exe = "/Applications/Motty.app/Contents/MacOS/motty"
-	for index, option := range aiMCPClientOptions() {
+	for index, name := range aiMCPClientNames {
 		client := aiMCPClient(index)
-		t.Run(option.Label, func(t *testing.T) {
+		t.Run(name, func(t *testing.T) {
 			config := aiAgentConfig(client, exe)
 			if !strings.Contains(config, exe) || !strings.Contains(config, "mcp-serve") {
 				t.Fatalf("does not start the program: %s", config)
@@ -102,7 +102,7 @@ func TestAgentSettingsStoreTheModeCopyTheConfigurationAndShowAndClearTheActivity
 	if got := world.clip[len(world.clip)-1]; !strings.HasPrefix(got, "claude mcp add motty-hosts -- /opt/motty/motty mcp-serve --data-dir ") {
 		t.Fatalf("copied %q", got)
 	}
-	state.Click(aiAgentClientID(aiMCPCodex))
+	chooseMCPClient(t, state, true, aiMCPCodex)
 	state.Click(hitAISetAgentCopy)
 	if got := world.clip[len(world.clip)-1]; !strings.HasPrefix(got, "[mcp_servers.motty-hosts]") {
 		t.Fatalf("the chosen client was not used: %q", got)
@@ -139,8 +139,8 @@ func TestAgentSettingsStoreTheModeCopyTheConfigurationAndShowAndClearTheActivity
 func TestAgentConfigurationKeepsTheCurrentDataDirectoryForEveryClient(t *testing.T) {
 	const executable = "/Applications/Motty.app/Contents/MacOS/motty"
 	const directory = "/home/test/profile with spaces"
-	for index, option := range aiMCPClientOptions() {
-		t.Run(option.Label, func(t *testing.T) {
+	for index, name := range aiMCPClientNames {
+		t.Run(name, func(t *testing.T) {
 			config := aiAgentConfigForDataDir(aiMCPClient(index), executable, directory)
 			if !strings.Contains(config, "--data-dir") || !strings.Contains(config, directory) {
 				t.Fatalf("the service would read another profile: %s", config)

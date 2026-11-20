@@ -22,10 +22,10 @@ func TestRemoteFolderContextMenuCompressesOnTheServerAndRefreshes(t *testing.T) 
 	state.sftpMenu = sftpMenu{open: true, session: session.ID, at: gfx.Point{X: 80, Y: 140}}
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if _, ok := hitByID(&canvas, hitSFTPMenuCompress); !ok {
+	if _, ok := menuHit(&canvas, state, hitSFTPMenuCompress); !ok {
 		t.Fatal("remote folder has no Compress menu item")
 	}
-	state.Click(hitSFTPMenuCompress)
+	chooseMenu(t, state, hitSFTPMenuCompress)
 	if view.dialog != sftpDialogCompress || view.dialogEditor.String() != "docs.tar.gz" {
 		t.Fatalf("compression dialog = %v, name = %q", view.dialog, view.dialogEditor.String())
 	}

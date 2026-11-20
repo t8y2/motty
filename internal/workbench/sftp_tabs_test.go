@@ -401,7 +401,6 @@ func TestSFTPFileTabVerticalRailOwnsInputWhenExpanded(t *testing.T) {
 		t.Fatalf("test point %.1f,%.1f is outside expanded rail %+v", x, y, panel)
 	}
 
-	w.ui.bars[1].MaxOffsetY = 120
 	w.ui.offset[1] = 20
 	result := state.Scroll(gfx.ScrollEvent{
 		X: x, Y: y, DeltaY: 30, Precise: true, Viewport: size,

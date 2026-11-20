@@ -70,6 +70,9 @@ func StartWithInterval(runner Runner, notify func(), seconds int) *Worker {
 }
 
 func startCommand(runner Runner, notify func(), first, next time.Duration, script string, kind commandKind) *Worker {
+	if kind == kindPOSIX {
+		script = linuxShellCommand(script)
+	}
 	worker := newWorker(runner, notify, script, kind)
 	go worker.run(first, next)
 	return worker
@@ -124,6 +127,7 @@ func (worker *Worker) run(first, next time.Duration) {
 		darwinPrevious       darwinReading
 		darwinAt             time.Time
 		darwinHave           bool
+		darwinGPUs           []GPU
 	)
 	limit := maxLineBytes
 	if worker.kind == kindWindows {
@@ -150,7 +154,9 @@ func (worker *Worker) run(first, next time.Duration) {
 			at := worker.now()
 			watchdog.Reset(next)
 			if darwinHave && !reading.warm {
-				worker.publish(Result{Sample: darwinSample(darwinPrevious, reading, at.Sub(darwinAt))})
+				sample := darwinSample(darwinPrevious, reading, at.Sub(darwinAt))
+				sample.GPUs = darwinGPUs
+				worker.publish(Result{Sample: sample})
 			}
 			darwinPrevious, darwinAt, darwinHave = reading, at, true
 			return true
@@ -187,7 +193,9 @@ func (worker *Worker) run(first, next time.Duration) {
 		}
 		if isGPULine(line) {
 			text := strings.TrimSpace(string(line))
-			if strings.HasPrefix(text, gpuNvidiaProcessPrefix) {
+			if strings.HasPrefix(text, gpuDarwinPrefix) {
+				darwinGPUs = parseGPULine(darwinGPUs, line)
+			} else if strings.HasPrefix(text, gpuNvidiaProcessPrefix) {
 				if process, ok := parseNvidiaProcess(text[len(gpuNvidiaProcessPrefix):]); ok && len(pendingGPUProcesses) < MaxGPUs*MaxGPUProcesses {
 					pendingGPUProcesses = append(pendingGPUProcesses, process)
 				}

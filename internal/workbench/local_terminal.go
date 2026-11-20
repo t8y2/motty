@@ -92,7 +92,10 @@ func (conn *localConn) proxyEnvironment() []string {
 // shellConfig is how the shell starts on goos, with the folder and prompt
 // reporting the shell supports there.
 func (conn *localConn) shellConfig(config sshconn.ShellConfig, goos string) localshell.Config {
-	shell := localshell.Config{Shell: conn.shell, Args: localshell.ArgsFor(conn.shell), Cols: config.Cols, Rows: config.Rows, Dir: conn.dir, Notify: config.Notify}
+	shell := localshell.Config{
+		Shell: conn.shell, Args: localshell.ArgsFor(conn.shell), Cols: config.Cols, Rows: config.Rows,
+		PixelWidth: config.PixelWidth, PixelHeight: config.PixelHeight, Dir: conn.dir, Notify: config.Notify,
+	}
 	shell.Env = conn.proxyEnvironment()
 	if config.IntegrateShell && goos == "windows" {
 		shell.DirectoryToken = config.IntegrationToken
@@ -262,10 +265,15 @@ func (state *State) sessionAddress(host Host) string {
 // isLocal reports whether a session runs on this machine.
 func (session *Session) isLocal() bool { return session.HostID == localHostID }
 
+// localMachineName is how the local terminal names this computer. The tests
+// replace it so what a page paints does not depend on the machine that runs
+// them.
+var localMachineName = os.Hostname
+
 // localHost is the Host a local session carries, so the code that shows or saves
 // a session's host has something to read.
 func localHost(label string) Host {
-	name, _ := os.Hostname()
+	name, _ := localMachineName()
 	host := Host{ID: localHostID, Label: label, Address: name, System: localSystem()}
 	host.finish()
 	return host

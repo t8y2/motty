@@ -120,7 +120,7 @@ func TestStartupShellChoice(t *testing.T) {
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsConnection)
 	state.Click(hitSettingsStartupHosts)
-	state.Click(hitSettingsStartupShells.At(1))
+	clickPageMenuRow(t, state, state.localShellMenu.choices[1].Name)
 	if state.startupShell != state.localShellMenu.choices[1].Path || state.startupLocal {
 		t.Fatalf("shell %q local %v: picking a shell must choose it instead of the default", state.startupShell, state.startupLocal)
 	}
@@ -137,18 +137,18 @@ func TestStartupShellChoice(t *testing.T) {
 	}
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsConnection)
-	state.Click(hitSettingsStartupHosts)
-	state.Click(hitSettingsStartupLocal)
+	state.startupPicker.open = true // still open from before: the trigger would close it
+	clickPageMenuRow(t, state, state.messages.LocalTerminal)
 	if !state.startupLocal || state.startupShell != "" {
 		t.Fatalf("shell %q local %v: picking the default must clear the shell", state.startupShell, state.startupLocal)
 	}
-	state.Click(hitSettingsStartupDismiss)
+	state.startupPicker.open = false
 	state.Click(hitSettingsStartupHosts)
-	state.Click(hitSettingsStartupShells.At(1))
+	clickPageMenuRow(t, state, state.localShellMenu.choices[1].Name)
 	if state.startupShell != state.localShellMenu.choices[1].Path || state.startupLocal {
 		t.Fatal("reopening the menu must offer the shells again")
 	}
-	state.Click(hitSettingsStartupShells.At(1)) // the menu stays open: the same row clears it
+	clickPageMenuRow(t, state, state.localShellMenu.choices[1].Name) // the menu stays open: the same row clears it
 	if state.startupShell != "" || state.startupLocal {
 		t.Fatal("clicking the picked shell again must clear the choice")
 	}

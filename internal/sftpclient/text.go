@@ -14,9 +14,7 @@ import (
 
 const MaxEditFileBytes = 1 << 20
 
-const MaxPreviewFileBytes = 16 << 20
-
-var ErrPreviewFileTooLarge = errors.New("file exceeds the 16 MiB preview limit")
+var ErrPreviewFileTooLarge = errors.New("file exceeds the preview size limit")
 var ErrNotRegularFile = errors.New("sftp: preview requires a regular file")
 
 func editSizeError(limit int) error {
@@ -59,7 +57,7 @@ func (worker *Worker) saveText(client Remote, remotePath, value string, revision
 	if err != nil {
 		return TextDocument{}, err
 	}
-	if err = worker.replaceDocumentBytes(client, remotePath, content, revision, generation); err != nil {
+	if err = worker.replaceDocumentBytes(client, remotePath, content, revision, MaxEditFileBytes, generation); err != nil {
 		return TextDocument{}, err
 	}
 	return decodeTextDocument(content)
@@ -72,7 +70,7 @@ func (worker *Worker) saveText(client Remote, remotePath, value string, revision
 // group-writable config), it writes the file in place instead, as vim does
 // under backupcopy=auto. In-place writing also keeps owner, ACLs and hard
 // links, at the cost of atomicity.
-func (worker *Worker) replaceDocumentBytes(client Remote, remotePath string, content []byte, revision Revision, generation uint64) error {
+func (worker *Worker) replaceDocumentBytes(client Remote, remotePath string, content []byte, revision Revision, limit int, generation uint64) error {
 	advanced, ok := client.(transferRemote)
 	if !ok {
 		if IsSCP(client) {
@@ -80,7 +78,7 @@ func (worker *Worker) replaceDocumentBytes(client Remote, remotePath string, con
 		}
 		return fmt.Errorf("sftp: atomic remote file replacement is not supported")
 	}
-	if err := worker.checkDocumentRevision(client, remotePath, revision, generation); err != nil {
+	if err := worker.checkDocumentRevision(client, remotePath, revision, limit, generation); err != nil {
 		return err
 	}
 	info, exists, err := remoteLstat(advanced, remotePath)
@@ -90,20 +88,21 @@ func (worker *Worker) replaceDocumentBytes(client Remote, remotePath string, con
 	if !exists || info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return fmt.Errorf("%w: %s", ErrRemoteChanged, remotePath)
 	}
-	err = worker.replaceDocumentAtomically(client, advanced, remotePath, content, revision, info, generation)
+	err = worker.replaceDocumentAtomically(client, advanced, remotePath, content, revision, limit, info, generation)
 	if !errors.Is(err, os.ErrPermission) {
 		return err
 	}
 	// Nothing was changed: the temporary file could not be created, or could not
 	// be moved over the original, and a leftover is removed. Try the file itself;
 	// if that is refused too the permission error is the real answer.
-	return worker.replaceDocumentInPlace(client, advanced, remotePath, content, revision, generation)
+	return worker.replaceDocumentInPlace(client, advanced, remotePath, content, revision, limit, generation)
 }
 
 // checkDocumentRevision reports ErrRemoteChanged unless the remote file still
-// has the content the editor opened.
-func (worker *Worker) checkDocumentRevision(client Remote, remotePath string, revision Revision, generation uint64) error {
-	current, err := worker.readFileBytes(client, remotePath, generation, MaxPreviewFileBytes)
+// has the content the editor opened. limit is the bound the document was opened
+// under, so a file that grew past it is a change rather than a read.
+func (worker *Worker) checkDocumentRevision(client Remote, remotePath string, revision Revision, limit int, generation uint64) error {
+	current, err := worker.readFileBytes(client, remotePath, generation, limit)
 	if err != nil {
 		if editReadMeansConflict(err) {
 			return fmt.Errorf("%w: %s", ErrRemoteChanged, remotePath)
@@ -116,7 +115,7 @@ func (worker *Worker) checkDocumentRevision(client Remote, remotePath string, re
 	return nil
 }
 
-func (worker *Worker) replaceDocumentAtomically(client Remote, advanced transferRemote, remotePath string, content []byte, revision Revision, original os.FileInfo, generation uint64) (err error) {
+func (worker *Worker) replaceDocumentAtomically(client Remote, advanced transferRemote, remotePath string, content []byte, revision Revision, limit int, original os.FileInfo, generation uint64) (err error) {
 	temporary, target, err := openEditTemporary(advanced, remotePath)
 	if err != nil {
 		return err
@@ -157,7 +156,7 @@ func (worker *Worker) replaceDocumentAtomically(client Remote, advanced transfer
 	if err = advanced.Chmod(target, original.Mode().Perm()); err != nil {
 		return err
 	}
-	if err = worker.checkDocumentRevision(client, remotePath, revision, generation); err != nil {
+	if err = worker.checkDocumentRevision(client, remotePath, revision, limit, generation); err != nil {
 		return err
 	}
 	if worker.canceled(generation) {
@@ -173,8 +172,8 @@ func (worker *Worker) replaceDocumentAtomically(client Remote, advanced transfer
 // replaceDocumentInPlace truncates and rewrites the file itself. The revision is
 // checked once more right before the truncation, the last point at which a
 // concurrent change can still be told apart from our own write.
-func (worker *Worker) replaceDocumentInPlace(client Remote, advanced transferRemote, remotePath string, content []byte, revision Revision, generation uint64) (err error) {
-	if err = worker.checkDocumentRevision(client, remotePath, revision, generation); err != nil {
+func (worker *Worker) replaceDocumentInPlace(client Remote, advanced transferRemote, remotePath string, content []byte, revision Revision, limit int, generation uint64) (err error) {
+	if err = worker.checkDocumentRevision(client, remotePath, revision, limit, generation); err != nil {
 		return err
 	}
 	if worker.canceled(generation) {
@@ -229,6 +228,23 @@ func (worker *Worker) readFileBytes(client Remote, remotePath string, generation
 		return nil, err
 	}
 	defer source.Close()
+	if writerTo, ok := source.(io.WriterTo); ok {
+		// One request at a time costs a round trip per 32 KiB, which a distant
+		// server turns into seconds for a few megabytes. WriteTo keeps a window
+		// of reads in flight and delivers them in order, as downloads do.
+		sink := &boundedBytes{worker: worker, generation: generation, limit: limit}
+		_, err := writerTo.WriteTo(sink)
+		switch {
+		case sink.err != nil:
+			return nil, sink.err
+		case err == nil:
+			return append([]byte{}, sink.data...), nil
+		case sink.started:
+			return nil, err
+		}
+		// A server that refuses a stat on an open file still reads fine one
+		// request at a time; nothing was delivered, so the source is untouched.
+	}
 	pair := bufferPool.Get().(*[2][32 * 1024]byte)
 	defer bufferPool.Put(pair)
 	buffer := pair[0][:]
@@ -254,6 +270,34 @@ func (worker *Worker) readFileBytes(client Remote, remotePath string, generation
 			return nil, io.ErrNoProgress
 		}
 	}
+}
+
+// boundedBytes collects what a pipelined read delivers, refusing the byte that
+// would pass the limit and noticing a cancellation between chunks.
+type boundedBytes struct {
+	worker     *Worker
+	generation uint64
+	limit      int
+	data       []byte
+	started    bool
+	err        error
+}
+
+func (sink *boundedBytes) Write(chunk []byte) (int, error) {
+	if sink.worker.canceled(sink.generation) {
+		sink.err = ErrCanceled
+		return 0, sink.err
+	}
+	if len(sink.data)+len(chunk) > sink.limit {
+		sink.err = editSizeError(sink.limit)
+		return 0, sink.err
+	}
+	sink.started = true
+	if sink.data == nil {
+		sink.data = make([]byte, 0, min(sink.limit, max(len(chunk), 32*1024)))
+	}
+	sink.data = append(sink.data, chunk...)
+	return len(chunk), nil
 }
 
 func decodeTextDocument(content []byte) (TextDocument, error) {

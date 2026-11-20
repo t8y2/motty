@@ -55,6 +55,13 @@ type terminalFind struct {
 	screenState                uint64
 	lastScan                   time.Duration // when the last automatic scan ran
 	pending                    bool          // a version change is waiting for the next scan
+	// filledSelection records the selection the bar already took as its query.
+	// A split pane keeps its rows when the bar opens, so the selection survives
+	// the open; without this mark, pressing the shortcut again after editing the
+	// query would put the old selection back over the text just typed.
+	filledSelection           bool
+	filledAnchor, filledFocus term.Point
+	filledBlock               bool
 }
 
 func newTerminalFind() terminalFind {
@@ -191,6 +198,7 @@ func (find *terminalFind) close() {
 	find.truncated = false
 	find.query = ""
 	find.count = ""
+	find.filledSelection = false
 }
 
 func (state *State) activeTerminalFind() (*Session, bool) {
@@ -234,20 +242,41 @@ func (find *terminalFind) selectQuery() {
 	find.editor.SetSelection(text.Range{Start: 0, End: find.editor.RuneCount()})
 }
 
+// fillFromSelection puts a searchable one-line selection into the field. It
+// takes the selection once: a selection already used as the query is left
+// alone, so editing the query and pressing the shortcut again does not restore
+// the old selection over the text. The mark is dropped when the bar closes, so
+// reopening still takes a selection that is still on screen.
+func (find *terminalFind) fillFromSelection(selection *terminalSelection, screen *term.Terminal) {
+	if !selection.selected {
+		return
+	}
+	if find.filledSelection && find.filledAnchor == selection.anchor &&
+		find.filledFocus == selection.focus && find.filledBlock == selection.block {
+		return
+	}
+	query := terminalFindQuery(selection.text(screen))
+	if query == "" {
+		return
+	}
+	find.setQuery(query)
+	find.filledSelection = true
+	find.filledAnchor = selection.anchor
+	find.filledFocus = selection.focus
+	find.filledBlock = selection.block
+}
+
 // openTerminalFind opens the search bar of a pane. The bar takes a strip above
 // the grid, as a macOS terminal does, and leaves the shared rail its width, so
 // only the row count changes and only the columns stay put. A terminal
-// selection fills the field when it is one line, and the field's text is
-// selected in either case, so pasting a new query replaces what is there.
+// selection fills the field when it is one line, even if the bar is already
+// open or still holds a previous query, and the field's text is selected in
+// either case, so pasting a new query replaces what is there.
 func (state *State) openTerminalFind(session *Session) gfx.EventResult {
 	find := &session.term.find
 	opening := !find.open
 	find.open = true
-	if opening && session.term.selection.selected {
-		if query := terminalFindQuery(session.term.selection.text(session.term.screen)); query != "" {
-			find.setQuery(query)
-		}
-	}
+	find.fillFromSelection(&session.term.selection, session.term.screen)
 	find.selectQuery()
 	// The origin and the view are read before the bar takes its strip: the
 	// resize scans the screen too, and that scan must already start where this
@@ -373,7 +402,6 @@ func (state *State) clickTerminalFind(id gfx.ID) bool {
 		} else {
 			state.findSettingsUI.open = true
 			state.findSettingsUI.session = session.ID
-			state.findSettingsUI.focus = hitFindForeground
 		}
 	case hitTerminalFindPrevious:
 		session.term.find.move(session.term.screen, state.messages, -1)

@@ -478,7 +478,6 @@ func (state *State) aiPanelBeginPaint() {
 	panel.paintedHistory = panel.paintedHistory[:0]
 	panel.copySlots = panel.copySlots[:0]
 	panel.rowSlots = panel.rowSlots[:0]
-	panel.statusPainted = false
 	if !state.aiPanelVisible() {
 		panel.scrollbar.dragging = false
 	}
@@ -555,6 +554,7 @@ func (state *State) declareAISectionPanel(c ui.C, size gfx.Size) {
 		Background(pal.workspace).Border(1, pal.windowStroke).Radius(radius.surface).Clip().Children(func() {
 		state.declareAIPanelBody(c)
 	})
+	state.declareAIResize(c, gfx.Point{})
 }
 
 // declareAIDockedPanel declares the column at the right of a workspace, where the
@@ -574,6 +574,7 @@ func (state *State) declareAIDockedPanel(c ui.C, size gfx.Size) {
 		Background(pal.workspace).Children(func() {
 		state.declareAIPanelBody(c)
 	})
+	state.declareAIResize(c, gfx.Point{})
 }
 
 // Use the workspace viewport so the drawer never covers the native title bar.
@@ -586,27 +587,27 @@ func (state *State) declareAIDrawer(c ui.C, size gfx.Size) {
 	bounds := gfx.Rect{X: viewport.X + viewport.Width - contentWidth, Y: viewport.Y, Width: contentWidth, Height: viewport.Height}
 	panel.rect = bounds
 	panel.resize = aiPanelResize{window: viewport, ratio: (bounds.X - viewport.X) / max(viewport.Width-1, 1), handle: 8}
-	dismiss := ui.ID(c)
-	if canvas := c.Canvas(); canvas != nil && canvas.Clicked(dismiss) {
+	// The page Drawer covers the window less its inset, so its scrim and dismiss
+	// target stop at the visible workspace, as the old drawer's viewport did.
+	inset := gfx.Insets{
+		Top: viewport.Y, Left: viewport.X,
+		Right:  size.Width - (viewport.X + viewport.Width),
+		Bottom: size.Height - (viewport.Y + viewport.Height),
+	}
+	panel.drawerOpen = true
+	spec := ui.DrawerSpec{Side: ui.DrawerRight, Size: contentWidth, Inset: inset, NonModal: true}
+	if ui.Drawer(c, &panel.drawerOpen, "", spec, func() {
+		state.declareAIPanelBody(c)
+		state.declareAIResize(c, gfx.Point{X: bounds.X, Y: bounds.Y})
+	}, nil) {
 		c.After(state.closeAIPanel)
 	}
-	drawer := components.BeginDrawer(c.Canvas(), state.Theme(), viewport, components.DrawerOptions{
-		Layer: drawerLayer, DismissID: dismiss,
-		Side: components.DrawerRight, ContentExtent: contentWidth,
-	})
-	ui.Stack(c).Absolute().Left(viewport.X).Top(viewport.Y).Size(viewport.Width, viewport.Height).
-		Draw(func(*ui.DrawContext) { drawer.Begin("", "") }).Children(func() {
-		ui.Column(c).Absolute().Left(bounds.X-viewport.X).Top(0).Size(bounds.Width, bounds.Height).Children(func() {
-			state.declareAIPanelBody(c)
-		})
-		ui.Slot(c).Absolute().Size(0, 0).Draw(func(*ui.DrawContext) { drawer.End() })
-	})
 }
 
-// paintAIPanel paints what the declared panel needs outside the page: its resize
-// edge and the file-drop hint. The drawer keeps them inside its own layer, where
-// the page's over hook painted them; the docked and section panels paint them at
-// the page's layer, after it, as the panel always has.
+// paintAIPanel paints what the declared panel needs outside the page: the
+// file-drop hint. The drawer keeps it inside its own layer, where the page's
+// over hook painted it; the docked and section panels paint it at the page's
+// layer, after it, as the panel always has.
 func (state *State) paintAIPanel(canvas *gfx.Canvas, size gfx.Size) {
 	panel := &state.ai.panel
 	if !state.aiPanelVisible() || !panel.declared {
@@ -620,10 +621,8 @@ func (state *State) paintAIPanel(canvas *gfx.Canvas, size gfx.Size) {
 		canvas.RequestFocus(hitAIInput)
 	case aiPanelDocked:
 		state.paintAIDockEdge(canvas)
-		state.paintAIResize(canvas)
 		state.paintAIDrop(canvas)
 	default:
-		state.paintAIResize(canvas)
 		state.paintAIDrop(canvas)
 	}
 }
@@ -639,21 +638,60 @@ func (state *State) paintAIDockEdge(canvas *gfx.Canvas) {
 	}
 }
 
-// paintAIResize paints the panel's resize edge. Its resting 1px line is the
+// declareAIResize declares the panel's resize edge. Its resting 1px line is the
 // boundary between the docked column and the panes, as the files panel's
-// divider is; the section card keeps its own border instead, so only the handle
-// that shows hover, press and focus is painted there.
-func (state *State) paintAIResize(canvas *gfx.Canvas) {
+// divider is; the section card keeps its own border instead. origin is where
+// the parent box's coordinates start, in window pixels.
+func (state *State) declareAIResize(c ui.C, origin gfx.Point) {
 	panel := &state.ai.panel
-	if panel.resize.window.Width <= 0 {
+	window := panel.resize.window
+	if window.Width <= 0 {
 		return
 	}
+	x := window.X + (window.Width-1)*panel.resize.ratio
+	handle := panel.resize.handle
 	theme := state.Theme()
-	if panel.mode != aiPanelDocked {
-		theme.Border = gfx.Color{}
+	line := gfx.Color{}
+	if panel.mode == aiPanelDocked {
+		line = theme.Border
 	}
-	components.BeginResizable(canvas, theme, hitAIDivider, panel.resize.window, panel.resize.ratio).
-		Limits(0, 1).HandleSize(panel.resize.handle).Paint(state.messages.AIPanel.ResizePanel)
+	// The hit strip starts half a pixel left of the resting line, as the
+	// Resizable it replaces did, so the line sits at its first whole pixel.
+	left := x - origin.X - (handle-1)/2
+	edge := (handle - 1) / 2
+	focused := c.Canvas() != nil && c.Canvas().FocusVisible() == hitAIDivider
+	pressed := c.Canvas() != nil && c.Canvas().Pressed() == hitAIDivider
+	hovered := c.Canvas() != nil && c.Canvas().Hovered() == hitAIDivider
+	ui.Column(c).Absolute().
+		Left(left).
+		Top(window.Y-origin.Y).
+		Width(handle).Height(window.Height).
+		HitWith(hitAIDivider, state.messages.AIPanel.ResizePanel, gfx.HitOptions{
+			Role: gfx.RoleSeparator, Cursor: gfx.PointerCursorResizeHorizontal,
+		}).Children(func() {
+		// The old handle painted the focus ring first, the separator over it,
+		// then the hover or press line: the same order here.
+		if focused {
+			focus := theme.Ring
+			focus.Alpha *= 0.50
+			ui.Slot(c).Absolute().Left(-1).Top(-1).
+				Width(handle + 2).Height(window.Height + 2).
+				Radius(2).Background(focus)
+		}
+		if line.Alpha > 0 {
+			ui.Slot(c).Absolute().Left(edge).Top(0).
+				Width(1).Height(window.Height).Background(line)
+		}
+		if !focused && (hovered || pressed) {
+			accent := theme.Ring
+			if pressed {
+				accent = theme.Primary
+			}
+			ui.Slot(c).Absolute().Left(edge - 1).Top(-1).
+				Width(3).Height(window.Height + 2).
+				Radius(1).Background(accent)
+		}
+	})
 }
 
 // aiMenuOpen reports whether one of the chip menus is showing. A menu whose
@@ -700,10 +738,6 @@ const aiMenuContextWidth = float32(144)
 // over them (paintAIMessageChrome, paintAIHistoryChrome).
 func (state *State) paintAIPanelContent(d *ui.DrawContext) {
 	canvas, panel, ai := d.Canvas, &state.ai.panel, &state.ai
-	s := &panel.pageScratch
-	if s.showSetup {
-		components.BeginButton(canvas, state.Theme(), hitAISetup, panel.body.setup.Rect()).Small().Default(s.setupLabel)
-	}
 	// Keep the list slot's rectangle even when it is the empty state, which
 	// declares no List: the wheel and the scrollbar read it between paints.
 	panel.list = panel.body.list.Rect()
@@ -725,8 +759,8 @@ func (state *State) paintAIPanelOver(d *ui.DrawContext) {
 }
 
 // paintAIPanelChrome paints what must come over the body's controls: the
-// composer's resize grip, and, for the drawer, the panel's resize edge and the
-// file-drop hint, which belong on the drawer's layer rather than the page's.
+// composer's resize grip, and, for the drawer, the file-drop hint, which
+// belongs on the drawer's layer rather than the page's.
 func (state *State) paintAIPanelChrome(d *ui.DrawContext) {
 	canvas, panel := d.Canvas, &state.ai.panel
 	if box := panel.composer; box.Width > 0 {
@@ -735,7 +769,6 @@ func (state *State) paintAIPanelChrome(d *ui.DrawContext) {
 			gfx.HitOptions{Role: gfx.RoleSlider, Cursor: gfx.PointerCursorResizeVertical, SkipFocus: true})
 	}
 	if panel.mode == aiPanelDrawer {
-		state.paintAIResize(canvas)
 		state.paintAIDrop(canvas)
 	}
 }
@@ -785,7 +818,7 @@ func (state *State) declareAIPanelBody(c ui.C) {
 		if s.showSetup {
 			ui.Row(c).Height(56).MarginSides(0, aiPad, 8, aiPad).PadX(12).Gap(12).Items(ui.Center).Background(pal.surface).Border(1, pal.line).Radius(radius.control).Children(func() {
 				ui.Paragraph(c, s.setupSummary, 3).FontSize(aiSizes.small).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiSizes.smallLine).Grow(1)
-				panel.body.setup = ui.Slot(c).Size(s.setupWidth, 30)
+				ui.Button(c, s.setupLabel).Small().Hit(hitAISetup, s.setupLabel).Size(s.setupWidth, 30)
 			})
 		}
 		ui.Divider(c).Background(pal.line)
@@ -1001,7 +1034,6 @@ type aiPaintedRow struct {
 	index       int
 	view        *aiRowView
 	body        ui.Box
-	hasBody     bool
 	plain       [aiTextPartCount]ui.Box
 	plainSet    [aiTextPartCount]bool
 	copiesStart int
@@ -1022,7 +1054,7 @@ func (state *State) declareAIMessages(c ui.C) {
 	ai, panel := &state.ai, &state.ai.panel
 	m := state.messages.AIPanel
 	panel.rowWidth = panel.rect.Width - 2*aiPad
-	panel.statusLabel, panel.statusPainted = "", false
+	panel.statusLabel = ""
 	if canvas := c.Canvas(); canvas != nil {
 		panel.cell, panel.cellHeight = canvas.MonoCellSize(aiSizes.mono, state.terminalFontFace)
 		status, usage := state.aiRunStatusText()
@@ -1113,7 +1145,7 @@ func (state *State) declareAIMessageRow(row ui.ListRow) {
 	root := row.Element.PadSides(topGap, aiPad, aiGap, aiPad)
 	start := len(panel.copySlots)
 	body := state.declareAIRow(root, aiRowFrame{c: row.C}, index, view, item)
-	painted := aiPaintedRow{index: index, view: view, body: body, hasBody: body != (ui.Box{}),
+	painted := aiPaintedRow{index: index, view: view, body: body,
 		copiesStart: start, copiesLen: len(panel.copySlots) - start}
 	for part := range aiTextPartCount {
 		if view.textSlotSet[part] {
@@ -1133,11 +1165,10 @@ func (state *State) declareAIRunStatusRow(row ui.ListRow) {
 		topGap = aiGap
 	}
 	f := aiRowFrame{c: row.C}
-	var activity ui.Box
 	row.Element.PadSides(topGap, aiPad, aiGap, aiPad).Children(func() {
 		ui.Column(row.C).Fill().Gap(4).HitWith(hitAIRunStatus, panel.statusLabel, gfx.HitOptions{Role: gfx.RoleGroup, SkipTab: true}).Children(func() {
 			ui.Row(row.C).Gap(8).Children(func() {
-				activity = ui.Slot(row.C).Size(12, 12).Shrink(0).MarginSides(2, 0, 0, 0)
+				state.declareAIRunStatusMark(row.C)
 				ui.Column(row.C).Grow(1).Children(func() {
 					aiTextLines(f, panel.statusLines, aiSizes.small, aiSizes.smallLine, pal.muted)
 				})
@@ -1149,16 +1180,27 @@ func (state *State) declareAIRunStatusRow(row ui.ListRow) {
 			}
 		})
 	})
-	panel.statusActivity, panel.statusPainted = activity, true
+}
+
+// declareAIRunStatusMark declares the run's mark before its status: a spinner
+// while it runs, else the completed or failed icon.
+func (state *State) declareAIRunStatusMark(c ui.C) {
+	if state.aiRunActive() {
+		ui.Spinner(c).Size(12, 12).Shrink(0).MarginSides(2, 0, 0, 0)
+		return
+	}
+	icon := iconCircleCheck
+	if state.ai.lastRun != nil && state.ai.lastRun.phase != aiRunCompleted {
+		icon = iconBot
+	}
+	ui.Icon(c, lucideIcons[icon]).Size(12, 12).Color(state.pal.muted).Shrink(0).MarginSides(2, 0, 0, 0)
 }
 
 // paintAIMessageChrome paints what the conversation's List cannot: the
-// plain-text selections over its rows, the Markdown bodies and spinners in their
-// slots, the custom scrollbar and the jump-to-end button.
+// plain-text selections over its rows and the Markdown bodies in their slots.
 func (state *State) paintAIMessageChrome(d *ui.DrawContext) {
 	canvas, panel, ai := d.Canvas, &state.ai.panel, &state.ai
 
-	m := state.messages.AIPanel
 	panel.list, panel.listing = d.Rect, false
 	scroll := panel.messageScroll
 	if scroll != nil {
@@ -1203,37 +1245,15 @@ func (state *State) paintAIMessageChrome(d *ui.DrawContext) {
 		case painted.view.kind == aiAssistant:
 			copies := panel.copySlots[painted.copiesStart : painted.copiesStart+painted.copiesLen]
 			state.paintAIAssistant(canvas, painted.body.Rect(), d.Rect, painted.view, painted.index, copies)
-		case (painted.view.kind == aiReasoning && state.aiThinking(painted.index)) || (painted.view.kind == aiTool && painted.view.status == aiToolRunning):
-			// Still thinking, or the command is running: a spinner in the slot the row left for it.
-			components.PaintSpinner(canvas, state.Theme(), painted.body.Rect(), components.SpinnerPhase(canvas.Now()/spinnerStep))
-			canvas.RequestFrameIn(spinnerStep)
 		}
 	}
-	if panel.statusPainted {
-		state.paintAIRunStatusChrome(canvas, panel.statusActivity.Rect())
-	}
 	if scroll != nil {
+		m := state.messages.AIPanel
 		scroller := components.BeginMessageScroller(canvas, state.aiScrollbarTheme(), d.Rect, scroll.Content, scroll.Offset).
 			Scrollbar(hitAIMessageBar, m.ScrollbarLabel, state.aiScrollbarValue(false, scroll.Offset, scroll.Max())).
 			Buttons(gfx.ID{}, "", hitAIToEnd, m.ScrollToEnd)
 		panel.scrollbar.geometry = scroller.EndContent()
 	}
-}
-
-// paintAIRunStatusChrome paints the spinner or icon of the run status into the
-// slot its row declared.
-func (state *State) paintAIRunStatusChrome(canvas *gfx.Canvas, bounds gfx.Rect) {
-	pal := state.pal
-	if state.aiRunActive() {
-		components.PaintSpinner(canvas, state.Theme(), bounds, components.SpinnerPhase(canvas.Now()/spinnerStep))
-		canvas.RequestFrameIn(spinnerStep)
-		return
-	}
-	icon := iconCircleCheck
-	if state.ai.lastRun != nil && state.ai.lastRun.phase != aiRunCompleted {
-		icon = iconBot
-	}
-	canvas.DrawIcon(lucideIcons[icon], bounds, pal.muted)
 }
 
 // aiThinking reports whether row index is a thought the model is still writing:
@@ -1335,7 +1355,7 @@ func (state *State) declareAIRow(root ui.Box, f aiRowFrame, index int, view *aiR
 					icon = iconChevronDown
 				}
 				if state.aiThinking(index) {
-					body = f.Slot().Size(12, 12)
+					ui.Spinner(f.c).Size(12, 12)
 				} else {
 					f.Icon(lucideIcons[icon]).Size(12, 12).Color(pal.muted)
 				}
@@ -1387,8 +1407,7 @@ func (state *State) declareAIRow(root ui.Box, f aiRowFrame, index int, view *aiR
 							f.Icon(lucideIcons[iconAlert]).Size(13, 13).Color(statusColor).MarginSides(0, 4, 0, 0)
 						default:
 							if item.status == aiToolRunning {
-								// Painted as a spinner once the row is placed.
-								body = f.Slot().Size(13, 13).MarginSides(0, 5, 0, 0)
+								ui.Spinner(f.c).Size(13, 13).MarginSides(0, 5, 0, 0)
 							} else {
 								f.Column().Size(7, 7).Background(statusColor).Radius(3.5).MarginSides(0, 5, 0, 0)
 							}

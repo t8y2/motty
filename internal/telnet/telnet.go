@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"motty/internal/shellkind"
+	"motty/internal/termsize"
 )
 
 // Telnet commands (RFC 854) and options.
@@ -205,8 +206,11 @@ func (session *Session) Write(p []byte) bool {
 	return session.queue(encoded, false)
 }
 
-// Resize tells the server the new window size, if it asked for it.
-func (session *Session) Resize(cols, rows int) {
+// Resize tells the server the new window size, if it asked for it. NAWS
+// carries the grid in cells and nothing about pixels, so the size's pixel
+// fields have no one to go to.
+func (session *Session) Resize(size termsize.Size) {
+	cols, rows := size.Cols, size.Rows
 	session.mu.Lock()
 	session.cols, session.rows = max(cols, 1), max(rows, 1)
 	enabled := session.us[optNAWS]

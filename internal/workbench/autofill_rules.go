@@ -71,12 +71,11 @@ type autofillUI struct {
 	enter                       bool
 	dialogError                 string
 	// The dialog's fields are page fields: a row and a text for each, the text bound to the
-	// editor above; fixedShown reveals the fixed text. The checkbox is painted into enterRow.
+	// editor above; fixedShown reveals the fixed text.
 	rows        [4]ui.FormFieldState
 	texts       [4]ui.Field
 	bound       bool
 	fixedShown  bool
-	enterRow    ui.Box
 	sendChoices [3]ui.Box
 
 	ask  autofillAsk
@@ -584,7 +583,7 @@ func (state *State) declareAutofillBody(c ui.C) {
 			state.declareAutofillField(c, 2, hitAutofillFixed, m.FixedText, placeholder, true)
 		}
 		state.declareAutofillField(c, 3, hitAutofillScope, m.Scope, m.ScopePlaceholder, false)
-		form.enterRow = state.declareDialogCheckboxC(c, m.Enter, 4, 0)
+		state.declareDialogCheck(c, hitAutofillEnter, m.Enter, form.enter, 4, 0)
 		if form.dialogError != "" {
 			ui.Text(c, form.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.danger).LineHeight(18).MarginSides(15, 0, 0, 0)
 		}
@@ -594,7 +593,6 @@ func (state *State) declareAutofillBody(c ui.C) {
 		for index, kind := range autofillSendKinds {
 			canvas.HitWithOptions(kind.id, form.sendChoices[index].Rect(), state.sendKindName(kind.send), gfx.HitOptions{Role: gfx.RoleButton, Selected: form.send == kind.send})
 		}
-		state.paintDialogCheckbox(canvas, hitAutofillEnter, m.Enter, form.enter, form.enterRow)
 	})
 }
 

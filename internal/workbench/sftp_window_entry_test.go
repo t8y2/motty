@@ -38,14 +38,14 @@ func TestSFTPWindowHostMenuAuthenticatesWithoutTerminalAndRetainsDocumentConnect
 	state.activeSessionID, state.activeSection = 0, sectionHosts
 	state.hostMenu = hostMenu{open: true, host: target.ID, at: gfx.Point{X: 300, Y: 250}}
 	var canvas gfx.Canvas
-	state.paintHostMenu(&canvas, gfx.Rect{Width: 1400, Height: 900})
-	connect, _ := hitByID(&canvas, hitHostMenuConnect)
-	files, ok := hitByID(&canvas, hitHostMenuSFTP)
-	edit, _ := hitByID(&canvas, hitHostMenuEdit)
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	connect, _ := menuHit(&canvas, state, hitHostMenuConnect)
+	files, ok := menuHit(&canvas, state, hitHostMenuSFTP)
+	edit, _ := menuHit(&canvas, state, hitHostMenuEdit)
 	if !ok || files.Disabled || files.Bounds.Y < connect.Bounds.Y+connect.Bounds.Height || files.Bounds.Y >= edit.Bounds.Y {
 		t.Fatal("SFTP must follow Connect in the host menu")
 	}
-	state.Click(hitHostMenuSFTP)
+	chooseMenu(t, state, hitHostMenuSFTP)
 	state.Wake()
 	if state.modal != modalHostKey || len(state.sessions) != sessions || len(host.windows) != 2 {
 		t.Fatal("standalone authentication must show progress without a terminal")

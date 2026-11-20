@@ -244,7 +244,7 @@ real Mac still needs `MOTTY_VNC_ADDR`, `MOTTY_VNC_USERNAME` and
 | Dependencies | pion/dtls, golang.org/x/net, testify, yaml.v3 (MIT/BSD/Apache) | core: standard library only (the Ebiten GUI of its demo is not imported by the library) |
 | Aim | browser/WASM client; its README: "primarily tested with XRDP; Windows servers may have issues", NLA "with limitations" | native client, Windows servers, NLA by default |
 | NLA/CredSSP | NTLMv2, own MD4 | CredSSP v2-v6, NTLMv2 over SPNEGO with EPA channel binding and MIC, own MD4 (`crypto/rc4`, `hmac`, `md5`, `sha256` from the standard library) |
-| Bitmaps | RLE, NSCodec, planar, RemoteFX | RLE (8-32), Planar, NSCodec, RDPGFX with ClearCodec, progressive RemoteFX, ZGFX, MPPC, drawing orders |
+| Bitmaps | RLE, NSCodec, planar, RemoteFX | RLE (8-32), Planar, NSCodec, RDPGFX with RemoteFX (CAVIDEO), ClearCodec, progressive RemoteFX, ZGFX, MPPC, drawing orders |
 | Maintenance | active (July 2026) | active (June 2026) |
 
 The grdp family (x90skysn3k, nakagami, icodeface) is GPL-3.0 and cannot be used in
@@ -257,8 +257,9 @@ drew the logon screen before any Motty code was written.
 commit `bfc357b`, licence kept): the library hard-codes `net.DialTimeout` (no SSH
 tunnel or proxy) and `InsecureSkipVerify: true` with no hook to see the certificate
 (no pinning), starts 14 logon attempts for one wrong password (account lockout), and
-carries 20,000 lines for audio/drive/printer/USB redirection that Motty does not
-expose. 37,000 lines remain in the tree (24,000 of code, the rest tests). It is
+carries 20,000 lines for audio input, drive, printer, camera and USB redirection
+that Motty does not expose; the audio output channel was reimplemented
+(`internal/rdpcore/protocol/rdpsnd`). 37,000 lines remain in the tree (24,000 of code, the rest tests). It is
 a fork that does not track upstream; `NOTICE.md` lists every change. The cost of
 the copy in the stripped macOS binary is +1.04 MB (19.53 MB to 20.57 MB), with no new
 module in `go.mod`.
@@ -273,24 +274,31 @@ offers nothing else or whose administrator chose the RDP security layer. Its
 keys come from a server key that is never authenticated, so anyone on the path
 can read and alter the session, including the password: the switch states that,
 and the status line reports the connection as **Not encrypted** (a tunneled host
-still reports the SSH protection). NLA starts with SPNEGO; if token negotiation fails before credentials
-are sent, it reconnects once using raw NTLM tokens for older WinPR servers such
-as GNOME Remote Desktop on Ubuntu 22.04. Both paths keep certificate checks,
-NTLMv2 MIC/channel binding and CredSSP public-key verification. The client
-always signs the SPNEGO mechanism list it offered; Windows 11 24H2 and Server
-2025 reject the public-key binding when that MIC is absent, even though their
-challenge does not request it. The MIC exchange counts as a signed message, so
-both directions seal the binding at sequence one, not zero. When the server asks
-for the MIC, the client verifies the acceptor's MIC and sends its public-key
-binding in a later TSRequest; that is what libfreerdp 3.x (GNOME Remote Desktop
-on Ubuntu 24.04 and later) requires, and sending both in one message makes it
+still reports the SSH protection). Go leaves the TLS suites that use RSA key
+exchange out of its defaults; a server that offers nothing newer is reached by
+the host's **Allow legacy TLS** switch, or by **Retry with legacy TLS** on the
+failure page, which turns that switch on and saves it. Either adds those
+AES-CBC and AES-GCM suites to the offer. It is off by default because RSA key
+exchange has no forward secrecy and CBC has known weaknesses. NLA starts with
+SPNEGO; if token negotiation fails before credentials are sent, it reconnects
+once using raw NTLM tokens for older WinPR servers such as GNOME Remote Desktop
+on Ubuntu 22.04. Both paths keep certificate checks, NTLMv2 MIC/channel binding
+and CredSSP public-key verification. The client always signs the SPNEGO
+mechanism list it offered; Windows 11 24H2 and Server 2025 reject the
+public-key binding when that MIC is absent, even though their challenge does
+not request it. The MIC exchange counts as a signed message, so both directions
+seal the binding at sequence one, not zero. When the server asks for the MIC,
+the client verifies the acceptor's MIC and sends its public-key binding in a
+later TSRequest; that is what libfreerdp 3.x (GNOME Remote Desktop on
+Ubuntu 24.04 and later) requires, and sending both in one message makes it
 echo the client's own binding back. When it does not ask, the Authenticate token
 is the client's last SPNEGO token, and MS-CSSP 3.2.5 requires the binding in
 that same TSRequest; Windows tears the TLS session down with an internal_error
 when the two are split. After sending an Authenticate
 message, failures stop automatic retries and TLS-only fallback.
 Bitmap updates (RLE, Planar, NSCodec, drawing orders) and the RDPGFX
-pipeline (ClearCodec, progressive RemoteFX, uncompressed; H.264 is not offered),
+pipeline (RemoteFX, ClearCodec, progressive RemoteFX, uncompressed; H.264 is
+not offered),
 fast-path updates, 32-bit colour. Input: keys as scancodes of a US keyboard (the
 remote layout decides characters; Shift is added where the character needs it,
 `internal/desktop/rdp/scancode.go`), the committed text of an input method and
@@ -301,7 +309,17 @@ that switch and feed a method reach the remote, which composes with its own),
 pointer with three
 buttons and horizontal/vertical wheel. Clipboard text and images, and files in
 both directions (CLIPRDR, see "Copying files to the server" and "Copying files from the server"), per host, off
-by default. Suppress Output while the tab is hidden. The initial desktop matches
+by default. Audio output over rdpsnd — the static channel, or the
+AUDIO_PLAYBACK_DVC dynamic channel that Windows 11 opens: the server's 16-bit
+PCM, mono or stereo, played on this computer's default output device. The
+compressed formats Windows also offers (ADPCM and others) are declined, so the
+server sends PCM; the lossy dynamic channel is refused. Audio is on by default
+for every RDP connection; the host's **Play remote audio** switch turns it off,
+in which case the client asks the server for no audio channel at all and this
+computer opens no output device. The system's own output volume and mute decide
+whether what is played is heard. The sound is written on the session's receive
+path, so an output device that stops consuming pauses the session's other
+channel data for at most the sound buffer, a fifth of a second. Suppress Output while the tab is hidden. The initial desktop matches
 the pane's device pixels and display scale (1600x900 only when the caller supplies
 no size). A server with the RDPEDISP display-control channel follows the pane
 in Fit mode, including fullscreen transitions; otherwise the picture is scaled.
@@ -411,8 +429,9 @@ than leaving a paste that looks complete.
 
 ### Limits
 
-No audio, drive/printer/smartcard/USB redirection, multiple monitors, dynamic
-resolution change from the client, RD Gateway, Kerberos or certificate-based logon
+Audio input (microphone redirection), drive/printer/smartcard/USB redirection,
+multiple monitors, dynamic resolution change from the client, RD Gateway,
+Kerberos or certificate-based logon
 (NTLM only), network-level authentication to a domain server that disables NTLM,
 H.264, clipboard formats other than text, images and files. A fresh Windows logon
 that finds the user signed in elsewhere asks the usual "sign out the other user?"
@@ -450,7 +469,11 @@ locked, read back into the client and compared by SHA-256
 on this computer (`TestLiveTextCopiedOnTheServerArrivesHere`); and the Windows
 file-list writer's result read back by PowerShell's
 `Get-Clipboard -Format FileDropList` as the same paths
-(`TestSetClipboardFilesRoundTrip` in `../viva`). On
+(`TestSetClipboardFilesRoundTrip` in `../viva`). Audio output was exercised
+from this Mac against the same Windows 11 machine: the test opens Run in the
+remote desktop, plays a system WAV, and checks that 16-bit PCM at 44.1 kHz
+stereo arrives (`TestLiveAudio`, `MOTTY_RDP_AUDIO=1`); the static rdpsnd
+channel's PDUs are covered by unit tests. On
 **xrdp** in Docker (amd64 under Rosetta): TLS without NLA, pixels via the RDPGFX
 path, keys typed as scancodes with Shift (`echo Key-Typed_1` shown in the xterm),
 and the headless Motty application end to end (`tools/e2e/rdp_e2e.txt`: add the host,

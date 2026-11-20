@@ -211,14 +211,48 @@ func (t *Terminal) csiStandard(final byte) {
 			t.restoreCursor()
 		}
 	case 't':
-		if t.arg(0, 0) == 18 {
-			b := append(t.scratch[:0], "\x1b[8;"...)
-			b = strconv.AppendInt(b, int64(t.rows), 10)
-			b = append(b, ';')
-			b = strconv.AppendInt(b, int64(t.cols), 10)
-			b = append(b, 't')
-			t.send(b)
+		t.reportWindowSize()
+	}
+}
+
+// reportWindowSize answers the size reports of XTWINOPS (CSI Ps t) with the
+// window size, height first: "CSI <answer> ; height ; width t". Programs that
+// place images by the character cell — the kitty graphics protocol, yazi,
+// chafa — ask for the text area and the cell in pixels and fall back to a
+// guessed cell when the terminal stays silent, so a terminal that can measure
+// its font answers. The pixel reports stay unanswered until the owner has
+// measured the cell (SetCellPixels): a wrong cell stretches the program's
+// image, which is worse than the guess it would otherwise pick.
+func (t *Terminal) reportWindowSize() {
+	reply := func(answer byte, height, width int) {
+		b := append(t.scratch[:0], '\x1b', '[')
+		b = append(b, answer, ';')
+		b = strconv.AppendInt(b, int64(height), 10)
+		b = append(b, ';')
+		b = strconv.AppendInt(b, int64(width), 10)
+		b = append(b, 't')
+		t.send(b)
+	}
+	switch report := t.arg(0, 0); report {
+	case 18:
+		reply('8', t.rows, t.cols)
+	case 19:
+		// The screen holds no chrome of its own, so it is the text area.
+		reply('9', t.rows, t.cols)
+	case 14, 15:
+		if t.cellPixelsW <= 0 || t.cellPixelsH <= 0 {
+			return
 		}
+		answer := byte('4') // 14: the text area; 15: the screen, which is the same here
+		if report == 15 {
+			answer = '5'
+		}
+		reply(answer, t.rows*t.cellPixelsH, t.cols*t.cellPixelsW)
+	case 16:
+		if t.cellPixelsW <= 0 || t.cellPixelsH <= 0 {
+			return
+		}
+		reply('6', t.cellPixelsH, t.cellPixelsW)
 	}
 }
 
