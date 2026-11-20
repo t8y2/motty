@@ -21,6 +21,7 @@ const (
 	shortcutCopy
 	shortcutPaste
 	shortcutNewTab
+	shortcutTerminalFolder
 	shortcutLocalTerminal
 	shortcutCloseTab
 	shortcutNextTab
@@ -46,6 +47,7 @@ const (
 	shortcutPaneMaximize
 	shortcutSettings
 	shortcutBroadcast
+	shortcutDuplicateTerminal
 	shortcutActionCount
 )
 
@@ -88,7 +90,9 @@ func defaultShortcuts() shortcutMap {
 	shortcuts.chords.Set(shortcutCopy, keymap.Chord{Modifiers: primary, Char: 'c'})
 	shortcuts.chords.Set(shortcutPaste, keymap.Chord{Modifiers: primary, Char: 'v'})
 	shortcuts.chords.Set(shortcutNewTab, keymap.Chord{Modifiers: primary, Char: 't'})
+	shortcuts.chords.Set(shortcutTerminalFolder, keymap.Chord{Modifiers: gfx.ModifierControl | gfx.ModifierShift, Char: 'r'})
 	shortcuts.chords.Set(shortcutLocalTerminal, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 't'})
+	shortcuts.chords.Set(shortcutDuplicateTerminal, keymap.Chord{Modifiers: gfx.ModifierAlt | gfx.ModifierShift, Char: 't'})
 	shortcuts.chords.Set(shortcutCloseTab, keymap.Chord{Modifiers: primary, Char: 'w'})
 	// Control+Tab is how browsers, VS Code and Windows Terminal switch tabs on
 	// every platform, the Mac included, where Command+Tab is the system's.
@@ -328,6 +332,10 @@ func (action shortcutAction) String() string {
 		return "paste"
 	case shortcutNewTab:
 		return "new_tab"
+	case shortcutDuplicateTerminal:
+		return "duplicate_terminal"
+	case shortcutTerminalFolder:
+		return "terminal_folder"
 	case shortcutLocalTerminal:
 		return "local_terminal"
 	case shortcutCloseTab:
@@ -577,6 +585,12 @@ func (state *State) shortcut(event gfx.KeyEvent, chord keymap.Chord) gfx.EventRe
 		}
 		return gfx.EventResult{}
 	}
+	if action == shortcutTerminalFolder {
+		return state.openTerminalFolder(event.Target)
+	}
+	if action == shortcutDuplicateTerminal {
+		return state.duplicateTerminal(event.Target)
+	}
 	return state.executeShortcut(action)
 }
 
@@ -734,6 +748,10 @@ func (state *State) executeShortcut(action shortcutAction) gfx.EventResult {
 		}
 	case shortcutNewTab:
 		state.Click(hitNewTab)
+	case shortcutTerminalFolder:
+		return state.openTerminalFolder(gfx.ID{})
+	case shortcutDuplicateTerminal:
+		return state.duplicateTerminal(gfx.ID{})
 	case shortcutLocalTerminal:
 		state.openLocalTerminal()
 		result.Focus = state.activeTerminalFocusHit()
