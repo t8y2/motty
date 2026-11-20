@@ -159,7 +159,7 @@ func TestClipboardChangeSkipsHostsWithoutSharing(t *testing.T) {
 // a picture, and only once: a click does not send it again, a new picture does,
 // and text copied since takes its place until a picture is copied again.
 func TestClipboardPictureReachesTheDesktopInFront(t *testing.T) {
-	picture := redSquarePNG(t)
+	picture := actualPastedPNG(t)
 	other := append([]byte(nil), picture...)
 	other[len(other)-1] ^= 0xFF // another copy, not another valid PNG: only the digest is compared
 	var text string

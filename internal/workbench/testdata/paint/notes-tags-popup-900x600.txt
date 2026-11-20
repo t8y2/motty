@@ -53,15 +53,15 @@ text "runbook ×" {327.51562 90 74.55469 20}
 text "runbook" {327.51562 90 47.554688 20}
 text "     Production ×" {408.0703 90 104.32617 20}
 text "     Production" {408.0703 90 77.32617 20}
-text "Heading" {223 124 28 26}
-text "Bold" {255 124 28 26}
-text "Inline code" {317 124 28 26}
-text "Code block" {349 124 28 26}
-text "Bullet list" {381 124 28 26}
-text "Numbered list" {413 124 28 26}
-text "Task list" {445 124 28 26}
-text "Quote" {477 124 28 26}
-text "Link" {509.70752 124 28 26}
+text "H1" {229.20703 124 28 26}
+text "B" {264.5874 124 28 26}
+text "`" {328.7373 124 28 26}
+text "{ }" {355.28906 124 28 26}
+text "•" {391.41797 124 28 26}
+text "1." {422.17383 124 28 26}
+text "☑" {452 124 28 26}
+text "❞" {484 124 28 26}
+text "↗" {517.7739 124 28 26}
 text "Updated 2026-01-02 11:04" {742.292 128 133.70801 18}
 text "1" {248.80002 168 8.400001 17}
 text "2" {248.80002 189 8.400001 17}
@@ -126,16 +126,16 @@ hit "Remove tag runbook" button {371.0703 86 22 24} disabled=false
 hit "runbook" button {318.51562 86 52.554688 24} disabled=false
 hit "Remove tag Production\nprod.example.com\ndeploy" button {481.39648 86 22 24} disabled=false
 hit "Production\nprod.example.com\ndeploy" button {399.0703 86 82.32617 24} disabled=false
-hit "Heading" button {223 124 28 26} disabled=false
-hit "Bold" button {255 124 28 26} disabled=false
+hit "H1" button {223 124 28 26} disabled=false
+hit "B" button {255 124 28 26} disabled=false
 hit "Italic" button {287 124 26 26} disabled=false
-hit "Inline code" button {317 124 28 26} disabled=false
-hit "Code block" button {349 124 28 26} disabled=false
-hit "Bullet list" button {381 124 28 26} disabled=false
-hit "Numbered list" button {413 124 28 26} disabled=false
-hit "Task list" button {445 124 28 26} disabled=false
-hit "Quote" button {477 124 28 26} disabled=false
-hit "Link" button {509 124 28 26} disabled=false
+hit "`" button {317 124 28 26} disabled=false
+hit "{ }" button {349 124 28 26} disabled=false
+hit "•" button {381 124 28 26} disabled=false
+hit "1." button {413 124 28 26} disabled=false
+hit "☑" button {445 124 28 26} disabled=false
+hit "❞" button {477 124 28 26} disabled=false
+hit "↗" button {509 124 28 26} disabled=false
 hit "Table" button {541 124 26 26} disabled=false
 hit "Horizontal rule" button {571 124 26 26} disabled=false
 hit "Markdown source" textfield {221 158 655 418} disabled=false

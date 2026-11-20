@@ -2,27 +2,28 @@ rect {{0 0 1400 900} {0.09411765 0.10980392 0.13725491 1} 0 0 {0 0 0 0} false #0
 rect {{9 467 186 36} {0.23529412 0.27450982 0.34117648 1} 7.5 0 {0 0 0 0} false #1}
 rect {{204 36 1189 857} {0.2627451 0.30588236 0.37254903 1} 11 0 {0 0 0 0} false #2}
 rect {{205 37 1187 855} {0.06666667 0.08235294 0.105882354 1} 10 0 {0 0 0 0} false #3}
-rect {{213 80 284 1} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #4}
-rect {{211 117 288 30} {0.23529412 0.27450982 0.34117648 1} 7.5 0 {211 87 288 799} true #5}
-rect {{505 37 1 855} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #6}
-rect {{564 45 602 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {0 0 0 0} false #8}
-rect {{565 46 600 26} {0.11146667 0.1264 0.1488 1} 6.5 0 {0 0 0 0} false #9}
-rect {{1280 45 28 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {0 0 0 0} false #11}
-rect {{1281 46 26 26} {0.11146667 0.1264 0.1488 1} 6.5 0 {0 0 0 0} false #12}
-rect {{1312 45 28 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {0 0 0 0} false #14}
-rect {{1313 46 26 26} {0.11146667 0.1264 0.1488 1} 6.5 0 {0 0 0 0} false #15}
-rect {{1344 45 28 28} {0.23529412 0.27450982 0.34117648 1} 7.5 0 {0 0 0 0} false #16}
-rect {{522 80 854 1} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #17}
-rect {{526 90 87.515625 20} {0.23529412 0.27450982 0.34117648 1} 10 0 {0 0 0 0} false #18}
-rect {{619.5156 90 74.55469 20} {0.23529412 0.27450982 0.34117648 1} 10 0 {0 0 0 0} false #19}
-rect {{700.0703 90 104.32617 20} {0.23529412 0.27450982 0.34117648 1} 10 0 {0 0 0 0} false #20}
-rect {{707.0703 93 14 14} {0.17254902 0.19607843 0.23529412 1} 3.36 0 {0 0 0 0} false #21}
-rect {{522 118 854 1} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #22}
-rect {{528 201 842 32} {0.2 0.23529412 0.2901961 1} 7.5 0 {522 127 854 749} true #23}
-rect {{529 202 840 30} {0.14509805 0.16862746 0.20784314 1} 6.5 0 {522 127 854 749} true #24}
-shadow {{564 45 602 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 0 0 0} false #7}
-shadow {{1280 45 28 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 0 0 0} false #10}
-shadow {{1312 45 28 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 0 0 0} false #13}
+rect {{213 81 284 36} {0.8862745 0.90588236 0.93333334 1} 7.5 0 {0 0 0 0} false #4}
+rect {{213 124 284 1} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #5}
+rect {{211 161 288 30} {0.23529412 0.27450982 0.34117648 1} 7.5 0 {211 131 288 755} true #6}
+rect {{505 37 1 855} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #7}
+rect {{564 45 602 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {0 0 0 0} false #9}
+rect {{565 46 600 26} {0.11146667 0.1264 0.1488 1} 6.5 0 {0 0 0 0} false #10}
+rect {{1280 45 28 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {0 0 0 0} false #12}
+rect {{1281 46 26 26} {0.11146667 0.1264 0.1488 1} 6.5 0 {0 0 0 0} false #13}
+rect {{1312 45 28 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {0 0 0 0} false #15}
+rect {{1313 46 26 26} {0.11146667 0.1264 0.1488 1} 6.5 0 {0 0 0 0} false #16}
+rect {{1344 45 28 28} {0.23529412 0.27450982 0.34117648 1} 7.5 0 {0 0 0 0} false #17}
+rect {{522 80 854 1} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #18}
+rect {{526 90 87.515625 20} {0.23529412 0.27450982 0.34117648 1} 10 0 {0 0 0 0} false #19}
+rect {{619.5156 90 74.55469 20} {0.23529412 0.27450982 0.34117648 1} 10 0 {0 0 0 0} false #20}
+rect {{700.0703 90 104.32617 20} {0.23529412 0.27450982 0.34117648 1} 10 0 {0 0 0 0} false #21}
+rect {{707.0703 93 14 14} {0.17254902 0.19607843 0.23529412 1} 3.36 0 {0 0 0 0} false #22}
+rect {{522 118 854 1} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #23}
+rect {{528 201 842 32} {0.2 0.23529412 0.2901961 1} 7.5 0 {522 127 854 749} true #24}
+rect {{529 202 840 30} {0.14509805 0.16862746 0.20784314 1} 6.5 0 {522 127 854 749} true #25}
+shadow {{564 45 602 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 0 0 0} false #8}
+shadow {{1280 45 28 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 0 0 0} false #11}
+shadow {{1312 45 28 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 0 0 0} false #14}
 text "Hosts" {52 114.5 37.180664 21}
 text "Workspaces" {52 154.5 80.37695 21}
 text "Monitor" {52 194.5 49.745117 21}
@@ -35,9 +36,10 @@ text "Snippets" {52 434.5 56.47168 21}
 text "Notes" {52 474.5 37.99414 21}
 text "Local Terminal" {52 815.5 94.36328 21}
 text "Settings" {52 855.5 52.759766 21}
-text "Operations" {255 92 236 20}
-text "Release runbook" {249 117 220 20}
-text "Ideas" {233 152 258 20}
+text "New note" {336.26904 81 61.461914 36}
+text "Operations" {255 136 236 20}
+text "Release runbook" {249 166 220 20}
+text "Ideas" {233 196 258 20}
 text "Release runbook" {575 48 580 22}
 text "operations ×" {535 90 87.515625 20}
 text "operations" {535 90 60.515625 20}
@@ -81,19 +83,19 @@ hit "Notes" menuitem {9 467 186 36} disabled=false
 hit "Local Terminal" menuitem {9 808 186 36} disabled=false
 hit "Settings" menuitem {9 848 186 36} disabled=false
 hit "Search notes" button {213 45 28 28} disabled=false
-hit "New note" button {243 45 28 28} disabled=false
-hit "New folder" button {273 45 28 28} disabled=false
-hit "Import Markdown" button {303 45 28 28} disabled=false
-hit "Link Markdown file" button {333 45 28 28} disabled=false
-hit "Link Markdown folder" button {363 45 28 28} disabled=false
-hit "Export ZIP" button {393 45 28 28} disabled=false
-hit "Collapse all" button {423 45 28 28} disabled=false
-hit "Scroll notes" group {211 87 288 799} disabled=false
-hit "Operations" button {211 92 20 20} disabled=false
-hit "Operations" button {231 87 268 30} disabled=false
-hit "Release runbook" button {211 117 288 30} disabled=false
-hit "More actions" button {469 118 28 28} disabled=false
-hit "Ideas" button {211 147 288 30} disabled=false
+hit "New folder" button {243 45 28 28} disabled=false
+hit "Import Markdown" button {273 45 28 28} disabled=false
+hit "Link Markdown file" button {303 45 28 28} disabled=false
+hit "Link Markdown folder" button {333 45 28 28} disabled=false
+hit "Export ZIP" button {363 45 28 28} disabled=false
+hit "Collapse all" button {393 45 28 28} disabled=false
+hit "New note" button {213 81 284 36} disabled=false
+hit "Scroll notes" group {211 131 288 755} disabled=false
+hit "Operations" button {211 136 20 20} disabled=false
+hit "Operations" button {231 131 268 30} disabled=false
+hit "Release runbook" button {211 161 288 30} disabled=false
+hit "More actions" button {469 162 28 28} disabled=false
+hit "Ideas" button {211 191 288 30} disabled=false
 hit "Resize note library" slider {501.5 37 8 855} disabled=false
 hit "Toggle library" button {524 45 28 28} disabled=false
 hit "Title" textfield {564 45 602 28} disabled=false

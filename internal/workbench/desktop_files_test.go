@@ -517,7 +517,7 @@ func TestDroppedFilesStayTheRemoteClipboardUntilSomethingNewIsCopied(t *testing.
 func TestDroppedFilesStayTheRemoteClipboardOverAnOlderPicture(t *testing.T) {
 	remote := newFileDesktop()
 	remote.offer = desktop.FileOffer{Files: 1}
-	picture := redSquarePNG(t)
+	picture := actualPastedPNG(t)
 	current := picture
 	state, session := fileDesktopState(t, remote, true, Options{
 		ClipboardFiles:    func() ([]string, error) { return nil, app.ErrNoFiles },

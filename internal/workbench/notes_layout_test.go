@@ -38,6 +38,57 @@ func TestNotesWorkspaceGivesTheDocumentItsWidth(t *testing.T) {
 	}
 }
 
+func TestNotesLibraryPrimaryActionSpansAboveTheList(t *testing.T) {
+	s := newTestState(t, freshOptions(t))
+	s.Click(hitNotes)
+	s.Click(hitNoteAdd)
+	var c gfx.Canvas
+	s.Paint(&c, gfx.Size{Width: 1400, Height: 900})
+	add, ok := hitByID(&c, hitNoteAdd)
+	if !ok {
+		t.Fatal("new note action is missing")
+	}
+	if add.Role != gfx.RoleButton || add.Label != s.noteText("New note", "新建笔记") {
+		t.Fatalf("new note action lacks button semantics: %+v", add)
+	}
+	search, searchOK := hitByID(&c, hitNoteSearchToggle)
+	if !searchOK || add.Bounds.X != search.Bounds.X || add.Bounds.Width != s.notes.page.library.Pos-16 || add.Bounds.Height < 36 {
+		t.Fatalf("new note action does not span the library: width=%v action=%+v", s.notes.page.library.Pos, add.Bounds)
+	}
+	row, ok := noteTreeRowHit(&c, &s.notes, s.notes.selected)
+	if !ok || add.Bounds.Y+add.Bounds.Height > row.Bounds.Y {
+		t.Fatalf("new note action is not above the list: action=%+v row=%+v", add.Bounds, row.Bounds)
+	}
+}
+
+func TestNotesEditorShowsAnInvitingEmptyState(t *testing.T) {
+	s := newTestState(t, freshOptions(t))
+	s.Click(hitNotes)
+	var c gfx.Canvas
+	s.Paint(&c, gfx.Size{Width: 1400, Height: 900})
+	title := s.noteText("Start with a note", "从一篇笔记开始")
+	foundTitle, foundDescription, foundLibraryPrompt := false, false, false
+	for _, text := range c.Texts() {
+		foundTitle = foundTitle || text.Value == title
+		foundDescription = foundDescription || strings.Contains(text.Value, s.noteText("Select a note", "从目录选择"))
+		foundLibraryPrompt = foundLibraryPrompt || text.Value == s.noteText("Your first working note starts here.", "第一条工作记录，从这里开始。")
+	}
+	if !foundTitle || !foundDescription || !foundLibraryPrompt {
+		t.Fatalf("empty state is incomplete: title=%v description=%v library=%v", foundTitle, foundDescription, foundLibraryPrompt)
+	}
+	for _, text := range c.Texts() {
+		if strings.Contains(text.Value, s.noteText("Notes stay on this device.", "笔记只保存在本机。")) {
+			t.Fatal("empty state incorrectly says synced notes stay on this device")
+		}
+		if text.Value == s.noteText("Select a note or create one to begin.", "选择笔记，或新建一篇笔记。") {
+			t.Fatal("legacy one-line empty prompt is still visible")
+		}
+		if text.Value == s.noteText("No notes yet. Create one above.", "暂无笔记，可点击上方新建。") {
+			t.Fatal("legacy library prompt is still visible")
+		}
+	}
+}
+
 // A note's name is centered in its tree row: the row's icon, name and action
 // button share one vertical centre.
 func TestNotesTreeTitleIsVerticallyCenteredInItsRow(t *testing.T) {

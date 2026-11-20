@@ -3,12 +3,16 @@
 package workbench
 
 import (
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
 	"github.com/vivaui/viva/text"
-	"os"
-	"testing"
+	"motty/internal/i18n"
 )
 
 func TestNotesNativeEditorPreviewAndComposition(t *testing.T) {
@@ -104,6 +108,62 @@ func TestNotesNativeEditorPreviewAndComposition(t *testing.T) {
 		t.Fatal("native source editor missing")
 	}
 }
+
+func TestNotesEmptyStateHeadlessScreenshots(t *testing.T) {
+	directory := os.Getenv("MOTTY_NOTES_EMPTY_SCREENSHOTS")
+	if directory != "" {
+		if err := os.MkdirAll(directory, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, capture := range []struct {
+		name  string
+		mode  appearanceMode
+		width int
+	}{
+		{"notes-empty-dark.png", appearancePinnedDark, 1400},
+		{"notes-empty-light.png", appearancePinnedLight, 1400},
+		{"notes-empty-narrow.png", appearancePinnedDark, 760},
+	} {
+		t.Run(capture.name, func(t *testing.T) {
+			state := newTestState(t, freshOptions(t))
+			state.language = i18n.Chinese
+			state.chooseAppearanceMode(capture.mode)
+			state.Click(hitNotes)
+			view, err := headless.Open(state.WindowConfig(app.Config{
+				Title: "Motty notes", Width: capture.width, Height: 900, Tree: Tree(),
+				Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
+			}), nil, headless.Options{Scale: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer view.Close()
+			if err := view.Wait(16 * time.Millisecond); err != nil {
+				t.Fatal(err)
+			}
+			if capture.width < 1000 {
+				if err := view.ClickLabel("显示 / 隐藏目录"); err != nil {
+					t.Fatal(err)
+				}
+				if err := view.Rest(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if directory != "" {
+				if err := view.Screenshot(filepath.Join(directory, capture.name)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := view.ClickLabel("新建笔记"); err != nil {
+				t.Fatal(err)
+			}
+			if len(state.notes.list) != 1 || state.notes.selected == "" {
+				t.Fatal("primary action did not create and select a note")
+			}
+		})
+	}
+}
+
 func slicesNoteHit(hits []gfx.Hit, id gfx.ID) bool {
 	for _, h := range hits {
 		if h.ID == id {
