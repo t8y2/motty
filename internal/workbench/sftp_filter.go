@@ -12,17 +12,16 @@ import (
 )
 
 var (
-	hitSFTPFilterToggle      = tree.ID(sftpHits, "sftp-filter-toggle")
-	hitSFTPFilter            = tree.ID(sftpHits, "sftp-filter")
-	hitSFTPFilterClear       = tree.ID(sftpHits, "sftp-filter-clear")
-	hitSFTPHiddenToggle      = tree.ID(sftpHits, "sftp-hidden-toggle")
-	hitSFTPHeaderMore        = tree.ID(sftpHits, "sftp-header-more")
-	hitSFTPHeaderFilter      = tree.ID(sftpHits, "sftp-header-filter")
-	hitSFTPHeaderHidden      = tree.ID(sftpHits, "sftp-header-hidden")
-	hitSFTPHeaderFollow      = tree.ID(sftpHits, "sftp-header-follow")
-	hitSFTPHeaderEditor      = tree.ID(sftpHits, "sftp-header-editor")
-	hitSFTPHeaderMenuDismiss = tree.ID(sftpHits, "sftp-header-menu-dismiss")
-	hitSFTPCoverage          = tree.ID(sftpHits, "sftp-local-coverage")
+	hitSFTPFilterToggle = tree.ID(sftpHits, "sftp-filter-toggle")
+	hitSFTPFilter       = tree.ID(sftpHits, "sftp-filter")
+	hitSFTPFilterClear  = tree.ID(sftpHits, "sftp-filter-clear")
+	hitSFTPHiddenToggle = tree.ID(sftpHits, "sftp-hidden-toggle")
+	hitSFTPHeaderMore   = tree.ID(sftpHits, "sftp-header-more")
+	hitSFTPHeaderFilter = tree.ID(sftpHits, "sftp-header-filter")
+	hitSFTPHeaderHidden = tree.ID(sftpHits, "sftp-header-hidden")
+	hitSFTPHeaderFollow = tree.ID(sftpHits, "sftp-header-follow")
+	hitSFTPHeaderEditor = tree.ID(sftpHits, "sftp-header-editor")
+	hitSFTPCoverage     = tree.ID(sftpHits, "sftp-local-coverage")
 )
 
 const sftpFilterMaxRunes = 256

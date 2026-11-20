@@ -438,13 +438,19 @@ func (state *State) declareSFTPPanel(c ui.C) {
 			}
 		})
 	})
-	if folder.headerMenuOpen && state.sftpHeaderMenuAvailable(view) {
-		rows := state.panelHeaderMenuRows(folder, view)
-		state.declareMenuAt(c, &folder.headerMenuOpen, s.moreButton.Rect(), false, hitSFTPHeaderMenuDismiss, &rows, func(id gfx.ID) {
-			state.clickSFTPPanelHeaderAction(session, view, id)
-		})
-	} else if !state.sftpHeaderMenuAvailable(view) {
-		folder.headerMenuOpen = false
+	if folder.headerMenuOpen {
+		// The menu hangs off the More button's own box: the page places it from
+		// the rectangle the control is laid out at, not the one the declaration
+		// can read before layout. A rect captured here is empty on the paint
+		// that opens the menu, which put the menu at the panel's corner.
+		if !state.sftpHeaderMenuAvailable(view) || !s.moreButton.Valid() {
+			folder.headerMenuOpen = false
+		} else {
+			rows := state.panelHeaderMenuRows(folder, view)
+			state.declareMenuOn(c, &folder.headerMenuOpen, s.moreButton, &rows, func(id gfx.ID) {
+				state.clickSFTPPanelHeaderAction(session, view, id)
+			})
+		}
 	}
 	if view.bookmarksOpen {
 		places := sftpPlaceBrowser{owner: state, session: session, view: view}
