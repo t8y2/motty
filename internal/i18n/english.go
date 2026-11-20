@@ -1804,6 +1804,7 @@ var englishTools = ToolsMessages{
 	SnippetShortcutInvalid:    "Use Control or Command plus one letter or digit. With Control, add Shift or Alt too, so terminal keys keep working.",
 	SnippetErrorName:          "Give the snippet a name.",
 	SnippetErrorCommand:       "Enter the command to send.",
+	SnippetErrorTooLong:       "This command is too long to save. Shorten it and try again.",
 	SnippetErrorTooMany:       "There are already as many snippets as can be kept. Delete one first.",
 	SnippetSave:               "Save",
 	SnippetPaletteFmt:         "Snippet: %s",

@@ -157,6 +157,23 @@ type recordPayload struct {
 	Data json.RawMessage `json:"d"`
 }
 
+// snippetRecordFits reports whether a snippet can be written as one record. A
+// snippet is stored as one configstore record, and the store refuses a payload
+// over MaxPayload. The editor measures the same JSON before it keeps a command,
+// so a command too large for the store is refused in the dialog instead of
+// being kept in memory and lost at the next start. The largest ordinal the
+// record format can carry makes the envelope an upper bound rather than a guess.
+func snippetRecordFits(entry snippet, order int) bool {
+	data, err := json.Marshal(savedSnippet{
+		Name: entry.Name, Command: entry.Command, Run: entry.Run, Group: entry.Group, Order: order,
+	})
+	if err != nil {
+		return false
+	}
+	payload, err := json.Marshal(recordPayload{Ord: 1 << 62, Data: data})
+	return err == nil && len(payload) <= configstore.MaxPayload
+}
+
 // entityField is a list in the state that is stored a record per item.
 type entityField struct {
 	field string // the JSON key in the state

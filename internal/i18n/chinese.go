@@ -1804,6 +1804,7 @@ var chineseTools = ToolsMessages{
 	SnippetShortcutInvalid:    "请使用 Control 或 Command 加一个字母或数字；使用 Control 时还需加 Shift 或 Alt，以免占用终端自带按键。",
 	SnippetErrorName:          "请给快捷命令起个名字。",
 	SnippetErrorCommand:       "请输入要发送的命令。",
+	SnippetErrorTooLong:       "命令过长，无法保存，请缩短后重试。",
 	SnippetErrorTooMany:       "快捷命令已达上限，请先删除一条。",
 	SnippetSave:               "保存",
 	SnippetPaletteFmt:         "快捷命令：%s",
