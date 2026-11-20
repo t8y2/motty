@@ -196,6 +196,28 @@ func TestMobaXtermSessionsKeepFoldersAndSkipOtherProtocols(t *testing.T) {
 	}
 }
 
+// MobaXterm writes a username taken from its saved credentials as "[name]".
+// The brackets are MobaXterm's notation, not part of the login.
+func TestMobaXtermUsernameDropsSavedCredentialBrackets(t *testing.T) {
+	text := "[Bookmarks]\r\nSubRep=\r\nImgNum=42\r\n" +
+		"Board=#109#0%10.10.82.114%22%[petalinux]%%-1%-1%%\r\n" +
+		"Typed=#109#0%10.10.82.113%22%petalinux%%-1%-1%%\r\n" +
+		"Half=#109#0%10.10.82.115%22%[petalinux%%-1%-1%%\r\n"
+	result, err := ParseMobaXterm(write(t, t.TempDir(), "s.mxtsessions", []byte(text)))
+	if err != nil || len(result.Entries) != 3 {
+		t.Fatalf("%+v %v", result, err)
+	}
+	if got := result.Entries[0].User; got != "petalinux" {
+		t.Fatalf("saved-credential username = %q, want the name inside the brackets", got)
+	}
+	if got := result.Entries[1].User; got != "petalinux" {
+		t.Fatalf("typed username = %q, want it unchanged", got)
+	}
+	if got := result.Entries[2].User; got != "[petalinux" {
+		t.Fatalf("username with one bracket = %q, want it unchanged", got)
+	}
+}
+
 func TestMobaXtermChineseEncoding(t *testing.T) {
 	text := "[Bookmarks]\r\nSubRep=客户\\生产\r\n中文主机=#109#0%web.example.test%22%root%\r\n"
 	legacy, err := simplifiedchinese.GB18030.NewEncoder().Bytes([]byte(text))

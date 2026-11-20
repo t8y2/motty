@@ -70,7 +70,9 @@ type menuEntry struct {
 	// pageContent makes it a row whose controls the page declares.
 	content     func(*gfx.Canvas, gfx.Rect, gfx.Theme)
 	pageContent func(ui.C, gfx.Rect)
-	height      float32
+	// trailing, when set, paints the area TrailingWidth reserved at the row's end.
+	trailing func(*gfx.Canvas, gfx.Rect, gfx.Theme)
+	height   float32
 }
 
 // menuRows collects the rows of a context menu before it is painted, so its
@@ -85,6 +87,14 @@ func (rows *menuRows) add(item components.ContextMenuItem) {
 	if rows.count < len(rows.entries) {
 		rows.entries[rows.count] = menuEntry{item: item}
 		rows.count++
+	}
+}
+
+// trailing reserves width at the end of the last row added, and paints it.
+func (rows *menuRows) trailing(width float32, paint func(*gfx.Canvas, gfx.Rect, gfx.Theme)) {
+	if rows.count > 0 && paint != nil {
+		rows.entries[rows.count-1].item.TrailingWidth = width
+		rows.entries[rows.count-1].trailing = paint
 	}
 }
 
@@ -181,6 +191,9 @@ func (rows *menuRows) declare(c ui.C, menu *ui.MenuItems, choose func(gfx.ID)) {
 			label += " · " + row.Shortcut
 		}
 		item := menu.Item(label).Icon(row.Icon).Disabled(row.Disabled)
+		if entry.trailing != nil {
+			item = item.Trailing(row.TrailingWidth, entry.trailing)
+		}
 		if row.Variant == components.ContextMenuItemDestructive {
 			item = item.Destructive()
 		}

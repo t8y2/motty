@@ -538,6 +538,7 @@ const (
 	modalXYTransfer
 	modalOpenLink
 	modalRenameTab
+	modalLocalStartupCommand
 	modalAIRename
 	modalCloseTabs
 	modalSessionLink

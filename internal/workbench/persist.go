@@ -54,6 +54,7 @@ type savedState struct {
 	NetworkProxy               string                  `json:"network_proxy,omitempty"`
 	TerminalOption             string                  `json:"terminalOption,omitempty"`
 	LocalShell                 string                  `json:"local_shell,omitempty"`
+	LocalStartupCommands       map[string]string       `json:"local_startup_commands,omitempty"` // the line each shell types when it starts, by choice path; this computer's own
 	HiddenShells               []string                `json:"hidden_shells,omitempty"`
 	LocalStart                 string                  `json:"local_start,omitempty"`
 	LastLocalDirectory         string                  `json:"last_local_directory,omitempty"`
@@ -535,6 +536,7 @@ func (state *State) snapshot() savedState {
 		SSHBrowser:                 string(state.sshBrowser),
 		TerminalOption:             state.terminalOption.String(),
 		LocalShell:                 state.localShell,
+		LocalStartupCommands:       maps.Clone(state.localStartupCommands),
 		HiddenShells:               slices.Clone(state.hiddenShells),
 		LocalStart:                 state.localStart.String(),
 		LastLocalDirectory:         state.lastLocalDirectory,
@@ -1060,6 +1062,7 @@ func (state *State) restoreLocal(saved savedState) {
 	state.terminalToolbarPosition = terminalToolbarPositionFromString(saved.TerminalToolbarPosition)
 	state.terminalToolbarSize = terminalToolbarSizeFromString(saved.TerminalToolbarSize)
 	state.localShell = saved.LocalShell
+	state.localStartupCommands = cleanLocalStartupCommands(saved.LocalStartupCommands)
 	state.hiddenShells = cleanShellPaths(saved.HiddenShells)
 	state.recentConnectSort = saved.RecentConnectSort
 	state.localShellsExpanded = saved.LocalShellsExpanded

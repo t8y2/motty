@@ -328,6 +328,12 @@ type Messages struct {
 	SettingsLocalShell                     string
 	SettingsLocalShellDescription          string
 	SettingsLocalShellEmpty                string
+	SettingsLocalStartupCommands           string
+	SettingsLocalStartupDescription        string
+	SettingsLocalStartupCommand            string
+	SettingsLocalStartupEdit               string
+	SettingsLocalStartupSave               string
+	SettingsLocalStartupInvalid            string
 	LocalShellDefault                      string
 	ShellEyeHide                           string
 	ShellEyeShow                           string

@@ -771,12 +771,23 @@ func parseMobaSession(result *Result, name, value, group, source string) {
 	port, _ := strconv.Atoi(fields[2])
 	switch fields[0] {
 	case "0":
-		result.add(Entry{Name: name, Group: group, Host: fields[1], Port: port, User: fields[3], Source: source})
+		result.add(Entry{Name: name, Group: group, Host: fields[1], Port: port, User: mobaUsername(fields[3]), Source: source})
 	case "1":
 		result.add(Entry{Name: name, Group: group, Protocol: Telnet, Host: fields[1], Port: port, Source: source})
 	default:
 		result.Skipped++
 	}
+}
+
+// mobaUsername returns the login of a MobaXterm session. MobaXterm shows a
+// login taken from its saved credentials in square brackets, and the export
+// stores that text verbatim ("[petalinux]"); the brackets are MobaXterm's own
+// notation and are not part of the name the server receives.
+func mobaUsername(field string) string {
+	if len(field) >= 2 && field[0] == '[' && field[len(field)-1] == ']' {
+		return field[1 : len(field)-1]
+	}
+	return field
 }
 
 // ---- WindTerm ----

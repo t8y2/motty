@@ -2844,6 +2844,8 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareKeyPassphraseDialog(c)
 	case modalRenameTab:
 		state.declareTabRenameDialog(c)
+	case modalLocalStartupCommand:
+		state.declareLocalStartupCommandDialog(c)
 	case modalAIRename:
 		state.declareAIRenameDialog(c)
 	case modalHostImportResult:

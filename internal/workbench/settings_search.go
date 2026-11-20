@@ -214,6 +214,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsTerminal, m.SettingsLocalStart, m.SettingsLocalStartDescription)
 	if localShellSettingVisible() {
 		row(settingsTerminal, m.SettingsLocalShell, m.SettingsLocalShellDescription)
+		row(settingsTerminal, m.SettingsLocalStartupCommands, m.SettingsLocalStartupDescription)
 	}
 	group(settingsTerminal, tools.SchemeGroup, tools.SchemeGroup, tools.SchemeDescription)
 	row(settingsTerminal, tools.HighlightBuiltin, tools.HighlightBuiltinDescription)

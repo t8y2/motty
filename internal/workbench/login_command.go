@@ -55,9 +55,18 @@ type loginCommand struct {
 	promptVersion uint64
 	last          time.Duration
 	seen          bool
+	// local marks a local shell's startup command. Such a shell reports its
+	// prompt from the moment it starts, because the integration is part of its
+	// launch, so the first prompt carries no command-start marker and promptReady
+	// never turns true before the first command; it is typed at the prompt's end
+	// instead.
+	local bool
 }
 
 func (login *loginCommand) arm(line string) { *login = loginCommand{line: line} }
+
+// armLocal freezes a local shell's startup command.
+func (login *loginCommand) armLocal(line string) { *login = loginCommand{line: line, local: true} }
 
 // output notes that the shell wrote something at now, while a command waits.
 func (login *loginCommand) output(now time.Duration) {
@@ -81,18 +90,19 @@ func (state *State) loginQuiet(session *Session) time.Duration {
 	return loginCommandQuiet
 }
 
-// runLoginCommand types the login command when the shell is ready for it.
+// runLoginCommand types the initialization command when the shell is ready.
 func (state *State) runLoginCommand(session *Session) {
 	t := session.term
-	if t == nil || t.login.line == "" || t.shell == nil || t.ended || t.screen.Modes().AltScreen {
+	if t == nil || t.login.line == "" || t.shell == nil || t.ended {
 		return
 	}
-	if t.injection.holding() {
-		// The shell is still receiving its integration; the login command
-		// follows it, in order.
+	if t.screen.Modes().AltScreen {
+		if t.login.local {
+			t.login = loginCommand{} // startup handed control to a full-screen program
+		}
 		return
 	}
-	if t.login.paused {
+	if t.injection.holding() || t.login.paused {
 		return
 	}
 	if t.login.waitPrompt && (!t.promptReady || t.promptDirty || t.promptVersion <= t.login.promptVersion) {
@@ -101,9 +111,12 @@ func (state *State) runLoginCommand(session *Session) {
 	now := state.now()
 	switch {
 	case t.promptReady && !t.promptDirty:
+	case t.login.local && t.promptStarted && t.inputLine && !t.promptDirty && t.submittedLines == 0:
+		// Locally installed prompt hooks report the first A/B before any C.
+		// CMD never reports C. Both are ready for the one startup line, without
+		// claiming command-reporting support for other terminal features.
 	case !t.login.seen || t.folderIntegrationSeen:
-		// Nothing has been said yet, or the integration is working and will say
-		// when the prompt is ready.
+		// Once hooks report, only their prompt end authorizes a command.
 		return
 	case t.login.quietWait(now, state.loginQuiet(session)) > 0:
 		return
@@ -111,23 +124,31 @@ func (state *State) runLoginCommand(session *Session) {
 	state.sendInitializationCommand(t)
 }
 
-// requestLoginCommandFrames asks for the frame that lets the quiet rule apply to
-// a shell whose output has stopped. A terminal with no login command waiting
-// asks for nothing.
+// requestLoginCommandFrames schedules the existing quiet fallback only while
+// an unreported prompt still has an initialization command waiting.
 func (state *State) requestLoginCommandFrames(canvas *gfx.Canvas) {
 	for index := range state.sessions {
 		session := &state.sessions[index]
 		t := session.term
-		if t == nil || t.login.line == "" || t.login.paused || t.login.waitPrompt || !t.login.seen || t.folderIntegrationSeen || t.shell == nil {
+		if t == nil || t.login.line == "" || t.login.paused || t.login.waitPrompt || !t.login.seen || t.folderIntegrationSeen || t.shell == nil || t.ended {
 			continue
 		}
 		canvas.RequestFrameIn(max(t.login.quietWait(state.now(), state.loginQuiet(session)), time.Millisecond))
 	}
 }
 
-// armInitialization freezes both commands for this shell, independently of later host edits.
-func (t *terminal) armInitialization(session *Session) {
+// armInitialization freezes both commands for this shell, independently of later edits.
+func (t *terminal) armInitialization(state *State, session *Session) {
 	t.login = loginCommand{}
+	if session.isLocal() {
+		// A local shell's startup command belongs to the shell it runs, whether
+		// the tab chose one or the settings' default did; the connection froze
+		// that choice when it was made, as it froze the folder.
+		if local, ok := session.conn.(*localConn); ok {
+			t.login.armLocal(state.localStartupCommand(local.shell))
+		}
+		return
+	}
 	if !workspaceCommandHost(session.host) || session.containerCommand != "" {
 		return
 	}
@@ -145,7 +166,9 @@ func (t *terminal) armInitialization(session *Session) {
 }
 
 func (t *terminal) pauseInitialization() {
-	if t.login.workspace != "" {
+	if t.login.local {
+		t.login = loginCommand{} // never interleave startup with user/assistant input
+	} else if t.login.workspace != "" {
 		t.login.paused = true
 	}
 }
@@ -154,7 +177,9 @@ func (state *State) sendInitializationCommand(t *terminal) {
 	login := t.login
 	if !t.sendAssistant([]byte(login.line + "\r")) {
 		t.login.paused = true
-		if login.workspace != "" {
+		if login.local {
+			state.showActionWarning(state.messages.SettingsLocalStartupCommand, state.messages.TerminalInput.SendFailed)
+		} else if login.workspace != "" {
 			state.showActionWarning(state.messages.WorkspaceCommandField, state.messages.TerminalInput.SendFailed)
 		}
 		return
