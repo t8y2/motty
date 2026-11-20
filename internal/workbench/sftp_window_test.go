@@ -341,6 +341,39 @@ func TestSFTPWindowCloseConfirmsAndDoesNotCloseSourceConnection(t *testing.T) {
 	}
 }
 
+// A remote name that Windows rejects must not become the local destination:
+// the transfer window used to pass the raw name to the worker, so a file named
+// with a colon failed at CreateFile on Windows. The docked panel, the clipboard
+// and the download command all went through SafeLocalName; this window is the
+// same path and must not be the exception.
+func TestSFTPWindowDownloadKeepsLocalNamesUsable(t *testing.T) {
+	state, w, remote, host, localDir := dualSFTPFixture(t, 1)
+	const name = "CustomerCompany_2026-11-19 18:26:51.xlsx"
+	const content = "report"
+	remote.mu.Lock()
+	remote.entries["/home/test"] = append(remote.entries["/home/test"], workbenchFileInfo{
+		name: name, size: int64(len(content)), mode: 0o644, when: time.Unix(1_700_000_300, 0),
+	})
+	remote.files["/home/test/"+name] = []byte(content)
+	remote.mu.Unlock()
+	w.queueEntries(false, []sftpclient.Entry{{Name: name}}, "/home/test", localDir)
+	dualWait(t, state, w, host.windows[0].view, func() bool {
+		return len(w.view.transfers) == 1 && !sftpTransfersActive(w.view.transfers) &&
+			!w.view.busy && !w.view.refreshAfterTransfers && w.pendingLocal == "" && !w.localRefresh
+	})
+	safe := sftpclient.SafeLocalName(name)
+	if safe == name {
+		t.Fatalf("test name %q is already local-safe", name)
+	}
+	got, err := os.ReadFile(filepath.Join(localDir, safe))
+	if err != nil || string(got) != content {
+		t.Fatalf("download did not land under the safe name %q: %q %v (transfers %+v)", safe, got, err, w.view.transfers)
+	}
+	if _, err := os.Stat(filepath.Join(localDir, name)); err == nil {
+		t.Fatalf("download kept the local-unsafe name %q", name)
+	}
+}
+
 func TestSFTPWindowLayoutAndEntryAtDisplayScales(t *testing.T) {
 	for _, scale := range []float64{1, 1.25, 1.5, 1.75, 2} {
 		t.Run(fmt.Sprintf("%.2f", scale), func(t *testing.T) {
