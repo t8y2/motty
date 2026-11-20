@@ -443,6 +443,7 @@ func (state *State) paintConnectionSettings(page *settingsPage) {
 			settingsChoiceRow(page, messages.SettingsNetworkProxy, messages.SettingsNetworkProxyDescription, &state.networkProxy, settingsNetworkProxyChoices[:], state.settingsNetworkProxyLabel,
 				func() { state.save() }, nil)
 			state.paintOutboundProxyRow(page)
+			state.paintSSHBrowserSetting(page)
 		})
 		state.paintSSHSyncSettings(page)
 		state.paintHostTagSettings(page)

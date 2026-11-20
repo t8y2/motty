@@ -18,6 +18,7 @@ import (
 	"motty/internal/configstore"
 	"motty/internal/i18n"
 	"motty/internal/monitoring"
+	"motty/internal/sshbrowser"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
 )
@@ -152,6 +153,7 @@ type savedState struct {
 	SFTPBookmarks           []savedBookmark     `json:"sftp_bookmarks,omitempty"`
 	SFTPLocalBookmarks      []string            `json:"sftp_local_bookmarks,omitempty"`
 	OutboundProxy           *savedOutboundProxy `json:"outbound_proxy,omitempty"`
+	SSHBrowser              string              `json:"ssh_browser,omitempty"` // which Chromium-family browser the SSH tab opens
 	HighlightBuiltin        string              `json:"highlight_builtin,omitempty"`
 	Highlights              []savedHighlight    `json:"highlights,omitempty"`
 	Snippets                []savedSnippet      `json:"snippets,omitempty"`
@@ -528,6 +530,7 @@ func (state *State) snapshot() savedState {
 		VerticalTabsAutoHide:       state.verticalTabs.autoHide,
 		VerticalTabsGrouping:       state.verticalTabs.grouping,
 		NetworkProxy:               state.networkProxy.String(),
+		SSHBrowser:                 string(state.sshBrowser),
 		TerminalOption:             state.terminalOption.String(),
 		LocalShell:                 state.localShell,
 		HiddenShells:               slices.Clone(state.hiddenShells),
@@ -1087,6 +1090,7 @@ func (state *State) restoreLocal(saved savedState) {
 	state.messages = i18n.For(state.language)
 	state.appearanceMode = appearanceModeFromString(saved.Theme)
 	state.networkProxy = networkProxyModeFromString(saved.NetworkProxy)
+	state.sshBrowser = sshbrowser.ParseFamily(saved.SSHBrowser)
 	state.syncNativeAppearance()
 	// The theme setAppearance builds copies the metrics by value, so the saved
 	// text size must be in effect before it runs.

@@ -21,6 +21,7 @@ import (
 	"motty/internal/highlight"
 	"motty/internal/i18n"
 	"motty/internal/sessionlog"
+	"motty/internal/sshbrowser"
 	"motty/internal/sshconn"
 	"motty/internal/systemproxy"
 	layoutcore "motty/internal/workspace"
@@ -699,11 +700,14 @@ type State struct {
 	post func(func())
 	// setMenuBar installs the macOS menu bar; menuBarSig is the state it was
 	// built for, so Wake rebuilds it only when enablement or language changed.
-	setMenuBar          func([]app.Menu) error
-	menuBarSig          string
-	appearance          appearance
-	appearanceMode      appearanceMode
-	networkProxy        networkProxyMode
+	setMenuBar     func([]app.Menu) error
+	menuBarSig     string
+	appearance     appearance
+	appearanceMode appearanceMode
+	networkProxy   networkProxyMode
+	// sshBrowser is the Chromium-family browser the SSH tab's browser opens.
+	// Automatic takes the first one installed.
+	sshBrowser          sshbrowser.Family
 	lookupSystemProxy   func() systemproxy.Settings
 	stopAppearanceWatch func()
 	stopLinkWatch       func()
