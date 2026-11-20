@@ -297,6 +297,99 @@ func (r *stalledSFTPRemote) OpenTransferFile(name string, flags int) (sftpclient
 }
 func (r *stalledSFTPRemote) Close() error { r.closeOnce.Do(func() { close(r.release) }); return nil }
 
+// queueHitPainted reports whether a queue control is in the last paint.
+func queueHitPainted(view *headless.Session, id gfx.ID) bool {
+	for _, hit := range view.Snapshot().Hits {
+		if hit.ID == id && !hit.Block {
+			return true
+		}
+	}
+	return false
+}
+
+// A batch upload that meets existing destinations puts one conflict choice in
+// the window's own queue, matching the transfer center's bulk recovery instead
+// of asking for every file separately.
+func TestSFTPWindowQueueResolvesAllConflicts(t *testing.T) {
+	state, w, remote, host, localDir := dualSFTPFixture(t, 1)
+	view := host.windows[0].view
+	for _, name := range []string{"notes.txt", "dup.txt"} {
+		if err := os.WriteFile(filepath.Join(localDir, name), []byte("new "+name), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	remote.mu.Lock()
+	remote.entries["/home/test"] = append(remote.entries["/home/test"], workbenchFileInfo{
+		name: "dup.txt", size: 3, mode: 0o644, when: time.Unix(1_700_000_400, 0),
+	})
+	remote.files["/home/test/dup.txt"] = []byte("old")
+	remote.mu.Unlock()
+	w.queueEntries(true, []sftpclient.Entry{{Name: "notes.txt"}, {Name: "dup.txt"}}, localDir, w.view.path)
+	settled := func() bool {
+		return len(w.view.transfers) == 2 && !sftpTransfersActive(w.view.transfers) &&
+			!w.view.busy && !w.view.refreshAfterTransfers && w.pendingLocal == "" && !w.localRefresh
+	}
+	dualWait(t, state, w, view, settled)
+	if w.queueCount() != 2 || w.ui.queueConflicts != 2 {
+		t.Fatalf("queue did not report both conflicts: count=%d conflicts=%d", w.queueCount(), w.ui.queueConflicts)
+	}
+	view.Rest()
+	if !queueHitPainted(view, hitSFTPQueueReplaceAll) || !queueHitPainted(view, hitSFTPQueueSkipAll) {
+		t.Fatal("the queue did not paint its conflict choices")
+	}
+
+	// Overwriting asks first, the same two-step the transfer center uses.
+	w.click(hitSFTPQueueReplaceAll)
+	if len(w.ui.queueBatch.targets) != 2 {
+		t.Fatalf("replace all captured %d targets", len(w.ui.queueBatch.targets))
+	}
+	if w.ui.queueBatch.action != state.messages.Transfers.Replace {
+		t.Fatalf("replace all described itself as %q", w.ui.queueBatch.action)
+	}
+	w.click(hitSFTPQueueReplaceCancel)
+	if len(w.ui.queueBatch.targets) != 0 {
+		t.Fatal("canceling the confirmation left the batch pending")
+	}
+
+	w.click(hitSFTPQueueReplaceAll)
+	w.click(hitSFTPQueueReplaceConfirm)
+	dualWait(t, state, w, view, func() bool {
+		return settled() && w.ui.queueConflicts == 0
+	})
+	remote.mu.Lock()
+	notes, dup := string(remote.files["/home/test/notes.txt"]), string(remote.files["/home/test/dup.txt"])
+	remote.mu.Unlock()
+	if notes != "new notes.txt" || dup != "new dup.txt" {
+		t.Fatalf("replace all did not upload both files: notes=%q dup=%q", notes, dup)
+	}
+}
+
+func TestSFTPWindowQueueSkipsAllConflicts(t *testing.T) {
+	state, w, remote, host, localDir := dualSFTPFixture(t, 1)
+	view := host.windows[0].view
+	if err := os.WriteFile(filepath.Join(localDir, "notes.txt"), []byte("new notes"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	w.queueEntries(true, []sftpclient.Entry{{Name: "notes.txt"}}, localDir, w.view.path)
+	dualWait(t, state, w, view, func() bool {
+		return len(w.view.transfers) == 1 && !sftpTransfersActive(w.view.transfers) &&
+			!w.view.busy && !w.view.refreshAfterTransfers && w.pendingLocal == "" && !w.localRefresh
+	})
+	if w.queueCount() != 1 || w.ui.queueConflicts != 1 {
+		t.Fatalf("queue did not report the conflict: count=%d conflicts=%d", w.queueCount(), w.ui.queueConflicts)
+	}
+	w.click(hitSFTPQueueSkipAll)
+	dualWait(t, state, w, view, func() bool {
+		return !sftpTransfersActive(w.view.transfers) && w.ui.queueConflicts == 0
+	})
+	remote.mu.Lock()
+	notes := string(remote.files["/home/test/notes.txt"])
+	remote.mu.Unlock()
+	if notes != "hello world" {
+		t.Fatalf("skip all overwrote the destination: %q", notes)
+	}
+}
+
 func TestSFTPWindowCloseConfirmsAndDoesNotCloseSourceConnection(t *testing.T) {
 	state, w, remote, host, dir := dualSFTPFixture(t, 1.5)
 	view := host.windows[0].view
@@ -338,6 +431,39 @@ func TestSFTPWindowCloseConfirmsAndDoesNotCloseSourceConnection(t *testing.T) {
 	conn.mu.Unlock()
 	if canceled != 0 || source.files == nil || source.files.worker == nil {
 		t.Fatal("closing SFTP canceled the shared source connection")
+	}
+}
+
+// A remote name that Windows rejects must not become the local destination:
+// the transfer window used to pass the raw name to the worker, so a file named
+// with a colon failed at CreateFile on Windows. The docked panel, the clipboard
+// and the download command all went through SafeLocalName; this window is the
+// same path and must not be the exception.
+func TestSFTPWindowDownloadKeepsLocalNamesUsable(t *testing.T) {
+	state, w, remote, host, localDir := dualSFTPFixture(t, 1)
+	const name = "CustomerCompany_2026-11-19 18:26:51.xlsx"
+	const content = "report"
+	remote.mu.Lock()
+	remote.entries["/home/test"] = append(remote.entries["/home/test"], workbenchFileInfo{
+		name: name, size: int64(len(content)), mode: 0o644, when: time.Unix(1_700_000_300, 0),
+	})
+	remote.files["/home/test/"+name] = []byte(content)
+	remote.mu.Unlock()
+	w.queueEntries(false, []sftpclient.Entry{{Name: name}}, "/home/test", localDir)
+	dualWait(t, state, w, host.windows[0].view, func() bool {
+		return len(w.view.transfers) == 1 && !sftpTransfersActive(w.view.transfers) &&
+			!w.view.busy && !w.view.refreshAfterTransfers && w.pendingLocal == "" && !w.localRefresh
+	})
+	safe := sftpclient.SafeLocalName(name)
+	if safe == name {
+		t.Fatalf("test name %q is already local-safe", name)
+	}
+	got, err := os.ReadFile(filepath.Join(localDir, safe))
+	if err != nil || string(got) != content {
+		t.Fatalf("download did not land under the safe name %q: %q %v (transfers %+v)", safe, got, err, w.view.transfers)
+	}
+	if _, err := os.Stat(filepath.Join(localDir, name)); err == nil {
+		t.Fatalf("download kept the local-unsafe name %q", name)
 	}
 }
 

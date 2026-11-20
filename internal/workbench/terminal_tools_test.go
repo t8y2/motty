@@ -208,7 +208,7 @@ func TestEveryColorSchemeIsLegible(t *testing.T) {
 			t.Errorf("scheme %q is duplicated or unnamed", scheme.id)
 		}
 		seen[scheme.id] = true
-		for _, slot := range highlight.Slots() {
+		for _, slot := range highlight.Colors() {
 			ink := scheme.ansi[slot.ANSI()]
 			if contrast(ink, scheme.background) < 2.0 {
 				t.Errorf("%s: highlight %s has contrast %.1f against its background", scheme.name, slot.Name(), contrast(ink, scheme.background))
@@ -272,18 +272,18 @@ func TestAddingAHighlightRuleThroughTheDialogCompilesKeepsAndRestoresIt(t *testi
 	if err := driver.Click(chip.Bounds.X+chip.Bounds.Width/2, chip.Bounds.Y+chip.Bounds.Height/2); err != nil {
 		t.Fatal(err)
 	}
-	if state.highlighting.slot != highlight.Green {
-		t.Fatalf("the green chip did not choose its color: slot %v", state.highlighting.slot)
+	if state.highlighting.color != highlight.Green {
+		t.Fatalf("the green chip did not choose its color: slot %v", state.highlighting.color)
 	}
 	state.Click(hitHighlightSubmit)
 	if state.modal != modalNone || len(state.highlighting.rules) != 1 {
 		t.Fatalf("modal %d, rules %v", state.modal, state.highlighting.rules)
 	}
 	rule := state.highlighting.rules[0]
-	if rule.Pattern != "5\\d\\d" || !rule.Regex || rule.Slot != highlight.Green {
+	if rule.Pattern != "5\\d\\d" || !rule.Regex || rule.Color != highlight.Green {
 		t.Fatalf("rule = %+v", rule)
 	}
-	if !state.highlights.Mark([]byte("HTTP 503"), make([]highlight.Slot, 8)) {
+	if !state.highlights.Mark([]byte("HTTP 503"), make([]highlight.Color, 8)) {
 		t.Fatal("the new rule is not in the compiled set")
 	}
 
@@ -589,5 +589,28 @@ func BenchmarkPrepareALogLine(b *testing.B) {
 				cache.row(row, 120, -1, cellSpan{}, &look, false)
 			}
 		})
+	}
+}
+
+// An explicit color survives the state file and the restart that reads it, as
+// the named colors do.
+func TestAHighlightRuleWithAnExplicitColorIsKeptAcrossRestarts(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	ink := highlight.RGB(0x50, 0xfa, 0x7b)
+	state.highlighting.rules = []highlightRule{{Pattern: "CUSTOMKEY", Color: ink}}
+	state.recompileHighlights()
+	state.save()
+	saved, _, err := loadState(options.StatePath)
+	if err != nil || len(saved.Highlights) != 1 || saved.Highlights[0].Color != "#50fa7b" {
+		t.Fatalf("saved highlights = %+v, %v; want #50fa7b", saved.Highlights, err)
+	}
+	restarted := newTestState(t, options)
+	if len(restarted.highlighting.rules) != 1 || restarted.highlighting.rules[0].Color != ink {
+		t.Fatalf("restored rules = %+v, want %v", restarted.highlighting.rules, ink)
+	}
+	marks := make([]highlight.Color, len("CUSTOMKEY"))
+	if !restarted.highlights.Mark([]byte("CUSTOMKEY"), marks) || marks[0] != ink {
+		t.Fatalf("restored rule did not mark with its explicit color: %v", marks)
 	}
 }

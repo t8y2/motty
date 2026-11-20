@@ -521,7 +521,7 @@ func (w *sftpWindow) queueEntries(fromLocal bool, entries []sftpclient.Entry, so
 		if fromLocal {
 			_, accepted = w.view.worker.QueueUpload(filepath.Join(sourceDir, entry.Name), path.Join(targetDir, entry.Name), entry.IsDir() && !entry.IsLink(), sftpclient.ExistingFail)
 		} else {
-			_, accepted = w.view.worker.QueueDownload(path.Join(sourceDir, entry.Name), filepath.Join(targetDir, entry.Name), entry.IsDir(), sftpclient.ExistingFail)
+			_, accepted = w.view.worker.QueueDownload(path.Join(sourceDir, entry.Name), filepath.Join(targetDir, safeLocalName(entry.Name)), entry.IsDir(), sftpclient.ExistingFail)
 		}
 		if accepted {
 			queued++

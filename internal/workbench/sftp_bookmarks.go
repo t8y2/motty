@@ -40,8 +40,6 @@ var (
 	hitSFTPProfileQuickMenu    = tree.ID(sftpWindowHits, "profile-quick-menu")
 	hitSFTPProfileQuickItems   = tree.Sub(sftpWindowHits, tree.Name("profile-quick-items"))
 	hitSFTPProfileQuickBar     = tree.ID(sftpWindowHits, "profile-quick-scroll")
-	hitSFTPProfileHover        = tree.ID(sftpWindowHits, "profile-hover")
-	hitSFTPProfileHoverItems   = tree.Sub(sftpWindowHits, tree.Name("profile-hover-items"))
 )
 
 type sftpBookmarkEditor struct {

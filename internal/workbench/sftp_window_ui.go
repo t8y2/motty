@@ -2,7 +2,6 @@ package workbench
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
@@ -59,6 +58,10 @@ var (
 	sftpWindowQueueStatus        = tree.Sub(sftpWindowHits, tree.Name("queue-status"))
 	hitSFTPQueueDetails          = tree.ID(sftpWindowHits, "queue-details")
 	hitSFTPQueueDetailsDismiss   = tree.ID(sftpWindowHits, "queue-details-dismiss")
+	hitSFTPQueueReplaceAll       = tree.ID(sftpWindowHits, "queue-replace-all")
+	hitSFTPQueueSkipAll          = tree.ID(sftpWindowHits, "queue-skip-all")
+	hitSFTPQueueReplaceConfirm   = tree.ID(sftpWindowHits, "queue-replace-confirm")
+	hitSFTPQueueReplaceCancel    = tree.ID(sftpWindowHits, "queue-replace-cancel")
 )
 
 type sftpWindowUI struct {
@@ -95,26 +98,23 @@ type sftpWindowUI struct {
 	columnWidths     [2][3]float32
 	// split is the divider between the panes. It holds the position in pixels and
 	// keeps the share across a window resize; the page declares it as ui.Splitter.
-	split               ui.SplitterState
-	tooltip             components.HoverTooltip
-	menuOpen            bool
-	menuAt              gfx.Point
-	queueBounds         gfx.Rect
-	queueScroll         *ui.ScrollState
-	queueEntries        []int
-	queueRevision       uint64
-	queueDetails        transferDetails
-	sort                [2]sftpWindowSort
-	headerAnchor        [2]ui.Box
-	selection           [2]sftpWindowSelection
-	profileQuickOpen    bool
-	profileQuickFocus   bool
-	profileHoverOpen    bool
-	profileHoverBox     ui.Box
-	profileQuickBox     ui.Box
-	profileHoverTrigger gfx.ID
-	profileHoverArmed   bool
-	profileHoverSince   time.Duration
+	split             ui.SplitterState
+	tooltip           components.HoverTooltip
+	menuOpen          bool
+	menuAt            gfx.Point
+	queueBounds       gfx.Rect
+	queueScroll       *ui.ScrollState
+	queueEntries      []int
+	queueRevision     uint64
+	queueConflicts    int
+	queueBatch        transferBatch
+	queueDetails      transferDetails
+	sort              [2]sftpWindowSort
+	headerAnchor      [2]ui.Box
+	selection         [2]sftpWindowSelection
+	profileQuickOpen  bool
+	profileQuickFocus bool
+	profileQuickBox   ui.Box
 }
 
 // sftpWindowScratch is the room one pane's declaration leaves for what is
@@ -216,9 +216,7 @@ func (w *sftpWindow) paint(canvas *gfx.Canvas, size gfx.Size) {
 		w.paintForeignDrag(canvas)
 	}
 	w.notices.paint(canvas, theme, gfx.Rect{Width: size.Width, Height: size.Height})
-	if !w.ui.profileHoverOpen {
-		w.ui.tooltip.Paint(canvas, theme, gfx.Rect{Width: size.Width, Height: size.Height}, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
-	}
+	w.ui.tooltip.Paint(canvas, theme, gfx.Rect{Width: size.Width, Height: size.Height}, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
 	if !w.pendingFocus.IsZero() {
 		canvas.RequestFocus(w.pendingFocus)
 		w.pendingFocus = gfx.ID{}
@@ -264,7 +262,7 @@ func (w *sftpWindow) declareWindowBody(c ui.C) {
 	size := w.ui.size
 	bounds := w.windowBodyBounds()
 	queue := w.queueCount()
-	body, queueRect, status := sftpTabPaneRects(bounds, queue)
+	body, queueRect, status := sftpTabPaneRects(bounds, queue, w.ui.queueConflicts)
 	w.ui.body, w.ui.queue = body, queueRect
 	firstLocal := w.owner.sftpWindowOrder == sftpLocalLeft
 	ui.Column(c).Grow(1).Shrink(1).Children(func() {
@@ -288,7 +286,6 @@ func (w *sftpWindow) declareWindowBody(c ui.C) {
 	w.declareWindowMenu(c)
 	w.declareHeaderMenus(c, &w.ui.headerAnchor)
 	w.declareProfileQuickMenu(c)
-	w.declareProfileHover(c)
 }
 
 // sftpWindowSplitExtent is the room ui.Splitter's divider takes between the panes.
@@ -735,8 +732,6 @@ func (w *sftpWindow) declarePane(c ui.C, s *sftpWindowScratch) {
 		switch button.id {
 		case sftpWindowMore[side]:
 			w.ui.headerAnchor[side] = button.box
-		case hitSFTPLocationProfiles:
-			w.ui.profileHoverBox = button.box
 		case hitSFTPProfileQuick:
 			w.ui.profileQuickBox = button.box
 		}

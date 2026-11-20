@@ -65,7 +65,7 @@ export const compare: Record<'en' | 'zh', CompareContent> = {
       },
       {
         label: 'SSH and file transfer',
-        motty: 'SSH terminal, SFTP and SCP with a resumable queue, ZMODEM and XMODEM/YMODEM',
+        motty: 'SSH terminal, SFTP and SCP with a resumable queue, ZMODEM, XMODEM/YMODEM and TRZSZ',
         termius: 'SSH terminal and SFTP',
         tabby: 'SSH terminal and SFTP',
         windterm: 'SSH, Telnet, serial and SFTP',
@@ -172,7 +172,7 @@ export const compare: Record<'en' | 'zh', CompareContent> = {
       },
       {
         label: 'SSH 与文件传输',
-        motty: 'SSH 终端、带可续传队列的 SFTP 与 SCP、ZMODEM 与 XMODEM/YMODEM',
+        motty: 'SSH 终端、带可续传队列的 SFTP 与 SCP、ZMODEM、XMODEM/YMODEM 与 TRZSZ',
         termius: 'SSH 终端与 SFTP',
         tabby: 'SSH 终端与 SFTP',
         windterm: 'SSH、Telnet、串口与 SFTP',
