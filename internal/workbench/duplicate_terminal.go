@@ -7,8 +7,20 @@ import (
 
 // duplicateTerminal 在聚焦终端下方打开同一主机，并继承它的工作目录。
 func (state *State) duplicateTerminal(target gfx.ID) gfx.EventResult {
-	if state.activeSection != sectionTerminal {
+	session := state.focusedShortcutTerminal(target)
+	if session == nil {
 		return gfx.EventResult{}
+	}
+	workspaceID, paneID, _ := state.deck.PaneForSession(layoutcore.SessionID(session.ID))
+	state.activatePane(workspaceID, paneID)
+	state.splitWithCurrentHost(layoutcore.Vertical)
+	return gfx.EventResult{Handled: true, Repaint: true, Focus: state.activeTerminalFocusHit()}
+}
+
+// focusedShortcutTerminal 解析快捷键的终端焦点，排除其他页面和工作区。
+func (state *State) focusedShortcutTerminal(target gfx.ID) *Session {
+	if state.activeSection != sectionTerminal {
+		return nil
 	}
 	if _, local, embedded := state.decodePaneHit(target); embedded {
 		target = local
@@ -22,13 +34,11 @@ func (state *State) duplicateTerminal(target gfx.ID) gfx.EventResult {
 		session, _ = state.sessionByIDPointer(state.activeSessionID)
 	}
 	if session == nil || session.term == nil || session.host.Address == "" {
-		return gfx.EventResult{}
+		return nil
 	}
-	workspaceID, paneID, ok := state.deck.PaneForSession(layoutcore.SessionID(session.ID))
+	workspaceID, _, ok := state.deck.PaneForSession(layoutcore.SessionID(session.ID))
 	if !ok || workspaceID != state.deck.ActiveWorkspace() {
-		return gfx.EventResult{}
+		return nil
 	}
-	state.activatePane(workspaceID, paneID)
-	state.splitWithCurrentHost(layoutcore.Vertical)
-	return gfx.EventResult{Handled: true, Repaint: true, Focus: state.activeTerminalFocusHit()}
+	return session
 }

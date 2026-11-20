@@ -21,6 +21,10 @@ func (state *State) shortcutActionLabel(action shortcutAction) string {
 		return messages.ShortcutPaste
 	case shortcutNewTab:
 		return messages.ShortcutNewTab
+	case shortcutDuplicateTerminal:
+		return messages.ShortcutDuplicateTerminal
+	case shortcutTerminalFolder:
+		return messages.ShortcutTerminalFolder
 	case shortcutLocalTerminal:
 		return messages.ShortcutLocalTerminal
 	case shortcutCloseTab:

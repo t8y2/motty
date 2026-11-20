@@ -444,6 +444,8 @@ type Messages struct {
 	ShortcutCopy                         string
 	ShortcutPaste                        string
 	ShortcutNewTab                       string
+	ShortcutDuplicateTerminal            string
+	ShortcutTerminalFolder               string
 	ShortcutLocalTerminal                string
 	ShortcutCloseTab                     string
 	ShortcutNextTab                      string
