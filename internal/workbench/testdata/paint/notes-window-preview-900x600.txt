@@ -7,14 +7,15 @@ rect {{19 176 862 30} {0.14509805 0.16862746 0.20784314 1} 6.5 0 {12 101 876 439
 rect {{12 548 876 1} {0.2 0.23529412 0.2901961 1} 0 0 {0 0 0 0} false #6}
 rect {{18 560 660 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {0 0 0 0} false #8}
 rect {{19 561 658 26} {0.11146667 0.1264 0.1488 1} 6.5 0 {0 0 0 0} false #9}
-rect {{792 560 28 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {0 0 0 0} false #11}
-rect {{793 561 26 26} {0.11146667 0.1264 0.1488 1} 6.5 0 {0 0 0 0} false #12}
-rect {{824 560 28 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {0 0 0 0} false #14}
-rect {{825 561 26 26} {0.11146667 0.1264 0.1488 1} 6.5 0 {0 0 0 0} false #15}
-rect {{856 560 28 28} {0.23529412 0.27450982 0.34117648 1} 7.5 0 {0 0 0 0} false #16}
+rect {{792 560 96 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {0 0 0 0} false #11}
+rect {{793 561 94 26} {0.06666667 0.08235294 0.105882354 1} 6.5 0 {0 0 0 0} false #12}
+rect {{793 561 37.5 26} {1 1 1 0.048} 6.5 0 {793 561 31 26} true #13}
+rect {{824 561 32 26} {1 1 1 0.048} 0 0 {0 0 0 0} false #14}
+rect {{823.5 561 1 26} {1 1 1 0.16} 0 0 {0 0 0 0} false #15}
+rect {{849.5 561 37.5 26} {0.23529412 0.27450982 0.34117648 1} 6.5 0 {856 561 31 26} true #16}
+rect {{855.5 561 1 26} {1 1 1 0.16} 0 0 {0 0 0 0} false #17}
 shadow {{18 560 660 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 0 0 0} false #7}
-shadow {{792 560 28 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 0 0 0} false #10}
-shadow {{824 560 28 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 0 0 0} false #13}
+shadow {{792 560 96 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 0 0 0} false #10}
 text "Release runbook" {86 8.5 92.2793 19}
 text "Release runbook" {44 52 92.2793 20}
 text "Release runbook" {18 107 153.93848 31}
@@ -32,6 +33,7 @@ hit "Title" textfield {18 560 660 28} disabled=false
 hit "Tags" button {690 560 28 28} disabled=false
 hit "Linked hosts" button {724 560 28 28} disabled=false
 hit "Pin note" button {758 560 28 28} disabled=false
-hit "Source" button {792 560 28 28} disabled=false
-hit "Split" button {824 560 28 28} disabled=false
-hit "Preview" button {856 560 28 28} disabled=false
+hit "View mode" group {792 560 96 28} disabled=false
+hit "Source" button {792 560 32 28} disabled=false
+hit "Split" button {824 560 32 28} disabled=false
+hit "Preview" button {856 560 32 28} disabled=false
