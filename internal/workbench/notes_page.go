@@ -6,6 +6,7 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/ui/buttongroup"
 	"motty/internal/workbench/icons"
 )
 
@@ -35,6 +36,9 @@ type notePageUI struct {
 	library, side, panel                                        ui.SplitterState
 	title, query, inline, picker, find                          ui.Field
 	titleBound, queryBound, inlineBound, pickerBound, findBound bool
+	// modes shares the three mode actions' outline and outer corners, keeping
+	// the application-owned identities and selection.
+	modes buttongroup.Group
 	// node, label and content build the tree's rows; drawSource and drawPreview
 	// paint what the page only lays out. They are made once.
 	node                    func(int) ui.TreeNode
@@ -731,23 +735,20 @@ func (s *State) declareNoteEditorHeader(c ui.C, n *notesUI, width float32, windo
 			if hasImages {
 				s.declareNoteToolbarButton(c, hitNoteLoadImages, s.noteText("Load images", "加载图片"), icons.Image, false)
 			}
-			ui.Row(c).Shrink(0).Gap(0).Children(func() {
-				modes := [...]struct {
-					mode noteMode
-					icon gfx.Icon
-				}{{noteSource, icons.CodeXml}, {noteSplit, icons.Columns2}, {notePreview, icons.Eye}}
-				tokens := [...]int{0, 2, 1} // source, split, preview
-				for i, item := range modes {
-					label := s.noteModeLabel(item.mode)
-					button := ui.Button(c, label).Icon(item.icon).IconOnly().Size(32, 28).
-						HitWith(hitNoteModes.At(tokens[i]), label, gfx.HitOptions{Role: gfx.RoleButton, Selected: v.mode == item.mode})
-					if v.mode == item.mode {
-						button.Secondary()
-					} else {
-						button.Outline()
-					}
+			modes := &p.modes
+			modes.Reset()
+			choices := [...]struct {
+				mode noteMode
+				icon gfx.Icon
+			}{{noteSource, icons.CodeXml}, {noteSplit, icons.Columns2}, {notePreview, icons.Eye}}
+			tokens := [...]int{0, 2, 1} // source, split, preview
+			for i, choice := range choices {
+				modes.Item(hitNoteModes.At(tokens[i]), s.noteModeLabel(choice.mode)).Icon(choice.icon).IconOnly().Outline()
+				if v.mode == choice.mode {
+					modes.Selected(i)
 				}
-			})
+			}
+			modes.View(c, s.noteText("View mode", "查看模式")).Size(96, 28).Shrink(0)
 		})
 	}
 	ui.Column(c).FillWidth().Children(func() {
