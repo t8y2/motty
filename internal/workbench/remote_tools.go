@@ -212,6 +212,9 @@ type remoteToolsView struct {
 	tableRowHeight   float32
 	tableScroll      *ui.ScrollState
 	resetScroll      bool
+	// Each tab keeps its chosen widths across sorting, filtering and refreshes.
+	columnWidths [6]remoteTableColumnWidths
+	columnResize remoteTableColumnResize
 	// menuRow and rowMenuAt are the row a secondary press opened the context
 	// menu for; rowMenuOpen is the menu's own dismissal state.
 	menuRow     int
