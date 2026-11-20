@@ -142,6 +142,11 @@ func pinPaintState(state *State) {
 	if paintEnvironment == nil {
 		return
 	}
+	// A screenshot's elapsed labels must not include the runner's time opening
+	// stores or decoding previews. Scenes with an explicit clock keep it.
+	if state.options.Now == nil {
+		state.options.Now = func() time.Duration { return time.Second }
+	}
 	state.options.SSHConfigPath = paintEnvironment.sshConfigPath
 	state.options.FileIcon = func(string, int) (gfx.Bitmap, error) {
 		return gfx.Bitmap{}, app.ErrUnsupported

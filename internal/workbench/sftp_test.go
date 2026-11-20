@@ -1404,7 +1404,10 @@ func TestSFTPSteadyStatePaintDoesNotAllocate(t *testing.T) {
 	canvas.SetClock(func() time.Duration { return time.Second })
 	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
-	allocations := testing.AllocsPerRun(100, func() {
+	// The counter includes other goroutines. Use the same bounded steady-state
+	// sampler as the local pane: it must observe zero, and a per-frame
+	// allocation fails every batch.
+	allocations := steadyAllocs(func() {
 		canvas.Reset()
 		state.Paint(&canvas, size)
 	})

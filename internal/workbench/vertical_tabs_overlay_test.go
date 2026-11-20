@@ -419,3 +419,14 @@ func steadyAllocs(paint func()) float64 {
 	}
 	return best
 }
+
+var steadyAllocationSink []byte
+
+// A noisy startup may settle, but allocating on every frame must never pass
+// the bounded sampler used by the idle-paint budgets.
+func TestSteadySamplerStillRejectsPerFrameAllocations(t *testing.T) {
+	t.Cleanup(func() { steadyAllocationSink = nil })
+	if got := steadyAllocs(func() { steadyAllocationSink = make([]byte, 32) }); got == 0 {
+		t.Fatal("the steady-state sampler accepted an allocation on every frame")
+	}
+}
