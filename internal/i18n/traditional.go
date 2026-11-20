@@ -2982,8 +2982,8 @@ var traditionalAbout = AboutMessages{
 	RepoDescription:    "原始碼、釋出版本和討論都在 GitHub。",
 	Docs:               "官網與文件",
 	DocsDescription:    "安裝、使用和開發說明在 motty.page。",
-	Viva:               "構建於 Viva",
-	VivaDescription:    "Motty 的原生視窗、輸入與渲染來自 Viva 桌面框架。",
+	Viva:               "Viva",
+	VivaDescription:    "Motty 所用的 Go 優先、GPU 原生桌面框架。",
 	Join:               "加入",
 	Open:               "開啟",
 }

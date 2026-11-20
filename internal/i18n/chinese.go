@@ -2982,8 +2982,8 @@ var chineseAbout = AboutMessages{
 	RepoDescription:    "源码、发布版本和讨论都在 GitHub。",
 	Docs:               "官网与文档",
 	DocsDescription:    "安装、使用和开发说明在 motty.page。",
-	Viva:               "构建于 Viva",
-	VivaDescription:    "Motty 的原生窗口、输入与渲染来自 Viva 桌面框架。",
+	Viva:               "Viva",
+	VivaDescription:    "Motty 所用的 Go 优先、GPU 原生桌面框架。",
 	Join:               "加入",
 	Open:               "打开",
 }
