@@ -315,6 +315,10 @@ jobs:
         if: matrix.shard == 0
         working-directory: motty
         run: go test ./internal/ai/cli -run 'TestPi' -count=1
+      - name: Test Windows desktop icon resources and owned shortcuts
+        if: matrix.shard == 0
+        working-directory: motty
+        run: go test ./cmd/motty -run '^TestDesktop' -count=1 -timeout 2m
       - name: Test the Windows local terminal's ConPTY and portable update
         if: matrix.shard == 0
         shell: bash

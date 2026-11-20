@@ -88,7 +88,7 @@ func TestDesktopShortcutsChangeOnlyOwnedTargetsAndPreserveLaunch(t *testing.T) {
 	if err := iconCOM(link, 16, uintptr(unsafe.Pointer(&text[0])), uintptr(len(text)), uintptr(unsafe.Pointer(&index))); err != nil {
 		t.Fatal(err)
 	}
-	if got := win32.UTF16ToString(text[:]); got != resource || index != 0 {
+	if got := win32.UTF16ToString(text[:]); !sameIconTestFile(got, resource) || index != 0 {
 		t.Fatalf("shortcut icon = %q,%d, want %s,0", got, index, resource)
 	}
 	for method, want := range map[int]string{3: executable, 8: dir, 10: args} {
@@ -99,7 +99,12 @@ func TestDesktopShortcutsChangeOnlyOwnedTargetsAndPreserveLaunch(t *testing.T) {
 		} else {
 			err = iconCOM(link, method, uintptr(unsafe.Pointer(&text[0])), uintptr(len(text)))
 		}
-		if err != nil || win32.UTF16ToString(text[:]) != want {
+		got := win32.UTF16ToString(text[:])
+		matches := got == want
+		if method == 3 || method == 8 {
+			matches = sameIconTestFile(got, want)
+		}
+		if err != nil || !matches {
 			t.Fatalf("launch field %d = %q, want %q (%v)", method, win32.UTF16ToString(text[:]), want, err)
 		}
 	}
@@ -147,9 +152,18 @@ func TestDesktopShortcutsChangeOnlyOwnedTargetsAndPreserveLaunch(t *testing.T) {
 	if err := iconCOM(secondLink, 16, uintptr(unsafe.Pointer(&text[0])), uintptr(len(text)), uintptr(unsafe.Pointer(&index))); err != nil {
 		t.Fatal(err)
 	}
-	if got := win32.UTF16ToString(text[:]); got != secondResource || secondResource == resource {
+	if got := win32.UTF16ToString(text[:]); !sameIconTestFile(got, secondResource) || sameIconTestFile(secondResource, resource) {
 		t.Fatalf("second icon change was not persisted: %s", got)
 	}
+}
+
+func sameIconTestFile(a, b string) bool {
+	left, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	right, err := os.Stat(b)
+	return err == nil && os.SameFile(left, right)
 }
 
 func createTestIconShortcut(t *testing.T, path, target, args, dir string) {

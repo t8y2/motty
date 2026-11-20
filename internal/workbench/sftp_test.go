@@ -1384,6 +1384,10 @@ func TestLeavingSFTPStopsItsWorker(t *testing.T) {
 
 func TestSFTPSteadyStatePaintDoesNotAllocate(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
+	// The native .txt icon service is asynchronous on Windows. Like the local
+	// pane allocation test, use a settled fallback slot: this measures idle
+	// painting, while native icon loading has its own platform tests.
+	state.sftpTypeIcons = map[string]*fileIconSlot{".txt": {failed: true}}
 	clickSFTPRow(t, state, session.files, "notes.txt")
 	// The completion catalog loads on a background wake. Settle it before
 	// measuring the allocations of an otherwise idle paint.
