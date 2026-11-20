@@ -114,7 +114,10 @@ func (state *State) tabMiddlePointer(event gfx.PointerEvent) (gfx.EventResult, b
 	case fileTabList, fileTabCloseList:
 		state.requestCloseSFTPTab(state.sftpWindows[uint32(item(event.Target))])
 	default:
-		return gfx.EventResult{}, false
+		if !settingsTabHit(event.Target) {
+			return gfx.EventResult{}, false
+		}
+		state.closeSettingsTab()
 	}
 	return gfx.EventResult{Handled: true, Repaint: true}, true
 }

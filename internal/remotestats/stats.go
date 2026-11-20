@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 )
 
 // maxLineBytes leaves room for rocm-smi's JSON, which is one line.
@@ -63,6 +64,14 @@ type counters struct {
 	memTotalKiB       uint64
 	memAvailKiB       uint64
 	uptime            float64
+}
+
+// linuxShellCommand runs a POSIX sampler independently of the SSH account's
+// login shell. In Zsh, an unmatched GPU sensor glob can otherwise abort it.
+// The host must provide /bin/sh; an Android/Termux-style system without one is
+// not a supported monitor target.
+func linuxShellCommand(script string) string {
+	return "exec /bin/sh -c '" + strings.ReplaceAll(script, "'", `'\''`) + "'"
 }
 
 // The command has a version marker so the e2e server and diagnostics can

@@ -55,9 +55,7 @@ func TestClosingSplitRestoresPopulatedTerminal(t *testing.T) {
 			if c, r := terminal.screen.Size(); c != cols || r != rows {
 				t.Fatalf("terminal stayed at %dx%d, want %dx%d", c, r, cols, rows)
 			}
-			shell.mu.Lock()
-			lastResize := shell.resizes[len(shell.resizes)-1]
-			shell.mu.Unlock()
+			lastResize := shell.lastResize()
 			if lastResize != [2]int{cols, rows} {
 				t.Fatalf("shell stayed at %v, want %dx%d", lastResize, cols, rows)
 			}
@@ -568,6 +566,9 @@ func TestWorkspaceDividerDragResizesTerminalsAndPersists(t *testing.T) {
 		t.Fatalf("divider move did not resize: ratio %v", ratio)
 	}
 	canvas.DeliverPointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: target, Captured: true, X: dragX, Y: y, Viewport: size}, size, state.Paint)
+	if got, want := canvas.FocusRequest(), state.activeTerminalFocusHit(); got != want {
+		t.Fatalf("releasing the divider asked for focus %v, want the terminal %v", got, want)
+	}
 	if state.workspaceViewBuilds != builds {
 		t.Fatalf("splitter drag rebuilt the complete workspace view: %d -> %d", builds, state.workspaceViewBuilds)
 	}
@@ -1064,5 +1065,55 @@ func TestDockedFilesPanelEventsGoThroughTheWorkbenchPage(t *testing.T) {
 	}
 	if got := folder.filterInputEditor().String(); got != "note" {
 		t.Fatalf("typed filter = %q, want note", got)
+	}
+}
+
+func TestWorkspacePaneSplitterDrawsOnTheDeckSeam(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	openHost(state)
+	openHostInSplit(t, state, 2, layoutcore.Horizontal)
+	size := gfx.Size{Width: 1000, Height: 700}
+	state.Resize(size)
+	canvas, _ := paintAt(state, size)
+	hit := panelHit(t, canvas, hitPaneDividerList.At(0))
+	split := state.PaneSplits(nil)[0]
+	bounds := pixelBounds(state.workspacePixelBounds(size), split.Bounds)
+	want := bounds.X + (bounds.Width-1)*split.Ratio + 0.5
+	center := hit.Bounds.X + hit.Bounds.Width/2
+	if center < want-0.01 || center > want+0.01 {
+		t.Fatalf("divider centre %v, want the seam at %v", center, want)
+	}
+	if pos := state.paneSplitters[0].state.Pos; pos < (bounds.Width-1)*split.Ratio-0.01 || pos > (bounds.Width-1)*split.Ratio+0.01 {
+		t.Fatalf("splitter position %v, want %v of the pane's extent", pos, (bounds.Width-1)*split.Ratio)
+	}
+}
+
+func TestTabbedWorkspacePaneTabsKeepOneWidth(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	workspaceID := launchTemporaryWorkspace(t, state, 0, 1)
+	state.managedWorkspaceLayouts[workspaceID] = layoutcore.LayoutSpec{Kind: layoutcore.LayoutTabs}
+	if len(state.sessions) < 2 {
+		t.Fatalf("tabbed workspace has %d sessions", len(state.sessions))
+	}
+	short, long := "A", strings.Repeat("A long pane title ", 4)
+	state.sessions[0].Title = short
+	state.sessions[1].Title = long
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	var widths []float32
+	for _, hit := range canvas.Hits() {
+		if hit.Role == gfx.RoleTab && (hit.Label == short || hit.Label == long) {
+			widths = append(widths, hit.Bounds.Width)
+		}
+	}
+	if len(widths) != 2 {
+		t.Fatalf("pane tab hits = %d, want 2", len(widths))
+	}
+	if widths[0] != widths[1] {
+		t.Fatalf("pane tabs have different widths: %v", widths)
+	}
+	if widths[0] < 120 || widths[0] > 160 {
+		t.Fatalf("pane tab width %v, want one 160px page share", widths[0])
 	}
 }

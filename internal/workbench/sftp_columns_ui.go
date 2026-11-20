@@ -13,6 +13,7 @@ var (
 	hitSFTPColumnSettingsDismiss = tree.ID(sftpColumnSettingsHits, "dismiss")
 	hitSFTPColumnSettingsReset   = tree.ID(sftpColumnSettingsHits, "reset")
 	hitSFTPColumnSettingsToggles = tree.Sub(sftpColumnSettingsHits, tree.Name("toggle"))
+	hitSFTPColumnSettingsHandles = tree.Sub(sftpColumnSettingsHits, tree.Name("handle"))
 )
 
 type sftpColumnSettingsUI struct {
@@ -72,7 +73,8 @@ func (state *State) sftpColumnSettingsKey(event gfx.KeyEvent) gfx.EventResult {
 	if state.modal != modalSFTPColumns {
 		return gfx.EventResult{}
 	}
-	// The columns are a page List: WindowConfig routes its keys.
+	// The columns are a page List: it routes the arrows and reorders with Alt and
+	// the arrows. It has no plain-key reorder or handle-only drag yet.
 	if event.Key == gfx.KeyEscape && !event.Release && !event.Repeat {
 		state.closeModal()
 		return gfx.EventResult{Handled: true, Repaint: true}
@@ -93,6 +95,7 @@ func (state *State) declareSFTPColumnSettings(c ui.C) {
 			state.moveSFTPColumn(rows[0], to)
 		}
 	}
+	editor.rows.Handle = hitSFTPColumnSettingsHandles
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: m.FilesColumnsTitle, Description: m.FilesColumnsHint, Width: 560, Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitSFTPColumnSettingsDismiss, CloseID: hitSFTPColumnSettingsClose,
@@ -121,12 +124,17 @@ func (state *State) declareSFTPColumn(row ui.ListRow) {
 	if !enabled {
 		color = theme.MutedForeground
 	}
-	row.Element.Height(44).MarginBottom(4).PadX(10).Gap(10).Items(ui.Center).
+	row.Element.Height(48).MarginBottom(4).PadSides(0, 7, 0, 3).Gap(8).Items(ui.Center).
 		Radius(theme.Metrics.RadiusControl).Border(1, theme.Border).Background(theme.Background).Children(func() {
-		ui.Text(c, label).FontSize(theme.Metrics.FontSizeM).Color(color).Ellipsis().Grow(1)
-		toggle := ui.Switch(c, state.pageFlag(enabled), "").Hit(hitSFTPColumnSettingsToggles.At(index), label).Shrink(0)
-		if fixed {
-			toggle.Disabled(true)
-		}
+		// The handle is named by its row, which is what the list's Handle scope
+		// maps back to; the switch and position keep the column's key.
+		reorderHandle(c, hitSFTPColumnSettingsHandles.At(row.Index), label, fixed, 48)
+		ui.Row(c).Grow(1).Gap(10).Items(ui.Center).Children(func() {
+			ui.Text(c, label).FontSize(theme.Metrics.FontSizeM).Color(color).Ellipsis().Grow(1)
+			toggle := ui.Switch(c, state.pageFlag(enabled), "").Hit(hitSFTPColumnSettingsToggles.At(index), label).Shrink(0)
+			if fixed {
+				toggle.Disabled(true)
+			}
+		})
 	})
 }

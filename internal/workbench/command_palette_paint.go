@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
@@ -51,21 +50,22 @@ func (state *State) declareCommandPalette(c ui.C) {
 	palette.ctx = c
 	if palette.body == nil {
 		palette.body = func() { state.declareCommandPaletteBody(palette.ctx) }
-		palette.listOver = state.paintCommandPaletteListOverlay
+		palette.listOver = state.paintCommandPaletteListOver
 		palette.chromeOver = state.paintCommandPaletteChrome
 	}
 	height := state.commandPaletteHeight()
-	// The dialog's own layout says where its title row sits and how wide its body
-	// is; the sort switch and the rows keep the rectangles they had when the
-	// palette opened the dialog by hand.
-	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
-		ContentSize: gfx.Size{Width: commandPaletteWidth, Height: height},
-	}).Layout("")
-	palette.bodyWidth = layout.Body.Width
-	palette.sortLeft = layout.Close.X - commandPaletteSortWidth - commandPaletteSortGap - layout.Body.X
-	palette.sortTop = layout.Close.Y - layout.Body.Y
-	palette.sortHeight = layout.Close.Height
+	// The dialog's own rhythm says where its title row sits and how wide its
+	// body is: the same padding, gaps and title height components.Dialog uses,
+	// so the sort switch keeps the place it had when the palette opened the
+	// dialog by hand.
+	metricsNow := c.Theme().Metrics
+	padding := metricsNow.PadSurface + metricsNow.GapItem
+	contentWidth := max(min(float32(commandPaletteWidth), c.Bounds().Width-32), 0)
+	headerHeight := metricsNow.FontSizeM + 2 + 1
+	palette.bodyWidth = max(contentWidth-2*padding, 0)
+	palette.sortLeft = contentWidth - metricsNow.PadSurface - metricsNow.ControlHeight - commandPaletteSortWidth - commandPaletteSortGap - padding
+	palette.sortTop = -(headerHeight + 4*metricsNow.GapItem)
+	palette.sortHeight = metricsNow.ControlHeight
 	// The palette is a dialog's peer: on its own layer it paints over a terminal's
 	// native view and over the page behind it.
 	ui.PopupLayer(c, dialogLayer)
@@ -109,7 +109,6 @@ func (state *State) commandPaletteTexts() (title, placeholder, empty string) {
 func (state *State) declareCommandPaletteBody(c ui.C) {
 	palette := &state.commandPalette
 	sending := palette.snippets
-	palette.listBox = ui.Box{}
 	palette.sendInputBox = ui.Box{}
 	column := ui.Column(c).Fill()
 	if sending {
@@ -132,26 +131,37 @@ func (state *State) declareCommandPaletteBody(c ui.C) {
 			Height(36).FillWidth().Shrink(0).NavigationKeys()
 		if count == 0 {
 			palette.listRect = gfx.Rect{}
-			palette.bar = components.ScrollAreaGeometry{}
+			palette.scrollState = nil
 			ui.Text(c, palette.emptyText).FontSize(metrics.FontSizeM).Color(state.pal.muted).LineHeight(24).TextCenter().MarginSides(36, 0, 0, 0)
 		} else {
-			palette.listBox = ui.Row(c).Height(commandPaletteListHeight).FillWidth().Shrink(0).MarginSides(12, 0, 0, 0).DrawOver(palette.listOver)
-			palette.listBox.Children(func() {
-				// The rows are clipped to the list's window; the scrollbar beside it
-				// is painted by the row's DrawOver, outside that clip.
-				list := ui.Column(c).Fill().Clip()
-				list.Children(func() {
-					first := max(0, int(palette.scroll/commandPaletteRowStep))
-					last := min(count, first+commandPaletteVisibleRows+1)
-					inner := ui.Column(c).FillWidth().Gap(4).MarginTop(-palette.scroll)
-					inner.Children(func() {
-						if first > 0 {
-							ui.Spacer(c).Height(float32(first)*commandPaletteRowStep - 4)
-						}
-						for visible := first; visible < last; visible++ {
-							state.declareCommandPaletteRow(c, palette.entries[palette.visible[visible]], visible)
-						}
-					})
+			// The list is the page's scroll area: the rows are page controls, and
+			// the bar beside them is the page's. The choice the keyboard made is
+			// applied before the rows are declared.
+			list := ui.Scroll(c).Width(palette.bodyWidth+commandPaletteBarGap+commandPaletteBarWidth).
+				Height(commandPaletteListHeight).Shrink(0).MarginSides(12, 0, 0, 0).
+				PadSides(0, commandPaletteBarGap+commandPaletteBarWidth, 0, 0).
+				AlwaysScrollbars().ScrollbarSize(commandPaletteBarWidth)
+			palette.scrollState = list.ScrollState()
+			// The bar the page owns wrote the offset since the last paint; the
+			// keyboard wrote palette.scroll through the same state.
+			palette.scroll = palette.scrollState.Offset
+			palette.scrollState.ScrollTo(palette.scroll)
+			scroll := palette.scroll
+			list.DrawOver(palette.listOver)
+			list.Children(func() {
+				first := max(0, int(scroll/commandPaletteRowStep))
+				last := min(count, first+commandPaletteVisibleRows+1)
+				inner := ui.Column(c).FillWidth().Gap(4)
+				inner.Children(func() {
+					if first > 0 {
+						ui.Spacer(c).Height(float32(first)*commandPaletteRowStep - 4)
+					}
+					for visible := first; visible < last; visible++ {
+						state.declareCommandPaletteRow(c, palette.entries[palette.visible[visible]], visible)
+					}
+					if last < count {
+						ui.Spacer(c).Height(float32(count-last)*commandPaletteRowStep - 4)
+					}
 				})
 			})
 		}
@@ -309,20 +319,10 @@ func (state *State) declareCommandPaletteRow(c ui.C, entry commandPaletteEntry, 
 	})
 }
 
-// paintCommandPaletteListOverlay paints the list's scrollbar after the page laid
-// the rows out, as the palette always has: beside the rows, not over them.
-func (state *State) paintCommandPaletteListOverlay(d *ui.DrawContext) {
-	palette := &state.commandPalette
-	palette.listRect = d.Rect
-	if palette.maxScroll() <= 0 {
-		palette.bar = components.ScrollAreaGeometry{}
-		return
-	}
-	bounds := d.Rect
-	bounds.Width += commandPaletteBarGap + commandPaletteBarWidth
-	area := components.BeginScrollArea(d.Canvas, *d.Theme, bounds, gfx.Size{Width: bounds.Width, Height: palette.contentHeight()}).
-		Offset(0, palette.scroll).VerticalScrollbar(hitCommandPaletteBar, palette.searchLabel, "").HoverScrollbars(true)
-	palette.bar = area.EndContent()
+// paintCommandPaletteListOver records the list's rectangle, which the wheel
+// resolves the row under the pointer with.
+func (state *State) paintCommandPaletteListOver(d *ui.DrawContext) {
+	state.commandPalette.listRect = d.Rect
 }
 
 // paintCommandPaletteChrome paints the parts the dialog body left for the page's

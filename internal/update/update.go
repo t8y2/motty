@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -21,10 +22,12 @@ import (
 	"unicode/utf8"
 
 	vivaupdate "github.com/vivaui/viva/update"
+
+	"motty/internal/netclient"
 )
 
 // Current is the version of this build. A test keeps it equal to viva.toml's.
-const Current = "0.4.14"
+const Current = "0.4.19"
 
 // Feed is the GitHub release the project publishes its builds to.
 const Feed = "https://api.github.com/repos/t8y2/motty/releases/latest"
@@ -115,13 +118,21 @@ const (
 	// A minisign signature is a few hundred bytes; anything far past that is
 	// not one, and the feed should not be allowed to make the app carry it.
 	maxSignatureBytes = 4096
+	// CheckBudget bounds a whole check, caller side: the feeds are
+	// alternatives tried one after another, each may use feedAttemptTimeout,
+	// and the last one still needs room to answer.
+	CheckBudget = 35 * time.Second
 )
 
-// Latest reads the feed. The client decides timeouts and proxies; nil uses one
-// with a 15 second timeout and the environment's proxy.
+// feedAttemptTimeout bounds one feed in the fallback chain, so a feed that
+// stalls cannot spend the time the next one needs. Tests shorten it.
+var feedAttemptTimeout = 10 * time.Second
+
+// Latest reads the feed. The client decides timeouts and proxies; nil uses the
+// desktop's proxy settings, as netclient does, with a 15 second timeout.
 func Latest(ctx context.Context, client *http.Client, feed string) (Release, error) {
 	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Second}
+		client = netclient.Client(15 * time.Second)
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, feed, nil)
 	if err != nil {
@@ -188,23 +199,148 @@ const (
 	PackagePortable
 )
 
+// Source is where an installation reads releases and packages from.
+type Source uint8
+
+const (
+	// SourceOfficial is the project's own mirror: the signed Viva feed on the
+	// official download host, with its mirror and GitHub fallbacks.
+	SourceOfficial Source = iota
+	// SourceCNB is the copy of the same signed feed and the same packages on
+	// CNB, for networks where the official host is slow or unreachable.
+	SourceCNB
+)
+
+// String is the value the setting is saved as.
+func (source Source) String() string {
+	if source == SourceCNB {
+		return "cnb"
+	}
+	return "official"
+}
+
+// ParseSource reads a saved source. Anything unknown is the official one, so a
+// file written by an older or newer version never leaves the app without a
+// source.
+func ParseSource(value string) Source {
+	if value == "cnb" {
+		return SourceCNB
+	}
+	return SourceOfficial
+}
+
+// CNBFeed is the signed Viva feed published beside the packages on CNB. It is
+// the newest release's asset under CNB's "latest" alias, so a check from that
+// source never touches the official host.
+const CNBFeed = "https://cnb.cool/dbxio.com/motty/-/releases/latest/download/latest.json"
+
+// cnbReleases is the directory CNB serves a release's assets from.
+const cnbReleases = "https://cnb.cool/dbxio.com/motty/-/releases/download/"
+
 // CheckPackage selects the package matching the installation on this machine.
 // It prefers the signed Viva feed, which is where patches and the one trust
 // root live; the mirror feed stays for a .deb (the Viva feed has no Debian
 // asset) and for the migration window, when the Viva feed is not published yet
-// or cannot be reached.
+// or cannot be reached. Each feed gets its own attempt timeout: a stalled Viva
+// feed must not spend the time the mirror or GitHub fallback needs.
 func CheckPackage(ctx context.Context, client *http.Client, goos, goarch string, pkg Package) (Release, error) {
 	if pkg != PackageDeb {
-		if release, err := checkVivaPackageAt(ctx, client, VivaFeed, []string{VivaPublicKey}, goos, goarch, pkg); err == nil {
+		attempt, cancel := context.WithTimeout(ctx, feedAttemptTimeout)
+		release, err := checkVivaPackageAt(attempt, client, VivaFeed, []string{VivaPublicKey}, goos, goarch, pkg)
+		cancel()
+		if err == nil {
 			return release, nil
 		}
 	}
 	return checkFeedsPackage(ctx, client, MirrorFeed, Feed, goos, goarch, pkg)
 }
 
+// CheckPackageFrom asks the source the user selected. The CNB source reads the
+// same signed feed from the CNB copy and points the package at the CNB release.
+// When that copy cannot answer, the official feeds still decide, so a mirror
+// that is not published yet never makes updates impossible; the returned error
+// is then the CNB one, because that is the source the user chose. A .deb has no
+// asset in the signed feed, so it keeps the official path whatever the source.
+func CheckPackageFrom(ctx context.Context, client *http.Client, goos, goarch string, pkg Package, source Source) (Release, error) {
+	if source != SourceCNB || pkg == PackageDeb {
+		return CheckPackage(ctx, client, goos, goarch, pkg)
+	}
+	attempt, cancel := context.WithTimeout(ctx, feedAttemptTimeout)
+	release, err := checkVivaPackageAt(attempt, client, CNBFeed, []string{VivaPublicKey}, goos, goarch, pkg)
+	cancel()
+	if err == nil {
+		return cnbRelease(release, goos, goarch, pkg), nil
+	}
+	if official, officialErr := CheckPackage(ctx, client, goos, goarch, pkg); officialErr == nil {
+		return official, nil
+	}
+	return Release{}, err
+}
+
+// cnbRelease points the package and the patches of a release read from the CNB
+// feed at the CNB copy. The feed's size and SHA-256 still hold every download,
+// and the signed feed still names each file, so only the host changes. A patch
+// keeps the file name its URL in the feed has; one whose URL names no file is
+// dropped, which leaves that update to the full package.
+func cnbRelease(release Release, goos, goarch string, pkg Package) Release {
+	name := cnbAssetName(release.Version, goos, goarch, pkg)
+	if !release.Asset.Has() || name == "" {
+		return release
+	}
+	base := cnbReleases + "v" + release.Version + "/"
+	release.Asset.URL = base + name
+	patches := make([]Patch, 0, len(release.Asset.Patches))
+	for _, patch := range release.Asset.Patches {
+		file := patchFileName(patch.URL)
+		if file == "" {
+			continue
+		}
+		patch.URL = base + file
+		patches = append(patches, patch)
+	}
+	if len(patches) == 0 {
+		patches = nil
+	}
+	release.Asset.Patches = patches
+	return release
+}
+
+// patchFileName is the escaped last path segment of a patch URL, or "" when the
+// URL does not end in a .patch file name.
+func patchFileName(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	file := path.Base(parsed.EscapedPath())
+	if file == "." || file == "/" || !strings.HasSuffix(file, ".patch") {
+		return ""
+	}
+	return file
+}
+
+// cnbAssetName is the name the release's asset has on CNB, which is the name
+// the release published: the stable name with the version in it, and the .deb
+// naming the architecture instead.
+func cnbAssetName(version, goos, goarch string, pkg Package) string {
+	stable := StableNamePackage(goos, goarch, pkg)
+	if stable == "" || version == "" {
+		return ""
+	}
+	if pkg == PackageDeb {
+		return "motty_" + version + "_" + goarch + ".deb"
+	}
+	return strings.Replace(stable, "motty-", "motty-"+version+"-", 1)
+}
+
 // checkVivaPackageAt reads a Viva feed. The feed URL and keys are parameters so
 // a test can sign a feed of its own.
 func checkVivaPackageAt(ctx context.Context, client *http.Client, feedURL string, keys []string, goos, goarch string, pkg Package) (Release, error) {
+	if client == nil {
+		// The attempt context normally ends the feed first; the client's own
+		// timeout is the backstop for a caller that sets no deadline.
+		client = netclient.Client(30 * time.Second)
+	}
 	publicKeys := make([]ed25519.PublicKey, 0, len(keys))
 	for _, encoded := range keys {
 		key, err := vivaupdate.ParsePublicKey(encoded)
@@ -299,8 +435,13 @@ func ApplyPatch(patchPath, fromVersion, toVersion string) (string, error) {
 	return vivaupdate.ApplyPatch(patchPath, AppID, fromVersion, toVersion)
 }
 
-// newVivaClient is the Viva feed client with the embedded key.
+// newVivaClient is the Viva feed client with the embedded key. Its requests
+// follow the desktop's proxy settings; the caller's context bounds them, so
+// the client itself carries no timeout and a large patch is not cut short.
 func newVivaClient(client *http.Client) (*vivaupdate.Client, error) {
+	if client == nil {
+		client = netclient.Client(0)
+	}
 	key, err := vivaupdate.ParsePublicKey(VivaPublicKey)
 	if err != nil {
 		return nil, fmt.Errorf("update: the Viva feed key: %w", err)
@@ -325,14 +466,59 @@ func selectVivaAsset(feed *vivaupdate.Feed, goos, goarch string, pkg Package) (v
 // fetchReleaseNotes is releaseNotes, replaceable by tests.
 var fetchReleaseNotes = releaseNotes
 
-// releaseNotes reads the GitHub release body for the update dialog. The Viva
-// feed names the release page but not its text; a failed lookup leaves the
-// dialog saying there are no notes.
+// releaseNotes reads the release notes for the update dialog. It checks the
+// mirror feed first (which carries the notes without GitHub API rate limits),
+// and falls back to the GitHub release body. A failed lookup leaves the dialog
+// saying there are no notes.
 func releaseNotes(ctx context.Context, client *http.Client, version string) string {
+	githubURL := "https://api.github.com/repos/t8y2/motty/releases/tags/v" + version
+	return releaseNotesFrom(ctx, client, MirrorFeed, githubURL, version)
+}
+
+func releaseNotesFrom(ctx context.Context, client *http.Client, mirrorURL, githubURL, version string) string {
 	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Second}
+		client = netclient.Client(15 * time.Second)
 	}
-	url := "https://api.github.com/repos/t8y2/motty/releases/tags/v" + version
+	if notes := mirrorNotes(ctx, client, mirrorURL, version); notes != "" {
+		return notes
+	}
+	return githubNotes(ctx, client, githubURL)
+}
+
+func mirrorNotes(ctx context.Context, client *http.Client, feedURL, version string) string {
+	if feedURL == "" {
+		return ""
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
+	if err != nil {
+		return ""
+	}
+	request.Header.Set("User-Agent", "motty/"+Current)
+	response, err := client.Do(request)
+	if err != nil {
+		return ""
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return ""
+	}
+	var body struct {
+		Version string `json:"version"`
+		Notes   string `json:"notes"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, maxFeedBytes)).Decode(&body); err != nil {
+		return ""
+	}
+	if body.Version != version || strings.TrimSpace(body.Notes) == "" {
+		return ""
+	}
+	return cutUTF8(body.Notes, maxNotesBytes)
+}
+
+func githubNotes(ctx context.Context, client *http.Client, url string) string {
+	if url == "" {
+		return ""
+	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return ""
@@ -350,7 +536,7 @@ func releaseNotes(ctx context.Context, client *http.Client, version string) stri
 	var body struct {
 		Body string `json:"body"`
 	}
-	if err := json.NewDecoder(io.LimitReader(response.Body, maxNotesBytes*2)).Decode(&body); err != nil {
+	if err := json.NewDecoder(io.LimitReader(response.Body, maxFeedBytes)).Decode(&body); err != nil {
 		return ""
 	}
 	return cutUTF8(body.Body, maxNotesBytes)
@@ -360,12 +546,19 @@ func checkFeeds(ctx context.Context, client *http.Client, mirrorFeed, githubFeed
 	return checkFeedsPackage(ctx, client, mirrorFeed, githubFeed, goos, goarch, PackageArchive)
 }
 
+// checkFeedsPackage asks the mirror and, when it cannot answer, GitHub. Each
+// one gets its own attempt timeout, so a mirror that stalls still leaves the
+// fallback enough time to answer.
 func checkFeedsPackage(ctx context.Context, client *http.Client, mirrorFeed, githubFeed, goos, goarch string, pkg Package) (Release, error) {
-	release, err := latestMirrorPackage(ctx, client, mirrorFeed, goos, goarch, pkg)
+	mirrorCtx, cancelMirror := context.WithTimeout(ctx, feedAttemptTimeout)
+	release, err := latestMirrorPackage(mirrorCtx, client, mirrorFeed, goos, goarch, pkg)
+	cancelMirror()
 	if err == nil {
 		return release, nil
 	}
-	if fallback, fallbackErr := Latest(ctx, client, githubFeed); fallbackErr == nil || errors.Is(fallbackErr, ErrNoRelease) {
+	githubCtx, cancelGitHub := context.WithTimeout(ctx, feedAttemptTimeout)
+	defer cancelGitHub()
+	if fallback, fallbackErr := Latest(githubCtx, client, githubFeed); fallbackErr == nil || errors.Is(fallbackErr, ErrNoRelease) {
 		return fallback, fallbackErr
 	}
 	return Release{}, err
@@ -419,7 +612,7 @@ func LatestMirror(ctx context.Context, client *http.Client, feed, goos, goarch s
 
 func latestMirrorPackage(ctx context.Context, client *http.Client, feed, goos, goarch string, pkg Package) (Release, error) {
 	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Second}
+		client = netclient.Client(15 * time.Second)
 	}
 	base, err := url.Parse(feed)
 	if err != nil || base.Scheme != "https" || base.Host == "" {

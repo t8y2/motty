@@ -60,11 +60,11 @@ type rowCache struct {
 	builds     uint64 // lines prepared so far, to tell reuse from rework
 
 	// Scratch for the highlight rules: the text of a line, the cell each of its
-	// bytes came from, and the slot each byte was given.
+	// bytes came from, and the color each byte was given.
 	hlText  []byte
 	hlCell  []int32
-	hlMarks []highlight.Slot
-	hlCells []highlight.Slot
+	hlMarks []highlight.Color
+	hlCells []highlight.Color
 }
 
 // begin starts a paint pass.
@@ -390,20 +390,27 @@ func asciiOnly(value string) bool {
 	return true
 }
 
-// highlightColor is the color a slot has in the terminal's scheme.
-func (pal *palette) highlightColor(slot highlight.Slot, inactive bool) gfx.Color {
-	ansi := pal.ansi[slot.ANSI()]
-	color := gfx.RGB(ansi[0], ansi[1], ansi[2])
+// highlightColor is the color a rule gives its text: a named color's in the
+// terminal's scheme, or the explicit one as the user chose it.
+func (pal *palette) highlightColor(ink highlight.Color, inactive bool) gfx.Color {
+	color := gfx.Color{}
+	if ink.IsCustom() {
+		red, green, blue := ink.Channels()
+		color = gfx.RGB(red, green, blue)
+	} else {
+		ansi := pal.ansi[ink.ANSI()]
+		color = gfx.RGB(ansi[0], ansi[1], ansi[2])
+	}
 	if inactive {
 		color.Alpha *= 0.55
 	}
 	return color
 }
 
-// markCells runs the highlight rules over a line's text and returns the slot of
+// markCells runs the highlight rules over a line's text and returns the color of
 // each cell, or nil when no rule matched, which is nearly every line of a quiet
 // terminal and costs the caller nothing.
-func (cache *rowCache) markCells(line term.Row, count int, rules *highlight.Set) []highlight.Slot {
+func (cache *rowCache) markCells(line term.Row, count int, rules *highlight.Set) []highlight.Color {
 	if rules.Empty() {
 		return nil
 	}
@@ -424,23 +431,23 @@ func (cache *rowCache) markCells(line term.Row, count int, rules *highlight.Set)
 		}
 	}
 	cache.hlText, cache.hlCell = text, owner
-	marks := slotBuffer(&cache.hlMarks, len(text))
+	marks := markBuffer(&cache.hlMarks, len(text))
 	if !rules.Mark(text, marks) {
 		return nil
 	}
-	cells := slotBuffer(&cache.hlCells, count)
-	for index, slot := range marks {
-		if slot != highlight.None {
-			cells[owner[index]] = slot
+	cells := markBuffer(&cache.hlCells, count)
+	for index, color := range marks {
+		if color != highlight.None {
+			cells[owner[index]] = color
 		}
 	}
 	return cells
 }
 
-// slotBuffer returns a zeroed slice of n slots, reusing what the cache kept.
-func slotBuffer(buffer *[]highlight.Slot, n int) []highlight.Slot {
+// markBuffer returns a zeroed slice of n marks, reusing what the cache kept.
+func markBuffer(buffer *[]highlight.Color, n int) []highlight.Color {
 	if cap(*buffer) < n {
-		*buffer = make([]highlight.Slot, n)
+		*buffer = make([]highlight.Color, n)
 	}
 	*buffer = (*buffer)[:n]
 	clear(*buffer)

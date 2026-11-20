@@ -1,6 +1,7 @@
 package sftpclient
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"github.com/vivaui/viva/leaks"
@@ -119,6 +120,10 @@ type TransferSnapshot struct {
 	FilesTotal  int
 	BytesDone   int64
 	BytesTotal  int64
+	// SourceModTime is the local source's modification time when this attempt
+	// read it. A resume adopts the acknowledged prefix only while the source is
+	// still that file: the size alone cannot tell an in-place edit apart.
+	SourceModTime time.Time
 	// BytesPerSecond is the recent speed of a running transfer, smoothed; zero
 	// until there is something to measure and while paused.
 	BytesPerSecond int64
@@ -256,6 +261,21 @@ type request struct {
 	utf8BOM     bool
 	recursive   bool
 	policy      ExistingPolicy
+	// limit is how many bytes a document read may return; the caller sizes it
+	// from the preview setting.
+	limit int
+	// trusted is how many leading bytes of an interrupted upload's partial
+	// file this process wrote in an earlier attempt. The worker resumes from
+	// there without reading those bytes back to verify them.
+	trusted int64
+	// trustedTotal is the source size the trusted prefix was recorded against,
+	// checked when the upload starts so a source that changed size meanwhile
+	// is verified instead.
+	trustedTotal int64
+	// trustedModTime is the source modification time the trusted prefix was
+	// recorded against. The size check cannot see an in-place edit, so the
+	// time is compared as well.
+	trustedModTime time.Time
 	// copySource opens a subsystem on the server to read from, and
 	// copySources/copyRoot name the batch copied into destination.
 	copySource  RemoteSource
@@ -469,6 +489,26 @@ func (worker *Worker) QueueUpload(localPath, remotePath string, recursive bool, 
 	})
 }
 
+// QueueUploadResume continues an upload over the partial file an interrupted
+// attempt left. trusted is the length of the prefix that attempt wrote and had
+// acknowledged on the server; those bytes are already on the server and are not
+// read back to be compared, so a resume starts sending at once. trustedTotal is
+// the source size that prefix was recorded against, and sourceModTime the
+// source's modification time; if the source is no longer that file the upload
+// verifies the partial instead.
+func (worker *Worker) QueueUploadResume(localPath, remotePath string, trusted, trustedTotal int64, sourceModTime time.Time) (uint64, bool) {
+	if trusted <= 0 || trustedTotal <= 0 || trusted > trustedTotal || sourceModTime.IsZero() {
+		// Nothing pins the prefix to a known source, so let the upload verify
+		// the partial instead of adopting it.
+		return worker.QueueUpload(localPath, remotePath, false, ExistingResume)
+	}
+	return worker.enqueueTransfer(request{
+		operation: OperationUpload, local: localPath, remote: remotePath,
+		policy: ExistingResume, trusted: trusted, trustedTotal: trustedTotal,
+		trustedModTime: sourceModTime,
+	})
+}
+
 // QueueRemoteCopy queues one batch that reads files from another server and
 // writes them into the destination folder of this worker's server. The data is
 // relayed through memory; no local file is part of the transfer.
@@ -547,8 +587,9 @@ func (worker *Worker) OpenText(remotePath string) bool {
 }
 
 // OpenDocument reads bounded raw bytes without treating an image as UTF-8.
-func (worker *Worker) OpenDocument(remotePath string) bool {
-	return worker.enqueue(request{operation: OperationOpenDocument, remote: remotePath})
+// limit is the caller's bound on the document.
+func (worker *Worker) OpenDocument(remotePath string, limit int) bool {
+	return worker.enqueue(request{operation: OperationOpenDocument, remote: remotePath, limit: limit})
 }
 
 // ReadDocument reads the current bounded text bytes for comparison without
@@ -559,12 +600,11 @@ func (worker *Worker) ReadDocument(remotePath string) bool {
 }
 
 // SaveDocument replaces a revision-checked document without reinterpreting its
-// bytes. Encoding and image/text policy belong to the document editor.
-func (worker *Worker) SaveDocument(remotePath string, data []byte, revision Revision) bool {
-	if len(data) > MaxPreviewFileBytes {
-		return false
-	}
-	return worker.enqueue(request{operation: OperationSaveDocument, remote: remotePath, data: append([]byte(nil), data...), revision: revision})
+// bytes. Encoding and image/text policy belong to the document editor; limit is
+// the bound its window was opened under, checked when the server copy is read
+// back for the revision comparison.
+func (worker *Worker) SaveDocument(remotePath string, data []byte, revision Revision, limit int) bool {
+	return worker.enqueue(request{operation: OperationSaveDocument, remote: remotePath, data: append([]byte(nil), data...), revision: revision, limit: limit})
 }
 
 // SaveText atomically replaces one previously opened remote text file when its
@@ -865,6 +905,21 @@ func (worker *Worker) Retry(id uint64, policy ExistingPolicy) bool {
 		return false
 	}
 	record.request.policy = policy
+	record.request.trusted = 0
+	record.request.trustedTotal = 0
+	record.request.trustedModTime = time.Time{}
+	if policy == ExistingResume && record.request.operation == OperationUpload && !record.request.recursive {
+		// The bytes this attempt acknowledged are on the server and came from
+		// this source, so the continuation need not read them back — but only
+		// while the source is still the file that was being sent. A source
+		// changed since then, even to the same size, must fall back to the
+		// verification the partial normally gets. The size and modification
+		// time are rechecked when the upload starts, where the source is
+		// already stat'd, so this does no file I/O under the lock.
+		record.request.trusted = record.snapshot.BytesDone
+		record.request.trustedTotal = record.snapshot.BytesTotal
+		record.request.trustedModTime = record.snapshot.SourceModTime
+	}
 	record.snapshot.State = TransferQueued
 	record.snapshot.Error = ""
 	record.snapshot.FilesDone = 0
@@ -1163,6 +1218,16 @@ func (worker *Worker) setTotals(id uint64, files int, bytes int64) {
 	worker.changed()
 }
 
+// setSourceModTime records the local source's modification time when an upload
+// starts, so a later resume can tell whether the source is still that file.
+func (worker *Worker) setSourceModTime(id uint64, mod time.Time) {
+	worker.mu.Lock()
+	if record := worker.transferLocked(id); record != nil {
+		record.snapshot.SourceModTime = mod
+	}
+	worker.mu.Unlock()
+}
+
 func (worker *Worker) setProgress(id uint64, files int, bytes, resumed int64) {
 	notify := false
 	worker.mu.Lock()
@@ -1272,11 +1337,11 @@ func (worker *Worker) execute(next request) Result {
 	case OperationSaveText:
 		result.Document, result.Err = worker.saveText(client, next.remote, next.text, next.revision, next.utf8BOM, generation)
 	case OperationOpenDocument:
-		result.Data, result.Err = worker.readFileBytes(client, next.remote, generation, MaxPreviewFileBytes)
+		result.Data, result.Err = worker.readFileBytes(client, next.remote, generation, next.limit)
 	case OperationReadDocument:
 		result.Data, result.Err = worker.readFileBytes(client, next.remote, generation, MaxEditFileBytes)
 	case OperationSaveDocument:
-		result.Err = worker.replaceDocumentBytes(client, next.remote, next.data, next.revision, generation)
+		result.Err = worker.replaceDocumentBytes(client, next.remote, next.data, next.revision, next.limit, generation)
 		if result.Err == nil {
 			result.Data = next.data
 		}
@@ -1418,6 +1483,10 @@ func (worker *Worker) resolveLinks(job linkJob) {
 	if worker.canceled(job.generation) {
 		return
 	}
+	// Resolving a link can reveal that it points at a folder. The listing's
+	// order puts folders first, so the follow-up has to be ordered again now
+	// that those links are known.
+	sortEntries(job.entries)
 	worker.publish(Result{
 		ListID:     job.listID,
 		Background: job.background, Operation: OperationList, Path: job.directory,
@@ -1472,6 +1541,15 @@ func entriesFrom(infos []os.FileInfo) []Entry {
 		}
 		entries = append(entries, entry)
 	}
+	sortEntries(entries)
+	return entries
+}
+
+// sortEntries orders a listing the way the file panel shows it: folders first,
+// then by name. A symbolic link counts as a folder once describeLinks found
+// that its target is one, so the follow-up that carries the resolved links is
+// ordered again.
+func sortEntries(entries []Entry) {
 	slices.SortFunc(entries, func(left, right Entry) int {
 		if left.IsDir() != right.IsDir() {
 			if left.IsDir() {
@@ -1481,7 +1559,6 @@ func entriesFrom(infos []os.FileInfo) []Entry {
 		}
 		return strings.Compare(left.Name, right.Name)
 	})
-	return entries
 }
 
 func (worker *Worker) upload(client Remote, next request, generation uint64) (files int, bytes, resumed int64, err error) {
@@ -1499,13 +1576,23 @@ func (worker *Worker) upload(client Remote, next request, generation uint64) (fi
 		written, fallbackErr := worker.legacyUpload(client, next.local, next.remote, generation)
 		return boolInt(fallbackErr == nil), written, 0, fallbackErr
 	}
-	info, totalFiles, totalBytes, err := scanLocal(next.local, next.recursive)
+	info, plan, err := planLocal(next.local, next.recursive)
 	if err != nil {
 		return 0, 0, 0, err
 	}
+	totalFiles, totalBytes := planTotals(plan)
 	worker.setTotals(next.id, totalFiles, totalBytes)
 	if !info.IsDir() {
-		bytes, resumed, err = worker.uploadFile(advanced, next.local, next.remote, info, next.policy, generation, next.id, 0, 0)
+		worker.setSourceModTime(next.id, info.ModTime())
+		trusted := next.trusted
+		if trusted > 0 && next.trustedTotal > 0 &&
+			(info.Size() != next.trustedTotal || !info.ModTime().Equal(next.trustedModTime)) {
+			// The source is not the file the trusted prefix was measured on,
+			// so the partial is verified rather than adopted.
+			trusted = 0
+		}
+		sink := newFileSink(worker, next.id, 0, 0)
+		bytes, resumed, err = worker.uploadFile(advanced, next.local, next.remote, info, next.policy, generation, next.id, trusted, sink)
 		if err == nil {
 			files = 1
 		}
@@ -1514,42 +1601,154 @@ func (worker *Worker) upload(client Remote, next request, generation uint64) (fi
 	if err := ensureRemoteRoot(advanced, next.remote, next.policy); err != nil {
 		return 0, 0, 0, err
 	}
-	root := filepath.Clean(next.local)
-	err = filepath.WalkDir(root, func(localPath string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
+	// Directories first, in the plan's order (a parent precedes its children),
+	// so the file workers that follow always find theirs.
+	filesPlan := make([]plannedUpload, 0, len(plan))
+	for _, item := range plan {
 		if worker.stopped(generation, next.id) {
-			return ErrCanceled
+			return 0, 0, 0, ErrCanceled
 		}
-		relative, err := filepath.Rel(root, localPath)
-		if err != nil || relative == "." {
-			return err
-		}
-		remotePath, err := joinRemoteWithin(next.remote, filepath.ToSlash(relative))
+		remotePath, err := joinRemoteWithin(next.remote, item.relative)
 		if err != nil {
-			return err
+			return 0, 0, 0, err
 		}
-		entryInfo, err := entry.Info()
-		if err != nil {
-			return err
+		if item.directory {
+			if err := ensureRemoteDirectory(advanced, remotePath); err != nil {
+				return 0, 0, 0, err
+			}
+			continue
 		}
-		if entryInfo.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("%w: %s", ErrSymbolicLink, localPath)
+		filesPlan = append(filesPlan, plannedUpload{local: item.local, remote: remotePath, info: item.info})
+	}
+	if len(filesPlan) == 0 {
+		return 0, 0, 0, nil
+	}
+	progress := &transferProgress{worker: worker, id: next.id}
+	if err := worker.uploadPlanned(advanced, next, generation, filesPlan, progress); err != nil {
+		files, bytes, resumed = progress.counts()
+		return files, bytes, resumed, err
+	}
+	files, bytes, resumed = progress.counts()
+	return files, bytes, resumed, nil
+}
+
+// plannedUpload is one file of a directory upload, with the remote path its
+// plan already validated.
+type plannedUpload struct {
+	local  string
+	remote string
+	info   os.FileInfo
+}
+
+// uploadFilesInFlight is how many files of one directory transfer are uploaded
+// at once. A small file costs several round trips (open, write, close, chmod,
+// rename) that its own sliding window cannot overlap with the next file's, so
+// without this a folder of KB-sized files is paced by one file at a time. KB
+// files hold one chunk each; the window bounds the cost of a folder of large
+// files at this many times uploadWindow.
+const uploadFilesInFlight = 8
+
+// uploadPlanned uploads a directory's files with a few in flight. The first
+// failure stops new files from starting; files already in flight finish and
+// keep the partials their policy allows, and their bytes stay counted.
+func (worker *Worker) uploadPlanned(client transferRemote, next request, generation uint64, files []plannedUpload, progress *transferProgress) error {
+	workers := min(uploadFilesInFlight, len(files))
+	tasks := make(chan plannedUpload)
+	var (
+		group sync.WaitGroup
+		stop  = make(chan struct{})
+		once  sync.Once
+		fail  error
+	)
+	stopWith := func(err error) {
+		once.Do(func() {
+			fail = err
+			close(stop)
+		})
+	}
+	group.Add(workers)
+	for range workers {
+		go func() {
+			defer group.Done()
+			for task := range tasks {
+				if worker.stopped(generation, next.id) {
+					stopWith(ErrCanceled)
+					return
+				}
+				if _, _, err := worker.uploadFile(client, task.local, task.remote, task.info, next.policy, generation, next.id, 0, progress); err != nil {
+					stopWith(err)
+					return
+				}
+				progress.fileFinished()
+			}
+		}()
+	}
+sending:
+	for _, task := range files {
+		select {
+		case <-stop:
+			break sending
+		case tasks <- task:
 		}
-		if entryInfo.IsDir() {
-			return ensureRemoteDirectory(advanced, remotePath)
-		}
-		written, continued, err := worker.uploadFile(advanced, localPath, remotePath, entryInfo, next.policy, generation, next.id, files, bytes)
-		bytes += written
-		resumed += continued
-		if err == nil {
-			files++
-			worker.setProgress(next.id, files, bytes, resumed)
-		}
-		return err
-	})
-	return files, bytes, resumed, err
+	}
+	close(tasks)
+	group.Wait()
+	return fail
+}
+
+// transferProgress counts one directory transfer from the several file uploads
+// that move it. Every update is an increment under the lock, so the snapshot it
+// reports never goes backwards when files finish out of order.
+type transferProgress struct {
+	worker *Worker
+	id     uint64
+
+	mu      sync.Mutex
+	files   int
+	bytes   int64
+	resumed int64
+}
+
+func (progress *transferProgress) addResumed(n int64) {
+	progress.add(n, true)
+}
+
+func (progress *transferProgress) addBytes(n int64) {
+	progress.add(n, false)
+}
+
+func (progress *transferProgress) add(n int64, resumed bool) {
+	if n == 0 {
+		return
+	}
+	progress.mu.Lock()
+	defer progress.mu.Unlock()
+	progress.bytes += n
+	if resumed {
+		progress.resumed += n
+	}
+	progress.reportLocked()
+}
+
+func (progress *transferProgress) fileFinished() {
+	progress.mu.Lock()
+	defer progress.mu.Unlock()
+	progress.files++
+	progress.reportLocked()
+}
+
+// reportLocked publishes the counters under the lock, so two files finishing
+// out of order cannot leave an older snapshot showing.
+func (progress *transferProgress) reportLocked() {
+	if progress.id != 0 {
+		progress.worker.setProgress(progress.id, progress.files, progress.bytes, progress.resumed)
+	}
+}
+
+func (progress *transferProgress) counts() (files int, bytes, resumed int64) {
+	progress.mu.Lock()
+	defer progress.mu.Unlock()
+	return progress.files, progress.bytes, progress.resumed
 }
 
 func (worker *Worker) legacyUpload(client Remote, localPath, remotePath string, generation uint64) (written int64, err error) {
@@ -1570,27 +1769,39 @@ func (worker *Worker) legacyUpload(client Remote, localPath, remotePath string, 
 	return worker.uploadCopy(destination, source, generation, 0, 0, 0, 0)
 }
 
-func scanLocal(localPath string, recursive bool) (os.FileInfo, int, int64, error) {
+// localPlanItem is one entry a local directory upload will move, with the
+// local path and the slash-separated path it takes below the transfer root. A
+// directory's plan is in walk order, so a parent precedes its children.
+type localPlanItem struct {
+	local     string
+	relative  string
+	info      os.FileInfo
+	directory bool
+}
+
+// planLocal validates a local source and lists what an upload moves. A single
+// file is a plan of one item; a directory holds every entry below it but the
+// root itself.
+func planLocal(localPath string, recursive bool) (os.FileInfo, []localPlanItem, error) {
 	info, err := os.Lstat(localPath)
 	if err != nil {
-		return nil, 0, 0, err
+		return nil, nil, err
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
-		return nil, 0, 0, fmt.Errorf("%w: %s", ErrSymbolicLink, localPath)
+		return nil, nil, fmt.Errorf("%w: %s", ErrSymbolicLink, localPath)
 	}
 	if !info.IsDir() {
 		if !info.Mode().IsRegular() {
-			return nil, 0, 0, fmt.Errorf("sftp: unsupported local file type: %s", localPath)
+			return nil, nil, fmt.Errorf("sftp: unsupported local file type: %s", localPath)
 		}
-		return info, 1, info.Size(), nil
+		return info, []localPlanItem{{local: localPath, relative: ".", info: info}}, nil
 	}
 	if !recursive {
-		return nil, 0, 0, fmt.Errorf("sftp: directory upload requires recursive mode")
+		return nil, nil, fmt.Errorf("sftp: directory upload requires recursive mode")
 	}
-	files := 0
-	var bytes int64
-	items := 0
 	root := filepath.Clean(localPath)
+	var plan []localPlanItem
+	items := 0
 	err = filepath.WalkDir(root, func(current string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -1603,7 +1814,8 @@ func scanLocal(localPath string, recursive bool) (os.FileInfo, int, int64, error
 		if relErr != nil {
 			return relErr
 		}
-		if depth := pathDepth(filepath.ToSlash(relative)); depth > maxTransferDepth {
+		relative = filepath.ToSlash(relative)
+		if depth := pathDepth(relative); depth > maxTransferDepth {
 			return fmt.Errorf("sftp: directory exceeds transfer depth %d", maxTransferDepth)
 		}
 		entryInfo, infoErr := entry.Info()
@@ -1613,27 +1825,51 @@ func scanLocal(localPath string, recursive bool) (os.FileInfo, int, int64, error
 		if entryInfo.Mode()&os.ModeSymlink != 0 {
 			return fmt.Errorf("%w: %s", ErrSymbolicLink, current)
 		}
-		if !entryInfo.IsDir() {
-			if !entryInfo.Mode().IsRegular() {
-				return fmt.Errorf("sftp: unsupported local file type: %s", current)
-			}
-			files++
-			bytes += entryInfo.Size()
+		if !entryInfo.IsDir() && !entryInfo.Mode().IsRegular() {
+			return fmt.Errorf("sftp: unsupported local file type: %s", current)
 		}
+		if relative == "." {
+			return nil
+		}
+		plan = append(plan, localPlanItem{local: current, relative: relative, info: entryInfo, directory: entryInfo.IsDir()})
 		return nil
 	})
-	return info, files, bytes, err
+	if err != nil {
+		return nil, nil, err
+	}
+	return info, plan, nil
 }
 
-func (worker *Worker) uploadFile(client transferRemote, localPath, remotePath string, sourceInfo os.FileInfo, policy ExistingPolicy, generation, transferID uint64, filesDone int, bytesBefore int64) (written, resumed int64, err error) {
-	return worker.uploadStream(client, func() (io.ReadCloser, error) { return os.Open(localPath) }, sourceInfo, remotePath, policy, generation, transferID, filesDone, bytesBefore)
+func scanLocal(localPath string, recursive bool) (os.FileInfo, int, int64, error) {
+	info, plan, err := planLocal(localPath, recursive)
+	if err != nil {
+		return info, 0, 0, err
+	}
+	files, bytes := planTotals(plan)
+	return info, files, bytes, nil
+}
+
+// planTotals counts the files and bytes a plan moves. Directories take no
+// bytes of their own.
+func planTotals(plan []localPlanItem) (files int, bytes int64) {
+	for _, item := range plan {
+		if !item.directory {
+			files++
+			bytes += item.info.Size()
+		}
+	}
+	return files, bytes
+}
+
+func (worker *Worker) uploadFile(client transferRemote, localPath, remotePath string, sourceInfo os.FileInfo, policy ExistingPolicy, generation, transferID uint64, trusted int64, sink progressSink) (written, resumed int64, err error) {
+	return worker.uploadStream(client, func() (io.ReadCloser, error) { return os.Open(localPath) }, sourceInfo, localPath, remotePath, policy, generation, transferID, trusted, sink)
 }
 
 // uploadStream writes sourceInfo's content into remotePath through a staged
 // partial file, as uploadFile does for a local file. openSource runs once the
 // destination rules are settled, so a conflict costs no read; a remote copy
 // passes the source server's file handle here.
-func (worker *Worker) uploadStream(client transferRemote, openSource func() (io.ReadCloser, error), sourceInfo os.FileInfo, remotePath string, policy ExistingPolicy, generation, transferID uint64, filesDone int, bytesBefore int64) (written, resumed int64, err error) {
+func (worker *Worker) uploadStream(client transferRemote, openSource func() (io.ReadCloser, error), sourceInfo os.FileInfo, sourceIdentity, remotePath string, policy ExistingPolicy, generation, transferID uint64, trusted int64, sink progressSink) (written, resumed int64, err error) {
 	finalInfo, finalExists, err := remoteLstat(client, remotePath)
 	if err != nil {
 		return 0, 0, err
@@ -1650,11 +1886,11 @@ func (worker *Worker) uploadStream(client transferRemote, openSource func() (io.
 		}
 		if policy == ExistingSkip {
 			// Already there: counted as done, not copied.
-			worker.setProgress(transferID, filesDone, bytesBefore+sourceInfo.Size(), sourceInfo.Size())
+			sink.addResumed(sourceInfo.Size())
 			return sourceInfo.Size(), sourceInfo.Size(), nil
 		}
 	}
-	partial := remotePartialPath(remotePath)
+	partial := remotePartialPath(remotePath, sourceIdentity)
 	partialInfo, partialExists, err := remoteLstat(client, partial)
 	if err != nil {
 		return 0, 0, err
@@ -1712,10 +1948,39 @@ func (worker *Worker) uploadStream(client transferRemote, openSource func() (io.
 		if partialInfo.Size() > sourceInfo.Size() {
 			return 0, 0, fmt.Errorf("%w: %s", ErrResumeMismatch, partial)
 		}
-		if err := worker.verifyPrefix(source, destination, partialInfo.Size(), generation, transferID); err != nil {
-			return 0, 0, fmt.Errorf("%w: %s: %v", ErrResumeMismatch, partial, err)
-		}
 		resumed = partialInfo.Size()
+		if trusted <= 0 || trusted > partialInfo.Size() {
+			// Nothing proves the partial continues this source: read it back
+			// and compare it with the source before going on from its end.
+			if err := worker.verifyPrefix(source, destination, partialInfo.Size(), generation, transferID); err != nil {
+				return 0, 0, fmt.Errorf("%w: %s: %v", ErrResumeMismatch, partial, err)
+			}
+		} else {
+			// The first trusted bytes were written and acknowledged by an
+			// earlier attempt of this very upload, so they are a prefix of the
+			// source already on the server. Reading them back would mean
+			// downloading the whole prefix again; instead drop anything past
+			// them and start the copy at trusted.
+			if partialInfo.Size() > trusted {
+				if err := destination.Truncate(trusted); err != nil {
+					return 0, 0, err
+				}
+			}
+			// The copy starts at trusted on both sides. A source that cannot
+			// seek would be sent from its start while the writes land at
+			// trusted, corrupting the result, so it must not reach here.
+			sourceSeek, ok := source.(io.Seeker)
+			if !ok {
+				return 0, 0, fmt.Errorf("sftp: resume requires a seekable source: %s", remotePath)
+			}
+			if _, err := sourceSeek.Seek(trusted, io.SeekStart); err != nil {
+				return 0, 0, err
+			}
+			if _, err := destination.Seek(trusted, io.SeekStart); err != nil {
+				return 0, 0, err
+			}
+			resumed = trusted
+		}
 	} else {
 		if err := destination.Truncate(0); err != nil {
 			return 0, 0, err
@@ -1724,8 +1989,8 @@ func (worker *Worker) uploadStream(client transferRemote, openSource func() (io.
 			return 0, 0, err
 		}
 	}
-	worker.setProgress(transferID, filesDone, bytesBefore+resumed, resumed)
-	newBytes, err := worker.uploadCopy(destination, source, generation, transferID, filesDone, bytesBefore, resumed)
+	sink.addResumed(resumed)
+	newBytes, err := worker.uploadCopyTo(destination, source, generation, transferID, resumed, sink)
 	written = resumed + newBytes
 	if err != nil {
 		if errors.Is(err, errUploadAbandoned) {
@@ -1880,7 +2145,8 @@ func (worker *Worker) remoteCopy(destination Remote, next request, generation ui
 				return remoteSource.OpenTransferFile(sourcePath, os.O_RDONLY)
 			}
 			info := plannedFileInfo{name: path.Base(sourcePath), size: item.size, mode: item.mode, modTime: item.modTime}
-			written, continued, copyErr := worker.uploadStream(client, open, info, targetPath, next.policy, generation, next.id, files, bytes)
+			sink := newFileSink(worker, next.id, files, bytes)
+			written, continued, copyErr := worker.uploadStream(client, open, info, sourcePath, targetPath, next.policy, generation, next.id, 0, sink)
 			bytes += written
 			resumed += continued
 			if copyErr != nil {
@@ -2409,7 +2675,7 @@ func (pipeline *uploadPipeline) write() {
 // run counts acknowledgements until every goroutine of the pipeline has ended
 // and returns the bytes that are acknowledged without a gap before them, which
 // is all that progress, resume and the partial file's length may rely on.
-func (pipeline *uploadPipeline) run(filesDone int, bytesBefore int64) (int64, error) {
+func (pipeline *uploadPipeline) run(sink progressSink) (int64, error) {
 	worker := pipeline.worker
 	go func() {
 		<-pipeline.readerDone
@@ -2421,6 +2687,7 @@ func (pipeline *uploadPipeline) run(filesDone int, bytesBefore int64) (int64, er
 		slots     [uploadWindow]uploadChunk
 		next      int64
 		confirmed int64
+		reported  int64
 		failed    error
 		aborted   bool
 		abandoned bool
@@ -2468,7 +2735,8 @@ func (pipeline *uploadPipeline) run(filesDone int, bytesBefore int64) (int64, er
 			if advanced && pipeline.transferID != 0 {
 				if now := worker.clock(); now.Sub(lastNotify) >= progressFrameInterval {
 					lastNotify = now
-					worker.setProgress(pipeline.transferID, filesDone, bytesBefore+pipeline.resumed+confirmed, pipeline.resumed)
+					sink.addBytes(confirmed - reported)
+					reported = confirmed
 				}
 			}
 		case <-wake:
@@ -2489,7 +2757,7 @@ func (pipeline *uploadPipeline) run(filesDone int, bytesBefore int64) (int64, er
 	}
 
 	if pipeline.transferID != 0 {
-		worker.setProgress(pipeline.transferID, filesDone, bytesBefore+pipeline.resumed+confirmed, pipeline.resumed)
+		sink.addBytes(confirmed - reported)
 	}
 	if abandoned {
 		// The reader never waits on the network and has been told to stop; the
@@ -2528,6 +2796,15 @@ func (pipeline *uploadPipeline) run(filesDone int, bytesBefore int64) (int64, er
 // beyond a failed one may still have landed, leaving the remote file longer than
 // that and zero-filled in between; the caller truncates it to the result.
 func (worker *Worker) uploadPipelined(destination io.WriterAt, source io.Reader, generation, transferID uint64, filesDone int, bytesBefore, resumed int64) (int64, error) {
+	sink := newFileSink(worker, transferID, filesDone, bytesBefore)
+	sink.addResumed(resumed)
+	return worker.uploadPipelinedTo(destination, source, generation, transferID, resumed, sink)
+}
+
+// uploadPipelinedTo is uploadPipelined for a copy whose progress another file
+// may be reporting at the same time: the sink counts the bytes this file moves
+// as increments, so several files can share one transfer's counters.
+func (worker *Worker) uploadPipelinedTo(destination io.WriterAt, source io.Reader, generation, transferID uint64, resumed int64, sink progressSink) (int64, error) {
 	pipeline := &uploadPipeline{
 		worker: worker, destination: destination, source: source,
 		generation: generation, transferID: transferID, resumed: resumed,
@@ -2538,39 +2815,96 @@ func (worker *Worker) uploadPipelined(destination io.WriterAt, source io.Reader,
 		readerDone: make(chan struct{}),
 	}
 	go pipeline.read()
-	return pipeline.run(filesDone, bytesBefore)
+	return pipeline.run(sink)
 }
 
 // uploadCopy moves a local file to a remote writer. A destination that takes
 // writes at offsets, which is every SFTP file, gets the sliding window; any other
 // is written sequentially.
 func (worker *Worker) uploadCopy(destination io.Writer, source io.Reader, generation, transferID uint64, filesDone int, bytesBefore, resumed int64) (int64, error) {
+	sink := newFileSink(worker, transferID, filesDone, bytesBefore)
+	sink.addResumed(resumed)
+	return worker.uploadCopyTo(destination, source, generation, transferID, resumed, sink)
+}
+
+func (worker *Worker) uploadCopyTo(destination io.Writer, source io.Reader, generation, transferID uint64, resumed int64, sink progressSink) (int64, error) {
 	if writerAt, ok := destination.(io.WriterAt); ok {
-		return worker.uploadPipelined(writerAt, source, generation, transferID, filesDone, bytesBefore, resumed)
+		return worker.uploadPipelinedTo(writerAt, source, generation, transferID, resumed, sink)
 	}
-	return worker.copy(destination, source, generation, transferID, filesDone, bytesBefore, resumed)
+	return worker.copyTo(destination, source, generation, transferID, sink)
 }
 
 // downloadCopy keeps pipelined reads when the source supports WriteTo. Fallback
 // is only safe before the destination was tried; a local write failure must not
 // be hidden by retrying from the source's already advanced offset.
 func (worker *Worker) downloadCopy(destination io.Writer, source io.Reader, generation, transferID uint64, filesDone int, bytesBefore, resumed int64) (int64, error) {
+	sink := newFileSink(worker, transferID, filesDone, bytesBefore)
+	sink.addResumed(resumed)
+	return worker.downloadCopyTo(destination, source, generation, transferID, sink)
+}
+
+func (worker *Worker) downloadCopyTo(destination io.Writer, source io.Reader, generation, transferID uint64, sink progressSink) (int64, error) {
 	writerTo, ok := source.(io.WriterTo)
 	if !ok {
-		return worker.copy(destination, source, generation, transferID, filesDone, bytesBefore, resumed)
+		return worker.copyTo(destination, source, generation, transferID, sink)
 	}
 	progress := &copyProgress{
-		worker: worker, destination: destination, generation: generation, transferID: transferID,
-		filesDone: filesDone, bytesBefore: bytesBefore, resumed: resumed,
+		worker: worker, destination: destination, generation: generation, transferID: transferID, sink: sink,
 	}
 	_, err := writerTo.WriteTo(progress)
 	if err != nil && !progress.started {
 		// A server that refuses a stat on an open file still reads fine one
 		// request at a time; WriteTo gave up before moving any byte, so the
 		// source is still where it started.
-		return worker.copy(destination, source, generation, transferID, filesDone, bytesBefore, resumed)
+		return worker.copyTo(destination, source, generation, transferID, sink)
 	}
 	return progress.written, err
+}
+
+// progressSink receives the bytes a copy adds to its transfer: addResumed for
+// bytes already on the server (a resumed prefix or a skipped file), addBytes
+// for bytes just written. A copy shared with other files adds increments, so
+// one transfer's counters stay right however many files report at once.
+type progressSink interface {
+	addResumed(n int64)
+	addBytes(n int64)
+}
+
+// fileSink is the sink of a copy that owns its transfer's counters, as a single
+// file or a sequential download does.
+type fileSink struct {
+	worker    *Worker
+	id        uint64
+	filesDone int
+	bytes     int64
+	resumed   int64
+}
+
+func newFileSink(worker *Worker, id uint64, filesDone int, bytes int64) *fileSink {
+	return &fileSink{worker: worker, id: id, filesDone: filesDone, bytes: bytes}
+}
+
+func (sink *fileSink) addResumed(n int64) {
+	if n == 0 {
+		return
+	}
+	sink.bytes += n
+	sink.resumed += n
+	sink.report()
+}
+
+func (sink *fileSink) addBytes(n int64) {
+	if n == 0 {
+		return
+	}
+	sink.bytes += n
+	sink.report()
+}
+
+func (sink *fileSink) report() {
+	if sink.id != 0 {
+		sink.worker.setProgress(sink.id, sink.filesDone, sink.bytes, sink.resumed)
+	}
 }
 
 // copyProgress counts a pipelined download, keeps its progress fresh on the
@@ -2580,9 +2914,7 @@ type copyProgress struct {
 	destination io.Writer
 	generation  uint64
 	transferID  uint64
-	filesDone   int
-	bytesBefore int64
-	resumed     int64
+	sink        progressSink
 	written     int64
 	started     bool
 }
@@ -2602,12 +2934,18 @@ func (progress *copyProgress) Write(chunk []byte) (int, error) {
 	}
 	progress.written += int64(written)
 	if progress.transferID != 0 {
-		progress.worker.setProgress(progress.transferID, progress.filesDone, progress.bytesBefore+progress.resumed+progress.written, progress.resumed)
+		progress.sink.addBytes(int64(written))
 	}
 	return written, err
 }
 
 func (worker *Worker) copy(destination io.Writer, source io.Reader, generation, transferID uint64, filesDone int, bytesBefore, resumed int64) (int64, error) {
+	sink := newFileSink(worker, transferID, filesDone, bytesBefore)
+	sink.addResumed(resumed)
+	return worker.copyTo(destination, source, generation, transferID, sink)
+}
+
+func (worker *Worker) copyTo(destination io.Writer, source io.Reader, generation, transferID uint64, sink progressSink) (int64, error) {
 	pair := bufferPool.Get().(*[2][32 * 1024]byte)
 	defer bufferPool.Put(pair)
 	buffer := pair[0][:]
@@ -2627,15 +2965,15 @@ func (worker *Worker) copy(destination io.Writer, source io.Reader, generation, 
 				count, writeErr := destination.Write(buffer[offset:read])
 				written += int64(count)
 				offset += count
+				if transferID != 0 {
+					sink.addBytes(int64(count))
+				}
 				if writeErr != nil {
 					return written, writeErr
 				}
 				if count == 0 {
 					return written, io.ErrShortWrite
 				}
-			}
-			if transferID != 0 {
-				worker.setProgress(transferID, filesDone, bytesBefore+resumed+written, resumed)
 			}
 		}
 		if readErr != nil {
@@ -2887,8 +3225,16 @@ func localLstat(localPath string) (os.FileInfo, bool, error) {
 	return nil, false, err
 }
 
-func remotePartialPath(remotePath string) string {
-	return path.Join(path.Dir(remotePath), transferPartialName(path.Base(remotePath), false))
+// remotePartialPath names the partial of an upload. The source identity keeps
+// two different sources that target the same remote path from adopting each
+// other's partial: the destination alone cannot tell them apart.
+func remotePartialPath(remotePath, sourceIdentity string) string {
+	name := path.Base(remotePath)
+	if sourceIdentity != "" {
+		digest := sha256.Sum256([]byte(sourceIdentity))
+		name = fmt.Sprintf("%x.%s", digest[:4], name)
+	}
+	return path.Join(path.Dir(remotePath), transferPartialName(name, false))
 }
 
 func localPartialPath(localPath string) string {

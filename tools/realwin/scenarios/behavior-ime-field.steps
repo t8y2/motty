@@ -1,0 +1,18 @@
+# Compose Chinese with the IME in the command palette's native search field and
+# commit it there.
+place 200 100 2000 1300
+focus
+sleep 800
+keys ^+p
+sleep 1000
+ime 1
+sleep 500
+typefast nihao
+sleep 1500
+shot beh-imf-1-compose
+keys 1
+sleep 1000
+shot beh-imf-2-picked
+keys {ESC}
+sleep 500
+ime 0

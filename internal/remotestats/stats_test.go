@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"strconv"
@@ -271,6 +272,93 @@ func TestCommandEscapesReachTheShellOnce(t *testing.T) {
 	}
 }
 
+func TestLinuxMonitorSamplesThroughZshWithoutGPUFiles(t *testing.T) {
+	zsh, err := exec.LookPath("zsh")
+	if err != nil {
+		t.Skipf("zsh unavailable: %v", err)
+	}
+	checkLinuxMonitorSamples(t, zsh, "-f", "-o", "nomatch")
+}
+
+func TestLinuxMonitorSamplesWithoutShOnPath(t *testing.T) {
+	checkLinuxMonitorSamples(t, "/bin/sh")
+}
+
+func checkLinuxMonitorSamples(t *testing.T, shell string, args ...string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("requires a POSIX sh")
+	}
+	dir := t.TempDir()
+	for path, contents := range map[string]string{
+		"proc/stat":    "cpu 10 0 0 90 0 0 0 0\n",
+		"proc/meminfo": "MemTotal: 1024 kB\nMemAvailable: 512 kB\n",
+		"proc/uptime":  "100 0\n",
+		"proc/net/dev": "",
+		// Advance the counters each time the sampler waits.
+		"sleep": `#!/bin/sh
+read -r uptime _ <proc/uptime
+next=$((uptime + 1))
+printf '%s 0\n' "$next" >proc/uptime
+printf 'cpu %s 0 0 90 0 0 0 0\n' "$next" >proc/stat
+`,
+	} {
+		file := filepath.Join(dir, path)
+		if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(file, []byte(contents), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runner := commandCaptureRunner{commands: make(chan string, 1)}
+	worker := StartWithInterval(runner, nil, 1)
+	defer worker.Close()
+	var script string
+	select {
+	case script = <-runner.commands:
+	case <-time.After(statsWait()):
+		t.Fatal("the sampler did not start")
+	}
+	// Exercise the generated SSH command against isolated files, with three
+	// readings so there are two samples after the baseline.
+	script = strings.NewReplacer(
+		"/proc/", "proc/",
+		"/sys/class/drm/", "drm/",
+		"while :; do\n\tsample || exit 1\n\tsleep 1\ndone", "sample || exit 1\nsleep 1\nsample || exit 1",
+	).Replace(script)
+	ctx, cancel := context.WithTimeout(context.Background(), statsWait())
+	defer cancel()
+	process := exec.CommandContext(ctx, shell, append(args, "-c", script)...)
+	process.Dir = dir
+	// Only the fixture's sleep is on PATH. The command must use the system sh
+	// by absolute path, and the test cannot pick up installed GPU utilities.
+	process.Env = append(os.Environ(), "ZDOTDIR="+dir, "PATH="+dir)
+	output, err := process.CombinedOutput()
+	if err != nil {
+		t.Fatalf("sampler exited with %v: %s", err, output)
+	}
+	var readings []counters
+	for _, line := range strings.Split(strings.TrimSuffix(string(output), "\n"), "\n") {
+		if strings.HasPrefix(line, "gop-net-primary ") {
+			continue
+		}
+		reading, err := parse([]byte(line))
+		if err != nil {
+			t.Fatalf("line %q: %v", line, err)
+		}
+		readings = append(readings, reading)
+	}
+	if len(readings) != 3 {
+		t.Fatalf("got %d readings, want three", len(readings))
+	}
+	for index := 1; index < len(readings); index++ {
+		if got, ok := sample(readings[index-1], readings[index]); !ok || got.MemoryUsedBytes != 512<<10 {
+			t.Fatalf("sample %d = %+v, valid=%v", index, got, ok)
+		}
+	}
+}
+
 // On a Linux host the real script runs under the system shell: it must print
 // readings that parse and make sense, the first at once.
 func TestCommandPrintsReadingsOnThisHost(t *testing.T) {
@@ -282,7 +370,7 @@ func TestCommandPrintsReadingsOnThisHost(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	process := exec.CommandContext(ctx, "/bin/sh", "-c", command)
+	process := exec.CommandContext(ctx, "/bin/sh", "-c", linuxShellCommand(command))
 	stdout, err := process.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)

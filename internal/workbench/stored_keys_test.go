@@ -165,6 +165,47 @@ func TestGeneratedKeyWithAPassphraseIsEncrypted(t *testing.T) {
 	}
 }
 
+func TestThePassphraseOfAGeneratedKeyCanBeSaved(t *testing.T) {
+	options := freshOptions(t)
+	options.SetClipboardText = func(string) error { return nil } // never the machine's clipboard
+	state := newTestState(t, options)
+	state.Click(hitKeychain)
+	state.Click(hitKeysAdd)
+	state.Click(hitKeysGenerate)
+	state.form.set(0, "locked")
+	state.form.set(1, "correct horse")
+	state.Click(hitFormSubmit)
+	key := state.identities[0]
+	if !key.Stored || !key.Encrypted {
+		t.Fatalf("generated key = %+v", key)
+	}
+
+	// A passphrase that does not open the key is refused, as it is for a file.
+	state.Click(hitKeysPassphrase)
+	if state.modal != modalForm {
+		t.Fatalf("the passphrase form did not open: modal %d", state.modal)
+	}
+	state.form.set(0, "not it")
+	state.Click(hitFormSubmit)
+	if state.modal != modalForm || state.form.dialogError != state.messages.KeyPassphraseWrong {
+		t.Fatalf("a wrong passphrase was accepted: modal %d, error %q", state.modal, state.form.dialogError)
+	}
+	if _, found, _ := state.secrets.vault.Get(passphraseSecretName(key.Path)); found {
+		t.Fatal("a wrong passphrase reached the vault")
+	}
+
+	// The one the key was made with is kept under the key's reference, which is
+	// the name a connection looks it up by.
+	state.form.set(0, "correct horse")
+	state.Click(hitFormSubmit)
+	if state.modal != modalNone {
+		t.Fatalf("the form stayed open: %q", state.form.dialogError)
+	}
+	if value, found, err := state.secrets.vault.Get(passphraseSecretName(key.Path)); err != nil || !found || value != "correct horse" {
+		t.Fatalf("saved passphrase = %q, %v, %v", value, found, err)
+	}
+}
+
 func TestStoredKeyReachesTheConnectionByName(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)

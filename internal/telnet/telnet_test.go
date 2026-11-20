@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"motty/internal/shellkind"
+	"motty/internal/termsize"
 )
 
 // pair connects a Session to a raw peer the test plays the server on.
@@ -78,7 +79,7 @@ func TestTheOptionsATerminalNeedsAreAcceptedAndTheRestRefused(t *testing.T) {
 		t.Fatalf("terminal type = %q", reply)
 	}
 	// A resize is reported.
-	session.Resize(80, 24)
+	session.Resize(termsize.Size{Cols: 80, Rows: 24})
 	if got := readN(t, server, 9); !bytes.Equal(got, []byte{iac, sb, optNAWS, 0, 80, 0, 24, iac, se}) {
 		t.Fatalf("resize = %v", got)
 	}

@@ -188,7 +188,7 @@ func (state *State) declareAIPresetField(c ui.C) {
 	ui.Column(c).Height(60).Children(func() {
 		ui.Text(c, m.FormPreset).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(theme.Foreground).LineHeight(metrics.FontSizeM + 4).Ellipsis()
 		previous := cfg.preset
-		selector := ui.SelectIcon(c, &cfg.preset, aiPresetChoices, state.aiPresetLabel, aiPresetIcon).
+		selector := ui.Select(c, &cfg.preset, aiPresetChoices, state.aiPresetLabel).Icons(aiPresetIcons).
 			Label(m.FormPreset).Height(metrics.ControlHeight).MarginSides(gap, 0, 0, 0)
 		if selector.Changed() {
 			preset := cfg.preset

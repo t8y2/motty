@@ -36,6 +36,10 @@ Changed:
 * Standard RDP Security (RC4 without TLS) is used only when
   `Options.Security` is `SecurityStandard`; the default refuses a server that
   offers nothing else.
+* `Options.LegacyTLS` adds the RSA key exchange cipher suites (AES-CBC and
+  AES-GCM) to the TLS offer for a server that leaves nothing newer reachable.
+  They are named explicitly because Go's default offer leaves RSA key exchange
+  out (`tlsrsakex`) and CBC-SHA256 out of every list it builds.
 * A wrong password stops after one attempt (`%w` instead of `%v` kept
   `nla.ErrCredentialsFatal` visible). A server that drops the connection after the
   credentials were sent is still not retried, but it is reported as an unproven
@@ -81,7 +85,10 @@ Changed:
   a suppressed server must not answer it.
 * A 32bpp pointer's alpha channel decides transparency, with the AND mask able
   only to hide a pixel; 32bpp data with no alpha at all still falls back to the
-  masks. xrdp sends X cursors at 32bpp with per-pixel alpha and a zero AND
+  masks. A server that omits the AND mask entirely (`lengthAndMask = 0`) leaves
+  each pixel to its alpha; GNOME Remote Desktop sends Debian 13's cursor this
+  way, and reading the absent mask as "hide" rendered the whole cursor
+  invisible. xrdp sends X cursors at 32bpp with per-pixel alpha and a zero AND
   mask, which upstream's rule rendered as an opaque black square around the
   pointer.
 * The EGFX `ResetGraphics` PDU clears surfaces, output maps and frame state but

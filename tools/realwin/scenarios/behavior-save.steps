@@ -1,0 +1,21 @@
+# Export the terminal's output through the platform's Save dialog and confirm
+# the file lands where the dialog was told.
+place 200 100 2000 1300
+focus
+sleep 800
+click 370 1260
+sleep 3500
+typefast echo save-check
+sleep 300
+keys {ENTER}
+sleep 800
+click 2156 660
+sleep 1500
+shot beh-save-1-dialog
+keys ^a
+sleep 200
+typefast C:\Users\11562\mt-probe\saved-output.txt
+sleep 400
+keys {ENTER}
+sleep 1500
+shot beh-save-2-after

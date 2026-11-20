@@ -11,6 +11,7 @@ import (
 
 	"motty/internal/keyidentity"
 	"motty/internal/sshconn"
+	"motty/internal/vault"
 )
 
 // A stored key is a private key that is not a file: one pasted into Motty or made
@@ -56,21 +57,26 @@ func unmarshalStoredKey(value string) (storedKey, error) {
 	return key, nil
 }
 
+// readStoredKey reads the private key a reference names from the vault.
+func readStoredKey(source passwordReader, ref string) ([]byte, error) {
+	value, found, err := source.Get(ref)
+	switch {
+	case err != nil:
+		return nil, err
+	case !found:
+		return nil, errors.New("it is no longer saved in Motty")
+	}
+	key, err := unmarshalStoredKey(value)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(key.Key), nil
+}
+
 // storedKeyReader is how a connection reads the private key a reference names.
 func storedKeyReader(source passwordReader) func(string) ([]byte, error) {
 	return func(ref string) ([]byte, error) {
-		value, found, err := source.Get(ref)
-		switch {
-		case err != nil:
-			return nil, err
-		case !found:
-			return nil, errors.New("it is no longer saved in Motty")
-		}
-		key, err := unmarshalStoredKey(value)
-		if err != nil {
-			return nil, err
-		}
-		return []byte(key.Key), nil
+		return readStoredKey(source, ref)
 	}
 }
 
@@ -180,20 +186,50 @@ func (state *State) addStoredKey(name string, data []byte, onAdded func(identity
 		})
 		return ""
 	}
-	ref, err := newStoredKeyRef()
+	record, err := state.sealStoredKey(name, data, nil)
 	if err != nil {
-		return fmt.Sprintf(m.VaultSaveFailedFmt, err)
-	}
-	if err := vaultFile.Set(ref, marshalStoredKey(name, data)); err != nil {
 		return fmt.Sprintf(m.VaultSaveFailedFmt, state.vaultErrorText(err))
 	}
-	record := inspectStoredIdentity(state.nextIdentityID, ref, storedKey{Name: name, Key: string(data)}, state.keyMessages())
-	state.nextIdentityID++
 	state.identities = append(state.identities, record)
 	state.selectedIdentityID = record.ID
 	state.refreshIdentityCount()
 	onAdded(record)
 	return ""
+}
+
+// sealStoredKey keeps a private key in the vault under a new reference and
+// returns its record, numbered but not yet listed. A key that was listed as a
+// file passes it as replaces: the record takes its ID, so what was selected
+// stays selected, and the passphrase saved for the file's path moves to the new
+// reference in the same write, so the key does not ask for it again.
+func (state *State) sealStoredKey(name string, data []byte, replaces *identityRecord) (identityRecord, error) {
+	vaultFile := state.secrets.vault
+	if vaultFile == nil {
+		return identityRecord{}, vault.ErrUnavailable
+	}
+	ref, err := newStoredKeyRef()
+	if err != nil {
+		return identityRecord{}, err
+	}
+	changes := []vault.Change{{Name: ref, Value: marshalStoredKey(name, data)}}
+	id := state.nextIdentityID
+	if replaces != nil {
+		id = replaces.ID
+		if passphrase, found, err := vaultFile.Get(passphraseSecretName(replaces.Path)); err != nil {
+			return identityRecord{}, err
+		} else if found {
+			changes = append(changes,
+				vault.Change{Name: passphraseSecretName(ref), Value: passphrase},
+				vault.Change{Name: passphraseSecretName(replaces.Path), Delete: true})
+		}
+	}
+	if err := vaultFile.Apply(changes); err != nil {
+		return identityRecord{}, err
+	}
+	if replaces == nil {
+		state.nextIdentityID++
+	}
+	return inspectStoredIdentity(id, ref, storedKey{Name: name, Key: string(data)}, state.keyMessages()), nil
 }
 
 // defaultKeyName names a key whose adder gave it no name: its type and the start

@@ -87,6 +87,8 @@ func (state *State) clickSnippetsPage(id gfx.ID) bool {
 	switch {
 	case id == hitSnippetAdd:
 		state.openSnippetDialog(-1)
+	case id == hitSnippetGroups:
+		state.openSnippetGroupsManager()
 	case id == hitSnippetSend:
 		state.sendSnippetFromPage(state.snippets.selected, state.snippets.sendAt)
 	case id == hitSnippetEdit:
@@ -102,14 +104,17 @@ func (state *State) clickSnippetsPage(id gfx.ID) bool {
 // snippetsSectionUI is what the snippets page's declaration leaves for its
 // paint.
 type snippetsSectionUI struct {
-	rows, filter, remove, edit, send, add, empty ui.Box
-	removeWidth, sendWidth, editWidth, addWidth  float32
-	removeIcon, sendIcon, editIcon, addIcon      uint8
-	condensed                                    bool
+	rows, filter, groups, remove, edit, send, add, empty ui.Box
+	removeWidth, sendWidth, editWidth, addWidth          float32
+	removeIcon, sendIcon, editIcon, addIcon              uint8
+	condensed                                            bool
 	// widths are the three fixed columns' widths; the command column takes the
 	// rest. The header and the rows are declared with the same numbers.
 	widths      [3]float32
 	manualOrder bool
+	// keyWidth and commandWidth are the run keycap's inset and the room the
+	// command column has, so its text and expander land where the table put them.
+	keyWidth, commandWidth float32
 	// draw is the page hook that paints the fixed footer position and empty state.
 	draw func(*ui.DrawContext)
 }
@@ -165,12 +170,19 @@ func (state *State) declareSnippetsWorkspace(c ui.C) {
 			view.empty = state.reserveEmptyPage(c, bounds, m.SnippetEmpty, m.SnippetEmptySub, m.SnippetAdd, hitSnippetAdd, iconSnippets, canAdd)
 		} else {
 			if len(form.groups) > 0 {
-				view.filter = state.declareSnippetFilter(c).Size(220, toolbarHeight).MarginSides(0, 0, 9, 0).Shrink(0)
+				ui.Row(c).Height(toolbarHeight).MarginSides(0, 0, 9, 0).Gap(9).Children(func() {
+					view.filter = state.declareSnippetFilter(c).Size(220, toolbarHeight).Shrink(0)
+					groupsWidth := toolbarButtonWidth(canvas, m.SnippetGroupsManage, false)
+					view.groups = state.declareButtonSized(c, hitSnippetGroups, m.SnippetGroupsManage, 0, false, false, true, toolbarFont, false).
+						Size(groupsWidth, toolbarHeight)
+				})
 			}
 			theme := state.Theme()
 			view.manualOrder = form.sort.Direction == components.TableSortNone && form.filter.all() && len(form.list) > 1
 			state.fitSnippetColumns(canvas, theme)
+			view.keyWidth = max(canvas.TextWidthWeight(enterKeyLabel, theme.Metrics.FontSizeS, gfx.WeightMedium)+8, theme.Metrics.FontSizeS+9)
 			rowWidth := max(bounds.Width-36-catalogBarGutter, 0)
+			view.commandWidth = max(rowWidth-view.widths[0]-view.widths[1]-view.widths[2], 0)
 			_, lineHeight, detailHeight := state.snippetDetailHeight(canvas, rowWidth-2*snippetDetailPadding)
 			form.detailLineHeight, form.detailHeight = lineHeight, detailHeight
 			state.declareSnippetHeader(c, theme)
@@ -227,21 +239,39 @@ func (state *State) declareSnippetHeader(c ui.C, theme gfx.Theme) {
 		}
 		state.declareSnippetHeading(c, theme, 3, 0)
 	})
-	ui.Divider(c).Background(theme.Border)
 }
 
 // declareSnippetHeading declares one heading button. width 0 is the command
 // column, which takes the rest of the row.
 func (state *State) declareSnippetHeading(c ui.C, theme gfx.Theme, column int, width float32) {
-	m, form := state.messages.Tools, &state.snippets
+	m, form, view := state.messages.Tools, &state.snippets, &state.sectionBodies.snippets
 	heading := [...]string{m.SnippetColumnName, m.SnippetColumnGroup, m.SnippetColumnShortcut, m.SnippetColumnCommand}[column]
 	direction := components.TableSortNone
+	description := m.RemoteSortAction
 	if form.sort.Direction != components.TableSortNone && form.sort.Column == column {
 		direction = form.sort.Direction
+		if direction == components.TableSortAscending {
+			description = m.RemoteSortAscending
+		} else {
+			description = m.RemoteSortDescending
+		}
 	}
-	button := ui.ButtonBase(c, heading).Hit(hitSnippetSort.At(column), heading).
-		Height(components.TableHeaderHeight(theme)).PadX(theme.Metrics.GapItem).
-		Justify(ui.Start).Items(ui.Center)
+	// The manual order's drag handle indents the name column by its 24px square;
+	// the command column keeps the run keycap's inset and the expander's room.
+	left, right := theme.Metrics.GapItem, theme.Metrics.GapItem
+	if column == 0 && view.manualOrder {
+		left += 24
+	}
+	if column == 3 {
+		left += view.keyWidth + 6
+		right += 24 + theme.Metrics.GapItem
+	}
+	button := ui.ButtonBase(c, heading).
+		HitWith(hitSnippetSort.At(column), heading, gfx.HitOptions{Role: gfx.RoleButton, Description: description}).
+		Height(components.TableHeaderHeight(theme)).PadLeft(left).PadRight(right).
+		Justify(ui.Start).Items(ui.Center).
+		Hover(ui.Look{}.Background(theme.Hover)).
+		Focus(ui.Look{}.Ring(1, theme.Ring))
 	if width > 0 {
 		button.Width(width)
 	} else {
@@ -249,14 +279,15 @@ func (state *State) declareSnippetHeading(c ui.C, theme gfx.Theme, column int, w
 	}
 	button.Children(func() {
 		ui.Text(c, heading).Grow(1).FontSize(theme.Metrics.FontSizeM).Weight(gfx.WeightMedium).
-			Color(theme.MutedForeground).Ellipsis()
-		if direction != components.TableSortNone {
-			glyph := iconArrowUp
-			if direction == components.TableSortDescending {
-				glyph = iconChevronDown
-			}
-			ui.Icon(c, lucideIcons[glyph]).Size(12, 12).Color(theme.MutedForeground).Shrink(0)
+			Color(theme.Foreground).Ellipsis()
+		icon := remoteTableUnsortedIcon
+		switch direction {
+		case components.TableSortAscending:
+			icon = remoteTableAscendingIcon
+		case components.TableSortDescending:
+			icon = remoteTableDescendingIcon
 		}
+		ui.Icon(c, icon).Size(14, 14).Color(theme.Foreground).Shrink(0)
 	})
 }
 
@@ -322,45 +353,71 @@ func (state *State) declareSnippetRow(row ui.ListRow) {
 		background, paintBackground = theme.Hover, true
 	}
 	row.Element.Height(height).FillWidth()
-	if paintBackground {
-		row.Element.Background(background)
-	}
-	row.Element.DrawOver(form.rowRule)
 	row.Element.Children(func() {
 		ui.Column(c).FillWidth().Children(func() {
-			ui.Row(c).Height(rowHeight).FillWidth().Items(ui.Center).Children(func() {
-				ui.Text(c, entry.cells[0]).Width(view.widths[0]).PadX(pad).
-					FontSize(theme.Metrics.FontSizeM).Color(theme.Foreground).Ellipsis()
+			header := ui.Row(c).Height(rowHeight).FillWidth().Items(ui.Center)
+			if paintBackground {
+				// The old table's row surface covered the 36px row only; the
+				// expanded band below it stays on the page background.
+				header.Background(background)
+			}
+			header.Children(func() {
+				nameLeft := pad
+				if view.manualOrder {
+					nameLeft += 24
+				}
+				// The headings fix these three columns' widths. A command wider
+				// than its column is ellipsized there; without Shrink(0) its
+				// unwrapped width would shrink these cells instead and shift
+				// every later column in that row by the command's length (#1152).
+				ui.Text(c, entry.cells[0]).Width(view.widths[0]).PadLeft(nameLeft).PadRight(pad).
+					FontSize(theme.Metrics.FontSizeM).Color(theme.Foreground).Ellipsis().Shrink(0)
 				ui.Text(c, entry.cells[1]).Width(view.widths[1]).PadX(pad).
-					FontSize(theme.Metrics.FontSizeM).Color(theme.Foreground).Ellipsis()
-				ui.Row(c).Width(view.widths[2]).PadX(pad).Items(ui.Center).Children(func() {
+					FontSize(theme.Metrics.FontSizeM).Color(theme.Foreground).Ellipsis().Shrink(0)
+				ui.Row(c).Width(view.widths[2]).PadX(pad).Items(ui.Center).Shrink(0).Children(func() {
 					if entry.Shortcut.Valid() {
 						ui.Kbd(c, entry.cells[2])
 					}
 				})
-				command := ui.Row(c).Grow(1).PadX(pad).Items(ui.Center).Gap(pad).Children(func() {
+				ui.Row(c).Grow(1).PadLeft(pad + view.keyWidth + 6).PadRight(pad).
+					Items(ui.Center).Gap(pad).Children(func() {
 					if entry.Run {
-						ui.Kbd(c, enterKeyLabel)
+						// The run keycap stays at the cell's leading edge; the
+						// text starts past the column's key inset, as the table's
+						// command cell did.
+						ui.Kbd(c, enterKeyLabel).Absolute().Left(pad).
+							Top((snippetExpandSize - theme.Metrics.FontSizeS - 9) / 2).
+							Height(theme.Metrics.FontSizeS + 9)
 					}
 					ui.Text(c, entry.cells[3]).Grow(1).
 						FontSize(theme.Metrics.FontSizeM).Color(theme.Foreground).Ellipsis()
-					open := form.expanded == index+1
-					hint, glyph := m.SnippetExpand, iconChevronRight
-					if open {
-						hint, glyph = m.SnippetCollapse, iconChevronDown
+					// A command cell too narrow for the chevron drops it, as the
+					// old painter did instead of squeezing the text.
+					if view.commandWidth >= snippetExpandSize {
+						open := form.expanded == index+1
+						hint, glyph := m.SnippetExpand, iconChevronRight
+						if open {
+							hint, glyph = m.SnippetCollapse, iconChevronDown
+						}
+						state.declareIconButtonWithOptions(c, hitSnippetExpandList.At(index), glyph, hint,
+							false, iconButtonQuiet, 0, gfx.HitOptions{
+								Expanded: open, Expandable: true, Description: entry.Name,
+							}).Size(snippetExpandSize, snippetExpandSize)
 					}
-					state.declareIconButtonWithOptions(c, hitSnippetExpandList.At(index), glyph, hint,
-						false, iconButtonQuiet, 0, gfx.HitOptions{
-							Expanded: open, Expandable: true, Description: entry.Name,
-						}).Size(snippetExpandSize, snippetExpandSize)
 				})
 				if !expanded && hovered && strings.Contains(entry.Command, "\n") {
-					form.hoverCandidate, form.hoverCandidateAnchor = index+1, command
+					// The preview aligns 4px in from the command cell, as the old
+					// hover card's default align offset did, and hangs from the
+					// row's bottom edge whatever the cell's own height.
+					commandX := view.widths[0] + view.widths[1] + view.widths[2]
+					marker := ui.Slot(c).Absolute().Left(commandX + 4).Top(0).Width(1).Height(rowHeight)
+					form.hoverCandidate, form.hoverCandidateAnchor = index+1, marker
 				}
 			})
 			if expanded {
 				form.detailName, form.detailCommand = entry.Name, entry.Command
 				detail := ui.Column(c).FillWidth().Height(form.detailHeight).
+					Background(theme.Background).
 					PadX(snippetDetailPadding).PadY(snippetDetailPadding)
 				detail.Children(func() {
 					for _, line := range form.detailLines {
@@ -369,17 +426,48 @@ func (state *State) declareSnippetRow(row ui.ListRow) {
 							Height(form.detailLineHeight).FillWidth()
 					}
 				})
-				detail.DrawOver(form.detailCut)
+				detail.DrawOver(form.detailAccent)
 			}
 		})
+		if view.manualOrder {
+			row.Element.DrawOver(form.handleDraw)
+		}
 	})
 	state.sendSnippetOn(canvas, row.ID, index)
 	state.openSnippetMenuOn(canvas, row.ID, index)
 }
 
-// paintSnippetRowRule paints the hairline under each row, as the table did.
-func (state *State) paintSnippetRowRule(d *ui.DrawContext) {
-	d.Canvas.Fill(gfx.Rect{X: d.Rect.X, Y: d.Rect.Y + d.Rect.Height - 1, Width: d.Rect.Width, Height: 1}, state.Theme().Border)
+// paintSnippetHandle draws the manual order's six-dot drag handle in the name
+// column, at the 24px square the old reorder grid gave it. The page List owns
+// the drag; the glyph keeps the place and size it had.
+func (state *State) paintSnippetHandle(d *ui.DrawContext) {
+	theme := state.Theme()
+	handle := gfx.Rect{
+		X: d.Rect.X + 7, Y: d.Rect.Y + (components.TableRowHeight(theme)-24)/2,
+		Width: 24, Height: 24,
+	}
+	color := theme.MutedForeground
+	const dot = float32(2.5)
+	for y := float32(-5); y <= 5; y += 5 {
+		for _, x := range [...]float32{-2.5, 2.5} {
+			d.Canvas.Rounded(gfx.Rect{
+				X:     handle.X + handle.Width/2 + x - dot/2,
+				Y:     handle.Y + handle.Height/2 + y - dot/2,
+				Width: dot, Height: dot,
+			}, dot/2, color)
+		}
+	}
+}
+
+// paintSnippetDetailAccent rules the expanded band off from its row, marks its
+// leading edge, and names the band as one region for assistive technology.
+func (state *State) paintSnippetDetailAccent(d *ui.DrawContext) {
+	theme := state.Theme()
+	d.Canvas.Fill(gfx.Rect{X: d.Rect.X, Y: d.Rect.Y, Width: d.Rect.Width, Height: 1}, theme.Border)
+	accent := theme.Primary
+	accent.Alpha *= 0.7
+	d.Canvas.Fill(gfx.Rect{X: d.Rect.X, Y: d.Rect.Y, Width: 3, Height: d.Rect.Height}, accent)
+	state.paintSnippetDetailRegion(d)
 }
 
 // paintSnippetDetailRegion marks the expanded command as one region named by
@@ -462,8 +550,8 @@ func (state *State) declareSnippetHoverCard(c ui.C) {
 		form.hoverBody = state.declareSnippetHoverBody
 	}
 	ui.PopoverWith(c, form.hoverAnchor, ui.PopoverSpec{
-		Side: components.PopoverBottom, Align: ui.Start, Offset: 1, KeepOpenOnAnchor: true,
-		Width: snippetCardWidth,
+		Side: components.PopoverBottom, Align: ui.Start, Offset: 4, KeepOpenOnAnchor: true,
+		Title: entry.Name, Width: snippetCardWidth,
 	}, &form.hoverOpen, form.hoverBody)
 }
 

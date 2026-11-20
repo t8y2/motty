@@ -98,7 +98,9 @@ type Host struct {
 	// one. NoAudio is an RDP host's too: the server is asked for no audio, and
 	// this computer opens no output device for the session. StandardSecurity is
 	// an RDP host's as well: the connection uses Standard RDP Security alone,
-	// with no TLS or NLA, for a server that requires it.
+	// with no TLS or NLA, for a server that requires it. LegacyTLS is an RDP
+	// host's too: the TLS offer includes the RSA key exchange suites (AES-CBC
+	// and AES-GCM) that an old server offers and Go leaves out by default.
 	// Chromeless is a desktop host's: its page shows the picture alone,
 	// without the bar above it and the status line under it.
 	ViaSSH           bool
@@ -106,6 +108,7 @@ type Host struct {
 	Console          bool
 	NoAudio          bool
 	StandardSecurity bool
+	LegacyTLS        bool
 	Chromeless       bool
 
 	// localShell is the shell a local terminal was opened with: a program path,

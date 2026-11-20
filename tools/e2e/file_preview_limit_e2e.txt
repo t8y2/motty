@@ -1,0 +1,52 @@
+# lang: en
+# End to end: a server file larger than the preview bound is refused, the Files
+# setting raises the bound, and the same file then opens in a document window.
+# Against the loopback fixture with a 24 MB text file in its SFTP root:
+#
+#   cd tools/e2esshd && go build -o /tmp/e2esshd .
+#   E2ESSHD_LARGE_TEXT_MIB=24 /tmp/e2esshd 2246
+#   go build -tags vivahead,dev -o /tmp/motty-head ./cmd/motty
+#   MOTTY_HEAD=/tmp/motty-head python3 tools/headless_drive.py "$(mktemp -d)" \
+#     tools/e2e/file_preview_limit_e2e.txt
+#
+# The first double click must be refused with the default 20 MB bound. The
+# stepper in Settings > Files applies to files opened afterwards; typing 64 MB
+# there, navigating back and double-clicking again opens the document window,
+# and the text it paints proves the 24 MB file was loaded. The toast is
+# dismissed by its own button because a headless run does not advance the wall
+# clock its timer uses.
+
+click "Search"
+type tester@127.0.0.1:2246
+click "Connect"
+waitfor "Trust this host" 3000
+click "Connect Once"
+waitfor "Password" 3000
+type secret
+key enter
+settle 2500
+key cmd+shift+s
+settle 2000
+dblclick "large-preview.txt"
+settle 600
+expect text "This file exceeds the 20 MB preview limit"
+click "Close toast"
+settle 1500
+click "Settings"
+settle 500
+click "Files"
+settle 500
+click "Preview size limit"
+settle 300
+type 64
+key enter
+settle 300
+click tab:127.0.0.1:2246
+settle 500
+dblclick "large-preview.txt"
+settle 3000
+windows
+window 2
+settle 500
+expect text "0123456789abcdef"
+expect layout clean

@@ -18,6 +18,9 @@ func liveRecordingSession(t testing.TB, now *time.Duration) (*State, *fakeConn, 
 	options.Invalidate = func() {}
 	options.Now = func() time.Duration { return *now }
 	state := newTestState(t, options)
+	// These tests check what recording captures; the multi-line paste review is
+	// tested separately in paste_review_test.go, so pastes go straight through.
+	state.pasteConfirmOff = true
 	fake := connect(t, state, world)
 	fake.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
 	state.Wake()

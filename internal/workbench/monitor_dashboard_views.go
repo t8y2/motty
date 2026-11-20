@@ -104,6 +104,13 @@ func (s *State) paintDashboardState(c *gfx.Canvas, p *monitoring.Panel, h Host, 
 	monitorLabel(c, label, b, 12, color, gfx.WeightMedium)
 }
 
+// A simple row's heading band is as tall as its shortest row. A disk or network
+// table grows the row below that band, where the view strip stays at its top.
+const (
+	dashboardSimpleRowLeast = float32(116)
+	dashboardSimpleTabInset = float32(7)
+)
+
 func dashboardSimpleHeight(r *dashboardRow) float32 {
 	n := 0
 	if r.simplePage == 1 {
@@ -112,7 +119,7 @@ func dashboardSimpleHeight(r *dashboardRow) float32 {
 	if r.simplePage == 2 {
 		n = len(r.snapshot.Details.Networks)
 	}
-	return max(116, 40+float32(n)*30)
+	return max(dashboardSimpleRowLeast, 40+float32(n)*30)
 }
 func dashboardSimpleColumns(b gfx.Rect) (float32, float32) {
 	host := min(float32(260), b.Width*.24)
@@ -191,6 +198,15 @@ func (s *State) paintDashboardDeviceView(c *gfx.Canvas, p *monitoring.Panel, h H
 		}
 	}
 	c.Fill(gfx.Rect{X: b.X, Y: b.Y + b.Height - 6, Width: b.Width, Height: 1}, pal.line)
+}
+
+// dashboardViewIcons is the leading glyph of each host view: overview, disks
+// and network, in the order the view strip declares them.
+func dashboardViewIcons(index int) gfx.Icon {
+	if index < 0 || index >= 3 {
+		return gfx.Icon{}
+	}
+	return [...]gfx.Icon{icons.Activity, icons.HardDrive, icons.Wifi}[index]
 }
 
 // dashboardViewOptions is the host view strip; the page declares it as ui.Tabs

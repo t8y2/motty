@@ -112,12 +112,19 @@ func (state *State) declareRuleManager(c ui.C) {
 				if all {
 					label = m.ClearSelection
 				}
-				ui.Checkbox(c, state.pageFlag(all), "").Hit(hitRuleManagerAll, label).Shrink(0)
+				side := components.CheckboxExtent(*c.Theme())
+				checkbox := ui.Slot(c).Size(22, 24).Shrink(0)
+				checkbox.Children(func() {
+					// The page control binds a copy: the dialog's dispatcher owns the
+					// real selection, as the component did.
+					ui.Checkbox(c, &all, "").Absolute().Left(0).Top(0).Size(side, side).Hit(hitRuleManagerAll, label)
+				})
 				ui.Text(c, fmt.Sprintf(m.CountFmt, count)).FontSize(metrics.FontSizeM).Color(state.pal.text)
 				ui.Spacer(c).Grow(1)
 				ui.Text(c, fmt.Sprintf(m.SelectedFmt, len(manager.selected))).FontSize(metrics.FontSizeS).Color(state.pal.muted)
 			})
-			list := ui.Scroll(c).FillWidth().Grow(1).Basis(0).PadSides(0, 14, 0, 0).Scrollbars().ScrollbarSize(10)
+			list := ui.Scroll(c).FillWidth().Grow(1).Basis(0).PadSides(0, 14, 0, 0).
+				AlwaysScrollbars().ScrollbarSize(10)
 			manager.list = list.ScrollState()
 			list.Children(func() {
 				if count == 0 {
@@ -164,16 +171,21 @@ func (state *State) declareRuleManagerRow(c ui.C, index int) {
 		case rule.CaseSensitive:
 			detail = tools.HighlightKindTextCase
 		}
-		detail = state.slotName(rule.Slot) + " · " + detail
+		detail = state.colorName(rule.Color) + " · " + detail
 	}
 	row := ui.Row(c).FillWidth().Height(68).Shrink(0).Items(ui.Center).Gap(14).PadSides(0, 14, 0, 8)
 	if manager.selected[index] {
 		row = row.Background(state.pal.accentSoft)
 	}
 	row.Children(func() {
-		ui.Checkbox(c, state.pageFlag(manager.selected[index]), "").Hit(hitRuleManagerSelect.At(index), name).Shrink(0)
+		selectBox := ui.Slot(c).Size(22, 24).Shrink(0)
+		selectBox.Children(func() {
+			selected := manager.selected[index]
+			side := components.CheckboxExtent(*c.Theme())
+			ui.Checkbox(c, &selected, "").Absolute().Left(0).Top(0).Size(side, side).Hit(hitRuleManagerSelect.At(index), name)
+		})
 		if manager.kind == ruleDeleteHighlight {
-			ui.Slot(c).Size(10, 24).Shrink(0).Background(state.slotColor(state.highlighting.rules[index].Slot)).Radius(2)
+			ui.Slot(c).Size(10, 24).Shrink(0).Background(state.ruleColor(state.highlighting.rules[index].Color)).Radius(2)
 		}
 		ui.Column(c).Grow(1).Basis(0).Gap(4).Children(func() {
 			ui.Text(c, name).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).MaxLines(1)
@@ -181,11 +193,16 @@ func (state *State) declareRuleManagerRow(c ui.C, index int) {
 		})
 		if manager.kind == ruleDeleteAutofill {
 			rule := state.autofillRules.rules[index]
-			label := m.TurnOn
-			if rule.Enabled {
-				label = m.TurnOff
-			}
-			ui.Switch(c, state.pageFlag(rule.Enabled), "").Hit(hitAutofillToggleList.At(index), label+": "+name).Shrink(0).Margin(10)
+			toggle := ui.Slot(c).Size(52, 32).Shrink(0)
+			toggle.Children(func() {
+				on := rule.Enabled
+				label := m.TurnOn
+				if on {
+					label = m.TurnOff
+				}
+				width, height := components.SwitchExtent(*c.Theme(), false)
+				ui.Switch(c, &on, "").Absolute().Left(10).Top(7).Size(width, height).Hit(hitAutofillToggleList.At(index), label+": "+name)
+			})
 		}
 		state.declareIconButton(c, hitRuleManagerEdit.At(index), iconPencil, m.Edit+": "+name, false, iconButtonQuiet).Size(32, 32)
 	})
@@ -196,7 +213,7 @@ func (state *State) declareRuleManagerRow(c ui.C, index int) {
 func (state *State) scrollRuleManager(event gfx.ScrollEvent) gfx.EventResult {
 	result := gfx.EventResult{Handled: true}
 	if pointInRect(event.X, event.Y, state.ruleManager.bounds) {
-		result = state.windowPage().Wheel(event)
+		result = state.windowPage().RouteWheel(event)
 		result.Handled = true
 	}
 	return result

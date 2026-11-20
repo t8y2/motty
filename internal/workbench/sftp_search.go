@@ -295,7 +295,7 @@ func (search *sftpSearch) matchItem(item *sftpSearchItem) {
 		return
 	}
 	start, end, _ := sftpFilterMatch(item.name, search.query)
-	icon, mono := sftpFileIcon(item.name, item.mode)
+	icon, mono := sftpFileIcon(sftpclient.Entry{Name: item.name, Mode: item.mode})
 	search.rows = append(search.rows, sftpRow{
 		entry: sftpclient.Entry{Name: item.name, Mode: item.mode}, icon: icon, mono: mono,
 		matchStart: start, matchEnd: end, where: item.dir,

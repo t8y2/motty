@@ -1,0 +1,22 @@
+# Settings behavior: the page opens, Tab walks its controls with visible focus,
+# and Space toggles a switch.
+place 200 100 2000 1300
+focus
+sleep 800
+click 370 1336
+sleep 1200
+shot beh-set-1-open
+click 2010 1056
+sleep 500
+space
+sleep 500
+shot beh-set-2-space-off
+space
+sleep 500
+shot beh-set-3-space-on
+keys {TAB}
+sleep 400
+shot beh-set-4-tab
+keys {TAB}
+sleep 400
+shot beh-set-5-tab

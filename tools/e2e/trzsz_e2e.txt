@@ -1,0 +1,63 @@
+# End to end: the remote runs tsz/trz (trzsz), the terminal answers the
+# announcement with the same offer dialog it uses for ZMODEM, the folder is
+# transferred, and the remote program prints its saved line.
+#
+# The peer is trzsz-go's own tsz and trz, built outside this repository:
+#
+#   git clone --depth 1 https://github.com/trzsz/trzsz-go /tmp/trzsz-go
+#   (cd /tmp/trzsz-go && go build -o /tmp/trzref/tsz ./cmd/tsz && go build -o /tmp/trzref/trz ./cmd/trz)
+#   rm -rf /tmp/trzsz-e2e-src /tmp/trzsz-e2e-local /tmp/trzsz-e2e-got /tmp/trzsz-home
+#   mkdir -p /tmp/trzsz-e2e-src/sub /tmp/trzsz-e2e-local/tree/child /tmp/trzsz-e2e-local/tree/empty \
+#            /tmp/trzsz-e2e-got /tmp/trzsz-home/Downloads
+#   printf 'hello from the remote\n' > /tmp/trzsz-e2e-src/hello.txt
+#   printf 'nested\n' > /tmp/trzsz-e2e-src/sub/nested.txt
+#   head -c 200000 /dev/urandom > /tmp/trzsz-e2e-src/blob.bin
+#   printf 'a\n' > /tmp/trzsz-e2e-local/tree/a.txt
+#   printf 'b\n' > /tmp/trzsz-e2e-local/tree/child/b.txt
+#   (cd tools/e2esshd && go build -o /tmp/e2esshd .) && /tmp/e2esshd 2222 &
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   HOME=/tmp/trzsz-home MOTTY_LANG=en python3 tools/headless_drive.py /tmp/trzsz-home tools/e2e/trzsz_e2e.txt
+#
+# tsz and trz run in e2esshd's shell, whose working directory is the system's
+# temp directory, so the fixtures are absolute paths. trz requires its save
+# directory to exist already.
+# lang: en
+resize 1400 900
+appearance dark
+settle 500
+click "Search"
+type tester@127.0.0.1:2222
+settle 300
+click "Connect"
+waitfor "Trust" 5000
+click "Trust and Save"
+waitfor "Password" 5000
+type secret
+key enter
+waitfor "tester@e2e" 10000
+settle 500
+
+# tsz -d: the offer appears before anything is written, and the default folder
+# receives the whole tree.
+type /tmp/trzref/tsz -d /tmp/trzsz-e2e-src
+key enter
+waitfor "Receive files" 10000
+expect text "wants to send you files over the terminal" within 3000
+expect layout clean
+shot /tmp/trzsz-receive-offer.png
+click id:transfer/transfer-downloads
+expect text "Saved 3 files" within 20000
+settle 800
+shot /tmp/trzsz-receive-done.png
+
+# trz -d: the dialog asks for a folder, and the remote receives the tree.
+type /tmp/trzref/trz -d /tmp/trzsz-e2e-got
+key enter
+waitfor "Send files" 10000
+expect text "is ready to receive files over the terminal" within 3000
+opendirectory /tmp/trzsz-e2e-local/tree
+click "Choose folder"
+expect text "Saved 1 file/directory" within 20000
+settle 800
+shot /tmp/trzsz-send-done.png
+layout

@@ -146,7 +146,7 @@ func TestNotesSidebarResizeScrollAndSelectionAreIndependent(t *testing.T) {
 		t.Fatal("section splitter missing")
 	}
 	base := s.baseWorkspacePixelBounds(gfx.Size{Width: 1200, Height: 800})
-	width := func() float32 { return base.Width - 8 - n.page.panel.Pos }
+	width := func() float32 { return base.Width - 1 - n.page.panel.Pos }
 	if width() != v.bounds.Width {
 		t.Fatalf("splitter position %v does not match the width %v", width(), v.bounds.Width)
 	}
@@ -290,5 +290,25 @@ func TestNotesSidebarCloseKeyPreservesBrowserState(t *testing.T) {
 		if s.noteSidebarState() != v || v.content.query.String() != "needle" || !v.content.sideAll || v.content.selected != "note" || v.width != 450 || v.fraction != .6 {
 			t.Fatal("reopening lost browser state")
 		}
+	}
+}
+
+func TestNotesSidebarSitsAfterADockedContextPanel(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	state.activeSection = sectionTerminal
+	state.Click(hitNotesPanel)
+	workspace := state.deck.ActiveWorkspace()
+	context, _ := state.deck.Context(workspace)
+	context.Kind, context.Open, context.Width, context.Side = layoutcore.ContextSFTP, true, 340, layoutcore.ContextLeft
+	if err := state.deck.SetContext(workspace, context); err != nil {
+		t.Fatal(err)
+	}
+	size := gfx.Size{Width: 1200, Height: 800}
+	canvas, _ := paintAt(state, size)
+	frame := state.workspacePixelBounds(size)
+	splitter := noteSplitterHit(t, canvas, state.noteText("Resize notes panel", "调整笔记侧栏宽度"))
+	center := splitter.Bounds.X + splitter.Bounds.Width/2
+	if want := frame.X + frame.Width - 0.5; center < want-0.01 || center > want+0.01 {
+		t.Fatalf("notes divider centre %v, want the workspace's right edge %v", center, want)
 	}
 }

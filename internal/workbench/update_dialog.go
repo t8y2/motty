@@ -24,6 +24,9 @@ const (
 	updateNotesPadY     float32 = 8
 	updateNotesPadRight float32 = 4
 	updateWhyLines              = 2
+	// updateSourceSelectWidth is the footer's source picker: the host the check
+	// and the download use, in the corner the actions leave free.
+	updateSourceSelectWidth float32 = 150
 )
 
 var (
@@ -165,11 +168,27 @@ func (state *State) declareUpdateDialog(c ui.C) {
 		column.DrawOver(notes.draw)
 	})
 	dialog.Footer(func() {
+		state.declareUpdateSourceFooter(c)
 		state.dialogActionFooter(c,
 			components.ButtonAction{ID: hitUpdateSkip, Label: m.UpdateSkip, Variant: components.ButtonOutline},
 			components.ButtonAction{ID: hitUpdateLater, Label: m.UpdateLater, Variant: components.ButtonSecondary},
 			primary,
 		)
+	})
+}
+
+// declareUpdateSourceFooter is the footer's source picker, in the bottom-left
+// corner the actions leave free. It grows to take that room, so the buttons
+// after it stay against the right edge.
+func (state *State) declareUpdateSourceFooter(c ui.C) {
+	m := state.messages.Tools
+	row := ui.Row(c).Grow(1).Items(ui.Center).Gap(8)
+	row.Children(func() {
+		ui.Text(c, m.GeneralUpdateSource).FontSize(metrics.FontSizeS).Color(state.pal.muted).LineHeight(18).Shrink(0)
+		selector := ui.Select(c, &state.update.source, settingsUpdateSourceChoices[:], state.settingsUpdateSourceLabel).Width(updateSourceSelectWidth)
+		if selector.Changed() {
+			c.After(state.changeUpdateSource)
+		}
 	})
 }
 

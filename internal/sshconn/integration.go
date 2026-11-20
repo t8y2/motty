@@ -469,9 +469,18 @@ const commandFinishedFunction = `__motty_command_finished() {
 
 const bashIntegrationTail = `
 _motty_prompt_marker='\[\e]133;B__MOTTY_SUFFIX__\a\]'
+# An exported PROMPT_COMMAND survives su/sudo into a shell that has none of
+# these functions. Gate each injected entry on a non-exported flag so an
+# inherited value expands to nothing there (no "command not found", $? and the
+# user's own entries untouched) while this shell expands it to the real hook.
+_motty_active=1
+# set -a (allexport) exports every assignment, including this flag; with it
+# exported, su's shell would inherit the gate switched on and the wrapped
+# entries would run again. Keep it local whatever the profile asked for.
+export -n _motty_active
 case $(declare -p PROMPT_COMMAND 2>/dev/null) in
-    'declare -a '*) PROMPT_COMMAND=(__motty_command_finished "${PROMPT_COMMAND[@]}" __motty_report) ;;
-    *) PROMPT_COMMAND=__motty_command_finished$'\n'${PROMPT_COMMAND:+$PROMPT_COMMAND$'\n'}__motty_report ;;
+    'declare -a '*) PROMPT_COMMAND=('${_motty_active:+__motty_command_finished}' "${PROMPT_COMMAND[@]}" '${_motty_active:+__motty_report}') ;;
+    *) PROMPT_COMMAND='${_motty_active:+__motty_command_finished}'$'\n'${PROMPT_COMMAND:+$PROMPT_COMMAND$'\n'}'${_motty_active:+__motty_report}' ;;
 esac
 if (( __MOTTY_FORCE__ == 0 && (BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4)) )); then
     PS0=$'\e]133;C__MOTTY_SUFFIX__\a'${PS0-}
@@ -489,12 +498,12 @@ else
             __motty_disarm() { local _motty_status=$?; _motty_armed=0; return "$_motty_status"; }
             __motty_arm() { _motty_armed=1; }
             __motty_debug() {
-                [[ ${_motty_armed-} == 1 && $BASH_COMMAND != __motty_disarm && -z ${COMP_POINT-} ]] || return 0
+                [[ ${_motty_armed-} == 1 && $BASH_COMMAND != *__motty_disarm* && -z ${COMP_POINT-} ]] || return 0
                 _motty_armed=0
                 printf '\033]133;C__MOTTY_SUFFIX__\007'
             }
             _motty_armed=0
-            PROMPT_COMMAND=__motty_disarm$'\n'${PROMPT_COMMAND:+$PROMPT_COMMAND$'\n'}__motty_arm
+            PROMPT_COMMAND='${_motty_active:+__motty_disarm}'$'\n'${PROMPT_COMMAND:+$PROMPT_COMMAND$'\n'}'${_motty_active:+__motty_arm}'
             # Keep the user's own DEBUG trap and run it first, so that it sees
             # the same $?, $_ and BASH_COMMAND as without us. trap -p is read
             # through a file because a command substitution is a subshell.

@@ -352,6 +352,12 @@ type Options struct {
 	// session; the backend reports the connection as not encrypted. VNC chooses
 	// its security types with the server and ignores this.
 	StandardSecurity bool
+	// LegacyTLS lets an RDP connection offer the TLS suites that use RSA key
+	// exchange (with AES-CBC or AES-GCM) to a server that offers nothing newer.
+	// They have no forward secrecy and CBC has known weaknesses, so this is an
+	// explicit accommodation for an old server, not a default. Modern suites
+	// stay in the offer; VNC ignores this.
+	LegacyTLS bool
 	// Username and Domain are the account a protocol with accounts signs in as.
 	// VNC account authentication uses Username; Domain belongs to RDP.
 	Username, Domain string

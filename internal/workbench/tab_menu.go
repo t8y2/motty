@@ -205,7 +205,7 @@ func (state *State) declareTabMenu(c ui.C) {
 		rows.add(components.ContextMenuItem{ID: hitTabMenuSaveWorkspace, Label: messages.WorkspaceSaveMenu, Icon: icon(iconArchive)})
 	}
 	rows.separate()
-	rows.addContent(tabColorFooterHeight, state.paintTabColorRow)
+	rows.addPageContent(tabColorFooterHeight, state.declareTabColorRow)
 	state.declareRowsMenu(c, &state.tabMenu.open, state.tabMenu.at, hitTabMenuDismiss, &rows, state.chooseTabMenu)
 }
 

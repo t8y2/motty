@@ -12,6 +12,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/workbench/icons"
 )
 
 // On this computer an application bundle shows the icon its own program has, as
@@ -27,6 +28,11 @@ const (
 	// maxAppIcons bounds the icons asked for in one listing; the bundles past it
 	// keep the glyph. A folder of applications is a few dozen.
 	maxAppIcons = 256
+	// sftpShortcutSize is the square the shortcut arrow sits on, and
+	// sftpShortcutGlyph the arrow inside it. It overlays the icon's lower-left
+	// corner as the system marks a shortcut in its file lists.
+	sftpShortcutSize  = float32(8)
+	sftpShortcutGlyph = float32(6)
 )
 
 // appIconIDs numbers the bitmaps so the renderer keeps what it uploaded for one.
@@ -121,8 +127,31 @@ func (state *State) loadAppIcons(view *sftpView, previous, rows []sftpRow) {
 }
 
 // declareSFTPRowIcon declares what leads a row: the system's icon for an
-// application bundle once it has arrived, otherwise the glyph of its kind.
-func declareSFTPRowIcon(c ui.C, row *sftpRow, tint gfx.Color) {
+// application bundle or a file type once it has arrived, otherwise the glyph of
+// its kind. A resolved symbolic link also gets a small arrow over its icon, the
+// way a file manager marks a shortcut, so the row says both what the target is
+// and that the row is a link.
+func (state *State) declareSFTPRowIcon(c ui.C, row *sftpRow, tint gfx.Color) {
+	if !row.showsShortcut() {
+		declareSFTPRowGlyph(c, row, tint)
+		return
+	}
+	ui.Stack(c).Size(sftpColumnIconWidth, sftpColumnIconWidth).Children(func() {
+		declareSFTPRowGlyph(c, row, tint)
+		// The arrow sits on an inverted chip, the way the system marks a
+		// shortcut: a light square on a dark theme, a dark one on a light
+		// theme, so it stays readable over either kind of target icon.
+		fill, ink := state.pal.text, state.pal.workspace
+		ui.Row(c).Size(sftpShortcutSize, sftpShortcutSize).Absolute().Left(0).Bottom(0).Center().
+			Radius(2).Background(fill).Children(func() {
+			ui.Icon(c, icons.Shortcut).Size(sftpShortcutGlyph, sftpShortcutGlyph).Color(ink)
+		})
+	})
+}
+
+// declareSFTPRowGlyph declares the icon itself: the system's image for a bundle
+// or file type once it has arrived, otherwise the glyph of its kind.
+func declareSFTPRowGlyph(c ui.C, row *sftpRow, tint gfx.Color) {
 	switch {
 	case row.appIcon.ready():
 		ui.Image(c, row.appIcon.bitmap)
@@ -131,4 +160,10 @@ func declareSFTPRowIcon(c ui.C, row *sftpRow, tint gfx.Color) {
 	case row.icon != nil:
 		ui.Icon(c, *row.icon).Color(tint)
 	}
+}
+
+// showsShortcut reports a link whose target's icon is drawn, so the shortcut
+// arrow belongs over it. Broken and unresolved links already show the link glyph.
+func (row *sftpRow) showsShortcut() bool {
+	return row.entry.IsLink() && !row.entry.LinkBroken && (row.entry.LinkDir || row.entry.LinkTarget != "")
 }

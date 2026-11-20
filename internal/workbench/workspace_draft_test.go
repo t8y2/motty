@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"encoding/json"
+	"fmt"
 	layoutcore "motty/internal/workspace"
 	"reflect"
 	"slices"
@@ -736,5 +737,70 @@ func TestWorkspaceDraftGroupsTheHostList(t *testing.T) {
 	header := panelHit(t, canvas, hitWorkspaceDraftGroupList.At(0))
 	if header.Role != gfx.RoleButton || !header.Expanded || header.Label != state.messages.WorkspaceDraftLocalGroup {
 		t.Fatalf("group header semantics = %+v", header)
+	}
+}
+
+func TestWorkspaceDraftKeepsTheCountIndentAndHintGap(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.activeSection = sectionWorkspaces
+	state.Click(hitWorkspaceNew)
+	state.Click(workspaceDraftHostID(0))
+	state.Click(workspaceDraftHostID(1))
+	canvas, texts := paintAt(state, gfx.Size{Width: 1400, Height: 900})
+
+	count := fmt.Sprintf(state.messages.WorkspaceDraftSelectedFmt, state.workspaceDraftSelectionCount())
+	if !hasText(texts, count) {
+		t.Fatalf("draft preview is missing the selection count %q: %q", count, texts)
+	}
+
+	var group, host gfx.Hit
+	var groupOK, hostOK bool
+	for index := 0; index < 8 && (!groupOK || !hostOK); index++ {
+		if !groupOK {
+			group, groupOK = hitByID(canvas, hitWorkspaceDraftGroupList.At(index))
+		}
+		if !hostOK {
+			host, hostOK = hitByID(canvas, hitWorkspaceDraftHostList.At(index))
+		}
+	}
+	if !groupOK || !hostOK {
+		t.Fatal("draft host list did not paint its groups or hosts")
+	}
+	if got := host.Bounds.X - group.Bounds.X; got != workspaceDraftHostIndent {
+		t.Fatalf("host row indent %v, want %v", got, workspaceDraftHostIndent)
+	}
+	if host.Bounds.X+host.Bounds.Width != group.Bounds.X+group.Bounds.Width {
+		t.Fatalf("host row right edge %v does not meet the group's %v", host.Bounds.X+host.Bounds.Width, group.Bounds.X+group.Bounds.Width)
+	}
+
+	hintY := float32(0)
+	for _, text := range canvas.Texts() {
+		if text.Value == state.messages.WorkspaceDraftTemporaryHint {
+			hintY = text.Bounds.Y
+			break
+		}
+	}
+	if hintY == 0 {
+		t.Fatalf("draft hint %q is not painted", state.messages.WorkspaceDraftTemporaryHint)
+	}
+	if gap := hintY - (state.workspaceDraft.bounds.Y + state.workspaceDraft.bounds.Height); gap != 10 {
+		t.Fatalf("host list leaves %v above the hint, want 10", gap)
+	}
+}
+
+func TestWorkspaceDraftPreviewLeavesTheScrollbarGutter(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.activeSection = sectionWorkspaces
+	template := mustWorkspaceTemplate(t, "Production", workspaceCatalogIDs(state, 0, 1), 2)
+	state.templates = []WorkspaceTemplate{template}
+	state.openWorkspaceDraftEdit(template.ID)
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	remove := panelHit(t, canvas, hitWorkspaceDraftRemoveItem.At(0))
+	preview := state.workspaceDraft.previewBounds
+	right := preview.X + preview.Width
+	// The card sits inside the content rect, which keeps the 10px gutter the
+	// old scroll area reserved and the cell's own 4px inset on each side.
+	if edge := remove.Bounds.X + remove.Bounds.Width; edge > right-18+0.5 {
+		t.Fatalf("remove button edge %v reaches the preview's %v without the gutter", edge, right)
 	}
 }

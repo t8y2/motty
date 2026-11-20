@@ -1,0 +1,16 @@
+# Choose quit-on-close, then close the window: the process must end.
+place 200 100 2000 1300
+focus
+sleep 800
+click 370 1336
+sleep 1200
+move 1500 1000
+wheel 24
+sleep 800
+shot beh-quit-1-settings
+click 2008 452
+sleep 800
+shot beh-quit-2-choice
+click 2156 136
+sleep 2500
+shot beh-quit-3-closed

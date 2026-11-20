@@ -10,7 +10,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/configstore"
 	"motty/internal/sshconn"
@@ -136,19 +135,21 @@ type remoteLogView struct {
 	formOriginal       remoteLogPath
 	formError          string
 	follow             bool
-	top                int64
 	height             float32
 	expanded, resizing bool
 	pointerOffset      float32
-	visibleRows        int
 	matches            []int
 	matchQuery         string
 	matchRevision      uint64
-	scrollRemainder    float32
-	scroll             ui.Handlers
-	scrollbar          components.ScrollAreaGeometry
-	scrollGrab         float32
-	scrollDragging     bool
+	// scroll is the page's area for the output; viewport is its height as of
+	// the last paint, and lastOffset/lastFollow keep the auto-scroll switch in
+	// step with a wheel or a drag. resetScroll asks the next declaration to go
+	// back to the top, as a new search does.
+	scroll      *ui.ScrollState
+	viewport    float32
+	lastOffset  float32
+	lastFollow  bool
+	resetScroll bool
 }
 
 type remoteLogForm uint8
@@ -189,7 +190,7 @@ func (state *State) followRemoteLog(session *Session, view *remoteLogView, path 
 	view.cancel, view.buffer, view.selected = cancel, buffer, path
 	view.snapshot = remoteLogSnapshot{}
 	view.matchQuery, view.matchRevision, view.matches = "", 0, view.matches[:0]
-	view.follow, view.top, view.scrollRemainder = true, 0, 0
+	view.follow, view.lastFollow, view.lastOffset, view.resetScroll = true, true, 0, true
 	conn, notify := session.conn, state.notifyFor(session)
 	go func() {
 		first := true

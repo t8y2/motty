@@ -30,6 +30,13 @@ func validHostGroup(value string) bool {
 	return strings.TrimSpace(value) != "" && !strings.ContainsFunc(value, unicode.IsControl)
 }
 
+// closeOtherHostPickers keeps only one hand-painted host-form popup open at a
+// time. Each picker closes every other one before it opens itself.
+func (state *State) closeOtherHostPickers() {
+	state.editor.groupPicker.control.Open = false
+	state.editor.tagPicker.control.Open = false
+}
+
 func (state *State) hostGroupPicker() *hostGroupPicker {
 	p := &state.editor.groupPicker
 	if !p.ready {
@@ -152,7 +159,7 @@ func (state *State) paintHostGroupPicker(canvas *gfx.Canvas, bounds gfx.Rect) {
 	viewport := gfx.Rect{Width: state.viewport.Width, Height: state.viewport.Height}
 	if state.editor.form.clipped {
 		// Keep every option and the scrollbar inside the form's actual clip.
-		viewport = state.editor.form.geometry.Viewport
+		viewport = state.editor.form.viewport
 	}
 	layout := components.PaintSingleSelect(canvas, state.Theme(), input, &p.control, components.SingleSelectOptions{
 		InputID: hitDialogGroup, TriggerID: hitHostGroupTrigger, ClearID: hitHostGroupClear, DismissID: hitHostGroupPickerDismiss, Scope: hostGroupPickerScope, ScrollID: hitHostGroupPickerScroll, OptionIDs: hitHostGroupChoices,

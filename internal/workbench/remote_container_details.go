@@ -234,11 +234,14 @@ func (state *State) declareRemoteContainerDetailsDialog(c ui.C) {
 	dialog.Body(func() {
 		ui.Column(c).Fill().Pad(8).Gap(8).Children(func() {
 			tab := state.remoteContainerDetailTab()
-			if ui.Tabs(c, &tab, remoteContainerDetailTabIDs[:], state.remoteContainerDetailTabLabel).Width(min(float32(320), viewport.Width)).Height(34).Shrink(0).Changed() {
-				c.After(func() { state.selectRemoteContainerDetailTab(tab) })
+			strip := ui.Tabs(c, &tab, remoteContainerDetailTabIDs[:], state.remoteContainerDetailTabLabel).Width(min(float32(320), viewport.Width)).Height(34).Shrink(0)
+			// A click on the active tab asks for that read again, as it does for
+			// the process details.
+			if index, clicked := strip.TabClicked(); clicked && index >= 0 && index < len(remoteContainerDetailTabIDs) {
+				id := remoteContainerDetailTabIDs[index]
+				c.After(func() { state.selectRemoteContainerDetailTab(id) })
 			}
-			fallback := max(contentWidth-2*(c.Theme().Metrics.PadSurface+c.Theme().Metrics.GapItem)-16, 80)
-			state.declareRemoteContainerDetailsText(c, fallback)
+			state.declareRemoteContainerDetailsText(c, contentWidth-32)
 		})
 	})
 	dialog.Footer(func() {
@@ -251,13 +254,13 @@ func (state *State) declareRemoteContainerDetailsDialog(c ui.C) {
 	}
 }
 
-func (state *State) declareRemoteContainerDetailsText(c ui.C, fallback float32) {
+func (state *State) declareRemoteContainerDetailsText(c ui.C, width float32) {
 	details, m := &state.remote.containerDetails, state.messages.Tools
 	if state.remoteContainerDetailTab() != hitRemoteContainerDetailsEnvironment {
 		state.declareRemoteDetail(c, &details.text, remoteDetailSpec{
 			textID: hitRemoteContainerDetailsText, textIDLabel: m.RemoteContainerDetailsTitle,
 			scrollbarID: hitRemoteContainerDetailsScroll, scrollbarLabel: m.RemoteContainerDetailsTitle,
-			source: remoteDetailSource(state.remoteContainerOverviewBody(details.container)),
+			source: remoteDetailSource(state.remoteContainerOverviewBody(details.container)), width: width,
 		})
 		return
 	}
@@ -269,11 +272,11 @@ func (state *State) declareRemoteContainerDetailsText(c ui.C, fallback float32) 
 	spec := remoteDetailSpec{
 		textID: hitRemoteContainerDetailsText, textIDLabel: m.RemoteProcessEnvironment,
 		scrollbarID: hitRemoteContainerDetailsScroll, scrollbarLabel: m.RemoteProcessEnvironment,
-		notice: notice, noticeTone: tone,
+		notice: notice, noticeTone: tone, width: width,
 	}
 	if notice == "" {
 		spec.columns, spec.header, spec.rows = remoteEnvironmentTable(details.environment,
-			[2]string{m.RemoteProcessEnvironmentName, m.RemoteProcessEnvironmentValue}, fallback)
+			[2]string{m.RemoteProcessEnvironmentName, m.RemoteProcessEnvironmentValue})
 	}
 	state.declareRemoteDetail(c, &details.text, spec)
 }

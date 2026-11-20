@@ -56,7 +56,7 @@ func (s *State) dashboardScroll(e gfx.ScrollEvent) gfx.EventResult {
 	if s.modal != modalNone && s.modal != modalDashboard && s.modal != modalDashboardAdd {
 		return gfx.EventResult{}
 	}
-	result := s.windowPage().Wheel(e)
+	result := s.windowPage().RouteWheel(e)
 	if s.modal != modalNone {
 		result.Handled = true
 	}
@@ -92,25 +92,40 @@ func (s *State) dashboardKey(e gfx.KeyEvent) gfx.EventResult {
 			return gfx.EventResult{Handled: true, Repaint: true, Focus: next, FocusVisible: true}
 		}
 	}
-	// Page keys scroll the page from any of its controls, so following a long
-	// panel does not first require Tab-ing to the scroll viewport. A text field
-	// keeps its own page keys.
-	if e.Key == gfx.KeyPageUp || e.Key == gfx.KeyPageDown {
-		if s.EditorFor(e.Target) != nil {
-			return gfx.EventResult{}
+	// The viewport itself moves by the arrow keys, Home and End, as the
+	// hand-painted scroll area did; page keys scroll it from any of the page's
+	// controls, so following a long panel does not first require Tab-ing to the
+	// viewport. A text field keeps its own page keys.
+	d := &s.dashboard
+	maxOffset := max(d.content-d.body.Height, 0)
+	next, move := d.scroll, false
+	if e.Target == hitDashboardScroll {
+		switch e.Key {
+		case gfx.KeyDown:
+			next, move = d.scroll+32, true
+		case gfx.KeyUp:
+			next, move = d.scroll-32, true
+		case gfx.KeyHome:
+			next, move = 0, true
+		case gfx.KeyEnd:
+			next, move = maxOffset, true
+		case gfx.KeyPageDown:
+			next, move = d.scroll+d.body.Height, true
+		case gfx.KeyPageUp:
+			next, move = d.scroll-d.body.Height, true
 		}
-		d := &s.dashboard
-		maxOffset := max(d.content-d.body.Height, 0)
-		step := max(d.body.Height*0.9, 32)
-		if e.Key == gfx.KeyPageUp {
-			step = -step
-		}
-		next := min(max(d.scroll+step, 0), maxOffset)
-		if next == d.scroll {
-			return gfx.EventResult{Handled: true}
-		}
-		d.scroll = next
-		return gfx.EventResult{Handled: true, Repaint: true}
+	} else if e.Key == gfx.KeyPageDown && s.EditorFor(e.Target) == nil {
+		next, move = d.scroll+d.body.Height, true
+	} else if e.Key == gfx.KeyPageUp && s.EditorFor(e.Target) == nil {
+		next, move = d.scroll-d.body.Height, true
 	}
-	return gfx.EventResult{}
+	if !move {
+		return gfx.EventResult{}
+	}
+	next = min(max(next, 0), maxOffset)
+	if next == d.scroll {
+		return gfx.EventResult{Handled: true}
+	}
+	d.scroll = next
+	return gfx.EventResult{Handled: true, Repaint: true}
 }

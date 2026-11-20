@@ -181,3 +181,30 @@ func TestSnippetVariablesApplyAndPreview(t *testing.T) {
 		t.Errorf("expected %q, got %q", expected, res)
 	}
 }
+
+// A Go template written without a space after its keyword (as docker inspect
+// examples sometimes are) must still read as a template, not as required
+// variables called "range.NetworkSettings.Networks" and "end".
+func TestGoTemplateKeywordsAreNotRequiredVariables(t *testing.T) {
+	for _, cmd := range []string{
+		"docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' web",
+		"docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' web",
+		"docker inspect -f '{{if.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' web",
+	} {
+		if vars := parseSnippetVariables(cmd); len(vars) != 0 {
+			t.Errorf("%q: got required variables %v, want none", cmd, vars)
+		}
+		if snippetHasVariables(cmd) {
+			t.Errorf("%q: reports variables, want none", cmd)
+		}
+	}
+}
+
+// A dotted name the user really wants to fill in is still a variable: only the
+// template keywords are special, not every dot.
+func TestADottedNameIsStillAVariable(t *testing.T) {
+	vars := parseSnippetVariables("echo {{my.value}}")
+	if len(vars) != 1 || vars[0].Name != "my.value" {
+		t.Fatalf("got %v, want one variable named my.value", vars)
+	}
+}

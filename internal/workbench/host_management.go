@@ -9,7 +9,6 @@ import (
 	"github.com/vivaui/viva/text"
 
 	"motty/internal/configstore"
-	"motty/internal/keyidentity"
 	"motty/internal/sshconn"
 	"motty/internal/vault"
 	layoutcore "motty/internal/workspace"
@@ -272,9 +271,6 @@ func (state *State) singleHostAction() (Host, bool) {
 
 func (state *State) submitHostDialog() {
 	if !state.commitHostGroupQuery() {
-		return
-	}
-	if !state.commitHostEncodingQuery() {
 		return
 	}
 	if !state.commitHostTagQuery() {
@@ -720,7 +716,7 @@ func (state *State) hostPassphraseChanges() (changes []vault.Change, failure str
 		return nil, state.messages.VaultUnavailable
 	}
 	secret := []byte(typed)
-	_, err := keyidentity.Load(identity.Path, secret)
+	err := state.keyPassphraseOpens(identity, secret)
 	clear(secret)
 	if err != nil {
 		return nil, state.messages.KeyPassphraseWrong
@@ -855,6 +851,11 @@ func (state *State) confirmDeleteHosts() {
 			state.unlinkNoteHost(host.CatalogID)
 		}
 	}
+	// The folders were the hosts' homes, not the hosts: deleting a host must
+	// leave the folder behind so the next host can be put in it. Mark every
+	// path the deleted hosts named, and its ancestors, as a folder the catalog
+	// keeps even while it holds no host.
+	state.retainHostGroups(state.hostActionIDs)
 	count := len(state.hostActionIDs)
 	kept := state.hosts[:0]
 	for _, host := range state.hosts {
@@ -871,6 +872,24 @@ func (state *State) confirmDeleteHosts() {
 	state.hostDataChanged()
 	state.status = fmt.Sprintf(state.messages.HostDeletedFmt, count)
 	state.save()
+}
+
+// retainHostGroups makes the folders named by the given hosts part of the
+// catalog before the hosts leave it: a folder the user named by putting a host
+// in it stays after the host is deleted, as an empty folder, until the user
+// deletes the folder itself.
+func (state *State) retainHostGroups(ids []uint32) {
+	for _, id := range ids {
+		host, ok := state.hostByID(id)
+		if !ok {
+			continue
+		}
+		for path := strings.TrimSpace(host.Group); path != ""; path = hostGroupParent(path) {
+			if index := state.hostGroupIndex(path); index >= 0 {
+				state.hostGroups[index].Explicit = true
+			}
+		}
+	}
 }
 
 func containsHostID(ids []uint32, id uint32) bool {
@@ -1064,12 +1083,12 @@ func (state *State) hostManagementKey(event gfx.KeyEvent) (gfx.EventResult, bool
 		return gfx.EventResult{}, false
 	}
 	if event.Target == hitHostSideWidth {
-		if bounds := state.hostSide.splitBounds; bounds.Width > 1 {
-			if fraction, ok := state.hostSideResizable(nil).FractionForKey(event.Key); ok {
-				state.hostSide.width = fraction * (bounds.Width - 1)
-				state.save()
-				return handled, true
+		if result := state.hostSide.split.Key(event); result.Handled {
+			if state.hostSide.split.Pos > 0 {
+				state.hostSide.width = state.hostSide.split.Pos
 			}
+			state.save()
+			return handled, true
 		}
 	}
 	if event.Key == gfx.KeySpace && !event.Release && state.clickHostScopeSelection(event.Target) {

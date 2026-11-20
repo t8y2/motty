@@ -770,9 +770,9 @@ func (state *State) declareWorkspaceDraftRest(c ui.C, width, height float32) {
 	}
 	ui.Column(c).FillWidth().Height(height).Children(func() {
 		if wide {
-			ui.Row(c).Grow(1).MinHeight(0).Children(func() {
+			ui.Row(c).Grow(1).MinHeight(0).MarginBottom(10).Children(func() {
 				ui.Column(c).Width(hostWidth).FillHeight().Children(func() {
-					state.declareWorkspaceDraftHostPane(c, hostWidth, max(0, height-22))
+					state.declareWorkspaceDraftHostPane(c, hostWidth, max(0, height-32))
 				})
 				ui.Slot(c).Width(24).Shrink(0)
 				ui.Column(c).Grow(1).FillHeight().Children(func() {
@@ -784,8 +784,8 @@ func (state *State) declareWorkspaceDraftRest(c ui.C, width, height float32) {
 				state.declareWorkspaceDraftPreview(c, width)
 			})
 			ui.Slot(c).Height(12).Shrink(0)
-			ui.Column(c).Grow(1).MinHeight(0).Children(func() {
-				state.declareWorkspaceDraftHostPane(c, width, max(0, height-184-12-22))
+			ui.Column(c).Grow(1).MinHeight(0).MarginBottom(10).Children(func() {
+				state.declareWorkspaceDraftHostPane(c, width, max(0, height-184-12-32))
 			})
 		}
 		state.declareWorkspaceDraftHint(c, width, wide)
@@ -798,7 +798,11 @@ func (state *State) declareWorkspaceDraftPreview(c ui.C, width float32) {
 	draft, m, pal := &state.workspaceDraft, state.messages, state.pal
 	items := state.workspaceItemsForRegion(workspaceCardRegion{view: workspaceCardsDraft})
 	draft.previewContent = workspaceCardContentHeight(len(items), draft.layout)
-	ui.Text(c, m.WorkspaceDraftPreview).FontSize(13).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(22).Ellipsis().Shrink(0)
+	ui.Row(c).Height(22).FillWidth().Children(func() {
+		ui.Text(c, m.WorkspaceDraftPreview).FontSize(13).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(22).Ellipsis().Grow(1).Shrink(1)
+		ui.Text(c, fmt.Sprintf(m.WorkspaceDraftSelectedFmt, state.workspaceDraftSelectionCount())).
+			FontSize(12).Color(pal.muted).LineHeight(22).Shrink(0)
+	})
 	strip := workspacePresetStripHeight(width)
 	ui.Slot(c).FillWidth().Height(strip).Shrink(0).MarginTop(8).Draw(func(d *ui.DrawContext) {
 		state.paintWorkspaceLayoutPresets(d.Canvas, d.Rect, hitWorkspaceDraftPresets, 0, draft.layout)
@@ -809,7 +813,8 @@ func (state *State) declareWorkspaceDraftPreview(c ui.C, width float32) {
 		})
 		return
 	}
-	scroll := ui.Scroll(c).Grow(1).MinHeight(0).FillWidth().MarginTop(12).Scrollbars().
+	scroll := ui.Scroll(c).Grow(1).MinHeight(0).FillWidth().MarginTop(12).AlwaysScrollbars().
+		ScrollbarIDs(hitWorkspaceDraftPreviewScrollbar, gfx.ID{}).ScrollbarLabels(m.WorkspaceDraftPreview, "").
 		HitWith(hitWorkspaceDraftPreviewScroll, m.WorkspaceDraftPreview, gfx.HitOptions{Role: gfx.RoleGroup})
 	area := scroll.ScrollState()
 	if draft.previewScroll != draft.previewScrollSynced {
@@ -818,13 +823,14 @@ func (state *State) declareWorkspaceDraftPreview(c ui.C, width float32) {
 		c.Canvas().RequestFrame()
 	}
 	scroll.Children(func() {
-		content := ui.Stack(c).FillWidth().Height(draft.previewContent)
+		contentWidth := max(0, width-10)
+		content := ui.Stack(c).Width(contentWidth).Height(draft.previewContent)
 		content.Children(func() {
 			ui.Slot(c).Absolute().Inset(0).Draw(func(d *ui.DrawContext) {
 				state.paintWorkspaceCards(d.Canvas, d.Rect, d.Rect, items, draft.layout, workspaceCardsDraft, "", 0)
 			})
 			if draft.mode == workspaceDraftEdit {
-				state.declareWorkspaceDraftRemoveButtons(c, width, items, draft.layout)
+				state.declareWorkspaceDraftRemoveButtons(c, contentWidth, items, draft.layout)
 			}
 		})
 	})
@@ -928,7 +934,8 @@ func (state *State) declareWorkspaceDraftRow(row ui.ListRow) {
 		height += 66
 	}
 	id := hitWorkspaceDraftHostList.At(r.hostIndex)
-	row.Element.Height(height).HitWith(id, host.Label, gfx.HitOptions{Role: gfx.RoleCheckbox, Checked: selected, Disabled: disabled}).
+	row.Element.Height(height).MarginSides(0, 0, 0, workspaceDraftHostIndent).
+		HitWith(id, host.Label, gfx.HitOptions{Role: gfx.RoleCheckbox, Checked: selected, Disabled: disabled}).
 		Draw(func(d *ui.DrawContext) { state.paintWorkspaceDraftHost(d, host, id, selected, disabled, configurable) }).
 		Children(func() {
 			ui.Column(c).FillWidth().Children(func() {
@@ -1132,7 +1139,7 @@ func (state *State) workspaceDraftScroll(event gfx.ScrollEvent) gfx.EventResult 
 	}
 	if pointInRect(event.X, event.Y, state.workspaceDraft.previewBounds) ||
 		pointInRect(event.X, event.Y, state.workspaceDraft.bounds) {
-		result := state.windowPage().Wheel(event)
+		result := state.windowPage().RouteWheel(event)
 		result.Handled = true
 		return result
 	}

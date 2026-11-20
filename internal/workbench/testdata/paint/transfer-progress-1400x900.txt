@@ -50,9 +50,9 @@ text "Connecting" {446 450.62 75.208984 25}
 text "Elapsed 0:00" {428 533.12 352.05762 19}
 text "Show log" {798.0576 526.62 79.44531 32}
 text "Close" {885.5029 526.62 56.49707 32}
-text "Receive files" {1037 749 334 19}
-text "/dev/ttyUSB0" {1037 775 334 19}
-text "release-2026.tar.gz" {1037 799 334 21}
+text "Receive files" {1037 749 334 20}
+text "/dev/ttyUSB0" {1037 775 334 18}
+text "release-2026.tar.gz" {1037 799 334 20}
 text "24.0 MB / 100.0 MB" {1037 843.5 261.38867 19}
 text "Cancel" {1316.3887 839 64.61133 28}
 hit "" region {0 0 1400 36} disabled=false

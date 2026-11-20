@@ -40,6 +40,168 @@ func TestCommandTagClickRoutes(t *testing.T) {
 	}
 }
 
+// Sending a quick command from the bar must hand the keyboard back to the
+// terminal, or the next Enter types wherever the pointer happens to be.
+func TestClickingACommandChipReturnsTheKeyboardToTheTerminal(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	world.connectFirst(t, state)
+	state.activeSection = sectionTerminal
+	state.snippets.list = []snippet{{Name: "ls", Command: "ls", Run: true}}
+	state.commands.shown = true
+	state.Click(hitCommandsTag.At(0))
+	want := state.activeTerminalFocusHit()
+	if want.IsZero() {
+		t.Fatal("no terminal focus target")
+	}
+	if state.pendingFocus != want {
+		t.Fatalf("pending focus = %v, want the terminal %v", state.pendingFocus, want)
+	}
+	canvas, _ := paintAt(state, gfx.Size{Width: 1200, Height: 800})
+	if got := canvas.FocusRequest(); got != want {
+		t.Fatalf("paint asked for focus %v, want the terminal %v", got, want)
+	}
+	if !state.pendingFocus.IsZero() {
+		t.Fatal("the focus request was not consumed")
+	}
+}
+
+// The focus a chip asked for must not be taken while a dialog is up (the
+// dialog keeps its own first field), and must still be cleared so it cannot
+// steal the keyboard later.
+func TestAQuickCommandKeepsADialogsKeyboardAndDropsItsFocus(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	world.connectFirst(t, state)
+	state.activeSection = sectionTerminal
+	state.modal = modalSnippetVariables
+	state.pendingFocus = state.activeTerminalFocusHit()
+	canvas, _ := paintAt(state, gfx.Size{Width: 1200, Height: 800})
+	if got := canvas.FocusRequest(); !got.IsZero() {
+		t.Fatalf("paint asked for %v while a dialog was up", got)
+	}
+	if !state.pendingFocus.IsZero() {
+		t.Fatal("the focus request was not dropped with the dialog up")
+	}
+}
+
+// A page that cannot take the keyboard (the snippets page) must drop the
+// request too, not hold it for a later paint to grab the keyboard.
+func TestAQuickCommandDropsFocusOnANonTerminalPage(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	world.connectFirst(t, state)
+	state.activeSection = sectionSnippets
+	state.pendingFocus = state.activeTerminalFocusHit()
+	canvas, _ := paintAt(state, gfx.Size{Width: 1200, Height: 800})
+	if got := canvas.FocusRequest(); !got.IsZero() {
+		t.Fatalf("paint asked for %v on the snippets page", got)
+	}
+	if !state.pendingFocus.IsZero() {
+		t.Fatal("the focus request was not dropped on a non-terminal page")
+	}
+}
+
+// Cancelling or closing the variables dialog opened from the command bar must
+// also bring the keyboard back to the terminal.
+func TestCancellingTheVariablesDialogReturnsTheKeyboardToTheTerminal(t *testing.T) {
+	for _, id := range []gfx.ID{hitSnippetVarCancel, hitSnippetVarClose} {
+		world, options := newSharingWorld(t)
+		state := newTestState(t, options)
+		world.connectFirst(t, state)
+		state.activeSection = sectionTerminal
+		state.modal = modalSnippetVariables
+		state.snippetPrompt.fromPage = false
+		state.pendingFocus = gfx.ID{}
+		state.clickSnippetVariablesDialog(id)
+		want := state.activeTerminalFocusHit()
+		if want.IsZero() {
+			t.Fatal("no terminal focus target")
+		}
+		if state.pendingFocus != want {
+			t.Fatalf("%v: pending focus = %v, want the terminal %v", id, state.pendingFocus, want)
+		}
+	}
+}
+
+// Cancelling a dialog opened from the snippets page stays on that page: it
+// must not queue a terminal focus request.
+func TestCancellingTheVariablesDialogFromThePageKeepsThePage(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	world.connectFirst(t, state)
+	state.activeSection = sectionSnippets
+	state.modal = modalSnippetVariables
+	state.snippetPrompt.fromPage = true
+	state.pendingFocus = gfx.ID{}
+	state.clickSnippetVariablesDialog(hitSnippetVarCancel)
+	if !state.pendingFocus.IsZero() {
+		t.Fatal("cancelling from the snippets page asked for the terminal")
+	}
+}
+
+// A quick command with variables opens a dialog instead of sending; sending it
+// must bring the keyboard back to the terminal the command went to.
+func TestSubmittingTheSnippetVariablesDialogReturnsTheKeyboardToTheTerminal(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	world.connectFirst(t, state)
+	state.activeSection = sectionTerminal
+	state.modal = modalSnippetVariables
+	state.snippets.list = []snippet{{Name: "ls", Command: "ls", Run: true}}
+	state.snippetPrompt.snippetIndex = 0
+	state.snippetPrompt.targetSessionID = state.sessions[0].ID
+	state.submitSnippetVariables()
+	want := state.activeTerminalFocusHit()
+	if want.IsZero() {
+		t.Fatal("no terminal focus target")
+	}
+	if state.pendingFocus != want {
+		t.Fatalf("pending focus = %v, want the terminal %v", state.pendingFocus, want)
+	}
+}
+
+// A right click on a chip opens that snippet's own menu, so a command added to the
+// bar can still be edited or removed there (#1005).
+func TestRightClickingACommandChipOpensItsMenu(t *testing.T) {
+	state := openCommandsDrawerTest(t)
+	event := gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitCommandsTag.At(1)}
+	if got := pointer(state, event); !got.Handled || !state.snippetMenu.open || !state.snippetMenu.fromBar || state.snippetMenu.index != 1 {
+		t.Fatalf("secondary: handled=%v menu=%+v", got.Handled, state.snippetMenu)
+	}
+	if menuHasRow(state, state.messages.Tools.SnippetMoveUp) {
+		t.Fatal("a command-bar menu offers Move up, which reorders by the Snippets page")
+	}
+	chooseMenu(t, state, hitSnippetMenuEdit)
+	if state.modal != modalSnippet {
+		t.Fatalf("edit from the bar opened modal %d, want the snippet form", state.modal)
+	}
+	state.modal = modalNone
+	state.snippetMenu = snippetMenu{}
+
+	pointer(state, event)
+	chooseMenu(t, state, hitSnippetMenuDelete)
+	if state.modal != modalSnippetDelete || len(state.snippets.list) != 2 {
+		t.Fatalf("delete from the bar opened modal %d with %d snippets", state.modal, len(state.snippets.list))
+	}
+}
+
+// A rebuilt snippet list no longer holds the snippet the open menu was asked for,
+// so the menu closes instead of editing whatever now sits at its index.
+func TestACommandBarMenuFollowsARebuiltList(t *testing.T) {
+	state := openCommandsDrawerTest(t)
+	event := gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitCommandsTag.At(1)}
+	if got := pointer(state, event); !got.Handled || !state.snippetMenu.open {
+		t.Fatalf("the menu did not open: handled=%v menu=%+v", got.Handled, state.snippetMenu)
+	}
+	state.snippets.list = []snippet{{Name: "other", Command: "echo other"}}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	if state.snippetMenu.open {
+		t.Fatal("the menu stayed open over a rebuilt list")
+	}
+}
+
 // The drawer reserves no space off the terminal page, a fixed single-bar height on
 // the terminal page, and nothing once closed.
 func TestCommandDrawerHeight(t *testing.T) {
@@ -405,5 +567,91 @@ func TestCommandBarOptInSurvivesRestart(t *testing.T) {
 	fresh := newTestState(t, testOptions(t))
 	if fresh.commands.shown {
 		t.Fatal("a new profile must start with the bar hidden")
+	}
+}
+
+// The bar is the content area's bottom strip, so a file panel docked beside the
+// terminal must not narrow it: the corners beside the terminal column are the
+// bar's, not blank. This is #981 — the strip used to stop at the terminal column
+// and leave a gap under each side panel.
+func TestCommandBarSpansTheContentWidthBesideAFilePanel(t *testing.T) {
+	state, _, _, _ := openTestSFTP(t)
+	state.snippets.list = []snippet{{Name: "pwd", Command: "pwd"}}
+	state.commands.shown = true
+	size := gfx.Size{Width: 1444, Height: 808}
+	canvas, _ := paintAt(state, size)
+	context, ok := state.deck.Context(state.deck.ActiveWorkspace())
+	if !ok || !context.Open || context.Side != layoutcore.ContextLeft {
+		t.Fatalf("the files panel is not docked left: %+v", context)
+	}
+	full := state.fullWorkspacePixelBounds(size)
+	frame := state.toolbarDockFrame(size, true)
+	bar := state.commands.bar
+	if bar.Width <= 0 || bar.Height <= 0 {
+		t.Fatalf("the bar was not painted: %+v", bar)
+	}
+	if bar.X != full.X || bar.Width != full.Width {
+		t.Fatalf("bar spans %v..%v, want the content frame %v..%v", bar.X, bar.X+bar.Width, full.X, full.X+full.Width)
+	}
+	if bar.Y != frame.Y+frame.Height {
+		t.Fatalf("bar top = %v, want the dock frame's bottom %v", bar.Y, frame.Y+frame.Height)
+	}
+	// Both bottom corners of the content frame are painted by the strip: the top
+	// rectangle at each corner is the bar's own fill, so no side panel covers it
+	// and no gap is left beside it.
+	want := withAlpha(state.pal.shell, 0.6)
+	mid := bar.Y + commandsBarHeight/2
+	for _, corner := range []gfx.Point{{X: full.X + 2, Y: mid}, {X: full.X + full.Width - 3, Y: mid}} {
+		var top gfx.Rectangle
+		found := false
+		for _, r := range canvas.Rectangles() {
+			if corner.X >= r.Bounds.X && corner.X < r.Bounds.X+r.Bounds.Width &&
+				corner.Y >= r.Bounds.Y && corner.Y < r.Bounds.Y+r.Bounds.Height {
+				top, found = r, true
+			}
+		}
+		if !found || top.Color != want {
+			t.Fatalf("bottom corner %v is %+v, want the bar fill %+v", corner, top.Color, want)
+		}
+	}
+}
+
+// A terminal toolbar docked to a side takes its rail width out of the panes,
+// but the command strip still spans the content frame under the rail: the rail
+// ends at the strip's top, so the corner below it belongs to the bar.
+func TestCommandBarSpansTheContentWidthBesideASideRail(t *testing.T) {
+	state, _ := monitorFixture(t)
+	state.snippets.list = []snippet{{Name: "pwd", Command: "pwd"}}
+	state.commands.shown = true
+	state.terminalToolbarPosition = terminalToolbarLeft
+	size := gfx.Size{Width: 1444, Height: 808}
+	canvas, _ := paintAt(state, size)
+
+	full := state.fullWorkspacePixelBounds(size)
+	frame := state.toolbarDockFrame(size, true)
+	if frame.Width >= full.Width {
+		t.Fatalf("the side rail did not narrow the dock frame (%v vs %v); the case proves nothing", frame.Width, full.Width)
+	}
+	bar := state.commands.bar
+	if bar.Width <= 0 || bar.Height <= 0 {
+		t.Fatalf("the bar was not painted: %+v", bar)
+	}
+	if bar.X != full.X || bar.Width != full.Width {
+		t.Fatalf("bar spans %v..%v, want the content frame %v..%v", bar.X, bar.X+bar.Width, full.X, full.X+full.Width)
+	}
+	want := withAlpha(state.pal.shell, 0.6)
+	mid := bar.Y + commandsBarHeight/2
+	for _, corner := range []gfx.Point{{X: full.X + 2, Y: mid}, {X: full.X + full.Width - 3, Y: mid}} {
+		var top gfx.Rectangle
+		found := false
+		for _, r := range canvas.Rectangles() {
+			if corner.X >= r.Bounds.X && corner.X < r.Bounds.X+r.Bounds.Width &&
+				corner.Y >= r.Bounds.Y && corner.Y < r.Bounds.Y+r.Bounds.Height {
+				top, found = r, true
+			}
+		}
+		if !found || top.Color != want {
+			t.Fatalf("bottom corner %v is %+v, want the bar fill %+v", corner, top.Color, want)
+		}
 	}
 }

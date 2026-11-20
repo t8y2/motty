@@ -27,7 +27,7 @@ func (state *State) remoteProcessWheel(event gfx.ScrollEvent) (gfx.EventResult, 
 	if view.auto.open {
 		return gfx.EventResult{}, false
 	}
-	result := state.windowPage().Wheel(event)
+	result := state.windowPage().RouteWheel(event)
 	return result, result.Handled || result.Repaint
 }
 

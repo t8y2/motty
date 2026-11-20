@@ -188,7 +188,7 @@ text "Sync with SSH config" {541 887 664 21}
 text "Keeps your OpenSSH config and these hosts in step both ways. Hosts made here go in a marked block of the file, and a" {541 909 664 15}
 text "copy of the file is kept before the first change." {541 924 664 15}
 text "SSH config file" {541 958.5 544.08105 21}
-text "/Users/skyler/.ssh/config" {541 980.5 544.08105 15}
+text "/home/tester/.ssh/config" {541 980.5 544.08105 15}
 text "Choose…" {1119.081 963 81.55078 28}
 text "Default" {1208.6318 963 66.368164 28}
 text "Sync now" {541 1022.5 616.8086 21}

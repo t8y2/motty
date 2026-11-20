@@ -278,3 +278,34 @@ func TestProcessDetailStateLabelsAndUnknownValues(t *testing.T) {
 		t.Fatal("missing process values are not represented consistently")
 	}
 }
+
+// The command tab's status row sits inside the same panel as the command, with
+// no gap before the text: the tab strip's own gap is the only one.
+func TestRemoteCommandStatusSharesThePanelWithItsText(t *testing.T) {
+	state, _, _ := openRemoteToolsDialog(t)
+	doubleClickRemoteToolsRow(t, state, 0)
+	details := &state.remote.processDetails
+	status := details.commandStatus
+	if status == "" {
+		t.Fatal("the command tab has no status row to place")
+	}
+	canvas := remoteToolsPaint(t, state)
+	var statusText gfx.Text
+	foundStatus := false
+	for _, text := range canvas.Texts() {
+		if text.Value == status {
+			statusText, foundStatus = text, true
+			break
+		}
+	}
+	if !foundStatus {
+		t.Fatalf("the command status %q is not painted", status)
+	}
+	detail, found := hitByID(canvas, hitRemoteProcessDetailsText)
+	if !found {
+		t.Fatal("the command text area is not painted")
+	}
+	if detail.Bounds.Y != statusText.Bounds.Y+28 {
+		t.Fatalf("command text starts at %v, want %v: the 28px status row and no gap", detail.Bounds.Y, statusText.Bounds.Y+28)
+	}
+}

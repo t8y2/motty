@@ -274,6 +274,9 @@ func (state *State) groupDeleteChoices() [2]string {
 	return [2]string{fmt.Sprintf(m.KeepParentFmt, parent), m.KeepUngrouped}
 }
 
+// paintHostGroupParentSelect paints the move dialog's destination as the
+// hierarchy select it has always been. A page Select cannot keep the dialog's
+// initial focus on the field's own identity, so this stays with components.
 func (state *State) paintHostGroupParentSelect(canvas *gfx.Canvas, bounds, viewport gfx.Rect) {
 	a, m := &state.groupActions, state.messages.HostGroupActions
 	value := state.hostGroupEditor.String()

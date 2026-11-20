@@ -21,6 +21,12 @@ func TestRunningTransfersHoldOneSleepRequest(t *testing.T) {
 		}
 	})
 
+	// Another driver left registered by an earlier test can be the active one
+	// while that test's goroutines drain; a pump makes this driver active so
+	// the process-wide claim is recorded where this test reads it.
+	if err := driver.Pump(); err != nil {
+		t.Fatal(err)
+	}
 	holdTransferSleep(true)
 	holdTransferSleep(true)
 	reasons := driver.AwakeReasons()

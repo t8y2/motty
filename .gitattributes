@@ -11,3 +11,7 @@ internal/completion/data/catalog.bin binary
 # core.autocrlf must not rewrite them either.
 internal/localshell/conpty/**/*.dll binary
 internal/localshell/conpty/**/*.exe binary
+
+# Paint goldens are compared byte for byte; a checkout with core.autocrlf must
+# not rewrite their line endings.
+internal/workbench/testdata/paint/*.txt text eol=lf

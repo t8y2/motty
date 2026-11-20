@@ -396,6 +396,25 @@ func TestSFTPDirectoryTreeWidthKeepsFileListUsable(t *testing.T) {
 	}
 }
 
+func TestSFTPDirectoryTreeIndentsByDisplayDepth(t *testing.T) {
+	w := &sftpWindow{}
+	tree := &w.directoryTree[0]
+	tree.visible = []sftpTreeVisibleRow{{node: &sftpTreeNode{key: 1, name: "deep"}, depth: 12}}
+	w.initDirectoryTreeState(0)
+	tree.contentWidth = sftpDirectoryTreeIndent*4 + directoryTreeLabelReserve
+	if got := tree.tree.Indent; got != sftpDirectoryTreeIndent {
+		t.Fatalf("the tree's indent was squeezed to %v; each row's display depth carries the clamp", got)
+	}
+	// Depth is the folder's own level, which the tree reads for keyboard
+	// movement; DisplayDepth is the compressed indent its name is drawn at.
+	if got := tree.tree.Node(0).Depth; got != 12 {
+		t.Fatalf("deep row reports depth %d, want the folder's own 12", got)
+	}
+	if got := tree.tree.DisplayDepth(tree.tree.Node(0).Depth); got != 4 {
+		t.Fatalf("deep row indents at depth %d, want the four the width allows", got)
+	}
+}
+
 func TestSFTPDirectoryTreeLeafKeepsDisclosureColumn(t *testing.T) {
 	content := gfx.Rect{X: 20, Y: 10, Width: 160, Height: 28}
 	branch := directoryTreeContentBounds(content, true)
@@ -536,7 +555,7 @@ func TestSFTPLocationProfileEditorPersistsSync(t *testing.T) {
 	}
 }
 
-func TestSFTPLocationProfileHoverShowsQuickActions(t *testing.T) {
+func TestSFTPLocationProfileButtonsOpenOnFirstClick(t *testing.T) {
 	state, w, _, host, directory := dualSFTPFixture(t, 1)
 	view := host.windows[0].view
 	state.sftpBookmarks = []sftpBookmark{{
@@ -548,33 +567,43 @@ func TestSFTPLocationProfileHoverShowsQuickActions(t *testing.T) {
 		t.Fatal(err)
 	}
 	view.Rest()
-	button := dualHit(t, view, hitSFTPLocationProfiles)
-	if err := view.Move(button.X+button.Width/2, button.Y+button.Height/2); err != nil {
+	// The pointer stops on the chevron, then presses once: no preview opens
+	// under it, so the first click opens the menu.
+	button := dualHit(t, view, hitSFTPProfileQuick)
+	x, y := button.X+button.Width/2, button.Y+button.Height/2
+	if err := view.Move(x, y); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Click(x, y); err != nil {
 		t.Fatal(err)
 	}
 	if err := view.Driver().Pump(); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(time.Second)
-	for !w.ui.profileHoverOpen && time.Now().Before(deadline) {
-		state.Wake()
-		if err := view.Driver().Pump(); err != nil {
-			t.Fatal(err)
-		}
+	view.Rest()
+	if !w.ui.profileQuickOpen {
+		t.Fatal("the first click on the chevron did not open the profile menu")
+	}
+	w.closeProfileQuickMenu()
+	w.window.Invalidate()
+	if err := view.Driver().Pump(); err != nil {
+		t.Fatal(err)
 	}
 	view.Rest()
-	if !w.ui.profileHoverOpen {
-		t.Fatal("hovering the profiles button did not open the quick card")
+	// The manager button beside it opens the profile editor on its own first click.
+	button = dualHit(t, view, hitSFTPLocationProfiles)
+	x, y = button.X+button.Width/2, button.Y+button.Height/2
+	if err := view.Move(x, y); err != nil {
+		t.Fatal(err)
 	}
-	dualHit(t, view, hitSFTPProfileHoverItems.At(0))
-	result, handled := w.profileQuickKey(gfx.KeyEvent{Target: hitSFTPProfileHoverItems.At(0), Key: gfx.KeyEscape})
-	if !handled || !result.Handled || w.ui.profileHoverOpen || result.Focus != hitSFTPLocationProfiles {
-		t.Fatal("Escape did not close the focused profile preview and restore trigger focus")
+	if err := view.Click(x, y); err != nil {
+		t.Fatal(err)
 	}
-	w.ui.profileHoverOpen = true
-	w.ui.profileHoverTrigger = hitSFTPProfileQuick
-	result, handled = w.profileQuickKey(gfx.KeyEvent{Target: hitSFTPProfileHoverItems.At(0), Key: gfx.KeyEscape})
-	if !handled || !result.Handled || result.Focus != hitSFTPProfileQuick {
-		t.Fatal("Escape did not return focus to the profile quick trigger")
+	if err := view.Driver().Pump(); err != nil {
+		t.Fatal(err)
+	}
+	view.Rest()
+	if !w.bookmark.open {
+		t.Fatal("the first click on the profiles button did not open the editor")
 	}
 }

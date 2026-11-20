@@ -336,7 +336,7 @@ func TestHostPasswordFitsEveryHostDialogInAShortWindow(t *testing.T) {
 			state.editor.setProtocol(test.protocol)
 			canvas, _ := paintAt(state, gfx.Size{Width: 900, Height: 600})
 			initial := canvas
-			state.editor.form.offset = state.editor.form.geometry.MaxOffsetY
+			state.editor.form.scrollTo(100000)
 			canvas, _ = paintAt(state, gfx.Size{Width: 900, Height: 600})
 			last, ok := hitByID(canvas, test.last)
 			if !ok {

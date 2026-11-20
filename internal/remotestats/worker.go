@@ -70,6 +70,9 @@ func StartWithInterval(runner Runner, notify func(), seconds int) *Worker {
 }
 
 func startCommand(runner Runner, notify func(), first, next time.Duration, script string, kind commandKind) *Worker {
+	if kind == kindPOSIX {
+		script = linuxShellCommand(script)
+	}
 	worker := newWorker(runner, notify, script, kind)
 	go worker.run(first, next)
 	return worker

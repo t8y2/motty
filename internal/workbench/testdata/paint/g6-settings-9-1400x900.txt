@@ -16,38 +16,44 @@ rect {{537 287 361 60} {0.14509805 0.16862746 0.20784314 1} 5.5 0 {414 37 978 85
 rect {{908 287 361 60} {0.14509805 0.16862746 0.20784314 1} 5.5 0 {414 37 978 855} true #17}
 rect {{537 357 361 60} {0.14509805 0.16862746 0.20784314 1} 5.5 0 {414 37 978 855} true #18}
 rect {{908 357 361 60} {0.14509805 0.16862746 0.20784314 1} 5.5 0 {414 37 978 855} true #19}
-rect {{523 483 760 128} {0.2 0.23529412 0.2901961 0.85} 11 0 {414 37 978 855} true #20}
-rect {{524 484 758 126} {0.12156863 0.14117648 0.1764706 1} 10 0 {414 37 978 855} true #21}
-rect {{1221 505.8 32 18.4} {0.38431373 0.80784315 0.53333336 1} 9.2 0 {414 37 978 855} true #23}
-rect {{1236 507 16 16} {0.8862745 0.90588236 0.93333334 1} 8 0 {414 37 978 855} true #24}
-rect {{524 547 758 1} {0.2 0.23529412 0.2901961 0.7} 0 0 {414 37 978 855} true #25}
-rect {{1172.956 565 92.043945 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {414 37 978 855} true #27}
-rect {{1173.956 566 90.043945 26} {0.11146667 0.1264 0.1488 1} 6.5 0 {414 37 978 855} true #28}
-rect {{523 663 760 210} {0.2 0.23529412 0.2901961 0.85} 11 0 {414 37 978 855} true #29}
-rect {{524 664 758 208} {0.12156863 0.14117648 0.1764706 1} 10 0 {414 37 978 855} true #30}
-rect {{537 677 361 86} {0.2 0.23529412 0.2901961 0.85} 7.5 0 {414 37 978 855} true #31}
-rect {{538 678 359 84} {0.14509805 0.16862746 0.20784314 1} 6.5 0 {414 37 978 855} true #32}
-rect {{550 697 26 26} {1 1 1 1} 5.5 0 {414 37 978 855} true #33}
-rect {{908 677 361 86} {0.2 0.23529412 0.2901961 0.85} 7.5 0 {414 37 978 855} true #34}
-rect {{909 678 359 84} {0.14509805 0.16862746 0.20784314 1} 6.5 0 {414 37 978 855} true #35}
-rect {{921 697 26 26} {0.02745098 0.75686276 0.3764706 1} 5.5 0 {414 37 978 855} true #36}
-rect {{537 773 361 86} {0.2 0.23529412 0.2901961 0.85} 7.5 0 {414 37 978 855} true #37}
-rect {{538 774 359 84} {0.14509805 0.16862746 0.20784314 1} 6.5 0 {414 37 978 855} true #38}
-rect {{550 793 26 26} {1 1 1 1} 5.5 0 {414 37 978 855} true #39}
-rect {{908 773 361 86} {0.2 0.23529412 0.2901961 0.85} 7.5 0 {414 37 978 855} true #40}
-rect {{909 774 359 84} {0.14509805 0.16862746 0.20784314 1} 6.5 0 {414 37 978 855} true #41}
-rect {{921 793 26 26} {0.7529412 0.33333334 0.30588236 1} 5.5 0 {414 37 978 855} true #42}
-rect {{523 925 760 114} {0.2 0.23529412 0.2901961 0.85} 11 0 {414 37 978 855} true #43}
-rect {{524 926 758 112} {0.12156863 0.14117648 0.1764706 1} 10 0 {414 37 978 855} true #44}
-rect {{537 939 361 86} {0.2 0.23529412 0.2901961 0.85} 7.5 0 {414 37 978 855} true #45}
-rect {{538 940 359 84} {0.14509805 0.16862746 0.20784314 1} 6.5 0 {414 37 978 855} true #46}
-rect {{550 959 26 26} {1 1 1 1} 5.5 0 {414 37 978 855} true #47}
-rect {{908 939 361 86} {0.2 0.23529412 0.2901961 0.85} 7.5 0 {414 37 978 855} true #48}
-rect {{909 940 359 84} {0.14509805 0.16862746 0.20784314 1} 6.5 0 {414 37 978 855} true #49}
+rect {{523 483 760 192} {0.2 0.23529412 0.2901961 0.85} 11 0 {414 37 978 855} true #20}
+rect {{524 484 758 190} {0.12156863 0.14117648 0.1764706 1} 10 0 {414 37 978 855} true #21}
+rect {{965 499 300 32} {0.2 0.23529412 0.2901961 1} 7.5 0 {414 37 978 855} true #22}
+rect {{966 500 298 30} {0.14509805 0.16862746 0.20784314 1} 6.5 0 {414 37 978 855} true #23}
+rect {{967 501 146 28} {0.24886276 0.27184314 0.30941176 1} 5.5 0 {414 37 978 855} true #24}
+rect {{1117 501 146 28} {0.14509805 0.16862746 0.20784314 1} 5.5 0 {414 37 978 855} true #25}
+rect {{1114.5 507.96 1 14.08} {0.2 0.23529412 0.2901961 0} 0 0 {414 37 978 855} true #26}
+rect {{524 547 758 1} {0.2 0.23529412 0.2901961 0.7} 0 0 {414 37 978 855} true #27}
+rect {{1221 569.8 32 18.4} {0.38431373 0.80784315 0.53333336 1} 9.2 0 {414 37 978 855} true #29}
+rect {{1236 571 16 16} {0.8862745 0.90588236 0.93333334 1} 8 0 {414 37 978 855} true #30}
+rect {{524 611 758 1} {0.2 0.23529412 0.2901961 0.7} 0 0 {414 37 978 855} true #31}
+rect {{1172.956 629 92.043945 28} {0.216 0.22917646 0.24894118 1} 7.5 0 {414 37 978 855} true #33}
+rect {{1173.956 630 90.043945 26} {0.11146667 0.1264 0.1488 1} 6.5 0 {414 37 978 855} true #34}
+rect {{523 727 760 210} {0.2 0.23529412 0.2901961 0.85} 11 0 {414 37 978 855} true #35}
+rect {{524 728 758 208} {0.12156863 0.14117648 0.1764706 1} 10 0 {414 37 978 855} true #36}
+rect {{537 741 361 86} {0.2 0.23529412 0.2901961 0.85} 7.5 0 {414 37 978 855} true #37}
+rect {{538 742 359 84} {0.14509805 0.16862746 0.20784314 1} 6.5 0 {414 37 978 855} true #38}
+rect {{550 761 26 26} {1 1 1 1} 5.5 0 {414 37 978 855} true #39}
+rect {{908 741 361 86} {0.2 0.23529412 0.2901961 0.85} 7.5 0 {414 37 978 855} true #40}
+rect {{909 742 359 84} {0.14509805 0.16862746 0.20784314 1} 6.5 0 {414 37 978 855} true #41}
+rect {{921 761 26 26} {0.02745098 0.75686276 0.3764706 1} 5.5 0 {414 37 978 855} true #42}
+rect {{537 837 361 86} {0.2 0.23529412 0.2901961 0.85} 7.5 0 {414 37 978 855} true #43}
+rect {{538 838 359 84} {0.14509805 0.16862746 0.20784314 1} 6.5 0 {414 37 978 855} true #44}
+rect {{550 857 26 26} {1 1 1 1} 5.5 0 {414 37 978 855} true #45}
+rect {{908 837 361 86} {0.2 0.23529412 0.2901961 0.85} 7.5 0 {414 37 978 855} true #46}
+rect {{909 838 359 84} {0.14509805 0.16862746 0.20784314 1} 6.5 0 {414 37 978 855} true #47}
+rect {{921 857 26 26} {0.7529412 0.33333334 0.30588236 1} 5.5 0 {414 37 978 855} true #48}
+rect {{523 989 760 114} {0.2 0.23529412 0.2901961 0.85} 11 0 {414 37 978 855} true #49}
+rect {{524 990 758 112} {0.12156863 0.14117648 0.1764706 1} 10 0 {414 37 978 855} true #50}
+rect {{537 1003 361 86} {0.2 0.23529412 0.2901961 0.85} 7.5 0 {414 37 978 855} true #51}
+rect {{538 1004 359 84} {0.14509805 0.16862746 0.20784314 1} 6.5 0 {414 37 978 855} true #52}
+rect {{550 1023 26 26} {1 1 1 1} 5.5 0 {414 37 978 855} true #53}
+rect {{908 1003 361 86} {0.2 0.23529412 0.2901961 0.85} 7.5 0 {414 37 978 855} true #54}
+rect {{909 1004 359 84} {0.14509805 0.16862746 0.20784314 1} 6.5 0 {414 37 978 855} true #55}
 shadow {{217 101 184 38} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {205 37 1187 855} true #4}
 shadow {{1210.9844 159 54.015625 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {414 37 978 855} true #11}
-shadow {{1221 505.8 32 18.4} 9.2 {0 0 0 0.05} {0 1 2 0} 0 {414 37 978 855} true #22}
-shadow {{1172.956 565 92.043945 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {414 37 978 855} true #26}
+shadow {{1221 569.8 32 18.4} 9.2 {0 0 0 0.05} {0 1 2 0} 0 {414 37 978 855} true #28}
+shadow {{1172.956 629 92.043945 28} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {414 37 978 855} true #32}
 text "Hosts" {52 114.5 37.180664 21}
 text "Workspaces" {52 154.5 80.37695 21}
 text "Monitor" {52 194.5 49.745117 21}
@@ -77,35 +83,40 @@ text "SSH, SFTP, port forwarding, remote desktop and an AI assistant, in one nat
 text "Copy" {1220.9844 159 54.015625 28}
 text "Version info" {527 245 752 22}
 text "Version" {569 298.5 41.583984 15}
-text "v0.4.14" {549 316.5 337 19}
+text "v0.0.0-test" {549 316.5 337 19}
 text "Platform" {940 298.5 45.984375 15}
-text "macOS · arm64" {920 316.5 337 19}
+text "TestOS · testarch" {920 316.5 337 19}
 text "Build" {569 368.5 26.982422 15}
 text "Build information unavailable" {549 386.5 337 19}
 text "Runtime" {940 368.5 44.396484 15}
-text "go1.26.11" {920 386.5 337 19}
+text "go0.0.0" {920 386.5 337 19}
 text "Updates" {527 455 752 22}
-text "Check automatically" {541 489 664 21}
-text "Look for a newer version five seconds after starting, then every hour. The check lets the download host see your" {541 511 664 15}
-text "address." {541 526 664 15}
-text "Check for updates" {541 560.5 607.95605 21}
-text "Looks for a newer version on GitHub and opens its download page. Nothing is installed for you." {541 582.5 607.95605 15}
-text "Check now" {1182.956 565 92.043945 28}
-text "Community" {527 635 752 22}
-text "QQ group" {584 700 281 20}
-text "Group 1131573299: questions, feedback and chat." {550 728 335 15}
-text "WeChat group" {955 700 281 20}
-text "Open the Tencent Doc and scan the QR code to join." {921 728 335 15}
-text "Discord group" {584 796 281 20}
-text "Real-time chat with the people building and using Motty." {550 824 335 15}
-text "Report an issue" {955 796 281 20}
-text "Bug reports and feature requests on GitHub." {921 824 335 15}
-text "Project" {527 897 752 22}
-text "Source repository" {584 962 281 20}
-text "Source, releases and discussions on GitHub." {550 990 335 15}
-text "Website and docs" {955 962 281 20}
-text "Install, use and development guides on motty.page." {921 990 335 15}
-text "Built with Viva" {872.6738 1063 76.65234 15}
+text "Update source" {541 489 400 21}
+text "Where checks and downloads go. CNB is the copy for mainland China;" {541 511 400 15}
+text "the official mirror answers when it cannot." {541 526 400 15}
+text "Official mirror" {995.6758 499 150 32}
+text "CNB" {1175.5762 499 150 32}
+text "Check automatically" {541 553 664 21}
+text "Look for a newer version five seconds after starting, then every hour. The check lets the download host see your" {541 575 664 15}
+text "address." {541 590 664 15}
+text "Check for updates" {541 624.5 607.95605 21}
+text "Looks for a newer version on GitHub and opens its download page. Nothing is installed for you." {541 646.5 607.95605 15}
+text "Check now" {1182.956 629 92.043945 28}
+text "Community" {527 699 752 22}
+text "QQ group" {584 764 281 20}
+text "Group 1131573299: questions, feedback and chat." {550 792 335 15}
+text "WeChat group" {955 764 281 20}
+text "Open the Tencent Doc and scan the QR code to join." {921 792 335 15}
+text "Discord group" {584 860 281 20}
+text "Real-time chat with the people building and using Motty." {550 888 335 15}
+text "Report an issue" {955 860 281 20}
+text "Bug reports and feature requests on GitHub." {921 888 335 15}
+text "Project" {527 961 752 22}
+text "Source repository" {584 1026 281 20}
+text "Source, releases and discussions on GitHub." {550 1054 335 15}
+text "Website and docs" {955 1026 281 20}
+text "Install, use and development guides on motty.page." {921 1054 335 15}
+text "Built with Viva" {872.6738 1127 76.65234 15}
 hit "" region {0 0 1400 36} disabled=false
 hit "Hosts" button {82 4 28 28} disabled=false
 hit "New tab" button {116 4 28 28} disabled=false
@@ -131,8 +142,10 @@ hit "Local Terminal" menuitem {9 808 186 36} disabled=false
 hit "Settings" menuitem {9 848 186 36} disabled=false
 hit "Search settings" textfield {217 101 184 38} disabled=false
 hit "Copy" button {1210.9844 159 54.015625 28} disabled=false
-hit "Check automatically" switch {1209 497.8 56 34.400024} disabled=false
-hit "Check now" button {1172.956 565 92.043945 28} disabled=false
+hit "Official mirror" radio {965 499 150 32} disabled=false
+hit "CNB" radio {1115 499 150 32} disabled=false
+hit "Check automatically" switch {1209 561.8 56 34.400024} disabled=false
+hit "Check now" button {1172.956 629 92.043945 28} disabled=false
 hit "General" menuitem {217 151 184 36} disabled=false
 hit "Terminal" menuitem {217 191 184 36} disabled=false
 hit "Connection" menuitem {217 231 184 36} disabled=false
@@ -143,8 +156,8 @@ hit "AI assistant" menuitem {217 391 184 36} disabled=false
 hit "MCP" menuitem {217 431 184 36} disabled=false
 hit "Keyboard shortcuts" menuitem {217 471 184 36} disabled=false
 hit "About" menuitem {217 511 184 36} disabled=false
-hit "Check automatically" button {541 489 664 52} disabled=false
-hit "QQ group" link {537 677 361 86} disabled=false
-hit "WeChat group" link {908 677 361 86} disabled=false
-hit "Discord group" link {537 773 361 86} disabled=false
-hit "Report an issue" link {908 773 361 86} disabled=false
+hit "Check automatically" button {541 553 664 52} disabled=false
+hit "QQ group" link {537 741 361 86} disabled=false
+hit "WeChat group" link {908 741 361 86} disabled=false
+hit "Discord group" link {537 837 361 55} disabled=false
+hit "Report an issue" link {908 837 361 55} disabled=false

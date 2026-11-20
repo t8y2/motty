@@ -1094,6 +1094,45 @@ func TestAISettingsPaintInBothLanguages(t *testing.T) {
 	}
 }
 
+// A provider row is a pointer target for choosing the provider, and it holds a
+// switch and its own buttons. A press on one of them belongs to that control,
+// not to the row around it; a press on the rest of the row still chooses the
+// provider. The driver delivers real pointer events, so a hit painted over the
+// controls, or a row that stopped taking presses, fails this.
+func TestAIProviderRowPressesReachItsOwnControls(t *testing.T) {
+	world := newSettingsWorld(t, newLister())
+	world.addOpenAI(t, "Alpha", "", "k")
+	world.addOpenAI(t, "Beta", "", "k")
+	state := world.state
+	provider := state.ai.providers[1]
+	driver := modalEventDriverSize(t, state, 1400, 900)
+
+	clickPaintedHit(t, driver, hitAISetProviderRow.At(1))
+	if state.ai.cfg.selected != provider.ID {
+		t.Fatalf("a press on the row chose %q, want %q", state.ai.cfg.selected, provider.ID)
+	}
+
+	wasEnabled := state.ai.providers[1].Enabled
+	clickPaintedHit(t, driver, hitAISetProviderSwitch.At(1))
+	if state.ai.providers[1].Enabled == wasEnabled {
+		t.Fatal("a press on the switch did not toggle the provider")
+	}
+
+	clickPaintedHit(t, driver, hitAISetProviderEdit.At(1))
+	if state.ai.cfg.dialog != aiDialogProvider || state.ai.cfg.editID != provider.ID {
+		t.Fatalf("a press on Edit opened dialog %v for %q, want the provider dialog for %q",
+			state.ai.cfg.dialog, state.ai.cfg.editID, provider.ID)
+	}
+	state.Click(hitAISetFormCancel)
+	driver.Paint()
+
+	clickPaintedHit(t, driver, hitAISetProviderDelete.At(1))
+	if state.ai.cfg.dialog != aiDialogDelete || state.ai.cfg.deleteID != provider.ID {
+		t.Fatalf("a press on Delete opened dialog %v for %q, want the delete question for %q",
+			state.ai.cfg.dialog, state.ai.cfg.deleteID, provider.ID)
+	}
+}
+
 func TestAISettingsFocusOrderFollowsThePage(t *testing.T) {
 	world := newSettingsWorld(t, newLister("chat-a", "chat-b")) // the first is the default, the second stays switchable
 	state := world.state
@@ -1380,5 +1419,29 @@ func TestAskAgentModeSurvivesAReload(t *testing.T) {
 	state.setAIMode(agent.ModeAsk)
 	if got := settingValue(t, world.db(t), "ai.mode"); got != "ask" {
 		t.Fatalf("stored ai.mode = %q, want ask", got)
+	}
+}
+
+// The step field keeps its digits-only restriction after an edit ends. The editor
+// is made anew each time the edit opens, and a restriction set once on another
+// editor would not follow it.
+func TestAIStepsFieldKeepsItsRestrictionAfterAnEdit(t *testing.T) {
+	world := newSettingsWorld(t, newLister())
+	state := world.state
+	setAISteps(t, state, 7)
+	state.Click(hitAISetStepsValue)
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 3200})
+	input := state.WindowConfig(app.Config{}).TextInput(app.TextInputContext{ID: hitAISetStepsValue})
+	if input == nil {
+		t.Fatal("the step field has no page editor")
+	}
+	input.Editor.Insert("abc12x3")
+	if got := input.Editor.String(); got != "123" {
+		t.Fatalf("the step field accepted %q, want the digits only", got)
+	}
+	state.Key(gfx.KeyEvent{Target: hitAISetStepsValue, Key: gfx.KeyEnter})
+	if got := state.ai.settings.maxSteps; got != 123 {
+		t.Fatalf("typed 123 steps = %d", got)
 	}
 }

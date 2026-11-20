@@ -30,6 +30,8 @@ type DesktopMessages struct {
 	RemoteAudio               string
 	StandardSecurity          string
 	StandardSecurityNote      string
+	LegacyTLS                 string
+	LegacyTLSNote             string
 	VNCPlaintext              string
 	TipCapture                string
 	TipRelease                string

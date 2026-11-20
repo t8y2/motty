@@ -54,6 +54,16 @@ var aiPresetChoices = func() []int {
 	return choices
 }()
 
+// aiPresetIcons is what the preset Select paints for each choice, indexed like
+// aiPresetChoices.
+var aiPresetIcons = func() []gfx.Icon {
+	icons := make([]gfx.Icon, len(aiPresetChoices))
+	for index, choice := range aiPresetChoices {
+		icons[index] = aiPresetIcon(choice)
+	}
+	return icons
+}()
+
 func (preset aiPreset) address(language i18n.Language) string {
 	if language == i18n.Chinese && preset.urlZH != "" {
 		return preset.urlZH

@@ -1,0 +1,59 @@
+# End to end: a keyword highlight rule can take an explicit HEX color, and the
+# terminal paints its word in that color instead of one of the scheme's six
+# named ones.
+#
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/highlight_custom_color_e2e.txt
+#
+# The script uses a local terminal, so it needs no SSH fixture.
+
+# lang: en
+resize 1200 800
+
+# Settings > Terminal > Keyword highlighting.
+click "Settings"
+settle 300
+click "Terminal"
+settle 300
+scroll 800 500 0 2100
+settle 400
+
+# A rule with a color of its own: the picker sits beside the six named
+# swatches, and its panel's HEX field takes the value.
+click "Add rule"
+settle 400
+click "Custom color"
+settle 400
+click "textfield:Custom HEX"
+settle 200
+key cmd+a
+type #50FA7B
+settle 300
+shot /tmp/motty-highlight-custom-color-picker.png
+click "OK"
+settle 300
+click "Text to find"
+type CUSTOMKEY
+shot /tmp/motty-highlight-custom-color-dialog.png
+click "Add"
+settle 500
+expect layout clean
+shot /tmp/motty-highlight-custom-color-rule.png
+
+# The rule manager keeps the HEX color, and the terminal paints the word in it.
+click "Manage rules"
+settle 400
+waitfor "#50fa7b" 2000
+expect layout clean
+shot /tmp/motty-highlight-custom-color-manager.png
+click "Done"
+settle 300
+
+click "Local Terminal"
+settle 1500
+type printf 'CUSTOMKEY\n'
+key enter
+settle 800
+waitfor "CUSTOMKEY" 3000
+expect layout clean
+shot /tmp/motty-highlight-custom-color-terminal.png

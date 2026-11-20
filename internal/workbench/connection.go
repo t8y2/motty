@@ -522,6 +522,9 @@ const (
 	modalRuleManager
 	modalSnippet
 	modalSnippetDelete
+	modalSnippetGroups
+	modalSnippetGroupRename
+	modalSnippetGroupDelete
 	modalSnippetVariables
 	modalImportSessions
 	modalFontPicker
@@ -1354,9 +1357,14 @@ func (state *State) showNextPrompt() {
 
 func (state *State) closeModal() {
 	returnToRules := state.ruleManager.returning && (state.modal == modalHighlightRule || state.modal == modalAutofillRule || state.modal == modalDeleteRule)
+	returnToSnippetGroups := state.snippetGroups.returning && (state.modal == modalSnippetGroupRename || state.modal == modalSnippetGroupDelete)
+	returnToSnippet := state.modal == modalSnippetGroups && state.snippetGroups.returnToSnippet
 	returnToHost := state.modal == modalCredential && state.credentialReturn != modalNone
 	if state.modal == modalRuleManager {
 		state.ruleManager = ruleManagerUI{}
+	}
+	if state.modal == modalSnippetGroups {
+		state.snippetGroups = snippetGroupsUI{}
 	}
 	if state.modal == modalSnippetVariables {
 		state.snippetPrompt = snippetPromptState{}
@@ -1408,6 +1416,14 @@ func (state *State) closeModal() {
 		state.modal = modalRuleManager
 		state.ruleManager.returning = false
 		state.ruleManager.list = nil
+	}
+	if returnToSnippetGroups {
+		state.modal = modalSnippetGroups
+		state.snippetGroups.returning = false
+	}
+	if returnToSnippet {
+		state.modal = modalSnippet
+		state.refreshSnippetGroupPicker()
 	}
 	if returnToHost {
 		state.modal = state.credentialReturn

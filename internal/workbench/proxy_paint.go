@@ -11,7 +11,6 @@ import (
 
 // proxySectionUI is what the proxies page's declaration leaves for its paint.
 type proxySectionUI struct {
-	tableBox                                                                                    ui.Box
 	add, batchAdd, batchDelete, batchStart, batchStop, batchClear, empty                        ui.Box
 	hubToggle, hubUnbind                                                                        ui.Box
 	addWidth, batchAddWidth, batchDeleteWidth, batchStartWidth, batchStopWidth, batchClearWidth float32
@@ -19,6 +18,12 @@ type proxySectionUI struct {
 	addIcon, batchAddIcon, batchDeleteIcon, batchStartIcon, batchStopIcon, batchClearIcon       uint8
 	hubToggleIcon, hubUnbindIcon                                                                uint8
 	condensed                                                                                   bool
+	// listScroll is the page list's scroll area, so switching hubs can return
+	// the rows to the top.
+	listScroll *ui.ScrollState
+	// cardOver paints every visible route card after the page laid the rows
+	// out. It is kept so a paint makes no closure.
+	cardOver func(*ui.DrawContext)
 	// draw is the page hook that paints into these slots. It is kept so a paint
 	// does not build a closure for the hook.
 	draw func(*ui.DrawContext)
@@ -77,7 +82,7 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 		addWidth, addIcon = toolbarButtonLayout(canvas, messages.ProxyAdd, iconPlus, iconPlus, condensed)
 	}
 	view := &state.sectionBodies.proxies
-	draw := view.draw
+	draw, cardOver := view.draw, view.cardOver
 	*view = proxySectionUI{
 		addWidth: addWidth, batchAddWidth: batchAddWidth,
 		batchDeleteWidth: batchDeleteWidth, batchStartWidth: batchStartWidth, batchStopWidth: batchStopWidth, batchClearWidth: batchClearWidth,
@@ -88,9 +93,12 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 		condensed: condensed,
 	}
 	if draw == nil {
-		draw = func(d *ui.DrawContext) { state.paintProxiesWorkspace(d.Canvas) }
+		draw = func(d *ui.DrawContext) { state.paintProxiesEmpty(d.Canvas) }
 	}
-	view.draw = draw
+	if cardOver == nil {
+		cardOver = state.paintProxyCards
+	}
+	view.draw, view.cardOver = draw, cardOver
 	body := ui.Column(c).Fill().PadSides(12, 18, 0, 18)
 	body.Children(func() {
 		ui.Row(c).MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(ui.Center).Children(func() {
@@ -139,7 +147,7 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 					}
 				})
 			}
-			state.syncProxyTable()
+			state.syncProxyList()
 			maxHops := 2
 			count := state.visibleProxyCount()
 			for i := range count {
@@ -174,18 +182,48 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 				shrink := min(overflow, max(state.proxyColumns[4].Width-100, 0))
 				state.proxyColumns[4].Width -= shrink
 			}
-			table := ui.Table(c, &state.proxyTable, ui.TableSpec{
-				Rows: hitProxyRowList, Columns: state.proxyColumns[:], Headers: state.proxyHeadings[:], Source: &state.proxyRows,
-				Scrollbar: hitProxyScrollThumb, ScrollbarLabel: messages.ProxyListScroll,
-				ScrollbarSize: catalogBarGutter, ScrollbarGutter: catalogBarGutter,
-				RowHeight: 52,
-			}).Grow(1).Shrink(1)
-			if row, ok := table.RowClicked(); ok && state.modal == modalNone {
-				if route, found := state.visibleProxyAt(row); found {
-					state.selectProxy(route.ID)
-				}
+			// The rows are the page's list. Its height, as the body lays it out,
+			// decides whether the rows overflow and so keep the bar's gutter
+			// clear, exactly as the canvas table did.
+			listHeight := bounds.Height - 123 - 52
+			if len(hubs) > 0 {
+				listHeight -= 50
 			}
-			view.tableBox = table
+			overflow := float32(count)*52 > listHeight
+			theme := state.Theme()
+			headerPad := theme.Metrics.GapItem
+			totalVis, checkedVis := state.proxyVisibleStats()
+			allChecked := totalVis > 0 && totalVis == checkedVis
+			ui.Column(c).Grow(1).Shrink(1).MinHeight(0).Children(func() {
+				header := ui.Row(c).Height(52).Shrink(0).FillWidth().Gap(0).Items(ui.Center)
+				if overflow {
+					header = header.PadSides(0, catalogBarGutter, 0, 0)
+				}
+				header.Children(func() {
+					ui.Row(c).Width(state.proxyColumns[0].Width).Height(52).Shrink(0).Items(ui.Center).Justify(ui.Center).Children(func() {
+						ui.Checkbox(c, state.pageFlag(allChecked), "").Hit(hitProxyCheckAll, messages.MenuSelectAll)
+					})
+					for column := 1; column < len(state.proxyColumns)-1; column++ {
+						width := state.proxyColumns[column].Width
+						if width <= 0 {
+							break
+						}
+						ui.Text(c, state.proxyHeadings[column]).Weight(gfx.WeightMedium).PadX(headerPad).Width(width).Shrink(0).Ellipsis()
+					}
+					ui.Slot(c).Grow(1)
+					ui.Slot(c).Absolute().Left(0).Right(0).Bottom(0).Height(1).Background(theme.Border)
+				})
+				list := ui.List(c, &state.proxyList, count, state.proxyRowDecl).Grow(1).Shrink(1).MinHeight(0).FillWidth()
+				if overflow {
+					list = list.PadSides(0, catalogBarGutter, 0, 0)
+				}
+				list.AlwaysScrollbars().ScrollbarSize(catalogBarGutter).Label(messages.ProxyListScroll).
+					DrawOver(view.cardOver)
+				view.listScroll = list.ScrollState()
+				if state.proxyList.Changed() {
+					state.takeProxyListSelection()
+				}
+			})
 		}
 		ui.Divider(c).Background(pal.line)
 		ui.Row(c).Height(40).PadSides(8, 0, 16, 0).Items(ui.Center).Children(func() {
@@ -230,189 +268,146 @@ func (state *State) declareSegmentedHubTab(c ui.C, id gfx.ID, label, countLabel 
 	return tabBox
 }
 
-// paintProxiesWorkspace paints the proxies page's buttons, table and empty state
-// into the slots its declaration left.
-func (state *State) paintProxiesWorkspace(canvas *gfx.Canvas) {
-	view, messages, pal := &state.sectionBodies.proxies, state.messages, state.pal
-
-	if len(state.proxies) == 0 {
-		state.drawReservedEmptyPage(canvas, view.empty, iconGlobe)
+// declareProxyRow declares one route row of the page list: its selection box,
+// the target and jump hosts, the switch and status, the route card and the
+// row's edit and delete buttons.
+func (state *State) declareProxyRow(row ui.ListRow) {
+	route, ok := state.visibleProxyAt(row.Index)
+	if !ok {
 		return
 	}
-
-	tableRect := view.tableBox.Rect()
-	if tableRect.Width <= 0 || tableRect.Height <= 0 {
-		return
-	}
-	rowHeight := float32(52)
-	headerHeight := rowHeight
-	visibleCount := state.visibleProxyCount()
-	body := gfx.Rect{X: tableRect.X, Y: tableRect.Y + headerHeight, Width: tableRect.Width, Height: max(tableRect.Height-headerHeight, 0)}
-	if body.Height <= 0 {
-		return
-	}
-	content := float32(visibleCount) * rowHeight
-	if body.Height+0.5 < content {
-		body.Width = max(body.Width-float32(catalogBarGutter), 0)
-	}
-
-	// 1. 复用 Viva 的 TableCellBounds 获取与 ui.Table 完全一致的列边界，绘制表头 Checkbox
-	totalVis, checkedVis := state.proxyVisibleStats()
-	allChecked := totalVis > 0 && totalVis == checkedVis
-	theme := state.Theme()
-	side := components.CheckboxExtent(theme)
-	headerRow := gfx.Rect{X: tableRect.X, Y: tableRect.Y, Width: body.Width, Height: headerHeight}
-	state.proxyRowCells = components.TableCellBounds(state.proxyColumns[:], headerRow, state.proxyRowCells[:0])
-	if len(state.proxyRowCells) > 0 {
-		headerCell := state.proxyRowCells[0]
-		boxRect := gfx.Rect{
-			X:      headerCell.X + (headerCell.Width-side)/2,
-			Y:      headerCell.Y + (headerCell.Height-side)/2,
-			Width:  side,
-			Height: side,
+	c := row.C
+	theme, pal, messages := state.Theme(), state.pal, state.messages
+	const height = float32(52)
+	// The route table never painted a row fill: selection and the pointer show in
+	// the details pane beside it, not on the row itself.
+	element := row.Element.Height(height).Shrink(0).FillWidth().Gap(0).Items(ui.Center)
+	element.Children(func() {
+		ui.Row(c).Width(state.proxyColumns[0].Width).Height(height).Shrink(0).Items(ui.Center).Justify(ui.Center).Children(func() {
+			checked := state.proxyChecked != nil && state.proxyChecked[route.ID]
+			ui.Checkbox(c, state.pageFlag(checked), "").Label(route.label).Hit(hitProxyRowCheckList.At(int(route.ID)), route.label)
+		})
+		for column := 1; column < 3; column++ {
+			width := state.proxyColumns[column].Width
+			if width <= 0 {
+				break
+			}
+			ui.Text(c, route.cells[column-1]).PadX(theme.Metrics.GapItem).Width(width).Shrink(0).Ellipsis()
 		}
-		components.BeginCheckbox(canvas, theme, hitProxyCheckAll, boxRect, allChecked).Label(messages.MenuSelectAll).Paint()
-	}
+		ui.Row(c).Width(state.proxyColumns[3].Width).Height(height).Shrink(0).Gap(8).Items(ui.Center).Children(func() {
+			// The page dresses its switches differently from these rows' old
+			// hand-painted switch: this one keeps the components' own look.
+			ui.Switch(c, state.pageFlag(!route.Stopped), "").Label(route.label).Small().Size(24, 14).
+				SwitchRecipe(components.SwitchRecipe).
+				MarginSides(0, 0, 0, theme.Metrics.GapItem).Shrink(0).
+				Hit(hitProxyRowSwitchList.At(int(route.ID)), route.label)
+			statusText, statusColor := messages.ProxyRunning, pal.accent
+			if route.Stopped {
+				statusText, statusColor = messages.ProxyStopped, pal.muted
+			}
+			ui.Text(c, statusText).FontSize(metrics.FontSizeS).Color(statusColor).LineHeight(16).
+				Grow(1).MarginSides(0, 4, 0, 0).Ellipsis()
+		})
+		ui.Slot(c).Width(state.proxyColumns[4].Width).Height(height).Shrink(0)
+		ui.Row(c).Grow(1).Height(height).Justify(ui.End).Items(ui.Center).Gap(6).PadSides(0, 8, 0, 0).Children(func() {
+			state.declareProxyRowAction(c, hitProxyRowEditList.At(int(route.ID)), iconPencil, messages.ProxyActionEdit, false)
+			state.declareProxyRowAction(c, hitProxyRowDeleteList.At(int(route.ID)), iconTrash, messages.ProxyActionDelete, true)
+		})
+	})
+	element.Hit(hitProxyRowList.At(row.Index), route.cells[0])
+}
 
-	// 2. 依据当前过滤视图下的可见行绘制富交互控件
-	if visibleCount == 0 {
+// declareProxyRowAction declares a row's pencil or bin button, keeping the
+// wash the hand-painted one showed while the pointer was on it.
+func (state *State) declareProxyRowAction(c ui.C, id gfx.ID, icon uint8, hint string, danger bool) {
+	pal := state.pal
+	hovered := false
+	if canvas := c.Canvas(); canvas != nil {
+		hovered = canvas.Hovered() == id
+	}
+	foreground := pal.muted
+	button := ui.ButtonBase(c, hint).Size(24, 24).Radius(radius.control).Shrink(0).
+		HitWith(id, hint, gfx.HitOptions{Role: gfx.RoleButton})
+	if hovered {
+		if danger {
+			foreground = pal.danger
+			button = button.Background(pal.danger.WithAlpha(0.15))
+		} else {
+			foreground = pal.text
+			button = button.Background(pal.surfaceHot)
+		}
+	}
+	button.Children(func() {
+		ui.Icon(c, lucideIcons[icon]).Size(16, 16).Color(foreground)
+	})
+}
+
+// paintProxyCards paints the topology cards of the rows the list shows. The
+// cards sit in one column of every row, so one pass over the visible rows paints
+// them without declaring a control per row.
+func (state *State) paintProxyCards(d *ui.DrawContext) {
+	view := &state.sectionBodies.proxies
+	if view.listScroll == nil {
 		return
 	}
-	swWidth, swHeight := components.SwitchExtent(theme, true)
-	btnSize := float32(24)
-	offset := state.proxyTable.Scroll.Offset
-	first := max(0, int(offset/rowHeight))
-	last := min(visibleCount, int((offset+body.Height)/rowHeight)+1)
-
-	canvas.Clip(body)
+	rect := d.Rect
+	if rect.Width <= 0 || rect.Height <= 0 {
+		return
+	}
+	count := state.visibleProxyCount()
+	offset := view.listScroll.Offset
+	x := rect.X + state.proxyColumns[0].Width + state.proxyColumns[1].Width +
+		state.proxyColumns[2].Width + state.proxyColumns[3].Width
+	width := state.proxyColumns[4].Width
+	const pitch float32 = 52
+	first := max(0, int(offset/pitch))
+	last := min(count, int((offset+rect.Height)/pitch)+1)
+	d.Canvas.Clip(rect)
 	for row := first; row < last; row++ {
 		route, ok := state.visibleProxyAt(row)
 		if !ok {
 			continue
 		}
-		rowY := body.Y + float32(row)*rowHeight - offset
-		rowRect := gfx.Rect{X: body.X, Y: rowY, Width: body.Width, Height: rowHeight}
-		state.proxyRowCells = components.TableCellBounds(state.proxyColumns[:], rowRect, state.proxyRowCells[:0])
-		cells := state.proxyRowCells
+		state.paintProxyHops(d.Canvas, gfx.Rect{
+			X: x, Y: rect.Y + float32(row)*pitch - offset, Width: width, Height: pitch,
+		}, route)
+	}
+	d.Canvas.Unclip()
+}
 
-		// 列 0: 勾选框
-		if len(cells) > 0 {
-			c0 := cells[0]
-			cboxRect := gfx.Rect{
-				X:      c0.X + (c0.Width-side)/2,
-				Y:      c0.Y + (c0.Height-side)/2,
-				Width:  side,
-				Height: side,
-			}
-			isChecked := state.proxyChecked != nil && state.proxyChecked[route.ID]
-			components.BeginCheckbox(canvas, theme, hitProxyRowCheckList.At(int(route.ID)), cboxRect, isChecked).Label(route.label).Paint()
-		}
-
-		// 列 3: Switch 开关与状态文字
-		if len(cells) > 3 {
-			c3 := cells[3]
-			swRect := gfx.Rect{
-				X:      c3.X + theme.Metrics.GapItem,
-				Y:      c3.Y + (c3.Height-swHeight)/2,
-				Width:  swWidth,
-				Height: swHeight,
-			}
-			switchID := hitProxyRowSwitchList.At(int(route.ID))
-			components.BeginSwitch(canvas, theme, switchID, swRect, !route.Stopped).Small().Label(route.label).Paint()
-
-			statusText := state.messages.ProxyRunning
-			statusColor := pal.accent
-			if route.Stopped {
-				statusText = state.messages.ProxyStopped
-				statusColor = pal.muted
-			}
-			stRect := gfx.Rect{
-				X:      swRect.X + swWidth + 8,
-				Y:      c3.Y + (c3.Height-16)/2,
-				Width:  max(0, c3.X+c3.Width-(swRect.X+swWidth+8)-4),
-				Height: 16,
-			}
-			if stRect.Width > 0 {
-				canvas.Label(statusText, stRect, gfx.TextStyle{Size: metrics.FontSizeS, Color: statusColor})
-			}
-		}
-
-		// 列 4: 路径精美拓扑卡片呈现（单元格内局部裁剪，防止窄窗口下溢出覆盖操作列）
-		if len(cells) > 4 {
-			c4 := cells[4]
-			hops := route.hops
-			if len(hops) == 0 {
-				hops = []proxyHop{
-					{ID: route.JumpID, Label: route.cells[1], Address: "Jump"},
-					{ID: route.TargetID, Label: route.cells[0], Address: "Target"},
-				}
-			}
-			cardW := float32(104)
-			cardH := float32(38)
-			cardY := c4.Y + (c4.Height-cardH)/2
-			flowW := float32(24)
-
-			canvas.Clip(c4)
-			for i, hop := range hops {
-				nodeX := c4.X + 6 + float32(i)*(cardW+flowW)
-				canvas.Rounded(gfx.Rect{X: nodeX, Y: cardY, Width: cardW, Height: cardH}, 6, pal.surfaceSoft.WithAlpha(0.55))
-				canvas.Label(hop.Label, gfx.Rect{X: nodeX + 8, Y: cardY + 4, Width: cardW - 16, Height: 15},
-					gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: pal.text})
-				canvas.Label(hop.Address, gfx.Rect{X: nodeX + 8, Y: cardY + 20, Width: cardW - 16, Height: 13},
-					gfx.TextStyle{Size: 11, Color: pal.muted})
-
-				if i < len(hops)-1 {
-					arrowX := nodeX + cardW
-					midY := c4.Y + c4.Height/2
-					canvas.Fill(gfx.Rect{X: arrowX + 2, Y: midY, Width: 10, Height: 1}, pal.line)
-					canvas.DrawIcon(icons.ChevronRight, gfx.Rect{X: arrowX + 10, Y: midY - 6, Width: 12, Height: 12}, pal.muted)
-					if route.ViaShell && i == len(hops)-2 {
-						canvas.Label(state.messages.ProxyViaShellTag, gfx.Rect{X: arrowX - 4, Y: cardY - 2, Width: flowW + 8, Height: 10},
-							gfx.TextStyle{Size: 8, Color: pal.accent})
-					}
-				}
-			}
-			canvas.Unclip()
-		}
-
-		// 列 5: 行尾操作按钮
-		if len(cells) > 5 {
-			c5 := cells[5]
-			btnY := c5.Y + (c5.Height-btnSize)/2
-			btnX := max(c5.X+8, c5.X+c5.Width-btnSize*2-14)
-			editRect := gfx.Rect{
-				X:      btnX,
-				Y:      btnY,
-				Width:  btnSize,
-				Height: btnSize,
-			}
-			delRect := gfx.Rect{
-				X:      btnX + btnSize + 6,
-				Y:      btnY,
-				Width:  btnSize,
-				Height: btnSize,
-			}
-
-			editID := hitProxyRowEditList.At(int(route.ID))
-			editColor := pal.muted
-			if canvas.Hovered() == editID {
-				canvas.Rounded(editRect, radius.control, pal.surfaceHot)
-				editColor = pal.text
-			}
-			canvas.DrawIcon(lucideIcons[iconPencil], gfx.Rect{X: editRect.X + 4, Y: editRect.Y + 4, Width: 16, Height: 16}, editColor)
-			canvas.HitWithOptions(editID, editRect, state.messages.ProxyActionEdit, gfx.HitOptions{Role: gfx.RoleButton})
-
-			delID := hitProxyRowDeleteList.At(int(route.ID))
-			delColor := pal.muted
-			if canvas.Hovered() == delID {
-				canvas.Rounded(delRect, radius.control, pal.danger.WithAlpha(0.15))
-				delColor = pal.danger
-			}
-			canvas.DrawIcon(lucideIcons[iconTrash], gfx.Rect{X: delRect.X + 4, Y: delRect.Y + 4, Width: 16, Height: 16}, delColor)
-			canvas.HitWithOptions(delID, delRect, state.messages.ProxyActionDelete, gfx.HitOptions{Role: gfx.RoleButton})
+// paintProxyHops paints the route's topology card in its cell: the hops side by
+// side with arrows between them.
+func (state *State) paintProxyHops(canvas *gfx.Canvas, c4 gfx.Rect, route *proxyRecord) {
+	hops := route.hops
+	if len(hops) == 0 {
+		hops = []proxyHop{
+			{ID: route.JumpID, Label: route.cells[1], Address: "Jump"},
+			{ID: route.TargetID, Label: route.cells[0], Address: "Target"},
 		}
 	}
-
+	cardW := float32(104)
+	cardH := float32(38)
+	cardY := c4.Y + (c4.Height-cardH)/2
+	flowW := float32(24)
+	canvas.Clip(c4)
+	for i, hop := range hops {
+		nodeX := c4.X + 6 + float32(i)*(cardW+flowW)
+		canvas.Rounded(gfx.Rect{X: nodeX, Y: cardY, Width: cardW, Height: cardH}, 6, state.pal.surfaceSoft.WithAlpha(0.55))
+		canvas.Label(hop.Label, gfx.Rect{X: nodeX + 8, Y: cardY + 4, Width: cardW - 16, Height: 15},
+			gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: state.pal.text})
+		canvas.Label(hop.Address, gfx.Rect{X: nodeX + 8, Y: cardY + 20, Width: cardW - 16, Height: 13},
+			gfx.TextStyle{Size: 11, Color: state.pal.muted})
+		if i < len(hops)-1 {
+			arrowX := nodeX + cardW
+			midY := c4.Y + c4.Height/2
+			canvas.Fill(gfx.Rect{X: arrowX + 2, Y: midY, Width: 10, Height: 1}, state.pal.line)
+			canvas.DrawIcon(icons.ChevronRight, gfx.Rect{X: arrowX + 10, Y: midY - 6, Width: 12, Height: 12}, state.pal.muted)
+			if route.ViaShell && i == len(hops)-2 {
+				canvas.Label(state.messages.ProxyViaShellTag, gfx.Rect{X: arrowX - 4, Y: cardY - 2, Width: flowW + 8, Height: 10},
+					gfx.TextStyle{Size: 8, Color: state.pal.accent})
+			}
+		}
+	}
 	canvas.Unclip()
 }
 
@@ -432,7 +427,7 @@ func (state *State) declareProxyDialog(c ui.C) {
 	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: dialogTitle, Width: 500, Height: height, Layer: dialogLayer,
-		Scope: dialogScope, CloseID: hitProxyDialogClose, InitialFocusID: hitProxyDialogTarget,
+		Scope: dialogScope, CloseID: hitProxyDialogClose,
 	})
 	dialog.Body(func() { state.declareProxyDialogBody(c) })
 	dialog.Footer(func() {
@@ -455,8 +450,26 @@ func (state *State) declareProxyDialogBody(c ui.C) {
 	const rowHeight = 64
 	column := ui.Column(c).Fill().PadSides(2, 4, 0, 4)
 	column.Children(func() {
-		b.target = ui.Slot(c).Height(rowHeight)
-		b.jump = ui.Slot(c).Height(rowHeight)
+		ui.FormField(c, &editor.targetRow, messages.ProxyFieldTarget).Height(rowHeight).Children(func() {
+			chooser := ui.Combobox(c, &editor.targetChoice, state.proxyTargetChoices(), state.hostPickerName, messages.ProxyFieldTarget).
+				Placeholder(messages.HostPickerSearch).Empty(messages.HostPickerNoMatches).FillWidth()
+			if editor.focusTarget {
+				chooser.AutoFocus()
+				editor.focusTarget = false
+			}
+		})
+		if editor.targetChoice != editor.targetID {
+			state.applyProxyTargetChoice(editor.targetChoice)
+			editor.targetChoice = editor.targetID
+		}
+		ui.FormField(c, &editor.jumpRow, messages.ProxyFieldJump).Height(rowHeight).Children(func() {
+			ui.Combobox(c, &editor.jumpChoice, state.proxyJumpChoices(), state.hostPickerName, messages.ProxyFieldJump).
+				Placeholder(messages.HostPickerSearch).Empty(messages.HostPickerNoMatches).FillWidth()
+		})
+		if editor.jumpChoice != editor.jumpID {
+			state.applyProxyJumpChoice(editor.jumpChoice)
+			editor.jumpChoice = editor.jumpID
+		}
 		_, b.viaHelp = state.declareDialogCheckHelp(c, hitProxyDialogViaShell, messages.ProxyFieldViaShell, state.proxyEditor.viaShell, 4, 6)
 		if viaShell {
 			if !editor.relayBound {
@@ -475,13 +488,11 @@ func (state *State) declareProxyDialogBody(c ui.C) {
 	column.DrawOver(func(d *ui.DrawContext) { state.paintProxyDialogFields(d.Canvas) })
 }
 
-// paintProxyDialogFields paints the route editor's controls into the slots the
+// paintProxyDialogFields paints the route editor's help icon into the slot the
 // body laid out.
 func (state *State) paintProxyDialogFields(canvas *gfx.Canvas) {
 	messages := state.messages
 	b := &state.proxyEditor.dialogBody
-	state.paintProxyHostField(canvas, b.target.Rect(), true)
-	state.paintProxyHostField(canvas, b.jump.Rect(), false)
 	state.paintHelpIcon(canvas, hitProxyDialogViaHelp, messages.ProxyViaShellHelp, b.viaHelp.Rect())
 }
 
@@ -502,38 +513,6 @@ func (state *State) proxyRelayNote() string {
 		return fmt.Sprintf(state.messages.ProxyRelayPreludeFmt, jump.LoginCommand)
 	}
 	return state.messages.ProxyRelayNoPrelude
-}
-
-// paintProxyHostField paints one searchable host picker. Typing in the field
-// filters the list by name, address, account and group, so a long catalog is
-// still reachable without scrolling.
-func (state *State) paintProxyHostField(canvas *gfx.Canvas, bounds gfx.Rect, target bool) {
-	theme := state.Theme()
-	label := state.messages.ProxyFieldJump
-	inputID, triggerID, dismissID := hitProxyDialogJump, hitProxyJumpTrigger, hitProxyJumpDismiss
-	scrollID, itemBase := hitProxyJumpScroll, hitProxyJumpItemList
-	scope := hitProxyJumpPickerScope
-	control := &state.proxyEditor.jumpSelect
-	if target {
-		label = state.messages.ProxyFieldTarget
-		inputID, triggerID, dismissID = hitProxyDialogTarget, hitProxyTargetTrigger, hitProxyTargetDismiss
-		scrollID, itemBase = hitProxyTargetScroll, hitProxyTargetItemList
-		scope = hitProxyTargetPickerScope
-		control = &state.proxyEditor.targetSelect
-	}
-	content := components.BeginField(canvas, theme, bounds).Paint(label, "", "")
-	layout := components.PaintSingleSelect(canvas, theme, content, control, components.SingleSelectOptions{
-		InputID: inputID, TriggerID: triggerID, DismissID: dismissID, Scope: scope,
-		ScrollID: scrollID, OptionIDs: itemBase,
-		Label: label, Placeholder: state.messages.HostPickerSearch,
-		EmptyLabel: state.messages.HostPickerNoMatches,
-		Viewport:   state.windowRect(), Layer: dialogLayer + 1,
-	})
-	if target {
-		state.proxyEditor.targetPopup = layout.Popup
-		return
-	}
-	state.proxyEditor.jumpPopup = layout.Popup
 }
 
 // declareProxyDeleteConfirmDialog 声明单条跳板路由删除确认弹窗
@@ -582,4 +561,13 @@ func (state *State) declareProxyBatchDeleteConfirmDialog(c ui.C) {
 			components.ButtonAction{ID: hitProxyBatchDeleteConfirmSubmit, Label: fmt.Sprintf("%s (%d)", messages.ProxyBatchDelete, count), Variant: components.ButtonDestructive},
 		)
 	})
+}
+
+// paintProxiesEmpty paints the proxies page's empty state into the slot its
+// declaration left. A page with routes is declared by the page itself.
+func (state *State) paintProxiesEmpty(canvas *gfx.Canvas) {
+	view := &state.sectionBodies.proxies
+	if len(state.proxies) == 0 {
+		state.drawReservedEmptyPage(canvas, view.empty, iconGlobe)
+	}
 }

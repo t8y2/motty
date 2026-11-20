@@ -30,7 +30,7 @@ const (
 // symbol away from the terminal.
 func (state *State) tabNumberOptions() [3]components.SegmentOption {
 	primary, shifted := "Ctrl", "Ctrl+Shift"
-	if keymap.Primary == gfx.ModifierMeta {
+	if primaryModifier == gfx.ModifierMeta {
 		primary, shifted = "Cmd", "Cmd+Shift"
 	}
 	return [...]components.SegmentOption{
@@ -93,7 +93,7 @@ func (choice tabNumberChoice) id() gfx.ID {
 
 // tabNumberModifiers is the modifier set of one of those options.
 func tabNumberModifiers(id gfx.ID) (gfx.Modifiers, bool) {
-	primary := keymap.Primary
+	primary := primaryModifier
 	switch id {
 	case hitSettingsTabNumbersPrimary:
 		return primary, true

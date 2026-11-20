@@ -11,6 +11,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
+	"motty/internal/sftpclient"
 )
 
 type openedPaths struct {
@@ -203,4 +204,145 @@ func TestLocalNamesKeepTheExtensionAndDropTheDangerousCharacters(t *testing.T) {
 	if got := safeLocalName("/tmp/.."); !strings.HasPrefix(got, "file") {
 		t.Errorf("parent name -> %q", got)
 	}
+}
+
+// The system editor's copy is the only thing a save touches, so a save that did
+// not reach the server must be said out loud and must not be replaced by asking
+// for the file again: what the editor showed would then quietly become stale.
+func TestASaveThatCannotBeSentIsReportedAndItsCopyIsKept(t *testing.T) {
+	state, session, remote, opened := externalEditSetup(t)
+	edit := startExternalEditOf(t, state, session, "notes.txt")
+	refuseReplacing(t, remote, "/home/test/notes.txt")
+	if err := os.WriteFile(edit.local, []byte("not sent\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, state, func() bool {
+		return !state.edits.list[0].saving && session.files.errorText != ""
+	})
+	if got := remoteText(remote, "/home/test/notes.txt"); got != "hello world" {
+		t.Fatalf("the server was changed by a failed save: %q", got)
+	}
+	if !strings.Contains(session.files.errorText, "notes.txt") {
+		t.Fatalf("the failure did not name the file: %q", session.files.errorText)
+	}
+	if len(state.fileNotices.items) == 0 {
+		t.Fatal("a save that did not reach the server said nothing")
+	}
+	notice := state.fileNotices.items[len(state.fileNotices.items)-1]
+	if notice.detail != session.files.errorText || notice.kind != components.ToastError {
+		t.Fatalf("failure notice = %+v, panel said %q", notice, session.files.errorText)
+	}
+
+	// Asking for the file again warns that the copy here is ahead of the
+	// server, and still opens that copy: the editor has the user's text.
+	state.Click(hitSFTPEditExternal)
+	want := fmt.Sprintf(state.messages.Tools.ExtEditUnsentFmt, "notes.txt")
+	if session.files.errorText != want {
+		t.Fatalf("reopening an unsent copy said %q, want %q", session.files.errorText, want)
+	}
+	if len(opened.paths) != 2 || opened.paths[1] != edit.local {
+		t.Fatalf("reopened %v", opened.paths)
+	}
+
+	// Once a save does reach the server the copy is no longer unsent.
+	allowReplacing(remote)
+	if err := os.WriteFile(edit.local, []byte("second save\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, state, func() bool {
+		return remoteText(remote, "/home/test/notes.txt") == "second save\n" && !state.edits.list[0].saving
+	})
+	if externalEditHeldLocally(&state.edits.list[0]) {
+		t.Fatal("a save that reached the server left the copy ahead of it")
+	}
+	state.Click(hitSFTPEditExternal)
+	if session.files.errorText != "" {
+		t.Fatalf("a copy the server has was still warned about: %q", session.files.errorText)
+	}
+}
+
+// A connection that ends with the save in flight publishes no answer, so the
+// edit would wait for it forever and every later save would be skipped.
+func TestASaveWhoseWorkerEndedIsSentAgain(t *testing.T) {
+	state, session, remote, _ := externalEditSetup(t)
+	edit := startExternalEditOf(t, state, session, "notes.txt")
+	edit.saving, edit.worker = true, deadSFTPWorker()
+	if err := os.WriteFile(edit.local, []byte("sent after the worker ended\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, state, func() bool {
+		e := &state.edits.list[0]
+		return remoteText(remote, "/home/test/notes.txt") == "sent after the worker ended\n" && !e.saving && e.worker == nil
+	})
+	if externalEditHeldLocally(&state.edits.list[0]) {
+		t.Fatal("the retried send left the copy ahead of the server")
+	}
+}
+
+// A read whose worker died is answered nowhere either; without dropping it no
+// later edit of the run could start.
+func TestAnOpenWhoseWorkerEndedDoesNotBlockTheNextOne(t *testing.T) {
+	state, session, _, _ := externalEditSetup(t)
+	state.edits.opening.active = true
+	state.edits.opening.session = session.ID
+	state.edits.opening.remote = "/home/test/notes.txt"
+	state.edits.opening.worker = deadSFTPWorker()
+	startExternalEditOf(t, state, session, "notes.txt")
+	if len(state.edits.list) != 1 {
+		t.Fatalf("%d edits", len(state.edits.list))
+	}
+}
+
+// A file the user kept over a conflict is still only in the local copy, and
+// asking for it again says so instead of passing that copy off as the server's.
+func TestKeepingTheLocalVersionLeavesTheCopyAheadOfTheServer(t *testing.T) {
+	state, session, remote, _ := externalEditSetup(t)
+	edit := startExternalEditOf(t, state, session, "notes.txt")
+	remote.mu.Lock()
+	remote.files["/home/test/notes.txt"] = []byte("someone else\n")
+	remote.mu.Unlock()
+	if err := os.WriteFile(edit.local, []byte("mine\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, state, func() bool { return state.modal == modalForm })
+	state.Click(hitFormCancel)
+	if !externalEditHeldLocally(&state.edits.list[0]) {
+		t.Fatal("keeping the local version left the copy looking like the server's")
+	}
+	if got := remoteText(remote, "/home/test/notes.txt"); got != "someone else\n" {
+		t.Fatalf("keeping the local version wrote the server: %q", got)
+	}
+	state.Click(hitSFTPEditExternal)
+	want := fmt.Sprintf(state.messages.Tools.ExtEditUnsentFmt, "notes.txt")
+	if session.files.errorText != want {
+		t.Fatalf("reopening the kept copy said %q, want %q", session.files.errorText, want)
+	}
+}
+
+func deadSFTPWorker() *sftpclient.Worker {
+	worker := sftpclient.NewWorker(func() (sftpclient.Remote, error) {
+		return nil, errors.New("gone")
+	}, func() {})
+	worker.Close()
+	<-worker.Done()
+	return worker
+}
+
+// refuseReplacing makes the server refuse every write onto one file, the way a
+// full disk or a filesystem that rejects the temporary sibling does, so the save
+// has to give up instead of falling back to writing the file itself.
+func refuseReplacing(t *testing.T, remote *workbenchSFTPRemote, remotePath string) {
+	t.Helper()
+	remote.mu.Lock()
+	defer remote.mu.Unlock()
+	if remote.replaceErr == nil {
+		remote.replaceErr = map[string]error{}
+	}
+	remote.replaceErr[remotePath] = errors.New("no space left on device")
+}
+
+func allowReplacing(remote *workbenchSFTPRemote) {
+	remote.mu.Lock()
+	remote.replaceErr = nil
+	remote.mu.Unlock()
 }

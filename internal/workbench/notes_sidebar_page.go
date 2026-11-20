@@ -43,13 +43,15 @@ func (s *State) declareNoteSidebar(c ui.C) {
 	s.noteTreeRows(n, true)
 	total := max(0, frame.Width+b.Width)
 	if p.panel.Pos == 0 {
-		p.panel.Pos = max(0, total-8-b.Width)
+		p.panel.Pos = max(0, total-1-b.Width)
 	}
-	maxWidth := max(0, base.Width*.7)
-	minFirst := max(0, total-8-maxWidth)
-	row := ui.Row(c).Absolute().Left(base.X).Top(b.Y).Width(total).Height(b.Height)
+	maxWidth := max(0, total*.7)
+	minFirst := max(0, total-1-maxWidth)
+	row := ui.Row(c).Absolute().Left(frame.X).Top(b.Y).Width(total).Height(b.Height)
 	row.Children(func() {
 		ui.Slot(c).Grow(1)
+		// The old handles' FractionForKey moved them 5% of the room per arrow.
+		p.panel.StepFraction = .05
 		ui.Splitter(c, &p.panel).SplitterThickness(1).Mins(minFirst, min(280, maxWidth)).Label(s.noteText("Resize notes panel", "调整笔记侧栏宽度"))
 		panel := ui.Column(c).Width(min(b.Width, maxWidth)).FillHeight().Background(s.pal.workspace).
 			HitWith(hitNoteSidebarSurface, "", gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, SkipTab: true})
@@ -74,6 +76,7 @@ func (s *State) declareNoteSidebar(c ui.C) {
 				ui.Column(c).Height(top).FillWidth().Children(func() {
 					s.declareNoteSidebarTree(c, n, b.Width-2, top)
 				})
+				p.side.StepFraction = .05
 				ui.Splitter(c, &p.side).SplitterThickness(1).Mins(minTop, minBottom).Label(s.noteText("Resize note browser sections", "调整笔记上下区域"))
 				ui.Column(c).Grow(1).FillWidth().Children(func() {
 					s.declareNoteSidebarPreview(c, n, b.Width-2)
@@ -125,7 +128,9 @@ func (s *State) declareNoteSidebarTree(c ui.C, n *notesUI, width, height float32
 	linked := s.noteText("Linked only", "只看关联")
 	ui.Column(c).FillWidth().Height(height).Children(func() {
 		ui.Row(c).Height(30).MarginSides(8, 8, 0, 8).Gap(6).Items(ui.Center).Children(func() {
-			s.noteIconButton(c, hitNoteSideExpand, expandIcon, expandLabel, 28, true).
+			// The expand control was a ghost button, not a quiet icon: its
+			// hover and focus are the button recipe's, as before.
+			s.noteIconButton(c, hitNoteSideExpand, expandIcon, expandLabel, 28, false).
 				Disabled(disabled)
 			p.query.Bind(&n.query)
 			field := ui.TextFieldID(c, hitNoteSearch, &p.query, s.noteText("Search title, body and tags", "搜索标题、正文和标签"), s.noteText("Search title, body and tags", "搜索标题、正文和标签")).
@@ -178,7 +183,8 @@ func (s *State) noteSidebarAfterLayout(n *notesUI) {
 	frame := s.workspacePixelBounds(s.viewport)
 	total := max(0, frame.Width+s.notesPanelWidth(s.viewport))
 	if p.panel.Pos != 0 {
-		width := min(max(total-8-p.panel.Pos, 280), max(0, base.Width*.7))
+		maximum := max(0, total*.7)
+		width := min(max(total-1-p.panel.Pos, min(280, maximum)), maximum)
 		if width != s.notesPanelWidth(s.viewport) {
 			if panel := s.noteSidebars[s.deck.ActiveWorkspace()]; panel != nil {
 				panel.width = width

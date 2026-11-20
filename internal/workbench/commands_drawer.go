@@ -175,8 +175,14 @@ func (state *State) commandsBarRect() gfx.Rect {
 	if state.commandsDrawerHeight() <= 0 {
 		return gfx.Rect{}
 	}
-	wb := state.workspaceBoundsAboveLogs(state.deck.ActiveWorkspace(), state.viewport)
-	return gfx.Rect{X: wb.X, Y: wb.Y + wb.Height, Width: wb.Width, Height: commandsBarHeight}
+	// The strip is the content area's own bottom, so it spans the full width the
+	// panes and their side panels share, not just the terminal column between
+	// them. A side panel or a terminal toolbar rail ends above the strip;
+	// spanning it here means nothing is left unpainted in the corners beside
+	// the bar (#981).
+	full := state.fullWorkspacePixelBounds(state.viewport)
+	frame := state.toolbarDockFrame(state.viewport, true)
+	return gfx.Rect{X: full.X, Y: frame.Y + frame.Height, Width: full.Width, Height: commandsBarHeight}
 }
 
 // paintCommandsDrawer draws the single command bar beneath the terminal panes.
@@ -285,7 +291,9 @@ func (state *State) paintCommandChips(canvas *gfx.Canvas, bar gfx.Rect, x, width
 	for _, index := range order {
 		w := state.commandTagWidth(canvas, state.snippets.list[index].Name)
 		if x0+w > x && x0 < x+width {
-			state.paintCommandTag(canvas, gfx.Rect{X: x0, Y: y, Width: w, Height: chipH}, state.snippets.list[index].Name, hitCommandsTag.At(index))
+			id := hitCommandsTag.At(index)
+			state.paintCommandTag(canvas, gfx.Rect{X: x0, Y: y, Width: w, Height: chipH}, state.snippets.list[index].Name, id)
+			state.openSnippetBarMenuOn(canvas, id, index)
 		}
 		x0 += w + commandsTagGap
 		if x0 >= x+width {
@@ -545,7 +553,14 @@ func (state *State) clickCommandsDrawer(id gfx.ID) bool {
 			state.save()
 		}
 	case id.Scope() == hitCommandsTag:
-		state.sendSnippet(item(id))
+		// Sending a command leaves the keyboard on the bar. Ask for the
+		// terminal back so the next keystroke types there, not at whatever
+		// sits under the pointer.
+		if state.sendSnippet(item(id)) {
+			if focus := state.activeTerminalFocusHit(); !focus.IsZero() {
+				state.pendingFocus = focus
+			}
+		}
 	case id == hitCommandsAdd:
 		state.openSnippetDialog(-1)
 	case id == hitCommandsClose:

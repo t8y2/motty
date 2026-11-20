@@ -5,7 +5,6 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
-	"github.com/vivaui/viva/text"
 )
 
 // selectTypeahead is the typed prefix of one closed select trigger. The owner
@@ -55,22 +54,6 @@ func (state *State) selectTypeaheadOptions(target gfx.ID) ([]components.MenuType
 			items = append(items, components.MenuTypeaheadItem{ID: option.ID, Label: option.Label, Disabled: option.Disabled})
 		}
 		return items, state.aiChooseOnlyTarget, true
-	case state.modal == modalNewHost && target == hitDialogPortsTrigger && !state.editor.portsOpen:
-		items := make([]components.MenuTypeaheadItem, 0, len(state.editor.ports))
-		for index, port := range state.editor.ports {
-			items = append(items, components.MenuTypeaheadItem{
-				ID: hitDialogPortsItemList.At(index), Label: port.Device,
-			})
-		}
-		return items, func(id gfx.ID) bool {
-			index, ok := id.In(hitDialogPortsItemList)
-			if !ok || index < 0 || index >= len(state.editor.ports) {
-				return false
-			}
-			state.editor.address = text.Editor{}
-			state.editor.address.Insert(state.editor.ports[index].Device)
-			return true
-		}, true
 	}
 	return nil, nil, false
 }

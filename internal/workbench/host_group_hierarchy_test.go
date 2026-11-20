@@ -157,6 +157,43 @@ func TestExplicitHostGroupsRemainUsableWithoutHosts(t *testing.T) {
 	}
 }
 
+// Deleting the only host in a folder leaves the folder itself: naming the
+// folder in the host's group field made it part of the catalog, not of the host.
+func TestDeletingTheLastHostKeepsItsGroup(t *testing.T) {
+	options := testOptions(t)
+	state := newTestState(t, options)
+	state.hosts[2].Group = "Team/Prod" // The host is the only one in this folder.
+	state.hostDataChanged()
+	host := state.hosts[2]
+	if state.hostGroupIndex(host.Group) < 0 {
+		t.Fatalf("fixture host %+v has no group", host)
+	}
+	state.Click(hitHostCheckList.At(int(host.ID)))
+	clickHostAction(state, hitDeleteHost)
+	if state.modal != modalDeleteHost || len(state.hosts) != 3 {
+		t.Fatalf("delete did not wait for confirmation: modal=%d hosts=%d", state.modal, len(state.hosts))
+	}
+	state.Key(gfx.KeyEvent{Target: hitHostDeleteConfirm, Key: gfx.KeyEnter})
+	if len(state.hosts) != 2 || state.modal != modalNone {
+		t.Fatalf("delete result hosts=%+v modal=%d", state.hosts, state.modal)
+	}
+	for _, path := range []string{"Team/Prod", "Team"} {
+		if state.hostGroupIndex(path) < 0 {
+			t.Fatalf("the last host took folder %q with it: %+v", path, state.hostGroups)
+		}
+	}
+	canvas, _ := paintedTexts(state)
+	if _, ok := hitByID(canvas, hitHostGroupMore.At(state.hostGroupIndex("Team/Prod"))); !ok {
+		t.Fatal("the empty folder has no row to manage")
+	}
+	restarted := newTestState(t, options)
+	for _, path := range []string{"Team/Prod", "Team"} {
+		if restarted.hostGroupIndex(path) < 0 {
+			t.Fatalf("the empty folder %q disappeared at restart", path)
+		}
+	}
+}
+
 func TestHostGroupRightClickNewHostPrefillsClickedGroup(t *testing.T) {
 	for _, view := range []hostViewMode{hostViewList, hostViewGrid} {
 		state := nestedHostGroupState(t)

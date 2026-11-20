@@ -42,7 +42,6 @@ func (state *State) ensureRemoteTableHooks() {
 	view.rowDecl = state.declareRemoteTableRow
 	view.rowMenu = state.declareRemoteTableMenu
 	view.headerDraw = state.paintRemoteTableHeader
-	view.fillDraw = state.paintRemoteTableFill
 	view.borderDraw = state.paintRemoteTableBorder
 	view.menuRow = -1
 }
@@ -103,8 +102,8 @@ func (state *State) declareRemoteToolsTable(c ui.C, tab remoteTab, fallbackWidth
 	placeholder := state.remoteTablePlaceholder(tab)
 	showHeader := !state.remoteTableHeaderHidden(tab)
 	ui.Column(c).Grow(1).Shrink(1).MinHeight(headerHeight+view.tableRowHeight).
-		MarginSides(remoteToolsTableMargin, 0, 0, 0).Radius(radius.control).Children(func() {
-		ui.Slot(c).Absolute().Left(0).Right(0).Top(0).Bottom(0).Draw(view.fillDraw)
+		MarginSides(remoteToolsTableMargin, 0, 0, 0).Radius(radius.control).
+		Background(state.pal.workspace).Children(func() {
 		// The old control drew its header and rows inside its one-pixel frame,
 		// so the page keeps the same inset.
 		ui.Column(c).Fill().PadSides(1, 1, 0, 1).Children(func() {
@@ -122,7 +121,7 @@ func (state *State) declareRemoteToolsTable(c ui.C, tab remoteTab, fallbackWidth
 			}
 			state.syncRemoteTableChoice(tab)
 			list := ui.List(c, &view.lists[tab], len(view.rows), view.rowDecl).
-				Grow(1).Shrink(1).FillWidth().Scrollbars().ScrollbarSize(10).Label(label)
+				Grow(1).Shrink(1).FillWidth().AlwaysScrollbars().ScrollbarSize(10).Label(label)
 			if scroll := list.ScrollState(); scroll != nil {
 				if view.resetScroll {
 					scroll.ScrollTo(0)
@@ -136,13 +135,9 @@ func (state *State) declareRemoteToolsTable(c ui.C, tab remoteTab, fallbackWidth
 	})
 }
 
-// paintRemoteTableFill paints the table surface under its header and rows, as
-// the modal's own control did: the workspace colour inside the rounded frame.
-func (state *State) paintRemoteTableFill(d *ui.DrawContext) {
-	d.Canvas.Rounded(d.Rect, radius.control, state.pal.workspace)
-}
-
-// paintRemoteTableBorder paints the rounded frame over the table's edge.
+// paintRemoteTableBorder paints the rounded frame over the table's edge. It is
+// an overlay so the frame stays above the rows; the surface beneath them is the
+// container's background, which the page paints before its children.
 func (state *State) paintRemoteTableBorder(d *ui.DrawContext) {
 	d.Canvas.RoundedOutline(d.Rect, radius.control, 1, state.pal.line)
 }
@@ -263,7 +258,7 @@ func (state *State) declareRemoteTableRow(row ui.ListRow) {
 		for column := 0; column < view.tableCount; column++ {
 			spec := view.tableColumns[column]
 			cell := ui.Text(row.C, record.cells[column]).Height(height).Shrink(0).
-				FontSize(theme.Metrics.FontSizeM).Color(theme.Foreground).Ellipsis().
+				FontSize(theme.Metrics.FontSizeM).Color(theme.Foreground).Ellipsis().LineHeight(height).
 				PadX(theme.Metrics.GapItem)
 			if spec.Alignment == components.TableAlignRight {
 				cell = cell.TextEnd()
@@ -322,6 +317,9 @@ func (state *State) paintRemoteTableHeader(d *ui.DrawContext) {
 		if canvas.Hovered() == header.ID || canvas.Pressed() == header.ID {
 			canvas.Fill(cell, theme.Hover)
 		}
+		if !header.Disabled && canvas.FocusVisible() == header.ID {
+			canvas.RoundedBorder(cell.Inset(gfx.All(1)), theme.Metrics.RadiusControl, 1, theme.Ring, gfx.Color{})
+		}
 		color := theme.Foreground
 		if header.Disabled {
 			color.Alpha *= 0.5
@@ -361,24 +359,30 @@ func (state *State) paintRemoteTableHeader(d *ui.DrawContext) {
 // state in the page instead of a list.
 func (state *State) declareRemoteTablePlaceholder(c ui.C, tab remoteTab) {
 	view, m, pal := &state.remote, state.messages.Tools, state.pal
-	centered := func(body func()) {
-		ui.Column(c).Grow(1).FillWidth().Justify(ui.Center).Items(ui.Center).Gap(6).Children(body)
-	}
+	theme := state.Theme()
 	if tab != remoteProcesses {
 		if view.noDocker && view.collectedAt.IsZero() {
-			centered(func() {
-				ui.Icon(c, icons.LinuxDocker).Size(48, 48).Color(pal.muted)
-				ui.Text(c, m.RemoteDockerMissing).FontSize(state.Theme().Metrics.FontSizeM).
-					Weight(gfx.WeightSemibold).Color(pal.text)
-				ui.Paragraph(c, m.RemoteDockerMissingHint, 0).FontSize(state.Theme().Metrics.FontSizeS).
-					Color(pal.muted).TextCenter()
+			// components.Empty's bare-icon state: a 32px glyph in the
+			// foreground, the large medium title, and the body-size muted
+			// description in a 384px column.
+			titleSize := theme.Metrics.FontSizeM + 5
+			ui.Column(c).Grow(1).FillWidth().Justify(ui.Center).Items(ui.Center).Children(func() {
+				ui.Icon(c, icons.LinuxDocker).Size(32, 32).Color(theme.Foreground).
+					MarginBottom(theme.Metrics.GapItem * 2)
+				ui.Text(c, m.RemoteDockerMissing).Height(titleSize + 10).LineHeight(titleSize + 10).FontSize(titleSize).
+					Weight(gfx.WeightMedium).Color(theme.Foreground)
+				ui.Paragraph(c, m.RemoteDockerMissingHint, 6).FontSize(theme.Metrics.FontSizeM).
+					LineHeight(theme.Metrics.FontSizeM * 1.625).MaxWidth(384).
+					Color(theme.MutedForeground).TextCenter().MarginTop(theme.Metrics.GapItem)
 			})
 			return
 		}
 		if view.loading && len(view.rows) == 0 {
-			centered(func() {
+			// The spinner sat 24 above the center and the label started at it.
+			ui.Column(c).Grow(1).FillWidth().Justify(ui.Center).Items(ui.Center).Children(func() {
 				ui.Spinner(c).Size(16, 16)
-				ui.Text(c, m.RemoteLoading).FontSize(state.Theme().Metrics.FontSizeM).Color(pal.muted)
+				ui.Slot(c).Height(theme.Metrics.GapItem * 2).Shrink(0)
+				ui.Text(c, m.RemoteLoading).Height(24).LineHeight(24).FontSize(theme.Metrics.FontSizeM).Color(pal.muted)
 			})
 			return
 		}
@@ -390,8 +394,8 @@ func (state *State) declareRemoteTablePlaceholder(c ui.C, tab remoteTab) {
 			message = state.remoteTabLabel(tab)
 		}
 	}
-	centered(func() {
-		ui.Text(c, message).FontSize(state.Theme().Metrics.FontSizeM).Color(color)
+	ui.Column(c).Grow(1).FillWidth().Justify(ui.Center).Items(ui.Center).Children(func() {
+		ui.Text(c, message).FontSize(theme.Metrics.FontSizeM).Color(color)
 	})
 }
 

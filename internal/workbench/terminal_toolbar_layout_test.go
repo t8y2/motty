@@ -427,7 +427,7 @@ func TestSplitScrollbarUsesPaintedPaneCoordinates(t *testing.T) {
 	if !ok {
 		t.Fatal("the second split has no painted scrollbar")
 	}
-	geometry := state.terminalScrollArea(nil, session, state.layoutForSession(session.ID).area, 1).Geometry()
+	geometry := state.terminalScrollGeometry(session, state.layoutForSession(session.ID).area)
 	x := bar.Bounds.X + bar.Bounds.Width/2
 	grab := geometry.VerticalThumb.Y + geometry.VerticalThumb.Height/2
 	result := state.Pointer(gfx.PointerEvent{

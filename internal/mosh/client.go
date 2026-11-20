@@ -74,6 +74,9 @@ type Client struct {
 	wake     bool
 	finishAt time.Time
 	lastRecv time.Time
+	// room wakes the receive loop when a drain makes space in output; nil
+	// until the first wait.
+	room *sync.Cond
 	// lastEchoAck is the newest echo ack already handed to the input queue, so
 	// a received state that only repeats it does not wake the owner.
 	lastEchoAck uint64
@@ -189,6 +192,13 @@ func (c *Client) LastRecv() time.Time {
 	return c.lastRecv
 }
 
+// maxOutputBacklog bounds the screen output the client holds before the owner
+// drains it. The receive loop waits at this mark instead of appending without
+// limit: a program that prints faster than the owner parses would otherwise
+// grow this buffer until the process is OOM-killed. The transport is lossy and
+// retransmits, so pausing the loop applies backpressure without losing state.
+const maxOutputBacklog = 1 << 20
+
 // Drain appends output received since the last call to dst.
 func (c *Client) Drain(dst []byte) []byte {
 	c.mu.Lock()
@@ -198,7 +208,23 @@ func (c *Client) Drain(dst []byte) []byte {
 	}
 	dst = append(dst, c.output...)
 	c.output = c.output[:0]
+	if c.room != nil {
+		c.room.Broadcast()
+	}
 	return dst
+}
+
+// waitForOutputRoom blocks the receive loop while output holds a full backlog.
+// It returns when a drain, Close or an error frees the loop.
+func (c *Client) waitForOutputRoom() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for len(c.output) >= maxOutputBacklog && !c.closing && c.err == nil {
+		if c.room == nil {
+			c.room = sync.NewCond(&c.mu)
+		}
+		c.room.Wait()
+	}
 }
 
 // Done is closed once the session has ended and its output is drainable.
@@ -227,6 +253,9 @@ func (c *Client) Close() {
 	}
 	c.closing = true
 	c.wake = true
+	if c.room != nil {
+		c.room.Broadcast()
+	}
 	c.mu.Unlock()
 	c.wakeRead()
 }
@@ -328,6 +357,11 @@ func (c *Client) run() {
 		c.mu.Unlock()
 		if notify && c.notify != nil {
 			c.notify()
+		}
+		if len(update) > 0 {
+			// Hand the new output to the owner first, then wait here if it
+			// already has a full backlog; the owner's Drain wakes us.
+			c.waitForOutputRoom()
 		}
 	}
 }
@@ -437,6 +471,9 @@ func (c *Client) setErr(err error) {
 	c.mu.Lock()
 	if c.err == nil {
 		c.err = err
+	}
+	if c.room != nil {
+		c.room.Broadcast()
 	}
 	c.mu.Unlock()
 }

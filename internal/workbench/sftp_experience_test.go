@@ -337,7 +337,7 @@ func TestSFTPSidebarScrollbarDragReachesTheWholeListAtDifferentWindowSizes(t *te
 		}
 		var bar gfx.Rect
 		for _, hit := range driver.Snapshot().Hits {
-			if hit.Label == "Vertical scrollbar" && pointInRect(hit.Bounds.X+1, hit.Bounds.Y+1, list) {
+			if hit.Role == gfx.RoleSeparator && hit.Bounds.X+hit.Bounds.Width >= list.X+list.Width-1 && pointInRect(hit.Bounds.X+1, hit.Bounds.Y+1, list) {
 				bar = hit.Bounds
 				break
 			}

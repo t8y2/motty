@@ -288,12 +288,11 @@ func (state *State) declareTerminalPane(c ui.C, session *Session, bounds gfx.Rec
 	}
 
 	t.paintFinding, t.paintInSplit, t.paintInactive = finding, inSplit, inactive
-	t.paintNoticeShown = showingInputNotice
 	t.paintCommandNoticeShown = state.workspaceCommandNoticeInWorkspace(session) && (inSplit || !finding)
 	t.paintBarBackground = barBackground
 	t.paintGeometry = geometry
 	t.paintFind = findBarSlots{}
-	t.paintSpinner, t.paintLight, t.paintNotice = ui.Box{}, ui.Box{}, ui.Box{}
+	t.paintSpinner, t.paintLight = ui.Box{}, ui.Box{}
 
 	// Each notice reserves its own strip across a split, including panes that
 	// do not own the notice, so changing focus does not resize the terminal.
@@ -318,7 +317,7 @@ func (state *State) declareTerminalPane(c ui.C, session *Session, bounds gfx.Rec
 			}
 			switch {
 			case showingInputNotice:
-				t.paintNotice = ui.Slot(c).Height(inputNoticeHeight).FillWidth().Shrink(0)
+				state.declareTerminalInputNotice(c, session, bounds.Width)
 			case noticeReserved:
 				ui.Slot(c).Height(inputNoticeHeight).FillWidth().Shrink(0).Background(state.ground(state.termPal.terminal))
 			}
@@ -331,6 +330,8 @@ func (state *State) declareTerminalPane(c ui.C, session *Session, bounds gfx.Rec
 			terminal.Grow(1).FillWidth().Background(state.ground(state.termPal.terminal)).Draw(t.controlDraw)
 		})
 	})
+	state.declareCompletionList(c, session, bounds, geometry)
+	state.declareAutofillPick(c, session, bounds, geometry)
 }
 
 // drawTerminalControl paints the grid inside the control's rectangle.

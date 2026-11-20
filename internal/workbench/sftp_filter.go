@@ -345,8 +345,8 @@ func (state *State) declareLocalCoverage(c ui.C, folder *sftpFolder, id gfx.ID) 
 		return
 	}
 	ui.Column(c).Height(38).Shrink(0).HitWith(id, folder.coverageText, gfx.HitOptions{Role: gfx.RoleStatus, SkipFocus: true, Hint: folder.coverageText}).Children(func() {
-		ui.Text(c, folder.coverageLabel).FontSize(metrics.FontSizeS).Color(state.pal.warning).Ellipsis().Height(18).Shrink(0)
-		ui.Text(c, state.messages.Tools.FilesLoadedFilterOnly).FontSize(metrics.FontSizeS).Color(state.pal.muted).Ellipsis().Height(18).Shrink(0)
+		ui.Text(c, folder.coverageLabel).FontSize(metrics.FontSizeS).Color(state.pal.warning).Ellipsis().Height(18).LineHeight(18).Shrink(0)
+		ui.Text(c, state.messages.Tools.FilesLoadedFilterOnly).FontSize(metrics.FontSizeS).Color(state.pal.muted).Ellipsis().Height(18).LineHeight(18).Shrink(0)
 	})
 }
 

@@ -111,21 +111,30 @@ func (state *State) declareRemoteProcessDetailsBody(c ui.C, width float32, proce
 			})
 		}
 		tab := state.remoteProcessDetailTab()
-		if ui.Tabs(c, &tab, remoteProcessDetailTabIDs[:], state.remoteProcessDetailTabLabel).Width(min(float32(300), width)).Height(34).Shrink(0).MarginSides(2, 0, 0, 0).Changed() {
-			c.After(func() { state.selectRemoteProcessDetailTab(tab) })
+		strip := ui.Tabs(c, &tab, remoteProcessDetailTabIDs[:], state.remoteProcessDetailTabLabel).Width(min(float32(300), width)).Height(34).Shrink(0).MarginSides(2, 0, 0, 0)
+		// A click on the active tab asks for that read again, as the container
+		// details' strip does.
+		if index, clicked := strip.TabClicked(); clicked && index >= 0 && index < len(remoteProcessDetailTabIDs) {
+			id := remoteProcessDetailTabIDs[index]
+			c.After(func() { state.selectRemoteProcessDetailTab(id) })
 		}
 		if state.remoteProcessDetailTab() != hitRemoteProcessDetailsEnv {
-			if details.commandStatus != "" {
-				color := pal.muted
-				if details.commandFailed {
-					color = pal.danger
+			// The old panel painted the status over its top 28 pixels and the
+			// command under it with no gap; keep them in one column so the gap
+			// between the tabs and the panel is the only one.
+			ui.Column(c).Grow(1).Basis(0).FillWidth().Gap(0).Children(func() {
+				if details.commandStatus != "" {
+					color := pal.muted
+					if details.commandFailed {
+						color = pal.danger
+					}
+					ui.Text(c, details.commandStatus).Height(28).LineHeight(28).Shrink(0).FontSize(theme.Metrics.FontSizeM).Color(color).Ellipsis()
 				}
-				ui.Text(c, details.commandStatus).Height(28).Shrink(0).FontSize(theme.Metrics.FontSizeM).Color(color).Ellipsis()
-			}
-			state.declareRemoteDetail(c, &details.text, remoteDetailSpec{
-				textID: hitRemoteProcessDetailsText, textIDLabel: m.RemoteProcessDetailsTitle,
-				scrollbarID: hitRemoteProcessDetailsScroll, scrollbarLabel: m.RemoteProcessDetailsTitle,
-				source: remoteDetailSource(processText(details.commandValue)),
+				state.declareRemoteDetail(c, &details.text, remoteDetailSpec{
+					textID: hitRemoteProcessDetailsText, textIDLabel: m.RemoteProcessDetailsTitle,
+					scrollbarID: hitRemoteProcessDetailsScroll, scrollbarLabel: m.RemoteProcessDetailsTitle,
+					source: remoteDetailSource(processText(details.commandValue)), width: width - 16,
+				})
 			})
 			return
 		}
@@ -137,11 +146,11 @@ func (state *State) declareRemoteProcessDetailsBody(c ui.C, width float32, proce
 		spec := remoteDetailSpec{
 			textID: hitRemoteProcessDetailsText, textIDLabel: m.RemoteProcessEnvironment,
 			scrollbarID: hitRemoteProcessDetailsScroll, scrollbarLabel: m.RemoteProcessEnvironment,
-			notice: notice, noticeTone: tone,
+			notice: notice, noticeTone: tone, width: width - 16,
 		}
 		if notice == "" {
 			spec.columns, spec.header, spec.rows = remoteEnvironmentTable(details.environment,
-				[2]string{m.RemoteProcessEnvironmentName, m.RemoteProcessEnvironmentValue}, width-16)
+				[2]string{m.RemoteProcessEnvironmentName, m.RemoteProcessEnvironmentValue})
 		}
 		state.declareRemoteDetail(c, &details.text, spec)
 	})

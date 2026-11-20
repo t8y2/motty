@@ -122,7 +122,7 @@ func (state *State) declareKnownHostsWorkspace(c ui.C) {
 				})
 				start, end := state.knownHostsPageRange()
 				ui.List(c, &view.list, end-start, view.rowDecl).Grow(1).Shrink(1).MinHeight(0).FillWidth().
-					Scrollbars().Label(messages.KnownHostsTitle)
+					Label(messages.KnownHostsTitle)
 			})
 		}
 		ui.Divider(c).Background(pal.line)
@@ -135,14 +135,14 @@ func (state *State) declareKnownHostsWorkspace(c ui.C) {
 			ui.Text(c, view.status).FontSize(metrics.FontSizeS).Color(statusColor).Grow(1).Ellipsis()
 			if paginated {
 				pages := (len(view.visible) + knownHostsPageSize - 1) / knownHostsPageSize
-				ui.Row(c).Size(242, 30).Shrink(0).Gap(4).Items(ui.Center).Children(func() {
-					ui.Button(c, messages.KnownHostsPrevious).Hit(hitKnownHostsPrevious, messages.KnownHostsPrevious).
-						Outline().Small().Disabled(view.page == 0).Shrink(0)
-					ui.Text(c, view.pageText).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text).
-						Grow(1).TextCenter().Ellipsis()
-					ui.Button(c, messages.KnownHostsNext).Hit(hitKnownHostsNext, messages.KnownHostsNext).
-						Outline().Small().Disabled(view.page+1 >= pages).Shrink(0)
-				})
+				// The items carry the application's identities, so the central
+				// click handler keeps turning the pages as it did for the old
+				// paint-time chooser.
+				ui.Pagination(c, []ui.PaginationItem{
+					{ID: hitKnownHostsPrevious, Label: messages.KnownHostsPrevious, Kind: ui.PaginationPrevious, Disabled: view.page == 0},
+					{Label: view.pageText, Kind: ui.PaginationPage, Current: true},
+					{ID: hitKnownHostsNext, Label: messages.KnownHostsNext, Kind: ui.PaginationNext, Disabled: view.page+1 >= pages},
+				}).Size(242, 30).Shrink(0)
 			}
 		})
 	})
@@ -150,7 +150,8 @@ func (state *State) declareKnownHostsWorkspace(c ui.C) {
 }
 
 // paintKnownHostsWorkspace paints the known-hosts page's empty state into the
-// slot its declaration left. The table is declared by the page itself.
+// slot its declaration left. The table and the page chooser are declared by the
+// page itself.
 func (state *State) paintKnownHostsWorkspace(canvas *gfx.Canvas) {
 	layout := &state.sectionBodies.knownHosts
 	if layout.empty {
@@ -177,6 +178,11 @@ func (state *State) declareKnownHostRow(row ui.ListRow) {
 	element := row.Element.Height(height).Shrink(0).FillWidth().Gap(0).Items(ui.Center)
 	if record.selected {
 		element = element.Background(theme.Muted)
+	} else {
+		// The table's row lightened under the pointer; the page List keeps it.
+		element = element.
+			Hover(ui.Look{}.Background(theme.Hover)).
+			Pressed(ui.Look{}.Background(theme.Muted))
 	}
 	element.Children(func() {
 		ui.Row(c).Width(view.columns[0].Width).Height(height).Shrink(0).Items(ui.Center).Children(func() {
@@ -195,7 +201,7 @@ func (state *State) declareKnownHostRow(row ui.ListRow) {
 		}
 		ui.Slot(c).Absolute().Left(0).Right(0).Bottom(0).Height(1).Background(theme.Border)
 	})
-	element.Hit(hitKnownHostRowList.At(index), record.cells[1])
+	element.Hit(hitKnownHostRowList.At(index), record.rowLabel)
 }
 
 // fitKnownHostsColumns narrows the columns to the room the table has, as the
