@@ -346,3 +346,25 @@ func allowReplacing(remote *workbenchSFTPRemote) {
 	remote.replaceErr = nil
 	remote.mu.Unlock()
 }
+
+func TestEditingSameSizeAndTimestampSendsSaveBack(t *testing.T) {
+	state, session, remote, _ := externalEditSetup(t)
+	edit := startExternalEditOf(t, state, session, "notes.txt")
+	info, err := os.Stat(edit.local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalTime := info.ModTime()
+
+	// Replace "hello world" (11 bytes) with "HELLO WORLD" (11 bytes, same size)
+	// and restore original timestamp to simulate filesystem timestamp granularity.
+	if err := os.WriteFile(edit.local, []byte("HELLO WORLD"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Chtimes(edit.local, originalTime, originalTime)
+
+	waitFor(t, state, func() bool {
+		return remoteText(remote, "/home/test/notes.txt") == "HELLO WORLD" && !state.edits.list[0].saving
+	})
+}
+

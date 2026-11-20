@@ -317,6 +317,13 @@ func (state *State) openSFTP(session *Session) {
 		return
 	}
 	if session.files != nil {
+		if session.files.worker == nil {
+			connection, transfer := session.conn, session.host.Transfer
+			session.files.transport = &filesTransport{conn: connection}
+			session.files.openFiles = func() (sftpclient.Remote, error) { return openRemoteFiles(session.files.transport.connection(), transfer) }
+			session.files.worker = sftpclient.NewWorker(session.files.openFiles, state.notifyFor(session))
+			state.configureSFTPWorker(session.files)
+		}
 		return
 	}
 	connection, transfer := session.conn, session.host.Transfer

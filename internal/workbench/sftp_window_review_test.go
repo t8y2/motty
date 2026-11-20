@@ -500,3 +500,39 @@ func TestSFTPWindowMovesSelectionThroughContextMenu(t *testing.T) {
 		})
 	}
 }
+
+func TestSFTPWindowExternalEditorSendsEverySaveBack(t *testing.T) {
+	state, w, remote, host, _ := dualSFTPFixture(t, 1.0)
+	state.options.EditPollInterval = 10 * time.Millisecond
+	state.options.OpenPath = func(string) error { return nil }
+
+	remoteRows := w.folder(false).rows
+	found := false
+	for i := range remoteRows {
+		if remoteRows[i].entry.Name == "notes.txt" {
+			remoteRows[i].selected = true
+			found = true
+		} else {
+			remoteRows[i].selected = false
+		}
+	}
+	if !found {
+		t.Fatalf("notes.txt not found in remote rows")
+	}
+	w.fileAction(false, hitSFTPEditExternal)
+
+	dualWait(t, state, w, host.windows[0].view, func() bool {
+		return len(state.edits.list) == 1
+	})
+
+	edit := &state.edits.list[0]
+	time.Sleep(20 * time.Millisecond)
+	if err := os.WriteFile(edit.local, []byte("window save content\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	dualWait(t, state, w, host.windows[0].view, func() bool {
+		return remoteText(remote, "/home/test/notes.txt") == "window save content\n" && !state.edits.list[0].saving
+	})
+}
+

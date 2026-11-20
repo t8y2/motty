@@ -177,6 +177,9 @@ func (w *sftpWindow) wake() {
 		w.owner.showNextPrompt()
 	}
 	w.pump()
+	if len(w.owner.edits.list) > 0 && !w.owner.edits.watching {
+		w.owner.watchExternalEdits()
+	}
 }
 
 // wakeEmbedded runs the per-browser work for a main-window tab. State.Wake has
@@ -188,6 +191,9 @@ func (w *sftpWindow) wakeEmbedded() {
 		return
 	}
 	w.pump()
+	if len(w.owner.edits.list) > 0 && !w.owner.edits.watching {
+		w.owner.watchExternalEdits()
+	}
 }
 
 func (w *sftpWindow) pump() {
