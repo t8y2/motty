@@ -331,7 +331,10 @@ func (s *State) paintDashboardChart(c *gfx.Canvas, p *monitoring.Panel, h Host, 
 	dashboardGreen, dashboardBlue, dashboardAmber := s.dashboardColors()
 	if len(r.x) == 0 {
 		if s.dashboard.running[p.ID] || !r.snapshot.HasSample {
-			monitorLabel(c, s.dashboardStatus(r.snapshot.Status, s.dashboard.running[p.ID], false), b, 12, s.pal.muted, gfx.WeightRegular)
+			// An empty plot holds one placeholder for the whole chart area, so it
+			// sits in the middle of it rather than at the left edge where a
+			// chart's data would start.
+			monitorCenter(c, s.dashboardStatus(r.snapshot.Status, s.dashboard.running[p.ID], false), b, 12, s.pal.muted, gfx.WeightRegular)
 		}
 		return
 	}

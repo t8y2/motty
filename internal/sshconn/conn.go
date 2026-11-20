@@ -249,6 +249,11 @@ type Config struct {
 	// accepted. Nil means the application keeps none, and such a reference is
 	// skipped.
 	StoredKey func(ref string) ([]byte, error)
+	// StoredCertificate reads the OpenSSH user certificate the application keeps
+	// with the stored key ref. Nil, an empty slice, or a nil error with no
+	// certificate means the key has none, and it is offered on its own. Like
+	// StoredKey it is called only after the host key is accepted.
+	StoredCertificate func(ref string) ([]byte, error)
 	// Agent controls whether the running ssh-agent is offered. It is ignored
 	// when there is no agent to offer (see AgentAddress).
 	Agent bool

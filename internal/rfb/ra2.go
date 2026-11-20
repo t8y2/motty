@@ -86,17 +86,17 @@ func ra2Hash(parts ...[]byte) []byte {
 }
 
 // userWait excludes user interaction from the network handshake's deadline.
+// Deadlines are best effort: a transport can lack them, as a forwarded SSH
+// channel does, and there is then no deadline to suspend or to set again.
 // Context cancellation is owned by desktop/vnc and closes the connection even
 // while its credential or trust callback is waiting.
 func (client *Client) userWait(callback func() error) error {
-	if err := client.conn.SetDeadline(time.Time{}); err != nil {
+	_ = client.conn.SetDeadline(time.Time{})
+	if err := callback(); err != nil {
 		return err
 	}
-	err := callback()
-	if err != nil {
-		return err
-	}
-	return client.conn.SetDeadline(time.Now().Add(client.timeout))
+	_ = client.conn.SetDeadline(time.Now().Add(client.timeout))
+	return nil
 }
 
 func (client *Client) authenticateRA2(config Config) error {

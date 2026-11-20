@@ -3,14 +3,17 @@ package workbench
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
+	"golang.org/x/crypto/ssh"
 	"motty/internal/i18n"
 	"motty/internal/keyidentity"
+	"motty/internal/sshconn"
 	"motty/internal/vault"
 )
 
@@ -68,6 +71,10 @@ type identityRecord struct {
 	// is locked and its public half is not readable.
 	PublicKey string
 	Encrypted bool
+	// Certificate is true when the key signs in with an OpenSSH user
+	// certificate: kept with a stored key in the vault, or in the -cert.pub file
+	// beside an identity file.
+	Certificate bool
 	// Stored marks a key kept in the vault (see stored_keys.go): Path is then its
 	// reference, not a file.
 	Stored bool
@@ -75,7 +82,7 @@ type identityRecord struct {
 	// reaches the device; the passphrase is asked by ssh-add, not saved here.
 	SecurityKey bool
 	Error       string
-	cells       [4]string
+	cells       [5]string
 }
 
 func inspectIdentity(id uint32, path string, messages keyMessages) identityRecord {
@@ -97,13 +104,14 @@ func inspectIdentity(id uint32, path string, messages keyMessages) identityRecor
 	record.PublicKey = info.PublicKey
 	record.Encrypted = info.Encrypted
 	record.SecurityKey = info.SecurityKey
+	record.Certificate = sshconn.CertificateBeside(absolute)
 	record.refreshCells(messages)
 	return record
 }
 
 func (record *identityRecord) refreshCells(messages keyMessages) {
 	if record.Error != "" {
-		record.cells = [4]string{record.Name, messages.Unavailable, "—", record.Path}
+		record.cells = [5]string{record.Name, messages.Unavailable, "—", "—", record.Path}
 		return
 	}
 	protection := messages.Unencrypted
@@ -116,26 +124,32 @@ func (record *identityRecord) refreshCells(messages keyMessages) {
 	if algorithm == "" {
 		algorithm = messages.EncryptedUnknown
 	}
-	record.cells = [4]string{record.Name, algorithm, protection, record.Fingerprint}
+	certificate := "—"
+	if record.Certificate {
+		certificate = messages.CertificatePresent
+	}
+	record.cells = [5]string{record.Name, algorithm, protection, certificate, record.Fingerprint}
 }
 
 type keyMessages struct {
-	Unavailable      string
-	Unencrypted      string
-	Passphrase       string
-	SecurityKey      string
-	EncryptedUnknown string
+	Unavailable        string
+	Unencrypted        string
+	Passphrase         string
+	SecurityKey        string
+	EncryptedUnknown   string
+	CertificatePresent string
 }
 
 func (state *State) keyMessages() keyMessages { return keyMessagesIn(state.messages) }
 
 func keyMessagesIn(messages i18n.Messages) keyMessages {
 	return keyMessages{
-		Unavailable:      messages.KeyUnavailable,
-		Unencrypted:      messages.KeyUnencrypted,
-		Passphrase:       messages.KeyPassphraseProtected,
-		SecurityKey:      messages.KeySecurityKey,
-		EncryptedUnknown: messages.KeyEncryptedUnknown,
+		Unavailable:        messages.KeyUnavailable,
+		Unencrypted:        messages.KeyUnencrypted,
+		Passphrase:         messages.KeyPassphraseProtected,
+		SecurityKey:        messages.KeySecurityKey,
+		EncryptedUnknown:   messages.KeyEncryptedUnknown,
+		CertificatePresent: messages.KeyCertificatePresent,
 	}
 }
 
@@ -170,6 +184,8 @@ func (state *State) clickKeys(id gfx.ID) {
 		state.removeSelectedIdentity()
 	case id == hitKeysPassphrase:
 		state.openKeyPassphraseForm()
+	case id == hitKeysCertificate:
+		state.chooseCertificate()
 	}
 }
 
@@ -217,6 +233,7 @@ func (state *State) importKeyFiles(paths []string) {
 	}
 	added := 0
 	hadError := false
+	certificateAttached := false
 	for _, path := range paths {
 		if path == "" {
 			continue
@@ -240,7 +257,33 @@ func (state *State) importKeyFiles(paths []string) {
 			return !identity.Stored && identity.Path == absolute ||
 				identity.Error == "" && info.Fingerprint != "" && identity.Fingerprint == info.Fingerprint
 		})
-		if known >= 0 && (state.identities[known].Stored || info.SecurityKey) {
+		var certificate string
+		if !info.SecurityKey {
+			var certificateErr error
+			certificate, certificateErr = companionCertificate(absolute, info.PublicKey)
+			if certificateErr != nil {
+				// The key is still worth importing; the certificate it came
+				// with is reported so the user can attach a good one.
+				hadError = true
+				state.showActionFailure(m.KeyImportTitle, certificateErr, fmt.Sprintf(m.KeyCertificateIgnoredFmt, name))
+			}
+		}
+		if known >= 0 && state.identities[known].Stored {
+			// The key is already kept. A certificate beside the file it came from
+			// fills a gap, but never replaces one the user attached here.
+			if certificate != "" && !state.identities[known].Certificate {
+				if err := state.storeCertificate(state.identities[known].Path, certificate); err != nil {
+					state.showActionFailure(m.KeyImportTitle, err, fmt.Sprintf(m.VaultSaveFailedFmt, state.vaultErrorText(err)))
+					continue
+				}
+				state.identities[known].Certificate = true
+				state.identities[known].refreshCells(state.keyMessages())
+				state.showActionInfo(m.KeyCertificate, fmt.Sprintf(m.KeyCertificateAttachedFmt, state.identities[known].Name))
+				certificateAttached = true
+			}
+			continue
+		}
+		if known >= 0 && info.SecurityKey {
 			continue // already listed
 		}
 		if info.SecurityKey {
@@ -255,7 +298,7 @@ func (state *State) importKeyFiles(paths []string) {
 		if known >= 0 {
 			replaces = &state.identities[known]
 		}
-		record, err := state.sealStoredKey(name, data, replaces)
+		record, err := state.sealStoredKey(storedKey{Name: name, Key: string(data), Certificate: certificate}, replaces)
 		if err != nil {
 			hadError = true
 			state.showActionFailure(m.KeyImportTitle, err, fmt.Sprintf(m.VaultSaveFailedFmt, state.vaultErrorText(err)))
@@ -273,9 +316,93 @@ func (state *State) importKeyFiles(paths []string) {
 		state.refreshIdentityCount()
 		state.status = fmt.Sprintf(m.KeyImportedFmt, added)
 		state.save()
-	} else if !hadError {
+	} else if !hadError && !certificateAttached {
 		state.showActionInfo(m.KeyImportTitle, m.KeyNothingImported)
 	}
+}
+
+// companionCertificate is the OpenSSH user certificate beside an imported key,
+// as its authorized_keys line, when the key comes with one. public may be nil
+// when the key's public half is not readable before its passphrase.
+func companionCertificate(identity, publicKey string) (string, error) {
+	var public ssh.PublicKey
+	if publicKey != "" {
+		public, _, _, _, _ = ssh.ParseAuthorizedKey([]byte(publicKey))
+	}
+	certificate, err := sshconn.ReadCertificate(identity+"-cert.pub", public)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return sshconn.CertificateLine(certificate), nil
+}
+
+// chooseCertificate attaches the OpenSSH user certificate of the selected key,
+// or replaces the one it has. Certificates are short-lived, so this is how a key
+// that stays in Motty keeps signing in after its old certificate expired.
+func (state *State) chooseCertificate() {
+	identity, ok := state.identityByID(state.selectedIdentityID)
+	if !ok || identity.Error != "" || !identity.Stored {
+		return
+	}
+	m := state.messages
+	paths, err := state.options.OpenFiles(app.OpenFileOptions{Title: m.KeyCertificateTitle})
+	if errors.Is(err, app.ErrCanceled) || err == nil && len(paths) == 0 {
+		return
+	}
+	if err != nil {
+		state.showActionFailure(m.KeyCertificateTitle, err, m.ActionFeedback.FilePickerFailed)
+		return
+	}
+	certificate, err := sshconn.ReadCertificate(paths[0], certificatePublicKey(identity))
+	if err != nil {
+		state.showActionFailure(m.KeyCertificateTitle, err, m.KeyCertificateInvalid)
+		return
+	}
+	state.keepCertificate(identity, sshconn.CertificateLine(certificate))
+}
+
+// certificatePublicKey is the public half the certificate of a stored key must
+// certify. It is nil when the key cannot name its public half before its
+// passphrase; the match is then checked when the key is used.
+func certificatePublicKey(identity identityRecord) ssh.PublicKey {
+	if identity.PublicKey == "" {
+		return nil
+	}
+	public, _, _, _, err := ssh.ParseAuthorizedKey([]byte(identity.PublicKey))
+	if err != nil {
+		return nil
+	}
+	return public
+}
+
+// keepCertificate writes the certificate into the stored key in the vault and
+// shows it in the list.
+func (state *State) keepCertificate(identity identityRecord, certificate string) {
+	m := state.messages
+	vaultFile := state.secrets.vault
+	if vaultFile == nil {
+		state.showActionInfo(m.KeyCertificateTitle, m.VaultUnavailable)
+		return
+	}
+	if vaultFile.NeedsConversion() {
+		state.openVaultUnlock(nil, func() { state.keepCertificate(identity, certificate) })
+		return
+	}
+	if err := state.storeCertificate(identity.Path, certificate); err != nil {
+		state.showActionFailure(m.KeyCertificateTitle, err, fmt.Sprintf(m.VaultSaveFailedFmt, state.vaultErrorText(err)))
+		return
+	}
+	for index := range state.identities {
+		if state.identities[index].ID == identity.ID {
+			state.identities[index].Certificate = certificate != ""
+			state.identities[index].refreshCells(state.keyMessages())
+			break
+		}
+	}
+	state.showActionInfo(m.KeyCertificate, fmt.Sprintf(m.KeyCertificateAttachedFmt, identity.Name))
 }
 
 // openKeyPassphraseForm asks for the passphrase of the selected encrypted key to
