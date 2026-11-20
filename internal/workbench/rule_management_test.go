@@ -13,10 +13,10 @@ import (
 func TestHighlightEditingReplacesOnlyItsRuleAndRejectsInvalidOrDuplicateInput(t *testing.T) {
 	_, options := newWorld(t)
 	state := newTestState(t, options)
-	original := highlightRule{Pattern: "ERROR", Regex: true, CaseSensitive: true, Slot: highlight.Green}
-	state.highlighting.rules = []highlightRule{original, {Pattern: "WARN", Slot: highlight.Yellow}}
+	original := highlightRule{Pattern: "ERROR", Regex: true, CaseSensitive: true, Color: highlight.Green}
+	state.highlighting.rules = []highlightRule{original, {Pattern: "WARN", Color: highlight.Yellow}}
 	state.openHighlightEdit(0)
-	if state.highlighting.pattern.String() != original.Pattern || !state.highlighting.regex || !state.highlighting.folded || state.highlighting.slot != original.Slot {
+	if state.highlighting.pattern.String() != original.Pattern || !state.highlighting.regex || !state.highlighting.folded || state.highlighting.color != original.Color {
 		t.Fatal("editor did not retain the complete rule")
 	}
 	state.highlighting.pattern = text.Editor{}
@@ -28,7 +28,7 @@ func TestHighlightEditingReplacesOnlyItsRuleAndRejectsInvalidOrDuplicateInput(t 
 	state.highlighting.pattern = text.Editor{}
 	state.highlighting.pattern.Insert("WARN")
 	state.highlighting.regex, state.highlighting.folded = false, false
-	state.highlighting.slot = highlight.Yellow
+	state.highlighting.color = highlight.Yellow
 	state.Click(hitHighlightSubmit)
 	if state.modal != modalHighlightRule || state.highlighting.dialogError == "" || state.highlighting.rules[0] != original {
 		t.Fatal("duplicate edit changed the rule")
@@ -48,7 +48,7 @@ func TestHighlightEditingReplacesOnlyItsRuleAndRejectsInvalidOrDuplicateInput(t 
 func TestRuleManagerBatchHighlightDeletionCancelsAndPreservesUnselectedRules(t *testing.T) {
 	_, options := newWorld(t)
 	state := newTestState(t, options)
-	state.highlighting.rules = []highlightRule{{Pattern: "one", Slot: highlight.Red}, {Pattern: "two", Slot: highlight.Blue}, {Pattern: "three", Slot: highlight.Green}}
+	state.highlighting.rules = []highlightRule{{Pattern: "one", Color: highlight.Red}, {Pattern: "two", Color: highlight.Blue}, {Pattern: "three", Color: highlight.Green}}
 	state.Click(hitSettingsHighlightManage)
 	state.Click(hitRuleManagerSelect.At(0))
 	state.Click(hitRuleManagerSelect.At(2))
@@ -117,7 +117,7 @@ func TestRuleManagerAutofillBatchDeletionRemovesOnlySelectedVaultText(t *testing
 func TestRuleManagerDeleteSnapshotDoesNotDeleteShiftedHighlightRule(t *testing.T) {
 	_, options := newWorld(t)
 	state := newTestState(t, options)
-	state.highlighting.rules = []highlightRule{{Pattern: "one", Slot: highlight.Red}, {Pattern: "two", Slot: highlight.Blue}}
+	state.highlighting.rules = []highlightRule{{Pattern: "one", Color: highlight.Red}, {Pattern: "two", Color: highlight.Blue}}
 	state.Click(hitSettingsHighlightManage)
 	state.Click(hitRuleManagerSelect.At(0))
 	state.Click(hitRuleManagerDelete)
@@ -136,7 +136,7 @@ func TestRuleManagerSelectionAndCompactSettings(t *testing.T) {
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	emptyHeight := state.settingsContent
 	for index := range maxCustomHighlightRules {
-		state.highlighting.rules = append(state.highlighting.rules, highlightRule{Pattern: fmt.Sprintf("rule-%d", index), Slot: highlight.Red})
+		state.highlighting.rules = append(state.highlighting.rules, highlightRule{Pattern: fmt.Sprintf("rule-%d", index), Color: highlight.Red})
 	}
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if state.settingsContent != emptyHeight {
@@ -259,7 +259,7 @@ func TestRuleManagerBatchDeletionSaveFailureKeepsRulesAndSelection(test *testing
 			state := world.state
 			world.addRule(test, "one", `^One:`, "", autofill.SendText, "private-one")
 			world.addRule(test, "two", `^Two:`, "", autofill.SendText, "private-two")
-			state.highlighting.rules = []highlightRule{{Pattern: "one", Slot: highlight.Red}, {Pattern: "two", Slot: highlight.Blue}}
+			state.highlighting.rules = []highlightRule{{Pattern: "one", Color: highlight.Red}, {Pattern: "two", Color: highlight.Blue}}
 			if err := state.saveWithResult(); err != nil {
 				test.Fatal(err)
 			}

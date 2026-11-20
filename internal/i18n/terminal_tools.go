@@ -48,6 +48,7 @@ type ToolsMessages struct {
 	HighlightRegex               string
 	HighlightCase                string
 	HighlightColor               string
+	HighlightCustomColor         string
 	HighlightErrorEmpty          string
 	HighlightErrorTooLong        string
 	HighlightErrorEverywhere     string

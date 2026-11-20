@@ -647,7 +647,7 @@ func (state *State) snapshot() savedState {
 	}
 	for _, rule := range state.highlighting.rules {
 		saved.Highlights = append(saved.Highlights, savedHighlight{
-			Pattern: rule.Pattern, Regex: rule.Regex, CaseSensitive: rule.CaseSensitive, Color: rule.Slot.Name(),
+			Pattern: rule.Pattern, Regex: rule.Regex, CaseSensitive: rule.CaseSensitive, Color: rule.Color.Name(),
 		})
 	}
 	saved.Autofill = state.savedAutofillRules()
