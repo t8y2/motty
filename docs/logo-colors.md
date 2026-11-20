@@ -30,6 +30,7 @@
 - Windows 原生测试验证真实窗口的大小 HICON、旧句柄释放，以及真实窗口 Shell 属性中的 ICO 路径和 AppUserModelID；真实 `.lnk` 测试验证目标隔离、图标位置和启动参数/工作目录保留，并执行 race 检查。
 - Linux 在 Xvfb 真实 X11 服务中读取更新后的 `_NET_WM_ICON`；另外保留更新分发与 GTK 原生 pixbuf 生命周期测试。
 - macOS 原生测试读取更新后的 Dock 图像像素，验证连续切换和菜单栏 template；同一测试分别从普通可执行文件与临时 `.app` 启动，交由 macOS CI 执行。
+- 上述 macOS 原生测试已在 [Viva CI 的 darwin 作业](https://github.com/vivaui/viva/actions/runs/44739964792/job/136301078366) 通过，包含普通程序与临时 `.app` 两种启动方式；同一作业的 DMG 内容校验也通过。
 - 原生 API/属性验证不等同于覆盖所有桌面 Shell 的视觉效果。本次修复通过原生测试与 CI 验证，未做图形界面自动化核验；没有把各版本 Windows 任务栏、Linux 所有桌面环境或 macOS Finder/Launchpad 的展示宣称为已验证。
 
 参考：[Windows 任务栏图标属性](https://learn.microsoft.com/en-us/windows/win32/properties/props-system-appusermodel-relaunchiconresource)、[窗口 AppUserModelID 与刷新顺序](https://learn.microsoft.com/en-us/windows/win32/properties/props-system-appusermodel-id)、[Apple 运行中应用图标](https://developer.apple.com/documentation/appkit/nsapplication/applicationiconimage)、[freedesktop 启动项规范](https://specifications.freedesktop.org/desktop-entry/latest/recognized-keys.html)。
