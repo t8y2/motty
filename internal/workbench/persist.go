@@ -623,6 +623,8 @@ func (state *State) snapshot() savedState {
 		TerminalCursorSteady:       state.terminalCursorSteady,
 		TerminalCursorThickness:    state.terminalCursorThickness.String(),
 		TerminalCopyOnSelect:       state.terminalCopyOnSelect,
+		TerminalCommandBlocks:      state.terminalCommandBlocks,
+		TerminalBlockMenuActions:   state.terminalBlockMenuActions,
 		TerminalWordSeparators:     state.terminalWordSeparators,
 		TerminalRightClickPaste:    state.terminalRightClickPaste,
 		TabTitleMode:               state.tabTitleMode,
@@ -1283,6 +1285,8 @@ func (state *State) restoreShared(saved savedState) {
 	state.terminalCursorSteady = saved.TerminalCursorSteady
 	state.terminalCursorThickness = cursorThicknessFromString(saved.TerminalCursorThickness)
 	state.terminalCopyOnSelect = saved.TerminalCopyOnSelect
+	state.terminalCommandBlocks = saved.TerminalCommandBlocks
+	state.terminalBlockMenuActions = saved.TerminalBlockMenuActions
 	state.terminalWordSeparators = saved.TerminalWordSeparators
 	state.terminalWordEditor = *text.NewEditor(saved.TerminalWordSeparators)
 	state.terminalRightClickPaste = saved.TerminalRightClickPaste
