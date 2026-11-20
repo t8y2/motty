@@ -65,6 +65,18 @@ func TestToolbarSettingsNativeControlsDragKeyboardAndSwitchAcrossScales(t *testi
 			}
 			shot("toolbar-general")
 			for group := toolbarWindow; group <= toolbarSFTP; group++ {
+				// General settings can extend below the viewport as appearance
+				// options are added. Reach the editor through the scrolling page.
+				for attempt := 0; attempt < 8; attempt++ {
+					if hit, ok := hitByIDSnapshot(view.Snapshot().Hits, hitToolbarSettingsOpen[group]); ok && hit.Bounds.Height >= 24 {
+						break
+					}
+					bounds := state.settingsWorkspaceBounds(gfx.Rect{Width: 1200, Height: 900})
+					if err := view.Scroll(gfx.ScrollEvent{X: bounds.X + bounds.Width - 40, Y: bounds.Y + bounds.Height/2, DeltaY: 160}); err != nil {
+						t.Fatal(err)
+					}
+					view.Driver().Advance(300 * time.Millisecond)
+				}
 				click(hitToolbarSettingsOpen[group])
 				view.Driver().Advance(250 * time.Millisecond)
 				shot(fmt.Sprintf("toolbar-opened-%d", group))

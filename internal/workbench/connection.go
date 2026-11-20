@@ -308,6 +308,9 @@ type Options struct {
 	// (buttons, menus, dialogs, native text editing). Nil uses
 	// app.SetNativeAppearance.
 	SetNativeAppearance func(app.Appearance)
+	// SetAppIcon updates this window and the application's status icon on the
+	// event-loop thread when the icon color changes, including from another window.
+	SetAppIcon func(app.WindowIcon)
 	// Executable is the path of the running program, which the settings page
 	// puts into the client configuration of the MCP server that needs no window.
 	// Nil uses os.Executable.
@@ -558,6 +561,7 @@ const (
 	modalLocalProxy
 	modalCredential
 	modalPasteReview
+	modalIconColorPicker
 )
 
 // tone colors a session's headline.

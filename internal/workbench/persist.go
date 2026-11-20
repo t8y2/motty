@@ -44,6 +44,7 @@ type savedState struct {
 	Version                    int                     `json:"version"`
 	Language                   string                  `json:"language,omitempty"`
 	Theme                      string                  `json:"theme,omitempty"`
+	IconColor                  string                  `json:"icon_color,omitempty"`
 	BackgroundOutputAlerts     bool                    `json:"background_output_alerts,omitempty"`
 	TabOrientation             string                  `json:"tab_orientation,omitempty"`
 	TabNumbers                 bool                    `json:"tab_numbers,omitempty"`
@@ -523,6 +524,7 @@ func (state *State) snapshot() savedState {
 		Version:                    stateFileVersion,
 		Language:                   state.savedLanguage(),
 		Theme:                      state.appearanceMode.saved(),
+		IconColor:                  state.iconColor.saved(),
 		BackgroundOutputAlerts:     state.backgroundOutputAlerts,
 		TabOrientation:             state.tabOrientation.String(),
 		TabNumbers:                 state.tabNumbers,
@@ -1089,6 +1091,7 @@ func (state *State) restoreLocal(saved savedState) {
 	}
 	state.messages = i18n.For(state.language)
 	state.appearanceMode = appearanceModeFromString(saved.Theme)
+	state.setIconColor(iconColorFromString(saved.IconColor))
 	state.networkProxy = networkProxyModeFromString(saved.NetworkProxy)
 	state.sshBrowser = sshbrowser.ParseFamily(saved.SSHBrowser)
 	state.syncNativeAppearance()

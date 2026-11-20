@@ -2888,6 +2888,8 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareFormDialog(c)
 	case modalFontPicker:
 		state.declareFontPicker(c)
+	case modalIconColorPicker:
+		state.declareIconColorPicker(c)
 	case modalOutboundProxy:
 		state.declareOutboundProxyDialog(c)
 	case modalAutofillRule:
