@@ -180,6 +180,7 @@ func (w *remoteToolsWindow) dispose() {
 	w.ui.cancelRemoteProcessCommand()
 	w.ui.cancelRemoteProcessEnvironment()
 	w.ui.cancelRemoteContainerEnvironment()
+	w.ui.cancelRemoteContainerInspect()
 	w.cancel()
 	w.session.sudoCommands, w.session.sudoPassword = false, ""
 	w.owner.remoteWindows = slices.DeleteFunc(w.owner.remoteWindows, func(other *remoteToolsWindow) bool { return other == w })

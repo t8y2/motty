@@ -57,7 +57,7 @@ func (state *State) prepareRemoteTable(c ui.C, tab remoteTab, width float32) {
 	if tab == remoteProcesses {
 		columns, headings = state.processTableSchema(width)
 	} else {
-		columns, headings = state.objectTableSchema(tab)
+		columns, headings = state.objectTableSchema(tab, width)
 	}
 	view.tableCount = len(headings)
 	order := view.tableSort()

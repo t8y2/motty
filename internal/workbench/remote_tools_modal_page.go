@@ -234,28 +234,45 @@ func (state *State) declareRemoteToolActions(c ui.C) {
 // objectTableSchema is the Docker table's columns and headings by tab. It
 // fills the view's own column storage, so a paint neither allocates the schema
 // nor loses it before the rows are declared.
-func (state *State) objectTableSchema(tab remoteTab) ([]components.TableColumn, []string) {
+func (state *State) objectTableSchema(tab remoteTab, width float32) ([]components.TableColumn, []string) {
 	m, view := state.messages.Tools, &state.remote
 	switch tab {
 	case remoteCompose:
-		view.columns = [6]string{m.RemoteColName, m.RemoteColStatus, m.RemoteColConfig}
-		view.processColumns = [6]components.TableColumn{{Width: 220}, {Width: 200}, {Width: 0}}
+		view.columns = [remoteMaxColumns]string{m.RemoteColName, m.RemoteColStatus, m.RemoteColConfig}
+		view.processColumns = [remoteMaxColumns]components.TableColumn{{Width: 220}, {Width: 200}, {Width: 0}}
 		return view.processColumns[:3], view.columns[:3]
 	case remoteImages:
-		view.columns = [6]string{m.RemoteColName, m.RemoteColID, m.RemoteColSize, m.RemoteColCreated}
-		view.processColumns = [6]components.TableColumn{{Width: 470}, {Width: 150}, {Width: 100, Alignment: components.TableAlignRight}, {Width: 0}}
+		view.columns = [remoteMaxColumns]string{m.RemoteColName, m.RemoteColID, m.RemoteColSize, m.RemoteColCreated}
+		view.processColumns = [remoteMaxColumns]components.TableColumn{{Width: 470}, {Width: 150}, {Width: 100, Alignment: components.TableAlignRight}, {Width: 0}}
 		return view.processColumns[:4], view.columns[:4]
 	case remoteVolumes:
-		view.columns = [6]string{m.RemoteColName, m.RemoteColDriver, m.RemoteColScope}
-		view.processColumns = [6]components.TableColumn{{Width: 470}, {Width: 150}, {Width: 0}}
+		view.columns = [remoteMaxColumns]string{m.RemoteColName, m.RemoteColDriver, m.RemoteColScope}
+		view.processColumns = [remoteMaxColumns]components.TableColumn{{Width: 470}, {Width: 150}, {Width: 0}}
 		return view.processColumns[:3], view.columns[:3]
 	case remoteNetworks:
-		view.columns = [6]string{m.RemoteColName, m.RemoteColID, m.RemoteColDriver, m.RemoteColScope}
-		view.processColumns = [6]components.TableColumn{{Width: 300}, {Width: 160}, {Width: 150}, {Width: 0}}
+		view.columns = [remoteMaxColumns]string{m.RemoteColName, m.RemoteColID, m.RemoteColDriver, m.RemoteColScope}
+		view.processColumns = [remoteMaxColumns]components.TableColumn{{Width: 300}, {Width: 160}, {Width: 150}, {Width: 0}}
 		return view.processColumns[:4], view.columns[:4]
 	default:
-		view.columns = [6]string{m.RemoteColName, m.RemoteColImage, m.RemoteColState, m.RemoteColStatus, m.RemoteColID}
-		view.processColumns = [6]components.TableColumn{{Width: 200}, {Width: 220}, {Width: 90}, {Width: 200}, {Width: 0}}
-		return view.processColumns[:5], view.columns[:5]
+		// Docker's CPU and memory figures sit beside the image, as they do in
+		// docker stats. The status line takes the room a wide window leaves:
+		// it is the only value whose length varies a lot, while the ID is
+		// always twelve characters.
+		view.columns = [remoteMaxColumns]string{
+			m.RemoteColName, m.RemoteColImage, m.RemoteColCPU, m.RemoteColContainerMemory,
+			m.RemoteColState, m.RemoteColID, m.RemoteColStatus,
+		}
+		view.processColumns = [remoteMaxColumns]components.TableColumn{
+			{Width: 160}, {Width: 150}, {Width: 80, Alignment: components.TableAlignRight},
+			{Width: 160, Alignment: components.TableAlignRight}, {Width: 80}, {Width: 120}, {Width: 0},
+		}
+		const fixed = 160 + 150 + 80 + 160 + 80 + 120
+		if width < fixed+120 {
+			scale := min(max(width-120, 1)/fixed, 1)
+			for index := range view.processColumns[:6] {
+				view.processColumns[index].Width *= scale
+			}
+		}
+		return view.processColumns[:7], view.columns[:7]
 	}
 }

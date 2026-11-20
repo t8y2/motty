@@ -44,6 +44,9 @@ func init() {
 		}),
 		remoteToolsScene("remote-container-details-overview", func(t *testing.T, state *State) {
 			openRemoteContainerDetailsScene(t, state)
+			waitFor(t, state, func() bool {
+				return state.remote.containerDetails.inspectLoaded && !state.remote.containerDetails.inspectLoading
+			})
 		}),
 		remoteToolsScene("remote-container-details-environment", func(t *testing.T, state *State) {
 			openRemoteContainerDetailsScene(t, state)

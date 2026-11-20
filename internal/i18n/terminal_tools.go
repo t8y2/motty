@@ -909,6 +909,19 @@ type ToolsMessages struct {
 	RemoteContainerDetailsTitle         string
 	RemoteContainerOverview             string
 	RemoteContainerEnvironmentEmpty     string
+	RemoteContainerConfiguration        string
+	RemoteContainerConfigurationLoading string
+	RemoteContainerCreated              string
+	RemoteContainerCommand              string
+	RemoteContainerImageID              string
+	RemoteContainerRestartPolicy        string
+	RemoteContainerPorts                string
+	RemoteContainerNetworks             string
+	RemoteContainerMounts               string
+	RemoteContainerNetworkIO            string
+	RemoteContainerBlockIO              string
+	RemoteContainerPIDs                 string
+	RemoteContainerUsageFailedFmt       string
 
 	RemoteProcessCopyPID            string
 	RemoteProcessCopyUser           string
@@ -932,6 +945,7 @@ type ToolsMessages struct {
 	RemoteColState                  string
 	RemoteColStatus                 string
 	RemoteColID                     string
+	RemoteColContainerMemory        string
 	RemoteRefresh                   string
 	RemoteAutoRefresh               string
 	RemoteAutoStart                 string
