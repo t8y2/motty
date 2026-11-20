@@ -3450,14 +3450,23 @@ var hostSystemChoices = [...]struct {
 	{sshconn.SystemWindows, "Windows"}, {sshconn.SystemDarwin, "macOS"},
 }
 
+// hostSystemDisplayName is the system's own name, the same in every language.
+// It returns "" for a system the list does not name.
+func hostSystemDisplayName(system sshconn.RemoteSystem) string {
+	for _, choice := range hostSystemChoices {
+		if choice.system == system {
+			return choice.name
+		}
+	}
+	return ""
+}
+
 // hostIconLabel is the name of an icon in the list.
 func (state *State) hostIconLabel(icon hostIcon) string {
 	m := state.messages
 	if system, ok := icon.system(); ok {
-		for _, choice := range hostSystemChoices {
-			if choice.system == system {
-				return choice.name
-			}
+		if name := hostSystemDisplayName(system); name != "" {
+			return name
 		}
 	}
 	switch icon {

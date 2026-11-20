@@ -503,8 +503,12 @@ func TestMonitorHeaderOrderAndWidths(t *testing.T) {
 	if !ok {
 		t.Fatal("interval control is missing")
 	}
-	if interval.Bounds.Width < 65 || interval.Bounds.Width > 66 || interval.Bounds.Height != 26 {
-		t.Fatalf("interval = %v, want 65-66x26", interval.Bounds)
+	// Content-sized: 4px padding, the 16px clock, 4px gaps, the 11px chevron,
+	// then the text at its own measured width.
+	intervalText := fmt.Sprintf(state.messages.Monitor.IntervalFmt, 2)
+	wantIntervalWidth := 43 + canvas.TextWidthWeight(intervalText, 12, gfx.WeightMedium)
+	if math.Abs(float64(interval.Bounds.Width-wantIntervalWidth)) > 1 || interval.Bounds.Height != 26 {
+		t.Fatalf("interval = %v, want %vx26", interval.Bounds, wantIntervalWidth)
 	}
 	titleWidth := canvas.TextWidthWeight(state.messages.Monitor.Title, 14, gfx.WeightSemibold)
 	if interval.Bounds.X != b.X+35+titleWidth+12 {

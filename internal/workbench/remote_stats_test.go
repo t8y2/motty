@@ -400,3 +400,14 @@ func TestHardwareKeepsNameOnlyGPUProcessesAndUnknownMemoryUnavailable(t *testing
 		t.Fatalf("GPU memory without a capacity = %q, want 3.0 GiB", got)
 	}
 }
+
+func TestGPUReadoutKeepsUsedOnlyMemory(t *testing.T) {
+	gpu := remotestats.GPU{UtilPercent: 9, MemoryUsedBytes: 3 << 30, MemoryKnown: true, TemperatureC: -1, PowerWatts: -1}
+	if got := formatGPU(&gpu, false); got != "GPU 9% 3.0G" {
+		t.Fatalf("used-only memory = %q, want GPU 9%% 3.0G", got)
+	}
+	gpu.MemoryUsedBytes, gpu.MemoryKnown = 0, false
+	if got := formatGPU(&gpu, false); got != "GPU 9%" {
+		t.Fatalf("unreported memory = %q, want GPU 9%%", got)
+	}
+}

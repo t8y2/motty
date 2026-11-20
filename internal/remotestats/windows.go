@@ -71,6 +71,7 @@ function Query($name) { @(Get-CimInstance -ClassName $name -OperationTimeoutSec 
 $meta=$null
 $gpuAdapters=@{devices=@();controllers=@()}
 $lastMeta=[DateTime]::MinValue
+$lastGPU=[DateTime]::MinValue
 while ($true) {
     try { $os=(Query 'Win32_OperatingSystem')[0]; if (!$os -or !$os.TotalVisibleMemorySize -or $null -eq $os.FreePhysicalMemory) { throw 'unavailable' } }
     catch { [Console]::WriteLine('gop-stats-unsupported Windows'); exit 0 }
@@ -98,7 +99,6 @@ while ($true) {
     } catch { $netOK=$false }
     if ($net.Count -eq 0) { $netOK=$false }
     if (!$meta -or (([DateTime]::UtcNow-$lastMeta).TotalSeconds -ge 5)) {
-        $gpuAdapters=Get-GPUAdapters
         $disks=@()
         try {
             foreach ($d in (Query 'Win32_LogicalDisk' | Where-Object { $_.DriveType -eq 3 -and $_.Size -gt 0 -and $null -ne $_.FreeSpace } | Select-Object -First 32)) {
@@ -112,6 +112,12 @@ while ($true) {
     $payload=@{cpu=$cpu;total=([uint64]$os.TotalVisibleMemorySize*1024);free=([uint64]$os.FreePhysicalMemory*1024);uptime=[math]::Max(0,([DateTime]::Now-$os.LastBootUpTime).TotalSeconds);cores=@($coreRows);net=@($net);networkAvailable=$netOK;meta=$meta;gpus=@(Read-GPUs $gpuAdapters)}
     $json=ConvertTo-Json -InputObject $payload -Depth 6 -Compress
     [Console]::WriteLine('gop-stats-win-v1 '+$json)
+    # Probe after the first reading is out: the Add-Type compile and adapter
+    # enumeration must not delay the first sample past its timeout.
+    if (([DateTime]::UtcNow-$lastGPU).TotalSeconds -ge 5) {
+        $gpuAdapters=Get-GPUAdapters
+        $lastGPU=[DateTime]::UtcNow
+    }
     Start-Sleep -Seconds __INTERVAL__
 }`
 

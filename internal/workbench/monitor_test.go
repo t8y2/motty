@@ -587,3 +587,25 @@ func TestMonitorPlaceholderIsCentredWithoutStats(t *testing.T) {
 	}
 	t.Fatal("the panel did not paint its placeholder")
 }
+
+func TestMonitorHardwareSystemUsesTheSystemsOwnName(t *testing.T) {
+	for _, tc := range []struct {
+		system sshconn.RemoteSystem
+		want   string
+	}{
+		{sshconn.SystemCentOS, "CentOS"},
+		{sshconn.SystemRedHat, "Red Hat"},
+		{sshconn.SystemOpenSUSE, "openSUSE"},
+		{sshconn.SystemNixOS, "NixOS"},
+		{sshconn.SystemPopOS, "Pop!_OS"},
+		{sshconn.SystemUbuntu, "Ubuntu"},
+		{sshconn.SystemLinux, "Linux"},
+		{sshconn.SystemWindows, "Windows"},
+		{sshconn.SystemDarwin, "macOS"},
+		{sshconn.SystemUnknown, "—"},
+	} {
+		if got := monitorSystemName(tc.system); got != tc.want {
+			t.Errorf("monitorSystemName(%v) = %q, want %q", tc.system, got, tc.want)
+		}
+	}
+}

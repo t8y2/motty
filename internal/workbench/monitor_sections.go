@@ -414,19 +414,11 @@ func (s *State) paintMonitorDisks(c *gfx.Canvas, p *monitorView, b, viewport gfx
 }
 
 func monitorSystemName(system sshconn.RemoteSystem) string {
-	switch system {
-	case sshconn.SystemWindows:
-		return "Windows"
-	case sshconn.SystemDarwin:
-		return "macOS"
-	case sshconn.SystemFreeBSD:
-		return "FreeBSD"
-	case sshconn.SystemAIX:
-		return "AIX"
-	case sshconn.SystemLinux:
-		return "Linux"
-	case sshconn.SystemUnknown:
+	if system == sshconn.SystemUnknown {
 		return "—"
+	}
+	if name := hostSystemDisplayName(system); name != "" {
+		return name
 	}
 	name := system.String()
 	if name == "" {
