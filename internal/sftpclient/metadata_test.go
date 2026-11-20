@@ -39,6 +39,14 @@ func entryNamed(t *testing.T, entries []Entry, name string) Entry {
 	return Entry{}
 }
 
+func entryNames(entries []Entry) []string {
+	names := make([]string, len(entries))
+	for index := range entries {
+		names[index] = entries[index].Name
+	}
+	return names
+}
+
 func TestListingCarriesTheOwnerAndTheNamesTheAccountFilesGive(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("no numeric owners")
@@ -199,12 +207,22 @@ func TestAListingArrivesBeforeItsLinksResolve(t *testing.T) {
 	if link := entryNamed(t, first.Entries, "to-dir"); link.LinkTarget != "" || link.LinkDir {
 		t.Fatalf("the first result already resolved the link: %+v", link)
 	}
+	// The listing cannot place the link until its target is known, so it sits
+	// among the files here.
+	if got := strings.Join(entryNames(first.Entries), ","); got != "real,file.txt,to-dir" {
+		t.Fatalf("the unresolved listing's order = %s", got)
+	}
 	follow := waitResult(t, worker)
 	if follow.Err != nil || !follow.FollowUp || follow.Path != first.Path || follow.LinksPending {
 		t.Fatalf("follow-up = %+v", follow)
 	}
 	if link := entryNamed(t, follow.Entries, "to-dir"); !strings.HasSuffix(link.LinkTarget, "real") || !link.LinkDir {
 		t.Fatalf("the follow-up did not resolve the link: %+v", link)
+	}
+	// Now that the link is known to point at a folder, it is ordered with the
+	// folders instead of the files.
+	if got := strings.Join(entryNames(follow.Entries), ","); got != "real,to-dir,file.txt" {
+		t.Fatalf("the resolved listing's order = %s", got)
 	}
 }
 

@@ -1820,8 +1820,11 @@ func TestSFTPLinksFillInAfterTheListingIsShown(t *testing.T) {
 	if err := remote.Symlink("notes.txt", "/home/test/latest"); err != nil {
 		t.Fatal(err)
 	}
+	if err := remote.Symlink("docs", "/home/test/zzz-docs"); err != nil {
+		t.Fatal(err)
+	}
 	state.Click(hitSFTPRefresh)
-	// The listing arrives first, with the link unresolved.
+	// The listing arrives first, with the links unresolved.
 	waitSFTP(t, state, session, func(view *sftpView) bool {
 		for _, row := range view.rows {
 			if row.entry.Name == "latest" {
@@ -1830,15 +1833,44 @@ func TestSFTPLinksFillInAfterTheListingIsShown(t *testing.T) {
 		}
 		return false
 	})
-	// Its resolution follows and updates the row in place.
+	// Their resolution follows and updates the rows in place. The link to a
+	// folder moves up with the folders; the link to a file stays with the files.
 	waitSFTP(t, state, session, func(view *sftpView) bool {
+		latest, folderLink := false, false
 		for _, row := range view.rows {
-			if row.entry.Name == "latest" {
-				return row.entry.LinkTarget == "notes.txt" && !row.entry.LinkDir
+			switch row.entry.Name {
+			case "latest":
+				latest = row.entry.LinkTarget == "notes.txt" && !row.entry.LinkDir
+			case "zzz-docs":
+				folderLink = row.entry.LinkTarget == "docs" && row.entry.LinkDir
 			}
 		}
-		return false
+		return latest && folderLink
 	})
+	if got := strings.Join(rowNames(session.files.rows), ","); got != "docs,zzz-docs,latest,notes.txt" {
+		t.Fatalf("rows after the links resolved = %s", got)
+	}
+}
+
+func TestSFTPListingComparisonKeepsTheResolvedOrder(t *testing.T) {
+	when := time.Unix(1_700_000_000, 0)
+	rows := []sftpRow{
+		{entry: sftpclient.Entry{Name: "docs", Mode: os.ModeDir | 0o755, ModTime: when}},
+		{entry: sftpclient.Entry{Name: "zzz-docs", Mode: os.ModeSymlink | 0o777, LinkTarget: "docs", LinkDir: true, ModTime: when}},
+		{entry: sftpclient.Entry{Name: "notes.txt", Size: 11, Mode: 0o644, ModTime: when}},
+	}
+	unresolved := []sftpclient.Entry{
+		{Name: "docs", Mode: os.ModeDir | 0o755, ModTime: when},
+		{Name: "notes.txt", Size: 11, Mode: 0o644, ModTime: when},
+		{Name: "zzz-docs", Mode: os.ModeSymlink | 0o777, ModTime: when},
+	}
+	if !sameSFTPListing(rows, unresolved) {
+		t.Fatal("a listing ordered before its links resolved was treated as different")
+	}
+	unresolved[1].Size = 12
+	if sameSFTPListing(rows, unresolved) {
+		t.Fatal("a folder that changed was treated as the same listing")
+	}
 }
 
 func TestSFTPListingCacheHasAByteBudget(t *testing.T) {

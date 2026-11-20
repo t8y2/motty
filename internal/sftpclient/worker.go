@@ -1483,6 +1483,10 @@ func (worker *Worker) resolveLinks(job linkJob) {
 	if worker.canceled(job.generation) {
 		return
 	}
+	// Resolving a link can reveal that it points at a folder. The listing's
+	// order puts folders first, so the follow-up has to be ordered again now
+	// that those links are known.
+	sortEntries(job.entries)
 	worker.publish(Result{
 		ListID:     job.listID,
 		Background: job.background, Operation: OperationList, Path: job.directory,
@@ -1537,6 +1541,15 @@ func entriesFrom(infos []os.FileInfo) []Entry {
 		}
 		entries = append(entries, entry)
 	}
+	sortEntries(entries)
+	return entries
+}
+
+// sortEntries orders a listing the way the file panel shows it: folders first,
+// then by name. A symbolic link counts as a folder once describeLinks found
+// that its target is one, so the follow-up that carries the resolved links is
+// ordered again.
+func sortEntries(entries []Entry) {
 	slices.SortFunc(entries, func(left, right Entry) int {
 		if left.IsDir() != right.IsDir() {
 			if left.IsDir() {
@@ -1546,7 +1559,6 @@ func entriesFrom(infos []os.FileInfo) []Entry {
 		}
 		return strings.Compare(left.Name, right.Name)
 	})
-	return entries
 }
 
 func (worker *Worker) upload(client Remote, next request, generation uint64) (files int, bytes, resumed int64, err error) {

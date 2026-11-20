@@ -1283,13 +1283,34 @@ func sameSFTPListing(rows []sftpRow, entries []sftpclient.Entry) bool {
 	if len(rows) != len(entries) {
 		return false
 	}
+	same := true
 	for index := range rows {
-		left, right := rows[index].entry, entries[index]
-		if left.Name != right.Name || left.Size != right.Size || left.Mode != right.Mode || !left.ModTime.Equal(right.ModTime) {
+		if !sameSFTPEntry(rows[index].entry, entries[index]) {
+			same = false
+			break
+		}
+	}
+	if same {
+		return true
+	}
+	// A follow-up orders the same entries again once it knows which links point
+	// at folders, and a prefetch lists them before that. Compare by name so an
+	// unresolved reading does not replace the resolved rows on screen.
+	byName := make(map[string]sftpclient.Entry, len(entries))
+	for _, entry := range entries {
+		byName[entry.Name] = entry
+	}
+	for index := range rows {
+		right, ok := byName[rows[index].entry.Name]
+		if !ok || !sameSFTPEntry(rows[index].entry, right) {
 			return false
 		}
 	}
 	return true
+}
+
+func sameSFTPEntry(left, right sftpclient.Entry) bool {
+	return left.Name == right.Name && left.Size == right.Size && left.Mode == right.Mode && left.ModTime.Equal(right.ModTime)
 }
 
 func (state *State) listSFTP(view *sftpView, remotePath string) {
