@@ -23,6 +23,7 @@ const (
 	shortcutNewTab
 	shortcutTerminalFolder
 	shortcutLocalTerminal
+	shortcutDuplicateTerminal
 	shortcutCloseTab
 	shortcutNextTab
 	shortcutPreviousTab
@@ -47,7 +48,6 @@ const (
 	shortcutPaneMaximize
 	shortcutSettings
 	shortcutBroadcast
-	shortcutDuplicateTerminal
 	shortcutActionCount
 )
 
