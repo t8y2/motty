@@ -2880,6 +2880,8 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declarePasswordDialog(c)
 	case modalCloseTabs:
 		state.declareCloseTabsDialog(c)
+	case modalQuitKeepWindows:
+		state.declareQuitKeepWindowsDialog(c)
 	case modalRemoteTools:
 		state.declareRemoteToolsModal(c)
 	case modalSudoSFTP:

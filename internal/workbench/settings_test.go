@@ -541,6 +541,8 @@ func TestSettingsChoicesHaveRovingKeyboardFocus(t *testing.T) {
 		func() bool { return state.restoreConnect == restoreConnectActive })
 	rove(settingsConnection, m.SettingsSSHAgent, state.settingsAgentKindLabel(agentKindSystem), state.settingsAgentKindLabel(agentKindOnePassword),
 		func() bool { return state.sshAgent.kind == agentKindOnePassword })
+	rove(settingsGeneral, m.Tools.GeneralKeepWindows, state.settingsKeepWindowsLabel(keepWindowsAlways), state.settingsKeepWindowsLabel(keepWindowsNever),
+		func() bool { return state.keepWindows == keepWindowsNever })
 	// The language changes the row's own words, so it goes last.
 	rove(settingsGeneral, m.SettingsLanguage, state.settingsLanguageLabel(i18n.English), state.settingsLanguageLabel(i18n.Chinese),
 		func() bool { return state.language == i18n.Chinese })

@@ -382,29 +382,104 @@ type windowSet struct {
 	mu      sync.Mutex
 	states  []*workbench.State
 	pending [][]string
-	// quitting says the whole program is ending: every window's record stays,
-	// so the next launch reopens the windows that were up. A window the user
-	// closed while the program kept running drops its own instead.
-	quitting bool
+	// quitting says the whole program is ending. keepWindows says whether the
+	// records of the windows now closing stay, so the next launch reopens them.
+	// A window the user closed while the program kept running drops its own
+	// instead.
+	quitting    bool
+	keepWindows bool
+	// askingKeepWindows is set while the quit question is open, so a second
+	// quit request does not replace it.
+	askingKeepWindows bool
 }
 
 var windows windowSet
 
 // Quitting from any window or the status menu visits unsaved native documents
-// first. A canceled document close leaves the application running.
+// first, then asks whether to keep the windows when the user chose that in
+// Settings. A canceled document close or question leaves the application
+// running.
 func (set *windowSet) quitWithDocuments(allow func()) {
 	set.mu.Lock()
 	states := append([]*workbench.State(nil), set.states...)
+	asking := set.askingKeepWindows
 	set.mu.Unlock()
+	if asking {
+		// The question is already up; another quit request must not answer it.
+		return
+	}
 	for _, state := range states {
 		if state.ConfirmDocumentClose(func() { set.quitWithDocuments(allow) }) {
 			return
 		}
 	}
+	if len(states) == 0 {
+		set.finishQuit(true, allow)
+		return
+	}
+	state := states[0]
+	for _, candidate := range states {
+		if candidate.WindowVisible() {
+			state = candidate
+			break
+		}
+	}
+	if set.askKeepWindows(state, allow) {
+		return
+	}
+	set.finishQuit(state.KeepsWindowsOnExit(), allow)
+}
+
+// askKeepWindows opens the quit question and reports whether it took over. The
+// answer quits with the user's choice; dismissing it leaves the program running
+// and clears the flag so a later quit can ask again.
+func (set *windowSet) askKeepWindows(state *workbench.State, allow func()) bool {
+	if !state.AsksAboutWindowsOnExit() {
+		return false
+	}
 	set.mu.Lock()
-	set.quitting = true
+	set.askingKeepWindows = true
+	set.mu.Unlock()
+	if state.AskKeepWindowsOnExit(func(keep bool) {
+		set.finishQuit(keep, allow)
+	}, func() {
+		set.mu.Lock()
+		set.askingKeepWindows = false
+		set.mu.Unlock()
+	}) {
+		return true
+	}
+	set.mu.Lock()
+	set.askingKeepWindows = false
+	set.mu.Unlock()
+	return false
+}
+
+// finishQuit records whether the windows now closing keep their records, then
+// lets the application close them.
+func (set *windowSet) finishQuit(keep bool, allow func()) {
+	set.mu.Lock()
+	set.quitting, set.keepWindows, set.askingKeepWindows = true, keep, false
 	set.mu.Unlock()
 	allow()
+}
+
+// closeLastWindow ends the program through the close button of its last
+// window. It asks the same keep-windows question as the quit command, so both
+// exits follow the setting.
+func (set *windowSet) closeLastWindow(state *workbench.State, allow func()) {
+	if set.askKeepWindows(state, allow) {
+		return
+	}
+	set.finishQuit(!state.DiscardsWindowsOnExit(), allow)
+}
+
+// keepsWindowsOnQuit reports whether the windows closing with the program keep
+// their records for the next launch.
+func (set *windowSet) keepsWindowsOnQuit() bool {
+	set.mu.Lock()
+	defer set.mu.Unlock()
+	return set.keepWindows
 }
 
 // isQuitting reports whether the program is ending rather than one window.

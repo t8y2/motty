@@ -357,11 +357,17 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 			state.NoteHiddenToTray()
 			return
 		}
-		if state.ConfirmClose(allow) {
+		closeWindow := allow
+		if (status == nil && windows.count() == 1) || (status != nil && status.list.WindowCount() == 1) {
+			// The last window ends the program just as the quit command does,
+			// so it makes the same decision about keeping the windows.
+			closeWindow = func() { windows.closeLastWindow(state, allow) }
+		}
+		if state.ConfirmClose(closeWindow) {
 			invalidate()
 			return
 		}
-		allow()
+		closeWindow()
 	}
 	state = workbench.New(workbench.Options{
 		DevelopmentSource: importSource,
@@ -495,12 +501,22 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 			hub.Remove(state)
 			quitting := windows.isQuitting()
 			remaining := windows.count()
+			keepRecord := true
+			switch {
+			case quitting:
+				// The quit command decided whether to keep the windows.
+				keepRecord = windows.keepsWindowsOnQuit()
+			case remaining > 0:
+				// A window the user closed while other windows are still up is
+				// one they are done with, so its record goes.
+				keepRecord = false
+			case state.DiscardsWindowsOnExit():
+				// Closing the last window ends the program without the quit
+				// command; the user chose not to keep windows on that exit.
+				keepRecord = false
+			}
 			state.Close()
-			// A window the user closed while other windows are still up is one
-			// they are done with, so its record goes and the next launch does not
-			// reopen it. A quit, and the last window, keep every record: that is
-			// what the next launch reopens.
-			if !quitting && remaining > 0 {
+			if !keepRecord {
 				state.DropWindowRecord()
 			}
 			if status != nil {

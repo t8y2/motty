@@ -779,14 +779,19 @@ type State struct {
 	xy             xySetup
 	// Requests from outside to connect (see launch.go), the link being asked
 	// about, and the update check.
-	launchBacklog  [][]string
-	launchTarget   connection
-	update         updateState
-	updateAtStart  bool
-	updateStarted  bool
-	loginOn        bool
-	closeAction    closeAction
-	relaunchAction relaunchAction
+	launchBacklog [][]string
+	launchTarget  connection
+	update        updateState
+	updateAtStart bool
+	updateStarted bool
+	loginOn       bool
+	closeAction   closeAction
+	// keepWindows is what quitting does with this window's record for the next
+	// launch: keep it, discard it, or ask first.
+	keepWindows keepWindowsPolicy
+	// quitKeepWindows is the open question of the ask policy.
+	quitKeepWindows quitKeepWindowsPrompt
+	relaunchAction  relaunchAction
 	// The file panel's settings and the folders kept for each host.
 	sftpParallel       int
 	sftpKeepTimesOff   bool
@@ -1725,6 +1730,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		return
 	case modalCloseTabs:
 		state.clickCloseTabsDialog(id)
+		return
+	case modalQuitKeepWindows:
+		state.clickQuitKeepWindows(id)
 		return
 	case modalSessionLink:
 		state.clickSessionLinkDialog(id)
