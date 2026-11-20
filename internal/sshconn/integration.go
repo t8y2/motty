@@ -396,6 +396,16 @@ __motty_home_report() {
 // write, which makes the replacement atomic, and drops it again before the
 // next prompt.
 //
+// That drop cannot assume the prefix is still first in PS1: an activation
+// (conda, virtualenv) between the two prompts prepends the environment name
+// in front of it, and a front-only removal would never match, so the clear
+// would stay in PS1 and wipe the environment name off every later prompt
+// (issue #1121). The report function therefore removes the first occurrence
+// anywhere in PS1. The injected prefix was written in front of the whole
+// prompt, so no earlier copy of those bytes can exist, and the first match
+// is always the injected one; an identical sequence the user had of their
+// own sits later and is kept.
+//
 // Zsh additionally has to keep PROMPT_SP off for that prompt. With it on, zsh
 // marks the partial line the hidden activation line left by writing a row of
 // spaces from the cursor; the cursor is still after the first prompt, so the
@@ -422,7 +432,7 @@ const directoryReportFunction = `__motty_report() {
         _motty_first_prompt_shown=1
     elif [[ -n ${_motty_first_prompt_shown-} ]]; then
         unset _motty_first_prompt_shown
-        PS1=${PS1#"$_motty_first_prompt_erase"}
+        PS1=${PS1/"$_motty_first_prompt_erase"/}
     fi
     case $PS1 in
         *"$_motty_prompt_marker") ;;
