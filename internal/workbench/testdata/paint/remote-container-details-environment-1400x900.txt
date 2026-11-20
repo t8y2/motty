@@ -83,20 +83,26 @@ text "Auto refresh" {1005 133.5 78 34}
 text "PID, user, command or resource name" {285 181.5 850 20}
 text "2 of 2 loaded entries (snapshot search)" {254 211.5 892 19}
 text "Name" {263 240.5 37.625 40}
-text "Image" {463 240.5 39.450195 40}
-text "State" {683 240.5 33.35254 40}
-text "Status" {773 240.5 40.783203 40}
-text "ID" {973 240.5 13.364258 40}
-text "web" {263 280.5 184 36}
-text "nginx:latest" {463 280.5 204 36}
-text "running" {683 280.5 74 36}
-text "Up 2 hours" {773 280.5 184 36}
-text "0f1e2d3c4b5a" {973 280.5 164 36}
-text "old-job" {263 316.5 184 36}
-text "alpine:3.19" {463 316.5 204 36}
-text "exited" {683 316.5 74 36}
-text "Exited (0) 3 days ago" {773 316.5 184 36}
-text "a1b2c3d4e5f6" {973 316.5 164 36}
+text "Image" {423 240.5 39.450195 40}
+text "CPU %" {573.64355 240.5 45.356445 40}
+text "Memory" {725.8574 240.5 53.14258 40}
+text "State" {813 240.5 33.35254 40}
+text "ID" {893 240.5 13.364258 40}
+text "Status" {1013 240.5 40.783203 40}
+text "web" {263 280.5 144 36}
+text "nginx:latest" {423 280.5 134 36}
+text "1.25" {611.2969 280.5 64 36}
+text "12.5MiB / 7.6GiB" {692.82715 280.5 144 36}
+text "running" {813 280.5 64 36}
+text "0f1e2d3c4b5a" {893 280.5 104 36}
+text "Up 2 hours" {1013 280.5 124 36}
+text "old-job" {263 316.5 144 36}
+text "alpine:3.19" {423 316.5 134 36}
+text "—" {623.56055 316.5 64 36}
+text "—" {783.56055 316.5 144 36}
+text "exited" {813 316.5 64 36}
+text "a1b2c3d4e5f6" {893 316.5 104 36}
+text "Exited (0) 3 days…" {1013 316.5 124 36}
 text "2 entries." {254 724.5 532 19}
 text "Collected 2026-11-18 12:34:56" {786 724.5 360 19}
 text "Close" {566.2383 775.5 56.49707 32}
@@ -148,11 +154,13 @@ hit "Auto refresh: Auto refresh" button {972 133.5 134 34} disabled=false
 hit "Use sudo for tools and monitoring…" button {1118 133.5 34 34} disabled=false
 hit "Search loaded snapshot" textfield {254 175.5 892 32} disabled=false
 hit "2 of 2 loaded entries (snapshot search)" status {254 211.5 892 20} disabled=false
-hit "Name" button {255 240.5 200 40} disabled=false
-hit "Image" button {455 240.5 220 40} disabled=false
-hit "State" button {675 240.5 90 40} disabled=false
-hit "Status" button {765 240.5 200 40} disabled=false
-hit "ID" button {965 240.5 180 40} disabled=false
+hit "Name" button {255 240.5 160 40} disabled=false
+hit "Image" button {415 240.5 150 40} disabled=false
+hit "CPU %" button {565 240.5 80 40} disabled=false
+hit "Memory" button {645 240.5 160 40} disabled=false
+hit "State" button {805 240.5 80 40} disabled=false
+hit "ID" button {885 240.5 120 40} disabled=false
+hit "Status" button {1005 240.5 140 40} disabled=false
 hit "Containers" listbox {255 280.5 890 435} disabled=false
 hit "" option {255 280.5 890 36} disabled=false
 hit "" option {255 316.5 890 36} disabled=false

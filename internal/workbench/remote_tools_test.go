@@ -35,6 +35,11 @@ const containerFixture = `a1b2c3d4e5f6|old-job|alpine:3.19|exited|Exited (0) 3 d
 0f1e2d3c4b5a|web|nginx:latest|running|Up 2 hours
 `
 
+const containerUsageFixture = `0f1e2d3c4b5a|1.25%|12.5MiB / 7.6GiB|0.16%|1.2kB / 648B|0B / 0B|5
+`
+
+const containerInspectFixture = `[{"Id":"0f1e2d3c4b5a0f1e2d3c4b5a0f1e2d3c4b5a0f1e2d3c4b5a0f1e2d3c4b5a0f1e","Created":"2026-11-19T08:14:02.123456789Z","Image":"sha256:0f1e2d3c4b5a0000000000000000000000000000000000000000000000000000","Config":{"Entrypoint":["/docker-entrypoint.sh"],"Cmd":["nginx","-g","daemon off;"]},"HostConfig":{"RestartPolicy":{"Name":"always"}},"Mounts":[{"Type":"bind","Source":"/srv/www","Destination":"/usr/share/nginx/html","RW":true}],"NetworkSettings":{"Ports":{"80/tcp":[{"HostIp":"0.0.0.0","HostPort":"8080"}]},"Networks":{"bridge":{"IPAddress":"172.17.0.2"}}}}]`
+
 const composeFixture = `[{"Name":"web","Status":"running(2)","ConfigFiles":"/srv/web/compose.yml"},{"Name":"batch","Status":"exited(1)","ConfigFiles":"/srv/batch/compose.yml"}]`
 
 type remoteServer struct {
@@ -44,6 +49,8 @@ type remoteServer struct {
 	// containers replaces the default container fixture when non-empty, so a
 	// test can show a container appearing while a tool window stays open.
 	containers           string
+	containerUsage       string
+	containerInspect     string
 	identities           string
 	environment          string
 	containerEnvironment string
@@ -186,6 +193,14 @@ func (server *remoteServer) run(_ context.Context, command string, _ int) ([]byt
 			return []byte(server.containers), nil
 		}
 		return []byte(containerFixture), nil
+	case strings.HasPrefix(command, "docker stats"):
+		if err := server.failures["docker stats"]; err != nil {
+			return []byte("denied by the test\nsecond line"), err
+		}
+		if server.containerUsage != "" {
+			return []byte(server.containerUsage), nil
+		}
+		return []byte(containerUsageFixture), nil
 	case strings.HasPrefix(command, "docker inspect --format '{{json .Config.Env}}'"):
 		if err := server.failures["docker inspect --format '{{json .Config.Env}}'"]; err != nil {
 			return []byte("denied by the test\nsecond line"), err
@@ -196,6 +211,14 @@ func (server *remoteServer) run(_ context.Context, command string, _ int) ([]byt
 		return []byte(`["PATH=/usr/local/sbin:/usr/local/bin","SERVICE=web","EMPTY="]`), nil
 	case strings.HasPrefix(command, "docker inspect --format"):
 		return []byte("0f1e2d3c4b5a" + strings.Repeat("0", 52) + "\n"), nil
+	case strings.HasPrefix(command, "docker inspect "):
+		if err := server.failures["docker inspect"]; err != nil {
+			return []byte("denied by the test\nsecond line"), err
+		}
+		if server.containerInspect != "" {
+			return []byte(server.containerInspect), nil
+		}
+		return []byte(containerInspectFixture), nil
 	case strings.HasPrefix(command, "docker images"):
 		return []byte(imageFixture), nil
 	case strings.HasPrefix(command, "docker volume ls"):

@@ -37,7 +37,7 @@ func (state *State) remoteProcessWheel(event gfx.ScrollEvent) (gfx.EventResult, 
 func (state *State) processTableSchema(width float32) ([]components.TableColumn, []string) {
 	m := state.messages.Tools
 	view := &state.remote
-	view.processColumns = [6]components.TableColumn{
+	view.processColumns = [remoteMaxColumns]components.TableColumn{
 		{Width: 72, Alignment: components.TableAlignRight},
 		{Width: 110},
 		{Width: 78, Alignment: components.TableAlignRight},
@@ -45,7 +45,7 @@ func (state *State) processTableSchema(width float32) ([]components.TableColumn,
 		{Width: 108},
 		{Width: 0},
 	}
-	view.columns = [6]string{m.RemoteColPID, m.RemoteColUser, m.RemoteColCPU, m.RemoteColMemory, m.RemoteColTime, m.RemoteColCommand}
+	view.columns = [remoteMaxColumns]string{m.RemoteColPID, m.RemoteColUser, m.RemoteColCPU, m.RemoteColMemory, m.RemoteColTime, m.RemoteColCommand}
 	const fixed = 72 + 110 + 78 + 88 + 108
 	if width < fixed+140 {
 		available := max(width-120, 1)
@@ -54,5 +54,5 @@ func (state *State) processTableSchema(width float32) ([]components.TableColumn,
 			view.processColumns[index].Width *= scale
 		}
 	}
-	return view.processColumns[:], view.columns[:]
+	return view.processColumns[:6], view.columns[:6]
 }
