@@ -236,7 +236,7 @@ func (s *State) declareNoteTreeRow(n *notesUI, i int) {
 	rowID := p.tree.RowID(i)
 	hovered := c.Canvas().Hovered() == rowID
 	focused := c.Canvas().FocusVisible() == rowID
-	ui.Row(c).Gap(0).FillWidth().Children(func() {
+	ui.Row(c).Gap(0).FillWidth().Items(ui.Center).Children(func() {
 		ui.Icon(c, icon).Size(16, 16).Color(color).Shrink(0).MarginSides(0, 0, 0, 4)
 		label := ui.Text(c, e.label).FontSize(13).Color(color).Grow(1).Ellipsis()
 		if !e.folder {
@@ -873,7 +873,7 @@ func (s *State) declareNoteFormatting(c ui.C, n *notesUI, width float32, window 
 			if len(icon.Commands) > 0 {
 				button = s.noteIconButton(c, hitNoteFormats.At(i), icon, name, 26, false)
 			} else {
-				button = ui.Button(c, label).Ghost().Size(28, 26).Hit(hitNoteFormats.At(i), name)
+				button = ui.Button(c, label).Ghost().Size(28, 26).Hit(hitNoteFormats.At(i), label)
 			}
 			button.Tooltip(name)
 		}
