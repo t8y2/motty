@@ -58,10 +58,12 @@ jobs:
           # from, so an older release must not take it.
           curl -fsSL https://dl.motty.page/viva/latest.json -o "$dir/feed.json"
           feed_version=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["latest"]["version"])' "$dir/feed.json")
-          latest=""
+          # The feed's delta patches ride along for the same reason: the feed
+          # lists patches to this release only.
+          extra=()
           if [ "v$feed_version" = "$TAG" ]; then
             cp "$dir/feed.json" "$dir/assets/latest.json"
             curl -fsSL https://dl.motty.page/viva/latest.json.sig -o "$dir/assets/latest.json.sig"
-            latest="--make-latest"
+            extra=(--feed "$dir/assets/latest.json" --make-latest)
           fi
-          node tools/sync-cnb-release.mjs --github-release "$dir/release.json" --assets-dir "$dir/assets" $latest
+          node tools/sync-cnb-release.mjs --github-release "$dir/release.json" --assets-dir "$dir/assets" "${extra[@]}"
