@@ -155,6 +155,7 @@ func (d *fileDocument) declareEditWindow(c ui.C) {
 				if d.image == nil {
 					d.declareEncoding(c, bounds)
 				}
+				d.declareFooterProgress(c)
 				status := d.footerStatus()
 				ui.Text(c, status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(22).Grow(1).
 					HitWith(hitDocumentStatus, status, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: status})
@@ -217,6 +218,16 @@ func (d *fileDocument) declareEncoding(c ui.C, bounds gfx.Rect) {
 			c.After(func() { d.chooseEncoding(name) })
 		}
 	})
+}
+
+// declareFooterProgress declares the spinner the footer shows while the
+// document is waiting on a save, reload or server read: the status text alone
+// read as if the work had already finished. The files panel's status row shows
+// the same spinner for its busy state.
+func (d *fileDocument) declareFooterProgress(c ui.C) {
+	if d.busy {
+		ui.Spinner(c).Size(16, 16).Shrink(0)
+	}
 }
 
 // encodingLabel names one choice of the encoding select.
@@ -370,6 +381,7 @@ func (d *fileDocument) declareComparisonWindow(c ui.C) {
 			}
 			uiState.contentBox = ui.Slot(c).Grow(1).MinHeight(64)
 			ui.Row(c).Height(32).Gap(8).Items(ui.Center).Children(func() {
+				d.declareFooterProgress(c)
 				status := d.comparisonStatus()
 				ui.Text(c, status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(22).Grow(1).
 					HitWith(hitDocumentStatus, status, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: status})

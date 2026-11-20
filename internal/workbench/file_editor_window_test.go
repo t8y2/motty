@@ -1,12 +1,68 @@
 package workbench
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 )
+
+// A save in flight must look like work in progress, not like a finished save:
+// the footer names the state and animates a spinner beside it.
+func TestDocumentFooterAnimatesWhileSaving(t *testing.T) {
+	d := documentFixture(t)
+	d.busy = true
+	d.status = d.owner.messages.FileWindow.Saving
+	var saving gfx.Canvas
+	d.paint(&saving, gfx.Size{Width: 900, Height: 640})
+	status, animating := documentFooterState(&saving, d.owner.messages.FileWindow.Saving)
+	if !status {
+		t.Fatal("the saving footer does not name the save")
+	}
+	if !animating {
+		t.Fatal("the saving footer does not animate a spinner")
+	}
+
+	d.busy = false
+	d.status = d.owner.messages.FileWindow.Ready
+	var idle gfx.Canvas
+	d.paint(&idle, gfx.Size{Width: 900, Height: 640})
+	if status, animating := documentFooterState(&idle, d.owner.messages.FileWindow.Saving); status || animating {
+		t.Fatalf("an idle footer still shows progress: status=%v animating=%v", status, animating)
+	}
+}
+
+// documentFooterState reports whether the painted footer names the given state
+// and whether anything in it asks for the next frame, which only the spinner
+// does when nothing is focused.
+func documentFooterState(canvas *gfx.Canvas, status string) (named, animating bool) {
+	for _, text := range canvas.Texts() {
+		if strings.Contains(text.Value, status) {
+			named = true
+		}
+	}
+	_, animating = canvas.NextFrame()
+	return named, animating
+}
+
+// The comparison window is the other place a save starts; its footer shows the
+// same in-progress state.
+func TestComparisonFooterAnimatesWhileSaving(t *testing.T) {
+	d := documentFixture(t)
+	d.local = false
+	d.comparison.active = true
+	d.comparison.baseline = d.original
+	d.comparison.result = components.DiffCodeLines(d.original, d.editor.String())
+	d.busy = true
+	d.comparison.saving = true
+	var canvas gfx.Canvas
+	d.paintComparison(&canvas, gfx.Size{Width: 1120, Height: 720})
+	if status, animating := documentFooterState(&canvas, d.owner.messages.FileWindow.SavingChanges); !status || !animating {
+		t.Fatalf("the comparison save footer: status=%v animating=%v", status, animating)
+	}
+}
 
 // A document and its comparison are windows of their own now, so each declares
 // the same titlebar the tools window does: the file it shows at the top, and
