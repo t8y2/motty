@@ -20,9 +20,6 @@ func (w *sftpWindow) closeHeaderMenu() {
 }
 
 func (w *sftpWindow) targetSide(id gfx.ID) (bool, bool) {
-	if _, ok := id.In(hitSFTPProfileHoverItems); ok {
-		return true, true
-	}
 	for side := range 2 {
 		if _, ok := id.In(sftpWindowBreadcrumbs[side]); ok {
 			return side == 0, true

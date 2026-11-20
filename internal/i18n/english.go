@@ -14,7 +14,7 @@ var EnglishMessages = Messages{
 		LocalHome: "Home", LocalDesktop: "Desktop", LocalDownloads: "Downloads", LocalDocuments: "Documents", LocalPictures: "Pictures", LocalMusic: "Music", LocalVideos: "Videos", LocalMovies: "Movies", LocalApplications: "Applications",
 		ProfileScope: "Available to", BrowseRootLabel: "Sync roots:",
 		ProfileSite: "This connection", ProfileShared: "All connections", ProfileNew: "New", ProfileDelete: "Remove", ProfileOpen: "Open", ProfileEmpty: "No location profiles yet", ProfileNameExists: "A profile with this name already exists. Select it to make changes.",
-		ProfileSync: "Enable synchronized browsing when opened", ProfileQuickTitle: "Location profiles", ProfileQuickDescription: "Quickly open saved local and server folders.", ProfileQuickSync: "Synchronized browsing", ProfileChoose: "Choose a location profile",
+		ProfileSync: "Enable synchronized browsing when opened", ProfileQuickSync: "Synchronized browsing", ProfileChoose: "Choose a location profile",
 		DirectoryTree: "Directory tree", ShowDirectoryTree: "Show directory tree", HideDirectoryTree: "Hide directory tree",
 		DirectoryTreeLoadFailedFmt: "%s, failed to load: %s", DirectoryTreeTruncated: "Directory contents were truncated",
 		DirectoryTreeNeedsWidth: "The pane is too narrow to show both the directory tree and file list",

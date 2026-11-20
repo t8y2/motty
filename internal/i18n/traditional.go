@@ -14,7 +14,7 @@ var TraditionalMessages = Messages{
 		LocalHome: "主目錄", LocalDesktop: "桌面", LocalDownloads: "下載", LocalDocuments: "文件", LocalPictures: "圖片", LocalMusic: "音樂", LocalVideos: "影片", LocalMovies: "影片", LocalApplications: "應用程式",
 		ProfileScope: "適用連線", BrowseRootLabel: "同步目錄：",
 		ProfileSite: "僅目前連線", ProfileShared: "所有連線", ProfileNew: "新增", ProfileDelete: "刪除", ProfileOpen: "開啟", ProfileEmpty: "還沒有位置檔案", ProfileNameExists: "已存在同名位置檔案，請選取後修改。",
-		ProfileSync: "開啟檔案時啟用同步瀏覽", ProfileQuickTitle: "位置檔案", ProfileQuickDescription: "快速開啟已儲存的本機與伺服器目錄。", ProfileQuickSync: "同步瀏覽", ProfileChoose: "選擇位置檔案",
+		ProfileSync: "開啟檔案時啟用同步瀏覽", ProfileQuickSync: "同步瀏覽", ProfileChoose: "選擇位置檔案",
 		DirectoryTree: "目錄樹", ShowDirectoryTree: "顯示目錄樹", HideDirectoryTree: "隱藏目錄樹",
 		DirectoryTreeLoadFailedFmt: "%s，載入失敗：%s", DirectoryTreeTruncated: "目錄內容已截斷",
 		DirectoryTreeNeedsWidth: "視窗過窄，無法同時顯示目錄樹和檔案清單",

@@ -14,7 +14,7 @@ var ChineseMessages = Messages{
 		LocalHome: "主目录", LocalDesktop: "桌面", LocalDownloads: "下载", LocalDocuments: "文档", LocalPictures: "图片", LocalMusic: "音乐", LocalVideos: "视频", LocalMovies: "影片", LocalApplications: "应用程序",
 		ProfileScope: "适用连接", BrowseRootLabel: "同步目录：",
 		ProfileSite: "仅当前连接", ProfileShared: "所有连接", ProfileNew: "新建", ProfileDelete: "删除", ProfileOpen: "打开", ProfileEmpty: "还没有位置档案", ProfileNameExists: "已存在同名位置档案，请选中后修改。",
-		ProfileSync: "打开档案时启用同步浏览", ProfileQuickTitle: "位置档案", ProfileQuickDescription: "快速打开已保存的本地与服务器目录。", ProfileQuickSync: "同步浏览", ProfileChoose: "选择位置档案",
+		ProfileSync: "打开档案时启用同步浏览", ProfileQuickSync: "同步浏览", ProfileChoose: "选择位置档案",
 		DirectoryTree: "目录树", ShowDirectoryTree: "显示目录树", HideDirectoryTree: "隐藏目录树",
 		DirectoryTreeLoadFailedFmt: "%s，加载失败：%s", DirectoryTreeTruncated: "目录内容已截断",
 		DirectoryTreeNeedsWidth: "窗口过窄，无法同时显示目录树和文件列表",

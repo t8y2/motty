@@ -319,7 +319,7 @@ func (state *State) fileTabHit(id gfx.ID) bool {
 // sftpTabPaneRects lays the tab out as the window's view always did: padding
 // around the body, a gap between the body, the transfer queue and the status
 // line. The body takes the room the fixed children leave.
-func sftpTabPaneRects(bounds gfx.Rect, queue int) (body, queueRect, status gfx.Rect) {
+func sftpTabPaneRects(bounds gfx.Rect, queue, conflicts int) (body, queueRect, status gfx.Rect) {
 	size := gfx.Size{Width: bounds.Width, Height: bounds.Height}
 	inner := gfx.Rect{X: bounds.X + sftpWindowPad, Y: bounds.Y + sftpWindowPad,
 		Width: max(size.Width-2*sftpWindowPad, 0), Height: max(size.Height-2*sftpWindowPad, 0)}
@@ -327,7 +327,7 @@ func sftpTabPaneRects(bounds gfx.Rect, queue int) (body, queueRect, status gfx.R
 	queueHeight := float32(0)
 	if queue > 0 {
 		children = 3
-		queueHeight = sftpQueueHeight(size, queue)
+		queueHeight = sftpQueueHeight(size, queue, conflicts)
 	}
 	body = gfx.Rect{X: inner.X, Y: inner.Y, Width: inner.Width,
 		Height: max(inner.Height-sftpWindowGap*float32(children-1)-queueHeight-sftpWindowStatusHeight, 0)}
@@ -378,7 +378,6 @@ func (state *State) declareSFTPTab(c ui.C) {
 	w.declareWindowMenu(c)
 	w.declareHeaderMenus(c, &w.ui.headerAnchor)
 	w.declareProfileQuickMenu(c)
-	w.declareProfileHover(c)
 	state.declareSFTPFileProperties(c, bounds, &w.fileProperties)
 }
 
@@ -386,7 +385,7 @@ func (state *State) declareSFTPTab(c ui.C) {
 // line in the tab's container.
 func (state *State) declareSFTPTabContent(c ui.C, w *sftpWindow, bounds gfx.Rect) {
 	queue := w.queueCount()
-	body, queueRect, status := sftpTabPaneRects(bounds, queue)
+	body, queueRect, status := sftpTabPaneRects(bounds, queue, w.ui.queueConflicts)
 	w.ui.body, w.ui.queue = body, queueRect
 	state.declareSFTPTabPanes(c, w, bounds, body)
 	if queue > 0 {
@@ -447,7 +446,7 @@ func (w *sftpWindow) paintTabDetails(canvas *gfx.Canvas, bounds gfx.Rect) {
 		w.paintDrag(canvas)
 	}
 	w.notices.paint(canvas, state.Theme(), bounds)
-	if !w.ui.profileHoverOpen && !w.ui.profileQuickOpen {
+	if !w.ui.profileQuickOpen {
 		w.ui.tooltip.Paint(canvas, state.Theme(), bounds, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
 	}
 	if !w.pendingFocus.IsZero() {
