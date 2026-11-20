@@ -57,6 +57,23 @@ func (state *State) NoteWindowFrame(frame gfx.Rect) {
 	state.scheduleWindowFrameSave()
 }
 
+// NoteWindowSize records the window's size and saves it once the resize settles.
+func (state *State) NoteWindowSize(size gfx.Size) {
+	if !state.winChrome.remember || state.closed || state.winChrome.fullscreen || state.winChrome.fullscreenSession != 0 {
+		return
+	}
+	if size.Width < MinimumWindowWidth || size.Height < MinimumWindowHeight {
+		return
+	}
+	if state.winChrome.hasFrame && state.winChrome.frame.Width == size.Width && state.winChrome.frame.Height == size.Height {
+		return
+	}
+	state.winChrome.frame.Width = size.Width
+	state.winChrome.frame.Height = size.Height
+	state.winChrome.hasFrame = true
+	state.scheduleWindowFrameSave()
+}
+
 // scheduleWindowFrameSave writes the frame after the window stops moving. The
 // timer is the only one a still window does not hold.
 func (state *State) scheduleWindowFrameSave() {

@@ -124,7 +124,7 @@ func fatalText(language i18n.Language, err error, logDir string) (title, body st
 // crashNoticeFor gives the crash report of the previous run to the window that
 // tells the user about it: the first one of this run.
 func crashNoticeFor(place placement) string {
-	if !place.rememberFrame {
+	if !place.rememberFrame || (place.windowID != 0 && place.windowID != 1) {
 		return ""
 	}
 	return previousCrash()
