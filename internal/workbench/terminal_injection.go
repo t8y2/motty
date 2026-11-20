@@ -179,6 +179,15 @@ func (state *State) beginInjection(session *Session) {
 		state.failInjection(session)
 		return
 	}
+	// A full-screen program owns the terminal (a multiplexer the login files
+	// start, say): the line would be typed into that program, not the shell,
+	// and its ready marker would never come back through it. Run unintegrated,
+	// as for any shell that cannot be reached, instead of holding input for the
+	// whole window.
+	if t.screen.Modes().AltScreen {
+		state.failInjection(session)
+		return
+	}
 	injection.marker = sshconn.IntegrationReadyMarker(injection.token)
 	injection.echoTag = sshconn.IntegrationEchoTag(injection.token)
 	injection.phase = injectionSuppressing

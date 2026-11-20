@@ -243,3 +243,53 @@ func TestTheShellReplacesTheFirstPromptLine(t *testing.T) {
 		t.Fatalf("the redrawn prompt shows %d times, want exactly one:\n%s", count, screenText(state, 0))
 	}
 }
+
+// A program's query is answered when it is asked. The answer is not typing:
+// held behind the injection window it would reach the shell as keystrokes long
+// after the program stopped waiting (a multiplexer's startup queries, printed
+// at the prompt).
+func TestAnswersToQueriesAreNotHeldByTheInjection(t *testing.T) {
+	t0 := &terminal{screen: term.New(80, 24, 0), folderToken: "token"}
+	shell := &fakeShell{}
+	t0.shell = shell
+	t0.injection = terminalInjection{phase: injectionWaiting}
+
+	t0.answerQuery([]byte("\x1b[?62;22c"))
+	if got := string(shell.input); got != "\x1b[?62;22c" {
+		t.Fatalf("answer written = %q, want it sent while the injection waits", got)
+	}
+	if len(t0.injection.queued) != 0 {
+		t.Fatalf("the answer was queued behind the injection: %q", t0.injection.queued)
+	}
+	t0.writeShellInput([]byte("ls\r"))
+	if len(t0.injection.queued) != 1 {
+		t.Fatal("typing during the injection must still wait for it")
+	}
+}
+
+// A full-screen program owns the terminal, so the line cannot be typed to a
+// shell and its marker cannot come back: the shell runs unintegrated at once
+// instead of holding input until the window times out.
+func TestInjectionIsNotTypedIntoAFullScreenProgram(t *testing.T) {
+	screen := term.New(80, 24, 0)
+	screen.Write([]byte("\x1b[?1049h"))
+	t0 := &terminal{screen: screen, folderToken: "token", integrated: true}
+	shell := &fakeShell{}
+	t0.shell = shell
+	session := &Session{term: t0}
+	state := &State{}
+	t0.injection = terminalInjection{
+		phase:  injectionWaiting,
+		probed: true,
+		probe:  shellProbe{path: "/bin/bash", kind: shellkind.POSIX, line: " : motty-token\n"},
+	}
+	t0.injection.queue([]byte("typed\r"))
+
+	state.beginInjection(session)
+	if t0.injection.phase != injectionFailed || t0.integrated {
+		t.Fatalf("phase = %v integrated = %v, want a failed, unintegrated injection", t0.injection.phase, t0.integrated)
+	}
+	if got := string(shell.input); got != "typed\r" {
+		t.Fatalf("shell received %q, want only the released input and no activation line", got)
+	}
+}

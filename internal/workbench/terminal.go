@@ -827,7 +827,23 @@ func (t *terminal) sendProtocol(p []byte) bool {
 	if t.shell == nil || len(p) == 0 {
 		return false
 	}
-	accepted := t.writeShellInput(p)
+	return t.recordProtocol(p, t.writeShellInput(p))
+}
+
+// answerQuery writes the terminal's answer to a query the program on the far
+// side made (device attributes, colors, mode reports). An answer is not input:
+// the program asked for it now and stops waiting shortly, so it is never held
+// back with the user's typing while the shell integration is installed. A
+// reply that arrived after the window would reach the shell as keystrokes.
+// ASCII, so no charset conversion applies.
+func (t *terminal) answerQuery(p []byte) bool {
+	if t.shell == nil || len(p) == 0 {
+		return false
+	}
+	return t.recordProtocol(p, t.shell.Write(p))
+}
+
+func (t *terminal) recordProtocol(p []byte, accepted bool) bool {
 	if accepted {
 		t.noteInput()
 		t.recording.append(t.recordingNow(), terminalRecordingInput, p)
@@ -1055,7 +1071,7 @@ func (state *State) shellOpened(session *Session, shell Shell, err error) {
 		}
 	}
 	t.screen.SetReply(func(reply []byte) {
-		t.sendProtocol(reply)
+		t.answerQuery(reply)
 	})
 	t.screen.SetCellPixels(state.cellPixelWidth, state.cellPixelHeight)
 	t.armInitialization(session)
