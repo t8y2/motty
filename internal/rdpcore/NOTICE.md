@@ -36,6 +36,10 @@ Changed:
 * Standard RDP Security (RC4 without TLS) is used only when
   `Options.Security` is `SecurityStandard`; the default refuses a server that
   offers nothing else.
+* `Options.LegacyTLS` adds the RSA key exchange cipher suites (AES-CBC and
+  AES-GCM) to the TLS offer for a server that leaves nothing newer reachable.
+  They are named explicitly because Go's default offer leaves RSA key exchange
+  out (`tlsrsakex`) and CBC-SHA256 out of every list it builds.
 * A wrong password stops after one attempt (`%w` instead of `%v` kept
   `nla.ErrCredentialsFatal` visible). A server that drops the connection after the
   credentials were sent is still not retried, but it is reported as an unproven

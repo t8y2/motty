@@ -1252,6 +1252,7 @@ type Messages struct {
 	ConnShowProgress           string
 	ConnClose                  string
 	ConnRetry                  string
+	ConnLegacyTLS              string
 	ConnCancelReconnect        string
 	ConnExportLog              string
 	ConnReconnectWaitingFmt    string

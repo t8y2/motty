@@ -309,7 +309,8 @@ func sameSavedHost(left, right savedHost) bool {
 		slices.Equal(left.RemoteLogPaths, right.RemoteLogPaths) &&
 		left.ViaSSH == right.ViaSSH && left.Clipboard == right.Clipboard && left.Console == right.Console &&
 		left.NoAudio == right.NoAudio &&
-		left.StandardSecurity == right.StandardSecurity && left.Chromeless == right.Chromeless
+		left.StandardSecurity == right.StandardSecurity && left.LegacyTLS == right.LegacyTLS &&
+		left.Chromeless == right.Chromeless
 }
 
 func sameSavedProxy(left, right *savedOutboundProxy) bool {

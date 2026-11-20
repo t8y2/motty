@@ -3,6 +3,7 @@ package workbench
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/desktop"
+	rdpdesktop "motty/internal/desktop/rdp"
 	"motty/internal/sshconn"
 )
 
@@ -61,14 +63,14 @@ func rdpState(t *testing.T, certificate *[]byte, opened *[]desktopRequest) (*Sta
 }
 
 func TestRDPHostIsSavedWithItsAccountAndDefaultPort(t *testing.T) {
-	host := Host{Label: "Win", Address: "win.example.com", User: `CORP\alice`, Protocol: protocolRDP, Clipboard: true, Console: true, StandardSecurity: true}
+	host := Host{Label: "Win", Address: "win.example.com", User: `CORP\alice`, Protocol: protocolRDP, Clipboard: true, Console: true, StandardSecurity: true, LegacyTLS: true}
 	host.normalizeEndpoint()
 	host.finish()
 	if host.Port != 3389 || host.User != `CORP\alice` || host.target != "rdp://win.example.com" {
 		t.Fatalf("host = %+v", host)
 	}
 	var restored Host
-	if !restored.applyTransport(host.transport()) || restored.Protocol != protocolRDP || !restored.Clipboard || !restored.Console || !restored.StandardSecurity {
+	if !restored.applyTransport(host.transport()) || restored.Protocol != protocolRDP || !restored.Clipboard || !restored.Console || !restored.StandardSecurity || !restored.LegacyTLS {
 		t.Fatalf("restored = %+v", restored)
 	}
 	if user, domain := rdpAccount(`CORP\alice`); user != "alice" || domain != "CORP" {
@@ -197,6 +199,122 @@ func TestRDPStandardSecurityIsAnRDPOnlySwitch(t *testing.T) {
 	var restored Host
 	if !restored.applyTransport(host.transport()) || !restored.StandardSecurity {
 		t.Fatalf("restored = %+v", restored)
+	}
+}
+
+// Legacy TLS is an RDP-only switch: a VNC host cannot ask for it, and the
+// choice is saved with the host.
+func TestRDPLegacyTLSIsAnRDPOnlySwitch(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.openHostDialog()
+	state.editor.setProtocol(protocolVNC)
+	canvas, _ := paintAt(state, gfx.Size{Width: 1200, Height: 1000})
+	if _, ok := hitByID(canvas, hitDialogLegacyTLS); ok {
+		t.Fatal("a VNC host was offered legacy TLS")
+	}
+	state.editor.setProtocol(protocolRDP)
+	canvas, _ = paintAt(state, gfx.Size{Width: 1200, Height: 1000})
+	if _, ok := hitByID(canvas, hitDialogLegacyTLS); !ok {
+		t.Fatal("an RDP host was not offered legacy TLS")
+	}
+	state.Click(hitDialogLegacyTLS)
+	typeInto(state, hitDialogLabel, "Old Windows")
+	typeInto(state, hitDialogAddress, "old.example.com")
+	typeInto(state, hitDialogUser, `CORP\alice`)
+	state.Click(hitDialogSubmit)
+	if state.modal != modalNone || state.dialogError != "" {
+		t.Fatalf("submit: modal=%d error=%q", state.modal, state.dialogError)
+	}
+	index := state.hostIndexByEndpoint(Host{Protocol: protocolRDP, Address: "old.example.com", User: `CORP\alice`, Port: 3389})
+	if index < 0 {
+		t.Fatal("the RDP host was not added")
+	}
+	host := state.hosts[index]
+	if !host.LegacyTLS {
+		t.Fatal("the legacy TLS switch was not saved with the host")
+	}
+	var restored Host
+	if !restored.applyTransport(host.transport()) || !restored.LegacyTLS {
+		t.Fatalf("restored = %+v", restored)
+	}
+}
+
+// A TLS handshake failure offers the legacy-suite retry: the click turns the
+// host's switch on, saves it, and dials again.
+func TestRDPTLSFailureOffersLegacyTLSRetry(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	state.options.Invalidate = func() {}
+	state.connectionReconnect = reconnectOff
+	var mu sync.Mutex
+	var opened []desktopRequest
+	state.dialDesktop = func(_ context.Context, request desktopRequest) (desktop.Session, error) {
+		mu.Lock()
+		opened = append(opened, request)
+		first := len(opened) == 1
+		mu.Unlock()
+		if first {
+			return nil, fmt.Errorf("%w: EOF", rdpdesktop.ErrTLSFailed)
+		}
+		return newPictureOnly(), nil
+	}
+	host := addStreamHost(state, Host{Label: "Win", Address: "win.example.com", User: "alice", Protocol: protocolRDP})
+	openHost(state)
+	session, _ := state.sessionByIDPointer(state.activeSessionID)
+	waitUntil(t, state, "the TLS failure", func() bool { return session.phase == sshconn.PhaseFailed })
+	canvas, _ := paintAt(state, gfx.Size{Width: 1200, Height: 800})
+	if _, ok := hitByID(canvas, hitConnLegacyTLS); !ok {
+		t.Fatal("a TLS failure did not offer the legacy retry")
+	}
+	if _, ok := hitByID(canvas, hitConnRetry); !ok {
+		t.Fatal("a TLS failure lost the plain retry")
+	}
+
+	state.Click(hitConnLegacyTLS)
+	waitUntil(t, state, "the second dial", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(opened) == 2
+	})
+	mu.Lock()
+	second := opened[1]
+	mu.Unlock()
+	if !second.Host.LegacyTLS {
+		t.Fatal("the second dial did not allow legacy TLS")
+	}
+	index := state.hostIndex(host.ID)
+	if index < 0 || !state.hosts[index].LegacyTLS {
+		t.Fatalf("the host was not saved with legacy TLS: %+v", state.hosts)
+	}
+	if !session.host.LegacyTLS {
+		t.Fatal("the session kept the host without legacy TLS")
+	}
+}
+
+// The legacy retry is only for a failed RDP TLS handshake that has not already
+// allowed the suites; other failures keep the plain retry.
+func TestLegacyTLSRetryOnlyForAnRDPTLSFailure(t *testing.T) {
+	tlsFailure := fmt.Errorf("%w: EOF", rdpdesktop.ErrTLSFailed)
+	tests := []struct {
+		name   string
+		host   Host
+		err    error
+		wanted bool
+	}{
+		{"RDP TLS failure", Host{Protocol: protocolRDP}, tlsFailure, true},
+		{"RDP TLS failure with legacy allowed", Host{Protocol: protocolRDP, LegacyTLS: true}, tlsFailure, false},
+		{"RDP TLS failure with standard security", Host{Protocol: protocolRDP, StandardSecurity: true}, tlsFailure, false},
+		{"RDP other failure", Host{Protocol: protocolRDP}, errors.New("connection reset"), false},
+		{"VNC with a TLS error", Host{Protocol: protocolVNC}, tlsFailure, false},
+	}
+	state := &State{}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			session := &Session{host: test.host, err: test.err, phase: sshconn.PhaseFailed}
+			if got := state.offersLegacyTLSRetry(session); got != test.wanted {
+				t.Fatalf("offersLegacyTLSRetry = %v, want %v", got, test.wanted)
+			}
+		})
 	}
 }
 
