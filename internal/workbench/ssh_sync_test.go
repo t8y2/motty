@@ -376,6 +376,10 @@ func TestSSHSyncToggleThroughSettings(t *testing.T) {
 	state.openSettings()
 	state.selectSettingsCategory(settingsConnection)
 	canvas, texts := paintedTexts(state)
+	for attempt := 0; attempt < 10 && !hasHit(canvas, hitSettingsSSHSyncToggle); attempt++ {
+		state.settingsScroll += 160
+		canvas, texts = paintedTexts(state)
+	}
 	if !contains(texts, state.messages.SSHSync.ToggleRow) || !hasHit(canvas, hitSettingsSSHSyncToggle) {
 		t.Fatalf("setting is not shown: %v", texts)
 	}

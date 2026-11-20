@@ -336,24 +336,28 @@ func (state *State) declareToolbarEntry(row ui.ListRow) {
 	if !entry.Enabled {
 		color = theme.MutedForeground
 	}
-	row.Element.Height(44).MarginBottom(4).PadSides(0, 7, 0, 3).Gap(8).Items(ui.Center).
-		Radius(theme.Metrics.RadiusControl).Border(1, theme.Border).Background(theme.Background).Children(func() {
-		// The handle is named by its row: the list starts a drag from the handle
-		// the row's index names (ListState.Handle).
-		reorderHandle(c, hitToolbarHandles.At(row.Index), label, false, 44)
-		ui.Row(c).Grow(1).Gap(10).Items(ui.Center).Children(func() {
-			ui.Icon(c, lucideIcons[spec.icon]).Size(18, 18).Color(color).Shrink(0)
-			ui.Text(c, label).FontSize(theme.Metrics.FontSizeM).Color(color).Ellipsis().Grow(1)
-			if editor.group <= toolbarTerminal {
-				zone := state.toolbarDockZoneLabel(state.toolbarDockZoneFor(editor.group, entry.Key))
-				ui.Button(c, zone).Hit(hitToolbarPositions.At(index), zone).Outline().Shrink(0)
-			}
-			checked := entry.Enabled
-			if editor.group == toolbarTerminal && entry.Key == "latency" {
-				// This switch is the same preference as Settings > Show latency.
-				checked = state.terminalShowLatency
-			}
-			ui.Switch(c, state.pageFlag(checked), "").Hit(hitToolbarToggles.At(index), label).Shrink(0)
+	// The virtual list measures the root's height, excluding its margin. Keep
+	// the gap inside that height so the last row remains reachable when scrolled.
+	row.Element.Height(48).Children(func() {
+		ui.Row(c).Height(44).FillWidth().PadSides(0, 7, 0, 3).Gap(8).Items(ui.Center).
+			Radius(theme.Metrics.RadiusControl).Border(1, theme.Border).Background(theme.Background).Children(func() {
+			// The handle is named by its row: the list starts a drag from the handle
+			// the row's index names (ListState.Handle).
+			reorderHandle(c, hitToolbarHandles.At(row.Index), label, false, 44)
+			ui.Row(c).Grow(1).Gap(10).Items(ui.Center).Children(func() {
+				ui.Icon(c, lucideIcons[spec.icon]).Size(18, 18).Color(color).Shrink(0)
+				ui.Text(c, label).FontSize(theme.Metrics.FontSizeM).Color(color).Ellipsis().Grow(1)
+				if editor.group <= toolbarTerminal {
+					zone := state.toolbarDockZoneLabel(state.toolbarDockZoneFor(editor.group, entry.Key))
+					ui.Button(c, zone).Hit(hitToolbarPositions.At(index), zone).Outline().Shrink(0)
+				}
+				checked := entry.Enabled
+				if editor.group == toolbarTerminal && entry.Key == "latency" {
+					// This switch is the same preference as Settings > Show latency.
+					checked = state.terminalShowLatency
+				}
+				ui.Switch(c, state.pageFlag(checked), "").Hit(hitToolbarToggles.At(index), label).Shrink(0)
+			})
 		})
 	})
 }

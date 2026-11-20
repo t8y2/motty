@@ -87,7 +87,7 @@ func TestToolbarSettingsNativeControlsDragKeyboardAndSwitchAcrossScales(t *testi
 				lastSlot := len(lastEntries) - 1
 				for lastSlot > 0 {
 					// A row cut by the list's edge is not a place to drop on.
-					if row, ok := toolbarRowHit(t, state, view, group, lastEntries[lastSlot].Key); ok && row.Height >= 44 {
+					if row, ok := toolbarRowHit(t, state, view, group, lastEntries[lastSlot].Key); ok && row.Height >= 48 {
 						break
 					}
 					lastSlot--
@@ -118,13 +118,13 @@ func TestToolbarSettingsNativeControlsDragKeyboardAndSwitchAcrossScales(t *testi
 				if err := view.Press(x, y); err != nil {
 					t.Fatal(err)
 				}
-				if err := view.Move(b.X+b.Width/2, b.Y+b.Height/2); err != nil {
+				if err := view.Move(b.X+b.Width/2, b.Y+b.Height*0.75); err != nil {
 					t.Fatal(err)
 				}
 				if err := view.Driver().Cancel(); err != nil {
 					t.Fatal(err)
 				}
-				if err := view.Release(b.X+b.Width/2, b.Y+b.Height/2); err != nil {
+				if err := view.Release(b.X+b.Width/2, b.Y+b.Height*0.75); err != nil {
 					t.Fatal(err)
 				}
 				if state.toolbars.entries(group)[0].Key != original {
@@ -133,13 +133,13 @@ func TestToolbarSettingsNativeControlsDragKeyboardAndSwitchAcrossScales(t *testi
 				if err := view.Press(x, y); err != nil {
 					t.Fatal(err)
 				}
-				if err := view.Move(b.X+b.Width/2, b.Y+b.Height/2); err != nil {
+				if err := view.Move(b.X+b.Width/2, b.Y+b.Height*0.75); err != nil {
 					t.Fatal(err)
 				}
 				if state.toolbars.entries(group)[0].Key != original {
 					t.Fatal("drag saved before drop")
 				}
-				if err := view.Release(b.X+b.Width/2, b.Y+b.Height/2); err != nil {
+				if err := view.Release(b.X+b.Width/2, b.Y+b.Height*0.75); err != nil {
 					t.Fatal(err)
 				}
 				entries := state.toolbars.entries(group)
@@ -222,7 +222,8 @@ func TestToolbarSettingsSmallWindowCanScrollDuringDrag(t *testing.T) {
 	entries := state.toolbars.entries(toolbarTerminal)
 	first, last := entries[0].Key, entries[len(entries)-1].Key
 	a, _ := toolbarRowHit(t, state, view, toolbarTerminal, first)
-	x, y := a.X+12, a.Y+a.Height/2
+	grip := dualHit(t, view, hitToolbarHandles.At(0))
+	x, y := grip.X+grip.Width/2, grip.Y+grip.Height/2
 	if err := view.Press(x, y); err != nil {
 		t.Fatal(err)
 	}
@@ -230,10 +231,17 @@ func TestToolbarSettingsSmallWindowCanScrollDuringDrag(t *testing.T) {
 		t.Fatal(err)
 	}
 	box := state.toolbarEditor.list.Rect()
+	// Keep the pointer away from the top-edge auto-scroll band while wheeling.
+	if err := view.Move(x, box.Y+box.Height/2); err != nil {
+		t.Fatal(err)
+	}
 	if err := view.Scroll(gfx.ScrollEvent{X: box.X + box.Width/2, Y: box.Y + box.Height/2, DeltaY: 1000}); err != nil {
 		t.Fatal(err)
 	}
-	b, _ := toolbarRowHit(t, state, view, toolbarTerminal, last)
+	b, found := toolbarRowHit(t, state, view, toolbarTerminal, last)
+	if !found || b.Height < a.Height {
+		t.Fatal("the last row is not visible after scrolling during the drag")
+	}
 	if err := view.Move(b.X+12, b.Y+b.Height-4); err != nil {
 		t.Fatal(err)
 	}

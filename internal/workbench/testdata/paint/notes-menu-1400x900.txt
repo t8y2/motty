@@ -42,7 +42,7 @@ text "Notes" {52 474.5 37.99414 21}
 text "Local Terminal" {52 815.5 94.36328 21}
 text "Settings" {52 855.5 52.759766 21}
 text "Operations" {255 92 156 20}
-text "Release runbook" {249 117 140 20}
+text "Release runbook" {249 122 140 20}
 text "Ideas" {233 152 178 20}
 text "Release runbook" {495 48 660 22}
 text "operations ×" {455 90 87.515625 20}
@@ -51,16 +51,16 @@ text "runbook ×" {548.5156 90 74.55469 20}
 text "runbook" {548.5156 90 47.554688 20}
 text "     Production ×" {629.0703 90 104.32617 20}
 text "     Production" {629.0703 90 77.32617 20}
-text "Heading" {444 124 28 26}
-text "Bold" {476 124 28 26}
-text "Inline code" {538 124 28 26}
-text "Code block" {570 124 28 26}
-text "Bullet list" {602 124 28 26}
-text "Numbered list" {634 124 28 26}
-text "Task list" {666 124 28 26}
-text "Quote" {698 124 28 26}
-text "Link" {730.7075 124 28 26}
-text "Updated 2026-01-02 11:04" {1242.292 128 133.70801 18}
+text "H1" {450.20703 124 28 26}
+text "B" {485.5874 124 28 26}
+text "`" {549.7373 124 28 26}
+text "{ }" {576.28906 124 28 26}
+text "•" {612.41797 124 28 26}
+text "1." {643.1738 124 28 26}
+text "☑" {673 124 28 26}
+text "❞" {705 124 28 26}
+text "↗" {738.7739 124 28 26}
+text "Updated 2026-01-02 03:04" {1237.7051 128 138.29492 18}
 text "1" {469.80002 168 8.400001 17}
 text "2" {469.80002 189 8.400001 17}
 text "3" {469.80002 210 8.400001 17}
@@ -140,16 +140,16 @@ hit "Remove tag runbook" button {592.0703 86 22 24} disabled=false
 hit "runbook" button {539.5156 86 52.554688 24} disabled=false
 hit "Remove tag Production\nprod.example.com\ndeploy" button {702.3965 86 22 24} disabled=false
 hit "Production\nprod.example.com\ndeploy" button {620.0703 86 82.32617 24} disabled=false
-hit "Heading" button {444 124 28 26} disabled=false
-hit "Bold" button {476 124 28 26} disabled=false
+hit "H1" button {444 124 28 26} disabled=false
+hit "B" button {476 124 28 26} disabled=false
 hit "Italic" button {508 124 26 26} disabled=false
-hit "Inline code" button {538 124 28 26} disabled=false
-hit "Code block" button {570 124 28 26} disabled=false
-hit "Bullet list" button {602 124 28 26} disabled=false
-hit "Numbered list" button {634 124 28 26} disabled=false
-hit "Task list" button {666 124 28 26} disabled=false
-hit "Quote" button {698 124 28 26} disabled=false
-hit "Link" button {730 124 28 26} disabled=false
+hit "`" button {538 124 28 26} disabled=false
+hit "{ }" button {570 124 28 26} disabled=false
+hit "•" button {602 124 28 26} disabled=false
+hit "1." button {634 124 28 26} disabled=false
+hit "☑" button {666 124 28 26} disabled=false
+hit "❞" button {698 124 28 26} disabled=false
+hit "↗" button {730 124 28 26} disabled=false
 hit "Table" button {762 124 26 26} disabled=false
 hit "Horizontal rule" button {792 124 26 26} disabled=false
 hit "Markdown source" textfield {442 158 934 718} disabled=false

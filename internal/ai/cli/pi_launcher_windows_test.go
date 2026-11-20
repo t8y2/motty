@@ -12,6 +12,17 @@ import (
 	"motty/internal/ai/store"
 )
 
+// A Windows temp directory can use its 8.3 name while resolution returns its
+// long name. Compare file identity without weakening the selected-install check.
+func samePiFile(a, b string) bool {
+	first, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	second, err := os.Stat(b)
+	return err == nil && os.SameFile(first, second)
+}
+
 func writePiLauncherFixture(t *testing.T, path, contents string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -93,10 +104,10 @@ func TestPiLaunchersUseSelectedInstallAndManifestEntry(t *testing.T) {
 			// A co-located official launcher must not override the npm shim.
 			writePiLauncherFixture(t, filepath.Join(prefix, "pi-launcher.js"), "// other install")
 			c, err := resolve(store.KindPiCLI, launcher)
-			if err != nil || !strings.EqualFold(c.program, node) || len(c.args) != 1 || !strings.EqualFold(c.args[0], entry) {
+			if err != nil || !samePiFile(c.program, node) || len(c.args) != 1 || !samePiFile(c.args[0], entry) {
 				t.Fatalf("resolved = %+v, error = %v", c, err)
 			}
-			if got, err := ExecutablePath(store.KindPiCLI, launcher); err != nil || got != launcher {
+			if got, err := ExecutablePath(store.KindPiCLI, launcher); err != nil || !samePiFile(got, launcher) {
 				t.Fatalf("saved launcher = %q, error = %v", got, err)
 			}
 			c.args = append([]string{"-test.run=^TestPiLauncherNodeHelper$", "--"}, c.args...)
@@ -104,7 +115,7 @@ func TestPiLaunchersUseSelectedInstallAndManifestEntry(t *testing.T) {
 			c.env = []string{"MOTTY_TEST_PI_LAUNCHER=yes"}
 			raw, err := capture(t.Context(), c, 4096)
 			var args []string
-			if err != nil || json.Unmarshal(raw, &args) != nil || len(args) < 4 || !strings.EqualFold(args[3], entry) || !reflect.DeepEqual(args[4:], []string{"argument with spaces", "literal&argument"}) {
+			if err != nil || json.Unmarshal(raw, &args) != nil || len(args) < 4 || !samePiFile(args[3], entry) || !reflect.DeepEqual(args[4:], []string{"argument with spaces", "literal&argument"}) {
 				t.Fatalf("argv = %s, error = %v", raw, err)
 			}
 			// An upgrade may move bin.pi while the selected shim still has
@@ -114,7 +125,7 @@ func TestPiLaunchersUseSelectedInstallAndManifestEntry(t *testing.T) {
 				t.Fatal(err)
 			}
 			c, err = resolve(store.KindPiCLI, launcher)
-			if err != nil || len(c.args) != 1 || !strings.EqualFold(c.args[0], upgraded) {
+			if err != nil || len(c.args) != 1 || !samePiFile(c.args[0], upgraded) {
 				t.Fatalf("upgraded = %+v, error = %v", c, err)
 			}
 		})
@@ -142,11 +153,11 @@ $standaloneNode=Join-Path $env:LOCALAPPDATA "pi-node/current/node.exe"
 			launcher := filepath.Join(bin, "pi"+tc.ext)
 			writePiLauncherFixture(t, launcher, tc.script)
 			c, err := resolve(store.KindPiCLI, launcher)
-			if err != nil || !strings.EqualFold(c.program, node) || len(c.args) != 1 || !strings.EqualFold(c.args[0], entry) {
+			if err != nil || !samePiFile(c.program, node) || len(c.args) != 1 || !samePiFile(c.args[0], entry) {
 				t.Fatalf("resolved = %+v, error = %v", c, err)
 			}
 			c, err = resolve(store.KindPiCLI, entry)
-			if err != nil || !strings.EqualFold(c.program, node) {
+			if err != nil || !samePiFile(c.program, node) {
 				t.Fatalf("direct managed JS Node = %+v, error = %v", c, err)
 			}
 			fallbackDir := filepath.Join(root, "path node")
@@ -156,12 +167,12 @@ $standaloneNode=Join-Path $env:LOCALAPPDATA "pi-node/current/node.exe"
 				t.Fatal(err)
 			}
 			c, err = resolve(store.KindPiCLI, launcher)
-			if err != nil || !strings.EqualFold(c.program, fallback) {
+			if err != nil || !samePiFile(c.program, fallback) {
 				t.Fatalf("standalone removed = %+v, error = %v", c, err)
 			}
 			writePiLauncherFixture(t, launcher, strings.ReplaceAll(tc.script, "pi-node", "unused-node"))
 			c, err = resolve(store.KindPiCLI, launcher)
-			if err != nil || !strings.EqualFold(c.program, fallback) {
+			if err != nil || !samePiFile(c.program, fallback) {
 				t.Fatalf("default official Node = %+v, error = %v", c, err)
 			}
 		})
@@ -181,11 +192,11 @@ func TestPiPATHDiscoveryAndLinksStayWithSelectedLauncher(t *testing.T) {
 	writePiLauncherFixture(t, filepath.Join(other, "pi.cmd"), `node "%dp0%\node_modules\@earendil-works\pi-coding-agent\dist\bundle\cli.js" %*`)
 	t.Setenv("PATH", selected+string(os.PathListSeparator)+other)
 	c, err := resolve(store.KindPiCLI, "")
-	if err != nil || !strings.EqualFold(c.program, node) || len(c.args) != 1 || !strings.EqualFold(c.args[0], entry) {
+	if err != nil || !samePiFile(c.program, node) || len(c.args) != 1 || !samePiFile(c.args[0], entry) {
 		t.Fatalf("PATH discovery = %+v, error = %v", c, err)
 	}
 	c, err = resolve(store.KindPiCLI, filepath.Join(other, "pi.cmd"))
-	if err != nil || len(c.args) != 1 || !strings.EqualFold(c.args[0], otherEntry) {
+	if err != nil || len(c.args) != 1 || !samePiFile(c.args[0], otherEntry) {
 		t.Fatalf("explicit override = %+v, error = %v", c, err)
 	}
 	t.Run("symlink", func(t *testing.T) {
@@ -194,7 +205,7 @@ func TestPiPATHDiscoveryAndLinksStayWithSelectedLauncher(t *testing.T) {
 			t.Skipf("symlinks unavailable: %v", err)
 		}
 		c, err := resolve(store.KindPiCLI, link)
-		if err != nil || !strings.EqualFold(c.program, node) || len(c.args) != 1 || !strings.EqualFold(c.args[0], entry) {
+		if err != nil || !samePiFile(c.program, node) || len(c.args) != 1 || !samePiFile(c.args[0], entry) {
 			t.Fatalf("linked launcher = %+v, error = %v", c, err)
 		}
 	})
@@ -210,7 +221,7 @@ func TestPiLocalNPMShimAndDirectEntry(t *testing.T) {
 	writePiLauncherFixture(t, launcher, `node "%dp0%\..\@earendil-works\pi-coding-agent\dist\bundle\cli.js" %*`)
 	for _, path := range []string{launcher, entry} {
 		c, err := resolve(store.KindPiCLI, path)
-		if err != nil || !strings.EqualFold(c.program, node) || len(c.args) != 1 || !strings.EqualFold(c.args[0], entry) {
+		if err != nil || !samePiFile(c.program, node) || len(c.args) != 1 || !samePiFile(c.args[0], entry) {
 			t.Fatalf("%q = %+v, error = %v", path, c, err)
 		}
 	}
@@ -265,7 +276,7 @@ require(path.join(root, "releases", version, "cli.js"));`)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if c.program != node {
+		if !samePiFile(c.program, node) {
 			t.Fatalf("wrong Node: %q", c.program)
 		}
 		c.args = append(c.args, "argument with spaces")
@@ -360,7 +371,7 @@ func TestPiLauncherIgnoresCommentedInstallations(t *testing.T) {
 			launcher := filepath.Join(prefix, "pi"+tc.ext)
 			writePiLauncherFixture(t, launcher, tc.comment+"\n"+tc.active)
 			c, err := resolve(store.KindPiCLI, launcher)
-			if err != nil || len(c.args) != 1 || !strings.EqualFold(c.args[0], entry) {
+			if err != nil || len(c.args) != 1 || !samePiFile(c.args[0], entry) {
 				t.Fatalf("resolved = %+v, error = %v", c, err)
 			}
 			if err := os.Remove(entry); err != nil {
@@ -383,7 +394,7 @@ func TestPiLauncherIgnoresAnInlineComment(t *testing.T) {
 	launcher := filepath.Join(prefix, "pi.ps1")
 	writePiLauncherFixture(t, launcher, `& node "$basedir/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" $args # "$basedir/node_modules/@mariozechner/pi-coding-agent/dist/cli.js"`)
 	c, err := resolve(store.KindPiCLI, launcher)
-	if err != nil || len(c.args) != 1 || !strings.EqualFold(c.args[0], entry) {
+	if err != nil || len(c.args) != 1 || !samePiFile(c.args[0], entry) {
 		t.Fatalf("resolved = %+v, error = %v", c, err)
 	}
 }
@@ -395,7 +406,7 @@ func TestPiOfficialDiscoveryWithoutUpdatedPATH(t *testing.T) {
 	launcher := filepath.Join(home, ".pi", "agent", "bin", "pi.cmd")
 	writePiLauncherFixture(t, launcher, `node "%~dp0pi-launcher.js" %*`)
 	path, err := ExecutablePath(store.KindPiCLI, "")
-	if err != nil || !strings.EqualFold(path, launcher) {
+	if err != nil || !samePiFile(path, launcher) {
 		t.Fatalf("official fallback = %q, error = %v", path, err)
 	}
 	if _, err := ExecutablePath(store.KindPiCLI, filepath.Join(home, "missing", "pi.cmd")); err == nil {

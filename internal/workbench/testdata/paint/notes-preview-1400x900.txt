@@ -36,7 +36,7 @@ text "Notes" {52 474.5 37.99414 21}
 text "Local Terminal" {52 815.5 94.36328 21}
 text "Settings" {52 855.5 52.759766 21}
 text "Operations" {255 92 236 20}
-text "Release runbook" {249 117 220 20}
+text "Release runbook" {249 122 220 20}
 text "Ideas" {233 152 258 20}
 text "Release runbook" {575 48 580 22}
 text "operations ×" {535 90 87.515625 20}

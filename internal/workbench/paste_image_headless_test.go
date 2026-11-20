@@ -21,6 +21,9 @@ func TestImageOnlyClipboardPastesIntoLocalTerminalThroughNativeShortcut(t *testi
 			t.Setenv("XDG_CACHE_HOME", t.TempDir())
 			t.Setenv("LOCALAPPDATA", t.TempDir())
 			state, owner := openLocal(t)
+			// This integration test reads the headless driver's clipboard instead
+			// of newTestState's isolated no-image stub.
+			state.options.ClipboardImagePNG = app.ClipboardImagePNG
 			state.Wake()
 			if owner.term == nil || owner.term.shell == nil {
 				t.Fatal("local shell did not start")
