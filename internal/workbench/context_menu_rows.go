@@ -70,7 +70,10 @@ type menuEntry struct {
 	// pageContent makes it a row whose controls the page declares.
 	content     func(*gfx.Canvas, gfx.Rect, gfx.Theme)
 	pageContent func(ui.C, gfx.Rect)
-	height      float32
+	// submenu, when set, makes the entry open a menu of its own. Choosing a row
+	// of that menu is the body's concern; this row has no action of its own.
+	submenu func(*ui.MenuItems)
+	height  float32
 }
 
 // menuRows collects the rows of a context menu before it is painted, so its
@@ -84,6 +87,16 @@ type menuRows struct {
 func (rows *menuRows) add(item components.ContextMenuItem) {
 	if rows.count < len(rows.entries) {
 		rows.entries[rows.count] = menuEntry{item: item}
+		rows.count++
+	}
+}
+
+// addSubmenu adds a row that opens a submenu. body runs while that submenu is
+// open and declares its rows.
+func (rows *menuRows) addSubmenu(item components.ContextMenuItem, body func(*ui.MenuItems)) {
+	if rows.count < len(rows.entries) {
+		item.Kind = components.ContextMenuSubmenu
+		rows.entries[rows.count] = menuEntry{item: item, submenu: body}
 		rows.count++
 	}
 }
@@ -173,6 +186,13 @@ func (rows *menuRows) declare(c ui.C, menu *ui.MenuItems, choose func(gfx.ID)) {
 		}
 		if entry.pageContent != nil {
 			menu.ContentPage(entry.height, entry.pageContent)
+			continue
+		}
+		if entry.submenu != nil {
+			item := menu.Sub(entry.item.Label, entry.submenu).Icon(entry.item.Icon).Disabled(entry.item.Disabled)
+			if entry.item.Description != "" {
+				item.Description(entry.item.Description)
+			}
 			continue
 		}
 		row := entry.item

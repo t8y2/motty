@@ -394,6 +394,123 @@ func (state *State) communitySchemeIndexByName(name string) (int, bool) {
 	return 0, false
 }
 
+// schemePreview is the unsaved scheme the theme menu is showing. saved is what
+// the look wore when the menu opened. A hovered row replaces it until the
+// pointer leaves that row; a click keeps the row's scheme, and closing the menu
+// without one puts saved back.
+type schemePreview struct {
+	on       bool
+	keep     bool
+	saved    string
+	hovered  string
+	sawHover bool
+}
+
+// beginSchemePreview remembers the scheme to restore, once, when the theme
+// button's menu opens. Later paints only clear the hover seen last time.
+func (state *State) beginSchemePreview() {
+	preview := &state.schemePreview
+	if !preview.on {
+		*preview = schemePreview{on: true, saved: state.activeScheme()}
+		return
+	}
+	preview.sawHover = false
+	preview.hovered = ""
+}
+
+// finishSchemePreview puts the original scheme back when the menu closes
+// without a choice, and asks for the frame that shows it.
+func (state *State) finishSchemePreview(c ui.C) {
+	preview := &state.schemePreview
+	if !preview.on {
+		return
+	}
+	saved, keep := preview.saved, preview.keep
+	*preview = schemePreview{}
+	if keep || !state.setTerminalScheme(saved) {
+		return
+	}
+	if canvas := c.Canvas(); canvas != nil {
+		canvas.RequestFrame()
+	}
+}
+
+// followSchemePreview wears the hovered scheme, or the original one when the
+// pointer is not on a scheme row. The terminal for this paint was already
+// drawn, so a change asks for the frame that shows it.
+func (state *State) followSchemePreview(c ui.C) {
+	preview := &state.schemePreview
+	if !preview.on || preview.keep {
+		return
+	}
+	want := preview.saved
+	if preview.sawHover {
+		want = preview.hovered
+	}
+	if !state.setTerminalScheme(want) {
+		return
+	}
+	if canvas := c.Canvas(); canvas != nil {
+		canvas.RequestFrame()
+	}
+}
+
+// declareToolbarSchemeMenu lists the terminal color schemes in the theme
+// button's menu. The hand-written built-ins stay in this menu, few enough that
+// the terminal beside it stays in view. The longer collections open beside the
+// row, so opening the menu does not cover the terminal with every scheme at once.
+// Resting on a row previews that scheme; choosing the row keeps it.
+func (state *State) declareToolbarSchemeMenu(c ui.C, menu *ui.MenuItems) {
+	menu.WidthRange(168, 280)
+	m := state.messages.Tools
+	active := state.activeScheme()
+	menu.Label(m.SchemeBuiltin)
+	for index := 0; index < schemeCount; index++ {
+		state.schemeMenuItem(c, menu, index, active)
+	}
+	dark, light := state.communitySchemeIndices()
+	state.schemeMenuGroup(c, menu, fmt.Sprintf("%s · %s", m.SchemeCommunity, m.SchemeDark), dark, active)
+	state.schemeMenuGroup(c, menu, fmt.Sprintf("%s · %s", m.SchemeCommunity, m.SchemeLight), light, active)
+	state.schemeMenuGroup(c, menu, m.SchemeMine, state.userSchemeIndices(), active)
+}
+
+// schemeMenuGroup adds one collection as a submenu. An empty collection, such as
+// a data folder that holds no scheme files, adds nothing.
+func (state *State) schemeMenuGroup(c ui.C, menu *ui.MenuItems, title string, indices []int, active string) {
+	if len(indices) == 0 {
+		return
+	}
+	menu.Sub(title, func(sub *ui.MenuItems) {
+		sub.WidthRange(168, 280)
+		for _, index := range indices {
+			state.schemeMenuItem(c, sub, index, active)
+		}
+	})
+}
+
+// schemeMenuItem adds one scheme as a radio row. The pointer resting on it
+// previews the scheme; choosing the row keeps it for the look that is showing
+// and leaves the other look's scheme alone.
+func (state *State) schemeMenuItem(c ui.C, menu *ui.MenuItems, index int, active string) {
+	id, name, _ := state.schemeAt(index)
+	if id == "" {
+		return
+	}
+	item := menu.Item(name).Chosen(id == active)
+	if canvas := c.Canvas(); canvas != nil && canvas.Hovered() == item.ID() {
+		state.schemePreview.sawHover = true
+		state.schemePreview.hovered = id
+	}
+	if item.Clicked() {
+		state.schemePreview.keep = true
+		schemeID := id
+		c.After(func() {
+			state.setTerminalScheme(schemeID)
+			state.save()
+		})
+	}
+}
+
 // schemeQuickPicks is seven hand-written built-ins, one community pick and the
 // active scheme when it would otherwise be off the list.
 func (state *State) schemeQuickPicks() []int {
