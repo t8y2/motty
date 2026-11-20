@@ -3,6 +3,7 @@ package workbench
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vivaui/viva/gfx"
 )
@@ -49,6 +50,9 @@ func init() {
 		}),
 		paintScene{name: "notes-sidebar", sizes: []gfx.Size{paintDesktop, paintSmall}, open: func(t *testing.T) (*State, func(*gfx.Canvas, gfx.Size)) {
 			world, options := newSharingWorld(t)
+			// Connection elapsed text belongs to the scene, not the runner's
+			// time spent opening the notes store and decoding its preview.
+			options.Now = func() time.Duration { return time.Second }
 			s := newTestState(t, options)
 			world.connectFirst(t, s)
 			s.restoreNotes([]savedNote{

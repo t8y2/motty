@@ -387,6 +387,9 @@ func TestCompletionTypingHandsTheListToTheAutomaticOne(t *testing.T) {
 	}
 	w.type_("t")
 	list := &w.state.completion.list
+	// The automatic list waits for background history/catalog reads. Let the
+	// window adopt their results before checking the manual-to-auto handoff.
+	waitFor(t, w.state, func() bool { return list.active && list.auto })
 	if !list.active || !list.auto {
 		t.Fatal("typing did not hand the list to the automatic one")
 	}
