@@ -135,10 +135,9 @@ func desktopShortcutRoots() []shortcutRoot {
 	var roots []shortcutRoot
 	for _, folder := range []*win32.KNOWNFOLDERID{
 		win32.FOLDERID_Desktop, win32.FOLDERID_Programs, win32.FOLDERID_Startup,
-		win32.FOLDERID_PublicDesktop, win32.FOLDERID_CommonPrograms, win32.FOLDERID_CommonStartup,
 	} {
 		if path, err := win32.KnownFolderPath(folder, 0); err == nil {
-			roots = append(roots, shortcutRoot{path, folder == win32.FOLDERID_Programs || folder == win32.FOLDERID_CommonPrograms})
+			roots = append(roots, shortcutRoot{path, folder == win32.FOLDERID_Programs})
 		}
 	}
 	if roaming, err := win32.KnownFolderPath(win32.FOLDERID_RoamingAppData, 0); err == nil {
