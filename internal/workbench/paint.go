@@ -2263,6 +2263,7 @@ func (state *State) declareHostListRowContent(c ui.C, d *hostRowDrawer) {
 // the count. The actions button and the selection checkbox are painted after the
 // page, at the slots kept here.
 func (state *State) declareHostGroupTreeRow(c ui.C, d *hostRowDrawer, width float32) {
+	width = float32(int(width+4)/8 * 8)
 	pal := state.pal
 	group := state.hostGroups[state.hostTreeRows[d.index].GroupIndex]
 	textColor, countColor, pinColor := pal.text, pal.faint, pal.accent
@@ -2326,6 +2327,13 @@ func (state *State) declareHostTreeRow(c ui.C, d *hostRowDrawer, rowWidth, left 
 	nameWidth := min(max(rowWidth*0.34, nameLeast), max(addressStart-leadWidth-8, nameLeast))
 	addressWidth := max(min(rowWidth*0.25, min(tagsStart, statusStart)-addressStart-8), 0)
 	tagsWidth := min(rowWidth*0.18, statusStart-tagsStart-8)
+	// Quantize column metrics (8px) during layout to avoid continuous sub-pixel
+	// jitter and text re-rasterization storms during window resize.
+	nameWidth = float32(int(nameWidth+4)/8 * 8)
+	addressStart = float32(int(addressStart+4)/8 * 8)
+	tagsStart = float32(int(tagsStart+4)/8 * 8)
+	addressWidth = float32(int(addressWidth+4)/8 * 8)
+	tagsWidth = float32(int(tagsWidth+4)/8 * 8)
 	status, _ := state.hostStatus(host)
 	checkMargin := 46 - 10 - components.CheckboxExtent(state.Theme())
 	protocolLabel := state.hostProtocolTagLabel(host)
