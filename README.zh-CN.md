@@ -42,6 +42,14 @@ Motty 是一个桌面 SSH 客户端。终端、SFTP 面板、端口转发、远�
   </tr>
   <tr>
     <td width="50%" valign="top">
+      <a href="assets/readme-dashboard.png"><img src="assets/readme-dashboard.png" alt="监控面板的详细概览：多台主机的 CPU、内存和网络曲线" /></a>
+    </td>
+    <td width="50%" valign="top">
+      <a href="assets/readme-transfers.png"><img src="assets/readme-transfers.png" alt="传输中心：正在运行的传输、等待中的任务、历史记录和一次失败" /></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
       <a href="assets/readme-desktop.png"><img src="assets/readme-desktop.png" alt="通过 VNC 连接的远程桌面" /></a>
     </td>
     <td width="50%" valign="top">
