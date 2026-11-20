@@ -803,9 +803,8 @@ func tabGhostWidth(canvas *gfx.Canvas, title string) float32 {
 // drawTabGhost draws a tab in bounds as the active tab of the bar looks.
 func (state *State) drawTabGhost(canvas *gfx.Canvas, bounds gfx.Rect, title string, host Host, hasHost bool, color string) {
 	pal := state.pal
-	fill, edge := pal.tabActive, pal.windowStroke
-	fill = tabFill(pal, fill, color, true, false)
-	edge = tintHostSurface(edge, color, tabColorBorderTint)
+	fill := tabFill(pal, pal.tabActive, color, true, false)
+	edge := tabBorderColor(pal, color, true)
 	canvas.RoundedBorder(bounds, radius.item, 1, edge, fill)
 	badge := gfx.Rect{X: bounds.X + 4, Y: bounds.Y + (bounds.Height-20)/2, Width: 20, Height: 20}
 	if hasHost {
