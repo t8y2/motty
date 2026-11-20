@@ -569,16 +569,17 @@ func (m *fileWindowManager) declareDocumentTabRows(c ui.C, activeDocument *fileD
 		active := key == m.active
 		hovered := canvas != nil && (canvas.Hovered() == id || canvas.Hovered() == closeID)
 		foreground := pal.muted
-		fill, edge := pal.tab, pal.line
+		fill := pal.tab
 		switch {
 		case active:
-			fill, edge, foreground = pal.tabActive, pal.windowStroke, pal.text
+			fill, foreground = pal.tabActive, pal.text
 		case hovered:
 			fill, foreground = pal.tabHover, pal.text
 		}
-		if color := d.hostColor(); color != "" {
+		color := d.hostColor()
+		edge := tabBorderColor(pal, color, active)
+		if color != "" {
 			fill = tabFill(pal, fill, color, active, hovered)
-			edge = tintHostSurface(edge, color, tabColorBorderTint)
 			foreground = tabInk(pal, color, foreground)
 		}
 		label := m.tabLabel(d)

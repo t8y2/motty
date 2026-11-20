@@ -859,10 +859,10 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool
 						hovered := c.Canvas().Hovered() == id || c.Canvas().Hovered() == closeID
 						dropped := state.foreignFileTab == fileTab.session.ID
 						foreground := pal.muted
-						fill, edge := pal.tab, pal.line
+						fill := pal.tab
 						switch {
 						case active:
-							fill, edge, foreground = pal.tabActive, pal.windowStroke, pal.text
+							fill, foreground = pal.tabActive, pal.text
 						case hovered:
 							fill, foreground = pal.tabHover, pal.text
 						}
@@ -870,7 +870,7 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool
 						entry.tint = color
 						entry.base = fill
 						fill = tabFill(pal, fill, color, active, hovered)
-						edge = tintHostSurface(edge, color, tabColorBorderTint)
+						edge := tabBorderColor(pal, color, active)
 						foreground = tabInk(pal, color, foreground)
 						if dropped {
 							// A file drag from another window would land in this
@@ -945,10 +945,10 @@ func (state *State) declareWorkspaceTab(c ui.C, workspace layoutcore.WorkspaceIn
 	active := state.activeSection == sectionTerminal && state.deck.ActiveWorkspace() == workspace.ID
 	hovered := c.Canvas().Hovered() == id || c.Canvas().Hovered() == closeID
 	foreground := pal.muted
-	fill, edge := pal.tab, pal.line
+	fill := pal.tab
 	switch {
 	case active:
-		fill, edge, foreground = pal.tabActive, pal.windowStroke, pal.text
+		fill, foreground = pal.tabActive, pal.text
 	case hovered:
 		fill, foreground = pal.tabHover, pal.text
 	}
@@ -956,7 +956,7 @@ func (state *State) declareWorkspaceTab(c ui.C, workspace layoutcore.WorkspaceIn
 	entry.tint = color
 	entry.base = fill
 	fill = tabFill(pal, fill, color, active, hovered)
-	edge = tintHostSurface(edge, color, tabColorBorderTint)
+	edge := tabBorderColor(pal, color, active)
 	foreground = tabInk(pal, color, foreground)
 	entry.background = fill
 	entry.foreground = foreground
