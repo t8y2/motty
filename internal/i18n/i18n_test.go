@@ -108,10 +108,26 @@ func compareCatalogs(t *testing.T, english, chinese reflect.Value, prefix string
 		if strings.Count(en.String(), "%") != strings.Count(zh.String(), "%") {
 			t.Errorf("%s: verbs differ between %q and %q", name, en, zh)
 		}
-		if strings.HasSuffix(field.Name, "Fmt") && hasWords(en.String()) && !hasHan(zh.String()) {
+		if strings.HasSuffix(field.Name, "Fmt") && hasWords(en.String()) && !hasHan(zh.String()) && !parameterOnlyProxyFormat(name, zh.String()) {
 			t.Errorf("%s: %q has no Chinese text", name, zh)
 		}
 	}
+}
+
+// Chinese joins the supplied profile name, kind and address without the
+// English preposition "at". Only these exact formats may omit Chinese prose;
+// other messages and the argument-count check above keep their usual rules.
+func parameterOnlyProxyFormat(name, text string) bool {
+	return name == "ProxyProfiles.RowFmt" && text == "%s %s" ||
+		name == "ProxyProfiles.ChoiceFmt" && text == "%s · %s %s"
+}
+
+func TestProxyLabelsTranslateWithoutAddingLiteralWords(t *testing.T) {
+	type proxyFormats struct{ RowFmt, ChoiceFmt string }
+	type catalog struct{ ProxyProfiles proxyFormats }
+	english := catalog{proxyFormats{"%s at %s", "%s · %s at %s"}}
+	chinese := catalog{proxyFormats{"%s %s", "%s · %s %s"}}
+	compareCatalogs(t, reflect.ValueOf(english), reflect.ValueOf(chinese), "")
 }
 
 // formatVerb matches a printf directive, so a purely numeric format like
