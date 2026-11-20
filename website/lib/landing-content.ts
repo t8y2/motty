@@ -86,7 +86,7 @@ export const landing: Record<'en' | 'zh', LandingContent> = {
       {
         icon: 'folder',
         title: 'Files without another app',
-        body: 'SFTP with a resumable queue, atomic replacement and a built-in editor. SCP fallback, ZMODEM and XMODEM/YMODEM.',
+        body: 'SFTP with a resumable queue, atomic replacement and a built-in editor. SCP fallback, ZMODEM, XMODEM/YMODEM and TRZSZ.',
       },
       {
         icon: 'network',
@@ -153,7 +153,7 @@ export const landing: Record<'en' | 'zh', LandingContent> = {
       },
       {
         q: 'What can Motty do beyond SSH?',
-        a: 'SFTP and SCP with a resumable queue, ZMODEM, XMODEM and YMODEM, local, remote, SOCKS5 and HTTP CONNECT forwarding with X11, jump chains, serial, Telnet and local shells, and VNC and RDP desktops in a tab. All of it shares one window.',
+        a: 'SFTP and SCP with a resumable queue, ZMODEM, XMODEM, YMODEM and TRZSZ, local, remote, SOCKS5 and HTTP CONNECT forwarding with X11, jump chains, serial, Telnet and local shells, and VNC and RDP desktops in a tab. All of it shares one window.',
       },
       {
         q: 'Can an AI agent use Motty?',
@@ -233,7 +233,7 @@ export const landing: Record<'en' | 'zh', LandingContent> = {
       {
         icon: 'folder',
         title: '不用另一个文件工具',
-        body: '带可续传队列的 SFTP、原子替换和内置编辑器。另有 SCP 回退、ZMODEM 与 XMODEM/YMODEM。',
+        body: '带可续传队列的 SFTP、原子替换和内置编辑器。另有 SCP 回退、ZMODEM、XMODEM/YMODEM 与 TRZSZ。',
       },
       {
         icon: 'network',
@@ -297,7 +297,7 @@ export const landing: Record<'en' | 'zh', LandingContent> = {
       },
       {
         q: '除了 SSH，Motty 还能做什么？',
-        a: 'SFTP 与 SCP（带可续传队列）、ZMODEM/XMODEM/YMODEM、本地/远程/SOCKS5/HTTP CONNECT 转发与 X11、跳板链、串口、Telnet 与本地 Shell，以及标签页里的 VNC 与 RDP 远程桌面。所有这些都在同一个窗口里。',
+        a: 'SFTP 与 SCP（带可续传队列）、ZMODEM/XMODEM/YMODEM/TRZSZ、本地/远程/SOCKS5/HTTP CONNECT 转发与 X11、跳板链、串口、Telnet 与本地 Shell，以及标签页里的 VNC 与 RDP 远程桌面。所有这些都在同一个窗口里。',
       },
       {
         q: 'AI agent 能用 Motty 吗？',
