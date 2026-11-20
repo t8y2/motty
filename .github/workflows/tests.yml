@@ -322,6 +322,13 @@ jobs:
         run: |
           go test ./internal/localshell -run 'TestBundledConPTY' -count=1 -timeout 5m
           go test ./internal/selfupdate -run 'TestSignedPortableUpgrade|TestPortableUpgradeRejects|TestWindowsPortable' -count=1 -timeout 5m
+      # AllocsPerRun reads a process-wide counter. Keep this zero-allocation
+      # assertion in its own test process so workers from earlier tests cannot
+      # be counted as allocations by the idle SFTP paint. It still gates CI.
+      - name: Test the Windows SFTP paint allocation budget in isolation
+        if: matrix.shard == 0
+        working-directory: motty
+        run: go test ./internal/workbench -run '^TestSFTPSteadyStatePaintDoesNotAllocate$' -count=3 -timeout 2m
       - name: Test the workbench
         shell: bash
         working-directory: motty
@@ -332,7 +339,7 @@ jobs:
           go run ./tools/testslice -n "$SHARDS" -i "$SHARD" -max-pattern 12000 ./internal/workbench |
             while IFS= read -r pattern; do
               go test ./internal/workbench -count=1 -timeout 20m -run "$pattern" \
-                -skip 'TestPaintingRemoteStatsAllocatesNothingOnceWarm|TestRemoteProcessActionPaintStateDoesNotAllocate|TestSFTPHistorySteadyPaintBudget|TestWindowOpenedAfterAFinishedClearIsNotPausedOrNotified|TestClearPausesJoinedWindowsAndFlushesEveryOldQueue' || exit 1
+                -skip 'TestSFTPSteadyStatePaintDoesNotAllocate|TestPaintingRemoteStatsAllocatesNothingOnceWarm|TestRemoteProcessActionPaintStateDoesNotAllocate|TestSFTPHistorySteadyPaintBudget|TestWindowOpenedAfterAFinishedClearIsNotPausedOrNotified|TestClearPausesJoinedWindowsAndFlushesEveryOldQueue' || exit 1
             done
 
   # The race detector is the long pole on Linux: it runs one package at a time,
