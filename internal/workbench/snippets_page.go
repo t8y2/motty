@@ -366,11 +366,15 @@ func (state *State) declareSnippetRow(row ui.ListRow) {
 				if view.manualOrder {
 					nameLeft += 24
 				}
+				// The headings fix these three columns' widths. A command wider
+				// than its column is ellipsized there; without Shrink(0) its
+				// unwrapped width would shrink these cells instead and shift
+				// every later column in that row by the command's length (#1152).
 				ui.Text(c, entry.cells[0]).Width(view.widths[0]).PadLeft(nameLeft).PadRight(pad).
-					FontSize(theme.Metrics.FontSizeM).Color(theme.Foreground).Ellipsis()
+					FontSize(theme.Metrics.FontSizeM).Color(theme.Foreground).Ellipsis().Shrink(0)
 				ui.Text(c, entry.cells[1]).Width(view.widths[1]).PadX(pad).
-					FontSize(theme.Metrics.FontSizeM).Color(theme.Foreground).Ellipsis()
-				ui.Row(c).Width(view.widths[2]).PadX(pad).Items(ui.Center).Children(func() {
+					FontSize(theme.Metrics.FontSizeM).Color(theme.Foreground).Ellipsis().Shrink(0)
+				ui.Row(c).Width(view.widths[2]).PadX(pad).Items(ui.Center).Shrink(0).Children(func() {
 					if entry.Shortcut.Valid() {
 						ui.Kbd(c, entry.cells[2])
 					}
