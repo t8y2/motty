@@ -432,6 +432,43 @@ func TestEndpointKeyPolicyDoesNotFallBackToPassword(t *testing.T) {
 	}
 }
 
+// Equal is what a caller compares before lending one connection to another
+// endpoint. Two policies that differ in any part change how the endpoint logs
+// in, so none of them may pass; nil and empty identity lists differ too, since
+// one tries the default identities and the other tries none.
+func TestAuthenticationEqualitySeparatesPoliciesThatDiffer(t *testing.T) {
+	base := Authentication{Methods: AuthPublicKey | AuthKeyboardInteractive, RequirePublicKey: true, Agent: true}
+	changed := []struct {
+		name   string
+		change func(*Authentication)
+	}{
+		{"methods", func(a *Authentication) { a.Methods = AuthPassword }},
+		{"require public key", func(a *Authentication) { a.RequirePublicKey = false }},
+		{"agent", func(a *Authentication) { a.Agent = false }},
+		{"identities only", func(a *Authentication) { a.IdentitiesOnly = true }},
+		{"identity file", func(a *Authentication) { a.IdentityFiles = []string{"key"} }},
+		{"no identity files instead of the defaults", func(a *Authentication) { a.IdentityFiles = []string{} }},
+		{"additional identity file", func(a *Authentication) { a.AdditionalIdentityFiles = []string{"key"} }},
+		{"no additional identity files instead of none at all", func(a *Authentication) { a.AdditionalIdentityFiles = []string{} }},
+	}
+	for _, test := range changed {
+		t.Run(test.name, func(t *testing.T) {
+			other := base
+			test.change(&other)
+			if base.Equal(other) || other.Equal(base) {
+				t.Fatalf("%+v equals %+v, want the policies kept apart", base, other)
+			}
+		})
+	}
+	same := base
+	same.IdentityFiles = []string{"one", "two"}
+	also := same
+	also.IdentityFiles = []string{"one", "two"}
+	if !same.Equal(also) {
+		t.Fatal("the same policy was not recognized")
+	}
+}
+
 func TestUnauthorizedKeyFallsBackToPassword(t *testing.T) {
 	path, _ := writeKey(t, t.TempDir())
 	other := newSigner(t)

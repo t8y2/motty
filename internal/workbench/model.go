@@ -178,16 +178,20 @@ type Session struct {
 	desktopTunnel bool
 	// proxyRoute is the effective outbound proxy frozen when this connection
 	// was dialed. Editing the host updates host, but not the live transport.
-	proxyRoute   string
-	sshOptions   *sshconfig.ConnectionOptions
-	endpoint     sshconn.Endpoint
-	role         sshconn.EndpointRole
-	conn         Connection
-	browser      *sshbrowser.Browser
-	sudoCommands bool
-	sudoPassword string
-	recordRecent bool // this user dial may update its recent success once
-	shared       bool // conn is a tab on another tab's connection
+	proxyRoute string
+	// authentication is the policy this connection was dialed with. Like
+	// sshOptions it is frozen at the dial: a transport authenticated one way is
+	// not lent to a host that would authenticate another (see shareFrom).
+	authentication sshconn.Authentication
+	sshOptions     *sshconfig.ConnectionOptions
+	endpoint       sshconn.Endpoint
+	role           sshconn.EndpointRole
+	conn           Connection
+	browser        *sshbrowser.Browser
+	sudoCommands   bool
+	sudoPassword   string
+	recordRecent   bool // this user dial may update its recent success once
+	shared         bool // conn is a tab on another tab's connection
 	// An interactive remote command for this tab only; it is not persisted as a host setting.
 	containerCommand string
 	// avoidShare makes the next connection a fresh one: the server refused one
