@@ -300,7 +300,7 @@ var stateVersionFields = map[string]bool{"version": true, "host_catalog_version"
 var windowStateFields = map[string]bool{
 	"sessions": true, "active_session": true, "deck": true, "note_sidebars": true,
 	"workspace": true, "workspace_layouts": true,
-	"window_x": true, "window_y": true, "window_width": true, "window_height": true,
+	"window_x": true, "window_y": true, "window_width": true, "window_height": true, "window_maximized": true,
 }
 
 // windowKey names the local value holding one window's own state. A development

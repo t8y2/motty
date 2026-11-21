@@ -430,11 +430,13 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 	}
 	width, height := 1400, 900
 	origin := place.origin
+	maximized := false
 	if place.rememberFrame {
 		if frame, ok := state.RestoredWindowFrame(); ok {
 			width, height = int(frame.Width), int(frame.Height)
 			origin = &gfx.Point{X: frame.X, Y: frame.Y}
 		}
+		maximized = state.RestoredWindowMaximized()
 	}
 	window := state.WindowColor()
 	width = max(width, workbench.MinimumWindowWidth)
@@ -489,6 +491,7 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		MinWidth:       workbench.MinimumWindowWidth,
 		MinHeight:      workbench.MinimumWindowHeight,
 		Origin:         origin,
+		Maximized:      maximized,
 		WindowMode:     app.WindowCustomTitlebar,
 		TitlebarHeight: workbench.TitlebarHeight,
 		WindowControls: state.WindowControlsStyle,
@@ -514,6 +517,7 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		OnResize:      state.Resize,
 		OnFrameChange: state.NoteWindowFrame,
 		OnMinimize:    state.SetWindowMinimized,
+		OnMaximize:    state.SetWindowMaximized,
 		OnFullscreen:  state.SetWindowFullscreen,
 		OnClosed: func() {
 			log.Print("motty: window closed")

@@ -21,6 +21,7 @@ type windowChrome struct {
 	remember          bool
 	frame             gfx.Rect
 	hasFrame          bool
+	maximized         bool
 	minimized         bool
 	saveTimer         *time.Timer
 	fullscreen        bool
@@ -34,6 +35,13 @@ func (state *State) RestoredWindowFrame() (gfx.Rect, bool) {
 	return state.winChrome.frame, state.winChrome.hasFrame
 }
 
+// RestoredWindowMaximized reports whether the last run left this window
+// maximized. When true, the window opens maximized while keeping its restored
+// frame as the bounds to return to on unmaximize.
+func (state *State) RestoredWindowMaximized() bool {
+	return state.winChrome.maximized
+}
+
 // restoreWindowFrame takes the frame a saved state carries. It is this window's
 // own, read from the record it saved, so it is kept here and not shared.
 func (state *State) restoreWindowFrame(frame gfx.Rect) {
@@ -41,6 +49,10 @@ func (state *State) restoreWindowFrame(frame gfx.Rect) {
 		return
 	}
 	state.winChrome.frame, state.winChrome.hasFrame = frame, true
+}
+
+func (state *State) restoreWindowMaximized(maximized bool) {
+	state.winChrome.maximized = maximized
 }
 
 // NoteWindowFrame records where the window is, as Viva reports every move and
@@ -54,6 +66,20 @@ func (state *State) NoteWindowFrame(frame gfx.Rect) {
 		return
 	}
 	state.winChrome.frame, state.winChrome.hasFrame = frame, true
+	state.scheduleWindowFrameSave()
+}
+
+// SetWindowMaximized records whether the window manager has the window
+// maximized and saves it once the change settles. Windows that do not remember
+// their frame ignore it.
+func (state *State) SetWindowMaximized(maximized bool) {
+	if !state.winChrome.remember || state.closed || state.winChrome.fullscreen || state.winChrome.fullscreenSession != 0 {
+		return
+	}
+	if state.winChrome.maximized == maximized {
+		return
+	}
+	state.winChrome.maximized = maximized
 	state.scheduleWindowFrameSave()
 }
 
@@ -88,6 +114,10 @@ func (state *State) closeWindowChrome() {
 // record holds. Two windows of one process save two places.
 func (state *State) savedWindowFrame() (gfx.Rect, bool) {
 	return state.winChrome.frame, state.winChrome.hasFrame
+}
+
+func (state *State) savedWindowMaximized() bool {
+	return state.winChrome.maximized
 }
 
 // SetWindowMinimized records what the window manager did, and wakes the window

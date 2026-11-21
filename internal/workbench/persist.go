@@ -118,6 +118,7 @@ type savedState struct {
 	WindowY                 int                 `json:"window_y,omitempty"`
 	WindowWidth             int                 `json:"window_width,omitempty"`
 	WindowHeight            int                 `json:"window_height,omitempty"`
+	WindowMaximized         bool                `json:"window_maximized,omitempty"`
 	TerminalScheme          string              `json:"terminal_scheme,omitempty"` // read only: before the scheme was kept per look
 	TerminalSchemeDark      string              `json:"terminal_scheme_dark,omitempty"`
 	TerminalSchemeLight     string              `json:"terminal_scheme_light,omitempty"`
@@ -656,6 +657,7 @@ func (state *State) snapshot() savedState {
 		saved.WindowWidth = int(math.Round(float64(frame.Width)))
 		saved.WindowHeight = int(math.Round(float64(frame.Height)))
 	}
+	saved.WindowMaximized = state.savedWindowMaximized()
 	if state.highlighting.builtinOff {
 		saved.HighlightBuiltin = "off"
 	}
@@ -1176,6 +1178,7 @@ func (state *State) restoreLocal(saved savedState) {
 			Width: float32(saved.WindowWidth), Height: float32(saved.WindowHeight),
 		})
 	}
+	state.restoreWindowMaximized(saved.WindowMaximized)
 }
 
 // restoreShared applies what every computer of the user shares: the terminal and
