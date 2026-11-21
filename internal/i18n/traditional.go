@@ -30,7 +30,7 @@ var TraditionalMessages = Messages{
 		BookmarkInvalid: "請填寫有效的絕對目錄路徑；儲存檔案時還需填寫名稱。本機目錄可以留空。", BookmarkLimit: "位置檔案數量已達上限，請先刪除不再使用的檔案。",
 		ConnectingFmt: "正在連線 %s…",
 		Authenticate:  "前往主視窗認證", AuthenticationHint: "請在主視窗確認主機金鑰或完成身分驗證。",
-		DropUploadHint: "拖曳到此處上傳", DropDownloadHint: "拖曳到此處下載", DropCopyHint: "拖曳到此處複製",
+		DropUploadHint: "拖曳到此處上傳", DropDownloadHint: "拖曳到此處下載", DropCopyHint: "拖曳到此處複製", DropMoveHint: "拖曳到此處移動",
 		QueueRejectedFmt: "有 %d 個專案未能加入傳輸佇列，請稍後重試。",
 		SelectedFmt:      "已選擇 %d 項", CopyPath: "複製完整路徑", CopyFiles: "複製檔案", PasteFiles: "貼上檔案",
 		PropertiesTitle: "檔案屬性", PropertiesName: "名稱", PropertiesPath: "完整路徑", PropertiesType: "類型", PropertiesSize: "大小", PropertiesModified: "修改時間",

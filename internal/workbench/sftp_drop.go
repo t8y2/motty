@@ -20,6 +20,10 @@ import (
 // row under the pointer remains the target of the eventual system drop. label
 // says what the drop will do.
 func (state *State) paintSFTPDropOverlay(canvas *gfx.Canvas, bounds gfx.Rect, label string) {
+	state.paintSFTPDropOverlayWithIcon(canvas, bounds, label, iconUpload)
+}
+
+func (state *State) paintSFTPDropOverlayWithIcon(canvas *gfx.Canvas, bounds gfx.Rect, label string, glyph uint8) {
 	if bounds.Width <= 0 || bounds.Height <= 0 {
 		return
 	}
@@ -73,7 +77,7 @@ func (state *State) paintSFTPDropOverlay(canvas *gfx.Canvas, bounds gfx.Rect, la
 		text.Y = icon.Y + icon.Height + 14
 		label = elide(canvas, label, textStyle.Size, textStyle.Weight, text.Width)
 	}
-	paintIcon(canvas, iconUpload, icon, state.pal.muted)
+	paintIcon(canvas, glyph, icon, state.pal.muted)
 	canvas.LabelCenter(label, text, textStyle)
 }
 
