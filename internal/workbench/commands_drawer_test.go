@@ -60,6 +60,76 @@ func TestCommandSidebarRepeatsWithoutTakingTerminalFocus(t *testing.T) {
 	}
 }
 
+func TestCommandSidebarKeyboardActivationReturnsToTerminal(t *testing.T) {
+	for _, key := range []string{"enter", "space"} {
+		t.Run(key, func(t *testing.T) {
+			state, _, _, shell := liveSession(t)
+			state.commands.shown = true
+			state.snippets.list = []snippet{{Name: "List", Command: "ls", Run: true}}
+			view := openPickerView(t, state, 1)
+			sort := dualHit(t, view, hitCommandsSort)
+			if err := view.Click(sort.X+sort.Width/2, sort.Y+sort.Height/2); err != nil {
+				t.Fatal(err)
+			}
+			if err := view.Keys("escape"); err != nil {
+				t.Fatal(err)
+			}
+			for count := 0; count < 30 && view.Snapshot().Focused != hitCommandsTag.At(0); count++ {
+				if err := view.Keys("tab"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if got := view.Snapshot().Focused; got != hitCommandsTag.At(0) {
+				t.Fatalf("tab did not reach the command: %v", got)
+			}
+			if err := view.Keys(key); err != nil {
+				t.Fatal(err)
+			}
+			if got := view.Snapshot().Focused; got != terminalHit(state, 0) {
+				t.Fatalf("focus after activating command = %v", got)
+			}
+			if got := shell.typed(); got != "ls\r" {
+				t.Fatalf("terminal received %q, want command", got)
+			}
+			if err := view.Type("after"); err != nil {
+				t.Fatal(err)
+			}
+			if got := shell.typed(); got != "ls\rafter" {
+				t.Fatalf("typing after activation went to %q", got)
+			}
+		})
+	}
+}
+
+func TestCommandSidebarVariableDialogKeepsKeyboard(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	state.commands.shown = true
+	state.snippets.list = []snippet{{Name: "Deploy", Command: "deploy {{version}}", Run: true}}
+	view := openPickerView(t, state, 1)
+	chip := dualHit(t, view, hitCommandsTag.At(0))
+	if err := view.Click(chip.X+chip.Width/2, chip.Y+chip.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if got := view.Snapshot().Focused; got != hitSnippetVarList.At(0) {
+		t.Fatalf("focus after opening variables = %v", got)
+	}
+	if err := view.Type("v1"); err != nil {
+		t.Fatal(err)
+	}
+	if got := shell.typed(); got != "" {
+		t.Fatalf("typing in dialog reached terminal: %q", got)
+	}
+	if err := view.Keys("enter"); err != nil {
+		t.Fatal(err)
+	}
+	if got := shell.typed(); got != "deploy v1\r" {
+		t.Fatalf("terminal received %q, want expanded command", got)
+	}
+	if got := view.Snapshot().Focused; got != terminalHit(state, 0) {
+		t.Fatalf("focus after submission = %v", got)
+	}
+}
+
 // Sending a quick command from the bar must hand the keyboard back to the
 // terminal, or the next Enter types wherever the pointer happens to be.
 func TestClickingACommandChipReturnsTheKeyboardToTheTerminal(t *testing.T) {
@@ -78,7 +148,7 @@ func TestClickingACommandChipReturnsTheKeyboardToTheTerminal(t *testing.T) {
 		t.Fatalf("pending focus = %v, want the terminal %v", state.pendingFocus, want)
 	}
 	canvas, _ := paintAt(state, gfx.Size{Width: 1200, Height: 800})
-	if got := canvas.FocusRequest(); got != want {
+	if got := canvas.FocusOnce(); got != want {
 		t.Fatalf("paint asked for focus %v, want the terminal %v", got, want)
 	}
 	if !state.pendingFocus.IsZero() {
@@ -97,7 +167,7 @@ func TestAQuickCommandKeepsADialogsKeyboardAndDropsItsFocus(t *testing.T) {
 	state.modal = modalSnippetVariables
 	state.pendingFocus = state.activeTerminalFocusHit()
 	canvas, _ := paintAt(state, gfx.Size{Width: 1200, Height: 800})
-	if got := canvas.FocusRequest(); !got.IsZero() {
+	if got := canvas.FocusOnce(); !got.IsZero() {
 		t.Fatalf("paint asked for %v while a dialog was up", got)
 	}
 	if !state.pendingFocus.IsZero() {
@@ -114,7 +184,7 @@ func TestAQuickCommandDropsFocusOnANonTerminalPage(t *testing.T) {
 	state.activeSection = sectionSnippets
 	state.pendingFocus = state.activeTerminalFocusHit()
 	canvas, _ := paintAt(state, gfx.Size{Width: 1200, Height: 800})
-	if got := canvas.FocusRequest(); !got.IsZero() {
+	if got := canvas.FocusOnce(); !got.IsZero() {
 		t.Fatalf("paint asked for %v on the snippets page", got)
 	}
 	if !state.pendingFocus.IsZero() {
@@ -238,6 +308,22 @@ func TestCommandSidebarBounds(t *testing.T) {
 	if sidebar.Width != commandsSidebarWidth || workspace.X+workspace.Width != sidebar.X ||
 		sidebar.X+sidebar.Width != size.Width || workspace.Height != full.Height {
 		t.Fatalf("sidebar=%+v workspace=%+v full=%+v", sidebar, workspace, full)
+	}
+}
+
+func TestCommandSidebarDoesNotCoverTheRightToolbar(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	state.commands.shown = true
+	state.snippets.list = []snippet{{Name: "List", Command: "ls"}}
+	view := openPickerView(t, state, 1)
+	bar := state.commandsSidebarBounds(state.viewport)
+	button := dualHit(t, view, hitTerminalSnippets)
+	if overlap := intersectRect(bar, button); overlap.Width > 0 && overlap.Height > 0 {
+		t.Fatalf("command sidebar %+v covers toolbar button %+v", bar, button)
+	}
+	terminal := dualHit(t, view, terminalHit(state, 0))
+	if overlap := intersectRect(terminal, button); overlap.Width > 0 && overlap.Height > 0 {
+		t.Fatalf("toolbar button %+v covers terminal %+v", button, terminal)
 	}
 }
 

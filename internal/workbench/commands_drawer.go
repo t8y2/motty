@@ -436,7 +436,7 @@ func (state *State) paintCommandTag(canvas *gfx.Canvas, rect gfx.Rect, entry sni
 	canvas.RoundedBorder(rect, commandsChipRadius, 1, border, fill)
 	label := gfx.Rect{X: rect.X + commandsTagPaddingX, Y: rect.Y, Width: rect.Width - commandsTagPaddingX*2, Height: rect.Height}
 	canvas.Label(entry.Name, label, gfx.TextStyle{Size: theme.Metrics.FontSizeS, Weight: gfx.WeightMedium, Color: state.pal.text})
-	canvas.HitWithOptions(id, rect, entry.Name, gfx.HitOptions{Role: gfx.RoleButton, Hint: entry.Command, SkipFocus: true})
+	canvas.HitWithOptions(id, rect, entry.Name, gfx.HitOptions{Role: gfx.RoleButton, Hint: entry.Command})
 }
 
 // commandBarSwitchShown reports whether the picker's chrome offers the bar's

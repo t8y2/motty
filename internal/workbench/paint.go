@@ -206,7 +206,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		// dropped either way so a later paint does not steal it back.
 		// The terminal has to be the page on screen to take the keyboard too.
 		if state.modal == modalNone && state.terminalPage() {
-			canvas.RequestFocus(state.pendingFocus)
+			canvas.RequestFocusOnce(state.pendingFocus)
 		}
 		state.pendingFocus = gfx.ID{}
 	}
