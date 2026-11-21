@@ -123,4 +123,15 @@ func TestTheRemotePointerIsTheCursorOverThePicture(t *testing.T) {
 	if hit := cursorOverPicture(); hit.Cursor != gfx.PointerCursorDefault || hit.CursorImage != nil {
 		t.Fatalf("an oversized shape: %v, %v", hit.Cursor, hit.CursorImage)
 	}
+
+	// An ended connection restores the system cursor so the disconnected screen and reconnect
+	// button can be navigated even if the remote had hidden the pointer before disconnecting.
+	remote.say(desktop.PointerHidden, desktop.PointerShape{})
+	if hit := cursorOverPicture(); hit.Cursor != gfx.PointerCursorHidden {
+		t.Fatalf("expected hidden pointer before disconnect, got %v", hit.Cursor)
+	}
+	state.endDesktop(session)
+	if hit := cursorOverPicture(); hit.Cursor != gfx.PointerCursorDefault || hit.CursorImage != nil {
+		t.Fatalf("after connection ends: cursor=%v image=%v, want default arrow cursor", hit.Cursor, hit.CursorImage)
+	}
 }
