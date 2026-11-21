@@ -1,16 +1,16 @@
 package workbench
 
 import (
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
 
-// The settings page is a tab of the window bar, after the workspace and
-// file-manager tabs, like a browser's settings tab: opening settings adds it
-// and closing it takes it away, and while it is open the other tabs stay one
-// press away. Its page is the section the sidebar's Settings row already opens;
-// the tab is the way the bar shows and leaves it.
+// The settings page is a tab of the window bar, like a browser's settings tab:
+// opening settings adds it at the end of the workspace and file-manager tabs,
+// dragging it puts it anywhere among them, and closing it takes it away. While
+// it is open the other tabs stay one press away. Its page is the section the
+// sidebar's Settings row already opens; the tab is the way the bar shows and
+// leaves it.
 var (
 	hitSettingsTab      = tree.ID(fileTabsHits, "settings-tab")
 	hitSettingsTabClose = tree.ID(fileTabsHits, "settings-tab-close")
@@ -46,7 +46,7 @@ func (state *State) settingsTabActive() bool {
 // settingsTabIndex is the tab's place among the window's tabs, counted the way
 // the number shortcuts count them.
 func (state *State) settingsTabIndex() int {
-	return len(state.workspaceTabs) + len(state.sftpTabs)
+	return state.settingsTabPlace()
 }
 
 // activateSettingsTab brings an open settings tab to the front. Pressing the
@@ -87,15 +87,6 @@ func (state *State) closeSettingsTab() {
 	}
 }
 
-// appendSettingsTabOption lists the settings tab after the options already
-// there, for the arrow keys that move between the bar's tabs.
-func (state *State) appendSettingsTabOption(options []components.TabOption) []components.TabOption {
-	if !state.settingsTabShown() {
-		return options
-	}
-	return append(options, components.TabOption{ID: hitSettingsTab, Label: state.messages.NavSettings})
-}
-
 // settingsTabHit reports whether id is the settings tab or its close button.
 func settingsTabHit(id gfx.ID) bool {
 	return id == hitSettingsTab || id == hitSettingsTabClose
@@ -105,7 +96,7 @@ func settingsTabHit(id gfx.ID) bool {
 // the look of the file-manager tabs beside it: the same fill, edge, number and
 // close button. With probe set only the place is declared, for the bar's
 // geometry.
-func (state *State) declareSettingsTab(c ui.C, probe bool, geometry barGeometry, scroll float32) barTab {
+func (state *State) declareSettingsTab(c ui.C, probe bool, geometry barGeometry, first float32) barTab {
 	chrome := &state.chrome
 	if probe {
 		minimum := barTabMin
@@ -136,10 +127,6 @@ func (state *State) declareSettingsTab(c ui.C, probe bool, geometry barGeometry,
 		fill, foreground = pal.tabHover, pal.text
 	}
 	entry.base, entry.background, entry.foreground = fill, fill, foreground
-	first := float32(0)
-	if index == 0 {
-		first = -scroll
-	}
 	label := m.NavSettings
 	entry.label = label
 	entry.box = ui.Row(c).Size(geometry.tabWidth, barTabHeight).Shrink(0).MarginSides(0, barGap, 0, first).

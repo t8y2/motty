@@ -155,6 +155,7 @@ func (d *fileDocument) declareEditWindow(c ui.C) {
 				if d.image == nil {
 					d.declareEncoding(c, bounds)
 				}
+				d.declareFooterProgress(c)
 				status := d.footerStatus()
 				ui.Text(c, status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(22).Grow(1).
 					HitWith(hitDocumentStatus, status, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: status})
@@ -206,7 +207,7 @@ func (d *fileDocument) declareEncoding(c ui.C, bounds gfx.Rect) {
 		ui.Text(c, m.Encoding+":").FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).LineHeight(22).Shrink(0).
 			Hit(hitDocumentEncodingLabel, m.Encoding)
 		selector := ui.Select(c, &d.ui.encodingChoice, d.ui.encodingChoices, d.encodingLabel).
-			Label(m.Encoding).Hit(hitDocumentEncoding, m.Encoding).Height(32).Grow(1).
+			Label(m.Encoding).Height(32).Grow(1).
 			Disabled(d.busy || d.comparison.active)
 		if d.ui.focusEncoding {
 			selector.AutoFocus()
@@ -219,6 +220,16 @@ func (d *fileDocument) declareEncoding(c ui.C, bounds gfx.Rect) {
 	})
 }
 
+// declareFooterProgress declares the spinner the footer shows while the
+// document is waiting on a save, reload or server read: the status text alone
+// read as if the work had already finished. The files panel's status row shows
+// the same spinner for its busy state.
+func (d *fileDocument) declareFooterProgress(c ui.C) {
+	if d.busy {
+		ui.Spinner(c).Size(16, 16).Shrink(0)
+	}
+}
+
 // encodingLabel names one choice of the encoding select.
 func (d *fileDocument) encodingLabel(name string) string {
 	if name == "" {
@@ -227,25 +238,25 @@ func (d *fileDocument) encodingLabel(name string) string {
 	return name
 }
 
-// declareSaveSplit declares the remote save button and the chevron that opens
-// the actions beside it, as page buttons under one row. Both keep the
-// application's own identities, so the central dispatcher handles their clicks.
+// declareSaveSplit declares the remote save action and the chevron that opens
+// the action beside it as one split button: the halves share a surface, only the
+// group's outer corners are rounded, and a hairline separates them. Both halves
+// keep the application's own identities, so the central dispatcher handles their
+// clicks.
 func (d *fileDocument) declareSaveSplit(c ui.C, disabled bool) {
 	m := d.owner.messages.FileWindow
-	theme := d.owner.Theme()
-	ui.Row(c).Gap(0).Shrink(0).Items(ui.Center).Children(func() {
-		// The split button the page replaces kept its halves at the size it was
-		// given: an 80px primary and a 32px trigger, the label in the small type
-		// the size names.
-		ui.Button(c, m.Save).Small().Width(80).Height(32).Hit(hitDocumentSave, m.Save).Disabled(disabled)
-		d.ui.saveMenuTrigger = ui.Button(c, m.SaveOptions).Icon(lucideIcons[iconChevronDown]).IconOnly().
-			Size(32, 32).Hit(hitDocumentSaveMenu, m.SaveOptions).Disabled(disabled).
-			Draw(func(part *ui.DrawContext) {
-				// The hairline the split button drew between its halves.
-				part.Canvas.Fill(gfx.Rect{X: part.Rect.X - 0.5, Y: part.Rect.Y, Width: 1, Height: part.Rect.Height}, theme.Input)
-			})
-		d.ui.saveMenuDeclared = true
-	})
+	// The split button the page replaced kept its halves at the size it was
+	// given: an 80px primary and a 32px trigger, the label in the small type
+	// the size names.
+	save := ui.SplitButton(c, ui.SplitButtonSpec{
+		PrimaryID: hitDocumentSave, MenuID: hitDocumentSaveMenu,
+		Label: m.Save, MenuLabel: m.SaveOptions,
+		Hint: m.Save, MenuHint: m.SaveOptions,
+		Icon: lucideIcons[iconChevronDown], Open: d.ui.saveMenuOpen,
+	}).Small().Width(112).Height(32)
+	save = save.Disabled(disabled)
+	d.ui.saveMenuTrigger = save
+	d.ui.saveMenuDeclared = true
 }
 
 // declareSaveMenu declares the open save menu under the chevron: the actions
@@ -370,6 +381,7 @@ func (d *fileDocument) declareComparisonWindow(c ui.C) {
 			}
 			uiState.contentBox = ui.Slot(c).Grow(1).MinHeight(64)
 			ui.Row(c).Height(32).Gap(8).Items(ui.Center).Children(func() {
+				d.declareFooterProgress(c)
 				status := d.comparisonStatus()
 				ui.Text(c, status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(22).Grow(1).
 					HitWith(hitDocumentStatus, status, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: status})

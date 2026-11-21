@@ -20,7 +20,7 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 	ownDevice := map[string]bool{
 		"notes_view": true, "note_sidebars": true, "recent_connect_sort": true, "recent_connections": true,
 		"monitor_panels": true, "monitor_active": true,
-		"language": true, "theme": true, "network_proxy": true, "terminal_font_size": true, "text_scale": true, "interface_text_size": true, "interface_font": true, "interface_font_main_weight": true, "interface_font_bold_weight": true, "terminal_font_face": true, "terminal_font_family": true, "terminal_font_main_weight": true, "terminal_font_bold_weight": true, "terminal_font_fallbacks": true,
+		"language": true, "theme": true, "icon_color": true, "network_proxy": true, "terminal_font_size": true, "text_scale": true, "interface_text_size": true, "interface_font": true, "interface_font_main_weight": true, "interface_font_bold_weight": true, "terminal_font_face": true, "terminal_font_family": true, "terminal_font_main_weight": true, "terminal_font_bold_weight": true, "terminal_font_fallbacks": true,
 		"restore_connect": true, "share_connections": true, "update_check": true, "close_action": true, "relaunch_action": true, "tray_hint_shown": true, "update_skipped": true, "ai_panel_width": true, "ai_composer_height": true,
 		"sftp_panel_width": true, "monitor_panel_width": true,
 		"terminal_toolbar_position": true,
@@ -52,6 +52,9 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		// computer's own picker layout, like the hidden shells below.
 		"local_shells_expanded": true,
 		"local_shell":           true, "local_start": true, "last_local_directory": true, "ssh_agent": true, "ssh_agent_path": true, "local_proxy_port": true, "terminal_cursor": true,
+		// The commands a computer's local shells type when they start name its own
+		// shells and set up its own locale, so another device keeps its own.
+		"local_startup_commands": true,
 		// Whether the command bar shows, which groups it filters and how it
 		// orders them are this computer's own layout, not a preference to sync.
 		"commands_shown": true, "commands_sort": true, "commands_hidden_groups": true,
@@ -96,7 +99,7 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 func richState() savedState {
 	return savedState{
 		Version: stateFileVersion, HostCatalogVersion: hostCatalogSchemaVersion, ShortcutVersion: shortcutSchemaVersion,
-		Language: "zh-CN", Theme: "dark", NetworkProxy: "system", TabOrientation: "vertical", VerticalTabsAutoHide: true, LocalShell: "/opt/local-shell/bin/shell", TerminalFontSize: 15, TerminalScrollback: 5000, TerminalPadding: "roomy", TerminalWordSeparators: "-/", HiddenHostTags: []string{"dev", "prod"},
+		Language: "zh-CN", Theme: "dark", NetworkProxy: "system", TabOrientation: "vertical", VerticalTabsAutoHide: true, LocalShell: "/opt/local-shell/bin/shell", LocalStartupCommands: map[string]string{"/opt/local-shell/bin/shell": "export LANG=zh_CN.UTF-8"}, TerminalFontSize: 15, TerminalScrollback: 5000, TerminalPadding: "roomy", TerminalWordSeparators: "-/", HiddenHostTags: []string{"dev", "prod"},
 		RecentConnectSort: true, RecentConnections: map[string]time.Time{"host_b": time.Date(2026, 11, 3, 8, 0, 0, 0, time.UTC)},
 		SFTPParallel: 2, SFTPTerminalFollow: true, SFTPTransferFilter: 1, CommandHistory: true,
 		Hosts: []savedHost{

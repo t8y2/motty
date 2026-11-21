@@ -22,11 +22,19 @@ type sudoSFTPDialog struct {
 	window      *sftpWindow
 	password    text.Editor
 	field       ui.Field
+	row         ui.FormFieldState
 	bound       bool
 	commands    bool
+	logs        bool
 	dashboard   bool
 	returnTools bool
 }
+
+// sudoDialogBody is the body of the dialog that asks for one secret without the
+// vault's save box: the labeled field and the padding around it. The field is a
+// form field like the other secret dialogs, so the control inside it keeps the
+// ordinary single-line height.
+const sudoDialogBody = 66
 
 func sudoSFTPAvailable(session *Session, view *sftpView) bool {
 	return !view.localOnly && session.host.System != sshconn.SystemWindows && session.host.Transfer != transferSCP
@@ -77,7 +85,7 @@ func (state *State) submitSudoSFTP() {
 	session, ok := state.sessionByIDPointer(sessionID)
 	password := state.sudoSFTP.password.String()
 	commands, returnTools := state.sudoSFTP.commands, state.sudoSFTP.returnTools
-	dashboard := state.sudoSFTP.dashboard
+	dashboard, logs := state.sudoSFTP.dashboard, state.sudoSFTP.logs
 	window := state.sudoSFTP.window
 	state.closeModal()
 	if commands {
@@ -87,6 +95,12 @@ func (state *State) submitSudoSFTP() {
 					state.setSudoCommands(&source.session, password, true)
 					return
 				}
+			}
+			return
+		}
+		if logs {
+			if ok {
+				state.setSudoCommands(session, password, true)
 			}
 			return
 		}
@@ -222,9 +236,11 @@ func (state *State) declareSudoSFTPDialog(c ui.C) {
 		DismissID: hitSudoSFTPDismiss, CloseID: hitSudoSFTPCancel, InitialFocusID: hitSudoSFTPPassword,
 	})
 	dialog.Body(func() {
-		ui.Column(c).Height(state.secretFieldBody("")).PadSides(2, 4, 0, 4).Children(func() {
-			ui.TextFieldID(c, hitSudoSFTPPassword, &dialogState.field, m.SFTPSudoPassword, "").
-				Height(62).FillWidth().Secure().AutoFocus()
+		ui.Column(c).Height(sudoDialogBody).PadSides(2, 4, 0, 4).Children(func() {
+			ui.FormField(c, &dialogState.row, m.SFTPSudoPassword).FillWidth().Height(62).Children(func() {
+				ui.TextFieldID(c, hitSudoSFTPPassword, &dialogState.field, m.SFTPSudoPassword, "").
+					FillWidth().Secure().AutoFocus()
+			})
 		})
 	})
 	dialog.Footer(func() {

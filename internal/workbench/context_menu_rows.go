@@ -73,7 +73,9 @@ type menuEntry struct {
 	// submenu, when set, makes the entry open a menu of its own. Choosing a row
 	// of that menu is the body's concern; this row has no action of its own.
 	submenu func(*ui.MenuItems)
-	height  float32
+	// trailing, when set, paints the area TrailingWidth reserved at the row's end.
+	trailing func(*gfx.Canvas, gfx.Rect, gfx.Theme)
+	height   float32
 }
 
 // menuRows collects the rows of a context menu before it is painted, so its
@@ -98,6 +100,14 @@ func (rows *menuRows) addSubmenu(item components.ContextMenuItem, body func(*ui.
 		item.Kind = components.ContextMenuSubmenu
 		rows.entries[rows.count] = menuEntry{item: item, submenu: body}
 		rows.count++
+	}
+}
+
+// trailing reserves width at the end of the last row added, and paints it.
+func (rows *menuRows) trailing(width float32, paint func(*gfx.Canvas, gfx.Rect, gfx.Theme)) {
+	if rows.count > 0 && paint != nil {
+		rows.entries[rows.count-1].item.TrailingWidth = width
+		rows.entries[rows.count-1].trailing = paint
 	}
 }
 
@@ -201,6 +211,9 @@ func (rows *menuRows) declare(c ui.C, menu *ui.MenuItems, choose func(gfx.ID)) {
 			label += " · " + row.Shortcut
 		}
 		item := menu.Item(label).Icon(row.Icon).Disabled(row.Disabled)
+		if entry.trailing != nil {
+			item = item.Trailing(row.TrailingWidth, entry.trailing)
+		}
 		if row.Variant == components.ContextMenuItemDestructive {
 			item = item.Destructive()
 		}

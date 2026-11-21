@@ -140,6 +140,10 @@ type savedTransport struct {
 	// Proxy is nil when this host inherits the global outbound proxy. An entry
 	// whose kind is "direct" explicitly bypasses it.
 	Proxy *savedOutboundProxy `json:"proxy,omitempty"`
+	// ProxyProfile, when set, names a saved proxy profile that carries the host
+	// instead of Proxy, and ProxyBypass is the host's own direct list for it.
+	ProxyProfile string `json:"proxy_profile,omitempty"`
+	ProxyBypass  string `json:"proxy_bypass,omitempty"`
 	// Algorithms is "compatible" or "custom" for an SSH host that does not use
 	// the default algorithms; AlgorithmList is the custom list.
 	Algorithms    string `json:"algorithms,omitempty"`
@@ -201,7 +205,8 @@ type savedTransport struct {
 }
 
 func (host Host) transport() savedTransport {
-	transport := savedTransport{Proxy: savedHostProxy(host.Proxy), Credential: host.Credential}
+	transport := savedTransport{Proxy: savedHostProxy(host.Proxy), Credential: host.Credential,
+		ProxyProfile: host.ProxyProfile, ProxyBypass: host.ProxyBypass}
 	// UTF-8 is the empty value, so a host that never chose a charset keeps its
 	// old record byte-for-byte.
 	if host.Encoding != "" && host.Encoding != charset.UTF8 {
@@ -261,6 +266,13 @@ func (host Host) transport() savedTransport {
 func (host *Host) applyTransport(transport savedTransport) bool {
 	host.Proxy = restoredHostProxy(transport.Proxy)
 	host.Credential = strings.TrimSpace(transport.Credential)
+	host.ProxyProfile = strings.TrimSpace(transport.ProxyProfile)
+	host.ProxyBypass = strings.TrimSpace(transport.ProxyBypass)
+	if host.ProxyProfile != "" {
+		// A profile carries the route; a stale per-host proxy in the same
+		// record must not shadow it.
+		host.Proxy = nil
+	}
 	// An unknown charset is a damaged record: drop it rather than opening a
 	// session that would show replacement characters.
 	encoding, ok := charset.Normalize(strings.TrimSpace(transport.Encoding))

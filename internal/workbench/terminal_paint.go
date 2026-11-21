@@ -120,7 +120,7 @@ func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools
 	tools = append(tools, barTool{id: hitTerminalRecord, icon: recordIcon, hint: recordHint, disabled: session.term.shell == nil, style: recordStyle})
 	tools = append(tools, barTool{id: hitTerminalSaveOutput, icon: iconSave, hint: state.messages.Tools.MenuSaveOutput, style: iconButtonQuiet})
 	if hint, style, offered := state.remoteStatsToggle(session); offered {
-		tools = append(tools, barTool{id: hitRemoteStats, icon: iconActivity, hint: hint, style: style})
+		tools = append(tools, barTool{id: hitRemoteStats, icon: iconGauge, hint: hint, style: style})
 	}
 	tools = append(tools, barTool{id: hitProcessToolsOpen, icon: iconProcess, hint: state.messages.Tools.RemoteMenu, disabled: !state.remoteToolsOffered(session), style: iconButtonQuiet})
 	if tool, ok := state.serverLogsRailTool(session, true); ok {
@@ -655,9 +655,7 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 	// need the terminal itself focused.
 	suggesting := focused || state.ghostMenu.open && state.ghostMenu.session == session.ID
 	if !sensitive && suggesting && !composing && !predicting && t.sync == nil {
-		if rest, ok := state.passwordHintGhost(session); ok {
-			state.paintGhost(canvas, t, geometry, cursor, rest, block)
-		} else if rest, ok := state.commandGhost(session); ok {
+		if rest, ok := state.commandGhost(session); ok {
 			if used, limit, painted := state.paintGhost(canvas, t, geometry, cursor, rest, block); painted {
 				hintRect, hintShown = state.paintGhostHint(canvas, session, geometry, cursor, used, limit)
 			}

@@ -438,13 +438,19 @@ func (state *State) declareSFTPPanel(c ui.C) {
 			}
 		})
 	})
-	if folder.headerMenuOpen && state.sftpHeaderMenuAvailable(view) {
-		rows := state.panelHeaderMenuRows(folder, view)
-		state.declareMenuAt(c, &folder.headerMenuOpen, s.moreButton.Rect(), false, hitSFTPHeaderMenuDismiss, &rows, func(id gfx.ID) {
-			state.clickSFTPPanelHeaderAction(session, view, id)
-		})
-	} else if !state.sftpHeaderMenuAvailable(view) {
-		folder.headerMenuOpen = false
+	if folder.headerMenuOpen {
+		// The menu hangs off the More button's own box: the page places it from
+		// the rectangle the control is laid out at, not the one the declaration
+		// can read before layout. A rect captured here is empty on the paint
+		// that opens the menu, which put the menu at the panel's corner.
+		if !state.sftpHeaderMenuAvailable(view) || !s.moreButton.Valid() {
+			folder.headerMenuOpen = false
+		} else {
+			rows := state.panelHeaderMenuRows(folder, view)
+			state.declareMenuOn(c, &folder.headerMenuOpen, s.moreButton, &rows, func(id gfx.ID) {
+				state.clickSFTPPanelHeaderAction(session, view, id)
+			})
+		}
 	}
 	if view.bookmarksOpen {
 		places := sftpPlaceBrowser{owner: state, session: session, view: view}
@@ -1041,6 +1047,15 @@ func (state *State) declareSFTPDialog(c ui.C, viewport gfx.Rect, view *sftpView)
 		description = messages.SFTPEditConflictDescription
 		submitLabel = messages.SFTPEditReloadConfirm
 		initialFocus = hitSFTPDialogCancel
+	case sftpDialogDownloadConflict:
+		title = messages.SFTPDownloadConflictTitle
+		if view.downloadConflictCount > 1 {
+			description = fmt.Sprintf(messages.SFTPDownloadConflictCountFmt, view.downloadConflictCount)
+		} else {
+			description = fmt.Sprintf(messages.SFTPDownloadConflictDescriptionFmt, view.downloadConflictName)
+		}
+		submitLabel = messages.SFTPDownloadKeepBoth
+		initialFocus = hitSFTPDialogSubmit
 	}
 	fieldDialog := sftpDialogShowsField(view.dialog)
 	showError := view.dialog == sftpDialogDelete && view.dialogError != ""
@@ -1074,6 +1089,14 @@ func (state *State) declareSFTPDialog(c ui.C, viewport gfx.Rect, view *sftpView)
 // the application's identities, and the view keeps the draw so the footer is
 // the same when an application modal stands beside the dialog.
 func (state *State) declareSFTPDialogFooter(c ui.C, view *sftpView) {
+	if view.dialog == sftpDialogDownloadConflict {
+		state.dialogActionFooter(c,
+			components.ButtonAction{ID: hitSFTPDialogCancel, Label: view.dialogCancelLabel, Variant: components.ButtonSecondary},
+			components.ButtonAction{ID: hitSFTPDialogReplace, Label: state.messages.SFTPDownloadReplace, Variant: components.ButtonDestructive},
+			components.ButtonAction{ID: hitSFTPDialogSubmit, Label: view.dialogSubmitLabel, Variant: components.ButtonDefault},
+		)
+		return
+	}
 	state.dialogActionFooter(c,
 		components.ButtonAction{ID: hitSFTPDialogCancel, Label: view.dialogCancelLabel, Variant: components.ButtonSecondary},
 		components.ButtonAction{ID: hitSFTPDialogSubmit, Label: view.dialogSubmitLabel, Variant: view.dialogSubmitVariant},

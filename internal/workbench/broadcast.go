@@ -24,12 +24,23 @@ const broadcastPaneLimit = 16
 func (state *State) typed(session *Session, input []byte) bool {
 	accepted := session.term.send(input)
 	if accepted && state.broadcast != 0 {
-		state.broadcastInput(session.ID, input)
+		state.broadcastInput(session.ID, input, true)
 	}
 	return accepted
 }
 
-func (state *State) broadcastInput(source uint32, input []byte) {
+// typedKeyState is typed for keys that carry key state instead of typing: a
+// bare modifier or a release. The panes of a broadcasting tab need the same
+// state, but their selection and view stay where the user put them.
+func (state *State) typedKeyState(session *Session, input []byte) bool {
+	accepted := session.term.sendKeyState(input)
+	if accepted && state.broadcast != 0 {
+		state.broadcastInput(session.ID, input, false)
+	}
+	return accepted
+}
+
+func (state *State) broadcastInput(source uint32, input []byte, typing bool) {
 	workspaceID, _, ok := state.deck.PaneForSession(layoutcore.SessionID(source))
 	if !ok || workspaceID != state.broadcast {
 		return
@@ -40,7 +51,11 @@ func (state *State) broadcastInput(source uint32, input []byte) {
 			continue
 		}
 		if peer, ok := state.sessionByIDPointer(uint32(pane.SessionID)); ok && workspaceSessionState(peer) == workspacePaneConnected {
-			peer.term.send(input)
+			if typing {
+				peer.term.send(input)
+			} else {
+				peer.term.sendKeyState(input)
+			}
 		}
 	}
 }
@@ -171,6 +186,7 @@ func (state *State) clickTerminalTools(id gfx.ID) bool {
 	case id == hitImportSessions:
 		state.modal = modalImportSessions
 	case state.clickCredentialSettings(id):
+	case state.clickProxyProfileSettings(id):
 	case state.clickHostTagSettings(id):
 	case id == hitSettingsHighlightManage:
 		state.openRuleManager(ruleDeleteHighlight)

@@ -129,6 +129,7 @@ type ToolsMessages struct {
 	SnippetShortcutInvalid    string
 	SnippetErrorName          string
 	SnippetErrorCommand       string
+	SnippetErrorTooLong       string
 	SnippetErrorTooMany       string
 	SnippetSave               string
 	SnippetPaletteFmt         string
@@ -291,7 +292,6 @@ type ToolsMessages struct {
 	PasswordHintDescription string
 	CloseConfirmRow         string
 	CloseConfirmDescription string
-	PasswordHintGhost       string // drawn after a sudo prompt, beside the cursor
 
 	// The outbound proxy.
 	ProxyRow                    string
@@ -677,6 +677,8 @@ type ToolsMessages struct {
 	UpdateConfirmSubmit             string
 	UpdateDownloadingTitleFmt       string
 	UpdateVerifying                 string
+	UpdateInstallingTitleFmt        string
+	UpdateInstalling                string
 	UpdateRestarting                string
 	UpdateFailedTitle               string
 	UpdateFailedBodyFmt             string

@@ -351,3 +351,62 @@ func TestPressOutsideTheFilesMenuClosesIt(t *testing.T) {
 		t.Fatal("a press outside the menu left it open")
 	}
 }
+
+// TestSFTPHeaderMenuHangsOffTheMoreButton guards the menu's anchor: the docked
+// files panel opens it from the More button's own box, so the popup starts
+// under that button. Reading the button's rectangle while the page is still
+// being declared yields an empty one, which used to place the menu at the
+// panel's top-left corner instead.
+func TestSFTPHeaderMenuHangsOffTheMoreButton(t *testing.T) {
+	state, _, _, _ := openTestSFTP(t)
+	state.setLanguage(i18n.Chinese)
+	view, err := headless.Open(state.WindowConfig(app.Config{
+		Title: "files more menu anchor", Width: 1400, Height: 900, Tree: Tree(),
+		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnResize: state.Resize,
+	}), nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	more, ok := hitByIDSnapshot(view.Snapshot().Hits, contextID(hitSFTPHeaderMore))
+	if !ok {
+		t.Fatal("no hit for the More button")
+	}
+	if err := view.Click(more.Bounds.X+more.Bounds.Width/2, more.Bounds.Y+more.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	// Every row of the open menu is a menuitem hit; their union is the menu's
+	// extent. The window is wide enough that the popup neither flips nor is
+	// clamped against an edge.
+	var menu gfx.Rect
+	rows := 0
+	for _, hit := range view.Snapshot().Hits {
+		if hit.Role != gfx.RoleMenuItem {
+			continue
+		}
+		if rows == 0 {
+			menu = hit.Bounds
+		} else {
+			left, top := min(menu.X, hit.Bounds.X), min(menu.Y, hit.Bounds.Y)
+			right := max(menu.X+menu.Width, hit.Bounds.X+hit.Bounds.Width)
+			bottom := max(menu.Y+menu.Height, hit.Bounds.Y+hit.Bounds.Height)
+			menu = gfx.Rect{X: left, Y: top, Width: right - left, Height: bottom - top}
+		}
+		rows++
+	}
+	if rows == 0 {
+		t.Fatal("the More menu opened no rows")
+	}
+	if menu.X < more.Bounds.X-1 {
+		t.Fatalf("menu starts at x=%v, left of the More button at x=%v", menu.X, more.Bounds.X)
+	}
+	if menu.Y < more.Bounds.Y+more.Bounds.Height {
+		t.Fatalf("menu starts at y=%v, above the More button's bottom at y=%v", menu.Y, more.Bounds.Y+more.Bounds.Height)
+	}
+}

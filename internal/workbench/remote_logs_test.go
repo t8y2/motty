@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/keymap"
 
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
@@ -517,5 +518,200 @@ func TestClosingSSHBrowserKeepsRemoteLogsRunning(t *testing.T) {
 	state.clickTabMenu(hitTabMenuBrowserClose)
 	if canceled {
 		t.Fatal("closing the SSH browser stopped the log stream")
+	}
+}
+
+func TestRemoteLogWrapKeepsEveryByteOnItsCells(t *testing.T) {
+	line := strings.Repeat("wide主语 abc ", 40)
+	view := &remoteLogView{}
+	view.snapshot = remoteLogSnapshot{lines: []string{line}, revision: 1}
+	view.refreshRows(23)
+	rows := view.rows
+	if len(rows) < 2 {
+		t.Fatalf("a %d-byte line at 23 cells made %d rows", len(line), len(rows))
+	}
+	var rebuilt strings.Builder
+	for index, row := range rows {
+		if index > 0 && rows[index-1].line != row.line {
+			t.Fatalf("row %d moved to line %d", index, row.line)
+		}
+		if cells := remoteLogCells(line[row.start:row.end]); cells > 23 {
+			t.Fatalf("row %d covers %d cells", index, cells)
+		}
+		rebuilt.WriteString(line[row.start:row.end])
+	}
+	if rebuilt.String() != line {
+		t.Fatal("wrapping lost or changed bytes")
+	}
+}
+
+func TestRemoteLogSelectionPointMapsWrappedRows(t *testing.T) {
+	view := &remoteLogView{
+		snapshot:   remoteLogSnapshot{lines: []string{"abcdefghij", "K"}, revision: 1},
+		textOrigin: gfx.Point{X: 100, Y: 50},
+		cellWidth:  10,
+	}
+	view.refreshRows(4)
+	rows := view.rows
+	if len(rows) != 4 || rows[1].start != 4 || rows[2].start != 8 || rows[3].line != 1 {
+		t.Fatalf("wrapped rows = %+v", rows)
+	}
+	point := func(x, y float32) int {
+		t.Helper()
+		placed, ok := view.selectionPoint(gfx.Point{X: x, Y: y})
+		if !ok {
+			t.Fatal("no selection point")
+		}
+		return placed.Offset
+	}
+	// The second row begins at byte 4; two cells into it is byte 6.
+	if got := point(100+15, 50+20+1); got != 6 {
+		t.Fatalf("point in the second row = %d, want 6", got)
+	}
+	// The third row begins at byte 8; the first cell is byte 8.
+	if got := point(100+3, 50+40+1); got != 8 {
+		t.Fatalf("point in the third row = %d, want 8", got)
+	}
+	// Above the origin clamps to the row's first byte; below the last row
+	// clamps to the last line's start.
+	if got := point(90, 50+20+1); got != 4 {
+		t.Fatalf("point left of the second row = %d, want 4", got)
+	}
+	if got := point(100+1, 400); got != 11 {
+		t.Fatalf("point below the last row = %d, want 11", got)
+	}
+}
+
+func TestRemoteLogWrapsAndCopiesSelection(t *testing.T) {
+	state, _, fake, _ := liveSession(t)
+	session, _ := state.sessionByIDPointer(state.activeSessionID)
+	path := remoteLogPath{Name: "App log", Path: "/var/log/app.log"}
+	index := state.hostIndex(session.HostID)
+	if index < 0 {
+		t.Fatal("the session host is not in the catalog")
+	}
+	state.hosts[index].RemoteLogPaths = []remoteLogPath{path}
+	long := strings.Repeat("spring boot request ", 120)
+	fake.streamCommand = func(ctx context.Context, command string, _ int, line func([]byte) bool) error {
+		line([]byte("\n"))
+		line([]byte(long + "\n"))
+		line([]byte("ERROR second line\n"))
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	view, err := headless.Open(state.WindowConfig(app.Config{
+		Title: "Server logs", Width: 1200, Height: 800, Tree: Tree(),
+		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
+		OnResize: state.Resize, OnWake: state.Wake,
+	}), nil, headless.Options{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.ClickLabel(state.messages.RemoteLogs.Title); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.ClickLabel(path.Name + " " + path.Path); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for len(session.remoteLogs.snapshot.lines) < 2 && time.Now().Before(deadline) {
+		if err := view.Resize(1200, 800); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if len(session.remoteLogs.snapshot.lines) != 2 {
+		t.Fatalf("the stream reached %d lines", len(session.remoteLogs.snapshot.lines))
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	rows := session.remoteLogs.rows
+	if len(rows) < 3 {
+		t.Fatalf("the long line was not wrapped: %d rows", len(rows))
+	}
+	// The tail of the long line is painted in its last row, not clipped away.
+	last := rows[len(rows)-2]
+	tail := session.remoteLogs.snapshot.lines[last.line][last.start:last.end]
+	found := false
+	for _, painted := range view.Snapshot().Texts {
+		if painted.Value == tail {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("the wrapped tail %q is not painted", tail)
+	}
+	if max := session.remoteLogs.scroll.Max(); max <= 0 {
+		t.Fatal("the wrapped log has no scroll range")
+	}
+
+	var copied string
+	state.options.SetClipboardText = func(value string) error { copied = value; return nil }
+	selectAll := gfx.KeyEvent{Text: "a", Modifiers: keymap.Primary, Target: hitRemoteLogOutput}
+	if result := state.Shortcut(selectAll); !result.Handled || session.remoteLogs.selection.Empty() {
+		t.Fatalf("select all = %+v, selection %+v", result, session.remoteLogs.selection)
+	}
+	copyChord := gfx.KeyEvent{Text: "c", Modifiers: keymap.Primary, Target: hitRemoteLogOutput}
+	if result := state.Shortcut(copyChord); !result.Handled {
+		t.Fatal("the copy chord did not reach the log output")
+	}
+	if want := long + "\nERROR second line"; copied != want {
+		t.Fatalf("copied %q, want %q", copied, want)
+	}
+
+	// A drag inside the first wrapped row selects source bytes, not cells of the
+	// panel: the copied text is the line's own opening.
+	origin, cell := session.remoteLogs.textOrigin, session.remoteLogs.cellWidth
+	drag := func(kind gfx.PointerEventKind, x, y float32) gfx.EventResult {
+		return state.Pointer(gfx.PointerEvent{
+			Kind: kind, Button: gfx.PointerButtonPrimary, X: x, Y: y,
+			Target: hitRemoteLogOutput, Captured: kind != gfx.PointerDown,
+		})
+	}
+	if result := drag(gfx.PointerDown, origin.X+1, origin.Y+1); !result.Handled {
+		t.Fatal("pressing the log output did not start a selection")
+	}
+	drag(gfx.PointerMove, origin.X+cell*3+1, origin.Y+1)
+	drag(gfx.PointerUp, origin.X+cell*3+1, origin.Y+1)
+	copied = ""
+	state.Shortcut(copyChord)
+	if copied != long[:3] {
+		t.Fatalf("dragged copy = %q, want %q", copied, long[:3])
+	}
+}
+
+func TestRemoteLogSelectionFollowsRotation(t *testing.T) {
+	buffer := new(remoteLogBuffer)
+	for index := range remoteLogBufferLines + 3 {
+		buffer.append(fmt.Appendf(nil, "line %d\n", index))
+	}
+	view := &remoteLogView{buffer: buffer}
+	buffer.snapshot(&view.snapshot)
+	view.refreshRows(40)
+	if !view.selectAll() {
+		t.Fatal("select all left nothing to copy")
+	}
+	selected, ok := view.selectedText()
+	if !ok || !strings.HasPrefix(selected, "line 3\n") {
+		t.Fatalf("selection starts %q", selected[:min(len(selected), 20)])
+	}
+	buffer.append([]byte("extra one\n"))
+	buffer.append([]byte("extra two\n"))
+	buffer.snapshot(&view.snapshot)
+	view.refreshRows(40)
+	// The two lines that rotated out moved the text, and the selection with it:
+	// the copy starts at the first line still retained and keeps the old end.
+	selected, ok = view.selectedText()
+	if !ok || !strings.HasPrefix(selected, "line 5\n") {
+		t.Fatalf("rotated selection starts %q", selected[:min(len(selected), 20)])
+	}
+	if strings.Contains(selected, "extra one") {
+		t.Fatal("the selection grew into lines it did not cover")
 	}
 }

@@ -91,6 +91,13 @@ type Host struct {
 	// Proxy overrides the global outbound proxy for this host. Nil inherits the
 	// global proxy; an explicit ProxyNone forces a direct connection.
 	Proxy *outboundProxy
+	// ProxyProfile, when set, is the id of a saved proxy profile (see
+	// outbound_proxy_profiles.go) that carries this host instead of Proxy. The
+	// profile wins over Proxy; an id no profile has treats the host as direct.
+	// ProxyBypass is this host's own direct list for that route, since the
+	// profile is shared by several hosts.
+	ProxyProfile string
+	ProxyBypass  string
 	// ViaSSH and Clipboard are a remote desktop host's: its server is reached
 	// through an SSH connection to Address (User is then the SSH account), and
 	// the clipboard is shared with the remote desktop. Console is an RDP host's:
@@ -171,16 +178,20 @@ type Session struct {
 	desktopTunnel bool
 	// proxyRoute is the effective outbound proxy frozen when this connection
 	// was dialed. Editing the host updates host, but not the live transport.
-	proxyRoute   string
-	sshOptions   *sshconfig.ConnectionOptions
-	endpoint     sshconn.Endpoint
-	role         sshconn.EndpointRole
-	conn         Connection
-	browser      *sshbrowser.Browser
-	sudoCommands bool
-	sudoPassword string
-	recordRecent bool // this user dial may update its recent success once
-	shared       bool // conn is a tab on another tab's connection
+	proxyRoute string
+	// authentication is the policy this connection was dialed with. Like
+	// sshOptions it is frozen at the dial: a transport authenticated one way is
+	// not lent to a host that would authenticate another (see shareFrom).
+	authentication sshconn.Authentication
+	sshOptions     *sshconfig.ConnectionOptions
+	endpoint       sshconn.Endpoint
+	role           sshconn.EndpointRole
+	conn           Connection
+	browser        *sshbrowser.Browser
+	sudoCommands   bool
+	sudoPassword   string
+	recordRecent   bool // this user dial may update its recent success once
+	shared         bool // conn is a tab on another tab's connection
 	// An interactive remote command for this tab only; it is not persisted as a host setting.
 	containerCommand string
 	// avoidShare makes the next connection a fresh one: the server refused one

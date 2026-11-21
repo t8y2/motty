@@ -206,7 +206,7 @@ func dashboardViewIcons(index int) gfx.Icon {
 	if index < 0 || index >= 3 {
 		return gfx.Icon{}
 	}
-	return [...]gfx.Icon{icons.Activity, icons.HardDrive, icons.Wifi}[index]
+	return [...]gfx.Icon{icons.Gauge, icons.HardDrive, icons.Wifi}[index]
 }
 
 // dashboardViewOptions is the host view strip; the page declares it as ui.Tabs
@@ -219,7 +219,7 @@ func (s *State) dashboardViewOptions(host uint32, simple bool) [3]components.Tab
 		if simple {
 			id = hitDashboardSimpleViewList.At(int(host)*3 + i)
 		}
-		out[i] = components.TabOption{ID: id, Label: label, Icon: []gfx.Icon{icons.Activity, icons.HardDrive, icons.Wifi}[i], Disabled: host == 0}
+		out[i] = components.TabOption{ID: id, Label: label, Icon: []gfx.Icon{icons.Gauge, icons.HardDrive, icons.Wifi}[i], Disabled: host == 0}
 	}
 	return out
 }

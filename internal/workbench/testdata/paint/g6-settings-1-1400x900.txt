@@ -462,8 +462,8 @@ text "Show a preview before text containing line breaks reaches the shell. Turn 
 text "Confirm before closing running sessions" {541 1982.5 664 21}
 text "Asks first when a tab or pane that is still connected is closed. Sessions that have ended close without asking." {541 2004.5 664 15}
 text "Password prompt assist" {541 2039 664 21}
-text "When sudo asks for a password, offers the host's saved password; when su asks, lists the host's and identities'" {541 2061 664 15}
-text "passwords to choose from. Nothing is sent until you press Enter or pick one. Save identities in Settings > Security > Ide…" {541 2076 664 15}
+text "Lists saved passwords at sudo, su and SSH/SCP account password prompts, including in local terminals and nested SSH" {541 2061 664 15}
+text "sessions. Use ↑/↓ then Enter, or click a password to send it. Save identities in Settings > Security > Identities." {541 2076 664 15}
 text "Desktop notifications" {541 2103 664 21}
 text "Show a system notification when a program in the terminal asks for one (OSC 9, 777 and 99). At most one a second per" {541 2125 664 15}
 text "terminal." {541 2140 664 15}

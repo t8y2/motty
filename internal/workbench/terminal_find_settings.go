@@ -268,7 +268,7 @@ func (state *State) declareFindPreference(c ui.C, which findPreference) ui.Box {
 			v.originChoice = state.terminalFindPrefs.Origin
 		}
 		origins := terminalFindOrigins[:]
-		selector := ui.Select(c, &v.originChoice, origins, state.findOriginLabel).Label(m.Origin).Hit(hitFindSettingsOrigin, m.Origin).Grow(1)
+		selector := ui.Select(c, &v.originChoice, origins, state.findOriginLabel).Label(m.Origin).Grow(1)
 		if selector.Changed() {
 			origin := v.originChoice
 			c.After(func() {

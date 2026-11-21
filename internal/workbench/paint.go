@@ -50,6 +50,9 @@ const (
 	iconArrowUp
 	iconFolderOpen
 	iconActivity
+	// iconGauge is the resource monitor's own glyph: the speedometer that says
+	// performance, where iconActivity is the pulse of latency and live traffic.
+	iconGauge
 	iconRecord
 	iconRecordStop
 	iconPlay
@@ -241,24 +244,13 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	chrome := &state.chrome
 	geometry := state.windowBarGeometry(canvas, size.Width)
 	activeIndex := -1
-	if state.activeSection == sectionTerminal {
-		for index, tab := range state.workspaceTabs {
-			if tab.ID == state.deck.ActiveWorkspace() {
-				activeIndex = index
-				break
-			}
-		}
-	} else if fileManager {
-		if index := state.sftpTabIndex(state.activeSFTPTab); index >= 0 {
-			activeIndex = len(state.workspaceTabs) + index
-		}
-	} else if state.settingsTabActive() {
-		activeIndex = state.settingsTabIndex()
+	if active, ok := state.activeWindowTab(); ok {
+		activeIndex = state.windowTabIndex(active)
 	}
 	scroll := float32(0)
 	if state.tabOrientation == tabsHorizontal {
-		topTabCount := len(state.workspaceTabs) + state.fileTabCount()
-		scroll = state.tabStrip.layoutIndex(geometry.area, float32(topTabCount)*(geometry.tabWidth+barGap), topTabCount, activeIndex, geometry.tabWidth+barGap, geometry.tabWidth)
+		count := state.windowTabCount()
+		scroll = state.tabStrip.layoutIndex(geometry.area, float32(count)*(geometry.tabWidth+barGap), count, activeIndex, geometry.tabWidth+barGap, geometry.tabWidth)
 	} else if state.fileTabCount() > 0 {
 		fileTabs := state.fileTabCount()
 		scroll = state.fileTabStrip.layoutIndex(geometry.area, float32(fileTabs)*(geometry.tabWidth+barGap), fileTabs, activeIndex-len(state.workspaceTabs), geometry.tabWidth+barGap, geometry.tabWidth)
@@ -756,6 +748,8 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool
 		}
 	}
 	visibleFileTabs += state.settingsTabCount()
+	settingsPlace := state.settingsTabPlace()
+	settingsDeclared := false
 	bar.tabs = bar.tabs[:0]
 	bar.title = ui.Box{}
 	bar.titleLabel = ""
@@ -803,6 +797,15 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool
 					tabs.Width(geometry.row.Width).Height(windowBarHeight).Items(ui.Center).Shrink(0).Clip()
 				}
 				tabs.Children(func() {
+					firstPending := !probe
+					if settingsPlace == 0 {
+						first := float32(0)
+						if firstPending {
+							first, firstPending = -scroll, false
+						}
+						bar.tabs = append(bar.tabs, state.declareSettingsTab(c, probe, geometry, first))
+						settingsDeclared = true
+					}
 					for index := range state.workspaceTabs {
 						if state.tabOrientation == tabsVertical {
 							break
@@ -823,20 +826,27 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool
 							tab = ui.Slot(c).Width(barTabMax).MinWidth(minimum).Height(barTabHeight).Shrink(1).MarginSides(0, barGap, 0, 0)
 							chrome.probeTabs = append(chrome.probeTabs, tab)
 							bar.tabs = append(bar.tabs, barTab{})
-							continue
+						} else {
+							first := float32(0)
+							if firstPending {
+								first, firstPending = -scroll, false
+							}
+							number := state.windowTabIndex(windowTab{kind: windowTabWorkspace, id: uint32(workspace.ID)}) + 1
+							entry := state.declareWorkspaceTab(c, workspace, geometry.tabWidth, barTabHeight, first, false, false, number)
+							bar.tabs = append(bar.tabs, entry)
 						}
-						first := float32(0)
-						if index == 0 {
-							first = -scroll
+						if settingsPlace == index+1 {
+							bar.tabs = append(bar.tabs, state.declareSettingsTab(c, probe, geometry, 0))
+							settingsDeclared = true
 						}
-						entry := state.declareWorkspaceTab(c, workspace, geometry.tabWidth, barTabHeight, first, false, false, index+1)
-						bar.tabs = append(bar.tabs, entry)
 					}
-					for fileIndex, fileTab := range state.sftpTabs {
+					visibleFileIndex := 0
+					for _, fileTab := range state.sftpTabs {
 						if fileTab == nil || fileTab.closed {
 							continue
 						}
-						index := len(state.workspaceTabs) + fileIndex
+						baseIndex := len(state.workspaceTabs) + visibleFileIndex
+						visibleFileIndex++
 						id, closeID := sftpFileTabID(fileTab.session.ID), sftpFileTabCloseID(fileTab.session.ID)
 						if probe {
 							minimum := barTabMin
@@ -849,76 +859,76 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool
 							tab := ui.Slot(c).Width(barTabMax).MinWidth(minimum).Height(barTabHeight).Shrink(1).MarginSides(0, barGap, 0, 0)
 							chrome.probeTabs = append(chrome.probeTabs, tab)
 							bar.tabs = append(bar.tabs, barTab{})
-							continue
-						}
-						entry := barTab{fileSession: fileTab.session.ID, id: id, closeID: closeID}
-						if state.tabNumbers {
-							entry.number = tabNumber(index + 1)
-						}
-						active := state.activeSection == sectionSFTP && state.activeSFTPTab == fileTab.session.ID
-						hovered := c.Canvas().Hovered() == id || c.Canvas().Hovered() == closeID
-						dropped := state.foreignFileTab == fileTab.session.ID
-						foreground := pal.muted
-						fill := pal.tab
-						switch {
-						case active:
-							fill, foreground = pal.tabActive, pal.text
-						case hovered:
-							fill, foreground = pal.tabHover, pal.text
-						}
-						color := fileTab.session.host.Color
-						entry.tint = color
-						entry.base = fill
-						fill = tabFill(pal, fill, color, active, hovered)
-						edge := tabBorderColor(pal, color, active)
-						foreground = tabInk(pal, color, foreground)
-						if dropped {
-							// A file drag from another window would land in this
-							// tab's server folder.
-							fill, edge, foreground = pal.tabActive, pal.accent, pal.text
-						}
-						entry.background = fill
-						first := float32(0)
-						if state.tabOrientation == tabsVertical {
-							if fileIndex == 0 {
-								first = -scroll
+						} else {
+							entry := barTab{fileSession: fileTab.session.ID, id: id, closeID: closeID}
+							if state.tabNumbers {
+								entry.number = tabNumber(state.windowTabIndex(windowTab{kind: windowTabFile, id: fileTab.session.ID}) + 1)
 							}
-						} else if index == 0 {
-							first = -scroll
-						}
-						label := state.sftpFileTabTitle(fileTab)
-						entry.box = ui.Row(c).Size(geometry.tabWidth, barTabHeight).Shrink(0).MarginSides(0, barGap, 0, first).
-							HitOutset(barTabReach, 0, barTabReach, 0).PadSides(0, 3, 0, 4).Items(ui.Center).Radius(radius.item).Border(1, edge).Background(fill).
-							HitWith(id, label, gfx.HitOptions{Role: gfx.RoleTab, Selected: active, Hint: label}).Children(func() {
-							entry.badge = ui.Slot(c).Size(20, 20).MarginSides(0, 7, 0, 0)
-							if state.tabNumbers && entry.number != "" {
-								// File tabs follow the session tabs in the number row,
-								// as they do for the number shortcuts.
-								ui.Text(c, entry.number).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(tabNumberInk(foreground, fileTab.session.host.Color)).LineHeight(20).Shrink(0).MarginSides(0, tabNumberGap, 0, 0)
+							active := state.activeSection == sectionSFTP && state.activeSFTPTab == fileTab.session.ID
+							hovered := c.Canvas().Hovered() == id || c.Canvas().Hovered() == closeID
+							dropped := state.foreignFileTab == fileTab.session.ID
+							foreground := pal.muted
+							fill := pal.tab
+							switch {
+							case active:
+								fill, foreground = pal.tabActive, pal.text
+							case hovered:
+								fill, foreground = pal.tabHover, pal.text
 							}
-							ui.Text(c, label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(foreground).LineHeight(20).Ellipsis()
-							entry.light = ui.Slot(c).Size(9, 20).MarginSides(0, 0, 0, 7)
-							ui.Spacer(c)
-							if !active && !hovered {
-								ui.Slot(c).Size(20, 20)
-								return
+							color := fileTab.session.host.Color
+							entry.tint = color
+							entry.base = fill
+							fill = tabFill(pal, fill, color, active, hovered)
+							edge := tabBorderColor(pal, color, active)
+							foreground = tabInk(pal, color, foreground)
+							if dropped {
+								// A file drag from another window would land in this
+								// tab's server folder.
+								fill, edge, foreground = pal.tabActive, pal.accent, pal.text
 							}
-							var closeFill gfx.Color
-							if c.Canvas().Hovered() == closeID {
-								closeFill = pal.line
-								if active {
-									closeFill = pal.tabCloseHot
+							entry.background = fill
+							first := float32(0)
+							if firstPending {
+								first, firstPending = -scroll, false
+							}
+							label := state.sftpFileTabTitle(fileTab)
+							entry.box = ui.Row(c).Size(geometry.tabWidth, barTabHeight).Shrink(0).MarginSides(0, barGap, 0, first).
+								HitOutset(barTabReach, 0, barTabReach, 0).PadSides(0, 3, 0, 4).Items(ui.Center).Radius(radius.item).Border(1, edge).Background(fill).
+								HitWith(id, label, gfx.HitOptions{Role: gfx.RoleTab, Selected: active, Hint: label}).Children(func() {
+								entry.badge = ui.Slot(c).Size(20, 20).MarginSides(0, 7, 0, 0)
+								if state.tabNumbers && entry.number != "" {
+									// File tabs follow the session tabs in the number row,
+									// as they do for the number shortcuts.
+									ui.Text(c, entry.number).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(tabNumberInk(foreground, fileTab.session.host.Color)).LineHeight(20).Shrink(0).MarginSides(0, tabNumberGap, 0, 0)
 								}
-							}
-							ui.Row(c).Size(20, 20).Shrink(0).Center().Radius(radius.item).Background(closeFill).
-								HitWith(closeID, m.LabelCloseTab, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true}).Children(func() {
-								ui.Icon(c, lucideIcons[iconClose]).Size(14, 14).Color(foreground)
+								ui.Text(c, label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(foreground).LineHeight(20).Ellipsis()
+								entry.light = ui.Slot(c).Size(9, 20).MarginSides(0, 0, 0, 7)
+								ui.Spacer(c)
+								if !active && !hovered {
+									ui.Slot(c).Size(20, 20)
+									return
+								}
+								var closeFill gfx.Color
+								if c.Canvas().Hovered() == closeID {
+									closeFill = pal.line
+									if active {
+										closeFill = pal.tabCloseHot
+									}
+								}
+								ui.Row(c).Size(20, 20).Shrink(0).Center().Radius(radius.item).Background(closeFill).
+									HitWith(closeID, m.LabelCloseTab, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true}).Children(func() {
+									ui.Icon(c, lucideIcons[iconClose]).Size(14, 14).Color(foreground)
+								})
 							})
-						})
-						bar.tabs = append(bar.tabs, entry)
+							bar.tabs = append(bar.tabs, entry)
+						}
+						if settingsPlace == baseIndex+1 {
+							bar.tabs = append(bar.tabs, state.declareSettingsTab(c, probe, geometry, 0))
+							settingsDeclared = true
+						}
 					}
-					if state.settingsTabShown() {
-						bar.tabs = append(bar.tabs, state.declareSettingsTab(c, probe, geometry, scroll))
+					if settingsPlace >= 0 && !settingsDeclared {
+						bar.tabs = append(bar.tabs, state.declareSettingsTab(c, probe, geometry, 0))
 					}
 				})
 				state.barButton(c, probe, hitNewTab, iconPlus, m.LabelNewTab)
@@ -1463,7 +1473,7 @@ func (state *State) hostsHeaderPlan(canvas *gfx.Canvas, layout hostsLayout) host
 		{hitEditHost, m.EditHost, iconPencil, false, false},
 		{hitCopyHost, m.CopyHost, iconCopy, false, false},
 		{hitMoveHostGroup, m.MoveHostGroup, iconFolderOpen, false, false},
-		{hitDashboardAddHosts, state.messages.Dashboard.AddHosts, iconActivity, false, false},
+		{hitDashboardAddHosts, state.messages.Dashboard.AddHosts, iconGauge, false, false},
 		{hitDeleteHost, m.DeleteHost, iconTrash, false, true},
 	}
 	// The actions keep their words while the row has room for them and the count
@@ -2683,6 +2693,7 @@ var lucideIcons = [...]gfx.Icon{
 	iconFolderSolid:     icons.FolderSolid,
 	iconFolderSolidOpen: icons.FolderSolidOpen,
 	iconActivity:        icons.Activity,
+	iconGauge:           icons.Gauge,
 	iconRecord:          icons.CircleDot,
 	iconRecordStop:      icons.CircleStop,
 	iconPlay:            icons.Play,
@@ -2844,6 +2855,8 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareKeyPassphraseDialog(c)
 	case modalRenameTab:
 		state.declareTabRenameDialog(c)
+	case modalLocalStartupCommand:
+		state.declareLocalStartupCommandDialog(c)
 	case modalAIRename:
 		state.declareAIRenameDialog(c)
 	case modalHostImportResult:
@@ -2860,6 +2873,8 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareUpdateDialog(c)
 	case modalUpdateProgress:
 		state.declareUpdateProgress(c)
+	case modalProxyProfile:
+		state.declareProxyProfileDialog(c)
 	case modalNewHost:
 		state.declareHostDialog(c)
 	case modalTerminalInput:
@@ -2888,6 +2903,8 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareFormDialog(c)
 	case modalFontPicker:
 		state.declareFontPicker(c)
+	case modalIconColorPicker:
+		state.declareIconColorPicker(c)
 	case modalOutboundProxy:
 		state.declareOutboundProxyDialog(c)
 	case modalAutofillRule:

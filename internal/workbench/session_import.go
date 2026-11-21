@@ -16,11 +16,12 @@ import (
 )
 
 // Importing the saved sessions of PuTTY, Xshell, MobaXterm, WindTerm, Electerm,
-// Netcatty, SecureCRT and FinalShell. The files are read by
+// Netcatty, SecureCRT, FinalShell, Xterminal and XPipe. The files are read by
 // internal/sessionimport; this file picks them, turns their sessions into hosts
 // and shows what came of it in the same result dialog as an OpenSSH config.
-// SecureCRT keeps its sessions as a tree of .ini files and FinalShell keeps
-// them in a data folder, so both ask for a folder instead of files.
+// SecureCRT keeps its sessions as a tree of .ini files, and FinalShell,
+// Xterminal and XPipe keep their data in a folder, so they ask for a folder
+// instead of files.
 
 // sessionImportHits is the place of the controls this file paints.
 var sessionImportHits = tree.Feature("session-import")
@@ -42,6 +43,8 @@ var (
 	hitImportNetcatty        = tree.ID(sessionImportHits, "import-netcatty")
 	hitImportSecureCRT       = tree.ID(sessionImportHits, "import-secure-crt")
 	hitImportFinalShell      = tree.ID(sessionImportHits, "import-final-shell")
+	hitImportXterminal       = tree.ID(sessionImportHits, "import-xterminal")
+	hitImportXPipe           = tree.ID(sessionImportHits, "import-xpipe")
 	hitImportGuide           = tree.ID(sessionImportHits, "import-guide")
 	hitImportPreviewCancel   = tree.ID(sessionImportHits, "import-preview-cancel")
 	hitImportPreviewClose    = tree.ID(sessionImportHits, "import-preview-close")
@@ -84,6 +87,10 @@ func importClientName(client sessionimport.Client) string {
 		return "SecureCRT"
 	case sessionimport.FinalShell:
 		return "FinalShell"
+	case sessionimport.Xterminal:
+		return "Xterminal"
+	case sessionimport.XPipe:
+		return "XPipe"
 	}
 	return "MobaXterm"
 }
@@ -106,6 +113,10 @@ func (state *State) clickImportSessions(id gfx.ID) {
 		state.importSessions(sessionimport.SecureCRT)
 	case hitImportFinalShell:
 		state.importSessions(sessionimport.FinalShell)
+	case hitImportXterminal:
+		state.importSessions(sessionimport.Xterminal)
+	case hitImportXPipe:
+		state.importSessions(sessionimport.XPipe)
 	case hitImportGuide:
 		state.openExternal(state.messages.Tools.ImportGuideURL)
 	case hitImportSessionsCancel, hitImportSessionsClose, hitImportSessionsDismiss:
@@ -142,7 +153,8 @@ func (state *State) importSessionsWithOptions(client sessionimport.Client, optio
 // importClientUsesFolder reports whether a client keeps its sessions in a
 // folder whose inner layout becomes groups, so it is picked as a folder.
 func importClientUsesFolder(client sessionimport.Client) bool {
-	return client == sessionimport.SecureCRT || client == sessionimport.FinalShell
+	return client == sessionimport.SecureCRT || client == sessionimport.FinalShell ||
+		client == sessionimport.Xterminal || client == sessionimport.XPipe
 }
 
 // importSessionFolder asks for the folder that holds a client's sessions. Each
@@ -151,7 +163,7 @@ func (state *State) importSessionFolder(client sessionimport.Client, options ses
 	m := state.messages.Tools
 	name := importClientName(client)
 	title := fmt.Sprintf(m.ImportFolderPickerFmt, name)
-	if client == sessionimport.FinalShell {
+	if client == sessionimport.FinalShell || client == sessionimport.Xterminal || client == sessionimport.XPipe {
 		title = fmt.Sprintf(m.ImportConfigFolderPickerFmt, name)
 	}
 	folder, err := state.options.OpenDirectory(app.OpenDirectoryOptions{Title: title})
@@ -325,6 +337,8 @@ func (state *State) declareImportSessions(c ui.C) {
 		{hitImportNetcatty, "Netcatty"},
 		{hitImportSecureCRT, "SecureCRT"},
 		{hitImportFinalShell, "FinalShell"},
+		{hitImportXterminal, "Xterminal"},
+		{hitImportXPipe, "XPipe"},
 	}
 	const columns = 2
 	gap := theme.Metrics.GapItem
@@ -625,14 +639,21 @@ func planHasSameHost(plan hostImportPlan, host Host) bool {
 func (state *State) planStreamImport(plan *hostImportPlan, usedIDs map[string]struct{}, entry sessionimport.Entry) {
 	host := Host{
 		ID: plan.nextHostID, Label: entry.Name, Group: entry.Group,
-		Address: entry.Host, Port: uint16(entry.Port),
+		Address: entry.Host, Port: uint16(entry.Port), User: entry.User,
 	}
-	if entry.Protocol == sessionimport.Serial {
+	switch entry.Protocol {
+	case sessionimport.Serial:
 		if !host.applyTransport(savedTransport{Protocol: "serial", Line: entry.Line, Flow: entry.Flow}) {
 			plan.duplicateHosts++ // a line that cannot be used is left out
 			return
 		}
-	} else {
+	case sessionimport.Telnet:
+		host.Protocol = protocolTelnet
+	case sessionimport.VNC:
+		host.Protocol = protocolVNC
+	case sessionimport.RDP:
+		host.Protocol = protocolRDP
+	default:
 		host.Protocol = protocolTelnet
 	}
 	host.normalizeEndpoint()

@@ -50,3 +50,15 @@ func (runner sudoCommandRunner) StreamCommand(ctx context.Context, command strin
 	}
 	return connection.StreamSudoCommand(ctx, command, runner.password, limit, line)
 }
+
+// StreamCommandSkippingLongLines keeps a privileged stream alive over a line
+// longer than limit, as the connection's own tolerant stream does.
+func (runner sudoCommandRunner) StreamCommandSkippingLongLines(ctx context.Context, command string, limit int, line func([]byte) bool) error {
+	connection, ok := runner.connection.(interface {
+		StreamSudoCommandSkippingLongLines(context.Context, string, string, int, func([]byte) bool) error
+	})
+	if !ok {
+		return errSudoCommandUnavailable
+	}
+	return connection.StreamSudoCommandSkippingLongLines(ctx, command, runner.password, limit, line)
+}

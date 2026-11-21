@@ -506,6 +506,9 @@ func (state *State) shortcut(event gfx.KeyEvent, chord keymap.Chord) gfx.EventRe
 	if result, handled := state.remoteDetailShortcut(event); handled {
 		return result
 	}
+	if result, handled := state.remoteLogShortcut(event); handled {
+		return result
+	}
 	if state.modal != modalNone {
 		return gfx.EventResult{}
 	}

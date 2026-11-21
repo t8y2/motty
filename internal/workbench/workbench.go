@@ -177,6 +177,7 @@ var (
 	hitKeysExport      = tree.ID(keysHits, "keys-export")
 	hitKeysRemove      = tree.ID(keysHits, "keys-remove")
 	hitKeysPassphrase  = tree.ID(keysHits, "keys-passphrase")
+	hitKeysCertificate = tree.ID(keysHits, "keys-certificate")
 	hitKeysScrollThumb = tree.ID(keysHits, "keys-scroll-thumb")
 	hitKeyRowList      = tree.Sub(keysHits, tree.Name("key-row"))
 )
@@ -194,6 +195,8 @@ var (
 	hitForwardDialogLocalPort       = tree.ID(forwardsHits, "forward-dialog-local-port")
 	hitForwardDialogDestination     = tree.ID(forwardsHits, "forward-dialog-destination")
 	hitForwardDialogDestinationPort = tree.ID(forwardsHits, "forward-dialog-destination-port")
+	hitForwardDialogAutoStart       = tree.ID(forwardsHits, "forward-dialog-auto-start")
+	hitForwardDialogAutoStartHelp   = tree.ID(forwardsHits, "forward-dialog-auto-start-help")
 	hitForwardDialogResume          = tree.ID(forwardsHits, "forward-dialog-resume")
 	hitForwardDialogResumeHelp      = tree.ID(forwardsHits, "forward-dialog-resume-help")
 	hitForwardDialogViaShell        = tree.ID(forwardsHits, "forward-dialog-via-shell")
@@ -307,6 +310,7 @@ var (
 	hitSFTPDialogClose     = tree.ID(sftpHits, "sftp-dialog-close")
 	hitSFTPDialogCancel    = tree.ID(sftpHits, "sftp-dialog-cancel")
 	hitSFTPDialogSubmit    = tree.ID(sftpHits, "sftp-dialog-submit")
+	hitSFTPDialogReplace   = tree.ID(sftpHits, "sftp-dialog-replace")
 	hitSFTPDialogField     = tree.ID(sftpHits, "sftp-dialog-field")
 	hitSFTPEditor          = tree.ID(sftpHits, "sftp-editor")
 	hitSFTPBreadcrumbList  = tree.Sub(sftpHits, tree.Name("sftp-breadcrumb"))
@@ -449,14 +453,17 @@ type State struct {
 	// settingsTab is the settings page's tab on the window bar. It is open from
 	// the moment settings are opened until the tab is closed, and whenever the
 	// settings section is in front it is open.
-	settingsTab      bool
-	fileTabOptions   []components.TabOption
-	windowTabOptions []components.TabOption
-	fileTabStrip     tabStrip
-	fileManagerRect  gfx.Rect
-	remoteWindows    []*remoteToolsWindow
-	remoteWindow     *remoteToolsWindow // set only on a native tool window's isolated presenter
-	closed           bool
+	settingsTab bool
+	// settingsTabAnchor is the tab the settings page follows on the bar; zero
+	// leaves it last. When that tab is gone the settings tab comes back last.
+	settingsTabAnchor windowTab
+	fileTabOptions    []components.TabOption
+	windowTabOptions  []components.TabOption
+	fileTabStrip      tabStrip
+	fileManagerRect   gfx.Rect
+	remoteWindows     []*remoteToolsWindow
+	remoteWindow      *remoteToolsWindow // set only on a native tool window's isolated presenter
+	closed            bool
 	// saveBlocked is set when the state file came from a newer build: nothing is
 	// ever written over it. stateNotice is the dialog that tells the user why a
 	// state file was not loaded as it was.
@@ -540,8 +547,8 @@ type State struct {
 	keysRows               keyTableSource
 	forwardColumns         [5]components.TableColumn
 	forwardHeadings        [5]string
-	keysColumns            [4]components.TableColumn
-	keysHeadings           [4]string
+	keysColumns            [5]components.TableColumn
+	keysHeadings           [5]string
 	proxyColumns           [6]components.TableColumn
 	proxyHeadings          [6]string
 	proxyFilteredIndices   []int
@@ -700,11 +707,13 @@ type State struct {
 	post func(func())
 	// setMenuBar installs the macOS menu bar; menuBarSig is the state it was
 	// built for, so Wake rebuilds it only when enablement or language changed.
-	setMenuBar     func([]app.Menu) error
-	menuBarSig     string
-	appearance     appearance
-	appearanceMode appearanceMode
-	networkProxy   networkProxyMode
+	setMenuBar      func([]app.Menu) error
+	menuBarSig      string
+	appearance      appearance
+	appearanceMode  appearanceMode
+	iconColor       iconColor
+	iconColorChoice iconColor // the unconfirmed selection in the icon picker
+	networkProxy    networkProxyMode
 	// sshBrowser is the Chromium-family browser the SSH tab's browser opens.
 	// Automatic takes the first one installed.
 	sshBrowser          sshbrowser.Family
@@ -722,9 +731,16 @@ type State struct {
 	localShellsExpanded bool
 	recentConnections   map[string]time.Time
 	localShell          string // executable on this computer; empty uses the platform default
-	localStart          localStartPolicy
-	lastLocalDirectory  string // where a local shell last was; a new local terminal starts there when no local tab is in front
-	localShellMenu      localShellSelect
+	// localStartupCommands is the line each local shell types once it starts, by
+	// the choice path it was started with (an executable or a WSL distribution).
+	// It is this computer's own: another computer runs other shells, and the
+	// commands set up its character set and the like.
+	localStartupCommands map[string]string
+	// localStartupDialog is the popup that edits one shell's startup command.
+	localStartupDialog localStartupDialog
+	localStart         localStartPolicy
+	lastLocalDirectory string // where a local shell last was; a new local terminal starts there when no local tab is in front
+	localShellMenu     localShellSelect
 	// hiddenShells are the shells the pickers leave out, by their choice path.
 	// An entry whose shell this computer stops detecting simply sits unseen:
 	// lists follow detection, so an uninstalled shell is gone either way, and
@@ -940,7 +956,7 @@ type State struct {
 	// pasteConfirmOff skips the multi-line paste confirmation; see
 	// paste_review.go.
 	pasteConfirmOff bool
-	// passwordHintOff keeps the saved password from being offered at a sudo prompt.
+	// passwordHintOff disables the saved password picker at account prompts.
 	passwordHintOff bool
 	// closeConfirmOff skips the question before closing a session that still runs.
 	closeConfirmOff bool
@@ -1058,6 +1074,10 @@ type State struct {
 	clipboardRequest         remoteClipboardRequest
 	autofillRules            autofillUI
 	credentialForm           credentialUI
+	proxyProfileForm         proxyProfileUI
+	// proxyProfileReturn is the modal the profile dialog returns to when the
+	// host proxy dialog opened it to make a profile for itself; modalNone otherwise.
+	proxyProfileReturn modalKind
 	// credentialReturn is the modal the identity dialog returns to when the host
 	// form opened it to make an identity for itself; modalNone otherwise.
 	credentialReturn modalKind
@@ -1463,6 +1483,10 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 		if hit == hitTabRenameField {
 			return &state.tabRename.editor
 		}
+	case modalLocalStartupCommand:
+		if hit == hitLocalStartupField {
+			return &state.localStartupDialog.editor
+		}
 	case modalAIRename:
 		if hit == hitAIRenameField {
 			return &state.ai.rename.editor
@@ -1528,6 +1552,19 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 			return &state.credentialForm.user
 		case hitCredentialPassword:
 			return &state.credentialForm.password
+		}
+	case modalProxyProfile:
+		switch hit {
+		case hitProxyProfileName:
+			return &state.proxyProfileForm.name
+		case hitProxyProfileAddress:
+			return &state.proxyProfileForm.address
+		case hitProxyProfileUser:
+			return &state.proxyProfileForm.user
+		case hitProxyProfilePassword:
+			return &state.proxyProfileForm.password
+		case hitProxyProfileTarget:
+			return &state.proxyProfileForm.testTarget
 		}
 	case modalAutofillRule:
 		switch hit {
@@ -1707,6 +1744,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	if state.clickTerminalInput(id) {
 		return
 	}
+	if state.clickLocalShellPickerSetup(id) {
+		return
+	}
 	switch state.modal {
 	case modalPasteReview:
 		state.clickPasteReview(id)
@@ -1722,6 +1762,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		return
 	case modalRenameTab:
 		state.clickTabRenameDialog(id)
+		return
+	case modalLocalStartupCommand:
+		state.clickLocalStartupCommandDialog(id)
 		return
 	case modalAIRename:
 		state.clickAIRenameDialog(id)
@@ -1774,6 +1817,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	case modalCredential:
 		state.clickCredentialDialog(id)
 		return
+	case modalProxyProfile:
+		state.clickProxyProfileDialog(id)
+		return
 	case modalAutofillConfirm:
 		state.clickAutofillConfirm(id)
 		return
@@ -1800,6 +1846,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		return
 	case modalFontPicker:
 		state.clickFontPicker(id)
+		return
+	case modalIconColorPicker:
+		state.clickIconColorPicker(id)
 		return
 	case modalOutboundProxy:
 		state.clickOutboundProxy(id)
@@ -2078,6 +2127,8 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	case state.clickSnippetsPage(id):
 	case id == hitInterfaceFontChoose:
 		state.openInterfaceFontPicker()
+	case id == hitSettingsIconColorChoose:
+		state.openIconColorPicker()
 	case tree.Within(id.Scope(), settingsHits) || tree.Within(id.Scope(), toolbarSettingsHits):
 		state.clickSettings(id)
 	case tree.Within(id.Scope(), forwardsHits):
@@ -2538,6 +2589,9 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result := state.remoteLogResize(event); result.Handled {
 		return result
 	}
+	if result, handled := state.remoteLogPointer(event); handled {
+		return result
+	}
 	if result := state.notesPointer(event); result.Handled {
 		return result
 	}
@@ -2861,6 +2915,10 @@ func (state *State) Key(event gfx.KeyEvent) (outcome gfx.EventResult) {
 	if state.modal == modalNone && state.terminalPage() {
 		if view := state.workspaceRemoteLogs(state.deck.ActiveWorkspace()); view != nil && view.formMode == remoteLogFormNone {
 			if event.Target == hitRemoteLogOutput {
+				if event.Key == gfx.KeyEscape && !event.Repeat && !view.selection.Empty() {
+					view.selection.Clear()
+					return gfx.EventResult{Handled: true, Repaint: true}
+				}
 				if result := view.keyLogOutput(event); result.Handled {
 					return result
 				}
@@ -3096,6 +3154,9 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	if result, handled := state.aiRenameKey(event); handled {
 		return result
 	}
+	if result, handled := state.localStartupCommandKey(event); handled {
+		return result
+	}
 	if result, handled := state.tabRenameKey(event); handled {
 		return result
 	}
@@ -3115,6 +3176,9 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		return result
 	}
 	if result, handled := state.fontPickerKey(event); handled {
+		return result
+	}
+	if result, handled := state.iconColorKey(event); handled {
 		return result
 	}
 	if result, handled := state.settingsKey(event); handled {
@@ -3178,6 +3242,12 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		state.submitCredential()
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
+	if state.modal == modalProxyProfile && event.Key == gfx.KeyEnter && !event.Repeat &&
+		(event.Target == hitProxyProfileName || event.Target == hitProxyProfileAddress || event.Target == hitProxyProfileUser ||
+			event.Target == hitProxyProfilePassword || event.Target == hitProxyProfileTarget) {
+		state.submitProxyProfile()
+		return gfx.EventResult{Handled: true, Repaint: true}
+	}
 	if state.modal == modalHighlightRule && event.Key == gfx.KeyEnter && event.Target == hitHighlightPattern && !event.Repeat {
 		state.submitHighlightRule()
 		return gfx.EventResult{Handled: true, Repaint: true}
@@ -3213,12 +3283,9 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	case tabScope == hitTabList && state.tabOrientation == tabsVertical:
 		orientation = components.TabsVertical
 	case pageTab && state.tabOrientation == tabsVertical:
-		state.windowTabOptions = append(state.windowTabOptions[:0], state.fileTabOptions...)
-		options = state.appendSettingsTabOption(state.windowTabOptions)
+		options = state.fileTabOptions
 	default:
-		state.windowTabOptions = append(state.windowTabOptions[:0], state.tabOptions...)
-		state.windowTabOptions = append(state.windowTabOptions, state.fileTabOptions...)
-		options = state.appendSettingsTabOption(state.windowTabOptions)
+		options = state.windowTabOptionsOrdered()
 	}
 	next, handled := components.TabsKeyDown(
 		event.Target,
@@ -3269,7 +3336,7 @@ func (state *State) createHostSession(host Host, address string) *Session {
 }
 
 func (state *State) createHostSessionWithConnection(host Host, address string, conn Connection, command string, relay *notifyRelay) *Session {
-	title := state.uniqueSessionTitle(host.Label)
+	title := cleanSessionTitle(host.Label)
 	workspaceID := state.pendingWorkspace
 	paneID := state.pendingPane
 	state.pendingWorkspace, state.pendingPane = 0, 0
@@ -3311,7 +3378,7 @@ func (state *State) createHostSessionWithConnection(host Host, address string, c
 // without dialing. Batch startup installs every structure first, then starts
 // the independent connections.
 func (state *State) bindWorkspaceSession(workspaceID layoutcore.WorkspaceID, paneID layoutcore.PaneID, host Host, address string) *Session {
-	title := state.uniqueSessionTitle(host.Label)
+	title := cleanSessionTitle(host.Label)
 	session := state.bindSessionToPane(workspaceID, paneID, host, address, title, nil, "", nil)
 	if session == nil {
 		return nil

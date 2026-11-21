@@ -28,6 +28,7 @@ func TestEveryVaultSecretFamilyHasASyncCategory(t *testing.T) {
 		{"host-proxy:abc:deadbeef:password", syncCategoryHosts},
 		{proxyPasswordSecret, syncCategorySettings},
 		{"credential:abc", syncCategoryCredentials},
+		{"proxy-profile:abc:password", syncCategorySettings},
 		{"sshkey:abc", syncCategoryKeys},
 		{"passphrase:abc", syncCategoryKeys},
 		{"aikey:abc", syncCategoryAI},

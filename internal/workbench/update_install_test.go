@@ -23,6 +23,7 @@ type fakeUpdater struct {
 	reason      selfupdate.Reason
 	packageType update.Package
 	prepare     func(ctx context.Context, progress func(selfupdate.Progress), phase func(selfupdate.Phase)) (selfupdate.Staged, error)
+	launch      func(staged selfupdate.Staged, quit func()) error
 	launched    int
 	failure     string
 }
@@ -37,10 +38,14 @@ func (updater *fakeUpdater) Prepare(ctx context.Context, _ update.Release, progr
 	return selfupdate.Staged{Version: "99.0.0"}, nil
 }
 
-func (updater *fakeUpdater) Launch(selfupdate.Staged, func()) error {
+func (updater *fakeUpdater) Launch(staged selfupdate.Staged, quit func()) error {
 	updater.mu.Lock()
-	defer updater.mu.Unlock()
 	updater.launched++
+	launch := updater.launch
+	updater.mu.Unlock()
+	if launch != nil {
+		return launch(staged, quit)
+	}
 	return nil
 }
 
@@ -103,6 +108,58 @@ func TestAnUpdateThatCanBeInstalledIsInstalledAndTheApplicationQuits(t *testing.
 	waitUpdate(t, state, func() bool { return quits == 1 })
 	if updater.launches() != 1 || state.update.install.phase != installRestarting || len(opened) != 0 {
 		t.Fatalf("launched %d, phase %d, opened %q", updater.launches(), state.update.install.phase, opened)
+	}
+}
+
+// The download being over, the dialog says the release is being prepared and
+// then installed, not downloaded or checked; and a cancel clicked once the
+// installer has started cannot stop a replacement that is already under way.
+func TestTheDialogSaysWhatTheUpdateIsDoingAfterTheDownload(t *testing.T) {
+	updater, quits, opened := &fakeUpdater{}, 0, []string(nil)
+	prepared, continuePrepare := make(chan struct{}), make(chan struct{})
+	updater.prepare = func(_ context.Context, progress func(selfupdate.Progress), phase func(selfupdate.Phase)) (selfupdate.Staged, error) {
+		phase(selfupdate.PhaseDownloading)
+		progress(selfupdate.Progress{Done: 10, Size: 10})
+		phase(selfupdate.PhaseVerifying)
+		close(prepared)
+		<-continuePrepare
+		return selfupdate.Staged{Version: "99.0.0"}, nil
+	}
+	running, releaseInstall := make(chan struct{}), make(chan struct{})
+	updater.launch = func(selfupdate.Staged, func()) error {
+		close(running)
+		<-releaseInstall
+		return nil
+	}
+	state := updateWindow(t, updater, &quits, &opened)
+	m := state.messages.Tools
+	state.Click(hitUpdateInstall)
+	<-prepared
+	waitUpdate(t, state, func() bool { return state.update.install.phase == installVerifying })
+	_, texts := paintedTexts(state)
+	if !contains(texts, fmt.Sprintf(m.UpdateInstallingTitleFmt, "99.0.0")) || !contains(texts, m.UpdateVerifying) {
+		t.Fatalf("preparing the update still reads as the download: %q", texts)
+	}
+	if contains(texts, fmt.Sprintf(m.UpdateDownloadingTitleFmt, "99.0.0")) {
+		t.Fatalf("the download is over but the title says it is running: %q", texts)
+	}
+	close(continuePrepare)
+	waitUpdate(t, state, func() bool { return state.update.install.phase == installInstalling })
+	<-running
+	_, texts = paintedTexts(state)
+	if !contains(texts, m.UpdateInstalling) || contains(texts, m.UpdateVerifying) {
+		t.Fatalf("the install does not say it is installing: %q", texts)
+	}
+	// The installer has started: cancelling now would only lose the dialog.
+	state.Click(hitUpdateProgressCancel)
+	waitUpdate(t, state, func() bool { return true })
+	if state.modal != modalUpdateProgress || state.update.install.phase != installInstalling {
+		t.Fatalf("cancel stopped an install that had started: modal %d, phase %d", state.modal, state.update.install.phase)
+	}
+	close(releaseInstall)
+	waitUpdate(t, state, func() bool { return quits == 1 })
+	if updater.launches() != 1 || len(opened) != 0 {
+		t.Fatalf("launched %d, opened %q", updater.launches(), opened)
 	}
 }
 

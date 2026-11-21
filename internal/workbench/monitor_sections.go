@@ -37,6 +37,14 @@ func monitorRight(c *gfx.Canvas, text string, b gfx.Rect, size float32, color gf
 	c.LabelAligned(elide(c, text, size, weight, b.Width), b, gfx.TextStyle{Size: size, Color: color, Weight: weight}, gfx.AlignRight)
 }
 
+// monitorCenter paints a one-line label centered in b with a width-aware ellipsis.
+func monitorCenter(c *gfx.Canvas, text string, b gfx.Rect, size float32, color gfx.Color, weight float32) {
+	if b.Width <= 0 || b.Height <= 0 {
+		return
+	}
+	c.LabelAligned(elide(c, text, size, weight, b.Width), b, gfx.TextStyle{Size: size, Color: color, Weight: weight}, gfx.AlignCenter)
+}
+
 func monitorRowVisible(viewport gfx.Rect, y, height float32) bool {
 	return viewport.Width > 0 && viewport.Height > 0 &&
 		y < viewport.Y+viewport.Height && y+height > viewport.Y

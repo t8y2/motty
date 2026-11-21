@@ -32,6 +32,23 @@ func toolbarRowHit(t *testing.T, state *State, view *headless.Session, group too
 	return gfx.Rect{}, false
 }
 
+func toolbarHandleHit(t *testing.T, state *State, view *headless.Session, group toolbarGroup, key string) (gfx.Rect, bool) {
+	t.Helper()
+	row, ok := toolbarRowHit(t, state, view, group, key)
+	if !ok {
+		return gfx.Rect{}, false
+	}
+	spec, _ := toolbarSpecFor(group, key)
+	label := state.toolbarLabel(spec.id)
+	for _, hit := range view.Snapshot().Hits {
+		if hit.Role == gfx.RoleButton && hit.Label == label && hit.Bounds.Width == 28 &&
+			math.Abs(float64(hit.Bounds.X-(row.X+4))) < .75 {
+			return hit.Bounds, true
+		}
+	}
+	return gfx.Rect{}, false
+}
+
 func TestToolbarSettingsNativeControlsDragKeyboardAndSwitchAcrossScales(t *testing.T) {
 	for _, scale := range []float64{1, 1.25, 1.5, 1.75, 2} {
 		t.Run(fmt.Sprint(scale), func(t *testing.T) {
@@ -65,6 +82,18 @@ func TestToolbarSettingsNativeControlsDragKeyboardAndSwitchAcrossScales(t *testi
 			}
 			shot("toolbar-general")
 			for group := toolbarWindow; group <= toolbarSFTP; group++ {
+				// The Logo color row can put a toolbar button below the viewport.
+				// Reach it through the same scrolling page a user would use.
+				for attempt := 0; attempt < 8; attempt++ {
+					if hit, ok := hitByIDSnapshot(view.Snapshot().Hits, hitToolbarSettingsOpen[group]); ok && hit.Bounds.Height >= 24 {
+						break
+					}
+					bounds := state.settingsWorkspaceBounds(gfx.Rect{Width: 1200, Height: 900})
+					if err := view.Scroll(gfx.ScrollEvent{X: bounds.X + bounds.Width - 40, Y: bounds.Y + bounds.Height/2, DeltaY: 160}); err != nil {
+						t.Fatal(err)
+					}
+					view.Driver().Advance(300 * time.Millisecond)
+				}
 				click(hitToolbarSettingsOpen[group])
 				view.Driver().Advance(250 * time.Millisecond)
 				shot(fmt.Sprintf("toolbar-opened-%d", group))
@@ -75,31 +104,17 @@ func TestToolbarSettingsNativeControlsDragKeyboardAndSwitchAcrossScales(t *testi
 				lastSlot := len(lastEntries) - 1
 				for lastSlot > 0 {
 					// A row cut by the list's edge is not a place to drop on.
-					if row, ok := toolbarRowHit(t, state, view, group, lastEntries[lastSlot].Key); ok && row.Height >= 44 {
+					if row, ok := toolbarRowHit(t, state, view, group, lastEntries[lastSlot].Key); ok && row.Height >= 48 {
 						break
 					}
 					lastSlot--
 				}
-				a, _ := toolbarRowHit(t, state, view, group, original)
 				b, _ := toolbarRowHit(t, state, view, group, lastEntries[lastSlot].Key)
 				// The row starts with a 28px drag-handle button, as the
 				// painted reorder list did.
-				spec, _ := toolbarSpecFor(group, original)
-				label := state.toolbarLabel(spec.id)
-				handle := false
-				var handleRect gfx.Rect
-				var buttons []string
-				for _, h := range view.Snapshot().Hits {
-					if h.Role == gfx.RoleButton {
-						buttons = append(buttons, fmt.Sprintf("%q %v", h.Label, h.Bounds))
-					}
-					if h.Role == gfx.RoleButton && h.Label == label && h.Bounds.Width == 28 &&
-						math.Abs(float64(h.Bounds.X-(a.X+4))) < .75 {
-						handle, handleRect = true, h.Bounds
-					}
-				}
-				if !handle {
-					t.Fatalf("group %d has no 28px drag handle at the row's start: row=%v buttons=%v", group, a, buttons)
+				handleRect, ok := toolbarHandleHit(t, state, view, group, original)
+				if !ok {
+					t.Fatalf("group %d has no 28px drag handle at the row's start", group)
 				}
 				// The drag starts on the handle, as the painted reorder list's did.
 				x, y := handleRect.X+handleRect.Width/2, handleRect.Y+handleRect.Height/2
@@ -132,7 +147,8 @@ func TestToolbarSettingsNativeControlsDragKeyboardAndSwitchAcrossScales(t *testi
 				}
 				entries := state.toolbars.entries(group)
 				if entries[lastSlot].Key != original {
-					t.Fatalf("group %d did not reorder on drop: %+v", group, entries)
+					t.Fatalf("group %d did not reorder %s onto %s on drop at (%g,%g), from handle %v there: %+v",
+						group, original, lastEntries[lastSlot].Key, b.X+b.Width/2, b.Y+b.Height/2, handleRect, entries)
 				}
 				for range lastSlot {
 					if err := view.Keys("Up"); err != nil {
@@ -208,9 +224,12 @@ func TestToolbarSettingsSmallWindowCanScrollDuringDrag(t *testing.T) {
 		t.Fatal("small window fixture did not scroll")
 	}
 	entries := state.toolbars.entries(toolbarTerminal)
-	first, last := entries[0].Key, entries[len(entries)-1].Key
-	a, _ := toolbarRowHit(t, state, view, toolbarTerminal, first)
-	x, y := a.X+12, a.Y+a.Height/2
+	firstKey, last := entries[0].Key, entries[len(entries)-1].Key
+	first, ok := toolbarHandleHit(t, state, view, toolbarTerminal, firstKey)
+	if !ok {
+		t.Fatal("the first row has no drag handle")
+	}
+	x, y := first.X+first.Width/2, first.Y+first.Height/2
 	if err := view.Press(x, y); err != nil {
 		t.Fatal(err)
 	}
@@ -221,21 +240,63 @@ func TestToolbarSettingsSmallWindowCanScrollDuringDrag(t *testing.T) {
 	if err := view.Scroll(gfx.ScrollEvent{X: box.X + box.Width/2, Y: box.Y + box.Height/2, DeltaY: 1000}); err != nil {
 		t.Fatal(err)
 	}
-	b, _ := toolbarRowHit(t, state, view, toolbarTerminal, last)
-	if err := view.Move(b.X+12, b.Y+b.Height-4); err != nil {
+	target, ok := toolbarHandleHit(t, state, view, toolbarTerminal, last)
+	if !ok {
+		t.Fatal("the last row has no drag handle after scrolling")
+	}
+	if err := view.Move(target.X+target.Width/2, target.Y+target.Height-4); err != nil {
 		t.Fatal(err)
 	}
-	if err := view.Release(b.X+12, b.Y+b.Height-4); err != nil {
+	if err := view.Release(target.X+target.Width/2, target.Y+target.Height-4); err != nil {
 		t.Fatal(err)
 	}
 	entries = state.toolbars.entries(toolbarTerminal)
-	if entries[len(entries)-1].Key != first {
+	if entries[len(entries)-1].Key != firstKey {
 		t.Fatal("scrolling during a drag changed the wrong target")
 	}
 	for _, id := range []gfx.ID{hitToolbarEnableAll, hitToolbarDisableAll, hitToolbarReset, hitToolbarSettingsClose} {
 		bounds := dualHit(t, view, id)
 		if bounds.Y < 0 || bounds.Y+bounds.Height > 480 {
 			t.Fatal("small window made a footer action unreachable")
+		}
+	}
+}
+
+func TestToolbarSettingsScrollReachesTheWholeLastRow(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.openToolbarSettings(toolbarTerminal)
+	var invalidator app.Invalidator
+	state.options.Invalidate = invalidator.Invalidate
+	view, err := headless.Open(state.WindowConfig(app.Config{Width: 640, Height: 480, Tree: Tree(), Invalidator: &invalidator, OnWake: state.Wake, Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize}), nil, headless.Options{Scale: 1.25})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	view.Driver().Advance(250 * time.Millisecond)
+	box := state.toolbarEditor.list.Rect()
+	if err := view.Scroll(gfx.ScrollEvent{X: box.X + box.Width/2, Y: box.Y + box.Height/2, DeltaY: 2000}); err != nil {
+		t.Fatal(err)
+	}
+	view.Driver().Advance(250 * time.Millisecond)
+	entries := state.toolbars.entries(toolbarTerminal)
+	last := entries[len(entries)-1]
+	row, ok := toolbarRowHit(t, state, view, toolbarTerminal, last.Key)
+	if !ok {
+		t.Fatalf("last row %q was not painted at the end", last.Key)
+	}
+	list := state.toolbarEditor.list.Rect()
+	if row.Y < list.Y-1 || row.Y+row.Height > list.Y+list.Height+1 {
+		t.Fatalf("last row %v is not wholly inside list %v after scrolling to the end", row, list)
+	}
+	if !state.toolbarEditor.rows.AtEnd() {
+		t.Fatal("the list did not report its end after scrolling to the bottom")
+	}
+	if dir := os.Getenv("MOTTY_TOOLBAR_SCREENSHOT_DIR"); dir != "" {
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := view.Screenshot(filepath.Join(dir, "toolbar-scroll-end.png")); err != nil && !errors.Is(err, headless.ErrNoRenderer) {
+			t.Fatal(err)
 		}
 	}
 }

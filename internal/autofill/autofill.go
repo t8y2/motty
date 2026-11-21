@@ -181,6 +181,10 @@ func (w *Watcher) Pending(now time.Duration) (wait time.Duration, pending bool) 
 // Skip drops pending output without looking at it.
 func (w *Watcher) Skip() { w.dirty = false }
 
+// HasInput reports unsubmitted user input, including input the remote may have
+// chosen not to echo, such as a manually typed password.
+func (w *Watcher) HasInput() bool { return len(w.typed) > 0 || w.taint }
+
 // Retry makes the line be looked at again at the next pause, as when a dialog
 // held the answer back.
 func (w *Watcher) Retry(now time.Duration) { w.dirty, w.quiet = true, now-Pause }

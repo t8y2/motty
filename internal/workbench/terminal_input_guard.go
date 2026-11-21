@@ -325,7 +325,7 @@ func (state *State) clickTerminalInput(id gfx.ID) bool {
 	if ask.event.Kind == app.TextPaste {
 		input = term.EncodePaste(value, t.screen.Modes().BracketedPaste)
 	}
-	if !t.sendInput(input, false) {
+	if !t.sendInput(input, false, true) {
 		state.retryInputChoice(ask)
 	} else if id == hitInputReplace {
 		t.inputGuard.smartQuote = ask.smartQuote

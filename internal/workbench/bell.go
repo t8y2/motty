@@ -34,8 +34,16 @@ func (state *State) terminalBell(sessionID uint32) {
 		return
 	}
 	session.belled, session.didBell = now, true
-	// A system without an alert sound has nothing to tell the user about.
-	_ = state.options.Bell()
+	// The sound plays off this thread. Waiting for it here holds the whole
+	// window, and the wait itself is longer than the interval above, so a
+	// binary stream of BEL would start the next sound the moment the last one
+	// returned. The stamp is already set, and this call does not block, so the
+	// rest of the same output rings nothing.
+	bell := state.options.Bell
+	if bell == nil {
+		return
+	}
+	go func() { _ = bell() }()
 }
 
 func playBell() error { return app.PlaySystemSound(app.SoundDefault) }

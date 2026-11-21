@@ -235,7 +235,7 @@ func (state *State) declareTerminalMenu(c ui.C) {
 	rows.chord(chord(shortcutHistory))
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuSearch, Label: messages.Tools.MenuSearchSelection, Icon: icon(iconSearch), Disabled: !hasSelection})
 	if _, _, monitor := state.remoteStatsToggle(session); monitor {
-		rows.add(components.ContextMenuItem{ID: hitTerminalMenuStats, Label: messages.MenuResourceMonitor, Icon: icon(iconActivity), Kind: components.ContextMenuCheckbox, Checked: session.stats != nil})
+		rows.add(components.ContextMenuItem{ID: hitTerminalMenuStats, Label: messages.MenuResourceMonitor, Icon: icon(iconGauge), Kind: components.ContextMenuCheckbox, Checked: session.stats != nil})
 	}
 	if state.remoteToolsOffered(session) {
 		rows.add(components.ContextMenuItem{ID: hitTerminalMenuTools, Label: messages.Tools.RemoteMenu, Icon: icon(iconProcess)})

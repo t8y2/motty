@@ -204,6 +204,7 @@ func (state *State) declareForwardDialogBody(c ui.C) {
 				state.declareForwardDialogField(c, hitForwardDialogRelay, forwardFieldRelay, messages.ForwardFieldRelay, messages.ForwardRelayPlaceholder).FillWidth()
 			}
 		}
+		_, b.autoStartHelp = state.declareDialogCheckHelp(c, hitForwardDialogAutoStart, messages.ForwardFieldAutoStart, state.forwardEditor.autoStart, 4, 6)
 		_, b.resumeHelp = state.declareDialogCheckHelp(c, hitForwardDialogResume, messages.ForwardFieldResume, state.forwardEditor.resume, 4, 6)
 		if state.forwardDialogError != "" {
 			ui.Text(c, state.forwardDialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).MarginSides(6, 0, 0, 0)
@@ -220,6 +221,7 @@ func (state *State) paintForwardDialogFields(canvas *gfx.Canvas, mode portforwar
 	if modeUsesServerDestination(mode) {
 		state.paintHelpIcon(canvas, hitForwardDialogViaShellHelp, messages.ForwardViaShellHelp, b.viaShellHelp.Rect())
 	}
+	state.paintHelpIcon(canvas, hitForwardDialogAutoStartHelp, messages.ForwardAutoStartHelp, b.autoStartHelp.Rect())
 	state.paintHelpIcon(canvas, hitForwardDialogResumeHelp, messages.ForwardResumeHelp, b.resumeHelp.Rect())
 }
 

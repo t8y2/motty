@@ -1808,3 +1808,39 @@ func addViaShellForwardRule(t testing.TB, state *State, label string, localPort 
 		t.Fatalf("forward submit modal=%d error=%q", state.modal, state.forwardDialogError)
 	}
 }
+
+func TestForwardWithAutoStartStartsWhenATabConnectsToItsHost(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	addForwardRule(t, state, "Auto", freePort(t), "db.internal", 5432)
+	addForwardRule(t, state, "Manual", freePort(t), "web.internal", 8080)
+	state.selectedForwardID = state.forwards[0].ID
+	state.Click(hitForwardEdit)
+	if state.forwardEditor.autoStart {
+		t.Fatal("a new forward starts with its host by default")
+	}
+	state.Click(hitForwardDialogAutoStart)
+	state.Click(hitForwardDialogSubmit)
+	if !state.forwards[0].AutoStart {
+		t.Fatalf("edited forward = %+v", state.forwards[0])
+	}
+
+	restarted := newTestState(t, options)
+	if !restarted.forwards[0].AutoStart || restarted.forwards[1].AutoStart {
+		t.Fatalf("restored auto-start choices = %+v", restarted.forwards)
+	}
+
+	state.activeSection = sectionHosts
+	fake := connect(t, state, world)
+	if state.forwards[0].runner != nil {
+		t.Fatal("forward started before its host was connected")
+	}
+	fake.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	if state.forwards[0].runner == nil || state.forwards[0].sessionID != state.sessions[0].ID {
+		t.Fatalf("auto-start forward = %+v", state.forwards[0])
+	}
+	if state.forwards[1].runner != nil {
+		t.Fatalf("forward without auto-start was started: %+v", state.forwards[1])
+	}
+}

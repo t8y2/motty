@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/ui"
 	"golang.org/x/text/encoding/simplifiedchinese"
+	_ "modernc.org/sqlite"
 )
 
 func TestImportingMobaXtermSessionsAddsGroupedHostsOnceAndSaysWhatItLeftOut(t *testing.T) {
@@ -807,5 +809,125 @@ func TestImportingFinalShellSessionsAsksForItsDataFolder(t *testing.T) {
 	warnings := strings.Join(result.warnings[:result.visible], "\n")
 	if !strings.Contains(warnings, "No readable SSH passwords") {
 		t.Fatalf("warnings = %q", warnings)
+	}
+}
+
+func TestImportingXterminalConnectionsAddsTheirGroups(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "XTerminal")
+	path := filepath.Join(root, "sqlite", "local-store.db")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	store, err := sql.Open("sqlite", "file:"+filepath.ToSlash(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Exec(`CREATE TABLE local_store (
+		store_key TEXT NOT NULL, item_id TEXT NOT NULL, payload TEXT NOT NULL,
+		updated_at INTEGER NOT NULL, created_at INTEGER NOT NULL,
+		PRIMARY KEY (store_key, item_id)
+	)`); err != nil {
+		t.Fatal(err)
+	}
+	rows := []struct{ key, payload string }{
+		{"u-GeneralDatabaseLocalImp-SERVER", `{"_id":"prod","type":"SERVER","name":"Production","parentId":null}`},
+		{"u-GeneralDatabaseLocalImp-ServerDatabaseLocalImp", `{"_id":"h1","title":"Web","host":"web.example.test","port":2222,"username":"deploy","groupId":"prod","authType":"password","password":"secret","connectionConfig":{"init":{"bash":"cd /srv"}}}`},
+		{"u-GeneralDatabaseLocalImp-ServerDatabaseLocalImp", `{"_id":"h2","title":"DB","host":"db.example.test","port":22,"username":"admin"}`},
+	}
+	for index, row := range rows {
+		if _, err := store.Exec(
+			`INSERT INTO local_store(store_key, item_id, payload, updated_at, created_at) VALUES (?, ?, ?, ?, ?)`,
+			row.key, fmt.Sprintf("item-%d", index), row.payload, index, index,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	options := freshOptions(t)
+	options.Keystore = &memKeys{}
+	var request app.OpenDirectoryOptions
+	options.OpenDirectory = func(asked app.OpenDirectoryOptions) (string, error) {
+		request = asked
+		return root, nil
+	}
+	state := newTestState(t, options)
+	state.Click(hitImportMenu)
+	clickPageMenuRow(t, state, state.messages.Tools.ImportSessions)
+	if _, texts := paintedTexts(state); !contains(texts, "Xterminal") {
+		t.Fatal("the import chooser has no Xterminal button")
+	}
+	state.Click(hitImportXterminal)
+	if !strings.Contains(request.Title, "Xterminal") || !strings.Contains(request.Title, "data folder") {
+		t.Fatalf("OpenDirectory request = %+v", request)
+	}
+	if state.modal != modalHostImportResult || len(state.hosts) != 2 {
+		t.Fatalf("modal %d, hosts %d", state.modal, len(state.hosts))
+	}
+	web := state.hosts[0]
+	if web.Label != "Web" || web.Group != "Production" || web.Address != "web.example.test" || web.User != "deploy" || web.Port != 2222 || web.LoginCommand != "cd /srv" {
+		t.Fatalf("web = %+v", web)
+	}
+	if db := state.hosts[1]; db.Label != "DB" || db.Group != "" || db.Address != "db.example.test" {
+		t.Fatalf("db = %+v", db)
+	}
+	result := state.hostImportResult
+	if strings.Contains(strings.Join(result.warnings[:result.visible], "\n"), "secret") {
+		t.Fatal("an imported password appeared in the result warnings")
+	}
+}
+
+func TestImportingXPipeConnectionsAddsSSHAndRDPHosts(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "XPipe")
+	files := map[string]string{
+		"storage/categories/default/category.json": `{"uuid":"97458c07-75c0-4f9d-a06e-92d8cdf67c40","name":"Default","parentUuid":null}`,
+		"storage/categories/clients/category.json": `{"uuid":"clients","name":"Clients","parentUuid":"97458c07-75c0-4f9d-a06e-92d8cdf67c40"}`,
+		"storage/stores/web/entry.json":            `{"uuid":"web","name":"Web","categoryUuid":"clients"}`,
+		"storage/stores/web/store.json":            `{"type":"ssh","host":"web.example.test","port":2222,"identity":{"type":"inPlace","identityStore":{"username":"deploy","sshIdentity":{"type":"none"}}}}`,
+		"storage/stores/desk/entry.json":           `{"uuid":"desk","name":"Windows","categoryUuid":"clients"}`,
+		"storage/stores/desk/store.json":           `{"type":"rdpSimple","host":"win.example.test","port":3389,"identity":{"type":"inPlace","identityStore":{"username":"admin"}}}`,
+	}
+	for name, content := range files {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	options := freshOptions(t)
+	options.Keystore = &memKeys{}
+	var request app.OpenDirectoryOptions
+	options.OpenDirectory = func(asked app.OpenDirectoryOptions) (string, error) {
+		request = asked
+		return root, nil
+	}
+	state := newTestState(t, options)
+	state.Click(hitImportSessions)
+	if _, texts := paintedTexts(state); !contains(texts, "XPipe") {
+		t.Fatal("the import chooser has no XPipe button")
+	}
+	state.Click(hitImportXPipe)
+	if !strings.Contains(request.Title, "XPipe") || !strings.Contains(request.Title, "data folder") {
+		t.Fatalf("OpenDirectory request = %+v", request)
+	}
+	if state.modal != modalHostImportResult || len(state.hosts) != 2 {
+		t.Fatalf("modal %d, hosts %d", state.modal, len(state.hosts))
+	}
+	byLabel := map[string]Host{}
+	for _, host := range state.hosts {
+		byLabel[host.Label] = host
+	}
+	web := byLabel["Web"]
+	if web.Protocol != protocolSSH || web.Group != "Clients" || web.Address != "web.example.test" || web.User != "deploy" || web.Port != 2222 {
+		t.Fatalf("web = %+v", web)
+	}
+	desk := byLabel["Windows"]
+	if desk.Protocol != protocolRDP || desk.Group != "Clients" || desk.Address != "win.example.test" || desk.User != "admin" || desk.Port != 3389 {
+		t.Fatalf("desktop = %+v", desk)
 	}
 }

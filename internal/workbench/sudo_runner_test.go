@@ -102,6 +102,10 @@ func (connection *sudoRunnerTestConn) StreamSudoCommand(ctx context.Context, com
 	return err
 }
 
+func (connection *sudoRunnerTestConn) StreamSudoCommandSkippingLongLines(ctx context.Context, command, password string, limit int, line func([]byte) bool) error {
+	return connection.StreamSudoCommand(ctx, command, password, limit, line)
+}
+
 func TestRemoteCommandsUseSudoOnlyAfterConfirmationAndForgetItOnDisconnect(t *testing.T) {
 	state, _, fake, _ := liveSession(t)
 	session, _ := state.sessionByIDPointer(state.activeSessionID)

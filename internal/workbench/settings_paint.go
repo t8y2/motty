@@ -314,6 +314,7 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 				})
 			settingsChoiceRow(page, messages.SettingsAppearance, "", &state.appearanceMode, settingsAppearanceChoices[:], state.settingsAppearanceLabel,
 				func() { state.chooseAppearanceMode(state.appearanceMode); state.save() }, nil)
+			state.paintIconColorSetting(page)
 			page.actionRow(messages.SettingsTextSize, messages.SettingsTextSizeDescription, false,
 				components.ButtonAction{ID: hitSettingsTextSizeDown, Label: "−", Variant: components.ButtonOutline},
 				components.ButtonAction{ID: hitSettingsTextSizeReset, Label: state.interfaceTextSizeLabel(), Variant: components.ButtonGhost},
@@ -445,6 +446,7 @@ func (state *State) paintConnectionSettings(page *settingsPage) {
 			state.paintOutboundProxyRow(page)
 			state.paintSSHBrowserSetting(page)
 		})
+		state.paintProxyProfileSettings(page)
 		state.paintSSHSyncSettings(page)
 		state.paintHostTagSettings(page)
 	})

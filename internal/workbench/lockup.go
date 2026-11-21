@@ -41,9 +41,10 @@ var (
 // says which copy it is on the Dock icon (see buildinfo.DockBadge), not by
 // renaming the product inside its own interface.
 func (state *State) paintLockup(canvas *gfx.Canvas, bounds gfx.Rect) {
-	bitmap := lockupLight()
+	art := state.iconColor.artwork()
+	bitmap := art.light
 	if state.pal.dark {
-		bitmap = lockupDark()
+		bitmap = art.dark
 	}
 	canvas.DrawBitmap(bitmap, bounds)
 }

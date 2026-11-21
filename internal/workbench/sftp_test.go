@@ -905,7 +905,7 @@ func TestSFTPUploadsMultipleFilesAndDirectory(t *testing.T) {
 	}
 }
 
-func TestSFTPOverwriteRequiresConfirmationThenResumes(t *testing.T) {
+func TestSFTPOverwriteRequiresConfirmationThenReplaces(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	view := session.files
 	state.sftpDownloadDirectory = "" // exercise the ask-each-time picker path
@@ -916,19 +916,15 @@ func TestSFTPOverwriteRequiresConfirmationThenResumes(t *testing.T) {
 	state.options.SaveFile = func(app.SaveFileOptions) (string, error) { return target, nil }
 	clickSFTPRow(t, state, view, "notes.txt")
 	state.Click(hitSFTPDownload)
-	waitSFTP(t, state, session, func(view *sftpView) bool {
-		return state.transfers.open && len(view.transfers) == 1 && view.transfers[0].State == sftpclient.TransferFailed
-	})
+	if view.dialog != sftpDialogDownloadConflict || len(view.transfers) != 0 {
+		t.Fatalf("expected the conflict prompt first: dialog=%v transfers=%+v", view.dialog, view.transfers)
+	}
 	if content, err := os.ReadFile(target); err != nil || string(content) != "do not replace yet" {
 		t.Fatalf("destination changed before confirmation: %q, %v", content, err)
 	}
-	state.Click(hitSFTPClose)
-	if session.files != view {
-		t.Fatal("closing the browser detached a retryable transfer")
-	}
-	state.Click(hitTransfersReplace.At(state.transfers.entries[0].id))
+	state.Click(hitSFTPDialogReplace)
 	waitSFTP(t, state, session, func(view *sftpView) bool {
-		return view.dialog == sftpDialogNone && view.transfers[0].State == sftpclient.TransferCompleted
+		return view.dialog == sftpDialogNone && len(view.transfers) == 1 && view.transfers[0].State == sftpclient.TransferCompleted
 	})
 	if content, err := os.ReadFile(target); err != nil || string(content) != "hello world" {
 		t.Fatalf("confirmed replacement = %q, %v", content, err)
