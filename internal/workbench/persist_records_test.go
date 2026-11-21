@@ -26,6 +26,7 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		// Which host an update is downloaded from depends on the network this
 		// computer is on, like its proxy: another device picks its own.
 		"update_source": true,
+		"ssh_browser":   true,
 
 		"sftp_panel_width": true, "monitor_panel_width": true,
 		"terminal_toolbar_position": true,
