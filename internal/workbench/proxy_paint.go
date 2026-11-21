@@ -3,6 +3,7 @@ package workbench
 import (
 	"fmt"
 
+	"github.com/vivaui/viva/base"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
@@ -421,7 +422,7 @@ func (state *State) declareProxyDialog(c ui.C) {
 		dialogTitle = messages.ProxyEditDialogTitle
 		submitLabel = messages.ProxyRouteSave
 	}
-	bodyHeight := withError(state.proxyDialogBodyHeight(), state.proxyDialogError)
+	bodyHeight := withError(state.proxyDialogBodyHeight(c.Theme()), state.proxyDialogError)
 	viewport := dialogViewport(c)
 	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 500, "", bodyHeight)
 	// No scrim dismiss: a press beside the form must not discard its input.
@@ -447,7 +448,7 @@ func (state *State) declareProxyDialogBody(c ui.C) {
 	viaShell := editor.viaShell
 	b := &editor.dialogBody
 	*b = proxyDialogBody{}
-	const rowHeight = 64
+	rowHeight := dialogRowHeight(c.Theme())
 	column := ui.Column(c).Fill().PadSides(2, 4, 0, 4)
 	column.Children(func() {
 		ui.FormField(c, &editor.targetRow, messages.ProxyFieldTarget).Height(rowHeight).Children(func() {
@@ -470,7 +471,7 @@ func (state *State) declareProxyDialogBody(c ui.C) {
 			state.applyProxyJumpChoice(editor.jumpChoice)
 			editor.jumpChoice = editor.jumpID
 		}
-		_, b.viaHelp = state.declareDialogCheckHelp(c, hitProxyDialogViaShell, messages.ProxyFieldViaShell, state.proxyEditor.viaShell, 4, 6)
+		_, b.viaHelp = state.declareDialogCheckHelp(c, hitProxyDialogViaShell, messages.ProxyFieldViaShell, state.proxyEditor.viaShell, dialogCheckGapAbove, dialogCheckGapBelow)
 		if viaShell {
 			if !editor.relayBound {
 				editor.relayText.Bind(&editor.relay)
@@ -499,10 +500,10 @@ func (state *State) paintProxyDialogFields(canvas *gfx.Canvas) {
 // proxyDialogBodyHeight is the height of the dialog's fields: the two hosts, the
 // choice of relaying through the jump host's shell, and when it is on the relay
 // command with the note under it.
-func (state *State) proxyDialogBodyHeight() float32 {
-	height := float32(130 + 30) // two fields, then the checkbox
+func (state *State) proxyDialogBodyHeight(theme *base.Theme) float32 {
+	height := 2*dialogRowHeight(theme) + dialogCheckRowHeight // two fields, then the checkbox
 	if state.proxyEditor.viaShell {
-		height += 64 + 44 // the relay field, then a note of two lines
+		height += dialogRowHeight(theme) + 44 // the relay field, then a note of two lines
 	}
 	return height
 }

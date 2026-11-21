@@ -1062,13 +1062,13 @@ func (state *State) declareSFTPDialog(c ui.C, viewport gfx.Rect, view *sftpView)
 	body := float32(0) // a confirmation is only its text
 	switch {
 	case view.dialog == sftpDialogSymlink, view.dialog == sftpDialogChown:
-		body = 6 + 64 + 8 + 64 // two fields: the link's name and target, or the owner and group
+		body = 6 + 2*dialogRowHeight(c.Theme()) // two fields: the link's name and target, or the owner and group
 	case view.dialog == sftpDialogChmod:
 		// The octal field, then the permission grid: a 16px header row and
 		// three 24px rows, with a 4px gap between them.
-		body = 6 + 64 + 8 + 16 + 3*24 + 3*4
+		body = 6 + dialogRowHeight(c.Theme()) + 16 + 3*24 + 3*4
 	case fieldDialog:
-		body = 6 + 64
+		body = 6 + dialogRowHeight(c.Theme())
 	case showError:
 		body = 20
 	}
@@ -1157,7 +1157,7 @@ func (state *State) declareSFTPDialogField(c ui.C, view *sftpView, i int, label 
 	if i == 0 {
 		row.Error = view.dialogError
 	}
-	ui.FormField(c, row, label).FillWidth().Height(64).Shrink(0).Children(func() {
+	ui.FormField(c, row, label).FillWidth().Height(dialogRowHeight(c.Theme())).Shrink(0).Children(func() {
 		ui.TextFieldID(c, id, &view.dialogTexts[i], label, "")
 	})
 }
@@ -1187,7 +1187,7 @@ func (state *State) declareSFTPOwnershipFields(c ui.C, view *sftpView) {
 			row.Error = view.dialogError
 		}
 		var input ui.Box
-		ui.FormField(c, row, labels[field]).FillWidth().Height(64).Shrink(0).Children(func() {
+		ui.FormField(c, row, labels[field]).FillWidth().Height(dialogRowHeight(c.Theme())).Shrink(0).Children(func() {
 			input = ui.TextFieldID(c, id, &view.chownTexts[field], labels[field], "").Height(32)
 			// A typed change opens the suggestions; the field reports an edit,
 			// and a suggestion the program wrote is not one.

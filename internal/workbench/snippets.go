@@ -698,7 +698,8 @@ func (state *State) declareSnippetDialog(c ui.C) {
 		title = m.SnippetDialogEditTitle
 	}
 	viewport := dialogViewport(c)
-	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 560, "", withError(350, form.dialogError))
+	// The name row, then the command box and the rows under it.
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 560, "", withError(282+dialogRowHeight(c.Theme()), form.dialogError))
 	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: title, Width: 560, Height: height, Layer: dialogLayer,
@@ -726,7 +727,7 @@ func (state *State) declareSnippetDialogBody(c ui.C) {
 			form.nameBound = true
 		}
 		form.nameText.Invalid = form.dialogError != ""
-		ui.FormField(c, &form.nameForm, m.SnippetName).FillWidth().Height(62).MarginSides(0, 0, 6, 0).Children(func() {
+		ui.FormField(c, &form.nameForm, m.SnippetName).FillWidth().Height(dialogRowHeight(c.Theme())).Children(func() {
 			ui.TextFieldID(c, hitSnippetName, &form.nameText, m.SnippetName, m.SnippetNamePlaceholder)
 		})
 		ui.Column(c).Height(140).MarginSides(0, 0, 6, 0).Children(func() {

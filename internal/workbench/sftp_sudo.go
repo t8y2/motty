@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"github.com/vivaui/viva/base"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
@@ -34,7 +35,7 @@ type sudoSFTPDialog struct {
 // vault's save box: the labeled field and the padding around it. The field is a
 // form field like the other secret dialogs, so the control inside it keeps the
 // ordinary single-line height.
-const sudoDialogBody = 66
+func sudoDialogBody(theme *base.Theme) float32 { return dialogRowHeight(theme) + 4 }
 
 func sudoSFTPAvailable(session *Session, view *sftpView) bool {
 	return !view.localOnly && session.host.System != sshconn.SystemWindows && session.host.Transfer != transferSCP
@@ -236,8 +237,8 @@ func (state *State) declareSudoSFTPDialog(c ui.C) {
 		DismissID: hitSudoSFTPDismiss, CloseID: hitSudoSFTPCancel, InitialFocusID: hitSudoSFTPPassword,
 	})
 	dialog.Body(func() {
-		ui.Column(c).Height(sudoDialogBody).PadSides(2, 4, 0, 4).Children(func() {
-			ui.FormField(c, &dialogState.row, m.SFTPSudoPassword).FillWidth().Height(62).Children(func() {
+		ui.Column(c).Height(sudoDialogBody(c.Theme())).PadSides(2, 4, 0, 4).Children(func() {
+			ui.FormField(c, &dialogState.row, m.SFTPSudoPassword).FillWidth().Height(dialogRowHeight(c.Theme())).Children(func() {
 				ui.TextFieldID(c, hitSudoSFTPPassword, &dialogState.field, m.SFTPSudoPassword, "").
 					FillWidth().Secure().AutoFocus()
 			})

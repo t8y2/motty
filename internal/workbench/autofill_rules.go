@@ -544,9 +544,10 @@ func (state *State) declareAutofillDialog(c ui.C) {
 	if form.editing != nil {
 		title = m.DialogEditTitle
 	}
-	body := float32(68*3 + 58 + 28) // name, pattern and scope; the sending choice; the box
+	row := dialogRowHeight(c.Theme())
+	body := 3*row + 58 + 28 // name, pattern and scope; the sending choice; the box
 	if form.send == autofill.SendText {
-		body += 68
+		body += row
 	}
 	viewport := dialogViewport(c)
 	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 600, "", withError(body, form.dialogError))
@@ -624,7 +625,7 @@ func (state *State) declareAutofillField(c ui.C, i int, id gfx.ID, label, placeh
 	field := &form.texts[i]
 	field.Invalid = form.dialogError != ""
 	field.Secure = secret && !form.fixedShown
-	ui.FormField(c, &form.rows[i], label).FillWidth().Height(62).MarginSides(0, 0, 6, 0).Children(func() {
+	ui.FormField(c, &form.rows[i], label).FillWidth().Height(dialogRowHeight(c.Theme())).Children(func() {
 		box := ui.TextFieldID(c, id, field, label, placeholder)
 		if secret {
 			icon, name := lucideIcons[iconEye], m.ShowSecret

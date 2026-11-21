@@ -198,7 +198,7 @@ func (state *State) declareLocalStartupCommandDialog(c ui.C) {
 	}
 	// No scrim dismiss: a press beside the form must not discard its input.
 	viewport := dialogViewport(c)
-	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 480, description, 62)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 480, description, dialogRowHeight(c.Theme()))
 	box := ui.Dialog(c, ui.DialogSpec{
 		Title: messages.SettingsLocalStartupCommands, Description: description,
 		Width: 480, Height: height, Layer: dialogLayer,
@@ -210,7 +210,7 @@ func (state *State) declareLocalStartupCommandDialog(c ui.C) {
 			dialog.bound = true
 		}
 		dialog.form.For, dialog.form.Error, dialog.form.Invalid = hitLocalStartupField, state.dialogError, state.dialogError != ""
-		ui.FormField(c, &dialog.form, messages.SettingsLocalStartupCommand).FillWidth().Height(62).Children(func() {
+		ui.FormField(c, &dialog.form, messages.SettingsLocalStartupCommand).FillWidth().Height(dialogRowHeight(c.Theme())).Children(func() {
 			ui.TextFieldID(c, hitLocalStartupField, &dialog.input, messages.SettingsLocalStartupCommand, startupCommandExample(dialog.shell.Path))
 		})
 	})

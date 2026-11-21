@@ -125,13 +125,14 @@ func (state *State) declareForwardDialog(c ui.C) {
 		dialogTitle = messages.ForwardEditDialogTitle
 		submitLabel = messages.ForwardSave
 	}
-	// Four rows of fields, the resume box, and for a forward that dials through
-	// the server the shell-relay box with its relay command when it is on.
-	bodyHeight := withError(4*58+2+30, state.forwardDialogError)
+	// Four rows of fields, the shell-relay box for a forward that dials through
+	// the server with its relay command when it is on, and the two boxes under
+	// them.
+	bodyHeight := withError(4*dialogRowHeight(c.Theme())+2*dialogCheckRowHeight, state.forwardDialogError)
 	if modeUsesServerDestination(state.forwardEditor.mode) {
-		bodyHeight += 30
+		bodyHeight += dialogCheckRowHeight
 		if state.forwardEditor.viaShell {
-			bodyHeight += 58
+			bodyHeight += dialogRowHeight(c.Theme())
 		}
 	}
 	viewport := dialogViewport(c)
@@ -164,7 +165,7 @@ func (state *State) declareForwardDialogBody(c ui.C) {
 	if mode == portforward.ModeHTTPConnect {
 		hint = messages.ForwardHTTPConnectHint
 	}
-	const rowHeight = 58
+	rowHeight := dialogRowHeight(c.Theme())
 	column := ui.Column(c).Fill().PadSides(2, 4, 0, 4)
 	column.Children(func() {
 		state.declareForwardDialogField(c, hitForwardDialogLabel, forwardFieldLabel, messages.ForwardFieldName, "").FillWidth()
@@ -199,13 +200,13 @@ func (state *State) declareForwardDialogBody(c ui.C) {
 			}
 		})
 		if modeUsesServerDestination(mode) {
-			_, b.viaShellHelp = state.declareDialogCheckHelp(c, hitForwardDialogViaShell, messages.ForwardFieldViaShell, state.forwardEditor.viaShell, 4, 6)
+			_, b.viaShellHelp = state.declareDialogCheckHelp(c, hitForwardDialogViaShell, messages.ForwardFieldViaShell, state.forwardEditor.viaShell, dialogCheckGapAbove, dialogCheckGapBelow)
 			if editor.viaShell {
 				state.declareForwardDialogField(c, hitForwardDialogRelay, forwardFieldRelay, messages.ForwardFieldRelay, messages.ForwardRelayPlaceholder).FillWidth()
 			}
 		}
-		_, b.autoStartHelp = state.declareDialogCheckHelp(c, hitForwardDialogAutoStart, messages.ForwardFieldAutoStart, state.forwardEditor.autoStart, 4, 6)
-		_, b.resumeHelp = state.declareDialogCheckHelp(c, hitForwardDialogResume, messages.ForwardFieldResume, state.forwardEditor.resume, 4, 6)
+		_, b.autoStartHelp = state.declareDialogCheckHelp(c, hitForwardDialogAutoStart, messages.ForwardFieldAutoStart, state.forwardEditor.autoStart, dialogCheckGapAbove, dialogCheckGapBelow)
+		_, b.resumeHelp = state.declareDialogCheckHelp(c, hitForwardDialogResume, messages.ForwardFieldResume, state.forwardEditor.resume, dialogCheckGapAbove, dialogCheckGapBelow)
 		if state.forwardDialogError != "" {
 			ui.Text(c, state.forwardDialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).MarginSides(6, 0, 0, 0)
 		}
@@ -267,7 +268,7 @@ func (state *State) declareForwardDialogField(c ui.C, id gfx.ID, field forwardFi
 		}
 		editor.bound = true
 	}
-	return ui.FormField(c, &editor.rows[field], title).Height(58).Children(func() {
+	return ui.FormField(c, &editor.rows[field], title).Height(dialogRowHeight(c.Theme())).Children(func() {
 		ui.TextFieldID(c, id, &editor.texts[field], title, placeholder)
 	})
 }
