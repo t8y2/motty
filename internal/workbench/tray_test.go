@@ -557,6 +557,31 @@ func TestClosingAnEmptyWindowDoesNotAsk(t *testing.T) {
 	}
 }
 
+func TestTheCloseWindowQuestionCanBeTurnedOff(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	state.Click(hitSettingsCloseWindowConfirmToggle)
+	if !state.closeWindowConfirmOff {
+		t.Fatal("the setting did not turn the question off")
+	}
+	if state.snapshot().CloseWindowConfirm != "off" {
+		t.Fatal("the choice is not saved")
+	}
+	closed := 0
+	if state.ConfirmClose(func() { closed++ }) || state.modal != modalNone {
+		t.Fatalf("the window asked with the setting off: modal %d", state.modal)
+	}
+	state.Click(hitSettingsCloseWindowConfirmToggle)
+	if state.closeWindowConfirmOff {
+		t.Fatal("the setting did not turn the question back on")
+	}
+	if !state.ConfirmClose(func() { closed++ }) || state.modal != modalForm {
+		t.Fatalf("the window did not ask with the setting on: modal %d", state.modal)
+	}
+	if closed != 0 {
+		t.Fatalf("asking closed the window %d times", closed)
+	}
+}
+
 func TestHidingToTrayIsExplainedOnce(t *testing.T) {
 	w := newNotifyWorld(t)
 	state := newTestState(t, w.options)

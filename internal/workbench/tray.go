@@ -139,6 +139,9 @@ func (state *State) ConfirmClose(allow func()) bool {
 	}) {
 		return true
 	}
+	if state.closeWindowConfirmOff {
+		return false
+	}
 	if len(state.sessions) == 0 || state.closeAsked && state.modal == modalForm {
 		return false
 	}

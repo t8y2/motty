@@ -179,6 +179,9 @@ func (state *State) clickTerminalTools(id gfx.ID) bool {
 	case id == hitSettingsCloseConfirmToggle:
 		state.closeConfirmOff = !state.closeConfirmOff
 		state.save()
+	case id == hitSettingsCloseWindowConfirmToggle:
+		state.closeWindowConfirmOff = !state.closeWindowConfirmOff
+		state.save()
 	case id == hitSettingsPasswordHintToggle:
 		if state.setPasswordHint(state.passwordHintOff) {
 			state.save()

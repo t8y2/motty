@@ -293,6 +293,10 @@ type ToolsMessages struct {
 	CloseConfirmRow         string
 	CloseConfirmDescription string
 
+	// Closing a window that still has sessions.
+	CloseWindowConfirmRow         string
+	CloseWindowConfirmDescription string
+
 	// The outbound proxy.
 	ProxyRow                    string
 	ProxyConfigure              string

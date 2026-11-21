@@ -1976,6 +1976,9 @@ var traditionalTools = ToolsMessages{
 	CloseConfirmRow:         "關閉執行中的工作階段前確認",
 	CloseConfirmDescription: "關閉仍處於連線狀態的分頁或分割窗格時先詢問。已結束的工作階段直接關閉。",
 
+	CloseWindowConfirmRow:         "關閉視窗前確認",
+	CloseWindowConfirmDescription: "視窗還有開啟的工作階段時，關閉前先詢問。關閉後這些工作階段會中斷連線。",
+
 	NotifyRow:         "桌面通知",
 	NotifyDescription: "終端機裡的程式請求通知時（OSC 9、777、99），顯示系統通知。每個終端機每秒最多一條。",
 

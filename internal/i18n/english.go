@@ -1979,6 +1979,9 @@ var englishTools = ToolsMessages{
 	CloseConfirmRow:         "Confirm before closing running sessions",
 	CloseConfirmDescription: "Asks first when a tab or pane that is still connected is closed. Sessions that have ended close without asking.",
 
+	CloseWindowConfirmRow:         "Confirm before closing a window",
+	CloseWindowConfirmDescription: "Asks first when a window that still has sessions is closed. Closing it ends those connections.",
+
 	ProxyRow:                    "Outbound proxy",
 	ProxyConfigure:              "Configure",
 	ProxyDescriptionNone:        "Connect directly. A SOCKS5 or HTTP proxy can carry the first connection of every session.",

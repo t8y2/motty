@@ -1976,6 +1976,9 @@ var chineseTools = ToolsMessages{
 	CloseConfirmRow:         "关闭运行中的会话前确认",
 	CloseConfirmDescription: "关闭仍处于连接状态的标签页或分屏时先询问。已结束的会话直接关闭。",
 
+	CloseWindowConfirmRow:         "关闭窗口前确认",
+	CloseWindowConfirmDescription: "窗口还有打开的会话时，关闭前先询问。关闭后这些会话会断开连接。",
+
 	NotifyRow:         "桌面通知",
 	NotifyDescription: "终端里的程序请求通知时（OSC 9、777、99），显示系统通知。每个终端每秒最多一条。",
 
