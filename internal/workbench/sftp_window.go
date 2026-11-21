@@ -161,6 +161,7 @@ func (w *sftpWindow) config() app.Config {
 	config := ui.Configure(w.windowPage(), base)
 	config.Paint = base.Paint
 	config.OnScroll = w.scrollWindow
+	config.OnActivate = w.activate
 	return config
 }
 

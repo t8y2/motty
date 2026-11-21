@@ -152,6 +152,47 @@ func (w *sftpWindow) clearDirectoryTreeRequests() {
 	}
 }
 
+// Keep node identities and expansion while forgetting readings made before a
+// mutation or an explicit refresh. Collapsed branches stay lazy.
+func (w *sftpWindow) invalidateDirectoryTree(local bool) {
+	tree := &w.directoryTree[sideIndex(local)]
+	tree.generation++
+	clear(tree.requests)
+	for _, node := range tree.nodes {
+		node.loaded, node.loading = false, false
+		node.requestID++
+	}
+}
+
+func (w *sftpWindow) loadExpandedDirectoryTree(local bool) {
+	side := sideIndex(local)
+	tree := &w.directoryTree[side]
+	var load func(*sftpTreeNode)
+	load = func(node *sftpTreeNode) {
+		if !node.expanded {
+			return
+		}
+		if !node.loaded {
+			w.loadDirectoryTreeNode(side, node)
+			return
+		}
+		for _, child := range node.children {
+			load(child)
+		}
+	}
+	for _, root := range tree.roots {
+		load(root)
+	}
+}
+
+func cancelDirectoryTreeRead(tree *sftpDirectoryTree, node *sftpTreeNode) {
+	if directory, ok := tree.requests[node.requestID]; ok && sameDirectoryTreePath(false, directory, node.path) {
+		delete(tree.requests, node.requestID)
+	}
+	node.requestID++
+	node.loading = false
+}
+
 func directoryTreeRoot(local bool, location string) string {
 	if !local {
 		return "/"
@@ -365,6 +406,7 @@ func (w *sftpWindow) syncDirectoryTreeToPath(local bool, location string) {
 			for index := range folder.allRows {
 				entries[index] = folder.allRows[index].entry
 			}
+			cancelDirectoryTreeRead(tree, node)
 			w.setDirectoryTreeChildren(tree, local, node, entries, false)
 		}
 	}
@@ -379,6 +421,9 @@ func (w *sftpWindow) syncDirectoryTreeAfterBackgroundLoad(local bool) {
 	if current == "" || !sameDirectoryTreeLocation(local, tree.selectedPath, current) {
 		return
 	}
+	if node := tree.nodes[directoryTreePathKey(local, tree.selectedPath)]; node != nil && node.loaded {
+		return
+	}
 	w.syncDirectoryTreeToPath(local, current)
 }
 
@@ -391,11 +436,13 @@ func (w *sftpWindow) loadDirectoryTreeNode(side int, node *sftpTreeNode) {
 	tree.revealSelected = true
 	if side == 0 {
 		generation := tree.generation
+		node.requestID++
+		requestID := node.requestID
 		directory := node.path
 		go func() {
 			children, truncated, err := readLocalDirectoryTreeChildren(directory)
 			w.owner.aiPost(func(*State) {
-				w.applyLocalDirectoryTreeResult(tree, node, generation, directory, children, truncated, err)
+				w.applyLocalDirectoryTreeResult(tree, node, generation, requestID, directory, children, truncated, err)
 			})
 		}()
 		return
@@ -419,8 +466,8 @@ func (w *sftpWindow) loadDirectoryTreeNode(side int, node *sftpTreeNode) {
 	tree.requests[id] = node.path
 }
 
-func (w *sftpWindow) applyLocalDirectoryTreeResult(tree *sftpDirectoryTree, node *sftpTreeNode, generation uint64, directory string, children []sftpclient.Entry, truncated bool, err error) {
-	if w.closed || tree.generation != generation {
+func (w *sftpWindow) applyLocalDirectoryTreeResult(tree *sftpDirectoryTree, node *sftpTreeNode, generation, requestID uint64, directory string, children []sftpclient.Entry, truncated bool, err error) {
+	if w.closed || tree.generation != generation || node.requestID != requestID {
 		return
 	}
 	// The map lookup is not enough: a refresh can remove this path and create a
@@ -437,6 +484,7 @@ func (w *sftpWindow) applyLocalDirectoryTreeResult(tree *sftpDirectoryTree, node
 		w.setDirectoryTreeChildren(tree, true, node, children, truncated)
 	}
 	w.syncDirectoryTreeAfterBackgroundLoad(true)
+	w.loadExpandedDirectoryTree(true)
 	w.invalidate()
 }
 
@@ -560,13 +608,9 @@ func (w *sftpWindow) observeDirectoryTreeListing(local bool, directory string, e
 	if node == nil {
 		return
 	}
+	cancelDirectoryTreeRead(tree, node)
 	w.setDirectoryTreeChildren(tree, local, node, entries, len(entries) > maxDirectoryTreeChildren)
-	if local && sameDirectoryTreeLocation(true, tree.selectedPath, directory) {
-		w.syncDirectoryTreeToPath(true, directory)
-	}
-	if !local && sameDirectoryTreeLocation(false, tree.selectedPath, directory) {
-		w.syncDirectoryTreeToPath(false, directory)
-	}
+	w.loadExpandedDirectoryTree(local)
 	w.invalidate()
 }
 
@@ -598,6 +642,7 @@ func (w *sftpWindow) acceptDirectoryTreeResult(result sftpclient.Result) bool {
 			delete(tree.requests, result.ListID)
 		}
 		w.syncDirectoryTreeAfterBackgroundLoad(false)
+		w.loadExpandedDirectoryTree(false)
 	}
 	w.invalidate()
 	return true
@@ -702,12 +747,11 @@ func (w *sftpWindow) initDirectoryTreeState(side int) {
 		}
 		row := tree.visible[index]
 		node := row.node
-		branch := !node.loaded || node.loading || node.err != "" || len(node.children) > 0
 		// Depth is the folder's own level: the tree reads it for keyboard
 		// movement between a parent and its children. DisplayDepth compresses
 		// only the indent a deep path draws with.
 		return ui.TreeNode{
-			Depth: int(row.depth), Branch: branch,
+			Depth: int(row.depth), Branch: true,
 			Expanded: node.expanded, Selected: sameDirectoryTreePath(side == 0, node.path, tree.selectedPath),
 		}
 	}
@@ -741,12 +785,6 @@ func (w *sftpWindow) declareDirectoryTreeRow(c ui.C, side, index int) {
 	row := tree.visible[index]
 	node := row.node
 	theme := w.owner.Theme()
-	branch := !node.loaded || node.loading || node.err != "" || len(node.children) > 0
-	if !branch {
-		// A loaded folder with no children has no chevron; keep its icon where a
-		// branch's is.
-		ui.Slot(c).Width(directoryTreeDisclosureWidth).Shrink(0)
-	}
 	ui.Icon(c, lucideIcons[iconFolderOpen]).Size(16, 16).Color(theme.MutedForeground).Shrink(0)
 	color := theme.Foreground
 	if node.err != "" {
@@ -789,7 +827,7 @@ func (w *sftpWindow) directoryTreeChanges(side int, rows []sftpTreeVisibleRow) {
 }
 
 // toggleDirectoryTreeRow opens or closes the branch at a visible row, reading
-// its children the first time it opens.
+// its children again when it opens: SFTP has no change notifications.
 func (w *sftpWindow) toggleDirectoryTreeRow(side, index int) {
 	tree := &w.directoryTree[side]
 	if index < 0 || index >= len(tree.visible) {
@@ -801,12 +839,9 @@ func (w *sftpWindow) toggleDirectoryTreeRow(side, index int) {
 	w.activeLocal, w.view.local = side == 0, side == 0
 	node.expanded = !node.expanded
 	if node.expanded {
-		if node.err != "" {
-			node.loaded, node.err = false, ""
-		}
-		if !node.loaded {
-			w.loadDirectoryTreeNode(side, node)
-		}
+		cancelDirectoryTreeRead(tree, node)
+		node.loaded = false
+		w.loadDirectoryTreeNode(side, node)
 	}
 	w.invalidate()
 }

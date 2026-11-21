@@ -129,6 +129,9 @@ func (state *State) toggleSFTPPane(view *sftpView) {
 // on the window thread when it arrives. localSeq drops an answer that a newer
 // listing has overtaken.
 func (state *State) listLocal(view *sftpView, dir string) error {
+	if view.detached != nil && sameDirectoryTreeLocation(true, view.lfolder.path, dir) {
+		view.detached.invalidateDirectoryTree(true)
+	}
 	return state.listLocalNavigation(view, dir, sftpNavigationPassive, 0)
 }
 
@@ -329,6 +332,7 @@ func (state *State) applyLocalListing(view *sftpView, listing localListing, seq 
 		view.detached.pendingLocal = ""
 	}
 	folder := &view.lfolder
+	changed := !sameDirectoryTreeLocation(true, folder.path, listing.dir)
 	place, restore := folder.acceptNavigation(listing.dir, listing.navigation)
 	folder.path = listing.dir
 	if view.detached != nil && listing.navigation.kind == sftpNavigationManual && !state.sftpPathInput {
@@ -347,7 +351,9 @@ func (state *State) applyLocalListing(view *sftpView, listing localListing, seq 
 	folder.crumbs = prepareLocalCrumbs(folder.crumbs, listing.dir)
 	if view.detached != nil {
 		view.detached.observeDirectoryTreeListing(true, listing.dir, listing.entries)
-		view.detached.syncDirectoryTreeToPath(true, listing.dir)
+		if changed {
+			view.detached.syncDirectoryTreeToPath(true, listing.dir)
+		}
 	}
 	state.applySFTPFilter(view, folder, true)
 	state.finishSFTPNavigation(view, true, place, restore, listing.navigation)

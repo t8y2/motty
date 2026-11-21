@@ -1053,6 +1053,9 @@ func (view *sftpView) forgetListings() {
 	// remote change. Forget its token so its late result cannot repopulate the
 	// cache.
 	clear(view.prefetching)
+	if view.detached != nil {
+		view.detached.invalidateDirectoryTree(false)
+	}
 }
 
 // openSFTPDirectory goes into a folder. One already read is shown at once and
@@ -1176,6 +1179,7 @@ func (state *State) applySFTPListingNavigation(view *sftpView, remotePath string
 	if nav.id != 0 && nav.id != view.navigation.id {
 		return
 	}
+	changed := !sameDirectoryTreePath(false, view.path, remotePath)
 	place, restore := view.sftpFolder.acceptNavigation(remotePath, nav)
 	view.acceptedListID = listID
 	view.preparingID = 0
@@ -1197,7 +1201,9 @@ func (state *State) applySFTPListingNavigation(view *sftpView, remotePath string
 			entries[index] = rows[index].entry
 		}
 		view.detached.observeDirectoryTreeListing(false, remotePath, entries)
-		view.detached.syncDirectoryTreeToPath(false, remotePath)
+		if changed {
+			view.detached.syncDirectoryTreeToPath(false, remotePath)
+		}
 	}
 	state.applySFTPFilter(view, &view.sftpFolder, true)
 	state.finishSFTPNavigation(view, false, place, restore, nav)

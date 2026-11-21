@@ -67,8 +67,12 @@ func (state *State) activateSFTPTab(id uint32) bool {
 	if index < 0 {
 		return false
 	}
+	changed := state.activeSection != sectionSFTP || state.activeSFTPTab != id
 	state.activeSFTPTab = id
 	state.activeSection = sectionSFTP
+	if changed && state.modal == modalNone {
+		state.sftpTabs[index].activate()
+	}
 	state.options.Invalidate()
 	return true
 }

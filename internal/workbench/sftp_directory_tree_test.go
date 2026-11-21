@@ -330,7 +330,7 @@ func TestSFTPDirectoryTreeRejectsLateLocalResultForRecreatedPath(t *testing.T) {
 		t.Fatal("same-name refresh did not create a replacement node")
 	}
 
-	w.applyLocalDirectoryTreeResult(tree, oldNode, tree.generation, oldNode.path, []sftpclient.Entry{
+	w.applyLocalDirectoryTreeResult(tree, oldNode, tree.generation, oldNode.requestID, oldNode.path, []sftpclient.Entry{
 		{Name: "stale-child", Mode: os.ModeDir | 0o755},
 	}, false, nil)
 	if replacement.loaded || len(replacement.children) != 0 {
