@@ -91,6 +91,8 @@ type Messages struct {
 	// PasteReview holds the multi-line paste confirmation's texts; see
 	// paste_review.go.
 	PasteReview PasteReviewMessages
+	// Blocks holds the command blocks' texts; see terminal_blocks.go.
+	Blocks TerminalBlockMessages
 	// Autofill holds the autofill rules' texts; see autofill.go.
 	Autofill       AutofillMessages
 	RuleManagement RuleManagementMessages

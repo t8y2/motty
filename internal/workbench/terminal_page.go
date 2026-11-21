@@ -36,7 +36,17 @@ const (
 const (
 	terminalPartScrollbar = iota
 	terminalPartGhostHint
+	terminalPartBlockCopyCommand
+	terminalPartBlockCopyOutput
+	terminalPartBlockCopyAll
+	terminalPartBlockToggleFold
+	terminalPartBlockTruncatedHint
 )
+
+// terminalPartFoldSummaryBase is the first control part reserved for a
+// collapsed block's summary row; the block index is added to it. A hundred
+// leaves room for every block a terminal keeps.
+const terminalPartFoldSummaryBase = 1000
 
 // terminalPageRoot names one session's pane container in the window's identity
 // tree. The session number is unique in the window, so it keeps the panes apart.
@@ -139,6 +149,21 @@ func (state *State) terminalControlPointer(session *Session, event gfx.PointerEv
 		}
 		if part == terminalPartGhostHint {
 			return state.terminalGhostHintPointer(session, event)
+		}
+		if part >= terminalPartFoldSummaryBase {
+			return state.terminalFoldSummaryPointer(session, part-terminalPartFoldSummaryBase, event)
+		}
+		switch part {
+		case terminalPartBlockCopyCommand:
+			return state.terminalBlockPointer(session, blockCopyCommand, event)
+		case terminalPartBlockCopyOutput:
+			return state.terminalBlockPointer(session, blockCopyOutput, event)
+		case terminalPartBlockCopyAll:
+			return state.terminalBlockPointer(session, blockCopyAll, event)
+		case terminalPartBlockToggleFold:
+			return state.terminalBlockPointer(session, blockToggleFold, event)
+		case terminalPartBlockTruncatedHint:
+			return gfx.EventResult{Handled: true}
 		}
 		return gfx.EventResult{}
 	}

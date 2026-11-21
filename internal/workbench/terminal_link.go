@@ -108,6 +108,6 @@ func terminalBufferPositionLess(left, right term.BufferPosition) bool {
 	return left.Line < right.Line || left.Line == right.Line && left.Column < right.Column
 }
 
-func terminalLinkPosition(screen *term.Terminal, position term.Position) term.BufferPosition {
-	return term.BufferPosition{Line: screen.ViewLine(position.Row), Column: position.Column}
+func terminalLinkPosition(terminal *terminal, position term.Position) term.BufferPosition {
+	return term.BufferPosition{Line: terminal.displayIndex(position.Row), Column: position.Column}
 }

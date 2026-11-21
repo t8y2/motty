@@ -455,8 +455,10 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 	inactive := state.paneIsInactive(session.ID)
 	t.expireSync()
 	cols, rows := t.presentedSize()
+	t.buildDisplayMap(rows)
 	cellWidth, cellHeight := state.cellWidth, state.cellHeight
 	cursor := t.presentedCursor()
+	cursor.Y = t.displayCursorRow(cursor)
 	composing := t.preedit.Composing
 	predictionText, predictionRuns, predictionCells, predicting := t.prediction.overlay(state.now())
 	predicting = predicting && !composing && cursor.Visible && t.sync == nil
@@ -500,6 +502,13 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 	style := gfx.TextStyle{Size: state.terminalFontSize, Color: pal.termFG, MonoFace: state.terminalFontFace}
 	// The strip is empty on the alternate screen, whose program owns the grid.
 	gutterShown := !sensitive && state.terminalGutter != gutterOff && !t.presentedAltScreen() && t.sync == nil
+	if alt := t.screen.Modes().AltScreen; alt != t.blockAlt {
+		t.blockAlt = alt
+		if !alt {
+			state.remapBlocks(session)
+		}
+	}
+	blocksShown := t.blocksEnabled && !sensitive && !t.presentedAltScreen() && t.sync == nil && len(t.blocks) > 0
 	gutterNumberStyle, gutterTimeStyle := gutterStyles(state.terminalFontSize, state.terminalFontFace, pal)
 	labelWidth := float32(math.Ceil(float64(float32(cols)*cellWidth))) + 1
 
@@ -532,17 +541,22 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 		if block && row == cursor.Y {
 			column = caretX
 		}
-		line := t.presentedRow(row)
+		line := t.displayRow(row)
 		t.rowIDs[row] = line.ID
 		entry := t.cache.row(line, cols, column, coveredOn(covered, row == cursor.Y), pal, inactive)
+		_, _, folded := t.displayFold(row)
 		y := geometry.top + float32(row)*cellHeight
-		for _, span := range entry.spans {
-			from := snap(geometry.left + float32(span.from)*cellWidth)
-			to := snap(geometry.left + float32(span.to)*cellWidth)
-			canvas.Fill(gfx.Rect{X: from, Y: y, Width: to - from, Height: cellHeight}, span.color)
+		if !folded {
+			// A folded row is the summary, not its old first output line: its
+			// ANSI background spans must not show through the summary.
+			for _, span := range entry.spans {
+				from := snap(geometry.left + float32(span.from)*cellWidth)
+				to := snap(geometry.left + float32(span.to)*cellWidth)
+				canvas.Fill(gfx.Rect{X: from, Y: y, Width: to - from, Height: cellHeight}, span.color)
+			}
 		}
-		if finding {
-			firstFindMatch = state.paintTerminalFindMatches(canvas, &t.find, geometry, row, t.screen.ViewLine(row), firstFindMatch, findInk, findBackground)
+		if finding && !folded {
+			firstFindMatch = state.paintTerminalFindMatches(canvas, &t.find, geometry, row, t.displayIndex(row), firstFindMatch, findInk, findBackground)
 		}
 	}
 	if t.sync == nil {
@@ -559,23 +573,33 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 		if block && row == cursor.Y {
 			column = caretX
 		}
-		entry := t.cache.row(t.presentedRow(row), cols, column, coveredOn(covered, row == cursor.Y), pal, inactive)
+		line := t.displayRow(row)
+		lineNumber := t.displayLine(row)
+		entry := t.cache.row(line, cols, column, coveredOn(covered, row == cursor.Y), pal, inactive)
+		fold, hidden, folded := t.displayFold(row)
 		y := geometry.top + float32(row)*cellHeight
-		if from, to, selected := t.selection.span(t.screen.LineNumber(row), t.presentedRow(row), cols); selected {
-			left := snap(geometry.left + float32(from)*cellWidth)
-			right := snap(geometry.left + float32(to)*cellWidth)
-			canvas.Fill(gfx.Rect{X: left, Y: y, Width: right - left, Height: cellHeight}, withAlpha(pal.termFG, 0.25))
+		if blocksShown {
+			state.paintBlockRow(canvas, session, geometry, lineNumber, row, cellHeight, cellWidth)
+		}
+		if !folded {
+			if from, to, selected := t.selection.span(lineNumber, line, cols); selected {
+				left := snap(geometry.left + float32(from)*cellWidth)
+				right := snap(geometry.left + float32(to)*cellWidth)
+				canvas.Fill(gfx.Rect{X: left, Y: y, Width: right - left, Height: cellHeight}, withAlpha(pal.termFG, 0.25))
+			}
 		}
 		if gutterShown && row <= cursor.Y {
 			// Rows below the cursor have not been written yet.
-			state.paintGutter(canvas, entry, t, geometry, row, y, gutterNumberStyle, gutterTimeStyle)
+			state.paintGutter(canvas, entry, geometry, line, lineNumber, y, gutterNumberStyle, gutterTimeStyle)
 		}
-		if !t.presentedAltScreen() && row <= cursor.Y {
+		if !folded && !t.presentedAltScreen() && row <= cursor.Y {
 			if _, ok := t.aiRows[t.rowIDs[row]]; ok {
 				state.paintAIMarking(canvas, geometry, y, cellHeight)
 			}
 		}
-		if len(entry.runs) > 0 {
+		if folded {
+			state.paintFoldSummary(canvas, session, geometry, fold, &t.blocks[fold], hidden, y)
+		} else if len(entry.runs) > 0 {
 			last := entry.runs[len(entry.runs)-1]
 			rowCols := min(int(last.Column+last.Cells)+1, cols)
 			rowWidth := min(float32(math.Ceil(float64(float32(rowCols)*cellWidth)))+1, labelWidth)
@@ -585,15 +609,15 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 			}
 			runs := entry.runs
 			if finding {
-				t.find.paintRuns, firstFindMatch = terminalFindRuns(t.find.paintRuns, entry, &t.find, t.screen.ViewLine(row), cols, firstFindMatch, findInk)
+				t.find.paintRuns, firstFindMatch = terminalFindRuns(t.find.paintRuns, entry, &t.find, t.displayIndex(row), cols, firstFindMatch, findInk)
 				if len(t.find.paintRuns) != 0 {
 					runs = t.find.paintRuns
 				}
 			}
 			canvas.LabelRunsWithIdentity(identity, entry.text, gfx.Rect{X: geometry.left, Y: y, Width: rowWidth, Height: cellHeight}, style, cellWidth, runs)
 		}
-		if t.sync == nil {
-			state.paintTerminalLink(canvas, t, geometry, row)
+		if t.sync == nil && !folded {
+			state.paintTerminalLink(canvas, t, geometry, row, t.displayIndex(row))
 		}
 	}
 	if gutterShown {
@@ -647,6 +671,9 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 		x := geometry.left + float32(covered.from)*cellWidth
 		y := geometry.top + float32(cursor.Y)*cellHeight
 		canvas.Fill(gfx.Rect{X: x, Y: y, Width: float32(covered.to-covered.from) * cellWidth, Height: cellHeight}, pal.terminal)
+	}
+	if blocksShown {
+		state.paintBlockToolbar(canvas, session, geometry, rows, cellHeight)
 	}
 	var hintRect gfx.Rect
 	hintShown := false

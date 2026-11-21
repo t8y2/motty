@@ -80,6 +80,17 @@ var ChineseMessages = Messages{
 		Stale:   "终端已变化，未发送任何内容；请重新粘贴。",
 		Stopped: "终端无法接收本次粘贴的剩余行；已发送的行不会重发。",
 	},
+	Blocks: TerminalBlockMessages{
+		CopyCommand: "复制命令", CopyOutput: "复制输出", CopyBlock: "复制区块",
+		Running: "运行中", Succeeded: "成功", Failed: "失败", Interrupted: "已中断", Finished: "已结束",
+		ExitCodeFmt: "退出码 %d", Copied: "已复制", OutputUnavailable: "输出已不在滚动缓冲区内",
+
+		Collapse: "折叠输出", Expand: "展开输出", HiddenLinesFmt: "已折叠 %d 行",
+		HiddenOneLine: "已折叠 1 行",
+		SettingsRow:   "命令区块", SettingsDescription: "将每条命令与其输出归为独立区块，显示状态与耗时，并提供复制、折叠操作。需要 Motty 的 shell 集成。仅影响新打开的终端；已打开的终端保持创建时的状态。",
+		MenuRow: "右键菜单中的区块操作", MenuDescription: "在启用了命令区块的终端中右键点击区块时，显示复制命令、复制输出与折叠操作。",
+		TruncatedHint: "输出头部已超出滚动缓冲：较早内容已丢弃，展开无法恢复；复制只能得到保留的尾部。",
+	},
 
 	Transfers: TransferCenterMessages{
 		Title: "传输中心", Description: "所有连接的上传、下载与传输记录", Close: "关闭传输中心",

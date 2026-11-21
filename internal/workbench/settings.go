@@ -504,6 +504,10 @@ func (state *State) clickSettings(id gfx.ID) bool {
 		changed = state.setTerminalFontSize(state.terminalFontSize + 1)
 	case hitSettingsFontSizeReset:
 		changed = state.setTerminalFontSize(terminalFontSizeDefault)
+	case hitSettingsCommandBlocks:
+		changed = state.setCommandBlocks(!state.terminalCommandBlocks)
+	case hitSettingsBlockMenuActions:
+		changed = state.setTerminalBlockMenuActions(!state.terminalBlockMenuActions)
 	case hitSettingsShareToggle:
 		if state.shareConnections == shareConnectionsOff {
 			changed = state.setShareConnections(shareConnectionsOn)
