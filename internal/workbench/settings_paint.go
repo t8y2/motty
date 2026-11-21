@@ -728,28 +728,11 @@ func (page *settingsPage) buttons(slot ui.Box, disabled bool, actions ...compone
 		ui.Row(c).Gap(page.state.Theme().Metrics.GapItem).Items(ui.Center).Children(func() {
 			for _, action := range actions {
 				button := ui.Button(c, action.Label).Small().Hit(action.ID, action.Label)
-				button = settingsButtonVariant(button, action.Variant)
+				button = button.Variant(action.Variant)
 				button.Disabled(disabled || action.Disabled)
 			}
 		})
 	})
-}
-
-// settingsButtonVariant dresses a page button as the variant a ButtonAction names.
-func settingsButtonVariant(button ui.Box, variant components.ButtonVariant) ui.Box {
-	switch variant {
-	case components.ButtonSecondary:
-		return button.Secondary()
-	case components.ButtonOutline:
-		return button.Outline()
-	case components.ButtonGhost:
-		return button.Ghost()
-	case components.ButtonDestructive:
-		return button.Destructive()
-	case components.ButtonDestructiveOutline:
-		return button.DestructiveOutline()
-	}
-	return button
 }
 
 // switchSlot declares a switch with the application's identity and returns it.

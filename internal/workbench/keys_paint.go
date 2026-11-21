@@ -23,7 +23,6 @@ type keysSectionUI struct {
 func (state *State) declareKeysWorkspace(c ui.C) {
 	canvas := c.Canvas()
 	pal, messages := state.pal, state.messages
-	state.syncKeyTable()
 	bounds := state.catalogSectionBounds()
 	// The title keeps a readable column beside the buttons; a card too narrow for
 	// both shows the buttons as their icons, whose tooltips name them.
@@ -86,14 +85,18 @@ func (state *State) declareKeysWorkspace(c ui.C) {
 			state.keysColumns = [...]components.TableColumn{{Width: 190}, {Width: 150}, {Width: 120}, {Width: 105}, {Width: 0}}
 			state.keysHeadings = [...]string{messages.KeyColumnName, messages.KeyColumnType, messages.KeyColumnProtection, messages.KeyColumnCertificate, messages.KeyColumnFingerprint}
 			components.FitTableHeadings(canvas, state.Theme(), state.keysColumns[:], state.keysHeadings[:])
-			table := ui.Table(c, &state.keysTable, ui.TableSpec{
+			ui.Table(c, &state.keysTable, ui.TableSpec{
 				Rows: hitKeyRowList, Columns: state.keysColumns[:], Headers: state.keysHeadings[:], Source: &state.keysRows,
 				Scrollbar: hitKeysScrollThumb, ScrollbarLabel: messages.KeyListScroll,
 				ScrollbarGutter: catalogBarGutter,
 			}).Grow(1).Shrink(1)
-			if row, ok := table.RowClicked(); ok && state.modal == modalNone && row >= 0 && row < len(state.identities) {
-				state.keysTable.Select(row)
-				state.selectIdentity(state.identities[row].ID)
+			// A click or an arrow key chose a row: the detail follows it. Otherwise
+			// the table shows the key the application selected; the table lays out
+			// after the declaration, so this paint already shows it.
+			if state.keysTable.Changed() && state.modal == modalNone {
+				state.takeKeyTableSelection()
+			} else {
+				state.syncKeyTable()
 			}
 		}
 		ui.Divider(c).Background(pal.line)

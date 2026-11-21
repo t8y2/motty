@@ -3068,12 +3068,6 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	if result, handled := state.forwardListKey(event); handled {
 		return result
 	}
-	if state.activeSection == sectionKeys && state.modal == modalNone {
-		if result := state.keysTable.Key(event); result.Handled {
-			state.takeKeyTableSelection()
-			return result
-		}
-	}
 	if result, handled := state.proxyListKey(event); handled {
 		return result
 	}

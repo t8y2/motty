@@ -53,7 +53,7 @@ func (state *State) syncKeyTable() {
 	state.keysTable.Select(row)
 }
 
-// takeKeyTableSelection adopts the row a key moved the table to.
+// takeKeyTableSelection adopts the row a click or a key chose in the table.
 func (state *State) takeKeyTableSelection() {
 	row := state.keysTable.Selected()
 	if row >= 0 && row < len(state.identities) {

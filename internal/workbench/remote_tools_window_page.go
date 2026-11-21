@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
@@ -215,14 +214,7 @@ func (w *remoteToolsWindow) declareActions(c ui.C) {
 		for i := 0; i < count; i++ {
 			action := actions[i]
 			button := ui.Button(c, action.Label).Small().Shrink(0)
-			switch action.Variant {
-			case components.ButtonDestructive:
-				button = button.Destructive()
-			case components.ButtonSecondary:
-				button = button.Secondary()
-			default:
-				button = button.Outline()
-			}
+			button = button.Variant(remoteToolsVariant(action.Variant))
 			if action.Disabled {
 				button = button.Disabled(true)
 			}
