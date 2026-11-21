@@ -269,4 +269,3 @@ func redSquarePNG(t *testing.T) []byte {
 	}
 	return out.Bytes()
 }
-
