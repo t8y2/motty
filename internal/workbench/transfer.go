@@ -958,7 +958,7 @@ func (state *State) declareOneTransferCard(c ui.C, session *Session, slot int) {
 			}
 			ui.Text(c, name).Height(20).LineHeight(20).FillWidth().Ellipsis().
 				FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text)
-			ui.Progress(c, fraction).Height(8).FillWidth()
+			ui.Progress(c, fraction).Height(8).FillWidth().Label(title + " " + name)
 			ui.Row(c).Height(28).FillWidth().Gap(8).Items(ui.Center).Children(func() {
 				ui.Text(c, transfer.text.line).Grow(1).Ellipsis().
 					FontSize(metrics.FontSizeS).Color(pal.muted)
