@@ -50,6 +50,9 @@ const (
 	iconArrowUp
 	iconFolderOpen
 	iconActivity
+	// iconGauge is the resource monitor's own glyph: the speedometer that says
+	// performance, where iconActivity is the pulse of latency and live traffic.
+	iconGauge
 	iconRecord
 	iconRecordStop
 	iconPlay
@@ -1470,7 +1473,7 @@ func (state *State) hostsHeaderPlan(canvas *gfx.Canvas, layout hostsLayout) host
 		{hitEditHost, m.EditHost, iconPencil, false, false},
 		{hitCopyHost, m.CopyHost, iconCopy, false, false},
 		{hitMoveHostGroup, m.MoveHostGroup, iconFolderOpen, false, false},
-		{hitDashboardAddHosts, state.messages.Dashboard.AddHosts, iconActivity, false, false},
+		{hitDashboardAddHosts, state.messages.Dashboard.AddHosts, iconGauge, false, false},
 		{hitDeleteHost, m.DeleteHost, iconTrash, false, true},
 	}
 	// The actions keep their words while the row has room for them and the count
@@ -2690,6 +2693,7 @@ var lucideIcons = [...]gfx.Icon{
 	iconFolderSolid:     icons.FolderSolid,
 	iconFolderSolidOpen: icons.FolderSolidOpen,
 	iconActivity:        icons.Activity,
+	iconGauge:           icons.Gauge,
 	iconRecord:          icons.CircleDot,
 	iconRecordStop:      icons.CircleStop,
 	iconPlay:            icons.Play,

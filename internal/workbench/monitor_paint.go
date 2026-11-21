@@ -142,7 +142,7 @@ func (state *State) declareMonitorContent(c ui.C, width, height float32) {
 	state.monitorUI = monitorPageUI{}
 	ui.Column(c).Fill().Children(func() {
 		ui.Row(c).Height(infoBarHeight).PadSides(0, 10, 0, 12).Items(ui.Center).Children(func() {
-			ui.Icon(c, lucideIcons[iconActivity]).Size(16, 16).Color(state.pal.muted).Shrink(0)
+			ui.Icon(c, lucideIcons[iconGauge]).Size(16, 16).Color(state.pal.muted).Shrink(0)
 			ui.Text(c, m.Title).FontSize(14).Weight(gfx.WeightSemibold).Color(state.pal.text).Shrink(0).MarginLeft(7)
 			if session == nil || session.stats == nil {
 				ui.Spacer(c)

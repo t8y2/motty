@@ -194,6 +194,10 @@ var (
 // from: the line a page turns over.
 var iconSpine = gfx.Point{X: 12, Y: 12}
 
+// iconGaugeHub is where a gauge's needle is hinged, in the icon's view box: the
+// centre of the dial, which is not the middle of the glyph.
+var iconGaugeHub = gfx.Point{X: 12, Y: 14}
+
 var (
 	// iconMotionTurn turns a gear half way round, slowly, while it settles. Half a
 	// turn is the still picture for a gear, which is why the motion can end where
@@ -417,6 +421,23 @@ var (
 		},
 	}
 
+	// iconMotionSweep swings a gauge's needle toward the high end of the dial and
+	// lets it settle back: contour 0 is the needle, and it turns about the hub in
+	// the middle of the dial rather than the middle of the glyph, so the dial it
+	// is drawn on stays still.
+	iconMotionSweep = iconMotion{
+		duration: 900 * time.Millisecond,
+		parts: []iconPartMotion{
+			{contour: 0, anchor: &iconGaugeHub, tracks: []iconMotionTrack{
+				{axis: iconAxisTurn, stops: []iconMotionStop{
+					{at: 0, value: 0, ease: easeRockIn},
+					{at: 260, value: turn(30), ease: easeLand},
+					{at: 900, value: 0},
+				}},
+			}},
+		},
+	}
+
 	// iconMotionFold closes a ledger half way on its spine and opens it again: known
 	// hosts is a book, and a book is the one glyph here that hinges. The outline is
 	// a single contour that wraps both pages, and the spine is the line the two
@@ -510,6 +531,8 @@ func iconMotionFor(icon uint8) (iconMotion, bool) {
 		return iconMotionFold, true
 	case iconActivity:
 		return iconMotionTrace, true
+	case iconGauge:
+		return iconMotionSweep, true
 	case iconLock:
 		return iconMotionUnlock, true
 	case iconKey:
