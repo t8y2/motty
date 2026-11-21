@@ -3235,7 +3235,7 @@ var traditionalMonitor = MonitorMessages{
 	GPU: "GPU", GPUMetricsUnavailable: "未取得到顯示卡指標",
 	Collapse:      "收起",
 	AddressCopied: "位址已複製", AddressCopyFailed: "複製位址失敗", AddressCopy: "複製位址",
-	Logins: "目前登入使用者", LoginsHint: "目前透過終端機或遠端連線登入主機的使用者", NoLogins: "目前沒有終端機登入工作階段", LoginsUnavailable: "無法讀取登入工作階段", LoginsTruncated: "僅顯示前 32 個工作階段",
+	Logins: "目前登入使用者", LoginsHint: "目前透過終端機或遠端連線登入主機的使用者", NoLogins: "目前沒有終端機登入工作階段", LoginsUnavailable: "無法讀取登入工作階段", LoginsTruncated: "僅顯示前 32 個工作階段", CurrentSSHLogin: "目前 SSH 連線",
 }
 
 var traditionalRemoteLogs = RemoteLogMessages{
