@@ -34,46 +34,24 @@ func TestWin32InputModeIsAcceptedOnlyWhereThePlatformHasIt(t *testing.T) {
 	}
 }
 
-func TestWin32LogicalBytes(t *testing.T) {
-	// Not a win32 packet
-	plain := []byte("hello world")
-	if got := Win32LogicalBytes(plain); string(got) != "hello world" {
-		t.Fatalf("plain = %q", got)
-	}
-
-	// Press of 'a'
-	pressA := EncodeWin32Key(gfx.KeyEvent{Win32: gfx.Win32Key{VirtualKey: 'A', ScanCode: 0x1e, Unicode: 'a', Repeat: 1}})
-	if got := Win32LogicalBytes(pressA); string(got) != "a" {
-		t.Fatalf("pressA = %q, want 'a'", got)
-	}
-
-	// Release of 'a' -> should return empty
-	relA := EncodeWin32Key(gfx.KeyEvent{Win32: gfx.Win32Key{VirtualKey: 'A', ScanCode: 0x1e, Unicode: 'a'}, Release: true})
-	if got := Win32LogicalBytes(relA); len(got) != 0 {
-		t.Fatalf("relA = %q, want empty", got)
-	}
-
-	// Press of Enter (13)
-	pressEnter := EncodeWin32Key(gfx.KeyEvent{Win32: gfx.Win32Key{VirtualKey: 13, ScanCode: 28, Unicode: 13, Repeat: 1}})
-	if got := Win32LogicalBytes(pressEnter); string(got) != "\r" {
-		t.Fatalf("pressEnter = %q, want '\\r'", got)
-	}
-
-	// Press of Backspace (8)
-	pressBS := EncodeWin32Key(gfx.KeyEvent{Win32: gfx.Win32Key{VirtualKey: 8, ScanCode: 14, Unicode: 8, Repeat: 1}})
-	if got := Win32LogicalBytes(pressBS); string(got) != "\x7f" {
-		t.Fatalf("pressBS = %q, want '\\x7f'", got)
-	}
-
-	// Press of Tab (9)
-	pressTab := EncodeWin32Key(gfx.KeyEvent{Win32: gfx.Win32Key{VirtualKey: 9, ScanCode: 15, Unicode: 9, Repeat: 1}})
-	if got := Win32LogicalBytes(pressTab); string(got) != "\t" {
-		t.Fatalf("pressTab = %q, want '\\t'", got)
-	}
-
-	// Press of Up arrow (vk 38, uc 0)
-	pressUp := EncodeWin32Key(gfx.KeyEvent{Win32: gfx.Win32Key{VirtualKey: 38, ScanCode: 72, Unicode: 0, Repeat: 1}})
-	if got := Win32LogicalBytes(pressUp); string(got) != "\x1b[A" {
-		t.Fatalf("pressUp = %q, want '\\x1b[A'", got)
+func TestWin32LogicalKey(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		event gfx.KeyEvent
+		want  string
+	}{
+		{"text", gfx.KeyEvent{Win32: gfx.Win32Key{VirtualKey: 'A', Unicode: 'a', Repeat: 2}}, "aa"},
+		{"release", gfx.KeyEvent{Release: true, Win32: gfx.Win32Key{VirtualKey: 'A', Unicode: 'a'}}, ""},
+		{"enter", gfx.KeyEvent{Win32: gfx.Win32Key{VirtualKey: 13, Unicode: 13}}, "\r"},
+		{"backspace", gfx.KeyEvent{Win32: gfx.Win32Key{VirtualKey: 8, Unicode: 8}}, "\x7f"},
+		{"tab", gfx.KeyEvent{Win32: gfx.Win32Key{VirtualKey: 9, Unicode: 9}}, "\t"},
+		{"up", gfx.KeyEvent{Win32: gfx.Win32Key{VirtualKey: 38}}, "\x1b[A"},
+		{"surrogate", gfx.KeyEvent{Win32: gfx.Win32Key{VirtualKey: 'A', Unicode: 0xd83d}}, ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := string(Win32LogicalKey(test.event)); got != test.want {
+				t.Fatalf("logical input = %q, want %q", got, test.want)
+			}
+		})
 	}
 }

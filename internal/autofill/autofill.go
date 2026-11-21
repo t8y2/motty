@@ -213,6 +213,8 @@ func (w *Watcher) Typed(p []byte) {
 	}
 }
 
+func (w *Watcher) UnknownInput() { w.taint = true }
+
 // echo reports whether the line may be what the user typed.
 func (w *Watcher) echo(line string) bool {
 	return w.taint || len(w.typed) > 0 && strings.Contains(line, string(w.typed))

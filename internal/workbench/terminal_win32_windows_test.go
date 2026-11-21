@@ -3,16 +3,75 @@
 package workbench
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
+	"unicode"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/cmdhistory"
 	"motty/internal/completion"
+	"motty/internal/localshell"
 	"motty/internal/term"
 )
+
+func TestWin32GitBashCompletionThroughConPTY(t *testing.T) {
+	var bash string
+	for _, choice := range localshell.InstalledWindowsShells() {
+		if choice.Name == "Git Bash" {
+			bash = choice.Path
+			break
+		}
+	}
+	if bash == "" {
+		t.Skip("Git Bash is not installed")
+	}
+	t.Setenv("HOME", t.TempDir())
+	state := newTestState(t, testOptions(t))
+	state.options.Invalidate = func() {}
+	state.localShell = bash
+	state.Click(hitLocalTerminal)
+	session, ok := state.sessionByIDPointer(state.activeSessionID)
+	if !ok || session.term == nil || session.term.shell == nil {
+		t.Fatal("Git Bash did not start")
+	}
+	t.Cleanup(func() { session.term.shell.Close() })
+	deadline := time.Now().Add(waitBudget())
+	for time.Now().Before(deadline) {
+		state.Wake()
+		if session.term.screen.Modes().Win32Input && session.term.screen.Cursor().X > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !session.term.screen.Modes().Win32Input {
+		t.Fatal("Git Bash did not request Win32 input records")
+	}
+	time.Sleep(100 * time.Millisecond)
+	state.Wake()
+	state.history.suggestOff = false
+	state.history.inlineOff = true
+	catalog, err := completion.Builtin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.completion.catalog = catalog
+	for _, character := range "git s" {
+		event := gfx.KeyEvent{Text: string(character), Typed: string(character), Win32: gfx.Win32Key{VirtualKey: uint16(unicode.ToUpper(character)), Unicode: uint16(character)}}
+		key(state, 0, event)
+	}
+	localShellOutput(t, state, session, "git s")
+	line, ok := session.term.recorder.Line(cmdhistory.TermScreen{Term: session.term.screen})
+	if !ok || line != "git s" {
+		t.Fatalf("Git Bash line = %q, %v", line, ok)
+	}
+	state.openCompletions()
+	if !state.completion.list.active || len(state.completion.list.candidates) == 0 {
+		t.Fatal("Git Bash did not open completion for the typed line")
+	}
+}
 
 func TestWin32InputModeSendsTheConsolePacket(t *testing.T) {
 	state, _, _, shell := liveSession(t)
@@ -204,7 +263,11 @@ func TestWin32InputTypingAndCompletion(t *testing.T) {
 func TestWin32InputUnintegratedShellAutoListOpens(t *testing.T) {
 	w := newPlainCompletionWorld(t)
 	w.shell.onWrite = func(p []byte) {
-		logical := term.Win32LogicalBytes(p)
+		var vk, sc, uc, down, control, repeat uint16
+		logical := p
+		if _, err := fmt.Sscanf(string(p), "\x1b[%d;%d;%d;%d;%d;%d_", &vk, &sc, &uc, &down, &control, &repeat); err == nil {
+			logical = term.Win32LogicalKey(gfx.KeyEvent{Release: down == 0, Win32: gfx.Win32Key{VirtualKey: vk, ScanCode: sc, Unicode: uc, ControlState: control, Repeat: repeat}})
+		}
 		w.shell.say(strings.ReplaceAll(string(logical), "\r", "\r\n"))
 	}
 	w.shell.say("\x1b[?9001h")

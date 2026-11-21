@@ -710,6 +710,14 @@ func (state *State) attachCompletion(session *Session) {
 		}
 		state.closeCompletionList()
 	}
+	t.completionUnknown = func() {
+		if state.completion.autoHold.session == sessionID {
+			state.completion.autoHold = completionAutoHold{}
+		}
+		if state.completion.list.active && state.completion.list.sessionID == sessionID {
+			state.closeCompletionList()
+		}
+	}
 	state.requestCompletionHistory(session)
 }
 
@@ -1102,10 +1110,10 @@ func (state *State) completionKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	}
 	handled := gfx.EventResult{Handled: true, Repaint: true}
 	if event.Release {
-		if session.term != nil && session.term.acceptedKey.holds(event) {
-			session.term.acceptedKey = acceptedKey{}
+		if session.term.consumeAcceptedKey(event) {
+			return handled, true
 		}
-		return handled, true
+		return gfx.EventResult{}, false
 	}
 	if len(list.candidates) == 0 {
 		// A loading row has nothing to choose. Enter still runs the line; the
