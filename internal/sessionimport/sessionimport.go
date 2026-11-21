@@ -1,18 +1,20 @@
 // Package sessionimport reads the saved sessions of other clients, PuTTY,
-// Xshell, MobaXterm, WindTerm, Electerm, Netcatty, SecureCRT and FinalShell,
-// into the host fields Motty keeps. It reads files or folders the user chose
-// and never executes, resolves or contacts anything in them.
+// Xshell, MobaXterm, WindTerm, Electerm, Netcatty, SecureCRT, FinalShell and
+// Xterminal, into the host fields Motty keeps. It reads files or folders the
+// user chose and never executes, resolves or contacts anything in them.
 //
 // Only connection fields, a session's command after login and readable SSH
 // login password candidates from Electerm and Netcatty are taken. The caller
 // decides whether to save those candidates in a vault. Other clients' encrypted
-// credentials and key files are not imported; SecureCRT and FinalShell store
-// every saved password encrypted, so their imports never carry one.
+// credentials and key files are not imported; SecureCRT, FinalShell and
+// Xterminal store every saved password encrypted, so their imports never carry
+// one.
 package sessionimport
 
 import (
 	"archive/zip"
 	"bytes"
+	"database/sql"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -30,6 +32,7 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/text/encoding/simplifiedchinese"
+	_ "modernc.org/sqlite" // registers the "sqlite" driver
 )
 
 // Limits keep a damaged or hostile file from using the machine: a session file
@@ -396,6 +399,8 @@ func ParseWithOptions(client Client, paths []string, options ParseOptions) (Resu
 			part, err = ParseSecureCRT(path)
 		case FinalShell:
 			part, err = ParseFinalShell(path)
+		case Xterminal:
+			part, err = ParseXterminal(path)
 		default:
 			err = fmt.Errorf("unknown client %d", client)
 		}
@@ -429,6 +434,7 @@ const (
 	Netcatty
 	SecureCRT
 	FinalShell
+	Xterminal
 )
 
 // ---- PuTTY ----
@@ -1700,6 +1706,311 @@ func finalShellGroupPath(folders map[string]finalShellFolder, id string) (string
 	titles := make([]string, 0, len(ids))
 	for _, folderID := range slices.Backward(ids) {
 		if name := clean(folders[folderID].Name, maxNameLength); name != "" {
+			titles = append(titles, name)
+		}
+	}
+	return strings.Join(titles, "/"), cut
+}
+
+// ---- Xterminal ----
+
+// Xterminal keeps its local repository in a SQLite database, local-store.db,
+// inside a sqlite folder under its user data directory. Connections and their
+// folders are rows of one generic table, their JSON payloads under a store key
+// that starts with the local user's id. Only the SSH connections and the folder
+// tree above them are read; RDP, Telnet and tunnel records sit under other
+// store keys and are left alone. Xterminal encrypts passwords, private keys and
+// saved credentials with the repository password, so an import carries the
+// address, port, login, name, folder and command after login, never a secret.
+const (
+	// xtermServerStoreSuffix ends the key of the local SSH connections. The
+	// part before it identifies the local user the rows belong to.
+	xtermServerStoreSuffix = "GeneralDatabaseLocalImp-server"
+	// xtermGroupStoreSuffix ends the key of that user's SSH folders.
+	xtermGroupStoreSuffix = "GeneralDatabaseLocalImp-SERVER"
+)
+
+// xtermServer is the part of one connection record this package reads.
+// Xterminal spells the login username, and a connection's saved password,
+// private key and credential stay encrypted and are not read.
+type xtermServer struct {
+	Title      string   `json:"title"`
+	Host       string   `json:"host"`
+	Port       xtermInt `json:"port"`
+	User       string   `json:"username"`
+	GroupID    string   `json:"groupId"`
+	AuthType   string   `json:"authType"`
+	PrivateKey string   `json:"privateKey"`
+	// Xterminal's editor keeps the command it runs after login as a Bash
+	// script under connectionConfig.init; a one-line script is the same thing
+	// as a host's command after login.
+	ConnectionConfig struct {
+		Init struct {
+			Bash string `json:"bash"`
+		} `json:"init"`
+	} `json:"connectionConfig"`
+}
+
+// xtermGroup is one folder. A missing ParentID means the top level.
+type xtermGroup struct {
+	ID       string `json:"_id"`
+	Name     string `json:"name"`
+	ParentID string `json:"parentId"`
+}
+
+// xtermInt reads a number that an edited or older record may hold as text.
+type xtermInt int
+
+func (value *xtermInt) UnmarshalJSON(data []byte) error {
+	text := strings.Trim(strings.TrimSpace(string(data)), `"`)
+	number, err := strconv.Atoi(text)
+	if err != nil {
+		*value = 0
+		return nil
+	}
+	*value = xtermInt(number)
+	return nil
+}
+
+// ParseXterminal reads Xterminal's local repository: the local-store.db file
+// itself, the sqlite folder holding it, or the user data folder that holds that
+// folder. The SSH sessions and their folder tree come out; their saved
+// credentials do not.
+func ParseXterminal(path string) (Result, error) {
+	database, err := xterminalDatabase(path)
+	if err != nil {
+		return Result{}, err
+	}
+	// The path becomes a SQLite URI, where ? and # would start query options.
+	if strings.ContainsAny(database, "?#") {
+		return Result{}, errors.New("the Xterminal local store path holds characters a database URI cannot carry")
+	}
+	store, err := sql.Open("sqlite", "file:"+strings.ReplaceAll(database, `\`, "/")+"?mode=ro&_pragma=busy_timeout(3000)")
+	if err != nil {
+		return Result{}, fmt.Errorf("not an Xterminal local store: %v", err)
+	}
+	defer store.Close()
+	store.SetMaxOpenConns(1)
+	store.SetMaxIdleConns(1)
+	var table string
+	err = store.QueryRow(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'local_store'`).Scan(&table)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Result{}, errors.New("not an Xterminal local store: it has no local_store table")
+	}
+	if err != nil {
+		return Result{}, fmt.Errorf("not an Xterminal local store: %v", err)
+	}
+	source := filepath.Base(database)
+	keys, err := xtermStoreKeys(store)
+	if err != nil {
+		return Result{}, err
+	}
+	groups, err := xtermGroups(store, keys)
+	if err != nil {
+		return Result{}, err
+	}
+	result, rows, err := xtermServers(store, keys, groups, source)
+	if err != nil {
+		return Result{}, err
+	}
+	if rows == 0 {
+		return result, errors.New("not an Xterminal local store: it holds no SSH connections")
+	}
+	return result, nil
+}
+
+// xterminalDatabase resolves the chosen path to the local-store.db it names or
+// holds. The folder layouts are the ones Xterminal itself uses: a chosen user
+// data folder, its sqlite subfolder, and the userData folder of the portable
+// build that lives under xt_data.
+func xterminalDatabase(path string) (string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return path, nil
+	}
+	for _, relative := range []string{
+		"local-store.db",
+		filepath.Join("sqlite", "local-store.db"),
+		filepath.Join("userData", "sqlite", "local-store.db"),
+	} {
+		candidate := filepath.Join(path, relative)
+		if candidateInfo, candidateErr := os.Stat(candidate); candidateErr == nil && !candidateInfo.IsDir() {
+			return candidate, nil
+		}
+	}
+	return "", errors.New("not an Xterminal data folder: it holds no sqlite/local-store.db")
+}
+
+// xtermStoreKeys lists the store keys the database holds. Xterminal keys every
+// kind of record with the local user's id, so the suffix is what tells a set of
+// SSH connections from a set of notes or a different protocol.
+func xtermStoreKeys(store *sql.DB) ([]string, error) {
+	rows, err := store.Query(`SELECT DISTINCT store_key FROM local_store LIMIT ?`, MaxEntries)
+	if err != nil {
+		return nil, fmt.Errorf("not an Xterminal local store: %v", err)
+	}
+	defer rows.Close()
+	var keys []string
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, fmt.Errorf("not an Xterminal local store: %v", err)
+		}
+		keys = append(keys, key)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("not an Xterminal local store: %v", err)
+	}
+	return keys, nil
+}
+
+// xtermGroups reads every SSH folder in the store, grouped by the local user
+// whose key holds it, so a connection finds its own user's folders and not
+// another user's. A record that is not a folder is skipped.
+func xtermGroups(store *sql.DB, keys []string) (map[string]map[string]xtermGroup, error) {
+	groups := map[string]map[string]xtermGroup{}
+	for _, key := range keys {
+		prefix, ok := strings.CutSuffix(key, "-"+xtermGroupStoreSuffix)
+		if !ok || prefix == "" {
+			continue
+		}
+		rows, err := store.Query(
+			`SELECT payload FROM local_store WHERE store_key = ? AND length(payload) <= ? ORDER BY created_at ASC`,
+			key, MaxFileSize,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("not an Xterminal local store: %v", err)
+		}
+		for rows.Next() {
+			var payload string
+			if err := rows.Scan(&payload); err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("not an Xterminal local store: %v", err)
+			}
+			var folder xtermGroup
+			if err := json.Unmarshal([]byte(payload), &folder); err != nil || folder.ID == "" {
+				continue
+			}
+			if groups[prefix] == nil {
+				groups[prefix] = map[string]xtermGroup{}
+			}
+			if _, seen := groups[prefix][folder.ID]; !seen {
+				groups[prefix][folder.ID] = folder
+			}
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("not an Xterminal local store: %v", err)
+		}
+		rows.Close()
+	}
+	return groups, nil
+}
+
+// xtermServers reads the SSH connections. rows is how many records the store
+// held for them, so a database of only other protocols is told apart from an
+// empty one.
+func xtermServers(store *sql.DB, keys []string, groups map[string]map[string]xtermGroup, source string) (Result, int, error) {
+	var (
+		result    Result
+		servers   int
+		orphans   int
+		shortened bool
+	)
+	for _, key := range keys {
+		if len(result.Entries) >= MaxEntries {
+			result.warn("%s: more than %d sessions; the rest were not read", source, MaxEntries)
+			break
+		}
+		prefix, ok := strings.CutSuffix(key, "-"+xtermServerStoreSuffix)
+		if !ok || prefix == "" {
+			continue
+		}
+		rows, err := store.Query(
+			`SELECT payload FROM local_store WHERE store_key = ? AND length(payload) <= ? ORDER BY created_at ASC`,
+			key, MaxFileSize,
+		)
+		if err != nil {
+			return Result{}, 0, fmt.Errorf("not an Xterminal local store: %v", err)
+		}
+		for rows.Next() {
+			if len(result.Entries) >= MaxEntries {
+				result.warn("%s: more than %d sessions; the rest were not read", source, MaxEntries)
+				break
+			}
+			var payload string
+			if err := rows.Scan(&payload); err != nil {
+				rows.Close()
+				return Result{}, 0, fmt.Errorf("not an Xterminal local store: %v", err)
+			}
+			servers++
+			var server xtermServer
+			if err := json.Unmarshal([]byte(payload), &server); err != nil {
+				result.warn("%s: a connection record is not valid JSON; skipped", source)
+				continue
+			}
+			group := ""
+			if server.GroupID != "" {
+				var cut bool
+				group, cut = xtermGroupPath(groups[prefix], server.GroupID)
+				shortened = shortened || cut
+				if _, known := groups[prefix][server.GroupID]; !known {
+					orphans++
+				}
+			}
+			if server.AuthType == "privateKey" && server.PrivateKey != "" {
+				result.Keys++
+			}
+			result.add(Entry{
+				Name: server.Title, Group: group, Protocol: SSH, Host: server.Host,
+				Port: int(server.Port), User: server.User, Command: server.ConnectionConfig.Init.Bash,
+				Source: source,
+			})
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return Result{}, 0, fmt.Errorf("not an Xterminal local store: %v", err)
+		}
+		rows.Close()
+	}
+	if orphans > 0 {
+		result.warn("%d sessions are in folders that are not in this repository and were imported without one", orphans)
+	}
+	if shortened {
+		result.warn("%s: folders nested more than %d levels deep were shortened", source, maxGroupDepth)
+	}
+	return result, servers, nil
+}
+
+// xtermGroupPath is the folder a group sits in followed by its own name, joined
+// with "/" the way the other imports join nested folders, and whether the path
+// had to be cut at maxGroupDepth levels (the innermost ones are kept). A group
+// that is its own ancestor, as a damaged record can make it, stops the climb
+// where it would come round to itself.
+func xtermGroupPath(groups map[string]xtermGroup, id string) (string, bool) {
+	var ids []string
+	cut := false
+	for current := id; ; {
+		folder, known := groups[current]
+		if !known || slices.Contains(ids, current) {
+			break
+		}
+		if len(ids) == maxGroupDepth {
+			cut = true
+			break
+		}
+		ids = append(ids, current)
+		if folder.ParentID == "" {
+			break
+		}
+		current = folder.ParentID
+	}
+	titles := make([]string, 0, len(ids))
+	for _, groupID := range slices.Backward(ids) {
+		if name := clean(groups[groupID].Name, maxNameLength); name != "" {
 			titles = append(titles, name)
 		}
 	}

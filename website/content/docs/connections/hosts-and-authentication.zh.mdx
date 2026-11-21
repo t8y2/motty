@@ -94,9 +94,11 @@ Netcatty 的导出还可能含可读取的 SSH 登录密码，此时可以选择
 | Electerm | 在 Electerm 书签管理里导出的书签 JSON。 |
 | Netcatty | Netcatty 主机页**导出**按钮得到的 CSV。Netcatty 自己的保险库是加密的，只有这份导出能被读取。 |
 | FinalShell | FinalShell 的数据文件夹：Linux 为 `~/.finalshell`，macOS 为 `~/Library/FinalShell`，Windows 上通常是 FinalShell 的安装目录。 |
+| Xterminal | Xterminal 的数据文件夹：macOS 为 `~/Library/Application Support/XTerminal`，Windows 为 `%APPDATA%\XTerminal`，Linux 为 `~/.config/XTerminal`；免安装版的数据在 `xt_data\userData` 下。 |
 
 Electerm 和 Netcatty 会把已保存的密码以明文写进导出文件。选择保存密码后，
 合格的 SSH 密码进入 Motty 保险库，但源文件不会被删除；用完请妥善保管或删除。
+Xterminal 用仓库密码加密已保存的密码和密钥，因此导入它的数据文件夹只会得到连接，不会带走密码或密钥。
 MobaXterm 的 UTF-8、带 BOM 的 UTF-16 和 GB18030 文本可读取；
 不支持或损坏的编码会报错，不会静默丢字。无 BOM 文件若同时符合 UTF-8 和
 GB18030，Motty 会先展示两种名称供选择，在确认前不会保存主机。
