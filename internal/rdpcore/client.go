@@ -1161,7 +1161,9 @@ func (c *Client) mcsConnect() error {
 					return
 				}
 				c.log.LogAttrs(context.Background(), slog.LevelDebug, "RDPGFX DVC data received", slog.Int("len", len(data)))
+				c.frameMu.Lock()
 				c.egfxHandler.ProcessPDU(data)
+				c.frameMu.Unlock()
 			})
 			// Send CAPS_ADVERTISE AFTER create response via OnOpen callback
 			ch.OnOpen(func() {
@@ -2187,13 +2189,12 @@ func (c *Client) receiveLoop() {
 }
 
 // dispatchPacket handles one received packet. It returns whether the packet
-// ended the connection. The framebuffer lock is held for the whole packet so a
-// rectangle a viewer reads cannot change halfway through: the decoders write the
-// framebuffer only from this goroutine, and ReadRectBGRA takes the read side.
+// ended the connection. The framebuffer lock is held for packets that write to
+// the framebuffer so a rectangle a viewer reads cannot change halfway through:
+// the decoders write the framebuffer only from this goroutine, and ReadRectBGRA
+// takes the read side. Non-framebuffer channels (such as rdpsnd) do not hold
+// frameMu, so audio playback cannot stall the UI thread in ReadRectBGRA.
 func (c *Client) dispatchPacket(pktType tpkt.PacketType, actionByte byte, data []byte) (ended bool) {
-	c.frameMu.Lock()
-	defer c.frameMu.Unlock()
-
 	switch pktType {
 	case tpkt.PacketTPKT:
 		mcsPayload, err := x224.DecodeDataTPDU(data)
@@ -2232,13 +2233,17 @@ func (c *Client) dispatchPacket(pktType tpkt.PacketType, actionByte byte, data [
 				c.handleVirtualChannelData(channelID, userData)
 				return false
 			}
+			c.frameMu.Lock()
 			c.handleSlowPathPDU(userData)
+			c.frameMu.Unlock()
 		default:
 			c.logMcs.LogAttrs(context.Background(), slog.LevelWarn, "receiveLoop: unhandled MCS PDU type", util.Hex2("type", uint8(mcs.PDUType(mcsPayload))))
 		}
 
 	case tpkt.PacketFastPath:
+		c.frameMu.Lock()
 		c.handleFastPathPDU(actionByte, data)
+		c.frameMu.Unlock()
 	}
 	return false
 }

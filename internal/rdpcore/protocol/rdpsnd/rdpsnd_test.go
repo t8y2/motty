@@ -7,6 +7,7 @@ import (
 	"io"
 	"sync"
 	"testing"
+	"time"
 )
 
 type capture struct {
@@ -33,9 +34,13 @@ type captureWriter struct {
 	data   []byte
 	closed bool
 	fail   error
+	delay  time.Duration
 }
 
 func (w *captureWriter) Write(p []byte) (int, error) {
+	if w.delay > 0 {
+		time.Sleep(w.delay)
+	}
 	if w.fail != nil {
 		return 0, w.fail
 	}
@@ -182,7 +187,7 @@ func TestNoPlayerOffersNoFormats(t *testing.T) {
 	}
 }
 
-func TestWave2PlaysAndConfirmsTwice(t *testing.T) {
+func TestWave2PlaysAndConfirms(t *testing.T) {
 	handler, captured := newTestHandler(t)
 	handler.ProcessPDU(serverFormats(t, 8, pcm(48000, 2)))
 	captured.pdus = nil
@@ -192,19 +197,17 @@ func TestWave2PlaysAndConfirmsTwice(t *testing.T) {
 		t.Errorf("played %v, want %v", got, audio)
 	}
 	sent := captured.sent()
-	if len(sent) != 2 {
-		t.Fatalf("confirmations = %d, want 2", len(sent))
+	if len(sent) != 1 {
+		t.Fatalf("confirmations = %d, want 1", len(sent))
 	}
-	for i, want := range []uint16{42, 42} {
-		if sent[i][0] != sndcWaveConfirm {
-			t.Fatalf("response %d is not a confirmation", i)
-		}
-		if got := binary.LittleEndian.Uint16(sent[i][4:6]); i == 0 && got != want {
-			t.Errorf("first confirmation timestamp = %d, want %d", got, want)
-		}
-		if got := sent[i][6]; got != 7 {
-			t.Errorf("confirmation block = %d, want 7", got)
-		}
+	if sent[0][0] != sndcWaveConfirm {
+		t.Fatalf("response is not a confirmation")
+	}
+	if got := binary.LittleEndian.Uint16(sent[0][4:6]); got < 42 {
+		t.Errorf("confirmation timestamp = %d, want at least 42", got)
+	}
+	if got := sent[0][6]; got != 7 {
+		t.Errorf("confirmation block = %d, want 7", got)
 	}
 }
 
@@ -222,8 +225,8 @@ func TestTwoPartWaveIsReassembled(t *testing.T) {
 	if got := captured.writer.played(); !bytes.Equal(got, audio) {
 		t.Errorf("played %v, want %v", got, audio)
 	}
-	if sent := captured.sent(); len(sent) != 2 {
-		t.Errorf("confirmations = %d, want 2", len(sent))
+	if sent := captured.sent(); len(sent) != 1 {
+		t.Errorf("confirmations = %d, want 1", len(sent))
 	}
 }
 
@@ -267,14 +270,14 @@ func TestWriterFailureDoesNotStopTheChannel(t *testing.T) {
 	handler.ProcessPDU(serverFormats(t, 8, pcm(48000, 2)))
 	captured.pdus = nil
 	handler.ProcessPDU(wave2(t, 1, 0, []byte{1, 2, 3, 4}))
-	if sent := captured.sent(); len(sent) != 2 {
-		t.Errorf("confirmations = %d after a player failure, want 2", len(sent))
+	if sent := captured.sent(); len(sent) != 1 {
+		t.Errorf("confirmations = %d after a player failure, want 1", len(sent))
 	}
 	// The player is gone, but the channel still confirms later waves.
 	captured.pdus = nil
 	handler.ProcessPDU(wave2(t, 2, 0, []byte{5, 6, 7, 8}))
-	if sent := captured.sent(); len(sent) != 2 {
-		t.Errorf("confirmations = %d after a second wave, want 2", len(sent))
+	if sent := captured.sent(); len(sent) != 1 {
+		t.Errorf("confirmations = %d after a second wave, want 1", len(sent))
 	}
 }
 
@@ -287,5 +290,23 @@ func TestShortPDUsAreIgnored(t *testing.T) {
 		{0x0D, 0, 0, 5, 1},
 	} {
 		handler.ProcessPDU(data)
+	}
+}
+
+func TestWaveConfirmIncludesElapsedRenderTime(t *testing.T) {
+	captured := &capture{writer: &captureWriter{delay: 15 * time.Millisecond}}
+	handler := NewHandler(captured.send, func(uint32, uint16) (io.WriteCloser, error) {
+		return captured.writer, nil
+	}, nil)
+	handler.ProcessPDU(serverFormats(t, 8, pcm(48000, 2)))
+	captured.pdus = nil
+	handler.ProcessPDU(wave2(t, 100, 1, []byte{1, 2, 3, 4}))
+	sent := captured.sent()
+	if len(sent) != 1 {
+		t.Fatalf("confirmations = %d, want 1", len(sent))
+	}
+	ts := binary.LittleEndian.Uint16(sent[0][4:6])
+	if ts < 110 {
+		t.Errorf("confirmation timestamp = %d, want at least 110 (100 + >=10ms render elapsed)", ts)
 	}
 }
