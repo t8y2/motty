@@ -4,6 +4,7 @@ import (
 	"regexp"
 
 	"motty/internal/autofill"
+	"motty/internal/term"
 )
 
 // Password prompt assist settings and prompt tracking. The shared password
@@ -37,8 +38,23 @@ type terminalPasswordPrompt struct {
 	generation uint64
 }
 
+// endsWithPromptColon is the cheap test every recognised prompt passes: the
+// last written cell of the cursor row is a colon. Ordinary output stops here,
+// without building the logical line or running a pattern over it.
+func endsWithPromptColon(cells []term.Cell) bool {
+	for i := len(cells) - 1; i >= 0; i-- {
+		switch r := cells[i].R; {
+		case r == 0 || r == ' ' || cells[i].Attr&term.WideTail != 0:
+		default:
+			return r == ':' || r == '：'
+		}
+	}
+	return false
+}
+
 func (t *terminal) passwordPromptAtCursor() terminalPasswordPrompt {
-	if t.screen == nil || t.screen.Modes().AltScreen || t.screen.ViewOffset() != 0 {
+	if t.screen == nil || t.screen.Modes().AltScreen || t.screen.ViewOffset() != 0 ||
+		!endsWithPromptColon(t.screen.Row(t.screen.Cursor().Y).Cells) {
 		return terminalPasswordPrompt{}
 	}
 	line, id, ok := t.screen.LogicalLineText(t.screen.Cursor().Y, 1024)

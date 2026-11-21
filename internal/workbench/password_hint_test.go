@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/gfx"
+
+	"motty/internal/term"
 )
 
 func TestSudoUsesThePasswordPickerWithoutSharedIdentities(t *testing.T) {
@@ -44,5 +46,34 @@ func TestSudoEnterWithoutSelectingDoesNotSendTheHostPassword(t *testing.T) {
 	key(w.state, 0, gfx.KeyEvent{Key: gfx.KeyEnter})
 	if got := w.shell.typed(); got != "\r" {
 		t.Fatalf("Enter without a selection typed %q", got)
+	}
+}
+
+func benchmarkPasswordPromptAtCursor(b *testing.B, output string) {
+	t := &terminal{screen: term.New(80, 24, 100)}
+	t.screen.Write([]byte(output))
+	b.ReportAllocs()
+	for b.Loop() {
+		t.passwordPromptAtCursor()
+	}
+}
+
+// Ordinary output must not pay for the logical line or the prompt patterns.
+func BenchmarkPasswordPromptAtCursorOrdinaryOutput(b *testing.B) {
+	benchmarkPasswordPromptAtCursor(b, "$ cat /var/log/syslog\r\nJan  1 00:00:00 host kernel: eth0 link up")
+}
+
+func BenchmarkPasswordPromptAtCursorPrompt(b *testing.B) {
+	benchmarkPasswordPromptAtCursor(b, "$ ssh deploy@server-b\r\ndeploy@server-b's password: ")
+}
+
+func TestOrdinaryOutputIsNotTakenForAPasswordPrompt(t *testing.T) {
+	screen := term.New(80, 24, 100)
+	screen.Write([]byte("$ echo hi\r\nhi"))
+	state := &State{}
+	session := &Session{term: &terminal{screen: screen, passwordHint: "stale"}}
+	state.notePasswordPrompt(session)
+	if session.term.passwordHint != "" {
+		t.Fatalf("hint %q for ordinary output", session.term.passwordHint)
 	}
 }
