@@ -566,7 +566,7 @@ func (state *State) declareDashboardAddMenu(c ui.C) {
 		rows.add(components.ContextMenuItem{ID: hitDashboardAddPanelList.At(index), Label: p.Name, Icon: icons.Gauge})
 	}
 	open := true
-	state.declareMenuAt(c, &open, d.addAnchor, false, hitDashboardAddDismiss, &rows, func(id gfx.ID) {
+	state.declareMenuAt(c, &open, d.addAnchor, false, &rows, func(id gfx.ID) {
 		state.click(id, true)
 	})
 	if !open {

@@ -36,7 +36,7 @@ func (state *State) declareTransferCenter(c ui.C) {
 		Scope: hitTransfersScope, DismissID: hitTransfersDismiss, InitialFocusID: hitTransfersList,
 		Side: side, Align: ui.End, Offset: gap, Width: width,
 	}
-	if ui.PopoverWith(c, origin, spec, &center.open, func() { state.declareTransferBody(c, height) }) {
+	if ui.PopoverWith(c, origin, &center.open, spec, func() { state.declareTransferBody(c, height) }) {
 		center.close()
 		return
 	}

@@ -1351,7 +1351,7 @@ func (state *State) declareCompletionList(c ui.C, session *Session, bounds gfx.R
 		// play its entrance.
 		Instant: true,
 	}
-	if ui.PopoverWith(c, anchor, spec, &list.open, list.body) {
+	if ui.PopoverWith(c, anchor, &list.open, spec, list.body) {
 		list.open = false
 	}
 }
