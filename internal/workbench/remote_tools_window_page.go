@@ -431,9 +431,11 @@ func (w *remoteToolsWindow) declareSudoDialog(c ui.C) {
 		DismissID: hitSudoSFTPDismiss, CloseID: hitSudoSFTPCancel, InitialFocusID: hitSudoSFTPPassword,
 	})
 	dialog.Body(func() {
-		ui.Column(c).Height(w.ui.secretFieldBody("")).PadSides(2, 4, 0, 4).Children(func() {
-			ui.TextFieldID(c, hitSudoSFTPPassword, &dialogState.field, m.SFTPSudoPassword, "").
-				Height(62).FillWidth().Secure().AutoFocus()
+		ui.Column(c).Height(sudoDialogBody).PadSides(2, 4, 0, 4).Children(func() {
+			ui.FormField(c, &dialogState.row, m.SFTPSudoPassword).FillWidth().Height(62).Children(func() {
+				ui.TextFieldID(c, hitSudoSFTPPassword, &dialogState.field, m.SFTPSudoPassword, "").
+					FillWidth().Secure().AutoFocus()
+			})
 		})
 	})
 	dialog.Footer(func() {
