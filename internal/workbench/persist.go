@@ -623,7 +623,7 @@ func (state *State) snapshot() savedState {
 		SFTPTransferFilter:         state.transfers.filter,
 		DefaultEditor:              string(state.defaultEditor),
 		CustomEditorPath:           state.customEditorPath,
-		Toolbars:                   state.toolbars.snapshot(),
+		Toolbars:                   state.toolbars.sharedSnapshot(state.terminalToolbarPosition, state.terminalToolbarSize),
 		UpdateCheck:                updateCheckString(state.updateAtStart),
 		UpdateSource:               state.update.source.String(),
 		CloseAction:                state.closeAction.String(),
@@ -1061,10 +1061,7 @@ func (state *State) restoreLocal(saved savedState) {
 	state.setVerticalTabsAutoHide(saved.VerticalTabsAutoHide)
 	state.setVerticalTabsGrouping(saved.VerticalTabsGrouping)
 	state.restoreSFTPLocalFavorites(saved.SFTPLocalBookmarks)
-	state.toolbars.restore(saved.Toolbars)
 	state.terminalFindPrefs = saved.TerminalFind.normalized()
-	state.terminalToolbarPosition = terminalToolbarPositionFromString(saved.TerminalToolbarPosition)
-	state.terminalToolbarSize = terminalToolbarSizeFromString(saved.TerminalToolbarSize)
 	state.localShell = saved.LocalShell
 	state.localStartupCommands = cleanLocalStartupCommands(saved.LocalStartupCommands)
 	state.hiddenShells = cleanShellPaths(saved.HiddenShells)
@@ -1182,6 +1179,20 @@ func (state *State) restoreLocal(saved savedState) {
 // its place for the sessions that use it, and a forward that is still wanted
 // keeps running.
 func (state *State) restoreShared(saved savedState) {
+	previousToolbars := state.toolbars
+	previousPosition, previousSize := state.terminalToolbarPosition, state.terminalToolbarSize
+	previousLatency := state.terminalShowLatency
+	state.toolbars.restore(saved.Toolbars)
+	state.terminalToolbarPosition = terminalToolbarPositionFromString(saved.TerminalToolbarPosition)
+	state.terminalToolbarSize = terminalToolbarSizeFromString(saved.TerminalToolbarSize)
+	if saved.Toolbars != nil {
+		if saved.Toolbars.Position != "" {
+			state.terminalToolbarPosition = terminalToolbarPositionFromString(saved.Toolbars.Position)
+		}
+		if saved.Toolbars.Size != "" {
+			state.terminalToolbarSize = terminalToolbarSizeFromString(saved.Toolbars.Size)
+		}
+	}
 	state.hostOrder = hostOrderFromString(saved.HostOrder)
 	state.hiddenHostTags = normalizeHiddenHostTags(saved.HiddenHostTags)
 	if state.hostOrder != hostOrderManual {
@@ -1309,6 +1320,15 @@ func (state *State) restoreShared(saved savedState) {
 	state.restoreProxies(saved.Proxies)
 	if (saved.AIProviders != nil || saved.AICLIProviders != nil) && !state.starting {
 		state.importAIProviderCollections(saved.AIProviders, saved.AICLIProviders)
+	}
+	state.syncLatencyToolbarEntry()
+	toolbarChanged := previousPosition != state.terminalToolbarPosition || previousSize != state.terminalToolbarSize ||
+		previousLatency != state.terminalShowLatency || !slices.Equal(previousToolbars.dock, state.toolbars.dock)
+	for group := toolbarWindow; group <= toolbarSFTP; group++ {
+		toolbarChanged = toolbarChanged || !slices.Equal(previousToolbars.entries(group), state.toolbars.entries(group))
+	}
+	if toolbarChanged {
+		state.refitToolbarDock()
 	}
 	// The cell follows the font and the line-spacing choice together; the next paint
 	// measures it, and refits open terminals when a synced setting changed it.

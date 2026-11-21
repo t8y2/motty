@@ -89,6 +89,8 @@ import (
 // writers would drop the new toolbar key and silently move it back.
 // Version 28 preserves the device-local interface text size as a pixel number:
 // an older full save would drop the field and reset the size.
+// Toolbar preferences use optional setting records. Older clients preserve
+// unknown setting IDs, so promoting them from local state needs no new epoch.
 const configFormat = 28
 
 const (
@@ -237,7 +239,7 @@ func proxyRecordKey(fields map[string]json.RawMessage) string {
 	return joinKey(user, address, port)
 }
 
-// syncedSettings are the scalar settings every device shares.
+// syncedSettings are the scalar or object settings every device shares.
 var syncedSettings = map[string]bool{
 	"host_order":                   true,
 	"hidden_host_tags":             true,
@@ -257,6 +259,7 @@ var syncedSettings = map[string]bool{
 	"terminal_tab_title":           true, // read legacy shared preference
 	"tab_title_mode":               true,
 	"terminal_show_latency":        true,
+	"toolbars":                     true,
 	"terminal_bell_off":            true,
 	"terminal_link_plain_click":    true,
 	"terminal_input_click_off":     true,
@@ -696,6 +699,14 @@ func joinState(entries []configstore.Entry, local []byte) (savedState, *configBa
 		}
 	}
 	base.local = local
+	if raw, present := fields["toolbars"]; present {
+		var legacy savedToolbars
+		if json.Unmarshal(raw, &legacy) == nil && !legacy.specified() {
+			// An object containing only future fields is not a customization.
+			// Keep its raw fields in local state without inventing a shared one.
+			delete(fields, "toolbars")
+		}
+	}
 
 	type item struct {
 		ord  int64
@@ -1192,6 +1203,20 @@ func openConfig(path string, id int) (store *configstore.Store, saved savedState
 		return nil, fresh, newConfigBase(), loadReport{}, fmt.Errorf("open %s: %w", path, err)
 	}
 	entries, local, err := store.Load()
+	if err == nil {
+		migrated, migrationErr := migrateLocalToolbars(store, entries, local[localKey])
+		if migrationErr != nil {
+			store.Close()
+			return nil, fresh, newConfigBase(), loadReport{}, fmt.Errorf("migrate toolbar preferences: %w", migrationErr)
+		}
+		if migrated {
+			entries, local, err = store.Load()
+			if err != nil {
+				store.Close()
+				return nil, fresh, newConfigBase(), loadReport{}, fmt.Errorf("read migrated toolbar preferences: %w", err)
+			}
+		}
+	}
 	if err == nil {
 		saved, base, err = joinState(entries, local[localKey])
 		if err == nil {

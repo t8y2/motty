@@ -29,9 +29,10 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		"ssh_browser":   true,
 
 		"sftp_panel_width": true, "monitor_panel_width": true,
+		// Legacy mirrors remain local; the canonical values travel in toolbars.
 		"terminal_toolbar_position": true,
-		"terminal_find":             true,
 		"terminal_toolbar_size":     true,
+		"terminal_find":             true,
 		"workspace":                 true, "active_session": true, "shortcuts": true, "identity_files": true, "agent_hosts": true, "agent_host_mode": true, "sessions": true, "deck": true, "sync": true,
 		// The generation of default chords this computer's table was reconciled
 		// against: which defaults a build ships is not another device's business.
@@ -53,7 +54,6 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		"sftp_columns":           true, "sftp_download_directory": true, "default_editor": true,
 		"sftp_window_order": true, "sftp_open_mode": true, "sftp_directory_tree": true, "custom_editor_path": true,
 		"sftp_transfer_filter": true,
-		"toolbars":             true,
 		// Whether the new-tab picker lists its shells expanded is this
 		// computer's own picker layout, like the hidden shells below.
 		"local_shells_expanded": true,

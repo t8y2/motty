@@ -2477,7 +2477,7 @@ var chineseTools = ToolsMessages{
 	SyncScopeHosts:                  "主机与分组",
 	SyncScopeHostsDescription:       "主机和分组，以及保存在其下的密码、验证码和代理密码。",
 	SyncScopeSettings:               "设置",
-	SyncScopeSettingsDescription:    "终端、界面与文件面板设置，以及全局出站代理。",
+	SyncScopeSettingsDescription:    "终端、工具栏与文件面板设置，以及全局出站代理。",
 	SyncScopeNotes:                  "笔记",
 	SyncScopeNotesDescription:       "笔记库及其文件夹；链接到文件的笔记只保存在本机。",
 	SyncScopeSnippets:               "快捷命令",
