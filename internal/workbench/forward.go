@@ -30,6 +30,9 @@ type forwardRecord struct {
 	// Resume makes the forward wait through an automatic reconnect of its tab
 	// and start again once it is connected, instead of stopping.
 	Resume bool
+	// AutoStart starts the forward whenever a tab connects to its host, so it
+	// does not have to be opened by hand from the forwards page.
+	AutoStart bool
 	// ViaShell carries each connection through a relay program run in a shell on
 	// the host, for a server that refuses forwarded channels: the shell becomes
 	// the TCP stream. Relay is that program, with the tokens of a proxy command;
@@ -240,6 +243,7 @@ type forwardEditor struct {
 	hostRow   ui.FormFieldState
 	mode      portforward.Mode
 	resume    bool
+	autoStart bool
 	viaShell  bool
 	relay     text.Editor
 	editing   bool
@@ -256,8 +260,9 @@ type forwardEditor struct {
 // forwardDialogBody is where the forward editor's body put each control it
 // paints by hand.
 type forwardDialogBody struct {
-	viaShell, viaShellHelp ui.Box
-	resume, resumeHelp     ui.Box
+	viaShell, viaShellHelp   ui.Box
+	resume, resumeHelp       ui.Box
+	autoStart, autoStartHelp ui.Box
 }
 
 type forwardField uint8
@@ -306,6 +311,7 @@ func (editor *forwardEditor) load(forward forwardRecord, hostID uint32) {
 		hostChoice: hostID,
 		mode:       forward.Mode,
 		resume:     forward.Resume,
+		autoStart:  forward.AutoStart,
 		viaShell:   forward.ViaShell,
 		editing:    true,
 		forwardID:  forward.ID,
@@ -403,7 +409,7 @@ func (editor *forwardEditor) record(id uint32, host Host) forwardRecord {
 	forward := forwardRecord{
 		ID: id, Label: editor.value(forwardFieldLabel), Mode: editor.mode,
 		HostLabel: host.Label, HostAddress: host.Address, HostUser: host.User, HostPort: host.Port,
-		LocalPort: localPort, Resume: editor.resume,
+		LocalPort: localPort, Resume: editor.resume, AutoStart: editor.autoStart,
 	}
 	if editor.viaShell && modeUsesServerDestination(editor.mode) {
 		forward.ViaShell, forward.Relay = true, editor.relayCommand()
@@ -493,6 +499,8 @@ func (state *State) clickForwardDialog(id gfx.ID) {
 		state.status = state.messages.StatusEditCanceled
 	case hitForwardDialogResume:
 		state.forwardEditor.resume = !state.forwardEditor.resume
+	case hitForwardDialogAutoStart:
+		state.forwardEditor.autoStart = !state.forwardEditor.autoStart
 	case hitForwardDialogViaShell:
 		state.forwardEditor.viaShell = !state.forwardEditor.viaShell
 	case hitForwardDialogSubmit:
@@ -522,6 +530,7 @@ func (state *State) submitForwardDialog() {
 			f.HostPort = host.Port
 			f.LocalPort = localPort
 			f.Resume = state.forwardEditor.resume
+			f.AutoStart = state.forwardEditor.autoStart
 			f.ViaShell, f.Relay = false, ""
 			if state.forwardEditor.viaShell && modeUsesServerDestination(state.forwardEditor.mode) {
 				f.ViaShell, f.Relay = true, state.forwardEditor.relayCommand()
@@ -765,6 +774,8 @@ func (state *State) startRemoteForward(forward *forwardRecord, session *Session)
 	}()
 }
 
+// startPendingForwards starts the forwards waiting for this session, and those
+// set to start with their host.
 func (state *State) startPendingForwards(session *Session) {
 	if !session.hasServer() {
 		return // a mosh, Telnet, serial or local session has no SSH server to forward through
@@ -772,6 +783,13 @@ func (state *State) startPendingForwards(session *Session) {
 	for index := range state.forwards {
 		forward := &state.forwards[index]
 		if forward.pending && forward.sessionID == session.ID {
+			state.startForward(forward, session)
+			continue
+		}
+		// An idle forward that asked to follow its host starts with the first
+		// tab that connects to it; one already running or waiting is left alone.
+		if forward.AutoStart && forward.matchesHost(session.host) &&
+			forward.runner == nil && !forward.pending && !forward.starting {
 			state.startForward(forward, session)
 		}
 	}
@@ -916,7 +934,7 @@ func (state *State) restoreForwards(saved []savedForward) {
 		forward := forwardRecord{
 			ID: numbers[index], Label: entry.Label, Mode: mode,
 			HostLabel: entry.HostLabel, HostAddress: entry.HostAddress, HostUser: entry.HostUser, HostPort: entry.HostPort,
-			LocalPort: entry.LocalPort, Resume: entry.Resume, ViaShell: entry.ViaShell, Relay: entry.Relay,
+			LocalPort: entry.LocalPort, Resume: entry.Resume, AutoStart: entry.AutoStart, ViaShell: entry.ViaShell, Relay: entry.Relay,
 		}
 		if !modeUsesServerDestination(mode) {
 			forward.ViaShell, forward.Relay = false, ""
@@ -939,7 +957,7 @@ func (state *State) restoreForwards(saved []savedForward) {
 			previous = slices.Delete(previous, match, match+1)
 			if kept.sameAs(forward) {
 				kept.ID = forward.ID
-				kept.Label, kept.HostLabel, kept.Resume = forward.Label, forward.HostLabel, forward.Resume
+				kept.Label, kept.HostLabel, kept.Resume, kept.AutoStart = forward.Label, forward.HostLabel, forward.Resume, forward.AutoStart
 				forward = kept
 			} else {
 				kept.stop()

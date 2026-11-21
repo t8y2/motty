@@ -936,6 +936,8 @@ var ChineseMessages = Messages{
 	ForwardFieldRemotePort:        "远程端口",
 	ForwardFieldDestination:       "目标主机",
 	ForwardFieldDestinationPort:   "目标端口",
+	ForwardFieldAutoStart:         "随服务器自动开启",
+	ForwardAutoStartHelp:          "连接到该服务器的标签页建立连接时，自动启动这条转发，无需再回到“端口转发”页手动开启。已在运行的转发不受影响。",
 	ForwardFieldResume:            "断线后自动恢复",
 	ForwardResumeHelp:             "SSH 连接意外断开后，在连接恢复时重新启动这条转发。需要先在“设置 → 连接”中打开自动重连。",
 	ForwardFieldViaShell:          "经主机的终端中继",

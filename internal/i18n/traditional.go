@@ -936,6 +936,8 @@ var TraditionalMessages = Messages{
 	ForwardFieldRemotePort:        "遠端連接埠",
 	ForwardFieldDestination:       "目標主機",
 	ForwardFieldDestinationPort:   "目標連接埠",
+	ForwardFieldAutoStart:         "隨伺服器自動開啟",
+	ForwardAutoStartHelp:          "連線到該伺服器的分頁建立連線時，自動啟動這條轉發，無需再回到“連接埠轉發”頁手動開啟。已在執行的轉發不受影響。",
 	ForwardFieldResume:            "斷線後自動恢復",
 	ForwardResumeHelp:             "SSH 連線意外中斷後，在連線恢復時重新啟動這條轉發。需要先在“設定 → 連線”中開啟自動重新連線。",
 	ForwardFieldViaShell:          "經主機的終端機中繼",

@@ -936,6 +936,8 @@ var EnglishMessages = Messages{
 	ForwardFieldRemotePort:        "Remote port",
 	ForwardFieldDestination:       "Destination host",
 	ForwardFieldDestinationPort:   "Destination port",
+	ForwardFieldAutoStart:         "Start with the server",
+	ForwardAutoStartHelp:          "Start this forward automatically whenever a tab connects to its server, so you do not have to open it from the Forwards page. A forward that is already running is left as it is.",
 	ForwardFieldResume:            "Resume after reconnect",
 	ForwardResumeHelp:             "When the SSH connection drops unexpectedly, start this forward again once it has reconnected. Turn on Automatic reconnect in Settings → Connection first.",
 	ForwardFieldViaShell:          "Relay through the host's shell",

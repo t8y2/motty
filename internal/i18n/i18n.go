@@ -994,6 +994,8 @@ type Messages struct {
 	ForwardFieldRemotePort        string
 	ForwardFieldDestination       string
 	ForwardFieldDestinationPort   string
+	ForwardFieldAutoStart         string
+	ForwardAutoStartHelp          string
 	ForwardFieldResume            string
 	ForwardResumeHelp             string
 	ForwardFieldViaShell          string
