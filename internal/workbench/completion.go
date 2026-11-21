@@ -710,6 +710,14 @@ func (state *State) attachCompletion(session *Session) {
 		}
 		state.closeCompletionList()
 	}
+	t.completionUnknown = func() {
+		if state.completion.autoHold.session == sessionID {
+			state.completion.autoHold = completionAutoHold{}
+		}
+		if state.completion.list.active && state.completion.list.sessionID == sessionID {
+			state.closeCompletionList()
+		}
+	}
 	state.requestCompletionHistory(session)
 }
 
@@ -1101,11 +1109,18 @@ func (state *State) completionKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 		return gfx.EventResult{}, false
 	}
 	handled := gfx.EventResult{Handled: true, Repaint: true}
+	if event.Release {
+		if session.term.consumeAcceptedKey(event) {
+			return handled, true
+		}
+		return gfx.EventResult{}, false
+	}
 	if len(list.candidates) == 0 {
 		// A loading row has nothing to choose. Enter still runs the line; the
 		// other keys leave the terminal alone.
 		switch event.Key {
 		case gfx.KeyEscape:
+			session.term.noteAcceptedKey(event)
 			state.dismissCompletion(session)
 			return handled, true
 		case gfx.KeyEnter, gfx.KeyTab:
@@ -1116,6 +1131,7 @@ func (state *State) completionKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	}
 	switch event.Key {
 	case gfx.KeyEscape:
+		session.term.noteAcceptedKey(event)
 		state.dismissCompletion(session)
 		return handled, true
 	case gfx.KeyEnter:
@@ -1132,6 +1148,7 @@ func (state *State) completionKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 			state.closeCompletionList()
 			return gfx.EventResult{}, false
 		}
+		session.term.noteAcceptedKey(event)
 		state.acceptCompletion(session)
 		return handled, true
 	case gfx.KeyTab:
@@ -1144,24 +1161,30 @@ func (state *State) completionKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 		if event.Modifiers != 0 {
 			return gfx.EventResult{}, false
 		}
+		session.term.noteAcceptedKey(event)
 		state.completionMove(-1)
 		return handled, true
 	case gfx.KeyDown:
 		if event.Modifiers != 0 {
 			return gfx.EventResult{}, false
 		}
+		session.term.noteAcceptedKey(event)
 		state.completionMove(1)
 		return handled, true
 	case gfx.KeyPageUp:
+		session.term.noteAcceptedKey(event)
 		state.completionMove(-completionRows)
 		return handled, true
 	case gfx.KeyPageDown:
+		session.term.noteAcceptedKey(event)
 		state.completionMove(completionRows)
 		return handled, true
 	case gfx.KeyHome:
+		session.term.noteAcceptedKey(event)
 		list.selected, list.top = 0, 0
 		return handled, true
 	case gfx.KeyEnd:
+		session.term.noteAcceptedKey(event)
 		list.selected = len(list.candidates) - 1
 		list.clamp()
 		return handled, true

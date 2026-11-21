@@ -241,12 +241,13 @@ type terminal struct {
 	// automatic path list follows the line instead, and closes only on the keys
 	// that end it.
 	completionInput   func([]byte)
+	completionUnknown func()
 	suggestionPending *suggestionEcho
 	// acceptedKey is a press the terminal took for a prompt-level overlay (a
 	// suggestion, the password hint). A program that asked for win32 input
 	// records sees releases, so the end of that press is dropped with its
 	// repeats: the program never got the press itself.
-	acceptedKey acceptedKey
+	acceptedKeys map[acceptedKey]struct{}
 	// idleLastInput is when this shell last received input from any source. The
 	// idle keepalive measures its quiet interval from here.
 	idleLastInput time.Duration
@@ -784,6 +785,10 @@ func (t *terminal) sendKeyState(p []byte) bool {
 // typing says whether p is the user typing rather than key state, and so
 // whether it clears the selection and returns the view to the live screen.
 func (t *terminal) sendInput(p []byte, drain, typing bool) bool {
+	return t.sendLogicalInput(p, p, drain, typing, false)
+}
+
+func (t *terminal) sendLogicalInput(p, logical []byte, drain, typing, unknown bool) bool {
 	// Any other input takes the terminal back from a line-by-line paste: the
 	// remaining lines would otherwise be interleaved with what the user is
 	// typing. The queue's own writes pass through writing.
@@ -800,23 +805,29 @@ func (t *terminal) sendInput(p []byte, drain, typing bool) bool {
 			return false
 		}
 	}
-	if t.exec != nil && userInterrupts(p) {
+	if t.exec != nil && (userInterrupts(p) || userInterrupts(logical)) {
 		t.finishExec(endUser) // the user took the terminal back; the keys go on to the shell
 	}
 	if typing {
 		t.selection.clear()
 		t.screen.ScrollToBottom()
 	}
-	t.autofill.Typed(p)
+	if unknown {
+		t.autofill.UnknownInput()
+	} else if len(logical) > 0 {
+		t.autofill.Typed(logical)
+	}
 	feed := t.historyOn != nil && t.historyOn()
 	if !feed && t.completionFeed != nil {
 		feed = t.completionFeed()
 	}
-	if feed {
-		if drain && t.takeOutput != nil && bytes.ContainsAny(p, "\r\n") {
+	if feed && unknown {
+		t.recorder.UnknownInput(cmdhistory.TermScreen{Term: t.screen}, t.recordingNow())
+	} else if feed && len(logical) > 0 {
+		if drain && t.takeOutput != nil && bytes.ContainsAny(logical, "\r\n") {
 			t.takeOutput()
 		}
-		if command, ok := t.recorder.Typed(p, cmdhistory.TermScreen{Term: t.screen}, t.recordingNow()); ok && t.onCommand != nil {
+		if command, ok := t.recorder.Typed(logical, cmdhistory.TermScreen{Term: t.screen}, t.recordingNow()); ok && t.onCommand != nil {
 			t.onCommand(command)
 		}
 	}
@@ -824,13 +835,23 @@ func (t *terminal) sendInput(p []byte, drain, typing bool) bool {
 	if accepted {
 		t.observePredictionInput()
 		t.inputSent = true
-		t.noteShellInput(p)
-		if bytes.ContainsAny(p, "\r\n\x03\x04") {
+		if unknown {
+			t.noteShellInput(nil)
+			t.inputLine = false
+			t.inputGuard.known = false
+			t.promptDirty = true
+			t.suggestionPending = nil
+		} else if len(logical) > 0 {
+			t.noteShellInput(logical)
+		}
+		if bytes.ContainsAny(logical, "\r\n\x03\x04") {
 			t.suggestionPending = nil
 		}
 		t.recording.append(t.recordingNow(), terminalRecordingInput, p)
-		if t.completionInput != nil {
-			t.completionInput(p)
+		if unknown && t.completionUnknown != nil {
+			t.completionUnknown()
+		} else if t.completionInput != nil && len(logical) > 0 {
+			t.completionInput(logical)
 		}
 	}
 	return accepted
@@ -1973,7 +1994,6 @@ func displayCells(value string) int {
 // program that asked for win32 input records sees presses and releases, so the
 // release of a press it never got is dropped, along with its repeats.
 type acceptedKey struct {
-	set  bool
 	key  gfx.Key
 	text string
 }
@@ -1982,14 +2002,27 @@ type acceptedKey struct {
 // also be sent its release.
 func (t *terminal) noteAcceptedKey(event gfx.KeyEvent) {
 	if t.screen.Modes().Win32Input && !event.Release && !event.Repeat {
-		t.acceptedKey = acceptedKey{set: true, key: event.Key, text: event.Text}
+		if t.acceptedKeys == nil {
+			t.acceptedKeys = make(map[acceptedKey]struct{})
+		}
+		t.acceptedKeys[acceptedKey{key: event.Key, text: event.Text}] = struct{}{}
 	}
 }
 
 // holds reports whether event ends the press the terminal consumed, or repeats
 // it: it is that key's release or a repeat, with the same text.
-func (a acceptedKey) holds(event gfx.KeyEvent) bool {
-	return a.set && (event.Release || event.Repeat) && event.Key == a.key && event.Text == a.text
+func (t *terminal) consumeAcceptedKey(event gfx.KeyEvent) bool {
+	if !event.Release && !event.Repeat {
+		return false
+	}
+	key := acceptedKey{key: event.Key, text: event.Text}
+	if _, ok := t.acceptedKeys[key]; !ok {
+		return false
+	}
+	if event.Release {
+		delete(t.acceptedKeys, key)
+	}
+	return true
 }
 
 // terminalKey encodes keys left unclaimed by the application shortcut routes.
@@ -2001,10 +2034,7 @@ func (state *State) terminalKey(session *Session, event gfx.KeyEvent) gfx.EventR
 	if t.preedit.Composing && event.Key == gfx.KeyEnter && event.Modifiers == 0 && !t.screen.Modes().AltScreen {
 		return handled
 	}
-	if t.acceptedKey.holds(event) {
-		if event.Release {
-			t.acceptedKey = acceptedKey{}
-		}
+	if t.consumeAcceptedKey(event) {
 		return handled
 	}
 	if event.Modifiers&gfx.ModifierMeta != 0 && !event.Key.IsModifier() {
@@ -2062,8 +2092,10 @@ func (state *State) terminalKey(session *Session, event gfx.KeyEvent) gfx.EventR
 		return handled
 	}
 	var bytes []byte
+	win32Key := false
 	if modes.Win32Input {
 		bytes = term.EncodeWin32Key(event)
+		win32Key = len(bytes) > 0
 	} else if runtime.GOOS == "darwin" && t.screen.KeyboardFlags() == 0 && !modes.AltScreen &&
 		event.Modifiers == gfx.ModifierAlt && !event.Release {
 		// Match macOS Terminal's word movement when the shell owns the key.
@@ -2092,12 +2124,20 @@ func (state *State) terminalKey(session *Session, event gfx.KeyEvent) gfx.EventR
 		if event.Release || event.Key.IsModifier() {
 			// Key state is not typing: it reaches the program, but leaves the
 			// selection and the scrollback view where the user put them.
-			state.typedKeyState(session, bytes)
+			if win32Key {
+				state.typedWin32Key(session, bytes, nil, false)
+			} else {
+				state.typedKeyState(session, bytes)
+			}
 			return handled
 		}
 		scrolled := t.screen.ViewOffset() > 0
 		predictionChanged := t.prediction.reset()
-		state.typed(session, bytes)
+		if win32Key {
+			state.typedWin32Key(session, bytes, term.Win32LogicalKey(event), true)
+		} else {
+			state.typed(session, bytes)
+		}
 		handled.Repaint = scrolled || predictionChanged
 	}
 	return handled

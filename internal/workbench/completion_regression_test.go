@@ -1,13 +1,80 @@
 package workbench
 
 import (
+	"bytes"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/cmdhistory"
+	"motty/internal/term"
 )
+
+func TestConsoleInputKeepsWireBytesSeparateFromLogicalInput(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	session := &state.sessions[0]
+	var observed []byte
+	session.term.completionInput = func(input []byte) { observed = append(observed, input...) }
+	text := []byte("\x1b[65;30;97;1;0;1000000_tail")
+	if !session.term.send(text) || !bytes.Equal(observed, text) || !bytes.HasSuffix(shell.input, text) {
+		t.Fatalf("literal input: observed=%q shell=%q", observed, shell.input)
+	}
+	observed = nil
+	epoch := session.term.inputGuard.epoch
+	event := gfx.KeyEvent{Key: gfx.KeyEnter, Win32: gfx.Win32Key{VirtualKey: 13, Unicode: 13}}
+	wire := term.EncodeWin32Key(event)
+	if !state.typedWin32Key(session, wire, term.Win32LogicalKey(event), true) {
+		t.Fatal("console input was not sent")
+	}
+	if !bytes.Equal(observed, []byte("\r")) || !bytes.HasSuffix(shell.input, wire) || session.term.inputGuard.epoch != epoch+1 {
+		t.Fatalf("console input: observed=%q shell=%q epoch=%d", observed, shell.input, session.term.inputGuard.epoch)
+	}
+}
+
+func TestCompletionOnlyConsumesReleasesOfAcceptedKeys(t *testing.T) {
+	w := newCompletionWorld(t)
+	w.type_("git s")
+	w.state.openCompletions()
+	if !w.state.completion.list.active {
+		t.Fatal("completion list did not open")
+	}
+	terminal := w.session.term
+	terminal.acceptedKeys = map[acceptedKey]struct{}{
+		{key: gfx.KeyUp}:   {},
+		{key: gfx.KeyDown}: {},
+	}
+	if _, handled := w.state.completionKey(gfx.KeyEvent{Key: gfx.KeyControlLeft, Release: true}); handled {
+		t.Fatal("release of a key sent to the shell was consumed")
+	}
+	for _, key := range []gfx.Key{gfx.KeyUp, gfx.KeyDown} {
+		if _, handled := w.state.completionKey(gfx.KeyEvent{Key: key, Release: true}); !handled {
+			t.Fatalf("accepted %v release reached the shell", key)
+		}
+	}
+	if len(terminal.acceptedKeys) != 0 {
+		t.Fatal("accepted keys were not cleared")
+	}
+}
+
+func TestUnrepresentableConsoleInputInvalidatesTheKnownLine(t *testing.T) {
+	w := newCompletionWorld(t)
+	w.type_("git s")
+	w.state.openCompletions()
+	w.session.term.inputGuard.active = true
+	w.session.term.inputGuard.known = true
+	event := gfx.KeyEvent{Win32: gfx.Win32Key{VirtualKey: 'A', Unicode: 0xd83d}}
+	wire := term.EncodeWin32Key(event)
+	if !w.state.typedWin32Key(w.session, wire, term.Win32LogicalKey(event), true) {
+		t.Fatal("console input was not sent")
+	}
+	if w.session.term.inputGuard.known || !w.session.term.autofill.HasInput() || w.state.completion.list.active || !w.session.term.promptDirty {
+		t.Fatalf("unknown input left stale state: guard=%v autofill=%v completion=%v promptDirty=%v", w.session.term.inputGuard.known, w.session.term.autofill.HasInput(), w.state.completion.list.active, w.session.term.promptDirty)
+	}
+	if !bytes.HasSuffix(w.shell.input, wire) {
+		t.Fatalf("shell did not receive the console record: %q", w.shell.input)
+	}
+}
 
 func TestCompletionRegressionSensitiveLineHasNoStaticSuggestions(t *testing.T) {
 	w := newCompletionWorld(t)
