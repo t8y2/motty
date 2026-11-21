@@ -183,15 +183,20 @@ type Session struct {
 	// sshOptions it is frozen at the dial: a transport authenticated one way is
 	// not lent to a host that would authenticate another (see shareFrom).
 	authentication sshconn.Authentication
-	sshOptions     *sshconfig.ConnectionOptions
-	endpoint       sshconn.Endpoint
-	role           sshconn.EndpointRole
-	conn           Connection
-	browser        *sshbrowser.Browser
-	sudoCommands   bool
-	sudoPassword   string
-	recordRecent   bool // this user dial may update its recent success once
-	shared         bool // conn is a tab on another tab's connection
+	// interactiveOnly is the probe policy this connection was dialed with,
+	// frozen like authentication. A transport opened for a host confined to its
+	// interactive session sent no command probes and carries TCP keepalive, so
+	// another tab may not borrow it after the host is edited (see shareFrom).
+	interactiveOnly bool
+	sshOptions      *sshconfig.ConnectionOptions
+	endpoint        sshconn.Endpoint
+	role            sshconn.EndpointRole
+	conn            Connection
+	browser         *sshbrowser.Browser
+	sudoCommands    bool
+	sudoPassword    string
+	recordRecent    bool // this user dial may update its recent success once
+	shared          bool // conn is a tab on another tab's connection
 	// An interactive remote command for this tab only; it is not persisted as a host setting.
 	containerCommand string
 	// avoidShare makes the next connection a fresh one: the server refused one

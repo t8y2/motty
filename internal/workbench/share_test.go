@@ -541,3 +541,46 @@ func TestAnAccountIsSharedOnlyBetweenTheSameAuthentication(t *testing.T) {
 		})
 	}
 }
+
+// A transport is opened for the policy the host had at the dial: one confined to
+// its interactive session carries TCP keepalive and no probe may be sent on it,
+// so an RTT reading and shell integration never come from it. Editing that policy
+// changes the next connection, not the live one, and a tab must not borrow a
+// transport dialed under the other policy.
+func TestAChangedInteractiveOnlyPolicyNeverSharesTheOldConnection(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		initial bool
+		next    bool
+	}{
+		{"left the interactive session only policy", true, false},
+		{"confined to the interactive session only policy", false, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			world, options := newSharingWorld(t)
+			state := newTestState(t, options)
+			state.hosts[0].InteractiveOnly = test.initial
+			world.connectFirst(t, state)
+			if world.configs[0].InteractiveOnly != test.initial {
+				t.Fatalf("dialed config interactive-only = %v, want %v", world.configs[0].InteractiveOnly, test.initial)
+			}
+
+			state.Click(hitHosts)
+			state.selectedHostID = state.hosts[0].ID
+			state.openEditHost()
+			state.Click(hitDialogInteractiveOnly)
+			state.Click(hitDialogSubmit)
+			if state.hosts[0].InteractiveOnly != test.next {
+				t.Fatalf("the host was not edited: interactive-only %v", state.hosts[0].InteractiveOnly)
+			}
+
+			openHost(state)
+			if len(world.conns) != 2 || len(world.shared) != 0 {
+				t.Fatalf("dials=%d shares=%d: the tab borrowed a transport dialed under the other policy", len(world.conns), len(world.shared))
+			}
+			if world.configs[1].InteractiveOnly != test.next {
+				t.Fatalf("dialed config interactive-only = %v, want %v", world.configs[1].InteractiveOnly, test.next)
+			}
+		})
+	}
+}
