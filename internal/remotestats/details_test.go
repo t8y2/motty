@@ -62,45 +62,34 @@ func TestDetailsLoginSessionsAreOptionalBoundedAndSanitized(t *testing.T) {
 	}
 }
 
-func TestDetailsLoginFallbackFromPS(t *testing.T) {
-	rows := "logins-ready\n" +
-		"login\talice\tpts/1\t00:15\n" +
-		"login\tbob\ttty1\t01:23:45\n" +
-		"login\tcharlie\tconsole\t1-02:03:04\n"
-	details, err := parseDetails([]byte(detailsFixture + rows))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !details.LoginsAvailable || len(details.Logins) != 3 {
-		t.Fatalf("unexpected logins state: %+v", details)
-	}
-	expected := []Login{
-		{User: "alice", Terminal: "pts/1", Since: "00:15"},
-		{User: "bob", Terminal: "tty1", Since: "01:23:45"},
-		{User: "charlie", Terminal: "console", Since: "1-02:03:04"},
-	}
-	for i, exp := range expected {
-		if details.Logins[i] != exp {
-			t.Errorf("login[%d] = %+v, want %+v", i, details.Logins[i], exp)
-		}
-	}
-}
-
-func TestLoginsCommandFallbackOnShell(t *testing.T) {
+func TestLoginsCommandDoesNotInferSessionsFromProcesses(t *testing.T) {
 	sh, err := exec.LookPath("sh")
 	if err != nil {
 		t.Skip("requires sh")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	script := "who() { :; }; " + loginsCommand
-	data, err := exec.CommandContext(ctx, sh, "-c", script).Output()
-	if err != nil {
-		t.Fatalf("logins command failed: %v", err)
-	}
-	out := string(data)
-	if !strings.HasPrefix(out, "logins-ready\n") && !strings.HasPrefix(out, "logins-unavailable\n") {
-		t.Fatalf("unexpected logins output: %q", out)
+	for _, test := range []struct {
+		name, who string
+		available bool
+		count     int
+	}{
+		{"empty who", ":", true, 0},
+		{"other session", "printf 'bob pts/1 2026-11-21 10:30\\n'", true, 1},
+		{"who failure", "return 1", false, 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			script := "who() { " + test.who + "; }; ps() { printf 'root pts/1 sudo\\n'; }; " + loginsCommand
+			command := exec.CommandContext(ctx, sh, "-c", script)
+			data, err := command.Output()
+			if err != nil {
+				t.Fatalf("logins command failed: %v", err)
+			}
+			details, err := parseDetails(append([]byte(detailsFixture), data...))
+			if err != nil || details.LoginsAvailable != test.available || len(details.Logins) != test.count {
+				t.Fatalf("logins=%+v output=%q err=%v", details, data, err)
+			}
+		})
 	}
 }
 

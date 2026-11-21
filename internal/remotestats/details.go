@@ -154,7 +154,7 @@ awk 'NR>2 {
 }' /proc/net/dev
 ` + loginsCommand
 
-const loginsCommand = `if command -v who >/dev/null 2>&1 && logins=$(who 2>/dev/null) && [ -n "$logins" ]; then
+const loginsCommand = `if command -v who >/dev/null 2>&1 && logins=$(who 2>/dev/null); then
 	printf 'logins-ready\n'
 	printf '%s\n' "$logins" | awk 'NF>=3 {
 		if (++count>32) { print "logins-truncated"; exit }
@@ -162,17 +162,6 @@ const loginsCommand = `if command -v who >/dev/null 2>&1 && logins=$(who 2>/dev/
 		for (i=3; i<=NF; i++) printf "%s%s", (i==3 ? "" : " "), $i
 		printf "\n"
 	}'
-elif logins=$( (ps -eo user:32,tty:16,etime,comm 2>/dev/null || ps -eo user,tty,etime,comm 2>/dev/null || ps -eo user,tty,etime 2>/dev/null) | awk '
-	NR>1 && $4 !~ /(agetty|getty)$/ && ($2 ~ /^pts\/[0-9]+$/ || $2 ~ /^tty[0-9a-zA-Z_]+$/ || $2 == "console") {
-		if (!seen[$2]++) {
-			if (++count>32) { print "logins-truncated"; exit }
-			printf "login\t%s\t%s\t%s\n", $1, $2, $3
-		}
-	}') && [ -n "$logins" ]; then
-	printf 'logins-ready\n'
-	printf '%s\n' "$logins"
-elif command -v who >/dev/null 2>&1 || ps -eo user,tty,etime >/dev/null 2>&1 || ps -eo user,tty >/dev/null 2>&1; then
-	printf 'logins-ready\n'
 else
 	printf 'logins-unavailable\n'
 fi
