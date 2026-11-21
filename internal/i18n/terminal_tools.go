@@ -129,6 +129,7 @@ type ToolsMessages struct {
 	SnippetShortcutInvalid    string
 	SnippetErrorName          string
 	SnippetErrorCommand       string
+	SnippetErrorTooLong       string
 	SnippetErrorTooMany       string
 	SnippetSave               string
 	SnippetPaletteFmt         string

@@ -1834,6 +1834,7 @@ var traditionalTools = ToolsMessages{
 	SnippetShortcutInvalid:    "請使用 Control 或 Command 加一個字母或數字；使用 Control 時還需加 Shift 或 Alt，以免佔用終端機自帶按鍵。",
 	SnippetErrorName:          "請給快速指令起個名字。",
 	SnippetErrorCommand:       "請輸入要傳送的指令。",
+	SnippetErrorTooLong:       "指令過長，無法儲存，請縮短後重試。",
 	SnippetErrorTooMany:       "快速指令已達上限，請先刪除一條。",
 	SnippetSave:               "儲存",
 	SnippetPaletteFmt:         "快速指令：%s",
