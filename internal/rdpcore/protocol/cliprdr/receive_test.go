@@ -1,6 +1,7 @@
 package cliprdr
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"os"
@@ -459,5 +460,128 @@ func TestAFileListTheServerRefusesReleasesItsLock(t *testing.T) {
 	}
 	if unlocked != locked {
 		t.Fatalf("unlocked %d, want the locked id %d", unlocked, locked)
+	}
+}
+
+// startFileServer is a server holding files, whose file list the client has
+// been told about and may now ask for.
+func startFileServer(t *testing.T, files []fileEntry, data map[string][]byte) *receiveServer {
+	t.Helper()
+	server := newReceiveServer(t, files, data)
+	server.handler.ProcessPDU(encodeCapsPDU(CBCapsVersion2, CBStreamFileclipEnabled|CBCanLockClipData))
+	server.handler.ProcessPDU(encodeFormatListShort([]FormatListEntry{
+		{FormatID: formatIDFileGroupDescriptorW, FormatName: FormatFileGroupDescriptorW},
+		{FormatID: formatIDFileContents, FormatName: FormatFileContents},
+	}))
+	return server
+}
+
+func TestRemoteFilesReportTheirProgressUntilTheyArrive(t *testing.T) {
+	big := bytes.Repeat([]byte("x"), 150<<10) // several chunks
+	files := []fileEntry{
+		{name: "big.bin", size: uint64(len(big))},
+		{name: "folder", dir: true},
+		{name: `folder\small.txt`, size: 5},
+	}
+	server := startFileServer(t, files, map[string][]byte{"big.bin": big, `folder\small.txt`: []byte("small")})
+	var mu sync.Mutex
+	var reports []RemoteFilesProgress
+	ended := make(chan struct{})
+	server.handler.OnRemoteFilesProgress(func(progress RemoteFilesProgress) {
+		mu.Lock()
+		reports = append(reports, progress)
+		mu.Unlock()
+		if !progress.Active {
+			close(ended)
+		}
+	})
+	arrived := make(chan RemoteFiles, 1)
+	server.handler.OnRemoteFiles(func(files RemoteFiles, err error) {
+		if err != nil {
+			t.Error(err)
+		}
+		arrived <- files
+	})
+	if err := server.handler.RequestRemoteFiles(); err != nil {
+		t.Fatal(err)
+	}
+	var got RemoteFiles
+	select {
+	case got = <-arrived:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the files never arrived")
+	}
+	defer os.RemoveAll(got.Dir)
+	select {
+	case <-ended:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the progress never ended")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	total := got.Bytes
+	var done uint64
+	names := map[string]bool{}
+	for _, report := range reports[:len(reports)-1] {
+		if !report.Active || !report.HasTotal || report.Total != total {
+			t.Fatalf("report %+v, want an active one out of %d bytes", report, total)
+		}
+		if report.Done < done || report.Done > total {
+			t.Fatalf("progress went from %d to %d of %d", done, report.Done, total)
+		}
+		done = report.Done
+		names[report.Name] = true
+	}
+	if done != total {
+		t.Fatalf("progress stopped at %d of %d", done, total)
+	}
+	if !names["big.bin"] || !names[`folder\small.txt`] {
+		t.Fatalf("progress named %v", names)
+	}
+	if len(reports) < 4 {
+		t.Fatalf("a file of several chunks was reported %d times", len(reports))
+	}
+}
+
+func TestCancellingRemoteFilesDeliversNothingAndKeepsNothing(t *testing.T) {
+	stage := t.TempDir()
+	t.Setenv("TMPDIR", stage)
+	t.Setenv("TMP", stage)
+	t.Setenv("TEMP", stage)
+	big := bytes.Repeat([]byte("x"), 1<<20)
+	server := startFileServer(t, []fileEntry{{name: "big.bin", size: uint64(len(big))}}, map[string][]byte{"big.bin": big})
+	ended := make(chan struct{})
+	server.handler.OnRemoteFilesProgress(func(progress RemoteFilesProgress) {
+		if progress.Done > 0 && progress.Active {
+			server.handler.CancelRemoteFiles()
+		}
+		if !progress.Active {
+			close(ended)
+		}
+	})
+	delivered := make(chan struct{}, 1)
+	server.handler.OnRemoteFiles(func(RemoteFiles, error) { delivered <- struct{}{} })
+	if err := server.handler.RequestRemoteFiles(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-ended:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the cancelled download never ended")
+	}
+	select {
+	case <-delivered:
+		t.Fatal("a cancelled download delivered its files")
+	default:
+	}
+	entries, err := os.ReadDir(stage)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("left behind %v, %v", entries, err)
+	}
+	server.mu.Lock()
+	locked, unlocked := server.locked, server.unlocked
+	server.mu.Unlock()
+	if locked == 0 || unlocked != locked {
+		t.Fatalf("locked %d, unlocked %d: a cancelled download must release the server's data", locked, unlocked)
 	}
 }

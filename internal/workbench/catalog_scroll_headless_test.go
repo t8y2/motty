@@ -32,14 +32,91 @@ func TestCatalogPagesScrollLongLists(t *testing.T) {
 		state.activeSection = sectionForwards
 		state.selectedForwardID = 1
 		view := openCatalogWindow(t, state)
-		assertTableScrolls(t, state, view, &state.forwardTable, count,
-			hitForwardRowList.At(0), hitForwardRowList.At(count-1), hitForwardScrollThumb,
-			state.messages.ForwardListScroll, state.messages.ForwardColumnStatus,
-			func(state *State) {
-				if state.selectedForwardID != state.forwards[count-1].ID {
-					t.Fatalf("keyboard selection did not reach the last forward: %d", state.selectedForwardID)
-				}
-			})
+		list := &state.forwardList
+		scroll := state.sectionBodies.forwards.listScroll
+		if scroll == nil {
+			t.Fatal("the forwards page has no scroll area")
+		}
+		first, ok := findSnapshotHit(view.Snapshot(), hitForwardRowList.At(0))
+		if !ok {
+			t.Fatal("the first row is not painted")
+		}
+		if _, ok := findSnapshotHit(view.Snapshot(), hitForwardRowList.At(count-1)); ok {
+			t.Fatal("the list fits every row without scrolling")
+		}
+		if _, ok := findSnapshotHit(view.Snapshot(), hitForwardScrollThumb); ok {
+			t.Fatal("the scrollbar is painted before the pointer reaches the list")
+		}
+		at := gfx.Point{X: first.Bounds.X + first.Bounds.Width/2, Y: first.Bounds.Y + first.Bounds.Height/2}
+		if err := view.Move(at.X, at.Y); err != nil {
+			t.Fatal(err)
+		}
+		bar, ok := findSnapshotHit(view.Snapshot(), hitForwardScrollThumb)
+		if !ok {
+			t.Fatal("a list taller than its body has no scrollbar under the pointer")
+		}
+		if bar.Bounds.Width != catalogBarGutter {
+			t.Fatalf("scrollbar width = %v, want %v", bar.Bounds.Width, catalogBarGutter)
+		}
+		headerAboveRows(t, view.Snapshot(), state.messages.ForwardColumnStatus, bar.Bounds)
+
+		// The wheel moves the rows, not the page around them.
+		if err := view.Scroll(gfx.ScrollEvent{X: at.X, Y: at.Y, DeltaY: 10000, Precise: true}); err != nil {
+			t.Fatal(err)
+		}
+		if scroll.Offset <= 0 {
+			t.Fatalf("wheel left the list at offset %v", scroll.Offset)
+		}
+		if _, ok := findSnapshotHit(view.Snapshot(), hitForwardRowList.At(count-1)); !ok {
+			t.Fatal("the last row is unreachable at the end of the list")
+		}
+		if _, ok := findSnapshotHit(view.Snapshot(), hitForwardRowList.At(0)); ok {
+			t.Fatal("the first row is still painted at the end of the list")
+		}
+		if err := view.Scroll(gfx.ScrollEvent{X: at.X, Y: at.Y, DeltaY: -10000, Precise: true}); err != nil {
+			t.Fatal(err)
+		}
+		if scroll.Offset != 0 {
+			t.Fatalf("scrolling back left the list at %v", scroll.Offset)
+		}
+
+		// The keyboard moves the selection to the last row and reveals it.
+		if err := view.Driver().Click(at.X, at.Y); err != nil {
+			t.Fatal(err)
+		}
+		if err := view.Driver().Key(gfx.KeyEnd, 0); err != nil {
+			t.Fatal(err)
+		}
+		if got := list.Selected(); got != count-1 {
+			t.Fatalf("End selected row %d of %d", got, count)
+		}
+		if maximum := scroll.Max(); scroll.Offset != maximum {
+			t.Fatalf("End left the list at %v of %v", scroll.Offset, maximum)
+		}
+		if _, ok := findSnapshotHit(view.Snapshot(), hitForwardRowList.At(count-1)); !ok {
+			t.Fatal("End did not reveal the last row")
+		}
+		if state.selectedForwardID != state.forwards[count-1].ID {
+			t.Fatalf("keyboard selection did not reach the last forward: %d", state.selectedForwardID)
+		}
+
+		// While the bar is held, the rows it dragged over do not take the press.
+		bar, ok = findSnapshotHit(view.Snapshot(), hitForwardScrollThumb)
+		if !ok {
+			t.Fatal("the scrollbar disappeared before the drag")
+		}
+		if err := view.Driver().Press(bar.Bounds.X+bar.Bounds.Width/2, bar.Bounds.Y+bar.Bounds.Height/2, gfx.PointerButtonPrimary); err != nil {
+			t.Fatal(err)
+		}
+		if err := view.Driver().Move(bar.Bounds.X+bar.Bounds.Width/2, bar.Bounds.Y+bar.Bounds.Height/2-40); err != nil {
+			t.Fatal(err)
+		}
+		if scroll.Offset == 0 {
+			t.Fatal("dragging the bar did not move the list")
+		}
+		if err := view.Driver().Release(bar.Bounds.X+bar.Bounds.Width/2, bar.Bounds.Y+bar.Bounds.Height/2-40, gfx.PointerButtonPrimary); err != nil {
+			t.Fatal(err)
+		}
 	})
 
 	t.Run("keychain", func(t *testing.T) {

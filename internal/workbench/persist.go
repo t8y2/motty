@@ -227,7 +227,7 @@ type savedState struct {
 	AIProviders    *[]savedAIProvider `json:"ai_providers,omitempty"`
 	AICLIProviders *[]savedAIProvider `json:"ai_cli_providers,omitempty"`
 
-	// The bottom command bar's own layout: whether it is hidden, the snippet
+	// The command sidebar's own layout: whether it is hidden, the snippet
 	// groups it filters out (keyed by lowercased name; "" means ungrouped), and
 	// the order of its chips. A fresh state shows every group in list order.
 	CommandsShown        bool     `json:"commands_shown,omitempty"`

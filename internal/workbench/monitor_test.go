@@ -399,9 +399,9 @@ func TestMonitorStartsForAQuietWorkspaceOnActivation(t *testing.T) {
 // than showing an empty one, and the content height drops with it.
 func TestMonitorLeavesOutTheCoresSectionWhereThereIsNoSource(t *testing.T) {
 	var p monitorView
-	with := monitorContentHeight(&p)
+	with := monitorContentHeight(&p, "")
 	p.noPerCore = true
-	if without := monitorContentHeight(&p); with-without != monitorCoresHeight(&p)+monitorGap {
+	if without := monitorContentHeight(&p, ""); with-without != monitorCoresHeight(&p)+monitorGap {
 		t.Fatalf("content height %v with the section, %v without", with, without)
 	}
 }

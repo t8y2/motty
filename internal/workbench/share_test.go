@@ -326,6 +326,32 @@ func TestAnotherHostIsDialedNotShared(t *testing.T) {
 	}
 }
 
+// Several saved hosts can name one bastion account, each standing for the
+// asset the user picks in the bastion's menu. A bastion binds the channels of
+// one transport to the asset chosen on it, so lending the first host's
+// connection to the second skips the menu and lands on the first asset, and the
+// file panels of both follow whichever asset was chosen last (#1305).
+func TestAnotherSavedHostAtTheSameAccountIsDialedNotShared(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	world.connectFirst(t, state)
+
+	second := state.hosts[0]
+	second.ID, second.CatalogID, second.Label = state.nextHostID, "host_bastion_second_asset", "Second asset"
+	state.nextHostID++
+	state.hosts = append(state.hosts, second)
+	state.Click(hitHosts)
+	state.selectedHostID = second.ID
+	openHost(state)
+	if len(world.conns) != 2 || len(world.shared) != 0 {
+		t.Fatalf("dials %d, shares %d: another saved host must be its own connection", len(world.conns), len(world.shared))
+	}
+	opened, ok := state.sessionByIDPointer(state.activeSessionID)
+	if !ok || opened.HostID != second.ID || opened.shared {
+		t.Fatalf("opened session = %+v", opened)
+	}
+}
+
 func TestSharingCanBeTurnedOffAndTheChoiceIsKept(t *testing.T) {
 	world, options := newSharingWorld(t)
 	state := newTestState(t, options)
@@ -480,22 +506,11 @@ func TestClosingTheTabThatDialedLeavesTheSharedTabAlive(t *testing.T) {
 	}
 }
 
-// oneAccountHosts are two saved hosts at one account that authenticate
-// differently: the first is connected, the second is opened after it.
-func oneAccountHosts(first, second string) []savedHost {
-	host := func(id, label, authentication string) savedHost {
-		return savedHost{
-			ID: id, Label: label, Address: "bastion.example.com", User: "ops", Port: 22,
-			savedTransport: savedTransport{Authentication: authentication},
-		}
-	}
-	return []savedHost{host("host_first", "First", first), host("host_second", "Second", second)}
-}
-
-// Two entries at one account have one server and one login, but not one
-// authentication: a transport opened with a key is not a password login. The
-// password host has to dial and be asked (and refused, if the server refuses
-// that method), however many tabs its neighbour has open.
+// A transport is opened for the authentication policy the host had at the
+// dial: one opened with a key is not a password login. Editing the policy
+// changes the next connection, not the live one, so a tab opened after the edit
+// has to dial and be asked (and refused, if the server refuses that method)
+// instead of borrowing the transport its earlier tab still holds (#1258).
 func TestAnAccountIsSharedOnlyBetweenTheSameAuthentication(t *testing.T) {
 	tests := []struct {
 		name             string
@@ -512,14 +527,26 @@ func TestAnAccountIsSharedOnlyBetweenTheSameAuthentication(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			world, options := newSharingWorld(t)
-			if err := saveState(options.StatePath, savedState{Hosts: oneAccountHosts(test.first, test.second)}); err != nil {
+			saved := savedHost{
+				ID: "host_bastion", Label: "Bastion", Address: "bastion.example.com", User: "ops", Port: 22,
+				savedTransport: savedTransport{Authentication: test.first},
+			}
+			if err := saveState(options.StatePath, savedState{Hosts: []savedHost{saved}}); err != nil {
 				t.Fatal(err)
 			}
 			state := newTestState(t, options)
 			world.connectFirst(t, state)
+			next, ok := parseHostAuth(test.second)
+			if !ok {
+				t.Fatalf("policy %q", test.second)
+			}
+			// Host editing updates open tabs for future reconnects, but it cannot
+			// change how their live connection already authenticated.
+			state.hosts[0].Auth = next
+			state.sessions[0].host = state.hosts[0]
 			state.Click(hitHosts)
-			state.Click(hitHostList.At(2))
-			openHost(state)
+			state.selectedHostID = state.hosts[0].ID
+			state.newHostSession(state.hosts[0])
 			if test.wantShares {
 				if len(world.conns) != 1 || len(world.shared) != 1 {
 					t.Fatalf("dials = %d, shares = %d: want the connection lent", len(world.conns), len(world.shared))
@@ -530,11 +557,11 @@ func TestAnAccountIsSharedOnlyBetweenTheSameAuthentication(t *testing.T) {
 				t.Fatal("the connection was lent to another authentication policy")
 			}
 			if len(world.conns) != 2 {
-				t.Fatalf("dials = %d: want the second host's own", len(world.conns))
+				t.Fatalf("dials = %d: want the edited host's own", len(world.conns))
 			}
 			target := sshconn.Endpoint{Host: "bastion.example.com", Port: 22, User: "ops"}
 			if got := world.configs[1].Authentication[target].Methods; got != test.wantSecondMethod {
-				t.Fatalf("the second host dialed with methods %b, want %b", got, test.wantSecondMethod)
+				t.Fatalf("the edited host dialed with methods %b, want %b", got, test.wantSecondMethod)
 			}
 		})
 	}

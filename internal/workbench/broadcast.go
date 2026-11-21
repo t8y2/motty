@@ -24,7 +24,7 @@ const broadcastPaneLimit = 16
 func (state *State) typed(session *Session, input []byte) bool {
 	accepted := session.term.send(input)
 	if accepted && state.broadcast != 0 {
-		state.broadcastInput(session.ID, input, true)
+		state.broadcastInput(session.ID, input, input, true, false)
 	}
 	return accepted
 }
@@ -35,12 +35,24 @@ func (state *State) typed(session *Session, input []byte) bool {
 func (state *State) typedKeyState(session *Session, input []byte) bool {
 	accepted := session.term.sendKeyState(input)
 	if accepted && state.broadcast != 0 {
-		state.broadcastInput(session.ID, input, false)
+		state.broadcastInput(session.ID, input, input, false, false)
 	}
 	return accepted
 }
 
-func (state *State) broadcastInput(source uint32, input []byte, typing bool) {
+func (state *State) typedWin32Key(session *Session, input, logical []byte, typing bool) bool {
+	if session.term.transferHoldsInput {
+		return false
+	}
+	unknown := typing && len(logical) == 0
+	accepted := session.term.sendLogicalInput(input, logical, true, typing, unknown)
+	if accepted && state.broadcast != 0 {
+		state.broadcastInput(session.ID, input, logical, typing, unknown)
+	}
+	return accepted
+}
+
+func (state *State) broadcastInput(source uint32, input, logical []byte, typing, unknown bool) {
 	workspaceID, _, ok := state.deck.PaneForSession(layoutcore.SessionID(source))
 	if !ok || workspaceID != state.broadcast {
 		return
@@ -51,10 +63,8 @@ func (state *State) broadcastInput(source uint32, input []byte, typing bool) {
 			continue
 		}
 		if peer, ok := state.sessionByIDPointer(uint32(pane.SessionID)); ok && workspaceSessionState(peer) == workspacePaneConnected {
-			if typing {
-				peer.term.send(input)
-			} else {
-				peer.term.sendKeyState(input)
+			if !peer.term.transferHoldsInput {
+				peer.term.sendLogicalInput(input, logical, true, typing, unknown)
 			}
 		}
 	}

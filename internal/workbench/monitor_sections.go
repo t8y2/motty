@@ -129,7 +129,7 @@ func monitorDisksHeight(p *monitorView) float32 {
 	}
 	return h
 }
-func monitorContentHeight(p *monitorView) float32 {
+func monitorContentHeight(p *monitorView, currentSSHUser string) float32 {
 	h := float32(8)
 	switch p.page {
 	case 0:
@@ -142,18 +142,25 @@ func monitorContentHeight(p *monitorView) float32 {
 	if p.page == 0 {
 		h += monitorGap + monitorHardwareHeight(p)
 		if !p.loginsUnsupported {
-			h += monitorGap + monitorLoginsHeight(p)
+			h += monitorGap + monitorLoginsHeight(p, currentSSHUser)
 		}
 	}
 	return h + monitorBottomPadding
 }
 
-func monitorLoginsHeight(p *monitorView) float32 {
+func monitorLoginsHeight(p *monitorView, currentSSHUser string) float32 {
 	if p.loginsClosed {
 		return 32
 	}
 	height := float32(32 + 28)
+	currentSSH := currentSSHUser != ""
+	if currentSSH {
+		height += 32
+	}
 	if len(p.data.Logins) == 0 || p.detailsFailed || !p.data.LoginsAvailable {
+		if currentSSH && p.haveDetails && !p.detailsFailed && p.data.LoginsAvailable {
+			return height + 8
+		}
 		return height + 36 + 8
 	}
 	height += float32(len(p.data.Logins))*43 + 16
@@ -163,7 +170,7 @@ func monitorLoginsHeight(p *monitorView) float32 {
 	return height
 }
 
-func (s *State) paintMonitorLogins(c *gfx.Canvas, p *monitorView, b, viewport gfx.Rect) {
+func (s *State) paintMonitorLogins(c *gfx.Canvas, p *monitorView, currentSSHUser string, b, viewport gfx.Rect) {
 	colors, messages := s.monitorColors(), s.messages.Monitor
 	if monitorRowVisible(viewport, b.Y, b.Height) {
 		c.RoundedBorder(b, 10, 1, colors.border, colors.surface)
@@ -178,7 +185,17 @@ func (s *State) paintMonitorLogins(c *gfx.Canvas, p *monitorView, b, viewport gf
 		monitorLabel(c, messages.LoginsHint, gfx.Rect{X: b.X + 10, Y: rowY, Width: b.Width - 20, Height: 28}, 10, colors.muted, gfx.WeightRegular)
 	}
 	rowY += 28
+	if currentSSHUser != "" {
+		if monitorRowVisible(viewport, rowY, 32) {
+			monitorLabel(c, currentSSHUser, gfx.Rect{X: b.X + 10, Y: rowY, Width: b.Width*.48 - 10, Height: 21}, 12, colors.text, gfx.WeightSemibold)
+			monitorRight(c, messages.CurrentSSHLogin, gfx.Rect{X: b.X + b.Width*.48, Y: rowY, Width: b.Width*.52 - 10, Height: 21}, 11, colors.muted, gfx.WeightRegular)
+		}
+		rowY += 32
+	}
 	if len(p.data.Logins) == 0 || p.detailsFailed || !p.data.LoginsAvailable {
+		if currentSSHUser != "" && p.haveDetails && !p.detailsFailed && p.data.LoginsAvailable {
+			return
+		}
 		message := messages.NoLogins
 		if !p.haveDetails {
 			message = messages.WaitingDetails
@@ -559,8 +576,9 @@ func (s *State) paintMonitorSections(c *gfx.Canvas, session *Session, v *remoteS
 		s.paintMonitorHardware(c, p, session, gfx.Rect{X: x, Y: y, Width: w, Height: h}, viewport)
 		y += h + monitorGap
 		if !p.loginsUnsupported {
-			h = monitorLoginsHeight(p)
-			s.paintMonitorLogins(c, p, gfx.Rect{X: x, Y: y, Width: w, Height: h}, viewport)
+			currentSSHUser := s.monitorCurrentSSHUser(session)
+			h = monitorLoginsHeight(p, currentSSHUser)
+			s.paintMonitorLogins(c, p, currentSSHUser, gfx.Rect{X: x, Y: y, Width: w, Height: h}, viewport)
 		}
 	case 1:
 		s.monitorTile(c, p, gfx.Rect{X: x, Y: y, Width: w, Height: monitorTileHeight}, m.PrimaryDisk, p.diskText, p.diskCapacity, icons.HardDrive, colors.disk, monitorDisk)

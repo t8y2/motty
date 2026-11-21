@@ -29,11 +29,19 @@ func (state *State) transferProgress() (progress transferProgress) {
 	// list it. One whose size the other end has not announced yet counts as
 	// running but contributes no bytes.
 	for index := range state.sessions {
-		transfer := &state.sessions[index].transfer
+		session := &state.sessions[index]
+		transfer := &session.transfer
 		if transfer.phase == transferRunning && transfer.progress.Size > 0 {
 			progress.active++
 			progress.done += min(transfer.progress.Done, transfer.progress.Size)
 			progress.total += transfer.progress.Size
+		}
+		// So is a remote desktop saving the files its user copied.
+		if session.desk.receivingFiles() && session.desk.files.receiving.Size > 0 {
+			receiving := session.desk.files.receiving
+			progress.active++
+			progress.done += min(receiving.Done, receiving.Size)
+			progress.total += receiving.Size
 		}
 	}
 	return progress
