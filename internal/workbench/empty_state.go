@@ -36,6 +36,14 @@ func (state *State) catalogSectionBounds() gfx.Rect {
 	return gfx.Rect{Width: width, Height: height}
 }
 
+// declareCatalogDescription declares a catalog page's description paragraph.
+// It always reserves two lines, so a one-line and a two-line description leave
+// the same header height and switching tabs does not shift the body (#1059).
+func (state *State) declareCatalogDescription(c ui.C, text string) ui.Box {
+	line := metrics.FontSizeS + 7
+	return ui.Paragraph(c, text, 2).FontSize(metrics.FontSizeS).Color(state.pal.muted).LineHeight(line).Height(2 * line)
+}
+
 // declareCatalogSection declares the active catalog section's body in the
 // workbench page's workspace slot. The sections are exclusive; a section that
 // does not use this path (hosts, the dashboard and notes) declares itself.

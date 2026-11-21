@@ -11,7 +11,7 @@ import (
 
 // proxySectionUI is what the proxies page's declaration leaves for its paint.
 type proxySectionUI struct {
-	add, batchAdd, batchDelete, batchStart, batchStop, batchClear, empty                        ui.Box
+	add, batchAdd, batchDelete, batchStart, batchStop, batchClear, empty, listBox               ui.Box
 	hubToggle, hubUnbind                                                                        ui.Box
 	addWidth, batchAddWidth, batchDeleteWidth, batchStartWidth, batchStopWidth, batchClearWidth float32
 	hubToggleWidth, hubUnbindWidth                                                              float32
@@ -39,7 +39,7 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 
 	const (
 		titleLeast = float32(220)
-		gap        = float32(8)
+		gap        = float32(10)
 	)
 	bounds := state.catalogSectionBounds()
 	canAdd := state.canAddJumpRoute()
@@ -101,14 +101,16 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 	view.draw, view.cardOver = draw, cardOver
 	body := ui.Column(c).Fill().PadSides(12, 18, 0, 18)
 	body.Children(func() {
-		ui.Row(c).MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(ui.Center).Children(func() {
+		// Keep the header aligned with the forwards/snippets pages (top-aligned
+		// buttons, same footer band) so switching tabs does not shift content.
+		ui.Row(c).MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(ui.Start).Children(func() {
 			ui.Column(c).Grow(1).Gap(3).MarginSides(4, 0, 0, 0).Children(func() {
 				ui.Text(c, messages.ProxyTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
 				desc := messages.ProxyDescription
 				if checkedCount > 0 {
 					desc = fmt.Sprintf(messages.ProxyBatchSelectedCountFmt, checkedCount)
 				}
-				ui.Paragraph(c, desc, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
+				state.declareCatalogDescription(c, desc)
 			})
 
 			if checkedCount > 0 {
@@ -184,8 +186,11 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 			}
 			// The rows are the page's list. Its height, as the body lays it out,
 			// decides whether the rows overflow and so keep the bar's gutter
-			// clear, exactly as the canvas table did.
-			listHeight := bounds.Height - 123 - 52
+			// clear, exactly as the canvas table did. 141 is the shared catalog
+			// skeleton around the list: 12 top inset + 66 header (25 title + 3
+			// gap + 38 two-line description) + 12 header margin + 1 divider +
+			// 50 footer.
+			listHeight := bounds.Height - 141 - 52
 			if len(hubs) > 0 {
 				listHeight -= 50
 			}
@@ -194,7 +199,8 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 			headerPad := theme.Metrics.GapItem
 			totalVis, checkedVis := state.proxyVisibleStats()
 			allChecked := totalVis > 0 && totalVis == checkedVis
-			ui.Column(c).Grow(1).Shrink(1).MinHeight(0).Children(func() {
+			listColumn := ui.Column(c).Grow(1).Shrink(1).MinHeight(0)
+			listColumn.Children(func() {
 				header := ui.Row(c).Height(52).Shrink(0).FillWidth().Gap(0).Items(ui.Center)
 				if overflow {
 					header = header.PadSides(0, catalogBarGutter, 0, 0)
@@ -224,9 +230,10 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 					state.takeProxyListSelection()
 				}
 			})
+			view.listBox = listColumn
 		}
 		ui.Divider(c).Background(pal.line)
-		ui.Row(c).Height(40).PadSides(8, 0, 16, 0).Items(ui.Center).Children(func() {
+		ui.Row(c).Height(50).PadSides(8, 0, 20, 0).Items(ui.Center).Children(func() {
 			ui.Text(c, state.proxyCountText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint)
 		})
 	})

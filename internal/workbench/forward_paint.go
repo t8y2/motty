@@ -9,6 +9,7 @@ import (
 
 // forwardSectionUI is what the forwards page's declaration leaves for its paint.
 type forwardSectionUI struct {
+	tableBox                                      ui.Box
 	remove, edit, action, add, empty              ui.Box
 	removeWidth, editWidth, actionWidth, addWidth float32
 	removeIcon, editIcon, actionIcon, addIcon     uint8
@@ -69,7 +70,7 @@ func (state *State) declareForwardsWorkspace(c ui.C) {
 		ui.Row(c).MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(ui.Start).Children(func() {
 			ui.Column(c).Grow(1).Gap(3).MarginSides(4, 0, 0, 0).Children(func() {
 				ui.Text(c, messages.ForwardTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
-				ui.Paragraph(c, messages.ForwardDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
+				state.declareCatalogDescription(c, messages.ForwardDescription)
 			})
 			view.remove = state.declareButtonSized(c, hitForwardRemove, messages.ForwardRemove, removeIcon, false, false, hasSelection, toolbarFont, condensed).Size(removeWidth, toolbarHeight)
 			view.edit = state.declareButtonSized(c, hitForwardEdit, messages.ForwardEdit, editIcon, false, false, hasSelection, toolbarFont, condensed).Size(editWidth, toolbarHeight)
@@ -94,6 +95,7 @@ func (state *State) declareForwardsWorkspace(c ui.C) {
 				state.forwardTable.Select(row)
 				state.selectForward(state.forwards[row].ID)
 			}
+			view.tableBox = table
 		}
 		ui.Divider(c).Background(pal.line)
 		ui.Row(c).Height(50).PadSides(8, 0, 20, 0).Items(ui.Center).Children(func() {
