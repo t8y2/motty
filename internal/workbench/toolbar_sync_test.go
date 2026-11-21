@@ -209,6 +209,41 @@ func TestToolbarPreferencesRestoreFromTheCloud(t *testing.T) {
 	assertCustomSyncToolbars(t, target)
 }
 
+func TestUntouchedToolbarDefaultsRoundTripThroughBackup(t *testing.T) {
+	source, _, _ := backupTestState(t)
+	document, err := source.backupDocument()
+	if err != nil {
+		t.Fatal(err)
+	}
+	records, err := source.config.Records()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range records {
+		if record.Kind == kindSetting && record.ID == "toolbars" && !record.Deleted {
+			t.Fatal("export wrote untouched defaults into shared settings")
+		}
+	}
+	sealed, err := backup.Seal(document, testBackupPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened, err := backup.Open(sealed, testBackupPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, options, _ := backupTestState(t)
+	setCustomSyncToolbars(target)
+	if _, err := target.applyBackup(opened); err != nil {
+		t.Fatal(err)
+	}
+	for _, state := range []*State{target, newTestState(t, options)} {
+		if state.toolbars.snapshot() != nil || state.terminalToolbarPosition != terminalToolbarRight || state.terminalToolbarSize != terminalToolbarSmall {
+			t.Fatal("the backup did not restore the untouched default toolbar layout")
+		}
+	}
+}
+
 func TestOldBackupWithoutToolbarRecordsKeepsCurrentLayout(t *testing.T) {
 	source, _, _ := backupTestState(t)
 	source.terminalScrollback = 10000
