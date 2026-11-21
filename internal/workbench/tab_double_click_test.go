@@ -17,6 +17,7 @@ func doubleClickTab(state *State, workspace layoutcore.WorkspaceID) gfx.EventRes
 func TestDoubleClickOnATabDuplicatesItBesideTheSource(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)
+	state.tabDoubleClick = tabDoubleClickDuplicate
 	connect(t, state, world)
 	source := state.deck.ActiveWorkspace()
 	sourceSession := state.sessions[0]
@@ -108,32 +109,32 @@ func TestDoubleClickCanDoNothing(t *testing.T) {
 
 func TestTabDoubleClickSettingIsSavedOnThisDevice(t *testing.T) {
 	state := newTestState(t, freshOptions(t))
-	if state.tabDoubleClick != tabDoubleClickDuplicate {
-		t.Fatalf("default double click = %q, want duplicate", state.tabDoubleClick)
+	if state.tabDoubleClick != tabDoubleClickRename {
+		t.Fatalf("default double click = %q, want rename", state.tabDoubleClick)
 	}
 	state.Click(hitSettings)
 	if !contains(paintedAt(state, 1400, 4000), state.messages.SettingsTabDoubleClick) {
 		t.Fatal("the double-click row is missing from settings")
 	}
-	clickSettingsChoiceInRow(t, state, state.messages.SettingsTabDoubleClick, state.messages.MenuRenameTab)
-	if state.tabDoubleClick != tabDoubleClickRename {
-		t.Fatalf("chosen double click = %q, want rename", state.tabDoubleClick)
+	clickSettingsChoiceInRow(t, state, state.messages.SettingsTabDoubleClick, state.messages.MenuDuplicateTab)
+	if state.tabDoubleClick != tabDoubleClickDuplicate {
+		t.Fatalf("chosen double click = %q, want duplicate", state.tabDoubleClick)
 	}
 	state.save()
 
 	restored := newTestState(t, state.options)
-	if restored.tabDoubleClick != tabDoubleClickRename {
-		t.Fatalf("restored double click = %q, want rename", restored.tabDoubleClick)
+	if restored.tabDoubleClick != tabDoubleClickDuplicate {
+		t.Fatalf("restored double click = %q, want duplicate", restored.tabDoubleClick)
 	}
 	for _, test := range []struct {
 		saved string
 		want  tabDoubleClickAction
 	}{
-		{"", tabDoubleClickDuplicate},
+		{"", tabDoubleClickRename},
 		{"duplicate", tabDoubleClickDuplicate},
 		{"rename", tabDoubleClickRename},
 		{"none", tabDoubleClickNone},
-		{"nonsense", tabDoubleClickDuplicate},
+		{"nonsense", tabDoubleClickRename},
 	} {
 		if got := tabDoubleClickFromString(test.saved); got != test.want {
 			t.Errorf("tabDoubleClickFromString(%q) = %q, want %q", test.saved, got, test.want)

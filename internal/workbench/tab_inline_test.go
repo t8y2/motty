@@ -26,7 +26,6 @@ func TestAnIdleEditorMatchesNoTab(t *testing.T) {
 func TestDoubleClickOnATabStartsTheInlineRename(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)
-	state.tabDoubleClick = tabDoubleClickRename
 	connect(t, state, world)
 	workspace := state.workspaceTabs[0].ID
 	label := state.tabLabel(state.workspaceTabs[0])

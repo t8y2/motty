@@ -4,7 +4,7 @@ import layoutcore "motty/internal/workspace"
 
 // tabDoubleClickAction is what a double click on a session tab does. It is a
 // saved string rather than a run-local number so a state file that predates the
-// setting reads as the default: duplicate.
+// setting reads as the default: rename, the behavior it has always had.
 type tabDoubleClickAction string
 
 const (
@@ -19,10 +19,10 @@ func (action tabDoubleClickAction) String() string { return string(action) }
 // state file that predates the setting, is the default.
 func tabDoubleClickFromString(value string) tabDoubleClickAction {
 	switch action := tabDoubleClickAction(value); action {
-	case tabDoubleClickRename, tabDoubleClickNone:
+	case tabDoubleClickDuplicate, tabDoubleClickNone:
 		return action
 	}
-	return tabDoubleClickDuplicate
+	return tabDoubleClickRename
 }
 
 // tabSessionForWorkspace is the session behind the pane a tab shows.

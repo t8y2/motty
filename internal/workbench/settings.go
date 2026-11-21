@@ -561,7 +561,7 @@ var (
 	settingsAppearanceChoices      = [...]appearanceMode{appearanceFollowSystem, appearancePinnedDark, appearancePinnedLight}
 	settingsToolbarPositionChoices = [...]terminalToolbarPosition{terminalToolbarLeft, terminalToolbarRight}
 	settingsTabOrientationChoices  = [...]tabOrientation{tabsHorizontal, tabsVertical}
-	settingsTabDoubleClickChoices  = [...]tabDoubleClickAction{tabDoubleClickDuplicate, tabDoubleClickRename, tabDoubleClickNone}
+	settingsTabDoubleClickChoices  = [...]tabDoubleClickAction{tabDoubleClickRename, tabDoubleClickDuplicate, tabDoubleClickNone}
 	settingsCloseChoices           = [...]closeAction{closeToTray, closeQuits}
 	settingsRelaunchChoices        = [...]relaunchAction{relaunchRaise, relaunchNewWindow}
 	settingsUpdateSourceChoices    = [...]update.Source{update.SourceOfficial, update.SourceCNB}

@@ -1213,7 +1213,7 @@ func New(options Options) *State {
 		terminalScrollback: scrollbackLines,
 		terminalFindPrefs:  defaultTerminalFindPreferences,
 		tabTitleMode:       tabTitleConnection,
-		tabDoubleClick:     tabDoubleClickDuplicate,
+		tabDoubleClick:     tabDoubleClickRename,
 		startupReuse:       true,
 		startupEnabled:     true,
 		// The defaults a fresh window starts from, before the saved state is
