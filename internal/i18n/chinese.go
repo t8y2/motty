@@ -1971,10 +1971,9 @@ var chineseTools = ToolsMessages{
 	PasteConfirmDescription: "粘贴包含换行的文本时先显示预览，可选择整段或逐行发送。关闭后按原样一次粘贴。",
 
 	PasswordHintRow:         "密码提示辅助",
-	PasswordHintDescription: "sudo 要求密码时提供该主机的已保存密码；su 要求密码时列出该主机和身份的密码供选择。按下 Enter 或点选之前不会发送任何内容。身份在「设置 > 安全 > 身份」中保存。",
+	PasswordHintDescription: "在 sudo、su 和 SSH/SCP 的账户密码提示处列出已保存的密码，支持本地终端和嵌套 SSH 会话。用 ↑/↓ 选择后按 Enter，或点击候选才会发送。身份在「设置 > 安全 > 身份」中保存。",
 	CloseConfirmRow:         "关闭运行中的会话前确认",
 	CloseConfirmDescription: "关闭仍处于连接状态的标签页或分屏时先询问。已结束的会话直接关闭。",
-	PasswordHintGhost:       "按 Enter 粘贴已保存的密码",
 
 	NotifyRow:         "桌面通知",
 	NotifyDescription: "终端里的程序请求通知时（OSC 9、777、99），显示系统通知。每个终端每秒最多一条。",

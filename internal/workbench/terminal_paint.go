@@ -655,9 +655,7 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 	// need the terminal itself focused.
 	suggesting := focused || state.ghostMenu.open && state.ghostMenu.session == session.ID
 	if !sensitive && suggesting && !composing && !predicting && t.sync == nil {
-		if rest, ok := state.passwordHintGhost(session); ok {
-			state.paintGhost(canvas, t, geometry, cursor, rest, block)
-		} else if rest, ok := state.commandGhost(session); ok {
+		if rest, ok := state.commandGhost(session); ok {
 			if used, limit, painted := state.paintGhost(canvas, t, geometry, cursor, rest, block); painted {
 				hintRect, hintShown = state.paintGhostHint(canvas, session, geometry, cursor, used, limit)
 			}
