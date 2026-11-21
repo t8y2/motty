@@ -1048,6 +1048,7 @@ func (state *State) completionCandidates(session *Session, line string) ([]compl
 			add(completion.Candidate{Text: entry.Command, Insert: insertText, Desc: humanRelativeTime(now, entry.Used, state.messages.Completion), Kind: completion.KindCommand})
 		}
 	}
+	state.addSnippetCandidates(line, add)
 	if catalog := state.completionCatalog(); catalog != nil {
 		if result := completion.Complete(catalog, line); !result.Suppressed {
 			for _, candidate := range result.Candidates {
@@ -1056,6 +1057,30 @@ func (state *State) completionCandidates(session *Session, line string) ([]compl
 		}
 	}
 	return candidates, pathLoading || state.completion.catalogLoading
+}
+
+// addSnippetCandidates offers the configured quick commands the line continues
+// into, after the history and before the public catalog: they are the user's
+// own configuration, so they outrank the catalog, and they need no learning to
+// be on (#1084, #1200). The inline ghost offers the same text, but it stays
+// quiet when several quick commands share a prefix; the list is where they are
+// all named. A command that cannot be typed as it stands is left to the snippet
+// picker, which can ask for its template variables.
+func (state *State) addSnippetCandidates(line string, add func(completion.Candidate)) {
+	if !snippetHintLine(line) {
+		return
+	}
+	for _, entry := range state.snippets.list {
+		if !snippetHintCandidate(line, entry.Command) {
+			continue
+		}
+		add(completion.Candidate{
+			Text:   entry.Command,
+			Insert: entry.Command[len(line):],
+			Desc:   state.messages.Tools.SnippetsTitle,
+			Kind:   completion.KindCommand,
+		})
+	}
 }
 
 // completionKey handles keys while the list is open. Printable keys stay with
