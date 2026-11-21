@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
@@ -368,3 +369,119 @@ func TestEditingSameSizeAndTimestampSendsSaveBack(t *testing.T) {
 	})
 }
 
+func TestRevertingWhileAnExternalSaveIsInFlightStillSendsTheRevert(t *testing.T) {
+	state, session, remote, _ := externalEditSetup(t)
+	edit := startExternalEditOf(t, state, session, "notes.txt")
+	remote.mu.Lock()
+	locked := true
+	defer func() {
+		if locked {
+			remote.mu.Unlock()
+		}
+	}()
+	if err := os.WriteFile(edit.local, []byte("pending change"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, state, func() bool { return edit.saving })
+	if err := os.WriteFile(edit.local, []byte("hello world"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	original := sha256.Sum256([]byte("hello world"))
+	waitFor(t, state, func() bool { return edit.seenSum == original && edit.dirty })
+	remote.mu.Unlock()
+	locked = false
+	waitFor(t, state, func() bool {
+		return remoteText(remote, "/home/test/notes.txt") == "hello world" && !edit.saving && edit.synced == original
+	})
+}
+
+func TestExternalEditRetriesAFailedSaveWithoutAnotherEdit(t *testing.T) {
+	state, session, remote, _ := externalEditSetup(t)
+	edit := startExternalEditOf(t, state, session, "notes.txt")
+	refuseReplacing(t, remote, "/home/test/notes.txt")
+	if err := os.WriteFile(edit.local, []byte("retry this save"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, state, func() bool { return !edit.saving && edit.retryWait > 0 })
+	allowReplacing(remote)
+	waitFor(t, state, func() bool {
+		return remoteText(remote, "/home/test/notes.txt") == "retry this save" && !edit.saving
+	})
+}
+
+func TestAnUncertainSaveDoesNotLoseARevertedLocalCopy(t *testing.T) {
+	state, session, remote, _ := externalEditSetup(t)
+	edit := startExternalEditOf(t, state, session, "notes.txt")
+	remote.mu.Lock()
+	remote.files["/home/test/notes.txt"] = []byte("save completed without a reply")
+	remote.mu.Unlock()
+	edit.saving = true
+	edit.sending = sha256.Sum256([]byte("save completed without a reply"))
+	state.externalEditResult(session, session.files, sftpclient.Result{
+		Operation: sftpclient.OperationSaveText,
+		Path:      "/home/test/notes.txt",
+		Err:       errors.New("connection interrupted before the reply"),
+	})
+	waitFor(t, state, func() bool { return state.modal == modalForm })
+	if got := remoteText(remote, "/home/test/notes.txt"); got != "save completed without a reply" {
+		t.Fatalf("an uncertain save silently replaced the server: %q", got)
+	}
+	local, err := os.ReadFile(edit.local)
+	if err != nil || string(local) != "hello world" {
+		t.Fatalf("the local version was lost: %q, %v", local, err)
+	}
+}
+
+func TestKeepingARevertedCopyStillReportsTheServerConflict(t *testing.T) {
+	state, session, remote, _ := externalEditSetup(t)
+	edit := startExternalEditOf(t, state, session, "notes.txt")
+	remote.mu.Lock()
+	remote.files["/home/test/notes.txt"] = []byte("changed by another user")
+	remote.mu.Unlock()
+	if err := os.WriteFile(edit.local, []byte("my change"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, state, func() bool { return state.modal == modalForm })
+	if err := os.WriteFile(edit.local, []byte("hello world"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state.Click(hitFormCancel)
+	if !externalEditHeldLocally(edit) {
+		t.Fatal("the kept local version was mistaken for the changed server version")
+	}
+	if got := remoteText(remote, "/home/test/notes.txt"); got != "changed by another user" {
+		t.Fatalf("keeping a local copy changed the server: %q", got)
+	}
+}
+
+func TestAnOldExternalEditWatcherCannotStopItsReplacement(t *testing.T) {
+	state, session, _, _ := externalEditSetup(t)
+	startExternalEditOf(t, state, session, "notes.txt")
+	old := state.edits.stop
+	state.stopWatchingExternalEdits()
+	state.watchExternalEdits()
+	current := state.edits.stop
+	state.finishExternalEditWatch(old)
+	state.stopWatchingExternalEdits()
+	select {
+	case <-current:
+	default:
+		t.Fatal("the replacement watcher lost its stop signal")
+	}
+}
+
+func TestOversizedExternalEditIsReportedAndCanBeCorrected(t *testing.T) {
+	state, session, remote, _ := externalEditSetup(t)
+	edit := startExternalEditOf(t, state, session, "notes.txt")
+	if err := os.WriteFile(edit.local, []byte(strings.Repeat("x", sftpclient.MaxEditFileBytes+1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, state, func() bool { return edit.badFile && session.files.errorText != "" })
+	if got := remoteText(remote, "/home/test/notes.txt"); got != "hello world" {
+		t.Fatalf("oversized edit changed the server: %q", got)
+	}
+	if err := os.WriteFile(edit.local, []byte("fixed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, state, func() bool { return remoteText(remote, "/home/test/notes.txt") == "fixed" })
+}
