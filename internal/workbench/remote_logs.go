@@ -52,7 +52,14 @@ func remoteLogCommand(path string) string {
 	// A leading empty line acknowledges that the initial file is readable.
 	// Keep tail as the session process so canceling can signal it directly.
 	file := shellQuote(path)
-	return "{ if [ ! -f " + file + " ]; then printf '%s\\n' 'Log path is missing or is not a regular file.'; exit 1; fi; " +
+	return "{ if [ ! -f " + file + " ]; then " +
+		// `test -f` is also false when a directory above the file cannot be
+		// searched, which a log the account may not read looks like. Walking up
+		// to the first directory that exists separates that from a missing
+		// path, so the two are not reported as the same failure.
+		"dir=" + file + "; while [ ! -d \"$dir\" ] && [ \"$dir\" != / ]; do dir=${dir%/*}; [ -z \"$dir\" ] && dir=/; done; " +
+		"if [ ! -x \"$dir\" ]; then printf '%s\\n' 'Permission denied.'; exit 1; fi; " +
+		"printf '%s\\n' 'Log path is missing or is not a regular file.'; exit 1; fi; " +
 		"if [ ! -r " + file + " ]; then printf '%s\\n' 'Permission denied.'; exit 1; fi; " +
 		"printf '\\n'; exec tail -n 200 -F -- " + file + "; } 2>&1"
 }
@@ -235,11 +242,14 @@ func (state *State) followRemoteLog(session *Session, view *remoteLogView, path 
 	view.resetOutput()
 	view.matchQuery, view.matchRevision, view.matches = "", 0, view.matches[:0]
 	view.follow, view.lastFollow, view.lastOffset, view.resetScroll = true, true, 0, true
-	conn, notify := session.conn, state.notifyFor(session)
+	// The stream runs where the session runs its other remote commands, so the
+	// sudo privilege the tools and the monitor use also reaches a log the
+	// account itself cannot read.
+	runner, notify := commandRunnerFor(session), state.notifyFor(session)
 	go func() {
 		first := true
-		stream := conn.StreamCommand
-		if tolerant, ok := conn.(interface {
+		stream := runner.StreamCommand
+		if tolerant, ok := runner.(interface {
 			StreamCommandSkippingLongLines(context.Context, string, int, func([]byte) bool) error
 		}); ok {
 			stream = tolerant.StreamCommandSkippingLongLines

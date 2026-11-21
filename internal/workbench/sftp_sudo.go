@@ -24,6 +24,7 @@ type sudoSFTPDialog struct {
 	field       ui.Field
 	bound       bool
 	commands    bool
+	logs        bool
 	dashboard   bool
 	returnTools bool
 }
@@ -77,7 +78,7 @@ func (state *State) submitSudoSFTP() {
 	session, ok := state.sessionByIDPointer(sessionID)
 	password := state.sudoSFTP.password.String()
 	commands, returnTools := state.sudoSFTP.commands, state.sudoSFTP.returnTools
-	dashboard := state.sudoSFTP.dashboard
+	dashboard, logs := state.sudoSFTP.dashboard, state.sudoSFTP.logs
 	window := state.sudoSFTP.window
 	state.closeModal()
 	if commands {
@@ -87,6 +88,12 @@ func (state *State) submitSudoSFTP() {
 					state.setSudoCommands(&source.session, password, true)
 					return
 				}
+			}
+			return
+		}
+		if logs {
+			if ok {
+				state.setSudoCommands(session, password, true)
 			}
 			return
 		}

@@ -23,6 +23,7 @@ var (
 	hitServerLogs       = tree.ID(remoteLogHits, "toggle")
 	hitRemoteLogDivider = tree.ID(remoteLogHits, "divider")
 	hitRemoteLogDismiss = tree.ID(remoteLogHits, "dismiss")
+	hitRemoteLogSudo    = tree.ID(remoteLogHits, "sudo")
 	hitRemoteLogName    = tree.ID(remoteLogHits, "name")
 	hitRemoteLogPath    = tree.ID(remoteLogHits, "path")
 	hitRemoteLogOutput  = tree.ID(remoteLogHits, "output")
@@ -166,6 +167,7 @@ func (state *State) declareRemoteLogs(c ui.C) {
 			ui.Icon(c, lucideIcons[iconFileClock]).Size(16, 16)
 			ui.Text(c, m.Title).Weight(gfx.WeightSemibold).Color(p.text).Shrink(0)
 			ui.Text(c, session.Title).Color(p.muted).Grow(1).Ellipsis()
+			state.declareRemoteLogSudo(c, session)
 			label, icon := m.Expand, remoteLogExpandIcon
 			if view.expanded {
 				label, icon = m.Restore, remoteLogRestoreIcon
@@ -199,6 +201,47 @@ func (state *State) declareRemoteLogs(c ui.C) {
 	if state.modal == modalNone && view.formMode != remoteLogFormNone {
 		state.declareRemoteLogForm(c, session, view)
 	}
+}
+
+// declareRemoteLogSudo is the log panel's form of the tools' privilege switch:
+// the same lock, wording and password dialog, sharing the session's flag, so a
+// log the account itself cannot read opens as root once it is on.
+func (state *State) declareRemoteLogSudo(c ui.C, session *Session) {
+	m := state.messages
+	label, style := m.SudoCommandsEnable, iconButtonQuiet
+	if session.sudoCommands {
+		label, style = m.SudoCommandsDisable, iconButtonActive
+	}
+	button := state.declareIconButton(c, hitRemoteLogSudo, iconLock, label, !session.canViewRemoteLogs(), style).
+		Size(28, 28)
+	if button.Clicked() {
+		c.After(func() { state.toggleRemoteLogSudo(session) })
+	}
+}
+
+func (state *State) toggleRemoteLogSudo(session *Session) {
+	if session.sudoCommands {
+		// The switch restarts the stream: it belongs to the privilege it
+		// started with.
+		state.setSudoCommands(session, "", false)
+		return
+	}
+	if !sudoCommandsAvailable(session) {
+		state.showActionError(state.messages.SudoCommandsEnable, errSudoCommandUnavailable.Error())
+		return
+	}
+	state.sudoSFTP = sudoSFTPDialog{sessionID: session.ID, commands: true, logs: true}
+	state.modal = modalSudoSFTP
+}
+
+// restartRemoteLog reopens the selected path after the privilege changed: the
+// stream already running belongs to the previous privilege and would keep
+// failing, or keep reading as root after it was turned off.
+func (state *State) restartRemoteLog(session *Session, view *remoteLogView) {
+	if session.remoteLogs != view || view.selected.Path == "" {
+		return
+	}
+	state.followRemoteLog(session, view, view.selected)
 }
 
 func (state *State) declareRemoteLogPaths(c ui.C, session *Session, view *remoteLogView, width float32) {
