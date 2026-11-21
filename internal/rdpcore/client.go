@@ -1187,7 +1187,10 @@ func (c *Client) mcsConnect() error {
 				if c.soundHandler == nil || c.dvc == nil {
 					return
 				}
-				c.soundHandler.SetSendFn(func(pdu []byte) error { return c.dvc.SendData(ch.ID, pdu) })
+				// The player goroutine confirms through this function after the
+				// receive goroutine may have replaced c.dvc, so it holds the handler.
+				channels := c.dvc
+				c.soundHandler.SetSendFn(func(pdu []byte) error { return channels.SendData(ch.ID, pdu) })
 				c.soundHandler.ProcessPDU(data)
 			})
 			ch.OnClose(func() {
