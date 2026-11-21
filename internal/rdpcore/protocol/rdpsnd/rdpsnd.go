@@ -359,12 +359,10 @@ func (h *Handler) wave2(body []byte) {
 	h.play(audio, timestamp, formatNo, block)
 }
 
-// play confirms the PDU before writing — the server uses that first
-// confirmation to measure network latency — then writes it and confirms again
-// with the render time added, which the server uses to adapt.
+// play confirms the PDU after writing — with the elapsed render time added,
+// which the server uses to pace the stream and measure latency per MS-RDPEA.
 func (h *Handler) play(audio []byte, timestamp, formatNo uint16, block byte) {
 	start := time.Now()
-	h.confirm(timestamp, block)
 	h.mu.Lock()
 	out := h.out
 	negotiated := h.clientFormat != nil
