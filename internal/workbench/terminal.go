@@ -214,6 +214,10 @@ type terminal struct {
 	// command start or control key: the cursor is on the line being typed, which
 	// is what lets typed text be shown before its echo (see terminalPrediction).
 	inputLine bool
+	// keyedSincePrompt is set by any user input and cleared when the shell shows
+	// its prompt: it tells whether the user has touched this prompt, which
+	// inputLine cannot (it only changes for control keys and drives prediction).
+	keyedSincePrompt bool
 	// autofill is what the autofill rules need to know of this terminal.
 	autofill autofill.Watcher
 	// passwordHint is the recognised account password prompt: set
@@ -540,6 +544,7 @@ func (state *State) configureTerminal(session *Session) {
 			current.term.folderIntegrationSeen = true
 			current.term.promptStarted = true
 			current.term.promptReady = false
+			current.term.keyedSincePrompt = false
 			current.term.inputLine = false
 			current.outputAlert.promptSeen = true
 		}
@@ -594,6 +599,7 @@ func (t *terminal) resetFolderSync() {
 	t.screen.SetPromptToken(t.folderToken)
 	t.promptReady, t.promptStarted, t.promptDirty = false, false, false
 	t.inputLine = false
+	t.keyedSincePrompt = false
 	t.folderIntegrationSeen, t.commandReporting = false, false
 	t.reportedDirectory = term.Cwd{}
 	t.reportedHome = ""
@@ -936,6 +942,9 @@ func (t *terminal) noteShellInput(p []byte) {
 	t.inputScreenVersion = t.screen.Version()
 	t.noteInput()
 	t.passwordHint = ""
+	if len(p) > 0 {
+		t.keyedSincePrompt = true
+	}
 	if bytes.ContainsFunc(p, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
 		t.inputLine = false // Enter, Tab, an arrow or Ctrl-R: the line is no longer what was typed
 	}
