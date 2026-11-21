@@ -350,6 +350,9 @@ func (session *Session) finish(err error) {
 		err = nil
 	}
 	session.err = err
+	session.pointerKind = desktop.PointerSystem
+	session.pointerShape = desktop.PointerShape{}
+	session.pointerVersion++
 	close(session.done)
 	session.mu.Unlock()
 	session.closeTransport()
@@ -462,6 +465,9 @@ func (session *Session) Err() error {
 func (session *Session) Close() error {
 	session.mu.Lock()
 	session.closed = true
+	session.pointerKind = desktop.PointerSystem
+	session.pointerShape = desktop.PointerShape{}
+	session.pointerVersion++
 	session.mu.Unlock()
 	return session.client.Close()
 }

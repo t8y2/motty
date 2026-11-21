@@ -225,7 +225,9 @@ func (view *desktopView) present() bool {
 		view.width, view.height = view.surface.Size()
 		noteDesktopSize(view, view.width, view.height)
 	}
-	view.presentPointer()
+	if !view.ended {
+		view.presentPointer()
+	}
 	return changed
 }
 
@@ -251,6 +253,9 @@ func (view *desktopView) presentPointer() {
 // pixels per logical pixel the shape is made for: the remote's pixels are the
 // screen's.
 func (view *desktopView) pointerCursor(scale float32) (gfx.PointerCursor, *gfx.CursorImage) {
+	if view.ended {
+		return gfx.PointerCursorDefault, nil
+	}
 	switch view.pointerKind {
 	case desktop.PointerHidden:
 		return gfx.PointerCursorHidden, nil
@@ -433,6 +438,8 @@ func (state *State) endDesktop(session *Session) {
 		return
 	}
 	session.desk.ended = true
+	session.desk.pointerKind = desktop.PointerSystem
+	session.desk.cursorImage = nil
 	session.desk.releaseInput()
 	session.term.ended = true
 }
