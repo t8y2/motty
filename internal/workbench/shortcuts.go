@@ -456,6 +456,23 @@ func (state *State) shortcut(event gfx.KeyEvent, chord keymap.Chord) gfx.EventRe
 	if chord == state.shortcuts.chords.Chord(shortcutAcceptSuggestion) {
 		return gfx.EventResult{}
 	}
+	// Ctrl+W is the shell's word-delete key, even when it is also the default
+	// close-tab binding. Decline both the press and the release before shortcut
+	// routing consumes them; terminalKey encodes the program's keyboard mode.
+	if chord.Modifiers == gfx.ModifierControl && chord.Char == 'w' &&
+		state.shortcuts.actionFor(chord) == shortcutCloseTab && state.modal == modalNone && state.terminalPage() {
+		_, target, embedded := state.decodePaneHit(event.Target)
+		if !embedded {
+			target = event.Target
+		}
+		session := state.terminalSession(target)
+		if session == nil {
+			session = state.terminalPageSession(target)
+		}
+		if session != nil && state.paintsTerminalPane(session) && session.term.shell != nil && !session.term.ended {
+			return gfx.EventResult{}
+		}
+	}
 	if state.notesVisible() && (state.notes.view.menu != "" || state.notes.view.popup != "" || state.notes.view.drawer || state.notes.confirm != "") {
 		action := state.shortcuts.actionFor(chord)
 		if action == shortcutCopy || action == shortcutPaste || action == shortcutNone {
