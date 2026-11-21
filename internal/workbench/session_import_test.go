@@ -831,8 +831,8 @@ func TestImportingXterminalConnectionsAddsTheirGroups(t *testing.T) {
 	}
 	rows := []struct{ key, payload string }{
 		{"u-GeneralDatabaseLocalImp-SERVER", `{"_id":"prod","type":"SERVER","name":"Production","parentId":null}`},
-		{"u-GeneralDatabaseLocalImp-server", `{"_id":"h1","title":"Web","host":"web.example.test","port":2222,"username":"deploy","groupId":"prod","authType":"password","password":"secret","connectionConfig":{"init":{"bash":"cd /srv"}}}`},
-		{"u-GeneralDatabaseLocalImp-server", `{"_id":"h2","title":"DB","host":"db.example.test","port":22,"username":"admin"}`},
+		{"u-GeneralDatabaseLocalImp-ServerDatabaseLocalImp", `{"_id":"h1","title":"Web","host":"web.example.test","port":2222,"username":"deploy","groupId":"prod","authType":"password","password":"secret","connectionConfig":{"init":{"bash":"cd /srv"}}}`},
+		{"u-GeneralDatabaseLocalImp-ServerDatabaseLocalImp", `{"_id":"h2","title":"DB","host":"db.example.test","port":22,"username":"admin"}`},
 	}
 	for index, row := range rows {
 		if _, err := store.Exec(

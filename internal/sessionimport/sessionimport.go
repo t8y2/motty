@@ -1723,9 +1723,10 @@ func finalShellGroupPath(folders map[string]finalShellFolder, id string) (string
 // saved credentials with the repository password, so an import carries the
 // address, port, login, name, folder and command after login, never a secret.
 const (
-	// xtermServerStoreSuffix ends the key of the local SSH connections. The
-	// part before it identifies the local user the rows belong to.
-	xtermServerStoreSuffix = "GeneralDatabaseLocalImp-server"
+	// xtermServerStoreSuffix ends the key of the local SSH connections, which
+	// Xterminal names after its local server database. The part before it
+	// identifies the local user the rows belong to.
+	xtermServerStoreSuffix = "GeneralDatabaseLocalImp-ServerDatabaseLocalImp"
 	// xtermGroupStoreSuffix ends the key of that user's SSH folders.
 	xtermGroupStoreSuffix = "GeneralDatabaseLocalImp-SERVER"
 )

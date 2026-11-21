@@ -904,7 +904,7 @@ func xtermStore(t *testing.T, path string, rows []struct{ key, payload string })
 
 func TestXterminalLocalStoreReadsConnectionsAndTheirFolders(t *testing.T) {
 	groupKey := "local-user-GeneralDatabaseLocalImp-SERVER"
-	serverKey := "local-user-GeneralDatabaseLocalImp-server"
+	serverKey := "local-user-GeneralDatabaseLocalImp-ServerDatabaseLocalImp"
 	path := xtermStore(t, filepath.Join(t.TempDir(), "sqlite", "local-store.db"), []struct{ key, payload string }{
 		{groupKey, `{"_id":"clients","type":"SERVER","name":"Clients","parentId":null}`},
 		{groupKey, `{"_id":"acme","type":"SERVER","name":"Acme","parentId":"clients"}`},
@@ -917,7 +917,7 @@ func TestXterminalLocalStoreReadsConnectionsAndTheirFolders(t *testing.T) {
 		{serverKey, `{"_id":`},
 		{"local-user-GeneralDatabaseLocalImp-rdp", `{"_id":"rdp","title":"Desktop","host":"win.lab","port":3389}`},
 		{"another-user-GeneralDatabaseLocalImp-SERVER", `{"_id":"prod","type":"SERVER","name":"OtherProd","parentId":null}`},
-		{"another-user-GeneralDatabaseLocalImp-server", `{"_id":"other","title":"Other","host":"other.lab","groupId":"prod"}`},
+		{"another-user-GeneralDatabaseLocalImp-ServerDatabaseLocalImp", `{"_id":"other","title":"Other","host":"other.lab","groupId":"prod"}`},
 	})
 	result, err := Parse(Xterminal, []string{path})
 	if err != nil {
@@ -967,7 +967,7 @@ func TestXterminalLocalStoreReadsConnectionsAndTheirFolders(t *testing.T) {
 func TestXterminalDatabaseCanBeChosenByItsDataFolder(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "xterminal")
 	path := xtermStore(t, filepath.Join(root, "sqlite", "local-store.db"), []struct{ key, payload string }{
-		{"local-user-GeneralDatabaseLocalImp-server", `{"_id":"h1","title":"Web","host":"web.example.test","port":22,"username":"root"}`},
+		{"local-user-GeneralDatabaseLocalImp-ServerDatabaseLocalImp", `{"_id":"h1","title":"Web","host":"web.example.test","port":22,"username":"root"}`},
 	})
 	if _, err := ParseXterminal(root); err != nil {
 		t.Fatalf("the sqlite folder's parent was not accepted: %v", err)
@@ -977,7 +977,7 @@ func TestXterminalDatabaseCanBeChosenByItsDataFolder(t *testing.T) {
 	}
 	portable := filepath.Join(t.TempDir(), "xt_data")
 	xtermStore(t, filepath.Join(portable, "userData", "sqlite", "local-store.db"), []struct{ key, payload string }{
-		{"local-user-GeneralDatabaseLocalImp-server", `{"_id":"h1","title":"Web","host":"web.example.test"}`},
+		{"local-user-GeneralDatabaseLocalImp-ServerDatabaseLocalImp", `{"_id":"h1","title":"Web","host":"web.example.test"}`},
 	})
 	if result, err := ParseXterminal(portable); err != nil || len(result.Entries) != 1 {
 		t.Fatalf("portable userData was not found: %+v %v", result, err)
