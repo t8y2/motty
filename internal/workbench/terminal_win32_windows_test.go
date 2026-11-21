@@ -3,10 +3,14 @@
 package workbench
 
 import (
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
+	"motty/internal/cmdhistory"
+	"motty/internal/completion"
 	"motty/internal/term"
 )
 
@@ -93,5 +97,135 @@ func TestBareModifierInWin32InputModeKeepsTheSelectionForCopy(t *testing.T) {
 	}
 	if copied := key(state, 0, insert).ClipboardText; copied != "pha b" {
 		t.Fatalf("Ctrl+Insert copied %q, want %q", copied, "pha b")
+	}
+}
+
+func TestWin32InputTypingAndCompletion(t *testing.T) {
+	h := ghostWorld(t, "git checkout main")
+	h.shell.say("\x1b[?9001h")
+	h.state.Wake()
+	h.prompt("$ ")
+
+	session := &h.state.sessions[0]
+
+	for _, ch := range "git " {
+		press := gfx.KeyEvent{
+			Key:   gfx.Key(ch),
+			Text:  string(ch),
+			Win32: gfx.Win32Key{VirtualKey: uint16(ch), Unicode: uint16(ch)},
+		}
+		key(h.state, 0, press)
+		h.shell.say(string(ch))
+		h.state.Wake()
+	}
+	line, ok := session.term.recorder.Line(cmdhistory.TermScreen{Term: session.term.screen})
+	if !ok || line != "git " {
+		t.Fatalf("recorder.Line = %q, %v; want %q, true", line, ok, "git ")
+	}
+	ghost, ghostOk := h.ghost()
+	if !ghostOk || ghost != "checkout main" {
+		t.Fatalf("ghost = %q, %v; want %q, true", ghost, ghostOk, "checkout main")
+	}
+	if !h.state.completionEligible(session) {
+		t.Fatal("completionEligible is false after typing under Win32Input")
+	}
+
+	h.state.openCompletions()
+	if !h.state.completion.list.active {
+		t.Fatal("manual completion failed to open under Win32Input")
+	}
+
+	enter := gfx.KeyEvent{
+		Key:   gfx.KeyEnter,
+		Win32: gfx.Win32Key{VirtualKey: 13, ScanCode: 28, Unicode: 13},
+	}
+	// First Enter accepts the completion candidate
+	key(h.state, 0, enter)
+	h.state.Wake()
+	if h.state.completion.list.active {
+		t.Fatal("completion list remained active after accept")
+	}
+
+	// Second Enter submits the command to the shell
+	key(h.state, 0, enter)
+	h.prompt("$ ")
+
+	// Check if the command was remembered in history
+	if remembered := h.remembered(""); len(remembered) == 0 || remembered[0] != "git checkout main" {
+		t.Fatalf("remembered commands = %v, want git checkout main", remembered)
+	}
+
+	// Type second command: "git c"
+	for _, ch := range "git c" {
+		press := gfx.KeyEvent{
+			Key:   gfx.Key(ch),
+			Text:  string(ch),
+			Win32: gfx.Win32Key{VirtualKey: uint16(ch), Unicode: uint16(ch)},
+		}
+		key(h.state, 0, press)
+		h.shell.say(string(ch))
+		h.state.Wake()
+	}
+	line2, ok2 := session.term.recorder.Line(cmdhistory.TermScreen{Term: session.term.screen})
+	if !ok2 || line2 != "git c" {
+		t.Fatalf("line2 = %q, %v; want %q, true", line2, ok2, "git c")
+	}
+	ghost2, ghostOk2 := h.ghost()
+	if !ghostOk2 || ghost2 != "heckout main" {
+		t.Fatalf("ghost2 = %q, %v; want %q, true", ghost2, ghostOk2, "heckout main")
+	}
+
+	// Catalog static ghost without history
+	h2 := ghostWorld(t) // empty history
+	catalog, err := completion.Builtin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h2.state.completion.catalog = catalog
+	h2.shell.say("\x1b[?9001h")
+	h2.state.Wake()
+	h2.prompt("$ ")
+	for _, ch := range "git statu" {
+		press := gfx.KeyEvent{
+			Key:   gfx.Key(ch),
+			Text:  string(ch),
+			Win32: gfx.Win32Key{VirtualKey: uint16(ch), Unicode: uint16(ch)},
+		}
+		key(h2.state, 0, press)
+		h2.shell.say(string(ch))
+		h2.state.Wake()
+	}
+	ghostStatic, okStatic := h2.ghost()
+	if !okStatic || ghostStatic != "s" {
+		t.Fatalf("staticGhost with Win32Input on = %q, %v; want %q, true", ghostStatic, okStatic, "s")
+	}
+}
+
+func TestWin32InputUnintegratedShellAutoListOpens(t *testing.T) {
+	w := newPlainCompletionWorld(t)
+	w.shell.onWrite = func(p []byte) {
+		logical := term.Win32LogicalBytes(p)
+		w.shell.say(strings.ReplaceAll(string(logical), "\r", "\r\n"))
+	}
+	w.shell.say("\x1b[?9001h")
+	w.state.Wake()
+	w.clock += time.Second
+	w.state.history.inlineOff = true
+	for _, ch := range "git s" {
+		press := gfx.KeyEvent{
+			Key:   gfx.Key(ch),
+			Text:  string(ch),
+			Win32: gfx.Win32Key{VirtualKey: uint16(ch), Unicode: uint16(ch)},
+		}
+		key(w.state, 0, press)
+		w.state.Wake()
+		w.tick()
+	}
+	waitCompletionList(t, w)
+	if !w.state.completion.list.auto {
+		t.Fatal("the win32 input unintegrated shell did not open the automatic list")
+	}
+	if got := strings.Join(listTexts(w), ","); !strings.Contains(got, "stage") {
+		t.Fatalf("list = %q, want git stage", got)
 	}
 }

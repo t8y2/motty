@@ -692,6 +692,7 @@ func (t *terminal) sendInput(p []byte, drain, typing bool) bool {
 	if t.shell == nil || len(p) == 0 {
 		return false
 	}
+	logical := term.Win32LogicalBytes(p)
 	t.pauseInitialization()
 	if drain && t.takeOutput != nil {
 		t.takeOutput()
@@ -699,23 +700,23 @@ func (t *terminal) sendInput(p []byte, drain, typing bool) bool {
 			return false
 		}
 	}
-	if t.exec != nil && userInterrupts(p) {
+	if t.exec != nil && (userInterrupts(p) || userInterrupts(logical)) {
 		t.finishExec(endUser) // the user took the terminal back; the keys go on to the shell
 	}
 	if typing {
 		t.selection.clear()
 		t.screen.ScrollToBottom()
 	}
-	t.autofill.Typed(p)
+	t.autofill.Typed(logical)
 	feed := t.historyOn != nil && t.historyOn()
 	if !feed && t.completionFeed != nil {
 		feed = t.completionFeed()
 	}
 	if feed {
-		if drain && t.takeOutput != nil && bytes.ContainsAny(p, "\r\n") {
+		if drain && t.takeOutput != nil && bytes.ContainsAny(logical, "\r\n") {
 			t.takeOutput()
 		}
-		if command, ok := t.recorder.Typed(p, cmdhistory.TermScreen{Term: t.screen}, t.recordingNow()); ok && t.onCommand != nil {
+		if command, ok := t.recorder.Typed(logical, cmdhistory.TermScreen{Term: t.screen}, t.recordingNow()); ok && t.onCommand != nil {
 			t.onCommand(command)
 		}
 	}
@@ -724,12 +725,12 @@ func (t *terminal) sendInput(p []byte, drain, typing bool) bool {
 		t.observePredictionInput()
 		t.inputSent = true
 		t.noteShellInput(p)
-		if bytes.ContainsAny(p, "\r\n\x03\x04") {
+		if bytes.ContainsAny(logical, "\r\n\x03\x04") {
 			t.suggestionPending = nil
 		}
 		t.recording.append(t.recordingNow(), terminalRecordingInput, p)
 		if t.completionInput != nil {
-			t.completionInput(p)
+			t.completionInput(logical)
 		}
 	}
 	return accepted
