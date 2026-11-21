@@ -3318,23 +3318,39 @@ func (state *State) openHostSession(host Host) *Session {
 		session := &state.sessions[index]
 		// Match the catalog entry and the dialed address. An edit can leave
 		// the old connection running, and different entries can share an address.
-		if session.containerCommand != "" || session.HostID != host.ID || session.Address != address {
+		if session.containerCommand != "" || session.HostID != host.ID {
 			continue
 		}
 		if !session.restored && (session.dialedProtocol != host.Protocol || session.dialedTerminal != host.Terminal) {
 			continue
 		}
-		// Prefer an open connection (including one still dialing) over a retry.
+		// A failed session keeps the address it last dialed, but reconnecting it
+		// below rewrites the address from the current host before dialing. Live
+		// sessions still require an exact endpoint match so distinct hosts cannot
+		// share a transport accidentally.
+		if session.Address != address && (host.ID == 0 || !state.canReconnect(session)) {
+			continue
+		}
+		// Prefer an open connection (including one still dialing) over a retry,
+		// and keep the active matching session when several were opened explicitly.
 		if !state.canReconnect(session) {
 			// An active SSH session still has the authentication and probe
 			// policy it dialed with, even after the saved host has been edited.
 			if host.isSSH() && (session.interactiveOnly != host.InteractiveOnly ||
 				!session.sshOptions.Equal(host.SSHOptions) ||
-				!session.authentication.Equal(state.hostCatalog.authenticationFor(host))) {
+				session.dialedHostAuth != host.Auth ||
+				session.dialedHostIdentity != host.Identity ||
+				session.dialedHostCredential != host.Credential ||
+				session.dialedHostIdentitiesOnly != host.IdentitiesOnly) {
 				continue
 			}
-			existing = session
-			break
+			if existing == nil || state.canReconnect(existing) || session.ID == state.activeSessionID {
+				existing = session
+			}
+			if session.ID == state.activeSessionID {
+				break
+			}
+			continue
 		}
 		if existing == nil {
 			existing = session

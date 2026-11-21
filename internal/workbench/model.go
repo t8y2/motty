@@ -185,6 +185,13 @@ type Session struct {
 	// sshOptions it is frozen at the dial: a transport authenticated one way is
 	// not lent to a host that would authenticate another (see shareFrom).
 	authentication sshconn.Authentication
+	// These are the host-owned authentication settings at the time of the dial.
+	// Keep them separate from authentication: the resolved policy also contains
+	// the global key library, which may change without editing this host.
+	dialedHostAuth           hostAuth
+	dialedHostIdentity       string
+	dialedHostCredential     string
+	dialedHostIdentitiesOnly bool
 	// interactiveOnly is the probe policy this connection was dialed with,
 	// frozen like authentication. A transport opened for a host confined to its
 	// interactive session sent no command probes and carries TCP keepalive, so

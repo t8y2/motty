@@ -971,6 +971,84 @@ func TestOpeningTheSameHostAgainReusesItsWorkspace(t *testing.T) {
 	}
 }
 
+func TestOpeningTheSameHostAgainPrefersTheActiveLiveSession(t *testing.T) {
+	for _, ended := range []bool{false, true} {
+		t.Run(map[bool]string{false: "active live session", true: "active failed session"}[ended], func(t *testing.T) {
+			world, options := newWorld(t)
+			state := newTestState(t, options)
+			connect(t, state, world)
+			firstID := state.activeSessionID
+			second := state.newHostSession(state.hosts[0])
+			wantID := second.ID
+			if ended {
+				world.conns[1].set(func(s *sshconn.Status) { s.Phase = sshconn.PhaseFailed; s.Err = sshconn.ErrAuthFailed })
+				state.Wake()
+				wantID = firstID
+			}
+			state.Click(hitHosts)
+			openHost(state)
+			if state.activeSessionID != wantID || len(world.conns) != 2 || len(state.sessions) != 2 {
+				t.Fatalf("active=%d conns=%d sessions=%d, want the existing live session %d", state.activeSessionID, len(world.conns), len(state.sessions), wantID)
+			}
+		})
+	}
+}
+
+func TestOpeningAHostAfterItsAddressChangesRetriesTheExistingSession(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	connect(t, state, world)
+	firstID := state.activeSessionID
+	previous := state.hosts[0]
+	updated := previous
+	updated.Address = "new-prod.example.com"
+	state.replaceHost(0, previous, updated)
+	world.conns[0].set(func(s *sshconn.Status) { s.Phase = sshconn.PhaseFailed; s.Err = sshconn.ErrDisconnected })
+	state.Wake()
+	state.Click(hitHosts)
+	openHost(state)
+	if len(world.conns) != 2 || len(state.sessions) != 1 || state.activeSessionID != firstID {
+		t.Fatalf("conns=%d sessions=%d active=%d, want one retry in session %d", len(world.conns), len(state.sessions), state.activeSessionID, firstID)
+	}
+	if state.sessions[0].Address != state.sessionAddress(updated) {
+		t.Fatalf("retried address=%q, want %q", state.sessions[0].Address, state.sessionAddress(updated))
+	}
+}
+
+func TestOpeningANewAdHocAddressDoesNotReuseAFailedTarget(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	oldHost := Host{Label: "old target", Address: "old.example.com", Protocol: protocolSSH, Port: 22}
+	old := state.createHostSession(oldHost, oldHost.Address)
+	world.conns[0].set(func(status *sshconn.Status) {
+		status.Phase = sshconn.PhaseFailed
+		status.Err = sshconn.ErrDisconnected
+	})
+	state.Wake()
+
+	newHost := Host{Label: "new target", Address: "new.example.com", Protocol: protocolSSH, Port: 22}
+	opened := state.openHostSession(newHost)
+	if opened == nil || opened.ID == old.ID || len(state.sessions) != 2 || len(world.conns) != 2 {
+		t.Fatalf("opened=%+v sessions=%d conns=%d, want a new session for the new address", opened, len(state.sessions), len(world.conns))
+	}
+	if state.sessions[0].Address != state.sessionAddress(oldHost) || state.sessions[1].Address != state.sessionAddress(newHost) {
+		t.Fatalf("session addresses = %q, %q; want separate old/new targets", state.sessions[0].Address, state.sessions[1].Address)
+	}
+}
+
+func TestOpeningAHostAfterAddingAnUnrelatedIdentityReusesItsSession(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	connect(t, state, world)
+	firstID := state.activeSessionID
+	state.identities = append(state.identities, identityRecord{ID: 99, Path: filepath.Join(t.TempDir(), "unrelated-key")})
+	state.Click(hitHosts)
+	openHost(state)
+	if len(world.conns) != 1 || len(state.sessions) != 1 || state.activeSessionID != firstID {
+		t.Fatalf("conns=%d sessions=%d active=%d, want the existing session %d", len(world.conns), len(state.sessions), state.activeSessionID, firstID)
+	}
+}
+
 func TestOpeningAHostAfterProtocolEditUsesItsNewProtocol(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)
