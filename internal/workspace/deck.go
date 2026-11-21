@@ -88,16 +88,17 @@ type WorkspaceInfo struct {
 }
 
 type workspaceRecord struct {
-	id         WorkspaceID
-	title      string
-	color      string
-	locked     bool
-	named      bool
-	layout     Layout
-	panes      []Pane
-	activePane PaneID
-	context    ContextState
-	revision   uint64
+	paneMaximized bool
+	id            WorkspaceID
+	title         string
+	color         string
+	locked        bool
+	named         bool
+	layout        Layout
+	panes         []Pane
+	activePane    PaneID
+	context       ContextState
+	revision      uint64
 }
 
 // Deck owns workspace tabs, their independent split trees, and pane/session
@@ -386,6 +387,9 @@ func (deck *Deck) ClosePane(workspaceID WorkspaceID, paneID PaneID) (SessionID, 
 		return 0, err
 	}
 	workspace.panes = slices.Delete(workspace.panes, index, index+1)
+	if len(workspace.panes) < 2 {
+		workspace.paneMaximized = false
+	}
 	workspace.revision++
 	if len(workspace.panes) == 0 {
 		workspace.activePane = 0

@@ -358,6 +358,16 @@ type sessionPaneUI struct {
 // declareSessionPane declares a session the terminal control does not show: its
 // connection, restored or desktop body, in the pane's container.
 func (state *State) declareSessionPane(c ui.C, session *Session, bounds gfx.Rect) {
+	state.declareSessionPaneBody(c, session, bounds)
+	if state.paneInSplit(session.ID) && (session.restored || state.showsProgress(session) || session.desk != nil && session.desk.chromeless && !session.desk.fullscreen) {
+		ui.Row(c).Absolute().Top(0).Right(termPadX).Height(infoBarHeight).Items(ui.Center).Children(func() {
+			state.declareSessionMaximizeButton(c, session)
+			state.declarePaneBarClose(c, session)
+		})
+	}
+}
+
+func (state *State) declareSessionPaneBody(c ui.C, session *Session, bounds gfx.Rect) {
 	switch {
 	case session.restored:
 		state.declareRestoredSessionBody(c, session, bounds)

@@ -913,7 +913,7 @@ var tearOffCorners = func() [4]gfx.Path {
 // own ground. Only the bar starts a drag; the terminal below it keeps selecting
 // text.
 func (state *State) paneBarAt(event gfx.PointerEvent) (layoutcore.PaneID, *Session, bool) {
-	if state.modal != modalNone || state.activeSection != sectionTerminal ||
+	if state.deck.PaneMaximized(state.deck.ActiveWorkspace()) || state.modal != modalNone || state.activeSection != sectionTerminal ||
 		(event.Button != gfx.PointerButtonPrimary && event.Button != gfx.PointerButtonNone) ||
 		event.Target.Scope() != hitPaneActivateList {
 		return 0, nil, false
@@ -942,7 +942,7 @@ func (state *State) paneDropAt(workspace layoutcore.WorkspaceID, source layoutco
 	if drop := state.paneUndockDropAt(at); drop.kind != dropNone {
 		return drop
 	}
-	if state.activeSection != sectionTerminal || state.workspaceTabbed(workspace) || state.deck.ActiveWorkspace() != workspace {
+	if state.activeSection != sectionTerminal || state.workspaceSinglePaneView(workspace) || state.deck.ActiveWorkspace() != workspace {
 		return tabDrop{}
 	}
 	state.refreshWorkspaceViews()

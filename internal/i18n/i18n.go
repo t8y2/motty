@@ -463,6 +463,8 @@ type Messages struct {
 	ShortcutCopy                         string
 	ShortcutPaste                        string
 	ShortcutNewTab                       string
+	ShortcutDuplicateTerminal            string
+	ShortcutTerminalFolder               string
 	ShortcutLocalTerminal                string
 	ShortcutCloseTab                     string
 	ShortcutNextTab                      string
@@ -737,6 +739,9 @@ type Messages struct {
 	PaneNext            string
 	PaneSplitHorizontal string
 	PaneSplitVertical   string
+	PaneMaximize        string
+	PaneRestore         string
+	PaneMaximizeToggle  string
 	PaneClose           string
 	PaneResize          string
 
