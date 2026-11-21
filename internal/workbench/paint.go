@@ -206,7 +206,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		// dropped either way so a later paint does not steal it back.
 		// The terminal has to be the page on screen to take the keyboard too.
 		if state.modal == modalNone && state.terminalPage() {
-			canvas.RequestFocus(state.pendingFocus)
+			canvas.RequestFocusOnce(state.pendingFocus)
 		}
 		state.pendingFocus = gfx.ID{}
 	}
@@ -300,8 +300,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		// Assistant popovers may intentionally extend to the window edge; paint
 		// the rail first so they can remain above it and nothing is clipped.
 		state.paintAIPanel(canvas, size)
-		// The bottom command drawer sits beneath the panes, in the space the
-		// panes gave up for it.
 		state.paintCommandsDrawer(canvas)
 	} else if fileManager {
 		state.paintSFTPTab(canvas, state.fileManagerPixelBounds(size))

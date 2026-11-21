@@ -1867,7 +1867,7 @@ var englishTools = ToolsMessages{
 	CommandsAdd:         "Add command",
 	CommandsClose:       "Hide snippets (tick the box in the Snippets picker to show them again)",
 	CommandsBarHidden:   "Snippets hidden",
-	CommandsBarShow:     "Show snippets at the bottom",
+	CommandsBarShow:     "Show snippets sidebar",
 	CommandsFilter:      "Filter by group",
 	CommandsUngrouped:   "Ungrouped",
 	CommandsShowAll:     "Show all",

@@ -1,0 +1,29 @@
+# lang: zh-CN
+click "主机"
+click "快捷命令"
+click "添加命令"
+waitfor "添加快捷命令" 3000
+type 回环命令
+key tab
+type echo side$(echo bar)-1033
+click "保存"
+click "主机"
+click "搜索"
+type tester@127.0.0.1:2222
+click "连接"
+waitfor "信任" 5000
+click "信任并保存"
+waitfor "密码" 5000
+type secret
+key enter
+waitfor "tester@e2e" 8000
+click id:snippets/terminal-snippets
+click id:commands/bar-toggle
+key escape
+click id:commands/tag/#0
+expect text "sidebar-1033" within 4000
+type echo focus$(echo back)-1033
+key enter
+expect text "focusback-1033" within 4000
+click id:commands/tag/#0
+expect layout clean
