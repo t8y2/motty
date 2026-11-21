@@ -17,6 +17,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
+	layoutcore "motty/internal/workspace"
 )
 
 // vncFixture is a loopback server that speaks RFB 3.8 with a password, draws a
@@ -480,6 +481,101 @@ func TestDesktopEndedFullscreenAndChromelessOffersReconnect(t *testing.T) {
 	canvas = paintDesk(state)
 	if _, ok := hitByID(canvas, buttonID); !ok {
 		t.Fatalf("reconnect button %v not found in chromeless hits", buttonID)
+	}
+}
+
+func TestDesktopEndedReconnectRemainsClickableInMinimumPane(t *testing.T) {
+	fixture := startVNCFixture(t, "secret")
+	state, session := vncState(t, fixture)
+	connectDesktop(t, state, session, "secret")
+	fixture.mu.Lock()
+	for _, conn := range fixture.conns {
+		conn.Close()
+	}
+	fixture.mu.Unlock()
+	waitUntil(t, state, "the end", func() bool { return session.desk != nil && session.desk.ended })
+	size := gfx.Size{Width: 1400, Height: 900}
+	state.Resize(size)
+	if !state.splitActivePane(layoutcore.Vertical) {
+		t.Fatal("could not split the desktop pane")
+	}
+	driver := paneDriver(t, state, size)
+	divider := hitOf(t, driver, hitPaneDividerList.At(0)).Bounds
+	x, y := divider.X+divider.Width/2, divider.Y+divider.Height/2
+	if err := driver.Press(x, y, gfx.PointerButtonPrimary); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.Move(x, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.Release(x, 0, gfx.PointerButtonPrimary); err != nil {
+		t.Fatal(err)
+	}
+	buttonID := state.paneIdentity(session, hitDesktopReconnect)
+	button := hitOf(t, driver, buttonID).Bounds
+	x, y = button.X+button.Width/2, button.Y+button.Height/2
+	if hit, ok := driver.HitTest(x, y); !ok || hit != buttonID {
+		t.Fatalf("reconnect center hits %v, %v, want %v", hit, ok, buttonID)
+	}
+	if err := driver.Click(x, y); err != nil {
+		t.Fatal(err)
+	}
+	connectDesktop(t, state, session, "secret")
+}
+
+func TestDesktopEndedReasonCanBeScrolled(t *testing.T) {
+	fixture := startVNCFixture(t, "secret")
+	state, session := vncState(t, fixture)
+	connectDesktop(t, state, session, "secret")
+	fixture.mu.Lock()
+	for _, conn := range fixture.conns {
+		conn.Close()
+	}
+	fixture.mu.Unlock()
+	waitUntil(t, state, "the end", func() bool { return session.desk != nil && session.desk.ended })
+	session.err = fmt.Errorf("%s ENDREASON", strings.Repeat("long disconnect reason ", 30))
+	driver := desktopDriver(t, state)
+	button := hitOf(t, driver, state.paneIdentity(session, hitDesktopReconnect)).Bounds
+	if err := driver.Scroll(gfx.ScrollEvent{X: button.X + button.Width/2, Y: button.Y - 10, DeltaY: 2000, Precise: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.Pump(); err != nil {
+		t.Fatal(err)
+	}
+	for _, label := range driver.Snapshot().Labels {
+		if strings.Contains(label.Value, "ENDREASON") && (!label.Clipped || rectInside(label.Bounds, label.Clip)) {
+			return
+		}
+	}
+	t.Fatal("the end of the disconnect reason is not visible after scrolling")
+}
+
+func TestDesktopEndedReconnectWorksInPictureModes(t *testing.T) {
+	for _, mode := range []string{"chromeless", "fullscreen"} {
+		t.Run(mode, func(t *testing.T) {
+			fixture := startVNCFixture(t, "secret")
+			state, session := vncState(t, fixture)
+			connectDesktop(t, state, session, "secret")
+			session.desk.chromeless = mode == "chromeless"
+			session.desk.fullscreen = mode == "fullscreen"
+			fixture.mu.Lock()
+			for _, conn := range fixture.conns {
+				conn.Close()
+			}
+			fixture.mu.Unlock()
+			waitUntil(t, state, "the end", func() bool { return session.desk != nil && session.desk.ended })
+			driver := desktopDriver(t, state)
+			buttonID := state.paneIdentity(session, hitDesktopReconnect)
+			button := hitOf(t, driver, buttonID).Bounds
+			x, y := button.X+button.Width/2, button.Y+button.Height/2
+			if hit, ok := driver.HitTest(x, y); !ok || hit != buttonID {
+				t.Fatalf("reconnect center hits %v, %v, want %v", hit, ok, buttonID)
+			}
+			if err := driver.Click(x, y); err != nil {
+				t.Fatal(err)
+			}
+			connectDesktop(t, state, session, "secret")
+		})
 	}
 }
 

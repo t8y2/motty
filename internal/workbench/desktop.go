@@ -976,16 +976,12 @@ func (state *State) declareDesktopBody(c ui.C, session *Session, bounds gfx.Rect
 		}
 	}
 	if view.chromeless || view.fullscreen {
-		topOffset := float32(0)
-		if !view.chromeless {
-			topOffset = infoBarHeight
-		}
 		ui.Stack(c).Fill().Background(pal.workspace).Children(func() {
 			state.declareDesktopInfoBar(c, session, view, s, bounds, title, status, showStatus, false)
 			state.declareDesktopStrip(c, session, view, s, true)
 			ui.Slot(c).Absolute().Left(0).Right(0).Top(infoBarHeight).Bottom(desktopStripHeight).
 				Background(state.ground(state.termPal.terminal)).Draw(s.pictureDraw)
-			state.declareDesktopReconnect(c, session, view, topOffset)
+			state.declareDesktopEnded(c, session, view.area.X-bounds.X, view.area.Y-bounds.Y)
 			if view.fullscreen {
 				state.declareDesktopFullscreenControls(c, view, session)
 			}
@@ -996,7 +992,7 @@ func (state *State) declareDesktopBody(c ui.C, session *Session, bounds gfx.Rect
 		state.declareDesktopInfoBar(c, session, view, s, bounds, title, status, showStatus, true)
 		ui.Stack(c).Grow(1).Children(func() {
 			ui.Slot(c).Fill().Background(state.ground(state.termPal.terminal)).Draw(s.pictureDraw)
-			state.declareDesktopReconnect(c, session, view, 0)
+			state.declareDesktopEnded(c, session, 0, 0)
 		})
 		state.declareDesktopStrip(c, session, view, s, false)
 	})
@@ -1079,22 +1075,47 @@ const (
 	desktopEndedCardPad    = float32(20)
 )
 
-// declareDesktopReconnect declares the button the ended page offers over the
-// dimmed picture. It is the same width the canvas row gave it: a 28px button at
-// the right of a width the picture's own width bounds.
-func (state *State) declareDesktopReconnect(c ui.C, session *Session, view *desktopView, topOffset float32) {
-	if !view.ended || !state.canReconnect(session) {
+func (state *State) declareDesktopEnded(c ui.C, session *Session, left, top float32) {
+	view := session.desk
+	if !view.ended {
 		return
 	}
-	m := state.messages.Desktop
 	area := view.area
-	cardWidth := min(max(area.Width-32, 160), desktopEndedCardWidth)
-	contentWidth := cardWidth - 2*desktopEndedCardPad
-	left := (area.Width-cardWidth)/2 + desktopEndedCardPad
-	top := topOffset + max((area.Height-desktopEndedCardHeight)/2, 8) + desktopEndedCardPad + 78
-	label := m.Reconnect
-	ui.Row(c).Absolute().Left(left).Top(top).Width(contentWidth).Height(28).Items(ui.Center).Justify(ui.End).Children(func() {
-		ui.Button(c, label).Small().Hit(state.paneIdentity(session, hitDesktopReconnect), label)
+	cardWidth := min(max(area.Width-16, 0), desktopEndedCardWidth)
+	cardHeight := min(max(area.Height-16, 0), desktopEndedCardHeight)
+	pad := min(desktopEndedCardPad, max((cardHeight-52)/2, 0))
+	pal, m := state.pal, state.messages.Desktop
+	reason := state.failureLine(session)
+	if session.err != nil && reason == "" {
+		reason = session.err.Error()
+	}
+	ui.Stack(c).Absolute().Left(left).Top(top).Width(area.Width).Height(area.Height).Clip().
+		Background(withAlpha(pal.shell, 0.78)).Children(func() {
+		ui.Slot(c).Fill().Draw(func(d *ui.DrawContext) { d.Canvas.Block(d.Rect) })
+		ui.Stack(c).Absolute().Left((area.Width-cardWidth)/2).Top((area.Height-cardHeight)/2).
+			Width(cardWidth).Height(cardHeight).Background(pal.surface).Radius(radius.popup).
+			Border(1, pal.line).Shadow(gfx.ShadowMD).Clip().Children(func() {
+			ui.Column(c).Fill().Pad(pad).Children(func() {
+				if cardHeight >= 52 {
+					ui.Text(c, m.Disconnected).FontSize(16).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(24).Shrink(0).Ellipsis()
+				}
+				if reason != "" {
+					ui.Scroll(c).Grow(1).MinHeight(0).FillWidth().Scrollbars().Children(func() {
+						ui.Wrap(c, fmt.Sprintf(m.DisconnectedFmt, reason)).FillWidth().FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18)
+					})
+				} else {
+					ui.Slot(c).Grow(1).MinHeight(0)
+				}
+				if state.canReconnect(session) {
+					ui.Row(c).FillWidth().Height(28).Shrink(0).Items(ui.Center).Justify(ui.End).Children(func() {
+						ui.Button(c, m.Reconnect).Small().Hit(state.paneIdentity(session, hitDesktopReconnect), m.Reconnect)
+					})
+					if cardHeight >= 140 {
+						ui.Text(c, m.ReconnectHint).FontSize(metrics.FontSizeS).Color(pal.faint).LineHeight(18).Shrink(0).Ellipsis()
+					}
+				}
+			})
+		})
 	})
 }
 
@@ -1195,9 +1216,6 @@ func (state *State) paintDesktopPicture(d *ui.DrawContext, session *Session) {
 	canvas.HitWithOptions(hitTerminalList.At(int(session.ID)), area, name, gfx.HitOptions{
 		Role: gfx.RoleTerminal, Autofocus: session.ID == state.activeSessionID && !view.ended, Cursor: cursor, CursorImage: cursorImage,
 	})
-	if view.ended {
-		state.paintDesktopEnded(canvas, area, session)
-	}
 	if view.focusPending {
 		canvas.RequestFocus(hitTerminalList.At(int(session.ID)))
 		view.focusPending = false
@@ -1325,43 +1343,6 @@ func (state *State) desktopStripLeft(view *desktopView, session *Session) string
 		parts = append(parts, m.StripClipboard)
 	}
 	return strings.Join(parts, " · ")
-}
-
-// paintDesktopEnded dims the last picture and says the connection ended; the
-// page declares the way to start it again over it.
-func (state *State) paintDesktopEnded(canvas *gfx.Canvas, area gfx.Rect, session *Session) {
-	pal, m := state.pal, state.messages
-	canvas.Fill(area, withAlpha(pal.shell, 0.78))
-	cardWidth := min(max(area.Width-32, 160), desktopEndedCardWidth)
-	cardHeight := desktopEndedCardHeight
-	cardX := area.X + (area.Width-cardWidth)/2
-	cardY := area.Y + max((area.Height-cardHeight)/2, 8)
-	card := gfx.Rect{X: cardX, Y: cardY, Width: cardWidth, Height: cardHeight}
-
-	canvas.Elevate(card, radius.popup, gfx.ShadowMD)
-	canvas.RoundedBorder(card, radius.popup, 1, pal.line, pal.surface)
-	canvas.Block(card)
-
-	contentX := cardX + desktopEndedCardPad
-	contentY := cardY + desktopEndedCardPad
-	contentWidth := cardWidth - 2*desktopEndedCardPad
-
-	canvas.Label(m.Desktop.Disconnected, gfx.Rect{X: contentX, Y: contentY, Width: contentWidth, Height: 24}, gfx.TextStyle{Size: 16, Weight: gfx.WeightSemibold, Color: pal.text})
-	reason := state.failureLine(session)
-	if session.err != nil && reason == "" {
-		reason = session.err.Error()
-	}
-	if reason != "" {
-		fullReason := fmt.Sprintf(m.Desktop.DisconnectedFmt, reason)
-		var scratch [4]string
-		lines := canvas.WrapLines(scratch[:0], fullReason, metrics.FontSizeS, gfx.WeightRegular, contentWidth, 2)
-		for i, line := range lines {
-			canvas.Label(line, gfx.Rect{X: contentX, Y: contentY + 30 + float32(i)*18, Width: contentWidth, Height: 18}, gfx.TextStyle{Size: metrics.FontSizeS, Color: pal.muted})
-		}
-	}
-	if state.canReconnect(session) {
-		canvas.Label(m.Desktop.ReconnectHint, gfx.Rect{X: contentX, Y: contentY + 112, Width: contentWidth, Height: 18}, gfx.TextStyle{Size: metrics.FontSizeS, Color: pal.faint})
-	}
 }
 
 // hostSubtitle is the line under a host's name in the list: the account it signs
