@@ -176,9 +176,10 @@ type completionUI struct {
 	// answer to an old question.
 	generation uint64
 
-	// autoHold suppresses the automatic path menu after a candidate was
-	// accepted, until the user types again. Without it the echo of the accepted
-	// suffix would reopen the menu and swallow the Enter that runs the line.
+	// autoHold suppresses the automatic menu after a candidate was accepted or
+	// after non-typing input (history arrows, Tab, control keys, Enter), until
+	// the user types again. Without it the echo of an accepted suffix or a
+	// recalled history command would open the menu and swallow the next key.
 	autoHold completionAutoHold
 	// accepting covers the synchronous revalidation and drain of an acceptance,
 	// which reads output before the hold is set.
@@ -696,6 +697,13 @@ func (state *State) attachCompletion(session *Session) {
 		return ok && state.completionFeed(owner)
 	}
 	t.completionInput = func(input []byte) {
+		if completionEndsInput(input) {
+			state.completion.autoHold = completionAutoHold{session: sessionID}
+			if state.completion.list.active && state.completion.list.sessionID == sessionID {
+				state.closeCompletionList()
+			}
+			return
+		}
 		if state.completion.autoHold.session == sessionID {
 			state.completion.autoHold = completionAutoHold{}
 		}
@@ -705,15 +713,13 @@ func (state *State) attachCompletion(session *Session) {
 		}
 		// An automatic list follows the line: a typed character filters it and
 		// the echo rebuilds it. Everything an explicit list does, it still does.
-		if list.auto && !completionEndsInput(input) {
+		if list.auto {
 			return
 		}
 		state.closeCompletionList()
 	}
 	t.completionUnknown = func() {
-		if state.completion.autoHold.session == sessionID {
-			state.completion.autoHold = completionAutoHold{}
-		}
+		state.completion.autoHold = completionAutoHold{session: sessionID}
 		if state.completion.list.active && state.completion.list.sessionID == sessionID {
 			state.closeCompletionList()
 		}
@@ -902,6 +908,9 @@ func (state *State) completionRefresh(session *Session) {
 // rather than showing a loading row that may be gone before it is read, and it
 // never opens over another menu or a program of its own.
 func (state *State) completionMaybeAuto(session *Session) {
+	if state.completionMode() != completionList {
+		return
+	}
 	if state.modal != modalNone || state.activeSection != sectionTerminal || state.activeSessionID != session.ID {
 		return
 	}
@@ -1489,13 +1498,13 @@ func (state *State) completionShowsIcons() bool {
 	return false
 }
 
-// completionEndsInput reports whether input ends the line an automatic list
-// follows: Enter, Tab, an interrupt, or an escape sequence such as an arrow.
-// Ordinary editing keys keep it open; the echo rebuilds it.
+// completionEndsInput reports whether input stops the automatic list from
+// following the line: Enter, Tab, an interrupt, a control key such as
+// Ctrl+P/Ctrl+N/Ctrl+R, or an escape sequence such as an arrow. Ordinary
+// typing and Backspace keep it open; the echo rebuilds it.
 func completionEndsInput(input []byte) bool {
 	for _, b := range input {
-		switch b {
-		case '\r', '\n', '\t', 0x03, 0x04, 0x1b:
+		if b < 0x20 && b != 0x08 {
 			return true
 		}
 	}
