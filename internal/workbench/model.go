@@ -129,6 +129,27 @@ type Host struct {
 	target string
 }
 
+type reuseHostPolicy struct {
+	line             serial.Settings
+	encoding         string
+	user             string
+	localShell       string
+	viaSSH           bool
+	clipboard        bool
+	console          bool
+	noAudio          bool
+	standardSecurity bool
+	legacyTLS        bool
+	interactiveOnly  bool
+}
+
+func reusePolicyFor(host Host) reuseHostPolicy {
+	return reuseHostPolicy{line: host.Line, encoding: host.Encoding, user: host.User,
+		localShell: host.localShell, viaSSH: host.ViaSSH, clipboard: host.Clipboard,
+		console: host.Console, noAudio: host.NoAudio, standardSecurity: host.StandardSecurity,
+		legacyTLS: host.LegacyTLS, interactiveOnly: host.InteractiveOnly}
+}
+
 // defaultPort is the SSH port a host without an explicit one uses.
 const defaultPort = 22
 
@@ -169,11 +190,15 @@ type Session struct {
 	// value is copied when a tab moves between windows.
 	pathCompletion *pathCompletion
 
-	host           Host // current host settings, used on the next dial
-	dialedProtocol hostProtocol
-	dialedTerminal hostTerminal
-	jumpPath       string
-	jumpPolicies   []jumpPolicy
+	host            Host // current host settings, used on the next dial
+	dialedProtocol  hostProtocol
+	dialedTerminal  hostTerminal
+	jumpPath        string
+	jumpPolicies    []jumpPolicy
+	reuseRoute      connectionRoute
+	reuseRouteValid bool
+	reusePolicy     reuseHostPolicy
+	reuseOptions    *sshconfig.ConnectionOptions
 	// desktopTunnel says this remote desktop is reached over SSH: its ViaSSH
 	// tunnel, or the jump route that carries its port. It is what the desktop's
 	// own encryption and login rows follow, where host.tunneled() names only

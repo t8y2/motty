@@ -187,6 +187,20 @@ func connectDesktop(t *testing.T, state *State, session *Session, password strin
 	waitUntil(t, state, "the picture", func() bool { return session.desk != nil && session.desk.width == 200 })
 }
 
+func TestOpeningDesktopReusesOnlyMatchingConnectionSettings(t *testing.T) {
+	fixture := startVNCFixture(t, "secret")
+	state, session := vncState(t, fixture)
+	connectDesktop(t, state, session, "secret")
+	first, host := session.ID, session.host
+	if opened := state.openHostSession(host); opened == nil || opened.ID != first {
+		t.Fatal("unchanged desktop did not reuse its session")
+	}
+	host.Clipboard = !host.Clipboard
+	if opened := state.openHostSession(host); opened == nil || opened.ID == first {
+		t.Fatal("desktop with changed clipboard policy reused the old session")
+	}
+}
+
 func paintDesk(state *State) *gfx.Canvas {
 	var canvas gfx.Canvas
 	canvas.BeginFrame()

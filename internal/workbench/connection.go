@@ -640,6 +640,9 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 	session.dialedHostCredential = host.Credential
 	session.dialedHostIdentitiesOnly = host.IdentitiesOnly
 	session.dialedAlgoMode, session.dialedAlgoList = host.savedAlgo()
+	session.reusePolicy = reusePolicyFor(host)
+	session.reuseOptions = host.SSHOptions.Clone()
+	session.reuseRoute, session.reuseRouteValid = state.reuseRouteFor(host)
 	session.agent, session.agentWatch = agentNone, agentWatch{}
 	session.Address = state.sessionAddress(host)
 	session.endpoint = sshconn.Endpoint{Host: host.Address, Port: host.Port, User: state.login(host)}
@@ -732,6 +735,14 @@ func (state *State) sshConfigFor(session *Session, host Host) (config sshconn.Co
 	session.authentication = config.Authentication[sshconn.Endpoint{Host: config.Host, Port: config.Port, User: config.User}]
 	session.interactiveOnly = config.InteractiveOnly
 	return config, valid
+}
+
+func (state *State) reuseRouteFor(host Host) (connectionRoute, bool) {
+	if host.ID == localHostID || host.Protocol == protocolSerial {
+		return connectionRoute{}, true
+	}
+	config, route, valid := state.hostCatalog.sshConfigFor(host, host, state.connectionEnv(nil))
+	return route, valid && (config.Proxy == nil || config.Proxy.Err == nil)
 }
 
 // connectionEnv is what resolving a connection needs that the catalog does not

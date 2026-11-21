@@ -3313,15 +3313,7 @@ func (state *State) openHostSession(host Host) *Session {
 	if !state.startupReuse || state.pendingPane != 0 {
 		return state.createHostSession(host, address)
 	}
-	var route connectionRoute
-	routeValid := true
-	if host.isSSH() && host.ID != localHostID {
-		var config sshconn.Config
-		config, route, routeValid = state.hostCatalog.sshConfigFor(host, host, state.connectionEnv(nil))
-		if config.Proxy != nil && config.Proxy.Err != nil {
-			routeValid = false
-		}
-	}
+	route, routeValid := state.reuseRouteFor(host)
 	var existing *Session
 	for index := range state.sessions {
 		session := &state.sessions[index]
@@ -3343,14 +3335,17 @@ func (state *State) openHostSession(host Host) *Session {
 		// Prefer an open connection (including one still dialing) over a retry,
 		// and keep the active matching session when several were opened explicitly.
 		if !state.canReconnect(session) {
+			if !routeValid || !session.reuseRouteValid || session.reusePolicy != reusePolicyFor(host) ||
+				session.reuseRoute.proxyKey != route.proxyKey || session.reuseRoute.jumpPath != route.jumpPath ||
+				!slices.EqualFunc(session.reuseRoute.jumpPolicies, route.jumpPolicies, jumpPolicy.equal) {
+				continue
+			}
 			// An active SSH session still has the authentication and probe
 			// policy it dialed with, even after the saved host has been edited.
 			algoMode, algoList := host.savedAlgo()
-			if host.isSSH() && host.ID != localHostID && (!routeValid || session.proxyRoute != route.proxyKey || session.jumpPath != route.jumpPath ||
-				!slices.EqualFunc(session.jumpPolicies, route.jumpPolicies, jumpPolicy.equal) ||
-				session.dialedAlgoMode != algoMode || session.dialedAlgoList != algoList ||
-				session.interactiveOnly != host.InteractiveOnly ||
-				!session.sshOptions.Equal(host.SSHOptions) ||
+			if (host.isSSH() && host.ID != localHostID || host.isDesktop()) && (session.dialedAlgoMode != algoMode || session.dialedAlgoList != algoList ||
+				(host.isSSH() && session.interactiveOnly != host.InteractiveOnly) ||
+				!session.reuseOptions.Equal(host.SSHOptions) ||
 				session.dialedHostAuth != host.Auth ||
 				session.dialedHostIdentity != host.Identity ||
 				session.dialedHostCredential != host.Credential ||
