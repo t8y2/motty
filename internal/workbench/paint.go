@@ -3464,7 +3464,8 @@ var hostSystemChoices = [...]struct {
 	{sshconn.SystemVoid, "Void Linux"}, {sshconn.SystemSlackware, "Slackware"},
 	{sshconn.SystemAnolis, "Anolis OS"}, {sshconn.SystemTencentOS, "TencentOS"},
 	{sshconn.SystemAmazonLinux, "Amazon Linux"}, {sshconn.SystemAzureLinux, "Azure Linux"},
-	{sshconn.SystemOracleLinux, "Oracle Linux"}, {sshconn.SystemESXi, "VMware ESXi"}, {sshconn.SystemAIX, "AIX"},
+	{sshconn.SystemOracleLinux, "Oracle Linux"}, {sshconn.SystemAlibabaCloudLinux, "Alibaba Cloud Linux"},
+	{sshconn.SystemESXi, "VMware ESXi"}, {sshconn.SystemAIX, "AIX"},
 	{sshconn.SystemFreeBSD, "FreeBSD"}, {sshconn.SystemLinux, "Linux"},
 	{sshconn.SystemWindows, "Windows"}, {sshconn.SystemDarwin, "macOS"},
 }

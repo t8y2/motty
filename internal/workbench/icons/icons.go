@@ -4,7 +4,7 @@
 // comes from Skill Icons (https://github.com/tandpfun/skill-icons), MIT. The Linux
 // glyph comes from selfh.st/icons (https://selfh.st/icons), CC-BY-4.0, and is
 // split into theme-aware color layers. The Apple glyph comes from Devicon
-// (https://devicon.dev), MIT. The Linux distribution and FreeBSD glyphs come from Simple Icons (https://simpleicons.org), CC0-1.0, except the fnOS glyph, which comes from selfh.st/icons (https://selfh.st/icons), CC-BY-4.0, the QNAP box mark, which comes from dashboard-icons (https://github.com/homarr-labs/dashboard-icons), Apache-2.0, the UOS mark, which is redrawn as vector paths from the icon UnionTech publishes on the UOS website (https://www.chinauos.com), and the Kylin glyph, which was supplied as SVG from Kylin's own icon set (https://www.kylinos.cn). The cloud vendors' distributions carry the vendor's own mark: AWS and Microsoft Azure from SVG Logos (https://github.com/gilbarbara/logos), CC0-1.0, and Tencent Cloud and Oracle from theSVG (https://thesvg.org), MIT. The Anolis OS and VMware glyphs were supplied as SVG for those badges. The AIX glyph is redrawn as vector paths from the AIX badge IBM publishes. The mit-* file-type glyphs come from Material Icon Theme (https://github.com/material-extensions/vscode-material-icon-theme), MIT, through Iconify. The WeChat, Discord and GitHub marks come from Simple Icons (https://simpleicons.org), CC0-1.0. The QQ mark is Tencent's penguin, as drawn for the community card of the author's DBX project, and is used only to link to this project's QQ group under Tencent's trademark policy. The ai-* provider marks come from LobeHub Icons (https://github.com/lobehub/lobe-icons), MIT (Claude, Gemini, DeepSeek, Kimi, Qwen, MiniMax, Z.ai, Pi, OpenCode, Grok), Iconify (OpenAI) and Simple Icons (https://simpleicons.org), CC0-1.0 (Ollama); the plug glyph is Lucide's. The magpie mark comes from magpie (https://github.com/yetone/magpie), MIT, and the cc-switch mark from cc-switch (https://github.com/farion1231/cc-switch), MIT. Brand names and logos remain subject to their
+// (https://devicon.dev), MIT. The Linux distribution and FreeBSD glyphs come from Simple Icons (https://simpleicons.org), CC0-1.0, except the fnOS glyph, which comes from selfh.st/icons (https://selfh.st/icons), CC-BY-4.0, the QNAP box mark, which comes from dashboard-icons (https://github.com/homarr-labs/dashboard-icons), Apache-2.0, the UOS mark, which is redrawn as vector paths from the icon UnionTech publishes on the UOS website (https://www.chinauos.com), and the Kylin glyph, which was supplied as SVG from Kylin's own icon set (https://www.kylinos.cn). The cloud vendors' distributions carry the vendor's own mark: AWS and Microsoft Azure from SVG Logos (https://github.com/gilbarbara/logos), CC0-1.0, Alibaba Cloud from Simple Icons (https://simpleicons.org), CC0-1.0, and Tencent Cloud and Oracle from theSVG (https://thesvg.org), MIT. The Anolis OS and VMware glyphs were supplied as SVG for those badges. The AIX glyph is redrawn as vector paths from the AIX badge IBM publishes. The mit-* file-type glyphs come from Material Icon Theme (https://github.com/material-extensions/vscode-material-icon-theme), MIT, through Iconify. The WeChat, Discord and GitHub marks come from Simple Icons (https://simpleicons.org), CC0-1.0. The QQ mark is Tencent's penguin, as drawn for the community card of the author's DBX project, and is used only to link to this project's QQ group under Tencent's trademark policy. The ai-* provider marks come from LobeHub Icons (https://github.com/lobehub/lobe-icons), MIT (Claude, Gemini, DeepSeek, Kimi, Qwen, MiniMax, Z.ai, Pi, OpenCode, Grok), Iconify (OpenAI) and Simple Icons (https://simpleicons.org), CC0-1.0 (Ollama); the plug glyph is Lucide's. The magpie mark comes from magpie (https://github.com/yetone/magpie), MIT, and the cc-switch mark from cc-switch (https://github.com/farion1231/cc-switch), MIT. Brand names and logos remain subject to their
 // respective trademark policies. SVG sources are compiled at build time with
 // `viva icons`; no SVG parser links into the app.
 // The sftp-* action glyphs were supplied with the SFTP interface design and
@@ -15,6 +15,8 @@
 // The session-log glyph is Lucide's file-clock, pinned from lucide-static v0.469.0
 // (https://raw.githubusercontent.com/lucide-icons/lucide/0.469.0/icons/file-clock.svg).
 // It is ISC licensed like the other Lucide icons above.
+// The Alibaba Cloud glyph is pinned from Simple Icons
+// (https://github.com/simple-icons/simple-icons/blob/521c96fd04b0ea93034db8715eda5a4de27a58bb/icons/alibabacloud.svg).
 
 package icons
 
@@ -1134,6 +1136,47 @@ var Aix = gfx.Icon{
 		gfx.LineTo(16.9, 8.0),
 		gfx.LineTo(15.85, 10.507),
 		gfx.LineTo(14.8, 8.0),
+		gfx.ClosePath(),
+	},
+}
+
+// alibabacloudlinux is a compiled vector icon.
+var Alibabacloudlinux = gfx.Icon{
+	ViewBox: 24.0,
+	Stroke:  2.0,
+	Cap:     gfx.CapRound,
+	Join:    gfx.JoinRound,
+	Commands: []gfx.PathCommand{
+		gfx.MoveTo(3.996, 4.517),
+		gfx.LineTo(9.287, 4.517),
+		gfx.LineTo(8.01, 6.324),
+		gfx.LineTo(4.153, 7.506),
+		gfx.CubicTo(3.45566, 7.72654, 2.98334, 8.37564, 2.988, 9.107),
+		gfx.LineTo(2.988, 14.893),
+		gfx.CubicTo(2.98377, 15.624, 3.45602, 16.2726, 4.153, 16.493),
+		gfx.LineTo(8.01, 17.676),
+		gfx.LineTo(9.287, 19.483),
+		gfx.LineTo(3.996, 19.483),
+		gfx.CubicTo(1.78907, 19.483, 2.66454e-15, 17.6939, 4.44089e-16, 15.487),
+		gfx.LineTo(0.0, 8.513),
+		gfx.CubicTo(-4.44089e-16, 6.30607, 1.78907, 4.517, 3.996, 4.517),
+		gfx.MoveTo(20.004, 4.517),
+		gfx.LineTo(14.713, 4.517),
+		gfx.LineTo(15.99, 6.324),
+		gfx.LineTo(19.847, 7.506),
+		gfx.CubicTo(20.562, 7.733, 21.017, 8.395, 21.012, 9.107),
+		gfx.LineTo(21.012, 14.893),
+		gfx.CubicTo(21.0162, 15.624, 20.544, 16.2726, 19.847, 16.493),
+		gfx.LineTo(15.99, 17.676),
+		gfx.LineTo(14.713, 19.483),
+		gfx.LineTo(20.004, 19.483),
+		gfx.CubicTo(22.2109, 19.483, 24.0, 17.6939, 24.0, 15.487),
+		gfx.LineTo(24.0, 8.513),
+		gfx.CubicTo(24.0, 6.30607, 22.2109, 4.517, 20.004, 4.517),
+		gfx.MoveTo(15.997, 12.862),
+		gfx.LineTo(8.002, 12.862),
+		gfx.LineTo(8.002, 11.058),
+		gfx.LineTo(15.997, 11.058),
 		gfx.ClosePath(),
 	},
 }
