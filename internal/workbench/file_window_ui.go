@@ -238,25 +238,25 @@ func (d *fileDocument) encodingLabel(name string) string {
 	return name
 }
 
-// declareSaveSplit declares the remote save button and the chevron that opens
-// the actions beside it, as page buttons under one row. Both keep the
-// application's own identities, so the central dispatcher handles their clicks.
+// declareSaveSplit declares the remote save action and the chevron that opens
+// the action beside it as one split button: the halves share a surface, only the
+// group's outer corners are rounded, and a hairline separates them. Both halves
+// keep the application's own identities, so the central dispatcher handles their
+// clicks.
 func (d *fileDocument) declareSaveSplit(c ui.C, disabled bool) {
 	m := d.owner.messages.FileWindow
-	theme := d.owner.Theme()
-	ui.Row(c).Gap(0).Shrink(0).Items(ui.Center).Children(func() {
-		// The split button the page replaces kept its halves at the size it was
-		// given: an 80px primary and a 32px trigger, the label in the small type
-		// the size names.
-		ui.Button(c, m.Save).Small().Width(80).Height(32).Hit(hitDocumentSave, m.Save).Disabled(disabled)
-		d.ui.saveMenuTrigger = ui.Button(c, m.SaveOptions).Icon(lucideIcons[iconChevronDown]).IconOnly().
-			Size(32, 32).Hit(hitDocumentSaveMenu, m.SaveOptions).Disabled(disabled).
-			Draw(func(part *ui.DrawContext) {
-				// The hairline the split button drew between its halves.
-				part.Canvas.Fill(gfx.Rect{X: part.Rect.X - 0.5, Y: part.Rect.Y, Width: 1, Height: part.Rect.Height}, theme.Input)
-			})
-		d.ui.saveMenuDeclared = true
-	})
+	// The split button the page replaced kept its halves at the size it was
+	// given: an 80px primary and a 32px trigger, the label in the small type
+	// the size names.
+	save := ui.SplitButton(c, ui.SplitButtonSpec{
+		PrimaryID: hitDocumentSave, MenuID: hitDocumentSaveMenu,
+		Label: m.Save, MenuLabel: m.SaveOptions,
+		Hint: m.Save, MenuHint: m.SaveOptions,
+		Icon: lucideIcons[iconChevronDown], Open: d.ui.saveMenuOpen,
+	}).Small().Width(112).Height(32)
+	save = save.Disabled(disabled)
+	d.ui.saveMenuTrigger = save
+	d.ui.saveMenuDeclared = true
 }
 
 // declareSaveMenu declares the open save menu under the chevron: the actions
