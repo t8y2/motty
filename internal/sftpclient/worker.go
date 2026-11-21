@@ -3547,8 +3547,10 @@ func (worker *Worker) removeTree(client Remote, remotePath string, remover remot
 	infos, err := client.ReadDir(remotePath)
 	if err != nil {
 		if IsPathNotFound(err) {
-			// It vanished under us: there is nothing left to remove.
-			return 0, 0, nil
+			// It vanished under us: there is nothing left to remove, and the
+			// already-gone folder is one entry the removal does not have to
+			// retry.
+			return 1, 0, nil
 		}
 		// The folder cannot be read, so what is in it is unknown. Report why it
 		// could not be listed, not the server's "not empty" to removing it
