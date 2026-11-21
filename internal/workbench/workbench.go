@@ -185,9 +185,9 @@ var (
 // Local forwarding: its page and dialog.
 var (
 	hitForwardAdd                   = tree.ID(forwardsHits, "forward-add")
-	hitForwardEdit                  = tree.ID(forwardsHits, "forward-edit")
-	hitForwardRemove                = tree.ID(forwardsHits, "forward-remove")
-	hitForwardStartStop             = tree.ID(forwardsHits, "forward-start-stop")
+	hitForwardRowEditList           = tree.Sub(forwardsHits, tree.Name("forward-row-edit"))
+	hitForwardRowToggleList         = tree.Sub(forwardsHits, tree.Name("forward-row-start-stop"))
+	hitForwardRowRemoveList         = tree.Sub(forwardsHits, tree.Name("forward-row-remove"))
 	hitForwardDialogClose           = tree.ID(forwardsHits, "forward-dialog-close")
 	hitForwardDialogCancel          = tree.ID(forwardsHits, "forward-dialog-cancel")
 	hitForwardDialogSubmit          = tree.ID(forwardsHits, "forward-dialog-submit")
@@ -535,18 +535,20 @@ type State struct {
 	forwards           []forwardRecord
 	// forwardTunnels are the SSH transports forwards use when no open tab
 	// carries one. They have no terminal and are never saved.
-	forwardTunnels         []*forwardTunnel
-	selectedIdentityID     uint32
-	selectedForwardID      uint32
-	selectedProxyID        uint32
-	forwardTable           ui.TableState
-	keysTable              ui.TableState
-	proxyList              ui.ListState
-	proxyRowDecl           func(ui.ListRow)
-	forwardRows            forwardTableSource
-	keysRows               keyTableSource
-	forwardColumns         [5]components.TableColumn
-	forwardHeadings        [5]string
+	forwardTunnels     []*forwardTunnel
+	selectedIdentityID uint32
+	selectedForwardID  uint32
+	selectedProxyID    uint32
+	forwardList        ui.ListState
+	forwardRowDecl     func(ui.ListRow)
+	keysTable          ui.TableState
+	proxyList          ui.ListState
+	proxyRowDecl       func(ui.ListRow)
+	keysRows           keyTableSource
+	// forwardColumns are the row's five data columns and the one its actions
+	// keep at the end.
+	forwardColumns         [6]components.TableColumn
+	forwardHeadings        [6]string
 	keysColumns            [5]components.TableColumn
 	keysHeadings           [5]string
 	proxyColumns           [6]components.TableColumn
@@ -1250,7 +1252,8 @@ func New(options Options) *State {
 	// it here makes it part of the defaults, so a computer that changed nothing
 	// writes no record for it.
 	state.history.inlineOff = true
-	state.forwardRows.records, state.keysRows.records = &state.forwards, &state.identities
+	state.keysRows.records = &state.identities
+	state.initForwardList()
 	state.initProxyList()
 	state.configDefaults = defaultsOf(state.snapshot())
 	config, saved, configBase, report, err := openConfig(state.options.StatePath, state.windowID)
@@ -3062,11 +3065,8 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	if result, handled := state.hostGroupPickerKey(event); handled {
 		return result
 	}
-	if state.activeSection == sectionForwards && state.modal == modalNone {
-		if result := state.forwardTable.Key(event); result.Handled {
-			state.takeForwardTableSelection()
-			return result
-		}
+	if result, handled := state.forwardListKey(event); handled {
+		return result
 	}
 	if state.activeSection == sectionKeys && state.modal == modalNone {
 		if result := state.keysTable.Key(event); result.Handled {

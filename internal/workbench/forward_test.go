@@ -121,7 +121,7 @@ func TestSOCKS5ForwardPersistsAndUsesSSHRemoteDial(t *testing.T) {
 	if forward.Mode != portforward.ModeSOCKS5 || forward.DestinationHost != "" || forward.DestinationPort != 0 || forward.cells[3] != state.messages.ForwardModeSOCKS5 {
 		t.Fatalf("SOCKS5 forward = %+v", *forward)
 	}
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	if forward.runner == nil {
 		t.Fatal("SOCKS5 forward did not start")
 	}
@@ -154,7 +154,7 @@ func TestSOCKS5ForwardPersistsAndUsesSSHRemoteDial(t *testing.T) {
 		t.Fatalf("remote dial calls = %+v", fake.dialCalls)
 	}
 	fake.mu.Unlock()
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 
 	restarted := newTestState(t, options)
 	if len(restarted.forwards) != 1 || restarted.forwards[0].Mode != portforward.ModeSOCKS5 || restarted.forwards[0].cells[3] != restarted.messages.ForwardModeSOCKS5 {
@@ -179,7 +179,7 @@ func TestHTTPConnectForwardPersistsAndUsesSSHRemoteDial(t *testing.T) {
 	if forward.Mode != portforward.ModeHTTPConnect || forward.DestinationHost != "" || forward.DestinationPort != 0 || forward.cells[3] != state.messages.ForwardModeHTTPConnect {
 		t.Fatalf("HTTP CONNECT forward = %+v", *forward)
 	}
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	if forward.runner == nil {
 		t.Fatal("HTTP CONNECT forward did not start")
 	}
@@ -202,7 +202,7 @@ func TestHTTPConnectForwardPersistsAndUsesSSHRemoteDial(t *testing.T) {
 		t.Fatalf("remote dial calls = %+v", fake.dialCalls)
 	}
 	fake.mu.Unlock()
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 
 	restarted := newTestState(t, options)
 	if len(restarted.forwards) != 1 || restarted.forwards[0].Mode != portforward.ModeHTTPConnect || restarted.forwards[0].cells[3] != restarted.messages.ForwardModeHTTPConnect {
@@ -235,7 +235,7 @@ func TestRemoteForwardPersistsAndBridgesServerListenerToLocalTarget(t *testing.T
 		t.Fatalf("restored remote forwards = %+v", restarted.forwards)
 	}
 
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	waitForward(t, state, func() bool { return forward.runner != nil })
 	fake.mu.Lock()
 	listenCalls := append([]fakeListenCall(nil), fake.listenCalls...)
@@ -262,7 +262,7 @@ func TestRemoteForwardPersistsAndBridgesServerListenerToLocalTarget(t *testing.T
 		return status.Accepted == 1 && status.Active == 0 && status.Uploaded > 0 && status.Downloaded > 0
 	})
 
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	if forward.runner != nil || forward.starting || forward.pending {
 		t.Fatalf("stopped remote forward = %+v", *forward)
 	}
@@ -291,7 +291,7 @@ func TestRemoteForwardStartDoesNotBlockAndStopClosesLateListener(t *testing.T) {
 		return listener, err
 	}
 
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	forward := &state.forwards[0]
 	if !forward.starting || forward.runner != nil {
 		t.Fatalf("starting remote forward = %+v", *forward)
@@ -301,7 +301,7 @@ func TestRemoteForwardStartDoesNotBlockAndStopClosesLateListener(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("remote Listen was not started in the background")
 	}
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	if forward.starting || forward.startID != 0 {
 		t.Fatalf("stopped pending start = %+v", *forward)
 	}
@@ -344,18 +344,18 @@ func TestRemoteForwardListenFailureCanRetry(t *testing.T) {
 		return net.Listen(network, address)
 	}
 	forward := &state.forwards[0]
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	waitForward(t, state, func() bool { return !forward.starting && forward.lastError != "" })
 	if !strings.Contains(forward.lastError, wantErr.Error()) || forward.runner != nil || forward.cells[4] != state.messages.ForwardStoppedError {
 		t.Fatalf("failed remote start = %+v", *forward)
 	}
 
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	waitForward(t, state, func() bool { return forward.runner != nil })
 	if forward.lastError != "" || attempt != 2 {
 		t.Fatalf("retried remote start = %+v attempts=%d", *forward, attempt)
 	}
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 }
 
 func TestRemoteForwardStopDoesNotWaitForServerCancellation(t *testing.T) {
@@ -377,12 +377,12 @@ func TestRemoteForwardStopDoesNotWaitForServerCancellation(t *testing.T) {
 		return &delayedCloseListener{Listener: listener, started: closeStarted, release: releaseClose}, nil
 	}
 	forward := &state.forwards[0]
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	waitForward(t, state, func() bool { return forward.runner != nil })
 
 	stopped := make(chan struct{})
 	go func() {
-		state.Click(hitForwardStartStop)
+		state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 		close(stopped)
 	}()
 	select {
@@ -504,9 +504,9 @@ func TestForwardsSharingALocalPortRunOneAtATime(t *testing.T) {
 	// Neither forward has a tab to borrow a connection from, so both wait on the
 	// one tunnel their host dials.
 	state.selectedForwardID = state.forwards[0].ID
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	state.selectedForwardID = state.forwards[1].ID
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	if len(world.conns) != 1 || len(state.forwardTunnels) != 1 {
 		t.Fatalf("two waiting forwards dialed conns=%d tunnels=%d", len(world.conns), len(state.forwardTunnels))
 	}
@@ -526,9 +526,9 @@ func TestForwardsSharingALocalPortRunOneAtATime(t *testing.T) {
 
 	// The port serves the other forward once its first holder stops.
 	state.selectedForwardID = first.ID
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	state.selectedForwardID = second.ID
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	if !second.pending || second.sessionID == 0 || len(state.forwardTunnels) != 1 || len(world.conns) != 2 {
 		t.Fatalf("restarted forward = %+v tunnels=%d conns=%d", *second, len(state.forwardTunnels), len(world.conns))
 	}
@@ -555,12 +555,12 @@ func TestStartingAForwardOnATakenPortDoesNotDial(t *testing.T) {
 	addForwardRuleOnHost(t, state, "Staging Copy", port, "test.internal", 9090, "stag")
 
 	state.selectedForwardID = state.forwards[0].ID
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	if state.forwards[0].runner == nil {
 		t.Fatal("the first forward did not start")
 	}
 	state.selectedForwardID = state.forwards[1].ID
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	second := &state.forwards[1]
 	if second.runner != nil || second.lastError != state.messages.ErrForwardLocalTaken || second.cells[4] != state.messages.ForwardStoppedError {
 		t.Fatalf("refused start = %+v", *second)
@@ -587,12 +587,12 @@ func TestRemoteForwardsSharingAPortOnOneHostRunOneAtATime(t *testing.T) {
 	addRemoteForwardRule(t, state, "Remote B", remotePort, "127.0.0.1", uint16(targetB.Addr().(*net.TCPAddr).Port))
 
 	state.selectedForwardID = state.forwards[0].ID
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	first := &state.forwards[0]
 	waitForward(t, state, func() bool { return first.runner != nil })
 
 	state.selectedForwardID = state.forwards[1].ID
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	second := &state.forwards[1]
 	if second.runner != nil || second.starting || second.lastError != state.messages.ErrForwardRemoteTaken || second.cells[4] != state.messages.ForwardStoppedError {
 		t.Fatalf("conflicting remote start = %+v", *second)
@@ -604,7 +604,7 @@ func TestRemoteForwardsSharingAPortOnOneHostRunOneAtATime(t *testing.T) {
 	// A remote listener closes in the background: the port is free once a dial to
 	// it stops succeeding.
 	state.selectedForwardID = first.ID
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	address := fmt.Sprintf("127.0.0.1:%d", remotePort)
 	deadline := time.Now().Add(2 * time.Second)
 	for {
@@ -620,7 +620,7 @@ func TestRemoteForwardsSharingAPortOnOneHostRunOneAtATime(t *testing.T) {
 	}
 
 	state.selectedForwardID = second.ID
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	waitForward(t, state, func() bool { return second.runner != nil })
 	if second.lastError != "" || first.runner != nil {
 		t.Fatalf("the second remote forward on its own start = %+v first=%+v", *second, *first)
@@ -672,7 +672,7 @@ func TestForwardDialsABackgroundTunnelWithoutATerminal(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)
 	addForwardRule(t, state, "Database", freePort(t), "database.internal", 5432)
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 
 	forward := &state.forwards[0]
 	if !forward.pending || forward.runner != nil || len(state.sessions) != 0 || state.activeSection != sectionForwards {
@@ -712,9 +712,9 @@ func TestForwardsOnOneHostShareABackgroundTunnel(t *testing.T) {
 	addForwardRule(t, state, "Database", freePort(t), "db.internal", 5432)
 
 	state.selectedForwardID = state.forwards[0].ID
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	state.selectedForwardID = state.forwards[1].ID
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	if len(world.conns) != 1 || len(state.forwardTunnels) != 1 || len(state.sessions) != 0 {
 		t.Fatalf("conns=%d tunnels=%d sessions=%d", len(world.conns), len(state.forwardTunnels), len(state.sessions))
 	}
@@ -730,12 +730,12 @@ func TestForwardsOnOneHostShareABackgroundTunnel(t *testing.T) {
 
 	// Stopping one leaves the other's transport alone.
 	state.selectedForwardID = state.forwards[0].ID
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	if len(state.forwardTunnels) != 1 || tunnel.closed {
 		t.Fatal("stopping one forward closed the shared tunnel")
 	}
 	state.selectedForwardID = state.forwards[1].ID
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	if len(state.forwardTunnels) != 0 || !tunnel.closed {
 		t.Fatal("stopping the last forward kept its tunnel")
 	}
@@ -745,7 +745,7 @@ func TestForwardBackgroundTunnelAsksForAuthentication(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)
 	addForwardRule(t, state, "Database", freePort(t), "database.internal", 5432)
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 
 	tunnel := state.forwardTunnels[0]
 	fake := world.conns[0]
@@ -778,10 +778,10 @@ func TestForwardBackgroundTunnelResumesAfterItsConnectionDrops(t *testing.T) {
 	state := newTestState(t, options)
 	state.connectionReconnect = reconnectForever
 	addForwardRule(t, state, "Database", freePort(t), "database.internal", 5432)
-	state.Click(hitForwardEdit)
+	state.Click(hitForwardRowEditList.At(int(state.selectedForwardID)))
 	state.Click(hitForwardDialogResume)
 	state.Click(hitForwardDialogSubmit)
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 
 	tunnel := state.forwardTunnels[0]
 	world.conns[0].set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
@@ -820,10 +820,10 @@ func TestForwardBackgroundTunnelStopsWhenReconnectIsOff(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)
 	addForwardRule(t, state, "Database", freePort(t), "database.internal", 5432)
-	state.Click(hitForwardEdit)
+	state.Click(hitForwardRowEditList.At(int(state.selectedForwardID)))
 	state.Click(hitForwardDialogResume)
 	state.Click(hitForwardDialogSubmit)
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 
 	world.conns[0].set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
 	state.Wake()
@@ -842,10 +842,10 @@ func TestStoppingAForwardClosesItsBackgroundTunnel(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)
 	addForwardRule(t, state, "Database", freePort(t), "database.internal", 5432)
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 
 	tunnel := state.forwardTunnels[0]
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	forward := &state.forwards[0]
 	if forward.pending || forward.sessionID != 0 || len(state.forwardTunnels) != 0 || !tunnel.closed {
 		t.Fatalf("stopped forward = %+v tunnels=%d", *forward, len(state.forwardTunnels))
@@ -862,10 +862,10 @@ func TestTurningReconnectOffStopsAWaitingTunnel(t *testing.T) {
 	state := newTestState(t, options)
 	state.connectionReconnect = reconnectForever
 	addForwardRule(t, state, "Database", freePort(t), "database.internal", 5432)
-	state.Click(hitForwardEdit)
+	state.Click(hitForwardRowEditList.At(int(state.selectedForwardID)))
 	state.Click(hitForwardDialogResume)
 	state.Click(hitForwardDialogSubmit)
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	world.conns[0].set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
 	state.Wake()
 	world.conns[0].set(func(status *sshconn.Status) {
@@ -888,7 +888,7 @@ func TestABackgroundTunnelFollowsAnEditedHost(t *testing.T) {
 	_, options := newWorld(t)
 	state := newTestState(t, options)
 	addForwardRule(t, state, "Web", freePort(t), "web.internal", 8080)
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 
 	tunnel := state.forwardTunnels[0]
 	index := state.hostIndex(tunnel.host.ID)
@@ -908,7 +908,7 @@ func TestConnectedTabIsPreferredOverANewTunnel(t *testing.T) {
 	fake.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
 	state.Wake()
 	addForwardRule(t, state, "Database", freePort(t), "database.internal", 5432)
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	if state.forwards[0].runner == nil || len(world.conns) != 1 || len(state.forwardTunnels) != 0 {
 		t.Fatalf("forward=%+v conns=%d tunnels=%d", state.forwards[0], len(world.conns), len(state.forwardTunnels))
 	}
@@ -922,13 +922,13 @@ func startedForwardOverReconnectingSession(t *testing.T, policy reconnectPolicy)
 	state, world, connection, clock := reconnectingSession(t, policy)
 	addForwardRule(t, state, "Database", freePort(t), "database.internal", 5432)
 	forward := &state.forwards[0]
-	state.Click(hitForwardEdit)
+	state.Click(hitForwardRowEditList.At(int(state.selectedForwardID)))
 	state.Click(hitForwardDialogResume)
 	state.Click(hitForwardDialogSubmit)
 	if state.modal != modalNone || !forward.Resume {
 		t.Fatalf("forward after choosing resume: modal=%d forward=%+v", state.modal, *forward)
 	}
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	if forward.runner == nil || forward.sessionID != state.sessions[0].ID {
 		t.Fatalf("started forward = %+v", *forward)
 	}
@@ -999,14 +999,14 @@ func TestForwardStopsWhenAutomaticReconnectGivesUp(t *testing.T) {
 
 func TestForwardWithoutResumeStopsDespiteAutomaticReconnect(t *testing.T) {
 	state, world, connection, clock, forward := startedForwardOverReconnectingSession(t, reconnectForever)
-	state.Click(hitForwardEdit)
+	state.Click(hitForwardRowEditList.At(int(state.selectedForwardID)))
 	state.Click(hitForwardDialogResume)
 	state.Click(hitForwardDialogSubmit)
 	if state.modal != modalNone || forward.Resume {
 		t.Fatalf("edited forward modal=%d forward=%+v", state.modal, *forward)
 	}
 	// Saving stopped it, as any edit does; start it again before the drop.
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	if forward.runner == nil {
 		t.Fatalf("restarted forward = %+v", *forward)
 	}
@@ -1037,7 +1037,7 @@ func TestForwardResumeChoiceIsOffByDefaultAndPersists(t *testing.T) {
 	}
 
 	state.selectedForwardID = state.forwards[1].ID
-	state.Click(hitForwardEdit)
+	state.Click(hitForwardRowEditList.At(int(state.selectedForwardID)))
 	if state.forwardEditor.resume {
 		t.Fatal("edit dialog shows resume on for a forward without it")
 	}
@@ -1056,7 +1056,7 @@ func TestForwardResumeChoiceIsOffByDefaultAndPersists(t *testing.T) {
 		t.Fatalf("restored resume choices = %v", resume)
 	}
 	restarted.selectedForwardID = restarted.forwards[1].ID
-	restarted.Click(hitForwardEdit)
+	restarted.Click(hitForwardRowEditList.At(int(restarted.selectedForwardID)))
 	if !restarted.forwardEditor.resume {
 		t.Fatal("edit dialog did not load the saved resume choice")
 	}
@@ -1133,24 +1133,62 @@ func TestForwardCanStopRestartAndRemove(t *testing.T) {
 	state.Wake()
 	addForwardRule(t, state, "Cache", freePort(t), "cache.internal", 6379)
 
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	if state.forwards[0].runner == nil {
 		t.Fatal("connected session did not start the forward")
 	}
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	if state.forwards[0].runner != nil || state.forwards[0].lastError != "" {
 		t.Fatalf("stopped forward = %+v", state.forwards[0])
 	}
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	if state.forwards[0].runner == nil {
 		t.Fatal("forward did not restart")
 	}
-	state.Click(hitForwardRemove)
+	state.Click(hitForwardRowRemoveList.At(int(state.selectedForwardID)))
 	if len(state.forwards) != 0 || state.selectedForwardID != 0 {
 		t.Fatalf("remove left forwards=%+v selected=%d", state.forwards, state.selectedForwardID)
 	}
 	if restarted := newTestState(t, options); len(restarted.forwards) != 0 {
 		t.Fatalf("removed forward was restored: %+v", restarted.forwards)
+	}
+}
+
+// The buttons at the end of a forward's row act on that forward, not on
+// whichever row the page has selected.
+func TestForwardRowActionsActOnTheirOwnRow(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	fake := connect(t, state, world)
+	fake.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	addForwardRule(t, state, "First", freePort(t), "first.internal", 8080)
+	addForwardRule(t, state, "Second", freePort(t), "second.internal", 9090)
+	first, second := state.forwards[0], state.forwards[1]
+	state.selectedForwardID = second.ID
+
+	state.Click(hitForwardRowToggleList.At(int(first.ID)))
+	if state.forwards[0].runner == nil || state.forwards[1].runner != nil || state.selectedForwardID != second.ID {
+		t.Fatalf("the first row's toggle started %+v and left the second %+v selected %d", state.forwards[0], state.forwards[1], state.selectedForwardID)
+	}
+	state.Click(hitForwardRowToggleList.At(int(first.ID)))
+	if state.forwards[0].runner != nil {
+		t.Fatalf("the first row's toggle did not stop it: %+v", state.forwards[0])
+	}
+
+	state.Click(hitForwardRowEditList.At(int(first.ID)))
+	if state.modal != modalNewForward || !state.forwardEditor.editing || state.forwardEditor.forwardID != first.ID {
+		t.Fatalf("the first row's edit opened modal=%d editing=%v forward=%d, want %d", state.modal, state.forwardEditor.editing, state.forwardEditor.forwardID, first.ID)
+	}
+	if state.forwardEditor.label.String() != first.Label {
+		t.Fatalf("the first row's edit loaded %q, want %q", state.forwardEditor.label.String(), first.Label)
+	}
+	state.Click(hitForwardDialogCancel)
+
+	state.selectedForwardID = second.ID
+	state.Click(hitForwardRowRemoveList.At(int(first.ID)))
+	if len(state.forwards) != 1 || state.forwards[0].ID != second.ID || state.selectedForwardID != second.ID {
+		t.Fatalf("the first row's remove left forwards=%+v selected=%d", state.forwards, state.selectedForwardID)
 	}
 }
 
@@ -1161,8 +1199,29 @@ func TestForwardPagePaintsRowsDialogAndHostOptions(t *testing.T) {
 	if !contains(texts, state.messages.ForwardTitle) || !contains(texts, "Web") || !contains(texts, "web.internal") {
 		t.Fatalf("forward page texts = %v", texts)
 	}
-	if !hasHit(canvas, hitForwardRowList.At(0)) || !hasHit(canvas, hitForwardStartStop) || !hasHit(canvas, hitForwardRemove) {
-		t.Fatalf("forward page hits = %+v", canvas.Hits())
+	forward := state.forwards[0]
+	for _, id := range []gfx.ID{
+		hitForwardRowList.At(0), hitForwardRowEditList.At(int(forward.ID)),
+		hitForwardRowToggleList.At(int(forward.ID)), hitForwardRowRemoveList.At(int(forward.ID)),
+	} {
+		if !hasHit(canvas, id) {
+			t.Fatalf("forward page hits are missing %d: %+v", id, canvas.Hits())
+		}
+	}
+	// A row's buttons are icons: each names itself for the pointer and for
+	// assistive technology with the action it takes.
+	for _, action := range []struct {
+		id   gfx.ID
+		hint string
+	}{
+		{hitForwardRowEditList.At(int(forward.ID)), state.messages.ForwardEdit},
+		{hitForwardRowToggleList.At(int(forward.ID)), state.messages.ForwardStart},
+		{hitForwardRowRemoveList.At(int(forward.ID)), state.messages.ForwardRemove},
+	} {
+		hit, ok := hitByID(canvas, action.id)
+		if !ok || hit.Hint != action.hint || hit.Label != action.hint {
+			t.Fatalf("row action %d hit=%+v, want hint %q", action.id, hit, action.hint)
+		}
 	}
 
 	state.Click(hitForwardAdd)
@@ -1173,6 +1232,46 @@ func TestForwardPagePaintsRowsDialogAndHostOptions(t *testing.T) {
 	canvas, texts = paintedTexts(state)
 	if !contains(texts, state.messages.ForwardDialogTitle) || !hasLabel(canvas, "Production", gfx.RoleOption) {
 		t.Fatalf("forward dialog texts=%v hits=%+v", texts, canvas.Hits())
+	}
+}
+
+// A card narrowed to the smallest window keeps each forward's three buttons
+// inside its row, where the pointer can still reach them.
+func TestForwardNarrowWindowRowActionsRemainReachable(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	addForwardRule(t, state, "Web", freePort(t), "web.internal", 8080)
+	addForwardRule(t, state, "Db", freePort(t), "db.internal", 5432)
+	state.activeSection = sectionForwards
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 960, Height: 640}
+	state.Paint(&canvas, size)
+	canvas = gfx.Canvas{}
+	state.Paint(&canvas, size)
+
+	row, ok := hitByID(&canvas, hitForwardRowList.At(0))
+	if !ok || row.Bounds.Width <= 0 {
+		t.Fatalf("a forward row is not painted at 960 pixels: %+v", row.Bounds)
+	}
+	for _, forward := range state.forwards {
+		for _, action := range []gfx.ID{
+			hitForwardRowEditList.At(int(forward.ID)),
+			hitForwardRowToggleList.At(int(forward.ID)),
+			hitForwardRowRemoveList.At(int(forward.ID)),
+		} {
+			hit, ok := hitByID(&canvas, action)
+			if !ok || hit.Bounds.Width < 20 {
+				t.Fatalf("forward %d action %d is missing or clipped at 960 pixels: %+v", forward.ID, action, hit.Bounds)
+			}
+			if hit.Bounds.X+hit.Bounds.Width > row.Bounds.X+row.Bounds.Width {
+				t.Fatalf("forward %d action %d overflows the row: %+v past %+v", forward.ID, action, hit.Bounds, row.Bounds)
+			}
+		}
+	}
+
+	first := state.forwards[0]
+	state.Click(hitForwardRowEditList.At(int(first.ID)))
+	if state.modal != modalNewForward || !state.forwardEditor.editing || state.forwardEditor.forwardID != first.ID {
+		t.Fatalf("a row's edit at 960 pixels opened modal=%d editing=%v forward=%d", state.modal, state.forwardEditor.editing, state.forwardEditor.forwardID)
 	}
 }
 
@@ -1471,7 +1570,7 @@ func TestForwardEditModifiesAndPersists(t *testing.T) {
 
 	// Select first forward and edit
 	state.selectedForwardID = state.forwards[0].ID
-	state.Click(hitForwardEdit)
+	state.Click(hitForwardRowEditList.At(int(state.selectedForwardID)))
 	if state.modal != modalNewForward || !state.forwardEditor.editing || state.forwardEditor.forwardID != state.forwards[0].ID {
 		t.Fatalf("edit forward modal=%d editing=%v forwardID=%d", state.modal, state.forwardEditor.editing, state.forwardEditor.forwardID)
 	}
@@ -1565,7 +1664,7 @@ func TestEditingAForwardThatIsGoneReportsItInsteadOfAddingACopy(t *testing.T) {
 	addForwardRule(t, state, "Web", port, "web.internal", 8080)
 
 	state.selectedForwardID = state.forwards[0].ID
-	state.Click(hitForwardEdit)
+	state.Click(hitForwardRowEditList.At(int(state.selectedForwardID)))
 	if state.modal != modalNewForward || !state.forwardEditor.editing {
 		t.Fatalf("edit dialog = %d editing=%v", state.modal, state.forwardEditor.editing)
 	}
@@ -1591,7 +1690,7 @@ func TestEditingAForwardWhoseHostIsGoneAsksForAHost(t *testing.T) {
 	addForwardRule(t, state, "Web", freePort(t), "web.internal", 8080)
 
 	state.selectedForwardID = state.forwards[0].ID
-	state.Click(hitForwardEdit)
+	state.Click(hitForwardRowEditList.At(int(state.selectedForwardID)))
 	if state.modal != modalNewForward {
 		t.Fatalf("edit dialog = %d", state.modal)
 	}
@@ -1747,7 +1846,7 @@ func TestForwardThroughTheHostsShellUsesTheRelayInsteadOfAChannel(t *testing.T) 
 	if !forward.ViaShell || forward.Relay != "ncat %h %p" {
 		t.Fatalf("forward = %+v", *forward)
 	}
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 	waitForward(t, state, func() bool { return forward.runner != nil })
 	client, err := net.Dial("tcp", forward.runner.Status().ListenAddress)
 	if err != nil {
@@ -1767,7 +1866,7 @@ func TestForwardThroughTheHostsShellUsesTheRelayInsteadOfAChannel(t *testing.T) 
 	if len(shellDials) != 1 || shellDials[0] != (fakeShellDialCall{command: "ncat %h %p", address: "127.0.0.1:3336"}) {
 		t.Fatalf("shell relay calls = %+v", shellDials)
 	}
-	state.Click(hitForwardStartStop)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
 
 	restarted := newTestState(t, options)
 	if len(restarted.forwards) != 1 || !restarted.forwards[0].ViaShell || restarted.forwards[0].Relay != "ncat %h %p" {
@@ -1815,7 +1914,7 @@ func TestForwardWithAutoStartStartsWhenATabConnectsToItsHost(t *testing.T) {
 	addForwardRule(t, state, "Auto", freePort(t), "db.internal", 5432)
 	addForwardRule(t, state, "Manual", freePort(t), "web.internal", 8080)
 	state.selectedForwardID = state.forwards[0].ID
-	state.Click(hitForwardEdit)
+	state.Click(hitForwardRowEditList.At(int(state.selectedForwardID)))
 	if state.forwardEditor.autoStart {
 		t.Fatal("a new forward starts with its host by default")
 	}

@@ -9,44 +9,44 @@ import (
 
 // forwardSectionUI is what the forwards page's declaration leaves for its paint.
 type forwardSectionUI struct {
-	remove, edit, action, add, empty              ui.Box
-	removeWidth, editWidth, actionWidth, addWidth float32
-	removeIcon, editIcon, actionIcon, addIcon     uint8
-	actionLabel                                   string
-	condensed                                     bool
+	add, empty ui.Box
+	addWidth   float32
+	addIcon    uint8
+	condensed  bool
+	// listScroll is the page list's scroll area, so a long list can be moved
+	// from elsewhere.
+	listScroll *ui.ScrollState
 	// draw is the page hook that paints the empty state. It is kept so a paint
 	// does not build a closure for the hook.
 	draw func(*ui.DrawContext)
 }
 
+// The forward list keeps the widths its rows read at: five data columns and the
+// one its row actions take at the end.
+const (
+	forwardActionsWidth = float32(92)
+	forwardStatusLeast  = float32(110)
+	// forwardSidePad is the body's padding on each side, which the rows and
+	// their headings sit inside.
+	forwardSidePad = float32(18)
+)
+
 // declareForwardsWorkspace declares the forwards page in the workbench page:
-// its header, its open/empty body and its footer. The buttons, the table and the
+// its header, its open/empty body and its footer. The button, the rows and the
 // empty state's icon are painted into the slots it leaves.
 func (state *State) declareForwardsWorkspace(c ui.C) {
 	canvas := c.Canvas()
 	pal, messages := state.pal, state.messages
-	state.syncForwardTable()
+	state.syncForwardList()
 	selected, hasSelection := state.forwardByID(state.selectedForwardID)
-	actionLabel := messages.ForwardStart
-	actionIcon := uint8(iconPlay)
-	running := selected.runner != nil || selected.pending || selected.starting
-	if running {
-		actionLabel = messages.ForwardStop
-		actionIcon = iconStop
-	}
-	// The title keeps a readable column beside the buttons; a card too narrow for
-	// both shows the buttons as their icons, whose tooltips name them.
+	// The title keeps a readable column beside the button; a card too narrow for
+	// both shows the button as its icon, whose tooltip names it.
 	const (
 		titleLeast = float32(220)
 		gap        = float32(10)
 	)
 	bounds := state.catalogSectionBounds()
-	labeled := toolbarButtonWidth(canvas, messages.ForwardRemove, false) + gap + toolbarButtonWidth(canvas, messages.ForwardEdit, false) +
-		gap + toolbarButtonWidth(canvas, actionLabel, false) + gap + toolbarButtonWidth(canvas, messages.ForwardAdd, true) + gap + titleLeast
-	condensed := labeled > bounds.Width-36
-	removeWidth, removeIcon := toolbarButtonLayout(canvas, messages.ForwardRemove, 0, iconTrash, condensed)
-	editWidth, editIcon := toolbarButtonLayout(canvas, messages.ForwardEdit, 0, iconPencil, condensed)
-	actionWidth, realActionIcon := toolbarButtonLayout(canvas, actionLabel, 0, actionIcon, condensed)
+	condensed := toolbarButtonWidth(canvas, messages.ForwardAdd, true)+gap+titleLeast > bounds.Width-36
 	addWidth, addIcon := toolbarButtonLayout(canvas, messages.ForwardAdd, iconPlus, iconPlus, condensed)
 	detailColor := pal.muted
 	if selected.lastError != "" {
@@ -55,45 +55,24 @@ func (state *State) declareForwardsWorkspace(c ui.C) {
 	canAdd := state.sshHostCount() > 0
 	view := &state.sectionBodies.forwards
 	draw := view.draw
-	*view = forwardSectionUI{
-		removeWidth: removeWidth, editWidth: editWidth, actionWidth: actionWidth, addWidth: addWidth,
-		removeIcon: removeIcon, editIcon: editIcon, actionIcon: realActionIcon, addIcon: addIcon,
-		actionLabel: actionLabel, condensed: condensed,
-	}
+	*view = forwardSectionUI{addWidth: addWidth, addIcon: addIcon, condensed: condensed}
 	if draw == nil {
 		draw = func(d *ui.DrawContext) { state.paintForwardsWorkspace(d.Canvas) }
 	}
 	view.draw = draw
-	body := ui.Column(c).Fill().PadSides(12, 18, 0, 18)
+	body := ui.Column(c).Fill().PadSides(12, forwardSidePad, 0, forwardSidePad)
 	body.Children(func() {
 		ui.Row(c).MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(ui.Start).Children(func() {
 			ui.Column(c).Grow(1).Gap(3).MarginSides(4, 0, 0, 0).Children(func() {
 				ui.Text(c, messages.ForwardTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
 				ui.Paragraph(c, messages.ForwardDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
 			})
-			view.remove = state.declareButtonSized(c, hitForwardRemove, messages.ForwardRemove, removeIcon, false, false, hasSelection, toolbarFont, condensed).Size(removeWidth, toolbarHeight)
-			view.edit = state.declareButtonSized(c, hitForwardEdit, messages.ForwardEdit, editIcon, false, false, hasSelection, toolbarFont, condensed).Size(editWidth, toolbarHeight)
-			view.action = state.declareButtonSized(c, hitForwardStartStop, actionLabel, realActionIcon, false, false, hasSelection, toolbarFont, condensed).Size(actionWidth, toolbarHeight)
 			view.add = state.declareButtonSized(c, hitForwardAdd, messages.ForwardAdd, addIcon, true, false, canAdd, toolbarFont, condensed).Size(addWidth, toolbarHeight)
 		})
 		if len(state.forwards) == 0 {
 			view.empty = state.reserveEmptyPage(c, bounds, messages.ForwardEmpty, messages.ForwardEmptySub, messages.ForwardAdd, hitForwardAdd, iconForward, canAdd)
 		} else {
-			state.forwardColumns = [...]components.TableColumn{{Width: 180}, {Width: 160}, {Width: 170}, {Width: 210}, {Width: 0}}
-			state.forwardHeadings = [...]string{
-				messages.ForwardColumnName, messages.ForwardColumnHost, messages.ForwardColumnListener,
-				messages.ForwardColumnDestination, messages.ForwardColumnStatus,
-			}
-			components.FitTableHeadings(canvas, state.Theme(), state.forwardColumns[:], state.forwardHeadings[:])
-			table := ui.Table(c, &state.forwardTable, ui.TableSpec{
-				Rows: hitForwardRowList, Columns: state.forwardColumns[:], Headers: state.forwardHeadings[:], Source: &state.forwardRows,
-				Scrollbar: hitForwardScrollThumb, ScrollbarLabel: messages.ForwardListScroll,
-				ScrollbarGutter: catalogBarGutter,
-			}).Grow(1).Shrink(1)
-			if row, ok := table.RowClicked(); ok && state.modal == modalNone && row >= 0 && row < len(state.forwards) {
-				state.forwardTable.Select(row)
-				state.selectForward(state.forwards[row].ID)
-			}
+			state.declareForwardList(c, bounds)
 		}
 		ui.Divider(c).Background(pal.line)
 		ui.Row(c).Height(50).PadSides(8, 0, 20, 0).Items(ui.Center).Children(func() {
@@ -106,8 +85,117 @@ func (state *State) declareForwardsWorkspace(c ui.C) {
 	body.Clip().DrawOver(view.draw)
 }
 
+// declareForwardList declares the forwards page's headings and rows. The rows are
+// the page's list, so each one can carry the buttons that act on it; the page
+// declares the headings above them.
+func (state *State) declareForwardList(c ui.C, bounds gfx.Rect) {
+	canvas, messages := c.Canvas(), state.messages
+	state.forwardColumns = [...]components.TableColumn{
+		{Width: 180}, {Width: 160}, {Width: 170}, {Width: 210}, {Width: 0}, {Width: forwardActionsWidth},
+	}
+	state.forwardHeadings = [...]string{
+		messages.ForwardColumnName, messages.ForwardColumnHost, messages.ForwardColumnListener,
+		messages.ForwardColumnDestination, messages.ForwardColumnStatus, "",
+	}
+	components.FitTableHeadings(canvas, state.Theme(), state.forwardColumns[:], state.forwardHeadings[:])
+	state.fitForwardColumns(bounds.Width - 2*forwardSidePad)
+	theme := state.Theme()
+	headerHeight := components.TableHeaderHeight(theme)
+	headerPad := theme.Metrics.GapItem
+	ui.Column(c).Grow(1).Shrink(1).MinHeight(0).Children(func() {
+		ui.Row(c).Height(headerHeight).Shrink(0).FillWidth().Gap(0).Items(ui.Center).Children(func() {
+			for column := range 5 {
+				width := state.forwardColumns[column].Width
+				if width <= 0 {
+					continue
+				}
+				ui.Text(c, state.forwardHeadings[column]).Weight(gfx.WeightMedium).PadX(headerPad).Width(width).Shrink(0).Ellipsis()
+			}
+			ui.Slot(c).Width(state.forwardColumns[5].Width).Height(headerHeight).Shrink(0)
+			ui.Slot(c).Absolute().Left(0).Right(0).Bottom(0).Height(1).Background(theme.Border)
+		})
+		list := ui.List(c, &state.forwardList, len(state.forwards), state.forwardRowDecl).Grow(1).Shrink(1).MinHeight(0).FillWidth().
+			Scrollbars().ScrollbarIDs(hitForwardScrollThumb, gfx.ID{}).ScrollbarSize(catalogBarGutter).
+			ScrollbarLabels(messages.ForwardListScroll, "").Label(messages.ForwardTitle)
+		state.sectionBodies.forwards.listScroll = list.ScrollState()
+		if state.forwardList.Changed() {
+			state.takeForwardListSelection()
+		}
+	})
+}
+
+// fitForwardColumns fits the list's columns to the room its card has: the
+// actions keep the width their buttons need at the end, the status keeps a
+// readable column, and the four data columns before them share what is left in
+// proportion to the widths they read well at, so a narrow card ellipsizes its
+// cells instead of cutting the status and the actions off the row.
+func (state *State) fitForwardColumns(width float32) {
+	width = max(width, 0)
+	actions := min(forwardActionsWidth, width)
+	state.forwardColumns[5].Width = actions
+	content := width - actions
+	fixed := float32(0)
+	for column := range 4 {
+		fixed += state.forwardColumns[column].Width
+	}
+	status := content - fixed
+	if status < forwardStatusLeast {
+		status = min(forwardStatusLeast, content)
+		if scale := min(1, (content-status)/max(fixed, 1)); scale < 1 {
+			for column := range 4 {
+				state.forwardColumns[column].Width *= scale
+			}
+		}
+	}
+	state.forwardColumns[4].Width = max(status, 0)
+}
+
+// declareForwardRow declares one row of the forwards page: its data cells at the
+// list's column widths, and the buttons that edit it, start or stop it and
+// remove it at its end. Each button acts on this row, whatever row the page has
+// selected.
+func (state *State) declareForwardRow(row ui.ListRow) {
+	if row.Index < 0 || row.Index >= len(state.forwards) {
+		return
+	}
+	forward := &state.forwards[row.Index]
+	theme, messages := state.Theme(), state.messages
+	height := components.TableRowHeight(theme)
+	pad := theme.Metrics.GapItem
+	c := row.C
+	element := row.Element.Height(height).Shrink(0).FillWidth().Gap(0).Items(ui.Center)
+	if forward.ID == state.selectedForwardID {
+		element = element.Background(theme.Muted)
+	} else {
+		element = element.Hover(ui.Look{}.Background(theme.Hover)).Pressed(ui.Look{}.Background(theme.Muted))
+	}
+	element.Children(func() {
+		for column := range 5 {
+			width := state.forwardColumns[column].Width
+			if width <= 0 {
+				continue
+			}
+			ui.Text(c, forward.cells[column]).PadX(pad).Width(width).Shrink(0).Ellipsis()
+		}
+		running := forward.runner != nil || forward.pending || forward.starting
+		toggleIcon, toggleLabel := uint8(iconPlay), messages.ForwardStart
+		if running {
+			toggleIcon, toggleLabel = iconStop, messages.ForwardStop
+		}
+		// The actions keep clear of the hover scrollbar's lane at the row's end.
+		ui.Row(c).Width(state.forwardColumns[5].Width).Height(height).Shrink(0).Justify(ui.End).Items(ui.Center).
+			PadSides(0, 10, 0, 0).Gap(2).Children(func() {
+			state.declareIconButton(c, hitForwardRowEditList.At(int(forward.ID)), iconPencil, messages.ForwardEdit, false, iconButtonQuiet).Size(24, 24)
+			state.declareIconButton(c, hitForwardRowToggleList.At(int(forward.ID)), toggleIcon, toggleLabel, false, iconButtonQuiet).Size(24, 24)
+			state.declareIconButton(c, hitForwardRowRemoveList.At(int(forward.ID)), iconTrash, messages.ForwardRemove, false, iconButtonQuiet).Size(24, 24)
+		})
+		ui.Slot(c).Absolute().Left(0).Right(0).Bottom(0).Height(1).Background(theme.Border)
+	})
+	element.Hit(hitForwardRowList.At(row.Index), forward.Label)
+}
+
 // paintForwardsWorkspace paints the forwards page's empty state into the slot
-// its declaration left. A table is painted by the page itself.
+// its declaration left. The rows are the page's list.
 func (state *State) paintForwardsWorkspace(canvas *gfx.Canvas) {
 	view := &state.sectionBodies.forwards
 	if len(state.forwards) == 0 {
