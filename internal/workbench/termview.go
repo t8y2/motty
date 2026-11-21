@@ -39,7 +39,9 @@ func (span cellSpan) holds(column int) bool { return column >= span.from && colu
 type rowEntry struct {
 	id             uint64
 	version        uint32
-	logicalVersion uint32
+	logicalVersion uint64
+	logicalID      uint64
+	suppressed     bool
 	cursor         int // the column drawn as the cursor block, or -1
 	covered        cellSpan
 	epoch          uint32
@@ -72,6 +74,28 @@ type rowCache struct {
 	hlOwnerRow     []int32
 	hlOwnerCol     []int32
 	hlLogicalMarks []highlight.Color
+	logical        map[uint64]*logicalHighlight
+	logicalFree    []*logicalHighlight
+	logicalSerial  uint64
+}
+
+type logicalRowKey struct {
+	id      uint64
+	version uint32
+	used    int
+	length  int
+	wrapped bool
+}
+
+type logicalHighlight struct {
+	rows      []logicalRowKey
+	positions map[uint64]int
+	cells     []highlight.Color
+	epoch     uint32
+	cols      int
+	used      uint32
+	serial    uint64
+	rules     *highlight.Set
 }
 
 // begin starts a paint pass.
@@ -80,13 +104,20 @@ func (cache *rowCache) begin() { cache.generation++ }
 // end releases the entries the pass did not use, so the cache holds about one
 // screenful however long the terminal has run.
 func (cache *rowCache) end(visible int) {
-	if len(cache.entries) <= visible*2+8 {
-		return
+	if len(cache.entries) > visible*2+8 {
+		for id, entry := range cache.entries {
+			if entry.used != cache.generation {
+				delete(cache.entries, id)
+				cache.free = append(cache.free, entry)
+			}
+		}
 	}
-	for id, entry := range cache.entries {
-		if entry.used != cache.generation {
-			delete(cache.entries, id)
-			cache.free = append(cache.free, entry)
+	if len(cache.logical) > visible*2+8 {
+		for id, entry := range cache.logical {
+			if entry.used != cache.generation {
+				delete(cache.logical, id)
+				cache.logicalFree = append(cache.logicalFree, entry)
+			}
 		}
 	}
 }
@@ -97,6 +128,10 @@ func (cache *rowCache) end(visible int) {
 // method's composition: they are left out, text and background, because a
 // rectangle painted over a cell does not hide the text already in it.
 func (cache *rowCache) row(line term.Row, cols, cursor int, covered cellSpan, pal *palette, inactive bool, logical ...term.Row) *rowEntry {
+	return cache.rowWithLogical(line, cols, cursor, covered, pal, inactive, logical, false)
+}
+
+func (cache *rowCache) rowWithLogical(line term.Row, cols, cursor int, covered cellSpan, pal *palette, inactive bool, logical []term.Row, suppressed bool) *rowEntry {
 	epoch := uint32(pal.epoch) << 3
 	if pal.dark {
 		epoch |= 1
@@ -119,15 +154,15 @@ func (cache *rowCache) row(line term.Row, cols, cursor int, covered cellSpan, pa
 		entry.version = ^uint32(0) // never matches: build below
 	}
 	entry.used = cache.generation
-	logicalVersion := line.Version
-	if len(logical) > 1 {
-		for _, r := range logical {
-			logicalVersion = logicalVersion*31 + r.Version
-		}
+	var group *logicalHighlight
+	var logicalID, logicalVersion uint64
+	if len(logical) > 1 && !suppressed {
+		group = cache.logicalLine(logical, cols, epoch, pal.highlight)
+		logicalID, logicalVersion = logical[0].ID, group.serial
 	}
-	if entry.version != line.Version || entry.logicalVersion != logicalVersion || entry.cursor != cursor || entry.covered != covered || entry.epoch != epoch {
-		cache.build(entry, line, cols, cursor, covered, pal, inactive, logical...)
-		entry.version, entry.logicalVersion, entry.cursor, entry.covered, entry.epoch, entry.cols = line.Version, logicalVersion, cursor, covered, epoch, cols
+	if entry.version != line.Version || entry.logicalID != logicalID || entry.logicalVersion != logicalVersion || entry.suppressed != suppressed || entry.cursor != cursor || entry.covered != covered || entry.epoch != epoch {
+		cache.build(entry, line, cols, cursor, covered, pal, inactive, group, suppressed)
+		entry.version, entry.logicalID, entry.logicalVersion, entry.suppressed, entry.cursor, entry.covered, entry.epoch, entry.cols = line.Version, logicalID, logicalVersion, suppressed, cursor, covered, epoch, cols
 	} else if entry.cols != cols {
 		rebuild := entry.usedCols > min(entry.cols, cols) || pal.highlight.PaddingSensitive()
 		if !rebuild && cols > entry.cols {
@@ -142,7 +177,7 @@ func (cache *rowCache) row(line term.Row, cols, cursor int, covered cellSpan, pa
 			}
 		}
 		if rebuild {
-			cache.build(entry, line, cols, cursor, covered, pal, inactive, logical...)
+			cache.build(entry, line, cols, cursor, covered, pal, inactive, group, suppressed)
 			entry.logicalVersion = logicalVersion
 		}
 		entry.cols = cols
@@ -219,7 +254,7 @@ func (pal *palette) termColor(color term.Color, fallback gfx.Color) gfx.Color {
 // costs nothing. Every non-ASCII character is a run of its own, placed at its
 // cell by the renderer, so a wide or fallback-font glyph can never push the
 // text after it off its column.
-func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, covered cellSpan, pal *palette, inactive bool, logical ...term.Row) {
+func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, covered cellSpan, pal *palette, inactive bool, group *logicalHighlight, suppressed bool) {
 	cache.builds++
 	entry.runs = entry.runs[:0]
 	entry.spans = entry.spans[:0]
@@ -235,9 +270,11 @@ func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, c
 	}
 	cursorStyle := cellStyle{fg: pal.terminal, bg: pal.cursor, hasBG: true}
 	var cellSlots []highlight.Color
-	if len(logical) > 1 {
-		cellSlots = cache.markLogicalCells(line, count, cols, logical, pal.highlight)
-	} else {
+	if group != nil {
+		if index, ok := group.positions[line.ID]; ok && len(group.cells) >= (index+1)*cols {
+			cellSlots = group.cells[index*cols : index*cols+count]
+		}
+	} else if !suppressed {
 		cellSlots = cache.markCells(line, count, pal.highlight)
 	}
 
@@ -434,6 +471,7 @@ func (cache *rowCache) markCells(line term.Row, count int, rules *highlight.Set)
 		return nil
 	}
 	text, owner := cache.hlText[:0], cache.hlCell[:0]
+	markIndex := 0
 	for x := 0; x < count; x++ {
 		cell := line.Cells[x]
 		if cell.Attr&term.WideTail != 0 {
@@ -447,6 +485,19 @@ func (cache *rowCache) markCells(line term.Row, count int, rules *highlight.Set)
 		text = utf8.AppendRune(text, character)
 		for range len(text) - before {
 			owner = append(owner, int32(x))
+		}
+		for markIndex < len(line.Marks) && int(line.Marks[markIndex].Col) < x {
+			markIndex++
+		}
+		for markIndex < len(line.Marks) && int(line.Marks[markIndex].Col) == x {
+			if cell.Attr&term.Hidden == 0 {
+				before = len(text)
+				text = utf8.AppendRune(text, line.Marks[markIndex].R)
+				for range len(text) - before {
+					owner = append(owner, int32(x))
+				}
+			}
+			markIndex++
 		}
 	}
 	cache.hlText, cache.hlCell = text, owner
@@ -463,39 +514,80 @@ func (cache *rowCache) markCells(line term.Row, count int, rules *highlight.Set)
 	return cells
 }
 
-// markLogicalCells runs the highlight rules over the joined text of a soft-wrapped
-// logical line and returns the highlight color of each cell in line, or nil when
-// no rule matched.
-func (cache *rowCache) markLogicalCells(line term.Row, count, cols int, logical []term.Row, rules *highlight.Set) []highlight.Color {
-	if rules.Empty() {
-		return nil
+func (cache *rowCache) logicalLine(logical []term.Row, cols int, epoch uint32, rules *highlight.Set) *logicalHighlight {
+	if cache.logical == nil {
+		cache.logical = make(map[uint64]*logicalHighlight)
 	}
-	targetIndex := -1
-	for index, row := range logical {
-		if row.ID == line.ID {
-			targetIndex = index
-			break
+	id := logical[0].ID
+	group := cache.logical[id]
+	if group == nil {
+		if last := len(cache.logicalFree) - 1; last >= 0 {
+			group, cache.logicalFree = cache.logicalFree[last], cache.logicalFree[:last]
+			group.serial = 0
+		} else {
+			group = &logicalHighlight{}
+		}
+		cache.logical[id] = group
+	}
+	if group.serial != 0 && group.used == cache.generation {
+		return group
+	}
+	group.used = cache.generation
+	changed := group.serial == 0 || group.cols != cols || group.epoch != epoch || group.rules != rules || len(group.rows) != len(logical)
+	if !changed {
+		for index, row := range logical {
+			key := logicalRowKey{id: row.ID, version: row.Version, used: row.Used, length: len(row.Cells), wrapped: row.Wrapped}
+			if group.rows[index] != key {
+				changed = true
+				break
+			}
 		}
 	}
-	if targetIndex < 0 {
-		return cache.markCells(line, count, rules)
+	if !changed {
+		return group
 	}
+	cache.logicalSerial++
+	group.serial, group.cols, group.epoch, group.rules = cache.logicalSerial, cols, epoch, rules
+	group.rows = group.rows[:0]
+	if group.positions == nil {
+		group.positions = make(map[uint64]int)
+	} else {
+		clear(group.positions)
+	}
+	for index, row := range logical {
+		group.rows = append(group.rows, logicalRowKey{id: row.ID, version: row.Version, used: row.Used, length: len(row.Cells), wrapped: row.Wrapped})
+		group.positions[row.ID] = index
+	}
+	cache.markLogicalCells(group, logical, cols, rules)
+	return group
+}
 
+func (cache *rowCache) markLogicalCells(group *logicalHighlight, logical []term.Row, cols int, rules *highlight.Set) {
+	group.cells = group.cells[:0]
+	if rules.Empty() {
+		return
+	}
 	text := cache.hlLogicalText[:0]
 	ownerRow := cache.hlOwnerRow[:0]
 	ownerCol := cache.hlOwnerCol[:0]
 
-	for k, row := range logical {
+	for rowIndex, row := range logical {
 		rowCells := row.Cells
 		rowCount := min(len(rowCells), cols)
-		isWrapped := k < len(logical)-1
+		if rowIndex < len(logical)-1 {
+			rowCount = min(rowCount, row.Used)
+			marked := 0
+			if len(row.Marks) > 0 {
+				marked = int(row.Marks[len(row.Marks)-1].Col) + 1
+			}
+			for rowCount > marked && rowCells[rowCount-1].R == 0 && rowCells[rowCount-1].Attr&term.WideTail == 0 {
+				rowCount--
+			}
+		}
+		markIndex := 0
 		for x := 0; x < rowCount; x++ {
 			cell := rowCells[x]
 			if cell.Attr&term.WideTail != 0 {
-				continue
-			}
-			if isWrapped && x == rowCount-1 && cell.R == 0 {
-				// Empty padding cell before an autowrap of a wide character.
 				continue
 			}
 			character := cell.R
@@ -505,8 +597,26 @@ func (cache *rowCache) markLogicalCells(line term.Row, count, cols int, logical 
 			before := len(text)
 			text = utf8.AppendRune(text, character)
 			for range len(text) - before {
-				ownerRow = append(ownerRow, int32(k))
+				ownerRow = append(ownerRow, int32(rowIndex))
 				ownerCol = append(ownerCol, int32(x))
+			}
+			for markIndex < len(row.Marks) && int(row.Marks[markIndex].Col) < x {
+				markIndex++
+			}
+			for markIndex < len(row.Marks) && int(row.Marks[markIndex].Col) == x {
+				if cell.Attr&term.Hidden == 0 {
+					before = len(text)
+					text = utf8.AppendRune(text, row.Marks[markIndex].R)
+					for range len(text) - before {
+						ownerRow = append(ownerRow, int32(rowIndex))
+						ownerCol = append(ownerCol, int32(x))
+					}
+				}
+				markIndex++
+			}
+			if len(text) > maxLogicalHighlightCells*4 {
+				cache.hlLogicalText, cache.hlOwnerRow, cache.hlOwnerCol = text, ownerRow, ownerCol
+				return
 			}
 		}
 	}
@@ -517,20 +627,15 @@ func (cache *rowCache) markLogicalCells(line term.Row, count, cols int, logical 
 
 	marks := markBuffer(&cache.hlLogicalMarks, len(text))
 	if !rules.Mark(text, marks) {
-		return nil
+		return
 	}
 
-	cells := markBuffer(&cache.hlCells, count)
-	targetRow := int32(targetIndex)
+	cells := markBuffer(&group.cells, len(logical)*cols)
 	for index, color := range marks {
-		if color != highlight.None && ownerRow[index] == targetRow {
-			col := ownerCol[index]
-			if col < int32(count) {
-				cells[col] = color
-			}
+		if color != highlight.None {
+			cells[int(ownerRow[index])*cols+int(ownerCol[index])] = color
 		}
 	}
-	return cells
 }
 
 // markBuffer returns a zeroed slice of n marks, reusing what the cache kept.

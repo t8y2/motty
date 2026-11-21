@@ -175,10 +175,13 @@ type terminal struct {
 	paintSpinner, paintLight                  ui.Box
 
 	// preedit is the input-method composition, shown at the cursor.
-	preedit    app.TextState
-	inputGuard terminalInputGuard
-	input      app.TextInput // reused, so resolving the text input allocates nothing
-	cache      rowCache
+	preedit      app.TextState
+	inputGuard   terminalInputGuard
+	input        app.TextInput // reused, so resolving the text input allocates nothing
+	cache        rowCache
+	logicalRows  []term.Row
+	logicalView  []logicalViewRow
+	logicalReady bool
 	// rowIDs are the visible rows' line identities, kept between paints so an
 	// image can find its row without scanning the whole scrollback.
 	rowIDs    []uint64
@@ -290,11 +293,19 @@ func (t *terminal) accessibleName(format, address string) string {
 // the visible rows, the cursor and which buffer was active. The cells and marks
 // are copies, because the live screen changes in place while the block runs.
 type terminalSync struct {
-	lines  []term.Row
-	cursor term.Cursor
-	cols   int
-	alt    bool
+	lines                []term.Row
+	cursor               term.Cursor
+	cols, visible, rows  int
+	prefixCut, suffixCut bool
+	alt                  bool
 }
+
+type logicalViewRow struct {
+	first, last int
+	suppressed  bool
+}
+
+const maxLogicalHighlightCells = 1 << 20
 
 // terminalSyncTimeout ends a block whose program never sent ESU, so a crash
 // cannot leave the display frozen forever.
@@ -314,6 +325,7 @@ func newTerminalWithScrollback(cols, rows, scrollback int) *terminal {
 func (t *terminal) holdSync(on bool) {
 	if !on {
 		t.sync = nil
+		t.logicalReady = false
 		return
 	}
 	if t.sync != nil {
@@ -322,13 +334,31 @@ func (t *terminal) holdSync(on bool) {
 	cols, rows := t.screen.Size()
 	held := &t.syncBuf
 	held.cols, held.cursor, held.alt = cols, t.screen.Cursor(), t.screen.Modes().AltScreen
-	if cap(held.lines) < rows {
-		held.lines = make([]term.Row, rows)
+	first, last := t.screen.ViewLine(0), t.screen.ViewLine(rows-1)
+	held.prefixCut, held.suffixCut = false, false
+	if start, end, ok := t.screen.LogicalLineRange(0); ok {
+		if end-start+1 <= maxLogicalHighlightCells/cols {
+			first = start
+		} else {
+			held.prefixCut = start < first
+		}
+	}
+	if start, end, ok := t.screen.LogicalLineRange(rows - 1); ok {
+		if end-start+1 <= maxLogicalHighlightCells/cols {
+			last = end
+		} else {
+			held.suffixCut = end > last
+		}
+	}
+	held.visible, held.rows = t.screen.ViewLine(0)-first, rows
+	count := last - first + 1
+	if cap(held.lines) < count {
+		held.lines = make([]term.Row, count)
 	} else {
-		held.lines = held.lines[:rows]
+		held.lines = held.lines[:count]
 	}
 	for row := range held.lines {
-		line := t.screen.Row(row)
+		line, _ := t.screen.RetainedRow(first + row)
 		cells := held.lines[row].Cells[:0]
 		line.Cells = append(cells, line.Cells...)
 		marks := held.lines[row].Marks[:0]
@@ -336,6 +366,7 @@ func (t *terminal) holdSync(on bool) {
 		held.lines[row] = line
 	}
 	t.sync = held
+	t.logicalReady = false
 	t.syncAt = t.recordingNow()
 }
 
@@ -346,12 +377,13 @@ func (t *terminal) expireSync() {
 	}
 	if t.recordingNow()-t.syncAt >= terminalSyncTimeout {
 		t.sync = nil
+		t.logicalReady = false
 	}
 }
 
 func (t *terminal) presentedSize() (cols, rows int) {
 	if t.sync != nil {
-		return t.sync.cols, len(t.sync.lines)
+		return t.sync.cols, t.sync.rows
 	}
 	return t.screen.Size()
 }
@@ -372,41 +404,81 @@ func (t *terminal) presentedAltScreen() bool {
 
 func (t *terminal) presentedRow(row int) term.Row {
 	if t.sync != nil {
-		if row < 0 || row >= len(t.sync.lines) {
+		if row < 0 || row >= t.sync.rows {
 			return term.Row{}
 		}
-		return t.sync.lines[row]
+		return t.sync.lines[t.sync.visible+row]
 	}
 	return t.screen.Row(row)
 }
 
 func (t *terminal) presentedLogicalLine(row int) []term.Row {
-	if t.sync != nil {
-		if row < 0 || row >= len(t.sync.lines) {
-			return nil
-		}
-		isWrapped := t.sync.lines[row].Wrapped
-		prevWrapped := row > 0 && t.sync.lines[row-1].Wrapped
-		if !isWrapped && !prevWrapped {
-			return nil
-		}
-		first := row
-		for first > 0 && t.sync.lines[first-1].Wrapped && row-first < 64 {
-			first--
-		}
-		last := row
-		for last+1 < len(t.sync.lines) && t.sync.lines[last].Wrapped && last-row < 64 {
-			last++
-		}
-		return t.sync.lines[first : last+1]
+	if !t.logicalReady {
+		t.prepareLogicalLines()
 	}
-	if t.screen != nil {
-		if !t.screen.RowIsWrapped(row) {
-			return nil
-		}
-		return t.screen.LogicalLineRows(row)
+	if row < 0 || row >= len(t.logicalView) {
+		return nil
 	}
-	return nil
+	group := t.logicalView[row]
+	return t.logicalRows[group.first:group.last]
+}
+
+func (t *terminal) prepareLogicalLines() {
+	cols, rows := t.presentedSize()
+	if cap(t.logicalView) < rows {
+		t.logicalView = make([]logicalViewRow, rows)
+	} else {
+		t.logicalView = t.logicalView[:rows]
+		clear(t.logicalView)
+	}
+	clear(t.logicalRows)
+	t.logicalRows = t.logicalRows[:0]
+	for row := 0; row < rows; {
+		first, last, base := 0, 0, 0
+		cut := false
+		if t.sync != nil {
+			base = t.sync.visible
+			first, last = base+row, base+row
+			for first > 0 && t.sync.lines[first-1].Wrapped {
+				first--
+			}
+			for last+1 < len(t.sync.lines) && t.sync.lines[last].Wrapped {
+				last++
+			}
+			cut = first == 0 && t.sync.prefixCut || last == len(t.sync.lines)-1 && t.sync.suffixCut
+		} else {
+			base = t.screen.ViewLine(0)
+			var ok bool
+			first, last, ok = t.screen.LogicalLineRange(row)
+			if !ok {
+				row++
+				continue
+			}
+		}
+		next := min(rows, last-base+1)
+		if next <= row {
+			row++
+			continue
+		}
+		if last > first || cut {
+			group := logicalViewRow{first: len(t.logicalRows), suppressed: cut || last-first+1 > maxLogicalHighlightCells/cols}
+			if !group.suppressed {
+				for index := first; index <= last; index++ {
+					if t.sync != nil {
+						t.logicalRows = append(t.logicalRows, t.sync.lines[index])
+					} else if line, ok := t.screen.RetainedRow(index); ok {
+						t.logicalRows = append(t.logicalRows, line)
+					}
+				}
+			}
+			group.last = len(t.logicalRows)
+			for visible := row; visible < next; visible++ {
+				t.logicalView[visible] = group
+			}
+		}
+		row = next
+	}
+	t.logicalReady = true
 }
 
 // syncRemaining is how long the held frame may still be shown.
