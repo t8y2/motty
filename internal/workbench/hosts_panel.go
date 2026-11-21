@@ -549,13 +549,12 @@ func (state *State) hostsPanelGroupFromHit(id gfx.ID) (int, bool) {
 	return 0, false
 }
 
-// connectHostsPanelHost opens the host in a tab of its own, as the hosts page
-// does: choosing a session already open belongs to the tab strip.
+// connectHostsPanelHost opens a host the same way the hosts page does.
 func (state *State) connectHostsPanelHost(host Host) gfx.EventResult {
 	state.hostsPanel.selected = host.ID
 	state.selectedHostID = host.ID
 	state.pendingWorkspace, state.pendingPane = 0, 0
-	state.newHostSession(host)
+	state.openHostSession(host)
 	return gfx.EventResult{Handled: true, Repaint: true, Focus: state.activeTerminalFocusHit()}
 }
 

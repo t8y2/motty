@@ -169,8 +169,10 @@ type Session struct {
 	// value is copied when a tab moves between windows.
 	pathCompletion *pathCompletion
 
-	host     Host // what was dialed, to dial again
-	jumpPath string
+	host           Host // current host settings, used on the next dial
+	dialedProtocol hostProtocol
+	dialedTerminal hostTerminal
+	jumpPath       string
 	// desktopTunnel says this remote desktop is reached over SSH: its ViaSSH
 	// tunnel, or the jump route that carries its port. It is what the desktop's
 	// own encryption and login rows follow, where host.tunneled() names only
@@ -183,6 +185,13 @@ type Session struct {
 	// sshOptions it is frozen at the dial: a transport authenticated one way is
 	// not lent to a host that would authenticate another (see shareFrom).
 	authentication sshconn.Authentication
+	// These are the host-owned authentication settings at the time of the dial.
+	// Keep them separate from authentication: the resolved policy also contains
+	// the global key library, which may change without editing this host.
+	dialedHostAuth           hostAuth
+	dialedHostIdentity       string
+	dialedHostCredential     string
+	dialedHostIdentitiesOnly bool
 	// interactiveOnly is the probe policy this connection was dialed with,
 	// frozen like authentication. A transport opened for a host confined to its
 	// interactive session sent no command probes and carries TCP keepalive, so

@@ -399,16 +399,14 @@ func (tray *Tray) reveal(member trayMember, id uint32) {
 	member.state.options.Invalidate()
 }
 
-// openHost connects a saved host in a tab of its own, as the hosts page does,
-// and brings the window forward: a menu chosen while the window is hidden
-// should show the session it just opened.
+// openHost connects a saved host and brings the selected window forward.
 func (tray *Tray) openHost(member trayMember, catalogID string) {
 	host, ok := member.state.hostByCatalogID(catalogID)
 	if !ok {
 		return
 	}
 	member.state.pendingWorkspace, member.state.pendingPane = 0, 0
-	member.state.newHostSession(host)
+	member.state.openHostSession(host)
 	member.window.Show()
 	member.state.options.Invalidate()
 }

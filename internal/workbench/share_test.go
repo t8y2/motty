@@ -115,8 +115,8 @@ func TestANewTabOnAConnectedHostSharesToo(t *testing.T) {
 	state := newTestState(t, options)
 	world.connectFirst(t, state)
 
-	state.Click(hitHosts)
-	openHost(state)
+	state.Click(hitNewTab)
+	clickPickerRow(t, state, state.hosts[0].Label)
 	if len(world.conns) != 1 || len(world.shared) != 1 {
 		t.Fatalf("dials %d, shares %d", len(world.conns), len(world.shared))
 	}
@@ -305,8 +305,7 @@ func TestAChangedEffectiveProxyPolicyNeverSharesTheOldConnection(t *testing.T) {
 			// Host editing updates open tabs for future reconnects, but it cannot
 			// change the transport their live connection already established.
 			state.sessions[0].host = state.hosts[0]
-			state.Click(hitHosts)
-			openHost(state)
+			state.newHostSession(state.hosts[0])
 			if len(world.conns) != 2 || len(world.shared) != 0 {
 				t.Fatalf("dials=%d shares=%d", len(world.conns), len(world.shared))
 			}
@@ -337,8 +336,7 @@ func TestSharingCanBeTurnedOffAndTheChoiceIsKept(t *testing.T) {
 		t.Fatal("the setting did not change")
 	}
 
-	state.Click(hitHosts)
-	openHost(state)
+	state.newHostSession(state.hosts[0])
 	if len(world.conns) != 2 || len(world.shared) != 0 {
 		t.Fatalf("dials %d, shares %d: with sharing off a tab dials", len(world.conns), len(world.shared))
 	}

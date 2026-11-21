@@ -171,6 +171,34 @@ func TestPressingTheBarOfALonePaneKeepsTyping(t *testing.T) {
 	}
 }
 
+func TestReopeningAHostFromTheCatalogFocusesItsExistingTerminal(t *testing.T) {
+	state, world, _, shell := liveSession(t)
+	firstID := state.activeSessionID
+	workspace := state.deck.ActiveWorkspace()
+	state.newHostSession(state.hosts[1])
+	state.Click(hitHosts)
+	driver := paneDriver(t, state, gfx.Size{Width: 1400, Height: 900})
+	row, ok := hostListHostHitIn(driver.Snapshot().Hits, state, state.hosts[0].ID)
+	if !ok {
+		t.Fatal("catalog does not show the first host")
+	}
+	if err := driver.DoubleClick(row.Bounds.X+row.Bounds.Width/4, row.Bounds.Y+row.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if len(state.sessions) != 2 || len(world.conns) != 2 || state.activeSessionID != firstID || state.deck.ActiveWorkspace() != workspace {
+		t.Fatalf("sessions=%d dials=%d active=%d workspace=%d, want original session=%d workspace=%d", len(state.sessions), len(world.conns), state.activeSessionID, state.deck.ActiveWorkspace(), firstID, workspace)
+	}
+	if got, want := driver.Snapshot().Focused, terminalOf(state, &state.sessions[0]); got != want {
+		t.Fatalf("focused %v, want the reused terminal %v", got, want)
+	}
+	if err := driver.Type("x"); err != nil {
+		t.Fatal(err)
+	}
+	if got := shell.typed(); got != "x" {
+		t.Fatalf("the reused shell received %q, want x", got)
+	}
+}
+
 // A restored pane has no terminal, so pressing it puts the keyboard on the one
 // action its page offers: Enter then connects that pane instead of typing into
 // the pane the keyboard was in.

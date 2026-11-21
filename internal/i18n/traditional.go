@@ -370,7 +370,7 @@ var TraditionalMessages = Messages{
 	SettingsStartupDisabled:                "已停用",
 	SettingsStartupDescription:             "開啟軟體時自動開啟的終端機和主機；需要密碼或確認主機金鑰的會照常詢問。",
 	SettingsStartupReuse:                   "已開啟時不再新增",
-	SettingsStartupReuseDescription:        "啟動要開啟的終端機或主機已經開啟時，切換到它而不是再開一個。",
+	SettingsStartupReuseDescription:        "連線主機或在啟動時開啟工作階段時，切換到目前視窗中已有的工作階段。新增分頁、複製和分割畫面仍會開啟獨立工作階段。",
 	SettingsStartupNone:                    "不開啟",
 	SettingsStartupJoiner:                  "、",
 	SettingsStartupHostsCount:              "%d 台主機",
