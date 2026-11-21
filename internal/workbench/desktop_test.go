@@ -370,6 +370,119 @@ func TestKeyboardCaptureStopsMottyShortcutsUntilTheEscapeChordReleasesIt(t *test
 	}
 }
 
+func TestDesktopEndedReconnectButtonIsSelectableByPointer(t *testing.T) {
+	fixture := startVNCFixture(t, "secret")
+	state, session := vncState(t, fixture)
+	connectDesktop(t, state, session, "secret")
+	fixture.mu.Lock()
+	for _, conn := range fixture.conns {
+		conn.Close()
+	}
+	fixture.mu.Unlock()
+	waitUntil(t, state, "the end", func() bool { return session.desk != nil && session.desk.ended })
+	canvas := paintDesk(state)
+	buttonID := state.paneIdentity(session, hitDesktopReconnect)
+	btnHit, ok := hitByID(canvas, buttonID)
+	if !ok {
+		t.Fatalf("reconnect button %v not found in hits", buttonID)
+	}
+	hits := canvas.Hits()
+	var cardBlocked bool
+	for _, h := range hits {
+		if h.Block && h.Bounds.Width >= 160 && h.Bounds.Height >= 100 {
+			cardBlocked = true
+			break
+		}
+	}
+	if !cardBlocked {
+		t.Fatal("expected dialog card to have a blocking hit region")
+	}
+
+	terminalHit, ok := hitByID(canvas, hitTerminalList.At(int(session.ID)))
+	if !ok {
+		t.Fatal("terminal hit not found")
+	}
+	if terminalHit.Cursor != gfx.PointerCursorDefault {
+		t.Fatalf("terminal hit cursor when ended = %v, want PointerCursorDefault", terminalHit.Cursor)
+	}
+
+	cx, cy := btnHit.Bounds.X+btnHit.Bounds.Width/2, btnHit.Bounds.Y+btnHit.Bounds.Height/2
+	var topHit gfx.Hit
+	var found bool
+	for i := len(hits) - 1; i >= 0; i-- {
+		h := hits[i]
+		if cx >= h.Bounds.X && cx <= h.Bounds.X+h.Bounds.Width && cy >= h.Bounds.Y && cy <= h.Bounds.Y+h.Bounds.Height {
+			topHit = h
+			found = true
+			break
+		}
+	}
+	if !found || topHit.ID != buttonID {
+		t.Fatalf("top hit at button (%v, %v) is %v (role=%v), want button %v", cx, cy, topHit.ID, topHit.Role, buttonID)
+	}
+	state.Click(topHit.ID)
+	connectDesktop(t, state, session, "secret")
+	if fixture.accepted != 2 {
+		t.Fatalf("server accepted %d connections, want 2", fixture.accepted)
+	}
+}
+
+func TestDesktopEndedCardAndMultiLineReason(t *testing.T) {
+	fixture := startVNCFixture(t, "secret")
+	state, session := vncState(t, fixture)
+	connectDesktop(t, state, session, "secret")
+	fixture.mu.Lock()
+	for _, conn := range fixture.conns {
+		conn.Close()
+	}
+	fixture.mu.Unlock()
+	waitUntil(t, state, "the end", func() bool { return session.desk != nil && session.desk.ended })
+	session.err = fmt.Errorf("sshconn: disconnected: disconnected by server: MCS Disconnect PDU: An internal server error occurred")
+	canvas := paintDesk(state)
+
+	buttonID := state.paneIdentity(session, hitDesktopReconnect)
+	if _, ok := hitByID(canvas, buttonID); !ok {
+		t.Fatalf("reconnect button %v not found in hits", buttonID)
+	}
+
+	var hasBlock bool
+	for _, hit := range canvas.Hits() {
+		if hit.Block && hit.Bounds.Width >= 160 && hit.Bounds.Height >= 100 {
+			hasBlock = true
+			break
+		}
+	}
+	if !hasBlock {
+		t.Fatal("expected dialog card to have a blocking hit region")
+	}
+}
+
+func TestDesktopEndedFullscreenAndChromelessOffersReconnect(t *testing.T) {
+	fixture := startVNCFixture(t, "secret")
+	state, session := vncState(t, fixture)
+	connectDesktop(t, state, session, "secret")
+	session.desk.fullscreen = true
+	fixture.mu.Lock()
+	for _, conn := range fixture.conns {
+		conn.Close()
+	}
+	fixture.mu.Unlock()
+	waitUntil(t, state, "the end", func() bool { return session.desk != nil && session.desk.ended })
+	canvas := paintDesk(state)
+
+	buttonID := state.paneIdentity(session, hitDesktopReconnect)
+	if _, ok := hitByID(canvas, buttonID); !ok {
+		t.Fatalf("reconnect button %v not found in fullscreen hits", buttonID)
+	}
+
+	session.desk.fullscreen = false
+	session.desk.chromeless = true
+	canvas = paintDesk(state)
+	if _, ok := hitByID(canvas, buttonID); !ok {
+		t.Fatalf("reconnect button %v not found in chromeless hits", buttonID)
+	}
+}
+
 func TestLostConnectionKeepsThePictureAndEnterReconnects(t *testing.T) {
 	fixture := startVNCFixture(t, "secret")
 	state, session := vncState(t, fixture)
