@@ -904,6 +904,9 @@ func (state *State) Wake() {
 	state.syncSFTPWindows()
 	state.aiPumpCLILogin()
 	state.syncRemoteToolsWindows()
+	if len(state.edits.list) > 0 && !state.edits.watching {
+		state.watchExternalEdits()
+	}
 	// Sessions were created, ended, or moved into a retry above: the network
 	// watcher follows the live ones, so idle windows poll nothing.
 	state.syncLinkWatch()
