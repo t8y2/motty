@@ -971,6 +971,67 @@ func TestOpeningTheSameHostAgainReusesItsWorkspace(t *testing.T) {
 	}
 }
 
+func TestOpeningAHostReusesOnlyItsDialedRoute(t *testing.T) {
+	tests := []struct {
+		name   string
+		setup  func(*State)
+		change func(*State)
+		reuse  bool
+	}{
+		{name: "unchanged jump", setup: func(state *State) {
+			state.proxies = []proxyRecord{{ID: 1, TargetID: state.hosts[0].ID, JumpID: state.hosts[1].ID}}
+		}, reuse: true},
+		{name: "outbound proxy changes", change: func(state *State) {
+			state.proxy = outboundProxy{kind: sshconn.ProxySOCKS5, address: "localhost:1080"}
+		}},
+		{name: "jump added", change: func(state *State) {
+			state.proxies = []proxyRecord{{ID: 1, TargetID: state.hosts[0].ID, JumpID: state.hosts[1].ID}}
+		}},
+		{name: "jump authentication changes", setup: func(state *State) {
+			state.proxies = []proxyRecord{{ID: 1, TargetID: state.hosts[0].ID, JumpID: state.hosts[1].ID}}
+		}, change: func(state *State) {
+			state.hosts[1].Auth = authPassword
+		}},
+		{name: "target algorithms change", change: func(state *State) {
+			state.hosts[0].Algo = &hostAlgo{mode: algoCompatible}
+		}},
+		{name: "target credential changes", change: func(state *State) {
+			state.hosts[0].Credential = "changed"
+		}},
+		{name: "jump algorithms change", setup: func(state *State) {
+			state.proxies = []proxyRecord{{ID: 1, TargetID: state.hosts[0].ID, JumpID: state.hosts[1].ID}}
+		}, change: func(state *State) {
+			state.hosts[1].Algo = &hostAlgo{mode: algoCompatible}
+		}},
+		{name: "jump endpoint changes", setup: func(state *State) {
+			state.proxies = []proxyRecord{{ID: 1, TargetID: state.hosts[0].ID, JumpID: state.hosts[1].ID}}
+		}, change: func(state *State) {
+			state.hosts[1].Address = "other-jump.example.com"
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			world, options := newSharingWorld(t)
+			state := newTestState(t, options)
+			if test.setup != nil {
+				test.setup(state)
+			}
+			world.connectFirst(t, state)
+			first := state.activeSessionID
+			if test.change != nil {
+				test.change(state)
+			}
+			opened := state.openHostSession(state.hosts[0])
+			if (opened.ID == first) != test.reuse {
+				t.Fatalf("opened session %d, original %d, reuse=%v", opened.ID, first, test.reuse)
+			}
+			if !test.reuse && (len(world.conns) != 2 || len(world.shared) != 0) {
+				t.Fatalf("changed route: dials=%d shared=%d", len(world.conns), len(world.shared))
+			}
+		})
+	}
+}
+
 func TestOpeningTheSameHostAgainPrefersTheActiveLiveSession(t *testing.T) {
 	for _, ended := range []bool{false, true} {
 		t.Run(map[bool]string{false: "active live session", true: "active failed session"}[ended], func(t *testing.T) {

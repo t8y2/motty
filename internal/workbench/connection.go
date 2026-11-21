@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -638,6 +639,7 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 	session.dialedHostIdentity = host.Identity
 	session.dialedHostCredential = host.Credential
 	session.dialedHostIdentitiesOnly = host.IdentitiesOnly
+	session.dialedAlgoMode, session.dialedAlgoList = host.savedAlgo()
 	session.agent, session.agentWatch = agentNone, agentWatch{}
 	session.Address = state.sessionAddress(host)
 	session.endpoint = sshconn.Endpoint{Host: host.Address, Port: host.Port, User: state.login(host)}
@@ -723,6 +725,7 @@ func (state *State) sshConfigFor(session *Session, host Host) (config sshconn.Co
 	// it with the connection.
 	config.SecurityKeyAgent = newSecurityKeyAgent(state).Agent
 	session.proxyRoute, session.jumpPath = route.proxyKey, route.jumpPath
+	session.jumpPolicies = route.jumpPolicies
 	// Freeze how this endpoint authenticates and which probes it allows, as the
 	// transport will: a later host edit, or another host at the same address,
 	// must not describe this dial after the fact.
@@ -773,6 +776,10 @@ func (state *State) shareFrom(session *Session, host Host) (Connection, *Session
 		// Compare its dialed account/address, not the next connection's settings.
 		if other.ID == session.ID || other.conn == nil || other.host.CatalogID != host.CatalogID || other.Address != address ||
 			other.jumpPath != session.jumpPath || other.proxyRoute != session.proxyRoute ||
+			!slices.EqualFunc(other.jumpPolicies, session.jumpPolicies, jumpPolicy.equal) ||
+			other.dialedAlgoMode != session.dialedAlgoMode || other.dialedAlgoList != session.dialedAlgoList ||
+			other.dialedHostAuth != session.dialedHostAuth || other.dialedHostIdentity != session.dialedHostIdentity ||
+			other.dialedHostCredential != session.dialedHostCredential || other.dialedHostIdentitiesOnly != session.dialedHostIdentitiesOnly ||
 			other.interactiveOnly != session.interactiveOnly ||
 			!other.sshOptions.Equal(session.sshOptions) || !other.authentication.Equal(session.authentication) {
 			continue

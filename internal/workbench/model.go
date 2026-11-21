@@ -173,6 +173,7 @@ type Session struct {
 	dialedProtocol hostProtocol
 	dialedTerminal hostTerminal
 	jumpPath       string
+	jumpPolicies   []jumpPolicy
 	// desktopTunnel says this remote desktop is reached over SSH: its ViaSSH
 	// tunnel, or the jump route that carries its port. It is what the desktop's
 	// own encryption and login rows follow, where host.tunneled() names only
@@ -192,6 +193,8 @@ type Session struct {
 	dialedHostIdentity       string
 	dialedHostCredential     string
 	dialedHostIdentitiesOnly bool
+	dialedAlgoMode           string
+	dialedAlgoList           string
 	// interactiveOnly is the probe policy this connection was dialed with,
 	// frozen like authentication. A transport opened for a host confined to its
 	// interactive session sent no command probes and carries TCP keepalive, so

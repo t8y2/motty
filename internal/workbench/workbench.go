@@ -3313,6 +3313,15 @@ func (state *State) openHostSession(host Host) *Session {
 	if !state.startupReuse || state.pendingPane != 0 {
 		return state.createHostSession(host, address)
 	}
+	var route connectionRoute
+	routeValid := true
+	if host.isSSH() && host.ID != localHostID {
+		var config sshconn.Config
+		config, route, routeValid = state.hostCatalog.sshConfigFor(host, host, state.connectionEnv(nil))
+		if config.Proxy != nil && config.Proxy.Err != nil {
+			routeValid = false
+		}
+	}
 	var existing *Session
 	for index := range state.sessions {
 		session := &state.sessions[index]
@@ -3336,7 +3345,11 @@ func (state *State) openHostSession(host Host) *Session {
 		if !state.canReconnect(session) {
 			// An active SSH session still has the authentication and probe
 			// policy it dialed with, even after the saved host has been edited.
-			if host.isSSH() && (session.interactiveOnly != host.InteractiveOnly ||
+			algoMode, algoList := host.savedAlgo()
+			if host.isSSH() && host.ID != localHostID && (!routeValid || session.proxyRoute != route.proxyKey || session.jumpPath != route.jumpPath ||
+				!slices.EqualFunc(session.jumpPolicies, route.jumpPolicies, jumpPolicy.equal) ||
+				session.dialedAlgoMode != algoMode || session.dialedAlgoList != algoList ||
+				session.interactiveOnly != host.InteractiveOnly ||
 				!session.sshOptions.Equal(host.SSHOptions) ||
 				session.dialedHostAuth != host.Auth ||
 				session.dialedHostIdentity != host.Identity ||
