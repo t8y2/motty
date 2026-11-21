@@ -3398,8 +3398,8 @@ func (state *State) declareHostGroupDeleteDialog(c ui.C) {
 		// The body's 130 pixels are the two choices' rows, as the hand-painted
 		// group stretched them: a radio centres its circle and label in the row.
 		ui.RadioGroup(c).Fill().Children(func() {
-			ui.RadioID(c.Key("parent"), hitGroupDeleteParent, &state.groupActions.ungroup, false, choices[0]).Grow(1)
-			ui.RadioID(c.Key("ungroup"), hitGroupDeleteUngroup, &state.groupActions.ungroup, true, choices[1]).Grow(1)
+			ui.RadioID(c, hitGroupDeleteParent, &state.groupActions.ungroup, false, choices[0]).Grow(1)
+			ui.RadioID(c, hitGroupDeleteUngroup, &state.groupActions.ungroup, true, choices[1]).Grow(1)
 		})
 	})
 	dialog.Footer(func() {
