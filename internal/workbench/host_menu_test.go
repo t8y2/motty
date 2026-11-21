@@ -36,6 +36,13 @@ func TestRightClickOnAHostOpensItsMenuWithoutChangingWhatIsChecked(t *testing.T)
 	if state.hostMenu.open || len(world.conns) != 1 {
 		t.Fatalf("Connect: open=%v dialed=%d", state.hostMenu.open, len(world.conns))
 	}
+	opened := state.activeSessionID
+	state.Click(hitHosts)
+	rightClickHost(state, second)
+	chooseMenu(t, state, hitHostMenuConnect)
+	if len(world.conns) != 1 || len(state.sessions) != 1 || state.activeSessionID != opened {
+		t.Fatal("Connect must reuse the session from the first menu action")
+	}
 }
 
 func TestHostMenuCopiesThePointedHostAddressAndConnectionName(t *testing.T) {

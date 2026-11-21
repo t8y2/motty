@@ -370,7 +370,7 @@ var EnglishMessages = Messages{
 	SettingsStartupDisabled:                "Off",
 	SettingsStartupDescription:             "The terminal and hosts a launch opens; password and host-key prompts are asked as usual.",
 	SettingsStartupReuse:                   "Reuse open ones",
-	SettingsStartupReuseDescription:        "When a terminal or host to open is already open, switch to it instead of opening another.",
+	SettingsStartupReuseDescription:        "Switch to an existing session in this window when connecting to a host or opening sessions at launch. New Tab, Duplicate and Split still open separate sessions.",
 	SettingsStartupNone:                    "Open nothing",
 	SettingsStartupJoiner:                  ", ",
 	SettingsStartupHostsCount:              "%d hosts",
