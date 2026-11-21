@@ -572,7 +572,7 @@ func TestAChangedInteractiveOnlyPolicyNeverSharesTheOldConnection(t *testing.T) 
 				t.Fatalf("the host was not edited: interactive-only %v", state.hosts[0].InteractiveOnly)
 			}
 
-			state.newHostSession(state.hosts[0])
+			openHost(state)
 			if len(world.conns) != 2 || len(world.shared) != 0 {
 				t.Fatalf("dials=%d shares=%d: the tab borrowed a transport dialed under the other policy", len(world.conns), len(world.shared))
 			}

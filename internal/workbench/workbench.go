@@ -3326,6 +3326,13 @@ func (state *State) openHostSession(host Host) *Session {
 		}
 		// Prefer an open connection (including one still dialing) over a retry.
 		if !state.canReconnect(session) {
+			// An active SSH session still has the authentication and probe
+			// policy it dialed with, even after the saved host has been edited.
+			if host.isSSH() && (session.interactiveOnly != host.InteractiveOnly ||
+				!session.sshOptions.Equal(host.SSHOptions) ||
+				!session.authentication.Equal(state.hostCatalog.authenticationFor(host))) {
+				continue
+			}
 			existing = session
 			break
 		}
