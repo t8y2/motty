@@ -15,6 +15,9 @@ import (
 // edited the way a native text field is.
 func openTabInlineSession(t *testing.T, state *State) *headless.Session {
 	t.Helper()
+	// These tests are about the name field, which the default double click no
+	// longer opens; choose rename so the gesture reaches it.
+	state.tabDoubleClick = tabDoubleClickRename
 	var input app.TextInput
 	session, err := headless.Open(app.Config{
 		Title: "tab inline rename", Width: 1400, Height: 900,

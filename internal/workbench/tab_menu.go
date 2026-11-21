@@ -100,12 +100,7 @@ func (state *State) workspaceTab(id layoutcore.WorkspaceID) (int, bool) {
 
 // tabMenuSession is the session shown in the menu's tab, if it has one.
 func (state *State) tabMenuSession() (*Session, bool) {
-	paneID := state.deck.ActivePane(state.tabMenu.workspace)
-	pane, ok := state.deck.Pane(state.tabMenu.workspace, paneID)
-	if !ok || pane.SessionID == 0 {
-		return nil, false
-	}
-	return state.sessionByIDPointer(uint32(pane.SessionID))
+	return state.tabSessionForWorkspace(state.tabMenu.workspace)
 }
 
 func (state *State) tabMenuHost(session *Session) (Host, bool) {
@@ -261,15 +256,7 @@ func (state *State) chooseTabMenu(id gfx.ID) {
 		state.rebuildTabOptions()
 		state.save()
 	case hitTabMenuDuplicate:
-		if session, ok := state.tabMenuSessionFor(workspace); ok {
-			state.pendingWorkspace, state.pendingPane = 0, 0
-			if session.isLocal() && state.localStart == localStartRemember {
-				// A copy of a local tab is opened beside it, so it starts in
-				// the same folder, the way a split does.
-				state.pendingDirectory = session.localDirectory
-			}
-			state.newHostSession(session.host)
-		}
+		state.duplicateTab(workspace)
 	case hitTabMenuEditHost:
 		if session, ok := state.tabMenuSessionFor(workspace); ok {
 			if host, found := state.tabMenuHost(session); found {

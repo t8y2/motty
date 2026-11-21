@@ -47,6 +47,7 @@ type savedState struct {
 	IconColor                  string                  `json:"icon_color,omitempty"`
 	BackgroundOutputAlerts     bool                    `json:"background_output_alerts,omitempty"`
 	TabOrientation             string                  `json:"tab_orientation,omitempty"`
+	TabDoubleClick             string                  `json:"tab_double_click,omitempty"`
 	TabNumbers                 bool                    `json:"tab_numbers,omitempty"`
 	HiddenNav                  []string                `json:"hidden_nav,omitempty"`
 	VerticalTabsAutoHide       bool                    `json:"vertical_tabs_auto_hide,omitempty"`
@@ -531,6 +532,7 @@ func (state *State) snapshot() savedState {
 		IconColor:                  state.iconColor.saved(),
 		BackgroundOutputAlerts:     state.backgroundOutputAlerts,
 		TabOrientation:             state.tabOrientation.String(),
+		TabDoubleClick:             state.tabDoubleClick.String(),
 		TabNumbers:                 state.tabNumbers,
 		HiddenNav:                  state.hiddenNav.savedKeys(),
 		VerticalTabsAutoHide:       state.verticalTabs.autoHide,
@@ -1056,6 +1058,7 @@ func (state *State) restoreLocal(saved savedState) {
 	state.restoreDashboard(saved.MonitorPanels, saved.MonitorActive)
 	state.backgroundOutputAlerts = saved.BackgroundOutputAlerts
 	state.setTabOrientation(tabOrientationFromString(saved.TabOrientation))
+	state.tabDoubleClick = tabDoubleClickFromString(saved.TabDoubleClick)
 	state.setTabNumbers(saved.TabNumbers)
 	state.hiddenNav = hiddenNavPages(saved.HiddenNav)
 	state.setVerticalTabsAutoHide(saved.VerticalTabsAutoHide)

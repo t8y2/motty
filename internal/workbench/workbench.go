@@ -508,6 +508,7 @@ type State struct {
 	tabStrip               tabStrip
 	windowBarScroll        windowBarScroll
 	tabOrientation         tabOrientation
+	tabDoubleClick         tabDoubleClickAction
 	tabNumbers             bool // each tab shows its place number next to the name
 	// hiddenNav is the set of page rows the sidebar leaves out. Hiding is the
 	// entry only: the page keeps its section, shortcuts and command entry.
@@ -1212,6 +1213,7 @@ func New(options Options) *State {
 		terminalScrollback: scrollbackLines,
 		terminalFindPrefs:  defaultTerminalFindPreferences,
 		tabTitleMode:       tabTitleConnection,
+		tabDoubleClick:     tabDoubleClickDuplicate,
 		startupReuse:       true,
 		startupEnabled:     true,
 		// The defaults a fresh window starts from, before the saved state is
