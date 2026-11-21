@@ -122,5 +122,11 @@ func projectLocalPatch(raw []byte) ([]byte, error) {
 		return nil, err
 	}
 	delete(fields, "recent_connections")
+	// Moving recognized toolbar fields to a shared record removes those fields,
+	// not future metadata an older-compatible writer must keep in this object.
+	// An empty object on both sides is neutral when there is no legacy value.
+	if _, present := fields["toolbars"]; !present {
+		fields["toolbars"] = json.RawMessage(`{}`)
+	}
 	return json.Marshal(fields)
 }

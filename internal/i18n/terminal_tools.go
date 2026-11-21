@@ -688,6 +688,10 @@ type ToolsMessages struct {
 	ActionSSHFmt                    string
 	ActionBrowserFmt                string
 	ActionFilesFmt                  string
+	ActionRevealFmt                 string
+	ActionReveal                    string
+	ActionRevealFailed              string
+	ActionRevealMissing             string
 	ActionExtractFmt                string
 	ActionCopyFmt                   string
 	DiagnosticsRow                  string

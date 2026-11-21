@@ -80,6 +80,12 @@ func (s *fileDesktop) RemoteFiles() (desktop.ReceivedFiles, bool) {
 	return files, true
 }
 
+func (s *fileDesktop) ReceivingFiles() (desktop.FileProgress, bool) {
+	return desktop.FileProgress{}, false
+}
+
+func (s *fileDesktop) CancelReceivingFiles() {}
+
 func (s *fileDesktop) SendText(text string) error {
 	s.mu.Lock()
 	s.typed = append(s.typed, text)

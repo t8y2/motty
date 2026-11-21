@@ -111,7 +111,7 @@ func TestSFTPToolbarCustomizationFromContextMenu(t *testing.T) {
 			must(err)
 			restored := newTestState(t, state.options)
 			menuLabelState = state // the window is the one whose language names the menu's rows
-			if !reflect.DeepEqual(restored.toolbars.snapshot(), saved.Toolbars) {
+			if !reflect.DeepEqual(restored.toolbars.sharedSnapshot(restored.terminalToolbarPosition, restored.terminalToolbarSize), saved.Toolbars) {
 				t.Fatal("toolbar visibility did not survive reopening")
 			}
 			for _, entry := range restored.toolbars.entries(toolbarSFTP) {

@@ -175,10 +175,13 @@ type terminal struct {
 	paintSpinner, paintLight                  ui.Box
 
 	// preedit is the input-method composition, shown at the cursor.
-	preedit    app.TextState
-	inputGuard terminalInputGuard
-	input      app.TextInput // reused, so resolving the text input allocates nothing
-	cache      rowCache
+	preedit      app.TextState
+	inputGuard   terminalInputGuard
+	input        app.TextInput // reused, so resolving the text input allocates nothing
+	cache        rowCache
+	logicalRows  []term.Row
+	logicalView  []logicalViewRow
+	logicalReady bool
 	// rowIDs are the visible rows' line identities, kept between paints so an
 	// image can find its row without scanning the whole scrollback.
 	rowIDs    []uint64
@@ -238,12 +241,13 @@ type terminal struct {
 	// automatic path list follows the line instead, and closes only on the keys
 	// that end it.
 	completionInput   func([]byte)
+	completionUnknown func()
 	suggestionPending *suggestionEcho
 	// acceptedKey is a press the terminal took for a prompt-level overlay (a
 	// suggestion, the password hint). A program that asked for win32 input
 	// records sees releases, so the end of that press is dropped with its
 	// repeats: the program never got the press itself.
-	acceptedKey acceptedKey
+	acceptedKeys map[acceptedKey]struct{}
 	// idleLastInput is when this shell last received input from any source. The
 	// idle keepalive measures its quiet interval from here.
 	idleLastInput time.Duration
@@ -290,11 +294,19 @@ func (t *terminal) accessibleName(format, address string) string {
 // the visible rows, the cursor and which buffer was active. The cells and marks
 // are copies, because the live screen changes in place while the block runs.
 type terminalSync struct {
-	lines  []term.Row
-	cursor term.Cursor
-	cols   int
-	alt    bool
+	lines                []term.Row
+	cursor               term.Cursor
+	cols, visible, rows  int
+	prefixCut, suffixCut bool
+	alt                  bool
 }
+
+type logicalViewRow struct {
+	first, last int
+	suppressed  bool
+}
+
+const maxLogicalHighlightCells = 1 << 20
 
 // terminalSyncTimeout ends a block whose program never sent ESU, so a crash
 // cannot leave the display frozen forever.
@@ -314,6 +326,7 @@ func newTerminalWithScrollback(cols, rows, scrollback int) *terminal {
 func (t *terminal) holdSync(on bool) {
 	if !on {
 		t.sync = nil
+		t.logicalReady = false
 		return
 	}
 	if t.sync != nil {
@@ -322,13 +335,31 @@ func (t *terminal) holdSync(on bool) {
 	cols, rows := t.screen.Size()
 	held := &t.syncBuf
 	held.cols, held.cursor, held.alt = cols, t.screen.Cursor(), t.screen.Modes().AltScreen
-	if cap(held.lines) < rows {
-		held.lines = make([]term.Row, rows)
+	first, last := t.screen.ViewLine(0), t.screen.ViewLine(rows-1)
+	held.prefixCut, held.suffixCut = false, false
+	if start, end, ok := t.screen.LogicalLineRange(0); ok {
+		if end-start+1 <= maxLogicalHighlightCells/cols {
+			first = start
+		} else {
+			held.prefixCut = start < first
+		}
+	}
+	if start, end, ok := t.screen.LogicalLineRange(rows - 1); ok {
+		if end-start+1 <= maxLogicalHighlightCells/cols {
+			last = end
+		} else {
+			held.suffixCut = end > last
+		}
+	}
+	held.visible, held.rows = t.screen.ViewLine(0)-first, rows
+	count := last - first + 1
+	if cap(held.lines) < count {
+		held.lines = make([]term.Row, count)
 	} else {
-		held.lines = held.lines[:rows]
+		held.lines = held.lines[:count]
 	}
 	for row := range held.lines {
-		line := t.screen.Row(row)
+		line, _ := t.screen.RetainedRow(first + row)
 		cells := held.lines[row].Cells[:0]
 		line.Cells = append(cells, line.Cells...)
 		marks := held.lines[row].Marks[:0]
@@ -336,6 +367,7 @@ func (t *terminal) holdSync(on bool) {
 		held.lines[row] = line
 	}
 	t.sync = held
+	t.logicalReady = false
 	t.syncAt = t.recordingNow()
 }
 
@@ -346,12 +378,13 @@ func (t *terminal) expireSync() {
 	}
 	if t.recordingNow()-t.syncAt >= terminalSyncTimeout {
 		t.sync = nil
+		t.logicalReady = false
 	}
 }
 
 func (t *terminal) presentedSize() (cols, rows int) {
 	if t.sync != nil {
-		return t.sync.cols, len(t.sync.lines)
+		return t.sync.cols, t.sync.rows
 	}
 	return t.screen.Size()
 }
@@ -372,12 +405,81 @@ func (t *terminal) presentedAltScreen() bool {
 
 func (t *terminal) presentedRow(row int) term.Row {
 	if t.sync != nil {
-		if row < 0 || row >= len(t.sync.lines) {
+		if row < 0 || row >= t.sync.rows {
 			return term.Row{}
 		}
-		return t.sync.lines[row]
+		return t.sync.lines[t.sync.visible+row]
 	}
 	return t.screen.Row(row)
+}
+
+func (t *terminal) presentedLogicalLine(row int) []term.Row {
+	if !t.logicalReady {
+		t.prepareLogicalLines()
+	}
+	if row < 0 || row >= len(t.logicalView) {
+		return nil
+	}
+	group := t.logicalView[row]
+	return t.logicalRows[group.first:group.last]
+}
+
+func (t *terminal) prepareLogicalLines() {
+	cols, rows := t.presentedSize()
+	if cap(t.logicalView) < rows {
+		t.logicalView = make([]logicalViewRow, rows)
+	} else {
+		t.logicalView = t.logicalView[:rows]
+		clear(t.logicalView)
+	}
+	clear(t.logicalRows)
+	t.logicalRows = t.logicalRows[:0]
+	for row := 0; row < rows; {
+		first, last, base := 0, 0, 0
+		cut := false
+		if t.sync != nil {
+			base = t.sync.visible
+			first, last = base+row, base+row
+			for first > 0 && t.sync.lines[first-1].Wrapped {
+				first--
+			}
+			for last+1 < len(t.sync.lines) && t.sync.lines[last].Wrapped {
+				last++
+			}
+			cut = first == 0 && t.sync.prefixCut || last == len(t.sync.lines)-1 && t.sync.suffixCut
+		} else {
+			base = t.screen.ViewLine(0)
+			var ok bool
+			first, last, ok = t.screen.LogicalLineRange(row)
+			if !ok {
+				row++
+				continue
+			}
+		}
+		next := min(rows, last-base+1)
+		if next <= row {
+			row++
+			continue
+		}
+		if last > first || cut {
+			group := logicalViewRow{first: len(t.logicalRows), suppressed: cut || last-first+1 > maxLogicalHighlightCells/cols}
+			if !group.suppressed {
+				for index := first; index <= last; index++ {
+					if t.sync != nil {
+						t.logicalRows = append(t.logicalRows, t.sync.lines[index])
+					} else if line, ok := t.screen.RetainedRow(index); ok {
+						t.logicalRows = append(t.logicalRows, line)
+					}
+				}
+			}
+			group.last = len(t.logicalRows)
+			for visible := row; visible < next; visible++ {
+				t.logicalView[visible] = group
+			}
+		}
+		row = next
+	}
+	t.logicalReady = true
 }
 
 // syncRemaining is how long the held frame may still be shown.
@@ -683,6 +785,10 @@ func (t *terminal) sendKeyState(p []byte) bool {
 // typing says whether p is the user typing rather than key state, and so
 // whether it clears the selection and returns the view to the live screen.
 func (t *terminal) sendInput(p []byte, drain, typing bool) bool {
+	return t.sendLogicalInput(p, p, drain, typing, false)
+}
+
+func (t *terminal) sendLogicalInput(p, logical []byte, drain, typing, unknown bool) bool {
 	// Any other input takes the terminal back from a line-by-line paste: the
 	// remaining lines would otherwise be interleaved with what the user is
 	// typing. The queue's own writes pass through writing.
@@ -699,23 +805,29 @@ func (t *terminal) sendInput(p []byte, drain, typing bool) bool {
 			return false
 		}
 	}
-	if t.exec != nil && userInterrupts(p) {
+	if t.exec != nil && (userInterrupts(p) || userInterrupts(logical)) {
 		t.finishExec(endUser) // the user took the terminal back; the keys go on to the shell
 	}
 	if typing {
 		t.selection.clear()
 		t.screen.ScrollToBottom()
 	}
-	t.autofill.Typed(p)
+	if unknown {
+		t.autofill.UnknownInput()
+	} else if len(logical) > 0 {
+		t.autofill.Typed(logical)
+	}
 	feed := t.historyOn != nil && t.historyOn()
 	if !feed && t.completionFeed != nil {
 		feed = t.completionFeed()
 	}
-	if feed {
-		if drain && t.takeOutput != nil && bytes.ContainsAny(p, "\r\n") {
+	if feed && unknown {
+		t.recorder.UnknownInput(cmdhistory.TermScreen{Term: t.screen}, t.recordingNow())
+	} else if feed && len(logical) > 0 {
+		if drain && t.takeOutput != nil && bytes.ContainsAny(logical, "\r\n") {
 			t.takeOutput()
 		}
-		if command, ok := t.recorder.Typed(p, cmdhistory.TermScreen{Term: t.screen}, t.recordingNow()); ok && t.onCommand != nil {
+		if command, ok := t.recorder.Typed(logical, cmdhistory.TermScreen{Term: t.screen}, t.recordingNow()); ok && t.onCommand != nil {
 			t.onCommand(command)
 		}
 	}
@@ -723,13 +835,23 @@ func (t *terminal) sendInput(p []byte, drain, typing bool) bool {
 	if accepted {
 		t.observePredictionInput()
 		t.inputSent = true
-		t.noteShellInput(p)
-		if bytes.ContainsAny(p, "\r\n\x03\x04") {
+		if unknown {
+			t.noteShellInput(nil)
+			t.inputLine = false
+			t.inputGuard.known = false
+			t.promptDirty = true
+			t.suggestionPending = nil
+		} else if len(logical) > 0 {
+			t.noteShellInput(logical)
+		}
+		if bytes.ContainsAny(logical, "\r\n\x03\x04") {
 			t.suggestionPending = nil
 		}
 		t.recording.append(t.recordingNow(), terminalRecordingInput, p)
-		if t.completionInput != nil {
-			t.completionInput(p)
+		if unknown && t.completionUnknown != nil {
+			t.completionUnknown()
+		} else if t.completionInput != nil && len(logical) > 0 {
+			t.completionInput(logical)
 		}
 	}
 	return accepted
@@ -1872,7 +1994,6 @@ func displayCells(value string) int {
 // program that asked for win32 input records sees presses and releases, so the
 // release of a press it never got is dropped, along with its repeats.
 type acceptedKey struct {
-	set  bool
 	key  gfx.Key
 	text string
 }
@@ -1881,14 +2002,27 @@ type acceptedKey struct {
 // also be sent its release.
 func (t *terminal) noteAcceptedKey(event gfx.KeyEvent) {
 	if t.screen.Modes().Win32Input && !event.Release && !event.Repeat {
-		t.acceptedKey = acceptedKey{set: true, key: event.Key, text: event.Text}
+		if t.acceptedKeys == nil {
+			t.acceptedKeys = make(map[acceptedKey]struct{})
+		}
+		t.acceptedKeys[acceptedKey{key: event.Key, text: event.Text}] = struct{}{}
 	}
 }
 
 // holds reports whether event ends the press the terminal consumed, or repeats
 // it: it is that key's release or a repeat, with the same text.
-func (a acceptedKey) holds(event gfx.KeyEvent) bool {
-	return a.set && (event.Release || event.Repeat) && event.Key == a.key && event.Text == a.text
+func (t *terminal) consumeAcceptedKey(event gfx.KeyEvent) bool {
+	if !event.Release && !event.Repeat {
+		return false
+	}
+	key := acceptedKey{key: event.Key, text: event.Text}
+	if _, ok := t.acceptedKeys[key]; !ok {
+		return false
+	}
+	if event.Release {
+		delete(t.acceptedKeys, key)
+	}
+	return true
 }
 
 // terminalKey encodes keys left unclaimed by the application shortcut routes.
@@ -1900,10 +2034,7 @@ func (state *State) terminalKey(session *Session, event gfx.KeyEvent) gfx.EventR
 	if t.preedit.Composing && event.Key == gfx.KeyEnter && event.Modifiers == 0 && !t.screen.Modes().AltScreen {
 		return handled
 	}
-	if t.acceptedKey.holds(event) {
-		if event.Release {
-			t.acceptedKey = acceptedKey{}
-		}
+	if t.consumeAcceptedKey(event) {
 		return handled
 	}
 	if event.Modifiers&gfx.ModifierMeta != 0 && !event.Key.IsModifier() {
@@ -1961,8 +2092,10 @@ func (state *State) terminalKey(session *Session, event gfx.KeyEvent) gfx.EventR
 		return handled
 	}
 	var bytes []byte
+	win32Key := false
 	if modes.Win32Input {
 		bytes = term.EncodeWin32Key(event)
+		win32Key = len(bytes) > 0
 	} else if runtime.GOOS == "darwin" && t.screen.KeyboardFlags() == 0 && !modes.AltScreen &&
 		event.Modifiers == gfx.ModifierAlt && !event.Release {
 		// Match macOS Terminal's word movement when the shell owns the key.
@@ -1991,12 +2124,20 @@ func (state *State) terminalKey(session *Session, event gfx.KeyEvent) gfx.EventR
 		if event.Release || event.Key.IsModifier() {
 			// Key state is not typing: it reaches the program, but leaves the
 			// selection and the scrollback view where the user put them.
-			state.typedKeyState(session, bytes)
+			if win32Key {
+				state.typedWin32Key(session, bytes, nil, false)
+			} else {
+				state.typedKeyState(session, bytes)
+			}
 			return handled
 		}
 		scrolled := t.screen.ViewOffset() > 0
 		predictionChanged := t.prediction.reset()
-		state.typed(session, bytes)
+		if win32Key {
+			state.typedWin32Key(session, bytes, term.Win32LogicalKey(event), true)
+		} else {
+			state.typed(session, bytes)
+		}
 		handled.Repaint = scrolled || predictionChanged
 	}
 	return handled

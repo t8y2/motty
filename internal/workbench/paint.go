@@ -2374,12 +2374,14 @@ func (state *State) declareHostTreeRow(c ui.C, d *hostRowDrawer, rowWidth, left 
 				ui.Row(c).Width(tagsRoom).Shrink(0).Gap(5).Items(ui.Center).Children(func() {
 					if showProtocol {
 						color := hostProtocolTagColor(pal, host.Protocol)
-						ui.Row(c).Height(24).PadX(7).Items(ui.Center).Radius(12).Background(withAlpha(color, 0.14)).Children(func() {
+						ui.Badge(c, protocolLabel).Height(24).PadX(7).PadY(0).Items(ui.Center).Radius(12).
+							Background(withAlpha(color, 0.14)).Children(func() {
 							ui.Text(c, protocolLabel).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(color)
 						})
 					}
 					for _, tag := range tagList[:tagCount] {
-						ui.Row(c).Height(24).PadX(7).Items(ui.Center).Radius(12).Background(pal.surface).Children(func() {
+						ui.Badge(c, tag).Height(24).PadX(7).PadY(0).Items(ui.Center).Radius(12).
+							Background(pal.surface).Children(func() {
 							ui.Text(c, tag).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted)
 						})
 					}
@@ -3460,7 +3462,8 @@ var hostSystemChoices = [...]struct {
 	{sshconn.SystemVoid, "Void Linux"}, {sshconn.SystemSlackware, "Slackware"},
 	{sshconn.SystemAnolis, "Anolis OS"}, {sshconn.SystemTencentOS, "TencentOS"},
 	{sshconn.SystemAmazonLinux, "Amazon Linux"}, {sshconn.SystemAzureLinux, "Azure Linux"},
-	{sshconn.SystemOracleLinux, "Oracle Linux"}, {sshconn.SystemESXi, "VMware ESXi"}, {sshconn.SystemAIX, "AIX"},
+	{sshconn.SystemOracleLinux, "Oracle Linux"}, {sshconn.SystemAlibabaCloudLinux, "Alibaba Cloud Linux"},
+	{sshconn.SystemESXi, "VMware ESXi"}, {sshconn.SystemAIX, "AIX"},
 	{sshconn.SystemFreeBSD, "FreeBSD"}, {sshconn.SystemLinux, "Linux"},
 	{sshconn.SystemWindows, "Windows"}, {sshconn.SystemDarwin, "macOS"},
 }

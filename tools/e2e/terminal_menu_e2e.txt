@@ -4,28 +4,43 @@
 #   dir=$(mktemp -d)
 #   MOTTY_LANG=en MOTTY_DATA_DIR=$dir python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/terminal_menu_e2e.txt
 #
-# The echoed line sits on row 2 of the terminal; the x of each right click is
+# The echoed line sits on row 1 of the terminal; the x of each right click is
 # where the address, the path and the archive name are on it. Look at the shots.
+# /etc/hosts is a path this computer really has, so the local terminal offers to
+# show it in the file manager.
 
 click "Local Terminal"
 settle 800
-type echo listening on 10.0.0.5:8080 and ls /var/log/syslog backup-2026-10-19-full.tar.gz
+type echo listening on 10.0.0.5:8080 and ls /etc/hosts backup-2026-10-19-full.tar.gz
 key enter
 settle 600
 
-rightclick 162 98
+rightclick 162 66
 settle 300
 waitfor "Open 10.0.0.5:8080 in browser" 2000
 shot /tmp/menu-ip.png
 key esc
 
-rightclick 310 98
+rightclick 337 66
 settle 300
-waitfor "in Files" 2000
+waitfor "in folder" 2000
 shot /tmp/menu-path.png
 key esc
 
-rightclick 450 98
+rightclick 514 66
 settle 300
 waitfor "Unpack" 2000
 shot /tmp/menu-archive.png
+
+# A name ls prints is relative, so it resolves against the folder the shell
+# reports. After the screen is cleared the shell's output is on row 1.
+key esc
+key ctrl+l
+settle 300
+type cd /etc && ls hosts
+key enter
+settle 800
+rightclick 31 66
+settle 300
+waitfor "Show hosts in folder" 2000
+shot /tmp/menu-relative.png

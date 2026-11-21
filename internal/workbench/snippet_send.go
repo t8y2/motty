@@ -183,6 +183,10 @@ func (state *State) submitSend() {
 	}
 	sender.input = text.Editor{}
 	state.closeCommandPalette()
+	// The form took the keyboard while it was up. Whichever targets it used,
+	// the terminal page is what stays on screen, so the terminal takes the
+	// keyboard back; off that page or under a dialog the request is dropped.
+	state.returnKeyboardToTerminal()
 	state.status = fmt.Sprintf(m.StatusSendSentFmt, sent)
 }
 

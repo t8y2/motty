@@ -85,6 +85,8 @@ type savedToolbars struct {
 	Terminal []toolbarEntry     `json:"terminal,omitempty"`
 	SFTP     []toolbarEntry     `json:"sftp,omitempty"`
 	Dock     []toolbarDockEntry `json:"dock,omitempty"`
+	Position string             `json:"position,omitempty"`
+	Size     string             `json:"size,omitempty"`
 }
 
 func (prefs *toolbarPreferences) entries(group toolbarGroup) []toolbarEntry {
@@ -181,6 +183,17 @@ func (prefs *toolbarPreferences) snapshot() *savedToolbars {
 		return nil
 	}
 	return &savedToolbars{Window: slices.Clone(prefs.layouts[0]), Terminal: slices.Clone(prefs.layouts[1]), SFTP: slices.Clone(prefs.layouts[2]), Dock: slices.Clone(prefs.dock)}
+}
+
+// Keep layout and placement in one shared record. An explicit default layout
+// records a reset; the pristine-state guard leaves untouched defaults out of sync.
+func (prefs *toolbarPreferences) sharedSnapshot(position terminalToolbarPosition, size terminalToolbarSize) *savedToolbars {
+	saved := prefs.snapshot()
+	if saved == nil {
+		saved = &savedToolbars{}
+	}
+	saved.Position, saved.Size = position.String(), size.String()
+	return saved
 }
 
 func (prefs *toolbarPreferences) customize(group toolbarGroup) []toolbarEntry {

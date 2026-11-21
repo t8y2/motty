@@ -58,32 +58,26 @@ type forwardStartResult struct {
 	err       error
 }
 
-// forwardTableSource reads the forwards page's table cells when the table asks
-// for them, one visible cell at a time.
-type forwardTableSource struct {
-	records *[]forwardRecord
-}
-
-func (source *forwardTableSource) Len() int {
-	if source == nil || source.records == nil {
-		return 0
+// initForwardList names the forward list's rows by their forward numbers, so a
+// row keeps its keyboard place as forwards are added above it or removed.
+func (state *State) initForwardList() {
+	state.forwardRowDecl = state.declareForwardRow
+	state.forwardList.Key = func(row int) int {
+		if row >= 0 && row < len(state.forwards) {
+			return int(state.forwards[row].ID)
+		}
+		return row
 	}
-	return len(*source.records)
-}
-
-func (source *forwardTableSource) Cell(row, column int) string {
-	if source == nil || source.records == nil {
+	state.forwardList.Label = func(row int) string {
+		if row >= 0 && row < len(state.forwards) {
+			return state.forwards[row].Label
+		}
 		return ""
 	}
-	records := *source.records
-	if row < 0 || row >= len(records) || column < 0 || column >= len(records[row].cells) {
-		return ""
-	}
-	return records[row].cells[column]
 }
 
-// syncForwardTable makes the table show the forward the application selected.
-func (state *State) syncForwardTable() {
+// syncForwardList makes the list show the forward the application selected.
+func (state *State) syncForwardList() {
 	row := -1
 	for index := range state.forwards {
 		if state.forwards[index].ID == state.selectedForwardID {
@@ -91,15 +85,61 @@ func (state *State) syncForwardTable() {
 			break
 		}
 	}
-	state.forwardTable.Select(row)
+	state.forwardList.Select(row)
 }
 
-// takeForwardTableSelection adopts the row a key moved the table to.
-func (state *State) takeForwardTableSelection() {
-	row := state.forwardTable.Selected()
+// takeForwardListSelection adopts the row a click or a key moved the list to.
+func (state *State) takeForwardListSelection() {
+	row := state.forwardList.Selected()
 	if row >= 0 && row < len(state.forwards) {
 		state.selectForward(state.forwards[row].ID)
 	}
+}
+
+// forwardListKey moves the forward list's keyboard row: the arrows, Home and End
+// and Page Up and Down, from a row that has the keyboard, as the canvas table
+// did.
+func (state *State) forwardListKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if state.activeSection != sectionForwards || state.modal != modalNone {
+		return gfx.EventResult{}, false
+	}
+	if event.Modifiers&(gfx.ModifierControl|gfx.ModifierMeta|gfx.ModifierAlt) != 0 {
+		return gfx.EventResult{}, false
+	}
+	row, ok := event.Target.In(hitForwardRowList)
+	if !ok {
+		return gfx.EventResult{}, false
+	}
+	last := len(state.forwards) - 1
+	if last < 0 {
+		return gfx.EventResult{}, false
+	}
+	first, lastVisible := state.forwardList.Visible()
+	page := max(lastVisible-first, 1)
+	switch event.Key {
+	case gfx.KeyUp:
+		row--
+	case gfx.KeyDown:
+		row++
+	case gfx.KeyPageUp:
+		row -= page
+	case gfx.KeyPageDown:
+		row += page
+	case gfx.KeyHome:
+		row = 0
+	case gfx.KeyEnd:
+		row = last
+	default:
+		return gfx.EventResult{}, false
+	}
+	row = min(max(row, 0), last)
+	state.forwardList.Select(row)
+	state.forwardList.ScrollIntoView(row)
+	state.takeForwardListSelection()
+	return gfx.EventResult{
+		Handled: true, Repaint: true,
+		Focus: hitForwardRowList.At(row), FocusVisible: true,
+	}, true
 }
 
 func (forward *forwardRecord) listenAddress() string {
@@ -467,13 +507,6 @@ func (state *State) openForwardDialog() {
 	state.modal = modalNewForward
 }
 
-func (state *State) openEditForward() {
-	if state.selectedForwardID == 0 {
-		return
-	}
-	state.openEditForwardID(state.selectedForwardID)
-}
-
 func (state *State) openEditForwardID(id uint32) {
 	forward, ok := state.forwardByID(id)
 	if !ok {
@@ -579,16 +612,26 @@ func (state *State) clickForwards(id gfx.ID) {
 	switch {
 	case id == hitForwardAdd:
 		state.openForwardDialog()
-	case id == hitForwardEdit:
-		state.openEditForward()
-	case id == hitForwardRemove:
-		state.removeSelectedForward()
-	case id == hitForwardStartStop:
-		state.toggleSelectedForward()
+	case id.Scope() == hitForwardRowList:
+		if row, ok := id.In(hitForwardRowList); ok && row >= 0 && row < len(state.forwards) {
+			state.selectForward(state.forwards[row].ID)
+		}
+	case id.Scope() == hitForwardRowEditList:
+		if forwardID, ok := id.In(hitForwardRowEditList); ok {
+			state.openEditForwardID(uint32(forwardID))
+		}
+	case id.Scope() == hitForwardRowToggleList:
+		if forwardID, ok := id.In(hitForwardRowToggleList); ok {
+			state.toggleForwardByID(uint32(forwardID))
+		}
+	case id.Scope() == hitForwardRowRemoveList:
+		if forwardID, ok := id.In(hitForwardRowRemoveList); ok {
+			state.removeForwardByID(uint32(forwardID))
+		}
 	}
 }
 
-// selectForward makes a forward the selected one. The table calls it from the
+// selectForward makes a forward the selected one. The list calls it from the
 // paint that delivers the click on its row.
 func (state *State) selectForward(id uint32) {
 	if _, ok := state.forwardByID(id); ok {
@@ -597,18 +640,22 @@ func (state *State) selectForward(id uint32) {
 	}
 }
 
-func (state *State) removeSelectedForward() {
+// removeForwardByID removes a forward from the list. A forward that is not the
+// selected one leaves the selection where it is.
+func (state *State) removeForwardByID(id uint32) {
 	for index := range state.forwards {
-		if state.forwards[index].ID != state.selectedForwardID {
+		if state.forwards[index].ID != id {
 			continue
 		}
 		removed := state.forwards[index]
 		state.forwards[index].stop()
 		state.forwards = slices.Delete(state.forwards, index, index+1)
 		state.releaseForwardTunnel(removed.sessionID)
-		state.selectedForwardID = 0
-		if len(state.forwards) > 0 {
-			state.selectedForwardID = state.forwards[min(index, len(state.forwards)-1)].ID
+		if state.selectedForwardID == removed.ID {
+			state.selectedForwardID = 0
+			if len(state.forwards) > 0 {
+				state.selectedForwardID = state.forwards[min(index, len(state.forwards)-1)].ID
+			}
 		}
 		state.refreshForwardCount()
 		state.status = state.messages.ForwardRemoved + removed.Label
@@ -617,8 +664,10 @@ func (state *State) removeSelectedForward() {
 	}
 }
 
-func (state *State) toggleSelectedForward() {
-	forward, ok := state.forwardByIDPointer(state.selectedForwardID)
+// toggleForwardByID starts the forward if it is stopped, and stops it if it
+// runs, waits or starts.
+func (state *State) toggleForwardByID(id uint32) {
+	forward, ok := state.forwardByIDPointer(id)
 	if !ok {
 		return
 	}

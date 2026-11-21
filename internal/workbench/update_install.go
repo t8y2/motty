@@ -62,11 +62,6 @@ type updateInstall struct {
 		done, size int64
 		line       string
 	}
-	// bar is the progress slot, fraction what it is filled to, and draw the
-	// painter kept so the declaration makes no method value.
-	bar      ui.Box
-	fraction float32
-	draw     func(*ui.DrawContext)
 }
 
 var (
@@ -317,18 +312,12 @@ func (state *State) declareUpdateProgress(c ui.C) {
 		case installInstalling:
 			line = m.UpdateInstalling
 		}
-		install.fraction = fraction
-		install.bar = ui.Box{}
 		dialog.Body(func() {
-			column := ui.Column(c).Fill()
-			column.Children(func() {
-				install.bar = ui.Slot(c).Height(8).Shrink(0).MarginSides(12, 0, 0, 0)
+			ui.Column(c).Fill().Children(func() {
+				ui.Progress(c, fraction).Height(8).Shrink(0).FillWidth().MarginSides(12, 0, 0, 0).
+					Label(title)
 				ui.Text(c, line).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(20).MarginSides(10, 0, 0, 0)
 			})
-			if install.draw == nil {
-				install.draw = state.drawUpdateProgressBar
-			}
-			column.DrawOver(install.draw)
 		})
 		if install.phase != installRestarting {
 			action := components.ButtonAction{ID: hitUpdateProgressCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary}
@@ -341,10 +330,4 @@ func (state *State) declareUpdateProgress(c ui.C) {
 			})
 		}
 	}
-}
-
-// drawUpdateProgressBar paints the install progress into its slot.
-func (state *State) drawUpdateProgressBar(d *ui.DrawContext) {
-	install := &state.update.install
-	components.Progress(d.Canvas, *d.Theme, install.bar.Rect(), install.fraction)
 }

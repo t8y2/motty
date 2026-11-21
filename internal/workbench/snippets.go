@@ -648,6 +648,10 @@ func (state *State) sendSnippetPicked(index int, session *Session) {
 	if state.sendResolvedSnippet(entry, entry.Command, session) {
 		state.ActivatePane(session.ID)
 		state.activeSection = sectionTerminal
+		// The page had the keyboard, and the page is what the click was on. The
+		// terminal is now on screen, so ask the next paint for its keyboard;
+		// otherwise the command arrives but typing goes nowhere until a click.
+		state.returnKeyboardToTerminal()
 	}
 }
 

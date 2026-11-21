@@ -742,9 +742,15 @@ func (state *State) connectionEnv(notify func()) connectEnv {
 }
 
 // shareFrom opens a tab on the connection another tab of this window already
-// has to the same account through the same jumps, so a split or a second tab
+// has to the same host through the same jumps, so a split or a second tab
 // needs no new handshake and no new password. It returns nil when there is no
 // such connection, or when the server will not lend it.
+//
+// Only a tab of the same saved host lends its connection, as a saved host owns
+// its tabs (see openHostSession). Two saved hosts at one account are two
+// destinations the user chose to keep apart: a bastion menu, for one, binds
+// every channel of a transport to the asset picked on it, so a borrowed
+// connection would skip the menu and land on another host's asset.
 //
 // The two tabs must also have dialed the same authentication policy. A
 // transport opened with a key is not a password login: lending it to a host
@@ -760,7 +766,7 @@ func (state *State) shareFrom(session *Session, host Host) (Connection, *Session
 		other := &state.sessions[index]
 		// The saved host may have been edited since this transport was opened.
 		// Compare its dialed account/address, not the next connection's settings.
-		if other.ID == session.ID || other.conn == nil || other.Address != address ||
+		if other.ID == session.ID || other.conn == nil || other.host.CatalogID != host.CatalogID || other.Address != address ||
 			other.jumpPath != session.jumpPath || other.proxyRoute != session.proxyRoute ||
 			other.interactiveOnly != session.interactiveOnly ||
 			!other.sshOptions.Equal(session.sshOptions) || !other.authentication.Equal(session.authentication) {
