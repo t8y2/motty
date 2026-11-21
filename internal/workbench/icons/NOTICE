@@ -14,3 +14,5 @@ The serial glyph was drawn for the host icon set in the Lucide style.
 The session-log glyph is Lucide's file-clock, pinned from lucide-static v0.469.0
 (https://raw.githubusercontent.com/lucide-icons/lucide/0.469.0/icons/file-clock.svg).
 It is ISC licensed like the other Lucide icons above.
+The Alibaba Cloud glyph is pinned from Simple Icons
+(https://github.com/simple-icons/simple-icons/blob/521c96fd04b0ea93034db8715eda5a4de27a58bb/icons/alibabacloud.svg).

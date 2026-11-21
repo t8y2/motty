@@ -15,6 +15,8 @@
 // The session-log glyph is Lucide's file-clock, pinned from lucide-static v0.469.0
 // (https://raw.githubusercontent.com/lucide-icons/lucide/0.469.0/icons/file-clock.svg).
 // It is ISC licensed like the other Lucide icons above.
+// The Alibaba Cloud glyph is pinned from Simple Icons
+// (https://github.com/simple-icons/simple-icons/blob/521c96fd04b0ea93034db8715eda5a4de27a58bb/icons/alibabacloud.svg).
 
 package icons
 
@@ -1155,7 +1157,7 @@ var Alibabacloudlinux = gfx.Icon{
 		gfx.LineTo(8.01, 17.676),
 		gfx.LineTo(9.287, 19.483),
 		gfx.LineTo(3.996, 19.483),
-		gfx.CubicTo(1.78907, 19.483, 1.77636e-15, 17.6939, -4.44089e-16, 15.487),
+		gfx.CubicTo(1.78907, 19.483, 2.66454e-15, 17.6939, 4.44089e-16, 15.487),
 		gfx.LineTo(0.0, 8.513),
 		gfx.CubicTo(-4.44089e-16, 6.30607, 1.78907, 4.517, 3.996, 4.517),
 		gfx.MoveTo(20.004, 4.517),
