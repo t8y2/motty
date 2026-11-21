@@ -465,7 +465,7 @@ func (t *Terminal) rowOf(l *line) Row {
 	for len(marks) > 0 && int(marks[len(marks)-1].Col) >= markColumns {
 		marks = marks[:len(marks)-1]
 	}
-	return Row{Cells: cells, Marks: marks, ID: l.id, Version: l.version, Wrapped: l.wrapped, Written: l.at}
+	return Row{Cells: cells, Marks: marks, ID: l.id, Version: l.version, Used: min(l.used, len(cells)), Wrapped: l.wrapped, Written: l.at}
 }
 
 func (t *Terminal) lineAt(i int) *line {
