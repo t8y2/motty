@@ -1739,7 +1739,7 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	if state.clickTransferCenter(id) {
 		return
 	}
-	if state.clickRunningTransfer(id) {
+	if state.clickRunningTransfer(id) || state.clickDesktopReceiveCancel(id) {
 		return
 	}
 	if state.aiClick(id) {

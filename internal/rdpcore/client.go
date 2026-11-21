@@ -266,23 +266,24 @@ type Client struct {
 	fragCode byte   // update Code of the in-progress fragment sequence
 
 	// Callbacks (protected by cbMu — use load*/On* methods, not direct access)
-	cbMu              sync.RWMutex
-	onNetworkRTT      func()
-	onBitmap          func(*BitmapUpdate)
-	onStridedBitmap   func(x, y, w, h int, data []byte, stride int)
-	onH264Frame       func(*egfx.H264Frame) // H.264 pass-through callback
-	onBeginPaint      func()                // called before batch of display updates
-	onEndPaint        func()                // called after batch of display updates
-	painting          bool                  // true while inside beginPaint/endPaint (reentrant guard)
-	onPointer         func(*PointerUpdate)
-	onResize          func(width, height int)
-	onDisconnect      func(error)
-	onReconnecting    func()
-	onReconnected     func()
-	onClipboardUpdate func(hasText, hasImage, hasFiles bool)
-	onClipboardText   func(text string)
-	onClipboardImage  func(pngData []byte)
-	onClipboardFiles  func(files cliprdr.RemoteFiles, err error)
+	cbMu                     sync.RWMutex
+	onNetworkRTT             func()
+	onBitmap                 func(*BitmapUpdate)
+	onStridedBitmap          func(x, y, w, h int, data []byte, stride int)
+	onH264Frame              func(*egfx.H264Frame) // H.264 pass-through callback
+	onBeginPaint             func()                // called before batch of display updates
+	onEndPaint               func()                // called after batch of display updates
+	painting                 bool                  // true while inside beginPaint/endPaint (reentrant guard)
+	onPointer                func(*PointerUpdate)
+	onResize                 func(width, height int)
+	onDisconnect             func(error)
+	onReconnecting           func()
+	onReconnected            func()
+	onClipboardUpdate        func(hasText, hasImage, hasFiles bool)
+	onClipboardText          func(text string)
+	onClipboardImage         func(pngData []byte)
+	onClipboardFiles         func(files cliprdr.RemoteFiles, err error)
+	onClipboardFilesProgress func(cliprdr.RemoteFilesProgress)
 
 	// Heartbeat: last time we received any data from server (unix nanos)
 	lastReceived atomic.Int64
@@ -1245,6 +1246,14 @@ func (c *Client) mcsConnect() error {
 		c.clipHandler.OnRemoteFiles(func(files cliprdr.RemoteFiles, err error) {
 			if fn := c.loadOnClipboardFiles(); fn != nil {
 				fn(files, err)
+			}
+		})
+		c.clipHandler.OnRemoteFilesProgress(func(progress cliprdr.RemoteFilesProgress) {
+			c.cbMu.RLock()
+			fn := c.onClipboardFilesProgress
+			c.cbMu.RUnlock()
+			if fn != nil {
+				fn(progress)
 			}
 		})
 		c.registerChannelHandler("cliprdr", func(_ uint16, data []byte) {
@@ -5250,6 +5259,27 @@ func (c *Client) OnClipboardFiles(fn func(files cliprdr.RemoteFiles, err error))
 	c.cbMu.Lock()
 	c.onClipboardFiles = fn
 	c.cbMu.Unlock()
+}
+
+// ClipboardFilesProgress is how far the files the server copied have been read
+// (see OnClipboardFilesProgress).
+type ClipboardFilesProgress = cliprdr.RemoteFilesProgress
+
+// OnClipboardFilesProgress sets the callback that hears how far the files the
+// server put on its clipboard have been read, after every chunk and once with
+// Active false when the download is over. It runs on the download's goroutine.
+func (c *Client) OnClipboardFilesProgress(fn func(ClipboardFilesProgress)) {
+	c.cbMu.Lock()
+	c.onClipboardFilesProgress = fn
+	c.cbMu.Unlock()
+}
+
+// CancelClipboardFiles stops reading the files the server copied; nothing is
+// delivered for them (see OnClipboardFiles).
+func (c *Client) CancelClipboardFiles() {
+	if c.clipHandler != nil {
+		c.clipHandler.CancelRemoteFiles()
+	}
 }
 
 // SetClipboardEnabled toggles clipboard forwarding at runtime. When disabled

@@ -478,6 +478,7 @@ func (state *State) pumpDesktop(session *Session) {
 	state.finishFileOffers(view)
 	receivedFiles := false
 	if receiver, ok := view.session.(desktop.FileReceiver); ok {
+		state.pumpReceivingFiles(view, receiver)
 		if files, ok := receiver.RemoteFiles(); ok {
 			state.receiveDesktopFiles(view, files)
 			receivedFiles = len(files.Paths) > 0
