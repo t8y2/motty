@@ -47,6 +47,13 @@ func TestSFTPDeleteOffersNormalAndForceMethods(t *testing.T) {
 			t.Fatalf("delete confirmation lacks %q", want)
 		}
 	}
+	// The method choice must still fit the smallest window the app supports.
+	var small gfx.Canvas
+	state.Paint(&small, gfx.Size{Width: 900, Height: 600})
+	if !canvasHasText(&small, state.messages.SFTPDeleteMethodLabel) ||
+		!canvasHasText(&small, state.messages.SFTPDeleteMethodForce) {
+		t.Fatal("the delete method choice is clipped at the minimum window size")
+	}
 
 	state.Click(hitSFTPDialogSubmit)
 	waitSFTP(t, state, session, func(view *sftpView) bool {
