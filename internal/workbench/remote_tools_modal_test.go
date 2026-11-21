@@ -256,7 +256,7 @@ func TestRemoteToolsModalRowHitTestFollowsPaintedRows(t *testing.T) {
 	for index := range state.remote.rows {
 		state.remote.rows[index] = remoteRow{
 			key:   fmt.Sprintf("resource-%02d", index),
-			cells: [6]string{fmt.Sprintf("resource-%02d", index)},
+			cells: [remoteMaxColumns]string{fmt.Sprintf("resource-%02d", index)},
 		}
 	}
 	remoteToolsPaint(t, state)
@@ -303,7 +303,7 @@ func TestRemoteToolsModalScrollsThroughAllDockerObjects(t *testing.T) {
 			for index := range state.remote.rows {
 				state.remote.rows[index] = remoteRow{
 					key:   fmt.Sprintf("resource-%02d", index),
-					cells: [6]string{fmt.Sprintf("resource-%02d", index)},
+					cells: [remoteMaxColumns]string{fmt.Sprintf("resource-%02d", index)},
 				}
 			}
 			canvas := remoteToolsPaint(t, state)
@@ -343,7 +343,7 @@ func TestRemoteToolsRowsCenterTheirCells(t *testing.T) {
 	for index := range state.remote.rows {
 		state.remote.rows[index] = remoteRow{
 			key:   fmt.Sprintf("resource-%02d", index),
-			cells: [6]string{fmt.Sprintf("resource-%02d", index)},
+			cells: [remoteMaxColumns]string{fmt.Sprintf("resource-%02d", index)},
 		}
 	}
 	canvas := remoteToolsPaint(t, state)

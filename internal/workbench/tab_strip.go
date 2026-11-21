@@ -16,8 +16,8 @@ type tabStrip struct {
 	offset   float32 // how far the tabs are scrolled along the layout axis
 	max      float32 // the furthest offset; zero when every tab fits
 	revealed layoutcore.WorkspaceID
-	// revealedIndex is the active tab's position in the combined top strip, where
-	// workspace tabs come first and runtime file-manager tabs follow.
+	// revealedIndex is the active tab's position in the combined top strip of
+	// workspace, file-manager and settings tabs.
 	revealedIndex    int
 	hasRevealedIndex bool
 }

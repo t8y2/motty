@@ -64,6 +64,13 @@ type Options struct {
 	// refuses Standard RDP Security, whose keys are not authenticated.
 	Security SecurityMode
 
+	// LegacyTLS offers the TLS 1.0-1.2 cipher suites that use RSA key exchange,
+	// including AES-CBC, to a server that offers nothing else. Go leaves those
+	// suites out by default: RSA key exchange has no forward secrecy and CBC
+	// has known weaknesses. Only an old server needs it; modern servers keep
+	// negotiating ECDHE, because the modern suites stay in the offer.
+	LegacyTLS bool
+
 	// Authentication
 	Username string // Login username
 	Password string // Login password

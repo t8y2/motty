@@ -413,11 +413,7 @@ func (conn *Conn) loadIdentities(authentication Authentication, agents []ssh.Sig
 						matched = true
 						continue
 					}
-					certified := signer
-					var certErr error
-					if !IsStoredKey(path) {
-						certified, certErr = certificateSigner(path, signer)
-					}
+					certified, certErr := conn.certifiedSigner(path, signer)
 					if certErr != nil {
 						skipped = append(skipped, certErr.Error())
 					} else if !usedAgents[index] {
@@ -437,11 +433,7 @@ func (conn *Conn) loadIdentities(authentication Authentication, agents []ssh.Sig
 			}
 			usedKeys[string(public.Marshal())] = true
 			pending := &pendingSecurityKeySigner{conn: conn, path: path, public: public}
-			if IsStoredKey(path) {
-				signers = append(signers, pending)
-				continue
-			}
-			certified, err := certificateSigner(path, pending)
+			certified, err := conn.certifiedSigner(path, pending)
 			if err != nil {
 				skipped = append(skipped, err.Error())
 				continue
@@ -477,13 +469,10 @@ func (conn *Conn) loadIdentities(authentication Authentication, agents []ssh.Sig
 				signer = &lockedIdentity{conn: conn, path: path, public: public}
 			}
 		}
-		if IsStoredKey(path) {
-			signers = append(signers, signer) // no file for a certificate to sit beside
-			continue
-		}
-		// An accompanying certificate file upgrades the signer, as OpenSSH's
-		// default identity pairing does.
-		certified, err := certificateSigner(path, signer)
+		// A certificate upgrades the signer: the companion file OpenSSH pairs
+		// with an identity file, or the one the application keeps with a stored
+		// key.
+		certified, err := conn.certifiedSigner(path, signer)
 		if err != nil {
 			skipped = append(skipped, err.Error())
 			continue
@@ -501,6 +490,31 @@ func (conn *Conn) loadIdentities(authentication Authentication, agents []ssh.Sig
 	}
 	signers = append(preferred, signers...)
 	return signers, skipped, nil
+}
+
+// certifiedSigner wraps signer in the certificate that belongs with the identity
+// at path: the companion file of an identity file, or the certificate the
+// application keeps with a stored key. An identity without one is returned
+// unchanged.
+func (conn *Conn) certifiedSigner(path string, signer ssh.Signer) (ssh.Signer, error) {
+	if !IsStoredKey(path) {
+		return certificateSigner(path, signer)
+	}
+	if conn.config.StoredCertificate == nil {
+		return signer, nil
+	}
+	data, err := conn.config.StoredCertificate(path)
+	if err != nil {
+		return nil, fmt.Errorf("read stored certificate: %w", err)
+	}
+	if len(data) == 0 {
+		return signer, nil
+	}
+	certificate, err := CertificateFor(data, signer.PublicKey())
+	if err != nil {
+		return nil, fmt.Errorf("use stored certificate: %w", err)
+	}
+	return wrapCertificate(certificate, signer)
 }
 
 // identityPublicKey reads the public half of an identity without unlocking it,

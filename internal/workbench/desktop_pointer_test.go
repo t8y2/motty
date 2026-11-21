@@ -35,6 +35,20 @@ func pointerShapeOf(width, height, hotX, hotY int) desktop.PointerShape {
 	return desktop.PointerShape{Width: width, Height: height, HotX: hotX, HotY: hotY, BGRA: make([]byte, width*height*4)}
 }
 
+func TestEndedDesktopPresentsPendingPictureWithoutRestoringRemotePointer(t *testing.T) {
+	remote := &pointingDesktop{followingDesktop: newFollowingDesktop(640, 480, false)}
+	view := newDesktopView(remote, false)
+	t.Cleanup(view.close)
+	remote.say(desktop.PointerHidden, desktop.PointerShape{})
+	view.ended = true
+	if !view.present() || view.width != 640 || view.height != 480 {
+		t.Fatalf("pending picture was not presented after disconnect: %dx%d", view.width, view.height)
+	}
+	if cursor, image := view.pointerCursor(1); cursor != gfx.PointerCursorDefault || image != nil {
+		t.Fatalf("disconnected picture restored remote cursor: %v, %v", cursor, image)
+	}
+}
+
 // TestTheRemotePointerIsTheCursorOverThePicture follows what the remote says
 // about its pointer to the cursor the page asks the system for, at the display
 // scale, as the window paints it.
@@ -122,5 +136,16 @@ func TestTheRemotePointerIsTheCursorOverThePicture(t *testing.T) {
 	remote.say(desktop.PointerBitmap, pointerShapeOf(gfx.MaxCursorImageSize+1, 1, 0, 0))
 	if hit := cursorOverPicture(); hit.Cursor != gfx.PointerCursorDefault || hit.CursorImage != nil {
 		t.Fatalf("an oversized shape: %v, %v", hit.Cursor, hit.CursorImage)
+	}
+
+	// An ended connection restores the system cursor so the disconnected screen and reconnect
+	// button can be navigated even if the remote had hidden the pointer before disconnecting.
+	remote.say(desktop.PointerHidden, desktop.PointerShape{})
+	if hit := cursorOverPicture(); hit.Cursor != gfx.PointerCursorHidden {
+		t.Fatalf("expected hidden pointer before disconnect, got %v", hit.Cursor)
+	}
+	state.endDesktop(session)
+	if hit := cursorOverPicture(); hit.Cursor != gfx.PointerCursorDefault || hit.CursorImage != nil {
+		t.Fatalf("after connection ends: cursor=%v image=%v, want default arrow cursor", hit.Cursor, hit.CursorImage)
 	}
 }

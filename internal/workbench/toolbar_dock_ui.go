@@ -464,6 +464,7 @@ func terminalToolbarCompactVisible(id gfx.ID) bool {
 
 func (state *State) toolbarDockSideBoundsFor(size gfx.Size, left bool) gfx.Rect {
 	bounds := state.fullWorkspacePixelBounds(size)
+	right := bounds.X + bounds.Width
 	if !state.terminalPage() && state.activeSFTPWindow() == nil {
 		bounds.X = 0
 	}
@@ -471,7 +472,7 @@ func (state *State) toolbarDockSideBoundsFor(size gfx.Size, left bool) gfx.Rect 
 	extent := state.terminalToolbarMetrics().railExtent
 	bounds.Width = extent
 	if !left {
-		bounds.X = max(size.Width-extent, 0)
+		bounds.X = max(right-extent, 0)
 	}
 	return bounds
 }

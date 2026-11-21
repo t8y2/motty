@@ -138,7 +138,7 @@ func TestRuleManagerNativeHighlightScrollEditAndDelete(t *testing.T) {
 			state.setLanguage(layout.language)
 			state.setAppearance(appearanceDark)
 			for index := range 30 {
-				state.highlighting.rules = append(state.highlighting.rules, highlightRule{Pattern: fmt.Sprintf("SERVICE_%02d", index), Slot: highlight.Slots()[index%6], Regex: index%3 == 0, CaseSensitive: index%2 == 0})
+				state.highlighting.rules = append(state.highlighting.rules, highlightRule{Pattern: fmt.Sprintf("SERVICE_%02d", index), Color: highlight.Colors()[index%6], Regex: index%3 == 0, CaseSensitive: index%2 == 0})
 			}
 			view := ruleManagerNativeView(t, state, layout.width, layout.height, layout.scale)
 			openRuleManagerNative(t, state, view, hitSettingsHighlightManage)

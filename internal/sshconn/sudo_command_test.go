@@ -72,6 +72,23 @@ func TestSudoStreamStopsWithoutClosingTheSSHConnection(t *testing.T) {
 	}
 }
 
+func TestSudoStreamSkippingLongLinesKeepsReading(t *testing.T) {
+	harness := connectedCommandHarness(t, func(_ string, channel ssh.Channel) {
+		_, _ = io.WriteString(channel.Stderr(), sudoReady)
+		_, _ = io.WriteString(channel, strings.Repeat("x", 64)+"\nkept\n")
+		_, _ = channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{0}))
+		_ = channel.Close()
+	})
+	var lines []string
+	err := harness.conn.StreamSudoCommandSkippingLongLines(context.Background(), "logs", "", 16, func(line []byte) bool {
+		lines = append(lines, string(line))
+		return true
+	})
+	if err != nil || len(lines) != 1 || lines[0] != "kept\n" {
+		t.Fatalf("lines = %q, error = %v", lines, err)
+	}
+}
+
 func TestSudoCommandCancellationEndsOnlyItsSession(t *testing.T) {
 	started := make(chan struct{})
 	harness := connectedCommandHarness(t, func(_ string, channel ssh.Channel) {

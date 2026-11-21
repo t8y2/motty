@@ -12,7 +12,7 @@ import (
 	"motty/internal/remotetools"
 )
 
-var remoteColumnCounts = [...]int{remoteProcesses: 6, remoteContainers: 5, remoteImages: 4, remoteVolumes: 3, remoteNetworks: 4, remoteCompose: 3}
+var remoteColumnCounts = [...]int{remoteProcesses: 6, remoteContainers: 7, remoteImages: 4, remoteVolumes: 3, remoteNetworks: 4, remoteCompose: 3}
 
 func remoteTableHeaderID(tab remoteTab, column int) gfx.ID {
 	if tab == remoteProcesses {
@@ -23,7 +23,7 @@ func remoteTableHeaderID(tab remoteTab, column int) gfx.ID {
 			return hitRemoteSortMemory
 		}
 	}
-	return hitRemoteSortColumns.At(int(tab)*6 + column)
+	return hitRemoteSortColumns.At(int(tab)*remoteMaxColumns + column)
 }
 
 func (view *remoteToolsView) tableSort() components.TableSortState {
@@ -82,7 +82,9 @@ func (state *State) sortRemoteRows() {
 	if column < 0 || column >= remoteColumnCounts[view.tab] {
 		return
 	}
-	numeric := view.tab == remoteProcesses && (column == 0 || column == 2 || column == 3 || column == 4) || view.tab == remoteImages && (column == 2 || column == 3)
+	numeric := view.tab == remoteProcesses && (column == 0 || column == 2 || column == 3 || column == 4) ||
+		view.tab == remoteContainers && (column == 2 || column == 3) ||
+		view.tab == remoteImages && (column == 2 || column == 3)
 	for i := range view.rows {
 		row := &view.rows[i]
 		value := strings.TrimSpace(row.cells[column])
@@ -97,6 +99,8 @@ func (state *State) sortRemoteRows() {
 			case view.tab == remoteImages && column == 3:
 				row.orderNumber, row.orderValid = remoteCreatedAge(value)
 				row.orderNumber = -row.orderNumber // chronological order: oldest first
+			case view.tab == remoteContainers && column == 3:
+				row.orderNumber, row.orderValid = remoteContainerMemoryBytes(value)
 			default:
 				var err error
 				row.orderNumber, err = strconv.ParseFloat(value, 64)
@@ -124,6 +128,16 @@ func (state *State) sortRemoteRows() {
 		}
 		return result
 	})
+}
+
+// remoteContainerMemoryBytes reads the used part of docker stats' "used / limit"
+// figure, so the memory column orders by what the container actually holds.
+func remoteContainerMemoryBytes(value string) (float64, bool) {
+	used, _, found := strings.Cut(value, " / ")
+	if !found {
+		return 0, false
+	}
+	return remoteSizeBytes(strings.TrimSpace(used))
 }
 
 func remoteElapsedSeconds(value string) (float64, bool) {

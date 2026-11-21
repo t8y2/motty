@@ -30,3 +30,11 @@ var LockupDark []byte
 
 //go:embed lockup-light.png
 var LockupLight []byte
+
+// VivaTile is the Viva framework's mark on the white rounded tile the other
+// marks on the About page stand on, four times the size it is drawn (26
+// points). It is Viva's own logo (the red V) drawn at 60% of the tile, not a
+// second artwork.
+//
+//go:embed viva-tile.png
+var VivaTile []byte

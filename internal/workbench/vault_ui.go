@@ -367,7 +367,7 @@ func (state *State) submitVaultUnlock() {
 func (state *State) declareVaultUnlockDialog(c ui.C) {
 	m := state.messages
 	viewport := dialogViewport(c)
-	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 480, m.VaultConvertDescription, withError(66, state.secrets.dialogError))
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 480, m.VaultConvertDescription, withError(dialogRowHeight(c.Theme())+4, state.secrets.dialogError))
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: m.VaultUnlockTitle, Description: m.VaultConvertDescription, Width: 480, Height: height, Layer: dialogLayer,
 		Scope: dialogScope, DismissID: hitVaultUnlockDismiss, CloseID: hitVaultUnlockClose, InitialFocusID: hitVaultUnlockField,
@@ -395,7 +395,7 @@ func (state *State) declareVaultUnlockBody(c ui.C) {
 	secrets.unlockText.Secure = !secrets.unlockShown
 	secrets.unlockText.Invalid = secrets.dialogError != ""
 	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Gap(12).Children(func() {
-		ui.FormField(c, &secrets.unlockForm, m.VaultUnlockLabel).FillWidth().Height(62).Children(func() {
+		ui.FormField(c, &secrets.unlockForm, m.VaultUnlockLabel).FillWidth().Height(dialogRowHeight(c.Theme())).Children(func() {
 			box := ui.TextFieldID(c, hitVaultUnlockField, &secrets.unlockText, m.VaultUnlockLabel, "")
 			icon, label := lucideIcons[iconEye], m.ShowSecret
 			if secrets.unlockShown {

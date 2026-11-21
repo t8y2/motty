@@ -53,11 +53,13 @@ func (edge dockEdge) placement() layoutcore.Placement {
 // tabDrop is where a drag would land if it were dropped now.
 type tabDrop struct {
 	kind tabDropKind
-	// boundary is the gap among the tabs, counted from the first, a reorder drop
-	// goes into.
+	// boundary is the deck index a reorder drop goes into.
 	boundary int
-	pane     layoutcore.PaneID
-	edge     dockEdge
+	// slot is the gap among the bar's tabs, settings included, the insertion
+	// bar is drawn in.
+	slot int
+	pane layoutcore.PaneID
+	edge dockEdge
 	// moveUnit says the drop moves the dragged tab, or the whole group of tabs
 	// it stands for, to stand before the tab at the deck index boundary, rather
 	// than reordering it among tabs of its own group.
@@ -76,8 +78,11 @@ const (
 )
 
 type tabDrag struct {
-	pressed   bool
-	active    bool
+	pressed bool
+	active  bool
+	// settings says the drag carries the settings page's tab, which only moves
+	// along this window's bar.
+	settings  bool
 	workspace layoutcore.WorkspaceID
 	// pane is the pane of workspace being pulled out of its split; zero when the
 	// drag carries a whole tab.
@@ -115,6 +120,9 @@ func (state *State) tabDragPointer(event gfx.PointerEvent) (gfx.EventResult, boo
 		state.closeTabPreview()
 		*drag = tabDrag{}
 		if state.modal == modalNone && (event.Button == gfx.PointerButtonPrimary || event.Button == gfx.PointerButtonNone) &&
+			event.Target == hitSettingsTab {
+			*drag = tabDrag{pressed: true, settings: true, title: state.messages.NavSettings, start: gfx.Point{X: event.X, Y: event.Y}}
+		} else if state.modal == modalNone && (event.Button == gfx.PointerButtonPrimary || event.Button == gfx.PointerButtonNone) &&
 			event.Target.Scope() == hitTabList {
 			id := layoutcore.WorkspaceID(item(event.Target))
 			if event.ClickCount == 2 {
@@ -191,6 +199,12 @@ func (state *State) tabDragPointer(event gfx.PointerEvent) (gfx.EventResult, boo
 // this window, or hands the drag to the window it is over, or notes that it has
 // left every window.
 func (state *State) trackTabDrag(drag *tabDrag, event gfx.PointerEvent) {
+	if drag.settings {
+		drag.outside, drag.peer = false, nil
+		state.closeTabPreview()
+		drag.drop = state.settingsTabDropAt(drag.at)
+		return
+	}
 	if drag.pane != 0 {
 		// A pane only ever lands among this window's tabs.
 		drag.outside, drag.peer = false, nil
@@ -274,6 +288,11 @@ func (state *State) closeTabPreview() {
 // trackTabDragEnd settles the drop at the point of the release.
 func (state *State) trackTabDragEnd(drag *tabDrag, event gfx.PointerEvent) {
 	drag.at = gfx.Point{X: event.X, Y: event.Y}
+	if drag.settings {
+		drag.outside, drag.peer = false, nil
+		drag.drop = state.settingsTabDropAt(drag.at)
+		return
+	}
 	if drag.pane != 0 {
 		drag.outside, drag.peer = false, nil
 		drag.drop = state.paneDropAt(drag.workspace, drag.pane, drag.at)
@@ -377,6 +396,25 @@ func (state *State) tabDropAt(at gfx.Point, source layoutcore.WorkspaceID, panes
 		if strip.vertical {
 			positionOnAxis = at.Y
 		}
+		if !strip.vertical {
+			// The top strip carries workspace, file-manager and settings tabs in
+			// one row, so the gap under the pointer counts them all. The deck only
+			// holds workspaces; workspaceInsertIndex turns that gap into the place
+			// the dragged tab takes there.
+			slot := min(max(int((positionOnAxis-strip.origin+strip.offset)/strip.pitch+0.5), 0), state.windowTabCount())
+			position := -1
+			for index, tab := range state.workspaceTabs {
+				if tab.ID == source {
+					position = index
+				}
+			}
+			boundary := state.workspaceInsertIndex(slot, 0)
+			if source != 0 && (position < 0 || boundary == position || boundary == position+1) {
+				return tabDrop{}
+			}
+			x := strip.origin - strip.offset + float32(slot)*strip.pitch - barGap/2
+			return tabDrop{kind: dropReorder, boundary: boundary, slot: slot, zone: state.tabInsertion(x)}
+		}
 		count := len(state.workspaceTabs)
 		boundary := min(max(int((positionOnAxis-strip.origin+strip.offset)/strip.pitch+0.5), 0), count)
 		position := -1
@@ -452,6 +490,12 @@ func dockZoneAt(at gfx.Point, bounds gfx.Rect) (dockEdge, gfx.Rect) {
 
 // dropTab carries out a drop.
 func (state *State) dropTab(drag tabDrag) {
+	if drag.settings {
+		if drag.drop.kind == dropReorder && state.moveSettingsTab(drag.drop.slot) {
+			state.activateSettingsTab()
+		}
+		return
+	}
 	if drag.pane != 0 {
 		switch drag.drop.kind {
 		case dropReorder:
@@ -614,7 +658,7 @@ func (state *State) dockWorkspace(src layoutcore.WorkspaceID, target layoutcore.
 // tabDragTearOff reports whether drag is a tab held outside every window, with
 // nothing to join: letting go opens a window of its own.
 func tabDragTearOff(drag *tabDrag) bool {
-	return drag.active && drag.outside && drag.peer == nil && len(drag.group) == 0
+	return drag.active && !drag.settings && drag.outside && drag.peer == nil && len(drag.group) == 0
 }
 
 // tabDragEffective is the drag this window draws: its own while the pointer is
@@ -803,9 +847,8 @@ func tabGhostWidth(canvas *gfx.Canvas, title string) float32 {
 // drawTabGhost draws a tab in bounds as the active tab of the bar looks.
 func (state *State) drawTabGhost(canvas *gfx.Canvas, bounds gfx.Rect, title string, host Host, hasHost bool, color string) {
 	pal := state.pal
-	fill, edge := pal.tabActive, pal.windowStroke
-	fill = tabFill(pal, fill, color, true, false)
-	edge = tintHostSurface(edge, color, tabColorBorderTint)
+	fill := tabFill(pal, pal.tabActive, color, true, false)
+	edge := tabBorderColor(pal, color, true)
 	canvas.RoundedBorder(bounds, radius.item, 1, edge, fill)
 	badge := gfx.Rect{X: bounds.X + 4, Y: bounds.Y + (bounds.Height-20)/2, Width: 20, Height: 20}
 	if hasHost {
@@ -976,4 +1019,21 @@ func (state *State) undockPane(workspace layoutcore.WorkspaceID, paneID layoutco
 	state.fitSFTP(state.viewport)
 	state.save()
 	return true
+}
+
+// settingsTabDropAt is where the settings tab would land if it were let go at
+// window point at: a gap among every tab of the top strip, settings included.
+func (state *State) settingsTabDropAt(at gfx.Point) tabDrop {
+	strip := &state.tabStrip
+	if strip.pitch <= 0 || !pointInRect(at.X, at.Y, state.tabDropArea()) {
+		return tabDrop{}
+	}
+	count := state.windowTabCount()
+	slot := min(max(int((at.X-strip.origin+strip.offset)/strip.pitch+0.5), 0), count)
+	place := state.settingsTabPlace()
+	if place < 0 || slot == place || slot == place+1 {
+		return tabDrop{}
+	}
+	x := strip.origin - strip.offset + float32(slot)*strip.pitch - barGap/2
+	return tabDrop{kind: dropReorder, slot: slot, zone: state.tabInsertion(x)}
 }

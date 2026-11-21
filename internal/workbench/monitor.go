@@ -24,7 +24,7 @@ var (
 	hitMonitorEvery1        = tree.ID(monitorHits, "every-1")
 	hitMonitorEvery2        = tree.ID(monitorHits, "every-2")
 	hitMonitorEvery5        = tree.ID(monitorHits, "every-5")
-	hitMonitorSudo          = tree.ID(monitorHits, "sudo")
+	hitMonitorEvery10       = tree.ID(monitorHits, "every-10")
 	hitMonitorDisks         = tree.ID(monitorHits, "more-disks")
 	hitMonitorHardware      = tree.ID(monitorHits, "hardware")
 	hitMonitorLogins        = tree.ID(monitorHits, "logins")
@@ -97,8 +97,6 @@ type monitorView struct {
 	processLabel, noProcessLabel                              string
 	diskValue                                                 float64
 	diskAvailable                                             bool
-	copiedAddress                                             string
-	addressCopiedUntil                                        time.Duration
 
 	worker                                                   *remotestats.DetailsWorker
 	data                                                     remotestats.Details
@@ -295,9 +293,6 @@ func (state *State) clickMonitor(id gfx.ID) bool {
 	switch id {
 	case hitMonitorHostAddress:
 		state.copyMonitorHostAddress(s)
-	case hitMonitorSudo:
-		state.monitorMenu = false
-		state.toggleSudoCommands(s, false)
 	case hitMonitorPause:
 		v.panel.refreshReset = true
 		v.panel.paused = !v.panel.paused
@@ -317,7 +312,7 @@ func (state *State) clickMonitor(id gfx.ID) bool {
 	case hitMonitorInterval:
 		state.monitorMenu = !state.monitorMenu
 		state.monitorMenuSession = s.ID
-	case hitMonitorEvery1, hitMonitorEvery2, hitMonitorEvery5:
+	case hitMonitorEvery1, hitMonitorEvery2, hitMonitorEvery5, hitMonitorEvery10:
 		if state.monitorMenuSession != s.ID {
 			state.monitorMenu = false
 			return true
@@ -328,6 +323,9 @@ func (state *State) clickMonitor(id gfx.ID) bool {
 		}
 		if id == hitMonitorEvery5 {
 			n = 5
+		}
+		if id == hitMonitorEvery10 {
+			n = 10
 		}
 		v.panel.interval = n
 		v.panel.refreshReset = true
@@ -582,7 +580,7 @@ func (state *State) formatMonitor(v *remoteStatsView) {
 		}
 		row := monitorGPUText{
 			name:             name,
-			memory:           monitorCapacity(gpu.MemoryUsedBytes, gpu.MemoryTotalBytes),
+			memory:           monitorGPUUsage(gpu.MemoryUsedBytes, gpu.MemoryTotalBytes, gpu.MemoryKnown),
 			memoryValue:      percentOf(gpu.MemoryUsedBytes, gpu.MemoryTotalBytes),
 			util:             "—",
 			utilValue:        -1,
@@ -590,7 +588,7 @@ func (state *State) formatMonitor(v *remoteStatsView) {
 			powerValue:       -1,
 			temperature:      "—",
 			temperatureValue: -1,
-			processesKnown:   gpu.Vendor == "NVIDIA",
+			processesKnown:   gpu.Vendor == "NVIDIA" && gpu.UUID != "",
 		}
 		if gpu.UtilPercent >= 0 {
 			row.util = fmt.Sprintf("%.0f%%", gpu.UtilPercent)
@@ -625,6 +623,16 @@ func percentOf(value, total uint64) float64 {
 		return -1
 	}
 	return min(100, 100*float64(value)/float64(total))
+}
+
+func monitorGPUUsage(used, total uint64, known bool) string {
+	if total > 0 {
+		return monitorCapacity(used, total)
+	}
+	if known || used > 0 {
+		return monitorBytes(used)
+	}
+	return "—"
 }
 
 func monitorBytes(value uint64) string {

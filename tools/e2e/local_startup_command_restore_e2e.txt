@@ -1,0 +1,5 @@
+# lang: zh-CN
+# 使用 local_startup_command_e2e.txt 的同一个临时 home 再启动应用。
+# 恢复的本地 Bash 必须重新执行启动后命令；这不是读取旧终端输出。
+expect text 启动完成 within 10000
+shot /tmp/motty-1225-restart.png

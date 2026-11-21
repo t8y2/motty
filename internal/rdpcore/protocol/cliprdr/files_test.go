@@ -236,13 +236,13 @@ func TestFormatListNamesTheFileFormatsAndTextReturnsAfterwards(t *testing.T) {
 		t.Fatalf("registered format numbers = %d, %d", formats[0].FormatID, formats[1].FormatID)
 	}
 
-	// Copying text replaces the files: the list goes back to text and image, and
+	// Copying text replaces the files: the list goes back to the text alone, and
 	// the server's reads of the old list are refused.
 	if err := server.h.SetLocalClipboard("text"); err != nil {
 		t.Fatal(err)
 	}
 	_, _, payload = server.last(t)
-	if formats := decodeFormatListLong(payload); len(formats) != 2 || formats[0].FormatID != CFUnicodeText || formats[1].FormatID != CFDIB {
+	if formats := decodeFormatListLong(payload); len(formats) != 1 || formats[0].FormatID != CFUnicodeText {
 		t.Fatalf("after text the formats = %+v", formats)
 	}
 	server.h.ProcessPDU(contentsRequest(1, 0, FileContentsSize, 0, 8, nil))

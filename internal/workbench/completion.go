@@ -710,6 +710,14 @@ func (state *State) attachCompletion(session *Session) {
 		}
 		state.closeCompletionList()
 	}
+	t.completionUnknown = func() {
+		if state.completion.autoHold.session == sessionID {
+			state.completion.autoHold = completionAutoHold{}
+		}
+		if state.completion.list.active && state.completion.list.sessionID == sessionID {
+			state.closeCompletionList()
+		}
+	}
 	state.requestCompletionHistory(session)
 }
 
@@ -1048,6 +1056,7 @@ func (state *State) completionCandidates(session *Session, line string) ([]compl
 			add(completion.Candidate{Text: entry.Command, Insert: insertText, Desc: humanRelativeTime(now, entry.Used, state.messages.Completion), Kind: completion.KindCommand})
 		}
 	}
+	state.addSnippetCandidates(line, add)
 	if catalog := state.completionCatalog(); catalog != nil {
 		if result := completion.Complete(catalog, line); !result.Suppressed {
 			for _, candidate := range result.Candidates {
@@ -1056,6 +1065,30 @@ func (state *State) completionCandidates(session *Session, line string) ([]compl
 		}
 	}
 	return candidates, pathLoading || state.completion.catalogLoading
+}
+
+// addSnippetCandidates offers the configured quick commands the line continues
+// into, after the history and before the public catalog: they are the user's
+// own configuration, so they outrank the catalog, and they need no learning to
+// be on (#1084, #1200). The inline ghost offers the same text, but it stays
+// quiet when several quick commands share a prefix; the list is where they are
+// all named. A command that cannot be typed as it stands is left to the snippet
+// picker, which can ask for its template variables.
+func (state *State) addSnippetCandidates(line string, add func(completion.Candidate)) {
+	if !snippetHintLine(line) {
+		return
+	}
+	for _, entry := range state.snippets.list {
+		if !snippetHintCandidate(line, entry.Command) {
+			continue
+		}
+		add(completion.Candidate{
+			Text:   entry.Command,
+			Insert: entry.Command[len(line):],
+			Desc:   state.messages.Tools.SnippetsTitle,
+			Kind:   completion.KindCommand,
+		})
+	}
 }
 
 // completionKey handles keys while the list is open. Printable keys stay with
@@ -1076,11 +1109,18 @@ func (state *State) completionKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 		return gfx.EventResult{}, false
 	}
 	handled := gfx.EventResult{Handled: true, Repaint: true}
+	if event.Release {
+		if session.term.consumeAcceptedKey(event) {
+			return handled, true
+		}
+		return gfx.EventResult{}, false
+	}
 	if len(list.candidates) == 0 {
 		// A loading row has nothing to choose. Enter still runs the line; the
 		// other keys leave the terminal alone.
 		switch event.Key {
 		case gfx.KeyEscape:
+			session.term.noteAcceptedKey(event)
 			state.dismissCompletion(session)
 			return handled, true
 		case gfx.KeyEnter, gfx.KeyTab:
@@ -1091,6 +1131,7 @@ func (state *State) completionKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	}
 	switch event.Key {
 	case gfx.KeyEscape:
+		session.term.noteAcceptedKey(event)
 		state.dismissCompletion(session)
 		return handled, true
 	case gfx.KeyEnter:
@@ -1107,6 +1148,7 @@ func (state *State) completionKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 			state.closeCompletionList()
 			return gfx.EventResult{}, false
 		}
+		session.term.noteAcceptedKey(event)
 		state.acceptCompletion(session)
 		return handled, true
 	case gfx.KeyTab:
@@ -1119,24 +1161,30 @@ func (state *State) completionKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 		if event.Modifiers != 0 {
 			return gfx.EventResult{}, false
 		}
+		session.term.noteAcceptedKey(event)
 		state.completionMove(-1)
 		return handled, true
 	case gfx.KeyDown:
 		if event.Modifiers != 0 {
 			return gfx.EventResult{}, false
 		}
+		session.term.noteAcceptedKey(event)
 		state.completionMove(1)
 		return handled, true
 	case gfx.KeyPageUp:
+		session.term.noteAcceptedKey(event)
 		state.completionMove(-completionRows)
 		return handled, true
 	case gfx.KeyPageDown:
+		session.term.noteAcceptedKey(event)
 		state.completionMove(completionRows)
 		return handled, true
 	case gfx.KeyHome:
+		session.term.noteAcceptedKey(event)
 		list.selected, list.top = 0, 0
 		return handled, true
 	case gfx.KeyEnd:
+		session.term.noteAcceptedKey(event)
 		list.selected = len(list.candidates) - 1
 		list.clamp()
 		return handled, true

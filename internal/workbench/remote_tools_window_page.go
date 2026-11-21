@@ -346,7 +346,7 @@ func (w *remoteToolsWindow) declareFormDialog(c ui.C) {
 		return
 	}
 	form := &w.ui.form
-	bodyHeight := form.bodyHeight() + w.ui.formProblemHeight(c.Canvas(), form.formProblem())
+	bodyHeight := form.bodyHeight(c.Theme()) + w.ui.formProblemHeight(c.Canvas(), form.formProblem())
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: form.title, Description: form.description, Width: formWidth,
 		Layer: dialogLayer, Scope: dialogScope, CloseID: hitFormClose,
@@ -431,9 +431,11 @@ func (w *remoteToolsWindow) declareSudoDialog(c ui.C) {
 		DismissID: hitSudoSFTPDismiss, CloseID: hitSudoSFTPCancel, InitialFocusID: hitSudoSFTPPassword,
 	})
 	dialog.Body(func() {
-		ui.Column(c).Height(w.ui.secretFieldBody("")).PadSides(2, 4, 0, 4).Children(func() {
-			ui.TextFieldID(c, hitSudoSFTPPassword, &dialogState.field, m.SFTPSudoPassword, "").
-				Height(62).FillWidth().Secure().AutoFocus()
+		ui.Column(c).Height(sudoDialogBody(c.Theme())).PadSides(2, 4, 0, 4).Children(func() {
+			ui.FormField(c, &dialogState.row, m.SFTPSudoPassword).FillWidth().Height(dialogRowHeight(c.Theme())).Children(func() {
+				ui.TextFieldID(c, hitSudoSFTPPassword, &dialogState.field, m.SFTPSudoPassword, "").
+					FillWidth().Secure().AutoFocus()
+			})
 		})
 	})
 	dialog.Footer(func() {

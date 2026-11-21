@@ -244,7 +244,7 @@ real Mac still needs `MOTTY_VNC_ADDR`, `MOTTY_VNC_USERNAME` and
 | Dependencies | pion/dtls, golang.org/x/net, testify, yaml.v3 (MIT/BSD/Apache) | core: standard library only (the Ebiten GUI of its demo is not imported by the library) |
 | Aim | browser/WASM client; its README: "primarily tested with XRDP; Windows servers may have issues", NLA "with limitations" | native client, Windows servers, NLA by default |
 | NLA/CredSSP | NTLMv2, own MD4 | CredSSP v2-v6, NTLMv2 over SPNEGO with EPA channel binding and MIC, own MD4 (`crypto/rc4`, `hmac`, `md5`, `sha256` from the standard library) |
-| Bitmaps | RLE, NSCodec, planar, RemoteFX | RLE (8-32), Planar, NSCodec, RDPGFX with ClearCodec, progressive RemoteFX, ZGFX, MPPC, drawing orders |
+| Bitmaps | RLE, NSCodec, planar, RemoteFX | RLE (8-32), Planar, NSCodec, RDPGFX with RemoteFX (CAVIDEO), ClearCodec, progressive RemoteFX, ZGFX, MPPC, drawing orders |
 | Maintenance | active (July 2026) | active (June 2026) |
 
 The grdp family (x90skysn3k, nakagami, icodeface) is GPL-3.0 and cannot be used in
@@ -274,24 +274,31 @@ offers nothing else or whose administrator chose the RDP security layer. Its
 keys come from a server key that is never authenticated, so anyone on the path
 can read and alter the session, including the password: the switch states that,
 and the status line reports the connection as **Not encrypted** (a tunneled host
-still reports the SSH protection). NLA starts with SPNEGO; if token negotiation fails before credentials
-are sent, it reconnects once using raw NTLM tokens for older WinPR servers such
-as GNOME Remote Desktop on Ubuntu 22.04. Both paths keep certificate checks,
-NTLMv2 MIC/channel binding and CredSSP public-key verification. The client
-always signs the SPNEGO mechanism list it offered; Windows 11 24H2 and Server
-2025 reject the public-key binding when that MIC is absent, even though their
-challenge does not request it. The MIC exchange counts as a signed message, so
-both directions seal the binding at sequence one, not zero. When the server asks
-for the MIC, the client verifies the acceptor's MIC and sends its public-key
-binding in a later TSRequest; that is what libfreerdp 3.x (GNOME Remote Desktop
-on Ubuntu 24.04 and later) requires, and sending both in one message makes it
+still reports the SSH protection). Go leaves the TLS suites that use RSA key
+exchange out of its defaults; a server that offers nothing newer is reached by
+the host's **Allow legacy TLS** switch, or by **Retry with legacy TLS** on the
+failure page, which turns that switch on and saves it. Either adds those
+AES-CBC and AES-GCM suites to the offer. It is off by default because RSA key
+exchange has no forward secrecy and CBC has known weaknesses. NLA starts with
+SPNEGO; if token negotiation fails before credentials are sent, it reconnects
+once using raw NTLM tokens for older WinPR servers such as GNOME Remote Desktop
+on Ubuntu 22.04. Both paths keep certificate checks, NTLMv2 MIC/channel binding
+and CredSSP public-key verification. The client always signs the SPNEGO
+mechanism list it offered; Windows 11 24H2 and Server 2025 reject the
+public-key binding when that MIC is absent, even though their challenge does
+not request it. The MIC exchange counts as a signed message, so both directions
+seal the binding at sequence one, not zero. When the server asks for the MIC,
+the client verifies the acceptor's MIC and sends its public-key binding in a
+later TSRequest; that is what libfreerdp 3.x (GNOME Remote Desktop on
+Ubuntu 24.04 and later) requires, and sending both in one message makes it
 echo the client's own binding back. When it does not ask, the Authenticate token
 is the client's last SPNEGO token, and MS-CSSP 3.2.5 requires the binding in
 that same TSRequest; Windows tears the TLS session down with an internal_error
 when the two are split. After sending an Authenticate
 message, failures stop automatic retries and TLS-only fallback.
 Bitmap updates (RLE, Planar, NSCodec, drawing orders) and the RDPGFX
-pipeline (ClearCodec, progressive RemoteFX, uncompressed; H.264 is not offered),
+pipeline (RemoteFX, ClearCodec, progressive RemoteFX, uncompressed; H.264 is
+not offered),
 fast-path updates, 32-bit colour. Input: keys as scancodes of a US keyboard (the
 remote layout decides characters; Shift is added where the character needs it,
 `internal/desktop/rdp/scancode.go`), the committed text of an input method and
@@ -300,8 +307,9 @@ events, such as a terminal in xrdp, shows only some of them; while the desktop i
 focused the host's input method is disabled — `TextInput.DisableIME` — so the keys
 that switch and feed a method reach the remote, which composes with its own),
 pointer with three
-buttons and horizontal/vertical wheel. Clipboard text and images, and files in
-both directions (CLIPRDR, see "Copying files to the server" and "Copying files from the server"), per host, off
+buttons and horizontal/vertical wheel. Clipboard text and pictures from
+this computer, and files in both directions (CLIPRDR, see "Copying a picture to
+the server", "Copying files to the server" and "Copying files from the server"), per host, off
 by default. Audio output over rdpsnd — the static channel, or the
 AUDIO_PLAYBACK_DVC dynamic channel that Windows 11 opens: the server's 16-bit
 PCM, mono or stereo, played on this computer's default output device. The
@@ -393,6 +401,24 @@ counted in the notice. Characters Windows forbids in a name (`\ : * ? " < > |` a
 control characters) become `_`. The list is made on a goroutine of its own, since
 it walks folders; a second copy made meanwhile replaces a waiting one.
 
+### Copying a picture to the server
+
+A picture on this computer's clipboard — a screenshot, one copied from a browser
+or a viewer — pastes on the server the way `mstsc` carries it (MS-RDPECLIP, a
+`CF_DIB` image): copy it here, then press that application's paste shortcut in the
+remote window, or use its own Paste command. Motty reads the system clipboard when
+the remote is about to be pasted into — the pointer pressed in the picture or a
+paste chord typed — and announces the picture when the clipboard holds one and no
+text, so an application that takes pictures gets the image and one that takes only
+text finds nothing. The PNG is turned into a DIB when the server's application asks
+for it, and the same picture is not announced again by every click. Text or files
+copied afterwards replace the picture on the remote clipboard, and copying the
+same picture again offers it again. The host's clipboard sharing must be on.
+
+The picture is read as a PNG of at most 32 MiB (`app.MaxClipboardImageBytes`); a
+larger one is not offered. A picture copied on the server does not come back to
+this computer.
+
 ### Copying files from the server
 
 Files copied on the server come back through the same protocol: the server
@@ -478,11 +504,15 @@ and with raw NTLM (`TestLiveCredSSPTokenLegs`, `MOTTY_RDP_NLA_ADDR`,
 `MOTTY_RDP_NLA_USER`, `MOTTY_RDP_NLA_PASSWORD`). The shadow server cannot carry
 the rest of the session — it answers the network auto-detect PDU with
 `unsupported security flags` — so the full desktop on Ubuntu was not retested.
+On the **Windows 11 test VM** (`tools/winenv`), with clipboard sharing on: a picture
+copied on this computer reached the session's clipboard (`Clipboard.GetImage`
+returned the same 320x200 picture, corner pixels included) and pasted into the
+remote Paint, shown in a capture of the session.
 The workbench's certificate question (new, trusted, changed, rejected) is
 covered by a unit test with a fake server. Not exercised: a domain-joined server,
 Windows Server editions, Windows 10, an RD Gateway, Kerberos, a real window,
 physical keyboards and input-method composition, the macOS and Linux builds of the
-window, resizing, the image clipboard against a real server, a real Windows or
+window, resizing, a picture copied on the server arriving here, a real Windows or
 Linux desktop pasting the file list the other way, reconnect after a
 network loss.
 The console session switch was not exercised either: it needs a Windows host with

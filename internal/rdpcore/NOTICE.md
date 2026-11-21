@@ -36,6 +36,10 @@ Changed:
 * Standard RDP Security (RC4 without TLS) is used only when
   `Options.Security` is `SecurityStandard`; the default refuses a server that
   offers nothing else.
+* `Options.LegacyTLS` adds the RSA key exchange cipher suites (AES-CBC and
+  AES-GCM) to the TLS offer for a server that leaves nothing newer reachable.
+  They are named explicitly because Go's default offer leaves RSA key exchange
+  out (`tlsrsakex`) and CBC-SHA256 out of every list it builds.
 * A wrong password stops after one attempt (`%w` instead of `%v` kept
   `nla.ErrCredentialsFatal` visible). A server that drops the connection after the
   credentials were sent is still not retried, but it is reported as an unproven
@@ -87,6 +91,14 @@ Changed:
   invisible. xrdp sends X cursors at 32bpp with per-pixel alpha and a zero AND
   mask, which upstream's rule rendered as an opaque black square around the
   pointer.
+* The EGFX RemoteFX (CAVIDEO) codec is decoded (`protocol/rfx/remotefx.go`). It
+  is the only bitmap codec the RDP 8.0 graphics pipeline offers, so Windows 8
+  and Windows Server 2012 (not R2), which cannot use the progressive codec,
+  send every frame in it; without a decoder their sessions showed black or
+  shredded pictures. The decoder parses MS-RDPRFX's blocks and reuses the
+  progressive codec's RLGR, inverse DWT and colour conversion; the only state
+  that crosses a message is the context's entropy mode. A 1280x720 frame
+  captured from a live server is the test fixture.
 * The EGFX `ResetGraphics` PDU clears surfaces, output maps and frame state but
   keeps the progressive-codec decoder. Its tile context (SYNC, CONTEXT and
   simple tiles) is not part of the graphics output; Windows sends only UPGRADE

@@ -61,6 +61,7 @@ const (
 	sftpDialogExtract
 	sftpDialogCompress
 	sftpDialogBrowseCreateDirectory
+	sftpDialogDownloadConflict
 )
 
 // sftpDialogShowsField reports whether the dialog edits a field: a folder, a
@@ -280,6 +281,12 @@ type sftpView struct {
 	terminalScreenVersion uint64 // plain-shell locate must keep the same visible prompt during the read
 	terminalSyncSkipped   bool
 	terminalLocate        bool // one explicit toolbar request, independent of automatic following
+
+	// downloadPending is the download the conflict dialog is asking about, and
+	// the two fields describe the first destination already on disk.
+	downloadPending       []sftpDownloadRequest
+	downloadConflictName  string
+	downloadConflictCount int
 }
 
 // sftpListing is one folder as it was last read.
@@ -317,6 +324,15 @@ func (state *State) openSFTP(session *Session) {
 		return
 	}
 	if session.files != nil {
+		if session.files.worker == nil {
+			connection, transfer := session.conn, session.host.Transfer
+			session.files.transport = &filesTransport{conn: connection}
+			session.files.openFiles = func() (sftpclient.Remote, error) {
+				return openRemoteFiles(session.files.transport.connection(), transfer)
+			}
+			session.files.worker = sftpclient.NewWorker(session.files.openFiles, state.notifyFor(session))
+			state.configureSFTPWorker(session.files)
+		}
 		return
 	}
 	connection, transfer := session.conn, session.host.Transfer
@@ -1337,9 +1353,14 @@ func (state *State) downloadSFTP(view *sftpView) {
 	}
 	configuredDirectory := state.sftpDownloadDirectory
 	if directory, ok := state.ensureSFTPDownloadDirectory(view); ok {
+		requests := make([]sftpDownloadRequest, 0, len(selected))
 		for index := range selected {
-			state.queueSFTPDownload(view, selected[index].entry, filepath.Join(directory, safeLocalName(selected[index].entry.Name)))
+			requests = append(requests, sftpDownloadRequest{
+				view: view, remoteDir: view.path, entry: selected[index].entry,
+				localPath: filepath.Join(directory, safeLocalName(selected[index].entry.Name)),
+			})
 		}
+		state.queueSFTPDownloads(view, requests)
 		return
 	}
 	if len(selected) == 1 && !selected[0].entry.IsDir() {
@@ -1364,9 +1385,14 @@ func (state *State) downloadSFTP(view *sftpView) {
 	if configuredDirectory != "" {
 		state.rememberSFTPDownloadDirectory(localDirectory)
 	}
+	requests := make([]sftpDownloadRequest, 0, len(selected))
 	for index := range selected {
-		state.queueSFTPDownload(view, selected[index].entry, filepath.Join(localDirectory, safeLocalName(selected[index].entry.Name)))
+		requests = append(requests, sftpDownloadRequest{
+			view: view, remoteDir: view.path, entry: selected[index].entry,
+			localPath: filepath.Join(localDirectory, safeLocalName(selected[index].entry.Name)),
+		})
 	}
+	state.queueSFTPDownloads(view, requests)
 }
 
 func (state *State) ensureSFTPDownloadDirectory(view *sftpView) (string, bool) {
@@ -1408,7 +1434,146 @@ func (state *State) handleSFTPPickerError(view *sftpView, err error, canceled st
 }
 
 func (state *State) queueSFTPDownload(view *sftpView, entry sftpclient.Entry, localPath string) {
-	state.queueSFTPDownloadFrom(view, view.path, entry, localPath)
+	state.queueSFTPDownloads(view, []sftpDownloadRequest{{
+		view: view, remoteDir: view.path, entry: entry, localPath: localPath,
+	}})
+}
+
+type sftpDownloadRequest struct {
+	view      *sftpView
+	remoteDir string
+	entry     sftpclient.Entry
+	localPath string
+	policy    sftpclient.ExistingPolicy
+}
+
+// queueSFTPDownloads asks about every destination already on disk before it
+// queues anything. It returns how many transfers started now; a conflict opens
+// the dialog and starts none until the user chooses.
+func (state *State) queueSFTPDownloads(view *sftpView, requests []sftpDownloadRequest) int {
+	hadRequests := len(requests) > 0
+	requests = slices.DeleteFunc(requests, func(request sftpDownloadRequest) bool {
+		return request.view == nil || request.view.worker == nil
+	})
+	if len(requests) == 0 {
+		if hadRequests {
+			view.errorText = state.messages.SFTPUnavailable
+		}
+		return 0
+	}
+	if view.dialog != sftpDialogNone {
+		return 0
+	}
+	conflicts := 0
+	first := ""
+	for _, request := range requests {
+		if _, err := os.Lstat(request.localPath); err == nil {
+			conflicts++
+			if first == "" {
+				first = filepath.Base(request.localPath)
+			}
+		}
+	}
+	if conflicts > 0 {
+		view.downloadPending = requests
+		view.downloadConflictName = first
+		view.downloadConflictCount = conflicts
+		view.dialogError = ""
+		view.dialog = sftpDialogDownloadConflict
+		return 0
+	}
+	return state.startSFTPDownloads(view, requests)
+}
+
+func (state *State) startSFTPDownloads(view *sftpView, requests []sftpDownloadRequest) int {
+	queued := 0
+	refresh := make(map[*sftpView]bool, len(requests))
+	for _, request := range requests {
+		if request.view == nil || request.view.worker == nil {
+			continue
+		}
+		if _, ok := request.view.worker.QueueDownload(path.Join(request.remoteDir, request.entry.Name), request.localPath, request.entry.IsDir(), request.policy); !ok {
+			continue
+		}
+		queued++
+		refresh[request.view] = true
+	}
+	if queued > 0 {
+		if len(requests) == 1 {
+			view.status = fmt.Sprintf(state.messages.SFTPQueuedFmt, requests[0].entry.Name)
+		} else {
+			view.status = fmt.Sprintf(state.messages.SFTPQueuedFmt, fmt.Sprintf("%d → %s", queued, filepath.Dir(requests[0].localPath)))
+		}
+		view.errorText = ""
+		state.transfers.host = nil
+		state.openTransferCenterForQueued()
+		for source := range refresh {
+			state.refreshSFTPTransfers(source)
+		}
+	}
+	if queued < len(requests) {
+		view.errorText = state.messages.SFTPUnavailable
+	}
+	return queued
+}
+
+// resolveSFTPDownloadConflict applies the user's choice to the pending
+// download. Keeping both numbers the copies that are taken; replacing hands
+// every destination to the worker's overwrite policy.
+func (state *State) resolveSFTPDownloadConflict(view *sftpView, replace bool) {
+	requests := slices.Clone(view.downloadPending)
+	if len(requests) == 0 {
+		state.closeSFTPDialog(view)
+		return
+	}
+	state.closeSFTPDialog(view)
+	taken := make(map[string]bool, len(requests))
+	for index := range requests {
+		request := &requests[index]
+		if replace {
+			request.policy = sftpclient.ExistingReplace
+			continue
+		}
+		request.policy = sftpclient.ExistingFail
+		request.localPath = numberedDownloadPath(request.localPath, request.entry.IsDir(), taken)
+	}
+	state.startSFTPDownloads(view, requests)
+}
+
+// numberedDownloadPath returns target when it is free, otherwise the first
+// "name (n).ext" beside it that neither the disk nor this batch holds.
+func numberedDownloadPath(target string, directory bool, taken map[string]bool) string {
+	free := func(candidate string) bool {
+		key := strings.ToLower(filepath.Clean(candidate))
+		if taken[key] {
+			return false
+		}
+		_, err := os.Lstat(candidate)
+		return os.IsNotExist(err)
+	}
+	if free(target) {
+		taken[strings.ToLower(filepath.Clean(target))] = true
+		return target
+	}
+	directoryPath, name := filepath.Split(target)
+	extension := ""
+	stem := name
+	if !directory {
+		extension = filepath.Ext(name)
+		stem = strings.TrimSuffix(name, extension)
+		if stem == "" {
+			stem, extension = name, ""
+		}
+	}
+	for attempt := 1; attempt <= 1000; attempt++ {
+		candidate := filepath.Join(directoryPath, fmt.Sprintf("%s (%d)%s", stem, attempt, extension))
+		if free(candidate) {
+			taken[strings.ToLower(filepath.Clean(candidate))] = true
+			return candidate
+		}
+	}
+	taken[strings.ToLower(filepath.Clean(target))] = true
+	return target
 }
 
 func (state *State) uploadSFTP(view *sftpView) {
@@ -1632,6 +1797,9 @@ func (state *State) closeSFTPDialog(view *sftpView) {
 	view.dialogEditor, view.dialogEditor2 = text.Editor{}, text.Editor{}
 	view.dialogEntry = sftpclient.Entry{}
 	view.dialogEntries = nil
+	view.downloadPending = nil
+	view.downloadConflictName = ""
+	view.downloadConflictCount = 0
 	view.dialogError = ""
 }
 
@@ -1766,6 +1934,8 @@ func (state *State) clickSFTPDialog(view *sftpView, id gfx.ID) {
 		state.closeSFTPDialog(view)
 	case hitSFTPDialogSubmit:
 		state.submitSFTPDialog(view)
+	case hitSFTPDialogReplace:
+		state.resolveSFTPDownloadConflict(view, true)
 	}
 }
 
@@ -2074,6 +2244,9 @@ func (state *State) submitSFTPDialog(view *sftpView) {
 		return
 	case sftpDialogReloadEdit:
 		state.queueSFTPEditReload(view)
+		return
+	case sftpDialogDownloadConflict:
+		state.resolveSFTPDownloadConflict(view, false)
 		return
 	}
 	view.moveAfterRename = false

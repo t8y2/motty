@@ -42,6 +42,14 @@ Motty 是一个桌面 SSH 客户端。终端、SFTP 面板、端口转发、远�
   </tr>
   <tr>
     <td width="50%" valign="top">
+      <a href="assets/readme-dashboard.png"><img src="assets/readme-dashboard.png" alt="监控面板的详细概览：多台主机的 CPU、内存和网络曲线" /></a>
+    </td>
+    <td width="50%" valign="top">
+      <a href="assets/readme-transfers.png"><img src="assets/readme-transfers.png" alt="传输中心：正在运行的传输、等待中的任务、历史记录和一次失败" /></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
       <a href="assets/readme-desktop.png"><img src="assets/readme-desktop.png" alt="通过 VNC 连接的远程桌面" /></a>
     </td>
     <td width="50%" valign="top">
@@ -56,7 +64,7 @@ Motty 是一个桌面 SSH 客户端。终端、SFTP 面板、端口转发、远�
   <tr>
     <td width="50%" valign="top">
       <p><strong>主机管理得住。</strong>分组、标签、颜色和图标，可以从 OpenSSH
-      config、PuTTY、MobaXterm 等九种来源导入。密码进 AES-256-GCM 保险库，
+      config、PuTTY、MobaXterm 等十一种来源导入。密码进 AES-256-GCM 保险库，
       密钥放在系统密钥存储里。</p>
     </td>
     <td width="50%" valign="top">
@@ -191,10 +199,10 @@ agent，用 `ssh-add` 载入密钥，并在窗口里显示 PIN 或口令提示�
 「安全密钥」。要求与限制见 [安全密钥](docs/security-keys.md)。
 
 主机可以分组、打标签、搜索，也可以从 OpenSSH config、PuTTY、Xshell、MobaXterm、
-WindTerm、Electerm、Netcatty、SecureCRT、FinalShell 导入。TOTP/HOTP 种子可以存入保险库并自动填充。密码和私钥口令
+WindTerm、Electerm、Netcatty、SecureCRT、FinalShell、Xterminal、XPipe 导入。TOTP/HOTP 种子可以存入保险库并自动填充。密码和私钥口令
 进入 AES-256-GCM 保险库，跟随各自的主机；密钥放在系统密钥存储，没有时（以及便携版）放在保险库旁的密钥文件里。
 Electerm 和 Netcatty 的明文 SSH 密码可在明确确认后导入；重新导入只补齐缺失密码。
-SecureCRT 和 FinalShell 的保存密码是加密的，导入只包含连接。
+SecureCRT、FinalShell、Xterminal 和 XPipe 的保存密码是加密的，导入只包含连接。
 
 OpenSSH 配置导入和同步会保留每台主机的 `ServerAliveInterval`、
 `ServerAliveCountMax`、`IdentitiesOnly` 和指定的身份文件。显式设置间隔为 0

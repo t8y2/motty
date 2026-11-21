@@ -90,3 +90,39 @@ func TestResizeBackToItsWidthRestoresThePrompt(t *testing.T) {
 		t.Fatalf("the cursor is at column %d, want it after the prompt at %d", terminal.cx, len(prompt))
 	}
 }
+
+// Typing at a prompt before the shell answers a resize is not the shell's
+// redraw: the echoed input must not drop the prompt the shell has not replaced
+// yet. The redraw that follows replaces the line exactly once.
+func TestResizeKeepsThePromptWhenInputArrivesFirst(t *testing.T) {
+	prompt := "user@host:~$ "
+	terminal := New(60, 8, 100)
+	terminal.SetPromptToken("t")
+	feed(terminal, "\x1b]133;A;motty=t\x07"+prompt)
+	terminal.Resize(40, 8)
+	feed(terminal, "ls")
+	if text := string(terminal.AppendRetainedText(nil)); !strings.Contains(text, prompt+"ls") {
+		t.Fatalf("the echoed input dropped the prompt: %q", text)
+	}
+	feed(terminal, "\r\x1b[K"+prompt+"ls")
+	if text := strings.TrimRight(string(terminal.AppendRetainedText(nil)), " "); text != prompt+"ls" {
+		t.Fatalf("the redraw left %q instead of the one prompt and input %q", text, prompt+"ls")
+	}
+}
+
+// Input that wraps below the prompt is still echoed text, not the redraw: it
+// lands after the prompt's first row and must not clear the prompt.
+func TestResizeKeepsThePromptWhenEchoedInputWraps(t *testing.T) {
+	prompt := "$ "
+	terminal := New(20, 6, 100)
+	terminal.SetPromptToken("t")
+	feed(terminal, "\x1b]133;A;motty=t\x07"+prompt)
+	terminal.Resize(10, 6)
+	input := strings.Repeat("x", 24)
+	feed(terminal, input)
+	text := string(terminal.AppendRetainedText(nil))
+	flat := strings.ReplaceAll(text, "\n", "")
+	if !strings.HasPrefix(flat, prompt+input) {
+		t.Fatalf("the wrapped echo changed the prompt line: %q", text)
+	}
+}

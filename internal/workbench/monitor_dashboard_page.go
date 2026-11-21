@@ -44,7 +44,7 @@ func (state *State) declareDashboardWorkspace(c ui.C) {
 		// The icon is painted by hand into the slot the empty state declared, as
 		// the other catalog sections do, so a first run shows it too.
 		if empty := state.declareDashboardEmpty(c); empty.Valid() {
-			empty.DrawOver(func(d *ui.DrawContext) { state.paintEmptyPage(d.Canvas, iconActivity) })
+			empty.DrawOver(func(d *ui.DrawContext) { state.paintEmptyPage(d.Canvas, iconGauge) })
 		}
 		return
 	}
@@ -563,7 +563,7 @@ func (state *State) declareDashboardAddMenu(c ui.C) {
 	rows.add(components.ContextMenuItem{ID: hitDashboardAddNew, Label: m.New, Icon: icons.Plus})
 	rows.separate()
 	for index, p := range d.panels {
-		rows.add(components.ContextMenuItem{ID: hitDashboardAddPanelList.At(index), Label: p.Name, Icon: icons.Activity})
+		rows.add(components.ContextMenuItem{ID: hitDashboardAddPanelList.At(index), Label: p.Name, Icon: icons.Gauge})
 	}
 	open := true
 	state.declareMenuAt(c, &open, d.addAnchor, false, hitDashboardAddDismiss, &rows, func(id gfx.ID) {

@@ -136,6 +136,238 @@ func TestIntegrationRealSSHPTYTracksCD(t *testing.T) {
 	}
 }
 
+// integrationPTYServer serves real shells on a pty the way sshd does, with
+// the integration file delivered over a command session (ADR 0025), for the
+// first-prompt-erase tests. Several shells can run over it one after another.
+func integrationPTYServer(t *testing.T, name, program string) *harness {
+	t.Helper()
+	home := t.TempDir()
+	// A .zshrc keeps zsh-newuser-install quiet: with an empty home it comes up
+	// before the first prompt and consumes the first character of the lines
+	// the test types ahead, which would mangle them.
+	if err := os.WriteFile(filepath.Join(home, ".zshrc"), []byte("# test\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	server := startServer(t, func(server *testServer) {
+		server.password = "secret"
+		server.version = "SSH-2.0-OpenSSH_9.6"
+		server.shell = func(shell *fakeShell) {
+			// name comes from the fixed {bash, zsh} allowlist; the switch
+			// keeps the started executables explicit literals.
+			var cmd *exec.Cmd
+			switch name {
+			case "bash":
+				cmd = exec.Command("bash", "-l")
+			case "zsh":
+				cmd = exec.Command("zsh", "-l")
+			default:
+				t.Errorf("real shell: %s is not a supported shell", name)
+				shell.exit(1)
+				return
+			}
+			cmd.Dir = home
+			cmd.Env = append(os.Environ(), "HOME="+home, "SHELL="+program, "TERM=xterm-256color", "LANG=en_US.UTF-8")
+			master, err := pty.Start(cmd)
+			if err != nil {
+				t.Errorf("real shell: %v", err)
+				shell.exit(1)
+				return
+			}
+			defer master.Close()
+			inputDone := make(chan struct{})
+			go func() {
+				io.Copy(master, shell.Channel)
+				master.Close()
+				close(inputDone)
+			}()
+			io.Copy(shell.Channel, master)
+			cmd.Wait()
+			shell.exit(0)
+			<-inputDone
+		}
+		server.command = func(command string, channel ssh.Channel) {
+			defer channel.Close()
+			if command == shellProbe {
+				io.WriteString(channel, "\x1emotty-shell:"+program+"\x1f\nmotty-shell:\n")
+				channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{0}))
+				return
+			}
+			// The command is the integration upload the code under test sends
+			// over this test's own channel. It passes through the environment,
+			// so it is never part of the command line's arguments.
+			cmd := exec.Command("/bin/sh", "-c", `eval "$MOTTY_SESSION_COMMAND"`)
+			cmd.Env = append(os.Environ(), "MOTTY_SESSION_COMMAND="+command)
+			cmd.Stdin = channel
+			cmd.Stdout = channel
+			status := uint32(0)
+			if err := cmd.Run(); err != nil {
+				status = 1
+			}
+			channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{status}))
+		}
+	})
+	return connect(t, server)
+}
+
+// eraseSession is a fresh pty shell with the integration injected, tracking
+// the raw output and the prompt reports for assertions.
+type eraseSession struct {
+	w      *shellWatcher
+	token  string
+	prompt string
+	output string
+}
+
+// startIntegratedShell injects the integration into a fresh shell and waits
+// for the first integrated prompt. before, when set, is typed at the shell's
+// own prompt before the activation line: an environment that was already
+// active when the integration landed.
+func startIntegratedShell(t *testing.T, h *harness, token, before string) *eraseSession {
+	t.Helper()
+	s := &eraseSession{
+		w:      openShellWith(t, h, ShellConfig{Cols: 80, Rows: 24}),
+		token:  token,
+		prompt: "\x1b]133;A;motty=" + token + "\x07",
+	}
+	if before != "" {
+		s.w.shell.Write([]byte(before + "\r"))
+	}
+	path, _ := h.conn.ProbeShell(context.Background())
+	line, err := h.conn.UploadIntegration(context.Background(), path, token, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.w.shell.Write([]byte(line))
+	// The OSC 133;B report sits at the end of PS1, so its arrival means the
+	// whole prompt, first-prompt clear included, has been received.
+	end := "\x1b]133;B;motty=" + token + "\x07"
+	s.w.until("integrated prompt", func(out string) bool {
+		s.output = out
+		return strings.Count(out, s.prompt) > 0 && strings.Contains(out, end)
+	})
+	return s
+}
+
+// nextPrompt types line at the current prompt and returns the output that
+// follows it, up to and including the next prompt's full render.
+func (s *eraseSession) nextPrompt(t *testing.T, what, line string) string {
+	t.Helper()
+	start := len(s.output)
+	before := strings.Count(s.output, s.prompt)
+	s.w.shell.Write([]byte(line + "\r"))
+	end := "\x1b]133;B;motty=" + s.token + "\x07"
+	s.w.until(what, func(out string) bool {
+		s.output = out
+		return strings.Count(out, s.prompt) > before && strings.Contains(out[start:], end)
+	})
+	return s.output[start:]
+}
+
+// TestIntegrationFirstPromptEraseSurvivesEnvActivation covers the window
+// between the first and the second prompt after the injection, where an
+// activation (conda, virtualenv) prepends the environment name in front of
+// the first-prompt clear. The clear must still be dropped from PS1, and from
+// no other position: a residue wipes the environment name off every later
+// prompt (issue #1121), while dropping it has to keep clearing the hidden
+// activation line once (issue #960).
+func TestIntegrationFirstPromptEraseSurvivesEnvActivation(t *testing.T) {
+	for _, name := range []string{"bash", "zsh"} {
+		t.Run(name, func(t *testing.T) {
+			program, err := exec.LookPath(name)
+			if err != nil {
+				t.Skipf("%s unavailable", name)
+			}
+			h := integrationPTYServer(t, name, program)
+			for _, tc := range []struct {
+				what     string
+				before   string // typed before the injection: the env was already active
+				activate string // typed after the first prompt: activates the env late
+				rendered string // what the activation adds in front of the prompt
+			}{
+				// The typed line splits the environment name with "" so its
+				// echo can never match the rendered prefix.
+				{what: "conda activates between the prompts", activate: `PS1="(motty""-conda) "$PS1`, rendered: "(motty-conda) "},
+				{what: "venv activates between the prompts", activate: `PS1="(motty""-venv) "$PS1`, rendered: "(motty-venv) "},
+				{what: "nested envs activate between the prompts", activate: `PS1="(motty""-venv) (motty""-conda) "$PS1`, rendered: "(motty-venv) (motty-conda) "},
+				{what: "env active before the injection", before: `PS1="(motty""-before) "$PS1`, rendered: "(motty-before) "},
+			} {
+				t.Run(tc.what, func(t *testing.T) {
+					s := startIntegratedShell(t, h, "erase-env", tc.before)
+					if !strings.Contains(s.output, "\r\x1b[2K") {
+						t.Fatalf("the first prompt did not clear the hidden activation line: %q", s.output)
+					}
+					line := tc.activate
+					if line == "" {
+						line = "true"
+					}
+					rest := s.nextPrompt(t, "the prompt after the activation", line)
+					if !strings.Contains(rest, tc.rendered) {
+						t.Fatalf("the prompt does not show %q: %q", tc.rendered, rest)
+					}
+					if strings.Contains(rest, "\r\x1b[2K") {
+						t.Fatalf("the first-prompt clear survived the activation and wipes %q off the prompt: %q", tc.rendered, rest)
+					}
+					// The variable itself is the exact state, seen from the
+					// shell: after the one-shot drop it must be out of PS1.
+					rest = s.nextPrompt(t, "the PS1 erase probe", `printf 'MOTTY_ERASE=%s\n' "$([[ $PS1 == *"$_motty_first_prompt_erase"* ]] && echo yes || echo no)"`)
+					if !strings.Contains(rest, "MOTTY_ERASE=no") {
+						t.Fatalf("the first-prompt clear is still in PS1: %q", rest)
+					}
+					if got := strings.Count(s.output, "\r\x1b[2K"); got != 1 {
+						t.Fatalf("the first-prompt clear ran %d times, want once: %q", got, s.output)
+					}
+					s.w.shell.Write([]byte("exit\r"))
+					s.w.waitDone()
+				})
+			}
+		})
+	}
+}
+
+// TestIntegrationFirstPromptEraseSurvivesVenvSnapshotRestore covers the other
+// way a virtualenv keeps the clear alive: activate snapshots PS1 and
+// deactivate restores that snapshot, which still holds the clear. Every
+// prompt has to drop it again, or the environment label of a later prompt is
+// erased (issue #1121).
+func TestIntegrationFirstPromptEraseSurvivesVenvSnapshotRestore(t *testing.T) {
+	for _, name := range []string{"bash", "zsh"} {
+		t.Run(name, func(t *testing.T) {
+			program, err := exec.LookPath(name)
+			if err != nil {
+				t.Skipf("%s unavailable: %v", name, err)
+			}
+			h := integrationPTYServer(t, name, program)
+			s := startIntegratedShell(t, h, "erase-venv", "")
+			if !strings.Contains(s.output, "\r\x1b[2K") {
+				t.Fatalf("the first prompt did not clear the hidden activation line: %q", s.output)
+			}
+			// A real venv activate snapshots PS1 and then prepends its label.
+			rest := s.nextPrompt(t, "the venv activation", `_motty_old_ps1=$PS1; PS1="(motty""-venv) "$PS1`)
+			if !strings.Contains(rest, "(motty-venv) ") || strings.Contains(rest, "\r\x1b[2K") {
+				t.Fatalf("the activated prompt is wrong: %q", rest)
+			}
+			// deactivate restores the snapshot, clear included.
+			rest = s.nextPrompt(t, "the venv deactivation", `PS1=$_motty_old_ps1`)
+			if strings.Contains(rest, "\r\x1b[2K") {
+				t.Fatalf("the restored snapshot kept the clear: %q", rest)
+			}
+			rest = s.nextPrompt(t, "a second activation", `PS1="(motty""-venv2) "$PS1`)
+			if !strings.Contains(rest, "(motty-venv2) ") || strings.Contains(rest, "\r\x1b[2K") {
+				t.Fatalf("the second activated prompt is wrong: %q", rest)
+			}
+			rest = s.nextPrompt(t, "the PS1 erase probe", `printf 'MOTTY_ERASE=%s\n' "$([[ $PS1 == *"$_motty_first_prompt_erase"* ]] && echo yes || echo no)"`)
+			if !strings.Contains(rest, "MOTTY_ERASE=no") {
+				t.Fatalf("the first-prompt clear is still in PS1: %q", rest)
+			}
+			if got := strings.Count(s.output, "\r\x1b[2K"); got != 1 {
+				t.Fatalf("the first-prompt clear ran %d times, want once: %q", got, s.output)
+			}
+			s.w.shell.Write([]byte("exit\r"))
+			s.w.waitDone()
+		})
+	}
+}
+
 func TestIntegrationReportsRealShellDirectoriesWithoutChangingProfiles(t *testing.T) {
 	for _, name := range []string{"bash", "zsh"} {
 		t.Run(name, func(t *testing.T) {

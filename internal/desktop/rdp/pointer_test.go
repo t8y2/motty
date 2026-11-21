@@ -60,3 +60,20 @@ func TestAnUnknownCachedPointerLeavesThePointerAlone(t *testing.T) {
 		t.Fatalf("after an unknown cached pointer: kind %v, version %d", kind, version)
 	}
 }
+
+// TestFinishRestoresSystemPointer verifies that when a session ends (such as on network interrupt
+// or server disconnect), any hidden or custom cursor is reset to the system pointer.
+func TestFinishRestoresSystemPointer(t *testing.T) {
+	session := &Session{
+		done:           make(chan struct{}),
+		closeTransport: func() {},
+	}
+	session.onPointer(&rdpcore.PointerUpdate{Type: rdpcore.PointerNull})
+	if kind, _, _ := session.PointerShape(); kind != desktop.PointerHidden {
+		t.Fatalf("expected hidden pointer, got %v", kind)
+	}
+	session.finish(nil)
+	if kind, shape, _ := session.PointerShape(); kind != desktop.PointerSystem || shape.Width != 0 {
+		t.Fatalf("after finish: kind %v, shape %+v, want PointerSystem", kind, shape)
+	}
+}

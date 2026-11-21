@@ -140,6 +140,10 @@ type savedTransport struct {
 	// Proxy is nil when this host inherits the global outbound proxy. An entry
 	// whose kind is "direct" explicitly bypasses it.
 	Proxy *savedOutboundProxy `json:"proxy,omitempty"`
+	// ProxyProfile, when set, names a saved proxy profile that carries the host
+	// instead of Proxy, and ProxyBypass is the host's own direct list for it.
+	ProxyProfile string `json:"proxy_profile,omitempty"`
+	ProxyBypass  string `json:"proxy_bypass,omitempty"`
 	// Algorithms is "compatible" or "custom" for an SSH host that does not use
 	// the default algorithms; AlgorithmList is the custom list.
 	Algorithms    string `json:"algorithms,omitempty"`
@@ -185,6 +189,8 @@ type savedTransport struct {
 	// console session instead of a new one, as mstsc /admin does. NoAudio is an
 	// RDP host's too: ask the server for no audio. StandardSecurity is an RDP
 	// host's as well: use Standard RDP Security alone, with no TLS or NLA.
+	// LegacyTLS is an RDP host's too: offer the RSA key exchange TLS suites
+	// that an old server requires.
 	// Chromeless is a desktop host's: its page shows the picture without the
 	// bars around it.
 	// The password is never here: it is asked for, and kept in the vault only if
@@ -194,11 +200,13 @@ type savedTransport struct {
 	Console          bool `json:"console,omitempty"`
 	NoAudio          bool `json:"no_audio,omitempty"`
 	StandardSecurity bool `json:"standard_security,omitempty"`
+	LegacyTLS        bool `json:"legacy_tls,omitempty"`
 	Chromeless       bool `json:"chromeless,omitempty"`
 }
 
 func (host Host) transport() savedTransport {
-	transport := savedTransport{Proxy: savedHostProxy(host.Proxy), Credential: host.Credential}
+	transport := savedTransport{Proxy: savedHostProxy(host.Proxy), Credential: host.Credential,
+		ProxyProfile: host.ProxyProfile, ProxyBypass: host.ProxyBypass}
 	// UTF-8 is the empty value, so a host that never chose a charset keeps its
 	// old record byte-for-byte.
 	if host.Encoding != "" && host.Encoding != charset.UTF8 {
@@ -225,6 +233,7 @@ func (host Host) transport() savedTransport {
 		transport.Console = host.Console
 		transport.NoAudio = host.NoAudio
 		transport.StandardSecurity = host.StandardSecurity
+		transport.LegacyTLS = host.LegacyTLS
 		return transport
 	case protocolSerial:
 		transport.Proxy, transport.Protocol, transport.Line = nil, "serial", host.Line.String()
@@ -257,6 +266,13 @@ func (host Host) transport() savedTransport {
 func (host *Host) applyTransport(transport savedTransport) bool {
 	host.Proxy = restoredHostProxy(transport.Proxy)
 	host.Credential = strings.TrimSpace(transport.Credential)
+	host.ProxyProfile = strings.TrimSpace(transport.ProxyProfile)
+	host.ProxyBypass = strings.TrimSpace(transport.ProxyBypass)
+	if host.ProxyProfile != "" {
+		// A profile carries the route; a stale per-host proxy in the same
+		// record must not shadow it.
+		host.Proxy = nil
+	}
 	// An unknown charset is a damaged record: drop it rather than opening a
 	// session that would show replacement characters.
 	encoding, ok := charset.Normalize(strings.TrimSpace(transport.Encoding))
@@ -317,6 +333,7 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 		host.Console = transport.Console
 		host.NoAudio = transport.NoAudio
 		host.StandardSecurity = transport.StandardSecurity
+		host.LegacyTLS = transport.LegacyTLS
 	case "serial":
 		host.Proxy, host.Credential = nil, ""
 		flow := serial.FlowNone

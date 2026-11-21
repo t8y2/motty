@@ -1,0 +1,56 @@
+# lang: zh-CN
+# End to end: the settings page is a tab of the window bar (issue 1177). Run:
+#   go build -tags vivahead,dev -o /tmp/motty-head-1177 ./cmd/motty
+#   MOTTY_HEAD=/tmp/motty-head-1177 python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/settings_tab_e2e.txt
+# Issue 1177: the settings page shows as a tab on the window bar.
+click "本地终端"
+settle 800
+click "主机"
+settle 500
+click "设置"
+settle 800
+expect state id:file-tabs/settings-tab selected
+shot /tmp/issue1177-settings-tab.png
+# Another tab in front: the settings tab stays on the bar, no longer selected.
+click "本机"
+settle 500
+expect text "本机"
+hits
+shot /tmp/issue1177-other-tab.png
+# Pressing the settings tab brings the page back.
+click id:file-tabs/settings-tab
+settle 500
+expect text "界面文字大小"
+expect state id:file-tabs/settings-tab selected
+# Close it with its button: the terminal tab takes over and the tab is gone.
+click id:file-tabs/settings-tab-close
+settle 500
+expect no-text "界面文字大小"
+shot /tmp/issue1177-closed.png
+# Command+W closes it as well: reopen from the sidebar gear, then close.
+click id:shell/window-settings
+settle 500
+expect state id:file-tabs/settings-tab selected
+key cmd+w
+settle 500
+expect no-text "界面文字大小"
+expect absent id:file-tabs/settings-tab
+# Ctrl+Tab walks onto the settings tab and back.
+click id:shell/window-settings
+settle 400
+key ctrl+tab
+settle 400
+expect no-text "界面文字大小"
+key ctrl+tab
+settle 400
+expect state id:file-tabs/settings-tab selected
+shot /tmp/issue1177-cycled.png
+# Vertical tab layout: the tabs live in the sidebar, so the bar has no settings tab.
+click "垂直"
+settle 600
+shot /tmp/issue1177-vertical.png
+expect absent id:file-tabs/settings-tab
+click "水平"
+settle 600
+expect state id:file-tabs/settings-tab selected
+layout

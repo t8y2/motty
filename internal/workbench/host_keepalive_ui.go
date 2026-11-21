@@ -83,7 +83,7 @@ func (state *State) declareHostIdleKeepAliveRows(c ui.C) {
 		b.interval.Children(func() {
 			ui.FormField(c, &form.idleIntervalField, m.IdleKeepAliveField).FillWidth().Height(rowHeight).Children(func() {
 				form.idleIntervalBox = ui.Select(c, &form.idleIntervalChoice, idleKeepAliveChoices[:], state.idleKeepAlivePresetLabel).
-					Label(m.IdleKeepAliveField).Hit(hitDialogIdleKeepAlive, m.IdleKeepAliveField)
+					Label(m.IdleKeepAliveField)
 				if form.idleIntervalBox.Changed() {
 					editor.idleKeepAlive = form.idleIntervalChoice
 					if editor.idleKeepAlive == idleKeepAliveCustom && strings.TrimSpace(editor.idleInterval.String()) == "" {
@@ -103,7 +103,7 @@ func (state *State) declareHostIdleKeepAliveRows(c ui.C) {
 				b.unit.Children(func() {
 					ui.FormField(c, &form.idleUnitField, "").FillWidth().Height(rowHeight).Children(func() {
 						form.idleUnitBox = ui.Select(c, &form.idleUnitChoice, idleUnitChoices[:], state.idleIntervalUnitLabel).
-							Label(m.IdleKeepAliveCustomInterval).Hit(hitDialogIdleUnit, m.IdleKeepAliveCustomInterval)
+							Label(m.IdleKeepAliveCustomInterval)
 						if form.idleUnitBox.Changed() {
 							editor.idleUnit = form.idleUnitChoice
 							state.dialogError = ""
@@ -118,7 +118,7 @@ func (state *State) declareHostIdleKeepAliveRows(c ui.C) {
 			b.input.Children(func() {
 				ui.FormField(c, &form.idleInputField, m.IdleKeepAliveInputField).FillWidth().Height(rowHeight).Children(func() {
 					form.idleInputBox = ui.Select(c, &form.idleInputChoice, idleInputChoices[:], state.idleInputLabel).
-						Label(m.IdleKeepAliveInputField).Hit(hitDialogIdleInput, m.IdleKeepAliveInputField)
+						Label(m.IdleKeepAliveInputField)
 					if index, picked := form.idleInputBox.Picked(); picked && index >= 0 && index < len(idleInputChoices) {
 						// A click on the option already shown is a choice too: it pins
 						// the mode only when it is not this protocol's default.

@@ -438,13 +438,19 @@ func (state *State) declareSFTPPanel(c ui.C) {
 			}
 		})
 	})
-	if folder.headerMenuOpen && state.sftpHeaderMenuAvailable(view) {
-		rows := state.panelHeaderMenuRows(folder, view)
-		state.declareMenuAt(c, &folder.headerMenuOpen, s.moreButton.Rect(), false, hitSFTPHeaderMenuDismiss, &rows, func(id gfx.ID) {
-			state.clickSFTPPanelHeaderAction(session, view, id)
-		})
-	} else if !state.sftpHeaderMenuAvailable(view) {
-		folder.headerMenuOpen = false
+	if folder.headerMenuOpen {
+		// The menu hangs off the More button's own box: the page places it from
+		// the rectangle the control is laid out at, not the one the declaration
+		// can read before layout. A rect captured here is empty on the paint
+		// that opens the menu, which put the menu at the panel's corner.
+		if !state.sftpHeaderMenuAvailable(view) || !s.moreButton.Valid() {
+			folder.headerMenuOpen = false
+		} else {
+			rows := state.panelHeaderMenuRows(folder, view)
+			state.declareMenuOn(c, &folder.headerMenuOpen, s.moreButton, &rows, func(id gfx.ID) {
+				state.clickSFTPPanelHeaderAction(session, view, id)
+			})
+		}
 	}
 	if view.bookmarksOpen {
 		places := sftpPlaceBrowser{owner: state, session: session, view: view}
@@ -1041,19 +1047,28 @@ func (state *State) declareSFTPDialog(c ui.C, viewport gfx.Rect, view *sftpView)
 		description = messages.SFTPEditConflictDescription
 		submitLabel = messages.SFTPEditReloadConfirm
 		initialFocus = hitSFTPDialogCancel
+	case sftpDialogDownloadConflict:
+		title = messages.SFTPDownloadConflictTitle
+		if view.downloadConflictCount > 1 {
+			description = fmt.Sprintf(messages.SFTPDownloadConflictCountFmt, view.downloadConflictCount)
+		} else {
+			description = fmt.Sprintf(messages.SFTPDownloadConflictDescriptionFmt, view.downloadConflictName)
+		}
+		submitLabel = messages.SFTPDownloadKeepBoth
+		initialFocus = hitSFTPDialogSubmit
 	}
 	fieldDialog := sftpDialogShowsField(view.dialog)
 	showError := view.dialog == sftpDialogDelete && view.dialogError != ""
 	body := float32(0) // a confirmation is only its text
 	switch {
 	case view.dialog == sftpDialogSymlink, view.dialog == sftpDialogChown:
-		body = 6 + 64 + 8 + 64 // two fields: the link's name and target, or the owner and group
+		body = 6 + 2*dialogRowHeight(c.Theme()) // two fields: the link's name and target, or the owner and group
 	case view.dialog == sftpDialogChmod:
 		// The octal field, then the permission grid: a 16px header row and
 		// three 24px rows, with a 4px gap between them.
-		body = 6 + 64 + 8 + 16 + 3*24 + 3*4
+		body = 6 + dialogRowHeight(c.Theme()) + 16 + 3*24 + 3*4
 	case fieldDialog:
-		body = 6 + 64
+		body = 6 + dialogRowHeight(c.Theme())
 	case showError:
 		body = 20
 	}
@@ -1074,6 +1089,14 @@ func (state *State) declareSFTPDialog(c ui.C, viewport gfx.Rect, view *sftpView)
 // the application's identities, and the view keeps the draw so the footer is
 // the same when an application modal stands beside the dialog.
 func (state *State) declareSFTPDialogFooter(c ui.C, view *sftpView) {
+	if view.dialog == sftpDialogDownloadConflict {
+		state.dialogActionFooter(c,
+			components.ButtonAction{ID: hitSFTPDialogCancel, Label: view.dialogCancelLabel, Variant: components.ButtonSecondary},
+			components.ButtonAction{ID: hitSFTPDialogReplace, Label: state.messages.SFTPDownloadReplace, Variant: components.ButtonDestructive},
+			components.ButtonAction{ID: hitSFTPDialogSubmit, Label: view.dialogSubmitLabel, Variant: components.ButtonDefault},
+		)
+		return
+	}
 	state.dialogActionFooter(c,
 		components.ButtonAction{ID: hitSFTPDialogCancel, Label: view.dialogCancelLabel, Variant: components.ButtonSecondary},
 		components.ButtonAction{ID: hitSFTPDialogSubmit, Label: view.dialogSubmitLabel, Variant: view.dialogSubmitVariant},
@@ -1134,7 +1157,7 @@ func (state *State) declareSFTPDialogField(c ui.C, view *sftpView, i int, label 
 	if i == 0 {
 		row.Error = view.dialogError
 	}
-	ui.FormField(c, row, label).FillWidth().Height(64).Shrink(0).Children(func() {
+	ui.FormField(c, row, label).FillWidth().Height(dialogRowHeight(c.Theme())).Shrink(0).Children(func() {
 		ui.TextFieldID(c, id, &view.dialogTexts[i], label, "")
 	})
 }
@@ -1164,7 +1187,7 @@ func (state *State) declareSFTPOwnershipFields(c ui.C, view *sftpView) {
 			row.Error = view.dialogError
 		}
 		var input ui.Box
-		ui.FormField(c, row, labels[field]).FillWidth().Height(64).Shrink(0).Children(func() {
+		ui.FormField(c, row, labels[field]).FillWidth().Height(dialogRowHeight(c.Theme())).Shrink(0).Children(func() {
 			input = ui.TextFieldID(c, id, &view.chownTexts[field], labels[field], "").Height(32)
 			// A typed change opens the suggestions; the field reports an edit,
 			// and a suggestion the program wrote is not one.

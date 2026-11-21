@@ -1,16 +1,25 @@
 package workbench
 
 import (
+	"strconv"
+	"strings"
+
 	"github.com/vivaui/viva/gfx"
+	"motty/internal/sshconn"
 	"motty/internal/workbench/icons"
 )
 
 const monitorInset = float32(12)
 const monitorControlsHeight = float32(44)
-const monitorHostInfoHeight = float32(40)
 const monitorTileHeight = float32(128)
 const monitorLowerTileHeight = float32(128)
 const monitorGap = float32(10)
+const monitorHostSummaryHeight = float32(112)
+const monitorHardwareHeaderHeight = float32(32)
+const monitorHardwareFactHeight = float32(22)
+const monitorBottomPadding = float32(20)
+
+var monitorIntervals = [...]int{1, 2, 5, 10}
 
 type monitorColors struct{ background, surface, border, text, muted, track, cpu, memory, disk, network gfx.Color }
 
@@ -26,6 +35,14 @@ func monitorRight(c *gfx.Canvas, text string, b gfx.Rect, size float32, color gf
 		return
 	}
 	c.LabelAligned(elide(c, text, size, weight, b.Width), b, gfx.TextStyle{Size: size, Color: color, Weight: weight}, gfx.AlignRight)
+}
+
+// monitorCenter paints a one-line label centered in b with a width-aware ellipsis.
+func monitorCenter(c *gfx.Canvas, text string, b gfx.Rect, size float32, color gfx.Color, weight float32) {
+	if b.Width <= 0 || b.Height <= 0 {
+		return
+	}
+	c.LabelAligned(elide(c, text, size, weight, b.Width), b, gfx.TextStyle{Size: size, Color: color, Weight: weight}, gfx.AlignCenter)
 }
 
 func monitorRowVisible(viewport gfx.Rect, y, height float32) bool {
@@ -71,11 +88,8 @@ func monitorCoresHeight(p *monitorView) float32 {
 	return h
 }
 func monitorGPUHeight(p *monitorView) float32 {
-	if !p.hardwareOpen {
-		return 0
-	}
 	if len(p.gpuRows) == 0 {
-		return 28
+		return 0
 	}
 	height := float32(0)
 	for index := range p.gpuRows {
@@ -94,6 +108,17 @@ func monitorGPUHeight(p *monitorView) float32 {
 	}
 	return height
 }
+
+func monitorHardwareHeight(p *monitorView) float32 {
+	height := monitorHardwareHeaderHeight
+	if !p.hardwareOpen {
+		return height
+	}
+	height += 8 + 4*monitorHardwareFactHeight
+	height += 9 + 20 + max(30, monitorGPUHeight(p))
+	return height + 8
+}
+
 func monitorDisksHeight(p *monitorView) float32 {
 	if p.disksCollapsed {
 		return 32
@@ -104,46 +129,48 @@ func monitorDisksHeight(p *monitorView) float32 {
 	}
 	return h
 }
-func monitorContentHeight(p *monitorView) float32 {
+func monitorContentHeight(p *monitorView, currentSSHUser string) float32 {
 	h := float32(8)
 	switch p.page {
 	case 0:
-		h += monitorTileHeight + monitorLowerTileHeight + monitorGap*3 + monitorSummaryHeight + monitorCoresBlock(p) + monitorDisksHeight(p)
+		h += monitorTileHeight + monitorLowerTileHeight + monitorGap*3 + monitorHostSummaryHeight + monitorCoresBlock(p) + monitorDisksHeight(p)
 	case 1:
 		h += monitorTileHeight + monitorGap + monitorDisksHeight(p)
 	case 2:
 		h += 142 + monitorGap + 32 + float32(max(1, len(p.networks)))*34 + 8
 	}
 	if p.page == 0 {
-		h += monitorGap + 28
-		if p.hardwareOpen {
-			h += monitorGPUHeight(p)
-			if p.data.Kernel != "" {
-				h += 24
-			}
-		}
+		h += monitorGap + monitorHardwareHeight(p)
 		if !p.loginsUnsupported {
-			h += monitorGap + monitorLoginsHeight(p)
+			h += monitorGap + monitorLoginsHeight(p, currentSSHUser)
 		}
 	}
-	return h + 8
+	return h + monitorBottomPadding
 }
 
-func monitorLoginsHeight(p *monitorView) float32 {
+func monitorLoginsHeight(p *monitorView, currentSSHUser string) float32 {
 	if p.loginsClosed {
 		return 32
 	}
-	if len(p.data.Logins) == 0 || p.detailsFailed || !p.data.LoginsAvailable {
-		return 32 + 36
+	height := float32(32 + 28)
+	currentSSH := currentSSHUser != ""
+	if currentSSH {
+		height += 32
 	}
-	height := 32 + float32(len(p.data.Logins))*43 + 8
+	if len(p.data.Logins) == 0 || p.detailsFailed || !p.data.LoginsAvailable {
+		if currentSSH && p.haveDetails && !p.detailsFailed && p.data.LoginsAvailable {
+			return height + 8
+		}
+		return height + 36 + 8
+	}
+	height += float32(len(p.data.Logins))*43 + 16
 	if p.data.LoginsTruncated {
 		height += 24
 	}
 	return height
 }
 
-func (s *State) paintMonitorLogins(c *gfx.Canvas, p *monitorView, b, viewport gfx.Rect) {
+func (s *State) paintMonitorLogins(c *gfx.Canvas, p *monitorView, currentSSHUser string, b, viewport gfx.Rect) {
 	colors, messages := s.monitorColors(), s.messages.Monitor
 	if monitorRowVisible(viewport, b.Y, b.Height) {
 		c.RoundedBorder(b, 10, 1, colors.border, colors.surface)
@@ -152,8 +179,23 @@ func (s *State) paintMonitorLogins(c *gfx.Canvas, p *monitorView, b, viewport gf
 	if p.loginsClosed {
 		return
 	}
-	rowY := b.Y + 32
+	c.Fill(gfx.Rect{X: b.X, Y: b.Y + 32, Width: b.Width, Height: 1}, colors.border)
+	rowY := b.Y + 34
+	if monitorRowVisible(viewport, rowY, 28) {
+		monitorLabel(c, messages.LoginsHint, gfx.Rect{X: b.X + 10, Y: rowY, Width: b.Width - 20, Height: 28}, 10, colors.muted, gfx.WeightRegular)
+	}
+	rowY += 28
+	if currentSSHUser != "" {
+		if monitorRowVisible(viewport, rowY, 32) {
+			monitorLabel(c, currentSSHUser, gfx.Rect{X: b.X + 10, Y: rowY, Width: b.Width*.48 - 10, Height: 21}, 12, colors.text, gfx.WeightSemibold)
+			monitorRight(c, messages.CurrentSSHLogin, gfx.Rect{X: b.X + b.Width*.48, Y: rowY, Width: b.Width*.52 - 10, Height: 21}, 11, colors.muted, gfx.WeightRegular)
+		}
+		rowY += 32
+	}
 	if len(p.data.Logins) == 0 || p.detailsFailed || !p.data.LoginsAvailable {
+		if currentSSHUser != "" && p.haveDetails && !p.detailsFailed && p.data.LoginsAvailable {
+			return
+		}
 		message := messages.NoLogins
 		if !p.haveDetails {
 			message = messages.WaitingDetails
@@ -208,17 +250,19 @@ func (s *State) monitorTile(c *gfx.Canvas, p *monitorView, b gfx.Rect, label, va
 	s.paintMonitorTrend(c, p, gfx.Rect{X: b.X + 2, Y: b.Y + 80, Width: b.Width - 4, Height: b.Height - 84}, metric, label, tint)
 }
 
-const monitorSummaryHeight = float32(92)
-
-func (s *State) paintMonitorSummary(c *gfx.Canvas, p *monitorView, b gfx.Rect) {
+func (s *State) paintMonitorSummary(c *gfx.Canvas, p *monitorView, b gfx.Rect, session *Session) {
 	colors, m := s.monitorColors(), s.messages.Monitor
 	c.RoundedBorder(b, 10, 1, colors.border, colors.surface)
+	host := b.Inset(gfx.Insets{Left: 10, Right: 10, Top: 7})
+	host.Height = 18
+	s.paintHostInfoText(c, host, session)
+	c.Fill(gfx.Rect{X: b.X + 10, Y: b.Y + 31, Width: max(0, b.Width-20), Height: 1}, colors.border)
 	labels := [...]string{m.AvailableMemory, m.LoadAverages, m.Uptime}
 	values := [...]string{p.availableMemory, p.loadText, p.uptimeText}
 	for i, label := range labels {
-		row := gfx.Rect{X: b.X + 10, Y: b.Y + 7 + float32(i)*26, Width: b.Width - 20, Height: 26}
+		row := gfx.Rect{X: b.X + 10, Y: b.Y + 35 + float32(i)*24, Width: b.Width - 20, Height: 24}
 		left := row
-		left.Width = row.Width * .50
+		left.Width = row.Width * .5
 		monitorLabel(c, label, left, 10, colors.muted, gfx.WeightRegular)
 		right := row
 		right.X += left.Width
@@ -394,6 +438,97 @@ func (s *State) paintMonitorDisks(c *gfx.Canvas, p *monitorView, b, viewport gfx
 	}
 }
 
+func monitorSystemName(system sshconn.RemoteSystem) string {
+	if system == sshconn.SystemUnknown {
+		return "—"
+	}
+	if name := hostSystemDisplayName(system); name != "" {
+		return name
+	}
+	name := system.String()
+	if name == "" {
+		return "—"
+	}
+	return strings.ToUpper(name[:1]) + name[1:]
+}
+
+func monitorHardwareVersion(p *monitorView, system sshconn.RemoteSystem) string {
+	version := strings.TrimSpace(p.data.Kernel)
+	if system == sshconn.SystemWindows {
+		version = strings.TrimSpace(strings.TrimPrefix(version, "Windows"))
+	}
+	if version == "" {
+		return "—"
+	}
+	return version
+}
+
+func monitorHardwareFact(c *gfx.Canvas, b gfx.Rect, label, value string, colors monitorColors) {
+	left := b
+	left.Width *= .42
+	monitorLabel(c, label, left, 10, colors.muted, gfx.WeightRegular)
+	right := b
+	right.X += left.Width
+	right.Width -= left.Width
+	monitorRight(c, value, right, 10, colors.text, gfx.WeightMedium)
+}
+
+func (s *State) paintMonitorHardware(c *gfx.Canvas, p *monitorView, session *Session, b, viewport gfx.Rect) {
+	colors, m := s.monitorColors(), s.messages.Monitor
+	if monitorRowVisible(viewport, b.Y, b.Height) {
+		c.RoundedBorder(b, 10, 1, colors.border, colors.surface)
+	}
+	s.monitorSection(c, hitMonitorHardware, gfx.Rect{X: b.X, Y: b.Y, Width: b.Width, Height: monitorHardwareHeaderHeight}, m.Hardware, icons.Cpu, colors.muted, p.hardwareOpen)
+	if !p.hardwareOpen {
+		return
+	}
+	c.Fill(gfx.Rect{X: b.X, Y: b.Y + monitorHardwareHeaderHeight, Width: b.Width, Height: 1}, colors.border)
+	system := monitorSystem(session)
+	versionLabel := m.HardwareKernelVersion
+	if system == sshconn.SystemWindows {
+		versionLabel = m.HardwareSystemVersion
+	}
+	coreCount := p.data.CPUCount
+	if coreCount == 0 {
+		coreCount = len(p.sample.Cores)
+	}
+	coreText, memoryText := "—", "—"
+	if coreCount > 0 {
+		coreText = strconv.Itoa(coreCount)
+	}
+	if p.sample.MemoryTotalBytes > 0 {
+		memoryText = monitorBytes(p.sample.MemoryTotalBytes)
+	}
+	facts := [...]struct {
+		label, value string
+	}{
+		{m.HardwareSystem, monitorSystemName(system)},
+		{versionLabel, monitorHardwareVersion(p, system)},
+		{m.HardwareLogicalProcessors, coreText},
+		{m.HardwarePhysicalMemory, memoryText},
+	}
+	x, y, w := b.X+10, b.Y+40, b.Width-20
+	for _, fact := range facts {
+		if monitorRowVisible(viewport, y, monitorHardwareFactHeight) {
+			monitorHardwareFact(c, gfx.Rect{X: x, Y: y, Width: w, Height: monitorHardwareFactHeight}, fact.label, fact.value, colors)
+		}
+		y += monitorHardwareFactHeight
+	}
+	c.Fill(gfx.Rect{X: x, Y: y, Width: w, Height: 1}, colors.border)
+	y += 9
+	if monitorRowVisible(viewport, y, 20) {
+		monitorLabel(c, m.GPU, gfx.Rect{X: x, Y: y, Width: w, Height: 20}, 10, colors.muted, gfx.WeightSemibold)
+	}
+	y += 20
+	if len(p.gpuRows) == 0 {
+		if monitorRowVisible(viewport, y, 30) {
+			monitorLabel(c, m.GPUMetricsUnavailable, gfx.Rect{X: x, Y: y, Width: w, Height: 30}, 10, colors.muted, gfx.WeightRegular)
+		}
+		return
+	}
+	s.paintMonitorGPUs(c, p, gfx.Rect{X: x, Y: y, Width: w, Height: monitorGPUHeight(p)}, viewport)
+}
+
 func (s *State) paintMonitorNetworkTile(c *gfx.Canvas, p *monitorView, b gfx.Rect, large bool) {
 	colors, m := s.monitorColors(), s.messages.Monitor
 	c.RoundedBorder(b, 10, 1, colors.border, colors.surface)
@@ -414,7 +549,7 @@ func (s *State) paintMonitorNetworkTile(c *gfx.Canvas, p *monitorView, b gfx.Rec
 // paintMonitorSections paints the stat sections in b, the scrolled content. Rows entirely outside
 // viewport, the part of it that shows, are skipped: a host with hundreds of mounts would
 // otherwise draw every row on every frame.
-func (s *State) paintMonitorSections(c *gfx.Canvas, v *remoteStatsView, b, viewport gfx.Rect) {
+func (s *State) paintMonitorSections(c *gfx.Canvas, session *Session, v *remoteStatsView, b, viewport gfx.Rect) {
 	p := &v.panel
 	colors, m := s.monitorColors(), s.messages.Monitor
 	x, y, w := b.X+monitorInset, b.Y+8, max(0, b.Width-monitorInset*2)
@@ -427,8 +562,8 @@ func (s *State) paintMonitorSections(c *gfx.Canvas, v *remoteStatsView, b, viewp
 		s.monitorTile(c, p, gfx.Rect{X: x, Y: y, Width: half, Height: monitorLowerTileHeight}, m.PrimaryDisk, p.diskText, p.diskCapacity, icons.HardDrive, colors.disk, monitorDisk)
 		s.paintMonitorNetworkTile(c, p, gfx.Rect{X: x + half + monitorGap, Y: y, Width: half, Height: monitorLowerTileHeight}, false)
 		y += monitorLowerTileHeight + monitorGap
-		s.paintMonitorSummary(c, p, gfx.Rect{X: x, Y: y, Width: w, Height: monitorSummaryHeight})
-		y += monitorSummaryHeight + monitorGap
+		s.paintMonitorSummary(c, p, gfx.Rect{X: x, Y: y, Width: w, Height: monitorHostSummaryHeight}, session)
+		y += monitorHostSummaryHeight + monitorGap
 		if !p.noPerCore {
 			h := monitorCoresHeight(p)
 			s.paintMonitorCores(c, p, gfx.Rect{X: x, Y: y, Width: w, Height: h}, viewport)
@@ -437,24 +572,13 @@ func (s *State) paintMonitorSections(c *gfx.Canvas, v *remoteStatsView, b, viewp
 		h := monitorDisksHeight(p)
 		s.paintMonitorDisks(c, p, gfx.Rect{X: x, Y: y, Width: w, Height: h}, viewport)
 		y += h + monitorGap
-		s.monitorSection(c, hitMonitorHardware, gfx.Rect{X: x, Y: y, Width: w, Height: 28}, m.Hardware, icons.Cpu, colors.muted, p.hardwareOpen)
-		y += 28
-		if p.hardwareOpen {
-			if p.data.Kernel != "" {
-				monitorLabel(c, p.data.Kernel, gfx.Rect{X: x + 10, Y: y, Width: w - 20, Height: 24}, 11, colors.muted, gfx.WeightRegular)
-				y += 24
-			}
-			if len(p.gpuRows) == 0 {
-				monitorLabel(c, m.NoHardware, gfx.Rect{X: x + 10, Y: y, Width: w - 20, Height: 28}, 11, colors.muted, gfx.WeightRegular)
-				y += 28
-			} else {
-				y = s.paintMonitorGPUs(c, p, gfx.Rect{X: x, Y: y, Width: w, Height: monitorGPUHeight(p)}, viewport)
-			}
-		}
+		h = monitorHardwareHeight(p)
+		s.paintMonitorHardware(c, p, session, gfx.Rect{X: x, Y: y, Width: w, Height: h}, viewport)
+		y += h + monitorGap
 		if !p.loginsUnsupported {
-			y += monitorGap
-			h = monitorLoginsHeight(p)
-			s.paintMonitorLogins(c, p, gfx.Rect{X: x, Y: y, Width: w, Height: h}, viewport)
+			currentSSHUser := s.monitorCurrentSSHUser(session)
+			h = monitorLoginsHeight(p, currentSSHUser)
+			s.paintMonitorLogins(c, p, currentSSHUser, gfx.Rect{X: x, Y: y, Width: w, Height: h}, viewport)
 		}
 	case 1:
 		s.monitorTile(c, p, gfx.Rect{X: x, Y: y, Width: w, Height: monitorTileHeight}, m.PrimaryDisk, p.diskText, p.diskCapacity, icons.HardDrive, colors.disk, monitorDisk)

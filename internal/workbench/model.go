@@ -91,6 +91,13 @@ type Host struct {
 	// Proxy overrides the global outbound proxy for this host. Nil inherits the
 	// global proxy; an explicit ProxyNone forces a direct connection.
 	Proxy *outboundProxy
+	// ProxyProfile, when set, is the id of a saved proxy profile (see
+	// outbound_proxy_profiles.go) that carries this host instead of Proxy. The
+	// profile wins over Proxy; an id no profile has treats the host as direct.
+	// ProxyBypass is this host's own direct list for that route, since the
+	// profile is shared by several hosts.
+	ProxyProfile string
+	ProxyBypass  string
 	// ViaSSH and Clipboard are a remote desktop host's: its server is reached
 	// through an SSH connection to Address (User is then the SSH account), and
 	// the clipboard is shared with the remote desktop. Console is an RDP host's:
@@ -98,7 +105,9 @@ type Host struct {
 	// one. NoAudio is an RDP host's too: the server is asked for no audio, and
 	// this computer opens no output device for the session. StandardSecurity is
 	// an RDP host's as well: the connection uses Standard RDP Security alone,
-	// with no TLS or NLA, for a server that requires it.
+	// with no TLS or NLA, for a server that requires it. LegacyTLS is an RDP
+	// host's too: the TLS offer includes the RSA key exchange suites (AES-CBC
+	// and AES-GCM) that an old server offers and Go leaves out by default.
 	// Chromeless is a desktop host's: its page shows the picture alone,
 	// without the bar above it and the status line under it.
 	ViaSSH           bool
@@ -106,6 +115,7 @@ type Host struct {
 	Console          bool
 	NoAudio          bool
 	StandardSecurity bool
+	LegacyTLS        bool
 	Chromeless       bool
 
 	// localShell is the shell a local terminal was opened with: a program path,
@@ -168,16 +178,25 @@ type Session struct {
 	desktopTunnel bool
 	// proxyRoute is the effective outbound proxy frozen when this connection
 	// was dialed. Editing the host updates host, but not the live transport.
-	proxyRoute   string
-	sshOptions   *sshconfig.ConnectionOptions
-	endpoint     sshconn.Endpoint
-	role         sshconn.EndpointRole
-	conn         Connection
-	browser      *sshbrowser.Browser
-	sudoCommands bool
-	sudoPassword string
-	recordRecent bool // this user dial may update its recent success once
-	shared       bool // conn is a tab on another tab's connection
+	proxyRoute string
+	// authentication is the policy this connection was dialed with. Like
+	// sshOptions it is frozen at the dial: a transport authenticated one way is
+	// not lent to a host that would authenticate another (see shareFrom).
+	authentication sshconn.Authentication
+	// interactiveOnly is the probe policy this connection was dialed with,
+	// frozen like authentication. A transport opened for a host confined to its
+	// interactive session sent no command probes and carries TCP keepalive, so
+	// another tab may not borrow it after the host is edited (see shareFrom).
+	interactiveOnly bool
+	sshOptions      *sshconfig.ConnectionOptions
+	endpoint        sshconn.Endpoint
+	role            sshconn.EndpointRole
+	conn            Connection
+	browser         *sshbrowser.Browser
+	sudoCommands    bool
+	sudoPassword    string
+	recordRecent    bool // this user dial may update its recent success once
+	shared          bool // conn is a tab on another tab's connection
 	// An interactive remote command for this tab only; it is not persisted as a host setting.
 	containerCommand string
 	// avoidShare makes the next connection a fresh one: the server refused one

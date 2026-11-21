@@ -45,6 +45,14 @@ Motty はデスクトップの SSH クライアントです。ターミナル、
   </tr>
   <tr>
     <td width="50%" valign="top">
+      <a href="assets/readme-dashboard.png"><img src="assets/readme-dashboard.png" alt="監視ダッシュボードの詳細ビュー：複数ホストの CPU・メモリ・ネットワークのグラフ" /></a>
+    </td>
+    <td width="50%" valign="top">
+      <a href="assets/readme-transfers.png"><img src="assets/readme-transfers.png" alt="転送センター：実行中と待機中の転送、履歴、失敗した転送" /></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
       <a href="assets/readme-desktop.png"><img src="assets/readme-desktop.png" alt="VNC で接続したリモートデスクトップ" /></a>
     </td>
     <td width="50%" valign="top">
@@ -59,7 +67,7 @@ Motty はデスクトップの SSH クライアントです。ターミナル、
   <tr>
     <td width="50%" valign="top">
       <p><strong>ホストが散らからない。</strong>グループ、タグ、色、アイコンを付けられ、
-      OpenSSH config、PuTTY、MobaXterm など 9 種類の取り込み元から読み込めます。パスワードは
+      OpenSSH config、PuTTY、MobaXterm など 11 種類の取り込み元から読み込めます。パスワードは
       AES-256-GCM の保管庫へ、鍵はシステムのシークレットストアへ。</p>
     </td>
     <td width="50%" valign="top">
@@ -215,14 +223,14 @@ Kitty/iTerm2/SIXEL の画像の表示、スニペットの送信、分割タブ�
 デフォルトではオフです）。
 
 ホストは、グループ化、タグ付け、検索ができ、OpenSSH の設定、PuTTY、
-Xshell、MobaXterm、WindTerm、Electerm、Netcatty、SecureCRT、FinalShell からインポートできます。TOTP/HOTP のシードは
+Xshell、MobaXterm、WindTerm、Electerm、Netcatty、SecureCRT、FinalShell、Xterminal、XPipe からインポートできます。TOTP/HOTP のシードは
 保管庫に保存して、自動で入力できます。保存したパスワードと鍵のパスフレーズは、
 AES-256-GCM の保管庫に、対応するホストの下に保存されます。保管庫の鍵は
 システムのシークレットストアに保存され、それがない場合は保管庫の隣の鍵ファイルに保存されます
 （ポータブル版でも同様です）。
 Electerm と Netcatty からのインポートでは、明示的な同意のもとで、読み取り可能な SSH のパスワードを保存できます。
 再インポート時には、不足しているパスワードだけが補われます。
-SecureCRT と FinalShell の保存済みパスワードは暗号化されているため、インポートされるのは接続情報だけです。
+SecureCRT、FinalShell、Xterminal、XPipe の保存済みパスワードは暗号化されているため、インポートされるのは接続情報だけです。
 
 ### 別のアプリなしでファイルを扱う
 

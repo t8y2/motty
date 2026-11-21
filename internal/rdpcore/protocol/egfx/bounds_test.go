@@ -90,17 +90,29 @@ func TestSurfaceBudgetFollowsReplaceAndDelete(t *testing.T) {
 	}
 }
 
-func TestResetGraphicsReturnsSurfaceBudget(t *testing.T) {
+// A graphics reset is not the end of a surface: the server keeps drawing into
+// the one it had until it deletes it itself, so the budget follows the surface
+// rather than the reset.
+func TestResetGraphicsKeepsTheSurfaceBudgetUntilTheServerDeletesTheSurface(t *testing.T) {
 	h := newTestHandler()
 	h.handleCreateSurface(createSurfacePDU(1, 64, 64))
+	held := h.surfaceBytes
+	if held == 0 {
+		t.Fatal("the surface took no budget")
+	}
 
 	reset := make([]byte, 12)
 	binary.LittleEndian.PutUint32(reset[0:4], 800)
 	binary.LittleEndian.PutUint32(reset[4:8], 600)
 	h.handleResetGraphics(reset)
 
-	if len(h.surfaces) != 0 || h.surfaceBytes != 0 || h.cacheBytes != 0 {
-		t.Fatalf("after reset: %d surfaces, %d surface bytes, %d cache bytes, want none", len(h.surfaces), h.surfaceBytes, h.cacheBytes)
+	if h.surfaces[1] == nil || h.surfaceBytes != held {
+		t.Fatalf("after reset: surface 1 held = %v, %d surface bytes, want true and %d", h.surfaces[1] != nil, h.surfaceBytes, held)
+	}
+
+	h.handleDeleteSurface([]byte{1, 0})
+	if h.surfaces[1] != nil || h.surfaceBytes != 0 {
+		t.Fatalf("after delete: surface 1 held = %v, %d surface bytes, want false and 0", h.surfaces[1] != nil, h.surfaceBytes)
 	}
 }
 

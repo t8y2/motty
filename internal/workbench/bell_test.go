@@ -7,29 +7,49 @@ import (
 
 func TestTerminalBellSoundsOncePerBurstAndCanBeSilenced(t *testing.T) {
 	now := time.Second
-	rings := 0
+	calls := make(chan struct{}, 4)
+	release := make(chan struct{})
 	options := testOptions(t)
 	options.Now = func() time.Duration { return now }
-	options.Bell = func() error { rings++; return nil }
+	// The player blocks, the way the system alert sound does. The write has to
+	// return while it is still blocked, or a binary file of BEL holds the window.
+	options.Bell = func() error {
+		calls <- struct{}{}
+		<-release
+		return nil
+	}
 	state := newTestState(t, options)
 	openHost(state)
 	screen := state.sessions[0].term.screen
 
 	screen.Write([]byte("\a\a\a"))
-	if rings != 1 {
-		t.Fatalf("a burst of bells sounded %d times", rings)
+	select {
+	case <-calls:
+	case <-time.After(2 * time.Second):
+		t.Fatal("a burst of bells never sounded")
 	}
+	select {
+	case <-calls:
+		t.Fatal("a burst of bells sounded more than once")
+	default:
+	}
+	close(release)
+
 	now += bellInterval
 	screen.Write([]byte("\a"))
-	if rings != 2 {
-		t.Fatalf("a bell after the interval sounded %d times in total", rings)
+	select {
+	case <-calls:
+	case <-time.After(2 * time.Second):
+		t.Fatal("a bell after the interval did not sound")
 	}
 
 	state.terminalBellOff = true
 	now += time.Minute
 	screen.Write([]byte("\a"))
-	if rings != 2 {
-		t.Fatalf("a silenced bell sounded: %d", rings)
+	select {
+	case <-calls:
+		t.Fatal("a silenced bell sounded")
+	default:
 	}
 }
 

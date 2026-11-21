@@ -308,6 +308,9 @@ type Options struct {
 	// (buttons, menus, dialogs, native text editing). Nil uses
 	// app.SetNativeAppearance.
 	SetNativeAppearance func(app.Appearance)
+	// SetAppIcon updates this window and the application's status icon on the
+	// event-loop thread when the icon color changes, including from another window.
+	SetAppIcon func(app.WindowIcon)
 	// Executable is the path of the running program, which the settings page
 	// puts into the client configuration of the MCP server that needs no window.
 	// Nil uses os.Executable.
@@ -535,6 +538,7 @@ const (
 	modalXYTransfer
 	modalOpenLink
 	modalRenameTab
+	modalLocalStartupCommand
 	modalAIRename
 	modalCloseTabs
 	modalSessionLink
@@ -557,7 +561,9 @@ const (
 	modalWorkspaceTemplateDelete
 	modalLocalProxy
 	modalCredential
+	modalProxyProfile
 	modalPasteReview
+	modalIconColorPicker
 )
 
 // tone colors a session's headline.
@@ -712,6 +718,11 @@ func (state *State) sshConfigFor(session *Session, host Host) (config sshconn.Co
 	// it with the connection.
 	config.SecurityKeyAgent = newSecurityKeyAgent(state).Agent
 	session.proxyRoute, session.jumpPath = route.proxyKey, route.jumpPath
+	// Freeze how this endpoint authenticates and which probes it allows, as the
+	// transport will: a later host edit, or another host at the same address,
+	// must not describe this dial after the fact.
+	session.authentication = config.Authentication[sshconn.Endpoint{Host: config.Host, Port: config.Port, User: config.User}]
+	session.interactiveOnly = config.InteractiveOnly
 	return config, valid
 }
 
@@ -731,17 +742,34 @@ func (state *State) connectionEnv(notify func()) connectEnv {
 }
 
 // shareFrom opens a tab on the connection another tab of this window already
-// has to the same account through the same jumps, so a split or a second tab
+// has to the same host through the same jumps, so a split or a second tab
 // needs no new handshake and no new password. It returns nil when there is no
 // such connection, or when the server will not lend it.
+//
+// Only a tab of the same saved host lends its connection, as a saved host owns
+// its tabs (see openHostSession). Two saved hosts at one account are two
+// destinations the user chose to keep apart: a bastion menu, for one, binds
+// every channel of a transport to the asset picked on it, so a borrowed
+// connection would skip the menu and land on another host's asset.
+//
+// The two tabs must also have dialed the same authentication policy. A
+// transport opened with a key is not a password login: lending it to a host
+// whose policy is a password would log that host in with a method it is not
+// configured for, and get past a server that refuses that method. The same
+// holds for the interactive-only policy: the probes are the destination's
+// question, and a transport dialed without them cannot start asking (no RTT,
+// no shell integration), while one dialed with them must not serve a host that
+// now refuses them.
 func (state *State) shareFrom(session *Session, host Host) (Connection, *Session) {
 	address := state.sessionAddress(host)
 	for index := range state.sessions {
 		other := &state.sessions[index]
 		// The saved host may have been edited since this transport was opened.
 		// Compare its dialed account/address, not the next connection's settings.
-		if other.ID == session.ID || other.conn == nil || other.Address != address ||
-			other.jumpPath != session.jumpPath || other.proxyRoute != session.proxyRoute || !other.sshOptions.Equal(session.sshOptions) {
+		if other.ID == session.ID || other.conn == nil || other.host.CatalogID != host.CatalogID || other.Address != address ||
+			other.jumpPath != session.jumpPath || other.proxyRoute != session.proxyRoute ||
+			other.interactiveOnly != session.interactiveOnly ||
+			!other.sshOptions.Equal(session.sshOptions) || !other.authentication.Equal(session.authentication) {
 			continue
 		}
 		lender, ok := other.conn.(sharer)
@@ -882,6 +910,9 @@ func (state *State) Wake() {
 	state.syncSFTPWindows()
 	state.aiPumpCLILogin()
 	state.syncRemoteToolsWindows()
+	if len(state.edits.list) > 0 && !state.edits.watching {
+		state.watchExternalEdits()
+	}
 	// Sessions were created, ended, or moved into a retry above: the network
 	// watcher follows the live ones, so idle windows poll nothing.
 	state.syncLinkWatch()
@@ -1048,13 +1079,19 @@ func (state *State) closeDisconnectedShell(session *Session) {
 	if terminal == nil || terminal.shell == nil {
 		return
 	}
-	terminal.rx = terminal.shell.Drain(terminal.rx[:0])
-	if len(terminal.rx) > 0 || terminal.decoder != nil {
+	pending := terminal.shell.Drain(terminal.rx[:0])
+	terminal.rx = terminal.rx[:0]
+	// These bytes belong to the transfer. Drawing them rings the bell for every
+	// 0x07 in a binary file, and that sound runs where the window cannot paint
+	// or read the other sessions.
+	if session.transfer.phase != transferNone && len(pending) > 0 {
+		pending = state.feedTransfer(session, pending)
+	}
+	if len(pending) > 0 || terminal.decoder != nil {
 		// The last read may end mid-character; decode and flush it before the
 		// shell goes away, so a trailing GB18030 character is not lost.
-		output := terminal.decodeRemote(terminal.rx)
+		output := terminal.decodeRemote(pending)
 		output = append(output, terminal.flushRemoteDecoder()...)
-		terminal.rx = terminal.rx[:0]
 		// What a shell says while its integration is hidden is not meant for
 		// the user: the activation line's echo is among that output, and no
 		// ready marker can end the window now. What is still hidden is dropped,
@@ -1398,6 +1435,11 @@ func (state *State) closeModal() {
 	}
 	if state.modal == modalCredential {
 		state.credentialForm = credentialUI{} // the password does not stay in the form
+	}
+	if state.modal == modalProxyProfile {
+		// The password does not stay in the form; the test generation does, so a
+		// late result cannot land in the next dialog.
+		state.proxyProfileForm = proxyProfileUI{testRun: state.proxyProfileForm.testRun}
 	}
 	if state.modal == modalWorkspaceDraft {
 		state.workspaceDraft.reset()

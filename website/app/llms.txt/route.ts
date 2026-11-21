@@ -32,7 +32,7 @@ export async function GET() {
     '',
     '- SSH terminal: real PTY sessions, true colour, 5,000 lines of scrollback, inline images, splits, search and recording.',
     '- Hosts and authentication: host keys are verified before any credential is sent; agent, key, password and one-time codes, with an encrypted vault.',
-    '- Files: SFTP with a resumable queue, atomic replacement and a built-in editor; SCP fallback; ZMODEM and XMODEM/YMODEM.',
+    '- Files: SFTP with a resumable queue, atomic replacement and a built-in editor; SCP fallback; ZMODEM, XMODEM/YMODEM and TRZSZ.',
     '- Port forwarding: local, remote, SOCKS5 and HTTP CONNECT rules, X11 forwarding, and jump chains where every hop is verified on its own.',
     '- Remote desktops: VNC and RDP in a tab, with certificate pinning, optionally through an SSH hop when the server only listens on loopback.',
     '- Assistant and MCP: Ask and Agent modes behind a risk-classified approval gate, and an optional loopback-only MCP server for external agents.',

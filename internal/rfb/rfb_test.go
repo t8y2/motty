@@ -184,6 +184,13 @@ func pair(t *testing.T) (client, serverSide net.Conn) {
 
 func connect(t *testing.T, config Config, script func(*server)) (*Client, error) {
 	t.Helper()
+	return connectOver(t, func(conn net.Conn) net.Conn { return conn }, config, script)
+}
+
+// connectOver is connect for a test that wraps the client's end of the
+// connection first, to give the client a different kind of transport.
+func connectOver(t *testing.T, wrap func(net.Conn) net.Conn, config Config, script func(*server)) (*Client, error) {
+	t.Helper()
 	clientSide, serverSide := pair(t)
 	done := make(chan struct{})
 	go func() {
@@ -197,9 +204,21 @@ func connect(t *testing.T, config Config, script func(*server)) (*Client, error)
 		serverSide.Close()
 		<-done
 	})
-	client, err := Connect(clientSide, config)
+	client, err := Connect(wrap(clientSide), config)
 	return client, err
 }
+
+// errNoDeadlines is what golang.org/x/crypto/ssh's forwarded channel reports
+// from the deadline methods: an SSH stream has no deadlines to set.
+var errNoDeadlines = errors.New("ssh: tcpChan: deadline not supported")
+
+// noDeadlineConn is a transport that does not support deadlines, like the
+// channel an SSH forward returns.
+type noDeadlineConn struct{ net.Conn }
+
+func (noDeadlineConn) SetDeadline(time.Time) error      { return errNoDeadlines }
+func (noDeadlineConn) SetReadDeadline(time.Time) error  { return errNoDeadlines }
+func (noDeadlineConn) SetWriteDeadline(time.Time) error { return errNoDeadlines }
 
 // update is a FramebufferUpdate carrying the given rectangle bodies.
 func update(rects ...[]byte) []byte {

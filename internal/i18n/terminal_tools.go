@@ -48,6 +48,7 @@ type ToolsMessages struct {
 	HighlightRegex               string
 	HighlightCase                string
 	HighlightColor               string
+	HighlightCustomColor         string
 	HighlightErrorEmpty          string
 	HighlightErrorTooLong        string
 	HighlightErrorEverywhere     string
@@ -128,6 +129,7 @@ type ToolsMessages struct {
 	SnippetShortcutInvalid    string
 	SnippetErrorName          string
 	SnippetErrorCommand       string
+	SnippetErrorTooLong       string
 	SnippetErrorTooMany       string
 	SnippetSave               string
 	SnippetPaletteFmt         string
@@ -290,7 +292,6 @@ type ToolsMessages struct {
 	PasswordHintDescription string
 	CloseConfirmRow         string
 	CloseConfirmDescription string
-	PasswordHintGhost       string // drawn after a sudo prompt, beside the cursor
 
 	// The outbound proxy.
 	ProxyRow                    string
@@ -421,25 +422,26 @@ type ToolsMessages struct {
 	SerialOpenedFmt        string
 
 	// File transfer over the terminal (ZMODEM).
-	TransferSentFmt           string
-	TransferReceivedFmt       string
-	TransferCancelled         string
-	TransferFailedFmt         string
-	TransferDeclined          string
-	TransferChooseFolderTitle string
-	TransferNoDownloads       string
-	TransferChooseFilesTitle  string
-	TransferTooManyFmt        string
-	TransferNotFileFmt        string
-	TransferTooBigFmt         string
-	TransferReceiveTitle      string
-	TransferSendTitle         string
-	TransferReceiveOfferFmt   string
-	TransferSendOfferFmt      string
-	TransferDecline           string
-	TransferChooseFiles       string
-	TransferChooseFolder      string
-	TransferToFolderFmt       string
+	TransferSentFmt               string
+	TransferReceivedFmt           string
+	TransferCancelled             string
+	TransferFailedFmt             string
+	TransferDeclined              string
+	TransferChooseFolderTitle     string
+	TransferNoDownloads           string
+	TransferChooseFilesTitle      string
+	TransferChooseSendFolderTitle string
+	TransferTooManyFmt            string
+	TransferNotFileFmt            string
+	TransferTooBigFmt             string
+	TransferReceiveTitle          string
+	TransferSendTitle             string
+	TransferReceiveOfferFmt       string
+	TransferSendOfferFmt          string
+	TransferDecline               string
+	TransferChooseFiles           string
+	TransferChooseFolder          string
+	TransferToFolderFmt           string
 
 	// The file panel.
 	CatFiles                        string
@@ -675,6 +677,8 @@ type ToolsMessages struct {
 	UpdateConfirmSubmit             string
 	UpdateDownloadingTitleFmt       string
 	UpdateVerifying                 string
+	UpdateInstallingTitleFmt        string
+	UpdateInstalling                string
 	UpdateRestarting                string
 	UpdateFailedTitle               string
 	UpdateFailedBodyFmt             string
@@ -684,6 +688,10 @@ type ToolsMessages struct {
 	ActionSSHFmt                    string
 	ActionBrowserFmt                string
 	ActionFilesFmt                  string
+	ActionRevealFmt                 string
+	ActionReveal                    string
+	ActionRevealFailed              string
+	ActionRevealMissing             string
 	ActionExtractFmt                string
 	ActionCopyFmt                   string
 	DiagnosticsRow                  string
@@ -907,6 +915,19 @@ type ToolsMessages struct {
 	RemoteContainerDetailsTitle         string
 	RemoteContainerOverview             string
 	RemoteContainerEnvironmentEmpty     string
+	RemoteContainerConfiguration        string
+	RemoteContainerConfigurationLoading string
+	RemoteContainerCreated              string
+	RemoteContainerCommand              string
+	RemoteContainerImageID              string
+	RemoteContainerRestartPolicy        string
+	RemoteContainerPorts                string
+	RemoteContainerNetworks             string
+	RemoteContainerMounts               string
+	RemoteContainerNetworkIO            string
+	RemoteContainerBlockIO              string
+	RemoteContainerPIDs                 string
+	RemoteContainerUsageFailedFmt       string
 
 	RemoteProcessCopyPID            string
 	RemoteProcessCopyUser           string
@@ -930,6 +951,7 @@ type ToolsMessages struct {
 	RemoteColState                  string
 	RemoteColStatus                 string
 	RemoteColID                     string
+	RemoteColContainerMemory        string
 	RemoteRefresh                   string
 	RemoteAutoRefresh               string
 	RemoteAutoStart                 string
@@ -990,6 +1012,8 @@ type ToolsMessages struct {
 	ExtEditButton                   string
 	ExtEditOpenedFmt                string
 	ExtEditSentFmt                  string
+	ExtEditUnsentFmt                string
+	ExtEditGoneFmt                  string
 	ExtEditSendFailedFmt            string
 	ExtEditBadFmt                   string
 	ExtEditRefused                  string

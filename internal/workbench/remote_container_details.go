@@ -2,10 +2,14 @@ package workbench
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/i18n"
 	"motty/internal/remotetools"
 )
 
@@ -31,7 +35,30 @@ type remoteContainerDetails struct {
 	environmentRequest uint64
 	environmentCancel  func()
 	environment        []remotetools.ProcessEnvironmentVariable
-	text               remoteDetailText
+	// usage is the docker stats sample the listing held when the dialog
+	// opened, so the overview and the table show the same figures.
+	usage      remotetools.ContainerUsage
+	usageKnown bool
+	// The inspect read fills the overview's configuration rows. It has its own
+	// request, because switching to the environment tab cancels it.
+	inspectLoaded  bool
+	inspectLoading bool
+	inspectFailed  bool
+	inspectStatus  string
+	inspectRequest uint64
+	inspectCancel  func()
+	inspect        remotetools.ContainerDetails
+	text           remoteDetailText
+}
+
+func (state *State) cancelRemoteContainerInspect() {
+	details := &state.remote.containerDetails
+	details.inspectRequest++
+	details.inspectLoading = false
+	if details.inspectCancel != nil {
+		details.inspectCancel()
+		details.inspectCancel = nil
+	}
 }
 
 func (state *State) cancelRemoteContainerEnvironment() {
@@ -47,15 +74,22 @@ func (state *State) cancelRemoteContainerEnvironment() {
 func (state *State) openRemoteContainerDetails(container remotetools.Container) {
 	state.closeRemoteProcessDetails()
 	state.cancelRemoteContainerEnvironment()
+	state.cancelRemoteContainerInspect()
 	state.remote.containerDetailsSerial++
 	state.remote.containerDetails = remoteContainerDetails{
 		open: true, container: container, tab: hitRemoteContainerDetailsOverview,
 		serial: state.remote.containerDetailsSerial,
 	}
+	if usage, ok := state.remote.containerUsage[container.ID]; ok {
+		state.remote.containerDetails.usage = usage
+		state.remote.containerDetails.usageKnown = true
+	}
+	state.loadRemoteContainerInspect()
 }
 
 func (state *State) closeRemoteContainerDetails() {
 	state.cancelRemoteContainerEnvironment()
+	state.cancelRemoteContainerInspect()
 	state.remote.containerDetails = remoteContainerDetails{}
 }
 
@@ -92,16 +126,22 @@ func (state *State) selectRemoteContainerDetailTab(tab gfx.ID) {
 	if details.tab == tab {
 		if tab == hitRemoteContainerDetailsEnvironment {
 			state.loadRemoteContainerEnvironment()
+		} else {
+			state.loadRemoteContainerInspect()
 		}
 		return
 	}
 	if details.tab == hitRemoteContainerDetailsEnvironment {
 		state.cancelRemoteContainerEnvironment()
+	} else {
+		state.cancelRemoteContainerInspect()
 	}
 	details.tab = tab
 	details.text.reset()
 	if tab == hitRemoteContainerDetailsEnvironment {
 		state.loadRemoteContainerEnvironment()
+	} else {
+		state.loadRemoteContainerInspect()
 	}
 }
 
@@ -169,6 +209,74 @@ func (state *State) applyRemoteContainerEnvironment(
 	details.text.clearSelection()
 }
 
+// loadRemoteContainerInspect reads the configuration the overview shows. It
+// runs when the dialog opens and again when the overview tab is clicked after
+// a failure, as the environment tab re-reads its own list.
+func (state *State) loadRemoteContainerInspect() {
+	details := &state.remote.containerDetails
+	if !details.open || state.remoteContainerDetailTab() != hitRemoteContainerDetailsOverview ||
+		details.inspectLoading || details.inspectLoaded && !details.inspectFailed {
+		return
+	}
+	session, ok := state.remoteSession()
+	if !ok {
+		details.inspectLoading = false
+		details.inspectFailed = true
+		details.inspectLoaded = true
+		details.inspectStatus = state.messages.History.StatusNotConnected
+		return
+	}
+	if state.remote.stale {
+		details.inspectLoading = false
+		details.inspectFailed = true
+		details.inspectLoaded = true
+		details.inspectStatus = state.messages.Tools.RemoteRefreshRequired
+		return
+	}
+	sourceID := state.remote.session
+	container := details.container
+	serial := details.serial
+	details.inspectRequest++
+	request := details.inspectRequest
+	details.inspectLoading, details.inspectFailed = true, false
+	details.inspectStatus = ""
+	runner := remotetools.ForSystem(commandRunnerFor(session), session.host.System.String())
+	ctx, cancel := context.WithTimeout(state.remoteToolsContext(), remoteTimeout)
+	details.inspectCancel = cancel
+	go func() {
+		defer cancel()
+		inspect, err := remotetools.ReadContainerDetails(ctx, runner, container.ID)
+		state.postRemoteToolsUpdate(func(state *State) {
+			state.applyRemoteContainerInspect(serial, request, sourceID, container, inspect, err)
+		})
+	}()
+}
+
+func (state *State) applyRemoteContainerInspect(
+	serial, request uint64,
+	sourceID uint32,
+	container remotetools.Container,
+	inspect remotetools.ContainerDetails,
+	err error,
+) {
+	details := &state.remote.containerDetails
+	if !details.open || details.serial != serial || state.remote.session != sourceID ||
+		details.inspectRequest != request || details.container.ID != container.ID {
+		return
+	}
+	details.inspectCancel = nil
+	details.inspectLoading = false
+	details.inspectLoaded = true
+	if err != nil {
+		details.inspectFailed = true
+		details.inspectStatus = state.remoteErrorText(err)
+		return
+	}
+	details.inspectFailed, details.inspectStatus = false, ""
+	details.inspect = inspect
+	details.text.clearSelection()
+}
+
 func (state *State) clickRemoteContainerDetails(id gfx.ID) bool {
 	details := &state.remote.containerDetails
 	if !details.open {
@@ -202,15 +310,116 @@ func (state *State) remoteContainerDetailTab() gfx.ID {
 }
 
 func (state *State) remoteContainerOverviewBody(container remotetools.Container) string {
-	m := state.messages.Tools
-	rows := [][2]string{
+	m, details := state.messages.Tools, &state.remote.containerDetails
+	facts := [][2]string{
 		{m.RemoteColName, processText(container.Name)},
 		{m.RemoteColID, processText(container.ID)},
 		{m.RemoteColImage, processText(container.Image)},
 		{m.RemoteColState, processText(container.State)},
 		{m.RemoteColStatus, processText(container.Status)},
 	}
-	return remoteDetailRows(rows)
+	if details.usageKnown {
+		facts = append(facts,
+			[2]string{m.RemoteProcessCPU, containerPercent(details.usage.CPUPercent)},
+			[2]string{m.RemoteProcessMemory, fmt.Sprintf("%s / %s (%s)",
+				details.usage.MemoryUsed, details.usage.MemoryLimit, containerPercent(details.usage.MemoryPercent))},
+			[2]string{m.RemoteContainerNetworkIO, details.usage.NetIO},
+			[2]string{m.RemoteContainerBlockIO, details.usage.BlockIO},
+			[2]string{m.RemoteContainerPIDs, details.usage.PIDs},
+		)
+	}
+	var configuration [][2]string
+	switch {
+	case details.inspectLoading && !details.inspectLoaded:
+		configuration = append(configuration, [2]string{m.RemoteContainerConfiguration, m.RemoteContainerConfigurationLoading})
+	case details.inspectFailed:
+		configuration = append(configuration, [2]string{m.RemoteContainerConfiguration, details.inspectStatus})
+	case details.inspectLoaded:
+		configuration = containerInspectRows(details.inspect, m)
+	}
+	return remoteDetailSections(facts, configuration)
+}
+
+// remoteDetailSections turns label/value rows into the detail body's source.
+// Every label is padded to the widest one's cells, so values share a column on
+// the fenced block's fixed-pitch grid; sections are separated by a blank line.
+func remoteDetailSections(sections ...[][2]string) string {
+	width := 0
+	for _, rows := range sections {
+		for _, row := range rows {
+			width = max(width, remoteTextCells(row[0]))
+		}
+	}
+	var source strings.Builder
+	for _, rows := range sections {
+		if len(rows) == 0 {
+			continue
+		}
+		if source.Len() > 0 {
+			source.WriteString("\n\n")
+		}
+		for rowIndex, row := range rows {
+			if rowIndex > 0 {
+				source.WriteByte('\n')
+			}
+			source.WriteString(row[0])
+			source.WriteString(strings.Repeat(" ", width-remoteTextCells(row[0])+2))
+			source.WriteString(row[1])
+		}
+	}
+	return source.String()
+}
+
+// remoteTextCells is how many cells value covers on the fixed-pitch grid the
+// detail body is laid out on.
+func remoteTextCells(value string) int {
+	cells := 0
+	for _, r := range value {
+		cells += text.CellWidth(r)
+	}
+	return cells
+}
+
+// containerInspectRows lists the configuration docker inspect holds: the
+// command that started the container, its ports, networks and mounts. Values
+// with several entries keep one row each, so a long list stays readable.
+func containerInspectRows(inspect remotetools.ContainerDetails, m i18n.ToolsMessages) [][2]string {
+	rows := [][2]string{
+		{m.RemoteContainerCreated, inspect.Created.Format("2006-01-02 15:04:05 MST")},
+		{m.RemoteContainerCommand, processText(inspect.Command)},
+		{m.RemoteContainerImageID, processText(shortContainerImageID(inspect.ImageID))},
+		{m.RemoteContainerRestartPolicy, processText(inspect.RestartPolicy)},
+	}
+	for _, port := range inspect.Ports {
+		rows = append(rows, [2]string{m.RemoteContainerPorts, port})
+	}
+	for _, network := range inspect.Networks {
+		rows = append(rows, [2]string{m.RemoteContainerNetworks, strings.TrimSpace(network.Name + " " + network.Address)})
+	}
+	for _, mount := range inspect.Mounts {
+		rows = append(rows, [2]string{m.RemoteContainerMounts, containerMountText(mount)})
+	}
+	return rows
+}
+
+func shortContainerImageID(image string) string {
+	image = strings.TrimPrefix(image, "sha256:")
+	if len(image) > 12 {
+		return image[:12]
+	}
+	return image
+}
+
+func containerMountText(mount remotetools.ContainerMount) string {
+	mode := "rw"
+	if mount.ReadOnly {
+		mode = "ro"
+	}
+	source := processText(mount.Source)
+	if mount.Type == "volume" && mount.Name != "" {
+		source = mount.Name
+	}
+	return mount.Type + " " + source + " → " + processText(mount.Destination) + " (" + mode + ")"
 }
 
 // declareRemoteContainerDetailsDialog declares the open container details as a

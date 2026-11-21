@@ -33,3 +33,25 @@ func TestWin32InputModeIsAcceptedOnlyWhereThePlatformHasIt(t *testing.T) {
 		}
 	}
 }
+
+func TestWin32LogicalKey(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		event gfx.KeyEvent
+		want  string
+	}{
+		{"text", gfx.KeyEvent{Win32: gfx.Win32Key{VirtualKey: 'A', Unicode: 'a', Repeat: 2}}, "aa"},
+		{"release", gfx.KeyEvent{Release: true, Win32: gfx.Win32Key{VirtualKey: 'A', Unicode: 'a'}}, ""},
+		{"enter", gfx.KeyEvent{Win32: gfx.Win32Key{VirtualKey: 13, Unicode: 13}}, "\r"},
+		{"backspace", gfx.KeyEvent{Win32: gfx.Win32Key{VirtualKey: 8, Unicode: 8}}, "\x7f"},
+		{"tab", gfx.KeyEvent{Win32: gfx.Win32Key{VirtualKey: 9, Unicode: 9}}, "\t"},
+		{"up", gfx.KeyEvent{Win32: gfx.Win32Key{VirtualKey: 38}}, "\x1b[A"},
+		{"surrogate", gfx.KeyEvent{Win32: gfx.Win32Key{VirtualKey: 'A', Unicode: 0xd83d}}, ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := string(Win32LogicalKey(test.event)); got != test.want {
+				t.Fatalf("logical input = %q, want %q", got, test.want)
+			}
+		})
+	}
+}

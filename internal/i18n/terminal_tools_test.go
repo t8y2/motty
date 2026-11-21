@@ -14,7 +14,7 @@ var sameInEveryLanguage = map[string]bool{
 	"FieldDevicePlaceholder": true, "FieldLinePlaceholder": true, "FlowHardware": true, "FlowSoftware": true,
 	"AlgoCustomPlaceholder": true, "RemoteColPID": true, "RemoteColCPU": true, "RemoteColID": true, "RemoteTabCompose": true,
 	"CatMCP": true, "SyncConfigure": true, "SyncConfigureS3": true, "SyncConfigureGist": true, "SyncConfigureGitee": true,
-	"GiteeDialogTitle":  true,
+	"GiteeDialogTitle": true, "GeneralUpdateSourceCNB": true,
 	"FilesEditorVSCode": true, "FilesEditorZed": true,
 }
 

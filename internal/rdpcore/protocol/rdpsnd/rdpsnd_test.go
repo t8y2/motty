@@ -7,6 +7,7 @@ import (
 	"io"
 	"sync"
 	"testing"
+	"time"
 )
 
 type capture struct {
@@ -56,6 +57,18 @@ func (w *captureWriter) played() []byte {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return append([]byte(nil), w.data...)
+}
+
+// eventually waits for a condition the player goroutine makes true.
+func eventually(t *testing.T, what string, ok func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !ok() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(time.Millisecond)
+	}
 }
 
 func pdu(t *testing.T, message byte, body []byte) []byte {
@@ -188,13 +201,11 @@ func TestWave2PlaysAndConfirmsTwice(t *testing.T) {
 	captured.pdus = nil
 	audio := []byte{1, 2, 3, 4, 5, 6, 7, 8}
 	handler.ProcessPDU(wave2(t, 42, 7, audio))
+	eventually(t, "both confirmations", func() bool { return len(captured.sent()) == 2 })
 	if got := captured.writer.played(); !bytes.Equal(got, audio) {
 		t.Errorf("played %v, want %v", got, audio)
 	}
 	sent := captured.sent()
-	if len(sent) != 2 {
-		t.Fatalf("confirmations = %d, want 2", len(sent))
-	}
 	for i, want := range []uint16{42, 42} {
 		if sent[i][0] != sndcWaveConfirm {
 			t.Fatalf("response %d is not a confirmation", i)
@@ -219,6 +230,7 @@ func TestTwoPartWaveIsReassembled(t *testing.T) {
 	copy(info[8:12], audio[:4])
 	handler.ProcessPDU(pdu(t, sndcWave, info))
 	handler.ProcessPDU(pdu(t, sndcWave, append([]byte{0, 0, 0, 0}, audio[4:]...)))
+	eventually(t, "both confirmations", func() bool { return len(captured.sent()) == 2 })
 	if got := captured.writer.played(); !bytes.Equal(got, audio) {
 		t.Errorf("played %v, want %v", got, audio)
 	}
@@ -254,6 +266,7 @@ func TestServerCloseAllowsRenegotiation(t *testing.T) {
 	handler.output = func(uint32, uint16) (io.WriteCloser, error) { return second, nil }
 	handler.ProcessPDU(serverFormats(t, 8, pcm(44100, 2)))
 	handler.ProcessPDU(wave2(t, 1, 0, []byte{1, 2, 3, 4}))
+	eventually(t, "the renegotiated player's sound", func() bool { return len(second.played()) == 4 })
 	if got := second.played(); !bytes.Equal(got, []byte{1, 2, 3, 4}) {
 		t.Errorf("renegotiated player got %v", got)
 	}
@@ -267,15 +280,13 @@ func TestWriterFailureDoesNotStopTheChannel(t *testing.T) {
 	handler.ProcessPDU(serverFormats(t, 8, pcm(48000, 2)))
 	captured.pdus = nil
 	handler.ProcessPDU(wave2(t, 1, 0, []byte{1, 2, 3, 4}))
-	if sent := captured.sent(); len(sent) != 2 {
-		t.Errorf("confirmations = %d after a player failure, want 2", len(sent))
-	}
+	eventually(t, "confirmations after a player failure", func() bool { return len(captured.sent()) == 2 })
 	// The player is gone, but the channel still confirms later waves.
+	captured.mu.Lock()
 	captured.pdus = nil
+	captured.mu.Unlock()
 	handler.ProcessPDU(wave2(t, 2, 0, []byte{5, 6, 7, 8}))
-	if sent := captured.sent(); len(sent) != 2 {
-		t.Errorf("confirmations = %d after a second wave, want 2", len(sent))
-	}
+	eventually(t, "confirmations after a second wave", func() bool { return len(captured.sent()) == 2 })
 }
 
 func TestShortPDUsAreIgnored(t *testing.T) {
@@ -288,4 +299,79 @@ func TestShortPDUsAreIgnored(t *testing.T) {
 	} {
 		handler.ProcessPDU(data)
 	}
+}
+
+// blockingWriter is an output that holds every Write until released, as the
+// system output does while it already holds enough sound.
+type blockingWriter struct {
+	release chan struct{}
+	started chan struct{}
+	once    sync.Once
+	mu      sync.Mutex
+	bytes   int
+}
+
+func (w *blockingWriter) Write(p []byte) (int, error) {
+	w.once.Do(func() { close(w.started) })
+	select {
+	case <-w.release:
+	}
+	w.mu.Lock()
+	w.bytes += len(p)
+	w.mu.Unlock()
+	return len(p), nil
+}
+
+func (w *blockingWriter) Close() error {
+	select {
+	case <-w.release:
+	default:
+		close(w.release)
+	}
+	return nil
+}
+
+// The connection's receive goroutine calls ProcessPDU and also reads the
+// screen updates; an output that is full must not hold it.
+func TestFullOutputDoesNotBlockProcessPDU(t *testing.T) {
+	writer := &blockingWriter{release: make(chan struct{}), started: make(chan struct{})}
+	captured := &capture{}
+	handler := NewHandler(captured.send, func(uint32, uint16) (io.WriteCloser, error) { return writer, nil }, nil)
+	handler.ProcessPDU(serverFormats(t, 8, pcm(48000, 2)))
+
+	// 48 kHz stereo is 192000 bytes a second: 40 blocks of 100 ms is four
+	// seconds, far beyond what the output takes and the queue keeps.
+	block := make([]byte, 19200)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 40; i++ {
+			handler.ProcessPDU(wave2(t, uint16(i), byte(i), block))
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("ProcessPDU waited for the output")
+	}
+	<-writer.started
+
+	handler.out.mu.Lock()
+	queued, limit := handler.out.queued, handler.out.maxBytes
+	handler.out.mu.Unlock()
+	if queued > limit {
+		t.Errorf("%d bytes queued, more than the bound of %d", queued, limit)
+	}
+	// Every wave is confirmed on arrival; dropped ones are confirmed a second
+	// time so the server is never left waiting.
+	arrived := 0
+	for _, sent := range captured.sent() {
+		if sent[0] == sndcWaveConfirm {
+			arrived++
+		}
+	}
+	if arrived < 40 {
+		t.Errorf("%d confirmations for 40 waves", arrived)
+	}
+	handler.Close()
 }

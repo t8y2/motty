@@ -128,6 +128,7 @@ func TestRemoteSortValueParsers(t *testing.T) {
 		{"1.5 GiB", remoteSizeBytes, 1.5 * (1 << 30), true}, {"900MB", remoteSizeBytes, 9e8, true}, {"N/A", remoteSizeBytes, 0, false},
 		{"About an hour ago", remoteCreatedAge, 3600, true}, {"Less than a second ago", remoteCreatedAge, 0, true},
 		{"3 months ago", remoteCreatedAge, 90 * 86400, true}, {"unknown", remoteCreatedAge, 0, false},
+		{"12.5MiB / 7.6GiB", remoteContainerMemoryBytes, 12.5 * (1 << 20), true}, {"—", remoteContainerMemoryBytes, 0, false},
 	} {
 		t.Run(fmt.Sprintf("%s/%v", test.value, test.want), func(t *testing.T) {
 			got, ok := test.parse(test.value)

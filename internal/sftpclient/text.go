@@ -228,6 +228,23 @@ func (worker *Worker) readFileBytes(client Remote, remotePath string, generation
 		return nil, err
 	}
 	defer source.Close()
+	if writerTo, ok := source.(io.WriterTo); ok {
+		// One request at a time costs a round trip per 32 KiB, which a distant
+		// server turns into seconds for a few megabytes. WriteTo keeps a window
+		// of reads in flight and delivers them in order, as downloads do.
+		sink := &boundedBytes{worker: worker, generation: generation, limit: limit}
+		_, err := writerTo.WriteTo(sink)
+		switch {
+		case sink.err != nil:
+			return nil, sink.err
+		case err == nil:
+			return append([]byte{}, sink.data...), nil
+		case sink.started:
+			return nil, err
+		}
+		// A server that refuses a stat on an open file still reads fine one
+		// request at a time; nothing was delivered, so the source is untouched.
+	}
 	pair := bufferPool.Get().(*[2][32 * 1024]byte)
 	defer bufferPool.Put(pair)
 	buffer := pair[0][:]
@@ -253,6 +270,34 @@ func (worker *Worker) readFileBytes(client Remote, remotePath string, generation
 			return nil, io.ErrNoProgress
 		}
 	}
+}
+
+// boundedBytes collects what a pipelined read delivers, refusing the byte that
+// would pass the limit and noticing a cancellation between chunks.
+type boundedBytes struct {
+	worker     *Worker
+	generation uint64
+	limit      int
+	data       []byte
+	started    bool
+	err        error
+}
+
+func (sink *boundedBytes) Write(chunk []byte) (int, error) {
+	if sink.worker.canceled(sink.generation) {
+		sink.err = ErrCanceled
+		return 0, sink.err
+	}
+	if len(sink.data)+len(chunk) > sink.limit {
+		sink.err = editSizeError(sink.limit)
+		return 0, sink.err
+	}
+	sink.started = true
+	if sink.data == nil {
+		sink.data = make([]byte, 0, min(sink.limit, max(len(chunk), 32*1024)))
+	}
+	sink.data = append(sink.data, chunk...)
+	return len(chunk), nil
 }
 
 func decodeTextDocument(content []byte) (TextDocument, error) {

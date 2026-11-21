@@ -1,43 +1,79 @@
 // Package highlight finds the words in a line of terminal text that deserve a
 // color: errors, warnings, addresses, and whatever the user asked for. It knows
-// nothing of cells or colors; it marks bytes of a line with a Slot, and the
-// terminal turns a slot into a color of its scheme.
+// nothing of cells or palettes; it marks bytes of a line with a Color, which the
+// terminal resolves through its scheme when the color is a named one, or draws
+// as the explicit value the rule holds.
 package highlight
 
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
-// Slot names one of the colors a terminal scheme provides. The zero Slot marks
-// nothing.
-type Slot uint8
+// Color is the color a rule gives its text: one of the colors a terminal scheme
+// names, or an explicit RGB value the user chose. The zero Color marks nothing.
+type Color uint32
 
 const (
-	None Slot = iota
+	None Color = iota
 	Red
 	Green
 	Yellow
 	Blue
 	Magenta
 	Cyan
-	slotCount
+	namedColorCount
 )
 
-// ANSI is the index in the terminal's sixteen named colors that a slot uses: the
-// bright variants, which every scheme keeps legible on its background.
-func (slot Slot) ANSI() int {
-	if slot == None || slot >= slotCount {
-		return -1
-	}
-	return 8 + int(slot)
+// customColor marks a Color as explicit RGB channels rather than a named one. A
+// named color is below namedColorCount, so the bit tells them apart.
+const customColor Color = 1 << 24
+
+// RGB is the color of eight-bit red, green and blue channels.
+func RGB(red, green, blue uint8) Color {
+	return customColor | Color(red)<<16 | Color(green)<<8 | Color(blue)
 }
 
-// Name is the slot's word in a saved file.
-func (slot Slot) Name() string {
-	switch slot {
+// IsCustom reports whether the color is explicit RGB rather than one of the
+// terminal scheme's named colors.
+func (color Color) IsCustom() bool { return color&customColor != 0 }
+
+// Channels is the eight-bit red, green and blue of an explicit color.
+func (color Color) Channels() (red, green, blue uint8) {
+	return uint8(color >> 16), uint8(color >> 8), uint8(color)
+}
+
+// valid reports whether the value names a color a rule can use: one of the
+// named ones or an explicit RGB value. The zero value and bits beyond the RGB
+// channels are refused.
+func (color Color) valid() bool {
+	if color == None {
+		return false
+	}
+	if color.IsCustom() {
+		return color&0xFF000000 == customColor
+	}
+	return color < namedColorCount
+}
+
+// ANSI is the index in the terminal's sixteen named colors that a named color
+// uses: the bright variants, which every scheme keeps legible on its background.
+// An explicit color, and None, have no index.
+func (color Color) ANSI() int {
+	if color == None || color >= namedColorCount {
+		return -1
+	}
+	return 8 + int(color)
+}
+
+// Name is the color's word in a saved file: a named color's word, or its
+// #rrggbb form when it is explicit.
+func (color Color) Name() string {
+	switch color {
 	case Red:
 		return "red"
 	case Green:
@@ -51,21 +87,58 @@ func (slot Slot) Name() string {
 	case Cyan:
 		return "cyan"
 	}
+	if color.IsCustom() {
+		red, green, blue := color.Channels()
+		return fmt.Sprintf("#%02x%02x%02x", red, green, blue)
+	}
 	return ""
 }
 
-// SlotFromName reads a saved slot, or None for one it does not know.
-func SlotFromName(name string) Slot {
-	for slot := Red; slot < slotCount; slot++ {
-		if slot.Name() == name {
-			return slot
+// ColorFromName reads a saved color, or None for one it does not know. A named
+// color is its word in any case; an explicit one is #rgb or #rrggbb.
+func ColorFromName(name string) Color {
+	name = strings.ToLower(strings.TrimSpace(name))
+	for color := Red; color < namedColorCount; color++ {
+		if color.Name() == name {
+			return color
 		}
 	}
-	return None
+	return colorFromHex(name)
 }
 
-// Slots lists the colors a rule may use, in the order a chooser shows them.
-func Slots() []Slot { return []Slot{Red, Yellow, Green, Cyan, Blue, Magenta} }
+// colorFromHex reads #rgb or #rrggbb, with the channels an eight-bit color has.
+func colorFromHex(value string) Color {
+	if len(value) == 0 || value[0] != '#' {
+		return None
+	}
+	digits, short := value[1:], false
+	switch len(digits) {
+	case 3:
+		short = true
+	case 6:
+	default:
+		return None
+	}
+	var channels [3]uint8
+	for index := range channels {
+		var text string
+		if short {
+			text = strings.Repeat(digits[index:index+1], 2)
+		} else {
+			text = digits[index*2 : index*2+2]
+		}
+		channel, err := strconv.ParseUint(text, 16, 8)
+		if err != nil {
+			return None
+		}
+		channels[index] = uint8(channel)
+	}
+	return RGB(channels[0], channels[1], channels[2])
+}
+
+// Colors lists the named colors a rule may use, in the order a chooser shows
+// them.
+func Colors() []Color { return []Color{Red, Yellow, Green, Cyan, Blue, Magenta} }
 
 // MaxRules bounds how many rules a set takes, and MaxPatternLength how long one
 // pattern is, so a damaged state file cannot make every line cost seconds.
@@ -80,7 +153,7 @@ type Rule struct {
 	Pattern       string
 	Regex         bool
 	CaseSensitive bool
-	Slot          Slot
+	Color         Color
 
 	// fast, when set by Builtin, holds the literal matcher the package can run
 	// instead of the expression. User rules never set it, so their behavior is
@@ -88,9 +161,8 @@ type Rule struct {
 	fast *fastMatcher
 }
 
-// fastMatcher is the whole-word form Builtin's first three rules take: every
-// alternative is literal text between ASCII word boundaries. quad is the IPv4
-// rule. It lets Mark skip the regular expression engine on plain ASCII lines.
+// fastMatcher matches builtin rules without regular expressions on ASCII lines.
+// words are literal alternatives between word boundaries; quad matches IPv4.
 type fastMatcher struct {
 	words []string
 	quad  bool
@@ -109,7 +181,7 @@ func (rule Rule) expression() (*regexp.Regexp, error) {
 		return nil, ErrEmptyPattern
 	case len(rule.Pattern) > MaxPatternLength:
 		return nil, ErrTooLong
-	case rule.Slot == None || rule.Slot >= slotCount:
+	case !rule.Color.valid():
 		return nil, ErrNoColor
 	}
 	pattern := rule.Pattern
@@ -142,7 +214,7 @@ type compiled struct {
 	// words and quad are the fast matcher of a builtin rule.
 	words [][]byte
 	quad  bool
-	slot  Slot
+	color Color
 }
 
 // Set is a compiled list of rules. A nil Set marks nothing.
@@ -169,10 +241,10 @@ func Compile(rules []Rule) *Set {
 			for index, word := range rule.fast.words {
 				words[index] = []byte(word)
 			}
-			set.rules = append(set.rules, compiled{expression: expression, words: words, quad: rule.fast.quad, slot: rule.Slot})
+			set.rules = append(set.rules, compiled{expression: expression, words: words, quad: rule.fast.quad, color: rule.Color})
 			continue
 		}
-		set.rules = append(set.rules, compiled{expression: expression, slot: rule.Slot})
+		set.rules = append(set.rules, compiled{expression: expression, color: rule.Color})
 		set.paddingSensitive = true
 	}
 	return set
@@ -186,10 +258,10 @@ func (set *Set) Empty() bool { return set == nil || len(set.rules) == 0 }
 // user rules may count spaces or anchor a match at the end of the row.
 func (set *Set) PaddingSensitive() bool { return set != nil && set.paddingSensitive }
 
-// Mark colors the bytes of line that a rule matches: marks[i] is the slot of
+// Mark colors the bytes of line that a rule matches: marks[i] is the color of
 // line[i]. It reports whether it marked anything. Bytes another rule already
-// marked keep their slot. marks must be as long as line and zeroed.
-func (set *Set) Mark(line []byte, marks []Slot) bool {
+// marked keep their color. marks must be as long as line and zeroed.
+func (set *Set) Mark(line []byte, marks []Color) bool {
 	if set.Empty() || len(line) == 0 {
 		return false
 	}
@@ -212,11 +284,11 @@ func (set *Set) Mark(line []byte, marks []Slot) bool {
 	for _, rule := range set.rules {
 		switch {
 		case fast && rule.quad:
-			any = markQuad(line, marks, rule.slot) || any
+			any = markQuad(line, marks, rule.color) || any
 		case fast && rule.words != nil:
-			any = markWords(lower[:len(line)], marks, rule.words, rule.slot) || any
+			any = markWords(lower[:len(line)], marks, rule.words, rule.color) || any
 		default:
-			any = markExpression(rule.expression, line, marks, rule.slot) || any
+			any = markExpression(rule.expression, line, marks, rule.color) || any
 		}
 	}
 	return any
@@ -241,12 +313,12 @@ func isWord(value byte) bool {
 
 // markExpression is the regular expression path, which serves every user rule
 // and the builtin rules on text the fast matcher does not take.
-func markExpression(expression *regexp.Regexp, line []byte, marks []Slot, slot Slot) bool {
+func markExpression(expression *regexp.Regexp, line []byte, marks []Color, color Color) bool {
 	any := false
 	for _, span := range expression.FindAllIndex(line, -1) {
 		for index := span[0]; index < span[1]; index++ {
 			if marks[index] == None {
-				marks[index] = slot
+				marks[index] = color
 				any = true
 			}
 		}
@@ -257,7 +329,7 @@ func markExpression(expression *regexp.Regexp, line []byte, marks []Slot, slot S
 // markWords marks every whole-word occurrence of words in the already lower
 // cased line. It reproduces \b at both ends of each alternative, including the
 // non-word final character of "active (running)".
-func markWords(line []byte, marks []Slot, words [][]byte, slot Slot) bool {
+func markWords(line []byte, marks []Color, words [][]byte, color Color) bool {
 	any := false
 	for _, word := range words {
 		if len(word) == 0 {
@@ -278,7 +350,7 @@ func markWords(line []byte, marks []Slot, words [][]byte, slot Slot) bool {
 			}
 			for index := start; index < end; index++ {
 				if marks[index] == None {
-					marks[index] = slot
+					marks[index] = color
 					any = true
 				}
 			}
@@ -289,7 +361,7 @@ func markWords(line []byte, marks []Slot, words [][]byte, slot Slot) bool {
 
 // markQuad marks IPv4-shaped dotted quads the way \b\d{1,3}(\.\d{1,3}){3}\b
 // does: four groups of one to three ASCII digits with word boundaries outside.
-func markQuad(line []byte, marks []Slot, slot Slot) bool {
+func markQuad(line []byte, marks []Color, color Color) bool {
 	any := false
 	for at := 0; at < len(line); at++ {
 		if line[at] < '0' || line[at] > '9' {
@@ -323,7 +395,7 @@ func markQuad(line []byte, marks []Slot, slot Slot) bool {
 		}
 		for index := at; index < end; index++ {
 			if marks[index] == None {
-				marks[index] = slot
+				marks[index] = color
 				any = true
 			}
 		}
@@ -332,28 +404,29 @@ func markQuad(line []byte, marks []Slot, slot Slot) bool {
 	return any
 }
 
-// Builtin are the rules a terminal starts with: failures in red, warnings in
-// yellow, successes in green and addresses in cyan. They are what an operator
-// scanning a log is looking for.
+// Builtin returns the default rules for log levels, common status words and
+// IPv4 addresses. Colors come from the terminal's scheme.
 func Builtin() []Rule {
 	return []Rule{
 		wordRule(Red, "error", "errors", "err", "fail", "fails", "failed", "failure", "fatal", "panic", "denied", "refused", "critical", "exception", "traceback", "segfault", "segmentation fault"),
 		wordRule(Yellow, "warn", "warning", "warnings", "deprecated", "timeout", "timed out", "retrying"),
-		wordRule(Green, "ok", "success", "successful", "successfully", "passed", "done", "connected", "active (running)"),
-		{Slot: Cyan, Regex: true, Pattern: `\b\d{1,3}(\.\d{1,3}){3}\b`, fast: &fastMatcher{quad: true}},
+		wordRule(Green, "info", "ok", "success", "successful", "successfully", "passed", "done", "connected", "active (running)"),
+		wordRule(Blue, "debug"),
+		wordRule(Magenta, "trace"),
+		{Color: Cyan, Regex: true, Pattern: `\b\d{1,3}(\.\d{1,3}){3}\b`, fast: &fastMatcher{quad: true}},
 	}
 }
 
 // wordRule builds a whole-word literal rule. Pattern is the same expression it
 // always had, so Validate and the non-ASCII fallback keep their exact meaning;
 // fast is the matcher Mark uses on plain ASCII lines.
-func wordRule(slot Slot, words ...string) Rule {
+func wordRule(color Color, words ...string) Rule {
 	quoted := make([]string, len(words))
 	for index, word := range words {
 		quoted[index] = regexp.QuoteMeta(word)
 	}
 	return Rule{
-		Slot: slot, Regex: true,
+		Color: color, Regex: true,
 		Pattern: `\b(` + strings.Join(quoted, "|") + `)\b`,
 		fast:    &fastMatcher{words: words},
 	}

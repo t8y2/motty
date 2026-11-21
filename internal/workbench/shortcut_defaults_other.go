@@ -16,3 +16,10 @@ func defaultPaneSplitChords() (horizontal, vertical keymap.Chord) {
 	return keymap.Chord{Modifiers: gfx.ModifierControl | gfx.ModifierShift, Char: 'd'},
 		keymap.Chord{Modifiers: gfx.ModifierControl | gfx.ModifierShift, Char: 'e'}
 }
+
+// defaultBroadcastChord is the broadcast-input binding this platform ships:
+// Control with Shift for the reason the split chords use it, and clear of
+// Motty's other defaults. Control+Alt+I would never leave GNOME and KDE.
+func defaultBroadcastChord() keymap.Chord {
+	return keymap.Chord{Modifiers: gfx.ModifierControl | gfx.ModifierShift, Char: 'i'}
+}

@@ -162,19 +162,6 @@ func remoteDetailSource(body string) string {
 	return fence + "text\n" + body + "\n" + fence
 }
 
-func remoteDetailRows(rows [][2]string) string {
-	var source strings.Builder
-	for index, row := range rows {
-		if index > 0 {
-			source.WriteByte('\n')
-		}
-		source.WriteString(row[0])
-		source.WriteByte('\t')
-		source.WriteString(row[1])
-	}
-	return source.String()
-}
-
 // remoteDetailSpec says what a detail body shows: markdown source, a table, or
 // a notice in place of either, and the identities the old scroll area exposed.
 type remoteDetailSpec struct {

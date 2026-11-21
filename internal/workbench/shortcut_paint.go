@@ -67,6 +67,8 @@ func (state *State) shortcutActionLabel(action shortcutAction) string {
 		return messages.Completion.AcceptHintAction
 	case shortcutSettings:
 		return messages.NavSettings
+	case shortcutBroadcast:
+		return messages.Tools.BroadcastStart
 	default:
 		return ""
 	}

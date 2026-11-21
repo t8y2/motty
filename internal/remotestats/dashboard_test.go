@@ -2,28 +2,16 @@ package remotestats
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/binary"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
-	"unicode/utf16"
 )
 
 func TestDashboardWindowsIntervalsReachTheRemoteScript(t *testing.T) {
 	for _, seconds := range []int{1, 2, 5, 10, 30, 60} {
 		command := WindowsCommand(seconds)
-		encoded := command[strings.LastIndex(command, " ")+1:]
-		data, err := base64.StdEncoding.DecodeString(encoded)
-		if err != nil {
-			t.Fatal(err)
-		}
-		units := make([]uint16, len(data)/2)
-		for i := range units {
-			units[i] = binary.LittleEndian.Uint16(data[i*2:])
-		}
-		script := string(utf16.Decode(units))
+		script := decodeWindowsCommand(t, command)
 		if !strings.Contains(script, "Start-Sleep -Seconds "+strconv.Itoa(seconds)) {
 			t.Fatalf("interval %d fell back to another frequency", seconds)
 		}
@@ -56,6 +44,39 @@ func TestDashboardLongIntervalUsesOneCancellableLinuxStream(t *testing.T) {
 		t.Fatal("long sampling interval delayed cancellation")
 	}
 }
+
+func TestDashboardGPUProbeIsAlwaysIncluded(t *testing.T) {
+	r := commandCaptureRunner{commands: make(chan string, 1)}
+	w := StartWithInterval(r, nil, 10)
+	var script string
+	select {
+	case script = <-r.commands:
+	case <-time.After(time.Second):
+		t.Fatal("sampler did not start")
+	}
+	w.Close()
+	select {
+	case <-w.Done():
+	case <-time.After(time.Second):
+		t.Fatal("sampler did not stop")
+	}
+	if !strings.Contains(script, "sample() {\n\tgpu_probe\n") {
+		t.Fatal("GPU probe call is missing")
+	}
+	for _, want := range []string{
+		"# gpu-probe-begin",
+		"/proc/stat",
+		"/proc/meminfo",
+		"/proc/net/dev",
+		"gop-stats-v2",
+		"sleep 10\ndone",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("sampling protocol lost %q", want)
+		}
+	}
+}
+
 func TestDashboardWindowsRatesDoNotInventByteTotals(t *testing.T) {
 	r, err := parseWindows([]byte(`gop-stats-win-v1 {"cpu":1,"total":1000,"free":500,"uptime":1,"networkAvailable":true,"net":[{"name":"Ethernet","rx":1234,"tx":5678}],"meta":{"count":1}}`))
 	if err != nil {

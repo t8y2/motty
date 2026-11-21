@@ -44,6 +44,14 @@ the project, the packages and how to build it.
   </tr>
   <tr>
     <td width="50%" valign="top">
+      <a href="assets/readme-dashboard.png"><img src="assets/readme-dashboard.png" alt="The dashboard's detailed overview: CPU, memory and network charts for several hosts" /></a>
+    </td>
+    <td width="50%" valign="top">
+      <a href="assets/readme-transfers.png"><img src="assets/readme-transfers.png" alt="The transfer centre: running uploads and downloads, waiting items, history and a failed transfer" /></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
       <a href="assets/readme-desktop.png"><img src="assets/readme-desktop.png" alt="A remote desktop over VNC" /></a>
     </td>
     <td width="50%" valign="top">
@@ -58,7 +66,7 @@ the project, the packages and how to build it.
   <tr>
     <td width="50%" valign="top">
       <p><strong>Hosts stay organised.</strong> Groups, tags, colours and icons, importable from
-      OpenSSH config, PuTTY, MobaXterm and six more. Passwords go to an
+      OpenSSH config, PuTTY, MobaXterm and eight more. Passwords go to an
       AES-256-GCM vault; the key lives in the system secret store.</p>
     </td>
     <td width="50%" valign="top">
@@ -231,13 +239,13 @@ PIN or passphrase prompt in the window; the key list marks it as a security
 key. See [security keys](docs/security-keys.md) for the requirements and limits.
 
 Hosts can be grouped, tagged, searched and imported from OpenSSH config, PuTTY,
-Xshell, MobaXterm, WindTerm, Electerm, Netcatty, SecureCRT or FinalShell. TOTP/HOTP seeds can be stored in the
+Xshell, MobaXterm, WindTerm, Electerm, Netcatty, SecureCRT, FinalShell, Xterminal or XPipe. TOTP/HOTP seeds can be stored in the
 vault and filled automatically. Saved passwords and key passphrases go into an
 AES-256-GCM vault, kept under the host they belong to; the vault key lives in the
 system secret store, or in a key file beside the vault where there is none (and
 in a portable copy).
 Electerm and Netcatty imports can save readable SSH passwords with explicit
-consent; re-import only fills missing passwords. SecureCRT and FinalShell store
+consent; re-import only fills missing passwords. SecureCRT, FinalShell, Xterminal and XPipe store
 their saved passwords encrypted, so those imports carry connections only.
 
 OpenSSH config import and sync retain per-host `ServerAliveInterval`,
@@ -272,11 +280,11 @@ configuration), switch on the **sudo** toggle beside the remote pane title (or
 choose **Use sudo for remote files** in the file context menu) and confirm the
 password. The same toggle stays selected while sudo is active; click it again
 to return to normal mode. This switches the current file browser, its
-transfers and open documents to a privileged SFTP server. Remote tools and the
-terminal's resource monitor have a separate sudo control, while each dashboard
-host requires its own confirmation. Sudo is off by default, never elevates the
-terminal, and passwords are held only for the connection, not saved. The remote
-host needs `sudo` and an OpenSSH
+transfers and open documents to a privileged SFTP server. Remote tools, the
+terminal's resource monitor and its server-log panel have a separate sudo
+control, while each dashboard host requires its own confirmation. Sudo is off
+by default, never elevates the terminal, and passwords are held only for the
+connection, not saved. The remote host needs `sudo` and an OpenSSH
 `sftp-server` executable; Windows servers and SCP-only servers cannot use
 privileged SFTP. Server sudo policies may deny the required shell command.
 

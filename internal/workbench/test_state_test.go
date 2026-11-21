@@ -10,7 +10,6 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
-	"github.com/vivaui/viva/keymap"
 	"motty/internal/linkwatch"
 	"motty/internal/localshell"
 )
@@ -68,6 +67,10 @@ func newTestState(t testing.TB, options Options) *State {
 		// Nor does a test read the files the developer last copied.
 		options.ClipboardFiles = func() ([]string, error) { return nil, app.ErrNoFiles }
 	}
+	if options.ClipboardImagePNG == nil {
+		// Nor the picture the developer last copied.
+		options.ClipboardImagePNG = func() ([]byte, error) { return nil, app.ErrNoImage }
+	}
 	if options.SetClipboardFiles == nil {
 		// Nor may a test replace them: the real clipboard belongs to the machine
 		// running the test.
@@ -88,22 +91,18 @@ func newTestState(t testing.TB, options Options) *State {
 	}
 	state := New(options)
 	menuLabelState = state
-	if paintEnvironment != nil {
-		pinPaintState(state)
-	} else {
-		// The shells a Windows computer offers are whatever is installed on it, and
-		// naming WSL distributions starts wsl.exe: a test sees one shell and no
-		// distributions, the way a computer with only a default shell would. On a
-		// Unix test binary the Windows executable cannot run, so the fixture leaves
-		// detection to the platform default.
-		state.localShellMenu.discover = func() []localshell.Choice {
-			if runtime.GOOS != "windows" {
-				return nil
-			}
-			return []localshell.Choice{{Name: "CMD", Path: `C:\Windows\System32\cmd.exe`, Default: true}}
+	// The shells a Windows computer offers are whatever is installed on it, and
+	// naming WSL distributions starts wsl.exe: a test sees one shell and no
+	// distributions, the way a computer with only a default shell would. On a
+	// Unix test binary the Windows executable cannot run, so the fixture leaves
+	// detection to the platform default.
+	state.localShellMenu.discover = func() []localshell.Choice {
+		if runtime.GOOS != "windows" {
+			return nil
 		}
-		state.localShellMenu.discoverWSL = func(context.Context) []localshell.Choice { return nil }
+		return []localshell.Choice{{Name: "CMD", Path: `C:\Windows\System32\cmd.exe`, Default: true}}
 	}
+	state.localShellMenu.discoverWSL = func(context.Context) []localshell.Choice { return nil }
 	// A test never waits for the automatic check; the ones that exercise it set
 	// these back to something short.
 	state.update.firstDelay, state.update.every = time.Hour, time.Hour
@@ -114,75 +113,6 @@ func newTestState(t testing.TB, options Options) *State {
 		eventCanvasesMu.Unlock()
 	})
 	return state
-}
-
-// paintEnvironment pins what a paint golden must not take from the machine
-// that runs it: the paths the settings pages print, the shells they find and
-// the icons the file list loads. Production never sets it.
-type paintEnvironmentValues struct {
-	sshConfigPath     string
-	downloadDirectory string
-}
-
-const (
-	paintSSHConfigPath     = "/home/tester/.ssh/config"
-	paintDownloadDirectory = "/home/tester/Downloads"
-)
-
-var paintEnvironment *paintEnvironmentValues
-
-// pinPaintState gives a state that a golden paints the pinned environment
-// after its own constructor ran, for the fixtures that do not go through
-// newTestState.
-func pinPaintState(state *State) {
-	if paintEnvironment == nil {
-		return
-	}
-	state.options.SSHConfigPath = paintEnvironment.sshConfigPath
-	state.options.FileIcon = func(string, int) (gfx.Bitmap, error) {
-		return gfx.Bitmap{}, app.ErrUnsupported
-	}
-	state.sftpDownloadDirectory = paintEnvironment.downloadDirectory
-	state.sshSync.shown = ""
-	state.localShellMenu.discover = func() []localshell.Choice { return nil }
-	state.localShellMenu.discoverWSL = func(context.Context) []localshell.Choice { return nil }
-}
-
-var paintAboutFacts = aboutBuildInfo{
-	version:     "0.0.0-test",
-	versionText: "v0.0.0-test",
-	platform:    "TestOS · testarch",
-	runtime:     "go0.0.0",
-	copyText:    "Motty 0.0.0-test\nplatform: TestOS · testarch\nruntime: go0.0.0\n",
-}
-
-// pinPaintEnvironment gives the paint goldens one platform's environment, so
-// the same snapshots hold on macOS, Linux and Windows. It restores everything
-// when the test ends; the tests that exercise the real platform run outside it.
-func pinPaintEnvironment(t *testing.T) {
-	t.Helper()
-	previous := paintEnvironment
-	paintEnvironment = &paintEnvironmentValues{
-		sshConfigPath:     paintSSHConfigPath,
-		downloadDirectory: paintDownloadDirectory,
-	}
-	previousInsets, previousPrimary := windowTitlebarInsets, primaryModifier
-	previousSplits, previousFacts := paneSplitChords, aboutFacts
-	previousEditor := customEditorChoice
-	windowTitlebarInsets = func() (float32, float32) { return 70, 0 }
-	primaryModifier = gfx.ModifierMeta
-	paneSplitChords = func() (keymap.Chord, keymap.Chord) {
-		return keymap.Chord{Modifiers: gfx.ModifierMeta, Char: 'd'},
-			keymap.Chord{Modifiers: gfx.ModifierMeta | gfx.ModifierShift, Char: 'd'}
-	}
-	aboutFacts = func() aboutBuildInfo { return paintAboutFacts }
-	customEditorChoice = func() bool { return true }
-	t.Cleanup(func() {
-		paintEnvironment = previous
-		windowTitlebarInsets, primaryModifier = previousInsets, previousPrimary
-		paneSplitChords, aboutFacts = previousSplits, previousFacts
-		customEditorChoice = previousEditor
-	})
 }
 
 // eventCanvases keeps, per state, the canvas the pointer helper paints events into.

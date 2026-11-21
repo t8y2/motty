@@ -5,6 +5,7 @@ import (
 
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
+	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -12,6 +13,100 @@ import (
 // use: Command on macOS, Control elsewhere.
 func commandW(state *State) gfx.EventResult {
 	return state.Shortcut(gfx.KeyEvent{Modifiers: keymap.Primary, Text: "w", Key: gfx.Key('w')})
+}
+
+func TestControlWBelongsToTheRunningTerminal(t *testing.T) {
+	for _, test := range []struct{ name, output, want string }{
+		{"shell", "", "\x17"},
+		{"alternate screen", "\x1b[?1049h", "\x17"},
+		{"kitty releases", "\x1b[=3u", "\x1b[119;5:1u\x1b[119;5:3u"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			state, _, _, shell := liveSession(t)
+			// Exercise the Windows/Linux close binding on macOS too.
+			state.shortcuts.chords.Set(shortcutCloseTab, keymap.Chord{Modifiers: gfx.ModifierControl, Char: 'w'})
+			shell.say(test.output)
+			state.Wake()
+			target := terminalTestHit(state, &state.sessions[0])
+			shell.input = nil
+			for _, release := range []bool{false, true} {
+				event := gfx.KeyEvent{Target: target, Text: "w", Modifiers: gfx.ModifierControl, Release: release}
+				if result := state.Shortcut(event); result.Handled {
+					t.Fatalf("Ctrl+W release=%v was taken by the application: %+v", release, result)
+				}
+				state.Key(event)
+			}
+			if got := string(shell.input); got != test.want {
+				t.Fatalf("Ctrl+W sent %q, want %q", got, test.want)
+			}
+			if state.modal != modalNone || len(state.sessions) != 1 {
+				t.Fatalf("Ctrl+W closed the terminal or opened a dialog: modal=%v sessions=%d", state.modal, len(state.sessions))
+			}
+		})
+	}
+}
+
+func TestAReboundCloseShortcutStillClosesTheRunningTerminal(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	state.shortcuts.chords.Set(shortcutCloseTab, keymap.Chord{Modifiers: gfx.ModifierControl | gfx.ModifierShift, Char: 'w'})
+	result := state.Shortcut(gfx.KeyEvent{Target: terminalTestHit(state, &state.sessions[0]), Key: gfx.Key('w'), Text: "w", Modifiers: gfx.ModifierControl | gfx.ModifierShift})
+	if !result.Handled || state.modal != modalCloseTabs {
+		t.Fatalf("the rebound close shortcut did not ask to close: result=%+v modal=%v", result, state.modal)
+	}
+}
+
+func TestControlWStillClosesTheConnectionPageAfterTheShellOpens(t *testing.T) {
+	for _, staleTarget := range []bool{false, true} {
+		t.Run(map[bool]string{false: "no focus", true: "stale terminal focus"}[staleTarget], func(t *testing.T) {
+			world, options := newClockedWorld(t)
+			state := newTestState(t, options)
+			fake := connect(t, state, world.world)
+			fake.set(func(s *sshconn.Status) { s.Phase = sshconn.PhaseConnected })
+			state.Wake()
+			shell := fake.shell(t)
+			session := &state.sessions[0]
+			if session.term.shell == nil || !state.showsProgress(session) {
+				t.Fatal("setup: a silent open shell must still show the connection page")
+			}
+			state.shortcuts.chords.Set(shortcutCloseTab, keymap.Chord{Modifiers: gfx.ModifierControl, Char: 'w'})
+			var target gfx.ID
+			if staleTarget {
+				target = terminalTestHit(state, session)
+			}
+			result := state.Shortcut(gfx.KeyEvent{Target: target, Text: "w", Modifiers: gfx.ModifierControl})
+			if !result.Handled || state.modal != modalCloseTabs {
+				t.Fatalf("Ctrl+W did not ask to close the connection page: result=%+v modal=%v", result, state.modal)
+			}
+			if len(shell.input) != 0 {
+				t.Fatalf("the hidden shell received %q", shell.input)
+			}
+		})
+	}
+}
+
+func TestControlWOnlyYieldsWhenTheTerminalOwnsTheKey(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		target   func(*State) gfx.ID
+		ended    bool
+		modifier gfx.Modifiers
+		wantPass bool
+	}{
+		{"no focus", func(*State) gfx.ID { return gfx.ID{} }, false, gfx.ModifierControl, false},
+		{"tab focus", func(s *State) gfx.ID { return hitTabList.At(int(s.workspaceTabs[0].ID)) }, false, gfx.ModifierControl, false},
+		{"ended terminal", func(s *State) gfx.ID { return terminalTestHit(s, &s.sessions[0]) }, true, gfx.ModifierControl, false},
+		{"Command W", func(s *State) gfx.ID { return terminalTestHit(s, &s.sessions[0]) }, false, gfx.ModifierMeta, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			state, _, _, _ := liveSession(t)
+			state.shortcuts.chords.Set(shortcutCloseTab, keymap.Chord{Modifiers: test.modifier, Char: 'w'})
+			state.sessions[0].term.ended = test.ended
+			result := state.Shortcut(gfx.KeyEvent{Target: test.target(state), Text: "w", Modifiers: test.modifier})
+			if result.Handled == test.wantPass {
+				t.Fatalf("handled=%v, want pass-through=%v", result.Handled, test.wantPass)
+			}
+		})
+	}
 }
 
 func TestCommandWClosesAConnectingTab(t *testing.T) {

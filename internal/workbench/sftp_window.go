@@ -177,6 +177,9 @@ func (w *sftpWindow) wake() {
 		w.owner.showNextPrompt()
 	}
 	w.pump()
+	if len(w.owner.edits.list) > 0 && !w.owner.edits.watching {
+		w.owner.watchExternalEdits()
+	}
 }
 
 // wakeEmbedded runs the per-browser work for a main-window tab. State.Wake has
@@ -188,6 +191,9 @@ func (w *sftpWindow) wakeEmbedded() {
 		return
 	}
 	w.pump()
+	if len(w.owner.edits.list) > 0 && !w.owner.edits.watching {
+		w.owner.watchExternalEdits()
+	}
 }
 
 func (w *sftpWindow) pump() {
@@ -509,7 +515,27 @@ func (w *sftpWindow) queueSelection(local bool) {
 
 func (w *sftpWindow) queueEntries(fromLocal bool, entries []sftpclient.Entry, sourceDir, targetDir string) {
 	if !w.connected() || w.view.worker == nil || w.view.busy || w.pendingLocal != "" || sourceDir == "" || targetDir == "" ||
-		w.fileProperties.open || w.closeConfirm || w.view.dialog != sftpDialogNone {
+		w.fileProperties.open || w.closeConfirm || w.view.dialog != sftpDialogNone || len(entries) == 0 {
+		return
+	}
+	if !fromLocal {
+		requests := make([]sftpDownloadRequest, 0, len(entries))
+		for _, entry := range entries {
+			if entry.LinkBroken {
+				continue
+			}
+			requests = append(requests, sftpDownloadRequest{
+				view: w.view, remoteDir: sourceDir, entry: entry,
+				localPath: filepath.Join(targetDir, safeLocalName(entry.Name)),
+			})
+		}
+		queued := w.owner.queueSFTPDownloads(w.view, requests)
+		if queued > 0 {
+			w.localRefresh = true
+		}
+		if queued < len(entries) && w.view.dialog == sftpDialogNone {
+			w.notices.show(w.owner.messages.SFTPWindow.Title, fmt.Sprintf(w.owner.messages.SFTPWindow.QueueRejectedFmt, len(entries)-queued), components.ToastWarning)
+		}
 		return
 	}
 	queued := 0
@@ -517,18 +543,11 @@ func (w *sftpWindow) queueEntries(fromLocal bool, entries []sftpclient.Entry, so
 		if entry.LinkBroken {
 			continue
 		}
-		var accepted bool
-		if fromLocal {
-			_, accepted = w.view.worker.QueueUpload(filepath.Join(sourceDir, entry.Name), path.Join(targetDir, entry.Name), entry.IsDir() && !entry.IsLink(), sftpclient.ExistingFail)
-		} else {
-			_, accepted = w.view.worker.QueueDownload(path.Join(sourceDir, entry.Name), filepath.Join(targetDir, entry.Name), entry.IsDir(), sftpclient.ExistingFail)
-		}
-		if accepted {
+		if _, accepted := w.view.worker.QueueUpload(filepath.Join(sourceDir, entry.Name), path.Join(targetDir, entry.Name), entry.IsDir() && !entry.IsLink(), sftpclient.ExistingFail); accepted {
 			queued++
 		}
 	}
 	if queued > 0 {
-		w.localRefresh = w.localRefresh || !fromLocal
 		w.view.status = fmt.Sprintf(w.owner.messages.SFTPQueuedFmt, fmt.Sprintf("%d → %s", queued, targetDir))
 		w.view.errorText = ""
 		w.owner.refreshSFTPTransfers(w.view)

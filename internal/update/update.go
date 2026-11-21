@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -26,7 +27,7 @@ import (
 )
 
 // Current is the version of this build. A test keeps it equal to viva.toml's.
-const Current = "0.4.17"
+const Current = "0.4.22"
 
 // Feed is the GitHub release the project publishes its builds to.
 const Feed = "https://api.github.com/repos/t8y2/motty/releases/latest"
@@ -276,18 +277,46 @@ func CheckPackageFrom(ctx context.Context, client *http.Client, goos, goarch str
 	return Release{}, err
 }
 
-// cnbRelease points the package of a release read from the CNB feed at the CNB
-// copy. The feed's size and SHA-256 still hold the download, and the signed
-// feed still names the asset, so only the host changes. Patches are published
-// to the official mirror only, so this source downloads the full package.
+// cnbRelease points the package and the patches of a release read from the CNB
+// feed at the CNB copy. The feed's size and SHA-256 still hold every download,
+// and the signed feed still names each file, so only the host changes. A patch
+// keeps the file name its URL in the feed has; one whose URL names no file is
+// dropped, which leaves that update to the full package.
 func cnbRelease(release Release, goos, goarch string, pkg Package) Release {
 	name := cnbAssetName(release.Version, goos, goarch, pkg)
 	if !release.Asset.Has() || name == "" {
 		return release
 	}
-	release.Asset.URL = cnbReleases + "v" + release.Version + "/" + name
-	release.Asset.Patches = nil
+	base := cnbReleases + "v" + release.Version + "/"
+	release.Asset.URL = base + name
+	patches := make([]Patch, 0, len(release.Asset.Patches))
+	for _, patch := range release.Asset.Patches {
+		file := patchFileName(patch.URL)
+		if file == "" {
+			continue
+		}
+		patch.URL = base + file
+		patches = append(patches, patch)
+	}
+	if len(patches) == 0 {
+		patches = nil
+	}
+	release.Asset.Patches = patches
 	return release
+}
+
+// patchFileName is the escaped last path segment of a patch URL, or "" when the
+// URL does not end in a .patch file name.
+func patchFileName(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	file := path.Base(parsed.EscapedPath())
+	if file == "." || file == "/" || !strings.HasSuffix(file, ".patch") {
+		return ""
+	}
+	return file
 }
 
 // cnbAssetName is the name the release's asset has on CNB, which is the name

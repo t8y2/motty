@@ -388,7 +388,10 @@ func TestSavedSourceReadsWhatTheSettingWrote(t *testing.T) {
 func TestCNBSourceMovesThePackageToItsOwnHost(t *testing.T) {
 	release := Release{Version: "1.2.3", Asset: Asset{
 		URL: "https://dl.motty.page/releases/v1.2.3/motty-1.2.3-darwin-arm64.zip", SHA256: goodHash, Size: 100,
-		FeedVerified: true, Patches: []Patch{{FromVersion: "1.2.2"}},
+		FeedVerified: true, Patches: []Patch{
+			{FromVersion: "1.2.2", Size: 7, SHA256: goodHash, URL: "https://dl.motty.page/releases/v1.2.3/motty-1.2.3-darwin-arm64.zip.1.2.2.patch"},
+			{FromVersion: "1.2.1", URL: "https://dl.motty.page/releases/v1.2.3/"},
+		},
 	}}
 	got := cnbRelease(release, "darwin", "arm64", PackageArchive)
 	want := "https://cnb.cool/dbxio.com/motty/-/releases/download/v1.2.3/motty-1.2.3-darwin-arm64.zip"
@@ -398,8 +401,12 @@ func TestCNBSourceMovesThePackageToItsOwnHost(t *testing.T) {
 	if got.Asset.SHA256 != goodHash || got.Asset.Size != 100 || !got.Asset.FeedVerified {
 		t.Errorf("the signed digest was not kept: %+v", got.Asset)
 	}
-	if len(got.Asset.Patches) != 0 {
-		t.Errorf("a package from CNB kept patches the mirror publishes: %+v", got.Asset.Patches)
+	patch, ok := got.Asset.PatchFrom("1.2.2")
+	if !ok || patch.URL != want+".1.2.2.patch" || patch.Size != 7 || patch.SHA256 != goodHash {
+		t.Errorf("the patch did not move to CNB with its signed digest: %+v", got.Asset.Patches)
+	}
+	if _, ok := got.Asset.PatchFrom("1.2.1"); ok {
+		t.Errorf("a patch whose URL names no file was kept: %+v", got.Asset.Patches)
 	}
 }
 

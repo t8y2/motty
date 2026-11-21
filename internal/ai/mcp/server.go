@@ -336,8 +336,12 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	out := s.handleBody(ctx, body)
-	if r.Context().Err() != nil {
-		return // the client left; nobody to answer
+	// A request the client abandoned has nobody to answer. A request the server
+	// cancelled itself (Shutdown) still gets its reply: the client is waiting on
+	// the open connection, and an empty 200 without a content type is not a
+	// response MCP clients accept, so they fail the call as a transport error.
+	if r.Context().Err() != nil && s.base.Err() == nil {
+		return
 	}
 	if out == nil {
 		w.WriteHeader(http.StatusAccepted)

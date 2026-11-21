@@ -29,7 +29,7 @@ const (
 	// read that as the colour having been faded out. Every state is now clearly
 	// higher, so a tab really shows which colour was picked. The ceiling comes from
 	// ink contrast: with coloured tabs taking the strong ink, the worst of the six
-	// offered colours still clears 4.9:1, and brighter connection colours lose one
+	// offered colours still clears 4.5:1, and brighter connection colours lose one
 	// step of colour in tabFill to stay readable.
 	tabColorIdleTint   = float32(.24)
 	tabColorHoverTint  = float32(.34)
@@ -65,6 +65,14 @@ func tabColorAmount(active, hovered bool) float32 {
 // colour leaves the tab in the palette's ordinary greys.
 func tabColored(color string) bool {
 	return hostAccent(color).Alpha > 0
+}
+
+func tabBorderColor(pal *palette, color string, active bool) gfx.Color {
+	base := pal.line
+	if active {
+		base = pal.windowStroke
+	}
+	return tintHostSurface(base, color, tabColorBorderTint)
 }
 
 // tabFill is the painted fill of a tab in a state whose ordinary fill is base:

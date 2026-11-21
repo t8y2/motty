@@ -100,9 +100,12 @@ type hostEditor struct {
 	// noHistory is the host's "Don't record commands" switch.
 	noHistory bool
 	// proxy is nil to inherit the global proxy, ProxyNone to force a direct
-	// connection, or a dedicated proxy. proxyPassword is staged until the outer
-	// host form is saved.
+	// connection, or a dedicated proxy. proxyProfile names a saved proxy profile
+	// instead, with proxyBypass as this host's own direct list. proxyPassword is
+	// staged until the outer host form is saved.
 	proxy         *outboundProxy
+	proxyProfile  string
+	proxyBypass   string
 	proxyPassword string
 	// otp is a new one-time code secret to save with the host. A saved one is
 	// never shown again; otpSaved only says there is one.
@@ -123,10 +126,11 @@ type hostEditor struct {
 	connectionBefore hostConnectionType
 	flow             serial.Flow
 	// viaSSH, clipboard and chromeless are the switches of a VNC or RDP host;
-	// console, noAudio and standardSecurity are RDP's own: the server's console
-	// (administrative) session, muting remote sound, and Standard RDP Security
-	// without TLS or NLA.
-	viaSSH, clipboard, console, noAudio, standardSecurity, chromeless bool
+	// console, noAudio, standardSecurity and legacyTLS are RDP's own: the
+	// server's console (administrative) session, muting remote sound, Standard
+	// RDP Security without TLS or NLA, and the RSA key exchange TLS suites an
+	// old server needs.
+	viaSSH, clipboard, console, noAudio, standardSecurity, legacyTLS, chromeless bool
 	// ports are the serial ports found when the picker was last opened.
 	ports []serial.Port
 }
@@ -338,7 +342,8 @@ func (editor *hostEditor) load(host Host) {
 	editor.agentForward = host.AgentForward
 	editor.interactiveOnly = host.InteractiveOnly
 	editor.noHistory = host.NoHistory
-	editor.proxy, editor.proxyPassword = cloneOutboundProxy(host.Proxy), ""
+	editor.proxy, editor.proxyProfile, editor.proxyBypass = cloneOutboundProxy(host.Proxy), host.ProxyProfile, host.ProxyBypass
+	editor.proxyPassword = ""
 	editor.transfer = host.Transfer
 	editor.advancedOpen = host.isSSH() && (host.Algo != nil || host.ForwardX11 || host.AgentForward || host.InteractiveOnly || host.NoHistory || host.IdentitiesOnly || host.LoginCommand != "")
 	if idleKeepAliveProtocol(host.Protocol) && (host.IdleKeepAlive > 0 || host.IdleInput != idleInputProtocolDefault) {
@@ -359,6 +364,7 @@ func (editor *hostEditor) load(host Host) {
 	editor.console = host.Protocol == protocolRDP && host.Console
 	editor.noAudio = host.Protocol == protocolRDP && host.NoAudio
 	editor.standardSecurity = host.Protocol == protocolRDP && host.StandardSecurity
+	editor.legacyTLS = host.Protocol == protocolRDP && host.LegacyTLS
 	if host.Protocol == protocolSerial {
 		editor.port.Insert(host.Line.String())
 		editor.ports = serialPorts()
@@ -394,6 +400,7 @@ func (editor *hostEditor) host(id uint32) Host {
 		host.Console = editor.console
 		host.NoAudio = editor.noAudio
 		host.StandardSecurity = editor.standardSecurity
+		host.LegacyTLS = editor.legacyTLS
 	}
 	if editor.protocol == protocolSSH {
 		host.SSHOptions = editor.sshOptions.Clone()
@@ -419,6 +426,7 @@ func (editor *hostEditor) host(id uint32) Host {
 	}
 	if editor.protocol != protocolSerial {
 		host.Proxy = cloneOutboundProxy(editor.proxy)
+		host.ProxyProfile, host.ProxyBypass = editor.proxyProfile, editor.proxyBypass
 	}
 	if idleKeepAliveProtocol(editor.protocol) {
 		host.IdleKeepAlive, _ = editor.idleKeepAliveDuration()
@@ -469,7 +477,7 @@ func (editor *hostEditor) reset() {
 	editor.advancedOpen = false
 	editor.port.Insert(strconv.Itoa(defaultPort))
 	editor.protocol, editor.terminal, editor.flow = protocolSSH, terminalSSH, serial.FlowNone
-	editor.viaSSH, editor.clipboard, editor.console, editor.noAudio, editor.standardSecurity, editor.chromeless = false, false, false, false, false, false
+	editor.viaSSH, editor.clipboard, editor.console, editor.noAudio, editor.standardSecurity, editor.legacyTLS, editor.chromeless = false, false, false, false, false, false, false
 }
 
 // defaultPortText is what the port field holds for a protocol until the user
