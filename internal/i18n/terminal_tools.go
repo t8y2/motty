@@ -677,6 +677,8 @@ type ToolsMessages struct {
 	UpdateConfirmSubmit             string
 	UpdateDownloadingTitleFmt       string
 	UpdateVerifying                 string
+	UpdateInstallingTitleFmt        string
+	UpdateInstalling                string
 	UpdateRestarting                string
 	UpdateFailedTitle               string
 	UpdateFailedBodyFmt             string

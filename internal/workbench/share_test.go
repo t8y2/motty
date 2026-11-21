@@ -481,3 +481,63 @@ func TestClosingTheTabThatDialedLeavesTheSharedTabAlive(t *testing.T) {
 		t.Fatalf("sessions = %+v", state.sessions)
 	}
 }
+
+// oneAccountHosts are two saved hosts at one account that authenticate
+// differently: the first is connected, the second is opened after it.
+func oneAccountHosts(first, second string) []savedHost {
+	host := func(id, label, authentication string) savedHost {
+		return savedHost{
+			ID: id, Label: label, Address: "bastion.example.com", User: "ops", Port: 22,
+			savedTransport: savedTransport{Authentication: authentication},
+		}
+	}
+	return []savedHost{host("host_first", "First", first), host("host_second", "Second", second)}
+}
+
+// Two entries at one account have one server and one login, but not one
+// authentication: a transport opened with a key is not a password login. The
+// password host has to dial and be asked (and refused, if the server refuses
+// that method), however many tabs its neighbour has open.
+func TestAnAccountIsSharedOnlyBetweenTheSameAuthentication(t *testing.T) {
+	tests := []struct {
+		name             string
+		first, second    string
+		wantShares       bool
+		wantSecondMethod sshconn.AuthMethods
+	}{
+		{"the same key policy", "key", "key", true, 0},
+		{"the same password policy", "password", "password", true, 0},
+		{"a key connection is not a password login", "key", "password", false, sshconn.AuthKeyboardInteractive | sshconn.AuthPassword},
+		{"a password connection is not a key login", "password", "key", false, sshconn.AuthPublicKey | sshconn.AuthKeyboardInteractive},
+		{"the automatic order is its own policy", "", "password", false, sshconn.AuthKeyboardInteractive | sshconn.AuthPassword},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			world, options := newSharingWorld(t)
+			if err := saveState(options.StatePath, savedState{Hosts: oneAccountHosts(test.first, test.second)}); err != nil {
+				t.Fatal(err)
+			}
+			state := newTestState(t, options)
+			world.connectFirst(t, state)
+			state.Click(hitHosts)
+			state.Click(hitHostList.At(2))
+			openHost(state)
+			if test.wantShares {
+				if len(world.conns) != 1 || len(world.shared) != 1 {
+					t.Fatalf("dials = %d, shares = %d: want the connection lent", len(world.conns), len(world.shared))
+				}
+				return
+			}
+			if len(world.shared) != 0 {
+				t.Fatal("the connection was lent to another authentication policy")
+			}
+			if len(world.conns) != 2 {
+				t.Fatalf("dials = %d: want the second host's own", len(world.conns))
+			}
+			target := sshconn.Endpoint{Host: "bastion.example.com", Port: 22, User: "ops"}
+			if got := world.configs[1].Authentication[target].Methods; got != test.wantSecondMethod {
+				t.Fatalf("the second host dialed with methods %b, want %b", got, test.wantSecondMethod)
+			}
+		})
+	}
+}

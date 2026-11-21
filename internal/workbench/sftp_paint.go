@@ -1047,6 +1047,15 @@ func (state *State) declareSFTPDialog(c ui.C, viewport gfx.Rect, view *sftpView)
 		description = messages.SFTPEditConflictDescription
 		submitLabel = messages.SFTPEditReloadConfirm
 		initialFocus = hitSFTPDialogCancel
+	case sftpDialogDownloadConflict:
+		title = messages.SFTPDownloadConflictTitle
+		if view.downloadConflictCount > 1 {
+			description = fmt.Sprintf(messages.SFTPDownloadConflictCountFmt, view.downloadConflictCount)
+		} else {
+			description = fmt.Sprintf(messages.SFTPDownloadConflictDescriptionFmt, view.downloadConflictName)
+		}
+		submitLabel = messages.SFTPDownloadKeepBoth
+		initialFocus = hitSFTPDialogSubmit
 	}
 	fieldDialog := sftpDialogShowsField(view.dialog)
 	showError := view.dialog == sftpDialogDelete && view.dialogError != ""
@@ -1080,6 +1089,14 @@ func (state *State) declareSFTPDialog(c ui.C, viewport gfx.Rect, view *sftpView)
 // the application's identities, and the view keeps the draw so the footer is
 // the same when an application modal stands beside the dialog.
 func (state *State) declareSFTPDialogFooter(c ui.C, view *sftpView) {
+	if view.dialog == sftpDialogDownloadConflict {
+		state.dialogActionFooter(c,
+			components.ButtonAction{ID: hitSFTPDialogCancel, Label: view.dialogCancelLabel, Variant: components.ButtonSecondary},
+			components.ButtonAction{ID: hitSFTPDialogReplace, Label: state.messages.SFTPDownloadReplace, Variant: components.ButtonDestructive},
+			components.ButtonAction{ID: hitSFTPDialogSubmit, Label: view.dialogSubmitLabel, Variant: components.ButtonDefault},
+		)
+		return
+	}
 	state.dialogActionFooter(c,
 		components.ButtonAction{ID: hitSFTPDialogCancel, Label: view.dialogCancelLabel, Variant: components.ButtonSecondary},
 		components.ButtonAction{ID: hitSFTPDialogSubmit, Label: view.dialogSubmitLabel, Variant: view.dialogSubmitVariant},

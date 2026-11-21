@@ -21,8 +21,10 @@ type Updater interface {
 	Package() update.Package
 	// Prepare downloads the release's package and checks it; it changes nothing.
 	Prepare(ctx context.Context, release update.Release, progress func(selfupdate.Progress), phase func(selfupdate.Phase)) (selfupdate.Staged, error)
-	// Launch starts what replaces the program once it has quit. quit ends the
-	// application, which a payload install hands to the installer.
+	// Launch stages the release and starts the helper that replaces the program
+	// once this process has quit. It copies the new application and checks its
+	// signature, so it must run off the window's thread; quit is called when the
+	// helper is running, and the caller quits as soon as Launch returns.
 	Launch(staged selfupdate.Staged, quit func()) error
 	// TakeFailure is why the last update did not finish, if it did not, and forgets it.
 	TakeFailure() string
@@ -32,7 +34,14 @@ type installPhase uint8
 
 const (
 	installDownloading installPhase = iota
+	// installVerifying covers the checks and the work that turns the download
+	// into an application: applying a delta patch, or unpacking and checking
+	// the archive.
 	installVerifying
+	// installInstalling is the step that copies the new application beside the
+	// installation and starts the helper replacing it. Nothing after this can
+	// be cancelled: the helper is about to run.
+	installInstalling
 	installRestarting
 	installFailed
 )
@@ -130,9 +139,10 @@ func (state *State) askInstall() {
 	})
 }
 
-// startInstall downloads and checks the release on a goroutine, and hands over to
-// the new version when that is done. Everything the goroutine reports goes
-// through aiPost, so the state is only touched on the window's thread.
+// startInstall downloads and checks the release on a goroutine, then hands it to
+// the installer, which replaces the application once this process quits.
+// Everything the goroutine reports goes through aiPost, so the state is only
+// touched on the window's thread.
 func (state *State) startInstall() {
 	install := &state.update.install
 	serial := install.serial + 1
@@ -160,11 +170,40 @@ func (state *State) startInstall() {
 					}
 				})
 			})
-		state.aiPost(func(state *State) { state.finishInstall(serial, staged, err) })
+		if err == nil && ctx.Err() == nil {
+			state.aiPost(func(state *State) { state.installStaged(serial, staged) })
+			return
+		}
+		state.aiPost(func(state *State) { state.finishInstall(serial, err) })
 	}()
 }
 
-func (state *State) finishInstall(serial int, staged selfupdate.Staged, err error) {
+// installStaged starts the installer on its own goroutine, so the window keeps
+// drawing the step instead of freezing on the last frame, and so the reported
+// step is the one actually running. It runs on the window's thread, which is
+// also where a cancel would arrive: a cancel that lost the race is impossible
+// once this returns, because the dialog stops offering one.
+func (state *State) installStaged(serial int, staged selfupdate.Staged) {
+	install := &state.update.install
+	if install.serial != serial || install.cancel == nil || install.phase == installFailed {
+		return // cancelled while the release was being prepared
+	}
+	install.phase = installInstalling
+	updater := state.options.Updater
+	go func() {
+		// The installer asks for the application to quit once the helper that
+		// replaces it is running. The quit is finishInstall's, on the window's
+		// thread, and Launch returns right after the helper starts, so the
+		// application still quits right after that request.
+		err := updater.Launch(staged, func() {})
+		state.aiPost(func(state *State) { state.finishInstall(serial, err) })
+	}()
+}
+
+// finishInstall ends an attempt that has installed nothing yet, or one whose
+// installer has finished: it saves the state and quits so the replacement can
+// run.
+func (state *State) finishInstall(serial int, err error) {
 	install := &state.update.install
 	if install.serial != serial || install.cancel == nil {
 		return // cancelled, or the window went away
@@ -173,9 +212,6 @@ func (state *State) finishInstall(serial int, staged selfupdate.Staged, err erro
 	install.cancel = nil
 	if errors.Is(err, context.Canceled) {
 		return
-	}
-	if err == nil {
-		err = state.options.Updater.Launch(staged, state.options.Quit)
 	}
 	if err != nil {
 		install.phase, install.err = installFailed, err
@@ -209,7 +245,7 @@ func (state *State) clickUpdateProgress(id gfx.ID) {
 		if install.phase == installFailed {
 			state.closeModal()
 			state.showNextPrompt()
-		} else if install.phase != installRestarting {
+		} else if install.phase != installRestarting && install.phase != installInstalling {
 			state.cancelInstall()
 		}
 	case hitUpdateProgressDimiss:
@@ -229,6 +265,10 @@ func (state *State) declareUpdateProgress(c ui.C) {
 	title := fmt.Sprintf(m.UpdateDownloadingTitleFmt, state.update.release.Version)
 	bodyHeight := float32(68)
 	switch install.phase {
+	case installVerifying, installInstalling:
+		// The download is done: what is left is turning it into the new
+		// application, which the title should say rather than "downloading".
+		title = fmt.Sprintf(m.UpdateInstallingTitleFmt, state.update.release.Version)
 	case installRestarting:
 		title = m.UpdateRestarting
 		bodyHeight = 40
@@ -274,6 +314,8 @@ func (state *State) declareUpdateProgress(c ui.C) {
 			}
 		case installVerifying:
 			line = m.UpdateVerifying
+		case installInstalling:
+			line = m.UpdateInstalling
 		}
 		install.fraction = fraction
 		install.bar = ui.Box{}
@@ -289,8 +331,13 @@ func (state *State) declareUpdateProgress(c ui.C) {
 			column.DrawOver(install.draw)
 		})
 		if install.phase != installRestarting {
+			action := components.ButtonAction{ID: hitUpdateProgressCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary}
+			// The installer is replacing the application either way once it has
+			// started, so the button stays where it was and stops offering what it
+			// cannot do.
+			action.Disabled = install.phase == installInstalling
 			dialog.Footer(func() {
-				state.dialogActionFooter(c, components.ButtonAction{ID: hitUpdateProgressCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary})
+				state.dialogActionFooter(c, action)
 			})
 		}
 	}

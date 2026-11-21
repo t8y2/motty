@@ -718,6 +718,10 @@ func (state *State) sshConfigFor(session *Session, host Host) (config sshconn.Co
 	// it with the connection.
 	config.SecurityKeyAgent = newSecurityKeyAgent(state).Agent
 	session.proxyRoute, session.jumpPath = route.proxyKey, route.jumpPath
+	// Freeze how this endpoint authenticates, as the transport will: a later
+	// host edit, or another host at the same address, must not describe this
+	// dial after the fact.
+	session.authentication = config.Authentication[sshconn.Endpoint{Host: config.Host, Port: config.Port, User: config.User}]
 	return config, valid
 }
 
@@ -740,6 +744,11 @@ func (state *State) connectionEnv(notify func()) connectEnv {
 // has to the same account through the same jumps, so a split or a second tab
 // needs no new handshake and no new password. It returns nil when there is no
 // such connection, or when the server will not lend it.
+//
+// The two tabs must also have dialed the same authentication policy. A
+// transport opened with a key is not a password login: lending it to a host
+// whose policy is a password would log that host in with a method it is not
+// configured for, and get past a server that refuses that method.
 func (state *State) shareFrom(session *Session, host Host) (Connection, *Session) {
 	address := state.sessionAddress(host)
 	for index := range state.sessions {
@@ -747,7 +756,8 @@ func (state *State) shareFrom(session *Session, host Host) (Connection, *Session
 		// The saved host may have been edited since this transport was opened.
 		// Compare its dialed account/address, not the next connection's settings.
 		if other.ID == session.ID || other.conn == nil || other.Address != address ||
-			other.jumpPath != session.jumpPath || other.proxyRoute != session.proxyRoute || !other.sshOptions.Equal(session.sshOptions) {
+			other.jumpPath != session.jumpPath || other.proxyRoute != session.proxyRoute ||
+			!other.sshOptions.Equal(session.sshOptions) || !other.authentication.Equal(session.authentication) {
 			continue
 		}
 		lender, ok := other.conn.(sharer)
@@ -1054,13 +1064,19 @@ func (state *State) closeDisconnectedShell(session *Session) {
 	if terminal == nil || terminal.shell == nil {
 		return
 	}
-	terminal.rx = terminal.shell.Drain(terminal.rx[:0])
-	if len(terminal.rx) > 0 || terminal.decoder != nil {
+	pending := terminal.shell.Drain(terminal.rx[:0])
+	terminal.rx = terminal.rx[:0]
+	// These bytes belong to the transfer. Drawing them rings the bell for every
+	// 0x07 in a binary file, and that sound runs where the window cannot paint
+	// or read the other sessions.
+	if session.transfer.phase != transferNone && len(pending) > 0 {
+		pending = state.feedTransfer(session, pending)
+	}
+	if len(pending) > 0 || terminal.decoder != nil {
 		// The last read may end mid-character; decode and flush it before the
 		// shell goes away, so a trailing GB18030 character is not lost.
-		output := terminal.decodeRemote(terminal.rx)
+		output := terminal.decodeRemote(pending)
 		output = append(output, terminal.flushRemoteDecoder()...)
-		terminal.rx = terminal.rx[:0]
 		// What a shell says while its integration is hidden is not meant for
 		// the user: the activation line's echo is among that output, and no
 		// ready marker can end the window now. What is still hidden is dropped,

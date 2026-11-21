@@ -527,3 +527,35 @@ func TestAnotherTabCanTransferWhileOneIsAlreadyRunning(t *testing.T) {
 		t.Fatalf("progress cards: first %v second %v", sawFirst, sawSecond)
 	}
 }
+
+// The shell closing mid-transfer still has the file's bytes buffered. Those
+// bytes are the transfer's, and drawing them rings the bell for every 0x07.
+func TestADisconnectedTransferDoesNotPaintItsBytes(t *testing.T) {
+	state, session, shell := transferState(t)
+	dir := t.TempDir()
+	state.options.OpenDirectory = func(app.OpenDirectoryOptions) (string, error) { return dir, nil }
+	state.options.Bell = func() error { return nil }
+	payload := make([]byte, 400000)
+	sender := zmodem.NewSender([]zmodem.SendFile{{Name: "big.bin", Size: int64(len(payload)), Source: bytes.NewReader(payload)}}, zmodem.SendOptions{Window: 2048})
+	answers := 0
+	shell.onWrite = func(p []byte) {
+		if answers < 3 {
+			answers++
+			sender.Feed(p)
+			shell.say(string(sender.TakeOutput(nil)))
+		}
+	}
+	shell.say(zrqinit)
+	waitUntil(t, state, "the offer", func() bool { return state.modal == modalFileTransfer })
+	state.Click(hitTransferChoose)
+	waitUntil(t, state, "the transfer to run", func() bool {
+		return session.transfer.phase == transferRunning && session.transfer.progress.Name == "big.bin"
+	})
+	shell.onWrite = nil
+	shell.say("\a\aLEAKED-BYTES")
+	state.closeDisconnectedShell(session)
+	if strings.Contains(screenText(state, 0), "LEAKED-BYTES") {
+		t.Fatalf("the transfer's bytes were drawn: %q", screenText(state, 0))
+	}
+	state.abandonTransfer(session)
+}

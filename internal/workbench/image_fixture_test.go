@@ -7,7 +7,9 @@ import (
 	"testing"
 )
 
-// Shared by attachment and desktop tests on every platform.
+// redSquarePNG is the smallest picture the clipboard and desktop-file tests
+// need. It lives outside the platform-specific assistant tests because the
+// desktop tests that paste it compile on every platform.
 func redSquarePNG(t *testing.T) []byte {
 	t.Helper()
 	img := image.NewNRGBA(image.Rect(0, 0, 8, 8))

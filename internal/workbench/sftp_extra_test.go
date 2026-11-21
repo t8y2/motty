@@ -68,21 +68,23 @@ func TestNewSymbolicLinkIsCreatedListedAndOpensLikeAFolder(t *testing.T) {
 	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.path == "/home/test/shortcut" })
 }
 
+// A conflict that still reaches the worker (for example a file created after
+// the panel checked the destination) opens the transfer center with its
+// recovery choices, unfiltered.
 func TestConflictDialogCanSkipWhatExists(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	view := session.files
-	state.sftpDownloadDirectory = "" // exercise the ask-each-time picker path
 	target := filepath.Join(t.TempDir(), "notes.txt")
 	os.WriteFile(target, []byte("mine"), 0o600)
-	state.options.SaveFile = func(app.SaveFileOptions) (string, error) { return target, nil }
 	// A filter or collapsed section must not hide a conflict that needs action.
 	state.transfers.filter = transferFilterRunning
 	state.transfers.direction = transferUpload
 	state.transfers.search.SetText("hidden")
 	state.updateTransferSearch()
 	state.transfers.groups[transferFilterFailed].collapsed = true
-	clickSFTPRow(t, state, view, "notes.txt")
-	state.Click(hitSFTPDownload)
+	if _, queued := view.worker.QueueDownload("/home/test/notes.txt", target, false, sftpclient.ExistingFail); !queued {
+		t.Fatal("conflict download was not queued")
+	}
 	waitSFTP(t, state, session, func(view *sftpView) bool {
 		return state.transfers.open && len(state.transfers.entries) == 1 && state.transfers.entries[0].conflict
 	})
