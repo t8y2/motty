@@ -95,6 +95,33 @@ func TestLocalDeleteRemovesASymlinkWithoutFollowingIt(t *testing.T) {
 	}
 }
 
+func TestLocalForceDeleteContinuesPastAMissingEntry(t *testing.T) {
+	state, session, _, _ := openTestSFTP(t)
+	dir := t.TempDir()
+	for _, name := range []string{"aaa.txt", "bbb.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	view := openLocalPane(t, state, session, dir)
+	clickSFTPLocalRow(t, state, view, "aaa.txt")
+	clickSFTPLocalRow(t, state, view, "bbb.txt")
+	state.Click(hitSFTPDelete)
+	if err := os.Remove(filepath.Join(dir, "aaa.txt")); err != nil {
+		t.Fatal(err)
+	}
+	chooseSFTPDeleteMethod(t, state, state.messages.SFTPDeleteMethodForce)
+	state.Click(hitSFTPDialogSubmit)
+	state.Click(hitSFTPDialogSubmit)
+	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.localBusy })
+	if _, err := os.Stat(filepath.Join(dir, "bbb.txt")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("force delete stopped at the missing entry: %v", err)
+	}
+	if view.status == "" || strings.Contains(view.status, "…") {
+		t.Fatalf("force local delete left the running status %q", view.status)
+	}
+}
+
 func TestLocalDeleteStopsAtTheFirstFailureAndSaysSo(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	dir := t.TempDir()

@@ -1201,7 +1201,16 @@ type Messages struct {
 	// canceled: what was deleted before it stopped stays deleted.
 	SFTPDeletePartialHint       string
 	SFTPDeleteConfirm           string
+	SFTPDeleteMethodLabel       string
+	SFTPDeleteMethodHint        string
+	SFTPDeleteMethodNormal      string
+	SFTPDeleteMethodForce       string
+	SFTPDeleteForceTitle        string
+	SFTPDeleteForceDescription  string
+	SFTPDeleteForceConfirm      string
+	SFTPDeleteForcePartialFmt   string
 	SFTPDeletingFmt             string
+	SFTPDeletingCountFmt        string
 	SFTPDeletedFmt              string
 	SFTPDeletedCountFmt         string
 	SFTPPermissionsTitle        string
