@@ -380,6 +380,35 @@ func (t *terminal) presentedRow(row int) term.Row {
 	return t.screen.Row(row)
 }
 
+func (t *terminal) presentedLogicalLine(row int) []term.Row {
+	if t.sync != nil {
+		if row < 0 || row >= len(t.sync.lines) {
+			return nil
+		}
+		isWrapped := t.sync.lines[row].Wrapped
+		prevWrapped := row > 0 && t.sync.lines[row-1].Wrapped
+		if !isWrapped && !prevWrapped {
+			return nil
+		}
+		first := row
+		for first > 0 && t.sync.lines[first-1].Wrapped && row-first < 64 {
+			first--
+		}
+		last := row
+		for last+1 < len(t.sync.lines) && t.sync.lines[last].Wrapped && last-row < 64 {
+			last++
+		}
+		return t.sync.lines[first : last+1]
+	}
+	if t.screen != nil {
+		if !t.screen.RowIsWrapped(row) {
+			return nil
+		}
+		return t.screen.LogicalLineRows(row)
+	}
+	return nil
+}
+
 // syncRemaining is how long the held frame may still be shown.
 func (t *terminal) syncRemaining() time.Duration {
 	if t.sync == nil || t.clock == nil {
