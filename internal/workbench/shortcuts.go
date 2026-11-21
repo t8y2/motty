@@ -469,9 +469,6 @@ func (state *State) shortcut(event gfx.KeyEvent, chord keymap.Chord) gfx.EventRe
 		if session == nil {
 			session = state.terminalPageSession(target)
 		}
-		if event.Target.IsZero() {
-			session, _ = state.sessionByIDPointer(state.activeSessionID)
-		}
 		if session != nil && state.paintsTerminalPane(session) && session.term.shell != nil && !session.term.ended {
 			return gfx.EventResult{}
 		}

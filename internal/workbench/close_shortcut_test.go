@@ -92,7 +92,7 @@ func TestControlWOnlyYieldsWhenTheTerminalOwnsTheKey(t *testing.T) {
 		modifier gfx.Modifiers
 		wantPass bool
 	}{
-		{"raw terminal key", func(*State) gfx.ID { return gfx.ID{} }, false, gfx.ModifierControl, true},
+		{"no focus", func(*State) gfx.ID { return gfx.ID{} }, false, gfx.ModifierControl, false},
 		{"tab focus", func(s *State) gfx.ID { return hitTabList.At(int(s.workspaceTabs[0].ID)) }, false, gfx.ModifierControl, false},
 		{"ended terminal", func(s *State) gfx.ID { return terminalTestHit(s, &s.sessions[0]) }, true, gfx.ModifierControl, false},
 		{"Command W", func(s *State) gfx.ID { return terminalTestHit(s, &s.sessions[0]) }, false, gfx.ModifierMeta, false},
