@@ -29,19 +29,21 @@ func (state *State) paintTransferBadge(canvas *gfx.Canvas) {
 	}
 }
 
-// declareTransferBatch declares the confirmation shown before a bulk action.
-func (state *State) declareTransferBatchBody(c ui.C) {
-	center, pal := &state.transfers, state.pal
-	ui.Column(c).Grow(1).FillWidth().Gap(16).Children(func() {
-		ui.Wrap(c, center.batch.title).FontSize(metrics.FontSizeL).Weight(gfx.WeightSemibold).Color(pal.text)
-		ui.Wrap(c, center.batch.description).FontSize(metrics.FontSizeS).Color(pal.muted).
-			HitWith(hitTransfersBulkDescription, center.batch.title, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: center.batch.description})
-		ui.Spacer(c)
-		ui.Row(c).Height(32).Shrink(0).Gap(8).Items(ui.Center).Children(func() {
-			ui.Spacer(c)
-			ui.Button(c, state.messages.Cancel).Secondary().Hit(hitTransfersBulkCancel, state.messages.Cancel)
-			ui.Button(c, center.batch.action).Destructive().Hit(hitTransfersBulkConfirm, center.batch.action)
-		})
+// declareTransferBatchDialog declares the alert dialog asked before a bulk
+// overwrite or resume, over whatever surface raised it, so the transfers it
+// concerns stay visible behind it. Cancel has the initial focus because the
+// action replaces files that exist.
+func (state *State) declareTransferBatchDialog(c ui.C, batch *transferBatch, cancel, confirm gfx.ID) {
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: batch.title, Description: batch.description, Width: 512,
+		Layer: dialogLayer + 1, Scope: dialogScope, CloseID: cancel,
+		InitialFocusID: cancel, NoClose: true,
+	})
+	dialog.Footer(func() {
+		state.dialogActionFooter(c,
+			components.ButtonAction{ID: cancel, Label: state.messages.Cancel, Variant: components.ButtonOutline},
+			components.ButtonAction{ID: confirm, Label: batch.action, Variant: components.ButtonDestructive},
+		)
 	})
 }
 
