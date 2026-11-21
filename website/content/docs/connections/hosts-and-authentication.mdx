@@ -117,12 +117,13 @@ fill an empty saved password, but never replace one already saved.
 | Netcatty | The CSV from the **Export** button on Netcatty's hosts page. Netcatty keeps its own vault encrypted, so only this export can be read. |
 | FinalShell | The FinalShell data folder: `~/.finalshell` on Linux, `~/Library/FinalShell` on macOS, or usually the FinalShell install folder on Windows. |
 | Xterminal | The Xterminal data folder: `~/Library/Application Support/XTerminal` on macOS, `%APPDATA%\XTerminal` on Windows, or `~/.config/XTerminal` on Linux. The portable build keeps it in `xt_data\userData`. |
+| XPipe | The XPipe data folder (`~/.xpipe`) or its `storage` subfolder, or a clone of the git repository XPipe syncs to. SSH, RDP and VNC connections are imported; other XPipe entry types are not. |
 
 Electerm and Netcatty write saved passwords into the export in clear text.
 Choosing to save passwords encrypts eligible SSH passwords in Motty's vault,
 but does not erase the export. Protect or delete the file when you are done.
-Xterminal encrypts its saved passwords and keys with its repository password, so
-importing its data folder takes the connections but never a secret.
+Xterminal and XPipe encrypt their saved passwords and keys, so importing their
+data folders takes the connections but never a secret.
 MobaXterm imports support UTF-8, UTF-16 with a byte-order mark, and
 GB18030 text; unsupported or damaged encodings are rejected rather than
 silently dropping characters. If a BOM-less file can be read as both UTF-8 and

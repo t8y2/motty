@@ -878,3 +878,56 @@ func TestImportingXterminalConnectionsAddsTheirGroups(t *testing.T) {
 		t.Fatal("an imported password appeared in the result warnings")
 	}
 }
+
+func TestImportingXPipeConnectionsAddsSSHAndRDPHosts(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "XPipe")
+	files := map[string]string{
+		"storage/categories/default/category.json": `{"uuid":"97458c07-75c0-4f9d-a06e-92d8cdf67c40","name":"Default","parentUuid":null}`,
+		"storage/categories/clients/category.json": `{"uuid":"clients","name":"Clients","parentUuid":"97458c07-75c0-4f9d-a06e-92d8cdf67c40"}`,
+		"storage/stores/web/entry.json":            `{"uuid":"web","name":"Web","categoryUuid":"clients"}`,
+		"storage/stores/web/store.json":            `{"type":"ssh","host":"web.example.test","port":2222,"identity":{"type":"inPlace","identityStore":{"username":"deploy","sshIdentity":{"type":"none"}}}}`,
+		"storage/stores/desk/entry.json":           `{"uuid":"desk","name":"Windows","categoryUuid":"clients"}`,
+		"storage/stores/desk/store.json":           `{"type":"rdpSimple","host":"win.example.test","port":3389,"identity":{"type":"inPlace","identityStore":{"username":"admin"}}}`,
+	}
+	for name, content := range files {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	options := freshOptions(t)
+	options.Keystore = &memKeys{}
+	var request app.OpenDirectoryOptions
+	options.OpenDirectory = func(asked app.OpenDirectoryOptions) (string, error) {
+		request = asked
+		return root, nil
+	}
+	state := newTestState(t, options)
+	state.Click(hitImportSessions)
+	if _, texts := paintedTexts(state); !contains(texts, "XPipe") {
+		t.Fatal("the import chooser has no XPipe button")
+	}
+	state.Click(hitImportXPipe)
+	if !strings.Contains(request.Title, "XPipe") || !strings.Contains(request.Title, "data folder") {
+		t.Fatalf("OpenDirectory request = %+v", request)
+	}
+	if state.modal != modalHostImportResult || len(state.hosts) != 2 {
+		t.Fatalf("modal %d, hosts %d", state.modal, len(state.hosts))
+	}
+	byLabel := map[string]Host{}
+	for _, host := range state.hosts {
+		byLabel[host.Label] = host
+	}
+	web := byLabel["Web"]
+	if web.Protocol != protocolSSH || web.Group != "Clients" || web.Address != "web.example.test" || web.User != "deploy" || web.Port != 2222 {
+		t.Fatalf("web = %+v", web)
+	}
+	desk := byLabel["Windows"]
+	if desk.Protocol != protocolRDP || desk.Group != "Clients" || desk.Address != "win.example.test" || desk.User != "admin" || desk.Port != 3389 {
+		t.Fatalf("desktop = %+v", desk)
+	}
+}

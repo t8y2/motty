@@ -1001,3 +1001,118 @@ func TestXterminalLocalStoreNeedsItsConnections(t *testing.T) {
 		t.Fatal("a text file was accepted as the local store")
 	}
 }
+
+func writeXPipeVault(t *testing.T, root string, files map[string]string) string {
+	t.Helper()
+	for name, content := range files {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}
+
+func TestXPipeVaultReadsSSHRDPAndVNCWithTheirFolders(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "vault")
+	writeXPipeVault(t, root, map[string]string{
+		"categories/all/category.json":     `{"uuid":"bfb0b51a-e7a3-4ce4-8878-8d4cb5828d6c","name":"All connections","parentUuid":null}`,
+		"categories/default/category.json": `{"uuid":"97458c07-75c0-4f9d-a06e-92d8cdf67c40","name":"Default","parentUuid":"bfb0b51a-e7a3-4ce4-8878-8d4cb5828d6c"}`,
+		"categories/clients/category.json": `{"uuid":"clients","name":"Clients","parentUuid":"97458c07-75c0-4f9d-a06e-92d8cdf67c40"}`,
+		"categories/acme/category.json":    `{"uuid":"acme","name":"Acme","parentUuid":"clients"}`,
+		"categories/ring-a/category.json":  `{"uuid":"ring-a","name":"RingA","parentUuid":"ring-b"}`,
+		"categories/ring-b/category.json":  `{"uuid":"ring-b","name":"RingB","parentUuid":"ring-a"}`,
+		// An SSH connection with its login written into the connection.
+		"stores/web/entry.json": `{"uuid":"web","name":"Web","categoryUuid":"acme","tags":["prod"]}`,
+		"stores/web/store.json": `{"type":"ssh","host":"web.acme.test","port":2222,"identity":{"type":"inPlace","identityStore":{"type":"localIdentity","username":"deploy","password":{"secrets":[{"name":"vault","secret":"cipher"}]},"sshIdentity":{"type":"none"}}}}`,
+		// An SSH connection whose login and key are a referenced identity.
+		"stores/db/entry.json":    `{"uuid":"db","name":"DB","categoryUuid":"clients"}`,
+		"stores/db/store.json":    `{"type":"ssh","host":"db.acme.test","port":22,"identity":{"type":"ref","ref":"ident"}}`,
+		"stores/ident/entry.json": `{"uuid":"ident","name":"root"}`,
+		"stores/ident/store.json": `{"type":"syncedIdentity","username":"root","password":{"type":"none"},"sshIdentity":{"type":"file","file":"<DATA>/keys/id_ed25519","publicKey":"ssh-ed25519 AAAA"}}`,
+		// RDP and VNC are hosts Motty can open; Docker is not a host.
+		"stores/desk/entry.json":   `{"uuid":"desk","name":"Windows","categoryUuid":"acme"}`,
+		"stores/desk/store.json":   `{"type":"rdpSimple","host":"10.1.1.1","port":3389,"identity":{"type":"ref","ref":"ident"}}`,
+		"stores/vnc/entry.json":    `{"uuid":"vnc","name":"Desktop","categoryUuid":"ring-a"}`,
+		"stores/vnc/store.json":    `{"type":"vnc","host":"10.1.1.2"}`,
+		"stores/docker/store.json": `{"type":"docker","host":"container"}`,
+		// A default-category connection has no user folder.
+		"stores/plain/entry.json": `{"uuid":"plain","name":"Plain","categoryUuid":"97458c07-75c0-4f9d-a06e-92d8cdf67c40"}`,
+		"stores/plain/store.json": `{"type":"ssh","host":"plain.example.test","port":22}`,
+		// A damaged or encrypted record is skipped, not fatal.
+		"stores/broken/store.json": `not json`,
+	})
+	result, err := Parse(XPipe, []string{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Entries) != 5 || result.Keys != 1 || result.PlainSecrets != 0 {
+		t.Fatalf("entries = %+v, keys %d, plain secrets %d", result.Entries, result.Keys, result.PlainSecrets)
+	}
+	byName := map[string]Entry{}
+	for _, entry := range result.Entries {
+		byName[entry.Name] = entry
+	}
+	web := byName["Web"]
+	if web.Group != "Clients/Acme" || web.Host != "web.acme.test" || web.Port != 2222 || web.User != "deploy" || web.Protocol != SSH {
+		t.Fatalf("web = %+v", web)
+	}
+	if web.Password != "" {
+		t.Fatalf("an encrypted XPipe password was taken: %q", web.Password)
+	}
+	if db := byName["DB"]; db.Group != "Clients" || db.User != "root" || db.Protocol != SSH {
+		t.Fatalf("db = %+v", db)
+	}
+	if desk := byName["Windows"]; desk.Group != "Clients/Acme" || desk.Protocol != RDP || desk.Port != 3389 || desk.User != "root" {
+		t.Fatalf("rdp = %+v", desk)
+	}
+	if vnc := byName["Desktop"]; vnc.Protocol != VNC || vnc.Host != "10.1.1.2" || vnc.Port != 0 {
+		t.Fatalf("vnc = %+v", vnc)
+	}
+	if plain := byName["Plain"]; plain.Group != "" || plain.User != "" {
+		t.Fatalf("plain = %+v", plain)
+	}
+	if box := byName["Desktop"]; box.Group != "RingA/RingB" && box.Group != "RingB/RingA" {
+		t.Fatalf("vnc group = %q", box.Group)
+	}
+	warnings := strings.Join(result.Warnings, "\n")
+	if !strings.Contains(warnings, "not readable JSON") {
+		t.Fatalf("warnings = %q", warnings)
+	}
+	if strings.Contains(warnings, "cipher") {
+		t.Fatalf("a secret appeared in an import warning: %q", warnings)
+	}
+}
+
+func TestXPipeVaultCanBeChosenByItsStorageOrDataFolder(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "xpipe")
+	storage := filepath.Join(root, "storage")
+	writeXPipeVault(t, storage, map[string]string{
+		"categories/default/category.json": `{"uuid":"97458c07-75c0-4f9d-a06e-92d8cdf67c40","name":"Default","parentUuid":null}`,
+		"stores/web/entry.json":            `{"uuid":"web","name":"Web","categoryUuid":"97458c07-75c0-4f9d-a06e-92d8cdf67c40"}`,
+		"stores/web/store.json":            `{"type":"ssh","host":"web.example.test","port":22,"identity":{"type":"inPlace","identityStore":{"username":"root"}}}`,
+	})
+	if result, err := ParseXPipe(storage); err != nil || len(result.Entries) != 1 {
+		t.Fatalf("storage folder: %+v %v", result, err)
+	}
+	if result, err := ParseXPipe(root); err != nil || len(result.Entries) != 1 {
+		t.Fatalf("data folder: %+v %v", result, err)
+	}
+}
+
+func TestXPipeVaultNeedsItsStoresAndConnections(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := ParseXPipe(dir); err == nil {
+		t.Fatal("a folder without stores and categories was accepted")
+	}
+	empty := writeXPipeVault(t, filepath.Join(t.TempDir(), "empty"), map[string]string{
+		"categories/default/category.json": `{"uuid":"default","name":"Default"}`,
+		"stores/docker/store.json":         `{"type":"docker","host":"container"}`,
+	})
+	if _, err := ParseXPipe(empty); err == nil {
+		t.Fatal("a vault without SSH, RDP or VNC connections was accepted")
+	}
+}
