@@ -167,6 +167,9 @@ func main() {
 				return
 			}
 			defer conn.Close()
+			// One line per authenticated transport, so a check can count how
+			// many connections the client made and which tabs shared one.
+			log.Printf("connection user=%s from=%s", conn.User(), conn.RemoteAddr())
 			remoteForwards := newRemoteForwardSet(conn)
 			defer remoteForwards.Close()
 			go remoteForwards.Serve(requests)

@@ -1,0 +1,65 @@
+# 端到端：两个已保存主机指向同一个堡垒机账号（地址、用户、端口、密码都相同），
+# 各自代表在堡垒机菜单里选的一台资产。堡垒机把一条连接上的所有通道都绑到这条
+# 连接上选过的资产，所以第二个主机必须拨自己的连接、问自己的密码：借用第一个
+# 主机的连接会跳过菜单、落到第一台资产上，文件面板也跟着走（#1305）。同一主机
+# 的分屏仍复用它自己的连接。
+#
+#   cd tools/e2esshd && go build -o /tmp/e2esshd . && cd ../..
+#   /tmp/e2esshd 2391 >/tmp/e2esshd.log 2>&1 &
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/bastion_separate_hosts_e2e.txt
+#
+# 跑完后 /tmp/e2esshd.log 恰有两行 `connection user=tester`：两个主机各一条，
+# 分屏没有第三条；文件面板在第二个主机自己的连接上打开（`sftp subsystem opened`）。
+click "新建主机"
+settle 500
+click id:shell/dialog-label
+type 资产-甲
+click id:shell/dialog-address
+type 127.0.0.1
+click id:shell/dialog-user
+type tester
+click id:shell/dialog-port
+key backspace
+key backspace
+type 2391
+click "添加主机"
+settle 400
+click "新建主机"
+settle 500
+click id:shell/dialog-label
+type 资产-乙
+click id:shell/dialog-address
+type 127.0.0.1
+click id:shell/dialog-user
+type tester
+click id:shell/dialog-port
+key backspace
+key backspace
+type 2391
+click "添加主机"
+settle 400
+
+dblclick 500 156
+waitfor "信任此主机" 10000
+click "信任并保存"
+waitfor "密码" 8000
+type secret
+key enter
+settle 2500
+
+# 第一个已连上，打开第二个主机：它要问自己的密码，而不是直接借到第一条连接。
+click "主机"
+settle 400
+dblclick 500 220
+waitfor "密码" 8000
+type secret
+key enter
+settle 2500
+click "向右分屏"
+settle 1500
+key cmd+shift+s
+waitfor "alpha.txt" 5000
+settle 500
+texts alpha.txt
+layout
