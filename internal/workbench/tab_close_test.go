@@ -138,11 +138,7 @@ func TestASubmittedButUnreportedCommandStillAsks(t *testing.T) {
 	}
 }
 
-// A line submitted under an earlier prompt that never reported a command start
-// (a cleared or blank line, a multi-line command) is stale once the shell shows a
-// new prompt: the tab is idle and must close without asking, or #966 comes back
-// forever after one empty Enter.
-func TestANewPromptClearsAStaleSubmission(t *testing.T) {
+func TestAnIntermediatePromptDoesNotClearQueuedInput(t *testing.T) {
 	state, _, _, shell := liveSession(t)
 	id := state.sessions[0].ID
 	token := state.sessions[0].term.folderToken
@@ -150,16 +146,14 @@ func TestANewPromptClearsAStaleSubmission(t *testing.T) {
 	promptMark(shell, token, "A")
 	promptMark(shell, token, "B")
 	state.Wake()
-	state.sessions[0].term.submittedLines = 1
+	state.sessions[0].term.send([]byte("sleep 1\rread value\r"))
+	promptMark(shell, token, "C")
 	promptMark(shell, token, "A")
 	promptMark(shell, token, "B")
 	state.Wake()
 	state.Click(hitTabCloseList.At(int(id)))
-	if state.modal == modalCloseTabs {
-		t.Fatalf("asked about an idle session; running=%v", state.tabsClose.running)
-	}
-	if _, ok := state.sessionByIDPointer(id); ok {
-		t.Fatal("the idle session was not closed")
+	if state.modal != modalCloseTabs || len(state.tabsClose.running) != 1 {
+		t.Fatalf("modal %d, running %v; queued input must still ask", state.modal, state.tabsClose.running)
 	}
 }
 

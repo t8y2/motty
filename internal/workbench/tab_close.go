@@ -44,7 +44,7 @@ func sessionRunning(session *Session) bool {
 		// A line submitted but not yet reported as started still counts as
 		// running. Once the user has touched the prompt, or no prompt is showing,
 		// the tab may be running something the shell never reports, so ask.
-		return term.submittedLines > 0 || !term.screen.AtPrompt() || term.keyedSincePrompt
+		return term.submittedLines > 0 || term.promptDirty || !term.screen.AtPrompt() || term.keyedSincePrompt
 	}
 	// A shell that never reports command starts may be running something, so
 	// fall back to the old, always-ask answer.

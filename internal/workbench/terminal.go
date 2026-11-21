@@ -544,13 +544,6 @@ func (state *State) configureTerminal(session *Session) {
 			current.term.folderIntegrationSeen = true
 			current.term.promptStarted = true
 			current.term.promptReady = false
-			// A fresh prompt begins a new command cycle. A line submitted under the
-			// previous prompt that never reported a command start (a cleared or
-			// blank line, a multi-line command) is superseded by this prompt and
-			// must not keep counting as running, or an idle tab would ask before
-			// closing forever. A command that did start reported it (and decremented
-			// submittedLines) before this prompt arrived.
-			current.term.submittedLines = 0
 			current.term.keyedSincePrompt = false
 			current.term.inputLine = false
 			current.outputAlert.promptSeen = true
