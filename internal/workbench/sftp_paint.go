@@ -1070,9 +1070,9 @@ func (state *State) declareSFTPDialog(c ui.C, viewport gfx.Rect, view *sftpView)
 	case view.dialog == sftpDialogDelete:
 		// The method label, its one-line hint and the choice control; the
 		// dialog's error, when one is left from a failed queue, follows them.
-		body = 6 + 18 + 4 + 36 + 6 + c.Theme().Metrics.ControlHeight
+		body = 6 + 18 + 4 + 36 + 4 + c.Theme().Metrics.ControlHeight
 		if showError {
-			body += 20
+			body += 4 + 20
 		}
 	case view.dialog == sftpDialogDeleteForce:
 		if showError {
@@ -1270,10 +1270,11 @@ func (state *State) sftpDeleteMethodLabel(method sftpDeleteMethod) string {
 	return state.messages.SFTPDeleteMethodNormal
 }
 
-// declareSFTPDialogBody lays out the dialog's body: one labelled input, two for
-// a link, the permission grid under a chmod field, or the error of a failed
-// move when that is what the dialog says. The parts painted by hand are kept in
-// view so the painter can fill the boxes the page laid out.
+// declareSFTPDialogBody lays out the dialog's body: the delete method choice,
+// one labelled input, two for a link, the permission grid under a chmod field,
+// or the error of a failed queue when that is what the dialog says. The parts
+// painted by hand are kept in view so the painter can fill the boxes the page
+// laid out.
 func (state *State) declareSFTPDialogBody(c ui.C, view *sftpView) {
 	showError := (view.dialog == sftpDialogDelete || view.dialog == sftpDialogDeleteForce) && view.dialogError != ""
 	view.dialogFirst, view.dialogSecond = ui.Box{}, ui.Box{}
