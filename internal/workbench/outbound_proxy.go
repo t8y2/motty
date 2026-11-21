@@ -687,7 +687,7 @@ func (state *State) declareOutboundProxyProfileSelect(c ui.C) {
 		ui.FormField(c, &form.profileField, m.ProfileLabel).Height(62).Children(func() {
 			previous := form.profile
 			form.profileBox = ui.Select(c, &form.profile, choices, state.proxyProfileChoiceLabel).
-				Label(m.ProfileLabel).Hit(hitOutboundProxyProfile, m.ProfileLabel)
+				Label(m.ProfileLabel)
 			if form.profileBox.Changed() {
 				switch {
 				case form.profile == proxyProfileAddChoice:

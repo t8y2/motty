@@ -207,7 +207,7 @@ func (d *fileDocument) declareEncoding(c ui.C, bounds gfx.Rect) {
 		ui.Text(c, m.Encoding+":").FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).LineHeight(22).Shrink(0).
 			Hit(hitDocumentEncodingLabel, m.Encoding)
 		selector := ui.Select(c, &d.ui.encodingChoice, d.ui.encodingChoices, d.encodingLabel).
-			Label(m.Encoding).Hit(hitDocumentEncoding, m.Encoding).Height(32).Grow(1).
+			Label(m.Encoding).Height(32).Grow(1).
 			Disabled(d.busy || d.comparison.active)
 		if d.ui.focusEncoding {
 			selector.AutoFocus()
