@@ -345,6 +345,12 @@ func (state *State) applyBackupScope(document backup.Document, scope syncScope) 
 		if key.Kind == kindAICLIProvider && !hasCLICollection {
 			continue // legacy backups predate the independent CLI collection
 		}
+		if key.Kind == kindSetting && key.ID == "toolbars" && !seen[key] {
+			// Earlier backups never carried these device-local preferences.
+			// Absence keeps the destination's layout; an explicit toolbar
+			// record, including a reset, is still applied.
+			continue
+		}
 		if !live[key] {
 			change.Delete = append(change.Delete, key)
 		}

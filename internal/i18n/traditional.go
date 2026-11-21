@@ -2477,7 +2477,7 @@ var traditionalTools = ToolsMessages{
 	SyncScopeHosts:                  "主機與群組",
 	SyncScopeHostsDescription:       "主機和群組，以及保存在其下的密碼、驗證碼和代理密碼。",
 	SyncScopeSettings:               "設定",
-	SyncScopeSettingsDescription:    "終端、介面與檔案面板設定，以及全域出站代理。",
+	SyncScopeSettingsDescription:    "終端、工具列與檔案面板設定，以及全域出站代理。",
 	SyncScopeNotes:                  "筆記",
 	SyncScopeNotesDescription:       "筆記庫及其資料夾；連結到檔案的筆記只保存在本機。",
 	SyncScopeSnippets:               "快速指令",

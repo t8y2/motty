@@ -2477,7 +2477,7 @@ var englishTools = ToolsMessages{
 	SyncScopeHosts:                  "Hosts and groups",
 	SyncScopeHostsDescription:       "Hosts and groups, with the passwords, one-time codes and proxy passwords saved under them.",
 	SyncScopeSettings:               "Settings",
-	SyncScopeSettingsDescription:    "Terminal, interface and file-panel settings, and the outbound proxy.",
+	SyncScopeSettingsDescription:    "Terminal, toolbar and file-panel settings, and the outbound proxy.",
 	SyncScopeNotes:                  "Notes",
 	SyncScopeNotesDescription:       "The note library and its folders. Notes linked to a file stay on this computer.",
 	SyncScopeSnippets:               "Snippets",
