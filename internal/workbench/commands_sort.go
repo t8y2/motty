@@ -1,6 +1,6 @@
 package workbench
 
-// commandsSort is how the bottom command bar orders its chips. It is a display
+// commandsSort is how the command sidebar orders its chips. It is a display
 // preference, saved with the drawer so the order survives a restart.
 type commandsSort uint8
 
