@@ -937,6 +937,9 @@ type State struct {
 	// page and body outlive a paint so wheel handling can use the last layout.
 	schemeBrowserOpen bool
 	scheme            schemeUI
+	// schemePreview is the theme button menu's unsaved look: a hovered row wears
+	// its scheme until the pointer leaves or the menu closes without a choice.
+	schemePreview schemePreview
 	// empty is the shared empty-state slots the catalog sections paint.
 	empty emptyStateUI
 	// sectionBodies are the catalog sections' declared slots, painted once the
@@ -1378,6 +1381,11 @@ func (state *State) systemAppearanceChanged() {
 }
 
 func (state *State) setAppearance(appearance appearance) {
+	if state.appearance != appearance {
+		state.schemePreview.shown = ""
+		state.schemePreview.hovered = ""
+		state.schemePreview.sawHover = false
+	}
 	state.appearance = appearance
 	state.pal = appearance.palette()
 	state.theme = state.pal.theme()
