@@ -1,6 +1,8 @@
 package workbench
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -49,6 +51,42 @@ func TestTextUnderThePointerIsClassifiedByWhatItCouldBe(t *testing.T) {
 		}
 		if test.ssh != "" && found[0].target != test.ssh {
 			t.Errorf("%q connects to %q, want %q", test.token, found[0].target, test.ssh)
+		}
+	}
+}
+
+// A local terminal can show the entry the text names, so the text has to
+// resolve the way the shell reads it: from the root, from home, or from the
+// folder the shell reported.
+func TestLocalPathTokensResolveToTheEntryTheyName(t *testing.T) {
+	folder, home := t.TempDir(), t.TempDir()
+	if err := os.Mkdir(filepath.Join(folder, "photos"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{filepath.Join(folder, "report.txt"), filepath.Join(home, "notes.txt")} {
+		if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, test := range []struct {
+		token, directory, want string
+	}{
+		{filepath.Join(folder, "report.txt"), folder, filepath.Join(folder, "report.txt")},
+		{filepath.Join(folder, "photos"), "", filepath.Join(folder, "photos")},
+		{"report.txt", folder, filepath.Join(folder, "report.txt")},
+		{"report.txt:42", folder, filepath.Join(folder, "report.txt")},
+		{"photos", folder, filepath.Join(folder, "photos")},
+		{"~/notes.txt", "", filepath.Join(home, "notes.txt")},
+		// Nothing to show: no entry by that name, no folder to resolve
+		// against, or text that names an address rather than a local entry.
+		{"missing.txt", folder, ""},
+		{"report.txt", "", ""},
+		{"https://example.com/report.txt", folder, ""},
+		{"~someone/notes.txt", folder, ""},
+	} {
+		got, ok := localFilePath(test.token, test.directory, home)
+		if got != test.want || ok != (test.want != "") {
+			t.Errorf("localFilePath(%q, %q) = %q, %v; want %q", test.token, test.directory, got, ok, test.want)
 		}
 	}
 }

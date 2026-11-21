@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"fmt"
+	"os"
 	"path"
 	"path/filepath"
 	"runtime"
@@ -64,7 +65,18 @@ func (state *State) offerActionsAt(session *Session, position term.Position) {
 	if !session.isLocal() {
 		user = session.host.User
 	}
-	for _, item := range classifyToken(session.term.screen.TokenAt(position), user) {
+	token := session.term.screen.TokenAt(position)
+	found := classifyToken(token, user)
+	if session.isLocal() && session.wslDistro() == "" && !offersPlace(found) {
+		// A path in a local terminal is an entry of this computer, so the
+		// system's file manager shows it where the text says it is; the file
+		// panel stays the transfer surface it is, one menu row away.
+		if target, ok := state.localRevealTarget(session, token); ok {
+			label := pathLine.ReplaceAllString(token, "")
+			found = append([]detected{{kind: actionReveal, target: target, label: label}}, found...)
+		}
+	}
+	for _, item := range found {
 		if menu.count == maxMenuActions {
 			break
 		}
@@ -76,11 +88,39 @@ func (state *State) offerActionsAt(session *Session, position term.Position) {
 	}
 }
 
+// offersPlace reports whether the text already reads as an address to reach
+// rather than as a path to look at.
+func offersPlace(found []detected) bool {
+	for _, item := range found {
+		if item.kind == actionSSH || item.kind == actionBrowser {
+			return true
+		}
+	}
+	return false
+}
+
+// localRevealTarget resolves text under the pointer against the folder the
+// local shell reported, falling back to where the shell started.
+func (state *State) localRevealTarget(session *Session, token string) (string, bool) {
+	directory := ""
+	if session.term != nil && session.term.reportedDirectory.Path != "" {
+		directory = session.term.reportedDirectory.Path
+	} else if conn, ok := session.conn.(*localConn); ok {
+		directory = conn.dir
+	}
+	home, _ := os.UserHomeDir()
+	return localFilePath(token, directory, home)
+}
+
 // actionAvailable is whether an action can be taken from this session now.
 func (state *State) actionAvailable(session *Session, item detected) bool {
 	switch item.kind {
 	case actionFiles:
-		return session.isLocal() || session.conn != nil && session.hasServer()
+		// A local terminal's paths are this computer's, unless they are a WSL
+		// distribution's: those are reached through the panel that maps them.
+		return session.wslDistro() != "" || session.conn != nil && session.hasServer()
+	case actionReveal:
+		return session.isLocal() && session.wslDistro() == ""
 	case actionExtract:
 		return session.term.shell != nil && session.host.System != sshconn.SystemWindows && !(session.isLocal() && runtime.GOOS == "windows")
 	}
@@ -102,6 +142,8 @@ func (state *State) actionLabel(item detected) string {
 		format = m.ActionBrowserFmt
 	case actionFiles:
 		format = m.ActionFilesFmt
+	case actionReveal:
+		format = m.ActionRevealFmt
 	case actionExtract:
 		format = m.ActionExtractFmt
 	}
@@ -132,6 +174,9 @@ func (state *State) runAction(session *Session, item detected) {
 		}
 	case actionFiles:
 		state.showInFiles(session, item.target)
+	case actionReveal:
+		m := state.messages.Tools
+		state.revealLocalPath(item.target, m.ActionReveal, m.ActionRevealFailed, m.ActionRevealMissing)
 	case actionExtract:
 		// Typed, not run: the user reads the line and presses Enter.
 		state.typed(session, []byte(item.target))
@@ -265,6 +310,8 @@ func actionIcon(kind actionKind) uint8 {
 	case actionBrowser:
 		return iconGlobe
 	case actionFiles:
+		return iconFolderOpen
+	case actionReveal:
 		return iconFolderOpen
 	case actionExtract:
 		return iconArchive
