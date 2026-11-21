@@ -82,7 +82,20 @@ func TestSFTPModeControlInFileTab(t *testing.T) {
 	}
 	click(checkMode(false))
 	state.sudoSFTP.password.Insert("secret")
+	tree := &window.directoryTree[1]
+	staleID := sftpDirectoryTreeRequestBit | 43
+	staleNode := &sftpTreeNode{path: "/stale-worker", loaded: true, loading: true, requestID: staleID}
+	staleNode.err = "permission denied"
+	tree.enabled = true
+	tree.nodes = map[string]*sftpTreeNode{staleNode.path: staleNode}
+	tree.requests = map[uint64]string{staleID: staleNode.path}
 	state.Click(hitSudoSFTPEnable)
+	if tree.requests[staleID] != "" || staleNode.loading {
+		t.Fatal("sudo mode replacement retained a request from the previous SFTP worker")
+	}
+	if staleNode.loaded || staleNode.err != "" {
+		t.Fatalf("sudo mode replacement kept what the unelevated worker read: loaded=%v err=%q", staleNode.loaded, staleNode.err)
+	}
 	waitSFTPTab(t, state, window, func() bool { return window.view.sudo && !window.view.busy })
 	checkMode(true)
 	if directory := os.Getenv("MOTTY_SUDO_SCREENSHOT_DIR"); directory != "" {
