@@ -160,6 +160,15 @@ func (state *State) switchSudoSFTP(session *Session, view *sftpView, password st
 	// was under way continues from its partial once the new worker is usable.
 	view.worker.Interrupt()
 	view.worker.Close()
+	// Tree request IDs belong to the worker that just closed. Retire them
+	// before the replacement worker starts issuing fresh listings, and forget
+	// what the old worker read: elevation changes what this account may see, so
+	// children and their errors are no longer trustworthy.
+	if window := view.detached; window != nil {
+		window.clearDirectoryTreeRequests()
+		window.invalidateDirectoryTree(false)
+		window.loadExpandedDirectoryTree(false)
+	}
 	state.refreshSFTPTransfers(view)
 	state.archiveTransfers(view)
 	// The new worker numbers its transfers from one again; the old source

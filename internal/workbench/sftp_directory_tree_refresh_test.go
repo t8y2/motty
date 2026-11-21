@@ -3,8 +3,11 @@
 package workbench
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/vivaui/viva/app"
@@ -79,6 +82,57 @@ func TestSFTPDirectoryTreeRemoteMutationInvalidatesCachedNodesAndOldReads(t *tes
 	}
 	if w.acceptDirectoryTreeResult(sftpclient.Result{Operation: sftpclient.OperationList, Path: node.path, ListID: id}) {
 		t.Fatal("a tree read started before the mutation was accepted")
+	}
+}
+
+func TestSFTPDirectoryTreeRefreshPreservesTheRevealIntent(t *testing.T) {
+	_, w, _, _, _ := dualSFTPFixture(t, 1)
+	tree := &w.directoryTree[1]
+	tree.enabled = true
+	node := &sftpTreeNode{path: "/cached", expanded: true}
+	tree.roots = []*sftpTreeNode{node}
+	tree.nodes = map[string]*sftpTreeNode{node.path: node}
+	tree.revealSelected = false
+
+	w.loadExpandedDirectoryTree(false)
+	if tree.revealSelected {
+		t.Fatal("a background tree refresh changed the user's reveal intent")
+	}
+	w.clearDirectoryTreeRequests()
+}
+
+func TestReplacingAnSFTPWorkerDropsOldDirectoryTreeRequests(t *testing.T) {
+	_, w, _, _, _ := dualSFTPFixture(t, 1)
+	tree := &w.directoryTree[1]
+	tree.enabled = true
+	node := &sftpTreeNode{path: "/cached", loading: true, requestID: sftpDirectoryTreeRequestBit | 41}
+	tree.nodes = map[string]*sftpTreeNode{node.path: node}
+	tree.requests = map[uint64]string{node.requestID: node.path}
+	generation := tree.generation
+
+	w.clearDirectoryTreeRequests()
+	if tree.generation == generation || len(tree.requests) != 0 || node.loading {
+		t.Fatalf("old worker request was not retired: generation=%d->%d requests=%v loading=%v", generation, tree.generation, tree.requests, node.loading)
+	}
+}
+
+func TestRestartingTheSFTPBrowserRetiresRequestsFromItsOldWorker(t *testing.T) {
+	_, w, _, _, _ := dualSFTPFixture(t, 1)
+	oldWorker := w.view.worker
+	oldWorker.Close()
+	w.view.worker = nil
+	tree := &w.directoryTree[1]
+	tree.enabled = true
+	id := sftpDirectoryTreeRequestBit | 42
+	node := &sftpTreeNode{path: "/old-worker", loading: true, requestID: id}
+	tree.nodes = map[string]*sftpTreeNode{node.path: node}
+	tree.roots = []*sftpTreeNode{node}
+	tree.requests = map[uint64]string{id: node.path}
+	generation := tree.generation
+
+	w.startBrowser()
+	if tree.generation == generation || tree.requests[id] != "" || node.loading {
+		t.Fatalf("browser restart retained an old worker request: generation=%d->%d requests=%v loading=%v", generation, tree.generation, tree.requests, node.loading)
 	}
 }
 
@@ -273,5 +327,152 @@ func TestSFTPDirectoryTreeAppCreatesRefreshBothSides(t *testing.T) {
 		waitDirectoryTree(t, state, w, host.windows[0].view, func() bool {
 			return !w.navigationBusy() && directoryTreeTestNode(w, localSide, location) != nil
 		})
+	}
+}
+
+func TestSFTPDirectoryTreeRefreshLeavesRoomForNavigation(t *testing.T) {
+	state, w, remote, host, _ := dualSFTPFixture(t, 1)
+	enableRefreshTestTrees(t, state, w, remote, host)
+	directory := w.view.path
+	entries := []sftpclient.Entry{{Name: "docs", Mode: os.ModeDir}}
+	for index := range 40 { // More expanded branches than the worker's 32 slots.
+		name := fmt.Sprintf("branch-%02d", index)
+		if err := remote.Mkdir(directory + "/" + name); err != nil {
+			t.Fatal(err)
+		}
+		entries = append(entries, sftpclient.Entry{Name: name, Mode: os.ModeDir})
+	}
+	w.observeDirectoryTreeListing(false, directory, entries)
+	for index := range 40 {
+		location := fmt.Sprintf("%s/branch-%02d", directory, index)
+		node := directoryTreeTestNode(w, false, location)
+		node.expanded, node.loaded = true, true
+		if err := remote.Mkdir(location + "/external"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	started, release := make(chan struct{}), make(chan struct{})
+	var startOnce, releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(unblock)
+	remote.mu.Lock()
+	remote.unreadable = map[string]bool{directory + "/branch-00": true}
+	remote.onRead = func(location string) {
+		if strings.HasPrefix(location, directory+"/branch-") {
+			startOnce.Do(func() { close(started); <-release })
+		}
+	}
+	remote.mu.Unlock()
+	w.refresh(false)
+	waitDirectoryTree(t, state, w, host.windows[0].view, func() bool {
+		select {
+		case <-started:
+			return true
+		default:
+			return false
+		}
+	})
+	tree := &w.directoryTree[1]
+	if len(tree.requests) > 1 {
+		t.Errorf("automatic refresh queued %d tree reads behind a blocked server", len(tree.requests))
+	}
+	for index := range 40 {
+		node := directoryTreeTestNode(w, false, fmt.Sprintf("%s/branch-%02d", directory, index))
+		if node.err != "" {
+			t.Errorf("queue pressure reported a directory error: %s: %s", node.path, node.err)
+		}
+	}
+	w.navigate(false, directory+"/docs")
+	if !w.view.busy {
+		t.Error("automatic tree refresh filled the queue and prevented user navigation")
+	}
+	unblock()
+	waitDirectoryTree(t, state, w, host.windows[0].view, func() bool {
+		if w.view.busy || w.view.path != directory+"/docs" || len(tree.requests) != 0 {
+			return false
+		}
+		for index := range 40 {
+			node := directoryTreeTestNode(w, false, fmt.Sprintf("%s/branch-%02d", directory, index))
+			if !node.loaded || node.loading {
+				return false
+			}
+			if index == 0 {
+				if node.err == "" {
+					return false
+				}
+			} else if len(node.children) != 1 || node.children[0].name != "external" {
+				return false
+			}
+		}
+		return true
+	})
+}
+
+func TestSFTPDirectoryTreeNavigationFollowsInvalidatedCollapsedAncestors(t *testing.T) {
+	for _, localSide := range []bool{true, false} {
+		t.Run(map[bool]string{true: "local", false: "remote"}[localSide], func(t *testing.T) {
+			state, w, remote, host, local := dualSFTPFixture(t, 1)
+			enableRefreshTestTrees(t, state, w, remote, host)
+			original, parent := w.view.path, w.view.path+"/docs"
+			if localSide {
+				original, parent = local, filepath.Join(local, "tree")
+			}
+			target := parent + "/target"
+			if localSide {
+				target = filepath.Join(parent, "target")
+				if err := os.Mkdir(target, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := remote.Mkdir(target); err != nil {
+				t.Fatal(err)
+			}
+			side := sideIndex(localSide)
+			settled := func() bool {
+				for _, node := range w.directoryTree[side].nodes {
+					if node.loading {
+						return false
+					}
+				}
+				return !w.navigationBusy() && len(w.directoryTree[side].requests) == 0
+			}
+			w.navigate(localSide, target)
+			waitDirectoryTree(t, state, w, host.windows[0].view, settled)
+			w.navigate(localSide, original)
+			waitDirectoryTree(t, state, w, host.windows[0].view, settled)
+			ancestor := directoryTreeTestNode(w, localSide, parent)
+			ancestor.expanded = false
+			w.invalidateDirectoryTree(localSide)
+			w.navigate(localSide, target)
+			waitDirectoryTree(t, state, w, host.windows[0].view, settled)
+			w.flattenDirectoryTree(side)
+			if !sameDirectoryTreeLocation(localSide, w.folder(localSide).path, target) || !ancestor.expanded || directoryTreeIndex(w, localSide, target) < 0 {
+				t.Fatalf("navigation left its target behind a collapsed ancestor: expanded=%v selected=%q target=%q", ancestor.expanded, w.directoryTree[side].selectedPath, target)
+			}
+		})
+	}
+}
+
+func TestSFTPDirectoryTreeActivationKeepsCollapsedAncestorsOfCurrentSelection(t *testing.T) {
+	state, w, remote, host, local := dualSFTPFixture(t, 1)
+	enableRefreshTestTrees(t, state, w, remote, host)
+	localParent := directoryTreeTestNode(w, true, filepath.Dir(local))
+	remoteParent := directoryTreeTestNode(w, false, "/home")
+	localParent.expanded, remoteParent.expanded = false, false
+	w.activate()
+	waitDirectoryTree(t, state, w, host.windows[0].view, func() bool {
+		for side := range 2 {
+			for _, node := range w.directoryTree[side].nodes {
+				if node.loading {
+					return false
+				}
+			}
+		}
+		return directoryTreeTestNode(w, true, local).loaded && directoryTreeTestNode(w, false, w.view.path).loaded
+	})
+	if localParent.expanded || remoteParent.expanded {
+		t.Fatal("activation unfolded an ancestor of the current tree selection")
+	}
+	if !sameDirectoryTreeLocation(true, w.directoryTree[0].selectedPath, local) || w.directoryTree[1].selectedPath != w.view.path {
+		t.Fatal("activation replaced the current tree selection")
 	}
 }
