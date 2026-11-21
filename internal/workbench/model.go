@@ -169,8 +169,10 @@ type Session struct {
 	// value is copied when a tab moves between windows.
 	pathCompletion *pathCompletion
 
-	host     Host // what was dialed, to dial again
-	jumpPath string
+	host           Host // current host settings, used on the next dial
+	dialedProtocol hostProtocol
+	dialedTerminal hostTerminal
+	jumpPath       string
 	// desktopTunnel says this remote desktop is reached over SSH: its ViaSSH
 	// tunnel, or the jump route that carries its port. It is what the desktop's
 	// own encryption and login rows follow, where host.tunneled() names only

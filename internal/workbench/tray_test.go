@@ -248,13 +248,12 @@ func TestChoosingASavedHostOpensItInTheVisibleWindow(t *testing.T) {
 	fixture := newTrayFixture(t)
 	fixture.firstView.hidden = true
 	hosts := directItem(fixture.tray.Menu(), "Hosts")
-	network := directItem(hosts.Submenu, "Network")
-	router := directItem(network.Submenu, "Router")
-	if router == nil || router.OnSelect == nil {
-		t.Fatalf("router entry = %+v", router)
+	production := findItem(hosts.Submenu, "Production")
+	if production == nil || production.OnSelect == nil {
+		t.Fatalf("production entry = %+v", production)
 	}
 	before := len(fixture.second.sessions)
-	router.OnSelect()
+	production.OnSelect()
 	if len(fixture.second.sessions) != before+1 {
 		t.Fatalf("second window sessions = %d, want %d", len(fixture.second.sessions), before+1)
 	}
@@ -264,14 +263,19 @@ func TestChoosingASavedHostOpensItInTheVisibleWindow(t *testing.T) {
 	if fixture.invalidated.Load() == 0 {
 		t.Fatal("the window was not asked to repaint")
 	}
-	var routerHost Host
+	var productionHost Host
 	for _, host := range fixture.second.hosts {
-		if host.Label == "Router" {
-			routerHost = host
+		if host.Label == "Production" {
+			productionHost = host
 		}
 	}
-	if opened := fixture.second.sessions[before]; routerHost.ID == 0 || opened.HostID != routerHost.ID {
-		t.Fatalf("opened host %d, want Router %d", opened.HostID, routerHost.ID)
+	opened := fixture.second.sessions[before]
+	if productionHost.ID == 0 || opened.HostID != productionHost.ID {
+		t.Fatalf("opened host %d, want Production %d", opened.HostID, productionHost.ID)
+	}
+	production.OnSelect()
+	if len(fixture.second.sessions) != before+1 || fixture.second.activeSessionID != opened.ID || fixture.firstView.shows != 0 {
+		t.Fatal("choosing the host again must reuse it in the visible window")
 	}
 }
 

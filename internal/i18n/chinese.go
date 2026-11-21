@@ -370,7 +370,7 @@ var ChineseMessages = Messages{
 	SettingsStartupDisabled:                "已停用",
 	SettingsStartupDescription:             "打开软件时自动打开的终端和主机；需要密码或确认主机密钥的会照常询问。",
 	SettingsStartupReuse:                   "已打开时不再新增",
-	SettingsStartupReuseDescription:        "启动要打开的终端或主机已经打开时，切换到它而不是再开一个。",
+	SettingsStartupReuseDescription:        "连接主机或在启动时打开会话时，切换到当前窗口中已有的会话。新建标签页、复制和分屏仍会打开独立会话。",
 	SettingsStartupNone:                    "不打开",
 	SettingsStartupJoiner:                  "、",
 	SettingsStartupHostsCount:              "%d 台主机",

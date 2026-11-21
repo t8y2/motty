@@ -771,8 +771,8 @@ type State struct {
 	// startupEnabled is the feature switch of what a launch opens: off, the
 	// launch opens nothing but the choices are kept for when it turns on again.
 	startupEnabled bool
-	// startupReuse says a launch focuses what it was asked to open when that
-	// terminal or host is already open, instead of opening another one.
+	// startupReuse also applies to ordinary host opens. An explicit new tab,
+	// pane, or duplicate still starts a separate session.
 	startupReuse  bool
 	startupPicker struct {
 		open bool
@@ -3309,28 +3309,49 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 
 func (state *State) openHostSession(host Host) *Session {
 	address := state.sessionAddress(host)
+	// "All hosts" on an empty pane leaves a target for the next connection.
+	if !state.startupReuse || state.pendingPane != 0 {
+		return state.createHostSession(host, address)
+	}
+	var existing *Session
 	for index := range state.sessions {
 		session := &state.sessions[index]
-		// A saved host owns its tab; a typed target is reused by its address.
-		if session.containerCommand != "" || session.HostID != host.ID || host.ID == 0 && session.Address != address {
+		// Match the catalog entry and the dialed address. An edit can leave
+		// the old connection running, and different entries can share an address.
+		if session.containerCommand != "" || session.HostID != host.ID || session.Address != address {
 			continue
 		}
-		state.activeSessionID = session.ID
-		state.activeSection = sectionTerminal
-		if state.canReconnect(session) {
-			state.startConnection(session, host) // reconnect in the same tab
-			state.status = state.messages.StatusOpened + session.Title
-		} else {
-			state.status = state.messages.StatusReused + session.Title
+		if !session.restored && (session.dialedProtocol != host.Protocol || session.dialedTerminal != host.Terminal) {
+			continue
 		}
-		state.save()
-		return session
+		// Prefer an open connection (including one still dialing) over a retry.
+		if !state.canReconnect(session) {
+			existing = session
+			break
+		}
+		if existing == nil {
+			existing = session
+		}
 	}
-	return state.createHostSession(host, address)
+	previous := state.deck.ActiveWorkspace()
+	if existing == nil || !state.ActivatePane(existing.ID) {
+		return state.createHostSession(host, address)
+	}
+	if state.deck.ActiveWorkspace() != previous {
+		state.clearBroadcast()
+	}
+	if state.canReconnect(existing) {
+		state.startConnection(existing, host)
+		state.status = state.messages.StatusOpened + existing.Title
+	} else {
+		state.status = state.messages.StatusReused + existing.Title
+	}
+	state.pendingFocus = state.activeTerminalFocusHit()
+	state.save()
+	return existing
 }
 
-// newHostSession always opens another tab. Host rows use this path because
-// choosing an existing session belongs to the tab strip, not the host list.
+// newHostSession always opens a separate session for explicit new-tab actions.
 func (state *State) newHostSession(host Host) *Session {
 	address := state.sessionAddress(host)
 	return state.createHostSession(host, address)
@@ -3485,13 +3506,13 @@ func (state *State) hostsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 		case state.isHostRow(event.Target):
 			host, _ := state.hostForRow(event.Target)
 			state.selectedHostID = host.ID
-			state.newHostSession(host)
+			state.openHostSession(host)
 			return handled, true
 		case event.Target.IsZero():
 			// Nothing is focused: Enter connects the selected host, provided
 			// the search box has not hidden it.
 			if host, ok := state.selectedHost(); ok && state.hostIsVisible(host.ID) {
-				state.newHostSession(host)
+				state.openHostSession(host)
 				return handled, true
 			}
 		}

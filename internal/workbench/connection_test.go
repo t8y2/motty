@@ -942,9 +942,61 @@ func TestConnectionOutcomesBecomeTerminalLines(t *testing.T) {
 	}
 }
 
-func TestOpeningTheSameHostAgainCreatesAnotherTab(t *testing.T) {
+func TestOpeningTheSameHostAgainReusesItsWorkspace(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)
+	connect(t, state, world)
+	firstID := state.activeSessionID
+	firstWorkspace := state.deck.ActiveWorkspace()
+
+	state.Click(hitHosts)
+	state.selectedHostID = state.hosts[1].ID
+	connect(t, state, world)
+
+	state.Click(hitHosts)
+	state.selectedHostID = state.hosts[0].ID
+	openHost(state)
+	if len(world.conns) != 2 || len(state.sessions) != 2 {
+		t.Fatalf("conns=%d sessions=%d, want only the two already opened", len(world.conns), len(state.sessions))
+	}
+	if state.activeSessionID != firstID || state.deck.ActiveWorkspace() != firstWorkspace || state.activeSection != sectionTerminal {
+		t.Fatalf("active session=%d workspace=%d section=%d, want session=%d workspace=%d on the terminal page", state.activeSessionID, state.deck.ActiveWorkspace(), state.activeSection, firstID, firstWorkspace)
+	}
+	world.conns[0].set(func(s *sshconn.Status) { s.Phase = sshconn.PhaseFailed; s.Err = sshconn.ErrAuthFailed })
+	state.Wake()
+	state.Click(hitHosts)
+	openHost(state)
+	if len(world.conns) != 3 || len(state.sessions) != 2 || state.activeSessionID != firstID {
+		t.Fatalf("conns=%d sessions=%d active=%d, want one retry in the original session %d", len(world.conns), len(state.sessions), state.activeSessionID, firstID)
+	}
+}
+
+func TestOpeningAHostAfterProtocolEditUsesItsNewProtocol(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	previous := state.hosts[0]
+	previous.Protocol = protocolVNC
+	state.hosts[0] = previous
+	// VNC and RDP can share the same address and explicit port.
+	first := state.newHostSession(previous)
+	firstID := first.ID
+	updated := previous
+	updated.Protocol = protocolRDP
+	state.replaceHost(0, previous, updated)
+	state.Click(hitHosts)
+	openHost(state)
+	if len(world.conns) != 0 || len(state.sessions) != 2 || state.activeSessionID == firstID || state.sessions[1].dialedProtocol != protocolRDP {
+		t.Fatalf("sessions=%d active=%d, want a separate RDP session", len(state.sessions), state.activeSessionID)
+	}
+}
+
+func TestOpeningTheSameHostAgainCreatesAnotherTabWithReuseOff(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	state.Click(hitSettings)
+	state.selectSettingsCategory(settingsConnection)
+	state.Click(hitSettingsStartupReuse)
+	state.Click(hitHosts)
 	first := connect(t, state, world)
 	firstSessionID := state.sessions[0].ID
 

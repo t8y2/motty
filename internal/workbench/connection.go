@@ -633,6 +633,7 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 	session.restored = false
 	session.autoRestore, session.restoreNote = false, ""
 	session.host = host
+	session.dialedProtocol, session.dialedTerminal = host.Protocol, host.Terminal
 	session.agent, session.agentWatch = agentNone, agentWatch{}
 	session.Address = state.sessionAddress(host)
 	session.endpoint = sshconn.Endpoint{Host: host.Address, Port: host.Port, User: state.login(host)}
