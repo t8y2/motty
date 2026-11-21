@@ -1084,6 +1084,13 @@ var TraditionalMessages = Messages{
 	SFTPOverwriteTitle:          "取代已有目標？",
 	SFTPOverwriteDescriptionFmt: "%s 已存在。可以取代它（符合的部分傳輸會續傳），或跳過已有內容、只複製缺少的部分。",
 	SFTPOverwriteConfirm:        "取代 / 續傳",
+
+	SFTPDownloadConflictTitle:          "下載衝突",
+	SFTPDownloadConflictDescriptionFmt: "%s 已存在於下載目錄。要覆寫它，還是保留兩者？",
+	SFTPDownloadConflictCountFmt:       "下載目錄中已有 %d 個項目存在。要覆寫它們，還是保留兩者？",
+	SFTPDownloadReplace:                "覆寫",
+	SFTPDownloadKeepBoth:               "保留兩者",
+
 	SFTPNewDirectoryTitle:       "新增資料夾",
 	SFTPDirectoryName:           "資料夾名稱",
 	SFTPCreateDirectory:         "建立",
