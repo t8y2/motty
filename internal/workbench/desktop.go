@@ -220,15 +220,14 @@ func (view *desktopView) close() {
 
 // present brings the picture up to date and reports whether it changed.
 func (view *desktopView) present() bool {
-	if view.ended {
-		return false
-	}
 	changed := view.session.Present(&view.surface)
 	if changed {
 		view.width, view.height = view.surface.Size()
 		noteDesktopSize(view, view.width, view.height)
 	}
-	view.presentPointer()
+	if !view.ended {
+		view.presentPointer()
+	}
 	return changed
 }
 
@@ -1242,9 +1241,6 @@ func (state *State) paintDesktopPicture(d *ui.DrawContext, session *Session) {
 
 	name := fmt.Sprintf(m.Desktop.AccessibleFmt, session.Address)
 	cursor, cursorImage := view.pointerCursor(view.pixelScale)
-	if view.ended {
-		cursor, cursorImage = gfx.PointerCursorDefault, nil
-	}
 	canvas.HitWithOptions(hitTerminalList.At(int(session.ID)), area, name, gfx.HitOptions{
 		Role: gfx.RoleTerminal, Autofocus: session.ID == state.activeSessionID && !view.ended, Cursor: cursor, CursorImage: cursorImage,
 	})
