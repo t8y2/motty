@@ -174,7 +174,7 @@ func (state *State) normalizeSchemeID(id string) string {
 	return defaultSchemeID
 }
 
-// activeScheme is the scheme the terminal wears in the look that is showing.
+// activeScheme is the chosen scheme for the current appearance.
 func (state *State) activeScheme() string {
 	return state.terminalSchemes[state.appearance]
 }
@@ -202,7 +202,11 @@ func (state *State) migrateTerminalScheme(id string) (dark, light string) {
 func (state *State) rebuildTerminalLook() {
 	look := *state.pal
 	look.termFG = look.text
-	if scheme, ok := state.schemeByID(state.activeScheme()); ok {
+	schemeID := state.activeScheme()
+	if state.schemePreview.shown != "" {
+		schemeID = state.schemePreview.shown
+	}
+	if scheme, ok := state.schemeByID(schemeID); ok {
 		look.dark = luminance(scheme.background) < 0.5
 		look.terminal = gfx.RGB(scheme.background[0], scheme.background[1], scheme.background[2])
 		look.termFG = gfx.RGB(scheme.foreground[0], scheme.foreground[1], scheme.foreground[2])
@@ -394,42 +398,38 @@ func (state *State) communitySchemeIndexByName(name string) (int, bool) {
 	return 0, false
 }
 
-// schemePreview is the unsaved scheme the theme menu is showing. saved is what
-// the look wore when the menu opened. A hovered row replaces it until the
-// pointer leaves that row; a click keeps the row's scheme, and closing the menu
-// without one puts saved back.
+// schemePreview holds the menu's transient look independently of saved choices.
 type schemePreview struct {
 	on       bool
 	keep     bool
-	saved    string
+	shown    string
 	hovered  string
 	sawHover bool
 }
 
-// beginSchemePreview remembers the scheme to restore, once, when the theme
-// button's menu opens. Later paints only clear the hover seen last time.
+// beginSchemePreview starts a preview or clears the previous paint's hover.
 func (state *State) beginSchemePreview() {
 	preview := &state.schemePreview
 	if !preview.on {
-		*preview = schemePreview{on: true, saved: state.activeScheme()}
+		*preview = schemePreview{on: true}
 		return
 	}
 	preview.sawHover = false
 	preview.hovered = ""
 }
 
-// finishSchemePreview puts the original scheme back when the menu closes
-// without a choice, and asks for the frame that shows it.
+// finishSchemePreview restores the selected scheme when the menu closes.
 func (state *State) finishSchemePreview(c ui.C) {
 	preview := &state.schemePreview
 	if !preview.on {
 		return
 	}
-	saved, keep := preview.saved, preview.keep
+	shown := preview.shown
 	*preview = schemePreview{}
-	if keep || !state.setTerminalScheme(saved) {
+	if shown == "" {
 		return
 	}
+	state.rebuildTerminalLook()
 	if canvas := c.Canvas(); canvas != nil {
 		canvas.RequestFrame()
 	}
@@ -443,13 +443,15 @@ func (state *State) followSchemePreview(c ui.C) {
 	if !preview.on || preview.keep {
 		return
 	}
-	want := preview.saved
+	want := ""
 	if preview.sawHover {
 		want = preview.hovered
 	}
-	if !state.setTerminalScheme(want) {
+	if preview.shown == want {
 		return
 	}
+	preview.shown = want
+	state.rebuildTerminalLook()
 	if canvas := c.Canvas(); canvas != nil {
 		canvas.RequestFrame()
 	}
@@ -505,7 +507,11 @@ func (state *State) schemeMenuItem(c ui.C, menu *ui.MenuItems, index int, active
 		state.schemePreview.keep = true
 		schemeID := id
 		c.After(func() {
-			state.setTerminalScheme(schemeID)
+			shown := state.schemePreview.shown
+			state.schemePreview.shown = ""
+			if !state.setTerminalScheme(schemeID) && shown != "" {
+				state.rebuildTerminalLook()
+			}
 			state.save()
 		})
 	}

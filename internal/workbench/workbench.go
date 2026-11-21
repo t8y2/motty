@@ -1381,6 +1381,11 @@ func (state *State) systemAppearanceChanged() {
 }
 
 func (state *State) setAppearance(appearance appearance) {
+	if state.appearance != appearance {
+		state.schemePreview.shown = ""
+		state.schemePreview.hovered = ""
+		state.schemePreview.sawHover = false
+	}
 	state.appearance = appearance
 	state.pal = appearance.palette()
 	state.theme = state.pal.theme()

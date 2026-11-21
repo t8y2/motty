@@ -72,9 +72,10 @@ func TestThemeButtonMenuPreviewsSchemeWhileHovered(t *testing.T) {
 	if err := view.Frame(); err != nil {
 		t.Fatal(err)
 	}
-	if state.activeScheme() != "one-dark" || state.termPal.terminal != gfx.RGB(0x28, 0x2c, 0x34) {
-		t.Fatalf("hover scheme = %q background %v, want one-dark", state.activeScheme(), state.termPal.terminal)
+	if state.activeScheme() != defaultSchemeID || state.termPal.terminal != gfx.RGB(0x28, 0x2c, 0x34) {
+		t.Fatalf("hover selection = %q background %v, want unsaved One Dark preview", state.activeScheme(), state.termPal.terminal)
 	}
+	state.save()
 	restarted := newTestState(t, options)
 	if restarted.activeScheme() != defaultSchemeID {
 		t.Fatalf("hover saved %q", restarted.activeScheme())
@@ -87,6 +88,78 @@ func TestThemeButtonMenuPreviewsSchemeWhileHovered(t *testing.T) {
 	}
 	if state.activeScheme() != defaultSchemeID || state.termPal.terminal == gfx.RGB(0x28, 0x2c, 0x34) {
 		t.Fatalf("leaving the row kept %q", state.activeScheme())
+	}
+}
+
+func TestThemeButtonPreviewDoesNotChangeOtherAppearance(t *testing.T) {
+	options := freshOptions(t)
+	state := newTestState(t, options)
+	state.setAppearance(appearanceLight)
+	state.setTerminalScheme("nord")
+	state.setAppearance(appearanceDark)
+	darkBackground := state.termPal.terminal
+	view := openToolbarSchemeView(t, state)
+
+	rightClickToolbarTool(t, view, hitTheme)
+	if err := view.ClickLabel(state.messages.Tools.SchemeGroup); err != nil {
+		t.Fatal(err)
+	}
+	hit, err := view.Locate("One Dark")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Move(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Frame(); err != nil {
+		t.Fatal(err)
+	}
+	if state.termPal.terminal != gfx.RGB(0x28, 0x2c, 0x34) {
+		t.Fatal("One Dark was not previewed")
+	}
+	state.setAppearance(appearanceLight)
+	nord, _ := state.schemeByID("nord")
+	if state.termPal.terminal != gfx.RGB(nord.background[0], nord.background[1], nord.background[2]) {
+		t.Fatal("switching appearance kept the previous preview")
+	}
+	state.save()
+	if err := view.Click(8, 400); err != nil {
+		t.Fatal(err)
+	}
+	state.setAppearance(appearanceDark)
+	if state.termPal.terminal != darkBackground {
+		t.Fatal("closing the menu changed the dark scheme")
+	}
+	restarted := newTestState(t, options)
+	if restarted.terminalSchemes[appearanceDark] != defaultSchemeID || restarted.terminalSchemes[appearanceLight] != "nord" {
+		t.Fatalf("saved schemes = %q, want default dark and nord light", restarted.terminalSchemes)
+	}
+}
+
+func TestThemeButtonPreviewSelectingSavedScheme(t *testing.T) {
+	options := freshOptions(t)
+	state := newTestState(t, options)
+	originalBackground := state.termPal.terminal
+	view := openToolbarSchemeView(t, state)
+	rightClickToolbarTool(t, view, hitTheme)
+	if err := view.ClickLabel(state.messages.Tools.SchemeGroup); err != nil {
+		t.Fatal(err)
+	}
+	hit, err := view.Locate("One Dark")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Move(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Frame(); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.ClickLabel(state.messages.Tools.SchemeDefault); err != nil {
+		t.Fatal(err)
+	}
+	if state.activeScheme() != defaultSchemeID || state.termPal.terminal != originalBackground {
+		t.Fatal("selecting the saved scheme left a preview visible")
 	}
 }
 
