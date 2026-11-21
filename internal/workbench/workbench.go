@@ -451,14 +451,17 @@ type State struct {
 	// settingsTab is the settings page's tab on the window bar. It is open from
 	// the moment settings are opened until the tab is closed, and whenever the
 	// settings section is in front it is open.
-	settingsTab      bool
-	fileTabOptions   []components.TabOption
-	windowTabOptions []components.TabOption
-	fileTabStrip     tabStrip
-	fileManagerRect  gfx.Rect
-	remoteWindows    []*remoteToolsWindow
-	remoteWindow     *remoteToolsWindow // set only on a native tool window's isolated presenter
-	closed           bool
+	settingsTab bool
+	// settingsTabAnchor is the tab the settings page follows on the bar; zero
+	// leaves it last. When that tab is gone the settings tab comes back last.
+	settingsTabAnchor windowTab
+	fileTabOptions    []components.TabOption
+	windowTabOptions  []components.TabOption
+	fileTabStrip      tabStrip
+	fileManagerRect   gfx.Rect
+	remoteWindows     []*remoteToolsWindow
+	remoteWindow      *remoteToolsWindow // set only on a native tool window's isolated presenter
+	closed            bool
 	// saveBlocked is set when the state file came from a newer build: nothing is
 	// ever written over it. stateNotice is the dialog that tells the user why a
 	// state file was not loaded as it was.
@@ -3275,12 +3278,9 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	case tabScope == hitTabList && state.tabOrientation == tabsVertical:
 		orientation = components.TabsVertical
 	case pageTab && state.tabOrientation == tabsVertical:
-		state.windowTabOptions = append(state.windowTabOptions[:0], state.fileTabOptions...)
-		options = state.appendSettingsTabOption(state.windowTabOptions)
+		options = state.fileTabOptions
 	default:
-		state.windowTabOptions = append(state.windowTabOptions[:0], state.tabOptions...)
-		state.windowTabOptions = append(state.windowTabOptions, state.fileTabOptions...)
-		options = state.appendSettingsTabOption(state.windowTabOptions)
+		options = state.windowTabOptionsOrdered()
 	}
 	next, handled := components.TabsKeyDown(
 		event.Target,
