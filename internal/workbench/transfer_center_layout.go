@@ -141,8 +141,9 @@ func (state *State) declareTransferTab(c ui.C, index int, label string) {
 			Role: gfx.RoleTab, Selected: selected, Value: center.groups[index].count,
 		}).Children(func() {
 		ui.Text(c, label).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(ink).MinWidth(0).Ellipsis()
-		ui.Row(c).PadX(5).Height(17).Center().Shrink(0).Radius(8.5).Background(withAlpha(ink, 0.13)).Children(func() {
-			ui.Text(c, center.groups[index].count).FontSize(metrics.FontSizeS - 1).Color(ink)
+		ui.Badge(c, center.groups[index].count).Height(17).PadX(5).PadY(0).Items(ui.Center).Shrink(0).Radius(8.5).
+			Background(withAlpha(ink, 0.13)).Children(func() {
+			ui.Text(c, center.groups[index].count).FontSize(metrics.FontSizeS - 1).Weight(gfx.WeightRegular).Color(ink)
 		})
 	})
 }
