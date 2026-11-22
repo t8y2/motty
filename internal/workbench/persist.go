@@ -151,6 +151,7 @@ type savedState struct {
 	UpdateCheck             string              `json:"update_check,omitempty"`
 	UpdateSource            string              `json:"update_source,omitempty"`
 	CloseAction             string              `json:"close_action,omitempty"`
+	KeepWindowsOnExit       string              `json:"keep_windows_on_exit,omitempty"`
 	RelaunchAction          string              `json:"relaunch_action,omitempty"`
 	TrayHintShown           bool                `json:"tray_hint_shown,omitempty"`
 	UpdateSkipped           string              `json:"update_skipped,omitempty"`
@@ -631,6 +632,7 @@ func (state *State) snapshot() savedState {
 		UpdateCheck:                updateCheckString(state.updateAtStart),
 		UpdateSource:               state.update.source.String(),
 		CloseAction:                state.closeAction.String(),
+		KeepWindowsOnExit:          state.keepWindows.String(),
 		RelaunchAction:             state.relaunchAction.String(),
 		TrayHintShown:              state.trayHintShown,
 		UpdateSkipped:              state.update.skipped,

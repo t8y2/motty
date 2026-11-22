@@ -28,6 +28,13 @@ type windowChrome struct {
 	setFullscreen     func(bool) error
 }
 
+// WindowVisible reports whether the desktop shows this window. A window that
+// never told its state about a desktop (a test, or before it opened) counts as
+// visible, which is enough for choosing where a question is shown.
+func (state *State) WindowVisible() bool {
+	return state.windowVisible == nil || state.windowVisible()
+}
+
 // RestoredWindowFrame is where the last first window was, if a previous run
 // saved it. The window opens there and at that size.
 func (state *State) RestoredWindowFrame() (gfx.Rect, bool) {

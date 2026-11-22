@@ -639,6 +639,15 @@ type ToolsMessages struct {
 	GeneralCloseDescription         string
 	GeneralCloseTray                string
 	GeneralCloseQuit                string
+	GeneralKeepWindows              string
+	GeneralKeepWindowsDescription   string
+	GeneralKeepWindowsKeep          string
+	GeneralKeepWindowsDiscard       string
+	GeneralKeepWindowsAsk           string
+	QuitKeepWindowsTitle            string
+	QuitKeepWindowsDescription      string
+	QuitKeepWindowsKeep             string
+	QuitKeepWindowsDiscard          string
 	GeneralRelaunch                 string
 	GeneralRelaunchDescription      string
 	GeneralRelaunchRaise            string

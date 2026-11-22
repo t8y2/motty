@@ -542,6 +542,7 @@ const (
 	modalLocalStartupCommand
 	modalAIRename
 	modalCloseTabs
+	modalQuitKeepWindows
 	modalSessionLink
 	modalAutofillRule
 	modalAutofillConfirm
