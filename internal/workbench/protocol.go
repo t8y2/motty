@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"motty/internal/charset"
+	"motty/internal/desktop"
 	"motty/internal/serial"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconfig"
@@ -207,6 +208,12 @@ type savedTransport struct {
 	StandardSecurity bool `json:"standard_security,omitempty"`
 	LegacyTLS        bool `json:"legacy_tls,omitempty"`
 	Chromeless       bool `json:"chromeless,omitempty"`
+	// ColorDepth, DesktopEncoding and Effects are a desktop host's quality
+	// choices. They are written only when they differ from what a host that never
+	// chose has, so an older record stays byte-for-byte what it was.
+	ColorDepth      int              `json:"color_depth,omitempty"`
+	DesktopEncoding desktop.Encoding `json:"desktop_encoding,omitempty"`
+	Effects         *desktop.Effects `json:"effects,omitempty"`
 }
 
 func (host Host) transport() savedTransport {
@@ -232,6 +239,7 @@ func (host Host) transport() savedTransport {
 		return transport
 	case protocolVNC:
 		transport.Protocol, transport.ViaSSH, transport.Clipboard, transport.Chromeless = "vnc", host.ViaSSH, host.Clipboard, host.Chromeless
+		transport.ColorDepth, transport.DesktopEncoding = host.ColorDepth, host.PreferredEncoding
 		return transport
 	case protocolRDP:
 		transport.Protocol, transport.ViaSSH, transport.Clipboard, transport.Chromeless = "rdp", host.ViaSSH, host.Clipboard, host.Chromeless
@@ -239,6 +247,8 @@ func (host Host) transport() savedTransport {
 		transport.NoAudio = host.NoAudio
 		transport.StandardSecurity = host.StandardSecurity
 		transport.LegacyTLS = host.LegacyTLS
+		transport.ColorDepth = host.ColorDepth
+		transport.Effects = host.Effects
 		return transport
 	case protocolSerial:
 		transport.Proxy, transport.Protocol, transport.Line = nil, "serial", host.Line.String()
@@ -333,12 +343,18 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 		host.Protocol, host.Credential = protocolTelnet, ""
 	case "vnc":
 		host.Protocol, host.ViaSSH, host.Clipboard, host.Chromeless = protocolVNC, transport.ViaSSH, transport.Clipboard, transport.Chromeless
+		host.ColorDepth, host.PreferredEncoding = vncColorDepth(transport.ColorDepth), transport.DesktopEncoding
+		if !host.PreferredEncoding.Valid() {
+			host.PreferredEncoding = desktop.EncodingAuto
+		}
 	case "rdp":
 		host.Protocol, host.ViaSSH, host.Clipboard, host.Chromeless = protocolRDP, transport.ViaSSH, transport.Clipboard, transport.Chromeless
 		host.Console = transport.Console
 		host.NoAudio = transport.NoAudio
 		host.StandardSecurity = transport.StandardSecurity
 		host.LegacyTLS = transport.LegacyTLS
+		host.ColorDepth = rdpColorDepth(transport.ColorDepth)
+		host.Effects = transport.Effects
 	case "serial":
 		host.Proxy, host.Credential = nil, ""
 		flow := serial.FlowNone

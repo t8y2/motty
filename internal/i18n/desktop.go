@@ -32,6 +32,22 @@ type DesktopMessages struct {
 	StandardSecurityNote      string
 	LegacyTLS                 string
 	LegacyTLSNote             string
+	QualityHeading            string
+	ColorDepthField           string
+	ColorDepthFmt             string
+	ColorDepthDefaultFmt      string
+	EncodingPreferenceField   string
+	EncodingAuto              string
+	EncodingZRLE              string
+	EncodingHextile           string
+	EncodingRaw               string
+	EffectWallpaper           string
+	EffectFontSmoothing       string
+	EffectComposition         string
+	EffectWindowDrag          string
+	EffectAnimations          string
+	EffectThemes              string
+	EffectCursorShadow        string
 	VNCPlaintext              string
 	TipCapture                string
 	TipRelease                string

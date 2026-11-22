@@ -33,6 +33,7 @@ import (
 //	MOTTY_RDP_CLICK     "x,y": a click there once the first picture is up, instead of keys
 //	MOTTY_RDP_PROMPT    seconds the certificate question takes to answer (optional)
 //	MOTTY_RDP_LEGACY    any value offers the legacy TLS suites too (optional)
+//	MOTTY_RDP_DEPTH     color depth to ask for: 16 or 24 (optional, default 32)
 //
 // See tools/live/rdp_live.sh and docs/remote-desktop.md.
 
@@ -168,8 +169,10 @@ func TestLiveSessionPaintsAndTakesInput(t *testing.T) {
 	var pinned string
 	var verified atomic.Int32
 	prompt, _ := strconv.Atoi(os.Getenv("MOTTY_RDP_PROMPT"))
+	depth, _ := strconv.Atoi(os.Getenv("MOTTY_RDP_DEPTH"))
 	opts := desktop.Options{
 		Username: config.user, Domain: config.domain, Password: config.password, Clipboard: true, LegacyTLS: config.legacy,
+		ColorDepth: depth,
 		VerifyCertificate: func(address string, der []byte) error {
 			sum := sha256.Sum256(der)
 			pinned = hex.EncodeToString(sum[:])

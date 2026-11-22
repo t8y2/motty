@@ -68,6 +68,28 @@ const (
 // compact first, Raw last as what every server must support.
 var DefaultEncodings = []int32{EncodingZRLE, EncodingHextile, EncodingRRE, EncodingCopyRect, EncodingRaw, encodingDesktopSize}
 
+// PreferEncoding is DefaultEncodings with encoding moved to the front, which is
+// how a client tells the server which one to use when it supports several. The
+// others stay behind it, because a server may not offer the one preferred and
+// every server must handle Raw. CopyRect, DesktopSize and the rest are not
+// alternatives to a pixel encoding, so a preference for one of them is
+// ignored and DefaultEncodings is returned.
+func PreferEncoding(encoding int32) []int32 {
+	switch encoding {
+	case EncodingZRLE, EncodingHextile, EncodingRRE, EncodingRaw:
+	default:
+		return DefaultEncodings
+	}
+	order := make([]int32, 0, len(DefaultEncodings))
+	order = append(order, encoding)
+	for _, other := range DefaultEncodings {
+		if other != encoding {
+			order = append(order, other)
+		}
+	}
+	return order
+}
+
 // Sink receives what the server draws. Calls come from the goroutine that runs
 // Client.Run, in the order of the protocol. Pixels are blue, green, red and one
 // unused byte, rows Stride bytes apart; pix is only valid during the call.
@@ -114,6 +136,10 @@ type Config struct {
 	Exclusive bool
 	// Encodings overrides DefaultEncodings, in order of preference.
 	Encodings []int32
+	// PixelFormat is the pixel size the server is asked to send. The zero value
+	// is Pixel32, which needs no conversion; Pixel16 and Pixel8 trade colours
+	// for bandwidth.
+	PixelFormat PixelFormat
 	// Timeout bounds the handshake. Zero means 20 seconds.
 	Timeout time.Duration
 }
@@ -149,9 +175,14 @@ type Client struct {
 	waiting bool // an update arrived while inactive, so none is asked for yet
 	running bool
 
+	// format is the pixel format asked for in init, which every decoder reads.
+	format PixelFormat
+
 	// decoder state
 	rowBuf  []byte
 	tileBuf []byte
+	// convBuf holds Raw and Hextile pixels widened from a smaller format.
+	convBuf []byte
 	zrle    zrleState
 }
 
@@ -394,9 +425,8 @@ func (client *Client) init(config Config) error {
 		encodings = DefaultEncodings
 	}
 	message := make([]byte, 0, 20+4+4*len(encodings))
-	// SetPixelFormat: 32 bits per pixel, depth 24, little-endian true colour,
-	// red, green and blue in bits 16, 8 and 0: memory order blue, green, red, pad.
-	message = append(message, 0, 0, 0, 0, 32, 24, 0, 1, 0, 255, 0, 255, 0, 255, 16, 8, 0, 0, 0, 0)
+	client.format = config.PixelFormat
+	message = append(message, client.format.message()...)
 	message = append(message, 2, 0)
 	message = binary.BigEndian.AppendUint16(message, uint16(len(encodings)))
 	for _, encoding := range encodings {

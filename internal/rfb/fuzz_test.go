@@ -63,8 +63,22 @@ func FuzzMessages(f *testing.F) {
 	f.Add(update(stream.rect(0, 0, 8, 8, append([]byte{1}, cpixel(1, 2, 3)...))))
 	f.Add(update(rect(0, 0, 8, 8, encodingDesktopSize)))
 	f.Add([]byte{3, 0, 0, 0, 0, 0, 0, 2, 'h', 'i', 2, 1, 0, 0, 0, 0})
+	// The first byte picks the pixel format; a seed above is read as 32-bit
+	// when it starts with 0, so the smaller formats get their own.
+	for _, format := range []PixelFormat{Pixel16, Pixel8} {
+		size := format.size()
+		f.Add(append([]byte{byte(format)}, update(rect(0, 0, 4, 4, EncodingRaw, make([]byte, 16*size)...))...))
+		f.Add(append([]byte{byte(format)}, update(rect(0, 0, 8, 8, EncodingRRE, append(append(u32(1), make([]byte, size)...), append(make([]byte, size), u16(1, 1, 2, 2)...)...)...))...))
+		f.Add(append([]byte{byte(format)}, update(rect(0, 0, 20, 20, EncodingHextile, append([]byte{hextileRaw}, make([]byte, 16*16*size)...)...))...))
+		f.Add(append([]byte{byte(format)}, update(newZRLEStream().rect(0, 0, 8, 8, append([]byte{1}, make([]byte, size)...)))...))
+	}
 	f.Fuzz(func(t *testing.T, data []byte) {
+		format := PixelFormat(0)
+		if len(data) > 0 {
+			format, data = PixelFormat(data[0]%3), data[1:]
+		}
 		client := clientOver(data, 40, 30)
+		client.format = format
 		sink := &nullSink{t: t, width: 40, height: 30}
 		for range 64 {
 			kind, err := client.r.ReadByte()
