@@ -278,7 +278,11 @@ func (state *State) declareCommandPaletteRow(c ui.C, entry commandPaletteEntry, 
 	if selected {
 		color, detailColor = state.pal.onAccent, state.pal.onAccent
 	}
-	row := ui.Row(c).Height(30).PadX(10).Gap(12).Items(ui.Center).Shrink(0)
+	padLeft := float32(10)
+	if palette.query == "" && entry.depth > 0 {
+		padLeft += float32(min(int(entry.depth), 8)) * 14
+	}
+	row := ui.Row(c).Height(30).PadSides(0, 10, 0, padLeft).Gap(12).Items(ui.Center).Shrink(0)
 	if selected {
 		row.Background(state.pal.accent).Radius(radius.item)
 	}
@@ -380,7 +384,8 @@ func (state *State) commandPaletteHeight() float32 {
 func (state *State) declareFoldRow(c ui.C, entry commandPaletteEntry, visible int) {
 	selected := state.commandPalette.selected == visible
 	color, detailColor := state.pal.muted, state.pal.faint
-	row := ui.Row(c).Height(30).PadX(10).Gap(8).Items(ui.Center).Shrink(0)
+	padLeft := float32(10 + min(int(entry.depth), 8)*14)
+	row := ui.Row(c).Height(30).PadSides(0, 10, 0, padLeft).Gap(8).Items(ui.Center).Shrink(0)
 	if selected {
 		color, detailColor = state.pal.onAccent, state.pal.onAccent
 		row.Background(state.pal.accent).Radius(radius.item)

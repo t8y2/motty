@@ -10,12 +10,14 @@ import (
 	"github.com/vivaui/viva/ui"
 )
 
-// A snippet may belong to one group, a name the user types once and picks after
-// that. Groups are not records of their own: one exists while a snippet names
-// it. The Snippets page filters its table by group, and the command palette
-// searches the group with the name and the command.
+// A snippet may belong to one group, a name or slash-separated path
+// (e.g. "Clients/Acme/Production") the user types once and picks after that.
+// Groups are not records of their own: one exists while a snippet names it or
+// a descendant beneath it. The Snippets page filters its table by group
+// (including descendants), and the command palette searches the group with the
+// name and the command.
 
-const maxSnippetGroup = 80
+const maxSnippetGroup = 512
 
 var (
 	hitSnippetFilter = tree.ID(snippetsHits, "snippet-filter")
@@ -43,26 +45,145 @@ func (filter snippetFilter) matches(entry *snippet) bool {
 	case filter.ungrouped:
 		return entry.Group == ""
 	case filter.group != "":
-		return sameSnippetGroup(entry.Group, filter.group)
+		return snippetGroupWithin(entry.Group, filter.group)
 	}
 	return true
 }
 
 func sameSnippetGroup(a, b string) bool { return strings.EqualFold(a, b) }
 
+// normalizeSnippetGroupPath is the one form a snippet group path is kept in:
+// its folder names, in order, joined with "/". Spaces around separators and
+// empty segments are dropped, matching normalizeHostGroupPath.
+func normalizeSnippetGroupPath(path string) string {
+	if !strings.Contains(path, "/") {
+		return strings.TrimSpace(path)
+	}
+	segments := make([]string, 0, 4)
+	for _, segment := range strings.Split(path, "/") {
+		if segment = strings.TrimSpace(segment); segment != "" {
+			segments = append(segments, segment)
+		}
+	}
+	return strings.Join(segments, "/")
+}
+
+func snippetGroupLeaf(path string) string {
+	return path[strings.LastIndex(path, "/")+1:]
+}
+
+func snippetGroupParent(path string) string {
+	if at := strings.LastIndex(path, "/"); at >= 0 {
+		return path[:at]
+	}
+	return ""
+}
+
+func snippetGroupDepth(path string) uint8 {
+	return uint8(min(strings.Count(path, "/"), 12))
+}
+
+// snippetGroupWithin reports whether path is parent or a descendant of parent,
+// comparing segments case-insensitively.
+func snippetGroupWithin(path, parent string) bool {
+	if sameSnippetGroup(path, parent) {
+		return true
+	}
+	if parent == "" {
+		return false
+	}
+	for {
+		p, prest, pmore := strings.Cut(path, "/")
+		a, arest, amore := strings.Cut(parent, "/")
+		if !strings.EqualFold(p, a) {
+			return false
+		}
+		if !amore {
+			return pmore
+		}
+		if !pmore {
+			return false
+		}
+		path, parent = prest, arest
+	}
+}
+
+// snippetGroupLess compares two group paths one segment at a time so
+// punctuation in a sibling cannot split a subtree, matching hostGroupLess.
+func snippetGroupLess(left, right string) bool {
+	for {
+		l, lrest, lmore := strings.Cut(left, "/")
+		r, rrest, rmore := strings.Cut(right, "/")
+		if order := strings.Compare(strings.ToLower(l), strings.ToLower(r)); order != 0 {
+			return order < 0
+		}
+		if l != r {
+			return l < r
+		}
+		if !lmore || !rmore {
+			return !lmore && rmore
+		}
+		left, right = lrest, rrest
+	}
+}
+
+// remapSnippetGroupPath rewrites a path in the from subtree to sit under to,
+// preserving the spelling of any descendant segments.
+func remapSnippetGroupPath(path, from, to string) string {
+	if sameSnippetGroup(path, from) {
+		return to
+	}
+	if !snippetGroupWithin(path, from) {
+		return path
+	}
+	segments := strings.Count(from, "/") + 1
+	rest := path
+	for range segments {
+		_, after, ok := strings.Cut(rest, "/")
+		if !ok {
+			return to
+		}
+		rest = after
+	}
+	if rest == "" {
+		return to
+	}
+	return to + "/" + rest
+}
+
 func validSnippetGroup(value string) bool {
-	value = strings.TrimSpace(value)
+	value = normalizeSnippetGroupPath(value)
 	return value != "" && len(value) <= maxSnippetGroup && !strings.ContainsFunc(value, unicode.IsControl)
 }
 
 // cleanSnippetGroup is the group a saved snippet names: a group that cannot be
 // typed in the dialog is no group.
 func cleanSnippetGroup(value string) string {
-	value = cleanSnippetText(value, maxSnippetGroup)
+	value = normalizeSnippetGroupPath(cleanSnippetText(value, maxSnippetGroup))
 	if !validSnippetGroup(value) {
 		return ""
 	}
 	return value
+}
+
+// restoreSnippetGroup migrates a snippet group loaded from saved state into a
+// normalized slash-separated path without dropping previously valid flat group
+// names to ungrouped. Names containing "/" become nested paths; names composed
+// solely of "/" and whitespace (which were valid as flat strings before nested
+// groups existed) keep their slashes as fullwidth "／" so no group is lost on
+// the next save.
+func restoreSnippetGroup(value string) string {
+	cleaned := cleanSnippetText(value, maxSnippetGroup)
+	if cleaned == "" {
+		return ""
+	}
+	if normalized := normalizeSnippetGroupPath(cleaned); normalized != "" {
+		return normalized
+	}
+	// Preserve slash-only legacy flat group names (e.g. "/", "//") without
+	// exceeding maxSnippetGroup bytes.
+	migrated := strings.ReplaceAll(cleaned, "/", "／")
+	return cleanSnippetText(migrated, maxSnippetGroup)
 }
 
 // snippetDetail is what the command palette shows beside a snippet's name: its
@@ -79,39 +200,54 @@ func snippetDetail(entry *snippet) string {
 	return ""
 }
 
-// refreshSnippetGroups makes the groups the snippets name and the rows the page
-// shows under its filter. A group has one spelling, that of the snippet that
-// names it first.
+// refreshSnippetGroups makes the groups the snippets name (plus every ancestor
+// folder in their slash-separated paths) and the rows the page shows under its
+// filter. A group has one spelling, that of the snippet that names it first.
 func (form *snippetsUI) refreshSnippetGroups() {
 	form.groups = form.groups[:0]
+	if form.groupCounts == nil {
+		form.groupCounts = make(map[string]int)
+	}
+	clear(form.groupCounts)
+	canonical := make(map[string]string, len(form.list))
+	add := func(group string) string {
+		key := strings.ToLower(group)
+		if known, ok := canonical[key]; ok {
+			return known
+		}
+		canonical[key] = group
+		form.groups = append(form.groups, group)
+		return group
+	}
 	ungrouped := false
 	for index := range form.list {
 		group := form.list[index].Group
-		switch {
-		case group == "":
-			ungrouped = true
-		case !slices.ContainsFunc(form.groups, func(known string) bool { return sameSnippetGroup(known, group) }):
-			form.groups = append(form.groups, group)
-		}
-	}
-	slices.SortStableFunc(form.groups, func(a, b string) int { return strings.Compare(strings.ToLower(a), strings.ToLower(b)) })
-	if form.groupCounts == nil {
-		form.groupCounts = make(map[string]int, len(form.groups))
-	}
-	clear(form.groupCounts)
-	for index := range form.list {
-		group := form.list[index].Group
 		if group == "" {
+			ungrouped = true
 			continue
 		}
-		if at := slices.IndexFunc(form.groups, func(known string) bool { return sameSnippetGroup(known, group) }); at >= 0 {
-			form.groupCounts[form.groups[at]]++
+		for path := group; path != ""; path = snippetGroupParent(path) {
+			known := add(path)
+			form.groupCounts[known]++
 		}
 	}
+	slices.SortStableFunc(form.groups, func(a, b string) int {
+		switch {
+		case snippetGroupLess(a, b):
+			return -1
+		case snippetGroupLess(b, a):
+			return 1
+		}
+		return 0
+	})
 	form.hasUngrouped = ungrouped
 	// A filter whose group is gone shows everything rather than nothing.
-	if filter := form.filter; filter.ungrouped && !ungrouped || filter.group != "" && !slices.ContainsFunc(form.groups, func(known string) bool { return sameSnippetGroup(known, filter.group) }) {
+	if filter := form.filter; filter.ungrouped && !ungrouped {
 		form.filter = snippetFilter{}
+	} else if filter.group != "" {
+		if _, ok := canonical[strings.ToLower(filter.group)]; !ok {
+			form.filter = snippetFilter{}
+		}
 	}
 	form.visible = form.visible[:0]
 	for index := range form.list {
@@ -219,6 +355,9 @@ func (state *State) snippetGroupPicker(value string) *components.SingleSelectSta
 	control.AllowCreate = true
 	// A group has one name: typing "ops" over "Ops" selects the existing group.
 	control.MatchCaseInsensitive = true
+	// Groups nest by "/": browse one level at a time, with typing as the flat
+	// search over full paths, matching hostGroupPicker.
+	control.Separator = "/"
 	control.SetValidateCreate(validSnippetGroup)
 	options := make([]components.SingleSelectOption, len(state.snippets.groups))
 	for index, group := range state.snippets.groups {

@@ -696,9 +696,12 @@ func (state *State) snapshot() savedState {
 	saved.CommandsSide = state.commands.placement == commandsPlacementSide
 	saved.CommandsSort = state.commands.sort.String()
 	saved.CommandsWidth = state.commands.width
-	for key := range state.commands.hiddenGroups {
-		saved.CommandsHiddenGroups = append(saved.CommandsHiddenGroups, key)
+	for key, hidden := range state.commands.hiddenGroups {
+		if hidden {
+			saved.CommandsHiddenGroups = append(saved.CommandsHiddenGroups, key)
+		}
 	}
+	slices.Sort(saved.CommandsHiddenGroups)
 	for key, collapsed := range state.commands.collapsedGroups {
 		if collapsed {
 			saved.CommandsCollapsedGroups = append(saved.CommandsCollapsedGroups, key)
