@@ -243,6 +243,7 @@ func (s *State) connectDashboardSource(source *dashboardSource) {
 	v.pendingSecretValue = ""
 	v.endpoint = sshconn.Endpoint{Host: v.host.Address, Port: v.host.Port, User: s.login(v.host)}
 	v.role = sshconn.EndpointTarget
+	v.freezeDialedSSHPolicy(v.host)
 	config, ok := s.sshConfigFor(v, v.host)
 	if !ok {
 		v.phase = sshconn.PhaseFailed

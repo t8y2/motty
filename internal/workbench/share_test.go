@@ -609,3 +609,112 @@ func TestAChangedInteractiveOnlyPolicyNeverSharesTheOldConnection(t *testing.T) 
 		})
 	}
 }
+
+// Two saved hosts pointing to the same bastion account (with explicit password
+// authentication or a shared credential) dial separate terminal transports, and
+// each host's standalone file manager window must share its own terminal's
+// transport rather than dialing an unbound connection (#1348).
+func TestBastionHostsWithPasswordAuthShareEachHostsOwnFileWindowConnection(t *testing.T) {
+	world, options := newSharingWorld(t)
+	options.OpenContentWindow = nil
+	options.Invalidate = func() {}
+	state := newTestState(t, options)
+	state.sftpOpenMode = sftpOpenTab
+
+	first := state.hosts[0]
+	first.Auth = authPassword
+	state.hosts[0] = first
+
+	second := first
+	second.ID, second.CatalogID, second.Label = state.nextHostID, "host_bastion_second_asset", "Second asset"
+	state.nextHostID++
+	state.hosts = append(state.hosts, second)
+
+	world.connectFirst(t, state)
+	state.openHostSession(second)
+	if len(world.conns) != 2 || len(world.shared) != 0 {
+		t.Fatalf("after opening two bastion terminals: dials=%d shares=%d, want 2 dials and 0 shares", len(world.conns), len(world.shared))
+	}
+	world.conns[1].set(func(status *sshconn.Status) {
+		status.Phase = sshconn.PhaseConnected
+		status.ServerVersion = "SSH-2.0-Test"
+		status.ConnectionGeneration = 2
+		status.HostKey.Fingerprint = "SHA256:test"
+	})
+	state.Wake()
+
+	state.openHostSFTPWindow(first)
+	state.openHostSFTPWindow(second)
+	if len(world.conns) != 2 || len(world.shared) != 2 {
+		t.Fatalf("after opening each host's file window: dials=%d shares=%d, want 2 dials and 2 shares", len(world.conns), len(world.shared))
+	}
+	var firstWin, secondWin *sftpWindow
+	for _, w := range state.sftpWindows {
+		switch w.session.HostID {
+		case first.ID:
+			firstWin = w
+		case second.ID:
+			secondWin = w
+		}
+	}
+	if firstWin == nil || secondWin == nil {
+		t.Fatalf("expected two independent file windows, got first=%v second=%v", firstWin, secondWin)
+	}
+	if got := firstWin.session.conn.Status().ConnectionGeneration; got != 1 {
+		t.Fatalf("first host file window generation = %d, want 1 (first terminal's transport)", got)
+	}
+	if got := secondWin.session.conn.Status().ConnectionGeneration; got != 2 {
+		t.Fatalf("second host file window generation = %d, want 2 (second terminal's transport)", got)
+	}
+}
+
+func TestBastionHostsWithSharedCredentialShareEachHostsOwnFileWindowConnection(t *testing.T) {
+	world, options := newSharingWorld(t)
+	options.OpenContentWindow = nil
+	options.Invalidate = func() {}
+	state := newTestState(t, options)
+	state.sftpOpenMode = sftpOpenTab
+
+	first := state.hosts[0]
+	first.Credential = "cred_bastion"
+	state.hosts[0] = first
+
+	second := first
+	second.ID, second.CatalogID, second.Label = state.nextHostID, "host_bastion_cred_second", "Second credential asset"
+	state.nextHostID++
+	state.hosts = append(state.hosts, second)
+
+	world.connectFirst(t, state)
+	state.openHostSession(second)
+	world.conns[1].set(func(status *sshconn.Status) {
+		status.Phase = sshconn.PhaseConnected
+		status.ServerVersion = "SSH-2.0-Test"
+		status.ConnectionGeneration = 2
+		status.HostKey.Fingerprint = "SHA256:test"
+	})
+	state.Wake()
+
+	state.openHostSFTPWindow(first)
+	state.openHostSFTPWindow(second)
+	if len(world.conns) != 2 || len(world.shared) != 2 {
+		t.Fatalf("after opening credentialed file windows: dials=%d shares=%d, want 2 dials and 2 shares", len(world.conns), len(world.shared))
+	}
+	var firstWin, secondWin *sftpWindow
+	for _, w := range state.sftpWindows {
+		switch w.session.HostID {
+		case first.ID:
+			firstWin = w
+		case second.ID:
+			secondWin = w
+		}
+	}
+	if firstWin == nil || secondWin == nil {
+		t.Fatalf("expected two independent file windows, got first=%v second=%v", firstWin, secondWin)
+	}
+	if got := firstWin.session.conn.Status().ConnectionGeneration; got != 1 {
+		t.Fatalf("first host file window generation = %d, want 1", got)
+	}
+	if got := secondWin.session.conn.Status().ConnectionGeneration; got != 2 {
+		t.Fatalf("second host file window generation = %d, want 2", got)
+	}
+}

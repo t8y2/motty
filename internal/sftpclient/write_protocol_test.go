@@ -2,6 +2,8 @@ package sftpclient
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"io"
 	"net"
@@ -9,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -419,5 +422,128 @@ func TestWorkerUploadClosesDestinationAndPropagatesCloseError(t *testing.T) {
 	}
 	if remote.path != "target.txt" || writer.String() != "complete payload" {
 		t.Fatalf("path = %q, content = %q", remote.path, writer.String())
+	}
+}
+
+// writeOrderRecorder wraps the server side of an SFTP pipe and captures every
+// SSH_FXP_WRITE packet's offset and payload in wire arrival order, as a bastion
+// or streaming SFTP proxy sees them.
+type writeOrderRecorder struct {
+	net.Conn
+	mu          sync.Mutex
+	buf         []byte
+	offsets     []uint64
+	streamedOut []byte
+}
+
+func (r *writeOrderRecorder) Read(p []byte) (int, error) {
+	n, err := r.Conn.Read(p)
+	if n > 0 {
+		r.mu.Lock()
+		r.buf = append(r.buf, p[:n]...)
+		for len(r.buf) >= 4 {
+			pktLen := int(binary.BigEndian.Uint32(r.buf[:4]))
+			if len(r.buf) < 4+pktLen {
+				break
+			}
+			pkt := r.buf[4 : 4+pktLen]
+			// SSH_FXP_WRITE = 6: type(1) + id(4) + handleLen(4) + handle + offset(8) + dataLen(4) + data
+			if len(pkt) >= 1 && pkt[0] == 6 && len(pkt) >= 9 {
+				handleLen := int(binary.BigEndian.Uint32(pkt[5:9]))
+				offPos := 9 + handleLen
+				if len(pkt) >= offPos+12 {
+					offset := binary.BigEndian.Uint64(pkt[offPos : offPos+8])
+					dataLen := int(binary.BigEndian.Uint32(pkt[offPos+8 : offPos+12]))
+					dataPos := offPos + 12
+					if len(pkt) >= dataPos+dataLen {
+						r.offsets = append(r.offsets, offset)
+						r.streamedOut = append(r.streamedOut, pkt[dataPos:dataPos+dataLen]...)
+					}
+				}
+			}
+			r.buf = r.buf[4+pktLen:]
+		}
+		r.mu.Unlock()
+	}
+	return n, err
+}
+
+// Bastion and streaming SFTP proxies commonly expect SSH_FXP_WRITE packets in
+// ascending offset order (as FileZilla and OpenSSH sftp send them). Sending
+// chunks out of order scrambles the received file and breaks archive hashes
+// without returning an SFTP error (#1348).
+func TestWorkerUploadDispatchesWritePacketsInOffsetOrder(t *testing.T) {
+	var recorder *writeOrderRecorder
+	worker, root := newProtocolWorkerOn(t, func(conn net.Conn) net.Conn {
+		recorder = &writeOrderRecorder{Conn: conn}
+		return recorder
+	}, nil)
+
+	const size = 2 << 20 // 64 chunks of 32 KiB
+	localPath, content := randomFile(t, size)
+	result := requireQueuedResult(t, worker.Upload(localPath, "archive.zip"), worker, OperationUpload)
+	if result.Err != nil {
+		t.Fatalf("upload failed: %v", result.Err)
+	}
+	uploaded, err := os.ReadFile(filepath.Join(root, "archive.zip"))
+	if err != nil || !bytes.Equal(uploaded, content) {
+		t.Fatalf("uploaded file mismatch: err=%v len=%d", err, len(uploaded))
+	}
+
+	recorder.mu.Lock()
+	offsets := append([]uint64(nil), recorder.offsets...)
+	streamed := append([]byte(nil), recorder.streamedOut...)
+	recorder.mu.Unlock()
+
+	if len(offsets) != size/uploadChunkSize {
+		t.Fatalf("captured %d write packets, want %d", len(offsets), size/uploadChunkSize)
+	}
+	for i, got := range offsets {
+		want := uint64(i) * uploadChunkSize
+		if got != want {
+			t.Fatalf("SSH_FXP_WRITE packet %d arrived with offset %d, want %d (out-of-order dispatch)", i, got, want)
+		}
+	}
+	if sha256.Sum256(streamed) != sha256.Sum256(content) {
+		t.Fatal("sequentially streamed SSH_FXP_WRITE payload hash does not match source archive")
+	}
+
+	// Resuming a partial upload must likewise dispatch the remaining writes in
+	// strictly ascending offset order starting from the resumed offset.
+	recorder.mu.Lock()
+	recorder.offsets = nil
+	recorder.streamedOut = nil
+	recorder.mu.Unlock()
+
+	const resumed = int64(4 * uploadChunkSize)
+	partial := filepath.Join(root, remotePartialPath("resumed.zip", localPath))
+	if err := os.WriteFile(partial, content[:resumed], 0o600); err != nil {
+		t.Fatal(err)
+	}
+	id, queued := worker.QueueUploadResume(localPath, "resumed.zip", resumed, int64(len(content)), sourceModTime(t, localPath))
+	resumeResult := queueResult(t, id, queued, worker)
+	if resumeResult.Err != nil || resumeResult.Resumed != resumed {
+		t.Fatalf("resumed upload = %+v", resumeResult)
+	}
+	resumedFile, err := os.ReadFile(filepath.Join(root, "resumed.zip"))
+	if err != nil || !bytes.Equal(resumedFile, content) {
+		t.Fatalf("resumed file mismatch: err=%v len=%d", err, len(resumedFile))
+	}
+	recorder.mu.Lock()
+	resumedOffsets := append([]uint64(nil), recorder.offsets...)
+	resumedStreamed := append([]byte(nil), recorder.streamedOut...)
+	recorder.mu.Unlock()
+	wantCount := (size - int(resumed)) / uploadChunkSize
+	if len(resumedOffsets) != wantCount {
+		t.Fatalf("resumed upload captured %d write packets, want %d", len(resumedOffsets), wantCount)
+	}
+	for i, got := range resumedOffsets {
+		want := uint64(resumed) + uint64(i)*uploadChunkSize
+		if got != want {
+			t.Fatalf("resumed SSH_FXP_WRITE packet %d arrived with offset %d, want %d", i, got, want)
+		}
+	}
+	if sha256.Sum256(resumedStreamed) != sha256.Sum256(content[resumed:]) {
+		t.Fatal("resumed sequentially streamed payload hash does not match source tail")
 	}
 }
