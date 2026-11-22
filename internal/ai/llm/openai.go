@@ -223,6 +223,7 @@ func (p *openAI) Stream(ctx context.Context, req Request) (<-chan Event, error) 
 	resp, err := p.do(ctx, http.MethodPost, p.endpoint+"/chat/completions", body, func(r *http.Request) {
 		r.Header.Set("Content-Type", "application/json")
 		p.auth(r)
+		sessionHeader(r, req.SessionID)
 	})
 	if err != nil {
 		return nil, err

@@ -29,6 +29,7 @@ func runSession(parent context.Context, cfg Config, provider SessionProvider, ms
 		MaxTokens:       cfg.MaxTokens,
 		Temperature:     cfg.Temperature,
 		ReasoningEffort: cfg.ReasoningEffort,
+		SessionID:       cfg.SessionID,
 	}
 	if cfg.Mode != ModeAgent {
 		if cfg.NoTools {

@@ -168,7 +168,10 @@ type aiState struct {
 	items          []aiItem
 	history        []llm.Message
 	conv           int64
-	input          text.Editor
+	// session names the conversation to providers that route on it; it is
+	// made on the first question and dropped with the conversation.
+	session string
+	input   text.Editor
 	// attachments wait in the message box for the next question; attaching is how
 	// many files are still being read for it.
 	attachments []aiAttachment
@@ -913,9 +916,13 @@ func (state *State) aiSend() bool {
 	}
 	state.aiMessagesToEnd()
 
+	if ai.session == "" {
+		ai.session = llm.NewSessionID()
+	}
 	config := agent.Config{
 		Provider:          state.aiProvider(provider),
 		Model:             model,
+		SessionID:         ai.session,
 		System:            agent.DefaultSystem(state.aiSessionSummary(references...)) + state.aiNoSessionNote(references...),
 		Mode:              ai.mode,
 		UserInHistory:     retry,
@@ -1367,7 +1374,7 @@ func (state *State) aiNewConversation() {
 	ai.target, ai.extras, ai.targetSet = gate.SessionInfo{}, nil, false
 	ai.panel.targetOpen = false
 	ai.panel.autoMenu = false
-	ai.items, ai.history, ai.conv, ai.notice = nil, nil, 0, ""
+	ai.items, ai.history, ai.conv, ai.session, ai.notice = nil, nil, 0, "", ""
 	ai.noteMentions, ai.requestNoteReferences = nil, nil
 	state.aiClearAttachments()
 	ai.approvals = nil
@@ -1394,7 +1401,7 @@ func (state *State) aiOpenConversation(id int64) {
 		ai.notice = err.Error()
 		return
 	}
-	ai.items, ai.history, ai.conv = nil, nil, id
+	ai.items, ai.history, ai.conv, ai.session = nil, nil, id, ""
 	ai.noteMentions, ai.requestNoteReferences = nil, nil
 	state.aiClearAttachments()
 	// Persisted terminal IDs are not identities across application restarts.

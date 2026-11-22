@@ -153,6 +153,7 @@ func (p *openAIResponses) Stream(ctx context.Context, req Request) (<-chan Event
 	resp, err := p.do(ctx, http.MethodPost, p.endpoint+"/responses", body, func(r *http.Request) {
 		r.Header.Set("Content-Type", "application/json")
 		p.auth(r)
+		sessionHeader(r, req.SessionID)
 	})
 	if err != nil {
 		return nil, err
