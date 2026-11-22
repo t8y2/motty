@@ -561,6 +561,31 @@ func TestClosingAnEmptyWindowDoesNotAsk(t *testing.T) {
 	}
 }
 
+func TestTheCloseWindowQuestionCanBeTurnedOff(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	state.Click(hitSettingsCloseWindowConfirmToggle)
+	if !state.closeWindowConfirmOff {
+		t.Fatal("the setting did not turn the question off")
+	}
+	if state.snapshot().CloseWindowConfirm != "off" {
+		t.Fatal("the choice is not saved")
+	}
+	closed := 0
+	if state.ConfirmClose(func() { closed++ }) || state.modal != modalNone {
+		t.Fatalf("the window asked with the setting off: modal %d", state.modal)
+	}
+	state.Click(hitSettingsCloseWindowConfirmToggle)
+	if state.closeWindowConfirmOff {
+		t.Fatal("the setting did not turn the question back on")
+	}
+	if !state.ConfirmClose(func() { closed++ }) || state.modal != modalForm {
+		t.Fatalf("the window did not ask with the setting on: modal %d", state.modal)
+	}
+	if closed != 0 {
+		t.Fatalf("asking closed the window %d times", closed)
+	}
+}
+
 func TestHidingToTrayIsExplainedOnce(t *testing.T) {
 	w := newNotifyWorld(t)
 	state := newTestState(t, w.options)
@@ -580,5 +605,24 @@ func TestHidingToTrayIsExplainedOnce(t *testing.T) {
 	}
 	if again := newTestState(t, w.options); !again.trayHintShown {
 		t.Fatal("the explanation was not remembered on this device")
+	}
+}
+
+// The choice rides in the shared settings, so another window and a restart get
+// it, not only the state that made it.
+func TestTheDisabledCloseWindowQuestionSurvivesRestore(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	state.Click(hitSettingsCloseWindowConfirmToggle)
+	saved := state.snapshot()
+	if saved.CloseWindowConfirm != "off" {
+		t.Fatalf("saved choice = %q, want off", saved.CloseWindowConfirm)
+	}
+	other := newTestState(t, testOptions(t))
+	other.restoreShared(saved)
+	if !other.closeWindowConfirmOff {
+		t.Fatal("restoring the shared settings lost the choice")
+	}
+	if other.ConfirmClose(func() {}) {
+		t.Fatal("a restored state asked the question with the setting off")
 	}
 }

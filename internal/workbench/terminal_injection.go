@@ -74,8 +74,11 @@ type terminalInjection struct {
 
 	// token binds the ready marker, the command-start reports and the
 	// activation line's echo tag to this shell.
-	token  string
-	marker []byte
+	token string
+	// directory is the folder the shell starts in, for a line that is built
+	// when it is typed.
+	directory string
+	marker    []byte
 	// echoTag identifies the activation line in the shell's output; it outlives
 	// a failed window, because the line may be echoed long after the deadline.
 	echoTag []byte
@@ -120,20 +123,35 @@ func (state *State) startInjection(session *Session, shell Shell) {
 	}
 	token, directory := t.folderToken, session.startDirectory
 	result := make(chan shellProbe, 1)
-	t.injection = terminalInjection{phase: injectionWaiting, result: result, token: token, since: state.now()}
+	t.injection = terminalInjection{phase: injectionWaiting, result: result, token: token, directory: directory, since: state.now()}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 		defer cancel()
 		path, kind := prober.ProbeShell(ctx)
 		probe := shellProbe{path: path, kind: kind}
-		if path != "" {
-			probe.line, probe.err = prober.UploadIntegration(ctx, path, token, directory)
-		}
+		probe.line, probe.err = activationLine(kind, path, token, directory, -1, func() (string, error) {
+			return prober.UploadIntegration(ctx, path, token, directory)
+		})
 		result <- probe
 		if state.options.Invalidate != nil {
 			state.options.Invalidate()
 		}
 	}()
+}
+
+// activationLine is the line that installs integration in a shell of this kind.
+// A PowerShell takes the whole script in the line itself, since a script file
+// would be subject to the host's execution policy; a Bash or Zsh reads a file
+// that upload writes to the server. Neither is available for any other shell,
+// which runs on without integration.
+func activationLine(kind shellkind.Kind, path, token, directory string, row int, upload func() (string, error)) (string, error) {
+	switch {
+	case kind == shellkind.PowerShell:
+		return sshconn.PowerShellActivation(token, directory, row), nil
+	case path != "":
+		return upload()
+	}
+	return "", nil
 }
 
 // advanceInjection moves one shell's injection forward on a Wake. Window thread.
@@ -188,6 +206,11 @@ func (state *State) beginInjection(session *Session) {
 		state.failInjection(session)
 		return
 	}
+	if injection.probe.kind == shellkind.PowerShell {
+		// The line is built now, not when the shell was probed: it names the
+		// screen row the prompt is on, which the startup output has moved.
+		injection.probe.line = sshconn.PowerShellActivation(injection.token, injection.directory, t.screen.Cursor().Y)
+	}
 	injection.marker = sshconn.IntegrationReadyMarker(injection.token)
 	injection.echoTag = sshconn.IntegrationEchoTag(injection.token)
 	injection.phase = injectionSuppressing
@@ -219,6 +242,14 @@ func (state *State) applyInjection(session *Session, data []byte) (rest []byte, 
 			t.commandReporting = true
 		}
 		rest = append([]byte(nil), injection.buf[index+len(injection.marker):]...)
+		if injection.probe.kind == shellkind.PowerShell {
+			// The console behind the pty draws the next prompt relative to
+			// where it believes the cursor is: the start of the prompt's row,
+			// since the script put it there. The screen never saw the line's
+			// echo, so its own cursor is still at the end of the old prompt.
+			// Moving it to that start and clearing the row makes the two agree.
+			rest = append([]byte("\r\x1b[2K"), rest...)
+		}
 		injection.buf = injection.buf[:0]
 		injection.phase = injectionDone
 		// The echo arrived, however late: the shell is integrated after all.

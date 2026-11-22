@@ -49,6 +49,48 @@ func TestInjectionHidesItsEchoAndReleasesQueuedInput(t *testing.T) {
 	}
 }
 
+// The screen never sees the PowerShell activation line's echo, so its cursor is
+// still after the old prompt when the console draws the new one from the start
+// of the row. The new prompt must replace the old, not follow it.
+func TestPowerShellInjectionRedrawsThePromptOverTheOldOne(t *testing.T) {
+	const token = "ps-token"
+	screen := term.New(80, 24, 0)
+	screen.Write([]byte("PS C:\\Users\\me> "))
+	t0 := &terminal{screen: screen, folderToken: token}
+	t0.shell = &fakeShell{}
+	session := &Session{term: t0}
+	state := &State{}
+	marker := sshconn.IntegrationReadyMarker(token)
+	t0.injection = terminalInjection{phase: injectionSuppressing, marker: marker, probe: shellProbe{kind: shellkind.PowerShell}}
+
+	rest, applied := state.applyInjection(session, append(append([]byte("echo of the line\r\n"), marker...), []byte("PS C:\\Users\\me> ")...))
+	if !applied {
+		t.Fatal("the ready marker was not recognized")
+	}
+	screen.Write(rest)
+	if got := strings.TrimRight(screen.RowText(0), " "); got != "PS C:\\Users\\me>" {
+		t.Fatalf("first row = %q, want exactly one prompt", got)
+	}
+}
+
+// A PowerShell has no $SHELL path to name and no file to upload: the server
+// would run it under its execution policy. The line is the script itself.
+func TestPowerShellIsIntegratedWithoutAnUploadedFile(t *testing.T) {
+	upload := func() (string, error) {
+		t.Fatal("a PowerShell's integration must not be uploaded as a file")
+		return "", nil
+	}
+	line, err := activationLine(shellkind.PowerShell, "", "ps-token", "/C:/Users/me", 3, upload)
+	if err != nil || !strings.Contains(line, string(sshconn.IntegrationEchoTag("ps-token"))) {
+		t.Fatalf("line = %q, err = %v; want the PowerShell activation", line, err)
+	}
+	uploaded := false
+	line, _ = activationLine(shellkind.POSIX, "/bin/bash", "ps-token", "", 0, func() (string, error) { uploaded = true; return "bash line", nil })
+	if !uploaded || line != "bash line" {
+		t.Fatalf("a Bash shell must keep its uploaded integration, got %q (uploaded %v)", line, uploaded)
+	}
+}
+
 // A connection that ends while the injection hides its output must not put
 // that output on screen. The flush that keeps the shell's last words runs
 // around the normal output path, and no ready marker can end the hidden window

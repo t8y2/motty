@@ -147,9 +147,9 @@ func (conn *Conn) captureCommand(ctx context.Context, command string, input []by
 		default:
 		}
 	}
-	client := conn.Client()
-	if client == nil {
-		return errors.New("sshconn: not connected")
+	client, err := conn.SessionClient(ctx)
+	if err != nil {
+		return err
 	}
 	operationCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -344,9 +344,12 @@ func (conn *Conn) streamCommand(ctx context.Context, command string, maxLineByte
 		}
 		return ctx.Err()
 	}
-	client := conn.Client()
-	if client == nil {
-		return errors.New("sshconn: not connected")
+	client, err := conn.SessionClient(operation)
+	if err != nil {
+		if operation.Err() != nil {
+			return canceled()
+		}
+		return err
 	}
 	session, err := openCommandSession(operation, client)
 	if err != nil {

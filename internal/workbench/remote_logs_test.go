@@ -56,6 +56,7 @@ func TestRemoteLogsWithCommandsBar(t *testing.T) {
 					click(hitServerLogs)
 				}
 				click(hitTerminalSnippets)
+				state.commands.placement = commandsPlacementSide
 				click(hitCommandsBarToggle)
 				if err := view.Keys("Escape"); err != nil {
 					t.Fatal(err)

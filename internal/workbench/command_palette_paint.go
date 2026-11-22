@@ -126,6 +126,10 @@ func (state *State) declareCommandPaletteBody(c ui.C) {
 			// control of the dialog, never a result of the search below it.
 			state.declareCommandPaletteBarToggle(c)
 			ui.Spacer(c).Height(6).Shrink(0)
+			if state.commands.shown {
+				state.declareCommandPalettePlacement(c)
+				ui.Spacer(c).Height(6).Shrink(0)
+			}
 		}
 		ui.TextFieldID(c, hitCommandPaletteSearch, &palette.searchField, palette.searchLabel, palette.searchPlace).
 			Height(36).FillWidth().Shrink(0).NavigationKeys()
@@ -227,6 +231,24 @@ func (state *State) declareCommandPaletteBarToggle(c ui.C) {
 			}
 		})
 		ui.Text(c, label).FontSize(metrics.FontSizeS).Weight(gfx.WeightRegular).Color(pal.muted).Ellipsis().Grow(1)
+	})
+}
+
+// declareCommandPalettePlacement paints the dock control under the bar's
+// checkbox: the bottom strip or the sidebar beside the panes. It appears only
+// while the bar is shown, so a hidden bar keeps the dialog's height for the
+// list; the saved dock is there again when the bar comes back.
+func (state *State) declareCommandPalettePlacement(c ui.C) {
+	pal := state.pal
+	previous := state.commands.placement
+	ui.Row(c).Height(26).FillWidth().PadX(8).Gap(8).Items(ui.Center).Shrink(0).Children(func() {
+		ui.Text(c, state.messages.Tools.CommandsPlacement).FontSize(metrics.FontSizeS).Color(pal.muted).Shrink(0)
+		ui.Spacer(c).Grow(1)
+		choice := ui.Choice(c, &state.commands.placement, commandsPlacementChoices[:], state.commandsPlacementLabel).
+			Width(140).Height(26).Shrink(0)
+		if choice.Changed() {
+			c.After(func() { state.commandsPlacementChanged(previous) })
+		}
 	})
 }
 
@@ -337,12 +359,16 @@ func (state *State) paintCommandPaletteChrome(d *ui.DrawContext) {
 
 // commandPaletteHeight is the dialog's height: the snippet picker adds the form
 // that sends a typed command under its list, and the command bar's checkbox
-// above its search field when that page has a bar to switch.
+// above its search field when that page has a bar to switch. A shown bar also
+// adds its dock control under the checkbox.
 func (state *State) commandPaletteHeight() float32 {
 	if state.commandPalette.snippets {
 		height := float32(474 + 12 + 36 + 8 + 32)
 		if state.commandBarSwitchShown() {
 			height += 26 + 6
+			if state.commands.shown {
+				height += 26 + 6
+			}
 		}
 		return height
 	}

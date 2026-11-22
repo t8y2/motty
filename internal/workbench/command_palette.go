@@ -177,6 +177,11 @@ func (state *State) rebuildCommandPalette() {
 		palette.add(messages.PaneSplitHorizontal, hitPaneSplitHorizontal)
 		palette.add(messages.PaneSplitVertical, hitPaneSplitVertical)
 		palette.add(messages.PaneClose, hitPaneClose)
+		// Maximizing needs a split: with one pane the command would silently do
+		// nothing, so the palette does not offer it.
+		if layout, ok := state.deck.Layout(state.deck.ActiveWorkspace()); ok && layout.Len() > 1 {
+			palette.add(messages.PaneMaximizeToggle, hitPaneMaximize)
+		}
 		palette.add(messages.MenuRenameTerminal, hitPaneRename)
 		palette.add(messages.SFTPOpen, hitSFTPOpen)
 		if session, _ := state.sessionByIDPointer(state.activeSessionID); session != nil {

@@ -18,29 +18,46 @@ type terminalPasteQueue struct {
 	writing bool // the queue itself is writing; user input cancellation must not stop it
 	token   string
 	lines   []string
-	next    int
-	due     time.Duration
+	// submitLast says whether the last line is submitted too; a paste always
+	// submits it, a snippet leaves that to its Run setting.
+	submitLast bool
+	next       int
+	due        time.Duration
 }
 
-func (state *State) startPasteQueue(session *Session, lines []string) {
+// startPasteQueue writes the first line and queues the rest, and reports
+// whether the first write was accepted. Every line but the last is submitted
+// with Enter; the last is too when submitLast is set.
+func (state *State) startPasteQueue(session *Session, lines []string, submitLast bool) bool {
 	if session == nil || session.term == nil || len(lines) == 0 {
-		return
+		return false
 	}
 	t := session.term
 	state.cancelPasteQueue(t)
+	queue := terminalPasteQueue{active: true, token: t.folderToken, lines: lines, submitLast: submitLast}
 	t.pasteQueue.writing = true
-	accepted := state.typed(session, []byte(lines[0]+"\r"))
+	accepted := state.typed(session, queue.input(0))
 	t.pasteQueue.writing = false
 	if !accepted {
 		state.status = state.messages.PasteReview.Stopped
-		return
+		return false
 	}
 	if len(lines) == 1 {
-		return
+		return true
 	}
-	t.pasteQueue = terminalPasteQueue{
-		active: true, token: t.folderToken, lines: lines, next: 1, due: state.now() + pasteLineGap,
+	queue.next, queue.due = 1, state.now()+pasteLineGap
+	t.pasteQueue = queue
+	return true
+}
+
+// input is what line index sends: the line, and its Enter unless it is the last
+// line of a queue that does not submit it.
+func (q *terminalPasteQueue) input(index int) []byte {
+	line := q.lines[index]
+	if index < len(q.lines)-1 || q.submitLast {
+		return []byte(line + "\r")
 	}
+	return []byte(line)
 }
 
 // advancePasteQueue writes the next line once its deadline passed. It runs from
@@ -55,9 +72,8 @@ func (state *State) advancePasteQueue(session *Session, now time.Duration) {
 		state.cancelPasteQueue(t)
 		return
 	}
-	line := t.pasteQueue.lines[t.pasteQueue.next]
 	t.pasteQueue.writing = true
-	accepted := state.typed(session, []byte(line+"\r"))
+	accepted := state.typed(session, t.pasteQueue.input(t.pasteQueue.next))
 	t.pasteQueue.writing = false
 	if !accepted {
 		state.cancelPasteQueue(t)

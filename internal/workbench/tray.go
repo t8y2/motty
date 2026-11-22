@@ -129,8 +129,9 @@ func (state *State) NoteHiddenToTray() {
 
 // ConfirmClose asks before a window that is about to quit takes its sessions
 // with it, and runs allow only when the user agrees. It reports whether it took
-// over; false means nothing is open and the caller may close at once. Asking a
-// second time while the question is up closes, since the user insists.
+// over; false means the caller may close at once, either because nothing is open
+// or because the user turned the question off. Asking a second time while the
+// question is up closes, since the user insists.
 func (state *State) ConfirmClose(allow func()) bool {
 	if state.ConfirmDocumentClose(func() {
 		if !state.ConfirmClose(allow) {
@@ -138,6 +139,9 @@ func (state *State) ConfirmClose(allow func()) bool {
 		}
 	}) {
 		return true
+	}
+	if state.closeWindowConfirmOff {
+		return false
 	}
 	if len(state.sessions) == 0 || state.closeAsked && state.modal == modalForm {
 		return false
@@ -396,7 +400,7 @@ func (tray *Tray) reveal(member trayMember, id uint32) {
 		return
 	}
 	member.window.Show()
-	member.state.options.Invalidate()
+	tray.invalidate(member)
 }
 
 // openHost connects a saved host and brings the selected window forward.
@@ -408,7 +412,15 @@ func (tray *Tray) openHost(member trayMember, catalogID string) {
 	member.state.pendingWorkspace, member.state.pendingPane = 0, 0
 	member.state.openHostSession(host)
 	member.window.Show()
-	member.state.options.Invalidate()
+	tray.invalidate(member)
+}
+
+// invalidate asks the window to redraw through the callback it was given. A
+// headless test, or a window that has not started yet, has none.
+func (tray *Tray) invalidate(member trayMember) {
+	if member.state.options.Invalidate != nil {
+		member.state.options.Invalidate()
+	}
 }
 
 // openWorkspace opens a saved workspace template, as the workspace library
@@ -422,7 +434,7 @@ func (tray *Tray) openWorkspace(member trayMember, templateID string) {
 	state.selectedWorkspaceTemplateID = templateID
 	state.applySelectedWorkspaceTemplate()
 	member.window.Show()
-	state.options.Invalidate()
+	tray.invalidate(member)
 }
 
 // visibleMember is the window a new terminal or a request to show the
@@ -448,7 +460,7 @@ func (tray *Tray) openLocalTerminal() {
 	}
 	member.state.openLocalTerminal()
 	member.window.Show()
-	member.state.options.Invalidate()
+	tray.invalidate(member)
 }
 
 // ShowWindow brings the application back: the window the user can already see,

@@ -68,6 +68,28 @@ const (
 // compact first, Raw last as what every server must support.
 var DefaultEncodings = []int32{EncodingZRLE, EncodingHextile, EncodingRRE, EncodingCopyRect, EncodingRaw, encodingDesktopSize}
 
+// PreferEncoding is DefaultEncodings with encoding moved to the front, which is
+// how a client tells the server which one to use when it supports several. The
+// others stay behind it, because a server may not offer the one preferred and
+// every server must handle Raw. CopyRect, DesktopSize and the rest are not
+// alternatives to a pixel encoding, so a preference for one of them is
+// ignored and DefaultEncodings is returned.
+func PreferEncoding(encoding int32) []int32 {
+	switch encoding {
+	case EncodingZRLE, EncodingHextile, EncodingRRE, EncodingRaw:
+	default:
+		return DefaultEncodings
+	}
+	order := make([]int32, 0, len(DefaultEncodings))
+	order = append(order, encoding)
+	for _, other := range DefaultEncodings {
+		if other != encoding {
+			order = append(order, other)
+		}
+	}
+	return order
+}
+
 // Sink receives what the server draws. Calls come from the goroutine that runs
 // Client.Run, in the order of the protocol. Pixels are blue, green, red and one
 // unused byte, rows Stride bytes apart; pix is only valid during the call.
@@ -114,6 +136,10 @@ type Config struct {
 	Exclusive bool
 	// Encodings overrides DefaultEncodings, in order of preference.
 	Encodings []int32
+	// PixelFormat is the pixel size the server is asked to send. The zero value
+	// is Pixel32, which needs no conversion; Pixel16 and Pixel8 trade colours
+	// for bandwidth.
+	PixelFormat PixelFormat
 	// Timeout bounds the handshake. Zero means 20 seconds.
 	Timeout time.Duration
 }
@@ -149,9 +175,25 @@ type Client struct {
 	waiting bool // an update arrived while inactive, so none is asked for yet
 	running bool
 
+	// format is the pixel format the updates being decoded are in, which every
+	// decoder reads and only the goroutine that runs Run touches. wireFormat is
+	// the one most recently asked for; format becomes it at the first update
+	// after formatChanged, which is the first one sent in answer to a request
+	// made after the change (see SetQuality).
+	format        PixelFormat
+	wireFormat    PixelFormat
+	formatChanged bool
+	// pending is a quality change waiting for the reply to the request that is
+	// outstanding, and refresh makes the next request ask for the whole desktop
+	// so that the picture is redrawn in the new format.
+	pending *qualityChange
+	refresh bool
+
 	// decoder state
 	rowBuf  []byte
 	tileBuf []byte
+	// convBuf holds Raw and Hextile pixels widened from a smaller format.
+	convBuf []byte
 	zrle    zrleState
 }
 
@@ -393,16 +435,20 @@ func (client *Client) init(config Config) error {
 	if encodings == nil {
 		encodings = DefaultEncodings
 	}
-	message := make([]byte, 0, 20+4+4*len(encodings))
-	// SetPixelFormat: 32 bits per pixel, depth 24, little-endian true colour,
-	// red, green and blue in bits 16, 8 and 0: memory order blue, green, red, pad.
-	message = append(message, 0, 0, 0, 0, 32, 24, 0, 1, 0, 255, 0, 255, 0, 255, 16, 8, 0, 0, 0, 0)
+	client.format, client.wireFormat = config.PixelFormat, config.PixelFormat
+	message := append(make([]byte, 0, 20+4+4*len(encodings)), client.format.message()...)
+	return client.write(append(message, encodingsMessage(encodings)...))
+}
+
+// encodingsMessage is the SetEncodings message that lists encodings.
+func encodingsMessage(encodings []int32) []byte {
+	message := make([]byte, 0, 4+4*len(encodings))
 	message = append(message, 2, 0)
 	message = binary.BigEndian.AppendUint16(message, uint16(len(encodings)))
 	for _, encoding := range encodings {
 		message = binary.BigEndian.AppendUint32(message, uint32(encoding))
 	}
-	return client.write(message)
+	return message
 }
 
 func checkSize(width, height int) error {
@@ -458,10 +504,55 @@ func (client *Client) SetActive(active bool) {
 	}
 }
 
-// request asks for the desktop to be sent: only what changed when incremental.
+type qualityChange struct {
+	format    PixelFormat
+	encodings []int32
+}
+
+// SetQuality changes the pixel format and the encodings in order of preference
+// of a connection that is running, with the same meaning as Config.PixelFormat
+// and Config.Encodings (nil encodings are DefaultEncodings). The whole desktop
+// is then sent again, in the new format.
+//
+// A server answers a FramebufferUpdateRequest in the format it has when it
+// answers, so a client cannot tell in which format a reply to a request that is
+// already outstanding comes. SetQuality therefore never overlaps one: this
+// client keeps at most one request outstanding, and the change is sent when
+// its reply has been read (or at once, if none is outstanding because the
+// desktop is hidden), before the next request is made. Every update after
+// that is in the new format and none before it is.
+func (client *Client) SetQuality(format PixelFormat, encodings []int32) error {
+	if encodings == nil {
+		encodings = DefaultEncodings
+	}
+	change := qualityChange{format: format, encodings: encodings}
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if client.running && !client.waiting {
+		client.pending = &change
+		return nil
+	}
+	return client.applyQualityLocked(change)
+}
+
+// applyQualityLocked sends the change; no request is outstanding. client.mu is
+// held, which keeps Run from making one meanwhile.
+func (client *Client) applyQualityLocked(change qualityChange) error {
+	message := make([]byte, 0, 20+4+4*len(change.encodings))
+	message = append(message, change.format.message()...)
+	message = append(message, encodingsMessage(change.encodings)...)
+	client.wireFormat, client.formatChanged, client.refresh = change.format, true, true
+	return client.write(message)
+}
+
+// request asks for the desktop to be sent: only what changed when incremental,
+// and all of it right after a change of quality.
 func (client *Client) request(incremental bool) error {
 	client.mu.Lock()
 	width, height := client.width, client.height
+	if client.refresh {
+		incremental, client.refresh = false, false
+	}
 	client.mu.Unlock()
 	var flag byte
 	if incremental {
@@ -594,6 +685,11 @@ func (client *Client) update(sink Sink) error {
 		return err
 	}
 	count := int(binary.BigEndian.Uint16(header[1:]))
+	client.mu.Lock()
+	if client.formatChanged {
+		client.format, client.formatChanged = client.wireFormat, false
+	}
+	client.mu.Unlock()
 	resized := false
 	for index := 0; index < count; index++ {
 		var rect [12]byte
@@ -643,7 +739,15 @@ func (client *Client) update(sink Sink) error {
 	client.mu.Lock()
 	active := client.active
 	client.waiting = !active
+	var qualityErr error
+	if client.pending != nil {
+		qualityErr = client.applyQualityLocked(*client.pending)
+		client.pending = nil
+	}
 	client.mu.Unlock()
+	if qualityErr != nil {
+		return qualityErr
+	}
 	if resized {
 		return client.request(false)
 	}

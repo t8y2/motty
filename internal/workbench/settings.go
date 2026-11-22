@@ -287,6 +287,36 @@ func closeActionFromString(value string) closeAction {
 	return closeToTray
 }
 
+// keepWindowsPolicy is what quitting the application does with the windows
+// that are open: keep their records for the next launch, discard them, or ask.
+type keepWindowsPolicy uint8
+
+const (
+	keepWindowsAlways keepWindowsPolicy = iota
+	keepWindowsNever
+	keepWindowsAsk
+)
+
+func (policy keepWindowsPolicy) String() string {
+	switch policy {
+	case keepWindowsNever:
+		return "never"
+	case keepWindowsAsk:
+		return "ask"
+	}
+	return "always"
+}
+
+func keepWindowsPolicyFromString(value string) keepWindowsPolicy {
+	switch value {
+	case keepWindowsNever.String():
+		return keepWindowsNever
+	case keepWindowsAsk.String():
+		return keepWindowsAsk
+	}
+	return keepWindowsAlways
+}
+
 type relaunchAction uint8
 
 const (
@@ -561,7 +591,9 @@ var (
 	settingsAppearanceChoices      = [...]appearanceMode{appearanceFollowSystem, appearancePinnedDark, appearancePinnedLight}
 	settingsToolbarPositionChoices = [...]terminalToolbarPosition{terminalToolbarLeft, terminalToolbarRight}
 	settingsTabOrientationChoices  = [...]tabOrientation{tabsHorizontal, tabsVertical}
+	settingsTabDoubleClickChoices  = [...]tabDoubleClickAction{tabDoubleClickRename, tabDoubleClickDuplicate, tabDoubleClickNone}
 	settingsCloseChoices           = [...]closeAction{closeToTray, closeQuits}
+	settingsKeepWindowsChoices     = [...]keepWindowsPolicy{keepWindowsAlways, keepWindowsNever, keepWindowsAsk}
 	settingsRelaunchChoices        = [...]relaunchAction{relaunchRaise, relaunchNewWindow}
 	settingsUpdateSourceChoices    = [...]update.Source{update.SourceOfficial, update.SourceCNB}
 )
@@ -608,11 +640,32 @@ func (state *State) settingsTabOrientationLabel(orientation tabOrientation) stri
 	return state.messages.SettingsTabsHorizontal
 }
 
+func (state *State) settingsTabDoubleClickLabel(action tabDoubleClickAction) string {
+	switch action {
+	case tabDoubleClickRename:
+		return state.messages.MenuRenameTab
+	case tabDoubleClickNone:
+		return state.messages.SettingsTabDoubleClickNone
+	}
+	return state.messages.MenuDuplicateTab
+}
+
 func (state *State) settingsCloseLabel(action closeAction) string {
 	if action == closeQuits {
 		return state.messages.Tools.GeneralCloseQuit
 	}
 	return state.messages.Tools.GeneralCloseTray
+}
+
+func (state *State) settingsKeepWindowsLabel(policy keepWindowsPolicy) string {
+	messages := state.messages.Tools
+	switch policy {
+	case keepWindowsNever:
+		return messages.GeneralKeepWindowsDiscard
+	case keepWindowsAsk:
+		return messages.GeneralKeepWindowsAsk
+	}
+	return messages.GeneralKeepWindowsKeep
 }
 
 func (state *State) settingsRelaunchLabel(action relaunchAction) string {

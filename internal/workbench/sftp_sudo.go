@@ -160,6 +160,14 @@ func (state *State) switchSudoSFTP(session *Session, view *sftpView, password st
 	// was under way continues from its partial once the new worker is usable.
 	view.worker.Interrupt()
 	view.worker.Close()
+	// Tree request IDs belong to the worker that just closed. Retire them
+	// before the replacement worker starts issuing fresh listings, and forget
+	// what the old worker read: elevation changes what this account may see, so
+	// children and their errors are no longer trustworthy.
+	if window := view.detached; window != nil {
+		window.clearDirectoryTreeRequests()
+		window.invalidateDirectoryTree(false)
+	}
 	state.refreshSFTPTransfers(view)
 	state.archiveTransfers(view)
 	// The new worker numbers its transfers from one again; the old source
@@ -184,6 +192,12 @@ func (state *State) switchSudoSFTP(session *Session, view *sftpView, password st
 	}
 	view.worker = sftpclient.NewWorker(view.openFiles, state.notifyForView(session, view))
 	state.configureSFTPWorker(view)
+	// The tree prefetch must run on the replacement worker: the unelevated
+	// worker is closed, and prefetching there would mark every expanded node
+	// unavailable instead of rereading it under the new privileges.
+	if window := view.detached; window != nil {
+		window.loadExpandedDirectoryTree(false)
+	}
 	for _, document := range state.fileWindows.documents {
 		if document.view == view && !document.local && !document.closed && document.worker != nil {
 			document.worker.Close()

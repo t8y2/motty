@@ -124,7 +124,13 @@ func TestHTTPMCPJobReportsProgressWhileTheCommandRuns(t *testing.T) {
 
 	var output strings.Builder
 	offset, sawRunning := 0, false
-	deadline := time.Now().Add(15 * time.Second)
+	// How fast the job runs is not what this test checks: a PowerShell starting
+	// cold on a CI runner takes many seconds before its first echo. It waits as
+	// long as the test itself may run, and says what it saw if that runs out.
+	deadline := time.Now().Add(5 * time.Minute)
+	if testDeadline, ok := t.Deadline(); ok {
+		deadline = testDeadline.Add(-30 * time.Second)
+	}
 	for {
 		status, failed := client.call("terminal_poll", map[string]any{"job_id": id, "offset": offset})
 		if failed {
@@ -144,7 +150,7 @@ func TestHTTPMCPJobReportsProgressWhileTheCommandRuns(t *testing.T) {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("job did not finish")
+			t.Fatalf("job did not finish: last status %v, output so far %q", status, output.String())
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

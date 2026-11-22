@@ -712,6 +712,7 @@ func (state *State) restoreSFTPSettings(saved savedState) {
 	state.updateAtStart = saved.UpdateCheck != "off"
 	state.update.source = update.ParseSource(saved.UpdateSource)
 	state.closeAction = closeActionFromString(saved.CloseAction)
+	state.keepWindows = keepWindowsPolicyFromString(saved.KeepWindowsOnExit)
 	state.relaunchAction = relaunchActionFromString(saved.RelaunchAction)
 	state.trayHintShown = saved.TrayHintShown
 	state.update.skipped = saved.UpdateSkipped

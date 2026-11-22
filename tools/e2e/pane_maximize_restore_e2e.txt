@@ -1,0 +1,25 @@
+# lang: zh-CN
+# 使用 pane_maximize_e2e.txt 产生的同一临时 HOME，验证新进程恢复和标签页隔离。
+# 新建标签页与分屏也点可点击控件，避免 macOS 与 Linux 不同的 Ctrl/Cmd 组合键；
+# Ctrl+Tab 在两个平台上相同，继续用来切换标签页。
+resize 1400 900
+settle 1500
+expect exists id:shell/pane-focus-tab/#1
+expect exists id:shell/pane-focus-tab/#3
+expect exists id:shell/pane-maximize-button/#3
+expect absent id:shell/pane-maximize-button/#1
+shot /tmp/motty-pane-restarted.png
+click id:shell/new-tab
+settle 500
+click "本地终端"
+settle 900
+click id:shell/pane-split-horizontal
+settle 600
+expect absent id:shell/pane-focus-tab/#1
+key Ctrl+Tab
+settle 400
+expect exists id:shell/pane-focus-tab/#3
+expect exists id:shell/pane-maximize-button/#3
+key Ctrl+Tab
+settle 400
+expect absent id:shell/pane-focus-tab/#1

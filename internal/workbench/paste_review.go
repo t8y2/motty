@@ -187,7 +187,10 @@ func (state *State) declarePasteReviewDialog(c ui.C) {
 		bodyHeight += float32(noteLines)*16 + 6
 	}
 	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, width, summary, bodyHeight)
-	initial := hitPasteReviewEditor
+	// Enter confirms a dialog: focus starts on the default action, not in the
+	// preview, where Enter would insert a line break. A click or Tab reaches the
+	// editable preview. A read-only preview of a huge paste starts on Cancel.
+	initial := hitPasteReviewWhole
 	if review.readOnly {
 		initial = hitPasteReviewCancel
 	}
@@ -290,7 +293,7 @@ func (state *State) confirmPasteLines() {
 		return
 	}
 	state.closeModal()
-	state.startPasteQueue(session, splitPasteLines(value))
+	state.startPasteQueue(session, splitPasteLines(value), true)
 }
 
 func (state *State) finishStalePasteReview() {

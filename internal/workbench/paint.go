@@ -121,6 +121,8 @@ const (
 	// The solid folders mark a group in the host trees, open or closed.
 	iconFolderSolid
 	iconFolderSolidOpen
+	iconPaneMaximize
+	iconPaneRestore
 )
 
 // terminalPage reports whether the window shows the panes of a workspace rather
@@ -153,6 +155,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	state.syncNoteWindows()
 	state.workspaceCardRegions = state.workspaceCardRegions[:0]
 	state.pixelScale = canvas.PixelScale()
+	state.titlebarLeading, state.titlebarTrailing = canvas.TitlebarInsets()
 	// Motty keeps one central click handler. The event pass of a click names its
 	// target here; the handler runs once this paint has returned, outside it,
 	// because it may open a native dialog or block. The repaint that follows
@@ -388,7 +391,7 @@ func (state *State) fileManagerPixelBounds(size gfx.Size) gfx.Rect {
 const tooltipGap = float32(10)
 
 // Window-bar metrics. The bar leaves what the platform keeps of the strip's two
-// ends (app.TitlebarInsets: macOS's traffic lights, or the buttons Viva draws on
+// ends (the canvas's TitlebarInsets: macOS's traffic lights, or the buttons Viva draws on
 // Windows and Linux) and starts barMargin inside what is left.
 const (
 	barButtonSize = float32(28) // the square hit area of a window-bar button
@@ -482,6 +485,14 @@ func (state *State) WindowConfig(base app.Config) app.Config {
 	// the page's generic scroll-area routing does not know. Everything else the
 	// event reaches goes on to the page as before.
 	config.OnScroll = state.scrollWindow
+	config.OnActivate = func() {
+		if base.OnActivate != nil {
+			base.OnActivate()
+		}
+		if w := state.activeSFTPWindow(); w != nil && state.modal == modalNone {
+			w.activate()
+		}
+	}
 	return config
 }
 
@@ -565,7 +576,7 @@ func (state *State) windowFrameColor() gfx.Color {
 // draws the window controls in the corner, their inset owns the space and the
 // bar keeps its own margin; the rail is left where it is.
 func (state *State) windowBarRightPad() float32 {
-	_, trailing := windowTitlebarInsets()
+	_, trailing := state.windowTitlebarInsets()
 	centred := state.terminalToolbarMetrics().railExtent/2 - barButtonSize/2
 	if centred <= trailing {
 		return trailing + barMargin
@@ -684,7 +695,7 @@ func (state *State) declareShell(c ui.C) {
 // to share the room left of the buttons.
 func (state *State) windowBarGeometry(canvas *gfx.Canvas, width float32) barGeometry {
 	chrome := &state.chrome
-	leading, trailing := windowTitlebarInsets()
+	leading, trailing := state.windowTitlebarInsets()
 	padRight := state.windowBarRightPad()
 	buttons := state.windowBarButtons()
 	tabCount := len(state.workspaceTabs) + state.fileTabCount()
@@ -738,7 +749,7 @@ func (state *State) declareProbeBar(c ui.C) {
 // window. With probe set only the places are declared, for windowBarGeometry.
 func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool, geometry barGeometry, scroll float32) {
 	m, pal, chrome := state.messages, state.pal, &state.chrome
-	leading, _ := windowTitlebarInsets()
+	leading, _ := state.windowTitlebarInsets()
 	visibleFileTabs := 0
 	for _, tab := range state.sftpTabs {
 		if tab != nil && !tab.closed {
@@ -2607,12 +2618,13 @@ func (state *State) paintHostCatalogIcon(canvas *gfx.Canvas, host Host, bounds g
 		return
 	}
 	if host.Icon == hostIconAuto {
-		if host.isDesktop() && host.System == sshconn.SystemUnknown {
+		system := autoIconSystem(host.System, host.Protocol)
+		if host.isDesktop() && system == sshconn.SystemUnknown {
 			canvas.Rounded(bounds, bounds.Width*0.24, state.hostBadgeFill(background))
 			paintIcon(canvas, iconDesktop, insetRect(bounds, 0.24), state.pal.accent)
 			return
 		}
-		paintSystemBadge(canvas, host.System, bounds, state.pal)
+		paintSystemBadge(canvas, system, bounds, state.pal)
 		return
 	}
 	if system, ok := host.Icon.system(); ok {
@@ -2710,6 +2722,8 @@ var lucideIcons = [...]gfx.Icon{
 	iconChevronRight:     icons.ChevronRight,
 	iconChevronLeft:      icons.ChevronLeft,
 	iconChevronDown:      icons.ChevronDown,
+	iconPaneMaximize:     remoteLogExpandIcon,
+	iconPaneRestore:      remoteLogRestoreIcon,
 	iconChevronsExpand:   icons.ChevronsUpDown,
 	iconChevronsCollapse: icons.ChevronsDownUp,
 	iconSliders:          icons.SlidersHorizontal,
@@ -2882,6 +2896,8 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declarePasswordDialog(c)
 	case modalCloseTabs:
 		state.declareCloseTabsDialog(c)
+	case modalQuitKeepWindows:
+		state.declareQuitKeepWindowsDialog(c)
 	case modalRemoteTools:
 		state.declareRemoteToolsModal(c)
 	case modalSudoSFTP:
@@ -3518,13 +3534,13 @@ func (state *State) hostIconLabel(icon hostIcon) string {
 
 // hostIconArt is what an icon looks like in the list: a system's badge, or a line
 // icon. The automatic icon is the badge of the system the host was detected to
-// run, until there is one.
-func (state *State) hostIconArt(icon hostIcon, detected sshconn.RemoteSystem, desktop bool) gfx.Icon {
+// run or, for RDP, the one its protocol implies, until there is one.
+func (state *State) hostIconArt(icon hostIcon, system sshconn.RemoteSystem, protocol hostProtocol) gfx.Icon {
 	if icon == hostIconAuto {
-		if art, ok := systemBadgeIcon(detected, state.pal.dark); ok {
+		if art, ok := systemBadgeIcon(autoIconSystem(system, protocol), state.pal.dark); ok {
 			return art
 		}
-		if desktop {
+		if protocol.isDesktop() {
 			return icons.Monitor
 		}
 		return icons.Server
@@ -3600,25 +3616,30 @@ func (state *State) declareHostKeyDialog(c ui.C) {
 }
 
 // declareHostKeyBody lays out the address, type and fingerprint of the key.
+// hostKeyRow is one labelled line of the host-key dialog's body.
+type hostKeyRow struct{ label, value string }
+
 func (state *State) declareHostKeyBody(c ui.C) {
 	session := state.promptSession()
 	if session == nil {
 		return
 	}
 	m, pal := state.messages, state.pal
-	type keyRow struct{ label, value string }
-	rows := []keyRow{
-		{m.FieldAddress, session.hostKey.Address},
-		{m.HostKeyType, session.hostKey.Type},
-		{m.HostKeyFingerprint, session.hostKey.Fingerprint},
-	}
+	// The rows reuse a slice on the state so a steady paint does not allocate
+	// the list of three lines (and the saved fingerprints) every frame.
+	rows := append(state.hostKeyRows[:0],
+		hostKeyRow{m.FieldAddress, session.hostKey.Address},
+		hostKeyRow{m.HostKeyType, session.hostKey.Type},
+		hostKeyRow{m.HostKeyFingerprint, session.hostKey.Fingerprint},
+	)
 	labelWidth := float32(90)
 	if session.hostKey.Changed {
 		labelWidth = 110
 		for _, fingerprint := range session.hostKey.Known {
-			rows = append(rows, keyRow{m.HostKeySavedFingerprint, fingerprint})
+			rows = append(rows, hostKeyRow{m.HostKeySavedFingerprint, fingerprint})
 		}
 	}
+	state.hostKeyRows = rows
 	ui.Column(c).Fill().Gap(8).Children(func() {
 		for _, row := range rows {
 			ui.Row(c).Height(22).Gap(6).Children(func() {

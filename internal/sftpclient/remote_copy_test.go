@@ -277,6 +277,40 @@ func TestRemoteCopyRequiresSFTPOnBothServers(t *testing.T) {
 	}
 }
 
+// A link inside a folder is copied between servers as a link, and nothing is
+// read through it.
+func TestRemoteCopyKeepsSymbolicLinksInsideAFolder(t *testing.T) {
+	sourceRoot := t.TempDir()
+	links := makeAppTree(t, filepath.Join(sourceRoot, "App.app"))
+	recorder := &linkRecorder{sent: map[string]string{}}
+	worker, destinationRoot := newProtocolWorkerOn(t, nil, func(client remote) Remote {
+		recorder.remote = client
+		return recorder
+	})
+	_, queued := worker.QueueRemoteCopy(RemoteCopyRequest{
+		Source: remoteSourceFor(sourceRoot), SourceRoot: "App.app",
+		Sources:     []string{"App.app"},
+		Destination: ".",
+		Recursive:   true,
+		Policy:      ExistingFail,
+	})
+	if !queued {
+		t.Fatal("remote copy was not queued")
+	}
+	result := waitTransferResult(t, worker)
+	if result.Err != nil || result.Files != 1 || result.Bytes != int64(len("binary")) {
+		t.Fatalf("remote copy result = %+v", result)
+	}
+	for link, target := range links {
+		if sent := recorder.sent["App.app/"+link]; sent != target {
+			t.Fatalf("%s was sent as %q, want %q", link, sent, target)
+		}
+		if info, err := os.Lstat(filepath.Join(destinationRoot, "App.app", filepath.FromSlash(link))); err != nil || info.Mode()&os.ModeSymlink == 0 {
+			t.Fatalf("%s is not a link at the destination: %v, %v", link, info, err)
+		}
+	}
+}
+
 func TestRemoteCopyRejectsSymbolicLinkSources(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symbolic links need a privilege the Windows test account may not have")

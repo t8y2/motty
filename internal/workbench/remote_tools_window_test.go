@@ -475,6 +475,14 @@ func TestRemoteNativeWindowResizesWithReachableActionsAndVirtualScroll(t *testin
 						t.Fatalf("language %v viewport %+v: control %q is unreachable: %+v", language, size, control.label, hit)
 					}
 				}
+				// The refresh controls share the tabs' line where the content is
+				// wide enough for both, and go under the tabs where it is not.
+				tabs, tabsOK := hitByLabelAny(&canvas, w.ui.remoteTabLabel(remoteProcesses))
+				refresh, _ := hitByLabelRole(&canvas, state.messages.Tools.RemoteRefresh, gfx.RoleButton)
+				inline := refresh.Bounds.Y < tabs.Bounds.Y+tabs.Bounds.Height
+				if wantInline := size.Width-2*remoteToolsContentPad >= remoteToolsInlineToolbarWidth; !tabsOK || inline != wantInline {
+					t.Fatalf("language %v viewport %+v: refresh at %+v beside the tabs at %+v = %v, want %v", language, size, refresh.Bounds, tabs.Bounds, inline, wantInline)
+				}
 				if _, ok := hitByLabelRoleLast(&canvas, state.messages.KnownHostsNext, gfx.RoleButton); ok {
 					t.Fatal("process list still paints pagination controls")
 				}

@@ -689,10 +689,24 @@ func (w *sftpWindow) refresh(local bool) {
 		return
 	}
 	if local {
-		w.owner.listLocal(w.view, w.view.lfolder.path)
+		w.owner.refreshLocalDirectory(w.view)
 	} else if !w.view.busy && w.connected() {
 		w.view.forgetListings()
 		w.owner.listSFTP(w.view, w.view.path)
+	}
+}
+
+// Only deliberate returns to the manager refresh it; wakes and paints do not
+// poll. Leave interactions and in-flight navigation in charge of their rows.
+func (w *sftpWindow) activate() {
+	if w.closed || !w.connected() || w.listBlocked() || w.navigationBusy() || w.drag.armed || w.drag.active || w.foreign.active ||
+		w.view.localBusy || w.view.editPath != "" || w.view.pathEditing || w.view.lfolder.pathEditing || w.ui.profileQuickOpen {
+		return
+	}
+	w.refresh(true)
+	if w.connected() && w.view.path != "" {
+		w.view.forgetListings()
+		w.owner.refreshSFTPDirectory(w.view, w.view.path)
 	}
 }
 

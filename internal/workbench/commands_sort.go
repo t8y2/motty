@@ -1,16 +1,20 @@
 package workbench
 
-// commandsSort is how the command sidebar orders its chips. It is a display
-// preference, saved with the drawer so the order survives a restart.
+// commandsSort is how the command bar orders its groups and the chips in them.
+// Ungrouped commands always close the list. It is a display preference, saved
+// with the drawer so the order survives a restart.
 type commandsSort uint8
 
 const (
-	// commandsSortCreated keeps the snippet list order: the order commands were
-	// added, which is the order the Snippets page lists them in.
+	// commandsSortCreated keeps the snippet list order: groups appear where their
+	// first command sits and commands keep the order the Snippets page lists them
+	// in.
 	commandsSortCreated commandsSort = iota
-	// commandsSortName orders by name, case-insensitively.
+	// commandsSortName orders groups and the commands in them by name,
+	// case-insensitively.
 	commandsSortName
-	// commandsSortGroup orders by group name (ungrouped first), then by name.
+	// commandsSortGroup orders the groups by name and leaves the commands in each
+	// in the list order.
 	commandsSortGroup
 )
 

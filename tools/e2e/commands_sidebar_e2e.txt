@@ -19,6 +19,7 @@ key enter
 waitfor "tester@e2e" 8000
 click id:snippets/terminal-snippets
 click id:commands/bar-toggle
+click "侧边"
 key escape
 click id:commands/tag/#0
 expect text "sidebar-1033" within 4000

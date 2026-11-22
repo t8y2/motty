@@ -152,6 +152,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsGeneral, m.SettingsAppearance, "")
 	rowSearch(settingsGeneral, m.SettingsIconColor, m.SettingsIconColorDescription, "logo icon taskbar dock tray")
 	row(settingsGeneral, m.SettingsTabOrientation, m.SettingsTabOrientationDescription)
+	row(settingsGeneral, m.SettingsTabDoubleClick, m.SettingsTabDoubleClickDescription)
 	row(settingsGeneral, m.SettingsTabNumbers, m.SettingsTabNumbersDescription)
 	row(settingsGeneral, m.SettingsTabNumberKeys, m.SettingsTabNumberKeysDescription)
 	row(settingsGeneral, m.SettingsOutputAlerts, m.SettingsOutputAlertsDescription)
@@ -169,6 +170,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	if state.closeActionVisible() {
 		row(settingsGeneral, tools.GeneralClose, tools.GeneralCloseDescription)
 	}
+	row(settingsGeneral, tools.GeneralKeepWindows, tools.GeneralKeepWindowsDescription)
 	if state.options.NewWindow != nil {
 		row(settingsGeneral, tools.GeneralRelaunch, tools.GeneralRelaunchDescription)
 	}
@@ -198,6 +200,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsTerminal, tools.PasteImageRow, tools.PasteImageDescription)
 	row(settingsTerminal, tools.PasteConfirmRow, tools.PasteConfirmDescription)
 	row(settingsTerminal, tools.CloseConfirmRow, tools.CloseConfirmDescription)
+	row(settingsTerminal, tools.CloseWindowConfirmRow, tools.CloseWindowConfirmDescription)
 	row(settingsTerminal, tools.PasswordHintRow, tools.PasswordHintDescription)
 	row(settingsTerminal, tools.NotifyRow, tools.NotifyDescription)
 	group(settingsTerminal, m.FindSettings.Title, m.FindSettings.Title, "")

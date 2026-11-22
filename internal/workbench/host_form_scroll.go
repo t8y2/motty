@@ -97,6 +97,8 @@ type hostFormScroll struct {
 	vncBody  hostVNCRowsBody
 	algoBody hostAlgoRowsBody
 	idleBody hostIdleKeepAliveRowsBody
+	// qualityBody is the quality section of a desktop host.
+	qualityBody hostQualityBody
 	// idleLayout and idleInputLayout are the probe values this frame's rows were
 	// laid out for, before a click writes the values the next frame shows.
 	idleLayout      idleKeepAlivePreset
@@ -237,7 +239,7 @@ func (state *State) scrollHostForm(event gfx.ScrollEvent) gfx.EventResult {
 // its list open: the open list owns the wheel wherever the pointer is.
 func (state *State) hostFormPageListOpen() bool {
 	f := &state.editor.form
-	for _, box := range [...]ui.Box{f.iconBox, f.authBox, f.portsBox, f.idleIntervalBox, f.idleUnitBox, f.idleInputBox} {
+	for _, box := range [...]ui.Box{f.iconBox, f.authBox, f.portsBox, f.idleIntervalBox, f.idleUnitBox, f.idleInputBox, f.qualityBody.depthBox, f.qualityBody.encodingBox} {
 		if !box.Valid() {
 			continue
 		}

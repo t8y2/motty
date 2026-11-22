@@ -289,14 +289,14 @@ func (state *State) navigateSFTPFolder(view *sftpView, local bool, directory str
 		return
 	}
 	if local {
-		_ = state.listLocalNavigation(view, directory, kind, index)
+		_ = state.listLocalNavigation(view, directory, kind, index, false)
 	} else {
 		state.navigateSFTPDirectoryNavigation(view, directory, kind, index)
 	}
 }
 
 func (state *State) navigateLocalDirectory(view *sftpView, directory string) error {
-	return state.listLocalNavigation(view, directory, sftpNavigationManual, 0)
+	return state.listLocalNavigation(view, directory, sftpNavigationManual, 0, false)
 }
 
 func (state *State) cancelSFTPNavigation(view *sftpView) {

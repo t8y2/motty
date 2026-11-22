@@ -559,6 +559,7 @@ func TestBroadcastStaysInItsTabAndNeverCarriesProtocolReplies(t *testing.T) {
 
 	// Another tab, on a connection of its own.
 	state.shareConnections = shareConnectionsOff
+	state.startupReuse = false // the other tab must dial its own connection
 	openEmptyTab(state)
 	state.Click(hitHosts)
 	openHost(state)

@@ -64,6 +64,9 @@ const (
 	remoteMaxRows            = 200
 	remoteTimeout            = 20 * time.Second
 	remoteToolbarHeight      = float32(34)
+	// remoteToolsInlineToolbarWidth is how wide the tools' content must be for
+	// the tabs and the refresh controls to share one line.
+	remoteToolsInlineToolbarWidth = 800
 )
 
 // clickRemoteToolsOpen opens the dialog for the active session.
@@ -212,6 +215,11 @@ type remoteToolsView struct {
 	tableRowHeight   float32
 	tableScroll      *ui.ScrollState
 	resetScroll      bool
+	// columnWidths points at the workbench's chosen widths for each tab. The
+	// dialog and every content window share them, so closing and reopening a
+	// surface keeps the sizes for the session.
+	columnWidths *[6]remoteTableColumnWidths
+	columnResize remoteTableColumnResize
 	// menuRow and rowMenuAt are the row a secondary press opened the context
 	// menu for; rowMenuOpen is the menu's own dismissal state.
 	menuRow     int

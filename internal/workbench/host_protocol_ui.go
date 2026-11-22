@@ -23,6 +23,13 @@ var (
 	hitDialogStandardSecurityHelp = tree.ID(hostProtocolUiHits, "dialog-standard-security-help")
 	hitDialogLegacyTLS            = tree.ID(hostProtocolUiHits, "dialog-legacy-tls")
 	hitDialogLegacyTLSHelp        = tree.ID(hostProtocolUiHits, "dialog-legacy-tls-help")
+	hitDialogEffectWallpaper      = tree.ID(hostProtocolUiHits, "dialog-effect-wallpaper")
+	hitDialogEffectFontSmoothing  = tree.ID(hostProtocolUiHits, "dialog-effect-font-smoothing")
+	hitDialogEffectComposition    = tree.ID(hostProtocolUiHits, "dialog-effect-composition")
+	hitDialogEffectWindowDrag     = tree.ID(hostProtocolUiHits, "dialog-effect-window-drag")
+	hitDialogEffectAnimations     = tree.ID(hostProtocolUiHits, "dialog-effect-animations")
+	hitDialogEffectThemes         = tree.ID(hostProtocolUiHits, "dialog-effect-themes")
+	hitDialogEffectCursorShadow   = tree.ID(hostProtocolUiHits, "dialog-effect-cursor-shadow")
 	hitDialogChromeless           = tree.ID(hostProtocolUiHits, "dialog-chromeless")
 	hitDialogPortsTrigger         = tree.ID(hostProtocolUiHits, "dialog-ports-trigger")
 	hitDialogAlgorithms           = tree.ID(hostProtocolUiHits, "dialog-algorithms")
@@ -460,6 +467,8 @@ func (state *State) clickHostProtocol(id gfx.ID) bool {
 		editor.standardSecurity = !editor.standardSecurity
 	case id == hitDialogLegacyTLS:
 		editor.legacyTLS = !editor.legacyTLS
+	case state.clickDesktopQuality(id):
+		// An RDP effect switch flipped its own setting.
 	case id == hitDialogAdvanced:
 		editor.advancedOpen = !editor.advancedOpen
 	case id == hitDialogForwardX11:
@@ -805,9 +814,9 @@ const rdpRowsHeight = vncRowsHeight + 4*(12+20)
 // desktopRowsHeight is the room paintVNCRows takes for the protocol on screen.
 func (state *State) desktopRowsHeight() float32 {
 	if state.editor.protocol == protocolRDP {
-		return rdpRowsHeight
+		return rdpRowsHeight + desktopQualityRowsHeight(protocolRDP)
 	}
-	return vncRowsHeight
+	return vncRowsHeight + desktopQualityRowsHeight(protocolVNC)
 }
 
 // paintVNCRows paints the switches of a VNC or RDP host in the slots the host
@@ -858,5 +867,7 @@ func (state *State) declareHostVNCRows(c ui.C) {
 			_, b.legacyTLSHelp = state.declareDialogCheckHelp(c, hitDialogLegacyTLS, m.LegacyTLS, editor.legacyTLS, 12, 0)
 			_, b.standardSecurityHelp = state.declareDialogCheckHelp(c, hitDialogStandardSecurity, m.StandardSecurity, editor.standardSecurity, 12, 0)
 		}
+		ui.Slot(c).Height(16)
+		state.declareDesktopQualityRows(c)
 	})
 }

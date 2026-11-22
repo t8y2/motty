@@ -194,8 +194,13 @@ type Result struct {
 	Owner, Group string
 	Bytes        int64
 	Files        int
-	Resumed      int64
-	Document     TextDocument
+	// Removed and Failures describe a removal: how many entries left the
+	// server, and how many a forced removal could not delete. A forced
+	// removal keeps going after a failure, so both can be non-zero.
+	Removed  int
+	Failures int
+	Resumed  int64
+	Document TextDocument
 	// Approximate marks a listing read from `ls` output because the server has
 	// no SFTP: names are exact, times and link details may not be.
 	Approximate bool
@@ -243,14 +248,18 @@ type RemoteCopyRequest struct {
 }
 
 type request struct {
-	sources     []string
-	listID      uint64
-	data        []byte
-	id          uint64
-	background  bool // a listing nobody is waiting on: its Result says so
-	namesOnly   bool // a listing for path completion: names and the directory bit
-	operation   Operation
-	remote      string
+	sources    []string
+	listID     uint64
+	data       []byte
+	id         uint64
+	background bool // a listing nobody is waiting on: its Result says so
+	namesOnly  bool // a listing for path completion: names and the directory bit
+	operation  Operation
+	remote     string
+	// force makes a removal keep going after an entry fails and treat an
+	// entry that was already gone as removed. It is the panel's forced
+	// delete, not a permission bypass: the server still decides every unlink.
+	force       bool
 	local       string
 	destination string
 	mode        os.FileMode
@@ -546,8 +555,21 @@ func (worker *Worker) RemoveFile(remotePath string) bool {
 	return worker.enqueue(request{operation: OperationRemoveFile, remote: remotePath})
 }
 
+// RemoveFileForce removes one file with the semantics of rm -f: a file that is
+// already gone is not an error. Other failures are still reported.
+func (worker *Worker) RemoveFileForce(remotePath string) bool {
+	return worker.enqueue(request{operation: OperationRemoveFile, remote: remotePath, force: true})
+}
+
 func (worker *Worker) RemoveDirectory(remotePath string) bool {
 	return worker.enqueue(request{operation: OperationRemoveDirectory, remote: remotePath})
+}
+
+// RemoveDirectoryForce removes a folder with the semantics of rm -rf: the walk
+// keeps going after an entry fails, and entries that are already gone are not
+// errors. The result says how many entries were removed and how many failed.
+func (worker *Worker) RemoveDirectoryForce(remotePath string) bool {
+	return worker.enqueue(request{operation: OperationRemoveDirectory, remote: remotePath, force: true})
 }
 
 // Symlink creates a symbolic link at linkPath that points at target.
@@ -1323,9 +1345,24 @@ func (worker *Worker) execute(next request) Result {
 		}
 		result.Err = errors.Join(failures...)
 	case OperationRemoveFile:
-		result.Err = removeFile(client, next.remote)
+		removed, err := removeFile(client, next.remote, next.force)
+		if removed {
+			result.Removed = 1
+		}
+		if err != nil {
+			result.Failures = 1
+		}
+		result.Err = err
 	case OperationRemoveDirectory:
-		result.Err = worker.removeDirectory(client, next.remote, generation)
+		removed, err := worker.removeDirectory(client, next.remote, next.force, generation)
+		result.Removed = removed
+		var partial *PartialRemoveError
+		if errors.As(err, &partial) {
+			result.Failures = partial.Failed
+		} else if err != nil {
+			result.Failures = 1
+		}
+		result.Err = err
 	case OperationChmod:
 		result.Err = chmod(client, next.remote, next.mode)
 	case OperationChown:
@@ -1618,6 +1655,12 @@ func (worker *Worker) upload(client Remote, next request, generation uint64) (fi
 			}
 			continue
 		}
+		if item.link != "" {
+			if err := putRemoteLink(advanced, remotePath, item.link, next.policy); err != nil {
+				return 0, 0, 0, err
+			}
+			continue
+		}
 		filesPlan = append(filesPlan, plannedUpload{local: item.local, remote: remotePath, info: item.info})
 	}
 	if len(filesPlan) == 0 {
@@ -1771,12 +1814,14 @@ func (worker *Worker) legacyUpload(client Remote, localPath, remotePath string, 
 
 // localPlanItem is one entry a local directory upload will move, with the
 // local path and the slash-separated path it takes below the transfer root. A
-// directory's plan is in walk order, so a parent precedes its children.
+// directory's plan is in walk order, so a parent precedes its children. A
+// symbolic link inside the directory carries its target text in link.
 type localPlanItem struct {
 	local     string
 	relative  string
 	info      os.FileInfo
 	directory bool
+	link      string
 }
 
 // planLocal validates a local source and lists what an upload moves. A single
@@ -1823,7 +1868,13 @@ func planLocal(localPath string, recursive bool) (os.FileInfo, []localPlanItem, 
 			return infoErr
 		}
 		if entryInfo.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("%w: %s", ErrSymbolicLink, current)
+			// WalkDir does not follow it; the link travels as the text it holds.
+			target, linkErr := os.Readlink(current)
+			if linkErr != nil {
+				return linkErr
+			}
+			plan = append(plan, localPlanItem{local: current, relative: relative, info: entryInfo, link: target})
+			return nil
 		}
 		if !entryInfo.IsDir() && !entryInfo.Mode().IsRegular() {
 			return fmt.Errorf("sftp: unsupported local file type: %s", current)
@@ -1849,11 +1900,11 @@ func scanLocal(localPath string, recursive bool) (os.FileInfo, int, int64, error
 	return info, files, bytes, nil
 }
 
-// planTotals counts the files and bytes a plan moves. Directories take no
-// bytes of their own.
+// planTotals counts the files and bytes a plan moves. Directories and links
+// take no bytes of their own.
 func planTotals(plan []localPlanItem) (files int, bytes int64) {
 	for _, item := range plan {
-		if !item.directory {
+		if !item.directory && item.link == "" {
 			files++
 			bytes += item.info.Size()
 		}
@@ -2103,7 +2154,7 @@ func (worker *Worker) remoteCopy(destination Remote, next request, generation ui
 			return 0, 0, 0, fmt.Errorf("sftp: transfer exceeds %d items", maxTransferItems)
 		}
 		for _, item := range items {
-			if !item.directory {
+			if !item.directory && item.link == "" {
 				totalFiles++
 			}
 		}
@@ -2137,6 +2188,12 @@ func (worker *Worker) remoteCopy(destination Remote, next request, generation ui
 					if err := ensureRemoteDirectory(client, targetPath); err != nil {
 						return files, bytes, resumed, err
 					}
+				}
+				continue
+			}
+			if item.link != "" {
+				if err := putRemoteLink(client, targetPath, item.link, next.policy); err != nil {
+					return files, bytes, resumed, err
 				}
 				continue
 			}
@@ -2262,7 +2319,7 @@ func (worker *Worker) download(client Remote, next request, generation uint64) (
 	}
 	totalFiles := 0
 	for index := range plan {
-		if !plan[index].directory {
+		if !plan[index].directory && plan[index].link == "" {
 			totalFiles++
 		}
 	}
@@ -2290,6 +2347,12 @@ func (worker *Worker) download(client Remote, next request, generation uint64) (
 			}
 			continue
 		}
+		if item.link != "" {
+			if err := putLocalLink(localPath, item.link, next.policy); err != nil {
+				return files, bytes, resumed, err
+			}
+			continue
+		}
 		written, continued, err := worker.downloadFile(advanced, item.remote, localPath, item.mode, item.modTime, item.size, next.policy, generation, next.id, files, bytes)
 		bytes += written
 		resumed += continued
@@ -2309,6 +2372,9 @@ type remotePlanItem struct {
 	modTime   time.Time
 	size      int64
 	directory bool
+	// link is the target text of a symbolic link inside the folder; the link
+	// is recreated at the other end and never followed.
+	link string
 }
 
 func scanRemote(client transferRemote, remotePath string, recursive bool) ([]remotePlanItem, int64, error) {
@@ -2349,7 +2415,23 @@ func scanRemote(client transferRemote, remotePath string, recursive bool) ([]rem
 				return fmt.Errorf("%w: %q", ErrPathTraversal, name)
 			}
 			if child.Mode()&os.ModeSymlink != 0 {
-				return fmt.Errorf("%w: %s", ErrSymbolicLink, path.Join(current, name))
+				links, ok := client.(remoteLinkStore)
+				if !ok {
+					return fmt.Errorf("%w: %s", ErrSymbolicLink, path.Join(current, name))
+				}
+				childRemote, err := joinRemoteWithin(root, path.Join(relative, name))
+				if err != nil {
+					return err
+				}
+				target, err := links.ReadLink(childRemote)
+				if err != nil {
+					return err
+				}
+				plan = append(plan, remotePlanItem{remote: childRemote, relative: path.Join(relative, name), mode: child.Mode(), modTime: child.ModTime(), link: target})
+				if len(plan) > maxTransferItems {
+					return fmt.Errorf("sftp: directory exceeds %d transfer items", maxTransferItems)
+				}
+				continue
 			}
 			childRemote, err := joinRemoteWithin(root, path.Join(relative, name))
 			if err != nil {
@@ -3396,15 +3478,51 @@ func rename(client Remote, oldPath, newPath string) error {
 	return renamer.Rename(oldPath, newPath)
 }
 
-func removeFile(client Remote, remotePath string) error {
+// PartialRemoveError says a forced removal deleted what it could, but could not
+// delete every entry. Failed counts entries, not only the top-level paths the
+// caller selected.
+type PartialRemoveError struct {
+	Failed int
+	First  error
+}
+
+func (err *PartialRemoveError) Error() string {
+	if err.First == nil {
+		return fmt.Sprintf("sftp: %d items could not be removed", err.Failed)
+	}
+	return fmt.Sprintf("sftp: %d items could not be removed: %v", err.Failed, err.First)
+}
+
+func (err *PartialRemoveError) Unwrap() error { return err.First }
+
+// errRemoveLimit stops a tree walk that is larger than the worker will delete.
+// Even a forced removal must not keep walking an unbounded tree or a loop.
+var errRemoveLimit = errors.New("sftp: removal tree is too large")
+
+// IsFatalRemoveError reports whether a removal error must stop a forced queue:
+// cancellation, a path that escaped the selected tree, or the work limit.
+func IsFatalRemoveError(err error) bool {
+	return errors.Is(err, ErrCanceled) || errors.Is(err, ErrPathTraversal) || errors.Is(err, errRemoveLimit)
+}
+
+func removeFile(client Remote, remotePath string, force bool) (bool, error) {
 	if remotePath == "" {
-		return fmt.Errorf("sftp: remove file requires a remote path")
+		return false, fmt.Errorf("sftp: remove file requires a remote path")
 	}
 	remover, ok := client.(remoteFileRemover)
 	if !ok {
-		return fmt.Errorf("sftp: remove file is not supported by the remote")
+		return false, fmt.Errorf("sftp: remove file is not supported by the remote")
 	}
-	return remover.Remove(remotePath)
+	err := remover.Remove(remotePath)
+	if err == nil {
+		return true, nil
+	}
+	// rm -f treats a path that is already gone as removed. The row still has
+	// to leave the listing, and the caller has nothing left to retry.
+	if force && IsPathNotFound(err) {
+		return true, nil
+	}
+	return false, err
 }
 
 // maxRemoveDepth bounds the tree a directory removal walks. A server that
@@ -3416,9 +3534,12 @@ const maxRemoveDepth = 96
 // plain rmdir and refuses a folder that is not empty, so the tree is walked here:
 // each folder on the way down is listed, its files are removed, its folders are
 // emptied the same way, and the folder itself goes last.
-func (worker *Worker) removeDirectory(client Remote, remotePath string, generation uint64) error {
+//
+// A normal removal stops at the first failure. A forced one keeps going and
+// returns a PartialRemoveError that says how many entries were left behind.
+func (worker *Worker) removeDirectory(client Remote, remotePath string, force bool, generation uint64) (int, error) {
 	if remotePath == "" {
-		return fmt.Errorf("sftp: remove directory requires a remote path")
+		return 0, fmt.Errorf("sftp: remove directory requires a remote path")
 	}
 	// What was asked for may be a link to a folder: a listing of it would be the
 	// listing of the folder it points at, and emptying that is not what the user
@@ -3426,43 +3547,64 @@ func (worker *Worker) removeDirectory(client Remote, remotePath string, generati
 	// or fails to say, does not get the benefit of the doubt: nothing is walked.
 	linker, ok := client.(remoteLinker)
 	if !ok {
-		return fmt.Errorf("sftp: remove directory is not supported by the remote")
+		return 0, fmt.Errorf("sftp: remove directory is not supported by the remote")
 	}
 	info, err := linker.Lstat(remotePath)
 	if err != nil {
-		return err
+		if force && IsPathNotFound(err) {
+			return 1, nil
+		}
+		return 0, err
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
-		return removeFile(client, remotePath)
+		removed, err := removeFile(client, remotePath, force)
+		if removed {
+			return 1, err
+		}
+		return 0, err
 	}
 	remover, ok := client.(remoteDirectoryRemover)
 	if !ok {
-		return fmt.Errorf("sftp: remove directory is not supported by the remote")
+		return 0, fmt.Errorf("sftp: remove directory is not supported by the remote")
 	}
 	items := 0
-	return worker.removeTree(client, remotePath, remover, generation, 0, &items)
+	removed, failed, firstErr := worker.removeTree(client, remotePath, remover, generation, force, 0, &items)
+	if firstErr != nil && IsFatalRemoveError(firstErr) {
+		return removed, firstErr
+	}
+	if failed > 0 && force {
+		return removed, &PartialRemoveError{Failed: failed, First: firstErr}
+	}
+	if firstErr != nil {
+		return removed, firstErr
+	}
+	return removed, nil
 }
 
 // removeTree empties one folder and then removes it. items counts everything
-// removed so far across the whole walk.
-func (worker *Worker) removeTree(client Remote, remotePath string, remover remoteDirectoryRemover, generation uint64, depth int, items *int) error {
+// attempted across the whole walk, so the work stays bounded even if entries
+// keep failing. removed and failed count entries that left the server and
+// entries that could not; a normal removal returns at the first failure.
+func (worker *Worker) removeTree(client Remote, remotePath string, remover remoteDirectoryRemover, generation uint64, force bool, depth int, items *int) (removed int, failed int, firstErr error) {
 	if depth > maxRemoveDepth {
-		return fmt.Errorf("sftp: %s is nested deeper than %d folders", remotePath, maxRemoveDepth)
+		return 0, 0, fmt.Errorf("%w: %s is nested deeper than %d folders", errRemoveLimit, remotePath, maxRemoveDepth)
 	}
 	infos, err := client.ReadDir(remotePath)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			// It vanished under us: there is nothing left to remove.
-			return nil
+		if IsPathNotFound(err) {
+			// It vanished under us: there is nothing left to remove, and the
+			// already-gone folder is one entry the removal does not have to
+			// retry.
+			return 1, 0, nil
 		}
 		// The folder cannot be read, so what is in it is unknown. Report why it
 		// could not be listed, not the server's "not empty" to removing it
 		// anyway, and lead with the cause so a status line that cuts the long
 		// path still shows it. An empty folder that merely cannot be listed goes.
 		if removeErr := remover.RemoveDirectory(remotePath); removeErr != nil {
-			return fmt.Errorf("sftp: %w, cannot list %s", err, remotePath)
+			return 0, 1, fmt.Errorf("sftp: %w, cannot list %s", err, remotePath)
 		}
-		return nil
+		return 1, 0, nil
 	}
 	for _, info := range infos {
 		if info == nil {
@@ -3471,31 +3613,63 @@ func (worker *Worker) removeTree(client Remote, remotePath string, remover remot
 		// A tree of any size is started and stopped by the user, so the walk
 		// asks between entries rather than finishing a folder it no longer wants.
 		if worker.canceled(generation) {
-			return ErrCanceled
+			return removed, failed, ErrCanceled
 		}
 		name := info.Name()
 		if !safeRemoteName(name) {
-			return fmt.Errorf("%w: %q", ErrPathTraversal, name)
+			return removed, failed, fmt.Errorf("%w: %q", ErrPathTraversal, name)
 		}
 		*items++
 		if *items > maxTransferItems {
-			return fmt.Errorf("sftp: %s holds more than %d items", remotePath, maxTransferItems)
+			return removed, failed, fmt.Errorf("%w: %s holds more than %d items", errRemoveLimit, remotePath, maxTransferItems)
 		}
 		child := path.Join(remotePath, name)
 		// A link is removed as a link, never followed: its target is elsewhere.
 		if info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
-			err = worker.removeTree(client, child, remover, generation, depth+1, items)
+			childRemoved, childFailed, err := worker.removeTree(client, child, remover, generation, force, depth+1, items)
+			removed += childRemoved
+			failed += childFailed
+			if err != nil {
+				fatal := IsFatalRemoveError(err)
+				if firstErr == nil {
+					firstErr = err
+				}
+				if !force || fatal {
+					return removed, failed, err
+				}
+			}
+			continue
+		}
+		childRemoved, err := removeFile(client, child, force)
+		if childRemoved {
+			removed++
 		} else {
-			err = removeFile(client, child)
+			failed++
 		}
 		if err != nil {
-			return err
+			if firstErr == nil {
+				firstErr = err
+			}
+			if !force {
+				return removed, failed, err
+			}
 		}
 	}
 	if worker.canceled(generation) {
-		return ErrCanceled
+		return removed, failed, ErrCanceled
 	}
-	return remover.RemoveDirectory(remotePath)
+	if err := remover.RemoveDirectory(remotePath); err != nil {
+		failed++
+		if firstErr == nil {
+			firstErr = err
+		}
+		if !force {
+			return removed, failed, err
+		}
+		return removed, failed, firstErr
+	}
+	removed++
+	return removed, failed, nil
 }
 
 func chmod(client Remote, remotePath string, mode os.FileMode) error {

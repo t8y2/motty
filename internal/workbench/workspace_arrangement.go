@@ -68,6 +68,7 @@ func (state *State) applyWorkspaceArrangement() {
 		draft.err = state.messages.WorkspaceLayoutStale
 		return
 	}
+	state.deck.SetPaneMaximized(draft.workspace, false)
 	state.managedWorkspaceLayouts[draft.workspace] = draft.layout
 	if _, temporary := state.temporaryWorkspaceLayouts[draft.workspace]; temporary {
 		state.temporaryWorkspaceLayouts[draft.workspace] = draft.layout

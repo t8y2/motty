@@ -47,6 +47,7 @@ type savedState struct {
 	IconColor                  string                  `json:"icon_color,omitempty"`
 	BackgroundOutputAlerts     bool                    `json:"background_output_alerts,omitempty"`
 	TabOrientation             string                  `json:"tab_orientation,omitempty"`
+	TabDoubleClick             string                  `json:"tab_double_click,omitempty"`
 	TabNumbers                 bool                    `json:"tab_numbers,omitempty"`
 	HiddenNav                  []string                `json:"hidden_nav,omitempty"`
 	VerticalTabsAutoHide       bool                    `json:"vertical_tabs_auto_hide,omitempty"`
@@ -128,6 +129,7 @@ type savedState struct {
 	TerminalPasteImage      string              `json:"terminal_paste_image,omitempty"`
 	TerminalPasswordHint    string              `json:"terminal_password_hint,omitempty"`
 	TerminalCloseConfirm    string              `json:"terminal_close_confirm,omitempty"`
+	CloseWindowConfirm      string              `json:"close_window_confirm,omitempty"`
 	SFTPParallel            int                 `json:"sftp_parallel,omitempty"`
 	SFTPKeepTimes           string              `json:"sftp_keep_times,omitempty"`
 	SFTPFollow              string              `json:"sftp_follow,omitempty"`
@@ -149,6 +151,7 @@ type savedState struct {
 	UpdateCheck             string              `json:"update_check,omitempty"`
 	UpdateSource            string              `json:"update_source,omitempty"`
 	CloseAction             string              `json:"close_action,omitempty"`
+	KeepWindowsOnExit       string              `json:"keep_windows_on_exit,omitempty"`
 	RelaunchAction          string              `json:"relaunch_action,omitempty"`
 	TrayHintShown           bool                `json:"tray_hint_shown,omitempty"`
 	UpdateSkipped           string              `json:"update_skipped,omitempty"`
@@ -227,12 +230,20 @@ type savedState struct {
 	AIProviders    *[]savedAIProvider `json:"ai_providers,omitempty"`
 	AICLIProviders *[]savedAIProvider `json:"ai_cli_providers,omitempty"`
 
-	// The command sidebar's own layout: whether it is hidden, the snippet
-	// groups it filters out (keyed by lowercased name; "" means ungrouped), and
-	// the order of its chips. A fresh state shows every group in list order.
-	CommandsShown        bool     `json:"commands_shown,omitempty"`
+	// The command bar's own layout: whether it is hidden, whether it is docked
+	// beside the terminals instead of under them, the snippet groups it filters
+	// out (keyed by lowercased name; "" means ungrouped), and the order of its
+	// chips. A fresh state shows every group in list order.
+	CommandsShown bool `json:"commands_shown,omitempty"`
+	// CommandsSide is the sidebar dock; false is the bottom strip, which is
+	// also what settings written before the sidebar mean.
+	CommandsSide         bool     `json:"commands_side,omitempty"`
 	CommandsHiddenGroups []string `json:"commands_hidden_groups,omitempty"`
-	CommandsSort         string   `json:"commands_sort,omitempty"`
+	// CommandsCollapsedGroups are the groups folded to their heading in the bar.
+	CommandsCollapsedGroups []string `json:"commands_collapsed_groups,omitempty"`
+	CommandsSort            string   `json:"commands_sort,omitempty"`
+	// CommandsWidth is the width the sidebar was dragged to; zero is the default.
+	CommandsWidth float32 `json:"commands_width,omitempty"`
 }
 
 type savedOutboundProxy struct {
@@ -256,6 +267,7 @@ type savedSnippet struct {
 	Name    string `json:"name"`
 	Command string `json:"command"`
 	Run     bool   `json:"run,omitempty"`
+	Lines   bool   `json:"lines,omitempty"`
 	Group   string `json:"group,omitempty"`
 	Order   int    `json:"order,omitempty"`
 }
@@ -531,6 +543,7 @@ func (state *State) snapshot() savedState {
 		IconColor:                  state.iconColor.saved(),
 		BackgroundOutputAlerts:     state.backgroundOutputAlerts,
 		TabOrientation:             state.tabOrientation.String(),
+		TabDoubleClick:             state.tabDoubleClick.String(),
 		TabNumbers:                 state.tabNumbers,
 		HiddenNav:                  state.hiddenNav.savedKeys(),
 		VerticalTabsAutoHide:       state.verticalTabs.autoHide,
@@ -599,6 +612,7 @@ func (state *State) snapshot() savedState {
 		TerminalPasteImage:         notifyString(state.pasteImageOff),
 		TerminalPasswordHint:       notifyString(state.passwordHintOff),
 		TerminalCloseConfirm:       notifyString(state.closeConfirmOff),
+		CloseWindowConfirm:         notifyString(state.closeWindowConfirmOff),
 		CommandHistory:             state.history.on,
 		CommandSuggestOff:          state.history.suggestOff,
 		CommandCompletionMode:      state.completionMode().persistName(),
@@ -627,6 +641,7 @@ func (state *State) snapshot() savedState {
 		UpdateCheck:                updateCheckString(state.updateAtStart),
 		UpdateSource:               state.update.source.String(),
 		CloseAction:                state.closeAction.String(),
+		KeepWindowsOnExit:          state.keepWindows.String(),
 		RelaunchAction:             state.relaunchAction.String(),
 		TrayHintShown:              state.trayHintShown,
 		UpdateSkipped:              state.update.skipped,
@@ -668,7 +683,7 @@ func (state *State) snapshot() savedState {
 	saved.Notes = append([]savedNote(nil), state.notes.list...)
 	saved.NoteFolders = append([]savedNoteFolder(nil), state.notes.folders...)
 	for index, entry := range state.snippets.list {
-		saved.Snippets = append(saved.Snippets, savedSnippet{Name: entry.Name, Command: entry.Command, Run: entry.Run, Group: entry.Group, Order: index})
+		saved.Snippets = append(saved.Snippets, savedSnippet{Name: entry.Name, Command: entry.Command, Run: entry.Run, Lines: entry.Lines, Group: entry.Group, Order: index})
 		if entry.Shortcut.Valid() {
 			saved.SnippetShortcuts = append(saved.SnippetShortcuts, savedSnippetKey{
 				Name: entry.Name, Key: string([]byte{entry.Shortcut.Char}), Modifiers: uint8(entry.Shortcut.Modifiers),
@@ -676,10 +691,20 @@ func (state *State) snapshot() savedState {
 		}
 	}
 	saved.CommandsShown = state.commands.shown
+	saved.CommandsSide = state.commands.placement == commandsPlacementSide
 	saved.CommandsSort = state.commands.sort.String()
+	saved.CommandsWidth = state.commands.width
 	for key := range state.commands.hiddenGroups {
 		saved.CommandsHiddenGroups = append(saved.CommandsHiddenGroups, key)
 	}
+	for key, collapsed := range state.commands.collapsedGroups {
+		if collapsed {
+			saved.CommandsCollapsedGroups = append(saved.CommandsCollapsedGroups, key)
+		}
+	}
+	// The map's order is random; a stable list keeps the saved file from
+	// changing when nothing did.
+	slices.Sort(saved.CommandsCollapsedGroups)
 	if state.proxy.kind != sshconn.ProxyNone || state.proxy.bypass != "" {
 		saved.OutboundProxy = &savedOutboundProxy{
 			Kind: proxyKindString(state.proxy.kind), Address: state.proxy.address, User: state.proxy.user, Bypass: state.proxy.bypass,
@@ -1056,6 +1081,7 @@ func (state *State) restoreLocal(saved savedState) {
 	state.restoreDashboard(saved.MonitorPanels, saved.MonitorActive)
 	state.backgroundOutputAlerts = saved.BackgroundOutputAlerts
 	state.setTabOrientation(tabOrientationFromString(saved.TabOrientation))
+	state.tabDoubleClick = tabDoubleClickFromString(saved.TabDoubleClick)
 	state.setTabNumbers(saved.TabNumbers)
 	state.hiddenNav = hiddenNavPages(saved.HiddenNav)
 	state.setVerticalTabsAutoHide(saved.VerticalTabsAutoHide)
@@ -1242,6 +1268,7 @@ func (state *State) restoreShared(saved savedState) {
 	state.pasteImageOff = saved.TerminalPasteImage == "off"
 	state.passwordHintOff = saved.TerminalPasswordHint == "off"
 	state.closeConfirmOff = saved.TerminalCloseConfirm == "off"
+	state.closeWindowConfirmOff = saved.CloseWindowConfirm == "off"
 	state.history.on = saved.CommandHistory
 	state.history.acceptHintOff = saved.CommandAcceptHintOff
 	switch saved.CommandCompletionMode {

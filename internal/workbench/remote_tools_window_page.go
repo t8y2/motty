@@ -74,8 +74,8 @@ func (w *remoteToolsWindow) declareWindow(c ui.C) {
 	w.ui.viewport = gfx.Size{Width: size.Width, Height: size.Height}
 	ui.Column(c).Fill().Background(pal.workspace).Children(func() {
 		w.declareTitlebar(c)
-		ui.Column(c).Grow(1).Shrink(1).PadSides(0, remoteToolsContentPad, remoteToolsContentPad, remoteToolsContentPad).Children(func() {
-			tab := w.declareToolbar(c, size)
+		ui.Container(c).Grow(1).Shrink(1).PadSides(0, remoteToolsContentPad, remoteToolsContentPad, remoteToolsContentPad).Children(func() {
+			tab := w.declareToolbar(c)
 			w.declareSearch(c)
 			w.declareTable(c, tab)
 			w.declareStatus(c, tab)
@@ -94,30 +94,25 @@ func (w *remoteToolsWindow) declareTitlebar(c ui.C) {
 }
 
 // declareToolbar declares the tab choice, the refresh controls and the sudo
-// switch. It returns the tab the paint started with: the choice writes a new tab
-// while it is declared, and the body laid out from the old one is what the rest
-// of this paint shows.
-func (w *remoteToolsWindow) declareToolbar(c ui.C, size gfx.Size) remoteTab {
+// switch, on one line once the content is wide enough for them and with the
+// controls on a line of their own under the tabs otherwise. It returns the tab
+// the paint started with: the choice writes a new tab while it is declared, and
+// the body laid out from the old one is what the rest of this paint shows.
+func (w *remoteToolsWindow) declareToolbar(c ui.C) remoteTab {
 	view := &w.ui.remote
 	tab := view.tab
-	stacked := size.Width < 800
-	ui.Row(c).Height(remoteToolbarHeight).Shrink(0).Gap(remoteToolsToolbarGap).Children(func() {
-		if ui.Choice(c, &view.tab, remoteTabChoices[:], w.ui.remoteTabLabel).Width(600).Shrink(1).FillHeight().Changed() {
-			w.ui.applyRemoteTab()
-		}
-		ui.Spacer(c)
-		if !stacked {
-			w.declareRefreshControls(c)
-			w.declareSudo(c)
-		}
-	})
-	if stacked {
-		ui.Row(c).Height(remoteToolbarHeight).Shrink(0).MarginSides(8, 0, 0, 0).Children(func() {
+	ui.Column(c).Shrink(0).Gap(8).From(ui.Width(remoteToolsInlineToolbarWidth), func(b ui.Box) { b.Row().Gap(remoteToolsToolbarGap) }).Children(func() {
+		ui.Row(c).Height(remoteToolbarHeight).Grow(1).Shrink(1).Children(func() {
+			if ui.Choice(c, &view.tab, remoteTabChoices[:], w.ui.remoteTabLabel).Width(600).Shrink(1).FillHeight().Changed() {
+				w.ui.applyRemoteTab()
+			}
+		})
+		ui.Row(c).Height(remoteToolbarHeight).Shrink(0).Children(func() {
 			ui.Spacer(c)
 			w.declareRefreshControls(c)
 			w.declareSudo(c)
 		})
-	}
+	})
 	return tab
 }
 

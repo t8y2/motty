@@ -37,6 +37,7 @@ var (
 	hitDesktopReconnect  = tree.ID(desktopHits, "reconnect")
 	hitDesktopFullscreen = tree.ID(desktopHits, "fullscreen")
 	hitDesktopLatency    = tree.ID(desktopHits, "latency")
+	hitDesktopQuality    = tree.ID(desktopHits, "quality")
 )
 
 const (
@@ -110,6 +111,8 @@ type desktopView struct {
 	asked, pending desktopTarget
 	pendingSince   time.Duration
 	settling       bool
+	// qualityMenu is whether the quality menu of the bar is open.
+	qualityMenu bool
 }
 
 // imageDigest identifies the picture a desktop's clipboard was last given, so the
@@ -768,6 +771,22 @@ func (state *State) desktopHoldsTheKeyboard() bool {
 	return state.desktopVisible(session)
 }
 
+// keepKeyboardOnDesktop gives the keyboard back to the remote desktop in front after a click on
+// one of Motty's own controls (a tab, a toolbar button, a menu entry). A press moves the focus to
+// the control, but while the desktop holds the keyboard every key, Alt+Tab included, is the
+// remote's, and only the focused desktop is sent them: left on the control, Alt+Tab would be a
+// Tab through Motty's controls and the modifier press would never leave the window. The picture
+// asks for it in the paint that follows, so a control that opens its own field or menu in the
+// same click still decides where the keyboard goes.
+func (state *State) keepKeyboardOnDesktop() {
+	if !state.desktopHoldsTheKeyboard() {
+		return
+	}
+	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok && session.desk != nil {
+		session.desk.focusPending = true
+	}
+}
+
 // systemKeyCapture is how the window takes the system's shortcuts (the Windows key and its
 // chords, Alt+Tab, Ctrl+Esc) for itself, nil where it cannot, and what it was last asked.
 type systemKeyCapture struct {
@@ -984,6 +1003,10 @@ func (state *State) clickDesktop(id gfx.ID) bool {
 		view.fit = false
 	case hitDesktopFullscreen:
 		state.toggleDesktopFullscreen(session)
+	case hitDesktopQuality:
+		if !view.ended {
+			view.qualityMenu = !view.qualityMenu
+		}
 	case hitDesktopCapture:
 		state.toggleCapture(view)
 	case hitDesktopCtrlAltDel:
@@ -1091,6 +1114,10 @@ func (state *State) declareDesktopInfoBar(c ui.C, session *Session, view *deskto
 					}
 					s.capture = state.declareIconButton(c, state.paneIdentity(session, hitDesktopCapture), iconKeyboard, captureHint, view.ended, captureStyle).Size(barToolSize, barToolSize).Shrink(0)
 				}
+				if withTools && state.paneInSplit(session.ID) {
+					state.declareSessionMaximizeButton(c, session)
+					state.declarePaneBarClose(c, session)
+				}
 			})
 		})
 		ui.Row(c).FillWidth().Height(1).Self(ui.End).Background(pal.line)
@@ -1124,6 +1151,11 @@ func (state *State) declareDesktopTools(c ui.C, session *Session, view *desktopV
 		if view.ended {
 			fullscreen = fullscreen.Disabled(true)
 		}
+		quality := ui.Button(c, m.Quality).XSmall().Ghost().Hit(state.paneIdentity(session, hitDesktopQuality), m.Quality)
+		if view.ended {
+			quality = quality.Disabled(true)
+		}
+		state.declareDesktopQualityMenu(c, session, view, quality)
 	})
 }
 

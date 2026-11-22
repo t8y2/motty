@@ -7,7 +7,7 @@ import (
 )
 
 // The window bar every standalone content window declares for itself. The
-// platform keeps the strip's two ends for its window buttons (app.TitlebarInsets:
+// platform keeps the strip's two ends for its window buttons (the canvas's TitlebarInsets:
 // macOS's traffic lights at the leading end, Viva's controls at the trailing
 // end on Windows and Linux), so the text starts after the leading end and stops
 // before the trailing one.
@@ -16,18 +16,13 @@ const (
 	titlebarGap     = float32(14) // room between the window's name and its context
 )
 
-// windowTitlebarInsets is app.TitlebarInsets, with a seam for the paint
-// goldens: production reads the platform's insets, while a golden pins one set
-// so the same snapshots hold on every platform.
-var windowTitlebarInsets = app.TitlebarInsets
-
 // declareWindowTitlebar declares a custom-titlebar window's strip: the window's
 // name at the leading end, the muted context it names after it, and the rest of
 // the strip as the place the window is dragged from. Every standalone content
 // window uses it, so all of them are titled, moved and kept clear of the
 // platform's window buttons alike.
 func declareWindowTitlebar(c ui.C, pal *palette, title, subtitle string) {
-	leading, trailing := windowTitlebarInsets()
+	leading, trailing := c.TitlebarInsets()
 	fontSize := c.Theme().Metrics.FontSizeS
 	ui.Row(c).Height(TitlebarHeight).Shrink(0).
 		PadSides(0, trailing+titlebarTextPad, 0, leading+titlebarTextPad).
@@ -46,4 +41,10 @@ func declareWindowTitlebar(c ui.C, pal *palette, title, subtitle string) {
 // before a repaint match the content instead of the framework's default.
 func windowClearColor(color gfx.Color) app.Color {
 	return app.Color{Red: float64(color.Red), Green: float64(color.Green), Blue: float64(color.Blue), Alpha: 1}
+}
+
+// windowTitlebarInsets is how much of the main window's bar the window buttons
+// cover, at its leading and trailing ends, as of the last paint.
+func (state *State) windowTitlebarInsets() (leading, trailing float32) {
+	return state.titlebarLeading, state.titlebarTrailing
 }

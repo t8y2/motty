@@ -1,0 +1,59 @@
+# lang: en
+# End to end: the multi-line paste review is confirmed from the keyboard. The dialog opens
+# on its default action, so Enter pastes (and Esc cancels); the editable preview keeps Enter
+# as a line break once it has been clicked into. Needs a headless Viva build and the
+# e2esshd fixture on port 2261:
+#
+#   go build -tags vivahead,dev -o /tmp/motty-head-paste ./cmd/motty
+#   (cd tools/e2esshd && go build -o /tmp/e2esshd-paste .) && /tmp/e2esshd-paste 2261 &
+#   MOTTY_HEAD=/tmp/motty-head-paste python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/paste_review_keyboard_e2e.txt
+#
+# Look at /tmp/paste-review-focus.png (the Paste button holds the focus ring) and
+# /tmp/paste-review-pasted.png (the three lines reached the shell after one Enter).
+
+click "Search"
+type tester@127.0.0.1:2261
+click "Connect"
+waitfor "Trust" 5000
+click "Trust and Save"
+waitfor "Password" 5000
+type secret
+key enter
+waitfor "tester@e2e" 8000
+settle 800
+
+# A multi-line text arrives on the clipboard (OSC 52 from the remote shell).
+type printf '\033]52;c;ZWNobyBvbmUKZWNobyB0d28KZWNobyB0aHJlZQ==\007'
+key enter
+settle 800
+clip
+key cmd+v
+waitfor "Multi-line paste" 3000
+expect focus button:Paste
+expect layout clean
+shot /tmp/paste-review-focus.png
+
+# Esc cancels without sending.
+key esc
+expect no-text "Multi-line paste" within 2000
+
+# Enter pastes the text unchanged.
+key cmd+v
+waitfor "Multi-line paste" 3000
+key enter
+expect no-text "Multi-line paste" within 2000
+settle 500
+shot /tmp/paste-review-pasted.png
+texts "echo"
+
+# Inside the preview Enter is a line break; the dialog stays open.
+key ctrl+u
+key cmd+v
+waitfor "Multi-line paste" 3000
+click id:terminal-paste-review/preview
+key enter
+settle 300
+expect text "Multi-line paste"
+expect editor contains "echo three"
+shot /tmp/paste-review-editing.png
+key esc
