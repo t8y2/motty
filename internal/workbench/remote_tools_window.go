@@ -9,6 +9,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -384,8 +385,8 @@ func (w *remoteToolsWindow) key(event gfx.KeyEvent) gfx.EventResult {
 	return gfx.EventResult{}
 }
 
-// shortcut gives the tools' own find key and the detail text's copy/select-all
-// their chords.
+// shortcut handles closing the tools window, finding, and copying or selecting
+// the detail text.
 func (w *remoteToolsWindow) shortcut(event gfx.KeyEvent) gfx.EventResult {
 	if w.closed {
 		return gfx.EventResult{Handled: true}
@@ -393,6 +394,13 @@ func (w *remoteToolsWindow) shortcut(event gfx.KeyEvent) gfx.EventResult {
 	w.ui.shortcuts = w.owner.shortcuts
 	if w.ui.modal == modalForm || w.ui.modal == modalSudoSFTP || w.ui.remote.auto.open {
 		return gfx.EventResult{}
+	}
+	if chord, ok := keymap.FromEvent(event); ok && w.ui.shortcuts.actionFor(chord) == shortcutCloseTab {
+		// Close this tools window, not the source workbench's SSH tab.
+		if !event.Release && !event.Repeat {
+			w.close()
+		}
+		return gfx.EventResult{Handled: true}
 	}
 	if result, handled := w.ui.remoteDetailShortcut(event); handled {
 		return result

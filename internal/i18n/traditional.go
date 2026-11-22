@@ -2575,7 +2575,7 @@ var traditionalTools = ToolsMessages{
 	CloseAppDescriptionFmt:          "有 %d 個工作階段仍然開啟，關閉後會中斷連線。",
 	CloseAppConfirm:                 "關閉",
 	RemoteMenu:                      "程序與容器",
-	RemoteTitle:                     "遠端工具",
+	RemoteTitle:                     "程序與容器",
 	RemoteDescriptionFmt:            "%s 上的程序與 Docker 容器。內容不會自動重新整理。",
 	RemoteDockOpenWindow:            "在獨立視窗中開啟",
 	RemoteDockSelectProcess:         "選擇左側程序檢視詳細資訊",
