@@ -554,14 +554,13 @@ func (state *State) paintAITargetSelect(canvas *gfx.Canvas) {
 	if panel.targetOpen {
 		options = state.aiTargetOptions()
 	}
-	below := max(state.viewport.Height-8-bounds.Y-bounds.Height-4, 0)
-	above := max(bounds.Y-windowBarHeight-8, 0)
-	height := min(float32(8+len(options)*32), max(above, below))
-	content := gfx.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: min(aiTargetListWidth(canvas, options, state.Theme().Metrics.FontSizeM), state.viewport.Width-16), Height: height}
-	content.X = min(max(content.X, 8), state.viewport.Width-8-content.Width)
-	if below < height {
-		content.Y = bounds.Y - height - 4
-	}
+	// The list opens below the selector, or above it with more room there, and
+	// is shortened to that room: the theme's popup rule, inside the window under
+	// its title bar.
+	area := gfx.Rect{Y: windowBarHeight, Width: state.viewport.Width, Height: max(state.viewport.Height-windowBarHeight, 0)}
+	content, _ := components.PlaceOverlay(bounds, gfx.Size{
+		Width: aiTargetListWidth(canvas, options, state.Theme().Metrics.FontSizeM), Height: float32(8 + len(options)*32),
+	}, area, components.OverlayPlacement{Side: components.OverlayBottom, Align: components.OverlayAlignStart, SideOffset: 4, Margin: 8, Fit: true})
 	// A narrow panel is a modal drawer. Its trigger must remain in that focus
 	// scope even though the menu is painted outside the body's clip. The trigger
 	// belongs to the drawer's layer, below dialogs and overlay menus, so an open
