@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/vivaui/viva/gfx"
@@ -208,5 +209,127 @@ func TestDesktopRouteNeedsOnlyTheJumpHost(t *testing.T) {
 	state.Click(hitProxyDialogSubmit)
 	if state.modal != modalNone || len(state.proxies) != 1 || state.proxyDialogError != "" {
 		t.Fatalf("saving the route: modal=%d routes=%+v error=%q", state.modal, state.proxies, state.proxyDialogError)
+	}
+}
+
+// A route to a remote desktop is saved like any other and comes back after a
+// restart: the list shows it again and the desktop's form offers to edit that
+// route instead of adding a second one (#1323).
+func TestADesktopRouteComesBackAfterARestart(t *testing.T) {
+	_, options := newWorld(t)
+	first := newTestState(t, options)
+	desk := addStreamHost(first, Host{Label: "Desk", Address: "10.0.0.9", User: "alice", Protocol: protocolRDP, Port: 3389})
+	jump := hostByLabel(t, first, "Production")
+	addProxyRoute(t, first, desk.ID, jump.ID)
+
+	second := newTestState(t, options)
+	if len(second.proxies) != 1 {
+		t.Fatalf("restored routes = %d, want the route to the remote desktop", len(second.proxies))
+	}
+	restored := second.proxies[0]
+	restoredDesk := hostByLabel(t, second, "Desk")
+	restoredJump := hostByLabel(t, second, "Production")
+	if restored.TargetID != restoredDesk.ID || restored.JumpID != restoredJump.ID {
+		t.Fatalf("restored route = %+v, want target %d and jump %d", restored, restoredDesk.ID, restoredJump.ID)
+	}
+	if !strings.Contains(restored.label, restoredJump.Label) || !strings.Contains(restored.cells[3], "rdp://") {
+		t.Fatalf("restored route = %+v, want it to name %q and the desktop's destination", restored, restoredJump.Label)
+	}
+	second.Click(hitProxies)
+	if got := second.visibleProxyCount(); got != 1 {
+		t.Fatalf("the route list shows %d routes, want 1", got)
+	}
+
+	second.openEditHostID(restoredDesk.ID)
+	want := fmt.Sprintf(second.messages.Tools.HostJumpDescriptionFmt, restoredJump.Label)
+	if got := second.hostJumpDescription(); got != want {
+		t.Fatalf("summary = %q, want %q", got, want)
+	}
+	second.Click(hitHostJumpConfigure)
+	if second.modal != modalNewProxy || !second.proxyEditor.editing || second.proxyEditor.targetID != restoredDesk.ID {
+		t.Fatalf("editing route: modal=%d editing=%v target=%d", second.modal, second.proxyEditor.editing, second.proxyEditor.targetID)
+	}
+	second.Click(hitProxyDialogSubmit)
+	if second.modal != modalNewHost || second.proxyDialogError != "" || len(second.proxies) != 1 {
+		t.Fatalf("saving the route: modal=%d routes=%d error=%q", second.modal, len(second.proxies), second.proxyDialogError)
+	}
+}
+
+// A remote desktop is a route target only: a saved route that tries to sign in
+// to one as its jump is still dropped when the catalog is read (#1323).
+func TestARemoteDesktopIsNotAJumpAfterARestart(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	desk := addStreamHost(state, Host{Label: "Desk", Address: "10.0.0.9", User: "alice", Protocol: protocolRDP, Port: 3389})
+	target := hostByLabel(t, state, "Production")
+	record := savedProxy{
+		TargetID: target.CatalogID, TargetAddress: target.Address, TargetUser: target.User, TargetPort: target.Port,
+		JumpID: desk.CatalogID, JumpAddress: desk.Address, JumpUser: desk.User, JumpPort: desk.Port,
+	}
+	if routes := decodeProxies([]savedProxy{record}, state.hosts); len(routes) != 0 {
+		t.Fatalf("a remote desktop was restored as a jump: %+v", routes)
+	}
+
+	// A record saved before catalog IDs existed names the desktop by its
+	// destination; it is a target there too.
+	record.TargetID, record.JumpID = "", ""
+	record.JumpAddress, record.JumpPort = target.Address, target.Port
+	record.JumpUser = target.User
+	record.TargetAddress, record.TargetPort = desk.Address, desk.Port
+	record.TargetUser = desk.User
+	routes := decodeProxies([]savedProxy{record}, state.hosts)
+	if len(routes) != 1 || routes[0].TargetID != desk.ID || routes[0].JumpID != target.ID {
+		t.Fatalf("legacy desktop route = %+v, want target %d and jump %d", routes, desk.ID, target.ID)
+	}
+}
+
+// The target list paints a remote desktop, so choosing one has to commit: the
+// rule behind the list and the rule behind the choice are the same (#1323).
+func TestJumpRouteTargetListCommitsARemoteDesktop(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	production := hostByLabel(t, state, "Production")
+	jump := hostByLabel(t, state, "Staging")
+	desk := addStreamHost(state, Host{Label: "Desk", Address: "10.0.0.9", User: "alice", Protocol: protocolRDP, Port: 3389})
+	state.Click(hitProxies)
+	state.Click(hitProxyAdd)
+	// Start from an SSH target so the choice has somewhere to move.
+	state.proxyEditor.targetID, state.proxyEditor.jumpID = production.ID, jump.ID
+	state.proxyEditor.syncChoices()
+	clickPageLabel(t, state, gfx.RoleCombobox, state.messages.ProxyFieldTarget)
+	clickPageLabel(t, state, gfx.RoleOption, desk.Label)
+	if state.proxyEditor.targetID != desk.ID {
+		t.Fatalf("chosen target = %d, want the desktop %d", state.proxyEditor.targetID, desk.ID)
+	}
+	if state.proxyEditor.jumpID != jump.ID {
+		t.Fatalf("jump = %d, want %d", state.proxyEditor.jumpID, jump.ID)
+	}
+	if state.proxyDialogError != "" {
+		t.Fatalf("the choice reported %q", state.proxyDialogError)
+	}
+}
+
+// Swapping the two ends keeps them valid: a remote desktop can be the target
+// but never the jump, so a swap that would leave a desktop as the jump clears
+// it and lets the dialog ask for one instead.
+func TestJumpRouteSwapKeepsAValidJump(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	staging := hostByLabel(t, state, "Staging")
+	desk := addStreamHost(state, Host{Label: "Desk", Address: "10.0.0.9", User: "alice", Protocol: protocolRDP, Port: 3389})
+	state.Click(hitProxies)
+	state.Click(hitProxyAdd)
+	state.proxyEditor.targetID = desk.ID
+	state.proxyEditor.jumpID = staging.ID
+	state.applyProxyTargetChoice(staging.ID)
+	if state.proxyEditor.targetID != staging.ID {
+		t.Fatalf("target = %d, want %d", state.proxyEditor.targetID, staging.ID)
+	}
+	if state.proxyEditor.jumpID == desk.ID {
+		t.Fatal("the desktop became the jump")
+	}
+	if state.proxyEditor.jumpID != 0 {
+		t.Fatalf("jump = %d, want it cleared", state.proxyEditor.jumpID)
+	}
+	state.applyProxyJumpChoice(desk.ID)
+	if state.proxyEditor.jumpID != 0 {
+		t.Fatal("the jump picker took a desktop")
 	}
 }

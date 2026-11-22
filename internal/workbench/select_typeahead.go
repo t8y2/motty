@@ -58,32 +58,48 @@ func (state *State) selectTypeaheadOptions(target gfx.ID) ([]components.MenuType
 	return nil, nil, false
 }
 
-// proxyTargetSelectable is the rule the open target select paints: a host that
-// is SSH and not already the target of another route.
+// proxyTargetSelectable is the rule the target select paints and commits: a
+// route target that is not already the target of another route. A remote
+// desktop is a route target, so the choice the list offers has to land.
 func (state *State) proxyTargetSelectable(id uint32) bool {
 	host, ok := state.hostByID(id)
-	return ok && host.isSSH() && !state.proxyTargetConfiguredExcluding(id, state.proxyEditor.routeID)
+	return ok && host.isRouteTarget() && !state.proxyTargetConfiguredExcluding(id, state.proxyEditor.routeID)
 }
 
 // chooseProxyTarget and chooseProxyJump apply the same choices as the open
-// popup, including the swap that keeps the two hosts distinct.
+// popup, including the swap that keeps the two hosts distinct and each end in
+// a role it can take: only an SSH host can be the jump a route signs in to.
 func (state *State) chooseProxyTarget(id uint32) bool {
 	if !state.proxyTargetSelectable(id) {
 		return false
 	}
 	if id == state.proxyEditor.jumpID {
-		state.proxyEditor.jumpID = state.proxyEditor.targetID
+		// The old target takes the jump's place when it can be a jump; a
+		// remote desktop cannot, so the dialog asks for one instead.
+		previous, ok := state.hostByID(state.proxyEditor.targetID)
+		if ok && previous.isSSH() {
+			state.proxyEditor.jumpID = previous.ID
+		} else {
+			state.proxyEditor.jumpID = 0
+		}
 	}
 	state.proxyEditor.targetID = id
 	return true
 }
 
 func (state *State) chooseProxyJump(id uint32) bool {
-	if _, ok := state.hostByID(id); !ok {
+	host, ok := state.hostByID(id)
+	if !ok || !host.isSSH() {
 		return false
 	}
 	if id == state.proxyEditor.targetID {
-		state.proxyEditor.targetID = state.proxyEditor.jumpID
+		// The old jump takes the target's place only when no other route has
+		// taken it as a target.
+		previous := state.proxyEditor.jumpID
+		if !state.proxyTargetSelectable(previous) {
+			previous = 0
+		}
+		state.proxyEditor.targetID = previous
 	}
 	state.proxyEditor.jumpID = id
 	return true

@@ -160,31 +160,50 @@ func (catalog *hostCatalog) hostByID(id uint32) (Host, bool) {
 }
 
 func (catalog *hostCatalog) hostByConnection(address, user string, port uint16) (Host, bool) {
-	if port == 0 {
-		port = defaultPort
+	return catalog.hostByRouteDestination(address, user, port, false)
+}
+
+// hostByRouteEnd is the host one end of a saved route names: the host with that
+// catalog ID, or, for a route saved without one, the host at that destination.
+// A route reaches a remote desktop as well as an SSH host, so the caller says
+// which end it names: any route target for the target, only an SSH host for the
+// jump. An ID that no host holds names nothing: another host at the same
+// destination is not the one the route was made for.
+func (catalog *hostCatalog) hostByRouteEnd(id, address, user string, port uint16, target bool) (Host, bool) {
+	if id == "" {
+		return catalog.hostByRouteDestination(address, user, port, target)
 	}
 	for _, host := range catalog.hosts {
-		if host.isSSH() && host.Address == address && catalog.storedLogin(host) == user && host.Port == port {
+		if host.CatalogID == id && host.routeEndAllowed(target) {
 			return host, true
 		}
 	}
 	return Host{}, false
 }
 
-// hostByRouteEnd is the host one end of a saved route names: the host with that
-// catalog ID, or, for a route saved without one, the host at that destination.
-// An ID that no host holds names nothing: another host at the same destination
-// is not the one the route was made for.
-func (catalog *hostCatalog) hostByRouteEnd(id, address, user string, port uint16) (Host, bool) {
-	if id == "" {
-		return catalog.hostByConnection(address, user, port)
+// hostByRouteDestination is the host at a destination, for a record saved
+// without catalog IDs. The caller says which end of a route it names, so a
+// route to a remote desktop, which is not an SSH host, can still be resolved.
+func (catalog *hostCatalog) hostByRouteDestination(address, user string, port uint16, target bool) (Host, bool) {
+	if port == 0 {
+		port = defaultPort
 	}
 	for _, host := range catalog.hosts {
-		if host.CatalogID == id && host.isSSH() {
+		if host.routeEndAllowed(target) && host.Address == address && catalog.storedLogin(host) == user && host.Port == port {
 			return host, true
 		}
 	}
 	return Host{}, false
+}
+
+// routeEndAllowed reports whether a host can be that end of a route: a route
+// target, which includes a remote desktop, or only an SSH host when the host is
+// the jump the route signs in to.
+func (host Host) routeEndAllowed(target bool) bool {
+	if target {
+		return host.isRouteTarget()
+	}
+	return host.isSSH()
 }
 
 // secretOwner is the catalog ID of the host that the secrets of a connection
@@ -622,8 +641,8 @@ func decodeProxies(saved []savedProxy, hosts []Host) []proxyRecord {
 	ids := proxyNumbersBySavedID(saved)
 	next := uint32(1)
 	for index, entry := range saved {
-		target, targetOK := catalog.hostByRouteEnd(entry.TargetID, entry.TargetAddress, entry.TargetUser, entry.TargetPort)
-		jump, jumpOK := catalog.hostByRouteEnd(entry.JumpID, entry.JumpAddress, entry.JumpUser, entry.JumpPort)
+		target, targetOK := catalog.hostByRouteEnd(entry.TargetID, entry.TargetAddress, entry.TargetUser, entry.TargetPort, true)
+		jump, jumpOK := catalog.hostByRouteEnd(entry.JumpID, entry.JumpAddress, entry.JumpUser, entry.JumpPort, false)
 		if !targetOK || !jumpOK || target.ID == jump.ID || catalog.proxyTargetConfigured(target.ID) || catalog.proxyWouldCycle(target.ID, jump.ID) {
 			continue
 		}
