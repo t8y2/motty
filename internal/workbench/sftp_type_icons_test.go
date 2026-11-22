@@ -7,6 +7,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/text"
 
 	"motty/internal/sftpclient"
 )
@@ -91,4 +92,86 @@ func TestTransferCenterSharesSystemFileIconsWithTheFileList(t *testing.T) {
 	if answers.askedCount() != 1 {
 		t.Fatalf("system icon questions = %d, want one shared question", answers.askedCount())
 	}
+}
+
+func TestSFTPUpdateRowsKeepsAndLoadsSystemTypeIcons(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	answers := &iconAnswers{failed: map[string]error{}}
+	state.options.FileIcon = answers.icon
+
+	view := &sftpView{sftpFolder: sftpFolder{path: "/srv"}}
+	initial := prepareSFTPRows(nil, []sftpclient.Entry{
+		{Name: "compose.yaml", Size: 699, Mode: 0o644},
+		{Name: "config.json", Size: 100, Mode: 0o644},
+		{Name: "current", Mode: os.ModeSymlink | 0o777},
+	})
+	state.applySFTPListing(view, "/srv", initial)
+	waitAppIcons(t, state, func() bool {
+		return view.rows[0].typeIcon.ready() && view.rows[1].typeIcon.ready()
+	})
+	yamlSlot := view.rows[0].typeIcon
+	jsonSlot := view.rows[1].typeIcon
+	if view.rows[2].typeIcon != nil {
+		t.Fatal("unresolved symlink should not have a type icon before follow-up")
+	}
+
+	// Simulate a background refresh / follow-up listing after compose.yaml is
+	// edited and the symlink target is resolved.
+	state.updateSFTPRows(view, []sftpclient.Entry{
+		{Name: "compose.yaml", Size: 840, Mode: 0o644},
+		{Name: "config.json", Size: 100, Mode: 0o644},
+		{Name: "current", Mode: os.ModeSymlink | 0o777, LinkTarget: "/srv/compose.yaml"},
+		{Name: "notes.md", Size: 50, Mode: 0o644},
+	})
+
+	if view.rows[0].typeIcon != yamlSlot || !view.rows[0].typeIcon.ready() {
+		t.Fatalf("compose.yaml lost its system type icon after updateSFTPRows: got %v", view.rows[0].typeIcon)
+	}
+	if view.rows[1].typeIcon != jsonSlot || !view.rows[1].typeIcon.ready() {
+		t.Fatalf("config.json lost its system type icon after updateSFTPRows: got %v", view.rows[1].typeIcon)
+	}
+	if view.rows[2].typeIcon != yamlSlot || !view.rows[2].typeIcon.ready() {
+		t.Fatalf("resolved symlink did not inherit .yaml system type icon: got %v", view.rows[2].typeIcon)
+	}
+	waitAppIcons(t, state, func() bool {
+		return view.rows[3].typeIcon.ready()
+	})
+	if answers.askedCount() != 3 {
+		t.Fatalf("system icon questions = %d, want 3 (.yaml, .json, .md)", answers.askedCount())
+	}
+}
+
+func TestSFTPSearchResultsAttachSystemTypeIcons(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	answers := &iconAnswers{failed: map[string]error{}}
+	state.options.FileIcon = answers.icon
+
+	root := t.TempDir()
+	view := &sftpView{lfolder: sftpFolder{path: root, deep: true}}
+	search := &sftpSearch{root: root, query: "compose", folded: "compose", selected: -1}
+	view.lfolder.search = search
+	*view.lfolder.filterInputEditor() = *text.NewEditor("compose")
+
+	state.handSearch(view, &view.lfolder, search, []sftpSearchItem{
+		{dir: "app", name: "compose.yaml", folded: "compose.yaml", mode: 0o644},
+		{dir: "app", name: "config.json", folded: "config.json", mode: 0o644},
+	}, true, sftpclient.WalkSummary{}, "")
+	waitAppIcons(t, state, func() bool {
+		return len(search.rows) == 1 && search.rows[0].typeIcon.ready()
+	})
+	yamlSlot := search.rows[0].typeIcon
+
+	// Changing the search query rebuilds search.rows via search.match and must
+	// still attach system type icons.
+	*view.lfolder.filterInputEditor() = *text.NewEditor("c")
+	state.syncSFTPSearch(view, &view.lfolder)
+	if len(search.rows) != 2 {
+		t.Fatalf("matched search rows = %d, want 2", len(search.rows))
+	}
+	if search.rows[0].typeIcon != yamlSlot {
+		t.Fatal("compose.yaml did not reuse its system type icon after query change")
+	}
+	waitAppIcons(t, state, func() bool {
+		return search.rows[1].typeIcon.ready()
+	})
 }

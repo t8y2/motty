@@ -1292,6 +1292,7 @@ func (state *State) updateSFTPRows(view *sftpView, entries []sftpclient.Entry) {
 		}
 	}
 	view.allRows = prepareSFTPRows(view.allRows, entries)
+	state.loadTypeIcons(view, view.allRows)
 	if view.detached != nil {
 		view.detached.observeDirectoryTreeListing(false, view.path, entries)
 	}
