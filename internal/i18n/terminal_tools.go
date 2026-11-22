@@ -122,6 +122,7 @@ type ToolsMessages struct {
 	SnippetCommand            string
 	SnippetCommandPlaceholder string
 	SnippetRun                string
+	SnippetLines              string
 	SnippetShortcut           string
 	SnippetShortcutNone       string
 	SnippetShortcutRecording  string

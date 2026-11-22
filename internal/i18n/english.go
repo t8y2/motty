@@ -1844,6 +1844,7 @@ var englishTools = ToolsMessages{
 	SnippetCommand:            "Command",
 	SnippetCommandPlaceholder: "systemctl restart nginx",
 	SnippetRun:                "Press Enter after sending it",
+	SnippetLines:              "Send multi-line commands one line at a time",
 	SnippetShortcut:           "Shortcut",
 	SnippetShortcutNone:       "Set shortcut",
 	SnippetShortcutRecording:  "Press the keys…",

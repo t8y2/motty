@@ -1844,6 +1844,7 @@ var traditionalTools = ToolsMessages{
 	SnippetCommand:            "指令",
 	SnippetCommandPlaceholder: "例如：systemctl restart nginx",
 	SnippetRun:                "傳送後自動按Enter",
+	SnippetLines:              "多行指令逐行傳送",
 	SnippetShortcut:           "快速鍵",
 	SnippetShortcutNone:       "設定快速鍵",
 	SnippetShortcutRecording:  "請按下按鍵…",

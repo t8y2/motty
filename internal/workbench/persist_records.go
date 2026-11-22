@@ -167,7 +167,7 @@ type recordPayload struct {
 // record format can carry makes the envelope an upper bound rather than a guess.
 func snippetRecordFits(entry snippet, order int) bool {
 	data, err := json.Marshal(savedSnippet{
-		Name: entry.Name, Command: entry.Command, Run: entry.Run, Group: entry.Group, Order: order,
+		Name: entry.Name, Command: entry.Command, Run: entry.Run, Lines: entry.Lines, Group: entry.Group, Order: order,
 	})
 	if err != nil {
 		return false

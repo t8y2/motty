@@ -1844,6 +1844,7 @@ var chineseTools = ToolsMessages{
 	SnippetCommand:            "命令",
 	SnippetCommandPlaceholder: "例如：systemctl restart nginx",
 	SnippetRun:                "发送后自动按回车",
+	SnippetLines:              "多行命令逐行发送",
 	SnippetShortcut:           "快捷键",
 	SnippetShortcutNone:       "设置快捷键",
 	SnippetShortcutRecording:  "请按下按键…",
