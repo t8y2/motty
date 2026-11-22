@@ -34,6 +34,43 @@ func TestWindowFrameSurvivesRestart(t *testing.T) {
 	}
 }
 
+// TestWindowMaximizedSurvivesRestart proves that maximizing a remembered window
+// persists alongside its floating frame, and unmaximizing clears it without
+// losing the floating frame.
+func TestWindowMaximizedSurvivesRestart(t *testing.T) {
+	dir := t.TempDir()
+	options := windowStateOptions(dir)
+	frame := gfx.Rect{X: 120, Y: 80, Width: 1234, Height: 777}
+
+	state := newTestState(t, options)
+	state.NoteWindowFrame(frame)
+	state.SetWindowMaximized(true)
+	state.closeWindowChrome()
+	state.Close()
+
+	reopened := newTestState(t, options)
+	got, ok := reopened.RestoredWindowFrame()
+	if !ok || got != frame {
+		t.Fatalf("restored frame = %+v, %t; want %+v", got, ok, frame)
+	}
+	if !reopened.RestoredWindowMaximized() {
+		t.Fatal("RestoredWindowMaximized = false, want true")
+	}
+
+	reopened.SetWindowMaximized(false)
+	reopened.closeWindowChrome()
+	reopened.Close()
+
+	restored := newTestState(t, options)
+	got, ok = restored.RestoredWindowFrame()
+	if !ok || got != frame {
+		t.Fatalf("frame after unmaximize = %+v, %t; want %+v", got, ok, frame)
+	}
+	if restored.RestoredWindowMaximized() {
+		t.Fatal("RestoredWindowMaximized = true after unmaximize, want false")
+	}
+}
+
 // TestMinimizedWindowHidesRemoteDesktops proves the minimized state reaches the
 // visibility rule that stops a remote desktop's stream.
 func TestMinimizedWindowHidesRemoteDesktops(t *testing.T) {

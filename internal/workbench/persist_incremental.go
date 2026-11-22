@@ -44,7 +44,7 @@ func changedSavedFields(previous, current savedState) []savedFieldChange {
 // last dialed a host. The store merges the dials of every window rather than
 // replacing them, so another window has nothing to read back from one.
 var windowOwnFields = map[string]bool{
-	"window_x": true, "window_y": true, "window_width": true, "window_height": true,
+	"window_x": true, "window_y": true, "window_width": true, "window_height": true, "window_maximized": true,
 	"recent_connections": true,
 }
 
