@@ -1696,6 +1696,7 @@ func (state *State) WindowControlsStyle() app.WindowControlsStyle {
 func (state *State) Click(id gfx.ID) {
 	if !state.clickNoteExit(id) {
 		state.click(id, true)
+		state.keepKeyboardOnDesktop()
 	}
 }
 
@@ -2611,6 +2612,15 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 		return gfx.EventResult{Handled: true}
 	}
 	defer state.afterEvent(&outcome)
+	if event.Kind == gfx.PointerDown && event.Target.IsZero() {
+		// A press on bare ground blurs the window; with a desktop holding the keyboard the
+		// keyboard stays the desktop's, as after a click on one of Motty's controls.
+		defer func() {
+			if outcome.Focus.IsZero() && !outcome.Blur && state.desktopHoldsTheKeyboard() {
+				outcome.Focus = state.activeTerminalFocusHit()
+			}
+		}()
+	}
 	if state.modal == modalPasteReview {
 		return state.pasteReview.code.Pointer(event)
 	}

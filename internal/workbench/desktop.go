@@ -768,6 +768,22 @@ func (state *State) desktopHoldsTheKeyboard() bool {
 	return state.desktopVisible(session)
 }
 
+// keepKeyboardOnDesktop gives the keyboard back to the remote desktop in front after a click on
+// one of Motty's own controls (a tab, a toolbar button, a menu entry). A press moves the focus to
+// the control, but while the desktop holds the keyboard every key, Alt+Tab included, is the
+// remote's, and only the focused desktop is sent them: left on the control, Alt+Tab would be a
+// Tab through Motty's controls and the modifier press would never leave the window. The picture
+// asks for it in the paint that follows, so a control that opens its own field or menu in the
+// same click still decides where the keyboard goes.
+func (state *State) keepKeyboardOnDesktop() {
+	if !state.desktopHoldsTheKeyboard() {
+		return
+	}
+	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok && session.desk != nil {
+		session.desk.focusPending = true
+	}
+}
+
 // systemKeyCapture is how the window takes the system's shortcuts (the Windows key and its
 // chords, Alt+Tab, Ctrl+Esc) for itself, nil where it cannot, and what it was last asked.
 type systemKeyCapture struct {
