@@ -107,6 +107,7 @@ func TestAPasswordTheUserAsksToSaveIsKeptOnceTheServerAcceptsItAndAnswersTheNext
 
 	// Another connection to the same account is answered without a dialog.
 	state.Click(hitHosts)
+	state.startupReuse = false // this step needs a connection of its own
 	second := connect(t, state, world)
 	askForPassword(state, second, 1)
 	if state.modal != modalNone {
@@ -159,6 +160,7 @@ func TestASavedPasswordTheServerRefusesIsForgottenAndTheUserIsAsked(t *testing.T
 	signInSavingThePassword(t, state, world, "old password")
 
 	state.Click(hitHosts)
+	state.startupReuse = false // this step needs a connection of its own
 	second := connect(t, state, world)
 	askForPassword(state, second, 1)
 	if len(second.passwords) != 1 {
@@ -182,6 +184,7 @@ func TestASecondFactorRoundKeepsTheSavedPasswordAndReportsNoError(t *testing.T) 
 	signInSavingThePassword(t, state, world, "hunter2")
 
 	state.Click(hitHosts)
+	state.startupReuse = false // this step needs a connection of its own
 	second := connect(t, state, world)
 	askForPassword(state, second, 1)
 	if len(second.passwords) != 1 || second.passwords[0] != "hunter2" {
@@ -228,6 +231,7 @@ func TestAKeyPassphraseCanBeSavedAndAnswersTheNextQuestion(t *testing.T) {
 	}
 
 	state.Click(hitHosts)
+	state.startupReuse = false // this step needs a connection of its own
 	second := connect(t, state, world)
 	ask(second)
 	if state.modal != modalNone || len(second.keyPassphrases) != 1 || second.keyPassphrases[0] != "open sesame" {
@@ -240,6 +244,7 @@ func TestAnOneTimeCodeQuestionIsNeverAnsweredFromTheVault(t *testing.T) {
 	state := newTestState(t, options)
 	signInSavingThePassword(t, state, world, "hunter2")
 	state.Click(hitHosts)
+	state.startupReuse = false // this step needs a connection of its own
 	second := connect(t, state, world)
 	second.set(func(s *sshconn.Status) {
 		s.Phase = sshconn.PhasePasswordPrompt
@@ -288,6 +293,7 @@ func TestAVaultFromAnEarlierVersionAsksForItsMasterPasswordThenAnswers(t *testin
 	state.secrets.vault.DropKeyForTests()
 
 	state.Click(hitHosts)
+	state.startupReuse = false // this step needs a connection of its own
 	second := connect(t, state, world)
 	askForPassword(state, second, 1)
 	if state.modal != modalVaultUnlock {
@@ -313,6 +319,7 @@ func TestDecliningToUnlockFallsBackToTheNormalDialogAndDoesNotAskAgain(t *testin
 	state.secrets.vault.DropKeyForTests()
 
 	state.Click(hitHosts)
+	state.startupReuse = false // this step needs a connection of its own
 	second := connect(t, state, world)
 	askForPassword(state, second, 1)
 	state.Click(hitVaultUnlockCancel)
@@ -321,6 +328,7 @@ func TestDecliningToUnlockFallsBackToTheNormalDialogAndDoesNotAskAgain(t *testin
 	}
 	state.Click(hitPasswordCancel)
 	state.Click(hitHosts)
+	state.startupReuse = false // this step needs a connection of its own
 	third := connect(t, state, world)
 	askForPassword(state, third, 1)
 	if state.modal != modalPassword {
@@ -406,6 +414,7 @@ func TestVaultDialogsAnswerRealPointerEvents(t *testing.T) {
 	state.secrets.vault.DropKeyForTests()
 
 	state.Click(hitHosts)
+	state.startupReuse = false // this step needs a connection of its own
 	second := connect(t, state, world)
 	askForPassword(state, second, 1)
 	if state.modal != modalVaultUnlock {
@@ -521,6 +530,7 @@ func TestASavedPasswordAnswersAKeyboardInteractivePasswordPrompt(t *testing.T) {
 	state.Wake()
 
 	state.Click(hitHosts)
+	state.startupReuse = false // this step needs a connection of its own
 	second := connect(t, state, world)
 	ask(second, "Password: ")
 	if state.modal != modalNone {
@@ -533,6 +543,7 @@ func TestASavedPasswordAnswersAKeyboardInteractivePasswordPrompt(t *testing.T) {
 	// A hidden question that is not asking for the password is the user's to
 	// answer; guessing would be refused and the refusal would forget the password.
 	state.Click(hitHosts)
+	state.startupReuse = false // this step needs a connection of its own
 	third := connect(t, state, world)
 	ask(third, "Enter your YubiKey PIN: ")
 	if state.modal != modalPassword || len(third.passwords) != 0 {
