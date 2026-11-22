@@ -64,7 +64,15 @@ func (state *State) toolbarDockFrame(size gfx.Size, includeTerminal bool) gfx.Re
 
 func (state *State) fullWorkspacePixelBounds(size gfx.Size) gfx.Rect {
 	left := state.verticalTabsReserve(size)
-	return gfx.Rect{X: left, Y: windowBarHeight, Width: max(size.Width-left, 0), Height: max(size.Height-windowBarHeight, 0)}
+	bounds := gfx.Rect{X: left, Y: windowBarHeight, Width: max(size.Width-left, 0), Height: max(size.Height-windowBarHeight, 0)}
+	// A bottom command bar lives in the content area's lowest strip, so the
+	// workspace root accounts for it; every derived panel then sits above it.
+	// The side form is subtracted from the terminals' own column in
+	// toolbarDockContentBounds, so the panels beside it keep their full height.
+	if reserve := state.commandsDrawerHeight(); reserve > 0 {
+		bounds.Height = max(0, bounds.Height-reserve)
+	}
+	return bounds
 }
 
 func (state *State) terminalSideRailBounds(size gfx.Size) (gfx.Rect, bool) {

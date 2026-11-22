@@ -47,7 +47,21 @@ var (
 	hitCommandsResize = tree.ID(commandsHits, "resize")
 )
 
+// commandsPlacement is where the quick command bar lives: the strip under the
+// terminal panes, or the sidebar beside them. The zero value is the bottom bar,
+// so stored settings that predate the sidebar restore the strip the user had.
+type commandsPlacement uint8
+
 const (
+	commandsPlacementBottom commandsPlacement = iota
+	commandsPlacementSide
+)
+
+var commandsPlacementChoices = [...]commandsPlacement{commandsPlacementBottom, commandsPlacementSide}
+
+const (
+	commandsBarHeight     float32 = 34 // the bottom bar's own height
+	commandsChipInset     float32 = 5  // vertical inset of chips inside the bar
 	commandsSidebarWidth  float32 = 224
 	commandsSidebarMin    float32 = 160 // the narrowest the bar may be dragged
 	commandsMinContent    float32 = 320 // the terminals keep at least this much beside it
@@ -57,6 +71,8 @@ const (
 	commandsTagGap        float32 = 6
 	commandsTagPaddingX   float32 = 12
 	commandsChipRadius    float32 = 8
+	commandsMinTagWidth   float32 = 44
+	commandsMaxTagWidth   float32 = 200
 	commandsIconSize      float32 = 16
 	commandsButtonGap     float32 = 4  // between the + and × buttons
 	commandsLeadGap       float32 = 10 // between the filter and order buttons
@@ -65,14 +81,17 @@ const (
 	commandsScrollStep    float32 = 60 // pixels a wheel notch moves the chips
 )
 
-// commandsUI is the command sidebar's state. The sidebar stays hidden
-// until shown opts it in. hiddenGroups are the
-// snippet groups (by lowercased name; "" means ungrouped) not shown in the bar,
-// and sort is the order the visible commands appear in.
+// commandsUI is the command bar's state. The bar stays hidden until shown opts
+// it in. placement is its dock: the strip under the panes or the sidebar beside
+// them. hiddenGroups are the snippet groups (by lowercased name; "" means
+// ungrouped) not shown in the bar, and sort is the order its chips appear in.
 type commandsUI struct {
 	// shown is whether the user opted the bar in. The zero value hides it,
 	// so a fresh install sees no bar until the picker's checkbox turns it on.
 	shown bool
+	// placement is where the bar docks while shown; the zero value is the
+	// bottom strip.
+	placement commandsPlacement
 	// filterOpen is whether the group-filter dropdown is showing.
 	filterOpen bool
 	// sortOpen is whether the order dropdown is showing.
@@ -83,14 +102,15 @@ type commandsUI struct {
 	hiddenGroups map[string]bool
 	// sort is how the visible commands are ordered along the bar.
 	sort commandsSort
-	// offset is how far the chips are scrolled down; it is where the wheel puts
-	// them when more commands exist than the bar can hold.
+	// offset is how far the chips are scrolled: right on the bottom strip,
+	// down the sidebar. It is where the wheel puts them when more commands
+	// exist than the bar can hold.
 	offset float32
-	// bar is the last painted sidebar and maxOffset the largest offset that still
+	// bar is the last painted strip and maxOffset the largest offset that still
 	// shows a chip, both recorded so a wheel over the bar knows what it moves.
 	bar       gfx.Rect
 	maxOffset float32
-	// width is the width the user dragged the bar to; zero means the default.
+	// width is the width the user dragged the sidebar to; zero means the default.
 	width float32
 	// resizing is set while the inner edge is dragged, with dragFrom and
 	// dragStart recording where the gesture began so motion lands exactly.
@@ -113,12 +133,48 @@ func (state *State) commandsBarAvailable() bool {
 	return true
 }
 
+// commandsDrawerHeight is the bottom space the bar reserves, subtracted from
+// the terminal panes so they do not sit under it. Zero unless the bar is shown
+// and docked at the bottom.
+func (state *State) commandsDrawerHeight() float32 {
+	if !state.commandsBarAvailable() || !state.commands.shown || state.commands.placement != commandsPlacementBottom {
+		return 0
+	}
+	return commandsBarHeight
+}
+
+// commandsBarRect is where the bottom bar sits: the lowest strip of the active
+// workspace, under its panes. Both the page's menus and the canvas' chips are
+// placed from it.
+func (state *State) commandsBarRect() gfx.Rect {
+	if state.commandsDrawerHeight() <= 0 {
+		return gfx.Rect{}
+	}
+	// The strip is the content area's own bottom, so it spans the full width the
+	// panes and their side panels share, not just the terminal column between
+	// them. A side panel or a terminal toolbar rail ends above the strip;
+	// spanning it here means nothing is left unpainted in the corners beside
+	// the bar (#981).
+	full := state.fullWorkspacePixelBounds(state.viewport)
+	frame := state.toolbarDockFrame(state.viewport, true)
+	return gfx.Rect{X: full.X, Y: frame.Y + frame.Height, Width: full.Width, Height: commandsBarHeight}
+}
+
+// commandsPlacementLabel is the name of one dock in the picker's placement
+// control.
+func (state *State) commandsPlacementLabel(placement commandsPlacement) string {
+	if placement == commandsPlacementSide {
+		return state.messages.Tools.CommandsPlaceSide
+	}
+	return state.messages.Tools.CommandsPlaceBottom
+}
+
 // commandsSidebarExtent is the width the bar takes from the terminals: what
 // the user dragged it to, within the room the dock frame has, or the default.
 // The terminals keep their own minimum, so the bar cannot swallow the pane it
-// sits beside.
+// sits beside. Zero while the bar is docked at the bottom.
 func (state *State) commandsSidebarExtent(size gfx.Size) float32 {
-	if !state.commandsBarAvailable() || !state.commands.shown {
+	if !state.commandsBarAvailable() || !state.commands.shown || state.commands.placement != commandsPlacementSide {
 		return 0
 	}
 	frame := state.toolbarDockFrame(size, true)
@@ -205,8 +261,74 @@ func (state *State) commandDisplayOrder() []int {
 	return order
 }
 
-// paintCommandsDrawer draws the sidebar beside the terminal panes.
+// paintCommandsDrawer draws the quick command bar where the user docked it.
 func (state *State) paintCommandsDrawer(canvas *gfx.Canvas) {
+	if state.commands.placement == commandsPlacementSide {
+		state.paintCommandsSidebar(canvas)
+		return
+	}
+	state.paintCommandsBar(canvas)
+}
+
+// paintCommandsBar draws the bottom strip of quick commands under the panes.
+func (state *State) paintCommandsBar(canvas *gfx.Canvas) {
+	bar := state.commandsBarRect()
+	state.commands.bar = bar
+	// Nothing is painted, so a wheel must not think the old strip is there.
+	state.commands.maxOffset = 0
+	if bar.Width <= 0 {
+		return
+	}
+	// A faint fill and a top hairline set the strip apart from the terminal.
+	canvas.Fill(bar, withAlpha(state.pal.shell, 0.6))
+	canvas.Fill(gfx.Rect{X: bar.X, Y: bar.Y, Width: bar.Width, Height: 1}, state.pal.line)
+
+	m := state.messages.Tools
+	iconColor := state.pal.muted
+	cy := bar.Y + (commandsBarHeight-commandsIconSize)/2
+
+	// Group-filter button on the left. It tints to the accent, on a soft pill,
+	// while the dropdown is open or any group is hidden, so an active filter reads
+	// at a glance.
+	filterBtn := gfx.Rect{X: bar.X + commandsDrawerPadding, Y: cy, Width: commandsIconSize, Height: commandsIconSize}
+	filterActive := state.commands.filterOpen || len(state.commands.hiddenGroups) > 0
+	state.paintCommandsLeadButton(canvas, filterBtn, hitCommandsFilter, iconSliders, m.CommandsFilter, filterActive)
+
+	// Order button right beside it, lit the same way while its menu is open or a
+	// non-default order is in effect.
+	sortBtn := gfx.Rect{X: filterBtn.X + filterBtn.Width + commandsLeadGap, Y: cy, Width: commandsIconSize, Height: commandsIconSize}
+	sortActive := state.commands.sortOpen || state.commands.sort != commandsSortCreated
+	state.paintCommandsLeadButton(canvas, sortBtn, hitCommandsSort, iconArrowUpDown, m.CommandsSortRow, sortActive)
+
+	// Add (+) and close (×) grouped together on the right; each lifts or reddens
+	// on hover so the pair reads as controls.
+	closeX := bar.X + bar.Width - commandsDrawerPadding - commandsIconSize
+	addX := closeX - commandsButtonGap - commandsIconSize
+	add := gfx.Rect{X: addX, Y: cy, Width: commandsIconSize, Height: commandsIconSize}
+	addColor := iconColor
+	if canvas.Hovered() == hitCommandsAdd {
+		addColor = state.pal.text
+	}
+	canvas.DrawIcon(lucideIcons[iconPlus], add, addColor)
+	canvas.HitWithOptions(hitCommandsAdd, add, m.CommandsAdd, gfx.HitOptions{Role: gfx.RoleButton})
+	closeBtn := gfx.Rect{X: closeX, Y: cy, Width: commandsIconSize, Height: commandsIconSize}
+	closeColor := iconColor
+	if canvas.Hovered() == hitCommandsClose {
+		closeColor = state.pal.danger
+	}
+	canvas.DrawIcon(lucideIcons[iconClose], closeBtn, closeColor)
+	canvas.HitWithOptions(hitCommandsClose, closeBtn, m.CommandsClose, gfx.HitOptions{Role: gfx.RoleButton})
+
+	// Command chips occupy the middle, between the leading buttons and add/close.
+	contentX := sortBtn.X + sortBtn.Width + commandsButtonInset + commandsFilterGap
+	contentW := addX - commandsFilterGap - contentX
+	if contentW > 0 {
+		state.paintCommandChipsBar(canvas, bar, contentX, contentW)
+	}
+}
+
+// paintCommandsSidebar draws the sidebar beside the terminal panes.
+func (state *State) paintCommandsSidebar(canvas *gfx.Canvas) {
 	bar := state.commandsSidebarBounds(state.viewport)
 	state.commands.bar = bar
 	state.commands.maxOffset = 0
@@ -319,6 +441,44 @@ func (state *State) paintCommandChips(canvas *gfx.Canvas, bounds gfx.Rect) {
 	canvas.Unclip()
 }
 
+// paintCommandChipsBar draws the visible commands in the bottom strip's middle.
+// More commands than fit scroll sideways with the wheel, so a long list stays
+// reachable without widening the bar; the clip keeps a half-scrolled chip from
+// running under the buttons at either end.
+func (state *State) paintCommandChipsBar(canvas *gfx.Canvas, bar gfx.Rect, x, width float32) {
+	order := state.commandDisplayOrder()
+	chipH := commandsBarHeight - commandsChipInset*2
+	y := bar.Y + commandsChipInset
+	extent := float32(0)
+	for i, index := range order {
+		if i > 0 {
+			extent += commandsTagGap
+		}
+		extent += state.commandTagWidth(canvas, state.snippets.list[index].Name)
+	}
+	maxOffset := max(extent-width, 0)
+	state.commands.maxOffset = maxOffset
+	state.commands.offset = min(max(state.commands.offset, 0), maxOffset)
+	if len(order) == 0 {
+		return
+	}
+	canvas.Clip(gfx.Rect{X: x, Y: bar.Y, Width: width, Height: bar.Height})
+	x0 := x - state.commands.offset
+	for _, index := range order {
+		w := state.commandTagWidth(canvas, state.snippets.list[index].Name)
+		if x0+w > x && x0 < x+width {
+			id := hitCommandsTag.At(index)
+			state.paintCommandTag(canvas, gfx.Rect{X: x0, Y: y, Width: w, Height: chipH}, state.snippets.list[index], id)
+			state.openSnippetBarMenuOn(canvas, id, index)
+		}
+		x0 += w + commandsTagGap
+		if x0 >= x+width {
+			break
+		}
+	}
+	canvas.Unclip()
+}
+
 // commandsMenuWidth fits a dropdown to its longest row: group names and order
 // labels come from the user's own snippets, so a fixed width would clip them.
 // The minimum keeps short menus from looking cramped like a tooltip.
@@ -342,23 +502,61 @@ func commandsMenuHeading(label string) components.DropdownMenuItem {
 // bar itself is still painted by the window; the menu is an overlay of the
 // page, so its rows keep the page's own hit, focus and keyboard behaviour.
 func (state *State) declareCommandsMenus(c ui.C) {
+	if state.commands.placement == commandsPlacementBottom {
+		bar := state.commandsBarRect()
+		if bar.Width <= 0 {
+			return
+		}
+		state.commands.bar = bar
+		cy := bar.Y + (commandsBarHeight-commandsIconSize)/2
+		filterButton := gfx.Rect{X: bar.X + commandsDrawerPadding, Y: cy, Width: commandsIconSize, Height: commandsIconSize}
+		sortButton := gfx.Rect{X: filterButton.X + filterButton.Width + commandsLeadGap, Y: cy, Width: commandsIconSize, Height: commandsIconSize}
+		if state.commands.filterOpen {
+			state.declareCommandsFilterMenu(c, bar, filterButton)
+		}
+		if state.commands.sortOpen {
+			state.declareCommandsSortMenu(c, bar, sortButton)
+		}
+		return
+	}
 	bar := state.commandsSidebarBounds(state.viewport)
 	if bar.Width <= 0 {
 		return
 	}
+	cy := bar.Y + (commandsHeaderHeight-commandsIconSize)/2
+	closeX := bar.X + bar.Width - commandsDrawerPadding - commandsIconSize
+	addX := closeX - commandsButtonGap - commandsIconSize
+	sortX := addX - commandsLeadGap - commandsIconSize
+	filterX := sortX - commandsLeadGap - commandsIconSize
 	if state.commands.filterOpen {
-		state.declareCommandsFilterMenu(c, bar)
+		state.declareCommandsFilterMenu(c, bar, gfx.Rect{X: filterX, Y: cy, Width: commandsIconSize, Height: commandsIconSize})
 	}
 	if state.commands.sortOpen {
-		state.declareCommandsSortMenu(c, bar)
+		state.declareCommandsSortMenu(c, bar, gfx.Rect{X: sortX, Y: cy, Width: commandsIconSize, Height: commandsIconSize})
 	}
 }
 
-// declareCommandsMenu places a menu to the left of the sidebar header.
-func (state *State) declareCommandsMenu(c ui.C, bar gfx.Rect, open *bool, width float32, rows func(*ui.MenuItems)) {
-	width = min(width, max(0, bar.X-18))
-	anchor := gfx.Rect{X: bar.X - width - 6, Y: bar.Y + commandsHeaderHeight}
-	ui.MenuAt(c, open, anchor, func(menu *ui.MenuItems) {
+// declareCommandsMenu places a menu beside the sidebar header or above the
+// bottom bar, depending on where the bar is docked, and declares its rows.
+func (state *State) declareCommandsMenu(c ui.C, bar, trigger gfx.Rect, open *bool, width float32, rows func(*ui.MenuItems)) {
+	if state.commands.placement == commandsPlacementSide {
+		width = min(width, max(0, bar.X-18))
+		anchor := gfx.Rect{X: bar.X - width - 6, Y: bar.Y + commandsHeaderHeight}
+		ui.MenuAt(c, open, anchor, func(menu *ui.MenuItems) {
+			menu.WidthRange(width, width)
+			rows(menu)
+		})
+		return
+	}
+	// ui.Menu opens 4px over its anchor; the bar's menus have always kept 6px
+	// from the strip, so the zero-size anchor sits 2px above the bar's top.
+	viewport := state.windowRect()
+	x := max(12, trigger.X-4)
+	if x+width > viewport.Width-12 {
+		x = max(12, viewport.Width-12-width)
+	}
+	anchor := ui.Slot(c).Absolute().Left(x).Top(bar.Y-2).Size(0, 0)
+	ui.Menu(c, anchor, open, func(menu *ui.MenuItems) {
 		menu.WidthRange(width, width)
 		rows(menu)
 	})
@@ -369,7 +567,7 @@ func (state *State) declareCommandsMenu(c ui.C, bar gfx.Rect, open *bool, width 
 // are states, not one-shot choices, so the application reopens the menu after a
 // row is chosen: the page closes a menu on any choice, while the canvas menu kept
 // this one open for the next toggle.
-func (state *State) declareCommandsFilterMenu(c ui.C, bar gfx.Rect) {
+func (state *State) declareCommandsFilterMenu(c ui.C, bar, trigger gfx.Rect) {
 	m := state.messages.Tools
 	groups, hasUngrouped := state.commandGroups()
 	choices := make([]components.DropdownMenuItem, 0, len(groups)+1)
@@ -408,7 +606,7 @@ func (state *State) declareCommandsFilterMenu(c ui.C, bar gfx.Rect) {
 			}
 		})
 	}
-	state.declareCommandsMenu(c, bar, &state.commands.filterOpen, width, func(menu *ui.MenuItems) {
+	state.declareCommandsMenu(c, bar, trigger, &state.commands.filterOpen, width, func(menu *ui.MenuItems) {
 		menu.Item(m.CommandsFilter).Disabled(true)
 		for _, choice := range choices {
 			item := menu.Item(choice.Label).Checked(choice.Checked)
@@ -431,7 +629,7 @@ func (state *State) declareCommandsFilterMenu(c ui.C, bar gfx.Rect) {
 // declareCommandsSortMenu declares the order dropdown: a heading and one radio
 // item per order. Picking an order closes it, since the bar behind already shows
 // the result.
-func (state *State) declareCommandsSortMenu(c ui.C, bar gfx.Rect) {
+func (state *State) declareCommandsSortMenu(c ui.C, bar, trigger gfx.Rect) {
 	items := []components.DropdownMenuItem{commandsMenuHeading(state.messages.Tools.CommandsSortRow)}
 	for i, order := range settingsCommandsSortChoices {
 		current := state.commands.sort == order
@@ -441,7 +639,7 @@ func (state *State) declareCommandsSortMenu(c ui.C, bar gfx.Rect) {
 		})
 	}
 	width := state.commandsMenuWidth(c.Canvas(), items, 180)
-	state.declareCommandsMenu(c, bar, &state.commands.sortOpen, width, func(menu *ui.MenuItems) {
+	state.declareCommandsMenu(c, bar, trigger, &state.commands.sortOpen, width, func(menu *ui.MenuItems) {
 		menu.Item(state.messages.Tools.CommandsSortRow).Disabled(true)
 		for i, order := range settingsCommandsSortChoices {
 			item := menu.Item(state.settingsCommandsSortLabel(order)).Chosen(state.commands.sort == order)
@@ -453,7 +651,8 @@ func (state *State) declareCommandsSortMenu(c ui.C, bar gfx.Rect) {
 	})
 }
 
-// scrollCommandsBar moves the chips under a wheel that turns over the sidebar.
+// scrollCommandsBar moves the chips under a wheel that turns over the bar: to
+// the side on the bottom strip, down the sidebar.
 func (state *State) scrollCommandsBar(event gfx.ScrollEvent) (gfx.EventResult, bool) {
 	if !state.commandsBarAvailable() || !state.commands.shown || state.commands.maxOffset <= 0 ||
 		state.commands.filterOpen || state.commands.sortOpen ||
@@ -461,12 +660,28 @@ func (state *State) scrollCommandsBar(event gfx.ScrollEvent) (gfx.EventResult, b
 		return gfx.EventResult{}, false
 	}
 	delta := event.StepY(commandsScrollStep)
+	if state.commands.placement == commandsPlacementBottom {
+		// A horizontal delta is the user's own sideways gesture; a plain wheel
+		// turns its vertical notches into the same sideways move, the way a tab
+		// strip does.
+		if horizontal := event.StepX(commandsScrollStep); horizontal != 0 {
+			delta = horizontal
+		}
+	}
 	if delta == 0 {
 		return gfx.EventResult{}, false
 	}
 	before := state.commands.offset
 	state.commands.offset = min(max(before+delta, 0), state.commands.maxOffset)
 	return gfx.EventResult{Handled: true, Repaint: state.commands.offset != before}, true
+}
+
+// commandTagWidth measures a bottom bar tag's width from its label, clamped to
+// sensible bounds.
+func (state *State) commandTagWidth(canvas *gfx.Canvas, name string) float32 {
+	theme := state.Theme()
+	w := canvas.TextWidthWeight(name, theme.Metrics.FontSizeS, gfx.WeightMedium) + commandsTagPaddingX*2
+	return max(commandsMinTagWidth, min(commandsMaxTagWidth, w))
 }
 
 // paintCommandTag draws one command chip: a rounded, bordered pill that sends on
@@ -506,9 +721,32 @@ func (state *State) toggleCommandBarFromPicker() {
 	state.save()
 }
 
-// clickCommandsDrawer dispatches a click in the command sidebar. It returns
-// false when the id is not one of the drawer's, so the central handler can try
-// the next candidate.
+// setCommandsPlacement docks the bar at the bottom strip or beside the panes.
+// A dock change ends any menu or drag that belonged to the old shape, and the
+// chips start from the beginning again because the room they have changed.
+func (state *State) setCommandsPlacement(placement commandsPlacement) {
+	previous := state.commands.placement
+	state.commands.placement = placement
+	state.commandsPlacementChanged(previous)
+}
+
+// commandsPlacementChanged is what follows the picker's dock control, which has
+// already written state.commands.placement: only a real change resets the
+// menus, drag and chip offset the old dock had.
+func (state *State) commandsPlacementChanged(previous commandsPlacement) {
+	if state.commands.placement == previous {
+		return
+	}
+	state.commands.offset = 0
+	state.commands.filterOpen = false
+	state.commands.sortOpen = false
+	state.commands.resizing = false
+	state.save()
+}
+
+// clickCommandsDrawer dispatches a click in the command bar. It returns false
+// when the id is not one of the bar's, so the central handler can try the next
+// candidate.
 func (state *State) clickCommandsDrawer(id gfx.ID) bool {
 	if !state.commandsBarAvailable() || !state.commands.shown || state.modal != modalNone {
 		return false
@@ -580,7 +818,7 @@ func (state *State) commandsDrawerResize(event gfx.PointerEvent) gfx.EventResult
 	if event.Kind == gfx.PointerDown && event.Target != hitCommandsResize {
 		commands.resizing = false
 	}
-	if !state.commandsBarAvailable() || !commands.shown || state.modal != modalNone {
+	if !state.commandsBarAvailable() || !commands.shown || commands.placement != commandsPlacementSide || state.modal != modalNone {
 		return gfx.EventResult{}
 	}
 	if event.Kind == gfx.PointerDown && event.Target == hitCommandsResize && event.Button == gfx.PointerButtonPrimary {

@@ -230,13 +230,17 @@ type savedState struct {
 	AIProviders    *[]savedAIProvider `json:"ai_providers,omitempty"`
 	AICLIProviders *[]savedAIProvider `json:"ai_cli_providers,omitempty"`
 
-	// The command sidebar's own layout: whether it is hidden, the snippet
-	// groups it filters out (keyed by lowercased name; "" means ungrouped), and
-	// the order of its chips. A fresh state shows every group in list order.
-	CommandsShown        bool     `json:"commands_shown,omitempty"`
+	// The command bar's own layout: whether it is hidden, whether it is docked
+	// beside the terminals instead of under them, the snippet groups it filters
+	// out (keyed by lowercased name; "" means ungrouped), and the order of its
+	// chips. A fresh state shows every group in list order.
+	CommandsShown bool `json:"commands_shown,omitempty"`
+	// CommandsSide is the sidebar dock; false is the bottom strip, which is
+	// also what settings written before the sidebar mean.
+	CommandsSide         bool     `json:"commands_side,omitempty"`
 	CommandsHiddenGroups []string `json:"commands_hidden_groups,omitempty"`
 	CommandsSort         string   `json:"commands_sort,omitempty"`
-	// CommandsWidth is the width the bar was dragged to; zero is the default.
+	// CommandsWidth is the width the sidebar was dragged to; zero is the default.
 	CommandsWidth float32 `json:"commands_width,omitempty"`
 }
 
@@ -684,6 +688,7 @@ func (state *State) snapshot() savedState {
 		}
 	}
 	saved.CommandsShown = state.commands.shown
+	saved.CommandsSide = state.commands.placement == commandsPlacementSide
 	saved.CommandsSort = state.commands.sort.String()
 	saved.CommandsWidth = state.commands.width
 	for key := range state.commands.hiddenGroups {

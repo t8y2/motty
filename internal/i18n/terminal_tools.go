@@ -170,6 +170,12 @@ type ToolsMessages struct {
 	// the strip: the UI uses the language's own word for saved commands.
 	CommandsBarHidden string
 	CommandsBarShow   string
+	// CommandsPlacement labels the picker's dock control, and
+	// CommandsPlaceBottom / CommandsPlaceSide name its two docks: the strip
+	// under the terminal or the sidebar beside it.
+	CommandsPlacement   string
+	CommandsPlaceBottom string
+	CommandsPlaceSide   string
 	// CommandsFilter is the tooltip of the group-filter button at the bar's left
 	// and the heading of the menu it opens.
 	CommandsFilter string
