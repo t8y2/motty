@@ -374,14 +374,20 @@ func (state *State) openSettings() {
 	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
 		state.releaseIdleSFTP(session)
 	}
+	// Returning to an already-open settings tab preserves where the user left
+	// the page (scroll offsets, drawer, and visit state). Only opening settings
+	// anew starts back at the top.
+	reopen := !state.settingsTab
 	state.settingsTab = true
 	state.activeSection = sectionSettings
-	state.settingsScroll = 0
-	state.settings.navScroll = 0
 	state.settings.pageMotion, state.settings.navMotion = gfx.Motion{}, gfx.Motion{}
-	state.settings.aboutCopied = false
-	state.schemeBrowserOpen = false
-	state.revealSettingsCategory()
+	if reopen {
+		state.settingsScroll = 0
+		state.settings.navScroll = 0
+		state.settings.aboutCopied = false
+		state.schemeBrowserOpen = false
+		state.revealSettingsCategory()
+	}
 	state.aiSettingsOpened()
 	state.save()
 }
