@@ -63,37 +63,39 @@ func main() {
 // serve runs one connection's handshake and then answers framebuffer requests.
 func serve(conn net.Conn) {
 	defer conn.Close()
-	frame := paint()
-	if err := handshake(conn); err != nil {
+	img := paint()
+	format, err := handshake(conn)
+	if err != nil {
 		log.Printf("handshake: %v", err)
 		return
 	}
-	if err := pump(conn, frame); err != nil && err != io.EOF {
+	if err := pump(conn, img, format); err != nil && err != io.EOF {
 		log.Printf("session: %v", err)
 	}
 }
 
 // handshake is the server side of RFB 3.8 with no security: version, chosen
-// security type, ServerInit, then the client's pixel format and encodings.
-func handshake(conn net.Conn) error {
+// security type, ServerInit, then the client's pixel format and encodings. It
+// returns the pixel format the client asked for, which the fixture honours.
+func handshake(conn net.Conn) (pixelFormat, error) {
 	reader := bufio.NewReader(conn)
 	if _, err := conn.Write([]byte("RFB 003.008\n")); err != nil {
-		return err
+		return pixelFormat{}, err
 	}
 	if _, err := io.ReadFull(reader, make([]byte, 12)); err != nil {
-		return err
+		return pixelFormat{}, err
 	}
 	if _, err := conn.Write([]byte{1, 1}); err != nil { // one security type: None
-		return err
+		return pixelFormat{}, err
 	}
 	if _, err := io.ReadFull(reader, make([]byte, 1)); err != nil { // the client's choice
-		return err
+		return pixelFormat{}, err
 	}
 	if _, err := conn.Write([]byte{0, 0, 0, 0}); err != nil { // SecurityResult: ok
-		return err
+		return pixelFormat{}, err
 	}
 	if _, err := io.ReadFull(reader, make([]byte, 1)); err != nil { // ClientInit
-		return err
+		return pixelFormat{}, err
 	}
 	init := make([]byte, 0, 24)
 	init = binary.BigEndian.AppendUint16(init, desktopWidth)
@@ -104,30 +106,40 @@ func handshake(conn net.Conn) error {
 	init = binary.BigEndian.AppendUint32(init, uint32(len(desktopName)))
 	init = append(init, desktopName...)
 	if _, err := conn.Write(init); err != nil {
-		return err
+		return pixelFormat{}, err
 	}
 	// SetPixelFormat is 20 bytes; SetEncodings is a 4-byte header plus 4 per
 	// encoding. Reading them keeps the stream aligned; the fixture only ever
 	// answers with raw rectangles, which every client understands.
-	if _, err := io.ReadFull(reader, make([]byte, 20)); err != nil {
-		return err
+	message := make([]byte, 20)
+	if _, err := io.ReadFull(reader, message); err != nil {
+		return pixelFormat{}, err
 	}
+	format := parseFormat(message)
 	header := make([]byte, 4)
 	if _, err := io.ReadFull(reader, header); err != nil {
-		return err
+		return pixelFormat{}, err
 	}
 	count := binary.BigEndian.Uint16(header[2:])
-	if _, err := io.ReadFull(reader, make([]byte, int(count)*4)); err != nil {
-		return err
+	encodings := make([]byte, int(count)*4)
+	if _, err := io.ReadFull(reader, encodings); err != nil {
+		return pixelFormat{}, err
 	}
+	first := int32(-1)
+	if count > 0 {
+		first = int32(binary.BigEndian.Uint32(encodings))
+	}
+	log.Printf("client asked for %d bits per pixel, first encoding %d", format.bits, first)
 	// A client may also send SetPixelFormat before ServerInit is read in some
 	// orders; the reader above has consumed it, so nothing else is pending.
-	return nil
+	return format, nil
 }
 
-// pump answers FramebufferUpdateRequest (type 3) with the whole desktop and
-// drains everything else the client sends.
-func pump(conn net.Conn, frame []byte) error {
+// pump answers FramebufferUpdateRequest (type 3) with the whole desktop in the
+// pixel format the client last asked for, follows SetPixelFormat (type 0) and
+// SetEncodings (type 2) sent while the session runs, and drains everything else
+// the client sends.
+func pump(conn net.Conn, img *image.RGBA, format pixelFormat) error {
 	reader := bufio.NewReader(conn)
 	header := make([]byte, 1)
 	for {
@@ -135,11 +147,34 @@ func pump(conn net.Conn, frame []byte) error {
 			return err
 		}
 		switch header[0] {
+		case 0: // SetPixelFormat: three pad bytes, then the 16-byte format
+			message := make([]byte, 20)
+			if _, err := io.ReadFull(reader, message[1:]); err != nil {
+				return err
+			}
+			format = parseFormat(message)
+			log.Printf("client changed to %d bits per pixel", format.bits)
+		case 2: // SetEncodings: a pad byte, the count, then the encodings
+			head := make([]byte, 3)
+			if _, err := io.ReadFull(reader, head); err != nil {
+				return err
+			}
+			first := make([]byte, 4)
+			count := int(binary.BigEndian.Uint16(head[1:]))
+			if count > 0 {
+				if _, err := io.ReadFull(reader, first); err != nil {
+					return err
+				}
+				log.Printf("client changed encodings, first %d", int32(binary.BigEndian.Uint32(first)))
+			}
+			if _, err := io.ReadFull(reader, make([]byte, max(count-1, 0)*4)); err != nil {
+				return err
+			}
 		case 3: // FramebufferUpdateRequest: incremental, x, y, w, h
 			if _, err := io.ReadFull(reader, make([]byte, 9)); err != nil {
 				return err
 			}
-			if err := sendFrame(conn, frame); err != nil {
+			if err := sendFrame(conn, encodeRaw(img, format)); err != nil {
 				return err
 			}
 		case 4: // KeyEvent: down-flag, padding, key
@@ -182,7 +217,7 @@ func sendFrame(w io.Writer, frame []byte) error {
 
 // paint draws the desktop: a window with a title bar, a prompt, and the tail of
 // a test run. Colours are the ones a dark terminal theme would use.
-func paint() []byte {
+func paint() *image.RGBA {
 	img := image.NewRGBA(image.Rect(0, 0, desktopWidth, desktopHeight))
 	draw.Draw(img, img.Bounds(), &image.Uniform{color.RGBA{0x1a, 0x1b, 0x26, 0xff}}, image.Point{}, draw.Src)
 
@@ -236,7 +271,7 @@ func paint() []byte {
 	// The cursor block after the prompt.
 	cursorX := 20 + len(lines[len(lines)-1].text)*7
 	draw.Draw(img, image.Rect(cursorX, 456+2, cursorX+7, 456+13), &image.Uniform{accent}, image.Point{}, draw.Src)
-	return encodeRaw(img)
+	return img
 }
 
 // drawString draws text at x,y with the built-in fixed font.
@@ -251,14 +286,43 @@ func drawString(img *image.RGBA, x, y int, value string, ink color.RGBA) {
 	drawer.DrawString(value)
 }
 
-// encodeRaw turns the image into the client's pixel order: blue, green, red,
-// pad, four bytes per pixel, row by row.
-func encodeRaw(img *image.RGBA) []byte {
-	out := make([]byte, 0, desktopWidth*desktopHeight*4)
+// pixelFormat is the true-colour format a client asked for: bits per pixel and,
+// for each channel, its maximum and its position.
+type pixelFormat struct {
+	bits      int
+	bigEndian bool
+	max       [3]uint32 // red, green, blue
+	shift     [3]uint
+}
+
+func parseFormat(message []byte) pixelFormat {
+	format := pixelFormat{bits: int(message[4]), bigEndian: message[6] != 0}
+	for channel := range 3 {
+		format.max[channel] = uint32(binary.BigEndian.Uint16(message[8+2*channel:]))
+		format.shift[channel] = uint(message[14+channel])
+	}
+	return format
+}
+
+// encodeRaw turns the image into the client's pixel format, row by row.
+func encodeRaw(img *image.RGBA, format pixelFormat) []byte {
+	size := format.bits / 8
+	out := make([]byte, 0, desktopWidth*desktopHeight*size)
 	for y := 0; y < desktopHeight; y++ {
 		row := img.Pix[y*img.Stride : y*img.Stride+desktopWidth*4]
 		for x := 0; x < desktopWidth; x++ {
-			out = append(out, row[x*4+2], row[x*4+1], row[x*4+0], 0)
+			var value uint32
+			for channel := range 3 {
+				level := (uint32(row[x*4+channel])*format.max[channel] + 127) / 255
+				value |= level << format.shift[channel]
+			}
+			for index := range size {
+				at := index
+				if format.bigEndian {
+					at = size - 1 - index
+				}
+				out = append(out, byte(value>>(8*at)))
+			}
 		}
 	}
 	return out

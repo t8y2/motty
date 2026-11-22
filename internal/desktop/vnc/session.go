@@ -30,6 +30,13 @@ type Session struct {
 }
 
 var _ desktop.Session = (*Session)(nil)
+var _ desktop.QualityAdjuster = (*Session)(nil)
+
+// SetQuality changes the colour depth and the preferred encoding of the
+// running connection.
+func (session *Session) SetQuality(colorDepth int, encoding desktop.Encoding) error {
+	return session.client.SetQuality(pixelFormat(colorDepth), encodings(encoding))
+}
 
 // Open connects to address through dial and starts reading the server. It
 // returns rfb.ErrAuthRequired when the server wants a password and opts has none,
@@ -45,6 +52,7 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 	config := rfb.Config{
 		Username: opts.Username, Password: opts.Password,
 		AskPassword: opts.AskPassword, AskCredentials: opts.AskCredentials,
+		PixelFormat: pixelFormat(opts.ColorDepth), Encodings: encodings(opts.Encoding),
 	}
 	if opts.VerifyServerKey != nil {
 		config.VerifyServerKey = func(publicKeyDER []byte) error {
@@ -67,6 +75,32 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 	session.info = desktop.Info{Protocol: "VNC", Name: client.Name, Encrypted: opts.Encrypted || client.Encrypted}
 	go session.run(conn)
 	return session, nil
+}
+
+// pixelFormat is the format a color depth in bits asks the server for; a depth
+// VNC has no format for is the full 32 bits.
+func pixelFormat(depth int) rfb.PixelFormat {
+	switch depth {
+	case 16:
+		return rfb.Pixel16
+	case 8:
+		return rfb.Pixel8
+	}
+	return rfb.Pixel32
+}
+
+// encodings is the order of encodings that expresses the user's preference; nil
+// leaves it to rfb's default.
+func encodings(preferred desktop.Encoding) []int32 {
+	switch preferred {
+	case desktop.EncodingZRLE:
+		return rfb.PreferEncoding(rfb.EncodingZRLE)
+	case desktop.EncodingHextile:
+		return rfb.PreferEncoding(rfb.EncodingHextile)
+	case desktop.EncodingRaw:
+		return rfb.PreferEncoding(rfb.EncodingRaw)
+	}
+	return nil
 }
 
 // sink gives rfb the frame to draw on, and takes the bell and the clipboard.

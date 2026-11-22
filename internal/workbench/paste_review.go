@@ -293,7 +293,7 @@ func (state *State) confirmPasteLines() {
 		return
 	}
 	state.closeModal()
-	state.startPasteQueue(session, splitPasteLines(value))
+	state.startPasteQueue(session, splitPasteLines(value), true)
 }
 
 func (state *State) finishStalePasteReview() {

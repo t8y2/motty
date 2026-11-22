@@ -3443,32 +3443,56 @@ func (state *State) declareMoveGroupBody(c ui.C, label string, viewport gfx.Rect
 	})
 }
 
-// hostSystemChoices are the systems whose badge a host can be given, in the order
-// the list shows them. The names are the systems' own, the same in every language.
+// hostSystemChoices are the systems whose badge a host can be given, listed A-Z
+// by name. The names are the systems' own, the same in every language.
 var hostSystemChoices = [...]struct {
 	system sshconn.RemoteSystem
 	name   string
 }{
-	{sshconn.SystemUbuntu, "Ubuntu"}, {sshconn.SystemDebian, "Debian"}, {sshconn.SystemFedora, "Fedora"},
-	{sshconn.SystemArch, "Arch Linux"}, {sshconn.SystemCentOS, "CentOS"}, {sshconn.SystemRedHat, "Red Hat"},
-	{sshconn.SystemRocky, "Rocky Linux"}, {sshconn.SystemAlma, "AlmaLinux"}, {sshconn.SystemOpenSUSE, "openSUSE"},
-	{sshconn.SystemKali, "Kali Linux"}, {sshconn.SystemMint, "Linux Mint"}, {sshconn.SystemRaspberryPi, "Raspberry Pi OS"},
-	{sshconn.SystemAlpine, "Alpine"}, {sshconn.SystemNixOS, "NixOS"}, {sshconn.SystemGentoo, "Gentoo"},
-	{sshconn.SystemManjaro, "Manjaro"},
-	{sshconn.SystemSynology, "Synology DSM"}, {sshconn.SystemQNAP, "QNAP QTS"}, {sshconn.SystemFnOS, "fnOS"},
-	{sshconn.SystemTrueNAS, "TrueNAS"}, {sshconn.SystemUnraid, "Unraid"},
-	{sshconn.SystemOpenMediaVault, "OpenMediaVault"}, {sshconn.SystemProxmox, "Proxmox VE"},
-	{sshconn.SystemOpenWrt, "OpenWrt"}, {sshconn.SystemDeepin, "deepin"}, {sshconn.SystemUOS, "UOS"},
+	{sshconn.SystemAIX, "AIX"},
+	{sshconn.SystemAlibabaCloudLinux, "Alibaba Cloud Linux"},
+	{sshconn.SystemAlma, "AlmaLinux"},
+	{sshconn.SystemAlpine, "Alpine"},
+	{sshconn.SystemAmazonLinux, "Amazon Linux"},
+	{sshconn.SystemAnolis, "Anolis OS"},
+	{sshconn.SystemArch, "Arch Linux"},
+	{sshconn.SystemAzureLinux, "Azure Linux"},
+	{sshconn.SystemCentOS, "CentOS"},
+	{sshconn.SystemDebian, "Debian"},
+	{sshconn.SystemDeepin, "deepin"},
+	{sshconn.SystemElementary, "elementary OS"},
+	{sshconn.SystemFedora, "Fedora"},
+	{sshconn.SystemFnOS, "fnOS"},
+	{sshconn.SystemFreeBSD, "FreeBSD"},
+	{sshconn.SystemGentoo, "Gentoo"},
+	{sshconn.SystemKali, "Kali Linux"},
 	{sshconn.SystemKylin, "Kylin"},
+	{sshconn.SystemLinux, "Linux"},
+	{sshconn.SystemMint, "Linux Mint"},
+	{sshconn.SystemDarwin, "macOS"},
+	{sshconn.SystemManjaro, "Manjaro"},
+	{sshconn.SystemNixOS, "NixOS"},
+	{sshconn.SystemOpenMediaVault, "OpenMediaVault"},
+	{sshconn.SystemOpenSUSE, "openSUSE"},
+	{sshconn.SystemOpenWrt, "OpenWrt"},
+	{sshconn.SystemOracleLinux, "Oracle Linux"},
 	{sshconn.SystemPopOS, "Pop!_OS"},
-	{sshconn.SystemZorin, "Zorin OS"}, {sshconn.SystemElementary, "elementary OS"},
-	{sshconn.SystemVoid, "Void Linux"}, {sshconn.SystemSlackware, "Slackware"},
-	{sshconn.SystemAnolis, "Anolis OS"}, {sshconn.SystemTencentOS, "TencentOS"},
-	{sshconn.SystemAmazonLinux, "Amazon Linux"}, {sshconn.SystemAzureLinux, "Azure Linux"},
-	{sshconn.SystemOracleLinux, "Oracle Linux"}, {sshconn.SystemAlibabaCloudLinux, "Alibaba Cloud Linux"},
-	{sshconn.SystemESXi, "VMware ESXi"}, {sshconn.SystemAIX, "AIX"},
-	{sshconn.SystemFreeBSD, "FreeBSD"}, {sshconn.SystemLinux, "Linux"},
-	{sshconn.SystemWindows, "Windows"}, {sshconn.SystemDarwin, "macOS"},
+	{sshconn.SystemProxmox, "Proxmox VE"},
+	{sshconn.SystemQNAP, "QNAP QTS"},
+	{sshconn.SystemRaspberryPi, "Raspberry Pi OS"},
+	{sshconn.SystemRedHat, "Red Hat"},
+	{sshconn.SystemRocky, "Rocky Linux"},
+	{sshconn.SystemSlackware, "Slackware"},
+	{sshconn.SystemSynology, "Synology DSM"},
+	{sshconn.SystemTencentOS, "TencentOS"},
+	{sshconn.SystemTrueNAS, "TrueNAS"},
+	{sshconn.SystemUbuntu, "Ubuntu"},
+	{sshconn.SystemUnraid, "Unraid"},
+	{sshconn.SystemUOS, "UOS"},
+	{sshconn.SystemESXi, "VMware ESXi"},
+	{sshconn.SystemVoid, "Void Linux"},
+	{sshconn.SystemWindows, "Windows"},
+	{sshconn.SystemZorin, "Zorin OS"},
 }
 
 // hostSystemDisplayName is the system's own name, the same in every language.

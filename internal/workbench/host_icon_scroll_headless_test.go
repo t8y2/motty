@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
 	"motty/internal/sshconn"
 )
@@ -35,6 +36,7 @@ func TestHostIconSelectNativeInput(test *testing.T) {
 			must(view.Rest())
 			must(view.ClickLabel(state.messages.FieldIcon))
 			must(view.Rest())
+			must(scrollToIconOption(view, "Linux Mint"))
 			must(view.ClickLabel("Linux Mint"))
 			must(view.Rest())
 			if state.editor.icon != hostIconOf(sshconn.SystemMint) {
@@ -46,4 +48,26 @@ func TestHostIconSelectNativeInput(test *testing.T) {
 			}
 		})
 	}
+}
+
+// The icon list is taller than the dialog and has no filter, so a row past the
+// first screen is reached by scrolling the list before it is chosen.
+func scrollToIconOption(view *headless.Session, label string) error {
+	if _, ok := view.Hit(label); ok {
+		return nil
+	}
+	list, ok := view.Hit("Automatic")
+	if !ok {
+		return fmt.Errorf("the icon list is not open")
+	}
+	at := gfx.ScrollEvent{X: list.Bounds.X + 10, Y: list.Bounds.Y + list.Bounds.Height/2, DeltaY: 120, Precise: true}
+	for range 200 {
+		if err := view.Scroll(at); err != nil {
+			return err
+		}
+		if _, ok := view.Hit(label); ok {
+			return nil
+		}
+	}
+	return fmt.Errorf("no icon option %q after scrolling the list", label)
 }
