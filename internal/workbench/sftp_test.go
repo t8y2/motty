@@ -1397,7 +1397,13 @@ func TestSFTPSteadyStatePaintDoesNotAllocate(t *testing.T) {
 		state.Paint(&canvas, size)
 	})
 	if allocations != 0 {
-		t.Fatalf("SFTP steady-state paint allocations = %v", allocations)
+		sites := allocationSites(func() {
+			for range 10 {
+				canvas.Reset()
+				state.Paint(&canvas, size)
+			}
+		})
+		t.Fatalf("SFTP steady-state paint allocations = %v; in ten paints:\n%s", allocations, sites)
 	}
 }
 
