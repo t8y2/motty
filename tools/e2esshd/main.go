@@ -180,6 +180,7 @@ func main() {
 			// their own.
 			oneSession := os.Getenv("E2E_ONE_SESSION") == "1"
 			usedSession := false
+			login := &loginMessage{text: os.Getenv("E2E_LOGIN_MESSAGE")}
 			for newChannel := range channels {
 				switch newChannel.ChannelType() {
 				case "session":
@@ -191,7 +192,7 @@ func main() {
 					channel, reqs, err := newChannel.Accept()
 					if err == nil {
 						usedSession = oneSession
-						go serve(conn, fixture.sftpRoot, channel, reqs)
+						go serve(conn, fixture.sftpRoot, login, channel, reqs)
 					}
 				case "direct-tcpip":
 					if os.Getenv("E2E_NO_DIRECT") == "1" {
@@ -319,7 +320,7 @@ func serveEcho(connection net.Conn) {
 	}
 }
 
-func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-chan *ssh.Request) {
+func serve(sshConn ssh.Conn, sftpRoot string, login *loginMessage, channel ssh.Channel, requests <-chan *ssh.Request) {
 	user := sshConn.User()
 	defer channel.Close()
 	x11 := newX11Relay(sshConn)
@@ -369,6 +370,7 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 			}
 		case "shell":
 			request.Reply(true, nil)
+			login.show(channel, "shell")
 			if os.Getenv("E2E_SFTP_ONLY") == "1" {
 				// An account restricted to SFTP: the shell request is accepted, the
 				// session says so and ends with a failure status.
@@ -417,6 +419,7 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 				request.Reply(false, nil)
 				continue
 			}
+			login.discard("exec")
 			if scpOnlyEnabled() {
 				// A server without SFTP: only the scp programs and their helper commands.
 				if _, allowed := scpCommand(sftpRoot, payload.Command); !allowed {
@@ -532,6 +535,7 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 				continue
 			}
 			request.Reply(true, nil)
+			login.discard("subsystem")
 			log.Printf("sftp subsystem opened")
 			server, err := sftp.NewServer(channel, sftp.WithServerWorkingDirectory(sftpRoot))
 			if err != nil {
@@ -633,4 +637,37 @@ func prepareFixture() (fixture, error) {
 		return fail(err)
 	}
 	return fixture{root: root, sftpRoot: sftpRoot, identityPath: identityPath, publicKey: clientSigner.PublicKey()}, nil
+}
+
+// loginMessage is the message sshd prints at login (PAM's MOTD, last login),
+// set with E2E_LOGIN_MESSAGE. As in OpenSSH it belongs to the connection, not
+// to a session: the first session that starts a program takes it, and only a
+// shell request shows it. A command or a subsystem (SFTP) that starts first
+// drops it for every later session, so a client that opens one before its
+// shell loses the user's login banner.
+type loginMessage struct {
+	text string
+	once sync.Once
+}
+
+// show prints the message to the session that took it, when that session is a
+// shell and the fixture has a message to give.
+func (message *loginMessage) show(channel ssh.Channel, kind string) {
+	message.once.Do(func() {
+		if message.text == "" {
+			return
+		}
+		log.Printf("login-message shown to %s", kind)
+		fmt.Fprint(channel, strings.ReplaceAll(message.text, `\n`, "\r\n")+"\r\n")
+	})
+}
+
+// discard is the first session being a command or a subsystem: the message is
+// gone and nothing displays it.
+func (message *loginMessage) discard(kind string) {
+	message.once.Do(func() {
+		if message.text != "" {
+			log.Printf("login-message dropped by %s", kind)
+		}
+	})
 }

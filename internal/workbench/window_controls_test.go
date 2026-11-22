@@ -7,29 +7,40 @@ import (
 	"github.com/vivaui/viva/gfx"
 )
 
-// The window bar leaves room for what the platform keeps of the strip's two
-// ends: the traffic lights on macOS, the buttons Viva draws on Windows and Linux.
+// The window bar leaves room for what the window buttons cover of the strip's
+// two ends, as the window reports it: the traffic lights at the start on macOS,
+// the buttons Viva draws at the end on Windows and Linux, and nothing in full
+// screen, where the bar takes the room back.
 func TestWindowBarStaysClearOfTheWindowButtons(t *testing.T) {
 	_, options := newWorld(t)
 	state := newTestState(t, options)
-	var canvas gfx.Canvas
 	const width = 1400
-	state.Paint(&canvas, gfx.Size{Width: width, Height: 900})
-	leading, trailing := app.TitlebarInsets()
-
-	var leftmost, rightmost float32 = width, 0
-	for _, hit := range canvas.Hits() {
-		if hit.Bounds.Y >= windowBarHeight || hit.MovesWindow {
-			continue
+	edges := func(leading, trailing float32) (leftmost, rightmost float32) {
+		var canvas gfx.Canvas
+		canvas.SetTitlebarInsets(leading, trailing)
+		state.Paint(&canvas, gfx.Size{Width: width, Height: 900})
+		leftmost = width
+		for _, hit := range canvas.Hits() {
+			if hit.Bounds.Y >= windowBarHeight || hit.MovesWindow {
+				continue
+			}
+			leftmost = min(leftmost, hit.Bounds.X)
+			rightmost = max(rightmost, hit.Bounds.X+hit.Bounds.Width)
 		}
-		leftmost = min(leftmost, hit.Bounds.X)
-		rightmost = max(rightmost, hit.Bounds.X+hit.Bounds.Width)
+		return leftmost, rightmost
 	}
-	if leftmost < leading {
-		t.Errorf("a window-bar control starts at %.0f, inside the %.0f the platform keeps", leftmost, leading)
+	for _, insets := range [][2]float32{{70, 0}, {0, 3 * app.WindowControlWidth}} {
+		leftmost, rightmost := edges(insets[0], insets[1])
+		if leftmost < insets[0] {
+			t.Errorf("insets %v: a window-bar control starts at %.0f, inside the %.0f the buttons cover", insets, leftmost, insets[0])
+		}
+		if rightmost > width-insets[1] {
+			t.Errorf("insets %v: a window-bar control ends at %.0f, inside the %.0f the buttons cover", insets, rightmost, insets[1])
+		}
 	}
-	if rightmost > width-trailing {
-		t.Errorf("a window-bar control ends at %.0f, inside the %.0f the platform keeps at the end", rightmost, trailing)
+	covered, _ := edges(70, 0)
+	if free, _ := edges(0, 0); free >= covered {
+		t.Errorf("with no window buttons on the strip the bar still starts at %.0f, as it does beside them", free)
 	}
 }
 
@@ -58,11 +69,9 @@ func TestTheWindowBarDoesNotShiftWhenASessionConnects(t *testing.T) {
 }
 
 // A side rail is a column of centred tools. The bar's last control sits over
-// that column rather than beside it, so the two right edges read as one line.
+// that column rather than beside it, so the two right edges read as one line,
+// where no window buttons cover the bar's end: the canvas here reports none.
 func TestTheWindowBarEndsOverTheSideRail(t *testing.T) {
-	if _, trailing := app.TitlebarInsets(); trailing > 0 {
-		t.Skip("the platform draws its window controls in the bar's right corner")
-	}
 	state := newTestState(t, testOptions(t))
 	inTerminal(t, state)
 	for _, size := range [...]terminalToolbarSize{terminalToolbarSmall, terminalToolbarMedium, terminalToolbarLarge} {

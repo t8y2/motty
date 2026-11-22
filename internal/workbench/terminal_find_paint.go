@@ -43,6 +43,9 @@ func (state *State) declareFindBar(c ui.C, session *Session) (slots findBarSlots
 				state.declareFindButton(c, hitTerminalFindClose, icons.X, state.messages.TerminalFindClose, false)
 			})
 		})
+		if state.deck.PaneMaximized(state.deck.ActiveWorkspace()) {
+			state.declareSessionMaximizeButton(c, session)
+		}
 	})
 	state.declareFindSettingsPopover(c, slots.settings)
 	return slots

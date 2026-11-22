@@ -3,6 +3,7 @@ package workbench
 import (
 	"errors"
 	"fmt"
+	"motty/internal/desktop"
 	"strconv"
 	"strings"
 
@@ -131,6 +132,12 @@ type hostEditor struct {
 	// RDP Security without TLS or NLA, and the RSA key exchange TLS suites an
 	// old server needs.
 	viaSSH, clipboard, console, noAudio, standardSecurity, legacyTLS, chromeless bool
+	// colorDepth, desktopEncoding and effects are a desktop host's quality
+	// choices: the bits per pixel (zero is 32), the VNC encoding listed first,
+	// and the visual effects an RDP server may render.
+	colorDepth      int
+	desktopEncoding desktop.Encoding
+	effects         desktop.Effects
 	// ports are the serial ports found when the picker was last opened.
 	ports []serial.Port
 }
@@ -365,6 +372,13 @@ func (editor *hostEditor) load(host Host) {
 	editor.noAudio = host.Protocol == protocolRDP && host.NoAudio
 	editor.standardSecurity = host.Protocol == protocolRDP && host.StandardSecurity
 	editor.legacyTLS = host.Protocol == protocolRDP && host.LegacyTLS
+	editor.colorDepth, editor.desktopEncoding, editor.effects = 0, desktop.EncodingAuto, desktop.DefaultEffects()
+	switch host.Protocol {
+	case protocolVNC:
+		editor.colorDepth, editor.desktopEncoding = host.ColorDepth, host.PreferredEncoding
+	case protocolRDP:
+		editor.colorDepth, editor.effects = host.ColorDepth, host.desktopEffects()
+	}
 	if host.Protocol == protocolSerial {
 		editor.port.Insert(host.Line.String())
 		editor.ports = serialPorts()
@@ -401,6 +415,14 @@ func (editor *hostEditor) host(id uint32) Host {
 		host.NoAudio = editor.noAudio
 		host.StandardSecurity = editor.standardSecurity
 		host.LegacyTLS = editor.legacyTLS
+		host.ColorDepth = rdpColorDepth(editor.colorDepth)
+		if editor.effects != desktop.DefaultEffects() {
+			effects := editor.effects
+			host.Effects = &effects
+		}
+	}
+	if editor.protocol == protocolVNC {
+		host.ColorDepth, host.PreferredEncoding = vncColorDepth(editor.colorDepth), editor.desktopEncoding
 	}
 	if editor.protocol == protocolSSH {
 		host.SSHOptions = editor.sshOptions.Clone()
@@ -478,6 +500,7 @@ func (editor *hostEditor) reset() {
 	editor.port.Insert(strconv.Itoa(defaultPort))
 	editor.protocol, editor.terminal, editor.flow = protocolSSH, terminalSSH, serial.FlowNone
 	editor.viaSSH, editor.clipboard, editor.console, editor.noAudio, editor.standardSecurity, editor.legacyTLS, editor.chromeless = false, false, false, false, false, false, false
+	editor.colorDepth, editor.desktopEncoding, editor.effects = 0, desktop.EncodingAuto, desktop.DefaultEffects()
 }
 
 // defaultPortText is what the port field holds for a protocol until the user

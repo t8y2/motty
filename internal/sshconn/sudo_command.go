@@ -36,9 +36,9 @@ func (conn *Conn) runSudoCommand(ctx context.Context, command, password string, 
 	if err := ctx.Err(); err != nil {
 		return nil, false, err
 	}
-	client := conn.Client()
-	if client == nil {
-		return nil, false, errors.New("sshconn: not connected")
+	client, err := conn.SessionClient(ctx)
+	if err != nil {
+		return nil, false, err
 	}
 	operationCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -103,9 +103,9 @@ func (conn *Conn) streamSudoCommand(ctx context.Context, command, password strin
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	client := conn.Client()
-	if client == nil {
-		return errors.New("sshconn: not connected")
+	client, err := conn.SessionClient(ctx)
+	if err != nil {
+		return err
 	}
 	operationCtx, cancel := context.WithCancel(ctx)
 	defer cancel()

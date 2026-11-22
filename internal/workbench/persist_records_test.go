@@ -21,7 +21,7 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		"notes_view": true, "note_sidebars": true, "recent_connect_sort": true, "recent_connections": true,
 		"monitor_panels": true, "monitor_active": true,
 		"language": true, "theme": true, "icon_color": true, "network_proxy": true, "terminal_font_size": true, "text_scale": true, "interface_text_size": true, "interface_font": true, "interface_font_main_weight": true, "interface_font_bold_weight": true, "terminal_font_face": true, "terminal_font_family": true, "terminal_font_main_weight": true, "terminal_font_bold_weight": true, "terminal_font_fallbacks": true,
-		"restore_connect": true, "share_connections": true, "update_check": true, "close_action": true, "relaunch_action": true, "tray_hint_shown": true, "update_skipped": true, "ai_panel_width": true, "ai_composer_height": true,
+		"restore_connect": true, "share_connections": true, "update_check": true, "close_action": true, "keep_windows_on_exit": true, "relaunch_action": true, "tray_hint_shown": true, "update_skipped": true, "ai_panel_width": true, "ai_composer_height": true,
 
 		// Which host an update is downloaded from depends on the network this
 		// computer is on, like its proxy: another device picks its own.
@@ -62,9 +62,10 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		// The commands a computer's local shells type when they start name its own
 		// shells and set up its own locale, so another device keeps its own.
 		"local_startup_commands": true,
-		// Whether the command bar shows, which groups it filters and how it
-		// orders them are this computer's own layout, not a preference to sync.
-		"commands_shown": true, "commands_sort": true, "commands_hidden_groups": true,
+		// Whether the command bar shows, where it docks, which groups it filters
+		// and how it orders them are this computer's own layout, not a
+		// preference to sync.
+		"commands_shown": true, "commands_side": true, "commands_sort": true, "commands_hidden_groups": true, "commands_collapsed_groups": true, "commands_width": true,
 		// The shells a computer hides from its pickers name this machine's own
 		// programs and distributions; another device hides its own.
 		"hidden_shells": true,

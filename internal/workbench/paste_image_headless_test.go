@@ -36,6 +36,15 @@ func TestImageOnlyClipboardPastesIntoLocalTerminalThroughNativeShortcut(t *testi
 				t.Fatal(err)
 			}
 			defer preview.Close()
+			// Read the picture back from the driver's clipboard. The app's default
+			// reads the system clipboard; a headless run has no window to publish
+			// the driver's own clipboard through, so wire it here.
+			state.options.ClipboardImagePNG = func() ([]byte, error) {
+				if png := preview.Driver().ClipboardImage(); len(png) > 0 {
+					return png, nil
+				}
+				return nil, app.ErrNoImage
+			}
 			if err := preview.ClickLabel(fmt.Sprintf(state.messages.LabelTerminalFmt, owner.Address)); err != nil {
 				t.Fatal(err)
 			}

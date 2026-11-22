@@ -98,6 +98,15 @@ func (state *State) settingsCategoryName(category settingsCategory) string {
 	return m.CatGeneral
 }
 
+// openSettingsCategory opens settings on a category at its top. An open tab keeps
+// its scroll, and selecting the category it already shows changes nothing, so
+// the top is set here rather than left to either of them.
+func (state *State) openSettingsCategory(category settingsCategory) {
+	state.openSettings()
+	state.selectSettingsCategory(category)
+	state.settingsScroll = 0
+}
+
 func (state *State) selectSettingsCategory(category settingsCategory) bool {
 	if category >= settingsCategoryCount {
 		return false

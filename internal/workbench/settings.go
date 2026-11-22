@@ -287,6 +287,36 @@ func closeActionFromString(value string) closeAction {
 	return closeToTray
 }
 
+// keepWindowsPolicy is what quitting the application does with the windows
+// that are open: keep their records for the next launch, discard them, or ask.
+type keepWindowsPolicy uint8
+
+const (
+	keepWindowsAlways keepWindowsPolicy = iota
+	keepWindowsNever
+	keepWindowsAsk
+)
+
+func (policy keepWindowsPolicy) String() string {
+	switch policy {
+	case keepWindowsNever:
+		return "never"
+	case keepWindowsAsk:
+		return "ask"
+	}
+	return "always"
+}
+
+func keepWindowsPolicyFromString(value string) keepWindowsPolicy {
+	switch value {
+	case keepWindowsNever.String():
+		return keepWindowsNever
+	case keepWindowsAsk.String():
+		return keepWindowsAsk
+	}
+	return keepWindowsAlways
+}
+
 type relaunchAction uint8
 
 const (
@@ -344,14 +374,20 @@ func (state *State) openSettings() {
 	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
 		state.releaseIdleSFTP(session)
 	}
+	// Returning to an already-open settings tab preserves where the user left
+	// the page (scroll offsets, drawer, and visit state). Only opening settings
+	// anew starts back at the top.
+	reopen := !state.settingsTab
 	state.settingsTab = true
 	state.activeSection = sectionSettings
-	state.settingsScroll = 0
-	state.settings.navScroll = 0
 	state.settings.pageMotion, state.settings.navMotion = gfx.Motion{}, gfx.Motion{}
-	state.settings.aboutCopied = false
-	state.schemeBrowserOpen = false
-	state.revealSettingsCategory()
+	if reopen {
+		state.settingsScroll = 0
+		state.settings.navScroll = 0
+		state.settings.aboutCopied = false
+		state.schemeBrowserOpen = false
+		state.revealSettingsCategory()
+	}
 	state.aiSettingsOpened()
 	state.save()
 }
@@ -563,6 +599,7 @@ var (
 	settingsTabOrientationChoices  = [...]tabOrientation{tabsHorizontal, tabsVertical}
 	settingsTabDoubleClickChoices  = [...]tabDoubleClickAction{tabDoubleClickRename, tabDoubleClickDuplicate, tabDoubleClickNone}
 	settingsCloseChoices           = [...]closeAction{closeToTray, closeQuits}
+	settingsKeepWindowsChoices     = [...]keepWindowsPolicy{keepWindowsAlways, keepWindowsNever, keepWindowsAsk}
 	settingsRelaunchChoices        = [...]relaunchAction{relaunchRaise, relaunchNewWindow}
 	settingsUpdateSourceChoices    = [...]update.Source{update.SourceOfficial, update.SourceCNB}
 )
@@ -624,6 +661,17 @@ func (state *State) settingsCloseLabel(action closeAction) string {
 		return state.messages.Tools.GeneralCloseQuit
 	}
 	return state.messages.Tools.GeneralCloseTray
+}
+
+func (state *State) settingsKeepWindowsLabel(policy keepWindowsPolicy) string {
+	messages := state.messages.Tools
+	switch policy {
+	case keepWindowsNever:
+		return messages.GeneralKeepWindowsDiscard
+	case keepWindowsAsk:
+		return messages.GeneralKeepWindowsAsk
+	}
+	return messages.GeneralKeepWindowsKeep
 }
 
 func (state *State) settingsRelaunchLabel(action relaunchAction) string {

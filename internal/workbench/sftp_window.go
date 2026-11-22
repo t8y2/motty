@@ -138,6 +138,7 @@ func (w *sftpWindow) startBrowser() {
 	}
 	state := w.owner
 	connection, mode := w.session.conn, w.session.host.Transfer
+	w.clearDirectoryTreeRequests()
 	w.view.openFiles = func() (sftpclient.Remote, error) { return openRemoteFiles(connection, mode) }
 	w.view.worker = sftpclient.NewWorker(w.view.openFiles, w.invalidate)
 	state.configureSFTPWorker(w.view)
@@ -161,6 +162,7 @@ func (w *sftpWindow) config() app.Config {
 	config := ui.Configure(w.windowPage(), base)
 	config.Paint = base.Paint
 	config.OnScroll = w.scrollWindow
+	config.OnActivate = w.activate
 	return config
 }
 

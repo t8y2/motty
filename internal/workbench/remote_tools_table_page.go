@@ -42,6 +42,8 @@ func (state *State) ensureRemoteTableHooks() {
 	view.rowDecl = state.declareRemoteTableRow
 	view.rowMenu = state.declareRemoteTableMenu
 	view.headerDraw = state.paintRemoteTableHeader
+	view.columnResize.draw = state.paintRemoteTableColumnResize
+	view.columnResize.handlers.Pointer = state.remoteTableColumnPointer
 	view.borderDraw = state.paintRemoteTableBorder
 	view.menuRow = -1
 }
@@ -84,6 +86,13 @@ func (state *State) prepareRemoteTable(c ui.C, tab remoteTab, width float32) {
 		}
 	}
 	components.FitSortableTableHeadings(c.Canvas(), theme, view.tableColumns[:len(headings)], view.tableHeaderCells[:len(headings)])
+	chosen := state.remoteChosenWidths(tab)
+	if chosen.chosen {
+		for index := 0; index+1 < view.tableCount; index++ {
+			view.tableColumns[index].Width = chosen.widths[index]
+		}
+	}
+	fitRemoteTableColumns(view.tableColumns[:view.tableCount], width)
 }
 
 // declareRemoteToolsTable declares the current tab's sortable header and page
@@ -92,11 +101,7 @@ func (state *State) prepareRemoteTable(c ui.C, tab remoteTab, width float32) {
 func (state *State) declareRemoteToolsTable(c ui.C, tab remoteTab, fallbackWidth float32) {
 	state.ensureRemoteTableHooks()
 	view, theme := &state.remote, state.Theme()
-	width := fallbackWidth
-	if bounds := c.Bounds(); bounds.Width > 0 {
-		width = bounds.Width
-	}
-	state.prepareRemoteTable(c, tab, width)
+	state.prepareRemoteTable(c, tab, fallbackWidth)
 	headerHeight := components.TableHeaderHeight(theme)
 	label := state.remoteTabLabel(tab)
 	placeholder := state.remoteTablePlaceholder(tab)
@@ -109,10 +114,12 @@ func (state *State) declareRemoteToolsTable(c ui.C, tab remoteTab, fallbackWidth
 		ui.Column(c).Fill().PadSides(1, 1, 0, 1).Children(func() {
 			if showHeader {
 				ui.Stack(c).Height(headerHeight).Shrink(0).FillWidth().Children(func() {
-					ui.Slot(c).Fill().Draw(view.headerDraw)
+					control := ui.Control(c, label, &view.columnResize.handlers).Fill().Draw(view.headerDraw)
+					control.HitWith(control.N().ID, label, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true})
 					ui.Row(c).Fill().Children(func() {
 						state.declareRemoteTableHeaderHits(c)
 					})
+					ui.Slot(c).Fill().Draw(view.columnResize.draw)
 				})
 			}
 			if placeholder {

@@ -403,6 +403,9 @@ func (w *sftpWindow) declareStatusLine(c ui.C) {
 	}
 	if w.browse.enabled {
 		ui.Row(c).Height(sftpWindowStatusHeight).Gap(6).Items(ui.Center).Children(func() {
+			if w.view.busy || w.view.localBusy {
+				ui.Spinner(c).Size(16, 16).Shrink(0)
+			}
 			ui.Icon(c, lucideIcons[iconSFTPBrowseSync]).Size(14, 14).Color(w.owner.pal.success)
 			ui.Text(c, m.SFTPWindow.BrowseRootLabel).FontSize(theme.Metrics.FontSizeS).Color(theme.Foreground)
 			ui.Text(c, w.browse.roots[0]).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().Grow(1)
@@ -414,7 +417,12 @@ func (w *sftpWindow) declareStatusLine(c ui.C) {
 		})
 		return
 	}
-	ui.Text(c, status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(sftpWindowStatusHeight)
+	ui.Row(c).Height(sftpWindowStatusHeight).Gap(6).Items(ui.Center).Children(func() {
+		if w.view.busy || w.view.localBusy {
+			ui.Spinner(c).Size(16, 16).Shrink(0)
+		}
+		ui.Text(c, status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().Grow(1).LineHeight(sftpWindowStatusHeight)
+	})
 }
 
 func (w *sftpWindow) canTransfer(local bool) bool {

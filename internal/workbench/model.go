@@ -3,6 +3,7 @@ package workbench
 import (
 	"time"
 
+	"motty/internal/desktop"
 	"motty/internal/serial"
 	"motty/internal/sessionlog"
 	"motty/internal/sshbrowser"
@@ -117,6 +118,15 @@ type Host struct {
 	StandardSecurity bool
 	LegacyTLS        bool
 	Chromeless       bool
+	// ColorDepth, PreferredEncoding and Effects are a remote desktop host's
+	// quality and bandwidth choices; the zero values are what a host has always
+	// had. ColorDepth is the bits per pixel to ask for (VNC 32, 16 or 8; RDP 32,
+	// 24 or 16), PreferredEncoding the VNC encoding listed first, and Effects
+	// the visual effects an RDP server may render; nil is desktop.DefaultEffects.
+	// Effects is never modified in place, so hosts may share it.
+	ColorDepth        int
+	PreferredEncoding desktop.Encoding
+	Effects           *desktop.Effects
 
 	// localShell is the shell a local terminal was opened with: a program path,
 	// or a WSL distribution as localshell.WSLShell names it. Empty starts the
@@ -141,13 +151,25 @@ type reuseHostPolicy struct {
 	standardSecurity bool
 	legacyTLS        bool
 	interactiveOnly  bool
+	colorDepth       int
+	desktopEncoding  desktop.Encoding
+	effects          desktop.Effects
 }
 
 func reusePolicyFor(host Host) reuseHostPolicy {
 	return reuseHostPolicy{line: host.Line, encoding: host.Encoding, user: host.User,
 		localShell: host.localShell, viaSSH: host.ViaSSH, clipboard: host.Clipboard,
 		console: host.Console, noAudio: host.NoAudio, standardSecurity: host.StandardSecurity,
-		legacyTLS: host.LegacyTLS, interactiveOnly: host.InteractiveOnly}
+		legacyTLS: host.LegacyTLS, interactiveOnly: host.InteractiveOnly,
+		colorDepth: host.ColorDepth, desktopEncoding: host.PreferredEncoding, effects: host.desktopEffects()}
+}
+
+// desktopEffects is the effects an RDP host asks for: its own, or the defaults.
+func (host Host) desktopEffects() desktop.Effects {
+	if host.Effects != nil {
+		return *host.Effects
+	}
+	return desktop.DefaultEffects()
 }
 
 // defaultPort is the SSH port a host without an explicit one uses.

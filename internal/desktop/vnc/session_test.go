@@ -185,3 +185,61 @@ func TestServerHangupEndsTheSessionWithAnError(t *testing.T) {
 		t.Fatal("a dropped connection must report why")
 	}
 }
+
+// A host's color depth and encoding preference are what the server is asked
+// for in the first messages after ServerInit.
+func TestSessionAsksTheServerForTheHostsQuality(t *testing.T) {
+	for _, test := range []struct {
+		opts     desktop.Options
+		bits     byte
+		encoding int32
+	}{
+		{desktop.Options{}, 32, 16},
+		{desktop.Options{ColorDepth: 16, Encoding: desktop.EncodingRaw}, 16, 0},
+		{desktop.Options{ColorDepth: 8, Encoding: desktop.EncodingHextile}, 8, 5},
+		{desktop.Options{ColorDepth: 24}, 32, 16}, // not a VNC format: the default
+	} {
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		type asked struct {
+			bits     byte
+			encoding int32
+		}
+		got := make(chan asked, 1)
+		go func() {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			defer conn.Close()
+			conn.Write([]byte("RFB 003.008\n"))
+			io.ReadFull(conn, make([]byte, 12))
+			conn.Write([]byte{1, 1})
+			io.ReadFull(conn, make([]byte, 1))
+			conn.Write([]byte{0, 0, 0, 0})
+			io.ReadFull(conn, make([]byte, 1))
+			init := []byte{0, 4, 0, 2, 32, 24, 0, 1, 0, 255, 0, 255, 0, 255, 16, 8, 0, 0, 0, 0, 0, 0, 0, 4}
+			conn.Write(append(init, "demo"...))
+			format := make([]byte, 20)
+			io.ReadFull(conn, format)
+			header := make([]byte, 4)
+			io.ReadFull(conn, header)
+			first := make([]byte, 4)
+			io.ReadFull(conn, first)
+			got <- asked{format[4], int32(binary.BigEndian.Uint32(first))}
+		}()
+		session, err := Open(context.Background(), func(ctx context.Context, network, address string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, network, listener.Addr().String())
+		}, "x:5900", test.opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if answer := <-got; answer.bits != test.bits || answer.encoding != test.encoding {
+			t.Errorf("%+v asked for %d bits and encoding %d, want %d and %d", test.opts, answer.bits, answer.encoding, test.bits, test.encoding)
+		}
+		session.Close()
+		listener.Close()
+	}
+}

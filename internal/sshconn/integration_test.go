@@ -202,3 +202,68 @@ func TestIntegrationActivationStartsWithTheEchoTag(t *testing.T) {
 		}
 	}
 }
+
+// sshd gives a connection's login message to the first session that starts a
+// program and drops it for a command, so a connection made for a terminal opens
+// nothing else before the shell: not a probe, a file transfer or a monitor
+// (ADR 0025). A session asked for early waits, and stops waiting when its
+// caller gives up.
+func TestACommandSessionWaitsForTheTerminalsShell(t *testing.T) {
+	var mu sync.Mutex
+	var commands []string
+	server := startServer(t, func(server *testServer) {
+		server.password, server.shell = "secret", echoShell
+		// A Windows banner keeps the system probe away from this test.
+		server.version = "SSH-2.0-OpenSSH_for_Windows_9.5"
+		server.command = func(command string, channel ssh.Channel) {
+			defer channel.Close()
+			mu.Lock()
+			commands = append(commands, command)
+			mu.Unlock()
+			_, _ = channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{0}))
+		}
+	})
+	h := dial(t, server, func(config *Config) { config.PrimaryShell = true })
+	h.phase(PhaseHostKeyPrompt)
+	h.conn.TrustHostKey(false)
+	h.phase(PhasePasswordPrompt)
+	h.conn.SubmitPassword("secret")
+	h.phase(PhaseConnected)
+
+	early, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if _, err := h.conn.RunCommand(early, "early", 64); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("a command before the shell: err = %v, want it to wait until its context ended", err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := h.conn.RunCommand(context.Background(), "after", 64)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("a command ran before the shell opened (err = %v)", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	mu.Lock()
+	if len(commands) != 0 {
+		t.Fatalf("the server received %q before the shell request", commands)
+	}
+	mu.Unlock()
+
+	openShell(t, h, 80, 24)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("the command waiting for the shell failed: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the command was not released when the shell opened")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(commands) != 1 || commands[0] != "after" {
+		t.Fatalf("commands = %q, want only the one asked for after the shell", commands)
+	}
+}

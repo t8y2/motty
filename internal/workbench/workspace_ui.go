@@ -43,6 +43,9 @@ func (state *State) toolbarDockContentBounds(size gfx.Size, includeTerminal bool
 			bounds.X += extent
 			bounds.Width = max(bounds.Width-extent, 0)
 		}
+		// The command bar takes the inner strip of the right edge; the terminal
+		// toolbar rail beyond it keeps the window edge.
+		bounds.Width = max(bounds.Width-state.commandsSidebarBounds(size).Width, 0)
 	}
 	return bounds
 }
@@ -62,7 +65,13 @@ func (state *State) toolbarDockFrame(size gfx.Size, includeTerminal bool) gfx.Re
 func (state *State) fullWorkspacePixelBounds(size gfx.Size) gfx.Rect {
 	left := state.verticalTabsReserve(size)
 	bounds := gfx.Rect{X: left, Y: windowBarHeight, Width: max(size.Width-left, 0), Height: max(size.Height-windowBarHeight, 0)}
-	bounds.Width = max(0, bounds.Width-state.commandsSidebarBounds(size).Width)
+	// A bottom command bar lives in the content area's lowest strip, so the
+	// workspace root accounts for it; every derived panel then sits above it.
+	// The side form is subtracted from the terminals' own column in
+	// toolbarDockContentBounds, so the panels beside it keep their full height.
+	if reserve := state.commandsDrawerHeight(); reserve > 0 {
+		bounds.Height = max(0, bounds.Height-reserve)
+	}
 	return bounds
 }
 
@@ -82,6 +91,9 @@ func (state *State) workspacePixelBoundsFor(workspaceID layoutcore.WorkspaceID, 
 	bounds := state.workspaceBoundsAboveLogs(workspaceID, size)
 	if view := state.workspaceRemoteLogs(workspaceID); view != nil {
 		bounds.Height -= view.extent(bounds.Height)
+	}
+	if state.deck.PaneMaximized(workspaceID) {
+		bounds.Height = max(0, bounds.Height-workspacePaneTabsHeight)
 	}
 	return bounds
 }
@@ -108,7 +120,7 @@ func (state *State) workspaceBoundsAboveLogs(workspaceID layoutcore.WorkspaceID,
 	}
 	if state.workspaceManaged(workspaceID) {
 		reserve := workspaceHeaderHeight
-		if state.workspaceTabbed(workspaceID) {
+		if state.workspaceTabbed(workspaceID) && !state.deck.PaneMaximized(workspaceID) {
 			reserve += workspacePaneTabsHeight
 		}
 		bounds.Y += reserve
@@ -171,6 +183,7 @@ func (state *State) declareWorkspacePanes(c ui.C) {
 	frame := state.workspacePixelBounds(state.viewport)
 	state.declareWorkspaceHeader(c, state.viewport)
 	state.declareWorkspacePaneTabs(c, frame)
+	state.declareWorkspaceFocusTabs(c, frame)
 	c.Part(terminalWorkspacePart)
 	ui.Stack(c).Absolute().Left(frame.X).Top(frame.Y).Width(frame.Width).Height(frame.Height).Clip().Children(func() {
 		if len(state.panes) == 0 {
@@ -217,6 +230,15 @@ func (state *State) declareWorkspacePanes(c ui.C) {
 // empty tab for the active one, its label for a background one. The pane itself
 // is the ground a press switches panes with.
 func (state *State) declareEmptyPane(c ui.C, frame, bounds gfx.Rect, index int, active bool) {
+	if len(state.panes) > 1 {
+		ui.Row(c).Absolute().Left(bounds.X - frame.X).Top(bounds.Y - frame.Y).Width(bounds.Width).Height(infoBarHeight).
+			Items(ui.Center).Children(func() {
+			ui.Text(c, state.messages.LabelNewTab).Grow(1).Ellipsis().MarginSides(0, 0, 0, termPadX)
+			state.declarePaneMaximizeButton(c, state.panes[index].ID)
+		})
+		bounds.Y += infoBarHeight
+		bounds.Height = max(0, bounds.Height-infoBarHeight)
+	}
 	pane := ui.Column(c).Absolute().Left(bounds.X-frame.X).Top(bounds.Y-frame.Y).Width(bounds.Width).Height(bounds.Height).
 		HitWith(hitPaneActivateList.At(index), state.messages.LabelNewTab, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true})
 	if !active {
@@ -276,7 +298,7 @@ func (state *State) paintWorkspacePanes(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintSessionPaneDetails(canvas, session, bounds)
 		canvas.Unclip()
 	}
-	if !state.workspaceTabbed(state.deck.ActiveWorkspace()) {
+	if !state.workspaceSinglePaneView(state.deck.ActiveWorkspace()) {
 		state.paintActivePaneGlow(canvas, frame, size)
 	}
 	state.paintTerminalDrop(canvas)
@@ -728,7 +750,7 @@ func (state *State) declareEmptyContextSFTP(c ui.C) {
 // rectangle: the drag, the arrows and the pane minimums are the page's, and the
 // deck takes the ratio the paint settles on.
 func (state *State) declarePaneSplitters(c ui.C, frame gfx.Rect) {
-	if state.workspaceTabbed(state.deck.ActiveWorkspace()) {
+	if state.workspaceSinglePaneView(state.deck.ActiveWorkspace()) {
 		state.paneSplitters = state.paneSplitters[:0]
 		return
 	}
@@ -1012,6 +1034,14 @@ func (state *State) splitActivePane(axis layoutcore.Axis) bool {
 	if _, err := state.deck.Split(workspaceID, activePane, axis); err != nil {
 		return false
 	}
+	if state.deck.PaneMaximized(workspaceID) && state.workspaceTabbed(workspaceID) {
+		layout, _ := state.deck.Layout(workspaceID)
+		state.managedWorkspaceLayouts[workspaceID] = layout.Spec()
+		if _, temporary := state.temporaryWorkspaceLayouts[workspaceID]; temporary {
+			state.temporaryWorkspaceLayouts[workspaceID] = layout.Spec()
+		}
+	}
+	state.deck.SetPaneMaximized(workspaceID, false)
 	state.syncActiveSession()
 	state.refreshWorkspaceViews()
 	state.fitWorkspaceTerminals(workspaceID)
@@ -1043,7 +1073,13 @@ func (state *State) activePaneSplitBounds(axis layoutcore.Axis) (gfx.Rect, bool)
 	if !found {
 		return gfx.Rect{}, false
 	}
-	bounds := pixelBounds(state.workspacePixelBounds(state.viewport), active.Bounds)
+	frame := state.workspacePixelBounds(state.viewport)
+	if state.deck.PaneMaximized(workspaceID) {
+		frame.Height += workspacePaneTabsHeight
+		layout, _ := state.deck.Layout(workspaceID)
+		active.Bounds, _ = findPaneFractionBounds(layout, layout.Root(), activePane, FractionBounds{Width: 1, Height: 1})
+	}
+	bounds := pixelBounds(frame, active.Bounds)
 	if axis == layoutcore.Horizontal && bounds.Width < minPaneWidth*2+1 ||
 		axis == layoutcore.Vertical && bounds.Height < minPaneHeight*2+1 {
 		return gfx.Rect{}, false
@@ -1161,7 +1197,8 @@ func (state *State) paneForSession(sessionID uint32) (Pane, bool) {
 // place.
 func (state *State) paneWindowBounds(sessionID uint32, size gfx.Size) (gfx.Rect, bool) {
 	workspaceID, paneID, ok := state.deck.PaneForSession(layoutcore.SessionID(sessionID))
-	if !ok || workspaceID != state.deck.ActiveWorkspace() {
+	if !ok || workspaceID != state.deck.ActiveWorkspace() ||
+		(state.workspaceSinglePaneView(workspaceID) && paneID != state.deck.ActivePane(workspaceID)) {
 		return gfx.Rect{}, false
 	}
 	fraction, _, ok := state.paneFractionBounds(workspaceID, paneID)
@@ -1176,7 +1213,7 @@ func (state *State) paneFractionBounds(workspaceID layoutcore.WorkspaceID, paneI
 	if !ok || layout.Root() == 0 {
 		return FractionBounds{}, 0, false
 	}
-	if state.workspaceTabbed(workspaceID) {
+	if state.workspaceSinglePaneView(workspaceID) {
 		// Every tab is sized for the whole area, so showing one needs no resize.
 		_, found := findPaneFractionBounds(layout, layout.Root(), paneID, FractionBounds{Width: 1, Height: 1})
 		return FractionBounds{Width: 1, Height: 1}, (layout.Len() + 1) / 2, found

@@ -26,6 +26,11 @@ type snippet struct {
 	Group string
 	// Run presses Enter after sending, so the command runs at once.
 	Run bool
+	// Lines sends a multi-line command one line at a time, each line submitted
+	// with Enter before the next goes out, as the paste review's line-by-line
+	// choice does; Run then decides only the last line. Without it the lines go
+	// as one paste.
+	Lines bool
 	// Shortcut sends the snippet from the terminal; the zero chord is none. It is
 	// kept on this device only: the modifier that is free differs by platform.
 	Shortcut keymap.Chord
@@ -59,6 +64,7 @@ var (
 	hitSnippetName        = tree.ID(snippetsHits, "snippet-name")
 	hitSnippetCommand     = tree.ID(snippetsHits, "snippet-command")
 	hitSnippetRun         = tree.ID(snippetsHits, "snippet-run")
+	hitSnippetLines       = tree.ID(snippetsHits, "snippet-lines")
 	hitSnippetShortcut    = tree.ID(snippetsHits, "snippet-shortcut")
 	hitSnippetShortcutOff = tree.ID(snippetsHits, "snippet-shortcut-clear")
 	hitSnippetSubmit      = tree.ID(snippetsHits, "snippet-submit")
@@ -103,6 +109,7 @@ type snippetsUI struct {
 	command     text.Editor
 	commandArea dialogArea
 	run         bool
+	lines       bool
 	groupPicker components.SingleSelectState
 	shortcut    keymap.Chord
 	capturing   bool // the next chord pressed becomes shortcut
@@ -309,7 +316,7 @@ func (state *State) openSnippetDialog(index int) {
 	form.editing = index
 	form.name, form.command = text.Editor{}, text.Editor{}
 	form.commandArea = dialogArea{}
-	form.run = true
+	form.run, form.lines = true, false
 	group := ""
 	form.shortcut, form.capturing = keymap.Chord{}, false
 	form.dialogError = ""
@@ -317,6 +324,7 @@ func (state *State) openSnippetDialog(index int) {
 		form.name.Insert(form.list[index].Name)
 		form.command.Insert(form.list[index].Command)
 		form.run = form.list[index].Run
+		form.lines = form.list[index].Lines
 		form.shortcut = form.list[index].Shortcut
 		group = form.list[index].Group
 	}
@@ -336,6 +344,9 @@ func (state *State) clickSnippetDialog(id gfx.ID) {
 		state.closeModal()
 	case hitSnippetRun:
 		form.run = !form.run
+		form.groupPicker.Open = false
+	case hitSnippetLines:
+		form.lines = !form.lines
 		form.groupPicker.Open = false
 	case hitSnippetShortcut:
 		form.capturing = !form.capturing
@@ -430,6 +441,7 @@ func (state *State) submitSnippet() {
 		Name:     cleanSnippetText(form.name.String(), maxSnippetName),
 		Command:  sanitizeSnippetCommand(form.command.String()),
 		Run:      form.run,
+		Lines:    form.lines,
 		Shortcut: form.shortcut,
 	}
 	switch {
@@ -581,6 +593,14 @@ func (state *State) sendSnippet(index int) bool {
 // while the tab is broadcasting.
 func (state *State) sendResolvedSnippet(entry snippet, command string, session *Session) bool {
 	m := state.messages.Tools
+	if entry.Lines && strings.Contains(command, "\n") {
+		if !state.startPasteQueue(session, splitPasteLines(command), entry.Run) {
+			state.showActionWarning(m.SnippetsTitle, m.StatusSnippetNotConnected)
+			return false
+		}
+		state.status = fmt.Sprintf(m.StatusSnippetSentFmt, entry.Name, session.Title)
+		return true
+	}
 	input := term.EncodePaste(command, session.term.screen.Modes().BracketedPaste && strings.Contains(command, "\n"))
 	if entry.Run {
 		input = append(input, '\r')
@@ -703,7 +723,7 @@ func (state *State) declareSnippetDialog(c ui.C) {
 	}
 	viewport := dialogViewport(c)
 	// The name row, then the command box and the rows under it.
-	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 560, "", withError(282+dialogRowHeight(c.Theme()), form.dialogError))
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 560, "", withError(282+dialogRowHeight(c.Theme())+dialogCheckGapAbove+dialogCheckHeight, form.dialogError))
 	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: title, Width: 560, Height: height, Layer: dialogLayer,
@@ -748,6 +768,7 @@ func (state *State) declareSnippetDialogBody(c ui.C) {
 			form.dialogGroup = ui.Slot(c).Height(62).MarginSides(0, 0, 6, 0)
 		}
 		state.declareDialogCheck(c, hitSnippetRun, m.SnippetRun, form.run, 7, 0)
+		state.declareDialogCheck(c, hitSnippetLines, m.SnippetLines, form.lines, dialogCheckGapAbove, 0)
 		ui.Row(c).Height(32).Items(ui.Center).MarginSides(12, 0, 0, 2).Children(func() {
 			ui.Text(c, m.SnippetShortcut).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).LineHeight(20).Grow(1)
 			label := m.SnippetShortcutNone

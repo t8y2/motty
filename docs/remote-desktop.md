@@ -191,6 +191,18 @@ DesktopSize; pointer, key and cut-text messages.
   once; local to remote is sent when the pointer is pressed or a paste chord is
   typed, if it changed. RFB carries Latin-1: other characters go as `?`. Pasting
   with the system paste shortcut types the clipboard on the remote instead.
+* Quality and bandwidth (host editor, **Quality and bandwidth**): the colour
+  depth asked from the server (32 bits by default, or 16 as 5-6-5, or 8 as
+  3-3-2; every decoder widens the pixels back to 32 bits, so a smaller format
+  only costs colours) and the encoding the client lists first (automatic, ZRLE,
+  Hextile or Raw; the others stay behind it, because a server may not offer the
+  preferred one). Both default to what a host has always used. The bar's
+  **Quality** menu changes them on a running session (and saves them with the
+  host): `Client.SetQuality` sends SetPixelFormat and SetEncodings only after
+  the reply to the outstanding update request has been read, because a server
+  answers in whichever format it has when it answers, then asks for the whole
+  desktop again. JPEG quality needs
+  the Tight encoding, which is not implemented.
 * Not supported: RA256, RA2ne/RA256ne, VeNCrypt/TLS, Tight/JPEG,
   extended clipboard, images in the clipboard, audio, file transfer, changing
   the remote resolution, multiple screens.
@@ -324,6 +336,27 @@ channel data for at most the sound buffer, a fifth of a second. Suppress Output 
 the pane's device pixels and display scale (1600x900 only when the caller supplies
 no size). A server with the RDPEDISP display-control channel follows the pane
 in Fit mode, including fullscreen transitions; otherwise the picture is scaled.
+
+### Quality and bandwidth
+
+The host editor's **Quality and bandwidth** section chooses the session's colour
+depth (32, 24 or 16 bits) and which visual effects the server renders: desktop
+background, font smoothing, desktop composition, window contents while dragging,
+menu and window animations, visual styles and the pointer shadow. These are the
+experience flags of Windows' own client (`TS_EXTENDED_INFO` performance flags).
+The defaults are what a session has always had (32 bits; font smoothing, visual
+styles and pointer shadow on, the rest off), and a host that keeps them is saved
+without any of these fields.
+
+A depth below 32 turns the graphics pipeline off for that session: the pipeline
+draws in 32 bits whatever the session's depth says (as with Windows' own client),
+so only the plain bitmap updates the server falls back to honour the depth.
+Checked on a Windows 10 machine at 32, 24 and 16 bits (the first picture of
+the 16-bit session was about half the size of the 32-bit one as a PNG). Not
+done: adapting the depth to the measured round-trip time. RDP fixes depth
+and effects in its handshake, so the bar's **Quality** menu saves the choice and
+asks to reconnect (not exercised against a live server: only the dialog logic
+is tested).
 
 ### Certificates
 

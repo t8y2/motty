@@ -69,7 +69,7 @@ func TestBadgeGlyphsAreCentered(t *testing.T) {
 		if !ok {
 			continue
 		}
-		for _, glyph := range art.glyphs {
+		for _, glyph := range art.glyphList() {
 			icon := glyph.icon
 			minX, minY, maxX, maxY := glyphBounds(icon)
 			height := icon.ViewBox

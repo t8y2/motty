@@ -106,19 +106,33 @@ func (conn realConn) Share(notify func()) (Connection, error) {
 	return realConn{child}, nil
 }
 
+// The file backends are sessions of their own, so they wait for the terminal's
+// shell like every other session that is not one (see sshconn.SessionClient).
 func (conn realConn) OpenSFTP() (sftpclient.Remote, error) {
-	return sftpclient.Open(conn.Conn.Client())
+	client, err := conn.Conn.SessionClient(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return sftpclient.Open(client)
 }
 
 func (conn realConn) OpenSudoSFTP(password string) (sftpclient.Remote, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
-	return sftpclient.OpenSudo(ctx, conn.Conn.Client(), password)
+	client, err := conn.Conn.SessionClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return sftpclient.OpenSudo(ctx, client, password)
 }
 
 // OpenSCP is the file backend for a server that has no SFTP subsystem.
 func (conn realConn) OpenSCP() (sftpclient.Remote, error) {
-	return sftpclient.OpenSCP(conn.Conn.Client())
+	client, err := conn.Conn.SessionClient(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return sftpclient.OpenSCP(client)
 }
 
 // Exec runs one bounded, non-PTY SSH command and preserves its exit status.
@@ -268,6 +282,8 @@ type Options struct {
 	// OpenPath opens a local document with the system's default application. Nil
 	// uses app.OpenPath.
 	OpenPath func(string) error
+	// OpenFolder 在系统文件管理器中进入本地目录。
+	OpenFolder func(string) error
 	// RevealPath selects a completed local download in the system's file manager.
 	// Nil uses app.RevealPath; tests may supply a recording function.
 	RevealPath func(string) error
@@ -409,6 +425,9 @@ func (options Options) withDefaults() Options {
 	if options.OpenPath == nil {
 		options.OpenPath = app.OpenPath
 	}
+	if options.OpenFolder == nil {
+		options.OpenFolder = openSystemFolder
+	}
 	if options.RevealPath == nil {
 		options.RevealPath = app.RevealPath
 	}
@@ -542,6 +561,7 @@ const (
 	modalLocalStartupCommand
 	modalAIRename
 	modalCloseTabs
+	modalQuitKeepWindows
 	modalSessionLink
 	modalAutofillRule
 	modalAutofillConfirm

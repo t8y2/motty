@@ -409,11 +409,12 @@ func (state *State) declarePaneBar(c ui.C, width float32, title, status string, 
 			readoutColor = pal.muted
 		}
 		ui.Text(c, readout).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(readoutColor).LineHeight(20).
-			MaxWidth(width * 0.42).Ellipsis().Shrink(1)
+			MaxWidth(width * 0.42).Ellipsis().Shrink(0)
 		if state.broadcasting(session.ID) {
 			// Typing goes to this pane too: the one mark an inactive bar carries.
 			ui.Icon(c, lucideIcons[iconRadio]).Size(14, 14).Color(pal.accent).MarginSides(0, 0, 0, 8)
 		}
+		state.declareSessionMaximizeButton(c, session)
 		state.declarePaneBarClose(c, session)
 	})
 	return spinner, light

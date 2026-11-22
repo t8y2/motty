@@ -44,6 +44,7 @@ func TestHeadlessApprovalWithCommandsBar(t *testing.T) {
 					t.Run(fmt.Sprintf("terminal=%v/bar=%v/width=%d/drag=%v", terminal, shown, width, drag), func(t *testing.T) {
 						testHeadlessApprovalActions(t, true, width, true, drag, func(state *State) {
 							state.commands.shown = shown
+							state.commands.placement = commandsPlacementSide
 							state.ai.needLogin = "test-provider"
 							state.moveToolbarDockTool(hitTheme, toolbarDockBottom, gfx.ID{})
 							if terminal {

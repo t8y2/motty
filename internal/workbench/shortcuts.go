@@ -22,7 +22,9 @@ const (
 	shortcutPaste
 	shortcutNewTab
 	shortcutDuplicateTab
+	shortcutTerminalFolder
 	shortcutLocalTerminal
+	shortcutDuplicateTerminal
 	shortcutCloseTab
 	shortcutNextTab
 	shortcutPreviousTab
@@ -44,6 +46,7 @@ const (
 	shortcutSnippetPicker
 	shortcutHostsPanel
 	shortcutAcceptSuggestion
+	shortcutPaneMaximize
 	shortcutSettings
 	shortcutBroadcast
 	shortcutActionCount
@@ -92,7 +95,9 @@ func defaultShortcuts() shortcutMap {
 	// Command+Shift+D splits vertically on a Mac, so Duplicate takes Alt as
 	// well. It stays on the same letter as Windows Terminal's Duplicate Tab.
 	shortcuts.chords.Set(shortcutDuplicateTab, keymap.Chord{Modifiers: primary | gfx.ModifierAlt | gfx.ModifierShift, Char: 'd'})
+	shortcuts.chords.Set(shortcutTerminalFolder, keymap.Chord{Modifiers: gfx.ModifierControl | gfx.ModifierShift, Char: 'r'})
 	shortcuts.chords.Set(shortcutLocalTerminal, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 't'})
+	shortcuts.chords.Set(shortcutDuplicateTerminal, keymap.Chord{Modifiers: gfx.ModifierAlt | gfx.ModifierShift, Char: 't'})
 	shortcuts.chords.Set(shortcutCloseTab, keymap.Chord{Modifiers: primary, Char: 'w'})
 	// Control+Tab is how browsers, VS Code and Windows Terminal switch tabs on
 	// every platform, the Mac included, where Command+Tab is the system's.
@@ -106,6 +111,7 @@ func defaultShortcuts() shortcutMap {
 	splitHorizontal, splitVertical := paneSplitChords()
 	shortcuts.chords.Set(shortcutPaneSplitHorizontal, splitHorizontal)
 	shortcuts.chords.Set(shortcutPaneSplitVertical, splitVertical)
+	shortcuts.chords.Set(shortcutPaneMaximize, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 'm'})
 	shortcuts.chords.Set(shortcutPaneClose, keymap.Chord{Modifiers: primary | gfx.ModifierAlt, Char: 'w'})
 	shortcuts.chords.Set(shortcutFilesPath, keymap.Chord{Modifiers: primary, Char: 'l'})
 	shortcuts.chords.Set(shortcutSFTP, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 's'})
@@ -333,6 +339,10 @@ func (action shortcutAction) String() string {
 		return "new_tab"
 	case shortcutDuplicateTab:
 		return "duplicate_tab"
+	case shortcutDuplicateTerminal:
+		return "duplicate_terminal"
+	case shortcutTerminalFolder:
+		return "terminal_folder"
 	case shortcutLocalTerminal:
 		return "local_terminal"
 	case shortcutCloseTab:
@@ -351,6 +361,8 @@ func (action shortcutAction) String() string {
 		return "pane_split_horizontal"
 	case shortcutPaneSplitVertical:
 		return "pane_split_vertical"
+	case shortcutPaneMaximize:
+		return "pane_maximize"
 	case shortcutPaneClose:
 		return "pane_close"
 	case shortcutFilesPath:
@@ -600,6 +612,12 @@ func (state *State) shortcut(event gfx.KeyEvent, chord keymap.Chord) gfx.EventRe
 		}
 		return gfx.EventResult{}
 	}
+	if action == shortcutTerminalFolder {
+		return state.openTerminalFolder(event.Target)
+	}
+	if action == shortcutDuplicateTerminal {
+		return state.duplicateTerminal(event.Target)
+	}
 	return state.executeShortcut(action)
 }
 
@@ -763,6 +781,10 @@ func (state *State) executeShortcut(action shortcutAction) gfx.EventResult {
 				result.Focus = state.activeTerminalFocusHit()
 			}
 		}
+	case shortcutTerminalFolder:
+		return state.openTerminalFolder(gfx.ID{})
+	case shortcutDuplicateTerminal:
+		return state.duplicateTerminal(gfx.ID{})
 	case shortcutLocalTerminal:
 		state.openLocalTerminal()
 		result.Focus = state.activeTerminalFocusHit()
@@ -784,6 +806,8 @@ func (state *State) executeShortcut(action shortcutAction) gfx.EventResult {
 		state.Click(hitPaneSplitHorizontal)
 	case shortcutPaneSplitVertical:
 		state.Click(hitPaneSplitVertical)
+	case shortcutPaneMaximize:
+		state.Click(hitPaneMaximize)
 	case shortcutPaneClose:
 		state.Click(hitPaneClose)
 	case shortcutSFTP:

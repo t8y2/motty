@@ -15,6 +15,7 @@ import (
 	"motty/internal/localshell"
 	"motty/internal/pathcomp"
 	"motty/internal/sftpclient"
+	"motty/internal/shellkind"
 )
 
 // Path completion: the files of the shell's own machine offered where a
@@ -192,6 +193,12 @@ func (state *State) completionPathDirectory(session *Session) (cwd, home string,
 		return dir, home, true
 	}
 	if !session.hasServer() || session.conn == nil {
+		return "", "", false
+	}
+	// Candidates are inserted with POSIX escaping and read from the shell's
+	// folder as a POSIX path. A PowerShell reports its folder, but neither of
+	// those is how it names or quotes one.
+	if kind := t.shellKind(); kind != shellkind.Unknown && kind != shellkind.POSIX {
 		return "", "", false
 	}
 	if !validSyncDirectory(session.startDirectory) {

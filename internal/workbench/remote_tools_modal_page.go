@@ -91,23 +91,21 @@ func (state *State) ensureRemoteToolsModalControls() {
 func (state *State) declareRemoteToolsBody(c ui.C) {
 	view := &state.remote
 	tab := view.tab
-	stacked := c.Bounds().Width < 800
-	ui.Column(c).Fill().Children(func() {
-		ui.Row(c).Height(remoteToolbarHeight).Shrink(0).Gap(12).Children(func() {
-			if ui.Choice(c, &view.tab, remoteTabChoices[:], view.tabLabel).Width(600).Shrink(1).FillHeight().Changed() {
-				state.applyRemoteTab()
-			}
-			ui.Spacer(c)
-			if !stacked {
-				state.declareRemoteRefreshControls(c)
-			}
-		})
-		if stacked {
-			ui.Row(c).Height(remoteToolbarHeight).Shrink(0).MarginSides(8, 0, 0, 0).Children(func() {
+	ui.Container(c).Fill().Children(func() {
+		// The tabs and the refresh controls share a line once the dialog's body
+		// is wide enough for both; a narrower body puts the controls on a line
+		// of their own under the tabs.
+		ui.Column(c).Shrink(0).Gap(8).From(ui.Width(remoteToolsInlineToolbarWidth), func(b ui.Box) { b.Row().Gap(12) }).Children(func() {
+			ui.Row(c).Height(remoteToolbarHeight).Grow(1).Shrink(1).Children(func() {
+				if ui.Choice(c, &view.tab, remoteTabChoices[:], view.tabLabel).Width(600).Shrink(1).FillHeight().Changed() {
+					state.applyRemoteTab()
+				}
+			})
+			ui.Row(c).Height(remoteToolbarHeight).Shrink(0).Children(func() {
 				ui.Spacer(c)
 				state.declareRemoteRefreshControls(c)
 			})
-		}
+		})
 		state.declareRemoteToolsSearch(c)
 		state.declareRemoteTable(c)
 		state.declareRemoteToolsStatus(c, tab)
@@ -175,7 +173,8 @@ func (state *State) declareRemoteToolsSearch(c ui.C) {
 func (state *State) declareRemoteTable(c ui.C) {
 	view, theme := &state.remote, state.Theme()
 	padding := theme.Metrics.PadSurface + theme.Metrics.GapItem
-	fallback := remoteToolsModalWidth - 2*padding - remoteToolsTableMargin
+	width := max(min(remoteToolsModalWidth, dialogViewport(c).Width-32), 0)
+	fallback := width - 2*padding - remoteToolsTableMargin - 2
 	view.ctx = c
 	state.declareRemoteToolsTable(c, view.tab, fallback)
 }

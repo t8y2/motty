@@ -762,8 +762,7 @@ func (state *State) declareAIModelMenu(c ui.C, anchor ui.Box) {
 // chooses the default, so the shortcut beside the providers reaches it without
 // closing the assistant first.
 func (state *State) openAIModelSettings() {
-	state.openSettings()
-	state.selectSettingsCategory(settingsAssistant)
+	state.openSettingsCategory(settingsAssistant)
 }
 
 // declareAIAutoScopeMenu declares the approval chip's menu, above it: the scopes

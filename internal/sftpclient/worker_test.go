@@ -193,10 +193,11 @@ func TestWorkerCancelInterruptsDownloadAndRemovesPartialFile(t *testing.T) {
 // network: the folders listed and the paths removed come back in order.
 type treeRemote struct {
 	*fakeRemote
-	dirs    map[string][]os.FileInfo
-	links   map[string]string
-	listed  []string
-	removed []string
+	dirs       map[string][]os.FileInfo
+	links      map[string]string
+	failRemove map[string]error
+	listed     []string
+	removed    []string
 }
 
 func (remote *treeRemote) ReadDir(directory string) ([]os.FileInfo, error) {
@@ -224,11 +225,17 @@ func (remote *treeRemote) Lstat(name string) (os.FileInfo, error) {
 }
 
 func (remote *treeRemote) Remove(name string) error {
+	if err := remote.failRemove[name]; err != nil {
+		return err
+	}
 	remote.removed = append(remote.removed, name)
 	return nil
 }
 
 func (remote *treeRemote) RemoveDirectory(name string) error {
+	if err := remote.failRemove[name]; err != nil {
+		return err
+	}
 	delete(remote.dirs, name)
 	remote.removed = append(remote.removed, name)
 	return nil
@@ -291,6 +298,86 @@ func TestWorkerRemovesALinkToAFolderAsTheLinkItIs(t *testing.T) {
 	}
 	if len(remote.dirs["/data/sub"]) != 1 {
 		t.Fatalf("the folder the link points at = %+v", remote.dirs["/data/sub"])
+	}
+}
+
+// A forced removal is rm -rf's useful half: one refused entry does not stop the
+// rest of the tree, and the result says what was left behind.
+func TestWorkerForceRemovalKeepsGoingAfterAFailure(t *testing.T) {
+	remote := newTreeRemote(map[string][]os.FileInfo{
+		"/data": {
+			fakeInfo{name: "blocked.txt", size: 1},
+			fakeInfo{name: "later.txt", size: 1},
+		},
+		"/data/sub": {fakeInfo{name: "inner.txt", size: 1}},
+	}, nil)
+	remote.dirs["/data"] = append(remote.dirs["/data"], fakeInfo{name: "sub", mode: os.ModeDir | 0o755})
+	remote.failRemove = map[string]error{"/data/blocked.txt": os.ErrPermission}
+	worker := NewWorker(func() (Remote, error) { return remote, nil }, nil)
+	defer worker.Close()
+
+	if !worker.RemoveDirectoryForce("/data") {
+		t.Fatal("the forced removal was not queued")
+	}
+	result := waitResult(t, worker)
+	var partial *PartialRemoveError
+	if !errors.As(result.Err, &partial) || partial.Failed != 1 {
+		t.Fatalf("forced removal result = %+v", result)
+	}
+	if result.Removed != 4 || result.Failures != 1 {
+		t.Fatalf("removed=%d failures=%d, want 4/1", result.Removed, result.Failures)
+	}
+	if slices.Contains(remote.removed, "/data/blocked.txt") {
+		t.Fatal("the refused file was reported as removed")
+	}
+	for _, want := range []string{"/data/later.txt", "/data/sub/inner.txt", "/data/sub", "/data"} {
+		if !slices.Contains(remote.removed, want) {
+			t.Fatalf("forced removal did not reach %q: %q", want, remote.removed)
+		}
+	}
+}
+
+func TestWorkerNormalRemovalStopsAtTheFirstFailure(t *testing.T) {
+	remote := newTreeRemote(map[string][]os.FileInfo{
+		"/data": {
+			fakeInfo{name: "blocked.txt", size: 1},
+			fakeInfo{name: "later.txt", size: 1},
+		},
+	}, nil)
+	remote.failRemove = map[string]error{"/data/blocked.txt": os.ErrPermission}
+	worker := NewWorker(func() (Remote, error) { return remote, nil }, nil)
+	defer worker.Close()
+
+	if !worker.RemoveDirectory("/data") {
+		t.Fatal("the normal removal was not queued")
+	}
+	if result := waitResult(t, worker); !errors.Is(result.Err, os.ErrPermission) {
+		t.Fatalf("normal removal result = %+v", result)
+	}
+	if slices.Contains(remote.removed, "/data/later.txt") {
+		t.Fatal("a normal removal kept going after the first failure")
+	}
+}
+
+func TestWorkerForceRemovalTreatsAMissingPathAsRemoved(t *testing.T) {
+	remote := newTreeRemote(map[string][]os.FileInfo{}, nil)
+	worker := NewWorker(func() (Remote, error) { return remote, nil }, nil)
+	defer worker.Close()
+
+	if !worker.RemoveFileForce("/data/gone.txt") {
+		t.Fatal("the forced file removal was not queued")
+	}
+	result := waitResult(t, worker)
+	if result.Err != nil || result.Removed != 1 {
+		t.Fatalf("forced missing file result = %+v", result)
+	}
+
+	if !worker.RemoveDirectoryForce("/data/gone-dir") {
+		t.Fatal("the forced folder removal was not queued")
+	}
+	result = waitResult(t, worker)
+	if result.Err != nil || result.Removed != 1 {
+		t.Fatalf("forced missing folder result = %+v", result)
 	}
 }
 

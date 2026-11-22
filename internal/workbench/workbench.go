@@ -658,6 +658,8 @@ type State struct {
 	workspaceTemplateFocusPending gfx.ID
 	// workspaceHeaderFocusPending is where the keyboard returns after a header
 	// menu closes; the pane painter applies it once the page has painted.
+	paneMaximizeHints           [5]string
+	focusTabs                   workspaceFocusTabs
 	workspaceHeaderFocusPending gfx.ID
 	workspaceDraft              workspaceDraft
 	// workspaceHeaderPlan and workspaceHeaderSlots are what the managed
@@ -798,14 +800,19 @@ type State struct {
 	xy             xySetup
 	// Requests from outside to connect (see launch.go), the link being asked
 	// about, and the update check.
-	launchBacklog  [][]string
-	launchTarget   connection
-	update         updateState
-	updateAtStart  bool
-	updateStarted  bool
-	loginOn        bool
-	closeAction    closeAction
-	relaunchAction relaunchAction
+	launchBacklog [][]string
+	launchTarget  connection
+	update        updateState
+	updateAtStart bool
+	updateStarted bool
+	loginOn       bool
+	closeAction   closeAction
+	// keepWindows is what quitting does with this window's record for the next
+	// launch: keep it, discard it, or ask first.
+	keepWindows keepWindowsPolicy
+	// quitKeepWindows is the open question of the ask policy.
+	quitKeepWindows quitKeepWindowsPrompt
+	relaunchAction  relaunchAction
 	// The file panel's settings and the folders kept for each host.
 	sftpParallel       int
 	sftpKeepTimesOff   bool
@@ -985,7 +992,11 @@ type State struct {
 	syncScope syncScope
 	sshSync   sshSyncState
 	remote    remoteToolsView
-	edits     externalEdits
+	// remoteColumnWidths are the widths the user dragged each tools tab's
+	// columns to. The dialog and every content window share them, so reopening
+	// a surface keeps the sizes for the session.
+	remoteColumnWidths [6]remoteTableColumnWidths
+	edits              externalEdits
 	// fontSizeText is the font size as the settings page shows it, for fontSizeShown.
 	fontSizeText         string
 	fontSizeShown        float32
@@ -1027,6 +1038,9 @@ type State struct {
 	// area: files panel and transfers
 	// filesRowIcons is scratch for the visible rows of the list.
 	filesRowIcons []ui.Box
+	// hostKeyRows is the host-key dialog's lines, kept between paints so the
+	// dialog does not rebuild its list every frame.
+	hostKeyRows []hostKeyRow
 
 	// area: keychain, palette, import and the rest
 	// hostGridPaint is the card grid's declaration: one control paints the cards
@@ -1044,8 +1058,12 @@ type State struct {
 	viewport gfx.Size
 	// pixelScale is the device pixels per logical pixel of the display, as the last
 	// paint saw it; zero before the first.
-	pixelScale            float32
-	cellWidth, cellHeight float32
+	pixelScale float32
+	// titlebarLeading and titlebarTrailing are how much of the window bar the
+	// window buttons cover, as the last paint's canvas reported them: none in
+	// full screen.
+	titlebarLeading, titlebarTrailing float32
+	cellWidth, cellHeight             float32
 	// cellPixelWidth and cellPixelHeight are one cell in device pixels as last
 	// handed to the screens and shells; see syncCellPixels.
 	cellPixelWidth, cellPixelHeight int
@@ -1678,6 +1696,7 @@ func (state *State) WindowControlsStyle() app.WindowControlsStyle {
 func (state *State) Click(id gfx.ID) {
 	if !state.clickNoteExit(id) {
 		state.click(id, true)
+		state.keepKeyboardOnDesktop()
 	}
 }
 
@@ -1786,6 +1805,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		return
 	case modalCloseTabs:
 		state.clickCloseTabsDialog(id)
+		return
+	case modalQuitKeepWindows:
+		state.clickQuitKeepWindows(id)
 		return
 	case modalSessionLink:
 		state.clickSessionLinkDialog(id)
@@ -2105,6 +2127,12 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		state.splitWithCurrentHost(layoutcore.Horizontal)
 	case id == hitPaneSplitVertical:
 		state.splitWithCurrentHost(layoutcore.Vertical)
+	case id.Scope() == hitWorkspaceFocusTab:
+		state.selectWorkspaceFocusTab(layoutcore.PaneID(item(id)), true)
+	case id == hitPaneMaximize:
+		state.togglePaneMaximized(0)
+	case id.Scope() == hitPaneMaximizeList:
+		state.togglePaneMaximized(layoutcore.PaneID(item(id)))
 	case id == hitPaneClose:
 		state.closeActivePane()
 	case id == hitPaneRename:
@@ -2584,6 +2612,15 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 		return gfx.EventResult{Handled: true}
 	}
 	defer state.afterEvent(&outcome)
+	if event.Kind == gfx.PointerDown && event.Target.IsZero() {
+		// A press on bare ground blurs the window; with a desktop holding the keyboard the
+		// keyboard stays the desktop's, as after a click on one of Motty's controls.
+		defer func() {
+			if outcome.Focus.IsZero() && !outcome.Blur && state.desktopHoldsTheKeyboard() {
+				outcome.Focus = state.activeTerminalFocusHit()
+			}
+		}()
+	}
 	if state.modal == modalPasteReview {
 		return state.pasteReview.code.Pointer(event)
 	}
@@ -2602,6 +2639,9 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 		}
 	}
 	if result := state.remoteLogResize(event); result.Handled {
+		return result
+	}
+	if result := state.commandsDrawerResize(event); result.Handled {
 		return result
 	}
 	if result, handled := state.remoteLogPointer(event); handled {
@@ -2950,6 +2990,9 @@ func (state *State) Key(event gfx.KeyEvent) (outcome gfx.EventResult) {
 		return result
 	}
 	if result, handled := state.keyShortcut(event); handled {
+		return result
+	}
+	if result := state.workspaceFocusTabsKey(event); result.Handled {
 		return result
 	}
 	if result, handled := state.hostsPanelKeyPress(event); handled {

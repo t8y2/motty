@@ -5,6 +5,7 @@ package workbench
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/vivaui/viva/app"
@@ -61,8 +62,8 @@ func TestPasteReviewHeadlessDialogOpensAndSends(t *testing.T) {
 	if state.modal != modalPasteReview {
 		t.Fatalf("multi-line paste opened modal %v", state.modal)
 	}
-	if got := preview.Snapshot().Focused; got != hitPasteReviewEditor {
-		t.Fatalf("initial focus = %v, want %v", got, hitPasteReviewEditor)
+	if got := preview.Snapshot().Focused; got != hitPasteReviewWhole {
+		t.Fatalf("initial focus = %v, want the default action %v", got, hitPasteReviewWhole)
 	}
 	found := map[gfx.ID]bool{}
 	for _, hit := range preview.Snapshot().Hits {
@@ -96,6 +97,9 @@ func TestPasteReviewHeadlessDialogOpensAndSends(t *testing.T) {
 		}
 		savePasteScreenshot(t, preview, "paste-review-dialog-"+look.name)
 	}
+	if err := preview.ClickLabel(state.messages.PasteReview.EditorLabel); err != nil {
+		t.Fatal(err)
+	}
 	if err := preview.Type("!"); err != nil {
 		t.Fatal(err)
 	}
@@ -122,6 +126,81 @@ func TestPasteReviewHeadlessDialogOpensAndSends(t *testing.T) {
 	if !state.sessions[0].term.pasteQueue.active {
 		t.Fatal("the remaining line was not queued")
 	}
+}
+
+// TestPasteReviewHeadlessEnterConfirms covers the keyboard path: the dialog
+// opens on its default action, so Enter sends the paste as in any dialog, while
+// a preview the user has entered keeps Enter as a line break.
+func TestPasteReviewHeadlessEnterConfirms(t *testing.T) {
+	open := func(t *testing.T) (*State, *headless.Session, *fakeShell) {
+		state, _, _, shell := liveSession(t)
+		state.setLanguage(i18n.Chinese)
+		state.options.ClipboardText = func() (string, error) { return "one\ntwo", nil }
+		var invalidator app.Invalidator
+		var nativeInput app.TextInput
+		preview, err := headless.Open(app.Config{Title: "Paste review", Width: 900, Height: 700, Tree: Tree(), Paint: state.Paint,
+			TextInput: func(context app.TextInputContext) *app.TextInput {
+				if context.Terminal {
+					return state.TerminalInput(context)
+				}
+				editor := state.EditorFor(context.ID)
+				if editor == nil {
+					return nil
+				}
+				nativeInput = app.TextInput{Editor: editor, NavigationKeys: context.NavigationKeys}
+				return &nativeInput
+			},
+			OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize, Invalidator: &invalidator}, nil, headless.Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { preview.Close() })
+		state.pasteIntoTerminal(&state.sessions[0])
+		if err := preview.Frame(); err != nil {
+			t.Fatal(err)
+		}
+		return state, preview, shell
+	}
+
+	t.Run("Enter pastes", func(t *testing.T) {
+		state, preview, shell := open(t)
+		if err := preview.Driver().Key(gfx.KeyEnter, 0); err != nil {
+			t.Fatal(err)
+		}
+		if state.modal != modalNone {
+			t.Fatalf("Enter left the review open: %v", state.modal)
+		}
+		if got := shell.typed(); got != "one\rtwo" {
+			t.Fatalf("Enter sent %q, want the paste unchanged", got)
+		}
+	})
+	t.Run("Escape cancels", func(t *testing.T) {
+		state, preview, shell := open(t)
+		if err := preview.Driver().Key(gfx.KeyEscape, 0); err != nil {
+			t.Fatal(err)
+		}
+		if state.modal != modalNone || shell.typed() != "" {
+			t.Fatalf("Escape: modal %v, sent %q", state.modal, shell.typed())
+		}
+	})
+	t.Run("Enter in the preview edits", func(t *testing.T) {
+		state, preview, shell := open(t)
+		if err := preview.ClickLabel(state.messages.PasteReview.EditorLabel); err != nil {
+			t.Fatal(err)
+		}
+		if got := preview.Snapshot().Focused; got != hitPasteReviewEditor {
+			t.Fatalf("clicking the preview focused %v", got)
+		}
+		if err := preview.Driver().Key(gfx.KeyEnter, 0); err != nil {
+			t.Fatal(err)
+		}
+		if state.modal != modalPasteReview || shell.typed() != "" {
+			t.Fatalf("Enter in the preview confirmed: modal %v, sent %q", state.modal, shell.typed())
+		}
+		if got := strings.Count(state.pasteReviewText(), "\n"); got != 2 {
+			t.Fatalf("Enter in the preview left %q, want one more line break", state.pasteReviewText())
+		}
+	})
 }
 
 // TestPasteReviewSettingsHeadlessScreenshot captures the terminal setting that

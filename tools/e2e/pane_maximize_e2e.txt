@@ -1,0 +1,36 @@
+# lang: zh-CN
+# 本地 Shell 分屏最大化、底部切换、按钮还原。
+# 分屏与最大化都点可点击控件，不用 Ctrl 组合键：macOS 的绑定是 Cmd+D /
+# Cmd+Shift+D / Cmd+Shift+M，而 Ctrl+Shift+D 会作为 EOF 送进 Shell 结束会话，
+# 同一份脚本因此要在 macOS 和 Linux 上都能跑。
+# MOTTY_HEAD=/tmp/motty-pane-maximize-head python3 tools/headless_drive.py /tmp/motty-pane-maximize-e2e tools/e2e/pane_maximize_e2e.txt --fail-fast
+resize 1400 900
+settle 400
+click "本地终端"
+settle 1200
+click id:shell/pane-split-horizontal
+settle 600
+click id:shell/pane-split-vertical
+settle 600
+expect exists id:shell/pane-maximize-button/#1
+shot /tmp/motty-pane-tiled.png
+click id:shell/pane-maximize-button/#1
+settle 400
+expect exists id:shell/pane-focus-tab/#1
+expect exists id:shell/pane-focus-tab/#2
+expect exists id:shell/pane-focus-tab/#3
+shot /tmp/motty-pane-maximized.png
+click id:shell/pane-focus-tab/#3
+settle 400
+expect exists id:shell/pane-maximize-button/#3
+shot /tmp/motty-pane-switched.png
+click id:shell/pane-maximize-button/#3
+settle 400
+expect absent id:shell/pane-focus-tab/#1
+expect exists id:shell/pane-maximize-button/#1
+expect exists id:shell/pane-maximize-button/#2
+expect exists id:shell/pane-maximize-button/#3
+shot /tmp/motty-pane-restored.png
+click id:shell/pane-maximize-button/#3
+settle 400
+expect exists id:shell/pane-focus-tab/#3
