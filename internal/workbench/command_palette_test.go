@@ -515,6 +515,33 @@ func TestCommandPaletteMoveWheelRepaintEnterOnLongList(t *testing.T) {
 	}
 }
 
+// TestCommandPaletteOffersPaneMaximizeOnlyInASplit covers the single-pane case:
+// setPaneMaximized is a no-op there, so the palette must not offer a command
+// that silently does nothing.
+func TestCommandPaletteOffersPaneMaximizeOnlyInASplit(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	world.connectFirst(t, state)
+	state.rebuildCommandPalette()
+	if paletteLists(state, state.messages.PaneMaximizeToggle) {
+		t.Fatal("a single pane offered pane maximize")
+	}
+	state.Click(hitPaneSplitHorizontal)
+	state.rebuildCommandPalette()
+	if !paletteLists(state, state.messages.PaneMaximizeToggle) {
+		t.Fatal("a split did not offer pane maximize")
+	}
+}
+
+func paletteLists(state *State, label string) bool {
+	for _, entry := range state.commandPalette.entries {
+		if entry.label == label {
+			return true
+		}
+	}
+	return false
+}
+
 func commandPaletteRow(t testing.TB, state *State, target gfx.ID) int {
 	t.Helper()
 	for row, entry := range state.commandPalette.entries {

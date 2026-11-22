@@ -268,6 +268,8 @@ type Options struct {
 	// OpenPath opens a local document with the system's default application. Nil
 	// uses app.OpenPath.
 	OpenPath func(string) error
+	// OpenFolder 在系统文件管理器中进入本地目录。
+	OpenFolder func(string) error
 	// RevealPath selects a completed local download in the system's file manager.
 	// Nil uses app.RevealPath; tests may supply a recording function.
 	RevealPath func(string) error
@@ -408,6 +410,9 @@ func (options Options) withDefaults() Options {
 	}
 	if options.OpenPath == nil {
 		options.OpenPath = app.OpenPath
+	}
+	if options.OpenFolder == nil {
+		options.OpenFolder = openSystemFolder
 	}
 	if options.RevealPath == nil {
 		options.RevealPath = app.RevealPath

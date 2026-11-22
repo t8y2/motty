@@ -1091,6 +1091,10 @@ func (state *State) declareDesktopInfoBar(c ui.C, session *Session, view *deskto
 					}
 					s.capture = state.declareIconButton(c, state.paneIdentity(session, hitDesktopCapture), iconKeyboard, captureHint, view.ended, captureStyle).Size(barToolSize, barToolSize).Shrink(0)
 				}
+				if withTools && state.paneInSplit(session.ID) {
+					state.declareSessionMaximizeButton(c, session)
+					state.declarePaneBarClose(c, session)
+				}
 			})
 		})
 		ui.Row(c).FillWidth().Height(1).Self(ui.End).Background(pal.line)

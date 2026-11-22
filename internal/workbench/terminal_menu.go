@@ -22,6 +22,7 @@ var terminalMenuHits = tree.Feature("terminal-menu")
 
 // Two more rows of the menu, outside the range the window's other menus use.
 var (
+	hitTerminalMenuFolder  = tree.ID(terminalMenuHits, "terminal-menu-folder")
 	hitTerminalMenuSave    = tree.ID(terminalMenuHits, "terminal-menu-save")
 	hitTerminalMenuSearch  = tree.ID(terminalMenuHits, "terminal-menu-search")
 	hitTerminalMenuHistory = tree.ID(terminalMenuHits, "terminal-menu-history")
@@ -271,6 +272,8 @@ func (state *State) declareTerminalMenu(c ui.C) {
 		rows.chord(chord(shortcutPaneClose))
 	}
 	rows.separate()
+	rows.add(components.ContextMenuItem{ID: hitTerminalMenuFolder, Label: messages.ShortcutTerminalFolder, Icon: icon(iconFolderOpen), Disabled: !canOpenSessionFolder(session)})
+	rows.chord(chord(shortcutTerminalFolder))
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuFiles, Label: messages.SFTPFiles, Icon: icon(iconFolderOpen), Kind: components.ContextMenuCheckbox, Checked: state.filesPanelShown(), Disabled: !session.isLocal() && (session.conn == nil || !session.hasServer())})
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuTransfer, Label: messages.Tools.XYMenu, Icon: icon(iconTransfer), Disabled: !live || session.transferBusy()})
 	rows.separate()
@@ -366,6 +369,8 @@ func (state *State) chooseTerminalMenu(id gfx.ID) {
 		// The session the menu was opened on, not whichever pane has the
 		// keyboard: a right click does not move focus.
 		state.requestCloseSession(session.ID)
+	case hitTerminalMenuFolder:
+		state.openSessionFolder(session)
 	case hitTerminalMenuFiles:
 		state.Click(hitSFTPOpen)
 	case hitTerminalMenuAsk:

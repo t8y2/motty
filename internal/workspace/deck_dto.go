@@ -14,15 +14,16 @@ type DeckDTO struct {
 
 // WorkspaceDTO stores one independent split tree.
 type WorkspaceDTO struct {
-	ID         WorkspaceID     `json:"id"`
-	Title      string          `json:"title"`
-	Color      string          `json:"color,omitempty"`
-	Locked     bool            `json:"locked,omitempty"`
-	Named      bool            `json:"named,omitempty"`
-	ActivePane PaneID          `json:"active_pane,omitempty"`
-	Layout     DTO             `json:"layout"`
-	Panes      []PaneDTO       `json:"panes,omitempty"`
-	Context    ContextStateDTO `json:"context,omitempty"`
+	PaneMaximized bool            `json:"pane_maximized,omitempty"`
+	ID            WorkspaceID     `json:"id"`
+	Title         string          `json:"title"`
+	Color         string          `json:"color,omitempty"`
+	Locked        bool            `json:"locked,omitempty"`
+	Named         bool            `json:"named,omitempty"`
+	ActivePane    PaneID          `json:"active_pane,omitempty"`
+	Layout        DTO             `json:"layout"`
+	Panes         []PaneDTO       `json:"panes,omitempty"`
+	Context       ContextStateDTO `json:"context,omitempty"`
 }
 
 // ContextStateDTO persists one workspace's shared panel presentation.
@@ -53,7 +54,8 @@ func (deck *Deck) DTO() DeckDTO {
 	for index := range deck.workspaces {
 		workspace := &deck.workspaces[index]
 		entry := WorkspaceDTO{
-			ID: workspace.id, Title: workspace.title, Color: workspace.color, Locked: workspace.locked, Named: workspace.named, ActivePane: workspace.activePane,
+			PaneMaximized: workspace.paneMaximized,
+			ID:            workspace.id, Title: workspace.title, Color: workspace.color, Locked: workspace.locked, Named: workspace.named, ActivePane: workspace.activePane,
 			Layout:  workspace.layout.DTO(),
 			Context: ContextStateDTO{Kind: workspace.context.Kind, Open: workspace.context.Open, Width: normalizeContext(workspace.context).Width, Side: workspace.context.Side, MonitorOpen: workspace.context.MonitorOpen, MonitorWidth: workspace.context.MonitorWidth, MonitorLeft: workspace.context.MonitorLeft},
 		}
@@ -83,7 +85,8 @@ func RestoreDeck(dto DeckDTO) (Deck, error) {
 			return Deck{}, err
 		}
 		workspace := workspaceRecord{
-			id: entry.ID, title: entry.Title, color: entry.Color, locked: entry.Locked, named: entry.Named, activePane: entry.ActivePane, layout: layout,
+			paneMaximized: entry.PaneMaximized && len(entry.Panes) > 1,
+			id:            entry.ID, title: entry.Title, color: entry.Color, locked: entry.Locked, named: entry.Named, activePane: entry.ActivePane, layout: layout,
 			panes:    make([]Pane, len(entry.Panes)),
 			context:  normalizeContext(ContextState{Kind: entry.Context.Kind, Open: entry.Context.Open, Width: entry.Context.Width, Side: entry.Context.Side, MonitorOpen: entry.Context.MonitorOpen, MonitorWidth: entry.Context.MonitorWidth, MonitorLeft: entry.Context.MonitorLeft}),
 			revision: 1,

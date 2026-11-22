@@ -121,6 +121,8 @@ const (
 	// The solid folders mark a group in the host trees, open or closed.
 	iconFolderSolid
 	iconFolderSolidOpen
+	iconPaneMaximize
+	iconPaneRestore
 )
 
 // terminalPage reports whether the window shows the panes of a workspace rather
@@ -2719,6 +2721,8 @@ var lucideIcons = [...]gfx.Icon{
 	iconChevronRight:     icons.ChevronRight,
 	iconChevronLeft:      icons.ChevronLeft,
 	iconChevronDown:      icons.ChevronDown,
+	iconPaneMaximize:     remoteLogExpandIcon,
+	iconPaneRestore:      remoteLogRestoreIcon,
 	iconChevronsExpand:   icons.ChevronsUpDown,
 	iconChevronsCollapse: icons.ChevronsDownUp,
 	iconSliders:          icons.SlidersHorizontal,
