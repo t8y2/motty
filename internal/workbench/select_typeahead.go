@@ -58,32 +58,43 @@ func (state *State) selectTypeaheadOptions(target gfx.ID) ([]components.MenuType
 	return nil, nil, false
 }
 
-// proxyTargetSelectable is the rule the open target select paints: a host that
-// is SSH and not already the target of another route.
+// proxyTargetSelectable is the rule the open target select paints: a route
+// target that is not already the target of another route.
 func (state *State) proxyTargetSelectable(id uint32) bool {
 	host, ok := state.hostByID(id)
-	return ok && host.isSSH() && !state.proxyTargetConfiguredExcluding(id, state.proxyEditor.routeID)
+	return ok && host.isRouteTarget() && !state.proxyTargetConfiguredExcluding(id, state.proxyEditor.routeID)
 }
 
 // chooseProxyTarget and chooseProxyJump apply the same choices as the open
-// popup, including the swap that keeps the two hosts distinct.
+// popup, including the swap that keeps the two hosts distinct when the other
+// host is valid in the opposite role; otherwise the opposite slot is cleared so
+// the user picks a valid host explicitly.
 func (state *State) chooseProxyTarget(id uint32) bool {
 	if !state.proxyTargetSelectable(id) {
 		return false
 	}
 	if id == state.proxyEditor.jumpID {
-		state.proxyEditor.jumpID = state.proxyEditor.targetID
+		if prev, ok := state.hostByID(state.proxyEditor.targetID); ok && prev.isSSH() {
+			state.proxyEditor.jumpID = prev.ID
+		} else {
+			state.proxyEditor.jumpID = 0
+		}
 	}
 	state.proxyEditor.targetID = id
 	return true
 }
 
 func (state *State) chooseProxyJump(id uint32) bool {
-	if _, ok := state.hostByID(id); !ok {
+	host, ok := state.hostByID(id)
+	if !ok || !host.isSSH() {
 		return false
 	}
 	if id == state.proxyEditor.targetID {
-		state.proxyEditor.targetID = state.proxyEditor.jumpID
+		if state.proxyTargetSelectable(state.proxyEditor.jumpID) {
+			state.proxyEditor.targetID = state.proxyEditor.jumpID
+		} else {
+			state.proxyEditor.targetID = 0
+		}
 	}
 	state.proxyEditor.jumpID = id
 	return true

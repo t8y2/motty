@@ -160,11 +160,19 @@ func (catalog *hostCatalog) hostByID(id uint32) (Host, bool) {
 }
 
 func (catalog *hostCatalog) hostByConnection(address, user string, port uint16) (Host, bool) {
-	if port == 0 {
-		port = defaultPort
-	}
+	return catalog.hostByDestination(address, user, port, Host.isSSH)
+}
+
+func (catalog *hostCatalog) hostByDestination(address, user string, port uint16, allow func(Host) bool) (Host, bool) {
 	for _, host := range catalog.hosts {
-		if host.isSSH() && host.Address == address && catalog.storedLogin(host) == user && host.Port == port {
+		if !allow(host) || host.Address != address || catalog.storedLogin(host) != user {
+			continue
+		}
+		wantPort := port
+		if wantPort == 0 {
+			wantPort = host.defaultPort()
+		}
+		if host.Port == wantPort {
 			return host, true
 		}
 	}
@@ -172,15 +180,15 @@ func (catalog *hostCatalog) hostByConnection(address, user string, port uint16) 
 }
 
 // hostByRouteEnd is the host one end of a saved route names: the host with that
-// catalog ID, or, for a route saved without one, the host at that destination.
-// An ID that no host holds names nothing: another host at the same destination
-// is not the one the route was made for.
-func (catalog *hostCatalog) hostByRouteEnd(id, address, user string, port uint16) (Host, bool) {
+// catalog ID matching allow, or, for a route saved without an ID, a matching
+// host at that destination. An ID that no host holds names nothing: another
+// host at the same destination is not the one the route was made for.
+func (catalog *hostCatalog) hostByRouteEnd(id, address, user string, port uint16, allow func(Host) bool) (Host, bool) {
 	if id == "" {
-		return catalog.hostByConnection(address, user, port)
+		return catalog.hostByDestination(address, user, port, allow)
 	}
 	for _, host := range catalog.hosts {
-		if host.CatalogID == id && host.isSSH() {
+		if host.CatalogID == id && allow(host) {
 			return host, true
 		}
 	}
@@ -622,8 +630,8 @@ func decodeProxies(saved []savedProxy, hosts []Host) []proxyRecord {
 	ids := proxyNumbersBySavedID(saved)
 	next := uint32(1)
 	for index, entry := range saved {
-		target, targetOK := catalog.hostByRouteEnd(entry.TargetID, entry.TargetAddress, entry.TargetUser, entry.TargetPort)
-		jump, jumpOK := catalog.hostByRouteEnd(entry.JumpID, entry.JumpAddress, entry.JumpUser, entry.JumpPort)
+		target, targetOK := catalog.hostByRouteEnd(entry.TargetID, entry.TargetAddress, entry.TargetUser, entry.TargetPort, Host.isRouteTarget)
+		jump, jumpOK := catalog.hostByRouteEnd(entry.JumpID, entry.JumpAddress, entry.JumpUser, entry.JumpPort, Host.isSSH)
 		if !targetOK || !jumpOK || target.ID == jump.ID || catalog.proxyTargetConfigured(target.ID) || catalog.proxyWouldCycle(target.ID, jump.ID) {
 			continue
 		}

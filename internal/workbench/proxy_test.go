@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -629,5 +630,147 @@ func TestSyncingAStoppedRouteKeepsItStopped(t *testing.T) {
 	}
 	if len(state.proxies) != 1 || state.proxies[0].Stopped || state.proxies[0].JumpID != state.hosts[2].ID {
 		t.Fatalf("routes after syncing another jump = %+v, want a new, running route", state.proxies)
+	}
+}
+
+func TestDesktopJumpRoutePersistsAcrossRestart(t *testing.T) {
+	options := testOptions(t)
+	first := newTestState(t, options)
+	jump := first.hosts[0]
+	rdpHost := Host{
+		ID: first.nextHostID, CatalogID: "host_win_rdp", Label: "Windows Desktop",
+		Address: "10.0.0.50", User: "Administrator", Port: 3389,
+		Protocol: protocolRDP, System: sshconn.SystemWindows,
+	}
+	first.nextHostID++
+	vncHost := Host{
+		ID: first.nextHostID, CatalogID: "host_vnc", Label: "Lab VNC",
+		Address: "10.0.0.51", Port: 5900, Protocol: protocolVNC,
+	}
+	first.nextHostID++
+	first.hosts = append(first.hosts, rdpHost, vncHost)
+	first.save()
+
+	// Choosing a remote desktop target through the route dialog's combobox must commit it.
+	first.Click(hitProxies)
+	first.Click(hitProxyAdd)
+	if first.modal != modalNewProxy {
+		t.Fatalf("proxy dialog = %d", first.modal)
+	}
+	clickPageLabel(t, first, gfx.RoleCombobox, first.messages.ProxyFieldTarget)
+	clickPageLabel(t, first, gfx.RoleOption, rdpHost.Label)
+	if first.proxyEditor.targetID != rdpHost.ID {
+		t.Fatalf("target choice after selecting RDP host = %d, want %d", first.proxyEditor.targetID, rdpHost.ID)
+	}
+	first.applyProxyJumpChoice(jump.ID)
+	first.Click(hitProxyDialogSubmit)
+	if first.modal != modalNone || first.proxyDialogError != "" || len(first.proxies) != 1 {
+		t.Fatalf("rdp route submit: modal=%d error=%q routes=%+v", first.modal, first.proxyDialogError, first.proxies)
+	}
+
+	addProxyRoute(t, first, vncHost.ID, jump.ID)
+	if len(first.proxies) != 2 {
+		t.Fatalf("routes before restart = %+v, want 2", first.proxies)
+	}
+
+	// Reopening must keep both desktop routes visible in the jump routes list and host form.
+	second := newTestState(t, options)
+	if len(second.proxies) != 2 {
+		t.Fatalf("restored routes = %+v, want 2 desktop routes", second.proxies)
+	}
+	second.Click(hitProxies)
+	if got := second.visibleProxyCount(); got != 2 {
+		t.Fatalf("visible routes after restart = %d, want 2", got)
+	}
+	restoredRDP, ok := second.hostByCatalogID(rdpHost.CatalogID)
+	if !ok {
+		t.Fatal("restored RDP host missing")
+	}
+	restoredJump, ok := second.hostByCatalogID(jump.CatalogID)
+	if !ok {
+		t.Fatal("restored jump host missing")
+	}
+	route, ok := second.proxyRouteForTarget(restoredRDP.ID)
+	if !ok {
+		t.Fatalf("restored RDP route missing from %+v", second.proxies)
+	}
+	if route.label != jump.Label+" → "+rdpHost.Label || !strings.Contains(route.cells[3], "rdp://") {
+		t.Fatalf("restored RDP route = %+v, want label %q and rdp:// target", route, jump.Label+" → "+rdpHost.Label)
+	}
+
+	second.openEditHostID(restoredRDP.ID)
+	wantSummary := fmt.Sprintf(second.messages.Tools.HostJumpDescriptionFmt, restoredJump.Label)
+	if got := second.hostJumpDescription(); got != wantSummary {
+		t.Fatalf("host form jump summary = %q, want %q", got, wantSummary)
+	}
+	second.Click(hitHostJumpConfigure)
+	if second.modal != modalNewProxy || !second.proxyEditor.editing || second.proxyEditor.targetID != restoredRDP.ID {
+		t.Fatalf("editing restored RDP route: modal=%d editing=%v target=%d", second.modal, second.proxyEditor.editing, second.proxyEditor.targetID)
+	}
+	second.Click(hitProxyDialogSubmit)
+	if second.modal != modalNewHost || second.proxyDialogError != "" || len(second.proxies) != 2 {
+		t.Fatalf("saving restored RDP route: modal=%d error=%q routes=%d", second.modal, second.proxyDialogError, len(second.proxies))
+	}
+
+	// A desktop host must still be refused as the jump host when decoding.
+	bad := decodeProxies([]savedProxy{{
+		ID: 9, TargetID: jump.CatalogID, JumpID: rdpHost.CatalogID,
+	}}, second.hosts)
+	if len(bad) != 0 {
+		t.Fatalf("desktop jump host must not decode: %+v", bad)
+	}
+
+	// A destination-only record without catalog IDs still resolves a desktop target
+	// (including when its port is omitted and falls back to the protocol default).
+	for _, port := range []uint16{rdpHost.Port, 0} {
+		legacy := decodeProxies([]savedProxy{{
+			TargetAddress: rdpHost.Address, TargetUser: rdpHost.User, TargetPort: port,
+			JumpAddress: jump.Address, JumpUser: jump.User, JumpPort: jump.Port,
+		}}, second.hosts)
+		if len(legacy) != 1 || legacy[0].TargetID != restoredRDP.ID || legacy[0].JumpID != restoredJump.ID {
+			t.Fatalf("legacy desktop route (port=%d) = %+v, want target %d jump %d", port, legacy, restoredRDP.ID, restoredJump.ID)
+		}
+	}
+}
+
+func TestProxyChoiceSwapKeepsBothEndsValid(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	sshA, sshB, sshC := state.hosts[0], state.hosts[1], state.hosts[2]
+	rdpHost := Host{
+		ID: state.nextHostID, CatalogID: "host_win_swap", Label: "Windows Swap",
+		Address: "10.0.0.60", User: "Administrator", Port: 3389,
+		Protocol: protocolRDP, System: sshconn.SystemWindows,
+	}
+	state.nextHostID++
+	state.hosts = append(state.hosts, rdpHost)
+
+	// Switching target from a desktop host to the current jump clears the jump
+	// instead of placing the desktop into the jump slot, and the jump picker refuses desktops.
+	state.openProxyDialogForHost(rdpHost.ID, false)
+	state.applyProxyJumpChoice(sshA.ID)
+	state.applyProxyTargetChoice(sshA.ID)
+	if state.proxyEditor.targetID != sshA.ID {
+		t.Fatalf("targetID = %d, want %d", state.proxyEditor.targetID, sshA.ID)
+	}
+	if state.proxyEditor.jumpID != 0 {
+		t.Fatalf("jumpID after swapping from RDP target = %d, want 0 (cleared)", state.proxyEditor.jumpID)
+	}
+	state.applyProxyJumpChoice(rdpHost.ID)
+	if state.proxyEditor.jumpID != 0 {
+		t.Fatalf("jump picker accepted desktop host: jumpID = %d", state.proxyEditor.jumpID)
+	}
+	state.closeProxyDialog()
+
+	// Switching jump to the current target clears the target when the old jump
+	// already has a route, instead of moving an already-routed host into the target slot.
+	addProxyRoute(t, state, sshA.ID, sshB.ID)
+	state.openProxyDialogForHost(sshC.ID, false)
+	state.applyProxyJumpChoice(sshA.ID)
+	state.applyProxyJumpChoice(sshC.ID)
+	if state.proxyEditor.jumpID != sshC.ID {
+		t.Fatalf("jumpID = %d, want %d", state.proxyEditor.jumpID, sshC.ID)
+	}
+	if state.proxyEditor.targetID != 0 {
+		t.Fatalf("targetID after swapping from already-routed jump = %d, want 0 (cleared)", state.proxyEditor.targetID)
 	}
 }
