@@ -410,3 +410,26 @@ func TestCompletionAutoListDoesNotHijackHistoryNavigation(t *testing.T) {
 		t.Fatalf("automatic list reopened on shell Tab completion echo: %+v", listTexts(w))
 	}
 }
+
+// A broadcast keystroke reaches every pane, so one Enter ends the line in every
+// session: each must keep its own hold, or the last pane to run overwrites the
+// hold the active pane needs and its echo reopens the list.
+func TestBroadcastInputKeepsEachSessionsAutoHold(t *testing.T) {
+	state := &State{}
+	first := &Session{ID: 1, term: &terminal{}}
+	second := &Session{ID: 2, term: &terminal{}}
+	state.attachCompletion(first)
+	state.attachCompletion(second)
+
+	first.term.completionInput([]byte("\r"))
+	second.term.completionInput([]byte("\r"))
+	if !state.completion.autoHold.holds(first.ID) || !state.completion.autoHold.holds(second.ID) {
+		t.Fatalf("auto holds = %v, want both sessions held", state.completion.autoHold)
+	}
+
+	// Typing in one session ends only that session's hold.
+	first.term.completionInput([]byte("l"))
+	if state.completion.autoHold.holds(first.ID) || !state.completion.autoHold.holds(second.ID) {
+		t.Fatalf("auto holds = %v, want only the second session held", state.completion.autoHold)
+	}
+}
