@@ -43,6 +43,21 @@ const (
 // hostIconOf is the icon that shows a system's badge.
 func hostIconOf(system sshconn.RemoteSystem) hostIcon { return hostIconSystem + hostIcon(system) }
 
+// autoIconSystem is the system the automatic icon shows: the one the host was
+// detected to run, or, before there is one, the system its protocol can only
+// be. RDP is Microsoft's remote desktop, whose account is the Windows user's
+// (FieldRDPUser), so a host added as RDP is a Windows host. VNC runs on any
+// system, so it stays unknown and keeps the generic desktop glyph.
+func autoIconSystem(system sshconn.RemoteSystem, protocol hostProtocol) sshconn.RemoteSystem {
+	if system != sshconn.SystemUnknown {
+		return system
+	}
+	if protocol == protocolRDP {
+		return sshconn.SystemWindows
+	}
+	return sshconn.SystemUnknown
+}
+
 // system is the system whose badge the icon shows, if it shows one.
 func (icon hostIcon) system() (sshconn.RemoteSystem, bool) {
 	if icon < hostIconSystem {

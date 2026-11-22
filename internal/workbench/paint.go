@@ -2607,12 +2607,13 @@ func (state *State) paintHostCatalogIcon(canvas *gfx.Canvas, host Host, bounds g
 		return
 	}
 	if host.Icon == hostIconAuto {
-		if host.isDesktop() && host.System == sshconn.SystemUnknown {
+		system := autoIconSystem(host.System, host.Protocol)
+		if host.isDesktop() && system == sshconn.SystemUnknown {
 			canvas.Rounded(bounds, bounds.Width*0.24, state.hostBadgeFill(background))
 			paintIcon(canvas, iconDesktop, insetRect(bounds, 0.24), state.pal.accent)
 			return
 		}
-		paintSystemBadge(canvas, host.System, bounds, state.pal)
+		paintSystemBadge(canvas, system, bounds, state.pal)
 		return
 	}
 	if system, ok := host.Icon.system(); ok {
@@ -3494,13 +3495,13 @@ func (state *State) hostIconLabel(icon hostIcon) string {
 
 // hostIconArt is what an icon looks like in the list: a system's badge, or a line
 // icon. The automatic icon is the badge of the system the host was detected to
-// run, until there is one.
-func (state *State) hostIconArt(icon hostIcon, detected sshconn.RemoteSystem, desktop bool) gfx.Icon {
+// run or, for RDP, the one its protocol implies, until there is one.
+func (state *State) hostIconArt(icon hostIcon, system sshconn.RemoteSystem, protocol hostProtocol) gfx.Icon {
 	if icon == hostIconAuto {
-		if art, ok := systemBadgeIcon(detected, state.pal.dark); ok {
+		if art, ok := systemBadgeIcon(autoIconSystem(system, protocol), state.pal.dark); ok {
 			return art
 		}
-		if desktop {
+		if protocol.isDesktop() {
 			return icons.Monitor
 		}
 		return icons.Server

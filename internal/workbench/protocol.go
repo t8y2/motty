@@ -95,10 +95,15 @@ func (host Host) defaultPort() uint16 {
 	return defaultPort
 }
 
+// isDesktop reports whether the protocol carries a remote desktop.
+func (protocol hostProtocol) isDesktop() bool {
+	return protocol == protocolVNC || protocol == protocolRDP
+}
+
 // isDesktop reports whether the host is a remote desktop: its tab shows a
 // picture, not a terminal.
 func (host Host) isDesktop() bool {
-	return host.Protocol == protocolVNC || host.Protocol == protocolRDP
+	return host.Protocol.isDesktop()
 }
 
 // isRouteTarget reports whether a jump route can reach the host as its target:

@@ -394,7 +394,7 @@ func (state *State) aiTargetOptions() []components.SelectItem {
 		options = append(options, components.SelectItem{ID: hitAITargets.At(int(session.ID)),
 			Label: info.Title, Hint: state.aiTargetLabel(info) + " · " + status, Disabled: !info.Ready,
 			Selected: slices.Contains(selected, session.ID),
-			Icon:     state.hostIconArt(session.host.Icon, session.host.System, session.host.isDesktop())})
+			Icon:     state.hostIconArt(session.host.Icon, session.host.System, session.host.Protocol)})
 	}
 	return options
 }
@@ -526,7 +526,7 @@ func (state *State) paintAITargetSelect(canvas *gfx.Canvas) {
 		status := m.TargetConnected
 		session, err := state.aiTargetSession()
 		if err == nil {
-			icon = state.hostIconArt(session.host.Icon, session.host.System, session.host.isDesktop())
+			icon = state.hostIconArt(session.host.Icon, session.host.System, session.host.Protocol)
 		}
 		if err != nil || !aiSessionInfo(session).Ready {
 			status = m.TargetDisconnected

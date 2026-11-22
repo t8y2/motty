@@ -313,21 +313,31 @@ func TestHostCardsShowTheirTags(t *testing.T) {
 	}
 }
 
-func TestDesktopHostsGetAMonitorIconByDefault(t *testing.T) {
+func TestAutomaticHostIconsFollowTheSystemAndProtocol(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	if art := state.hostIconArt(hostIconAuto, sshconn.SystemUnknown, true); !reflect.DeepEqual(art, icons.Monitor) {
-		t.Fatal("an automatic icon for a desktop host is not the monitor")
+	if art := state.hostIconArt(hostIconAuto, sshconn.SystemUnknown, protocolVNC); !reflect.DeepEqual(art, icons.Monitor) {
+		t.Fatal("an automatic icon for a VNC host is not the monitor")
 	}
-	if art := state.hostIconArt(hostIconAuto, sshconn.SystemUnknown, false); !reflect.DeepEqual(art, icons.Server) {
-		t.Fatal("an automatic icon for a non-desktop host is not the server")
+	if art := state.hostIconArt(hostIconAuto, sshconn.SystemUnknown, protocolSSH); !reflect.DeepEqual(art, icons.Server) {
+		t.Fatal("an automatic icon for an SSH host with no detected system is not the server")
 	}
-	if art := state.hostIconArt(hostIconAuto, sshconn.SystemWindows, true); reflect.DeepEqual(art, icons.Monitor) {
+	if art := state.hostIconArt(hostIconAuto, sshconn.SystemWindows, protocolRDP); reflect.DeepEqual(art, icons.Monitor) {
 		t.Fatal("a known system lost its badge on a desktop host")
 	}
-	if art := state.hostIconArt(hostIconDesktop, sshconn.SystemUnknown, false); !reflect.DeepEqual(art, icons.Monitor) {
+	// An RDP host is a Windows host before anything is detected: its account is
+	// the Windows user's, so its automatic icon is the Windows badge, not the
+	// generic desktop glyph.
+	windows := state.hostIconArt(hostIconOf(sshconn.SystemWindows), sshconn.SystemUnknown, protocolRDP)
+	if art := state.hostIconArt(hostIconAuto, sshconn.SystemUnknown, protocolRDP); !reflect.DeepEqual(art, windows) {
+		t.Fatal("an automatic icon for an RDP host is not the Windows badge")
+	}
+	if art := state.hostIconArt(hostIconAuto, sshconn.SystemDebian, protocolRDP); reflect.DeepEqual(art, windows) {
+		t.Fatal("a detected system lost its badge on an RDP host")
+	}
+	if art := state.hostIconArt(hostIconDesktop, sshconn.SystemUnknown, protocolSSH); !reflect.DeepEqual(art, icons.Monitor) {
 		t.Fatal("the explicit desktop icon is not the monitor")
 	}
-	if art := state.hostIconArt(hostIconSerial, sshconn.SystemUnknown, false); !reflect.DeepEqual(art, icons.Serial) {
+	if art := state.hostIconArt(hostIconSerial, sshconn.SystemUnknown, protocolSSH); !reflect.DeepEqual(art, icons.Serial) {
 		t.Fatal("the explicit serial icon is not the serial glyph")
 	}
 	icon, ok := parseHostIcon("desktop")
