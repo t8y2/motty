@@ -155,6 +155,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	state.syncNoteWindows()
 	state.workspaceCardRegions = state.workspaceCardRegions[:0]
 	state.pixelScale = canvas.PixelScale()
+	state.titlebarLeading, state.titlebarTrailing = canvas.TitlebarInsets()
 	// Motty keeps one central click handler. The event pass of a click names its
 	// target here; the handler runs once this paint has returned, outside it,
 	// because it may open a native dialog or block. The repaint that follows
@@ -390,7 +391,7 @@ func (state *State) fileManagerPixelBounds(size gfx.Size) gfx.Rect {
 const tooltipGap = float32(10)
 
 // Window-bar metrics. The bar leaves what the platform keeps of the strip's two
-// ends (app.TitlebarInsets: macOS's traffic lights, or the buttons Viva draws on
+// ends (the canvas's TitlebarInsets: macOS's traffic lights, or the buttons Viva draws on
 // Windows and Linux) and starts barMargin inside what is left.
 const (
 	barButtonSize = float32(28) // the square hit area of a window-bar button
@@ -575,7 +576,7 @@ func (state *State) windowFrameColor() gfx.Color {
 // draws the window controls in the corner, their inset owns the space and the
 // bar keeps its own margin; the rail is left where it is.
 func (state *State) windowBarRightPad() float32 {
-	_, trailing := windowTitlebarInsets()
+	_, trailing := state.windowTitlebarInsets()
 	centred := state.terminalToolbarMetrics().railExtent/2 - barButtonSize/2
 	if centred <= trailing {
 		return trailing + barMargin
@@ -694,7 +695,7 @@ func (state *State) declareShell(c ui.C) {
 // to share the room left of the buttons.
 func (state *State) windowBarGeometry(canvas *gfx.Canvas, width float32) barGeometry {
 	chrome := &state.chrome
-	leading, trailing := windowTitlebarInsets()
+	leading, trailing := state.windowTitlebarInsets()
 	padRight := state.windowBarRightPad()
 	buttons := state.windowBarButtons()
 	tabCount := len(state.workspaceTabs) + state.fileTabCount()
@@ -748,7 +749,7 @@ func (state *State) declareProbeBar(c ui.C) {
 // window. With probe set only the places are declared, for windowBarGeometry.
 func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool, geometry barGeometry, scroll float32) {
 	m, pal, chrome := state.messages, state.pal, &state.chrome
-	leading, _ := windowTitlebarInsets()
+	leading, _ := state.windowTitlebarInsets()
 	visibleFileTabs := 0
 	for _, tab := range state.sftpTabs {
 		if tab != nil && !tab.closed {

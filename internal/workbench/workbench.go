@@ -1055,8 +1055,12 @@ type State struct {
 	viewport gfx.Size
 	// pixelScale is the device pixels per logical pixel of the display, as the last
 	// paint saw it; zero before the first.
-	pixelScale            float32
-	cellWidth, cellHeight float32
+	pixelScale float32
+	// titlebarLeading and titlebarTrailing are how much of the window bar the
+	// window buttons cover, as the last paint's canvas reported them: none in
+	// full screen.
+	titlebarLeading, titlebarTrailing float32
+	cellWidth, cellHeight             float32
 	// cellPixelWidth and cellPixelHeight are one cell in device pixels as last
 	// handed to the screens and shells; see syncCellPixels.
 	cellPixelWidth, cellPixelHeight int

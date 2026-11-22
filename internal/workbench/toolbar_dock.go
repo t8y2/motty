@@ -314,7 +314,7 @@ func (state *State) refitToolbarDock() {
 
 // Keep a useful tab area; excess top actions remain available in the menu.
 func (state *State) toolbarTopLimit() int {
-	leading, trailing := windowTitlebarInsets()
+	leading, trailing := state.windowTitlebarInsets()
 	return max(2, int((state.viewport.Width-leading-trailing-240)/(barButtonSize+2)))
 }
 
