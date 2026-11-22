@@ -70,12 +70,19 @@ type badgeGlyph struct {
 }
 
 // badgeArt is what a system's badge is made of: a rounded square or a circle
-// in the background color, with its glyphs on it.
+// in the background color, with its glyphs on it. The glyphs live in a fixed
+// array rather than a slice so a steady paint does not allocate while it looks
+// the art up.
+const maxBadgeGlyphs = 3
+
 type badgeArt struct {
 	circle     bool
 	background gfx.Color
-	glyphs     []badgeGlyph
+	glyphs     [maxBadgeGlyphs]badgeGlyph
+	count      uint8
 }
+
+func (art badgeArt) glyphList() []badgeGlyph { return art.glyphs[:art.count] }
 
 // systemBadgeArt describes the badge of a system, for a dark or a light page. It
 // reports false for a system without a badge of its own.
@@ -89,15 +96,15 @@ func systemBadgeArt(system sshconn.RemoteSystem, dark bool) (badgeArt, bool) {
 	}
 	switch system {
 	case sshconn.SystemUbuntu:
-		return badgeArt{circle: true, background: gfx.RGB(221, 72, 20), glyphs: []badgeGlyph{{icons.Ubuntu, 0, white}}}, true
+		return badgeArt{circle: true, background: gfx.RGB(221, 72, 20), glyphs: [maxBadgeGlyphs]badgeGlyph{{icons.Ubuntu, 0, white}}, count: 1}, true
 	case sshconn.SystemWindows:
-		return badgeArt{background: background, glyphs: []badgeGlyph{{icons.Windows, 0, gfx.RGB(0, 173, 239)}}}, true
+		return badgeArt{background: background, glyphs: [maxBadgeGlyphs]badgeGlyph{{icons.Windows, 0, gfx.RGB(0, 173, 239)}}, count: 1}, true
 	case sshconn.SystemDarwin:
-		return badgeArt{background: background, glyphs: []badgeGlyph{{icons.Apple, 0.16, foreground}}}, true
+		return badgeArt{background: background, glyphs: [maxBadgeGlyphs]badgeGlyph{{icons.Apple, 0.16, foreground}}, count: 1}, true
 	case sshconn.SystemLinux:
-		return badgeArt{background: background, glyphs: []badgeGlyph{
+		return badgeArt{background: background, glyphs: [maxBadgeGlyphs]badgeGlyph{
 			{icons.Linux, 0.10, foreground}, {icons.LinuxDetail, 0.10, background}, {icons.LinuxAccent, 0.10, gfx.RGB(245, 192, 33)},
-		}}, true
+		}, count: 3}, true
 	}
 	if badge, ok := distroBadges[system]; ok {
 		// VMware's mark is a monogram two and a half times wider than it is tall,
@@ -107,7 +114,7 @@ func systemBadgeArt(system sshconn.RemoteSystem, dark bool) (badgeArt, bool) {
 		if system == sshconn.SystemESXi || system == sshconn.SystemAIX {
 			inset = 0.10
 		}
-		return badgeArt{background: badge.brand, glyphs: []badgeGlyph{{badge.icon, inset, white}}}, true
+		return badgeArt{background: badge.brand, glyphs: [maxBadgeGlyphs]badgeGlyph{{badge.icon, inset, white}}, count: 1}, true
 	}
 	return badgeArt{}, false
 }
@@ -131,7 +138,7 @@ func paintBadgeArt(canvas *gfx.Canvas, art badgeArt, bounds gfx.Rect) {
 		radius = bounds.Width / 2
 	}
 	canvas.Rounded(bounds, radius, art.background)
-	for _, glyph := range art.glyphs {
+	for _, glyph := range art.glyphList() {
 		paintFilledIcon(canvas, glyph.icon, insetRect(bounds, glyph.inset), glyph.color)
 	}
 }
@@ -172,7 +179,7 @@ func composeBadgeIcon(art badgeArt) gfx.Icon {
 	}
 	layers := []gfx.IconLayer{{Fill: art.background, Commands: roundedSquare(badgeIconView, radius)}}
 	for pass := 0; pass < 2; pass++ {
-		for _, glyph := range art.glyphs {
+		for _, glyph := range art.glyphList() {
 			layers = append(layers, gfx.IconLayer{Fill: glyph.color, Commands: scaledCommands(glyph.icon, glyph.inset)})
 		}
 	}

@@ -3592,25 +3592,30 @@ func (state *State) declareHostKeyDialog(c ui.C) {
 }
 
 // declareHostKeyBody lays out the address, type and fingerprint of the key.
+// hostKeyRow is one labelled line of the host-key dialog's body.
+type hostKeyRow struct{ label, value string }
+
 func (state *State) declareHostKeyBody(c ui.C) {
 	session := state.promptSession()
 	if session == nil {
 		return
 	}
 	m, pal := state.messages, state.pal
-	type keyRow struct{ label, value string }
-	rows := []keyRow{
-		{m.FieldAddress, session.hostKey.Address},
-		{m.HostKeyType, session.hostKey.Type},
-		{m.HostKeyFingerprint, session.hostKey.Fingerprint},
-	}
+	// The rows reuse a slice on the state so a steady paint does not allocate
+	// the list of three lines (and the saved fingerprints) every frame.
+	rows := append(state.hostKeyRows[:0],
+		hostKeyRow{m.FieldAddress, session.hostKey.Address},
+		hostKeyRow{m.HostKeyType, session.hostKey.Type},
+		hostKeyRow{m.HostKeyFingerprint, session.hostKey.Fingerprint},
+	)
 	labelWidth := float32(90)
 	if session.hostKey.Changed {
 		labelWidth = 110
 		for _, fingerprint := range session.hostKey.Known {
-			rows = append(rows, keyRow{m.HostKeySavedFingerprint, fingerprint})
+			rows = append(rows, hostKeyRow{m.HostKeySavedFingerprint, fingerprint})
 		}
 	}
+	state.hostKeyRows = rows
 	ui.Column(c).Fill().Gap(8).Children(func() {
 		for _, row := range rows {
 			ui.Row(c).Height(22).Gap(6).Children(func() {

@@ -1038,6 +1038,9 @@ type State struct {
 	// area: files panel and transfers
 	// filesRowIcons is scratch for the visible rows of the list.
 	filesRowIcons []ui.Box
+	// hostKeyRows is the host-key dialog's lines, kept between paints so the
+	// dialog does not rebuild its list every frame.
+	hostKeyRows []hostKeyRow
 
 	// area: keychain, palette, import and the rest
 	// hostGridPaint is the card grid's declaration: one control paints the cards
