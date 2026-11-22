@@ -603,3 +603,22 @@ func TestHidingToTrayIsExplainedOnce(t *testing.T) {
 		t.Fatal("the explanation was not remembered on this device")
 	}
 }
+
+// The choice rides in the shared settings, so another window and a restart get
+// it, not only the state that made it.
+func TestTheDisabledCloseWindowQuestionSurvivesRestore(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	state.Click(hitSettingsCloseWindowConfirmToggle)
+	saved := state.snapshot()
+	if saved.CloseWindowConfirm != "off" {
+		t.Fatalf("saved choice = %q, want off", saved.CloseWindowConfirm)
+	}
+	other := newTestState(t, testOptions(t))
+	other.restoreShared(saved)
+	if !other.closeWindowConfirmOff {
+		t.Fatal("restoring the shared settings lost the choice")
+	}
+	if other.ConfirmClose(func() {}) {
+		t.Fatal("a restored state asked the question with the setting off")
+	}
+}

@@ -129,8 +129,9 @@ func (state *State) NoteHiddenToTray() {
 
 // ConfirmClose asks before a window that is about to quit takes its sessions
 // with it, and runs allow only when the user agrees. It reports whether it took
-// over; false means nothing is open and the caller may close at once. Asking a
-// second time while the question is up closes, since the user insists.
+// over; false means the caller may close at once, either because nothing is open
+// or because the user turned the question off. Asking a second time while the
+// question is up closes, since the user insists.
 func (state *State) ConfirmClose(allow func()) bool {
 	if state.ConfirmDocumentClose(func() {
 		if !state.ConfirmClose(allow) {
