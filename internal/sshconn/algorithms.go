@@ -141,24 +141,45 @@ func negotiatedFrom(metadata ssh.ConnMetadata) (Negotiated, bool) {
 
 // hostKeyAlgorithms picks what to offer for the host key. known are the
 // signature algorithms of keys already on file for the host (nil for a new one),
-// wanted the caller's list (nil for the defaults). A known key narrows the offer
-// to it, so a server with several key types is checked against the one the user
-// trusted, as before.
+// wanted the caller's list (nil for the library's defaults).
+//
+// The client's order decides which key the server signs with, so the known keys
+// go first: a server with several key types is still checked against the one the
+// user trusted. The rest of the list follows rather than being dropped, as
+// OpenSSH does: a server that no longer has the saved key type (a replaced
+// firmware, a regenerated key set) would otherwise end in "no common algorithm
+// for host key". Its other key is then a type never stored for the address, which
+// verifyHostKey asks about.
 func hostKeyAlgorithms(known, wanted []string) []string {
-	if len(wanted) == 0 {
-		return known
-	}
 	if len(known) == 0 {
 		return wanted
 	}
-	var offer []string
-	for _, name := range wanted {
-		if slices.Contains(known, name) {
+	rest := wanted
+	if len(rest) == 0 {
+		rest = defaultHostKeys()
+	}
+	var first []string
+	for _, name := range known {
+		if slices.Contains(rest, name) {
+			first = append(first, name)
+		}
+	}
+	if len(first) == 0 {
+		first = known // the list leaves the trusted key out; it still wins
+	}
+	offer := slices.Clone(first)
+	for _, name := range rest {
+		if !slices.Contains(offer, name) {
 			offer = append(offer, name)
 		}
 	}
-	if len(offer) == 0 {
-		return known
-	}
 	return offer
+}
+
+// defaultHostKeys is the set the library offers when no list is given: its
+// supported host-key algorithms and the weak ones it still keeps (ssh-rsa), the
+// same set CompatibleAlgorithms ends with. The library does not export the
+// default list itself.
+func defaultHostKeys() []string {
+	return slices.Concat(ssh.SupportedAlgorithms().HostKeys, ssh.InsecureAlgorithms().HostKeys)
 }

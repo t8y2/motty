@@ -860,10 +860,13 @@ func TestUnreachableHostFailsWithTheAddress(t *testing.T) {
 	}
 }
 
-// The user once trusted this address under a different key type. OpenSSH
-// offers only the algorithms on file; a server without that key type then
-// cannot connect, which is not the same as its key having changed.
-func TestKnownKeyOfAnotherTypeIsNotReportedAsAChangedKey(t *testing.T) {
+// The user once trusted this address under a different key type, and the
+// server no longer has it (a replaced firmware, a regenerated key set). Like
+// OpenSSH, the saved type is preferred but not the only one offered, so the
+// handshake succeeds and the user is asked about a key never stored for the
+// address; it is not a changed key, and no credentials are sent before the
+// answer.
+func TestKnownKeyOfAnotherTypeAsksInsteadOfFailingTheHandshake(t *testing.T) {
 	server := startServer(t, func(s *testServer) { s.password = "pw" })
 	host, port := server.host()
 	path := filepath.Join(t.TempDir(), "known_hosts")
@@ -873,14 +876,19 @@ func TestKnownKeyOfAnotherTypeIsNotReportedAsAChangedKey(t *testing.T) {
 	}
 	h := dial(t, server, func(c *Config) { c.KnownHostsPath = path })
 	status := h.until("a verdict", func(s Status) bool { return s.Phase == PhaseFailed || s.Phase == PhaseHostKeyPrompt })
-	if status.Phase == PhaseHostKeyPrompt {
-		t.Fatal("an ed25519 key was offered for a host trusted under ECDSA")
+	if status.Phase != PhaseHostKeyPrompt {
+		t.Fatalf("the handshake failed instead of asking about the new key: %v", status.Err)
 	}
-	if errors.Is(status.Err, ErrHostKeyChanged) {
-		t.Fatalf("a different key type was reported as a changed key: %v", status.Err)
+	if status.HostKey.Changed || len(status.HostKey.Known) != 0 {
+		t.Fatalf("a different key type was reported as a changed key: %+v", status.HostKey)
 	}
 	if len(server.offered()) != 0 {
-		t.Fatal("credentials reached a server whose key type is not on file")
+		t.Fatal("credentials reached the server before its key was trusted")
+	}
+	h.conn.TrustHostKey(true)
+	h.phase(PhasePasswordPrompt)
+	if !strings.Contains(h.knownHosts(), "ssh-ed25519") || !strings.Contains(h.knownHosts(), "ecdsa-sha2-nistp256") {
+		t.Fatalf("both key types should be on file: %q", h.knownHosts())
 	}
 }
 
