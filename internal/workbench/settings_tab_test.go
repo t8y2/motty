@@ -268,3 +268,16 @@ func TestSettingsTabPreservesStateAcrossTabSwitches(t *testing.T) {
 		t.Fatalf("freshly reopened settings tab: scroll=%v shown=%v, want 0", state.settingsScroll, view.pageShown)
 	}
 }
+
+// The AI entry points open the assistant page at its top, also when the settings
+// tab is already open on that page and scrolled down.
+func TestAISettingsEntryOpensAtTheTopOfAnOpenPage(t *testing.T) {
+	state, _ := fourTabs(t)
+	state.openSettings()
+	state.selectSettingsCategory(settingsAssistant)
+	state.settingsScroll = 300
+	state.openAIModelSettings()
+	if state.settingsCategory != settingsAssistant || state.settingsScroll != 0 {
+		t.Fatalf("category %d, scroll %g: the entry point did not open at the top", state.settingsCategory, state.settingsScroll)
+	}
+}
