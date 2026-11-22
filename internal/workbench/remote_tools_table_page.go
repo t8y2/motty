@@ -86,7 +86,7 @@ func (state *State) prepareRemoteTable(c ui.C, tab remoteTab, width float32) {
 		}
 	}
 	components.FitSortableTableHeadings(c.Canvas(), theme, view.tableColumns[:len(headings)], view.tableHeaderCells[:len(headings)])
-	chosen := &view.columnWidths[tab]
+	chosen := state.remoteChosenWidths(tab)
 	if chosen.chosen {
 		for index := 0; index+1 < view.tableCount; index++ {
 			view.tableColumns[index].Width = chosen.widths[index]

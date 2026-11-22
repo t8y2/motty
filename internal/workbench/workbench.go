@@ -985,7 +985,11 @@ type State struct {
 	syncScope syncScope
 	sshSync   sshSyncState
 	remote    remoteToolsView
-	edits     externalEdits
+	// remoteColumnWidths are the widths the user dragged each tools tab's
+	// columns to. The dialog and every content window share them, so reopening
+	// a surface keeps the sizes for the session.
+	remoteColumnWidths [6]remoteTableColumnWidths
+	edits              externalEdits
 	// fontSizeText is the font size as the settings page shows it, for fontSizeShown.
 	fontSizeText         string
 	fontSizeShown        float32
