@@ -39,14 +39,26 @@ func TestTerminalFolderShortcutOpensFocusedLocalDirectory(t *testing.T) {
 }
 
 func TestTerminalFolderShortcutSettingsPositionAndPersistence(t *testing.T) {
-	if shortcutTerminalFolder+1 != shortcutLocalTerminal {
-		t.Fatal("file manager shortcut must immediately precede local terminal")
-	}
 	options := freshOptions(t)
 	state := newTestState(t, options)
 	showShortcutSettings(state)
 	if state.shortcutActionLabel(shortcutTerminalFolder) == "" {
 		t.Fatal("missing file manager shortcut label")
+	}
+	// The page lists the file-manager row above the local-terminal row; assert
+	// the order the user sees rather than enum adjacency.
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	folderRow, ok := hitByID(&canvas, hitShortcutRowList.At(int(shortcutTerminalFolder-1)))
+	if !ok {
+		t.Fatal("file manager shortcut row is not painted")
+	}
+	localRow, ok := hitByID(&canvas, hitShortcutRowList.At(int(shortcutLocalTerminal-1)))
+	if !ok {
+		t.Fatal("local terminal shortcut row is not painted")
+	}
+	if folderRow.Bounds.Y >= localRow.Bounds.Y {
+		t.Fatalf("file manager row sits below local terminal: folder=%+v local=%+v", folderRow.Bounds, localRow.Bounds)
 	}
 	state.Click(hitShortcutRowList.At(int(shortcutTerminalFolder - 1)))
 	if state.modal != modalShortcutCapture || state.shortcutCapture != shortcutTerminalFolder {
