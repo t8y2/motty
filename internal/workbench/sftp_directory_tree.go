@@ -285,10 +285,13 @@ func sameDirectoryTreeLocation(local bool, left, right string) bool {
 // Windows can expose the same directory through both its long name and an
 // 8.3 alias (for example RUNNER~1). The tree cache uses the long name returned
 // by its directory listing, so retry a missing local child by file identity.
+// Identity is read from the file system, not from the listing, so a node whose
+// listing a refresh has marked stale still answers: a refresh marks every node
+// stale before its own listing arrives, and must still find the node to update.
 // Restricting this to real directories avoids confusing a symlink with a
 // separate entry that happens to target the same location.
 func directoryTreeLocalAliasChild(node *sftpTreeNode, location string) *sftpTreeNode {
-	if node == nil || !node.loaded {
+	if node == nil {
 		return nil
 	}
 	target, err := os.Lstat(location)
@@ -322,7 +325,7 @@ func directoryTreeChild(tree *sftpDirectoryTree, local bool, node *sftpTreeNode,
 // root the way syncDirectoryTreeToPath does. The direct key answers whenever the
 // cache still knows the path, including a node a refresh has not reread yet.
 // A local miss retries the selection's canonical path and then the walk, whose
-// file-identity fallback needs loaded parents to prove two names are one folder.
+// file-identity fallback proves two names are one folder.
 func directoryTreeResolveNode(tree *sftpDirectoryTree, local bool, location string) *sftpTreeNode {
 	if tree == nil || location == "" {
 		return nil
