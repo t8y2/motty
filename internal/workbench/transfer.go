@@ -40,6 +40,9 @@ var (
 	// hitTransferCancelFor is one cancel button per session, so two progress
 	// cards do not share a click.
 	hitTransferCancelFor = tree.Sub(transferHits, tree.Name("transfer-cancel-for"))
+	// hitDesktopReceiveCancelFor cancels the files a remote desktop's session
+	// is saving from its clipboard, one per session.
+	hitDesktopReceiveCancelFor = tree.Sub(transferHits, tree.Name("desktop-receive-cancel-for"))
 )
 
 // maxHeldTransferBytes bounds what is kept while the user decides: a sender
@@ -877,10 +880,12 @@ func (state *State) declareFileTransferDialog(c ui.C) {
 // declareTransferProgressCards declares the running transfers' floating cards
 // in the page. Each sits in a corner and does not take the window: clicking
 // elsewhere leaves the transfer going, and only its cancel button stops it.
+// A remote desktop saving the files its user copied is such a transfer too.
 func (state *State) declareTransferProgressCards(c ui.C) {
 	running := 0
 	for index := range state.sessions {
-		if state.sessions[index].transfer.phase == transferRunning {
+		session := &state.sessions[index]
+		if session.transfer.phase == transferRunning || session.desk.receivingFiles() {
 			running++
 		}
 	}
@@ -891,16 +896,65 @@ func (state *State) declareTransferProgressCards(c ui.C) {
 	slot := 0
 	for index := range state.sessions {
 		session := &state.sessions[index]
-		if session.transfer.phase != transferRunning {
+		switch {
+		case session.transfer.phase == transferRunning:
+			state.declareOneTransferCard(c, session, slot)
+		case session.desk.receivingFiles():
+			state.declareDesktopReceiveCard(c, session, slot)
+		default:
 			continue
 		}
-		state.declareOneTransferCard(c, session, slot)
 		slot++
 	}
 }
 
 func (state *State) declareOneTransferCard(c ui.C, session *Session, slot int) {
 	transfer := &session.transfer
+	m := state.messages.Tools
+	title := m.TransferReceiveTitle
+	if transfer.sending {
+		title = m.TransferSendTitle
+	}
+	progress := transfer.progress
+	state.declareProgressCard(c, slot, progressCard{
+		title: title, address: session.Address, name: progress.Name,
+		line: transfer.text.format(progress.Done, progress.Size), fraction: progressFraction(progress.Done, progress.Size),
+		cancel: hitTransferCancelFor.At(int(session.ID)),
+	})
+}
+
+// progressCard is what one transfer's floating card shows.
+type progressCard struct {
+	title, address, name, line string
+	fraction                   float32
+	cancel                     gfx.ID
+}
+
+// progressFraction is how much of size done is, zero while size is not known.
+func progressFraction(done, size int64) float32 {
+	if size <= 0 {
+		return 0
+	}
+	return float32(float64(done) / float64(size))
+}
+
+// format returns the card's byte line for done out of size (-1: not known),
+// made again only when they change.
+func (text *transferText) format(done, size int64) string {
+	if text.line == "" || text.done != done || text.size != size {
+		text.done, text.size = done, size
+		if size >= 0 {
+			text.line = formatBytes(done) + " / " + formatBytes(size)
+		} else {
+			text.line = formatBytes(done)
+		}
+	}
+	return text.line
+}
+
+// declareProgressCard declares one floating card, slot cards up from the
+// window's bottom right corner.
+func (state *State) declareProgressCard(c ui.C, slot int, spec progressCard) {
 	viewport := state.windowRect()
 	const (
 		cardWidth  = float32(360)
@@ -921,28 +975,10 @@ func (state *State) declareOneTransferCard(c ui.C, session *Session, slot int) {
 	if minY := viewport.Y + windowBarHeight + 8; card.Y < minY {
 		card.Y = minY
 	}
-	address := session.Address
-	m, pal := state.messages.Tools, state.pal
-	title := m.TransferReceiveTitle
-	if transfer.sending {
-		title = m.TransferSendTitle
-	}
-	progress := transfer.progress
-	name := progress.Name
+	pal := state.pal
+	name := spec.name
 	if name == "" {
 		name = "…"
-	}
-	if transfer.text.line == "" || transfer.text.done != progress.Done || transfer.text.size != progress.Size {
-		transfer.text.done, transfer.text.size = progress.Done, progress.Size
-		if progress.Size >= 0 {
-			transfer.text.line = formatBytes(progress.Done) + " / " + formatBytes(progress.Size)
-		} else {
-			transfer.text.line = formatBytes(progress.Done)
-		}
-	}
-	fraction := float32(0)
-	if progress.Size > 0 {
-		fraction = float32(float64(progress.Done) / float64(progress.Size))
 	}
 	const pad, gap = float32(12), float32(6)
 	cancel := state.messages.Cancel
@@ -950,19 +986,19 @@ func (state *State) declareOneTransferCard(c ui.C, session *Session, slot int) {
 		Pad(pad).Gap(gap).Radius(radius.popup).Border(1, pal.line).Background(pal.surface).Shadow(gfx.ShadowMD).
 		HitWith(hitTransferProgress, "", gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, SkipTab: true}).
 		Children(func() {
-			ui.Text(c, title).Height(20).LineHeight(20).FillWidth().Ellipsis().
+			ui.Text(c, spec.title).Height(20).LineHeight(20).FillWidth().Ellipsis().
 				FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.text)
-			if address != "" {
-				ui.Text(c, address).Height(18).LineHeight(18).FillWidth().Ellipsis().
+			if spec.address != "" {
+				ui.Text(c, spec.address).Height(18).LineHeight(18).FillWidth().Ellipsis().
 					FontSize(metrics.FontSizeS).Color(pal.muted)
 			}
 			ui.Text(c, name).Height(20).LineHeight(20).FillWidth().Ellipsis().
 				FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text)
-			ui.Progress(c, fraction).Height(8).FillWidth()
+			ui.Progress(c, spec.fraction).Height(8).FillWidth().Label(spec.title + " " + name)
 			ui.Row(c).Height(28).FillWidth().Gap(8).Items(ui.Center).Children(func() {
-				ui.Text(c, transfer.text.line).Grow(1).Ellipsis().
+				ui.Text(c, spec.line).Grow(1).Ellipsis().
 					FontSize(metrics.FontSizeS).Color(pal.muted)
-				ui.Button(c, cancel).Small().Secondary().Hit(hitTransferCancelFor.At(int(session.ID)), cancel)
+				ui.Button(c, cancel).Small().Secondary().Hit(spec.cancel, cancel)
 			})
 		})
 }

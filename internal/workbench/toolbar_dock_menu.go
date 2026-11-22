@@ -25,7 +25,13 @@ var (
 func (state *State) declareToolbarDockMenu(c ui.C) {
 	dock, m := &state.toolbarDock, state.messages.Toolbars
 	if !dock.menu || state.modal != modalNone {
+		state.finishSchemePreview(c)
 		return
+	}
+	if dock.menuTool == hitTheme && !dock.overflow {
+		state.beginSchemePreview()
+	} else {
+		state.finishSchemePreview(c)
 	}
 	var rows menuRows
 	sftp := !dock.overflow && sftpToolbarMenuSource(dock.menuTool)
@@ -51,6 +57,21 @@ func (state *State) declareToolbarDockMenu(c ui.C) {
 			rows.add(components.ContextMenuItem{ID: hitToolbarDockHide, Label: m.Hide, Icon: lucideIcons[iconEyeOff]})
 		}
 	} else {
+		// The theme button's menu lists terminal color schemes. A choice here
+		// changes the terminal at once, so Settings does not have to cover it
+		// while the colors are compared. The second line names the scheme the
+		// look that is showing already wears.
+		if dock.menuTool == hitTheme {
+			tools := state.messages.Tools
+			current := tools.SchemeDefault
+			if index, ok := state.schemeIndexByID(state.activeScheme()); ok {
+				_, current, _ = state.schemeAt(index)
+			}
+			rows.addSubmenu(components.ContextMenuItem{
+				Label: tools.SchemeGroup, Description: current, Icon: lucideIcons[iconTerminal],
+			}, func(menu *ui.MenuItems) { state.declareToolbarSchemeMenu(c, menu) })
+			rows.separate()
+		}
 		rows.add(components.ContextMenuItem{ID: hitToolbarDockTop, Label: m.MoveTop, Icon: lucideIcons[iconRows2]})
 		rows.add(components.ContextMenuItem{ID: hitToolbarDockLeftTop, Label: m.MoveLeftTop, Icon: lucideIcons[iconArrowUp]})
 		rows.add(components.ContextMenuItem{ID: hitToolbarDockLeftBottom, Label: m.MoveLeftBottom, Icon: lucideIcons[iconChevronDown]})
@@ -65,6 +86,7 @@ func (state *State) declareToolbarDockMenu(c ui.C) {
 	rows.add(components.ContextMenuItem{ID: hitToolbarDockCustomize, Label: m.Customize, Icon: lucideIcons[iconSliders]})
 	rows.add(components.ContextMenuItem{ID: hitToolbarDockReset, Label: m.ResetLayout, Icon: lucideIcons[iconRefresh]})
 	state.declareRowsMenu(c, &dock.menu, dock.menuAt, hitToolbarDockDismiss, &rows, state.chooseToolbarDockMenu)
+	state.followSchemePreview(c)
 }
 
 // clickToolbarDockMenu opens the overflow menu from the More button.

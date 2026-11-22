@@ -7,6 +7,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"motty/internal/remotestats"
 	"motty/internal/sshconn"
 )
 
@@ -37,6 +38,37 @@ func TestMonitorHostInfoUsesTargetLoginAndConfiguredHost(t *testing.T) {
 	want[2] = state.systemUser
 	if got := state.monitorHostInfo(session); got != want {
 		t.Fatalf("missing default login: %q, want %q", got, want)
+	}
+}
+
+func TestMonitorCurrentSSHUserUsesAuthenticatedTargetAndPrivacy(t *testing.T) {
+	state, session := monitorFixture(t)
+	session.host.User = "saved-user"
+	session.endpoint = sshconn.Endpoint{Host: "host.example", User: "authenticated-user"}
+	session.role = sshconn.EndpointTarget
+	session.phase = sshconn.PhaseConnected
+	if got := state.monitorCurrentSSHUser(session); got != "authenticated-user" {
+		t.Fatalf("current SSH user = %q", got)
+	}
+	session.stats.panel.data.LoginsAvailable = true
+	session.stats.panel.data.Logins = []remotestats.Login{{User: "authenticated-user", Terminal: "pts/1", Since: "today"}}
+	if got := state.monitorCurrentSSHUser(session); got != "" {
+		t.Fatalf("listed login duplicated as %q", got)
+	}
+	session.stats.panel.data.Logins = nil
+	state.hostPrivacy = hostPrivacyState{enabled: true, maskUser: true}
+	if got := state.monitorCurrentSSHUser(session); got != "" {
+		t.Fatalf("hidden SSH user exposed as %q", got)
+	}
+	state.hostPrivacy = hostPrivacyState{}
+	session.role = sshconn.EndpointProxyJump
+	if got := state.monitorCurrentSSHUser(session); got != "" {
+		t.Fatalf("jump host user exposed as target user %q", got)
+	}
+	session.role = sshconn.EndpointTarget
+	session.phase = sshconn.PhaseFailed
+	if got := state.monitorCurrentSSHUser(session); got != "" {
+		t.Fatalf("disconnected SSH user exposed as active %q", got)
 	}
 }
 

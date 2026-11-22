@@ -3,7 +3,6 @@ package workbench
 import (
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 
 	"github.com/vivaui/viva/components"
@@ -130,13 +129,18 @@ func (state *State) sftpClipboardPaths() ([]string, bool) {
 
 // pasteRemoteClipboardToLocal queues the clipboard's server files into a local
 // folder, reading from the server they were copied from.
-func (state *State) pasteRemoteClipboardToLocal(clip sftpClipboard, localDir string) bool {
+func (state *State) pasteRemoteClipboardToLocal(view *sftpView, clip sftpClipboard, localDir string) bool {
 	if clip.view == nil || clip.view.worker == nil || localDir == "" {
 		return false
 	}
+	requests := make([]sftpDownloadRequest, 0, len(clip.entries))
 	for _, entry := range clip.entries {
-		state.queueSFTPDownloadFrom(clip.view, clip.sourceDir, entry, filepath.Join(localDir, safeLocalName(entry.Name)))
+		requests = append(requests, sftpDownloadRequest{
+			view: clip.view, remoteDir: clip.sourceDir, entry: entry,
+			localPath: filepath.Join(localDir, safeLocalName(entry.Name)),
+		})
 	}
+	state.queueSFTPDownloads(view, requests)
 	return true
 }
 
@@ -157,7 +161,7 @@ func (state *State) pasteSFTPClipboard(view *sftpView) bool {
 	}
 	clip := state.sftpRemoteClipboard()
 	if view.local {
-		return state.pasteRemoteClipboardToLocal(clip, folder.path)
+		return state.pasteRemoteClipboardToLocal(view, clip, folder.path)
 	}
 	if !clip.empty() && clip.open != nil {
 		if queued, _ := state.queueRemoteCopies(view, clip.copySource(), clip.sourceDir, folder.path, clip.entries); queued > 0 {
@@ -218,22 +222,6 @@ func (state *State) sftpClipboardShortcut(event gfx.KeyEvent, action shortcutAct
 	return handled, true
 }
 
-// queueSFTPDownloadFrom queues one server file into localPath. The source folder
-// is the one the file was listed in, which a copied selection keeps after its
-// panel has moved on.
-func (state *State) queueSFTPDownloadFrom(view *sftpView, remoteDir string, entry sftpclient.Entry, localPath string) {
-	_, queued := view.worker.QueueDownload(path.Join(remoteDir, entry.Name), localPath, entry.IsDir(), sftpclient.ExistingFail)
-	if !queued {
-		view.errorText = state.messages.SFTPUnavailable
-		return
-	}
-	view.status = fmt.Sprintf(state.messages.SFTPQueuedFmt, entry.Name)
-	view.errorText = ""
-	state.transfers.host = nil
-	state.openTransferCenterForQueued()
-	state.refreshSFTPTransfers(view)
-}
-
 // pasteClipboard pastes onto the side the transfer window last worked in: server
 // files another window copied become a server-to-server copy, files the system
 // clipboard holds are uploaded, and on the local side the copied server files
@@ -246,7 +234,7 @@ func (w *sftpWindow) pasteClipboard() {
 		if clip.empty() || target == "" {
 			return
 		}
-		if w.owner.pasteRemoteClipboardToLocal(clip, target) {
+		if w.owner.pasteRemoteClipboardToLocal(w.view, clip, target) {
 			w.localRefresh = true
 		}
 		return

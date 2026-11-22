@@ -30,6 +30,9 @@ type forwardRecord struct {
 	// Resume makes the forward wait through an automatic reconnect of its tab
 	// and start again once it is connected, instead of stopping.
 	Resume bool
+	// AutoStart starts the forward whenever a tab connects to its host, so it
+	// does not have to be opened by hand from the forwards page.
+	AutoStart bool
 	// ViaShell carries each connection through a relay program run in a shell on
 	// the host, for a server that refuses forwarded channels: the shell becomes
 	// the TCP stream. Relay is that program, with the tokens of a proxy command;
@@ -55,32 +58,26 @@ type forwardStartResult struct {
 	err       error
 }
 
-// forwardTableSource reads the forwards page's table cells when the table asks
-// for them, one visible cell at a time.
-type forwardTableSource struct {
-	records *[]forwardRecord
-}
-
-func (source *forwardTableSource) Len() int {
-	if source == nil || source.records == nil {
-		return 0
+// initForwardList names the forward list's rows by their forward numbers, so a
+// row keeps its keyboard place as forwards are added above it or removed.
+func (state *State) initForwardList() {
+	state.forwardRowDecl = state.declareForwardRow
+	state.forwardList.Key = func(row int) int {
+		if row >= 0 && row < len(state.forwards) {
+			return int(state.forwards[row].ID)
+		}
+		return row
 	}
-	return len(*source.records)
-}
-
-func (source *forwardTableSource) Cell(row, column int) string {
-	if source == nil || source.records == nil {
+	state.forwardList.Label = func(row int) string {
+		if row >= 0 && row < len(state.forwards) {
+			return state.forwards[row].Label
+		}
 		return ""
 	}
-	records := *source.records
-	if row < 0 || row >= len(records) || column < 0 || column >= len(records[row].cells) {
-		return ""
-	}
-	return records[row].cells[column]
 }
 
-// syncForwardTable makes the table show the forward the application selected.
-func (state *State) syncForwardTable() {
+// syncForwardList makes the list show the forward the application selected.
+func (state *State) syncForwardList() {
 	row := -1
 	for index := range state.forwards {
 		if state.forwards[index].ID == state.selectedForwardID {
@@ -88,15 +85,61 @@ func (state *State) syncForwardTable() {
 			break
 		}
 	}
-	state.forwardTable.Select(row)
+	state.forwardList.Select(row)
 }
 
-// takeForwardTableSelection adopts the row a key moved the table to.
-func (state *State) takeForwardTableSelection() {
-	row := state.forwardTable.Selected()
+// takeForwardListSelection adopts the row a click or a key moved the list to.
+func (state *State) takeForwardListSelection() {
+	row := state.forwardList.Selected()
 	if row >= 0 && row < len(state.forwards) {
 		state.selectForward(state.forwards[row].ID)
 	}
+}
+
+// forwardListKey moves the forward list's keyboard row: the arrows, Home and End
+// and Page Up and Down, from a row that has the keyboard, as the canvas table
+// did.
+func (state *State) forwardListKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if state.activeSection != sectionForwards || state.modal != modalNone {
+		return gfx.EventResult{}, false
+	}
+	if event.Modifiers&(gfx.ModifierControl|gfx.ModifierMeta|gfx.ModifierAlt) != 0 {
+		return gfx.EventResult{}, false
+	}
+	row, ok := event.Target.In(hitForwardRowList)
+	if !ok {
+		return gfx.EventResult{}, false
+	}
+	last := len(state.forwards) - 1
+	if last < 0 {
+		return gfx.EventResult{}, false
+	}
+	first, lastVisible := state.forwardList.Visible()
+	page := max(lastVisible-first, 1)
+	switch event.Key {
+	case gfx.KeyUp:
+		row--
+	case gfx.KeyDown:
+		row++
+	case gfx.KeyPageUp:
+		row -= page
+	case gfx.KeyPageDown:
+		row += page
+	case gfx.KeyHome:
+		row = 0
+	case gfx.KeyEnd:
+		row = last
+	default:
+		return gfx.EventResult{}, false
+	}
+	row = min(max(row, 0), last)
+	state.forwardList.Select(row)
+	state.forwardList.ScrollIntoView(row)
+	state.takeForwardListSelection()
+	return gfx.EventResult{
+		Handled: true, Repaint: true,
+		Focus: hitForwardRowList.At(row), FocusVisible: true,
+	}, true
 }
 
 func (forward *forwardRecord) listenAddress() string {
@@ -240,6 +283,7 @@ type forwardEditor struct {
 	hostRow   ui.FormFieldState
 	mode      portforward.Mode
 	resume    bool
+	autoStart bool
 	viaShell  bool
 	relay     text.Editor
 	editing   bool
@@ -256,8 +300,9 @@ type forwardEditor struct {
 // forwardDialogBody is where the forward editor's body put each control it
 // paints by hand.
 type forwardDialogBody struct {
-	viaShell, viaShellHelp ui.Box
-	resume, resumeHelp     ui.Box
+	viaShell, viaShellHelp   ui.Box
+	resume, resumeHelp       ui.Box
+	autoStart, autoStartHelp ui.Box
 }
 
 type forwardField uint8
@@ -306,6 +351,7 @@ func (editor *forwardEditor) load(forward forwardRecord, hostID uint32) {
 		hostChoice: hostID,
 		mode:       forward.Mode,
 		resume:     forward.Resume,
+		autoStart:  forward.AutoStart,
 		viaShell:   forward.ViaShell,
 		editing:    true,
 		forwardID:  forward.ID,
@@ -403,7 +449,7 @@ func (editor *forwardEditor) record(id uint32, host Host) forwardRecord {
 	forward := forwardRecord{
 		ID: id, Label: editor.value(forwardFieldLabel), Mode: editor.mode,
 		HostLabel: host.Label, HostAddress: host.Address, HostUser: host.User, HostPort: host.Port,
-		LocalPort: localPort, Resume: editor.resume,
+		LocalPort: localPort, Resume: editor.resume, AutoStart: editor.autoStart,
 	}
 	if editor.viaShell && modeUsesServerDestination(editor.mode) {
 		forward.ViaShell, forward.Relay = true, editor.relayCommand()
@@ -461,13 +507,6 @@ func (state *State) openForwardDialog() {
 	state.modal = modalNewForward
 }
 
-func (state *State) openEditForward() {
-	if state.selectedForwardID == 0 {
-		return
-	}
-	state.openEditForwardID(state.selectedForwardID)
-}
-
 func (state *State) openEditForwardID(id uint32) {
 	forward, ok := state.forwardByID(id)
 	if !ok {
@@ -493,6 +532,8 @@ func (state *State) clickForwardDialog(id gfx.ID) {
 		state.status = state.messages.StatusEditCanceled
 	case hitForwardDialogResume:
 		state.forwardEditor.resume = !state.forwardEditor.resume
+	case hitForwardDialogAutoStart:
+		state.forwardEditor.autoStart = !state.forwardEditor.autoStart
 	case hitForwardDialogViaShell:
 		state.forwardEditor.viaShell = !state.forwardEditor.viaShell
 	case hitForwardDialogSubmit:
@@ -522,6 +563,7 @@ func (state *State) submitForwardDialog() {
 			f.HostPort = host.Port
 			f.LocalPort = localPort
 			f.Resume = state.forwardEditor.resume
+			f.AutoStart = state.forwardEditor.autoStart
 			f.ViaShell, f.Relay = false, ""
 			if state.forwardEditor.viaShell && modeUsesServerDestination(state.forwardEditor.mode) {
 				f.ViaShell, f.Relay = true, state.forwardEditor.relayCommand()
@@ -570,16 +612,26 @@ func (state *State) clickForwards(id gfx.ID) {
 	switch {
 	case id == hitForwardAdd:
 		state.openForwardDialog()
-	case id == hitForwardEdit:
-		state.openEditForward()
-	case id == hitForwardRemove:
-		state.removeSelectedForward()
-	case id == hitForwardStartStop:
-		state.toggleSelectedForward()
+	case id.Scope() == hitForwardRowList:
+		if row, ok := id.In(hitForwardRowList); ok && row >= 0 && row < len(state.forwards) {
+			state.selectForward(state.forwards[row].ID)
+		}
+	case id.Scope() == hitForwardRowEditList:
+		if forwardID, ok := id.In(hitForwardRowEditList); ok {
+			state.openEditForwardID(uint32(forwardID))
+		}
+	case id.Scope() == hitForwardRowToggleList:
+		if forwardID, ok := id.In(hitForwardRowToggleList); ok {
+			state.toggleForwardByID(uint32(forwardID))
+		}
+	case id.Scope() == hitForwardRowRemoveList:
+		if forwardID, ok := id.In(hitForwardRowRemoveList); ok {
+			state.removeForwardByID(uint32(forwardID))
+		}
 	}
 }
 
-// selectForward makes a forward the selected one. The table calls it from the
+// selectForward makes a forward the selected one. The list calls it from the
 // paint that delivers the click on its row.
 func (state *State) selectForward(id uint32) {
 	if _, ok := state.forwardByID(id); ok {
@@ -588,18 +640,22 @@ func (state *State) selectForward(id uint32) {
 	}
 }
 
-func (state *State) removeSelectedForward() {
+// removeForwardByID removes a forward from the list. A forward that is not the
+// selected one leaves the selection where it is.
+func (state *State) removeForwardByID(id uint32) {
 	for index := range state.forwards {
-		if state.forwards[index].ID != state.selectedForwardID {
+		if state.forwards[index].ID != id {
 			continue
 		}
 		removed := state.forwards[index]
 		state.forwards[index].stop()
 		state.forwards = slices.Delete(state.forwards, index, index+1)
 		state.releaseForwardTunnel(removed.sessionID)
-		state.selectedForwardID = 0
-		if len(state.forwards) > 0 {
-			state.selectedForwardID = state.forwards[min(index, len(state.forwards)-1)].ID
+		if state.selectedForwardID == removed.ID {
+			state.selectedForwardID = 0
+			if len(state.forwards) > 0 {
+				state.selectedForwardID = state.forwards[min(index, len(state.forwards)-1)].ID
+			}
 		}
 		state.refreshForwardCount()
 		state.status = state.messages.ForwardRemoved + removed.Label
@@ -608,8 +664,10 @@ func (state *State) removeSelectedForward() {
 	}
 }
 
-func (state *State) toggleSelectedForward() {
-	forward, ok := state.forwardByIDPointer(state.selectedForwardID)
+// toggleForwardByID starts the forward if it is stopped, and stops it if it
+// runs, waits or starts.
+func (state *State) toggleForwardByID(id uint32) {
+	forward, ok := state.forwardByIDPointer(id)
 	if !ok {
 		return
 	}
@@ -765,6 +823,8 @@ func (state *State) startRemoteForward(forward *forwardRecord, session *Session)
 	}()
 }
 
+// startPendingForwards starts the forwards waiting for this session, and those
+// set to start with their host.
 func (state *State) startPendingForwards(session *Session) {
 	if !session.hasServer() {
 		return // a mosh, Telnet, serial or local session has no SSH server to forward through
@@ -772,6 +832,13 @@ func (state *State) startPendingForwards(session *Session) {
 	for index := range state.forwards {
 		forward := &state.forwards[index]
 		if forward.pending && forward.sessionID == session.ID {
+			state.startForward(forward, session)
+			continue
+		}
+		// An idle forward that asked to follow its host starts with the first
+		// tab that connects to it; one already running or waiting is left alone.
+		if forward.AutoStart && forward.matchesHost(session.host) &&
+			forward.runner == nil && !forward.pending && !forward.starting {
 			state.startForward(forward, session)
 		}
 	}
@@ -916,7 +983,7 @@ func (state *State) restoreForwards(saved []savedForward) {
 		forward := forwardRecord{
 			ID: numbers[index], Label: entry.Label, Mode: mode,
 			HostLabel: entry.HostLabel, HostAddress: entry.HostAddress, HostUser: entry.HostUser, HostPort: entry.HostPort,
-			LocalPort: entry.LocalPort, Resume: entry.Resume, ViaShell: entry.ViaShell, Relay: entry.Relay,
+			LocalPort: entry.LocalPort, Resume: entry.Resume, AutoStart: entry.AutoStart, ViaShell: entry.ViaShell, Relay: entry.Relay,
 		}
 		if !modeUsesServerDestination(mode) {
 			forward.ViaShell, forward.Relay = false, ""
@@ -939,7 +1006,7 @@ func (state *State) restoreForwards(saved []savedForward) {
 			previous = slices.Delete(previous, match, match+1)
 			if kept.sameAs(forward) {
 				kept.ID = forward.ID
-				kept.Label, kept.HostLabel, kept.Resume = forward.Label, forward.HostLabel, forward.Resume
+				kept.Label, kept.HostLabel, kept.Resume, kept.AutoStart = forward.Label, forward.HostLabel, forward.Resume, forward.AutoStart
 				forward = kept
 			} else {
 				kept.stop()

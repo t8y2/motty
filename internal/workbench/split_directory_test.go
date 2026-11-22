@@ -80,3 +80,34 @@ func TestSplittingALocalShellStartsItInTheSameFolder(t *testing.T) {
 		t.Fatalf("second shell starts in %q (remembered %q), want %q", conn.dir, second.localDirectory, directory)
 	}
 }
+
+// A duplicate of a local tab starts in the folder that tab was left in, the way
+// a split does, rather than in the default directory.
+func TestDuplicatingALocalTabStartsItInTheSameFolder(t *testing.T) {
+	state, first := openLocal(t)
+	directory, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.localDirectory = directory
+
+	if !state.duplicateTab(state.deck.ActiveWorkspace()) {
+		t.Fatal("the local tab was not duplicated")
+	}
+	if len(state.sessions) != 2 {
+		t.Fatalf("%d sessions after a duplicate", len(state.sessions))
+	}
+	second := &state.sessions[1]
+	t.Cleanup(func() {
+		if second.term != nil && second.term.shell != nil {
+			second.term.shell.Close()
+		}
+	})
+	conn, ok := second.conn.(*localConn)
+	if !ok || conn.dir != directory || second.localDirectory != directory {
+		t.Fatalf("duplicate shell starts in %q (remembered %q), want %q", conn.dir, second.localDirectory, directory)
+	}
+	if state.pendingDirectory != "" {
+		t.Fatalf("pending directory %q outlived the session it was for", state.pendingDirectory)
+	}
+}

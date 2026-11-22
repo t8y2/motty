@@ -511,6 +511,56 @@ func FuzzSender(f *testing.F) {
 	})
 }
 
+// fileHeaderCount counts ZFILE headers, the frame that offers one file.
+func fileHeaderCount(data []byte) int {
+	return bytes.Count(data, []byte{'*', 0x18, 'A', zFILE}) + bytes.Count(data, []byte{'*', 0x18, 'C', zFILE})
+}
+
+// A receiver that is still waiting for the first file sends ready again. That
+// ready means the header never arrived, so it is said again.
+func TestTheFirstFileIsOfferedAgainWhileTheReceiverIsStillWaiting(t *testing.T) {
+	sender := NewSender([]SendFile{{Name: "only.bin", Size: 4, Source: bytes.NewReader([]byte("aaaa"))}}, SendOptions{})
+	sender.Feed(start())
+	if got := fileHeaderCount(sender.TakeOutput(nil)); got != 1 {
+		t.Fatalf("the first offer contained %d file headers", got)
+	}
+	sender.Feed(start())
+	if got := fileHeaderCount(sender.TakeOutput(nil)); got != 1 {
+		t.Fatalf("a ready before the first file was accepted offered it %d times", got)
+	}
+	if sender.Progress().Name != "only.bin" {
+		t.Fatalf("progress name = %q", sender.Progress().Name)
+	}
+}
+
+// lrz answers a repeated end-of-file by sending ready again. That second ready
+// arrives after the next file has already been offered, and offering it again
+// makes lrz open another file.
+func TestARepeatedReadyBetweenFilesOffersTheNextFileOnce(t *testing.T) {
+	sender := NewSender([]SendFile{
+		{Name: "file0.bin", Size: 4, Source: bytes.NewReader([]byte("aaaa"))},
+		{Name: "file1.bin", Size: 4, Source: bytes.NewReader([]byte("bbbb"))},
+	}, SendOptions{})
+	sender.Feed(start())
+	if got := fileHeaderCount(sender.TakeOutput(nil)); got != 1 || sender.Progress().Name != "file0.bin" {
+		t.Fatalf("first offer has %d file headers, name %q", got, sender.Progress().Name)
+	}
+	sender.Feed(appendBinaryHeader(nil, zRPOS, positionBytes(0), true))
+	sender.TakeOutput(nil) // the file, then its end
+	sender.Feed(append(start(), start()...))
+	next := sender.TakeOutput(nil)
+	if got := fileHeaderCount(next); got != 1 {
+		t.Fatalf("two readies between files offered the next file %d times", got)
+	}
+	if sender.Progress().Name != "file1.bin" {
+		t.Fatalf("progress name = %q", sender.Progress().Name)
+	}
+	sender.Timeout()
+	if got := fileHeaderCount(sender.TakeOutput(nil)); got != 1 {
+		t.Fatalf("a timeout offered the waiting file %d times", got)
+	}
+}
+
 func TestASilentPeerEndsTheTransferAfterEnoughTimeouts(t *testing.T) {
 	for name, engine := range map[string]Engine{
 		"receiver": NewReceiver(&memTarget{}),

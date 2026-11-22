@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -13,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"motty/internal/netclient"
 )
 
 // The catalog comes from one public source. The repository is a constant so a
@@ -233,22 +236,9 @@ func resolveTag(ctx context.Context, client *http.Client, tag string) (Release, 
 }
 
 func getJSON(ctx context.Context, client *http.Client, url string, out any) error {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return err
-	}
-	request.Header.Set("Accept", "application/vnd.github+json")
-	request.Header.Set("User-Agent", "motty")
-	response, err := client.Do(request)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("the release service answered %s", response.Status)
-	}
-	decoder := json.NewDecoder(io.LimitReader(response.Body, 1<<20))
-	return decoder.Decode(out)
+	return readUpdate(ctx, client, url, "application/vnd.github+json", "the release service", func(body io.Reader) error {
+		return json.NewDecoder(io.LimitReader(body, 1<<20)).Decode(out)
+	})
 }
 
 // FetchCatalog downloads the archive of one immutable commit and imports it
@@ -261,20 +251,12 @@ func FetchCatalog(ctx context.Context, client *http.Client, release Release) (*C
 		return nil, ImportStats{}, errors.New("the release is not pinned")
 	}
 	url := "https://codeload.github.com/" + RepositoryOwner + "/" + RepositoryName + "/tar.gz/" + release.Commit
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, ImportStats{}, err
-	}
-	request.Header.Set("User-Agent", "motty")
-	response, err := client.Do(request)
-	if err != nil {
-		return nil, ImportStats{}, err
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return nil, ImportStats{}, fmt.Errorf("the download answered %s", response.Status)
-	}
-	source, err := ReadSourceArchive(response.Body, DefaultArchiveLimits())
+	var source *SourceArchive
+	err := readUpdate(ctx, client, url, "", "the download", func(body io.Reader) error {
+		var err error
+		source, err = ReadSourceArchive(body, DefaultArchiveLimits())
+		return err
+	})
 	if err != nil {
 		return nil, ImportStats{}, err
 	}
@@ -319,57 +301,76 @@ func allowedUpdateHost(host string) bool {
 	return false
 }
 
-// UpdateClient returns the HTTP client the updater uses: bounded in total
-// time, redirects only to GitHub or its fixed fallback over https.
+// UpdateClient returns the HTTP client the updater uses: each complete request
+// is bounded in time, follows the desktop's proxy policy and redirects only to
+// GitHub or the fixed fallback over https.
 func UpdateClient() *http.Client {
-	primary := http.DefaultTransport.(*http.Transport).Clone()
-	primary.ResponseHeaderTimeout = 25 * time.Second
-	return &http.Client{
-		Timeout:   updateTimeout,
-		Transport: updateFallbackTransport{primary: primary},
-		CheckRedirect: func(request *http.Request, via []*http.Request) error {
-			if len(via) >= 5 {
-				return errors.New("too many redirects")
-			}
-			if request.URL.Scheme != "https" {
-				return errors.New("only https downloads are followed")
-			}
-			if !allowedUpdateHost(request.URL.Hostname()) && request.URL.Hostname() != updateMirror {
-				return fmt.Errorf("the redirect leaves GitHub for %q", request.URL.Hostname())
-			}
-			return nil
-		},
+	client := netclient.Client(updateTimeout)
+	client.CheckRedirect = func(request *http.Request, via []*http.Request) error {
+		if len(via) >= 5 {
+			return errors.New("too many redirects")
+		}
+		if request.URL.Scheme != "https" {
+			return errors.New("only https downloads are followed")
+		}
+		if !allowedUpdateHost(request.URL.Hostname()) && request.URL.Hostname() != updateMirror {
+			return fmt.Errorf("the redirect leaves GitHub for %q", request.URL.Hostname())
+		}
+		return nil
 	}
+	return client
 }
 
-// updateFallbackTransport retries only the fixed public catalog's GitHub
-// endpoints. A mirror receives no credentials, and an unsuccessful direct
-// response is closed before retrying.
-type updateFallbackTransport struct{ primary http.RoundTripper }
-
-func (transport updateFallbackTransport) RoundTrip(request *http.Request) (*http.Response, error) {
-	response, err := transport.primary.RoundTrip(request)
+// readUpdate retries the fixed public catalog only after a complete HTTP attempt
+// fails, including a stalled or interrupted response body. Each attempt has its
+// own client timeout; cancellation of the caller stops the fallback as well.
+// A fresh request uses the mirror's authority and receives no credentials.
+func readUpdate(ctx context.Context, client *http.Client, endpoint, accept, service string, read func(io.Reader) error) error {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return err
+	}
+	request.Header.Set("User-Agent", "motty")
+	if accept != "" {
+		request.Header.Set("Accept", accept)
+	}
+	retry, err := readUpdateAttempt(client, request, service, read)
+	if err == nil || !retry || ctx.Err() != nil {
+		return err
+	}
 	api := request.URL.Hostname() == "api.github.com" &&
 		strings.HasPrefix(request.URL.Path, "/repos/"+RepositoryOwner+"/"+RepositoryName+"/")
 	archive := request.URL.Hostname() == "codeload.github.com" &&
 		strings.HasPrefix(request.URL.Path, "/"+RepositoryOwner+"/"+RepositoryName+"/tar.gz/")
-	if request.Context().Err() != nil || request.URL.Scheme != "https" || (!api && !archive) ||
-		(err == nil && response.StatusCode != http.StatusForbidden && response.StatusCode != http.StatusTooManyRequests && response.StatusCode < 500) {
-		return response, err
+	if request.URL.Scheme != "https" || (!api && !archive) {
+		return err
 	}
-	if response != nil {
-		response.Body.Close()
+	mirror, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://"+updateMirror+"/"+endpoint, nil)
+	if err != nil {
+		return err
 	}
-	mirrorURL, parseErr := url.Parse("https://" + updateMirror + "/" + request.URL.String())
-	if parseErr != nil {
-		return nil, parseErr
-	}
-	mirror := request.Clone(request.Context())
-	mirror.URL = mirrorURL
-	mirror.Header = make(http.Header)
 	mirror.Header.Set("User-Agent", "motty")
-	if request.Header.Get("Accept") != "" {
-		mirror.Header.Set("Accept", request.Header.Get("Accept"))
+	if accept != "" {
+		mirror.Header.Set("Accept", accept)
 	}
-	return transport.primary.RoundTrip(mirror)
+	_, err = readUpdateAttempt(client, mirror, service, read)
+	return err
+}
+
+// readUpdateAttempt closes the failed body before a new source is tried. Parse,
+// size and integrity errors remain failures; only incomplete transfers retry.
+func readUpdateAttempt(client *http.Client, request *http.Request, service string, read func(io.Reader) error) (bool, error) {
+	response, err := client.Do(request)
+	if err != nil {
+		return true, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		retry := response.StatusCode == http.StatusForbidden || response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500
+		return retry, fmt.Errorf("%s answered %s", service, response.Status)
+	}
+	err = read(response.Body)
+	var networkError net.Error
+	retry := errors.As(err, &networkError) || errors.Is(err, io.ErrUnexpectedEOF)
+	return retry, err
 }

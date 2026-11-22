@@ -31,6 +31,7 @@ var (
 	hitSettingsProxyConfigure = tree.ID(outboundProxyHits, "settings-proxy-configure")
 	hitHostProxyConfigure     = tree.ID(outboundProxyHits, "host-proxy-configure")
 	hitOutboundProxyAddress   = tree.ID(outboundProxyHits, "outbound-proxy-address")
+	hitOutboundProxyProfile   = tree.ID(outboundProxyHits, "outbound-proxy-profile")
 	hitOutboundProxyUser      = tree.ID(outboundProxyHits, "outbound-proxy-user")
 	hitOutboundProxyPassword  = tree.ID(outboundProxyHits, "outbound-proxy-password")
 	hitOutboundProxyBypass    = tree.ID(outboundProxyHits, "outbound-proxy-bypass")
@@ -62,6 +63,11 @@ type outboundProxy struct {
 type outboundProxyForm struct {
 	kind                            sshconn.ProxyKind
 	forHost, inherit                bool
+	profile                         string
+	profileBeforeAdd                string
+	profileChoices                  []string
+	profileField                    ui.FormFieldState
+	profileBox                      ui.Box
 	address, user, password, bypass text.Editor
 	dialogError                     string
 	// unconfirmed is set while the dialog shows an imported proxy command that
@@ -321,6 +327,19 @@ func sameProxyLogin(left, right *outboundProxy) bool {
 // cannot leave either credential half-changed.
 func (state *State) hostProxyChanges(host Host, previous, source *Host) (note string, changes []vault.Change, failure string) {
 	vaultFile := state.secrets.vault
+	if host.ProxyProfile != "" {
+		// The profile owns its password. Retire the host's own proxy secret, if
+		// it had one, so a later switch back cannot reuse it.
+		if previous != nil && previous.Proxy != nil && previous.Proxy.kind != sshconn.ProxyNone && previous.Proxy.user != "" && vaultFile != nil {
+			if vaultFile.NeedsConversion() && vaultFile.Len() > 0 {
+				return "", nil, state.messages.Tools.ProxyPasswordLocked
+			}
+			if name := hostProxyPasswordSecret(previous.CatalogID, previous.Proxy); name != "" {
+				return "", []vault.Change{{Name: name, Delete: true}}, ""
+			}
+		}
+		return "", nil, ""
+	}
 	proxy := host.Proxy
 	needsPassword := proxy != nil && proxy.kind != sshconn.ProxyNone && proxy.user != ""
 	destination := hostProxyPasswordSecret(host.CatalogID, proxy)
@@ -377,6 +396,7 @@ func (state *State) hostProxyChanges(host Host, previous, source *Host) (note st
 
 func (state *State) openOutboundProxyDialog() {
 	form, saved := &state.proxyForm, state.proxy
+	form.profile = ""
 	form.kind, form.forHost, form.inherit, form.unconfirmed = saved.kind, false, false, false
 	state.loadProxyForm(saved, "")
 	state.modal = modalOutboundProxy
@@ -384,14 +404,40 @@ func (state *State) openOutboundProxyDialog() {
 
 func (state *State) openHostProxyDialog() {
 	form := &state.proxyForm
-	form.forHost, form.inherit = true, state.editor.proxy == nil
+	form.profile, form.unconfirmed = "", false
+	form.forHost = true
 	saved := outboundProxy{}
-	if state.editor.proxy != nil {
+	switch {
+	case state.editor.proxyProfile != "":
+		// A profile that is gone is shown as a direct route, which is what the
+		// connection will do; saving the form drops the stale id.
+		if profile, ok := state.proxyProfileByID(state.editor.proxyProfile); ok {
+			form.profile = profile.ID
+			saved = profile.outboundProxy()
+			saved.bypass = state.editor.proxyBypass
+		}
+		form.inherit = false
+	case state.editor.proxy == nil:
+		form.inherit = true
+	default:
+		form.inherit = false
 		saved = *state.editor.proxy
+		form.unconfirmed = saved.unconfirmed
 	}
-	form.kind, form.unconfirmed = saved.kind, saved.unconfirmed
+	form.kind = saved.kind
 	state.loadProxyForm(saved, state.editor.proxyPassword)
 	state.modal = modalOutboundProxy
+}
+
+// loadProxyProfileIntoForm copies a saved profile's route into the dialog, so
+// the disabled fields show what the host will use. The password stays empty:
+// it is read from the vault when the connection is dialed.
+func (state *State) loadProxyProfileIntoForm(profile proxyProfile) {
+	form := &state.proxyForm
+	form.kind = profile.Kind
+	form.address, form.user, form.password = text.Editor{}, text.Editor{}, text.Editor{}
+	form.address.Insert(profile.Address)
+	form.user.Insert(profile.User)
 }
 
 func (state *State) loadProxyForm(saved outboundProxy, password string) {
@@ -423,6 +469,26 @@ func (state *State) clickOutboundProxy(id gfx.ID) {
 
 func (state *State) proxyFormValue() (outboundProxy, string, bool) {
 	form, m := &state.proxyForm, state.messages.Tools
+	if form.profile != "" {
+		profile, ok := state.proxyProfileByID(form.profile)
+		if !ok {
+			form.dialogError = state.messages.ProxyProfiles.HostMissing
+			return outboundProxy{}, "", false
+		}
+		entries := splitBypass(strings.TrimSpace(form.bypass.String()))
+		if len(entries) > maxBypassEntries {
+			form.dialogError = fmt.Sprintf(m.ProxyErrorBypassFmt, maxBypassEntries)
+			return outboundProxy{}, "", false
+		}
+		for _, entry := range entries {
+			if len(entry) > maxBypassEntryLen {
+				form.dialogError = fmt.Sprintf(m.ProxyErrorBypassFmt, maxBypassEntries)
+				return outboundProxy{}, "", false
+			}
+		}
+		form.dialogError = ""
+		return outboundProxy{kind: profile.Kind, address: profile.Address, user: profile.User, bypass: strings.Join(entries, ", ")}, "", true
+	}
 	address := strings.TrimSpace(form.address.String())
 	user := strings.TrimSpace(form.user.String())
 	bypass := strings.TrimSpace(form.bypass.String())
@@ -465,8 +531,9 @@ func (state *State) proxyFormValue() (outboundProxy, string, bool) {
 
 func (state *State) submitOutboundProxy() {
 	form, m := &state.proxyForm, state.messages.Tools
-	if form.forHost && form.inherit {
-		state.editor.proxy, state.editor.proxyPassword = nil, ""
+	if form.forHost && form.inherit && form.profile == "" {
+		state.editor.proxy, state.editor.proxyProfile, state.editor.proxyBypass = nil, "", ""
+		state.editor.proxyPassword = ""
 		state.modal = modalNewHost
 		return
 	}
@@ -475,7 +542,13 @@ func (state *State) submitOutboundProxy() {
 		return
 	}
 	if form.forHost {
-		state.editor.proxy, state.editor.proxyPassword = cloneOutboundProxy(&saved), password
+		if form.profile != "" {
+			state.editor.proxy, state.editor.proxyProfile, state.editor.proxyBypass = nil, form.profile, saved.bypass
+			state.editor.proxyPassword = ""
+		} else {
+			state.editor.proxy, state.editor.proxyProfile, state.editor.proxyBypass = cloneOutboundProxy(&saved), "", ""
+			state.editor.proxyPassword = password
+		}
 		state.modal = modalNewHost
 		return
 	}
@@ -511,7 +584,12 @@ func (state *State) declareOutboundProxyBody(c ui.C) {
 	form := &state.proxyForm
 	column := ui.Column(c).Fill().PadSides(2, 4, 0, 4)
 	column.Children(func() {
-		ui.Column(c).Height(34).MarginSides(0, 0, 14, 0).Children(func() { state.declareOutboundProxyKind(c) })
+		if form.forHost {
+			state.declareOutboundProxyProfileSelect(c)
+		}
+		if form.profile == "" {
+			ui.Column(c).Height(34).MarginSides(0, 0, 14, 0).Children(func() { state.declareOutboundProxyKind(c) })
+		}
 		state.declareOutboundProxyFields(c)
 		state.problemLineC(c, form.dialogError)
 	})
@@ -551,7 +629,8 @@ func (state *State) declareOutboundProxyKind(c ui.C) {
 	if !form.forHost {
 		choices = outboundProxyGlobalChoices[:]
 	}
-	if ui.Choice(c, &form.choice, choices, state.outboundProxyChoiceLabel).Fill().Changed() {
+	if ui.Choice(c, &form.choice, choices, state.outboundProxyChoiceLabel).Fill().
+		Disabled(form.profile != "").Changed() {
 		state.applyProxyChoice()
 	}
 }
@@ -560,11 +639,16 @@ func (state *State) declareOutboundProxyKind(c ui.C) {
 func (state *State) declareOutboundProxyFields(c ui.C) {
 	m := state.messages.Tools
 	form := &state.proxyForm
+	profile := form.profile != ""
 	disabled := form.inherit || form.kind == sshconn.ProxyNone
 	command := form.kind == sshconn.ProxyCommand
 	addressLabel, addressPlaceholder := m.ProxyAddress, "127.0.0.1:1080"
 	if command {
 		addressLabel, addressPlaceholder = m.ProxyCommandField, "cloudflared access ssh --hostname %h"
+	}
+	passwordPlaceholder := m.ProxyPasswordPlaceholder
+	if profile {
+		passwordPlaceholder = state.messages.ProxyProfiles.PasswordFromProfile
 	}
 	entries := [...]struct {
 		id          gfx.ID
@@ -575,18 +659,53 @@ func (state *State) declareOutboundProxyFields(c ui.C) {
 	}{
 		{hitOutboundProxyAddress, addressLabel, addressPlaceholder, &form.address, false},
 		{hitOutboundProxyUser, m.ProxyUser, "", &form.user, false},
-		{hitOutboundProxyPassword, m.ProxyPassword, m.ProxyPasswordPlaceholder, &form.password, true},
+		{hitOutboundProxyPassword, m.ProxyPassword, passwordPlaceholder, &form.password, true},
 		{hitOutboundProxyBypass, m.ProxyBypass, defaultProxyBypass, &form.bypass, false},
 	}
 	for index, entry := range entries {
+		if profile && entry.id == hitOutboundProxyAddress {
+			continue
+		}
 		login := entry.id == hitOutboundProxyUser || entry.id == hitOutboundProxyPassword
 		ui.Column(c.KeyInt(index)).Height(62).MarginSides(0, 0, 4, 0).Children(func() {
 			form.inputs[index].declare(c, state, entry.editor, dialogFieldSpec{
 				ID: entry.id, Label: entry.label, Placeholder: entry.placeholder, Secret: entry.secure, Height: 62,
-				Disabled: disabled && entry.id != hitOutboundProxyBypass || command && login,
+				Disabled: disabled && entry.id != hitOutboundProxyBypass || profile && entry.id != hitOutboundProxyBypass || command && login,
 			})
 		})
 	}
+}
+
+// declareOutboundProxyProfileSelect declares the saved profile a host can use in
+// place of its own route, with the manual route as the first choice. The kind
+// switch and route fields below it stay readable but are disabled while a
+// profile carries the host; the direct list stays the host's own.
+func (state *State) declareOutboundProxyProfileSelect(c ui.C) {
+	form, m := &state.proxyForm, state.messages.ProxyProfiles
+	choices := state.hostProxyProfileChoices()
+	ui.Column(c).Height(62).MarginSides(0, 0, 4, 0).Children(func() {
+		ui.FormField(c, &form.profileField, m.ProfileLabel).Height(62).Children(func() {
+			previous := form.profile
+			form.profileBox = ui.Select(c, &form.profile, choices, state.proxyProfileChoiceLabel).
+				Label(m.ProfileLabel)
+			if form.profileBox.Changed() {
+				switch {
+				case form.profile == proxyProfileAddChoice:
+					form.profile = previous
+					form.profileBeforeAdd = previous
+					c.After(func() { state.openProxyProfileDialogOverHost() })
+				case form.profile == "":
+					form.dialogError = ""
+				default:
+					if profile, ok := state.proxyProfileByID(form.profile); ok {
+						state.loadProxyProfileIntoForm(profile)
+						form.password = text.Editor{}
+					}
+					form.dialogError = ""
+				}
+			}
+		})
+	})
 }
 
 // declareOutboundProxyDialog declares the route settings as a dialog of the
@@ -602,12 +721,22 @@ func (state *State) declareOutboundProxyDialog(c ui.C) {
 		}
 	}
 	bodyHeight := withError(312, form.dialogError) // the kind and four fields
+	if form.forHost {
+		bodyHeight = withError(374, form.dialogError) // the profile choice above them
+		if form.profile != "" {
+			bodyHeight = withError(280, form.dialogError) // no kind switch while a profile carries it
+		}
+	}
 	viewport := dialogViewport(c)
-	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 560, description, bodyHeight)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 620, description, bodyHeight)
+	focus := hitOutboundProxyAddress
+	if form.profile != "" {
+		focus = hitOutboundProxyProfile
+	}
 	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := ui.Dialog(c, ui.DialogSpec{
-		Title: title, Description: description, Width: 560, Height: height, Layer: dialogLayer,
-		Scope: dialogScope, CloseID: hitOutboundProxyClose, InitialFocusID: hitOutboundProxyAddress,
+		Title: title, Description: description, Width: 620, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, CloseID: hitOutboundProxyClose, InitialFocusID: focus,
 	})
 	dialog.Body(func() { state.declareOutboundProxyBody(c) })
 	dialog.Footer(func() {
@@ -622,6 +751,14 @@ func (state *State) declareOutboundProxyDialog(c ui.C) {
 
 func (state *State) hostProxyDescription() string {
 	m, proxy := state.messages.Tools, state.editor.proxy
+	if state.editor.proxyProfile != "" {
+		p := state.messages.ProxyProfiles
+		profile, ok := state.proxyProfileByID(state.editor.proxyProfile)
+		if !ok {
+			return p.HostMissing
+		}
+		return fmt.Sprintf(p.HostDescriptionFmt, profile.Name, state.proxyKindName(profile.Kind), profile.Address)
+	}
 	if proxy == nil {
 		return m.HostProxyDescriptionInherit
 	}

@@ -383,8 +383,13 @@ func TestTransferCenterNativeBulkRecoveryAndHostSelection(t *testing.T) {
 			if _, ok := findSnapshotHit(view.Snapshot(), bulkAction("bulk-confirm")); !ok {
 				t.Fatal("replace has no explicit native confirmation")
 			}
-			if hit, ok := findSnapshotHit(view.Snapshot(), bulkAction("bulk-description")); !ok || hit.Label == "" || hit.Hint == "" {
-				t.Fatal("captured count/scope is not exposed semantically")
+			// The confirmation is an alert dialog over the list: it names the
+			// captured count in its title, and the transfers stay visible behind.
+			if batch := state.transfers.batch; batch.title == "" || batch.description == "" || !containsExact(view.Texts(), batch.title) {
+				t.Fatalf("the confirmation does not state the captured count: %q", view.Texts())
+			}
+			if _, ok := findSnapshotHit(view.Snapshot(), hitTransfersList); !ok {
+				t.Fatal("the confirmation hides the transfers it concerns")
 			}
 			if err := view.Driver().Key(gfx.KeyEscape, 0); err != nil {
 				t.Fatal(err)

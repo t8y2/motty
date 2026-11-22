@@ -86,6 +86,22 @@ func (state *State) activateSFTPTabAt(index int) bool {
 
 func (state *State) cycleWindowTabs(delta int) bool {
 	state.workspaceTabs = state.deck.Workspaces(state.workspaceTabs[:0])
+	if state.tabOrientation == tabsHorizontal {
+		count := state.windowTabCount()
+		if count < 2 {
+			return false
+		}
+		current := -1
+		if active, ok := state.activeWindowTab(); ok {
+			current = state.windowTabIndex(active)
+		}
+		next := (current + delta%count + count) % count
+		tab, ok := state.windowTabAt(next)
+		if !ok {
+			return false
+		}
+		return state.activateWindowTab(tab)
+	}
 	count := len(state.workspaceTabs) + state.fileTabCount()
 	if count < 2 {
 		return false
@@ -130,23 +146,33 @@ func (state *State) cycleWindowTabs(delta int) bool {
 	return state.activateSFTPTabAt(next - len(state.workspaceTabs))
 }
 
-// topTabCount is how many tabs the number shortcuts can reach: the workspace
-// tabs on the tab bar, in the order the bar shows them, then the file tabs.
+// topTabCount is how many tabs the number shortcuts can reach: the tabs of the
+// bar in the order it shows them.
 func (state *State) topTabCount() int {
 	state.workspaceTabs = state.deck.Workspaces(state.workspaceTabs[:0])
-	return len(state.visualWorkspaceTabs()) + state.fileTabCount()
+	if state.tabOrientation == tabsVertical && state.verticalTabsGrouped() {
+		return len(state.visualWorkspaceTabs()) + state.fileTabCount()
+	}
+	return state.windowTabCount()
 }
 
 func (state *State) activateTopTab(index int) bool {
 	state.workspaceTabs = state.deck.Workspaces(state.workspaceTabs[:0])
-	tabs := state.visualWorkspaceTabs()
-	if index < len(tabs) {
-		return state.activateTab(index)
+	if state.tabOrientation == tabsVertical && state.verticalTabsGrouped() {
+		tabs := state.visualWorkspaceTabs()
+		if index < len(tabs) {
+			return state.activateTab(index)
+		}
+		if file := index - len(tabs); file == len(state.sftpTabs) && state.settingsTabShown() {
+			return state.activateSettingsTab()
+		}
+		return state.activateSFTPTabAt(index - len(tabs))
 	}
-	if file := index - len(tabs); file == len(state.sftpTabs) && state.settingsTabShown() {
-		return state.activateSettingsTab()
+	tab, ok := state.windowTabAt(index)
+	if !ok {
+		return false
 	}
-	return state.activateSFTPTabAt(index - len(tabs))
+	return state.activateWindowTab(tab)
 }
 
 func (state *State) requestCloseSFTPTab(w *sftpWindow) {

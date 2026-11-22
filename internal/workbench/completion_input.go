@@ -74,7 +74,7 @@ func (state *State) sendSuggestion(session *Session, suffix string, fromCatalog 
 	if !ok {
 		return
 	}
-	if session.term.sendInput([]byte(suffix), false) {
+	if session.term.sendInput([]byte(suffix), false, true) {
 		session.term.suggestionPending = &suggestionEcho{line: line + suffix, token: session.term.folderToken, epoch: session.term.inputGuard.epoch}
 	}
 }
@@ -127,7 +127,7 @@ func (state *State) sendPathSuggestion(session *Session, suffix string) {
 	if !ok {
 		return
 	}
-	if session.term.sendInput([]byte(suffix), false) {
+	if session.term.sendInput([]byte(suffix), false, true) {
 		session.term.suggestionPending = &suggestionEcho{line: line + suffix, token: session.term.folderToken, epoch: session.term.inputGuard.epoch}
 	}
 }

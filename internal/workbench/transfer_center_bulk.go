@@ -14,15 +14,14 @@ import (
 )
 
 var (
-	hitTransfersRetryFailed     = tree.ID(transferCenterHits, "retry-failed")
-	hitTransfersSkipVisible     = tree.ID(transferCenterHits, "skip-visible")
-	hitTransfersReplaceVisible  = tree.ID(transferCenterHits, "replace-visible")
-	hitTransfersResumeVisible   = tree.ID(transferCenterHits, "resume-visible")
-	hitTransfersBulkConfirm     = tree.ID(transferCenterHits, "bulk-confirm")
-	hitTransfersBulkCancel      = tree.ID(transferCenterHits, "bulk-cancel")
-	hitTransfersScopeLabel      = tree.ID(transferCenterHits, "scope-label")
-	hitTransfersBulkDescription = tree.ID(transferCenterHits, "bulk-description")
-	transferConnectionIDs       atomic.Uint64
+	hitTransfersRetryFailed    = tree.ID(transferCenterHits, "retry-failed")
+	hitTransfersSkipVisible    = tree.ID(transferCenterHits, "skip-visible")
+	hitTransfersReplaceVisible = tree.ID(transferCenterHits, "replace-visible")
+	hitTransfersResumeVisible  = tree.ID(transferCenterHits, "resume-visible")
+	hitTransfersBulkConfirm    = tree.ID(transferCenterHits, "bulk-confirm")
+	hitTransfersBulkCancel     = tree.ID(transferCenterHits, "bulk-cancel")
+	hitTransfersScopeLabel     = tree.ID(transferCenterHits, "scope-label")
+	transferConnectionIDs      atomic.Uint64
 )
 
 // Capture host identity at connection time, not from a mutable catalog or a tab's

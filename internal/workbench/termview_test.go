@@ -492,3 +492,124 @@ func TestAnExplicitHighlightColorIsDrawnAsChosen(t *testing.T) {
 		t.Fatalf("runs = %+v, want the first word in %v", entry.runs, want)
 	}
 }
+
+func TestHighlightMatchesAcrossWrappedLogicalLines(t *testing.T) {
+	screen := term.New(10, 4, 0)
+	// "https://amazon.com/page=10" at width 10:
+	// row 0: "https://am" (wrapped = true)
+	// row 1: "azon.com/p" (wrapped = true)
+	// row 2: "age=10"     (wrapped = false)
+	screen.Write([]byte("https://amazon.com/page=10\r\n"))
+
+	look := darkPalette
+	cyan := highlight.RGB(0x00, 0xd0, 0xd0)
+	magenta := highlight.RGB(0xd0, 0x00, 0xd0)
+	look.highlight = highlight.Compile([]highlight.Rule{
+		{Pattern: `https://[^\s]+`, Regex: true, Color: cyan},
+		{Pattern: `\d+`, Regex: true, Color: magenta},
+	})
+
+	var cache rowCache
+	cache.begin()
+
+	for row := 0; row < 3; row++ {
+		entry := cache.row(screen.Row(row), 10, -1, cellSpan{}, &look, false, screen.LogicalLineRows(row)...)
+		want := gfx.RGB(0x00, 0xd0, 0xd0)
+		for _, run := range entry.runs {
+			if run.Color != want {
+				t.Fatalf("row %d run %+v, want color %v (full logical URL must stay cyan)", row, run, want)
+			}
+		}
+	}
+}
+
+func TestHighlightKeywordSplitAcrossRowBoundary(t *testing.T) {
+	screen := term.New(10, 3, 0)
+	// "12345678ERROR" at width 10:
+	// row 0: "12345678ER" (wrapped = true)
+	// row 1: "ROR"        (wrapped = false)
+	screen.Write([]byte("12345678ERROR\r\n"))
+
+	look := darkPalette
+	look.highlight = highlight.Compile([]highlight.Rule{
+		{Pattern: "ERROR", Color: highlight.Red},
+	})
+
+	var cache rowCache
+	cache.begin()
+
+	entry0 := cache.row(screen.Row(0), 10, -1, cellSpan{}, &look, false, screen.LogicalLineRows(0)...)
+	entry1 := cache.row(screen.Row(1), 10, -1, cellSpan{}, &look, false, screen.LogicalLineRows(1)...)
+
+	red := look.highlightColor(highlight.Red, false)
+	// On row 0, last run ("ER") should be red
+	if len(entry0.runs) < 2 || entry0.runs[len(entry0.runs)-1].Color != red {
+		t.Fatalf("row 0 runs = %+v, want last run in red (%v)", entry0.runs, red)
+	}
+	// On row 1, first run ("ROR") should be red
+	if len(entry1.runs) == 0 || entry1.runs[0].Color != red {
+		t.Fatalf("row 1 runs = %+v, want first run in red (%v)", entry1.runs, red)
+	}
+}
+
+func TestTerminalPresentedLogicalLineHighlightsInPaint(t *testing.T) {
+	term := newTerminal(10, 4)
+	term.screen.Write([]byte("https://amazon.com/page=10\r\n"))
+
+	look := darkPalette
+	cyan := highlight.RGB(0x00, 0xd0, 0xd0)
+	magenta := highlight.RGB(0xd0, 0x00, 0xd0)
+	look.highlight = highlight.Compile([]highlight.Rule{
+		{Pattern: `https://[^\s]+`, Regex: true, Color: cyan},
+		{Pattern: `\d+`, Regex: true, Color: magenta},
+	})
+
+	term.cache.begin()
+	for row := 0; row < 3; row++ {
+		line := term.presentedRow(row)
+		entry := term.cache.row(line, 10, -1, cellSpan{}, &look, false, term.presentedLogicalLine(row)...)
+		want := gfx.RGB(0x00, 0xd0, 0xd0)
+		for _, run := range entry.runs {
+			if run.Color != want {
+				t.Fatalf("presented row %d run %+v, want %v", row, run, want)
+			}
+		}
+	}
+}
+
+func TestHighlightReevaluatesWhenLogicalLineChanges(t *testing.T) {
+	screen := term.New(10, 4, 0)
+	// Write only first row: "12345678ER"
+	screen.Write([]byte("12345678ER"))
+
+	look := darkPalette
+	look.highlight = highlight.Compile([]highlight.Rule{
+		{Pattern: "ERROR", Color: highlight.Red},
+	})
+	red := look.highlightColor(highlight.Red, false)
+
+	var cache rowCache
+	cache.begin()
+
+	// Initial render: Row 0 has "ER", not matching "ERROR"
+	entry0 := cache.row(screen.Row(0), 10, -1, cellSpan{}, &look, false, screen.LogicalLineRows(0)...)
+	for _, run := range entry0.runs {
+		if run.Color == red {
+			t.Fatalf("row 0 should not match ERROR yet: %+v", entry0.runs)
+		}
+	}
+
+	// Now append "ROR" which wraps onto row 1
+	screen.Write([]byte("ROR\r\n"))
+	cache.begin()
+
+	entry0After := cache.row(screen.Row(0), 10, -1, cellSpan{}, &look, false, screen.LogicalLineRows(0)...)
+	entry1After := cache.row(screen.Row(1), 10, -1, cellSpan{}, &look, false, screen.LogicalLineRows(1)...)
+
+	if len(entry0After.runs) < 2 || entry0After.runs[len(entry0After.runs)-1].Color != red {
+		t.Fatalf("row 0 after completion should have ER in red: %+v", entry0After.runs)
+	}
+	if len(entry1After.runs) == 0 || entry1After.runs[0].Color != red {
+		t.Fatalf("row 1 after completion should have ROR in red: %+v", entry1After.runs)
+	}
+}

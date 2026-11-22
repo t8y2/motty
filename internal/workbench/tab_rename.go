@@ -100,7 +100,7 @@ func (state *State) declareTabRenameDialog(c ui.C) {
 	messages := state.messages
 	// No scrim dismiss: a press beside the form must not discard its input.
 	viewport := dialogViewport(c)
-	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 460, "", 62)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 460, "", dialogRowHeight(c.Theme()))
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: messages.RenameTerminalTitle, Width: 460, Height: height, Layer: dialogLayer,
 		Scope: dialogScope, CloseID: hitTabRenameClose, InitialFocusID: hitTabRenameField,
@@ -112,7 +112,7 @@ func (state *State) declareTabRenameDialog(c ui.C) {
 			rename.bound = true
 		}
 		rename.form.For, rename.form.Error, rename.form.Invalid = hitTabRenameField, state.dialogError, state.dialogError != ""
-		ui.FormField(c, &rename.form, messages.RenameTabField).FillWidth().Height(62).Children(func() {
+		ui.FormField(c, &rename.form, messages.RenameTabField).FillWidth().Height(dialogRowHeight(c.Theme())).Children(func() {
 			ui.TextFieldID(c, hitTabRenameField, &rename.input, messages.RenameTabField, messages.RenameTerminalPlaceholder)
 		})
 	})

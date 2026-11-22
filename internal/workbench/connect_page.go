@@ -501,7 +501,7 @@ func (state *State) declareConnectionBody(c ui.C, session *Session, frame gfx.Re
 		case footerHeight < 64 || session.reconnectPending:
 			button = button.Small()
 		}
-		sessionButtonLook(button, variant)
+		button.Variant(variant)
 	}
 	ui.Column(c).Fill().Background(pal.workspace).Items(ui.Center).Children(func() {
 		ui.Spacer(c).Grow(0.42)
@@ -851,7 +851,7 @@ func (state *State) declareRestoredSessionBody(c ui.C, session *Session, area gf
 	connectHint := append(s.connectKeys[:0], "↵")
 	hintHeight := state.Theme().Metrics.FontSizeS + 9
 	addButton := func(id gfx.ID, label string, variant components.ButtonVariant) {
-		sessionButtonLook(ui.Button(c, label).Hit(state.paneIdentity(session, id), label).MinWidth(96), variant)
+		ui.Button(c, label).Hit(state.paneIdentity(session, id), label).MinWidth(96).Variant(variant)
 	}
 
 	ui.Column(c).Fill().Background(pal.workspace).PadSides(max(24, area.Height*0.34), 0, 0, 0).Items(ui.Center).Children(func() {
@@ -879,18 +879,6 @@ func (state *State) declareRestoredSessionBody(c ui.C, session *Session, area gf
 			})
 		})
 	})
-}
-
-// sessionButtonLook gives a footer button its variant: the application keeps the
-// identity and the central dispatcher the click.
-func sessionButtonLook(button ui.Box, variant components.ButtonVariant) ui.Box {
-	switch variant {
-	case components.ButtonGhost:
-		return button.Ghost()
-	case components.ButtonOutline:
-		return button.Outline()
-	}
-	return button
 }
 
 // elapsedText is how long the connection has taken, kept between paints so a

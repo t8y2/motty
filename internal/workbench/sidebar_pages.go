@@ -123,7 +123,7 @@ type sidebarPage struct {
 var sidebarPages = [...]sidebarPage{
 	{navPageHosts, hitHosts, iconHosts, sectionHosts},
 	{navPageWorkspaces, hitWorkspaces, iconColumns2, sectionWorkspaces},
-	{navPageMonitor, hitDashboard, iconActivity, sectionDashboard},
+	{navPageMonitor, hitDashboard, iconGauge, sectionDashboard},
 	{navPageSessionLogs, hitSessionLogs, iconFileClock, sectionSessionLogs},
 	{navPageKeychain, hitKeychain, iconKey, sectionKeys},
 	{navPageProxies, hitProxies, iconGlobe, sectionProxies},

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/vivaui/viva/base"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
@@ -37,20 +38,21 @@ type snippetPromptState struct {
 	previewSet    bool
 }
 
-// The fields step 68px (62px input and a 6px gap); the list holds five of
-// them before it scrolls, so the preview and the actions stay in the dialog
-// whatever the number of variables.
+// The fields are one dialog row each, so the list holds five of them before it
+// scrolls and the preview and the actions stay in the dialog whatever the
+// number of variables.
 const (
-	snippetVarFieldHeight   = 62
-	snippetVarFieldGap      = 6
-	snippetVarFieldStep     = snippetVarFieldHeight + snippetVarFieldGap
-	snippetVarListMaxHeight = 5 * snippetVarFieldStep
 	// The preview box the body reserves; a long command wraps and scrolls
 	// inside it, so the whole of it stays readable instead of running off the
 	// right edge. The scroll area gets what Pad(8) and the 1px border leave.
 	snippetVarPreviewHeight    = 60
 	snippetVarPreviewMaxHeight = snippetVarPreviewHeight - 18
+	snippetVarListRows         = 5
 )
+
+func snippetVarListMaxHeight(theme *base.Theme) float32 {
+	return snippetVarListRows * dialogRowHeight(theme)
+}
 
 func (state *State) openSnippetVariablesDialog(index int, targetSessionID uint32, fromPage bool) {
 	if index < 0 || index >= len(state.snippets.list) {
@@ -110,7 +112,7 @@ func (state *State) declareSnippetVariablesDialog(c ui.C) {
 	if prompt.dialogError != "" {
 		errorExtra = 26
 	}
-	listHeight := min(float32(len(prompt.defs))*snippetVarFieldStep, snippetVarListMaxHeight)
+	listHeight := min(float32(len(prompt.defs))*dialogRowHeight(c.Theme()), snippetVarListMaxHeight(c.Theme()))
 	bodyHeight := 24 + listHeight + 22 + snippetVarPreviewHeight + errorExtra + 16
 
 	viewport := dialogViewport(c)
@@ -154,7 +156,7 @@ func (state *State) declareSnippetVariablesDialogBody(c ui.C, preview string) {
 		// the scrollbar reach every field; keyboard focus stays with the
 		// fields on screen, as in every other scrollable list of the app: a
 		// control scrolled out of a clip leaves the tab ring with its hits.
-		list := ui.Scroll(c).MaxHeight(snippetVarListMaxHeight).FillWidth().Scrollbars()
+		list := ui.Scroll(c).MaxHeight(snippetVarListMaxHeight(c.Theme())).FillWidth().Scrollbars()
 		list.Children(func() {
 			for i, def := range prompt.defs {
 				if !prompt.fieldBound[i] {
@@ -167,8 +169,7 @@ func (state *State) declareSnippetVariablesDialogBody(c ui.C, preview string) {
 				}
 				// A labelled form field, as the hand-painted dialog showed each
 				// variable's name above its input.
-				ui.FormField(c, &prompt.rows[i], def.Name).Height(snippetVarFieldHeight).FillWidth().
-					MarginSides(0, 0, snippetVarFieldGap, 0).Children(func() {
+				ui.FormField(c, &prompt.rows[i], def.Name).Height(dialogRowHeight(c.Theme())).FillWidth().Children(func() {
 					ui.TextFieldID(c, hitSnippetVarList.At(i), &prompt.fields[i], def.Name, placeholder).FillWidth()
 				})
 			}

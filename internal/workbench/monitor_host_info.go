@@ -6,6 +6,23 @@ import (
 	"motty/internal/sshconn"
 )
 
+func (state *State) monitorCurrentSSHUser(session *Session) string {
+	if session == nil || session.isLocal() || !session.host.isSSH() || session.phase != sshconn.PhaseConnected || session.role != sshconn.EndpointTarget || state.hostPrivacy.userHidden() {
+		return ""
+	}
+	if session.stats != nil {
+		panel := &session.stats.panel
+		if panel.haveDetails && !panel.detailsFailed && panel.data.LoginsAvailable {
+			for _, login := range panel.data.Logins {
+				if login.User == session.endpoint.User {
+					return ""
+				}
+			}
+		}
+	}
+	return session.endpoint.User
+}
+
 // Use the configured name and address, and the account of the target connection.
 // While connecting through a jump host, its endpoint must not name this host.
 func (state *State) monitorHostInfo(session *Session) [3]string {

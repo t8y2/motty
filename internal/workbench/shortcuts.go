@@ -21,6 +21,7 @@ const (
 	shortcutCopy
 	shortcutPaste
 	shortcutNewTab
+	shortcutDuplicateTab
 	shortcutLocalTerminal
 	shortcutCloseTab
 	shortcutNextTab
@@ -87,6 +88,10 @@ func defaultShortcuts() shortcutMap {
 	shortcuts.chords.Set(shortcutCopy, keymap.Chord{Modifiers: primary, Char: 'c'})
 	shortcuts.chords.Set(shortcutPaste, keymap.Chord{Modifiers: primary, Char: 'v'})
 	shortcuts.chords.Set(shortcutNewTab, keymap.Chord{Modifiers: primary, Char: 't'})
+	// Ctrl+Shift+D is the split default on Windows and Linux, and
+	// Command+Shift+D splits vertically on a Mac, so Duplicate takes Alt as
+	// well. It stays on the same letter as Windows Terminal's Duplicate Tab.
+	shortcuts.chords.Set(shortcutDuplicateTab, keymap.Chord{Modifiers: primary | gfx.ModifierAlt | gfx.ModifierShift, Char: 'd'})
 	shortcuts.chords.Set(shortcutLocalTerminal, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 't'})
 	shortcuts.chords.Set(shortcutCloseTab, keymap.Chord{Modifiers: primary, Char: 'w'})
 	// Control+Tab is how browsers, VS Code and Windows Terminal switch tabs on
@@ -326,6 +331,8 @@ func (action shortcutAction) String() string {
 		return "paste"
 	case shortcutNewTab:
 		return "new_tab"
+	case shortcutDuplicateTab:
+		return "duplicate_tab"
 	case shortcutLocalTerminal:
 		return "local_terminal"
 	case shortcutCloseTab:
@@ -456,6 +463,23 @@ func (state *State) shortcut(event gfx.KeyEvent, chord keymap.Chord) gfx.EventRe
 	if chord == state.shortcuts.chords.Chord(shortcutAcceptSuggestion) {
 		return gfx.EventResult{}
 	}
+	// Ctrl+W is the shell's word-delete key, even when it is also the default
+	// close-tab binding. Decline both the press and the release before shortcut
+	// routing consumes them; terminalKey encodes the program's keyboard mode.
+	if chord.Modifiers == gfx.ModifierControl && chord.Char == 'w' &&
+		state.shortcuts.actionFor(chord) == shortcutCloseTab && state.modal == modalNone && state.terminalPage() {
+		_, target, embedded := state.decodePaneHit(event.Target)
+		if !embedded {
+			target = event.Target
+		}
+		session := state.terminalSession(target)
+		if session == nil {
+			session = state.terminalPageSession(target)
+		}
+		if session != nil && state.paintsTerminalPane(session) && session.term.shell != nil && !session.term.ended {
+			return gfx.EventResult{}
+		}
+	}
 	if state.notesVisible() && (state.notes.view.menu != "" || state.notes.view.popup != "" || state.notes.view.drawer || state.notes.confirm != "") {
 		action := state.shortcuts.actionFor(chord)
 		if action == shortcutCopy || action == shortcutPaste || action == shortcutNone {
@@ -504,6 +528,9 @@ func (state *State) shortcut(event gfx.KeyEvent, chord keymap.Chord) gfx.EventRe
 		return result
 	}
 	if result, handled := state.remoteDetailShortcut(event); handled {
+		return result
+	}
+	if result, handled := state.remoteLogShortcut(event); handled {
 		return result
 	}
 	if state.modal != modalNone {
@@ -730,6 +757,12 @@ func (state *State) executeShortcut(action shortcutAction) gfx.EventResult {
 		}
 	case shortcutNewTab:
 		state.Click(hitNewTab)
+	case shortcutDuplicateTab:
+		if state.activeSection == sectionTerminal {
+			if workspace := state.deck.ActiveWorkspace(); workspace != 0 && state.duplicateTab(workspace) {
+				result.Focus = state.activeTerminalFocusHit()
+			}
+		}
 	case shortcutLocalTerminal:
 		state.openLocalTerminal()
 		result.Focus = state.activeTerminalFocusHit()

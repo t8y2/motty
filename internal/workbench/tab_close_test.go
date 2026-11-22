@@ -57,6 +57,124 @@ func TestTheDoNotAskBoxStopsTheQuestionAndSurvivesARestart(t *testing.T) {
 	}
 }
 
+// promptMark is one shell-integration marker for the session's own token, as the
+// injected Bash or Zsh prompt prints it.
+func promptMark(shell *fakeShell, token, mark string) {
+	shell.say("\x1b]133;" + mark + ";motty=" + token + "\x07")
+}
+
+// A remote shell that reports command starts and sits at its prompt has nothing
+// running, so closing its tab asks nothing.
+func TestARemoteSessionAtItsPromptClosesWithoutAsking(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	id := state.sessions[0].ID
+	token := state.sessions[0].term.folderToken
+	state.sessions[0].term.commandReporting = true
+	promptMark(shell, token, "A")
+	promptMark(shell, token, "B")
+	state.Wake()
+	if !state.sessions[0].term.screen.AtPrompt() {
+		t.Fatal("the shell is not recognised as sitting at its prompt")
+	}
+	state.Click(hitTabCloseList.At(int(id)))
+	if state.modal == modalCloseTabs {
+		t.Fatalf("asked about an idle session; running=%v", state.tabsClose.running)
+	}
+	if _, ok := state.sessionByIDPointer(id); ok {
+		t.Fatal("the idle session was not closed")
+	}
+}
+
+// A remote shell that has never reported a command start might be running one,
+// so it keeps the old, safe answer and asks.
+func TestARemoteSessionWithoutCommandReportsStillAsks(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	id := state.sessions[0].ID
+	token := state.sessions[0].term.folderToken
+	promptMark(shell, token, "A")
+	promptMark(shell, token, "B")
+	state.Wake()
+	if state.sessions[0].term.commandReporting {
+		t.Fatal("the shell reports command starts")
+	}
+	state.Click(hitTabCloseList.At(int(id)))
+	if state.modal != modalCloseTabs || len(state.tabsClose.running) != 1 {
+		t.Fatalf("modal %d, running %v", state.modal, state.tabsClose.running)
+	}
+}
+
+// A shell that says a command is in front is running it, even if it also sits
+// at a prompt: the command start decides, not the prompt marker. This keeps a
+// reported command from being silently killed.
+func TestAShellRunningAReportedCommandStillAsks(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	id := state.sessions[0].ID
+	token := state.sessions[0].term.folderToken
+	state.sessions[0].term.commandReporting = true
+	promptMark(shell, token, "A")
+	promptMark(shell, token, "B")
+	promptMark(shell, token, "C")
+	state.Wake()
+	state.Click(hitTabCloseList.At(int(id)))
+	if state.modal != modalCloseTabs || len(state.tabsClose.running) != 1 {
+		t.Fatalf("modal %d, running %v", state.modal, state.tabsClose.running)
+	}
+}
+
+// A command line the user has submitted but the shell has not yet reported as
+// started is still a command: the tab must ask, not close it quietly.
+func TestASubmittedButUnreportedCommandStillAsks(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	id := state.sessions[0].ID
+	token := state.sessions[0].term.folderToken
+	state.sessions[0].term.commandReporting = true
+	promptMark(shell, token, "A")
+	promptMark(shell, token, "B")
+	state.Wake()
+	state.sessions[0].term.submittedLines = 1
+	state.Click(hitTabCloseList.At(int(id)))
+	if state.modal != modalCloseTabs || len(state.tabsClose.running) != 1 {
+		t.Fatalf("modal %d, running %v", state.modal, state.tabsClose.running)
+	}
+}
+
+func TestAnIntermediatePromptDoesNotClearQueuedInput(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	id := state.sessions[0].ID
+	token := state.sessions[0].term.folderToken
+	state.sessions[0].term.commandReporting = true
+	promptMark(shell, token, "A")
+	promptMark(shell, token, "B")
+	state.Wake()
+	state.sessions[0].term.send([]byte("sleep 1\rread value\r"))
+	promptMark(shell, token, "C")
+	promptMark(shell, token, "A")
+	promptMark(shell, token, "B")
+	state.Wake()
+	state.Click(hitTabCloseList.At(int(id)))
+	if state.modal != modalCloseTabs || len(state.tabsClose.running) != 1 {
+		t.Fatalf("modal %d, running %v; queued input must still ask", state.modal, state.tabsClose.running)
+	}
+}
+
+// A key pressed at the prompt can start a program the shell never reports (an
+// editor opened from a readline binding, say), so a prompt with typed input still
+// asks rather than closing silently.
+func TestAPromptWithTypedInputStillAsks(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	id := state.sessions[0].ID
+	token := state.sessions[0].term.folderToken
+	state.sessions[0].term.commandReporting = true
+	promptMark(shell, token, "A")
+	promptMark(shell, token, "B")
+	state.Wake()
+	state.sessions[0].term.keyedSincePrompt = true // a key was typed; the line is no longer pristine
+	state.Click(hitTabCloseList.At(int(id)))
+	if state.modal != modalCloseTabs || len(state.tabsClose.running) != 1 {
+		t.Fatalf("modal %d, running %v; typed input must still ask", state.modal, state.tabsClose.running)
+	}
+}
+
 func TestAnEndedSessionClosesWithoutAsking(t *testing.T) {
 	state, _, _, shell := liveSession(t)
 	id := state.sessions[0].ID

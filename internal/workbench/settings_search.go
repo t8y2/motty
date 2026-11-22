@@ -150,7 +150,9 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	}
 	row(settingsGeneral, m.SettingsLanguage, "")
 	row(settingsGeneral, m.SettingsAppearance, "")
+	rowSearch(settingsGeneral, m.SettingsIconColor, m.SettingsIconColorDescription, "logo icon taskbar dock tray")
 	row(settingsGeneral, m.SettingsTabOrientation, m.SettingsTabOrientationDescription)
+	row(settingsGeneral, m.SettingsTabDoubleClick, m.SettingsTabDoubleClickDescription)
 	row(settingsGeneral, m.SettingsTabNumbers, m.SettingsTabNumbersDescription)
 	row(settingsGeneral, m.SettingsTabNumberKeys, m.SettingsTabNumberKeysDescription)
 	row(settingsGeneral, m.SettingsOutputAlerts, m.SettingsOutputAlertsDescription)
@@ -197,6 +199,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsTerminal, tools.PasteImageRow, tools.PasteImageDescription)
 	row(settingsTerminal, tools.PasteConfirmRow, tools.PasteConfirmDescription)
 	row(settingsTerminal, tools.CloseConfirmRow, tools.CloseConfirmDescription)
+	row(settingsTerminal, tools.CloseWindowConfirmRow, tools.CloseWindowConfirmDescription)
 	row(settingsTerminal, tools.PasswordHintRow, tools.PasswordHintDescription)
 	row(settingsTerminal, tools.NotifyRow, tools.NotifyDescription)
 	group(settingsTerminal, m.FindSettings.Title, m.FindSettings.Title, "")
@@ -213,6 +216,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsTerminal, m.SettingsLocalStart, m.SettingsLocalStartDescription)
 	if localShellSettingVisible() {
 		row(settingsTerminal, m.SettingsLocalShell, m.SettingsLocalShellDescription)
+		row(settingsTerminal, m.SettingsLocalStartupCommands, m.SettingsLocalStartupDescription)
 	}
 	group(settingsTerminal, tools.SchemeGroup, tools.SchemeGroup, tools.SchemeDescription)
 	row(settingsTerminal, tools.HighlightBuiltin, tools.HighlightBuiltinDescription)
@@ -236,6 +240,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsConnection, m.SettingsSSHAgent, m.SettingsSSHAgentDescription)
 	row(settingsConnection, m.SettingsNetworkProxy, m.SettingsNetworkProxyDescription)
 	row(settingsConnection, tools.ProxyRow, tools.ProxyDescriptionNone)
+	group(settingsConnection, state.messages.ProxyProfiles.Group, state.messages.ProxyProfiles.Group, state.messages.ProxyProfiles.RowDescription)
 	row(settingsConnection, state.messages.SSHSync.ToggleRow, state.messages.SSHSync.ToggleDescription)
 	row(settingsConnection, state.messages.SSHSync.FileRow, "")
 	row(settingsConnection, state.messages.SSHSync.NowRow, "")

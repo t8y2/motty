@@ -12,6 +12,7 @@ var localShellPickerHits = tree.Feature("local-shell-picker")
 var (
 	hitLocalShellPickerDismiss = tree.ID(localShellPickerHits, "local-shell-picker-dismiss")
 	hitLocalShellPickerItems   = tree.Sub(localShellPickerHits, tree.Name("local-shell-picker-item"))
+	hitLocalShellPickerSetup   = tree.Sub(localShellPickerHits, tree.Name("local-shell-picker-setup"))
 )
 
 // localShellPicker is the menu that opens a local terminal with one chosen
@@ -67,11 +68,15 @@ func (state *State) declareLocalShellPicker(c ui.C) {
 		if state.shellHidden(choice) {
 			continue // hidden here, still listed in the setting itself
 		}
-		item := components.ContextMenuItem{ID: hitLocalShellPickerItems.At(index), Label: choice.Name, Icon: icon}
+		item := components.ContextMenuItem{ID: hitLocalShellPickerItems.At(index), Label: choice.Name, Icon: icon, TrailingWidth: 30}
 		if index == selected {
 			item.Shortcut = m.LocalShellDefault
 		}
 		rows.add(item)
+		setup := hitLocalShellPickerSetup.At(index)
+		rows.trailing(30, func(canvas *gfx.Canvas, slot gfx.Rect, _ gfx.Theme) {
+			state.paintLocalStartupGear(canvas, setup, slot)
+		})
 	}
 	if len(menuState.choices) == 0 {
 		rows.add(components.ContextMenuItem{ID: hitLocalShellPickerItems.At(0), Label: m.SettingsLocalShellEmpty, Icon: icon, Disabled: true})

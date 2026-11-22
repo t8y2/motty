@@ -25,9 +25,30 @@ type tabsClose struct {
 }
 
 // sessionRunning reports whether closing the session would end something live: a
-// shell that has not ended.
+// shell that has not ended and is not merely waiting at its prompt. The shell's
+// own command reports are the only trustworthy evidence, and they hold on Unix,
+// over SSH, and inside WSL. The tab is idle only when a prompt is on screen, no
+// key has been typed since it (a key can start a program the shell never reports,
+// such as an editor opened from a readline binding), and nothing has been
+// submitted (a command typed but not yet reported as started still counts as
+// running). A Windows native shell reports only its prompt, never a command start,
+// so it cannot be told apart from one that is running something and keeps the old,
+// safe answer. A background job left at the prompt is still treated as idle: no
+// terminal can tell it from a prompt without the shell saying so.
 func sessionRunning(session *Session) bool {
-	return session != nil && session.term != nil && session.term.shell != nil && !session.term.ended
+	if session == nil || session.term == nil || session.term.shell == nil || session.term.ended {
+		return false
+	}
+	term := session.term
+	if term.commandReporting {
+		// A line submitted but not yet reported as started still counts as
+		// running. Once the user has touched the prompt, or no prompt is showing,
+		// the tab may be running something the shell never reports, so ask.
+		return term.submittedLines > 0 || term.promptDirty || !term.screen.AtPrompt() || term.keyedSincePrompt
+	}
+	// A shell that never reports command starts may be running something, so
+	// fall back to the old, always-ask answer.
+	return true
 }
 
 func (state *State) runningLabel(session *Session) string {

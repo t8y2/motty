@@ -173,7 +173,7 @@ func (state *State) declareSnippetFilter(c ui.C) ui.Box {
 		}
 	}
 	selector := ui.Select(c, &form.filterChoice, choices, state.snippetFilterChoiceLabel).
-		Label(label).Hit(hitSnippetFilter, label)
+		Label(label)
 	if selector.Changed() {
 		choice := form.filterChoice
 		c.After(func() { state.chooseSnippetFilter(choice) })

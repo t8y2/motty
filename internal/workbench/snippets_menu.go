@@ -113,7 +113,9 @@ func (state *State) chooseSnippetMenu(id gfx.ID) {
 	switch id {
 	case hitSnippetMenuSend:
 		if menu.fromBar {
-			state.sendSnippet(index)
+			if state.sendSnippet(index) {
+				state.returnKeyboardToTerminal()
+			}
 		} else {
 			state.sendSnippetFromPage(index, menu.at)
 		}

@@ -25,7 +25,7 @@ func TestToolbarDefaultsAndAllOffSurvivePersistence(t *testing.T) {
 		state.openToolbarSettings(group)
 		state.clickToolbarSettings(hitToolbarDisableAll)
 	}
-	want := state.toolbars.snapshot()
+	want := state.toolbars.sharedSnapshot(state.terminalToolbarPosition, state.terminalToolbarSize)
 	encoded, err := json.Marshal(want)
 	if err != nil {
 		t.Fatal(err)

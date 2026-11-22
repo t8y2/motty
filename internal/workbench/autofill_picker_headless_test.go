@@ -42,7 +42,8 @@ func headlessAutofillView(t *testing.T, state *State, invalidator *app.Invalidat
 	view, err := headless.Open(app.Config{
 		Title: "password prompt assist", Width: 1100, Height: 720, Tree: Tree(),
 		Invalidator: invalidator, Paint: state.Paint,
-		OnKey: state.Key, OnPointer: state.Pointer, OnScroll: state.Scroll, OnResize: state.Resize,
+		OnWake: state.Wake,
+		OnKey:  state.Key, OnPointer: state.Pointer, OnScroll: state.Scroll, OnResize: state.Resize,
 		TextInput: state.TerminalInput,
 	}, nil, headless.Options{Scale: 1.25})
 	if err != nil {
@@ -172,5 +173,122 @@ func TestPasswordPromptOfferFlipsAtTheBottom(t *testing.T) {
 	}
 	if first.Bounds.Y >= promptTop {
 		t.Fatalf("the list did not flip above the bottom prompt: row %v, prompt top %v", first.Bounds.Y, promptTop)
+	}
+}
+
+func TestSudoAndNestedSSHPasswordOfferNative(t *testing.T) {
+	for _, scenario := range []struct {
+		name, output string
+	}{
+		{"sudo", "$ sudo ls\r\n[sudo] password for deploy: "},
+		{"ssh", "$ ssh deploy@server-b\r\ndeploy@server-b's password: "},
+		{"scp", "$ scp file deploy@server-b:/tmp/\r\ndeploy@server-b's password: "},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			w, invalidator := headlessAutofillWorld(t)
+			state := w.state
+			state.setLanguage(i18n.Chinese)
+			addCredential(t, state, "server-b deploy", "deploy-secret")
+			state.credentials[0].User = "deploy"
+			addCredential(t, state, "root", "root-secret")
+			state.credentials[1].User = "root"
+			state.activeSection = sectionTerminal
+			view := headlessAutofillView(t, state, invalidator)
+			w.output(scenario.output)
+			if err := view.Wait(20 * time.Millisecond); err != nil {
+				t.Fatal(err)
+			}
+			if err := view.Rest(); err != nil {
+				t.Fatal(err)
+			}
+			if len(state.autofillRules.pick.candidates) != 1 || w.shell.typed() != "" {
+				t.Fatalf("pick %+v, typed %q", state.autofillRules.pick, w.shell.typed())
+			}
+			row, ok := hitByIDSnapshot(view.Snapshot().Hits, hitAutofillPickItem.At(0))
+			if !ok || row.Description != "deploy" {
+				t.Fatalf("identity row missing its username: %+v, %v", row, ok)
+			}
+			if dir := os.Getenv("MOTTY_PASSWORD_PROMPT_SCREENSHOTS"); dir != "" {
+				if err := os.MkdirAll(dir, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := view.Screenshot(filepath.Join(dir, scenario.name+"-password-offer.png")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := view.Click(row.Bounds.X+row.Bounds.Width/2, row.Bounds.Y+row.Bounds.Height/2); err != nil {
+				t.Fatal(err)
+			}
+			if got := w.shell.typed(); got != "deploy-secret\r" {
+				t.Fatalf("click typed %q", got)
+			}
+		})
+	}
+}
+
+func TestNativeFindFieldCannotConfirmAPassword(t *testing.T) {
+	w, invalidator := headlessAutofillWorld(t)
+	state := w.state
+	addCredential(t, state, "deploy", "deploy-secret")
+	state.activeSection = sectionTerminal
+	view := headlessAutofillView(t, state, invalidator)
+	state.openTerminalFind(&state.sessions[0])
+	invalidator.Invalidate()
+	if err := view.Wait(20 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	field, ok := hitByIDSnapshot(view.Snapshot().Hits, hitTerminalFindField)
+	if !ok {
+		t.Fatal("find field is not painted")
+	}
+	if err := view.Click(field.Bounds.X+field.Bounds.Width/2, field.Bounds.Y+field.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	w.output("[sudo: authenticate] Password: ")
+	if err := view.Wait(20 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"down", "enter"} {
+		if err := view.Keys(key); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := w.shell.typed(); got != "" {
+		t.Fatalf("find field sent a password: %q", got)
+	}
+}
+
+func TestNativePasswordOfferResumesWhenItsTabIsActivated(t *testing.T) {
+	w, invalidator := headlessAutofillWorld(t)
+	state := w.state
+	addCredential(t, state, "deploy", "deploy-secret")
+	state.activeSection = sectionTerminal
+	view := headlessAutofillView(t, state, invalidator)
+	state.Click(hitSettings)
+	w.output("[sudo: authenticate] Password: ")
+	if err := view.Wait(20 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	tab, ok := hitByIDSnapshot(view.Snapshot().Hits, hitTabList.At(int(state.deck.ActiveWorkspace())))
+	if !ok {
+		t.Fatal("terminal tab is not painted")
+	}
+	if err := view.Click(tab.Bounds.X+tab.Bounds.Width/2, tab.Bounds.Y+tab.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if len(state.autofillRules.pick.candidates) != 1 || w.shell.typed() != "" {
+		t.Fatalf("resumed pick %+v, typed %q", state.autofillRules.pick, w.shell.typed())
 	}
 }
