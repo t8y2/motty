@@ -64,6 +64,9 @@ const (
 	remoteMaxRows            = 200
 	remoteTimeout            = 20 * time.Second
 	remoteToolbarHeight      = float32(34)
+	// remoteToolsInlineToolbarWidth is how wide the tools' content must be for
+	// the tabs and the refresh controls to share one line.
+	remoteToolsInlineToolbarWidth = 800
 )
 
 // clickRemoteToolsOpen opens the dialog for the active session.
