@@ -437,15 +437,26 @@ func Dial(config Config) *Conn {
 // shell has been accepted (or can no longer come), so the connection's login
 // message has already reached the session that was going to display it.
 func (conn *Conn) releasePrimaryShell() {
+	conn = conn.transport()
 	if conn.primary == nil {
 		return
 	}
 	conn.primaryOnce.Do(func() { close(conn.primary) })
 }
 
+// transport is the Conn that dialed the SSH connection: a tab sharing it has
+// no gate of its own, because the login message is the transport's.
+func (conn *Conn) transport() *Conn {
+	if conn.owner != nil {
+		return conn.owner
+	}
+	return conn
+}
+
 // waitPrimaryShell blocks until the shell this connection is for has been
 // accepted. A connection that never asked for one is not delayed.
 func (conn *Conn) waitPrimaryShell() {
+	conn = conn.transport()
 	if conn.primary == nil {
 		return
 	}
@@ -453,6 +464,36 @@ func (conn *Conn) waitPrimaryShell() {
 	case <-conn.primary:
 	case <-conn.ctx.Done():
 	}
+}
+
+// SessionClient returns the authenticated client for a session that is not the
+// connection's interactive shell: a command, a file transfer, a monitor. Such a
+// session waits until the shell has been accepted, because sshd gives the
+// connection's login message to the first session that starts a program and
+// drops it for anything but a shell (ADR 0025). It returns early, with the
+// error that ended the wait, when ctx or the connection is done.
+func (conn *Conn) SessionClient(ctx context.Context) (*ssh.Client, error) {
+	if gate := conn.transport(); gate.primary != nil {
+		// A tab sharing the transport also stops waiting when it lets go.
+		var own <-chan struct{}
+		if conn.ctx != nil {
+			own = conn.ctx.Done()
+		}
+		select {
+		case <-gate.primary:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-own:
+			return nil, ErrCanceled
+		case <-gate.ctx.Done():
+			return nil, ErrCanceled
+		}
+	}
+	client := conn.Client()
+	if client == nil {
+		return nil, errors.New("sshconn: not connected")
+	}
+	return client, nil
 }
 
 // Status returns the current snapshot.
