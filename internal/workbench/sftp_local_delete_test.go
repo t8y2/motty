@@ -4,11 +4,38 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/vivaui/viva/gfx"
+	"motty/internal/sftpclient"
 )
+
+// The local walk reports each entry it finishes, so the status line can advance
+// past "1 of n" the way the remote queue's count does.
+func TestLocalDeleteWalkReportsPerItemProgress(t *testing.T) {
+	dir := t.TempDir()
+	entries := []sftpclient.Entry{{Name: "aaa.txt"}, {Name: "bbb.txt"}, {Name: "ccc.txt"}}
+	for _, name := range []string{"aaa.txt", "bbb.txt", "ccc.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The last entry vanishes before the walk reaches it; a forced walk treats
+	// that as removed and still reports it.
+	if err := os.Remove(filepath.Join(dir, "ccc.txt")); err != nil {
+		t.Fatal(err)
+	}
+	var seen []int
+	result := removeLocalEntries(dir, entries, true, func(done int) { seen = append(seen, done) })
+	if want := []int{1, 2, 3}; !slices.Equal(seen, want) {
+		t.Fatalf("progress frames = %v, want %v", seen, want)
+	}
+	if len(result.removed) != 3 || len(result.failed) != 0 || result.err != nil {
+		t.Fatalf("forced walk result = %+v", result)
+	}
+}
 
 // localDeleteSettled reports a finished local deletion: nothing is walking the
 // disk and the entry is gone.
@@ -92,6 +119,33 @@ func TestLocalDeleteRemovesASymlinkWithoutFollowingIt(t *testing.T) {
 	})
 	if _, err := os.Stat(filepath.Join(dir, "real", "keep.txt")); err != nil {
 		t.Fatalf("deleting a link emptied its target: %v", err)
+	}
+}
+
+func TestLocalForceDeleteContinuesPastAMissingEntry(t *testing.T) {
+	state, session, _, _ := openTestSFTP(t)
+	dir := t.TempDir()
+	for _, name := range []string{"aaa.txt", "bbb.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	view := openLocalPane(t, state, session, dir)
+	clickSFTPLocalRow(t, state, view, "aaa.txt")
+	clickSFTPLocalRow(t, state, view, "bbb.txt")
+	state.Click(hitSFTPDelete)
+	if err := os.Remove(filepath.Join(dir, "aaa.txt")); err != nil {
+		t.Fatal(err)
+	}
+	chooseSFTPDeleteMethod(t, state, state.messages.SFTPDeleteMethodForce)
+	state.Click(hitSFTPDialogSubmit)
+	state.Click(hitSFTPDialogSubmit)
+	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.localBusy })
+	if _, err := os.Stat(filepath.Join(dir, "bbb.txt")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("force delete stopped at the missing entry: %v", err)
+	}
+	if view.status == "" || strings.Contains(view.status, "…") {
+		t.Fatalf("force local delete left the running status %q", view.status)
 	}
 }
 

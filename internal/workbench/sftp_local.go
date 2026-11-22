@@ -543,10 +543,10 @@ func (state *State) submitLocalDirectory(view *sftpView, name string) bool {
 	return true
 }
 
-// submitLocalDelete removes the local entries the confirmation dialog named. A
-// folder may hold a whole tree, so the walk runs on a goroutine and the folder
-// is read again when it finishes.
-func (state *State) submitLocalDelete(view *sftpView) {
+// submitLocalDelete removes the local entries the confirmation named. A folder
+// may hold a whole tree, so the walk runs on a goroutine; force keeps going
+// after an entry fails and treats an entry that is already gone as removed.
+func (state *State) submitLocalDelete(view *sftpView, force bool) {
 	entries := slices.Clone(view.dialogEntries)
 	if len(entries) == 0 || view.localBusy {
 		return
@@ -555,50 +555,95 @@ func (state *State) submitLocalDelete(view *sftpView) {
 	state.closeSFTPDialog(view)
 	view.errorText = ""
 	view.localBusy = true
-	view.status = fmt.Sprintf(state.messages.SFTPDeletingFmt, entries[0].Name)
+	total := len(entries)
+	if total > 1 {
+		view.status = fmt.Sprintf(state.messages.SFTPDeletingCountFmt, 1, total)
+	} else {
+		view.status = fmt.Sprintf(state.messages.SFTPDeletingFmt, entries[0].Name)
+	}
+	// The walk reports each entry it finished, so the count advances the way the
+	// remote queue's does instead of staying on the first item until the end.
+	var progress func(done int)
+	if total > 1 {
+		progress = func(done int) {
+			if done >= total {
+				return
+			}
+			state.aiPost(func(*State) {
+				session, ok := state.sftpSession(view)
+				if !ok || session.files != view || !view.localBusy {
+					return
+				}
+				view.status = fmt.Sprintf(state.messages.SFTPDeletingCountFmt, done+1, total)
+			})
+		}
+	}
 	go func() {
-		result := removeLocalEntries(dir, entries)
+		result := removeLocalEntries(dir, entries, force, progress)
 		state.aiPost(func(*State) { state.finishLocalDelete(view, result) })
 	}()
 }
 
-// localDeleteResult is what removing a set of local entries did. The walk stops
-// at the first failure: what it already removed cannot be restored.
+// localDeleteResult is what removing a set of local entries did. A normal walk
+// stops at the first failure; a forced one keeps going and records every path
+// that could not be removed.
 type localDeleteResult struct {
-	dir     string
-	total   int
-	removed []string
-	failed  string // the path that stopped the walk
-	err     error  // why it stopped
+	dir         string
+	total       int
+	removed     []string
+	failed      []string
+	firstFailed string // the first path that failed
+	err         error  // why it failed
+	force       bool
 }
 
 // removeLocalEntries removes entries of dir in the order the list showed them.
 // It touches no State, so a goroutine may run it while the window keeps painting.
-func removeLocalEntries(dir string, entries []sftpclient.Entry) localDeleteResult {
-	result := localDeleteResult{dir: dir, total: len(entries)}
+// progress, when set, is called with the number of entries handled so far.
+func removeLocalEntries(dir string, entries []sftpclient.Entry, force bool, progress func(done int)) localDeleteResult {
+	result := localDeleteResult{dir: dir, total: len(entries), force: force}
 	for _, entry := range entries {
 		location := filepath.Join(dir, entry.Name)
-		if err := removeLocalEntry(location); err != nil {
-			result.failed, result.err = location, err
+		removed, err := removeLocalEntry(location, force)
+		if removed {
+			result.removed = append(result.removed, location)
+		} else {
+			result.failed = append(result.failed, location)
+			if result.err == nil {
+				result.firstFailed, result.err = location, err
+			}
+		}
+		if progress != nil {
+			progress(len(result.removed) + len(result.failed))
+		}
+		if !removed && !force {
 			return result
 		}
-		result.removed = append(result.removed, location)
 	}
 	return result
 }
 
 // removeLocalEntry removes one entry, looking at the disk again rather than at
 // the listing it came from. A link is only the link: what it points at is not
-// ours to empty.
-func removeLocalEntry(location string) error {
+// ours to empty. A forced removal treats an entry that is already gone as
+// removed, because there is nothing left for the row to show.
+func removeLocalEntry(location string, force bool) (bool, error) {
 	info, err := os.Lstat(location)
 	if err != nil {
-		return err
+		if force && errors.Is(err, os.ErrNotExist) {
+			return true, nil
+		}
+		return false, err
 	}
 	if info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
-		return os.RemoveAll(location)
+		err = os.RemoveAll(location)
+	} else {
+		err = os.Remove(location)
 	}
-	return os.Remove(location)
+	if err == nil || force && errors.Is(err, os.ErrNotExist) {
+		return true, nil
+	}
+	return false, err
 }
 
 // finishLocalDelete puts a finished local deletion on screen: the rows that
@@ -615,9 +660,22 @@ func (state *State) finishLocalDelete(view *sftpView, result localDeleteResult) 
 		// A walk that stopped part-way may have emptied a folder without
 		// removing it, and no result describes what it left.
 		view.status = fmt.Sprintf(messages.SFTPErrorFmt, result.err)
-		detail := fmt.Sprintf("%s: %s %s", result.failed, fmt.Sprintf(messages.SFTPErrorFmt, result.err), messages.SFTPDeleteSelectionPartial)
-		state.fileOpenNotice(view.detached, messages.SFTPDeleteSelectionTitle, detail, components.ToastError)
+		if result.force {
+			view.status = fmt.Sprintf(messages.SFTPDeleteForcePartialFmt, len(result.removed), len(result.failed))
+		}
+		detail := fmt.Sprintf("%s: %s %s", result.firstFailed, fmt.Sprintf(messages.SFTPErrorFmt, result.err), messages.SFTPDeleteSelectionPartial)
+		if result.force {
+			detail = fmt.Sprintf("%s: %s %s", result.firstFailed, fmt.Sprintf(messages.SFTPErrorFmt, result.err),
+				fmt.Sprintf(messages.SFTPDeleteForcePartialFmt, len(result.removed), len(result.failed)))
+		}
+		title, kind := messages.SFTPDeleteSelectionTitle, components.ToastError
+		if result.force {
+			title, kind = messages.SFTPDeleteForceTitle, components.ToastWarning
+		}
+		state.fileOpenNotice(view.detached, title, detail, kind)
 		if (view.local || view.detached != nil) && filepath.Clean(view.lfolder.path) == filepath.Clean(result.dir) {
+			view.localSeq++
+			state.retireLocalListingStatus(view)
 			state.listLocal(view, result.dir)
 		}
 		view.invalidateDetached()
@@ -637,7 +695,9 @@ func (state *State) finishLocalDelete(view *sftpView, result localDeleteResult) 
 		}
 		state.dropSFTPDeletedRows(view, &view.lfolder, names)
 	}
-	if result.total > 1 {
+	if len(result.removed) == 0 {
+		view.status = ""
+	} else if result.total > 1 {
 		view.status = fmt.Sprintf(messages.SFTPDeletedCountFmt, len(result.removed))
 	} else {
 		view.status = fmt.Sprintf(messages.SFTPDeletedFmt, result.removed[0])

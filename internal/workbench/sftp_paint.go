@@ -1006,6 +1006,12 @@ func (state *State) declareSFTPDialog(c ui.C, viewport gfx.Rect, view *sftpView)
 		submitLabel = messages.SFTPDeleteConfirm
 		initialFocus = hitSFTPDialogCancel
 		submitVariant = components.ButtonDestructive
+	case sftpDialogDeleteForce:
+		title = messages.SFTPDeleteForceTitle
+		description = messages.SFTPDeleteForceDescription
+		submitLabel = messages.SFTPDeleteForceConfirm
+		initialFocus = hitSFTPDialogCancel
+		submitVariant = components.ButtonDestructive
 	case sftpDialogChmod:
 		title = messages.SFTPPermissionsTitle
 		description = messages.SFTPPermissionsDescription
@@ -1058,9 +1064,20 @@ func (state *State) declareSFTPDialog(c ui.C, viewport gfx.Rect, view *sftpView)
 		initialFocus = hitSFTPDialogSubmit
 	}
 	fieldDialog := sftpDialogShowsField(view.dialog)
-	showError := view.dialog == sftpDialogDelete && view.dialogError != ""
+	showError := (view.dialog == sftpDialogDelete || view.dialog == sftpDialogDeleteForce) && view.dialogError != ""
 	body := float32(0) // a confirmation is only its text
 	switch {
+	case view.dialog == sftpDialogDelete:
+		// The method label, its one-line hint and the choice control; the
+		// dialog's error, when one is left from a failed queue, follows them.
+		body = 6 + 18 + 4 + 36 + 4 + c.Theme().Metrics.ControlHeight
+		if showError {
+			body += 4 + 20
+		}
+	case view.dialog == sftpDialogDeleteForce:
+		if showError {
+			body = 20
+		}
 	case view.dialog == sftpDialogSymlink, view.dialog == sftpDialogChown:
 		body = 6 + 2*dialogRowHeight(c.Theme()) // two fields: the link's name and target, or the owner and group
 	case view.dialog == sftpDialogChmod:
@@ -1069,8 +1086,6 @@ func (state *State) declareSFTPDialog(c ui.C, viewport gfx.Rect, view *sftpView)
 		body = 6 + dialogRowHeight(c.Theme()) + 16 + 3*24 + 3*4
 	case fieldDialog:
 		body = 6 + dialogRowHeight(c.Theme())
-	case showError:
-		body = 20
 	}
 	view.dialogFieldLabel = fieldLabel
 	view.dialogCancelLabel, view.dialogSubmitLabel, view.dialogSubmitVariant = cancelLabel, submitLabel, submitVariant
@@ -1246,12 +1261,22 @@ func (state *State) declareSFTPOwnershipPopup(c ui.C, view *sftpView, field int,
 	})
 }
 
-// declareSFTPDialogBody lays out the dialog's body: one labelled input, two for
-// a link, the permission grid under a chmod field, or the error of a failed
-// move when that is what the dialog says. The parts painted by hand are kept in
-// view so the painter can fill the boxes the page laid out.
+// sftpDeleteMethodLabel is one segment of the delete confirmation's method
+// choice.
+func (state *State) sftpDeleteMethodLabel(method sftpDeleteMethod) string {
+	if method == sftpDeleteForce {
+		return state.messages.SFTPDeleteMethodForce
+	}
+	return state.messages.SFTPDeleteMethodNormal
+}
+
+// declareSFTPDialogBody lays out the dialog's body: the delete method choice,
+// one labelled input, two for a link, the permission grid under a chmod field,
+// or the error of a failed queue when that is what the dialog says. The parts
+// painted by hand are kept in view so the painter can fill the boxes the page
+// laid out.
 func (state *State) declareSFTPDialogBody(c ui.C, view *sftpView) {
-	showError := view.dialog == sftpDialogDelete && view.dialogError != ""
+	showError := (view.dialog == sftpDialogDelete || view.dialog == sftpDialogDeleteForce) && view.dialogError != ""
 	view.dialogFirst, view.dialogSecond = ui.Box{}, ui.Box{}
 	view.dialogChmod = [9]ui.Box{}
 	column := ui.Column(c).Fill()
@@ -1260,6 +1285,24 @@ func (state *State) declareSFTPDialogBody(c ui.C, view *sftpView) {
 	}
 	column.Children(func() {
 		switch {
+		case view.dialog == sftpDialogDelete:
+			inner := ui.Column(c).Shrink(0).Gap(4).PadSides(6, 4, 0, 4)
+			inner.Children(func() {
+				theme := c.Theme()
+				ui.Text(c, state.messages.SFTPDeleteMethodLabel).FontSize(theme.Metrics.FontSizeM).
+					Weight(gfx.WeightMedium).Color(state.pal.text).Ellipsis()
+				ui.Text(c, state.messages.SFTPDeleteMethodHint).FontSize(theme.Metrics.FontSizeS).
+					Color(state.pal.muted).LineHeight(18).Height(36)
+				ui.Choice(c, &view.deleteMethod, sftpDeleteMethods[:], state.sftpDeleteMethodLabel).
+					Height(theme.Metrics.ControlHeight)
+				if showError {
+					ui.Text(c, view.dialogError).FontSize(theme.Metrics.FontSizeS).
+						Weight(gfx.WeightMedium).Color(state.pal.danger).Ellipsis()
+				}
+			})
+		case view.dialog == sftpDialogDeleteForce && showError:
+			ui.Text(c, view.dialogError).FontSize(c.Theme().Metrics.FontSizeS).
+				Weight(gfx.WeightMedium).Color(state.pal.danger).Ellipsis()
 		case sftpDialogShowsField(view.dialog):
 			inner := ui.Column(c).Shrink(0).Gap(8).PadSides(6, 4, 0, 4)
 			inner.Children(func() {
@@ -1287,8 +1330,6 @@ func (state *State) declareSFTPDialogBody(c ui.C, view *sftpView) {
 				}
 				inner.DrawOver(view.fieldWidthDraw)
 			}
-		case showError:
-			ui.Text(c, view.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).Ellipsis()
 		}
 	})
 }
