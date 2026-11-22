@@ -129,6 +129,8 @@ type terminal struct {
 	folderToken           string
 	folderIntegrationSeen bool
 	commandReporting      bool
+	commandActive         bool
+	sftpRefreshPending    bool
 	submittedLines        int
 	blink                 cursorBlink
 	wheelX                float32             // horizontal wheel travel not yet worth a whole cell
@@ -539,13 +541,18 @@ func (state *State) configureTerminal(session *Session) {
 	})
 	session.term.screen.SetPromptStart(func() {
 		if current, ok := state.sessionByIDPointer(sessionID); ok && current.term != nil {
-			current.term.inputGuard.start()
-			current.term.promptVersion++
-			current.term.folderIntegrationSeen = true
-			current.term.promptStarted = true
-			current.term.promptReady = false
-			current.term.keyedSincePrompt = false
-			current.term.inputLine = false
+			t := current.term
+			if t.commandActive || (!t.commandReporting && t.folderIntegrationSeen) {
+				t.commandActive = false
+				t.sftpRefreshPending = true
+			}
+			t.inputGuard.start()
+			t.promptVersion++
+			t.folderIntegrationSeen = true
+			t.promptStarted = true
+			t.promptReady = false
+			t.keyedSincePrompt = false
+			t.inputLine = false
 			current.outputAlert.promptSeen = true
 		}
 	})
@@ -567,6 +574,10 @@ func (state *State) configureTerminal(session *Session) {
 	})
 	session.term.screen.SetCommandFinished(func(code int) {
 		if current, ok := state.sessionByIDPointer(sessionID); ok {
+			if current.term != nil && current.term.commandActive {
+				current.term.commandActive = false
+				current.term.sftpRefreshPending = true
+			}
 			state.finishBackgroundCommand(current, code)
 		}
 	})
@@ -575,6 +586,9 @@ func (state *State) configureTerminal(session *Session) {
 			t := current.term
 			current.outputAlert.commandRunning = current.outputAlert.promptSeen
 			t.commandReporting = true
+			if t.folderIntegrationSeen {
+				t.commandActive = true
+			}
 			t.inputGuard.start()
 			t.promptReady, t.promptStarted = false, false
 			t.inputLine = false
@@ -601,6 +615,7 @@ func (t *terminal) resetFolderSync() {
 	t.inputLine = false
 	t.keyedSincePrompt = false
 	t.folderIntegrationSeen, t.commandReporting = false, false
+	t.commandActive, t.sftpRefreshPending = false, false
 	t.reportedDirectory = term.Cwd{}
 	t.reportedHome = ""
 	// followSeq is left alone: it names reports, and a reconnect must not make
