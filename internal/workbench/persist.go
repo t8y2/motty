@@ -236,6 +236,8 @@ type savedState struct {
 	CommandsShown        bool     `json:"commands_shown,omitempty"`
 	CommandsHiddenGroups []string `json:"commands_hidden_groups,omitempty"`
 	CommandsSort         string   `json:"commands_sort,omitempty"`
+	// CommandsWidth is the width the bar was dragged to; zero is the default.
+	CommandsWidth float32 `json:"commands_width,omitempty"`
 }
 
 type savedOutboundProxy struct {
@@ -683,6 +685,7 @@ func (state *State) snapshot() savedState {
 	}
 	saved.CommandsShown = state.commands.shown
 	saved.CommandsSort = state.commands.sort.String()
+	saved.CommandsWidth = state.commands.width
 	for key := range state.commands.hiddenGroups {
 		saved.CommandsHiddenGroups = append(saved.CommandsHiddenGroups, key)
 	}

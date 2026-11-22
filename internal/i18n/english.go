@@ -1883,6 +1883,7 @@ var englishTools = ToolsMessages{
 	// The saved commands shown under the terminal.
 	CommandsAdd:         "Add command",
 	CommandsClose:       "Hide snippets (tick the box in the Snippets picker to show them again)",
+	CommandsResize:      "Drag to resize the snippets sidebar",
 	CommandsBarHidden:   "Snippets hidden",
 	CommandsBarShow:     "Show snippets sidebar",
 	CommandsFilter:      "Filter by group",

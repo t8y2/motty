@@ -43,6 +43,9 @@ func (state *State) toolbarDockContentBounds(size gfx.Size, includeTerminal bool
 			bounds.X += extent
 			bounds.Width = max(bounds.Width-extent, 0)
 		}
+		// The command bar takes the inner strip of the right edge; the terminal
+		// toolbar rail beyond it keeps the window edge.
+		bounds.Width = max(bounds.Width-state.commandsSidebarBounds(size).Width, 0)
 	}
 	return bounds
 }
@@ -61,9 +64,7 @@ func (state *State) toolbarDockFrame(size gfx.Size, includeTerminal bool) gfx.Re
 
 func (state *State) fullWorkspacePixelBounds(size gfx.Size) gfx.Rect {
 	left := state.verticalTabsReserve(size)
-	bounds := gfx.Rect{X: left, Y: windowBarHeight, Width: max(size.Width-left, 0), Height: max(size.Height-windowBarHeight, 0)}
-	bounds.Width = max(0, bounds.Width-state.commandsSidebarBounds(size).Width)
-	return bounds
+	return gfx.Rect{X: left, Y: windowBarHeight, Width: max(size.Width-left, 0), Height: max(size.Height-windowBarHeight, 0)}
 }
 
 func (state *State) terminalSideRailBounds(size gfx.Size) (gfx.Rect, bool) {

@@ -321,10 +321,53 @@ func TestCommandSidebarBounds(t *testing.T) {
 	full := state.fullWorkspacePixelBounds(size)
 	state.commands.shown = true
 	sidebar := state.commandsSidebarBounds(size)
-	workspace := state.fullWorkspacePixelBounds(size)
-	if sidebar.Width != commandsSidebarWidth || workspace.X+workspace.Width != sidebar.X ||
-		sidebar.X+sidebar.Width != size.Width || workspace.Height != full.Height {
-		t.Fatalf("sidebar=%+v workspace=%+v full=%+v", sidebar, workspace, full)
+	frame := state.toolbarDockFrame(size, true)
+	content := state.baseWorkspacePixelBounds(size)
+	if sidebar.Width != commandsSidebarWidth || sidebar.X != frame.X+frame.Width-sidebar.Width ||
+		content.X+content.Width != sidebar.X || sidebar.X+sidebar.Width != frame.X+frame.Width ||
+		sidebar.Y != full.Y || sidebar.Y+sidebar.Height != size.Height {
+		t.Fatalf("sidebar=%+v frame=%+v content=%+v full=%+v", sidebar, frame, content, full)
+	}
+}
+
+func TestCommandSidebarResizeDragsAndPersists(t *testing.T) {
+	options := testOptions(t)
+	state := newTestState(t, options)
+	state.deck = layoutcore.Deck{}
+	if _, _, err := state.deck.Create("test"); err != nil {
+		t.Fatal(err)
+	}
+	state.activeSection = sectionTerminal
+	state.snippets.list = []snippet{{Name: "pwd", Command: "pwd"}}
+	state.commands.shown = true
+	size := gfx.Size{Width: 1400, Height: 900}
+	paintAt(state, size)
+	bar := state.commands.bar
+	if bar.Width != commandsSidebarWidth {
+		t.Fatalf("default bar width = %v, want %v", bar.Width, commandsSidebarWidth)
+	}
+	content := state.baseWorkspacePixelBounds(size).Width
+	down := gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hitCommandsResize, X: bar.X + 1, Y: bar.Y + 100, Viewport: size}
+	if got := state.Pointer(down); !got.Handled {
+		t.Fatal("pressing the bar's edge was not taken by the resize")
+	}
+	move := gfx.PointerEvent{Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: hitCommandsResize, X: bar.X - 59, Y: bar.Y + 100, Viewport: size, Captured: true}
+	state.Pointer(move)
+	paintAt(state, size)
+	want := bar.Width + 60
+	if got := state.commands.bar.Width; got != want {
+		t.Fatalf("dragging the edge left gave %v, want %v", got, want)
+	}
+	if got := state.baseWorkspacePixelBounds(size).Width; got != content-60 {
+		t.Fatalf("the terminals kept %v beside a wider bar, want %v", got, content-60)
+	}
+	up := gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: hitCommandsResize, X: bar.X - 59, Y: bar.Y + 100, Viewport: size}
+	if got := state.Pointer(up); !got.Handled {
+		t.Fatal("releasing the edge was not taken by the resize")
+	}
+	again := newTestState(t, options)
+	if again.commands.width != want {
+		t.Fatalf("a restart restored width %v, want %v", again.commands.width, want)
 	}
 }
 
@@ -703,7 +746,7 @@ func TestCommandSidebarSpansTheContentHeightBesideAFilePanel(t *testing.T) {
 	if !ok || !context.Open || context.Side != layoutcore.ContextLeft {
 		t.Fatalf("the files panel is not docked left: %+v", context)
 	}
-	assertCommandSidebarFillsRightEdge(t, state, canvas, size)
+	assertCommandSidebarSitsInsideTheDockFrame(t, state, canvas, size)
 }
 
 func TestCommandSidebarSpansTheContentHeightBesideASideRail(t *testing.T) {
@@ -719,19 +762,23 @@ func TestCommandSidebarSpansTheContentHeightBesideASideRail(t *testing.T) {
 	if frame.Width >= full.Width {
 		t.Fatalf("the side rail did not narrow the dock frame (%v vs %v); the case proves nothing", frame.Width, full.Width)
 	}
-	assertCommandSidebarFillsRightEdge(t, state, canvas, size)
+	assertCommandSidebarSitsInsideTheDockFrame(t, state, canvas, size)
 }
 
-func assertCommandSidebarFillsRightEdge(t *testing.T, state *State, canvas *gfx.Canvas, size gfx.Size) {
+func assertCommandSidebarSitsInsideTheDockFrame(t *testing.T, state *State, canvas *gfx.Canvas, size gfx.Size) {
 	t.Helper()
-	full := state.fullWorkspacePixelBounds(size)
+	frame := state.toolbarDockFrame(size, true)
+	content := state.baseWorkspacePixelBounds(size)
 	bar := state.commands.bar
-	if bar.Width <= 0 || bar.X != full.X+full.Width || bar.X+bar.Width != size.Width ||
-		bar.Y != full.Y || bar.Y+bar.Height != size.Height {
-		t.Fatalf("sidebar=%+v, content=%+v, viewport=%+v", bar, full, size)
+	if bar.Width <= 0 || bar.X != frame.X+frame.Width-bar.Width || bar.X+bar.Width != frame.X+frame.Width ||
+		content.X+content.Width != bar.X || bar.Y != frame.Y || bar.Y+bar.Height != size.Height {
+		t.Fatalf("sidebar=%+v frame=%+v content=%+v viewport=%+v", bar, frame, content, size)
+	}
+	if right := state.toolbarDockSideReserveFor(false, true); right > 0 && bar.X+bar.Width != size.Width-right {
+		t.Fatalf("sidebar %+v does not stop at the right toolbar rail (%v)", bar, right)
 	}
 	want := withAlpha(state.pal.shell, 0.6)
-	x := size.Width - 2
+	x := bar.X + 2
 	for _, y := range []float32{bar.Y + 2, size.Height - 2} {
 		var top gfx.Rectangle
 		found := false

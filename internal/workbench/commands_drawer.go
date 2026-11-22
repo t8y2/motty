@@ -42,10 +42,15 @@ var (
 	// hitCommandsTag names a snippet's chip in the bar; its index is the
 	// snippet's index in state.snippets.list.
 	hitCommandsTag = tree.Sub(commandsHits, tree.Name("tag"))
+	// hitCommandsResize is the strip along the bar's inner edge that drags its
+	// width, the way the assistant panel's divider does.
+	hitCommandsResize = tree.ID(commandsHits, "resize")
 )
 
 const (
 	commandsSidebarWidth  float32 = 224
+	commandsSidebarMin    float32 = 160 // the narrowest the bar may be dragged
+	commandsMinContent    float32 = 320 // the terminals keep at least this much beside it
 	commandsHeaderHeight  float32 = 34
 	commandsChipHeight    float32 = 26
 	commandsDrawerPadding float32 = 8
@@ -85,6 +90,13 @@ type commandsUI struct {
 	// shows a chip, both recorded so a wheel over the bar knows what it moves.
 	bar       gfx.Rect
 	maxOffset float32
+	// width is the width the user dragged the bar to; zero means the default.
+	width float32
+	// resizing is set while the inner edge is dragged, with dragFrom and
+	// dragStart recording where the gesture began so motion lands exactly.
+	resizing  bool
+	dragFrom  float32
+	dragStart float32
 }
 
 // commandsBarAvailable reports whether the active page can host the bar at all.
@@ -101,12 +113,40 @@ func (state *State) commandsBarAvailable() bool {
 	return true
 }
 
-func (state *State) commandsSidebarBounds(size gfx.Size) gfx.Rect {
+// commandsSidebarExtent is the width the bar takes from the terminals: what
+// the user dragged it to, within the room the dock frame has, or the default.
+// The terminals keep their own minimum, so the bar cannot swallow the pane it
+// sits beside.
+func (state *State) commandsSidebarExtent(size gfx.Size) float32 {
 	if !state.commandsBarAvailable() || !state.commands.shown {
+		return 0
+	}
+	frame := state.toolbarDockFrame(size, true)
+	if frame.Width <= 0 {
+		return 0
+	}
+	least := min(commandsSidebarMin, frame.Width)
+	most := max(frame.Width-commandsMinContent, least)
+	width := state.commands.width
+	if width <= 0 {
+		width = min(commandsSidebarWidth, frame.Width*0.24)
+	}
+	return min(max(width, least), most)
+}
+
+// commandsSidebarBounds places the bar inside the dock frame, so the terminal
+// toolbar keeps the window edge and the bar sits on its inner side, as the
+// assistant panel does.
+func (state *State) commandsSidebarBounds(size gfx.Size) gfx.Rect {
+	width := state.commandsSidebarExtent(size)
+	if width <= 0 {
 		return gfx.Rect{}
 	}
-	width := min(commandsSidebarWidth, max(size.Width-state.verticalTabsReserve(size), 0)*0.24)
-	return gfx.Rect{X: size.Width - width, Y: windowBarHeight, Width: width, Height: max(size.Height-windowBarHeight, 0)}
+	frame := state.toolbarDockFrame(size, true)
+	return gfx.Rect{
+		X: frame.X + frame.Width - width, Y: windowBarHeight,
+		Width: width, Height: max(size.Height-windowBarHeight, 0),
+	}
 }
 
 // commandGroupVisible reports whether a snippet's group is shown in the bar.
@@ -177,6 +217,12 @@ func (state *State) paintCommandsDrawer(canvas *gfx.Canvas) {
 	canvas.Fill(gfx.Rect{X: bar.X, Y: bar.Y, Width: 1, Height: bar.Height}, state.pal.line)
 
 	m := state.messages.Tools
+	// The inner edge drags the bar's width. The strip is wider than the line it
+	// sits on, so it is easy to grab without moving anything until it is pulled.
+	if state.commands.resizing || canvas.Hovered() == hitCommandsResize {
+		canvas.Fill(gfx.Rect{X: bar.X, Y: bar.Y, Width: 1, Height: bar.Height}, state.pal.accent)
+	}
+	canvas.HitWithOptions(hitCommandsResize, gfx.Rect{X: bar.X, Y: bar.Y, Width: 8, Height: bar.Height}, m.CommandsResize, gfx.HitOptions{Cursor: gfx.PointerCursorResizeHorizontal})
 	iconColor := state.pal.muted
 	cy := bar.Y + (commandsHeaderHeight-commandsIconSize)/2
 
@@ -522,4 +568,48 @@ func (state *State) clickCommandsDrawer(id gfx.ID) bool {
 		return false
 	}
 	return true
+}
+
+// commandsDrawerResize drags the bar's inner edge. It stores the width the
+// user leaves and refits the terminals while the drag runs, so the panes follow
+// the pointer instead of jumping when it is released.
+func (state *State) commandsDrawerResize(event gfx.PointerEvent) gfx.EventResult {
+	commands := &state.commands
+	// A press elsewhere ends a gesture whose release the window never saw, and
+	// is then handled normally.
+	if event.Kind == gfx.PointerDown && event.Target != hitCommandsResize {
+		commands.resizing = false
+	}
+	if !state.commandsBarAvailable() || !commands.shown || state.modal != modalNone {
+		return gfx.EventResult{}
+	}
+	if event.Kind == gfx.PointerDown && event.Target == hitCommandsResize && event.Button == gfx.PointerButtonPrimary {
+		if bar := state.commandsSidebarBounds(event.Viewport); bar.Width > 0 {
+			commands.resizing = true
+			commands.dragFrom, commands.dragStart = event.X, bar.Width
+			return gfx.EventResult{Handled: true, Repaint: true}
+		}
+		return gfx.EventResult{}
+	}
+	if !commands.resizing {
+		return gfx.EventResult{}
+	}
+	switch event.Kind {
+	case gfx.PointerMove, gfx.PointerUp:
+		frame := state.toolbarDockFrame(event.Viewport, true)
+		least := min(commandsSidebarMin, frame.Width)
+		most := max(frame.Width-commandsMinContent, least)
+		width := min(max(commands.dragStart+commands.dragFrom-event.X, least), most)
+		if width != commands.width {
+			commands.width = width
+			state.fitTerminals()
+		}
+	case gfx.PointerExit:
+		commands.resizing = false
+	}
+	if event.Kind == gfx.PointerUp {
+		commands.resizing = false
+		state.save()
+	}
+	return gfx.EventResult{Handled: true, Repaint: true}
 }

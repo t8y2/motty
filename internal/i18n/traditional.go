@@ -1883,6 +1883,7 @@ var traditionalTools = ToolsMessages{
 	// 底部快速指令。
 	CommandsAdd:         "新增命令",
 	CommandsClose:       "隱藏快速指令側欄（可在快速指令面板重新顯示）",
+	CommandsResize:      "拖曳調整快速指令側欄寬度",
 	CommandsBarHidden:   "快速指令側欄已隱藏",
 	CommandsBarShow:     "顯示快速指令側欄",
 	CommandsFilter:      "按分組篩選",

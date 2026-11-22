@@ -1883,6 +1883,7 @@ var chineseTools = ToolsMessages{
 	// 底部快捷命令。
 	CommandsAdd:         "添加命令",
 	CommandsClose:       "隐藏快捷命令侧边栏（可在快捷命令面板重新显示）",
+	CommandsResize:      "拖动调整快捷命令侧边栏宽度",
 	CommandsBarHidden:   "快捷命令侧边栏已隐藏",
 	CommandsBarShow:     "显示快捷命令侧边栏",
 	CommandsFilter:      "按分组筛选",

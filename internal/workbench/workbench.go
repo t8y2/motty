@@ -2624,6 +2624,9 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result := state.remoteLogResize(event); result.Handled {
 		return result
 	}
+	if result := state.commandsDrawerResize(event); result.Handled {
+		return result
+	}
 	if result, handled := state.remoteLogPointer(event); handled {
 		return result
 	}
