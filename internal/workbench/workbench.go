@@ -963,12 +963,17 @@ type State struct {
 	passwordHintOff bool
 	// closeConfirmOff skips the question before closing a session that still runs.
 	closeConfirmOff bool
-	fonts           fontsUI
-	uiFont          interfaceFontUI
-	proxyForm       outboundProxyForm
-	agentSetting    agentDescriptionCache
-	form            formDialog
-	formSerial      uint32
+
+	// closeWindowConfirmOff skips the question before closing a window that
+	// still has sessions open.
+	closeWindowConfirmOff bool
+
+	fonts        fontsUI
+	uiFont       interfaceFontUI
+	proxyForm    outboundProxyForm
+	agentSetting agentDescriptionCache
+	form         formDialog
+	formSerial   uint32
 	// syncEpoch changes whenever the cloud service is replaced or cleared, so work
 	// that started against the old one can tell its result no longer belongs here.
 	syncEpoch     uint32

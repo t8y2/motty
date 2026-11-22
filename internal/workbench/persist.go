@@ -129,6 +129,7 @@ type savedState struct {
 	TerminalPasteImage      string              `json:"terminal_paste_image,omitempty"`
 	TerminalPasswordHint    string              `json:"terminal_password_hint,omitempty"`
 	TerminalCloseConfirm    string              `json:"terminal_close_confirm,omitempty"`
+	CloseWindowConfirm      string              `json:"close_window_confirm,omitempty"`
 	SFTPParallel            int                 `json:"sftp_parallel,omitempty"`
 	SFTPKeepTimes           string              `json:"sftp_keep_times,omitempty"`
 	SFTPFollow              string              `json:"sftp_follow,omitempty"`
@@ -601,6 +602,7 @@ func (state *State) snapshot() savedState {
 		TerminalPasteImage:         notifyString(state.pasteImageOff),
 		TerminalPasswordHint:       notifyString(state.passwordHintOff),
 		TerminalCloseConfirm:       notifyString(state.closeConfirmOff),
+		CloseWindowConfirm:         notifyString(state.closeWindowConfirmOff),
 		CommandHistory:             state.history.on,
 		CommandSuggestOff:          state.history.suggestOff,
 		CommandCompletionMode:      state.completionMode().persistName(),
@@ -1245,6 +1247,7 @@ func (state *State) restoreShared(saved savedState) {
 	state.pasteImageOff = saved.TerminalPasteImage == "off"
 	state.passwordHintOff = saved.TerminalPasswordHint == "off"
 	state.closeConfirmOff = saved.TerminalCloseConfirm == "off"
+	state.closeWindowConfirmOff = saved.CloseWindowConfirm == "off"
 	state.history.on = saved.CommandHistory
 	state.history.acceptHintOff = saved.CommandAcceptHintOff
 	switch saved.CommandCompletionMode {

@@ -60,7 +60,8 @@ var (
 	hitTabsCloseConfirm = tree.ID(tabMenuHits, "tabs-close-confirm")
 	hitTabsCloseQuiet   = tree.ID(tabMenuHits, "tabs-close-quiet")
 
-	hitSettingsCloseConfirmToggle = tree.ID(tabMenuHits, "settings-close-confirm")
+	hitSettingsCloseConfirmToggle       = tree.ID(tabMenuHits, "settings-close-confirm")
+	hitSettingsCloseWindowConfirmToggle = tree.ID(tabMenuHits, "settings-close-window-confirm")
 )
 
 // tabMenu is the right-click menu of a tab: which tab, and where it was asked for.

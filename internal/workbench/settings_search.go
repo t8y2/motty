@@ -199,6 +199,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsTerminal, tools.PasteImageRow, tools.PasteImageDescription)
 	row(settingsTerminal, tools.PasteConfirmRow, tools.PasteConfirmDescription)
 	row(settingsTerminal, tools.CloseConfirmRow, tools.CloseConfirmDescription)
+	row(settingsTerminal, tools.CloseWindowConfirmRow, tools.CloseWindowConfirmDescription)
 	row(settingsTerminal, tools.PasswordHintRow, tools.PasswordHintDescription)
 	row(settingsTerminal, tools.NotifyRow, tools.NotifyDescription)
 	group(settingsTerminal, m.FindSettings.Title, m.FindSettings.Title, "")
