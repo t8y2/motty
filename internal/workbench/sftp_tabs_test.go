@@ -626,7 +626,12 @@ func TestSFTPFileTabCloseConfirmationAndWindowModeOpening(t *testing.T) {
 	waitSFTPTab(t, state, w, func() bool { return !w.view.busy })
 
 	w.view.extracting = true
+	state.activeSection = sectionTerminal
+	beforeCloseGeneration := w.directoryTree[1].generation
 	state.requestCloseSFTPTab(w)
+	if w.directoryTree[1].generation != beforeCloseGeneration {
+		t.Fatal("closing a file tab refreshed its directory tree before confirmation")
+	}
 	if !w.closeConfirm || w.closed || len(state.sftpTabs) != 1 {
 		t.Fatal("closing an active file tab skipped confirmation")
 	}

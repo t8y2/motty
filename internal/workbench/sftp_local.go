@@ -129,10 +129,26 @@ func (state *State) toggleSFTPPane(view *sftpView) {
 // on the window thread when it arrives. localSeq drops an answer that a newer
 // listing has overtaken.
 func (state *State) listLocal(view *sftpView, dir string) error {
-	return state.listLocalNavigation(view, dir, sftpNavigationPassive, 0)
+	state.invalidateLocalDirectoryTree(view, dir)
+	return state.listLocalNavigation(view, dir, sftpNavigationPassive, 0, false)
 }
 
-func (state *State) listLocalNavigation(view *sftpView, dir string, kind sftpNavigationKind, index int) error {
+// refreshLocalDirectory rereads the folder on show without losing the user's
+// place, the local counterpart of refreshSFTPDirectory: a window activation
+// refreshes what is there, it does not navigate.
+func (state *State) refreshLocalDirectory(view *sftpView) error {
+	dir := view.lfolder.path
+	state.invalidateLocalDirectoryTree(view, dir)
+	return state.listLocalNavigation(view, dir, sftpNavigationPassive, 0, true)
+}
+
+func (state *State) invalidateLocalDirectoryTree(view *sftpView, dir string) {
+	if view.detached != nil && sameDirectoryTreeLocation(true, view.lfolder.path, dir) {
+		view.detached.invalidateDirectoryTree(true)
+	}
+}
+
+func (state *State) listLocalNavigation(view *sftpView, dir string, kind sftpNavigationKind, index int, preservePlace bool) error {
 	dir = filepath.Clean(dir)
 	nav := state.beginSFTPNavigation(view, true, dir, kind, index)
 	if view.detached != nil {
@@ -180,7 +196,7 @@ func (state *State) listLocalNavigation(view *sftpView, dir string, kind sftpNav
 	if len(first) <= localListingInlineEntries {
 		listing := readLocalListing(dir, file, first, readErr)
 		file.Close()
-		listing.navigation = nav
+		listing.navigation, listing.preservePlace = nav, preservePlace
 		succeeded = true
 		state.applyLocalListing(view, listing, seq)
 		return nil
@@ -192,7 +208,7 @@ func (state *State) listLocalNavigation(view *sftpView, dir string, kind sftpNav
 	go func() {
 		defer file.Close()
 		listing := readLocalListing(dir, file, first, readErr)
-		listing.navigation = nav
+		listing.navigation, listing.preservePlace = nav, preservePlace
 		state.aiPost(func(*State) {
 			if seq != view.localSeq {
 				return
@@ -218,11 +234,12 @@ func (state *State) retireLocalListingStatus(view *sftpView) {
 
 // localListing is a local folder scanned away from the window thread.
 type localListing struct {
-	navigation sftpNavigation
-	dir        string
-	entries    []sftpclient.Entry
-	rows       []sftpRow
-	coverage   localListingCoverage
+	navigation    sftpNavigation
+	preservePlace bool
+	dir           string
+	entries       []sftpclient.Entry
+	rows          []sftpRow
+	coverage      localListingCoverage
 }
 
 type localListingCoverage struct {
@@ -329,6 +346,7 @@ func (state *State) applyLocalListing(view *sftpView, listing localListing, seq 
 		view.detached.pendingLocal = ""
 	}
 	folder := &view.lfolder
+	changed := !sameDirectoryTreeLocation(true, folder.path, listing.dir)
 	place, restore := folder.acceptNavigation(listing.dir, listing.navigation)
 	folder.path = listing.dir
 	if view.detached != nil && listing.navigation.kind == sftpNavigationManual && !state.sftpPathInput {
@@ -340,16 +358,39 @@ func (state *State) applyLocalListing(view *sftpView, listing localListing, seq 
 		folder.pathEditing = false
 	}
 	previousRows := folder.allRows
+	// The remote refresh keeps the user's checks and offset when the listing
+	// is a reread of the folder on show, and so must this one.
+	keepPlace := listing.preservePlace && !changed
+	var selected map[string]struct{}
+	if keepPlace {
+		for index := range folder.rows {
+			if !folder.rows[index].selected {
+				continue
+			}
+			if selected == nil {
+				selected = make(map[string]struct{})
+			}
+			selected[folder.rows[index].entry.Name] = struct{}{}
+		}
+	}
 	folder.allRows = listing.rows
+	for index := range folder.allRows {
+		if _, ok := selected[folder.allRows[index].entry.Name]; ok {
+			folder.allRows[index].selected = true
+			folder.allRows[index].cells[0] = sftpSelectionCell(true)
+		}
+	}
 	state.loadAppIcons(view, previousRows, listing.rows)
 	state.loadTypeIcons(view, listing.rows)
 	folder.localCoverage = listing.coverage
 	folder.crumbs = prepareLocalCrumbs(folder.crumbs, listing.dir)
 	if view.detached != nil {
 		view.detached.observeDirectoryTreeListing(true, listing.dir, listing.entries)
-		view.detached.syncDirectoryTreeToPath(true, listing.dir)
+		if changed {
+			view.detached.syncDirectoryTreeToPath(true, listing.dir)
+		}
 	}
-	state.applySFTPFilter(view, folder, true)
+	state.applySFTPFilter(view, folder, !keepPlace)
 	state.finishSFTPNavigation(view, true, place, restore, listing.navigation)
 	state.retireLocalListingStatus(view)
 	view.errorText = ""

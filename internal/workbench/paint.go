@@ -482,6 +482,14 @@ func (state *State) WindowConfig(base app.Config) app.Config {
 	// the page's generic scroll-area routing does not know. Everything else the
 	// event reaches goes on to the page as before.
 	config.OnScroll = state.scrollWindow
+	config.OnActivate = func() {
+		if base.OnActivate != nil {
+			base.OnActivate()
+		}
+		if w := state.activeSFTPWindow(); w != nil && state.modal == modalNone {
+			w.activate()
+		}
+	}
 	return config
 }
 

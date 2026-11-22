@@ -63,12 +63,20 @@ func (state *State) activeSFTPWindow() *sftpWindow {
 }
 
 func (state *State) activateSFTPTab(id uint32) bool {
+	return state.selectSFTPTab(id, true)
+}
+
+func (state *State) selectSFTPTab(id uint32, refresh bool) bool {
 	index := state.sftpTabIndex(id)
 	if index < 0 {
 		return false
 	}
+	changed := state.activeSection != sectionSFTP || state.activeSFTPTab != id
 	state.activeSFTPTab = id
 	state.activeSection = sectionSFTP
+	if refresh && changed && state.modal == modalNone {
+		state.sftpTabs[index].activate()
+	}
 	state.options.Invalidate()
 	return true
 }
@@ -179,7 +187,9 @@ func (state *State) requestCloseSFTPTab(w *sftpWindow) {
 	if w == nil || w.closed || state.sftpTabIndex(w.session.ID) < 0 {
 		return
 	}
-	state.activateSFTPTab(w.session.ID)
+	// Selecting a tab for closure must not refresh a worker that is about to
+	// be stopped.
+	state.selectSFTPTab(w.session.ID, false)
 	w.requestClose(func() { state.removeSFTPTab(w) })
 }
 

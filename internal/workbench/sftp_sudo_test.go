@@ -82,8 +82,27 @@ func TestSFTPModeControlInFileTab(t *testing.T) {
 	}
 	click(checkMode(false))
 	state.sudoSFTP.password.Insert("secret")
+	tree := &window.directoryTree[1]
+	staleID := sftpDirectoryTreeRequestBit | 43
+	staleNode := &sftpTreeNode{path: "/home/test", loaded: true, loading: true, requestID: staleID, expanded: true}
+	staleNode.err = "permission denied"
+	tree.enabled = true
+	tree.roots = []*sftpTreeNode{staleNode}
+	tree.nodes = map[string]*sftpTreeNode{staleNode.path: staleNode}
+	tree.requests = map[uint64]string{staleID: staleNode.path}
 	state.Click(hitSudoSFTPEnable)
-	waitSFTPTab(t, state, window, func() bool { return window.view.sudo && !window.view.busy })
+	if tree.requests[staleID] != "" {
+		t.Fatal("sudo mode replacement retained a request from the previous SFTP worker")
+	}
+	if staleNode.loaded || staleNode.err != "" {
+		t.Fatalf("sudo mode replacement kept what the unelevated worker read: loaded=%v err=%q", staleNode.loaded, staleNode.err)
+	}
+	waitSFTPTab(t, state, window, func() bool {
+		return window.view.sudo && !window.view.busy && !staleNode.loading
+	})
+	if !staleNode.loaded || staleNode.err != "" || len(staleNode.children) == 0 {
+		t.Fatalf("the expanded tree was not reread on the replacement worker: loaded=%v err=%q children=%d", staleNode.loaded, staleNode.err, len(staleNode.children))
+	}
 	checkMode(true)
 	if directory := os.Getenv("MOTTY_SUDO_SCREENSHOT_DIR"); directory != "" {
 		if err := os.MkdirAll(directory, 0o755); err != nil {

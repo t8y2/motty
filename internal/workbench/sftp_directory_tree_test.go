@@ -330,7 +330,7 @@ func TestSFTPDirectoryTreeRejectsLateLocalResultForRecreatedPath(t *testing.T) {
 		t.Fatal("same-name refresh did not create a replacement node")
 	}
 
-	w.applyLocalDirectoryTreeResult(tree, oldNode, tree.generation, oldNode.path, []sftpclient.Entry{
+	w.applyLocalDirectoryTreeResult(tree, oldNode, tree.generation, oldNode.requestID, oldNode.path, []sftpclient.Entry{
 		{Name: "stale-child", Mode: os.ModeDir | 0o755},
 	}, false, nil)
 	if replacement.loaded || len(replacement.children) != 0 {
@@ -412,21 +412,6 @@ func TestSFTPDirectoryTreeIndentsByDisplayDepth(t *testing.T) {
 	}
 	if got := tree.tree.DisplayDepth(tree.tree.Node(0).Depth); got != 4 {
 		t.Fatalf("deep row indents at depth %d, want the four the width allows", got)
-	}
-}
-
-func TestSFTPDirectoryTreeLeafKeepsDisclosureColumn(t *testing.T) {
-	content := gfx.Rect{X: 20, Y: 10, Width: 160, Height: 28}
-	branch := directoryTreeContentBounds(content, true)
-	leaf := directoryTreeContentBounds(content, false)
-	if branch != content {
-		t.Fatalf("branch content moved unexpectedly: %+v", branch)
-	}
-	if leaf.X != branch.X+directoryTreeDisclosureWidth {
-		t.Fatalf("leaf folder starts at x=%v, want disclosure-aligned x=%v", leaf.X, branch.X+directoryTreeDisclosureWidth)
-	}
-	if leaf.Width != branch.Width-directoryTreeDisclosureWidth {
-		t.Fatalf("leaf width=%v, want %v", leaf.Width, branch.Width-directoryTreeDisclosureWidth)
 	}
 }
 
