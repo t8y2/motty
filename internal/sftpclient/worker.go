@@ -257,8 +257,8 @@ type request struct {
 	operation  Operation
 	remote     string
 	// force makes a removal keep going after an entry fails and treat an
-	// entry that was already gone as removed. It is the panel's "rm -f"
-	// choice, not a permission bypass: the server still decides every unlink.
+	// entry that was already gone as removed. It is the panel's forced
+	// delete, not a permission bypass: the server still decides every unlink.
 	force       bool
 	local       string
 	destination string

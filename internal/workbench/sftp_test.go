@@ -1256,24 +1256,28 @@ func TestSFTPWriteErrorsRemainVisible(t *testing.T) {
 	}
 
 	// A removal the server refuses stays visible instead of passing for done.
+	// A folder may have been partly emptied on the way, so the view says that
+	// in a notice and reads the folder again rather than keeping stale rows.
 	remote.mu.Lock()
 	remote.removeErr = os.ErrPermission
 	remote.mu.Unlock()
 	clickSFTPRow(t, state, view, "docs")
 	state.Click(hitSFTPDelete)
 	state.Click(hitSFTPDialogSubmit)
-	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.errorText != "" })
+	waitSFTP(t, state, session, func(view *sftpView) bool {
+		return !view.busy && len(state.fileNotices.items) > 0
+	})
 	remote.mu.Lock()
 	_, stillExists := remote.entries["/home/test/docs"]
 	remote.mu.Unlock()
-	if !stillExists || view.errorText == "" {
-		t.Fatalf("refused delete: exists=%v error=%q", stillExists, view.errorText)
+	if !stillExists || sftpRowIndexOrNegative(view, "docs") < 0 {
+		t.Fatalf("refused delete: exists=%v rows=%v", stillExists, rowNames(view.rows))
 	}
 	// The walk may have deleted part of the folder before it was refused: say so
-	// in a notice that is not cut off, and drop what was remembered of it.
+	// in a notice that is not cut off.
 	if len(state.fileNotices.items) != 1 || state.fileNotices.items[0].kind != components.ToastError ||
-		!strings.Contains(state.fileNotices.items[0].detail, state.messages.SFTPDeletePartialHint) || len(view.listings) != 0 {
-		t.Fatalf("refused delete: notices=%+v listings=%d", state.fileNotices.items, len(view.listings))
+		!strings.Contains(state.fileNotices.items[0].detail, state.messages.SFTPDeleteSelectionPartial) {
+		t.Fatalf("refused delete: notices=%+v", state.fileNotices.items)
 	}
 }
 

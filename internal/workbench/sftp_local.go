@@ -555,13 +555,31 @@ func (state *State) submitLocalDelete(view *sftpView, force bool) {
 	state.closeSFTPDialog(view)
 	view.errorText = ""
 	view.localBusy = true
-	if len(entries) > 1 {
-		view.status = fmt.Sprintf(state.messages.SFTPDeletingCountFmt, 1, len(entries))
+	total := len(entries)
+	if total > 1 {
+		view.status = fmt.Sprintf(state.messages.SFTPDeletingCountFmt, 1, total)
 	} else {
 		view.status = fmt.Sprintf(state.messages.SFTPDeletingFmt, entries[0].Name)
 	}
+	// The walk reports each entry it finished, so the count advances the way the
+	// remote queue's does instead of staying on the first item until the end.
+	var progress func(done int)
+	if total > 1 {
+		progress = func(done int) {
+			if done >= total {
+				return
+			}
+			state.aiPost(func(*State) {
+				session, ok := state.sftpSession(view)
+				if !ok || session.files != view || !view.localBusy {
+					return
+				}
+				view.status = fmt.Sprintf(state.messages.SFTPDeletingCountFmt, done+1, total)
+			})
+		}
+	}
 	go func() {
-		result := removeLocalEntries(dir, entries, force)
+		result := removeLocalEntries(dir, entries, force, progress)
 		state.aiPost(func(*State) { state.finishLocalDelete(view, result) })
 	}()
 }
@@ -581,20 +599,24 @@ type localDeleteResult struct {
 
 // removeLocalEntries removes entries of dir in the order the list showed them.
 // It touches no State, so a goroutine may run it while the window keeps painting.
-func removeLocalEntries(dir string, entries []sftpclient.Entry, force bool) localDeleteResult {
+// progress, when set, is called with the number of entries handled so far.
+func removeLocalEntries(dir string, entries []sftpclient.Entry, force bool, progress func(done int)) localDeleteResult {
 	result := localDeleteResult{dir: dir, total: len(entries), force: force}
 	for _, entry := range entries {
 		location := filepath.Join(dir, entry.Name)
 		removed, err := removeLocalEntry(location, force)
 		if removed {
 			result.removed = append(result.removed, location)
-			continue
+		} else {
+			result.failed = append(result.failed, location)
+			if result.err == nil {
+				result.firstFailed, result.err = location, err
+			}
 		}
-		result.failed = append(result.failed, location)
-		if result.err == nil {
-			result.firstFailed, result.err = location, err
+		if progress != nil {
+			progress(len(result.removed) + len(result.failed))
 		}
-		if !force {
+		if !removed && !force {
 			return result
 		}
 	}

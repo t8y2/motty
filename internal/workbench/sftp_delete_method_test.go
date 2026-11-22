@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
@@ -182,5 +183,120 @@ func TestSFTPForceDeleteContinuesPastAFailure(t *testing.T) {
 	if len(state.fileNotices.items) != 1 || state.fileNotices.items[0].kind != components.ToastWarning ||
 		!strings.Contains(state.fileNotices.items[0].detail, fmt.Sprintf(state.messages.SFTPDeleteForcePartialFmt, 2, 1)) {
 		t.Fatalf("force partial notice = %+v", state.fileNotices.items)
+	}
+}
+
+// A forced folder walk deletes as it goes and can then fail part-way. The
+// entries it already removed still count in the summary: reporting zero of them
+// hides work that cannot be undone.
+func TestSFTPForceDeleteOfAFolderCountsWhatItRemoved(t *testing.T) {
+	state, session, _, remote := openTestSFTP(t)
+	view := session.files
+	remote.mu.Lock()
+	remote.entries["/home/test/docs"] = append(remote.entries["/home/test/docs"],
+		workbenchFileInfo{name: "keep.md", size: 4, mode: 0o644, when: time.Unix(1_700_000_300, 0)})
+	remote.files["/home/test/docs/keep.md"] = []byte("keep")
+	remote.removeErrAt = map[string]error{"/home/test/docs/keep.md": os.ErrPermission}
+	remote.mu.Unlock()
+
+	clickSFTPRow(t, state, view, "docs")
+	state.Click(hitSFTPDelete)
+	chooseSFTPDeleteMethod(t, state, state.messages.SFTPDeleteMethodForce)
+	state.Click(hitSFTPDialogSubmit)
+	state.Click(hitSFTPDialogSubmit)
+
+	waitSFTP(t, state, session, func(view *sftpView) bool {
+		return !view.busy && !view.deleteForce && len(state.fileNotices.items) > 0
+	})
+	// The walk removed guide.md, could not remove keep.md, and then could not
+	// remove the now non-empty folder: 1 removed, 2 failed.
+	want := fmt.Sprintf(state.messages.SFTPDeleteForcePartialFmt, 1, 2)
+	notice := state.fileNotices.items[len(state.fileNotices.items)-1]
+	if notice.kind != components.ToastWarning || !strings.Contains(notice.detail, want) {
+		t.Fatalf("forced folder notice = %+v, want it to say %q", notice, want)
+	}
+}
+
+// Canceling a forced removal leaves what the results confirmed deleted. The
+// rows and any cached reading still show those entries, so the cancel has to
+// drop them and read the folder again instead of only setting a status.
+func TestSFTPForceDeleteCancelKeepsWhatAlreadyLeft(t *testing.T) {
+	state, session, _, remote := openTestSFTP(t)
+	view := session.files
+	remote.mu.Lock()
+	remote.entries["/home/test"] = append(remote.entries["/home/test"],
+		workbenchFileInfo{name: "aaa", mode: os.ModeDir | 0o755, when: time.Unix(1_699_999_900, 0)})
+	remote.entries["/home/test/aaa"] = []os.FileInfo{
+		workbenchFileInfo{name: "inner.txt", size: 3, mode: 0o644, when: time.Unix(1_699_999_900, 0)},
+	}
+	remote.files["/home/test/aaa/inner.txt"] = []byte("in\n")
+	remote.mu.Unlock()
+	state.Click(hitSFTPRefresh)
+	waitSFTP(t, state, session, func(view *sftpView) bool {
+		return !view.busy && sftpRowIndexOrNegative(view, "aaa") >= 0
+	})
+
+	// Folders come first in the listing, so the forced queue walks aaa and is
+	// walking docs when the cancel comes.
+	clickSFTPRow(t, state, view, "aaa")
+	clickSFTPRow(t, state, view, "docs")
+	// Selecting a folder reads it ahead of need. Let those reads finish first,
+	// so the count below is the forced walk's own read of the folder.
+	waitSFTP(t, state, session, func(view *sftpView) bool { return len(view.prefetching) == 0 })
+	remote.mu.Lock()
+	remote.readDelay = 40 * time.Millisecond
+	remote.mu.Unlock()
+	before := remote.readCount("/home/test")
+	docsReads := remote.readCount("/home/test/docs")
+
+	state.Click(hitSFTPDelete)
+	chooseSFTPDeleteMethod(t, state, state.messages.SFTPDeleteMethodForce)
+	state.Click(hitSFTPDialogSubmit)
+	state.Click(hitSFTPDialogSubmit)
+
+	waitSFTP(t, state, session, func(view *sftpView) bool {
+		return view.busy && remote.readCount("/home/test/docs") > docsReads
+	})
+	state.cancelSFTPOperation(view)
+	waitSFTP(t, state, session, func(view *sftpView) bool {
+		return !view.busy && !view.deleteForce && view.status == state.messages.SFTPCanceled &&
+			sftpRowIndexOrNegative(view, "aaa") < 0
+	})
+	remote.mu.Lock()
+	_, folderExists := remote.entries["/home/test/aaa"]
+	remote.mu.Unlock()
+	if folderExists || sftpRowIndexOrNegative(view, "aaa") >= 0 {
+		t.Fatalf("the canceled delete put back a folder it had removed: remote=%v rows=%v", folderExists, rowNames(view.rows))
+	}
+	if sftpRowIndexOrNegative(view, "docs") < 0 {
+		t.Fatalf("the canceled delete dropped the folder it was walking: %v", rowNames(view.rows))
+	}
+	if view.status != state.messages.SFTPCanceled {
+		t.Fatalf("canceled force delete status = %q", view.status)
+	}
+	if reads := remote.readCount("/home/test"); reads <= before {
+		t.Fatalf("cancel did not read the folder again: %d reads, want more than %d", reads, before)
+	}
+}
+
+// A single deletion takes the same path as a multi-selection one: its
+// completion must forget the method and counters, or the next removal reads a
+// stale forced method.
+func TestSFTPForceDeleteOfOneEntryForgetsTheDeleteState(t *testing.T) {
+	state, session, _, _ := openTestSFTP(t)
+	view := session.files
+
+	clickSFTPRow(t, state, view, "notes.txt")
+	state.Click(hitSFTPDelete)
+	chooseSFTPDeleteMethod(t, state, state.messages.SFTPDeleteMethodForce)
+	state.Click(hitSFTPDialogSubmit)
+	state.Click(hitSFTPDialogSubmit)
+
+	waitSFTP(t, state, session, func(view *sftpView) bool {
+		return !view.busy && sftpRowIndexOrNegative(view, "notes.txt") < 0
+	})
+	if view.deleteForce || view.deleteTotal != 0 || view.deleteDone != 0 || view.deleteCompleted != 0 {
+		t.Fatalf("single delete state after completion: force=%t total=%d done=%d completed=%d",
+			view.deleteForce, view.deleteTotal, view.deleteDone, view.deleteCompleted)
 	}
 }

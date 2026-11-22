@@ -210,10 +210,17 @@ func (r *scpRemote) run(format string, args ...string) error {
 	return err
 }
 
-func (r *scpRemote) Mkdir(name string) error  { return r.run("mkdir -p -- {}", name) }
-func (r *scpRemote) Remove(name string) error { return r.run("rm -- {}", name) }
+func (r *scpRemote) Mkdir(name string) error { return r.run("mkdir -p -- {}", name) }
+
+// Remove and RemoveDirectory run under the C locale like the listing commands:
+// their errors are matched by message, and a localized server would not say the
+// English words scpclient maps to os.ErrNotExist (and IsPathNotFound looks for).
+func (r *scpRemote) Remove(name string) error {
+	return r.run("LC_ALL=C rm -- {}", name)
+}
+
 func (r *scpRemote) RemoveDirectory(name string) error {
-	return r.run("rmdir -- {}", name)
+	return r.run("LC_ALL=C rmdir -- {}", name)
 }
 func (r *scpRemote) Symlink(target, link string) error { return r.run("ln -s -- {} {}", target, link) }
 

@@ -4,11 +4,38 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/vivaui/viva/gfx"
+	"motty/internal/sftpclient"
 )
+
+// The local walk reports each entry it finishes, so the status line can advance
+// past "1 of n" the way the remote queue's count does.
+func TestLocalDeleteWalkReportsPerItemProgress(t *testing.T) {
+	dir := t.TempDir()
+	entries := []sftpclient.Entry{{Name: "aaa.txt"}, {Name: "bbb.txt"}, {Name: "ccc.txt"}}
+	for _, name := range []string{"aaa.txt", "bbb.txt", "ccc.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The last entry vanishes before the walk reaches it; a forced walk treats
+	// that as removed and still reports it.
+	if err := os.Remove(filepath.Join(dir, "ccc.txt")); err != nil {
+		t.Fatal(err)
+	}
+	var seen []int
+	result := removeLocalEntries(dir, entries, true, func(done int) { seen = append(seen, done) })
+	if want := []int{1, 2, 3}; !slices.Equal(seen, want) {
+		t.Fatalf("progress frames = %v, want %v", seen, want)
+	}
+	if len(result.removed) != 3 || len(result.failed) != 0 || result.err != nil {
+		t.Fatalf("forced walk result = %+v", result)
+	}
+}
 
 // localDeleteSettled reports a finished local deletion: nothing is walking the
 // disk and the entry is gone.

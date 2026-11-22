@@ -77,8 +77,8 @@ func sftpDialogShowsField(kind sftpDialogKind) bool {
 }
 
 // sftpDeleteMethod is the choice the confirmation offers. Normal stops at the
-// first failure; force is the panel's rm -f: it keeps going and treats an entry
-// that is already gone as deleted.
+// first failure; force is the panel's forced removal: it keeps going and treats
+// an entry that is already gone as deleted.
 type sftpDeleteMethod uint8
 
 const (
@@ -1049,21 +1049,6 @@ func sftpListingSize(entries []sftpclient.Entry) int {
 	return size
 }
 
-// sftpFolderRemovalStopped follows a folder removal that failed or was canceled
-// part-way: the walk deletes as it goes, so what it already removed is gone for
-// good. Nothing remembered about the folder can be trusted, and the notice
-// (unlike the cut-off status line) says so with the whole reason.
-func (state *State) sftpFolderRemovalStopped(view *sftpView, err error) {
-	view.forgetListings()
-	messages := state.messages
-	if errors.Is(err, sftpclient.ErrCanceled) {
-		state.fileOpenNotice(view.detached, messages.SFTPDeleteDirectoryTitle, messages.SFTPDeletePartialHint, components.ToastInfo)
-		return
-	}
-	detail := fmt.Sprintf(messages.SFTPErrorFmt, err) + " " + messages.SFTPDeletePartialHint
-	state.fileOpenNotice(view.detached, messages.SFTPDeleteDirectoryTitle, detail, components.ToastError)
-}
-
 // forgetListings drops everything remembered: after the remote changed, no
 // reading of it can be trusted to show.
 func (view *sftpView) forgetListings() {
@@ -1810,7 +1795,7 @@ func (state *State) openSFTPDialog(view *sftpView, dialog sftpDialogKind) {
 	view.dialog = dialog
 }
 
-// openSFTPDeleteForce asks once more before the rm -f style removal: the first
+// openSFTPDeleteForce asks once more before the forced removal: the first
 // confirmation already named what goes, and this one says what "force" changes.
 // The selected entries stay in the view; no editor is involved.
 func (state *State) openSFTPDeleteForce(view *sftpView) {
@@ -1954,14 +1939,27 @@ func (state *State) finishSFTPDelete(view *sftpView, result sftpclient.Result) {
 	} else {
 		view.deleteFailed++
 		view.deleteFailedItems += max(result.Failures, 1)
+		// A forced folder walk deletes as it goes and then reports a partial
+		// failure: what the result says it removed still counts even though
+		// the entry it was asked to delete stayed.
+		view.deleteRemovedItems += result.Removed
 		if view.deleteFirstFailure == "" {
 			view.deleteFirstFailure = fmt.Sprintf("%s: %s", result.Path, fmt.Sprintf(state.messages.SFTPErrorFmt, result.Err))
 		}
 	}
-	if view.deleteForce && errors.Is(result.Err, sftpclient.ErrCanceled) {
+	if errors.Is(result.Err, sftpclient.ErrCanceled) {
+		// A cancellation is the user's decision, not a failure. What the
+		// results confirmed is gone, a folder walk may have deleted part of
+		// its tree, and neither the rows nor a cached reading can be trusted:
+		// drop what left, say it was canceled, and read the folder again.
+		removed := view.deleteRemoved
 		view.busy = false
 		state.resetSFTPDelete(view)
+		view.forgetRemovedSFTPEntries()
+		state.dropSFTPDeletedRows(view, &view.sftpFolder, removed)
 		view.status = state.messages.SFTPCanceled
+		view.refreshStatus = state.messages.SFTPCanceled
+		state.listSFTP(view, view.path)
 		return
 	}
 	if view.deleteForce {
@@ -2666,7 +2664,10 @@ func (state *State) pumpSFTP(session *Session) {
 				state.refreshSFTPTransfers(view)
 				continue
 			}
-			if (result.Operation == sftpclient.OperationRemoveFile || result.Operation == sftpclient.OperationRemoveDirectory) && (view.deleteRemaining != nil || view.deleteCompleted > 0) {
+			if result.Operation == sftpclient.OperationRemoveFile || result.Operation == sftpclient.OperationRemoveDirectory {
+				// Every removal the confirmation started comes back here, not
+				// only the ones with entries left in a queue: each completion
+				// must also forget the method and counters it ran with.
 				state.finishSFTPDelete(view, result)
 				continue
 			}
@@ -2748,9 +2749,6 @@ func (state *State) pumpSFTP(session *Session) {
 				} else {
 					view.errorText = state.formatSFTPError(result.Err)
 				}
-				if result.Operation == sftpclient.OperationRemoveDirectory {
-					state.sftpFolderRemovalStopped(view, result.Err)
-				}
 				continue
 			}
 			switch result.Operation {
@@ -2800,10 +2798,6 @@ func (state *State) pumpSFTP(session *Session) {
 				}
 				view.moveAfterRename = false
 				state.listSFTP(view, view.path)
-			case sftpclient.OperationRemoveFile, sftpclient.OperationRemoveDirectory:
-				view.forgetRemovedSFTPEntries()
-				state.dropSFTPDeletedRows(view, &view.sftpFolder, []string{path.Base(result.Path)})
-				view.status = fmt.Sprintf(state.messages.SFTPDeletedFmt, result.Path)
 			case sftpclient.OperationSymlink:
 				view.forgetListings()
 				view.refreshStatus = fmt.Sprintf(state.messages.Tools.LinkCreatedFmt, path.Base(result.Path), result.Destination)
