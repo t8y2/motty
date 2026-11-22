@@ -441,8 +441,10 @@ func TestALocalTerminalPathOpensInTheSystemFileManager(t *testing.T) {
 
 	// A server's paths are not this computer's: an SSH terminal keeps the file
 	// panel's row.
+	// A server prints POSIX paths: the local file above is a Windows path
+	// there, which is not a remote path at all.
 	remoteScreen := term.New(80, 24, 100)
-	remoteScreen.Write([]byte(file + "\r\n"))
+	remoteScreen.Write([]byte("/srv/report.txt\r\n"))
 	remote := &Session{ID: 2, host: Host{Protocol: protocolSSH, Address: "box"}, conn: newLocalConn("", networkProxyDirect), term: &terminal{screen: remoteScreen}}
 	state.terminalMenu = terminalMenu{open: true, session: remote.ID}
 	state.offerActionsAt(remote, term.Position{Row: 0, Column: 2})
@@ -453,7 +455,7 @@ func TestALocalTerminalPathOpensInTheSystemFileManager(t *testing.T) {
 	// A WSL distribution's files are reached through the panel that maps its
 	// paths; the host's file manager cannot show them.
 	wslScreen := term.New(80, 24, 100)
-	wslScreen.Write([]byte(file + "\r\n"))
+	wslScreen.Write([]byte("/home/report.txt\r\n"))
 	wsl := &Session{ID: 3, HostID: localHostID, conn: newLocalConn(localshell.WSLShell("Ubuntu"), networkProxyDirect), term: &terminal{screen: wslScreen}}
 	state.terminalMenu = terminalMenu{open: true, session: wsl.ID}
 	state.offerActionsAt(wsl, term.Position{Row: 0, Column: 2})
