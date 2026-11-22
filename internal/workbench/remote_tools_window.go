@@ -75,7 +75,10 @@ func (state *State) openRemoteToolsWindowTab(session *Session, tab remoteTab, sw
 	w.ui.language, w.ui.messages = state.language, state.messages
 	w.ui.appearance, w.ui.pal, w.ui.theme = state.appearance, state.pal, state.theme
 	w.ui.modal, w.ui.activeSessionID, w.ui.remoteWindow = modalRemoteTools, session.ID, w
-	w.ui.remote = remoteToolsView{session: session.ID, title: session.Title, tab: tab, sort: state.remote.sort, serial: 1}
+	w.ui.remote = remoteToolsView{
+		session: session.ID, title: session.Title, tab: tab, sort: state.remote.sort, serial: 1,
+		columnWidths: &w.owner.remoteColumnWidths,
+	}
 	window, err := state.options.OpenContentWindow(w.config(), nil)
 	if err != nil {
 		w.dispose()
@@ -134,6 +137,9 @@ func (w *remoteToolsWindow) bind(owner *State, source *Session) {
 	w.session.Title, w.session.Address, w.session.host = source.Title, source.Address, source.host
 	w.session.conn, w.session.term, w.session.phase = w.connection, source.term, source.phase
 	w.session.sudoCommands, w.session.sudoPassword = source.sudoCommands, source.sudoPassword
+	// The widths belong to the workbench presenting the session, so a window
+	// that moves to another workbench follows that workbench's sizes.
+	w.ui.remote.columnWidths = &owner.remoteColumnWidths
 }
 
 // Locate the captured connection, including after its tab moves to another
