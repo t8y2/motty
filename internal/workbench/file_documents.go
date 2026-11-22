@@ -446,6 +446,7 @@ func (d *fileDocument) saveDirect(closeAfter bool) {
 		d.problem = d.owner.messages.SFTPUnavailable
 		d.notices.show(d.name, d.problem, components.ToastError)
 	}
+	d.invalidateWindows()
 }
 
 func (d *fileDocument) apply(event fileDocumentEvent) {

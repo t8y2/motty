@@ -7,6 +7,8 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/headless"
+	"motty/internal/sftpclient"
 )
 
 // A save in flight must look like work in progress, not like a finished save:
@@ -61,6 +63,94 @@ func TestComparisonFooterAnimatesWhileSaving(t *testing.T) {
 	d.paintComparison(&canvas, gfx.Size{Width: 1120, Height: 720})
 	if status, animating := documentFooterState(&canvas, d.owner.messages.FileWindow.SavingChanges); !status || !animating {
 		t.Fatalf("the comparison save footer: status=%v animating=%v", status, animating)
+	}
+	if !hasOverlayText(canvas.Texts(), d.owner.messages.FileWindow.SavingChanges, popupLayer) {
+		t.Fatal("the comparison window did not show a saving overlay while saving")
+	}
+}
+
+func hasOverlayText(texts []gfx.Text, value string, layer uint16) bool {
+	for _, txt := range texts {
+		if txt.Value == value && txt.Layer == layer {
+			return true
+		}
+	}
+	return false
+}
+
+// Confirming a remote save must immediately show unmistakable loading feedback:
+// the footer puts the saving status first so narrow windows cannot clip it, the
+// save action switches to the saving label, and a centered overlay sits above
+// the editor until the save settles.
+func TestDocumentSavingShowsVisibleLoadingState(t *testing.T) {
+	d := documentFixture(t)
+	d.cacheKey = "1:false:/test.log"
+	d.local = false
+	d.name = "test.log"
+	d.editor.Insert("edited\n")
+
+	m := &d.owner.fileWindows
+	m.documents = map[string]*fileDocument{d.cacheKey: d}
+	m.order = []string{d.cacheKey}
+	m.active = d.cacheKey
+
+	blockSave := make(chan struct{})
+	defer close(blockSave)
+	worker := sftpclient.NewWorker(func() (sftpclient.Remote, error) {
+		<-blockSave
+		return nil, sftpclient.ErrCanceled
+	}, func() {})
+	defer worker.Close()
+	d.worker = worker
+
+	view, err := headless.Open(m.config(), nil, headless.Options{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+
+	findHit := func(id gfx.ID) gfx.Hit {
+		t.Helper()
+		for _, h := range view.Snapshot().Hits {
+			if h.ID == id {
+				return h
+			}
+		}
+		t.Fatalf("missing hit %v", id)
+		return gfx.Hit{}
+	}
+
+	saveHit := findHit(hitDocumentSave)
+	if err := view.Click(saveHit.Bounds.X+saveHit.Bounds.Width/2, saveHit.Bounds.Y+saveHit.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if d.confirm != "save" {
+		t.Fatalf("clicking save opened confirm=%q, want save", d.confirm)
+	}
+
+	directHit := findHit(hitDocumentSaveDirect)
+	if err := view.Click(directHit.Bounds.X+directHit.Bounds.Width/2, directHit.Bounds.Y+directHit.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if !d.busy || d.confirm != "" || !d.saving() {
+		t.Fatalf("after confirming save: busy=%v confirm=%q saving=%v", d.busy, d.confirm, d.saving())
+	}
+
+	savingText := d.owner.messages.FileWindow.Saving
+	if !strings.HasPrefix(d.footerStatus(), savingText) {
+		t.Fatalf("footerStatus() = %q, want prefix %q so narrow windows do not clip it", d.footerStatus(), savingText)
+	}
+
+	snap := view.Snapshot()
+	if !hasOverlayText(snap.Texts, savingText, popupLayer) {
+		t.Fatal("missing centered saving overlay on popupLayer while save is in flight")
+	}
+	saveButton := findHit(hitDocumentSave)
+	if saveButton.Label != savingText {
+		t.Fatalf("save button label while saving = %q, want %q", saveButton.Label, savingText)
 	}
 }
 
