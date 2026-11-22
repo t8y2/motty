@@ -24,6 +24,8 @@ var (
 	hitSFTPSend         = tree.ID(sftpHits, "sftp-send")
 	hitSFTPDownloadHere = tree.ID(sftpHits, "sftp-download-here")
 	hitSFTPInsertPath   = tree.ID(sftpHits, "sftp-insert-path")
+	hitSFTPReveal       = tree.ID(sftpHits, "sftp-reveal")
+	hitSFTPOpenFolder   = tree.ID(sftpHits, "sftp-open-folder")
 )
 
 // maxLocalEntries bounds a local listing; a bigger folder shows its first part.
@@ -442,6 +444,12 @@ func (state *State) clickSFTPLocal(session *Session, view *sftpView, id gfx.ID) 
 		state.openLocalSelected(view)
 	case id == hitSFTPEditExternal:
 		state.openLocalExternal(view)
+	case id == hitSFTPReveal:
+		state.revealLocalSelected(view)
+	case id == hitSFTPOpenFolder:
+		if validLocalDirectory(folder.path) {
+			state.openLocalFolder(folder.path)
+		}
 	case id == hitSFTPDelete:
 		// The press belongs to the local side whatever its state: falling
 		// through would run the server's delete on this computer's panel.
@@ -510,6 +518,17 @@ func (state *State) openLocalExternal(view *sftpView) {
 			state.fileOpenPathReason(view.detached, state.messages.Tools.ExtEditButton, state.messages.Tools.ExtEditOpenFailedFmt, location, err.Error(), components.ToastError)
 		}
 	}
+}
+
+// revealLocalSelected shows the selected local file or folder in the system's
+// file manager.
+func (state *State) revealLocalSelected(view *sftpView) {
+	count, entry := selectedSFTP(view)
+	if !view.local || count != 1 || !validLocalDirectory(view.lfolder.path) {
+		return
+	}
+	m := state.messages.Tools
+	state.revealLocalPath(filepath.Join(view.lfolder.path, entry.Name), m.ActionReveal, m.ActionRevealFailed, m.ActionRevealMissing)
 }
 
 // insertLocalPaths types the selected items' paths into the local shell, quoted

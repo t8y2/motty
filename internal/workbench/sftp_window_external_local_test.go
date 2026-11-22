@@ -57,3 +57,30 @@ func TestSFTPWindowSpecialLocalFileHasNoEditorAction(t *testing.T) {
 		}
 	}
 }
+
+func TestSFTPWindowLocalContextMenuRevealsFileAndOpensFolder(t *testing.T) {
+	state, w, _, host, root := dualSFTPFixture(t, 1)
+	view := host.windows[0].view
+	revealed := make(chan string, 1)
+	state.options.RevealPath = func(location string) error {
+		revealed <- location
+		return nil
+	}
+	if err := view.RightClickLabel("中文上传.yml"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	dualClickMenuLabel(t, view, w.windowMenuRowLabel(sftpWindowMenuActions.At(sftpWindowActionIndex(hitSFTPReveal))))
+	waitFor(t, state, func() bool { return !state.revealBusy })
+	want := filepath.Join(root, "中文上传.yml")
+	select {
+	case got := <-revealed:
+		if got != want {
+			t.Fatalf("revealed %q, want %q", got, want)
+		}
+	default:
+		t.Fatal("dual-pane local reveal did not pass the selected path")
+	}
+}

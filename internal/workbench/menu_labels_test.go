@@ -24,7 +24,7 @@ func init() {
 		hitSnippetMenuSend, hitSnippetMenuUp, hitSnippetMenuDown, hitSnippetMenuEdit, hitSnippetMenuDelete, hitWorkspaceTemplateMenuEdit, hitWorkspaceTemplateMenuDelete,
 		hitToolbarDockTop, hitToolbarDockSideTop, hitToolbarDockSideBottom, hitToolbarDockLeftTop, hitToolbarDockLeftBottom, hitToolbarDockBottom, hitToolbarDockBottomRight, hitToolbarDockHide, hitToolbarDockCustomize, hitToolbarDockReset,
 		hitTabMenuRename, hitTabMenuDuplicate, hitTabMenuEditHost, hitTabMenuNewWindow, hitTabMenuCopyHost, hitTabMenuCopyAddress, hitTabMenuCopyName, hitTabMenuBrowserClose, hitTabMenuBrowserOpen, hitTabMenuFit, hitTabMenuActual, hitTabMenuCtrlAltDel, hitTabMenuHideBars, hitTabMenuFullscreen, hitTabMenuLatency, hitTabMenuClose, hitTabMenuCloseOthers, hitTabMenuReconnect, hitTabMenuRestart, hitTabMenuDisconnect, hitTabMenuSaveWorkspace, hitTabMenuLock, hitTabMenuCloseRight,
-		hitSFTPMenuOpen, hitSFTPMenuDownload, hitSFTPMenuDownloadHere, hitSFTPMenuSend, hitSFTPMenuInsertPath, hitSFTPMenuEdit, hitSFTPMenuRename, hitSFTPMenuMove, hitSFTPMenuChmod, hitSFTPMenuChown, hitSFTPMenuExtract, hitSFTPMenuCompress, hitSFTPMenuDelete, hitSFTPMenuSudo, hitSFTPMenuCopyFiles, hitSFTPMenuPasteFiles,
+		hitSFTPMenuOpen, hitSFTPMenuDownload, hitSFTPMenuDownloadHere, hitSFTPMenuSend, hitSFTPMenuInsertPath, hitSFTPMenuEdit, hitSFTPMenuReveal, hitSFTPMenuOpenFolder, hitSFTPMenuRename, hitSFTPMenuMove, hitSFTPMenuChmod, hitSFTPMenuChown, hitSFTPMenuExtract, hitSFTPMenuCompress, hitSFTPMenuDelete, hitSFTPMenuSudo, hitSFTPMenuCopyFiles, hitSFTPMenuPasteFiles,
 	} {
 		menuRowIDs[id] = true
 	}
@@ -246,6 +246,10 @@ func menuLabelOf(state *State, id gfx.ID) string {
 		return m.SFTPInsertPath
 	case hitSFTPMenuEdit:
 		return t.ExtEditButton
+	case hitSFTPMenuReveal:
+		return t.ActionReveal
+	case hitSFTPMenuOpenFolder:
+		return m.ShortcutTerminalFolder
 	case hitSFTPMenuRename:
 		return m.SFTPRename
 	case hitSFTPMenuMove:

@@ -1,10 +1,13 @@
 package workbench
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
+	"motty/internal/localshell"
+	"motty/internal/term"
 )
 
 func TestTerminalFolderShortcutOpensFocusedLocalDirectory(t *testing.T) {
@@ -104,5 +107,44 @@ func TestTerminalFolderMenuOpensRightClickedPaneDirectory(t *testing.T) {
 		}
 	default:
 		t.Fatal("file manager did not receive the directory")
+	}
+}
+
+func TestTerminalFolderFallsBackWhenLocalDirectoryUnreported(t *testing.T) {
+	reported := t.TempDir()
+	startup := t.TempDir()
+	remembered := t.TempDir()
+
+	session := &Session{ID: 1, HostID: localHostID, conn: newLocalConn("", networkProxyDirect), term: &terminal{screen: term.New(80, 24, 100)}}
+	session.term.reportedDirectory = term.Cwd{Path: reported}
+	if got := localSessionDirectory(session); got != filepath.Clean(reported) {
+		t.Fatalf("reported directory: got %q, want %q", got, filepath.Clean(reported))
+	}
+
+	session.term.reportedDirectory = term.Cwd{}
+	session.localDirectory = remembered
+	if got := localSessionDirectory(session); got != filepath.Clean(remembered) {
+		t.Fatalf("remembered directory: got %q, want %q", got, filepath.Clean(remembered))
+	}
+
+	session.localDirectory = ""
+	session.conn.(*localConn).dir = startup
+	if got := localSessionDirectory(session); got != filepath.Clean(startup) {
+		t.Fatalf("startup directory: got %q, want %q", got, filepath.Clean(startup))
+	}
+
+	session.conn.(*localConn).dir = ""
+	if got := localSessionDirectory(session); got != filepath.Clean(localHome()) {
+		t.Fatalf("home fallback: got %q, want %q", got, filepath.Clean(localHome()))
+	}
+
+	wsl := &Session{ID: 2, HostID: localHostID, conn: newLocalConn(localshell.WSLShell("Ubuntu"), networkProxyDirect), term: &terminal{screen: term.New(80, 24, 100)}}
+	if canOpenSessionFolder(wsl) {
+		t.Fatalf("WSL session without a reported path must not fall back to host home: %q", localSessionDirectory(wsl))
+	}
+
+	remote := &Session{ID: 3, host: Host{Protocol: protocolSSH, Address: "box"}}
+	if canOpenSessionFolder(remote) {
+		t.Fatal("remote session must not offer local folder opening")
 	}
 }

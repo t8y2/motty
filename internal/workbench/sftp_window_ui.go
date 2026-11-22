@@ -852,7 +852,9 @@ func (w *sftpWindow) windowMenuRows() menuRows {
 		}
 		if index := sftpWindowActionIndex(action); index >= 0 {
 			item.ID = sftpWindowMenuActions.At(index)
-			if action != hitSFTPProperties {
+			if action == hitSFTPReveal || action == hitSFTPOpenFolder {
+				item.Disabled = item.Disabled || w.browse.pending != nil || w.pendingLocal != "" || w.activeLocal && w.view.localBusy || w.owner.revealBusy
+			} else if action != hitSFTPProperties {
 				item.Disabled = w.browse.pending != nil || w.pendingLocal != "" || w.activeLocal && w.view.localBusy || !w.activeLocal && (!w.connected() || w.view.busy)
 			}
 		}

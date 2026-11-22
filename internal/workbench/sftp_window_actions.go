@@ -5,7 +5,7 @@ import (
 	"motty/internal/sshconn"
 )
 
-var sftpWindowActionIDs = [...]gfx.ID{hitSFTPOpenEntry, hitSFTPDownload, hitSFTPDownloadHere, hitSFTPSend, hitSFTPEditExternal, hitSFTPRename, hitSFTPMove, hitSFTPChmod, hitSFTPChown, hitSFTPExtract, hitSFTPCompress, hitSFTPDelete, hitSFTPNewDirectory, hitSFTPUpload, hitSFTPUploadDirectory, hitSFTPNewLink, hitSFTPProperties, hitSFTPCalculateDirectorySize}
+var sftpWindowActionIDs = [...]gfx.ID{hitSFTPOpenEntry, hitSFTPDownload, hitSFTPDownloadHere, hitSFTPSend, hitSFTPEditExternal, hitSFTPReveal, hitSFTPOpenFolder, hitSFTPRename, hitSFTPMove, hitSFTPChmod, hitSFTPChown, hitSFTPExtract, hitSFTPCompress, hitSFTPDelete, hitSFTPNewDirectory, hitSFTPUpload, hitSFTPUploadDirectory, hitSFTPNewLink, hitSFTPProperties, hitSFTPCalculateDirectorySize}
 
 func sftpWindowActionIndex(id gfx.ID) int {
 	for i, action := range sftpWindowActionIDs {
@@ -151,6 +151,14 @@ func (w *sftpWindow) fileAction(local bool, id gfx.ID) {
 			w.owner.openLocalExternal(w.view)
 		} else {
 			w.owner.startExternalEdit(&w.session, w.view)
+		}
+	case hitSFTPReveal:
+		if local {
+			w.owner.revealLocalSelected(w.view)
+		}
+	case hitSFTPOpenFolder:
+		if local && validLocalDirectory(w.view.lfolder.path) {
+			w.owner.openLocalFolder(w.view.lfolder.path)
 		}
 	case hitSFTPRename:
 		if !local {
