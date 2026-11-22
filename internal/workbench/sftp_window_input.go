@@ -689,7 +689,7 @@ func (w *sftpWindow) refresh(local bool) {
 		return
 	}
 	if local {
-		w.owner.listLocal(w.view, w.view.lfolder.path)
+		w.owner.refreshLocalDirectory(w.view)
 	} else if !w.view.busy && w.connected() {
 		w.view.forgetListings()
 		w.owner.listSFTP(w.view, w.view.path)

@@ -17,15 +17,14 @@ import (
 )
 
 const (
-	sftpDirectoryTreeRowHeight   = float32(28)
-	maxDirectoryTreeChildren     = 20000
-	maxDirectoryTreeDepth        = 64
-	directoryTreeMinWidth        = float32(140)
-	directoryListMinWidth        = float32(150)
-	directoryTreeGap             = float32(6)
-	sftpDirectoryTreeIndent      = float32(14)
-	directoryTreeDisclosureWidth = float32(24)
-	directoryTreeLabelReserve    = float32(80)
+	sftpDirectoryTreeRowHeight = float32(28)
+	maxDirectoryTreeChildren   = 20000
+	maxDirectoryTreeDepth      = 64
+	directoryTreeMinWidth      = float32(140)
+	directoryListMinWidth      = float32(150)
+	directoryTreeGap           = float32(6)
+	sftpDirectoryTreeIndent    = float32(14)
+	directoryTreeLabelReserve  = float32(80)
 	// Tree listings share the worker queue with ordinary navigation. Keep
 	// their IDs in a separate high range so results cannot be consumed by the
 	// wrong cache when both use the same sequence number.
@@ -256,18 +255,6 @@ func directoryTreeDisplayDepth(depth uint8, width float32) uint8 {
 	return uint8(min(int(depth), maxDepth))
 }
 
-// The Viva tree component only reserves the disclosure column for branches.
-// A loaded folder with no children is still a folder in this view, so keep its
-// icon aligned with sibling folders instead of letting it jump left.
-func directoryTreeContentBounds(content gfx.Rect, branch bool) gfx.Rect {
-	if branch {
-		return content
-	}
-	content.X += directoryTreeDisclosureWidth
-	content.Width = max(0, content.Width-directoryTreeDisclosureWidth)
-	return content
-}
-
 func directoryTreePathKey(local bool, location string) string {
 	if local {
 		location = filepath.Clean(location)
@@ -318,6 +305,56 @@ func directoryTreeLocalAliasChild(node *sftpTreeNode, location string) *sftpTree
 		}
 	}
 	return nil
+}
+
+// directoryTreeChild resolves one path component under node. The direct key is
+// the normal case; a local miss retries by file identity so an 8.3 alias and
+// the long name its listing recorded reach the same node.
+func directoryTreeChild(tree *sftpDirectoryTree, local bool, node *sftpTreeNode, location string) *sftpTreeNode {
+	child := tree.nodes[directoryTreePathKey(local, location)]
+	if child == nil && local {
+		child = directoryTreeLocalAliasChild(node, location)
+	}
+	return child
+}
+
+// directoryTreeResolveNode finds the cached node for location, walking from the
+// root the way syncDirectoryTreeToPath does. The direct key answers whenever the
+// cache still knows the path, including a node a refresh has not reread yet.
+// A local miss retries the selection's canonical path and then the walk, whose
+// file-identity fallback needs loaded parents to prove two names are one folder.
+func directoryTreeResolveNode(tree *sftpDirectoryTree, local bool, location string) *sftpTreeNode {
+	if tree == nil || location == "" {
+		return nil
+	}
+	if node := tree.nodes[directoryTreePathKey(local, location)]; node != nil {
+		return node
+	}
+	if len(tree.roots) == 0 {
+		return nil
+	}
+	if !local {
+		return nil
+	}
+	if tree.selectedPath != "" && sameDirectoryTreeLocation(true, tree.selectedPath, location) {
+		if node := tree.nodes[directoryTreePathKey(true, tree.selectedPath)]; node != nil {
+			return node
+		}
+	}
+	root := tree.roots[0]
+	parts, inside := directoryTreeRelativeParts(local, root.path, location)
+	if !inside {
+		return nil
+	}
+	node := root
+	for _, part := range parts {
+		nextPath := filepath.Join(node.path, part)
+		node = directoryTreeChild(tree, true, node, nextPath)
+		if node == nil {
+			return nil
+		}
+	}
+	return node
 }
 
 func cleanDirectoryTreePath(local bool, location string) string {
@@ -402,10 +439,7 @@ func (w *sftpWindow) syncDirectoryTreeToPath(local bool, location string) {
 		} else {
 			nextPath = path.Join(node.path, part)
 		}
-		next := tree.nodes[directoryTreePathKey(local, nextPath)]
-		if next == nil && local {
-			next = directoryTreeLocalAliasChild(node, nextPath)
-		}
+		next := directoryTreeChild(tree, local, node, nextPath)
 		if next == nil {
 			return
 		}
@@ -623,11 +657,9 @@ func (w *sftpWindow) observeDirectoryTreeListing(local bool, directory string, e
 	if !tree.enabled {
 		return
 	}
-	selectedDirectory := directory
-	if sameDirectoryTreeLocation(local, tree.selectedPath, directory) {
-		selectedDirectory = tree.selectedPath
-	}
-	node := tree.nodes[directoryTreePathKey(local, selectedDirectory)]
+	// The panel can name a local folder by an 8.3 alias while the node holds
+	// the long name its listing recorded; resolve it as navigation does.
+	node := directoryTreeResolveNode(tree, local, directory)
 	if node == nil {
 		return
 	}

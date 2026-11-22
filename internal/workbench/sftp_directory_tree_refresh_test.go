@@ -202,6 +202,63 @@ func TestSFTPWindowActivationRefreshesExternalChangesWithoutPolling(t *testing.T
 	}
 }
 
+func TestSFTPWindowActivationKeepsLocalSelectionAndOffset(t *testing.T) {
+	_, w, _, _, _ := dualSFTPFixture(t, 1)
+	folder := &w.view.lfolder
+	if len(folder.rows) < 2 {
+		t.Fatalf("the fixture needs two local rows, has %d", len(folder.rows))
+	}
+	folder.first = 1
+	folder.selectRow(0, 0)
+	topName, selectedName := folder.rows[1].entry.Name, folder.rows[0].entry.Name
+	wantOffset := float32(folder.first) * sftpRowHeight
+	w.ui.offset[0] = wantOffset
+	w.activate()
+	if len(folder.rows) < 2 {
+		t.Fatalf("activation replaced the local rows: %d", len(folder.rows))
+	}
+	if got := sftpRowNameIndex(folder.rows, topName); folder.first != got {
+		t.Fatalf("activation moved the local offset from row %q to %d", topName, folder.first)
+	}
+	if got := sftpRowNameIndex(folder.rows, selectedName); folder.selected != got || got < 0 || !folder.rows[got].selected {
+		t.Fatalf("activation lost the local selection of %q: selected=%d", selectedName, folder.selected)
+	}
+	if w.ui.offset[0] != wantOffset {
+		t.Fatalf("activation moved the local scroll offset to %v, want %v", w.ui.offset[0], wantOffset)
+	}
+}
+
+func TestSFTPDirectoryTreeRefreshResolvesLocalAlias(t *testing.T) {
+	_, w, _, _, _ := dualSFTPFixture(t, 1)
+	parent := t.TempDir()
+	canonical := filepath.Join(parent, "canonical")
+	if err := os.Mkdir(canonical, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	aliasRoot := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(parent, aliasRoot); err != nil {
+		t.Skipf("the platform cannot create the directory alias this test needs: %v", err)
+	}
+	// A Windows panel can name a folder by an 8.3 alias while the tree holds
+	// the long name its listing recorded. Refresh the node through the alias
+	// without asking the selected path for help.
+	tree := &w.directoryTree[0]
+	tree.enabled = true
+	root := &sftpTreeNode{path: aliasRoot, name: "root", loaded: true, expanded: true}
+	node := &sftpTreeNode{path: canonical, name: "canonical", loaded: true, expanded: true}
+	root.children = []*sftpTreeNode{node}
+	tree.roots = []*sftpTreeNode{root}
+	tree.nodes = map[string]*sftpTreeNode{
+		directoryTreePathKey(true, aliasRoot): root,
+		directoryTreePathKey(true, canonical): node,
+	}
+	w.observeDirectoryTreeListing(true, filepath.Join(aliasRoot, "canonical"), []sftpclient.Entry{{Name: "new", Mode: os.ModeDir}})
+	child := tree.nodes[directoryTreePathKey(true, filepath.Join(canonical, "new"))]
+	if child == nil || child.name != "new" {
+		t.Fatalf("refresh through an alias did not record the child under its canonical path: %+v", node.children)
+	}
+}
+
 func TestSFTPTabReturnRefreshesExternalChanges(t *testing.T) {
 	state, source, w, remote, local := openSFTPTabFixture(t)
 	if err := os.Mkdir(filepath.Join(local, "external"), 0o700); err != nil {

@@ -167,7 +167,6 @@ func (state *State) switchSudoSFTP(session *Session, view *sftpView, password st
 	if window := view.detached; window != nil {
 		window.clearDirectoryTreeRequests()
 		window.invalidateDirectoryTree(false)
-		window.loadExpandedDirectoryTree(false)
 	}
 	state.refreshSFTPTransfers(view)
 	state.archiveTransfers(view)
@@ -193,6 +192,12 @@ func (state *State) switchSudoSFTP(session *Session, view *sftpView, password st
 	}
 	view.worker = sftpclient.NewWorker(view.openFiles, state.notifyForView(session, view))
 	state.configureSFTPWorker(view)
+	// The tree prefetch must run on the replacement worker: the unelevated
+	// worker is closed, and prefetching there would mark every expanded node
+	// unavailable instead of rereading it under the new privileges.
+	if window := view.detached; window != nil {
+		window.loadExpandedDirectoryTree(false)
+	}
 	for _, document := range state.fileWindows.documents {
 		if document.view == view && !document.local && !document.closed && document.worker != nil {
 			document.worker.Close()

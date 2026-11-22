@@ -141,7 +141,7 @@ func (w *sftpWindow) readBrowseDirectory(local bool, destination string) {
 func (w *sftpWindow) readBrowseDirectoryHistory(local bool, destination string, kind sftpNavigationKind, index int) {
 	if local {
 		w.pendingLocal = destination
-		if err := w.owner.listLocalNavigation(w.view, destination, kind, index); err != nil {
+		if err := w.owner.listLocalNavigation(w.view, destination, kind, index, false); err != nil {
 			w.pendingLocal = ""
 			if !w.browseListingFailed(true, destination, err) {
 				w.view.errorText = ""
