@@ -364,6 +364,10 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 	// with nothing in it just closes, and so does every window when the user
 	// chose in Settings that closing quits.
 	requestClose := func(allow func()) {
+		// A window that closes or hides while it holds the keep-windows question
+		// dismisses it first; otherwise the question's guard would outlive it and
+		// swallow every later quit.
+		windows.cancelKeepWindows(state)
 		if status.hasStatusArea() && state.StaysInTray() && (state.WantsToStay() || status.list.WindowCount() <= 1) {
 			log.Print("motty: window hidden to the status area; the program keeps running")
 			mainWindow.Hide()
@@ -523,24 +527,15 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		OnFullscreen:  state.SetWindowFullscreen,
 		OnClosed: func() {
 			log.Print("motty: window closed")
+			// A system close (Alt+F4) can land here without the close request
+			// above, so release the question this window was holding before it
+			// leaves the set.
+			windows.cancelKeepWindows(state)
 			windows.remove(state)
 			hub.Remove(state)
 			quitting := windows.isQuitting()
 			remaining := windows.count()
-			keepRecord := true
-			switch {
-			case quitting:
-				// The quit command decided whether to keep the windows.
-				keepRecord = windows.keepsWindowsOnQuit()
-			case remaining > 0:
-				// A window the user closed while other windows are still up is
-				// one they are done with, so its record goes.
-				keepRecord = false
-			case state.DiscardsWindowsOnExit():
-				// Closing the last window ends the program without the quit
-				// command; the user chose not to keep windows on that exit.
-				keepRecord = false
-			}
+			keepRecord := keepWindowRecordOnClose(quitting, windows.keepsWindowsOnQuit(), remaining, state.DiscardsWindowsOnExit())
 			state.Close()
 			if !keepRecord {
 				state.DropWindowRecord()

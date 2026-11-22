@@ -70,13 +70,29 @@ func (state *State) clickQuitKeepWindows(id gfx.ID) {
 			prompt.answer(id == hitQuitKeepWindowsKeep)
 		}
 	case hitQuitKeepWindowsCancel, hitQuitKeepWindowsClose, hitQuitKeepWindowsDismiss:
+		// The question only borrowed the modal slot: put the dialog it replaced
+		// back untouched. closeModal would clear the form it belongs to, the
+		// password fields and the session the prompt was opened on, so a quit
+		// the user cancels would lose a half-filled form.
 		state.quitKeepWindows = quitKeepWindowsPrompt{}
-		state.closeModal()
 		state.modal = prompt.previous
 		if prompt.cancel != nil {
 			prompt.cancel()
 		}
 	}
+}
+
+// CancelKeepWindowsOnExit dismisses an open quit question as if the user
+// cancelled it, restoring the dialog it replaced. It reports whether a question
+// was open. A window that closes or hides while holding the question must call
+// it, or the process-wide guard would keep every later quit request waiting for
+// an answer that can never come.
+func (state *State) CancelKeepWindowsOnExit() bool {
+	if state.modal != modalQuitKeepWindows {
+		return false
+	}
+	state.clickQuitKeepWindows(hitQuitKeepWindowsCancel)
+	return true
 }
 
 // declareQuitKeepWindowsDialog declares the question as a dialog of the

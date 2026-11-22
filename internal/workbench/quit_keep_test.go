@@ -78,6 +78,27 @@ func TestAskKeepWindowsOnExitCancels(t *testing.T) {
 	}
 }
 
+func TestAskKeepWindowsOnExitCancelKeepsTheFormUnderIt(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.keepWindows = keepWindowsAsk
+	form := state.openForm(formDialog{title: "New host", submit: "Save"},
+		formField{label: "Name"})
+	form.set(0, "staging")
+	if !state.AskKeepWindowsOnExit(nil, nil) {
+		t.Fatal("the ask policy did not open the question")
+	}
+	if state.modal != modalQuitKeepWindows {
+		t.Fatalf("modal = %v, want the quit question", state.modal)
+	}
+	state.Click(hitQuitKeepWindowsCancel)
+	if state.modal != modalForm {
+		t.Fatalf("modal after cancel = %v, want the form the question replaced", state.modal)
+	}
+	if state.form.title != "New host" || state.form.value(0) != "staging" {
+		t.Fatalf("the form lost its contents: title %q, value %q", state.form.title, state.form.value(0))
+	}
+}
+
 func TestKeepWindowsPolicyIsRestored(t *testing.T) {
 	options := testOptions(t)
 	state := newTestState(t, options)
