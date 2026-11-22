@@ -1891,6 +1891,8 @@ var chineseTools = ToolsMessages{
 	CommandsPlaceSide:   "侧边",
 	CommandsFilter:      "按分组筛选",
 	CommandsUngrouped:   "未分组",
+	CommandsCollapse:    "折叠分组",
+	CommandsExpand:      "展开分组",
 	CommandsShowAll:     "全选",
 	CommandsHideAll:     "全不选",
 	CommandsNoGroups:    "暂无分组",

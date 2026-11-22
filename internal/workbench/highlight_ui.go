@@ -501,5 +501,9 @@ func (state *State) restoreTerminalTools(saved savedState) {
 	for _, group := range saved.CommandsHiddenGroups {
 		state.commands.hiddenGroups[group] = true
 	}
+	state.commands.collapsedGroups = make(map[string]bool)
+	for _, group := range saved.CommandsCollapsedGroups {
+		state.commands.collapsedGroups[group] = true
+	}
 	state.recompileHighlights()
 }

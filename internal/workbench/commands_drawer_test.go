@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -609,14 +610,18 @@ func TestCommandGroupFilterShowAndHideAll(t *testing.T) {
 	}
 }
 
-// The bar orders its chips by the chosen sort: creation order keeps the list
-// order, name sorts alphabetically, and group sorts by group then name.
+// The bar lists its groups, then the commands in each, by the chosen sort:
+// creation order keeps the list order, name sorts groups and commands
+// alphabetically, and group sorts only the groups. Ungrouped commands close the
+// list in every order.
 func TestCommandSort(t *testing.T) {
 	state := openCommandsDrawerTest(t)
 	state.snippets.list = []snippet{
 		{Name: "zeta", Command: "zeta", Group: "b"},
+		{Name: "loose", Command: "loose"},
+		{Name: "yak", Command: "yak", Group: "a"},
+		{Name: "beta", Command: "beta", Group: "b"},
 		{Name: "alpha", Command: "alpha", Group: "a"},
-		{Name: "beta", Command: "beta"},
 	}
 	names := func() string {
 		order := state.commandDisplayOrder()
@@ -626,18 +631,16 @@ func TestCommandSort(t *testing.T) {
 		}
 		return strings.Join(out, ",")
 	}
-	// Creation order is the list order.
-	if got := names(); got != "zeta,alpha,beta" {
+	// Groups sit where their first command is; commands keep the list order.
+	if got := names(); got != "zeta,beta,yak,alpha,loose" {
 		t.Fatalf("creation order = %q", got)
 	}
-	// Alphabetical by name.
 	state.commands.sort = commandsSortName
-	if got := names(); got != "alpha,beta,zeta" {
+	if got := names(); got != "alpha,yak,beta,zeta,loose" {
 		t.Fatalf("name order = %q", got)
 	}
-	// Group first (ungrouped sorts before any named group), then name.
 	state.commands.sort = commandsSortGroup
-	if got := names(); got != "beta,alpha,zeta" {
+	if got := names(); got != "yak,alpha,zeta,beta,loose" {
 		t.Fatalf("group order = %q", got)
 	}
 	for _, sort := range settingsCommandsSortChoices {
@@ -852,5 +855,52 @@ func assertCommandSidebarSitsInsideTheDockFrame(t *testing.T, state *State, canv
 		if !found || top.Color != want {
 			t.Fatalf("sidebar edge at (%v, %v) is %+v, want %+v", x, y, top.Color, want)
 		}
+	}
+}
+
+// Each group is listed under its own heading, and a heading folds its commands
+// away without taking the group out of the bar. Folding is a display state that
+// outlives a restart.
+func TestCommandGroupHeadingFoldsItsCommands(t *testing.T) {
+	state := openCommandsDrawerTest(t)
+	state.snippets.list = []snippet{
+		{Name: "loose", Command: "loose"},
+		{Name: "mysql-a", Command: "a", Group: "mysql"},
+		{Name: "mysql-b", Command: "b", Group: "MySQL"},
+		{Name: "os-a", Command: "c", Group: "os"},
+	}
+	sections := state.commandSections()
+	if len(sections) != 3 || sections[0].key != "mysql" || sections[1].key != "os" || sections[2].key != "" {
+		t.Fatalf("sections = %+v, want mysql and os, then ungrouped last", sections)
+	}
+	if len(sections[0].items) != 2 {
+		t.Fatalf("groups differing in case must share a section: %+v", sections[0])
+	}
+	if !commandSectionsGrouped(sections) {
+		t.Fatal("named groups must show headings")
+	}
+	if commandSectionsGrouped([]commandSection{{key: ""}}) {
+		t.Fatal("a list nobody grouped needs no heading")
+	}
+
+	if !state.clickCommandsDrawer(hitCommandsGroupHeading.At(0)) {
+		t.Fatal("the heading is not part of the bar")
+	}
+	if !state.commandSections()[0].collapsed {
+		t.Fatal("clicking the heading did not fold its group")
+	}
+	state.commands.shown = true
+	// A folded group still counts for the order and the filter; only the
+	// painted rows leave.
+	if len(state.commandDisplayOrder()) != 4 {
+		t.Fatalf("a folded group left the bar: %v", state.commandDisplayOrder())
+	}
+	saved := state.snapshot()
+	if !slices.Equal(saved.CommandsCollapsedGroups, []string{"mysql"}) {
+		t.Fatalf("folded groups saved as %v", saved.CommandsCollapsedGroups)
+	}
+	state.clickCommandsDrawer(hitCommandsGroupHeading.At(0))
+	if state.commandSections()[0].collapsed {
+		t.Fatal("a second click did not unfold the group")
 	}
 }

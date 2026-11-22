@@ -1891,6 +1891,8 @@ var traditionalTools = ToolsMessages{
 	CommandsPlaceSide:   "側邊",
 	CommandsFilter:      "按分組篩選",
 	CommandsUngrouped:   "未分組",
+	CommandsCollapse:    "摺疊分組",
+	CommandsExpand:      "展開分組",
 	CommandsShowAll:     "全選",
 	CommandsHideAll:     "全不選",
 	CommandsNoGroups:    "暫無分組",

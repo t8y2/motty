@@ -181,6 +181,10 @@ type ToolsMessages struct {
 	CommandsFilter string
 	// CommandsUngrouped is the checkbox for commands with no group in the filter.
 	CommandsUngrouped string
+	// CommandsCollapse and CommandsExpand are the hints of a group's heading in
+	// the bar: it folds the group's commands away, or lists them again.
+	CommandsCollapse string
+	CommandsExpand   string
 	// CommandsShowAll checks every group in the filter; CommandsHideAll clears them.
 	CommandsShowAll string
 	CommandsHideAll string

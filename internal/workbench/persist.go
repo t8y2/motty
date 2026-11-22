@@ -239,7 +239,9 @@ type savedState struct {
 	// also what settings written before the sidebar mean.
 	CommandsSide         bool     `json:"commands_side,omitempty"`
 	CommandsHiddenGroups []string `json:"commands_hidden_groups,omitempty"`
-	CommandsSort         string   `json:"commands_sort,omitempty"`
+	// CommandsCollapsedGroups are the groups folded to their heading in the bar.
+	CommandsCollapsedGroups []string `json:"commands_collapsed_groups,omitempty"`
+	CommandsSort            string   `json:"commands_sort,omitempty"`
 	// CommandsWidth is the width the sidebar was dragged to; zero is the default.
 	CommandsWidth float32 `json:"commands_width,omitempty"`
 }
@@ -694,6 +696,14 @@ func (state *State) snapshot() savedState {
 	for key := range state.commands.hiddenGroups {
 		saved.CommandsHiddenGroups = append(saved.CommandsHiddenGroups, key)
 	}
+	for key, collapsed := range state.commands.collapsedGroups {
+		if collapsed {
+			saved.CommandsCollapsedGroups = append(saved.CommandsCollapsedGroups, key)
+		}
+	}
+	// The map's order is random; a stable list keeps the saved file from
+	// changing when nothing did.
+	slices.Sort(saved.CommandsCollapsedGroups)
 	if state.proxy.kind != sshconn.ProxyNone || state.proxy.bypass != "" {
 		saved.OutboundProxy = &savedOutboundProxy{
 			Kind: proxyKindString(state.proxy.kind), Address: state.proxy.address, User: state.proxy.user, Bypass: state.proxy.bypass,

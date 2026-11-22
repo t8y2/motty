@@ -1891,6 +1891,8 @@ var englishTools = ToolsMessages{
 	CommandsPlaceSide:   "Side",
 	CommandsFilter:      "Filter by group",
 	CommandsUngrouped:   "Ungrouped",
+	CommandsCollapse:    "Collapse group",
+	CommandsExpand:      "Expand group",
 	CommandsShowAll:     "Show all",
 	CommandsHideAll:     "Hide all",
 	CommandsNoGroups:    "No groups yet",
