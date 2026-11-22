@@ -126,16 +126,34 @@ func (state *State) tabDragPointer(event gfx.PointerEvent) (gfx.EventResult, boo
 			event.Target.Scope() == hitTabList {
 			id := layoutcore.WorkspaceID(item(event.Target))
 			if event.ClickCount == 2 {
-				// A double click names the tab in place, as it does on a split
-				// pane's bar below; the first click has already made the tab
-				// the active one. The field's hit is declared by the repaint
-				// this asks for, so focus is handed to it in the same event
-				// rather than requested against a hit that does not exist yet.
-				state.beginTabInline(id)
-				if state.tabInlineActive() {
-					return gfx.EventResult{Handled: true, Repaint: true, Focus: hitTabInline}, true
+				if _, ok := state.workspaceTab(id); !ok {
+					// A stale hit from before the tab closed is nobody's.
+					return gfx.EventResult{}, false
 				}
-				return gfx.EventResult{Repaint: true}, true
+				switch state.tabDoubleClick {
+				case tabDoubleClickRename:
+					// A double click names the tab in place, as it does on a
+					// split pane's bar below; the first click has already made
+					// the tab the active one. The field's hit is declared by the
+					// repaint this asks for, so focus is handed to it in the same
+					// event rather than requested against a hit that does not
+					// exist yet.
+					state.beginTabInline(id)
+					if state.tabInlineActive() {
+						return gfx.EventResult{Handled: true, Repaint: true, Focus: hitTabInline}, true
+					}
+					return gfx.EventResult{Repaint: true}, true
+				case tabDoubleClickNone:
+					return gfx.EventResult{Handled: true}, true
+				default:
+					// The default is a duplicate, the way Xshell and WindTerm
+					// open another session from a tab. The first click has
+					// already made the tab active; this event asks for the copy.
+					if state.duplicateTab(id) {
+						return gfx.EventResult{Handled: true, Repaint: true, Focus: state.activeTerminalFocusHit()}, true
+					}
+					return gfx.EventResult{Handled: true}, true
+				}
 			}
 			for _, tab := range state.workspaceTabs {
 				if tab.ID == id {

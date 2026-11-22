@@ -152,6 +152,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsGeneral, m.SettingsAppearance, "")
 	rowSearch(settingsGeneral, m.SettingsIconColor, m.SettingsIconColorDescription, "logo icon taskbar dock tray")
 	row(settingsGeneral, m.SettingsTabOrientation, m.SettingsTabOrientationDescription)
+	row(settingsGeneral, m.SettingsTabDoubleClick, m.SettingsTabDoubleClickDescription)
 	row(settingsGeneral, m.SettingsTabNumbers, m.SettingsTabNumbersDescription)
 	row(settingsGeneral, m.SettingsTabNumberKeys, m.SettingsTabNumberKeysDescription)
 	row(settingsGeneral, m.SettingsOutputAlerts, m.SettingsOutputAlertsDescription)
