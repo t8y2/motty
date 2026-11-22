@@ -172,6 +172,7 @@ func TestForwardRejectsUnsafeOrInvalidConfiguration(t *testing.T) {
 		{name: "no dialer", config: Config{ListenAddress: "127.0.0.1:0", Destination: "example.com:80"}},
 		{name: "wildcard", config: Config{ListenAddress: "0.0.0.0:8080", Destination: "example.com:80", Dial: (&net.Dialer{}).DialContext}},
 		{name: "hostname listener", config: Config{ListenAddress: "localhost:8080", Destination: "example.com:80", Dial: (&net.Dialer{}).DialContext}},
+		{name: "hostname listener with non-loopback allowed", config: Config{ListenAddress: "localhost:8080", Destination: "example.com:80", AllowNonLoopback: true, Dial: (&net.Dialer{}).DialContext}},
 		{name: "missing destination port", config: Config{ListenAddress: "127.0.0.1:0", Destination: "example.com", Dial: (&net.Dialer{}).DialContext}},
 		{name: "zero destination port", config: Config{ListenAddress: "127.0.0.1:0", Destination: "example.com:0", Dial: (&net.Dialer{}).DialContext}},
 		{name: "SOCKS5 fixed destination", config: Config{ListenAddress: "127.0.0.1:0", Destination: "example.com:80", Mode: ModeSOCKS5, Dial: (&net.Dialer{}).DialContext}},
@@ -188,6 +189,50 @@ func TestForwardRejectsUnsafeOrInvalidConfiguration(t *testing.T) {
 				t.Fatal("invalid configuration was accepted")
 			}
 		})
+	}
+}
+
+func TestForwardAllowsAnExplicitNonLoopbackListener(t *testing.T) {
+	forward, err := Start(Config{
+		ListenAddress: "0.0.0.0:0", Destination: "example.com:80", AllowNonLoopback: true,
+		Dial: (&net.Dialer{}).DialContext,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer forward.Close()
+	host, _, err := net.SplitHostPort(forward.Status().ListenAddress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ip := net.ParseIP(host); ip == nil || !ip.IsUnspecified() {
+		t.Fatalf("listener = %q, want a wildcard address", forward.Status().ListenAddress)
+	}
+}
+
+func TestListenAddressValidation(t *testing.T) {
+	tests := []struct {
+		address          string
+		allowNonLoopback bool
+		wantError        bool
+	}{
+		{address: "127.0.0.1:0"},
+		{address: "127.0.0.2:8080"},
+		{address: "0.0.0.0:8080", wantError: true},
+		{address: "[::]:8080", wantError: true},
+		{address: "192.168.1.100:8080", wantError: true},
+		{address: "localhost:8080", wantError: true},
+		{address: "0.0.0.0:8080", allowNonLoopback: true},
+		{address: "[::]:8080", allowNonLoopback: true},
+		{address: "192.168.1.100:8080", allowNonLoopback: true},
+		{address: "localhost:8080", allowNonLoopback: true, wantError: true},
+		{address: "0.0.0.0", allowNonLoopback: true, wantError: true},
+	}
+	for _, test := range tests {
+		err := validateListenAddress(test.address, test.allowNonLoopback)
+		if (err != nil) != test.wantError {
+			t.Errorf("validateListenAddress(%q, %t) = %v, want error %t", test.address, test.allowNonLoopback, err, test.wantError)
+		}
 	}
 }
 

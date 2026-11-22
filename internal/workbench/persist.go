@@ -203,12 +203,17 @@ type savedState struct {
 	// AgentHosts are the catalog ids of the hosts an agent may use without a
 	// window. AgentHostMode records the last bulk choice and the default for new
 	// hosts. Both belong to this computer, not to the hosts that sync.
-	AgentHosts    []string            `json:"agent_hosts,omitempty"`
-	AgentHostMode string              `json:"agent_host_mode,omitempty"`
-	Forwards      []savedForward      `json:"forwards,omitempty"`
-	Proxies       []savedProxy        `json:"proxies,omitempty"`
-	Sessions      []savedSession      `json:"sessions,omitempty"`
-	Deck          *layoutcore.DeckDTO `json:"deck,omitempty"`
+	AgentHosts    []string       `json:"agent_hosts,omitempty"`
+	AgentHostMode string         `json:"agent_host_mode,omitempty"`
+	Forwards      []savedForward `json:"forwards,omitempty"`
+	// ForwardBindAddresses holds the listener address of forwards whose bind
+	// is not loopback, by forward identity. Opening a listener to a network is
+	// this computer's decision: a forward that arrives through sync keeps the
+	// loopback default until someone chooses an address here.
+	ForwardBindAddresses map[string]string   `json:"forward_bind_addresses,omitempty"`
+	Proxies              []savedProxy        `json:"proxies,omitempty"`
+	Sessions             []savedSession      `json:"sessions,omitempty"`
+	Deck                 *layoutcore.DeckDTO `json:"deck,omitempty"`
 	// An empty array distinguishes a new snapshot with no managed workspaces
 	// from an older snapshot that never recorded workspace identity.
 	WorkspaceLayouts []savedWorkspaceLayout `json:"workspace_layouts,omitzero"`
@@ -767,6 +772,12 @@ func (state *State) snapshot() savedState {
 			DestinationHost: forward.DestinationHost, DestinationPort: forward.DestinationPort,
 			Resume: forward.Resume, AutoStart: forward.AutoStart, ViaShell: forward.ViaShell, Relay: forward.Relay,
 		})
+		if address := bindAddressForSave(strings.TrimSpace(forward.BindAddress)); address != "" {
+			if saved.ForwardBindAddresses == nil {
+				saved.ForwardBindAddresses = make(map[string]string)
+			}
+			saved.ForwardBindAddresses[forwardBindKey(forward)] = address
+		}
 	}
 	for _, route := range state.proxies {
 		target, targetOK := state.hostByID(route.TargetID)
@@ -1356,7 +1367,7 @@ func (state *State) restoreShared(saved savedState) {
 		}
 		state.hostGroups = append(state.hostGroups, hostGroup{Name: name, Expanded: !entry.Collapsed, Explicit: entry.Explicit, Pinned: entry.Pinned, Order: max(0, entry.Order)})
 	}
-	state.restoreForwards(saved.Forwards)
+	state.restoreForwardsWithBindAddresses(saved.Forwards, saved.ForwardBindAddresses)
 	state.restoreProxies(saved.Proxies)
 	if (saved.AIProviders != nil || saved.AICLIProviders != nil) && !state.starting {
 		state.importAIProviderCollections(saved.AIProviders, saved.AICLIProviders)

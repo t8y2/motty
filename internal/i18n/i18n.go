@@ -995,6 +995,9 @@ type Messages struct {
 	ForwardFieldName              string
 	ForwardFieldHost              string
 	ForwardFieldType              string
+	ForwardFieldBindAddress       string
+	ForwardBindPlaceholder        string
+	ForwardBindWarning            string
 	ForwardModeLocal              string
 	ForwardModeRemote             string
 	ForwardModeSOCKS5             string
@@ -1026,6 +1029,7 @@ type Messages struct {
 	ForwardUpdated                string
 	ErrForwardNameRequired        string
 	ErrForwardHostRequired        string
+	ErrForwardBindInvalid         string
 	ErrForwardPortInvalid         string
 	ErrForwardDestinationRequired string
 	ErrForwardNameTaken           string

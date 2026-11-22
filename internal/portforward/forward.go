@@ -35,9 +35,15 @@ type Config struct {
 	Destination   string
 	Mode          Mode
 	MaxStreams    int
-	Listen        ListenFunc
-	Dial          DialFunc
-	Notify        func()
+	// AllowNonLoopback accepts a listen address that is not a loopback IP,
+	// including a wildcard such as 0.0.0.0. Set it only for an address the user
+	// chose on this device; never for a listener this code places by itself, and
+	// never for an address that only arrived from another machine's
+	// configuration.
+	AllowNonLoopback bool
+	Listen           ListenFunc
+	Dial             DialFunc
+	Notify           func()
 }
 
 // Status is a consistent snapshot of a running forward.
@@ -52,7 +58,7 @@ type Status struct {
 	Closed        bool
 }
 
-// Forward owns one loopback listener and the streams accepted from it.
+// Forward owns one TCP listener and the streams accepted from it.
 type Forward struct {
 	listener    net.Listener
 	destination string
@@ -85,20 +91,22 @@ type closeWriter interface {
 	CloseWrite() error
 }
 
-// Start binds a loopback TCP listener and begins forwarding accepted streams.
-// ListenAddress must contain a literal loopback IP, never a wildcard or a host
-// name, so an accidental configuration cannot expose a service. ModeRemote
-// binds through Listen; every other mode binds on the local machine.
+// Start binds a TCP listener and begins forwarding accepted streams.
+// ListenAddress must contain a literal IP address, never a host name, so an
+// accidental configuration cannot expose a service to a name that later
+// resolves somewhere else. Unless AllowNonLoopback is set, the IP must be a
+// loopback address and may not be a wildcard. ModeRemote binds through Listen;
+// every other mode binds on the local machine.
 func Start(config Config) (*Forward, error) {
 	if config.Dial == nil {
 		return nil, errors.New("portforward: no remote dialer")
 	}
-	if err := validateAddress(config.ListenAddress, true); err != nil {
+	if err := validateListenAddress(config.ListenAddress, config.AllowNonLoopback); err != nil {
 		return nil, fmt.Errorf("portforward: listen address: %w", err)
 	}
 	switch config.Mode {
 	case ModeLocal, ModeRemote:
-		if err := validateAddress(config.Destination, false); err != nil {
+		if err := validateDestination(config.Destination); err != nil {
 			return nil, fmt.Errorf("portforward: destination: %w", err)
 		}
 		if config.Mode == ModeRemote && config.Listen == nil {
@@ -364,21 +372,33 @@ func (forward *Forward) wake() {
 	}
 }
 
-func validateAddress(address string, loopback bool) error {
+func validateListenAddress(address string, allowNonLoopback bool) error {
 	host, portText, err := net.SplitHostPort(address)
 	if err != nil || host == "" {
 		return errors.New("expected host:port")
 	}
 	port, err := strconv.Atoi(portText)
-	if err != nil || port < 0 || port > 65535 || !loopback && port == 0 {
-		return errors.New("port must be 1-65535")
-	}
-	if !loopback {
-		return nil
+	if err != nil || port < 0 || port > 65535 {
+		return errors.New("port must be 0-65535")
 	}
 	ip := net.ParseIP(host)
-	if ip == nil || !ip.IsLoopback() {
-		return errors.New("listener must use a literal loopback address")
+	if ip == nil {
+		return errors.New("listener must use a literal IP address")
+	}
+	if !allowNonLoopback && (ip.IsUnspecified() || !ip.IsLoopback()) {
+		return errors.New("listener must use a literal loopback address unless non-loopback listening is allowed")
+	}
+	return nil
+}
+
+func validateDestination(address string) error {
+	host, portText, err := net.SplitHostPort(address)
+	if err != nil || host == "" {
+		return errors.New("expected host:port")
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil || port < 1 || port > 65535 {
+		return errors.New("port must be 1-65535")
 	}
 	return nil
 }

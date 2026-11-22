@@ -193,6 +193,7 @@ var (
 	hitForwardDialogCancel          = tree.ID(forwardsHits, "forward-dialog-cancel")
 	hitForwardDialogSubmit          = tree.ID(forwardsHits, "forward-dialog-submit")
 	hitForwardDialogLabel           = tree.ID(forwardsHits, "forward-dialog-label")
+	hitForwardDialogBindAddress     = tree.ID(forwardsHits, "forward-dialog-bind-address")
 	hitForwardDialogLocalPort       = tree.ID(forwardsHits, "forward-dialog-local-port")
 	hitForwardDialogDestination     = tree.ID(forwardsHits, "forward-dialog-destination")
 	hitForwardDialogDestinationPort = tree.ID(forwardsHits, "forward-dialog-destination-port")
@@ -1538,7 +1539,8 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 			return &state.proxyBatch.query
 		}
 	case modalNewForward:
-		if hit == hitForwardDialogLabel || hit == hitForwardDialogLocalPort || hit == hitForwardDialogDestination || hit == hitForwardDialogDestinationPort {
+		if hit == hitForwardDialogLabel || hit == hitForwardDialogBindAddress || hit == hitForwardDialogLocalPort ||
+			hit == hitForwardDialogDestination || hit == hitForwardDialogDestinationPort {
 			return state.forwardEditor.field(forwardDialogField(hit))
 		}
 		if hit == hitForwardDialogRelay && state.forwardEditor.viaShell {
