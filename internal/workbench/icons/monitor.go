@@ -76,6 +76,22 @@ var Cpu = gfx.Icon{
 	},
 }
 
+// gauge is a compiled vector icon.
+var Gauge = gfx.Icon{
+	ViewBox: 24.0,
+	Stroke:  2.0,
+	Cap:     gfx.CapRound,
+	Join:    gfx.JoinRound,
+	Commands: []gfx.PathCommand{
+		gfx.MoveTo(12.0, 14.0),
+		gfx.LineTo(16.0, 10.0),
+		gfx.MoveTo(3.34, 19.0),
+		gfx.CubicTo(0.913254, 14.7972, 1.85438, 9.45878, 5.57199, 6.33922),
+		gfx.CubicTo(9.2896, 3.21967, 14.7104, 3.21967, 18.428, 6.33922),
+		gfx.CubicTo(22.1456, 9.45878, 23.0867, 14.7972, 20.66, 19.0),
+	},
+}
+
 // memory-stick is a compiled vector icon.
 var MemoryStick = gfx.Icon{
 	ViewBox: 24.0,

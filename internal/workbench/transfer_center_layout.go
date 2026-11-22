@@ -31,17 +31,17 @@ func (state *State) declareTransferCenter(c ui.C) {
 	}
 	height := max(0, min(760, room-2*padding))
 	center.listWidth = max(0, width-2*padding)
-	initialFocus := hitTransfersList
-	if len(center.batch.targets) > 0 {
-		initialFocus = hitTransfersBulkCancel
-	}
 	origin := ui.Slot(c).Absolute().Left(anchor.X).Top(anchor.Y).Width(max(anchor.Width, 1)).Height(max(anchor.Height, 1))
 	spec := ui.PopoverSpec{
-		Scope: hitTransfersScope, DismissID: hitTransfersDismiss, InitialFocusID: initialFocus,
+		Scope: hitTransfersScope, DismissID: hitTransfersDismiss, InitialFocusID: hitTransfersList,
 		Side: side, Align: ui.End, Offset: gap, Width: width,
 	}
-	if ui.PopoverWith(c, origin, spec, &center.open, func() { state.declareTransferBody(c, height) }) {
+	if ui.PopoverWith(c, origin, &center.open, spec, func() { state.declareTransferBody(c, height) }) {
 		center.close()
+		return
+	}
+	if len(center.batch.targets) > 0 {
+		state.declareTransferBatchDialog(c, &center.batch, hitTransfersBulkCancel, hitTransfersBulkConfirm)
 	}
 }
 
@@ -59,10 +59,6 @@ func (state *State) declareTransferBody(c ui.C, height float32) {
 			}
 			state.declareIconButton(c, hitTransfersClose, iconClose, m.Close, false, iconButtonQuiet).Size(28, 28)
 		})
-		if len(center.batch.targets) > 0 {
-			state.declareTransferBatchBody(c)
-			return
-		}
 		state.declareTransferOverview(c, width)
 		ui.Column(c).FillWidth().Shrink(0).Gap(4).Children(func() {
 			ui.Row(c).Height(29).FillWidth().Gap(4).Items(ui.Center).Children(func() {
@@ -145,8 +141,9 @@ func (state *State) declareTransferTab(c ui.C, index int, label string) {
 			Role: gfx.RoleTab, Selected: selected, Value: center.groups[index].count,
 		}).Children(func() {
 		ui.Text(c, label).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(ink).MinWidth(0).Ellipsis()
-		ui.Row(c).PadX(5).Height(17).Center().Shrink(0).Radius(8.5).Background(withAlpha(ink, 0.13)).Children(func() {
-			ui.Text(c, center.groups[index].count).FontSize(metrics.FontSizeS - 1).Color(ink)
+		ui.Badge(c, center.groups[index].count).Height(17).PadX(5).PadY(0).Items(ui.Center).Shrink(0).Radius(8.5).
+			Background(withAlpha(ink, 0.13)).Children(func() {
+			ui.Text(c, center.groups[index].count).FontSize(metrics.FontSizeS - 1).Weight(gfx.WeightRegular).Color(ink)
 		})
 	})
 }
@@ -251,10 +248,6 @@ func (state *State) paintTransferCenterBody(d *ui.DrawContext) {
 	center, theme := &state.transfers, *d.Theme
 	pad := theme.Metrics.PadSurface
 	center.surface = gfx.Rect{X: d.Rect.X - pad, Y: d.Rect.Y - pad, Width: d.Rect.Width + 2*pad, Height: d.Rect.Height + 2*pad}
-	if len(center.batch.targets) > 0 {
-		center.list = gfx.Rect{}
-		return
-	}
 	center.list = center.body.list.Rect()
 	if scroll := center.listBox.ScrollState(); scroll != nil {
 		// The List owns its offset while the user moves it; adopt that offset so

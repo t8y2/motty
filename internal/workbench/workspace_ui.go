@@ -26,9 +26,6 @@ type paneSplitterUI struct {
 }
 
 func (state *State) baseWorkspacePixelBounds(size gfx.Size) gfx.Rect {
-	// The bottom command drawer is already reserved by fullWorkspacePixelBounds,
-	// which toolbarDockContentBounds derives from, so the drawer strip sits clear
-	// of every panel derived from this base.
 	return state.toolbarDockContentBounds(size, true)
 }
 
@@ -65,11 +62,7 @@ func (state *State) toolbarDockFrame(size gfx.Size, includeTerminal bool) gfx.Re
 func (state *State) fullWorkspacePixelBounds(size gfx.Size) gfx.Rect {
 	left := state.verticalTabsReserve(size)
 	bounds := gfx.Rect{X: left, Y: windowBarHeight, Width: max(size.Width-left, 0), Height: max(size.Height-windowBarHeight, 0)}
-	// The bottom command drawer lives in the content area's lowest strip, so the
-	// workspace root accounts for it; every derived panel then sits above it.
-	if reserve := state.commandsDrawerHeight(); reserve > 0 {
-		bounds.Height = max(0, bounds.Height-reserve)
-	}
+	bounds.Width = max(0, bounds.Width-state.commandsSidebarBounds(size).Width)
 	return bounds
 }
 

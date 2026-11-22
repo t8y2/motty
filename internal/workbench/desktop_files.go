@@ -10,6 +10,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 
 	"motty/internal/desktop"
 )
@@ -34,6 +35,12 @@ type desktopFiles struct {
 	// shortcut pastes those. pasteAfter says a paste was asked for while the files
 	// were still being offered, and goes to the remote once they are.
 	dropped, pasteAfter bool
+
+	// receiving is how far the files the remote copied have been saved, while
+	// isReceiving; receiveText is its card's byte line.
+	receiving   desktop.FileProgress
+	isReceiving bool
+	receiveText transferText
 
 	mu      sync.Mutex
 	running bool
@@ -97,6 +104,9 @@ func (state *State) syncClipboardFiles(view *desktopView) bool {
 		return true
 	}
 	view.files.sentKey, view.files.dropped = key, false
+	// The files replace what the remote clipboard held, so the next text or
+	// picture is offered again even when it is the same as before the files.
+	view.sentClip, view.sentImage = "", imageDigest{}
 	state.offerDesktopFiles(view, fileOfferRequest{paths: paths, key: key})
 	return true
 }
@@ -113,6 +123,12 @@ func (state *State) dropDesktopFiles(view *desktopView, paths []string) {
 		view.files.sentKey = filesKey(copied)
 	} else {
 		view.files.sentKey = ""
+	}
+	// A picture the clipboard holds is taken as already seen too: the text path
+	// above remembers the clipboard's words, but a clipboard of a picture and no
+	// words has none to remember.
+	if view.sentClip == "" {
+		_, view.sentImage, _ = state.clipboardImage()
 	}
 	view.files.dropped = false
 	// No key: what the clipboard sync last saw stays what it saw, so a click does
@@ -253,6 +269,55 @@ func (state *State) finishFileOffers(view *desktopView) {
 			view.pasteChord()
 		}
 	}
+}
+
+// receivingFiles reports whether the session is saving files its remote copied,
+// which a progress card shows.
+func (view *desktopView) receivingFiles() bool {
+	return view != nil && !view.ended && view.files.isReceiving
+}
+
+// pumpReceivingFiles reads how far the files the remote copied have been saved.
+func (state *State) pumpReceivingFiles(view *desktopView, receiver desktop.FileReceiver) {
+	progress, ok := receiver.ReceivingFiles()
+	files := &view.files
+	if ok == files.isReceiving && progress == files.receiving {
+		return
+	}
+	files.receiving, files.isReceiving = progress, ok
+	state.reportTransferProgress()
+}
+
+// declareDesktopReceiveCard is the progress card of files the remote copied
+// that are being saved here, before they are put on this computer's clipboard.
+func (state *State) declareDesktopReceiveCard(c ui.C, session *Session, slot int) {
+	files := &session.desk.files
+	progress := files.receiving
+	state.declareProgressCard(c, slot, progressCard{
+		title: state.messages.Tools.TransferReceiveTitle, address: session.Address, name: progress.Name,
+		line: files.receiveText.format(progress.Done, progress.Size), fraction: progressFraction(progress.Done, progress.Size),
+		cancel: hitDesktopReceiveCancelFor.At(int(session.ID)),
+	})
+}
+
+// clickDesktopReceiveCancel is the cancel of that card: the files are not saved
+// and this computer's clipboard keeps what it held.
+func (state *State) clickDesktopReceiveCancel(id gfx.ID) bool {
+	n, ok := id.In(hitDesktopReceiveCancelFor)
+	if !ok || n <= 0 {
+		return false
+	}
+	session, ok := state.sessionByIDPointer(uint32(n))
+	if !ok || !session.desk.receivingFiles() {
+		return true
+	}
+	if receiver, ok := session.desk.session.(desktop.FileReceiver); ok {
+		receiver.CancelReceivingFiles()
+	}
+	session.desk.files.isReceiving = false
+	state.status = state.messages.Tools.TransferCancelled
+	state.reportTransferProgress()
+	return true
 }
 
 // receiveDesktopFiles puts files the remote copied on this computer's

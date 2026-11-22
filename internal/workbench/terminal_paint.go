@@ -120,7 +120,7 @@ func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools
 	tools = append(tools, barTool{id: hitTerminalRecord, icon: recordIcon, hint: recordHint, disabled: session.term.shell == nil, style: recordStyle})
 	tools = append(tools, barTool{id: hitTerminalSaveOutput, icon: iconSave, hint: state.messages.Tools.MenuSaveOutput, style: iconButtonQuiet})
 	if hint, style, offered := state.remoteStatsToggle(session); offered {
-		tools = append(tools, barTool{id: hitRemoteStats, icon: iconActivity, hint: hint, style: style})
+		tools = append(tools, barTool{id: hitRemoteStats, icon: iconGauge, hint: hint, style: style})
 	}
 	tools = append(tools, barTool{id: hitProcessToolsOpen, icon: iconProcess, hint: state.messages.Tools.RemoteMenu, disabled: !state.remoteToolsOffered(session), style: iconButtonQuiet})
 	if tool, ok := state.serverLogsRailTool(session, true); ok {
@@ -517,6 +517,7 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 	}
 	canvas.Clip(geometry.area)
 	t.cache.begin()
+	t.prepareLogicalLines()
 	if cap(t.rowIDs) < rows {
 		t.rowIDs = make([]uint64, rows)
 	} else {
@@ -535,7 +536,7 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 		}
 		line := t.presentedRow(row)
 		t.rowIDs[row] = line.ID
-		entry := t.cache.row(line, cols, column, coveredOn(covered, row == cursor.Y), pal, inactive)
+		entry := t.cache.rowWithLogical(line, cols, column, coveredOn(covered, row == cursor.Y), pal, inactive, t.presentedLogicalLine(row), t.logicalView[row].suppressed)
 		y := geometry.top + float32(row)*cellHeight
 		for _, span := range entry.spans {
 			from := snap(geometry.left + float32(span.from)*cellWidth)
@@ -560,7 +561,7 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 		if block && row == cursor.Y {
 			column = caretX
 		}
-		entry := t.cache.row(t.presentedRow(row), cols, column, coveredOn(covered, row == cursor.Y), pal, inactive)
+		entry := t.cache.rowWithLogical(t.presentedRow(row), cols, column, coveredOn(covered, row == cursor.Y), pal, inactive, t.presentedLogicalLine(row), t.logicalView[row].suppressed)
 		y := geometry.top + float32(row)*cellHeight
 		if from, to, selected := t.selection.span(t.screen.LineNumber(row), t.presentedRow(row), cols); selected {
 			left := snap(geometry.left + float32(from)*cellWidth)
@@ -656,9 +657,7 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 	// need the terminal itself focused.
 	suggesting := focused || state.ghostMenu.open && state.ghostMenu.session == session.ID
 	if !sensitive && suggesting && !composing && !predicting && t.sync == nil {
-		if rest, ok := state.passwordHintGhost(session); ok {
-			state.paintGhost(canvas, t, geometry, cursor, rest, block)
-		} else if rest, ok := state.commandGhost(session); ok {
+		if rest, ok := state.commandGhost(session); ok {
 			if used, limit, painted := state.paintGhost(canvas, t, geometry, cursor, rest, block); painted {
 				hintRect, hintShown = state.paintGhostHint(canvas, session, geometry, cursor, used, limit)
 			}

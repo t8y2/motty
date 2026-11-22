@@ -268,7 +268,7 @@ func (state *State) declareFindPreference(c ui.C, which findPreference) ui.Box {
 			v.originChoice = state.terminalFindPrefs.Origin
 		}
 		origins := terminalFindOrigins[:]
-		selector := ui.Select(c, &v.originChoice, origins, state.findOriginLabel).Label(m.Origin).Hit(hitFindSettingsOrigin, m.Origin).Grow(1)
+		selector := ui.Select(c, &v.originChoice, origins, state.findOriginLabel).Label(m.Origin).Grow(1)
 		if selector.Changed() {
 			origin := v.originChoice
 			c.After(func() {
@@ -311,11 +311,11 @@ func (state *State) declareFindSettingsPopover(c ui.C, anchor ui.Box) {
 	if !v.open || !state.findSettingsOnBar() {
 		return
 	}
-	dismissed := ui.PopoverWith(c, anchor, ui.PopoverSpec{
+	dismissed := ui.PopoverWith(c, anchor, &v.open, ui.PopoverSpec{
 		Scope: hitFindSettingsDismiss, DismissID: hitFindSettingsDismiss,
 		Align: ui.End, Offset: 6, Width: 370, Title: m.Title,
 		ConsumeOutsidePress: true,
-	}, &v.open, func() {
+	}, func() {
 		for _, setting := range [...]struct {
 			which findPreference
 			label string

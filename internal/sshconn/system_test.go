@@ -64,6 +64,8 @@ func TestRemoteSystemClassification(t *testing.T) {
 		{"kernel=Linux\nid=azurelinux\n", SystemAzureLinux},
 		{"kernel=Linux\nid=mariner\n", SystemAzureLinux},
 		{"kernel=Linux\nid=ol\n", SystemOracleLinux},
+		{"kernel=Linux\nid=alinux\n", SystemAlibabaCloudLinux},
+		{"kernel=Linux\nid=aliyun\n", SystemAlibabaCloudLinux},
 		{"kernel=Linux\nmarker=/etc.defaults/VERSION\n", SystemSynology},
 		{"kernel=Linux\nmarker=/etc/config/uLinux.conf\n", SystemQNAP},
 		{"kernel=Linux\nmarker=/etc/unraid-version\n", SystemUnraid},

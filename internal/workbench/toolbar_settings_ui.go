@@ -21,6 +21,12 @@ var (
 	hitToolbarHandles         = tree.Sub(toolbarSettingsHits, tree.Name("handle"))
 )
 
+const (
+	toolbarEntryCardHeight = float32(44)
+	toolbarEntryGap        = float32(4)
+	toolbarEntryHeight     = toolbarEntryCardHeight + toolbarEntryGap
+)
+
 type toolbarSettingsUI struct {
 	group toolbarGroup
 	// rows is the entries' list: its rows are dragged, or moved with Alt and the
@@ -277,7 +283,7 @@ func (state *State) declareToolbarSettings(c ui.C) {
 	}
 	editor, m := &state.toolbarEditor, state.messages.Toolbars
 	entries := state.toolbars.entries(editor.group)
-	listHeight := float32(len(entries))*48 - 4
+	listHeight := float32(len(entries)) * toolbarEntryHeight
 	editor.controlsHeight = 0
 	if editor.group == toolbarTerminal {
 		editor.controlsHeight = 48
@@ -336,24 +342,28 @@ func (state *State) declareToolbarEntry(row ui.ListRow) {
 	if !entry.Enabled {
 		color = theme.MutedForeground
 	}
-	row.Element.Height(44).MarginBottom(4).PadSides(0, 7, 0, 3).Gap(8).Items(ui.Center).
-		Radius(theme.Metrics.RadiusControl).Border(1, theme.Border).Background(theme.Background).Children(func() {
-		// The handle is named by its row: the list starts a drag from the handle
-		// the row's index names (ListState.Handle).
-		reorderHandle(c, hitToolbarHandles.At(row.Index), label, false, 44)
-		ui.Row(c).Grow(1).Gap(10).Items(ui.Center).Children(func() {
-			ui.Icon(c, lucideIcons[spec.icon]).Size(18, 18).Color(color).Shrink(0)
-			ui.Text(c, label).FontSize(theme.Metrics.FontSizeM).Color(color).Ellipsis().Grow(1)
-			if editor.group <= toolbarTerminal {
-				zone := state.toolbarDockZoneLabel(state.toolbarDockZoneFor(editor.group, entry.Key))
-				ui.Button(c, zone).Hit(hitToolbarPositions.At(index), zone).Outline().Shrink(0)
-			}
-			checked := entry.Enabled
-			if editor.group == toolbarTerminal && entry.Key == "latency" {
-				// This switch is the same preference as Settings > Show latency.
-				checked = state.terminalShowLatency
-			}
-			ui.Switch(c, state.pageFlag(checked), "").Hit(hitToolbarToggles.At(index), label).Shrink(0)
+	// The List measures the element it declares. Give it the card and the gap as
+	// one row so scrolling reaches the card's whole height at the end.
+	row.Element.Height(toolbarEntryHeight).Children(func() {
+		ui.Row(c).FillWidth().Height(toolbarEntryCardHeight).MarginBottom(toolbarEntryGap).PadSides(0, 7, 0, 3).Gap(8).Items(ui.Center).
+			Radius(theme.Metrics.RadiusControl).Border(1, theme.Border).Background(theme.Background).Children(func() {
+			// The handle is named by its row: the list starts a drag from the handle
+			// the row's index names (ListState.Handle).
+			reorderHandle(c, hitToolbarHandles.At(row.Index), label, false, toolbarEntryCardHeight)
+			ui.Row(c).Grow(1).Gap(10).Items(ui.Center).Children(func() {
+				ui.Icon(c, lucideIcons[spec.icon]).Size(18, 18).Color(color).Shrink(0)
+				ui.Text(c, label).FontSize(theme.Metrics.FontSizeM).Color(color).Ellipsis().Grow(1)
+				if editor.group <= toolbarTerminal {
+					zone := state.toolbarDockZoneLabel(state.toolbarDockZoneFor(editor.group, entry.Key))
+					ui.Button(c, zone).Hit(hitToolbarPositions.At(index), zone).Outline().Shrink(0)
+				}
+				checked := entry.Enabled
+				if editor.group == toolbarTerminal && entry.Key == "latency" {
+					// This switch is the same preference as Settings > Show latency.
+					checked = state.terminalShowLatency
+				}
+				ui.Switch(c, state.pageFlag(checked), "").Hit(hitToolbarToggles.At(index), label).Shrink(0)
+			})
 		})
 	})
 }

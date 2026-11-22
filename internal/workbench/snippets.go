@@ -11,6 +11,7 @@ import (
 	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/configstore"
 	"motty/internal/term"
 )
 
@@ -38,9 +39,13 @@ const (
 	// working set: users migrating from other tools arrive with hundreds of
 	// commands (#211), and a list of this size costs the page's table and
 	// the command palette nothing noticeable.
-	maxSnippets       = 512
-	maxSnippetName    = 80
-	maxSnippetCommand = 4096
+	maxSnippets    = 512
+	maxSnippetName = 80
+	// maxSnippetCommand bounds one command. A snippet is one configstore record,
+	// and the store refuses a payload over its MaxPayload; the editor accepts up
+	// to this and submitSnippet refuses a command whose record would not fit
+	// instead of cutting it. A long script or README must round-trip whole.
+	maxSnippetCommand = configstore.MaxPayload
 )
 
 // snippetsHits is the place of the controls this file paints.
@@ -212,19 +217,27 @@ func cleanSnippetText(value string, limit int) string {
 	return strings.TrimSpace(cleanSnippetLine(value, limit))
 }
 
-// cleanSnippetCommand is cleanSnippetText for a command, which keeps its
+// sanitizeSnippetCommand makes what was typed safe to send: CRLF and lone CR
+// become the newline the editor shows, and a control character is dropped
+// because sending it would be a key the user never meant. It keeps the
 // surrounding space: "cd " or "ssh " is sent to be finished by hand, and a
-// leading space keeps a command out of the shell's history. A command of nothing
-// but space is empty.
-func cleanSnippetCommand(value string, limit int) string {
+// leading space keeps a command out of the shell's history.
+func sanitizeSnippetCommand(value string) string {
 	value = strings.ReplaceAll(strings.ReplaceAll(value, "\r\n", "\n"), "\r", "\n")
-	value = strings.Map(func(character rune) rune {
+	return strings.Map(func(character rune) rune {
 		if character < 0x20 && character != '\n' || character == 0x7f {
 			return -1
 		}
 		return character
 	}, value)
-	if len(value) > limit {
+}
+
+// cleanSnippetCommand is sanitizeSnippetCommand with a damaged or old state
+// file's oversized command bounded to limit, so one bad record cannot make the
+// editor or the next save carry an arbitrarily large string.
+func cleanSnippetCommand(value string, limit int) string {
+	value = sanitizeSnippetCommand(value)
+	if limit > 0 && len(value) > limit {
 		value = strings.ToValidUTF8(value[:limit], "")
 	}
 	if strings.TrimSpace(value) == "" {
@@ -398,6 +411,15 @@ func (form *snippetsUI) abandonOther(target gfx.ID) {
 	}
 }
 
+// snippetOrder is the place the edited snippet occupies, or the place a new one
+// would take. It is part of the record the save measures.
+func (form *snippetsUI) snippetOrder() int {
+	if form.editing >= 0 && form.editing < len(form.list) {
+		return form.editing
+	}
+	return len(form.list)
+}
+
 func (state *State) submitSnippet() {
 	form, m := &state.snippets, state.messages.Tools
 	if form.composing() || !state.commitSnippetGroupQuery() {
@@ -406,7 +428,7 @@ func (state *State) submitSnippet() {
 	entry := snippet{
 		Group:    cleanSnippetGroup(form.groupPicker.Value()),
 		Name:     cleanSnippetText(form.name.String(), maxSnippetName),
-		Command:  cleanSnippetCommand(form.command.String(), maxSnippetCommand),
+		Command:  sanitizeSnippetCommand(form.command.String()),
 		Run:      form.run,
 		Shortcut: form.shortcut,
 	}
@@ -414,8 +436,11 @@ func (state *State) submitSnippet() {
 	case entry.Name == "":
 		form.dialogError = m.SnippetErrorName
 		return
-	case entry.Command == "":
+	case strings.TrimSpace(entry.Command) == "":
 		form.dialogError = m.SnippetErrorCommand
+		return
+	case len(entry.Command) > maxSnippetCommand || !snippetRecordFits(entry, form.snippetOrder()):
+		form.dialogError = m.SnippetErrorTooLong
 		return
 	}
 	if form.editing >= 0 && form.editing < len(form.list) {
@@ -623,6 +648,10 @@ func (state *State) sendSnippetPicked(index int, session *Session) {
 	if state.sendResolvedSnippet(entry, entry.Command, session) {
 		state.ActivatePane(session.ID)
 		state.activeSection = sectionTerminal
+		// The page had the keyboard, and the page is what the click was on. The
+		// terminal is now on screen, so ask the next paint for its keyboard;
+		// otherwise the command arrives but typing goes nowhere until a click.
+		state.returnKeyboardToTerminal()
 	}
 }
 
@@ -673,7 +702,8 @@ func (state *State) declareSnippetDialog(c ui.C) {
 		title = m.SnippetDialogEditTitle
 	}
 	viewport := dialogViewport(c)
-	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 560, "", withError(350, form.dialogError))
+	// The name row, then the command box and the rows under it.
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 560, "", withError(282+dialogRowHeight(c.Theme()), form.dialogError))
 	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: title, Width: 560, Height: height, Layer: dialogLayer,
@@ -701,7 +731,7 @@ func (state *State) declareSnippetDialogBody(c ui.C) {
 			form.nameBound = true
 		}
 		form.nameText.Invalid = form.dialogError != ""
-		ui.FormField(c, &form.nameForm, m.SnippetName).FillWidth().Height(62).MarginSides(0, 0, 6, 0).Children(func() {
+		ui.FormField(c, &form.nameForm, m.SnippetName).FillWidth().Height(dialogRowHeight(c.Theme())).Children(func() {
 			ui.TextFieldID(c, hitSnippetName, &form.nameText, m.SnippetName, m.SnippetNamePlaceholder)
 		})
 		ui.Column(c).Height(140).MarginSides(0, 0, 6, 0).Children(func() {

@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 
 	"motty/internal/portforward"
@@ -16,6 +17,36 @@ import (
 
 // ErrBrowserNotFound means no supported browser executable was found.
 var ErrBrowserNotFound = errors.New("Chrome, Edge or Chromium was not found")
+
+// Family names the browser the tunnel browser launches. The values are written
+// to the state file, so they never change.
+type Family string
+
+const (
+	FamilyAuto     Family = ""
+	FamilyChrome   Family = "chrome"
+	FamilyEdge     Family = "edge"
+	FamilyChromium Family = "chromium"
+)
+
+// Families lists every family the setting offers, in the order it lists them.
+var Families = [...]Family{FamilyAuto, FamilyChrome, FamilyEdge, FamilyChromium}
+
+// ParseFamily makes a saved value a family this build knows. A value from
+// another version falls back to the automatic choice rather than leaving the
+// tab unable to open any browser.
+func ParseFamily(value string) Family {
+	switch family := Family(strings.TrimSpace(value)); family {
+	case FamilyChrome, FamilyEdge, FamilyChromium:
+		return family
+	}
+	return FamilyAuto
+}
+
+// known reports whether this build can look for the family.
+func (family Family) known() bool {
+	return family == FamilyChrome || family == FamilyEdge || family == FamilyChromium
+}
 
 // Browser owns a local browser process and its loopback proxy.
 type Browser struct {
@@ -25,10 +56,11 @@ type Browser struct {
 	stop    sync.Once
 }
 
-// Start opens a new private browser window. The browser uses its own profile
-// and proxy, so other browser windows are unaffected.
-func Start(dial portforward.DialFunc) (*Browser, error) {
-	path, err := findBrowser()
+// Start opens a new private browser window of the given family. The browser
+// uses its own profile and proxy, so other browser windows are unaffected.
+// FamilyAuto takes the first browser installed in the usual order.
+func Start(dial portforward.DialFunc, family Family) (*Browser, error) {
+	path, err := findBrowser(family)
 	if err != nil {
 		return nil, err
 	}
@@ -102,36 +134,105 @@ func (browser *Browser) Close() {
 	})
 }
 
-func findBrowser() (string, error) {
-	var names, paths []string
-	switch runtime.GOOS {
-	case "windows":
-		names = []string{"chrome.exe", "msedge.exe", "chromium.exe"}
-		for _, root := range []string{"LOCALAPPDATA", "ProgramW6432", "ProgramFiles", "ProgramFiles(x86)"} {
-			if dir := os.Getenv(root); filepath.IsAbs(dir) {
-				paths = append(paths,
-					filepath.Join(dir, "Google", "Chrome", "Application", "chrome.exe"),
-					filepath.Join(dir, "Microsoft", "Edge", "Application", "msedge.exe"),
-					filepath.Join(dir, "Chromium", "Application", "chrome.exe"),
-				)
-			}
-		}
-	case "darwin":
-		for _, root := range []string{"/Applications", filepath.Join(os.Getenv("HOME"), "Applications")} {
-			if !filepath.IsAbs(root) {
-				continue
-			}
-			for _, name := range []string{"Google Chrome", "Microsoft Edge", "Chromium"} {
-				paths = append(paths, filepath.Join(root, name+".app", "Contents", "MacOS", name))
-			}
-		}
-	default:
-		names = []string{"google-chrome", "google-chrome-stable", "microsoft-edge", "microsoft-edge-stable", "chromium", "chromium-browser"}
+// browserCandidate is one place a family may be installed: an absolute
+// location, or a name to look for on PATH.
+type browserCandidate struct {
+	family Family
+	path   string
+	name   string
+}
+
+func findBrowser(family Family) (string, error) {
+	return findBrowserWith(family, exec.LookPath)
+}
+
+// findBrowserWith takes the lookPath seam the tests replace, so they can prove
+// a chosen family never falls back to another browser.
+func findBrowserWith(family Family, lookPath func(string) (string, error)) (string, error) {
+	wanted := func(candidate browserCandidate) bool {
+		return !family.known() || candidate.family == family
 	}
-	for _, path := range append(paths, names...) {
-		if executable, err := exec.LookPath(path); err == nil {
+	// Install locations are tried before PATH names, and the automatic choice
+	// keeps the order it has always had: Chrome, then Edge, then Chromium.
+	for _, candidate := range installCandidates() {
+		if !wanted(candidate) {
+			continue
+		}
+		if executable, err := lookPath(candidate.path); err == nil {
+			return executable, nil
+		}
+	}
+	for _, candidate := range pathCandidates() {
+		if !wanted(candidate) {
+			continue
+		}
+		if executable, err := lookPath(candidate.name); err == nil {
 			return executable, nil
 		}
 	}
 	return "", ErrBrowserNotFound
+}
+
+func installCandidates() []browserCandidate {
+	switch runtime.GOOS {
+	case "windows":
+		var candidates []browserCandidate
+		for _, root := range []string{"LOCALAPPDATA", "ProgramW6432", "ProgramFiles", "ProgramFiles(x86)"} {
+			dir := os.Getenv(root)
+			if !filepath.IsAbs(dir) {
+				continue
+			}
+			candidates = append(candidates,
+				browserCandidate{family: FamilyChrome, path: filepath.Join(dir, "Google", "Chrome", "Application", "chrome.exe")},
+				browserCandidate{family: FamilyEdge, path: filepath.Join(dir, "Microsoft", "Edge", "Application", "msedge.exe")},
+				browserCandidate{family: FamilyChromium, path: filepath.Join(dir, "Chromium", "Application", "chrome.exe")},
+			)
+		}
+		return candidates
+	case "darwin":
+		var candidates []browserCandidate
+		for _, root := range []string{"/Applications", filepath.Join(os.Getenv("HOME"), "Applications")} {
+			if !filepath.IsAbs(root) {
+				continue
+			}
+			for _, browser := range []struct {
+				family Family
+				name   string
+			}{
+				{family: FamilyChrome, name: "Google Chrome"},
+				{family: FamilyEdge, name: "Microsoft Edge"},
+				{family: FamilyChromium, name: "Chromium"},
+			} {
+				candidates = append(candidates, browserCandidate{
+					family: browser.family,
+					path:   filepath.Join(root, browser.name+".app", "Contents", "MacOS", browser.name),
+				})
+			}
+		}
+		return candidates
+	default:
+		return nil
+	}
+}
+
+func pathCandidates() []browserCandidate {
+	switch runtime.GOOS {
+	case "windows":
+		return []browserCandidate{
+			{family: FamilyChrome, name: "chrome.exe"},
+			{family: FamilyEdge, name: "msedge.exe"},
+			{family: FamilyChromium, name: "chromium.exe"},
+		}
+	case "darwin":
+		return nil
+	default:
+		return []browserCandidate{
+			{family: FamilyChrome, name: "google-chrome"},
+			{family: FamilyChrome, name: "google-chrome-stable"},
+			{family: FamilyEdge, name: "microsoft-edge"},
+			{family: FamilyEdge, name: "microsoft-edge-stable"},
+			{family: FamilyChromium, name: "chromium"},
+			{family: FamilyChromium, name: "chromium-browser"},
+		}
+	}
 }

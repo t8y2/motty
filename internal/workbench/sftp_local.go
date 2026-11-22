@@ -503,9 +503,15 @@ func (state *State) downloadHere(view *sftpView) {
 	if view.lfolder.path == "" {
 		return
 	}
-	for _, row := range selectedSFTPRows(view) {
-		state.queueSFTPDownload(view, row.entry, filepath.Join(view.lfolder.path, safeLocalName(row.entry.Name)))
+	selected := selectedSFTPRows(view)
+	requests := make([]sftpDownloadRequest, 0, len(selected))
+	for _, row := range selected {
+		requests = append(requests, sftpDownloadRequest{
+			view: view, remoteDir: view.path, entry: row.entry,
+			localPath: filepath.Join(view.lfolder.path, safeLocalName(row.entry.Name)),
+		})
 	}
+	state.queueSFTPDownloads(view, requests)
 }
 
 // submitLocalDirectory makes a folder in the local folder on show.

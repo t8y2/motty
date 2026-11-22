@@ -1,12 +1,27 @@
 package workbench
 
 import (
-	"time"
-
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 )
+
+func (state *State) monitorCurrentSSHUser(session *Session) string {
+	if session == nil || session.isLocal() || !session.host.isSSH() || session.phase != sshconn.PhaseConnected || session.role != sshconn.EndpointTarget || state.hostPrivacy.userHidden() {
+		return ""
+	}
+	if session.stats != nil {
+		panel := &session.stats.panel
+		if panel.haveDetails && !panel.detailsFailed && panel.data.LoginsAvailable {
+			for _, login := range panel.data.Logins {
+				if login.User == session.endpoint.User {
+					return ""
+				}
+			}
+		}
+	}
+	return session.endpoint.User
+}
 
 // Use the configured name and address, and the account of the target connection.
 // While connecting through a jump host, its endpoint must not name this host.
@@ -24,36 +39,20 @@ func (state *State) monitorHostInfo(session *Session) [3]string {
 	return fields
 }
 
-func (state *State) paintMonitorHostInfo(canvas *gfx.Canvas, b gfx.Rect, session *Session) {
+func (state *State) paintHostInfoText(canvas *gfx.Canvas, b gfx.Rect, session *Session) {
 	if b.Width <= 0 || b.Height <= 0 || session == nil {
 		return
 	}
 	colors := state.monitorColors()
-	b.Height = max(b.Height-2, 0)
-	canvas.RoundedBorder(b, 10, 1, colors.border, colors.surface)
-	b = b.Inset(gfx.Insets{Left: 10, Right: 10, Top: 6, Bottom: 6})
-	if b.Width <= 0 || b.Height <= 0 {
-		return
-	}
 	fields := state.monitorHostInfo(session)
 	ids := [3]gfx.ID{hitMonitorHostName, hitMonitorHostAddress, hitMonitorHostUser}
 	hidden := [3]bool{state.hostPrivacy.nameHidden(), state.hostPrivacy.addressHidden(), state.hostPrivacy.userHidden()}
 	m := state.messages.Tools
 	labels := [3]string{m.HostPrivacyName, m.HostPrivacyAddress, m.HostPrivacyUser}
 	style := gfx.TextStyle{Size: 11, Color: colors.muted}
-	feedbackWidth := float32(0)
-	if session.stats != nil && !hidden[1] && session.stats.panel.copiedAddress == session.host.Address {
-		if left := session.stats.panel.addressCopiedUntil - state.now(); left > 0 {
-			feedbackWidth = canvas.TextWidthStyle(state.messages.Monitor.AddressCopied, style)
-			canvas.RequestFrameIn(left)
-		}
-	}
 	const separator = " · "
 	separatorWidth := canvas.TextWidthStyle(separator, style)
 	available := max(b.Width-2*separatorWidth, 0)
-	if feedbackWidth > 0 {
-		available = max(available-feedbackWidth-4, 0)
-	}
 	var widths [3]float32
 	for i, value := range fields {
 		widths[i] = canvas.TextWidthStyle(value, style) + 1
@@ -62,8 +61,13 @@ func (state *State) paintMonitorHostInfo(canvas *gfx.Canvas, b gfx.Rect, session
 		} else if i == 1 && session.host.Address != "" {
 			widths[i] += 8 // horizontal padding for the copy button
 		}
+		if widths[i] > b.Width {
+			widths[i] = b.Width
+		}
 	}
-	if widths[0]+widths[1]+widths[2] > available {
+	if available <= 0 {
+		widths = [3]float32{}
+	} else if widths[0]+widths[1]+widths[2] > available {
 		// Keep the address and account readable before assigning space to the name.
 		address := min(widths[1], available*.5)
 		user := min(widths[2], available*.25)
@@ -72,13 +76,8 @@ func (state *State) paintMonitorHostInfo(canvas *gfx.Canvas, b gfx.Rect, session
 		address += min(max(widths[1]-address, 0), spare)
 		user += min(max(widths[2]-user, 0), max(available-name-address-user, 0))
 		widths = [3]float32{name, address, user}
-	}
-	feedbackShown := false
-	if feedbackWidth > 0 && widths[1] > 0 {
-		room := max(b.Width-widths[0]-widths[1]-widths[2]-2*separatorWidth, 0)
-		if add := min(feedbackWidth+4, room); add == feedbackWidth+4 {
-			widths[1] += add
-			feedbackShown = true
+		if name <= 0 {
+			widths = [3]float32{}
 		}
 	}
 	for i, value := range fields {
@@ -97,21 +96,11 @@ func (state *State) paintMonitorHostInfo(canvas *gfx.Canvas, b gfx.Rect, session
 						background = state.pal.surfaceSoft
 						canvas.Rounded(bounds, 4, background)
 					}
-					if feedbackShown {
-						background = withAlpha(state.pal.success, 0.12)
-						canvas.Rounded(bounds, 4, background)
-					}
 					if canvas.FocusVisible() == ids[i] {
 						canvas.RoundedBorder(bounds, 4, 1, colors.cpu, background)
 					}
 					textBounds = bounds.Inset(gfx.Insets{Left: 4, Right: 4})
 					color = colors.cpu
-					if feedbackShown {
-						color = state.pal.success
-						feedback := gfx.Rect{X: textBounds.X + textBounds.Width - feedbackWidth, Y: textBounds.Y, Width: feedbackWidth, Height: textBounds.Height}
-						monitorLabel(canvas, state.messages.Monitor.AddressCopied, feedback, style.Size, color, style.Weight)
-						textBounds.Width = max(textBounds.Width-feedbackWidth-4, 0)
-					}
 					hit = gfx.HitOptions{Role: gfx.RoleButton, Cursor: gfx.PointerCursorHand, Value: value}
 					hitLabel = state.messages.Monitor.AddressCopy
 				}
@@ -132,7 +121,6 @@ func (state *State) copyMonitorHostAddress(session *Session) {
 		return
 	}
 	m := state.messages.Monitor
-	session.stats.panel.copiedAddress = ""
 	if state.options.SetClipboardText == nil {
 		state.fileNotices.show(m.AddressCopyFailed, "", components.ToastError)
 		return
@@ -141,6 +129,5 @@ func (state *State) copyMonitorHostAddress(session *Session) {
 		state.fileNotices.show(m.AddressCopyFailed, err.Error(), components.ToastError)
 		return
 	}
-	session.stats.panel.copiedAddress = session.host.Address
-	session.stats.panel.addressCopiedUntil = state.now() + 2*time.Second
+	state.fileNotices.show(m.AddressCopied, "", components.ToastSuccess)
 }

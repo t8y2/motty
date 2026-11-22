@@ -31,6 +31,7 @@ const (
 	ruleDeleteAutofill ruleDeleteKind = iota + 1
 	ruleDeleteHighlight
 	ruleDeleteCredential
+	ruleDeleteProxyProfile
 	ruleDeleteHostTag
 )
 
@@ -48,6 +49,7 @@ type ruleDelete struct {
 	// credential is the saved password to delete, by id; uses is how many hosts
 	// take their password from it when the question is asked.
 	credential         string
+	proxyProfile       string
 	uses               int
 	selectedAutofill   []*autofill.Rule
 	selectedHighlights []selectedHighlightRule
@@ -99,6 +101,15 @@ func (state *State) askDeleteCredential(index int) {
 	state.modal = modalDeleteRule
 }
 
+func (state *State) askDeleteProxyProfile(index int) {
+	if index < 0 || index >= len(state.proxyProfiles) {
+		return
+	}
+	entry := state.proxyProfiles[index]
+	state.ruleDelete = ruleDelete{kind: ruleDeleteProxyProfile, proxyProfile: entry.ID, name: entry.Name, uses: state.proxyProfileUses(entry.ID)}
+	state.modal = modalDeleteRule
+}
+
 func (state *State) askDeleteHighlightRule(index int) {
 	rules := state.highlighting.rules
 	if index < 0 || index >= len(rules) {
@@ -127,6 +138,8 @@ func (state *State) clickDeleteRuleDialog(id gfx.ID) {
 			}
 		case ruleDeleteCredential:
 			state.deleteCredential(ask.credential)
+		case ruleDeleteProxyProfile:
+			state.deleteProxyProfile(ask.proxyProfile)
 		case ruleDeleteHostTag:
 			state.deleteHostTag(ask.name)
 		case ruleDeleteHighlight:
@@ -223,6 +236,13 @@ func (state *State) declareDeleteRuleDialog(c ui.C) {
 		title, description = c.DeleteTitle, fmt.Sprintf(c.DeleteFmt, ask.name)
 		if ask.uses > 0 {
 			description += " " + fmt.Sprintf(c.DeleteInUseFmt, ask.uses)
+		}
+	}
+	if ask.kind == ruleDeleteProxyProfile {
+		p := state.messages.ProxyProfiles
+		title, description = p.DeleteTitle, fmt.Sprintf(p.DeleteFmt, ask.name)
+		if ask.uses > 0 {
+			description += " " + fmt.Sprintf(p.DeleteInUseFmt, ask.uses)
 		}
 	}
 	if ask.kind == ruleDeleteHostTag {

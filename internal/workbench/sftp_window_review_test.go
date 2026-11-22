@@ -294,6 +294,7 @@ func TestSFTPWindowExternalEditorConflictAndCloseStayInOrigin(t *testing.T) {
 	state, w, remote, host, _ := dualSFTPFixture(t, 1.25)
 	view := host.windows[0].view
 	state.options.OpenPath = func(string) error { return nil }
+	state.options.EditPollInterval = 5 * time.Millisecond
 	state.activeSessionID = 0
 	for i := range w.view.rows {
 		if w.view.rows[i].entry.Name == "notes.txt" {
@@ -312,10 +313,7 @@ func TestSFTPWindowExternalEditorConflictAndCloseStayInOrigin(t *testing.T) {
 	if err := os.WriteFile(edit.local, []byte("my edited content"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	state.pollExternalEdits()
-	state.pollExternalEdits()
-	dualWait(t, state, w, view, func() bool { return edit.conflicted })
-	state.pollExternalEdits()
+	dualWait(t, state, w, view, func() bool { return edit.conflicted && w.externalConflict != 0 })
 	view.Driver().Pump()
 	view.Rest()
 	if w.externalConflict == 0 || state.modal != modalNone {
@@ -499,4 +497,39 @@ func TestSFTPWindowMovesSelectionThroughContextMenu(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSFTPWindowExternalEditorSendsEverySaveBack(t *testing.T) {
+	state, w, remote, host, _ := dualSFTPFixture(t, 1.0)
+	state.options.EditPollInterval = 10 * time.Millisecond
+	state.options.OpenPath = func(string) error { return nil }
+
+	remoteRows := w.folder(false).rows
+	found := false
+	for i := range remoteRows {
+		if remoteRows[i].entry.Name == "notes.txt" {
+			remoteRows[i].selected = true
+			found = true
+		} else {
+			remoteRows[i].selected = false
+		}
+	}
+	if !found {
+		t.Fatalf("notes.txt not found in remote rows")
+	}
+	w.fileAction(false, hitSFTPEditExternal)
+
+	dualWait(t, state, w, host.windows[0].view, func() bool {
+		return len(state.edits.list) == 1
+	})
+
+	edit := &state.edits.list[0]
+	time.Sleep(20 * time.Millisecond)
+	if err := os.WriteFile(edit.local, []byte("window save content\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	dualWait(t, state, w, host.windows[0].view, func() bool {
+		return remoteText(remote, "/home/test/notes.txt") == "window save content\n" && !state.edits.list[0].saving
+	})
 }

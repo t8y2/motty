@@ -70,7 +70,12 @@ type menuEntry struct {
 	// pageContent makes it a row whose controls the page declares.
 	content     func(*gfx.Canvas, gfx.Rect, gfx.Theme)
 	pageContent func(ui.C, gfx.Rect)
-	height      float32
+	// submenu, when set, makes the entry open a menu of its own. Choosing a row
+	// of that menu is the body's concern; this row has no action of its own.
+	submenu func(*ui.MenuItems)
+	// trailing, when set, paints the area TrailingWidth reserved at the row's end.
+	trailing func(*gfx.Canvas, gfx.Rect, gfx.Theme)
+	height   float32
 }
 
 // menuRows collects the rows of a context menu before it is painted, so its
@@ -85,6 +90,24 @@ func (rows *menuRows) add(item components.ContextMenuItem) {
 	if rows.count < len(rows.entries) {
 		rows.entries[rows.count] = menuEntry{item: item}
 		rows.count++
+	}
+}
+
+// addSubmenu adds a row that opens a submenu. body runs while that submenu is
+// open and declares its rows.
+func (rows *menuRows) addSubmenu(item components.ContextMenuItem, body func(*ui.MenuItems)) {
+	if rows.count < len(rows.entries) {
+		item.Kind = components.ContextMenuSubmenu
+		rows.entries[rows.count] = menuEntry{item: item, submenu: body}
+		rows.count++
+	}
+}
+
+// trailing reserves width at the end of the last row added, and paints it.
+func (rows *menuRows) trailing(width float32, paint func(*gfx.Canvas, gfx.Rect, gfx.Theme)) {
+	if rows.count > 0 && paint != nil {
+		rows.entries[rows.count-1].item.TrailingWidth = width
+		rows.entries[rows.count-1].trailing = paint
 	}
 }
 
@@ -175,12 +198,22 @@ func (rows *menuRows) declare(c ui.C, menu *ui.MenuItems, choose func(gfx.ID)) {
 			menu.ContentPage(entry.height, entry.pageContent)
 			continue
 		}
+		if entry.submenu != nil {
+			item := menu.Sub(entry.item.Label, entry.submenu).Icon(entry.item.Icon).Disabled(entry.item.Disabled)
+			if entry.item.Description != "" {
+				item.Description(entry.item.Description)
+			}
+			continue
+		}
 		row := entry.item
 		label := row.Label
 		if row.Shortcut != "" {
 			label += " · " + row.Shortcut
 		}
 		item := menu.Item(label).Icon(row.Icon).Disabled(row.Disabled)
+		if entry.trailing != nil {
+			item = item.Trailing(row.TrailingWidth, entry.trailing)
+		}
 		if row.Variant == components.ContextMenuItemDestructive {
 			item = item.Destructive()
 		}
@@ -214,17 +247,16 @@ func (state *State) declareRowsMenu(c ui.C, open *bool, at gfx.Point, target gfx
 
 // declareAnchoredMenu declares an open menu over (or under) a rectangle of the window,
 // such as a badge the terminal painted: the menu opens above it unless there is no
-// room, and is named by target.
-func (state *State) declareAnchoredMenu(c ui.C, open *bool, anchor gfx.Rect, target gfx.ID, rows *menuRows, choose func(gfx.ID)) {
-	state.declareMenuAt(c, open, anchor, true, target, rows, choose)
+// room.
+func (state *State) declareAnchoredMenu(c ui.C, open *bool, anchor gfx.Rect, rows *menuRows, choose func(gfx.ID)) {
+	state.declareMenuAt(c, open, anchor, true, rows, choose)
 }
 
 // declareMenuAt is declareAnchoredMenu with the side chosen: above the rectangle, or
 // below it.
-func (state *State) declareMenuAt(c ui.C, open *bool, anchor gfx.Rect, above bool, target gfx.ID, rows *menuRows, choose func(gfx.ID)) {
+func (state *State) declareMenuAt(c ui.C, open *bool, anchor gfx.Rect, above bool, rows *menuRows, choose func(gfx.ID)) {
 	ui.PopupLayer(c, dialogLayer)
-	box := ui.Slot(c).Absolute().Left(anchor.X).Top(anchor.Y).Size(anchor.Width, anchor.Height).HitWith(target, "", gfx.HitOptions{SkipFocus: true, SkipTab: true})
-	ui.Menu(c, box, open, func(menu *ui.MenuItems) {
+	ui.MenuAt(c, open, anchor, func(menu *ui.MenuItems) {
 		if above {
 			menu.Above()
 		}

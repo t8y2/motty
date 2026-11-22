@@ -167,6 +167,37 @@ func TestASnippetWithoutAShortcutIsSentFromItsPage(t *testing.T) {
 	}
 }
 
+// A snippet sent from its page takes the page away and shows the terminal. The
+// terminal must get the keyboard in the same move: the user came from a page
+// whose button kept it, and no click lands on the terminal in between (#1160).
+func TestSendingASnippetFromThePageReturnsTheKeyboardToTheTerminal(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	state.snippets.list = []snippet{{Name: "list all", Command: "ls --all", Run: true}}
+	state.refreshSnippets()
+	world.connectFirst(t, state)
+	want := state.activeTerminalFocusHit()
+	if want.IsZero() {
+		t.Fatal("no terminal focus target")
+	}
+
+	state.Click(hitSnippets)
+	state.Click(hitSnippetSend)
+	if state.activeSection != sectionTerminal {
+		t.Fatalf("section = %d, want the terminal", state.activeSection)
+	}
+	if state.pendingFocus != want {
+		t.Fatalf("pending focus = %v, want the terminal %v", state.pendingFocus, want)
+	}
+	canvas, _ := paintAt(state, gfx.Size{Width: 1200, Height: 800})
+	if got := canvas.FocusOnce(); got != want {
+		t.Fatalf("paint asked for focus %v, want the terminal %v", got, want)
+	}
+	if !state.pendingFocus.IsZero() {
+		t.Fatal("the focus request was not consumed")
+	}
+}
+
 func TestRightClickingASnippetRowOpensItsMenu(t *testing.T) {
 	world, options := newSharingWorld(t)
 	state := newTestState(t, options)

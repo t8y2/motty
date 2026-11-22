@@ -82,7 +82,14 @@ func main() {
 	config := &ssh.ServerConfig{
 		ServerVersion: banner,
 		PublicKeyCallback: func(meta ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
-			if bytes.Equal(key.Marshal(), fixture.publicKey.Marshal()) || certs.acceptKey(key) {
+			// Under E2E_USER_CERT=1 only the certificate the fixture signed is
+			// accepted, so a client that falls back to the bare key fails: that
+			// is what proves the certificate was the credential.
+			accepted := certs.acceptKey(key)
+			if certs.userCert == nil && bytes.Equal(key.Marshal(), fixture.publicKey.Marshal()) {
+				accepted = true
+			}
+			if accepted {
 				return nil, nil
 			}
 			return nil, fmt.Errorf("denied")
@@ -160,6 +167,9 @@ func main() {
 				return
 			}
 			defer conn.Close()
+			// One line per authenticated transport, so a check can count how
+			// many connections the client made and which tabs shared one.
+			log.Printf("connection user=%s from=%s", conn.User(), conn.RemoteAddr())
 			remoteForwards := newRemoteForwardSet(conn)
 			defer remoteForwards.Close()
 			go remoteForwards.Serve(requests)

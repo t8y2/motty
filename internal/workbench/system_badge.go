@@ -51,13 +51,14 @@ var distroBadges = map[sshconn.RemoteSystem]distroBadge{
 	sshconn.SystemVoid:           {icons.Void, gfx.RGB(71, 128, 97)},
 	sshconn.SystemSlackware:      {icons.Slackware, gfx.RGB(60, 60, 60)},
 	// A vendor's own distribution carries the vendor's mark and color.
-	sshconn.SystemAnolis:      {icons.Anolis, gfx.RGB(78, 154, 39)},
-	sshconn.SystemTencentOS:   {icons.Tencentos, gfx.RGB(0, 82, 217)},
-	sshconn.SystemAmazonLinux: {icons.Amazonlinux, gfx.RGB(35, 47, 62)},
-	sshconn.SystemAzureLinux:  {icons.Azurelinux, gfx.RGB(0, 120, 212)},
-	sshconn.SystemOracleLinux: {icons.Oraclelinux, gfx.RGB(199, 70, 52)},
-	sshconn.SystemESXi:        {icons.Esxi, gfx.RGB(96, 112, 120)},
-	sshconn.SystemAIX:         {icons.Aix, gfx.RGB(106, 158, 0)},
+	sshconn.SystemAnolis:            {icons.Anolis, gfx.RGB(78, 154, 39)},
+	sshconn.SystemTencentOS:         {icons.Tencentos, gfx.RGB(0, 82, 217)},
+	sshconn.SystemAmazonLinux:       {icons.Amazonlinux, gfx.RGB(35, 47, 62)},
+	sshconn.SystemAzureLinux:        {icons.Azurelinux, gfx.RGB(0, 120, 212)},
+	sshconn.SystemOracleLinux:       {icons.Oraclelinux, gfx.RGB(199, 70, 52)},
+	sshconn.SystemAlibabaCloudLinux: {icons.Alibabacloudlinux, gfx.RGB(230, 81, 0)},
+	sshconn.SystemESXi:              {icons.Esxi, gfx.RGB(96, 112, 120)},
+	sshconn.SystemAIX:               {icons.Aix, gfx.RGB(106, 158, 0)},
 }
 
 // badgeGlyph is one filled glyph of a system's badge: the icon, how far the badge's

@@ -340,7 +340,7 @@ func (state *State) declareHighlightDialog(c ui.C) {
 		title, save = state.messages.RuleManagement.HighlightEditTitle, state.messages.Autofill.Save
 	}
 	viewport := dialogViewport(c)
-	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 520, "", withError(198, form.dialogError)) // the pattern, two boxes and the colors
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 520, "", withError(136+dialogRowHeight(c.Theme()), form.dialogError)) // the pattern, two boxes and the colors
 	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: title, Width: 520, Height: height, Layer: dialogLayer,
@@ -370,7 +370,7 @@ func (state *State) declareHighlightDialogBody(c ui.C) {
 			form.patternBound = true
 		}
 		form.patternText.Invalid = form.dialogError != ""
-		ui.FormField(c, &form.patternForm, m.HighlightPattern).FillWidth().Height(62).Children(func() {
+		ui.FormField(c, &form.patternForm, m.HighlightPattern).FillWidth().Height(dialogRowHeight(c.Theme())).Children(func() {
 			ui.TextFieldID(c, hitHighlightPattern, &form.patternText, m.HighlightPattern, m.HighlightPatternPlaceholder)
 		})
 		state.declareDialogCheck(c, hitHighlightRegex, m.HighlightRegex, form.regex, 11, 0)

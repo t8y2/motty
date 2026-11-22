@@ -31,7 +31,7 @@ func (state *State) declareHostIconPicker(c ui.C, parent ui.Box, rowHeight float
 	parent.Children(func() {
 		ui.FormField(c, &form.iconField, label).FillWidth().Height(rowHeight).Children(func() {
 			form.iconBox = ui.Select(c, &form.iconChoice, form.iconChoices, state.hostIconLabel).
-				Label(label).Icons(form.iconIcons).Hit(hitDialogIcon, label)
+				Label(label).Icons(form.iconIcons)
 			if form.iconBox.Changed() {
 				editor.icon, editor.iconChosen = form.iconChoice, true
 				state.dialogError = ""

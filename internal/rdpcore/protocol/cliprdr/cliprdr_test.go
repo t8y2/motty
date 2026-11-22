@@ -284,7 +284,8 @@ func TestHandlerHandshake_WithLongFormatNames(t *testing.T) {
 		t.Errorf("sent[0] type = 0x%04X, want CBClipCaps", msgType)
 	}
 
-	// Second should be CB_FORMAT_LIST (long format) with 2 entries: CF_UNICODETEXT + CF_DIB
+	// Second should be CB_FORMAT_LIST (long format), empty until this computer
+	// copies something: the formats are what its clipboard holds.
 	msgType, _, payload, err := decodePDU(sent[1])
 	if err != nil {
 		t.Fatalf("decodePDU[1]: %v", err)
@@ -292,9 +293,8 @@ func TestHandlerHandshake_WithLongFormatNames(t *testing.T) {
 	if msgType != CBFormatList {
 		t.Errorf("sent[1] type = 0x%04X, want CBFormatList", msgType)
 	}
-	// Long format: 2 × (formatId(4) + null(2)) = 12 bytes
-	if len(payload) != 12 {
-		t.Errorf("format list payload = %d bytes, want 12 (long format, 2 entries)", len(payload))
+	if len(payload) != 0 {
+		t.Errorf("format list payload = %d bytes, want 0 before anything is copied", len(payload))
 	}
 }
 
@@ -336,7 +336,8 @@ func TestHandlerHandshake_WithoutLongFormatNames(t *testing.T) {
 		t.Errorf("sent[0] type = 0x%04X, want CBClipCaps", msgType)
 	}
 
-	// Second: CB_FORMAT_LIST (short format) with 2 entries: CF_UNICODETEXT + CF_DIB
+	// Second: CB_FORMAT_LIST (short format), empty until this computer copies
+	// something.
 	msgType, _, payload, err := decodePDU(sent[1])
 	if err != nil {
 		t.Fatalf("decodePDU[1]: %v", err)
@@ -344,9 +345,8 @@ func TestHandlerHandshake_WithoutLongFormatNames(t *testing.T) {
 	if msgType != CBFormatList {
 		t.Errorf("sent[1] type = 0x%04X, want CBFormatList", msgType)
 	}
-	// Short format: 2 × (formatId(4) + formatName[32]) = 72 bytes
-	if len(payload) != shortFormatEntrySize*2 {
-		t.Errorf("format list payload = %d bytes, want %d (short format, 2 entries)", len(payload), shortFormatEntrySize*2)
+	if len(payload) != 0 {
+		t.Errorf("format list payload = %d bytes, want 0 before anything is copied", len(payload))
 	}
 }
 
@@ -390,9 +390,9 @@ func TestHandlerHandshake_NoCaps(t *testing.T) {
 	if msgType != CBFormatList {
 		t.Errorf("sent[1] type = 0x%04X, want CBFormatList", msgType)
 	}
-	// Short format: 2 entries
-	if len(payload) != shortFormatEntrySize*2 {
-		t.Errorf("format list payload = %d bytes, want %d (short format, 2 entries)", len(payload), shortFormatEntrySize*2)
+	// Nothing is on this computer's clipboard yet.
+	if len(payload) != 0 {
+		t.Errorf("format list payload = %d bytes, want 0 before anything is copied", len(payload))
 	}
 }
 
@@ -545,6 +545,7 @@ func TestHandlerSetLocalClipboard(t *testing.T) {
 		sent = append(sent, cp)
 		return nil
 	}, testLog)
+	h.localImage = createTestPNG(t, 2, 2) // a picture copied before
 
 	if err := h.SetLocalClipboard("test"); err != nil {
 		t.Fatalf("SetLocalClipboard: %v", err)
@@ -553,8 +554,12 @@ func TestHandlerSetLocalClipboard(t *testing.T) {
 	if h.localText != "test" {
 		t.Errorf("localText = %q, want %q", h.localText, "test")
 	}
+	if h.localImage != nil {
+		t.Error("the picture copied before is still on the clipboard")
+	}
 
-	// Should have sent CB_FORMAT_LIST (short format, no caps negotiated) with 2 entries
+	// Should have sent CB_FORMAT_LIST (short format, no caps negotiated) with the
+	// text alone: the picture is no longer what was copied.
 	if len(sent) != 1 {
 		t.Fatalf("sent %d PDUs, want 1", len(sent))
 	}
@@ -563,14 +568,60 @@ func TestHandlerSetLocalClipboard(t *testing.T) {
 		t.Errorf("type = 0x%04X, want CBFormatList", msgType)
 	}
 	formats := decodeFormatListShort(payload)
-	if len(formats) != 2 {
-		t.Fatalf("format list = %+v, want 2 entries", formats)
+	if len(formats) != 1 || formats[0].FormatID != CFUnicodeText {
+		t.Fatalf("format list = %+v, want CF_UNICODETEXT alone", formats)
 	}
-	if formats[0].FormatID != CFUnicodeText {
-		t.Errorf("formats[0] = %d, want CF_UNICODETEXT", formats[0].FormatID)
+
+	// A request for the old picture is refused rather than answered with it.
+	h.ProcessPDU(encodeFormatDataRequest(CFDIB))
+	if len(sent) != 2 {
+		t.Fatalf("sent %d PDUs, want the refused answer", len(sent))
 	}
-	if formats[1].FormatID != CFDIB {
-		t.Errorf("formats[1] = %d, want CF_DIB", formats[1].FormatID)
+	if _, flags, _, _ := decodePDU(sent[1]); flags != CBResponseFail {
+		t.Errorf("a request for the replaced picture got flags 0x%04X", flags)
+	}
+}
+
+func TestHandlerSetLocalImage(t *testing.T) {
+	var sent [][]byte
+	h := NewHandler(func(data []byte) error {
+		cp := make([]byte, len(data))
+		copy(cp, data)
+		sent = append(sent, cp)
+		return nil
+	}, testLog)
+	h.localText = "text copied before"
+	picture := createTestPNG(t, 2, 2)
+
+	if err := h.SetLocalImage(picture); err != nil {
+		t.Fatalf("SetLocalImage: %v", err)
+	}
+
+	if h.localText != "" {
+		t.Errorf("localText = %q, want the replaced text gone", h.localText)
+	}
+	if !bytes.Equal(h.localImage, picture) {
+		t.Error("localImage is not the picture that was set")
+	}
+	if len(sent) != 1 {
+		t.Fatalf("sent %d PDUs, want 1", len(sent))
+	}
+	msgType, _, payload, _ := decodePDU(sent[0])
+	if msgType != CBFormatList {
+		t.Fatalf("type = 0x%04X, want CBFormatList", msgType)
+	}
+	formats := decodeFormatListShort(payload)
+	if len(formats) != 1 || formats[0].FormatID != CFDIB {
+		t.Fatalf("format list = %+v, want CF_DIB alone", formats)
+	}
+
+	// The text replaced by the picture is not served any more.
+	h.ProcessPDU(encodeFormatDataRequest(CFUnicodeText))
+	if len(sent) != 2 {
+		t.Fatalf("sent %d PDUs, want the refused answer", len(sent))
+	}
+	if _, flags, _, _ := decodePDU(sent[1]); flags != CBResponseFail {
+		t.Errorf("a request for the replaced text got flags 0x%04X", flags)
 	}
 }
 

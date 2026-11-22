@@ -237,7 +237,7 @@ func (state *State) syncTerminalDirectory(view *sftpView) {
 	// Output was drained above; a second drain after validating the snapshot
 	// could change the prompt between checking and sending the command.
 	if !ready || session.term.promptVersion != version || session.term.transferHoldsInput ||
-		!session.term.sendInput([]byte(command), false) {
+		!session.term.sendInput([]byte(command), false, true) {
 		view.status = state.terminalFollowSkippedText(view)
 		if locate {
 			view.status = state.messages.Tools.FilesLocateTerminalSkipped

@@ -25,8 +25,8 @@ type monitorScrollGeometry struct {
 
 func (state *State) monitorScrollArea(p *monitorView) monitorScroll {
 	b := state.monitorRect
-	b.Y += infoBarHeight + monitorControlsHeight + monitorHostInfoHeight
-	b.Height = max(0, b.Height-infoBarHeight-monitorControlsHeight-monitorHostInfoHeight-24)
+	b.Y += infoBarHeight + monitorControlsHeight
+	b.Height = max(0, b.Height-infoBarHeight-monitorControlsHeight-24)
 	return monitorScroll{body: b, content: p.contentHeight}
 }
 

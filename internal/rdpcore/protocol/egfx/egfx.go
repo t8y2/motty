@@ -1,8 +1,9 @@
 // Package egfx implements the RDPGFX Graphics Pipeline Extension (MS-RDPEGFX).
 //
 // RDPGFX provides modern display codec support over a dynamic virtual channel,
-// including ClearCodec, Planar, and Uncompressed pixel formats. All server data
-// arrives wrapped in ZGFX compression.
+// including RemoteFX (CAVIDEO), ClearCodec, RemoteFX progressive, Planar and
+// Uncompressed pixel formats. All server data arrives wrapped in ZGFX
+// compression.
 package egfx
 
 import (
@@ -172,11 +173,12 @@ type Handler struct {
 	onBitmap        func(surfID uint16, x, y, w, h int, data []byte)
 	onStridedBitmap func(surfID uint16, x, y, w, h int, data []byte, stride int) // strided surface data
 	onResetGraphics func(w, h int)
-	onBeginPaint    func()           // called before EndFrame flush loop
-	onEndPaint      func()           // called after EndFrame flush loop
-	onH264Frame     func(*H264Frame) // H.264 pass-through callback
-	progressive     *rfx.Decoder     // RemoteFX Progressive codec decoder
-	avcEnabled      bool             // advertise AVC support in CAPS_ADVERTISE
+	onBeginPaint    func()               // called before EndFrame flush loop
+	onEndPaint      func()               // called after EndFrame flush loop
+	onH264Frame     func(*H264Frame)     // H.264 pass-through callback
+	progressive     *rfx.Decoder         // RemoteFX Progressive codec decoder
+	remotefx        *rfx.RemoteFXDecoder // RemoteFX (CAVIDEO) codec decoder
+	avcEnabled      bool                 // advertise AVC support in CAPS_ADVERTISE
 
 	// Negotiated cap version from CAPS_CONFIRM. Used to gate v10+ features
 	// like RDPGFX_QOE_FRAME_ACKNOWLEDGE_PDU. Zero until caps are confirmed.
@@ -218,6 +220,7 @@ func NewHandler(sendFn func([]byte) error, log *slog.Logger) *Handler {
 		outputMap:             make(map[uint16][2]int),
 		cache:                 make(map[uint16]*cacheEntry),
 		progressive:           rfx.NewDecoder(log),
+		remotefx:              rfx.NewRemoteFXDecoder(log),
 		frameProgressiveTiles: make(map[uint16]map[[2]int]struct{}),
 		ackCh:                 make(chan []byte, 32),
 		done:                  make(chan struct{}),
@@ -1053,6 +1056,41 @@ func (h *Handler) handleWireToSurface1(data []byte) {
 		}
 		return
 
+	case CodecRemoteFX:
+		if h.remotefx == nil {
+			h.log.LogAttrs(context.Background(), slog.LevelWarn, "RemoteFX data but no decoder set")
+			return
+		}
+		dstStride := int(surf.Width) * 4
+		err := h.remotefx.Decode(bitmapData, func(x, y, tw, th int, pixels []byte, stride int) {
+			// The message's own rectangles are relative to the destination
+			// the server placed it at, and only the update's rectangle is
+			// valid.
+			x1 := max(left+x, left)
+			y1 := max(top+y, top)
+			x2 := min(left+x+tw, right)
+			y2 := min(top+y+th, bottom)
+			if x1 >= x2 || y1 >= y2 {
+				return
+			}
+			srcBase := (y1-(top+y))*stride + (x1-(left+x))*4
+			copyW := (x2 - x1) * 4
+			for row := y1; row < y2; row++ {
+				srcOff := srcBase + (row-y1)*stride
+				dstOff := row*dstStride + x1*4
+				if dstOff+copyW > len(surf.Data) || srcOff+copyW > len(pixels) {
+					continue
+				}
+				copy(surf.Data[dstOff:dstOff+copyW], pixels[srcOff:srcOff+copyW])
+			}
+			h.notifyBitmap(surfId, x1, y1, x2-x1, y2-y1)
+		})
+		if err != nil {
+			h.log.LogAttrs(context.Background(), slog.LevelError, "RemoteFX decode error",
+				slog.Int("surfaceId", int(surfId)), slog.Any("err", err))
+		}
+		return
+
 	default:
 		h.log.LogAttrs(context.Background(), slog.LevelWarn, "unsupported codec", sloghex.Hex4("codecId", codecId))
 		return
@@ -1283,18 +1321,21 @@ func (h *Handler) handleResetGraphics(data []byte) {
 	// monitorCount := binary.LittleEndian.Uint32(data[8:12])
 	// followed by monitor definitions, pad to 340 bytes
 
-	// Clear all surfaces and output maps. The progressive decoder is kept:
-	// its tile context is not part of the graphics output, and Windows keeps
-	// sending UPGRADE tiles for a surface that it recreates after the reset
-	// without repeating the first pass's SYNC and CONTEXT blocks.
-	// NOTE: bitmap cache (h.cache) is NOT cleared — the server expects
-	// cached bitmaps to survive ResetGraphics and uses CacheToSurface
-	// immediately after creating the new surface.
-	for _, surf := range h.surfaces {
-		h.giveSurfaceBytes(len(surf.Data))
-	}
-	clear(h.surfaces)
-	clear(h.outputMap)
+	// Only the per-frame state goes. The surfaces and their output mappings stay:
+	// a graphics reset resets the output, not the surface store. Windows keeps
+	// drawing into the surfaces it had before the reset (WireToSurface1/2,
+	// SolidFill, CacheToSurface) until it deletes and recreates each of them, and
+	// it fills its bitmap cache from them first (SurfaceToCache). Dropping them
+	// here threw those paints away and left the cache holding something the
+	// server no longer agreed with, so the full repaint that follows pasted
+	// stale bitmaps: black rectangles and wrong glyphs over the resized desktop.
+	// A surface created again under the same id replaces the old one, so the byte
+	// budget still follows the server.
+	//
+	// The progressive decoder and the bitmap cache are kept for the same reason:
+	// Windows sends only UPGRADE tiles for a surface it recreates after the
+	// reset, without repeating the first pass's SYNC and CONTEXT blocks, and it
+	// expects cached bitmaps to survive the reset.
 	clear(h.frameProgressiveTiles)
 	h.frameDirtyRects = h.frameDirtyRects[:0]
 	clear(h.frameH264)

@@ -8,6 +8,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
+	"motty/internal/localshell"
 	"motty/internal/shellkind"
 	"motty/internal/term"
 	layoutcore "motty/internal/workspace"
@@ -403,5 +404,60 @@ func TestTheMenuOffersWhatTheTextUnderThePointerCouldBe(t *testing.T) {
 		if len(world.configs) != before+1 || world.configs[before].Host != "10.0.0.5" || world.configs[before].Port != 8080 {
 			t.Fatalf("connection configs after the click: %+v", world.configs[before:])
 		}
+	}
+}
+
+// A path a local terminal prints is an entry of this computer, so its menu row
+// shows it in the system's file manager. The file panel remains the transfer
+// surface, one menu row away, and a WSL distribution's paths stay in it because
+// this computer's file manager cannot show them.
+func TestALocalTerminalPathOpensInTheSystemFileManager(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	folder := t.TempDir()
+	file := filepath.Join(folder, "report.txt")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	screen := term.New(80, 24, 100)
+	screen.Write([]byte("report.txt\r\n"))
+	local := &Session{ID: 1, HostID: localHostID, conn: newLocalConn("", networkProxyDirect), term: &terminal{screen: screen}}
+	local.term.reportedDirectory = term.Cwd{Path: folder}
+	state.terminalMenu = terminalMenu{open: true, session: local.ID}
+	state.offerActionsAt(local, term.Position{Row: 0, Column: 2})
+	if state.terminalMenu.count != 1 {
+		t.Fatalf("menu offers %d actions: %+v", state.terminalMenu.count, state.terminalMenu.found[:state.terminalMenu.count])
+	}
+	first := state.terminalMenu.found[0]
+	if first.kind != actionReveal || first.target != file || first.label != "report.txt" {
+		t.Fatalf("first action = %+v, want showing %q", first, file)
+	}
+	revealed := ""
+	state.options.RevealPath = func(path string) error { revealed = path; return nil }
+	state.runAction(local, first)
+	waitFor(t, state, func() bool { return !state.revealBusy })
+	if revealed != file {
+		t.Fatalf("revealed %q, want %q", revealed, file)
+	}
+
+	// A server's paths are not this computer's: an SSH terminal keeps the file
+	// panel's row.
+	remoteScreen := term.New(80, 24, 100)
+	remoteScreen.Write([]byte(file + "\r\n"))
+	remote := &Session{ID: 2, host: Host{Protocol: protocolSSH, Address: "box"}, conn: newLocalConn("", networkProxyDirect), term: &terminal{screen: remoteScreen}}
+	state.terminalMenu = terminalMenu{open: true, session: remote.ID}
+	state.offerActionsAt(remote, term.Position{Row: 0, Column: 2})
+	if got := state.terminalMenu.found[0].kind; got != actionFiles {
+		t.Fatalf("an SSH terminal offered %v, want the file panel", got)
+	}
+
+	// A WSL distribution's files are reached through the panel that maps its
+	// paths; the host's file manager cannot show them.
+	wslScreen := term.New(80, 24, 100)
+	wslScreen.Write([]byte(file + "\r\n"))
+	wsl := &Session{ID: 3, HostID: localHostID, conn: newLocalConn(localshell.WSLShell("Ubuntu"), networkProxyDirect), term: &terminal{screen: wslScreen}}
+	state.terminalMenu = terminalMenu{open: true, session: wsl.ID}
+	state.offerActionsAt(wsl, term.Position{Row: 0, Column: 2})
+	if got := state.terminalMenu.found[0].kind; got != actionFiles {
+		t.Fatalf("a WSL terminal offered %v, want the file panel", got)
 	}
 }

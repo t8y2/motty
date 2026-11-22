@@ -13,7 +13,6 @@ var (
 	hitDashboardOrderTab     = tree.ID(dashboardHits, "order-tab")
 	hitDashboardAddHosts     = tree.ID(dashboardHits, "add-hosts")
 	hitDashboardAddNew       = tree.ID(dashboardHits, "add-new")
-	hitDashboardAddDismiss   = tree.ID(dashboardHits, "add-dismiss")
 	hitDashboardAddPanelList = tree.Sub(dashboardHits, tree.Name("add-panel"))
 )
 
@@ -47,8 +46,6 @@ func (s *State) clickDashboardManagement(id gfx.ID) bool {
 	d := &s.dashboard
 	if s.modal == modalDashboardAdd {
 		switch {
-		case id == hitDashboardAddDismiss:
-			s.closeModal()
 		case id == hitDashboardAddNew:
 			s.newDashboardFromHosts(d.addHosts)
 		case id.Scope() == hitDashboardAddPanelList:

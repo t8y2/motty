@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/vivaui/viva/text"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -414,7 +415,7 @@ func TestDashboardWindowsCollectorReusesPowerShellAndEmbeddedDetails(t *testing.
 	s.hosts[0].System = sshconn.SystemWindows
 	f.status.System = sshconn.SystemWindows
 	f.streamCommand = func(ctx context.Context, cmd string, limit int, line func([]byte) bool) error {
-		if !strings.HasPrefix(cmd, "powershell.exe ") {
+		if !strings.HasPrefix(cmd, `cmd.exe /d /s /c "echo `) {
 			t.Error("Windows host received Linux command")
 		}
 		line([]byte(`gop-stats-win-v1 {"cpu":25,"total":8589934592,"free":4294967296,"uptime":100,"networkAvailable":false,"cores":[{"id":"0","percent":25}],"meta":{"count":1,"kernel":"Windows","disks":[{"path":"C:\\","total":1000,"free":400}]}}`))
@@ -506,5 +507,52 @@ func TestDashboardPageKeysScrollThePageFromAnyControl(t *testing.T) {
 	result := s.Key(gfx.KeyEvent{Key: gfx.KeyPageDown, Target: hitDashboardSwitch})
 	if !result.Handled || s.dashboard.scroll <= 0 {
 		t.Fatalf("PageDown on a control did not scroll the page: handled=%v scroll=%v", result.Handled, s.dashboard.scroll)
+	}
+}
+
+// TestDashboardEmptyChartStatusIsCentered pins the placeholder of a chart that
+// has no data to the middle of its plot. It was painted from the plot's left
+// edge, which read as a stray label beside the empty card instead of the card's
+// one empty state.
+func TestDashboardEmptyChartStatusIsCentered(t *testing.T) {
+	s, _, _ := dashboardTestState(t)
+	createDashboard(t, s, "A")
+	p := s.dashboardPanel()
+	s.dashboard.running = map[string]bool{}
+	s.dashboard.engine.Set(*p, false)
+	canvas, _ := paintAt(s, gfx.Size{Width: 700, Height: 1000})
+	status, body := s.messages.Dashboard.Waiting, s.dashboard.body
+	centered := 0
+	for _, label := range canvas.Texts() {
+		if label.Value != status || label.Bounds.Y+label.Bounds.Height/2 < body.Y || label.Bounds.Y+label.Bounds.Height/2 > body.Y+body.Height {
+			continue
+		}
+		line := canvas.TextWidthWeight(label.Value, label.Style.Size, label.Style.Weight)
+		drawn := gfx.Rect{X: label.Bounds.X, Y: label.Bounds.Y, Width: line, Height: label.Bounds.Height}
+		// The smallest painted rectangle around the drawn line is the chart
+		// surface that holds the empty state.
+		box := gfx.Rect{}
+		for _, rectangle := range canvas.Rectangles() {
+			if !(rectangle.Bounds.X <= drawn.X && rectangle.Bounds.Y <= drawn.Y &&
+				rectangle.Bounds.X+rectangle.Bounds.Width >= drawn.X+drawn.Width &&
+				rectangle.Bounds.Y+rectangle.Bounds.Height >= drawn.Y+drawn.Height) {
+				continue
+			}
+			if box.Width == 0 || rectangle.Bounds.Width*rectangle.Bounds.Height < box.Width*box.Height {
+				box = rectangle.Bounds
+			}
+		}
+		if box.Width == 0 {
+			t.Fatalf("no chart surface around the empty-state label at %v", drawn)
+		}
+		lineCenter, boxCenter := drawn.X+line/2, box.X+box.Width/2
+		if math.Abs(float64(lineCenter-boxCenter)) > 1 {
+			t.Fatalf("empty chart status %q is not centered: line center %.1f, chart center %.1f", label.Value, lineCenter, boxCenter)
+		}
+		centered++
+	}
+	// The CPU, memory and network plots each hold one.
+	if centered != 3 {
+		t.Fatalf("checked %d empty chart statuses, want the three overview plots", centered)
 	}
 }

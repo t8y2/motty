@@ -156,7 +156,7 @@ func (s *State) declareDashboardEmpty(c ui.C) ui.Box {
 	}
 	m := s.messages.Dashboard
 	width, height := s.hostsWorkspaceSize()
-	return s.declareEmptyPageRegion(c, gfx.Rect{Width: width, Height: height}, m.Empty, m.EmptyHint, m.Create, s.pal.muted, hitDashboardNew, iconActivity, true)
+	return s.declareEmptyPageRegion(c, gfx.Rect{Width: width, Height: height}, m.Empty, m.EmptyHint, m.Create, s.pal.muted, hitDashboardNew, iconGauge, true)
 }
 
 // dashboardBar paints one bounded metric as a progress bar, in the metric's
@@ -331,7 +331,10 @@ func (s *State) paintDashboardChart(c *gfx.Canvas, p *monitoring.Panel, h Host, 
 	dashboardGreen, dashboardBlue, dashboardAmber := s.dashboardColors()
 	if len(r.x) == 0 {
 		if s.dashboard.running[p.ID] || !r.snapshot.HasSample {
-			monitorLabel(c, s.dashboardStatus(r.snapshot.Status, s.dashboard.running[p.ID], false), b, 12, s.pal.muted, gfx.WeightRegular)
+			// An empty plot holds one placeholder for the whole chart area, so it
+			// sits in the middle of it rather than at the left edge where a
+			// chart's data would start.
+			monitorCenter(c, s.dashboardStatus(r.snapshot.Status, s.dashboard.running[p.ID], false), b, 12, s.pal.muted, gfx.WeightRegular)
 		}
 		return
 	}

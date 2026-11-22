@@ -226,6 +226,10 @@ func formatGPU(gpu *remotestats.GPU, numbered bool) string {
 	}
 	if gpu.MemoryTotalBytes > 0 {
 		text += " " + formatMemory(gpu.MemoryUsedBytes, gpu.MemoryTotalBytes)
+	} else if gpu.MemoryKnown || gpu.MemoryUsedBytes > 0 {
+		// Windows reports usage without a capacity; the card shows that used
+		// figure, so the compact readout must not drop it.
+		text += " " + formatCompactBytes(gpu.MemoryUsedBytes)
 	}
 	if gpu.TemperatureC >= 0 {
 		text += fmt.Sprintf(" %.0f°C", gpu.TemperatureC)
@@ -239,6 +243,16 @@ func formatGPU(gpu *remotestats.GPU, numbered bool) string {
 func formatMemory(used, total uint64) string {
 	unit, divisor := byteUnit(total)
 	return fmt.Sprintf("%.1f/%.1f%s", float64(used)/divisor, float64(total)/divisor, unit)
+}
+
+// formatCompactBytes is one byte count in the compact units the readout uses,
+// for a value whose capacity is unknown.
+func formatCompactBytes(value uint64) string {
+	unit, divisor := byteUnit(value)
+	if divisor == 1 {
+		return fmt.Sprintf("%dB", value)
+	}
+	return fmt.Sprintf("%.1f%s", float64(value)/divisor, unit)
 }
 
 func formatRate(value uint64) string {

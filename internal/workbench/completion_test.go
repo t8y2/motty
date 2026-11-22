@@ -686,3 +686,106 @@ func TestCompletionListPaintsInANarrowWindow(t *testing.T) {
 		t.Fatal("the first row is not painted in a narrow window")
 	}
 }
+
+// A quick command the user configured is a command hint in the completion list
+// too, not only in the inline ghost (#1084, #1200). The automatic list is the
+// default mode, so this is where most users meet the hint; accepting one types
+// the rest like any other candidate instead of running it.
+func TestAConfiguredQuickCommandIsOfferedByTheList(t *testing.T) {
+	w := newCompletionWorld(t)
+	w.state.history.inlineOff = true // automatic-list mode, the default
+	w.state.snippets.list = []snippet{{Name: "fetch all", Command: "git fetch --all --prune"}}
+	w.type_("git f")
+	w.state.openCompletions()
+	list := &w.state.completion.list
+	if !list.active {
+		t.Fatal("the list did not open")
+	}
+	index := -1
+	for i, candidate := range list.candidates {
+		if candidate.Text != "git fetch --all --prune" {
+			continue
+		}
+		index = i
+		if candidate.Insert != "etch --all --prune" {
+			t.Fatalf("insert = %q, want the rest of the quick command", candidate.Insert)
+		}
+		if candidate.Desc != w.state.messages.Tools.SnippetsTitle {
+			t.Fatalf("desc = %q, want the quick commands' own name", candidate.Desc)
+		}
+	}
+	if index < 0 {
+		t.Fatalf("the quick command is not in the list: %v", listTexts(w))
+	}
+	// Before the catalog: the user's own list outranks public syntax.
+	for i := 0; i < index; i++ {
+		if list.candidates[i].FromCatalog {
+			t.Fatalf("the quick command is listed after catalog candidate %q", list.candidates[i].Text)
+		}
+	}
+	before := w.shell.typed()
+	list.selected = index
+	w.state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: terminalHit(w.state, 0)})
+	if got := w.shell.typed(); got != before+"etch --all --prune" {
+		t.Fatalf("typed %q, want %q", got, before+"etch --all --prune")
+	}
+	if strings.ContainsAny(w.shell.typed(), "\r\n") {
+		t.Fatal("accepting a quick command ran it")
+	}
+}
+
+// The ghost stays quiet when two quick commands share a prefix, because it
+// would have to guess. The list names both, so the same ambiguity is resolved
+// where there is room for it (#1200).
+func TestQuickCommandsSharingAPrefixAreAllListed(t *testing.T) {
+	w := newCompletionWorld(t)
+	w.state.history.inlineOff = true // automatic-list mode
+	w.state.snippets.list = []snippet{
+		{Name: "fetch all", Command: "git fetch --all"},
+		{Name: "fetch prune", Command: "git fetch --prune"},
+	}
+	w.type_("git f")
+	if rest, ok := w.state.commandGhost(w.session); ok {
+		t.Fatalf("the ghost guessed %q", rest)
+	}
+	w.state.openCompletions()
+	texts := listTexts(w)
+	for _, want := range []string{"git fetch --all", "git fetch --prune"} {
+		found := false
+		for _, text := range texts {
+			if text == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("the list = %v, missing %q", texts, want)
+		}
+	}
+}
+
+// A quick command that cannot be typed as it stands is the snippet picker's
+// job, not the completion list's: accepting it would type an unresolved
+// template or half a multi-line command.
+func TestAnUntypableQuickCommandIsNotListed(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		command string
+	}{
+		{"templated", "git {{branch}}"},
+		{"multi-line", "git log\nstatus"},
+		{"secret", "git clone https://user:token@example.com/repo"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newCompletionWorld(t)
+			w.state.history.inlineOff = true // automatic-list mode
+			w.state.snippets.list = []snippet{{Name: tc.name, Command: tc.command}}
+			w.type_("git ")
+			w.state.openCompletions()
+			for _, candidate := range w.state.completion.list.candidates {
+				if candidate.Text == tc.command {
+					t.Fatalf("the list offered the untypable quick command %q", tc.command)
+				}
+			}
+		})
+	}
+}

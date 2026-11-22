@@ -96,6 +96,9 @@ type Messages struct {
 	RuleManagement RuleManagementMessages
 	// Credentials holds the saved passwords' texts; see credentials.go.
 	Credentials CredentialMessages
+	// ProxyProfiles holds the saved outbound proxy profiles' texts; see
+	// proxy_profiles.go.
+	ProxyProfiles ProxyProfileMessages
 	// HostTags holds the host tag manager's texts; see host_tags.go.
 	HostTags HostTagMessages
 	// History holds the command history's texts; see history.go.
@@ -271,6 +274,14 @@ type Messages struct {
 	SettingsAppearanceSystem               string
 	SettingsAppearanceDark                 string
 	SettingsAppearanceLight                string
+	SettingsIconColor                      string
+	SettingsIconColorDescription           string
+	SettingsIconMint                       string
+	SettingsIconBlue                       string
+	SettingsIconRed                        string
+	SettingsIconViolet                     string
+	SettingsIconOrange                     string
+	SettingsIconGraphite                   string
 	SettingsTextSize                       string
 	SettingsTextSizeDescription            string
 	SettingsInterfaceFont                  string
@@ -280,6 +291,9 @@ type Messages struct {
 	SettingsOutputAlertsDescription        string
 	SettingsTabOrientation                 string
 	SettingsTabOrientationDescription      string
+	SettingsTabDoubleClick                 string
+	SettingsTabDoubleClickDescription      string
+	SettingsTabDoubleClickNone             string
 	SettingsTabsHorizontal                 string
 	SettingsTabsVertical                   string
 	SettingsTabNumbers                     string
@@ -303,6 +317,8 @@ type Messages struct {
 	SettingsNetworkProxyDescription        string
 	SettingsNetworkProxySystem             string
 	SettingsNetworkProxyDirect             string
+	SettingsSSHBrowser                     string
+	SettingsSSHBrowserDescription          string
 	SettingsToolbarPosition                string
 	SettingsToolbarPositionDescription     string
 	SettingsToolbarPositionLeft            string
@@ -318,6 +334,12 @@ type Messages struct {
 	SettingsLocalShell                     string
 	SettingsLocalShellDescription          string
 	SettingsLocalShellEmpty                string
+	SettingsLocalStartupCommands           string
+	SettingsLocalStartupDescription        string
+	SettingsLocalStartupCommand            string
+	SettingsLocalStartupEdit               string
+	SettingsLocalStartupSave               string
+	SettingsLocalStartupInvalid            string
 	LocalShellDefault                      string
 	ShellEyeHide                           string
 	ShellEyeShow                           string
@@ -656,10 +678,15 @@ type Messages struct {
 	MenuLockTab            string
 	MenuUnlockTab          string
 
-	MenuOpenSSHBrowser    string
-	MenuCloseSSHBrowser   string
-	SSHBrowserNotFound    string
-	SSHBrowserStartFailed string
+	MenuOpenSSHBrowser          string
+	MenuCloseSSHBrowser         string
+	SSHBrowserNotFound          string
+	SSHBrowserStartFailed       string
+	SSHBrowserAuto              string
+	SSHBrowserChrome            string
+	SSHBrowserEdge              string
+	SSHBrowserChromium          string
+	SSHBrowserChosenNotFoundFmt string
 
 	// TabLockedHint is the tab's accessible description while it is protected.
 	TabLockedHint                 string
@@ -843,6 +870,13 @@ type Messages struct {
 	KeyColumnName               string
 	KeyColumnType               string
 	KeyColumnProtection         string
+	KeyColumnCertificate        string
+	KeyCertificate              string
+	KeyCertificateTitle         string
+	KeyCertificatePresent       string
+	KeyCertificateAttachedFmt   string
+	KeyCertificateInvalid       string
+	KeyCertificateIgnoredFmt    string
 	KeyColumnFingerprint        string
 	KeyEmpty                    string
 	KeyEmptySub                 string
@@ -968,6 +1002,8 @@ type Messages struct {
 	ForwardFieldRemotePort        string
 	ForwardFieldDestination       string
 	ForwardFieldDestinationPort   string
+	ForwardFieldAutoStart         string
+	ForwardAutoStartHelp          string
 	ForwardFieldResume            string
 	ForwardResumeHelp             string
 	ForwardFieldViaShell          string
@@ -1218,6 +1254,14 @@ type Messages struct {
 	SFTPEditConflictDescription string
 	SFTPEditReloadConfirm       string
 
+	// SFTPDownloadConflictTitle and its descriptions ask what a download whose
+	// local name is taken should do. The count variant names a whole selection.
+	SFTPDownloadConflictTitle          string
+	SFTPDownloadConflictDescriptionFmt string
+	SFTPDownloadConflictCountFmt       string
+	SFTPDownloadReplace                string
+	SFTPDownloadKeepBoth               string
+
 	// Opt-in remote resource monitoring in the terminal info bar.
 	StatsMeasuring   string
 	StatsUnsupported string
@@ -1285,6 +1329,7 @@ func For(language Language) Messages {
 		messages.Autofill = chineseAutofill
 		messages.RuleManagement = chineseRuleManagement
 		messages.Credentials = chineseCredentials
+		messages.ProxyProfiles = chineseProxyProfiles
 		messages.HostTags = chineseHostTags
 		messages.History = chineseHistory
 		messages.Completion = chineseCompletion
@@ -1299,6 +1344,7 @@ func For(language Language) Messages {
 		messages.Autofill = traditionalAutofill
 		messages.RuleManagement = traditionalRuleManagement
 		messages.Credentials = traditionalCredentials
+		messages.ProxyProfiles = traditionalProxyProfiles
 		messages.HostTags = traditionalHostTags
 		messages.History = traditionalHistory
 		messages.Completion = traditionalCompletion
@@ -1313,6 +1359,7 @@ func For(language Language) Messages {
 		messages.Autofill = englishAutofill
 		messages.RuleManagement = englishRuleManagement
 		messages.Credentials = englishCredentials
+		messages.ProxyProfiles = englishProxyProfiles
 		messages.HostTags = englishHostTags
 		messages.History = englishHistory
 		messages.Completion = englishCompletion

@@ -202,6 +202,16 @@ type FileClipboard interface {
 	SetClipboardFiles(paths []string) (FileOffer, error)
 }
 
+// ImageClipboard is a Session that can give the picture on this computer's
+// clipboard to the remote system's clipboard, so that its user pastes it: RDP
+// does; VNC carries text only.
+type ImageClipboard interface {
+	Session
+	// SetClipboardImage makes the PNG picture what the remote clipboard holds,
+	// replacing the text it held before.
+	SetClipboardImage(png []byte) error
+}
+
 // FileReceiver is a Session that can take files the remote system put on its
 // clipboard. The files are saved beside this computer's own clipboard, so the
 // user can paste them where they are working.
@@ -211,6 +221,21 @@ type FileReceiver interface {
 	// previous call, if any. Paths names the top-level entries to put on the
 	// local clipboard; Err says why none or only some arrived.
 	RemoteFiles() (ReceivedFiles, bool)
+	// ReceivingFiles reports the files the remote copied that are being saved
+	// now, and false when none are; a change wakes the window like the rest.
+	ReceivingFiles() (FileProgress, bool)
+	// CancelReceivingFiles stops saving them. What arrived is deleted and
+	// RemoteFiles delivers nothing for them.
+	CancelReceivingFiles()
+}
+
+// FileProgress is how far files being received have come.
+type FileProgress struct {
+	// Name is the entry being saved, a `/` separated path inside the selection.
+	Name string
+	// Done is the bytes saved so far out of Size, which is -1 when the remote
+	// did not say how large its files are.
+	Done, Size int64
 }
 
 // ReceivedFiles is a remote file list saved on this computer.

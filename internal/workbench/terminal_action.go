@@ -3,7 +3,9 @@ package workbench
 import (
 	"net"
 	"net/netip"
+	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -21,6 +23,7 @@ const (
 	actionBrowser                   // open Target, a web address, in the browser
 	actionCopy                      // copy Target
 	actionFiles                     // show the folder of Target in the file browser
+	actionReveal                    // show Target in this computer's file manager
 	actionExtract                   // type the command that unpacks Target
 )
 
@@ -177,4 +180,41 @@ func classifyFile(token string) []detected {
 		found = append(found, detected{kind: actionCopy, target: filename, label: filename})
 	}
 	return found
+}
+
+// localPathToken bounds what is resolved as a local path; the same length
+// classifyToken accepts.
+const maxLocalPathToken = 300
+
+// localFilePath is the local file or folder the text under the pointer names,
+// when it names one that exists. token may be absolute, home-relative, or
+// relative to directory, which is how ls and compilers print paths. A line and
+// column suffix is not part of the path. directory is the folder the shell last
+// reported, which is what a relative name is read against.
+func localFilePath(token, directory, home string) (string, bool) {
+	if token == "" || len(token) > maxLocalPathToken || strings.Contains(token, "://") {
+		return "", false
+	}
+	name := pathLine.ReplaceAllString(token, "")
+	var candidate string
+	switch {
+	case name == "~" || strings.HasPrefix(name, "~/"):
+		if home == "" {
+			return "", false
+		}
+		candidate = filepath.Join(home, strings.TrimPrefix(name, "~"))
+	case filepath.IsAbs(name):
+		candidate = name
+	case directory != "":
+		candidate = filepath.Join(directory, name)
+	default:
+		return "", false
+	}
+	if len(candidate) <= 1 || strings.IndexByte(candidate, 0) >= 0 {
+		return "", false // the root is not an entry to show, and a NUL cannot be a path
+	}
+	if _, err := os.Lstat(candidate); err != nil {
+		return "", false
+	}
+	return candidate, true
 }

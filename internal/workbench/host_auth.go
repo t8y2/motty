@@ -134,13 +134,9 @@ func (state *State) paintHostIdentityChoice(canvas *gfx.Canvas, bounds gfx.Rect)
 }
 
 func (state *State) hostAuthListBounds(content gfx.Rect, rows int) gfx.Rect {
-	height := float32(8 + max(rows, 1)*32)
-	top := content.Y + content.Height + 4
-	window := state.windowRect()
-	if top+height > window.Y+window.Height-8 {
-		top = content.Y - height - 4
-	}
-	return gfx.Rect{X: content.X, Y: top, Width: content.Width, Height: height}
+	list, _ := components.PlaceOverlay(content, gfx.Size{Width: content.Width, Height: float32(8 + max(rows, 1)*32)}, state.windowRect(),
+		components.OverlayPlacement{Side: components.OverlayBottom, Align: components.OverlayAlignStart, SideOffset: 4, Margin: 8, Fit: true})
+	return list
 }
 
 func (state *State) clickHostAuthentication(id gfx.ID) bool {

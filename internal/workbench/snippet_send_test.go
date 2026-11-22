@@ -44,6 +44,23 @@ func TestSnippetPickerSendsATypedCommandToTheCurrentTerminal(t *testing.T) {
 	}
 }
 
+// The send form is a palette over the terminal: when it typed into the current
+// terminal, closing it must give that terminal the keyboard back.
+func TestSendingACommandFromThePickerReturnsTheKeyboardToTheTerminal(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	world.connectFirst(t, state)
+	state.Wake()
+	state.activeSection = sectionTerminal
+	want := state.activeTerminalFocusHit()
+	state.Click(hitTerminalSnippets)
+	app.TextEvent{Kind: app.TextInsert, Text: "uptime"}.Apply(state.EditorFor(hitSnippetSendInput))
+	state.Click(hitSnippetSendButton)
+	if state.modal != modalNone || state.pendingFocus != want {
+		t.Fatalf("modal = %d, pending focus = %v, want the terminal %v", state.modal, state.pendingFocus, want)
+	}
+}
+
 // Choosing terminals lists the connected ones, remembers the ticks, and refuses
 // to send until at least one is ticked.
 func TestSnippetPickerSendsOnlyToTheTickedTerminals(t *testing.T) {
@@ -72,6 +89,9 @@ func TestSnippetPickerSendsOnlyToTheTickedTerminals(t *testing.T) {
 	state.Click(hitSnippetSendButton)
 	if shell.typed() != "id\r" {
 		t.Fatalf("the ticked terminal heard %q", shell.typed())
+	}
+	if want := state.activeTerminalFocusHit(); state.pendingFocus != want {
+		t.Fatalf("pending focus = %v, want the terminal %v", state.pendingFocus, want)
 	}
 }
 

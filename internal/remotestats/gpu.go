@@ -21,7 +21,7 @@ const MaxGPUProcesses = 64
 // negative (or, for MemoryTotalBytes, zero) so that "not reported" is never
 // drawn as "0".
 type GPU struct {
-	// Vendor is "NVIDIA" or "AMD".
+	// Vendor is the driver or platform vendor when one can be identified.
 	Vendor string
 	// Index is the device number the vendor's tool reports (nvidia-smi index,
 	// the N of rocm-smi's cardN).
@@ -32,11 +32,14 @@ type GPU struct {
 	UtilPercent      float64
 	MemoryUsedBytes  uint64
 	MemoryTotalBytes uint64
-	TemperatureC     float64
-	PowerWatts       float64
-	PowerLimitWatts  float64
-	FanPercent       float64
-	Processes        []GPUProcess
+	// MemoryKnown records a reported usage even when the adapter's capacity
+	// is unavailable and the usage is zero.
+	MemoryKnown     bool
+	TemperatureC    float64
+	PowerWatts      float64
+	PowerLimitWatts float64
+	FanPercent      float64
+	Processes       []GPUProcess
 }
 
 // GPUProcess is one compute process an NVIDIA driver reports against a GPU.
@@ -58,6 +61,7 @@ const (
 	gpuNvidiaProcessPrefix = "gop-gpu-nvidia-proc "
 	gpuRocmPrefix          = "gop-gpu-rocm "
 	gpuSysfsPrefix         = "gop-gpu-sysfs "
+	gpuDarwinPrefix        = "gop-gpu-darwin "
 )
 
 func isGPULine(line []byte) bool { return bytes.HasPrefix(line, []byte("gop-gpu-")) }
@@ -84,8 +88,48 @@ func parseGPULine(gpus []GPU, line []byte) []GPU {
 		if gpu, ok := parseSysfs(text[len(gpuSysfsPrefix):]); ok {
 			found = append(found, gpu)
 		}
+	case strings.HasPrefix(text, gpuDarwinPrefix):
+		if gpu, ok := parseDarwinGPU(text[len(gpuDarwinPrefix):]); ok {
+			found = append(found, gpu)
+		}
 	}
 	return append(gpus, found[:min(len(found), room)]...)
+}
+
+// parseDarwinGPU reads the "index<TAB>name" row produced by
+// system_profiler SPDisplaysDataType. That command reports stable adapter
+// identity on both Apple Silicon and Intel Macs, while utilization and
+// temperature are vendor-specific or unavailable.
+func parseDarwinGPU(row string) (GPU, bool) {
+	fields := strings.SplitN(row, "\t", 2)
+	if len(fields) != 2 {
+		return GPU{}, false
+	}
+	index, err := strconv.Atoi(strings.TrimSpace(fields[0]))
+	name := detailText(fields[1], 128)
+	if err != nil || index < 0 || name == "" {
+		return GPU{}, false
+	}
+	return GPU{
+		Vendor: gpuVendor(name), Index: index, Name: name,
+		UtilPercent: -1, TemperatureC: -1, PowerWatts: -1, PowerLimitWatts: -1, FanPercent: -1,
+	}, true
+}
+
+func gpuVendor(name string) string {
+	lower := strings.ToLower(name)
+	switch {
+	case strings.Contains(lower, "apple"):
+		return "Apple"
+	case strings.Contains(lower, "nvidia") || strings.Contains(lower, "geforce") || strings.Contains(lower, "quadro"):
+		return "NVIDIA"
+	case strings.Contains(lower, "radeon") || strings.Contains(lower, "amd"):
+		return "AMD"
+	case strings.Contains(lower, "intel") || strings.Contains(lower, "arc"):
+		return "Intel"
+	default:
+		return ""
+	}
 }
 
 // parseNvidia reads one row of

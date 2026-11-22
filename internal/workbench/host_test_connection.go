@@ -78,7 +78,7 @@ func (state *State) hostTestSignature() [sha256.Size]byte {
 	return sha256.Sum256([]byte(fmt.Sprint(
 		editor.value(fieldAddress), "\x00", editor.value(fieldPort), "\x00", editor.value(fieldUser), "\x00",
 		editor.auth, editor.identity, "\x00", editor.password.String(), "\x00", editor.passphrase.String(), "\x00",
-		proxy, editor.proxyPassword)))
+		proxy, editor.proxyProfile, editor.proxyBypass, editor.proxyPassword)))
 }
 
 // draftSecrets answers the secrets typed into the form ahead of the vault's own,

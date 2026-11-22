@@ -96,6 +96,9 @@ func TestASavedPasswordIsKeptInTheVaultNotTheStateFile(t *testing.T) {
 func TestHostsShareASavedPasswordAndChangingItReachesBoth(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)
+	// This test covers credentials on new connections, not the separate
+	// preference that reuses an already-open host session.
+	state.startupReuse = false
 	entry := addCredential(t, state, "Internal", "first-password")
 	useCredential(t, state, hostLabeled(t, state, "Production"), entry)
 	useCredential(t, state, hostLabeled(t, state, "Staging"), entry)

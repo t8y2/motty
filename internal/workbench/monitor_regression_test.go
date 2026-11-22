@@ -455,7 +455,7 @@ func TestMonitorEmptyStateCentersWithoutFooter(t *testing.T) {
 			if line.Bounds.Width > state.monitorRect.Width-32+1 {
 				t.Fatalf("message width %v exceeds the panel inset", line.Bounds.Width)
 			}
-			top := state.monitorRect.Y + infoBarHeight + monitorControlsHeight + monitorHostInfoHeight
+			top := state.monitorRect.Y + infoBarHeight + monitorControlsHeight
 			bottom := state.monitorRect.Y + state.monitorRect.Height
 			center := line.Bounds.Y + line.Bounds.Height/2
 			if center <= top || center >= bottom {
@@ -469,8 +469,7 @@ func TestMonitorEmptyStateCentersWithoutFooter(t *testing.T) {
 }
 
 // The monitor header keeps the close action at the right edge and the move
-// action beside it, the title at x+35, and an 82-wide interval with the pause
-// four pixels to its right.
+// action beside it, the title at x+35, then interval and pause controls.
 func TestMonitorHeaderOrderAndWidths(t *testing.T) {
 	state, _ := monitorFixture(t)
 	var canvas gfx.Canvas
@@ -504,8 +503,12 @@ func TestMonitorHeaderOrderAndWidths(t *testing.T) {
 	if !ok {
 		t.Fatal("interval control is missing")
 	}
-	if interval.Bounds.Width != 82 || interval.Bounds.Height != 26 {
-		t.Fatalf("interval = %v, want 82x26", interval.Bounds)
+	// Content-sized: 4px padding, the 16px clock, 4px gaps, the 11px chevron,
+	// then the text at its own measured width.
+	intervalText := fmt.Sprintf(state.messages.Monitor.IntervalFmt, 2)
+	wantIntervalWidth := 43 + canvas.TextWidthWeight(intervalText, 12, gfx.WeightMedium)
+	if math.Abs(float64(interval.Bounds.Width-wantIntervalWidth)) > 1 || interval.Bounds.Height != 26 {
+		t.Fatalf("interval = %v, want %vx26", interval.Bounds, wantIntervalWidth)
 	}
 	titleWidth := canvas.TextWidthWeight(state.messages.Monitor.Title, 14, gfx.WeightSemibold)
 	if interval.Bounds.X != b.X+35+titleWidth+12 {
@@ -515,8 +518,9 @@ func TestMonitorHeaderOrderAndWidths(t *testing.T) {
 	if !ok {
 		t.Fatal("pause control is missing")
 	}
-	if pause.Bounds.X != interval.Bounds.X+82+4 || pause.Bounds.Width != 24 {
-		t.Fatalf("pause = %v, want four pixels right of the interval", pause.Bounds)
+	pauseX := interval.Bounds.X + interval.Bounds.Width + 4
+	if pause.Bounds.X != pauseX || pause.Bounds.Width != 24 {
+		t.Fatalf("pause = %v, want %v", pause.Bounds, pauseX)
 	}
 }
 

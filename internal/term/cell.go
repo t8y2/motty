@@ -96,6 +96,7 @@ type Row struct {
 	Marks   []Mark
 	ID      uint64
 	Version uint32
+	Used    int
 	Wrapped bool
 	// Written is when the line was last written, in unix seconds, or 0 when
 	// stamping is off (see SetClock) or nothing was written to it. Rewriting or

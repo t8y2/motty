@@ -151,3 +151,27 @@ func TestWorkerReadDocumentUsesTheEditorSizeLimit(t *testing.T) {
 		t.Fatalf("comparison read escaped the editor size limit: %v", result.Err)
 	}
 }
+
+// A document much larger than one SFTP packet is read through the pipelined
+// path of a real server: the bytes must arrive whole and in order, an empty
+// file must read as empty, and the caller's limit must hold.
+func TestWorkerDocumentPipelinedReadKeepsBytesInOrderAndHonorsTheLimit(t *testing.T) {
+	worker, root := newProtocolWorker(t)
+	content := make([]byte, 3<<20+12345)
+	for i := range content {
+		content[i] = byte(i*2654435761>>13) | 0x20
+	}
+	for name, data := range map[string][]byte{"large.log": content, "empty.log": {}} {
+		if err := os.WriteFile(filepath.Join(root, name), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		opened := requireQueuedResult(t, worker.OpenDocument(name, len(content)), worker, OperationOpenDocument)
+		if opened.Err != nil || !bytes.Equal(opened.Data, data) {
+			t.Fatalf("%s: read %d of %d bytes: %v", name, len(opened.Data), len(data), opened.Err)
+		}
+	}
+	refused := requireQueuedResult(t, worker.OpenDocument("large.log", len(content)-1), worker, OperationOpenDocument)
+	if !errors.Is(refused.Err, ErrPreviewFileTooLarge) {
+		t.Fatalf("read past the limit: %v", refused.Err)
+	}
+}

@@ -952,3 +952,30 @@ func TestBlockSelectionYieldsToProgramsUsingTheMouse(t *testing.T) {
 		t.Fatalf("Shift+block drag selected %q", got)
 	}
 }
+
+// A program may ask for the whole keyboard as escape sequences (the kitty
+// protocol's report-all-keys flag). A bare modifier then reaches it as a key,
+// but it is key state, not typing: it must not clear the selection that
+// Ctrl+Insert is about to copy.
+func TestKeyStateKeepsTheSelectionForCopy(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	shell.say("\x1b[=8u")
+	state.Wake()
+	shell.say("alpha beta\r\n")
+	state.Wake()
+	session := &state.sessions[0]
+	session.term.selection.selectRange(term.Point{Line: 0, Column: 2}, term.Point{Line: 0, Column: 6})
+
+	before := len(shell.input)
+	key(state, 0, gfx.KeyEvent{Key: gfx.KeyControlLeft, Modifiers: gfx.ModifierControl})
+	if len(shell.input) == before {
+		t.Fatal("the shell did not receive the modifier")
+	}
+	key(state, 0, gfx.KeyEvent{Key: gfx.KeyControlLeft, Modifiers: gfx.ModifierControl, Release: true})
+	if got := selectedText(session); got != "pha b" {
+		t.Fatalf("a lone Control press or release left the selection as %q", got)
+	}
+	if copied := key(state, 0, gfx.KeyEvent{Key: gfx.KeyInsert, Modifiers: gfx.ModifierControl}).ClipboardText; copied != "pha b" {
+		t.Fatalf("Ctrl+Insert copied %q, want %q", copied, "pha b")
+	}
+}
