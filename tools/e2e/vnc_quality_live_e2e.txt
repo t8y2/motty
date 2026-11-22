@@ -1,0 +1,29 @@
+# End to end: change the quality of a running VNC session from the bar's Quality
+# menu, against the loopback VNC fixture (go build -o /tmp/vncfixture
+# ./tools/e2e/vncfixture && /tmp/vncfixture 5901 &). Its log then shows
+# "client changed to 16 bits per pixel" with no new connection. Chinese labels;
+# coordinates are those of the 1400x900 headless window.
+#
+#   python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/vnc_quality_live_e2e.txt
+click "新建主机"
+click "VNC"
+click textfield:名称
+type fixture-vnc
+click textfield:地址
+type 127.0.0.1
+click textfield:端口
+key cmd+a
+type 5901
+click "添加主机"
+settle 500
+dblclick 400 145
+settle 2500
+click "画质"
+settle 400
+shot /tmp/vnc-quality-menu.png
+click "16 位色"
+settle 1500
+shot /tmp/vnc-quality-menu-after.png
+click "画质"
+settle 400
+shot /tmp/vnc-quality-menu-after-open.png

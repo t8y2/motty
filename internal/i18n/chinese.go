@@ -3000,6 +3000,8 @@ var chineseDesktop = DesktopMessages{
 	LegacyTLS:                 "允许旧版 TLS（RSA 密钥交换）",
 	LegacyTLSNote:             "仅用于不提供较新 TLS 的旧服务器。RSA 密钥交换没有前向保密，AES-CBC 也有已知弱点；日后取得服务器密钥的被动攻击者可以解密本次会话。较新的密码套件仍会保留在协商列表中。",
 	QualityHeading:            "画质与带宽",
+	Quality:                   "画质",
+	QualityReconnectNote:      "更改后将重新连接此会话",
 	ColorDepthField:           "色深",
 	ColorDepthFmt:             "%d 位色",
 	ColorDepthDefaultFmt:      "%d 位色（默认）",

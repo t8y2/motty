@@ -296,6 +296,17 @@ type Resizer interface {
 	Resize(width, height int, scale float32) error
 }
 
+// QualityAdjuster is a Session whose colour depth and encoding can change while
+// it runs, without a new connection (VNC). RDP fixes both in its handshake and
+// is not one: a change there needs the session opened again.
+type QualityAdjuster interface {
+	Session
+	// SetQuality asks the server for colorDepth bits per pixel (see
+	// Options.ColorDepth) and the encoding preferred (see Options.Encoding). The
+	// whole picture is sent again in the new format.
+	SetQuality(colorDepth int, encoding Encoding) error
+}
+
 // LatencySource reports the remote server's last network RTT measurement.
 // A zero timestamp means the server has not supplied a measurement.
 type LatencySource interface {

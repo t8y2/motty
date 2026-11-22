@@ -3000,6 +3000,8 @@ var englishDesktop = DesktopMessages{
 	LegacyTLS:                 "Allow legacy TLS (RSA key exchange)",
 	LegacyTLSNote:             "Only for an old server that offers no newer TLS. RSA key exchange gives no forward secrecy and AES-CBC has known weaknesses, so a passive attacker who later obtains the server's key can decrypt this session. Modern cipher suites stay in the offer.",
 	QualityHeading:            "Quality and bandwidth",
+	Quality:                   "Quality",
+	QualityReconnectNote:      "Changes reconnect this session",
 	ColorDepthField:           "Color depth",
 	ColorDepthFmt:             "%d-bit color",
 	ColorDepthDefaultFmt:      "%d-bit color (default)",

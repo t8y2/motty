@@ -69,7 +69,7 @@ func serve(conn net.Conn) {
 		log.Printf("handshake: %v", err)
 		return
 	}
-	if err := pump(conn, encodeRaw(img, format)); err != nil && err != io.EOF {
+	if err := pump(conn, img, format); err != nil && err != io.EOF {
 		log.Printf("session: %v", err)
 	}
 }
@@ -135,9 +135,11 @@ func handshake(conn net.Conn) (pixelFormat, error) {
 	return format, nil
 }
 
-// pump answers FramebufferUpdateRequest (type 3) with the whole desktop and
-// drains everything else the client sends.
-func pump(conn net.Conn, frame []byte) error {
+// pump answers FramebufferUpdateRequest (type 3) with the whole desktop in the
+// pixel format the client last asked for, follows SetPixelFormat (type 0) and
+// SetEncodings (type 2) sent while the session runs, and drains everything else
+// the client sends.
+func pump(conn net.Conn, img *image.RGBA, format pixelFormat) error {
 	reader := bufio.NewReader(conn)
 	header := make([]byte, 1)
 	for {
@@ -145,11 +147,34 @@ func pump(conn net.Conn, frame []byte) error {
 			return err
 		}
 		switch header[0] {
+		case 0: // SetPixelFormat: three pad bytes, then the 16-byte format
+			message := make([]byte, 20)
+			if _, err := io.ReadFull(reader, message[1:]); err != nil {
+				return err
+			}
+			format = parseFormat(message)
+			log.Printf("client changed to %d bits per pixel", format.bits)
+		case 2: // SetEncodings: a pad byte, the count, then the encodings
+			head := make([]byte, 3)
+			if _, err := io.ReadFull(reader, head); err != nil {
+				return err
+			}
+			first := make([]byte, 4)
+			count := int(binary.BigEndian.Uint16(head[1:]))
+			if count > 0 {
+				if _, err := io.ReadFull(reader, first); err != nil {
+					return err
+				}
+				log.Printf("client changed encodings, first %d", int32(binary.BigEndian.Uint32(first)))
+			}
+			if _, err := io.ReadFull(reader, make([]byte, max(count-1, 0)*4)); err != nil {
+				return err
+			}
 		case 3: // FramebufferUpdateRequest: incremental, x, y, w, h
 			if _, err := io.ReadFull(reader, make([]byte, 9)); err != nil {
 				return err
 			}
-			if err := sendFrame(conn, frame); err != nil {
+			if err := sendFrame(conn, encodeRaw(img, format)); err != nil {
 				return err
 			}
 		case 4: // KeyEvent: down-flag, padding, key

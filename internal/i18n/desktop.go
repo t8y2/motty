@@ -33,6 +33,8 @@ type DesktopMessages struct {
 	LegacyTLS                 string
 	LegacyTLSNote             string
 	QualityHeading            string
+	Quality                   string
+	QualityReconnectNote      string
 	ColorDepthField           string
 	ColorDepthFmt             string
 	ColorDepthDefaultFmt      string

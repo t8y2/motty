@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -8,6 +9,7 @@ import (
 	"github.com/vivaui/viva/gfx"
 
 	"motty/internal/desktop"
+	"motty/internal/sshconn"
 )
 
 // A host that never chose a quality is saved without one, so an older record
@@ -117,5 +119,75 @@ func TestDesktopQualityIsPartOfTheReusePolicy(t *testing.T) {
 		if reusePolicyFor(base) == reusePolicyFor(changed) {
 			t.Errorf("a changed %s leaves the reuse policy as it was", name)
 		}
+	}
+}
+
+// qualityTracker is a desktop session that takes a quality change without a new
+// connection, as VNC does, and records it.
+type qualityTracker struct {
+	*pictureOnly
+	depth    int
+	encoding desktop.Encoding
+	calls    int
+}
+
+func (q *qualityTracker) SetQuality(depth int, encoding desktop.Encoding) error {
+	q.depth, q.encoding = depth, encoding
+	q.calls++
+	return nil
+}
+
+func openedDesktopSession(t *testing.T, host Host, session desktop.Session) (*State, *Session) {
+	t.Helper()
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	state.options.Invalidate = func() {}
+	state.connectionReconnect = reconnectOff
+	state.dialDesktop = func(ctx context.Context, request desktopRequest) (desktop.Session, error) {
+		return session, nil
+	}
+	addStreamHost(state, host)
+	openHost(state)
+	opened, _ := state.sessionByIDPointer(state.activeSessionID)
+	waitUntil(t, state, "the picture", func() bool {
+		return opened.desk != nil && opened.desk.session != nil && opened.phase == sshconn.PhaseConnected
+	})
+	return state, opened
+}
+
+// A VNC session takes the choice at once and saves it with its host, and no
+// question is asked: nothing has to be connected again.
+func TestDesktopQualityMenuAdjustsARunningVNCSession(t *testing.T) {
+	tracker := &qualityTracker{pictureOnly: newPictureOnly()}
+	state, session := openedDesktopSession(t, Host{Label: "Box", Address: "box.example.com", Protocol: protocolVNC}, tracker)
+	state.setDesktopQuality(session, func(host *Host) { host.ColorDepth = 16; host.PreferredEncoding = desktop.EncodingRaw })
+	if tracker.calls != 1 || tracker.depth != 16 || tracker.encoding != desktop.EncodingRaw {
+		t.Fatalf("session was asked for %d bits and %q (%d calls)", tracker.depth, tracker.encoding, tracker.calls)
+	}
+	if state.modal != modalNone {
+		t.Fatalf("a running VNC session was asked to reconnect (modal %d)", state.modal)
+	}
+	saved, _ := state.hostByID(session.HostID)
+	if saved.ColorDepth != 16 || saved.PreferredEncoding != desktop.EncodingRaw {
+		t.Fatalf("saved host = %+v", saved)
+	}
+	// Choosing what is already in effect changes nothing.
+	state.setDesktopQuality(session, func(host *Host) { host.ColorDepth = 16 })
+	if tracker.calls != 1 {
+		t.Fatalf("an unchanged choice reached the server again (%d calls)", tracker.calls)
+	}
+}
+
+// RDP fixes depth and effects in its handshake: the choice is saved and the
+// user is asked to connect again.
+func TestDesktopQualityMenuAsksAnRDPSessionToReconnect(t *testing.T) {
+	state, session := openedDesktopSession(t, Host{Label: "Win", Address: "win.example.com", Protocol: protocolRDP}, newPictureOnly())
+	state.setDesktopQuality(session, func(host *Host) { host.ColorDepth = 16 })
+	if state.modal != modalSessionLink || state.sessionLink.disconnect || state.sessionLink.session != session.ID {
+		t.Fatalf("modal %d, link %+v: want the reconnect question for this session", state.modal, state.sessionLink)
+	}
+	saved, _ := state.hostByID(session.HostID)
+	if saved.ColorDepth != 16 {
+		t.Fatalf("saved host = %+v", saved)
 	}
 }

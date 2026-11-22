@@ -196,7 +196,12 @@ DesktopSize; pointer, key and cut-text messages.
   3-3-2; every decoder widens the pixels back to 32 bits, so a smaller format
   only costs colours) and the encoding the client lists first (automatic, ZRLE,
   Hextile or Raw; the others stay behind it, because a server may not offer the
-  preferred one). Both default to what a host has always used. JPEG quality needs
+  preferred one). Both default to what a host has always used. The bar's
+  **Quality** menu changes them on a running session (and saves them with the
+  host): `Client.SetQuality` sends SetPixelFormat and SetEncodings only after
+  the reply to the outstanding update request has been read, because a server
+  answers in whichever format it has when it answers, then asks for the whole
+  desktop again. JPEG quality needs
   the Tight encoding, which is not implemented.
 * Not supported: RA256, RA2ne/RA256ne, VeNCrypt/TLS, Tight/JPEG,
   extended clipboard, images in the clipboard, audio, file transfer, changing
@@ -348,7 +353,10 @@ draws in 32 bits whatever the session's depth says (as with Windows' own client)
 so only the plain bitmap updates the server falls back to honour the depth.
 Checked on a Windows 10 machine at 32, 24 and 16 bits (the first picture of
 the 16-bit session was about half the size of the 32-bit one as a PNG). Not
-done: adapting the depth to the measured round-trip time.
+done: adapting the depth to the measured round-trip time. RDP fixes depth
+and effects in its handshake, so the bar's **Quality** menu saves the choice and
+asks to reconnect (not exercised against a live server: only the dialog logic
+is tested).
 
 ### Certificates
 

@@ -251,3 +251,98 @@ func BenchmarkDecodeRaw(b *testing.B) {
 		})
 	}
 }
+
+// readQuality reads the SetPixelFormat and SetEncodings a client sends for
+// SetQuality and returns the bits per pixel and the first encoding.
+func (s *server) readQuality() (bits byte, first int32) {
+	s.t.Helper()
+	format := s.read(20)
+	if format[0] != 0 {
+		s.t.Fatalf("client sent message type %d, want SetPixelFormat", format[0])
+	}
+	header := s.read(4)
+	if header[0] != 2 {
+		s.t.Fatalf("client sent message type %d, want SetEncodings", header[0])
+	}
+	for index := range binary.BigEndian.Uint16(header[2:]) {
+		encoding := int32(binary.BigEndian.Uint32(s.read(4)))
+		if index == 0 {
+			first = encoding
+		}
+	}
+	return format[4], first
+}
+
+// A change of quality never overlaps a request that is outstanding: the server
+// sends the reply to it in the old format, the client reads that in the old
+// format, and only then sends the change, before its next request. The
+// request after the change asks for the whole desktop.
+func TestSetQualityWaitsForTheOutstandingReply(t *testing.T) {
+	sink := &canvas{}
+	clientSide, serverSide := pair(t)
+	s := &server{t: t, conn: serverSide}
+	go s.handshake("008", 1, "", 8, 2)
+	client, err := Connect(clientSide, Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := run(client, sink)
+	s.readRequest() // outstanding
+
+	if err := client.SetQuality(Pixel16, PreferEncoding(EncodingRaw)); err != nil {
+		t.Fatal(err)
+	}
+	// The reply to the outstanding request is still 32 bits per pixel.
+	s.write(update(rect(0, 0, 1, 1, EncodingRaw, 9, 8, 7, 0)))
+	if bits, first := s.readQuality(); bits != 16 || first != EncodingRaw {
+		t.Fatalf("change sent: %d bits, first encoding %d", bits, first)
+	}
+	if incremental, _, _ := s.readRequest(); incremental {
+		t.Error("the request after a change of quality must ask for the whole desktop")
+	}
+	d := declaredBy(Pixel16.message())
+	wire, shown := d.pack(10, 200, 90)
+	s.write(update(rect(1, 0, 1, 1, EncodingRaw, wire...)))
+	if incremental, _, _ := s.readRequest(); !incremental {
+		t.Error("only the request right after the change is a full one")
+	}
+	s.finish()
+	wait(t, done)
+	if got := sink.at(0, 0); got != [3]byte{9, 8, 7} {
+		t.Errorf("the reply made before the change = %v, want it read as 32 bits", got)
+	}
+	if got := sink.at(1, 0); got != shown {
+		t.Errorf("the reply made after the change = %v, want %v", got, shown)
+	}
+}
+
+// A hidden desktop has no request outstanding, so the change goes out at once,
+// and the whole desktop is asked for when it is shown again.
+func TestSetQualityOfAHiddenDesktopWaitsForNothing(t *testing.T) {
+	sink := &canvas{}
+	clientSide, serverSide := pair(t)
+	s := &server{t: t, conn: serverSide}
+	go s.handshake("008", 1, "", 8, 2)
+	client, err := Connect(clientSide, Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.SetActive(false)
+	done := run(client, sink)
+	s.readRequest()
+	s.write(update(rect(0, 0, 1, 1, EncodingRaw, 1, 2, 3, 0))) // arrives while hidden: no request follows
+	// Whether the client has read it is seen from outside by the next call: the
+	// change is queued or sent at once, and either way arrives before any request.
+	if err := client.SetQuality(Pixel8, nil); err != nil {
+		t.Fatal(err)
+	}
+	if bits, first := s.readQuality(); bits != 8 || first != EncodingZRLE {
+		t.Fatalf("change sent: %d bits, first encoding %d", bits, first)
+	}
+	go client.SetActive(true) // writes the request: the pipe has no buffer
+	if incremental, _, _ := s.readRequest(); incremental {
+		t.Error("showing the desktop after a change of quality must ask for all of it")
+	}
+	s.finish()
+	wait(t, done)
+}

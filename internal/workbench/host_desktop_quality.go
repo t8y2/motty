@@ -7,6 +7,7 @@ import (
 	"github.com/vivaui/viva/ui"
 
 	"motty/internal/desktop"
+	"motty/internal/i18n"
 )
 
 // A remote desktop host chooses how much bandwidth its picture may use: the
@@ -72,13 +73,22 @@ func (state *State) desktopEncodingLabel(encoding desktop.Encoding) string {
 }
 
 // desktopQualityRowsHeight is the room of the quality section for a protocol: a
-// heading, the color depth, and the VNC encoding or the RDP effects.
+// heading, then one row of selects (VNC: the depth and the encoding side by
+// side) or the depth and the effect switches in two columns (RDP).
 func desktopQualityRowsHeight(protocol hostProtocol) float32 {
+	height := float32(groupHeadingHeight + qualityHeadingGap + hostFormRowHeight + 16)
 	if protocol == protocolRDP {
-		return groupHeadingHeight + hostFormRowHeight + rdpEffectCount*(12+dialogCheckHeight) + 16
+		height += effectRows * (12 + dialogCheckHeight)
 	}
-	return groupHeadingHeight + 2*hostFormRowHeight + 16
+	return height
 }
+
+const (
+	// qualityHeadingGap separates the heading from the field label under it.
+	qualityHeadingGap = 8
+	// effectRows is the rows of the two columns the effect switches stand in.
+	effectRows = (rdpEffectCount + 1) / 2
+)
 
 // rdpEffectCount is how many effect switches the RDP section has.
 const rdpEffectCount = 7
@@ -91,19 +101,18 @@ type hostQualityBody struct {
 	encodingChoice            desktop.Encoding
 }
 
-// effectSwitches are the RDP effect switches in the order they are listed:
-// each one's hit, label and the setting it flips.
-func (state *State) effectSwitches() [rdpEffectCount]struct {
+// effectChoice is one RDP effect: its switch, its words and the setting it
+// flips.
+type effectChoice struct {
 	id      gfx.ID
 	label   string
 	setting *bool
-} {
-	m, effects := state.messages.Desktop, &state.editor.effects
-	return [rdpEffectCount]struct {
-		id      gfx.ID
-		label   string
-		setting *bool
-	}{
+}
+
+// effectChoices are the RDP effects in the order they are listed, over the
+// settings of effects.
+func effectChoices(m i18n.DesktopMessages, effects *desktop.Effects) [rdpEffectCount]effectChoice {
+	return [rdpEffectCount]effectChoice{
 		{hitDialogEffectWallpaper, m.EffectWallpaper, &effects.Wallpaper},
 		{hitDialogEffectFontSmoothing, m.EffectFontSmoothing, &effects.FontSmoothing},
 		{hitDialogEffectComposition, m.EffectComposition, &effects.Composition},
@@ -114,6 +123,11 @@ func (state *State) effectSwitches() [rdpEffectCount]struct {
 	}
 }
 
+// effectSwitches are the editor's effects.
+func (state *State) effectSwitches() [rdpEffectCount]effectChoice {
+	return effectChoices(state.messages.Desktop, &state.editor.effects)
+}
+
 // declareDesktopQualityRows lays out the quality section of a VNC or RDP host.
 func (state *State) declareDesktopQualityRows(c ui.C) {
 	editor, form, m := &state.editor, &state.editor.form, state.messages.Desktop
@@ -121,15 +135,11 @@ func (state *State) declareDesktopQualityRows(c ui.C) {
 	*b = hostQualityBody{}
 	rowHeight := float32(hostFormRowHeight)
 	rdp := editor.form.layoutProtocol == protocolRDP
-	ui.Column(c).FillWidth().Children(func() {
-		ui.Column(c).Height(groupHeadingHeight).Children(func() {
-			ui.Column(c).Height(1).MarginSides(12, 0, 0, 0).Background(withAlpha(state.pal.line, 0.7))
-			ui.Text(c, m.QualityHeading).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.muted).MarginSides(8, 0, 0, 2)
-		})
-		depths := vncColorDepths[:]
-		if rdp {
-			depths = rdpColorDepths[:]
-		}
+	depths := vncColorDepths[:]
+	if rdp {
+		depths = rdpColorDepths[:]
+	}
+	depthSelect := func() {
 		b.depthChoice = colorDepthOrDefault(editor.colorDepth)
 		ui.FormField(c, &b.depthField, m.ColorDepthField).FillWidth().Height(rowHeight).Children(func() {
 			b.depthBox = ui.Select(c, &b.depthChoice, depths, state.colorDepthLabel).Label(m.ColorDepthField)
@@ -138,20 +148,40 @@ func (state *State) declareDesktopQualityRows(c ui.C) {
 				state.dialogError = ""
 			}
 		})
+	}
+	ui.Column(c).FillWidth().Children(func() {
+		ui.Column(c).Height(groupHeadingHeight).Children(func() {
+			ui.Column(c).Height(1).MarginSides(12, 0, 0, 0).Background(withAlpha(state.pal.line, 0.7))
+			ui.Text(c, m.QualityHeading).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.muted).MarginSides(8, 0, 0, 2)
+		})
+		ui.Slot(c).Height(qualityHeadingGap)
 		if rdp {
-			for _, effect := range state.effectSwitches() {
-				state.declareDialogCheck(c, effect.id, effect.label, *effect.setting, 12, 0)
-			}
+			depthSelect()
+			effects := state.effectSwitches()
+			ui.Row(c).FillWidth().Height(effectRows * (12 + dialogCheckHeight)).Gap(8).Children(func() {
+				for column := range 2 {
+					ui.Column(c).Grow(1).Children(func() {
+						for index := column * effectRows; index < min((column+1)*effectRows, len(effects)); index++ {
+							state.declareDialogCheck(c, effects[index].id, effects[index].label, *effects[index].setting, 12, 0)
+						}
+					})
+				}
+			})
 			ui.Slot(c).Height(16)
 			return
 		}
-		b.encodingChoice = editor.desktopEncoding
-		ui.FormField(c, &b.encodingField, m.EncodingPreferenceField).FillWidth().Height(rowHeight).Children(func() {
-			b.encodingBox = ui.Select(c, &b.encodingChoice, vncEncodings[:], state.desktopEncodingLabel).Label(m.EncodingPreferenceField)
-			if b.encodingBox.Changed() {
-				editor.desktopEncoding = b.encodingChoice
-				state.dialogError = ""
-			}
+		ui.Row(c).FillWidth().Height(rowHeight).Gap(8).Children(func() {
+			ui.Column(c).Grow(1).Children(depthSelect)
+			ui.Column(c).Grow(1).Children(func() {
+				b.encodingChoice = editor.desktopEncoding
+				ui.FormField(c, &b.encodingField, m.EncodingPreferenceField).FillWidth().Height(rowHeight).Children(func() {
+					b.encodingBox = ui.Select(c, &b.encodingChoice, vncEncodings[:], state.desktopEncodingLabel).Label(m.EncodingPreferenceField)
+					if b.encodingBox.Changed() {
+						editor.desktopEncoding = b.encodingChoice
+						state.dialogError = ""
+					}
+				})
+			})
 		})
 		ui.Slot(c).Height(16)
 	})

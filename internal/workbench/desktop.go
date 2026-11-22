@@ -37,6 +37,7 @@ var (
 	hitDesktopReconnect  = tree.ID(desktopHits, "reconnect")
 	hitDesktopFullscreen = tree.ID(desktopHits, "fullscreen")
 	hitDesktopLatency    = tree.ID(desktopHits, "latency")
+	hitDesktopQuality    = tree.ID(desktopHits, "quality")
 )
 
 const (
@@ -110,6 +111,8 @@ type desktopView struct {
 	asked, pending desktopTarget
 	pendingSince   time.Duration
 	settling       bool
+	// qualityMenu is whether the quality menu of the bar is open.
+	qualityMenu bool
 }
 
 // imageDigest identifies the picture a desktop's clipboard was last given, so the
@@ -1000,6 +1003,10 @@ func (state *State) clickDesktop(id gfx.ID) bool {
 		view.fit = false
 	case hitDesktopFullscreen:
 		state.toggleDesktopFullscreen(session)
+	case hitDesktopQuality:
+		if !view.ended {
+			view.qualityMenu = !view.qualityMenu
+		}
 	case hitDesktopCapture:
 		state.toggleCapture(view)
 	case hitDesktopCtrlAltDel:
@@ -1144,6 +1151,11 @@ func (state *State) declareDesktopTools(c ui.C, session *Session, view *desktopV
 		if view.ended {
 			fullscreen = fullscreen.Disabled(true)
 		}
+		quality := ui.Button(c, m.Quality).XSmall().Ghost().Hit(state.paneIdentity(session, hitDesktopQuality), m.Quality)
+		if view.ended {
+			quality = quality.Disabled(true)
+		}
+		state.declareDesktopQualityMenu(c, session, view, quality)
 	})
 }
 

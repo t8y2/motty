@@ -3000,6 +3000,8 @@ var traditionalDesktop = DesktopMessages{
 	LegacyTLS:                 "允許舊版 TLS（RSA 金鑰交換）",
 	LegacyTLSNote:             "僅用於不提供較新 TLS 的舊伺服器。RSA 金鑰交換沒有前向保密，AES-CBC 也有已知弱點；日後取得伺服器金鑰的被動攻擊者可以解密本次工作階段。較新的密碼套件仍會保留在協商清單中。",
 	QualityHeading:            "畫質與頻寬",
+	Quality:                   "畫質",
+	QualityReconnectNote:      "變更後將重新連線此工作階段",
 	ColorDepthField:           "色彩深度",
 	ColorDepthFmt:             "%d 位元色彩",
 	ColorDepthDefaultFmt:      "%d 位元色彩（預設）",

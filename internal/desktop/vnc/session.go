@@ -30,6 +30,13 @@ type Session struct {
 }
 
 var _ desktop.Session = (*Session)(nil)
+var _ desktop.QualityAdjuster = (*Session)(nil)
+
+// SetQuality changes the colour depth and the preferred encoding of the
+// running connection.
+func (session *Session) SetQuality(colorDepth int, encoding desktop.Encoding) error {
+	return session.client.SetQuality(pixelFormat(colorDepth), encodings(encoding))
+}
 
 // Open connects to address through dial and starts reading the server. It
 // returns rfb.ErrAuthRequired when the server wants a password and opts has none,
