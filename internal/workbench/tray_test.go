@@ -248,13 +248,12 @@ func TestChoosingASavedHostOpensItInTheVisibleWindow(t *testing.T) {
 	fixture := newTrayFixture(t)
 	fixture.firstView.hidden = true
 	hosts := directItem(fixture.tray.Menu(), "Hosts")
-	network := directItem(hosts.Submenu, "Network")
-	router := directItem(network.Submenu, "Router")
-	if router == nil || router.OnSelect == nil {
-		t.Fatalf("router entry = %+v", router)
+	production := findItem(hosts.Submenu, "Production")
+	if production == nil || production.OnSelect == nil {
+		t.Fatalf("production entry = %+v", production)
 	}
 	before := len(fixture.second.sessions)
-	router.OnSelect()
+	production.OnSelect()
 	if len(fixture.second.sessions) != before+1 {
 		t.Fatalf("second window sessions = %d, want %d", len(fixture.second.sessions), before+1)
 	}
@@ -264,14 +263,19 @@ func TestChoosingASavedHostOpensItInTheVisibleWindow(t *testing.T) {
 	if fixture.invalidated.Load() == 0 {
 		t.Fatal("the window was not asked to repaint")
 	}
-	var routerHost Host
+	var productionHost Host
 	for _, host := range fixture.second.hosts {
-		if host.Label == "Router" {
-			routerHost = host
+		if host.Label == "Production" {
+			productionHost = host
 		}
 	}
-	if opened := fixture.second.sessions[before]; routerHost.ID == 0 || opened.HostID != routerHost.ID {
-		t.Fatalf("opened host %d, want Router %d", opened.HostID, routerHost.ID)
+	opened := fixture.second.sessions[before]
+	if productionHost.ID == 0 || opened.HostID != productionHost.ID {
+		t.Fatalf("opened host %d, want Production %d", opened.HostID, productionHost.ID)
+	}
+	production.OnSelect()
+	if len(fixture.second.sessions) != before+1 || fixture.second.activeSessionID != opened.ID || fixture.firstView.shows != 0 {
+		t.Fatal("choosing the host again must reuse it in the visible window")
 	}
 }
 
@@ -557,6 +561,31 @@ func TestClosingAnEmptyWindowDoesNotAsk(t *testing.T) {
 	}
 }
 
+func TestTheCloseWindowQuestionCanBeTurnedOff(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	state.Click(hitSettingsCloseWindowConfirmToggle)
+	if !state.closeWindowConfirmOff {
+		t.Fatal("the setting did not turn the question off")
+	}
+	if state.snapshot().CloseWindowConfirm != "off" {
+		t.Fatal("the choice is not saved")
+	}
+	closed := 0
+	if state.ConfirmClose(func() { closed++ }) || state.modal != modalNone {
+		t.Fatalf("the window asked with the setting off: modal %d", state.modal)
+	}
+	state.Click(hitSettingsCloseWindowConfirmToggle)
+	if state.closeWindowConfirmOff {
+		t.Fatal("the setting did not turn the question back on")
+	}
+	if !state.ConfirmClose(func() { closed++ }) || state.modal != modalForm {
+		t.Fatalf("the window did not ask with the setting on: modal %d", state.modal)
+	}
+	if closed != 0 {
+		t.Fatalf("asking closed the window %d times", closed)
+	}
+}
+
 func TestHidingToTrayIsExplainedOnce(t *testing.T) {
 	w := newNotifyWorld(t)
 	state := newTestState(t, w.options)
@@ -576,5 +605,24 @@ func TestHidingToTrayIsExplainedOnce(t *testing.T) {
 	}
 	if again := newTestState(t, w.options); !again.trayHintShown {
 		t.Fatal("the explanation was not remembered on this device")
+	}
+}
+
+// The choice rides in the shared settings, so another window and a restart get
+// it, not only the state that made it.
+func TestTheDisabledCloseWindowQuestionSurvivesRestore(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	state.Click(hitSettingsCloseWindowConfirmToggle)
+	saved := state.snapshot()
+	if saved.CloseWindowConfirm != "off" {
+		t.Fatalf("saved choice = %q, want off", saved.CloseWindowConfirm)
+	}
+	other := newTestState(t, testOptions(t))
+	other.restoreShared(saved)
+	if !other.closeWindowConfirmOff {
+		t.Fatal("restoring the shared settings lost the choice")
+	}
+	if other.ConfirmClose(func() {}) {
+		t.Fatal("a restored state asked the question with the setting off")
 	}
 }

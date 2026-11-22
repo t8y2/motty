@@ -1225,7 +1225,7 @@ func (state *State) declareSFTPOwnershipPopup(c ui.C, view *sftpView, field int,
 		Scope: dialogScope, DismissID: hitSFTPChownDismiss,
 		Side: components.PopoverBottom, Align: ui.Start, Offset: 8, Width: width,
 	}
-	ui.PopoverWith(c, anchor, spec, &view.ownership.open[field], func() {
+	ui.PopoverWith(c, anchor, &view.ownership.open[field], spec, func() {
 		ui.Column(c).Gap(2).Children(func() {
 			if len(matches) == 0 {
 				ui.Text(c, messages.SFTPOwnershipNoMatches).FontSize(metrics.FontSizeS).

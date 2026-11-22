@@ -399,6 +399,33 @@ func TestMonitorLoginSessionsScrollAndCollapse(t *testing.T) {
 	}
 }
 
+func TestMonitorShowsKnownSSHUserWhenSessionsAreUnavailable(t *testing.T) {
+	state, session := monitorFixture(t)
+	panel := &session.stats.panel
+	panel.haveDetails = true
+	panel.detailsFailed = false
+	session.endpoint = sshconn.Endpoint{User: "connected-user"}
+	session.role = sshconn.EndpointTarget
+	session.phase = sshconn.PhaseConnected
+	panel.data.LoginsAvailable = false
+	view, err := headless.Open(state.WindowConfig(app.Config{Title: "Monitor", Width: 1280, Height: 900, Tree: Tree(), Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll, OnResize: state.Resize}), nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err = view.Scroll(gfx.ScrollEvent{X: state.monitorRect.X + 50, Y: state.monitorRect.Y + 400, DeltaY: 10000}); err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range []string{"connected-user", state.messages.Monitor.CurrentSSHLogin, state.messages.Monitor.LoginsUnavailable} {
+		if !view.HasText(text) {
+			t.Fatalf("login sessions section is missing %q", text)
+		}
+	}
+	if view.HasText(state.messages.Monitor.NoLogins) {
+		t.Fatal("unavailable sessions were reported as empty")
+	}
+}
+
 func TestMonitorSpecialServerNativeStates(t *testing.T) {
 	for _, kind := range []string{"windows", "partial", "unsupported"} {
 		t.Run(kind, func(t *testing.T) {

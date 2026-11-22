@@ -46,6 +46,19 @@ type RemoteFiles struct {
 	Skipped int
 }
 
+// RemoteFilesProgress is how far the download of the server's file list has
+// come. OnRemoteFilesProgress hears it while the files are read, and once more
+// with Active false when the download is over, however it ended.
+type RemoteFilesProgress struct {
+	Active bool
+	// Name is the entry being read, as the server names it (`\` separated).
+	Name string
+	// Done is the bytes read so far; Total is the size of every file of the
+	// list, known only when the server sized each one (HasTotal).
+	Done, Total uint64
+	HasTotal    bool
+}
+
 // Why a remote file list may fail before any file arrives.
 var (
 	errFileListRefused     = errors.New("the server refused its file list")
@@ -153,6 +166,39 @@ func (h *Handler) releaseRemoteLockIfIdle(id uint32) {
 	}
 }
 
+// OnRemoteFilesProgress sets the callback that hears how far the download of
+// the server's files has come. It runs on the download's goroutine, once per
+// chunk, so it only records what it is told.
+func (h *Handler) OnRemoteFilesProgress(fn func(RemoteFilesProgress)) {
+	h.mu.Lock()
+	h.onFilesProgress = fn
+	h.mu.Unlock()
+}
+
+// CancelRemoteFiles stops the download of the server's files under way, if
+// any. What was read is deleted and no list is delivered; the server's
+// clipboard is left as it is, so copying the files again there reads them anew.
+func (h *Handler) CancelRemoteFiles() {
+	h.mu.Lock()
+	cancel := h.downloadCancel
+	h.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+// reportProgress tells the caller how far download serial has come, unless a
+// newer download has taken its place: that one reports for itself.
+func (h *Handler) reportProgress(serial uint64, progress RemoteFilesProgress) {
+	h.mu.Lock()
+	callback := h.onFilesProgress
+	current := h.downloadSerial == serial
+	h.mu.Unlock()
+	if current && callback != nil {
+		callback(progress)
+	}
+}
+
 // finishRemoteFiles hands an error, or a finished download, to the caller off
 // the connection's read goroutine.
 func (h *Handler) finishRemoteFiles(generation uint64, files RemoteFiles, err error) {
@@ -221,6 +267,20 @@ func (h *Handler) receiveRemoteFiles(ctx context.Context, cancel context.CancelF
 		return
 	}
 	result := RemoteFiles{Dir: root}
+	progress := RemoteFilesProgress{Active: true, HasTotal: true}
+	for _, entry := range files {
+		if entry.Dir {
+			continue
+		}
+		if !entry.HasSize {
+			progress.HasTotal = false
+		}
+		progress.Total += entry.Size
+	}
+	if !progress.HasTotal {
+		progress.Total = 0
+	}
+	h.reportProgress(serial, progress)
 	tops := make(map[string]bool)
 	for index, entry := range files {
 		if ctx.Err() != nil || h.generationChanged(generation) {
@@ -241,7 +301,19 @@ func (h *Handler) receiveRemoteFiles(ctx context.Context, cancel context.CancelF
 			}
 			result.Folders++
 		} else {
-			written, err := h.receiveRemoteFile(ctx, root, rel, index, entry, clipID)
+			progress.Name = entry.Name
+			h.reportProgress(serial, progress)
+			start := progress.Done
+			written, err := h.receiveRemoteFile(ctx, root, rel, index, entry, clipID, func(read uint64) {
+				progress.Done = start + read
+				h.reportProgress(serial, progress)
+			})
+			// A file refused part way, or one longer or shorter than its
+			// descriptor said, leaves the count at what the list announced.
+			progress.Done = start + entry.Size
+			if !entry.HasSize {
+				progress.Done = start + written
+			}
 			if err != nil {
 				h.log.LogAttrs(context.Background(), slog.LevelDebug, "remote file refused", slog.String("name", entry.Name), slog.Any("error", err))
 				result.Skipped++
@@ -286,18 +358,24 @@ func (h *Handler) finishDownload(serial uint64, clipID uint32) {
 	if release {
 		h.remoteLockID = 0
 	}
-	if h.downloadSerial == serial {
+	current := h.downloadSerial == serial
+	if current {
 		h.downloadCancel = nil
 		h.downloadClipID = 0
 	}
+	callback := h.onFilesProgress
 	h.mu.Unlock()
 	if release {
 		h.sendResponse(encodeLockClipData(CBUnlockClipData, clipID))
 	}
+	if current && callback != nil {
+		callback(RemoteFilesProgress{})
+	}
 }
 
-// receiveRemoteFile writes one file and returns how many bytes it read.
-func (h *Handler) receiveRemoteFile(ctx context.Context, root, rel string, index int, entry RemoteFile, clipID uint32) (uint64, error) {
+// receiveRemoteFile writes one file and returns how many bytes it read. read
+// hears the bytes written so far after every chunk.
+func (h *Handler) receiveRemoteFile(ctx context.Context, root, rel string, index int, entry RemoteFile, clipID uint32, read func(uint64)) (uint64, error) {
 	path := filepath.Join(root, rel)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return 0, err
@@ -340,6 +418,7 @@ func (h *Handler) receiveRemoteFile(ctx context.Context, root, rel string, index
 			return 0, err
 		}
 		offset += length
+		read(offset)
 	}
 	if !entry.Modified.IsZero() {
 		_ = os.Chtimes(path, entry.Modified, entry.Modified)

@@ -425,7 +425,6 @@ var credentialChoiceHits = tree.Feature("host-credential")
 
 var (
 	hitDialogCredential         = tree.ID(credentialChoiceHits, "dialog-credential")
-	hitDialogCredentialDismiss  = tree.ID(credentialChoiceHits, "dialog-credential-dismiss")
 	hitDialogCredentialOwn      = tree.ID(credentialChoiceHits, "dialog-credential-own")
 	hitDialogCredentialNew      = tree.ID(credentialChoiceHits, "dialog-credential-new")
 	hitDialogCredentialValue    = tree.ID(credentialChoiceHits, "dialog-credential-value")
@@ -528,9 +527,7 @@ func (state *State) declareHostCredentialMenu(c ui.C) {
 	}
 	rows.add(components.ContextMenuItem{ID: hitDialogCredentialNew, Label: m.Add})
 	ui.PopupLayer(c, dialogLayer)
-	anchorBox := ui.Slot(c).Absolute().Left(anchor.X).Top(anchor.Y).Size(anchor.Width, anchor.Height).
-		HitWith(hitDialogCredentialDismiss, "", gfx.HitOptions{SkipFocus: true, SkipTab: true})
-	ui.Menu(c, anchorBox, &editor.credentialOpen, func(menu *ui.MenuItems) {
+	ui.MenuAt(c, &editor.credentialOpen, anchor, func(menu *ui.MenuItems) {
 		menu.WidthRange(anchor.Width, anchor.Width)
 		rows.declare(c, menu, state.chooseHostCredential)
 	})
@@ -548,8 +545,6 @@ func (state *State) clickHostCredential(id gfx.ID) bool {
 	case id == hitDialogCredential, id == hitDialogCredentialValue:
 		editor.credentialOpen = !editor.credentialOpen
 		editor.authOpen, editor.identityOpen = false, false
-	case id == hitDialogCredentialDismiss:
-		editor.credentialOpen = false
 	case id == hitDialogCredentialOwn:
 		editor.credential, editor.credentialOpen = "", false
 	case id == hitDialogCredentialNew:

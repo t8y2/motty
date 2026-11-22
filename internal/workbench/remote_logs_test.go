@@ -77,8 +77,8 @@ func TestRemoteLogsWithCommandsBar(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if bar.Height <= 0 || paths.Bounds.Y+paths.Bounds.Height > bar.Y {
-						t.Fatalf("server logs overlap commands bar: logs splitter=%+v bar=%+v", paths.Bounds, bar)
+					if bar.Width <= 0 || paths.Bounds.X+paths.Bounds.Width > bar.X {
+						t.Fatalf("server logs overlap command sidebar: logs splitter=%+v sidebar=%+v", paths.Bounds, bar)
 					}
 				}
 				if dir := os.Getenv("MOTTY_REMOTE_LOG_SCREENSHOTS"); dir != "" {

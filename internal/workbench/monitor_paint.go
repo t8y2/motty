@@ -310,7 +310,7 @@ func (state *State) declareMonitorBody(c ui.C, session *Session, p *monitorView,
 		})
 		return
 	}
-	p.contentHeight = monitorContentHeight(p)
+	p.contentHeight = monitorContentHeight(p, state.monitorCurrentSSHUser(session))
 	scroll := ui.Scroll(c).Grow(1).Basis(0).MinHeight(0).Scrollbars().ScrollbarSize(catalogBarGutter).
 		HitWith(hitMonitorScroll, m.Title, gfx.HitOptions{Role: gfx.RoleGroup})
 	if area := scroll.ScrollState(); area != nil {

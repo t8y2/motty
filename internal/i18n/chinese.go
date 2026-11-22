@@ -265,6 +265,9 @@ var ChineseMessages = Messages{
 	SettingsOutputAlertsDescription:        "通过标签标题提示未查看的输出：蓝色表示输出中，绿色表示输出结束或静默，黄色表示命令报告失败。",
 	SettingsTabOrientation:                 "标签方向",
 	SettingsTabOrientationDescription:      "将会话标签显示在顶部，或垂直排列在左侧栏。",
+	SettingsTabDoubleClick:                 "双击标签页",
+	SettingsTabDoubleClickDescription:      "双击会话标签页时的操作；右键菜单始终提供这两个动作。",
+	SettingsTabDoubleClickNone:             "不做任何操作",
 	SettingsTabsHorizontal:                 "水平",
 	SettingsTabsVertical:                   "垂直",
 	SettingsTabNumbers:                     "显示标签编号",
@@ -370,7 +373,7 @@ var ChineseMessages = Messages{
 	SettingsStartupDisabled:                "已停用",
 	SettingsStartupDescription:             "打开软件时自动打开的终端和主机；需要密码或确认主机密钥的会照常询问。",
 	SettingsStartupReuse:                   "已打开时不再新增",
-	SettingsStartupReuseDescription:        "启动要打开的终端或主机已经打开时，切换到它而不是再开一个。",
+	SettingsStartupReuseDescription:        "连接主机或在启动时打开会话时，切换到当前窗口中已有的会话。新建标签页、复制和分屏仍会打开独立会话。",
 	SettingsStartupNone:                    "不打开",
 	SettingsStartupJoiner:                  "、",
 	SettingsStartupHostsCount:              "%d 台主机",
@@ -1865,9 +1868,9 @@ var chineseTools = ToolsMessages{
 
 	// 底部快捷命令。
 	CommandsAdd:         "添加命令",
-	CommandsClose:       "隐藏底部快捷命令（可在快捷命令面板重新勾选显示）",
-	CommandsBarHidden:   "底部快捷命令已隐藏",
-	CommandsBarShow:     "显示底部快捷命令",
+	CommandsClose:       "隐藏快捷命令侧边栏（可在快捷命令面板重新显示）",
+	CommandsBarHidden:   "快捷命令侧边栏已隐藏",
+	CommandsBarShow:     "显示快捷命令侧边栏",
 	CommandsFilter:      "按分组筛选",
 	CommandsUngrouped:   "未分组",
 	CommandsShowAll:     "全选",
@@ -1975,6 +1978,9 @@ var chineseTools = ToolsMessages{
 	PasswordHintDescription: "在 sudo、su 和 SSH/SCP 的账户密码提示处列出已保存的密码，支持本地终端和嵌套 SSH 会话。用 ↑/↓ 选择后按 Enter，或点击候选才会发送。身份在「设置 > 安全 > 身份」中保存。",
 	CloseConfirmRow:         "关闭运行中的会话前确认",
 	CloseConfirmDescription: "关闭仍处于连接状态的标签页或分屏时先询问。已结束的会话直接关闭。",
+
+	CloseWindowConfirmRow:         "关闭窗口前确认",
+	CloseWindowConfirmDescription: "窗口还有打开的会话时，关闭前先询问。关闭后这些会话会断开连接。",
 
 	NotifyRow:         "桌面通知",
 	NotifyDescription: "终端里的程序请求通知时（OSC 9、777、99），显示系统通知。每个终端每秒最多一条。",

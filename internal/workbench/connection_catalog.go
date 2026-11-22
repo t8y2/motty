@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"motty/internal/sshconfig"
 	"motty/internal/sshconn"
 	"motty/internal/vault"
 )
@@ -106,7 +107,27 @@ type connectionRoute struct {
 	// through another route is not shared.
 	proxyKey string
 	// jumpPath is the chain of jump hosts, "a → b", or empty for a direct host.
-	jumpPath string
+	jumpPath     string
+	jumpPolicies []jumpPolicy
+}
+
+type jumpPolicy struct {
+	id              uint32
+	auth            hostAuth
+	identity        string
+	credential      string
+	identitiesOnly  bool
+	interactiveOnly bool
+	options         *sshconfig.ConnectionOptions
+	algoMode        string
+	algoList        string
+}
+
+func (policy jumpPolicy) equal(other jumpPolicy) bool {
+	return policy.id == other.id && policy.auth == other.auth && policy.identity == other.identity &&
+		policy.credential == other.credential && policy.identitiesOnly == other.identitiesOnly &&
+		policy.interactiveOnly == other.interactiveOnly && policy.options.Equal(other.options) &&
+		policy.algoMode == other.algoMode && policy.algoList == other.algoList
 }
 
 // login is the account a connection to host signs in as.
@@ -466,6 +487,12 @@ func (catalog *hostCatalog) sshConfigFor(host, proxyHost Host, env connectEnv) (
 		var path strings.Builder
 		for source := len(chain) - 1; source >= 0; source-- {
 			jump := chain[source]
+			algoMode, algoList := jump.savedAlgo()
+			route.jumpPolicies = append(route.jumpPolicies, jumpPolicy{
+				id: jump.ID, auth: jump.Auth, identity: jump.Identity, credential: jump.Credential,
+				identitiesOnly: jump.IdentitiesOnly, interactiveOnly: jump.InteractiveOnly,
+				options: jump.SSHOptions.Clone(), algoMode: algoMode, algoList: algoList,
+			})
 			endpoint := sshconn.Endpoint{Host: jump.Address, Port: jump.Port, User: catalog.login(jump)}
 			config.ProxyJumps[len(chain)-1-source] = endpoint
 			config.Authentication[endpoint] = catalog.authenticationFor(jump)

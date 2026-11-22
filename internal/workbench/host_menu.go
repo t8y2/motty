@@ -35,6 +35,7 @@ type hostMenu struct {
 	open    bool
 	host    uint32
 	checked bool
+	newTab  bool
 	at      gfx.Point
 }
 
@@ -56,7 +57,7 @@ func (state *State) openHostOn(canvas *gfx.Canvas, id gfx.ID, host Host) {
 		return
 	}
 	state.selectedHostID = host.ID
-	state.newHostSession(host)
+	state.openHostSession(host)
 	canvas.Consume()
 }
 
@@ -72,7 +73,7 @@ func (state *State) openHostMenuOn(canvas *gfx.Canvas, id gfx.ID, host Host) {
 	}
 	state.selectedHostID = host.ID
 	state.hostBlankMenu.open = false
-	state.hostMenu = hostMenu{open: true, host: host.ID, checked: state.hostSelected(host.ID), at: gfx.Point{X: event.X, Y: event.Y}}
+	state.hostMenu = hostMenu{open: true, host: host.ID, checked: state.hostSelected(host.ID), newTab: id.Scope() == hitNewTabHostList, at: gfx.Point{X: event.X, Y: event.Y}}
 	canvas.Consume()
 }
 
@@ -128,7 +129,13 @@ func (state *State) chooseHostMenu(id gfx.ID) {
 	switch id {
 	case hitHostMenuConnect:
 		state.selectedHostID = host.ID
-		state.newHostSession(host)
+		if state.hostMenu.newTab {
+			state.pendingWorkspace = state.deck.ActiveWorkspace()
+			state.pendingPane = state.deck.ActivePane(state.pendingWorkspace)
+			state.newHostSession(host)
+		} else {
+			state.openHostSession(host)
+		}
 	case hitHostMenuSFTP:
 		state.openHostSFTPWindow(host)
 	case hitHostMenuAddress:

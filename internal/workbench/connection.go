@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -633,6 +634,15 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 	session.restored = false
 	session.autoRestore, session.restoreNote = false, ""
 	session.host = host
+	session.dialedProtocol, session.dialedTerminal = host.Protocol, host.Terminal
+	session.dialedHostAuth = host.Auth
+	session.dialedHostIdentity = host.Identity
+	session.dialedHostCredential = host.Credential
+	session.dialedHostIdentitiesOnly = host.IdentitiesOnly
+	session.dialedAlgoMode, session.dialedAlgoList = host.savedAlgo()
+	session.reusePolicy = reusePolicyFor(host)
+	session.reuseOptions = host.SSHOptions.Clone()
+	session.reuseRoute, session.reuseRouteValid = state.reuseRouteFor(host)
 	session.agent, session.agentWatch = agentNone, agentWatch{}
 	session.Address = state.sessionAddress(host)
 	session.endpoint = sshconn.Endpoint{Host: host.Address, Port: host.Port, User: state.login(host)}
@@ -718,12 +728,21 @@ func (state *State) sshConfigFor(session *Session, host Host) (config sshconn.Co
 	// it with the connection.
 	config.SecurityKeyAgent = newSecurityKeyAgent(state).Agent
 	session.proxyRoute, session.jumpPath = route.proxyKey, route.jumpPath
+	session.jumpPolicies = route.jumpPolicies
 	// Freeze how this endpoint authenticates and which probes it allows, as the
 	// transport will: a later host edit, or another host at the same address,
 	// must not describe this dial after the fact.
 	session.authentication = config.Authentication[sshconn.Endpoint{Host: config.Host, Port: config.Port, User: config.User}]
 	session.interactiveOnly = config.InteractiveOnly
 	return config, valid
+}
+
+func (state *State) reuseRouteFor(host Host) (connectionRoute, bool) {
+	if host.ID == localHostID || host.Protocol == protocolSerial {
+		return connectionRoute{}, true
+	}
+	config, route, valid := state.hostCatalog.sshConfigFor(host, host, state.connectionEnv(nil))
+	return route, valid && (config.Proxy == nil || config.Proxy.Err == nil)
 }
 
 // connectionEnv is what resolving a connection needs that the catalog does not
@@ -742,9 +761,15 @@ func (state *State) connectionEnv(notify func()) connectEnv {
 }
 
 // shareFrom opens a tab on the connection another tab of this window already
-// has to the same account through the same jumps, so a split or a second tab
+// has to the same host through the same jumps, so a split or a second tab
 // needs no new handshake and no new password. It returns nil when there is no
 // such connection, or when the server will not lend it.
+//
+// Only a tab of the same saved host lends its connection, as a saved host owns
+// its tabs (see openHostSession). Two saved hosts at one account are two
+// destinations the user chose to keep apart: a bastion menu, for one, binds
+// every channel of a transport to the asset picked on it, so a borrowed
+// connection would skip the menu and land on another host's asset.
 //
 // The two tabs must also have dialed the same authentication policy. A
 // transport opened with a key is not a password login: lending it to a host
@@ -760,8 +785,12 @@ func (state *State) shareFrom(session *Session, host Host) (Connection, *Session
 		other := &state.sessions[index]
 		// The saved host may have been edited since this transport was opened.
 		// Compare its dialed account/address, not the next connection's settings.
-		if other.ID == session.ID || other.conn == nil || other.Address != address ||
+		if other.ID == session.ID || other.conn == nil || other.host.CatalogID != host.CatalogID || other.Address != address ||
 			other.jumpPath != session.jumpPath || other.proxyRoute != session.proxyRoute ||
+			!slices.EqualFunc(other.jumpPolicies, session.jumpPolicies, jumpPolicy.equal) ||
+			other.dialedAlgoMode != session.dialedAlgoMode || other.dialedAlgoList != session.dialedAlgoList ||
+			other.dialedHostAuth != session.dialedHostAuth || other.dialedHostIdentity != session.dialedHostIdentity ||
+			other.dialedHostCredential != session.dialedHostCredential || other.dialedHostIdentitiesOnly != session.dialedHostIdentitiesOnly ||
 			other.interactiveOnly != session.interactiveOnly ||
 			!other.sshOptions.Equal(session.sshOptions) || !other.authentication.Equal(session.authentication) {
 			continue

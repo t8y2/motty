@@ -190,7 +190,7 @@ func TestSendingASnippetFromThePageReturnsTheKeyboardToTheTerminal(t *testing.T)
 		t.Fatalf("pending focus = %v, want the terminal %v", state.pendingFocus, want)
 	}
 	canvas, _ := paintAt(state, gfx.Size{Width: 1200, Height: 800})
-	if got := canvas.FocusRequest(); got != want {
+	if got := canvas.FocusOnce(); got != want {
 		t.Fatalf("paint asked for focus %v, want the terminal %v", got, want)
 	}
 	if !state.pendingFocus.IsZero() {

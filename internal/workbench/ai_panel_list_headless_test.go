@@ -209,8 +209,8 @@ func testHeadlessApprovalActions(t *testing.T, history bool, width int, extras, 
 		if state.ai.panel.mode != want {
 			t.Fatalf("panel mode=%v want=%v", state.ai.panel.mode, want)
 		}
-		if !state.terminalPage() && state.commandsDrawerHeight() != 0 {
-			t.Fatal("section reserved a terminal-only commands bar")
+		if !state.terminalPage() && state.commandsSidebarBounds(gfx.Size{Width: float32(width), Height: 900}).Width != 0 {
+			t.Fatal("section reserved a terminal-only commands sidebar")
 		}
 	}
 	visible(hitAIClose)
@@ -283,8 +283,8 @@ func testHeadlessApprovalActions(t *testing.T, history bool, width int, extras, 
 	if state.ai.panel.boxHeight < minimumComposer {
 		t.Fatalf("critical approval squeezed composer: height=%v minimum=%v", state.ai.panel.boxHeight, minimumComposer)
 	}
-	if state.commandsDrawerHeight() > 0 && state.ai.panel.rect.Y+state.ai.panel.rect.Height > state.commands.bar.Y+1 {
-		t.Fatalf("assistant overlaps commands strip: panel=%+v bar=%+v", state.ai.panel.rect, state.commands.bar)
+	if state.terminalPage() && state.commands.shown && state.ai.panel.rect.X+state.ai.panel.rect.Width > state.commands.bar.X+1 {
+		t.Fatalf("assistant overlaps command sidebar: panel=%+v sidebar=%+v", state.ai.panel.rect, state.commands.bar)
 	}
 	if dir := os.Getenv("MOTTY_AI_APPROVAL_SCREENSHOTS"); dir != "" {
 		if err := view.Screenshot(filepath.Join(dir, fmt.Sprintf("approval-section-%d-bar-%v-history-%v-width-%d-extras-%v-drag-%v.png", state.activeSection, state.commands.shown, history, width, extras, dragComposer))); err != nil {

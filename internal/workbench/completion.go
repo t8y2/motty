@@ -176,10 +176,11 @@ type completionUI struct {
 	// answer to an old question.
 	generation uint64
 
-	// autoHold suppresses the automatic path menu after a candidate was
-	// accepted, until the user types again. Without it the echo of the accepted
-	// suffix would reopen the menu and swallow the Enter that runs the line.
-	autoHold completionAutoHold
+	// autoHold suppresses the automatic menu after a candidate was accepted or
+	// after non-typing input (history arrows, Tab, control keys, Enter), until
+	// the user types again. Without it the echo of an accepted suffix or a
+	// recalled history command would open the menu and swallow the next key.
+	autoHold completionAutoHolds
 	// accepting covers the synchronous revalidation and drain of an acceptance,
 	// which reads output before the hold is set.
 	accepting bool
@@ -194,7 +195,21 @@ type completionUI struct {
 
 // completionAutoHold is the session whose accepted path keeps the automatic
 // menu closed until its next input.
-type completionAutoHold struct{ session uint32 }
+// completionAutoHolds is the set of sessions whose next echo must not reopen the
+// automatic menu: a broadcast keystroke reaches every pane, so one slot would let
+// the last pane overwrite the hold the active one needs.
+type completionAutoHolds map[uint32]struct{}
+
+func (holds completionAutoHolds) add(session uint32) {
+	holds[session] = struct{}{}
+}
+
+func (holds completionAutoHolds) holds(session uint32) bool {
+	_, ok := holds[session]
+	return ok
+}
+
+func (holds completionAutoHolds) drop(session uint32) { delete(holds, session) }
 
 // completionDismiss is one Escape: the prompt generation and the path context
 // it closed. Typing more of the same argument does not reopen the menu; a new
@@ -696,19 +711,36 @@ func (state *State) attachCompletion(session *Session) {
 		return ok && state.completionFeed(owner)
 	}
 	t.completionInput = func(input []byte) {
-		if state.completion.autoHold.session == sessionID {
-			state.completion.autoHold = completionAutoHold{}
+		if completionEndsInput(input) {
+			if state.completion.autoHold == nil {
+				state.completion.autoHold = completionAutoHolds{}
+			}
+			state.completion.autoHold.add(sessionID)
+			if state.completion.list.active && state.completion.list.sessionID == sessionID {
+				state.closeCompletionList()
+			}
+			return
 		}
+		state.completion.autoHold.drop(sessionID)
 		list := &state.completion.list
 		if !list.active || list.sessionID != sessionID {
 			return
 		}
 		// An automatic list follows the line: a typed character filters it and
 		// the echo rebuilds it. Everything an explicit list does, it still does.
-		if list.auto && !completionEndsInput(input) {
+		if list.auto {
 			return
 		}
 		state.closeCompletionList()
+	}
+	t.completionUnknown = func() {
+		if state.completion.autoHold == nil {
+			state.completion.autoHold = completionAutoHolds{}
+		}
+		state.completion.autoHold.add(sessionID)
+		if state.completion.list.active && state.completion.list.sessionID == sessionID {
+			state.closeCompletionList()
+		}
 	}
 	state.requestCompletionHistory(session)
 }
@@ -731,7 +763,7 @@ func (state *State) openCompletions() {
 		return
 	}
 	state.completion.dismissed = completionDismiss{}
-	state.completion.autoHold = completionAutoHold{}
+	state.completion.autoHold = nil
 	state.closeAutofillPick()
 	// Off stops the automatic list and the ghost, not the shortcut: the data it
 	// needs is loaded here, the first time it is asked for.
@@ -894,13 +926,16 @@ func (state *State) completionRefresh(session *Session) {
 // rather than showing a loading row that may be gone before it is read, and it
 // never opens over another menu or a program of its own.
 func (state *State) completionMaybeAuto(session *Session) {
+	if state.completionMode() != completionList {
+		return
+	}
 	if state.modal != modalNone || state.activeSection != sectionTerminal || state.activeSessionID != session.ID {
 		return
 	}
 	if !state.completionEligible(session) {
 		return
 	}
-	if state.completion.accepting || state.completion.autoHold.session == session.ID {
+	if state.completion.accepting || state.completion.autoHold.holds(session.ID) {
 		return
 	}
 	if state.ghostMenu.open || state.terminalMenu.open || len(state.autofillRules.pick.candidates) > 0 {
@@ -1101,11 +1136,18 @@ func (state *State) completionKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 		return gfx.EventResult{}, false
 	}
 	handled := gfx.EventResult{Handled: true, Repaint: true}
+	if event.Release {
+		if session.term.consumeAcceptedKey(event) {
+			return handled, true
+		}
+		return gfx.EventResult{}, false
+	}
 	if len(list.candidates) == 0 {
 		// A loading row has nothing to choose. Enter still runs the line; the
 		// other keys leave the terminal alone.
 		switch event.Key {
 		case gfx.KeyEscape:
+			session.term.noteAcceptedKey(event)
 			state.dismissCompletion(session)
 			return handled, true
 		case gfx.KeyEnter, gfx.KeyTab:
@@ -1116,6 +1158,7 @@ func (state *State) completionKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	}
 	switch event.Key {
 	case gfx.KeyEscape:
+		session.term.noteAcceptedKey(event)
 		state.dismissCompletion(session)
 		return handled, true
 	case gfx.KeyEnter:
@@ -1132,6 +1175,7 @@ func (state *State) completionKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 			state.closeCompletionList()
 			return gfx.EventResult{}, false
 		}
+		session.term.noteAcceptedKey(event)
 		state.acceptCompletion(session)
 		return handled, true
 	case gfx.KeyTab:
@@ -1144,24 +1188,30 @@ func (state *State) completionKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 		if event.Modifiers != 0 {
 			return gfx.EventResult{}, false
 		}
+		session.term.noteAcceptedKey(event)
 		state.completionMove(-1)
 		return handled, true
 	case gfx.KeyDown:
 		if event.Modifiers != 0 {
 			return gfx.EventResult{}, false
 		}
+		session.term.noteAcceptedKey(event)
 		state.completionMove(1)
 		return handled, true
 	case gfx.KeyPageUp:
+		session.term.noteAcceptedKey(event)
 		state.completionMove(-completionRows)
 		return handled, true
 	case gfx.KeyPageDown:
+		session.term.noteAcceptedKey(event)
 		state.completionMove(completionRows)
 		return handled, true
 	case gfx.KeyHome:
+		session.term.noteAcceptedKey(event)
 		list.selected, list.top = 0, 0
 		return handled, true
 	case gfx.KeyEnd:
+		session.term.noteAcceptedKey(event)
 		list.selected = len(list.candidates) - 1
 		list.clamp()
 		return handled, true
@@ -1240,7 +1290,10 @@ func (state *State) acceptCompletion(session *Session) {
 	if list.auto {
 		// The echo of the suffix must not reopen the menu before the next key:
 		// that would put a menu under the Enter that runs the finished line.
-		state.completion.autoHold = completionAutoHold{session: session.ID}
+		if state.completion.autoHold == nil {
+			state.completion.autoHold = completionAutoHolds{}
+		}
+		state.completion.autoHold.add(session.ID)
 	}
 }
 
@@ -1328,7 +1381,7 @@ func (state *State) declareCompletionList(c ui.C, session *Session, bounds gfx.R
 		// play its entrance.
 		Instant: true,
 	}
-	if ui.PopoverWith(c, anchor, spec, &list.open, list.body) {
+	if ui.PopoverWith(c, anchor, &list.open, spec, list.body) {
 		list.open = false
 	}
 }
@@ -1466,13 +1519,13 @@ func (state *State) completionShowsIcons() bool {
 	return false
 }
 
-// completionEndsInput reports whether input ends the line an automatic list
-// follows: Enter, Tab, an interrupt, or an escape sequence such as an arrow.
-// Ordinary editing keys keep it open; the echo rebuilds it.
+// completionEndsInput reports whether input stops the automatic list from
+// following the line: Enter, Tab, an interrupt, a control key such as
+// Ctrl+P/Ctrl+N/Ctrl+R, or an escape sequence such as an arrow. Ordinary
+// typing and Backspace keep it open; the echo rebuilds it.
 func completionEndsInput(input []byte) bool {
 	for _, b := range input {
-		switch b {
-		case '\r', '\n', '\t', 0x03, 0x04, 0x1b:
+		if b < 0x20 && b != 0x08 {
 			return true
 		}
 	}

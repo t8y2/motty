@@ -265,6 +265,9 @@ var TraditionalMessages = Messages{
 	SettingsOutputAlertsDescription:        "透過分頁標題提示未檢視的輸出：藍色表示輸出中，綠色表示輸出結束或靜默，黃色表示指令報告失敗。",
 	SettingsTabOrientation:                 "分頁方向",
 	SettingsTabOrientationDescription:      "將工作階段分頁顯示在頂部，或垂直排列在左側邊欄。",
+	SettingsTabDoubleClick:                 "雙擊分頁",
+	SettingsTabDoubleClickDescription:      "雙擊工作階段分頁時的動作；右鍵選單始終提供這兩個動作。",
+	SettingsTabDoubleClickNone:             "不做任何動作",
 	SettingsTabsHorizontal:                 "水平",
 	SettingsTabsVertical:                   "垂直",
 	SettingsTabNumbers:                     "顯示分頁編號",
@@ -370,7 +373,7 @@ var TraditionalMessages = Messages{
 	SettingsStartupDisabled:                "已停用",
 	SettingsStartupDescription:             "開啟軟體時自動開啟的終端機和主機；需要密碼或確認主機金鑰的會照常詢問。",
 	SettingsStartupReuse:                   "已開啟時不再新增",
-	SettingsStartupReuseDescription:        "啟動要開啟的終端機或主機已經開啟時，切換到它而不是再開一個。",
+	SettingsStartupReuseDescription:        "連線主機或在啟動時開啟工作階段時，切換到目前視窗中已有的工作階段。新增分頁、複製和分割畫面仍會開啟獨立工作階段。",
 	SettingsStartupNone:                    "不開啟",
 	SettingsStartupJoiner:                  "、",
 	SettingsStartupHostsCount:              "%d 台主機",
@@ -1865,9 +1868,9 @@ var traditionalTools = ToolsMessages{
 
 	// 底部快速指令。
 	CommandsAdd:         "新增命令",
-	CommandsClose:       "隱藏底部快速指令（可在快速指令面板重新勾選顯示）",
-	CommandsBarHidden:   "底部快速指令已隱藏",
-	CommandsBarShow:     "顯示底部快速指令",
+	CommandsClose:       "隱藏快速指令側欄（可在快速指令面板重新顯示）",
+	CommandsBarHidden:   "快速指令側欄已隱藏",
+	CommandsBarShow:     "顯示快速指令側欄",
 	CommandsFilter:      "按分組篩選",
 	CommandsUngrouped:   "未分組",
 	CommandsShowAll:     "全選",
@@ -1975,6 +1978,9 @@ var traditionalTools = ToolsMessages{
 	PasswordHintDescription: "在 sudo、su 和 SSH/SCP 的帳戶密碼提示處列出已儲存的密碼，支援本機終端和巢狀 SSH 工作階段。用 ↑/↓ 選擇後按 Enter，或點選候選才會傳送。身份在「設定 > 安全 > 身份」中儲存。",
 	CloseConfirmRow:         "關閉執行中的工作階段前確認",
 	CloseConfirmDescription: "關閉仍處於連線狀態的分頁或分割窗格時先詢問。已結束的工作階段直接關閉。",
+
+	CloseWindowConfirmRow:         "關閉視窗前確認",
+	CloseWindowConfirmDescription: "視窗還有開啟的工作階段時，關閉前先詢問。關閉後這些工作階段會中斷連線。",
 
 	NotifyRow:         "桌面通知",
 	NotifyDescription: "終端機裡的程式請求通知時（OSC 9、777、99），顯示系統通知。每個終端機每秒最多一條。",
@@ -3235,7 +3241,7 @@ var traditionalMonitor = MonitorMessages{
 	GPU: "GPU", GPUMetricsUnavailable: "未取得到顯示卡指標",
 	Collapse:      "收起",
 	AddressCopied: "位址已複製", AddressCopyFailed: "複製位址失敗", AddressCopy: "複製位址",
-	Logins: "目前登入使用者", LoginsHint: "目前透過終端機或遠端連線登入主機的使用者", NoLogins: "目前沒有終端機登入工作階段", LoginsUnavailable: "無法讀取登入工作階段", LoginsTruncated: "僅顯示前 32 個工作階段",
+	Logins: "目前登入使用者", LoginsHint: "目前透過終端機或遠端連線登入主機的使用者", NoLogins: "目前沒有終端機登入工作階段", LoginsUnavailable: "無法讀取登入工作階段", LoginsTruncated: "僅顯示前 32 個工作階段", CurrentSSHLogin: "目前 SSH 連線",
 }
 
 var traditionalRemoteLogs = RemoteLogMessages{

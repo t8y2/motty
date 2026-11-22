@@ -256,6 +256,7 @@ type Handler struct {
 	onTextData         func(text string)
 	onImageData        func(pngData []byte)
 	onFilesData        func(RemoteFiles, error)
+	onFilesProgress    func(RemoteFilesProgress)
 	fileResponses      chan fileContentsResponse
 	fileStream         uint32 // last streamId used for a file contents request; guarded by downloadMu
 	downloadSerial     uint64 // identifies the newest download; guarded by mu

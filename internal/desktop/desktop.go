@@ -221,6 +221,21 @@ type FileReceiver interface {
 	// previous call, if any. Paths names the top-level entries to put on the
 	// local clipboard; Err says why none or only some arrived.
 	RemoteFiles() (ReceivedFiles, bool)
+	// ReceivingFiles reports the files the remote copied that are being saved
+	// now, and false when none are; a change wakes the window like the rest.
+	ReceivingFiles() (FileProgress, bool)
+	// CancelReceivingFiles stops saving them. What arrived is deleted and
+	// RemoteFiles delivers nothing for them.
+	CancelReceivingFiles()
+}
+
+// FileProgress is how far files being received have come.
+type FileProgress struct {
+	// Name is the entry being saved, a `/` separated path inside the selection.
+	Name string
+	// Done is the bytes saved so far out of Size, which is -1 when the remote
+	// did not say how large its files are.
+	Done, Size int64
 }
 
 // ReceivedFiles is a remote file list saved on this computer.

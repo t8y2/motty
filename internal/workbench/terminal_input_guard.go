@@ -198,7 +198,7 @@ func (state *State) terminalOwnedByShell(session *Session) bool {
 	t := session.term
 	return state.modal == modalNone && state.activeSection == sectionTerminal && state.activeSessionID == session.ID && state.broadcast == 0 && !state.transfers.open && state.knownHosts.action == knownHostsActionNone &&
 		t.shell != nil && !t.ended && t.exec == nil && len(t.rx) == 0 &&
-		session.desk == nil && session.containerCommand == "" && !t.screen.Modes().AltScreen && t.screen.KeyboardFlags() == 0 && !t.screen.Modes().Win32Input &&
+		session.desk == nil && session.containerCommand == "" && !t.screen.Modes().AltScreen && t.screen.KeyboardFlags() == 0 &&
 		!session.transferBusy()
 }
 

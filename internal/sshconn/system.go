@@ -56,6 +56,7 @@ const (
 	SystemAmazonLinux
 	SystemAzureLinux
 	SystemOracleLinux
+	SystemAlibabaCloudLinux
 	SystemESXi
 	SystemAIX
 )
@@ -74,8 +75,9 @@ var systemNames = [...]string{
 	SystemPopOS: "popos", SystemZorin: "zorin",
 	SystemElementary: "elementary", SystemVoid: "void", SystemSlackware: "slackware",
 	SystemAnolis: "anolis", SystemTencentOS: "tencentos", SystemAmazonLinux: "amazonlinux",
-	SystemAzureLinux: "azurelinux", SystemOracleLinux: "oraclelinux", SystemESXi: "esxi",
-	SystemAIX: "aix",
+	SystemAzureLinux: "azurelinux", SystemOracleLinux: "oraclelinux", SystemAlibabaCloudLinux: "alibabacloudlinux",
+	SystemESXi: "esxi",
+	SystemAIX:  "aix",
 }
 
 func (system RemoteSystem) String() string {
@@ -123,6 +125,9 @@ var osReleaseIDs = map[string]RemoteSystem{
 	// what anyone calls them, so the ID needs an entry to reach the badge.
 	"amzn": SystemAmazonLinux, "ol": SystemOracleLinux, "mariner": SystemAzureLinux,
 	"tlinux": SystemTencentOS,
+	// Alibaba Cloud Linux writes "alinux" (and its older "Aliyun Linux" name wrote
+	// "aliyun"), neither of which is what anyone calls the system.
+	"alinux": SystemAlibabaCloudLinux, "aliyun": SystemAlibabaCloudLinux,
 }
 
 // systemMarkers are the files an appliance or a distribution with no

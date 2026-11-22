@@ -89,16 +89,32 @@ func TestSSHConfigImportAllowsPublicIdentityForAgentAuthentication(t *testing.T)
 }
 
 func TestChangedSSHIdentityPolicyDoesNotReuseAuthenticatedTransport(t *testing.T) {
-	world, options := newSharingWorld(t)
-	state := newTestState(t, options)
-	world.connectFirst(t, state)
-	only := true
-	state.hosts[0].SSHOptions = &sshconfig.ConnectionOptions{IdentitiesOnly: &only, IdentityFiles: []string{"configured-key"}}
-	state.sessions[0].host = state.hosts[0]
-	state.Click(hitHosts)
-	openHost(state)
-	if len(world.configs) != 2 {
-		t.Fatal("changed identity restrictions reused the previous transport")
+	for _, source := range []string{"imported SSH config", "host setting"} {
+		t.Run(source, func(t *testing.T) {
+			world, options := newSharingWorld(t)
+			state := newTestState(t, options)
+			world.connectFirst(t, state)
+			firstID := state.activeSessionID
+			previous := state.hosts[0]
+			updated := previous
+			if source == "imported SSH config" {
+				only := true
+				updated.SSHOptions = &sshconfig.ConnectionOptions{IdentitiesOnly: &only, IdentityFiles: []string{"configured-key"}}
+			} else {
+				updated.IdentitiesOnly = true
+			}
+			state.replaceHost(0, previous, updated)
+			state.Click(hitHosts)
+			openHost(state)
+			if len(world.configs) != 2 || state.activeSessionID == firstID || len(world.shared) != 0 {
+				t.Fatal("changed identity restrictions reused the previous transport")
+			}
+			config := world.configs[1]
+			auth := config.Authentication[sshconn.Endpoint{Host: config.Host, Port: config.Port, User: config.User}]
+			if !auth.IdentitiesOnly {
+				t.Fatal("the new connection did not apply the updated identity restrictions")
+			}
+		})
 	}
 }
 
