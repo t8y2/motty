@@ -1655,6 +1655,12 @@ func (worker *Worker) upload(client Remote, next request, generation uint64) (fi
 			}
 			continue
 		}
+		if item.link != "" {
+			if err := putRemoteLink(advanced, remotePath, item.link, next.policy); err != nil {
+				return 0, 0, 0, err
+			}
+			continue
+		}
 		filesPlan = append(filesPlan, plannedUpload{local: item.local, remote: remotePath, info: item.info})
 	}
 	if len(filesPlan) == 0 {
@@ -1808,12 +1814,14 @@ func (worker *Worker) legacyUpload(client Remote, localPath, remotePath string, 
 
 // localPlanItem is one entry a local directory upload will move, with the
 // local path and the slash-separated path it takes below the transfer root. A
-// directory's plan is in walk order, so a parent precedes its children.
+// directory's plan is in walk order, so a parent precedes its children. A
+// symbolic link inside the directory carries its target text in link.
 type localPlanItem struct {
 	local     string
 	relative  string
 	info      os.FileInfo
 	directory bool
+	link      string
 }
 
 // planLocal validates a local source and lists what an upload moves. A single
@@ -1860,7 +1868,13 @@ func planLocal(localPath string, recursive bool) (os.FileInfo, []localPlanItem, 
 			return infoErr
 		}
 		if entryInfo.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("%w: %s", ErrSymbolicLink, current)
+			// WalkDir does not follow it; the link travels as the text it holds.
+			target, linkErr := os.Readlink(current)
+			if linkErr != nil {
+				return linkErr
+			}
+			plan = append(plan, localPlanItem{local: current, relative: relative, info: entryInfo, link: target})
+			return nil
 		}
 		if !entryInfo.IsDir() && !entryInfo.Mode().IsRegular() {
 			return fmt.Errorf("sftp: unsupported local file type: %s", current)
@@ -1886,11 +1900,11 @@ func scanLocal(localPath string, recursive bool) (os.FileInfo, int, int64, error
 	return info, files, bytes, nil
 }
 
-// planTotals counts the files and bytes a plan moves. Directories take no
-// bytes of their own.
+// planTotals counts the files and bytes a plan moves. Directories and links
+// take no bytes of their own.
 func planTotals(plan []localPlanItem) (files int, bytes int64) {
 	for _, item := range plan {
-		if !item.directory {
+		if !item.directory && item.link == "" {
 			files++
 			bytes += item.info.Size()
 		}
@@ -2140,7 +2154,7 @@ func (worker *Worker) remoteCopy(destination Remote, next request, generation ui
 			return 0, 0, 0, fmt.Errorf("sftp: transfer exceeds %d items", maxTransferItems)
 		}
 		for _, item := range items {
-			if !item.directory {
+			if !item.directory && item.link == "" {
 				totalFiles++
 			}
 		}
@@ -2174,6 +2188,12 @@ func (worker *Worker) remoteCopy(destination Remote, next request, generation ui
 					if err := ensureRemoteDirectory(client, targetPath); err != nil {
 						return files, bytes, resumed, err
 					}
+				}
+				continue
+			}
+			if item.link != "" {
+				if err := putRemoteLink(client, targetPath, item.link, next.policy); err != nil {
+					return files, bytes, resumed, err
 				}
 				continue
 			}
@@ -2299,7 +2319,7 @@ func (worker *Worker) download(client Remote, next request, generation uint64) (
 	}
 	totalFiles := 0
 	for index := range plan {
-		if !plan[index].directory {
+		if !plan[index].directory && plan[index].link == "" {
 			totalFiles++
 		}
 	}
@@ -2327,6 +2347,12 @@ func (worker *Worker) download(client Remote, next request, generation uint64) (
 			}
 			continue
 		}
+		if item.link != "" {
+			if err := putLocalLink(localPath, item.link, next.policy); err != nil {
+				return files, bytes, resumed, err
+			}
+			continue
+		}
 		written, continued, err := worker.downloadFile(advanced, item.remote, localPath, item.mode, item.modTime, item.size, next.policy, generation, next.id, files, bytes)
 		bytes += written
 		resumed += continued
@@ -2346,6 +2372,9 @@ type remotePlanItem struct {
 	modTime   time.Time
 	size      int64
 	directory bool
+	// link is the target text of a symbolic link inside the folder; the link
+	// is recreated at the other end and never followed.
+	link string
 }
 
 func scanRemote(client transferRemote, remotePath string, recursive bool) ([]remotePlanItem, int64, error) {
@@ -2386,7 +2415,23 @@ func scanRemote(client transferRemote, remotePath string, recursive bool) ([]rem
 				return fmt.Errorf("%w: %q", ErrPathTraversal, name)
 			}
 			if child.Mode()&os.ModeSymlink != 0 {
-				return fmt.Errorf("%w: %s", ErrSymbolicLink, path.Join(current, name))
+				links, ok := client.(remoteLinkStore)
+				if !ok {
+					return fmt.Errorf("%w: %s", ErrSymbolicLink, path.Join(current, name))
+				}
+				childRemote, err := joinRemoteWithin(root, path.Join(relative, name))
+				if err != nil {
+					return err
+				}
+				target, err := links.ReadLink(childRemote)
+				if err != nil {
+					return err
+				}
+				plan = append(plan, remotePlanItem{remote: childRemote, relative: path.Join(relative, name), mode: child.Mode(), modTime: child.ModTime(), link: target})
+				if len(plan) > maxTransferItems {
+					return fmt.Errorf("sftp: directory exceeds %d transfer items", maxTransferItems)
+				}
+				continue
 			}
 			childRemote, err := joinRemoteWithin(root, path.Join(relative, name))
 			if err != nil {
