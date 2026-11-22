@@ -693,8 +693,7 @@ func (state *State) aiPanelClick(id gfx.ID) bool {
 			state.setAIMode(agent.ModeAsk)
 		}
 	case id == hitAISetup:
-		state.openSettings()
-		state.selectSettingsCategory(settingsAssistant)
+		state.openSettingsCategory(settingsAssistant)
 		if ai.needLogin != "" {
 			id := ai.needLogin
 			ai.cfg.selected, ai.needLogin = id, ""
