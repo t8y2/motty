@@ -1029,8 +1029,9 @@ func (state *State) openShell(session *Session) {
 	// off. SSH also needs reports for automatic completion, independently of
 	// file-panel following and path tabs. A host confined to the interactive
 	// session still opts out: its gateway could end the connection on startup.
+	// A Windows host is no exception: what its shell is (PowerShell, or cmd.exe
+	// that cannot be integrated) is learned by the probe after the shell starts.
 	config.IntegrateShell = session.isLocal() || (session.host.isSSH() && !session.host.mosh() && !session.host.InteractiveOnly &&
-		session.host.System != sshconn.SystemWindows &&
 		session.containerCommand == "" && (!state.sftpFollowOff || state.sftpTerminalFollow || state.tabTitleMode == tabTitleDirectory ||
 		!state.history.suggestOff && !session.host.NoHistory))
 	config.IntegrationToken = t.folderToken
