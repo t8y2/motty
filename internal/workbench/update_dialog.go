@@ -24,8 +24,14 @@ const (
 	updateNotesPadY     float32 = 8
 	updateNotesPadRight float32 = 4
 	updateWhyLines              = 2
+	// updateDialogWidth leaves the footer's single row room for the source
+	// picker and the three actions in English, whose words are the widest the
+	// dialog ships.
+	updateDialogWidth float32 = 640
 	// updateSourceSelectWidth is the footer's source picker: the host the check
-	// and the download use, in the corner the actions leave free.
+	// and the download use, in the corner the actions leave free. It is a
+	// maximum: the select takes what the row leaves so it can shrink instead of
+	// painting over the actions when a wording is longer.
 	updateSourceSelectWidth float32 = 150
 )
 
@@ -135,7 +141,7 @@ func (state *State) declareUpdateDialog(c ui.C) {
 	// not leave a gap above the buttons. The dialog narrows with the window, and
 	// the notes are laid out in the width it ends up with.
 	viewport := dialogViewport(c)
-	contentWidth := min(float32(560), viewport.Width-32)
+	contentWidth := min(updateDialogWidth, viewport.Width-32)
 	bodyWidth := contentWidth - 2*(metrics.PadSurface+metrics.GapItem)
 	viewWidth := bodyWidth - updateNotesPadX - updateNotesPadRight
 	state.measureNotes(canvas, viewWidth)
@@ -182,10 +188,11 @@ func (state *State) declareUpdateDialog(c ui.C) {
 // after it stay against the right edge.
 func (state *State) declareUpdateSourceFooter(c ui.C) {
 	m := state.messages.Tools
-	row := ui.Row(c).Grow(1).Items(ui.Center).Gap(8)
+	row := ui.Row(c).Grow(1).Shrink(1).Items(ui.Center).Gap(8)
 	row.Children(func() {
 		ui.Text(c, m.GeneralUpdateSource).FontSize(metrics.FontSizeS).Color(state.pal.muted).LineHeight(18).Shrink(0)
-		selector := ui.Select(c, &state.update.source, settingsUpdateSourceChoices[:], state.settingsUpdateSourceLabel).Width(updateSourceSelectWidth)
+		selector := ui.Select(c, &state.update.source, settingsUpdateSourceChoices[:], state.settingsUpdateSourceLabel).
+			FillWidth().MaxWidth(updateSourceSelectWidth)
 		if selector.Changed() {
 			c.After(state.changeUpdateSource)
 		}
