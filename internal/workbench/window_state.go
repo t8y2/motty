@@ -6,8 +6,8 @@ import (
 	"github.com/vivaui/viva/gfx"
 )
 
-// The window as the desktop sees it: where it is and whether the window manager
-// minimized it. Each window keeps its own place in its own record, so two
+// The window as the desktop sees it: where it is, and whether the window manager
+// maximized or minimized it. Each window keeps its own place in its own record, so two
 // windows of one process remember two places and a torn-off tab does not
 // overwrite the window it came from.
 
