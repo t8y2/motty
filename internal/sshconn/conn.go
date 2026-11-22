@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -109,6 +110,25 @@ type Authentication struct {
 	// Agent controls whether the running ssh-agent is offered.
 	Agent          bool
 	IdentitiesOnly bool
+}
+
+// Equal reports whether two endpoints would authenticate the same way: the
+// methods, identities and agent they offer. A connection authenticated under
+// one policy is not another endpoint's connection, so it must not stand in for
+// a login that endpoint is configured to make (and that the server may refuse).
+// Nil and empty identity lists differ: nil tries the default identities, empty
+// tries none.
+func (authentication Authentication) Equal(other Authentication) bool {
+	return authentication.Methods == other.Methods &&
+		authentication.RequirePublicKey == other.RequirePublicKey &&
+		authentication.Agent == other.Agent &&
+		authentication.IdentitiesOnly == other.IdentitiesOnly &&
+		equalIdentities(authentication.IdentityFiles, other.IdentityFiles) &&
+		equalIdentities(authentication.AdditionalIdentityFiles, other.AdditionalIdentityFiles)
+}
+
+func equalIdentities(left, right []string) bool {
+	return (left == nil) == (right == nil) && slices.Equal(left, right)
 }
 
 // SecurityKeyRequest names one hardware security-key identity the connection
@@ -249,6 +269,11 @@ type Config struct {
 	// accepted. Nil means the application keeps none, and such a reference is
 	// skipped.
 	StoredKey func(ref string) ([]byte, error)
+	// StoredCertificate reads the OpenSSH user certificate the application keeps
+	// with the stored key ref. Nil, an empty slice, or a nil error with no
+	// certificate means the key has none, and it is offered on its own. Like
+	// StoredKey it is called only after the host key is accepted.
+	StoredCertificate func(ref string) ([]byte, error)
 	// Agent controls whether the running ssh-agent is offered. It is ignored
 	// when there is no agent to offer (see AgentAddress).
 	Agent bool

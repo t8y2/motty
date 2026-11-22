@@ -10,6 +10,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/configstore"
 	"motty/internal/sshconn"
@@ -50,7 +52,14 @@ func remoteLogCommand(path string) string {
 	// A leading empty line acknowledges that the initial file is readable.
 	// Keep tail as the session process so canceling can signal it directly.
 	file := shellQuote(path)
-	return "{ if [ ! -f " + file + " ]; then printf '%s\\n' 'Log path is missing or is not a regular file.'; exit 1; fi; " +
+	return "{ if [ ! -f " + file + " ]; then " +
+		// `test -f` is also false when a directory above the file cannot be
+		// searched, which a log the account may not read looks like. Walking up
+		// to the first directory that exists separates that from a missing
+		// path, so the two are not reported as the same failure.
+		"dir=" + file + "; while [ ! -d \"$dir\" ] && [ \"$dir\" != / ]; do dir=${dir%/*}; [ -z \"$dir\" ] && dir=/; done; " +
+		"if [ ! -x \"$dir\" ]; then printf '%s\\n' 'Permission denied.'; exit 1; fi; " +
+		"printf '%s\\n' 'Log path is missing or is not a regular file.'; exit 1; fi; " +
 		"if [ ! -r " + file + " ]; then printf '%s\\n' 'Permission denied.'; exit 1; fi; " +
 		"printf '\\n'; exec tail -n 200 -F -- " + file + "; } 2>&1"
 }
@@ -62,10 +71,14 @@ type remoteLogBuffer struct {
 	lines       [remoteLogBufferLines]string
 	first, next int64
 	bytes       int
-	revision    uint64
-	ready       bool
-	done        bool
-	err         error
+	// prefix counts the bytes of the lines the ring already dropped, each with
+	// the newline that separated it. Selection offsets are byte offsets of the
+	// retained text with this prefix added, so they survive a rotation.
+	prefix   int64
+	revision uint64
+	ready    bool
+	done     bool
+	err      error
 }
 
 func (b *remoteLogBuffer) append(raw []byte) bool {
@@ -87,6 +100,7 @@ func (b *remoteLogBuffer) append(raw []byte) bool {
 	for b.next-b.first == remoteLogBufferLines || b.bytes+len(line) > remoteLogBufferSize {
 		index := b.first % remoteLogBufferLines
 		b.bytes -= len(b.lines[index])
+		b.prefix += int64(len(b.lines[index])) + 1
 		b.lines[index] = ""
 		b.first++
 	}
@@ -100,6 +114,7 @@ func (b *remoteLogBuffer) append(raw []byte) bool {
 type remoteLogSnapshot struct {
 	lines    []string
 	first    int64
+	prefix   int64
 	revision uint64
 	ready    bool
 	done     bool
@@ -112,7 +127,7 @@ func (b *remoteLogBuffer) snapshot(s *remoteLogSnapshot) {
 	if s.revision == b.revision {
 		return
 	}
-	s.revision, s.first, s.ready, s.done, s.err = b.revision, b.first, b.ready, b.done, b.err
+	s.revision, s.first, s.prefix, s.ready, s.done, s.err = b.revision, b.first, b.prefix, b.ready, b.done, b.err
 	clear(s.lines)
 	s.lines = slices.Grow(s.lines[:0], int(b.next-b.first))
 	for index := b.first; index < b.next; index++ {
@@ -150,6 +165,41 @@ type remoteLogView struct {
 	lastOffset  float32
 	lastFollow  bool
 	resetScroll bool
+
+	// The output is read as wrapped rows of the retained lines, one row per
+	// wrapped piece, so a long line is never cut off at the panel's edge.
+	// rows indexes snapshot.lines; lineStarts is where each retained line
+	// begins in the same byte space, view.selection addresses it, and the wrap
+	// ring remembers where each absolute line broke at the current width.
+	rows         []remoteLogRow
+	rowsRevision uint64
+	rowsCols     int
+	rowsQuery    string
+	rowsReady    bool
+	lineStarts   []int64
+	plainStart   int64
+	plainEnd     int64
+	wrapCols     int
+	wrap         []remoteLogLineWrap
+	selection    components.TextSelection
+	// textOrigin and cellWidth are the text's last painted origin and cell
+	// width; a pointer press is mapped to a byte offset through them.
+	textOrigin gfx.Point
+	cellWidth  float32
+}
+
+// remoteLogRow is one painted row of a line: the line's index in snapshot.lines
+// and the byte range of it the row shows. A wrapped line has several rows.
+type remoteLogRow struct {
+	line       int32
+	start, end int32
+}
+
+// remoteLogLineWrap is where one absolute line broke at the current width.
+// ends[i] is the byte offset just past row i, so row i begins at ends[i-1].
+type remoteLogLineWrap struct {
+	abs  int64
+	ends []int32
 }
 
 type remoteLogForm uint8
@@ -176,7 +226,8 @@ func (session *Session) stopRemoteLogs() {
 func (session *Session) clearRemoteLog() {
 	session.stopRemoteLogs()
 	if view := session.remoteLogs; view != nil {
-		view.selected, view.buffer, view.snapshot = remoteLogPath{}, nil, remoteLogSnapshot{}
+		view.selected, view.buffer = remoteLogPath{}, nil
+		view.resetOutput()
 	}
 }
 
@@ -188,14 +239,17 @@ func (state *State) followRemoteLog(session *Session, view *remoteLogView, path 
 	ctx, cancel := context.WithCancel(context.Background())
 	buffer := new(remoteLogBuffer)
 	view.cancel, view.buffer, view.selected = cancel, buffer, path
-	view.snapshot = remoteLogSnapshot{}
+	view.resetOutput()
 	view.matchQuery, view.matchRevision, view.matches = "", 0, view.matches[:0]
 	view.follow, view.lastFollow, view.lastOffset, view.resetScroll = true, true, 0, true
-	conn, notify := session.conn, state.notifyFor(session)
+	// The stream runs where the session runs its other remote commands, so the
+	// sudo privilege the tools and the monitor use also reaches a log the
+	// account itself cannot read.
+	runner, notify := commandRunnerFor(session), state.notifyFor(session)
 	go func() {
 		first := true
-		stream := conn.StreamCommand
-		if tolerant, ok := conn.(interface {
+		stream := runner.StreamCommand
+		if tolerant, ok := runner.(interface {
 			StreamCommandSkippingLongLines(context.Context, string, int, func([]byte) bool) error
 		}); ok {
 			stream = tolerant.StreamCommandSkippingLongLines

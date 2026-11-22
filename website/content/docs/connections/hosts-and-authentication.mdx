@@ -13,7 +13,7 @@ or save it. A changed key is reported again.
 Motty supports:
 
 - keys held by the running SSH agent,
-- identity files, including OpenSSH user certificates (a `id_ed25519-cert.pub` beside the key is paired automatically),
+- identity files and keys kept in Motty, including OpenSSH user certificates (a `-cert.pub` file beside an imported key is kept with it; **Certificate** in Keychain attaches or renews one),
 - PuTTY `.ppk` files, versions 2 and 3 (Argon2id encryption included),
 - passwords,
 - keyboard-interactive rounds.
@@ -48,12 +48,14 @@ code. When the server rejects every candidate key, or the chosen key is no longe
 available, authentication fails without falling back to an interactive login.
 
 **Keychain > Add Key** offers three ways to bring a key in: **Import from File**
-(the file stays where it is), **Paste Private Key** (no file needed) and
-**Generate New Key** (an Ed25519 pair; the public key is copied so you can add it
-to the server's `~/.ssh/authorized_keys`). Pasted and generated keys are kept
-encrypted in the vault, so they follow the vault to your other computers.
-**Copy Public Key** copies the selected key's public half at any time. Deleting a
-pasted or generated key is final: there is no file to fall back on.
+(the key and a `-cert.pub` certificate beside it are kept in the vault), **Paste
+Private Key** (no file needed) and **Generate New Key** (an Ed25519 pair; the
+public key is copied so you can add it to the server's `~/.ssh/authorized_keys`).
+Every key is kept encrypted in the vault, so it follows the vault to your other
+computers. **Copy Public Key** copies the selected key's public half at any time,
+and **Certificate** attaches or renews the OpenSSH user certificate of the
+selected key. Deleting a key kept in Motty is final: there is no file to fall
+back on.
 
 ### Certificates and the agent
 
@@ -114,10 +116,14 @@ fill an empty saved password, but never replace one already saved.
 | Electerm | The bookmarks JSON exported from Electerm's bookmark manager. |
 | Netcatty | The CSV from the **Export** button on Netcatty's hosts page. Netcatty keeps its own vault encrypted, so only this export can be read. |
 | FinalShell | The FinalShell data folder: `~/.finalshell` on Linux, `~/Library/FinalShell` on macOS, or usually the FinalShell install folder on Windows. |
+| Xterminal | The Xterminal data folder: `~/Library/Application Support/XTerminal` on macOS, `%APPDATA%\XTerminal` on Windows, or `~/.config/XTerminal` on Linux. The portable build keeps it in `xt_data\userData`. |
+| XPipe | The XPipe data folder (`~/.xpipe`) or its `storage` subfolder, or a clone of the git repository XPipe syncs to. SSH, RDP and VNC connections are imported; other XPipe entry types are not. |
 
 Electerm and Netcatty write saved passwords into the export in clear text.
 Choosing to save passwords encrypts eligible SSH passwords in Motty's vault,
 but does not erase the export. Protect or delete the file when you are done.
+Xterminal and XPipe encrypt their saved passwords and keys, so importing their
+data folders takes the connections but never a secret.
 MobaXterm imports support UTF-8, UTF-16 with a byte-order mark, and
 GB18030 text; unsupported or damaged encodings are rejected rather than
 silently dropping characters. If a BOM-less file can be read as both UTF-8 and

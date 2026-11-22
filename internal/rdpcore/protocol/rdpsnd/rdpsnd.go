@@ -7,6 +7,12 @@
 // caller can play, and a compressed format it offers is left unused; PCM keeps
 // the client free of codecs and of the per-format state they need. ADPCM and
 // the other compressed formats are not implemented.
+//
+// ProcessPDU runs on the connection's receive goroutine and never waits for the
+// sound device: the output blocks while it holds enough sound to play, and a
+// receive goroutine parked there would stop the screen updates and the
+// framebuffer lock the display reads under. Each negotiated format gets one
+// player goroutine fed through a bounded queue instead.
 package rdpsnd
 
 import (
@@ -51,6 +57,11 @@ const (
 	// 1 MiB is far above any PCM block and keeps a malformed length from
 	// asking for unbounded memory.
 	maxWaveBytes = 1 << 20
+	// maxQueuedMilliseconds bounds the sound waiting for the output. The server
+	// paces itself by the confirmations and normally stays within the latency
+	// it measured; a burst beyond this is dropped, oldest first, so a stalled
+	// device delays the sound by a bounded time instead of for ever.
+	maxQueuedMilliseconds = 500
 )
 
 // Output opens a player for the PCM the server will send. It is called during
@@ -70,7 +81,7 @@ type Handler struct {
 
 	mu           sync.Mutex
 	clientFormat *audioFormat
-	out          io.WriteCloser
+	out          *player
 	closed       bool
 
 	// pending holds the first wave PDU of a two-PDU SNDC_WAVE until its
@@ -84,6 +95,143 @@ type Handler struct {
 	// audioBuf is the receive goroutine's scratch for the bytes of a wave
 	// that span two PDUs. It is valid until the next PDU.
 	audioBuf []byte
+}
+
+// wave is one block of sound queued for the output.
+type wave struct {
+	audio     []byte
+	timestamp uint16
+	block     byte
+	received  time.Time
+	send      func([]byte) error
+}
+
+// player owns an output and the goroutine that writes to it, so that the
+// receive goroutine never waits for the device.
+type player struct {
+	out      io.WriteCloser
+	log      *slog.Logger
+	maxBytes int
+
+	mu     sync.Mutex
+	wake   *sync.Cond
+	queue  []wave
+	queued int
+	spare  [][]byte
+	closed bool
+	failed bool
+	done   chan struct{}
+}
+
+func newPlayer(out io.WriteCloser, maxBytes int, log *slog.Logger) *player {
+	p := &player{out: out, log: log, maxBytes: maxBytes, done: make(chan struct{})}
+	p.wake = sync.NewCond(&p.mu)
+	go p.run()
+	return p
+}
+
+// enqueue copies audio and hands it to the player goroutine. It reports false
+// when the output has failed, and the wave then needs its confirmation from the
+// caller. The waves it had to drop to stay within the bound are confirmed here.
+func (p *player) enqueue(audio []byte, timestamp uint16, block byte, send func([]byte) error) bool {
+	p.mu.Lock()
+	if p.failed || p.closed {
+		p.mu.Unlock()
+		return false
+	}
+	var dropped []wave
+	for len(p.queue) > 0 && p.queued+len(audio) > p.maxBytes {
+		oldest := p.queue[0]
+		p.queue[0] = wave{}
+		p.queue = p.queue[1:]
+		p.queued -= len(oldest.audio)
+		dropped = append(dropped, oldest)
+	}
+	var buffer []byte
+	if n := len(p.spare); n > 0 && cap(p.spare[n-1]) >= len(audio) {
+		buffer = p.spare[n-1][:len(audio)]
+		p.spare = p.spare[:n-1]
+	} else {
+		buffer = make([]byte, len(audio))
+	}
+	copy(buffer, audio)
+	p.queue = append(p.queue, wave{audio: buffer, timestamp: timestamp, block: block, received: time.Now(), send: send})
+	p.queued += len(buffer)
+	p.wake.Signal()
+	p.mu.Unlock()
+	for _, w := range dropped {
+		p.log.Debug("rdpsnd: dropped sound the output could not take", "bytes", len(w.audio))
+		confirm(w.send, w.timestamp, w.block, p.log)
+	}
+	return true
+}
+
+func (p *player) run() {
+	defer close(p.done)
+	for {
+		p.mu.Lock()
+		for len(p.queue) == 0 && !p.closed {
+			p.wake.Wait()
+		}
+		if p.closed {
+			p.mu.Unlock()
+			return
+		}
+		w := p.queue[0]
+		p.queue[0] = wave{}
+		p.queue = p.queue[1:]
+		p.queued -= len(w.audio)
+		p.mu.Unlock()
+
+		_, err := p.out.Write(w.audio)
+		if err != nil {
+			p.mu.Lock()
+			closed := p.closed
+			if !closed {
+				p.failed = true
+			}
+			pending := p.queue
+			p.queue, p.queued = nil, 0
+			p.mu.Unlock()
+			if closed {
+				return
+			}
+			p.log.Warn("rdpsnd: player stopped", "error", err)
+			// The channel keeps confirming: the server waits for it.
+			confirm(w.send, w.timestamp, w.block, p.log)
+			for _, rest := range pending {
+				confirm(rest.send, rest.timestamp, rest.block, p.log)
+			}
+			p.out.Close()
+			return
+		}
+		// The render time is the receive timestamp plus how long the sound
+		// took to reach the device; the server uses it to adapt.
+		elapsed := time.Since(w.received).Milliseconds()
+		confirm(w.send, uint16((uint32(w.timestamp)+uint32(elapsed))&0xFFFF), w.block, p.log)
+
+		p.mu.Lock()
+		if len(p.spare) < 8 {
+			p.spare = append(p.spare, w.audio[:0])
+		}
+		p.mu.Unlock()
+	}
+}
+
+// close stops the goroutine and releases the output. Sound not yet written is
+// discarded. Closing the output first lets a Write that is waiting for room
+// return.
+func (p *player) close() {
+	p.mu.Lock()
+	already := p.closed
+	p.closed = true
+	p.queue, p.queued = nil, 0
+	p.wake.Broadcast()
+	p.mu.Unlock()
+	if !already {
+		p.out.Close()
+	}
+	<-p.done
 }
 
 // audioFormat is AUDIO_FORMAT (MS-RDPEA 2.2.2.1).
@@ -180,19 +328,20 @@ func (h *Handler) closePlayer() {
 	h.clientFormat = nil
 	h.mu.Unlock()
 	if out != nil {
-		out.Close()
+		out.close()
 	}
 }
 
 // setPlayer replaces the player, closing the one it replaces.
 func (h *Handler) setPlayer(out io.WriteCloser, format *audioFormat) {
+	next := newPlayer(out, int(format.AvgBytes)*maxQueuedMilliseconds/1000, h.log)
 	h.mu.Lock()
 	previous := h.out
-	h.out = out
+	h.out = next
 	h.clientFormat = format
 	h.mu.Unlock()
 	if previous != nil {
-		previous.Close()
+		previous.close()
 	}
 }
 
@@ -359,9 +508,10 @@ func (h *Handler) wave2(body []byte) {
 	h.play(audio, timestamp, formatNo, block)
 }
 
-// play confirms the PDU before writing — the server uses that first
-// confirmation to measure network latency — then writes it and confirms again
-// with the render time added, which the server uses to adapt.
+// play confirms the PDU on arrival — the server uses that first confirmation
+// to measure network latency — and queues it for the player goroutine, which
+// confirms again with the render time added once the output has taken it. The
+// server uses that to adapt.
 func (h *Handler) play(audio []byte, timestamp, formatNo uint16, block byte) {
 	start := time.Now()
 	h.confirm(timestamp, block)
@@ -376,25 +526,25 @@ func (h *Handler) play(audio []byte, timestamp, formatNo uint16, block byte) {
 		h.confirm(timestamp, block)
 		return
 	}
-	if out != nil && len(audio) > 0 {
-		if _, err := out.Write(audio); err != nil {
-			h.log.Warn("rdpsnd: player stopped", "error", err)
-			h.closePlayer()
-		}
+	if out != nil && len(audio) > 0 && out.enqueue(audio, timestamp, block, h.send) {
+		return
 	}
 	elapsed := time.Since(start).Milliseconds()
-	render := (uint32(timestamp) + uint32(elapsed)) & 0xFFFF
-	h.confirm(uint16(render), block)
+	h.confirm(uint16((uint32(timestamp)+uint32(elapsed))&0xFFFF), block)
 }
 
 func (h *Handler) confirm(timestamp uint16, block byte) {
+	confirm(h.send, timestamp, block, h.log)
+}
+
+func confirm(send func([]byte) error, timestamp uint16, block byte, log *slog.Logger) {
 	var pdu [sndProlog + 4]byte
 	pdu[0] = sndcWaveConfirm
 	binary.LittleEndian.PutUint16(pdu[2:4], 4)
 	binary.LittleEndian.PutUint16(pdu[4:6], timestamp)
 	pdu[6] = block
-	if err := h.send(pdu[:]); err != nil {
-		h.log.Warn("rdpsnd: confirm failed", "error", err)
+	if err := send(pdu[:]); err != nil {
+		log.Warn("rdpsnd: confirm failed", "error", err)
 	}
 }
 

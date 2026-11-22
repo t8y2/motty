@@ -1,0 +1,40 @@
+# lang: zh-CN
+# macOS/Linux：独立 home，真实本地 Bash；默认 Shell 可不同。
+# go build -tags vivahead,dev -o /tmp/motty-head ./cmd/motty
+# python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/local_startup_command_e2e.txt
+click id:shell/window-settings
+wait 300
+click id:settings-search/settings-search
+type 启动后命令
+wait 200
+click id:settings-search/settings-result/#0
+wait 300
+# 设置页一行“启动后命令”打开对话框，编辑默认 Shell 的命令。
+click id:settings/settings-local-startup-open
+wait 300
+click id:settings/local-startup-field
+type echo 启动'完成'
+expect editor "echo 启动'完成'"
+shot /tmp/motty-1225-dialog.png
+click id:settings/local-startup-submit
+wait 200
+layout
+shot /tmp/motty-1225-settings.png
+resize 900 600
+wait 300
+layout
+shot /tmp/motty-1225-settings-small.png
+resize 1400 900
+# 右键“本地终端”的齿轮直接编辑该 Shell；命令仍是上面保存的那条。
+# 齿轮 #0 是本机列表的第一个 Shell（macOS 上是默认的 zsh）。
+rightclick id:terminal-menu/local-terminal
+wait 200
+shot /tmp/motty-1225-picker.png
+click id:local-shell-picker/local-shell-picker-setup/#0
+expect editor "echo 启动'完成'"
+shot /tmp/motty-1225-gear.png
+click id:settings/local-startup-cancel
+# 真实本地 Bash/Zsh 执行；命令本身没有“启动完成”完整字样，回显不算成功。
+click id:terminal-menu/local-terminal
+expect text 启动完成 within 10000
+shot /tmp/motty-1225-terminal.png

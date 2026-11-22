@@ -78,7 +78,7 @@ func (state *State) declareAIRenameDialog(c ui.C) {
 	m := state.messages.AIPanel
 	// No scrim dismiss: a press beside the form must not discard its input.
 	viewport := dialogViewport(c)
-	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 460, "", 62)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 460, "", dialogRowHeight(c.Theme()))
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: m.RenameTitle, Width: 460, Height: height, Layer: dialogLayer,
 		Scope: dialogScope, CloseID: hitAIRenameClose, InitialFocusID: hitAIRenameField,
@@ -90,7 +90,7 @@ func (state *State) declareAIRenameDialog(c ui.C) {
 			rename.bound = true
 		}
 		rename.form.For, rename.form.Error, rename.form.Invalid = hitAIRenameField, state.dialogError, state.dialogError != ""
-		ui.FormField(c, &rename.form, m.RenameField).FillWidth().Height(62).Children(func() {
+		ui.FormField(c, &rename.form, m.RenameField).FillWidth().Height(dialogRowHeight(c.Theme())).Children(func() {
 			ui.TextFieldID(c, hitAIRenameField, &rename.input, m.RenameField, m.RenamePlaceholder)
 		})
 	})

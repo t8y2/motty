@@ -213,14 +213,7 @@ func (state *State) declareRemoteToolActions(c ui.C) {
 	for index := 0; index < count; index++ {
 		action := actions[index]
 		button := ui.Button(c, action.Label).Shrink(0)
-		switch action.Variant {
-		case components.ButtonDestructive:
-			button = button.Destructive()
-		case components.ButtonSecondary:
-			button = button.Secondary()
-		default:
-			button = button.Outline()
-		}
+		button = button.Variant(remoteToolsVariant(action.Variant))
 		if action.Disabled {
 			button = button.Disabled(true)
 		}
@@ -275,4 +268,15 @@ func (state *State) objectTableSchema(tab remoteTab, width float32) ([]component
 		}
 		return view.processColumns[:7], view.columns[:7]
 	}
+}
+
+// remoteToolsVariant is the look of a remote tool's action: a destructive or
+// secondary action keeps its own, and every other is an outline button, so the
+// tool's actions read as one quiet row.
+func remoteToolsVariant(variant components.ButtonVariant) components.ButtonVariant {
+	switch variant {
+	case components.ButtonDestructive, components.ButtonSecondary:
+		return variant
+	}
+	return components.ButtonOutline
 }

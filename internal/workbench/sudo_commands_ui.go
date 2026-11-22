@@ -6,6 +6,16 @@ import (
 	"motty/internal/sshconn"
 )
 
+// sudoCommandsAvailable reports whether the session's connection can run
+// privileged commands. The tools, the monitor and the log panel share the
+// switch, so they also share this answer.
+func sudoCommandsAvailable(session *Session) bool {
+	_, ok := session.conn.(interface {
+		RunSudoCommand(context.Context, string, string, int) ([]byte, error)
+	})
+	return ok
+}
+
 func (state *State) toggleSudoCommands(session *Session, returnTools bool) {
 	if session.sudoCommands {
 		if state.remoteWindow != nil {
@@ -21,9 +31,7 @@ func (state *State) toggleSudoCommands(session *Session, returnTools bool) {
 		}
 		return
 	}
-	if _, ok := session.conn.(interface {
-		RunSudoCommand(context.Context, string, string, int) ([]byte, error)
-	}); !ok {
+	if !sudoCommandsAvailable(session) {
 		state.showActionError(state.messages.SudoCommandsEnable, errSudoCommandUnavailable.Error())
 		return
 	}
@@ -44,7 +52,14 @@ func (state *State) setSudoCommands(session *Session, password string, enabled b
 	if session == nil || session.conn == nil || session.phase != sshconn.PhaseConnected {
 		return
 	}
+	previous := session.sudoCommands
 	session.sudoCommands, session.sudoPassword = enabled, password
+	// A running log stream belongs to the privilege it started with: reopening
+	// it keeps a failed read from staying failed, and a root tail from outliving
+	// the switch being turned off.
+	if session.remoteLogs != nil && previous != enabled {
+		state.restartRemoteLog(session, session.remoteLogs)
+	}
 	for _, source := range state.dashboard.sources {
 		if &source.session == session {
 			state.dashboard.engine.BeginSource(source.session.host.CatalogID)

@@ -1,27 +1,27 @@
 package i18n
 
 type MonitorMessages struct {
-	MoveLeft, MoveRight                                                        string
-	AvailableMemory, LoadAverages, Uptime                                      string
-	UnsupportedPlatform                                                        string
-	PrimaryDisk                                                                string
-	PartialCoresFmt                                                            string
-	Overview, CoresTitleFmt, CoresMoreFmt, DiskSection, NetworkSection         string
-	NoCores, Unavailable, LoadUnavailable, LoadShortFmt                        string
-	IntervalLabels                                                             [4]string
-	Title                                                                      string
-	CPU, Memory, Disks, Network                                                string
-	LoadFmt, UptimeFmt, CPUCountFmt                                            string
-	MoreDisksFmt, AllNetworks, Hardware                                        string
-	HardwareSystem, HardwareSystemVersion, HardwareKernelVersion               string
-	HardwareLogicalProcessors, HardwarePhysicalMemory                          string
-	GPUMemory, Utilization, Power, Temperature, Processes, NoProcesses         string
-	NoDisks, WaitingDetails, DetailsUnavailable                                string
-	Pause, Resume, Paused, Updated, Interval, IntervalFmt, Retry, NotConnected string
-	GPU, GPUMetricsUnavailable                                                 string
-	Collapse                                                                   string
-	Logins, LoginsHint, NoLogins, LoginsUnavailable, LoginsTruncated           string
-	AddressCopied, AddressCopyFailed, AddressCopy                              string
+	MoveLeft, MoveRight                                                               string
+	AvailableMemory, LoadAverages, Uptime                                             string
+	UnsupportedPlatform                                                               string
+	PrimaryDisk                                                                       string
+	PartialCoresFmt                                                                   string
+	Overview, CoresTitleFmt, CoresMoreFmt, DiskSection, NetworkSection                string
+	NoCores, Unavailable, LoadUnavailable, LoadShortFmt                               string
+	IntervalLabels                                                                    [4]string
+	Title                                                                             string
+	CPU, Memory, Disks, Network                                                       string
+	LoadFmt, UptimeFmt, CPUCountFmt                                                   string
+	MoreDisksFmt, AllNetworks, Hardware                                               string
+	HardwareSystem, HardwareSystemVersion, HardwareKernelVersion                      string
+	HardwareLogicalProcessors, HardwarePhysicalMemory                                 string
+	GPUMemory, Utilization, Power, Temperature, Processes, NoProcesses                string
+	NoDisks, WaitingDetails, DetailsUnavailable                                       string
+	Pause, Resume, Paused, Updated, Interval, IntervalFmt, Retry, NotConnected        string
+	GPU, GPUMetricsUnavailable                                                        string
+	Collapse                                                                          string
+	Logins, LoginsHint, NoLogins, LoginsUnavailable, LoginsTruncated, CurrentSSHLogin string
+	AddressCopied, AddressCopyFailed, AddressCopy                                     string
 }
 
 var chineseMonitor = MonitorMessages{
@@ -45,7 +45,7 @@ var chineseMonitor = MonitorMessages{
 	GPU: "GPU", GPUMetricsUnavailable: "未获取到显卡指标",
 	Collapse:      "收起",
 	AddressCopied: "地址已复制", AddressCopyFailed: "复制地址失败", AddressCopy: "复制地址",
-	Logins: "当前登录用户", LoginsHint: "当前通过终端或远程连接登录到主机的用户", NoLogins: "当前没有终端登录会话", LoginsUnavailable: "无法读取登录会话", LoginsTruncated: "仅显示前 32 条会话",
+	Logins: "当前登录用户", LoginsHint: "当前通过终端或远程连接登录到主机的用户", NoLogins: "当前没有终端登录会话", LoginsUnavailable: "无法读取登录会话", LoginsTruncated: "仅显示前 32 条会话", CurrentSSHLogin: "当前 SSH 连接",
 }
 
 var englishMonitor = MonitorMessages{
@@ -69,5 +69,5 @@ var englishMonitor = MonitorMessages{
 	GPU: "GPU", GPUMetricsUnavailable: "No graphics adapter metrics available",
 	Collapse:      "Collapse",
 	AddressCopied: "Address copied", AddressCopyFailed: "Could not copy address", AddressCopy: "Copy address",
-	Logins: "Active login sessions", LoginsHint: "Users currently signed in through a terminal or remote connection", NoLogins: "No active terminal login sessions", LoginsUnavailable: "Login sessions unavailable", LoginsTruncated: "Showing the first 32 sessions",
+	Logins: "Active login sessions", LoginsHint: "Users currently signed in through a terminal or remote connection", NoLogins: "No active terminal login sessions", LoginsUnavailable: "Login sessions unavailable", LoginsTruncated: "Showing the first 32 sessions", CurrentSSHLogin: "Current SSH connection",
 }

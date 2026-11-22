@@ -19,7 +19,10 @@ var (
 )
 
 type localShellSelect struct {
-	choices  []localshell.Choice // the shells, then the WSL distributions
+	choices []localshell.Choice // the shells, then the WSL distributions
+	// startup is the shell whose startup command the settings page edits. It is
+	// the page's own selection, not the default shell choice above it.
+	startup  localshell.Choice
 	shells   []localshell.Choice
 	distros  []localshell.Choice
 	loaded   bool
@@ -37,6 +40,10 @@ const wslListTimeout = 10 * time.Second
 // localShellsSupported is whether this computer lists its shells for the user
 // to choose from. All platforms do: Windows has pwsh/cmd, Unix has zsh/bash/sh.
 var localShellsSupported = true
+
+// localShellControlWidth is the room the default shell trigger takes: wide
+// enough for a shell name and its arrow, narrower than a row's choice control.
+const localShellControlWidth = float32(220)
 
 func localShellSettingVisible() bool { return localShellsSupported }
 
@@ -215,8 +222,7 @@ func (state *State) paintLocalShellSetting(page *settingsPage) {
 			value = localshell.WSLName(distro) // chosen, but not listed yet
 		}
 	}
-	controlWidth := max(min(float32(300), max(float32(190), page.width*0.40)), 0)
-	controlWidth = min(controlWidth, max(page.width-60, 0))
+	controlWidth := min(localShellControlWidth, max(page.width-60, 0))
 	c := page.c
 	page.lineWith(m.SettingsLocalShell, m.SettingsLocalShellDescription, controlWidth, func() {
 		empty := len(menu.choices) == 0
@@ -265,6 +271,7 @@ func (state *State) paintLocalShellSetting(page *settingsPage) {
 			}
 		})
 	})
+	state.paintLocalStartupSetting(page)
 }
 
 // paintShellEye paints the trailing eye of a shell row: open where the pickers
@@ -301,6 +308,9 @@ func (state *State) clickLocalShell(id gfx.ID) bool {
 			state.refreshLocalShells()
 		}
 		menu.open = !menu.open && len(menu.choices) > 0
+		return true
+	case hitSettingsLocalStartupOpen:
+		state.openLocalStartupCommandDialog(state.localShellSettingChoice())
 		return true
 	}
 	if index, ok := id.In(hitSettingsShellEyes); ok && index >= 0 && index < len(menu.choices) {

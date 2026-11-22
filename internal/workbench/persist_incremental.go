@@ -298,6 +298,7 @@ func sameSavedHost(left, right savedHost) bool {
 		left.Terminal == right.Terminal &&
 		left.Line == right.Line && left.Flow == right.Flow &&
 		sameSavedProxy(left.Proxy, right.Proxy) &&
+		left.ProxyProfile == right.ProxyProfile && left.ProxyBypass == right.ProxyBypass &&
 		left.Algorithms == right.Algorithms && left.AlgorithmList == right.AlgorithmList &&
 		left.Authentication == right.Authentication && left.Identity == right.Identity && left.Credential == right.Credential &&
 		left.SSHOptions.Equal(right.SSHOptions) && left.IdentitiesOnly == right.IdentitiesOnly &&

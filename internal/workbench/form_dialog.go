@@ -3,6 +3,7 @@ package workbench
 import (
 	"math"
 
+	"github.com/vivaui/viva/base"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
@@ -113,11 +114,11 @@ func (form *formDialog) set(index int, value string) {
 
 // slotHeight is the room field index takes in the dialog, its title and the gap
 // below it included.
-func (form *formDialog) slotHeight(index int) float32 {
+func (form *formDialog) slotHeight(theme *base.Theme, index int) float32 {
 	if form.fields[index].multiline {
 		return formTextareaHeight + 4
 	}
-	return 66
+	return dialogRowHeight(theme)
 }
 
 // multilineField is the field that has the focus when it is a multiline one.
@@ -228,10 +229,10 @@ func (state *State) submitForm() {
 
 // bodyHeight is the dialog body's height: its fields and consent box. The error
 // under them, if any, adds its wrapped lines (formProblemHeight).
-func (form *formDialog) bodyHeight() float32 {
+func (form *formDialog) bodyHeight(theme *base.Theme) float32 {
 	height := float32(0)
 	for index := 0; index < form.count; index++ {
-		height += form.slotHeight(index)
+		height += form.slotHeight(theme, index)
 	}
 	if form.checkLabel != "" {
 		height += 72
@@ -292,7 +293,7 @@ func (state *State) declareFormDialog(c ui.C) {
 		initial = hitFormFieldList.At(0)
 	}
 	viewport := dialogViewport(c)
-	bodyHeight := form.bodyHeight() + state.formProblemHeight(c.Canvas(), form.formProblem())
+	bodyHeight := form.bodyHeight(c.Theme()) + state.formProblemHeight(c.Canvas(), form.formProblem())
 	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, formWidth, form.description, bodyHeight)
 	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := ui.Dialog(c, ui.DialogSpec{
@@ -332,7 +333,7 @@ func (state *State) declareFormDialogBody(c ui.C) {
 		for index := 0; index < form.count; index++ {
 			field := &form.fields[index]
 			if field.multiline {
-				height := form.slotHeight(index) - 4
+				height := form.slotHeight(c.Theme(), index) - 4
 				ui.Column(c).Height(height).Shrink(0).MarginSides(0, 0, 4, 0).Children(func() {
 					field.area.declare(c, hitFormFieldList.At(index), &field.editor, field.label, field.placeholder, height)
 				})
@@ -364,7 +365,7 @@ func (state *State) declareFormField(c ui.C, i int) {
 		field.pageBound = true
 	}
 	field.pageField.Secure = field.secure && !field.shown
-	ui.FormField(c, &field.row, field.label).FillWidth().Height(62).MarginSides(0, 0, 4, 0).Children(func() {
+	ui.FormField(c, &field.row, field.label).FillWidth().Height(dialogRowHeight(c.Theme())).Children(func() {
 		box := ui.TextFieldID(c, hitFormFieldList.At(i), &field.pageField, field.label, field.placeholder)
 		if field.secure {
 			icon, name := lucideIcons[iconEye], m.ShowSecret

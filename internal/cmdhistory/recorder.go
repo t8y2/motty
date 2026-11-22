@@ -116,6 +116,13 @@ func (r *Recorder) Typed(p []byte, screen Screen, now time.Duration) (command st
 	return "", false
 }
 
+func (r *Recorder) UnknownInput(screen Screen, now time.Duration) {
+	if !r.armed && !r.skip {
+		r.begin(screen, now)
+	}
+	r.edit()
+}
+
 // edit notes a key that changes the line in a way the recorder does not follow
 // (Tab, an arrow, a control key): from here on the screen is the only source.
 func (r *Recorder) edit() {

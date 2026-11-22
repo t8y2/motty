@@ -94,6 +94,24 @@ func TestBuiltinRulesFindFailuresWarningsSuccessesAndAddresses(t *testing.T) {
 	}
 }
 
+func TestBuiltinRulesColorWholeLogLevels(t *testing.T) {
+	set := Compile(Builtin())
+	for line, want := range map[string]string{
+		"[debug] [INFO] [TrAcE]": ".BBBBB...GGGG...MMMMM.",
+		"日志 DEBUG info trace":    ".......BBBBB.GGGG.MMMMM",
+		"TRACE traceback":        "MMMMM.RRRRRRRRR",
+		"WARN ERROR":             "YYYY.RRRRR",
+	} {
+		if got := marked(set, line); got != want {
+			t.Errorf("%q: got %s want %s", line, got, want)
+		}
+	}
+	const identifiers = "debugger information traced debug_mode info2 trace_id"
+	if got := marked(set, identifiers); got != strings.Repeat(".", len(identifiers)) {
+		t.Errorf("colored part of %q: %s", identifiers, got)
+	}
+}
+
 func BenchmarkMarkABuiltinLine(b *testing.B) {
 	set := Compile(Builtin())
 	line := []byte("2026-10-17T10:11:12 host sshd[123]: Failed password for root from 192.168.1.20 port 22 ssh2")
@@ -132,6 +150,8 @@ func TestBuiltinFastPathMatchesTheExpressions(t *testing.T) {
 		"中文 error 10.0.0.12",
 		"ＡＢＣ ok",
 		"segmentation fault: WARNING",
+		"DEBUG Info trace",
+		"日志 [debug] INFO TRACE traceback",
 	}
 	for _, line := range lines {
 		if got, want := markedBy(fast, line), markedBy(expressions, line); got != want {
@@ -147,6 +167,7 @@ func TestBuiltinFastPathMatchesTheExpressions(t *testing.T) {
 		"passed", "done", "connected", "active (running)", "errorless", "terror", "token", "look",
 		"10.0.0.12", "1.2.3.4", "999.1.2.3", "1.2.3", "1.2.3.4.5", "a1.2.3.4", "1.2.3.4b",
 		"2026-10-17", "x", "é", "中文", "\t", ":", ".", "_",
+		"debug", "DEBUG", "info", "Info", "trace", "TRACE", "debugger", "information", "traced", "trace_id",
 	}
 	random := rand.New(rand.NewSource(7))
 	for trial := 0; trial < 2000; trial++ {
@@ -182,7 +203,7 @@ func markedBy(set *Set, line string) string {
 // slice, the literal matcher does not.
 func TestBuiltinMarkDoesNotAllocateOnASCIILines(t *testing.T) {
 	set := Compile(Builtin())
-	line := []byte("2026-10-17T10:11:12 host sshd[123]: Failed password for root from 192.168.1.20 port 22")
+	line := []byte("2026-10-17T10:11:12 DEBUG info trace: Failed password for root from 192.168.1.20 port 22")
 	marks := make([]Color, len(line))
 	if allocs := testing.AllocsPerRun(100, func() {
 		clear(marks)
@@ -207,7 +228,9 @@ func TestBuiltinPatternsKeepTheirExpressions(t *testing.T) {
 	want := []string{
 		`\b(error|errors|err|fail|fails|failed|failure|fatal|panic|denied|refused|critical|exception|traceback|segfault|segmentation fault)\b`,
 		`\b(warn|warning|warnings|deprecated|timeout|timed out|retrying)\b`,
-		`\b(ok|success|successful|successfully|passed|done|connected|active \(running\))\b`,
+		`\b(info|ok|success|successful|successfully|passed|done|connected|active \(running\))\b`,
+		`\b(debug)\b`,
+		`\b(trace)\b`,
 		`\b\d{1,3}(\.\d{1,3}){3}\b`,
 	}
 	rules := Builtin()

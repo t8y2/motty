@@ -314,6 +314,7 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 				})
 			settingsChoiceRow(page, messages.SettingsAppearance, "", &state.appearanceMode, settingsAppearanceChoices[:], state.settingsAppearanceLabel,
 				func() { state.chooseAppearanceMode(state.appearanceMode); state.save() }, nil)
+			state.paintIconColorSetting(page)
 			page.actionRow(messages.SettingsTextSize, messages.SettingsTextSizeDescription, false,
 				components.ButtonAction{ID: hitSettingsTextSizeDown, Label: "−", Variant: components.ButtonOutline},
 				components.ButtonAction{ID: hitSettingsTextSizeReset, Label: state.interfaceTextSizeLabel(), Variant: components.ButtonGhost},
@@ -322,6 +323,8 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 				func() { state.applyTerminalToolbarPosition(); state.save() }, nil)
 			settingsChoiceRow(page, messages.SettingsTabOrientation, messages.SettingsTabOrientationDescription, &state.tabOrientation, settingsTabOrientationChoices[:], state.settingsTabOrientationLabel,
 				func() { state.applyTabOrientation(); state.save() }, nil)
+			settingsChoiceRow(page, messages.SettingsTabDoubleClick, messages.SettingsTabDoubleClickDescription, &state.tabDoubleClick, settingsTabDoubleClickChoices[:], state.settingsTabDoubleClickLabel,
+				func() { state.save() }, nil)
 			page.toggleRow(messages.SettingsTabNumbers, messages.SettingsTabNumbersDescription, state.tabNumbers, hitSettingsTabNumbers)
 			numberKey := state.tabNumberChoice()
 			settingsChoiceRow(page, messages.SettingsTabNumberKeys, messages.SettingsTabNumberKeysDescription, &numberKey, tabNumberChoices[:], state.tabNumberChoiceLabel,
@@ -414,6 +417,7 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 			page.toggleRow(state.messages.Tools.PasteImageRow, state.messages.Tools.PasteImageDescription, !state.pasteImageOff, hitSettingsPasteImageToggle)
 			page.toggleRow(state.messages.Tools.PasteConfirmRow, state.messages.Tools.PasteConfirmDescription, !state.pasteConfirmOff, hitSettingsPasteConfirmToggle)
 			page.toggleRow(state.messages.Tools.CloseConfirmRow, state.messages.Tools.CloseConfirmDescription, !state.closeConfirmOff, hitSettingsCloseConfirmToggle)
+			page.toggleRow(state.messages.Tools.CloseWindowConfirmRow, state.messages.Tools.CloseWindowConfirmDescription, !state.closeWindowConfirmOff, hitSettingsCloseWindowConfirmToggle)
 			page.toggleRow(state.messages.Tools.PasswordHintRow, state.messages.Tools.PasswordHintDescription, !state.passwordHintOff, hitSettingsPasswordHintToggle)
 			page.toggleRow(state.messages.Tools.NotifyRow, state.messages.Tools.NotifyDescription, !state.notifyOff, hitSettingsNotifyToggle)
 			state.paintLocalStartSetting(page)
@@ -447,6 +451,7 @@ func (state *State) paintConnectionSettings(page *settingsPage) {
 			state.paintOutboundProxyRow(page)
 			state.paintSSHBrowserSetting(page)
 		})
+		state.paintProxyProfileSettings(page)
 		state.paintSSHSyncSettings(page)
 		state.paintHostTagSettings(page)
 	})
@@ -728,28 +733,11 @@ func (page *settingsPage) buttons(slot ui.Box, disabled bool, actions ...compone
 		ui.Row(c).Gap(page.state.Theme().Metrics.GapItem).Items(ui.Center).Children(func() {
 			for _, action := range actions {
 				button := ui.Button(c, action.Label).Small().Hit(action.ID, action.Label)
-				button = settingsButtonVariant(button, action.Variant)
+				button = button.Variant(action.Variant)
 				button.Disabled(disabled || action.Disabled)
 			}
 		})
 	})
-}
-
-// settingsButtonVariant dresses a page button as the variant a ButtonAction names.
-func settingsButtonVariant(button ui.Box, variant components.ButtonVariant) ui.Box {
-	switch variant {
-	case components.ButtonSecondary:
-		return button.Secondary()
-	case components.ButtonOutline:
-		return button.Outline()
-	case components.ButtonGhost:
-		return button.Ghost()
-	case components.ButtonDestructive:
-		return button.Destructive()
-	case components.ButtonDestructiveOutline:
-		return button.DestructiveOutline()
-	}
-	return button
 }
 
 // switchSlot declares a switch with the application's identity and returns it.

@@ -245,3 +245,21 @@ func TestSearchFindsTheLineSpacingSetting(t *testing.T) {
 		})
 	}
 }
+
+// TestSearchFindsTheCloseWindowQuestion keeps the switch that decides whether
+// closing a window with sessions asks first on the page's terminal category.
+func TestSearchFindsTheCloseWindowQuestion(t *testing.T) {
+	for _, language := range []i18n.Language{i18n.English, i18n.Chinese} {
+		t.Run(language.String(), func(t *testing.T) {
+			state := newTestState(t, testOptions(t))
+			state.setLanguage(language)
+			searchSettings(t, state, state.messages.Tools.CloseWindowConfirmRow)
+			if state.settings.count != 1 || state.settings.results[0].label != state.messages.Tools.CloseWindowConfirmRow {
+				t.Fatalf("searching %q returned %+v", state.messages.Tools.CloseWindowConfirmRow, state.settings.results[:state.settings.count])
+			}
+			if category := state.settings.results[0].category; category != settingsTerminal {
+				t.Fatalf("the row is in category %d, want the terminal settings", category)
+			}
+		})
+	}
+}

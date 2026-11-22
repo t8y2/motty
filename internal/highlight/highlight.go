@@ -161,9 +161,8 @@ type Rule struct {
 	fast *fastMatcher
 }
 
-// fastMatcher is the whole-word form Builtin's first three rules take: every
-// alternative is literal text between ASCII word boundaries. quad is the IPv4
-// rule. It lets Mark skip the regular expression engine on plain ASCII lines.
+// fastMatcher matches builtin rules without regular expressions on ASCII lines.
+// words are literal alternatives between word boundaries; quad matches IPv4.
 type fastMatcher struct {
 	words []string
 	quad  bool
@@ -405,14 +404,15 @@ func markQuad(line []byte, marks []Color, color Color) bool {
 	return any
 }
 
-// Builtin are the rules a terminal starts with: failures in red, warnings in
-// yellow, successes in green and addresses in cyan. They are what an operator
-// scanning a log is looking for.
+// Builtin returns the default rules for log levels, common status words and
+// IPv4 addresses. Colors come from the terminal's scheme.
 func Builtin() []Rule {
 	return []Rule{
 		wordRule(Red, "error", "errors", "err", "fail", "fails", "failed", "failure", "fatal", "panic", "denied", "refused", "critical", "exception", "traceback", "segfault", "segmentation fault"),
 		wordRule(Yellow, "warn", "warning", "warnings", "deprecated", "timeout", "timed out", "retrying"),
-		wordRule(Green, "ok", "success", "successful", "successfully", "passed", "done", "connected", "active (running)"),
+		wordRule(Green, "info", "ok", "success", "successful", "successfully", "passed", "done", "connected", "active (running)"),
+		wordRule(Blue, "debug"),
+		wordRule(Magenta, "trace"),
 		{Color: Cyan, Regex: true, Pattern: `\b\d{1,3}(\.\d{1,3}){3}\b`, fast: &fastMatcher{quad: true}},
 	}
 }

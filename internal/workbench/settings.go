@@ -591,6 +591,7 @@ var (
 	settingsAppearanceChoices      = [...]appearanceMode{appearanceFollowSystem, appearancePinnedDark, appearancePinnedLight}
 	settingsToolbarPositionChoices = [...]terminalToolbarPosition{terminalToolbarLeft, terminalToolbarRight}
 	settingsTabOrientationChoices  = [...]tabOrientation{tabsHorizontal, tabsVertical}
+	settingsTabDoubleClickChoices  = [...]tabDoubleClickAction{tabDoubleClickRename, tabDoubleClickDuplicate, tabDoubleClickNone}
 	settingsCloseChoices           = [...]closeAction{closeToTray, closeQuits}
 	settingsKeepWindowsChoices     = [...]keepWindowsPolicy{keepWindowsAlways, keepWindowsNever, keepWindowsAsk}
 	settingsRelaunchChoices        = [...]relaunchAction{relaunchRaise, relaunchNewWindow}
@@ -637,6 +638,16 @@ func (state *State) settingsTabOrientationLabel(orientation tabOrientation) stri
 		return state.messages.SettingsTabsVertical
 	}
 	return state.messages.SettingsTabsHorizontal
+}
+
+func (state *State) settingsTabDoubleClickLabel(action tabDoubleClickAction) string {
+	switch action {
+	case tabDoubleClickRename:
+		return state.messages.MenuRenameTab
+	case tabDoubleClickNone:
+		return state.messages.SettingsTabDoubleClickNone
+	}
+	return state.messages.MenuDuplicateTab
 }
 
 func (state *State) settingsCloseLabel(action closeAction) string {

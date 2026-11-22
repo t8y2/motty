@@ -17,7 +17,6 @@ import (
 var ghostMenuHits = tree.Feature("ghost-menu")
 
 var (
-	hitGhostMenuDismiss    = tree.ID(ghostMenuHits, "ghost-menu-dismiss")
 	hitGhostMenuRight      = tree.ID(ghostMenuHits, "ghost-menu-right")
 	hitGhostMenuTab        = tree.ID(ghostMenuHits, "ghost-menu-tab")
 	hitGhostMenuShiftRight = tree.ID(ghostMenuHits, "ghost-menu-shift-right")
@@ -172,5 +171,5 @@ func (state *State) declareGhostMenu(c ui.C) {
 	}
 	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitGhostMenuTurnOff, Label: m.AcceptHintTurnOff})
-	state.declareAnchoredMenu(c, &state.ghostMenu.open, pill, hitGhostMenuDismiss, &rows, state.chooseGhostMenu)
+	state.declareAnchoredMenu(c, &state.ghostMenu.open, pill, &rows, state.chooseGhostMenu)
 }

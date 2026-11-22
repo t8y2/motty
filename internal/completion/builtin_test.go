@@ -81,3 +81,23 @@ func TestBuiltinCompletion(t *testing.T) {
 		}
 	}
 }
+
+func TestBuiltinWrappedCommand(t *testing.T) {
+	catalog, err := Builtin()
+	if err != nil {
+		t.Fatalf("Builtin: %v", err)
+	}
+	// sudo runs the rest of the line as a command (#1248): the shipped catalog
+	// must answer with the wrapped command's own syntax, including after
+	// sudo's options and separator.
+	for _, line := range []string{"sudo chown ", "sudo -u root chown ", "sudo -- chown "} {
+		result := Complete(catalog, line)
+		if result.Suppressed || !hasCandidate(result, "--recursive") {
+			t.Fatalf("%s lacks --recursive: suppressed=%v candidates=%v", line, result.Suppressed, candidateTexts(result))
+		}
+	}
+	result := Complete(catalog, "sudo chown --r")
+	if !hasCandidate(result, "--recursive") {
+		t.Fatalf("sudo chown --r = %v", candidateTexts(result))
+	}
+}

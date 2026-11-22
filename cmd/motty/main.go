@@ -27,6 +27,7 @@ import (
 type tray struct {
 	list *workbench.Tray
 	item *app.StatusItem
+	icon app.WindowIcon
 }
 
 // recentLog keeps what the program logged, for the diagnostics report.
@@ -177,7 +178,7 @@ func mainWindowTitle() string { return buildinfo.ProductName }
 // newTray makes the status-area list without an icon: the icon is added once
 // the first window is up, because making it delays the window (see show).
 func newTray(application *app.Application) *tray {
-	return &tray{list: workbench.NewTray(func() { windows.quitWithDocuments(application.Quit) })}
+	return &tray{list: workbench.NewTray(func() { windows.quitWithDocuments(application.Quit) }), icon: workbench.AppIcon()}
 }
 
 // show puts the icon in the status area. Without one, a desktop with no
@@ -191,7 +192,7 @@ func (status *tray) show(application *app.Application) {
 	// pointer rests on it, which can be before the first window wake updates it.
 	tooltip, _ := status.list.Tooltip()
 	item, err := application.AddStatusItem(app.StatusItemConfig{
-		Icon:    workbench.TrayIcon(),
+		Icon:    status.icon.StatusIcon(64),
 		Tooltip: tooltip,
 		// The system's menu, built when it opens. Where a desktop reports a
 		// primary press as an activation instead (a Linux tray), it brings the
@@ -215,6 +216,21 @@ func (status *tray) show(application *app.Application) {
 // hasStatusArea reports whether the application is in the status area, which is
 // what lets it keep running when its last window closes.
 func (status *tray) hasStatusArea() bool { return status != nil && status.item != nil }
+
+func (status *tray) setIcon(icon app.WindowIcon) {
+	if status == nil {
+		return
+	}
+	if len(status.icon.RGBA) > 0 && len(icon.RGBA) > 0 && &status.icon.RGBA[0] == &icon.RGBA[0] {
+		return
+	}
+	status.icon = icon
+	if status.item != nil {
+		if err := status.item.SetIcon(icon.StatusIcon(64)); err != nil {
+			log.Printf("motty: update tray icon: %v", err)
+		}
+	}
+}
 
 // keystore is where the saved-passwords vault of the data directory keeps its
 // key: the system's own store, which is nil here, except in a portable copy.
@@ -398,8 +414,17 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		Raise:              func() { mainWindow.Show() },
 		StartAtLogin:       loginStart(),
 		StatusArea:         status.hasStatusArea,
-		Updater:            updater(),
-		Quit:               func() { windows.quitWithDocuments(application.Quit) },
+		SetAppIcon: func(icon app.WindowIcon) {
+			icon = desktopWindowIcon(icon)
+			if mainWindow != nil {
+				if err := mainWindow.SetIcon(icon); err != nil {
+					log.Printf("motty: update window icon: %v", err)
+				}
+			}
+			status.setIcon(icon)
+		},
+		Updater: updater(),
+		Quit:    func() { windows.quitWithDocuments(application.Quit) },
 		AISettingsChanged: func() {
 			if err := hub.Reconfigure(); err != nil {
 				log.Printf("motty: external agent access: %v", err)
@@ -462,7 +487,8 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 	var err error
 	config := app.Config{
 		Title:          mainWindowTitle(),
-		Icon:           workbench.AppIcon(),
+		Class:          desktopWindowClass(),
+		Icon:           desktopWindowIcon(state.WindowIcon()),
 		Tree:           workbench.Tree(),
 		Width:          width,
 		Height:         height,
@@ -530,6 +556,13 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 	// handlers keep the events it leaves; the workbench's Paint stays its own.
 	mainWindow, err = application.OpenWindow(state.WindowConfig(config), &canvas)
 	if err == nil {
+		// A macOS bundle keeps its packaged icon when it opens. Restore the
+		// user's choice explicitly once its native window exists.
+		if runtime.GOOS == "darwin" {
+			if iconErr := mainWindow.SetIcon(state.WindowIcon()); iconErr != nil {
+				log.Printf("motty: restore Dock icon: %v", iconErr)
+			}
+		}
 		state.SyncMenuBar()
 		state.SetWindow(mainWindow.Frame, func() bool { return !mainWindow.Hidden() && !mainWindow.Closed() })
 		state.SetShortcutCapture(mainWindow.CaptureSystemShortcuts)

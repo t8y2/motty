@@ -431,11 +431,11 @@ func (w *remoteToolsWindow) scroll(event gfx.ScrollEvent) gfx.EventResult {
 		return gfx.EventResult{Handled: true}
 	}
 	if w.ui.remote.containerDetails.open || w.ui.remote.processDetails.open {
-		result := w.windowPage().Wheel(event)
+		result := w.windowPage().RouteWheel(event)
 		result.Handled = true
 		return result
 	}
-	return w.windowPage().Wheel(event)
+	return w.windowPage().RouteWheel(event)
 }
 
 // textInput answers for a form or sudo field before the page has declared it,

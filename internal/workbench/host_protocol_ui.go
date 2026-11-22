@@ -348,7 +348,7 @@ func (state *State) declareHostAuthenticationChoice(c ui.C, parent ui.Box, rowHe
 	label := state.messages.FieldAuthentication
 	parent.Children(func() {
 		ui.FormField(c, &form.authField, label).FillWidth().Height(rowHeight).Children(func() {
-			form.authBox = ui.Select(c, &editor.auth, choices[:count], state.authLabel).Label(label).Hit(hitDialogAuth, label)
+			form.authBox = ui.Select(c, &editor.auth, choices[:count], state.authLabel).Label(label)
 			if form.authBox.Changed() {
 				editor.identityOpen, editor.credentialOpen = false, false
 				state.dialogError = ""
@@ -378,7 +378,7 @@ func (state *State) declareHostPortsSelect(c ui.C, parent ui.Box, rowHeight floa
 	parent.Children(func() {
 		ui.FormField(c, &form.portsField, label).FillWidth().Height(rowHeight).Children(func() {
 			form.portsBox = ui.Select(c, &form.portChoice, form.portChoices, func(device string) string { return device }).
-				Label(label).Placeholder("…").Small().Hit(hitDialogPortsTrigger, label)
+				Label(label).Placeholder("…").Small()
 			if form.portsBox.Changed() {
 				editor.address = text.Editor{}
 				editor.address.Insert(form.portChoice)

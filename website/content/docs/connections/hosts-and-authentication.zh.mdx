@@ -12,7 +12,7 @@ description: 主机密钥、认证方式、主机的整理，以及从其他客�
 Motty 支持：
 
 - 正在运行的 SSH agent 中的密钥，
-- 身份文件，包括 OpenSSH 用户证书（自动配对密钥旁的 `id_ed25519-cert.pub`），
+- 身份文件和保存在 Motty 中的密钥，包括 OpenSSH 用户证书（导入密钥旁的 `-cert.pub` 会一起保存；在密钥链中用「证书」添加或更新），
 - PuTTY `.ppk` 文件（版本 2 和 3，含 Argon2id 加密），
 - 密码，
 - keyboard-interactive 多轮问答。
@@ -39,10 +39,11 @@ Motty 支持：
 二次认证，Motty 会弹出问答框，或使用已保存的一次性验证码。服务器拒绝所有候选密钥，或所选
 密钥已不可用时，认证失败，不会回退到交互式登录。
 
-**密钥链 > 添加密钥** 有三种方式：**从文件导入**（文件留在原处）、**粘贴私钥**
-（不需要先有文件）和**生成新密钥**（一对 Ed25519 密钥，公钥会自动复制，用于添加到服务器的
-`~/.ssh/authorized_keys`）。粘贴和生成的密钥加密保存在保险库中，会随保险库同步到你的其他电脑。
-**复制公钥**可随时复制所选密钥的公钥。删除粘贴或生成的密钥无法恢复，因为没有文件可回退。
+**密钥链 > 添加密钥** 有三种方式：**从文件导入**（密钥和旁边的 `-cert.pub` 证书一起
+存进保险库）、**粘贴私钥**（不需要先有文件）和**生成新密钥**（一对 Ed25519 密钥，公钥会
+自动复制，用于添加到服务器的 `~/.ssh/authorized_keys`）。所有密钥都加密保存在保险库中，
+会随保险库同步到你的其他电脑。**复制公钥**可随时复制所选密钥的公钥；**证书**可为所选
+密钥添加或更新 OpenSSH 用户证书。删除保存在 Motty 中的密钥无法恢复，因为没有文件可回退。
 
 ### 证书与 agent
 
@@ -93,9 +94,12 @@ Netcatty 的导出还可能含可读取的 SSH 登录密码，此时可以选择
 | Electerm | 在 Electerm 书签管理里导出的书签 JSON。 |
 | Netcatty | Netcatty 主机页**导出**按钮得到的 CSV。Netcatty 自己的保险库是加密的，只有这份导出能被读取。 |
 | FinalShell | FinalShell 的数据文件夹：Linux 为 `~/.finalshell`，macOS 为 `~/Library/FinalShell`，Windows 上通常是 FinalShell 的安装目录。 |
+| Xterminal | Xterminal 的数据文件夹：macOS 为 `~/Library/Application Support/XTerminal`，Windows 为 `%APPDATA%\XTerminal`，Linux 为 `~/.config/XTerminal`；免安装版的数据在 `xt_data\userData` 下。 |
+| XPipe | XPipe 的数据文件夹（`~/.xpipe`）或其下的 `storage` 子目录，也可以是它同步用的 git 仓库副本。导入 SSH、RDP 和 VNC 连接，XPipe 的其他条目类型不导入。 |
 
 Electerm 和 Netcatty 会把已保存的密码以明文写进导出文件。选择保存密码后，
 合格的 SSH 密码进入 Motty 保险库，但源文件不会被删除；用完请妥善保管或删除。
+Xterminal 和 XPipe 会加密已保存的密码和密钥，因此导入它们的数据文件夹只会得到连接，不会带走密码或密钥。
 MobaXterm 的 UTF-8、带 BOM 的 UTF-16 和 GB18030 文本可读取；
 不支持或损坏的编码会报错，不会静默丢字。无 BOM 文件若同时符合 UTF-8 和
 GB18030，Motty 会先展示两种名称供选择，在确认前不会保存主机。

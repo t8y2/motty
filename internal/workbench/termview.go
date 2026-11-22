@@ -37,18 +37,21 @@ func (span cellSpan) holds(column int) bool { return column >= span.from && colu
 // an unchanged line costs nothing to paint again, and a line that only moved
 // (the screen scrolled) is found again by its ID.
 type rowEntry struct {
-	id       uint64
-	version  uint32
-	cursor   int // the column drawn as the cursor block, or -1
-	covered  cellSpan
-	epoch    uint32
-	cols     int
-	usedCols int
-	used     uint32 // paint generation that last used the entry
-	text     string
-	gutter   gutterEntry
-	runs     []gfx.TextRun
-	spans    []bgSpan
+	id             uint64
+	version        uint32
+	logicalVersion uint64
+	logicalID      uint64
+	suppressed     bool
+	cursor         int // the column drawn as the cursor block, or -1
+	covered        cellSpan
+	epoch          uint32
+	cols           int
+	usedCols       int
+	used           uint32 // paint generation that last used the entry
+	text           string
+	gutter         gutterEntry
+	runs           []gfx.TextRun
+	spans          []bgSpan
 }
 
 // rowCache holds the prepared lines of one terminal.
@@ -65,6 +68,34 @@ type rowCache struct {
 	hlCell  []int32
 	hlMarks []highlight.Color
 	hlCells []highlight.Color
+
+	// Scratch for logical-line highlight rules across wrapped rows.
+	hlLogicalText  []byte
+	hlOwnerRow     []int32
+	hlOwnerCol     []int32
+	hlLogicalMarks []highlight.Color
+	logical        map[uint64]*logicalHighlight
+	logicalFree    []*logicalHighlight
+	logicalSerial  uint64
+}
+
+type logicalRowKey struct {
+	id      uint64
+	version uint32
+	used    int
+	length  int
+	wrapped bool
+}
+
+type logicalHighlight struct {
+	rows      []logicalRowKey
+	positions map[uint64]int
+	cells     []highlight.Color
+	epoch     uint32
+	cols      int
+	used      uint32
+	serial    uint64
+	rules     *highlight.Set
 }
 
 // begin starts a paint pass.
@@ -73,13 +104,20 @@ func (cache *rowCache) begin() { cache.generation++ }
 // end releases the entries the pass did not use, so the cache holds about one
 // screenful however long the terminal has run.
 func (cache *rowCache) end(visible int) {
-	if len(cache.entries) <= visible*2+8 {
-		return
+	if len(cache.entries) > visible*2+8 {
+		for id, entry := range cache.entries {
+			if entry.used != cache.generation {
+				delete(cache.entries, id)
+				cache.free = append(cache.free, entry)
+			}
+		}
 	}
-	for id, entry := range cache.entries {
-		if entry.used != cache.generation {
-			delete(cache.entries, id)
-			cache.free = append(cache.free, entry)
+	if len(cache.logical) > visible*2+8 {
+		for id, entry := range cache.logical {
+			if entry.used != cache.generation {
+				delete(cache.logical, id)
+				cache.logicalFree = append(cache.logicalFree, entry)
+			}
 		}
 	}
 }
@@ -89,7 +127,11 @@ func (cache *rowCache) end(visible int) {
 // covered is the stretch of cells something else is drawn over, an input
 // method's composition: they are left out, text and background, because a
 // rectangle painted over a cell does not hide the text already in it.
-func (cache *rowCache) row(line term.Row, cols, cursor int, covered cellSpan, pal *palette, inactive bool) *rowEntry {
+func (cache *rowCache) row(line term.Row, cols, cursor int, covered cellSpan, pal *palette, inactive bool, logical ...term.Row) *rowEntry {
+	return cache.rowWithLogical(line, cols, cursor, covered, pal, inactive, logical, false)
+}
+
+func (cache *rowCache) rowWithLogical(line term.Row, cols, cursor int, covered cellSpan, pal *palette, inactive bool, logical []term.Row, suppressed bool) *rowEntry {
 	epoch := uint32(pal.epoch) << 3
 	if pal.dark {
 		epoch |= 1
@@ -112,9 +154,15 @@ func (cache *rowCache) row(line term.Row, cols, cursor int, covered cellSpan, pa
 		entry.version = ^uint32(0) // never matches: build below
 	}
 	entry.used = cache.generation
-	if entry.version != line.Version || entry.cursor != cursor || entry.covered != covered || entry.epoch != epoch {
-		cache.build(entry, line, cols, cursor, covered, pal, inactive)
-		entry.version, entry.cursor, entry.covered, entry.epoch, entry.cols = line.Version, cursor, covered, epoch, cols
+	var group *logicalHighlight
+	var logicalID, logicalVersion uint64
+	if len(logical) > 1 && !suppressed {
+		group = cache.logicalLine(logical, cols, epoch, pal.highlight)
+		logicalID, logicalVersion = logical[0].ID, group.serial
+	}
+	if entry.version != line.Version || entry.logicalID != logicalID || entry.logicalVersion != logicalVersion || entry.suppressed != suppressed || entry.cursor != cursor || entry.covered != covered || entry.epoch != epoch {
+		cache.build(entry, line, cols, cursor, covered, pal, inactive, group, suppressed)
+		entry.version, entry.logicalID, entry.logicalVersion, entry.suppressed, entry.cursor, entry.covered, entry.epoch, entry.cols = line.Version, logicalID, logicalVersion, suppressed, cursor, covered, epoch, cols
 	} else if entry.cols != cols {
 		rebuild := entry.usedCols > min(entry.cols, cols) || pal.highlight.PaddingSensitive()
 		if !rebuild && cols > entry.cols {
@@ -129,7 +177,8 @@ func (cache *rowCache) row(line term.Row, cols, cursor int, covered cellSpan, pa
 			}
 		}
 		if rebuild {
-			cache.build(entry, line, cols, cursor, covered, pal, inactive)
+			cache.build(entry, line, cols, cursor, covered, pal, inactive, group, suppressed)
+			entry.logicalVersion = logicalVersion
 		}
 		entry.cols = cols
 	}
@@ -205,7 +254,7 @@ func (pal *palette) termColor(color term.Color, fallback gfx.Color) gfx.Color {
 // costs nothing. Every non-ASCII character is a run of its own, placed at its
 // cell by the renderer, so a wide or fallback-font glyph can never push the
 // text after it off its column.
-func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, covered cellSpan, pal *palette, inactive bool) {
+func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, covered cellSpan, pal *palette, inactive bool, group *logicalHighlight, suppressed bool) {
 	cache.builds++
 	entry.runs = entry.runs[:0]
 	entry.spans = entry.spans[:0]
@@ -220,7 +269,14 @@ func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, c
 		covered.from-- // the cover starts on the tail of a wide character: take its head too
 	}
 	cursorStyle := cellStyle{fg: pal.terminal, bg: pal.cursor, hasBG: true}
-	cellSlots := cache.markCells(line, count, pal.highlight)
+	var cellSlots []highlight.Color
+	if group != nil {
+		if index, ok := group.positions[line.ID]; ok && len(group.cells) >= (index+1)*cols {
+			cellSlots = group.cells[index*cols : index*cols+count]
+		}
+	} else if !suppressed {
+		cellSlots = cache.markCells(line, count, pal.highlight)
+	}
 
 	run := -1 // index into entry.runs of the run that may still grow
 	runASCII := false
@@ -415,6 +471,7 @@ func (cache *rowCache) markCells(line term.Row, count int, rules *highlight.Set)
 		return nil
 	}
 	text, owner := cache.hlText[:0], cache.hlCell[:0]
+	markIndex := 0
 	for x := 0; x < count; x++ {
 		cell := line.Cells[x]
 		if cell.Attr&term.WideTail != 0 {
@@ -429,6 +486,19 @@ func (cache *rowCache) markCells(line term.Row, count int, rules *highlight.Set)
 		for range len(text) - before {
 			owner = append(owner, int32(x))
 		}
+		for markIndex < len(line.Marks) && int(line.Marks[markIndex].Col) < x {
+			markIndex++
+		}
+		for markIndex < len(line.Marks) && int(line.Marks[markIndex].Col) == x {
+			if cell.Attr&term.Hidden == 0 {
+				before = len(text)
+				text = utf8.AppendRune(text, line.Marks[markIndex].R)
+				for range len(text) - before {
+					owner = append(owner, int32(x))
+				}
+			}
+			markIndex++
+		}
 	}
 	cache.hlText, cache.hlCell = text, owner
 	marks := markBuffer(&cache.hlMarks, len(text))
@@ -442,6 +512,130 @@ func (cache *rowCache) markCells(line term.Row, count int, rules *highlight.Set)
 		}
 	}
 	return cells
+}
+
+func (cache *rowCache) logicalLine(logical []term.Row, cols int, epoch uint32, rules *highlight.Set) *logicalHighlight {
+	if cache.logical == nil {
+		cache.logical = make(map[uint64]*logicalHighlight)
+	}
+	id := logical[0].ID
+	group := cache.logical[id]
+	if group == nil {
+		if last := len(cache.logicalFree) - 1; last >= 0 {
+			group, cache.logicalFree = cache.logicalFree[last], cache.logicalFree[:last]
+			group.serial = 0
+		} else {
+			group = &logicalHighlight{}
+		}
+		cache.logical[id] = group
+	}
+	if group.serial != 0 && group.used == cache.generation {
+		return group
+	}
+	group.used = cache.generation
+	changed := group.serial == 0 || group.cols != cols || group.epoch != epoch || group.rules != rules || len(group.rows) != len(logical)
+	if !changed {
+		for index, row := range logical {
+			key := logicalRowKey{id: row.ID, version: row.Version, used: row.Used, length: len(row.Cells), wrapped: row.Wrapped}
+			if group.rows[index] != key {
+				changed = true
+				break
+			}
+		}
+	}
+	if !changed {
+		return group
+	}
+	cache.logicalSerial++
+	group.serial, group.cols, group.epoch, group.rules = cache.logicalSerial, cols, epoch, rules
+	group.rows = group.rows[:0]
+	if group.positions == nil {
+		group.positions = make(map[uint64]int)
+	} else {
+		clear(group.positions)
+	}
+	for index, row := range logical {
+		group.rows = append(group.rows, logicalRowKey{id: row.ID, version: row.Version, used: row.Used, length: len(row.Cells), wrapped: row.Wrapped})
+		group.positions[row.ID] = index
+	}
+	cache.markLogicalCells(group, logical, cols, rules)
+	return group
+}
+
+func (cache *rowCache) markLogicalCells(group *logicalHighlight, logical []term.Row, cols int, rules *highlight.Set) {
+	group.cells = group.cells[:0]
+	if rules.Empty() {
+		return
+	}
+	text := cache.hlLogicalText[:0]
+	ownerRow := cache.hlOwnerRow[:0]
+	ownerCol := cache.hlOwnerCol[:0]
+
+	for rowIndex, row := range logical {
+		rowCells := row.Cells
+		rowCount := min(len(rowCells), cols)
+		if rowIndex < len(logical)-1 {
+			rowCount = min(rowCount, row.Used)
+			marked := 0
+			if len(row.Marks) > 0 {
+				marked = int(row.Marks[len(row.Marks)-1].Col) + 1
+			}
+			for rowCount > marked && rowCells[rowCount-1].R == 0 && rowCells[rowCount-1].Attr&term.WideTail == 0 {
+				rowCount--
+			}
+		}
+		markIndex := 0
+		for x := 0; x < rowCount; x++ {
+			cell := rowCells[x]
+			if cell.Attr&term.WideTail != 0 {
+				continue
+			}
+			character := cell.R
+			if character < 0x20 || (character >= 0x7f && character < 0xa0) || cell.Attr&term.Hidden != 0 {
+				character = ' '
+			}
+			before := len(text)
+			text = utf8.AppendRune(text, character)
+			for range len(text) - before {
+				ownerRow = append(ownerRow, int32(rowIndex))
+				ownerCol = append(ownerCol, int32(x))
+			}
+			for markIndex < len(row.Marks) && int(row.Marks[markIndex].Col) < x {
+				markIndex++
+			}
+			for markIndex < len(row.Marks) && int(row.Marks[markIndex].Col) == x {
+				if cell.Attr&term.Hidden == 0 {
+					before = len(text)
+					text = utf8.AppendRune(text, row.Marks[markIndex].R)
+					for range len(text) - before {
+						ownerRow = append(ownerRow, int32(rowIndex))
+						ownerCol = append(ownerCol, int32(x))
+					}
+				}
+				markIndex++
+			}
+			if len(text) > maxLogicalHighlightCells*4 {
+				cache.hlLogicalText, cache.hlOwnerRow, cache.hlOwnerCol = text, ownerRow, ownerCol
+				return
+			}
+		}
+	}
+
+	cache.hlLogicalText = text
+	cache.hlOwnerRow = ownerRow
+	cache.hlOwnerCol = ownerCol
+
+	marks := markBuffer(&cache.hlLogicalMarks, len(text))
+	if !rules.Mark(text, marks) {
+		return
+	}
+
+	cells := markBuffer(&group.cells, len(logical)*cols)
+	for index, color := range marks {
+		if color != highlight.None {
+			cells[int(ownerRow[index])*cols+int(ownerCol[index])] = color
+		}
+	}
 }
 
 // markBuffer returns a zeroed slice of n marks, reusing what the cache kept.

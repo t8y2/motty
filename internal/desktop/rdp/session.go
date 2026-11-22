@@ -11,6 +11,7 @@ import (
 	"math"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 	"unicode/utf16"
@@ -71,6 +72,12 @@ type Session struct {
 	hasText     bool
 	remoteFiles desktop.ReceivedFiles
 	hasFiles    bool
+	// receiving is the download of the server's files under way, when
+	// isReceiving; receivingStep is how far it had come when the window was
+	// last woken for it.
+	receiving     desktop.FileProgress
+	isReceiving   bool
+	receivingStep int64
 	// pointerKind is what the server last said about its pointer,
 	// pointerShape its pixels when the kind is PointerBitmap, and
 	// pointerVersion how many statements it has made. Guarded by mu.
@@ -260,6 +267,7 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 			session.mu.Unlock()
 			session.wake()
 		})
+		client.OnClipboardFilesProgress(session.onFilesProgress)
 	}
 
 	// Cancelling the context must end a handshake that is waiting on the network.
@@ -350,6 +358,9 @@ func (session *Session) finish(err error) {
 		err = nil
 	}
 	session.err = err
+	session.pointerKind = desktop.PointerSystem
+	session.pointerShape = desktop.PointerShape{}
+	session.pointerVersion++
 	close(session.done)
 	session.mu.Unlock()
 	session.closeTransport()
@@ -462,6 +473,9 @@ func (session *Session) Err() error {
 func (session *Session) Close() error {
 	session.mu.Lock()
 	session.closed = true
+	session.pointerKind = desktop.PointerSystem
+	session.pointerShape = desktop.PointerShape{}
+	session.pointerVersion++
 	session.mu.Unlock()
 	return session.client.Close()
 }
@@ -488,6 +502,43 @@ func (session *Session) RemoteFiles() (desktop.ReceivedFiles, bool) {
 	files, ok := session.remoteFiles, session.hasFiles
 	session.remoteFiles, session.hasFiles = desktop.ReceivedFiles{}, false
 	return files, ok
+}
+
+// ReceivingFiles reports the server's files being saved now (see
+// desktop.FileReceiver).
+func (session *Session) ReceivingFiles() (desktop.FileProgress, bool) {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return session.receiving, session.isReceiving
+}
+
+// CancelReceivingFiles stops saving the server's files.
+func (session *Session) CancelReceivingFiles() { session.client.CancelClipboardFiles() }
+
+// onFilesProgress records how far the server's files have been read. It runs
+// on the download's goroutine once per chunk, and wakes the window only when
+// what the progress card draws moves: a new file, or another hundredth of the
+// whole (another MiB when the whole is not known).
+func (session *Session) onFilesProgress(progress rdpcore.ClipboardFilesProgress) {
+	next := desktop.FileProgress{Name: strings.ReplaceAll(progress.Name, `\`, "/"), Done: int64(min(progress.Done, math.MaxInt64)), Size: -1}
+	step := next.Done >> 20
+	if progress.HasTotal {
+		next.Size = int64(min(progress.Total, math.MaxInt64))
+		step = 0
+		if next.Size > 0 {
+			step = int64(float64(next.Done) / float64(next.Size) * 100)
+		}
+	}
+	session.mu.Lock()
+	changed := progress.Active != session.isReceiving || next.Name != session.receiving.Name || step != session.receivingStep
+	session.receiving, session.isReceiving, session.receivingStep = next, progress.Active, step
+	if !progress.Active {
+		session.receiving = desktop.FileProgress{}
+	}
+	session.mu.Unlock()
+	if changed {
+		session.wake()
+	}
 }
 
 // Bells: RDP has no bell the client hears.

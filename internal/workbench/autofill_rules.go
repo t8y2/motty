@@ -80,9 +80,6 @@ type autofillUI struct {
 
 	ask  autofillAsk
 	pick autofillPick
-	// scanRules is the user's rules plus the built-in prompt assist, rebuilt on
-	// each idle scan without allocating.
-	scanRules []*autofill.Rule
 }
 
 // autofillSendKinds are the ways a rule may answer, in the order the dialog
@@ -129,24 +126,11 @@ func (state *State) scanAutofill(session *Session) {
 	}
 	line := screen.RowText(cursor.Y)
 	host := session.host
-	rules := state.autofillRules.rules
-	if state.passwordAssistOn() {
-		state.autofillRules.scanRules = append(state.autofillRules.scanRules[:0], rules...)
-		state.autofillRules.scanRules = append(state.autofillRules.scanRules, passwordAssistRule)
-		rules = state.autofillRules.scanRules
-	}
-	rule := t.autofill.Scan(line, rules, func(rule *autofill.Rule) bool {
+	rule := t.autofill.Scan(line, state.autofillRules.rules, func(rule *autofill.Rule) bool {
 		return rule.AppliesTo(host.Label, host.Group)
 	})
 	if rule == nil {
-		return
-	}
-	if rule == passwordAssistRule {
-		if state.modal != modalNone {
-			t.autofill.Retry(state.now()) // the offer waits for the dialog in the way
-			return
-		}
-		state.openPasswordPick(session, line)
+		state.scanPasswordAssist(session, line)
 		return
 	}
 	if t.autofill.Allowed(rule.ID) {
@@ -164,6 +148,34 @@ func (state *State) scanAutofill(session *Session) {
 	state.modalSession = session.ID
 }
 
+// scanPasswordAssist offers choices rather than answering automatically. Its
+// prompt identity is separate from the rules' Fired state: a fresh retry prompt
+// may reopen the list, but repainting a dismissed prompt must not.
+func (state *State) scanPasswordAssist(session *Session, ruleLine string) {
+	t := session.term
+	if !state.passwordAssistOn() || t.autofill.HasInput() {
+		return
+	}
+	prompt := t.passwordPromptAtCursor()
+	if prompt == t.passwordOffered || !isAccountPasswordPrompt(prompt.line) {
+		return
+	}
+	// A configured rule keeps ownership even when its answer was refused or
+	// declined; the manual list must not bypass that rule's repeat protection.
+	for _, rule := range state.autofillRules.rules {
+		if rule.Enabled && rule.AppliesTo(session.host.Label, session.host.Group) && rule.Matches(ruleLine) {
+			return
+		}
+	}
+	if state.modal != modalNone || session.ID != state.activeSessionID || state.activeSection != sectionTerminal {
+		t.autofill.Retry(state.now()) // no frames until the terminal can show the list
+		return
+	}
+	if state.openPasswordPick(session, prompt) {
+		t.passwordOffered = prompt
+	}
+}
+
 // requestAutofillFrames asks for the one frame that looks at a prompt once the
 // output has paused. A terminal that is quiet asks for nothing.
 func (state *State) requestAutofillFrames(canvas *gfx.Canvas) {
@@ -174,15 +186,15 @@ func (state *State) requestAutofillFrames(canvas *gfx.Canvas) {
 	for index := range state.sessions {
 		session := &state.sessions[index]
 		t := session.term
-		if t == nil {
+		if t == nil || t.shell == nil || t.ended {
 			continue
 		}
-		// The built-in offer asks for the pause frame only while there are
-		// shared passwords to offer: ordinary terminals keep asking for none.
+		// Only request a frame when a saved password could be offered.
 		if !state.autofillRules.armed && !state.passwordAssistWantsFrame(session) {
 			continue
 		}
-		if wait, pending := t.autofill.Pending(now); pending && wait > 0 {
+		if wait, pending := t.autofill.Pending(now); pending && (wait > 0 ||
+			state.modal == modalNone && state.activeSection == sectionTerminal && session.ID == state.activeSessionID) {
 			canvas.RequestFrameIn(wait)
 		}
 	}
@@ -190,12 +202,13 @@ func (state *State) requestAutofillFrames(canvas *gfx.Canvas) {
 
 // passwordAssistWantsFrame reports whether the pause frame is worth asking for:
 // something saved could be offered. It reads no screen text and makes no vault
-// lookup, so an idle paint never pays for the offer; without a shared password
-// there is nothing the frame could show, and the host's own password is already
-// covered by the sudo hint.
+// lookup, so an idle paint never pays for the offer. A host with its own saved
+// password needs this frame too, even when there are no shared identities.
 func (state *State) passwordAssistWantsFrame(session *Session) bool {
 	t := session.term
-	return t != nil && t.shell != nil && !t.ended && len(state.credentials) > 0
+	return t != nil && t.shell != nil && !t.ended && session.ID == state.activeSessionID &&
+		state.activeSection == sectionTerminal && (len(state.credentials) > 0 ||
+		t.passwordHint != "" && session.endpoint.Host != "" && state.secrets.vault != nil && state.secrets.vault.Len() > 0)
 }
 
 func (state *State) clickAutofillConfirm(id gfx.ID) {
@@ -331,8 +344,8 @@ func (state *State) openAutofillDialog(rule *autofill.Rule) {
 // that preset sends a fixed text. Both are anchored at the start of the line, so
 // a program that only mentions a password is not taken for the prompt.
 const (
-	sudoPromptPattern = `(?i)^\[sudo(?::[^\]]*)?\][^\n]*(?:password|密码|密碼)[^\n]*[:：]\s*$`
-	suPromptPattern   = `(?i)^(?:password|密码|密碼|口令)\s*[:：]\s*$`
+	sudoPromptPattern = autofill.SudoPromptPattern
+	suPromptPattern   = autofill.SuPromptPattern
 )
 
 // openAutofillSudoPreset opens the rule dialog filled in for sudo's prompt.
@@ -531,9 +544,10 @@ func (state *State) declareAutofillDialog(c ui.C) {
 	if form.editing != nil {
 		title = m.DialogEditTitle
 	}
-	body := float32(68*3 + 58 + 28) // name, pattern and scope; the sending choice; the box
+	row := dialogRowHeight(c.Theme())
+	body := 3*row + 58 + 28 // name, pattern and scope; the sending choice; the box
 	if form.send == autofill.SendText {
-		body += 68
+		body += row
 	}
 	viewport := dialogViewport(c)
 	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 600, "", withError(body, form.dialogError))
@@ -611,7 +625,7 @@ func (state *State) declareAutofillField(c ui.C, i int, id gfx.ID, label, placeh
 	field := &form.texts[i]
 	field.Invalid = form.dialogError != ""
 	field.Secure = secret && !form.fixedShown
-	ui.FormField(c, &form.rows[i], label).FillWidth().Height(62).MarginSides(0, 0, 6, 0).Children(func() {
+	ui.FormField(c, &form.rows[i], label).FillWidth().Height(dialogRowHeight(c.Theme())).Children(func() {
 		box := ui.TextFieldID(c, id, field, label, placeholder)
 		if secret {
 			icon, name := lucideIcons[iconEye], m.ShowSecret

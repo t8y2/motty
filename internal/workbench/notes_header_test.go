@@ -100,6 +100,35 @@ func TestNotesLibraryHeaderIconsKeepModeIdentitiesAndPinState(t *testing.T) {
 	}
 }
 
+// The mode group keeps the existing action identities and selects exactly one
+// mode without changing the draft. Its segments share edges instead of being
+// three independent rounded controls.
+func TestNotesModeButtonsAreOneControlledGroup(t *testing.T) {
+	s := newTestState(t, freshOptions(t))
+	s.Click(hitNotes)
+	s.Click(hitNoteAdd)
+	s.notes.body.Insert("keep this draft")
+	ids := [...]gfx.ID{hitNoteModes.At(0), hitNoteModes.At(2), hitNoteModes.At(1)}
+	for _, selected := range ids {
+		s.Click(selected)
+		canvas := paintNotesPage(s, 800)
+		var previous gfx.Hit
+		for index, id := range ids {
+			hit, ok := hitByID(canvas, id)
+			if !ok || hit.Selected != (id == selected) || hit.Hint == "" {
+				t.Fatalf("mode %v: %+v", id, hit)
+			}
+			if index > 0 && previous.Bounds.Right() != hit.Bounds.X {
+				t.Fatal("the mode items do not share their edges")
+			}
+			previous = hit
+		}
+		if s.notes.body.String() != "keep this draft" {
+			t.Fatal("changing the view mode changed the draft")
+		}
+	}
+}
+
 func TestNotesWindowHeaderStacksRightAligned(t *testing.T) {
 	s := newTestState(t, testOptions(t))
 	s.notes.list = []savedNote{{ID: "a", Title: "A", Body: "body"}}
