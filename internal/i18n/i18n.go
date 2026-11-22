@@ -291,6 +291,9 @@ type Messages struct {
 	SettingsOutputAlertsDescription        string
 	SettingsTabOrientation                 string
 	SettingsTabOrientationDescription      string
+	SettingsTabDoubleClick                 string
+	SettingsTabDoubleClickDescription      string
+	SettingsTabDoubleClickNone             string
 	SettingsTabsHorizontal                 string
 	SettingsTabsVertical                   string
 	SettingsTabNumbers                     string

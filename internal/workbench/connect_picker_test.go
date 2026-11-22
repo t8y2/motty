@@ -37,6 +37,8 @@ func TestNewTabButtonAsksWhereToConnectAndMakesNoTabYet(t *testing.T) {
 
 func TestPickingAHostCreatesANewTabForIt(t *testing.T) {
 	state := newTestState(t, testOptions(t))
+	openHost(state)
+	firstID := state.activeSessionID
 	before := len(state.deck.Workspaces(nil))
 	host := state.hosts[0]
 	state.Click(hitNewTab)
@@ -47,7 +49,7 @@ func TestPickingAHostCreatesANewTabForIt(t *testing.T) {
 		t.Fatalf("modal %d, tabs %d -> %d", state.modal, before, len(state.deck.Workspaces(nil)))
 	}
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
-	if !ok || session.HostID != host.ID || state.activeSection != sectionTerminal {
+	if !ok || session.ID == firstID || session.HostID != host.ID || state.activeSection != sectionTerminal {
 		t.Fatalf("active session %+v ok=%v section=%v", session, ok, state.activeSection)
 	}
 }

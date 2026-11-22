@@ -47,6 +47,7 @@ type savedState struct {
 	IconColor                  string                  `json:"icon_color,omitempty"`
 	BackgroundOutputAlerts     bool                    `json:"background_output_alerts,omitempty"`
 	TabOrientation             string                  `json:"tab_orientation,omitempty"`
+	TabDoubleClick             string                  `json:"tab_double_click,omitempty"`
 	TabNumbers                 bool                    `json:"tab_numbers,omitempty"`
 	HiddenNav                  []string                `json:"hidden_nav,omitempty"`
 	VerticalTabsAutoHide       bool                    `json:"vertical_tabs_auto_hide,omitempty"`
@@ -128,6 +129,7 @@ type savedState struct {
 	TerminalPasteImage      string              `json:"terminal_paste_image,omitempty"`
 	TerminalPasswordHint    string              `json:"terminal_password_hint,omitempty"`
 	TerminalCloseConfirm    string              `json:"terminal_close_confirm,omitempty"`
+	CloseWindowConfirm      string              `json:"close_window_confirm,omitempty"`
 	SFTPParallel            int                 `json:"sftp_parallel,omitempty"`
 	SFTPKeepTimes           string              `json:"sftp_keep_times,omitempty"`
 	SFTPFollow              string              `json:"sftp_follow,omitempty"`
@@ -531,6 +533,7 @@ func (state *State) snapshot() savedState {
 		IconColor:                  state.iconColor.saved(),
 		BackgroundOutputAlerts:     state.backgroundOutputAlerts,
 		TabOrientation:             state.tabOrientation.String(),
+		TabDoubleClick:             state.tabDoubleClick.String(),
 		TabNumbers:                 state.tabNumbers,
 		HiddenNav:                  state.hiddenNav.savedKeys(),
 		VerticalTabsAutoHide:       state.verticalTabs.autoHide,
@@ -599,6 +602,7 @@ func (state *State) snapshot() savedState {
 		TerminalPasteImage:         notifyString(state.pasteImageOff),
 		TerminalPasswordHint:       notifyString(state.passwordHintOff),
 		TerminalCloseConfirm:       notifyString(state.closeConfirmOff),
+		CloseWindowConfirm:         notifyString(state.closeWindowConfirmOff),
 		CommandHistory:             state.history.on,
 		CommandSuggestOff:          state.history.suggestOff,
 		CommandCompletionMode:      state.completionMode().persistName(),
@@ -1056,6 +1060,7 @@ func (state *State) restoreLocal(saved savedState) {
 	state.restoreDashboard(saved.MonitorPanels, saved.MonitorActive)
 	state.backgroundOutputAlerts = saved.BackgroundOutputAlerts
 	state.setTabOrientation(tabOrientationFromString(saved.TabOrientation))
+	state.tabDoubleClick = tabDoubleClickFromString(saved.TabDoubleClick)
 	state.setTabNumbers(saved.TabNumbers)
 	state.hiddenNav = hiddenNavPages(saved.HiddenNav)
 	state.setVerticalTabsAutoHide(saved.VerticalTabsAutoHide)
@@ -1242,6 +1247,7 @@ func (state *State) restoreShared(saved savedState) {
 	state.pasteImageOff = saved.TerminalPasteImage == "off"
 	state.passwordHintOff = saved.TerminalPasswordHint == "off"
 	state.closeConfirmOff = saved.TerminalCloseConfirm == "off"
+	state.closeWindowConfirmOff = saved.CloseWindowConfirm == "off"
 	state.history.on = saved.CommandHistory
 	state.history.acceptHintOff = saved.CommandAcceptHintOff
 	switch saved.CommandCompletionMode {

@@ -2797,20 +2797,7 @@ func dialogPageOwns(target gfx.ID) bool {
 // components.ButtonAction gave it, as a page-owned control: the page names it,
 // so the keyboard and the event pass reach it, and Clicked reports the press.
 func dialogButton(c ui.C, label string, variant components.ButtonVariant, disabled bool) ui.Box {
-	button := ui.Button(c, label)
-	switch variant {
-	case components.ButtonSecondary:
-		button = button.Secondary()
-	case components.ButtonOutline:
-		button = button.Outline()
-	case components.ButtonGhost:
-		button = button.Ghost()
-	case components.ButtonDestructive:
-		button = button.Destructive()
-	case components.ButtonDestructiveOutline:
-		button = button.DestructiveOutline()
-	}
-	return button.Disabled(disabled)
+	return ui.Button(c, label).Variant(variant).Disabled(disabled)
 }
 
 // dialogActionFooter declares a footer whose buttons keep the application's
@@ -3398,8 +3385,8 @@ func (state *State) declareHostGroupDeleteDialog(c ui.C) {
 		// The body's 130 pixels are the two choices' rows, as the hand-painted
 		// group stretched them: a radio centres its circle and label in the row.
 		ui.RadioGroup(c).Fill().Children(func() {
-			ui.RadioID(c.Key("parent"), hitGroupDeleteParent, &state.groupActions.ungroup, false, choices[0]).Grow(1)
-			ui.RadioID(c.Key("ungroup"), hitGroupDeleteUngroup, &state.groupActions.ungroup, true, choices[1]).Grow(1)
+			ui.RadioID(c, hitGroupDeleteParent, &state.groupActions.ungroup, false, choices[0]).Grow(1)
+			ui.RadioID(c, hitGroupDeleteUngroup, &state.groupActions.ungroup, true, choices[1]).Grow(1)
 		})
 	})
 	dialog.Footer(func() {

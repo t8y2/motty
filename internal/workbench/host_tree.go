@@ -355,7 +355,7 @@ func (state *State) hostListPointer(event gfx.PointerEvent) (gfx.EventResult, bo
 	if event.Button == gfx.PointerButtonPrimary && event.ClickCount >= 2 {
 		if host, ok := state.hostForRow(event.Target); ok {
 			state.selectedHostID = host.ID
-			state.newHostSession(host)
+			state.openHostSession(host)
 			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
 		return gfx.EventResult{}, false

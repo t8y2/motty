@@ -117,6 +117,39 @@ func TestTelnetHostOpensAStreamAndNotAnSSHConnection(t *testing.T) {
 	}
 }
 
+func TestOpeningStreamHostAfterTransportEditStartsANewSession(t *testing.T) {
+	tests := []struct {
+		name   string
+		host   Host
+		change func(*State, *Host)
+	}{
+		{name: "serial line", host: Host{Label: "Console", Address: "/dev/ttyUSB0", Protocol: protocolSerial, Line: serial.Default},
+			change: func(_ *State, host *Host) { host.Line.Baud = 9600 }},
+		{name: "telnet proxy", host: Host{Label: "Switch", Address: "10.0.0.2", Protocol: protocolTelnet},
+			change: func(state *State, _ *Host) {
+				state.proxy = outboundProxy{kind: sshconn.ProxySOCKS5, address: "localhost:1080"}
+			}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, options := newWorld(t)
+			state := newTestState(t, options)
+			streams := &streamWorld{}
+			streams.install(state)
+			host := addStreamHost(state, test.host)
+			openHost(state)
+			first := state.activeSessionID
+			waitUntil(t, state, "first stream", func() bool { return len(streams.requests()) == 1 })
+			test.change(state, &host)
+			opened := state.openHostSession(host)
+			if opened == nil || opened.ID == first {
+				t.Fatal("edited transport reused the old session")
+			}
+			waitUntil(t, state, "new stream", func() bool { return len(streams.requests()) == 2 })
+		})
+	}
+}
+
 func TestStreamHostsOfferNoServerOnlyTools(t *testing.T) {
 	_, options := newWorld(t)
 	state := newTestState(t, options)

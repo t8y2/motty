@@ -508,6 +508,7 @@ type State struct {
 	tabStrip               tabStrip
 	windowBarScroll        windowBarScroll
 	tabOrientation         tabOrientation
+	tabDoubleClick         tabDoubleClickAction
 	tabNumbers             bool // each tab shows its place number next to the name
 	// hiddenNav is the set of page rows the sidebar leaves out. Hiding is the
 	// entry only: the page keeps its section, shortcuts and command entry.
@@ -773,8 +774,8 @@ type State struct {
 	// startupEnabled is the feature switch of what a launch opens: off, the
 	// launch opens nothing but the choices are kept for when it turns on again.
 	startupEnabled bool
-	// startupReuse says a launch focuses what it was asked to open when that
-	// terminal or host is already open, instead of opening another one.
+	// startupReuse also applies to ordinary host opens. An explicit new tab,
+	// pane, or duplicate still starts a separate session.
 	startupReuse  bool
 	startupPicker struct {
 		open bool
@@ -962,12 +963,17 @@ type State struct {
 	passwordHintOff bool
 	// closeConfirmOff skips the question before closing a session that still runs.
 	closeConfirmOff bool
-	fonts           fontsUI
-	uiFont          interfaceFontUI
-	proxyForm       outboundProxyForm
-	agentSetting    agentDescriptionCache
-	form            formDialog
-	formSerial      uint32
+
+	// closeWindowConfirmOff skips the question before closing a window that
+	// still has sessions open.
+	closeWindowConfirmOff bool
+
+	fonts        fontsUI
+	uiFont       interfaceFontUI
+	proxyForm    outboundProxyForm
+	agentSetting agentDescriptionCache
+	form         formDialog
+	formSerial   uint32
 	// syncEpoch changes whenever the cloud service is replaced or cleared, so work
 	// that started against the old one can tell its result no longer belongs here.
 	syncEpoch     uint32
@@ -1212,6 +1218,7 @@ func New(options Options) *State {
 		terminalScrollback: scrollbackLines,
 		terminalFindPrefs:  defaultTerminalFindPreferences,
 		tabTitleMode:       tabTitleConnection,
+		tabDoubleClick:     tabDoubleClickRename,
 		startupReuse:       true,
 		startupEnabled:     true,
 		// The defaults a fresh window starts from, before the saved state is
@@ -3068,12 +3075,6 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	if result, handled := state.forwardListKey(event); handled {
 		return result
 	}
-	if state.activeSection == sectionKeys && state.modal == modalNone {
-		if result := state.keysTable.Key(event); result.Handled {
-			state.takeKeyTableSelection()
-			return result
-		}
-	}
 	if result, handled := state.proxyListKey(event); handled {
 		return result
 	}
@@ -3309,28 +3310,80 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 
 func (state *State) openHostSession(host Host) *Session {
 	address := state.sessionAddress(host)
+	// "All hosts" on an empty pane leaves a target for the next connection.
+	if !state.startupReuse || state.pendingPane != 0 {
+		return state.createHostSession(host, address)
+	}
+	route, routeValid := state.reuseRouteFor(host)
+	var existing *Session
 	for index := range state.sessions {
 		session := &state.sessions[index]
-		// A saved host owns its tab; a typed target is reused by its address.
-		if session.containerCommand != "" || session.HostID != host.ID || host.ID == 0 && session.Address != address {
+		// Match the catalog entry and the dialed address. An edit can leave
+		// the old connection running, and different entries can share an address.
+		if session.containerCommand != "" || session.HostID != host.ID {
 			continue
 		}
-		state.activeSessionID = session.ID
-		state.activeSection = sectionTerminal
-		if state.canReconnect(session) {
-			state.startConnection(session, host) // reconnect in the same tab
-			state.status = state.messages.StatusOpened + session.Title
-		} else {
-			state.status = state.messages.StatusReused + session.Title
+		if !session.restored && (session.dialedProtocol != host.Protocol || session.dialedTerminal != host.Terminal) {
+			continue
 		}
-		state.save()
-		return session
+		// A failed session keeps the address it last dialed, but reconnecting it
+		// below rewrites the address from the current host before dialing. Live
+		// sessions still require an exact endpoint match so distinct hosts cannot
+		// share a transport accidentally.
+		if session.Address != address && (host.ID == 0 || !state.canReconnect(session)) {
+			continue
+		}
+		// Prefer an open connection (including one still dialing) over a retry,
+		// and keep the active matching session when several were opened explicitly.
+		if !state.canReconnect(session) {
+			if !routeValid || !session.reuseRouteValid || session.reusePolicy != reusePolicyFor(host) ||
+				session.reuseRoute.proxyKey != route.proxyKey || session.reuseRoute.jumpPath != route.jumpPath ||
+				!slices.EqualFunc(session.reuseRoute.jumpPolicies, route.jumpPolicies, jumpPolicy.equal) {
+				continue
+			}
+			// An active SSH session still has the authentication and probe
+			// policy it dialed with, even after the saved host has been edited.
+			algoMode, algoList := host.savedAlgo()
+			if (host.isSSH() && host.ID != localHostID || host.isDesktop()) && (session.dialedAlgoMode != algoMode || session.dialedAlgoList != algoList ||
+				(host.isSSH() && session.interactiveOnly != host.InteractiveOnly) ||
+				!session.reuseOptions.Equal(host.SSHOptions) ||
+				session.dialedHostAuth != host.Auth ||
+				session.dialedHostIdentity != host.Identity ||
+				session.dialedHostCredential != host.Credential ||
+				session.dialedHostIdentitiesOnly != host.IdentitiesOnly) {
+				continue
+			}
+			if existing == nil || state.canReconnect(existing) || session.ID == state.activeSessionID {
+				existing = session
+			}
+			if session.ID == state.activeSessionID {
+				break
+			}
+			continue
+		}
+		if existing == nil {
+			existing = session
+		}
 	}
-	return state.createHostSession(host, address)
+	previous := state.deck.ActiveWorkspace()
+	if existing == nil || !state.ActivatePane(existing.ID) {
+		return state.createHostSession(host, address)
+	}
+	if state.deck.ActiveWorkspace() != previous {
+		state.clearBroadcast()
+	}
+	if state.canReconnect(existing) {
+		state.startConnection(existing, host)
+		state.status = state.messages.StatusOpened + existing.Title
+	} else {
+		state.status = state.messages.StatusReused + existing.Title
+	}
+	state.pendingFocus = state.activeTerminalFocusHit()
+	state.save()
+	return existing
 }
 
-// newHostSession always opens another tab. Host rows use this path because
-// choosing an existing session belongs to the tab strip, not the host list.
+// newHostSession always opens a separate session for explicit new-tab actions.
 func (state *State) newHostSession(host Host) *Session {
 	address := state.sessionAddress(host)
 	return state.createHostSession(host, address)
@@ -3485,13 +3538,13 @@ func (state *State) hostsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 		case state.isHostRow(event.Target):
 			host, _ := state.hostForRow(event.Target)
 			state.selectedHostID = host.ID
-			state.newHostSession(host)
+			state.openHostSession(host)
 			return handled, true
 		case event.Target.IsZero():
 			// Nothing is focused: Enter connects the selected host, provided
 			// the search box has not hidden it.
 			if host, ok := state.selectedHost(); ok && state.hostIsVisible(host.ID) {
-				state.newHostSession(host)
+				state.openHostSession(host)
 				return handled, true
 			}
 		}

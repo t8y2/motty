@@ -311,8 +311,8 @@ func (state *State) declareCommandsMenus(c ui.C) {
 // declareCommandsMenu places a menu to the left of the sidebar header.
 func (state *State) declareCommandsMenu(c ui.C, bar gfx.Rect, open *bool, width float32, rows func(*ui.MenuItems)) {
 	width = min(width, max(0, bar.X-18))
-	anchor := ui.Slot(c).Absolute().Left(bar.X-width-6).Top(bar.Y+commandsHeaderHeight).Size(0, 0)
-	ui.Menu(c, anchor, open, func(menu *ui.MenuItems) {
+	anchor := gfx.Rect{X: bar.X - width - 6, Y: bar.Y + commandsHeaderHeight}
+	ui.MenuAt(c, open, anchor, func(menu *ui.MenuItems) {
 		menu.WidthRange(width, width)
 		rows(menu)
 	})

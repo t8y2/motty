@@ -291,7 +291,7 @@ func (state *State) paintHostGroupParentSelect(canvas *gfx.Canvas, bounds, viewp
 	}
 	control := components.BeginSelect(canvas, state.Theme(), bounds, components.SelectOptions{
 		TriggerID: hitMoveGroupField, Label: m.Parent, Value: value, Open: a.parentOpen,
-		Content: gfx.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: bounds.Width, Height: float32(8 + min(count, 8)*32)},
+		Content: hostGroupParentList(bounds, count, viewport),
 		Layer:   dialogLayer + 1, Scope: dialogScope, DismissID: hitGroupParentDismiss, Viewport: viewport,
 		Scroll: state.selectScroll(a.parentOpen, hitGroupParentDismiss),
 	})
@@ -307,4 +307,12 @@ func (state *State) paintHostGroupParentSelect(canvas *gfx.Canvas, bounds, viewp
 		}
 		control.AddItem(components.SelectItem{ID: hitGroupParentItems.At(index), Label: group.Name, Selected: state.hostGroupEditor.String() == group.Name})
 	}
+}
+
+// hostGroupParentList is where the parent select's list goes: under the field, or
+// above it with more room there, shortened to the room it has.
+func hostGroupParentList(field gfx.Rect, count int, viewport gfx.Rect) gfx.Rect {
+	list, _ := components.PlaceOverlay(field, gfx.Size{Width: field.Width, Height: float32(8 + min(count, 8)*32)}, viewport,
+		components.OverlayPlacement{Side: components.OverlayBottom, Align: components.OverlayAlignStart, SideOffset: 4, Margin: 8, Fit: true})
+	return list
 }

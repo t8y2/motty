@@ -265,6 +265,9 @@ var EnglishMessages = Messages{
 	SettingsOutputAlertsDescription:        "Color tab titles for unseen output: blue while receiving, green when quiet, yellow on a reported command failure.",
 	SettingsTabOrientation:                 "Tab orientation",
 	SettingsTabOrientationDescription:      "Show session tabs across the top or in the left sidebar.",
+	SettingsTabDoubleClick:                 "Double-click a tab",
+	SettingsTabDoubleClickDescription:      "What a double-click on a session tab does; the tab menu always offers both actions.",
+	SettingsTabDoubleClickNone:             "Do nothing",
 	SettingsTabsHorizontal:                 "Horizontal",
 	SettingsTabsVertical:                   "Vertical",
 	SettingsTabNumbers:                     "Tab numbers",
@@ -370,7 +373,7 @@ var EnglishMessages = Messages{
 	SettingsStartupDisabled:                "Off",
 	SettingsStartupDescription:             "The terminal and hosts a launch opens; password and host-key prompts are asked as usual.",
 	SettingsStartupReuse:                   "Reuse open ones",
-	SettingsStartupReuseDescription:        "When a terminal or host to open is already open, switch to it instead of opening another.",
+	SettingsStartupReuseDescription:        "Switch to an existing session in this window when connecting to a host or opening sessions at launch. New Tab, Duplicate and Split still open separate sessions.",
 	SettingsStartupNone:                    "Open nothing",
 	SettingsStartupJoiner:                  ", ",
 	SettingsStartupHostsCount:              "%d hosts",
@@ -1987,6 +1990,9 @@ var englishTools = ToolsMessages{
 	PasswordHintDescription: "Lists saved passwords at sudo, su and SSH/SCP account password prompts, including in local terminals and nested SSH sessions. Use ↑/↓ then Enter, or click a password to send it. Save identities in Settings > Security > Identities.",
 	CloseConfirmRow:         "Confirm before closing running sessions",
 	CloseConfirmDescription: "Asks first when a tab or pane that is still connected is closed. Sessions that have ended close without asking.",
+
+	CloseWindowConfirmRow:         "Confirm before closing a window",
+	CloseWindowConfirmDescription: "Asks first when a window that still has sessions is closed. Closing it ends those connections.",
 
 	ProxyRow:                    "Outbound proxy",
 	ProxyConfigure:              "Configure",

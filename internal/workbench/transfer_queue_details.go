@@ -66,7 +66,7 @@ func (state *State) declareTransferDetailCard(c ui.C, details *transferDetails, 
 		Side: components.PopoverBottom, Align: ui.Start, Offset: 1, Width: width,
 		DismissID: dismiss, KeepOpenOnAnchor: true,
 	}
-	if ui.PopoverWith(c, anchor, spec, &details.open, func() {
+	if ui.PopoverWith(c, anchor, &details.open, spec, func() {
 		state.declareTransferDetailBody(c, entry, card)
 	}) {
 		details.dismiss()

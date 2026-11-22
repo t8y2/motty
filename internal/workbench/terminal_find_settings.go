@@ -311,11 +311,11 @@ func (state *State) declareFindSettingsPopover(c ui.C, anchor ui.Box) {
 	if !v.open || !state.findSettingsOnBar() {
 		return
 	}
-	dismissed := ui.PopoverWith(c, anchor, ui.PopoverSpec{
+	dismissed := ui.PopoverWith(c, anchor, &v.open, ui.PopoverSpec{
 		Scope: hitFindSettingsDismiss, DismissID: hitFindSettingsDismiss,
 		Align: ui.End, Offset: 6, Width: 370, Title: m.Title,
 		ConsumeOutsidePress: true,
-	}, &v.open, func() {
+	}, func() {
 		for _, setting := range [...]struct {
 			which findPreference
 			label string

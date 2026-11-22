@@ -177,10 +177,10 @@ func (s *State) declareNoteHostPopup(c ui.C, n *notesUI) {
 		return
 	}
 	open := true
-	ui.PopoverWith(c, anchor, ui.PopoverSpec{
+	ui.PopoverWith(c, anchor, &open, ui.PopoverSpec{
 		Scope: hitNoteDismiss, DismissID: hitNoteDismiss, ConsumeOutsidePress: true,
 		Side: s.notePopoverSide(), Align: ui.Start, Width: width, InitialFocusID: hitNotePicker,
-	}, &open, func() {
+	}, func() {
 		ui.Column(c).Children(func() {
 			p.picker.Bind(&v.picker)
 			ui.TextFieldID(c, hitNotePicker, &p.picker, s.noteText("Search hosts", "搜索主机"), s.noteText("Search hosts", "搜索主机")).

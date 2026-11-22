@@ -623,7 +623,7 @@ func (state *State) hostSidePointer(event gfx.PointerEvent) (gfx.EventResult, bo
 		if state.hostFilterOn && !state.inHostFilter(host) {
 			state.setHostFilter(false, "")
 		}
-		state.newHostSession(host)
+		state.openHostSession(host)
 		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	if event.Button != gfx.PointerButtonSecondary {

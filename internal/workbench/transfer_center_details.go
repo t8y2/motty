@@ -183,7 +183,7 @@ func (state *State) declareTransferCenterPreview(c ui.C) {
 		NoDismiss: dismiss.IsZero(),
 		DismissID: dismiss, KeepOpenOnAnchor: true,
 	}
-	if ui.PopoverWith(c, anchor, spec, &details.open, details.body) {
+	if ui.PopoverWith(c, anchor, &details.open, spec, details.body) {
 		details.dismiss()
 	}
 }
