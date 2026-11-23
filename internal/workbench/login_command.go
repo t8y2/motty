@@ -240,6 +240,18 @@ func (login *loginCommand) hasPendingOrRunningLogin() bool {
 	return login.line != "" && !login.isWorkspaceStep
 }
 
+// hasRemainingSteps reports whether there are subsequent commands waiting to
+// be executed after the current step.
+func (login *loginCommand) hasRemainingSteps() bool {
+	if login.local {
+		return false
+	}
+	if login.running {
+		return login.line != ""
+	}
+	return len(login.lines) > 1 || (len(login.lines) == 1 && login.workspace != "" && login.loginFirst)
+}
+
 // output notes that the shell wrote something at now, while a command waits or runs.
 func (login *loginCommand) output(now time.Duration) {
 	if login.line != "" || login.running {
@@ -534,7 +546,7 @@ func (state *State) abortLoginOnDisconnect(session *Session) {
 	t := session.term
 	// An unexecuted login command, or a multi-line batch still in flight when
 	// the shell drops, was cut short by the disconnect.
-	if !t.login.local && !t.login.isWorkspaceStep && (t.login.line != "" || (t.login.running && len(t.login.lines) > 1)) {
+	if !t.login.local && !t.login.isWorkspaceStep && t.login.hasRemainingSteps() {
 		state.abortLoginCommands(session, loginAbortDisconnected)
 	}
 }
@@ -550,8 +562,8 @@ func (state *State) runLoginCommand(session *Session) {
 		t.login.armedAt = now
 	}
 	if t.screen.Modes().AltScreen {
-		if t.login.local {
-			t.login = loginCommand{} // startup handed control to a full-screen program
+		if t.login.local || !t.login.hasRemainingSteps() {
+			t.login = loginCommand{results: t.login.results} // startup handed control to a full-screen program
 		} else if !t.login.isWorkspaceStep {
 			state.abortLoginCommands(session, loginAbortAbnormalPrompt)
 		}
@@ -568,15 +580,23 @@ func (state *State) runLoginCommand(session *Session) {
 		} else {
 			if !t.login.isWorkspaceStep {
 				if t.promptStarted && !t.promptReady && t.login.seen && t.login.quietWait(now, loginCommandGrace) == 0 {
-					state.abortLoginCommands(session, loginAbortAbnormalPrompt)
+					if t.login.hasRemainingSteps() {
+						state.abortLoginCommands(session, loginAbortAbnormalPrompt)
+					} else {
+						t.login = loginCommand{results: t.login.results}
+					}
 					return
 				}
-				if cmdhistory.PasswordPrompt(t.screen.RowText(t.screen.Cursor().Y)) && t.login.seen && t.login.quietWait(now, loginCommandGrace) == 0 && len(t.login.lines) > 1 {
+				if cmdhistory.PasswordPrompt(t.screen.RowText(t.screen.Cursor().Y)) && t.login.seen && t.login.quietWait(now, loginCommandGrace) == 0 && t.login.hasRemainingSteps() {
 					state.abortLoginCommands(session, loginAbortAbnormalPrompt)
 					return
 				}
 				if now-t.login.sentAt >= loginCommandExecTimeout {
-					state.abortLoginCommands(session, loginAbortTimeout)
+					if t.login.hasRemainingSteps() {
+						state.abortLoginCommands(session, loginAbortTimeout)
+					} else {
+						t.login = loginCommand{results: t.login.results}
+					}
 					return
 				}
 			}
@@ -594,7 +614,11 @@ func (state *State) runLoginCommand(session *Session) {
 		} else if t.folderIntegrationSeen {
 			if !t.promptReady || t.promptDirty || t.promptVersion <= t.login.promptVersion {
 				if t.promptStarted && !t.promptReady && t.login.seen && t.login.quietWait(now, loginCommandGrace) == 0 {
-					state.abortLoginCommands(session, loginAbortAbnormalPrompt)
+					if t.login.hasRemainingSteps() {
+						state.abortLoginCommands(session, loginAbortAbnormalPrompt)
+					} else {
+						t.login = loginCommand{results: t.login.results}
+					}
 				}
 				return
 			}
@@ -604,7 +628,7 @@ func (state *State) runLoginCommand(session *Session) {
 			}
 			rowText := strings.TrimSpace(t.screen.RowText(t.screen.Cursor().Y))
 			if cmdhistory.PasswordPrompt(rowText) {
-				if t.login.quietWait(now, loginCommandGrace) == 0 {
+				if t.login.quietWait(now, loginCommandGrace) == 0 && t.login.hasRemainingSteps() {
 					state.abortLoginCommands(session, loginAbortAbnormalPrompt)
 				}
 				return
@@ -624,7 +648,7 @@ func (state *State) runLoginCommand(session *Session) {
 		// claiming command-reporting support for other terminal features.
 	case !t.login.seen || t.folderIntegrationSeen:
 		// Once hooks report, only their prompt end authorizes a command.
-		if !t.login.local && !t.login.isWorkspaceStep {
+		if !t.login.local && !t.login.isWorkspaceStep && t.login.hasRemainingSteps() {
 			if t.promptStarted && !t.promptReady && t.login.seen && t.login.quietWait(now, loginCommandGrace) == 0 {
 				state.abortLoginCommands(session, loginAbortAbnormalPrompt)
 			} else if !t.login.seen && now-t.login.armedAt >= loginCommandExecTimeout {
@@ -635,7 +659,7 @@ func (state *State) runLoginCommand(session *Session) {
 	case t.login.quietWait(now, state.loginQuiet(session)) > 0:
 		return
 	default:
-		if !t.login.local && !t.login.isWorkspaceStep && cmdhistory.PasswordPrompt(t.screen.RowText(t.screen.Cursor().Y)) {
+		if !t.login.local && !t.login.isWorkspaceStep && t.login.hasRemainingSteps() && cmdhistory.PasswordPrompt(t.screen.RowText(t.screen.Cursor().Y)) {
 			state.abortLoginCommands(session, loginAbortAbnormalPrompt)
 			return
 		}
@@ -705,7 +729,8 @@ func (t *terminal) pauseInitialization() {
 
 func (state *State) sendInitializationCommand(t *terminal) {
 	login := t.login
-	if !login.local && !login.isWorkspaceStep {
+	singleLine := len(login.lines) <= 1 && (login.workspace == "" || !login.loginFirst)
+	if !login.local && !login.isWorkspaceStep && !singleLine {
 		t.login.snapshotBeforeSend(t)
 	}
 	if !t.sendAssistant([]byte(login.line + "\r")) {
@@ -719,7 +744,7 @@ func (state *State) sendInitializationCommand(t *terminal) {
 		}
 		return
 	}
-	if login.local || login.isWorkspaceStep {
+	if login.local || login.isWorkspaceStep || singleLine {
 		t.login = loginCommand{results: t.login.results}
 		return
 	}

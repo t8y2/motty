@@ -88,6 +88,98 @@ func TestLoginCommandStaysOutOfTheCommandHistory(t *testing.T) {
 	}
 }
 
+func TestSingleLineLoginCommandSupportsFullScreenProgramsWithoutTimeoutOrAbort(t *testing.T) {
+	state, shell, now := loginCommandSession(t, "tmux attach")
+	session := &state.sessions[0]
+	token := session.term.folderToken
+
+	shell.say("\x1b]133;C;motty=" + token + "\x07\x1b]133;A;motty=" + token + "\x07$ \x1b]133;B;motty=" + token + "\x07")
+	state.Wake()
+	if shell.typed() != "tmux attach\r" {
+		t.Fatalf("typed %q, want %q", shell.typed(), "tmux attach\r")
+	}
+
+	// tmux attach enters alternate screen mode (smcup / \x1b[?1049h).
+	shell.say("\x1b[?1049h")
+	state.Wake()
+	if !session.term.screen.Modes().AltScreen {
+		t.Fatal("terminal did not enter AltScreen")
+	}
+
+	// Must preserve legacy fire-and-forget: no abort on entering AltScreen.
+	if session.LoginCommandAborted() != "" {
+		t.Fatalf("aborted on entering AltScreen: %q", session.LoginCommandAborted())
+	}
+
+	// 40 seconds pass (longer than loginCommandExecTimeout = 30s) while staying in AltScreen.
+	*now += loginCommandExecTimeout + 10*time.Second
+	state.Wake()
+
+	// Must not abort on timeout.
+	if session.LoginCommandAborted() != "" {
+		t.Fatalf("aborted after timeout: %q", session.LoginCommandAborted())
+	}
+	if session.term.login.running {
+		t.Fatal("single-line login command left in running state")
+	}
+	if state.dialogError != "" {
+		t.Fatalf("dialogError = %q, want empty", state.dialogError)
+	}
+	screenText := string(session.term.screen.AppendRetainedText(nil))
+	if strings.Contains(screenText, "提示符异常") || strings.Contains(screenText, "超时") || strings.Contains(screenText, "abnormal") || strings.Contains(screenText, "timed out") {
+		t.Fatalf("failure notice written to screen: %q", screenText)
+	}
+}
+
+func TestMultilineLoginCommandLastStepCanBeFullScreenProgramWithoutTimeoutOrAbort(t *testing.T) {
+	state, shell, now := loginCommandSession(t, "cd /opt/app\ntmux attach")
+	session := &state.sessions[0]
+	token := session.term.folderToken
+
+	// Initial prompt triggers step 1.
+	shell.say("\x1b]133;C;motty=" + token + "\x07\x1b]133;A;motty=" + token + "\x07$ \x1b]133;B;motty=" + token + "\x07")
+	state.Wake()
+	if shell.typed() != "cd /opt/app\r" {
+		t.Fatalf("step 1 typed %q", shell.typed())
+	}
+
+	// Step 1 finishes -> step 2 (tmux attach) is sent.
+	shell.say("cd /opt/app\r\n\x1b]133;D;0;motty=" + token + "\x07\x1b]133;A;motty=" + token + "\x07$ \x1b]133;B;motty=" + token + "\x07")
+	state.Wake()
+	wantTyped := "cd /opt/app\rtmux attach\r"
+	if shell.typed() != wantTyped {
+		t.Fatalf("step 2 typed %q, want %q", shell.typed(), wantTyped)
+	}
+
+	// Step 2 enters AltScreen and stays there.
+	shell.say("\x1b[?1049h")
+	state.Wake()
+	if !session.term.screen.Modes().AltScreen {
+		t.Fatal("terminal did not enter AltScreen")
+	}
+
+	// Must not abort on entering AltScreen when no further steps are pending.
+	if session.LoginCommandAborted() != "" {
+		t.Fatalf("aborted on entering AltScreen: %q", session.LoginCommandAborted())
+	}
+
+	// 40 seconds pass (longer than loginCommandExecTimeout = 30s) while staying in AltScreen.
+	*now += loginCommandExecTimeout + 10*time.Second
+	state.Wake()
+
+	// Must not abort on timeout when no further steps are pending.
+	if session.LoginCommandAborted() != "" {
+		t.Fatalf("aborted after timeout: %q", session.LoginCommandAborted())
+	}
+	if session.term.login.running {
+		t.Fatal("login command left in running state")
+	}
+	results := session.LoginCommandResults()
+	if len(results) < 1 || results[0].Command != "cd /opt/app" || !results[0].Success {
+		t.Fatalf("step 1 result missing or failed: %+v", results)
+	}
+}
+
 func TestHostFormSavesAndReEditsMultilineLoginCommandAndPolicy(t *testing.T) {
 	options := testOptions(t)
 	state := newTestState(t, options)
