@@ -169,8 +169,10 @@ type ToolsMessages struct {
 	// CommandsBarShow is the label of the picker's quiet checkbox for that strip;
 	// CommandsBarHidden is that checkbox's tooltip while unticked. Neither names
 	// the strip: the UI uses the language's own word for saved commands.
-	CommandsBarHidden string
-	CommandsBarShow   string
+	CommandsBarHidden    string
+	CommandsBarShow      string
+	SnippetPickerGrouped string
+	SnippetPickerReorder string
 	// CommandsPlacement labels the picker's dock control, and
 	// CommandsPlaceBottom / CommandsPlaceSide name its two docks: the strip
 	// under the terminal or the sidebar beside it.

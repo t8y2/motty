@@ -95,6 +95,7 @@ type snippetsUI struct {
 	// The page's group filter: the groups there are, how many snippets each
 	// names, the list indices it shows in the order it shows them, and the
 	// integer choices its Select is over.
+	pickerGrouped bool
 	groups        []string
 	groupCounts   map[string]int
 	hasUngrouped  bool
@@ -503,8 +504,8 @@ func (state *State) clickSnippetDeleteDialog(id gfx.ID) {
 	case hitSnippetDeleteConfirm:
 		index := state.snippets.deleting - 1
 		state.snippets.deleting = 0
-		state.closeModal()
 		state.deleteSnippet(index)
+		state.closeModal()
 	}
 }
 
@@ -544,6 +545,15 @@ func (state *State) moveSnippetTo(source, to int) bool {
 	n := len(form.list)
 	if source < 0 || source >= n || to < 0 || to > n || source == to ||
 		form.sort.Direction != components.TableSortNone || !form.filter.all() {
+		return false
+	}
+	return state.moveSnippetInOrder(source, to)
+}
+
+// moveSnippetInOrder 调整持久化顺序，不依赖设置页的筛选状态。
+func (state *State) moveSnippetInOrder(source, to int) bool {
+	form := &state.snippets
+	if source < 0 || source >= len(form.list) || to < 0 || to > len(form.list) || source == to {
 		return false
 	}
 	entry := form.list[source]

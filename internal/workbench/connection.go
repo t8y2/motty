@@ -1436,6 +1436,7 @@ func (state *State) showNextPrompt() {
 }
 
 func (state *State) closeModal() {
+	returnToPicker := state.commandPalette.returnToPicker && (state.modal == modalSnippet || state.modal == modalSnippetDelete)
 	returnToRules := state.ruleManager.returning && (state.modal == modalHighlightRule || state.modal == modalAutofillRule || state.modal == modalDeleteRule)
 	returnToSnippetGroups := state.snippetGroups.returning && (state.modal == modalSnippetGroupRename || state.modal == modalSnippetGroupDelete)
 	returnToSnippet := state.modal == modalSnippetGroups && state.snippetGroups.returnToSnippet
@@ -1497,6 +1498,11 @@ func (state *State) closeModal() {
 		state.localProxyUI = localProxyUI{}
 	}
 	state.modal = modalNone
+	if returnToPicker {
+		state.commandPalette.returnToPicker = false
+		state.modal = modalCommandPalette
+		state.rebuildCommandPalette()
+	}
 	if returnToRules {
 		state.modal = modalRuleManager
 		state.ruleManager.returning = false
