@@ -244,3 +244,46 @@ func TestSessionAsksTheServerForTheHostsQuality(t *testing.T) {
 		listener.Close()
 	}
 }
+
+func TestSessionFlushesOncePerUpdate(t *testing.T) {
+	woken := make(chan struct{}, 16)
+	session, server := open(t, desktop.Options{Notify: func() { woken <- struct{}{} }})
+	defer session.Close()
+
+	// Drain initial resize notify
+	select {
+	case <-woken:
+	case <-time.After(time.Second):
+		t.Fatal("no initial notify")
+	}
+
+	io.ReadFull(server, make([]byte, 10)) // the first update request
+
+	// A single FramebufferUpdate with 3 rectangles
+	update := []byte{0, 0, 0, 3}
+	// Rect 1 (1x1 at 0,0)
+	update = append(update, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0)
+	update = append(update, 1, 2, 3, 0)
+	// Rect 2 (1x1 at 1,0)
+	update = append(update, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0)
+	update = append(update, 4, 5, 6, 0)
+	// Rect 3 (1x1 at 2,0)
+	update = append(update, 0, 2, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0)
+	update = append(update, 7, 8, 9, 0)
+
+	server.Write(update)
+	io.ReadFull(server, make([]byte, 10)) // the next request, after the update completes
+
+	select {
+	case <-woken:
+	case <-time.After(time.Second):
+		t.Fatal("no notify after update")
+	}
+
+	// Ensure there are no additional spurious wakes from individual rects
+	select {
+	case <-woken:
+		t.Fatal("spurious wake from individual rectangle instead of single flush")
+	case <-time.After(50 * time.Millisecond):
+	}
+}
