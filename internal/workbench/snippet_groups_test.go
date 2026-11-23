@@ -455,3 +455,150 @@ func TestSnippetPickerGroupsFoldFromTheKeyboard(t *testing.T) {
 		t.Fatalf("Enter on a group: %v, want %v", got, want)
 	}
 }
+
+func TestNestedSnippetGroupPathsNormalizeMaterializeAndFilterDescendants(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	for _, invalid := range []string{"", "   ", "/", " / / "} {
+		if validSnippetGroup(invalid) || cleanSnippetGroup(invalid) != "" {
+			t.Fatalf("invalid group path %q was accepted", invalid)
+		}
+	}
+	if got := cleanSnippetGroup(" Clients / Acme / Production "); got != "Clients/Acme/Production" {
+		t.Fatalf("normalized group path = %q, want %q", got, "Clients/Acme/Production")
+	}
+
+	state.restoreTerminalTools(savedState{Snippets: []savedSnippet{
+		{Name: "deploy-prod", Command: "deploy prod", Group: " Clients / Acme / Production "},
+		{Name: "deploy-stage", Command: "deploy stage", Group: "Clients/Acme/Staging"},
+		{Name: "other", Command: "echo other", Group: "Clients-2/Beta"},
+	}})
+	form := &state.snippets
+	wantGroups := []string{
+		"Clients",
+		"Clients/Acme",
+		"Clients/Acme/Production",
+		"Clients/Acme/Staging",
+		"Clients-2",
+		"Clients-2/Beta",
+	}
+	if !slices.Equal(form.groups, wantGroups) {
+		t.Fatalf("groups = %v, want %v", form.groups, wantGroups)
+	}
+	if form.groupCounts["Clients"] != 2 || form.groupCounts["Clients/Acme"] != 2 || form.groupCounts["Clients/Acme/Production"] != 1 {
+		t.Fatalf("group counts = %v", form.groupCounts)
+	}
+
+	// Filtering by a parent group includes all of its descendants.
+	form.filter = snippetFilter{group: "Clients"}
+	state.refreshSnippets()
+	if !slices.Equal(form.visible, []int{0, 1}) {
+		t.Fatalf("parent filter visible = %v, want [0 1]", form.visible)
+	}
+	form.filter = snippetFilter{group: "Clients/Acme"}
+	state.refreshSnippets()
+	if !slices.Equal(form.visible, []int{0, 1}) {
+		t.Fatalf("intermediate filter visible = %v, want [0 1]", form.visible)
+	}
+	form.filter = snippetFilter{group: "Clients/Acme/Production"}
+	state.refreshSnippets()
+	if !slices.Equal(form.visible, []int{0}) {
+		t.Fatalf("leaf filter visible = %v, want [0]", form.visible)
+	}
+
+	// The editor's group picker uses "/" hierarchy navigation like hosts.
+	if picker := state.snippetGroupPicker("Clients/Acme/Production"); picker.Separator != "/" {
+		t.Fatalf("snippet group picker separator = %q, want /", picker.Separator)
+	}
+}
+
+func TestSnippetPickerRendersNestedGroupsAsCollapsibleTreeAndSearchesInside(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	addTestSnippets(state,
+		snippet{Name: "deploy-prod", Command: "kubectl apply -f prod/", Group: "Clients/Acme/Prod"},
+		snippet{Name: "deploy-stage", Command: "kubectl apply -f stage/", Group: "Clients/Acme/Staging"},
+		snippet{Name: "top", Command: "top", Group: "Ops"},
+	)
+
+	state.openSnippetPicker()
+	// Initially only top-level groups are visible, both collapsed.
+	if got, want := pickerShape(state), []string{"#Clients", "#Ops"}; !sameShape(got, want) {
+		t.Fatalf("initial nested picker = %v, want %v", got, want)
+	}
+	if first := state.commandPalette.entries[state.commandPalette.visible[0]]; first.detail != "2" || first.depth != 0 {
+		t.Fatalf("Clients header = detail:%q depth:%d, want detail:2 depth:0", first.detail, first.depth)
+	}
+
+	// Search still finds deeply nested snippets while their ancestors are collapsed.
+	app.TextEvent{Kind: app.TextInsert, Text: "prod/"}.Apply(state.EditorFor(hitCommandPaletteSearch))
+	state.refreshCommandPalette()
+	if got, want := pickerShape(state), []string{"deploy-prod"}; !sameShape(got, want) {
+		t.Fatalf("search inside collapsed nested tree = %v, want %v", got, want)
+	}
+	state.commandPalette.search = text.Editor{}
+	state.refreshCommandPalette()
+
+	// Expanding Clients reveals Acme (depth 1), keeping Prod/Staging hidden.
+	state.Click(hitCommandPaletteItems.At(0))
+	if got, want := pickerShape(state), []string{"#Clients", "#Acme", "#Ops"}; !sameShape(got, want) {
+		t.Fatalf("after expanding Clients = %v, want %v", got, want)
+	}
+	if acme := state.commandPalette.entries[state.commandPalette.visible[1]]; acme.depth != 1 || acme.detail != "2" {
+		t.Fatalf("Acme header = detail:%q depth:%d, want detail:2 depth:1", acme.detail, acme.depth)
+	}
+
+	// Expanding Acme reveals Prod and Staging (depth 2).
+	state.Click(hitCommandPaletteItems.At(1))
+	if got, want := pickerShape(state), []string{"#Clients", "#Acme", "#Prod", "#Staging", "#Ops"}; !sameShape(got, want) {
+		t.Fatalf("after expanding Acme = %v, want %v", got, want)
+	}
+
+	// Expanding Prod reveals deploy-prod (depth 3).
+	state.Click(hitCommandPaletteItems.At(2))
+	if got, want := pickerShape(state), []string{"#Clients", "#Acme", "#Prod", "deploy-prod", "#Staging", "#Ops"}; !sameShape(got, want) {
+		t.Fatalf("after expanding Prod = %v, want %v", got, want)
+	}
+	if cmd := state.commandPalette.entries[state.commandPalette.visible[3]]; cmd.depth != 3 {
+		t.Fatalf("deploy-prod depth = %d, want 3", cmd.depth)
+	}
+
+	// Collapsing Clients hides the entire subtree; re-expanding restores inner state.
+	state.Click(hitCommandPaletteItems.At(0))
+	if got, want := pickerShape(state), []string{"#Clients", "#Ops"}; !sameShape(got, want) {
+		t.Fatalf("after collapsing Clients = %v, want %v", got, want)
+	}
+	state.Click(hitCommandPaletteItems.At(0))
+	if got, want := pickerShape(state), []string{"#Clients", "#Acme", "#Prod", "deploy-prod", "#Staging", "#Ops"}; !sameShape(got, want) {
+		t.Fatalf("after re-expanding Clients = %v, want %v", got, want)
+	}
+}
+
+func TestLegacyFlatSnippetGroupNamesMigrateWithoutLoss(t *testing.T) {
+	options := freshOptions(t)
+	state := newTestState(t, options)
+	state.restoreTerminalTools(savedState{Snippets: []savedSnippet{
+		{Name: "ci", Command: "make test", Group: "CI/CD"},
+		{Name: "spaced", Command: "echo hi", Group: " Clients / Acme "},
+		{Name: "dot", Command: "pwd", Group: "."},
+		{Name: "dotdot", Command: "cd ..", Group: ".."},
+		{Name: "slash", Command: "ls /", Group: "/"},
+		{Name: "slashes", Command: "ls //", Group: "//"},
+		{Name: "rel", Command: "ls", Group: "a/../b"},
+	}})
+	want := []string{"CI/CD", "Clients/Acme", ".", "..", "／", "／／", "a/../b"}
+	for index, expected := range want {
+		if got := state.snippets.list[index].Group; got != expected {
+			t.Fatalf("snippet %d (%s) group = %q, want %q", index, state.snippets.list[index].Name, got, expected)
+		}
+	}
+	if state.snippets.hasUngrouped {
+		t.Fatal("migrating legacy flat group names dropped a group to ungrouped")
+	}
+	// Saving and reloading preserves every migrated group identically.
+	state.save()
+	reloaded := newTestState(t, options)
+	for index, expected := range want {
+		if got := reloaded.snippets.list[index].Group; got != expected {
+			t.Fatalf("reloaded snippet %d group = %q, want %q", index, got, expected)
+		}
+	}
+}

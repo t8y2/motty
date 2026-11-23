@@ -125,13 +125,18 @@ func (state *State) submitSnippetGroupRename() {
 	state.closeModal()
 }
 
-// renameSnippetGroup gives every snippet that names from the name to, keeping
-// the group filter and the page on the renamed group. A name another group
-// already has is refused, so two groups never merge by accident.
+// renameSnippetGroup gives every snippet in from (and its descendants) the new
+// path under to, keeping the group filter and the page on the renamed group. A
+// name another group already has is refused, so two groups never merge by
+// accident.
 func (state *State) renameSnippetGroup(from, to string) bool {
 	form, manager, m := &state.snippets, &state.snippetGroups, state.messages.Tools
-	to = strings.TrimSpace(to)
+	to = normalizeSnippetGroupPath(to)
 	if !validSnippetGroup(to) {
+		manager.error = m.SnippetGroupRenameInvalid
+		return false
+	}
+	if !sameSnippetGroup(to, from) && snippetGroupWithin(to, from) {
 		manager.error = m.SnippetGroupRenameInvalid
 		return false
 	}
@@ -139,43 +144,63 @@ func (state *State) renameSnippetGroup(from, to string) bool {
 	for index, group := range form.groups {
 		if sameSnippetGroup(group, from) {
 			fromAt = index
-			continue
-		}
-		if sameSnippetGroup(group, to) {
-			manager.error = m.SnippetGroupConflict
-			return false
+			break
 		}
 	}
 	if fromAt < 0 {
 		manager.error = m.SnippetGroupMissing
 		return false
 	}
-	for index := range form.list {
-		if sameSnippetGroup(form.list[index].Group, from) {
-			form.list[index].Group = to
+	for _, group := range form.groups {
+		if !snippetGroupWithin(group, from) {
+			continue
+		}
+		remapped := remapSnippetGroupPath(group, from, to)
+		if !validSnippetGroup(remapped) {
+			manager.error = m.SnippetGroupRenameInvalid
+			return false
+		}
+		for _, existing := range form.groups {
+			if snippetGroupWithin(existing, from) {
+				continue
+			}
+			if sameSnippetGroup(existing, remapped) {
+				manager.error = m.SnippetGroupConflict
+				return false
+			}
 		}
 	}
-	if form.filter.group != "" && sameSnippetGroup(form.filter.group, from) {
-		form.filter.group = to
+	for index := range form.list {
+		if snippetGroupWithin(form.list[index].Group, from) {
+			form.list[index].Group = remapSnippetGroupPath(form.list[index].Group, from, to)
+		}
 	}
+	if form.filter.group != "" && snippetGroupWithin(form.filter.group, from) {
+		form.filter.group = remapSnippetGroupPath(form.filter.group, from, to)
+	}
+	remapCommandGroupMap(state.commands.hiddenGroups, from, to)
+	remapCommandGroupMap(state.commands.collapsedGroups, from, to)
 	manager.error = ""
 	state.refreshSnippets()
-	if manager.returnToSnippet && sameSnippetGroup(state.snippets.groupPicker.Value(), from) {
-		state.snippetGroupPicker(to)
+	if manager.returnToSnippet {
+		if current := state.snippets.groupPicker.Value(); snippetGroupWithin(current, from) {
+			state.snippetGroupPicker(remapSnippetGroupPath(current, from, to))
+		}
 	}
 	state.save()
 	state.status = fmt.Sprintf(m.StatusGroupRenamedFmt, from, to)
 	return true
 }
 
-// deleteSnippetGroup clears the group from its snippets: the commands stay on
-// the page as ungrouped ones. A filter on the deleted group shows everything
-// again, as it does for a group that is gone for any other reason.
+// deleteSnippetGroup clears the group from its snippets (and any descendants):
+// the commands stay on the page as ungrouped ones. A filter on the deleted
+// group or a descendant shows everything again, as it does for a group that is
+// gone for any other reason.
 func (state *State) deleteSnippetGroup(group string) {
 	form, manager, m := &state.snippets, &state.snippetGroups, state.messages.Tools
 	count := 0
 	for index := range form.list {
-		if sameSnippetGroup(form.list[index].Group, group) {
+		if snippetGroupWithin(form.list[index].Group, group) {
 			form.list[index].Group = ""
 			count++
 		}
@@ -183,15 +208,45 @@ func (state *State) deleteSnippetGroup(group string) {
 	if count == 0 {
 		return
 	}
-	if form.filter.group != "" && sameSnippetGroup(form.filter.group, group) {
+	if form.filter.group != "" && snippetGroupWithin(form.filter.group, group) {
 		form.filter = snippetFilter{}
 	}
+	deleteCommandGroupMap(state.commands.hiddenGroups, group)
+	deleteCommandGroupMap(state.commands.collapsedGroups, group)
 	state.refreshSnippets()
-	if manager.returnToSnippet && sameSnippetGroup(state.snippets.groupPicker.Value(), group) {
+	if manager.returnToSnippet && snippetGroupWithin(state.snippets.groupPicker.Value(), group) {
 		state.snippetGroupPicker("")
 	}
 	state.save()
 	state.status = fmt.Sprintf(m.StatusGroupDeletedFmt, group, count)
+}
+
+func remapCommandGroupMap(entries map[string]bool, from, to string) {
+	if len(entries) == 0 {
+		return
+	}
+	var updated map[string]bool
+	for key, set := range entries {
+		if !set || key == "" || !snippetGroupWithin(key, from) {
+			continue
+		}
+		if updated == nil {
+			updated = make(map[string]bool)
+		}
+		updated[strings.ToLower(remapSnippetGroupPath(key, from, to))] = true
+		delete(entries, key)
+	}
+	for key, set := range updated {
+		entries[key] = set
+	}
+}
+
+func deleteCommandGroupMap(entries map[string]bool, group string) {
+	for key := range entries {
+		if key != "" && snippetGroupWithin(key, group) {
+			delete(entries, key)
+		}
+	}
 }
 
 // snippetGroupCount is how many snippets the group at name lists, counted when
@@ -246,7 +301,8 @@ func (state *State) declareSnippetGroupsDialog(c ui.C) {
 func (state *State) declareSnippetGroupManagerRow(c ui.C, index int) {
 	form, m := &state.snippets, state.messages.Tools
 	group := form.groups[index]
-	ui.Row(c).FillWidth().Height(56).Shrink(0).Items(ui.Center).Gap(12).PadSides(0, 14, 0, 10).Children(func() {
+	padLeft := float32(10 + min(int(snippetGroupDepth(group)), 6)*16)
+	ui.Row(c).FillWidth().Height(56).Shrink(0).Items(ui.Center).Gap(12).PadSides(0, 14, 0, padLeft).Children(func() {
 		ui.Icon(c, lucideIcons[iconFolderOpen]).Size(16, 16).Color(state.pal.muted).Shrink(0)
 		ui.Column(c).Grow(1).Basis(0).Gap(2).Children(func() {
 			ui.Text(c, group).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).MaxLines(1).Ellipsis()

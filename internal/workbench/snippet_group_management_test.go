@@ -268,3 +268,72 @@ func TestSnippetGroupManagerFromTheEditorRefreshesItsChoices(t *testing.T) {
 			state.snippets.groupPicker.Value(), state.snippets.groupPicker.Query.String())
 	}
 }
+
+func TestRenamingANestedSnippetGroupRemapsItsSubtreeAndRejectsCycles(t *testing.T) {
+	options := freshOptions(t)
+	state := newTestState(t, options)
+	state.activeSection = sectionSnippets
+	addTestSnippets(state,
+		snippet{Name: "prod", Command: "echo prod", Group: "Clients/Acme/Prod"},
+		snippet{Name: "stage", Command: "echo stage", Group: "Clients/Acme/Staging"},
+		snippet{Name: "beta", Command: "echo beta", Group: "Clients/Beta"},
+		snippet{Name: "ops", Command: "echo ops", Group: "Ops"},
+	)
+	state.snippets.filter = snippetFilter{group: "Clients/Acme/Prod"}
+	state.refreshSnippets()
+
+	state.Click(hitSnippetGroups)
+	state.Click(hitSnippetGroupRenameList.At(snippetGroupAt(t, state, "Clients")))
+	// Reject moving a group inside itself.
+	state.snippetGroups.editor.ReplaceRange(text.Range{Start: 0, End: state.snippetGroups.editor.RuneCount()}, "Clients/Sub")
+	state.Click(hitSnippetGroupRenameSubmit)
+	if state.modal != modalSnippetGroupRename || state.snippetGroups.error == "" {
+		t.Fatalf("self-nesting rename was accepted: modal=%d err=%q", state.modal, state.snippetGroups.error)
+	}
+
+	// Rename the parent group: every descendant and the active filter remap.
+	state.snippetGroups.editor.ReplaceRange(text.Range{Start: 0, End: state.snippetGroups.editor.RuneCount()}, "Customers")
+	state.Click(hitSnippetGroupRenameSubmit)
+	if state.modal != modalSnippetGroups || state.snippetGroups.error != "" {
+		t.Fatalf("rename failed: modal=%d err=%q", state.modal, state.snippetGroups.error)
+	}
+	got := []string{
+		state.snippets.list[0].Group,
+		state.snippets.list[1].Group,
+		state.snippets.list[2].Group,
+		state.snippets.list[3].Group,
+	}
+	want := []string{"Customers/Acme/Prod", "Customers/Acme/Staging", "Customers/Beta", "Ops"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("groups after rename = %v, want %v", got, want)
+	}
+	if state.snippets.filter.group != "Customers/Acme/Prod" {
+		t.Fatalf("filter = %q, want Customers/Acme/Prod", state.snippets.filter.group)
+	}
+}
+
+func TestDeletingANestedSnippetGroupUngroupsItsSubtree(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	state.activeSection = sectionSnippets
+	addTestSnippets(state,
+		snippet{Name: "prod", Command: "echo prod", Group: "Clients/Acme/Prod"},
+		snippet{Name: "stage", Command: "echo stage", Group: "Clients/Acme/Staging"},
+		snippet{Name: "beta", Command: "echo beta", Group: "Clients/Beta"},
+	)
+	state.snippets.filter = snippetFilter{group: "Clients/Acme/Prod"}
+	state.refreshSnippets()
+
+	state.Click(hitSnippetGroups)
+	state.Click(hitSnippetGroupDeleteList.At(snippetGroupAt(t, state, "Clients/Acme")))
+	if state.snippetGroupCount("Clients/Acme") != 2 {
+		t.Fatalf("subtree count = %d, want 2", state.snippetGroupCount("Clients/Acme"))
+	}
+	state.Click(hitSnippetGroupDeleteConfirm)
+	got := []string{state.snippets.list[0].Group, state.snippets.list[1].Group, state.snippets.list[2].Group}
+	if !slices.Equal(got, []string{"", "", "Clients/Beta"}) {
+		t.Fatalf("groups after subtree delete = %v", got)
+	}
+	if !state.snippets.filter.all() {
+		t.Fatalf("filter = %+v, want reset to all", state.snippets.filter)
+	}
+}
