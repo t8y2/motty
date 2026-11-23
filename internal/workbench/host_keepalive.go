@@ -297,6 +297,18 @@ func idleSeesSecretPrompt(t *terminal) bool {
 	return cmdhistory.PasswordPrompt(line) && strings.ContainsAny(line, ":?：？")
 }
 
+// idleCommandRunning reports whether a shell that reports its command starts
+// has handed the terminal to a program: a command began and no prompt has
+// returned. The probe is input for the shell's line editor, and the shell's
+// own idle timer (TMOUT, a device's exec-timeout) only runs while it waits at
+// a prompt. A running program gets the bytes instead, and the tty echoes them
+// into its output (^@ for NUL, a blank line for CR). A shell that never
+// reports command starts cannot be told apart from one at its prompt, so it
+// keeps receiving the probe the user asked for.
+func idleCommandRunning(t *terminal) bool {
+	return t.commandReporting && !t.screen.AtPrompt()
+}
+
 // idleKeepAliveInterval is the interval this shell was opened with, and whether
 // it has one at all. The host is not read here: editing a connected host
 // changes its next connection, as every other host setting does.
@@ -333,7 +345,8 @@ func (state *State) idleKeepAliveWait(session *Session, now time.Duration) time.
 // command, so Paint never touches the shell.
 //
 // A transfer that owns the shell, a password prompt, an assistant command, a
-// completion suggestion, a full-screen program and a partially typed line are
+// completion suggestion, a full-screen program, a running command and a
+// partially typed line are
 // all states an Enter could disturb or submit, so the probe waits for another
 // interval instead. A refused write is retried at the next interval, never in a
 // loop.
@@ -381,7 +394,8 @@ func (state *State) runIdleKeepAlive(session *Session, now time.Duration) {
 		return
 	}
 	if t.passwordHint != "" || t.exec != nil || t.suggestionPending != nil ||
-		t.screen.Modes().AltScreen || t.promptDirty || idleSeesSecretPrompt(t) {
+		t.screen.Modes().AltScreen || t.promptDirty || idleSeesSecretPrompt(t) ||
+		idleCommandRunning(t) {
 		t.idleLastInput = now
 		return
 	}

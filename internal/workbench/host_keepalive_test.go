@@ -369,6 +369,41 @@ func TestIdleKeepAliveSkipsAFullScreenProgram(t *testing.T) {
 	}
 }
 
+// A program the shell started (tail -f, a build, sleep) owns the terminal
+// line, so the tty echoes the probe: a NUL shows as ^@ and a CR as a blank
+// line in the middle of its output. Nothing is waiting at a prompt for the
+// probe either, so a shell that reports its command starts is left alone
+// until its prompt is back.
+func TestIdleKeepAliveSkipsARunningCommand(t *testing.T) {
+	state, session, shell := idleKeepAliveSession(t, Host{Protocol: protocolSSH, IdleKeepAlive: time.Minute})
+	term := session.term
+	term.screen.SetPromptToken("t")
+	term.commandReporting = true
+	mark := func(kind string) { term.screen.Write([]byte("\x1b]133;" + kind + ";motty=t\a")) }
+
+	mark("A")
+	term.screen.Write([]byte("$ "))
+	mark("B")
+	mark("C")
+	term.screen.Write([]byte("log line\r\n"))
+	state.runIdleKeepAlive(session, time.Minute)
+	if got := shell.typed(); got != "" {
+		t.Fatalf("typed %q into a running command", got)
+	}
+	if term.idleLastInput != time.Minute {
+		t.Fatalf("last input = %v, want the check deferred", term.idleLastInput)
+	}
+
+	mark("D;0")
+	mark("A")
+	term.screen.Write([]byte("$ "))
+	mark("B")
+	state.runIdleKeepAlive(session, 2*time.Minute)
+	if got := shell.typed(); got != "\x00" {
+		t.Fatalf("typed %q at the prompt, want the NUL probe", got)
+	}
+}
+
 // Programs ask for credentials in their own words; an Enter at any of these
 // would submit an empty password.
 func TestIdleKeepAliveSkipsCredentialPrompts(t *testing.T) {
