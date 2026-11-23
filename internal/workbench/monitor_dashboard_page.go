@@ -853,10 +853,11 @@ func (state *State) declareDashboardOrderList(c ui.C) {
 	e.orderList.Reorder = func(rows []int, to int) {
 		state.moveDashboardHost(rows, to)
 	}
-	list := ui.List(c, &e.orderList, len(e.selected), state.declareDashboardOrderRow).
-		Grow(1).Basis(0).MinHeight(0).Scrollbars().ScrollbarSize(catalogBarGutter).Label(m.OrderTab)
-	list.DrawOver(func(d *ui.DrawContext) {
-		e.bounds = list.Rect()
+	ui.Column(c).Grow(1).Basis(0).MinHeight(0).Children(func() {
+		ui.List(c, &e.orderList, len(e.selected), state.declareDashboardOrderRow).
+			Grow(1).Basis(0).MinHeight(0).Scrollbars().ScrollbarSize(catalogBarGutter).Label(m.OrderTab)
+	}).DrawOver(func(d *ui.DrawContext) {
+		e.bounds = d.Rect
 	})
 	if len(e.selected) == 0 {
 		ui.Text(c, m.HostsRequired).FontSize(12).Color(state.pal.muted)
