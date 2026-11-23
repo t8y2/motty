@@ -112,6 +112,10 @@ type Request struct {
 	MaxTokens       int
 	Temperature     *float64
 	ReasoningEffort string
+	// SessionID identifies the conversation the request continues. Providers
+	// that route on it (OpenCode's x-opencode-session) receive it; empty means
+	// a one-off request.
+	SessionID string
 }
 
 // EventKind classifies a streamed Event.
