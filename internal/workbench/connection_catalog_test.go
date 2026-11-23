@@ -210,3 +210,18 @@ func TestHeadlessServerReadsWhatTheWindowSaved(t *testing.T) {
 		t.Fatalf("hosts %d, opened %+v", len(catalog.hosts), allowed)
 	}
 }
+
+func TestKeepAliveUsesCountMaxByDefault(t *testing.T) {
+	catalog := hostCatalog{connectionKeepAlive: 30 * time.Second}
+	host := Host{Address: "example.com", Port: 22}
+	keepAlive := catalog.keepAliveFor(host)
+	if keepAlive.Interval != 30*time.Second {
+		t.Fatalf("Interval = %v, want 30s", keepAlive.Interval)
+	}
+	if keepAlive.Timeout != 0 {
+		t.Fatalf("Timeout = %v, want 0", keepAlive.Timeout)
+	}
+	if keepAlive.CountMax == nil || *keepAlive.CountMax != 3 {
+		t.Fatalf("CountMax = %v, want 3", keepAlive.CountMax)
+	}
+}

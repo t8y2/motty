@@ -62,6 +62,10 @@ func reconnectTerminalError(err error) bool {
 }
 
 func (state *State) cancelReconnect(session *Session) {
+	if session.reconnectTimer != nil {
+		session.reconnectTimer.Stop()
+		session.reconnectTimer = nil
+	}
 	if session.reconnectPending {
 		state.reconnectWaiters--
 	}
@@ -79,6 +83,10 @@ func (state *State) queueReconnect(session *Session) bool {
 	}
 	next := session.reconnectAttempt + 1
 	if !state.connectionReconnect.permits(next) {
+		if session.reconnectTimer != nil {
+			session.reconnectTimer.Stop()
+			session.reconnectTimer = nil
+		}
 		session.reconnectPending = false
 		session.reconnectDue = 0
 		session.reconnectExhausted = session.reconnectAttempt > 0
@@ -86,14 +94,36 @@ func (state *State) queueReconnect(session *Session) bool {
 		state.recordConnectionEvent(session, connectionEventReconnectStopped, "")
 		return false
 	}
+	delay := reconnectDelay(next)
 	session.reconnectAttempt = next
-	session.reconnectDue = state.now() + reconnectDelay(next)
+	session.reconnectDue = state.now() + delay
 	session.reconnectPending = true
 	state.reconnectWaiters++
 	session.reconnectExhausted = false
 	session.reconnectText = ""
 	session.showLog = false
 	state.recordConnectionEvent(session, connectionEventReconnectWaiting, "")
+	if session.reconnectTimer != nil {
+		session.reconnectTimer.Stop()
+	}
+	invalidate := state.options.Invalidate
+	wake := func() {
+		if state.post != nil {
+			state.post(func() {
+				state.Wake()
+				if invalidate != nil {
+					invalidate()
+				}
+			})
+			return
+		}
+		if invalidate != nil {
+			invalidate()
+		}
+	}
+	if state.post != nil || invalidate != nil {
+		session.reconnectTimer = time.AfterFunc(delay, wake)
+	}
 	return true
 }
 
@@ -144,6 +174,10 @@ func (state *State) advanceReconnects() {
 		session := &state.sessions[index]
 		if !session.reconnectPending || now < session.reconnectDue {
 			continue
+		}
+		if session.reconnectTimer != nil {
+			session.reconnectTimer.Stop()
+			session.reconnectTimer = nil
 		}
 		session.reconnectPending = false
 		state.reconnectWaiters--

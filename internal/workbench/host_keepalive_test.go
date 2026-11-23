@@ -916,3 +916,30 @@ func TestIdleKeepAliveIgnoresDamagedSavedValues(t *testing.T) {
 		})
 	}
 }
+
+func TestArmIdleKeepAliveDispatchesThroughPost(t *testing.T) {
+	posted := make(chan func(), 1)
+	state := &State{
+		post: func(fn func()) {
+			select {
+			case posted <- fn:
+			default:
+			}
+		},
+	}
+	session := &Session{term: &terminal{}}
+	state.armIdleKeepAlive(session, 10*time.Millisecond, 0)
+	if session.term.idleTimer == nil {
+		t.Fatal("armIdleKeepAlive did not schedule timer")
+	}
+	defer session.term.stopIdleKeepAlive()
+
+	select {
+	case fn := <-posted:
+		if fn == nil {
+			t.Fatal("posted function is nil")
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("timed out waiting for idle timer to post wake")
+	}
+}

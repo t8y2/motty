@@ -436,11 +436,25 @@ func (state *State) armIdleKeepAlive(session *Session, wait, now time.Duration) 
 		t.idleTimer.Stop()
 	}
 	invalidate := state.options.Invalidate
-	if invalidate == nil {
+	if invalidate == nil && state.post == nil {
 		t.idleTimer, t.idleTimerAt = nil, 0
 		return
 	}
-	t.idleTimer = time.AfterFunc(wait, invalidate)
+	wake := func() {
+		if state.post != nil {
+			state.post(func() {
+				state.Wake()
+				if invalidate != nil {
+					invalidate()
+				}
+			})
+			return
+		}
+		if invalidate != nil {
+			invalidate()
+		}
+	}
+	t.idleTimer = time.AfterFunc(wait, wake)
 	t.idleTimerAt = due
 }
 

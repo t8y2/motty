@@ -444,7 +444,11 @@ func (conn *Conn) Ping(ctx context.Context) (time.Duration, error) {
 	go func() {
 		_, _, err := client.SendRequest(keepAliveRequest, true, nil)
 		owner.endProbe()
-		ch <- pingResult{rtt: time.Since(start), err: err}
+		rtt := time.Since(start)
+		if rtt <= 0 {
+			rtt = time.Nanosecond
+		}
+		ch <- pingResult{rtt: rtt, err: err}
 	}()
 	select {
 	case res := <-ch:

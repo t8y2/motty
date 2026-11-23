@@ -330,3 +330,34 @@ func TestReconnectCountdownIsFullyVisible(t *testing.T) {
 		})
 	}
 }
+
+func TestBackgroundReconnectTimerDispatchesThroughPost(t *testing.T) {
+	posted := make(chan func(), 1)
+	world, options := newWorld(t)
+	now := 10 * time.Second
+	options.Now = func() time.Duration { return now }
+	options.Post = func(fn func()) {
+		select {
+		case posted <- fn:
+		default:
+		}
+	}
+	state := newTestState(t, options)
+	state.connectionReconnect = reconnectThree
+	connection := connect(t, state, world)
+	connection.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+
+	disconnectEstablished(connection, state)
+	if !state.sessions[0].reconnectPending {
+		t.Fatal("session is not pending reconnect")
+	}
+	if state.sessions[0].reconnectTimer == nil {
+		t.Fatal("reconnect timer was not scheduled")
+	}
+
+	state.cancelReconnect(&state.sessions[0])
+	if state.sessions[0].reconnectTimer != nil {
+		t.Fatal("cancelReconnect did not clean up reconnectTimer")
+	}
+}

@@ -466,7 +466,7 @@ func TestSettingsApplyScrollbackToExistingTerminalsAndReliabilityToNewConnection
 	state.activeSection = sectionHosts
 	openHost(state)
 	config := world.configs[len(world.configs)-1]
-	if config.DialTimeout != 30*time.Second || config.KeepAlive.Interval != 60*time.Second || config.KeepAlive.Timeout != 10*time.Second {
+	if config.DialTimeout != 30*time.Second || config.KeepAlive.Interval != 60*time.Second || config.KeepAlive.CountMax == nil || *config.KeepAlive.CountMax != 3 {
 		t.Fatalf("connection reliability config = %+v", config)
 	}
 }

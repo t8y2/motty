@@ -537,7 +537,8 @@ func (catalog *hostCatalog) keepAliveFor(host Host) sshconn.KeepAliveConfig {
 		return config
 	}
 	if catalog.connectionKeepAlive > 0 {
-		return sshconn.KeepAliveConfig{Interval: catalog.connectionKeepAlive, Timeout: 10 * time.Second, UseTCP: host.InteractiveOnly}
+		count := 3
+		return sshconn.KeepAliveConfig{Interval: catalog.connectionKeepAlive, CountMax: &count, UseTCP: host.InteractiveOnly}
 	}
 	return sshconn.KeepAliveConfig{}
 }
