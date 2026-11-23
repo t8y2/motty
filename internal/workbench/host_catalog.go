@@ -226,8 +226,10 @@ type hostMerge struct {
 	dropped, kept Host
 }
 
-// mergeKey is what makes two hosts one host for mergeSameHosts: the destination
-// and the name, as in sameHost.
+// mergeKey is what makes two hosts one host for mergeSameHosts: the destination,
+// the name and the group, as in sameHost and sameHostGroup. The group is part of
+// it so that a host the user keeps in two groups stays two hosts, while the same
+// host added on two devices, filed alike, still folds to one.
 type mergeKey struct {
 	protocol uint8
 	terminal uint8
@@ -236,10 +238,11 @@ type mergeKey struct {
 	port     uint16
 	viaSSH   bool
 	label    string
+	group    string
 }
 
 func mergeKeyOf(host Host) mergeKey {
-	key := mergeKey{protocol: uint8(host.Protocol), terminal: uint8(host.Terminal), address: host.Address, label: strings.ToLower(strings.TrimSpace(host.Label))}
+	key := mergeKey{protocol: uint8(host.Protocol), terminal: uint8(host.Terminal), address: host.Address, label: strings.ToLower(strings.TrimSpace(host.Label)), group: normalizeHostGroupPath(host.Group)}
 	if host.Protocol != protocolSerial {
 		key.user, key.port, key.viaSSH = host.User, host.Port, host.ViaSSH
 	}

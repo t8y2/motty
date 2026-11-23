@@ -224,8 +224,9 @@ func (editor *hostEditor) portNumber() (uint16, bool) {
 
 // validate returns the first user-visible error, or empty when the form is
 // submittable. A host is a duplicate only when it is the same destination under
-// the same name as an existing one (see sameHost): the same machine under another
-// account, or reached through a bastion under another name, is a different host.
+// the same name in the same group (see sameHost and sameHostGroup): the same
+// machine under another account, or reached through a bastion under another name,
+// is a different host, and so is the same server filed in a second group.
 func (editor *hostEditor) validate(hosts []Host, ignoreID uint32, messages i18n.Messages) string {
 	if editor.value(fieldLabel) == "" {
 		return messages.ErrLabelRequired
@@ -307,7 +308,7 @@ func (editor *hostEditor) validate(hosts []Host, ignoreID uint32, messages i18n.
 	}
 	candidate := editor.host(0)
 	for _, host := range hosts {
-		if host.ID != ignoreID && sameHost(host, candidate) {
+		if host.ID != ignoreID && sameHost(host, candidate) && sameHostGroup(host, candidate) {
 			return messages.ErrAddressTaken
 		}
 	}

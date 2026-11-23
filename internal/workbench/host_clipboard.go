@@ -114,8 +114,13 @@ func (state *State) hostLabelExists(label string) bool {
 
 // moveHostToGroup puts one host in group, as a drop onto a group row asks.
 func (state *State) moveHostToGroup(hostID uint32, group string) bool {
+	group = normalizeHostGroupPath(group)
 	index := state.hostIndex(hostID)
 	if index < 0 || strings.TrimSpace(state.hosts[index].Group) == group {
+		return false
+	}
+	if hostGroupTaken(state.hosts, state.hosts[index], group) {
+		state.status = state.messages.ErrAddressTaken
 		return false
 	}
 	state.hosts[index].Group = group
@@ -140,7 +145,11 @@ func (state *State) reorderHostBeside(sourceID, targetID uint32, after bool) boo
 	}
 	host := state.hosts[source]
 	if host.Group != state.hosts[target].Group {
-		host.Group = state.hosts[target].Group
+		if hostGroupTaken(state.hosts, host, state.hosts[target].Group) {
+			state.status = state.messages.ErrAddressTaken
+			return false
+		}
+		host.Group = normalizeHostGroupPath(state.hosts[target].Group)
 	}
 	// A display order other than Manual gives way to the order the drop writes.
 	if state.hostOrder != hostOrderManual {

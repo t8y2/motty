@@ -577,6 +577,7 @@ var TraditionalMessages = Messages{
 	ErrDeviceRequired:           "請填寫裝置",
 	ErrGroupRequired:            "請填寫群組",
 	ErrAddressTaken:             "該主機已存在",
+	HostGroupDeleteRepeatFmt:    "無法刪除：%s（%s）在 %s 中會產生重複的主機，請先重新命名或移除該主機。",
 	ErrPortInvalid:              "連接埠範圍 1-65535",
 	ErrHostTagsInvalid:          "最多 12 個標籤，每個不超過 32 個字元，且不包含逗號或換行",
 	Cancel:                      "取消",
