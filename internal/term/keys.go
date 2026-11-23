@@ -80,7 +80,7 @@ func EncodeKey(key gfx.Key, modifiers gfx.Modifiers, text string, appCursorKeys 
 		return prefix([]byte{0x1b})
 	case gfx.KeyBackspace:
 		if control {
-			return prefix([]byte{0x08})
+			return prefix([]byte{0x17})
 		}
 		return prefix([]byte{0x7f})
 	case gfx.KeySpace:
