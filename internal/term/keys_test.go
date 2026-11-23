@@ -26,7 +26,7 @@ func TestEncodeKey(t *testing.T) {
 		{"shift+tab", gfx.KeyTab, shift, "", false, "\x1b[Z"},
 		{"escape", gfx.KeyEscape, 0, "", false, "\x1b"},
 		{"backspace", gfx.KeyBackspace, 0, "", false, "\x7f"},
-		{"ctrl+backspace", gfx.KeyBackspace, control, "", false, "\x08"},
+		{"ctrl+backspace deletes a word", gfx.KeyBackspace, control, "", false, "\x17"},
 		{"alt+backspace deletes a word", gfx.KeyBackspace, alt, "", false, "\x1b\x7f"},
 		{"ctrl+space", gfx.KeySpace, control, "", false, "\x00"},
 		{"up", gfx.KeyUp, 0, "", false, "\x1b[A"},
