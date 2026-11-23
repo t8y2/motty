@@ -718,6 +718,7 @@ func TestClipboardBellAndInactiveClientAsksForNothing(t *testing.T) {
 }
 
 func TestInputMessages(t *testing.T) {
+	sink := &canvas{}
 	clientSide, serverSide := pair(t)
 	s := &server{t: t, conn: serverSide}
 	go s.handshake("008", 1, "", 20, 10)
@@ -725,6 +726,12 @@ func TestInputMessages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	done := run(client, sink)
+	s.readRequest()
+	// The clipboard goes out once the server has had its say on the clipboard
+	// protocol, which an update follows.
+	s.write(update(rect(0, 0, 1, 1, EncodingRaw, pixels(1, 4, 5, 6)...)))
+	s.readRequest()
 	go func() {
 		client.SendPointer(7, 9, 5)
 		client.SendKey(0xff0d, true)
@@ -739,6 +746,8 @@ func TestInputMessages(t *testing.T) {
 	if got := s.read(8 + 4); !bytes.Equal(got, append([]byte{6, 0, 0, 0, 0, 0, 0, 4}, "a\nb?"...)) {
 		t.Fatalf("clipboard = %q", got)
 	}
+	s.finish()
+	wait(t, done)
 }
 
 // slowConn delivers one byte per Read, the worst way a network can split what a

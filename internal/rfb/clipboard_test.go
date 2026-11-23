@@ -124,6 +124,76 @@ func TestExtendedClipboardCarriesUTF8BothWays(t *testing.T) {
 	}
 }
 
+// The pseudo-encoding number is the protocol's, not ours: a server only offers
+// the extended clipboard to a client that names it exactly.
+func TestExtendedClipboardEncodingNumber(t *testing.T) {
+	number := encodingExtendedClipboard
+	if got := uint32(number); got != 0xC0A1E5CE {
+		t.Fatalf("extended clipboard pseudo-encoding = %#x, want 0xC0A1E5CE", got)
+	}
+}
+
+// Text given before the server has had its say on the extended clipboard is not
+// sent as Latin-1: a server that speaks UTF-8 gets it as UTF-8 once it says so,
+// and one that does not gets Latin-1 when its first update shows it never will.
+func TestClipboardGivenEarlyWaitsForCapabilities(t *testing.T) {
+	t.Run("server speaks UTF-8", func(t *testing.T) {
+		clientSide, serverSide := pair(t)
+		s := &server{t: t, conn: serverSide}
+		go s.handshake("008", 1, "", 20, 10)
+		client, err := Connect(clientSide, Config{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		done := run(client, &canvas{})
+		s.readRequest()
+		if err := client.SendClipboard("中文"); err != nil {
+			t.Fatal(err)
+		}
+		s.serverCaps(allCaps)
+		if flags, _ := s.readClipboard(); flags&clipCaps == 0 {
+			t.Fatalf("client capabilities = %#x", flags)
+		}
+		if flags, _ := s.readClipboard(); flags != clipNotify|clipUTF8 {
+			t.Fatalf("announcement = %#x", flags)
+		}
+		s.write(serverClipboard(clipRequest|clipUTF8, nil))
+		flags, payload := s.readClipboard()
+		if flags != clipProvide|clipUTF8 {
+			t.Fatalf("answer = %#x", flags)
+		}
+		stream, err := zlib.NewReader(bytes.NewReader(payload))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, _ := io.ReadAll(stream)
+		if want := append(append(u32(len("中文")+1), "中文"...), 0); !bytes.Equal(got, want) {
+			t.Fatalf("provided %q, want %q", got, want)
+		}
+		s.finish()
+		wait(t, done)
+	})
+	t.Run("server does not", func(t *testing.T) {
+		clientSide, serverSide := pair(t)
+		s := &server{t: t, conn: serverSide}
+		go s.handshake("008", 1, "", 20, 10)
+		client, err := Connect(clientSide, Config{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		done := run(client, &canvas{})
+		s.readRequest()
+		client.SendClipboard("old")
+		client.SendClipboard("a€")
+		s.write(update(rect(0, 0, 1, 1, EncodingRaw, pixels(1, 4, 5, 6)...)))
+		if got := s.read(8 + 2); !bytes.Equal(got, append([]byte{6, 0, 0, 0, 0, 0, 0, 2}, "a?"...)) {
+			t.Fatalf("clipboard = %v", got)
+		}
+		s.finish()
+		wait(t, done)
+	})
+}
+
 // A server that cannot announce, request and provide UTF-8 gets no capabilities
 // back, and the client keeps to Latin-1 for it.
 func TestExtendedClipboardNeedsEveryAction(t *testing.T) {

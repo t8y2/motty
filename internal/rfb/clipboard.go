@@ -26,7 +26,7 @@ import (
 // Request asks for them and Provide sends them: a zlib stream of one U32 length
 // and the data per format, in ascending format bit. Peek asks for a Notify.
 // Text is UTF-8 with CRLF line ends and a terminating NUL.
-const encodingExtendedClipboard int32 = -1062706738 // 0xC0A1E5CE
+const encodingExtendedClipboard int32 = -1063131698 // 0xC0A1E5CE
 
 const (
 	clipUTF8    uint32 = 1 << 0
@@ -137,12 +137,34 @@ func (client *Client) extendedCutText(sink Sink, length uint32) error {
 func (client *Client) clipboardCaps(flags uint32) error {
 	const needed = clipRequest | clipNotify | clipProvide
 	if flags&clipUTF8 == 0 || flags&needed != needed {
-		return nil
+		return client.settleClipboard()
 	}
 	client.mu.Lock()
 	client.extClipboard = true
 	client.mu.Unlock()
-	return client.write(extendedMessage(clipCaps|needed|clipUTF8, binary.BigEndian.AppendUint32(nil, 0)))
+	if err := client.write(extendedMessage(clipCaps|needed|clipUTF8, binary.BigEndian.AppendUint32(nil, 0))); err != nil {
+		return err
+	}
+	return client.settleClipboard()
+}
+
+// settleClipboard ends the wait for the server's capabilities, on them or on the
+// first update, which a server sends them before, and sends what SendClipboard
+// held in the meantime.
+func (client *Client) settleClipboard() error {
+	client.mu.Lock()
+	if client.clipSettled {
+		client.mu.Unlock()
+		return nil
+	}
+	client.clipSettled = true
+	text, waiting := client.clipPending, client.clipWaiting
+	client.clipPending, client.clipWaiting = "", false
+	client.mu.Unlock()
+	if !waiting {
+		return nil
+	}
+	return client.SendClipboard(text)
 }
 
 // clipboardProvided delivers the text of a Provide. Text is the first format,
