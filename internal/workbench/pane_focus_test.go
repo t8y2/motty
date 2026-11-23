@@ -173,6 +173,9 @@ func TestPressingTheBarOfALonePaneKeepsTyping(t *testing.T) {
 
 func TestReopeningAHostFromTheCatalogFocusesItsExistingTerminal(t *testing.T) {
 	state, world, _, shell := liveSession(t)
+	// Reopening focuses the session the first open made, which is the reuse
+	// path; reuse is off by default, so turn it on for this test.
+	state.startupReuse = true
 	firstID := state.activeSessionID
 	workspace := state.deck.ActiveWorkspace()
 	state.newHostSession(state.hosts[1])
