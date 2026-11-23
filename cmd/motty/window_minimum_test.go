@@ -55,9 +55,9 @@ func (h *minSizeHost) Quit() {
 	}
 }
 
-// The main window must carry the minimum into the native config, and a frame
-// restored below it must open at the minimum instead of the saved size.
-func TestMainWindowKeepsItsMinimumAndCorrectsARestoredTinyFrame(t *testing.T) {
+// The main window must carry the minimum into the native config, and a
+// minimized frame reported after a usable one must not replace it.
+func TestMainWindowKeepsItsMinimumAndIgnoresAMinimizedFrame(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv(datadir.Variable, dir)
 	// Both runs open the window the launch path opens, so they share one frame
@@ -69,7 +69,8 @@ func TestMainWindowKeepsItsMinimumAndCorrectsARestoredTinyFrame(t *testing.T) {
 	app.UseApplicationRunner(func(start func(app.Host) error) error { return start(host) })
 	t.Cleanup(func() { host.Quit(); app.UseApplicationRunner(nil) })
 
-	run := func(shrink bool) app.Config {
+	usable := gfx.Rect{X: 120, Y: 80, Width: 1234, Height: 777}
+	run := func(minimize bool) app.Config {
 		t.Helper()
 		hub := workbench.NewAIHub(filepath.Join(t.TempDir(), "ai.db"))
 		defer hub.Close()
@@ -84,8 +85,11 @@ func TestMainWindowKeepsItsMinimumAndCorrectsARestoredTinyFrame(t *testing.T) {
 			}
 			window := host.windows[len(host.windows)-1]
 			opened = window.config
-			if shrink {
-				window.config.OnFrameChange(gfx.Rect{Width: 400, Height: 300})
+			window.config.OnFrameChange(usable)
+			if minimize {
+				// What Windows reports while the window is minimized: the icon's
+				// corner and size, sent before OnMinimize marks the window.
+				window.config.OnFrameChange(gfx.Rect{X: -32000, Y: -32000, Width: 160, Height: 28})
 			}
 			window.Close()
 			return nil
@@ -96,14 +100,16 @@ func TestMainWindowKeepsItsMinimumAndCorrectsARestoredTinyFrame(t *testing.T) {
 		return opened
 	}
 
-	// Record a frame far below the minimum, then open again from the store.
 	run(true)
 	restored := run(false)
 	if restored.MinWidth != workbench.MinimumWindowWidth || restored.MinHeight != workbench.MinimumWindowHeight {
 		t.Fatalf("main window minimum = %dx%d, want %dx%d", restored.MinWidth, restored.MinHeight, workbench.MinimumWindowWidth, workbench.MinimumWindowHeight)
 	}
-	if restored.Width != workbench.MinimumWindowWidth || restored.Height != workbench.MinimumWindowHeight {
-		t.Fatalf("restored frame %dx%d opened at %dx%d, want the minimum %dx%d", 400, 300, restored.Width, restored.Height, workbench.MinimumWindowWidth, workbench.MinimumWindowHeight)
+	if restored.Width != int(usable.Width) || restored.Height != int(usable.Height) {
+		t.Fatalf("restored frame %dx%d, want the last usable %v", restored.Width, restored.Height, usable)
+	}
+	if restored.Origin == nil || *restored.Origin != (gfx.Point{X: usable.X, Y: usable.Y}) {
+		t.Fatalf("restored origin = %v, want %v", restored.Origin, gfx.Point{X: usable.X, Y: usable.Y})
 	}
 }
 

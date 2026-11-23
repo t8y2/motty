@@ -34,6 +34,40 @@ func TestWindowFrameSurvivesRestart(t *testing.T) {
 	}
 }
 
+// TestMinimizedWindowFrameDoesNotReplaceTheLastUsableFrame proves the window
+// manager's small off-screen rectangle, reported when the window is minimized,
+// never becomes the frame the next launch restores. Windows can deliver the
+// move before it tells the application the window is minimized.
+func TestMinimizedWindowFrameDoesNotReplaceTheLastUsableFrame(t *testing.T) {
+	dir := t.TempDir()
+	options := windowStateOptions(dir)
+	frame := gfx.Rect{X: 120, Y: 80, Width: 1234, Height: 777}
+	minimized := gfx.Rect{X: -32000, Y: -32000, Width: 160, Height: 28}
+
+	state := newTestState(t, options)
+	state.NoteWindowFrame(frame)
+	state.NoteWindowFrame(minimized)
+	state.closeWindowChrome()
+	state.Close()
+
+	reopened := newTestState(t, options)
+	got, ok := reopened.RestoredWindowFrame()
+	if !ok || got != frame {
+		t.Fatalf("restored frame = %+v, %t; want the last usable frame %+v", got, ok, frame)
+	}
+}
+
+// TestRestoredUnusableFrameIsIgnored proves a record an older build filled with
+// the minimized rectangle does not open the window in the corner at a size it
+// could never have had.
+func TestRestoredUnusableFrameIsIgnored(t *testing.T) {
+	state := newTestState(t, Options{})
+	state.restoreWindowFrame(gfx.Rect{X: -32000, Y: -32000, Width: 160, Height: 28})
+	if got, ok := state.RestoredWindowFrame(); ok {
+		t.Fatalf("restored frame = %+v, want no frame", got)
+	}
+}
+
 // TestWindowMaximizedSurvivesRestart proves that maximizing a remembered window
 // persists alongside its floating frame, and unmaximizing clears it without
 // losing the floating frame.
