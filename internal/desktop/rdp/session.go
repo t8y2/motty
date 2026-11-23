@@ -174,9 +174,7 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 	config.Host, config.Port = host, port
 	config.Username, config.Domain, config.Password = opts.Username, opts.Domain, opts.Password
 	config.Width, config.Height = uint16(width), uint16(height)
-	if percent := scalePercent(opts.Scale); percent != 100 {
-		config.DesktopScaleFactor = percent
-	}
+	config.DesktopScaleFactor = scalePercent(opts.Scale)
 	config.Clipboard = opts.Clipboard
 	config.ConsoleSession = opts.Console
 	if opts.StandardSecurity {
