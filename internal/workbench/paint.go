@@ -596,6 +596,7 @@ func (state *State) declareShell(c ui.C) {
 		state.declareDesktopBody(c, session, gfx.Rect{Width: state.viewport.Width, Height: state.viewport.Height})
 		state.declareTransferProgressCards(c)
 		state.declareDashboardDialog(c)
+		state.declareAgentHostsDialog(c)
 		state.declareDashboardAddMenu(c)
 		return
 	}
@@ -683,6 +684,7 @@ func (state *State) declareShell(c ui.C) {
 	// The dashboard's own dialog and its hosts-page add menu are page controls
 	// too: they are open over whatever section asked for them.
 	state.declareDashboardDialog(c)
+	state.declareAgentHostsDialog(c)
 	state.declareDashboardAddMenu(c)
 	// The drag overlay is hitless and paints over the page on the drag layer.
 	state.declareTabDragOverlays(c)

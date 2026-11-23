@@ -2275,6 +2275,9 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if result := state.dashboardScroll(event); result.Handled {
 		return result
 	}
+	if result := state.agentHostsScroll(event); result.Handled {
+		return result
+	}
 	if result := state.workspaceDraftScroll(event); result.Handled {
 		return result
 	}

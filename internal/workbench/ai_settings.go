@@ -238,6 +238,7 @@ type aiSettingsUI struct {
 	agentDataDir       string
 	agentPreviewClient aiMCPClient
 	agentPreviewConfig string
+	agentHostsView     agentHostsViewUI
 	tokenReset         bool
 	loadPosted         bool // the first load was queued from a paint
 

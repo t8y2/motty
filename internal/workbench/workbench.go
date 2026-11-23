@@ -1461,6 +1461,9 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 	if editor := state.dashboardEditorFor(hit); editor != nil {
 		return editor
 	}
+	if editor := state.agentHostsEditor(hit); editor != nil {
+		return editor
+	}
 	if _, local, ok := state.decodePaneHit(hit); ok {
 		hit = local
 	}
@@ -1727,6 +1730,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		state.pressIconMotion(id)
 	}
 	if state.clickDashboard(id) {
+		return
+	}
+	if state.clickAgentHosts(id) {
 		return
 	}
 	if state.clickRemoteLogs(id) {
@@ -3090,6 +3096,9 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		return result
 	}
 	if result := state.dashboardKey(event); result.Handled {
+		return result
+	}
+	if result := state.agentHostsKey(event); result.Handled {
 		return result
 	}
 	if result, handled := state.remoteProcessDetailsKey(event); handled {
