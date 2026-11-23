@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"motty/internal/desktop"
+	"motty/internal/rfb"
 )
 
 // fakeServer speaks the part of RFB 3.8 (no security) a Session needs, and
@@ -25,7 +26,7 @@ func fakeServer(t *testing.T, conn net.Conn) {
 	init := []byte{0, 4, 0, 2}
 	init = append(init, 32, 24, 0, 1, 0, 255, 0, 255, 0, 255, 16, 8, 0, 0, 0, 0, 0, 0, 0, 4)
 	conn.Write(append(init, "demo"...))
-	io.ReadFull(conn, make([]byte, 20+4+4*6)) // pixel format and six encodings
+	io.ReadFull(conn, make([]byte, 20+4+4*len(rfb.DefaultEncodings))) // pixel format and the encodings
 }
 
 func open(t *testing.T, opts desktop.Options) (*Session, net.Conn) {

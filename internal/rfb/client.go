@@ -66,7 +66,7 @@ const (
 
 // DefaultEncodings is the preference order sent to the server: the most
 // compact first, Raw last as what every server must support.
-var DefaultEncodings = []int32{EncodingZRLE, EncodingHextile, EncodingRRE, EncodingCopyRect, EncodingRaw, encodingDesktopSize}
+var DefaultEncodings = []int32{EncodingZRLE, EncodingHextile, EncodingRRE, EncodingCopyRect, EncodingRaw, encodingDesktopSize, encodingExtendedClipboard}
 
 // PreferEncoding is DefaultEncodings with encoding moved to the front, which is
 // how a client tells the server which one to use when it supports several. The
@@ -188,6 +188,12 @@ type Client struct {
 	// so that the picture is redrawn in the new format.
 	pending *qualityChange
 	refresh bool
+
+	// extClipboard is set when the server has agreed to the extended clipboard,
+	// and clip is the text SendClipboard last sent, in the form the server asks
+	// for (nil before any).
+	extClipboard bool
+	clip         []byte
 
 	// decoder state
 	rowBuf  []byte
@@ -587,10 +593,17 @@ func (client *Client) SendKey(keysym uint32, down bool) error {
 	return client.write(message[:])
 }
 
-// SendClipboard gives the server text for its clipboard. The protocol carries
-// Latin-1 only: other characters are sent as '?'. Text beyond MaxClipboard bytes
-// is cut.
+// SendClipboard gives the server text for its clipboard. A server that speaks
+// the extended clipboard gets UTF-8, handed over when it asks for it; any other
+// gets Latin-1, the only text RFC 6143 carries, with the characters it cannot
+// hold sent as '?'. Text beyond MaxClipboard bytes is cut.
 func (client *Client) SendClipboard(text string) error {
+	client.mu.Lock()
+	extended := client.extClipboard
+	client.mu.Unlock()
+	if extended {
+		return client.sendExtendedClipboard(text)
+	}
 	data := make([]byte, 0, min(len(text), MaxClipboard))
 	for _, r := range text {
 		if len(data) >= MaxClipboard {
@@ -656,6 +669,10 @@ func (client *Client) cutText(sink Sink) error {
 		return err
 	}
 	length := binary.BigEndian.Uint32(header[3:])
+	if int32(length) < 0 {
+		// A negative length marks an extended clipboard message of -length bytes.
+		return client.extendedCutText(sink, -length)
+	}
 	if length > maxCutText {
 		return fmt.Errorf("%w: a %d byte clipboard", ErrProtocol, length)
 	}

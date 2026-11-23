@@ -63,6 +63,10 @@ func FuzzMessages(f *testing.F) {
 	f.Add(update(stream.rect(0, 0, 8, 8, append([]byte{1}, cpixel(1, 2, 3)...))))
 	f.Add(update(rect(0, 0, 8, 8, encodingDesktopSize)))
 	f.Add([]byte{3, 0, 0, 0, 0, 0, 0, 2, 'h', 'i', 2, 1, 0, 0, 0, 0})
+	f.Add(serverClipboard(allCaps, u32(20<<20)))
+	f.Add(serverClipboard(clipProvide|clipUTF8, textProvide(f, "a\r\nb\x00")))
+	f.Add(serverClipboard(clipNotify|clipUTF8, nil))
+	f.Add(serverClipboard(clipPeek, nil))
 	// The first byte picks the pixel format; a seed above is read as 32-bit
 	// when it starts with 0, so the smaller formats get their own.
 	for _, format := range []PixelFormat{Pixel16, Pixel8} {

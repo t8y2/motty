@@ -81,8 +81,9 @@ Oversized or invalid UTF-8 values are rejected without truncation.
 
 RA256, RA2ne/RA256ne, VeNCrypt/TLS, RealVNC private type 13 and other vendor
 authentication extensions are outside this implementation's scope. Text
-clipboard sharing retains its existing Latin-1 behavior; UTF-8 clipboard
-support belongs to a separate change.
+clipboard sharing uses UTF-8 through the Extended Clipboard pseudo-encoding
+where the server supports it (TigerVNC and compatible servers) and Latin-1
+otherwise.
 
 ## Verification
 

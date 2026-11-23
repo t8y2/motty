@@ -189,8 +189,10 @@ DesktopSize; pointer, key and cut-text messages.
   crosshair.
 * Clipboard: per host, default off, text only. Remote to local is applied at
   once; local to remote is sent when the pointer is pressed or a paste chord is
-  typed, if it changed. RFB carries Latin-1: other characters go as `?`. Pasting
-  with the system paste shortcut types the clipboard on the remote instead.
+  typed, if it changed. Servers that speak the Extended Clipboard
+  pseudo-encoding (TigerVNC and compatible) get UTF-8; for any other, RFB
+  carries only Latin-1 and other characters go as `?`. Pasting with the system
+  paste shortcut types the clipboard on the remote instead.
 * Quality and bandwidth (host editor, **Quality and bandwidth**): the colour
   depth asked from the server (32 bits by default, or 16 as 5-6-5, or 8 as
   3-3-2; every decoder widens the pixels back to 32 bits, so a smaller format

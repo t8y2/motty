@@ -11,12 +11,13 @@
 // to 3.8. A 32-bit true-colour pixel format is requested from the
 // server by default, so no pixel is converted; Config.PixelFormat asks for 16
 // or 8 bits to save bandwidth, and the decoders widen each pixel back to 32.
-// Supported encodings are Raw, CopyRect, RRE,
-// Hextile and ZRLE; the DesktopSize pseudo-encoding; pointer, key and
-// clipboard (Latin-1 text) messages. What it does not: VeNCrypt and other TLS
-// security types, the cursor shape
-// pseudo-encoding (the server then draws the cursor into the framebuffer),
-// extended clipboard, Tight and the other encodings, audio.
+// Supported encodings are Raw, CopyRect, RRE, Hextile and ZRLE; the DesktopSize
+// pseudo-encoding; pointer, key and clipboard messages: UTF-8 text through the
+// extended clipboard pseudo-encoding where the server speaks it, Latin-1 text
+// otherwise. What it does not: VeNCrypt and other TLS security types, the
+// cursor shape pseudo-encoding (the server then draws the cursor into the
+// framebuffer), the extended clipboard's other formats (RTF, HTML, images,
+// files), Tight and the other encodings, audio.
 //
 // A server is not trusted. Every length it sends is checked against a limit
 // before memory is allocated for it, every rectangle against the framebuffer,
