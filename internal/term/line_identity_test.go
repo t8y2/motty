@@ -209,18 +209,18 @@ func TestRetainedRowsCoverScrollbackAndScreen(t *testing.T) {
 		t.Fatalf("RetainedFrom = %d, %v; want 1, true", first, ok)
 	}
 	for index := 0; index < total; index++ {
-		row := screen.RetainedRow(index)
-		if row.ID == 0 {
+		row, ok := screen.RetainedRow(index)
+		if !ok || row.ID == 0 {
 			t.Fatalf("RetainedRow(%d) has no identity", index)
 		}
 		if line := screen.RetainedLine(index); line != first+uint64(index) {
 			t.Fatalf("RetainedLine(%d) = %d, want %d", index, line, first+uint64(index))
 		}
 	}
-	if row := screen.RetainedRow(-1); row.ID != 0 {
+	if _, ok := screen.RetainedRow(-1); ok {
 		t.Fatal("RetainedRow(-1) returned a row")
 	}
-	if row := screen.RetainedRow(total); row.ID != 0 {
+	if _, ok := screen.RetainedRow(total); ok {
 		t.Fatal("RetainedRow(total) returned a row")
 	}
 }

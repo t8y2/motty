@@ -148,16 +148,6 @@ func (t *Terminal) ReflowEpoch() uint64 { return t.reflowEpoch }
 // included. It is the range RetainedRow accepts.
 func (t *Terminal) RetainedLines() int { return t.bufferLineCount() }
 
-// RetainedRow returns retained-buffer line index, 0 being the oldest line the
-// buffer still holds. A view can show any of these lines, not only the screen's
-// rows, which is what lets an owner draw a collapsed view of the buffer.
-func (t *Terminal) RetainedRow(index int) Row {
-	if index < 0 || index >= t.bufferLineCount() {
-		return Row{}
-	}
-	return t.rowOf(t.bufferLine(index))
-}
-
 // RetainedLine is the absolute line number of retained-buffer index.
 func (t *Terminal) RetainedLine(index int) uint64 {
 	return t.lineBase() + uint64(index)

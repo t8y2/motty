@@ -332,8 +332,8 @@ func (state *State) remapBlocks(session *Session) {
 	lines := t.lineIndex
 	clear(lines)
 	for index := 0; index < count; index++ {
-		row := screen.RetainedRow(index)
-		if row.ID != 0 {
+		row, ok := screen.RetainedRow(index)
+		if ok && row.ID != 0 {
 			lines[row.ID] = screen.RetainedLine(index)
 		}
 	}
@@ -356,7 +356,7 @@ func (state *State) remapBlocks(session *Session) {
 			// The line was trimmed at the head of the buffer. Keep it on the
 			// oldest retained line; its output is still partially copyable.
 			anchor.line = first
-			if row := screen.RetainedRow(0); row.ID != 0 {
+			if row, ok := screen.RetainedRow(0); ok && row.ID != 0 {
 				anchor.id = row.ID
 			}
 			return anchor, false, true
@@ -366,7 +366,7 @@ func (state *State) remapBlocks(session *Session) {
 			// so the old line is past the last retained one. Clamp it and adopt
 			// the current line's identity so later resizes can still follow it.
 			anchor.line = min(max(anchor.line, first), last)
-			if row := screen.RetainedRow(int(anchor.line - first)); row.ID != 0 {
+			if row, ok := screen.RetainedRow(int(anchor.line - first)); ok && row.ID != 0 {
 				anchor.id = row.ID
 			}
 			return anchor, false, false

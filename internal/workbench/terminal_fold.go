@@ -508,7 +508,8 @@ func (t *terminal) displayRow(row int) term.Row {
 	if !ok {
 		return term.Row{}
 	}
-	return t.screen.RetainedRow(entry.index)
+	line, _ := t.screen.RetainedRow(entry.index)
+	return line
 }
 
 func (t *terminal) displayLine(row int) uint64 {
