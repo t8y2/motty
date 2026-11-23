@@ -187,10 +187,14 @@ func TestHandlerResizeMulti(t *testing.T) {
 		t.Errorf("monitor2 left = %d, want 1920", left2)
 	}
 
-	// Physical dimensions should be auto-computed (non-zero)
+	// Physical dimensions should be auto-computed at 96 DPI (1920 * 25.4 / 96 = 508 mm)
 	physW := binary.LittleEndian.Uint32(sent[off+20:])
-	if physW == 0 {
-		t.Error("monitor1 physicalWidth should be non-zero")
+	if physW != 508 {
+		t.Errorf("monitor1 physicalWidth = %d, want 508", physW)
+	}
+	physH := binary.LittleEndian.Uint32(sent[off+24:])
+	if physH != 286 {
+		t.Errorf("monitor1 physicalHeight = %d, want 286", physH)
 	}
 }
 
@@ -289,5 +293,42 @@ func TestHandlerResize(t *testing.T) {
 	hh := binary.LittleEndian.Uint32(sent[off+16:])
 	if hh != 1440 {
 		t.Errorf("height = %d, want 1440", hh)
+	}
+	// 2560x1440 at 100% (96 DPI): round(2560 * 25.4 / 96) = 677 mm, round(1440 * 25.4 / 96) = 381 mm
+	physW := binary.LittleEndian.Uint32(sent[off+20:])
+	if physW != 677 {
+		t.Errorf("physicalWidth = %d, want 677", physW)
+	}
+	physH := binary.LittleEndian.Uint32(sent[off+24:])
+	if physH != 381 {
+		t.Errorf("physicalHeight = %d, want 381", physH)
+	}
+}
+
+func TestHandlerResizeWithDPI(t *testing.T) {
+	var sent []byte
+	h := NewHandler(func(data []byte) error {
+		sent = make([]byte, len(data))
+		copy(sent, data)
+		return nil
+	}, testLogger)
+
+	capsData := make([]byte, 16)
+	binary.LittleEndian.PutUint32(capsData[0:4], TypeCaps)
+	binary.LittleEndian.PutUint32(capsData[4:8], 16)
+	binary.LittleEndian.PutUint32(capsData[8:12], 16)
+	binary.LittleEndian.PutUint32(capsData[12:16], 25600000)
+	h.ProcessPDU(capsData)
+
+	if err := h.ResizeWithDPI(1920, 1080, 150, 100); err != nil {
+		t.Fatalf("ResizeWithDPI error: %v", err)
+	}
+	off := 16
+	physW := binary.LittleEndian.Uint32(sent[off+20:])
+	physH := binary.LittleEndian.Uint32(sent[off+24:])
+	dScale := binary.LittleEndian.Uint32(sent[off+32:])
+	devScale := binary.LittleEndian.Uint32(sent[off+36:])
+	if physW != 339 || physH != 191 || dScale != 150 || devScale != 100 {
+		t.Errorf("got phys=%dx%d scale=%d/%d, want 339x191 150/100", physW, physH, dScale, devScale)
 	}
 }

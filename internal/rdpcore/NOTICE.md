@@ -120,3 +120,6 @@ Changed:
   that does not ask for the small cache (the cache is evicted instead of dropping
   the connection). One shared budget had let a session hold 512 MiB of cache
   alone, five times what the protocol allows.
+* `disp.Handler.Resize` and `ResizeMulti` compute physical monitor dimensions at
+  96 DPI (100% scale) instead of 75 DPI, matching `ResizeWithDPI` and the
+  `TS_UD_CS_CORE` handshake calculation (rounded to the nearest millimeter).
