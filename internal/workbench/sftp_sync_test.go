@@ -352,9 +352,18 @@ func TestTerminalCommandRefreshesDockedSFTPWithoutCommandMarkers(t *testing.T) {
 	fake.shell(t).say(fmt.Sprintf("\x1b]133;A;motty=%s\a\x1b]7;file://box/home/test\a", token))
 	state.Wake()
 
+	// A prompt redrawn with nothing typed since the last one ran no command.
+	before := remote.readCount("/home/test")
+	fake.shell(t).say(fmt.Sprintf("\x1b]133;A;motty=%s\a\x1b]7;file://box/home/test\a", token))
+	state.Wake()
+	if remote.readCount("/home/test") != before {
+		t.Fatal("a prompt with no input since the last one refreshed the listing")
+	}
+
 	if err := remote.Mkdir("/home/test/shdir"); err != nil {
 		t.Fatal(err)
 	}
+	session.term.keyedSincePrompt = true // a command was typed and run
 	fake.shell(t).say(fmt.Sprintf("\x1b]133;A;motty=%s\a\x1b]7;file://box/home/test\a", token))
 	waitSFTP(t, state, session, func(view *sftpView) bool {
 		return sftpHasRow(view, "shdir")

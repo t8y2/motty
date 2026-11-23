@@ -263,6 +263,9 @@ func (state *State) followTerminalDirectory(session *Session) {
 	}
 	refresh := t.sftpRefreshPending
 	t.sftpRefreshPending = false
+	if !refresh && t.followPath == "" {
+		return
+	}
 	if !session.canBrowseFiles() || session.containerCommand != "" {
 		t.followPath = ""
 		return
@@ -291,11 +294,9 @@ func (state *State) followTerminalDirectory(session *Session) {
 	dockedPrevPath, windowPrevPath := "", ""
 	if dockedCanRefresh {
 		dockedPrevPath = docked.path
-		docked.forgetListings()
 	}
 	if windowCanRefresh {
 		windowPrevPath = window.view.path
-		window.view.forgetListings()
 	}
 	if t.followPath != "" {
 		if state.sftpFollowOff {
@@ -306,10 +307,14 @@ func (state *State) followTerminalDirectory(session *Session) {
 			t.followPath = ""
 		}
 	}
+	// What was remembered is dropped only when the refresh is issued, so a
+	// view that cannot take it now keeps its cache and its directory tree.
 	if dockedCanRefresh && state.canRefreshDockedSFTPView(session, docked) && docked.path == dockedPrevPath {
+		docked.forgetListings()
 		state.refreshSFTPDirectory(docked, docked.path)
 	}
 	if windowCanRefresh && window.canRefreshRemote() && window.view.path == windowPrevPath {
+		window.view.forgetListings()
 		state.refreshSFTPDirectory(window.view, window.view.path)
 	}
 }

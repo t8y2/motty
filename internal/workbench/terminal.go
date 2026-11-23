@@ -542,7 +542,9 @@ func (state *State) configureTerminal(session *Session) {
 	session.term.screen.SetPromptStart(func() {
 		if current, ok := state.sessionByIDPointer(sessionID); ok && current.term != nil {
 			t := current.term
-			if t.commandActive || (!t.commandReporting && t.folderIntegrationSeen) {
+			// Without command reports a prompt that follows typing is the sign a
+			// command ran; one redrawn with nothing keyed is not.
+			if t.commandActive || (!t.commandReporting && t.folderIntegrationSeen && t.keyedSincePrompt) {
 				t.commandActive = false
 				t.sftpRefreshPending = true
 			}
