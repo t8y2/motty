@@ -128,6 +128,7 @@ type Messages struct {
 	NavDebug                  string
 	NavSearch                 string
 	SearchPlaceholder         string
+	SearchClear               string
 	CommandPaletteTitle       string
 	CommandPalettePlaceholder string
 	CommandPaletteEmpty       string

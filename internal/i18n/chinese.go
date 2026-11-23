@@ -114,6 +114,7 @@ var ChineseMessages = Messages{
 	NavDebug:                  "调试",
 	NavSearch:                 "搜索",
 	SearchPlaceholder:         "搜索主机或 ssh user@hostname…",
+	SearchClear:               "清空搜索",
 	CommandPaletteTitle:       "命令面板",
 	CommandPalettePlaceholder: "输入命令…",
 	CommandPaletteEmpty:       "没有匹配的命令",

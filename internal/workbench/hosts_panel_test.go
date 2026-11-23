@@ -155,3 +155,38 @@ func TestHostsPanelExpandsAndCollapsesEveryGroup(t *testing.T) {
 		t.Error("collapse all is offered while a search holds the groups open")
 	}
 }
+
+// The panel's search box offers a clear button when text is present.
+func TestHostsPanelSearchClearButton(t *testing.T) {
+	state := hostsPanelFixture(t)
+	clear := func() (gfx.Hit, bool) {
+		canvas, _ := paintedTexts(state)
+		return hitByLabelAny(canvas, state.messages.SearchClear)
+	}
+	if _, ok := clear(); ok {
+		t.Fatal("clear button visible on empty search")
+	}
+
+	state.hostsPanel.search.SetText("gam")
+	state.hostsPanel.stale = true
+	state.Paint(&gfx.Canvas{}, panelWide)
+	button, ok := clear()
+	if !ok {
+		t.Fatal("clear button missing when search has text")
+	}
+
+	clickInEventPass(t, state, panelWide, button.ID)
+	if state.hostsPanel.search.Text() != "" {
+		t.Fatalf("clear button left text: %q", state.hostsPanel.search.Text())
+	}
+	if _, ok := hostsPanelRowOf(state, "alpha"); !ok {
+		t.Error("clearing panel search did not restore alpha")
+	}
+	if _, ok := hostsPanelRowOf(state, "gamma"); !ok {
+		t.Error("clearing panel search did not keep gamma")
+	}
+
+	if _, ok := clear(); ok {
+		t.Fatal("clear button still present after clearing")
+	}
+}
