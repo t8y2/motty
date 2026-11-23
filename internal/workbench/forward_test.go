@@ -207,6 +207,26 @@ func TestForwardBindAddressStaysOutOfSharedRecords(t *testing.T) {
 	}
 }
 
+// A forward renamed on another device is still the same forward: the shared
+// record's identity has no label, so this device keeps its listen address for it.
+func TestForwardBindAddressSurvivesARenameFromAnotherDevice(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	host := state.hosts[0]
+	saved := savedForward{
+		Label: "Database", Mode: "local", HostLabel: host.Label, HostAddress: host.Address,
+		HostUser: host.User, HostPort: host.Port, LocalPort: 9000,
+		DestinationHost: "db.internal", DestinationPort: 5432,
+	}
+	state.restoreForwards([]savedForward{saved})
+	key := forwardBindKey(state.forwards[0])
+	renamed := saved
+	renamed.Label = "Database (renamed elsewhere)"
+	state.restoreForwardsWithBindAddresses([]savedForward{renamed}, map[string]string{key: "192.168.1.100"})
+	if got, want := state.forwards[0].listenAddress(), "192.168.1.100:9000"; got != want {
+		t.Fatalf("listen address after a rename = %q, want this device's %q", got, want)
+	}
+}
+
 func TestForwardBindAddressDefaultsToLoopback(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	host := state.hosts[0]

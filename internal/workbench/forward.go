@@ -163,11 +163,11 @@ func (forward *forwardRecord) listenAddress() string {
 	return net.JoinHostPort(forward.listenHost(), strconv.Itoa(int(forward.LocalPort)))
 }
 
-// forwardBindKey names a forward in the device-local listener map. The label
-// keeps two forwards that share host, ports and destination but differ by bind
-// from overwriting each other's address.
+// forwardBindKey names a forward in the device-local listener map. It is the
+// identity the shared records carry (see the "forwards" record key), so renaming a
+// forward on another device does not detach this device's address from it.
 func forwardBindKey(forward forwardRecord) string {
-	return joinKey(forward.Label, forward.savedMode(), forward.HostAddress, forward.HostUser,
+	return joinKey(forward.savedMode(), forward.HostAddress, forward.HostUser,
 		strconv.Itoa(int(forward.HostPort)), strconv.Itoa(int(forward.LocalPort)),
 		forward.DestinationHost, strconv.Itoa(int(forward.DestinationPort)))
 }

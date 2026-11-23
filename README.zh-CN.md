@@ -78,8 +78,8 @@ Motty 是一个桌面 SSH 客户端。终端、SFTP 面板、端口转发、远�
       回环地址时，还可以借一台 SSH 主机穿过去。</p>
     </td>
     <td width="50%" valign="top">
-      <p><strong>隧道看得见。</strong>本地、远程、SOCKS5 和 HTTP CONNECT 规则只绑定
-      回环地址，显式保存、显式启动；隧道随拥有它的 SSH 标签页一起停止。</p>
+      <p><strong>隧道看得见。</strong>本地、远程、SOCKS5 和 HTTP CONNECT 规则默认只绑定
+      回环地址（监听地址按设备单独设置），显式保存、显式启动；隧道随拥有它的 SSH 标签页一起停止。</p>
     </td>
   </tr>
 </table>
