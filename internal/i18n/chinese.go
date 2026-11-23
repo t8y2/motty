@@ -2600,7 +2600,7 @@ var chineseTools = ToolsMessages{
 	CloseAppDescriptionFmt:          "有 %d 个会话仍然打开，关闭后会断开连接。",
 	CloseAppConfirm:                 "关闭",
 	RemoteMenu:                      "进程与容器",
-	RemoteTitle:                     "远程工具",
+	RemoteTitle:                     "进程与容器",
 	RemoteDescriptionFmt:            "%s 上的进程与 Docker 容器。内容不会自动刷新。",
 	RemoteDockOpenWindow:            "在独立窗口中打开",
 	RemoteDockSelectProcess:         "选择左侧进程查看详细信息",

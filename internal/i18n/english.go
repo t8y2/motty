@@ -2600,7 +2600,7 @@ var englishTools = ToolsMessages{
 	CloseAppDescriptionFmt:          "%d sessions are open and will be disconnected.",
 	CloseAppConfirm:                 "Close",
 	RemoteMenu:                      "Processes & containers",
-	RemoteTitle:                     "Remote tools",
+	RemoteTitle:                     "Processes & containers",
 	RemoteDescriptionFmt:            "Processes and Docker containers on %s. Nothing refreshes by itself.",
 	RemoteDockOpenWindow:            "Open in a separate window",
 	RemoteDockSelectProcess:         "Select a process on the left to see its details",
