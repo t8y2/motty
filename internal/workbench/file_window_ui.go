@@ -195,8 +195,6 @@ func (d *fileDocument) declareEditWindow(c ui.C) {
 	d.declareSaveMenu(c)
 	if d.confirm != "" {
 		d.declareConfirmation(c)
-	} else {
-		d.declareSavingOverlay(c, m.Saving)
 	}
 	// A note that could not be saved asks in this window too, not only in the
 	// workbench window behind it.
@@ -233,7 +231,7 @@ func (d *fileDocument) declareEncoding(c ui.C, bounds gfx.Rect) {
 // saving reports whether the document is currently waiting on an in-flight save
 // to local disk or the remote server.
 func (d *fileDocument) saving() bool {
-	return d.busy && (d.comparison.saving || d.status == d.owner.messages.FileWindow.Saving)
+	return d.busy && (d.comparison.saving || d.saveInFlight)
 }
 
 // declareFooterProgress declares the spinner the footer shows while the
@@ -244,27 +242,6 @@ func (d *fileDocument) declareFooterProgress(c ui.C) {
 	if d.busy {
 		ui.Spinner(c).Size(16, 16).Shrink(0)
 	}
-}
-
-// declareSavingOverlay shows a centered loading pill above the editor while a
-// save is in flight so the user sees immediate progress where the save
-// confirmation just closed, even when the footer is narrow or out of focus.
-func (d *fileDocument) declareSavingOverlay(c ui.C, label string) {
-	if !d.saving() {
-		return
-	}
-	theme := d.owner.Theme()
-	ui.Overlay(c, ui.OverlaySpec{Band: ui.Band(popupLayer), Bounds: c.Bounds()}).Children(func() {
-		ui.Column(c).Fill().Center().Children(func() {
-			ui.Row(c).Gap(10).Items(ui.Center).PadSides(12, 20, 12, 18).
-				Radius(radius.popup).Background(theme.Popover).
-				Border(1, theme.Border).Shadow(gfx.ShadowMD).Children(func() {
-				ui.Spinner(c).Size(16, 16).Shrink(0)
-				ui.Text(c, label).FontSize(theme.Metrics.FontSizeM).Weight(gfx.WeightMedium).
-					Color(theme.PopoverForeground).LineHeight(22)
-			})
-		})
-	})
 }
 
 // encodingLabel names one choice of the encoding select.
@@ -283,10 +260,8 @@ func (d *fileDocument) encodingLabel(name string) string {
 func (d *fileDocument) declareSaveSplit(c ui.C, disabled bool) {
 	m := d.owner.messages.FileWindow
 	label := m.Save
-	width := float32(112)
 	if d.saving() {
 		label = m.Saving
-		width = 136
 	}
 	// The split button the page replaced kept its halves at the size it was
 	// given: an 80px primary and a 32px trigger, the label in the small type
@@ -296,7 +271,7 @@ func (d *fileDocument) declareSaveSplit(c ui.C, disabled bool) {
 		Label: label, MenuLabel: m.SaveOptions,
 		Hint: label, MenuHint: m.SaveOptions,
 		Icon: lucideIcons[iconChevronDown], Open: d.ui.saveMenuOpen,
-	}).Small().Width(width).Height(32)
+	}).Small().Width(112).Height(32)
 	save = save.Disabled(disabled)
 	d.ui.saveMenuTrigger = save
 	d.ui.saveMenuDeclared = true
@@ -446,8 +421,6 @@ func (d *fileDocument) declareComparisonWindow(c ui.C) {
 	})
 	if d.comparison.confirm {
 		d.declareComparisonConfirmation(c)
-	} else {
-		d.declareSavingOverlay(c, m.SavingChanges)
 	}
 }
 

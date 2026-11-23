@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -64,24 +65,26 @@ func TestComparisonFooterAnimatesWhileSaving(t *testing.T) {
 	if status, animating := documentFooterState(&canvas, d.owner.messages.FileWindow.SavingChanges); !status || !animating {
 		t.Fatalf("the comparison save footer: status=%v animating=%v", status, animating)
 	}
-	if !hasOverlayText(canvas.Texts(), d.owner.messages.FileWindow.SavingChanges, popupLayer) {
-		t.Fatal("the comparison window did not show a saving overlay while saving")
-	}
-}
-
-func hasOverlayText(texts []gfx.Text, value string, layer uint16) bool {
-	for _, txt := range texts {
-		if txt.Value == value && txt.Layer == layer {
-			return true
-		}
-	}
-	return false
 }
 
 // Confirming a remote save must immediately show unmistakable loading feedback:
-// the footer puts the saving status first so narrow windows cannot clip it, the
-// save action switches to the saving label, and a centered overlay sits above
-// the editor until the save settles.
+// the footer puts the saving status first so narrow windows cannot clip it,
+// and the save action switches to the saving label until the save settles.
+// A save that fails must leave the saving state: the label, the footer and the
+// spinner all follow it, and a stuck one would read as work still going on.
+func TestDocumentSavingEndsWhenTheSaveFails(t *testing.T) {
+	d := documentFixture(t)
+	d.busy, d.saveInFlight = true, true
+	d.status = d.owner.messages.FileWindow.Saving
+	if !d.saving() {
+		t.Fatal("a save in flight must read as saving")
+	}
+	d.apply(fileDocumentEvent{document: d, err: errors.New("disk full"), saved: true})
+	if d.saving() || d.busy {
+		t.Fatalf("after the save failed: saving=%v busy=%v", d.saving(), d.busy)
+	}
+}
+
 func TestDocumentSavingShowsVisibleLoadingState(t *testing.T) {
 	d := documentFixture(t)
 	d.cacheKey = "1:false:/test.log"
@@ -144,10 +147,6 @@ func TestDocumentSavingShowsVisibleLoadingState(t *testing.T) {
 		t.Fatalf("footerStatus() = %q, want prefix %q so narrow windows do not clip it", d.footerStatus(), savingText)
 	}
 
-	snap := view.Snapshot()
-	if !hasOverlayText(snap.Texts, savingText, popupLayer) {
-		t.Fatal("missing centered saving overlay on popupLayer while save is in flight")
-	}
 	saveButton := findHit(hitDocumentSave)
 	if saveButton.Label != savingText {
 		t.Fatalf("save button label while saving = %q, want %q", saveButton.Label, savingText)
