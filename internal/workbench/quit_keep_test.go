@@ -61,6 +61,33 @@ func TestAskKeepWindowsOnExitAnswers(t *testing.T) {
 	}
 }
 
+func TestAskKeepWindowsOnExitRequestsTheFrameThatShowsIt(t *testing.T) {
+	options := testOptions(t)
+	var calls []string
+	options.Raise = func() { calls = append(calls, "raise") }
+	options.Invalidate = func() { calls = append(calls, "invalidate") }
+	state := newTestState(t, options)
+	state.keepWindows = keepWindowsAsk
+	calls = nil
+
+	if !state.AskKeepWindowsOnExit(nil, nil) {
+		t.Fatal("the ask policy did not open the question")
+	}
+	if len(calls) != 2 || calls[0] != "raise" || calls[1] != "invalidate" {
+		t.Fatalf("opening the question did %v, want the window raised and then a repaint requested", calls)
+	}
+
+	state.CancelKeepWindowsOnExit()
+	calls = nil
+	state.keepWindows = keepWindowsAlways
+	if state.AskKeepWindowsOnExit(nil, nil) {
+		t.Fatal("a policy that does not ask opened the question")
+	}
+	if len(calls) != 0 {
+		t.Fatalf("a policy that does not ask raised or repainted the window: %v", calls)
+	}
+}
+
 func TestAskKeepWindowsOnExitCancels(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.keepWindows = keepWindowsAsk

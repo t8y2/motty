@@ -54,6 +54,13 @@ func (state *State) AskKeepWindowsOnExit(answer func(keep bool), cancelled func(
 	}
 	state.quitKeepWindows = quitKeepWindowsPrompt{answer: answer, cancel: cancelled, previous: state.modal}
 	state.modal = modalQuitKeepWindows
+	// A status-area menu entry, or a native close request, opens the question
+	// outside the window's input and paint pass. Nothing else asks for the frame
+	// that shows it, so without this the dialog waits for unrelated output to
+	// repaint the window.
+	if state.options.Invalidate != nil {
+		state.options.Invalidate()
+	}
 	return true
 }
 
