@@ -2357,6 +2357,8 @@ var traditionalTools = ToolsMessages{
 	LaunchXshellEmptyFmt:            "%s 裡沒有可開啟的 SSH 或 Telnet 工作階段。",
 	GeneralLogin:                    "開機時啟動",
 	GeneralLoginDescription:         "登入後在背景啟動。",
+	GeneralTrayIcon:                 "顯示系統托盤圖示",
+	GeneralTrayIconDescription:      "關閉後，托盤圖示將被隱藏；此時關閉視窗將直接結束應用。",
 	GeneralClose:                    "關閉視窗時",
 	GeneralCloseDescription:         "關閉最後一個視窗後，留在系統匣繼續執行，或直接退出。",
 	GeneralCloseTray:                "留在系統匣",

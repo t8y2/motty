@@ -649,6 +649,8 @@ type ToolsMessages struct {
 	LaunchXshellEmptyFmt            string // base name
 	GeneralLogin                    string
 	GeneralLoginDescription         string
+	GeneralTrayIcon                 string
+	GeneralTrayIconDescription      string
 	GeneralClose                    string
 	GeneralCloseDescription         string
 	GeneralCloseTray                string

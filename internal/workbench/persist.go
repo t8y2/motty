@@ -155,6 +155,7 @@ type savedState struct {
 	KeepWindowsOnExit       string              `json:"keep_windows_on_exit,omitempty"`
 	RelaunchAction          string              `json:"relaunch_action,omitempty"`
 	TrayHintShown           bool                `json:"tray_hint_shown,omitempty"`
+	TrayIconOff             bool                `json:"tray_icon_off,omitempty"`
 	UpdateSkipped           string              `json:"update_skipped,omitempty"`
 	SFTPBookmarks           []savedBookmark     `json:"sftp_bookmarks,omitempty"`
 	SFTPLocalBookmarks      []string            `json:"sftp_local_bookmarks,omitempty"`
@@ -645,6 +646,7 @@ func (state *State) snapshot() savedState {
 		KeepWindowsOnExit:          state.keepWindows.String(),
 		RelaunchAction:             state.relaunchAction.String(),
 		TrayHintShown:              state.trayHintShown,
+		TrayIconOff:                state.trayIconOff,
 		UpdateSkipped:              state.update.skipped,
 		ShortcutVersion:            shortcutSchemaVersion,
 		ShortcutDefaultsGeneration: shortcutDefaultsGeneration,

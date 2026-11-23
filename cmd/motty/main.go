@@ -91,6 +91,9 @@ func main() {
 	err := app.RunApplication(func(application *app.Application) error {
 		application.OnQuitRequest(windows.quitWithDocuments)
 		status := newTray(application)
+		// The icon is the user's choice in General settings; read it before the
+		// first window so one turned off is never put up, even for a moment.
+		trayIcon := !workbench.TrayIconHidden(stateDatabasePath())
 		// The icon the desktop shows stands for the whole program, so the
 		// windows report the work they are doing together, through one bar.
 		// A fraction below zero is the end of the work.
@@ -125,9 +128,11 @@ func main() {
 		// and Linux start a second process whose path is carried here as an
 		// argument by single-instance handoff.
 		application.OnOpenFile(func(path string) { windows.launch([]string{path}) })
-		if background {
+		if background && trayIcon {
 			// Started at login: the first window opens hidden, so the icon can
 			// go up first and closing it still leaves the application running.
+			// Without an icon there is nothing to hide behind, so the window
+			// opens in view instead.
 			status.show(application)
 		}
 		// Every window the last run left open comes back with its own tabs and
@@ -160,7 +165,9 @@ func main() {
 		}
 		// Putting the icon in the status area costs about 60 ms, which would
 		// otherwise be part of how long the window takes to appear.
-		status.show(application)
+		if trayIcon {
+			status.show(application)
+		}
 		return nil
 	})
 	hub.Close()
@@ -230,6 +237,28 @@ func (status *tray) setIcon(icon app.WindowIcon) {
 			log.Printf("motty: update tray icon: %v", err)
 		}
 	}
+}
+
+// setVisible applies the General settings' choice of a status-area icon. It
+// runs on the event-loop thread, from the settings click.
+func (status *tray) setVisible(application *app.Application, visible bool) {
+	if visible {
+		status.show(application)
+		return
+	}
+	status.hide()
+}
+
+// hide takes the icon out of the status area, bringing back any window hiding
+// there first so none is left unreachable. Without an icon the application
+// cannot stay behind a closed window, so closing one quits as usual.
+func (status *tray) hide() {
+	if status == nil || status.item == nil {
+		return
+	}
+	status.list.ShowHidden()
+	status.item.Remove()
+	status.item = nil
 }
 
 // keystore is where the saved-passwords vault of the data directory keeps its
@@ -427,8 +456,9 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 			}
 			status.setIcon(icon)
 		},
-		Updater: updater(),
-		Quit:    func() { windows.quitWithDocuments(application.Quit) },
+		SetTrayIcon: func(visible bool) { status.setVisible(application, visible) },
+		Updater:     updater(),
+		Quit:        func() { windows.quitWithDocuments(application.Quit) },
 		AISettingsChanged: func() {
 			if err := hub.Reconfigure(); err != nil {
 				log.Printf("motty: external agent access: %v", err)
