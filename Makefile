@@ -90,6 +90,7 @@ check:
 	go vet ./...
 	go vet -tags dev ./internal/workbench
 	go test ./... -count=1
+	cd third_party/golang.org/x/crypto && go test ./ssh -count=1
 	$(MAKE) test-dev
 	bash -n tools/dev.sh tools/dev_launch.sh tools/macos_dev_signing.sh \
 		tools/macos_dev_signing_integration_test.sh

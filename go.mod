@@ -32,3 +32,5 @@ require (
 )
 
 replace github.com/vivaui/viva => ../viva
+
+replace golang.org/x/crypto => ./third_party/golang.org/x/crypto

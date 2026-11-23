@@ -157,6 +157,10 @@ jobs:
           # The workbench package is sharded below: run every other package
           # here, one parallel build of the whole set.
           go test $(go list ./... | grep -v '/internal/workbench$') -count=1 -timeout 20m
+      # The patched x/crypto is a module of its own, so ./... above skips it.
+      - name: Test the patched x/crypto
+        working-directory: motty/third_party/golang.org/x/crypto
+        run: go test ./ssh -count=1
 
   # The workbench package is one package that runs one test at a time, and the
   # suite outgrew the ten-minute per-binary default (and then twenty). It is
