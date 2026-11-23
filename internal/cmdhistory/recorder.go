@@ -132,11 +132,16 @@ func (r *Recorder) edit() {
 
 // begin looks at the screen when the first key of a line is pressed.
 func (r *Recorder) begin(screen Screen, now time.Duration) {
-	if screen.Alt() || screen.Scrolled() || r.heard && now-r.lastOutput < QuietBefore {
+	if screen.Alt() || screen.Scrolled() {
 		r.skip = true
 		return
 	}
 	x, y := screen.Cursor()
+	prompt := screen.Span(y, 0, x, true)
+	if r.heard && now-r.lastOutput < QuietBefore && !Prompt(prompt) {
+		r.skip = true
+		return
+	}
 	r.promptX = x
 	r.promptRows = 0
 	for row := y; row > 0 && screen.Wrapped(row-1) && r.promptRows < maxRows; row-- {

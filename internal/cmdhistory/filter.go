@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // MaxCommand is the longest command that is recorded, in bytes.
@@ -50,6 +51,28 @@ var programPrompt = regexp.MustCompile(`(?i)` + strings.Join([]string{
 // ProgramPrompt reports whether text reads like a line-editing program's own
 // prompt rather than a shell prompt.
 func ProgramPrompt(text string) bool { return programPrompt.MatchString(strings.TrimSpace(text)) }
+
+// Prompt reports whether text reads like a shell prompt before the cursor.
+func Prompt(text string) bool {
+	trimmed := strings.TrimRight(text, " \t\r\n")
+	if trimmed == "" || PasswordPrompt(text) || ProgramPrompt(text) {
+		return false
+	}
+	last, _ := utf8.DecodeLastRuneInString(trimmed)
+	switch last {
+	case '$', '#', '%', '>', '❯', '➜', '»', '›':
+		return true
+	}
+	first, _ := utf8.DecodeRuneInString(trimmed)
+	switch first {
+	case '❯', '➜', '»', '›':
+		return true
+	}
+	if strings.Contains(trimmed, "@") && (strings.Contains(trimmed, ":") || strings.Contains(trimmed, " ")) {
+		return true
+	}
+	return false
+}
 
 // secretText matches commands that carry a secret in their own text. Only
 // shapes that are unambiguous are listed: a filter that guessed at every "-p"
