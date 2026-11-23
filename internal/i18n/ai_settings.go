@@ -169,6 +169,7 @@ type AISettingsMessages struct {
 	ModelFilterAvailable string
 	ModelFilterFailed    string
 	ModelFilterEnabled   string
+	ModelSortLabel       string
 	ModelSortDefault     string
 	ModelSortLatencyAsc  string
 	ModelSortLatencyDesc string

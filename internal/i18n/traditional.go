@@ -1597,6 +1597,7 @@ var traditionalAISettings = AISettingsMessages{
 	ModelFilterAvailable: "可用",
 	ModelFilterFailed:    "失敗",
 	ModelFilterEnabled:   "已啟用",
+	ModelSortLabel:       "模型排序",
 	ModelSortDefault:     "預設",
 	ModelSortLatencyAsc:  "最快",
 	ModelSortLatencyDesc: "最慢",

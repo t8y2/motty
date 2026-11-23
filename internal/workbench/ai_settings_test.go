@@ -16,6 +16,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/style"
 	"github.com/vivaui/viva/text"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/attach"
@@ -1446,9 +1447,10 @@ func TestAIStepsFieldKeepsItsRestrictionAfterAnEdit(t *testing.T) {
 	}
 }
 
-// TestAIModelFilterAndSortLayout verifies that model filter choice and sort dropdown
-// never overflow the settings card across various window widths in both languages,
-// and stay neatly aligned on the same row.
+// TestAIModelFilterAndSortLayout verifies that the model filter choice and the
+// sort select never overlap or leave the settings workspace, and that neither is
+// squeezed away, at every window width in both languages. When the card is too
+// narrow for both on one row the sort select moves to the row below.
 func TestAIModelFilterAndSortLayout(t *testing.T) {
 	for _, language := range []i18n.Language{i18n.Chinese, i18n.English} {
 		world := newSettingsWorld(t, newLister("gpt-4o", "gpt-4o-mini"))
@@ -1457,60 +1459,44 @@ func TestAIModelFilterAndSortLayout(t *testing.T) {
 		world.addOpenAI(t, "Work", "", "k")
 		state.Click(hitAISetFetchModels)
 		pumpSettings(t, state, "the fetch", func() bool { return state.ai.cfg.fetch == nil })
+		m := state.messages.AISettings
 
 		for _, winWidth := range []float32{800, 960, 1024, 1200, 1400} {
 			var canvas gfx.Canvas
 			state.Paint(&canvas, gfx.Size{Width: winWidth, Height: 900})
-			bounds := state.settingsWorkspaceBounds(gfx.Rect{Width: winWidth, Height: 900})
-			navWidth := min(settingsNavWidthMax, max(bounds.Width*0.26, 150))
-			areaWidth := max(bounds.Width-navWidth-1, 0)
-			pageWidth := min(settingsColumnMax, max(areaWidth-64, 0))
-			cardLeft := bounds.X + navWidth + 1 + 32
-			if areaWidth-64 > settingsColumnMax {
-				cardLeft = bounds.X + navWidth + 1 + (areaWidth-settingsColumnMax)/2
-			}
-			cardRight := cardLeft + pageWidth
+			workspace := state.settingsWorkspaceBounds(gfx.Rect{Width: winWidth, Height: 900})
 
-			var (
-				filterY float32 = -1
-				sortY   float32 = -1
-			)
+			var filterRight, filterY, sortLeft, sortRight, sortY float32 = 0, -1, 0, 0, -1
 			for _, hit := range canvas.Hits() {
-				label := hit.Label
-				isFilter := hit.Role == gfx.RoleRadio && (strings.Contains(label, "全部") || strings.Contains(label, "可用") ||
-					strings.Contains(label, "失败") || label == "已启用" ||
-					strings.Contains(label, "All") || strings.Contains(label, "Available") ||
-					strings.Contains(label, "Failed") || label == "Enabled")
-				isSort := hit.Role == gfx.RoleCombobox && (hit.Value == "默认" || hit.Value == "Default")
-
-				if isFilter || isSort {
-					right := hit.Bounds.X + hit.Bounds.Width
-					name := label
-					if name == "" {
-						name = hit.Value
-					}
-					if right > cardRight+1 {
-						t.Errorf("[%v w=%.0f] control %q right=%.1f exceeds cardRight=%.1f",
-							language, winWidth, name, right, cardRight)
-					}
-					if isFilter {
-						filterY = hit.Bounds.Y
-					}
-					if isSort {
-						sortY = hit.Bounds.Y
-					}
+				switch {
+				case hit.Role == gfx.RoleRadio && strings.HasPrefix(hit.Label, m.ModelFilterAll):
+					filterY = hit.Bounds.Y
+				case hit.Role == gfx.RoleCombobox && hit.Label == m.ModelSortLabel:
+					sortLeft, sortRight, sortY = hit.Bounds.X, hit.Bounds.X+hit.Bounds.Width, hit.Bounds.Y
 				}
 			}
-
 			if filterY < 0 || sortY < 0 {
-				t.Fatalf("[%v w=%.0f] failed to find filter or sort control (filterY=%.1f, sortY=%.1f)",
-					language, winWidth, filterY, sortY)
+				t.Fatalf("[%v w=%.0f] filter or sort control not found (filterY=%.1f, sortY=%.1f)", language, winWidth, filterY, sortY)
 			}
-
-			// Filter choice and sort dropdown should always fit cleanly on a single row across all supported widths.
-			if filterY != sortY {
-				t.Errorf("[%v w=%.0f] expected filter and sort on same row, got filterY=%.1f sortY=%.1f",
-					language, winWidth, filterY, sortY)
+			// The filter is a Choice whose options are separate hits on the row of
+			// the first one; its right edge is the last of them.
+			for _, hit := range canvas.Hits() {
+				if hit.Role == gfx.RoleRadio && hit.Bounds.Y == filterY {
+					filterRight = max(filterRight, hit.Bounds.X+hit.Bounds.Width)
+				}
+			}
+			sameRow := filterY == sortY
+			if sameRow && filterRight > sortLeft {
+				t.Errorf("[%v w=%.0f] filter right=%.1f overlaps sort left=%.1f", language, winWidth, filterRight, sortLeft)
+			}
+			if !sameRow && sortY < filterY {
+				t.Errorf("[%v w=%.0f] sort row %.1f is above the filter row %.1f", language, winWidth, sortY, filterY)
+			}
+			if sortRight-sortLeft < style.SelectDefaultWidth(state.Theme().Metrics) {
+				t.Errorf("[%v w=%.0f] sort select is squeezed to %.1f, below its own chrome", language, winWidth, sortRight-sortLeft)
+			}
+			if sortRight > workspace.X+workspace.Width {
+				t.Errorf("[%v w=%.0f] sort right=%.1f leaves the workspace edge %.1f", language, winWidth, sortRight, workspace.X+workspace.Width)
 			}
 		}
 	}

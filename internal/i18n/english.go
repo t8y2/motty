@@ -1597,6 +1597,7 @@ var englishAISettings = AISettingsMessages{
 	ModelFilterAvailable: "Available",
 	ModelFilterFailed:    "Failed",
 	ModelFilterEnabled:   "Enabled",
+	ModelSortLabel:       "Sort models",
 	ModelSortDefault:     "Default",
 	ModelSortLatencyAsc:  "Fastest",
 	ModelSortLatencyDesc: "Slowest",
