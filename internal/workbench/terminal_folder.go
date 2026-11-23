@@ -10,11 +10,11 @@ func (state *State) openTerminalFolder(target gfx.ID) gfx.EventResult {
 	return state.openSessionFolder(state.focusedShortcutTerminal(target))
 }
 
-// localSessionDirectory returns the best known local folder for a local
-// terminal session: the last reported directory, the remembered/restored
-// directory, the shell's startup directory, or the user's home directory for
-// non-WSL local terminals when none has been reported yet.
-func localSessionDirectory(session *Session) string {
+// localShellDirectory returns the folder a local terminal session is known to
+// be in: the last reported directory, the remembered or restored one, or the
+// directory its shell started in. It is empty when none is known, so a name
+// resolved against it is never guessed from somewhere the shell is not.
+func localShellDirectory(session *Session) string {
 	if session == nil || !session.isLocal() {
 		return ""
 	}
@@ -27,7 +27,17 @@ func localSessionDirectory(session *Session) string {
 	if conn, ok := session.conn.(*localConn); ok && validLocalDirectory(conn.dir) {
 		return filepath.Clean(conn.dir)
 	}
-	if session.wslDistro() == "" {
+	return ""
+}
+
+// localSessionDirectory is the folder the open-folder action shows: where the
+// shell is when that is known, else the user's home directory for a non-WSL
+// local terminal that has not reported one yet.
+func localSessionDirectory(session *Session) string {
+	if directory := localShellDirectory(session); directory != "" {
+		return directory
+	}
+	if session != nil && session.isLocal() && session.wslDistro() == "" {
 		if home := localHome(); validLocalDirectory(home) {
 			return filepath.Clean(home)
 		}

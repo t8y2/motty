@@ -104,7 +104,7 @@ func offersPlace(found []detected) bool {
 // local shell reported, falling back to where the shell started.
 func (state *State) localRevealTarget(session *Session, token string) (string, bool) {
 	home, _ := os.UserHomeDir()
-	return localFilePath(token, localSessionDirectory(session), home)
+	return localFilePath(token, localShellDirectory(session), home)
 }
 
 // actionAvailable is whether an action can be taken from this session now.

@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -146,5 +147,29 @@ func TestTerminalFolderFallsBackWhenLocalDirectoryUnreported(t *testing.T) {
 	remote := &Session{ID: 3, host: Host{Protocol: protocolSSH, Address: "box"}}
 	if canOpenSessionFolder(remote) {
 		t.Fatal("remote session must not offer local folder opening")
+	}
+}
+
+// A name in the terminal is only resolved against a folder the shell is known
+// to be in; the open-folder shortcut's home fallback must not make an unrelated
+// file of the same name in the home directory the one that is shown.
+func TestRevealTargetIsNotResolvedAgainstTheHomeFallback(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	if err := os.WriteFile(filepath.Join(home, "same.txt"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state := &State{}
+	session := &Session{ID: 1, HostID: localHostID, conn: newLocalConn("", networkProxyDirect), term: &terminal{screen: term.New(80, 24, 100)}}
+	if !canOpenSessionFolder(session) {
+		t.Skip("no home directory to fall back to on this machine")
+	}
+	if path, ok := state.localRevealTarget(session, "same.txt"); ok {
+		t.Fatalf("a name with no known shell directory resolved to %q", path)
+	}
+	session.term.reportedDirectory = term.Cwd{Path: home}
+	if _, ok := state.localRevealTarget(session, "same.txt"); !ok {
+		t.Fatal("a name in the reported directory must resolve")
 	}
 }
