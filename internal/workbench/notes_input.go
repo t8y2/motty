@@ -191,6 +191,9 @@ func (s *State) notesKey(e gfx.KeyEvent) gfx.EventResult {
 		if v.inlineID != "" || v.inlineNew {
 			v.inlineID = ""
 			v.inlineNew = false
+			if n := s.noteContent(); n.error == s.noteText("Name cannot be empty.", "名称不能为空。") {
+				n.error = ""
+			}
 			return gfx.EventResult{Handled: true, Repaint: true}
 		}
 		if v.drawer {
