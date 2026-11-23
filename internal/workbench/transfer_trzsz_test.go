@@ -196,6 +196,22 @@ func TestTrzszUploadIsChosenFromFiles(t *testing.T) {
 	}
 }
 
+// trz and tsz before 1.2.0 save the cursor with ESC 7 instead of ESC [ s, and
+// the announcement must be offered all the same (#1374).
+func TestTrzszAnnouncementFromAnOlderServerIsOffered(t *testing.T) {
+	for _, introducer := range []string{"\x1b7\x07", "\x1b7"} {
+		state, session, shell := transferState(t)
+		shell.say("before\r\n" + introducer + "::TRZSZ:TRANSFER:S:1.1.8:0000001234567:36435\r\n")
+		waitUntil(t, state, "the TRZSZ offer", func() bool { return state.modal == modalFileTransfer })
+		if session.transfer.protocol != transferTrzsz {
+			t.Fatalf("%q: transfer = %+v", introducer, session.transfer)
+		}
+		if screen := screenText(state, 0); !strings.Contains(screen, "before") || strings.Contains(screen, "TRZSZ") {
+			t.Fatalf("%q: screen = %q", introducer, screen)
+		}
+	}
+}
+
 func TestTrzszAnnouncementCutBetweenReadsIsStillOffered(t *testing.T) {
 	state, _, shell := transferState(t)
 	line := strings.Replace(trzszAnnouncement, "%c", "S", 1)

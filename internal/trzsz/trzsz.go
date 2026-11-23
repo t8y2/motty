@@ -55,10 +55,17 @@ func (t Trigger) Sending() bool { return t.Mode != 'S' }
 // answered by asking the user for a directory, exactly like D.
 func (t Trigger) Directory() bool { return t.Mode == 'D' || t.Mode == 'F' }
 
-// triggerPrefix begins the announcement. It includes the save-cursor sequence
-// the remote program writes first, so a program that merely prints the words is
-// not mistaken for a transfer.
-const triggerPrefix = "\x1b[s::TRZSZ:TRANSFER:"
+// triggerMarker is the word every announcement carries, whatever version wrote
+// it.
+const triggerMarker = "::TRZSZ:TRANSFER:"
+
+// triggerIntroducers are what the remote program writes just before the marker.
+// All of them save the cursor, which the program restores when it is done:
+// ESC 7 with a BEL after it from the Go programs up to 1.1.8, ESC 7 alone from
+// the Python programs, and ESC [ s from 1.2.0 on. The longest comes first, so
+// the BEL is not left behind. An announcement without one is only text that
+// happens to contain the words, and is left on the screen.
+var triggerIntroducers = [...]string{"\x1b7\x07", "\x1b[s", "\x1b7"}
 
 // triggerLimit bounds an announcement line. The real one is under 60 bytes; a
 // longer line is not an announcement and is left on the screen.
@@ -66,7 +73,7 @@ const triggerLimit = 256
 
 // TailSize is how many bytes at the end of a read must be kept for the next
 // read, so an announcement split across two reads is still seen as one.
-const TailSize = len(triggerPrefix) - 1
+const TailSize = 3 + len(triggerMarker) - 1
 
 // MatchTrigger looks for the announcement in buf, which holds the bytes kept
 // from the previous read followed by the bytes that just arrived.
@@ -76,11 +83,21 @@ const TailSize = len(triggerPrefix) - 1
 // decide. When an announcement begins but is not yet complete, start marks where
 // it begins and more is true; the caller keeps buf[start:] for the next read.
 func MatchTrigger(buf []byte) (start, end int, trigger Trigger, ok, more bool) {
-	index := bytes.LastIndex(buf, []byte(triggerPrefix))
+	marker := bytes.LastIndex(buf, []byte(triggerMarker))
+	if marker < 0 {
+		return 0, 0, Trigger{}, false, false
+	}
+	index := -1
+	for _, introducer := range triggerIntroducers {
+		if bytes.HasSuffix(buf[:marker], []byte(introducer)) {
+			index = marker - len(introducer)
+			break
+		}
+	}
 	if index < 0 {
 		return 0, 0, Trigger{}, false, false
 	}
-	rest := buf[index+len(triggerPrefix):]
+	rest := buf[marker+len(triggerMarker):]
 	if len(rest) > triggerLimit {
 		return 0, 0, Trigger{}, false, false
 	}
@@ -95,7 +112,7 @@ func MatchTrigger(buf []byte) (start, end int, trigger Trigger, ok, more bool) {
 	if !ok {
 		return 0, 0, Trigger{}, false, false
 	}
-	return index, index + len(triggerPrefix) + newline + 1, trigger, true, false
+	return index, marker + len(triggerMarker) + newline + 1, trigger, true, false
 }
 
 // parseTriggerLine reads "M:VERSION[:UNIQUEID[:PORT]]".

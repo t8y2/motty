@@ -52,6 +52,41 @@ func TestMatchTrigger(t *testing.T) {
 	}
 }
 
+// Servers before 1.2.0 save the cursor with ESC 7 (the Go programs add a BEL),
+// and the announcement must be read whichever way they do it, however the
+// output is split.
+func TestMatchTriggerEveryIntroducer(t *testing.T) {
+	for _, introducer := range []string{"\x1b[s", "\x1b7", "\x1b7\x07"} {
+		line := introducer + "::TRZSZ:TRANSFER:R:1.1.8:0000001234567:36435\r\n"
+		input := "prompt$ trz" + line
+		start, end, trigger, ok, more := MatchTrigger([]byte(input))
+		if !ok || more || start != len("prompt$ trz") || end != len(input) {
+			t.Fatalf("%q: MatchTrigger = %d, %d, %v, %v", introducer, start, end, ok, more)
+		}
+		if trigger.Mode != 'R' || trigger.Version != [3]int{1, 1, 8} {
+			t.Fatalf("%q: trigger = %+v", introducer, trigger)
+		}
+		// Cut at every byte: what the caller keeps (TailSize) must be enough
+		// to find the announcement once the rest arrives.
+		for cut := 1; cut < len(input); cut++ {
+			kept := []byte(input[:cut])
+			at, _, _, found, more := MatchTrigger(kept)
+			if found {
+				continue
+			}
+			if more {
+				kept = kept[at:]
+			} else if len(kept) > TailSize {
+				kept = kept[len(kept)-TailSize:]
+			}
+			kept = append(kept, input[cut:]...)
+			if got, _, _, found, _ := MatchTrigger(kept); !found || got != bytes.Index(kept, []byte(introducer)) {
+				t.Fatalf("%q cut at %d: announcement lost (found %v at %d)", introducer, cut, found, got)
+			}
+		}
+	}
+}
+
 func TestMatchTriggerNeedsMore(t *testing.T) {
 	part := "\x1b[s::TRZSZ:TRANSFER:R:1.2.0:00000012345"
 	start, _, _, ok, more := MatchTrigger([]byte(part))
