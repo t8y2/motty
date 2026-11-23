@@ -38,6 +38,57 @@ func TestNotesWorkspaceGivesTheDocumentItsWidth(t *testing.T) {
 	}
 }
 
+func TestNotesLibraryPrimaryActionSpansAboveTheList(t *testing.T) {
+	s := newTestState(t, freshOptions(t))
+	s.Click(hitNotes)
+	s.Click(hitNoteAdd)
+	var c gfx.Canvas
+	s.Paint(&c, gfx.Size{Width: 1400, Height: 900})
+	add, ok := hitByID(&c, hitNoteAdd)
+	if !ok {
+		t.Fatal("new note action is missing")
+	}
+	if add.Role != gfx.RoleButton || add.Label != s.noteText("New note", "新建笔记") {
+		t.Fatalf("new note action lacks button semantics: %+v", add)
+	}
+	search, searchOK := hitByID(&c, hitNoteSearchToggle)
+	if !searchOK || add.Bounds.X != search.Bounds.X || add.Bounds.Width != s.notes.page.library.Pos-16 || add.Bounds.Height < 36 {
+		t.Fatalf("new note action does not span the library: width=%v action=%+v", s.notes.page.library.Pos, add.Bounds)
+	}
+	row, ok := noteTreeRowHit(&c, &s.notes, s.notes.selected)
+	if !ok || add.Bounds.Y+add.Bounds.Height > row.Bounds.Y {
+		t.Fatalf("new note action is not above the list: action=%+v row=%+v", add.Bounds, row.Bounds)
+	}
+}
+
+// With no note chosen, the editor side invites the user to pick or create one
+// rather than leaving a bare line, and an empty library says where to start.
+func TestNotesEmptyStatesInviteTheFirstNote(t *testing.T) {
+	s := newTestState(t, freshOptions(t))
+	s.Click(hitNotes)
+	var c gfx.Canvas
+	s.Paint(&c, gfx.Size{Width: 1400, Height: 900})
+	want := map[string]bool{
+		s.noteText("Start with a note", "从一篇笔记开始"):                           false,
+		s.noteText("Your first working note starts here.", "第一条工作记录，从这里开始。"): false,
+	}
+	description := false
+	for _, text := range c.Texts() {
+		if _, ok := want[text.Value]; ok {
+			want[text.Value] = true
+		}
+		description = description || strings.Contains(text.Value, s.noteText("Select a note", "从目录选择"))
+	}
+	for value, found := range want {
+		if !found {
+			t.Fatalf("empty state does not show %q", value)
+		}
+	}
+	if !description {
+		t.Fatal("empty state does not explain what to do")
+	}
+}
+
 // A note's name is centered in its tree row: the row's icon, name and action
 // button share one vertical centre.
 func TestNotesTreeTitleIsVerticallyCenteredInItsRow(t *testing.T) {
