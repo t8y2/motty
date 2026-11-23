@@ -64,10 +64,13 @@ func TestHostDialogValidationAndSubmit(t *testing.T) {
 		t.Fatalf("empty form submitted: open=%v error=%q", (state.modal == modalNewHost), state.dialogError)
 	}
 
-	// The same destination under the same name must not submit.
+	// The same destination under the same name in the same group must not
+	// submit: a repeat inside one group is the accidental duplicate, while the
+	// same host in another group is a row the user filed there on purpose.
 	typeInto(state, hitDialogLabel, "Production")
 	typeInto(state, hitDialogAddress, "prod.example.com")
 	typeInto(state, hitDialogUser, "deploy")
+	typeInto(state, hitDialogGroup, "Servers")
 	state.Click(hitDialogSubmit)
 	if !(state.modal == modalNewHost) || state.dialogError != state.messages.ErrAddressTaken {
 		t.Fatalf("duplicate host accepted: error=%q", state.dialogError)

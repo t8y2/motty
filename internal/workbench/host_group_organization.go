@@ -158,10 +158,29 @@ func (state *State) deleteHostGroup(path string, ungroup bool) bool {
 	if ungroup {
 		target = ""
 	}
+	// The hosts leave the group together, so the move is checked before it is
+	// made: a host the target group already holds, or one that repeats another
+	// host on its way out, would be folded away on the next start.
+	var moving []int
 	for index := range state.hosts {
 		if hostGroupWithin(strings.TrimSpace(state.hosts[index].Group), path) {
-			state.hosts[index].Group = target
+			moving = append(moving, index)
 		}
+	}
+	// Both choices move the hosts into target (the parent group, or none), so a
+	// host target already holds makes the group impossible to delete until it is
+	// dealt with. Say which one, so the user has a next step rather than only
+	// "this host already exists".
+	if repeat, ok := groupMoveRepeat(state.hosts, moving, target); ok {
+		label := target
+		if label == "" {
+			label = state.messages.HostGroupDefault
+		}
+		state.dialogError = fmt.Sprintf(state.messages.HostGroupDeleteRepeatFmt, strings.TrimSpace(repeat.Label), repeat.Address, label)
+		return false
+	}
+	for _, index := range moving {
+		state.hosts[index].Group = target
 	}
 	kept := state.hostGroups[:0]
 	for _, group := range state.hostGroups {

@@ -643,6 +643,79 @@ func sameHost(a Host, b Host) bool {
 	return sameEndpoint(a, b) && strings.EqualFold(strings.TrimSpace(a.Label), strings.TrimSpace(b.Label))
 }
 
+// sameHostGroup reports whether two hosts are filed under one group. A host may
+// repeat a name and a destination in another group: the user keeps the same
+// server in two places on purpose, and the rows are told apart by the group they
+// sit in. A repeat inside one group is still the accidental duplicate the form
+// refuses.
+func sameHostGroup(a Host, b Host) bool {
+	return sameHostGroupPath(a, b.Group)
+}
+
+// sameHostGroupPath reports whether host is filed under group, as sameHostGroup
+// compares two hosts.
+func sameHostGroupPath(host Host, group string) bool {
+	return normalizeHostGroupPath(host.Group) == normalizeHostGroupPath(group)
+}
+
+// hostGroupTaken reports whether hosts already hold this destination under this
+// name in group, other than by the host itself. Moving a host there would make
+// the accidental duplicate the form refuses, and the fold that reconciles hosts
+// saved on two devices would drop one of the two on the next start.
+//
+// It reads the fold's own identity (mergeKeyOf, with the group swapped for the
+// one the host would land in) so the guard and the fold can never disagree about
+// which rows are the same host.
+func hostGroupTaken(hosts []Host, host Host, group string) bool {
+	want := mergeKeyInGroup(host, group)
+	for _, other := range hosts {
+		if other.ID != host.ID && mergeKeyOf(other) == want {
+			return true
+		}
+	}
+	return false
+}
+
+// mergeKeyInGroup is mergeKeyOf(host) with the group replaced: the identity the
+// fold would use for host once it is filed under group.
+func mergeKeyInGroup(host Host, group string) mergeKey {
+	host.Group = group
+	return mergeKeyOf(host)
+}
+
+// groupMoveRepeat reports the first moving host the fold would drop once the
+// moving hosts (given by their indexes in hosts) are all filed under group: one
+// that group already holds under the same identity, or one that repeats another
+// host moving with it. Hosts already in group change nothing and are left out of
+// moving by the caller.
+//
+// It keys hosts by mergeKeyOf, the fold's own identity, so the check is one
+// linear pass instead of a scan per host and a pairwise pass over the selection,
+// and it cannot drift from the fold as that key gains fields.
+func groupMoveRepeat(hosts []Host, moving []int, group string) (Host, bool) {
+	movingSet := make(map[uint32]bool, len(moving))
+	for _, index := range moving {
+		movingSet[hosts[index].ID] = true
+	}
+	seen := make(map[mergeKey]Host, len(hosts))
+	for _, host := range hosts {
+		key := mergeKeyOf(host)
+		if movingSet[host.ID] {
+			key = mergeKeyInGroup(host, group)
+		}
+		if other, ok := seen[key]; ok && other.ID != host.ID {
+			if movingSet[host.ID] {
+				return host, true
+			}
+			if movingSet[other.ID] {
+				return other, true
+			}
+		}
+		seen[key] = host
+	}
+	return Host{}, false
+}
+
 // hostIndexByEndpoint is where the list has a host that is the same destination
 // as host, or -1. The SSH config sync uses it to tell a block that only names a
 // server already saved from a host of its own. A session imported from another
@@ -657,8 +730,22 @@ func (state *State) hostIndexByEndpoint(host Host) int {
 	return -1
 }
 
-// hostIndexSame is where the list has the same host as host (see sameHost), or -1.
+// hostIndexSame is where the list has the same host as host (see sameHost), filed
+// under the group host is, or -1.
 func (state *State) hostIndexSame(host Host) int {
+	for index, saved := range state.hosts {
+		if sameHost(saved, host) && sameHostGroup(saved, host) {
+			return index
+		}
+	}
+	return -1
+}
+
+// hostIndexSameName is where the list already holds host's name at its
+// destination, whatever group that host is filed in, or -1. An import asks this
+// rather than hostIndexSame: a session the user already saved is not imported
+// again just because the file files it under another group.
+func (state *State) hostIndexSameName(host Host) int {
 	for index, saved := range state.hosts {
 		if sameHost(saved, host) {
 			return index

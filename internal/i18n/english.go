@@ -575,6 +575,7 @@ var EnglishMessages = Messages{
 	ErrDeviceRequired:           "Device is required",
 	ErrGroupRequired:            "Group is required",
 	ErrAddressTaken:             "This host already exists",
+	HostGroupDeleteRepeatFmt:    "Cannot delete: %s (%s) would duplicate a host in %s. Rename or remove it first.",
 	ErrPortInvalid:              "Port must be 1-65535",
 	ErrHostTagsInvalid:          "Use at most 12 tags of 32 characters each, without commas or line breaks",
 	Cancel:                      "Cancel",

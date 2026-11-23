@@ -615,7 +615,7 @@ func (state *State) sessionImportPlan(result sessionimport.Result) hostImportPla
 			LoginCommand: restoredLoginCommand(entry.Command),
 		}
 		host.finish()
-		if state.hostIndexSame(host) >= 0 || planHasSameHost(builder.plan, host) {
+		if state.hostIndexSameName(host) >= 0 || planHasSameHost(builder.plan, host) {
 			builder.plan.duplicateHosts++
 			builder.plan.warnings = append(builder.plan.warnings,
 				fmt.Sprintf(state.messages.Tools.ImportWarningSkippedHostFmt, host.Label, hostTarget(host)))
@@ -658,7 +658,7 @@ func (state *State) planStreamImport(plan *hostImportPlan, usedIDs map[string]st
 	}
 	host.normalizeEndpoint()
 	host.finish()
-	if state.hostIndexSame(host) >= 0 || planHasSameHost(*plan, host) {
+	if state.hostIndexSameName(host) >= 0 || planHasSameHost(*plan, host) {
 		plan.duplicateHosts++
 		plan.warnings = append(plan.warnings,
 			fmt.Sprintf(state.messages.Tools.ImportWarningSkippedHostFmt, host.Label, hostTarget(host)))

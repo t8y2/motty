@@ -599,6 +599,7 @@ type Messages struct {
 	ErrDeviceRequired           string
 	ErrGroupRequired            string
 	ErrAddressTaken             string
+	HostGroupDeleteRepeatFmt    string
 	ErrPortInvalid              string
 	ErrHostTagsInvalid          string
 	Cancel                      string

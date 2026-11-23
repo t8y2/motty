@@ -575,6 +575,7 @@ var ChineseMessages = Messages{
 	ErrDeviceRequired:           "请填写设备",
 	ErrGroupRequired:            "请填写分组",
 	ErrAddressTaken:             "该主机已存在",
+	HostGroupDeleteRepeatFmt:    "无法删除：%s（%s）在 %s 中会产生重复的主机，请先重命名或移除该主机。",
 	ErrPortInvalid:              "端口范围 1-65535",
 	ErrHostTagsInvalid:          "最多 12 个标签，每个不超过 32 个字符，且不包含逗号或换行",
 	Cancel:                      "取消",

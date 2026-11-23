@@ -928,6 +928,10 @@ func (state *State) clickMoveHostGroupDialog(id gfx.ID) {
 	case hitMoveGroupDismiss, hitMoveGroupClose, hitMoveGroupCancel:
 		state.modal = modalNone
 		state.dialogError = ""
+	case hitGroupDeleteParent, hitGroupDeleteUngroup:
+		// The two choices move the hosts to different groups, so a reason that
+		// named one of them no longer applies to the other: drop it on the switch.
+		state.dialogError = ""
 	case hitMoveGroupSubmit:
 		group := strings.TrimSpace(state.hostGroupEditor.String())
 		switch state.groupActions.op {
@@ -960,37 +964,66 @@ func (state *State) clickMoveHostGroupDialog(id gfx.ID) {
 				state.dialogError = state.messages.ErrHostGroupInvalid
 				return
 			}
-			state.applyHostGroup(group)
+			copying := state.hostGroupCopy
+			if !state.applyHostGroup(group) {
+				if copying {
+					// A copy takes a fresh name, so a refusal is not the address
+					// the move would repeat: close as a copy that made nothing.
+					state.modal = modalNone
+					state.dialogError = ""
+					return
+				}
+				state.dialogError = state.messages.ErrAddressTaken
+				return
+			}
 		}
 		state.modal = modalNone
 		state.dialogError = ""
 	}
 }
 
-func (state *State) applyHostGroup(group string) {
+// applyHostGroup files the selected hosts under group and reports whether it did:
+// a refusal leaves every one of them where it was.
+func (state *State) applyHostGroup(group string) bool {
+	// Store the group the way a reload will read it back, so a name typed with
+	// spaces around the separators does not move to a second group on restart.
+	group = normalizeHostGroupPath(group)
 	if state.hostGroupCopy {
 		state.hostGroupCopy = false
-		state.copyHostsToGroup(state.hostActionIDs, group)
-		return
+		return state.copyHostsToGroup(state.hostActionIDs, group)
 	}
-	count := 0
+	// The hosts move together, so the move is checked before any of it is made:
+	// a host the group already holds, or one that repeats another host on its way
+	// in, would be folded away on the next start. Checking first also keeps the
+	// result the same whichever order the hosts were selected in.
+	var moving, incoming []int
 	for index := range state.hosts {
 		if !containsHostID(state.hostActionIDs, state.hosts[index].ID) {
 			continue
 		}
-		state.hosts[index].Group = group
-		count++
+		moving = append(moving, index)
+		if !sameHostGroupPath(state.hosts[index], group) {
+			incoming = append(incoming, index)
+		}
 	}
-	if count == 0 {
-		return
+	if _, repeat := groupMoveRepeat(state.hosts, incoming, group); repeat {
+		state.status = state.messages.ErrAddressTaken
+		return false
+	}
+	if len(moving) == 0 {
+		return true
+	}
+	for _, index := range moving {
+		state.hosts[index].Group = group
 	}
 	state.hostDataChanged()
 	label := group
 	if label == "" {
 		label = state.messages.HostGroupDefault
 	}
-	state.status = fmt.Sprintf(state.messages.HostMovedFmt, count, label)
+	state.status = fmt.Sprintf(state.messages.HostMovedFmt, len(moving), label)
 	state.save()
+	return true
 }
 
 func (state *State) hostDataChanged() {
