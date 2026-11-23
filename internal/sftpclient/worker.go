@@ -2064,9 +2064,14 @@ func (worker *Worker) uploadStream(client transferRemote, openSource func() (io.
 		return written, resumed, err
 	}
 	closed = true
+	// The bytes are already on the server. Carrying the source permissions over
+	// is a courtesy that servers fronting an account through a gateway often
+	// refuse with a generic failure; OpenSSH's sftp does not fail a put for it
+	// either. A refusal leaves the server's default mode and the upload goes
+	// on; a timeout is fatal because the subsystem was discarded to end it.
 	if err := worker.finalizeUpload(generation, transferID, "chmod", func() error {
 		return client.Chmod(partial, sourceInfo.Mode().Perm())
-	}); err != nil {
+	}); errors.Is(err, ErrUploadFinalizeTimeout) {
 		return written, resumed, err
 	}
 	if timer, ok := client.(remoteChtimes); ok && worker.preserveTimes() {

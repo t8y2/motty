@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/pkg/sftp"
 )
 
 func queueResult(t *testing.T, id uint64, queued bool, worker *Worker) Result {
@@ -475,6 +477,46 @@ func TestUploadCompletesWhenServerDoesNotAdvertisePosixRename(t *testing.T) {
 	}
 	if noPosix.posixCalls != 0 || noPosix.renameCalls != 1 {
 		t.Fatalf("posix calls = %d, rename calls = %d", noPosix.posixCalls, noPosix.renameCalls)
+	}
+	if got, err := os.ReadFile(filepath.Join(root, "payload.txt")); err != nil || !bytes.Equal(got, content) {
+		t.Fatalf("uploaded content = %q, err %v", got, err)
+	}
+	requireExists(t, filepath.Join(root, remotePartialPath("payload.txt", source)), false)
+}
+
+// chmodRefusingRemote answers every permission change with the generic failure
+// status, as a gateway that does not pass SETSTAT through to the account does.
+type chmodRefusingRemote struct {
+	remote
+	chmodCalls int
+}
+
+func (remote *chmodRefusingRemote) Chmod(string, os.FileMode) error {
+	remote.chmodCalls++
+	return &sftp.StatusError{Code: uint32(sftp.ErrSSHFxFailure)}
+}
+
+func TestUploadCompletesWhenServerRefusesPermissionChange(t *testing.T) {
+	refusing := &chmodRefusingRemote{}
+	worker, root := newProtocolWorkerOn(t, nil, func(base remote) Remote {
+		refusing.remote = base
+		return refusing
+	})
+	content := []byte("upload through a gateway that refuses setstat\n")
+	source := filepath.Join(t.TempDir(), "payload.txt")
+	if err := os.WriteFile(source, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	id, queued := worker.QueueUpload(source, "payload.txt", false, ExistingFail)
+	if !queued {
+		t.Fatal("upload was not queued")
+	}
+	result := resultWithin(t, worker, 10*time.Second)
+	if result.TransferID != id || result.Err != nil {
+		t.Fatalf("result = %+v", result)
+	}
+	if refusing.chmodCalls == 0 {
+		t.Fatal("the upload never asked for the permission change")
 	}
 	if got, err := os.ReadFile(filepath.Join(root, "payload.txt")); err != nil || !bytes.Equal(got, content) {
 		t.Fatalf("uploaded content = %q, err %v", got, err)
