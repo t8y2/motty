@@ -117,7 +117,7 @@ func (state *State) saveWorkspaceInline() {
 		return
 	}
 	value := strings.TrimSpace(edit.editor.String())
-	if !validLoginCommand(value) {
+	if !validSingleLineCommand(value) {
 		edit.error = state.messages.WorkspaceCommandInvalid
 		return
 	}

@@ -558,7 +558,7 @@ func (catalog *hostCatalog) addRelays(config *sshconn.Config, route *connectionR
 			continue
 		}
 		jump := chain[index+1]
-		relay := sshconn.Relay{Prelude: jump.LoginCommand, Command: record.relayCommand()}
+		relay := sshconn.Relay{Prelude: jump.relayPrelude(), Command: record.relayCommand()}
 		if config.Relays == nil {
 			config.Relays = make(map[sshconn.Endpoint]sshconn.Relay, 1)
 		}

@@ -66,9 +66,10 @@ type Host struct {
 	// history, whatever the global switch says.
 	NoHistory bool
 	// LoginCommand is typed into each new shell of an SSH host once it is ready
-	// for input, as the user would type it. One line, empty for none.
-	LoginCommand   string
-	RemoteLogPaths []remoteLogPath
+	// for input, as the user would type it. One or more lines, empty for none.
+	LoginCommand       string
+	LoginCommandPolicy loginFailurePolicy
+	RemoteLogPaths     []remoteLogPath
 	// Encoding is the character set of the remote shell's byte stream. Empty
 	// means UTF-8. A legacy server whose LANG names GB18030, Big5 or Shift_JIS
 	// needs its output decoded and its input encoded with that charset.
@@ -189,8 +190,10 @@ func (host *Host) finish() {
 // shell, the other fields are what the window last read from the connection.
 type Session struct {
 	remoteLogs       *remoteLogView
-	workspaceCommand WorkspaceCommand    // immutable workspace configuration for this session
-	outputAlert      terminalOutputAlert // runtime only; connection status stays independent
+	workspaceCommand WorkspaceCommand     // immutable workspace configuration for this session
+	loginResults     []LoginCommandResult // results of post-login commands executed in this session
+	loginAborted     string               // reason remaining post-login commands were aborted
+	outputAlert      terminalOutputAlert  // runtime only; connection status stays independent
 
 	ID     uint32
 	HostID uint32

@@ -1151,9 +1151,19 @@ type ToolsMessages struct {
 	AlgoCustomField                 string
 	AlgoCustomPlaceholder           string
 	ErrAlgoRequired                 string
-	LoginCommandField               string
-	LoginCommandPlaceholder         string
-	ErrLoginCommand                 string
+	LoginCommandField                 string
+	LoginCommandPlaceholder           string
+	ErrLoginCommand                   string
+	LoginCommandPolicyField           string
+	LoginCommandStopOnError           string
+	LoginCommandContinueOnError       string
+	LoginCommandStepSuccessFmt        string
+	LoginCommandStepFailedStopFmt     string
+	LoginCommandStepFailedContinueFmt string
+	LoginCommandOutputFmt             string
+	LoginCommandAbortDisconnectFmt    string
+	LoginCommandAbortTimeoutFmt       string
+	LoginCommandAbortPromptFmt        string
 	IdleKeepAliveHeading            string
 	IdleKeepAliveField              string
 	IdleKeepAliveOff                string
