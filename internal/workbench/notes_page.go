@@ -216,11 +216,15 @@ func (s *State) declareNoteTreeRow(n *notesUI, i int) {
 	if c == nil {
 		return
 	}
-	if e.id == "" {
-		// The row a new folder or note is being named in.
+	if e.id == "" || e.id == n.view.inlineID {
+		// New items and existing items being renamed share the same field.
 		p.inline.Bind(&n.view.inline)
 		field := ui.TextFieldID(c, hitNoteInline, &p.inline, s.noteText("Name", "名称"), s.noteText("Name", "名称")).
 			FillWidth().Height(noteTreeRowHeight-4).MarginSides(0, 4, 2, 0)
+		if n.view.focus == hitNoteInline {
+			c.Canvas().RequestFocus(hitNoteInline)
+			n.view.focus = gfx.ID{}
+		}
 		if field.Submitted() {
 			c.After(func() { s.commitNoteInline() })
 		}
