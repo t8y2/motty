@@ -1,0 +1,46 @@
+# End to end: the session manager's expand-all and collapse-all buttons open and
+# close every group in one click (issue #1389), and stand down while the search
+# holds the groups open.
+#
+#   go build -tags vivahead,dev -o /tmp/motty-head ./cmd/motty
+#   MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/hosts_panel_expand_e2e.txt
+#
+# lang: en
+click "New Host"
+settle 400
+type h1
+click textfield:Address
+type 10.0.0.1
+click combobox:Group
+type School/Gansu/Lanzhou
+key enter
+settle 300
+click "Add Host"
+settle 400
+click "New Host"
+settle 400
+type h2
+click textfield:Address
+type 10.0.0.2
+click combobox:Group
+type Office
+key enter
+settle 300
+click "Add Host"
+settle 400
+click "Local Terminal"
+settle 1500
+click "Session manager"
+settle 500
+shot /tmp/h1389-1-expanded.png
+layout
+click "Collapse all groups"
+settle 400
+shot /tmp/h1389-2-collapsed.png
+click "Expand all groups"
+settle 400
+shot /tmp/h1389-3-expanded-again.png
+click textfield:Search
+type h1
+settle 400
+shot /tmp/h1389-4-search.png

@@ -11,12 +11,14 @@ import (
 var hostsPanelHits = tree.Feature("hosts-panel")
 
 var (
-	hitHostsPanel        = tree.ID(hostsPanelHits, "toggle")
-	hitHostsPanelClose   = tree.ID(hostsPanelHits, "close")
-	hitHostsPanelNew     = tree.ID(hostsPanelHits, "new-host")
-	hitHostsPanelManage  = tree.ID(hostsPanelHits, "manage")
-	hitHostsPanelSearch  = tree.ID(hostsPanelHits, "search")
-	hitHostsPanelDivider = tree.ID(hostsPanelHits, "divider")
+	hitHostsPanel         = tree.ID(hostsPanelHits, "toggle")
+	hitHostsPanelClose    = tree.ID(hostsPanelHits, "close")
+	hitHostsPanelNew      = tree.ID(hostsPanelHits, "new-host")
+	hitHostsPanelManage   = tree.ID(hostsPanelHits, "manage")
+	hitHostsPanelSearch   = tree.ID(hostsPanelHits, "search")
+	hitHostsPanelDivider  = tree.ID(hostsPanelHits, "divider")
+	hitHostsPanelExpand   = tree.ID(hostsPanelHits, "expand-all")
+	hitHostsPanelCollapse = tree.ID(hostsPanelHits, "collapse-all")
 )
 
 // The session manager is the saved hosts and their groups as a tree beside the
@@ -175,6 +177,20 @@ func (state *State) rebuildHostsPanelRows() {
 	panel.rows = state.appendHostTreeRows(panel.rows[:0], panel.hosts, words, state.namedHostGroups() == 0, false, "")
 }
 
+// hostsPanelExpansionActions says which of expand-all and collapse-all would
+// change the panel. A search opens every group it finds a host in, and a catalog
+// without named groups lists no group headers, so neither has anything to do.
+func (state *State) hostsPanelExpansionActions() (expand, collapse bool) {
+	if state.hostsPanel.filtering || state.namedHostGroups() == 0 {
+		return false, false
+	}
+	for _, group := range state.hostGroups {
+		expand = expand || !group.Expanded
+		collapse = collapse || group.Expanded
+	}
+	return expand, collapse
+}
+
 // hostsPanelEntry is row i of the panel, or false for a row the catalog no
 // longer has: a paint may come between a change to the hosts and the rebuild.
 func (state *State) hostsPanelEntry(i int) (hostTreeRow, bool) {
@@ -323,7 +339,7 @@ func (state *State) declareHostsPanel(c ui.C) {
 				})
 			}
 		})
-		ui.Row(c).Height(hostsPanelSearch).Shrink(0).FillWidth().PadSides(0, 8, 6, 8).Items(ui.Center).Children(func() {
+		ui.Row(c).Height(hostsPanelSearch).Shrink(0).FillWidth().PadSides(0, 8, 6, 8).Gap(2).Items(ui.Center).Children(func() {
 			input := ui.TextFieldID(c, hitHostsPanelSearch, &panel.search, m.NavSearch, m.SearchPlaceholder).
 				Icon(lucideIcons[iconSearch]).FontSize(metrics.FontSizeS).Height(28).Grow(1).MinWidth(0)
 			if input.Changed() {
@@ -332,10 +348,21 @@ func (state *State) declareHostsPanel(c ui.C) {
 			if input.Submitted() && len(panel.rows) > 0 {
 				c.Canvas().RequestFocus(panel.tree.RowID(0))
 			}
+			// The rows follow this frame's search before the buttons ask whether
+			// a search holds the groups open.
+			if panel.stale {
+				state.rebuildHostsPanelRows()
+			}
+			expand, collapse := state.hostsPanelExpansionActions()
+			if ui.Button(c, m.HostGroupActions.ExpandAll).Hit(hitHostsPanelExpand, m.HostGroupActions.ExpandAll).Icon(lucideIcons[iconChevronsExpand]).IconOnly().Ghost().Size(28, 28).Shrink(0).
+				Tooltip(m.HostGroupActions.ExpandAll).Disabled(!expand).Clicked() {
+				c.After(func() { state.setHostGroupsExpanded(true) })
+			}
+			if ui.Button(c, m.HostGroupActions.CollapseAll).Hit(hitHostsPanelCollapse, m.HostGroupActions.CollapseAll).Icon(lucideIcons[iconChevronsCollapse]).IconOnly().Ghost().Size(28, 28).Shrink(0).
+				Tooltip(m.HostGroupActions.CollapseAll).Disabled(!collapse).Clicked() {
+				c.After(func() { state.setHostGroupsExpanded(false) })
+			}
 		})
-		if panel.stale {
-			state.rebuildHostsPanelRows()
-		}
 		panel.bounds = gfx.Rect{X: frame.X, Y: frame.Y, Width: width, Height: frame.Height}
 		panel.body = gfx.Rect{
 			X: frame.X, Y: frame.Y + hostsPanelHeader + hostsPanelSearch,

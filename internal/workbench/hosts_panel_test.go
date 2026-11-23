@@ -118,3 +118,40 @@ func TestHostsPanelStateIsSaved(t *testing.T) {
 		t.Fatalf("saved %v at %v, want open at 300", saved.HostsPanelOpen, saved.HostsPanelWidth)
 	}
 }
+
+// The panel offers expand-all and collapse-all beside its search box. Each acts
+// on every group through the state the hosts page shares, and offers itself only
+// while it would change something: a search holds the groups open on its own.
+func TestHostsPanelExpandsAndCollapsesEveryGroup(t *testing.T) {
+	state := hostsPanelFixture(t)
+	offered := func(id gfx.ID) (found, disabled bool) {
+		canvas, _ := paintedTexts(state)
+		hit, found := hitByID(canvas, id)
+		return found, hit.Disabled
+	}
+	state.setHostGroupsExpanded(true)
+	if found, disabled := offered(hitHostsPanelExpand); !found || !disabled {
+		t.Errorf("with every group open expand all: found=%v disabled=%v, want found and disabled", found, disabled)
+	}
+	if found, disabled := offered(hitHostsPanelCollapse); !found || disabled {
+		t.Errorf("with every group open collapse all: found=%v disabled=%v, want enabled", found, disabled)
+	}
+	open := len(state.hostsPanel.rows)
+	state.setHostGroupsExpanded(false)
+	state.Paint(&gfx.Canvas{}, panelWide)
+	if len(state.hostsPanel.rows) >= open {
+		t.Errorf("collapsing left %d rows, was %d", len(state.hostsPanel.rows), open)
+	}
+	if found, disabled := offered(hitHostsPanelExpand); !found || disabled {
+		t.Errorf("with every group closed expand all: found=%v disabled=%v, want enabled", found, disabled)
+	}
+	if _, disabled := offered(hitHostsPanelCollapse); !disabled {
+		t.Error("with every group closed collapse all is still offered")
+	}
+	state.setHostGroupsExpanded(true)
+	state.hostsPanel.search.SetText("alp")
+	state.hostsPanel.stale = true
+	if _, disabled := offered(hitHostsPanelCollapse); !disabled {
+		t.Error("collapse all is offered while a search holds the groups open")
+	}
+}
