@@ -177,8 +177,9 @@ type savedTransport struct {
 	InteractiveOnly bool `json:"interactive_only,omitempty"`
 	// NoHistory is set for an SSH host whose commands are not remembered.
 	NoHistory bool `json:"no_history,omitempty"`
-	// LoginCommand is the line an SSH host types into its shell after login.
-	LoginCommand string `json:"login_command,omitempty"`
+	// LoginCommand is the command lines an SSH host types into its shell after login.
+	LoginCommand       string `json:"login_command,omitempty"`
+	LoginCommandPolicy string `json:"login_command_policy,omitempty"`
 	// IdleKeepAliveSeconds is how often an idle terminal is sent input; zero is
 	// off. IdleInput is "cr", "nul" or "custom" (empty follows the protocol),
 	// and IdleInputCustom is the escaped text for "custom".
@@ -271,6 +272,7 @@ func (host Host) transport() savedTransport {
 	transport.ForwardX11, transport.AgentForward, transport.NoHistory, transport.Transfer = host.ForwardX11, host.AgentForward, host.NoHistory, host.savedTransfer()
 	transport.InteractiveOnly = host.InteractiveOnly
 	transport.LoginCommand = host.LoginCommand
+	transport.LoginCommandPolicy = host.savedLoginCommandPolicy()
 	transport.RemoteLogPaths = host.RemoteLogPaths
 	return transport
 }
@@ -321,6 +323,7 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 		host.InteractiveOnly = transport.InteractiveOnly
 		host.NoHistory = transport.NoHistory
 		host.LoginCommand = restoredLoginCommand(transport.LoginCommand)
+		host.applyLoginCommandPolicy(transport.LoginCommandPolicy)
 		host.RemoteLogPaths = restoreRemoteLogPaths(transport.RemoteLogPaths)
 		switch transport.Terminal {
 		case "", "ssh":

@@ -107,7 +107,7 @@ type hostFormScroll struct {
 
 // hostFormChoiceIDs is the chosen option hit of each Choice of the host form.
 type hostFormChoiceIDs struct {
-	protocol, flow, algo, transfer gfx.ID
+	protocol, flow, algo, transfer, loginPolicy gfx.ID
 }
 
 // hostFormBody is where the host form's body put each control: the slots it

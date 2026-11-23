@@ -34,6 +34,7 @@ var (
 	hitDialogPortsTrigger         = tree.ID(hostProtocolUiHits, "dialog-ports-trigger")
 	hitDialogAlgorithms           = tree.ID(hostProtocolUiHits, "dialog-algorithms")
 	hitDialogLoginCommand         = tree.ID(hostProtocolUiHits, "dialog-login-command")
+	hitDialogLoginCommandPolicy   = tree.ID(hostProtocolUiHits, "dialog-login-command-policy")
 	hitDialogAdvanced             = tree.ID(hostProtocolUiHits, "dialog-advanced")
 	hitDialogForwardX11           = tree.ID(hostProtocolUiHits, "dialog-forward-x11")
 	hitDialogAgentForward         = tree.ID(hostProtocolUiHits, "dialog-agent-forward")
@@ -114,9 +115,10 @@ func (editor *hostEditor) connectionType() hostConnectionType {
 // The segmented choices of the host form. Each is a Choice of the form's own
 // page, declared at the row its layout reserved.
 var (
-	hostConnectionChoices = [...]hostConnectionType{connectionSSH, connectionTelnet, connectionSerial, connectionVNC, connectionRDP, connectionMosh}
-	hostFlowChoices       = [...]serial.Flow{serial.FlowNone, serial.FlowHardware, serial.FlowSoftware}
-	hostAlgoChoices       = [...]algoMode{algoDefault, algoCompatible, algoCustom}
+	hostConnectionChoices  = [...]hostConnectionType{connectionSSH, connectionTelnet, connectionSerial, connectionVNC, connectionRDP, connectionMosh}
+	hostFlowChoices        = [...]serial.Flow{serial.FlowNone, serial.FlowHardware, serial.FlowSoftware}
+	hostAlgoChoices        = [...]algoMode{algoDefault, algoCompatible, algoCustom}
+	hostLoginPolicyChoices = [...]loginFailurePolicy{loginFailureStop, loginFailureContinue}
 )
 
 // hostConnectionChoiceLabel names one connection type as the form's choice
@@ -165,6 +167,16 @@ func (state *State) hostAlgoChoiceLabel(mode algoMode) string {
 		return state.messages.Tools.AlgoCustom
 	default:
 		return state.messages.Tools.AlgoDefault
+	}
+}
+
+// hostLoginPolicyChoiceLabel names one post-login failure policy as the form's choice shows it.
+func (state *State) hostLoginPolicyChoiceLabel(policy loginFailurePolicy) string {
+	switch policy {
+	case loginFailureContinue:
+		return state.messages.Tools.LoginCommandContinueOnError
+	default:
+		return state.messages.Tools.LoginCommandStopOnError
 	}
 }
 
@@ -338,6 +350,13 @@ func (state *State) declareHostTextField(c ui.C, parent ui.Box, field *dialogFie
 	state.editor.form.body.addField(id, field)
 }
 
+func (state *State) declareHostTextAreaField(c ui.C, parent ui.Box, field *dialogField, id gfx.ID, editor *text.Editor, label, placeholder string, height float32) {
+	parent.Children(func() {
+		field.declare(c, state, editor, dialogFieldSpec{ID: id, Label: label, Placeholder: placeholder, Multiline: true, Height: height})
+	})
+	state.editor.form.body.addField(id, field)
+}
+
 // declareHostAuthenticationChoice declares the authentication policy as a page
 // select over the protocols' fixed choices. A change closes the pickers over the
 // field and refills the secrets the new policy needs.
@@ -481,6 +500,12 @@ func (state *State) clickHostProtocol(id gfx.ID) bool {
 		editor.identitiesOnly = !editor.identitiesOnly
 	case id == hitDialogNoHistory:
 		editor.noHistory = !editor.noHistory
+	case id == hitDialogLoginCommandPolicy:
+		if editor.loginFailurePolicy == loginFailureStop {
+			editor.loginFailurePolicy = loginFailureContinue
+		} else {
+			editor.loginFailurePolicy = loginFailureStop
+		}
 	case id == hitDialogAgentAccess:
 		editor.agentAccess = !editor.agentAccess
 		editor.agentAccessChanged = true
@@ -611,9 +636,12 @@ const advancedHeaderHeight = 48
 // it: 8px each, around its 32px.
 const advancedHeaderGap = 8
 
+const loginCommandAreaHeight = 104
+
 // sshAdvancedRowsHeight is the room of the SSH-only part of an open Advanced
-// section: the algorithm choice (a third row for a custom list), the one-time
-// code secret with its buttons, and the switches.
+// section: the algorithm choice (a third row for a custom list), the login
+// command and failure policy, the one-time code secret with its buttons, and
+// the switches.
 func (state *State) sshAdvancedRowsHeight() float32 {
 	if state.editor.protocol != protocolSSH {
 		return 0
@@ -622,7 +650,7 @@ func (state *State) sshAdvancedRowsHeight() float32 {
 	if state.editor.algoMode == algoCustom {
 		rows++
 	}
-	return rows*hostFormRowHeight + hostFormRowHeight + otpFieldHeight + otpButtonsRow + state.sshSwitchRowsHeight()
+	return rows*hostFormRowHeight + loginCommandAreaHeight + hostFormRowHeight + otpFieldHeight + otpButtonsRow + state.sshSwitchRowsHeight()
 }
 
 // idleAdvancedRowsHeight is the room of the idle keepalive rows: a heading, the
@@ -718,8 +746,8 @@ type hostVNCRowsBody struct {
 
 // hostAlgoRowsBody is where the SSH algorithm rows put each control.
 type hostAlgoRowsBody struct {
-	algo, custom, login, otp, scan, paste, remove ui.Box
-	identitiesOnlyHelp, agentHelp                 ui.Box
+	algo, custom, login, loginPolicy, otp, scan, paste, remove ui.Box
+	identitiesOnlyHelp, agentHelp                              ui.Box
 }
 
 // paintAlgorithmRows draws the SSH algorithm choice and, for a custom one, the
@@ -756,8 +784,12 @@ func (state *State) declareHostAlgoRows(c ui.C) {
 			b.custom = ui.Slot(c).Height(rowHeight)
 			state.declareHostTextField(c, b.custom, &form.fieldAlgoCustom, hitDialogAlgorithms, &editor.algorithms, m.AlgoCustomField, m.AlgoCustomPlaceholder, false, rowHeight)
 		}
-		b.login = ui.Slot(c).Height(rowHeight)
-		state.declareHostTextField(c, b.login, &form.fieldLoginCommand, hitDialogLoginCommand, &editor.loginCommand, m.LoginCommandField, m.LoginCommandPlaceholder, false, rowHeight)
+		b.login = ui.Slot(c).Height(loginCommandAreaHeight)
+		state.declareHostTextAreaField(c, b.login, &form.fieldLoginCommand, hitDialogLoginCommand, &editor.loginCommand, m.LoginCommandField, m.LoginCommandPlaceholder, loginCommandAreaHeight)
+		b.loginPolicy = hostFormChoice(c, m.LoginCommandPolicyField, rowHeight, &editor.loginFailurePolicy, hostLoginPolicyChoices[:], state.hostLoginPolicyChoiceLabel)
+		if b.loginPolicy.Changed() {
+			state.dialogError = ""
+		}
 		ui.Row(c).Height(otpFieldHeight).Gap(8).Children(func() {
 			b.otp = ui.Slot(c).Grow(1)
 			placeholder := m.OTPPlaceholder

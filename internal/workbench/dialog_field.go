@@ -47,7 +47,7 @@ type dialogField struct {
 type dialogFieldSpec struct {
 	ID                                     gfx.ID
 	Label, Description, Placeholder, Error string
-	Secret, Invalid, Disabled              bool
+	Secret, Invalid, Disabled, Multiline   bool
 	Height                                 float32
 }
 
@@ -63,6 +63,15 @@ func (f *dialogField) declare(c ui.C, state *State, editor *text.Editor, spec di
 	f.input.Disabled = spec.Disabled
 	f.row.For, f.row.Description, f.row.Error = spec.ID, spec.Description, spec.Error
 	f.row.Invalid = spec.Invalid || spec.Error != ""
+	if spec.Multiline {
+		theme := c.Theme()
+		metrics := theme.Metrics
+		ui.Column(c).FillWidth().Height(spec.Height).Shrink(0).PadSides(0, 0, dialogRowGap, 0).Gap(metrics.GapItem / 2).Children(func() {
+			ui.Text(c, spec.Label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(theme.Foreground).LineHeight(metrics.FontSizeM + 4).Ellipsis().LabelFor(spec.ID)
+			f.box = ui.TextAreaID(c, spec.ID, &f.input, spec.Label, spec.Placeholder).FillWidth().Grow(1)
+		})
+		return
+	}
 	ui.FormField(c, &f.row, spec.Label).FillWidth().Height(spec.Height).Children(func() {
 		box := ui.TextFieldID(c, spec.ID, &f.input, spec.Label, spec.Placeholder)
 		f.box = box

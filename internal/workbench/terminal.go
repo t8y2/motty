@@ -547,6 +547,7 @@ func (state *State) configureTerminal(session *Session) {
 	session.term.screen.SetPromptStart(func() {
 		if current, ok := state.sessionByIDPointer(sessionID); ok && current.term != nil {
 			t := current.term
+			t.login.notePromptStart(t)
 			// Without command reports a prompt that follows typing is the sign a
 			// command ran; one redrawn with nothing keyed is not.
 			if t.commandActive || (!t.commandReporting && t.folderIntegrationSeen && t.keyedSincePrompt) {
@@ -581,9 +582,14 @@ func (state *State) configureTerminal(session *Session) {
 	})
 	session.term.screen.SetCommandFinished(func(code int) {
 		if current, ok := state.sessionByIDPointer(sessionID); ok {
-			if current.term != nil && current.term.commandActive {
-				current.term.commandActive = false
-				current.term.sftpRefreshPending = true
+			if current.term != nil {
+				if current.term.commandActive {
+					current.term.commandActive = false
+					current.term.sftpRefreshPending = true
+				} else if current.term.submittedLines > 0 {
+					current.term.submittedLines--
+				}
+				current.term.login.noteCommandFinished(current.term, code)
 			}
 			state.finishBackgroundCommand(current, code)
 		}
@@ -591,6 +597,7 @@ func (state *State) configureTerminal(session *Session) {
 	session.term.screen.SetCommandStart(func() {
 		if current, ok := state.sessionByIDPointer(sessionID); ok && current.term != nil {
 			t := current.term
+			t.login.noteCommandStart()
 			current.outputAlert.commandRunning = current.outputAlert.promptSeen
 			t.commandReporting = true
 			if t.folderIntegrationSeen {
@@ -1054,7 +1061,7 @@ func (state *State) openShell(session *Session) {
 	// A Windows host is no exception: what its shell is (PowerShell, or cmd.exe
 	// that cannot be integrated) is learned by the probe after the shell starts.
 	config.IntegrateShell = session.isLocal() || (session.host.isSSH() && !session.host.mosh() && !session.host.InteractiveOnly &&
-		session.containerCommand == "" && (!state.sftpFollowOff || state.sftpTerminalFollow || state.tabTitleMode == tabTitleDirectory ||
+		session.containerCommand == "" && (session.host.LoginCommand != "" || !state.sftpFollowOff || state.sftpTerminalFollow || state.tabTitleMode == tabTitleDirectory ||
 		!state.history.suggestOff && !session.host.NoHistory))
 	config.IntegrationToken = t.folderToken
 	if !session.isLocal() {
@@ -1461,6 +1468,7 @@ func (state *State) shellEnded(session *Session) {
 	t.shell.Close()
 	t.shell = nil
 	t.stopIdleKeepAlive()
+	state.abortLoginOnDisconnect(session)
 	t.login = loginCommand{}
 	t.injection = terminalInjection{}
 	t.finishExec(endShell)

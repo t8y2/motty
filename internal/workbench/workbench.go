@@ -3223,7 +3223,7 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	if result, handled := state.hostManagementKey(event); handled {
 		return result
 	}
-	if state.modal == modalNewHost && event.Key == gfx.KeyEnter && event.Modifiers == 0 && state.EditorFor(event.Target) != nil {
+	if state.modal == modalNewHost && event.Key == gfx.KeyEnter && event.Modifiers == 0 && event.Target != hitDialogLoginCommand && state.EditorFor(event.Target) != nil {
 		_, composing := state.EditorFor(event.Target).Composition()
 		if !event.Repeat && !composing {
 			state.submitHostDialog()
