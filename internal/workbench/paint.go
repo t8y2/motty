@@ -3385,8 +3385,6 @@ func (state *State) declareMoveHostGroupDialog(c ui.C) {
 	})
 }
 
-// declareHostGroupDeleteDialog declares the delete-group variant of the group
-// dialog: two radio choices for what happens to the hosts in it.
 // The delete-a-group dialog's body is the two choice rows; a refusal notice,
 // when shown, adds its measured lines above them.
 const (
@@ -3395,6 +3393,8 @@ const (
 	groupDeleteNoticeGap  = float32(4)
 )
 
+// declareHostGroupDeleteDialog declares the delete-group variant of the group
+// dialog: two radio choices for what happens to the hosts in it.
 func (state *State) declareHostGroupDeleteDialog(c ui.C) {
 	m := state.messages.HostGroupActions
 	body := groupDeleteChoiceRows
