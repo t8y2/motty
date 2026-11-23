@@ -1558,8 +1558,14 @@ func (state *State) declareHostsToolbar(c ui.C, width float32, plan hostsHeaderP
 				state.chrome.searchBound = true
 			}
 			state.chrome.searchField.Disabled = state.hostSort.enabled
-			ui.TextFieldID(c, hitSearch, &state.chrome.searchField, m.NavSearch, m.SearchPlaceholder).
+			field := ui.TextFieldID(c, hitSearch, &state.chrome.searchField, m.NavSearch, m.SearchPlaceholder).
 				Icon(lucideIcons[iconSearch]).FillWidth().Height(toolbarHeight).Disabled(state.hostSort.enabled)
+			if state.search.RuneCount() > 0 && !state.hostSort.enabled {
+				field = field.Action(lucideIcons[iconClose], m.SearchClear)
+				if field.ActionClicked() {
+					state.clearSearch()
+				}
+			}
 		})
 		b.connect = state.declareButtonSized(c, hitConnect, m.Connect, plan.connectIcon, false, false, state.typedQuery() != "", toolbarFont, plan.condensed).Size(plan.connectWidth, toolbarHeight).MarginSides(0, buttonGap, 0, 0)
 		ui.Spacer(c)

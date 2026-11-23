@@ -114,6 +114,7 @@ var TraditionalMessages = Messages{
 	NavDebug:                  "除錯",
 	NavSearch:                 "搜尋",
 	SearchPlaceholder:         "搜尋主機或 ssh user@hostname…",
+	SearchClear:               "清空搜尋",
 	CommandPaletteTitle:       "指令面板",
 	CommandPalettePlaceholder: "輸入指令…",
 	CommandPaletteEmpty:       "沒有符合的指令",

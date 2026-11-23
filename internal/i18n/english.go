@@ -114,6 +114,7 @@ var EnglishMessages = Messages{
 	NavDebug:                  "Debug",
 	NavSearch:                 "Search",
 	SearchPlaceholder:         "Search hosts or ssh user@hostname…",
+	SearchClear:               "Clear search",
 	CommandPaletteTitle:       "Command Palette",
 	CommandPalettePlaceholder: "Type a command…",
 	CommandPaletteEmpty:       "No matching commands",

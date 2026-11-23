@@ -2450,6 +2450,12 @@ func (state *State) openHostDialog() {
 	state.modal = modalNewHost
 }
 
+// clearSearch clears the hosts page's search query and restores the visible host list.
+func (state *State) clearSearch() {
+	state.search = text.Editor{}
+	state.syncVisible()
+}
+
 // syncVisible rebuilds the list of hosts the search box lets through when the
 // text or the host list changed since it was last built, and does nothing
 // otherwise, so painting an unchanged window stays free of work.
@@ -3573,8 +3579,7 @@ func (state *State) hostsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	switch event.Key {
 	case gfx.KeyEscape:
 		if event.Target == hitSearch && state.search.RuneCount() > 0 {
-			state.search = text.Editor{}
-			state.syncVisible()
+			state.clearSearch()
 			return handled, true
 		}
 	case gfx.KeyEnter:
