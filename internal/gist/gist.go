@@ -47,6 +47,10 @@ type Config struct {
 	// fine-grained token with the Gists permission, or a classic one with the
 	// gist scope), and nothing else.
 	Token string
+	// GitHubCLI takes the token from the GitHub CLI (`gh auth token`) instead
+	// of Token, which must then be empty. It is read for every operation and
+	// never kept. GitHub only; Gitee has no CLI.
+	GitHubCLI bool
 	// ID is the snippet that holds the backup; empty means none exists yet and
 	// the first Put creates a secret one (see Client.ID).
 	ID string
@@ -111,7 +115,12 @@ func New(config Config, client *http.Client) (*Client, error) {
 		return nil, fmt.Errorf("gist: %q is not an http or https address", config.APIBase)
 	}
 	config.Token = strings.TrimSpace(config.Token)
-	if config.Token == "" || strings.ContainsAny(config.Token, " \r\n\x00") {
+	switch {
+	case config.GitHubCLI && config.Provider != GitHub:
+		return nil, errors.New("gist: only GitHub has a command-line login")
+	case config.GitHubCLI && config.Token != "":
+		return nil, errors.New("gist: give an access token or the GitHub CLI, not both")
+	case !config.GitHubCLI && (config.Token == "" || strings.ContainsAny(config.Token, " \r\n\x00")):
 		return nil, errors.New("gist: an access token is required")
 	}
 	config.ID = strings.TrimSpace(config.ID)
@@ -150,7 +159,16 @@ func validID(provider Provider, id string) bool {
 	return true
 }
 
-func (client *Client) do(ctx context.Context, method, route string, body any) (*http.Response, error) {
+// token is the credential for one operation: the configured token, or the one
+// the GitHub CLI holds for the API's host right now.
+func (client *Client) token(ctx context.Context) (string, error) {
+	if !client.config.GitHubCLI {
+		return client.config.Token, nil
+	}
+	return readCLIToken(ctx, CLIHost(client.base.String()))
+}
+
+func (client *Client) do(ctx context.Context, token, method, route string, body any) (*http.Response, error) {
 	var reader io.Reader
 	if body != nil {
 		encoded, err := json.Marshal(body)
@@ -168,7 +186,7 @@ func (client *Client) do(ctx context.Context, method, route string, body any) (*
 			return nil, err
 		}
 		query := parsed.Query()
-		query.Set("access_token", client.config.Token)
+		query.Set("access_token", token)
 		parsed.RawQuery = query.Encode()
 		target = parsed.String()
 	}
@@ -177,7 +195,7 @@ func (client *Client) do(ctx context.Context, method, route string, body any) (*
 		return nil, err
 	}
 	if client.config.Provider == GitHub {
-		request.Header.Set("Authorization", "Bearer "+client.config.Token)
+		request.Header.Set("Authorization", "Bearer "+token)
 		request.Header.Set("Accept", "application/vnd.github+json")
 		request.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	} else {
@@ -335,8 +353,8 @@ func decodeGist(reader io.Reader) (apiGist, error) {
 }
 
 // fetch reads the snippet. found is false when it does not exist.
-func (client *Client) fetch(ctx context.Context) (g apiGist, found bool, err error) {
-	response, err := client.do(ctx, http.MethodGet, "/gists/"+client.config.ID, nil)
+func (client *Client) fetch(ctx context.Context, token string) (g apiGist, found bool, err error) {
+	response, err := client.do(ctx, token, http.MethodGet, "/gists/"+client.config.ID, nil)
 	if err != nil {
 		return g, false, err
 	}
@@ -356,14 +374,18 @@ func (client *Client) fetch(ctx context.Context) (g apiGist, found bool, err err
 
 // Test checks the token. With a snippet id it also checks that the snippet is there.
 func (client *Client) Test(ctx context.Context) error {
+	token, err := client.token(ctx)
+	if err != nil {
+		return err
+	}
 	if client.config.ID != "" {
-		_, found, err := client.fetch(ctx)
+		_, found, err := client.fetch(ctx, token)
 		if err == nil && !found {
 			return errors.New("gist: that snippet was not found with this token")
 		}
 		return err
 	}
-	response, err := client.do(ctx, http.MethodGet, "/gists?per_page=1", nil)
+	response, err := client.do(ctx, token, http.MethodGet, "/gists?per_page=1", nil)
 	if err != nil {
 		return err
 	}
@@ -379,7 +401,11 @@ func (client *Client) Get(ctx context.Context) (data []byte, tag string, err err
 	if client.config.ID == "" {
 		return nil, "", cloudsync.ErrNotFound
 	}
-	g, found, err := client.fetch(ctx)
+	token, err := client.token(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	g, found, err := client.fetch(ctx, token)
 	if err != nil {
 		return nil, "", err
 	}
@@ -446,6 +472,10 @@ func (client *Client) raw(ctx context.Context, file gistFile) (string, error) {
 // so another computer that saves between that read and the PATCH is not
 // noticed; the window is one round trip.
 func (client *Client) Put(ctx context.Context, data []byte, previous string) (tag string, err error) {
+	token, err := client.token(ctx)
+	if err != nil {
+		return "", err
+	}
 	content := base64.StdEncoding.EncodeToString(data)
 	if client.config.Provider == Gitee && len(content) > MaxFileBytes {
 		return "", fmt.Errorf("%w: a snippet file holds at most 1 MB, and this backup is %d KB as text", cloudsync.ErrTooLarge, len(content)/1000+1)
@@ -460,7 +490,7 @@ func (client *Client) Put(ctx context.Context, data []byte, previous string) (ta
 		if client.config.Provider == Gitee {
 			body = map[string]any{"description": "Motty encrypted backup", "files": files}
 		}
-		g, found, err := client.fetch(ctx)
+		g, found, err := client.fetch(ctx, token)
 		if err != nil {
 			return "", err
 		}
@@ -469,7 +499,7 @@ func (client *Client) Put(ctx context.Context, data []byte, previous string) (ta
 			return "", cloudsync.ErrChanged
 		}
 	}
-	response, err := client.do(ctx, method, route, body)
+	response, err := client.do(ctx, token, method, route, body)
 	if err != nil {
 		return "", err
 	}

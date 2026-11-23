@@ -272,6 +272,14 @@ func (state *State) backupErrorText(err error) string {
 			return m.SyncErrUnauthorized + " (" + detail
 		}
 		return m.SyncErrUnauthorized
+	case errors.Is(err, gist.ErrNoCLI):
+		return m.GistErrNoCLI
+	case errors.Is(err, gist.ErrCLINotSignedIn):
+		// gh's own words (which host, what to run) follow.
+		if _, detail, found := strings.Cut(err.Error(), " ("); found {
+			return m.GistErrCLISignedOut + " (" + detail
+		}
+		return m.GistErrCLISignedOut
 	case errors.Is(err, cloudsync.ErrNotFound):
 		return m.SyncErrNotFound
 	case errors.Is(err, cloudsync.ErrChanged):
@@ -690,7 +698,12 @@ func (state *State) syncLogin(retry func(), quiet bool) (store cloudsync.Store, 
 		state.openVaultUnlock(nil, retry)
 		return nil, "", false
 	}
-	secret, foundSecret, err := opened.Get(state.sync.secretName())
+	var secret string
+	foundSecret := true // a service with no secret (the GitHub CLI login) has none to miss
+	var err error
+	if name := state.sync.secretName(); name != "" {
+		secret, foundSecret, err = opened.Get(name)
+	}
 	if err == nil {
 		var foundBackup bool
 		backupPassword, foundBackup, err = opened.Get(backupPasswordSecret)

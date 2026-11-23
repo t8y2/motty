@@ -851,6 +851,10 @@ type ToolsMessages struct {
 	GistID                          string
 	GistFile                        string
 	GistAPI                         string
+	GistTokenPlaceholder            string
+	GistErrBackupPassword           string
+	GistErrNoCLI                    string
+	GistErrCLISignedOut             string
 	GistErrFields                   string
 	GistErrTooLarge                 string
 	GiteeDialogTitle                string

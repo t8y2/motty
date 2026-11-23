@@ -39,6 +39,11 @@ const (
 	giteeTokenSecret = "gitee:token"
 )
 
+// savedAuthGitHubCLI is how the state file says the GitHub token is read from
+// the GitHub CLI; an empty one is a token in the saved passwords, which came
+// first.
+const savedAuthGitHubCLI = "gh"
+
 // savedProviderGitee is how the state file names the Gitee snippet service;
 // an empty provider is GitHub, which came first.
 const savedProviderGitee = "gitee"
@@ -61,10 +66,12 @@ type savedS3 struct {
 }
 
 // gistSettings is where the backup is on a snippet service. The token is in the
-// vault.
+// vault, unless cli is set: then there is none, and every sync asks the GitHub
+// CLI for the one it holds.
 type gistSettings struct {
 	provider      gist.Provider
 	id, file, api string
+	cli           bool
 }
 
 // savedGist is gistSettings in the state file.
@@ -73,6 +80,7 @@ type savedGist struct {
 	ID       string `json:"id,omitempty"`
 	File     string `json:"file,omitempty"`
 	API      string `json:"api,omitempty"`
+	Auth     string `json:"auth,omitempty"`
 }
 
 func (saved *savedS3) settings() s3Settings {
@@ -90,7 +98,8 @@ func (saved *savedGist) settings() gistSettings {
 	if saved.Provider == savedProviderGitee {
 		provider = gist.Gitee
 	}
-	return gistSettings{provider: provider, id: saved.ID, file: saved.File, api: saved.API}
+	return gistSettings{provider: provider, id: saved.ID, file: saved.File, api: saved.API,
+		cli: provider == gist.GitHub && saved.Auth == savedAuthGitHubCLI}
 }
 
 func (settings gistSettings) saved() *savedGist {
@@ -98,10 +107,18 @@ func (settings gistSettings) saved() *savedGist {
 	if settings.provider == gist.Gitee {
 		saved.Provider = savedProviderGitee
 	}
+	if settings.cli {
+		saved.Auth = savedAuthGitHubCLI
+	}
 	return saved
 }
 
+// tokenSecretName is the vault entry of the access token; the GitHub CLI login
+// has none.
 func (settings gistSettings) tokenSecretName() string {
+	if settings.cli {
+		return ""
+	}
 	if settings.provider == gist.Gitee {
 		return giteeTokenSecret
 	}
@@ -122,7 +139,8 @@ func (view *syncState) configured() bool {
 	return view.url != ""
 }
 
-// secretName is the vault entry that holds the service's password, key or token.
+// secretName is the vault entry that holds the service's password, key or
+// token; empty when the service needs none (the GitHub CLI login).
 func (view *syncState) secretName() string {
 	switch view.kind {
 	case syncS3:
@@ -146,6 +164,8 @@ func (view *syncState) location() string {
 		name := "GitHub Gist"
 		if view.gist.provider == gist.Gitee {
 			name = "Gitee"
+		} else if view.gist.cli {
+			name = "GitHub Gist (gh)"
 		}
 		if view.gist.id == "" {
 			return name + " (" + file + ")"
@@ -162,6 +182,9 @@ func (view *syncState) fieldsError(m i18n.ToolsMessages) string {
 	case syncS3:
 		return m.S3ErrFields
 	case syncGist:
+		if view.gist.cli {
+			return m.GistErrBackupPassword
+		}
 		return m.GistErrFields
 	}
 	return m.SyncErrFields
@@ -175,7 +198,7 @@ func (view *syncState) newStore(secret string) (cloudsync.Store, error) {
 		config.AllowInsecureHTTP = view.allowInsecureHTTP
 		return s3.New(config, nil)
 	case syncGist:
-		return gist.New(gist.Config{Provider: view.gist.provider, Token: secret, ID: view.gist.id, File: view.gist.file, APIBase: view.gist.api}, nil)
+		return gist.New(gist.Config{Provider: view.gist.provider, Token: secret, GitHubCLI: view.gist.cli, ID: view.gist.id, File: view.gist.file, APIBase: view.gist.api}, nil)
 	}
 	return webdav.New(webdav.Config{URL: view.url, User: view.user, Password: secret, Path: view.path, AllowInsecureHTTP: view.allowInsecureHTTP}, nil)
 }
@@ -188,7 +211,7 @@ func (settings s3Settings) config(secret string) s3.Config {
 // switchSync makes next the service, forgetting what was known of the file on
 // the previous one, and drops the secrets of the services no longer used.
 func (state *State) switchSync(next syncState) {
-	if opened := state.secrets.vault; opened != nil && (next.kind != state.sync.kind || next.secretName() != state.sync.secretName()) {
+	if opened := state.secrets.vault; opened != nil && state.sync.secretName() != "" && (next.kind != state.sync.kind || next.secretName() != state.sync.secretName()) {
 		_ = opened.Delete(state.sync.secretName())
 	}
 	state.stopSyncTimer()
@@ -390,6 +413,9 @@ func (state *State) openSnippetConfigure(provider gist.Provider) {
 		{label: m.GistFile, placeholder: gist.DefaultFile},
 		{label: m.GistAPI, placeholder: gist.DefaultAPIBaseFor(provider)},
 	}
+	if provider == gist.GitHub {
+		fields[0].placeholder = m.GistTokenPlaceholder
+	}
 	fields = append(fields, formField{label: m.BackupPassword, placeholder: m.BackupPasswordPlaceholder, secure: true})
 	form := state.openForm(formDialog{
 		title: title, description: description, submit: m.SyncSave,
@@ -412,16 +438,27 @@ func (state *State) runSnippetConfigure(provider gist.Provider, form *formDialog
 	if settings.api == gist.DefaultAPIBaseFor(provider) {
 		settings.api = ""
 	}
+	// A saved token is kept when the field is left empty. With no token, GitHub
+	// takes it from the GitHub CLI; Gitee has no such login and needs one.
+	haveToken := state.sync.kind == syncGist && state.sync.gist.provider == provider && !state.sync.gist.cli &&
+		state.hasSyncSecret(settings.tokenSecretName())
+	settings.cli = provider == gist.GitHub && token == "" && !haveToken
 	secretName := settings.tokenSecretName()
-	haveToken := state.sync.kind == syncGist && state.sync.gist.provider == provider && state.hasSyncSecret(secretName)
 	haveBackup := state.hasSyncSecret(backupPasswordSecret)
-	if token == "" && !haveToken || backupPassword == "" && !haveBackup {
+	if token == "" && !haveToken && !settings.cli || backupPassword == "" && !haveBackup {
+		if settings.cli {
+			return m.GistErrBackupPassword
+		}
 		return m.GistErrFields
 	}
 	if backupPassword != "" && len(backupPassword) < backup.MinPasswordLength {
 		return m.BackupErrPasswordShort
 	}
-	if _, err := gist.New(gist.Config{Provider: provider, Token: "x", ID: settings.id, File: settings.file, APIBase: settings.api}, nil); err != nil {
+	check := gist.Config{Provider: provider, Token: "x", ID: settings.id, File: settings.file, APIBase: settings.api}
+	if settings.cli {
+		check.Token, check.GitHubCLI = "", true
+	}
+	if _, err := gist.New(check, nil); err != nil {
 		if errors.Is(err, cloudsync.ErrInsecure) {
 			return m.SyncErrInsecure
 		}

@@ -435,3 +435,74 @@ func TestSwitchingBetweenGitHubAndGiteeForgetsTheOtherToken(t *testing.T) {
 		t.Fatal("the GitHub token was not kept")
 	}
 }
+
+// With the token field left empty, GitHub syncs through the GitHub CLI: no token
+// is asked for, saved or sent from the vault, and the choice survives a restart.
+func TestAnEmptyGitHubTokenSyncsThroughTheGitHubCLI(t *testing.T) {
+	server, api := newFakeGistAPI(t)
+	var hosts []string
+	defer gist.UseGitHubCLIForTests(func(host string) (string, error) {
+		hosts = append(hosts, host)
+		return "ghp_token", nil
+	})()
+	state, options, _ := backupTestState(t)
+	state.Click(hitSyncConfigureGist)
+	fillForm(state, "", "", "", server.URL, testBackupPassword)
+	state.Click(hitFormSubmit)
+	if state.modal != modalNone {
+		t.Fatalf("an empty token was refused: %q", state.form.dialogError)
+	}
+	waitFor(t, state, func() bool { return state.status == state.messages.Tools.SyncTestOK })
+	if !state.sync.gist.cli {
+		t.Fatal("an empty token did not select the GitHub CLI")
+	}
+	if _, found, _ := state.secrets.vault.Get(gistTokenSecret); found {
+		t.Fatal("a token was saved although the GitHub CLI holds it")
+	}
+	syncAndWait(t, state, hitSyncNow, state.messages.Tools.SyncDone)
+	if !api.exists || state.sync.gist.id != "feedbeef" || len(hosts) == 0 {
+		t.Fatalf("nothing was uploaded through the CLI login: %+v hosts %v", state.sync.gist, hosts)
+	}
+	state.Close()
+
+	restored := newTestState(t, options)
+	if !restored.sync.gist.cli || restored.sync.gist.id != "feedbeef" {
+		t.Fatalf("a restart lost the GitHub CLI choice: %+v", restored.sync.gist)
+	}
+	// Typing a token afterwards is a different login: it is kept in the vault.
+	restored.activeSection, restored.settingsCategory = sectionSettings, settingsBackup
+	restored.Click(hitSyncConfigureGist)
+	// The fields still hold the gist and the server from before.
+	fillForm(restored, "ghp_token")
+	restored.Click(hitFormSubmit)
+	if restored.sync.gist.cli {
+		t.Fatalf("a typed token still used the GitHub CLI: %q", restored.form.dialogError)
+	}
+	if _, found, _ := restored.secrets.vault.Get(gistTokenSecret); !found {
+		t.Fatal("the typed token was not saved")
+	}
+}
+
+// A token that is saved stays in use when the field is left empty on a later
+// visit; the GitHub CLI is only the answer when there is no token to keep.
+func TestASavedGitHubTokenIsKeptWhenTheFieldIsLeftEmpty(t *testing.T) {
+	server, _ := newFakeGistAPI(t)
+	defer gist.UseGitHubCLIForTests(func(string) (string, error) { return "", gist.ErrNoCLI })()
+	state, _, _ := backupTestState(t)
+	configureGist(t, state, server, "")
+	state.Click(hitSyncConfigureGist) // the fields still hold the gist and the server
+	state.Click(hitFormSubmit)
+	if state.modal != modalNone || state.sync.gist.cli {
+		t.Fatalf("an empty token replaced the saved one: %q cli=%v", state.form.dialogError, state.sync.gist.cli)
+	}
+}
+
+func TestAMissingGitHubCLIIsReportedInPlainWords(t *testing.T) {
+	server, _ := newFakeGistAPI(t)
+	defer gist.UseGitHubCLIForTests(func(string) (string, error) { return "", gist.ErrNoCLI })()
+	state, _, _ := backupTestState(t)
+	state.Click(hitSyncConfigureGist)
+	fillForm(state, "", "", "", server.URL, testBackupPassword)
+	state.Click(hitFormSubmit)
+	waitFor(t, state, func() bool { return strings.Contains(state.status, state.messages.Tools.GistErrNoCLI) })
+}
