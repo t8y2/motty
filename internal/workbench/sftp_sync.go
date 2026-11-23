@@ -258,25 +258,98 @@ func (state *State) terminalFollowSkippedText(view *sftpView) string {
 
 func (state *State) followTerminalDirectory(session *Session) {
 	t := session.term
-	if t == nil || t.followPath == "" {
+	if t == nil {
 		return
 	}
-	if state.sftpFollowOff || !session.canBrowseFiles() || session.containerCommand != "" {
+	refresh := t.sftpRefreshPending
+	t.sftpRefreshPending = false
+	if !refresh && t.followPath == "" {
+		return
+	}
+	if !session.canBrowseFiles() || session.containerCommand != "" {
 		t.followPath = ""
 		return
 	}
-	view := session.files
 	if session.isLocal() {
-		state.followLocalTerminalDirectory(session, view)
+		prevPath := ""
+		if session.files != nil {
+			prevPath = session.files.lfolder.path
+		}
+		if t.followPath != "" {
+			if state.sftpFollowOff {
+				t.followPath = ""
+			} else {
+				state.followLocalTerminalDirectory(session, session.files)
+			}
+		}
+		if refresh && state.canRefreshLocalSFTPView(session, session.files) && session.files.lfolder.path == prevPath {
+			_ = state.refreshLocalDirectory(session.files)
+		}
 		return
 	}
-	directory := t.followPath
-	if !state.followSFTPViews(session, directory) {
-		// Nothing can take the folder yet (a listing, a dialog, an edit is in
-		// the way). Keep the report for the next pump instead of dropping it.
-		return
+	docked := session.files
+	window := state.sftpWindows[session.ID]
+	dockedCanRefresh := refresh && state.canRefreshDockedSFTPView(session, docked)
+	windowCanRefresh := refresh && window.canRefreshRemote()
+	dockedPrevPath, windowPrevPath := "", ""
+	if dockedCanRefresh {
+		dockedPrevPath = docked.path
 	}
-	t.followPath = ""
+	if windowCanRefresh {
+		windowPrevPath = window.view.path
+	}
+	if t.followPath != "" {
+		if state.sftpFollowOff {
+			t.followPath = ""
+		} else if state.followSFTPViews(session, t.followPath) {
+			// Nothing can take the folder yet (a listing, a dialog, an edit is in
+			// the way). Keep the report for the next pump instead of dropping it.
+			t.followPath = ""
+		}
+	}
+	// What was remembered is dropped only when the refresh is issued, so a
+	// view that cannot take it now keeps its cache and its directory tree.
+	if dockedCanRefresh && state.canRefreshDockedSFTPView(session, docked) && docked.path == dockedPrevPath {
+		docked.forgetListings()
+		state.refreshSFTPDirectory(docked, docked.path)
+	}
+	if windowCanRefresh && window.canRefreshRemote() && window.view.path == windowPrevPath {
+		window.view.forgetListings()
+		state.refreshSFTPDirectory(window.view, window.view.path)
+	}
+}
+
+func (state *State) canRefreshDockedSFTPView(session *Session, view *sftpView) bool {
+	if view == nil || view.detached != nil || view.worker == nil || view.local || view.path == "" || view.busy || view.dropping {
+		return false
+	}
+	if state.followSFTPUserBusy(session, view) || !state.sftpNavigationReady(view, false) {
+		return false
+	}
+	if state.sftpPathInput && view.pathField.path == view.path && view.pathField.editor.String() != view.path {
+		return false
+	}
+	return true
+}
+
+func (state *State) canRefreshLocalSFTPView(session *Session, view *sftpView) bool {
+	if view == nil || !view.localOnly || view.detached != nil || view.lfolder.path == "" || view.busy || view.localBusy || view.dropping {
+		return false
+	}
+	if state.followSFTPUserBusy(session, view) {
+		return false
+	}
+	if state.sftpPathInput && view.pathField.path == view.lfolder.path && view.pathField.editor.String() != view.lfolder.path {
+		return false
+	}
+	return true
+}
+
+func (w *sftpWindow) canRefreshRemote() bool {
+	return w != nil && !w.closed && w.connected() && w.view != nil && w.view.worker != nil && w.view.path != "" &&
+		!w.view.busy && !w.view.dropping && !w.listBlocked() && !w.navigationBusy() &&
+		!w.drag.armed && !w.drag.active && !w.foreign.active &&
+		w.view.editPath == "" && !w.view.pathEditing && !w.view.lfolder.pathEditing && !w.ui.profileQuickOpen
 }
 
 // followSFTPViews moves every open file panel for the session to directory: the

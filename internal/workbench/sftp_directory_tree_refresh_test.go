@@ -533,3 +533,45 @@ func TestSFTPDirectoryTreeActivationKeepsCollapsedAncestorsOfCurrentSelection(t 
 		t.Fatal("activation replaced the current tree selection")
 	}
 }
+
+func TestSFTPDirectoryTreeRefreshesAfterTerminalCommandKeepingExpansion(t *testing.T) {
+	state, w, remote, host, _ := dualSFTPFixture(t, 1)
+	enableRefreshTestTrees(t, state, w, remote, host)
+	session, ok := state.sessionByIDPointer(w.session.ID)
+	if !ok || session.term == nil {
+		t.Fatal("missing terminal session for SFTP window")
+	}
+
+	// Expand /home/test/docs in the remote directory tree before running terminal commands.
+	docsNode := directoryTreeTestNode(w, false, "/home/test/docs")
+	w.flattenDirectoryTree(1)
+	sftpTreeActivate(t, w, w.directoryTree[1].tree.DisclosureID(directoryTreeIndex(w, false, "/home/test/docs")))
+	waitDirectoryTree(t, state, w, host.windows[0].view, func() bool {
+		return docsNode.expanded && docsNode.loaded && !docsNode.loading
+	})
+
+	// Simulate `mkdir newdir && mkdir docs/nested && touch newfile.txt` in the terminal
+	// without switching to or activating the SFTP window.
+	if err := remote.Mkdir("/home/test/newdir"); err != nil {
+		t.Fatal(err)
+	}
+	if err := remote.Mkdir("/home/test/docs/nested"); err != nil {
+		t.Fatal(err)
+	}
+	remote.mu.Lock()
+	remote.entries["/home/test"] = append(remote.entries["/home/test"], workbenchFileInfo{name: "newfile.txt", mode: 0o644})
+	remote.mu.Unlock()
+
+	session.term.sftpRefreshPending = true
+	state.followTerminalDirectory(session)
+
+	waitDirectoryTree(t, state, w, host.windows[0].view, func() bool {
+		return sftpHasRow(w.view, "newdir") &&
+			sftpHasRow(w.view, "newfile.txt") &&
+			directoryTreeTestNode(w, false, "/home/test/newdir") != nil &&
+			directoryTreeTestNode(w, false, "/home/test/docs/nested") != nil
+	})
+	if !directoryTreeTestNode(w, false, "/home/test").expanded || !docsNode.expanded {
+		t.Fatal("terminal-triggered refresh collapsed previously expanded directory tree levels")
+	}
+}

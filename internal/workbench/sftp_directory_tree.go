@@ -663,11 +663,10 @@ func (w *sftpWindow) observeDirectoryTreeListing(local bool, directory string, e
 	// The panel can name a local folder by an 8.3 alias while the node holds
 	// the long name its listing recorded; resolve it as navigation does.
 	node := directoryTreeResolveNode(tree, local, directory)
-	if node == nil {
-		return
+	if node != nil {
+		cancelDirectoryTreeRead(tree, local, node)
+		w.setDirectoryTreeChildren(tree, local, node, entries, len(entries) > maxDirectoryTreeChildren)
 	}
-	cancelDirectoryTreeRead(tree, local, node)
-	w.setDirectoryTreeChildren(tree, local, node, entries, len(entries) > maxDirectoryTreeChildren)
 	w.loadExpandedDirectoryTree(local)
 	w.invalidate()
 }
