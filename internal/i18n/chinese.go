@@ -1597,6 +1597,7 @@ var chineseAISettings = AISettingsMessages{
 	ModelFilterAvailable: "可用",
 	ModelFilterFailed:    "失败",
 	ModelFilterEnabled:   "已启用",
+	ModelSortLabel:       "模型排序",
 	ModelSortDefault:     "默认",
 	ModelSortLatencyAsc:  "最快",
 	ModelSortLatencyDesc: "最慢",
