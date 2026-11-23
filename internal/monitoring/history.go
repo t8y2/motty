@@ -12,13 +12,14 @@ import (
 )
 
 type Panel struct {
-	ID        string   `json:"id"`
-	Name      string   `json:"name"`
-	Note      string   `json:"note,omitempty"`
-	Hosts     []string `json:"hosts"`
-	Simple    bool     `json:"simple,omitempty"`
-	Interval  int      `json:"interval"`
-	Retention int      `json:"retention_minutes"`
+	ID        string             `json:"id"`
+	Name      string             `json:"name"`
+	Note      string             `json:"note,omitempty"`
+	Hosts     []string           `json:"hosts"`
+	Simple    bool               `json:"simple,omitempty"`
+	Interval  int                `json:"interval"`
+	Retention int                `json:"retention_minutes"`
+	Display   map[string]Display `json:"display,omitempty"`
 }
 
 func ValidInterval(n int) bool  { return n == 2 || n == 5 || n == 10 || n == 30 || n == 60 }
@@ -39,6 +40,11 @@ func (p *Panel) Normalize() {
 		}
 	}
 	p.Hosts = hosts
+	for id := range p.Display {
+		if !seen[id] {
+			delete(p.Display, id)
+		}
+	}
 }
 
 type Status uint8
@@ -67,6 +73,7 @@ type Snapshot struct {
 	DetailsFailed bool
 	Updated       time.Time
 	Points        []Point
+	GPUs          []GPUHistory
 }
 type history struct {
 	Snapshot
@@ -74,6 +81,7 @@ type history struct {
 	head, count, limit int
 	gap                bool
 	next               time.Time
+	gpus               map[string]*gpuHistory
 }
 type runtime struct {
 	config  Panel
@@ -98,6 +106,7 @@ func (e *Engine) BeginSource(id string) uint64 {
 }
 
 func (e *Engine) Set(p Panel, running bool) {
+	p = p.Clone()
 	p.Normalize()
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -146,11 +155,28 @@ func (e *Engine) Set(p Panel, running bool) {
 			h.next = time.Time{}
 			h.Status = Connecting
 		}
+		if p.Metrics(id) != r.config.Metrics(id) {
+			h.gap = h.HasSample
+			h.next = time.Time{}
+			h.Sample = p.Metrics(id).FilterSample(h.Sample)
+			h.Details = p.Metrics(id).FilterDetails(h.Details)
+			if p.Metrics(id)&remotestats.GPUs == 0 {
+				for _, gpu := range h.gpus {
+					gpu.present = false
+				}
+			}
+		}
 		if p.Interval != r.config.Interval {
 			h.next = time.Time{}
 		}
 		if h.count > 0 {
 			h.prune(h.at(h.count - 1).At.Add(-time.Duration(p.Retention) * time.Minute))
+		}
+		for _, gpu := range h.gpus {
+			gpu.series.resize(limit)
+			if h.count > 0 {
+				gpu.series.prune(h.at(h.count - 1).At.Add(-time.Duration(p.Retention) * time.Minute))
+			}
 		}
 		h.Version++
 	}
@@ -162,7 +188,15 @@ func (e *Engine) Set(p Panel, running bool) {
 // hosts at the same cadence and retention. Name, note and display mode never
 // reach the history, so changing them alone does not invalidate it.
 func sameCollection(previous, p Panel) bool {
-	return previous.Interval == p.Interval && previous.Retention == p.Retention && slices.Equal(previous.Hosts, p.Hosts)
+	if previous.Interval != p.Interval || previous.Retention != p.Retention || !slices.Equal(previous.Hosts, p.Hosts) {
+		return false
+	}
+	for _, id := range p.Hosts {
+		if previous.Metrics(id) != p.Metrics(id) {
+			return false
+		}
+	}
+	return true
 }
 func (e *Engine) Remove(id string) { e.mu.Lock(); defer e.mu.Unlock(); delete(e.panels, id) }
 func (e *Engine) Wanted() map[string]int {
@@ -172,6 +206,9 @@ func (e *Engine) Wanted() map[string]int {
 	for _, r := range e.panels {
 		if r.running {
 			for _, id := range r.config.Hosts {
+				if r.config.Metrics(id) == 0 {
+					continue
+				}
 				if n, ok := result[id]; !ok || r.config.Interval < n {
 					result[id] = r.config.Interval
 				}
@@ -180,10 +217,21 @@ func (e *Engine) Wanted() map[string]int {
 	}
 	return result
 }
+
+// Metrics is the union of all running panels' needs for one shared host stream.
+func (e *Engine) Metrics(id string) remotestats.Metrics {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	var m remotestats.Metrics
+	e.each(id, func(r *runtime, _ *history) { m |= r.config.Metrics(id) })
+	return m
+}
 func (e *Engine) each(id string, f func(*runtime, *history)) {
 	for _, r := range e.panels {
 		if r.running {
-			if h := r.hosts[id]; h != nil {
+			// An empty card is stopped even when another panel still needs the
+			// shared source. Do not advance its status or retain empty samples.
+			if h := r.hosts[id]; h != nil && r.config.Metrics(id) != 0 {
 				f(r, h)
 			}
 		}
@@ -217,9 +265,9 @@ func (e *Engine) DetailsFrom(id string, generation uint64, d remotestats.Details
 	e.details(id, d, failed)
 }
 func (e *Engine) details(id string, d remotestats.Details, failed bool) {
-	e.each(id, func(_ *runtime, h *history) {
+	e.each(id, func(r *runtime, h *history) {
 		if !failed {
-			h.Details = d
+			h.Details = r.config.Metrics(id).FilterDetails(d)
 		}
 		h.DetailsFailed = failed
 		h.Version++
@@ -240,6 +288,7 @@ func (e *Engine) PublishFrom(id string, generation uint64, at time.Time, s remot
 }
 func (e *Engine) publish(id string, at time.Time, s remotestats.Sample) {
 	e.each(id, func(r *runtime, h *history) {
+		s := r.config.Metrics(id).FilterSample(s)
 		previousInterface := h.Sample.NetworkInterface
 		if h.count > 0 && !at.After(h.at(h.count-1).At) {
 			return
@@ -252,6 +301,7 @@ func (e *Engine) publish(id string, at time.Time, s remotestats.Sample) {
 		h.Status = Live
 		h.Updated = at
 		h.Version++
+		h.publishGPUs(at, s.GPUs, h.gap, time.Duration(r.config.Interval)*time.Second, at.Add(-time.Duration(r.config.Retention)*time.Minute))
 		if h.count > 0 && (h.gap || at.Sub(h.at(h.count-1).At) > time.Duration(r.config.Interval*3)*time.Second) {
 			last := h.at(h.count - 1).At
 			gapAt := last.Add(at.Sub(last) / 2)
@@ -269,7 +319,7 @@ func (e *Engine) publish(id string, at time.Time, s remotestats.Sample) {
 			v[2] = float32(s.ReceiveBytesPerSecond)
 			v[3] = float32(s.SendBytesPerSecond)
 		}
-		if !h.DetailsFailed {
+		if r.config.Metrics(id)&remotestats.Disks != 0 && !h.DetailsFailed {
 			for _, disk := range h.Details.Disks {
 				if !disk.Virtual && (h.Details.PrimaryDisk == "" || disk.Path == h.Details.PrimaryDisk) {
 					v[4] = float32(disk.Percent)
@@ -312,6 +362,7 @@ func (e *Engine) Read(panel, id string, buckets int, version uint64) (Snapshot, 
 	// thousands of points, and copying them all on every sample would cost more
 	// than the chart it feeds.
 	s.Points = reduce(h.count, h.at, max(1, buckets))
+	s.GPUs = h.readGPUs(max(1, buckets))
 	return s, true
 }
 func nan() float32                { return float32(math.NaN()) }

@@ -38,10 +38,9 @@ func (s *State) paintDashboardSimpleRow(c *gfx.Canvas, p *monitoring.Panel, h Ho
 func (s *State) paintDashboardSimpleMetrics(c *gfx.Canvas, r *dashboardRow, b gfx.Rect) {
 	m, pal := s.messages.Dashboard, s.pal
 	green, blue, amber := s.dashboardColors()
-	w := b.Width / 4
-	texts := [3]string{r.cpu, r.memory, "—"}
-	notes := [3]string{"", r.capacity, ""}
-	values := [3]float64{math.NaN(), math.NaN(), math.NaN()}
+	texts := [5]string{r.cpu, r.memory, "", "—", "—"}
+	notes := [5]string{"", r.capacity, "", "", ""}
+	values := [5]float64{math.NaN(), math.NaN(), math.NaN(), math.NaN(), math.NaN()}
 	if r.snapshot.HasSample {
 		if !r.snapshot.Sample.CPUUnavailable {
 			values[0] = r.snapshot.Sample.CPUPercent
@@ -52,25 +51,60 @@ func (s *State) paintDashboardSimpleMetrics(c *gfx.Canvas, r *dashboardRow, b gf
 	}
 	if len(r.disks) > 0 && !r.snapshot.DetailsFailed {
 		disk := r.disks[0]
-		texts[2] = fmt.Sprintf("%.0f%%", disk.Percent)
-		notes[2] = monitorCapacity(disk.Used, disk.Total)
-		values[2] = disk.Percent
+		texts[3] = fmt.Sprintf("%.0f%%", disk.Percent)
+		notes[3] = monitorCapacity(disk.Used, disk.Total)
+		values[3] = disk.Percent
 	}
-	colors := [3]gfx.Color{green, blue, amber}
-	labels := [3]string{m.CPU, m.Memory, m.Disk}
-	for i := 0; i < 3; i++ {
-		x := b.X + float32(i)*w
-		monitorLabel(c, labels[i], gfx.Rect{X: x, Y: b.Y + 8, Width: w - 18, Height: 18}, 12, pal.muted, gfx.WeightMedium)
-		monitorLabel(c, texts[i], gfx.Rect{X: x, Y: b.Y + 29, Width: w - 18, Height: 27}, 18, pal.text, gfx.WeightSemibold)
-		dashboardBar(c, gfx.Rect{X: x, Y: b.Y + 61, Width: w - 20, Height: 5}, values[i], colors[i], pal.line)
-		monitorLabel(c, notes[i], gfx.Rect{X: x, Y: b.Y + 72, Width: w - 18, Height: 20}, 11, pal.muted, gfx.WeightRegular)
+	if g, present := r.gpu(); len(r.snapshot.GPUs) > 0 {
+		texts[4] = dashboardGPUPercent(g, present)
+		memory, _, _, _ := dashboardGPUReading(g, present)
+		notes[4] = s.messages.Monitor.GPUMemory + " " + memory
+		if present && g.UtilPercent >= 0 {
+			values[4] = g.UtilPercent
+		}
 	}
-	x := b.X + 3*w
-	monitorLabel(c, m.Network, gfx.Rect{X: x, Y: b.Y + 8, Width: w - 6, Height: 18}, 12, pal.muted, gfx.WeightMedium)
-	monitorLabel(c, "↓ "+r.down, gfx.Rect{X: x, Y: b.Y + 31, Width: w - 6, Height: 24}, 12, green, gfx.WeightMedium)
-	monitorLabel(c, "↑ "+r.up, gfx.Rect{X: x, Y: b.Y + 60, Width: w - 6, Height: 24}, 12, blue, gfx.WeightMedium)
+	labels := [5]string{m.CPU, m.Memory, m.Network, m.Disk, s.messages.Monitor.GPU}
+	colors := [5]gfx.Color{green, blue, green, amber, green}
+	count := 0
+	for _, shown := range r.visible {
+		if shown {
+			count++
+		}
+	}
+	if count == 0 {
+		monitorLabel(c, m.NoDisplay, b, 12, pal.muted, gfx.WeightRegular)
+		return
+	}
+	width := b.Width / float32(count)
+	n := 0
+	for _, metric := range [5]int{0, 1, 3, 2, 4} {
+		if !r.visible[metric] {
+			continue
+		}
+		x := b.X + float32(n)*width
+		n++
+		monitorLabel(c, labels[metric], gfx.Rect{X: x, Y: b.Y + 8, Width: width - 12, Height: 18}, 12, pal.muted, gfx.WeightMedium)
+		if metric == 2 {
+			monitorLabel(c, "↓ "+r.down, gfx.Rect{X: x, Y: b.Y + 31, Width: width - 8, Height: 24}, 12, green, gfx.WeightMedium)
+			monitorLabel(c, "↑ "+r.up, gfx.Rect{X: x, Y: b.Y + 60, Width: width - 8, Height: 24}, 12, blue, gfx.WeightMedium)
+		} else {
+			offset := float32(0)
+			if metric == 3 && len(r.disks) > 0 && !r.snapshot.DetailsFailed {
+				monitorLabel(c, r.disks[0].Path+" · "+fmt.Sprintf(m.MountCount, len(r.disks)), gfx.Rect{X: x, Y: b.Y + 26, Width: width - 14, Height: 14}, 10, pal.muted, gfx.WeightRegular)
+				offset = 14
+			}
+			monitorLabel(c, texts[metric], gfx.Rect{X: x, Y: b.Y + 29 + offset, Width: width - 14, Height: 27}, 18, pal.text, gfx.WeightSemibold)
+			dashboardBar(c, gfx.Rect{X: x, Y: b.Y + 61 + offset, Width: width - 20, Height: 5}, values[metric], colors[metric], pal.line)
+			monitorLabel(c, notes[metric], gfx.Rect{X: x, Y: b.Y + 72 + offset, Width: width - 14, Height: 20}, 11, pal.muted, gfx.WeightRegular)
+		}
+	}
 }
+
 func (s *State) paintDashboardSimpleDeviceMetrics(c *gfx.Canvas, r *dashboardRow, b gfx.Rect) {
+	if r.simplePage == 3 {
+		s.paintDashboardGPUSimple(c, r, b)
+		return
+	}
 	m, pal := s.messages.Dashboard, s.pal
 	if r.snapshot.DetailsFailed {
 		monitorLabel(c, s.messages.Monitor.DetailsUnavailable, gfx.Rect{X: b.X, Y: b.Y + 22, Width: b.Width, Height: 45}, 12, pal.warning, gfx.WeightRegular)

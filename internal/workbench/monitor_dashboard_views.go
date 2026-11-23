@@ -51,6 +51,13 @@ func (s *State) paintDashboardHeading(c *gfx.Canvas, p *monitoring.Panel, h Host
 	s.paintHostCatalogIcon(c, h, gfx.Rect{X: b.X + 4, Y: y + 7, Width: 28, Height: 28}, pal.workspace)
 	rects := s.dashboardHeadingRects(c, h, b)
 	nameW := min(float32(190), c.TextWidthWeight(h.Label, 15, gfx.WeightSemibold)+4)
+	if b.Width < 600 {
+		reserve := float32(32 + 194)
+		if canSudo {
+			reserve += 36
+		}
+		nameW = min(nameW, max(64, b.Width-reserve))
+	}
 	monitorLabel(c, h.Label, gfx.Rect{X: b.X + 42, Y: y, Width: nameW, Height: 42}, 15, pal.text, gfx.WeightSemibold)
 	port := h.Port
 	if port == 0 {
@@ -60,20 +67,21 @@ func (s *State) paintDashboardHeading(c *gfx.Canvas, p *monitoring.Panel, h Host
 	addrX := b.X + 42 + nameW + 12
 	addrW := min(float32(220), c.TextWidthWeight(address, 12, gfx.WeightRegular)+4)
 	if b.Width < 600 {
-		reserve := float32(114)
+		end := min(rects.terminal.X, rects.display.X) - 8
 		if canSudo {
-			reserve += 36
+			end = rects.sudo.X - 8
 		}
-		addrW = min(addrW, max(90, b.Width-nameW-reserve))
+		addrW = min(addrW, max(0, end-addrX))
 	}
 	monitorLabel(c, address, gfx.Rect{X: addrX, Y: y, Width: addrW, Height: 42}, 12, pal.muted, gfx.WeightRegular)
 	s.paintDashboardState(c, p, h, r, rects.retry)
 	if b.Width > 1120 {
-		left := max(b.X+b.Width-302, rects.tabs.X+rects.tabs.Width+12+125+12)
-		width := b.X + b.Width - 50 - left
+		end := min(rects.terminal.X, rects.display.X) - 12
 		if canSudo {
-			width -= 36
+			end = rects.sudo.X - 12
 		}
+		left := max(end-220, rects.retry.X+rects.retry.Width+12)
+		width := end - left
 		if width >= 170 {
 			monitorRight(c, s.messages.Dashboard.Updated+" "+r.updated, gfx.Rect{X: left, Y: y + 7, Width: width, Height: 28}, 11, pal.muted, gfx.WeightRegular)
 		}
@@ -84,6 +92,10 @@ func (s *State) paintDashboardHeading(c *gfx.Canvas, p *monitoring.Panel, h Host
 func (s *State) paintDashboardState(c *gfx.Canvas, p *monitoring.Panel, h Host, r *dashboardRow, b gfx.Rect) {
 	dashboardGreen, _, _ := s.dashboardColors()
 	running := s.dashboard.running[p.ID]
+	if p.Metrics(h.CatalogID) == 0 {
+		monitorLabel(c, s.messages.Dashboard.Stopped, b, 12, s.pal.muted, gfx.WeightRegular)
+		return
+	}
 	if !running && r.snapshot.Status != monitoring.Missing {
 		return
 	}
@@ -118,6 +130,12 @@ func dashboardSimpleHeight(r *dashboardRow) float32 {
 	}
 	if r.simplePage == 2 {
 		n = len(r.snapshot.Details.Networks)
+	}
+	if r.simplePage == 3 {
+		n = len(r.snapshot.GPUs)
+	}
+	if r.visible[4] {
+		return max(float32(146), 40+float32(n)*30)
 	}
 	return max(dashboardSimpleRowLeast, 40+float32(n)*30)
 }
@@ -203,6 +221,9 @@ func (s *State) paintDashboardDeviceView(c *gfx.Canvas, p *monitoring.Panel, h H
 // dashboardViewIcons is the leading glyph of each host view: overview, disks
 // and network, in the order the view strip declares them.
 func dashboardViewIcons(index int) gfx.Icon {
+	if index == 3 {
+		return icons.Cpu
+	}
 	if index < 0 || index >= 3 {
 		return gfx.Icon{}
 	}
@@ -211,15 +232,32 @@ func dashboardViewIcons(index int) gfx.Icon {
 
 // dashboardViewOptions is the host view strip; the page declares it as ui.Tabs
 // and the window's key handler still uses Viva's tab navigation.
-func (s *State) dashboardViewOptions(host uint32, simple bool) [3]components.TabOption {
+func (s *State) dashboardViewOptions(host uint32, simple bool) [4]components.TabOption {
 	labels := [3]string{s.messages.Monitor.Overview, s.messages.Monitor.Disks, s.messages.Monitor.Network}
-	var out [3]components.TabOption
+	var out [4]components.TabOption
+	out[3].Disabled = true
 	for i, label := range labels {
 		id := hitDashboardViewList.At(int(host)*3 + i)
 		if simple {
 			id = hitDashboardSimpleViewList.At(int(host)*3 + i)
 		}
 		out[i] = components.TabOption{ID: id, Label: label, Icon: []gfx.Icon{icons.Gauge, icons.HardDrive, icons.Wifi}[i], Disabled: host == 0}
+	}
+	if p := s.dashboardPanel(); p != nil {
+		if h, ok := s.hostByID(host); ok {
+			out[1].Disabled = !p.Shows(h.CatalogID, "disks")
+			out[2].Disabled = !p.Shows(h.CatalogID, "network")
+			if row := s.dashboard.rows[p.ID+"/"+h.CatalogID]; row != nil && row.visible[4] {
+				index := int(host) * 2
+				if simple {
+					index++
+				}
+				out[3] = components.TabOption{ID: hitDashboardGPUView.At(index), Label: s.messages.Monitor.GPU, Icon: icons.Cpu}
+				if !simple {
+					out[1], out[2], out[3] = out[3], out[1], out[2]
+				}
+			}
+		}
 	}
 	return out
 }

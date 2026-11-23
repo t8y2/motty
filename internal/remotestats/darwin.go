@@ -83,16 +83,27 @@ func darwinSample(before, after darwinReading, elapsed time.Duration) Sample {
 }
 
 // StartDarwin samples a macOS host the way Start samples a Linux one.
-func StartDarwin(runner Runner, notify func(), seconds int) *Worker {
+func StartDarwin(runner Runner, notify func(), seconds int, selected ...Metrics) *Worker {
 	if !validInterval(seconds) {
 		seconds = 2
 	}
-	return startCommand(runner, notify, firstReadingTimeout, time.Duration(seconds)*time.Second+readingTimeout, darwinScript(seconds), kindDarwin)
+	script := darwinScript(seconds)
+	if len(selected) > 0 {
+		script = selectedDarwin(script, seconds, selection(selected))
+	}
+	return startCommand(runner, notify, firstReadingTimeout, time.Duration(seconds)*time.Second+readingTimeout, script, kindDarwin, selected...)
 }
 
 // StartDetailsDarwin is StartDetailsWithInterval for a macOS host.
-func StartDetailsDarwin(runner DetailRunner, notify func(), seconds int) *DetailsWorker {
-	return startDetails(runner, notify, seconds, detailsCommandDarwin)
+func StartDetailsDarwin(runner DetailRunner, notify func(), seconds int, selected ...Metrics) *DetailsWorker {
+	script := detailsCommandDarwin
+	if len(selected) > 0 {
+		if selection(selected)&(Disks|NetworkIO) == 0 {
+			return nil
+		}
+		script = selectedDetails(script, true, selection(selected))
+	}
+	return startDetails(runner, notify, seconds, script, selected...)
 }
 
 // top's first sample is not an interval's figure: its sys share ran well above

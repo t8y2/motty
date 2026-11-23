@@ -45,6 +45,7 @@ type Worker struct {
 	close   sync.Once
 	command string
 	kind    commandKind
+	metrics Metrics
 	// now is the receiver's clock, which times the macOS interface counters.
 	now func() time.Time
 }
@@ -61,19 +62,24 @@ func start(runner Runner, notify func(), first, next time.Duration) *Worker {
 
 // StartWithInterval changes the remote sampling interval without adding a
 // second timer or SSH stream. The initial quarter-second warmup stays fast.
-func StartWithInterval(runner Runner, notify func(), seconds int) *Worker {
+// Optional metrics remove disabled probes; omitted metrics keep all probes.
+func StartWithInterval(runner Runner, notify func(), seconds int, selected ...Metrics) *Worker {
 	if !validInterval(seconds) {
 		seconds = 2
 	}
 	script := strings.TrimSuffix(command, "sleep 1\ndone") + "sleep " + strconv.Itoa(seconds) + "\ndone"
-	return startCommand(runner, notify, firstReadingTimeout, time.Duration(seconds)*time.Second+readingTimeout, script, kindPOSIX)
+	if len(selected) > 0 {
+		script = selectedLinux(script, selection(selected))
+	}
+	return startCommand(runner, notify, firstReadingTimeout, time.Duration(seconds)*time.Second+readingTimeout, script, kindPOSIX, selected...)
 }
 
-func startCommand(runner Runner, notify func(), first, next time.Duration, script string, kind commandKind) *Worker {
+func startCommand(runner Runner, notify func(), first, next time.Duration, script string, kind commandKind, selected ...Metrics) *Worker {
 	if kind == kindPOSIX {
 		script = linuxShellCommand(script)
 	}
 	worker := newWorker(runner, notify, script, kind)
+	worker.metrics = selection(selected)
 	go worker.run(first, next)
 	return worker
 }
@@ -81,7 +87,7 @@ func startCommand(runner Runner, notify func(), first, next time.Duration, scrip
 func newWorker(runner Runner, notify func(), script string, kind commandKind) *Worker {
 	ctx, cancel := context.WithCancel(context.Background())
 	worker := &Worker{
-		runner: runner, notify: notify, ctx: ctx, cancel: cancel, command: script, kind: kind, now: time.Now,
+		runner: runner, notify: notify, ctx: ctx, cancel: cancel, command: script, kind: kind, metrics: AllMetrics, now: time.Now,
 		results: make(chan Result, 1), done: make(chan struct{}),
 	}
 	return worker
@@ -257,6 +263,11 @@ func isClosed(done <-chan struct{}) bool {
 // publish keeps the newest result in the one-slot channel. The worker is its
 // only sender, so after dropping an unread result the send cannot block.
 func (worker *Worker) publish(result Result) {
+	result.Sample = worker.metrics.FilterSample(result.Sample)
+	if result.Details != nil {
+		d := worker.metrics.FilterDetails(*result.Details)
+		result.Details = &d
+	}
 	for {
 		select {
 		case worker.results <- result:
