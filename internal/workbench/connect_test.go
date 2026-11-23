@@ -56,6 +56,9 @@ func TestConnectIsDisabledUntilTheSearchBoxHoldsSomething(t *testing.T) {
 func TestConnectOpensWhatTheSearchBoxHolds(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)
+	// This test walks the reuse path: the second Connect must land in the tab
+	// the first one opened. Reuse is off by default, so ask for it here.
+	state.startupReuse = true
 
 	// A target nobody saved: user, host and port are read from the text.
 	typeSearch(state, "ops@10.0.0.9:2201")
@@ -489,6 +492,7 @@ func TestSearchBoxKeepsSteadyStatePaintAllocationFree(t *testing.T) {
 func TestConnectingAndFailingStillWorksFromATypedTarget(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)
+	state.startupReuse = true
 	typeSearch(state, "solo.example.com")
 	state.Click(hitConnect)
 	fake := world.conns[0]
@@ -508,6 +512,7 @@ func TestConnectingAndFailingStillWorksFromATypedTarget(t *testing.T) {
 func TestTypingASavedHostInFullOpensThatHostNotADuplicate(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)
+	state.startupReuse = true
 	openHost(state) // Production, deploy@prod.example.com:22
 	state.Click(hitHosts)
 
