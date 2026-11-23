@@ -518,6 +518,7 @@ func (state *State) restoreWorkspaceDeck(saved *layoutcore.DeckDTO, sourceSessio
 				if len(panes) == 1 {
 					if session, ok := state.sessionByIDPointer(uint32(panes[0].SessionID)); ok {
 						state.renameSession(session, workspace.Title)
+						session.customTitle = session.customTitle || workspace.Named
 					}
 				}
 				state.initializeSFTPPanel(workspace.ID, true)

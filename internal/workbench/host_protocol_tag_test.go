@@ -17,6 +17,8 @@ func TestHostProtocolTagsAppearInListAndGrid(t *testing.T) {
 		{ID: 3, CatalogID: "protocol-serial", Label: "charlie", Address: "/dev/ttyUSB0", Protocol: protocolSerial},
 		{ID: 4, CatalogID: "protocol-vnc", Label: "delta", Address: "delta.example.com", User: "admin", Protocol: protocolVNC},
 		{ID: 5, CatalogID: "protocol-rdp", Label: "echo", Address: "echo.example.com", User: "admin", Protocol: protocolRDP},
+		{ID: 6, CatalogID: "protocol-sftp", Label: "foxtrot", Address: "files.example.com", Protocol: protocolSSH, Transfer: transferSFTP},
+		{ID: 7, CatalogID: "protocol-scp", Label: "golf", Address: "copy.example.com", Protocol: protocolSSH, Transfer: transferSCP},
 	}
 	state.hostDataChanged()
 
@@ -26,6 +28,8 @@ func TestHostProtocolTagsAppearInListAndGrid(t *testing.T) {
 	}
 	want := map[string]gfx.Color{
 		"SSH":    ansi(4),
+		"SFTP":   ansi(4),
+		"SCP":    ansi(4),
 		"Telnet": ansi(6),
 		"Serial": ansi(2),
 		"VNC":    ansi(5),

@@ -56,6 +56,7 @@ func (state *State) applyTabRename(workspace layoutcore.WorkspaceID, name string
 		if len(panes) == 1 {
 			if session, ok := state.sessionByIDPointer(uint32(panes[0].SessionID)); ok {
 				state.renameSession(session, name)
+				session.customTitle = true
 			}
 		}
 		state.rebuildTabOptions()
@@ -78,6 +79,7 @@ func (state *State) clickTabRenameDialog(id gfx.ID) {
 		state.dialogError = ""
 		if session, ok := state.sessionByIDPointer(state.tabRename.session); ok {
 			state.renameSession(session, name)
+			session.customTitle = true
 			state.rebuildTabOptions()
 			state.save()
 		}

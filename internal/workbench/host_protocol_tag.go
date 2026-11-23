@@ -2,11 +2,13 @@ package workbench
 
 import "github.com/vivaui/viva/gfx"
 
-// hostProtocolTagLabel names a host's protocol the way the host form's protocol
-// choice does, so a tag on the hosts page follows the selection made there.
+// hostProtocolTagLabel 显示连接类型；SSH 手动指定文件传输协议时显示该选择。
 func (state *State) hostProtocolTagLabel(host Host) string {
 	if host.mosh() {
 		return state.messages.Tools.ProtocolMosh
+	}
+	if host.Protocol == protocolSSH && (host.Transfer == transferSFTP || host.Transfer == transferSCP) {
+		return state.hostTransferChoiceLabel(host.Transfer)
 	}
 	return state.hostProtocolChoiceLabel(host.Protocol)
 }

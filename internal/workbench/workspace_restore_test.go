@@ -113,7 +113,7 @@ func TestWorkspaceRestoreIgnoresUnknownOrInvalidLayoutMetadata(t *testing.T) {
 	workspace := launchTemporaryWorkspace(t, state, 0, 1)
 	state.restoreWorkspaceLayouts([]savedWorkspaceLayout{
 		{ID: workspace, Layout: layoutcore.GridSpec(0), Temporary: true},
-		{ID: workspace, Layout: layoutcore.GridSpec(4), Temporary: true},
+		{ID: workspace, Layout: layoutcore.GridSpec(layoutcore.MaxGridColumns + 1), Temporary: true},
 		{ID: 0, Layout: layoutcore.GridSpec(1)},
 		{ID: workspace + 100, Layout: layoutcore.GridSpec(1)},
 	})

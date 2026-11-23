@@ -685,6 +685,7 @@ func (state *State) declareShell(c ui.C) {
 	state.declareDashboardAddMenu(c)
 	// The drag overlay is hitless and paints over the page on the drag layer.
 	state.declareTabDragOverlays(c)
+	state.declareWorkspaceFocusDragOverlay(c)
 	state.declareWorkspaceCardDragOverlay(c)
 	state.declareToolbarDockDragOverlay(c)
 	state.declareTransferProgressCards(c)

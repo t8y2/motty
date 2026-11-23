@@ -148,7 +148,7 @@ func TestLaunchWorkspaceRejectsAnInvalidPlanBeforeCreatingAnything(t *testing.T)
 	}{
 		{"empty", WorkspaceLaunchPlan{Layout: layoutcore.GridSpec(1)}},
 		{"too many", WorkspaceLaunchPlan{Hosts: make([]Host, layoutcore.MaxPanes+1), Layout: layoutcore.GridSpec(2)}},
-		{"columns", WorkspaceLaunchPlan{Hosts: []Host{testWorkspaceHost("web", "web.example.com")}, Layout: layoutcore.GridSpec(4)}},
+		{"columns", WorkspaceLaunchPlan{Hosts: []Host{testWorkspaceHost("web", "web.example.com")}, Layout: layoutcore.GridSpec(layoutcore.MaxGridColumns + 1)}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

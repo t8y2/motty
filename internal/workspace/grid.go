@@ -4,7 +4,7 @@ import "errors"
 
 const (
 	MinGridColumns = 1
-	MaxGridColumns = 3
+	MaxGridColumns = 4
 )
 
 var (
