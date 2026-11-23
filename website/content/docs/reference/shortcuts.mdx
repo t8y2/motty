@@ -17,6 +17,7 @@ can be changed in settings.
     { action: 'File panel', mac: 'Command+Shift+S', other: 'Control+Shift+S' },
     { action: 'New window', mac: 'Command+Shift+N', other: 'Control+Shift+N' },
     { action: 'Open local terminal', mac: 'Command+Shift+T', other: 'Control+Shift+T' },
+    { action: 'Duplicate terminal', mac: 'Alt+Shift+T', other: 'Alt+Shift+T' },
     { action: 'Next tab', mac: 'Control+Tab', other: 'Control+Tab' },
     { action: 'Previous tab', mac: 'Control+Shift+Tab', other: 'Control+Shift+Tab' },
     { action: 'Jump to tab 1–9', mac: 'Command+1…9', other: 'Control+1…9' },
@@ -45,3 +46,7 @@ is on stays, so a command being typed is not lost.
 
 Inside a remote-desktop tab Motty's shortcuts are suspended and keys go to the
 remote. **Ctrl+Alt+G** releases the keyboard.
+
+`Alt+Shift+T` inserts a copy after the current terminal, inheriting its connection, working directory, and custom name. Automatic names are generated anew. Each workspace supports up to 12 terminals. Duplication balances an unchanged automatic grid, with the final row sharing the full width. In a custom layout, it splits only the source pane and preserves the other dividers. A maximized terminal stays maximized; restoring shows all panes. Toggling maximization without duplicating preserves the original layout.
+
+While maximized, drag the bottom terminal tabs to reorder them. Dropping saves the order, which also applies to the restored tiled view without changing split proportions and survives restarting the app. Drag near either edge to scroll the tab strip, or press Esc to cancel.

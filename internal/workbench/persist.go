@@ -366,6 +366,7 @@ type savedProxy struct {
 }
 
 type savedSession struct {
+	CustomTitle      *bool            `json:"custom_title,omitempty"`
 	WorkspaceCommand WorkspaceCommand `json:"workspace_command,omitzero"`
 	Label            string           `json:"label,omitempty"`
 	// Mention is the session's unique @ name; absent in older files and then
@@ -800,14 +801,14 @@ func (state *State) snapshot() savedState {
 			continue
 		}
 		if session.isLocal() {
-			saved.Sessions = append(saved.Sessions, savedSession{Label: session.Title, Mention: session.Mention, Local: true, LocalDirectory: session.localDirectory, LocalShell: session.host.localShell})
+			saved.Sessions = append(saved.Sessions, savedSession{CustomTitle: savedCustomSessionTitle(session.customTitle), Label: session.Title, Mention: session.Mention, Local: true, LocalDirectory: session.localDirectory, LocalShell: session.host.localShell})
 			if session.ID == state.activeSessionID {
 				saved.ActiveSession = len(saved.Sessions)
 			}
 			continue
 		}
 		saved.Sessions = append(saved.Sessions, savedSession{
-			Label: session.Title, Mention: session.Mention, Address: session.host.Address, User: session.host.User,
+			CustomTitle: savedCustomSessionTitle(session.customTitle), Label: session.Title, Mention: session.Mention, Address: session.host.Address, User: session.host.User,
 			Port: session.host.Port, System: session.host.System.String(), SavedHost: session.HostID != 0,
 			CatalogID: session.savedCatalogID(), RemoteDirectory: session.startDirectory,
 			WorkspaceCommand: session.workspaceCommand,
@@ -1546,8 +1547,9 @@ func (state *State) restoreSessions(entries []savedSession, active int) []uint32
 		}
 		state.sessions = append(state.sessions, Session{
 			ID: state.nextSessionID, HostID: host.ID, Title: title, Mention: entry.Mention,
-			Address: state.sessionAddress(host),
-			host:    host, phase: sshconn.PhaseClosed, restored: true, paneSlot: state.claimPaneSlot(),
+			customTitle: restoredCustomSessionTitle(entry.CustomTitle, title, host.Label),
+			Address:     state.sessionAddress(host),
+			host:        host, phase: sshconn.PhaseClosed, restored: true, paneSlot: state.claimPaneSlot(),
 		})
 		session := &state.sessions[len(state.sessions)-1]
 		if workspaceCommandHost(host) {

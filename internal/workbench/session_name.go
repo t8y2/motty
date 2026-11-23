@@ -56,3 +56,30 @@ func (state *State) renameSession(session *Session, title string) {
 		_ = state.deck.Rename(workspace, session.Title)
 	}
 }
+
+// legacyCustomSessionTitle 兼容未保存名称来源的旧记录。
+// 默认标题仅为主机名或主机名加自动编号，其余名称按自定义保留。
+func legacyCustomSessionTitle(title, base string) bool {
+	base = cleanSessionTitle(base)
+	if title == base {
+		return false
+	}
+	suffix, numbered := strings.CutPrefix(title, base+"-")
+	if numbered {
+		number, err := strconv.Atoi(suffix)
+		if err == nil && number >= 2 && strconv.Itoa(number) == suffix {
+			return false
+		}
+	}
+	return true
+}
+
+// 保存显式 false，以区别旧版本完全没有来源标记的记录。
+func savedCustomSessionTitle(custom bool) *bool { return &custom }
+
+func restoredCustomSessionTitle(custom *bool, title, base string) bool {
+	if custom != nil {
+		return *custom
+	}
+	return legacyCustomSessionTitle(title, base)
+}

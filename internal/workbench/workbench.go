@@ -2731,6 +2731,9 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result, handled := state.tabMiddlePointer(event); handled {
 		return result
 	}
+	if result, handled := state.workspaceFocusTabsPointer(event); handled {
+		return result
+	}
 	if result, handled := state.tabDragPointer(event); handled {
 		return result
 	}

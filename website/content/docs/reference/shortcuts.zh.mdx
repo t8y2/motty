@@ -17,6 +17,7 @@ description: 默认快捷键，全部可以修改。
     { action: '文件面板', mac: 'Command+Shift+S', other: 'Control+Shift+S' },
     { action: '新建窗口', mac: 'Command+Shift+N', other: 'Control+Shift+N' },
     { action: '打开本地终端', mac: 'Command+Shift+T', other: 'Control+Shift+T' },
+    { action: '复制终端', mac: 'Alt+Shift+T', other: 'Alt+Shift+T' },
     { action: '下一个标签页', mac: 'Control+Tab', other: 'Control+Tab' },
     { action: '上一个标签页', mac: 'Control+Shift+Tab', other: 'Control+Shift+Tab' },
     { action: '跳到第 1–9 个标签页', mac: 'Command+1…9', other: 'Control+1…9' },
@@ -32,3 +33,7 @@ description: 默认快捷键，全部可以修改。
 清空屏幕会同时清掉它上方的滚动历史，但光标所在的那一行会保留，正在输入的命令不会丢。
 
 在远程桌面标签页里，Motty 的快捷键会暂停，按键都发给远端。**Ctrl+Alt+G** 释放键盘。
+
+`Alt+Shift+T` 在当前终端后插入副本，继承连接、工作目录和用户自定义名称，默认名称重新生成。每个工作区最多 12 个终端。未调整过的自动网格在复制后重新均分，末行占满宽度；自定义布局只拆分源面板，保留其他分屏比例。最大化时保持最大化，还原后显示全部终端。仅切换最大化而未复制时，原分屏布局不变。
+
+最大化后可按住底部终端标签左右拖动排序，松开后保存。还原平铺时使用相同顺序，分屏比例保持不变；退出并重新打开程序也会恢复此顺序。拖到标签条边缘可自动滚动，按 Esc 取消拖动。
