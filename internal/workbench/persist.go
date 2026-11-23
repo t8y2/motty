@@ -93,8 +93,9 @@ type savedState struct {
 	// StartupDisabled is the feature switch of what a launch opens, stored
 	// negated so that a fresh install without this key has the feature on.
 	StartupDisabled bool `json:"startup_disabled,omitempty"`
-	// StartupNoReuse is the launch's reuse switch, stored negated so that a
-	// fresh install without this key reuses what is already open.
+	// StartupReuse is the reuse switch: when on, connecting a host or opening
+	// sessions at launch switches to an existing session in this window.
+	StartupReuse            bool                `json:"startup_reuse,omitempty"`
 	StartupNoReuse          bool                `json:"startup_no_reuse,omitempty"`
 	TerminalClipboard       string              `json:"terminal_clipboard,omitempty"`
 	TerminalCursorSteady    bool                `json:"terminal_cursor_steady,omitempty"`
@@ -585,7 +586,7 @@ func (state *State) snapshot() savedState {
 		StartupShell:               state.startupShell,
 		StartupHosts:               slices.Clone(state.startupHosts),
 		StartupDisabled:            !state.startupEnabled,
-		StartupNoReuse:             !state.startupReuse,
+		StartupReuse:               state.startupReuse,
 		TerminalClipboard:          state.terminalClipboard.String(),
 		TerminalCursorSteady:       state.terminalCursorSteady,
 		TerminalCursorThickness:    state.terminalCursorThickness.String(),
@@ -1164,7 +1165,7 @@ func (state *State) restoreLocal(saved savedState) {
 	state.startupShell = saved.StartupShell
 	state.startupHosts = cleanStartupHosts(saved.StartupHosts)
 	state.startupEnabled = !saved.StartupDisabled
-	state.startupReuse = !saved.StartupNoReuse
+	state.startupReuse = saved.StartupReuse
 	state.ai.panelWidth = saved.AIPanelWidth
 	if saved.AIComposerHeight > 0 {
 		state.ai.composerHeight = saved.AIComposerHeight

@@ -190,3 +190,45 @@ func TestHostsPanelSearchClearButton(t *testing.T) {
 		t.Fatal("clear button still present after clearing")
 	}
 }
+
+func TestHostsPanelConnectTwiceDoesNotLimitTabs(t *testing.T) {
+	state := hostsPanelFixture(t)
+	initial := len(state.sessions)
+	host := state.hosts[0]
+	// First connect from session manager opens a session.
+	state.connectHostsPanelHost(host)
+	if len(state.sessions) != initial+1 {
+		t.Fatalf("first connect: sessions=%d, want %d", len(state.sessions), initial+1)
+	}
+	firstID := state.activeSessionID
+
+	// Second connect from session manager: user double clicks the same host again
+	state.connectHostsPanelHost(host)
+	if len(state.sessions) != initial+2 {
+		t.Fatalf("second connect: sessions=%d, want %d (tabs must not be limited)", len(state.sessions), initial+2)
+	}
+	if state.activeSessionID == firstID {
+		t.Fatalf("second connect: active session=%d, want new session", state.activeSessionID)
+	}
+}
+
+func TestHostsPanelConnectReusesWhenEnabled(t *testing.T) {
+	state := hostsPanelFixture(t)
+	state.startupReuse = true
+	initial := len(state.sessions)
+	host := state.hosts[0]
+	state.connectHostsPanelHost(host)
+	if len(state.sessions) != initial+1 {
+		t.Fatalf("first connect: sessions=%d, want %d", len(state.sessions), initial+1)
+	}
+	firstID := state.activeSessionID
+
+	// Second connect reuses the existing session when startupReuse is enabled.
+	state.connectHostsPanelHost(host)
+	if len(state.sessions) != initial+1 {
+		t.Fatalf("second connect: sessions=%d, want %d (must reuse)", len(state.sessions), initial+1)
+	}
+	if state.activeSessionID != firstID {
+		t.Fatalf("second connect: active session=%d, want %d", state.activeSessionID, firstID)
+	}
+}
