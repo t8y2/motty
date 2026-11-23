@@ -1,9 +1,9 @@
 // Package netclient builds the HTTP clients the application's own requests
 // use. Where a request goes is the desktop's decision: an explicit proxy in
 // the environment when there is one, otherwise the system's proxy settings. A
-// desktop whose policy cannot be read, such as a macOS proxy configuration
-// script, fails the request instead of sending it direct, which would bypass
-// that policy.
+// desktop whose policy cannot be read or evaluated fails the request instead
+// of sending it direct, which would bypass that policy. PAC evaluation follows
+// the request's cancellation and deadline.
 package netclient
 
 import (
