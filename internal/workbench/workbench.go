@@ -760,6 +760,9 @@ type State struct {
 	terminalScrollback int
 	terminalFindPrefs  terminalFindPreferences
 	findSettingsUI     terminalFindSettingsUI
+	// terminalZoomSaveTimer coalesces a primary+wheel burst into one save once the
+	// gesture settles; see scheduleTerminalZoomSave.
+	terminalZoomSaveTimer *time.Timer
 	// interfaceTextSize is the body text size the user chose, in logical pixels:
 	// the size the whole window's text is drawn at, apart from the terminal's own
 	// font size.
@@ -1173,6 +1176,9 @@ func (state *State) Close() {
 	}
 	state.stopNetworkWatch()
 	state.closeWindowChrome()
+	// The window's save above already carried any applied font size, so a wheel
+	// save still waiting is dropped rather than fired after the store closes.
+	state.stopTerminalZoomSave()
 	state.closeAI()
 	state.closeHistory()
 	state.stopSyncTimer()

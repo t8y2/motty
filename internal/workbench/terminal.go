@@ -176,6 +176,11 @@ type terminal struct {
 	paintFind                                 findBarSlots
 	paintSpinner, paintLight                  ui.Box
 
+	// zoomWheel is the precise (trackpad) primary+wheel travel of this pane not yet
+	// worth one font-size point; see terminalZoomScroll. It is the pane's own, like
+	// wheelX and wheelY, so half a step in one pane does not complete in another.
+	zoomWheel float32
+
 	// preedit is the input-method composition, shown at the cursor.
 	preedit      app.TextState
 	inputGuard   terminalInputGuard
@@ -2455,13 +2460,25 @@ func (state *State) scroll(event gfx.ScrollEvent) gfx.EventResult {
 
 // terminalScroll turns the wheel into scrollback, or mouse reports, or arrow
 // keys on the alternate screen, where a pager or editor owns the display and
-// has no scrollback.
+// has no scrollback. A primary-modifier wheel instead resizes the terminal's font,
+// except where a program is reporting the mouse and has asked for the gesture.
 func (state *State) terminalScroll(session *Session, event gfx.ScrollEvent) gfx.EventResult {
 	t := session.term
 	modes := t.screen.Modes()
 	session.term.pageIdentity(session.ID)
+	// When a program asks for the mouse, the wheel is its to read: the report is
+	// forwarded with the pointer's modifiers, so a primary-modifier wheel reaches
+	// vim or tmux as an xterm-encoded gesture instead of being spent here. Only
+	// when nothing is reporting does the primary modifier plus the wheel resize
+	// the terminal's font, the same change the primary+/- shortcuts make: Command
+	// on macOS, Control on Windows and Linux. It is keyed on keymap.Primary alone,
+	// so a bare Ctrl+wheel on macOS stays the system's own zoom gesture and Win+wheel
+	// on Windows stays the shell's, rather than this window stealing either.
 	if modes.Mouse != term.MouseOff && event.Target == session.term.controlID && event.Modifiers&gfx.ModifierShift == 0 {
 		return state.terminalMouseScroll(session, event)
+	}
+	if event.Modifiers&keymap.Primary != 0 && event.Modifiers&gfx.ModifierShift == 0 {
+		return state.terminalZoomScroll(session, event)
 	}
 	if modes.AltScreen {
 		if modes.Mouse != term.MouseOff || !modes.AlternateScroll {
@@ -2489,6 +2506,40 @@ func (state *State) terminalScroll(session *Session, event gfx.ScrollEvent) gfx.
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	return gfx.EventResult{Handled: true}
+}
+
+// terminalZoomTrackpadUnit is how far a precise (trackpad) primary+wheel gesture
+// must travel, in logical pixels, to change the terminal font size by one point.
+const terminalZoomTrackpadUnit = float32(60)
+
+// terminalZoomScroll turns a primary-modifier wheel into a font-size step, the
+// same change the primary+/- shortcuts make: applyZoom clamps it to the size
+// range. A classic wheel moves one point per notch; a precise trackpad gesture
+// accumulates and steps once it has travelled far enough, so the size never races
+// ahead of the fingers. Scrolling up enlarges the text. Like the shortcuts, each step
+// reports the size now in effect on the status line, and the write to disk waits
+// until the gesture settles so a burst of wheeling saves once.
+func (state *State) terminalZoomScroll(session *Session, event gfx.ScrollEvent) gfx.EventResult {
+	steps := float32(0)
+	if event.Precise {
+		wheel := &session.term.zoomWheel
+		*wheel += -event.DeltaY / terminalZoomTrackpadUnit
+		steps = float32(int(*wheel))
+		*wheel -= steps
+	} else if event.DeltaY != 0 {
+		steps = 1
+		if event.DeltaY > 0 {
+			steps = -1
+		}
+	}
+	if steps == 0 {
+		return gfx.EventResult{Handled: true}
+	}
+	changed := state.applyZoom(steps, false)
+	if changed {
+		state.scheduleTerminalZoomSave()
+	}
+	return gfx.EventResult{Handled: true, Repaint: true}
 }
 
 func (state *State) terminalMouseScroll(session *Session, event gfx.ScrollEvent) gfx.EventResult {
