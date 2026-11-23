@@ -346,6 +346,7 @@ func sameShape(a, b []string) bool {
 // looks inside every group, closed or not, and shows the matches alone.
 func TestSnippetPickerGroupsFoldAndStartClosed(t *testing.T) {
 	state := newTestState(t, freshOptions(t))
+	state.snippets.pickerGrouped = true
 	addTestSnippets(state,
 		snippet{Name: "a", Command: "a", Group: "Ops"},
 		snippet{Name: "b", Command: "b"},
@@ -396,6 +397,7 @@ func TestSnippetPickerGroupsFoldAndStartClosed(t *testing.T) {
 // and Left closes it, and Enter on a snippet inside still sends it.
 func TestSnippetPickerGroupsFoldFromTheKeyboard(t *testing.T) {
 	state := newTestState(t, freshOptions(t))
+	state.snippets.pickerGrouped = true
 	addTestSnippets(state, snippet{Name: "a", Command: "a", Group: "Ops"})
 	state.openSnippetPicker()
 	palette := &state.commandPalette

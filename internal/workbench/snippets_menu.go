@@ -18,12 +18,13 @@ var (
 // snippetMenu is the right-click menu of a row of the Snippets page: which
 // snippet, and where it was asked for. Closed, it costs nothing.
 type snippetMenu struct {
-	open    bool
-	pick    bool // lists the terminals to send to, instead of the row's actions
-	fromBar bool // opened from a chip of the command bar, not from the page
-	index   int
-	name    string // the snippet the menu was opened on, to notice a rebuilt list
-	at      gfx.Point
+	open       bool
+	pick       bool // lists the terminals to send to, instead of the row's actions
+	fromPicker bool
+	fromBar    bool // opened from a chip of the command bar, not from the page
+	index      int
+	name       string // the snippet the menu was opened on, to notice a rebuilt list
+	at         gfx.Point
 }
 
 // openSnippetMenuOn is called while painting a snippet row: when this paint is the
@@ -58,8 +59,10 @@ func (state *State) declareSnippetMenu(c ui.C) {
 	if !menu.open {
 		return
 	}
-	if menu.index < 0 || menu.index >= len(state.snippets.list) || state.snippets.list[menu.index].Name != menu.name || state.modal != modalNone ||
-		(!menu.fromBar && state.activeSection != sectionSnippets) ||
+	picker := menu.fromPicker && state.modal == modalCommandPalette && state.commandPalette.snippets
+	if menu.index < 0 || menu.index >= len(state.snippets.list) || state.snippets.list[menu.index].Name != menu.name ||
+		(menu.fromPicker && !picker) || (!menu.fromPicker && state.modal != modalNone) ||
+		(!menu.fromBar && !menu.fromPicker && state.activeSection != sectionSnippets) ||
 		(menu.fromBar && (!state.terminalPage() || !state.commands.shown || !state.commandsBarAvailable())) {
 		menu.open = false
 		return
@@ -80,7 +83,7 @@ func (state *State) declareSnippetMenu(c ui.C) {
 			rows.add(components.ContextMenuItem{ID: hitSnippetPickList.At(int(session.ID)), Label: session.Title, Icon: icon(iconTerminal), Shortcut: current})
 		}
 	} else {
-		state.snippetActionRows(&rows, !menu.fromBar)
+		state.snippetActionRows(&rows, !menu.fromBar && !menu.fromPicker)
 	}
 	state.declareRowsMenu(c, &menu.open, menu.at, hitSnippetMenuDismiss, &rows, state.chooseSnippetMenu)
 }
@@ -91,7 +94,9 @@ func (state *State) declareSnippetMenu(c ui.C) {
 func (state *State) snippetActionRows(rows *menuRows, moves bool) {
 	m := state.messages.Tools
 	icon := func(kind uint8) gfx.Icon { return lucideIcons[kind] }
-	rows.add(components.ContextMenuItem{ID: hitSnippetMenuSend, Label: m.SnippetSend, Icon: icon(iconPlay)})
+	if !state.snippetMenu.fromPicker {
+		rows.add(components.ContextMenuItem{ID: hitSnippetMenuSend, Label: m.SnippetSend, Icon: icon(iconPlay)})
+	}
 	if moves {
 		rows.separate()
 		rows.add(components.ContextMenuItem{ID: hitSnippetMenuUp, Label: m.SnippetMoveUp, Icon: icon(iconArrowUp), Disabled: state.snippetNeighbor(state.snippetMenu.index, -1) < 0})
@@ -124,12 +129,16 @@ func (state *State) chooseSnippetMenu(id gfx.ID) {
 			state.sendSnippetFromPage(index, menu.at)
 		}
 	case hitSnippetMenuEdit:
+		if menu.fromPicker {
+			state.closeCommandPalette()
+		}
 		state.focusInlineSnippet(index)
 	case hitSnippetMenuUp:
 		state.moveSnippet(index, -1)
 	case hitSnippetMenuDown:
 		state.moveSnippet(index, 1)
 	case hitSnippetMenuDelete:
+		state.commandPalette.returnToPicker = menu.fromPicker
 		state.openSnippetDelete(index)
 	}
 }

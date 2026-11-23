@@ -121,6 +121,7 @@ type snippetsUI struct {
 	hasUngrouped bool
 	visible      []int
 	filter       snippetFilter
+	pickerGrouped bool
 
 	// The page: the selected snippet and the count under the tree.
 	selected  int
@@ -377,8 +378,8 @@ func (state *State) clickSnippetDeleteDialog(id gfx.ID) {
 	case hitSnippetDeleteConfirm:
 		index := state.snippets.deleting - 1
 		state.snippets.deleting = 0
-		state.closeModal()
 		state.deleteSnippet(index)
+		state.closeModal()
 	}
 }
 
@@ -404,6 +405,30 @@ func (state *State) moveSnippet(index, direction int) bool {
 	form := &state.snippets
 	form.list[index], form.list[target] = form.list[target], form.list[index]
 	form.selected = target
+	form.resetSnippetPreview()
+	state.refreshSnippets()
+	state.save()
+	return true
+}
+
+// moveSnippetInOrder 调整持久化顺序，不依赖设置页的筛选状态。
+func (state *State) moveSnippetInOrder(source, to int) bool {
+	form := &state.snippets
+	if source < 0 || source >= len(form.list) || to < 0 || to > len(form.list) || source == to {
+		return false
+	}
+	entry := form.list[source]
+	if source < to {
+		to--
+		if to == source {
+			return false
+		}
+		copy(form.list[source:to], form.list[source+1:to+1])
+	} else {
+		copy(form.list[to+1:source+1], form.list[to:source])
+	}
+	form.list[to] = entry
+	form.selected = to
 	form.resetSnippetPreview()
 	state.refreshSnippets()
 	state.save()

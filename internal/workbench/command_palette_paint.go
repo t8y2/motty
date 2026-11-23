@@ -121,12 +121,18 @@ func (state *State) declareCommandPaletteBody(c ui.C) {
 		// The sort switch's change rebuilds the list as it is declared, so the
 		// count is read after it, not before.
 		count := len(palette.visible)
-		if state.commandBarSwitchShown() {
+		if palette.snippets && state.snippetSend.target != sendChosen {
 			// Above the search field, outside the list: this checkbox is a
 			// control of the dialog, never a result of the search below it.
-			state.declareCommandPaletteBarToggle(c)
+			ui.Row(c).FillWidth().Gap(8).Shrink(0).Children(func() {
+				if state.commandBarSwitchShown() {
+					state.declareCommandPaletteBarToggle(c)
+				}
+				state.declareCommandPaletteCheckbox(c, hitSnippetPickerGrouped,
+					state.messages.Tools.SnippetPickerGrouped, "", state.snippets.pickerGrouped)
+			})
 			ui.Spacer(c).Height(6).Shrink(0)
-			if state.commands.shown {
+			if state.commandBarSwitchShown() && state.commands.shown {
 				state.declareCommandPalettePlacement(c)
 				ui.Spacer(c).Height(6).Shrink(0)
 			}
@@ -201,22 +207,25 @@ func (state *State) declareCommandPaletteBody(c ui.C) {
 // commands below keep the attention. The hidden state lives in the tooltip,
 // where it is available without taking space in the row.
 func (state *State) declareCommandPaletteBarToggle(c ui.C) {
+	hint := ""
+	if !state.commands.shown {
+		hint = state.messages.Tools.CommandsBarHidden
+	}
+	state.declareCommandPaletteCheckbox(c, hitCommandsBarToggle,
+		state.messages.Tools.CommandsBarShow, hint, state.commands.shown)
+}
+
+func (state *State) declareCommandPaletteCheckbox(c ui.C, id gfx.ID, label, hint string, checked bool) {
 	pal := state.pal
-	checked := state.commands.shown
-	label := state.messages.Tools.CommandsBarShow
 	hovered := false
-	if canvas := c.Canvas(); canvas != nil && canvas.Hovered() == hitCommandsBarToggle {
+	if canvas := c.Canvas(); canvas != nil && canvas.Hovered() == id {
 		hovered = true
 	}
-	row := ui.Row(c).Height(26).FillWidth().PadX(8).Gap(8).Items(ui.Center).Shrink(0).Radius(radius.item)
+	row := ui.Row(c).Height(26).Grow(1).PadX(8).Gap(8).Items(ui.Center).Shrink(0).Radius(radius.item)
 	if hovered {
 		row.Background(withAlpha(pal.surfaceHot, 0.7))
 	}
-	hint := ""
-	if !checked {
-		hint = state.messages.Tools.CommandsBarHidden
-	}
-	row.HitWith(hitCommandsBarToggle, label, gfx.HitOptions{
+	row.HitWith(id, label, gfx.HitOptions{
 		Role: gfx.RoleCheckbox, Checked: checked, Hint: hint,
 	}).Children(func() {
 		side := float32(14)
@@ -273,6 +282,7 @@ func (state *State) declareCommandPaletteRow(c ui.C, entry commandPaletteEntry, 
 		return
 	}
 	id := hitCommandPaletteItems.At(visible)
+	state.openSnippetPickerMenuOn(c.Canvas(), id, entry)
 	selected := palette.selected == visible
 	color, detailColor := state.pal.muted, state.pal.faint
 	if selected {
@@ -291,6 +301,7 @@ func (state *State) declareCommandPaletteRow(c ui.C, entry commandPaletteEntry, 
 	// the pointer and the arrows are the one way the selection moves, so Tab
 	// keeps its normal traversal.
 	row.HitOutset(2, 0, 2, 0).HitWith(id, entry.label, gfx.HitOptions{Role: gfx.RoleButton, SkipTab: true, Hint: entry.recencyHint, Selected: entry.checked}).Children(func() {
+		state.declareSnippetPickerHandle(c, entry, visible)
 		if entry.checkable {
 			// The tick keeps its place when unticked, so the names line up.
 			tick := ui.Stack(c).Size(14, 14).Shrink(0)
@@ -349,6 +360,7 @@ func (state *State) declareCommandPaletteRow(c ui.C, entry commandPaletteEntry, 
 // resolves the row under the pointer with.
 func (state *State) paintCommandPaletteListOver(d *ui.DrawContext) {
 	state.commandPalette.listRect = d.Rect
+	state.paintSnippetPickerDrop(d)
 }
 
 // paintCommandPaletteChrome paints the parts the dialog body left for the page's
@@ -368,9 +380,9 @@ func (state *State) paintCommandPaletteChrome(d *ui.DrawContext) {
 func (state *State) commandPaletteHeight() float32 {
 	if state.commandPalette.snippets {
 		height := float32(474 + 12 + 36 + 8 + 32)
-		if state.commandBarSwitchShown() {
+		if state.snippetSend.target != sendChosen {
 			height += 26 + 6
-			if state.commands.shown {
+			if state.commandBarSwitchShown() && state.commands.shown {
 				height += 26 + 6
 			}
 		}

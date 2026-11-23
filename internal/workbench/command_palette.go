@@ -89,6 +89,8 @@ type commandPalette struct {
 	// It starts empty, so every group begins closed and a search is what looks
 	// inside them.
 	expandedGroups []string
+	snippetDrag    snippetPickerDrag
+	returnToPicker bool
 	// ctx is the workbench page's declaration context of the last paint; body
 	// declares the dialog into it, kept so a paint makes no closure.
 	ctx  ui.C
@@ -127,6 +129,10 @@ func (state *State) openCommandPalette() {
 }
 
 func (state *State) closeCommandPalette() {
+	state.commandPalette.snippetDrag = snippetPickerDrag{}
+	if state.snippetMenu.fromPicker {
+		state.snippetMenu.open = false
+	}
 	state.commandPalette.connect, state.commandPalette.snippets, state.commandPalette.workspaces, state.commandPalette.localShells = false, false, false, false
 	state.modal = modalNone
 	state.commandPalette.search = text.Editor{}
@@ -364,6 +370,11 @@ func (state *State) clickCommandPalette(id gfx.ID) {
 	switch id {
 	case hitCommandPaletteDismiss, hitCommandPaletteClose:
 		state.dismissCommandPalette()
+	case hitSnippetPickerGrouped:
+		state.snippets.pickerGrouped = !state.snippets.pickerGrouped
+		state.rebuildCommandPalette()
+		state.save()
+		return
 	case hitCommandsBarToggle:
 		// The bar's checkbox is a control of the picker's chrome, not a row of
 		// its searchable list. It switches in place without closing the dialog.
@@ -428,6 +439,9 @@ func (state *State) commandPalettePointer(event gfx.PointerEvent) (gfx.EventResu
 		return gfx.EventResult{}, false
 	}
 	palette := &state.commandPalette
+	if result := state.snippetPickerDragPointer(event); result.Handled {
+		return result, true
+	}
 	// WindowConfig gives the page's controls, the sort switch, the list's own
 	// scrollbar and the dialog's backdrop and close button their presses first.
 	// The identities this file names by hand are the rows, so those presses

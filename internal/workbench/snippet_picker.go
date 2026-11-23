@@ -25,6 +25,8 @@ func (state *State) openSnippetPicker() {
 	state.rebuildCommandPalette()
 }
 
+var hitSnippetPickerGrouped = tree.ID(snippetsHits, "picker-grouped")
+
 // ungroupedFoldKey names the fold of the snippets that belong to no group; no
 // group name can be it, because a group name holds no control characters.
 const ungroupedFoldKey = "\x00"
@@ -87,6 +89,7 @@ func (state *State) rebuildSnippetPicker() {
 		palette.addDetailed(entry.Name, snippetDetail(entry), hitSnippetSendList.At(index))
 		last := &palette.entries[len(palette.entries)-1]
 		last.search += " " + strings.ToLower(entry.Command)
+		last.recencyHint = entry.Name + "\n" + entry.Command
 		last.searchOnly = folded
 		last.depth = depth
 	}
@@ -97,7 +100,7 @@ func (state *State) rebuildSnippetPicker() {
 		folded = !last.expanded
 	}
 	form := &state.snippets
-	if len(form.groups) == 0 {
+	if !form.pickerGrouped || len(form.groups) == 0 {
 		for index := range form.list {
 			add(index, 0)
 		}
