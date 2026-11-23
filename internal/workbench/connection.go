@@ -655,11 +655,7 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 	session.autoRestore, session.restoreNote = false, ""
 	session.host = host
 	session.dialedProtocol, session.dialedTerminal = host.Protocol, host.Terminal
-	session.dialedHostAuth = host.Auth
-	session.dialedHostIdentity = host.Identity
-	session.dialedHostCredential = host.Credential
-	session.dialedHostIdentitiesOnly = host.IdentitiesOnly
-	session.dialedAlgoMode, session.dialedAlgoList = host.savedAlgo()
+	session.freezeDialedSSHPolicy(host)
 	session.reusePolicy = reusePolicyFor(host)
 	session.reuseOptions = host.SSHOptions.Clone()
 	session.reuseRoute, session.reuseRouteValid = state.reuseRouteFor(host)
@@ -703,7 +699,6 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 		// An SSH host whose terminal runs over mosh: the SSH connection is the
 		// bootstrap, and the session has no SSH server once it is up.
 		config, _ := state.sshConfigFor(session, host)
-		session.sshOptions = host.SSHOptions.Clone()
 		session.conn = state.newMoshConn(session, host, config)
 		state.finishStartingConnection(session, automatic)
 		return
@@ -715,7 +710,6 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 		return
 	}
 	config, valid := state.sshConfigFor(session, host)
-	session.sshOptions = host.SSHOptions.Clone()
 	// This connection is for a terminal: its first session must be the shell,
 	// so the probes wait for it and the server's login message reaches the
 	// terminal (ADR 0025).
@@ -735,6 +729,18 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 	}
 	session.conn, session.shared = state.options.Dial(config), false
 	state.finishStartingConnection(session, automatic)
+}
+
+// freezeDialedSSHPolicy records the host-owned SSH policy this session is about
+// to dial, so shareFrom can match a standalone SFTP window or monitor source
+// against a live terminal transport dialed under the same policy.
+func (session *Session) freezeDialedSSHPolicy(host Host) {
+	session.dialedHostAuth = host.Auth
+	session.dialedHostIdentity = host.Identity
+	session.dialedHostCredential = host.Credential
+	session.dialedHostIdentitiesOnly = host.IdentitiesOnly
+	session.dialedAlgoMode, session.dialedAlgoList = host.savedAlgo()
+	session.sshOptions = host.SSHOptions.Clone()
 }
 
 // sshConfigFor is how to connect to an SSH host: its endpoint, identities and
