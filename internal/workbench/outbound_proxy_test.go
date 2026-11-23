@@ -531,11 +531,19 @@ func TestHostProxyConfigurationFitsEveryNetworkDialogInAShortWindow(t *testing.T
 			state.openHostDialog()
 			state.editor.setProtocol(protocol)
 			canvas, _ := paintAt(state, gfx.Size{Width: 900, Height: 600})
-			state.editor.form.scrollTo(100000)
+			// The form can be taller than the window, and the rows under the proxy
+			// row (the jump row and the advanced section) may be the taller part:
+			// reaching the bottom then leaves the proxy row above the viewport. Move
+			// the body to the row the way the tab ring does, then check the row the
+			// user would act on is inside the form and clear of the footer.
+			state.editor.form.reveal(state.editor.form.body.proxyRow.Rect())
 			canvas, _ = paintAt(state, gfx.Size{Width: 900, Height: 600})
 			proxy, ok := hitByID(canvas, hitHostProxyConfigure)
 			if !ok {
 				t.Fatal("proxy configuration was not painted")
+			}
+			if view := state.editor.form.viewport; proxy.Bounds.Y < view.Y || proxy.Bounds.Y+proxy.Bounds.Height > view.Y+view.Height {
+				t.Fatalf("proxy control %+v is outside the form viewport %+v", proxy.Bounds, view)
 			}
 			submit, ok := hitByLabel(canvas, state.messages.AddHost)
 			if !ok || proxy.Bounds.Y+proxy.Bounds.Height > submit.Bounds.Y {
