@@ -2296,7 +2296,12 @@ func (worker *Worker) finalizeUpload(generation, transferID uint64, stage string
 	defer timer.Stop()
 	select {
 	case err := <-done:
-		return err
+		if err != nil {
+			// Name the request that failed: a gateway's generic failure status
+			// otherwise cannot be told apart between close, rename and the rest.
+			return fmt.Errorf("sftp %s: %w", stage, err)
+		}
+		return nil
 	case <-timer.C:
 		worker.interruptIfAlone(generation, transferID)
 		return fmt.Errorf("%w: %s did not answer within %s", ErrUploadFinalizeTimeout, stage, timeout)
