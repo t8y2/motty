@@ -136,8 +136,8 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	}
 	row(settingsGeneral, m.SettingsLanguage, "")
 	row(settingsGeneral, m.SettingsAppearance, "")
-	if state.fontThickeningSupported {
-		row(settingsGeneral, m.SettingsThickerText, m.SettingsThickerTextDescription)
+	if state.fontSmoothingSupported {
+		row(settingsGeneral, m.SettingsFontSmoothing, m.SettingsFontSmoothingDescription)
 	}
 	row(settingsGeneral, m.SettingsTabOrientation, m.SettingsTabOrientationDescription)
 	row(settingsGeneral, m.SettingsTabNumbers, m.SettingsTabNumbersDescription)

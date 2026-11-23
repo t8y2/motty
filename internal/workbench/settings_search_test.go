@@ -20,14 +20,14 @@ func searchSettings(t *testing.T, state *State, query string) *gfx.Canvas {
 func TestSearchingSettingsListsMatchesFromEveryCategoryWithTheirCategory(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	canvas := searchSettings(t, state, "font")
-	if !state.settingsSearching() || state.settings.count != 4 {
-		t.Fatalf("results = %d, want the interface font, the terminal's font size, its font family and its fallback fonts", state.settings.count)
+	if !state.settingsSearching() || state.settings.count != 5 {
+		t.Fatalf("results = %d, want the interface font, its smoothing, the terminal's font size, its font family and its fallback fonts", state.settings.count)
 	}
 	for index := 0; index < state.settings.count; index++ {
 		hit, ok := hitByID(canvas, hitSettingsResultList.At(index))
 		want := state.messages.Tools.CatTerminal
 		if state.settings.results[index].category == settingsGeneral {
-			want = state.messages.Tools.CatGeneral // the interface's font
+			want = state.messages.Tools.CatGeneral // the interface's font and its smoothing
 		}
 		if !ok || hit.Label != want {
 			t.Fatalf("result %d hit = %+v, %v: it should be a button named for its category", index, hit, ok)

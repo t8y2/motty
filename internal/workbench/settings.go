@@ -408,8 +408,8 @@ func (state *State) clickSettings(id gfx.ID) bool {
 	switch id {
 	case hitSettingsTabNumbers:
 		changed = state.setTabNumbers(!state.tabNumbers)
-	case hitSettingsThickenToggle:
-		changed = state.setFontThickening(!state.fontThickening)
+	case hitSettingsFontSmoothing:
+		changed = state.setFontSmoothing(state.fontSmoothingOff)
 	case hitSettingsOutputAlerts:
 		state.backgroundOutputAlerts = !state.backgroundOutputAlerts
 		state.clearOutputAlerts()

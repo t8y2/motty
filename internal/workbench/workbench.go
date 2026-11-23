@@ -677,11 +677,12 @@ type State struct {
 	terminalScrollback int
 	terminalFindPrefs  terminalFindPreferences
 	findSettingsUI     terminalFindSettingsUI
-	// fontThickening is whether the window's text is drawn with a thicker stroke;
-	// fontThickeningSupported is whether this platform has the choice, which hides
+	// fontSmoothingOff is whether the window's text is drawn with the font's own
+	// outlines instead of the platform's font smoothing, which is the default;
+	// fontSmoothingSupported is whether this platform has the choice, which hides
 	// the settings row where it has not.
-	fontThickening          bool
-	fontThickeningSupported bool
+	fontSmoothingOff       bool
+	fontSmoothingSupported bool
 	// interfaceTextSize is the body text size the user chose, in logical pixels:
 	// the size the whole window's text is drawn at, apart from the terminal's own
 	// font size.
