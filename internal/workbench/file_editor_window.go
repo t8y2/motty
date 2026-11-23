@@ -607,7 +607,11 @@ func (m *fileWindowManager) declareDocumentTabRows(c ui.C, activeDocument *fileD
 		}
 		row.Children(func() {
 			ui.Row(c).Size(20, 20).Shrink(0).Center().MarginSides(0, 7, 0, 0).Children(func() {
-				ui.Icon(c, icon).Size(14, 14).Color(foreground)
+				if d.busy {
+					ui.Spinner(c).Size(14, 14)
+				} else {
+					ui.Icon(c, icon).Size(14, 14).Color(foreground)
+				}
 			})
 			ui.Text(c, label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(foreground).LineHeight(20).Ellipsis()
 			ui.Spacer(c)

@@ -157,7 +157,11 @@ func (d *fileDocument) declareEditWindow(c ui.C) {
 				}
 				d.declareFooterProgress(c)
 				status := d.footerStatus()
-				ui.Text(c, status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(22).Grow(1).
+				statusColor := theme.MutedForeground
+				if d.busy {
+					statusColor = theme.Foreground
+				}
+				ui.Text(c, status).FontSize(theme.Metrics.FontSizeS).Color(statusColor).Ellipsis().LineHeight(22).Grow(1).
 					HitWith(hitDocumentStatus, status, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: status})
 				if d.image != nil {
 					d.pageButton(c, "fit", hitDocumentFit, m.Fit).Small().Outline()
@@ -176,7 +180,11 @@ func (d *fileDocument) declareEditWindow(c ui.C) {
 				if d.image == nil {
 					disabled := d.busy || !d.ready || !d.dirty() || d.comparison.active
 					if d.local {
-						d.pageButton(c, "save", hitDocumentSave, m.Save).Small().Disabled(disabled)
+						saveLabel := m.Save
+						if d.saving() {
+							saveLabel = m.Saving
+						}
+						d.pageButton(c, "save", hitDocumentSave, saveLabel).Small().Disabled(disabled)
 					} else {
 						d.declareSaveSplit(c, disabled)
 					}
@@ -220,6 +228,12 @@ func (d *fileDocument) declareEncoding(c ui.C, bounds gfx.Rect) {
 	})
 }
 
+// saving reports whether the document is currently waiting on an in-flight save
+// to local disk or the remote server.
+func (d *fileDocument) saving() bool {
+	return d.busy && (d.comparison.saving || d.saveInFlight)
+}
+
 // declareFooterProgress declares the spinner the footer shows while the
 // document is waiting on a save, reload or server read: the status text alone
 // read as if the work had already finished. The files panel's status row shows
@@ -245,13 +259,17 @@ func (d *fileDocument) encodingLabel(name string) string {
 // clicks.
 func (d *fileDocument) declareSaveSplit(c ui.C, disabled bool) {
 	m := d.owner.messages.FileWindow
+	label := m.Save
+	if d.saving() {
+		label = m.Saving
+	}
 	// The split button the page replaced kept its halves at the size it was
 	// given: an 80px primary and a 32px trigger, the label in the small type
 	// the size names.
 	save := ui.SplitButton(c, ui.SplitButtonSpec{
 		PrimaryID: hitDocumentSave, MenuID: hitDocumentSaveMenu,
-		Label: m.Save, MenuLabel: m.SaveOptions,
-		Hint: m.Save, MenuHint: m.SaveOptions,
+		Label: label, MenuLabel: m.SaveOptions,
+		Hint: label, MenuHint: m.SaveOptions,
 		Icon: lucideIcons[iconChevronDown], Open: d.ui.saveMenuOpen,
 	}).Small().Width(112).Height(32)
 	save = save.Disabled(disabled)
@@ -383,13 +401,21 @@ func (d *fileDocument) declareComparisonWindow(c ui.C) {
 			ui.Row(c).Height(32).Gap(8).Items(ui.Center).Children(func() {
 				d.declareFooterProgress(c)
 				status := d.comparisonStatus()
-				ui.Text(c, status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(22).Grow(1).
+				statusColor := theme.MutedForeground
+				if d.busy {
+					statusColor = theme.Foreground
+				}
+				ui.Text(c, status).FontSize(theme.Metrics.FontSizeS).Color(statusColor).Ellipsis().LineHeight(22).Grow(1).
 					HitWith(hitDocumentStatus, status, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: status})
 				if d.comparison.conflict {
 					ui.Button(c, m.CompareRetry).Small().Outline().Hit(hitDocumentCompareRetry, m.CompareRetry).Disabled(d.busy)
 				}
 				ui.Button(c, m.ReturnToEdit).Small().Outline().Hit(hitDocumentReturnToEdit, m.ReturnToEdit).Disabled(d.busy || d.comparison.saving)
-				ui.Button(c, m.Save).Small().Hit(hitDocumentConfirmUpload, m.Save).Disabled(!d.canUploadComparison())
+				saveLabel := m.Save
+				if d.comparison.saving {
+					saveLabel = m.Saving
+				}
+				ui.Button(c, saveLabel).Small().Hit(hitDocumentConfirmUpload, saveLabel).Disabled(!d.canUploadComparison())
 			})
 		})
 	})
@@ -423,6 +449,9 @@ func (d *fileDocument) footerStatus() string {
 	position := d.positionStatus() + " · " + ending
 	if status == "" {
 		return position
+	}
+	if d.busy {
+		return status + " · " + position
 	}
 	return position + " · " + status
 }
