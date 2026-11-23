@@ -30,14 +30,20 @@ func TestStartupSessionsReuseOpenOnes(t *testing.T) {
 		t.Fatalf("sessions %d: with reuse off a new local terminal must open", len(state.sessions))
 	}
 
-	state.startupReuse = true
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsConnection)
+	state.Click(hitSettingsStartupReuse)
+	if !state.startupReuse {
+		t.Fatal("the switch must turn on")
+	}
+	if !state.snapshot().StartupReuse {
+		t.Fatal("the on switch must be saved")
+	}
 	state.Click(hitSettingsStartupReuse)
 	if state.startupReuse {
 		t.Fatal("the switch must turn off")
 	}
-	if !state.snapshot().StartupNoReuse {
+	if state.snapshot().StartupReuse {
 		t.Fatal("the off switch must be saved")
 	}
 }

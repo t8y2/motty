@@ -1238,7 +1238,7 @@ func New(options Options) *State {
 		terminalFindPrefs:  defaultTerminalFindPreferences,
 		tabTitleMode:       tabTitleConnection,
 		tabDoubleClick:     tabDoubleClickRename,
-		startupReuse:       true,
+		startupReuse:       false,
 		startupEnabled:     true,
 		// The defaults a fresh window starts from, before the saved state is
 		// read: the same ones a state file that says nothing gets.

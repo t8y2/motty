@@ -190,6 +190,7 @@ func connectDesktop(t *testing.T, state *State, session *Session, password strin
 func TestOpeningDesktopReusesOnlyMatchingConnectionSettings(t *testing.T) {
 	fixture := startVNCFixture(t, "secret")
 	state, session := vncState(t, fixture)
+	state.startupReuse = true
 	connectDesktop(t, state, session, "secret")
 	first, host := session.ID, session.host
 	if opened := state.openHostSession(host); opened == nil || opened.ID != first {
