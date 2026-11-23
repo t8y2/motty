@@ -89,6 +89,7 @@ func TestLegacyTLSControlsTheRSAKeyExchangeOffer(t *testing.T) {
 		{"default refuses an RSA-only server", rsaSuite, tls.VersionTLS12, tls.VersionTLS12, false, 0, true},
 		{"legacy reaches an RSA-only server", rsaSuite, tls.VersionTLS12, tls.VersionTLS12, true, rsaSuite, false},
 		{"legacy keeps ECDHE for a modern server", ecdheSuite, tls.VersionTLS12, tls.VersionTLS12, true, ecdheSuite, false},
+		{"default allows TLS 1.3 for a modern server", tls.TLS_AES_128_GCM_SHA256, tls.VersionTLS13, tls.VersionTLS13, false, tls.TLS_AES_128_GCM_SHA256, false},
 		{"default refuses a TLS 1.0 RSA server", tls10RsaSuite, tls.VersionTLS10, tls.VersionTLS10, false, 0, true},
 		{"legacy reaches a TLS 1.0 RSA server", tls10RsaSuite, tls.VersionTLS10, tls.VersionTLS10, true, tls10RsaSuite, false},
 		{"default refuses a TLS 1.0 3DES server", tls103DesSuite, tls.VersionTLS10, tls.VersionTLS10, false, 0, true},

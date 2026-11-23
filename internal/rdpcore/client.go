@@ -712,10 +712,9 @@ func (c *Client) upgradeTLS() error {
 	}
 	if c.tlsMaxVersion != 0 {
 		tlsConfig.MaxVersion = c.tlsMaxVersion
-	} else {
-		// Cap TLS at 1.2 for RDP. Older and modern Windows servers
-		// process RDP over TLS 1.0-1.2; TLS 1.3 causes CredSSP and
-		// legacy SChannel handshakes to fail.
+	} else if c.selectedProtocol == x224.ProtocolHybrid || c.opts.LegacyTLS {
+		// Cap TLS at 1.2 when CredSSP/NLA is selected (MS-CSSP was designed for 1.2;
+		// some Windows servers fail over 1.3), or when legacy TLS compatibility mode is requested.
 		tlsConfig.MaxVersion = tls.VersionTLS12
 	}
 	if c.opts.LegacyTLS {
