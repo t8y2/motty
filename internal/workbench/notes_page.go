@@ -942,12 +942,13 @@ func (s *State) notePreviewLayoutHeight(c ui.C, n *notesUI, width float32) {
 // content height.
 func (s *State) notePreviewLayout(canvas *gfx.Canvas, n *notesUI, width float32) {
 	source := n.body.String()
+	declared := width
 	width = max(1, width-12)
 	cache := &n.previewLayout
 	if !cache.ready || cache.source != source || cache.width != width || cache.face != s.terminalFontFace || cache.main != s.fonts.main || cache.bold != s.fonts.bold {
 		n.doc.Parse(source)
 		height := n.rendered.Layout(canvas, noteMarkdownStyle(s), &n.doc, width)
-		*cache = notePreviewLayout{ready: true, source: source, width: width, face: s.terminalFontFace, main: s.fonts.main, bold: s.fonts.bold, height: height}
+		*cache = notePreviewLayout{ready: true, source: source, width: width, declared: declared, face: s.terminalFontFace, main: s.fonts.main, bold: s.fonts.bold, height: height}
 	}
 	images := float32(0)
 	if n.imageSource == source {
@@ -970,8 +971,22 @@ func (s *State) drawNotePreview(d *ui.DrawContext, n *notesUI) {
 		n.previewScroll = st.Offset
 		n.page.previewContent = st.Content
 	}
+	s.notePreviewFresh(d.Canvas, n)
 	s.paintNotePreviewAt(d.Canvas, d.Rect, viewport, n)
 	s.syncNoteScroll(d.Canvas, n)
+}
+
+// notePreviewFresh lays the preview out again when the note's text changed
+// after the page laid it out. A narrow card declares the library drawer after
+// the editor, so choosing a note there replaces the text in the middle of the
+// declaration that measured it; the draw that follows must paint a layout of
+// the text it shows, not the previous note's layout with the new note's text.
+func (s *State) notePreviewFresh(canvas *gfx.Canvas, n *notesUI) {
+	cache := &n.previewLayout
+	if !cache.ready || cache.source == n.body.String() {
+		return
+	}
+	s.notePreviewLayout(canvas, n, cache.declared)
 }
 
 // noteMarkdownStyle is the style the preview lays out with.

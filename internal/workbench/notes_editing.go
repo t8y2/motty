@@ -28,10 +28,15 @@ type noteEditing struct {
 }
 
 type notePreviewLayout struct {
-	ready         bool
-	source        string
+	ready  bool
+	source string
+	// width is the width the text is laid out in, after the content inset; the
+	// page measured it and paints at that width.
 	width, height float32
-	face          gfx.MonoFace
+	// declared is the width the page passed, before the inset, so that a draw
+	// that finds the text changed can lay it out again at the same width.
+	declared float32
+	face     gfx.MonoFace
 	// main and bold are the weights the face is drawn at: the same source wraps
 	// differently under another weight, so a layout made at one is not kept for
 	// the other.
