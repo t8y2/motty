@@ -243,7 +243,7 @@ func (s *State) declareDashboardGPUSelect(c ui.C, r *dashboardRow, x, y, width f
 	for n := range values {
 		values[n] = n
 	}
-	ui.Select(c, &r.gpuChoice, values, func(n int) string { return fmt.Sprintf("GPU%d", r.snapshot.GPUs[n].Device.Index) }).Label(s.messages.Monitor.GPU).Absolute().Left(x).Top(y).Size(width, 26)
+	ui.Select(c, &r.gpuChoice, values, func(n int) string { return dashboardGPUName(r.snapshot.GPUs[n].Device) }).Label(s.messages.Monitor.GPU).Absolute().Left(x).Top(y).Size(width, 26)
 	if old != r.gpuChoice {
 		r.gpuKey = monitoring.GPUKey(r.snapshot.GPUs[r.gpuChoice].Device)
 		r.gpuPrepared = ""
