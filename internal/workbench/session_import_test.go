@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -15,6 +16,83 @@ import (
 	"golang.org/x/text/encoding/simplifiedchinese"
 	_ "modernc.org/sqlite"
 )
+
+func TestImportTabbyThroughChooserPreservesAuthentication(t *testing.T) {
+	key := writeWorkbenchIdentity(t, "test key", "")
+	file := filepath.Join(t.TempDir(), "config.yaml")
+	content := `profiles:
+  - type: ssh
+    name: Key host
+    options:
+      host: key.example.test
+      auth: publicKey
+      privateKeys: ['file://` + key + `']
+  - type: ssh
+    name: Password host
+    options:
+      host: password.example.test
+      auth: password
+      password: fixture-password
+`
+	if err := os.WriteFile(file, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	options := freshOptions(t)
+	options.StatePath = filepath.Join(filepath.Dir(options.KnownHostsPath), "state.json")
+	options.OpenFiles = func(request app.OpenFileOptions) ([]string, error) {
+		if !strings.Contains(request.Title, "Tabby") {
+			t.Fatalf("wrong picker title: %q", request.Title)
+		}
+		return []string{file}, nil
+	}
+	state := newTestState(t, options)
+	state.Click(hitImportSessions)
+	if _, texts := paintedTexts(state); !contains(texts, "Tabby") {
+		t.Fatal("Tabby is missing from the chooser")
+	}
+	state.Click(hitImportTabby)
+	if state.modal != modalSessionImportPreview || len(state.hosts) != 0 {
+		t.Fatal("the import should wait for password confirmation")
+	}
+	state.Click(hitImportConnectionsOnly)
+	if state.modal != modalHostImportResult || len(state.hosts) != 2 {
+		t.Fatal("the import did not save both connections")
+	}
+	name, _ := hostPasswordSecretName(state.hosts[1])
+	if _, found, err := state.secrets.vault.Get(name); err != nil || found {
+		t.Fatal("connections-only import should leave the password absent")
+	}
+	state.Click(hitHostImportDone)
+	state.Click(hitImportSessions)
+	state.Click(hitImportTabby)
+	if state.modal != modalSessionImportPreview || state.sessionImport.eligible != 1 {
+		t.Fatal("reimport should offer to fill one missing password")
+	}
+	state.Click(hitImportSavePasswords)
+	if state.modal != modalHostImportResult || len(state.hosts) != 2 {
+		t.Fatal("reimport should fill the password without duplicating hosts")
+	}
+	if value, found, err := state.secrets.vault.Get(name); err != nil || !found || value != "fixture-password" {
+		t.Fatal("confirmed password was not stored in the vault")
+	}
+	restarted := newTestState(t, options)
+	if len(restarted.hosts) != 2 {
+		t.Fatal("imported hosts were not restored")
+	}
+	keyHost, passwordHost := restarted.hosts[0], restarted.hosts[1]
+	catalog := hostCatalog{}
+	auth := catalog.authenticationFor(keyHost)
+	if len(restarted.identities) != 1 || !restarted.identities[0].Stored {
+		t.Fatal("the imported private key was not restored from the vault")
+	}
+	if keyHost.User != "root" || !auth.RequirePublicKey || !slices.Equal(auth.IdentityFiles, []string{restarted.identities[0].Path}) ||
+		passwordHost.Auth != authPassword {
+		t.Fatal("imported authentication settings were not restored")
+	}
+	if value, found := vaultValue(t, restarted, name); !found || value != "fixture-password" {
+		t.Fatal("the vault did not retain the imported password")
+	}
+}
 
 func TestImportingMobaXtermSessionsAddsGroupedHostsOnceAndSaysWhatItLeftOut(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "sessions.mxtsessions")
