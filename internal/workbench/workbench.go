@@ -760,9 +760,6 @@ type State struct {
 	terminalScrollback int
 	terminalFindPrefs  terminalFindPreferences
 	findSettingsUI     terminalFindSettingsUI
-	// terminalZoomWheel is the precise (trackpad) primary+wheel travel not yet worth
-	// one terminal font-size point; see terminalZoomScroll.
-	terminalZoomWheel float32
 	// terminalZoomSaveTimer coalesces a primary+wheel burst into one save once the
 	// gesture settles; see scheduleTerminalZoomSave.
 	terminalZoomSaveTimer *time.Timer

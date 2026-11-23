@@ -176,11 +176,10 @@ type terminal struct {
 	paintFind                                 findBarSlots
 	paintSpinner, paintLight                  ui.Box
 
-	// zoomLabel and zoomUntil are the transient "N px" badge shown over the grid
-	// after a primary+wheel zoom. They live on the pane the gesture was made in, so
-	// a split does not light the badge on the pane beside it.
-	zoomLabel string
-	zoomUntil time.Duration
+	// zoomWheel is the precise (trackpad) primary+wheel travel of this pane not yet
+	// worth one font-size point; see terminalZoomScroll. It is the pane's own, like
+	// wheelX and wheelY, so half a step in one pane does not complete in another.
+	zoomWheel float32
 
 	// preedit is the input-method composition, shown at the cursor.
 	preedit      app.TextState
@@ -2513,24 +2512,20 @@ func (state *State) terminalScroll(session *Session, event gfx.ScrollEvent) gfx.
 // must travel, in logical pixels, to change the terminal font size by one point.
 const terminalZoomTrackpadUnit = float32(60)
 
-// terminalZoomBadgeLinger is how long the "N px" badge stays over the grid after
-// the last primary+wheel notch, so a burst of wheeling keeps one badge up that
-// updates in place, and it clears shortly after the fingers stop.
-const terminalZoomBadgeLinger = 1200 * time.Millisecond
-
 // terminalZoomScroll turns a primary-modifier wheel into a font-size step, the
 // same change the primary+/- shortcuts make: applyZoom clamps it to the size
 // range. A classic wheel moves one point per notch; a precise trackpad gesture
 // accumulates and steps once it has travelled far enough, so the size never races
-// ahead of the fingers. Scrolling up enlarges the text. Each step refreshes the
-// pane's badge with the size now in effect, and the write to disk waits until the
-// gesture settles so a burst of wheeling saves once.
+// ahead of the fingers. Scrolling up enlarges the text. Like the shortcuts, each step
+// reports the size now in effect on the status line, and the write to disk waits
+// until the gesture settles so a burst of wheeling saves once.
 func (state *State) terminalZoomScroll(session *Session, event gfx.ScrollEvent) gfx.EventResult {
 	steps := float32(0)
 	if event.Precise {
-		state.terminalZoomWheel += -event.DeltaY / terminalZoomTrackpadUnit
-		steps = float32(int(state.terminalZoomWheel))
-		state.terminalZoomWheel -= steps
+		wheel := &session.term.zoomWheel
+		*wheel += -event.DeltaY / terminalZoomTrackpadUnit
+		steps = float32(int(*wheel))
+		*wheel -= steps
 	} else if event.DeltaY != 0 {
 		steps = 1
 		if event.DeltaY > 0 {
@@ -2541,8 +2536,6 @@ func (state *State) terminalZoomScroll(session *Session, event gfx.ScrollEvent) 
 		return gfx.EventResult{Handled: true}
 	}
 	changed := state.applyZoom(steps, false)
-	session.term.zoomLabel = fmt.Sprintf("%d px", int(state.terminalFontSize))
-	session.term.zoomUntil = state.now() + terminalZoomBadgeLinger
 	if changed {
 		state.scheduleTerminalZoomSave()
 	}

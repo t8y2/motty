@@ -1,7 +1,6 @@
 package workbench
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -142,7 +141,7 @@ func TestPrimaryWheelResizesTheTerminalFont(t *testing.T) {
 	}
 
 	// Half a precise unit does nothing; a full one steps a single point.
-	state.terminalZoomWheel = 0
+	session.term.zoomWheel = 0
 	state.terminalScroll(session, gfx.ScrollEvent{Modifiers: keymap.Primary, DeltaY: -30, Precise: true})
 	if state.terminalFontSize != start {
 		t.Fatalf("half a unit already zoomed to %v", state.terminalFontSize)
@@ -213,59 +212,32 @@ func TestWheelWithTheOtherModifierDoesNotResize(t *testing.T) {
 	if state.terminalFontSize != start {
 		t.Fatalf("%v+wheel resized the font to %v, want %v", other, state.terminalFontSize, start)
 	}
-	// Nothing of the zoom happened: no badge over the pane, no write pending.
-	if session.term.zoomLabel != "" {
-		t.Fatalf("%v+wheel drew the zoom badge: %q", other, session.term.zoomLabel)
-	}
+	// Nothing of the zoom happened: no write pending.
 	if state.terminalZoomSaveTimer != nil {
 		t.Fatalf("%v+wheel scheduled a save", other)
 	}
 }
 
-// A primary+wheel zoom reports what it did: the pane shows its current font size
-// as a transient badge over the grid, one that is absent until a gesture and
-// clears once its linger deadline passes.
-func TestPrimaryWheelShowsTheFontSizeBadge(t *testing.T) {
+// The trackpad's leftover travel belongs to the pane it was made in: half a step in
+// one pane and half in another make no step in either.
+func TestTrackpadZoomTravelDoesNotCarryToAnotherPane(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	state.sessions = append(state.sessions, Session{ID: 1, term: newTerminal(80, 24)})
+	state.sessions = append(state.sessions, Session{ID: 1, term: newTerminal(80, 24)}, Session{ID: 2, term: newTerminal(80, 24)})
 	state.activeSessionID = 1
-	session := &state.sessions[0]
-	grid := gfx.Rect{Width: 800, Height: 600}
-
-	// Before a gesture the pane has nothing to show.
-	if texts := badgeTexts(state, session, grid, time.Second); len(texts) != 0 {
-		t.Fatalf("a badge was drawn before any zoom: %v", texts)
-	}
-
-	state.terminalScroll(session, gfx.ScrollEvent{Modifiers: keymap.Primary, DeltaY: -120})
-	want := fmt.Sprintf("%d px", int(state.terminalFontSize))
-	if session.term.zoomLabel != want {
-		t.Fatalf("badge = %q, want %q", session.term.zoomLabel, want)
-	}
-	// The badge shows while it lingers after the last notch,
-	if texts := badgeTexts(state, session, grid, session.term.zoomUntil-1); !contains(texts, want) {
-		t.Fatalf("zoom badge %q was not drawn: %v", want, texts)
-	}
-	// ...and clears itself, and its label, once the deadline passes.
-	if texts := badgeTexts(state, session, grid, session.term.zoomUntil+1); len(texts) != 0 {
-		t.Fatalf("badge outlived its deadline: %v", texts)
-	}
-	if session.term.zoomLabel != "" {
-		t.Fatalf("badge label not cleared after its deadline: %q", session.term.zoomLabel)
-	}
-}
-
-// badgeTexts paints the zoom badge as it is seen at the given frame time and
-// returns the label text it drew.
-func badgeTexts(state *State, session *Session, grid gfx.Rect, now time.Duration) []string {
 	var canvas gfx.Canvas
-	canvas.SetClock(func() time.Duration { return now })
-	state.paintTerminalZoomBadge(&canvas, session, grid)
-	var texts []string
-	for _, text := range canvas.Texts() {
-		texts = append(texts, text.Value)
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	start := state.terminalFontSize
+	half := gfx.ScrollEvent{Modifiers: keymap.Primary, DeltaY: -terminalZoomTrackpadUnit / 2, Precise: true}
+
+	state.terminalScroll(&state.sessions[0], half)
+	state.terminalScroll(&state.sessions[1], half)
+	if state.terminalFontSize != start {
+		t.Fatalf("half a step in each of two panes zoomed to %v, want %v", state.terminalFontSize, start)
 	}
-	return texts
+	state.terminalScroll(&state.sessions[1], half)
+	if state.terminalFontSize != start+1 {
+		t.Fatalf("a full step in one pane zoomed to %v, want %v", state.terminalFontSize, start+1)
+	}
 }
 
 // narrowFontEngine measures a fixed-pitch font narrower than the reference cell, as the

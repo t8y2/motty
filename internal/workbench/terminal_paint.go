@@ -77,47 +77,6 @@ func (state *State) paintTerminalPaneDetails(canvas *gfx.Canvas, session *Sessio
 			paintLight(canvas, spot.X+spot.Width/2, spot.Y+spot.Height/2, kind, dot, t.paintBarBackground)
 		}
 	}
-	state.paintTerminalZoomBadge(canvas, session, bounds)
-}
-
-// terminalZoomBadgeFade is the last part of the badge's life, over which it
-// fades out. Before it the badge is fully lit, so a burst of wheeling reads as
-// one steady number that updates in place.
-const terminalZoomBadgeFade = terminalZoomBadgeLinger / 3
-
-// paintTerminalZoomBadge shows the terminal's current font size over the grid
-// after a primary+wheel zoom, so the gesture reports what it did. The badge sits in
-// the middle of the pane, where the eye already is, rather than along an edge.
-// It is transient: terminalZoomScroll gives it the size text and a linger
-// deadline on the pane's own clock, it holds a steady number until the last fade
-// window, then fades away and clears itself. It is painted inside the pane it was
-// made in, so a split does not light the badge beside it.
-func (state *State) paintTerminalZoomBadge(canvas *gfx.Canvas, session *Session, bounds gfx.Rect) {
-	t := session.term
-	if t.zoomLabel == "" {
-		return
-	}
-	remaining := t.zoomUntil - canvas.Now()
-	if remaining <= 0 {
-		t.zoomLabel = ""
-		return
-	}
-	alpha := float32(1)
-	if remaining < terminalZoomBadgeFade {
-		// Fading: repaint the next step to keep the ramp smooth.
-		alpha = float32(remaining) / float32(terminalZoomBadgeFade)
-		canvas.RequestFrameIn(16 * time.Millisecond)
-	} else {
-		// Steady: sleep until the fade begins rather than repaint every frame.
-		canvas.RequestFrameIn(remaining - terminalZoomBadgeFade + time.Millisecond)
-	}
-	canvas.PushLayer(popupLayer)
-	defer canvas.PopLayer()
-	width := canvas.TextWidthWeight(t.zoomLabel, metrics.FontSizeS, gfx.WeightMedium) + 20
-	height := float32(24)
-	badge := gfx.Rect{X: bounds.X + (bounds.Width-width)/2, Y: bounds.Y + (bounds.Height-height)/2, Width: width, Height: height}
-	canvas.RoundedBorder(badge, radius.item, 1, withAlpha(state.pal.line, alpha), withAlpha(state.pal.shell, 0.95*alpha))
-	canvas.LabelCenter(t.zoomLabel, badge, gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: withAlpha(state.pal.text, alpha)})
 }
 
 func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools]barTool) []barTool {
