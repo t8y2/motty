@@ -13,7 +13,7 @@ import (
 )
 
 func TestSelectedCommandsOmitDisabledProbes(t *testing.T) {
-	for _, m := range []Metrics{Memory, CPU | NetworkIO, GPUs, Disks} {
+	for m := Metrics(0); m <= AllMetrics; m++ {
 		linux := selectedLinux(command, m)
 		darwin := selectedDarwin(darwinScript(5), 5, m)
 		windows := decodeWindowsCommand(t, WindowsCommand(5, m))

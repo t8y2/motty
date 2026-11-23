@@ -229,7 +229,9 @@ func (e *Engine) Metrics(id string) remotestats.Metrics {
 func (e *Engine) each(id string, f func(*runtime, *history)) {
 	for _, r := range e.panels {
 		if r.running {
-			if h := r.hosts[id]; h != nil {
+			// An empty card is stopped even when another panel still needs the
+			// shared source. Do not advance its status or retain empty samples.
+			if h := r.hosts[id]; h != nil && r.config.Metrics(id) != 0 {
 				f(r, h)
 			}
 		}

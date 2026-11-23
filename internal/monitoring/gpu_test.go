@@ -120,3 +120,35 @@ func TestDisplayCollectionDemandUnionsPanelsAndStopsEmptyHosts(t *testing.T) {
 		t.Fatal("fully hidden host still owns a collection stream")
 	}
 }
+
+func TestDisplayEmptyPanelIgnoresSharedSourceUntilEnabled(t *testing.T) {
+	e := &Engine{}
+	a := Panel{ID: "a", Hosts: []string{"host"}, Interval: 5, Retention: 15}
+	b := a.Clone()
+	b.ID = "b"
+	e.Set(a, true)
+	e.Set(b, true)
+	at := time.Date(2026, 11, 23, 0, 0, 0, 0, time.UTC)
+	sample := remotestats.Sample{MemoryTotalBytes: 1024, MemoryUsedBytes: 512}
+	e.Publish("host", at, sample)
+	a.Display = map[string]Display{"host": {Hidden: []string{"cpu", "memory", "network", "disks", "gpu"}}}
+	e.Set(a, true)
+	stopped, _ := e.Read("a", "host", 100, 0)
+	e.SetStatus("host", Failed)
+	e.Details("host", remotestats.Details{}, true)
+	e.Publish("host", at.Add(5*time.Second), sample)
+	if _, changed := e.Read("a", "host", 100, stopped.Version); changed {
+		t.Fatal("empty panel still consumed updates from another panel's source")
+	}
+	active, _ := e.Read("b", "host", 100, 0)
+	if !active.Updated.Equal(at.Add(5*time.Second)) || len(active.Points) < 2 {
+		t.Fatal("empty panel stopped another panel's shared source")
+	}
+	delete(a.Display, "host")
+	e.Set(a, true)
+	e.Publish("host", at.Add(10*time.Second), sample)
+	resumed, _ := e.Read("a", "host", 100, stopped.Version)
+	if len(resumed.Points) != 3 || !math.IsNaN(float64(resumed.Points[1].Values[1])) || resumed.Points[2].Values[1] != 50 {
+		t.Fatal("re-enabling an empty panel lost its history or pause gap")
+	}
+}
