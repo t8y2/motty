@@ -487,8 +487,10 @@ func (state *State) checkForUpdates(asked bool) {
 				// leaves alone a version that was skipped.
 				switch {
 				case asked:
-					state.update.offer = true
-					state.showNextPrompt()
+					if state.modal != modalUpdate {
+						state.update.offer = true
+						state.showNextPrompt()
+					}
 				case release.Version != state.update.skipped && release.Version != state.update.announced:
 					// A check nobody asked for must not take the screen: a
 					// dialog would land on whatever the user is typing. Say it
@@ -504,6 +506,9 @@ func (state *State) checkForUpdates(asked bool) {
 					state.update.text = ""
 				}
 			}
+			if state.options.Invalidate != nil {
+				state.options.Invalidate()
+			}
 		})
 	}()
 }
@@ -511,18 +516,25 @@ func (state *State) checkForUpdates(asked bool) {
 // changeUpdateSource saves the choice and asks the new source at once. A
 // release the other source found names the other host, so it is dropped rather
 // than downloaded from the host the user just left; a check still running is
-// told to forget its answer.
+// told to forget its answer. If the update dialog is open, it remains open and
+// checks the new source with a progress indicator.
 func (state *State) changeUpdateSource() {
 	state.save()
+	inDialog := state.modal == modalUpdate
 	state.update.checkSerial++
 	state.update.checking = false
 	state.update.available = false
 	state.update.release = update.Release{}
 	state.update.offer = false
-	if state.modal == modalUpdate {
-		state.closeModal()
+	state.update.notes = updateNotes{}
+	if inDialog {
+		state.checkForUpdates(true)
+		if state.options.Invalidate != nil {
+			state.options.Invalidate()
+		}
+	} else {
+		state.checkForUpdates(false)
 	}
-	state.checkForUpdates(false)
 }
 
 // openExternal opens a web address in the browser.

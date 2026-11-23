@@ -1496,6 +1496,12 @@ func (state *State) closeModal() {
 	if state.modal == modalLocalProxy {
 		state.localProxyUI = localProxyUI{}
 	}
+	if state.modal == modalUpdate {
+		if state.update.checking {
+			state.update.checkSerial++
+			state.update.checking = false
+		}
+	}
 	state.modal = modalNone
 	if returnToRules {
 		state.modal = modalRuleManager
