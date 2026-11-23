@@ -426,6 +426,7 @@ var TraditionalMessages = Messages{
 	SettingsTerminalClipboardAllow:         "允許",
 	SettingsShortcuts:                      "鍵盤快速鍵",
 	ShortcutsReset:                         "恢復預設",
+	ShortcutsClearAll:                      "清除全部",
 	ShortcutsDelete:                        "刪除快速鍵",
 	ShortcutsCaptureTitle:                  "按下快速鍵",
 	ShortcutsCaptureDescription:            "按下單鍵或任意修飾鍵組合，支援字母、數字、標點、空格、導航鍵和 F1–F12。按 Esc 取消，點選「刪除快速鍵」移除繫結。已繫結的按鍵優先觸發快速鍵。",

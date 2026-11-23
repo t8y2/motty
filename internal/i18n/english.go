@@ -426,6 +426,7 @@ var EnglishMessages = Messages{
 	SettingsTerminalClipboardAllow:         "Allow",
 	SettingsShortcuts:                      "Keyboard shortcuts",
 	ShortcutsReset:                         "Reset defaults",
+	ShortcutsClearAll:                      "Clear all",
 	ShortcutsDelete:                        "Delete shortcut",
 	ShortcutsCaptureTitle:                  "Press a shortcut",
 	ShortcutsCaptureDescription:            "Press a key with any modifiers or none: letters, digits, punctuation, Space, navigation keys or F1–F12. Esc cancels; Delete shortcut removes the binding. Bound keys take priority over terminal input.",

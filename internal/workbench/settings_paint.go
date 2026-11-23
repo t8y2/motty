@@ -259,16 +259,21 @@ func (page *settingsPage) header(title string, searching bool) {
 		}
 		switch page.state.settingsCategory {
 		case settingsShortcuts:
-			page.headerButton(page.state.messages.ShortcutsReset, hitShortcutReset)
+			messages := page.state.messages
+			page.headerButtons(
+				components.ButtonAction{ID: hitShortcutClearAll, Label: messages.ShortcutsClearAll, Variant: components.ButtonOutline, Disabled: !page.state.shortcuts.anyBound()},
+				components.ButtonAction{ID: hitShortcutReset, Label: messages.ShortcutsReset, Variant: components.ButtonOutline},
+			)
 		}
 	})
 }
 
-// headerButton is a page-wide action in the title row. It is recorded like a
-// row's buttons, so the keyboard reaches it and the page paints it in place.
-func (page *settingsPage) headerButton(label string, id gfx.ID) {
+// headerButtons are the page-wide actions in the title row. They are recorded
+// like a row's buttons, so the keyboard reaches them and the page paints them in
+// place.
+func (page *settingsPage) headerButtons(actions ...components.ButtonAction) {
 	slot := ui.Row(page.c).Height(34).Shrink(0).Items(ui.Center).Justify(ui.End)
-	page.buttons(slot, false, components.ButtonAction{ID: id, Label: label, Variant: components.ButtonOutline})
+	page.buttons(slot, false, actions...)
 }
 
 // canvas is the page's canvas: a control paints from it and a label is measured

@@ -323,6 +323,25 @@ func (shortcuts *shortcutMap) unbind(action shortcutAction) bool {
 	return true
 }
 
+// unbindAll takes the chord away from every action, for a user who wants none
+// of the defaults and will give back only the ones they use. Each action keeps
+// its row reading "—", as after unbind, and Reset defaults brings the table back.
+func (shortcuts *shortcutMap) unbindAll() {
+	for action := shortcutAction(1); action < shortcutActionCount; action++ {
+		shortcuts.unbind(action)
+	}
+}
+
+// anyBound reports whether some action still has a chord.
+func (shortcuts *shortcutMap) anyBound() bool {
+	for action := shortcutAction(1); action < shortcutActionCount; action++ {
+		if shortcuts.chords.Chord(action).Valid() {
+			return true
+		}
+	}
+	return false
+}
+
 func (action shortcutAction) String() string {
 	switch action {
 	case shortcutCommandPalette:

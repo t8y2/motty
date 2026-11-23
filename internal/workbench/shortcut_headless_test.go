@@ -484,3 +484,51 @@ func TestHeadlessLocalTerminalShortcutOpensItsTab(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Clear all is the way to start from no shortcuts at all, for a user whose shell
+// or editor wants keys the defaults hold. Every action is left unbound, the
+// choice survives a restart, a key that was bound reaches the terminal instead
+// of running a Motty action, and Reset defaults brings the table back.
+func TestHeadlessShortcutClearAllLeavesNothingBoundAndSurvivesARestart(t *testing.T) {
+	options := freshOptions(t)
+	state := newTestState(t, options)
+	showShortcutSettings(state)
+	session, err := headless.Open(app.Config{
+		Title: "shortcuts", Width: 1400, Height: 900,
+		Paint: state.Paint, OnPointer: state.Pointer,
+		OnKey: state.Key, OnShortcut: state.Shortcut, OnResize: state.Resize,
+	}, nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	find := defaultShortcuts().chords.Chord(shortcutFind)
+	if state.shortcuts.actionFor(find) != shortcutFind {
+		t.Fatalf("find chord %+v is not bound before clearing", find)
+	}
+	if err := session.ClickLabel(state.messages.ShortcutsClearAll); err != nil {
+		t.Fatal(err)
+	}
+	if state.shortcuts.anyBound() {
+		t.Fatal("an action still has a chord after Clear all")
+	}
+	if got := state.shortcuts.actionFor(find); got != shortcutNone {
+		t.Fatalf("the cleared find chord still runs %v", got)
+	}
+	if got := state.shortcuts.labels[shortcutFind]; got != chordLabel(keymap.Chord{}) {
+		t.Fatalf("find row reads %q, want the empty-binding dash", got)
+	}
+
+	restarted := newTestState(t, options)
+	if restarted.shortcuts.anyBound() {
+		t.Fatal("the cleared shortcuts came back after a restart")
+	}
+
+	if err := session.ClickLabel(state.messages.ShortcutsReset); err != nil {
+		t.Fatal(err)
+	}
+	if got := state.shortcuts.actionFor(find); got != shortcutFind {
+		t.Fatalf("after Reset defaults the find chord runs %v, want find", got)
+	}
+}

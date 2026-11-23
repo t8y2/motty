@@ -426,6 +426,7 @@ var ChineseMessages = Messages{
 	SettingsTerminalClipboardAllow:         "允许",
 	SettingsShortcuts:                      "键盘快捷键",
 	ShortcutsReset:                         "恢复默认",
+	ShortcutsClearAll:                      "清除全部",
 	ShortcutsDelete:                        "删除快捷键",
 	ShortcutsCaptureTitle:                  "按下快捷键",
 	ShortcutsCaptureDescription:            "按下单键或任意修饰键组合，支持字母、数字、标点、空格、导航键和 F1–F12。按 Esc 取消，点击「删除快捷键」移除绑定。已绑定的按键优先触发快捷键。",

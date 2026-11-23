@@ -453,6 +453,7 @@ type Messages struct {
 	SettingsTerminalClipboardAllow       string
 	SettingsShortcuts                    string
 	ShortcutsReset                       string
+	ShortcutsClearAll                    string
 	ShortcutsDelete                      string
 	ShortcutsCaptureTitle                string
 	ShortcutsCaptureDescription          string
