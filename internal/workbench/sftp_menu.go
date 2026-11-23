@@ -20,6 +20,8 @@ var (
 	hitSFTPMenuSend         = tree.ID(sftpMenuHits, "sftp-menu-send")
 	hitSFTPMenuInsertPath   = tree.ID(sftpMenuHits, "sftp-menu-insert-path")
 	hitSFTPMenuEdit         = tree.ID(sftpMenuHits, "sftp-menu-edit")
+	hitSFTPMenuReveal       = tree.ID(sftpMenuHits, "sftp-menu-reveal")
+	hitSFTPMenuOpenFolder   = tree.ID(sftpMenuHits, "sftp-menu-open-folder")
 	hitSFTPMenuRename       = tree.ID(sftpMenuHits, "sftp-menu-rename")
 	hitSFTPMenuMove         = tree.ID(sftpMenuHits, "sftp-menu-move")
 	hitSFTPMenuChmod        = tree.ID(sftpMenuHits, "sftp-menu-chmod")
@@ -47,6 +49,10 @@ func sftpMenuAction(id gfx.ID) (gfx.ID, bool) {
 		return hitSFTPInsertPath, true
 	case hitSFTPMenuEdit:
 		return hitSFTPEditExternal, true
+	case hitSFTPMenuReveal:
+		return hitSFTPReveal, true
+	case hitSFTPMenuOpenFolder:
+		return hitSFTPOpenFolder, true
 	case hitSFTPMenuRename:
 		return hitSFTPRename, true
 	case hitSFTPMenuMove:
@@ -171,6 +177,12 @@ func (state *State) sftpMenuRows(session *Session, view *sftpView) menuRows {
 		if local && selected.Mode.IsRegular() {
 			rows.add(components.ContextMenuItem{ID: hitSFTPMenuEdit, Label: messages.Tools.ExtEditButton, Icon: icon(iconExternal), Disabled: busy})
 		}
+		if local && validLocalDirectory(view.lfolder.path) {
+			rows.add(components.ContextMenuItem{ID: hitSFTPMenuReveal, Label: messages.Tools.ActionReveal, Icon: icon(iconFolderOpen), Disabled: busy || state.revealBusy})
+		}
+		rows.separate()
+	} else if count == 0 && local && validLocalDirectory(view.lfolder.path) {
+		rows.add(components.ContextMenuItem{ID: hitSFTPMenuOpenFolder, Label: messages.ShortcutTerminalFolder, Icon: icon(iconFolderOpen), Disabled: busy || state.revealBusy})
 		rows.separate()
 	}
 	if count > 0 {
