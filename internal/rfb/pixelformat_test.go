@@ -252,6 +252,37 @@ func BenchmarkDecodeRaw(b *testing.B) {
 	}
 }
 
+func BenchmarkDecodeZRLE(b *testing.B) {
+	for _, format := range []PixelFormat{Pixel32, Pixel16, Pixel8} {
+		b.Run(map[PixelFormat]string{Pixel32: "32", Pixel16: "16", Pixel8: "8"}[format], func(b *testing.B) {
+			const width, height = 1024, 64
+			stream := newZRLEStream()
+			var tiles []byte
+			for left := 0; left < width; left += 64 {
+				tw := min(64, width-left)
+				tiles = append(tiles, 0) // raw mode
+				for range tw * height {
+					tiles = append(tiles, bytes.Repeat([]byte{0x12}, format.compressedSize())...)
+				}
+			}
+			rectData := stream.rect(0, 0, width, height, tiles)
+			body := rectData[12:] // skip 12-byte rect header
+			client := clientOver(nil, width, height)
+			client.format = format
+			sink := &nullSink{t: b, width: width, height: height}
+			b.SetBytes(int64(width * height * 4))
+			b.ReportAllocs()
+			for b.Loop() {
+				client.zrle = zrleState{}
+				client.r.Reset(bytes.NewReader(body))
+				if err := client.decodeZRLE(sink, 0, 0, width, height); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
 // readQuality reads the SetPixelFormat and SetEncodings a client sends for
 // SetQuality and returns the bits per pixel and the first encoding.
 func (s *server) readQuality() (bits byte, first int32) {

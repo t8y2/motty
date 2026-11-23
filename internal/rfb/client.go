@@ -105,6 +105,9 @@ type Sink interface {
 	Bell()
 	// ServerText is the server's clipboard, as UTF-8, at most MaxClipboard bytes.
 	ServerText(text string)
+	// Flush marks the end of a FramebufferUpdate, waking the presenter once
+	// rather than for each decoded rectangle.
+	Flush()
 }
 
 // Config describes how to connect.
@@ -204,8 +207,9 @@ type Client struct {
 	rowBuf  []byte
 	tileBuf []byte
 	// convBuf holds Raw and Hextile pixels widened from a smaller format.
-	convBuf []byte
-	zrle    zrleState
+	convBuf  []byte
+	zrle     zrleState
+	pixelBuf [4]byte
 }
 
 // Connect speaks the handshake over conn and returns a client ready to Run. On
@@ -771,6 +775,7 @@ func (client *Client) update(sink Sink) error {
 			return err
 		}
 	}
+	sink.Flush()
 	client.mu.Lock()
 	active := client.active
 	client.waiting = !active

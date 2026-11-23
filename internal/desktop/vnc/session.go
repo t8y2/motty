@@ -71,7 +71,7 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 		return nil, err
 	}
 	session := &Session{client: client, opts: opts, done: make(chan struct{})}
-	session.frame = desktop.NewFrame(opts.Notify)
+	session.frame = desktop.NewFrame(nil)
 	session.info = desktop.Info{Protocol: "VNC", Name: client.Name, Encrypted: opts.Encrypted || client.Encrypted}
 	go session.run(conn)
 	return session, nil
@@ -107,6 +107,15 @@ func encodings(preferred desktop.Encoding) []int32 {
 type sink struct {
 	*desktop.Frame
 	session *Session
+}
+
+func (s sink) Resize(width, height int) {
+	s.Frame.Resize(width, height)
+	s.session.wake()
+}
+
+func (s sink) Flush() {
+	s.session.wake()
 }
 
 func (s sink) Bell() {
