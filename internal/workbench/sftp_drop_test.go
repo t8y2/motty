@@ -66,6 +66,9 @@ func TestDroppedFilesUploadIntoTheFolderShown(t *testing.T) {
 	if file != "dropped" || leaf != "leaf" {
 		t.Fatalf("remote has file %q, leaf %q", file, leaf)
 	}
+	waitSFTP(t, state, session, func(v *sftpView) bool {
+		return !v.busy && sftpRowIndexOrNegative(v, "dropped.txt") >= 0 && sftpRowIndexOrNegative(v, "tree") >= 0
+	})
 }
 
 func TestDroppedFilesOnAFolderRowGoIntoThatFolder(t *testing.T) {
@@ -218,4 +221,133 @@ func TestDropOnATerminalWhoseFolderIsUnknownIsRefused(t *testing.T) {
 	if result := state.FileDrop(event); result.Handled {
 		t.Fatalf("a terminal with no known folder accepted the hover: %+v", result)
 	}
+}
+
+func TestDroppedFilesOnTheTerminalRefreshesSFTPViews(t *testing.T) {
+	state, session, w, remote, _ := openSFTPTabFixture(t)
+	w.navigate(false, "/home/test/docs")
+	waitSFTPTab(t, state, w, func() bool { return !w.view.busy && w.view.path == "/home/test/docs" })
+
+	dir := t.TempDir()
+	externalFile := filepath.Join(dir, "terminal_upload.txt")
+	if err := os.WriteFile(externalFile, []byte("content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	upload := terminalDrop{session: session.ID, directory: "/home/test/docs"}
+	if !state.uploadToTerminalFolder(upload, []string{externalFile}) {
+		t.Fatal("uploadToTerminalFolder failed")
+	}
+
+	waitSFTP(t, state, session, func(*sftpView) bool {
+		return len(state.terminalUploads) == 0 &&
+			len(session.files.transfers) > 0 &&
+			!sftpTransfersActive(session.files.transfers)
+	})
+
+	waitSFTPTab(t, state, w, func() bool {
+		return !w.view.busy && sftpRowIndexOrNegative(w.view, "terminal_upload.txt") >= 0
+	})
+	_ = remote
+}
+
+func TestDroppedFilesOnSubfolderRowRefreshesOpenView(t *testing.T) {
+	state, session, w, remote, _ := openSFTPTabFixture(t)
+	w.navigate(false, "/home/test")
+	waitSFTPTab(t, state, w, func() bool { return !w.view.busy && w.view.path == "/home/test" })
+
+	session.files.path = "/home/test/docs"
+	state.listSFTP(session.files, "/home/test/docs")
+	waitSFTP(t, state, session, func(v *sftpView) bool { return !v.busy && v.path == "/home/test/docs" })
+
+	docsRow := -1
+	for idx, r := range w.folder(false).rows {
+		if r.entry.Name == "docs" {
+			docsRow = idx
+			break
+		}
+	}
+	if docsRow < 0 {
+		t.Fatal("docs row not found in w")
+	}
+
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1500, Height: 900})
+
+	remoteRect := w.ui.list[1]
+	dropX := remoteRect.X + 24
+	dropY := remoteRect.Y + float32(docsRow)*sftpRowHeight + sftpRowHeight/2
+
+	dir := t.TempDir()
+	externalFile := filepath.Join(dir, "dropped_on_docs.txt")
+	if err := os.WriteFile(externalFile, []byte("content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	at := gfx.FileDropEvent{
+		Phase: gfx.FileDropDrop,
+		X:     dropX,
+		Y:     dropY,
+		Paths: []string{externalFile},
+	}
+	if result := state.FileDrop(at); !result.Handled {
+		t.Fatal("FileDrop not handled")
+	}
+
+	waitSFTPTab(t, state, w, func() bool {
+		return !w.view.busy &&
+			!w.view.refreshAfterTransfers &&
+			!sftpTransfersActive(w.view.worker.Transfers(nil))
+	})
+
+	waitSFTP(t, state, session, func(v *sftpView) bool {
+		return !v.busy && sftpRowIndexOrNegative(v, "dropped_on_docs.txt") >= 0
+	})
+	_ = remote
+}
+
+func TestDroppedDirectoryRefreshesFolder(t *testing.T) {
+	state, session, w, remote, _ := openSFTPTabFixture(t)
+	w.navigate(false, "/home/test")
+	waitSFTPTab(t, state, w, func() bool { return !w.view.busy && w.view.path == "/home/test" })
+
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1500, Height: 900})
+
+	remoteRect := w.ui.list[1]
+	dropX := remoteRect.X + 24
+	dropY := remoteRect.Y + remoteRect.Height - 12
+
+	localDir := t.TempDir()
+	folderToUpload := filepath.Join(localDir, "new_folder")
+	if err := os.Mkdir(folderToUpload, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(folderToUpload, "inner.txt"), []byte("inner"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	at := gfx.FileDropEvent{
+		Phase: gfx.FileDropDrop,
+		X:     dropX,
+		Y:     dropY,
+		Paths: []string{folderToUpload},
+	}
+	if result := state.FileDrop(at); !result.Handled {
+		t.Fatal("FileDrop not handled")
+	}
+
+	waitSFTPTab(t, state, w, func() bool {
+		return !w.view.busy &&
+			!w.view.refreshAfterTransfers &&
+			!sftpTransfersActive(w.view.worker.Transfers(nil))
+	})
+
+	waitSFTPTab(t, state, w, func() bool {
+		return sftpRowIndexOrNegative(w.view, "new_folder") >= 0
+	})
+	waitSFTP(t, state, session, func(v *sftpView) bool {
+		return sftpRowIndexOrNegative(v, "new_folder") >= 0
+	})
+	_ = remote
 }
