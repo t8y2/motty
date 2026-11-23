@@ -172,7 +172,7 @@ type terminal struct {
 	paintBarBackground                        gfx.Color
 	paintGeometry                             terminalGeometry
 	paintFind                                 findBarSlots
-	paintSpinner, paintLight ui.Box
+	paintSpinner, paintLight                  ui.Box
 	// paintConnectionBar is the connection bar's hand-painted content slot.
 	paintConnectionBar ui.Box
 
