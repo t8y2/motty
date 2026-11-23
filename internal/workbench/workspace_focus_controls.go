@@ -37,6 +37,10 @@ func (state *State) declareSessionMaximizeButton(c ui.C, session *Session) {
 }
 
 func (state *State) workspaceFocusTabsKey(event gfx.KeyEvent) gfx.EventResult {
+	if !event.Release && event.Key == gfx.KeyEscape && state.focusTabs.drag.pane != 0 {
+		state.focusTabs.drag = workspaceFocusDrag{}
+		return gfx.EventResult{Handled: true, Repaint: true}
+	}
 	if state.modal != modalNone || !state.terminalPage() || !state.deck.PaneMaximized(state.deck.ActiveWorkspace()) || event.Target.Scope() != hitWorkspaceFocusTab || event.Release || event.Modifiers != 0 {
 		return gfx.EventResult{}
 	}

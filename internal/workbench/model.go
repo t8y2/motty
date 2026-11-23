@@ -192,9 +192,10 @@ type Session struct {
 	workspaceCommand WorkspaceCommand    // immutable workspace configuration for this session
 	outputAlert      terminalOutputAlert // runtime only; connection status stays independent
 
-	ID     uint32
-	HostID uint32
-	Title  string
+	ID          uint32
+	HostID      uint32
+	Title       string
+	customTitle bool // 仅用户命名或复制自定义名称时设置。
 	// Mention is this session's unique @ name. Titles may repeat; the mention
 	// stays distinct so a message names exactly one terminal.
 	Mention  string
