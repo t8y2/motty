@@ -547,6 +547,7 @@ type ToolsMessages struct {
 	FilesFollowDescription          string
 	FilesLocateTerminal             string
 	FilesLocateTerminalSkipped      string
+	FilesLocateTerminalMissing      string
 	FilesTerminalFollow             string
 	FilesTerminalFollowDescription  string
 	FilesTerminalFollowSkipped      string

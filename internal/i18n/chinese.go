@@ -2267,6 +2267,7 @@ var chineseTools = ToolsMessages{
 	FilesFollow:                     "跟随终端所在目录",
 	FilesLocateTerminal:             "定位终端到当前目录",
 	FilesLocateTerminalSkipped:      "终端目录未切换。请回到 Shell 的空提示符后，重新点击定位按钮。",
+	FilesLocateTerminalMissing:      "远程目录已不存在，无法定位终端。文件面板仍停留在服务器。",
 	FilesFollowDescription:          "文件面板跟随 SSH 与本机终端 shell 所在目录（OSC 7）。新启动的 bash / zsh / PowerShell 会自动启用上报。",
 	FilesTerminalFollow:             "终端跟随文件栏目录",
 	FilesTerminalFollowDescription:  "默认关闭。进入远程文件夹时，仅在已验证的空提示符下同步终端目录。需要 Motty 自动启用的 Bash / zsh 集成。",

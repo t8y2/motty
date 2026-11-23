@@ -50,6 +50,37 @@ func TestLocateTerminalToolbarUsesDisplayedDirectoryOnce(t *testing.T) {
 	}
 }
 
+func TestLocateTerminalKeepsTheRemotePanelWhenTheFolderIsGone(t *testing.T) {
+	state, session, fake, remote := openTestSFTP(t)
+	shell := fake.shell(t)
+	shell.say(folderSyncMarker(session, "C") + folderSyncMarker(session, "A") + folderSyncMarker(session, "B"))
+	state.Wake()
+	remote.mu.Lock()
+	remote.missing = map[string]bool{session.files.path: true}
+	remote.mu.Unlock()
+	before := folderSyncInput(shell)
+	state.Click(hitSFTPLocateTerminal)
+	waitSFTP(t, state, session, func(v *sftpView) bool { return !v.busy })
+	if got := folderSyncInput(shell); got != before {
+		t.Fatalf("a deleted folder sent a cd: %q", got)
+	}
+	if session.files.local || session.files.localOnly {
+		t.Fatal("a deleted remote folder switched the panel to local files")
+	}
+	if session.files.path != "/home/test" {
+		t.Fatalf("the remote panel left its folder: %q", session.files.path)
+	}
+	if session.files.errorText != state.messages.Tools.FilesLocateTerminalMissing {
+		t.Fatalf("deleted folder error = %q, want %q", session.files.errorText, state.messages.Tools.FilesLocateTerminalMissing)
+	}
+	if session.files.status == state.messages.SFTPLoading {
+		t.Fatal("the failed locate left the panel loading")
+	}
+	if session.files.terminalPath != "" || session.files.terminalLocate {
+		t.Fatal("the failed locate left a pending command")
+	}
+}
+
 func TestLocateTerminalRejectsUnsafeOrUnrelatedContexts(t *testing.T) {
 	for _, mode := range []string{"unknown", "dirty", "running", "alt-screen", "ai-exec", "local", "detached", "container", "disconnected", "busy", "invalid-path", "windows-host"} {
 		t.Run(mode, func(t *testing.T) {

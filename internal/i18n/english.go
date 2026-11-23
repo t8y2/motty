@@ -2267,6 +2267,7 @@ var englishTools = ToolsMessages{
 	FilesFollow:                     "Follow the terminal's folder",
 	FilesLocateTerminal:             "Go to this folder in the terminal",
 	FilesLocateTerminalSkipped:      "Terminal folder unchanged. Return to an empty shell prompt, then click the button again.",
+	FilesLocateTerminalMissing:      "That remote folder no longer exists, so the terminal was not moved. The file panel is still showing the server.",
 	FilesFollowDescription:          "The file panel follows the folder the terminal reports (OSC 7), over SSH and on this computer. Bash, zsh and PowerShell are set up automatically when they start.",
 	FilesTerminalFollow:             "Terminal follows file navigation",
 	FilesTerminalFollowDescription:  "Off by default. Entering a remote folder also changes the same terminal's folder at a verified empty prompt. Requires the Bash or zsh integration Motty starts automatically.",

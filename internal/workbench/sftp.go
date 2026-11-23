@@ -2776,7 +2776,9 @@ func (state *State) pumpSFTP(session *Session) {
 				view.abandonedPath = ""
 				continue
 			}
+			locateMissing := false
 			if result.Operation == sftpclient.OperationList && result.Err != nil && result.Path == view.terminalPath {
+				locateMissing = view.terminalLocate && sftpclient.IsPathNotFound(result.Err)
 				view.terminalPath, view.terminalLocate = "", false
 			}
 			if result.Operation == sftpclient.OperationList && result.Err != nil && view.detached != nil && view.detached.browseListingFailed(false, result.Path, result.Err) {
@@ -2813,6 +2815,14 @@ func (state *State) pumpSFTP(session *Session) {
 				} else if errors.Is(result.Err, sftpclient.ErrRemoteChanged) {
 					view.dialog = sftpDialogRemoteChanged
 					view.errorText = state.messages.SFTPEditConflict
+				} else if locateMissing {
+					// The folder the explicit locate was about to validate has gone.
+					// Say so, leave the panel on the server side, and send no cd.
+					view.errorText = state.messages.Tools.FilesLocateTerminalMissing
+					if view.status == view.listingStatus {
+						view.status = ""
+					}
+					view.listingStatus = ""
 				} else {
 					view.errorText = state.formatSFTPError(result.Err)
 				}

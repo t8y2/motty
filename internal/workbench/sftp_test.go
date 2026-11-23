@@ -37,6 +37,7 @@ type workbenchSFTPRemote struct {
 	removeErr    error             // refuses every removal while set
 	removeErrAt  map[string]error  // refuses a particular path
 	unreadable   map[string]bool   // folders whose listing is refused
+	missing      map[string]bool   // folders that no longer exist
 	onRead       func(dir string)  // runs before a folder is listed, outside the lock
 }
 
@@ -92,6 +93,9 @@ func (remote *workbenchSFTPRemote) ReadDir(path string) ([]os.FileInfo, error) {
 	}
 	remote.mu.Lock()
 	defer remote.mu.Unlock()
+	if remote.missing[path] {
+		return nil, os.ErrNotExist
+	}
 	if remote.unreadable[path] {
 		return nil, os.ErrPermission
 	}
