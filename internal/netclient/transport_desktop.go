@@ -14,7 +14,7 @@ import (
 func newTransport() *http.Transport {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = func(request *http.Request) (*url.URL, error) {
-		return proxy.SystemProxy(request.URL)
+		return proxy.SystemProxyContext(request.Context(), request.URL)
 	}
 	return transport
 }
