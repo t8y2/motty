@@ -1,0 +1,80 @@
+# End to end: a saved outbound proxy profile carries a host, the settings page
+# shows how many hosts use it, and deleting it says what happens to them.
+#
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/proxy_profiles_e2e.txt
+#
+# The profile row and the confirmation are named by identity: the page has
+# other Delete buttons (host tags), and the dialog's own Delete shares its label
+# with them.
+
+# lang: en
+click "Settings"
+waitfor "Connection" 3000
+click "Connection"
+settle 500
+scroll 900 500 0 500
+settle 500
+expect layout clean
+shot /tmp/proxy-profile-empty.png
+
+click "Add proxy profile"
+waitfor "Proxy type" 3000
+type Office SOCKS
+click "Proxy address (host:port)"
+type 127.0.0.1:1080
+click "User name (optional)"
+type alice
+click "Password (optional)"
+type s3cret
+settle 300
+expect layout clean
+shot /tmp/proxy-profile-dialog.png
+click "Save"
+waitfor "Not used by any host" 3000
+settle 400
+expect layout clean
+shot /tmp/proxy-profile-saved.png
+
+click "Hosts"
+click "New Host"
+waitfor "Test Connection" 3000
+type Demo Host
+click textfield:Address
+type demo.example.com
+click textfield:User
+type root
+click "Configure"
+waitfor "Host outbound proxy" 3000
+settle 400
+expect layout clean
+shot /tmp/proxy-profile-host-manual.png
+click "Proxy profile"
+settle 300
+click "Office SOCKS · SOCKS5 at 127.0.0.1:1080"
+settle 400
+expect layout clean
+shot /tmp/proxy-profile-host-selected.png
+click "Save"
+settle 400
+click "Add Host"
+settle 500
+expect text "Demo Host" within 3000
+
+click "Settings"
+click "Connection"
+settle 500
+scroll 900 500 0 500
+settle 400
+waitfor "Used by 1 hosts" 3000
+expect layout clean
+shot /tmp/proxy-profile-used.png
+click id:proxy-profiles/proxy-profile-delete/#0
+waitfor "Delete proxy profile" 3000
+settle 300
+expect layout clean
+shot /tmp/proxy-profile-delete.png
+click id:rule-delete/confirm
+settle 500
+expect layout clean
+shot /tmp/proxy-profile-after-delete.png

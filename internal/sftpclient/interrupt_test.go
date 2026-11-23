@@ -34,7 +34,7 @@ func TestInterruptKeepsAnUploadForTheNextConnection(t *testing.T) {
 	if snapshots[0].Error != ErrInterrupted.Error() || snapshots[0].Retryable {
 		t.Fatalf("interrupted transfer reports %q retryable=%t", snapshots[0].Error, snapshots[0].Retryable)
 	}
-	partial := filepath.Join(root, remotePartialPath("up.bin"))
+	partial := filepath.Join(root, remotePartialPath("up.bin", local))
 	kept, err := os.ReadFile(partial)
 	if err != nil || len(kept) == 0 || len(kept) >= size {
 		t.Fatalf("partial: %d bytes, err %v, want the bytes moved before the link went", len(kept), err)
@@ -86,7 +86,7 @@ func TestInterruptCoversAFailureTheLostLinkCaused(t *testing.T) {
 	if len(snapshots) != 1 || snapshots[0].State != TransferInterrupted {
 		t.Fatalf("transfer = %+v, want the failed upload kept for a resume", snapshots)
 	}
-	requireExists(t, filepath.Join(root, remotePartialPath("up.bin")), true)
+	requireExists(t, filepath.Join(root, remotePartialPath("up.bin", local)), true)
 }
 
 // A destination that already exists is a question for the user; a lost link

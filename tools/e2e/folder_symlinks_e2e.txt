@@ -1,0 +1,33 @@
+# End to end: a folder that holds symbolic links, such as a macOS .app bundle,
+# moves as links instead of stopping the transfer.
+#
+#   cd tools/e2esshd && go build -o /tmp/e2esshd . && cd ../..
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   S=/tmp/lnsrc/App.app/Contents; mkdir -p $S/Frameworks/X.framework/Versions/A
+#   echo binary > $S/Frameworks/X.framework/Versions/A/X
+#   ln -s A $S/Frameworks/X.framework/Versions/Current
+#   ln -s ../.. $S/up; ln -s /etc/hosts $S/abs; ln -s missing $S/dangling
+#   /tmp/e2esshd 2261 &    # SFTP; for an SCP upload: E2E_NO_SFTP=1 /tmp/e2esshd 2261 &
+#   python3 tools/headless_drive.py $(mktemp -d) tools/e2e/folder_symlinks_e2e.txt
+#
+# Afterwards the fixture's root (printed as "sftp root") holds App.app with every
+# link as a link (`ls -lR`). The SFTP fixture joins a relative target to its own
+# folder, which OpenSSH does not; the SCP fixture keeps the text as sent.
+# Run folder_symlinks_download_e2e.txt next, in a fresh home, to bring it back.
+# lang: en
+click "Search"
+type tester@127.0.0.1:2261
+click "Connect"
+waitfor "Trust this host" 3000
+click "Connect Once"
+waitfor "Password" 3000
+type secret
+key enter
+settle 2500
+key cmd+shift+s
+settle 1500
+opendirectory /tmp/lnsrc/App.app
+click "Upload Folder"
+settle 2500
+expect text "Uploaded" within 4000
+shot /tmp/ln-symlinks-upload.png

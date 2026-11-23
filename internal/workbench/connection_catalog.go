@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"motty/internal/sshconfig"
 	"motty/internal/sshconn"
 	"motty/internal/vault"
 )
@@ -52,6 +53,9 @@ type hostCatalog struct {
 	identities []identityRecord
 	// credentials are the saved passwords hosts can share; the secrets are in the vault.
 	credentials []credential
+	// proxyProfiles are the saved outbound proxy routes hosts can share; their
+	// passwords are in the vault.
+	proxyProfiles []proxyProfile
 	// proxy is the outbound proxy every host inherits unless it names its own.
 	proxy             outboundProxy
 	connectionTimeout time.Duration
@@ -103,7 +107,27 @@ type connectionRoute struct {
 	// through another route is not shared.
 	proxyKey string
 	// jumpPath is the chain of jump hosts, "a → b", or empty for a direct host.
-	jumpPath string
+	jumpPath     string
+	jumpPolicies []jumpPolicy
+}
+
+type jumpPolicy struct {
+	id              uint32
+	auth            hostAuth
+	identity        string
+	credential      string
+	identitiesOnly  bool
+	interactiveOnly bool
+	options         *sshconfig.ConnectionOptions
+	algoMode        string
+	algoList        string
+}
+
+func (policy jumpPolicy) equal(other jumpPolicy) bool {
+	return policy.id == other.id && policy.auth == other.auth && policy.identity == other.identity &&
+		policy.credential == other.credential && policy.identitiesOnly == other.identitiesOnly &&
+		policy.interactiveOnly == other.interactiveOnly && policy.options.Equal(other.options) &&
+		policy.algoMode == other.algoMode && policy.algoList == other.algoList
 }
 
 // login is the account a connection to host signs in as.
@@ -136,11 +160,19 @@ func (catalog *hostCatalog) hostByID(id uint32) (Host, bool) {
 }
 
 func (catalog *hostCatalog) hostByConnection(address, user string, port uint16) (Host, bool) {
-	if port == 0 {
-		port = defaultPort
-	}
+	return catalog.hostByDestination(address, user, port, Host.isSSH)
+}
+
+func (catalog *hostCatalog) hostByDestination(address, user string, port uint16, allow func(Host) bool) (Host, bool) {
 	for _, host := range catalog.hosts {
-		if host.isSSH() && host.Address == address && catalog.storedLogin(host) == user && host.Port == port {
+		if !allow(host) || host.Address != address || catalog.storedLogin(host) != user {
+			continue
+		}
+		wantPort := port
+		if wantPort == 0 {
+			wantPort = host.defaultPort()
+		}
+		if host.Port == wantPort {
 			return host, true
 		}
 	}
@@ -148,15 +180,15 @@ func (catalog *hostCatalog) hostByConnection(address, user string, port uint16) 
 }
 
 // hostByRouteEnd is the host one end of a saved route names: the host with that
-// catalog ID, or, for a route saved without one, the host at that destination.
-// An ID that no host holds names nothing: another host at the same destination
-// is not the one the route was made for.
-func (catalog *hostCatalog) hostByRouteEnd(id, address, user string, port uint16) (Host, bool) {
+// catalog ID matching allow, or, for a route saved without an ID, a matching
+// host at that destination. An ID that no host holds names nothing: another
+// host at the same destination is not the one the route was made for.
+func (catalog *hostCatalog) hostByRouteEnd(id, address, user string, port uint16, allow func(Host) bool) (Host, bool) {
 	if id == "" {
-		return catalog.hostByConnection(address, user, port)
+		return catalog.hostByDestination(address, user, port, allow)
 	}
 	for _, host := range catalog.hosts {
-		if host.CatalogID == id && host.isSSH() {
+		if host.CatalogID == id && allow(host) {
 			return host, true
 		}
 	}
@@ -405,6 +437,17 @@ func (catalog *hostCatalog) proxyForHost(host Host, env connectEnv) *sshconn.Pro
 	if host.Protocol == protocolSerial {
 		return nil
 	}
+	if host.ProxyProfile != "" {
+		profile, ok := catalog.proxyProfileByID(host.ProxyProfile)
+		if !ok {
+			// A profile that is gone must not send the host through another
+			// route: it connects directly, as the host row says.
+			return nil
+		}
+		saved := profile.outboundProxy()
+		saved.bypass = host.ProxyBypass
+		return catalog.proxyWithPassword(saved, proxyProfileSecretName(profile.ID), env)
+	}
 	if host.Proxy == nil {
 		return catalog.proxyWithPassword(catalog.proxy, proxyPasswordSecret, env)
 	}
@@ -434,6 +477,7 @@ func (catalog *hostCatalog) sshConfigFor(host, proxyHost Host, env connectEnv) (
 	}
 	if env.Passwords != nil {
 		config.StoredKey = storedKeyReader(env.Passwords)
+		config.StoredCertificate = storedCertificateReader(env.Passwords)
 	}
 	targetEndpoint := sshconn.Endpoint{Host: host.Address, Port: host.Port, User: catalog.login(host)}
 	config.Authentication[targetEndpoint] = catalog.authenticationFor(host)
@@ -451,6 +495,12 @@ func (catalog *hostCatalog) sshConfigFor(host, proxyHost Host, env connectEnv) (
 		var path strings.Builder
 		for source := len(chain) - 1; source >= 0; source-- {
 			jump := chain[source]
+			algoMode, algoList := jump.savedAlgo()
+			route.jumpPolicies = append(route.jumpPolicies, jumpPolicy{
+				id: jump.ID, auth: jump.Auth, identity: jump.Identity, credential: jump.Credential,
+				identitiesOnly: jump.IdentitiesOnly, interactiveOnly: jump.InteractiveOnly,
+				options: jump.SSHOptions.Clone(), algoMode: algoMode, algoList: algoList,
+			})
 			endpoint := sshconn.Endpoint{Host: jump.Address, Port: jump.Port, User: catalog.login(jump)}
 			config.ProxyJumps[len(chain)-1-source] = endpoint
 			config.Authentication[endpoint] = catalog.authenticationFor(jump)
@@ -580,8 +630,8 @@ func decodeProxies(saved []savedProxy, hosts []Host) []proxyRecord {
 	ids := proxyNumbersBySavedID(saved)
 	next := uint32(1)
 	for index, entry := range saved {
-		target, targetOK := catalog.hostByRouteEnd(entry.TargetID, entry.TargetAddress, entry.TargetUser, entry.TargetPort)
-		jump, jumpOK := catalog.hostByRouteEnd(entry.JumpID, entry.JumpAddress, entry.JumpUser, entry.JumpPort)
+		target, targetOK := catalog.hostByRouteEnd(entry.TargetID, entry.TargetAddress, entry.TargetUser, entry.TargetPort, Host.isRouteTarget)
+		jump, jumpOK := catalog.hostByRouteEnd(entry.JumpID, entry.JumpAddress, entry.JumpUser, entry.JumpPort, Host.isSSH)
 		if !targetOK || !jumpOK || target.ID == jump.ID || catalog.proxyTargetConfigured(target.ID) || catalog.proxyWouldCycle(target.ID, jump.ID) {
 			continue
 		}

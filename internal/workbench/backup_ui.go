@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/vivaui/viva/gfx"
@@ -199,8 +200,35 @@ func (state *State) backupDocument() (backup.Document, error) {
 	if err != nil {
 		return backup.Document{}, err
 	}
-	document := backup.Document{Created: state.options.WallNow().UTC(), Device: state.config.Device(), Format: configFormat, Writer: configWriter(), Records: records}
 	snapshot := state.snapshot()
+	toolbarIndex := -1
+	for index, record := range records {
+		if record.Kind == kindSetting && record.ID == "toolbars" {
+			toolbarIndex = index
+			break
+		}
+	}
+	if toolbarIndex < 0 || records[toolbarIndex].Deleted {
+		data, err := json.Marshal(snapshot.Toolbars)
+		if err != nil {
+			return backup.Document{}, err
+		}
+		payload, err := json.Marshal(recordPayload{Data: data})
+		if err != nil {
+			return backup.Document{}, err
+		}
+		stamp, err := state.config.NextStamp()
+		if err != nil {
+			return backup.Document{}, err
+		}
+		record := configstore.Record{Kind: kindSetting, ID: "toolbars", Stamp: stamp, Payload: payload}
+		if toolbarIndex < 0 {
+			records = append(records, record)
+		} else {
+			records[toolbarIndex] = record
+		}
+	}
+	document := backup.Document{Created: state.options.WallNow().UTC(), Device: state.config.Device(), Format: configFormat, Writer: configWriter(), Records: records}
 	document.ShortcutPreferences = &backup.ShortcutPreferences{DefaultsGeneration: snapshot.ShortcutDefaultsGeneration, Shortcuts: make([]backup.Shortcut, 0, len(snapshot.Shortcuts))}
 	for _, entry := range snapshot.Shortcuts {
 		document.ShortcutPreferences.Shortcuts = append(document.ShortcutPreferences.Shortcuts, backup.Shortcut{Action: entry.Action, Key: entry.Key, Modifiers: entry.Modifiers})
@@ -344,6 +372,12 @@ func (state *State) applyBackupScope(document backup.Document, scope syncScope) 
 		}
 		if key.Kind == kindAICLIProvider && !hasCLICollection {
 			continue // legacy backups predate the independent CLI collection
+		}
+		if key.Kind == kindSetting && key.ID == "toolbars" && !seen[key] {
+			// Earlier backups never carried these device-local preferences.
+			// Absence keeps the destination's layout; an explicit toolbar
+			// record, including a reset, is still applied.
+			continue
 		}
 		if !live[key] {
 			change.Delete = append(change.Delete, key)

@@ -9,6 +9,7 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 )
 
@@ -45,7 +46,6 @@ type sftpPlaceMenu struct {
 	local     bool
 	locations []sftpLocalPlace
 	anchors   [2]gfx.Rect
-	scroll    components.MenuScroll
 }
 
 // A sidebar and a detached window share navigation shortcuts and favorites.
@@ -71,9 +71,6 @@ func (w *sftpWindow) toggleDirectoryFavorite(local bool) {
 }
 func (w *sftpWindow) openDirectoryPlaces(local bool) { w.placeBrowser().openDirectoryPlaces(local) }
 func (w *sftpWindow) clickDirectoryPlace(id gfx.ID)  { w.placeBrowser().clickDirectoryPlace(id) }
-func (w *sftpWindow) paintDirectoryPlaces(canvas *gfx.Canvas) {
-	w.placeBrowser().paintDirectoryPlaces(canvas, w.ui.bounds)
-}
 
 func (w sftpPlaceBrowser) folder(local bool) *sftpFolder {
 	if local {
@@ -213,7 +210,6 @@ func (w sftpPlaceBrowser) openDirectoryPlaces(local bool) {
 
 	w.view.local = local
 	w.view.places.local = local
-	w.view.places.scroll = components.MenuScroll{BarID: hitSFTPPlacesBar}
 	if local {
 		// Snapshot native locations on opening, never during paint. No volumes
 		// or network shares are scanned to populate the drive list.
@@ -263,120 +259,93 @@ func (w sftpPlaceBrowser) clickDirectoryPlace(id gfx.ID) {
 	w.view.bookmarksOpen = false
 }
 
-func (w sftpPlaceBrowser) paintDirectoryPlaces(canvas *gfx.Canvas, viewport gfx.Rect) {
+// declareDirectoryPlaces declares the places menu under the address bar as a
+// page menu: the favorite action, the folders kept, and, on this computer, the
+// common folders and drives. The rows carry the identities the browser's click
+// handler dispatches, and the remove buttons are trailing controls that do not
+// choose their row.
+func (w sftpPlaceBrowser) declareDirectoryPlaces(c ui.C, anchor ui.Box) {
 	m := w.owner.messages.SFTPWindow
 	local := w.view.places.local
-	anchor := w.view.places.anchors[1]
 	marks := w.directoryFavorites()
 	count := len(marks)
 	if local {
-		anchor, count = w.view.places.anchors[0], len(w.owner.sftpLocalBookmarks)
+		count = len(w.owner.sftpLocalBookmarks)
 	}
-	height := float32((max(count, 1)+2)*32 + 16)
-	if local {
-		height += float32((len(w.view.places.locations) + 4) * 32)
-	}
-	menu := components.BeginContextMenu(canvas, w.owner.Theme(), gfx.Rect{X: anchor.X, Y: anchor.Y + anchor.Height + 4, Width: min(480, viewport.Width-32), Height: min(560, height)}, components.ContextMenuOptions{Layer: popupLayer, Scope: hitSFTPBookmarkDismiss, DismissID: hitSFTPBookmarkDismiss, Viewport: viewport, Scroll: &w.view.places.scroll, RowHeight: 32})
 	label, glyph := m.FavoriteAdd, uint8(iconStar)
 	if w.directoryFavorite(local) {
 		label, glyph = m.FavoriteRemove, iconStarSolid
 	}
-	menu.AddItem(components.ContextMenuItem{ID: hitSFTPBookmarkNew, Label: label, Icon: lucideIcons[glyph], Disabled: w.folder(local).path == "" || local && w.localBusy() || !local && (w.view.busy || !w.connected() || w.session.host.CatalogID == "")})
-	menu.AddSeparator()
-	menu.AddLabel(m.DirectoryFavorites, false)
-	if count == 0 {
-		menu.AddItem(components.ContextMenuItem{Label: w.owner.messages.Tools.BookmarksEmpty, Disabled: true})
-	}
-	for index := range count {
-		id, remove, directory := hitSFTPBookmarkItemList.At(index), hitSFTPBookmarkRemoveList.At(index), ""
+	ui.Menu(c, anchor, &w.view.bookmarksOpen, func(menu *ui.MenuItems) {
+		item := menu.Item(label).Icon(lucideIcons[glyph]).
+			Disabled(w.folder(local).path == "" || local && w.localBusy() || !local && (w.view.busy || !w.connected() || w.session.host.CatalogID == ""))
+		if item.Clicked() {
+			c.After(func() { w.clickDirectoryPlace(hitSFTPBookmarkNew) })
+		}
+		menu.Separator()
+		menu.Label(m.DirectoryFavorites)
+		if count == 0 {
+			menu.Item(w.owner.messages.Tools.BookmarksEmpty).Disabled(true)
+		}
+		for index := range count {
+			id, remove, directory := hitSFTPBookmarkItemList.At(index), hitSFTPBookmarkRemoveList.At(index), ""
+			if local {
+				id, remove, directory = sftpLocalFavorites.At(index), sftpLocalFavoriteRemove.At(index), w.owner.sftpLocalBookmarks[index]
+			} else {
+				directory = marks[index].path
+			}
+			row := menu.Item(directory).Icon(lucideIcons[iconFolderOpen]).
+				Disabled(w.navigationBusy() || !local && !w.connected())
+			row.Trailing(24, func(canvas *gfx.Canvas, bounds gfx.Rect, theme gfx.Theme) {
+				w.owner.paintIconButton(canvas, remove, iconClose, bounds, w.owner.messages.Tools.BookmarkRemove, false, iconButtonQuiet, w.owner.pal.surface)
+			})
+			if row.Clicked() {
+				c.After(func() { w.clickDirectoryPlace(id) })
+			}
+		}
 		if local {
-			id, remove, directory = sftpLocalFavorites.At(index), sftpLocalFavoriteRemove.At(index), w.owner.sftpLocalBookmarks[index]
-		} else {
-			directory = marks[index].path
-		}
-		_, slot := menu.AddItemSlot(components.ContextMenuItem{ID: id, Label: directory, Hint: directory, Icon: lucideIcons[iconFolderOpen], TrailingWidth: 24, Disabled: w.navigationBusy() || !local && !w.connected()})
-		menu.BeginContent()
-		slot.Y += (slot.Height - 24) / 2
-		slot.Width, slot.Height = 24, 24
-		w.owner.paintIconButton(canvas, remove, iconClose, slot, w.owner.messages.Tools.BookmarkRemove, false, iconButtonQuiet, w.owner.pal.surface)
-		menu.EndContent()
-	}
-	if local {
-		lastKind := sftpLocalPlaceKind(255)
-		for index, place := range w.view.places.locations {
-			kind := localPlaceHome
-			if place.kind == localPlaceDrive {
-				kind = localPlaceDrive
-			}
-			if kind != lastKind {
-				menu.AddSeparator()
-				label := m.CommonFolders
-				if kind == localPlaceDrive {
-					label = m.LocalDrives
+			lastKind := sftpLocalPlaceKind(255)
+			for index, place := range w.view.places.locations {
+				kind := localPlaceHome
+				if place.kind == localPlaceDrive {
+					kind = localPlaceDrive
 				}
-				menu.AddLabel(label, false)
-				lastKind = kind
+				if kind != lastKind {
+					menu.Separator()
+					heading := m.CommonFolders
+					if kind == localPlaceDrive {
+						heading = m.LocalDrives
+					}
+					menu.Label(heading)
+					lastKind = kind
+				}
+				label, glyph := place.path, uint8(iconHardDrive)
+				switch place.kind {
+				case localPlaceHome:
+					label, glyph = m.LocalHome, uint8(iconFolderOpen)
+				case localPlaceDesktop:
+					label, glyph = m.LocalDesktop, uint8(iconDesktop)
+				case localPlaceDownloads:
+					label, glyph = m.LocalDownloads, uint8(iconDownload)
+				case localPlaceDocuments:
+					label, glyph = m.LocalDocuments, uint8(iconFile)
+				case localPlacePictures:
+					label, glyph = m.LocalPictures, uint8(iconFolderOpen)
+				case localPlaceMusic:
+					label, glyph = m.LocalMusic, uint8(iconFolderOpen)
+				case localPlaceVideos:
+					label, glyph = m.LocalVideos, uint8(iconFilm)
+				case localPlaceMovies:
+					label, glyph = m.LocalMovies, uint8(iconFilm)
+				case localPlaceApplications:
+					label, glyph = m.LocalApplications, uint8(iconHome)
+				}
+				id := sftpLocalPlaces.At(index)
+				row := menu.Item(label).Icon(lucideIcons[glyph]).Disabled(w.navigationBusy())
+				if row.Clicked() {
+					c.After(func() { w.clickDirectoryPlace(id) })
+				}
 			}
-			label, glyph := place.path, uint8(iconHardDrive)
-			switch place.kind {
-			case localPlaceHome:
-				label, glyph = m.LocalHome, uint8(iconFolderOpen)
-			case localPlaceDesktop:
-				label, glyph = m.LocalDesktop, uint8(iconDesktop)
-			case localPlaceDownloads:
-				label, glyph = m.LocalDownloads, uint8(iconDownload)
-			case localPlaceDocuments:
-				label, glyph = m.LocalDocuments, uint8(iconFile)
-			case localPlacePictures:
-				label, glyph = m.LocalPictures, uint8(iconFolderOpen)
-			case localPlaceMusic:
-				label, glyph = m.LocalMusic, uint8(iconFolderOpen)
-			case localPlaceVideos:
-				label, glyph = m.LocalVideos, uint8(iconFilm)
-			case localPlaceMovies:
-				label, glyph = m.LocalMovies, uint8(iconFilm)
-			case localPlaceApplications:
-				label, glyph = m.LocalApplications, uint8(iconHome)
-			}
-			menu.AddItem(components.ContextMenuItem{ID: sftpLocalPlaces.At(index), Label: label, Hint: place.path, Icon: lucideIcons[glyph], Disabled: w.navigationBusy()})
 		}
-	}
-	menu.End()
-}
-
-func (state *State) sftpPlacesKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
-	session, ok := state.sessionByIDPointer(state.activeSessionID)
-	if !ok || state.activeSection != sectionTerminal || state.modal != modalNone || session.files == nil || !session.files.bookmarksOpen || event.Release {
-		return gfx.EventResult{}, false
-	}
-	view := session.files
-	result := gfx.EventResult{Handled: true, Repaint: true}
-	if event.Key == gfx.KeyEscape && !event.Repeat {
-		view.bookmarksOpen = false
-		return result, true
-	}
-	if next, ok := view.places.scroll.Navigate(event.Key, event.Target, true); ok {
-		result.Focus, result.FocusVisible = next, true
-		return result, true
-	}
-	return gfx.EventResult{}, false
-}
-
-func (state *State) sftpPlacesPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	session, ok := state.sessionByIDPointer(state.activeSessionID)
-	if !ok || state.activeSection != sectionTerminal || state.modal != modalNone || session.files == nil || !session.files.bookmarksOpen {
-		return gfx.EventResult{}, false
-	}
-	view := session.files
-	wasDragging := view.places.scroll.Dragging()
-	changed := view.places.scroll.Drag(event)
-	if wasDragging || changed || view.places.scroll.Dragging() {
-		return gfx.EventResult{Handled: true, Repaint: changed}, true
-	}
-	inside := event.Target == hitSFTPBookmarkNew || event.Target.Scope() == sftpLocalFavorites || event.Target.Scope() == sftpLocalFavoriteRemove || event.Target.Scope() == sftpLocalPlaces || event.Target.Scope() == hitSFTPBookmarkItemList || event.Target.Scope() == hitSFTPBookmarkRemoveList
-	if event.Kind == gfx.PointerDown && !inside {
-		view.bookmarksOpen = false
-		return gfx.EventResult{Handled: true, Repaint: true}, true
-	}
-	return gfx.EventResult{}, false
+	})
 }

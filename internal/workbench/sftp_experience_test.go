@@ -320,30 +320,42 @@ func TestSFTPSidebarScrollbarDragReachesTheWholeListAtDifferentWindowSizes(t *te
 	view := session.files
 	for _, size := range []gfx.Size{{Width: 900, Height: 600}, {Width: 1400, Height: 900}, {Width: 1900, Height: 1200}} {
 		view.first, view.scrollOffset = 0, 0
-		var canvas gfx.Canvas
-		state.Paint(&canvas, size)
-		geometry := view.scroll
-		if geometry.VerticalTrack.Width != 10 || geometry.VerticalThumb.Height < 18 || geometry.MaxOffsetY <= 0 {
-			t.Fatalf("%.0fx%.0f scrollbar geometry = %+v", size.Width, size.Height, geometry)
+		driver := modalEventDriverSize(t, state, int(size.Width), int(size.Height))
+		if err := driver.Pump(); err != nil {
+			t.Fatal(err)
 		}
-		down := gfx.PointerEvent{
-			Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hitSFTPListScrollbar,
-			Y: geometry.VerticalThumb.Y + geometry.VerticalThumb.Height/2,
+		list := state.chrome.sftpPanel.listSlot.Rect()
+		if list.Width <= 0 || list.Height <= 0 {
+			t.Fatalf("%.0fx%.0f the panel has no list", size.Width, size.Height)
 		}
-		if result, handled := state.sftpListPointer(down); !handled || !result.Handled {
-			t.Fatalf("%.0fx%.0f scrollbar press = %+v, handled=%t", size.Width, size.Height, result, handled)
+		// Hover the list so the page reveals its scrollbar, then take its thumb.
+		if err := driver.Move(list.X+list.Width-4, list.Y+20); err != nil {
+			t.Fatal(err)
 		}
-		move := down
-		move.Kind, move.Captured = gfx.PointerMove, true
-		move.Y = geometry.VerticalTrack.Y + geometry.VerticalTrack.Height/2
-		if result, handled := state.sftpListPointer(move); !handled || !result.Handled {
-			t.Fatalf("%.0fx%.0f scrollbar drag = %+v, handled=%t", size.Width, size.Height, result, handled)
+		if err := driver.Pump(); err != nil {
+			t.Fatal(err)
 		}
-		up := move
-		up.Kind, up.Captured = gfx.PointerUp, false
-		if result, handled := state.sftpListPointer(up); !handled || !result.Handled {
-			t.Fatalf("%.0fx%.0f scrollbar release = %+v, handled=%t", size.Width, size.Height, result, handled)
+		var bar gfx.Rect
+		for _, hit := range driver.Snapshot().Hits {
+			if hit.Role == gfx.RoleSeparator && hit.Bounds.X+hit.Bounds.Width >= list.X+list.Width-1 && pointInRect(hit.Bounds.X+1, hit.Bounds.Y+1, list) {
+				bar = hit.Bounds
+				break
+			}
 		}
+		if bar.Width <= 0 {
+			t.Fatalf("%.0fx%.0f the panel list has no vertical scrollbar", size.Width, size.Height)
+		}
+		x, y := bar.X+bar.Width/2, bar.Y+bar.Height/2
+		if err := driver.Press(x, y, gfx.PointerButtonPrimary); err != nil {
+			t.Fatal(err)
+		}
+		if err := driver.Move(x, list.Y+list.Height/2); err != nil {
+			t.Fatal(err)
+		}
+		if err := driver.Release(x, list.Y+list.Height/2, gfx.PointerButtonPrimary); err != nil {
+			t.Fatal(err)
+		}
+		driver.Close()
 		if view.first <= 0 || view.first >= len(view.rows)-view.visibleRows {
 			t.Fatalf("%.0fx%.0f midpoint drag reached row %d of %d with %d visible", size.Width, size.Height, view.first, len(view.rows), view.visibleRows)
 		}

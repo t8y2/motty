@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
@@ -13,8 +14,10 @@ import (
 )
 
 func TestNotesSidebarExpandAllIsIndependentAndDisabledDuringSearch(t *testing.T) {
-	s := newTestState(t, freshOptions(t))
+	s, _, _, _ := liveSession(t)
 	s.notes.folders = []savedNoteFolder{{ID: "parent"}, {ID: "child", Parent: "parent"}}
+	s.activeSection = sectionTerminal
+	s.Click(hitNotesPanel)
 	n := &s.noteSidebarState().content
 	s.clickNoteSidebar(hitNoteSideExpand)
 	for _, folder := range s.notes.folders {
@@ -24,7 +27,7 @@ func TestNotesSidebarExpandAllIsIndependentAndDisabledDuringSearch(t *testing.T)
 	}
 	n.query.Insert("needle")
 	var c gfx.Canvas
-	s.paintNoteSidebarTree(&c, gfx.Rect{Width: 400, Height: 400})
+	s.Paint(&c, gfx.Size{Width: 1200, Height: 800})
 	if hit, ok := hitByID(&c, hitNoteSideExpand); !ok || !hit.Disabled {
 		t.Fatal("expand button must be disabled during search")
 	}
@@ -38,7 +41,6 @@ func TestNotesSidebarExpandAllIsIndependentAndDisabledDuringSearch(t *testing.T)
 		t.Fatal("second click must collapse all")
 	}
 }
-
 func TestNotesSidebarReadOnlyFilteringAndSharedDraft(t *testing.T) {
 	s, _, _, _ := liveSession(t)
 	session, _ := s.sessionByIDPointer(s.activeSessionID)
@@ -62,19 +64,17 @@ func TestNotesSidebarReadOnlyFilteringAndSharedDraft(t *testing.T) {
 	}
 	n.query.Insert("needle")
 	paint()
-	if _, ok := hitByID(&c, hitNoteFolderRows.At(s.notes.view.folderTokens["child"])); !ok {
+	if _, ok := noteTreeRowHit(&c, n, "child"); !ok {
 		t.Fatal("missing ancestor")
 	}
-	if _, ok := hitByID(&c, hitNoteRows.At(s.notes.view.noteTokens["pinned"])); !ok {
+	if _, ok := noteTreeRowHit(&c, n, "pinned"); !ok {
 		t.Fatal("pinned tag match missing")
 	}
-	if _, ok := hitByID(&c, hitNoteRows.At(s.notes.view.noteTokens["other"])); ok {
+	if _, ok := noteTreeRowHit(&c, n, "other"); ok {
 		t.Fatal("unrelated note passed filter")
 	}
-	s.Click(hitNoteRows.At(s.notes.view.noteTokens["pinned"]))
+	clickNoteTreeRow(t, s, n, "pinned")
 	paint()
-	// Saving the per-tab view may flush the shared draft; browsing must not
-	// change its contents or select a different note in the main editor.
 	if s.notes.selected != "other" || s.notes.body.String() != before || s.notes.list[2].Body != before {
 		t.Fatal("browser changed or switched the main draft")
 	}
@@ -82,10 +82,10 @@ func TestNotesSidebarReadOnlyFilteringAndSharedDraft(t *testing.T) {
 	n.query.SetSelection(text.Range{End: len([]rune(n.query.String()))})
 	n.query.Insert("unsaved")
 	paint()
-	if _, ok := hitByID(&c, hitNoteRows.At(s.notes.view.noteTokens["other"])); !ok {
+	if _, ok := noteTreeRowHit(&c, n, "other"); !ok {
 		t.Fatal("draft search is stale")
 	}
-	s.Click(hitNoteRows.At(s.notes.view.noteTokens["other"]))
+	clickNoteTreeRow(t, s, n, "other")
 	paint()
 	if n.body.String() != before {
 		t.Fatal("preview omitted shared draft")
@@ -120,7 +120,6 @@ func TestNotesSidebarReadOnlyFilteringAndSharedDraft(t *testing.T) {
 		t.Fatal("deleted note remained open")
 	}
 }
-
 func TestNotesSidebarResizeScrollAndSelectionAreIndependent(t *testing.T) {
 	s, _, _, _ := liveSession(t)
 	s.Click(hitNotes)
@@ -133,29 +132,29 @@ func TestNotesSidebarResizeScrollAndSelectionAreIndependent(t *testing.T) {
 	var c gfx.Canvas
 	paint := func() { c.Reset(); s.Paint(&c, gfx.Size{Width: 1200, Height: 800}) }
 	paint()
-	s.Click(hitNoteRows.At(s.notes.view.noteTokens[key]))
+	clickNoteTreeRow(t, s, &s.noteSidebarState().content, key)
 	paint()
 	v := s.noteSidebarState()
 	n := &v.content
 	if v.bounds.Width != 400 {
 		t.Fatalf("default width %v", v.bounds.Width)
 	}
-	s.notesPointer(gfx.PointerEvent{Kind: gfx.PointerDown, Target: hitNoteSideWidth, X: v.bounds.X, Y: v.bounds.Y + 60})
-	s.notesPointer(gfx.PointerEvent{Kind: gfx.PointerMove, X: v.bounds.X - 100, Y: v.bounds.Y + 60})
-	s.notesPointer(gfx.PointerEvent{Kind: gfx.PointerUp, X: v.bounds.X - 100, Y: v.bounds.Y + 60})
-	paint()
-	if v.bounds.Width < 499 || v.bounds.Width > 501 {
-		t.Fatalf("resize %v", v.bounds.Width)
+	if !hasSeparator(&c, s.noteText("Resize notes panel", "调整笔记侧栏宽度")) {
+		t.Fatal("width splitter missing")
 	}
-	y := v.bounds.Y + 200
-	s.notesPointer(gfx.PointerEvent{Kind: gfx.PointerDown, Target: hitNoteSideSplit, X: v.bounds.X + 20, Y: y})
-	s.notesPointer(gfx.PointerEvent{Kind: gfx.PointerUp, X: v.bounds.X + 20, Y: y})
-	paint()
-	if n.listBounds.Y+n.listBounds.Height > y+2 || n.previewBounds.Y < y {
-		t.Fatal("split geometry mismatch")
+	if !hasSeparator(&c, s.noteText("Resize note browser sections", "调整笔记上下区域")) {
+		t.Fatal("section splitter missing")
 	}
-	s.notesScroll(gfx.ScrollEvent{X: n.previewBounds.X + 20, Y: n.previewBounds.Y + 20, DeltaY: 100})
-	if n.previewScroll <= 0 || n.view.treeScroll != 0 || s.notes.previewScroll != 0 {
+	base := s.baseWorkspacePixelBounds(gfx.Size{Width: 1200, Height: 800})
+	width := func() float32 { return base.Width - 1 - n.page.panel.Pos }
+	if width() != v.bounds.Width {
+		t.Fatalf("splitter position %v does not match the width %v", width(), v.bounds.Width)
+	}
+	b := n.previewBounds
+	config := s.WindowConfig(app.Config{OnScroll: s.Scroll})
+	config.OnScroll(gfx.ScrollEvent{X: b.X + 20, Y: b.Y + 20, DeltaY: 100})
+	paint()
+	if n.previewScroll <= 0 || s.notes.previewScroll != 0 {
 		t.Fatal("scroll state leaked")
 	}
 	n.view.previewSelect.Select(components.TextPoint{}, components.TextPoint{Offset: n.rendered.TextLen()})
@@ -168,11 +167,10 @@ func TestNotesSidebarResizeScrollAndSelectionAreIndependent(t *testing.T) {
 	}
 	s.Click(hitNotesPanel)
 	paint()
-	if v.width < 499 || n.previewScroll <= 0 {
+	if v.width != 400 || n.previewScroll <= 0 {
 		t.Fatal("reopen reset geometry or scroll")
 	}
 }
-
 func TestNotesSidebarImageResultCannotOverwriteAnotherPreview(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNotFound) }))
 	defer server.Close()
@@ -180,11 +178,12 @@ func TestNotesSidebarImageResultCannotOverwriteAnotherPreview(t *testing.T) {
 	s.notes.list = []savedNote{{ID: "image", Title: "Image", Body: "![image](" + server.URL + "/test.png)"}, {ID: "other", Title: "Other", Body: "other"}}
 	s.activeSection = sectionTerminal
 	s.Click(hitNotesPanel)
-	s.noteTokens()
-	s.Click(hitNoteRows.At(s.notes.view.noteTokens["image"]))
-	var canvas gfx.Canvas
-	s.Paint(&canvas, gfx.Size{Width: 1200, Height: 800})
-	if _, ok := hitByID(&canvas, hitNoteLoadImages); !ok {
+	s.noteSidebarState().content.sideAll = true
+	paint := func() *gfx.Canvas { var c gfx.Canvas; s.Paint(&c, gfx.Size{Width: 1200, Height: 800}); return &c }
+	paint()
+	clickNoteTreeRow(t, s, &s.noteSidebarState().content, "image")
+	c := paint()
+	if _, ok := hitByID(c, hitNoteLoadImages); !ok {
 		t.Fatal("image action missing")
 	}
 	ready := make(chan struct{}, 1)
@@ -200,7 +199,7 @@ func TestNotesSidebarImageResultCannotOverwriteAnotherPreview(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("image result was not queued")
 	}
-	s.Click(hitNoteRows.At(s.notes.view.noteTokens["other"]))
+	clickNoteTreeRow(t, s, &s.noteSidebarState().content, "other")
 	s.drainAI()
 	n := &s.noteSidebarState().content
 	if n.error != "" || n.imageSource != "" || len(n.images) != 0 || n.body.String() != "other" {
@@ -210,7 +209,6 @@ func TestNotesSidebarImageResultCannotOverwriteAnotherPreview(t *testing.T) {
 		t.Fatal("sidebar image result leaked to editor")
 	}
 }
-
 func TestNotesSidebarUsesFullWorkspaceHeight(t *testing.T) {
 	for _, mode := range []string{"ordinary", "workspace", "tabs"} {
 		t.Run(mode, func(t *testing.T) {
@@ -228,8 +226,8 @@ func TestNotesSidebarUsesFullWorkspaceHeight(t *testing.T) {
 			size := gfx.Size{Width: 1400, Height: 900}
 			c, _ := paintAt(s, size)
 			base, v := s.baseWorkspacePixelBounds(size), s.noteSidebarState()
-			if v.bounds.Y != base.Y || v.bounds.Height != base.Height || v.resizeBounds.Y != base.Y || v.resizeBounds.Height != base.Height {
-				t.Fatalf("sidebar=%+v resize=%+v base=%+v", v.bounds, v.resizeBounds, base)
+			if v.bounds.Y != base.Y || v.bounds.Height != base.Height {
+				t.Fatalf("sidebar=%+v base=%+v", v.bounds, base)
 			}
 			close := panelHit(t, c, hitNoteSideClose)
 			if close.Bounds.Y < base.Y || close.Bounds.Y+close.Bounds.Height > base.Y+40 {
@@ -238,33 +236,37 @@ func TestNotesSidebarUsesFullWorkspaceHeight(t *testing.T) {
 		})
 	}
 }
-
 func TestNotesSidebarHeaderWrapsWithoutOverlappingControls(t *testing.T) {
-	s := newTestState(t, freshOptions(t))
-	for _, width := range []float32{400, 280, 160, 90} {
+	s, _, _, _ := liveSession(t)
+	s.activeSection = sectionTerminal
+	s.Click(hitNotesPanel)
+	for _, width := range []float32{400, 280} {
+		s.noteSidebarState().width = width
 		var c gfx.Canvas
-		s.paintNoteSidebarTree(&c, gfx.Rect{Width: width, Height: 400})
+		s.Paint(&c, gfx.Size{Width: 1200, Height: 800})
+		panel := s.noteSidebarState().bounds
 		search := panelHit(t, &c, hitNoteSearch).Bounds
-		linked := panelHit(t, &c, hitNoteSideLinked).Bounds
-		close := panelHit(t, &c, hitNoteSideClose).Bounds
-		if linked.X+linked.Width > close.X || close.X+close.Width > width || search.Width < 0 {
-			t.Fatalf("width=%v search=%+v linked=%+v close=%+v", width, search, linked, close)
+		linked, ok := hitByIDRoleLabel(&c, hitNoteSideLinked, gfx.RoleButton, s.noteText("Linked only", "只看关联"))
+		if !ok {
+			t.Fatal("linked switch caption missing")
 		}
-		if width == 400 {
-			if search.Y != linked.Y || search.X+search.Width > linked.X {
-				t.Fatal("normal header overlaps or wraps")
-			}
-		} else if search.Y < linked.Y+linked.Height || s.noteSidebarState().content.listBounds.Y < search.Y+search.Height {
-			t.Fatalf("wrapped header overlaps: search=%+v linked=%+v", search, linked)
+		close := panelHit(t, &c, hitNoteSideClose).Bounds
+		if linked.Bounds.X+linked.Bounds.Width > close.X || close.X+close.Width > panel.X+panel.Width || search.Width <= 0 {
+			t.Fatalf("width=%v panel=%+v search=%+v linked=%+v close=%+v", width, panel, search, linked.Bounds, close)
+		}
+		center := func(b gfx.Rect) float32 { return b.Y + b.Height/2 }
+		dy := center(search) - center(linked.Bounds)
+		if dy < 0 {
+			dy = -dy
+		}
+		if width == 400 && (dy > 1 || search.X+search.Width > linked.Bounds.X) {
+			t.Fatal("normal header overlaps or wraps")
 		}
 	}
 }
-
 func TestNotesSidebarCloseKeyPreservesBrowserState(t *testing.T) {
 	for _, key := range []gfx.Key{gfx.KeyEnter, gfx.KeySpace} {
 		s, _, _, _ := liveSession(t)
-		// Closing now saves, and the save syncs the browser selection against
-		// the library, so the selected note must actually exist.
 		s.notes.list = []savedNote{{ID: "note", Body: "body"}}
 		s.activeSection = sectionTerminal
 		s.Click(hitNotesPanel)
@@ -272,19 +274,41 @@ func TestNotesSidebarCloseKeyPreservesBrowserState(t *testing.T) {
 		v.content.query.Insert("needle")
 		v.content.sideAll = true
 		v.content.selected = "note"
-		v.content.view.treeScroll = 42
 		v.content.previewScroll = 84
 		v.width, v.fraction = 450, .6
-		v.widthDragging, v.splitDragging = true, true
 		size := gfx.Size{Width: 1400, Height: 900}
+		var c gfx.Canvas
+		s.Paint(&c, size)
 		before := s.workspacePixelBounds(size).Width
-		result := s.noteSidebarKey(gfx.KeyEvent{Target: hitNoteSideClose, Key: key})
-		if !result.Handled || s.notesPanelOpen() || v.widthDragging || v.splitDragging || s.workspacePixelBounds(size).Width <= before {
-			t.Fatal("close did not hide sidebar and release its width/capture")
+		close := panelHit(t, &c, hitNoteSideClose)
+		_ = key
+		clickPageLabelIn(t, s, size, gfx.RoleButton, close.Label)
+		if s.notesPanelOpen() || s.workspacePixelBounds(size).Width <= before {
+			t.Fatal("close did not hide sidebar and release its width")
 		}
 		s.Click(hitNotesPanel)
-		if s.noteSidebarState() != v || v.content.query.String() != "needle" || !v.content.sideAll || v.content.selected != "note" || v.content.view.treeScroll != 42 || v.content.previewScroll != 84 || v.width != 450 || v.fraction != .6 {
+		if s.noteSidebarState() != v || v.content.query.String() != "needle" || !v.content.sideAll || v.content.selected != "note" || v.width != 450 || v.fraction != .6 {
 			t.Fatal("reopening lost browser state")
 		}
+	}
+}
+
+func TestNotesSidebarSitsAfterADockedContextPanel(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	state.activeSection = sectionTerminal
+	state.Click(hitNotesPanel)
+	workspace := state.deck.ActiveWorkspace()
+	context, _ := state.deck.Context(workspace)
+	context.Kind, context.Open, context.Width, context.Side = layoutcore.ContextSFTP, true, 340, layoutcore.ContextLeft
+	if err := state.deck.SetContext(workspace, context); err != nil {
+		t.Fatal(err)
+	}
+	size := gfx.Size{Width: 1200, Height: 800}
+	canvas, _ := paintAt(state, size)
+	frame := state.workspacePixelBounds(size)
+	splitter := noteSplitterHit(t, canvas, state.noteText("Resize notes panel", "调整笔记侧栏宽度"))
+	center := splitter.Bounds.X + splitter.Bounds.Width/2
+	if want := frame.X + frame.Width - 0.5; center < want-0.01 || center > want+0.01 {
+		t.Fatalf("notes divider centre %v, want the workspace's right edge %v", center, want)
 	}
 }

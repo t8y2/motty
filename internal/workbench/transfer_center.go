@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
@@ -26,7 +25,6 @@ var (
 	hitTransfersClose     = tree.ID(transferCenterHits, "close")
 	hitTransfersScope     = tree.ID(transferCenterHits, "scope")
 	hitTransfersList      = tree.ID(transferCenterHits, "list")
-	hitTransfersBar       = tree.ID(transferCenterHits, "scrollbar")
 	hitTransfersClear     = tree.ID(transferCenterHits, "clear")
 	hitTransfersCancelAll = tree.ID(transferCenterHits, "cancel-all")
 	hitTransfersPauseAll  = tree.ID(transferCenterHits, "pause-all")
@@ -68,6 +66,9 @@ const (
 	transferRemoteCopy
 	transferDirectionCount
 )
+
+// transferDirections are the choices of the direction picker, in its order.
+var transferDirections = [...]transferDirection{transferAnyDirection, transferUpload, transferDownload, transferRemoteCopy}
 
 // transferEntry keeps the identity independent of worker-local IDs and tabs.
 // A closed connection releases its view; its finished snapshot remains readable.
@@ -132,15 +133,14 @@ type transferCenter struct {
 	anchor        gfx.Rect
 	scrollSynced  float32
 	surface, list gfx.Rect
-	geometry      components.ScrollAreaGeometry
-	scroll        float32
-	count         int
-	dragging      bool
-	dragOffset    float32
+	// scroll is the offset the application asked the List for; scrollSynced is
+	// the offset the List reported after the last layout.
+	scroll float32
+	count  int
 
 	host                        *transferHost
 	hosts                       []*transferHost
-	selectOpen                  gfx.ID
+	hostChoices                 []*transferHost // nil (all hosts) followed by hosts
 	hostLabel, scopeLabel       string
 	cancelLabel, clearLabel     string
 	pauseLabel                  string
@@ -170,9 +170,8 @@ type transferRow struct {
 	entry int // index in entries, or -1 for a group header
 }
 
-// transferBody leaves room for the Viva Select triggers, which share the
-// workbench's dropdown focus, menu scrolling and dismissal.
-type transferBody struct{ host, direction, list ui.Box }
+// transferBody keeps the page List that shows the rows.
+type transferBody struct{ list ui.Box }
 
 // handlers makes the page handlers the transfer center uses, once.
 func (center *transferCenter) handlers(state *State) {
@@ -215,11 +214,24 @@ func transferCanReveal(snapshot sftpclient.TransferSnapshot) bool {
 		snapshot.Destination != ""
 }
 
+// revealResult is how a background reveal finished, with the text to report a
+// failure in: the title the notice has, and what to say when the file manager
+// does not start or the target is gone.
 type revealResult struct {
-	err error
+	err                    error
+	title, failed, missing string
 }
 
-func (state *State) revealTransferPath(path string) {
+// revealLocalPath shows path in the system's file manager. A native reveal can
+// wait for the file manager, so it runs away from the window thread and leaves
+// its outcome for pumpRevealResults. One reveal is in flight at a time: a second
+// request while one runs is dropped.
+func (state *State) revealLocalPath(path, title, failed, missing string) {
+	state.launchFileManager(path, title, failed, missing, state.options.RevealPath)
+}
+
+// launchFileManager 在后台启动文件管理器，并复用统一的结果提示。
+func (state *State) launchFileManager(path, title, failed, missing string, reveal func(string) error) {
 	if state.revealBusy {
 		return
 	}
@@ -227,7 +239,6 @@ func (state *State) revealTransferPath(path string) {
 	if state.revealResults == nil {
 		state.revealResults = make(chan revealResult, 1)
 	}
-	reveal := state.options.RevealPath
 	go func() {
 		var err error
 		if reveal == nil {
@@ -235,11 +246,16 @@ func (state *State) revealTransferPath(path string) {
 		} else {
 			err = reveal(path)
 		}
-		state.revealResults <- revealResult{err: err}
+		state.revealResults <- revealResult{err: err, title: title, failed: failed, missing: missing}
 		if state.options.Invalidate != nil {
 			state.options.Invalidate()
 		}
 	}()
+}
+
+func (state *State) revealTransferPath(path string) {
+	m := state.messages.Transfers
+	state.revealLocalPath(path, m.ShowInFolder, m.ShowInFolderFailed, m.ShowInFolderMissing)
 }
 
 func (state *State) pumpRevealResults() {
@@ -253,11 +269,11 @@ func (state *State) pumpRevealResults() {
 			if result.err == nil {
 				continue
 			}
-			detail := state.messages.Transfers.ShowInFolderFailed
+			detail := result.failed
 			if errors.Is(result.err, fs.ErrNotExist) {
-				detail = state.messages.Transfers.ShowInFolderMissing
+				detail = result.missing
 			}
-			state.showActionFailure(state.messages.Transfers.ShowInFolder, result.err, detail)
+			state.showActionFailure(result.title, result.err, detail)
 		default:
 			return
 		}
@@ -393,7 +409,11 @@ func (state *State) resumeInterruptedTransfers(view *sftpView) {
 		var queued bool
 		switch snapshot.Operation {
 		case sftpclient.OperationUpload:
-			id, queued = view.worker.QueueUpload(snapshot.Source, snapshot.Destination, snapshot.Recursive, sftpclient.ExistingResume)
+			if !snapshot.Recursive && snapshot.BytesDone > 0 && snapshot.BytesTotal > 0 {
+				id, queued = view.worker.QueueUploadResume(snapshot.Source, snapshot.Destination, snapshot.BytesDone, snapshot.BytesTotal, snapshot.SourceModTime)
+			} else {
+				id, queued = view.worker.QueueUpload(snapshot.Source, snapshot.Destination, snapshot.Recursive, sftpclient.ExistingResume)
+			}
 		case sftpclient.OperationDownload:
 			id, queued = view.worker.QueueDownload(snapshot.Source, snapshot.Destination, snapshot.Recursive, sftpclient.ExistingResume)
 		default:
@@ -481,7 +501,7 @@ func (state *State) describeTransfer(entry *transferEntry) {
 	if snapshot.Recursive {
 		mode = fs.ModeDir
 	}
-	entry.fileIcon, entry.monoIcon = sftpFileIcon(entry.title, mode)
+	entry.fileIcon, entry.monoIcon = sftpFileIcon(sftpclient.Entry{Name: entry.title, Mode: mode})
 	entry.typeIcon = state.attachTypeIcon(entry.title, mode.IsDir())
 	entry.searchTitle = strings.ToLower(entry.title)
 	entry.status = m.Queued
@@ -722,8 +742,8 @@ func (state *State) clickTransferCenter(id gfx.ID) bool {
 }
 
 func (center *transferCenter) close() {
-	center.open, center.dragging = false, false
-	center.selectOpen, center.batch = gfx.ID{}, transferBatch{}
+	center.open = false
+	center.batch = transferBatch{}
 	center.details.dismiss()
 }
 

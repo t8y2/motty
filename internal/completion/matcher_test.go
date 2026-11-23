@@ -216,6 +216,116 @@ func TestCompleteOptionalValueDoesNotConsumeNextOption(t *testing.T) {
 	}
 }
 
+// wrapperCatalog is the syntax the wrapper tests need: a privilege wrapper,
+// a command prefix that takes assignments and a timeout that takes a duration
+// before the command it runs.
+func wrapperCatalog(t *testing.T) *Catalog {
+	t.Helper()
+	chown := &Node{
+		Token: "chown",
+		Desc:  "change file owner",
+		Flags: []Flag{
+			{Long: "recursive", Short: "R", Desc: "operate recursively"},
+			{Long: "reference", Value: true, Desc: "use this file's owner"},
+		},
+	}
+	status := &Node{Token: "status", Desc: "show status", Flags: []Flag{{Long: "short", Short: "s"}}}
+	git := &Node{Token: "git", Desc: "the stupid content tracker", Children: []*Node{status}}
+	sudo := &Node{
+		Token: "sudo",
+		Desc:  "run a command as another user",
+		Flags: []Flag{
+			{Long: "user", Short: "u", Value: true, Desc: "run as this user"},
+			{Long: "login", Short: "i", Desc: "run a login shell"},
+			{Long: "edit", Short: "e", Desc: "edit files"},
+		},
+	}
+	doas := &Node{Token: "doas", Flags: []Flag{{Long: "", Short: "u", Value: true}}}
+	env := &Node{Token: "env", Flags: []Flag{{Long: "ignore-environment", Short: "i"}, {Long: "unset", Short: "u", Value: true}}}
+	nice := &Node{Token: "nice", Flags: []Flag{{Long: "adjustment", Short: "n", Value: true}}}
+	nohup := &Node{Token: "nohup"}
+	timeout := &Node{Token: "timeout", Flags: []Flag{{Long: "signal", Short: "s", Value: true}}}
+	watch := &Node{Token: "watch", Flags: []Flag{{Long: "interval", Short: "n", Value: true}}}
+	xargs := &Node{Token: "xargs", Flags: []Flag{{Long: "replace", Short: "I", Value: true}}}
+	catalog, err := NewCatalog("test", "v0", "deadbeef", "MIT",
+		[]*Node{chown, git, sudo, doas, env, nice, nohup, timeout, watch, xargs})
+	if err != nil {
+		t.Fatalf("NewCatalog: %v", err)
+	}
+	return catalog
+}
+
+func TestCompleteWrappedCommand(t *testing.T) {
+	catalog := wrapperCatalog(t)
+	lines := []string{
+		"sudo chown ",
+		"sudo -u root chown ",
+		"sudo --user=root chown ",
+		"sudo -- chown ",
+		"sudo env A=B chown ",
+		"sudo timeout -s KILL 5 chown ",
+		"doas chown ",
+		"env A=B chown ",
+		"nice -n 5 chown ",
+		"nohup chown ",
+		"timeout 5 chown ",
+		"watch -n 1 chown ",
+		"xargs chown ",
+	}
+	for _, line := range lines {
+		result := Complete(catalog, line)
+		if result.Suppressed || !hasCandidate(result, "--recursive") {
+			t.Errorf("%q lacks the wrapped command's option: %v (suppressed=%v)", line, candidateTexts(result), result.Suppressed)
+		}
+	}
+
+	result := Complete(catalog, "sudo chown --r")
+	if !hasCandidate(result, "--recursive") {
+		t.Fatalf("sudo chown --r = %v", candidateTexts(result))
+	}
+	result = Complete(catalog, "sudo git s")
+	if !hasCandidate(result, "status") {
+		t.Fatalf("sudo git s = %v", candidateTexts(result))
+	}
+	// An unnamed wrapped command is a command position, not an option of the
+	// wrapper: sudo's own options stay for a word that starts with a dash.
+	result = Complete(catalog, "sudo ")
+	if !hasCandidate(result, "chown") || hasCandidate(result, "--user") {
+		t.Fatalf("sudo command position = %v", candidateTexts(result))
+	}
+	result = Complete(catalog, "sudo -- ")
+	if !hasCandidate(result, "chown") {
+		t.Fatalf("sudo -- = %v", candidateTexts(result))
+	}
+	result = Complete(catalog, "sudo -")
+	if !hasCandidate(result, "-u") || hasCandidate(result, "chown") {
+		t.Fatalf("sudo options = %v", candidateTexts(result))
+	}
+	result = Complete(catalog, "sudo --u")
+	if !hasCandidate(result, "--user") {
+		t.Fatalf("sudo --u = %v", candidateTexts(result))
+	}
+	// A wrapper that still waits for its own operand keeps its own options.
+	for line, want := range map[string]string{"timeout ": "--signal", "timeout -": "-s"} {
+		if result := Complete(catalog, line); !hasCandidate(result, want) || hasCandidate(result, "chown") {
+			t.Errorf("%q did not keep the wrapper's own options: %v", line, candidateTexts(result))
+		}
+	}
+	// sudo's edit mode takes files, and sudo's -u takes a user name.
+	for _, line := range []string{"sudo -e /etc/passwd ", "sudo --edit /etc/passwd ", "sudo -u "} {
+		if result := Complete(catalog, line); hasCandidate(result, "--recursive") || hasCandidate(result, "chown") {
+			t.Errorf("%q offered a command: %v", line, candidateTexts(result))
+		}
+	}
+	// A command that only looks like a wrapper argument is not a command
+	// position, and an unknown wrapped command stays unknown.
+	for _, line := range []string{"git status chown ", "sudo ./tool ", "sudo unknown "} {
+		if result := Complete(catalog, line); hasCandidate(result, "--recursive") || hasCandidate(result, "chown") {
+			t.Errorf("%q offered a command: %v", line, candidateTexts(result))
+		}
+	}
+}
+
 func TestCandidatesAreMarkedAsCatalogText(t *testing.T) {
 	result := Complete(testCatalog(t), "git ")
 	if len(result.Candidates) == 0 {

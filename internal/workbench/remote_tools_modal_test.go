@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -62,16 +63,24 @@ func clickRemoteToolsAction(t testing.TB, state *State, id gfx.ID) {
 	}
 }
 
-// remoteToolsTableControl finds the page control that paints the current tab's
-// table. The last paint records its body geometry.
+// remoteToolsTableControl finds the page List that paints the current tab's
+// rows. The rows are a List, so its rows are role options under its label.
 func remoteToolsTableControl(t testing.TB, canvas *gfx.Canvas, state *State) gfx.Hit {
 	t.Helper()
 	label := state.remoteTabLabel(state.remote.tab)
+	if hit, ok := hitByLabelRole(canvas, label, gfx.RoleListBox); ok {
+		return hit
+	}
 	hit, ok := hitByLabelRole(canvas, label, gfx.RoleGroup)
 	if !ok {
 		t.Fatalf("no table control labeled %q", label)
 	}
 	return hit
+}
+
+// remoteToolsRowID names the row the tab's list laid out at index.
+func remoteToolsRowID(state *State, index int) gfx.ID {
+	return state.remote.lists[state.remote.tab].RowID(index)
 }
 
 // clickRemoteToolsRow selects a row without opening its details.
@@ -88,29 +97,29 @@ func doubleClickRemoteToolsRow(t testing.TB, state *State, index int) {
 func clickRemoteToolsRowCount(t testing.TB, state *State, index, clickCount int) {
 	t.Helper()
 	canvas := remoteToolsPaint(t, state)
-	control := remoteToolsTableControl(t, canvas, state)
-	x := control.Bounds.X + control.Bounds.Width/2
-	y := state.remote.tableBodyBounds.Y + (float32(index-state.remote.tableBodyFirst)+0.5)*state.remote.tableRowHeight
-	down := gfx.PointerEvent{
-		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: clickCount,
-		X: x, Y: y, Target: control.ID, Viewport: remoteToolsPageSize,
+	id := remoteToolsRowID(state, index)
+	if id.IsZero() {
+		t.Fatalf("row %d of %q is not painted", index, state.remoteTabLabel(state.remote.tab))
 	}
-	windowPointerRoutes(state, down)
-	up := down
-	up.Kind = gfx.PointerUp
-	windowPointerRoutes(state, up)
+	canvas.BeginEventPass(id, gfx.ClickInfo{Clicks: clickCount})
+	state.Paint(canvas, remoteToolsPageSize)
+	canvas.EndEventPass()
+	canvas.RunAfterPaint()
 }
 
 // rightClickRemoteToolsRow opens the context menu on a row.
 func rightClickRemoteToolsRow(t testing.TB, state *State, index int) {
 	t.Helper()
 	canvas := remoteToolsPaint(t, state)
-	control := remoteToolsTableControl(t, canvas, state)
-	x := control.Bounds.X + control.Bounds.Width/2
-	y := state.remote.tableBodyBounds.Y + (float32(index-state.remote.tableBodyFirst)+0.5)*state.remote.tableRowHeight
+	id := remoteToolsRowID(state, index)
+	hit, ok := hitByID(canvas, id)
+	if !ok {
+		t.Fatalf("row %d of %q is not painted", index, state.remoteTabLabel(state.remote.tab))
+	}
 	down := gfx.PointerEvent{
 		Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary,
-		X: x, Y: y, Target: control.ID, Viewport: remoteToolsPageSize,
+		X: hit.Bounds.X + hit.Bounds.Width/2, Y: hit.Bounds.Y + hit.Bounds.Height/2,
+		Target: id, Viewport: remoteToolsPageSize,
 	}
 	windowPointerRoutes(state, down)
 	canvas.BeginPointerPass(down)
@@ -119,6 +128,7 @@ func rightClickRemoteToolsRow(t testing.TB, state *State, index int) {
 	up := down
 	up.Kind = gfx.PointerUp
 	windowPointerRoutes(state, up)
+	canvas.RunAfterPaint()
 }
 
 // clickRemoteToolsMenuItem chooses an item of the open page menu by label.
@@ -246,7 +256,7 @@ func TestRemoteToolsModalRowHitTestFollowsPaintedRows(t *testing.T) {
 	for index := range state.remote.rows {
 		state.remote.rows[index] = remoteRow{
 			key:   fmt.Sprintf("resource-%02d", index),
-			cells: [6]string{fmt.Sprintf("resource-%02d", index)},
+			cells: [remoteMaxColumns]string{fmt.Sprintf("resource-%02d", index)},
 		}
 	}
 	remoteToolsPaint(t, state)
@@ -254,35 +264,31 @@ func TestRemoteToolsModalRowHitTestFollowsPaintedRows(t *testing.T) {
 	if rowHeight <= 0 {
 		t.Fatal("the table has no row height")
 	}
+	scroll := state.remote.tableScroll
+	if scroll == nil || scroll.Max() <= 0 {
+		t.Fatal("the resource list has no scroll range")
+	}
 	// Stop more than half a row into the list: an offset that is not a
 	// multiple of the row height, as a precise wheel or dragged scrollbar gives.
-	state.remote.processScroll = 8*rowHeight + 2*rowHeight/3
+	scroll.ScrollTo(8*rowHeight + 2*rowHeight/3)
 	canvas := remoteToolsPaint(t, state)
-	if state.remote.tableBodyRemainder == 0 {
-		t.Fatalf("scroll offset %.1f landed on a row boundary", state.remote.processScroll)
-	}
-	viewport := state.remote.processScrollBar.Viewport
 	label := "resource-09"
+	rowID := remoteToolsRowID(state, 9)
+	hit, ok := hitByID(canvas, rowID)
+	if !ok {
+		t.Fatalf("%q is not painted after scrolling", label)
+	}
 	var bounds gfx.Rect
 	for _, painted := range canvas.Texts() {
-		if painted.Value == label && pointInRect(painted.Bounds.X, painted.Bounds.Y, viewport) {
+		if painted.Value == label && pointInRect(painted.Bounds.X, painted.Bounds.Y, hit.Bounds) {
 			bounds = painted.Bounds
 			break
 		}
 	}
-	if bounds.Width == 0 {
-		t.Fatalf("%q is not painted after scrolling to %.1f", label, state.remote.processScroll)
+	if bounds.Width == 0 || bounds.Y < hit.Bounds.Y || bounds.Bottom() > hit.Bounds.Bottom() {
+		t.Fatalf("%q is not painted on the row hit after scrolling", label)
 	}
-	control := remoteToolsTableControl(t, canvas, state)
-	down := gfx.PointerEvent{
-		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 1,
-		X: bounds.X + bounds.Width/2, Y: bounds.Y + bounds.Height/2,
-		Target: control.ID, Viewport: remoteToolsPageSize,
-	}
-	windowPointerRoutes(state, down)
-	up := down
-	up.Kind = gfx.PointerUp
-	windowPointerRoutes(state, up)
+	clickRemoteToolsPageHit(t, state, hit)
 	if state.remote.selected != label {
 		t.Fatalf("clicking the painted %q selected %q", label, state.remote.selected)
 	}
@@ -297,7 +303,7 @@ func TestRemoteToolsModalScrollsThroughAllDockerObjects(t *testing.T) {
 			for index := range state.remote.rows {
 				state.remote.rows[index] = remoteRow{
 					key:   fmt.Sprintf("resource-%02d", index),
-					cells: [6]string{fmt.Sprintf("resource-%02d", index)},
+					cells: [remoteMaxColumns]string{fmt.Sprintf("resource-%02d", index)},
 				}
 			}
 			canvas := remoteToolsPaint(t, state)
@@ -306,22 +312,62 @@ func TestRemoteToolsModalScrollsThroughAllDockerObjects(t *testing.T) {
 					t.Fatalf("resource list still paints %q", label)
 				}
 			}
-			if state.remote.processScrollBar.MaxOffsetY <= 0 {
+			scroll := state.remote.tableScroll
+			if scroll == nil || scroll.Max() <= 0 {
 				t.Fatal("resource list has no virtual scroll range")
 			}
-			bounds := state.remote.processTableBounds
+			bounds := remoteToolsTableControl(t, canvas, state).Bounds
 			result, handled := state.remoteProcessWheel(gfx.ScrollEvent{
 				X: bounds.X + bounds.Width/2, Y: bounds.Y + bounds.Height/2,
 				DeltaY: 100, Precise: true, Viewport: remoteToolsPageSize,
 			})
-			if !handled || !result.Handled || state.remote.processScroll <= 0 {
+			if !handled || !result.Handled || scroll.Offset <= 0 {
 				t.Fatalf("resource wheel did not scroll: handled=%v result=%+v", handled, result)
 			}
-			state.remote.processScroll = state.remote.processScrollBar.MaxOffsetY
+			scroll.ScrollToEnd()
 			canvas = remoteToolsPaint(t, state)
 			if !remoteCanvasHasText(canvas, "resource-39") {
 				t.Fatal("the last resource is not reachable by scrolling")
 			}
 		})
+	}
+}
+
+// A resource row's cells are centered in the row: the page List row's height is
+// also the cell's line height, so the text sits in the middle of its highlight
+// rather than at its top edge.
+func TestRemoteToolsRowsCenterTheirCells(t *testing.T) {
+	state, _, _ := openRemoteToolsDialog(t)
+	state.remote.tab = remoteContainers
+	state.remote.rows = make([]remoteRow, 4)
+	for index := range state.remote.rows {
+		state.remote.rows[index] = remoteRow{
+			key:   fmt.Sprintf("resource-%02d", index),
+			cells: [remoteMaxColumns]string{fmt.Sprintf("resource-%02d", index)},
+		}
+	}
+	canvas := remoteToolsPaint(t, state)
+	checked := 0
+	for index := range state.remote.rows {
+		hit, ok := hitByID(canvas, remoteToolsRowID(state, index))
+		if !ok {
+			continue
+		}
+		target := state.remote.rows[index].cells[0]
+		for _, text := range canvas.Texts() {
+			if text.Value != target {
+				continue
+			}
+			center := text.Bounds.Y + text.Bounds.Height/2
+			rowCenter := hit.Bounds.Y + hit.Bounds.Height/2
+			if math.Abs(float64(center-rowCenter)) > .5 {
+				t.Fatalf("row %d's cell is centered at %v in a row centered at %v", index, center, rowCenter)
+			}
+			checked++
+			break
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no resource row was painted; the test checks nothing")
 	}
 }

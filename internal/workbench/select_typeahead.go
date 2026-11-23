@@ -5,7 +5,6 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
-	"github.com/vivaui/viva/text"
 )
 
 // selectTypeahead is the typed prefix of one closed select trigger. The owner
@@ -55,68 +54,47 @@ func (state *State) selectTypeaheadOptions(target gfx.ID) ([]components.MenuType
 			items = append(items, components.MenuTypeaheadItem{ID: option.ID, Label: option.Label, Disabled: option.Disabled})
 		}
 		return items, state.aiChooseOnlyTarget, true
-	case target == hitAISetFormPreset && !state.ai.cfg.presetOpen:
-		items := make([]components.MenuTypeaheadItem, 0, len(aiPresets))
-		for index := range aiPresets {
-			items = append(items, components.MenuTypeaheadItem{
-				ID: hitAISetFormPresetItems.At(index), Label: state.aiPresetLabel(index),
-			})
-		}
-		return items, func(id gfx.ID) bool {
-			index, ok := id.In(hitAISetFormPresetItems)
-			if !ok || index < 0 || index >= len(aiPresets) {
-				return false
-			}
-			state.ai.cfg.preset = index
-			return true
-		}, true
-
-	case state.modal == modalNewHost && target == hitDialogPortsTrigger && !state.editor.portsOpen:
-		items := make([]components.MenuTypeaheadItem, 0, len(state.editor.ports))
-		for index, port := range state.editor.ports {
-			items = append(items, components.MenuTypeaheadItem{
-				ID: hitDialogPortsItemList.At(index), Label: port.Device,
-			})
-		}
-		return items, func(id gfx.ID) bool {
-			index, ok := id.In(hitDialogPortsItemList)
-			if !ok || index < 0 || index >= len(state.editor.ports) {
-				return false
-			}
-			state.editor.address = text.Editor{}
-			state.editor.address.Insert(state.editor.ports[index].Device)
-			return true
-		}, true
 	}
 	return nil, nil, false
 }
 
-// proxyTargetSelectable is the rule the open target select paints: a host that
-// is SSH and not already the target of another route.
+// proxyTargetSelectable is the rule the open target select paints: a route
+// target that is not already the target of another route.
 func (state *State) proxyTargetSelectable(id uint32) bool {
 	host, ok := state.hostByID(id)
-	return ok && host.isSSH() && !state.proxyTargetConfiguredExcluding(id, state.proxyEditor.routeID)
+	return ok && host.isRouteTarget() && !state.proxyTargetConfiguredExcluding(id, state.proxyEditor.routeID)
 }
 
 // chooseProxyTarget and chooseProxyJump apply the same choices as the open
-// popup, including the swap that keeps the two hosts distinct.
+// popup, including the swap that keeps the two hosts distinct when the other
+// host is valid in the opposite role; otherwise the opposite slot is cleared so
+// the user picks a valid host explicitly.
 func (state *State) chooseProxyTarget(id uint32) bool {
 	if !state.proxyTargetSelectable(id) {
 		return false
 	}
 	if id == state.proxyEditor.jumpID {
-		state.proxyEditor.jumpID = state.proxyEditor.targetID
+		if prev, ok := state.hostByID(state.proxyEditor.targetID); ok && prev.isSSH() {
+			state.proxyEditor.jumpID = prev.ID
+		} else {
+			state.proxyEditor.jumpID = 0
+		}
 	}
 	state.proxyEditor.targetID = id
 	return true
 }
 
 func (state *State) chooseProxyJump(id uint32) bool {
-	if _, ok := state.hostByID(id); !ok {
+	host, ok := state.hostByID(id)
+	if !ok || !host.isSSH() {
 		return false
 	}
 	if id == state.proxyEditor.targetID {
-		state.proxyEditor.targetID = state.proxyEditor.jumpID
+		if state.proxyTargetSelectable(state.proxyEditor.jumpID) {
+			state.proxyEditor.targetID = state.proxyEditor.jumpID
+		} else {
+			state.proxyEditor.targetID = 0
+		}
 	}
 	state.proxyEditor.jumpID = id
 	return true

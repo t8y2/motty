@@ -592,6 +592,10 @@ func TestRepliesToQueries(t *testing.T) {
 	feed(term, "\x1b[?1h\x1b[?1$p")
 	feed(term, "\x1b]10;?\x07\x1b]11;?\x1b\\")
 	feed(term, "\x1b[>q\x1b[18t")
+	// The pixel reports need a measured cell; once the owner sets one the
+	// text area and the cell are answered, and the reports follow the grid.
+	term.SetCellPixels(10, 21)
+	feed(term, "\x1b[16t\x1b[14t\x1b[15t\x1b[19t")
 	want := []string{
 		"\x1b[0n",
 		"\x1b[3;7R",
@@ -601,15 +605,35 @@ func TestRepliesToQueries(t *testing.T) {
 		"\x1b[?1;1$y",
 		"\x1b]10;rgb:aaaa/bbbb/cccc\x1b\\", "\x1b]11;rgb:0101/0202/0303\x1b\\",
 		"\x1bP>|motty\x1b\\", "\x1b[8;24;80t",
+		"\x1b[6;21;10t", "\x1b[4;504;800t", "\x1b[5;504;800t", "\x1b[9;24;80t",
 	}
 	if strings.Join(replies, "|") != strings.Join(want, "|") {
 		t.Fatalf("replies:\n%q\nwant:\n%q", replies, want)
 	}
 
-	// Without defaults installed the color queries stay unanswered.
+	// Without defaults installed the color queries stay unanswered, and
+	// without a measured cell the pixel reports do too: a program keeps its
+	// own fallback rather than an answer the terminal cannot stand behind.
 	bare := newTerm(10, 2)
 	bare.SetReply(func([]byte) { t.Error("unexpected reply") })
 	feed(bare, "\x1b]11;?\x07")
+	feed(bare, "\x1b[14t\x1b[15t\x1b[16t")
+}
+
+// The size reports are answered from the grid and the cell as they are when a
+// program asks, so a resize or a font change shows up in the next answer.
+func TestSizeReportsFollowTheGridAndTheCell(t *testing.T) {
+	term := newTerm(80, 24)
+	var replies []string
+	term.SetReply(func(b []byte) { replies = append(replies, string(b)) })
+	term.SetCellPixels(8, 16)
+	term.Resize(100, 30)
+	term.SetCellPixels(10, 21)
+	feed(term, "\x1b[16t\x1b[14t")
+	want := []string{"\x1b[6;21;10t", "\x1b[4;630;1000t"}
+	if strings.Join(replies, "|") != strings.Join(want, "|") {
+		t.Fatalf("replies: %q, want %q", replies, want)
+	}
 }
 
 func TestCursorPositionReportInOriginMode(t *testing.T) {

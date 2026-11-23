@@ -43,7 +43,8 @@ func TestSFTPBackgroundMenuCreatesFolderInClickedPane(t *testing.T) {
 			}
 
 			actionHit := func(action gfx.ID) (gfx.Hit, bool) {
-				return hitByIDSnapshot(preview.Snapshot().Hits, sftpWindowMenuActions.At(sftpWindowActionIndex(action)))
+				label := w.windowMenuRowLabel(sftpWindowMenuActions.At(sftpWindowActionIndex(action)))
+				return snapshotMenuHit(preview, label)
 			}
 			for side, local := range []bool{true, false} {
 				folder := w.folder(local)
@@ -190,13 +191,14 @@ func TestSFTPFileTabWheelAndScrollbarStayUnderThePointer(t *testing.T) {
 	w.view.lfolder.rows = prepareSFTPRows(nil, entries)
 
 	var invalidator app.Invalidator
-	preview, err := headless.Open(app.Config{
+	base := app.Config{
 		Title: "File manager scrolling", Width: 1100, Height: 720, Tree: Tree(),
 		Invalidator: &invalidator, Paint: state.Paint, OnWake: state.Wake,
 		OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut,
 		OnScroll: state.Scroll, OnFileDrop: state.FileDrop, OnResize: state.Resize,
 		TextInput: state.SFTPTabInput,
-	}, nil, headless.Options{Scale: 1})
+	}
+	preview, err := headless.Open(state.WindowConfig(base), nil, headless.Options{Scale: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,31 +225,31 @@ func TestSFTPFileTabWheelAndScrollbarStayUnderThePointer(t *testing.T) {
 		}
 	}
 
-	geometry := w.ui.bars[0]
-	thumb := geometry.VerticalThumb
-	x := thumb.X + thumb.Width/2
-	y := thumb.Y + thumb.Height/2
+	// The List draws its own scrollbar; hovering reveals it, and a press on the
+	// thumb drags the rows, as every page ScrollArea does.
+	if err := preview.Move(list.X+list.Width-4, list.Y+24); err != nil {
+		t.Fatal(err)
+	}
+	if err := preview.Driver().Pump(); err != nil {
+		t.Fatal(err)
+	}
+	var bar gfx.Rect
+	for _, hit := range preview.Snapshot().Hits {
+		if hit.Role == gfx.RoleSeparator && hit.Bounds.X+hit.Bounds.Width >= list.X+list.Width-1 && pointInRect(hit.Bounds.X+1, hit.Bounds.Y+1, list) {
+			bar = hit.Bounds
+			break
+		}
+	}
+	if bar.Width <= 0 {
+		t.Fatal("the file list has no vertical scrollbar")
+	}
+	x := bar.X + bar.Width/2
+	y := bar.Y + bar.Height/2
+	before := w.ui.offset[0]
 	if err := preview.Press(x, y); err != nil {
 		t.Fatal(err)
 	}
-	if w.ui.barDrag != 1 {
-		t.Fatalf("scrollbar press did not start a local drag: %d", w.ui.barDrag)
-	}
 	last := w.ui.offset[0]
-	jitter := w.pointer(gfx.PointerEvent{
-		Kind: gfx.PointerMove, Captured: true,
-		X: x, Y: y,
-	})
-	if jitter.Repaint || w.ui.offset[0] != last {
-		t.Fatalf("a move that did not change the offset repainted the tab: offset %.1f -> %.1f, repaint %v", last, w.ui.offset[0], jitter.Repaint)
-	}
-	capturedExit := w.pointer(gfx.PointerEvent{
-		Kind: gfx.PointerExit, Captured: true,
-		X: x, Y: y,
-	})
-	if w.ui.barDrag != 1 || !capturedExit.Handled {
-		t.Fatalf("a captured exit stopped the scrollbar drag: local drag %d, result %+v", w.ui.barDrag, capturedExit)
-	}
 	for step := float32(1); step <= 4; step++ {
 		if err := preview.Move(x, y+step*28); err != nil {
 			t.Fatal(err)
@@ -260,8 +262,8 @@ func TestSFTPFileTabWheelAndScrollbarStayUnderThePointer(t *testing.T) {
 	if err := preview.Release(x, y+4*28); err != nil {
 		t.Fatal(err)
 	}
-	if w.ui.barDrag != 0 {
-		t.Fatal("scrollbar release left the drag captured")
+	if w.ui.offset[0] <= before {
+		t.Fatal("dragging the scrollbar did not move the list")
 	}
 }
 
@@ -347,12 +349,12 @@ func TestSFTPFileTabEventsRouteThroughTheWorkbenchPage(t *testing.T) {
 	if !w.view.lfolder.headerMenuOpen {
 		t.Fatal("the tab's More menu did not open")
 	}
-	hidden, ok := hitByIDFromSnapshot(preview.Snapshot(), sftpWindowHeaderHidden[0])
+	hidden, ok := snapshotMenuHit(preview, w.headerMenuRowLabel(0, sftpWindowHeaderHidden[0]))
 	if !ok {
 		t.Fatal("the tab's More menu is not painted by the workbench page")
 	}
 	wasHidden := w.view.lfolder.showHidden
-	if err := preview.Click(hidden.X+hidden.Width/2, hidden.Y+hidden.Height/2); err != nil {
+	if err := preview.Click(hidden.Bounds.X+hidden.Bounds.Width/2, hidden.Bounds.Y+hidden.Bounds.Height/2); err != nil {
 		t.Fatal(err)
 	}
 	if err := preview.Driver().Pump(); err != nil {

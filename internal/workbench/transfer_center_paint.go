@@ -29,19 +29,21 @@ func (state *State) paintTransferBadge(canvas *gfx.Canvas) {
 	}
 }
 
-// declareTransferBatch declares the confirmation shown before a bulk action.
-func (state *State) declareTransferBatchBody(c ui.C) {
-	center, pal := &state.transfers, state.pal
-	ui.Column(c).Grow(1).FillWidth().Gap(16).Children(func() {
-		ui.Wrap(c, center.batch.title).FontSize(metrics.FontSizeL).Weight(gfx.WeightSemibold).Color(pal.text)
-		ui.Wrap(c, center.batch.description).FontSize(metrics.FontSizeS).Color(pal.muted).
-			HitWith(hitTransfersBulkDescription, center.batch.title, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: center.batch.description})
-		ui.Spacer(c)
-		ui.Row(c).Height(32).Shrink(0).Gap(8).Items(ui.Center).Children(func() {
-			ui.Spacer(c)
-			ui.Button(c, state.messages.Cancel).Secondary().Hit(hitTransfersBulkCancel, state.messages.Cancel)
-			ui.Button(c, center.batch.action).Destructive().Hit(hitTransfersBulkConfirm, center.batch.action)
-		})
+// declareTransferBatchDialog declares the alert dialog asked before a bulk
+// overwrite or resume, over whatever surface raised it, so the transfers it
+// concerns stay visible behind it. Cancel has the initial focus because the
+// action replaces files that exist.
+func (state *State) declareTransferBatchDialog(c ui.C, batch *transferBatch, cancel, confirm gfx.ID) {
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: batch.title, Description: batch.description, Width: 512,
+		Layer: dialogLayer + 1, Scope: dialogScope, CloseID: cancel,
+		InitialFocusID: cancel, NoClose: true,
+	})
+	dialog.Footer(func() {
+		state.dialogActionFooter(c,
+			components.ButtonAction{ID: cancel, Label: state.messages.Cancel, Variant: components.ButtonOutline},
+			components.ButtonAction{ID: confirm, Label: batch.action, Variant: components.ButtonDestructive},
+		)
 	})
 }
 
@@ -73,69 +75,25 @@ func transferFraction(snapshot sftpclient.TransferSnapshot) float32 {
 	return min(float32(0.99), max(0, float32(snapshot.BytesDone)/float32(snapshot.BytesTotal)))
 }
 
-func (state *State) transferCenterScroll(event gfx.ScrollEvent) (gfx.EventResult, bool) {
-	center := &state.transfers
-	if !center.open || !state.transferCenterAvailable() || !pointInRect(event.X, event.Y, center.surface) {
-		return gfx.EventResult{}, false
-	}
-	if len(center.batch.targets) > 0 || !pointInRect(event.X, event.Y, center.list) {
-		return gfx.EventResult{Handled: true}, true
-	}
-	before, step := center.scroll, event.StepY(36)
-	center.scroll = min(max(center.scroll+step, 0), center.geometry.MaxOffsetY)
-	if before != center.scroll {
-		center.details.dismiss()
-	}
-	return gfx.EventResult{Handled: true, Repaint: before != center.scroll}, true
-}
-
-func (state *State) transferCenterPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	center := &state.transfers
-	if !center.open || !state.transferCenterAvailable() || (event.Target != hitTransfersBar && !center.dragging) {
-		return gfx.EventResult{}, false
-	}
-	if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary {
-		center.dragging = true
-		center.details.dismiss()
-		center.dragOffset = center.geometry.VerticalThumb.Height / 2
-		if pointInRect(event.X, event.Y, center.geometry.VerticalThumb) {
-			center.dragOffset = event.Y - center.geometry.VerticalThumb.Y
-		}
-	}
-	if center.dragging {
-		center.scroll = center.geometry.VerticalOffsetForThumb(event.Y - center.dragOffset)
-	}
-	if event.Kind == gfx.PointerUp {
-		center.dragging = false
-	}
-	return gfx.EventResult{Handled: true, Repaint: true}, true
-}
-
 func (state *State) transferCenterKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	center := &state.transfers
 	if !center.open || !state.transferCenterAvailable() || event.Release {
 		return gfx.EventResult{}, false
 	}
 	if event.Key == gfx.KeyEscape {
-		if !center.selectOpen.IsZero() {
-			center.selectOpen = gfx.ID{}
-		} else if len(center.batch.targets) > 0 {
+		if len(center.batch.targets) > 0 {
 			center.batch = transferBatch{}
-		} else if center.details.showing != 0 || center.details.pinned != 0 {
+			return gfx.EventResult{Handled: true, Repaint: true}, true
+		}
+		// A pinned preview is the topmost transient surface: it closes before
+		// the center, as the page's choice lists do before both.
+		if center.details.pinned != 0 {
 			center.details.dismiss()
-		} else {
-			center.close()
+			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
-		return gfx.EventResult{Handled: true, Repaint: true}, true
-	}
-	if !center.selectOpen.IsZero() {
-		if result, handled := state.menuKey(event); handled {
-			return result, true
-		}
-	}
-	if (event.Target == hitTransfersHost || event.Target == hitTransfersDirection) && (event.Key == gfx.KeyDown || event.Key == gfx.KeyUp) {
-		center.selectOpen = event.Target
-		return gfx.EventResult{Handled: true, Repaint: true}, true
+		// The page's popovers own the rest: the open choice list first, then
+		// the center itself.
+		return gfx.EventResult{}, false
 	}
 	if len(center.batch.targets) > 0 {
 		if (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) && !event.Repeat && (event.Target == hitTransfersBulkConfirm || event.Target == hitTransfersBulkCancel) {
@@ -144,13 +102,9 @@ func (state *State) transferCenterKey(event gfx.KeyEvent) (gfx.EventResult, bool
 		}
 		return gfx.EventResult{}, false
 	}
-	if event.Target == hitTransfersList {
-		area := components.BeginScrollArea(nil, state.Theme(), center.list, gfx.Size{Height: float32(len(center.rows)) * transferRowHeight})
-		if _, offset, ok := area.ScrollForKey(0, center.scroll, event.Key, 36); ok {
-			center.scroll = offset
-			center.details.dismiss()
-			return gfx.EventResult{Handled: true, Repaint: true}, true
-		}
+	if event.Target == hitTransfersList && state.scrollTransferList(event.Key) {
+		center.details.dismiss()
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	if (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) && !event.Repeat && event.Target != hitTransfersList {
 		if state.clickTransferCenter(event.Target) {
@@ -158,4 +112,40 @@ func (state *State) transferCenterKey(event gfx.KeyEvent) (gfx.EventResult, bool
 		}
 	}
 	return gfx.EventResult{}, false
+}
+
+// scrollTransferList moves the List to where the key asks: the keys the list
+// itself takes once a row has the focus, for the list's own stop at the top of
+// the tab order.
+func (state *State) scrollTransferList(key gfx.Key) bool {
+	center := &state.transfers
+	if !center.listBox.Valid() {
+		return false
+	}
+	scroll := center.listBox.ScrollState()
+	step := float32(36)
+	page := max(scroll.Viewport-step, step)
+	target := scroll.Offset
+	switch key {
+	case gfx.KeyUp:
+		target -= step
+	case gfx.KeyDown:
+		target += step
+	case gfx.KeyPageUp:
+		target -= page
+	case gfx.KeyPageDown:
+		target += page
+	case gfx.KeyHome:
+		target = 0
+	case gfx.KeyEnd:
+		target = scroll.Max()
+	default:
+		return false
+	}
+	target = min(max(target, 0), scroll.Max())
+	if target != scroll.Offset {
+		scroll.ScrollTo(target)
+		center.scroll, center.scrollSynced = target, target
+	}
+	return true
 }

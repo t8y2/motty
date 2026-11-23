@@ -48,6 +48,7 @@ type ToolsMessages struct {
 	HighlightRegex               string
 	HighlightCase                string
 	HighlightColor               string
+	HighlightCustomColor         string
 	HighlightErrorEmpty          string
 	HighlightErrorTooLong        string
 	HighlightErrorEverywhere     string
@@ -77,6 +78,25 @@ type ToolsMessages struct {
 	SnippetColumnGroup        string
 	SnippetFilterAll          string
 	SnippetFilterNone         string
+	SnippetGroupsManage       string
+	SnippetGroupsTitle        string
+	SnippetGroupsDescription  string
+	SnippetGroupCountFmt      string
+	SnippetGroupEmpty         string
+	SnippetGroupRename        string
+	SnippetGroupRenameTitle   string
+	SnippetGroupRenameField   string
+	SnippetGroupRenameSave    string
+	SnippetGroupRenameInvalid string
+	SnippetGroupConflict      string
+	SnippetGroupMissing       string
+	SnippetGroupDelete        string
+	SnippetGroupDeleteTitle   string
+	SnippetGroupDeleteBodyFmt string
+	SnippetGroupDeleteConfirm string
+	SnippetGroupsClose        string
+	StatusGroupRenamedFmt     string
+	StatusGroupDeletedFmt     string
 	SnippetCountFilteredFmt   string
 	SnippetColumnCommand      string
 	SnippetSortAction         string
@@ -102,6 +122,7 @@ type ToolsMessages struct {
 	SnippetCommand            string
 	SnippetCommandPlaceholder string
 	SnippetRun                string
+	SnippetLines              string
 	SnippetShortcut           string
 	SnippetShortcutNone       string
 	SnippetShortcutRecording  string
@@ -109,6 +130,7 @@ type ToolsMessages struct {
 	SnippetShortcutInvalid    string
 	SnippetErrorName          string
 	SnippetErrorCommand       string
+	SnippetErrorTooLong       string
 	SnippetErrorTooMany       string
 	SnippetSave               string
 	SnippetPaletteFmt         string
@@ -141,16 +163,29 @@ type ToolsMessages struct {
 	// The strip of saved commands under the terminal.
 	CommandsAdd   string
 	CommandsClose string
+	// CommandsResize is the tooltip of the strip along the bar's inner edge that
+	// drags its width.
+	CommandsResize string
 	// CommandsBarShow is the label of the picker's quiet checkbox for that strip;
 	// CommandsBarHidden is that checkbox's tooltip while unticked. Neither names
 	// the strip: the UI uses the language's own word for saved commands.
 	CommandsBarHidden string
 	CommandsBarShow   string
+	// CommandsPlacement labels the picker's dock control, and
+	// CommandsPlaceBottom / CommandsPlaceSide name its two docks: the strip
+	// under the terminal or the sidebar beside it.
+	CommandsPlacement   string
+	CommandsPlaceBottom string
+	CommandsPlaceSide   string
 	// CommandsFilter is the tooltip of the group-filter button at the bar's left
 	// and the heading of the menu it opens.
 	CommandsFilter string
 	// CommandsUngrouped is the checkbox for commands with no group in the filter.
 	CommandsUngrouped string
+	// CommandsCollapse and CommandsExpand are the hints of a group's heading in
+	// the bar: it folds the group's commands away, or lists them again.
+	CommandsCollapse string
+	CommandsExpand   string
 	// CommandsShowAll checks every group in the filter; CommandsHideAll clears them.
 	CommandsShowAll string
 	CommandsHideAll string
@@ -271,7 +306,10 @@ type ToolsMessages struct {
 	PasswordHintDescription string
 	CloseConfirmRow         string
 	CloseConfirmDescription string
-	PasswordHintGhost       string // drawn after a sudo prompt, beside the cursor
+
+	// Closing a window that still has sessions.
+	CloseWindowConfirmRow         string
+	CloseWindowConfirmDescription string
 
 	// The outbound proxy.
 	ProxyRow                    string
@@ -347,11 +385,13 @@ type ToolsMessages struct {
 	ImportGuideURL               string
 	ImportPickerFmt              string // the client's name
 	ImportFolderPickerFmt        string // the client's name; it keeps sessions in a folder
+	ImportConfigFolderPickerFmt  string // the client's name; it keeps its data in a folder
 	ImportCanceled               string
 	ImportFailedFmt              string
 	ImportSummaryFmt             string // hosts, client, duplicates
 	ImportWarningKeysFmt         string
 	ImportWarningSkippedFmt      string
+	ImportWarningSkippedHostFmt  string // a skipped repeat: its label and address
 	ImportWarningPasswords       string
 	ImportWarningCleartextFmt    string // sessions whose file held readable passwords or keys
 	ImportWarningLoopback        string // a session aimed at 127.0.0.1 / localhost
@@ -404,25 +444,26 @@ type ToolsMessages struct {
 	SerialOpenedFmt        string
 
 	// File transfer over the terminal (ZMODEM).
-	TransferSentFmt           string
-	TransferReceivedFmt       string
-	TransferCancelled         string
-	TransferFailedFmt         string
-	TransferDeclined          string
-	TransferChooseFolderTitle string
-	TransferNoDownloads       string
-	TransferChooseFilesTitle  string
-	TransferTooManyFmt        string
-	TransferNotFileFmt        string
-	TransferTooBigFmt         string
-	TransferReceiveTitle      string
-	TransferSendTitle         string
-	TransferReceiveOfferFmt   string
-	TransferSendOfferFmt      string
-	TransferDecline           string
-	TransferChooseFiles       string
-	TransferChooseFolder      string
-	TransferToFolderFmt       string
+	TransferSentFmt               string
+	TransferReceivedFmt           string
+	TransferCancelled             string
+	TransferFailedFmt             string
+	TransferDeclined              string
+	TransferChooseFolderTitle     string
+	TransferNoDownloads           string
+	TransferChooseFilesTitle      string
+	TransferChooseSendFolderTitle string
+	TransferTooManyFmt            string
+	TransferNotFileFmt            string
+	TransferTooBigFmt             string
+	TransferReceiveTitle          string
+	TransferSendTitle             string
+	TransferReceiveOfferFmt       string
+	TransferSendOfferFmt          string
+	TransferDecline               string
+	TransferChooseFiles           string
+	TransferChooseFolder          string
+	TransferToFolderFmt           string
 
 	// The file panel.
 	CatFiles                        string
@@ -430,6 +471,8 @@ type ToolsMessages struct {
 	FilesPanelAutoOpenDescription   string
 	FilesDirectoryTree              string
 	FilesDirectoryTreeDescription   string
+	FilesPreviewLimit               string
+	FilesPreviewLimitDescription    string
 	FilesPanelPosition              string
 	FilesPanelPositionDescription   string
 	FilesPanelLeft, FilesPanelRight string
@@ -614,6 +657,15 @@ type ToolsMessages struct {
 	GeneralCloseDescription         string
 	GeneralCloseTray                string
 	GeneralCloseQuit                string
+	GeneralKeepWindows              string
+	GeneralKeepWindowsDescription   string
+	GeneralKeepWindowsKeep          string
+	GeneralKeepWindowsDiscard       string
+	GeneralKeepWindowsAsk           string
+	QuitKeepWindowsTitle            string
+	QuitKeepWindowsDescription      string
+	QuitKeepWindowsKeep             string
+	QuitKeepWindowsDiscard          string
 	GeneralRelaunch                 string
 	GeneralRelaunchDescription      string
 	GeneralRelaunchRaise            string
@@ -622,6 +674,10 @@ type ToolsMessages struct {
 	GeneralUpdateDescription        string
 	GeneralUpdateCheck              string
 	GeneralUpdateDownload           string
+	GeneralUpdateSource             string
+	GeneralUpdateSourceDescription  string
+	GeneralUpdateSourceOfficial     string
+	GeneralUpdateSourceCNB          string
 	GeneralUpdateStartup            string
 	GeneralUpdateStartupDescription string
 	UpdateChecking                  string
@@ -652,6 +708,8 @@ type ToolsMessages struct {
 	UpdateConfirmSubmit             string
 	UpdateDownloadingTitleFmt       string
 	UpdateVerifying                 string
+	UpdateInstallingTitleFmt        string
+	UpdateInstalling                string
 	UpdateRestarting                string
 	UpdateFailedTitle               string
 	UpdateFailedBodyFmt             string
@@ -661,6 +719,10 @@ type ToolsMessages struct {
 	ActionSSHFmt                    string
 	ActionBrowserFmt                string
 	ActionFilesFmt                  string
+	ActionRevealFmt                 string
+	ActionReveal                    string
+	ActionRevealFailed              string
+	ActionRevealMissing             string
 	ActionExtractFmt                string
 	ActionCopyFmt                   string
 	DiagnosticsRow                  string
@@ -671,6 +733,9 @@ type ToolsMessages struct {
 	DiagnosticsFailedFmt            string
 	PreviousCrashTitle              string
 	PreviousCrashBodyFmt            string
+	PreviousCrashReveal             string
+	PreviousCrashRevealFailed       string
+	PreviousCrashRevealMissing      string
 	CatBackup                       string
 	CatMCP                          string
 	BackupGroupFile                 string
@@ -881,6 +946,19 @@ type ToolsMessages struct {
 	RemoteContainerDetailsTitle         string
 	RemoteContainerOverview             string
 	RemoteContainerEnvironmentEmpty     string
+	RemoteContainerConfiguration        string
+	RemoteContainerConfigurationLoading string
+	RemoteContainerCreated              string
+	RemoteContainerCommand              string
+	RemoteContainerImageID              string
+	RemoteContainerRestartPolicy        string
+	RemoteContainerPorts                string
+	RemoteContainerNetworks             string
+	RemoteContainerMounts               string
+	RemoteContainerNetworkIO            string
+	RemoteContainerBlockIO              string
+	RemoteContainerPIDs                 string
+	RemoteContainerUsageFailedFmt       string
 
 	RemoteProcessCopyPID            string
 	RemoteProcessCopyUser           string
@@ -904,6 +982,7 @@ type ToolsMessages struct {
 	RemoteColState                  string
 	RemoteColStatus                 string
 	RemoteColID                     string
+	RemoteColContainerMemory        string
 	RemoteRefresh                   string
 	RemoteAutoRefresh               string
 	RemoteAutoStart                 string
@@ -964,6 +1043,8 @@ type ToolsMessages struct {
 	ExtEditButton                   string
 	ExtEditOpenedFmt                string
 	ExtEditSentFmt                  string
+	ExtEditUnsentFmt                string
+	ExtEditGoneFmt                  string
 	ExtEditSendFailedFmt            string
 	ExtEditBadFmt                   string
 	ExtEditRefused                  string

@@ -3,11 +3,15 @@ package workbench
 import (
 	"fmt"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/keymap"
+	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 	"motty/internal/workbench/icons"
@@ -19,11 +23,20 @@ var (
 	hitServerLogs       = tree.ID(remoteLogHits, "toggle")
 	hitRemoteLogDivider = tree.ID(remoteLogHits, "divider")
 	hitRemoteLogDismiss = tree.ID(remoteLogHits, "dismiss")
+	hitRemoteLogSudo    = tree.ID(remoteLogHits, "sudo")
 	hitRemoteLogName    = tree.ID(remoteLogHits, "name")
 	hitRemoteLogPath    = tree.ID(remoteLogHits, "path")
+	hitRemoteLogOutput  = tree.ID(remoteLogHits, "output")
+	hitRemoteLogBar     = tree.ID(remoteLogHits, "output-bar")
 )
 
-const remoteLogRowHeight = 20
+const (
+	remoteLogRowHeight = 20
+	// The line-number gutter and its right edge: the text starts at
+	// remoteLogTextLeft and has the rest of the width.
+	remoteLogTextLeft  = 72
+	remoteLogTextInset = 84
+)
 
 var remoteLogExpandIcon = gfx.Icon{
 	ViewBox: 24, Stroke: 2, Cap: gfx.CapRound, Join: gfx.JoinRound,
@@ -142,11 +155,6 @@ func (state *State) declareRemoteLogs(c ui.C) {
 	if view.buffer != nil {
 		view.buffer.snapshot(&view.snapshot)
 	}
-	if view.scroll.Scroll == nil {
-		view.scroll.Scroll = view.scrollLog
-		view.scroll.Key = view.keyLog
-		view.scroll.Pointer = view.logScrollbarPointer
-	}
 	c.Part("remote-logs")
 	ui.Column(c).Absolute().Left(frame.X).Top(frame.Y+frame.Height-height).
 		Size(frame.Width, height).Clip().Background(p.workspace).Children(func() {
@@ -159,6 +167,7 @@ func (state *State) declareRemoteLogs(c ui.C) {
 			ui.Icon(c, lucideIcons[iconFileClock]).Size(16, 16)
 			ui.Text(c, m.Title).Weight(gfx.WeightSemibold).Color(p.text).Shrink(0)
 			ui.Text(c, session.Title).Color(p.muted).Grow(1).Ellipsis()
+			state.declareRemoteLogSudo(c, session)
 			label, icon := m.Expand, remoteLogExpandIcon
 			if view.expanded {
 				label, icon = m.Restore, remoteLogRestoreIcon
@@ -179,12 +188,60 @@ func (state *State) declareRemoteLogs(c ui.C) {
 			width := min(view.pathSplit.Pos, max(minPaths, frame.Width-minOutput-8))
 			state.declareRemoteLogPaths(c, session, view, width)
 			ui.Splitter(c, &view.pathSplit).Mins(minPaths, minOutput).Label(m.ResizePaths)
-			state.declareRemoteLogOutput(c, session, view, frame.Width-width >= 470)
+			// The output is what the splitter leaves of the row. The thickness is
+			// the one the last layout used, so the wrapped height the declaration
+			// measures is the paint's own.
+			outputWidth := float32(0)
+			if thickness := view.pathSplit.GetThickness(); thickness > 0 {
+				outputWidth = frame.Width - width - thickness
+			}
+			state.declareRemoteLogOutput(c, session, view, outputWidth, frame.Width-width >= 470)
 		})
 	})
 	if state.modal == modalNone && view.formMode != remoteLogFormNone {
 		state.declareRemoteLogForm(c, session, view)
 	}
+}
+
+// declareRemoteLogSudo is the log panel's form of the tools' privilege switch:
+// the same lock, wording and password dialog, sharing the session's flag, so a
+// log the account itself cannot read opens as root once it is on.
+func (state *State) declareRemoteLogSudo(c ui.C, session *Session) {
+	m := state.messages
+	label, style := m.SudoCommandsEnable, iconButtonQuiet
+	if session.sudoCommands {
+		label, style = m.SudoCommandsDisable, iconButtonActive
+	}
+	button := state.declareIconButton(c, hitRemoteLogSudo, iconLock, label, !session.canViewRemoteLogs(), style).
+		Size(28, 28)
+	if button.Clicked() {
+		c.After(func() { state.toggleRemoteLogSudo(session) })
+	}
+}
+
+func (state *State) toggleRemoteLogSudo(session *Session) {
+	if session.sudoCommands {
+		// The switch restarts the stream: it belongs to the privilege it
+		// started with.
+		state.setSudoCommands(session, "", false)
+		return
+	}
+	if !sudoCommandsAvailable(session) {
+		state.showActionError(state.messages.SudoCommandsEnable, errSudoCommandUnavailable.Error())
+		return
+	}
+	state.sudoSFTP = sudoSFTPDialog{sessionID: session.ID, commands: true, logs: true}
+	state.modal = modalSudoSFTP
+}
+
+// restartRemoteLog reopens the selected path after the privilege changed: the
+// stream already running belongs to the previous privilege and would keep
+// failing, or keep reading as root after it was turned off.
+func (state *State) restartRemoteLog(session *Session, view *remoteLogView) {
+	if session.remoteLogs != view || view.selected.Path == "" {
+		return
+	}
+	state.followRemoteLog(session, view, view.selected)
 }
 
 func (state *State) declareRemoteLogPaths(c ui.C, session *Session, view *remoteLogView, width float32) {
@@ -269,7 +326,7 @@ func (state *State) declareRemoteLogPaths(c ui.C, session *Session, view *remote
 	})
 }
 
-func (state *State) declareRemoteLogOutput(c ui.C, session *Session, view *remoteLogView, wide bool) {
+func (state *State) declareRemoteLogOutput(c ui.C, session *Session, view *remoteLogView, width float32, wide bool) {
 	m, p := state.messages.RemoteLogs, state.pal
 	ui.Column(c).Grow(1).MinWidth(0).FillHeight().Clip().Children(func() {
 		ui.Row(c).Height(39).PadX(8).Gap(6).Items(ui.Center).Children(func() {
@@ -280,8 +337,43 @@ func (state *State) declareRemoteLogOutput(c ui.C, session *Session, view *remot
 			state.declareRemoteLogAutoScroll(c, view)
 		})
 		ui.Slot(c).Height(1).FillWidth().Background(p.line)
-		ui.Control(c, m.Title, &view.scroll).Grow(1).FillWidth().Clip().Background(p.terminal).
-			Draw(func(d *ui.DrawContext) { state.drawRemoteLogOutput(d, view) })
+		view.updateMatches()
+		// The declaration sizes the content from the output's own width, so the
+		// scroll range is right on the frame the first lines arrive. The paint
+		// repeats the call with the width it actually got.
+		cols, _ := remoteLogColumns(c.Canvas(), width)
+		view.refreshRows(cols)
+		scroll := ui.Scroll(c).Grow(1).FillWidth().Clip().Background(p.terminal).
+			AlwaysScrollbars().ScrollbarSize(7).ScrollbarIDs(hitRemoteLogBar, gfx.ID{}).
+			ScrollbarLabels(m.Title, "").
+			HitWith(hitRemoteLogOutput, m.Title, gfx.HitOptions{Role: gfx.RoleGroup})
+		if area := scroll.ScrollState(); area != nil {
+			if view.resetScroll && !view.follow {
+				area.ScrollTo(0)
+			}
+			view.resetScroll = false
+			if view.follow != view.lastFollow {
+				view.lastFollow = view.follow
+				if view.follow {
+					area.ScrollToEnd()
+				}
+			}
+			if area.Offset != view.lastOffset {
+				// The wheel or a drag moved the log: following follows only
+				// while the view is still at its end, as the old log's switch
+				// showed.
+				view.follow = area.AtEnd()
+				view.lastFollow = view.follow
+				view.lastOffset = area.Offset
+			}
+			view.scroll = area
+		}
+		scroll = scroll.Follow(view.follow)
+		scroll.Children(func() {
+			height := max(float32(view.outputRows())*remoteLogRowHeight, view.viewport, 1)
+			ui.Slot(c).FillWidth().Height(height).
+				Draw(func(d *ui.DrawContext) { state.drawRemoteLogOutput(d, view) })
+		})
 		state.declareRemoteLogStatus(c, session, view)
 	})
 }
@@ -417,32 +509,34 @@ func (state *State) declareRemoteLogForm(c ui.C, session *Session, view *remoteL
 
 func (state *State) drawRemoteLogOutput(d *ui.DrawContext, view *remoteLogView) {
 	p, m := state.pal, state.messages.RemoteLogs
-	box := d.Rect
-	view.visibleRows = max(1, int(box.Height/remoteLogRowHeight))
-	view.updateMatches()
-	last := view.lastTop()
-	if view.follow {
-		view.top = last
-	}
-	view.top = min(max(view.top, view.snapshot.first), last)
-	area := components.BeginScrollArea(d.Canvas, state.Theme(), box, gfx.Size{
-		Width: box.Width, Height: float32(view.outputRows()) * remoteLogRowHeight,
-	}).Offset(0, float32(view.top-view.snapshot.first)*remoteLogRowHeight).
-		ScrollbarSize(7).VerticalScrollbar(view.scroll.Parts().At(0), m.Title, "")
-	view.scrollbar = area.BeginContent()
+	area := view.scroll
+	view.viewport = area.Viewport
 	style := gfx.TextStyle{Size: metrics.FontSizeM, Color: p.termFG, Mono: true}
-	start := int(view.top - view.snapshot.first)
+	cols, cellWidth := remoteLogColumns(d.Canvas, d.Rect.Width)
+	view.refreshRows(cols)
+	view.textOrigin = gfx.Point{X: d.Rect.X + remoteLogTextLeft, Y: d.Rect.Y}
+	view.cellWidth = cellWidth
+	// The content child is laid out at the area's scroll offset; the viewport
+	// is where the area itself is.
+	box := gfx.Rect{X: d.Rect.X, Y: d.Rect.Y + area.Offset, Width: d.Rect.Width, Height: area.Viewport}
+	visibleRows := max(1, int(area.Viewport/remoteLogRowHeight))
+	start := int(area.Offset / remoteLogRowHeight)
+	if start < 0 {
+		start = 0
+	}
+	d.Canvas.Clip(box)
 	drawn := 0
-	for row := start; row < view.outputRows() && drawn < view.visibleRows; row++ {
-		index := row
-		if view.matchQuery != "" {
-			index = view.matches[row]
+	// One row past the viewport paints a partially scrolled row; the clip trims it.
+	for row := start; row < view.outputRows() && drawn <= visibleRows; row++ {
+		item := view.rows[row]
+		line := view.snapshot.lines[item.line]
+		y := d.Rect.Y + float32(row)*remoteLogRowHeight
+		if item.start == 0 {
+			number := gfx.Rect{X: box.X + 6, Y: y, Width: 55, Height: remoteLogRowHeight}
+			numberStyle := style
+			numberStyle.Color = p.muted
+			d.Canvas.LabelAligned(strconv.FormatInt(view.snapshot.first+int64(item.line)+1, 10), number, numberStyle, gfx.AlignRight)
 		}
-		line := view.snapshot.lines[index]
-		y := box.Y + float32(drawn)*remoteLogRowHeight
-		number := gfx.Rect{X: box.X + 6, Y: y, Width: 55, Height: remoteLogRowHeight}
-		style.Color = p.muted
-		d.Canvas.LabelAligned(strconv.FormatInt(view.snapshot.first+int64(index)+1, 10), number, style, gfx.AlignRight)
 		style.Color = p.termFG
 		switch {
 		case strings.Contains(line, "ERROR") || strings.Contains(line, "FATAL"):
@@ -450,9 +544,29 @@ func (state *State) drawRemoteLogOutput(d *ui.DrawContext, view *remoteLogView) 
 		case strings.Contains(line, "WARN"):
 			style.Color = p.warning
 		}
-		d.Canvas.Label(line, gfx.Rect{X: box.X + 72, Y: y, Width: max(0, box.Width-84), Height: remoteLogRowHeight}, style)
+		d.Canvas.Label(line[item.start:item.end], gfx.Rect{X: box.X + remoteLogTextLeft, Y: y, Width: max(0, box.Width-remoteLogTextInset), Height: remoteLogRowHeight}, style)
 		drawn++
 	}
+	// The selection paints over the text as the assistant's does: a quarter of
+	// the text colour leaves the selected row readable.
+	if selectStart, selectEnd, ok := view.selectionRange(); ok {
+		color := withAlpha(p.text, 0.25)
+		for row := start; row < view.outputRows() && row < start+visibleRows+1; row++ {
+			item := view.rows[row]
+			begin := view.lineStarts[item.line] + int64(item.start)
+			end := view.lineStarts[item.line] + int64(item.end)
+			lo, hi := max(selectStart, begin), min(selectEnd, end)
+			if lo >= hi {
+				continue
+			}
+			line := view.snapshot.lines[item.line]
+			from, to := item.start+int32(lo-begin), item.start+int32(hi-begin)
+			x := box.X + remoteLogTextLeft + float32(remoteLogCells(line[item.start:from]))*view.cellWidth
+			width := float32(remoteLogCells(line[from:to])) * view.cellWidth
+			d.Canvas.Fill(gfx.Rect{X: x, Y: d.Rect.Y + float32(row)*remoteLogRowHeight, Width: width, Height: remoteLogRowHeight}, color)
+		}
+	}
+	d.Canvas.Unclip()
 	if view.buffer == nil || view.matchQuery != "" && drawn == 0 {
 		label := m.SelectPath
 		if view.matchQuery != "" {
@@ -461,45 +575,326 @@ func (state *State) drawRemoteLogOutput(d *ui.DrawContext, view *remoteLogView) 
 		style.Color = p.muted
 		d.Canvas.LabelCenter(label, box, style)
 	}
-	area.EndContent()
 }
 
-func (view *remoteLogView) lastTop() int64 {
-	return view.snapshot.first + int64(max(0, view.outputRows()-view.visibleRows))
+// refreshRows lays the retained lines out as the rows the output paints: one row
+// per line, or several when a line is wider than cols cells. The declaration and
+// the paint both pass the output's own width, so the scroll range is measured
+// from the rows the paint will draw; cols <= 0 lays each line out as one row,
+// before a layout has measured the panel. The wrap ring is keyed by absolute
+// line number and reused, so a live tail only measures the lines it newly
+// received.
+func (view *remoteLogView) refreshRows(cols int) {
+	if view.rowsReady && view.rowsRevision == view.snapshot.revision && view.rowsCols == cols && view.rowsQuery == view.matchQuery {
+		return
+	}
+	view.rowsRevision, view.rowsCols, view.rowsQuery, view.rowsReady = view.snapshot.revision, cols, view.matchQuery, true
+	view.rows = view.rows[:0]
+	lines := view.snapshot.lines
+	view.lineStarts = view.lineStarts[:0]
+	start := view.snapshot.prefix
+	view.plainStart = start
+	for _, line := range lines {
+		view.lineStarts = append(view.lineStarts, start)
+		start += int64(len(line)) + 1
+	}
+	view.plainEnd = view.plainStart
+	if len(lines) > 0 {
+		view.plainEnd = start - 1
+	}
+	if view.wrapCols != cols {
+		view.wrapCols = cols
+		for index := range view.wrap {
+			view.wrap[index].abs = -1
+		}
+	}
+	match := 0
+	for index, line := range lines {
+		if view.matchQuery != "" {
+			for match < len(view.matches) && view.matches[match] < index {
+				match++
+			}
+			if match >= len(view.matches) || view.matches[match] != index {
+				continue
+			}
+		}
+		if cols <= 0 {
+			view.rows = append(view.rows, remoteLogRow{line: int32(index), end: int32(len(line))})
+			continue
+		}
+		from := int32(0)
+		for _, end := range view.wrapLine(view.snapshot.first+int64(index), line, cols) {
+			view.rows = append(view.rows, remoteLogRow{line: int32(index), start: from, end: end})
+			from = end
+		}
+	}
+	view.clampSelection()
 }
 
-func (view *remoteLogView) scrollLog(event gfx.ScrollEvent) gfx.EventResult {
-	delta := event.StepY(remoteLogRowHeight) + view.scrollRemainder
-	lines := int64(delta / remoteLogRowHeight)
-	view.scrollRemainder = delta - float32(lines)*remoteLogRowHeight
-	return view.moveLog(lines)
+// wrapLine is where one line broke at cols cells, remembered until the width
+// changes or the ring reuses its slot. A wide character takes two cells, so a
+// row ends where the next character would not fit, never inside one.
+func (view *remoteLogView) wrapLine(abs int64, line string, cols int) []int32 {
+	if len(view.wrap) != remoteLogBufferLines {
+		view.wrap = make([]remoteLogLineWrap, remoteLogBufferLines)
+		for index := range view.wrap {
+			view.wrap[index].abs = -1
+		}
+	}
+	entry := &view.wrap[abs%remoteLogBufferLines]
+	if entry.abs == abs {
+		return entry.ends
+	}
+	entry.abs = abs
+	entry.ends = entry.ends[:0]
+	cells := 0
+	for index, r := range line {
+		width := text.CellWidth(r)
+		if cells+width > cols && cells > 0 {
+			entry.ends = append(entry.ends, int32(index))
+			cells = 0
+		}
+		cells += width
+	}
+	entry.ends = append(entry.ends, int32(len(line)))
+	return entry.ends
 }
 
-func (view *remoteLogView) keyLog(event gfx.KeyEvent) gfx.EventResult {
+// remoteLogColumns is how many log cells fit in width and the cell width they
+// are measured at, as the painted mono label measures them.
+func remoteLogColumns(canvas *gfx.Canvas, width float32) (int, float32) {
+	cell, _ := canvas.MonoCellSize(metrics.FontSizeM, gfx.MonoSystem)
+	if cell <= 0 || width <= remoteLogTextInset {
+		return 0, cell
+	}
+	return int((width - remoteLogTextInset) / cell), cell
+}
+
+func remoteLogCells(value string) int {
+	cells := 0
+	for _, r := range value {
+		cells += text.CellWidth(r)
+	}
+	return cells
+}
+
+// resetOutput drops the rows, wrap and selection of the previous stream.
+func (view *remoteLogView) resetOutput() {
+	view.snapshot = remoteLogSnapshot{}
+	view.rows, view.rowsReady, view.rowsRevision, view.rowsQuery, view.rowsCols = view.rows[:0], false, 0, "", 0
+	view.lineStarts = view.lineStarts[:0]
+	view.plainStart, view.plainEnd = 0, 0
+	view.wrapCols = 0
+	for index := range view.wrap {
+		view.wrap[index].abs = -1
+	}
+	view.selection.Clear()
+}
+
+// selectionRange is the selected part of the retained text, in the byte space
+// lineStarts numbers: lines joined by a newline, starting after the dropped
+// prefix, so an offset stays put while the stream appends and a rotation only
+// moves its lower bound.
+func (view *remoteLogView) selectionRange() (int64, int64, bool) {
+	if view.selection.Empty() {
+		return 0, 0, false
+	}
+	part := view.selection.In(0)
+	start, end := int64(part.Anchor), int64(part.Focus)
+	if start > end {
+		start, end = end, start
+	}
+	start = max(start, view.plainStart)
+	end = min(end, view.plainEnd)
+	return start, end, start < end
+}
+
+// clampSelection keeps a selection inside the text that is still retained.
+func (view *remoteLogView) clampSelection() {
+	if view.selection.Empty() {
+		return
+	}
+	clamp := func(point components.TextPoint) components.TextPoint {
+		point.Offset = int(min(max(int64(point.Offset), view.plainStart), view.plainEnd))
+		return point
+	}
+	view.selection.Anchor, view.selection.Focus = clamp(view.selection.Anchor), clamp(view.selection.Focus)
+	if view.selection.Empty() && !view.selection.Dragging() {
+		view.selection.Clear()
+	}
+}
+
+// selectedText is what a copy puts on the clipboard. Soft wraps stay out of it:
+// a wrapped line is copied as the one line the remote host wrote.
+func (view *remoteLogView) selectedText() (string, bool) {
+	start, end, ok := view.selectionRange()
+	if !ok {
+		return "", false
+	}
+	lines := view.snapshot.lines
+	if len(lines) == 0 {
+		return "", false
+	}
+	first := sort.Search(len(lines), func(index int) bool {
+		return view.lineStarts[index]+int64(len(lines[index])) > start
+	})
+	var out strings.Builder
+	for index := first; index < len(lines); index++ {
+		begin := view.lineStarts[index]
+		if index > first {
+			if end <= begin-1 {
+				break
+			}
+			out.WriteByte('\n')
+		}
+		lo, hi := max(start, begin), min(end, begin+int64(len(lines[index])))
+		if lo < hi {
+			out.WriteString(lines[index][lo-begin : hi-begin])
+		}
+		if begin+int64(len(lines[index])) >= end {
+			break
+		}
+	}
+	return out.String(), out.Len() > 0
+}
+
+func (view *remoteLogView) selectAll() bool {
+	if len(view.snapshot.lines) == 0 || view.plainEnd <= view.plainStart {
+		return false
+	}
+	view.selection.Select(components.TextPoint{Offset: int(view.plainStart)}, components.TextPoint{Offset: int(view.plainEnd)})
+	return true
+}
+
+// selectionPoint is where a window point lies in the text: the row under it,
+// clamped to the painted rows, and the byte offset nearest inside that row.
+func (view *remoteLogView) selectionPoint(point gfx.Point) (components.TextPoint, bool) {
+	if len(view.rows) == 0 || view.cellWidth <= 0 {
+		return components.TextPoint{}, false
+	}
+	row := int((point.Y - view.textOrigin.Y) / remoteLogRowHeight)
+	row = min(max(row, 0), len(view.rows)-1)
+	item := view.rows[row]
+	rowText := view.snapshot.lines[item.line][item.start:item.end]
+	at := 0
+	if x := point.X - view.textOrigin.X; x > 0 {
+		at = len(rowText)
+		display := float32(0)
+		for offset := 0; offset < len(rowText); {
+			r, size := utf8.DecodeRuneInString(rowText[offset:])
+			width := float32(text.CellWidth(r)) * view.cellWidth
+			if x < display+width {
+				if x-display < width/2 {
+					at = offset
+				} else {
+					at = offset + size
+				}
+				break
+			}
+			display += width
+			offset += size
+			at = offset
+		}
+	}
+	return components.TextPoint{Offset: int(view.lineStarts[item.line] + int64(item.start) + int64(at))}, true
+}
+
+// remoteLogPointer selects log text with the pointer. The scroll area's own
+// bars keep their drag; everything that lands on the output is a selection.
+func (state *State) remoteLogPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	if state.modal != modalNone || !state.terminalPage() {
+		return gfx.EventResult{}, false
+	}
+	view := state.workspaceRemoteLogs(state.deck.ActiveWorkspace())
+	if view == nil || view.buffer == nil || len(view.snapshot.lines) == 0 {
+		return gfx.EventResult{}, false
+	}
+	primary := event.Button == gfx.PointerButtonPrimary || event.Button == gfx.PointerButtonNone
+	if event.Kind == gfx.PointerDown && primary && event.Target == hitRemoteLogOutput {
+		if result := view.selection.Pointer(event, view.selectionPoint); result.Handled {
+			return gfx.EventResult{Handled: true, Repaint: result.Changed, Focus: hitRemoteLogOutput}, true
+		}
+		return gfx.EventResult{}, false
+	}
+	if view.selection.Dragging() {
+		if result := view.selection.Pointer(event, view.selectionPoint); result.Handled {
+			return gfx.EventResult{Handled: true, Repaint: result.Changed}, true
+		}
+	}
+	return gfx.EventResult{}, false
+}
+
+// remoteLogShortcut copies the selected log text and selects all of it. It runs
+// only while the output holds the keyboard, so the terminal's own copy is not
+// taken over.
+func (state *State) remoteLogShortcut(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if state.modal != modalNone || !state.terminalPage() || event.Target != hitRemoteLogOutput {
+		return gfx.EventResult{}, false
+	}
+	view := state.workspaceRemoteLogs(state.deck.ActiveWorkspace())
+	if view == nil || view.buffer == nil {
+		return gfx.EventResult{}, false
+	}
+	chord, ok := keymap.FromEvent(event)
+	if !ok {
+		return gfx.EventResult{}, false
+	}
+	if chord.Modifiers == keymap.Primary && chord.Char == 'a' {
+		if !event.Repeat {
+			view.selectAll()
+		}
+		return gfx.EventResult{Handled: true, Repaint: true}, true
+	}
+	if state.shortcuts.actionFor(chord) != shortcutCopy {
+		return gfx.EventResult{}, false
+	}
+	if !event.Repeat {
+		if value, selected := view.selectedText(); selected {
+			state.copyRemoteLogText(value)
+		}
+	}
+	return gfx.EventResult{Handled: true, Repaint: true}, true
+}
+
+func (state *State) copyRemoteLogText(value string) {
+	if value == "" || state.options.SetClipboardText == nil {
+		return
+	}
+	if err := state.options.SetClipboardText(value); err != nil {
+		state.status = fmt.Sprintf(state.messages.StatusClipboardFailedFmt, err)
+	}
+}
+
+// keyLogOutput scrolls the log with the arrows while its output holds the
+// keyboard, as the old control did.
+func (view *remoteLogView) keyLogOutput(event gfx.KeyEvent) gfx.EventResult {
+	area := view.scroll
+	if area == nil || view.buffer == nil {
+		return gfx.EventResult{}
+	}
+	if event.Key == gfx.KeyEnd {
+		area.ScrollToEnd()
+		view.follow, view.lastFollow = true, true
+		return gfx.EventResult{Handled: true, Repaint: true}
+	}
+	page := float32(max(1, int(area.Viewport/remoteLogRowHeight))) * remoteLogRowHeight
 	switch event.Key {
 	case gfx.KeyUp:
-		return view.moveLog(-1)
+		area.ScrollTo(area.Offset - remoteLogRowHeight)
 	case gfx.KeyDown:
-		return view.moveLog(1)
+		area.ScrollTo(area.Offset + remoteLogRowHeight)
 	case gfx.KeyPageUp:
-		return view.moveLog(-int64(view.visibleRows))
+		area.ScrollTo(area.Offset - page)
 	case gfx.KeyPageDown:
-		return view.moveLog(int64(view.visibleRows))
+		area.ScrollTo(area.Offset + page)
 	case gfx.KeyHome:
-		return view.moveLog(view.snapshot.first - view.top)
-	case gfx.KeyEnd:
-		return view.moveLog(view.lastTop() - view.top)
+		area.ScrollTo(0)
 	default:
 		return gfx.EventResult{}
 	}
-}
-
-func (view *remoteLogView) moveLog(lines int64) gfx.EventResult {
-	if lines == 0 || view.buffer == nil {
-		return gfx.EventResult{Handled: true}
-	}
-	view.top = min(max(view.top+lines, view.snapshot.first), view.lastTop())
-	view.follow = view.top == view.lastTop()
+	view.follow = area.AtEnd()
+	view.lastFollow = view.follow
+	view.lastOffset = area.Offset
 	return gfx.EventResult{Handled: true, Repaint: true}
 }
 
@@ -509,7 +904,7 @@ func (view *remoteLogView) updateMatches() {
 		return
 	}
 	if query != view.matchQuery {
-		view.top = view.snapshot.first
+		view.resetScroll = true
 	}
 	view.matchQuery, view.matchRevision = query, view.snapshot.revision
 	view.matches = view.matches[:0]
@@ -524,30 +919,5 @@ func (view *remoteLogView) updateMatches() {
 }
 
 func (view *remoteLogView) outputRows() int {
-	if view.matchQuery != "" {
-		return len(view.matches)
-	}
-	return len(view.snapshot.lines)
-}
-
-func (view *remoteLogView) logScrollbarPointer(event gfx.PointerEvent) gfx.EventResult {
-	if event.Kind == gfx.PointerDown && event.Target == view.scroll.Parts().At(0) && event.Button == gfx.PointerButtonPrimary {
-		view.scrollDragging = true
-		view.scrollGrab = event.Y - view.scrollbar.VerticalThumb.Y
-	}
-	if !view.scrollDragging {
-		return gfx.EventResult{}
-	}
-	switch event.Kind {
-	case gfx.PointerMove, gfx.PointerUp:
-		offset := view.scrollbar.VerticalOffsetForThumb(event.Y - view.scrollGrab)
-		top := view.snapshot.first + int64(offset/remoteLogRowHeight+.5)
-		if event.Kind == gfx.PointerUp {
-			view.scrollDragging = false
-		}
-		return view.moveLog(top - view.top)
-	case gfx.PointerExit:
-		view.scrollDragging = false
-	}
-	return gfx.EventResult{Handled: true}
+	return len(view.rows)
 }

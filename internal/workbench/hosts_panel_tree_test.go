@@ -103,8 +103,14 @@ func TestSecondaryPressOnAnOpenMenuBackdropClosesItAndOpensTheHostMenu(t *testin
 	}
 	target := state.hostsPanel.tree.RowID(row)
 	state.tabMenu.open = true
-	// The first pass is the press the open menu's backdrop takes; it must close
-	// that menu and leave the panel alone.
+	// The runtime takes a secondary press on the open menu's backdrop as a click
+	// on it, which is what closes the page's menu; the press itself then goes on
+	// to the row under it. The two passes are played here in that order.
+	var dismiss gfx.Canvas
+	dismiss.BeginEventPass(hitTabMenuDismiss, gfx.ClickInfo{})
+	state.Paint(&dismiss, gfx.Size{Width: panelWide.Width, Height: panelWide.Height})
+	dismiss.EndEventPass()
+	dismiss.RunAfterPaint()
 	state.Pointer(gfx.PointerEvent{
 		Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitTabMenuDismiss,
 		X: 100, Y: 148, Viewport: panelWide,

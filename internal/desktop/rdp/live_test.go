@@ -32,11 +32,14 @@ import (
 //	                    server asks first (optional)
 //	MOTTY_RDP_CLICK     "x,y": a click there once the first picture is up, instead of keys
 //	MOTTY_RDP_PROMPT    seconds the certificate question takes to answer (optional)
+//	MOTTY_RDP_LEGACY    any value offers the legacy TLS suites too (optional)
+//	MOTTY_RDP_DEPTH     color depth to ask for: 16 or 24 (optional, default 32)
 //
 // See tools/live/rdp_live.sh and docs/remote-desktop.md.
 
 type liveConfig struct {
 	address, user, domain, password, png string
+	legacy                               bool
 }
 
 func liveEnv(t *testing.T) liveConfig {
@@ -44,6 +47,7 @@ func liveEnv(t *testing.T) liveConfig {
 	config := liveConfig{
 		address: os.Getenv("MOTTY_RDP_ADDR"), user: os.Getenv("MOTTY_RDP_USER"), domain: os.Getenv("MOTTY_RDP_DOMAIN"),
 		password: os.Getenv("MOTTY_RDP_PASSWORD"), png: os.Getenv("MOTTY_RDP_PNG"),
+		legacy: os.Getenv("MOTTY_RDP_LEGACY") != "",
 	}
 	if config.address == "" {
 		t.Skip("MOTTY_RDP_ADDR not set")
@@ -165,8 +169,10 @@ func TestLiveSessionPaintsAndTakesInput(t *testing.T) {
 	var pinned string
 	var verified atomic.Int32
 	prompt, _ := strconv.Atoi(os.Getenv("MOTTY_RDP_PROMPT"))
+	depth, _ := strconv.Atoi(os.Getenv("MOTTY_RDP_DEPTH"))
 	opts := desktop.Options{
-		Username: config.user, Domain: config.domain, Password: config.password, Clipboard: true,
+		Username: config.user, Domain: config.domain, Password: config.password, Clipboard: true, LegacyTLS: config.legacy,
+		ColorDepth: depth,
 		VerifyCertificate: func(address string, der []byte) error {
 			sum := sha256.Sum256(der)
 			pinned = hex.EncodeToString(sum[:])

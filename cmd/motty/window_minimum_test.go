@@ -60,6 +60,11 @@ func (h *minSizeHost) Quit() {
 func TestMainWindowKeepsItsMinimumAndCorrectsARestoredTinyFrame(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv(datadir.Variable, dir)
+	// Both runs open the window the launch path opens, so they share one frame
+	// record; leftovers from another test must not make it the second window.
+	previousIDs := windowIDs
+	windowIDs = 0
+	t.Cleanup(func() { windowIDs = previousIDs })
 	host := &minSizeHost{}
 	app.UseApplicationRunner(func(start func(app.Host) error) error { return start(host) })
 	t.Cleanup(func() { host.Quit(); app.UseApplicationRunner(nil) })
@@ -72,7 +77,7 @@ func TestMainWindowKeepsItsMinimumAndCorrectsARestoredTinyFrame(t *testing.T) {
 		err := app.RunApplication(func(application *app.Application) error {
 			status := newTray(application)
 			open := func() error {
-				return openWorkbenchWindow(application, status, hub, nil, false, placement{rememberFrame: true})
+				return openWorkbenchWindow(application, status, hub, nil, false, placement{windowID: 1, rememberFrame: true})
 			}
 			if err := open(); err != nil {
 				return err

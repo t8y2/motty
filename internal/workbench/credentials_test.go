@@ -96,6 +96,9 @@ func TestASavedPasswordIsKeptInTheVaultNotTheStateFile(t *testing.T) {
 func TestHostsShareASavedPasswordAndChangingItReachesBoth(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)
+	// This test covers credentials on new connections, not the separate
+	// preference that reuses an already-open host session.
+	state.startupReuse = false
 	entry := addCredential(t, state, "Internal", "first-password")
 	useCredential(t, state, hostLabeled(t, state, "Production"), entry)
 	useCredential(t, state, hostLabeled(t, state, "Staging"), entry)
@@ -354,7 +357,7 @@ func TestCredentialDialogPageServesItsFieldsAndSaves(t *testing.T) {
 	state.openCredentialDialog("")
 	view := func(c ui.C) { state.declareCredentialDialog(c) }
 	page, canvas := drawDialogPage(t, state, view)
-	config := page.Config(app.Config{})
+	config := ui.Configure(page, app.Config{})
 	name := config.TextInput(app.TextInputContext{ID: hitCredentialName})
 	if name == nil || name.Editor != &state.credentialForm.name {
 		t.Fatalf("the page does not serve the name field: %+v", name)

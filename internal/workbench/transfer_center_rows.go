@@ -53,10 +53,10 @@ func (state *State) declareTransferTaskRow(c ui.C, row ui.Box, rowID gfx.ID, ind
 		})
 		ref := transferDetailRow{entry: index, id: entry.id}
 		if hover {
-			details.hover = ref
+			details.hover, details.hoverBox = ref, name
 		}
 		if entry.id == details.pinned || details.pinned == 0 && entry.id == details.showing {
-			details.current = ref
+			details.current, details.currentBox = ref, name
 		}
 		direction := transferDirectionOf(entry.snapshot.Operation)
 		state.declareTransferDirection(c, direction, width < 630)
@@ -119,10 +119,12 @@ func (state *State) declareTransferDirection(c ui.C, direction transferDirection
 		width = 25
 	}
 	ui.Row(c).Width(width).Shrink(0).Items(ui.Center).Children(func() {
-		ui.Row(c).PadX(5).Gap(4).Height(21).Items(ui.Center).Radius(radius.control).Background(withAlpha(ink, 0.15)).Children(func() {
+		label := state.transferDirectionLabel(direction)
+		ui.Badge(c, label).Height(21).PadX(5).Gap(4).Items(ui.Center).Radius(radius.control).
+			Background(withAlpha(ink, 0.15)).Children(func() {
 			ui.Icon(c, glyph).Size(13, 13).Color(ink).Shrink(0)
 			if !compact {
-				ui.Text(c, state.transferDirectionLabel(direction)).FontSize(metrics.FontSizeS).Color(ink).Ellipsis()
+				ui.Text(c, label).FontSize(metrics.FontSizeS).Weight(gfx.WeightRegular).Color(ink).Ellipsis()
 			}
 		})
 	})

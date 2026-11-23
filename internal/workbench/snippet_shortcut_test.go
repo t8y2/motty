@@ -160,8 +160,41 @@ func TestASnippetWithoutAShortcutIsSentFromItsPage(t *testing.T) {
 	}
 
 	state.Click(hitSnippets)
-	if got := doubleClick(state, hitSnippetRowList.At(0)); !got.Handled || state.activeSection != sectionTerminal || shell.typed() != "ls --all\rls --all\r" {
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	if got := doubleClick(state, state.snippets.rows.RowID(0)); !got.Handled || state.activeSection != sectionTerminal || shell.typed() != "ls --all\rls --all\r" {
 		t.Fatalf("double click: handled=%v section=%d, shell heard %q", got.Handled, state.activeSection, shell.typed())
+	}
+}
+
+// A snippet sent from its page takes the page away and shows the terminal. The
+// terminal must get the keyboard in the same move: the user came from a page
+// whose button kept it, and no click lands on the terminal in between (#1160).
+func TestSendingASnippetFromThePageReturnsTheKeyboardToTheTerminal(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	state.snippets.list = []snippet{{Name: "list all", Command: "ls --all", Run: true}}
+	state.refreshSnippets()
+	world.connectFirst(t, state)
+	want := state.activeTerminalFocusHit()
+	if want.IsZero() {
+		t.Fatal("no terminal focus target")
+	}
+
+	state.Click(hitSnippets)
+	state.Click(hitSnippetSend)
+	if state.activeSection != sectionTerminal {
+		t.Fatalf("section = %d, want the terminal", state.activeSection)
+	}
+	if state.pendingFocus != want {
+		t.Fatalf("pending focus = %v, want the terminal %v", state.pendingFocus, want)
+	}
+	canvas, _ := paintAt(state, gfx.Size{Width: 1200, Height: 800})
+	if got := canvas.FocusOnce(); got != want {
+		t.Fatalf("paint asked for focus %v, want the terminal %v", got, want)
+	}
+	if !state.pendingFocus.IsZero() {
+		t.Fatal("the focus request was not consumed")
 	}
 }
 
@@ -175,7 +208,9 @@ func TestRightClickingASnippetRowOpensItsMenu(t *testing.T) {
 	shell := world.conns[0].shell(t)
 
 	state.Click(hitSnippets)
-	secondary := gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitSnippetRowList.At(1)}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	secondary := gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: state.snippets.rows.RowID(1)}
 	if got := pointer(state, secondary); !got.Handled || !state.snippetMenu.open || state.snippetMenu.index != 1 || state.snippets.selected != 1 {
 		t.Fatalf("handled=%v menu=%+v selected=%d", got.Handled, state.snippetMenu, state.snippets.selected)
 	}
@@ -185,7 +220,9 @@ func TestRightClickingASnippetRowOpensItsMenu(t *testing.T) {
 	}
 
 	state.Click(hitSnippets)
-	pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitSnippetRowList.At(0)})
+	var rowCanvas gfx.Canvas
+	state.Paint(&rowCanvas, gfx.Size{Width: 1400, Height: 900})
+	pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: state.snippets.rows.RowID(0)})
 	chooseMenu(t, state, hitSnippetMenuDelete)
 	if state.modal != modalSnippetDelete || len(state.snippets.list) != 2 {
 		t.Fatalf("the menu delete opened modal %d with %d snippets", state.modal, len(state.snippets.list))

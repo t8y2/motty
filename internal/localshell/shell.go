@@ -11,6 +11,7 @@ import (
 	"github.com/vivaui/viva/leaks"
 	"io"
 	"motty/internal/shellkind"
+	"motty/internal/termsize"
 	"strings"
 	"sync"
 	"time"
@@ -45,6 +46,11 @@ func ArgsFor(program string) []string {
 type Config struct {
 	// Cols and Rows are the terminal size in cells.
 	Cols, Rows int
+	// PixelWidth and PixelHeight are the text area in device pixels, the pty
+	// window size's own pixel fields. Zero means the terminal has not measured
+	// its font; a pty is then created without a pixel size rather than with a
+	// guess.
+	PixelWidth, PixelHeight int
 	// Shell is the program to run. Empty means the platform's default shell.
 	Shell string
 	// Args starts a specific local executable without interpreting a shell
@@ -74,8 +80,9 @@ type backend struct {
 	// foreground reads the argv of the program the user is looking at. Nil
 	// where the platform cannot tell.
 	foreground func() ([]string, bool)
-	// resize tells the program the terminal size in cells.
-	resize func(cols, rows int)
+	// resize tells the program the terminal size: the grid in cells and the
+	// text area in pixels, where the platform's pty carries them.
+	resize func(size termsize.Size)
 	// wait blocks until the program has ended and returns its exit status.
 	wait func() (status int, err error)
 	// hangup asks the program to end; kill makes sure it does.
@@ -107,10 +114,9 @@ type Shell struct {
 	pending int
 	closed  bool
 
-	resizeWake         chan struct{}
-	resizeMu           sync.Mutex
-	wantCols, wantRows int
-	curCols, curRows   int
+	resizeWake chan struct{}
+	resizeMu   sync.Mutex
+	want, cur  termsize.Size
 
 	kind shellkind.Kind
 }
@@ -130,12 +136,12 @@ func Start(config Config) (*Shell, error) {
 		return nil, err
 	}
 	liveShells.Acquire()
-	cols, rows := max(config.Cols, 1), max(config.Rows, 1)
+	size := termsize.Size{Cols: max(config.Cols, 1), Rows: max(config.Rows, 1), PixelWidth: config.PixelWidth, PixelHeight: config.PixelHeight}
 	shell := &Shell{
 		b: b, notify: config.Notify, done: make(chan struct{}), readDone: make(chan struct{}),
 		input: make(chan []byte, 256), kind: kindOf(config),
 		resizeWake: make(chan struct{}, 1),
-		wantCols:   cols, wantRows: rows, curCols: cols, curRows: rows,
+		want:       size, cur: size,
 	}
 	shell.space = sync.NewCond(&shell.mu)
 	go shell.readLoop()
@@ -309,10 +315,10 @@ func (shell *Shell) ForegroundArgs() ([]string, bool) {
 	return shell.b.foreground()
 }
 
-// Resize queues the terminal size in cells without blocking the caller.
-// Updates within one frame interval collapse into the latest size.
-func (shell *Shell) Resize(cols, rows int) {
-	if cols < 1 || rows < 1 {
+// Resize queues the terminal size without blocking the caller. Updates within
+// one frame interval collapse into the latest size.
+func (shell *Shell) Resize(size termsize.Size) {
+	if size.Cols < 1 || size.Rows < 1 {
 		return
 	}
 	shell.mu.Lock()
@@ -320,10 +326,10 @@ func (shell *Shell) Resize(cols, rows int) {
 	if shell.closed || shell.finished {
 		return
 	}
-	if cols == shell.wantCols && rows == shell.wantRows {
+	if size == shell.want {
 		return
 	}
-	shell.wantCols, shell.wantRows = cols, rows
+	shell.want = size
 	select {
 	case shell.resizeWake <- struct{}{}:
 	default:
@@ -336,15 +342,15 @@ func (shell *Shell) flushResize() {
 	shell.resizeMu.Lock()
 	defer shell.resizeMu.Unlock()
 	shell.mu.Lock()
-	if shell.closed || shell.finished || (shell.wantCols == shell.curCols && shell.wantRows == shell.curRows) {
+	if shell.closed || shell.finished || shell.want == shell.cur {
 		shell.mu.Unlock()
 		return
 	}
-	cols, rows := shell.wantCols, shell.wantRows
-	shell.curCols, shell.curRows = cols, rows
+	size := shell.want
+	shell.cur = size
 	shell.mu.Unlock()
 	if shell.b.resize != nil {
-		shell.b.resize(cols, rows)
+		shell.b.resize(size)
 	}
 }
 

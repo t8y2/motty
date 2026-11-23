@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -109,6 +110,25 @@ type Authentication struct {
 	// Agent controls whether the running ssh-agent is offered.
 	Agent          bool
 	IdentitiesOnly bool
+}
+
+// Equal reports whether two endpoints would authenticate the same way: the
+// methods, identities and agent they offer. A connection authenticated under
+// one policy is not another endpoint's connection, so it must not stand in for
+// a login that endpoint is configured to make (and that the server may refuse).
+// Nil and empty identity lists differ: nil tries the default identities, empty
+// tries none.
+func (authentication Authentication) Equal(other Authentication) bool {
+	return authentication.Methods == other.Methods &&
+		authentication.RequirePublicKey == other.RequirePublicKey &&
+		authentication.Agent == other.Agent &&
+		authentication.IdentitiesOnly == other.IdentitiesOnly &&
+		equalIdentities(authentication.IdentityFiles, other.IdentityFiles) &&
+		equalIdentities(authentication.AdditionalIdentityFiles, other.AdditionalIdentityFiles)
+}
+
+func equalIdentities(left, right []string) bool {
+	return (left == nil) == (right == nil) && slices.Equal(left, right)
 }
 
 // SecurityKeyRequest names one hardware security-key identity the connection
@@ -249,6 +269,11 @@ type Config struct {
 	// accepted. Nil means the application keeps none, and such a reference is
 	// skipped.
 	StoredKey func(ref string) ([]byte, error)
+	// StoredCertificate reads the OpenSSH user certificate the application keeps
+	// with the stored key ref. Nil, an empty slice, or a nil error with no
+	// certificate means the key has none, and it is offered on its own. Like
+	// StoredKey it is called only after the host key is accepted.
+	StoredCertificate func(ref string) ([]byte, error)
 	// Agent controls whether the running ssh-agent is offered. It is ignored
 	// when there is no agent to offer (see AgentAddress).
 	Agent bool
@@ -412,15 +437,26 @@ func Dial(config Config) *Conn {
 // shell has been accepted (or can no longer come), so the connection's login
 // message has already reached the session that was going to display it.
 func (conn *Conn) releasePrimaryShell() {
+	conn = conn.transport()
 	if conn.primary == nil {
 		return
 	}
 	conn.primaryOnce.Do(func() { close(conn.primary) })
 }
 
+// transport is the Conn that dialed the SSH connection: a tab sharing it has
+// no gate of its own, because the login message is the transport's.
+func (conn *Conn) transport() *Conn {
+	if conn.owner != nil {
+		return conn.owner
+	}
+	return conn
+}
+
 // waitPrimaryShell blocks until the shell this connection is for has been
 // accepted. A connection that never asked for one is not delayed.
 func (conn *Conn) waitPrimaryShell() {
+	conn = conn.transport()
 	if conn.primary == nil {
 		return
 	}
@@ -428,6 +464,36 @@ func (conn *Conn) waitPrimaryShell() {
 	case <-conn.primary:
 	case <-conn.ctx.Done():
 	}
+}
+
+// SessionClient returns the authenticated client for a session that is not the
+// connection's interactive shell: a command, a file transfer, a monitor. Such a
+// session waits until the shell has been accepted, because sshd gives the
+// connection's login message to the first session that starts a program and
+// drops it for anything but a shell (ADR 0025). It returns early, with the
+// error that ended the wait, when ctx or the connection is done.
+func (conn *Conn) SessionClient(ctx context.Context) (*ssh.Client, error) {
+	if gate := conn.transport(); gate.primary != nil {
+		// A tab sharing the transport also stops waiting when it lets go.
+		var own <-chan struct{}
+		if conn.ctx != nil {
+			own = conn.ctx.Done()
+		}
+		select {
+		case <-gate.primary:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-own:
+			return nil, ErrCanceled
+		case <-gate.ctx.Done():
+			return nil, ErrCanceled
+		}
+	}
+	client := conn.Client()
+	if client == nil {
+		return nil, errors.New("sshconn: not connected")
+	}
+	return client, nil
 }
 
 // Status returns the current snapshot.

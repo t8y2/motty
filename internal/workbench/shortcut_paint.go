@@ -21,6 +21,12 @@ func (state *State) shortcutActionLabel(action shortcutAction) string {
 		return messages.ShortcutPaste
 	case shortcutNewTab:
 		return messages.ShortcutNewTab
+	case shortcutDuplicateTab:
+		return messages.MenuDuplicateTab
+	case shortcutDuplicateTerminal:
+		return messages.ShortcutDuplicateTerminal
+	case shortcutTerminalFolder:
+		return messages.ShortcutTerminalFolder
 	case shortcutLocalTerminal:
 		return messages.ShortcutLocalTerminal
 	case shortcutCloseTab:
@@ -39,6 +45,8 @@ func (state *State) shortcutActionLabel(action shortcutAction) string {
 		return messages.PaneSplitHorizontal
 	case shortcutPaneSplitVertical:
 		return messages.PaneSplitVertical
+	case shortcutPaneMaximize:
+		return messages.PaneMaximizeToggle
 	case shortcutPaneClose:
 		return messages.PaneClose
 	case shortcutFilesPath:
@@ -65,6 +73,10 @@ func (state *State) shortcutActionLabel(action shortcutAction) string {
 		return messages.Tools.SnippetsTitle
 	case shortcutAcceptSuggestion:
 		return messages.Completion.AcceptHintAction
+	case shortcutSettings:
+		return messages.NavSettings
+	case shortcutBroadcast:
+		return messages.Tools.BroadcastStart
 	default:
 		return ""
 	}

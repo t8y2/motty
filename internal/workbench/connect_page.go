@@ -9,8 +9,13 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/desktop/rdp"
 	"motty/internal/sshconn"
 )
+
+// hitConnLegacyTLS is the failure page's action that allows the legacy TLS
+// suites for the host and dials again.
+var hitConnLegacyTLS = tree.ID(connHits, "conn-legacy-tls")
 
 // A connection goes through four stages. The page shown while it is made keeps
 // one row for each, so the user always sees where it is, what it is waiting
@@ -52,6 +57,35 @@ func (state *State) now() time.Duration {
 // page then says why and offers another try.
 func (session *Session) failed() bool {
 	return session.phase == sshconn.PhaseFailed || session.phase == sshconn.PhaseClosed && session.err != nil || session.term != nil && session.term.ended && !session.term.live
+}
+
+// retryWithLegacyTLS allows the legacy TLS suites for the failed host and dials
+// it again. The choice is saved with the host, so a later connection does not
+// have to fail before it is offered.
+func (state *State) retryWithLegacyTLS(session *Session) {
+	if session.host.Protocol != protocolRDP || session.host.LegacyTLS {
+		return
+	}
+	if index := state.hostIndex(session.HostID); index >= 0 {
+		previous, updated := state.hosts[index], state.hosts[index]
+		updated.LegacyTLS = true
+		state.replaceHost(index, previous, updated)
+		state.save()
+		state.hostDataChanged()
+	} else {
+		session.host.LegacyTLS = true
+	}
+	state.reconnect(session)
+}
+
+// offersLegacyTLSRetry reports whether a failed RDP connection is one the
+// legacy TLS cipher suites may fix and the host has not already allowed them.
+// A refused certificate is not such a failure: it is a decision, not a suite
+// mismatch, and retrying would only ask again.
+func (state *State) offersLegacyTLSRetry(session *Session) bool {
+	return session.failed() && session.host.Protocol == protocolRDP &&
+		!session.host.LegacyTLS && !session.host.StandardSecurity &&
+		errors.Is(session.err, rdp.ErrTLSFailed)
 }
 
 // stepOf is how row stage looks for a session.
@@ -305,17 +339,35 @@ type sessionPaneUI struct {
 	rail, railTarget, railIcon   ui.Box
 	// closeKeys and connectKeys are the restored pane's key hints.
 	closeKeys, connectKeys [6]string
-	// light, tools, capture and latency are the desktop bars' slots, and
-	// desktopTools the controls they hold.
-	light, tools, capture, latency ui.Box
-	desktopTools                   []components.ButtonAction
-	latencyBadge                   desktopLatencyUI
-	latencyShown                   bool
+	// light, capture and latency are the desktop bars' slots; pictureDraw paints
+	// the picture inside the page, under the controls that sit over it; the
+	// fullscreen fields are the latency badge of the fullscreen bar, declared in
+	// the page and painted over it.
+	light, capture, latency ui.Box
+	pictureDraw             func(*ui.DrawContext)
+	pictureSession          uint32
+	latencyBadge            desktopLatencyUI
+	latencyShown            bool
+	fullscreenLatency       gfx.Rect
+	fullscreenText          string
+	fullscreenColor         gfx.Color
+	fullscreenHint          string
+	fullscreenBarDraw       func(*ui.DrawContext)
 }
 
 // declareSessionPane declares a session the terminal control does not show: its
 // connection, restored or desktop body, in the pane's container.
 func (state *State) declareSessionPane(c ui.C, session *Session, bounds gfx.Rect) {
+	state.declareSessionPaneBody(c, session, bounds)
+	if state.paneInSplit(session.ID) && (session.restored || state.showsProgress(session) || session.desk != nil && session.desk.chromeless && !session.desk.fullscreen) {
+		ui.Row(c).Absolute().Top(0).Right(termPadX).Height(infoBarHeight).Items(ui.Center).Children(func() {
+			state.declareSessionMaximizeButton(c, session)
+			state.declarePaneBarClose(c, session)
+		})
+	}
+}
+
+func (state *State) declareSessionPaneBody(c ui.C, session *Session, bounds gfx.Rect) {
 	switch {
 	case session.restored:
 		state.declareRestoredSessionBody(c, session, bounds)
@@ -459,7 +511,7 @@ func (state *State) declareConnectionBody(c ui.C, session *Session, frame gfx.Re
 		case footerHeight < 64 || session.reconnectPending:
 			button = button.Small()
 		}
-		sessionButtonLook(button, variant)
+		button.Variant(variant)
 	}
 	ui.Column(c).Fill().Background(pal.workspace).Items(ui.Center).Children(func() {
 		ui.Spacer(c).Grow(0.42)
@@ -565,7 +617,12 @@ func (state *State) declareConnectionBody(c ui.C, session *Session, frame gfx.Re
 						if session.reconnectPending {
 							addButton(hitConnCancelReconnect, m.ConnCancelReconnect, components.ButtonDefault)
 						} else if failed && state.canReconnect(session) {
-							addButton(hitConnRetry, m.ConnRetry, components.ButtonDefault)
+							if state.offersLegacyTLSRetry(session) {
+								addButton(hitConnLegacyTLS, m.ConnLegacyTLS, components.ButtonDefault)
+								addButton(hitConnRetry, m.ConnRetry, components.ButtonOutline)
+							} else {
+								addButton(hitConnRetry, m.ConnRetry, components.ButtonDefault)
+							}
 						}
 					})
 				})
@@ -804,7 +861,7 @@ func (state *State) declareRestoredSessionBody(c ui.C, session *Session, area gf
 	connectHint := append(s.connectKeys[:0], "↵")
 	hintHeight := state.Theme().Metrics.FontSizeS + 9
 	addButton := func(id gfx.ID, label string, variant components.ButtonVariant) {
-		sessionButtonLook(ui.Button(c, label).Hit(state.paneIdentity(session, id), label).MinWidth(96), variant)
+		ui.Button(c, label).Hit(state.paneIdentity(session, id), label).MinWidth(96).Variant(variant)
 	}
 
 	ui.Column(c).Fill().Background(pal.workspace).PadSides(max(24, area.Height*0.34), 0, 0, 0).Items(ui.Center).Children(func() {
@@ -832,18 +889,6 @@ func (state *State) declareRestoredSessionBody(c ui.C, session *Session, area gf
 			})
 		})
 	})
-}
-
-// sessionButtonLook gives a footer button its variant: the application keeps the
-// identity and the central dispatcher the click.
-func sessionButtonLook(button ui.Box, variant components.ButtonVariant) ui.Box {
-	switch variant {
-	case components.ButtonGhost:
-		return button.Ghost()
-	case components.ButtonOutline:
-		return button.Outline()
-	}
-	return button
 }
 
 // elapsedText is how long the connection has taken, kept between paints so a
@@ -890,6 +935,10 @@ func (state *State) clickConnection(id gfx.ID) {
 	case hitConnRetry:
 		if state.canReconnect(session) {
 			state.reconnect(session)
+		}
+	case hitConnLegacyTLS:
+		if state.canReconnect(session) {
+			state.retryWithLegacyTLS(session)
 		}
 	case hitConnForget:
 		state.forgetServerIdentity(session)

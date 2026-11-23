@@ -21,7 +21,10 @@ const (
 	shortcutCopy
 	shortcutPaste
 	shortcutNewTab
+	shortcutDuplicateTab
+	shortcutTerminalFolder
 	shortcutLocalTerminal
+	shortcutDuplicateTerminal
 	shortcutCloseTab
 	shortcutNextTab
 	shortcutPreviousTab
@@ -43,6 +46,9 @@ const (
 	shortcutSnippetPicker
 	shortcutHostsPanel
 	shortcutAcceptSuggestion
+	shortcutPaneMaximize
+	shortcutSettings
+	shortcutBroadcast
 	shortcutActionCount
 )
 
@@ -53,6 +59,9 @@ const (
 type shortcutMap struct {
 	chords keymap.Table[shortcutAction]
 	labels [shortcutActionCount]string
+	// revision changes whenever a chord is bound or unbound, so the macOS menu
+	// bar (which shows those chords) rebuilds when the table changes.
+	revision uint64
 	// acceptKeys is the Keyboard shortcuts page's keys text for the
 	// accept-suggestion row, rebuilt with the labels so that painting it
 	// allocates nothing.
@@ -63,8 +72,18 @@ func newShortcutMap() shortcutMap {
 	return shortcutMap{chords: keymap.NewTable[shortcutAction](int(shortcutActionCount))}
 }
 
+// primaryModifier, paneSplitChords and broadcastChord are keymap.Primary,
+// defaultPaneSplitChords and defaultBroadcastChord with a seam for the paint
+// goldens: production takes this platform's chords, while a golden pins one
+// platform's so the same snapshots hold everywhere.
+var (
+	primaryModifier = keymap.Primary
+	paneSplitChords = defaultPaneSplitChords
+	broadcastChord  = defaultBroadcastChord
+)
+
 func defaultShortcuts() shortcutMap {
-	primary := keymap.Primary
+	primary := primaryModifier
 	shortcuts := newShortcutMap()
 	shortcuts.chords.Set(shortcutCommandPalette, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 'p'})
 	shortcuts.chords.Set(shortcutNewWindow, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 'n'})
@@ -72,7 +91,13 @@ func defaultShortcuts() shortcutMap {
 	shortcuts.chords.Set(shortcutCopy, keymap.Chord{Modifiers: primary, Char: 'c'})
 	shortcuts.chords.Set(shortcutPaste, keymap.Chord{Modifiers: primary, Char: 'v'})
 	shortcuts.chords.Set(shortcutNewTab, keymap.Chord{Modifiers: primary, Char: 't'})
+	// Ctrl+Shift+D is the split default on Windows and Linux, and
+	// Command+Shift+D splits vertically on a Mac, so Duplicate takes Alt as
+	// well. It stays on the same letter as Windows Terminal's Duplicate Tab.
+	shortcuts.chords.Set(shortcutDuplicateTab, keymap.Chord{Modifiers: primary | gfx.ModifierAlt | gfx.ModifierShift, Char: 'd'})
+	shortcuts.chords.Set(shortcutTerminalFolder, keymap.Chord{Modifiers: gfx.ModifierControl | gfx.ModifierShift, Char: 'r'})
 	shortcuts.chords.Set(shortcutLocalTerminal, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 't'})
+	shortcuts.chords.Set(shortcutDuplicateTerminal, keymap.Chord{Modifiers: gfx.ModifierAlt | gfx.ModifierShift, Char: 't'})
 	shortcuts.chords.Set(shortcutCloseTab, keymap.Chord{Modifiers: primary, Char: 'w'})
 	// Control+Tab is how browsers, VS Code and Windows Terminal switch tabs on
 	// every platform, the Mac included, where Command+Tab is the system's.
@@ -83,9 +108,10 @@ func defaultShortcuts() shortcutMap {
 	shortcuts.chords.Set(shortcutTabNumber, keymap.Chord{Modifiers: primary, Char: '1'})
 	shortcuts.chords.Set(shortcutPanePrevious, keymap.Chord{Modifiers: primary | gfx.ModifierAlt, Char: 'j'})
 	shortcuts.chords.Set(shortcutPaneNext, keymap.Chord{Modifiers: primary | gfx.ModifierAlt, Char: 'k'})
-	splitHorizontal, splitVertical := defaultPaneSplitChords()
+	splitHorizontal, splitVertical := paneSplitChords()
 	shortcuts.chords.Set(shortcutPaneSplitHorizontal, splitHorizontal)
 	shortcuts.chords.Set(shortcutPaneSplitVertical, splitVertical)
+	shortcuts.chords.Set(shortcutPaneMaximize, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 'm'})
 	shortcuts.chords.Set(shortcutPaneClose, keymap.Chord{Modifiers: primary | gfx.ModifierAlt, Char: 'w'})
 	shortcuts.chords.Set(shortcutFilesPath, keymap.Chord{Modifiers: primary, Char: 'l'})
 	shortcuts.chords.Set(shortcutSFTP, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 's'})
@@ -102,6 +128,8 @@ func defaultShortcuts() shortcutMap {
 	// shell itself leaves it. It is a binding of its own because the badge beside
 	// the suggestion names it and the user can choose another one there.
 	shortcuts.chords.Set(shortcutAcceptSuggestion, keymap.Chord{Key: gfx.KeyRight})
+	shortcuts.chords.Set(shortcutSettings, keymap.Chord{Modifiers: primary, Char: ','})
+	shortcuts.chords.Set(shortcutBroadcast, broadcastChord())
 	shortcuts.refreshLabels()
 	return shortcuts
 }
@@ -116,7 +144,7 @@ const shortcutDefaultsGeneration = 1
 // shipped. On macOS Command+Alt+H is the menu bar's Hide Others, which an
 // application's key equivalents never reach, so the chord could not work.
 func legacyPaneSplitChords() (horizontal, vertical keymap.Chord) {
-	primary := keymap.Primary
+	primary := primaryModifier
 	return keymap.Chord{Modifiers: primary | gfx.ModifierAlt, Char: 'h'},
 		keymap.Chord{Modifiers: primary | gfx.ModifierAlt, Char: 'v'}
 }
@@ -127,7 +155,7 @@ func legacyPaneSplitChords() (horizontal, vertical keymap.Chord) {
 // taken reports the chords something other than a built-in action holds.
 func (shortcuts *shortcutMap) migrateChangedDefaults(taken func(keymap.Chord) bool) {
 	previousHorizontal, previousVertical := legacyPaneSplitChords()
-	horizontal, vertical := defaultPaneSplitChords()
+	horizontal, vertical := paneSplitChords()
 	for _, change := range [...]struct {
 		action shortcutAction
 		was    keymap.Chord
@@ -277,6 +305,7 @@ func (shortcuts *shortcutMap) bind(action shortcutAction, chord keymap.Chord) (s
 	if action == shortcutAcceptSuggestion {
 		shortcuts.refreshAcceptKeys()
 	}
+	shortcuts.revision++
 	return shortcutNone, true
 }
 
@@ -290,6 +319,7 @@ func (shortcuts *shortcutMap) unbind(action shortcutAction) bool {
 	if action == shortcutAcceptSuggestion {
 		shortcuts.acceptKeys = "—"
 	}
+	shortcuts.revision++
 	return true
 }
 
@@ -307,6 +337,12 @@ func (action shortcutAction) String() string {
 		return "paste"
 	case shortcutNewTab:
 		return "new_tab"
+	case shortcutDuplicateTab:
+		return "duplicate_tab"
+	case shortcutDuplicateTerminal:
+		return "duplicate_terminal"
+	case shortcutTerminalFolder:
+		return "terminal_folder"
 	case shortcutLocalTerminal:
 		return "local_terminal"
 	case shortcutCloseTab:
@@ -325,6 +361,8 @@ func (action shortcutAction) String() string {
 		return "pane_split_horizontal"
 	case shortcutPaneSplitVertical:
 		return "pane_split_vertical"
+	case shortcutPaneMaximize:
+		return "pane_maximize"
 	case shortcutPaneClose:
 		return "pane_close"
 	case shortcutFilesPath:
@@ -351,6 +389,10 @@ func (action shortcutAction) String() string {
 		return "snippet_picker"
 	case shortcutAcceptSuggestion:
 		return "accept_suggestion"
+	case shortcutSettings:
+		return "settings"
+	case shortcutBroadcast:
+		return "broadcast_input"
 	default:
 		return ""
 	}
@@ -433,6 +475,23 @@ func (state *State) shortcut(event gfx.KeyEvent, chord keymap.Chord) gfx.EventRe
 	if chord == state.shortcuts.chords.Chord(shortcutAcceptSuggestion) {
 		return gfx.EventResult{}
 	}
+	// Ctrl+W is the shell's word-delete key, even when it is also the default
+	// close-tab binding. Decline both the press and the release before shortcut
+	// routing consumes them; terminalKey encodes the program's keyboard mode.
+	if chord.Modifiers == gfx.ModifierControl && chord.Char == 'w' &&
+		state.shortcuts.actionFor(chord) == shortcutCloseTab && state.modal == modalNone && state.terminalPage() {
+		_, target, embedded := state.decodePaneHit(event.Target)
+		if !embedded {
+			target = event.Target
+		}
+		session := state.terminalSession(target)
+		if session == nil {
+			session = state.terminalPageSession(target)
+		}
+		if session != nil && state.paintsTerminalPane(session) && session.term.shell != nil && !session.term.ended {
+			return gfx.EventResult{}
+		}
+	}
 	if state.notesVisible() && (state.notes.view.menu != "" || state.notes.view.popup != "" || state.notes.view.drawer || state.notes.confirm != "") {
 		action := state.shortcuts.actionFor(chord)
 		if action == shortcutCopy || action == shortcutPaste || action == shortcutNone {
@@ -481,6 +540,9 @@ func (state *State) shortcut(event gfx.KeyEvent, chord keymap.Chord) gfx.EventRe
 		return result
 	}
 	if result, handled := state.remoteDetailShortcut(event); handled {
+		return result
+	}
+	if result, handled := state.remoteLogShortcut(event); handled {
 		return result
 	}
 	if state.modal != modalNone {
@@ -549,6 +611,12 @@ func (state *State) shortcut(event gfx.KeyEvent, chord keymap.Chord) gfx.EventRe
 			return result
 		}
 		return gfx.EventResult{}
+	}
+	if action == shortcutTerminalFolder {
+		return state.openTerminalFolder(event.Target)
+	}
+	if action == shortcutDuplicateTerminal {
+		return state.duplicateTerminal(event.Target)
 	}
 	return state.executeShortcut(action)
 }
@@ -707,6 +775,16 @@ func (state *State) executeShortcut(action shortcutAction) gfx.EventResult {
 		}
 	case shortcutNewTab:
 		state.Click(hitNewTab)
+	case shortcutDuplicateTab:
+		if state.activeSection == sectionTerminal {
+			if workspace := state.deck.ActiveWorkspace(); workspace != 0 && state.duplicateTab(workspace) {
+				result.Focus = state.activeTerminalFocusHit()
+			}
+		}
+	case shortcutTerminalFolder:
+		return state.openTerminalFolder(gfx.ID{})
+	case shortcutDuplicateTerminal:
+		return state.duplicateTerminal(gfx.ID{})
 	case shortcutLocalTerminal:
 		state.openLocalTerminal()
 		result.Focus = state.activeTerminalFocusHit()
@@ -728,6 +806,8 @@ func (state *State) executeShortcut(action shortcutAction) gfx.EventResult {
 		state.Click(hitPaneSplitHorizontal)
 	case shortcutPaneSplitVertical:
 		state.Click(hitPaneSplitVertical)
+	case shortcutPaneMaximize:
+		state.Click(hitPaneMaximize)
 	case shortcutPaneClose:
 		state.Click(hitPaneClose)
 	case shortcutSFTP:
@@ -767,6 +847,16 @@ func (state *State) executeShortcut(action shortcutAction) gfx.EventResult {
 		} else {
 			result.Focus = state.activeTerminalFocusHit()
 		}
+	case shortcutSettings:
+		state.openSettings()
+	case shortcutBroadcast:
+		// The command palette and the toolbar button run this same toggle, which
+		// says why a tab cannot broadcast. Outside the terminal there is no tab
+		// in view to toggle, so the key is left to whatever has the keyboard.
+		if state.activeSection != sectionTerminal {
+			return gfx.EventResult{}
+		}
+		state.toggleBroadcast()
 	}
 	return result
 }

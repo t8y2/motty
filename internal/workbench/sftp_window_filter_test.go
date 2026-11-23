@@ -276,8 +276,12 @@ func TestSFTPWindowHeaderMenuHasUniqueHitsAndNarrowTransfers(t *testing.T) {
 		}
 		seen[hit.ID] = true
 	}
-	for _, id := range []gfx.ID{sftpWindowFilterToggle[1], hitSFTPWindowUpload, hitSFTPWindowDownload, sftpWindowNewFolder[1], hitSFTPNewLink} {
-		dualHit(t, view, id)
+	for _, label := range []string{
+		w.owner.messages.Tools.FilesFilterLabel, w.owner.messages.SFTPWindow.Upload,
+		w.owner.messages.SFTPWindow.Download, w.owner.messages.SFTPNewDirectory,
+		w.owner.messages.Tools.TipNewLink,
+	} {
+		dualHitLabel(t, view, label)
 	}
 	if err := view.Keys("escape"); err != nil {
 		t.Fatal(err)
@@ -354,7 +358,7 @@ func TestSFTPWindowFilterLayoutVariants(t *testing.T) {
 					dualText(t, view, fmt.Sprintf(state.messages.Tools.FilesFilterCountFmt, 1, 3))
 					dualText(t, view, fmt.Sprintf(state.messages.Tools.FilesFilterCountFmt, 1, 2))
 					dualClickID(t, view, sftpWindowMore[1])
-					dualHit(t, view, sftpWindowHeaderHidden[1])
+					dualHitLabel(t, view, w.headerMenuRowLabel(1, sftpWindowHeaderHidden[1]))
 					if err := view.Rest(); err != nil {
 						t.Fatal(err)
 					}

@@ -20,7 +20,15 @@ import (
 	"golang.org/x/text/encoding/unicode/utf32"
 )
 
-const MaxTextBytes = 16 << 20
+// textLimit checks a caller's bound before it is used. There is no upper bound
+// here: how much a window loads is the application's setting, and the caller
+// that read the bytes knows how many it holds.
+func textLimit(limit int) (int, error) {
+	if limit < 1 {
+		return 0, fmt.Errorf("filecontent: invalid text limit %d", limit)
+	}
+	return limit, nil
+}
 
 var (
 	ErrChooseEncoding = errors.New("choose the file's text encoding")
@@ -86,8 +94,14 @@ func bom(name string) []byte {
 	return nil
 }
 
-func Decode(data []byte, name string) (Text, error) {
-	if len(data) > MaxTextBytes {
+// Decode reads data whose size the caller already bounded with limit, which is
+// also the bound the decoded text may occupy.
+func Decode(data []byte, name string, limit int) (Text, error) {
+	limit, err := textLimit(limit)
+	if err != nil {
+		return Text{}, err
+	}
+	if len(data) > limit {
 		return Text{}, ErrTooLarge
 	}
 	format := Format{Encoding: name, LineEnding: "\n"}
@@ -165,7 +179,13 @@ func Decode(data []byte, name string) (Text, error) {
 	return Text{Value: text.String(), Format: format}, nil
 }
 
-func Encode(value string, format Format) ([]byte, error) {
+// Encode writes value back in format, refusing an encoded document larger than
+// limit.
+func Encode(value string, format Format, limit int) ([]byte, error) {
+	limit, err := textLimit(limit)
+	if err != nil {
+		return nil, err
+	}
 	value = strings.ReplaceAll(strings.ReplaceAll(value, "\r\n", "\n"), "\r", "\n")
 	if !utf8.ValidString(value) {
 		return nil, ErrEncoding
@@ -215,7 +235,7 @@ func Encode(value string, format Format) ([]byte, error) {
 		}
 		data = append(bom(format.Encoding), data...)
 	}
-	if len(data) > MaxTextBytes {
+	if len(data) > limit {
 		return nil, ErrTooLarge
 	}
 	return data, nil

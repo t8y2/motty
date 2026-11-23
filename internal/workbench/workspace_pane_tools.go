@@ -7,9 +7,8 @@ import (
 )
 
 var (
-	hitWorkspacePaneTools        = tree.ID(workspaceHeaderHits, "pane-tools")
-	hitWorkspacePaneToolsDismiss = tree.ID(workspaceHeaderHits, "pane-tools-dismiss")
-	hitWorkspacePaneToolList     = tree.Sub(workspaceHeaderHits, tree.Name("pane-tool"))
+	hitWorkspacePaneTools    = tree.ID(workspaceHeaderHits, "pane-tools")
+	hitWorkspacePaneToolList = tree.Sub(workspaceHeaderHits, tree.Name("pane-tool"))
 )
 
 type workspacePaneTools struct {
@@ -74,7 +73,7 @@ func (state *State) declareWorkspacePaneTools(c ui.C) {
 		rows.add(components.ContextMenuItem{ID: hitWorkspacePaneToolList.At(index), Label: tool.hint, Icon: lucideIcons[tool.icon], Disabled: tool.disabled})
 	}
 	open := true
-	state.declareMenuAt(c, &open, menu.anchor, false, hitWorkspacePaneToolsDismiss, &rows, func(id gfx.ID) {
+	state.declareMenuAt(c, &open, menu.anchor, false, &rows, func(id gfx.ID) {
 		if index, ok := id.In(hitWorkspacePaneToolList); ok {
 			state.runWorkspacePaneTool(index)
 		}

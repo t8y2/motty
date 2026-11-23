@@ -6,35 +6,21 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/autofill"
 )
 
-// The password prompt assist. su prints a bare Password: line and asks for
-// root's password, which the host itself does not keep; instead of a rule the
-// user has to write, the terminal recognises that prompt by itself and offers
-// the passwords already saved: the host's own first, then every shared one.
+// The password prompt assist recognises sudo, su and SSH/SCP account password
+// prompts, including commands run inside an already connected terminal. It
+// offers saved identities without requiring a separate autofill rule.
 //
 // The offer never sends anything. Enter sends only the row the user chose, a
 // typed character closes the list and reaches the shell unchanged, and Escape
 // closes it. The list is a Viva popover painted over the grid at the cursor, as
 // the command completion list is.
 
-const passwordAssistID = "password-assist"
-
-// passwordAssistRule is the built-in prompt the assist answers. It is enabled
-// and matches only a bare password line, so a sudo prompt (which names sudo)
-// stays with the ghost hint in password_hint.go, and programs that merely
-// mention a password are not taken for a prompt.
-var passwordAssistRule = newPasswordAssistRule()
-
-func newPasswordAssistRule() *autofill.Rule {
-	rule := &autofill.Rule{ID: passwordAssistID, Name: "password prompt", Pattern: suPromptPattern, Enabled: true}
-	_ = rule.Compile() // the pattern is a constant; the prompt tests guard it
-	return rule
-}
-
 // passwordAssistOn is the user's password prompt assist switch. It covers the
-// sudo hint and the password offer at once.
+// password offers for every supported account prompt.
 func (state *State) passwordAssistOn() bool { return !state.passwordHintOff }
 
 // passwordCandidate is one saved password the offer lists. credentialID is
@@ -48,20 +34,26 @@ type passwordCandidate struct {
 }
 
 // passwordCandidates is what the offer lists: the host's own password first,
-// then every shared password. A candidate whose secret cannot be read is still
-// listed, so the user learns it exists; sending it reports the vault's state.
-func (state *State) passwordCandidates(session *Session) []passwordCandidate {
+// then shared identities. If the prompt names an account, omit identities for
+// other users; password-only identities remain usable. A candidate whose secret
+// cannot be read is still listed; sending it reports the vault's state.
+func (state *State) passwordCandidates(session *Session, user string) []passwordCandidate {
 	m := state.messages.Autofill
 	var candidates []passwordCandidate
 	seen := make(map[string]bool, len(state.credentials))
-	if id, ok := strings.CutPrefix(state.passwordName(session), credentialSecretName("")); ok {
+	hostMatches := user == "" || session.endpoint.User == user
+	if id, ok := strings.CutPrefix(state.passwordName(session), credentialSecretName("")); ok && hostMatches {
 		if entry, found := state.credentialByID(id); found {
+			detail := session.endpoint.User
+			if detail == "" {
+				detail = m.PickHostDetail
+			}
 			candidates = append(candidates, passwordCandidate{
-				credentialID: entry.ID, name: entry.Name, detail: m.PickHostDetail, host: true,
+				credentialID: entry.ID, name: entry.Name, detail: detail, host: true,
 			})
 			seen[entry.ID] = true
 		}
-	} else if session.endpoint.Host != "" {
+	} else if hostMatches && session.endpoint.Host != "" {
 		if _, result := state.vaultSecret(state.passwordName(session)); result == vaultFound {
 			name := session.host.Label
 			if name == "" {
@@ -75,10 +67,14 @@ func (state *State) passwordCandidates(session *Session) []passwordCandidate {
 		}
 	}
 	for _, entry := range state.credentials {
-		if seen[entry.ID] {
+		if seen[entry.ID] || user != "" && entry.User != "" && entry.User != user {
 			continue
 		}
-		candidates = append(candidates, passwordCandidate{credentialID: entry.ID, name: entry.Name, detail: m.PickSharedDetail})
+		detail := entry.User
+		if detail == "" {
+			detail = m.PickSharedDetail
+		}
+		candidates = append(candidates, passwordCandidate{credentialID: entry.ID, name: entry.Name, detail: detail})
 	}
 	return candidates
 }
@@ -87,10 +83,20 @@ func (state *State) passwordCandidates(session *Session) []passwordCandidate {
 // list, so a plain Enter still reaches the shell.
 type autofillPick struct {
 	sessionID  uint32
-	line       string
+	prompt     terminalPasswordPrompt
 	candidates []passwordCandidate
 	selected   int
 	top        int
+	// The page Popover that carries the offer: open is its visibility, kept
+	// between paints so its scope and presence stay stable. body/draw are
+	// stored so an open offer allocates no closures.
+	open       bool
+	c          ui.C
+	body       func()
+	draw       func(*ui.DrawContext)
+	slotHeight float32
+	pickTop    int
+	visible    int
 }
 
 // openPasswordPick offers the saved passwords for the prompt. The session must
@@ -98,24 +104,23 @@ type autofillPick struct {
 // answered into whatever terminal has the keyboard. The prompt line is recorded
 // with it, so a changed line closes the offer instead of answering the wrong
 // program.
-func (state *State) openPasswordPick(session *Session, line string) {
+func (state *State) openPasswordPick(session *Session, prompt terminalPasswordPrompt) bool {
 	if session == nil || session.term == nil || session.term.shell == nil ||
 		session.ID != state.activeSessionID || state.activeSection != sectionTerminal ||
 		!state.passwordAssistOn() {
-		return
+		return false
 	}
-	candidates := state.passwordCandidates(session)
+	candidates := state.passwordCandidates(session, autofill.PasswordPromptUser(prompt.line))
 	if len(candidates) == 0 {
-		return
+		return false
 	}
+	state.suspendAutofillPick()
 	state.closeCompletionList()
-	state.autofillRules.pick = autofillPick{sessionID: session.ID, line: line, candidates: candidates, selected: -1}
-	// The offer stands for this prompt: closing it must not have it open again
-	// on the same line at the next pause.
-	session.term.autofill.Fired(passwordAssistID, line)
+	state.autofillRules.pick = autofillPick{sessionID: session.ID, prompt: prompt, candidates: candidates, selected: -1}
 	if state.options.Invalidate != nil {
 		state.options.Invalidate()
 	}
+	return true
 }
 
 // closeAutofillPick forgets the offer; nothing is sent.
@@ -123,12 +128,27 @@ func (state *State) closeAutofillPick() {
 	state.autofillRules.pick = autofillPick{}
 }
 
+// suspendAutofillPick leaves an unanswered prompt available when another tab or
+// dialog temporarily owns the window. Explicit dismissal and manual input use
+// closeAutofillPick instead, so repainting them never reopens the same list.
+func (state *State) suspendAutofillPick() {
+	pick := state.autofillRules.pick
+	if session, ok := state.sessionByIDPointer(pick.sessionID); ok && session.term != nil {
+		t := session.term
+		if t.shell != nil && !t.ended && !t.autofill.HasInput() && t.passwordOffered == pick.prompt {
+			t.passwordOffered = terminalPasswordPrompt{}
+			t.autofill.Retry(state.now())
+		}
+	}
+	state.closeAutofillPick()
+}
+
 // autofillPickSession returns the session the offer belongs to while it still
 // stands: the same prompt line under the cursor, not in a program that owns the
 // screen, and not behind a dialog or a scrolled view.
 func (state *State) autofillPickSession() (*Session, bool) {
 	pick := &state.autofillRules.pick
-	if len(pick.candidates) == 0 || !state.passwordAssistOn() {
+	if len(pick.candidates) == 0 || !state.passwordAssistOn() || state.modal != modalNone {
 		return nil, false
 	}
 	session, ok := state.sessionByIDPointer(pick.sessionID)
@@ -141,10 +161,7 @@ func (state *State) autofillPickSession() (*Session, bool) {
 		return nil, false
 	}
 	t := session.term
-	cursor := t.screen.Cursor()
-	_, rows := t.screen.Size()
-	if t.screen.Modes().AltScreen || t.screen.ViewOffset() != 0 || cursor.Y < 0 || cursor.Y >= rows ||
-		t.screen.RowText(cursor.Y) != pick.line {
+	if t.autofill.HasInput() || t.passwordPromptAtCursor() != pick.prompt {
 		return nil, false
 	}
 	return session, true
@@ -160,12 +177,19 @@ func (state *State) autofillPickKey(event gfx.KeyEvent) (gfx.EventResult, bool) 
 		return gfx.EventResult{}, false
 	}
 	if state.modal != modalNone {
-		state.closeAutofillPick()
+		state.suspendAutofillPick()
 		return gfx.EventResult{}, false
 	}
 	session, ok := state.autofillPickSession()
 	if !ok {
-		state.closeAutofillPick()
+		state.suspendAutofillPick()
+		return gfx.EventResult{}, false
+	}
+	// The window dispatcher also receives keys from find and file fields. Those
+	// keys cannot select or confirm a password; keep the offer suspended until
+	// the user returns to this terminal or explicitly clicks a candidate.
+	owner := state.terminalPageSession(event.Target)
+	if (owner == nil || owner.ID != session.ID) && event.Target.Scope() != hitAutofillPickItem {
 		return gfx.EventResult{}, false
 	}
 	if event.Release || event.Key.IsModifier() {
@@ -185,7 +209,7 @@ func (state *State) autofillPickKey(event gfx.KeyEvent) (gfx.EventResult, bool) 
 			state.closeAutofillPick()
 			return gfx.EventResult{}, false // the user's own Enter, as without an offer
 		}
-		state.sendPasswordCandidate(session, pick.candidates[pick.selected])
+		state.confirmPasswordPick(session, pick.selected)
 		return handled, true
 	}
 	if event.Modifiers == 0 {
@@ -212,6 +236,23 @@ func (state *State) autofillPickKey(event gfx.KeyEvent) (gfx.EventResult, bool) 
 	}
 	state.closeAutofillPick()
 	return gfx.EventResult{}, false
+}
+
+// confirmPasswordPick drains output received since the list was shown before
+// checking its prompt again. A delayed click or Enter must not answer a shell
+// that has already left the password prompt.
+func (state *State) confirmPasswordPick(session *Session, index int) {
+	pick := state.autofillRules.pick
+	if session.term.takeOutput != nil {
+		session.term.takeOutput()
+	}
+	session, ok := state.autofillPickSession()
+	if !ok || session.ID != pick.sessionID || len(session.term.rx) != 0 ||
+		state.autofillRules.pick.prompt != pick.prompt || index < 0 || index >= len(pick.candidates) {
+		state.closeAutofillPick()
+		return
+	}
+	state.sendPasswordCandidate(session, pick.candidates[index])
 }
 
 func (pick *autofillPick) moveList(delta, count int) {
@@ -280,14 +321,14 @@ func (state *State) clickAutofillPick(id gfx.ID) bool {
 	case id.Scope() == hitAutofillPickItem:
 		session, ok := state.autofillPickSession()
 		if !ok {
-			state.closeAutofillPick()
+			state.suspendAutofillPick()
 			return false
 		}
 		index := item(id)
 		if index < 0 || index >= len(pick.candidates) {
 			return false
 		}
-		state.sendPasswordCandidate(session, pick.candidates[index])
+		state.confirmPasswordPick(session, index)
 		return true
 	}
 	return false
@@ -327,15 +368,18 @@ const (
 	passwordPickMaxWidth        = float32(420)
 )
 
-// paintAutofillPick draws the offer over the grid, anchored to the cursor cell
-// and flipped above it when the terminal has no room below.
-func (state *State) paintAutofillPick(canvas *gfx.Canvas, session *Session, geometry terminalGeometry) {
+// declareAutofillPick declares the offer as a page Popover over the grid,
+// anchored to the cursor cell and flipped above it when the terminal has no room
+// below. The rows stay hand-painted in the popover's body slot.
+func (state *State) declareAutofillPick(c ui.C, session *Session, bounds gfx.Rect, geometry terminalGeometry) {
 	pick := &state.autofillRules.pick
 	if len(pick.candidates) == 0 || pick.sessionID != session.ID || session.ID != state.activeSessionID ||
 		state.modal != modalNone || state.activeSection != sectionTerminal {
+		pick.open = false
 		return
 	}
 	if _, ok := state.autofillPickSession(); !ok {
+		pick.open = false
 		return
 	}
 	cursor := session.term.presentedCursor()
@@ -345,27 +389,61 @@ func (state *State) paintAutofillPick(canvas *gfx.Canvas, session *Session, geom
 	area := geometry.area
 	x = min(max(x, area.X+2), area.X+max(area.Width-2, 2))
 	y = min(max(y, area.Y+2), area.Y+max(area.Height-2, 2))
-	anchor := gfx.Rect{X: x, Y: y, Width: max(cellWidth, 2), Height: max(cellHeight, 2)}
+	anchorRect := gfx.Rect{X: x, Y: y, Width: max(cellWidth, 2), Height: max(cellHeight, 2)}
 
 	top := min(pick.top, len(pick.candidates)-1)
 	visible := min(len(pick.candidates)-top, passwordPickRows)
 	height := 2*passwordPickSurfacePad + passwordPickGroupHeight + 2*passwordPickSeparatorHeight +
 		passwordPickHintHeight + float32(visible)*passwordPickRowHeight
-	popover := components.BeginPopover(canvas, state.Theme(), area, anchor, components.PopoverOptions{
-		Layer:       dialogLayer,
-		Scope:       autofillPickScope.ID(tree.Name("popover")),
-		DismissID:   hitAutofillPickDismiss,
-		Side:        components.PopoverBottom,
-		Align:       components.PopoverAlignStart,
-		SideOffset:  2,
-		ContentSize: gfx.Size{Width: state.passwordPickWidth(canvas, pick.candidates), Height: height},
-	})
-	// The title the popover would paint is empty: the list carries the command
-	// surface's own group heading, separators and rows, so the two headings and
-	// the rows share one grid.
-	layout := popover.Begin("", "")
-	state.paintPasswordPickRows(canvas, layout.Content, pick, top, visible)
-	popover.End()
+	// The page Popover reserves its border and padding in the layout; the old
+	// surface was given a fixed height. Shortening the slot by that inset makes
+	// the surface and the rows land where the old popover put them.
+	const border = float32(1)
+	padding := state.Theme().Metrics.PadSurface
+	pick.pickTop, pick.visible = top, visible
+	pick.slotHeight = height - 2*(border+padding)
+	pick.c = c
+	if pick.body == nil {
+		pick.body = state.declareAutofillPickBody
+	}
+	if pick.draw == nil {
+		pick.draw = state.drawAutofillPickBody
+	}
+	anchor := ui.Slot(c).Absolute().Left(anchorRect.X-bounds.X).Top(anchorRect.Y-bounds.Y).
+		Size(anchorRect.Width, anchorRect.Height)
+	pick.open = true
+	spec := ui.PopoverSpec{
+		Scope:            autofillPickScope.ID(tree.Name("popover")),
+		DismissID:        hitAutofillPickDismiss,
+		Side:             components.PopoverBottom,
+		Align:            ui.Start,
+		Offset:           2,
+		Width:            state.passwordPickWidth(c.Canvas(), pick.candidates),
+		KeepOpenOnAnchor: true,
+	}
+	if ui.PopoverWith(c, anchor, &pick.open, spec, pick.body) {
+		pick.open = false
+	}
+}
+
+// declareAutofillPickBody declares the one slot that paints the offer.
+func (state *State) declareAutofillPickBody() {
+	pick := &state.autofillRules.pick
+	ui.Slot(pick.c).FillWidth().Height(pick.slotHeight).Draw(pick.draw)
+}
+
+// drawAutofillPickBody paints the rows into the surface rectangle the old
+// popover exposed as its Content. Expanding the slot by the page's border and
+// padding recovers that surface.
+func (state *State) drawAutofillPickBody(d *ui.DrawContext) {
+	pick := &state.autofillRules.pick
+	const border = float32(1)
+	padding := state.Theme().Metrics.PadSurface
+	content := gfx.Rect{
+		X: d.Rect.X - (border + padding), Y: d.Rect.Y - (border + padding),
+		Width: d.Rect.Width + 2*(border+padding), Height: d.Rect.Height + 2*(border+padding),
+	}
+	state.paintPasswordPickRows(d.Canvas, content, pick, pick.pickTop, pick.visible)
 }
 
 func (state *State) paintPasswordPickRows(canvas *gfx.Canvas, content gfx.Rect, pick *autofillPick, top, visible int) {

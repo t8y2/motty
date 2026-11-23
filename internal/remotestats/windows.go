@@ -1,6 +1,8 @@
 package remotestats
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
@@ -15,6 +17,9 @@ import (
 // UTF-8 interface names and metadata can exceed the Linux line budget on
 // high-core-count hosts. Keep a separate bound for this single JSON record.
 const maxWindowsLineBytes = 32 << 10
+
+const windowsCommandPrefix = `cmd.exe /d /s /c "echo `
+const windowsPowerShellPipe = "|powershell.exe "
 
 // PowerShell's encoded command works with both cmd.exe and PowerShell as an
 // OpenSSH default shell. No paths, host names or credentials enter the script.
@@ -32,12 +37,21 @@ func encodeWindowsScript(script string) string {
 		lines[i] = strings.TrimSpace(lines[i])
 	}
 	script = strings.Join(lines, "\n")
-	u := utf16.Encode([]rune(script))
+	var compressed bytes.Buffer
+	writer := gzip.NewWriter(&compressed)
+	_, _ = writer.Write([]byte(script))
+	_ = writer.Close()
+	// Keep the payload out of the UTF-16 wrapper so cmd.exe's 8191-byte
+	// command-line limit still leaves room for the GPU probe. Both Windows
+	// OpenSSH shells accept this cmd.exe command and its ASCII input pipe.
+	payload := base64.StdEncoding.EncodeToString(compressed.Bytes())
+	wrapper := `$memory=[IO.MemoryStream]::new([Convert]::FromBase64String([Console]::ReadLine()));$gzip=[IO.Compression.GZipStream]::new($memory,[IO.Compression.CompressionMode]::Decompress);& ([scriptblock]::Create(([IO.StreamReader]::new($gzip)).ReadToEnd()))`
+	u := utf16.Encode([]rune(wrapper))
 	data := make([]byte, len(u)*2)
 	for i, v := range u {
 		binary.LittleEndian.PutUint16(data[i*2:], v)
 	}
-	return "powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand " + base64.StdEncoding.EncodeToString(data)
+	return windowsCommandPrefix + payload + windowsPowerShellPipe + "-NoLogo -NoProfile -NonInteractive -EncodedCommand " + base64.StdEncoding.EncodeToString(data) + `"`
 }
 
 func StartWindows(runner Runner, notify func(), seconds int) *Worker {
@@ -53,8 +67,11 @@ $ProgressPreference='SilentlyContinue'
 [Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false)
 [Threading.Thread]::CurrentThread.CurrentCulture=[Globalization.CultureInfo]::InvariantCulture
 function Query($name) { @(Get-CimInstance -ClassName $name -OperationTimeoutSec 3 -ErrorAction Stop) }
+` + windowsGPUProbe + `
 $meta=$null
+$gpuAdapters=@{devices=@();controllers=@()}
 $lastMeta=[DateTime]::MinValue
+$lastGPU=[DateTime]::MinValue
 while ($true) {
     try { $os=(Query 'Win32_OperatingSystem')[0]; if (!$os -or !$os.TotalVisibleMemorySize -or $null -eq $os.FreePhysicalMemory) { throw 'unavailable' } }
     catch { [Console]::WriteLine('gop-stats-unsupported Windows'); exit 0 }
@@ -92,9 +109,15 @@ while ($true) {
         $meta=@{count=$count;kernel=('Windows '+[string]$os.Version);disks=$disks;primaryDisk=([string]$os.SystemDrive+'\')}
         $lastMeta=[DateTime]::UtcNow
     }
-    $payload=@{cpu=$cpu;total=([uint64]$os.TotalVisibleMemorySize*1024);free=([uint64]$os.FreePhysicalMemory*1024);uptime=[math]::Max(0,([DateTime]::Now-$os.LastBootUpTime).TotalSeconds);cores=@($coreRows);net=@($net);networkAvailable=$netOK;meta=$meta}
+    $payload=@{cpu=$cpu;total=([uint64]$os.TotalVisibleMemorySize*1024);free=([uint64]$os.FreePhysicalMemory*1024);uptime=[math]::Max(0,([DateTime]::Now-$os.LastBootUpTime).TotalSeconds);cores=@($coreRows);net=@($net);networkAvailable=$netOK;meta=$meta;gpus=@(Read-GPUs $gpuAdapters)}
     $json=ConvertTo-Json -InputObject $payload -Depth 6 -Compress
     [Console]::WriteLine('gop-stats-win-v1 '+$json)
+    # Probe after the first reading is out: the Add-Type compile and adapter
+    # enumeration must not delay the first sample past its timeout.
+    if (([DateTime]::UtcNow-$lastGPU).TotalSeconds -ge 5) {
+        $gpuAdapters=Get-GPUAdapters
+        $lastGPU=[DateTime]::UtcNow
+    }
     Start-Sleep -Seconds __INTERVAL__
 }`
 
@@ -112,6 +135,7 @@ func parseWindows(line []byte) (Result, error) {
 			RX, TX uint64
 		}
 		NetworkAvailable bool
+		GPUs             []windowsGPUReading
 		Meta             struct {
 			PrimaryDisk string
 			Count       int
@@ -122,7 +146,7 @@ func parseWindows(line []byte) (Result, error) {
 			}
 		}
 	}
-	if len(line) > maxWindowsLineBytes || json.Unmarshal([]byte(strings.TrimPrefix(string(line), "gop-stats-win-v1 ")), &r) != nil || r.Total == 0 || r.Free > r.Total || math.IsNaN(r.Uptime) || math.IsInf(r.Uptime, 0) || r.Uptime < 0 || len(r.Cores) > 256 || len(r.Net) > 16 || len(r.Meta.Disks) > 32 || r.Meta.Count < 0 || r.Meta.Count > 1<<20 {
+	if len(line) > maxWindowsLineBytes || json.Unmarshal([]byte(strings.TrimPrefix(string(line), "gop-stats-win-v1 ")), &r) != nil || r.Total == 0 || r.Free > r.Total || math.IsNaN(r.Uptime) || math.IsInf(r.Uptime, 0) || r.Uptime < 0 || len(r.Cores) > 256 || len(r.Net) > 16 || len(r.GPUs) > MaxGPUs || len(r.Meta.Disks) > 32 || r.Meta.Count < 0 || r.Meta.Count > 1<<20 {
 		return Result{}, ErrMalformed
 	}
 	s := Sample{MemoryTotalBytes: r.Total, MemoryUsedBytes: r.Total - r.Free, UptimeSeconds: r.Uptime, CPUUnavailable: r.CPU == nil, NetworkUnavailable: !r.NetworkAvailable}
@@ -141,6 +165,7 @@ func parseWindows(line []byte) (Result, error) {
 		s.Cores = append(s.Cores, Core{ID: c.ID, Percent: c.Percent})
 	}
 	d := Details{LoadUnavailable: true, PrimaryDisk: detailText(r.Meta.PrimaryDisk, 32), CPUCount: r.Meta.Count, Uptime: r.Uptime, Kernel: detailText(r.Meta.Kernel, 120)}
+	s.GPUs = windowsGPUs(r.GPUs)
 	for _, n := range r.Net {
 		if math.MaxUint64-s.ReceiveBytesPerSecond < n.RX || math.MaxUint64-s.SendBytesPerSecond < n.TX {
 			return Result{}, ErrMalformed

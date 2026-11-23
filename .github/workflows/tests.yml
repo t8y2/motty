@@ -17,7 +17,7 @@ permissions:
 # reverse) without any change on the Motty side. Move the pin in the same commit
 # that needs a newer Viva API; do not check out the default branch here.
 env:
-  VIVA_REF: d97f2b666b48f1ec579b768670c03f5e9cf20fd7
+  VIVA_REF: 6915b4a88d808b7b72e12ee07f2367240337d0ba
 
 # A superseded pull-request run is cancelled: the newer push contains everything
 # the older one would have tested, and leaving the older run in place makes the
@@ -185,6 +185,10 @@ jobs:
         with:
           go-version-file: motty/go.mod
           cache-dependency-path: motty/go.sum
+      - name: Test Logo color picker and persistence
+        if: matrix.shard == 0
+        working-directory: motty
+        run: go test ./internal/workbench -run '^Test(IconColor|ChinaRed|LogoColor)' -count=1 -timeout 3m
       - name: Test the workbench
         working-directory: motty
         env:
@@ -303,6 +307,14 @@ jobs:
           restore-keys: |
             go-build-win-${{ hashFiles('motty/go.sum') }}-
             go-build-win-
+      - name: Test Logo color picker and persistence
+        if: matrix.shard == 0
+        working-directory: motty
+        run: go test ./internal/workbench -run '^Test(IconColor|ChinaRed|LogoColor)' -count=1 -timeout 3m
+      - name: Test Windows desktop icon resources and owned shortcuts
+        if: matrix.shard == 0
+        working-directory: motty
+        run: go test ./cmd/motty -run '^TestDesktop' -count=1 -timeout 2m
       - name: Test remote tools platform handling
         if: matrix.shard == 0
         working-directory: motty
@@ -311,6 +323,10 @@ jobs:
         if: matrix.shard == 0
         working-directory: motty
         run: go test ./internal/completion ./internal/sshconfig -count=1
+      - name: Test the Windows Pi launcher resolution
+        if: matrix.shard == 0
+        working-directory: motty
+        run: go test ./internal/ai/cli -run 'TestPi' -count=1
       - name: Test the Windows local terminal's ConPTY and portable update
         if: matrix.shard == 0
         shell: bash

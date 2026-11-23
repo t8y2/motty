@@ -236,58 +236,20 @@ func TestHostIconCanBeASystemBadgeAndSurvivesEditingAndRestart(t *testing.T) {
 	}
 }
 
-// chooseHostIcon opens the icon field, narrows it to the named icon and clicks
-// the row it reaches, the way typing in the field does.
+// chooseHostIcon opens the icon select and picks the option named name.
 func chooseHostIcon(t *testing.T, state *State, name string) {
 	t.Helper()
-	state.Click(hitDialogIcon)
-	p := state.hostIconPicker()
-	p.control.Query = text.Editor{}
-	p.control.Query.Insert(name)
-	canvas, _ := paintedTexts(state)
-	for _, hit := range canvas.Hits() {
-		if hit.ID.Scope() == hitHostIconChoices && hit.Role == gfx.RoleOption && hit.Label == name {
-			state.Click(hit.ID)
-			return
-		}
-	}
-	t.Fatalf("no icon row named %q after typing it", name)
+	chooseSelectOption(t, state, state.messages.FieldIcon, name)
 }
 
-// The icon field is a searchable list of fixed choices: a query filters it, and
-// a query that names no icon neither chooses nor creates one.
-func TestHostIconPickerFiltersAndNeverCreates(t *testing.T) {
+// The icon field is a fixed list of choices: a choice marks the icon as chosen,
+// and there is no way to invent one.
+func TestHostIconPickerChoosesAndNeverCreates(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	clickHostAction(state, hitAddHost)
-	state.Click(hitDialogIcon)
-	p := state.hostIconPicker()
-	p.control.Query.Insert("mint")
-	canvas, _ := paintedTexts(state)
-	var mint gfx.ID
-	for _, hit := range canvas.Hits() {
-		if hit.ID.Scope() == hitHostIconChoices && hit.Role == gfx.RoleOption && hit.Label == "Linux Mint" {
-			mint = hit.ID
-		}
-	}
-	if mint.IsZero() {
-		t.Fatal("typing mint did not offer Linux Mint")
-	}
-	state.Click(mint)
-	if state.editor.icon != hostIconOf(sshconn.SystemMint) || !state.editor.iconChosen || p.control.Open {
-		t.Fatalf("after choosing Linux Mint: icon %v chosen %v open %v", state.editor.icon, state.editor.iconChosen, p.control.Open)
-	}
-
-	state.Click(hitDialogIcon)
-	p.control.Query.Insert("not an icon")
-	paintedTexts(state)
-	for _, choice := range p.control.Choices() {
-		if choice.Create {
-			t.Fatal("an unmatched query offered to create an icon")
-		}
-	}
-	state.Key(gfx.KeyEvent{Target: hitDialogIcon, Key: gfx.KeyEnter})
-	if state.editor.icon != hostIconOf(sshconn.SystemMint) {
-		t.Fatalf("an unmatched query changed the icon to %v", state.editor.icon)
+	chooseHostIcon(t, state, "Linux Mint")
+	if state.editor.icon != hostIconOf(sshconn.SystemMint) || !state.editor.iconChosen {
+		t.Fatalf("after choosing Linux Mint: icon %v chosen %v", state.editor.icon, state.editor.iconChosen)
 	}
 }
 
@@ -301,7 +263,7 @@ func TestOTPFieldKeepsItsWidthWhateverButtonsItHas(t *testing.T) {
 		state.Click(hitDialogAdvanced)
 		state.editor.otpSaved = saved
 		canvas, _ := paintedTexts(state)
-		state.editor.form.offset = state.editor.form.geometry.MaxOffsetY
+		state.editor.form.scrollTo(100000)
 		canvas, _ = paintedTexts(state)
 		// The field's label shares its identity, so take the input: the taller one.
 		var field gfx.Hit
@@ -351,21 +313,31 @@ func TestHostCardsShowTheirTags(t *testing.T) {
 	}
 }
 
-func TestDesktopHostsGetAMonitorIconByDefault(t *testing.T) {
+func TestAutomaticHostIconsFollowTheSystemAndProtocol(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	if art := state.hostIconArt(hostIconAuto, sshconn.SystemUnknown, true); !reflect.DeepEqual(art, icons.Monitor) {
-		t.Fatal("an automatic icon for a desktop host is not the monitor")
+	if art := state.hostIconArt(hostIconAuto, sshconn.SystemUnknown, protocolVNC); !reflect.DeepEqual(art, icons.Monitor) {
+		t.Fatal("an automatic icon for a VNC host is not the monitor")
 	}
-	if art := state.hostIconArt(hostIconAuto, sshconn.SystemUnknown, false); !reflect.DeepEqual(art, icons.Server) {
-		t.Fatal("an automatic icon for a non-desktop host is not the server")
+	if art := state.hostIconArt(hostIconAuto, sshconn.SystemUnknown, protocolSSH); !reflect.DeepEqual(art, icons.Server) {
+		t.Fatal("an automatic icon for an SSH host with no detected system is not the server")
 	}
-	if art := state.hostIconArt(hostIconAuto, sshconn.SystemWindows, true); reflect.DeepEqual(art, icons.Monitor) {
+	if art := state.hostIconArt(hostIconAuto, sshconn.SystemWindows, protocolRDP); reflect.DeepEqual(art, icons.Monitor) {
 		t.Fatal("a known system lost its badge on a desktop host")
 	}
-	if art := state.hostIconArt(hostIconDesktop, sshconn.SystemUnknown, false); !reflect.DeepEqual(art, icons.Monitor) {
+	// An RDP host is a Windows host before anything is detected: its account is
+	// the Windows user's, so its automatic icon is the Windows badge, not the
+	// generic desktop glyph.
+	windows := state.hostIconArt(hostIconOf(sshconn.SystemWindows), sshconn.SystemUnknown, protocolRDP)
+	if art := state.hostIconArt(hostIconAuto, sshconn.SystemUnknown, protocolRDP); !reflect.DeepEqual(art, windows) {
+		t.Fatal("an automatic icon for an RDP host is not the Windows badge")
+	}
+	if art := state.hostIconArt(hostIconAuto, sshconn.SystemDebian, protocolRDP); reflect.DeepEqual(art, windows) {
+		t.Fatal("a detected system lost its badge on an RDP host")
+	}
+	if art := state.hostIconArt(hostIconDesktop, sshconn.SystemUnknown, protocolSSH); !reflect.DeepEqual(art, icons.Monitor) {
 		t.Fatal("the explicit desktop icon is not the monitor")
 	}
-	if art := state.hostIconArt(hostIconSerial, sshconn.SystemUnknown, false); !reflect.DeepEqual(art, icons.Serial) {
+	if art := state.hostIconArt(hostIconSerial, sshconn.SystemUnknown, protocolSSH); !reflect.DeepEqual(art, icons.Serial) {
 		t.Fatal("the explicit serial icon is not the serial glyph")
 	}
 	icon, ok := parseHostIcon("desktop")

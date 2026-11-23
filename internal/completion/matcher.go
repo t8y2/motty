@@ -54,6 +54,162 @@ type Result struct {
 	Suppressed bool
 }
 
+// commandWrapper describes a root command that runs a command line of its own:
+// the syntax of the wrapped command answers what follows, while the wrapper's
+// own options answer while they are still being typed. A command's
+// specification cannot say that its arguments are another command, so the set
+// is explicit. It is the subcommand-offset idea that bash-completion and fish
+// ship for the same commands.
+type commandWrapper struct {
+	// operands is how many of the wrapper's own positional arguments come
+	// before the wrapped command (timeout's DURATION).
+	operands int
+	// assignments skips NAME=VALUE operands (env).
+	assignments bool
+	// fileFlags are options after which the wrapper takes files rather than a
+	// command (sudo's -e/--edit). Nothing after them is completed from the
+	// catalog.
+	fileFlags []string
+}
+
+// commandWrappers are the wrappers whose own options the catalog knows. A
+// wrapper that is not here keeps the plain first-word interpretation.
+var commandWrappers = map[string]commandWrapper{
+	"sudo":    {fileFlags: []string{"-e", "--edit"}},
+	"doas":    {},
+	"env":     {assignments: true},
+	"nice":    {},
+	"nohup":   {},
+	"timeout": {operands: 1},
+	"watch":   {},
+	"xargs":   {},
+}
+
+// commandOffset returns the index of the command whose syntax answers tokens
+// after the wrappers in front of it, and that command's root (nil when the
+// catalog does not know it). pending is the wrapper whose wrapped command is
+// still the word being typed. A line that ends inside a wrapper's own options
+// or operands returns start, the wrapper to complete instead.
+func commandOffset(catalog *Catalog, tokens []string) (start int, root, pending *Node) {
+	if len(tokens) == 0 {
+		return 0, nil, nil
+	}
+	for start = 0; ; {
+		root = catalog.Root(tokens[start])
+		if root == nil {
+			return start, nil, nil
+		}
+		wrapper, ok := commandWrappers[root.Token]
+		if !ok {
+			return start, root, nil
+		}
+		next, atCommand := wrapper.offset(catalog, root, tokens[start+1:])
+		if !atCommand {
+			return start, root, nil
+		}
+		if next < 0 {
+			return len(tokens), nil, root
+		}
+		start += next + 1
+	}
+}
+
+// offset locates the wrapped command in args, the tokens after the wrapper
+// itself. next is the command's index, or -1 when the wrapped command is the
+// word being typed. atCommand is false while args is still inside the
+// wrapper's own options or operands; an option this catalog cannot parse also
+// stops the scan so the plain walk reports the suppression.
+func (wrapper commandWrapper) offset(catalog *Catalog, node *Node, args []string) (next int, atCommand bool) {
+	var expectValue, flagsStopped bool
+	operands := 0
+	for i, token := range args {
+		if expectValue {
+			expectValue = false
+			continue
+		}
+		if !flagsStopped && token == "--" {
+			flagsStopped = true
+			continue
+		}
+		if !flagsStopped && strings.HasPrefix(token, "-") && len(token) > 1 {
+			flag, attached, ok := wrapperFlag(catalog, node, token)
+			if !ok || wrapper.fileFlag(token) {
+				return 0, false
+			}
+			if !attached && flag.Value && !flag.Optional {
+				expectValue = true
+			}
+			continue
+		}
+		if wrapper.assignments && isAssignment(token) {
+			continue
+		}
+		if operands < wrapper.operands {
+			operands++
+			continue
+		}
+		return i, true
+	}
+	if expectValue || operands < wrapper.operands {
+		return 0, false
+	}
+	return -1, true
+}
+
+// wrapperFlag resolves one of a wrapper's own option tokens. attached reports
+// a value spelled with '='; ok is false for syntax the matcher refuses
+// everywhere: an unknown option or a short-option cluster.
+func wrapperFlag(catalog *Catalog, node *Node, token string) (flag Flag, attached, ok bool) {
+	if strings.HasPrefix(token, "--") {
+		name, _, hasValue := strings.Cut(token, "=")
+		flag, ok = catalog.FindFlag(node, name)
+		return flag, hasValue, ok
+	}
+	if len(token) != 2 {
+		return Flag{}, false, false
+	}
+	flag, ok = catalog.FindFlag(node, token)
+	return flag, false, ok
+}
+
+// fileFlag reports an option that switches the wrapper to file arguments.
+func (wrapper commandWrapper) fileFlag(token string) bool {
+	name, _, _ := strings.Cut(token, "=")
+	for _, flag := range wrapper.fileFlags {
+		if name == flag {
+			return true
+		}
+	}
+	return false
+}
+
+// isAssignment reports a NAME=VALUE environment operand.
+func isAssignment(token string) bool {
+	name, _, ok := strings.Cut(token, "=")
+	if !ok || name == "" {
+		return false
+	}
+	for i, r := range name {
+		if !(unicode.IsLetter(r) || r == '_' || i > 0 && unicode.IsDigit(r)) {
+			return false
+		}
+	}
+	return true
+}
+
+// addWrappedCommand answers the position of the command a wrapper runs. An
+// option word still belongs to the wrapper; anything else names a command.
+func addWrappedCommand(catalog *Catalog, wrapper *Node, word string, result *Result) {
+	switch {
+	case strings.HasPrefix(word, "--"):
+		addLongFlags(catalog, wrapper, word, nil, result)
+	case strings.HasPrefix(word, "-"):
+		addShortFlags(catalog, wrapper, word, nil, result)
+	default:
+		addRoots(catalog, word, result)
+	}
+}
+
 // Complete answers what the end of line could continue into. The line is
 // expected to be a single command line with the cursor at its end; anything
 // else is treated as unsupported rather than guessed at.
@@ -101,9 +257,16 @@ func Complete(catalog *Catalog, line string) Result {
 		return result
 	}
 
-	root := catalog.Root(tokens[0])
+	start, root, pending := commandOffset(catalog, tokens)
+	if pending != nil {
+		// A wrapper is waiting for the command it runs: the next word is a
+		// command, unless it is spelled as one of the wrapper's own options.
+		addWrappedCommand(catalog, pending, word, &result)
+		return result
+	}
+	tokens = tokens[start:]
 	if root == nil {
-		// An unknown first word may still be a local script; the static catalog
+		// An unknown command may still be a local script; the static catalog
 		// has nothing to say, and history suggestions are handled by the caller.
 		return result
 	}

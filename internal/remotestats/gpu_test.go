@@ -82,6 +82,17 @@ func TestNvidiaRowsOfSeveralGPUsWithPlaceholders(t *testing.T) {
 	}
 }
 
+func TestDarwinGPURowsKeepIdentityWithoutInventingMetrics(t *testing.T) {
+	gpus := parseAll(t, "gop-gpu-darwin 0\tApple M4 Pro\ngop-gpu-darwin 1\tAMD Radeon Pro 5500M\n")
+	want := []GPU{
+		{Vendor: "Apple", Index: 0, Name: "Apple M4 Pro", UtilPercent: -1, TemperatureC: -1, PowerWatts: -1, PowerLimitWatts: -1, FanPercent: -1},
+		{Vendor: "AMD", Index: 1, Name: "AMD Radeon Pro 5500M", UtilPercent: -1, TemperatureC: -1, PowerWatts: -1, PowerLimitWatts: -1, FanPercent: -1},
+	}
+	if !reflect.DeepEqual(gpus, want) {
+		t.Fatalf("GPUs = %+v, want %+v", gpus, want)
+	}
+}
+
 func TestNvidiaPlaceholdersAndOddNamesAreTolerated(t *testing.T) {
 	// A Jetson reports almost nothing; a name may hold a comma.
 	gpus := parseAll(t, string(nvidiaLines("0, GPU-A, Orin (nvgpu), [N/A], [N/A], [N/A], [Not Supported], [N/A], [N/A], [N/A]\n2, GPU-B, Acme, Inc. Tesla, 5, 100, 200, 40, 90.5, 120, 30")))

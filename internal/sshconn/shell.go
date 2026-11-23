@@ -12,6 +12,7 @@ import (
 	"golang.org/x/crypto/ssh/agent"
 
 	"motty/internal/shellkind"
+	"motty/internal/termsize"
 	"motty/internal/x11fwd"
 )
 
@@ -28,6 +29,10 @@ const (
 type ShellConfig struct {
 	// Cols and Rows are the terminal size in cells.
 	Cols, Rows int
+	// PixelWidth and PixelHeight are the text area in device pixels, the pty
+	// window size's own pixel fields. Zero means the terminal has not measured
+	// its font: the server is then told no pixel size rather than a guess.
+	PixelWidth, PixelHeight int
 	// Term is the TERM value. Empty means xterm-256color.
 	Term string
 	// Command starts in this PTY instead of the remote login shell when nonempty.
@@ -60,6 +65,12 @@ type ShellConfig struct {
 	// A host whose remote charset is configured (e.g. GB18030) wants the server
 	// to keep its own locale; the client decodes that stream instead.
 	SkipUTF8Locale bool
+}
+
+// Size is the terminal size the config describes: the grid in cells and the
+// text area in device pixels.
+func (config ShellConfig) Size() termsize.Size {
+	return termsize.Size{Cols: config.Cols, Rows: config.Rows, PixelWidth: config.PixelWidth, PixelHeight: config.PixelHeight}
 }
 
 // Shell is a remote shell on a pty. Reading is done by Drain from one thread;
@@ -116,14 +127,22 @@ func (conn *Conn) OpenShell(config ShellConfig) (*Shell, error) {
 	// the interactive session. Servers usually accept LANG; without a UTF-8
 	// locale the shell would mangle multibyte input, which the charset handling
 	// then reports, but staying connected comes first. A refusal is harmless.
-	if !conn.config.InteractiveOnly && !config.SkipUTF8Locale && standardImplementation(conn.Status().ServerVersion) {
-		_ = session.Setenv("LANG", utf8Locale())
+	// COLORTERM is how a program learns this terminal draws 24-bit color:
+	// xterm-256color's terminfo still advertises 256 entries. A host that keeps
+	// its own remote charset keeps its locale too, but the charset says nothing
+	// about the color depth, so COLORTERM is asked for either way.
+	if !conn.config.InteractiveOnly && standardImplementation(conn.Status().ServerVersion) {
+		if !config.SkipUTF8Locale {
+			_ = session.Setenv("LANG", utf8Locale())
+		}
+		_ = session.Setenv("COLORTERM", "truecolor")
 	}
 	term := config.Term
 	if term == "" {
 		term = "xterm-256color"
 	}
-	if err := session.RequestPty(term, max(config.Rows, 1), max(config.Cols, 1), ptyModes()); err != nil {
+	size := config.Size()
+	if err := requestPty(session, term, size, ptyModes()); err != nil {
 		session.Close()
 		return nil, fmt.Errorf("request pty: %w", err)
 	}
@@ -232,13 +251,14 @@ func (shell *Shell) Write(p []byte) bool {
 	return shell.input.put(inputItem{data: append([]byte(nil), p...)})
 }
 
-// Resize tells the remote pty the new terminal size. Resizes queued behind
-// each other collapse into the last one.
-func (shell *Shell) Resize(cols, rows int) {
-	if cols < 1 || rows < 1 {
+// Resize tells the remote pty the new terminal size: the grid in cells and the
+// text area in device pixels. Resizes queued behind each other collapse into
+// the last one.
+func (shell *Shell) Resize(size termsize.Size) {
+	if size.Cols < 1 || size.Rows < 1 {
 		return
 	}
-	shell.input.putResize(cols, rows)
+	shell.input.putResize(size)
 }
 
 // Close ends the session and releases its goroutines. It does not wait for the
@@ -263,7 +283,7 @@ func (shell *Shell) sendLoop(stdin io.WriteCloser) {
 				}
 				continue
 			}
-			if err := shell.session.WindowChange(item.rows, item.cols); err != nil {
+			if err := windowChange(shell.session, item.size); err != nil {
 				shell.input.close()
 				return
 			}
@@ -339,8 +359,8 @@ func (buffer *outputBuffer) finish() {
 
 // inputItem is bytes for the shell, or (when data is nil) a window change.
 type inputItem struct {
-	data       []byte
-	cols, rows int
+	data []byte
+	size termsize.Size
 }
 
 // inputQueue carries input from the window thread to the sender goroutine.
@@ -366,16 +386,17 @@ func (queue *inputQueue) put(item inputItem) bool {
 	return true
 }
 
-func (queue *inputQueue) putResize(cols, rows int) {
+func (queue *inputQueue) putResize(size termsize.Size) {
 	queue.mu.Lock()
 	defer queue.mu.Unlock()
 	if queue.closed {
 		return
 	}
+	item := inputItem{size: size}
 	if last := len(queue.items) - 1; last >= 0 && queue.items[last].data == nil {
-		queue.items[last] = inputItem{cols: cols, rows: rows}
+		queue.items[last] = item
 	} else {
-		queue.items = append(queue.items, inputItem{cols: cols, rows: rows})
+		queue.items = append(queue.items, item)
 	}
 	queue.ready.Signal()
 }
@@ -408,4 +429,62 @@ const backspaceByte = 0x7f
 // echo every Backspace as ^? instead of deleting.
 func ptyModes() ssh.TerminalModes {
 	return ssh.TerminalModes{ssh.ECHO: 1, ssh.VERASE: backspaceByte, ssh.TTY_OP_ISPEED: 38400, ssh.TTY_OP_OSPEED: 38400}
+}
+
+// requestPty sends RFC 4254's pty-req for the given terminal. ssh.Session's own
+// RequestPty fills the window size's pixel fields with eight pixels per cell, a
+// placeholder that programs laying images out by the character cell — the kitty
+// graphics protocol, yazi, chafa — then size their pictures to, so the image is
+// stretched by however far the real cell is from 8×8. The request here is the
+// one that method sends, with the terminal's own pixel size in place of the
+// placeholder.
+func requestPty(session *ssh.Session, term string, size termsize.Size, modes ssh.TerminalModes) error {
+	ok, err := session.SendRequest("pty-req", true, ssh.Marshal(&struct {
+		Term          string
+		Columns, Rows uint32
+		Width, Height uint32
+		Modelist      string
+	}{
+		Term:     term,
+		Columns:  uint32(max(size.Cols, 1)),
+		Rows:     uint32(max(size.Rows, 1)),
+		Width:    uint32(max(size.PixelWidth, 0)),
+		Height:   uint32(max(size.PixelHeight, 0)),
+		Modelist: string(encodeTerminalModes(modes)),
+	}))
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errors.New("ssh: pty-req failed")
+	}
+	return nil
+}
+
+// windowChange sends RFC 4254's window-change for the given terminal. It is
+// ssh.Session's own window-change, whose pixel fields carry the same placeholder
+// as RequestPty's.
+func windowChange(session *ssh.Session, size termsize.Size) error {
+	_, err := session.SendRequest("window-change", false, ssh.Marshal(&struct {
+		Columns, Rows, Width, Height uint32
+	}{
+		Columns: uint32(max(size.Cols, 1)),
+		Rows:    uint32(max(size.Rows, 1)),
+		Width:   uint32(max(size.PixelWidth, 0)),
+		Height:  uint32(max(size.PixelHeight, 0)),
+	}))
+	return err
+}
+
+// encodeTerminalModes encodes terminal modes the way RFC 4254 section 8 does:
+// a byte opcode and a uint32 value for each, ended by tty_OP_END.
+func encodeTerminalModes(modes ssh.TerminalModes) []byte {
+	encoded := make([]byte, 0, len(modes)*5+1)
+	for key, value := range modes {
+		encoded = append(encoded, ssh.Marshal(&struct {
+			Key byte
+			Val uint32
+		}{key, value})...)
+	}
+	return append(encoded, 0) // tty_OP_END
 }

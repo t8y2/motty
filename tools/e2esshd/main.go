@@ -82,7 +82,14 @@ func main() {
 	config := &ssh.ServerConfig{
 		ServerVersion: banner,
 		PublicKeyCallback: func(meta ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
-			if bytes.Equal(key.Marshal(), fixture.publicKey.Marshal()) || certs.acceptKey(key) {
+			// Under E2E_USER_CERT=1 only the certificate the fixture signed is
+			// accepted, so a client that falls back to the bare key fails: that
+			// is what proves the certificate was the credential.
+			accepted := certs.acceptKey(key)
+			if certs.userCert == nil && bytes.Equal(key.Marshal(), fixture.publicKey.Marshal()) {
+				accepted = true
+			}
+			if accepted {
 				return nil, nil
 			}
 			return nil, fmt.Errorf("denied")
@@ -160,6 +167,9 @@ func main() {
 				return
 			}
 			defer conn.Close()
+			// One line per authenticated transport, so a check can count how
+			// many connections the client made and which tabs shared one.
+			log.Printf("connection user=%s from=%s", conn.User(), conn.RemoteAddr())
 			remoteForwards := newRemoteForwardSet(conn)
 			defer remoteForwards.Close()
 			go remoteForwards.Serve(requests)
@@ -170,6 +180,7 @@ func main() {
 			// their own.
 			oneSession := os.Getenv("E2E_ONE_SESSION") == "1"
 			usedSession := false
+			login := &loginMessage{text: os.Getenv("E2E_LOGIN_MESSAGE")}
 			for newChannel := range channels {
 				switch newChannel.ChannelType() {
 				case "session":
@@ -181,7 +192,7 @@ func main() {
 					channel, reqs, err := newChannel.Accept()
 					if err == nil {
 						usedSession = oneSession
-						go serve(conn, fixture.sftpRoot, channel, reqs)
+						go serve(conn, fixture.sftpRoot, login, channel, reqs)
 					}
 				case "direct-tcpip":
 					if os.Getenv("E2E_NO_DIRECT") == "1" {
@@ -309,18 +320,19 @@ func serveEcho(connection net.Conn) {
 	}
 }
 
-func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-chan *ssh.Request) {
+func serve(sshConn ssh.Conn, sftpRoot string, login *loginMessage, channel ssh.Channel, requests <-chan *ssh.Request) {
 	user := sshConn.User()
 	defer channel.Close()
 	x11 := newX11Relay(sshConn)
 	defer x11.Close()
 	var (
-		term       = "xterm"
-		cols, rows = 80, 24
-		env        []string
-		ptmx       *os.File
-		once       sync.Once
-		ptyAsked   bool
+		term                    = "xterm"
+		cols, rows              = 80, 24
+		pixelWidth, pixelHeight int
+		env                     []string
+		ptmx                    *os.File
+		once                    sync.Once
+		ptyAsked                bool
 	)
 	for request := range requests {
 		switch request.Type {
@@ -338,6 +350,7 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 			}
 			ssh.Unmarshal(request.Payload, &payload)
 			term, cols, rows = payload.Term, int(payload.Columns), int(payload.Rows)
+			pixelWidth, pixelHeight = int(payload.Width), int(payload.Height)
 			ptyAsked = true
 			request.Reply(true, nil)
 		case "x11-req":
@@ -350,10 +363,14 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 			var payload struct{ Columns, Rows, Width, Height uint32 }
 			ssh.Unmarshal(request.Payload, &payload)
 			if ptmx != nil {
-				pty.Setsize(ptmx, &pty.Winsize{Cols: uint16(payload.Columns), Rows: uint16(payload.Rows)})
+				pty.Setsize(ptmx, &pty.Winsize{
+					Cols: uint16(payload.Columns), Rows: uint16(payload.Rows),
+					X: uint16(payload.Width), Y: uint16(payload.Height),
+				})
 			}
 		case "shell":
 			request.Reply(true, nil)
+			login.show(channel, "shell")
 			if os.Getenv("E2E_SFTP_ONLY") == "1" {
 				// An account restricted to SFTP: the shell request is accepted, the
 				// session says so and ends with a failure status.
@@ -375,7 +392,7 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 					command.Dir = os.TempDir()
 				}
 				var err error
-				ptmx, err = pty.StartWithSize(command, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
+				ptmx, err = pty.StartWithSize(command, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows), X: uint16(pixelWidth), Y: uint16(pixelHeight)})
 				if err != nil {
 					fmt.Fprintf(channel, "cannot start shell: %v\r\n", err)
 					channel.Close()
@@ -402,6 +419,7 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 				request.Reply(false, nil)
 				continue
 			}
+			login.discard("exec")
 			if scpOnlyEnabled() {
 				// A server without SFTP: only the scp programs and their helper commands.
 				if _, allowed := scpCommand(sftpRoot, payload.Command); !allowed {
@@ -438,7 +456,7 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 					command.Env = append(command.Env, x11.Env()...)
 					command.Dir = os.TempDir()
 					var err error
-					ptmx, err = pty.StartWithSize(command, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
+					ptmx, err = pty.StartWithSize(command, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows), X: uint16(pixelWidth), Y: uint16(pixelHeight)})
 					if err != nil {
 						fmt.Fprintf(channel, "cannot start command: %v\r\n", err)
 						channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{1}))
@@ -465,7 +483,10 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 					}()
 					continue
 				}
-				command.Stdout, command.Stderr = channel, channel
+				// The client's integration upload sends the script on stdin; a
+				// real sshd hands it to the command. Without the channel here the
+				// upload only creates an empty file and integration silently fails.
+				command.Stdin, command.Stdout, command.Stderr = channel, channel, channel
 				status := uint32(0)
 				if err := command.Run(); err != nil {
 					status = 1
@@ -514,6 +535,7 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 				continue
 			}
 			request.Reply(true, nil)
+			login.discard("subsystem")
 			log.Printf("sftp subsystem opened")
 			server, err := sftp.NewServer(channel, sftp.WithServerWorkingDirectory(sftpRoot))
 			if err != nil {
@@ -546,7 +568,12 @@ func gpuProbe(command string) string {
 	if begin < 0 || end < begin {
 		return ""
 	}
-	return command[begin:end] + "\ngpu_probe\n"
+	probe := command[begin:end]
+	if strings.HasPrefix(command, "exec /bin/sh -c '") {
+		// The monitor sent the script as a quoted shell argument.
+		probe = strings.ReplaceAll(probe, `'\''`, "'")
+	}
+	return probe + "\ngpu_probe\n"
 }
 
 // statsReading is the counters of a server that is 37.5% busy, uses 3 of 8 GiB
@@ -584,6 +611,15 @@ func prepareFixture() (fixture, error) {
 			return fail(err)
 		}
 	}
+	// A document window's preview bound only shows on a file larger than it, so
+	// a test asks for one instead of the fixture carrying 20 MiB every run.
+	if mib, err := strconv.Atoi(os.Getenv("E2ESSHD_LARGE_TEXT_MIB")); err == nil && mib > 0 {
+		line := []byte("0123456789abcdef\n")
+		data := bytes.Repeat(line, (mib<<20)/len(line)+1)[:mib<<20]
+		if err := os.WriteFile(filepath.Join(sftpRoot, "large-preview.txt"), data, 0o644); err != nil {
+			return fail(err)
+		}
+	}
 	_, clientPrivate, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return fail(err)
@@ -601,4 +637,37 @@ func prepareFixture() (fixture, error) {
 		return fail(err)
 	}
 	return fixture{root: root, sftpRoot: sftpRoot, identityPath: identityPath, publicKey: clientSigner.PublicKey()}, nil
+}
+
+// loginMessage is the message sshd prints at login (PAM's MOTD, last login),
+// set with E2E_LOGIN_MESSAGE. As in OpenSSH it belongs to the connection, not
+// to a session: the first session that starts a program takes it, and only a
+// shell request shows it. A command or a subsystem (SFTP) that starts first
+// drops it for every later session, so a client that opens one before its
+// shell loses the user's login banner.
+type loginMessage struct {
+	text string
+	once sync.Once
+}
+
+// show prints the message to the session that took it, when that session is a
+// shell and the fixture has a message to give.
+func (message *loginMessage) show(channel ssh.Channel, kind string) {
+	message.once.Do(func() {
+		if message.text == "" {
+			return
+		}
+		log.Printf("login-message shown to %s", kind)
+		fmt.Fprint(channel, strings.ReplaceAll(message.text, `\n`, "\r\n")+"\r\n")
+	})
+}
+
+// discard is the first session being a command or a subsystem: the message is
+// gone and nothing displays it.
+func (message *loginMessage) discard(kind string) {
+	message.once.Do(func() {
+		if message.text != "" {
+			log.Printf("login-message dropped by %s", kind)
+		}
+	})
 }

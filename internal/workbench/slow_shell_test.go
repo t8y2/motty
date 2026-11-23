@@ -123,7 +123,7 @@ func TestAShellOpeningDuringLayoutChangesReceivesTheLatestSize(t *testing.T) {
 	if config := slow.configs[0]; config.Cols == wantCols && config.Rows == wantRows {
 		t.Fatal("fixture did not change the size while the shell was opening")
 	}
-	if len(shell.resizes) == 0 || shell.resizes[len(shell.resizes)-1] != [2]int{wantCols, wantRows} {
+	if len(shell.resizes) == 0 || shell.lastResize() != [2]int{wantCols, wantRows} {
 		t.Fatalf("attached shell resizes = %v, want latest size %dx%d", shell.resizes, wantCols, wantRows)
 	}
 	resizes := len(shell.resizes)

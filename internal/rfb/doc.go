@@ -9,7 +9,9 @@
 // (type 30) for macOS Screen Sharing, which encrypts the credentials but not
 // the session that follows. A RealVNC 5.0 banner is negotiated down
 // to 3.8. A 32-bit true-colour pixel format is requested from the
-// server, so no pixel is ever converted; supported encodings are Raw, CopyRect, RRE,
+// server by default, so no pixel is converted; Config.PixelFormat asks for 16
+// or 8 bits to save bandwidth, and the decoders widen each pixel back to 32.
+// Supported encodings are Raw, CopyRect, RRE,
 // Hextile and ZRLE; the DesktopSize pseudo-encoding; pointer, key and
 // clipboard (Latin-1 text) messages. What it does not: VeNCrypt and other TLS
 // security types, the cursor shape

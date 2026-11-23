@@ -24,6 +24,19 @@ type completionWorld struct {
 
 func newCompletionWorld(t *testing.T) *completionWorld {
 	t.Helper()
+	return newCompletionWorldWith(t, true)
+}
+
+// newPlainCompletionWorld is a live SSH terminal whose shell never reported
+// shell integration: a shell the client cannot install its startup hooks into,
+// such as the BusyBox ash of OpenWrt (#1157).
+func newPlainCompletionWorld(t *testing.T) *completionWorld {
+	t.Helper()
+	return newCompletionWorldWith(t, false)
+}
+
+func newCompletionWorldWith(t *testing.T, integrated bool) *completionWorld {
+	t.Helper()
 	state, _, conn, shell := liveSession(t)
 	w := &completionWorld{state: state, shell: shell, conn: conn, clock: time.Second}
 	state.options.Now = func() time.Duration { return w.clock }
@@ -37,7 +50,12 @@ func newCompletionWorld(t *testing.T) *completionWorld {
 	if !state.ActivatePane(session.ID) {
 		t.Fatal("the session has no pane")
 	}
-	inputGuardPrompt(state, session, shell, "utf8", "")
+	if integrated {
+		inputGuardPrompt(state, session, shell, "utf8", "")
+	} else {
+		shell.say("\r\ntester@openwrt:~$ ")
+		state.Wake()
+	}
 	catalog, err := completion.Builtin()
 	if err != nil {
 		t.Fatal(err)
@@ -193,6 +211,71 @@ func TestANestedShellOffersNoPaths(t *testing.T) {
 func TestAProgramPromptOpensNeitherTheListNorTheGhost(t *testing.T) {
 	w := newCompletionWorld(t)
 	w.enterNestedShell(">>> ")
+	w.type_("git statu")
+	if w.state.completionEligible(w.session) {
+		t.Fatal("a REPL prompt was taken for a shell prompt")
+	}
+	w.state.openCompletions()
+	if w.state.completion.list.active {
+		t.Fatal("the list opened at a REPL prompt")
+	}
+	if rest, ok := w.state.commandGhost(w.session); ok {
+		t.Fatalf("the ghost offered %q at a REPL prompt", rest)
+	}
+}
+
+// A shell the client could never integrate — OpenWrt's BusyBox ash, a dash, a
+// shell behind an unrecognized server — still draws a prompt the recorder can
+// prove. The list follows the same proof as the inline suggestion (#1157).
+func TestTheListOpensWithoutShellIntegration(t *testing.T) {
+	w := newPlainCompletionWorld(t)
+	w.state.history.inlineOff = true // automatic-list mode
+	w.type_("git s")
+	waitCompletionList(t, w)
+	if !w.state.completion.list.auto {
+		t.Fatal("the unintegrated shell did not open the automatic list")
+	}
+	if got := strings.Join(listTexts(w), ","); !strings.Contains(got, "stage") {
+		t.Fatalf("the unintegrated shell's list = %q, want git stage", got)
+	}
+}
+
+func TestTheShortcutOpensTheListWithoutShellIntegration(t *testing.T) {
+	w := newPlainCompletionWorld(t)
+	w.type_("git s")
+	if !w.state.completionEligible(w.session) {
+		t.Fatal("the unintegrated shell's screen line is not eligible")
+	}
+	w.state.openCompletions()
+	list := &w.state.completion.list
+	if !list.active || len(list.candidates) == 0 || list.candidates[0].Text != "stage" {
+		t.Fatalf("list active=%v candidates=%v", list.active, list.candidates)
+	}
+}
+
+// The ghost and the list must agree on a shell without markers, which is the
+// inconsistency issue #1157 reports.
+func TestTheGhostAndTheListAgreeWithoutShellIntegration(t *testing.T) {
+	w := newPlainCompletionWorld(t)
+	w.state.history.on = true
+	w.state.history.ghost = map[string][]cmdhistory.Entry{
+		historyKey(w.session): {{Command: "git status"}},
+	}
+	w.type_("git s")
+	if rest, ok := w.state.commandGhost(w.session); !ok || rest != "tatus" {
+		t.Fatalf("the unintegrated shell's ghost = %q, %v", rest, ok)
+	}
+	w.state.history.inlineOff = true
+	w.state.openCompletions()
+	if !w.state.completion.list.active {
+		t.Fatal("the list refused a line the ghost accepted")
+	}
+}
+
+func TestAProgramPromptStillRefusesWithoutShellIntegration(t *testing.T) {
+	w := newPlainCompletionWorld(t)
+	w.shell.say("\r\n>>> ")
+	w.state.Wake()
 	w.type_("git statu")
 	if w.state.completionEligible(w.session) {
 		t.Fatal("a REPL prompt was taken for a shell prompt")
@@ -601,5 +684,108 @@ func TestCompletionListPaintsInANarrowWindow(t *testing.T) {
 	w.state.Paint(&canvas, gfx.Size{Width: 320, Height: 240})
 	if _, ok := hitByID(&canvas, hitCompletionList.At(0)); !ok {
 		t.Fatal("the first row is not painted in a narrow window")
+	}
+}
+
+// A quick command the user configured is a command hint in the completion list
+// too, not only in the inline ghost (#1084, #1200). The automatic list is the
+// default mode, so this is where most users meet the hint; accepting one types
+// the rest like any other candidate instead of running it.
+func TestAConfiguredQuickCommandIsOfferedByTheList(t *testing.T) {
+	w := newCompletionWorld(t)
+	w.state.history.inlineOff = true // automatic-list mode, the default
+	w.state.snippets.list = []snippet{{Name: "fetch all", Command: "git fetch --all --prune"}}
+	w.type_("git f")
+	w.state.openCompletions()
+	list := &w.state.completion.list
+	if !list.active {
+		t.Fatal("the list did not open")
+	}
+	index := -1
+	for i, candidate := range list.candidates {
+		if candidate.Text != "git fetch --all --prune" {
+			continue
+		}
+		index = i
+		if candidate.Insert != "etch --all --prune" {
+			t.Fatalf("insert = %q, want the rest of the quick command", candidate.Insert)
+		}
+		if candidate.Desc != w.state.messages.Tools.SnippetsTitle {
+			t.Fatalf("desc = %q, want the quick commands' own name", candidate.Desc)
+		}
+	}
+	if index < 0 {
+		t.Fatalf("the quick command is not in the list: %v", listTexts(w))
+	}
+	// Before the catalog: the user's own list outranks public syntax.
+	for i := 0; i < index; i++ {
+		if list.candidates[i].FromCatalog {
+			t.Fatalf("the quick command is listed after catalog candidate %q", list.candidates[i].Text)
+		}
+	}
+	before := w.shell.typed()
+	list.selected = index
+	w.state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: terminalHit(w.state, 0)})
+	if got := w.shell.typed(); got != before+"etch --all --prune" {
+		t.Fatalf("typed %q, want %q", got, before+"etch --all --prune")
+	}
+	if strings.ContainsAny(w.shell.typed(), "\r\n") {
+		t.Fatal("accepting a quick command ran it")
+	}
+}
+
+// The ghost stays quiet when two quick commands share a prefix, because it
+// would have to guess. The list names both, so the same ambiguity is resolved
+// where there is room for it (#1200).
+func TestQuickCommandsSharingAPrefixAreAllListed(t *testing.T) {
+	w := newCompletionWorld(t)
+	w.state.history.inlineOff = true // automatic-list mode
+	w.state.snippets.list = []snippet{
+		{Name: "fetch all", Command: "git fetch --all"},
+		{Name: "fetch prune", Command: "git fetch --prune"},
+	}
+	w.type_("git f")
+	if rest, ok := w.state.commandGhost(w.session); ok {
+		t.Fatalf("the ghost guessed %q", rest)
+	}
+	w.state.openCompletions()
+	texts := listTexts(w)
+	for _, want := range []string{"git fetch --all", "git fetch --prune"} {
+		found := false
+		for _, text := range texts {
+			if text == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("the list = %v, missing %q", texts, want)
+		}
+	}
+}
+
+// A quick command that cannot be typed as it stands is the snippet picker's
+// job, not the completion list's: accepting it would type an unresolved
+// template or half a multi-line command.
+func TestAnUntypableQuickCommandIsNotListed(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		command string
+	}{
+		{"templated", "git {{branch}}"},
+		{"multi-line", "git log\nstatus"},
+		{"secret", "git clone https://user:token@example.com/repo"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newCompletionWorld(t)
+			w.state.history.inlineOff = true // automatic-list mode
+			w.state.snippets.list = []snippet{{Name: tc.name, Command: tc.command}}
+			w.type_("git ")
+			w.state.openCompletions()
+			for _, candidate := range w.state.completion.list.candidates {
+				if candidate.Text == tc.command {
+					t.Fatalf("the list offered the untypable quick command %q", tc.command)
+				}
+			}
+		})
 	}
 }

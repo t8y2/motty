@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -27,36 +28,406 @@ func openCommandsDrawerTest(t *testing.T) *State {
 	return state
 }
 
-// Clicking a command tag routes through the central handler to sendSnippet, so a
-// tag is a repeatable action and not a one-shot popup.
-func TestCommandTagClickRoutes(t *testing.T) {
-	state := openCommandsDrawerTest(t)
-	state.Click(hitCommandsTag.At(0)) // a user click goes through the public Click
-	if !state.clickCommandsDrawer(hitCommandsTag.At(1)) {
-		t.Fatal("command tag scope was not recognized by the drawer")
-	}
-	if state.clickCommandsDrawer(hitSnippetAdd) {
-		t.Fatal("an unrelated hit was claimed by the drawer")
+func TestCommandBarRepeatsWithoutTakingTerminalFocus(t *testing.T) {
+	for _, placement := range commandsPlacementChoices {
+		t.Run(placementName(placement), func(t *testing.T) {
+			state, _, _, shell := liveSession(t)
+			state.commands.shown = true
+			state.commands.placement = placement
+			state.snippets.list = []snippet{
+				{Name: "List", Command: "ls", Run: true},
+				{Name: "Directory", Command: "pwd"},
+			}
+			view := openPickerView(t, state, 1)
+			terminalID := terminalHit(state, 0)
+			terminal := dualHit(t, view, terminalID)
+			if err := view.Click(terminal.X+20, terminal.Y+20); err != nil {
+				t.Fatal(err)
+			}
+			if focused := view.Snapshot().Focused; focused != terminalID {
+				t.Fatalf("terminal did not receive focus: %v", focused)
+			}
+			for _, index := range []int{0, 0, 1} {
+				chip := dualHit(t, view, hitCommandsTag.At(index))
+				if overlap := intersectRect(terminal, chip); overlap.Width > 0 && overlap.Height > 0 {
+					t.Fatalf("command chip overlaps terminal: chip=%+v terminal=%+v", chip, terminal)
+				}
+				if err := view.Click(chip.X+chip.Width/2, chip.Y+chip.Height/2); err != nil {
+					t.Fatal(err)
+				}
+				if focused := view.Snapshot().Focused; focused != terminalID {
+					t.Fatalf("command stole terminal focus: %v", focused)
+				}
+			}
+			if got := shell.typed(); got != "ls\rls\rpwd" {
+				t.Fatalf("terminal received %q, want two runs and one insert", got)
+			}
+		})
 	}
 }
 
-// The drawer reserves no space off the terminal page, a fixed single-bar height on
-// the terminal page, and nothing once closed.
-func TestCommandDrawerHeight(t *testing.T) {
+// placementName is a subtest name for the bar's two docks.
+func placementName(placement commandsPlacement) string {
+	if placement == commandsPlacementSide {
+		return "side"
+	}
+	return "bottom"
+}
+
+func TestCommandBarKeyboardActivationReturnsToTerminal(t *testing.T) {
+	for _, key := range []string{"enter", "space"} {
+		t.Run(key, func(t *testing.T) {
+			state, _, _, shell := liveSession(t)
+			state.commands.shown = true
+			state.snippets.list = []snippet{{Name: "List", Command: "ls", Run: true}}
+			view := openPickerView(t, state, 1)
+			sort := dualHit(t, view, hitCommandsSort)
+			if err := view.Click(sort.X+sort.Width/2, sort.Y+sort.Height/2); err != nil {
+				t.Fatal(err)
+			}
+			if err := view.Keys("escape"); err != nil {
+				t.Fatal(err)
+			}
+			for count := 0; count < 30 && view.Snapshot().Focused != hitCommandsTag.At(0); count++ {
+				if err := view.Keys("tab"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if got := view.Snapshot().Focused; got != hitCommandsTag.At(0) {
+				t.Fatalf("tab did not reach the command: %v", got)
+			}
+			if err := view.Keys(key); err != nil {
+				t.Fatal(err)
+			}
+			if got := view.Snapshot().Focused; got != terminalHit(state, 0) {
+				t.Fatalf("focus after activating command = %v", got)
+			}
+			if got := shell.typed(); got != "ls\r" {
+				t.Fatalf("terminal received %q, want command", got)
+			}
+			if err := view.Type("after"); err != nil {
+				t.Fatal(err)
+			}
+			if got := shell.typed(); got != "ls\rafter" {
+				t.Fatalf("typing after activation went to %q", got)
+			}
+		})
+	}
+}
+
+func TestCommandBarVariableDialogKeepsKeyboard(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	state.commands.shown = true
+	state.snippets.list = []snippet{{Name: "Deploy", Command: "deploy {{version}}", Run: true}}
+	view := openPickerView(t, state, 1)
+	chip := dualHit(t, view, hitCommandsTag.At(0))
+	if err := view.Click(chip.X+chip.Width/2, chip.Y+chip.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if got := view.Snapshot().Focused; got != hitSnippetVarList.At(0) {
+		t.Fatalf("focus after opening variables = %v", got)
+	}
+	if err := view.Type("v1"); err != nil {
+		t.Fatal(err)
+	}
+	if got := shell.typed(); got != "" {
+		t.Fatalf("typing in dialog reached terminal: %q", got)
+	}
+	if err := view.Keys("enter"); err != nil {
+		t.Fatal(err)
+	}
+	if got := shell.typed(); got != "deploy v1\r" {
+		t.Fatalf("terminal received %q, want expanded command", got)
+	}
+	if got := view.Snapshot().Focused; got != terminalHit(state, 0) {
+		t.Fatalf("focus after submission = %v", got)
+	}
+}
+
+// Sending a quick command from the bar must hand the keyboard back to the
+// terminal, or the next Enter types wherever the pointer happens to be.
+func TestClickingACommandChipReturnsTheKeyboardToTheTerminal(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	world.connectFirst(t, state)
+	state.activeSection = sectionTerminal
+	state.snippets.list = []snippet{{Name: "ls", Command: "ls", Run: true}}
+	state.commands.shown = true
+	state.Click(hitCommandsTag.At(0))
+	want := state.activeTerminalFocusHit()
+	if want.IsZero() {
+		t.Fatal("no terminal focus target")
+	}
+	if state.pendingFocus != want {
+		t.Fatalf("pending focus = %v, want the terminal %v", state.pendingFocus, want)
+	}
+	canvas, _ := paintAt(state, gfx.Size{Width: 1200, Height: 800})
+	if got := canvas.FocusOnce(); got != want {
+		t.Fatalf("paint asked for focus %v, want the terminal %v", got, want)
+	}
+	if !state.pendingFocus.IsZero() {
+		t.Fatal("the focus request was not consumed")
+	}
+}
+
+// The focus a chip asked for must not be taken while a dialog is up (the
+// dialog keeps its own first field), and must still be cleared so it cannot
+// steal the keyboard later.
+func TestAQuickCommandKeepsADialogsKeyboardAndDropsItsFocus(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	world.connectFirst(t, state)
+	state.activeSection = sectionTerminal
+	state.modal = modalSnippetVariables
+	state.pendingFocus = state.activeTerminalFocusHit()
+	canvas, _ := paintAt(state, gfx.Size{Width: 1200, Height: 800})
+	if got := canvas.FocusOnce(); !got.IsZero() {
+		t.Fatalf("paint asked for %v while a dialog was up", got)
+	}
+	if !state.pendingFocus.IsZero() {
+		t.Fatal("the focus request was not dropped with the dialog up")
+	}
+}
+
+// A page that cannot take the keyboard (the snippets page) must drop the
+// request too, not hold it for a later paint to grab the keyboard.
+func TestAQuickCommandDropsFocusOnANonTerminalPage(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	world.connectFirst(t, state)
+	state.activeSection = sectionSnippets
+	state.pendingFocus = state.activeTerminalFocusHit()
+	canvas, _ := paintAt(state, gfx.Size{Width: 1200, Height: 800})
+	if got := canvas.FocusOnce(); !got.IsZero() {
+		t.Fatalf("paint asked for %v on the snippets page", got)
+	}
+	if !state.pendingFocus.IsZero() {
+		t.Fatal("the focus request was not dropped on a non-terminal page")
+	}
+}
+
+// Cancelling or closing the variables dialog opened from the command bar must
+// also bring the keyboard back to the terminal.
+func TestCancellingTheVariablesDialogReturnsTheKeyboardToTheTerminal(t *testing.T) {
+	for _, id := range []gfx.ID{hitSnippetVarCancel, hitSnippetVarClose} {
+		world, options := newSharingWorld(t)
+		state := newTestState(t, options)
+		world.connectFirst(t, state)
+		state.activeSection = sectionTerminal
+		state.modal = modalSnippetVariables
+		state.snippetPrompt.fromPage = false
+		state.pendingFocus = gfx.ID{}
+		state.clickSnippetVariablesDialog(id)
+		want := state.activeTerminalFocusHit()
+		if want.IsZero() {
+			t.Fatal("no terminal focus target")
+		}
+		if state.pendingFocus != want {
+			t.Fatalf("%v: pending focus = %v, want the terminal %v", id, state.pendingFocus, want)
+		}
+	}
+}
+
+// Cancelling a dialog opened from the snippets page stays on that page: it
+// must not queue a terminal focus request.
+func TestCancellingTheVariablesDialogFromThePageKeepsThePage(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	world.connectFirst(t, state)
+	state.activeSection = sectionSnippets
+	state.modal = modalSnippetVariables
+	state.snippetPrompt.fromPage = true
+	state.pendingFocus = gfx.ID{}
+	state.clickSnippetVariablesDialog(hitSnippetVarCancel)
+	if !state.pendingFocus.IsZero() {
+		t.Fatal("cancelling from the snippets page asked for the terminal")
+	}
+}
+
+// A quick command with variables opens a dialog instead of sending; sending it
+// must bring the keyboard back to the terminal the command went to.
+func TestSubmittingTheSnippetVariablesDialogReturnsTheKeyboardToTheTerminal(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	world.connectFirst(t, state)
+	state.activeSection = sectionTerminal
+	state.modal = modalSnippetVariables
+	state.snippets.list = []snippet{{Name: "ls", Command: "ls", Run: true}}
+	state.snippetPrompt.snippetIndex = 0
+	state.snippetPrompt.targetSessionID = state.sessions[0].ID
+	state.submitSnippetVariables()
+	want := state.activeTerminalFocusHit()
+	if want.IsZero() {
+		t.Fatal("no terminal focus target")
+	}
+	if state.pendingFocus != want {
+		t.Fatalf("pending focus = %v, want the terminal %v", state.pendingFocus, want)
+	}
+}
+
+// A right click on a chip opens that snippet's own menu, so a command added to the
+// bar can still be edited or removed there (#1005).
+func TestRightClickingACommandChipOpensItsMenu(t *testing.T) {
 	state := openCommandsDrawerTest(t)
-	state.activeSection = sectionHosts // not the terminal page
-	if h := state.commandsDrawerHeight(); h != 0 {
-		t.Fatalf("drawer reserved space off the terminal page: %v", h)
+	event := gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitCommandsTag.At(1)}
+	if got := pointer(state, event); !got.Handled || !state.snippetMenu.open || !state.snippetMenu.fromBar || state.snippetMenu.index != 1 {
+		t.Fatalf("secondary: handled=%v menu=%+v", got.Handled, state.snippetMenu)
+	}
+	if menuHasRow(state, state.messages.Tools.SnippetMoveUp) {
+		t.Fatal("a command-bar menu offers Move up, which reorders by the Snippets page")
+	}
+	chooseMenu(t, state, hitSnippetMenuEdit)
+	if state.modal != modalSnippet {
+		t.Fatalf("edit from the bar opened modal %d, want the snippet form", state.modal)
+	}
+	state.modal = modalNone
+	state.snippetMenu = snippetMenu{}
+
+	pointer(state, event)
+	chooseMenu(t, state, hitSnippetMenuDelete)
+	if state.modal != modalSnippetDelete || len(state.snippets.list) != 2 {
+		t.Fatalf("delete from the bar opened modal %d with %d snippets", state.modal, len(state.snippets.list))
+	}
+}
+
+// Sending through the bar's right-click menu is another way the bar acts on
+// the terminal, so it must hand the keyboard back like a chip click does.
+func TestSendingFromACommandChipMenuReturnsTheKeyboardToTheTerminal(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	world.connectFirst(t, state)
+	state.activeSection = sectionTerminal
+	state.snippets.list = []snippet{{Name: "ls", Command: "ls", Run: true}}
+	state.commands.shown = true
+	want := state.activeTerminalFocusHit()
+	pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitCommandsTag.At(0)})
+	chooseMenu(t, state, hitSnippetMenuSend)
+	if state.pendingFocus != want {
+		t.Fatalf("pending focus = %v, want the terminal %v", state.pendingFocus, want)
+	}
+}
+
+// A rebuilt snippet list no longer holds the snippet the open menu was asked for,
+// so the menu closes instead of editing whatever now sits at its index.
+func TestACommandBarMenuFollowsARebuiltList(t *testing.T) {
+	state := openCommandsDrawerTest(t)
+	event := gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitCommandsTag.At(1)}
+	if got := pointer(state, event); !got.Handled || !state.snippetMenu.open {
+		t.Fatalf("the menu did not open: handled=%v menu=%+v", got.Handled, state.snippetMenu)
+	}
+	state.snippets.list = []snippet{{Name: "other", Command: "echo other"}}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	if state.snippetMenu.open {
+		t.Fatal("the menu stayed open over a rebuilt list")
+	}
+}
+
+// The bar reserves the strip it is docked in, and only while the terminal page
+// can host it: a bottom strip takes height from every panel, a sidebar takes
+// width from the terminals' own column.
+func TestCommandBarBoundsFollowItsDock(t *testing.T) {
+	state := openCommandsDrawerTest(t)
+	size := gfx.Size{Width: 1400, Height: 900}
+	state.activeSection = sectionHosts
+	if height := state.commandsDrawerHeight(); height != 0 {
+		t.Fatalf("bottom bar reserved space off the terminal page: %v", height)
+	}
+	if bounds := state.commandsSidebarBounds(size); bounds.Width != 0 {
+		t.Fatalf("sidebar reserved space off the terminal page: %v", bounds)
+	}
+
+	state.activeSection = sectionTerminal
+	state.commands.shown = false
+	if height := state.commandsDrawerHeight(); height != 0 {
+		t.Fatalf("a fresh, hidden bar reserved space: %v", height)
+	}
+
+	// The default dock is the strip under the panes, so the terminals give up
+	// its height, not their width.
+	state.commands.shown = true
+	state.viewport = size
+	full := state.fullWorkspacePixelBounds(size)
+	bar := state.commandsBarRect()
+	frame := state.toolbarDockFrame(size, true)
+	content := state.baseWorkspacePixelBounds(size)
+	if bar.Height != commandsBarHeight || bar.Width != full.Width || bar.X != full.X ||
+		bar.Y != frame.Y+frame.Height || bar.Y+bar.Height != size.Height ||
+		content.Width != full.Width || state.commandsSidebarBounds(size).Width != 0 {
+		t.Fatalf("bottom bar=%+v frame=%+v content=%+v full=%+v", bar, frame, content, full)
+	}
+
+	// The side dock gives up width instead and keeps the strip's height free.
+	state.setCommandsPlacement(commandsPlacementSide)
+	sidebar := state.commandsSidebarBounds(size)
+	frame = state.toolbarDockFrame(size, true)
+	content = state.baseWorkspacePixelBounds(size)
+	if sidebar.Width != commandsSidebarWidth || sidebar.X != frame.X+frame.Width-sidebar.Width ||
+		content.X+content.Width != sidebar.X || sidebar.X+sidebar.Width != frame.X+frame.Width ||
+		sidebar.Y != full.Y || sidebar.Y+sidebar.Height != size.Height {
+		t.Fatalf("sidebar=%+v frame=%+v content=%+v full=%+v", sidebar, frame, content, full)
+	}
+	if height := state.commandsDrawerHeight(); height != 0 {
+		t.Fatalf("side dock still reserved bottom height: %v", height)
+	}
+}
+
+func TestCommandSidebarResizeDragsAndPersists(t *testing.T) {
+	options := testOptions(t)
+	state := newTestState(t, options)
+	state.deck = layoutcore.Deck{}
+	if _, _, err := state.deck.Create("test"); err != nil {
+		t.Fatal(err)
 	}
 	state.activeSection = sectionTerminal
-	// Opting in is the only way the strip appears: a fresh state reserves nothing.
-	state.commands.shown = false
-	if h := state.commandsDrawerHeight(); h != 0 {
-		t.Fatalf("a fresh state reserved bar space: %v", h)
-	}
+	state.snippets.list = []snippet{{Name: "pwd", Command: "pwd"}}
 	state.commands.shown = true
-	if h := state.commandsDrawerHeight(); h != commandsBarHeight {
-		t.Fatalf("open drawer height = %v, want %v", h, commandsBarHeight)
+	state.commands.placement = commandsPlacementSide
+	size := gfx.Size{Width: 1400, Height: 900}
+	paintAt(state, size)
+	bar := state.commands.bar
+	if bar.Width != commandsSidebarWidth {
+		t.Fatalf("default bar width = %v, want %v", bar.Width, commandsSidebarWidth)
+	}
+	content := state.baseWorkspacePixelBounds(size).Width
+	down := gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hitCommandsResize, X: bar.X + 1, Y: bar.Y + 100, Viewport: size}
+	if got := state.Pointer(down); !got.Handled {
+		t.Fatal("pressing the bar's edge was not taken by the resize")
+	}
+	move := gfx.PointerEvent{Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: hitCommandsResize, X: bar.X - 59, Y: bar.Y + 100, Viewport: size, Captured: true}
+	state.Pointer(move)
+	paintAt(state, size)
+	want := bar.Width + 60
+	if got := state.commands.bar.Width; got != want {
+		t.Fatalf("dragging the edge left gave %v, want %v", got, want)
+	}
+	if got := state.baseWorkspacePixelBounds(size).Width; got != content-60 {
+		t.Fatalf("the terminals kept %v beside a wider bar, want %v", got, content-60)
+	}
+	up := gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: hitCommandsResize, X: bar.X - 59, Y: bar.Y + 100, Viewport: size}
+	if got := state.Pointer(up); !got.Handled {
+		t.Fatal("releasing the edge was not taken by the resize")
+	}
+	again := newTestState(t, options)
+	if again.commands.width != want {
+		t.Fatalf("a restart restored width %v, want %v", again.commands.width, want)
+	}
+}
+
+func TestCommandSidebarDoesNotCoverTheRightToolbar(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	state.commands.shown = true
+	state.commands.placement = commandsPlacementSide
+	state.snippets.list = []snippet{{Name: "List", Command: "ls"}}
+	view := openPickerView(t, state, 1)
+	bar := state.commandsSidebarBounds(state.viewport)
+	button := dualHit(t, view, hitTerminalSnippets)
+	if overlap := intersectRect(bar, button); overlap.Width > 0 && overlap.Height > 0 {
+		t.Fatalf("command sidebar %+v covers toolbar button %+v", bar, button)
+	}
+	terminal := dualHit(t, view, terminalHit(state, 0))
+	if overlap := intersectRect(terminal, button); overlap.Width > 0 && overlap.Height > 0 {
+		t.Fatalf("toolbar button %+v covers terminal %+v", button, terminal)
 	}
 }
 
@@ -66,15 +437,15 @@ func TestCommandDrawerHeight(t *testing.T) {
 // dialog.
 func TestCommandDrawerCloseAndReopen(t *testing.T) {
 	state := openCommandsDrawerTest(t)
-	if h := state.commandsDrawerHeight(); h != commandsBarHeight {
+	if state.commandsDrawerHeight() != commandsBarHeight {
 		t.Fatal("drawer was not open before closing")
 	}
 	state.Click(hitCommandsClose)
 	if state.commands.shown {
 		t.Fatal("close did not hide the drawer")
 	}
-	if h := state.commandsDrawerHeight(); h != 0 {
-		t.Fatalf("closed drawer still reserved space: %v", h)
+	if height := state.commandsDrawerHeight(); height != 0 {
+		t.Fatalf("closed drawer still reserved space: %v", height)
 	}
 	state.Click(hitTerminalSnippets)
 	if state.modal != modalCommandPalette {
@@ -93,8 +464,8 @@ func TestCommandDrawerCloseAndReopen(t *testing.T) {
 	if !state.commands.shown {
 		t.Fatal("ticking the checkbox did not show the bar")
 	}
-	if h := state.commandsDrawerHeight(); h != commandsBarHeight {
-		t.Fatalf("reopened bar height = %v, want %v", h, commandsBarHeight)
+	if height := state.commandsDrawerHeight(); height != commandsBarHeight {
+		t.Fatalf("reopened bar height = %v, want %v", height, commandsBarHeight)
 	}
 	// Unticking hides it again, with the picker still open.
 	state.Click(hitCommandsBarToggle)
@@ -195,7 +566,7 @@ func TestCommandGroupFilterToggle(t *testing.T) {
 	state := openCommandsDrawerTest(t)
 	state.commands.filterOpen = true // the menu is open while its checkboxes are clicked
 	// Hide ungrouped first: only the grouped "pwd" should remain.
-	state.Click(hitCommandsGroupUngrouped)
+	clickPageMenuRow(t, state, state.messages.Tools.CommandsUngrouped)
 	if !state.commands.hiddenGroups[""] {
 		t.Fatal("ungrouped checkbox did not hide ungrouped commands")
 	}
@@ -203,7 +574,7 @@ func TestCommandGroupFilterToggle(t *testing.T) {
 		t.Fatalf("hiding ungrouped should leave only the grouped command: %v", order)
 	}
 	// Re-checking ungrouped brings "ls" back; the menu never closed on the click.
-	state.Click(hitCommandsGroupUngrouped)
+	clickPageMenuRow(t, state, state.messages.Tools.CommandsUngrouped)
 	if state.commands.hiddenGroups[""] {
 		t.Fatal("re-checking ungrouped did not show ungrouped commands")
 	}
@@ -219,7 +590,8 @@ func TestCommandGroupFilterToggle(t *testing.T) {
 // named group the snippets name.
 func TestCommandGroupFilterShowAndHideAll(t *testing.T) {
 	state := openCommandsDrawerTest(t)
-	state.Click(hitCommandsGroupNone)
+	state.commands.filterOpen = true
+	clickPageMenuRow(t, state, state.messages.Tools.CommandsHideAll)
 	if !state.commandGroupVisible("does-not-exist") {
 		t.Fatal("Hide all should have hidden every named group")
 	}
@@ -229,7 +601,7 @@ func TestCommandGroupFilterShowAndHideAll(t *testing.T) {
 	if order := state.commandDisplayOrder(); len(order) != 0 {
 		t.Fatalf("Hide all should leave the bar empty: %v", order)
 	}
-	state.Click(hitCommandsGroupAll)
+	clickPageMenuRow(t, state, state.messages.Tools.CommandsShowAll)
 	if len(state.commands.hiddenGroups) != 0 {
 		t.Fatalf("Show all should clear the hidden groups: %v", state.commands.hiddenGroups)
 	}
@@ -238,14 +610,18 @@ func TestCommandGroupFilterShowAndHideAll(t *testing.T) {
 	}
 }
 
-// The bar orders its chips by the chosen sort: creation order keeps the list
-// order, name sorts alphabetically, and group sorts by group then name.
+// The bar lists its groups, then the commands in each, by the chosen sort:
+// creation order keeps the list order, name sorts groups and commands
+// alphabetically, and group sorts only the groups. Ungrouped commands close the
+// list in every order.
 func TestCommandSort(t *testing.T) {
 	state := openCommandsDrawerTest(t)
 	state.snippets.list = []snippet{
 		{Name: "zeta", Command: "zeta", Group: "b"},
+		{Name: "loose", Command: "loose"},
+		{Name: "yak", Command: "yak", Group: "a"},
+		{Name: "beta", Command: "beta", Group: "b"},
 		{Name: "alpha", Command: "alpha", Group: "a"},
-		{Name: "beta", Command: "beta"},
 	}
 	names := func() string {
 		order := state.commandDisplayOrder()
@@ -255,18 +631,16 @@ func TestCommandSort(t *testing.T) {
 		}
 		return strings.Join(out, ",")
 	}
-	// Creation order is the list order.
-	if got := names(); got != "zeta,alpha,beta" {
+	// Groups sit where their first command is; commands keep the list order.
+	if got := names(); got != "zeta,beta,yak,alpha,loose" {
 		t.Fatalf("creation order = %q", got)
 	}
-	// Alphabetical by name.
 	state.commands.sort = commandsSortName
-	if got := names(); got != "alpha,beta,zeta" {
+	if got := names(); got != "alpha,yak,beta,zeta,loose" {
 		t.Fatalf("name order = %q", got)
 	}
-	// Group first (ungrouped sorts before any named group), then name.
 	state.commands.sort = commandsSortGroup
-	if got := names(); got != "beta,alpha,zeta" {
+	if got := names(); got != "yak,alpha,zeta,beta,loose" {
 		t.Fatalf("group order = %q", got)
 	}
 	for _, sort := range settingsCommandsSortChoices {
@@ -292,7 +666,7 @@ func TestCommandSortMenuPicksAnOrder(t *testing.T) {
 	}
 	state.Click(hitCommandsSort)
 	state.commands.offset = 40
-	state.Click(hitCommandsSortChoice.At(1))
+	clickPageMenuRow(t, state, state.settingsCommandsSortLabel(settingsCommandsSortChoices[1]))
 	if state.commands.sort != settingsCommandsSortChoices[1] {
 		t.Fatalf("picking an order set %v", state.commands.sort)
 	}
@@ -304,46 +678,67 @@ func TestCommandSortMenuPicksAnOrder(t *testing.T) {
 	}
 }
 
-// Both dropdowns the bar opens are painted above it with every row intact. A
+// Both dropdowns the bar opens are painted clear of it with every row intact: a
 // fixed height that ignores the heading row and the divider clips the last
 // action, which is the easiest way for these menus to look broken.
-func TestCommandMenusKeepTheirLastRowAboveTheBar(t *testing.T) {
+func TestCommandMenusKeepTheirLastRowBesideTheBar(t *testing.T) {
 	tests := []struct {
-		name string
-		open func(*State)
-		last gfx.ID
+		name  string
+		open  func(*State)
+		label func(*State) string
 	}{
-		{"filter", func(state *State) { state.commands.filterOpen = true }, hitCommandsGroupNone},
-		{"sort", func(state *State) { state.commands.sortOpen = true }, hitCommandsSortChoice.At(len(settingsCommandsSortChoices) - 1)},
+		{"filter", func(state *State) { state.commands.filterOpen = true }, func(state *State) string {
+			return state.messages.Tools.CommandsHideAll
+		}},
+		{"sort", func(state *State) { state.commands.sortOpen = true }, func(state *State) string {
+			return state.settingsCommandsSortLabel(settingsCommandsSortChoices[len(settingsCommandsSortChoices)-1])
+		}},
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			state := openCommandsDrawerTest(t)
-			test.open(state)
-			view := openPickerView(t, state, 1)
-			hit, ok := hitByIDSnapshot(view.Snapshot().Hits, test.last)
-			if !ok {
-				t.Fatal("the menu's last row was not painted")
-			}
-			surface := state.popups.surface
-			if hit.Bounds.Y+hit.Bounds.Height > surface.Y+surface.Height+1 {
-				t.Fatalf("the last row %v falls outside the menu surface %v", hit.Bounds, surface)
-			}
-			if hit.Bounds.Y >= state.commands.bar.Y {
-				t.Fatalf("the menu opened below the bar: %v vs %v", hit.Bounds, state.commands.bar)
-			}
-		})
+	for _, placement := range commandsPlacementChoices {
+		for _, test := range tests {
+			t.Run(placementName(placement)+"/"+test.name, func(t *testing.T) {
+				state := openCommandsDrawerTest(t)
+				state.commands.placement = placement
+				test.open(state)
+				var canvas gfx.Canvas
+				state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+				label := test.label(state)
+				var row, surface gfx.Hit
+				for _, hit := range canvas.Hits() {
+					switch {
+					case hit.Role == gfx.RoleMenuItem && hit.Label == label:
+						row = hit
+					case hit.Role == gfx.RoleMenu:
+						surface = hit
+					}
+				}
+				if row.ID.IsZero() {
+					t.Fatal("the menu's last row was not painted")
+				}
+				if row.Bounds.Y+row.Bounds.Height > surface.Bounds.Y+surface.Bounds.Height+1 {
+					t.Fatalf("the last row %v falls outside the menu surface %v", row.Bounds, surface.Bounds)
+				}
+				bar := state.commands.bar
+				if state.commands.placement == commandsPlacementSide {
+					if surface.Bounds.X+surface.Bounds.Width > bar.X {
+						t.Fatalf("the menu overlaps the sidebar: %v vs %v", surface.Bounds, bar)
+					}
+				} else if surface.Bounds.Y+surface.Bounds.Height > bar.Y {
+					t.Fatalf("the menu overlaps the bottom bar: %v vs %v", surface.Bounds, bar)
+				}
+			})
+		}
 	}
 }
 
-// A wheel over the bar moves its chips sideways, stops at both ends, and stays
-// out of the way when the chips already fit or a menu is open.
+// A wheel over the bar moves its chips, stops at both ends, and stays out of the
+// way when the chips already fit or a menu is open.
 func TestCommandBarScroll(t *testing.T) {
 	state := openCommandsDrawerTest(t)
-	bar := gfx.Rect{X: 0, Y: 860, Width: 1400, Height: commandsBarHeight}
+	bar := gfx.Rect{X: 1176, Y: 48, Width: commandsSidebarWidth, Height: 852}
 	state.commands.bar = bar
 	state.commands.maxOffset = commandsScrollStep * 2
-	over := gfx.ScrollEvent{X: 400, Y: bar.Y + 10, DeltaY: 1}
+	over := gfx.ScrollEvent{X: bar.X + 10, Y: bar.Y + 40, DeltaY: 1}
 	if _, handled := state.scrollCommandsBar(over); !handled {
 		t.Fatal("a wheel over the bar was not taken")
 	}
@@ -356,13 +751,13 @@ func TestCommandBarScroll(t *testing.T) {
 	if state.commands.offset != state.commands.maxOffset {
 		t.Fatalf("scrolling past the end stopped at %v, want %v", state.commands.offset, state.commands.maxOffset)
 	}
-	state.scrollCommandsBar(gfx.ScrollEvent{X: 400, Y: bar.Y + 10, DeltaY: -1})
+	state.scrollCommandsBar(gfx.ScrollEvent{X: over.X, Y: over.Y, DeltaY: -1})
 	if state.commands.offset >= state.commands.maxOffset {
 		t.Fatal("a wheel the other way did not scroll back")
 	}
 	// Nothing past the bar's ends, nothing when the chips fit.
-	if _, handled := state.scrollCommandsBar(gfx.ScrollEvent{X: 400, Y: bar.Y - 40, DeltaY: 1}); handled {
-		t.Fatal("a wheel above the bar was taken by it")
+	if _, handled := state.scrollCommandsBar(gfx.ScrollEvent{X: bar.X - 40, Y: over.Y, DeltaY: 1}); handled {
+		t.Fatal("a wheel beside the sidebar was taken by it")
 	}
 	state.commands.maxOffset = 0
 	if _, handled := state.scrollCommandsBar(over); handled {
@@ -381,6 +776,12 @@ func TestCommandBarOptInSurvivesRestart(t *testing.T) {
 	if !again.commands.shown {
 		t.Fatal("after a restart the opted-in bar was hidden again")
 	}
+	// The default dock restores as the bottom strip; a chosen side dock is saved.
+	state.setCommandsPlacement(commandsPlacementSide)
+	again = newTestState(t, options)
+	if again.commands.placement != commandsPlacementSide {
+		t.Fatalf("after a restart the side dock became %v", again.commands.placement)
+	}
 	again.commands.shown = false
 	again.save()
 	hidden := newTestState(t, options)
@@ -391,5 +792,115 @@ func TestCommandBarOptInSurvivesRestart(t *testing.T) {
 	fresh := newTestState(t, testOptions(t))
 	if fresh.commands.shown {
 		t.Fatal("a new profile must start with the bar hidden")
+	}
+	if fresh.commands.placement != commandsPlacementBottom {
+		t.Fatalf("a new profile started with the %v dock, want the bottom strip", fresh.commands.placement)
+	}
+}
+
+func TestCommandSidebarSpansTheContentHeightBesideAFilePanel(t *testing.T) {
+	state, _, _, _ := openTestSFTP(t)
+	state.snippets.list = []snippet{{Name: "pwd", Command: "pwd"}}
+	state.commands.shown = true
+	state.commands.placement = commandsPlacementSide
+	size := gfx.Size{Width: 1444, Height: 808}
+	canvas, _ := paintAt(state, size)
+	context, ok := state.deck.Context(state.deck.ActiveWorkspace())
+	if !ok || !context.Open || context.Side != layoutcore.ContextLeft {
+		t.Fatalf("the files panel is not docked left: %+v", context)
+	}
+	assertCommandSidebarSitsInsideTheDockFrame(t, state, canvas, size)
+}
+
+func TestCommandSidebarSpansTheContentHeightBesideASideRail(t *testing.T) {
+	state, _ := monitorFixture(t)
+	state.snippets.list = []snippet{{Name: "pwd", Command: "pwd"}}
+	state.commands.shown = true
+	state.commands.placement = commandsPlacementSide
+	state.terminalToolbarPosition = terminalToolbarRight
+	size := gfx.Size{Width: 1444, Height: 808}
+	canvas, _ := paintAt(state, size)
+
+	full := state.fullWorkspacePixelBounds(size)
+	frame := state.toolbarDockFrame(size, true)
+	if frame.Width >= full.Width {
+		t.Fatalf("the side rail did not narrow the dock frame (%v vs %v); the case proves nothing", frame.Width, full.Width)
+	}
+	assertCommandSidebarSitsInsideTheDockFrame(t, state, canvas, size)
+}
+
+func assertCommandSidebarSitsInsideTheDockFrame(t *testing.T, state *State, canvas *gfx.Canvas, size gfx.Size) {
+	t.Helper()
+	frame := state.toolbarDockFrame(size, true)
+	content := state.baseWorkspacePixelBounds(size)
+	bar := state.commands.bar
+	if bar.Width <= 0 || bar.X != frame.X+frame.Width-bar.Width || bar.X+bar.Width != frame.X+frame.Width ||
+		content.X+content.Width != bar.X || bar.Y != frame.Y || bar.Y+bar.Height != size.Height {
+		t.Fatalf("sidebar=%+v frame=%+v content=%+v viewport=%+v", bar, frame, content, size)
+	}
+	if right := state.toolbarDockSideReserveFor(false, true); right > 0 && bar.X+bar.Width != size.Width-right {
+		t.Fatalf("sidebar %+v does not stop at the right toolbar rail (%v)", bar, right)
+	}
+	want := withAlpha(state.pal.shell, 0.6)
+	x := bar.X + 2
+	for _, y := range []float32{bar.Y + 2, size.Height - 2} {
+		var top gfx.Rectangle
+		found := false
+		for _, r := range canvas.Rectangles() {
+			if x >= r.Bounds.X && x < r.Bounds.X+r.Bounds.Width &&
+				y >= r.Bounds.Y && y < r.Bounds.Y+r.Bounds.Height {
+				top, found = r, true
+			}
+		}
+		if !found || top.Color != want {
+			t.Fatalf("sidebar edge at (%v, %v) is %+v, want %+v", x, y, top.Color, want)
+		}
+	}
+}
+
+// Each group is listed under its own heading, and a heading folds its commands
+// away without taking the group out of the bar. Folding is a display state that
+// outlives a restart.
+func TestCommandGroupHeadingFoldsItsCommands(t *testing.T) {
+	state := openCommandsDrawerTest(t)
+	state.snippets.list = []snippet{
+		{Name: "loose", Command: "loose"},
+		{Name: "mysql-a", Command: "a", Group: "mysql"},
+		{Name: "mysql-b", Command: "b", Group: "MySQL"},
+		{Name: "os-a", Command: "c", Group: "os"},
+	}
+	sections := state.commandSections()
+	if len(sections) != 3 || sections[0].key != "mysql" || sections[1].key != "os" || sections[2].key != "" {
+		t.Fatalf("sections = %+v, want mysql and os, then ungrouped last", sections)
+	}
+	if len(sections[0].items) != 2 {
+		t.Fatalf("groups differing in case must share a section: %+v", sections[0])
+	}
+	if !commandSectionsGrouped(sections) {
+		t.Fatal("named groups must show headings")
+	}
+	if commandSectionsGrouped([]commandSection{{key: ""}}) {
+		t.Fatal("a list nobody grouped needs no heading")
+	}
+
+	if !state.clickCommandsDrawer(hitCommandsGroupHeading.At(0)) {
+		t.Fatal("the heading is not part of the bar")
+	}
+	if !state.commandSections()[0].collapsed {
+		t.Fatal("clicking the heading did not fold its group")
+	}
+	state.commands.shown = true
+	// A folded group still counts for the order and the filter; only the
+	// painted rows leave.
+	if len(state.commandDisplayOrder()) != 4 {
+		t.Fatalf("a folded group left the bar: %v", state.commandDisplayOrder())
+	}
+	saved := state.snapshot()
+	if !slices.Equal(saved.CommandsCollapsedGroups, []string{"mysql"}) {
+		t.Fatalf("folded groups saved as %v", saved.CommandsCollapsedGroups)
+	}
+	state.clickCommandsDrawer(hitCommandsGroupHeading.At(0))
+	if state.commandSections()[0].collapsed {
+		t.Fatal("a second click did not unfold the group")
 	}
 }

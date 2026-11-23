@@ -1,8 +1,8 @@
 # Terminal and File Panel Folder Sync
 
 The attached file panel follows the SSH terminal's working directory by default.
-New Bash and Zsh sessions install session-only folder reporting, without editing
-the server's existing startup files. Directory reports are kept while the panel
+New Bash, Zsh and PowerShell sessions install session-only folder reporting,
+without editing the server's existing startup files. Directory reports are kept while the panel
 is opening, busy or being edited; only the latest pending directory is applied.
 
 In **Settings > Files**, the two directions are independent:
@@ -46,14 +46,36 @@ made before that reconnect inherit the same remembered directory.
 
 Only trusted prompt reports are remembered. A running program, a nested login,
 or a report that does not belong to this session's integration cannot change
-the next start directory. Native Windows SSH hosts are not POSIX shell targets,
-and disabling both integration directions, setting **Command completions** to
+the next start directory. Disabling both integration directions, setting **Command completions** to
 **Shortcut**, and leaving **Tab name** off **Current path** keeps the ordinary
 shell startup, so neither remembers a remote directory in this way.
 
 Local panes, standalone file windows and container command sessions do not
 control terminals. Refreshing a list or following a terminal report never sends
 another `cd` back. Both preferences use the existing shared-settings storage.
+
+## PowerShell on Windows hosts
+
+A Windows host's OpenSSH server starts the account's default shell. When the
+probe finds PowerShell (Windows PowerShell 5.1 or PowerShell 7), Motty types one
+line into the running shell, after the banner and the first prompt, and hides
+its echo until a private ready marker. The line wraps the shell's `prompt`
+function, so a prompt of your own still draws, and reports the folder at every
+prompt. The file panel names a folder the way the host's SFTP server does:
+`C:\Users\me` is `/C:/Users/me`. A folder that has no such name, such as a UNC
+share, is not reported.
+
+No file is written to the server: a script file would be subject to the host's
+execution policy, a typed line is not. PowerShell's line editor records every
+submitted line and offers no way to take one back, so the activation line stays
+in that shell's history. A shell in constrained language mode cannot redefine
+its prompt and is left as it was; the same goes for cmd.exe and other shells.
+
+PowerShell has no hook that runs before every command, so Motty cannot tell an
+idle prompt from a running program there. The panel follows the terminal and a
+reconnect returns to the last folder, but a PowerShell prompt is never typed
+into on the panel's behalf: **Terminal follows file navigation**, **Go to this
+folder in the terminal** and path completion stay off.
 
 ## Local Terminal Folder
 

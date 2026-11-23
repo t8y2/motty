@@ -27,6 +27,7 @@ import (
 type tray struct {
 	list *workbench.Tray
 	item *app.StatusItem
+	icon app.WindowIcon
 }
 
 // recentLog keeps what the program logged, for the diagnostics report.
@@ -177,7 +178,7 @@ func mainWindowTitle() string { return buildinfo.ProductName }
 // newTray makes the status-area list without an icon: the icon is added once
 // the first window is up, because making it delays the window (see show).
 func newTray(application *app.Application) *tray {
-	return &tray{list: workbench.NewTray(func() { windows.quitWithDocuments(application.Quit) })}
+	return &tray{list: workbench.NewTray(func() { windows.quitWithDocuments(application.Quit) }), icon: workbench.AppIcon()}
 }
 
 // show puts the icon in the status area. Without one, a desktop with no
@@ -191,7 +192,7 @@ func (status *tray) show(application *app.Application) {
 	// pointer rests on it, which can be before the first window wake updates it.
 	tooltip, _ := status.list.Tooltip()
 	item, err := application.AddStatusItem(app.StatusItemConfig{
-		Icon:    workbench.TrayIcon(),
+		Icon:    status.icon.StatusIcon(64),
 		Tooltip: tooltip,
 		// The system's menu, built when it opens. Where a desktop reports a
 		// primary press as an activation instead (a Linux tray), it brings the
@@ -215,6 +216,21 @@ func (status *tray) show(application *app.Application) {
 // hasStatusArea reports whether the application is in the status area, which is
 // what lets it keep running when its last window closes.
 func (status *tray) hasStatusArea() bool { return status != nil && status.item != nil }
+
+func (status *tray) setIcon(icon app.WindowIcon) {
+	if status == nil {
+		return
+	}
+	if len(status.icon.RGBA) > 0 && len(icon.RGBA) > 0 && &status.icon.RGBA[0] == &icon.RGBA[0] {
+		return
+	}
+	status.icon = icon
+	if status.item != nil {
+		if err := status.item.SetIcon(icon.StatusIcon(64)); err != nil {
+			log.Printf("motty: update tray icon: %v", err)
+		}
+	}
+}
 
 // keystore is where the saved-passwords vault of the data directory keeps its
 // key: the system's own store, which is nil here, except in a portable copy.
@@ -318,11 +334,23 @@ func nextWindowID() int {
 	return windowIDs
 }
 
+// placementWindowID is the number a window opens under. A placement without
+// one takes the next number, so a torn-off window never shares the first
+// window's number: its saved record and the tray entries named after it would
+// collide with that window's own.
+func placementWindowID(place placement) int {
+	if place.windowID != 0 {
+		return place.windowID
+	}
+	return nextWindowID()
+}
+
 func openWorkbenchWindow(application *app.Application, status *tray, hub *workbench.AIHub, newWindow func() error, background bool, place placement) error {
 	importSource, sourceErr := developmentImportSource(datadir.Current().Dir)
 	if sourceErr != nil {
 		return sourceErr
 	}
+	windowID := placementWindowID(place)
 	// Connection goroutines wake the window through this; it costs nothing
 	// until a connection reports progress.
 	var invalidator app.Invalidator
@@ -336,6 +364,10 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 	// with nothing in it just closes, and so does every window when the user
 	// chose in Settings that closing quits.
 	requestClose := func(allow func()) {
+		// A window that closes or hides while it holds the keep-windows question
+		// dismisses it first; otherwise the question's guard would outlive it and
+		// swallow every later quit.
+		windows.cancelKeepWindows(state)
 		if status.hasStatusArea() && state.StaysInTray() && (state.WantsToStay() || status.list.WindowCount() <= 1) {
 			log.Print("motty: window hidden to the status area; the program keeps running")
 			mainWindow.Hide()
@@ -345,11 +377,17 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 			state.NoteHiddenToTray()
 			return
 		}
-		if state.ConfirmClose(allow) {
+		closeWindow := allow
+		if (status == nil && windows.count() == 1) || (status != nil && status.list.WindowCount() == 1) {
+			// The last window ends the program just as the quit command does,
+			// so it makes the same decision about keeping the windows.
+			closeWindow = func() { windows.closeLastWindow(state, allow) }
+		}
+		if state.ConfirmClose(closeWindow) {
 			invalidate()
 			return
 		}
-		allow()
+		closeWindow()
 	}
 	state = workbench.New(workbench.Options{
 		DevelopmentSource: importSource,
@@ -359,7 +397,7 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		OpenContentWindow: application.OpenContentWindow,
 		Group:             windowGroup, Blank: place.blank, Log: recentLog,
 		LogDir: logDirectory(), PreviousCrash: crashNoticeFor(place),
-		WindowID:            place.windowID,
+		WindowID:            windowID,
 		RememberWindowFrame: place.rememberFrame,
 		TearOff: func(origin gfx.Point, adopt func(*workbench.State)) error {
 			return openWorkbenchWindow(application, status, hub, newWindow, false, placement{origin: &origin, adopt: adopt, blank: true})
@@ -380,8 +418,17 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		Raise:              func() { mainWindow.Show() },
 		StartAtLogin:       loginStart(),
 		StatusArea:         status.hasStatusArea,
-		Updater:            updater(),
-		Quit:               func() { windows.quitWithDocuments(application.Quit) },
+		SetAppIcon: func(icon app.WindowIcon) {
+			icon = desktopWindowIcon(icon)
+			if mainWindow != nil {
+				if err := mainWindow.SetIcon(icon); err != nil {
+					log.Printf("motty: update window icon: %v", err)
+				}
+			}
+			status.setIcon(icon)
+		},
+		Updater: updater(),
+		Quit:    func() { windows.quitWithDocuments(application.Quit) },
 		AISettingsChanged: func() {
 			if err := hub.Reconfigure(); err != nil {
 				log.Printf("motty: external agent access: %v", err)
@@ -393,11 +440,13 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 	}
 	width, height := 1400, 900
 	origin := place.origin
+	maximized := false
 	if place.rememberFrame {
 		if frame, ok := state.RestoredWindowFrame(); ok {
 			width, height = int(frame.Width), int(frame.Height)
 			origin = &gfx.Point{X: frame.X, Y: frame.Y}
 		}
+		maximized = state.RestoredWindowMaximized()
 	}
 	window := state.WindowColor()
 	width = max(width, workbench.MinimumWindowWidth)
@@ -422,9 +471,6 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		if input := state.TerminalFindInput(context); input != nil {
 			return input
 		}
-		if input := state.TerminalFindPreferencesInput(context); input != nil {
-			return input
-		}
 		if input := state.TerminalWordInput(context); input != nil {
 			return input
 		}
@@ -447,13 +493,15 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 	var err error
 	config := app.Config{
 		Title:          mainWindowTitle(),
-		Icon:           workbench.AppIcon(),
+		Class:          desktopWindowClass(),
+		Icon:           desktopWindowIcon(state.WindowIcon()),
 		Tree:           workbench.Tree(),
 		Width:          width,
 		Height:         height,
 		MinWidth:       workbench.MinimumWindowWidth,
 		MinHeight:      workbench.MinimumWindowHeight,
 		Origin:         origin,
+		Maximized:      maximized,
 		WindowMode:     app.WindowCustomTitlebar,
 		TitlebarHeight: workbench.TitlebarHeight,
 		WindowControls: state.WindowControlsStyle,
@@ -479,19 +527,21 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		OnResize:      state.Resize,
 		OnFrameChange: state.NoteWindowFrame,
 		OnMinimize:    state.SetWindowMinimized,
+		OnMaximize:    state.SetWindowMaximized,
 		OnFullscreen:  state.SetWindowFullscreen,
 		OnClosed: func() {
 			log.Print("motty: window closed")
+			// A system close (Alt+F4) can land here without the close request
+			// above, so release the question this window was holding before it
+			// leaves the set.
+			windows.cancelKeepWindows(state)
 			windows.remove(state)
 			hub.Remove(state)
 			quitting := windows.isQuitting()
 			remaining := windows.count()
+			keepRecord := keepWindowRecordOnClose(quitting, windows.keepsWindowsOnQuit(), remaining, state.DiscardsWindowsOnExit())
 			state.Close()
-			// A window the user closed while other windows are still up is one
-			// they are done with, so its record goes and the next launch does not
-			// reopen it. A quit, and the last window, keep every record: that is
-			// what the next launch reopens.
-			if !quitting && remaining > 0 {
+			if !keepRecord {
 				state.DropWindowRecord()
 			}
 			if status != nil {
@@ -505,6 +555,13 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 	// handlers keep the events it leaves; the workbench's Paint stays its own.
 	mainWindow, err = application.OpenWindow(state.WindowConfig(config), &canvas)
 	if err == nil {
+		// A macOS bundle keeps its packaged icon when it opens. Restore the
+		// user's choice explicitly once its native window exists.
+		if runtime.GOOS == "darwin" {
+			if iconErr := mainWindow.SetIcon(state.WindowIcon()); iconErr != nil {
+				log.Printf("motty: restore Dock icon: %v", iconErr)
+			}
+		}
 		state.SyncMenuBar()
 		state.SetWindow(mainWindow.Frame, func() bool { return !mainWindow.Hidden() && !mainWindow.Closed() })
 		state.SetShortcutCapture(mainWindow.CaptureSystemShortcuts)

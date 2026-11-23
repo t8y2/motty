@@ -95,7 +95,7 @@ func TestFlexibleShortcutsCapturePersistAndKeepConflicts(t *testing.T) {
 	for _, event := range []gfx.KeyEvent{
 		{Text: "x"}, {Text: "J", Modifiers: gfx.ModifierShift},
 		{Text: "j", Modifiers: gfx.ModifierAlt}, {Text: "/"}, {Text: "+"},
-		{Text: ",", Modifiers: gfx.ModifierControl}, {Key: gfx.KeySpace},
+		{Text: ";", Modifiers: gfx.ModifierControl}, {Key: gfx.KeySpace},
 		{Key: gfx.KeyEnter, Modifiers: gfx.ModifierShift}, {Key: gfx.KeyUp, Modifiers: gfx.ModifierAlt},
 		{Key: gfx.KeyF1}, {Key: gfx.KeyF12}, {Key: gfx.KeyEscape, Modifiers: gfx.ModifierAlt},
 	} {
@@ -608,5 +608,52 @@ func TestShiftInsertPastesIntoLiveTerminal(t *testing.T) {
 	}
 	if got := shell.typed(); !strings.Contains(got, "echo hi") || strings.Contains(got, "\x1b[2") {
 		t.Fatalf("terminal received %q", got)
+	}
+}
+
+func TestSettingsShortcutOpensSettings(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	chord := state.shortcuts.chords.Chord(shortcutSettings)
+	if !chord.Valid() || chord != (keymap.Chord{Modifiers: keymap.Primary, Char: ','}) {
+		t.Fatalf("settings shortcut default = %+v, want primary+,", chord)
+	}
+	result := state.Shortcut(gfx.KeyEvent{Modifiers: chord.Modifiers, Text: string([]byte{chord.Char})})
+	if !result.Handled || state.activeSection != sectionSettings {
+		t.Fatalf("settings shortcut result = %+v, section = %d", result, state.activeSection)
+	}
+}
+
+func TestSettingsShortcutInTerminalDoesNotSendKey(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	chord := state.shortcuts.chords.Chord(shortcutSettings)
+	result := state.Shortcut(gfx.KeyEvent{
+		Target:    state.activeTerminalFocusHit(),
+		Modifiers: chord.Modifiers,
+		Text:      string([]byte{chord.Char}),
+	})
+	if !result.Handled || state.activeSection != sectionSettings {
+		t.Fatalf("terminal settings shortcut result = %+v, section = %d", result, state.activeSection)
+	}
+	if got := shell.typed(); got != "" {
+		t.Fatalf("settings shortcut leaked into terminal shell: %q", got)
+	}
+}
+
+func TestSettingsShortcutCanBeReboundAndPersisted(t *testing.T) {
+	options := freshOptions(t)
+	state := newTestState(t, options)
+	custom := keymap.Chord{Modifiers: keymap.Primary | gfx.ModifierAlt, Char: 's'}
+	if conflict, ok := state.shortcuts.bind(shortcutSettings, custom); !ok {
+		t.Fatalf("binding custom shortcut failed, conflict with %v", conflict)
+	}
+	state.save()
+
+	restored := newTestState(t, options)
+	if got := restored.shortcuts.chords.Chord(shortcutSettings); got != custom {
+		t.Fatalf("restored settings shortcut = %+v, want %+v", got, custom)
+	}
+	result := restored.Shortcut(gfx.KeyEvent{Modifiers: custom.Modifiers, Text: string([]byte{custom.Char})})
+	if !result.Handled || restored.activeSection != sectionSettings {
+		t.Fatalf("custom settings shortcut result = %+v, section = %d", result, restored.activeSection)
 	}
 }

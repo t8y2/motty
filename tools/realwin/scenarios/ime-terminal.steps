@@ -1,0 +1,27 @@
+# Real-window check of terminal input on Windows: a local shell takes typed
+# keys, then a Chinese IME composes in the terminal, shows its candidate list
+# at the cursor and commits the word into the same command line, which the
+# shell then runs. Screenshots show each step.
+place 200 100 2000 1300
+focus
+sleep 800
+newlocal
+sleep 2500
+typefast abc123
+sleep 500
+keys ^u
+sleep 500
+shot ime-1-typed
+ime 1
+sleep 600
+typefast nihao
+sleep 1500
+shot ime-2-compose
+keys 1
+sleep 1000
+shot ime-3-picked
+keys {ENTER}
+sleep 1200
+shot ime-4-ran
+ime 0
+sleep 300

@@ -16,8 +16,8 @@ var appIcon = sync.OnceValue(func() app.WindowIcon {
 	return icon
 })
 
-// AppIcon is the logo for the window's taskbar button, Alt+Tab and, outside an
-// .app bundle, the Dock.
+// AppIcon is the default logo for the window's taskbar button, Alt+Tab and Dock.
+// A workbench's WindowIcon applies its saved color choice.
 func AppIcon() app.WindowIcon { return appIcon() }
 
 // TrayIcon is the logo as a status-area icon, in the form the platform expects:

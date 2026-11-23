@@ -2,6 +2,7 @@ package sessionimport
 
 import (
 	"archive/zip"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -196,6 +197,28 @@ func TestMobaXtermSessionsKeepFoldersAndSkipOtherProtocols(t *testing.T) {
 	}
 }
 
+// MobaXterm writes a username taken from its saved credentials as "[name]".
+// The brackets are MobaXterm's notation, not part of the login.
+func TestMobaXtermUsernameDropsSavedCredentialBrackets(t *testing.T) {
+	text := "[Bookmarks]\r\nSubRep=\r\nImgNum=42\r\n" +
+		"Board=#109#0%10.10.82.114%22%[petalinux]%%-1%-1%%\r\n" +
+		"Typed=#109#0%10.10.82.113%22%petalinux%%-1%-1%%\r\n" +
+		"Half=#109#0%10.10.82.115%22%[petalinux%%-1%-1%%\r\n"
+	result, err := ParseMobaXterm(write(t, t.TempDir(), "s.mxtsessions", []byte(text)))
+	if err != nil || len(result.Entries) != 3 {
+		t.Fatalf("%+v %v", result, err)
+	}
+	if got := result.Entries[0].User; got != "petalinux" {
+		t.Fatalf("saved-credential username = %q, want the name inside the brackets", got)
+	}
+	if got := result.Entries[1].User; got != "petalinux" {
+		t.Fatalf("typed username = %q, want it unchanged", got)
+	}
+	if got := result.Entries[2].User; got != "[petalinux" {
+		t.Fatalf("username with one bracket = %q, want it unchanged", got)
+	}
+}
+
 func TestMobaXtermChineseEncoding(t *testing.T) {
 	text := "[Bookmarks]\r\nSubRep=客户\\生产\r\n中文主机=#109#0%web.example.test%22%root%\r\n"
 	legacy, err := simplifiedchinese.GB18030.NewEncoder().Bytes([]byte(text))
@@ -285,8 +308,8 @@ func TestMobaXtermRejectsDamagedUTF16(t *testing.T) {
 
 func TestWindTermSessionsFileKeepsGroupsAndSkipsOtherProtocols(t *testing.T) {
 	text := `[
-	{"session.group": "Production", "session.icon": "linux", "session.label": "Web", "session.port": 2222, "session.protocol": "SSH", "session.target": "web.example.com", "session.uuid": "a"},
-	{"session.label": "Box", "session.protocol": "SSH", "session.target": "root@10.0.0.9", "session.identityFile": "C:\\k"},
+	{"session.group": "00-admin>01-infini", "session.icon": "linux", "session.label": "Web", "session.port": 2222, "session.protocol": "SSH", "session.target": "web.example.com", "session.uuid": "a"},
+	{"session.label": "Box", "session.protocol": "SSH", "session.target": "root@10.0.0.9", "session.identityFile": "C:\\k", "session.autoExecution": "10.0.0.9"},
 	{"session.label": "Tel", "session.protocol": "Telnet", "session.target": "10.0.0.10"},
 	{"session.label": "Serial", "session.protocol": "Serial"}
 	]`
@@ -295,10 +318,10 @@ func TestWindTermSessionsFileKeepsGroupsAndSkipsOtherProtocols(t *testing.T) {
 	if err != nil || len(result.Entries) != 3 || result.Skipped != 1 || result.Keys != 1 {
 		t.Fatalf("%+v %v", result, err)
 	}
-	if got := result.Entries[0]; got.Name != "Web" || got.Group != "Production" || got.Host != "web.example.com" || got.Port != 2222 {
+	if got := result.Entries[0]; got.Name != "Web" || got.Group != "00-admin/01-infini" || got.Host != "web.example.com" || got.Port != 2222 {
 		t.Fatalf("first = %+v", got)
 	}
-	if got := result.Entries[1]; got.Host != "10.0.0.9" || got.User != "root" {
+	if got := result.Entries[1]; got.Host != "10.0.0.9" || got.User != "root" || got.Command != "10.0.0.9" {
 		t.Fatalf("second = %+v", got)
 	}
 	if _, err := ParseWindTerm(write(t, dir, "x.json", []byte(`{"a":1}`))); err == nil {
@@ -689,5 +712,407 @@ func TestSecureCRTSingleFileAndWrongFolder(t *testing.T) {
 	}
 	if _, err := ParseSecureCRT(empty); err == nil {
 		t.Fatal("an empty folder was accepted as a Sessions folder")
+	}
+}
+
+func TestFinalShellDataFolderReadsGroupsAndLeavesPasswordsAndHistoryAlone(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "FinalShell")
+	files := map[string]string{
+		"config.json":          `{"secret_key_list":[{"id":"key1","name":"prod","key_data":"cGVt"}]}`,
+		"conn/one/folder.json": `{"id":"clients","name":"Clients","parent_id":"root"}`,
+		"conn/two/folder.json": `{"id":"acme","name":"Acme","parent_id":"clients"}`,
+		"conn/two/prod_connect_config.json": `{"id":"h1","name":"prod","host":"prod.example.test","port":2222,` +
+			`"user_name":"deploy","password":"U2FsdGVkX1+cipher","authentication_type":1,` +
+			`"secret_key_id":"key1","conection_type":100,"parent_id":"acme"}`,
+		"conn/top_connect_config.json": `{"id":"h2","name":"top","host":"top.example.test","port":"2200",` +
+			`"user_name":"root","conection_type":100,"parent_id":"root"}`,
+		"conn/desktop_connect_config.json": `{"id":"h3","name":"desktop","host":"10.1.1.1",` +
+			`"conection_type":101,"parent_id":"root"}`,
+		"conn/orphan_connect_config.json": `{"id":"h4","name":"orphan","host":"orphan.example.test",` +
+			`"user_name":"me","conection_type":100,"parent_id":"missing"}`,
+		"conn/broken_connect_config.json": `{"id":`,
+		// Historical copies and deleted entries must not come back.
+		"backup/conn/old_connect_config.json":   `{"id":"old","name":"old","host":"old.example.test","conection_type":100}`,
+		"deleted/conn/gone_connect_config.json": `{"id":"gone","name":"gone","host":"gone.example.test","conection_type":100}`,
+		"temp/conn/draft_connect_config.json":   `{"id":"draft","name":"draft","host":"draft.example.test","conection_type":100}`,
+	}
+	for name, content := range files {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result, err := Parse(FinalShell, []string{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Entries) != 3 {
+		t.Fatalf("entries = %+v warnings %v", result.Entries, result.Warnings)
+	}
+	byName := map[string]Entry{}
+	for _, entry := range result.Entries {
+		byName[entry.Name] = entry
+	}
+	prod, found := byName["prod"]
+	if !found || prod.Group != "Clients/Acme" || prod.Host != "prod.example.test" || prod.Port != 2222 || prod.User != "deploy" {
+		t.Errorf("prod = %+v", prod)
+	}
+	if prod.Password != "" {
+		t.Errorf("an encrypted FinalShell password was taken: %q", prod.Password)
+	}
+	if top := byName["top"]; top.Group != "" || top.Port != 2200 || top.User != "root" {
+		t.Errorf("top = %+v", top)
+	}
+	if orphan := byName["orphan"]; orphan.Group != "" || orphan.Host != "orphan.example.test" {
+		t.Errorf("orphan = %+v", orphan)
+	}
+	if _, found := byName["old"]; found {
+		t.Error("a backup copy was imported")
+	}
+	if _, found := byName["gone"]; found {
+		t.Error("a deleted session was imported")
+	}
+	if result.Keys != 1 || result.Skipped != 1 || result.PlainSecrets != 0 {
+		t.Errorf("keys %d skipped %d plain %d", result.Keys, result.Skipped, result.PlainSecrets)
+	}
+	warnings := strings.Join(result.Warnings, "\n")
+	if !strings.Contains(warnings, "not valid JSON") {
+		t.Errorf("warnings = %q", warnings)
+	}
+	if !strings.Contains(warnings, "outside the chosen folder") {
+		t.Errorf("warnings = %q", warnings)
+	}
+}
+
+func TestFinalShellNeedsADataFolder(t *testing.T) {
+	dir := t.TempDir()
+	path := write(t, dir, "prod_connect_config.json", []byte(`{"id":"h1","host":"prod.example.test"}`))
+	if _, err := ParseFinalShell(path); err == nil {
+		t.Fatal("a single host file was accepted instead of the data folder")
+	}
+	empty := filepath.Join(dir, "empty")
+	if err := os.Mkdir(empty, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseFinalShell(empty); err == nil {
+		t.Fatal("an empty folder was accepted as a FinalShell data folder")
+	}
+	configOnly := filepath.Join(dir, "config-only")
+	if err := os.Mkdir(configOnly, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configOnly, "config.json"), []byte(`{"quick_commands":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseFinalShell(configOnly); err == nil {
+		t.Fatal("a folder without host configurations was accepted")
+	}
+}
+
+func TestFinalShellFolderCycleStopsAtItself(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "FinalShell")
+	files := map[string]string{
+		"conn/one/folder.json": `{"id":"a","name":"A","parent_id":"b"}`,
+		"conn/two/folder.json": `{"id":"b","name":"B","parent_id":"a"}`,
+		"conn/one/host_connect_config.json": `{"id":"h1","name":"host","host":"host.example.test",` +
+			`"conection_type":100,"parent_id":"a"}`,
+	}
+	for name, content := range files {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err := ParseFinalShell(root)
+	if err != nil || len(result.Entries) != 1 {
+		t.Fatalf("%+v %v", result, err)
+	}
+	if got := result.Entries[0].Group; got != "A/B" && got != "B/A" {
+		t.Fatalf("group = %q", got)
+	}
+}
+
+// Folder records count toward the same entry limit as hosts: a damaged folder
+// full of folder.json files must not grow the group map without bound.
+func TestFinalShellCountsFolderRecordsTowardTheLimit(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "FinalShell")
+	for index := 0; index < 6; index++ {
+		dir := filepath.Join(root, "conn", fmt.Sprintf("f%d", index))
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		write(t, dir, "folder.json", []byte(fmt.Sprintf(`{"id":"f%d","name":"F%d","parent_id":"root"}`, index, index)))
+	}
+	if err := os.MkdirAll(filepath.Join(root, "conn"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(root, "conn"), "a_connect_config.json",
+		[]byte(`{"id":"h0","name":"host","host":"h.example.test","user_name":"me","conection_type":100,"parent_id":"root"}`))
+
+	result, err := parseFinalShellFolderWithin(root, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Entries) != 1 {
+		t.Fatalf("entries = %+v, want the one host read before the cap", result.Entries)
+	}
+	joined := strings.Join(result.Warnings, "\n")
+	if !strings.Contains(joined, "more than 4 records") {
+		t.Fatalf("warnings = %q, want the record cap warning", joined)
+	}
+}
+
+// xtermStore writes an Xterminal local-store.db: the same local_store table
+// its generic SQLite service creates, with one JSON payload per row.
+func xtermStore(t *testing.T, path string, rows []struct{ key, payload string }) string {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	store, err := sql.Open("sqlite", "file:"+filepath.ToSlash(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if _, err := store.Exec(`CREATE TABLE local_store (
+		store_key TEXT NOT NULL,
+		item_id TEXT NOT NULL,
+		payload TEXT NOT NULL,
+		updated_at INTEGER NOT NULL,
+		created_at INTEGER NOT NULL,
+		PRIMARY KEY (store_key, item_id)
+	)`); err != nil {
+		t.Fatal(err)
+	}
+	for index, row := range rows {
+		if _, err := store.Exec(
+			`INSERT INTO local_store(store_key, item_id, payload, updated_at, created_at) VALUES (?, ?, ?, ?, ?)`,
+			row.key, fmt.Sprintf("item-%d", index), row.payload, index, index,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return path
+}
+
+func TestXterminalLocalStoreReadsConnectionsAndTheirFolders(t *testing.T) {
+	groupKey := "local-user-GeneralDatabaseLocalImp-SERVER"
+	serverKey := "local-user-GeneralDatabaseLocalImp-ServerDatabaseLocalImp"
+	path := xtermStore(t, filepath.Join(t.TempDir(), "sqlite", "local-store.db"), []struct{ key, payload string }{
+		{groupKey, `{"_id":"clients","type":"SERVER","name":"Clients","parentId":null}`},
+		{groupKey, `{"_id":"acme","type":"SERVER","name":"Acme","parentId":"clients"}`},
+		{groupKey, `{"_id":"prod","type":"SERVER","name":"Prod","parentId":"acme"}`},
+		{groupKey, `{"_id":"ring-a","type":"SERVER","name":"RingA","parentId":"ring-b"}`},
+		{groupKey, `{"_id":"ring-b","type":"SERVER","name":"RingB","parentId":"ring-a"}`},
+		{serverKey, `{"_id":"h1","title":"Web","host":"web.acme.test","port":2222,"username":"deploy","groupId":"prod","authType":"password","password":"hunter2","note":"front end","connectionConfig":{"init":{"bash":"cd /srv/app"}}}`},
+		{serverKey, `{"_id":"h2","host":"db.acme.test","port":"2200","username":"admin","groupId":"missing","authType":"privateKey","privateKey":"-----BEGIN KEY-----"}`},
+		{serverKey, `{"_id":"h3","title":"Box","host":"box.lab","groupId":"ring-a"}`},
+		{serverKey, `{"_id":`},
+		{"local-user-GeneralDatabaseLocalImp-rdp", `{"_id":"rdp","title":"Desktop","host":"win.lab","port":3389}`},
+		{"another-user-GeneralDatabaseLocalImp-SERVER", `{"_id":"prod","type":"SERVER","name":"OtherProd","parentId":null}`},
+		{"another-user-GeneralDatabaseLocalImp-ServerDatabaseLocalImp", `{"_id":"other","title":"Other","host":"other.lab","groupId":"prod"}`},
+	})
+	result, err := Parse(Xterminal, []string{path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Entries) != 4 || result.Keys != 1 || result.PlainSecrets != 0 {
+		t.Fatalf("entries = %+v, keys %d, plain secrets %d", result.Entries, result.Keys, result.PlainSecrets)
+	}
+	byName := map[string]Entry{}
+	for _, entry := range result.Entries {
+		byName[entry.Name] = entry
+	}
+	web := byName["Web"]
+	if web.Group != "Clients/Acme/Prod" || web.Host != "web.acme.test" || web.Port != 2222 || web.User != "deploy" || web.Command != "cd /srv/app" {
+		t.Fatalf("web = %+v", web)
+	}
+	if web.Password != "" {
+		t.Fatalf("an encrypted Xterminal password was taken: %q", web.Password)
+	}
+	// A connection with no title is named after its address; a port stored as
+	// text still reads as a port.
+	if db := byName["db.acme.test"]; db.Group != "" || db.Port != 2200 || db.User != "admin" || db.Protocol != SSH {
+		t.Fatalf("db = %+v", db)
+	}
+	// Two folders that each sit in the other do not make a folder that runs on
+	// for ever.
+	if box := byName["Box"]; box.Group != "RingA/RingB" && box.Group != "RingB/RingA" {
+		t.Fatalf("box = %+v", box)
+	}
+	// A connection saved under another local user of the same repository still
+	// comes along; the RDP table is a different protocol and does not.
+	if got := byName["Other"]; got.Group != "OtherProd" || got.Host != "other.lab" {
+		t.Fatalf("other = %+v", got)
+	}
+	if _, found := byName["Desktop"]; found {
+		t.Fatal("an RDP record was imported as an SSH connection")
+	}
+	warnings := strings.Join(result.Warnings, "\n")
+	if !strings.Contains(warnings, "not valid JSON") || !strings.Contains(warnings, "without one") {
+		t.Fatalf("warnings = %q", warnings)
+	}
+	if strings.Contains(warnings, "hunter2") || strings.Contains(warnings, "BEGIN KEY") {
+		t.Fatalf("a secret appeared in an import warning: %q", warnings)
+	}
+}
+
+func TestXterminalDatabaseCanBeChosenByItsDataFolder(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "xterminal")
+	path := xtermStore(t, filepath.Join(root, "sqlite", "local-store.db"), []struct{ key, payload string }{
+		{"local-user-GeneralDatabaseLocalImp-ServerDatabaseLocalImp", `{"_id":"h1","title":"Web","host":"web.example.test","port":22,"username":"root"}`},
+	})
+	if _, err := ParseXterminal(root); err != nil {
+		t.Fatalf("the sqlite folder's parent was not accepted: %v", err)
+	}
+	if _, err := ParseXterminal(filepath.Dir(path)); err != nil {
+		t.Fatalf("the sqlite folder was not accepted: %v", err)
+	}
+	portable := filepath.Join(t.TempDir(), "xt_data")
+	xtermStore(t, filepath.Join(portable, "userData", "sqlite", "local-store.db"), []struct{ key, payload string }{
+		{"local-user-GeneralDatabaseLocalImp-ServerDatabaseLocalImp", `{"_id":"h1","title":"Web","host":"web.example.test"}`},
+	})
+	if result, err := ParseXterminal(portable); err != nil || len(result.Entries) != 1 {
+		t.Fatalf("portable userData was not found: %+v %v", result, err)
+	}
+}
+
+func TestXterminalLocalStoreNeedsItsConnections(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := ParseXterminal(dir); err == nil {
+		t.Fatal("a folder without local-store.db was accepted")
+	}
+	empty := xtermStore(t, filepath.Join(dir, "empty", "local-store.db"), nil)
+	if _, err := ParseXterminal(empty); err == nil {
+		t.Fatal("a store with no SSH connections was accepted")
+	}
+	plain := filepath.Join(dir, "notes.txt")
+	if err := os.WriteFile(plain, []byte("not a database"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseXterminal(plain); err == nil {
+		t.Fatal("a text file was accepted as the local store")
+	}
+}
+
+func writeXPipeVault(t *testing.T, root string, files map[string]string) string {
+	t.Helper()
+	for name, content := range files {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}
+
+func TestXPipeVaultReadsSSHRDPAndVNCWithTheirFolders(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "vault")
+	writeXPipeVault(t, root, map[string]string{
+		"categories/all/category.json":     `{"uuid":"bfb0b51a-e7a3-4ce4-8878-8d4cb5828d6c","name":"All connections","parentUuid":null}`,
+		"categories/default/category.json": `{"uuid":"97458c07-75c0-4f9d-a06e-92d8cdf67c40","name":"Default","parentUuid":"bfb0b51a-e7a3-4ce4-8878-8d4cb5828d6c"}`,
+		"categories/clients/category.json": `{"uuid":"clients","name":"Clients","parentUuid":"97458c07-75c0-4f9d-a06e-92d8cdf67c40"}`,
+		"categories/acme/category.json":    `{"uuid":"acme","name":"Acme","parentUuid":"clients"}`,
+		"categories/ring-a/category.json":  `{"uuid":"ring-a","name":"RingA","parentUuid":"ring-b"}`,
+		"categories/ring-b/category.json":  `{"uuid":"ring-b","name":"RingB","parentUuid":"ring-a"}`,
+		// An SSH connection with its login written into the connection.
+		"stores/web/entry.json": `{"uuid":"web","name":"Web","categoryUuid":"acme","tags":["prod"]}`,
+		"stores/web/store.json": `{"type":"ssh","host":"web.acme.test","port":2222,"identity":{"type":"inPlace","identityStore":{"type":"localIdentity","username":"deploy","password":{"secrets":[{"name":"vault","secret":"cipher"}]},"sshIdentity":{"type":"none"}}}}`,
+		// An SSH connection whose login and key are a referenced identity.
+		"stores/db/entry.json":    `{"uuid":"db","name":"DB","categoryUuid":"clients"}`,
+		"stores/db/store.json":    `{"type":"ssh","host":"db.acme.test","port":22,"identity":{"type":"ref","ref":"ident"}}`,
+		"stores/ident/entry.json": `{"uuid":"ident","name":"root"}`,
+		"stores/ident/store.json": `{"type":"syncedIdentity","username":"root","password":{"type":"none"},"sshIdentity":{"type":"file","file":"<DATA>/keys/id_ed25519","publicKey":"ssh-ed25519 AAAA"}}`,
+		// RDP and VNC are hosts Motty can open; Docker is not a host.
+		"stores/desk/entry.json":   `{"uuid":"desk","name":"Windows","categoryUuid":"acme"}`,
+		"stores/desk/store.json":   `{"type":"rdpSimple","host":"10.1.1.1","port":3389,"identity":{"type":"ref","ref":"ident"}}`,
+		"stores/vnc/entry.json":    `{"uuid":"vnc","name":"Desktop","categoryUuid":"ring-a"}`,
+		"stores/vnc/store.json":    `{"type":"vnc","host":"10.1.1.2"}`,
+		"stores/docker/store.json": `{"type":"docker","host":"container"}`,
+		// A default-category connection has no user folder.
+		"stores/plain/entry.json": `{"uuid":"plain","name":"Plain","categoryUuid":"97458c07-75c0-4f9d-a06e-92d8cdf67c40"}`,
+		"stores/plain/store.json": `{"type":"ssh","host":"plain.example.test","port":22}`,
+		// A damaged or encrypted record is skipped, not fatal.
+		"stores/broken/store.json": `not json`,
+	})
+	result, err := Parse(XPipe, []string{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Entries) != 5 || result.Keys != 1 || result.PlainSecrets != 0 {
+		t.Fatalf("entries = %+v, keys %d, plain secrets %d", result.Entries, result.Keys, result.PlainSecrets)
+	}
+	byName := map[string]Entry{}
+	for _, entry := range result.Entries {
+		byName[entry.Name] = entry
+	}
+	web := byName["Web"]
+	if web.Group != "Clients/Acme" || web.Host != "web.acme.test" || web.Port != 2222 || web.User != "deploy" || web.Protocol != SSH {
+		t.Fatalf("web = %+v", web)
+	}
+	if web.Password != "" {
+		t.Fatalf("an encrypted XPipe password was taken: %q", web.Password)
+	}
+	if db := byName["DB"]; db.Group != "Clients" || db.User != "root" || db.Protocol != SSH {
+		t.Fatalf("db = %+v", db)
+	}
+	if desk := byName["Windows"]; desk.Group != "Clients/Acme" || desk.Protocol != RDP || desk.Port != 3389 || desk.User != "root" {
+		t.Fatalf("rdp = %+v", desk)
+	}
+	if vnc := byName["Desktop"]; vnc.Protocol != VNC || vnc.Host != "10.1.1.2" || vnc.Port != 0 {
+		t.Fatalf("vnc = %+v", vnc)
+	}
+	if plain := byName["Plain"]; plain.Group != "" || plain.User != "" {
+		t.Fatalf("plain = %+v", plain)
+	}
+	if box := byName["Desktop"]; box.Group != "RingA/RingB" && box.Group != "RingB/RingA" {
+		t.Fatalf("vnc group = %q", box.Group)
+	}
+	warnings := strings.Join(result.Warnings, "\n")
+	if !strings.Contains(warnings, "not readable JSON") {
+		t.Fatalf("warnings = %q", warnings)
+	}
+	if strings.Contains(warnings, "cipher") {
+		t.Fatalf("a secret appeared in an import warning: %q", warnings)
+	}
+}
+
+func TestXPipeVaultCanBeChosenByItsStorageOrDataFolder(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "xpipe")
+	storage := filepath.Join(root, "storage")
+	writeXPipeVault(t, storage, map[string]string{
+		"categories/default/category.json": `{"uuid":"97458c07-75c0-4f9d-a06e-92d8cdf67c40","name":"Default","parentUuid":null}`,
+		"stores/web/entry.json":            `{"uuid":"web","name":"Web","categoryUuid":"97458c07-75c0-4f9d-a06e-92d8cdf67c40"}`,
+		"stores/web/store.json":            `{"type":"ssh","host":"web.example.test","port":22,"identity":{"type":"inPlace","identityStore":{"username":"root"}}}`,
+	})
+	if result, err := ParseXPipe(storage); err != nil || len(result.Entries) != 1 {
+		t.Fatalf("storage folder: %+v %v", result, err)
+	}
+	if result, err := ParseXPipe(root); err != nil || len(result.Entries) != 1 {
+		t.Fatalf("data folder: %+v %v", result, err)
+	}
+}
+
+func TestXPipeVaultNeedsItsStoresAndConnections(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := ParseXPipe(dir); err == nil {
+		t.Fatal("a folder without stores and categories was accepted")
+	}
+	empty := writeXPipeVault(t, filepath.Join(t.TempDir(), "empty"), map[string]string{
+		"categories/default/category.json": `{"uuid":"default","name":"Default"}`,
+		"stores/docker/store.json":         `{"type":"docker","host":"container"}`,
+	})
+	if _, err := ParseXPipe(empty); err == nil {
+		t.Fatal("a vault without SSH, RDP or VNC connections was accepted")
 	}
 }

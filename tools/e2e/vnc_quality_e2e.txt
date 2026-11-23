@@ -1,0 +1,37 @@
+# End to end: a VNC host asked for 16-bit colour and the Raw encoding, against the
+# loopback VNC fixture, which honours the pixel format the client asks for and
+# logs it (client asked for 16 bits per pixel, first encoding 0). The UI language
+# of the machine decides the labels; these are the Chinese ones. Coordinates are
+# those of the 1400x900 headless window.
+#
+#   go build -o /tmp/vncfixture ./tools/e2e/vncfixture && /tmp/vncfixture 5901 &
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/vnc_quality_e2e.txt
+click "新建主机"
+click "VNC"
+click textfield:名称
+type fixture-vnc
+click textfield:地址
+type 127.0.0.1
+click textfield:端口
+key cmd+a
+type 5901
+settle 300
+scroll 600 400 0 600
+settle 300
+click 600 686
+settle 300
+click 600 758
+settle 300
+click 600 756
+settle 300
+click 600 716
+settle 300
+shot /tmp/vnc-quality-vnc-chosen.png
+click "添加主机"
+settle 500
+texts "127.0.0.1"
+dblclick 400 145
+settle 3000
+shot /tmp/vnc-quality-vnc-16bit.png
+texts

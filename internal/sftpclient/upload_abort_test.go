@@ -127,7 +127,7 @@ func TestCancelingAnUploadKeepsThePartialOnlyForResume(t *testing.T) {
 			if result := resultWithin(t, worker, 10*time.Second); !errors.Is(result.Err, ErrCanceled) {
 				t.Fatalf("result error = %v, want ErrCanceled", result.Err)
 			}
-			partial := filepath.Join(root, remotePartialPath("up.bin"))
+			partial := filepath.Join(root, remotePartialPath("up.bin", local))
 			requireExists(t, filepath.Join(root, "up.bin"), false)
 			requireExists(t, partial, test.keep)
 			if !test.keep {
@@ -167,7 +167,7 @@ func TestLosingTheConnectionKeepsThePartial(t *testing.T) {
 	if result := resultWithin(t, worker, 10*time.Second); !errors.Is(result.Err, ErrCanceled) {
 		t.Fatalf("result error = %v, want ErrCanceled", result.Err)
 	}
-	requireExists(t, filepath.Join(root, remotePartialPath("up.bin")), true)
+	requireExists(t, filepath.Join(root, remotePartialPath("up.bin", local)), true)
 }
 
 // A link that no longer answers must not hold a canceled upload: its writes
@@ -253,7 +253,7 @@ func TestFailedUploadLeavesNoGapInThePartial(t *testing.T) {
 	if holey.beyond.Load() < holey.needBeyond {
 		t.Fatalf("only %d writes landed past the failure; the scenario did not happen", holey.beyond.Load())
 	}
-	partial := filepath.Join(root, remotePartialPath("up.bin"))
+	partial := filepath.Join(root, remotePartialPath("up.bin", local))
 	kept, err := os.ReadFile(partial)
 	if err != nil || len(kept) != 10*chunk || !bytes.Equal(kept, content[:len(kept)]) {
 		t.Fatalf("partial: %d bytes, err %v, want exactly the %d bytes before the failure", len(kept), err, 10*chunk)

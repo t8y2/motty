@@ -3,6 +3,7 @@ package workbench
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -23,6 +24,7 @@ type reconnectGateRemote struct {
 	*workbenchSFTPRemote
 	after   int64
 	written atomic.Int64
+	reads   atomic.Int64
 	reached chan struct{}
 	release chan struct{}
 	once    sync.Once
@@ -37,10 +39,34 @@ func newReconnectGateRemote(remote *workbenchSFTPRemote, after int64) *reconnect
 
 func (remote *reconnectGateRemote) OpenTransferFile(remotePath string, flags int) (sftpclient.TransferFile, error) {
 	file, err := remote.workbenchSFTPRemote.OpenTransferFile(remotePath, flags)
-	if err != nil || flags == os.O_RDONLY {
+	if err != nil {
 		return file, err
 	}
+	if flags == os.O_RDONLY {
+		return &reconnectReadFile{TransferFile: file, remote: remote}, nil
+	}
 	return &reconnectGateFile{TransferFile: file, remote: remote}, nil
+}
+
+type reconnectReadFile struct {
+	sftpclient.TransferFile
+	remote *reconnectGateRemote
+}
+
+func (file *reconnectReadFile) Read(p []byte) (int, error) {
+	n, err := file.TransferFile.Read(p)
+	file.remote.reads.Add(int64(n))
+	return n, err
+}
+
+func (file *reconnectReadFile) ReadAt(p []byte, off int64) (int, error) {
+	at, ok := file.TransferFile.(io.ReaderAt)
+	if !ok {
+		return 0, io.ErrNoProgress
+	}
+	n, err := at.ReadAt(p, off)
+	file.remote.reads.Add(int64(n))
+	return n, err
 }
 
 type reconnectGateFile struct {
@@ -117,6 +143,9 @@ func TestTransferCenterResumesInterruptedUploadAfterReconnect(t *testing.T) {
 	if entry.snapshot.State != sftpclient.TransferInterrupted || entry.owner != nil {
 		t.Fatalf("entry = %+v owner=%v, want an interrupted row without a view", entry.snapshot, entry.owner != nil)
 	}
+	if entry.snapshot.SourceModTime.IsZero() {
+		t.Fatal("the interrupted upload did not record the source modification time")
+	}
 	partial := testUploadPartial(t, remote, remoteDir)
 	if len(partial) == 0 || len(partial) >= len(payload) || !bytes.Equal(partial, payload[:len(partial)]) {
 		t.Fatalf("kept partial = %d bytes, want a prefix of the source", len(partial))
@@ -124,8 +153,15 @@ func TestTransferCenterResumesInterruptedUploadAfterReconnect(t *testing.T) {
 
 	state.openSFTP(session)
 	snapshot := waitTransfer(t, state, sftpclient.TransferCompleted)
-	if snapshot.Resumed != int64(len(partial)) {
-		t.Fatalf("resumed %d bytes, want the kept %d", snapshot.Resumed, len(partial))
+	// The resume trusts only the prefix the interrupted attempt had confirmed,
+	// so it may continue from before the end of what reached the disk: bytes
+	// written after the last acknowledgement are not known to be durable, and
+	// they are dropped rather than read back to be compared with the source.
+	if snapshot.Resumed <= 0 || snapshot.Resumed > int64(len(partial)) {
+		t.Fatalf("resumed %d bytes, want a prefix of the kept %d", snapshot.Resumed, len(partial))
+	}
+	if got := gated.reads.Load(); got != 0 {
+		t.Fatalf("the resume read %d bytes of the partial back, want the trusted prefix", got)
 	}
 	remote.mu.Lock()
 	content := append([]byte(nil), remote.files[remotePath]...)

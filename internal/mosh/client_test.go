@@ -76,3 +76,25 @@ func TestClientDoesNotResendTransportAcknowledgedActions(t *testing.T) {
 		t.Fatal("an acknowledged state was prepared for transmission again")
 	}
 }
+
+// Screen output is bounded: the receive loop waits at a full backlog and a
+// drain wakes it instead of letting the buffer grow without limit.
+func TestOutputBacklogWaitsForADrain(t *testing.T) {
+	client := &Client{output: make([]byte, maxOutputBacklog)}
+	done := make(chan struct{})
+	go func() {
+		client.waitForOutputRoom()
+		close(done)
+	}()
+	select {
+	case <-done:
+		t.Fatal("the client did not wait at a full backlog")
+	case <-time.After(50 * time.Millisecond):
+	}
+	client.Drain(nil)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("a drain did not wake the receive loop")
+	}
+}

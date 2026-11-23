@@ -119,10 +119,12 @@ func (state *State) commandGhostSource(session *Session) (rest string, fromCatal
 	// prompt; the ghost stays out of programs just as the list does (#783). The
 	// prompt text is read only when there is no marker to trust: the integrated
 	// path paints on every frame and must not allocate for it.
+	screenProof := false
 	if !t.inputGuard.active {
 		if _, prompt, ok := t.recorder.LinePrompt(cmdhistory.TermScreen{Term: t.screen}); !ok || cmdhistory.ProgramPrompt(prompt) {
 			return "", false, false
 		}
+		screenProof = state.terminalOwnedByShell(session)
 	}
 	if h.on && state.historyAvailable(session) && !session.host.NoHistory {
 		if rest, ok := cmdhistory.Suggest(state.commandGhostEntries(session), line); ok {
@@ -132,8 +134,67 @@ func (state *State) commandGhostSource(session *Session) (rest string, fromCatal
 			return rest, false, true
 		}
 	}
-	rest, ok = state.staticGhost(session, line)
+	if !session.host.NoHistory {
+		if rest, ok := state.snippetGhost(line); ok {
+			return rest, false, true
+		}
+	}
+	rest, ok = state.staticGhost(session, line, screenProof)
 	return rest, ok, ok
+}
+
+// snippetGhost is the rest of a configured quick command the line continues
+// into (#1084). Only one candidate is offered, and only when it is a single
+// line that can be typed as it stands: a command with template variables or
+// several lines is not something the user can finish by accepting a hint. The
+// list names every candidate instead, so it stays useful when several quick
+// commands share a prefix.
+func (state *State) snippetGhost(line string) (string, bool) {
+	if !snippetHintLine(line) {
+		return "", false
+	}
+	match := ""
+	for _, entry := range state.snippets.list {
+		command := entry.Command
+		if !snippetHintCandidate(line, command) {
+			continue
+		}
+		if match != "" && match != command {
+			// Two quick commands share this start: the hint would have to
+			// guess which one the user means.
+			return "", false
+		}
+		match = command
+	}
+	if match == "" {
+		return "", false
+	}
+	return match[len(line):], true
+}
+
+// snippetHintLine reports whether a line may be continued by a quick command at
+// all. A leading blank keeps a command out of the terminal's history, and a
+// secret-looking line is never suggested; both rules are the ghost's and the
+// list's alike.
+func snippetHintLine(line string) bool {
+	return line != "" && !strings.HasPrefix(line, " ") && !cmdhistory.Secret(line)
+}
+
+// snippetHintCandidate reports whether a configured quick command may be offered
+// as the continuation of the line, by the inline ghost and by the completion
+// list alike (#1084, #1200). It must be a single line longer than the typed
+// prefix that can be typed as it stands: template variables are the snippet
+// picker's job, and a secret-looking command is never suggested.
+func snippetHintCandidate(line, command string) bool {
+	if len(command) > cmdhistory.MaxCommand || len(command) <= len(line) || !strings.HasPrefix(command, line) {
+		return false
+	}
+	if strings.ContainsAny(command, "\r\n") || cmdhistory.Secret(command) {
+		return false
+	}
+	// A command without "{{" cannot hold a variable: the cheap check keeps the
+	// regexp scan, which allocates, off the every-frame paint path.
+	return !strings.Contains(command, "{{") || !snippetHasVariables(command)
 }
 
 // acceptGhost types the offered text, or its first word, into the shell. It

@@ -36,9 +36,9 @@ func (conn *Conn) runSudoCommand(ctx context.Context, command, password string, 
 	if err := ctx.Err(); err != nil {
 		return nil, false, err
 	}
-	client := conn.Client()
-	if client == nil {
-		return nil, false, errors.New("sshconn: not connected")
+	client, err := conn.SessionClient(ctx)
+	if err != nil {
+		return nil, false, err
 	}
 	operationCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -82,16 +82,30 @@ func (conn *Conn) runSudoCommand(ctx context.Context, command, password string, 
 	return data, exceeded, err
 }
 
+// StreamSudoCommand runs one long-lived privileged command and calls line with
+// each stdout line, as StreamCommand does. A line longer than maxLineBytes ends
+// it with ErrCommandOutputTooLarge; StreamSudoCommandSkippingLongLines drains
+// such a line instead so a noisy log does not end the stream.
 func (conn *Conn) StreamSudoCommand(ctx context.Context, command, password string, maxLineBytes int, line func([]byte) bool) error {
+	return conn.streamSudoCommand(ctx, command, password, maxLineBytes, false, line)
+}
+
+// StreamSudoCommandSkippingLongLines is StreamSudoCommand for a stream that
+// must survive log lines longer than maxLineBytes.
+func (conn *Conn) StreamSudoCommandSkippingLongLines(ctx context.Context, command, password string, maxLineBytes int, line func([]byte) bool) error {
+	return conn.streamSudoCommand(ctx, command, password, maxLineBytes, true, line)
+}
+
+func (conn *Conn) streamSudoCommand(ctx context.Context, command, password string, maxLineBytes int, skipLongLines bool, line func([]byte) bool) error {
 	if maxLineBytes <= 0 {
 		return errors.New("sshconn: command line limit must be positive")
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	client := conn.Client()
-	if client == nil {
-		return errors.New("sshconn: not connected")
+	client, err := conn.SessionClient(ctx)
+	if err != nil {
+		return err
 	}
 	operationCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -109,18 +123,12 @@ func (conn *Conn) StreamSudoCommand(ctx context.Context, command, password strin
 	_ = channel.Stdin.Close()
 	go io.Copy(io.Discard, channel.Stderr)
 	reader := bufio.NewReaderSize(channel.Stdout, max(maxLineBytes, 16))
-	for {
-		data, readErr := reader.ReadSlice('\n')
-		if readErr == nil {
-			if !line(data) {
-				return nil
-			}
-			continue
-		}
-		if errors.Is(readErr, bufio.ErrBufferFull) {
-			return fmt.Errorf("%w: limit %d bytes", ErrCommandOutputTooLarge, maxLineBytes)
-		}
-		break
+	stopped, err := streamLines(reader, maxLineBytes, skipLongLines, line)
+	if err != nil {
+		return err
+	}
+	if stopped {
+		return nil
 	}
 	if ctx.Err() != nil {
 		return ctx.Err()

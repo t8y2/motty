@@ -1,0 +1,55 @@
+# End to end: command completion in a shell without shell integration (#1157).
+# The fixture's default "GopE2E" banner keeps the client from probing for or
+# installing shell integration, so the pty is a plain shell that draws only a
+# screen prompt, like OpenWrt's BusyBox ash. "Remember commands" is turned on
+# and the mode is 自动列表; a command is run once, then its prefix is typed
+# again and the list must open from the history entry.
+#
+#   (cd tools/e2esshd && go build -o /tmp/e2esshd .)
+#   /tmp/e2esshd 2222 &
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/completion_no_integration_e2e.txt
+#
+# The same list must reopen with Cmd/Ctrl+Shift+J after Escape closes it.
+click "设置"
+click "终端"
+scroll 800 600 0 3000
+scroll 800 600 0 -700
+scroll 800 600 0 -2000
+settle 300
+click "记住命令"
+click "自动列表"
+settle 300
+click "主机"
+click 462 68
+type tester@127.0.0.1:2222
+click "连接"
+waitfor "信任" 5000
+click "信任并保存"
+waitfor "密码" 5000
+type secret
+key enter
+waitfor "tester@e2e" 8000
+settle 800
+type echo abc1157
+settle 600
+key enter
+waitfor "abc1157" 4000
+settle 500
+type clear
+key enter
+settle 500
+type echo abc
+settle 1200
+expect text "abc1157" within 2000
+shot /tmp/completion-no-integration-list.png
+texts "abc1157"
+layout
+key esc
+settle 300
+key cmd+shift+j
+settle 600
+expect text "abc1157" within 2000
+shot /tmp/completion-no-integration-shortcut.png
+texts "abc1157"
+layout

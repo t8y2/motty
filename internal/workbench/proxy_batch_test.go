@@ -560,8 +560,8 @@ func TestProxyHubTabFiltersRenderedRowsAndSelectAll(t *testing.T) {
 
 	// 1. 全部视图：应渲染 3 条路由
 	state.Paint(&canvas, gfx.Size{Width: 1200, Height: 800})
-	if got := state.proxyRows.Len(); got != 3 {
-		t.Fatalf("all tab proxyRows.Len() = %d, want 3", got)
+	if got := state.visibleProxyCount(); got != 3 {
+		t.Fatalf("all tab visibleProxyCount() = %d, want 3", got)
 	}
 	countRenderedRows := func(c *gfx.Canvas) int {
 		rows := 0
@@ -592,8 +592,8 @@ func TestProxyHubTabFiltersRenderedRowsAndSelectAll(t *testing.T) {
 	}
 	canvas = gfx.Canvas{}
 	state.Paint(&canvas, gfx.Size{Width: 1200, Height: 800})
-	if got := state.proxyRows.Len(); got != 1 {
-		t.Fatalf("jumpB tab proxyRows.Len() = %d, want 1", got)
+	if got := state.visibleProxyCount(); got != 1 {
+		t.Fatalf("jumpB tab visibleProxyCount() = %d, want 1", got)
 	}
 	if got := countRenderedRows(&canvas); got != 1 {
 		t.Fatalf("jumpB tab rendered rows = %d, want 1", got)
@@ -634,10 +634,11 @@ func TestProxyNarrowWindowRowActionsRemainReachable(t *testing.T) {
 	canvas = gfx.Canvas{}
 	state.Paint(&canvas, size)
 
-	tableRect := state.sectionBodies.proxies.tableBox.Rect()
-	if tableRect.Width <= 0 {
-		t.Fatalf("expected non-empty tableRect at 960px width, got %+v", tableRect)
+	rowRect, ok := findSnapshotHitRows(&canvas, hitProxyRowList.At(0))
+	if !ok || rowRect.Width <= 0 {
+		t.Fatalf("expected a painted route row at 960px width, got %+v", rowRect)
 	}
+	tableRect := rowRect
 
 	for _, route := range state.proxies {
 		editID := hitProxyRowEditList.At(int(route.ID))
@@ -667,6 +668,16 @@ func TestProxyNarrowWindowRowActionsRemainReachable(t *testing.T) {
 	if state.modal != modalNewProxy || !state.proxyEditor.editing || state.proxyEditor.routeID != 1 {
 		t.Fatalf("clicking edit button at 960px failed: modal=%v editing=%v routeID=%d", state.modal, state.proxyEditor.editing, state.proxyEditor.routeID)
 	}
+}
+
+// findSnapshotHitRows is the painted row of a route, for geometry assertions.
+func findSnapshotHitRows(canvas *gfx.Canvas, id gfx.ID) (gfx.Rect, bool) {
+	for _, hit := range canvas.Hits() {
+		if hit.ID == id {
+			return hit.Bounds, true
+		}
+	}
+	return gfx.Rect{}, false
 }
 
 func TestProxyBatchOverwritePreservesViaShellAndRelay(t *testing.T) {
@@ -743,8 +754,8 @@ func TestProxyRowClickDoesNotHighlightTableSelectionAndHidesToolbarRowActions(t 
 	}
 
 	state.Click(hitProxyRowList.At(0))
-	if state.proxyTable.Selected() >= 0 {
-		t.Fatalf("proxyTable.Selected() = %d, want < 0 so clicked row background does not highlight", state.proxyTable.Selected())
+	if state.proxyList.Selected() >= 0 {
+		t.Fatalf("proxyList.Selected() = %d, want < 0 so clicked row background does not highlight", state.proxyList.Selected())
 	}
 }
 

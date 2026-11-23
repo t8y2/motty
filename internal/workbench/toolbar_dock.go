@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 )
 
@@ -299,18 +298,23 @@ func (state *State) toolbarDockChanged() {
 	// The layout entry is only a mirror of the Show latency preference; keep it
 	// equal so the customize list and the saved layout never disagree.
 	state.syncLatencyToolbarEntry()
+	state.refitToolbarDock()
+	state.save()
+}
+
+// Shared restores need the same geometry update without saving recursively.
+func (state *State) refitToolbarDock() {
 	state.chrome.geometry.valid = false
 	state.toolbarDock.sideScroll = [4]float32{}
 	state.toolbarDock.bottomScroll = [2]float32{}
 	state.resetTerminalToolRails()
 	state.fitTerminals()
 	state.fitSFTP(state.viewport)
-	state.save()
 }
 
 // Keep a useful tab area; excess top actions remain available in the menu.
 func (state *State) toolbarTopLimit() int {
-	leading, trailing := app.TitlebarInsets()
+	leading, trailing := state.windowTitlebarInsets()
 	return max(2, int((state.viewport.Width-leading-trailing-240)/(barButtonSize+2)))
 }
 

@@ -9,6 +9,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
@@ -98,7 +99,7 @@ func (state *State) newSFTPWindow(source *Session) *sftpWindow {
 	w.view.transferHost = transferHostFor(source)
 	w.view.selected, w.view.lfolder.selected = -1, -1
 	w.session = Session{ID: source.ID, HostID: source.HostID, Title: source.Title, Address: source.Address, host: source.host, conn: source.conn, phase: source.phase, files: w.view}
-	w.ui.fraction = .5
+	w.ui.split = ui.SplitterState{Ratio: .5}
 	w.initialLocal = state.localSideStart()
 	if source.files != nil {
 		w.initialRemote = source.files.path
@@ -137,6 +138,7 @@ func (w *sftpWindow) startBrowser() {
 	}
 	state := w.owner
 	connection, mode := w.session.conn, w.session.host.Transfer
+	w.clearDirectoryTreeRequests()
 	w.view.openFiles = func() (sftpclient.Remote, error) { return openRemoteFiles(connection, mode) }
 	w.view.worker = sftpclient.NewWorker(w.view.openFiles, w.invalidate)
 	state.configureSFTPWorker(w.view)
@@ -157,9 +159,10 @@ func (w *sftpWindow) config() app.Config {
 	// state. The window keeps Paint (it also paints the toolbar controls, dialogs
 	// and transfer queue the page only lays out) and OnScroll (a wheel notch moves
 	// whole rows, and the window hands the offset to each List).
-	config := w.windowPage().Config(base)
+	config := ui.Configure(w.windowPage(), base)
 	config.Paint = base.Paint
-	config.OnScroll = base.OnScroll
+	config.OnScroll = w.scrollWindow
+	config.OnActivate = w.activate
 	return config
 }
 
@@ -176,6 +179,9 @@ func (w *sftpWindow) wake() {
 		w.owner.showNextPrompt()
 	}
 	w.pump()
+	if len(w.owner.edits.list) > 0 && !w.owner.edits.watching {
+		w.owner.watchExternalEdits()
+	}
 }
 
 // wakeEmbedded runs the per-browser work for a main-window tab. State.Wake has
@@ -187,6 +193,9 @@ func (w *sftpWindow) wakeEmbedded() {
 		return
 	}
 	w.pump()
+	if len(w.owner.edits.list) > 0 && !w.owner.edits.watching {
+		w.owner.watchExternalEdits()
+	}
 }
 
 func (w *sftpWindow) pump() {
@@ -508,7 +517,27 @@ func (w *sftpWindow) queueSelection(local bool) {
 
 func (w *sftpWindow) queueEntries(fromLocal bool, entries []sftpclient.Entry, sourceDir, targetDir string) {
 	if !w.connected() || w.view.worker == nil || w.view.busy || w.pendingLocal != "" || sourceDir == "" || targetDir == "" ||
-		w.fileProperties.open || w.closeConfirm || w.view.dialog != sftpDialogNone {
+		w.fileProperties.open || w.closeConfirm || w.view.dialog != sftpDialogNone || len(entries) == 0 {
+		return
+	}
+	if !fromLocal {
+		requests := make([]sftpDownloadRequest, 0, len(entries))
+		for _, entry := range entries {
+			if entry.LinkBroken {
+				continue
+			}
+			requests = append(requests, sftpDownloadRequest{
+				view: w.view, remoteDir: sourceDir, entry: entry,
+				localPath: filepath.Join(targetDir, safeLocalName(entry.Name)),
+			})
+		}
+		queued := w.owner.queueSFTPDownloads(w.view, requests)
+		if queued > 0 {
+			w.localRefresh = true
+		}
+		if queued < len(entries) && w.view.dialog == sftpDialogNone {
+			w.notices.show(w.owner.messages.SFTPWindow.Title, fmt.Sprintf(w.owner.messages.SFTPWindow.QueueRejectedFmt, len(entries)-queued), components.ToastWarning)
+		}
 		return
 	}
 	queued := 0
@@ -516,18 +545,11 @@ func (w *sftpWindow) queueEntries(fromLocal bool, entries []sftpclient.Entry, so
 		if entry.LinkBroken {
 			continue
 		}
-		var accepted bool
-		if fromLocal {
-			_, accepted = w.view.worker.QueueUpload(filepath.Join(sourceDir, entry.Name), path.Join(targetDir, entry.Name), entry.IsDir() && !entry.IsLink(), sftpclient.ExistingFail)
-		} else {
-			_, accepted = w.view.worker.QueueDownload(path.Join(sourceDir, entry.Name), filepath.Join(targetDir, entry.Name), entry.IsDir(), sftpclient.ExistingFail)
-		}
-		if accepted {
+		if _, accepted := w.view.worker.QueueUpload(filepath.Join(sourceDir, entry.Name), path.Join(targetDir, entry.Name), entry.IsDir() && !entry.IsLink(), sftpclient.ExistingFail); accepted {
 			queued++
 		}
 	}
 	if queued > 0 {
-		w.localRefresh = w.localRefresh || !fromLocal
 		w.view.status = fmt.Sprintf(w.owner.messages.SFTPQueuedFmt, fmt.Sprintf("%d → %s", queued, targetDir))
 		w.view.errorText = ""
 		w.owner.refreshSFTPTransfers(w.view)

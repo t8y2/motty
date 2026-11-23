@@ -31,7 +31,9 @@ func TestSFTPReconnectHeadlessRestoresBrowsedPath(t *testing.T) {
 	next := &fakeConn{sftp: remote}
 	state.options.Dial = func(sshconn.Config) Connection { return next }
 	state.askSessionLink(session, false)
-	if err := preview.Rest(); err != nil {
+	// Opening a modal from the application asks for the repaint its dialog is
+	// declared in; the test asks for it here.
+	if err := preview.Driver().Paint(); err != nil {
 		t.Fatal(err)
 	}
 	dualClickID(t, preview, hitSessionLinkConfirm)

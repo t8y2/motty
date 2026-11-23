@@ -401,7 +401,6 @@ func TestSFTPFileTabVerticalRailOwnsInputWhenExpanded(t *testing.T) {
 		t.Fatalf("test point %.1f,%.1f is outside expanded rail %+v", x, y, panel)
 	}
 
-	w.ui.bars[1].MaxOffsetY = 120
 	w.ui.offset[1] = 20
 	result := state.Scroll(gfx.ScrollEvent{
 		X: x, Y: y, DeltaY: 30, Precise: true, Viewport: size,
@@ -627,7 +626,12 @@ func TestSFTPFileTabCloseConfirmationAndWindowModeOpening(t *testing.T) {
 	waitSFTPTab(t, state, w, func() bool { return !w.view.busy })
 
 	w.view.extracting = true
+	state.activeSection = sectionTerminal
+	beforeCloseGeneration := w.directoryTree[1].generation
 	state.requestCloseSFTPTab(w)
+	if w.directoryTree[1].generation != beforeCloseGeneration {
+		t.Fatal("closing a file tab refreshed its directory tree before confirmation")
+	}
 	if !w.closeConfirm || w.closed || len(state.sftpTabs) != 1 {
 		t.Fatal("closing an active file tab skipped confirmation")
 	}

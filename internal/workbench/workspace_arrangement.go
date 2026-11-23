@@ -22,8 +22,11 @@ type workspaceArrangement struct {
 	items     []workspaceArrangementItem
 	revision  uint64
 	scroll    float32
-	bounds    gfx.Rect
-	err       string
+	// scrollSynced is the offset the page scroll area was last given, so a
+	// programmatic move (a preset, a card drag's edge) reaches it next paint.
+	scrollSynced float32
+	bounds       gfx.Rect
+	err          string
 }
 
 func workspaceTemplateItems(template WorkspaceTemplate) []workspaceArrangementItem {
@@ -65,6 +68,7 @@ func (state *State) applyWorkspaceArrangement() {
 		draft.err = state.messages.WorkspaceLayoutStale
 		return
 	}
+	state.deck.SetPaneMaximized(draft.workspace, false)
 	state.managedWorkspaceLayouts[draft.workspace] = draft.layout
 	if _, temporary := state.temporaryWorkspaceLayouts[draft.workspace]; temporary {
 		state.temporaryWorkspaceLayouts[draft.workspace] = draft.layout

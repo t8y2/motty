@@ -15,7 +15,7 @@ var hitXterminalInput = tree.ID(sessionImportHits, "xterminal-input")
 var hitXterminalClose = tree.ID(sessionImportHits, "xterminal-close")
 
 func (state *State) submitXterminalImport() {
-	result, err := sessionimport.ParseXterminal(state.xterminal.editor.String())
+	result, err := sessionimport.ParseXterminalText(state.xterminal.editor.String())
 	if err != nil {
 		state.dialogError = err.Error()
 		return

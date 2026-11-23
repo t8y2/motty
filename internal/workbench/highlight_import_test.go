@@ -38,7 +38,7 @@ func TestImportHighlightRules(t *testing.T) {
 	if len(state.highlighting.rules) != 2 {
 		t.Fatalf("rules = %d, want the two that parse", len(state.highlighting.rules))
 	}
-	if state.highlighting.rules[0].Pattern != "ERROR" || state.highlighting.rules[0].Slot.Name() != "red" {
+	if state.highlighting.rules[0].Pattern != "ERROR" || state.highlighting.rules[0].Color.Name() != "red" {
 		t.Fatalf("first rule = %+v", state.highlighting.rules[0])
 	}
 	if state.highlighting.rules[1].Pattern != "WARN" || !state.highlighting.rules[1].CaseSensitive {
@@ -90,7 +90,7 @@ func TestImportingFillsOnlyTheRoomLeftUnderTheCap(t *testing.T) {
 	options.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return []string{path}, nil }
 	state := newTestState(t, options)
 	for len(state.highlighting.rules) < maxCustomHighlightRules-1 {
-		state.highlighting.rules = append(state.highlighting.rules, highlightRule{Pattern: "seed", Slot: highlight.Red})
+		state.highlighting.rules = append(state.highlighting.rules, highlightRule{Pattern: "seed", Color: highlight.Red})
 	}
 	state.Click(hitSettingsHighlightImport)
 	if got := len(state.highlighting.rules); got != maxCustomHighlightRules {
@@ -144,7 +144,7 @@ func TestImportHighlightRulesScansPastDuplicateForRemainingCapacity(t *testing.T
 	state := importFile(t, "EXISTING | red\nNEW | blue\n")
 	state.highlighting.rules = state.highlighting.rules[:1]
 	for len(state.highlighting.rules) < maxCustomHighlightRules-1 {
-		state.highlighting.rules = append(state.highlighting.rules, highlightRule{Pattern: fmt.Sprintf("seed-%d", len(state.highlighting.rules)), Slot: highlight.Red})
+		state.highlighting.rules = append(state.highlighting.rules, highlightRule{Pattern: fmt.Sprintf("seed-%d", len(state.highlighting.rules)), Color: highlight.Red})
 	}
 	state.Click(hitSettingsHighlightImport)
 	if got := state.highlighting.rules[len(state.highlighting.rules)-1].Pattern; got != "NEW" {
@@ -153,5 +153,20 @@ func TestImportHighlightRulesScansPastDuplicateForRemainingCapacity(t *testing.T
 	state.Click(hitSettingsHighlightImport)
 	if state.status == state.messages.Tools.HighlightErrorTooMany {
 		t.Fatal("a full list reported capacity exhaustion for duplicate-only input")
+	}
+}
+
+// A file that writes colors as #rrggbb keeps them as they were written, which is
+// what makes importing another terminal's keyword scheme faithful.
+func TestImportingRulesWithExplicitColorsKeepsThem(t *testing.T) {
+	state := importFile(t, "ERROR | #FF5555\nWARN | #50fa7b | regex\n")
+	if len(state.highlighting.rules) != 2 {
+		t.Fatalf("rules = %+v, want the two that parse", state.highlighting.rules)
+	}
+	if got, want := state.highlighting.rules[0].Color, highlight.RGB(0xff, 0x55, 0x55); got != want {
+		t.Errorf("first color = %v, want %v", got, want)
+	}
+	if got, want := state.highlighting.rules[1].Color, highlight.RGB(0x50, 0xfa, 0x7b); got != want {
+		t.Errorf("second color = %v, want %v", got, want)
 	}
 }

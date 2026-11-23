@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+
+	"motty/internal/termsize"
 )
 
 // connect dials a test server and waits for the connection to be usable.
@@ -150,6 +152,9 @@ func TestAGatewayThatRejectsLocaleRequestsStillStartsAShell(t *testing.T) {
 	if locale, ok := env["LANG"]; ok {
 		t.Fatalf("the gateway was sent LANG=%q", locale)
 	}
+	if value, ok := env["COLORTERM"]; ok {
+		t.Fatalf("the gateway was sent COLORTERM=%q", value)
+	}
 	if !w.shell.Write([]byte("exit\r")) {
 		t.Fatal("writing to the shell failed")
 	}
@@ -206,6 +211,9 @@ func TestAnInteractiveOnlyHostGetsOnlyPtyAndShell(t *testing.T) {
 	if locale, ok := env["LANG"]; ok {
 		t.Fatalf("an interactive-only host was sent LANG=%q", locale)
 	}
+	if value, ok := env["COLORTERM"]; ok {
+		t.Fatalf("an interactive-only host was sent COLORTERM=%q", value)
+	}
 	if !w.shell.Write([]byte("exit\r")) {
 		t.Fatal("writing to the shell failed")
 	}
@@ -256,22 +264,25 @@ func TestShellRunsOnAPtyAndCarriesDataBothWays(t *testing.T) {
 	if !strings.Contains(strings.ToLower(env["LANG"]), "utf") {
 		t.Errorf("LANG = %q, want a UTF-8 locale", env["LANG"])
 	}
+	if env["COLORTERM"] != "truecolor" {
+		t.Errorf("COLORTERM = %q, want truecolor", env["COLORTERM"])
+	}
 
 	if !w.shell.Write([]byte("ls\r")) {
 		t.Fatal("Write refused")
 	}
 	w.until("the echo", func(output string) bool { return strings.HasSuffix(output, "LS\r") })
 
-	w.shell.Resize(132, 43)
-	w.shell.Resize(100, 30) // queued behind the first: only the last needs to arrive
+	w.shell.Resize(termsize.Size{Cols: 132, Rows: 43, PixelWidth: 1320, PixelHeight: 731})
+	w.shell.Resize(termsize.Size{Cols: 100, Rows: 30, PixelWidth: 1000, PixelHeight: 510}) // queued behind the first: only the last needs to arrive
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		_, _, _, _, resizes := fakeShellState(server)
-		if len(resizes) > 0 && resizes[len(resizes)-1] == [2]int{100, 30} {
+		if len(resizes) > 0 && resizes[len(resizes)-1] == [4]int{100, 30, 1000, 510} {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("window changes = %v, want ending in 100x30", resizes)
+			t.Fatalf("window changes = %v, want ending in 100x30 cells and 1000x510 pixels", resizes)
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
@@ -284,6 +295,32 @@ func TestShellRunsOnAPtyAndCarriesDataBothWays(t *testing.T) {
 	if w.shell.Write([]byte("x")) {
 		t.Error("Write succeeded after the shell ended")
 	}
+}
+
+// A host with a remote charset keeps the server's own locale, but the color
+// depth belongs to this terminal, not to the charset: COLORTERM still reaches
+// the shell.
+func TestARemoteCharsetHostStillGetsTheColorDepth(t *testing.T) {
+	server := startServer(t, func(server *testServer) {
+		server.password = "secret"
+		// A Windows banner keeps the system probe away from this test.
+		server.version = "SSH-2.0-OpenSSH_for_Windows_9.5"
+		server.shell = echoShell
+	})
+	h := connect(t, server)
+	w := openShellWith(t, h, ShellConfig{Cols: 80, Rows: 24, SkipUTF8Locale: true})
+	w.until("the greeting", func(output string) bool { return strings.Contains(output, "welcome") })
+	_, _, _, env, _ := fakeShellState(server)
+	if locale, ok := env["LANG"]; ok {
+		t.Fatalf("a remote-charset host was sent LANG=%q", locale)
+	}
+	if env["COLORTERM"] != "truecolor" {
+		t.Fatalf("COLORTERM = %q, want truecolor", env["COLORTERM"])
+	}
+	if !w.shell.Write([]byte("exit\r")) {
+		t.Fatal("writing to the shell failed")
+	}
+	w.waitDone()
 }
 
 func TestCommandShellUsesItsOwnPTYAndCarriesInteractiveInput(t *testing.T) {
@@ -346,7 +383,7 @@ func TestPtyRequestNamesTheByteBackspaceSends(t *testing.T) {
 }
 
 // fakeShellState reads the single shell session the server is running.
-func fakeShellState(server *testServer) (term string, cols, rows int, env map[string]string, resizes [][2]int) {
+func fakeShellState(server *testServer) (term string, cols, rows int, env map[string]string, resizes [][4]int) {
 	server.mu.Lock()
 	shell := server.lastShell
 	server.mu.Unlock()
@@ -354,6 +391,33 @@ func fakeShellState(server *testServer) (term string, cols, rows int, env map[st
 		return "", 0, 0, nil, nil
 	}
 	return shell.state()
+}
+
+// The pty request names the text area in pixels. Left to ssh.Session's own
+// RequestPty the server would see eight pixels per cell, and a program that
+// lays images out by the character cell, as the kitty graphics protocol does,
+// would size them to that placeholder.
+func TestPtyRequestCarriesTheTextAreaPixels(t *testing.T) {
+	server := startServer(t, func(server *testServer) {
+		server.password = "secret"
+		// A Windows banner keeps the system probe away from this test.
+		server.version = "SSH-2.0-OpenSSH_for_Windows_9.5"
+		server.shell = echoShell
+	})
+	h := connect(t, server)
+	w := openShellWith(t, h, ShellConfig{Cols: 80, Rows: 24, PixelWidth: 800, PixelHeight: 408})
+	w.until("the greeting", func(output string) bool { return strings.Contains(output, "welcome\r\n$ ") })
+	server.mu.Lock()
+	shell := server.lastShell
+	server.mu.Unlock()
+	if shell == nil {
+		t.Fatal("no shell was opened")
+	}
+	if width, height := shell.ptyPixels(); width != 800 || height != 408 {
+		t.Fatalf("pty pixels = %dx%d, want the text area's 800x408", width, height)
+	}
+	w.shell.Write([]byte("exit\r"))
+	w.waitDone()
 }
 
 func TestShellReportsTheExitStatus(t *testing.T) {
@@ -444,12 +508,12 @@ func TestInputQueueIsBoundedAndKeepsOrder(t *testing.T) {
 	if !queue.put(inputItem{data: []byte("a")}) {
 		t.Fatal("first put refused")
 	}
-	queue.putResize(10, 10)
-	queue.putResize(20, 20)
+	queue.putResize(termsize.Size{Cols: 10, Rows: 10, PixelWidth: 100, PixelHeight: 100})
+	queue.putResize(termsize.Size{Cols: 20, Rows: 20, PixelWidth: 200, PixelHeight: 210})
 	queue.put(inputItem{data: []byte("b")})
 	items, ok := queue.take()
-	if !ok || len(items) != 3 || string(items[0].data) != "a" || items[1].cols != 20 || string(items[2].data) != "b" {
-		t.Fatalf("items = %+v ok=%v, want a, resize 20, b", items, ok)
+	if !ok || len(items) != 3 || string(items[0].data) != "a" || items[1].size.Cols != 20 || items[1].size.PixelHeight != 210 || string(items[2].data) != "b" {
+		t.Fatalf("items = %+v ok=%v, want a, resize 20 cells at 200x210 pixels, b", items, ok)
 	}
 	if queue.put(inputItem{data: make([]byte, maxPendingInput+1)}) {
 		t.Fatal("an input larger than the backlog limit was queued")

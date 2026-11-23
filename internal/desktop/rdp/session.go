@@ -11,6 +11,7 @@ import (
 	"math"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 	"unicode/utf16"
@@ -28,6 +29,11 @@ var ErrAuthFailed = errors.New("rdp: the server refused the account or password"
 // ErrAuthRequired is returned by Open when there is no password and no way to
 // ask for one.
 var ErrAuthRequired = errors.New("rdp: a password is required")
+
+// ErrTLSFailed is returned by Open when the TLS handshake failed. It is the
+// library's error, kept here so a caller can tell a handshake a legacy server
+// may accept from other failures without importing the client package.
+var ErrTLSFailed = rdpcore.ErrTLSFailed
 
 // Defaults of the picture a session asks for when the caller gives no size:
 // the client chooses the size when it connects. The workbench gives the size of
@@ -66,6 +72,12 @@ type Session struct {
 	hasText     bool
 	remoteFiles desktop.ReceivedFiles
 	hasFiles    bool
+	// receiving is the download of the server's files under way, when
+	// isReceiving; receivingStep is how far it had come when the window was
+	// last woken for it.
+	receiving     desktop.FileProgress
+	isReceiving   bool
+	receivingStep int64
 	// pointerKind is what the server last said about its pointer,
 	// pointerShape its pixels when the kind is PointerBitmap, and
 	// pointerVersion how many statements it has made. Guarded by mu.
@@ -98,6 +110,31 @@ var _ desktop.FileReceiver = (*Session)(nil)
 
 func (session *Session) NetworkRTT() (time.Duration, time.Time) {
 	return session.client.NetworkRTT()
+}
+
+// applyQuality sets the picture quality a host asked for: the session's color
+// depth and the visual effects the server may render.
+func applyQuality(config *rdpcore.Options, opts desktop.Options) {
+	config.GFX = true
+	switch opts.ColorDepth {
+	case 16, 24:
+		config.Depth = uint16(opts.ColorDepth)
+		// The graphics pipeline draws in 32 bits per pixel whatever the session
+		// says, so a lower depth is only honoured by the plain bitmap updates the
+		// server falls back to without it, as Windows' own client does.
+		config.GFX = false
+	}
+	effects := desktop.DefaultEffects()
+	if opts.Effects != nil {
+		effects = *opts.Effects
+	}
+	config.Wallpaper = effects.Wallpaper
+	config.FontSmoothing = effects.FontSmoothing
+	config.DesktopComposition = effects.Composition
+	config.FullWindowDrag = effects.WindowDrag
+	config.MenuAnimations = effects.Animations
+	config.Theming = effects.Themes
+	config.CursorShadow = effects.CursorShadow
 }
 
 // Open connects to address through dial and starts reading the server. It
@@ -145,7 +182,8 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 	if opts.StandardSecurity {
 		config.Security = rdpcore.SecurityStandard
 	}
-	config.GFX = true
+	config.LegacyTLS = opts.LegacyTLS
+	applyQuality(config, opts)
 	config.NoAVC = true // no H.264 decoder: the server then sends RemoteFX or ClearCodec
 	if opts.Audio {
 		// The server picks one of the PCM formats the player accepts; opening
@@ -254,6 +292,7 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 			session.mu.Unlock()
 			session.wake()
 		})
+		client.OnClipboardFilesProgress(session.onFilesProgress)
 	}
 
 	// Cancelling the context must end a handshake that is waiting on the network.
@@ -344,6 +383,9 @@ func (session *Session) finish(err error) {
 		err = nil
 	}
 	session.err = err
+	session.pointerKind = desktop.PointerSystem
+	session.pointerShape = desktop.PointerShape{}
+	session.pointerVersion++
 	close(session.done)
 	session.mu.Unlock()
 	session.closeTransport()
@@ -456,6 +498,9 @@ func (session *Session) Err() error {
 func (session *Session) Close() error {
 	session.mu.Lock()
 	session.closed = true
+	session.pointerKind = desktop.PointerSystem
+	session.pointerShape = desktop.PointerShape{}
+	session.pointerVersion++
 	session.mu.Unlock()
 	return session.client.Close()
 }
@@ -484,6 +529,43 @@ func (session *Session) RemoteFiles() (desktop.ReceivedFiles, bool) {
 	return files, ok
 }
 
+// ReceivingFiles reports the server's files being saved now (see
+// desktop.FileReceiver).
+func (session *Session) ReceivingFiles() (desktop.FileProgress, bool) {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return session.receiving, session.isReceiving
+}
+
+// CancelReceivingFiles stops saving the server's files.
+func (session *Session) CancelReceivingFiles() { session.client.CancelClipboardFiles() }
+
+// onFilesProgress records how far the server's files have been read. It runs
+// on the download's goroutine once per chunk, and wakes the window only when
+// what the progress card draws moves: a new file, or another hundredth of the
+// whole (another MiB when the whole is not known).
+func (session *Session) onFilesProgress(progress rdpcore.ClipboardFilesProgress) {
+	next := desktop.FileProgress{Name: strings.ReplaceAll(progress.Name, `\`, "/"), Done: int64(min(progress.Done, math.MaxInt64)), Size: -1}
+	step := next.Done >> 20
+	if progress.HasTotal {
+		next.Size = int64(min(progress.Total, math.MaxInt64))
+		step = 0
+		if next.Size > 0 {
+			step = int64(float64(next.Done) / float64(next.Size) * 100)
+		}
+	}
+	session.mu.Lock()
+	changed := progress.Active != session.isReceiving || next.Name != session.receiving.Name || step != session.receivingStep
+	session.receiving, session.isReceiving, session.receivingStep = next, progress.Active, step
+	if !progress.Active {
+		session.receiving = desktop.FileProgress{}
+	}
+	session.mu.Unlock()
+	if changed {
+		session.wake()
+	}
+}
+
 // Bells: RDP has no bell the client hears.
 func (session *Session) Bells() int { return 0 }
 
@@ -492,6 +574,15 @@ func (session *Session) SetClipboard(text string) error {
 		return nil
 	}
 	return session.client.SetClipboard(text)
+}
+
+// SetClipboardImage offers a picture from this computer's clipboard as what the
+// remote clipboard holds, replacing its text (see desktop.ImageClipboard).
+func (session *Session) SetClipboardImage(png []byte) error {
+	if !session.opts.Clipboard {
+		return nil
+	}
+	return session.client.SetClipboardImage(png)
 }
 
 // SetClipboardFiles offers files of this computer to the server's clipboard, as a

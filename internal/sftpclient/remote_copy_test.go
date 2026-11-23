@@ -197,7 +197,8 @@ func TestRemoteCopyResumesFromAPartialFile(t *testing.T) {
 	}
 	worker, destinationRoot := newProtocolWorker(t)
 	prefix := content[:8]
-	if err := os.WriteFile(filepath.Join(destinationRoot, ".motty.partial.txt.part"), prefix, 0o644); err != nil {
+	partial := remotePartialPath("partial.txt", "partial.txt")
+	if err := os.WriteFile(filepath.Join(destinationRoot, filepath.FromSlash(partial)), prefix, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	_, queued := worker.QueueRemoteCopy(RemoteCopyRequest{
@@ -273,6 +274,40 @@ func TestRemoteCopyRequiresSFTPOnBothServers(t *testing.T) {
 	}
 	if result := waitTransferResult(t, worker); result.Err == nil {
 		t.Fatalf("a source without a seekable SFTP path succeeded: %+v", result)
+	}
+}
+
+// A link inside a folder is copied between servers as a link, and nothing is
+// read through it.
+func TestRemoteCopyKeepsSymbolicLinksInsideAFolder(t *testing.T) {
+	sourceRoot := t.TempDir()
+	links := makeAppTree(t, filepath.Join(sourceRoot, "App.app"))
+	recorder := &linkRecorder{sent: map[string]string{}}
+	worker, destinationRoot := newProtocolWorkerOn(t, nil, func(client remote) Remote {
+		recorder.remote = client
+		return recorder
+	})
+	_, queued := worker.QueueRemoteCopy(RemoteCopyRequest{
+		Source: remoteSourceFor(sourceRoot), SourceRoot: "App.app",
+		Sources:     []string{"App.app"},
+		Destination: ".",
+		Recursive:   true,
+		Policy:      ExistingFail,
+	})
+	if !queued {
+		t.Fatal("remote copy was not queued")
+	}
+	result := waitTransferResult(t, worker)
+	if result.Err != nil || result.Files != 1 || result.Bytes != int64(len("binary")) {
+		t.Fatalf("remote copy result = %+v", result)
+	}
+	for link, target := range links {
+		if sent := recorder.sent["App.app/"+link]; sent != target {
+			t.Fatalf("%s was sent as %q, want %q", link, sent, target)
+		}
+		if info, err := os.Lstat(filepath.Join(destinationRoot, "App.app", filepath.FromSlash(link))); err != nil || info.Mode()&os.ModeSymlink == 0 {
+			t.Fatalf("%s is not a link at the destination: %v, %v", link, info, err)
+		}
 	}
 }
 

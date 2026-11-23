@@ -89,7 +89,7 @@ func TestWindowsCommandRunsWithWindowsPowerShell(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	command := encodeWindowsScript(script)
-	output, err := exec.CommandContext(ctx, "cmd.exe", "/d", "/s", "/c", command).Output()
+	output, err := windowsBatchCommand(t, ctx, command).Output()
 	if err != nil {
 		if e, ok := err.(*exec.ExitError); ok {
 			t.Fatalf("Windows PowerShell: %v: %.500s", err, e.Stderr)
@@ -107,6 +107,9 @@ func TestWindowsCommandRunsWithWindowsPowerShell(t *testing.T) {
 		t.Fatal("missing Windows system information")
 	}
 	t.Logf("collected Windows metrics: %d cores, %d volumes, %d interfaces", len(r.Sample.Cores), len(r.Details.Disks), len(r.Details.Networks))
+	for _, gpu := range r.Sample.GPUs {
+		t.Logf("GPU %d %s: utilization=%g%% memory=%d known=%v", gpu.Index, gpu.Name, gpu.UtilPercent, gpu.MemoryUsedBytes, gpu.MemoryKnown)
+	}
 }
 
 func TestWindowsSamplerAcceptsABoundedStartupBanner(t *testing.T) {

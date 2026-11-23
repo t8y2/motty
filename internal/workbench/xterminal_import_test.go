@@ -10,7 +10,7 @@ func TestXterminalImportChooserAndPasteDialog(t *testing.T) {
 	state.modal = modalImportSessions
 	view := func(c ui.C) { state.declareImportSessions(c); state.declareXterminalImport(c) }
 	page, canvas := drawDialogPage(t, state, view)
-	clickPageHit(t, state, page, canvas, view, pageHitByLabel(t, canvas, "xterminal"))
+	clickPageHit(t, state, page, canvas, view, pageHitByLabel(t, canvas, state.messages.Tools.XterminalPasteTitle))
 	if state.modal != modalXterminalImport {
 		t.Fatal("paste dialog did not open")
 	}
@@ -31,16 +31,21 @@ func TestXterminalImportChooserAndPasteDialog(t *testing.T) {
 	if len(state.hosts) != 1 || state.modal != modalHostImportResult {
 		t.Fatal("host not imported")
 	}
-	state.xterminal.editor.Insert("host=192.0.2.1 port=2222 user=root title=Duplicate")
+	state.xterminal.editor.Insert("host=192.0.2.1 port=2222 user=root title=Test")
 	state.submitXterminalImport()
 	if len(state.hosts) != 1 {
 		t.Fatal("duplicate imported")
+	}
+	state.xterminal.editor.Insert("host=192.0.2.1 port=2222 user=root title=Another name")
+	state.submitXterminalImport()
+	if len(state.hosts) != 2 {
+		t.Fatal("distinct named connection was not retained")
 	}
 }
 
 func TestXterminalImportInvalidAndCancel(t *testing.T) {
 	state := newTestState(t, freshOptions(t))
-	state.clickImportSessions(hitImportXterminal)
+	state.clickImportSessions(hitImportXterminalPaste)
 	state.xterminal.editor.Insert("invalid")
 	state.submitXterminalImport()
 	if state.modal != modalXterminalImport || state.dialogError == "" || len(state.hosts) != 0 {
@@ -57,7 +62,7 @@ func TestXterminalImportInvalidAndCancel(t *testing.T) {
 func TestXterminalImportSavesPasswordsAndHostsAcrossRestart(t *testing.T) {
 	options := freshOptions(t)
 	state := newTestState(t, options)
-	state.clickImportSessions(hitImportXterminal)
+	state.clickImportSessions(hitImportXterminalPaste)
 	state.xterminal.editor.Insert("host=192.0.2.2 port=22 user=root authType=password password=test-secret sshProxy=ignored title=Saved\nhost=192.0.2.3 user=deploy title=Second")
 	state.submitXterminalImport()
 	state.Click(hitImportSavePasswords)

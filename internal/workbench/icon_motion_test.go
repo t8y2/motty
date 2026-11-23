@@ -231,6 +231,7 @@ func TestIconMotionFollowsWhatTheGlyphStandsFor(t *testing.T) {
 		{"key", []uint8{iconKey}, iconMotionKey},
 		{"world", []uint8{iconGlobe}, iconMotionWorld},
 		{"trace", []uint8{iconActivity}, iconMotionTrace},
+		{"sweep", []uint8{iconGauge}, iconMotionSweep},
 		{"fold", []uint8{iconKnown}, iconMotionFold},
 		{"rack", []uint8{iconHosts}, iconMotionRack},
 		{"type", []uint8{iconKeyboard}, iconMotionType},

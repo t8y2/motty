@@ -279,18 +279,24 @@ const (
 )
 
 type updateState struct {
-	checking   bool
-	firstDelay time.Duration
-	every      time.Duration
-	timer      *time.Timer
-	release    update.Release
-	available  bool
-	text       string // the outcome of the last check, in the language it was made in
-	offer      bool   // a dialog about release is waiting for its turn
-	skipped    string // the version the user asked not to be reminded of
-	announced  string // the version a background check already told the user about
-	install    updateInstall
-	notes      updateNotes
+	checking bool
+	// source is where checks and downloads go: the official mirror or the CNB
+	// copy. It belongs to this computer, like the check itself.
+	source update.Source
+	// checkSerial names the check whose answer is still wanted; a source change
+	// invalidates the one in flight.
+	checkSerial int
+	firstDelay  time.Duration
+	every       time.Duration
+	timer       *time.Timer
+	release     update.Release
+	available   bool
+	text        string // the outcome of the last check, in the language it was made in
+	offer       bool   // a dialog about release is waiting for its turn
+	skipped     string // the version the user asked not to be reminded of
+	announced   string // the version a background check already told the user about
+	install     updateInstall
+	notes       updateNotes
 }
 
 func (state *State) settingsLoginEnabled() bool {
@@ -311,6 +317,7 @@ func (state *State) paintLoginSetting(page *settingsPage) {
 // are the About page's, beside the version facts they act on.
 func (state *State) paintUpdateRows(page *settingsPage) {
 	m := state.messages.Tools
+	settingsChoiceRow(page, m.GeneralUpdateSource, m.GeneralUpdateSourceDescription, &state.update.source, settingsUpdateSourceChoices[:], state.settingsUpdateSourceLabel, state.changeUpdateSource, nil)
 	page.toggleRow(m.GeneralUpdateStartup, m.GeneralUpdateStartupDescription, state.updateAtStart, hitSettingsUpdateStartToggle)
 	description := m.GeneralUpdateDescription
 	if state.update.text != "" {
@@ -433,6 +440,8 @@ func (state *State) checkForUpdates(asked bool) {
 		return
 	}
 	state.update.checking = true
+	state.update.checkSerial++
+	serial := state.update.checkSerial
 	if asked {
 		state.update.text = state.messages.Tools.UpdateChecking
 	}
@@ -443,14 +452,17 @@ func (state *State) checkForUpdates(asked bool) {
 			pkg = state.options.Updater.Package()
 		}
 		check = func() (update.Release, error) {
-			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), update.CheckBudget)
 			defer cancel()
-			return update.CheckPackage(ctx, nil, runtime.GOOS, updateArch(), pkg)
+			return update.CheckPackageFrom(ctx, nil, runtime.GOOS, updateArch(), pkg, state.update.source)
 		}
 	}
 	go func() {
 		release, err := check()
 		state.aiPost(func(state *State) {
+			if state.closed || serial != state.update.checkSerial {
+				return // the window is gone, or the source changed under it
+			}
 			state.update.checking = false
 			m := state.messages.Tools
 			switch {
@@ -494,6 +506,23 @@ func (state *State) checkForUpdates(asked bool) {
 			}
 		})
 	}()
+}
+
+// changeUpdateSource saves the choice and asks the new source at once. A
+// release the other source found names the other host, so it is dropped rather
+// than downloaded from the host the user just left; a check still running is
+// told to forget its answer.
+func (state *State) changeUpdateSource() {
+	state.save()
+	state.update.checkSerial++
+	state.update.checking = false
+	state.update.available = false
+	state.update.release = update.Release{}
+	state.update.offer = false
+	if state.modal == modalUpdate {
+		state.closeModal()
+	}
+	state.checkForUpdates(false)
 }
 
 // openExternal opens a web address in the browser.

@@ -89,6 +89,8 @@ import (
 // writers would drop the new toolbar key and silently move it back.
 // Version 28 preserves the device-local interface text size as a pixel number:
 // an older full save would drop the field and reset the size.
+// Toolbar preferences use optional setting records. Older clients preserve
+// unknown setting IDs, so promoting them from local state needs no new epoch.
 const configFormat = 28
 
 const (
@@ -157,6 +159,23 @@ type recordPayload struct {
 	Data json.RawMessage `json:"d"`
 }
 
+// snippetRecordFits reports whether a snippet can be written as one record. A
+// snippet is stored as one configstore record, and the store refuses a payload
+// over MaxPayload. The editor measures the same JSON before it keeps a command,
+// so a command too large for the store is refused in the dialog instead of
+// being kept in memory and lost at the next start. The largest ordinal the
+// record format can carry makes the envelope an upper bound rather than a guess.
+func snippetRecordFits(entry snippet, order int) bool {
+	data, err := json.Marshal(savedSnippet{
+		Name: entry.Name, Command: entry.Command, Run: entry.Run, Lines: entry.Lines, Group: entry.Group, Order: order,
+	})
+	if err != nil {
+		return false
+	}
+	payload, err := json.Marshal(recordPayload{Ord: 1 << 62, Data: data})
+	return err == nil && len(payload) <= configstore.MaxPayload
+}
+
 // entityField is a list in the state that is stored a record per item.
 type entityField struct {
 	field string // the JSON key in the state
@@ -192,6 +211,7 @@ var entityFields = []entityField{
 	}},
 	{field: "autofill_rules", kind: "autofill", key: func(fields map[string]json.RawMessage) string { return fieldText(fields, "id") }},
 	{field: "credentials", kind: "credential", key: func(fields map[string]json.RawMessage) string { return fieldText(fields, "id") }},
+	{field: "proxy_profiles", kind: "proxy-profile", key: func(fields map[string]json.RawMessage) string { return fieldText(fields, "id") }},
 	{field: "sftp_bookmarks", kind: "bookmark", key: func(fields map[string]json.RawMessage) string {
 		if name := fieldText(fields, "name"); name != "" {
 			return joinKey("profile", fieldText(fields, "host"), fieldText(fields, "shared"), name)
@@ -219,7 +239,7 @@ func proxyRecordKey(fields map[string]json.RawMessage) string {
 	return joinKey(user, address, port)
 }
 
-// syncedSettings are the scalar settings every device shares.
+// syncedSettings are the scalar or object settings every device shares.
 var syncedSettings = map[string]bool{
 	"host_order":                   true,
 	"hidden_host_tags":             true,
@@ -239,6 +259,7 @@ var syncedSettings = map[string]bool{
 	"terminal_tab_title":           true, // read legacy shared preference
 	"tab_title_mode":               true,
 	"terminal_show_latency":        true,
+	"toolbars":                     true,
 	"terminal_bell_off":            true,
 	"terminal_link_plain_click":    true,
 	"terminal_input_click_off":     true,
@@ -253,7 +274,9 @@ var syncedSettings = map[string]bool{
 	"terminal_paste_image":         true,
 	"terminal_password_hint":       true,
 	"terminal_close_confirm":       true,
+	"close_window_confirm":         true,
 	"sftp_parallel":                true,
+	"file_preview_mb":              true,
 	"sftp_keep_times":              true,
 	"sftp_follow":                  true,
 	"sftp_terminal_follow":         true,
@@ -277,7 +300,7 @@ var stateVersionFields = map[string]bool{"version": true, "host_catalog_version"
 var windowStateFields = map[string]bool{
 	"sessions": true, "active_session": true, "deck": true, "note_sidebars": true,
 	"workspace": true, "workspace_layouts": true,
-	"window_x": true, "window_y": true, "window_width": true, "window_height": true,
+	"window_x": true, "window_y": true, "window_width": true, "window_height": true, "window_maximized": true,
 }
 
 // windowKey names the local value holding one window's own state. A development
@@ -677,6 +700,14 @@ func joinState(entries []configstore.Entry, local []byte) (savedState, *configBa
 		}
 	}
 	base.local = local
+	if raw, present := fields["toolbars"]; present {
+		var legacy savedToolbars
+		if json.Unmarshal(raw, &legacy) == nil && !legacy.specified() {
+			// An object containing only future fields is not a customization.
+			// Keep its raw fields in local state without inventing a shared one.
+			delete(fields, "toolbars")
+		}
+	}
 
 	type item struct {
 		ord  int64
@@ -1173,6 +1204,20 @@ func openConfig(path string, id int) (store *configstore.Store, saved savedState
 		return nil, fresh, newConfigBase(), loadReport{}, fmt.Errorf("open %s: %w", path, err)
 	}
 	entries, local, err := store.Load()
+	if err == nil {
+		migrated, migrationErr := migrateLocalToolbars(store, entries, local[localKey])
+		if migrationErr != nil {
+			store.Close()
+			return nil, fresh, newConfigBase(), loadReport{}, fmt.Errorf("migrate toolbar preferences: %w", migrationErr)
+		}
+		if migrated {
+			entries, local, err = store.Load()
+			if err != nil {
+				store.Close()
+				return nil, fresh, newConfigBase(), loadReport{}, fmt.Errorf("read migrated toolbar preferences: %w", err)
+			}
+		}
+	}
 	if err == nil {
 		saved, base, err = joinState(entries, local[localKey])
 		if err == nil {

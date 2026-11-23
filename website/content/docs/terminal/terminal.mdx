@@ -43,6 +43,30 @@ by whole words. Under **Settings → Terminal → Word separators**, enter the
 characters that should split words (for example, `-/`); leave the field empty
 for the default punctuation rules. Whitespace always splits words.
 
+## Password prompt assist
+
+Save password identities in **Settings → Security → Identities** and enable
+**Settings → Terminal → Password prompt assist**. At account password prompts
+from `sudo`, `su`, `ssh` and `scp`, a list appears near the cursor. This also
+works in local terminals and when connecting from server A to server B inside
+an existing SSH session, such as `deploy@server-b's password:`.
+
+Use **↑/↓** to choose an identity, then **Enter**, or click a row to send its
+password and submit it. Opening the list and moving the selection send nothing.
+**Esc** dismisses it; typing or pasting closes it and keeps your manual input.
+Passwords are never displayed in the list.
+
+If authentication is refused and a new password prompt appears, you can choose
+another identity. Wrapped prompts are supported. A prompt received in a
+background terminal waits until you activate that terminal; keys in the terminal
+search field continue to operate the search.
+
+When the prompt names a user, identities with a different saved username are
+excluded; password-only identities remain available. A bare `Password:` prompt
+cannot identify the target user, so it offers all identities. The current host's
+saved password is listed first when its login matches. Existing autofill rules
+take precedence. Key passphrases and one-time code prompts keep their own flows.
+
 ## Images
 
 Kitty, iTerm2 and SIXEL images are rendered inline.
@@ -114,11 +138,18 @@ in a left-hand drawer; your own X resources schemes join the list from the
 data folder's `schemes` directory. Fonts are stored per machine and are not
 synced.
 
+The built-in keyword rules use the terminal's colour scheme to mark `TRACE` in
+magenta, `DEBUG` in blue, `INFO` and success words in green, `WARN` in yellow,
+and `ERROR` and failure words in red. Text already coloured by the program keeps
+its colour. To choose a different colour for a level, add a custom rule under
+**Settings → Terminal → Keyword highlighting**. Custom rules take precedence.
+
 ## Recording
 
 A session is recorded only when you start a recording explicitly.
 
 ## Transfers inside the terminal
 
-ZMODEM transfers start when the remote `sz` or `rz` begins; XMODEM and YMODEM are
-started from the terminal's menu. See [ZMODEM, XMODEM and YMODEM](/en/docs/files/zmodem-xmodem).
+ZMODEM transfers start when the remote `sz` or `rz` begins; TRZSZ when `trz` or
+`tsz` begins; XMODEM and YMODEM are started from the terminal's menu. See
+[ZMODEM, XMODEM, YMODEM and TRZSZ](/en/docs/files/zmodem-xmodem).

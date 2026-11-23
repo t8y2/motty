@@ -25,7 +25,7 @@ func documentFixture(t *testing.T) *fileDocument {
 		source:   "docker-ubuntu · 127.0.0.1",
 		local:    true,
 	}
-	decoded, err := filecontent.Decode([]byte("name: 中文\n# configuration\nenabled: true\n"), "")
+	decoded, err := filecontent.Decode([]byte("name: 中文\n# configuration\nenabled: true\n"), "", 1<<20)
 	if err != nil {
 		t.Fatal(err)
 	}

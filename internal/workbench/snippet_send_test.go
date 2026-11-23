@@ -44,6 +44,23 @@ func TestSnippetPickerSendsATypedCommandToTheCurrentTerminal(t *testing.T) {
 	}
 }
 
+// The send form is a palette over the terminal: when it typed into the current
+// terminal, closing it must give that terminal the keyboard back.
+func TestSendingACommandFromThePickerReturnsTheKeyboardToTheTerminal(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	world.connectFirst(t, state)
+	state.Wake()
+	state.activeSection = sectionTerminal
+	want := state.activeTerminalFocusHit()
+	state.Click(hitTerminalSnippets)
+	app.TextEvent{Kind: app.TextInsert, Text: "uptime"}.Apply(state.EditorFor(hitSnippetSendInput))
+	state.Click(hitSnippetSendButton)
+	if state.modal != modalNone || state.pendingFocus != want {
+		t.Fatalf("modal = %d, pending focus = %v, want the terminal %v", state.modal, state.pendingFocus, want)
+	}
+}
+
 // Choosing terminals lists the connected ones, remembers the ticks, and refuses
 // to send until at least one is ticked.
 func TestSnippetPickerSendsOnlyToTheTickedTerminals(t *testing.T) {
@@ -72,5 +89,34 @@ func TestSnippetPickerSendsOnlyToTheTickedTerminals(t *testing.T) {
 	state.Click(hitSnippetSendButton)
 	if shell.typed() != "id\r" {
 		t.Fatalf("the ticked terminal heard %q", shell.typed())
+	}
+	if want := state.activeTerminalFocusHit(); state.pendingFocus != want {
+		t.Fatalf("pending focus = %v, want the terminal %v", state.pendingFocus, want)
+	}
+}
+
+// With more than one terminal, a Snippets-page send opens the picker. The
+// picker is a snippet menu too, so the identity guard must accept the row it
+// was opened on and not close it on the first paint.
+func TestASnippetsPageSendKeepsTheTerminalPickerOpen(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	world.connectFirst(t, state)
+	state.Wake()
+	second := state.sessions[0]
+	second.ID++
+	second.Title = "Second"
+	state.sessions = append(state.sessions, second)
+
+	state.snippets.list = []snippet{{Name: "Deploy", Command: "echo deploy"}}
+	state.activeSection = sectionSnippets
+	state.sendSnippetFromPage(0, gfx.Point{X: 20, Y: 20})
+	if !state.snippetMenu.open || !state.snippetMenu.pick {
+		t.Fatalf("the terminal picker did not open: %+v", state.snippetMenu)
+	}
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	_ = canvas
+	if !state.snippetMenu.open {
+		t.Fatal("the first paint closed the terminal picker")
 	}
 }

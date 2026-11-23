@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sessionimport"
@@ -16,10 +16,12 @@ import (
 )
 
 // Importing the saved sessions of PuTTY, Xshell, MobaXterm, WindTerm, Electerm,
-// Netcatty and SecureCRT. The files are read by internal/sessionimport; this
-// file picks them, turns their sessions into hosts and shows what came of it in
-// the same result dialog as an OpenSSH config. SecureCRT keeps its sessions as
-// a tree of .ini files, so it asks for the Sessions folder instead of files.
+// Netcatty, SecureCRT, FinalShell, Xterminal and XPipe. The files are read by
+// internal/sessionimport; this file picks them, turns their sessions into hosts
+// and shows what came of it in the same result dialog as an OpenSSH config.
+// SecureCRT keeps its sessions as a tree of .ini files, and FinalShell,
+// Xterminal and XPipe keep their data in a folder, so they ask for a folder
+// instead of files.
 
 // sessionImportHits is the place of the controls this file paints.
 var sessionImportHits = tree.Feature("session-import")
@@ -39,8 +41,11 @@ var (
 	hitImportWindTerm        = tree.ID(sessionImportHits, "import-wind-term")
 	hitImportElecterm        = tree.ID(sessionImportHits, "import-electerm")
 	hitImportNetcatty        = tree.ID(sessionImportHits, "import-netcatty")
-	hitImportXterminal       = tree.ID(sessionImportHits, "import-xterminal")
+	hitImportXterminalPaste  = tree.ID(sessionImportHits, "import-xterminal-paste")
 	hitImportSecureCRT       = tree.ID(sessionImportHits, "import-secure-crt")
+	hitImportFinalShell      = tree.ID(sessionImportHits, "import-final-shell")
+	hitImportXterminal       = tree.ID(sessionImportHits, "import-xterminal")
+	hitImportXPipe           = tree.ID(sessionImportHits, "import-xpipe")
 	hitImportGuide           = tree.ID(sessionImportHits, "import-guide")
 	hitImportPreviewCancel   = tree.ID(sessionImportHits, "import-preview-cancel")
 	hitImportPreviewClose    = tree.ID(sessionImportHits, "import-preview-close")
@@ -79,17 +84,21 @@ func importClientName(client sessionimport.Client) string {
 		return "Electerm"
 	case sessionimport.Netcatty:
 		return "Netcatty"
-	case sessionimport.Xterminal:
-		return "xterminal"
 	case sessionimport.SecureCRT:
 		return "SecureCRT"
+	case sessionimport.FinalShell:
+		return "FinalShell"
+	case sessionimport.Xterminal:
+		return "Xterminal"
+	case sessionimport.XPipe:
+		return "XPipe"
 	}
 	return "MobaXterm"
 }
 
 func (state *State) clickImportSessions(id gfx.ID) {
 	switch id {
-	case hitImportXterminal:
+	case hitImportXterminalPaste:
 		state.xterminal = xterminalImportDialog{}
 		state.dialogError = ""
 		state.modal = modalXterminalImport
@@ -107,6 +116,12 @@ func (state *State) clickImportSessions(id gfx.ID) {
 		state.importSessions(sessionimport.Netcatty)
 	case hitImportSecureCRT:
 		state.importSessions(sessionimport.SecureCRT)
+	case hitImportFinalShell:
+		state.importSessions(sessionimport.FinalShell)
+	case hitImportXterminal:
+		state.importSessions(sessionimport.Xterminal)
+	case hitImportXPipe:
+		state.importSessions(sessionimport.XPipe)
 	case hitImportGuide:
 		state.openExternal(state.messages.Tools.ImportGuideURL)
 	case hitImportSessionsCancel, hitImportSessionsClose, hitImportSessionsDismiss:
@@ -122,8 +137,8 @@ func (state *State) importSessions(client sessionimport.Client) {
 func (state *State) importSessionsWithOptions(client sessionimport.Client, options sessionimport.ParseOptions) {
 	m := state.messages.Tools
 	state.modal = modalNone
-	if client == sessionimport.SecureCRT {
-		state.importSecureCRTFolder(options)
+	if importClientUsesFolder(client) {
+		state.importSessionFolder(client, options)
 		return
 	}
 	paths, err := state.options.OpenFiles(app.OpenFileOptions{
@@ -140,11 +155,22 @@ func (state *State) importSessionsWithOptions(client sessionimport.Client, optio
 	state.readSessionImport(client, paths, options)
 }
 
-// importSecureCRTFolder asks for the folder that holds SecureCRT's sessions.
-// Each folder inside becomes a group, which picking individual files would lose.
-func (state *State) importSecureCRTFolder(options sessionimport.ParseOptions) {
+// importClientUsesFolder reports whether a client keeps its sessions in a
+// folder whose inner layout becomes groups, so it is picked as a folder.
+func importClientUsesFolder(client sessionimport.Client) bool {
+	return client == sessionimport.SecureCRT || client == sessionimport.FinalShell ||
+		client == sessionimport.Xterminal || client == sessionimport.XPipe
+}
+
+// importSessionFolder asks for the folder that holds a client's sessions. Each
+// folder inside becomes a group, which picking individual files would lose.
+func (state *State) importSessionFolder(client sessionimport.Client, options sessionimport.ParseOptions) {
 	m := state.messages.Tools
-	title := fmt.Sprintf(m.ImportFolderPickerFmt, importClientName(sessionimport.SecureCRT))
+	name := importClientName(client)
+	title := fmt.Sprintf(m.ImportFolderPickerFmt, name)
+	if client == sessionimport.FinalShell || client == sessionimport.Xterminal || client == sessionimport.XPipe {
+		title = fmt.Sprintf(m.ImportConfigFolderPickerFmt, name)
+	}
 	folder, err := state.options.OpenDirectory(app.OpenDirectoryOptions{Title: title})
 	if errors.Is(err, app.ErrCanceled) || err == nil && folder == "" {
 		state.status = m.ImportCanceled
@@ -154,7 +180,7 @@ func (state *State) importSecureCRTFolder(options sessionimport.ParseOptions) {
 		state.showActionFailure(title, err, state.messages.ActionFeedback.FilePickerFailed)
 		return
 	}
-	state.readSessionImport(sessionimport.SecureCRT, []string{folder}, options)
+	state.readSessionImport(client, []string{folder}, options)
 }
 
 func (state *State) readSessionImport(client sessionimport.Client, paths []string, options sessionimport.ParseOptions) {
@@ -186,7 +212,7 @@ func (state *State) readSessionImport(client sessionimport.Client, paths []strin
 	}
 	if err != nil {
 		fallback := fmt.Sprintf(state.messages.ActionFeedback.ImportSessionsFailedFmt, importClientName(client))
-		if client == sessionimport.SecureCRT {
+		if importClientUsesFolder(client) {
 			fallback = fmt.Sprintf(state.messages.ActionFeedback.ImportFolderFailedFmt, importClientName(client))
 		}
 		state.showFileReadFailure(fmt.Sprintf(m.ImportPickerFmt, importClientName(client)), err, fallback)
@@ -320,13 +346,14 @@ func (state *State) declareImportSessions(c ui.C) {
 		{hitImportElecterm, "Electerm"},
 		{hitImportNetcatty, "Netcatty"},
 		{hitImportSecureCRT, "SecureCRT"},
-		{hitImportXterminal, "xterminal"},
+		{hitImportFinalShell, "FinalShell"},
+		{hitImportXterminal, "Xterminal"},
+		{hitImportXterminalPaste, m.XterminalPasteTitle},
+		{hitImportXPipe, "XPipe"},
 	}
 	const columns = 2
-	rowHeight := components.BeginButton(nil, theme, gfx.ID{}, gfx.Rect{}).Large().BoundsHeight()
 	gap := theme.Metrics.GapItem
 	rows := (len(choices) + columns - 1) / columns
-	bodyHeight := float32(rows)*rowHeight + float32(rows-1)*gap
 	const width float32 = 480
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: m.ImportChooserTitle, Description: m.ImportChooserBody,
@@ -334,9 +361,11 @@ func (state *State) declareImportSessions(c ui.C) {
 		Scope: dialogScope, DismissID: hitImportSessionsDismiss, CloseID: hitImportSessionsClose,
 	})
 	dialog.Body(func() {
-		ui.Column(c).Height(bodyHeight).Gap(gap).Children(func() {
+		// The buttons' own Large height and the gap size the grid; the dialog
+		// fits itself to the body rather than taking a height measured beforehand.
+		ui.Column(c).Gap(gap).Children(func() {
 			for row := 0; row < rows; row++ {
-				ui.Row(c).Height(rowHeight).Gap(gap).Children(func() {
+				ui.Row(c).Gap(gap).Children(func() {
 					for column := 0; column < columns; column++ {
 						index := row*columns + column
 						if index >= len(choices) {
@@ -449,15 +478,15 @@ func (state *State) declareSessionImportPreview(c ui.C) {
 }
 
 func (state *State) sessionImportPasswords(result sessionimport.Result, plan hostImportPlan) ([]sessionImportPassword, int) {
-	hosts := make(map[hostConnection]Host, len(state.hosts)+len(plan.hosts))
+	hosts := make(map[sessionImportHostKey]Host, len(state.hosts)+len(plan.hosts))
 	for _, host := range state.hosts {
 		if host.isSSH() {
-			hosts[connectionKey(host.Address, host.User, host.Port)] = host
+			hosts[sessionImportHostKeyFor(host)] = host
 		}
 	}
 	for _, host := range plan.hosts {
 		if host.isSSH() {
-			hosts[connectionKey(host.Address, host.User, host.Port)] = host
+			hosts[sessionImportHostKeyFor(host)] = host
 		}
 	}
 	byName := make(map[string]sessionImportPassword)
@@ -466,7 +495,9 @@ func (state *State) sessionImportPasswords(result sessionimport.Result, plan hos
 		if entry.Protocol != sessionimport.SSH || entry.Password == "" {
 			continue
 		}
-		host, ok := hosts[connectionKey(entry.Host, entry.User, uint16(entry.Port))]
+		host, ok := hosts[sessionImportHostKeyFor(Host{
+			Label: entry.Name, Address: entry.Host, User: entry.User, Port: uint16(entry.Port),
+		})]
 		if !ok {
 			continue
 		}
@@ -486,6 +517,25 @@ func (state *State) sessionImportPasswords(result sessionimport.Result, plan hos
 		passwords = append(passwords, candidate)
 	}
 	return passwords, len(conflicted)
+}
+
+// sessionImportHostKey is the identity of an imported SSH host as the user sees
+// it: its name and destination. Two sessions at one address with different
+// names are different hosts, and each keeps its own password.
+type sessionImportHostKey struct {
+	label      string
+	connection hostConnection
+	terminal   hostTerminal
+	viaSSH     bool
+}
+
+func sessionImportHostKeyFor(host Host) sessionImportHostKey {
+	return sessionImportHostKey{
+		label:      strings.ToLower(strings.TrimSpace(host.Label)),
+		connection: connectionKey(host.Address, host.User, host.Port),
+		terminal:   host.Terminal,
+		viaSSH:     host.ViaSSH,
+	}
 }
 
 func (state *State) sessionImportPasswordChanges() ([]vault.Change, error) {
@@ -570,50 +620,62 @@ func (state *State) sessionImportPlan(result sessionimport.Result) hostImportPla
 		if port == 0 {
 			port = defaultPort
 		}
-		key := connectionKey(entry.Host, entry.User, port)
-		if _, exists := builder.connections[key]; exists {
-			builder.plan.duplicateHosts++
-			continue
-		}
 		host := Host{
 			ID: builder.plan.nextHostID, Label: entry.Name, Group: entry.Group,
 			Address: entry.Host, User: entry.User, Port: port,
+			LoginCommand: restoredLoginCommand(entry.Command),
+		}
+		host.finish()
+		if state.hostIndexSame(host) >= 0 || planHasSameHost(builder.plan, host) {
+			builder.plan.duplicateHosts++
+			builder.plan.warnings = append(builder.plan.warnings,
+				fmt.Sprintf(state.messages.Tools.ImportWarningSkippedHostFmt, host.Label, hostTarget(host)))
+			continue
 		}
 		host.CatalogID = freshCatalogID(builder.usedIDs)
-		host.finish()
 		builder.plan.nextHostID++
 		builder.plan.hosts = append(builder.plan.hosts, host)
-		builder.connections[key] = host
 	}
 	return builder.plan
+}
+
+// planHasSameHost reports whether the hosts this import has already made
+// include host. Sessions from another client are told apart by their name, so
+// two saved entries at one address both arrive; only the same name and address
+// is a repeat.
+func planHasSameHost(plan hostImportPlan, host Host) bool {
+	return slices.ContainsFunc(plan.hosts, func(planned Host) bool { return sameHost(planned, host) })
 }
 
 func (state *State) planStreamImport(plan *hostImportPlan, usedIDs map[string]struct{}, entry sessionimport.Entry) {
 	host := Host{
 		ID: plan.nextHostID, Label: entry.Name, Group: entry.Group,
-		Address: entry.Host, Port: uint16(entry.Port),
+		Address: entry.Host, Port: uint16(entry.Port), User: entry.User,
 	}
-	if entry.Protocol == sessionimport.Serial {
+	switch entry.Protocol {
+	case sessionimport.Serial:
 		if !host.applyTransport(savedTransport{Protocol: "serial", Line: entry.Line, Flow: entry.Flow}) {
 			plan.duplicateHosts++ // a line that cannot be used is left out
 			return
 		}
-	} else {
+	case sessionimport.Telnet:
+		host.Protocol = protocolTelnet
+	case sessionimport.VNC:
+		host.Protocol = protocolVNC
+	case sessionimport.RDP:
+		host.Protocol = protocolRDP
+	default:
 		host.Protocol = protocolTelnet
 	}
 	host.normalizeEndpoint()
-	host.CatalogID = freshCatalogID(usedIDs)
 	host.finish()
-	if state.hostIndexByEndpoint(host) >= 0 {
+	if state.hostIndexSame(host) >= 0 || planHasSameHost(*plan, host) {
 		plan.duplicateHosts++
+		plan.warnings = append(plan.warnings,
+			fmt.Sprintf(state.messages.Tools.ImportWarningSkippedHostFmt, host.Label, hostTarget(host)))
 		return
 	}
-	for _, planned := range plan.hosts {
-		if sameEndpoint(planned, host) {
-			plan.duplicateHosts++
-			return
-		}
-	}
+	host.CatalogID = freshCatalogID(usedIDs)
 	plan.nextHostID++
 	plan.hosts = append(plan.hosts, host)
 }

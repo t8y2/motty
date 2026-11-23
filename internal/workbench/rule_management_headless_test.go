@@ -4,6 +4,7 @@ package workbench
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -137,7 +138,7 @@ func TestRuleManagerNativeHighlightScrollEditAndDelete(t *testing.T) {
 			state.setLanguage(layout.language)
 			state.setAppearance(appearanceDark)
 			for index := range 30 {
-				state.highlighting.rules = append(state.highlighting.rules, highlightRule{Pattern: fmt.Sprintf("SERVICE_%02d", index), Slot: highlight.Slots()[index%6], Regex: index%3 == 0, CaseSensitive: index%2 == 0})
+				state.highlighting.rules = append(state.highlighting.rules, highlightRule{Pattern: fmt.Sprintf("SERVICE_%02d", index), Color: highlight.Colors()[index%6], Regex: index%3 == 0, CaseSensitive: index%2 == 0})
 			}
 			view := ruleManagerNativeView(t, state, layout.width, layout.height, layout.scale)
 			openRuleManagerNative(t, state, view, hitSettingsHighlightManage)
@@ -145,6 +146,10 @@ func TestRuleManagerNativeHighlightScrollEditAndDelete(t *testing.T) {
 				t.Fatal("long list has no bounded scroll area")
 			}
 			clickRuleNative(t, view, hitRuleManagerSelect.At(0))
+			// The list keeps its scrollbar at rest, not only under the pointer.
+			if _, ok := view.Hit("Vertical scrollbar"); !ok {
+				t.Fatal("long list has no scrollbar before the pointer reaches it")
+			}
 			bounds := state.ruleManager.bounds
 			beforeHover := state.ruleManager.list.Offset
 			if err := view.Move(bounds.X+bounds.Width-4, bounds.Y+40); err != nil {
@@ -238,6 +243,13 @@ func TestRuleManagerNativeAutofillKeepsSecretsAndArming(t *testing.T) {
 	w.addRule(t, "Sudo password", sudoPromptPattern, "", autofill.SendPassword, "")
 	view := ruleManagerNativeView(t, state, 1400, 900, 1)
 	openRuleManagerNative(t, state, view, hitSettingsAutofillManage)
+	// The switch sits in its own 52x32 slot ten pixels in and seven down; its
+	// painted hit reaches eight pixels above it, one above the edit button.
+	edit := dualHit(t, view, hitRuleManagerEdit.At(0))
+	toggle := dualHit(t, view, hitAutofillToggleList.At(0))
+	if math.Abs(float64(toggle.Y-(edit.Y-1))) > .75 {
+		t.Fatalf("switch slot geometry = %+v beside edit %+v", toggle, edit)
+	}
 	for _, value := range view.Texts() {
 		if strings.Contains(value, "never-render-this-secret") {
 			t.Fatal("manager rendered vault text")

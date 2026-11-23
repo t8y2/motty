@@ -72,7 +72,7 @@ func StartDetails(runner DetailRunner, notify func()) *DetailsWorker {
 
 // StartDetailsWithInterval keeps slow metadata independent of fast streaming.
 func StartDetailsWithInterval(runner DetailRunner, notify func(), seconds int) *DetailsWorker {
-	return startDetails(runner, notify, seconds, detailsCommand)
+	return startDetails(runner, notify, seconds, linuxShellCommand(detailsCommand))
 }
 
 func startDetails(runner DetailRunner, notify func(), seconds int, command string) *DetailsWorker {
@@ -154,18 +154,14 @@ awk 'NR>2 {
 }' /proc/net/dev
 ` + loginsCommand
 
-const loginsCommand = `if command -v who >/dev/null 2>&1; then
-	if logins=$(who 2>/dev/null); then
-		printf 'logins-ready\n'
-		printf '%s\n' "$logins" | awk 'NF>=3 {
-			if (++count>32) { print "logins-truncated"; exit }
-			printf "login\t%s\t%s\t", $1, $2
-			for (i=3; i<=NF; i++) printf "%s%s", (i==3 ? "" : " "), $i
-			printf "\n"
-		}'
-	else
-		printf 'logins-unavailable\n'
-	fi
+const loginsCommand = `if command -v who >/dev/null 2>&1 && logins=$(who 2>/dev/null); then
+	printf 'logins-ready\n'
+	printf '%s\n' "$logins" | awk 'NF>=3 {
+		if (++count>32) { print "logins-truncated"; exit }
+		printf "login\t%s\t%s\t", $1, $2
+		for (i=3; i<=NF; i++) printf "%s%s", (i==3 ? "" : " "), $i
+		printf "\n"
+	}'
 else
 	printf 'logins-unavailable\n'
 fi

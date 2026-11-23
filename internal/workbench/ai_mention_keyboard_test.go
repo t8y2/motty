@@ -84,7 +84,7 @@ func TestAITargetSelectUsesTheTabsHostIcons(t *testing.T) {
 	state.sessions[1].host.Icon = hostIconGlobe
 	options := state.aiTargetOptions()
 	for index, session := range state.sessions {
-		expected := state.hostIconArt(session.host.Icon, session.host.System, session.host.isDesktop())
+		expected := state.hostIconArt(session.host.Icon, session.host.System, session.host.Protocol)
 		if !reflect.DeepEqual(options[index+1].Icon, expected) || !strings.Contains(options[index+1].Hint, session.Address) {
 			t.Fatalf("selector did not use the tab's icon or address for %s", session.Title)
 		}

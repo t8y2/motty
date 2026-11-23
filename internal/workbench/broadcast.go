@@ -24,12 +24,35 @@ const broadcastPaneLimit = 16
 func (state *State) typed(session *Session, input []byte) bool {
 	accepted := session.term.send(input)
 	if accepted && state.broadcast != 0 {
-		state.broadcastInput(session.ID, input)
+		state.broadcastInput(session.ID, input, input, true, false)
 	}
 	return accepted
 }
 
-func (state *State) broadcastInput(source uint32, input []byte) {
+// typedKeyState is typed for keys that carry key state instead of typing: a
+// bare modifier or a release. The panes of a broadcasting tab need the same
+// state, but their selection and view stay where the user put them.
+func (state *State) typedKeyState(session *Session, input []byte) bool {
+	accepted := session.term.sendKeyState(input)
+	if accepted && state.broadcast != 0 {
+		state.broadcastInput(session.ID, input, input, false, false)
+	}
+	return accepted
+}
+
+func (state *State) typedWin32Key(session *Session, input, logical []byte, typing bool) bool {
+	if session.term.transferHoldsInput {
+		return false
+	}
+	unknown := typing && len(logical) == 0
+	accepted := session.term.sendLogicalInput(input, logical, true, typing, unknown)
+	if accepted && state.broadcast != 0 {
+		state.broadcastInput(session.ID, input, logical, typing, unknown)
+	}
+	return accepted
+}
+
+func (state *State) broadcastInput(source uint32, input, logical []byte, typing, unknown bool) {
 	workspaceID, _, ok := state.deck.PaneForSession(layoutcore.SessionID(source))
 	if !ok || workspaceID != state.broadcast {
 		return
@@ -40,7 +63,9 @@ func (state *State) broadcastInput(source uint32, input []byte) {
 			continue
 		}
 		if peer, ok := state.sessionByIDPointer(uint32(pane.SessionID)); ok && workspaceSessionState(peer) == workspacePaneConnected {
-			peer.term.send(input)
+			if !peer.term.transferHoldsInput {
+				peer.term.sendLogicalInput(input, logical, true, typing, unknown)
+			}
 		}
 	}
 }
@@ -154,6 +179,9 @@ func (state *State) clickTerminalTools(id gfx.ID) bool {
 	case id == hitSettingsCloseConfirmToggle:
 		state.closeConfirmOff = !state.closeConfirmOff
 		state.save()
+	case id == hitSettingsCloseWindowConfirmToggle:
+		state.closeWindowConfirmOff = !state.closeWindowConfirmOff
+		state.save()
 	case id == hitSettingsPasswordHintToggle:
 		if state.setPasswordHint(state.passwordHintOff) {
 			state.save()
@@ -171,6 +199,7 @@ func (state *State) clickTerminalTools(id gfx.ID) bool {
 	case id == hitImportSessions:
 		state.modal = modalImportSessions
 	case state.clickCredentialSettings(id):
+	case state.clickProxyProfileSettings(id):
 	case state.clickHostTagSettings(id):
 	case id == hitSettingsHighlightManage:
 		state.openRuleManager(ruleDeleteHighlight)

@@ -1,18 +1,21 @@
 // Package sessionimport reads the saved sessions of other clients, PuTTY,
-// Xshell, MobaXterm, WindTerm, Electerm, Netcatty and SecureCRT, into the host
-// fields Motty keeps. It reads files or folders the user chose and never
-// executes, resolves or contacts anything in them.
+// Xshell, MobaXterm, WindTerm, Electerm, Netcatty, SecureCRT, FinalShell,
+// Xterminal and XPipe, into the host fields Motty keeps. It reads files or
+// folders the user chose and never executes, resolves or contacts anything in
+// them.
 //
-// Only connection fields and readable SSH login password candidates from
-// Electerm and Netcatty are taken. The caller decides whether to save those
-// candidates in a vault. Other clients' encrypted credentials and key files
-// are not imported; SecureCRT in particular stores every saved password
-// encrypted, so a SecureCRT import never carries one.
+// Only connection fields, a session's command after login and readable SSH
+// login password candidates from Electerm and Netcatty are taken. The caller
+// decides whether to save those candidates in a vault. Other clients' encrypted
+// credentials and key files are not imported; SecureCRT, FinalShell,
+// Xterminal and XPipe store every saved password encrypted, so their imports
+// never carry one.
 package sessionimport
 
 import (
 	"archive/zip"
 	"bytes"
+	"database/sql"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -30,6 +33,7 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/text/encoding/simplifiedchinese"
+	_ "modernc.org/sqlite" // registers the "sqlite" driver
 )
 
 // Limits keep a damaged or hostile file from using the machine: a session file
@@ -55,6 +59,8 @@ const (
 	SSH Protocol = iota
 	Telnet
 	Serial
+	VNC
+	RDP
 )
 
 // Entry is one session. A serial one keeps its device in Host and its line in
@@ -70,6 +76,9 @@ type Entry struct {
 	Port     int // zero when the file named none
 	User     string
 	Password string // ephemeral candidate; never serialized with a host
+	// Command is typed into a new shell once it is ready, when the source
+	// client saved one.
+	Command string
 	// Source names where the entry came from, for warnings.
 	Source string
 }
@@ -391,6 +400,12 @@ func ParseWithOptions(client Client, paths []string, options ParseOptions) (Resu
 			part, err = ParseNetcatty(path)
 		case SecureCRT:
 			part, err = ParseSecureCRT(path)
+		case FinalShell:
+			part, err = ParseFinalShell(path)
+		case Xterminal:
+			part, err = ParseXterminal(path)
+		case XPipe:
+			part, err = ParseXPipe(path)
 		default:
 			err = fmt.Errorf("unknown client %d", client)
 		}
@@ -423,7 +438,9 @@ const (
 	Electerm
 	Netcatty
 	SecureCRT
+	FinalShell
 	Xterminal
+	XPipe
 )
 
 // ---- PuTTY ----
@@ -766,7 +783,7 @@ func parseMobaSession(result *Result, name, value, group, source string) {
 	port, _ := strconv.Atoi(fields[2])
 	switch fields[0] {
 	case "0":
-		result.add(Entry{Name: name, Group: group, Host: fields[1], Port: port, User: fields[3], Source: source})
+		result.add(Entry{Name: name, Group: group, Host: fields[1], Port: port, User: mobaUsername(fields[3]), Source: source})
 	case "1":
 		result.add(Entry{Name: name, Group: group, Protocol: Telnet, Host: fields[1], Port: port, Source: source})
 	default:
@@ -774,19 +791,33 @@ func parseMobaSession(result *Result, name, value, group, source string) {
 	}
 }
 
+// mobaUsername returns the login of a MobaXterm session. MobaXterm shows a
+// login taken from its saved credentials in square brackets, and the export
+// stores that text verbatim ("[petalinux]"); the brackets are MobaXterm's own
+// notation and are not part of the name the server receives.
+func mobaUsername(field string) string {
+	if len(field) >= 2 && field[0] == '[' && field[len(field)-1] == ']' {
+		return field[1 : len(field)-1]
+	}
+	return field
+}
+
 // ---- WindTerm ----
 
 // windTermSession is one entry of WindTerm's user.sessions, a JSON array it
 // keeps under profiles/<profile>/terminal/. A saved login (session.autoLogin) is
-// encrypted and is not read.
+// encrypted and is not read. session.autoExecution is the command WindTerm types
+// after authentication; its delay has no Motty counterpart because the command
+// waits for the shell's prompt instead.
 type windTermSession struct {
-	Label    string `json:"session.label"`
-	Group    string `json:"session.group"`
-	Target   string `json:"session.target"`
-	Port     int    `json:"session.port"`
-	Protocol string `json:"session.protocol"`
-	User     string `json:"session.user"`
-	Identity string `json:"session.identityFile"`
+	Label         string `json:"session.label"`
+	Group         string `json:"session.group"`
+	Target        string `json:"session.target"`
+	Port          int    `json:"session.port"`
+	Protocol      string `json:"session.protocol"`
+	User          string `json:"session.user"`
+	Identity      string `json:"session.identityFile"`
+	AutoExecution string `json:"session.autoExecution"`
 }
 
 // ParseWindTerm reads a WindTerm user.sessions file.
@@ -800,6 +831,7 @@ func ParseWindTerm(path string) (Result, error) {
 		return Result{}, errors.New("not a WindTerm sessions file: it is not a JSON list of sessions")
 	}
 	var result Result
+	shortened := false
 	source := filepath.Base(path)
 	for _, session := range sessions {
 		if session.Target == "" && session.Protocol == "" && session.Label == "" {
@@ -824,12 +856,39 @@ func ParseWindTerm(path string) (Result, error) {
 		if kind == Telnet {
 			user = ""
 		}
+		group, cut := windTermGroup(session.Group)
+		shortened = shortened || cut
 		result.add(Entry{
-			Name: session.Label, Group: strings.Trim(strings.ReplaceAll(session.Group, `\`, "/"), "/"),
-			Protocol: kind, Host: host, Port: session.Port, User: user, Source: source,
+			Name: session.Label, Group: group,
+			Protocol: kind, Host: host, Port: session.Port, User: user,
+			Command: session.AutoExecution, Source: source,
 		})
 	}
+	if shortened {
+		result.warn("%s: folders nested more than %d levels deep were shortened", source, maxGroupDepth)
+	}
 	return result, nil
+}
+
+// windTermGroup turns a WindTerm group into the "/" path Motty keeps. WindTerm
+// separates nested folders with ">", so "A>B" is the folder B inside A. A
+// backslash, which an older or hand-edited file may use, separates them too.
+// Empty folders go, and a path deeper than maxGroupDepth keeps its innermost
+// folders; it reports whether it cut.
+func windTermGroup(group string) (string, bool) {
+	group = strings.ReplaceAll(group, `\`, "/")
+	group = strings.ReplaceAll(group, ">", "/")
+	var folders []string
+	for _, folder := range strings.Split(group, "/") {
+		if folder = clean(folder, maxNameLength); folder != "" {
+			folders = append(folders, folder)
+		}
+	}
+	cut := len(folders) > maxGroupDepth
+	if cut {
+		folders = folders[len(folders)-maxGroupDepth:]
+	}
+	return strings.Join(folders, "/"), cut
 }
 
 // ---- Electerm ----
@@ -1393,4 +1452,899 @@ func secureCRTPort(value string) int {
 		return 0
 	}
 	return number
+}
+
+// ---- FinalShell ----
+
+// FinalShell keeps its data in a directory: config.json at the top, and under
+// conn/ a folder.json for every folder and an <id>_connect_config.json for
+// every host. The folder and host records name each other by id, so the tree is
+// rebuilt from parent_id rather than from the paths on disk. Passwords are
+// encrypted by FinalShell and are not read; keys named by secret_key_id are
+// counted but not imported. A record's conection_type is 100 for SSH and 101
+// for Windows remote desktop, which is skipped like any other unread protocol.
+const (
+	finalShellRoot = "root"
+	finalShellSSH  = 100
+)
+
+// finalShellIgnored keeps historical copies and deleted entries out of the
+// import; FinalShell writes both with the same shape as live records.
+var finalShellIgnored = map[string]bool{
+	"backup": true, "deleted": true, "temp": true, "blur_image_cache": true,
+}
+
+// finalShellFolder is one conn/<id>/folder.json.
+type finalShellFolder struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	ParentID string `json:"parent_id"`
+}
+
+// finalShellHost is one *_connect_config.json. FinalShell spells "connection"
+// as "conection" on disk, and an edited file may hold a number as text.
+type finalShellHost struct {
+	ID          string        `json:"id"`
+	Name        string        `json:"name"`
+	Host        string        `json:"host"`
+	Port        finalShellInt `json:"port"`
+	UserName    string        `json:"user_name"`
+	AuthType    finalShellInt `json:"authentication_type"`
+	SecretKeyID string        `json:"secret_key_id"`
+	ConnType    finalShellInt `json:"conection_type"`
+	ParentID    string        `json:"parent_id"`
+
+	source string // where it was read, for warnings
+}
+
+type finalShellInt int
+
+func (value *finalShellInt) UnmarshalJSON(data []byte) error {
+	text := strings.Trim(strings.TrimSpace(string(data)), `"`)
+	number, err := strconv.Atoi(text)
+	if err != nil {
+		*value = 0
+		return nil
+	}
+	*value = finalShellInt(number)
+	return nil
+}
+
+// ParseFinalShell reads the FinalShell data directory the user chose. On
+// Windows that is the folder FinalShell was installed in, on macOS
+// ~/Library/FinalShell, and on Linux ~/.finalshell.
+func ParseFinalShell(path string) (Result, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return Result{}, err
+	}
+	if !info.IsDir() {
+		return Result{}, errors.New("not a FinalShell data folder: choose the folder that holds config.json and conn")
+	}
+	return parseFinalShellFolder(path)
+}
+
+func parseFinalShellFolder(root string) (Result, error) {
+	return parseFinalShellFolderWithin(root, MaxEntries)
+}
+
+// parseFinalShellFolderWithin reads a data folder with an explicit record
+// limit, so a test can exercise the cap without thousands of files.
+func parseFinalShellFolderWithin(root string, limit int) (Result, error) {
+	var (
+		result    Result
+		folders   = map[string]finalShellFolder{}
+		seenHosts = map[string]bool{}
+		hosts     []finalShellHost
+		records   int
+		hostFiles int
+		totalSize uint64
+		shortened bool
+	)
+	walkErr := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			if path == root {
+				return err
+			}
+			result.warn("%s: %v", filepath.Base(path), err)
+			return nil
+		}
+		if entry.IsDir() {
+			relative, relativeErr := filepath.Rel(root, path)
+			if relativeErr == nil && relative != "." && finalShellIgnoredDir(filepath.ToSlash(relative)) {
+				// History and cache folders are never imported; do not walk them.
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if entry.Type()&fs.ModeSymlink != 0 {
+			return nil
+		}
+		lower := strings.ToLower(entry.Name())
+		isFolder := lower == "folder.json"
+		isHost := strings.HasSuffix(lower, "_connect_config.json")
+		if !isFolder && !isHost {
+			return nil
+		}
+		relative, relativeErr := filepath.Rel(root, path)
+		if relativeErr != nil {
+			relative = entry.Name()
+		}
+		relative = filepath.ToSlash(relative)
+		if finalShellIgnoredPath(relative) {
+			return nil
+		}
+		if records >= limit {
+			result.warn("%s: more than %d records; the rest were not read", filepath.Base(root), limit)
+			return filepath.SkipAll
+		}
+		records++
+		if info, infoErr := entry.Info(); infoErr == nil {
+			totalSize += uint64(info.Size())
+			if totalSize > maxArchiveSize {
+				result.warn("%s: too large; the rest of the folder was not read", filepath.Base(root))
+				return filepath.SkipAll
+			}
+		}
+		text, readErr := readFile(path)
+		if readErr != nil {
+			result.warn("%s: %v", relative, readErr)
+			return nil
+		}
+		if isFolder {
+			var folder finalShellFolder
+			if err := json.Unmarshal([]byte(text), &folder); err != nil {
+				result.warn("%s: not valid JSON; skipped", relative)
+				return nil
+			}
+			if folder.ID == "" {
+				result.warn("%s: no folder id; skipped", relative)
+				return nil
+			}
+			if _, seen := folders[folder.ID]; !seen {
+				folders[folder.ID] = folder
+			}
+			return nil
+		}
+		hostFiles++
+		var host finalShellHost
+		if err := json.Unmarshal([]byte(text), &host); err != nil {
+			result.warn("%s: not valid JSON; skipped", relative)
+			return nil
+		}
+		if host.ID == "" {
+			result.warn("%s: no host id; skipped", relative)
+			return nil
+		}
+		if seenHosts[host.ID] {
+			return nil
+		}
+		seenHosts[host.ID] = true
+		host.source = relative
+		hosts = append(hosts, host)
+		return nil
+	})
+	if walkErr != nil {
+		return result, walkErr
+	}
+	if hostFiles == 0 {
+		return result, errors.New("not a FinalShell data folder: it holds no host configurations")
+	}
+	orphans := 0
+	for _, host := range hosts {
+		group := ""
+		if host.ParentID != "" && host.ParentID != finalShellRoot {
+			var cut bool
+			group, cut = finalShellGroupPath(folders, host.ParentID)
+			shortened = shortened || cut
+			if _, known := folders[host.ParentID]; !known {
+				orphans++
+			}
+		}
+		switch int(host.ConnType) {
+		case 0, finalShellSSH:
+		default:
+			result.Skipped++
+			continue
+		}
+		if host.SecretKeyID != "" {
+			result.Keys++
+		}
+		result.add(Entry{
+			Name: host.Name, Group: group, Protocol: SSH, Host: host.Host,
+			Port: int(host.Port), User: host.UserName, Source: host.source,
+		})
+	}
+	if orphans > 0 {
+		result.warn("%d sessions are in folders outside the chosen folder and were imported without one; choose the FinalShell data folder to keep their groups", orphans)
+	}
+	if shortened {
+		result.warn("%s: folders nested more than %d levels deep were shortened", filepath.Base(root), maxGroupDepth)
+	}
+	return result, nil
+}
+
+// finalShellIgnoredPath reports whether a record sits under backup/, deleted/,
+// temp/ or blur_image_cache/, which hold history rather than saved sessions.
+func finalShellIgnoredPath(relative string) bool {
+	parts := strings.Split(relative, "/")
+	return finalShellIgnoredParts(parts[:len(parts)-1])
+}
+
+// finalShellIgnoredDir reports whether a directory itself belongs to the
+// history and cache trees a FinalShell folder keeps but never imports.
+func finalShellIgnoredDir(relative string) bool {
+	return finalShellIgnoredParts(strings.Split(relative, "/"))
+}
+
+func finalShellIgnoredParts(parts []string) bool {
+	for _, part := range parts {
+		if finalShellIgnored[strings.ToLower(part)] {
+			return true
+		}
+	}
+	return false
+}
+
+// finalShellGroupPath is the folder a record sits in followed by its own name,
+// joined with "/" the way the other imports join nested folders, and whether
+// the path had to be cut at maxGroupDepth levels. A folder that is its own
+// ancestor, as a damaged file can make it, stops the climb where it would come
+// round to itself.
+func finalShellGroupPath(folders map[string]finalShellFolder, id string) (string, bool) {
+	var ids []string
+	cut := false
+	for current := id; ; {
+		folder, known := folders[current]
+		if !known || slices.Contains(ids, current) {
+			break
+		}
+		if len(ids) == maxGroupDepth {
+			cut = true
+			break
+		}
+		ids = append(ids, current)
+		if folder.ParentID == "" || folder.ParentID == finalShellRoot {
+			break
+		}
+		current = folder.ParentID
+	}
+	titles := make([]string, 0, len(ids))
+	for _, folderID := range slices.Backward(ids) {
+		if name := clean(folders[folderID].Name, maxNameLength); name != "" {
+			titles = append(titles, name)
+		}
+	}
+	return strings.Join(titles, "/"), cut
+}
+
+// ---- Xterminal ----
+
+// Xterminal keeps its local repository in a SQLite database, local-store.db,
+// inside a sqlite folder under its user data directory. Connections and their
+// folders are rows of one generic table, their JSON payloads under a store key
+// that starts with the local user's id. Only the SSH connections and the folder
+// tree above them are read; RDP, Telnet and tunnel records sit under other
+// store keys and are left alone. Xterminal encrypts passwords, private keys and
+// saved credentials with the repository password, so an import carries the
+// address, port, login, name, folder and command after login, never a secret.
+const (
+	// xtermServerStoreSuffix ends the key of the local SSH connections, which
+	// Xterminal names after its local server database. The part before it
+	// identifies the local user the rows belong to.
+	xtermServerStoreSuffix = "GeneralDatabaseLocalImp-ServerDatabaseLocalImp"
+	// xtermGroupStoreSuffix ends the key of that user's SSH folders.
+	xtermGroupStoreSuffix = "GeneralDatabaseLocalImp-SERVER"
+)
+
+// xtermServer is the part of one connection record this package reads.
+// Xterminal spells the login username, and a connection's saved password,
+// private key and credential stay encrypted and are not read.
+type xtermServer struct {
+	Title      string     `json:"title"`
+	Host       string     `json:"host"`
+	Port       lenientInt `json:"port"`
+	User       string     `json:"username"`
+	GroupID    string     `json:"groupId"`
+	AuthType   string     `json:"authType"`
+	PrivateKey string     `json:"privateKey"`
+	// Xterminal's editor keeps the command it runs after login as a Bash
+	// script under connectionConfig.init; a one-line script is the same thing
+	// as a host's command after login.
+	ConnectionConfig struct {
+		Init struct {
+			Bash string `json:"bash"`
+		} `json:"init"`
+	} `json:"connectionConfig"`
+}
+
+// xtermGroup is one folder. A missing ParentID means the top level.
+type xtermGroup struct {
+	ID       string `json:"_id"`
+	Name     string `json:"name"`
+	ParentID string `json:"parentId"`
+}
+
+// lenientInt reads a number that an edited or older record may hold as text.
+type lenientInt int
+
+func (value *lenientInt) UnmarshalJSON(data []byte) error {
+	text := strings.Trim(strings.TrimSpace(string(data)), `"`)
+	number, err := strconv.Atoi(text)
+	if err != nil {
+		*value = 0
+		return nil
+	}
+	*value = lenientInt(number)
+	return nil
+}
+
+// ParseXterminal reads Xterminal's local repository: the local-store.db file
+// itself, the sqlite folder holding it, or the user data folder that holds that
+// folder. The SSH sessions and their folder tree come out; their saved
+// credentials do not.
+func ParseXterminal(path string) (Result, error) {
+	database, err := xterminalDatabase(path)
+	if err != nil {
+		return Result{}, err
+	}
+	// The path becomes a SQLite URI, where ? and # would start query options.
+	if strings.ContainsAny(database, "?#") {
+		return Result{}, errors.New("the Xterminal local store path holds characters a database URI cannot carry")
+	}
+	store, err := sql.Open("sqlite", "file:"+strings.ReplaceAll(database, `\`, "/")+"?mode=ro&_pragma=busy_timeout(3000)")
+	if err != nil {
+		return Result{}, fmt.Errorf("not an Xterminal local store: %v", err)
+	}
+	defer store.Close()
+	store.SetMaxOpenConns(1)
+	store.SetMaxIdleConns(1)
+	var table string
+	err = store.QueryRow(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'local_store'`).Scan(&table)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Result{}, errors.New("not an Xterminal local store: it has no local_store table")
+	}
+	if err != nil {
+		return Result{}, fmt.Errorf("not an Xterminal local store: %v", err)
+	}
+	source := filepath.Base(database)
+	keys, err := xtermStoreKeys(store)
+	if err != nil {
+		return Result{}, err
+	}
+	groups, err := xtermGroups(store, keys)
+	if err != nil {
+		return Result{}, err
+	}
+	result, rows, err := xtermServers(store, keys, groups, source)
+	if err != nil {
+		return Result{}, err
+	}
+	if rows == 0 {
+		return result, errors.New("not an Xterminal local store: it holds no SSH connections")
+	}
+	return result, nil
+}
+
+// xterminalDatabase resolves the chosen path to the local-store.db it names or
+// holds. The folder layouts are the ones Xterminal itself uses: a chosen user
+// data folder, its sqlite subfolder, and the userData folder of the portable
+// build that lives under xt_data.
+func xterminalDatabase(path string) (string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return path, nil
+	}
+	for _, relative := range []string{
+		"local-store.db",
+		filepath.Join("sqlite", "local-store.db"),
+		filepath.Join("userData", "sqlite", "local-store.db"),
+	} {
+		candidate := filepath.Join(path, relative)
+		if candidateInfo, candidateErr := os.Stat(candidate); candidateErr == nil && !candidateInfo.IsDir() {
+			return candidate, nil
+		}
+	}
+	return "", errors.New("not an Xterminal data folder: it holds no sqlite/local-store.db")
+}
+
+// xtermStoreKeys lists the store keys the database holds. Xterminal keys every
+// kind of record with the local user's id, so the suffix is what tells a set of
+// SSH connections from a set of notes or a different protocol.
+func xtermStoreKeys(store *sql.DB) ([]string, error) {
+	rows, err := store.Query(`SELECT DISTINCT store_key FROM local_store LIMIT ?`, MaxEntries)
+	if err != nil {
+		return nil, fmt.Errorf("not an Xterminal local store: %v", err)
+	}
+	defer rows.Close()
+	var keys []string
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, fmt.Errorf("not an Xterminal local store: %v", err)
+		}
+		keys = append(keys, key)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("not an Xterminal local store: %v", err)
+	}
+	return keys, nil
+}
+
+// xtermGroups reads every SSH folder in the store, grouped by the local user
+// whose key holds it, so a connection finds its own user's folders and not
+// another user's. A record that is not a folder is skipped.
+func xtermGroups(store *sql.DB, keys []string) (map[string]map[string]xtermGroup, error) {
+	groups := map[string]map[string]xtermGroup{}
+	for _, key := range keys {
+		prefix, ok := strings.CutSuffix(key, "-"+xtermGroupStoreSuffix)
+		if !ok || prefix == "" {
+			continue
+		}
+		rows, err := store.Query(
+			`SELECT payload FROM local_store WHERE store_key = ? AND length(payload) <= ? ORDER BY created_at ASC`,
+			key, MaxFileSize,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("not an Xterminal local store: %v", err)
+		}
+		for rows.Next() {
+			var payload string
+			if err := rows.Scan(&payload); err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("not an Xterminal local store: %v", err)
+			}
+			var folder xtermGroup
+			if err := json.Unmarshal([]byte(payload), &folder); err != nil || folder.ID == "" {
+				continue
+			}
+			if groups[prefix] == nil {
+				groups[prefix] = map[string]xtermGroup{}
+			}
+			if _, seen := groups[prefix][folder.ID]; !seen {
+				groups[prefix][folder.ID] = folder
+			}
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("not an Xterminal local store: %v", err)
+		}
+		rows.Close()
+	}
+	return groups, nil
+}
+
+// xtermServers reads the SSH connections. rows is how many records the store
+// held for them, so a database of only other protocols is told apart from an
+// empty one.
+func xtermServers(store *sql.DB, keys []string, groups map[string]map[string]xtermGroup, source string) (Result, int, error) {
+	var (
+		result    Result
+		servers   int
+		orphans   int
+		shortened bool
+	)
+	for _, key := range keys {
+		if len(result.Entries) >= MaxEntries {
+			result.warn("%s: more than %d sessions; the rest were not read", source, MaxEntries)
+			break
+		}
+		prefix, ok := strings.CutSuffix(key, "-"+xtermServerStoreSuffix)
+		if !ok || prefix == "" {
+			continue
+		}
+		rows, err := store.Query(
+			`SELECT payload FROM local_store WHERE store_key = ? AND length(payload) <= ? ORDER BY created_at ASC`,
+			key, MaxFileSize,
+		)
+		if err != nil {
+			return Result{}, 0, fmt.Errorf("not an Xterminal local store: %v", err)
+		}
+		for rows.Next() {
+			if len(result.Entries) >= MaxEntries {
+				result.warn("%s: more than %d sessions; the rest were not read", source, MaxEntries)
+				break
+			}
+			var payload string
+			if err := rows.Scan(&payload); err != nil {
+				rows.Close()
+				return Result{}, 0, fmt.Errorf("not an Xterminal local store: %v", err)
+			}
+			servers++
+			var server xtermServer
+			if err := json.Unmarshal([]byte(payload), &server); err != nil {
+				result.warn("%s: a connection record is not valid JSON; skipped", source)
+				continue
+			}
+			group := ""
+			if server.GroupID != "" {
+				var cut bool
+				group, cut = xtermGroupPath(groups[prefix], server.GroupID)
+				shortened = shortened || cut
+				if _, known := groups[prefix][server.GroupID]; !known {
+					orphans++
+				}
+			}
+			if server.AuthType == "privateKey" && server.PrivateKey != "" {
+				result.Keys++
+			}
+			result.add(Entry{
+				Name: server.Title, Group: group, Protocol: SSH, Host: server.Host,
+				Port: int(server.Port), User: server.User, Command: server.ConnectionConfig.Init.Bash,
+				Source: source,
+			})
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return Result{}, 0, fmt.Errorf("not an Xterminal local store: %v", err)
+		}
+		rows.Close()
+	}
+	if orphans > 0 {
+		result.warn("%d sessions are in folders that are not in this repository and were imported without one", orphans)
+	}
+	if shortened {
+		result.warn("%s: folders nested more than %d levels deep were shortened", source, maxGroupDepth)
+	}
+	return result, servers, nil
+}
+
+// xtermGroupPath is the folder a group sits in followed by its own name, joined
+// with "/" the way the other imports join nested folders, and whether the path
+// had to be cut at maxGroupDepth levels (the innermost ones are kept). A group
+// that is its own ancestor, as a damaged record can make it, stops the climb
+// where it would come round to itself.
+func xtermGroupPath(groups map[string]xtermGroup, id string) (string, bool) {
+	var ids []string
+	cut := false
+	for current := id; ; {
+		folder, known := groups[current]
+		if !known || slices.Contains(ids, current) {
+			break
+		}
+		if len(ids) == maxGroupDepth {
+			cut = true
+			break
+		}
+		ids = append(ids, current)
+		if folder.ParentID == "" {
+			break
+		}
+		current = folder.ParentID
+	}
+	titles := make([]string, 0, len(ids))
+	for _, groupID := range slices.Backward(ids) {
+		if name := clean(groups[groupID].Name, maxNameLength); name != "" {
+			titles = append(titles, name)
+		}
+	}
+	return strings.Join(titles, "/"), cut
+}
+
+// ---- XPipe ----
+
+// XPipe keeps a vault as a directory: every connection is stores/<uuid>/ with
+// an entry.json naming it and a store.json holding its type and address, its
+// folders are categories/<uuid>/category.json, and a connection can point at
+// an identity store by uuid. Only the connection types Motty can open are
+// read: SSH, RDP and VNC. Docker containers, shell environments, scripts and
+// identities are not hosts to import. XPipe encrypts passwords and keys, so an
+// import carries the address, port, login, name and folder, never a secret.
+const (
+	xpipeAllConnectionsCategory    = "bfb0b51a-e7a3-4ce4-8878-8d4cb5828d6c"
+	xpipeDefaultCategory           = "97458c07-75c0-4f9d-a06e-92d8cdf67c40"
+	xpipeAllIdentitiesCategory     = "23a5565d-b343-4ab2-abf4-48a5d12dda22"
+	xpipeLocalIdentitiesCategory   = "e784de4e-abea-4cb8-a839-fc557cd23097"
+	xpipeSyncedIdentitiesCategory  = "69aa5040-28dc-451e-b4ff-1192ce5e1e3c"
+	xpipeAllScriptsCategory        = "19024cf9-d192-41a9-88a6-a22694cf716a"
+	xpipePredefinedScriptsCategory = "5faf1d71-0efc-4293-8b70-299406396973"
+	xpipeCustomScriptsCategory     = "d3496db5-b709-41f9-abc0-ee0a660fbab9"
+	xpipeScriptSourcesCategory     = "4b766928-372b-4ac4-9d10-260ce65288cd"
+)
+
+// xpipeBuiltinCategories are the folders XPipe creates for itself. They say
+// where entries are kept in its own interface, not what the user called a
+// folder, so they do not become groups here.
+var xpipeBuiltinCategories = map[string]bool{
+	xpipeAllConnectionsCategory:    true,
+	xpipeDefaultCategory:           true,
+	xpipeAllIdentitiesCategory:     true,
+	xpipeLocalIdentitiesCategory:   true,
+	xpipeSyncedIdentitiesCategory:  true,
+	xpipeAllScriptsCategory:        true,
+	xpipePredefinedScriptsCategory: true,
+	xpipeCustomScriptsCategory:     true,
+	xpipeScriptSourcesCategory:     true,
+}
+
+// xpipeEntry is the entry.json of one store: its name and the folder it sits
+// in. Tags, colours and icons have no host field to go to.
+type xpipeEntry struct {
+	UUID         string `json:"uuid"`
+	Name         string `json:"name"`
+	CategoryUUID string `json:"categoryUuid"`
+}
+
+// xpipeCategory is one folder. A missing ParentUUID means the top level.
+type xpipeCategory struct {
+	UUID       string `json:"uuid"`
+	Name       string `json:"name"`
+	ParentUUID string `json:"parentUuid"`
+}
+
+// xpipeSSHIdentity is the key part of an identity. A key stored inside an
+// encrypted wrapper has no readable type and is not counted.
+type xpipeSSHIdentity struct {
+	Type string `json:"type"`
+}
+
+// xpipeIdentityRef is an identity store's login name and key, both when it is
+// embedded in a connection and when a connection points at it.
+type xpipeIdentityRef struct {
+	Username    string           `json:"username"`
+	SSHIdentity xpipeSSHIdentity `json:"sshIdentity"`
+}
+
+// xpipeIdentity is how a connection says who logs in: an identity written into
+// the connection itself, or a reference to an identity store.
+type xpipeIdentity struct {
+	Type          string           `json:"type"`
+	Ref           string           `json:"ref"`
+	IdentityStore xpipeIdentityRef `json:"identityStore"`
+}
+
+// xpipeStore is the part of a store.json this package reads. A connection uses
+// Host, Port and Identity; an identity store uses Username and SSHIdentity.
+type xpipeStore struct {
+	Type        string           `json:"type"`
+	Host        string           `json:"host"`
+	Port        lenientInt       `json:"port"`
+	Username    string           `json:"username"`
+	SSHIdentity xpipeSSHIdentity `json:"sshIdentity"`
+	Identity    xpipeIdentity    `json:"identity"`
+}
+
+type xpipeRecord struct {
+	dir   string // the store folder, for warnings and the source
+	uuid  string // the identity a connection refers to
+	entry xpipeEntry
+	store xpipeStore
+}
+
+// ParseXPipe reads an XPipe vault: the folder that holds stores and categories
+// (its storage folder), the data folder above it, or a clone of the git
+// repository it syncs to. SSH, RDP and VNC connections come out; encrypted
+// passwords and keys do not.
+func ParseXPipe(path string) (Result, error) {
+	root, err := xpipeVaultRoot(path)
+	if err != nil {
+		return Result{}, err
+	}
+	source := filepath.Base(root)
+	var result Result
+	categories, err := xpipeCategories(root, &result)
+	if err != nil {
+		return Result{}, err
+	}
+	records, err := xpipeRecords(root, &result)
+	if err != nil {
+		return Result{}, err
+	}
+	identities := map[string]xpipeIdentityRef{}
+	for _, record := range records {
+		switch record.store.Type {
+		case "localIdentity", "syncedIdentity":
+			identities[record.uuid] = xpipeIdentityRef{
+				Username: record.store.Username, SSHIdentity: record.store.SSHIdentity,
+			}
+		}
+	}
+	connections := 0
+	shortened := false
+	for _, record := range records {
+		protocol := SSH
+		switch record.store.Type {
+		case "ssh":
+		case "rdpSimple":
+			protocol = RDP
+		case "vnc", "vncSimple":
+			protocol = VNC
+		default:
+			continue
+		}
+		connections++
+		if record.entry.Name == "" && record.store.Host == "" {
+			continue
+		}
+		identity := xpipeIdentityRef{Username: record.store.Username, SSHIdentity: record.store.SSHIdentity}
+		if record.store.Identity.Type == "inPlace" {
+			identity = record.store.Identity.IdentityStore
+		} else if record.store.Identity.Type == "ref" {
+			if referenced, ok := identities[record.store.Identity.Ref]; ok {
+				identity = referenced
+			} else {
+				identity = xpipeIdentityRef{}
+			}
+		}
+		if protocol == SSH && identity.SSHIdentity.Type == "file" {
+			result.Keys++
+		}
+		group := ""
+		if record.entry.CategoryUUID != "" {
+			var cut bool
+			group, cut = xpipeGroupPath(categories, record.entry.CategoryUUID)
+			shortened = shortened || cut
+		}
+		result.add(Entry{
+			Name: record.entry.Name, Group: group, Protocol: protocol,
+			Host: record.store.Host, Port: int(record.store.Port), User: identity.Username,
+			Source: filepath.Join("stores", record.dir),
+		})
+	}
+	if shortened {
+		result.warn("%s: folders nested more than %d levels deep were shortened", source, maxGroupDepth)
+	}
+	if connections == 0 {
+		return result, errors.New("not an XPipe data folder: it holds no SSH, RDP or VNC connections")
+	}
+	return result, nil
+}
+
+// xpipeVaultRoot resolves the chosen folder to the one that holds stores and
+// categories: the vault itself, or the storage folder below XPipe's data
+// folder.
+func xpipeVaultRoot(path string) (string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", errors.New("not an XPipe data folder: choose the folder that holds stores and categories")
+	}
+	for _, root := range []string{path, filepath.Join(path, "storage")} {
+		valid := true
+		for _, name := range []string{"stores", "categories"} {
+			entry, err := os.Stat(filepath.Join(root, name))
+			if err != nil || !entry.IsDir() {
+				valid = false
+				break
+			}
+		}
+		if valid {
+			return root, nil
+		}
+	}
+	return "", errors.New("not an XPipe data folder: it holds no stores and categories")
+}
+
+// xpipeCategories reads the folder tree. A category that is not a folder is
+// skipped with a warning, so one damaged record does not hide the rest.
+func xpipeCategories(root string, result *Result) (map[string]xpipeCategory, error) {
+	dirs, err := os.ReadDir(filepath.Join(root, "categories"))
+	if err != nil {
+		return nil, fmt.Errorf("not an XPipe data folder: %v", err)
+	}
+	categories := map[string]xpipeCategory{}
+	var total int64
+	for _, dir := range dirs {
+		if !dir.IsDir() || dir.Type()&fs.ModeSymlink != 0 {
+			continue
+		}
+		text, readErr := readFile(filepath.Join(root, "categories", dir.Name(), "category.json"))
+		if readErr != nil {
+			result.warn("%s: %v", filepath.Join("categories", dir.Name()), readErr)
+			continue
+		}
+		total += int64(len(text))
+		if total > maxArchiveSize {
+			result.warn("%s: too large; the rest of the vault was not read", filepath.Base(root))
+			break
+		}
+		var category xpipeCategory
+		if err = json.Unmarshal([]byte(text), &category); err != nil || category.Name == "" {
+			result.warn("%s: not a readable category; skipped", filepath.Join("categories", dir.Name()))
+			continue
+		}
+		if category.UUID == "" {
+			category.UUID = dir.Name()
+		}
+		categories[category.UUID] = category
+	}
+	return categories, nil
+}
+
+// xpipeRecords reads every store, keeping the entry name and folder when the
+// folder holds one. A store that is not readable JSON is skipped; that is what
+// a vault encrypted at the connection level looks like.
+func xpipeRecords(root string, result *Result) ([]xpipeRecord, error) {
+	dirs, err := os.ReadDir(filepath.Join(root, "stores"))
+	if err != nil {
+		return nil, fmt.Errorf("not an XPipe data folder: %v", err)
+	}
+	var (
+		records []xpipeRecord
+		total   int64
+	)
+	for _, dir := range dirs {
+		if !dir.IsDir() || dir.Type()&fs.ModeSymlink != 0 {
+			continue
+		}
+		if len(records) >= MaxEntries*2 {
+			result.warn("%s: more than %d records; the rest were not read", filepath.Base(root), MaxEntries*2)
+			break
+		}
+		relative := filepath.Join("stores", dir.Name())
+		text, readErr := readFile(filepath.Join(root, relative, "store.json"))
+		if readErr != nil {
+			result.warn("%s: %v", relative, readErr)
+			continue
+		}
+		total += int64(len(text))
+		if total > maxArchiveSize {
+			result.warn("%s: too large; the rest of the vault was not read", filepath.Base(root))
+			break
+		}
+		var store xpipeStore
+		if err = json.Unmarshal([]byte(text), &store); err != nil {
+			result.warn("%s: a record is not readable JSON; skipped", relative)
+			continue
+		}
+		record := xpipeRecord{dir: dir.Name(), uuid: dir.Name(), store: store}
+		if entryText, entryErr := readFile(filepath.Join(root, relative, "entry.json")); entryErr == nil {
+			total += int64(len(entryText))
+			if total > maxArchiveSize {
+				result.warn("%s: too large; the rest of the vault was not read", filepath.Base(root))
+				break
+			}
+			if err = json.Unmarshal([]byte(entryText), &record.entry); err != nil {
+				result.warn("%s: its entry is not readable JSON; skipped", relative)
+				continue
+			}
+			if record.entry.UUID == "" {
+				record.entry.UUID = dir.Name()
+			}
+			record.uuid = record.entry.UUID
+		}
+		records = append(records, record)
+	}
+	return records, nil
+}
+
+// xpipeGroupPath is the folder a category sits in followed by its own name,
+// joined with "/" the way the other imports join nested folders, and whether
+// the path had to be cut at maxGroupDepth levels. XPipe's own categories are
+// not folders of the user's and are left out. A category that is its own
+// ancestor, as a damaged record can make it, stops where it would come round to
+// itself.
+func xpipeGroupPath(categories map[string]xpipeCategory, id string) (string, bool) {
+	var ids []string
+	cut := false
+	for current := id; ; {
+		category, known := categories[current]
+		if !known || slices.Contains(ids, current) {
+			break
+		}
+		if len(ids) == maxGroupDepth {
+			cut = true
+			break
+		}
+		ids = append(ids, current)
+		if category.ParentUUID == "" || xpipeBuiltinCategories[category.ParentUUID] {
+			break
+		}
+		current = category.ParentUUID
+	}
+	titles := make([]string, 0, len(ids))
+	for _, categoryID := range slices.Backward(ids) {
+		if xpipeBuiltinCategories[categoryID] {
+			continue
+		}
+		if name := clean(categories[categoryID].Name, maxNameLength); name != "" {
+			titles = append(titles, name)
+		}
+	}
+	return strings.Join(titles, "/"), cut
 }

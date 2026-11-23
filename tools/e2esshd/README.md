@@ -3,7 +3,10 @@
 A throwaway SSH server for end-to-end checks of the terminal. Password `secret`
 for any user, loopback only, runs `/bin/bash --norc` on a real pty (so colors,
 `stty size`, `less`, Ctrl+C and resizing all behave as on a real server), and
-serves an SFTP fixture containing `alpha.txt` and `docs/guide.txt`. The fixture
+serves an SFTP fixture containing `alpha.txt` and `docs/guide.txt`. The pty's
+window size carries the pixel fields a `pty-req` or `window-change` names, so a
+program on the far side reads back the same text area in pixels a real sshd
+would pass on (`TIOCGWINSZ`, as `tools/e2e/pixel_size_e2e.txt` checks). The fixture
 root is a fresh temporary directory and is writable so upload, recursive
 transfer, atomic replacement, cancellation, and resume paths can be exercised;
 the entire root is removed when the server exits.
@@ -33,9 +36,13 @@ With `E2E_ALLOW_EXEC=1` a command requested together with a terminal runs on a p
 `E2E_MAX_SFTP=n` refuses an SFTP subsystem request while n are open, as a server with a small `MaxSessions` does; every subsystem opened, refused or closed is logged. Use it to see how a second channel for a folder search behaves (see `tools/e2e/sftp_search_e2e.txt`).
 `E2ESSHD_BANNER=SSH-2.0-OpenSSH_9.0` makes the server announce a real implementation instead of `SSH-2.0-GopE2E`. The client only probes for and starts its shell integration (the OSC 7 directory report path completion reads) on a banner it recognizes, so a check that needs that integration must also run with `E2E_ALLOW_EXEC=1` (see `tools/e2e/path_completion_e2e.txt`).
 
+`E2E_LOGIN_MESSAGE='line one\nline two'` gives the server a login message (PAM's MOTD, last login) that behaves as in OpenSSH: it belongs to the connection, the first session that starts a program takes it, and only a shell request prints it. A command or an SFTP subsystem that comes first drops it for good, so a client that opens one before its shell loses the banner; the log says `login-message shown to shell` or `login-message dropped by <exec|subsystem>` (see `tools/e2e/login_message_e2e.txt`).
+
 `E2E_SFTP_ONLY=1` makes it an account restricted to SFTP: a shell request is accepted, prints `This service allows sftp connections only.` and ends with exit status 1, while the SFTP subsystem keeps working (see `tools/e2e/sftp_only_e2e.txt`).
 
 `E2E_ONE_SESSION=1` allows one session channel per SSH connection: the first one accepted claims the transport and every later session channel is refused with `administratively prohibited ("open failed")`, as an embedded SSH server that binds a connection to its first service does. A file panel on such a server has to open a connection of its own (see `tools/e2e/sftp_separate_connection_e2e.txt`; the log says `session-refused session` when the second channel is turned away).
+
+`E2ESSHD_LARGE_TEXT_MIB=n` adds `large-preview.txt`, a plain text file of that many MiB, to the SFTP fixture. It exists for the document window's preview size bound, which only shows on a file larger than it (see `tools/e2e/file_preview_limit_e2e.txt`).
 
 It is its own module so the pty dependency never reaches the application.
 

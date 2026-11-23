@@ -1,7 +1,6 @@
 package workbench
 
 import (
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"math"
@@ -16,10 +15,17 @@ const (
 	contextDrawerAt     = float32(900)
 )
 
+// paneSplitterUI is one pane divider's page Splitter state between paints. The
+// deck's ratio is remembered so a layout the deck moves (a preset, a restore)
+// is followed, while a drag the page made is not overwritten.
+type paneSplitterUI struct {
+	node      layoutcore.NodeID
+	state     ui.SplitterState
+	deckRatio float32
+	dragging  bool
+}
+
 func (state *State) baseWorkspacePixelBounds(size gfx.Size) gfx.Rect {
-	// The bottom command drawer is already reserved by fullWorkspacePixelBounds,
-	// which toolbarDockContentBounds derives from, so the drawer strip sits clear
-	// of every panel derived from this base.
 	return state.toolbarDockContentBounds(size, true)
 }
 
@@ -37,6 +43,9 @@ func (state *State) toolbarDockContentBounds(size gfx.Size, includeTerminal bool
 			bounds.X += extent
 			bounds.Width = max(bounds.Width-extent, 0)
 		}
+		// The command bar takes the inner strip of the right edge; the terminal
+		// toolbar rail beyond it keeps the window edge.
+		bounds.Width = max(bounds.Width-state.commandsSidebarBounds(size).Width, 0)
 	}
 	return bounds
 }
@@ -56,8 +65,10 @@ func (state *State) toolbarDockFrame(size gfx.Size, includeTerminal bool) gfx.Re
 func (state *State) fullWorkspacePixelBounds(size gfx.Size) gfx.Rect {
 	left := state.verticalTabsReserve(size)
 	bounds := gfx.Rect{X: left, Y: windowBarHeight, Width: max(size.Width-left, 0), Height: max(size.Height-windowBarHeight, 0)}
-	// The bottom command drawer lives in the content area's lowest strip, so the
+	// A bottom command bar lives in the content area's lowest strip, so the
 	// workspace root accounts for it; every derived panel then sits above it.
+	// The side form is subtracted from the terminals' own column in
+	// toolbarDockContentBounds, so the panels beside it keep their full height.
 	if reserve := state.commandsDrawerHeight(); reserve > 0 {
 		bounds.Height = max(0, bounds.Height-reserve)
 	}
@@ -80,6 +91,9 @@ func (state *State) workspacePixelBoundsFor(workspaceID layoutcore.WorkspaceID, 
 	bounds := state.workspaceBoundsAboveLogs(workspaceID, size)
 	if view := state.workspaceRemoteLogs(workspaceID); view != nil {
 		bounds.Height -= view.extent(bounds.Height)
+	}
+	if state.deck.PaneMaximized(workspaceID) {
+		bounds.Height = max(0, bounds.Height-workspacePaneTabsHeight)
 	}
 	return bounds
 }
@@ -106,7 +120,7 @@ func (state *State) workspaceBoundsAboveLogs(workspaceID layoutcore.WorkspaceID,
 	}
 	if state.workspaceManaged(workspaceID) {
 		reserve := workspaceHeaderHeight
-		if state.workspaceTabbed(workspaceID) {
+		if state.workspaceTabbed(workspaceID) && !state.deck.PaneMaximized(workspaceID) {
 			reserve += workspacePaneTabsHeight
 		}
 		bounds.Y += reserve
@@ -168,6 +182,8 @@ func (state *State) declareWorkspacePanes(c ui.C) {
 	}
 	frame := state.workspacePixelBounds(state.viewport)
 	state.declareWorkspaceHeader(c, state.viewport)
+	state.declareWorkspacePaneTabs(c, frame)
+	state.declareWorkspaceFocusTabs(c, frame)
 	c.Part(terminalWorkspacePart)
 	ui.Stack(c).Absolute().Left(frame.X).Top(frame.Y).Width(frame.Width).Height(frame.Height).Clip().Children(func() {
 		if len(state.panes) == 0 {
@@ -206,6 +222,7 @@ func (state *State) declareWorkspacePanes(c ui.C) {
 				state.declareSessionPane(c, session, bounds)
 			})
 		}
+		state.declarePaneSplitters(c, frame)
 	})
 }
 
@@ -213,6 +230,15 @@ func (state *State) declareWorkspacePanes(c ui.C) {
 // empty tab for the active one, its label for a background one. The pane itself
 // is the ground a press switches panes with.
 func (state *State) declareEmptyPane(c ui.C, frame, bounds gfx.Rect, index int, active bool) {
+	if len(state.panes) > 1 {
+		ui.Row(c).Absolute().Left(bounds.X - frame.X).Top(bounds.Y - frame.Y).Width(bounds.Width).Height(infoBarHeight).
+			Items(ui.Center).Children(func() {
+			ui.Text(c, state.messages.LabelNewTab).Grow(1).Ellipsis().MarginSides(0, 0, 0, termPadX)
+			state.declarePaneMaximizeButton(c, state.panes[index].ID)
+		})
+		bounds.Y += infoBarHeight
+		bounds.Height = max(0, bounds.Height-infoBarHeight)
+	}
 	pane := ui.Column(c).Absolute().Left(bounds.X-frame.X).Top(bounds.Y-frame.Y).Width(bounds.Width).Height(bounds.Height).
 		HitWith(hitPaneActivateList.At(index), state.messages.LabelNewTab, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true})
 	if !active {
@@ -229,13 +255,16 @@ func (state *State) declareEmptyPane(c ui.C, frame, bounds gfx.Rect, index int, 
 
 func (state *State) paintWorkspacePanes(canvas *gfx.Canvas, size gfx.Size) {
 	state.refreshWorkspaceViews()
+	if !state.workspaceHeaderFocusPending.IsZero() {
+		canvas.RequestFocus(state.workspaceHeaderFocusPending)
+		state.workspaceHeaderFocusPending = gfx.ID{}
+	}
 	state.workspacePaneTools.count = 0
 	frame := state.workspacePixelBounds(size)
 	headerOpen := state.paintWorkspaceHeader(canvas, size)
 	if !headerOpen {
 		state.workspaceHeaderMenu = workspaceHeaderMenuNone
 	}
-	state.paintWorkspacePaneTabs(canvas, frame)
 	if len(state.panes) == 0 {
 		state.paintEmptyWorkspace(canvas, frame)
 		state.paintContextPanel(canvas, size, frame)
@@ -269,8 +298,7 @@ func (state *State) paintWorkspacePanes(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintSessionPaneDetails(canvas, session, bounds)
 		canvas.Unclip()
 	}
-	state.paintPaneDividers(canvas, frame)
-	if !state.workspaceTabbed(state.deck.ActiveWorkspace()) {
+	if !state.workspaceSinglePaneView(state.deck.ActiveWorkspace()) {
 		state.paintActivePaneGlow(canvas, frame, size)
 	}
 	state.paintTerminalDrop(canvas)
@@ -384,10 +412,7 @@ func (state *State) contextSession() *Session {
 // inside. Its List and controls are the page's, so pointer, key, wheel and text
 // routing need no mount translation. When the window is too narrow to dock it,
 // the same view is declared in a drawer overlay the page paints itself.
-const (
-	contextPanelPart  = "sftp-panel"
-	contextDrawerPart = "sftp-drawer"
-)
+const contextPanelPart = "sftp-panel"
 
 // contextPanelMode is the view the docked panel declared in the last paint.
 type contextPanelMode uint8
@@ -436,43 +461,39 @@ func (state *State) declareContextPanel(c ui.C) {
 		if session != nil {
 			description = session.Title
 		}
-		side := components.DrawerLeft
+		side := ui.DrawerLeft
 		if context.Side == layoutcore.ContextRight {
-			side = components.DrawerRight
+			side = ui.DrawerRight
 		}
-		drawer := components.BeginDrawer(c.Canvas(), state.Theme(), viewport, components.DrawerOptions{
-			Layer: drawerLayer, Scope: dialogScope, DismissID: hitSFTPClose, CloseID: hitSFTPDrawerClose,
-			Side: side, ContentExtent: min(context.Width, size.Width*0.82),
-			InitialFocusID: hitSFTPDrawerClose,
-		})
-		layout := drawer.Layout(description)
-		state.contextDrawer = drawer
-		state.contextDrawerDescription = description
+		extent := min(context.Width, size.Width*0.82)
+		body := drawerPanelBody(c, viewport, side, extent, description)
 		state.contextDrawerOpen = true
-		if state.contextDrawerBegin == nil {
-			state.contextDrawerBegin = state.beginContextDrawer
-			state.contextDrawerEnd = state.endContextDrawer
+		closed := ui.Drawer(c, &state.contextDrawerOpen, state.messages.SFTPFiles, ui.DrawerSpec{
+			Side: side, Size: extent, Description: description,
+		}, func() {
+			state.declareContextPanelBody(c, body, gfx.Point{X: body.X, Y: body.Y}, session)
+		}, nil)
+		if closed || !state.contextDrawerOpen {
+			c.After(func() {
+				if session != nil {
+					state.hideFilesPanel(session)
+					return
+				}
+				workspaceID := state.deck.ActiveWorkspace()
+				context, _ := state.deck.Context(workspaceID)
+				context.Open = false
+				_ = state.deck.SetContext(workspaceID, context)
+			})
+			return
 		}
-		c.Part(contextDrawerPart)
-		overlay := ui.Stack(c).Absolute().Left(viewport.X).Top(viewport.Y).Width(viewport.Width).Height(viewport.Height)
-		overlay.Draw(state.contextDrawerBegin)
-		overlay.Children(func() {
-			state.declareContextPanelBody(c, layout.Body, gfx.Point{X: viewport.X, Y: viewport.Y}, session)
-			// The drawer closes after the panel painted: the panel's content is
-			// part of what it animates, and its scope and layer cover it.
-			ui.Slot(c).Absolute().Left(0).Top(0).Width(0).Height(0).Draw(state.contextDrawerEnd)
-		})
-		state.contextPanelScope = tree.Sub(tree.Sub(tree.Feature(shellPageRoot), tree.Name(contextDrawerPart)), tree.Name(contextPanelPart))
+		state.contextPanelScope = 0
 		if session != nil && session.files != nil && session.files.dialog != sftpDialogNone {
 			state.declareSFTPDialog(c, gfx.Rect{Width: size.Width, Height: size.Height}, session.files)
 		}
 		return
 	}
-	layout := state.sftpPanelResizable(nil, size, context).Paint(state.messages.SFTPFiles)
-	panel := layout.First
-	if context.Side == layoutcore.ContextRight {
-		panel = layout.Second
-	}
+	base, width, _, _ := state.contextPanelLayout(size, context)
+	panel, _ := contextPanelRect(base, width, context.Side)
 	state.contextPanelDocked = true
 	state.declareContextPanelBody(c, panel, gfx.Point{}, session)
 	state.contextPanelScope = tree.Sub(tree.Feature(shellPageRoot), tree.Name(contextPanelPart))
@@ -541,15 +562,32 @@ func (state *State) drawContextPanelBody(d *ui.DrawContext) {
 	}
 }
 
-func (state *State) beginContextDrawer(*ui.DrawContext) {
-	state.contextDrawer.Begin(state.messages.SFTPFiles, state.contextDrawerDescription)
-}
-
-func (state *State) endContextDrawer(*ui.DrawContext) {
-	if state.contextDrawerOpen {
-		state.contextDrawer.End()
-		state.contextDrawerOpen = false
+// drawerPanelBody is the body rectangle ui.Drawer gives a side drawer, worked
+// out before the page declares the panel inside it: the drawer's content inset
+// by its padding, below the title and description and above its bottom edge.
+// It follows components.Drawer's layout, the one the page paints.
+func drawerPanelBody(c ui.C, viewport gfx.Rect, side ui.DrawerSide, extent float32, description string) gfx.Rect {
+	metrics := c.Theme().Metrics
+	width := min(extent, viewport.Width)
+	if width <= 0 {
+		return gfx.Rect{}
 	}
+	x := viewport.X
+	if side == ui.DrawerRight {
+		x = viewport.X + viewport.Width - width
+	}
+	content := gfx.Rect{X: x, Y: viewport.Y, Width: width, Height: viewport.Height}
+	inner := content.Inset(gfx.All(metrics.PadSurface))
+	lineHeight := metrics.FontSizeM + 7
+	header := lineHeight
+	if description != "" {
+		var scratch [3]string
+		lines := c.Canvas().WrapLines(scratch[:0], description, metrics.FontSizeM, gfx.WeightRegular, inner.Width, 3)
+		header += 6 + float32(len(lines))*lineHeight
+	}
+	body := gfx.Rect{X: inner.X, Y: inner.Y + header + metrics.GapItem, Width: inner.Width}
+	body.Height = max(inner.Y+inner.Height-body.Y, 0)
+	return body
 }
 
 func (state *State) paintContextPanelBody(canvas *gfx.Canvas) {
@@ -635,7 +673,24 @@ func (state *State) paintContextPanel(canvas *gfx.Canvas, size gfx.Size, workspa
 	if size.Width >= contextDrawerAt {
 		// The divider between the panel and the workspace is the window's, not
 		// the panel's: paint its line and its drag target here, after the page.
-		state.sftpPanelResizable(canvas, size, context).Paint(state.messages.SFTPFiles)
+		base, width, _, _ := state.contextPanelLayout(size, context)
+		_, handleX := contextPanelRect(base, width, context.Side)
+		thickness, color := float32(1), state.pal.line
+		if canvas.Pressed() == hitContextDivider {
+			thickness, color = 3, state.pal.accent
+		} else if canvas.Hovered() == hitContextDivider {
+			thickness, color = 3, state.pal.accent
+		}
+		line := gfx.Rect{X: handleX + (1-thickness)/2, Y: base.Y, Width: thickness, Height: base.Height}
+		if thickness > 1 {
+			canvas.Rounded(line, 1, color)
+		} else {
+			canvas.Fill(line, color)
+		}
+		hit := gfx.Rect{X: handleX - (paneDividerHitWidth-1)/2, Y: base.Y, Width: paneDividerHitWidth, Height: base.Height}
+		canvas.HitWithOptions(hitContextDivider, hit, state.messages.SFTPFiles, gfx.HitOptions{
+			Role: gfx.RoleSeparator, Cursor: gfx.PointerCursorResizeHorizontal,
+		})
 	}
 }
 
@@ -689,58 +744,118 @@ func (state *State) declareEmptyContextSFTP(c ui.C) {
 	})
 }
 
-func (state *State) paintPaneDividers(canvas *gfx.Canvas, frame gfx.Rect) {
+// declarePaneSplitters declares the dividers between the panes of the active
+// split workspace. The deck lays the panes out as fractions of the frame, so
+// each divider is a page Splitter between two empty slots at the split's own
+// rectangle: the drag, the arrows and the pane minimums are the page's, and the
+// deck takes the ratio the paint settles on.
+func (state *State) declarePaneSplitters(c ui.C, frame gfx.Rect) {
+	if state.workspaceSinglePaneView(state.deck.ActiveWorkspace()) {
+		state.paneSplitters = state.paneSplitters[:0]
+		return
+	}
 	layout, _ := state.deck.Layout(state.deck.ActiveWorkspace())
+	used := 0
 	for index := range state.paneSplits {
 		split := state.paneSplits[index]
 		bounds := pixelBounds(frame, split.Bounds)
-		resizable := components.BeginResizable(
-			canvas,
-			state.Theme(),
-			hitPaneDividerList.At(index),
-			bounds,
-			split.Ratio,
-		).HandleSize(paneDividerHitWidth)
-		if split.Axis == layoutcore.Vertical {
-			resizable = resizable.Vertical()
+		if bounds.Width <= 0 || bounds.Height <= 0 {
+			continue
 		}
-		if minimum, maximum, ok := paneSplitRatioLimits(layout, split.NodeID, bounds); ok {
-			resizable = resizable.Limits(minimum, maximum)
-		} else {
-			resizable = resizable.Disabled()
+		entry := state.paneSplitterAt(used, split)
+		used++
+		if layout != nil {
+			if node, ok := layout.Node(split.NodeID); ok && node.Kind == layoutcore.KindSplit {
+				first := minimumPaneExtent(layout, node.First, node.Axis)
+				second := minimumPaneExtent(layout, node.Second, node.Axis)
+				if first <= 0 || second <= 0 {
+					continue
+				}
+				state.declarePaneSplitter(c, frame, bounds, split, entry, first, second)
+				continue
+			}
 		}
-		resizable.Paint(state.messages.PaneResize)
+		// Without a limit the split has nothing usable to drag.
+		entry.state.Pos = 0
+	}
+	state.paneSplitters = state.paneSplitters[:used]
+}
+
+// paneSplitterAt returns the SplitterState kept for a split, reusing the entry
+// the same split had in the previous paint so a drag survives the frame.
+func (state *State) paneSplitterAt(index int, split PaneSplit) *paneSplitterUI {
+	if index < len(state.paneSplitters) {
+		entry := &state.paneSplitters[index]
+		if entry.node != split.NodeID {
+			*entry = paneSplitterUI{node: split.NodeID, deckRatio: split.Ratio}
+			entry.state.Ratio = split.Ratio
+		} else if entry.deckRatio != split.Ratio {
+			// The deck moved the split (a preset, a restored layout); follow it.
+			entry.state.Ratio, entry.deckRatio = split.Ratio, split.Ratio
+		}
+		return entry
+	}
+	entry := paneSplitterUI{node: split.NodeID, deckRatio: split.Ratio}
+	entry.state.Ratio = split.Ratio
+	state.paneSplitters = append(state.paneSplitters, entry)
+	return &state.paneSplitters[len(state.paneSplitters)-1]
+}
+
+func (state *State) declarePaneSplitter(c ui.C, frame, bounds gfx.Rect, split PaneSplit, entry *paneSplitterUI, minFirst, minSecond float32) {
+	container := ui.Row(c)
+	if split.Axis == layoutcore.Vertical {
+		container = ui.Column(c)
+	}
+	container.Absolute().
+		Left(bounds.X - frame.X).Top(bounds.Y - frame.Y).
+		Width(bounds.Width).Height(bounds.Height).Children(func() {
+		ui.Slot(c).Width(entry.state.Pos).Shrink(0)
+		ui.Splitter(c, &entry.state).SplitterThickness(1).Mins(minFirst, minSecond).
+			Hit(hitPaneDividerList.At(splitterIndex(state.paneSplits, split.NodeID)), state.messages.PaneResize)
+		ui.Slot(c).Grow(1)
+	})
+	// A drag is handled by the Splitter while the page paints, after this
+	// declaration; the sync therefore reads the state once the paint has
+	// settled it, so the deck takes the last move and not the one before it.
+	if entry.state.Dragging() || entry.dragging {
+		node, splitter := split.NodeID, entry
+		c.After(func() {
+			if splitter.state.Dragging() {
+				splitter.deckRatio, splitter.dragging = splitter.state.Ratio, true
+				state.applyPaneSplitRatio(node, splitter.state.Ratio)
+				return
+			}
+			if splitter.dragging {
+				state.save()
+				// The drag took the keyboard: give it back to the terminal the
+				// workspace was typing in, as the old divider did on release.
+				if id := state.activeTerminalFocusHit(); !id.IsZero() {
+					c.Canvas().RequestFocus(id)
+				}
+			}
+			splitter.dragging = false
+		})
 	}
 }
 
-func (state *State) paneDividerPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	if event.Kind == gfx.PointerDown && event.Target.Scope() == hitPaneDividerList {
-		if event.Button != gfx.PointerButtonPrimary && event.Button != gfx.PointerButtonNone {
-			return gfx.EventResult{}, true
+func splitterIndex(splits []PaneSplit, node layoutcore.NodeID) int {
+	for index := range splits {
+		if splits[index].NodeID == node {
+			return index
 		}
-		state.draggedPaneSplit = uint32(state.paneSplits[item(event.Target)].NodeID)
-		return state.dragPaneDivider(event), true
 	}
-	if state.draggedPaneSplit == 0 {
-		return gfx.EventResult{}, false
+	return 0
+}
+
+// applyPaneSplitRatio moves the deck's split to the ratio the page Splitter
+// settled on, then refits the terminals and the files panel round the panes.
+func (state *State) applyPaneSplitRatio(node layoutcore.NodeID, ratio float32) {
+	if state.SetPaneRatio(node, ratio) != nil {
+		return
 	}
-	switch event.Kind {
-	case gfx.PointerMove:
-		if event.Captured {
-			return state.dragPaneDivider(event), true
-		}
-	case gfx.PointerUp:
-		result := state.dragPaneDivider(event)
-		state.draggedPaneSplit = 0
-		state.save()
-		result.Handled = true
-		result.Focus = state.activeTerminalFocusHit()
-		return result, true
-	case gfx.PointerExit:
-		state.draggedPaneSplit = 0
-		return gfx.EventResult{Handled: true}, true
-	}
-	return gfx.EventResult{Handled: true}, true
+	state.refreshWorkspaceViews()
+	state.fitWorkspaceTerminals(state.deck.ActiveWorkspace())
+	state.fitSFTP(state.viewport)
 }
 
 func (state *State) contextDividerPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
@@ -783,15 +898,12 @@ func (state *State) dragContextDivider(event gfx.PointerEvent) gfx.EventResult {
 	if !ok || !context.Open || event.Viewport.Width < contextDrawerAt {
 		return gfx.EventResult{Handled: true}
 	}
-	base := state.baseWorkspacePixelBounds(event.Viewport)
-	base.Width -= state.aiReserve(workspaceID, event.Viewport)
-	base.Width -= state.independentMonitorReserve(workspaceID, event.Viewport)
-	resizable := state.sftpPanelResizable(nil, event.Viewport, context)
-	ratio := resizable.FractionAt(event.X)
+	base, _, minimum, maximum := state.contextPanelLayout(event.Viewport, context)
+	width := event.X - base.X
 	if context.Side == layoutcore.ContextRight {
-		ratio = 1 - ratio
+		width = base.X + base.Width - 1 - event.X
 	}
-	width := (base.Width - 1) * ratio
+	width = min(max(width, minimum), maximum)
 	if width == context.Width {
 		return gfx.EventResult{Handled: true}
 	}
@@ -800,6 +912,7 @@ func (state *State) dragContextDivider(event gfx.PointerEvent) gfx.EventResult {
 	if state.deck.SetContext(workspaceID, context) != nil {
 		return gfx.EventResult{Handled: true}
 	}
+	state.refreshWorkspaceViews()
 	state.fitWorkspaceTerminals(state.deck.ActiveWorkspace())
 	state.fitSFTP(state.viewport)
 	return gfx.EventResult{Handled: true, Repaint: true}
@@ -873,69 +986,6 @@ func (state *State) activeTerminalFocusHit() gfx.ID {
 	return state.paneIdentity(session, session.term.controlID)
 }
 
-func (state *State) dragPaneDivider(event gfx.PointerEvent) gfx.EventResult {
-	splitID := layoutcore.NodeID(state.draggedPaneSplit)
-	var split PaneSplit
-	found := false
-	for index := range state.paneSplits {
-		if state.paneSplits[index].NodeID == splitID {
-			split, found = state.paneSplits[index], true
-			break
-		}
-	}
-	if !found {
-		return gfx.EventResult{Handled: true}
-	}
-	bounds := pixelBounds(state.workspacePixelBounds(event.Viewport), split.Bounds)
-	layout, ok := state.deck.Layout(state.deck.ActiveWorkspace())
-	minimum, maximum, ok := paneSplitRatioLimits(layout, split.NodeID, bounds)
-	if !ok {
-		return gfx.EventResult{Handled: true}
-	}
-	resizable := components.BeginResizable(nil, state.Theme(), gfx.ID{}, bounds, split.Ratio).
-		Limits(minimum, maximum).
-		HandleSize(paneDividerHitWidth)
-	position := event.X
-	if split.Axis == layoutcore.Vertical {
-		resizable = resizable.Vertical()
-		position = event.Y
-	}
-	ratio := resizable.FractionAt(position)
-	if ratio == split.Ratio || state.SetPaneRatio(split.NodeID, ratio) != nil {
-		return gfx.EventResult{Handled: true}
-	}
-	state.refreshWorkspaceViews()
-	state.fitWorkspaceTerminals(state.deck.ActiveWorkspace())
-	state.fitSFTP(state.viewport)
-	return gfx.EventResult{Handled: true, Repaint: true}
-}
-
-func paneSplitRatioLimits(layout *layoutcore.Layout, splitID layoutcore.NodeID, bounds gfx.Rect) (float32, float32, bool) {
-	if layout == nil {
-		return 0, 0, false
-	}
-	split, ok := layout.Node(splitID)
-	if !ok || split.Kind != layoutcore.KindSplit {
-		return 0, 0, false
-	}
-	extent := bounds.Width
-	if split.Axis == layoutcore.Vertical {
-		extent = bounds.Height
-	}
-	usable := extent - 1
-	if usable <= 0 {
-		return 0, 0, false
-	}
-	first := minimumPaneExtent(layout, split.First, split.Axis)
-	second := minimumPaneExtent(layout, split.Second, split.Axis)
-	if first <= 0 || second <= 0 || usable < first+second {
-		return 0, 0, false
-	}
-	minimum := max(layoutcore.MinPaneRatio, first/usable)
-	maximum := min(layoutcore.MaxPaneRatio, 1-second/usable)
-	return minimum, maximum, minimum <= maximum
-}
-
 func minimumPaneExtent(layout *layoutcore.Layout, nodeID layoutcore.NodeID, axis layoutcore.Axis) float32 {
 	node, ok := layout.Node(nodeID)
 	if !ok {
@@ -984,6 +1034,14 @@ func (state *State) splitActivePane(axis layoutcore.Axis) bool {
 	if _, err := state.deck.Split(workspaceID, activePane, axis); err != nil {
 		return false
 	}
+	if state.deck.PaneMaximized(workspaceID) && state.workspaceTabbed(workspaceID) {
+		layout, _ := state.deck.Layout(workspaceID)
+		state.managedWorkspaceLayouts[workspaceID] = layout.Spec()
+		if _, temporary := state.temporaryWorkspaceLayouts[workspaceID]; temporary {
+			state.temporaryWorkspaceLayouts[workspaceID] = layout.Spec()
+		}
+	}
+	state.deck.SetPaneMaximized(workspaceID, false)
 	state.syncActiveSession()
 	state.refreshWorkspaceViews()
 	state.fitWorkspaceTerminals(workspaceID)
@@ -1015,7 +1073,13 @@ func (state *State) activePaneSplitBounds(axis layoutcore.Axis) (gfx.Rect, bool)
 	if !found {
 		return gfx.Rect{}, false
 	}
-	bounds := pixelBounds(state.workspacePixelBounds(state.viewport), active.Bounds)
+	frame := state.workspacePixelBounds(state.viewport)
+	if state.deck.PaneMaximized(workspaceID) {
+		frame.Height += workspacePaneTabsHeight
+		layout, _ := state.deck.Layout(workspaceID)
+		active.Bounds, _ = findPaneFractionBounds(layout, layout.Root(), activePane, FractionBounds{Width: 1, Height: 1})
+	}
+	bounds := pixelBounds(frame, active.Bounds)
 	if axis == layoutcore.Horizontal && bounds.Width < minPaneWidth*2+1 ||
 		axis == layoutcore.Vertical && bounds.Height < minPaneHeight*2+1 {
 		return gfx.Rect{}, false
@@ -1133,7 +1197,8 @@ func (state *State) paneForSession(sessionID uint32) (Pane, bool) {
 // place.
 func (state *State) paneWindowBounds(sessionID uint32, size gfx.Size) (gfx.Rect, bool) {
 	workspaceID, paneID, ok := state.deck.PaneForSession(layoutcore.SessionID(sessionID))
-	if !ok || workspaceID != state.deck.ActiveWorkspace() {
+	if !ok || workspaceID != state.deck.ActiveWorkspace() ||
+		(state.workspaceSinglePaneView(workspaceID) && paneID != state.deck.ActivePane(workspaceID)) {
 		return gfx.Rect{}, false
 	}
 	fraction, _, ok := state.paneFractionBounds(workspaceID, paneID)
@@ -1148,7 +1213,7 @@ func (state *State) paneFractionBounds(workspaceID layoutcore.WorkspaceID, paneI
 	if !ok || layout.Root() == 0 {
 		return FractionBounds{}, 0, false
 	}
-	if state.workspaceTabbed(workspaceID) {
+	if state.workspaceSinglePaneView(workspaceID) {
 		// Every tab is sized for the whole area, so showing one needs no resize.
 		_, found := findPaneFractionBounds(layout, layout.Root(), paneID, FractionBounds{Width: 1, Height: 1})
 		return FractionBounds{Width: 1, Height: 1}, (layout.Len() + 1) / 2, found

@@ -10,6 +10,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/cmdhistory"
 	"motty/internal/completion"
 	"motty/internal/i18n"
@@ -175,10 +176,11 @@ type completionUI struct {
 	// answer to an old question.
 	generation uint64
 
-	// autoHold suppresses the automatic path menu after a candidate was
-	// accepted, until the user types again. Without it the echo of the accepted
-	// suffix would reopen the menu and swallow the Enter that runs the line.
-	autoHold completionAutoHold
+	// autoHold suppresses the automatic menu after a candidate was accepted or
+	// after non-typing input (history arrows, Tab, control keys, Enter), until
+	// the user types again. Without it the echo of an accepted suffix or a
+	// recalled history command would open the menu and swallow the next key.
+	autoHold completionAutoHolds
 	// accepting covers the synchronous revalidation and drain of an acceptance,
 	// which reads output before the hold is set.
 	accepting bool
@@ -193,7 +195,21 @@ type completionUI struct {
 
 // completionAutoHold is the session whose accepted path keeps the automatic
 // menu closed until its next input.
-type completionAutoHold struct{ session uint32 }
+// completionAutoHolds is the set of sessions whose next echo must not reopen the
+// automatic menu: a broadcast keystroke reaches every pane, so one slot would let
+// the last pane overwrite the hold the active one needs.
+type completionAutoHolds map[uint32]struct{}
+
+func (holds completionAutoHolds) add(session uint32) {
+	holds[session] = struct{}{}
+}
+
+func (holds completionAutoHolds) holds(session uint32) bool {
+	_, ok := holds[session]
+	return ok
+}
+
+func (holds completionAutoHolds) drop(session uint32) { delete(holds, session) }
 
 // completionDismiss is one Escape: the prompt generation and the path context
 // it closed. Typing more of the same argument does not reopen the menu; a new
@@ -241,6 +257,15 @@ type completionPopup struct {
 	// as if a choice was already made.
 	selected int
 	top      int
+	// The page Popover that carries the list: open is its visibility, kept
+	// between paints so its scope and presence stay stable. body/draw are
+	// stored so an open list allocates no closures.
+	open        bool
+	c           ui.C
+	body        func()
+	draw        func(*ui.DrawContext)
+	slotHeight  float32
+	visibleRows int
 }
 
 // completionCatalog only reads a prepared snapshot. Wake owns background work;
@@ -612,14 +637,10 @@ func validCommit(commit string) bool {
 
 // completionEligible reports whether this session may show completions now.
 // The catalog is public data, but a list still needs a live prompt the client
-// can prove: the shell's own marker (an integrated prompt), or, when an
-// interactive child shell has taken the terminal and the markers are gone, the
-// screen line the recorder read (see completionScreenPrompt).
+// can prove: the shell's own marker (an integrated prompt), or the screen line
+// the recorder read (see completionScreenPrompt).
 func (state *State) completionEligible(session *Session) bool {
-	if session == nil || session.term == nil || session.host.NoHistory {
-		return false
-	}
-	if session.term.suggestionPending != nil || session.term.preedit.Composing {
+	if !state.completionReady(session) {
 		return false
 	}
 	if state.inputGuardAvailable(session) {
@@ -628,16 +649,36 @@ func (state *State) completionEligible(session *Session) bool {
 	return state.completionScreenPrompt(session)
 }
 
-// completionScreenPrompt is the prompt proof left when an integrated shell has
-// handed the terminal to an interactive child that does not run the startup
-// hooks — sudo, su, a nested ssh (#783). No marker will come until the child
-// exits, so the proof is the line the recorder read at the first key of this
-// command: quiet terminal, cursor after a non-empty prompt, echo matching what
-// was typed. A prompt shaped like a line editor's own keeps the list out of
-// programs, which echo and draw a prompt just as a shell does.
+// completionReady holds the eligibility conditions that do not depend on how
+// the prompt is proven. A caller that has already read the screen line can
+// reuse that proof through completionEligibleWithScreenProof instead of making
+// the recorder scan the screen again.
+func (state *State) completionReady(session *Session) bool {
+	if session == nil || session.term == nil || session.host.NoHistory {
+		return false
+	}
+	return session.term.suggestionPending == nil && !session.term.preedit.Composing
+}
+
+// completionEligibleWithScreenProof is completionEligible for a caller that
+// already established the screen prompt for this line.
+func (state *State) completionEligibleWithScreenProof(session *Session, screenProof bool) bool {
+	return state.completionReady(session) && (screenProof || state.inputGuardAvailable(session))
+}
+
+// completionScreenPrompt is the prompt proof for a shell that reports no
+// marker right now: an integrated shell that handed the terminal to an
+// interactive child that does not run the startup hooks (sudo, su, a nested
+// ssh, #783), or a shell the client could never integrate (BusyBox ash on
+// OpenWrt, a dash, a shell behind an unrecognized server, #1157). No marker
+// will come until the shell is back, so the proof is the line the recorder read
+// at the first key of this command: quiet terminal, cursor after a non-empty
+// prompt, echo matching what was typed. A prompt shaped like a line editor's
+// own keeps the list out of programs, which echo and draw a prompt just as a
+// shell does.
 func (state *State) completionScreenPrompt(session *Session) bool {
 	t := session.term
-	if !t.folderIntegrationSeen || t.inputGuard.active || !state.terminalOwnedByShell(session) {
+	if t.inputGuard.active || !state.terminalOwnedByShell(session) {
 		return false
 	}
 	line, prompt, ok := t.recorder.LinePrompt(cmdhistory.TermScreen{Term: t.screen})
@@ -670,19 +711,36 @@ func (state *State) attachCompletion(session *Session) {
 		return ok && state.completionFeed(owner)
 	}
 	t.completionInput = func(input []byte) {
-		if state.completion.autoHold.session == sessionID {
-			state.completion.autoHold = completionAutoHold{}
+		if completionEndsInput(input) {
+			if state.completion.autoHold == nil {
+				state.completion.autoHold = completionAutoHolds{}
+			}
+			state.completion.autoHold.add(sessionID)
+			if state.completion.list.active && state.completion.list.sessionID == sessionID {
+				state.closeCompletionList()
+			}
+			return
 		}
+		state.completion.autoHold.drop(sessionID)
 		list := &state.completion.list
 		if !list.active || list.sessionID != sessionID {
 			return
 		}
 		// An automatic list follows the line: a typed character filters it and
 		// the echo rebuilds it. Everything an explicit list does, it still does.
-		if list.auto && !completionEndsInput(input) {
+		if list.auto {
 			return
 		}
 		state.closeCompletionList()
+	}
+	t.completionUnknown = func() {
+		if state.completion.autoHold == nil {
+			state.completion.autoHold = completionAutoHolds{}
+		}
+		state.completion.autoHold.add(sessionID)
+		if state.completion.list.active && state.completion.list.sessionID == sessionID {
+			state.closeCompletionList()
+		}
 	}
 	state.requestCompletionHistory(session)
 }
@@ -705,7 +763,7 @@ func (state *State) openCompletions() {
 		return
 	}
 	state.completion.dismissed = completionDismiss{}
-	state.completion.autoHold = completionAutoHold{}
+	state.completion.autoHold = nil
 	state.closeAutofillPick()
 	// Off stops the automatic list and the ghost, not the shortcut: the data it
 	// needs is loaded here, the first time it is asked for.
@@ -868,13 +926,16 @@ func (state *State) completionRefresh(session *Session) {
 // rather than showing a loading row that may be gone before it is read, and it
 // never opens over another menu or a program of its own.
 func (state *State) completionMaybeAuto(session *Session) {
+	if state.completionMode() != completionList {
+		return
+	}
 	if state.modal != modalNone || state.activeSection != sectionTerminal || state.activeSessionID != session.ID {
 		return
 	}
 	if !state.completionEligible(session) {
 		return
 	}
-	if state.completion.accepting || state.completion.autoHold.session == session.ID {
+	if state.completion.accepting || state.completion.autoHold.holds(session.ID) {
 		return
 	}
 	if state.ghostMenu.open || state.terminalMenu.open || len(state.autofillRules.pick.candidates) > 0 {
@@ -1022,6 +1083,7 @@ func (state *State) completionCandidates(session *Session, line string) ([]compl
 			add(completion.Candidate{Text: entry.Command, Insert: insertText, Desc: humanRelativeTime(now, entry.Used, state.messages.Completion), Kind: completion.KindCommand})
 		}
 	}
+	state.addSnippetCandidates(line, add)
 	if catalog := state.completionCatalog(); catalog != nil {
 		if result := completion.Complete(catalog, line); !result.Suppressed {
 			for _, candidate := range result.Candidates {
@@ -1030,6 +1092,30 @@ func (state *State) completionCandidates(session *Session, line string) ([]compl
 		}
 	}
 	return candidates, pathLoading || state.completion.catalogLoading
+}
+
+// addSnippetCandidates offers the configured quick commands the line continues
+// into, after the history and before the public catalog: they are the user's
+// own configuration, so they outrank the catalog, and they need no learning to
+// be on (#1084, #1200). The inline ghost offers the same text, but it stays
+// quiet when several quick commands share a prefix; the list is where they are
+// all named. A command that cannot be typed as it stands is left to the snippet
+// picker, which can ask for its template variables.
+func (state *State) addSnippetCandidates(line string, add func(completion.Candidate)) {
+	if !snippetHintLine(line) {
+		return
+	}
+	for _, entry := range state.snippets.list {
+		if !snippetHintCandidate(line, entry.Command) {
+			continue
+		}
+		add(completion.Candidate{
+			Text:   entry.Command,
+			Insert: entry.Command[len(line):],
+			Desc:   state.messages.Tools.SnippetsTitle,
+			Kind:   completion.KindCommand,
+		})
+	}
 }
 
 // completionKey handles keys while the list is open. Printable keys stay with
@@ -1050,11 +1136,18 @@ func (state *State) completionKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 		return gfx.EventResult{}, false
 	}
 	handled := gfx.EventResult{Handled: true, Repaint: true}
+	if event.Release {
+		if session.term.consumeAcceptedKey(event) {
+			return handled, true
+		}
+		return gfx.EventResult{}, false
+	}
 	if len(list.candidates) == 0 {
 		// A loading row has nothing to choose. Enter still runs the line; the
 		// other keys leave the terminal alone.
 		switch event.Key {
 		case gfx.KeyEscape:
+			session.term.noteAcceptedKey(event)
 			state.dismissCompletion(session)
 			return handled, true
 		case gfx.KeyEnter, gfx.KeyTab:
@@ -1065,6 +1158,7 @@ func (state *State) completionKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	}
 	switch event.Key {
 	case gfx.KeyEscape:
+		session.term.noteAcceptedKey(event)
 		state.dismissCompletion(session)
 		return handled, true
 	case gfx.KeyEnter:
@@ -1081,6 +1175,7 @@ func (state *State) completionKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 			state.closeCompletionList()
 			return gfx.EventResult{}, false
 		}
+		session.term.noteAcceptedKey(event)
 		state.acceptCompletion(session)
 		return handled, true
 	case gfx.KeyTab:
@@ -1093,24 +1188,30 @@ func (state *State) completionKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 		if event.Modifiers != 0 {
 			return gfx.EventResult{}, false
 		}
+		session.term.noteAcceptedKey(event)
 		state.completionMove(-1)
 		return handled, true
 	case gfx.KeyDown:
 		if event.Modifiers != 0 {
 			return gfx.EventResult{}, false
 		}
+		session.term.noteAcceptedKey(event)
 		state.completionMove(1)
 		return handled, true
 	case gfx.KeyPageUp:
+		session.term.noteAcceptedKey(event)
 		state.completionMove(-completionRows)
 		return handled, true
 	case gfx.KeyPageDown:
+		session.term.noteAcceptedKey(event)
 		state.completionMove(completionRows)
 		return handled, true
 	case gfx.KeyHome:
+		session.term.noteAcceptedKey(event)
 		list.selected, list.top = 0, 0
 		return handled, true
 	case gfx.KeyEnd:
+		session.term.noteAcceptedKey(event)
 		list.selected = len(list.candidates) - 1
 		list.clamp()
 		return handled, true
@@ -1189,7 +1290,10 @@ func (state *State) acceptCompletion(session *Session) {
 	if list.auto {
 		// The echo of the suffix must not reopen the menu before the next key:
 		// that would put a menu under the Enter that runs the finished line.
-		state.completion.autoHold = completionAutoHold{session: session.ID}
+		if state.completion.autoHold == nil {
+			state.completion.autoHold = completionAutoHolds{}
+		}
+		state.completion.autoHold.add(session.ID)
 	}
 }
 
@@ -1225,14 +1329,17 @@ func (state *State) clickCompletion(id gfx.ID) bool {
 	return true
 }
 
-// paintCompletionList draws the open list over the grid, anchored to the cursor
-// cell and flipped above it when the terminal has no room below.
-func (state *State) paintCompletionList(canvas *gfx.Canvas, session *Session, geometry terminalGeometry) {
+// declareCompletionList declares the open list as a page Popover over the grid,
+// anchored to the cursor cell and flipped above it when the terminal has no room
+// below. The rows themselves stay hand-painted in the popover's body slot.
+func (state *State) declareCompletionList(c ui.C, session *Session, bounds gfx.Rect, geometry terminalGeometry) {
 	list := &state.completion.list
 	if !list.active || list.sessionID != session.ID || state.modal != modalNone {
+		list.open = false
 		return
 	}
 	if !state.completionEligible(session) || len(list.candidates) == 0 && !list.loading {
+		list.open = false
 		return
 	}
 	cursor := session.term.presentedCursor()
@@ -1242,31 +1349,60 @@ func (state *State) paintCompletionList(canvas *gfx.Canvas, session *Session, ge
 	area := geometry.area
 	x = min(max(x, area.X+2), area.X+max(area.Width-2, 2))
 	y = min(max(y, area.Y+2), area.Y+max(area.Height-2, 2))
-	anchor := gfx.Rect{X: x, Y: y, Width: max(cellWidth, 2), Height: max(cellHeight, 2)}
+	anchorRect := gfx.Rect{X: x, Y: y, Width: max(cellWidth, 2), Height: max(cellHeight, 2)}
 
 	visible := min(len(list.candidates), completionRows)
-	width := state.completionWidth(canvas)
-	bodyHeight := float32(max(visible, 1))*completionRowHeight + 4
-	popover := components.BeginPopover(canvas, state.Theme(), area, anchor, components.PopoverOptions{
-		Layer:       dialogLayer,
-		Scope:       completionScope.ID(tree.Name("popover")),
-		DismissID:   hitCompletionDismiss,
-		Side:        components.PopoverBottom,
-		Align:       components.PopoverAlignStart,
-		SideOffset:  2,
-		Headerless:  true,                           // the rows are the content; a title would only take room
-		Padding:     components.DropdownMenuPadding, // the rows line up with the app's menus
-		Instant:     true,                           // it appears under the cursor as the user types
-		ContentSize: gfx.Size{Width: width},
-		BodyHeight:  bodyHeight,
-	})
-	layout := popover.Begin("", "")
-	if len(list.candidates) == 0 {
-		state.paintCompletionNote(canvas, layout.Body)
-	} else {
-		state.paintCompletionRows(canvas, layout.Body, visible)
+	width := state.completionWidth(c.Canvas())
+	// The page Popover reserves its border in the layout; the old card painted
+	// it inside. Shortening the slot by the two border pixels makes the surface
+	// and the body land where the old popover put them.
+	list.visibleRows = visible
+	list.slotHeight = float32(max(visible, 1))*completionRowHeight + 4 - 2
+	list.c = c
+	if list.body == nil {
+		list.body = state.declareCompletionListBody
 	}
-	popover.End()
+	if list.draw == nil {
+		list.draw = state.drawCompletionListBody
+	}
+	anchor := ui.Slot(c).Absolute().Left(anchorRect.X-bounds.X).Top(anchorRect.Y-bounds.Y).
+		Size(anchorRect.Width, anchorRect.Height)
+	list.open = true
+	spec := ui.PopoverSpec{
+		Scope:            completionScope.ID(tree.Name("popover")),
+		DismissID:        hitCompletionDismiss,
+		Side:             components.PopoverBottom,
+		Align:            ui.Start,
+		Offset:           2,
+		Width:            width,
+		Padding:          components.DropdownMenuPadding, // the rows line up with the app's menus
+		KeepOpenOnAnchor: true,
+		// The hand-painted list appeared at once; the page popover would otherwise
+		// play its entrance.
+		Instant: true,
+	}
+	if ui.PopoverWith(c, anchor, &list.open, spec, list.body) {
+		list.open = false
+	}
+}
+
+// declareCompletionListBody declares the one slot that paints the list's rows.
+func (state *State) declareCompletionListBody() {
+	list := &state.completion.list
+	ui.Slot(list.c).FillWidth().Height(list.slotHeight).Draw(list.draw)
+}
+
+// drawCompletionListBody paints the rows into the old popover's body box. The
+// page insets the slot by its border, so expanding it by that pixel restores the
+// old content rectangle.
+func (state *State) drawCompletionListBody(d *ui.DrawContext) {
+	list := &state.completion.list
+	body := gfx.Rect{X: d.Rect.X - 1, Y: d.Rect.Y - 1, Width: d.Rect.Width + 2, Height: d.Rect.Height + 2}
+	if len(list.candidates) == 0 {
+		state.paintCompletionNote(d.Canvas, body)
+		return
+	}
+	state.paintCompletionRows(d.Canvas, body, list.visibleRows)
 }
 
 // paintCompletionNote draws the one row of a list whose directory is still
@@ -1383,13 +1519,13 @@ func (state *State) completionShowsIcons() bool {
 	return false
 }
 
-// completionEndsInput reports whether input ends the line an automatic list
-// follows: Enter, Tab, an interrupt, or an escape sequence such as an arrow.
-// Ordinary editing keys keep it open; the echo rebuilds it.
+// completionEndsInput reports whether input stops the automatic list from
+// following the line: Enter, Tab, an interrupt, a control key such as
+// Ctrl+P/Ctrl+N/Ctrl+R, or an escape sequence such as an arrow. Ordinary
+// typing and Backspace keep it open; the echo rebuilds it.
 func completionEndsInput(input []byte) bool {
 	for _, b := range input {
-		switch b {
-		case '\r', '\n', '\t', 0x03, 0x04, 0x1b:
+		if b < 0x20 && b != 0x08 {
 			return true
 		}
 	}
@@ -1464,8 +1600,9 @@ func humanRelativeTime(now, t time.Time, m i18n.CompletionMessages) string {
 
 // staticGhost is the inline suggestion the catalog adds when history has none:
 // only when exactly one candidate exists, so the ghost never guesses.
-func (state *State) staticGhost(session *Session, line string) (string, bool) {
-	if strings.TrimSpace(line) == "" || cmdhistory.Secret(line) || !state.completionEligible(session) {
+// screenProof is the proof commandGhostSource already read from the screen.
+func (state *State) staticGhost(session *Session, line string, screenProof bool) (string, bool) {
+	if strings.TrimSpace(line) == "" || cmdhistory.Secret(line) || !state.completionEligibleWithScreenProof(session, screenProof) {
 		return "", false
 	}
 	catalog := state.completionCatalog()

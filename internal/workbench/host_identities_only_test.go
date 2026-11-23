@@ -87,8 +87,7 @@ func TestTheHostDialogSavesTheAgentIdentityRestriction(t *testing.T) {
 	// The switch is not part of the other policies.
 	state.Click(hitAddHost)
 	state.editor.advancedOpen = true
-	state.Click(hitDialogAuth)
-	state.Click(hitDialogAuthItemList.At(int(authPassword)))
+	chooseSelectOption(t, state, state.messages.FieldAuthentication, state.messages.AuthPassword)
 	canvas = gfx.Canvas{}
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1600})
 	if _, ok := hitByID(&canvas, hitDialogIdentitiesOnly); ok {

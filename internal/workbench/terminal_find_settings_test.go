@@ -23,9 +23,6 @@ func TestTerminalFindSettingsSharedControlsAndPersistence(t *testing.T) {
 		Width: 1100, Height: 800, Tree: Tree(), Paint: state.Paint,
 		OnResize: state.Resize, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut,
 		TextInput: func(context app.TextInputContext) *app.TextInput {
-			if input := state.TerminalFindPreferencesInput(context); input != nil {
-				return input
-			}
 			if input := state.TerminalFindInput(context); input != nil {
 				return input
 			}
@@ -63,6 +60,21 @@ func TestTerminalFindSettingsSharedControlsAndPersistence(t *testing.T) {
 		must(view.Click(b.X+b.Width/2, b.Y+b.Height/2))
 		must(view.Rest())
 	}
+	// clickLabel presses the control with the role and accessible name, the way
+	// the settings' page controls are reached now that the color picker is one.
+	clickLabel := func(role gfx.Role, name string) {
+		t.Helper()
+		hits := view.Snapshot().Hits
+		for i := len(hits) - 1; i >= 0; i-- {
+			h := hits[i]
+			if h.Role == role && h.Label == name && !h.Block && h.Bounds.Width > 0 && h.Bounds.Height > 0 {
+				must(view.Click(h.Bounds.X+h.Bounds.Width/2, h.Bounds.Y+h.Bounds.Height/2))
+				must(view.Rest())
+				return
+			}
+		}
+		t.Fatalf("missing %v named %q", role, name)
+	}
 	screenshot := func(name string) {
 		t.Helper()
 		if dir := os.Getenv("MOTTY_FIND_SCREENSHOTS"); dir != "" {
@@ -79,10 +91,15 @@ func TestTerminalFindSettingsSharedControlsAndPersistence(t *testing.T) {
 		t.Fatal("gear did not open find settings")
 	}
 	screenshot("find-popover")
-	click(hitFindForeground)
-	click(hitFindColorHex)
+	clickLabel(gfx.RoleButton, state.messages.FindSettings.Foreground)
+	clickLabel(gfx.RoleTextField, state.messages.FieldColorCustom)
 	must(view.Keys("Cmd+A"))
 	must(view.Type("#663399"))
+	// The preview follows the staged hex while the panel is open, as the old
+	// hand-painted picker's draft did.
+	if ink, _ := state.findHighlightColors(true); ink != gfx.RGB(0x66, 0x33, 0x99) {
+		t.Fatalf("preview ink %v does not follow the staged hex", ink)
+	}
 	must(view.Keys("Enter"))
 	must(view.Rest())
 	if state.terminalFindPrefs.Foreground != "#663399" || !state.findSettingsUI.open {
@@ -114,11 +131,11 @@ func TestTerminalFindSettingsSharedControlsAndPersistence(t *testing.T) {
 	must(view.Rest())
 	click(hitSettingsResultList.At(0))
 	screenshot("find-settings-page")
-	click(hitFindBackground)
-	click(hitFindColorHex)
+	clickLabel(gfx.RoleButton, state.messages.FindSettings.Background)
+	clickLabel(gfx.RoleTextField, state.messages.FieldColorCustom)
 	must(view.Keys("Cmd+A"))
 	must(view.Type("#CCDDEE"))
-	click(hitFindColorApply)
+	clickLabel(gfx.RoleButton, state.messages.ColorPickerApply)
 	want := terminalFindPreferences{Foreground: "#663399", Background: "#CCDDEE", Opacity: 0, Origin: findSessionBottom}
 	if state.terminalFindPrefs != want {
 		t.Fatalf("settings page: got %+v, want %+v", state.terminalFindPrefs, want)

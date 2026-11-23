@@ -141,7 +141,8 @@ MOTTY_MCP_TOKEN=<token> motty mcp-bridge --url http://127.0.0.1:<port>/mcp
 The token goes in an environment variable because a flag would show in the process
 list. If Motty restarts, the bridge starts a new session by itself, so the client
 keeps working without a restart. A client that speaks HTTP directly re-initializes
-when a request answers 404 with `MCP session not found`.
+when a request answers 404; the JSON-RPC body names the cause as `Session not found`
+(code -32001).
 
 ## Without the window
 

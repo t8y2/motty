@@ -60,28 +60,50 @@ func TestParseRefusesWhatItDoesNotKnow(t *testing.T) {
 	}
 }
 
-func TestHostKeyAlgorithmsKeepTheKnownKeyInCharge(t *testing.T) {
+// The trusted key comes first, so a server with several key types is checked
+// against it; everything else stays offered, so a server that lost that key
+// type can still be reached.
+func TestHostKeyAlgorithmsPreferTheKnownKeyAndKeepTheRest(t *testing.T) {
 	known := algorithmsFor(ssh.KeyAlgoRSA)
 	if got := hostKeyAlgorithms(nil, nil); got != nil {
 		t.Fatalf("new host, defaults: %v", got)
-	}
-	if got := hostKeyAlgorithms(known, nil); !slices.Equal(got, known) {
-		t.Fatalf("known host, defaults: %v", got)
 	}
 	wanted := []string{ssh.KeyAlgoED25519, ssh.KeyAlgoRSASHA256, ssh.KeyAlgoRSA}
 	if got := hostKeyAlgorithms(nil, wanted); !slices.Equal(got, wanted) {
 		t.Fatalf("new host, wanted: %v", got)
 	}
-	// The trusted RSA key is checked, and an old server that signs with SHA-1 is
-	// still allowed because ssh-rsa was asked for.
-	if got := hostKeyAlgorithms(known, wanted); !slices.Equal(got, []string{ssh.KeyAlgoRSASHA256, ssh.KeyAlgoRSA}) {
-		t.Fatalf("known and wanted: %v", got)
+
+	check := func(name string, got, offered []string) {
+		t.Helper()
+		seenOther := false
+		for _, a := range got {
+			if !slices.Contains(known, a) {
+				seenOther = true
+			} else if seenOther {
+				t.Fatalf("%s: a key that is not on file precedes one that is: %v", name, got)
+			}
+		}
+		for _, a := range offered {
+			if !slices.Contains(got, a) {
+				t.Fatalf("%s: %q was dropped: %v", name, a, got)
+			}
+		}
+		for i, a := range got {
+			if slices.Contains(got[:i], a) {
+				t.Fatalf("%s: %q is offered twice: %v", name, a, got)
+			}
+		}
 	}
-	if got := hostKeyAlgorithms(known, []string{ssh.KeyAlgoED25519}); !slices.Equal(got, known) {
-		t.Fatalf("no overlap falls back to the trusted key: %v", got)
+	defaults := hostKeyAlgorithms(known, nil)
+	check("known host, defaults", defaults, defaultHostKeys())
+	if !slices.Contains(defaults, ssh.KeyAlgoED25519) {
+		t.Fatalf("a server without the saved key type is unreachable: %v", defaults)
 	}
-	// A list that leaves ssh-rsa out keeps it out, whatever is on file.
-	if got := hostKeyAlgorithms(known, []string{ssh.KeyAlgoRSASHA256}); slices.Contains(got, ssh.KeyAlgoRSA) {
+	check("known and wanted", hostKeyAlgorithms(known, wanted), wanted)
+	// A list that leaves the trusted key out does not hide it.
+	check("no overlap", hostKeyAlgorithms(known, []string{ssh.KeyAlgoED25519}), known)
+	// A list that leaves ssh-rsa out keeps it out when the key on file is not RSA.
+	if got := hostKeyAlgorithms([]string{ssh.KeyAlgoED25519}, []string{ssh.KeyAlgoED25519, ssh.KeyAlgoRSASHA256}); slices.Contains(got, ssh.KeyAlgoRSA) {
 		t.Fatalf("ssh-rsa offered although the list left it out: %v", got)
 	}
 }

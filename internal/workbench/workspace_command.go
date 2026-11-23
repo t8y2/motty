@@ -3,9 +3,9 @@ package workbench
 import (
 	"strings"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -29,6 +29,21 @@ func (draft *workspaceDraft) commandEditor(id string) *text.Editor {
 		draft.commandEditors[id] = text.NewEditor("")
 	}
 	return draft.commandEditors[id]
+}
+
+// commandField is the page field on the command editor of one host, made once
+// and bound to the editor the dialog reads.
+func (draft *workspaceDraft) commandField(id string) *ui.Field {
+	if draft.commandFields == nil {
+		draft.commandFields = make(map[string]*ui.Field)
+	}
+	field := draft.commandFields[id]
+	if field == nil {
+		field = new(ui.Field)
+		field.Bind(draft.commandEditor(id))
+		draft.commandFields[id] = field
+	}
+	return field
 }
 
 func (state *State) workspaceDraftCommands() (map[string]WorkspaceCommand, bool) {
@@ -55,15 +70,6 @@ func (state *State) workspaceDraftCommands() (map[string]WorkspaceCommand, bool)
 	return commands, true
 }
 
-func (state *State) paintWorkspaceCommandFields(canvas *gfx.Canvas, host Host, bounds gfx.Rect) {
-	draft, m := &state.workspaceDraft, state.messages
-	editor := draft.commandEditor(host.CatalogID)
-	id := hitWorkspaceCommandField.At(int(host.ID))
-	monitorLabel(canvas, elide(canvas, m.WorkspaceCommandOrderHint, 12, gfx.WeightRegular, bounds.Width), gfx.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: 22}, 12, state.pal.text, gfx.WeightRegular)
-	control := gfx.Rect{X: bounds.X, Y: bounds.Y + 26, Width: bounds.Width, Height: 32}
-	components.PaintInput(canvas, state.Theme(), control, components.InputSnapshot{ID: id, Label: m.WorkspaceCommandField, Value: editor.String(), Placeholder: m.Tools.LoginCommandPlaceholder, Focused: canvas.Focused() == id, PlatformEditing: canvas.Focused() == id && editor.String() != ""})
-}
-
 func workspaceCommandPending(session *Session) bool {
 	return session != nil && session.term != nil && session.term.shell != nil && !session.term.ended && session.term.login.workspace != ""
 }
@@ -87,19 +93,21 @@ func (state *State) workspaceCommandNoticeInWorkspace(session *Session) bool {
 	return false
 }
 
-func (state *State) paintWorkspaceCommandNotice(canvas *gfx.Canvas, session *Session, bounds gfx.Rect) {
+// declareWorkspaceCommandNotice declares the pending login command's strip in
+// the terminal pane: its words and the two page buttons that run or drop it.
+func (state *State) declareWorkspaceCommandNotice(c ui.C, session *Session) {
 	if !workspaceCommandPending(session) {
 		return
 	}
 	m := state.messages
-	canvas.Fill(bounds, state.pal.surface)
-	buttons := min(float32(144), bounds.Width*.55)
-	label := gfx.Rect{X: bounds.X + 8, Y: bounds.Y + 8, Width: max(0, bounds.Width-buttons-20), Height: 22}
-	monitorLabel(canvas, elide(canvas, m.WorkspaceCommandPending, 12, gfx.WeightRegular, label.Width), label, 12, state.pal.muted, gfx.WeightRegular)
-	components.BeginButtonRow(canvas, state.Theme(), gfx.Rect{X: bounds.X + bounds.Width - buttons - 4, Y: bounds.Y + 5, Width: buttons, Height: 26}).Size(components.ButtonSizeXSmall).Paint(
-		components.ButtonAction{ID: hitWorkspaceCommandRun.At(int(session.ID)), Label: m.WorkspaceCommandRun, Variant: components.ButtonOutline},
-		components.ButtonAction{ID: hitWorkspaceCommandCancel.At(int(session.ID)), Label: m.WorkspaceCommandCancel, Variant: components.ButtonSecondary},
-	)
+	ui.Row(c).Height(inputNoticeHeight).FillWidth().Shrink(0).Background(state.pal.surface).
+		PadSides(8, 4, 5, 4).Gap(6).Items(ui.Center).Children(func() {
+		ui.Text(c, m.WorkspaceCommandPending).FontSize(12).Color(state.pal.muted).Grow(1).Ellipsis()
+		ui.Button(c, m.WorkspaceCommandRun).XSmall().Outline().
+			Hit(hitWorkspaceCommandRun.At(int(session.ID)), m.WorkspaceCommandRun)
+		ui.Button(c, m.WorkspaceCommandCancel).XSmall().Secondary().
+			Hit(hitWorkspaceCommandCancel.At(int(session.ID)), m.WorkspaceCommandCancel)
+	})
 }
 
 func (state *State) clickWorkspaceCommand(id gfx.ID) bool {

@@ -15,7 +15,7 @@ func workspaceCommandSession(t *testing.T, login string, command WorkspaceComman
 	state, shell, now := loginCommandSession(t, login)
 	session := &state.sessions[0]
 	session.workspaceCommand = command
-	session.term.armInitialization(session)
+	session.term.armInitialization(state, session)
 	return state, session, shell, now
 }
 
@@ -93,7 +93,7 @@ func TestWorkspaceCommandWithoutLoginAndReset(t *testing.T) {
 	if session.term.login.line != "" {
 		t.Fatal("reset kept pending command")
 	}
-	session.term.armInitialization(session)
+	session.term.armInitialization(state, session)
 	workspaceCommandPrompt(state, session, shell)
 	if shell.typed() != "cd /srv\rcd /srv\r" {
 		t.Fatalf("new shell: %q", shell.typed())
@@ -142,6 +142,9 @@ func TestWorkspaceCommandDraftPersistenceAndSessionSnapshot(t *testing.T) {
 		t.Fatal("no command editor")
 	}
 	editor.Insert("cd /srv && tail -f app.log")
+	// The list places its expanded row in the paint after the host grows; the
+	// next paint shows the field where the reveal scrolled it.
+	paintAt(state, gfx.Size{Width: 1280, Height: 800})
 	canvas, _ := paintAt(state, gfx.Size{Width: 1280, Height: 800})
 	panelHit(t, canvas, hitWorkspaceCommandField.At(int(host.ID)))
 	state.submitWorkspaceDraft()
@@ -229,7 +232,7 @@ func TestWorkspaceCommandDefaultUsesLoginAddedLater(t *testing.T) {
 	}
 	session.term.resetFolderSync()
 	session.host.LoginCommand = "cd /srv" // Even identical commands are two distinct steps.
-	session.term.armInitialization(session)
+	session.term.armInitialization(state, session)
 	workspaceCommandPrompt(state, session, shell)
 	if shell.typed() != "cd /srv\rcd /srv\r" {
 		t.Fatalf("new login not executed first: %q", shell.typed())
@@ -244,7 +247,7 @@ func TestWorkspaceCommandManualActionDoesNotCrossReconnect(t *testing.T) {
 	state, session, shell, _ := workspaceCommandSession(t, "", WorkspaceCommand{Command: "cd /srv"})
 	session.term.takeOutput = func() {
 		session.term.resetFolderSync()
-		session.term.armInitialization(session)
+		session.term.armInitialization(state, session)
 	}
 	state.Click(hitWorkspaceCommandRun.At(int(session.ID)))
 	if shell.typed() != "" {

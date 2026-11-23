@@ -115,8 +115,8 @@ func TestANewTabOnAConnectedHostSharesToo(t *testing.T) {
 	state := newTestState(t, options)
 	world.connectFirst(t, state)
 
-	state.Click(hitHosts)
-	openHost(state)
+	state.Click(hitNewTab)
+	clickPickerRow(t, state, state.hosts[0].Label)
 	if len(world.conns) != 1 || len(world.shared) != 1 {
 		t.Fatalf("dials %d, shares %d", len(world.conns), len(world.shared))
 	}
@@ -305,8 +305,7 @@ func TestAChangedEffectiveProxyPolicyNeverSharesTheOldConnection(t *testing.T) {
 			// Host editing updates open tabs for future reconnects, but it cannot
 			// change the transport their live connection already established.
 			state.sessions[0].host = state.hosts[0]
-			state.Click(hitHosts)
-			openHost(state)
+			state.newHostSession(state.hosts[0])
 			if len(world.conns) != 2 || len(world.shared) != 0 {
 				t.Fatalf("dials=%d shares=%d", len(world.conns), len(world.shared))
 			}
@@ -327,6 +326,32 @@ func TestAnotherHostIsDialedNotShared(t *testing.T) {
 	}
 }
 
+// Several saved hosts can name one bastion account, each standing for the
+// asset the user picks in the bastion's menu. A bastion binds the channels of
+// one transport to the asset chosen on it, so lending the first host's
+// connection to the second skips the menu and lands on the first asset, and the
+// file panels of both follow whichever asset was chosen last (#1305).
+func TestAnotherSavedHostAtTheSameAccountIsDialedNotShared(t *testing.T) {
+	world, options := newSharingWorld(t)
+	state := newTestState(t, options)
+	world.connectFirst(t, state)
+
+	second := state.hosts[0]
+	second.ID, second.CatalogID, second.Label = state.nextHostID, "host_bastion_second_asset", "Second asset"
+	state.nextHostID++
+	state.hosts = append(state.hosts, second)
+	state.Click(hitHosts)
+	state.selectedHostID = second.ID
+	openHost(state)
+	if len(world.conns) != 2 || len(world.shared) != 0 {
+		t.Fatalf("dials %d, shares %d: another saved host must be its own connection", len(world.conns), len(world.shared))
+	}
+	opened, ok := state.sessionByIDPointer(state.activeSessionID)
+	if !ok || opened.HostID != second.ID || opened.shared {
+		t.Fatalf("opened session = %+v", opened)
+	}
+}
+
 func TestSharingCanBeTurnedOffAndTheChoiceIsKept(t *testing.T) {
 	world, options := newSharingWorld(t)
 	state := newTestState(t, options)
@@ -337,8 +362,7 @@ func TestSharingCanBeTurnedOffAndTheChoiceIsKept(t *testing.T) {
 		t.Fatal("the setting did not change")
 	}
 
-	state.Click(hitHosts)
-	openHost(state)
+	state.newHostSession(state.hosts[0])
 	if len(world.conns) != 2 || len(world.shared) != 0 {
 		t.Fatalf("dials %d, shares %d: with sharing off a tab dials", len(world.conns), len(world.shared))
 	}
@@ -479,5 +503,109 @@ func TestClosingTheTabThatDialedLeavesTheSharedTabAlive(t *testing.T) {
 	}
 	if len(state.sessions) != 1 || !state.sessions[0].shared {
 		t.Fatalf("sessions = %+v", state.sessions)
+	}
+}
+
+// A transport is opened for the authentication policy the host had at the
+// dial: one opened with a key is not a password login. Editing the policy
+// changes the next connection, not the live one, so a tab opened after the edit
+// has to dial and be asked (and refused, if the server refuses that method)
+// instead of borrowing the transport its earlier tab still holds (#1258).
+func TestAnAccountIsSharedOnlyBetweenTheSameAuthentication(t *testing.T) {
+	tests := []struct {
+		name             string
+		first, second    string
+		wantShares       bool
+		wantSecondMethod sshconn.AuthMethods
+	}{
+		{"the same key policy", "key", "key", true, 0},
+		{"the same password policy", "password", "password", true, 0},
+		{"a key connection is not a password login", "key", "password", false, sshconn.AuthKeyboardInteractive | sshconn.AuthPassword},
+		{"a password connection is not a key login", "password", "key", false, sshconn.AuthPublicKey | sshconn.AuthKeyboardInteractive},
+		{"the automatic order is its own policy", "", "password", false, sshconn.AuthKeyboardInteractive | sshconn.AuthPassword},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			world, options := newSharingWorld(t)
+			saved := savedHost{
+				ID: "host_bastion", Label: "Bastion", Address: "bastion.example.com", User: "ops", Port: 22,
+				savedTransport: savedTransport{Authentication: test.first},
+			}
+			if err := saveState(options.StatePath, savedState{Hosts: []savedHost{saved}}); err != nil {
+				t.Fatal(err)
+			}
+			state := newTestState(t, options)
+			world.connectFirst(t, state)
+			next, ok := parseHostAuth(test.second)
+			if !ok {
+				t.Fatalf("policy %q", test.second)
+			}
+			// Host editing updates open tabs for future reconnects, but it cannot
+			// change how their live connection already authenticated.
+			state.hosts[0].Auth = next
+			state.sessions[0].host = state.hosts[0]
+			state.Click(hitHosts)
+			state.selectedHostID = state.hosts[0].ID
+			state.newHostSession(state.hosts[0])
+			if test.wantShares {
+				if len(world.conns) != 1 || len(world.shared) != 1 {
+					t.Fatalf("dials = %d, shares = %d: want the connection lent", len(world.conns), len(world.shared))
+				}
+				return
+			}
+			if len(world.shared) != 0 {
+				t.Fatal("the connection was lent to another authentication policy")
+			}
+			if len(world.conns) != 2 {
+				t.Fatalf("dials = %d: want the edited host's own", len(world.conns))
+			}
+			target := sshconn.Endpoint{Host: "bastion.example.com", Port: 22, User: "ops"}
+			if got := world.configs[1].Authentication[target].Methods; got != test.wantSecondMethod {
+				t.Fatalf("the edited host dialed with methods %b, want %b", got, test.wantSecondMethod)
+			}
+		})
+	}
+}
+
+// A transport is opened for the policy the host had at the dial: one confined to
+// its interactive session carries TCP keepalive and no probe may be sent on it,
+// so an RTT reading and shell integration never come from it. Editing that policy
+// changes the next connection, not the live one, and a tab must not borrow a
+// transport dialed under the other policy.
+func TestAChangedInteractiveOnlyPolicyNeverSharesTheOldConnection(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		initial bool
+		next    bool
+	}{
+		{"left the interactive session only policy", true, false},
+		{"confined to the interactive session only policy", false, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			world, options := newSharingWorld(t)
+			state := newTestState(t, options)
+			state.hosts[0].InteractiveOnly = test.initial
+			world.connectFirst(t, state)
+			if world.configs[0].InteractiveOnly != test.initial {
+				t.Fatalf("dialed config interactive-only = %v, want %v", world.configs[0].InteractiveOnly, test.initial)
+			}
+
+			state.Click(hitHosts)
+			state.selectedHostID = state.hosts[0].ID
+			state.openEditHost()
+			state.Click(hitDialogInteractiveOnly)
+			state.Click(hitDialogSubmit)
+			if state.hosts[0].InteractiveOnly != test.next {
+				t.Fatalf("the host was not edited: interactive-only %v", state.hosts[0].InteractiveOnly)
+			}
+
+			openHost(state)
+			if len(world.conns) != 2 || len(world.shared) != 0 {
+				t.Fatalf("dials=%d shares=%d: the tab borrowed a transport dialed under the other policy", len(world.conns), len(world.shared))
+			}
+			if world.configs[1].InteractiveOnly != test.next {
+				t.Fatalf("dialed config interactive-only = %v, want %v", world.configs[1].InteractiveOnly, test.next)
+			}
+		})
 	}
 }

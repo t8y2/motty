@@ -112,6 +112,7 @@ func (s *State) aiStartCLILogin(id string, device bool) {
 	s.aiCloseDialog()
 	ctx, cancel := context.WithCancel(context.Background())
 	login := &aiCLILogin{provider: p, term: newTerminalWithScrollback(90, 16, 200), cancel: cancel}
+	login.term.screen.SetCellPixels(s.cellPixelWidth, s.cellPixelHeight)
 	s.reportTerminalColors(login.term)
 	login.term.screen.SetImageWake(func() {
 		if s.options.Invalidate != nil {
@@ -352,7 +353,7 @@ func (s *State) declareAICLILogin(c ui.C) {
 			if columns, lines := term.screen.Size(); columns != cols || lines != rows {
 				term.screen.Resize(cols, rows)
 				if term.shell != nil {
-					term.shell.Resize(cols, rows)
+					s.tellShellSize(term, s.terminalSize(cols, rows))
 				}
 			}
 			login.geometry = terminalGeometry{area: area, left: area.X, top: area.Y, cols: cols, rows: rows}

@@ -95,6 +95,19 @@ func (form *snippetsUI) refreshSnippetGroups() {
 		}
 	}
 	slices.SortStableFunc(form.groups, func(a, b string) int { return strings.Compare(strings.ToLower(a), strings.ToLower(b)) })
+	if form.groupCounts == nil {
+		form.groupCounts = make(map[string]int, len(form.groups))
+	}
+	clear(form.groupCounts)
+	for index := range form.list {
+		group := form.list[index].Group
+		if group == "" {
+			continue
+		}
+		if at := slices.IndexFunc(form.groups, func(known string) bool { return sameSnippetGroup(known, group) }); at >= 0 {
+			form.groupCounts[form.groups[at]]++
+		}
+	}
 	form.hasUngrouped = ungrouped
 	// A filter whose group is gone shows everything rather than nothing.
 	if filter := form.filter; filter.ungrouped && !ungrouped || filter.group != "" && !slices.ContainsFunc(form.groups, func(known string) bool { return sameSnippetGroup(known, filter.group) }) {
@@ -160,7 +173,7 @@ func (state *State) declareSnippetFilter(c ui.C) ui.Box {
 		}
 	}
 	selector := ui.Select(c, &form.filterChoice, choices, state.snippetFilterChoiceLabel).
-		Label(label).Hit(hitSnippetFilter, label)
+		Label(label)
 	if selector.Changed() {
 		choice := form.filterChoice
 		c.After(func() { state.chooseSnippetFilter(choice) })
@@ -215,6 +228,17 @@ func (state *State) snippetGroupPicker(value string) *components.SingleSelectSta
 	control.SetValue(value)
 	control.Open = false
 	return control
+}
+
+// refreshSnippetGroupPicker rebuilds the editor's group choices after the
+// manager changed a group, keeping what the user typed or chose.
+func (state *State) refreshSnippetGroupPicker() {
+	control := &state.snippets.groupPicker
+	value, query := control.Value(), control.Query.String()
+	state.snippetGroupPicker(value)
+	if query != "" {
+		control.Query.Insert(query)
+	}
 }
 
 func (state *State) syncSnippetGroupError() {

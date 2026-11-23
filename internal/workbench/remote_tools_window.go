@@ -31,17 +31,11 @@ type remoteToolsWindow struct {
 	page *ui.Page
 	root string
 
-	tableHandlers   ui.Handlers
 	refreshHandlers ui.Handlers
 	autoHandlers    ui.Handlers
-	tableDraw       func(*ui.DrawContext)
-	tableHeaderDraw func(*ui.DrawContext)
 	refreshDraw     func(*ui.DrawContext)
 	autoDraw        func(*ui.DrawContext)
 	footerFlow      remoteToolsButtonFlow
-	paintTab        remoteTab
-	tablePressRow   int
-	tableHoverRow   int
 	menuCtx         ui.C
 }
 
@@ -61,7 +55,7 @@ func (state *State) openRemoteToolsWindowTab(session *Session, tab remoteTab, sw
 				}
 				window.ui.remote.selected = ""
 				window.ui.remote.rows = nil
-				window.ui.remote.processScroll = 0
+				window.ui.remote.resetScroll = true
 				window.ui.remote.collectedAt = time.Time{}
 				window.ui.remote.stale = false
 				window.window.Show()
@@ -75,13 +69,16 @@ func (state *State) openRemoteToolsWindowTab(session *Session, tab remoteTab, sw
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	w := &remoteToolsWindow{owner: state, group: state.options.Group, connection: session.conn, ctx: ctx, cancel: cancel, tablePressRow: -1, tableHoverRow: -1}
+	w := &remoteToolsWindow{owner: state, group: state.options.Group, connection: session.conn, ctx: ctx, cancel: cancel}
 	w.session.ID = session.ID
 	w.bind(state, session)
 	w.ui.language, w.ui.messages = state.language, state.messages
 	w.ui.appearance, w.ui.pal, w.ui.theme = state.appearance, state.pal, state.theme
 	w.ui.modal, w.ui.activeSessionID, w.ui.remoteWindow = modalRemoteTools, session.ID, w
-	w.ui.remote = remoteToolsView{session: session.ID, title: session.Title, tab: tab, sort: state.remote.sort, serial: 1}
+	w.ui.remote = remoteToolsView{
+		session: session.ID, title: session.Title, tab: tab, sort: state.remote.sort, serial: 1,
+		columnWidths: &w.owner.remoteColumnWidths,
+	}
 	window, err := state.options.OpenContentWindow(w.config(), nil)
 	if err != nil {
 		w.dispose()
@@ -107,7 +104,7 @@ func (w *remoteToolsWindow) config() app.Config {
 		MinWidth: remoteToolsMinWidth, MinHeight: remoteToolsMinHeight,
 		ClearColor: app.Color{Red: float64(w.ui.pal.workspace.Red), Green: float64(w.ui.pal.workspace.Green), Blue: float64(w.ui.pal.workspace.Blue), Alpha: 1},
 		Paint:      w.paint, OnKey: w.key, OnPointer: w.pointer, OnClosed: w.dispose,
-		OnShortcut: w.shortcut, OnScroll: w.scroll, TextInput: w.textInput,
+		OnShortcut: w.shortcut, TextInput: w.textInput,
 		OnMinimize: func(minimized bool) {
 			if minimized || w.closed || w.ui.remote.loading {
 				return
@@ -120,10 +117,14 @@ func (w *remoteToolsWindow) config() app.Config {
 	base.WindowBorderColor = func() app.Color {
 		return app.Color{Red: float64(w.ui.pal.workspace.Red), Green: float64(w.ui.pal.workspace.Green), Blue: float64(w.ui.pal.workspace.Blue), Alpha: 1}
 	}
-	config := w.windowPage().Config(base)
+	config := ui.Configure(w.windowPage(), base)
 	// The page's Config paints the page; the window's paint keeps the presenters
 	// in step with its owner before the page is declared.
 	config.Paint = w.paint
+	// The window routes the wheel: its own surfaces first, then the page's. The
+	// page must not have this handler as its fallback, or a wheel no area under
+	// the pointer uses would come back here from Page.Wheel forever.
+	config.OnScroll = w.scroll
 	return config
 }
 
@@ -136,6 +137,9 @@ func (w *remoteToolsWindow) bind(owner *State, source *Session) {
 	w.session.Title, w.session.Address, w.session.host = source.Title, source.Address, source.host
 	w.session.conn, w.session.term, w.session.phase = w.connection, source.term, source.phase
 	w.session.sudoCommands, w.session.sudoPassword = source.sudoCommands, source.sudoPassword
+	// The widths belong to the workbench presenting the session, so a window
+	// that moves to another workbench follows that workbench's sizes.
+	w.ui.remote.columnWidths = &owner.remoteColumnWidths
 }
 
 // Locate the captured connection, including after its tab moves to another
@@ -182,6 +186,7 @@ func (w *remoteToolsWindow) dispose() {
 	w.ui.cancelRemoteProcessCommand()
 	w.ui.cancelRemoteProcessEnvironment()
 	w.ui.cancelRemoteContainerEnvironment()
+	w.ui.cancelRemoteContainerInspect()
 	w.cancel()
 	w.session.sudoCommands, w.session.sudoPassword = false, ""
 	w.owner.remoteWindows = slices.DeleteFunc(w.owner.remoteWindows, func(other *remoteToolsWindow) bool { return other == w })
@@ -419,13 +424,11 @@ func (w *remoteToolsWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
 			return result
 		}
 	}
-	if result, handled := w.ui.remoteProcessScrollPointer(event); handled {
-		return result
-	}
 	return gfx.EventResult{}
 }
 
-// scroll sends the wheel to the open dialog, else to the selected snapshot.
+// scroll sends the wheel to the window page: the open detail dialog's scroll
+// area first, else the table's list under the pointer.
 func (w *remoteToolsWindow) scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if w.closed {
 		return gfx.EventResult{Handled: true}
@@ -433,10 +436,12 @@ func (w *remoteToolsWindow) scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if w.ui.remote.auto.open {
 		return gfx.EventResult{Handled: true}
 	}
-	if result, handled := w.ui.remoteProcessWheel(event); handled {
+	if w.ui.remote.containerDetails.open || w.ui.remote.processDetails.open {
+		result := w.windowPage().RouteWheel(event)
+		result.Handled = true
 		return result
 	}
-	return gfx.EventResult{Handled: true}
+	return w.windowPage().RouteWheel(event)
 }
 
 // textInput answers for a form or sudo field before the page has declared it,

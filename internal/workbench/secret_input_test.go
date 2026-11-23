@@ -54,13 +54,13 @@ func TestHostFormSavesTheKeyPassphraseUnderTheKeyAndRefusesAWrongOne(t *testing.
 	state.Click(hitKeychain)
 	state.Click(hitKeysImport)
 	state.Click(hitHosts)
+	locked = state.identities[0].Path // the key is kept in the vault, named by its reference
 
 	state.Click(hitAddHost)
 	typeInto(state, hitDialogLabel, "Vault")
 	typeInto(state, hitDialogAddress, "vault.example.com")
 	typeInto(state, hitDialogUser, "ops")
-	state.Click(hitDialogAuth)
-	state.Click(hitDialogAuthItemList.At(int(authPrivateKey)))
+	chooseSelectOption(t, state, state.messages.FieldAuthentication, state.messages.AuthPrivateKey)
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitDialogPassphrase); ok {
@@ -89,6 +89,45 @@ func TestHostFormSavesTheKeyPassphraseUnderTheKeyAndRefusesAWrongOne(t *testing.
 		t.Fatalf("the host was not saved: %q", state.dialogError)
 	}
 	if value, found, err := state.secrets.vault.Get(passphraseSecretName(locked)); err != nil || !found || value != "secret" {
+		t.Fatalf("saved passphrase = %q, %v, %v", value, found, err)
+	}
+}
+
+func TestHostFormSavesThePassphraseOfAGeneratedKey(t *testing.T) {
+	options := freshOptions(t)
+	options.SetClipboardText = func(string) error { return nil } // never the machine's clipboard
+	state := newTestState(t, options)
+	state.Click(hitKeychain)
+	state.Click(hitKeysAdd)
+	state.Click(hitKeysGenerate)
+	state.form.set(0, "locked")
+	state.form.set(1, "correct horse")
+	state.Click(hitFormSubmit)
+	key := state.identities[0]
+	if !key.Stored || !key.Encrypted {
+		t.Fatalf("generated key = %+v", key)
+	}
+	state.Click(hitHosts)
+
+	state.Click(hitAddHost)
+	typeInto(state, hitDialogLabel, "Vault")
+	typeInto(state, hitDialogAddress, "vault.example.com")
+	typeInto(state, hitDialogUser, "ops")
+	chooseSelectOption(t, state, state.messages.FieldAuthentication, state.messages.AuthPrivateKey)
+	state.Click(hitDialogIdentity)
+	state.Click(hitDialogIdentityItemList.At(int(key.ID)))
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	if _, ok := hitByID(&canvas, hitDialogPassphrase); !ok {
+		t.Fatal("an encrypted stored key did not ask for its passphrase")
+	}
+
+	typeInto(state, hitDialogPassphrase, "correct horse")
+	state.Click(hitDialogSubmit)
+	if state.modal != modalNone {
+		t.Fatalf("the host was not saved: %q", state.dialogError)
+	}
+	if value, found, err := state.secrets.vault.Get(passphraseSecretName(key.Path)); err != nil || !found || value != "correct horse" {
 		t.Fatalf("saved passphrase = %q, %v, %v", value, found, err)
 	}
 }

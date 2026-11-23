@@ -70,7 +70,10 @@ func TestNewTabPageEditsAndAddsHosts(t *testing.T) {
 }
 
 func TestNewTabPageConnectsAHostInThisTab(t *testing.T) {
-	state := newTabState(t)
+	state := newTestState(t, testOptions(t))
+	openHost(state)
+	firstID := state.activeSessionID
+	openEmptyTab(state)
 	before := len(state.workspaceTabs)
 	workspace := state.deck.ActiveWorkspace()
 	host := state.hosts[0]
@@ -79,11 +82,45 @@ func TestNewTabPageConnectsAHostInThisTab(t *testing.T) {
 		t.Fatalf("tabs %d -> %d: choosing a host must connect in the tab it was chosen in", before, len(state.workspaceTabs))
 	}
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
-	if !ok || session.HostID != host.ID {
+	if !ok || session.ID == firstID || session.HostID != host.ID {
 		t.Fatalf("active session = %+v, want host %d", session, host.ID)
 	}
 	if state.activeSection != sectionTerminal {
 		t.Fatalf("section = %v", state.activeSection)
+	}
+}
+
+func TestNewTabAllHostsConnectsInTheEmptyPaneEvenWithAnExistingSession(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	openHost(state)
+	firstID := state.activeSessionID
+	openEmptyTab(state)
+	workspace := state.deck.ActiveWorkspace()
+	newTabClick(t, state, hitPaneChooseHost)
+	openHost(state)
+	if len(state.sessions) != 2 || state.activeSessionID == firstID || state.deck.ActiveWorkspace() != workspace {
+		t.Fatalf("sessions=%d active=%d workspace=%d, want a new session in workspace %d", len(state.sessions), state.activeSessionID, state.deck.ActiveWorkspace(), workspace)
+	}
+}
+
+func TestNewTabHostMenuConnectsInTheEmptyPaneEvenWithAnExistingSession(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	openHost(state)
+	firstID := state.activeSessionID
+	openEmptyTab(state)
+	workspace := state.deck.ActiveWorkspace()
+	driver := paneDriver(t, state, gfx.Size{Width: 1400, Height: 900})
+	row := hitOf(t, driver, hitNewTabHostList.At(0))
+	x, y := row.Bounds.X+row.Bounds.Width/4, row.Bounds.Y+row.Bounds.Height/2
+	if err := driver.Press(x, y, gfx.PointerButtonSecondary); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.Release(x, y, gfx.PointerButtonSecondary); err != nil {
+		t.Fatal(err)
+	}
+	chooseMenu(t, state, hitHostMenuConnect)
+	if len(state.sessions) != 2 || state.activeSessionID == firstID || state.deck.ActiveWorkspace() != workspace {
+		t.Fatalf("sessions=%d active=%d workspace=%d, want a new session in workspace %d", len(state.sessions), state.activeSessionID, state.deck.ActiveWorkspace(), workspace)
 	}
 }
 

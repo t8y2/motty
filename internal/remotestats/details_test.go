@@ -62,6 +62,37 @@ func TestDetailsLoginSessionsAreOptionalBoundedAndSanitized(t *testing.T) {
 	}
 }
 
+func TestLoginsCommandDoesNotInferSessionsFromProcesses(t *testing.T) {
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("requires sh")
+	}
+	for _, test := range []struct {
+		name, who string
+		available bool
+		count     int
+	}{
+		{"empty who", ":", true, 0},
+		{"other session", "printf 'bob pts/1 2026-11-21 10:30\\n'", true, 1},
+		{"who failure", "return 1", false, 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			script := "who() { " + test.who + "; }; ps() { printf 'root pts/1 sudo\\n'; }; " + loginsCommand
+			command := exec.CommandContext(ctx, sh, "-c", script)
+			data, err := command.Output()
+			if err != nil {
+				t.Fatalf("logins command failed: %v", err)
+			}
+			details, err := parseDetails(append([]byte(detailsFixture), data...))
+			if err != nil || details.LoginsAvailable != test.available || len(details.Logins) != test.count {
+				t.Fatalf("logins=%+v output=%q err=%v", details, data, err)
+			}
+		})
+	}
+}
+
 func TestNetworkRatesHandleCounterResetAndNewInterfaces(t *testing.T) {
 	before := Details{Networks: []Network{{Name: "eth0", Received: 1000, Sent: 500}, {Name: "reset", Received: 999, Sent: 999}}}
 	after := Details{Networks: []Network{{Name: "eth0", Received: 3000, Sent: 1500}, {Name: "reset", Received: 1, Sent: 1}, {Name: "new", Received: 5000, Sent: 5000}}}
@@ -80,7 +111,7 @@ func (f detailRunFunc) RunCommand(ctx context.Context, command string, limit int
 func TestDetailsCloseCancelsAnInflightRequest(t *testing.T) {
 	started := make(chan struct{})
 	w := StartDetails(detailRunFunc(func(ctx context.Context, command string, limit int) ([]byte, error) {
-		if command != detailsCommand || limit != 96<<10 {
+		if command != linuxShellCommand(detailsCommand) || limit != 96<<10 {
 			t.Error("unexpected command or output bound")
 		}
 		if _, ok := ctx.Deadline(); !ok {
@@ -109,7 +140,7 @@ func TestDetailsCommandOnLinux(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	data, err := exec.CommandContext(ctx, "sh", "-c", detailsCommand).Output()
+	data, err := exec.CommandContext(ctx, "sh", "-c", linuxShellCommand(detailsCommand)).Output()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +156,7 @@ func TestWorkerIntervalAndRouteChanges(t *testing.T) {
 			seconds = 2
 		}
 		w := StartWithInterval(streamFunc(func(ctx context.Context, script string, limit int, line func([]byte) bool) error {
-			if !strings.HasSuffix(script, "sleep "+itoa(seconds)+"\ndone") {
+			if !strings.HasSuffix(script, "sleep "+itoa(seconds)+"\ndone'") {
 				t.Error("wrong sampling interval")
 			}
 			return feed("gop-net-primary eth0", reading(1), "gop-net-primary eth1", reading(2))(ctx, script, limit, line)

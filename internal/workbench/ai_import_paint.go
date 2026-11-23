@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/store"
@@ -367,22 +366,10 @@ func (state *State) aiImportCandidateRow(c ui.C, index int, candidate aiprovider
 	ui.Row(c).Height(aiImportRowHeight).MarginSides(0, aiImportRowReserve, 0, 0).
 		PadSides(0, 10, 0, 10).Gap(10).Items(ui.Center).Background(background).
 		Radius(radius.control).Children(func() {
-		// The checkbox keeps the identity the central click dispatcher toggles.
-		// The page has no checkbox that takes an explicit ID and leaves the
-		// value to the application, so the row reserves the component's hit
-		// extent and draws the same box into it: one click still toggles once,
-		// and the choice stays in the import state.
-		theme := *c.Theme()
-		side := components.CheckboxExtent(theme)
-		hitWidth, hitHeight := components.CheckboxHitExtent(theme)
-		id, label := hitAISetImportRow.At(index), candidate.Name
-		ui.Slot(c).Size(hitWidth, hitHeight).Draw(func(d *ui.DrawContext) {
-			bounds := gfx.Rect{
-				X: d.Rect.X + (d.Rect.Width-side)/2, Y: d.Rect.Y + (d.Rect.Height-side)/2,
-				Width: side, Height: side,
-			}
-			components.BeginCheckbox(d.Canvas, state.Theme(), id, bounds, checked).Label(label).Paint()
-		})
+		// The checkbox keeps the identity the central click dispatcher toggles:
+		// the page owns the box and its hit, and the choice stays in the import
+		// state.
+		ui.Checkbox(c, state.pageFlag(checked), "").Hit(hitAISetImportRow.At(index), candidate.Name).Shrink(0)
 		ui.Icon(c, aiImportKindIcon(candidate.Kind)).Size(18, 18).Color(state.pal.muted).Shrink(0)
 		ui.Column(c).Grow(1).Shrink(1).Children(func() {
 			ui.Text(c, candidate.Name).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).

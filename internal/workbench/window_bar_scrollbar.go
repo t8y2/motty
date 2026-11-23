@@ -1,11 +1,17 @@
 package workbench
 
 import (
+	"github.com/vivaui/viva/base"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 )
 
 var hitWindowBarTabsBar = tree.ID(shellHits, "window-bar-tabs-scrollbar")
+
+// scrollbarHoverSize is the thickness components.ScrollArea gives a
+// HoverScrollbars bar. The pure geometry must use the same thickness, or a drag
+// would map to a thumb other than the one that was painted.
+const scrollbarHoverSize = float32(6)
 
 // windowBarScroll is the hover scrollbar under the title bar's tabs. The wheel
 // already scrolls them; the bar shows how far, and lets the pointer drag them
@@ -48,11 +54,10 @@ func (state *State) paintWindowBarScrollbar(canvas *gfx.Canvas) {
 		return
 	}
 	strip := state.windowBarStrip()
-	area := components.BeginScrollArea(canvas, state.Theme(), bounds, gfx.Size{Width: bounds.Width + strip.max, Height: bounds.Height}).
-		Offset(strip.offset, 0).
-		HorizontalScrollbar(hitWindowBarTabsBar, state.messages.TabStripScrollbar, "").
-		HoverScrollbars(view.over || view.dragging)
-	view.geometry = area.EndContent()
+	view.geometry = base.LayoutScrollArea(bounds, gfx.Size{Width: bounds.Width + strip.max, Height: bounds.Height},
+		base.ScrollAreaLayout{OffsetX: strip.offset, BarSize: scrollbarHoverSize})
+	paintScrollbarBar(canvas, state.Theme(), view.geometry, false,
+		hitWindowBarTabsBar, state.messages.TabStripScrollbar, "", view.over || view.dragging)
 }
 
 // trackWindowBarScroll records whether the pointer is over the title bar's tabs.

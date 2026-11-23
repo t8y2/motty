@@ -3,11 +3,15 @@ package workbench
 import (
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
+	"motty/internal/update"
 )
 
 // The terminal's font size is any whole number of points from the smallest that
@@ -39,6 +43,60 @@ func (state *State) zoomTerminal(delta float32, reset bool) {
 		state.save()
 	}
 	state.status = fmt.Sprintf(state.messages.Tools.StatusFontSizeFmt, int(state.terminalFontSize))
+}
+
+// The preview size is how many megabytes of a file a document window loads at
+// once. It is chosen with a stepper and has no upper bound; only a value too
+// small to open anything is replaced by the default.
+const (
+	minFilePreviewMB     = 1
+	defaultFilePreviewMB = 20
+)
+
+// normalizeFilePreviewMB makes a saved size a usable one: a value below the
+// minimum is the default, so a damaged state file cannot refuse every file.
+func normalizeFilePreviewMB(value int) int {
+	if value < minFilePreviewMB {
+		return defaultFilePreviewMB
+	}
+	return value
+}
+
+// filePreviewBytes converts the setting to the byte bound a window enforces. A
+// value too large for an int is saturated instead of wrapping negative; the
+// stepper cannot produce one, only a damaged state file could.
+func filePreviewBytes(mb int) int {
+	mb = normalizeFilePreviewMB(mb)
+	if mb > int(^uint(0)>>1)>>20 {
+		return int(^uint(0) >> 1)
+	}
+	return mb << 20
+}
+
+// previewLimitMessage says a file is larger than the window's bound.
+func previewLimitMessage(messages i18n.Messages, mb int) string {
+	return fmt.Sprintf(messages.FileWindow.TooLargeFmt, strconv.Itoa(normalizeFilePreviewMB(mb))+" MB")
+}
+
+// filePreviewEdit is the stepper's field editor: the number is typed here while
+// it has the keyboard, and the stored setting follows when the edit commits.
+type filePreviewEdit struct {
+	input   text.Editor
+	field   ui.Field
+	editing bool
+	bound   bool
+}
+
+// previewDigit accepts the characters the field may hold.
+func previewDigit(r rune) bool { return r >= '0' && r <= '9' }
+
+// newFilePreviewInput is the field's editor, holding value with the digits and
+// length the field accepts.
+func newFilePreviewInput(value string) text.Editor {
+	var editor text.Editor
+	editor.Restrict(previewDigit, 7)
+	editor.Insert(value)
+	return editor
 }
 
 func normalizeTerminalScrollback(value int) int {
@@ -229,6 +287,36 @@ func closeActionFromString(value string) closeAction {
 	return closeToTray
 }
 
+// keepWindowsPolicy is what quitting the application does with the windows
+// that are open: keep their records for the next launch, discard them, or ask.
+type keepWindowsPolicy uint8
+
+const (
+	keepWindowsAlways keepWindowsPolicy = iota
+	keepWindowsNever
+	keepWindowsAsk
+)
+
+func (policy keepWindowsPolicy) String() string {
+	switch policy {
+	case keepWindowsNever:
+		return "never"
+	case keepWindowsAsk:
+		return "ask"
+	}
+	return "always"
+}
+
+func keepWindowsPolicyFromString(value string) keepWindowsPolicy {
+	switch value {
+	case keepWindowsNever.String():
+		return keepWindowsNever
+	case keepWindowsAsk.String():
+		return keepWindowsAsk
+	}
+	return keepWindowsAlways
+}
+
 type relaunchAction uint8
 
 const (
@@ -286,13 +374,20 @@ func (state *State) openSettings() {
 	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
 		state.releaseIdleSFTP(session)
 	}
+	// Returning to an already-open settings tab preserves where the user left
+	// the page (scroll offsets, drawer, and visit state). Only opening settings
+	// anew starts back at the top.
+	reopen := !state.settingsTab
+	state.settingsTab = true
 	state.activeSection = sectionSettings
-	state.settingsScroll = 0
-	state.settings.navScroll = 0
 	state.settings.pageMotion, state.settings.navMotion = gfx.Motion{}, gfx.Motion{}
-	state.settings.aboutCopied = false
-	state.schemeBrowserOpen = false
-	state.revealSettingsCategory()
+	if reopen {
+		state.settingsScroll = 0
+		state.settings.navScroll = 0
+		state.settings.aboutCopied = false
+		state.schemeBrowserOpen = false
+		state.revealSettingsCategory()
+	}
 	state.aiSettingsOpened()
 	state.save()
 }
@@ -388,10 +483,6 @@ func (state *State) applyLanguage() {
 	state.refreshForwards()
 	state.refreshProxies()
 	state.refreshSnippets()
-	// The host dialog's encoding options carry a localised UTF-8 label, and its
-	// icon options localised labels for the generic icons.
-	state.resetHostEncodingPicker()
-	state.resetHostIconPicker()
 	for index := range state.sessions {
 		state.sessions[index].reconnectText = ""
 		state.describe(&state.sessions[index])
@@ -506,9 +597,20 @@ var (
 	settingsAppearanceChoices      = [...]appearanceMode{appearanceFollowSystem, appearancePinnedDark, appearancePinnedLight}
 	settingsToolbarPositionChoices = [...]terminalToolbarPosition{terminalToolbarLeft, terminalToolbarRight}
 	settingsTabOrientationChoices  = [...]tabOrientation{tabsHorizontal, tabsVertical}
+	settingsTabDoubleClickChoices  = [...]tabDoubleClickAction{tabDoubleClickRename, tabDoubleClickDuplicate, tabDoubleClickNone}
 	settingsCloseChoices           = [...]closeAction{closeToTray, closeQuits}
+	settingsKeepWindowsChoices     = [...]keepWindowsPolicy{keepWindowsAlways, keepWindowsNever, keepWindowsAsk}
 	settingsRelaunchChoices        = [...]relaunchAction{relaunchRaise, relaunchNewWindow}
+	settingsUpdateSourceChoices    = [...]update.Source{update.SourceOfficial, update.SourceCNB}
 )
+
+// settingsUpdateSourceLabel names an update source for its choice row.
+func (state *State) settingsUpdateSourceLabel(source update.Source) string {
+	if source == update.SourceCNB {
+		return state.messages.Tools.GeneralUpdateSourceCNB
+	}
+	return state.messages.Tools.GeneralUpdateSourceOfficial
+}
 
 func (state *State) settingsLanguageLabel(language i18n.Language) string {
 	switch language {
@@ -544,11 +646,32 @@ func (state *State) settingsTabOrientationLabel(orientation tabOrientation) stri
 	return state.messages.SettingsTabsHorizontal
 }
 
+func (state *State) settingsTabDoubleClickLabel(action tabDoubleClickAction) string {
+	switch action {
+	case tabDoubleClickRename:
+		return state.messages.MenuRenameTab
+	case tabDoubleClickNone:
+		return state.messages.SettingsTabDoubleClickNone
+	}
+	return state.messages.MenuDuplicateTab
+}
+
 func (state *State) settingsCloseLabel(action closeAction) string {
 	if action == closeQuits {
 		return state.messages.Tools.GeneralCloseQuit
 	}
 	return state.messages.Tools.GeneralCloseTray
+}
+
+func (state *State) settingsKeepWindowsLabel(policy keepWindowsPolicy) string {
+	messages := state.messages.Tools
+	switch policy {
+	case keepWindowsNever:
+		return messages.GeneralKeepWindowsDiscard
+	case keepWindowsAsk:
+		return messages.GeneralKeepWindowsAsk
+	}
+	return messages.GeneralKeepWindowsKeep
 }
 
 func (state *State) settingsRelaunchLabel(action relaunchAction) string {
@@ -727,6 +850,24 @@ func (state *State) settingsNetworkProxyLabel(mode networkProxyMode) string {
 func (state *State) settingsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalNone || state.activeSection != sectionSettings {
 		return gfx.EventResult{}, false
+	}
+	// The preview stepper's field commits on Enter and on leaving the field;
+	// Escape puts the stored number back without changing it.
+	if state.settingsCategory == settingsFiles && state.filePreviewEdit.editing {
+		if event.Target != hitSettingsPreviewValue {
+			state.commitFilePreviewEdit()
+		} else {
+			switch event.Key {
+			case gfx.KeyEnter:
+				state.commitFilePreviewEdit()
+				return gfx.EventResult{Handled: true, Repaint: true}, true
+			case gfx.KeyEscape:
+				state.filePreviewEdit.editing = false
+				return gfx.EventResult{Handled: true, Repaint: true}, true
+			case gfx.KeyTab:
+				state.commitFilePreviewEdit()
+			}
+		}
 	}
 	if event.Target == hitSettingsLocalShell && localShellSettingVisible() && !state.localShellMenu.open && (event.Key == gfx.KeyDown || event.Key == gfx.KeyUp) {
 		state.refreshLocalShells()

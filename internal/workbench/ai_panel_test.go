@@ -1490,3 +1490,23 @@ func TestNarrowAIDrawerTakesTheComposerAndHandsFocusBack(t *testing.T) {
 		t.Fatalf("focus after dismissing = %v, want the terminal", focused)
 	}
 }
+
+// The panel divider's hit strip starts half a pixel left of its line, as the
+// old Resizable's did: the line sits at the first whole pixel the strip covers.
+func TestThePanelDividerKeepsTheResizableHitEdge(t *testing.T) {
+	state, _ := panelState(t, nil)
+	withModel(t, state)
+	state.ai.open = true
+	canvas, _ := paintAt(state, panelWide)
+	divider := panelHit(t, canvas, hitAIDivider)
+	panel := state.ai.panel
+	window := panel.resize.window
+	line := window.X + (window.Width-1)*panel.resize.ratio
+	want := line - (panel.resize.handle-1)/2
+	if math.Abs(float64(divider.Bounds.X-want)) > 0.01 {
+		t.Fatalf("divider hit starts at %v, want %v (%v shifted by (handle-1)/2)", divider.Bounds.X, want, line)
+	}
+	if divider.Bounds.Width != panel.resize.handle {
+		t.Fatalf("divider hit is %v wide, want %v", divider.Bounds.Width, panel.resize.handle)
+	}
+}

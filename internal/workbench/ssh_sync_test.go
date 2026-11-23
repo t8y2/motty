@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/gfx"
+
 	"motty/internal/sshconn"
 )
 
@@ -375,6 +377,10 @@ func TestSSHSyncToggleThroughSettings(t *testing.T) {
 	addSyncHost(t, state, "web", "web.example", "", 22)
 	state.openSettings()
 	state.selectSettingsCategory(settingsConnection)
+	// The connection page is longer than the default window; measure it, then
+	// scroll to its last group so the sync switch is on screen and has a hit.
+	paintedTexts(state)
+	state.scrollSettings(gfx.ScrollEvent{DeltaY: state.settingsContent, Precise: true})
 	canvas, texts := paintedTexts(state)
 	if !contains(texts, state.messages.SSHSync.ToggleRow) || !hasHit(canvas, hitSettingsSSHSyncToggle) {
 		t.Fatalf("setting is not shown: %v", texts)

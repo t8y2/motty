@@ -5,7 +5,7 @@
 [app]
 name = "Motty"
 id = "dev.motty.app"
-version = "0.4.14"
+version = "0.4.25"
 executable = "motty"
 package = "./cmd/motty"
 icon = "assets/icon.png"
@@ -24,6 +24,10 @@ out = "build/dist"
 [mac]
 category = "public.app-category.developer-tools"
 copyright = "Motty"
+entitlements = "assets/macos.entitlements"
+
+[mac.info]
+NSMicrophoneUsageDescription = "A program running in a Motty local terminal is requesting access to your microphone."
 
 [mac.dmg]
 background = "assets/dmg-background.png"

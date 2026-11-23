@@ -375,36 +375,187 @@ func loginStart() *workbench.LoginStart {
 	}
 }
 
+// quitWindow is the part of a window the quit paths drive: what it is showing,
+// whether it has unsaved documents, and the keep-windows setting. It is an
+// interface so the decisions can be tested without opening a native window.
+type quitWindow interface {
+	Launch(args []string)
+	ConfirmDocumentClose(allow func()) bool
+	WindowVisible() bool
+	AsksAboutWindowsOnExit() bool
+	AskKeepWindowsOnExit(answer func(keep bool), cancelled func()) bool
+	CancelKeepWindowsOnExit() bool
+	KeepsWindowsOnExit() bool
+	DiscardsWindowsOnExit() bool
+}
+
 // windowSet is the open windows, which a request from outside is handed to. A
 // request that comes before any window exists (a launch by link) waits for the
 // first one.
 type windowSet struct {
 	mu      sync.Mutex
-	states  []*workbench.State
+	states  []quitWindow
 	pending [][]string
-	// quitting says the whole program is ending: every window's record stays,
-	// so the next launch reopens the windows that were up. A window the user
-	// closed while the program kept running drops its own instead.
-	quitting bool
+	// quitting says the whole program is ending. keepWindows says whether the
+	// records of the windows now closing stay, so the next launch reopens them.
+	// A window the user closed while the program kept running drops its own
+	// instead.
+	quitting    bool
+	keepWindows bool
+	// asker is the window holding the open keep-windows question. askingKeepWindows
+	// is set while that question is open, so a second quit request does not
+	// replace it. The window that closes or hides while holding it cancels the
+	// question, which clears both: otherwise every later quit would wait for an
+	// answer that can no longer arrive.
+	asker             quitWindow
+	askingKeepWindows bool
 }
 
 var windows windowSet
 
-// Quitting from any window or the status menu visits unsaved native documents
-// first. A canceled document close leaves the application running.
+// keepWindowRecordOnClose says whether the window that just closed keeps the
+// record that reopens it. quitting means a quit command is ending the program
+// and has already decided for every window.
+func keepWindowRecordOnClose(quitting, keepOnQuit bool, remaining int, discards bool) bool {
+	switch {
+	case quitting:
+		return keepOnQuit
+	case remaining > 0:
+		// A window the user closed while other windows are still up is one they
+		// are done with, so its record goes.
+		return false
+	case discards:
+		// Closing the last window ends the program without the quit command;
+		// the user chose not to keep windows on that exit.
+		return false
+	}
+	return true
+}
+
+// Quitting from any window or the status menu asks whether to keep the windows
+// when the user chose that in Settings, then visits unsaved native documents.
+// Asking first means a cancelled question aborts the whole quit, rather than
+// leaving the documents closed after the answer. A canceled document close or
+// question leaves the application running.
 func (set *windowSet) quitWithDocuments(allow func()) {
 	set.mu.Lock()
-	states := append([]*workbench.State(nil), set.states...)
+	states := append([]quitWindow(nil), set.states...)
+	set.mu.Unlock()
+	if len(states) == 0 {
+		set.finishQuit(true, allow)
+		return
+	}
+	state := visibleQuitWindow(states)
+	answered := func(keep bool) { set.quitAfterDocuments(keep, allow) }
+	if set.askKeepWindows(state, answered) {
+		return
+	}
+	set.quitAfterDocuments(state.KeepsWindowsOnExit(), allow)
+}
+
+// quitAfterDocuments closes the unsaved documents and then the program. A
+// document the user decides not to close leaves the program running. The keep
+// choice already made is carried through the confirmation, so the question is
+// asked only once.
+func (set *windowSet) quitAfterDocuments(keep bool, allow func()) {
+	set.mu.Lock()
+	states := append([]quitWindow(nil), set.states...)
 	set.mu.Unlock()
 	for _, state := range states {
-		if state.ConfirmDocumentClose(func() { set.quitWithDocuments(allow) }) {
+		if state.ConfirmDocumentClose(func() { set.quitAfterDocuments(keep, allow) }) {
 			return
 		}
 	}
+	set.finishQuit(keep, allow)
+}
+
+// visibleQuitWindow is the window the question appears on: the first visible
+// one, or the first when none is.
+func visibleQuitWindow(states []quitWindow) quitWindow {
+	for _, state := range states {
+		if state.WindowVisible() {
+			return state
+		}
+	}
+	return states[0]
+}
+
+// askKeepWindows opens the quit question and reports whether it took over. The
+// guard lives here, so every path that asks shares it. answered runs with the
+// user's choice; dismissing the question leaves the program running and clears
+// the guard so a later quit can ask again.
+func (set *windowSet) askKeepWindows(state quitWindow, answered func(keep bool)) bool {
+	if !state.AsksAboutWindowsOnExit() {
+		return false
+	}
 	set.mu.Lock()
-	set.quitting = true
+	if set.askingKeepWindows {
+		// The question is already up; another request must not replace it.
+		set.mu.Unlock()
+		return true
+	}
+	set.askingKeepWindows, set.asker = true, state
+	set.mu.Unlock()
+	if state.AskKeepWindowsOnExit(func(keep bool) {
+		set.clearAsking(state)
+		answered(keep)
+	}, func() {
+		set.clearAsking(state)
+	}) {
+		return true
+	}
+	set.clearAsking(state)
+	return false
+}
+
+// cancelKeepWindows dismisses the question when the window holding it closes or
+// hides, so the guard cannot stay set with no question on screen.
+func (set *windowSet) cancelKeepWindows(state quitWindow) {
+	set.mu.Lock()
+	asking := set.askingKeepWindows && set.asker == state
+	set.mu.Unlock()
+	if !asking {
+		return
+	}
+	if !state.CancelKeepWindowsOnExit() {
+		set.clearAsking(state)
+	}
+}
+
+// clearAsking releases the guard after the question closes on the given window.
+func (set *windowSet) clearAsking(state quitWindow) {
+	set.mu.Lock()
+	defer set.mu.Unlock()
+	if set.asker == state {
+		set.asker, set.askingKeepWindows = nil, false
+	}
+}
+
+// finishQuit records whether the windows now closing keep their records, then
+// lets the application close them.
+func (set *windowSet) finishQuit(keep bool, allow func()) {
+	set.mu.Lock()
+	set.quitting, set.keepWindows, set.askingKeepWindows, set.asker = true, keep, false, nil
 	set.mu.Unlock()
 	allow()
+}
+
+// closeLastWindow ends the program through the close button of its last
+// window. It asks the same keep-windows question as the quit command, so both
+// exits follow the setting.
+func (set *windowSet) closeLastWindow(state quitWindow, allow func()) {
+	if set.askKeepWindows(state, func(keep bool) { set.finishQuit(keep, allow) }) {
+		return
+	}
+	set.finishQuit(!state.DiscardsWindowsOnExit(), allow)
+}
+
+// keepsWindowsOnQuit reports whether the windows closing with the program keep
+// their records for the next launch.
+func (set *windowSet) keepsWindowsOnQuit() bool {
+	set.mu.Lock()
+	defer set.mu.Unlock()
+	return set.keepWindows
 }
 
 // isQuitting reports whether the program is ending rather than one window.

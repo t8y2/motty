@@ -1,0 +1,31 @@
+# End to end: a folder that holds symbolic links, such as a macOS .app bundle,
+# moves as links instead of stopping the transfer.
+#
+#   cd tools/e2esshd && go build -o /tmp/e2esshd . && cd ../..
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   S=/tmp/lnsrc/App.app/Contents; mkdir -p $S/Frameworks/X.framework/Versions/A
+#   echo binary > $S/Frameworks/X.framework/Versions/A/X
+#   ln -s A $S/Frameworks/X.framework/Versions/Current
+#   ln -s ../.. $S/up; ln -s /etc/hosts $S/abs; ln -s missing $S/dangling
+#   /tmp/e2esshd 2261 &    # SFTP; for an SCP upload: E2E_NO_SFTP=1 /tmp/e2esshd 2261 &
+#   python3 tools/headless_drive.py $(mktemp -d) tools/e2e/folder_symlinks_download_e2e.txt
+#
+# Needs the folder on the server (the upload script) and a fresh home. Afterwards
+# <home>/Downloads/App.app holds the same links, each with its target text as the
+# server has it, and no .motty partial is left.
+# lang: en
+click "Search"
+type tester@127.0.0.1:2261
+click "Connect"
+waitfor "Trust this host" 3000
+click "Connect Once"
+waitfor "Password" 3000
+type secret
+key enter
+settle 2500
+key cmd+shift+s
+settle 1500
+click "App.app"
+click "Download"
+settle 2500
+shot /tmp/ln-symlinks-download.png

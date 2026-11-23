@@ -75,6 +75,11 @@ func (c *canvas) at(x, y int) [3]byte {
 type server struct {
 	t    *testing.T
 	conn net.Conn
+	// bits is the pixel size the handshake expects the client to ask for; zero
+	// is 32.
+	bits byte
+	// format is the SetPixelFormat message the handshake received.
+	format []byte
 }
 
 func (s *server) write(data ...[]byte) {
@@ -165,9 +170,14 @@ func (s *server) handshake(version string, security byte, password string, width
 	s.read(1) // ClientInit
 	s.write(serverInit(width, height, "test desktop"))
 	format := s.read(20)
-	if format[0] != 0 || format[4] != 32 || format[7] != 1 || format[14] != 16 {
-		s.t.Errorf("pixel format message = %v", format)
+	bits := s.bits
+	if bits == 0 {
+		bits = 32
 	}
+	if format[0] != 0 || format[4] != bits || format[7] != 1 {
+		s.t.Errorf("pixel format message = %v, want %d bits of true colour", format, bits)
+	}
+	s.format = format
 	header := s.read(4)
 	for range binary.BigEndian.Uint16(header[2:]) {
 		encodings = append(encodings, int32(binary.BigEndian.Uint32(s.read(4))))
@@ -184,6 +194,13 @@ func pair(t *testing.T) (client, serverSide net.Conn) {
 
 func connect(t *testing.T, config Config, script func(*server)) (*Client, error) {
 	t.Helper()
+	return connectOver(t, func(conn net.Conn) net.Conn { return conn }, config, script)
+}
+
+// connectOver is connect for a test that wraps the client's end of the
+// connection first, to give the client a different kind of transport.
+func connectOver(t *testing.T, wrap func(net.Conn) net.Conn, config Config, script func(*server)) (*Client, error) {
+	t.Helper()
 	clientSide, serverSide := pair(t)
 	done := make(chan struct{})
 	go func() {
@@ -197,9 +214,21 @@ func connect(t *testing.T, config Config, script func(*server)) (*Client, error)
 		serverSide.Close()
 		<-done
 	})
-	client, err := Connect(clientSide, config)
+	client, err := Connect(wrap(clientSide), config)
 	return client, err
 }
+
+// errNoDeadlines is what golang.org/x/crypto/ssh's forwarded channel reports
+// from the deadline methods: an SSH stream has no deadlines to set.
+var errNoDeadlines = errors.New("ssh: tcpChan: deadline not supported")
+
+// noDeadlineConn is a transport that does not support deadlines, like the
+// channel an SSH forward returns.
+type noDeadlineConn struct{ net.Conn }
+
+func (noDeadlineConn) SetDeadline(time.Time) error      { return errNoDeadlines }
+func (noDeadlineConn) SetReadDeadline(time.Time) error  { return errNoDeadlines }
+func (noDeadlineConn) SetWriteDeadline(time.Time) error { return errNoDeadlines }
 
 // update is a FramebufferUpdate carrying the given rectangle bodies.
 func update(rects ...[]byte) []byte {
@@ -456,15 +485,21 @@ func pixels(n int, blue, green, red byte) []byte {
 // the update was applied.
 func scenario(t *testing.T, width, height int, send func(s *server, push func(update []byte))) *canvas {
 	t.Helper()
+	return scenarioWith(t, Config{}, width, height, send)
+}
+
+// scenarioWith is scenario for a client configured as config says.
+func scenarioWith(t *testing.T, config Config, width, height int, send func(s *server, push func(update []byte))) *canvas {
+	t.Helper()
 	sink := &canvas{}
 	var client *Client
 	var connectErr error
 	clientSide, serverSide := pair(t)
-	s := &server{t: t, conn: serverSide}
+	s := &server{t: t, conn: serverSide, bits: bitsOf(config.PixelFormat)}
 	go func() {
 		s.handshake("008", 1, "", width, height)
 	}()
-	client, connectErr = Connect(clientSide, Config{})
+	client, connectErr = Connect(clientSide, config)
 	if connectErr != nil {
 		t.Fatal(connectErr)
 	}

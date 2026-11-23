@@ -187,25 +187,31 @@ func (t *Terminal) promptSplit() (int, bool) {
 }
 
 // clearStalePrompt drops the rows a shell prompt was drawn on before a resize.
-// The shell redraws the prompt itself, and the first text it writes after the
-// resize is that redraw: clearing right then keeps the prompt and the input
-// visible while the redraw is on its way, and leaves nothing beside the new
-// prompt when it arrives. Text from a command is not affected: OSC 133 C ends
-// the prompt before the command writes.
+// The shell redraws the prompt itself, and that redraw begins at the prompt's
+// first cell: it returns the cursor to that row and column and writes the
+// prompt again. Input typed at a prompt the shell has not redrawn yet is echoed
+// at the cursor after the prompt, not there, so it must leave the prompt
+// visible instead of taking the redraw's place. A prompt or input that wraps
+// writes below the prompt's first row, which is likewise not the redraw.
+// Text from a command is not affected: OSC 133 C ends the prompt before the
+// command writes.
 func (t *Terminal) clearStalePrompt() {
 	if !t.promptStale {
 		return
 	}
-	t.promptStale = false
-	t.dropPromptRows()
 	if t.onAlt {
+		t.promptStale = false
+		t.dropPromptRows()
 		return
 	}
 	row := int(t.promptLine) - 1 - int(t.scrolled)
-	if row < 0 || row >= len(t.main.lines) {
+	if row < 0 || row >= len(t.main.lines) || t.cy != row || t.cx > t.promptStart {
 		return
 	}
-	last := min(t.cy, len(t.main.lines)-1)
+	rows := len(t.promptSaved)
+	t.promptStale = false
+	t.dropPromptRows()
+	last := min(row+rows-1, len(t.main.lines)-1)
 	for y := row; y <= last; y++ {
 		if t.images != nil {
 			t.images.dropLine(t.main.lines[y].id)

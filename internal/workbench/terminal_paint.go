@@ -77,14 +77,6 @@ func (state *State) paintTerminalPaneDetails(canvas *gfx.Canvas, session *Sessio
 			paintLight(canvas, spot.X+spot.Width/2, spot.Y+spot.Height/2, kind, dot, t.paintBarBackground)
 		}
 	}
-	if t.paintCommandNoticeShown {
-		state.paintWorkspaceCommandNotice(canvas, session, t.paintCommandNotice.Rect())
-	}
-	state.paintCompletionList(canvas, session, t.paintGeometry)
-	state.paintAutofillPick(canvas, session, t.paintGeometry)
-	if t.paintNoticeShown {
-		state.paintTerminalInputNotice(canvas, session, t.paintNotice.Rect())
-	}
 }
 
 func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools]barTool) []barTool {
@@ -128,7 +120,7 @@ func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools
 	tools = append(tools, barTool{id: hitTerminalRecord, icon: recordIcon, hint: recordHint, disabled: session.term.shell == nil, style: recordStyle})
 	tools = append(tools, barTool{id: hitTerminalSaveOutput, icon: iconSave, hint: state.messages.Tools.MenuSaveOutput, style: iconButtonQuiet})
 	if hint, style, offered := state.remoteStatsToggle(session); offered {
-		tools = append(tools, barTool{id: hitRemoteStats, icon: iconActivity, hint: hint, style: style})
+		tools = append(tools, barTool{id: hitRemoteStats, icon: iconGauge, hint: hint, style: style})
 	}
 	tools = append(tools, barTool{id: hitProcessToolsOpen, icon: iconProcess, hint: state.messages.Tools.RemoteMenu, disabled: !state.remoteToolsOffered(session), style: iconButtonQuiet})
 	if tool, ok := state.serverLogsRailTool(session, true); ok {
@@ -417,11 +409,12 @@ func (state *State) declarePaneBar(c ui.C, width float32, title, status string, 
 			readoutColor = pal.muted
 		}
 		ui.Text(c, readout).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(readoutColor).LineHeight(20).
-			MaxWidth(width * 0.42).Ellipsis().Shrink(1)
+			MaxWidth(width * 0.42).Ellipsis().Shrink(0)
 		if state.broadcasting(session.ID) {
 			// Typing goes to this pane too: the one mark an inactive bar carries.
 			ui.Icon(c, lucideIcons[iconRadio]).Size(14, 14).Color(pal.accent).MarginSides(0, 0, 0, 8)
 		}
+		state.declareSessionMaximizeButton(c, session)
 		state.declarePaneBarClose(c, session)
 	})
 	return spinner, light
@@ -524,6 +517,7 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 	}
 	canvas.Clip(geometry.area)
 	t.cache.begin()
+	t.prepareLogicalLines()
 	if cap(t.rowIDs) < rows {
 		t.rowIDs = make([]uint64, rows)
 	} else {
@@ -542,7 +536,7 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 		}
 		line := t.presentedRow(row)
 		t.rowIDs[row] = line.ID
-		entry := t.cache.row(line, cols, column, coveredOn(covered, row == cursor.Y), pal, inactive)
+		entry := t.cache.rowWithLogical(line, cols, column, coveredOn(covered, row == cursor.Y), pal, inactive, t.presentedLogicalLine(row), t.logicalView[row].suppressed)
 		y := geometry.top + float32(row)*cellHeight
 		for _, span := range entry.spans {
 			from := snap(geometry.left + float32(span.from)*cellWidth)
@@ -567,7 +561,7 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 		if block && row == cursor.Y {
 			column = caretX
 		}
-		entry := t.cache.row(t.presentedRow(row), cols, column, coveredOn(covered, row == cursor.Y), pal, inactive)
+		entry := t.cache.rowWithLogical(t.presentedRow(row), cols, column, coveredOn(covered, row == cursor.Y), pal, inactive, t.presentedLogicalLine(row), t.logicalView[row].suppressed)
 		y := geometry.top + float32(row)*cellHeight
 		if from, to, selected := t.selection.span(t.screen.LineNumber(row), t.presentedRow(row), cols); selected {
 			left := snap(geometry.left + float32(from)*cellWidth)
@@ -663,9 +657,7 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 	// need the terminal itself focused.
 	suggesting := focused || state.ghostMenu.open && state.ghostMenu.session == session.ID
 	if !sensitive && suggesting && !composing && !predicting && t.sync == nil {
-		if rest, ok := state.passwordHintGhost(session); ok {
-			state.paintGhost(canvas, t, geometry, cursor, rest, block)
-		} else if rest, ok := state.commandGhost(session); ok {
+		if rest, ok := state.commandGhost(session); ok {
 			if used, limit, painted := state.paintGhost(canvas, t, geometry, cursor, rest, block); painted {
 				hintRect, hintShown = state.paintGhostHint(canvas, session, geometry, cursor, used, limit)
 			}

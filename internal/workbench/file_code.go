@@ -181,7 +181,7 @@ func (d *fileDocument) loadEditor(value string) {
 
 // canEditCode reports whether the keyboard may change the text of the document.
 func (d *fileDocument) canEditCode() bool {
-	return d.image == nil && d.ready && !d.busy && d.confirm == "" && !d.comparison.active && !d.ui.saveMenuOpen && !d.encodingOpen
+	return d.image == nil && d.ready && !d.busy && d.confirm == "" && !d.comparison.active && !d.ui.saveMenuOpen
 }
 
 // codeBarsAvailable reports whether the find and go to line bars may be open.

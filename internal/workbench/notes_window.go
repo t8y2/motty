@@ -117,7 +117,6 @@ func (d *fileDocument) paintNoteWindow(c *gfx.Canvas, size gfx.Size) {
 	c.Fill(n.viewport, s.Theme().Background)
 	d.windowPage().Draw(c, n.viewport, d.declareNoteWindow)
 	s.fileWindows.paintTabsScrollbar(c)
-	d.paintNoteContent(c, d.ui.contentBox.Rect())
 	if _, formatting := c.Hovered().In(hitNoteFormats); !formatting {
 		d.ui.tooltip.Paint(c, s.Theme(), n.viewport, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
 	}
@@ -133,75 +132,84 @@ func (d *fileDocument) declareNoteWindow(c ui.C) {
 		ui.Column(c).Grow(1).Shrink(1).Pad(12).Gap(8).Children(func() {
 			s.fileWindows.declareTabsSection(c, c.Bounds().Width)
 			ui.Divider(c).Background(theme.Border)
-			d.ui.contentBox = ui.Slot(c).Grow(1)
+			d.ui.contentBox = ui.Slot(c).Grow(1).Children(func() {
+				d.declareNoteWindowContent(c, s, &d.note.content)
+			})
 		})
 	})
 }
 
-func (d *fileDocument) paintNoteContent(c *gfx.Canvas, b gfx.Rect) {
-	s, n := d.owner, &d.note.content
+// declareNoteWindowContent declares the note itself in its window's share of
+// the page: the formatting bar, the document and the footer that names it.
+func (d *fileDocument) declareNoteWindowContent(c ui.C, s *State, n *notesUI) {
 	s.withNoteView(n, func() {
 		if d.note.missing {
-			c.Label(s.noteText("Note deleted", "笔记已删除"), b, gfx.TextStyle{Size: 14, Color: s.pal.muted})
+			ui.Text(c, s.noteText("Note deleted", "笔记已删除")).FontSize(14).Color(s.pal.muted)
 			return
 		}
-		n.view.documentBounds = b
+		page := s.ensureNotePage(n, noteSurfaceWindow)
+		page.c = c
 		n.sourceBounds, n.previewBounds = gfx.Rect{}, gfx.Rect{}
-		actionsWidth := float32(198)
-		if len(noteImageURLs(n.body.String())) > 0 {
-			actionsWidth += 34
+		width := c.Bounds().Width - 24
+		ui.Column(c).Fill().Children(func() {
+			s.declareNoteWindowBody(c, n, width)
+		})
+		s.declareNoteOverlays(c, n)
+		s.declareNoteExit(c)
+		if !n.view.focus.IsZero() {
+			c.Canvas().RequestFocus(n.view.focus)
+			n.view.focus = gfx.ID{}
 		}
-		footerHeight := float32(40)
-		if b.Width-actionsWidth-12 < 120 {
-			footerHeight += 36
-		}
-		footerTop := b.Y + b.Height - footerHeight
-		footerY := footerTop + 12
-		components.PaintSeparator(c, s.Theme(), gfx.Rect{X: b.X, Y: footerTop, Width: b.Width, Height: 1}, components.SeparatorHorizontal)
-		s.paintNoteLibraryHeader(c, b, b.X, footerY, b.X+b.Width)
-		mode := n.view.mode
-		if mode == noteSplit && b.Width < 640 {
-			mode = noteSource
-		}
-		if mode != noteSplit {
-			n.view.splitScroll.active = false
-		}
-		y := b.Y
-		if mode != notePreview {
-			y = s.paintNoteFormatting(c, gfx.Rect{X: b.X - 18, Y: b.Y, Width: b.Width + 18, Height: b.Height}, y, b.X+b.Width)
-		}
-		message := n.error
+		s.autosaveNotes(c.Canvas())
+	})
+}
+
+// declareNoteWindowBody declares the note in its window: the formatting bar at
+// the top, the document, and the footer that carries the title, the actions and
+// the mode switch.
+func (s *State) declareNoteWindowBody(c ui.C, n *notesUI, width float32) {
+	v := &n.view
+	mode := v.mode
+	if mode == noteSplit && width < 640 {
+		mode = noteSource
+	}
+	if mode != noteSplit {
+		v.splitScroll.active = false
+	}
+	if n.editing.findOpen && mode != notePreview {
+		s.declareNoteFindBar(c, n)
+	}
+	if mode != notePreview {
+		s.declareNoteFormatting(c, n, width, true)
+	}
+	if message := n.error; message != "" || n.problem != "" {
 		if n.problem != "" {
 			message = n.problem
 		}
-		if message != "" {
-			c.Label(message, gfx.Rect{X: b.X, Y: y, Width: b.Width, Height: 24}, gfx.TextStyle{Size: 12, Color: s.pal.danger})
-			y += 26
-		}
-		y += s.paintNoteLinkNotice(c, b.X, y, b.Width)
-		body := gfx.Rect{X: b.X, Y: y, Width: b.Width, Height: max(0, footerTop-8-y)}
+		ui.Text(c, message).FontSize(12).Color(s.pal.danger)
+	}
+	s.declareNoteLinkNotice(c, n, width, 0, 0)
+	body := ui.Row(c).Grow(1).FillWidth().MarginSides(8, 0, 8, 0)
+	body.Children(func() {
 		switch mode {
 		case noteSource:
-			n.sourceBounds = body
-			s.paintNoteSource(c, body)
-		case noteSplit:
-			n.sourceBounds = body
-			n.sourceBounds.Width = max(0, (body.Width-16)/2)
-			n.previewBounds = n.sourceBounds
-			n.previewBounds.X += n.sourceBounds.Width + 16
-			s.paintNoteSource(c, n.sourceBounds)
-			s.paintNotePreviewContent(c, n.previewBounds, n)
+			ui.Slot(c).Grow(1).FillHeight().Draw(n.page.drawSource)
+		case notePreview:
+			s.declareNotePreview(c, n, width, true)
 		default:
-			n.previewBounds = body
-			s.paintNotePreviewContent(c, body, n)
+			pane := (width - 16) / 2
+			ui.Column(c).Grow(1).Basis(0).FillHeight().Children(func() {
+				ui.Slot(c).Grow(1).FillWidth().Draw(n.page.drawSource)
+			})
+			ui.Slot(c).Width(16)
+			ui.Column(c).Grow(1).Basis(0).FillHeight().Children(func() {
+				s.declareNotePreview(c, n, pane, true)
+			})
 		}
-		s.paintNoteOverlays(c, n.viewport)
-		if !n.view.focus.IsZero() {
-			c.RequestFocus(n.view.focus)
-			n.view.focus = gfx.ID{}
-		}
-		s.autosaveNotes(c)
 	})
+	ui.Divider(c).Height(1).FillWidth().Background(s.Theme().Border)
+	footer := ui.Column(c).FillWidth().MarginSides(11, 0, 0, 0)
+	footer.Children(func() { s.declareNoteEditorHeader(c, n, width, true) })
 }
 
 func (d *fileDocument) clickNoteWindow(id gfx.ID) {

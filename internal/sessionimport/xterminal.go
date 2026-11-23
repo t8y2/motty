@@ -9,9 +9,9 @@ import (
 
 var xterminalFields = regexp.MustCompile(`(?:^|[\t ])(host|port|user|authType|password|sshProxy|title)=`)
 
-// ParseXterminal reads one exported SSH connection per line. sshProxy is a
+// ParseXterminalText reads one exported SSH connection per line. sshProxy is a
 // client-local identifier and is deliberately ignored. Values are not unescaped.
-func ParseXterminal(input string) (Result, error) {
+func ParseXterminalText(input string) (Result, error) {
 	var result Result
 	if len(input) > MaxFileSize {
 		return result, fmt.Errorf("xterminal export is too large")

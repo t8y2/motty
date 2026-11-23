@@ -38,9 +38,12 @@ func noteScrollEdge(y, maximum float32) int {
 	return 0
 }
 
-func (s *State) syncNoteSplit(c *gfx.Canvas) {
-	n := s.noteContent()
+func (s *State) syncNoteScroll(c *gfx.Canvas, n *notesUI) {
 	v := &n.view.splitScroll
+	if n.view.mode != noteSplit || n.view.documentBounds.Width < 640 {
+		v.active = false
+		return
+	}
 	selection, _ := n.noteSelections()
 	source := n.body.String()
 	sy, py := n.code.ScrollY(), n.previewScroll
@@ -70,7 +73,7 @@ func (s *State) syncNoteSplit(c *gfx.Canvas) {
 			} else if v.edge == 1 {
 				py = pm
 			}
-			n.previewScroll = min(max(0, py), pm)
+			n.setPreviewScroll(min(max(0, py), pm))
 		} else {
 			if y, ok := n.code.YAtOffset(v.anchor); ok {
 				sy = y
@@ -112,13 +115,13 @@ func (s *State) syncNoteSplit(c *gfx.Canvas) {
 		if offset, ok := n.code.OffsetAtY(sy); ok {
 			v.anchor = offset
 			if y, found := n.rendered.YAtSource(source, offset); found {
-				n.previewScroll = min(max(0, y+6), pm)
+				n.setPreviewScroll(min(max(0, y+6), pm))
 			}
 		}
 		if v.edge == -1 {
-			n.previewScroll = 0
+			n.setPreviewScroll(0)
 		} else if v.edge == 1 {
-			n.previewScroll = pm
+			n.setPreviewScroll(pm)
 		}
 	}
 	// The source was already painted this frame; a preview-driven update needs

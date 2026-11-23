@@ -57,16 +57,21 @@ var (
 	aboutIssuesMark  = linkMark{icon: iconBug, chip: gfx.RGB(0xC0, 0x55, 0x4E), ink: aboutMarkInk, size: 16}      // a bug's red, kept quiet
 )
 
-// The project's two: GitHub's mark on the same white chip the community icons
-// use, and the application's own icon for the site it opens.
+// The project's three: GitHub's mark on the same white chip the community icons
+// use, the application's own icon for the site it opens, and Viva's logo for the
+// framework the window is built on.
 var (
 	aboutRepoMark = linkMark{icon: iconGitHub, chip: aboutMarkTile, ink: gfx.RGB(0x18, 0x17, 0x17), size: 17}
 	aboutDocsMark = linkMark{picture: aboutIconTile}
+	aboutVivaMark = linkMark{picture: aboutVivaTile}
 )
 
 // aboutIconTile is the application icon in its rounded tile, the same mark the
 // Dock shows, ready for the About page to paint at its own size.
 var aboutIconTile = embeddedBitmap(assets.IconTile, 1<<60|3)
+
+// aboutVivaTile is Viva's logo on its own rounded tile, drawn at the same size.
+var aboutVivaTile = embeddedBitmap(assets.VivaTile, 1<<60|4)
 
 var (
 	hitAboutCopyInfo = tree.ID(settingsHits, "settings-about-copy")
@@ -250,27 +255,6 @@ func (page *settingsPage) linkMarkIcon(mark linkMark) {
 	})
 }
 
-// vivaColophon closes the page with the framework that draws the window. It is
-// not a place to go like the cards above, so it is one centered line below
-// them, and the words and the mark are the whole of its target.
-func (page *settingsPage) vivaColophon() {
-	c, pal := page.c, page.state.pal
-	m := page.state.messages
-	color := pal.muted
-	if canvas := page.canvas(); canvas.Hovered() == hitAboutViva || canvas.Focused() == hitAboutViva {
-		color = pal.accent
-	}
-	ui.Row(c).FillWidth().Items(ui.Center).Justify(ui.Center).Children(func() {
-		line := ui.Row(c).Items(ui.Center).Gap(5)
-		page.matchAnchor(m.About.Viva, line, 0)
-		page.hitOn(line, hitAboutViva, m.About.Viva, gfx.HitOptions{Role: gfx.RoleLink, Cursor: gfx.PointerCursorHand, Description: m.About.VivaDescription})
-		line.Children(func() {
-			ui.Icon(c, lucideIcons[iconLink]).Size(11, 11).Color(color).Shrink(0)
-			ui.Text(c, m.About.Viva).FontSize(metrics.FontSizeS).Color(color).LineHeight(15)
-		})
-	})
-}
-
 // paintAboutSettings paints the About category: what this copy is, how to bring
 // it up to date, where to report a problem and where the project lives.
 func (state *State) paintAboutSettings(page *settingsPage) {
@@ -334,9 +318,11 @@ func (state *State) paintAboutSettings(page *settingsPage) {
 				}, func() {
 					page.linkCard(hitAboutDocs, aboutDocsMark, m.About.Docs, m.About.DocsDescription)
 				})
+				page.pair(func() {
+					page.linkCard(hitAboutViva, aboutVivaMark, m.About.Viva, m.About.VivaDescription)
+				}, func() {})
 			})
 		})
-		page.vivaColophon()
 	})
 }
 

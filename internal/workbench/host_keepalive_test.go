@@ -287,7 +287,7 @@ func TestIdleKeepAliveWaitsForTheWholeQuietInterval(t *testing.T) {
 func TestIdleKeepAliveTypingPostponesTheProbe(t *testing.T) {
 	state, session, shell := idleKeepAliveSession(t, Host{Protocol: protocolSSH, IdleKeepAlive: time.Minute})
 	session.term.clock = func() time.Duration { return 10 * time.Second }
-	if !session.term.sendInput([]byte("x"), false) {
+	if !session.term.sendInput([]byte("x"), false, true) {
 		t.Fatal("sendInput refused the user's key")
 	}
 	if wait := state.idleKeepAliveWait(session, time.Minute); wait != 10*time.Second {
@@ -407,7 +407,7 @@ func TestIdleKeepAliveSkipsCredentialPrompts(t *testing.T) {
 func TestIdleKeepAliveSkipsAPartiallyTypedLine(t *testing.T) {
 	state, session, shell := idleKeepAliveSession(t, Host{Protocol: protocolSSH, IdleKeepAlive: time.Minute})
 	session.term.clock = func() time.Duration { return 0 }
-	if !session.term.sendInput([]byte("rm -rf /"), false) {
+	if !session.term.sendInput([]byte("rm -rf /"), false, true) {
 		t.Fatal("sendInput refused the user's keys")
 	}
 	state.runIdleKeepAlive(session, time.Minute)
@@ -675,11 +675,11 @@ func TestChoosingTheProtocolDefaultDoesNotPinTheSendMode(t *testing.T) {
 	editor := &state.editor
 	editor.reset()
 	editor.protocol = protocolSSH
-	state.clickHostIdleKeepAlive(hitDialogIdleInputItemList.At(1)) // NUL, the SSH default
+	editor.chooseIdleInput(idleInputNUL) // the SSH default
 	if editor.idleInput != idleInputNUL || editor.idleInputChosen {
 		t.Fatalf("input = %v chosen=%v, want the default left unpinned", editor.idleInput, editor.idleInputChosen)
 	}
-	state.clickHostIdleKeepAlive(hitDialogIdleInputItemList.At(0)) // CR
+	editor.chooseIdleInput(idleInputCR)
 	if editor.idleInput != idleInputCR || !editor.idleInputChosen {
 		t.Fatalf("input = %v chosen=%v, want CR pinned", editor.idleInput, editor.idleInputChosen)
 	}

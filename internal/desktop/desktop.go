@@ -202,6 +202,16 @@ type FileClipboard interface {
 	SetClipboardFiles(paths []string) (FileOffer, error)
 }
 
+// ImageClipboard is a Session that can give the picture on this computer's
+// clipboard to the remote system's clipboard, so that its user pastes it: RDP
+// does; VNC carries text only.
+type ImageClipboard interface {
+	Session
+	// SetClipboardImage makes the PNG picture what the remote clipboard holds,
+	// replacing the text it held before.
+	SetClipboardImage(png []byte) error
+}
+
 // FileReceiver is a Session that can take files the remote system put on its
 // clipboard. The files are saved beside this computer's own clipboard, so the
 // user can paste them where they are working.
@@ -211,6 +221,21 @@ type FileReceiver interface {
 	// previous call, if any. Paths names the top-level entries to put on the
 	// local clipboard; Err says why none or only some arrived.
 	RemoteFiles() (ReceivedFiles, bool)
+	// ReceivingFiles reports the files the remote copied that are being saved
+	// now, and false when none are; a change wakes the window like the rest.
+	ReceivingFiles() (FileProgress, bool)
+	// CancelReceivingFiles stops saving them. What arrived is deleted and
+	// RemoteFiles delivers nothing for them.
+	CancelReceivingFiles()
+}
+
+// FileProgress is how far files being received have come.
+type FileProgress struct {
+	// Name is the entry being saved, a `/` separated path inside the selection.
+	Name string
+	// Done is the bytes saved so far out of Size, which is -1 when the remote
+	// did not say how large its files are.
+	Done, Size int64
 }
 
 // ReceivedFiles is a remote file list saved on this computer.
@@ -269,6 +294,17 @@ type Resizer interface {
 	// interface is drawn at scale (see Options.Scale). The new size arrives
 	// through Present, when the server has made it.
 	Resize(width, height int, scale float32) error
+}
+
+// QualityAdjuster is a Session whose colour depth and encoding can change while
+// it runs, without a new connection (VNC). RDP fixes both in its handshake and
+// is not one: a change there needs the session opened again.
+type QualityAdjuster interface {
+	Session
+	// SetQuality asks the server for colorDepth bits per pixel (see
+	// Options.ColorDepth) and the encoding preferred (see Options.Encoding). The
+	// whole picture is sent again in the new format.
+	SetQuality(colorDepth int, encoding Encoding) error
 }
 
 // LatencySource reports the remote server's last network RTT measurement.
@@ -352,6 +388,26 @@ type Options struct {
 	// session; the backend reports the connection as not encrypted. VNC chooses
 	// its security types with the server and ignores this.
 	StandardSecurity bool
+	// LegacyTLS lets an RDP connection offer the TLS suites that use RSA key
+	// exchange (with AES-CBC or AES-GCM) to a server that offers nothing newer.
+	// They have no forward secrecy and CBC has known weaknesses, so this is an
+	// explicit accommodation for an old server, not a default. Modern suites
+	// stay in the offer; VNC ignores this.
+	LegacyTLS bool
+	// ColorDepth is the bits per pixel to ask the server for, to spend less
+	// bandwidth at the cost of colours: 32, 16 or 8 for VNC, 32, 24 or 16 for
+	// RDP. Zero, and any depth the protocol has no format for, is 32. An RDP
+	// depth below 32 also leaves out the graphics pipeline, which draws in 32
+	// bits whatever the session's depth says, so that the server sends the
+	// bitmaps at the depth asked for.
+	ColorDepth int
+	// Encoding is the pixel encoding a VNC server is asked to prefer; the empty
+	// value lets the client list them in its own order. RDP ignores it.
+	Encoding Encoding
+	// Effects is which visual effects an RDP server may render into the session.
+	// Nil is DefaultEffects. VNC ignores it: its server draws the desktop as it
+	// is.
+	Effects *Effects
 	// Username and Domain are the account a protocol with accounts signs in as.
 	// VNC account authentication uses Username; Domain belongs to RDP.
 	Username, Domain string
@@ -371,6 +427,61 @@ type Options struct {
 	// VerifyServerKey checks a RealVNC server's canonical PKIX RSA public key
 	// before the client sends credentials. Nil does not trust an RSA-AES server.
 	VerifyServerKey func(address string, publicKeyDER []byte) error
+}
+
+// Encoding is a VNC pixel encoding the user may ask the server to prefer.
+type Encoding string
+
+const (
+	// EncodingAuto lets the client list the encodings in the order of its
+	// choice: the most compact first.
+	EncodingAuto Encoding = ""
+	// EncodingZRLE is compact and cheap to decode; the usual choice of a slow link.
+	EncodingZRLE Encoding = "zrle"
+	// EncodingHextile is lighter on the server's processor than ZRLE and
+	// heavier on the network.
+	EncodingHextile Encoding = "hextile"
+	// EncodingRaw is uncompressed pixels: the least work for both ends and the
+	// most bytes, for a fast local link.
+	EncodingRaw Encoding = "raw"
+)
+
+// Valid reports whether encoding is one of the constants above.
+func (encoding Encoding) Valid() bool {
+	switch encoding {
+	case EncodingAuto, EncodingZRLE, EncodingHextile, EncodingRaw:
+		return true
+	}
+	return false
+}
+
+// Effects are the visual effects of a remote Windows session: each one that is
+// on costs bandwidth on the screen updates it produces, and the experience
+// settings of Windows' own remote desktop client switch the same ones.
+type Effects struct {
+	// Wallpaper shows the desktop background picture instead of a plain colour.
+	Wallpaper bool `json:"wallpaper,omitempty"`
+	// FontSmoothing smooths the edges of text (ClearType).
+	FontSmoothing bool `json:"font_smoothing,omitempty"`
+	// Composition renders windows with the desktop window manager (transparent
+	// glass, live thumbnails).
+	Composition bool `json:"composition,omitempty"`
+	// WindowDrag shows a window's contents while it is dragged, instead of only
+	// its outline.
+	WindowDrag bool `json:"window_drag,omitempty"`
+	// Animations animates menus and windows.
+	Animations bool `json:"animations,omitempty"`
+	// Themes draws windows and controls in the system's visual style.
+	Themes bool `json:"themes,omitempty"`
+	// CursorShadow draws a shadow under the pointer.
+	CursorShadow bool `json:"cursor_shadow,omitempty"`
+}
+
+// DefaultEffects are the effects of a host that never chose: what a session
+// has always had, with the effects that cost the most (the wallpaper, window
+// contents while dragging, animations, composition) off.
+func DefaultEffects() Effects {
+	return Effects{FontSmoothing: true, Themes: true, CursorShadow: true}
 }
 
 // Dialer opens the byte stream to the server: a direct TCP connection, or a

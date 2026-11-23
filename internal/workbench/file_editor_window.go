@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/base"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
@@ -83,7 +84,6 @@ func (m *fileWindowManager) activate(key string) {
 	m.pending = ""
 	if previous := m.activeDocument(); previous != nil && previous != d && previous.note != nil {
 		previous.note.content.view.previewSelect.EndDrag()
-		previous.note.content.view.previewDragging = false
 		previous.note.content.view.pointerValid = false
 	}
 	m.active = key
@@ -372,7 +372,7 @@ func (m *fileWindowManager) configWithClosed(onClosed func()) app.Config {
 		OnClosed:       onClosed,
 	}
 	base.WindowBorderColor = func() app.Color { return windowClearColor(m.ownerTheme()) }
-	config := m.editPage(m.pageTheme()).Config(base)
+	config := ui.Configure(m.editPage(m.pageTheme()), base)
 	config.Paint = base.Paint
 	return config
 }
@@ -569,16 +569,17 @@ func (m *fileWindowManager) declareDocumentTabRows(c ui.C, activeDocument *fileD
 		active := key == m.active
 		hovered := canvas != nil && (canvas.Hovered() == id || canvas.Hovered() == closeID)
 		foreground := pal.muted
-		fill, edge := pal.tab, pal.line
+		fill := pal.tab
 		switch {
 		case active:
-			fill, edge, foreground = pal.tabActive, pal.windowStroke, pal.text
+			fill, foreground = pal.tabActive, pal.text
 		case hovered:
 			fill, foreground = pal.tabHover, pal.text
 		}
-		if color := d.hostColor(); color != "" {
+		color := d.hostColor()
+		edge := tabBorderColor(pal, color, active)
+		if color != "" {
 			fill = tabFill(pal, fill, color, active, hovered)
-			edge = tintHostSurface(edge, color, tabColorBorderTint)
 			foreground = tabInk(pal, color, foreground)
 		}
 		label := m.tabLabel(d)
@@ -666,12 +667,11 @@ func (m *fileWindowManager) paintTabsScrollbar(canvas *gfx.Canvas) {
 	if active == nil || bounds.Width <= 0 || bounds.Height <= 0 {
 		return
 	}
-	area := components.BeginScrollArea(canvas, active.owner.Theme(), bounds, gfx.Size{
-		Width: m.tabs.contentWidth, Height: bounds.Height,
-	}).Offset(m.tabStrip.offset, 0).
-		HorizontalScrollbar(hitDocumentTabBar, active.owner.messages.FileWindow.TabsScrollbar, "").
-		HoverScrollbars(m.tabs.hovered || m.tabs.dragging)
-	m.tabs.geometry = area.EndContent()
+	m.tabs.geometry = base.LayoutScrollArea(bounds, gfx.Size{Width: m.tabs.contentWidth, Height: bounds.Height},
+		base.ScrollAreaLayout{OffsetX: m.tabStrip.offset, BarSize: scrollbarHoverSize})
+	paintScrollbarBar(canvas, active.owner.Theme(), m.tabs.geometry, false,
+		hitDocumentTabBar, active.owner.messages.FileWindow.TabsScrollbar, "",
+		m.tabs.hovered || m.tabs.dragging)
 }
 
 func (m *fileWindowManager) trackTabPointer(event gfx.PointerEvent) bool {

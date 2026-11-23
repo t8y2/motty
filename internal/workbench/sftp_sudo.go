@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"github.com/vivaui/viva/base"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
@@ -22,11 +23,19 @@ type sudoSFTPDialog struct {
 	window      *sftpWindow
 	password    text.Editor
 	field       ui.Field
+	row         ui.FormFieldState
 	bound       bool
 	commands    bool
+	logs        bool
 	dashboard   bool
 	returnTools bool
 }
+
+// sudoDialogBody is the body of the dialog that asks for one secret without the
+// vault's save box: the labeled field and the padding around it. The field is a
+// form field like the other secret dialogs, so the control inside it keeps the
+// ordinary single-line height.
+func sudoDialogBody(theme *base.Theme) float32 { return dialogRowHeight(theme) + 4 }
 
 func sudoSFTPAvailable(session *Session, view *sftpView) bool {
 	return !view.localOnly && session.host.System != sshconn.SystemWindows && session.host.Transfer != transferSCP
@@ -77,7 +86,7 @@ func (state *State) submitSudoSFTP() {
 	session, ok := state.sessionByIDPointer(sessionID)
 	password := state.sudoSFTP.password.String()
 	commands, returnTools := state.sudoSFTP.commands, state.sudoSFTP.returnTools
-	dashboard := state.sudoSFTP.dashboard
+	dashboard, logs := state.sudoSFTP.dashboard, state.sudoSFTP.logs
 	window := state.sudoSFTP.window
 	state.closeModal()
 	if commands {
@@ -87,6 +96,12 @@ func (state *State) submitSudoSFTP() {
 					state.setSudoCommands(&source.session, password, true)
 					return
 				}
+			}
+			return
+		}
+		if logs {
+			if ok {
+				state.setSudoCommands(session, password, true)
 			}
 			return
 		}
@@ -145,6 +160,14 @@ func (state *State) switchSudoSFTP(session *Session, view *sftpView, password st
 	// was under way continues from its partial once the new worker is usable.
 	view.worker.Interrupt()
 	view.worker.Close()
+	// Tree request IDs belong to the worker that just closed. Retire them
+	// before the replacement worker starts issuing fresh listings, and forget
+	// what the old worker read: elevation changes what this account may see, so
+	// children and their errors are no longer trustworthy.
+	if window := view.detached; window != nil {
+		window.clearDirectoryTreeRequests()
+		window.invalidateDirectoryTree(false)
+	}
 	state.refreshSFTPTransfers(view)
 	state.archiveTransfers(view)
 	// The new worker numbers its transfers from one again; the old source
@@ -169,6 +192,12 @@ func (state *State) switchSudoSFTP(session *Session, view *sftpView, password st
 	}
 	view.worker = sftpclient.NewWorker(view.openFiles, state.notifyForView(session, view))
 	state.configureSFTPWorker(view)
+	// The tree prefetch must run on the replacement worker: the unelevated
+	// worker is closed, and prefetching there would mark every expanded node
+	// unavailable instead of rereading it under the new privileges.
+	if window := view.detached; window != nil {
+		window.loadExpandedDirectoryTree(false)
+	}
 	for _, document := range state.fileWindows.documents {
 		if document.view == view && !document.local && !document.closed && document.worker != nil {
 			document.worker.Close()
@@ -222,9 +251,11 @@ func (state *State) declareSudoSFTPDialog(c ui.C) {
 		DismissID: hitSudoSFTPDismiss, CloseID: hitSudoSFTPCancel, InitialFocusID: hitSudoSFTPPassword,
 	})
 	dialog.Body(func() {
-		ui.Column(c).Height(state.secretFieldBody("")).PadSides(2, 4, 0, 4).Children(func() {
-			ui.TextFieldID(c, hitSudoSFTPPassword, &dialogState.field, m.SFTPSudoPassword, "").
-				Height(62).FillWidth().Secure().AutoFocus()
+		ui.Column(c).Height(sudoDialogBody(c.Theme())).PadSides(2, 4, 0, 4).Children(func() {
+			ui.FormField(c, &dialogState.row, m.SFTPSudoPassword).FillWidth().Height(dialogRowHeight(c.Theme())).Children(func() {
+				ui.TextFieldID(c, hitSudoSFTPPassword, &dialogState.field, m.SFTPSudoPassword, "").
+					FillWidth().Secure().AutoFocus()
+			})
 		})
 	})
 	dialog.Footer(func() {

@@ -154,7 +154,7 @@ var darkPalette = palette{
 	terminal:     gfx.RGB(11, 14, 19),
 	tab:          gfx.RGB(31, 36, 44),
 	tabHover:     gfx.RGB(40, 47, 58),
-	tabActive:    gfx.RGB(51, 60, 73),
+	tabActive:    gfx.RGB(59, 70, 87),
 	tabCloseHot:  gfx.RGB(71, 83, 101),
 
 	text:  gfx.RGB(226, 231, 238),
@@ -196,8 +196,8 @@ var lightPalette = palette{
 	line:         gfx.RGB(220, 220, 225),
 	windowStroke: gfx.RGB(204, 204, 210),
 	terminal:     gfx.RGB(244, 244, 247),
-	tab:          gfx.RGB(238, 238, 241),
-	tabHover:     gfx.RGB(243, 243, 246),
+	tab:          gfx.RGB(224, 224, 230),
+	tabHover:     gfx.RGB(235, 235, 239),
 	tabActive:    gfx.RGB(248, 248, 250),
 	tabCloseHot:  gfx.RGB(228, 228, 233),
 

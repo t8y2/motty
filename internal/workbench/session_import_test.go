@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,13 +13,14 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/ui"
 	"golang.org/x/text/encoding/simplifiedchinese"
+	_ "modernc.org/sqlite"
 )
 
 func TestImportingMobaXtermSessionsAddsGroupedHostsOnceAndSaysWhatItLeftOut(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "sessions.mxtsessions")
 	content := "[Bookmarks]\nSubRep=Clients\\Acme\nImgNum=42\n" +
 		"Web=#109#0%web.acme.test%2222%root%\n" +
-		"Same as saved=#109#0%prod.example.com%22%deploy%\n" +
+		"Production=#109#0%prod.example.com%22%deploy%\n" +
 		"Desktop=#91#4%10.1.1.1%3389%Administrator%\n"
 	if err := os.WriteFile(file, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
@@ -60,6 +62,9 @@ func TestImportingMobaXtermSessionsAddsGroupedHostsOnceAndSaysWhatItLeftOut(t *t
 	warnings := strings.Join(result.warnings[:result.visible], "\n")
 	if !strings.Contains(warnings, "not imported") || !strings.Contains(warnings, "No readable SSH passwords") {
 		t.Fatalf("warnings = %q", warnings)
+	}
+	if !strings.Contains(warnings, "Production (prod.example.com) was not imported") {
+		t.Fatalf("the skipped session is not named: %q", warnings)
 	}
 
 	// It is kept.
@@ -311,12 +316,44 @@ func TestImportingNetcattyHostsAddsHostsWithTheirGroups(t *testing.T) {
 	}
 }
 
+func TestImportPasswordsKeepSameAddressSessionsApartByName(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "hosts.csv")
+	content := "Label,Hostname/IP,Protocol,Port,Username,Password\n" +
+		"jump-a,jump.example.com,ssh,22222,ops,secret-a\n" +
+		"jump-b,jump.example.com,ssh,22222,ops,secret-b\n"
+	if err := os.WriteFile(file, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	options := freshOptions(t)
+	options.Keystore = &memKeys{}
+	options.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return []string{file}, nil }
+	state := newTestState(t, options)
+	state.Click(hitImportSessions)
+	state.Click(hitImportNetcatty)
+	if state.modal != modalSessionImportPreview || state.sessionImport.eligible != 2 {
+		t.Fatalf("preview modal=%d eligible=%d", state.modal, state.sessionImport.eligible)
+	}
+	state.Click(hitImportSavePasswords)
+	if len(state.hosts) != 2 {
+		t.Fatalf("hosts %+v", state.hosts)
+	}
+	for index, want := range []string{"secret-a", "secret-b"} {
+		value, found := vaultValue(t, state, hostSecretName(state.hosts[index].CatalogID, hostPasswordPart))
+		if !found || value != want {
+			t.Fatalf("host %d password %q found=%v, want %q", index, value, found, want)
+		}
+		if state.hosts[index].LoginCommand != "" {
+			t.Fatalf("a Netcatty host took a login command: %+v", state.hosts[index])
+		}
+	}
+}
+
 func TestImportPasswordsOnlyFillsMissingHostsAndKeepsExistingValues(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "hosts.csv")
-	content := "Hostname/IP,Protocol,Port,Username,Password\n" +
-		"prod.example.com,ssh,22,deploy,fill-me\n" +
-		"staging.example.com,ssh,22,deploy,do-not-overwrite\n" +
-		"new.example.com,ssh,22,root,new-secret\n"
+	content := "Label,Hostname/IP,Protocol,Port,Username,Password\n" +
+		"Prod,prod.example.com,ssh,22,deploy,fill-me\n" +
+		"Staging,staging.example.com,ssh,22,deploy,do-not-overwrite\n" +
+		"New,new.example.com,ssh,22,root,new-secret\n"
 	if err := os.WriteFile(file, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -476,7 +513,7 @@ func TestImportPasswordConflictsAndKeyHostsAreSkipped(t *testing.T) {
 	options.Keystore = &memKeys{}
 	options.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return []string{file}, nil }
 	state := newTestState(t, options)
-	keyHost := Host{ID: 1, Label: "Key", Address: "key.example.com", Port: 22, User: "deploy", Auth: authPrivateKey}
+	keyHost := Host{ID: 1, Label: "key.example.com", Address: "key.example.com", Port: 22, User: "deploy", Auth: authPrivateKey}
 	keyHost.finish()
 	state.hosts = append(state.hosts, keyHost)
 	state.nextHostID = 2
@@ -523,6 +560,50 @@ func TestImportingWindTermSessionsAddsHostsWithTheirGroups(t *testing.T) {
 	state.Click(hitImportWindTerm)
 	if len(state.hosts) != 1 || state.hosts[0].Label != "Pi" || state.hosts[0].Group != "Lab" || !strings.Contains(state.hostImportResult.summary, "WindTerm") {
 		t.Fatalf("hosts %+v, summary %q", state.hosts, state.hostImportResult.summary)
+	}
+}
+
+// WindTerm lets a bastion host carry several targets reached by the command
+// typed after authentication; those sessions share one address and are told
+// apart by name. Its ">" group separator becomes the "/" path Motty keeps.
+func TestImportingWindTermSessionsKeepsSameAddressSessionsAndTheirLoginCommands(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "user.sessions")
+	content := `[
+	{"session.group":"00-admin>01-infini","session.label":"jump-a","session.port":22222,"session.protocol":"SSH","session.target":"jump.example.com","session.user":"ops","session.autoExecution":"10.0.0.1"},
+	{"session.group":"00-admin>01-infini","session.label":"jump-b","session.port":22222,"session.protocol":"SSH","session.target":"jump.example.com","session.user":"ops","session.autoExecution":"10.0.0.2"},
+	{"session.group":"ica>00-ob","session.label":"jump-a","session.port":22222,"session.protocol":"SSH","session.target":"jump.example.com","session.user":"ops","session.autoExecution":"10.0.0.3"}
+	]`
+	if err := os.WriteFile(file, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	options := freshOptions(t)
+	options.Keystore = &memKeys{}
+	options.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return []string{file}, nil }
+	state := newTestState(t, options)
+	state.Click(hitImportSessions)
+	state.Click(hitImportWindTerm)
+	if state.modal != modalHostImportResult || len(state.hosts) != 2 {
+		t.Fatalf("modal %d, hosts %+v", state.modal, state.hosts)
+	}
+	for index, want := range []struct{ label, command string }{
+		{"jump-a", "10.0.0.1"},
+		{"jump-b", "10.0.0.2"},
+	} {
+		host := state.hosts[index]
+		if host.Label != want.label || host.Address != "jump.example.com" || host.Port != 22222 || host.User != "ops" {
+			t.Fatalf("host %d = %+v", index, host)
+		}
+		if host.Group != "00-admin/01-infini" || host.LoginCommand != want.command {
+			t.Fatalf("host %d group %q command %q", index, host.Group, host.LoginCommand)
+		}
+	}
+	result := state.hostImportResult
+	if !strings.Contains(result.summary, "2 hosts from WindTerm") || !strings.Contains(result.summary, "1 already saved") {
+		t.Fatalf("summary = %q", result.summary)
+	}
+	warnings := strings.Join(result.warnings[:result.visible], "\n")
+	if !strings.Contains(warnings, "jump-a (jump.example.com:22222) was not imported") {
+		t.Fatalf("the skipped session is not named: %q", warnings)
 	}
 }
 
@@ -676,5 +757,177 @@ func TestImportingSecureCRTSessionsAsksForItsSessionsFolder(t *testing.T) {
 	warnings := strings.Join(result.warnings[:result.visible], "\n")
 	if !strings.Contains(warnings, "No readable SSH passwords") {
 		t.Fatalf("warnings = %q", warnings)
+	}
+}
+
+func TestImportingFinalShellSessionsAsksForItsDataFolder(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "FinalShell")
+	files := map[string]string{
+		"conn/one/folder.json": `{"id":"clients","name":"Clients","parent_id":"root"}`,
+		"conn/one/prod_connect_config.json": `{"id":"h1","name":"prod","host":"prod.example.test",` +
+			`"port":2222,"user_name":"deploy","password":"U2FsdGVkX1+cipher",` +
+			`"authentication_type":1,"conection_type":100,"parent_id":"clients"}`,
+	}
+	for name, content := range files {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	options := freshOptions(t)
+	options.StatePath = filepath.Join(filepath.Dir(options.KnownHostsPath), "state.json")
+	var request app.OpenDirectoryOptions
+	options.OpenDirectory = func(asked app.OpenDirectoryOptions) (string, error) {
+		request = asked
+		return root, nil
+	}
+	state := newTestState(t, options)
+
+	state.Click(hitImportSessions)
+	if _, texts := paintedTexts(state); !contains(texts, "FinalShell") {
+		t.Fatal("the import chooser has no FinalShell button")
+	}
+	state.Click(hitImportFinalShell)
+	if !strings.Contains(request.Title, "FinalShell") || !strings.Contains(request.Title, "data folder") {
+		t.Fatalf("OpenDirectory request = %+v", request)
+	}
+	if state.modal != modalHostImportResult || len(state.hosts) != 1 {
+		t.Fatalf("modal %d, hosts %d", state.modal, len(state.hosts))
+	}
+	host := state.hosts[0]
+	if host.Label != "prod" || host.Group != "Clients" || host.Address != "prod.example.test" ||
+		host.User != "deploy" || host.Port != 2222 {
+		t.Fatalf("host = %+v", host)
+	}
+	result := state.hostImportResult
+	if !strings.Contains(result.summary, "FinalShell") {
+		t.Fatalf("summary = %q", result.summary)
+	}
+	warnings := strings.Join(result.warnings[:result.visible], "\n")
+	if !strings.Contains(warnings, "No readable SSH passwords") {
+		t.Fatalf("warnings = %q", warnings)
+	}
+}
+
+func TestImportingXterminalConnectionsAddsTheirGroups(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "XTerminal")
+	path := filepath.Join(root, "sqlite", "local-store.db")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	store, err := sql.Open("sqlite", "file:"+filepath.ToSlash(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Exec(`CREATE TABLE local_store (
+		store_key TEXT NOT NULL, item_id TEXT NOT NULL, payload TEXT NOT NULL,
+		updated_at INTEGER NOT NULL, created_at INTEGER NOT NULL,
+		PRIMARY KEY (store_key, item_id)
+	)`); err != nil {
+		t.Fatal(err)
+	}
+	rows := []struct{ key, payload string }{
+		{"u-GeneralDatabaseLocalImp-SERVER", `{"_id":"prod","type":"SERVER","name":"Production","parentId":null}`},
+		{"u-GeneralDatabaseLocalImp-ServerDatabaseLocalImp", `{"_id":"h1","title":"Web","host":"web.example.test","port":2222,"username":"deploy","groupId":"prod","authType":"password","password":"secret","connectionConfig":{"init":{"bash":"cd /srv"}}}`},
+		{"u-GeneralDatabaseLocalImp-ServerDatabaseLocalImp", `{"_id":"h2","title":"DB","host":"db.example.test","port":22,"username":"admin"}`},
+	}
+	for index, row := range rows {
+		if _, err := store.Exec(
+			`INSERT INTO local_store(store_key, item_id, payload, updated_at, created_at) VALUES (?, ?, ?, ?, ?)`,
+			row.key, fmt.Sprintf("item-%d", index), row.payload, index, index,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	options := freshOptions(t)
+	options.Keystore = &memKeys{}
+	var request app.OpenDirectoryOptions
+	options.OpenDirectory = func(asked app.OpenDirectoryOptions) (string, error) {
+		request = asked
+		return root, nil
+	}
+	state := newTestState(t, options)
+	state.Click(hitImportMenu)
+	clickPageMenuRow(t, state, state.messages.Tools.ImportSessions)
+	if _, texts := paintedTexts(state); !contains(texts, "Xterminal") {
+		t.Fatal("the import chooser has no Xterminal button")
+	}
+	state.Click(hitImportXterminal)
+	if !strings.Contains(request.Title, "Xterminal") || !strings.Contains(request.Title, "data folder") {
+		t.Fatalf("OpenDirectory request = %+v", request)
+	}
+	if state.modal != modalHostImportResult || len(state.hosts) != 2 {
+		t.Fatalf("modal %d, hosts %d", state.modal, len(state.hosts))
+	}
+	web := state.hosts[0]
+	if web.Label != "Web" || web.Group != "Production" || web.Address != "web.example.test" || web.User != "deploy" || web.Port != 2222 || web.LoginCommand != "cd /srv" {
+		t.Fatalf("web = %+v", web)
+	}
+	if db := state.hosts[1]; db.Label != "DB" || db.Group != "" || db.Address != "db.example.test" {
+		t.Fatalf("db = %+v", db)
+	}
+	result := state.hostImportResult
+	if strings.Contains(strings.Join(result.warnings[:result.visible], "\n"), "secret") {
+		t.Fatal("an imported password appeared in the result warnings")
+	}
+}
+
+func TestImportingXPipeConnectionsAddsSSHAndRDPHosts(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "XPipe")
+	files := map[string]string{
+		"storage/categories/default/category.json": `{"uuid":"97458c07-75c0-4f9d-a06e-92d8cdf67c40","name":"Default","parentUuid":null}`,
+		"storage/categories/clients/category.json": `{"uuid":"clients","name":"Clients","parentUuid":"97458c07-75c0-4f9d-a06e-92d8cdf67c40"}`,
+		"storage/stores/web/entry.json":            `{"uuid":"web","name":"Web","categoryUuid":"clients"}`,
+		"storage/stores/web/store.json":            `{"type":"ssh","host":"web.example.test","port":2222,"identity":{"type":"inPlace","identityStore":{"username":"deploy","sshIdentity":{"type":"none"}}}}`,
+		"storage/stores/desk/entry.json":           `{"uuid":"desk","name":"Windows","categoryUuid":"clients"}`,
+		"storage/stores/desk/store.json":           `{"type":"rdpSimple","host":"win.example.test","port":3389,"identity":{"type":"inPlace","identityStore":{"username":"admin"}}}`,
+	}
+	for name, content := range files {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	options := freshOptions(t)
+	options.Keystore = &memKeys{}
+	var request app.OpenDirectoryOptions
+	options.OpenDirectory = func(asked app.OpenDirectoryOptions) (string, error) {
+		request = asked
+		return root, nil
+	}
+	state := newTestState(t, options)
+	state.Click(hitImportSessions)
+	if _, texts := paintedTexts(state); !contains(texts, "XPipe") {
+		t.Fatal("the import chooser has no XPipe button")
+	}
+	state.Click(hitImportXPipe)
+	if !strings.Contains(request.Title, "XPipe") || !strings.Contains(request.Title, "data folder") {
+		t.Fatalf("OpenDirectory request = %+v", request)
+	}
+	if state.modal != modalHostImportResult || len(state.hosts) != 2 {
+		t.Fatalf("modal %d, hosts %d", state.modal, len(state.hosts))
+	}
+	byLabel := map[string]Host{}
+	for _, host := range state.hosts {
+		byLabel[host.Label] = host
+	}
+	web := byLabel["Web"]
+	if web.Protocol != protocolSSH || web.Group != "Clients" || web.Address != "web.example.test" || web.User != "deploy" || web.Port != 2222 {
+		t.Fatalf("web = %+v", web)
+	}
+	desk := byLabel["Windows"]
+	if desk.Protocol != protocolRDP || desk.Group != "Clients" || desk.Address != "win.example.test" || desk.User != "admin" || desk.Port != 3389 {
+		t.Fatalf("desktop = %+v", desk)
 	}
 }

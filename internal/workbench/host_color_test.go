@@ -79,7 +79,7 @@ func TestConnectionColorChoicesFitShortDialog(t *testing.T) {
 	}
 	var hit gfx.Hit
 	for _, h := range canvas.Hits() {
-		if h.ID == hostPickerIDs.Trigger && !h.IsLabel {
+		if h.Role == gfx.RoleButton && h.Label == state.messages.ColorPickerChoose && !h.IsLabel {
 			hit = h
 			break
 		}
@@ -260,7 +260,7 @@ func TestConnectionColorKeepsMonitorHeaderNeutral(t *testing.T) {
 	session.host.Color = "#3b82f6"
 	bounds := gfx.Rect{X: 600, Y: 40, Width: 320, Height: 800}
 	var canvas gfx.Canvas
-	state.paintMonitor(&canvas, bounds, session)
+	state.paintMonitorSurface(&canvas, bounds)
 	header := gfx.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: infoBarHeight}
 	for _, rectangle := range canvas.Rectangles() {
 		if rectangle.Bounds == header && rectangle.Color == state.pal.workspace {

@@ -5,6 +5,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 )
@@ -14,7 +15,7 @@ func TestNotesPopupSizing(t *testing.T) {
 	s.activeSection = sectionNotes
 	for _, test := range []struct{ doc, window, want float32 }{{1200, 1400, 600}, {400, 800, 340}, {400, 300, 276}} {
 		s.notes.view.documentBounds.Width = test.doc
-		w, h := s.notePopupSize(gfx.Rect{Width: test.window, Height: 800})
+		w, h := notePopupExtent(test.doc, test.window, 800, false)
 		if w != test.want || h < 479 || h > 481 {
 			t.Fatalf("size %v %v", w, h)
 		}
@@ -22,7 +23,7 @@ func TestNotesPopupSizing(t *testing.T) {
 	s.notes.view.popup = "hosts"
 	s.notes.view.documentBounds.Width = 1200
 	for _, test := range []struct{ window, want float32 }{{1400, 1200}, {1000, 976}} {
-		w, _ := s.notePopupSize(gfx.Rect{Width: test.window, Height: 800})
+		w, _ := notePopupExtent(1200, test.window, 800, true)
 		if w != test.want {
 			t.Fatalf("host popup width: %v, want %v", w, test.want)
 		}
@@ -96,7 +97,7 @@ func TestNotesHostPickerCheckboxScrollAndFocus(t *testing.T) {
 	token := s.noteTagToken("host-00")
 	id := hitNoteHostRows.At(token)
 	hit, ok := hitByID(&c, id)
-	if !ok || hit.Role != gfx.RoleCheckbox || hit.Bounds.Height != 40 || hit.Label != "Host 00" {
+	if !ok || hit.Role != gfx.RoleCheckbox || hit.Label != "Host 00" || hit.Checked {
 		t.Fatalf("card semantics: %+v", hit)
 	}
 	count := 0
@@ -108,20 +109,29 @@ func TestNotesHostPickerCheckboxScrollAndFocus(t *testing.T) {
 	if count != 1 {
 		t.Fatal("card has duplicate checkbox targets")
 	}
-	geo := s.notes.view.tagPopupArea.Geometry()
-	if geo.MaxOffsetY <= 0 || geo.Bounds.Height >= 480 {
-		t.Fatal("results do not scroll below height cap")
+	group, ok := hitByID(&c, hitNoteHostGroups.At(s.noteTagToken("Group")))
+	if !ok {
+		t.Fatal("the group row is missing")
 	}
 	s.Click(id)
 	if !noteHasHost(s.notes.draft.Tags, "host-00") || s.notes.view.popup != "hosts" || len(s.sessions) != 0 {
 		t.Fatal("card did not select or opened connection")
 	}
-	s.notesScroll(gfx.ScrollEvent{DeltaY: 10000})
+	config := s.WindowConfig(app.Config{OnScroll: s.Scroll})
+	for range 20 {
+		config.OnScroll(gfx.ScrollEvent{X: group.Bounds.X + 10, Y: group.Bounds.Y + 10, DeltaY: 300})
+	}
+	c.Reset()
+	s.Paint(&c, gfx.Size{Width: 1400, Height: 800})
+	if _, ok := hitByID(&c, hitNoteHostGroups.At(s.noteTagToken("Group"))); ok {
+		t.Fatal("the wheel did not scroll the picker")
+	}
 	s.notes.view.picker.Insert("Host 00")
 	c.Reset()
 	s.Paint(&c, gfx.Size{Width: 1400, Height: 800})
-	if s.notes.view.tagPopupScroll != 0 || s.notes.view.tagPopupArea.Geometry().Bounds.Height >= geo.Bounds.Height {
-		t.Fatal("query did not shrink popup/reset scroll")
+	groupAfter, ok := hitByID(&c, hitNoteHostGroups.At(s.noteTagToken("Group")))
+	if !ok || groupAfter.Bounds.Y > group.Bounds.Y+5 {
+		t.Fatal("query did not reset the picker scroll")
 	}
 	s.Click(id)
 	if noteHasHost(s.notes.draft.Tags, "host-00") {

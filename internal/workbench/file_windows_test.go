@@ -130,6 +130,7 @@ func TestDocumentLongPathsAndFooterEncodingMenu(t *testing.T) {
 				}
 				foundTabHint := false
 				foundReload, foundSave := false, false
+				var encoding gfx.Rect
 				for _, hit := range view.Snapshot().Hits {
 					if hit.ID.Scope() == hitDocumentTabList {
 						foundTabHint = true
@@ -141,7 +142,11 @@ func TestDocumentLongPathsAndFooterEncodingMenu(t *testing.T) {
 					if hit.ID == hitDocumentLocation {
 						t.Fatal("the document name was painted twice")
 					}
-					if hit.ID == hitDocumentEncoding || hit.ID == hitDocumentInput {
+					if hit.ID == hitDocumentInput {
+						checkBounds(hit.Bounds)
+					}
+					if hit.Role == gfx.RoleCombobox && hit.Label == d.owner.messages.FileWindow.Encoding {
+						encoding = hit.Bounds
 						checkBounds(hit.Bounds)
 					}
 					if hit.Label == d.owner.messages.FileWindow.Reload {
@@ -159,8 +164,10 @@ func TestDocumentLongPathsAndFooterEncodingMenu(t *testing.T) {
 				if !foundReload || !foundSave {
 					t.Fatal("missing footer reload or save button")
 				}
-				d.encodingOpen = true
-				if err := view.Resize(int(size.Width), int(size.Height)+1); err != nil {
+				if encoding.Width <= 0 {
+					t.Fatal("missing the footer encoding select")
+				}
+				if err := view.Click(encoding.X+encoding.Width/2, encoding.Y+encoding.Height/2); err != nil {
 					t.Fatal(err)
 				}
 				if err := view.Rest(); err != nil {
@@ -168,18 +175,14 @@ func TestDocumentLongPathsAndFooterEncodingMenu(t *testing.T) {
 				}
 				visible := 0
 				for _, hit := range view.Snapshot().Hits {
-					if hit.ID.Scope() == hitDocumentEncodings && !hit.Block {
+					if hit.Role == gfx.RoleOption && !hit.Block {
 						visible++
 						checkBounds(hit.Bounds)
-						if hit.Bounds.Y+hit.Bounds.Height > d.ui.encodingBounds.Y {
-							t.Fatal("footer menu failed to open above the selector")
-						}
 					}
 				}
 				if visible == 0 {
 					t.Fatal("no encoding choices visible")
 				}
-				d.encodingOpen = false
 				view.Close()
 			}
 		}
@@ -192,22 +195,22 @@ func TestDocumentLocalSavePreservesBytesAndRejectsExternalChanges(t *testing.T) 
 		if encoding == "Windows-1252" {
 			value = "name: café\nnext: yes\n"
 		}
-		raw, err := filecontent.Encode(value, filecontent.Format{Encoding: encoding, BOM: encoding == "UTF-16LE", LineEnding: "\r\n"})
+		raw, err := filecontent.Encode(value, filecontent.Format{Encoding: encoding, BOM: encoding == "UTF-16LE", LineEnding: "\r\n"}, 1<<20)
 		if err != nil {
 			t.Fatal(err)
 		}
 		location := filepath.Join(t.TempDir(), "settings.yml")
 		os.WriteFile(location, raw, 0600)
 		revision := sftpclient.Revision(sha256.Sum256(raw))
-		opened, err := readLocalDocument(location)
+		opened, err := readLocalDocument(location, 1<<20)
 		if err != nil || !bytes.Equal(opened, raw) {
 			t.Fatal("read changed bytes", err)
 		}
-		decoded, err := filecontent.Decode(opened, encoding)
+		decoded, err := filecontent.Decode(opened, encoding, 1<<20)
 		if err != nil {
 			t.Fatal(err)
 		}
-		edited, err := filecontent.Encode(decoded.Value+"added: true\n", decoded.Format)
+		edited, err := filecontent.Encode(decoded.Value+"added: true\n", decoded.Format, 1<<20)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -249,12 +252,13 @@ func TestDocumentSaveFailureRetainsEditsAndCloseCancellation(t *testing.T) {
 
 func TestDocumentUnsupportedFilesAndNoticesAreBounded(t *testing.T) {
 	d := documentFixture(t)
-	for _, data := range [][]byte{[]byte("%PDF-1.7"), []byte{'P', 'K', 3, 4, 0}, bytes.Repeat([]byte{'a'}, filecontent.MaxTextBytes+1)} {
+	d.previewMB = 1
+	for _, data := range [][]byte{[]byte("%PDF-1.7"), []byte{'P', 'K', 3, 4, 0}, bytes.Repeat([]byte{'a'}, d.previewLimitBytes()+1)} {
 		event := decodeFileEvent(d, data, nil)
 		if event.err == nil {
 			t.Fatal("unsupported content accepted")
 		}
-		d.owner.fileNotices.show("Preview", d.owner.fileProblem(event.err), components.ToastWarning)
+		d.owner.fileNotices.show("Preview", d.fileProblem(event.err), components.ToastWarning)
 	}
 	notices := &d.owner.fileNotices
 	count := len(notices.items)
@@ -522,7 +526,7 @@ func TestDocumentTabsUseSessionChromeAndScrollWhenTheyOverflow(t *testing.T) {
 			name:   fmt.Sprintf("service-%02d-production-configuration.yaml", index+1),
 			source: "production · 192.168.31.2", local: true,
 		}
-		decoded, err := filecontent.Decode([]byte(fmt.Sprintf("service: %d\n", index+1)), "")
+		decoded, err := filecontent.Decode([]byte(fmt.Sprintf("service: %d\n", index+1)), "", 1<<20)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -649,7 +653,7 @@ func TestSharedWindowCloseHandlesDirtyTabsInOrder(t *testing.T) {
 	owner.setLanguage(i18n.Chinese)
 	newDocument := func(key, name string) *fileDocument {
 		d := &fileDocument{owner: owner, cacheKey: key, name: name, local: true}
-		decoded, err := filecontent.Decode([]byte("original\n"), "")
+		decoded, err := filecontent.Decode([]byte("original\n"), "", 1<<20)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -744,7 +748,7 @@ func TestSharedWindowActivatesBusyTabBeforeClosePrompt(t *testing.T) {
 		manager.documents = make(map[string]*fileDocument)
 		makeDocument := func(key string, dirty, busy bool) *fileDocument {
 			document := &fileDocument{owner: owner, cacheKey: key, name: key + ".txt", local: true, busy: busy}
-			decoded, err := filecontent.Decode([]byte("original\n"), "")
+			decoded, err := filecontent.Decode([]byte("original\n"), "", 1<<20)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -796,7 +800,7 @@ func TestSharedWindowIgnoresCloseCallbackFromPreviousWindow(t *testing.T) {
 	owner := New(freshOptions(t))
 	t.Cleanup(owner.Close)
 	doc := &fileDocument{owner: owner, cacheKey: "notes", name: "notes.txt", local: true}
-	decoded, err := filecontent.Decode([]byte("notes\n"), "")
+	decoded, err := filecontent.Decode([]byte("notes\n"), "", 1<<20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -821,7 +825,7 @@ func TestClosingLastTabDiscardsPendingDocumentLoads(t *testing.T) {
 	owner := New(freshOptions(t))
 	t.Cleanup(owner.Close)
 	ready := &fileDocument{owner: owner, cacheKey: "ready", name: "ready.txt", local: true}
-	decoded, err := filecontent.Decode([]byte("ready\n"), "")
+	decoded, err := filecontent.Decode([]byte("ready\n"), "", 1<<20)
 	if err != nil {
 		t.Fatal(err)
 	}

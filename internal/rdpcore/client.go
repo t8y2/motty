@@ -266,23 +266,24 @@ type Client struct {
 	fragCode byte   // update Code of the in-progress fragment sequence
 
 	// Callbacks (protected by cbMu — use load*/On* methods, not direct access)
-	cbMu              sync.RWMutex
-	onNetworkRTT      func()
-	onBitmap          func(*BitmapUpdate)
-	onStridedBitmap   func(x, y, w, h int, data []byte, stride int)
-	onH264Frame       func(*egfx.H264Frame) // H.264 pass-through callback
-	onBeginPaint      func()                // called before batch of display updates
-	onEndPaint        func()                // called after batch of display updates
-	painting          bool                  // true while inside beginPaint/endPaint (reentrant guard)
-	onPointer         func(*PointerUpdate)
-	onResize          func(width, height int)
-	onDisconnect      func(error)
-	onReconnecting    func()
-	onReconnected     func()
-	onClipboardUpdate func(hasText, hasImage, hasFiles bool)
-	onClipboardText   func(text string)
-	onClipboardImage  func(pngData []byte)
-	onClipboardFiles  func(files cliprdr.RemoteFiles, err error)
+	cbMu                     sync.RWMutex
+	onNetworkRTT             func()
+	onBitmap                 func(*BitmapUpdate)
+	onStridedBitmap          func(x, y, w, h int, data []byte, stride int)
+	onH264Frame              func(*egfx.H264Frame) // H.264 pass-through callback
+	onBeginPaint             func()                // called before batch of display updates
+	onEndPaint               func()                // called after batch of display updates
+	painting                 bool                  // true while inside beginPaint/endPaint (reentrant guard)
+	onPointer                func(*PointerUpdate)
+	onResize                 func(width, height int)
+	onDisconnect             func(error)
+	onReconnecting           func()
+	onReconnected            func()
+	onClipboardUpdate        func(hasText, hasImage, hasFiles bool)
+	onClipboardText          func(text string)
+	onClipboardImage         func(pngData []byte)
+	onClipboardFiles         func(files cliprdr.RemoteFiles, err error)
+	onClipboardFilesProgress func(cliprdr.RemoteFilesProgress)
 
 	// Heartbeat: last time we received any data from server (unix nanos)
 	lastReceived atomic.Int64
@@ -632,6 +633,32 @@ func (c *Client) negotiateX224(requestedProtos uint32) error {
 	return nil
 }
 
+// legacyTLSCipherSuites is what CipherSuites is set to when LegacyTLS is on:
+// the TLS 1.0-1.2 suites of the default offer plus the RSA key exchange ones a
+// server that predates ECDHE may require. Go leaves the RSA key exchange suites
+// out of its defaults (GODEBUG tlsrsakex) and the CBC-SHA256 one out of every
+// list it builds, so naming them in CipherSuites is what re-enables them. 3DES
+// and RC4 stay out even here: no Windows server that speaks TLS for RDP needs
+// them.
+func legacyTLSCipherSuites() []uint16 {
+	suites := make([]uint16, 0, 16)
+	for _, suite := range tls.CipherSuites() {
+		for _, version := range suite.SupportedVersions {
+			if version == tls.VersionTLS12 {
+				suites = append(suites, suite.ID)
+				break
+			}
+		}
+	}
+	return append(suites,
+		tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
+		tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+		tls.TLS_RSA_WITH_AES_128_CBC_SHA,
+		tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+		tls.TLS_RSA_WITH_AES_128_CBC_SHA256,
+	)
+}
+
 // upgradeTLS upgrades the connection to TLS
 func (c *Client) upgradeTLS() error {
 	c.log.LogAttrs(context.Background(), slog.LevelInfo, "upgrading to TLS")
@@ -668,6 +695,9 @@ func (c *Client) upgradeTLS() error {
 		// Cap TLS at 1.2 when CredSSP/NLA is selected. Some Windows servers
 		// fail to process CredSSP over TLS 1.3 (MS-CSSP was designed for 1.2).
 		tlsConfig.MaxVersion = tls.VersionTLS12
+	}
+	if c.opts.LegacyTLS {
+		tlsConfig.CipherSuites = legacyTLSCipherSuites()
 	}
 
 	tlsConn := tls.Client(c.conn, tlsConfig)
@@ -1158,7 +1188,10 @@ func (c *Client) mcsConnect() error {
 				if c.soundHandler == nil || c.dvc == nil {
 					return
 				}
-				c.soundHandler.SetSendFn(func(pdu []byte) error { return c.dvc.SendData(ch.ID, pdu) })
+				// The player goroutine confirms through this function after the
+				// receive goroutine may have replaced c.dvc, so it holds the handler.
+				channels := c.dvc
+				c.soundHandler.SetSendFn(func(pdu []byte) error { return channels.SendData(ch.ID, pdu) })
 				c.soundHandler.ProcessPDU(data)
 			})
 			ch.OnClose(func() {
@@ -1213,6 +1246,14 @@ func (c *Client) mcsConnect() error {
 		c.clipHandler.OnRemoteFiles(func(files cliprdr.RemoteFiles, err error) {
 			if fn := c.loadOnClipboardFiles(); fn != nil {
 				fn(files, err)
+			}
+		})
+		c.clipHandler.OnRemoteFilesProgress(func(progress cliprdr.RemoteFilesProgress) {
+			c.cbMu.RLock()
+			fn := c.onClipboardFilesProgress
+			c.cbMu.RUnlock()
+			if fn != nil {
+				fn(progress)
 			}
 		})
 		c.registerChannelHandler("cliprdr", func(_ uint16, data []byte) {
@@ -5218,6 +5259,27 @@ func (c *Client) OnClipboardFiles(fn func(files cliprdr.RemoteFiles, err error))
 	c.cbMu.Lock()
 	c.onClipboardFiles = fn
 	c.cbMu.Unlock()
+}
+
+// ClipboardFilesProgress is how far the files the server copied have been read
+// (see OnClipboardFilesProgress).
+type ClipboardFilesProgress = cliprdr.RemoteFilesProgress
+
+// OnClipboardFilesProgress sets the callback that hears how far the files the
+// server put on its clipboard have been read, after every chunk and once with
+// Active false when the download is over. It runs on the download's goroutine.
+func (c *Client) OnClipboardFilesProgress(fn func(ClipboardFilesProgress)) {
+	c.cbMu.Lock()
+	c.onClipboardFilesProgress = fn
+	c.cbMu.Unlock()
+}
+
+// CancelClipboardFiles stops reading the files the server copied; nothing is
+// delivered for them (see OnClipboardFiles).
+func (c *Client) CancelClipboardFiles() {
+	if c.clipHandler != nil {
+		c.clipHandler.CancelRemoteFiles()
+	}
 }
 
 // SetClipboardEnabled toggles clipboard forwarding at runtime. When disabled

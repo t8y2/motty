@@ -309,7 +309,7 @@ func TestTheSectionToolbarsCondenseIntoIcons(t *testing.T) {
 	}{
 		{"keys", sectionKeys, []gfx.ID{hitKeysAdd, hitKeysCopyPublic, hitKeysRemove}},
 		{"proxies", sectionProxies, []gfx.ID{hitProxyBatchAdd, hitProxyAdd}},
-		{"forwards", sectionForwards, []gfx.ID{hitForwardAdd, hitForwardEdit, hitForwardStartStop, hitForwardRemove}},
+		{"forwards", sectionForwards, []gfx.ID{hitForwardAdd}},
 		{"known hosts", sectionKnownHosts, []gfx.ID{hitKnownHostsRefresh, hitKnownHostsRetrust, hitKnownHostsDelete}},
 	}
 	for _, section := range sections {
@@ -378,6 +378,21 @@ func TestANarrowHostRowKeepsTheName(t *testing.T) {
 	}
 	if !hasText(narrow, "Production") {
 		t.Errorf("a narrow row lost the host name: %q", narrow)
+	}
+}
+
+// A row with room to spare beside the name should use it: a long name must not
+// be cut short just because the columns after it are empty, as #1064 reported.
+func TestALongHostNameUsesTheRoomBesideItsColumns(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	name := "production-database-primary-replica-eu-central-1"
+	state.hosts[0].Label = name
+	_, texts := paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	if !hasText(texts, name) {
+		t.Errorf("a long host name was cut short beside empty columns: %q", texts)
+	}
+	if !hasText(texts, "prod.example.com") || !hasText(texts, state.messages.HostStateIdle) {
+		t.Errorf("widening the name cost the row its address or status: %q", texts)
 	}
 }
 

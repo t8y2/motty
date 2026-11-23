@@ -232,6 +232,10 @@ func (worker *Worker) scpUpload(remote *scpRemote, next request, generation uint
 			worker.setProgress(next.id, files, bytes, 0)
 		}}
 	}
+	// The scp protocol has no link record, so the links of a folder are made
+	// with ln once the folder is there.
+	type scpLink struct{ remote, target string }
+	var links []scpLink
 	err = remote.client.Upload(parent, info.IsDir(), func(sender *scpclient.Sender) error {
 		var sendFile func(local, name string, info os.FileInfo) error
 		sendFile = func(local, name string, info os.FileInfo) error {
@@ -243,7 +247,20 @@ func (worker *Worker) scpUpload(remote *scpRemote, next request, generation uint
 				modTime = info.ModTime()
 			}
 			if info.Mode()&os.ModeSymlink != 0 {
-				return fmt.Errorf("%w: %s", ErrSymbolicLink, local)
+				relative, err := filepath.Rel(next.local, local)
+				if err != nil {
+					return err
+				}
+				destination, err := joinRemoteWithin(target, filepath.ToSlash(relative))
+				if err != nil {
+					return err
+				}
+				text, err := os.Readlink(local)
+				if err != nil {
+					return err
+				}
+				links = append(links, scpLink{remote: destination, target: text})
+				return nil
 			}
 			if !info.IsDir() {
 				if !info.Mode().IsRegular() {
@@ -282,5 +299,16 @@ func (worker *Worker) scpUpload(remote *scpRemote, next request, generation uint
 		}
 		return sendFile(next.local, name, info)
 	})
-	return files, bytes, 0, err
+	if err != nil {
+		return files, bytes, 0, err
+	}
+	for _, link := range links {
+		if !worker.proceed(generation, next.id) {
+			return files, bytes, 0, ErrCanceled
+		}
+		if err := putRemoteLink(remote, link.remote, link.target, next.policy); err != nil {
+			return files, bytes, 0, err
+		}
+	}
+	return files, bytes, 0, nil
 }

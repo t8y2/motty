@@ -1,0 +1,13 @@
+# The terminal's save-output button must open the platform's Save dialog over
+# the real window; Escape closes it without writing anything.
+place 200 100 2000 1300
+focus
+sleep 800
+newlocal
+sleep 2500
+click 2156 660
+sleep 1500
+shot save-1-dialog
+keys {ESC}
+sleep 1000
+shot save-2-cancelled

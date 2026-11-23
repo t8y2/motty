@@ -6,6 +6,7 @@ import (
 
 	"motty/internal/i18n"
 	"motty/internal/mosh"
+	"motty/internal/termsize"
 )
 
 // moshShell is the workbench's Shell over a mosh client. Mosh has no SSH
@@ -71,7 +72,10 @@ func (shell *moshShell) Write(p []byte) bool {
 	return true
 }
 
-func (shell *moshShell) Resize(cols, rows int) { shell.client.Resize(cols, rows) }
+// Resize tells the mosh server the new grid. The mosh protocol has no pixel
+// size — its state carries width and height in characters only — so the size's
+// pixel fields stop at this client.
+func (shell *moshShell) Resize(size termsize.Size) { shell.client.Resize(size.Cols, size.Rows) }
 
 func (shell *moshShell) Done() <-chan struct{} { return shell.client.Done() }
 

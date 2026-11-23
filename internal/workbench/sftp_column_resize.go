@@ -1,7 +1,6 @@
 package workbench
 
 import (
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 )
 
@@ -91,18 +90,15 @@ func (state *State) resizeSFTPColumns(divider int, x float32, area gfx.Rect, gap
 	}
 	metrics := state.sftpColumnMetrics(area.Width, gap)
 	widths := [3]float32{metrics.name, metrics.size, metrics.modified}
-	resize := components.BeginColumnResize(nil, state.Theme(), area, widths[:]).
-		Minimums(sftpColumnMinimums[:]).
-		Gap(gap)
-	edit, ok := resize.Edit(divider, x)
+	left, right, ok := sftpColumnPairEdit(area, widths, gap, divider, x)
 	if !ok {
 		return false
 	}
 	if divider == 0 {
-		state.sftpColumnSizeWidth = edit.Right
+		state.sftpColumnSizeWidth = right
 	} else {
-		state.sftpColumnSizeWidth = edit.Left
-		state.sftpColumnModifiedWidth = edit.Right
+		state.sftpColumnSizeWidth = left
+		state.sftpColumnModifiedWidth = right
 	}
 	state.sftpColumnWidthsChosen = true
 	return true
@@ -153,12 +149,84 @@ func (state *State) pendingSFTPColumnMetrics(view *sftpView, folder *sftpFolder,
 // header, and returns the geometry through the caller's slices.
 func paintSFTPColumnResize(canvas *gfx.Canvas, theme gfx.Theme, area gfx.Rect, widths [3]float32, gap float32, ids [2]gfx.ID, label string, columns, dividers, hits []gfx.Rect) {
 	values := [3]float32{widths[0], widths[1], widths[2]}
-	labels := [2]string{label, label}
-	components.BeginColumnResize(canvas, theme, area, values[:]).
-		Dividers(ids[:]).
-		Minimums(sftpColumnMinimums[:]).
-		Gap(gap).
-		Paint(columns, dividers, hits, labels[:])
+	if len(columns) > 2 {
+		for index := range 3 {
+			columns[index] = gfx.Rect{
+				X: sftpColumnLeft(area, values, gap, index), Y: area.Y,
+				Width: sftpColumnWidth(values, index), Height: area.Height,
+			}
+		}
+	}
+	const hitSize = float32(4)
+	for index := range 2 {
+		x := sftpColumnLeft(area, values, gap, index) + sftpColumnWidth(values, index) + gap/2
+		if len(dividers) > index {
+			dividers[index] = gfx.Rect{X: x, Y: area.Y, Width: 1, Height: area.Height}
+		}
+		if len(hits) > index {
+			hits[index] = gfx.Rect{X: x - (hitSize-1)/2, Y: area.Y, Width: hitSize, Height: area.Height}
+		}
+		if dividers[index].Width <= 0 || dividers[index].Height <= 0 {
+			continue
+		}
+		canvas.Fill(dividers[index], theme.Border)
+		id := ids[index]
+		if id.IsZero() {
+			continue
+		}
+		line := theme.Ring
+		switch {
+		case canvas.Pressed() == id:
+			line = theme.Primary
+		case canvas.Hovered() != id:
+			line = gfx.Color{}
+		}
+		if line.Alpha != 0 {
+			// The hovered or pressed line grows a pixel above and below, as the
+			// painted ColumnResize did.
+			divider := dividers[index]
+			canvas.Rounded(gfx.Rect{X: divider.X - 1, Y: divider.Y - 1, Width: 3, Height: divider.Height + 2}, 1, line)
+		}
+		canvas.HitWithOptions(id, hits[index], label, gfx.HitOptions{
+			Role: gfx.RoleSeparator, Cursor: gfx.PointerCursorResizeHorizontal, SkipFocus: true,
+		})
+	}
+}
+
+// sftpColumnWidth is one column's width, at least its minimum.
+func sftpColumnWidth(widths [3]float32, index int) float32 {
+	return max(widths[index], sftpColumnMinimums[index])
+}
+
+// sftpColumnLeft is where a column starts in area.
+func sftpColumnLeft(area gfx.Rect, widths [3]float32, gap float32, index int) float32 {
+	x := area.X
+	for at := 0; at < index && at < len(widths); at++ {
+		x += sftpColumnWidth(widths, at) + gap
+	}
+	return x
+}
+
+// sftpColumnPairEdit maps a pointer position to the widths of the two columns
+// either side of divider. Their sum does not change, and neither goes below its
+// minimum.
+func sftpColumnPairEdit(area gfx.Rect, widths [3]float32, gap float32, divider int, x float32) (left, right float32, ok bool) {
+	if divider < 0 || divider+1 >= len(widths) {
+		return 0, 0, false
+	}
+	total := sftpColumnWidth(widths, divider) + sftpColumnWidth(widths, divider+1)
+	left = x - sftpColumnLeft(area, widths, gap, divider) - gap/2
+	low, high := sftpColumnMinimums[divider], sftpColumnMinimums[divider+1]
+	if low+high > total {
+		if low+high <= 0 {
+			left = total / 2
+		} else {
+			left = total * low / (low + high)
+		}
+	} else {
+		left = min(max(left, low), total-high)
+	}
+	return left, total - left, true
 }
 
 // sftpColumnPointer handles the docked file panel's column dividers. It runs

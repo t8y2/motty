@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"motty/internal/desktop"
 	"reflect"
 	"slices"
 	"sort"
@@ -43,7 +44,7 @@ func changedSavedFields(previous, current savedState) []savedFieldChange {
 // last dialed a host. The store merges the dials of every window rather than
 // replacing them, so another window has nothing to read back from one.
 var windowOwnFields = map[string]bool{
-	"window_x": true, "window_y": true, "window_width": true, "window_height": true,
+	"window_x": true, "window_y": true, "window_width": true, "window_height": true, "window_maximized": true,
 	"recent_connections": true,
 }
 
@@ -298,6 +299,7 @@ func sameSavedHost(left, right savedHost) bool {
 		left.Terminal == right.Terminal &&
 		left.Line == right.Line && left.Flow == right.Flow &&
 		sameSavedProxy(left.Proxy, right.Proxy) &&
+		left.ProxyProfile == right.ProxyProfile && left.ProxyBypass == right.ProxyBypass &&
 		left.Algorithms == right.Algorithms && left.AlgorithmList == right.AlgorithmList &&
 		left.Authentication == right.Authentication && left.Identity == right.Identity && left.Credential == right.Credential &&
 		left.SSHOptions.Equal(right.SSHOptions) && left.IdentitiesOnly == right.IdentitiesOnly &&
@@ -308,7 +310,18 @@ func sameSavedHost(left, right savedHost) bool {
 		left.IdleInputCustom == right.IdleInputCustom &&
 		slices.Equal(left.RemoteLogPaths, right.RemoteLogPaths) &&
 		left.ViaSSH == right.ViaSSH && left.Clipboard == right.Clipboard && left.Console == right.Console &&
-		left.StandardSecurity == right.StandardSecurity && left.Chromeless == right.Chromeless
+		left.NoAudio == right.NoAudio &&
+		left.StandardSecurity == right.StandardSecurity && left.LegacyTLS == right.LegacyTLS &&
+		left.Chromeless == right.Chromeless &&
+		left.ColorDepth == right.ColorDepth && left.DesktopEncoding == right.DesktopEncoding &&
+		sameSavedEffects(left.Effects, right.Effects)
+}
+
+func sameSavedEffects(left, right *desktop.Effects) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	return *left == *right
 }
 
 func sameSavedProxy(left, right *savedOutboundProxy) bool {

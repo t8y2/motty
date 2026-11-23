@@ -147,9 +147,9 @@ func (conn *Conn) captureCommand(ctx context.Context, command string, input []by
 		default:
 		}
 	}
-	client := conn.Client()
-	if client == nil {
-		return errors.New("sshconn: not connected")
+	client, err := conn.SessionClient(ctx)
+	if err != nil {
+		return err
 	}
 	operationCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -344,9 +344,12 @@ func (conn *Conn) streamCommand(ctx context.Context, command string, maxLineByte
 		}
 		return ctx.Err()
 	}
-	client := conn.Client()
-	if client == nil {
-		return errors.New("sshconn: not connected")
+	client, err := conn.SessionClient(operation)
+	if err != nil {
+		if operation.Err() != nil {
+			return canceled()
+		}
+		return err
 	}
 	session, err := openCommandSession(operation, client)
 	if err != nil {
@@ -390,29 +393,12 @@ func (conn *Conn) streamCommand(ctx context.Context, command string, maxLineByte
 	}
 
 	reader := bufio.NewReaderSize(stdout, max(maxLineBytes, 16))
-	discarding := false
-	for {
-		data, err := reader.ReadSlice('\n')
-		if operation.Err() != nil {
-			return canceled()
-		}
-		full := errors.Is(err, bufio.ErrBufferFull)
-		if full || len(data) > maxLineBytes {
-			if !skipLongLines {
-				return fmt.Errorf("%w: limit %d bytes", ErrCommandOutputTooLarge, maxLineBytes)
-			}
-			discarding = true
-		}
-		if full {
-			continue
-		}
-		if !discarding && len(data) != 0 && !line(data) {
-			return nil
-		}
-		discarding = false
-		if err != nil {
-			break
-		}
+	stopped, err := streamLines(reader, maxLineBytes, skipLongLines, line)
+	if err != nil {
+		return err
+	}
+	if stopped {
+		return nil
 	}
 	waited := make(chan error, 1)
 	go func() { waited <- session.Wait() }()
@@ -424,5 +410,35 @@ func (conn *Conn) streamCommand(ctx context.Context, command string, maxLineByte
 		return err
 	case <-operation.Done():
 		return canceled()
+	}
+}
+
+// streamLines hands each stdout line of reader, newline included, to line. A
+// line over maxLineBytes ends it with ErrCommandOutputTooLarge unless
+// skipLongLines drains the rest of that line first. stopped reports that line
+// asked for no more, and the caller ends its command at once; otherwise the
+// reader ran out. Both the plain and the privileged streaming commands read
+// through it, so a long line behaves the same either way.
+func streamLines(reader *bufio.Reader, maxLineBytes int, skipLongLines bool, line func([]byte) bool) (stopped bool, err error) {
+	discarding := false
+	for {
+		data, readErr := reader.ReadSlice('\n')
+		full := errors.Is(readErr, bufio.ErrBufferFull)
+		if full || len(data) > maxLineBytes {
+			if !skipLongLines {
+				return false, fmt.Errorf("%w: limit %d bytes", ErrCommandOutputTooLarge, maxLineBytes)
+			}
+			discarding = true
+		}
+		if full {
+			continue
+		}
+		if !discarding && len(data) != 0 && !line(data) {
+			return true, nil
+		}
+		discarding = false
+		if readErr != nil {
+			return false, nil
+		}
 	}
 }

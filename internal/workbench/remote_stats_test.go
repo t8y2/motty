@@ -242,16 +242,15 @@ func BenchmarkPaintRemoteStats(b *testing.B) {
 func TestRemoteStatsShowGPUPiecesOnlyWhenTheServerHasGPUs(t *testing.T) {
 	gpuReadout := func(lines ...string) ([]string, []string) {
 		state, _, fake, _ := liveSession(t)
+		session := state.contextSession()
 		fake.streamCommand = streamReadings(lines...)
 		state.Click(hitRemoteStats)
 		waitRemoteStats(t, state, func(view *remoteStatsView) bool { return view.state == remoteStatsReady })
-		session, _ := state.sessionByIDPointer(state.activeSessionID)
 		if !session.stats.panel.hardwareOpen {
 			t.Fatal("remote monitor hardware section did not start expanded")
 		}
 		var canvas gfx.Canvas
-		// Keep both GPU cards visible below the fixed host information bar.
-		state.Paint(&canvas, gfx.Size{Width: 1600, Height: 900 + monitorHostInfoHeight})
+		state.Paint(&canvas, gfx.Size{Width: 1600, Height: 1500})
 		var names []string
 		for _, text := range canvas.Texts() {
 			if strings.HasPrefix(text.Value, "GPU") && strings.Contains(text.Value, "·") {
@@ -313,8 +312,7 @@ func TestHardwareShowsGPUMetricsAndProcesses(t *testing.T) {
 	state.Click(hitRemoteStats)
 	waitRemoteStats(t, state, func(view *remoteStatsView) bool { return view.state == remoteStatsReady })
 	var canvas gfx.Canvas
-	// Keep both process rows visible below the fixed host information bar.
-	state.Paint(&canvas, gfx.Size{Width: 1600, Height: 900 + monitorHostInfoHeight})
+	state.Paint(&canvas, gfx.Size{Width: 1600, Height: 1500})
 	texts := []string{}
 	for _, text := range canvas.Texts() {
 		texts = append(texts, text.Value)
@@ -342,7 +340,7 @@ func TestHardwareShowsALightlyUsedCardsExactMemory(t *testing.T) {
 	state.Click(hitRemoteStats)
 	waitRemoteStats(t, state, func(view *remoteStatsView) bool { return view.state == remoteStatsReady })
 	var canvas gfx.Canvas
-	state.Paint(&canvas, gfx.Size{Width: 1600, Height: 900})
+	state.Paint(&canvas, gfx.Size{Width: 1600, Height: 1500})
 	texts := []string{}
 	for _, text := range canvas.Texts() {
 		texts = append(texts, text.Value)
@@ -379,5 +377,37 @@ func TestHardwareDoesNotClaimAMDCardHasNoProcesses(t *testing.T) {
 		if strings.Contains(joined, absent) {
 			t.Fatalf("an AMD card claimed %q; texts=%q", absent, joined)
 		}
+	}
+}
+
+func TestHardwareKeepsNameOnlyGPUProcessesAndUnknownMemoryUnavailable(t *testing.T) {
+	state, session := monitorFixture(t)
+	session.stats.panel.sample.GPUs = []remotestats.GPU{{
+		Vendor: "NVIDIA", Name: "NVIDIA GeForce", UtilPercent: -1,
+		PowerWatts: -1, PowerLimitWatts: -1, TemperatureC: -1,
+	}}
+	state.formatMonitor(session.stats)
+	row := session.stats.panel.gpuRows[0]
+	if row.processesKnown || row.memory != "—" {
+		t.Fatalf("name-only GPU invented readings: %+v", row)
+	}
+	session.stats.panel.sample.GPUs[0].MemoryKnown = true
+	state.formatMonitor(session.stats)
+	if got := session.stats.panel.gpuRows[0].memory; got != "0 B" {
+		t.Fatalf("reported zero GPU memory = %q, want 0 B", got)
+	}
+	if got := monitorGPUUsage(3<<30, 0, true); got != "3.0 GiB" {
+		t.Fatalf("GPU memory without a capacity = %q, want 3.0 GiB", got)
+	}
+}
+
+func TestGPUReadoutKeepsUsedOnlyMemory(t *testing.T) {
+	gpu := remotestats.GPU{UtilPercent: 9, MemoryUsedBytes: 3 << 30, MemoryKnown: true, TemperatureC: -1, PowerWatts: -1}
+	if got := formatGPU(&gpu, false); got != "GPU 9% 3.0G" {
+		t.Fatalf("used-only memory = %q, want GPU 9%% 3.0G", got)
+	}
+	gpu.MemoryUsedBytes, gpu.MemoryKnown = 0, false
+	if got := formatGPU(&gpu, false); got != "GPU 9%" {
+		t.Fatalf("unreported memory = %q, want GPU 9%%", got)
 	}
 }

@@ -1,0 +1,21 @@
+# Session log behavior: the filters take the pointer and the keyboard; Enter
+# opens the focused one and Escape closes it.
+place 200 100 2000 1300
+focus
+sleep 800
+click 370 596
+sleep 1200
+click 1080 360
+sleep 500
+keys {TAB}
+sleep 400
+shot beh-log-1-star
+keys {TAB}
+sleep 400
+shot beh-log-2-time
+keys {ENTER}
+sleep 800
+shot beh-log-3-menu
+keys {ESC}
+sleep 600
+shot beh-log-4-closed

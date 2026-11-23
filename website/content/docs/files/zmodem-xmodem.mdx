@@ -1,6 +1,6 @@
 ---
-title: ZMODEM, XMODEM and YMODEM
-description: File transfer inside the terminal stream, for serial lines and legacy gear.
+title: ZMODEM, XMODEM, YMODEM and TRZSZ
+description: File transfer inside the terminal stream, for serial lines, legacy gear and TRZSZ.
 ---
 Some devices only move files through the terminal itself.
 
@@ -9,6 +9,13 @@ Some devices only move files through the terminal itself.
 A transfer starts when the remote `sz` or `rz` begins. Motty takes the stream from
 the screen, shows a progress dialog, and returns the terminal to normal when it
 ends.
+
+## TRZSZ
+
+TRZSZ is a newer transfer tool with the same shape as `rz` and `sz`, plus
+directory transfer and its own progress. Start `trz` or `tsz` on the remote, and
+Motty answers its announcement and shows the same offer. `trz -d` and `tsz -d`
+move a folder. It needs the trzsz programs (`trz` and `tsz`) on the remote.
 
 ## XMODEM and YMODEM
 
@@ -21,4 +28,5 @@ that the transfer behaves like a ZMODEM one.
 
 Everything from the other end is treated as hostile. A file name is reduced to a
 plain name, a size claim allocates nothing, and the peer cannot choose a path or
-make Motty run a command.
+make Motty run a command. A TRZSZ directory is created under a name Motty picks,
+and every element it sends is checked before it is joined to that folder.

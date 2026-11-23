@@ -58,6 +58,9 @@ func TestSFTPPanelPlacesNativeNavigationMatchesDetachedFavorites(t *testing.T) {
 					t.Fatal("local favorites were not shared without moving the server pane")
 				}
 				click(hitSFTPLocalPlaces)
+				if err := preview.Driver().Pump(); err != nil {
+					t.Fatal(err)
+				}
 				if !files.bookmarksOpen {
 					t.Fatal("sidebar local locations did not open")
 				}
@@ -73,12 +76,16 @@ func TestSFTPPanelPlacesNativeNavigationMatchesDetachedFavorites(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				click(sftpLocalPlaces.At(0))
+				preview.Driver().Pump()
+				dualClickMenuLabel(t, preview, state.messages.SFTPWindow.LocalDocuments)
 				if files.lfolder.path != child || files.path != "/home/test" || files.bookmarksOpen {
 					t.Fatal("sidebar shortcut did not navigate its local pane")
 				}
 				click(hitSFTPLocalPlaces)
-				click(sftpLocalFavorites.At(0))
+				if err := preview.Driver().Pump(); err != nil {
+					t.Fatal(err)
+				}
+				dualClickMenuLabel(t, preview, dir)
 				if files.lfolder.path != dir {
 					t.Fatal("sidebar local favorite did not reopen")
 				}
@@ -127,24 +134,24 @@ func TestSFTPPanelPlacesScrollbarDoesNotScrollTheFileListOrDismiss(t *testing.T)
 	if err := preview.Click(trigger.Bounds.X+trigger.Bounds.Width/2, trigger.Bounds.Y+trigger.Bounds.Height/2); err != nil {
 		t.Fatal(err)
 	}
-	bar, ok := findSnapshotHit(preview.Snapshot(), contextID(files.places.scroll.BarID))
-	if !ok || files.places.scroll.BarID.IsZero() {
-		t.Fatal("long location menu has no scrollbar")
-	}
-	x, y := bar.Bounds.X+bar.Bounds.Width/2, bar.Bounds.Y+1
-	if err := preview.Press(x, y); err != nil {
+	if err := preview.Driver().Pump(); err != nil {
 		t.Fatal(err)
 	}
 	if !files.bookmarksOpen {
-		t.Fatal("pressing a stationary thumb dismissed places")
+		t.Fatal("the places menu did not open")
 	}
-	if err := preview.Move(x, bar.Bounds.Y+bar.Bounds.Height-2); err != nil {
+	// The page menu scrolls itself: a wheel over it must keep it open and leave
+	// the file list behind it where it was.
+	row, ok := snapshotMenuHit(preview, state.sftpLocalBookmarks[0])
+	if !ok {
+		t.Fatal("long location menu did not paint its favorites")
+	}
+	if err := preview.Scroll(gfx.ScrollEvent{
+		X: row.Bounds.X + row.Bounds.Width/2, Y: row.Bounds.Y + row.Bounds.Height/2, DeltaY: 400,
+	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := preview.Release(x, bar.Bounds.Y+bar.Bounds.Height-2); err != nil {
-		t.Fatal(err)
-	}
-	if !files.bookmarksOpen || files.places.scroll.Offset <= 0 || files.lfolder.first != 0 {
-		t.Fatal("scrollbar dismissed places or moved the underlying file list")
+	if !files.bookmarksOpen || files.lfolder.first != 0 {
+		t.Fatal("scrolling the places menu dismissed it or moved the underlying file list")
 	}
 }

@@ -22,6 +22,7 @@ import (
 	"motty/internal/shellkind"
 	"motty/internal/sshconn"
 	"motty/internal/term"
+	"motty/internal/termsize"
 	layoutcore "motty/internal/workspace"
 	"motty/internal/x11fwd"
 )
@@ -33,8 +34,10 @@ type Shell interface {
 	Drain(dst []byte) []byte
 	// Write queues input for the shell and reports whether it was accepted.
 	Write(p []byte) bool
-	// Resize tells the remote pty the terminal size in cells.
-	Resize(cols, rows int)
+	// Resize tells the pty the terminal size: the grid in cells and the text
+	// area in device pixels. A transport whose protocol carries only cells, as
+	// mosh and telnet do, ignores the pixels.
+	Resize(size termsize.Size)
 	// Done is closed once the shell has ended and all its output is drainable.
 	Done() <-chan struct{}
 	// Err says why the shell ended; nil for a clean exit.
@@ -73,12 +76,14 @@ type terminal struct {
 	screen *term.Terminal
 	shell  Shell
 	rx     []byte // scratch for draining output
-	// shellCols and shellRows are the size the shell was last told, wantCols
-	// and wantRows the size a prompt's redraw is waiting for; see resizeShell.
-	shellCols, shellRows int
-	wantCols, wantRows   int
-	shellWaiting         bool
-	shellWaitAt          time.Time
+	// shellSize is the size the shell was last told, wantCols and wantRows the
+	// grid a prompt's redraw is waiting for; see resizeShell. The pixels are
+	// computed when the size is told, so a font or display-scale change is
+	// carried even when the grid stays the same.
+	shellSize          termsize.Size
+	wantCols, wantRows int
+	shellWaiting       bool
+	shellWaitAt        time.Time
 	// encoding is the remote charset of this shell; empty is UTF-8. decoder
 	// streams its bytes to UTF-8, keeping a partial multibyte character until
 	// the next read completes it. It is nil for a UTF-8 shell.
@@ -113,6 +118,7 @@ type terminal struct {
 	shellOpened           time.Duration    // when the shell was asked for, to give a silent one up
 	opening               chan shellResult // a shell being opened in the background, until pump collects it
 	followPath            string           // latest shell directory awaiting a safe attached file panel
+	followSeq             uint64           // names that report, so a kept one is applied once
 	reportedHome          string           // home reported by this shell, in the same path form as cwd
 	reportedDirectory     term.Cwd         // last report accepted from this shell, rather than a running program
 	promptReady           bool
@@ -163,18 +169,19 @@ type terminal struct {
 	// declaration made, which the bar's slots are painted in after the page.
 	paintFinding, paintInSplit, paintInactive bool
 	paintCommandNoticeShown                   bool
-	paintCommandNotice                        ui.Box
-	paintNoticeShown                          bool
 	paintBarBackground                        gfx.Color
 	paintGeometry                             terminalGeometry
 	paintFind                                 findBarSlots
-	paintSpinner, paintLight, paintNotice     ui.Box
+	paintSpinner, paintLight                  ui.Box
 
 	// preedit is the input-method composition, shown at the cursor.
-	preedit    app.TextState
-	inputGuard terminalInputGuard
-	input      app.TextInput // reused, so resolving the text input allocates nothing
-	cache      rowCache
+	preedit      app.TextState
+	inputGuard   terminalInputGuard
+	input        app.TextInput // reused, so resolving the text input allocates nothing
+	cache        rowCache
+	logicalRows  []term.Row
+	logicalView  []logicalViewRow
+	logicalReady bool
 	// rowIDs are the visible rows' line identities, kept between paints so an
 	// image can find its row without scanning the whole scrollback.
 	rowIDs    []uint64
@@ -207,11 +214,18 @@ type terminal struct {
 	// command start or control key: the cursor is on the line being typed, which
 	// is what lets typed text be shown before its echo (see terminalPrediction).
 	inputLine bool
+	// keyedSincePrompt is set by any user input and cleared when the shell shows
+	// its prompt: it tells whether the user has touched this prompt, which
+	// inputLine cannot (it only changes for control keys and drives prediction).
+	keyedSincePrompt bool
 	// autofill is what the autofill rules need to know of this terminal.
 	autofill autofill.Watcher
-	// passwordHint is the sudo prompt line the saved password is on offer at: set
+	// passwordHint is the recognised account password prompt: set
 	// while that line is still under the cursor and nothing was sent since.
 	passwordHint string
+	// passwordOffered is the last prompt whose manual password list was shown.
+	// A new row can offer another password after a refused authentication.
+	passwordOffered terminalPasswordPrompt
 	// recorder decides which typed lines the command history may keep; it is
 	// only fed while historyOn says the history is wanted for this terminal.
 	recorder  cmdhistory.Recorder
@@ -231,12 +245,13 @@ type terminal struct {
 	// automatic path list follows the line instead, and closes only on the keys
 	// that end it.
 	completionInput   func([]byte)
+	completionUnknown func()
 	suggestionPending *suggestionEcho
 	// acceptedKey is a press the terminal took for a prompt-level overlay (a
 	// suggestion, the password hint). A program that asked for win32 input
 	// records sees releases, so the end of that press is dropped with its
 	// repeats: the program never got the press itself.
-	acceptedKey acceptedKey
+	acceptedKeys map[acceptedKey]struct{}
 	// idleLastInput is when this shell last received input from any source. The
 	// idle keepalive measures its quiet interval from here.
 	idleLastInput time.Duration
@@ -283,11 +298,19 @@ func (t *terminal) accessibleName(format, address string) string {
 // the visible rows, the cursor and which buffer was active. The cells and marks
 // are copies, because the live screen changes in place while the block runs.
 type terminalSync struct {
-	lines  []term.Row
-	cursor term.Cursor
-	cols   int
-	alt    bool
+	lines                []term.Row
+	cursor               term.Cursor
+	cols, visible, rows  int
+	prefixCut, suffixCut bool
+	alt                  bool
 }
+
+type logicalViewRow struct {
+	first, last int
+	suppressed  bool
+}
+
+const maxLogicalHighlightCells = 1 << 20
 
 // terminalSyncTimeout ends a block whose program never sent ESU, so a crash
 // cannot leave the display frozen forever.
@@ -307,6 +330,7 @@ func newTerminalWithScrollback(cols, rows, scrollback int) *terminal {
 func (t *terminal) holdSync(on bool) {
 	if !on {
 		t.sync = nil
+		t.logicalReady = false
 		return
 	}
 	if t.sync != nil {
@@ -315,13 +339,31 @@ func (t *terminal) holdSync(on bool) {
 	cols, rows := t.screen.Size()
 	held := &t.syncBuf
 	held.cols, held.cursor, held.alt = cols, t.screen.Cursor(), t.screen.Modes().AltScreen
-	if cap(held.lines) < rows {
-		held.lines = make([]term.Row, rows)
+	first, last := t.screen.ViewLine(0), t.screen.ViewLine(rows-1)
+	held.prefixCut, held.suffixCut = false, false
+	if start, end, ok := t.screen.LogicalLineRange(0); ok {
+		if end-start+1 <= maxLogicalHighlightCells/cols {
+			first = start
+		} else {
+			held.prefixCut = start < first
+		}
+	}
+	if start, end, ok := t.screen.LogicalLineRange(rows - 1); ok {
+		if end-start+1 <= maxLogicalHighlightCells/cols {
+			last = end
+		} else {
+			held.suffixCut = end > last
+		}
+	}
+	held.visible, held.rows = t.screen.ViewLine(0)-first, rows
+	count := last - first + 1
+	if cap(held.lines) < count {
+		held.lines = make([]term.Row, count)
 	} else {
-		held.lines = held.lines[:rows]
+		held.lines = held.lines[:count]
 	}
 	for row := range held.lines {
-		line := t.screen.Row(row)
+		line, _ := t.screen.RetainedRow(first + row)
 		cells := held.lines[row].Cells[:0]
 		line.Cells = append(cells, line.Cells...)
 		marks := held.lines[row].Marks[:0]
@@ -329,6 +371,7 @@ func (t *terminal) holdSync(on bool) {
 		held.lines[row] = line
 	}
 	t.sync = held
+	t.logicalReady = false
 	t.syncAt = t.recordingNow()
 }
 
@@ -339,12 +382,13 @@ func (t *terminal) expireSync() {
 	}
 	if t.recordingNow()-t.syncAt >= terminalSyncTimeout {
 		t.sync = nil
+		t.logicalReady = false
 	}
 }
 
 func (t *terminal) presentedSize() (cols, rows int) {
 	if t.sync != nil {
-		return t.sync.cols, len(t.sync.lines)
+		return t.sync.cols, t.sync.rows
 	}
 	return t.screen.Size()
 }
@@ -365,12 +409,81 @@ func (t *terminal) presentedAltScreen() bool {
 
 func (t *terminal) presentedRow(row int) term.Row {
 	if t.sync != nil {
-		if row < 0 || row >= len(t.sync.lines) {
+		if row < 0 || row >= t.sync.rows {
 			return term.Row{}
 		}
-		return t.sync.lines[row]
+		return t.sync.lines[t.sync.visible+row]
 	}
 	return t.screen.Row(row)
+}
+
+func (t *terminal) presentedLogicalLine(row int) []term.Row {
+	if !t.logicalReady {
+		t.prepareLogicalLines()
+	}
+	if row < 0 || row >= len(t.logicalView) {
+		return nil
+	}
+	group := t.logicalView[row]
+	return t.logicalRows[group.first:group.last]
+}
+
+func (t *terminal) prepareLogicalLines() {
+	cols, rows := t.presentedSize()
+	if cap(t.logicalView) < rows {
+		t.logicalView = make([]logicalViewRow, rows)
+	} else {
+		t.logicalView = t.logicalView[:rows]
+		clear(t.logicalView)
+	}
+	clear(t.logicalRows)
+	t.logicalRows = t.logicalRows[:0]
+	for row := 0; row < rows; {
+		first, last, base := 0, 0, 0
+		cut := false
+		if t.sync != nil {
+			base = t.sync.visible
+			first, last = base+row, base+row
+			for first > 0 && t.sync.lines[first-1].Wrapped {
+				first--
+			}
+			for last+1 < len(t.sync.lines) && t.sync.lines[last].Wrapped {
+				last++
+			}
+			cut = first == 0 && t.sync.prefixCut || last == len(t.sync.lines)-1 && t.sync.suffixCut
+		} else {
+			base = t.screen.ViewLine(0)
+			var ok bool
+			first, last, ok = t.screen.LogicalLineRange(row)
+			if !ok {
+				row++
+				continue
+			}
+		}
+		next := min(rows, last-base+1)
+		if next <= row {
+			row++
+			continue
+		}
+		if last > first || cut {
+			group := logicalViewRow{first: len(t.logicalRows), suppressed: cut || last-first+1 > maxLogicalHighlightCells/cols}
+			if !group.suppressed {
+				for index := first; index <= last; index++ {
+					if t.sync != nil {
+						t.logicalRows = append(t.logicalRows, t.sync.lines[index])
+					} else if line, ok := t.screen.RetainedRow(index); ok {
+						t.logicalRows = append(t.logicalRows, line)
+					}
+				}
+			}
+			group.last = len(t.logicalRows)
+			for visible := row; visible < next; visible++ {
+				t.logicalView[visible] = group
+			}
+		}
+		row = next
+	}
+	t.logicalReady = true
 }
 
 // syncRemaining is how long the held frame may still be shown.
@@ -431,6 +544,7 @@ func (state *State) configureTerminal(session *Session) {
 			current.term.folderIntegrationSeen = true
 			current.term.promptStarted = true
 			current.term.promptReady = false
+			current.term.keyedSincePrompt = false
 			current.term.inputLine = false
 			current.outputAlert.promptSeen = true
 		}
@@ -485,9 +599,12 @@ func (t *terminal) resetFolderSync() {
 	t.screen.SetPromptToken(t.folderToken)
 	t.promptReady, t.promptStarted, t.promptDirty = false, false, false
 	t.inputLine = false
+	t.keyedSincePrompt = false
 	t.folderIntegrationSeen, t.commandReporting = false, false
 	t.reportedDirectory = term.Cwd{}
 	t.reportedHome = ""
+	// followSeq is left alone: it names reports, and a reconnect must not make
+	// an old number look new to a panel that already took it.
 	t.submittedLines, t.followPath = 0, ""
 	t.promptVersion++
 }
@@ -654,12 +771,30 @@ func (t *terminal) send(p []byte) bool {
 	if t.transferHoldsInput {
 		return false
 	}
-	return t.sendInput(p, true)
+	return t.sendInput(p, true, true)
+}
+
+// sendKeyState writes a key event that is not typing: a bare modifier, or a
+// release. win32-input-mode and the kitty protocol carry key state as input
+// the program needs, but pressing Control on its way to Control+Insert must
+// not clear the selection that shortcut is about to copy, and letting go of a
+// key must not take the view away from what the user selected or scrolled to.
+func (t *terminal) sendKeyState(p []byte) bool {
+	if t.transferHoldsInput {
+		return false
+	}
+	return t.sendInput(p, true, false)
 }
 
 // A confirmed input snapshot has already drained and validated its owner.
 // Consuming another transition after that check would invalidate the decision.
-func (t *terminal) sendInput(p []byte, drain bool) bool {
+// typing says whether p is the user typing rather than key state, and so
+// whether it clears the selection and returns the view to the live screen.
+func (t *terminal) sendInput(p []byte, drain, typing bool) bool {
+	return t.sendLogicalInput(p, p, drain, typing, false)
+}
+
+func (t *terminal) sendLogicalInput(p, logical []byte, drain, typing, unknown bool) bool {
 	// Any other input takes the terminal back from a line-by-line paste: the
 	// remaining lines would otherwise be interleaved with what the user is
 	// typing. The queue's own writes pass through writing.
@@ -676,21 +811,29 @@ func (t *terminal) sendInput(p []byte, drain bool) bool {
 			return false
 		}
 	}
-	if t.exec != nil && userInterrupts(p) {
+	if t.exec != nil && (userInterrupts(p) || userInterrupts(logical)) {
 		t.finishExec(endUser) // the user took the terminal back; the keys go on to the shell
 	}
-	t.selection.clear()
-	t.screen.ScrollToBottom()
-	t.autofill.Typed(p)
+	if typing {
+		t.selection.clear()
+		t.screen.ScrollToBottom()
+	}
+	if unknown {
+		t.autofill.UnknownInput()
+	} else if len(logical) > 0 {
+		t.autofill.Typed(logical)
+	}
 	feed := t.historyOn != nil && t.historyOn()
 	if !feed && t.completionFeed != nil {
 		feed = t.completionFeed()
 	}
-	if feed {
-		if drain && t.takeOutput != nil && bytes.ContainsAny(p, "\r\n") {
+	if feed && unknown {
+		t.recorder.UnknownInput(cmdhistory.TermScreen{Term: t.screen}, t.recordingNow())
+	} else if feed && len(logical) > 0 {
+		if drain && t.takeOutput != nil && bytes.ContainsAny(logical, "\r\n") {
 			t.takeOutput()
 		}
-		if command, ok := t.recorder.Typed(p, cmdhistory.TermScreen{Term: t.screen}, t.recordingNow()); ok && t.onCommand != nil {
+		if command, ok := t.recorder.Typed(logical, cmdhistory.TermScreen{Term: t.screen}, t.recordingNow()); ok && t.onCommand != nil {
 			t.onCommand(command)
 		}
 	}
@@ -698,13 +841,23 @@ func (t *terminal) sendInput(p []byte, drain bool) bool {
 	if accepted {
 		t.observePredictionInput()
 		t.inputSent = true
-		t.noteShellInput(p)
-		if bytes.ContainsAny(p, "\r\n\x03\x04") {
+		if unknown {
+			t.noteShellInput(nil)
+			t.inputLine = false
+			t.inputGuard.known = false
+			t.promptDirty = true
+			t.suggestionPending = nil
+		} else if len(logical) > 0 {
+			t.noteShellInput(logical)
+		}
+		if bytes.ContainsAny(logical, "\r\n\x03\x04") {
 			t.suggestionPending = nil
 		}
 		t.recording.append(t.recordingNow(), terminalRecordingInput, p)
-		if t.completionInput != nil {
-			t.completionInput(p)
+		if unknown && t.completionUnknown != nil {
+			t.completionUnknown()
+		} else if t.completionInput != nil && len(logical) > 0 {
+			t.completionInput(logical)
 		}
 	}
 	return accepted
@@ -789,6 +942,9 @@ func (t *terminal) noteShellInput(p []byte) {
 	t.inputScreenVersion = t.screen.Version()
 	t.noteInput()
 	t.passwordHint = ""
+	if len(p) > 0 {
+		t.keyedSincePrompt = true
+	}
 	if bytes.ContainsFunc(p, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
 		t.inputLine = false // Enter, Tab, an arrow or Ctrl-R: the line is no longer what was typed
 	}
@@ -821,7 +977,23 @@ func (t *terminal) sendProtocol(p []byte) bool {
 	if t.shell == nil || len(p) == 0 {
 		return false
 	}
-	accepted := t.writeShellInput(p)
+	return t.recordProtocol(p, t.writeShellInput(p))
+}
+
+// answerQuery writes the terminal's answer to a query the program on the far
+// side made (device attributes, colors, mode reports). An answer is not input:
+// the program asked for it now and stops waiting shortly, so it is never held
+// back with the user's typing while the shell integration is installed. A
+// reply that arrived after the window would reach the shell as keystrokes.
+// ASCII, so no charset conversion applies.
+func (t *terminal) answerQuery(p []byte) bool {
+	if t.shell == nil || len(p) == 0 {
+		return false
+	}
+	return t.recordProtocol(p, t.shell.Write(p))
+}
+
+func (t *terminal) recordProtocol(p []byte, accepted bool) bool {
 	if accepted {
 		t.noteInput()
 		t.recording.append(t.recordingNow(), terminalRecordingInput, p)
@@ -838,9 +1010,9 @@ func (t *terminal) recordingNow() time.Duration {
 
 // shellResult is the outcome of a shell opened away from the window's thread.
 type shellResult struct {
-	shell      Shell
-	err        error
-	cols, rows int // the PTY size requested before opening began
+	shell Shell
+	err   error
+	size  termsize.Size // the PTY size requested before opening began
 }
 
 // openShell starts the remote shell once the connection is up. Over SSH that
@@ -851,14 +1023,15 @@ func (state *State) openShell(session *Session) {
 	if t.shell != nil || t.opening != nil || t.ended || session.conn == nil {
 		return
 	}
-	cols, rows := t.screen.Size()
-	config := sshconn.ShellConfig{Cols: cols, Rows: rows, Notify: state.notifyFor(session), Command: session.containerCommand}
+	size := state.terminalSize(t.screen.Size())
+	config := sshconn.ShellConfig{Cols: size.Cols, Rows: size.Rows, PixelWidth: size.PixelWidth, PixelHeight: size.PixelHeight, Notify: state.notifyFor(session), Command: session.containerCommand}
 	// Local directory restoration needs reports even with file-panel following
 	// off. SSH also needs reports for automatic completion, independently of
 	// file-panel following and path tabs. A host confined to the interactive
 	// session still opts out: its gateway could end the connection on startup.
+	// A Windows host is no exception: what its shell is (PowerShell, or cmd.exe
+	// that cannot be integrated) is learned by the probe after the shell starts.
 	config.IntegrateShell = session.isLocal() || (session.host.isSSH() && !session.host.mosh() && !session.host.InteractiveOnly &&
-		session.host.System != sshconn.SystemWindows &&
 		session.containerCommand == "" && (!state.sftpFollowOff || state.sftpTerminalFollow || state.tabTitleMode == tabTitleDirectory ||
 		!state.history.suggestOff && !session.host.NoHistory))
 	config.IntegrationToken = t.folderToken
@@ -897,7 +1070,7 @@ func (state *State) openShell(session *Session) {
 		opened := make(chan shellResult, 1)
 		go func() {
 			shell, err := conn.OpenShell(config)
-			opened <- shellResult{shell: shell, err: err, cols: config.Cols, rows: config.Rows}
+			opened <- shellResult{shell: shell, err: err, size: size}
 		}()
 		var outcome shellResult
 		if shared && wait > 0 {
@@ -906,7 +1079,7 @@ func (state *State) openShell(session *Session) {
 			case outcome = <-opened:
 				timer.Stop()
 			case <-timer.C:
-				outcome = shellResult{err: errSharedShellOpenTimeout, cols: config.Cols, rows: config.Rows}
+				outcome = shellResult{err: errSharedShellOpenTimeout, size: size}
 				// The server may still make the shell later. Nothing will take
 				// it, so it is closed when it arrives.
 				go func() {
@@ -942,9 +1115,8 @@ func (state *State) collectShell(session *Session) {
 			// Layout may have changed while OpenShell waited for the server.
 			// fitTerminal already resized the local screen without a shell, so
 			// its size comparison cannot detect the stale PTY after attachment.
-			cols, rows := t.screen.Size()
-			if cols != result.cols || rows != result.rows {
-				result.shell.Resize(cols, rows)
+			if current := state.terminalSize(t.screen.Size()); current != result.size {
+				result.shell.Resize(current)
 			}
 		}
 		state.shellOpened(session, result.shell, result.err)
@@ -1011,7 +1183,7 @@ func (state *State) shellOpened(session *Session, shell Shell, err error) {
 		t.decoder.Reset()
 	}
 	t.shell = shell
-	t.shellCols, t.shellRows = t.screen.Size()
+	t.shellSize = state.terminalSize(t.screen.Size())
 	t.shellWaiting = false
 	t.shellOpened = state.now()
 	t.idleLastInput = t.shellOpened
@@ -1050,9 +1222,10 @@ func (state *State) shellOpened(session *Session, shell Shell, err error) {
 		}
 	}
 	t.screen.SetReply(func(reply []byte) {
-		t.sendProtocol(reply)
+		t.answerQuery(reply)
 	})
-	t.armInitialization(session)
+	t.screen.SetCellPixels(state.cellPixelWidth, state.cellPixelHeight)
+	t.armInitialization(state, session)
 	state.startInjection(session, shell)
 	state.describe(session)
 }
@@ -1081,9 +1254,17 @@ func (state *State) goLive(session *Session) {
 // always parsed, so a Wake makes progress however slow the thread is. The shell
 // ending, an exec capture and a caller without an Invalidator keep the old
 // "all at once" behavior.
+//
+// While rx holds maxPumpBacklog unparsed bytes, a Wake drains no more: the
+// output stays in the shell's own bounded buffer, whose reader blocks on it
+// and so slows the sender down. sshconn and localshell block their reader at
+// one megabyte; the mosh client bounds its output the same way. Draining
+// everything regardless lets a program that prints faster than the budget
+// parses grow rx without bound until the process is OOM-killed (t8y2/motty#976).
 const (
-	pumpBudget = time.Second / 240
-	pumpSlice  = 32 << 10
+	pumpBudget     = time.Second / 240
+	pumpSlice      = 32 << 10
+	maxPumpBacklog = 1 << 20
 )
 
 // pump moves the shell's output into the screen and notices the shell's end.
@@ -1107,7 +1288,10 @@ func (state *State) pumpFor(session *Session, budget time.Duration) {
 		return
 	}
 	t.observePredictionInput()
-	t.rx = t.shell.Drain(t.rx) // keep what an earlier frame could not parse
+	backlogged := len(t.rx) >= maxPumpBacklog
+	if !backlogged {
+		t.rx = t.shell.Drain(t.rx) // keep what an earlier frame could not parse
+	}
 	hadOutput := len(t.rx) > 0
 	finished := false
 	select {
@@ -1151,6 +1335,11 @@ func (state *State) pumpFor(session *Session, budget time.Duration) {
 		}
 	default:
 		t.rx = t.rx[:0]
+	}
+	if backlogged && !finished && state.options.Invalidate != nil {
+		// Output was left in the shell's buffer: the next wake must come even
+		// when this one parsed all of rx.
+		state.options.Invalidate()
 	}
 	state.syncAgentIcon(session, hadOutput, finished)
 	if !finished && len(t.rx) == 0 {
@@ -1543,11 +1732,15 @@ func (state *State) resizeShell(session *Session, cols, rows int) {
 	if t.shell == nil {
 		return
 	}
+	size := state.terminalSize(cols, rows)
 	if !state.pointerHeld && !t.screen.AtPrompt() {
-		state.tellShellSize(t, cols, rows)
+		// The pane's fit is authoritative: a program that draws its own screen
+		// is told even when the size reads as the one it has, as it always has
+		// been, and the pixels are current either way.
+		state.tellShellSize(t, size)
 		return
 	}
-	if t.shellCols == cols && t.shellRows == rows {
+	if size == t.shellSize {
 		return
 	}
 	t.wantCols, t.wantRows, t.shellWaiting, t.shellWaitAt = cols, rows, true, state.options.WallNow()
@@ -1566,8 +1759,10 @@ func (state *State) settleShellResize(canvas *gfx.Canvas, session *Session) {
 		return
 	}
 	t.shellWaiting = false
-	if t.shellCols != t.wantCols || t.shellRows != t.wantRows {
-		state.tellShellSize(t, t.wantCols, t.wantRows)
+	// The pixels are taken now rather than when the wait began: a font or
+	// display-scale change during the delay belongs in this size too.
+	if size := state.terminalSize(t.wantCols, t.wantRows); size != t.shellSize {
+		state.tellShellSize(t, size)
 	}
 }
 
@@ -1580,15 +1775,15 @@ func (state *State) flushShellSizes() {
 			continue
 		}
 		t.shellWaiting = false
-		if t.shellCols != t.wantCols || t.shellRows != t.wantRows {
-			state.tellShellSize(t, t.wantCols, t.wantRows)
+		if size := state.terminalSize(t.wantCols, t.wantRows); size != t.shellSize {
+			state.tellShellSize(t, size)
 		}
 	}
 }
 
-func (state *State) tellShellSize(t *terminal, cols, rows int) {
-	t.shellCols, t.shellRows = cols, rows
-	t.shell.Resize(cols, rows)
+func (state *State) tellShellSize(t *terminal, size termsize.Size) {
+	t.shellSize = size
+	t.shell.Resize(size)
 }
 
 // Resize is the window-size callback: the terminals follow the window.
@@ -1809,7 +2004,6 @@ func displayCells(value string) int {
 // program that asked for win32 input records sees presses and releases, so the
 // release of a press it never got is dropped, along with its repeats.
 type acceptedKey struct {
-	set  bool
 	key  gfx.Key
 	text string
 }
@@ -1818,14 +2012,27 @@ type acceptedKey struct {
 // also be sent its release.
 func (t *terminal) noteAcceptedKey(event gfx.KeyEvent) {
 	if t.screen.Modes().Win32Input && !event.Release && !event.Repeat {
-		t.acceptedKey = acceptedKey{set: true, key: event.Key, text: event.Text}
+		if t.acceptedKeys == nil {
+			t.acceptedKeys = make(map[acceptedKey]struct{})
+		}
+		t.acceptedKeys[acceptedKey{key: event.Key, text: event.Text}] = struct{}{}
 	}
 }
 
 // holds reports whether event ends the press the terminal consumed, or repeats
 // it: it is that key's release or a repeat, with the same text.
-func (a acceptedKey) holds(event gfx.KeyEvent) bool {
-	return a.set && (event.Release || event.Repeat) && event.Key == a.key && event.Text == a.text
+func (t *terminal) consumeAcceptedKey(event gfx.KeyEvent) bool {
+	if !event.Release && !event.Repeat {
+		return false
+	}
+	key := acceptedKey{key: event.Key, text: event.Text}
+	if _, ok := t.acceptedKeys[key]; !ok {
+		return false
+	}
+	if event.Release {
+		delete(t.acceptedKeys, key)
+	}
+	return true
 }
 
 // terminalKey encodes keys left unclaimed by the application shortcut routes.
@@ -1837,10 +2044,7 @@ func (state *State) terminalKey(session *Session, event gfx.KeyEvent) gfx.EventR
 	if t.preedit.Composing && event.Key == gfx.KeyEnter && event.Modifiers == 0 && !t.screen.Modes().AltScreen {
 		return handled
 	}
-	if t.acceptedKey.holds(event) {
-		if event.Release {
-			t.acceptedKey = acceptedKey{}
-		}
+	if t.consumeAcceptedKey(event) {
 		return handled
 	}
 	if event.Modifiers&gfx.ModifierMeta != 0 && !event.Key.IsModifier() {
@@ -1893,13 +2097,15 @@ func (state *State) terminalKey(session *Session, event gfx.KeyEvent) gfx.EventR
 		}
 	}
 	modes := t.screen.Modes()
-	if t.screen.KeyboardFlags() == 0 && (state.passwordHintKey(session, event) || state.ghostKey(session, event)) {
+	if t.screen.KeyboardFlags() == 0 && state.ghostKey(session, event) {
 		t.noteAcceptedKey(event)
 		return handled
 	}
 	var bytes []byte
+	win32Key := false
 	if modes.Win32Input {
 		bytes = term.EncodeWin32Key(event)
+		win32Key = len(bytes) > 0
 	} else if runtime.GOOS == "darwin" && t.screen.KeyboardFlags() == 0 && !modes.AltScreen &&
 		event.Modifiers == gfx.ModifierAlt && !event.Release {
 		// Match macOS Terminal's word movement when the shell owns the key.
@@ -1925,9 +2131,23 @@ func (state *State) terminalKey(session *Session, event gfx.KeyEvent) gfx.EventR
 		bytes = term.EncodeKeyEvent(event, t.screen.KeyboardFlags(), modes.AppCursorKeys)
 	}
 	if len(bytes) > 0 {
+		if event.Release || event.Key.IsModifier() {
+			// Key state is not typing: it reaches the program, but leaves the
+			// selection and the scrollback view where the user put them.
+			if win32Key {
+				state.typedWin32Key(session, bytes, nil, false)
+			} else {
+				state.typedKeyState(session, bytes)
+			}
+			return handled
+		}
 		scrolled := t.screen.ViewOffset() > 0
 		predictionChanged := t.prediction.reset()
-		state.typed(session, bytes)
+		if win32Key {
+			state.typedWin32Key(session, bytes, term.Win32LogicalKey(event), true)
+		} else {
+			state.typed(session, bytes)
+		}
 		handled.Repaint = scrolled || predictionChanged
 	}
 	return handled
@@ -2051,12 +2271,6 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 		// The menu is modal: only its own panels scroll.
 		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, state.chipMenu.popup) && state.chipMenu.tree.Wheel(event)}
 	}
-	if result := state.scrollProxyDialog(event); result.Handled {
-		return result
-	}
-	if result := state.scrollForwardDialog(event); result.Handled {
-		return result
-	}
 	if state.hostGroupMenu {
 		if menu := state.moveGroupTree(); menu != nil {
 			return gfx.EventResult{Handled: true, Repaint: menu.Wheel(event)}
@@ -2064,14 +2278,6 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	}
 	if state.modal == modalNewHost && state.editor.groupPicker.control.Open {
 		p := &state.editor.groupPicker
-		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}
-	}
-	if state.modal == modalNewHost && state.editor.encodingPicker.control.Open {
-		p := &state.editor.encodingPicker
-		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}
-	}
-	if state.modal == modalNewHost && state.editor.iconPicker.control.Open {
-		p := &state.editor.iconPicker
 		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}
 	}
 	if state.modal == modalToolbarSettings {
@@ -2082,9 +2288,6 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}
 	}
 	if result, handled := state.remoteProcessWheel(event); handled {
-		return result
-	}
-	if result, handled := state.transferCenterScroll(event); handled {
 		return result
 	}
 	if result, handled := state.menuWheel(event); handled {
@@ -2102,8 +2305,19 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if state.modal == modalCommandPalette {
 		return state.scrollCommandPalette(event)
 	}
+	if state.modal == modalNewProxy || state.modal == modalNewForward {
+		// The host pickers are page comboboxes: their open lists take the wheel,
+		// and the dialog keeps it from the window behind it.
+		result := state.windowPage().RouteWheel(event)
+		result.Handled = true
+		return result
+	}
 	if state.modal == modalForm {
-		return state.scrollForm(event)
+		// The form's multiline fields are page text areas: the page scrolls them,
+		// and the dialog keeps the wheel from the window behind it.
+		result := state.windowPage().RouteWheel(event)
+		result.Handled = true
+		return result
 	}
 	if state.modal == modalUpdate {
 		return state.scrollUpdateNotes(event)
@@ -2113,6 +2327,9 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	}
 	if state.modal == modalRuleManager {
 		return state.scrollRuleManager(event)
+	}
+	if state.modal == modalSnippetGroups {
+		return state.scrollSnippetGroups(event)
 	}
 	// Dialogs own the wheel even over their backdrop. Menus and scrollable
 	// dialogs above have their own handlers; nothing behind them should move.
@@ -2126,7 +2343,7 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 		return result
 	}
 	tabScroll := &state.tabStrip
-	if state.tabOrientation == tabsVertical && len(state.sftpTabs) > 0 &&
+	if state.tabOrientation == tabsVertical && state.fileTabCount() > 0 &&
 		pointInRect(event.X, event.Y, state.fileTabStrip.area) {
 		tabScroll = &state.fileTabStrip
 	}
@@ -2193,9 +2410,6 @@ func (state *State) scroll(event gfx.ScrollEvent) gfx.EventResult {
 	}
 	if state.activeSection == sectionHosts && state.modal == modalNone && (state.hostsContent > 0 || state.hostSide.visible) {
 		return state.scrollHosts(event)
-	}
-	if state.activeSection == sectionSessionLogs && state.modal == modalNone {
-		return state.scrollSessionLogs(event)
 	}
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	paged := false

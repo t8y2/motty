@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -555,7 +556,14 @@ func TestListenRefusesNonLoopback(t *testing.T) {
 	}
 }
 
-func TestShutdownCancelsInFlightCallAndLeaksNothing(t *testing.T) {
+type callReply struct {
+	status int
+	ct     string
+	body   []byte
+	err    error
+}
+
+func TestShutdownAnswersInFlightCallAndLeaksNothing(t *testing.T) {
 	before := runtime.NumGoroutine()
 	b := &fakeBackend{block: true, execStarted: make(chan struct{}), execCtxDone: make(chan struct{})}
 	s, err := New(Config{Token: testToken, Gate: func() gate.Gate { return okGate(b) }})
@@ -574,16 +582,16 @@ func TestShutdownCancelsInFlightCallAndLeaksNothing(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodPost, url, strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"terminal_exec","arguments":{"command":"ls"}}}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+testToken)
-	got := make(chan string, 1)
+	got := make(chan callReply, 1)
 	go func() {
 		resp, err := client.Do(req)
 		if err != nil {
-			got <- "error: " + err.Error()
+			got <- callReply{err: err}
 			return
 		}
 		defer resp.Body.Close()
-		bb, _ := io.ReadAll(resp.Body)
-		got <- string(bb)
+		bb, readErr := io.ReadAll(resp.Body)
+		got <- callReply{status: resp.StatusCode, ct: resp.Header.Get("Content-Type"), body: bb, err: readErr}
 	}()
 	<-b.execStarted
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -595,7 +603,33 @@ func TestShutdownCancelsInFlightCallAndLeaksNothing(t *testing.T) {
 	if err := <-served; err != nil {
 		t.Fatalf("serve: %v", err)
 	}
-	<-got
+	// The call was cancelled by us, but the client is still on the connection:
+	// it must read a JSON-RPC error, not a 200 with no body and no content type.
+	reply := <-got
+	if reply.err != nil {
+		t.Fatalf("call: %v", reply.err)
+	}
+	if reply.status != http.StatusOK {
+		t.Fatalf("status = %d", reply.status)
+	}
+	if mt, _, err := mime.ParseMediaType(reply.ct); err != nil || mt != "application/json" {
+		t.Fatalf("content type = %q", reply.ct)
+	}
+	var rpc struct {
+		ID     int `json:"id"`
+		Result struct {
+			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(reply.body, &rpc); err != nil {
+		t.Fatalf("body %q: %v", reply.body, err)
+	}
+	if rpc.ID != 1 || !rpc.Result.IsError || len(rpc.Result.Content) == 0 || !strings.Contains(rpc.Result.Content[0].Text, "cancelled") {
+		t.Fatalf("reply = %+v", rpc)
+	}
 	client.CloseIdleConnections()
 	waitGoroutines(t, before)
 }
@@ -712,6 +746,34 @@ func TestHTTPSessionsAreIndependentAndUnknownSessionsAreRejected(t *testing.T) {
 	unknown, _ := post(t, server.URL, request, func(req *http.Request) { req.Header.Set("Mcp-Session-Id", "not-a-session") })
 	if unknown.StatusCode != http.StatusNotFound {
 		t.Fatalf("unknown session returned %d", unknown.StatusCode)
+	}
+}
+
+func TestHTTPUnknownSessionAnswersAJSONRPCError(t *testing.T) {
+	_, server := newServer(t, okGate(&fakeBackend{}), nil)
+	resp, body := post(t, server.URL, `{"jsonrpc":"2.0","id":7,"method":"tools/list"}`,
+		func(req *http.Request) { req.Header.Set("Mcp-Session-Id", "not-a-session") })
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("unknown session returned %d", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Content-Type"); got != "application/json" {
+		t.Fatalf("unknown session answered content type %q", got)
+	}
+	var reply struct {
+		JSONRPC string          `json:"jsonrpc"`
+		ID      json.RawMessage `json:"id"`
+		Error   struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(body), &reply); err != nil {
+		t.Fatalf("unknown session body is not JSON: %v (%q)", err, body)
+	}
+	// The code is the convention shared with the reference server, not a
+	// spec-assigned one; clients that do not read the body still get the 404.
+	if reply.JSONRPC != "2.0" || string(reply.ID) != "null" || reply.Error.Code != -32001 || reply.Error.Message != "Session not found" {
+		t.Fatalf("unexpected error body %q", body)
 	}
 }
 
