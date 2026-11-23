@@ -209,22 +209,23 @@ var (
 
 // Settings: its explicit choices.
 var (
-	hitSettingsTextSizeDown    = tree.ID(settingsHits, "settings-text-size-down")
-	hitSettingsTextSizeReset   = tree.ID(settingsHits, "settings-text-size-reset")
-	hitSettingsTextSizeUp      = tree.ID(settingsHits, "settings-text-size-up")
-	hitSettingsFontSizeDown    = tree.ID(settingsHits, "settings-font-size-down")
-	hitSettingsFontSizeReset   = tree.ID(settingsHits, "settings-font-size-reset")
-	hitSettingsFontSizeUp      = tree.ID(settingsHits, "settings-font-size-up")
-	hitSettingsCursorToggle    = tree.ID(settingsHits, "settings-cursor-blink")
-	hitSettingsCopyOnSelect    = tree.ID(settingsHits, "settings-copy-on-select")
-	hitSettingsWordSeparators  = tree.ID(settingsHits, "settings-word-separators")
-	hitSettingsRightClickPaste = tree.ID(settingsHits, "settings-right-click-paste")
-	hitSettingsInputClick      = tree.ID(settingsHits, "settings-input-click")
-	hitSettingsLatencyToggle   = tree.ID(settingsHits, "settings-latency")
-	hitSettingsLinkPlainClick  = tree.ID(settingsHits, "settings-link-plain-click")
-	hitSettingsShareToggle     = tree.ID(settingsHits, "settings-share")
-	hitSettingsVaultForget     = tree.ID(settingsHits, "settings-vault-forget")
-	hitSettingsVaultConvert    = tree.ID(settingsHits, "settings-vault-convert")
+	hitSettingsTextSizeDown          = tree.ID(settingsHits, "settings-text-size-down")
+	hitSettingsTextSizeReset         = tree.ID(settingsHits, "settings-text-size-reset")
+	hitSettingsTextSizeUp            = tree.ID(settingsHits, "settings-text-size-up")
+	hitSettingsFontSizeDown          = tree.ID(settingsHits, "settings-font-size-down")
+	hitSettingsFontSizeReset         = tree.ID(settingsHits, "settings-font-size-reset")
+	hitSettingsFontSizeUp            = tree.ID(settingsHits, "settings-font-size-up")
+	hitSettingsCursorToggle          = tree.ID(settingsHits, "settings-cursor-blink")
+	hitSettingsCopyOnSelect          = tree.ID(settingsHits, "settings-copy-on-select")
+	hitSettingsWordSeparators        = tree.ID(settingsHits, "settings-word-separators")
+	hitSettingsRightClickPaste       = tree.ID(settingsHits, "settings-right-click-paste")
+	hitSettingsInputClick            = tree.ID(settingsHits, "settings-input-click")
+	hitSettingsLatencyToggle         = tree.ID(settingsHits, "settings-latency")
+	hitSettingsLinkPlainClick        = tree.ID(settingsHits, "settings-link-plain-click")
+	hitSettingsShareToggle           = tree.ID(settingsHits, "settings-share")
+	hitSettingsConnectionStatsToggle = tree.ID(settingsHits, "settings-connection-stats")
+	hitSettingsVaultForget           = tree.ID(settingsHits, "settings-vault-forget")
+	hitSettingsVaultConvert          = tree.ID(settingsHits, "settings-vault-convert")
 )
 
 // Jump-host routing: its page and dialog.
@@ -885,7 +886,11 @@ type State struct {
 	// and latencyProbe names the sessions Paint saw that need a sample; Wake
 	// starts their requests so a repaint never sends network work.
 	terminalShowLatency bool
-	latencyProbe        []uint32
+	// connectionStats shows the resource reading above every connected terminal.
+	// It starts the same monitor workers the side panel uses, for every session,
+	// and stops them when neither this setting nor the side panel wants them.
+	connectionStats bool
+	latencyProbe    []uint32
 	// The shared terminal tool rail is a device-local presentation choice.
 	// Its zero value keeps the historical right-edge placement.
 	terminalToolbarPosition terminalToolbarPosition
@@ -2161,6 +2166,23 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		state.refreshWorkspaceViews()
 		if index < len(state.panes) && state.activatePane(state.deck.ActiveWorkspace(), state.panes[index].ID) {
 			state.save()
+		}
+	case id.Scope() == hitConnectionStatsAddress, id.Scope() == hitConnectionStatsCopy:
+		if session, ok := state.sessionByIDPointer(uint32(item(id))); ok {
+			state.copyConnectionStatsAddress(session)
+		}
+	case id.Scope() == hitConnectionStatsDisconnect:
+		if session, ok := state.sessionByIDPointer(uint32(item(id))); ok && state.canDisconnect(session) {
+			state.askSessionLink(session, true)
+		}
+	case id.Scope() == hitConnectionStatsRestart:
+		if session, ok := state.sessionByIDPointer(uint32(item(id))); ok {
+			if state.canReconnect(session) {
+				state.reconnect(session)
+				state.save()
+			} else if state.canReconnectLive(session) {
+				state.askSessionLink(session, false)
+			}
 		}
 	case id.Scope() == hitHostList:
 		if state.hostSort.enabled {

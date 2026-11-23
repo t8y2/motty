@@ -145,10 +145,7 @@ func TestActiveSplitPaneBarKeepsConnectionIdentity(t *testing.T) {
 			t.Fatalf("session %d has no pane geometry", session.ID)
 		}
 		bounds := pixelBounds(state.workspacePixelBounds(size), fraction)
-		title := session.Title
-		if title == "" {
-			title = session.Address
-		}
+		title := state.connectionBarAddress(session)
 		status, _ := state.sessionStatus(session)
 		foundTitle, foundStatus := false, false
 		for _, text := range canvas.Texts() {
@@ -953,10 +950,7 @@ func TestSplitPaneBarTextKeepsItsPlaceWhenFocusChanges(t *testing.T) {
 	size := gfx.Size{Width: 1200, Height: 800}
 	state.Resize(size)
 	first, second := &state.sessions[0], &state.sessions[1]
-	title := first.Title
-	if title == "" {
-		title = first.Address
-	}
+	title := state.connectionBarAddress(first)
 
 	titleBounds := func() gfx.Rect {
 		t.Helper()

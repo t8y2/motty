@@ -33,7 +33,7 @@ const latencyStaleAfter = 4 * latencyProbeInterval
 // wantLatencyProbe records a session Paint saw that may need a sample and
 // keeps the refresh frame coming; the request itself is sent from Wake.
 func (state *State) wantLatencyProbe(session *Session, canvas *gfx.Canvas) {
-	if !state.terminalShowLatency || session == nil || session.isLocal() || session.phase != sshconn.PhaseConnected {
+	if !state.latencyWanted(session) || session == nil || session.isLocal() || session.phase != sshconn.PhaseConnected {
 		return
 	}
 	if _, ok := session.conn.(pinger); !ok {
@@ -69,7 +69,7 @@ func (state *State) probeLatency() {
 // enabled and the previous sample is old enough. The ping runs on its own
 // goroutine and publishes through the session's atomics.
 func (state *State) maybeProbeLatency(session *Session) {
-	if !state.terminalShowLatency || session == nil || session.isLocal() || session.phase != sshconn.PhaseConnected {
+	if !state.latencyWanted(session) || session == nil || session.isLocal() || session.phase != sshconn.PhaseConnected {
 		return
 	}
 	pinger, ok := session.conn.(pinger)
@@ -146,6 +146,12 @@ func (session *Session) resetLatency() {
 	session.rttLastPing = time.Time{}
 }
 
+// latencyWanted reports whether this session's RTT is shown: the latency
+// readout's own switch or the connection bar's PING metric.
+func (state *State) latencyWanted(session *Session) bool {
+	return state.terminalShowLatency || state.connectionStatsBarShown(session)
+}
+
 // latencyInfo returns the latency text and status color (<100ms green, <200ms yellow, >=200ms red).
 func (state *State) latencyInfo(session *Session) (text string, color gfx.Color, ok bool) {
 	if !state.latencyAvailable(session) {
@@ -159,7 +165,7 @@ func (state *State) latencyInfo(session *Session) (text string, color gfx.Color,
 // latencyAvailable is the allocation-free presence check used while deciding
 // whether the shared side rail needs to reserve space.
 func (state *State) latencyAvailable(session *Session) bool {
-	return state.terminalShowLatency && session != nil && !session.isLocal() &&
+	return state.latencyWanted(session) && session != nil && !session.isLocal() &&
 		session.phase == sshconn.PhaseConnected &&
 		atomic.LoadInt32(&session.rttAvailable) == 1 &&
 		atomic.LoadInt64(&session.rttMs) >= 0

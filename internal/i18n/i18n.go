@@ -364,6 +364,8 @@ type Messages struct {
 	SettingsConnectionReconnectForever     string
 	SettingsShare                          string
 	SettingsShareDescription               string
+	SettingsConnectionStats                string
+	SettingsConnectionStatsDescription     string
 	ConnShareRefusedFmt                    string
 	PasswordSave                           string
 	KeyPassphraseSave                      string
@@ -433,6 +435,7 @@ type Messages struct {
 	MenuView                               string
 	CopyHostAddress                        string
 	CopyAddressAndPort                     string
+	CopyConnectionAddress                  string
 	CopyConnectionName                     string
 	MenuPaste                              string
 	MenuSelectAll                          string
