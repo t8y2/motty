@@ -71,11 +71,19 @@ func StartDetails(runner DetailRunner, notify func()) *DetailsWorker {
 }
 
 // StartDetailsWithInterval keeps slow metadata independent of fast streaming.
-func StartDetailsWithInterval(runner DetailRunner, notify func(), seconds int) *DetailsWorker {
-	return startDetails(runner, notify, seconds, linuxShellCommand(detailsCommand))
+// An explicit selection without disks or network needs no details worker.
+func StartDetailsWithInterval(runner DetailRunner, notify func(), seconds int, selected ...Metrics) *DetailsWorker {
+	script := detailsCommand
+	if len(selected) > 0 {
+		if selection(selected)&(Disks|NetworkIO) == 0 {
+			return nil
+		}
+		script = selectedDetails(script, false, selection(selected))
+	}
+	return startDetails(runner, notify, seconds, linuxShellCommand(script), selected...)
 }
 
-func startDetails(runner DetailRunner, notify func(), seconds int, command string) *DetailsWorker {
+func startDetails(runner DetailRunner, notify func(), seconds int, command string, selected ...Metrics) *DetailsWorker {
 	if !validInterval(seconds) {
 		seconds = 5
 	}
@@ -96,6 +104,7 @@ func startDetails(runner DetailRunner, notify func(), seconds int, command strin
 			var current Details
 			if err == nil {
 				current, err = parseDetails(data)
+				current = selection(selected).FilterDetails(current)
 			}
 			at := time.Now()
 			if err == nil {

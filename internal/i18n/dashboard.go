@@ -1,23 +1,27 @@
 package i18n
 
 type DashboardMessages struct {
-	SelectMatches, SortBy                                                     string
-	UnavailableHosts                                                          string
-	NamePlaceholder, NotePlaceholder                                          string
-	AllGroups, Ungrouped, GroupFilter, SelectedOnly, PickerCount              string
-	OrderTab, OrderHint                                                       string
-	AddHosts, AddHint, Sort, SortPanel                                        string
-	Selected, View, Metrics, Usage                                            string
-	Host, Mount, Interface, Used, Total, Available, ReceivedTotal, SentTotal  string
-	Title, New, Edit, Delete, Start, Stop, Simple, Detailed, Search           string
-	Name, Note, Hosts, HostSearch, Create, Save, Empty, EmptyHint             string
-	NameRequired, DuplicateName, HostsRequired, DeletePrompt                  string
-	Sampling, Retention, Every, Minutes, Hours, Count, Collecting             string
-	Waiting, Connecting, Live, Stopped, Failed, Unsupported, Missing, Updated string
-	CPU, Memory, Disk, Network, Receive, Send, Terminal, Retry, PickerHint    string
+	Display, DisplayHint, DisplayViews, RestoreDisplay, NoDisplay, Fan, GPUUnavailable string
+	MountCount                                                                         string
+	SelectMatches, SortBy                                                              string
+	UnavailableHosts                                                                   string
+	NamePlaceholder, NotePlaceholder                                                   string
+	AllGroups, Ungrouped, GroupFilter, SelectedOnly, PickerCount                       string
+	OrderTab, OrderHint                                                                string
+	AddHosts, AddHint, Sort, SortPanel                                                 string
+	Selected, View, Metrics, Usage                                                     string
+	Host, Mount, Interface, Used, Total, Available, ReceivedTotal, SentTotal           string
+	Title, New, Edit, Delete, Start, Stop, Simple, Detailed, Search                    string
+	Name, Note, Hosts, HostSearch, Create, Save, Empty, EmptyHint                      string
+	NameRequired, DuplicateName, HostsRequired, DeletePrompt                           string
+	Sampling, Retention, Every, Minutes, Hours, Count, Collecting                      string
+	Waiting, Connecting, Live, Stopped, Failed, Unsupported, Missing, Updated          string
+	CPU, Memory, Disk, Network, Receive, Send, Terminal, Retry, PickerHint             string
 }
 
 var chineseDashboard = DashboardMessages{
+	MountCount: "%d 个挂载点",
+	Display:    "显示信息", DisplayHint: "隐藏后停止对应采集", DisplayViews: "简洁与详细视图共用", RestoreDisplay: "恢复默认", NoDisplay: "尚未选择显示信息", Fan: "风扇", GPUUnavailable: "主机尚未报告 GPU",
 	SelectMatches: "全选匹配主机", SortBy: "排序方式",
 	UnavailableHosts: "不可用主机",
 	NamePlaceholder:  "例如：生产环境、个人实验室", NotePlaceholder: "例如：Web、API 与数据库主机",
@@ -33,6 +37,8 @@ var chineseDashboard = DashboardMessages{
 	CPU: "CPU", Memory: "内存", Disk: "磁盘", Network: "网络收发", Receive: "接收", Send: "发送", Terminal: "打开终端", Retry: "重试", PickerHint: "可跨分组选择 SSH 主机。创建后点击“开始监控”才会连接并采集。",
 }
 var englishDashboard = DashboardMessages{
+	MountCount: "%d mounts",
+	Display:    "Display information", DisplayHint: "Only selected metrics are collected", DisplayViews: "Shared by both views", RestoreDisplay: "Restore defaults", NoDisplay: "No information selected", Fan: "Fan", GPUUnavailable: "No GPU reported by this host",
 	SelectMatches: "Select all matches", SortBy: "Sort hosts by",
 	UnavailableHosts: "Unavailable hosts",
 	NamePlaceholder:  "e.g. Production or Home lab", NotePlaceholder: "e.g. Web, API and database hosts",

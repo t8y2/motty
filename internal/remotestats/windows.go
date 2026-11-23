@@ -23,11 +23,14 @@ const windowsPowerShellPipe = "|powershell.exe "
 
 // PowerShell's encoded command works with both cmd.exe and PowerShell as an
 // OpenSSH default shell. No paths, host names or credentials enter the script.
-func WindowsCommand(seconds int) string {
+func WindowsCommand(seconds int, selected ...Metrics) string {
 	if !validInterval(seconds) {
 		seconds = 2
 	}
 	script := strings.ReplaceAll(windowsScript, "__INTERVAL__", strconv.Itoa(seconds))
+	if len(selected) > 0 {
+		script = selectedWindows(script, selection(selected))
+	}
 	return encodeWindowsScript(script)
 }
 
@@ -54,11 +57,11 @@ func encodeWindowsScript(script string) string {
 	return windowsCommandPrefix + payload + windowsPowerShellPipe + "-NoLogo -NoProfile -NonInteractive -EncodedCommand " + base64.StdEncoding.EncodeToString(data) + `"`
 }
 
-func StartWindows(runner Runner, notify func(), seconds int) *Worker {
+func StartWindows(runner Runner, notify func(), seconds int, selected ...Metrics) *Worker {
 	if !validInterval(seconds) {
 		seconds = 2
 	}
-	return startCommand(runner, notify, 20*time.Second, time.Duration(seconds)*time.Second+15*time.Second, WindowsCommand(seconds), kindWindows)
+	return startCommand(runner, notify, 20*time.Second, time.Duration(seconds)*time.Second+15*time.Second, WindowsCommand(seconds, selected...), kindWindows, selected...)
 }
 
 const windowsScript = `# motty-monitor-windows-v1

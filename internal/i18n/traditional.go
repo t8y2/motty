@@ -3193,6 +3193,7 @@ var traditionalCodeEditor = CodeEditorMessages{
 }
 
 var traditionalDashboard = DashboardMessages{
+	Display: "顯示資訊", DisplayHint: "隱藏後停止對應採集", DisplayViews: "簡潔與詳細檢視共用", RestoreDisplay: "恢復預設", NoDisplay: "尚未選擇顯示資訊", Fan: "風扇", GPUUnavailable: "主機尚未回報 GPU", MountCount: "%d 個掛載點",
 	SelectMatches: "全選符合條件的主機", SortBy: "排序方式",
 	UnavailableHosts: "不可用主機",
 	NamePlaceholder:  "例如：生產環境、個人實驗室", NotePlaceholder: "例如：Web、API 與資料庫主機",

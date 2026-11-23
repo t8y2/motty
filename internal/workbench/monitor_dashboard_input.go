@@ -29,6 +29,7 @@ func (s *State) restoreDashboard(panels []monitoring.Panel, active string) {
 		if p.ID == "" || seen[p.ID] || strings.TrimSpace(p.Name) == "" {
 			continue
 		}
+		p = p.Clone()
 		p.Normalize()
 		seen[p.ID] = true
 		d.panels = append(d.panels, p)
