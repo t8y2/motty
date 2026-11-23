@@ -19,7 +19,9 @@ reverse sync. An ordinary POSIX shell, including an **Interactive session only**
 connection, can also receive this explicit action at a recognized empty shell
 prompt. The prompt must stay unchanged during the directory read. This fallback
 does not enable automatic reverse sync. A skipped or canceled request is never
-retried automatically.
+retried automatically. If the displayed folder has since been deleted, the panel
+stays on the server and reports that the folder no longer exists; it neither
+sends `cd` nor falls back to local files.
 
 Reverse sync requires a fresh successful directory read and an untouched,
 ready shell prompt belonging to the same session, with command-start reporting
