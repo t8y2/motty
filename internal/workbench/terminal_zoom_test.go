@@ -1,7 +1,9 @@
 package workbench
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
@@ -112,6 +114,111 @@ func TestZoomShortcutsAreCustomisableLikeTheOthers(t *testing.T) {
 	if _, ok := state.shortcuts.bind(shortcutZoomOut, keymap.Chord{Modifiers: keymap.Primary, Char: '='}); !ok {
 		t.Fatal("zoom out could not take the freed chord")
 	}
+}
+
+// Ctrl+wheel resizes the terminal's font, the same change the Ctrl +/- shortcuts
+// make: a wheel notch is one point, a trackpad gesture accumulates before it
+// steps, Ctrl+Shift stays with the terminal's scrolling, and the ends of the
+// range and the saved state are shared with the keyboard path.
+func TestCtrlWheelResizesTheTerminalFont(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.sessions = append(state.sessions, Session{ID: 1, term: newTerminal(80, 24)})
+	state.activeSessionID = 1
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	session := &state.sessions[0]
+	start := state.terminalFontSize
+
+	if result := state.terminalScroll(session, gfx.ScrollEvent{Modifiers: gfx.ModifierControl, DeltaY: -120}); !result.Handled || !result.Repaint {
+		t.Fatalf("wheel up: %+v", result)
+	}
+	if state.terminalFontSize != start+1 {
+		t.Fatalf("after wheel up = %v, want %v", state.terminalFontSize, start+1)
+	}
+	state.terminalScroll(session, gfx.ScrollEvent{Modifiers: gfx.ModifierControl, DeltaY: 120})
+	if state.terminalFontSize != start {
+		t.Fatalf("after wheel down = %v, want %v", state.terminalFontSize, start)
+	}
+
+	// Half a precise unit does nothing; a full one steps a single point.
+	state.terminalZoomWheel = 0
+	state.terminalScroll(session, gfx.ScrollEvent{Modifiers: gfx.ModifierControl, DeltaY: -30, Precise: true})
+	if state.terminalFontSize != start {
+		t.Fatalf("half a unit already zoomed to %v", state.terminalFontSize)
+	}
+	state.terminalScroll(session, gfx.ScrollEvent{Modifiers: gfx.ModifierControl, DeltaY: -30, Precise: true})
+	if state.terminalFontSize != start+1 {
+		t.Fatalf("a full precise unit did not zoom: %v, want %v", state.terminalFontSize, start+1)
+	}
+
+	// Ctrl+Shift+wheel scrolls the terminal, it does not zoom.
+	state.terminalScroll(session, gfx.ScrollEvent{Modifiers: gfx.ModifierControl | gfx.ModifierShift, DeltaY: -120})
+	if state.terminalFontSize != start+1 {
+		t.Fatalf("Ctrl+Shift changed the size to %v, want %v", state.terminalFontSize, start+1)
+	}
+
+	options := freshOptions(t)
+	options.Keystore = &memKeys{}
+	bounded := newTestState(t, options)
+	bounded.sessions = append(bounded.sessions, Session{ID: 1, term: newTerminal(80, 24)})
+	bounded.activeSessionID = 1
+	var frame gfx.Canvas
+	bounded.Paint(&frame, gfx.Size{Width: 1400, Height: 900})
+	for range 40 {
+		bounded.terminalScroll(&bounded.sessions[0], gfx.ScrollEvent{Modifiers: gfx.ModifierControl, DeltaY: -120})
+	}
+	if bounded.terminalFontSize != terminalFontSizeMax {
+		t.Fatalf("zoomed in without end: %v", bounded.terminalFontSize)
+	}
+	if restored := newTestState(t, options); restored.terminalFontSize != terminalFontSizeMax {
+		t.Fatalf("restored size %v", restored.terminalFontSize)
+	}
+}
+
+// A Ctrl+wheel zoom reports what it did: the pane shows its current font size
+// as a transient badge over the grid, one that is absent until a gesture and
+// clears once its linger deadline passes.
+func TestCtrlWheelShowsTheFontSizeBadge(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.sessions = append(state.sessions, Session{ID: 1, term: newTerminal(80, 24)})
+	state.activeSessionID = 1
+	session := &state.sessions[0]
+	grid := gfx.Rect{Width: 800, Height: 600}
+
+	// Before a gesture the pane has nothing to show.
+	if texts := badgeTexts(state, session, grid, time.Second); len(texts) != 0 {
+		t.Fatalf("a badge was drawn before any zoom: %v", texts)
+	}
+
+	state.terminalScroll(session, gfx.ScrollEvent{Modifiers: gfx.ModifierControl, DeltaY: -120})
+	want := fmt.Sprintf("%d px", int(state.terminalFontSize))
+	if session.term.zoomLabel != want {
+		t.Fatalf("badge = %q, want %q", session.term.zoomLabel, want)
+	}
+	// The badge shows while it lingers after the last notch,
+	if texts := badgeTexts(state, session, grid, session.term.zoomUntil-1); !contains(texts, want) {
+		t.Fatalf("zoom badge %q was not drawn: %v", want, texts)
+	}
+	// ...and clears itself, and its label, once the deadline passes.
+	if texts := badgeTexts(state, session, grid, session.term.zoomUntil+1); len(texts) != 0 {
+		t.Fatalf("badge outlived its deadline: %v", texts)
+	}
+	if session.term.zoomLabel != "" {
+		t.Fatalf("badge label not cleared after its deadline: %q", session.term.zoomLabel)
+	}
+}
+
+// badgeTexts paints the zoom badge as it is seen at the given frame time and
+// returns the label text it drew.
+func badgeTexts(state *State, session *Session, grid gfx.Rect, now time.Duration) []string {
+	var canvas gfx.Canvas
+	canvas.SetClock(func() time.Duration { return now })
+	state.paintTerminalZoomBadge(&canvas, session, grid)
+	var texts []string
+	for _, text := range canvas.Texts() {
+		texts = append(texts, text.Value)
+	}
+	return texts
 }
 
 // narrowFontEngine measures a fixed-pitch font narrower than the reference cell, as the

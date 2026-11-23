@@ -176,6 +176,12 @@ type terminal struct {
 	paintFind                                 findBarSlots
 	paintSpinner, paintLight                  ui.Box
 
+	// zoomLabel and zoomUntil are the transient "N px" badge shown over the grid
+	// after a Ctrl+wheel zoom. They live on the pane the gesture was made in, so a
+	// split does not light the badge on the pane beside it.
+	zoomLabel string
+	zoomUntil time.Duration
+
 	// preedit is the input-method composition, shown at the cursor.
 	preedit      app.TextState
 	inputGuard   terminalInputGuard
@@ -2460,6 +2466,14 @@ func (state *State) terminalScroll(session *Session, event gfx.ScrollEvent) gfx.
 	t := session.term
 	modes := t.screen.Modes()
 	session.term.pageIdentity(session.ID)
+	// Ctrl+wheel (Command on macOS) resizes the terminal's font rather than
+	// scrolling it, the same change the primary+/- shortcuts make. It is taken
+	// before the mouse-report check below so a full-screen program never receives
+	// the gesture it would otherwise read as a scroll, as the platform's terminals
+	// and this app's own document windows do.
+	if event.Modifiers&(gfx.ModifierControl|gfx.ModifierMeta) != 0 && event.Modifiers&gfx.ModifierShift == 0 {
+		return state.terminalZoomScroll(session, event)
+	}
 	if modes.Mouse != term.MouseOff && event.Target == session.term.controlID && event.Modifiers&gfx.ModifierShift == 0 {
 		return state.terminalMouseScroll(session, event)
 	}
@@ -2489,6 +2503,42 @@ func (state *State) terminalScroll(session *Session, event gfx.ScrollEvent) gfx.
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	return gfx.EventResult{Handled: true}
+}
+
+// terminalZoomTrackpadUnit is how far a precise (trackpad) Ctrl+wheel gesture
+// must travel, in logical pixels, to change the terminal font size by one point.
+const terminalZoomTrackpadUnit = float32(60)
+
+// terminalZoomBadgeLinger is how long the "N px" badge stays over the grid after
+// the last Ctrl+wheel notch, so a burst of wheeling keeps one badge up that
+// updates in place, and it clears shortly after the fingers stop.
+const terminalZoomBadgeLinger = 1200 * time.Millisecond
+
+// terminalZoomScroll turns Ctrl+wheel into a font-size step, the same change the
+// Ctrl +/- shortcuts make: state.zoomTerminal clamps it to the size range and
+// keeps it. A classic wheel moves one point per notch; a precise trackpad
+// gesture accumulates and steps once it has travelled far enough, so the size
+// never races ahead of the fingers. Scrolling up enlarges the text. Each step
+// refreshes the pane's badge with the size now in effect.
+func (state *State) terminalZoomScroll(session *Session, event gfx.ScrollEvent) gfx.EventResult {
+	steps := float32(0)
+	if event.Precise {
+		state.terminalZoomWheel += -event.DeltaY / terminalZoomTrackpadUnit
+		steps = float32(int(state.terminalZoomWheel))
+		state.terminalZoomWheel -= steps
+	} else if event.DeltaY != 0 {
+		steps = 1
+		if event.DeltaY > 0 {
+			steps = -1
+		}
+	}
+	if steps == 0 {
+		return gfx.EventResult{Handled: true}
+	}
+	state.zoomTerminal(steps, false)
+	session.term.zoomLabel = fmt.Sprintf("%d px", int(state.terminalFontSize))
+	session.term.zoomUntil = state.now() + terminalZoomBadgeLinger
+	return gfx.EventResult{Handled: true, Repaint: true}
 }
 
 func (state *State) terminalMouseScroll(session *Session, event gfx.ScrollEvent) gfx.EventResult {

@@ -760,6 +760,9 @@ type State struct {
 	terminalScrollback int
 	terminalFindPrefs  terminalFindPreferences
 	findSettingsUI     terminalFindSettingsUI
+	// terminalZoomWheel is the precise (trackpad) Ctrl+wheel travel not yet worth
+	// one terminal font-size point; see terminalZoomScroll.
+	terminalZoomWheel float32
 	// interfaceTextSize is the body text size the user chose, in logical pixels:
 	// the size the whole window's text is drawn at, apart from the terminal's own
 	// font size.

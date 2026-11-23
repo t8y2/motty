@@ -377,12 +377,13 @@ func TestTerminalMouseWheelPrecedesAlternateScroll(t *testing.T) {
 	session.term.shell = shell
 	session.term.screen.Write([]byte("\x1b[?1049h\x1b[?1007h\x1b[?1002h\x1b[?1006h"))
 	x, y := cellPoint(geometry, 2, 7, state.cellWidth, state.cellHeight)
+	// A plain wheel is what a program with mouse reporting receives; Ctrl+wheel
+	// is taken by the workbench to resize the font before it reaches this path.
 	result := state.Scroll(gfx.ScrollEvent{
-		Modifiers: gfx.ModifierControl,
-		X:         x, Y: y, DeltaX: state.cellWidth, DeltaY: -state.cellHeight,
+		X: x, Y: y, DeltaX: state.cellWidth, DeltaY: -state.cellHeight,
 		Viewport: state.viewport, Target: terminalTestHit(state, session), Precise: true,
 	})
-	if !result.Handled || result.Repaint || shell.typed() != "\x1b[<80;8;3M\x1b[<83;8;3M" {
+	if !result.Handled || result.Repaint || shell.typed() != "\x1b[<64;8;3M\x1b[<67;8;3M" {
 		t.Fatalf("result=%+v input=%q", result, shell.typed())
 	}
 }
