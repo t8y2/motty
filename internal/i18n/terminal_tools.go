@@ -398,8 +398,26 @@ type ToolsMessages struct {
 	ImportPasswordsSavedFmt      string
 	ImportPasswordConflictFmt    string
 	ImportHostSaveUnavailable    string
+	ImportPreviewStale           string
 	ImportHostSaveFailedFmt      string
 	ImportHostSaveRollbackFailed string
+
+	TabbyImportTitle          string
+	TabbyImportDescription    string
+	TabbyImportSave           string
+	TabbyImportSavedFmt       string
+	TabbyImportKeysSkippedFmt string
+
+	TabbyVaultTitle        string
+	TabbyVaultDescription  string
+	TabbyVaultOptional     string
+	TabbyVaultSkip         string
+	TabbyVaultPassword     string
+	TabbyVaultUnlock       string
+	TabbyVaultReadFailed   string
+	TabbyVaultUnlockFailed string
+	TabbyVaultPreviewFmt   string
+	TabbyVaultSave         string
 
 	// Broadcast input.
 	BroadcastStart            string

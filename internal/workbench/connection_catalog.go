@@ -271,6 +271,8 @@ func (catalog *hostCatalog) authenticationFor(host Host) sshconn.Authentication 
 			if identity, ok := catalog.identityForFingerprint(fingerprint); ok {
 				authentication.IdentityFiles = []string{identity.Path}
 			}
+		} else if host.SSHOptions != nil && len(host.SSHOptions.IdentityFiles) > 0 {
+			authentication.IdentityFiles = host.SSHOptions.IdentityFiles
 		} else {
 			authentication.AdditionalIdentityFiles = catalog.identityPaths()
 		}

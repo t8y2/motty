@@ -101,10 +101,10 @@ saved.
 Motty takes each session's name, folder, address, port and user; protocols it
 cannot open are counted as skipped. Electerm and Netcatty exports may also
 contain readable SSH login passwords. When they do, Motty asks whether to save
-them in its vault or import connections only. Key passphrases, private keys and
-encrypted passwords from other clients are not imported. A host whose address,
-user and port are already saved is not duplicated; importing a password may
-fill an empty saved password, but never replace one already saved.
+them in its vault or import connections only. See the Tabby options below for
+importing keys and unlocking the Vault. A host whose name, address, user and
+port are already saved is not duplicated. Imported passwords fill missing
+values and preserve any saved password.
 
 | Client | File to choose |
 | --- | --- |
@@ -118,6 +118,23 @@ fill an empty saved password, but never replace one already saved.
 | FinalShell | The FinalShell data folder: `~/.finalshell` on Linux, `~/Library/FinalShell` on macOS, or usually the FinalShell install folder on Windows. |
 | Xterminal | The Xterminal data folder: `~/Library/Application Support/XTerminal` on macOS, `%APPDATA%\XTerminal` on Windows, or `~/.config/XTerminal` on Linux. The portable build keeps it in `xt_data\userData`. |
 | XPipe | The XPipe data folder (`~/.xpipe`) or its `storage` subfolder, or a clone of the git repository XPipe syncs to. SSH, RDP and VNC connections are imported; other XPipe entry types are not. |
+| Tabby | `config.yaml` in `~/Library/Application Support/tabby` on macOS, `%APPDATA%/Tabby` on Windows, or `~/.config/tabby` on Linux. |
+
+Tabby import keeps SSH profiles and nested groups. SSH profiles that use a
+jump host or proxy are skipped so their route can be set up in Motty.
+Choose **Save local credentials** to copy local private keys, matching user
+certificates and SSH passwords present in the Tabby configuration to the Motty
+vault. **Connections only** keeps references to the original key files. Enter
+passwords or passphrases stored in the system keychain when Motty first
+needs them.
+
+After you select a single Tabby config, Motty offers to unlock its Vault
+locally with the master password. Choose **Skip unlocking** to import
+readable profiles without the Vault. If Tabby encrypts the entire
+configuration, unlock it to read its SSH profiles. Motty previews how many SSH login passwords can be
+saved and fills only missing passwords for matching hosts. The Vault option
+reads SSH login passwords. Keys and passphrases stored only inside the
+Tabby Vault require separate setup.
 
 Electerm and Netcatty write saved passwords into the export in clear text.
 Choosing to save passwords encrypts eligible SSH passwords in Motty's vault,
