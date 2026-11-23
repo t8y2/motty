@@ -196,3 +196,110 @@ func TestNotesWorkspaceKeepsTheEditorMinimumAndHairlineWidth(t *testing.T) {
 		t.Fatalf("document width %v is below the 480px minimum", state.notes.view.documentBounds.Width)
 	}
 }
+
+func TestNotesDrawerSwitchDoesNotCorruptNote(t *testing.T) {
+	s := newTestState(t, freshOptions(t))
+	s.Click(hitNotes)
+
+	s.Click(hitNoteAdd)
+	note1ID := s.notes.selected
+	s.EditorFor(hitNoteTitle).Insert("Alpha")
+	s.EditorFor(hitNoteBody).Insert("Content A")
+
+	s.Click(hitNoteAdd)
+	note2ID := s.notes.selected
+	s.EditorFor(hitNoteTitle).Insert("Beta")
+	s.EditorFor(hitNoteBody).Insert("Content B")
+
+	s.Click(hitNoteAdd)
+	note3ID := s.notes.selected
+	s.EditorFor(hitNoteTitle).Insert("Gamma")
+	s.EditorFor(hitNoteBody).Insert("Content C")
+
+	if !s.selectNote(note1ID) {
+		t.Fatal("failed to select note 1")
+	}
+
+	s.viewport = gfx.Size{Width: 600, Height: 700}
+	paintAt(s, s.viewport)
+
+	// Switch from note 1 to note 2 via the library drawer.
+	s.Click(hitNoteTreeToggle)
+	if !s.notes.view.drawer {
+		t.Fatal("drawer did not open for note 2 switch")
+	}
+	clickNoteTreeRow(t, s, &s.notes, note2ID)
+	if s.notes.view.drawer {
+		t.Fatal("drawer should close after choosing note 2")
+	}
+	if s.notes.selected != note2ID {
+		t.Fatalf("selected note = %q, want %q", s.notes.selected, note2ID)
+	}
+	if got := s.notes.title.String(); got != "Beta" {
+		t.Fatalf("note title = %q, want %q", got, "Beta")
+	}
+	if got := s.notes.body.String(); got != "Content B" {
+		t.Fatalf("note body = %q, want %q", got, "Content B")
+	}
+
+	// Switch from note 2 to note 3 via the library drawer.
+	paintAt(s, s.viewport)
+	s.Click(hitNoteTreeToggle)
+	if !s.notes.view.drawer {
+		t.Fatal("drawer did not open for note 3 switch")
+	}
+	clickNoteTreeRow(t, s, &s.notes, note3ID)
+	if s.notes.view.drawer {
+		t.Fatal("drawer should close after choosing note 3")
+	}
+	if s.notes.selected != note3ID {
+		t.Fatalf("selected note = %q, want %q", s.notes.selected, note3ID)
+	}
+	if got := s.notes.title.String(); got != "Gamma" {
+		t.Fatalf("note title = %q, want %q", got, "Gamma")
+	}
+	if got := s.notes.body.String(); got != "Content C" {
+		t.Fatalf("note body = %q, want %q", got, "Content C")
+	}
+
+	// Switch back to note 2.
+	paintAt(s, s.viewport)
+	s.Click(hitNoteTreeToggle)
+	clickNoteTreeRow(t, s, &s.notes, note2ID)
+	if s.notes.selected != note2ID || s.notes.title.String() != "Beta" || s.notes.body.String() != "Content B" {
+		t.Fatalf("note 2 corrupted after switching: title=%q, body=%q", s.notes.title.String(), s.notes.body.String())
+	}
+
+	// Check that clicking the active note closes the drawer without modifying anything.
+	paintAt(s, s.viewport)
+	s.Click(hitNoteTreeToggle)
+	if !s.notes.view.drawer {
+		t.Fatal("drawer did not open when re-clicking toggle")
+	}
+	clickNoteTreeRow(t, s, &s.notes, note2ID)
+	if s.notes.view.drawer {
+		t.Fatal("drawer should close when clicking the already-selected note")
+	}
+	if s.notes.selected != note2ID || s.notes.title.String() != "Beta" {
+		t.Fatalf("active note changed: %q, %q", s.notes.selected, s.notes.title.String())
+	}
+
+	// Verify all notes in the store retain their original contents.
+	for _, entry := range []struct {
+		id    string
+		title string
+		body  string
+	}{
+		{note1ID, "Alpha", "Content A"},
+		{note2ID, "Beta", "Content B"},
+		{note3ID, "Gamma", "Content C"},
+	} {
+		idx := s.noteIndex(entry.id)
+		if idx < 0 {
+			t.Fatalf("note %s missing from list", entry.title)
+		}
+		if s.notes.list[idx].Title != entry.title || s.notes.list[idx].Body != entry.body {
+			t.Fatalf("stored note %s was corrupted: title=%q, body=%q", entry.title, s.notes.list[idx].Title, s.notes.list[idx].Body)
+		}
+	}
+}

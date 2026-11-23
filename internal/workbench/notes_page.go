@@ -420,9 +420,13 @@ func (s *State) chooseNoteTreeRow(n *notesUI, e noteTreeEntry, side bool) {
 		return
 	}
 	if s.noteIndex(e.id) < 0 || e.id == n.selected {
+		if e.id == n.selected {
+			n.view.drawer = false
+			n.view.focus = hitNoteBody
+		}
 		return
 	}
-	if side {
+	if side && n != &s.notes {
 		if n.imageCancel != nil {
 			n.imageCancel()
 		}
@@ -548,7 +552,7 @@ func (s *State) declareNotesWorkspace(c ui.C) {
 	}
 	ui.Row(c).Fill().DrawOver(state.afterLayout).Children(func() {
 		ui.Column(c).Width(v.width).FillHeight().Children(func() {
-			s.declareNoteLibrary(c, n, v.width, false)
+			s.declareNoteLibrary(c, n, v.width)
 		})
 		// The old handle's FractionForKey moved it 5% of the room per arrow.
 		state.library.StepFraction = .05
@@ -569,7 +573,7 @@ func (s *State) declareNoteDrawer(c ui.C, n *notesUI) {
 	ui.Drawer(c, &open, s.noteText("Note library", "笔记目录"), ui.DrawerSpec{
 		Side: ui.DrawerLeft, Size: extent,
 	}, func() {
-		s.declareNoteLibrary(c, n, extent, true)
+		s.declareNoteLibrary(c, n, extent)
 	}, nil)
 	if !open {
 		v.drawer = false
@@ -578,7 +582,7 @@ func (s *State) declareNoteDrawer(c ui.C, n *notesUI) {
 
 // declareNoteLibrary declares the library pane: its tool row, its search, and
 // its tree.
-func (s *State) declareNoteLibrary(c ui.C, n *notesUI, width float32, drawer bool) {
+func (s *State) declareNoteLibrary(c ui.C, n *notesUI, width float32) {
 	p, v := &n.page, &n.view
 	p.c = c
 	rows := v.treeScratch.rows
@@ -621,7 +625,7 @@ func (s *State) declareNoteLibrary(c ui.C, n *notesUI, width float32, drawer boo
 	area.Children(func() {
 		ui.Tree(c, &p.tree, len(rows), p.label, p.content).Grow(1).FillWidth().Scrollbars().
 			Label(s.noteText("Scroll notes", "滚动笔记"))
-		s.noteTreeChanges(n, drawer)
+		s.noteTreeChanges(n, false)
 		if len(rows) == 0 {
 			message := s.noteText("No notes yet. Create one above.", "暂无笔记，可点击上方新建。")
 			if n.query.String() != "" {
