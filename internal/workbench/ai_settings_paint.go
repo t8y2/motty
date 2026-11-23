@@ -468,7 +468,16 @@ func (state *State) paintAIModels(page *settingsPage) {
 			}
 
 			filterWidth := settingsChoiceWidth(page, aiModelFilterChoices[:], filterName)
-			sortWidth := settingsChoiceWidth(page, aiModelSortChoices[:], sortName)
+			canvas := page.canvas()
+			var maxSortW float32
+			for _, s := range aiModelSortChoices {
+				maxSortW = max(maxSortW, canvas.TextWidthWeight(sortName(s), metrics.FontSizeM, gfx.WeightRegular))
+			}
+			sortWidth := max(float32(100), maxSortW+44)
+			availWidth := max(page.width-36, 0)
+			sortWidth = min(sortWidth, availWidth)
+			filterWidth = min(filterWidth, max(availWidth-sortWidth-12, 0))
+
 			page.rowOf(46).PadX(18).Gap(10).Children(func() {
 				ui.Row(c).Grow(1).Gap(12).Items(ui.Center).Children(func() {
 					choice := ui.Choice(page.c, &cfg.modelFilter, aiModelFilterChoices[:], filterName).Width(filterWidth)
@@ -477,8 +486,9 @@ func (state *State) paintAIModels(page *settingsPage) {
 						state.aiSettingsChanged()
 					}
 					ui.Spacer(c)
-					choice = ui.Choice(page.c, &cfg.modelSort, aiModelSortChoices[:], sortName).Width(sortWidth)
-					if choice.Changed() {
+					sortSel := ui.Select(page.c, &cfg.modelSort, aiModelSortChoices[:], sortName).
+						Label(state.messages.Tools.HostSort).Width(sortWidth)
+					if sortSel.Changed() {
 						cfg.page = 0
 						state.aiSettingsChanged()
 					}
