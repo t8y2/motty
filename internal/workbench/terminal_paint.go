@@ -86,7 +86,7 @@ func (state *State) paintTerminalPaneDetails(canvas *gfx.Canvas, session *Sessio
 const terminalZoomBadgeFade = terminalZoomBadgeLinger / 3
 
 // paintTerminalZoomBadge shows the terminal's current font size over the grid
-// after a Ctrl+wheel zoom, so the gesture reports what it did. The badge sits in
+// after a primary+wheel zoom, so the gesture reports what it did. The badge sits in
 // the middle of the pane, where the eye already is, rather than along an edge.
 // It is transient: terminalZoomScroll gives it the size text and a linger
 // deadline on the pane's own clock, it holds a steady number until the last fade

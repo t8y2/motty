@@ -32,17 +32,57 @@ func normalizeTerminalFontSize(value float32) float32 {
 }
 
 // zoomTerminal changes the font size by delta points, or back to the default
-// when reset is set, and tells the user which size it is now.
+// when reset is set, and tells the user which size it is now. A keyboard step
+// saves at once; a wheel gesture defers its save and calls applyZoom instead.
 func (state *State) zoomTerminal(delta float32, reset bool) {
+	if state.applyZoom(delta, reset) {
+		state.save()
+	}
+}
+
+// applyZoom moves the terminal font size and writes the status line, reporting
+// whether the size actually changed. It saves nothing, so a primary+wheel burst
+// can coalesce its many steps into one write once the gesture settles.
+func (state *State) applyZoom(delta float32, reset bool) bool {
 	size := state.terminalFontSize + delta
 	if reset {
 		size = terminalFontSizeDefault
 	}
 	size = min(max(size, terminalFontSizeMin), terminalFontSizeMax)
-	if state.setTerminalFontSize(size) {
-		state.save()
-	}
+	changed := state.setTerminalFontSize(size)
 	state.status = fmt.Sprintf(state.messages.Tools.StatusFontSizeFmt, int(state.terminalFontSize))
+	return changed
+}
+
+// terminalZoomSaveDelay is how long the font size holds still after the last
+// wheel notch before it is written to disk, so a burst of wheeling saves once.
+const terminalZoomSaveDelay = 400 * time.Millisecond
+
+// scheduleTerminalZoomSave writes the wheel's font-size change once the gesture
+// settles. Each notch re-arms one timer, so a wheel saves on its last notch rather
+// than on every notch. The size is applied in memory at once, so the screen and
+// Close()'s own save already carry it if the window quits before this fires.
+func (state *State) scheduleTerminalZoomSave() {
+	if state.terminalZoomSaveTimer != nil {
+		state.terminalZoomSaveTimer.Stop()
+	}
+	state.terminalZoomSaveTimer = time.AfterFunc(terminalZoomSaveDelay, func() {
+		state.aiPost(func(state *State) {
+			state.terminalZoomSaveTimer = nil
+			if !state.closed {
+				state.save()
+			}
+		})
+	})
+}
+
+// stopTerminalZoomSave cancels a pending wheel save. The size is already applied
+// and Close() saves, so nothing is lost by stopping the timer here.
+func (state *State) stopTerminalZoomSave() {
+	if state.terminalZoomSaveTimer != nil {
+		state.terminalZoomSaveTimer.Stop()
+		state.terminalZoomSaveTimer = nil
+	}
 }
 
 // The preview size is how many megabytes of a file a document window loads at
