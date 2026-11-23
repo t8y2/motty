@@ -188,7 +188,10 @@ func (state *State) declareAgentHostsDialog(c ui.C) {
 		InitialFocusID: hitAgentHostsQuery,
 	})
 	dialog.Body(func() {
-		inner := max(min(780, dialogViewport(c).Width-32)-2*c.Theme().Metrics.PadSurface, 200)
+		// The cards fill the body the dialog actually gives its content, less the
+		// list's scrollbar lane, so the last column never runs under the edge.
+		body := dialogContentRect(c.Canvas(), *c.Theme(), dialogViewport(c), 780, "", 0).Body
+		inner := max(body.Width-catalogBarGutter, 200)
 		columns := dashboardPickerColumns(inner - 12)
 		cardW := (inner - float32(columns-1)*8) / float32(columns)
 		state.ensureAgentHostRows(columns)
