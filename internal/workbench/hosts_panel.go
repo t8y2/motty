@@ -554,7 +554,7 @@ func (state *State) connectHostsPanelHost(host Host) gfx.EventResult {
 	state.hostsPanel.selected = host.ID
 	state.selectedHostID = host.ID
 	state.pendingWorkspace, state.pendingPane = 0, 0
-	state.openHostSession(host)
+	state.openSavedHost(host)
 	return gfx.EventResult{Handled: true, Repaint: true, Focus: state.activeTerminalFocusHit()}
 }
 

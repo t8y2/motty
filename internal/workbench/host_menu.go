@@ -57,7 +57,7 @@ func (state *State) openHostOn(canvas *gfx.Canvas, id gfx.ID, host Host) {
 		return
 	}
 	state.selectedHostID = host.ID
-	state.openHostSession(host)
+	state.openSavedHost(host)
 	canvas.Consume()
 }
 
@@ -129,12 +129,15 @@ func (state *State) chooseHostMenu(id gfx.ID) {
 	switch id {
 	case hitHostMenuConnect:
 		state.selectedHostID = host.ID
+		if state.openSavedHostFiles(host) {
+			return
+		}
 		if state.hostMenu.newTab {
 			state.pendingWorkspace = state.deck.ActiveWorkspace()
 			state.pendingPane = state.deck.ActivePane(state.pendingWorkspace)
 			state.newHostSession(host)
 		} else {
-			state.openHostSession(host)
+			state.openSavedHost(host)
 		}
 	case hitHostMenuSFTP:
 		state.openHostSFTPWindow(host)

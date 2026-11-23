@@ -2508,7 +2508,7 @@ func (state *State) connectTyped() {
 			}
 		}
 		state.selectedHostID = chosen.ID
-		state.openHostSession(chosen)
+		state.openSavedHost(chosen)
 		return
 	}
 	parsed, err := parseConnection(query)
@@ -3584,13 +3584,13 @@ func (state *State) hostsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 		case state.isHostRow(event.Target):
 			host, _ := state.hostForRow(event.Target)
 			state.selectedHostID = host.ID
-			state.openHostSession(host)
+			state.openSavedHost(host)
 			return handled, true
 		case event.Target.IsZero():
 			// Nothing is focused: Enter connects the selected host, provided
 			// the search box has not hidden it.
 			if host, ok := state.selectedHost(); ok && state.hostIsVisible(host.ID) {
-				state.openHostSession(host)
+				state.openSavedHost(host)
 				return handled, true
 			}
 		}

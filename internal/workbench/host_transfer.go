@@ -68,3 +68,22 @@ func (state *State) declareHostTransferChoice(c ui.C) ui.Box {
 	}
 	return choice
 }
+
+// openSavedHost 按保存的连接用途打开文件管理器或终端。
+func (state *State) openSavedHost(host Host) {
+	if state.openSavedHostFiles(host) {
+		return
+	}
+	state.openHostSession(host)
+}
+
+// openSavedHostFiles 复用右键文件传输入口，并清除空终端页留下的目标。
+func (state *State) openSavedHostFiles(host Host) bool {
+	if !host.isSSH() || host.mosh() || host.ID == localHostID ||
+		(host.Transfer != transferSFTP && host.Transfer != transferSCP) {
+		return false
+	}
+	state.pendingWorkspace, state.pendingPane = 0, 0
+	state.openHostSFTPWindow(host)
+	return true
+}

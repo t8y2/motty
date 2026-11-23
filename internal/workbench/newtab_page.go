@@ -186,6 +186,9 @@ func (state *State) chooseNewTabRow(id gfx.ID) {
 	if index >= len(state.hosts) {
 		return
 	}
+	if state.openSavedHostFiles(state.hosts[index]) {
+		return
+	}
 	state.pendingWorkspace = state.deck.ActiveWorkspace()
 	state.pendingPane = state.deck.ActivePane(state.pendingWorkspace)
 	state.newHostSession(state.hosts[index])
