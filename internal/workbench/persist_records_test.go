@@ -71,7 +71,7 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		"hidden_shells": true,
 		// What a launch opens is chosen per computer: the shells and hosts of
 		// this machine, not a preference to carry across devices.
-		"startup_disabled": true, "startup_local": true, "startup_shell": true, "startup_hosts": true, "startup_no_reuse": true,
+		"startup_disabled": true, "startup_local": true, "startup_shell": true, "startup_hosts": true, "startup_reuse": true,
 		"window_x": true, "window_y": true, "window_width": true, "window_height": true, "window_maximized": true,
 		// The session journal switch belongs to this computer: another device
 		// keeps its own choice, and an older build must not silently drop it.

@@ -94,9 +94,10 @@ type savedState struct {
 	// negated so that a fresh install without this key has the feature on.
 	StartupDisabled bool `json:"startup_disabled,omitempty"`
 	// StartupReuse is the reuse switch: when on, connecting a host or opening
-	// sessions at launch switches to an existing session in this window.
+	// sessions at launch switches to an existing session in this window. It
+	// is off by default, so a state without this key opens a separate session
+	// each time; the older negated "startup_no_reuse" key is no longer read.
 	StartupReuse            bool                `json:"startup_reuse,omitempty"`
-	StartupNoReuse          bool                `json:"startup_no_reuse,omitempty"`
 	TerminalClipboard       string              `json:"terminal_clipboard,omitempty"`
 	TerminalCursorSteady    bool                `json:"terminal_cursor_steady,omitempty"`
 	TerminalCursorThickness string              `json:"terminal_cursor_thickness,omitempty"`

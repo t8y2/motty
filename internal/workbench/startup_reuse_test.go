@@ -30,7 +30,6 @@ func TestStartupSessionsReuseOpenOnes(t *testing.T) {
 		t.Fatalf("sessions %d: with reuse off a new local terminal must open", len(state.sessions))
 	}
 
-	state.startupReuse = false
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsConnection)
 	state.Click(hitSettingsStartupReuse)
