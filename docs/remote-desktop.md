@@ -74,8 +74,10 @@ type Session interface {
 
 ## What the workbench does for any backend
 
-* Fit-to-window and 100% scaling; at 100% a picture larger than the pane pans
-  with the pointer so that the remote pixel under the pointer stays under it.
+* Fit-to-window and 100% scaling; at 100% one picture pixel is shown on one
+  device pixel, as the server's own screen shows it, and a picture larger than
+  the pane pans with the pointer so that the remote pixel under the pointer stays
+  under it.
 * **Fullscreen** in the desktop toolbar or tab menu, or `Ctrl+Alt+Enter`, uses
   Viva's native fullscreen window and gives the whole monitor to the selected
   desktop, hiding other panes, tabs and side panels without changing their saved
