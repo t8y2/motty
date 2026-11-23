@@ -408,6 +408,7 @@ var EnglishMessages = Messages{
 	MenuView:                               "View",
 	CopyHostAddress:                        "Copy IP",
 	CopyAddressAndPort:                     "Copy IP:PORT",
+	CopyConnectionAddress:                  "Copy connection address",
 	CopyConnectionName:                     "Copy Connection Name",
 	MenuPaste:                              "Paste",
 	MenuSelectAll:                          "Select All",

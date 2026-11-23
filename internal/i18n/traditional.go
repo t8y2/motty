@@ -408,6 +408,7 @@ var TraditionalMessages = Messages{
 	MenuView:                               "檢視",
 	CopyHostAddress:                        "複製 IP",
 	CopyAddressAndPort:                     "複製 IP:PORT",
+	CopyConnectionAddress:                  "複製連線位址",
 	CopyConnectionName:                     "複製連線名稱",
 	MenuPaste:                              "貼上",
 	MenuSelectAll:                          "全選",

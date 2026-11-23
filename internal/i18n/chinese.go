@@ -408,6 +408,7 @@ var ChineseMessages = Messages{
 	MenuView:                               "视图",
 	CopyHostAddress:                        "复制 IP",
 	CopyAddressAndPort:                     "复制 IP:PORT",
+	CopyConnectionAddress:                  "复制连接地址",
 	CopyConnectionName:                     "复制连接名称",
 	MenuPaste:                              "粘贴",
 	MenuSelectAll:                          "全选",

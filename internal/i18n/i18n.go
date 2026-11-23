@@ -434,6 +434,7 @@ type Messages struct {
 	MenuView                               string
 	CopyHostAddress                        string
 	CopyAddressAndPort                     string
+	CopyConnectionAddress                  string
 	CopyConnectionName                     string
 	MenuPaste                              string
 	MenuSelectAll                          string

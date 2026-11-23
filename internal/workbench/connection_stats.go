@@ -389,7 +389,7 @@ func (state *State) paintConnectionTopBar(canvas *gfx.Canvas, rect gfx.Rect, ses
 		canvas.Label(elide(canvas, address, metrics.FontSizeS, gfx.WeightMedium, addressMax), bounds,
 			gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: color})
 		canvas.HitWithOptions(hitConnectionStatsAddress.At(int(session.ID)), bounds, address,
-			gfx.HitOptions{Role: gfx.RoleButton, Value: address, Hint: state.messages.Monitor.AddressCopy})
+			gfx.HitOptions{Role: gfx.RoleButton, Value: address, Hint: state.messages.CopyConnectionAddress})
 		left += addressMax + 6
 	}
 
@@ -409,8 +409,8 @@ func (state *State) paintConnectionTopBar(canvas *gfx.Canvas, rect gfx.Rect, ses
 		canvas.HitWithOptions(id, bounds, label, gfx.HitOptions{Role: gfx.RoleButton, Hint: hint, Disabled: !enabled})
 		left += 22
 	}
-	action(hitConnectionStatsCopy.At(int(session.ID)), icons.Copy, state.messages.Monitor.AddressCopy,
-		state.messages.Monitor.AddressCopy, address != "")
+	action(hitConnectionStatsCopy.At(int(session.ID)), icons.Copy, state.messages.CopyConnectionAddress,
+		state.messages.CopyConnectionAddress, address != "")
 	action(hitConnectionStatsDisconnect.At(int(session.ID)), icons.CircleStop, state.messages.MenuDisconnect,
 		state.messages.MenuDisconnect, state.canDisconnect(session))
 	action(hitConnectionStatsRestart.At(int(session.ID)), icons.RotateCw, state.messages.MenuReconnect,
