@@ -214,12 +214,19 @@ func makeAppTree(t *testing.T, base string) map[string]string {
 		"Contents/dangling":       "missing",
 	}
 	for link, target := range links {
-		if err := os.Symlink(target, filepath.Join(base, filepath.FromSlash(link))); err != nil {
+		linkPath := filepath.Join(base, filepath.FromSlash(link))
+		if err := os.Symlink(target, linkPath); err != nil {
 			if runtime.GOOS == "windows" && errors.Is(err, syscall.Errno(1314)) {
 				t.Skipf("Windows account lacks symbolic-link privilege: %v", err)
 			}
 			t.Fatal(err)
 		}
+		// Windows 会规范化符号链接目标，断言应保留磁盘中实际存储的文本。
+		storedTarget, err := os.Readlink(linkPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		links[link] = storedTarget
 	}
 	return links
 }
@@ -276,7 +283,7 @@ func TestFolderTransferKeepsSymbolicLinksAsLinks(t *testing.T) {
 	}
 
 	// The other way: a folder on the server whose links are real links.
-	makeAppTree(t, filepath.Join(root, "Down.app"))
+	links = makeAppTree(t, filepath.Join(root, "Down.app"))
 	downloaded := filepath.Join(t.TempDir(), "Down.app")
 	id, queued = worker.QueueDownload("Down.app", downloaded, true, ExistingFail)
 	result = queueResult(t, id, queued, worker)

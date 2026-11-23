@@ -13,33 +13,9 @@ const transferSleepReason = "Motty: file transfer"
 // transferSleep is how many windows of this process have a transfer moving
 // bytes. One system request serves them all, and it exists only while the count
 // is above zero, so no timer or goroutine runs when nothing is transferring.
-var transferSleep struct {
-	mu      sync.Mutex
-	windows int
-	release func()
-}
+var transferSleep = asyncSleepClaim{prevent: app.PreventSleep}
 
-// holdTransferSleep adds or removes one window's claim. A system that refuses
-// the request leaves transfers working as before; staying awake is an
-// optimization, not a requirement of copying files.
-func holdTransferSleep(held bool) {
-	transferSleep.mu.Lock()
-	defer transferSleep.mu.Unlock()
-	if held {
-		transferSleep.windows++
-	} else if transferSleep.windows > 0 {
-		transferSleep.windows--
-	}
-	switch {
-	case transferSleep.windows > 0 && transferSleep.release == nil:
-		if release, err := app.PreventSleep(transferSleepReason); err == nil {
-			transferSleep.release = release
-		}
-	case transferSleep.windows == 0 && transferSleep.release != nil:
-		transferSleep.release()
-		transferSleep.release = nil
-	}
-}
+func holdTransferSleep(held bool) { transferSleep.hold(held) }
 
 // keepAwakeForTransfers follows this window's running transfers: the first adds
 // its claim and the last one takes it away, so a paused or finished transfer
