@@ -328,7 +328,33 @@ func TestDashboardNativeHostOrderAndBulkAdd(t *testing.T) {
 	if !ok {
 		t.Fatal("first host's native drag handle is missing")
 	}
-	moveRowToEnd(t, s, view, first.ID, 2)
+	second, ok := view.Hit(fmt.Sprintf(m.SortPanel, s.hosts[1].Label))
+	if !ok {
+		t.Fatal("second host's row is missing")
+	}
+	dragX := first.Bounds.X + first.Bounds.Width/2
+	dragY1 := first.Bounds.Y + first.Bounds.Height/2
+	dragY2 := second.Bounds.Y + second.Bounds.Height*0.9
+	if err := view.Press(dragX, dragY1); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Move(dragX, dragY2); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Release(dragX, dragY2); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if s.dashboard.editor.selected[1] != original[0] || s.dashboardPanel().Hosts[0] != original[0] {
+		t.Fatalf("drag reorder must change draft order without saving yet: got %v", s.dashboard.editor.selected)
+	}
+	firstMoved, ok := view.Hit(fmt.Sprintf(m.SortPanel, s.hosts[0].Label))
+	if !ok {
+		t.Fatal("dragged host row is missing")
+	}
+	moveRowToEnd(t, s, view, firstMoved.ID, 1)
 	if s.dashboard.editor.selected[2] != original[0] || s.dashboardPanel().Hosts[0] != original[0] {
 		t.Fatal("reorder must change the draft order until the editor is saved")
 	}

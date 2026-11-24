@@ -377,13 +377,28 @@ func TestTerminalMouseWheelPrecedesAlternateScroll(t *testing.T) {
 	session.term.shell = shell
 	session.term.screen.Write([]byte("\x1b[?1049h\x1b[?1007h\x1b[?1002h\x1b[?1006h"))
 	x, y := cellPoint(geometry, 2, 7, state.cellWidth, state.cellHeight)
+	start := state.terminalFontSize
+	// While a program reports the mouse, the primary modifier's wheel is forwarded
+	// to it with the xterm modifier bits rather than spent resizing the font, so
+	// vim or tmux still see the gesture.
 	result := state.Scroll(gfx.ScrollEvent{
-		Modifiers: gfx.ModifierControl,
+		Modifiers: keymap.Primary,
 		X:         x, Y: y, DeltaX: state.cellWidth, DeltaY: -state.cellHeight,
 		Viewport: state.viewport, Target: terminalTestHit(state, session), Precise: true,
 	})
-	if !result.Handled || result.Repaint || shell.typed() != "\x1b[<80;8;3M\x1b[<83;8;3M" {
-		t.Fatalf("result=%+v input=%q", result, shell.typed())
+	// The wheel keeps its xterm button codes; the primary modifier adds its bit,
+	// Control (16) on Windows and Linux, Meta (8) on macOS.
+	mod := 16
+	if keymap.Primary&gfx.ModifierMeta != 0 {
+		mod = 8
+	}
+	want := fmt.Sprintf("\x1b[<%d;8;3M\x1b[<%d;8;3M", 64+mod, 67+mod)
+	if !result.Handled || result.Repaint || shell.typed() != want {
+		t.Fatalf("result=%+v input=%q, want %q", result, shell.typed(), want)
+	}
+	// And it is spent on the program, not on the font: the size is where it was.
+	if state.terminalFontSize != start {
+		t.Fatalf("a reported wheel resized the font to %v, want %v", state.terminalFontSize, start)
 	}
 }
 

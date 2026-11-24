@@ -9,7 +9,7 @@ import (
 	"motty/internal/sshconn"
 )
 
-func TestDuplicateTerminalShortcutStartsBelowWithSameDirectory(t *testing.T) {
+func TestDuplicateTerminalShortcutTilesWithSameDirectory(t *testing.T) {
 	state, world, _, shell := liveSession(t)
 	firstID := state.activeSessionID
 	reportDirectory(state, &state.sessions[0], shell, "/data/workspace/ai/motty")
@@ -23,8 +23,8 @@ func TestDuplicateTerminalShortcutStartsBelowWithSameDirectory(t *testing.T) {
 	}
 	first, _ := state.paneForSession(firstID)
 	second, _ := state.paneForSession(state.activeSessionID)
-	if second.Bounds.Y <= first.Bounds.Y || second.Bounds.X != first.Bounds.X || second.Bounds.Width != first.Bounds.Width {
-		t.Fatalf("duplicate is not below source: first=%+v second=%+v", first.Bounds, second.Bounds)
+	if second.Bounds.X <= first.Bounds.X || second.Bounds.Y != first.Bounds.Y || second.Bounds.Height != first.Bounds.Height {
+		t.Fatalf("duplicate is not beside source: first=%+v second=%+v", first.Bounds, second.Bounds)
 	}
 	conn := world.conns[1]
 	conn.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
@@ -96,7 +96,7 @@ func TestDuplicateTerminalShortcutUsesFocusedPane(t *testing.T) {
 	}
 	sourcePane, _ := state.paneForSession(firstID)
 	duplicatePane, _ := state.paneForSession(duplicate.ID)
-	if duplicatePane.Bounds.Y <= sourcePane.Bounds.Y || duplicatePane.Bounds.X != sourcePane.Bounds.X {
-		t.Fatalf("duplicate is not below focused pane: source=%+v duplicate=%+v", sourcePane.Bounds, duplicatePane.Bounds)
+	if duplicatePane.Bounds.X <= sourcePane.Bounds.X || duplicatePane.Bounds.Y != sourcePane.Bounds.Y {
+		t.Fatalf("duplicate is not beside focused pane: source=%+v duplicate=%+v", sourcePane.Bounds, duplicatePane.Bounds)
 	}
 }

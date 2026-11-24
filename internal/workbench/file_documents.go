@@ -97,6 +97,7 @@ type fileDocument struct {
 	// an open document.
 	previewMB               int
 	ready, busy, closed     bool
+	saveInFlight            bool // a save of this document was sent and has not answered
 	status, problem         string
 	confirm                 string
 	allowClose, afterClosed func()
@@ -427,6 +428,7 @@ func (d *fileDocument) saveDirect(closeAfter bool) {
 	}
 	d.pending = d.editor.String()
 	d.busy = true
+	d.saveInFlight = true
 	d.closeAfter = closeAfter
 	d.status = d.owner.messages.FileWindow.Saving
 	d.problem = ""
@@ -440,12 +442,14 @@ func (d *fileDocument) saveDirect(closeAfter bool) {
 		}()
 	} else if !d.worker.SaveDocument(d.location, data, d.revision, d.previewLimitBytes()) {
 		d.busy = false
+		d.saveInFlight = false
 		d.closeAfter = false
 		d.afterClosed = nil
 		d.cancelFailedClose()
 		d.problem = d.owner.messages.SFTPUnavailable
 		d.notices.show(d.name, d.problem, components.ToastError)
 	}
+	d.invalidateWindows()
 }
 
 func (d *fileDocument) apply(event fileDocumentEvent) {
@@ -462,6 +466,7 @@ func (d *fileDocument) apply(event fileDocumentEvent) {
 		return
 	}
 	d.busy = false
+	d.saveInFlight = false
 	if event.err != nil {
 		failedClose := d.closeAfter
 		d.closeAfter = false

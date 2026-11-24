@@ -1,15 +1,13 @@
 // Package sessionimport reads the saved sessions of other clients, PuTTY,
 // Xshell, MobaXterm, WindTerm, Electerm, Netcatty, SecureCRT, FinalShell,
-// Xterminal and XPipe, into the host fields Motty keeps. It reads files or
+// Xterminal, XPipe and Tabby, into the host fields Motty keeps. It reads files or
 // folders the user chose and never executes, resolves or contacts anything in
 // them.
 //
 // Only connection fields, a session's command after login and readable SSH
-// login password candidates from Electerm and Netcatty are taken. The caller
-// decides whether to save those candidates in a vault. Other clients' encrypted
-// credentials and key files are not imported; SecureCRT, FinalShell,
-// Xterminal and XPipe store every saved password encrypted, so their imports
-// never carry one.
+// login password candidates are taken. The caller decides whether to save
+// those candidates in a vault. Tabby may also carry local private-key paths.
+// Other clients' encrypted credentials and private key contents are not read.
 package sessionimport
 
 import (
@@ -70,17 +68,24 @@ type Entry struct {
 	Line     string
 	Flow     string
 
-	Name     string
-	Group    string // folders joined with "/", empty at the top
-	Host     string
-	Port     int // zero when the file named none
-	User     string
-	Password string // ephemeral candidate; never serialized with a host
+	Name        string
+	Group       string // folders joined with "/", empty at the top
+	Host        string
+	Port        int // zero when the file named none
+	User        string
+	Password    string // ephemeral candidate; never serialized with a host
+	SSHSettings *SSHSettings
 	// Command is typed into a new shell once it is ready, when the source
 	// client saved one.
 	Command string
 	// Source names where the entry came from, for warnings.
 	Source string
+}
+
+// SSHSettings carries authentication choices from a client that specifies them.
+type SSHSettings struct {
+	Auth          string
+	IdentityFiles []string
 }
 
 // Result is what a file held.
@@ -406,6 +411,8 @@ func ParseWithOptions(client Client, paths []string, options ParseOptions) (Resu
 			part, err = ParseXterminal(path)
 		case XPipe:
 			part, err = ParseXPipe(path)
+		case Tabby:
+			part, err = ParseTabby(path)
 		default:
 			err = fmt.Errorf("unknown client %d", client)
 		}
@@ -441,6 +448,7 @@ const (
 	FinalShell
 	Xterminal
 	XPipe
+	Tabby
 )
 
 // ---- PuTTY ----

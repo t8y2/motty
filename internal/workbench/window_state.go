@@ -50,12 +50,23 @@ func (state *State) RestoredWindowMaximized() bool {
 }
 
 // restoreWindowFrame takes the frame a saved state carries. It is this window's
-// own, read from the record it saved, so it is kept here and not shared.
+// own, read from the record it saved, so it is kept here and not shared. A
+// frame too small to be a real workbench window is ignored: an older build
+// could save the small off-screen rectangle Windows reports while a window is
+// minimized, and restoring it would put the next window in a corner at a size
+// the user never chose.
 func (state *State) restoreWindowFrame(frame gfx.Rect) {
-	if frame.Width < 1 || frame.Height < 1 {
+	if !usableWindowFrame(frame) {
 		return
 	}
 	state.winChrome.frame, state.winChrome.hasFrame = frame, true
+}
+
+// usableWindowFrame reports whether a frame can be a window the user chose.
+// The minimum is the window's own, so anything smaller is a transient
+// rectangle from the window manager rather than a frame worth remembering.
+func usableWindowFrame(frame gfx.Rect) bool {
+	return frame.Width >= MinimumWindowWidth && frame.Height >= MinimumWindowHeight
 }
 
 func (state *State) restoreWindowMaximized(maximized bool) {
@@ -64,9 +75,15 @@ func (state *State) restoreWindowMaximized(maximized bool) {
 
 // NoteWindowFrame records where the window is, as Viva reports every move and
 // size change, and saves it once the drag settles. Windows that do not remember
-// their frame ignore it.
+// their frame ignore it. A frame below the window's minimum is ignored too: the
+// window manager reports the small iconic rectangle while a window is
+// minimized, and some platforms send its move before the minimize callback, so
+// it must not replace the last usable frame.
 func (state *State) NoteWindowFrame(frame gfx.Rect) {
 	if !state.winChrome.remember || state.closed || state.winChrome.fullscreen || state.winChrome.fullscreenSession != 0 {
+		return
+	}
+	if !usableWindowFrame(frame) {
 		return
 	}
 	if state.winChrome.hasFrame && state.winChrome.frame == frame {

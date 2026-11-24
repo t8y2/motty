@@ -40,9 +40,11 @@ type commandPaletteEntry struct {
 	header bool
 	// foldKey makes a header a row that folds its group: a choice of its own,
 	// which opens or closes the rows under it. foldKey names the group and
-	// expanded says which way it is now. Headers without one only label.
+	// expanded says which way it is now. depth indents nested groups and their
+	// rows in the unfiltered tree. Headers without foldKey only label.
 	foldKey  string
 	expanded bool
+	depth    uint8
 	// checkable rows are choices that tick on and off without closing the
 	// palette: the terminals a command is sent to.
 	checkable bool

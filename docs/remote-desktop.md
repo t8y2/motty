@@ -74,20 +74,26 @@ type Session interface {
 
 ## What the workbench does for any backend
 
-* Fit-to-window and 100% scaling; at 100% a picture larger than the pane pans
-  with the pointer so that the remote pixel under the pointer stays under it.
+* Fit-to-window and 100% scaling; at 100% one picture pixel is shown on one
+  device pixel, as the server's own screen shows it, and a picture larger than
+  the pane pans with the pointer so that the remote pixel under the pointer stays
+  under it.
 * **Fullscreen** in the desktop toolbar or tab menu, or `Ctrl+Alt+Enter`, uses
   Viva's native fullscreen window and gives the whole monitor to the selected
   desktop, hiding other panes, tabs and side panels without changing their saved
-  layout. The floating exit button and the same chord restore the window.
+  layout. The floating bar at the top centre holds the pin, the exit button, the
+  keyboard switch and the RTT badge. Pinned (the default), the bar stays
+  visible; unpinned, it hides and returns while the pointer reaches the top
+  edge, and the choice is remembered. The same chord restores the window.
   `Ctrl+Alt+G` still releases the keyboard. Fullscreen exits if the connection
   ends, another page is activated, or a Motty dialog needs attention. The
   fullscreen frame is not saved as the next launch's window placement.
 * RDP tabs offer **Show network latency (RTT)** in the tab menu, sharing the
   existing latency display preference with SSH terminals (off by default).
-  The status line, or a floating badge in fullscreen/picture-only mode, shows
-  the latest average TCP RTT reported by the RDP server through MS-RDPBCGR
-  network characteristics auto-detection. Its tooltip names the sample time:
+  The status line, the fullscreen bar, or the picture-only mode's floating
+  badge, shows the latest average TCP RTT reported by the RDP server through
+  MS-RDPBCGR network characteristics auto-detection. Its tooltip names the
+  sample time:
   this is not input-to-display latency, and refresh frequency is controlled by
   the server. Before a measurement, or on a server without auto-detection,
   `RTT —` explicitly means unavailable. No ping, artificial frame refresh or

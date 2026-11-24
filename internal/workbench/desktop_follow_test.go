@@ -222,3 +222,53 @@ func TestDesktopThatCannotFollowIsScaledAndNeverAsked(t *testing.T) {
 		}
 	}
 }
+
+// A server that cannot resize its desktop keeps the picture it delivered when
+// the pane shows it at 100%: one picture pixel on one device pixel, as its own
+// screen would show it, and as a picture the size of the pane already is. Drawn
+// on logical pixels instead, a desktop that fills the pane was magnified by the
+// display scale, so its edges were off the pane and had to be panned to (issue
+// #1400: a server desktop that "grew" at 100% on a Mac's 2x display).
+func TestActualSizeKeepsAPictureThatCannotFollowOnDevicePixels(t *testing.T) {
+	size := gfx.Size{Width: 1400, Height: 900}
+	state, session, server, _, screen := followState(t, 2, false, size)
+	screen.paint(size, 10*time.Millisecond)
+	state.clickDesktop(state.paneIdentity(session, hitDesktopActual))
+	if session.desk.fit {
+		t.Fatal("the 100% control did not stop fitting the picture")
+	}
+	// A window paints each frame into a canvas the runtime has reset; these
+	// paints share one, so the frame before the click has to go first.
+	screen.canvas.Reset()
+	screen.paint(size, 20*time.Millisecond)
+
+	area, deviceScale := session.desk.area, screen.canvas.PixelScale()
+	origin, scale := session.desk.place(area)
+	if got := scale * deviceScale; math.Abs(float64(got-1)) > 1e-6 {
+		t.Fatalf("one picture pixel covers %v device pixels at 100%%, want 1", got)
+	}
+
+	// The picture reaches the screen as the server's own pixels, not resampled.
+	tiles := pictureTiles(&screen.canvas)
+	if len(tiles) == 0 {
+		t.Fatal("the picture was not drawn")
+	}
+	for _, image := range tiles {
+		if !image.DevicePixels {
+			t.Fatalf("a tile of a picture shown at 100%% is scaled: %+v", image.Bounds)
+		}
+	}
+
+	// The pointer lands on the remote pixel under it: a point n logical pixels
+	// into the picture is the remote pixel its n device pixels cover.
+	pointer(state, gfx.PointerEvent{Kind: gfx.PointerMove, X: origin.X + 100, Y: origin.Y + 50, Target: hitTerminalList.At(int(session.ID)), Viewport: size})
+	waitUntil(t, state, "the pointer", func() bool {
+		server.mu.Lock()
+		defer server.mu.Unlock()
+		return len(server.pointer) > 0
+	})
+	want := [2]int{int(math.Round(100 * float64(deviceScale))), int(math.Round(50 * float64(deviceScale)))}
+	if got := server.pointer[len(server.pointer)-1]; got != want {
+		t.Fatalf("a point 100x50 logical pixels into the picture reached remote %v, want %v", got, want)
+	}
+}

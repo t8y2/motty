@@ -122,6 +122,7 @@ type dashboardState struct {
 type dashboardSource struct {
 	session              Session
 	interval, collecting int
+	metrics              remotestats.Metrics
 	cancel               context.CancelFunc
 	errors               chan error
 	blocked              bool
@@ -134,7 +135,7 @@ type dashboardSource struct {
 func (d *dashboardState) panelDefinitions() []monitoring.Panel {
 	panels := slices.Clone(d.panels)
 	for i := range panels {
-		panels[i].Hosts = slices.Clone(panels[i].Hosts)
+		panels[i] = panels[i].Clone()
 	}
 	return panels
 }
@@ -174,6 +175,7 @@ func (s *State) reconcileDashboard() {
 		}
 	}
 	for id, interval := range wanted {
+		metrics := d.engine.Metrics(id)
 		host, ok := s.dashboardHost(id)
 		if !ok {
 			d.engine.SetStatus(id, monitoring.Missing)
@@ -189,12 +191,14 @@ func (s *State) reconcileDashboard() {
 		}
 		source := d.sources[id]
 		if source == nil {
-			source = &dashboardSource{session: Session{ID: s.nextSessionID, HostID: host.ID, Title: host.Label, Address: s.sessionAddress(host), host: host}, interval: interval}
+			source = &dashboardSource{session: Session{ID: s.nextSessionID, HostID: host.ID, Title: host.Label, Address: s.sessionAddress(host), host: host}, interval: interval, metrics: metrics}
 			s.nextSessionID++
 			d.sources[id] = source
 			s.connectDashboardSource(source)
-		} else if source.interval != interval {
+		} else if source.interval != interval || source.metrics != metrics {
 			source.interval = interval
+			source.metrics = metrics
+			source.blocked = false
 			s.dashboard.engine.BeginSource(id)
 			if source.cancel != nil {
 				source.cancel()
@@ -243,6 +247,7 @@ func (s *State) connectDashboardSource(source *dashboardSource) {
 	v.pendingSecretValue = ""
 	v.endpoint = sshconn.Endpoint{Host: v.host.Address, Port: v.host.Port, User: s.login(v.host)}
 	v.role = sshconn.EndpointTarget
+	v.freezeDialedSSHPolicy(v.host)
 	config, ok := s.sshConfigFor(v, v.host)
 	if !ok {
 		v.phase = sshconn.PhaseFailed
@@ -400,8 +405,8 @@ func (s *State) startDashboardCollector(id string, source *dashboardSource) {
 	// five-second floor even when the sample cadence is faster, so a fast
 	// panel does not run df and interface counters every two seconds.
 	runner := commandRunnerFor(&source.session)
-	worker := startMonitorWorker(runner, nil, system, source.interval)
-	details := startMonitorDetails(runner, nil, system, max(source.interval, 5))
+	worker := startMonitorWorker(runner, nil, system, source.interval, source.metrics)
+	details := startMonitorDetails(runner, nil, system, max(source.interval, 5), source.metrics)
 	var detailResults <-chan remotestats.DetailResult
 	if details != nil {
 		detailResults = details.Results()
@@ -503,12 +508,14 @@ func (s *State) submitDashboard() {
 			p.Simple = d.panels[i].Simple
 			p.Interval = d.panels[i].Interval
 			p.Retention = d.panels[i].Retention
+			p.Display = d.panels[i].Display
 		}
 	}
 	if index < 0 {
 		p.ID = rand.Text()
 		d.panels = append(d.panels, p)
 	} else {
+		p.Normalize()
 		d.panels[index] = p
 	}
 	d.active = p.ID
@@ -631,6 +638,27 @@ func (s *State) clickDashboard(id gfx.ID) bool {
 	}
 	p := s.dashboardPanel()
 	switch {
+	case id.Scope() == hitDashboardGPUSelect && p != nil:
+		if h, ok := s.hostByID(uint32(item(id) / remotestats.MaxGPUs)); ok {
+			r := s.dashboardRow(p, h.CatalogID, int(d.body.Width))
+			index := item(id) % remotestats.MaxGPUs
+			if index < len(r.snapshot.GPUs) {
+				r.gpuKey = monitoring.GPUKey(r.snapshot.GPUs[index].Device)
+				r.gpuPrepared = ""
+				r.prepareGPU()
+			}
+		}
+	case id.Scope() == hitDashboardGPUView && p != nil:
+		if h, ok := s.hostByID(uint32(item(id) / 2)); ok {
+			r := s.dashboardRow(p, h.CatalogID, int(d.body.Width))
+			if len(r.snapshot.GPUs) > 0 {
+				if item(id)%2 == 1 {
+					r.simplePage = 3
+				} else {
+					r.page = 3
+				}
+			}
+		}
 	case id.Scope() == hitDashboardSudoList && p != nil:
 		if h, ok := s.hostByID(uint32(item(id))); ok {
 			if source := d.sources[h.CatalogID]; source != nil && source.session.phase == sshconn.PhaseConnected {

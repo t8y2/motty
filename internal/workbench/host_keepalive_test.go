@@ -537,14 +537,17 @@ func TestIdleKeepAliveSkipsScrolledOrWrappedPrompts(t *testing.T) {
 // the window is not asked to repaint for it later.
 func TestIdleKeepAliveDropsTheWakeWhenTheShellIsGone(t *testing.T) {
 	state, session, _ := idleKeepAliveSession(t, Host{Protocol: protocolSSH, IdleKeepAlive: time.Minute})
-	state.options.Invalidate = func() {}
+	stopped := false
+	state.options.PostAfter = func(time.Duration, func()) func() {
+		return func() { stopped = true }
+	}
 	state.armIdleKeepAlive(session, time.Minute, 0)
-	if session.term.idleTimer == nil {
+	if session.term.idleStop == nil {
 		t.Fatal("no wake was armed")
 	}
 	session.term.stopIdleKeepAlive()
-	if session.term.idleTimer != nil || session.term.idleTimerAt != 0 {
-		t.Fatalf("timer = %v at %v after the shell went away", session.term.idleTimer, session.term.idleTimerAt)
+	if session.term.idleStop != nil || session.term.idleTimerAt != 0 || !stopped {
+		t.Fatalf("wake set = %v at %v, stopped=%v after the shell went away", session.term.idleStop != nil, session.term.idleTimerAt, stopped)
 	}
 }
 
@@ -587,23 +590,25 @@ func TestIdleKeepAliveArmsAWakeWithoutPaint(t *testing.T) {
 	state, session, _ := idleKeepAliveSession(t, Host{Protocol: protocolSSH, IdleKeepAlive: 10 * time.Millisecond})
 	now := time.Duration(0)
 	state.options.Now = func() time.Duration { return now }
-	woke := make(chan struct{}, 1)
-	state.options.Invalidate = func() {
-		select {
-		case woke <- struct{}{}:
-		default:
+	var wake func()
+	state.options.PostAfter = func(d time.Duration, fn func()) func() {
+		if d != 10*time.Millisecond {
+			t.Fatalf("delay = %v, want the idle interval", d)
 		}
+		wake = fn
+		return func() { wake = nil }
 	}
 	state.runIdleKeepAlive(session, now)
-	select {
-	case <-woke:
-	case <-time.After(time.Second):
+	if wake == nil {
 		t.Fatal("no wake was armed for a window that stopped painting")
+	}
+	if session.term.idleStop == nil || session.term.idleTimerAt != 10*time.Millisecond {
+		t.Fatalf("wake set = %v at %v, want one due at 10ms", session.term.idleStop != nil, session.term.idleTimerAt)
 	}
 	now = 20 * time.Millisecond
 	state.runIdleKeepAlive(session, now)
-	if session.term.idleTimer == nil || session.term.idleTimerAt != 30*time.Millisecond {
-		t.Fatalf("timer = %v at %v, want one due at 30ms", session.term.idleTimer, session.term.idleTimerAt)
+	if session.term.idleStop == nil || session.term.idleTimerAt != 30*time.Millisecond {
+		t.Fatalf("wake set = %v at %v, want one due at 30ms", session.term.idleStop != nil, session.term.idleTimerAt)
 	}
 }
 
@@ -914,5 +919,33 @@ func TestIdleKeepAliveIgnoresDamagedSavedValues(t *testing.T) {
 				t.Fatalf("input = %v %q, want the protocol default", host.IdleInput, host.IdleInputCustom)
 			}
 		})
+	}
+}
+
+// The armed wake runs on the window loop and actually probes: the delay alone
+// must not be the only thing the test checks.
+func TestArmIdleKeepAliveDispatchesThroughPost(t *testing.T) {
+	state, session, shell := idleKeepAliveSession(t, Host{Protocol: protocolSSH, IdleKeepAlive: time.Minute})
+	now := time.Duration(0)
+	state.options.Now = func() time.Duration { return now }
+	invalidated := 0
+	state.options.Invalidate = func() { invalidated++ }
+	var wake func()
+	state.options.PostAfter = func(d time.Duration, fn func()) func() {
+		wake = fn
+		return func() { wake = nil }
+	}
+	state.sessions = append(state.sessions, *session)
+	state.armIdleKeepAlive(session, time.Minute, now)
+	if wake == nil {
+		t.Fatal("armIdleKeepAlive did not schedule a wake")
+	}
+	now = time.Minute
+	wake()
+	if got := shell.typed(); got != "\x00" {
+		t.Fatalf("typed %q, want the idle probe", got)
+	}
+	if invalidated == 0 {
+		t.Fatal("the wake did not ask for a repaint")
 	}
 }

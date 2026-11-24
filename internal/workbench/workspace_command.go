@@ -57,7 +57,7 @@ func (state *State) workspaceDraftCommands() (map[string]WorkspaceCommand, bool)
 			continue
 		}
 		command := strings.TrimSpace(editor.String())
-		if !validLoginCommand(command) {
+		if !validSingleLineCommand(command) {
 			return nil, false
 		}
 		if command != "" {

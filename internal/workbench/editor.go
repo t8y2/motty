@@ -99,7 +99,8 @@ type hostEditor struct {
 	agentAccess        bool
 	agentAccessChanged bool
 	// noHistory is the host's "Don't record commands" switch.
-	noHistory bool
+	noHistory          bool
+	loginFailurePolicy loginFailurePolicy
 	// proxy is nil to inherit the global proxy, ProxyNone to force a direct
 	// connection, or a dedicated proxy. proxyProfile names a saved proxy profile
 	// instead, with proxyBypass as this host's own direct list. proxyPassword is
@@ -199,7 +200,11 @@ func (editor *hostEditor) field(field hostField) *text.Editor {
 // value is a field's text without surrounding blanks; pasted addresses often
 // carry them.
 func (editor *hostEditor) value(field hostField) string {
-	return strings.TrimSpace(editor.field(field).String())
+	raw := editor.field(field).String()
+	if field == fieldLoginCommand {
+		return normalizeLoginCommand(raw)
+	}
+	return strings.TrimSpace(raw)
 }
 
 // moshTerminal reports whether the form describes a mosh session, whose
@@ -224,8 +229,9 @@ func (editor *hostEditor) portNumber() (uint16, bool) {
 
 // validate returns the first user-visible error, or empty when the form is
 // submittable. A host is a duplicate only when it is the same destination under
-// the same name as an existing one (see sameHost): the same machine under another
-// account, or reached through a bastion under another name, is a different host.
+// the same name in the same group (see sameHost and sameHostGroup): the same
+// machine under another account, or reached through a bastion under another name,
+// is a different host, and so is the same server filed in a second group.
 func (editor *hostEditor) validate(hosts []Host, ignoreID uint32, messages i18n.Messages) string {
 	if editor.value(fieldLabel) == "" {
 		return messages.ErrLabelRequired
@@ -307,7 +313,7 @@ func (editor *hostEditor) validate(hosts []Host, ignoreID uint32, messages i18n.
 	}
 	candidate := editor.host(0)
 	for _, host := range hosts {
-		if host.ID != ignoreID && sameHost(host, candidate) {
+		if host.ID != ignoreID && sameHost(host, candidate) && sameHostGroup(host, candidate) {
 			return messages.ErrAddressTaken
 		}
 	}
@@ -337,6 +343,7 @@ func (editor *hostEditor) load(host Host) {
 	editor.algorithms = text.Editor{}
 	editor.loginCommand = text.Editor{}
 	editor.loginCommand.Insert(host.LoginCommand)
+	editor.loginFailurePolicy = host.LoginCommandPolicy
 	editor.loadIdleKeepAlive(host)
 	editor.remoteLogPaths = host.RemoteLogPaths
 	editor.otp, editor.otpSaved, editor.otpRemove = text.Editor{}, false, false
@@ -352,7 +359,7 @@ func (editor *hostEditor) load(host Host) {
 	editor.proxy, editor.proxyProfile, editor.proxyBypass = cloneOutboundProxy(host.Proxy), host.ProxyProfile, host.ProxyBypass
 	editor.proxyPassword = ""
 	editor.transfer = host.Transfer
-	editor.advancedOpen = host.isSSH() && (host.Algo != nil || host.ForwardX11 || host.AgentForward || host.InteractiveOnly || host.NoHistory || host.IdentitiesOnly || host.LoginCommand != "")
+	editor.advancedOpen = host.isSSH() && (host.Algo != nil || host.ForwardX11 || host.AgentForward || host.InteractiveOnly || host.NoHistory || host.IdentitiesOnly || host.LoginCommand != "" || host.LoginCommandPolicy != loginFailureStop)
 	if idleKeepAliveProtocol(host.Protocol) && (host.IdleKeepAlive > 0 || host.IdleInput != idleInputProtocolDefault) {
 		editor.advancedOpen = true
 	}
@@ -437,6 +444,7 @@ func (editor *hostEditor) host(id uint32) Host {
 		host.InteractiveOnly = editor.interactiveOnly
 		host.NoHistory = editor.noHistory
 		host.LoginCommand = editor.value(fieldLoginCommand)
+		host.LoginCommandPolicy = editor.loginFailurePolicy
 		host.RemoteLogPaths = editor.remoteLogPaths
 		host.Transfer = editor.transfer
 		switch editor.algoMode {
@@ -485,6 +493,7 @@ func (editor *hostEditor) reset() {
 	editor.port = text.Editor{}
 	editor.algorithms = text.Editor{}
 	editor.loginCommand = text.Editor{}
+	editor.loginFailurePolicy = loginFailureStop
 	editor.resetIdleKeepAlive()
 	editor.remoteLogPaths = nil
 	editor.otp, editor.otpSaved, editor.otpRemove = text.Editor{}, false, false

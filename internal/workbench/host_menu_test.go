@@ -37,6 +37,7 @@ func TestRightClickOnAHostOpensItsMenuWithoutChangingWhatIsChecked(t *testing.T)
 		t.Fatalf("Connect: open=%v dialed=%d", state.hostMenu.open, len(world.conns))
 	}
 	opened := state.activeSessionID
+	state.startupReuse = true
 	state.Click(hitHosts)
 	rightClickHost(state, second)
 	chooseMenu(t, state, hitHostMenuConnect)

@@ -29,6 +29,7 @@ type hostImportResult struct {
 
 type hostImportPlan struct {
 	hosts          []Host
+	hostUpdates    map[uint32]*sshconfig.ConnectionOptions
 	identities     []identityRecord
 	proxies        []proxyRecord
 	warnings       []string

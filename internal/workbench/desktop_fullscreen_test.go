@@ -345,3 +345,102 @@ func TestLiveRDPFullscreenUsesTheRealSession(t *testing.T) {
 	}
 	t.Logf("live RDP picture %dx%d, RTT source=%T (server-dependent)", session.desk.width, session.desk.height, session.desk.session)
 }
+
+func TestDesktopFullscreenBarIsCentredAtTheTopEdge(t *testing.T) {
+	fixture := startVNCFixture(t, "secret")
+	state, session := vncState(t, fixture)
+	connectDesktop(t, state, session, "secret")
+	driver := desktopDriver(t, state)
+	button, ok := hitByIDInSnapshot(driver.Snapshot(), hitDesktopFullscreen)
+	if !ok {
+		t.Fatal("no fullscreen button")
+	}
+	if err := driver.Click(button.Bounds.X+button.Bounds.Width/2, button.Bounds.Y+button.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := driver.Snapshot()
+	var left, right float32
+	first := true
+	for _, id := range []gfx.ID{hitDesktopBarPin, hitDesktopFullscreen, hitDesktopCapture} {
+		hit, ok := hitByIDInSnapshot(snapshot, id)
+		if !ok {
+			t.Fatalf("fullscreen bar has no %v", id)
+		}
+		if first || hit.Bounds.X < left {
+			left, first = hit.Bounds.X, false
+		}
+		if end := hit.Bounds.X + hit.Bounds.Width; end > right {
+			right = end
+		}
+	}
+	centre, want := (left+right)/2, state.viewport.Width/2
+	if centre < want-1 || centre > want+1 {
+		t.Fatalf("fullscreen bar centre = %g, want %g (bar %g..%g of %g)", centre, want, left, right, state.viewport.Width)
+	}
+}
+
+func TestUnpinnedDesktopFullscreenBarHidesAndReturnsAtTheTopEdge(t *testing.T) {
+	fixture := startVNCFixture(t, "secret")
+	state, session := vncState(t, fixture)
+	connectDesktop(t, state, session, "secret")
+	driver := desktopDriver(t, state)
+	button, ok := hitByIDInSnapshot(driver.Snapshot(), hitDesktopFullscreen)
+	if !ok {
+		t.Fatal("no fullscreen button")
+	}
+	if err := driver.Click(button.Bounds.X+button.Bounds.Width/2, button.Bounds.Y+button.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	pin, ok := hitByIDInSnapshot(driver.Snapshot(), hitDesktopBarPin)
+	if !ok {
+		t.Fatal("the pinned fullscreen bar has no pin")
+	}
+	if err := driver.Click(pin.Bounds.X+pin.Bounds.Width/2, pin.Bounds.Y+pin.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if !state.desktopBar.autoHide || !state.desktopBar.over {
+		t.Fatalf("unpinning: autoHide=%v over=%v", state.desktopBar.autoHide, state.desktopBar.over)
+	}
+	move := func(x, y float32) {
+		state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, X: x, Y: y, Viewport: state.viewport})
+		if err := repaintDesktopDriver(driver, state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	move(state.viewport.Width/2, state.viewport.Height/2)
+	if _, ok := hitByIDInSnapshot(driver.Snapshot(), hitDesktopBarPin); ok {
+		t.Fatal("the unpinned bar stayed visible away from the top edge")
+	}
+	move(state.viewport.Width/2, 2)
+	if _, ok := hitByIDInSnapshot(driver.Snapshot(), hitDesktopBarPin); !ok {
+		t.Fatal("the unpinned bar did not return at the top edge")
+	}
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerExit})
+	if err := repaintDesktopDriver(driver, state); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := hitByIDInSnapshot(driver.Snapshot(), hitDesktopBarPin); ok {
+		t.Fatal("the unpinned bar stayed after the pointer left the window")
+	}
+	if err := driver.Key(gfx.KeyEnter, gfx.ModifierControl|gfx.ModifierAlt); err != nil {
+		t.Fatal(err)
+	}
+	if driver.Fullscreen() || session.desk.fullscreen {
+		t.Fatal("a hidden bar made the exit chord unreachable")
+	}
+}
+
+func TestDesktopFullscreenBarPinSurvivesARestart(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	if !state.setDesktopFullscreenBarAutoHide(true) {
+		t.Fatal("the pin did not change")
+	}
+	if saved := state.snapshot(); !saved.FullscreenBarAutoHide {
+		t.Fatal("the unpinned choice was not saved")
+	}
+	restored := newTestState(t, testOptions(t))
+	restored.restoreShared(state.snapshot())
+	if !restored.desktopBar.autoHide {
+		t.Fatal("the unpinned choice was not restored")
+	}
+}

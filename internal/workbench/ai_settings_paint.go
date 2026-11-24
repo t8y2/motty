@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/style"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/gate"
@@ -467,23 +468,46 @@ func (state *State) paintAIModels(page *settingsPage) {
 				}
 			}
 
-			filterWidth := settingsChoiceWidth(page, aiModelFilterChoices[:], filterName)
-			sortWidth := settingsChoiceWidth(page, aiModelSortChoices[:], sortName)
-			page.rowOf(46).PadX(18).Gap(10).Children(func() {
-				ui.Row(c).Grow(1).Gap(12).Items(ui.Center).Children(func() {
-					choice := ui.Choice(page.c, &cfg.modelFilter, aiModelFilterChoices[:], filterName).Width(filterWidth)
-					if choice.Changed() {
-						cfg.page = 0
-						state.aiSettingsChanged()
-					}
-					ui.Spacer(c)
-					choice = ui.Choice(page.c, &cfg.modelSort, aiModelSortChoices[:], sortName).Width(sortWidth)
-					if choice.Changed() {
-						cfg.page = 0
-						state.aiSettingsChanged()
-					}
+			// Both controls keep the room their labels need. The sort select's natural
+			// width is its widest value plus the select's own chrome. When the two do
+			// not fit on one row they stack, instead of one squeezing the other.
+			const filterSortGap = 12
+			availWidth := max(page.width-36, 0)
+			filterWidth := min(settingsChoiceWidth(page, aiModelFilterChoices[:], filterName), availWidth)
+			canvas := page.canvas()
+			var widestSort float32
+			for _, s := range aiModelSortChoices {
+				widestSort = max(widestSort, canvas.TextWidthWeight(sortName(s), metrics.FontSizeM, gfx.WeightRegular))
+			}
+			sortWidth := min(widestSort+style.SelectDefaultWidth(metrics), availWidth)
+
+			declareFilter := func() {
+				choice := ui.Choice(page.c, &cfg.modelFilter, aiModelFilterChoices[:], filterName).Width(filterWidth)
+				if choice.Changed() {
+					cfg.page = 0
+					state.aiSettingsChanged()
+				}
+			}
+			declareSort := func() {
+				sortSel := ui.Select(page.c, &cfg.modelSort, aiModelSortChoices[:], sortName).
+					Label(m.ModelSortLabel).Width(sortWidth)
+				if sortSel.Changed() {
+					cfg.page = 0
+					state.aiSettingsChanged()
+				}
+			}
+			if filterWidth+filterSortGap+sortWidth <= availWidth {
+				page.rowOf(46).PadX(18).Gap(10).Children(func() {
+					ui.Row(c).Grow(1).Gap(filterSortGap).Items(ui.Center).Children(func() {
+						declareFilter()
+						ui.Spacer(c)
+						declareSort()
+					})
 				})
-			})
+			} else {
+				page.rowOf(46).PadX(18).Gap(10).Children(declareFilter)
+				page.rowOf(46).PadX(18).Gap(10).Children(declareSort)
+			}
 		}
 		filteredModels := state.aiFilteredModels(provider.ID)
 		filteredTotal := len(filteredModels)

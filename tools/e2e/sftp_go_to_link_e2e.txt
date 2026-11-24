@@ -1,0 +1,31 @@
+# End to end: "Go to link target" in the file list's menu leaves a folder link
+# for the folder it points at, while a double click keeps entering the link.
+#
+#   cd tools/e2esshd && go build -o /tmp/e2esshd . && cd ../..
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   /tmp/e2esshd 2262 &    # prints "sftp root"; there:
+#   mkdir -p real/inner links && ln -s ../real/inner links/linkdir
+#   python3 tools/headless_drive.py $(mktemp -d) tools/e2e/sftp_go_to_link_e2e.txt
+# lang: en
+click "Search"
+type tester@127.0.0.1:2262
+click "Connect"
+waitfor "Trust this host" 3000
+click "Connect Once"
+waitfor "Password" 3000
+type secret
+key enter
+settle 2500
+key cmd+shift+s
+settle 1500
+dblclick "links"
+settle 1500
+expect text "linkdir" within 3000
+rightclick "linkdir"
+settle 500
+expect text "Go to link target" within 2000
+click "Go to link target"
+settle 1500
+expect text "target.txt" within 3000
+expect text "inner" within 1000
+shot /tmp/go-to-link.png

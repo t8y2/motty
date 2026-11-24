@@ -51,24 +51,24 @@ func monitorRunnerFor(session *Session) monitorRunner {
 	return commandRunnerFor(session)
 }
 
-func startMonitorWorker(runner remotestats.Runner, notify func(), system sshconn.RemoteSystem, seconds int) *remotestats.Worker {
+func startMonitorWorker(runner remotestats.Runner, notify func(), system sshconn.RemoteSystem, seconds int, selected ...remotestats.Metrics) *remotestats.Worker {
 	switch system {
 	case sshconn.SystemWindows:
-		return remotestats.StartWindows(runner, notify, seconds)
+		return remotestats.StartWindows(runner, notify, seconds, selected...)
 	case sshconn.SystemDarwin:
-		return remotestats.StartDarwin(runner, notify, seconds)
+		return remotestats.StartDarwin(runner, notify, seconds, selected...)
 	}
-	return remotestats.StartWithInterval(runner, notify, seconds)
+	return remotestats.StartWithInterval(runner, notify, seconds, selected...)
 }
 
 // startMonitorDetails starts the slow disk, interface and load readings, or
 // returns nil for a system whose stream already carries them.
-func startMonitorDetails(runner remotestats.DetailRunner, notify func(), system sshconn.RemoteSystem, seconds int) *remotestats.DetailsWorker {
+func startMonitorDetails(runner remotestats.DetailRunner, notify func(), system sshconn.RemoteSystem, seconds int, selected ...remotestats.Metrics) *remotestats.DetailsWorker {
 	switch system {
 	case sshconn.SystemWindows:
 		return nil
 	case sshconn.SystemDarwin:
-		return remotestats.StartDetailsDarwin(runner, notify, seconds)
+		return remotestats.StartDetailsDarwin(runner, notify, seconds, selected...)
 	}
-	return remotestats.StartDetailsWithInterval(runner, notify, seconds)
+	return remotestats.StartDetailsWithInterval(runner, notify, seconds, selected...)
 }

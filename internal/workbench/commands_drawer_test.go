@@ -904,3 +904,169 @@ func TestCommandGroupHeadingFoldsItsCommands(t *testing.T) {
 		t.Fatal("a second click did not unfold the group")
 	}
 }
+
+func TestCommandBarNestedGroupFilterIncludesDescendants(t *testing.T) {
+	state := openCommandsDrawerTest(t)
+	state.snippets.list = []snippet{
+		{Name: "prod", Command: "deploy prod", Group: "Clients/Acme/Prod"},
+		{Name: "stage", Command: "deploy stage", Group: "Clients/Acme/Staging"},
+		{Name: "top", Command: "top", Group: "Ops"},
+	}
+	groups, hasUngrouped := state.commandGroups()
+	if hasUngrouped {
+		t.Fatal("expected no ungrouped snippets")
+	}
+	wantGroups := []string{"Clients", "Clients/Acme", "Clients/Acme/Prod", "Clients/Acme/Staging", "Ops"}
+	if !slices.Equal(groups, wantGroups) {
+		t.Fatalf("commandGroups = %v, want %v", groups, wantGroups)
+	}
+
+	// Toggling Clients hides both Prod and Staging, leaving only Ops.
+	state.Click(hitCommandsGroupToggle.At(0))
+	if order := state.commandDisplayOrder(); !slices.Equal(order, []int{2}) {
+		t.Fatalf("after hiding Clients: order = %v, want [2]", order)
+	}
+	if state.commandGroupVisible("Clients") || state.commandGroupVisible("Clients/Acme") || state.commandGroupVisible("Clients/Acme/Prod") {
+		t.Fatal("hiding Clients did not hide its descendants")
+	}
+
+	// Re-enabling just Clients/Acme/Prod reveals it while keeping Staging hidden.
+	state.Click(hitCommandsGroupToggle.At(2))
+	if order := state.commandDisplayOrder(); !slices.Equal(order, []int{0, 2}) {
+		t.Fatalf("after enabling Prod under hidden Clients: order = %v, want [0 2]", order)
+	}
+	if state.commandGroupVisible("Clients/Acme/Staging") {
+		t.Fatal("enabling Prod should keep sibling Staging hidden")
+	}
+
+	// Re-enabling Clients restores all descendants.
+	state.Click(hitCommandsGroupToggle.At(0)) // Clients is visible now -> hides
+	state.Click(hitCommandsGroupToggle.At(0)) // Clients is hidden -> shows all
+	if order := state.commandDisplayOrder(); len(order) != 3 {
+		t.Fatalf("after re-enabling Clients: order = %v, want all 3", order)
+	}
+}
+
+func TestCommandBarNestedGroupHeadingsFoldSubtreesInSidebarAndStrip(t *testing.T) {
+	options := freshOptions(t)
+	state := newTestState(t, options)
+	state.deck = layoutcore.Deck{}
+	if _, _, err := state.deck.Create("test"); err != nil {
+		t.Fatal(err)
+	}
+	state.activeSection = sectionTerminal
+	state.commands.shown = true
+	state.commands.placement = commandsPlacementSide
+	state.snippets.list = []snippet{
+		{Name: "prod", Command: "deploy prod", Group: "Clients/Acme/Prod"},
+		{Name: "stage", Command: "deploy stage", Group: "Clients/Acme/Staging"},
+		{Name: "top", Command: "top", Group: "Ops"},
+	}
+	state.refreshSnippets()
+
+	sections := state.commandSections()
+	wantKeys := []string{"clients", "clients/acme", "clients/acme/prod", "clients/acme/staging", "ops"}
+	if len(sections) != len(wantKeys) {
+		t.Fatalf("sections = %+v, want %v", sections, wantKeys)
+	}
+	for i, want := range wantKeys {
+		if sections[i].key != want {
+			t.Fatalf("sections[%d].key = %q, want %q", i, sections[i].key, want)
+		}
+	}
+	if sections[0].label != "Clients" || sections[1].label != "Acme" || sections[2].label != "Prod" {
+		t.Fatalf("section leaf labels = %q, %q, %q", sections[0].label, sections[1].label, sections[2].label)
+	}
+	if sections[0].depth != 0 || sections[1].depth != 1 || sections[2].depth != 2 {
+		t.Fatalf("section depths = %d, %d, %d", sections[0].depth, sections[1].depth, sections[2].depth)
+	}
+
+	hitByID := func(c *gfx.Canvas, id gfx.ID) (gfx.Hit, bool) {
+		for _, h := range c.Hits() {
+			if h.ID == id {
+				return h, true
+			}
+		}
+		return gfx.Hit{}, false
+	}
+
+	// Sidebar indents nested headings by depth.
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	clientsHit, ok := hitByID(canvas, hitCommandsGroupHeading.At(0))
+	acmeHit, ok2 := hitByID(canvas, hitCommandsGroupHeading.At(1))
+	prodHit, ok3 := hitByID(canvas, hitCommandsGroupHeading.At(2))
+	if !ok || !ok2 || !ok3 {
+		t.Fatalf("expected nested heading hits: clients=%v acme=%v prod=%v", ok, ok2, ok3)
+	}
+	if !(clientsHit.Bounds.X < acmeHit.Bounds.X && acmeHit.Bounds.X < prodHit.Bounds.X) {
+		t.Fatalf("expected increasing indent: clients=%v acme=%v prod=%v",
+			clientsHit.Bounds.X, acmeHit.Bounds.X, prodHit.Bounds.X)
+	}
+
+	// Collapsing Clients hides Acme, Prod, Staging and their chips in both
+	// the sidebar and the bottom strip, while keeping Ops visible.
+	state.Click(hitCommandsGroupHeading.At(0))
+	for _, placement := range commandsPlacementChoices {
+		state.commands.placement = placement
+		canvas, _ = paintAt(state, gfx.Size{Width: 1400, Height: 900})
+		if _, found := hitByID(canvas, hitCommandsGroupHeading.At(1)); found {
+			t.Fatalf("placement %d: Acme remained visible after collapsing Clients", placement)
+		}
+		if _, found := hitByID(canvas, hitCommandsTag.At(0)); found {
+			t.Fatalf("placement %d: prod chip remained visible after collapsing Clients", placement)
+		}
+		if _, found := hitByID(canvas, hitCommandsTag.At(2)); !found {
+			t.Fatalf("placement %d: Ops chip should remain visible when Clients is collapsed", placement)
+		}
+	}
+
+	// Collapsed state survives restart.
+	restarted := newTestState(t, options)
+	if !restarted.commands.collapsedGroups["clients"] {
+		t.Fatal("collapsed group state did not persist across restart")
+	}
+}
+
+func TestCommandBarRestoresLegacyHiddenAndCollapsedSlashGroupKeys(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	state.restoreTerminalTools(savedState{
+		Snippets: []savedSnippet{
+			{Name: "build", Command: "make", Group: "CI/CD"},
+			{Name: "deploy", Command: "deploy", Group: " CI / Deploy "},
+			{Name: "root", Command: "ls /", Group: "/"},
+			{Name: "top", Command: "top", Group: "Ops"},
+			{Name: "plain", Command: "pwd"},
+		},
+		CommandsHiddenGroups:    []string{"ci/cd", " ci / deploy ", "/"},
+		CommandsCollapsedGroups: []string{"ci/cd", " ci / deploy ", "/", ""},
+	})
+
+	if state.commandGroupVisible("CI/CD") || state.commandGroupVisible("CI/Deploy") || state.commandGroupVisible("／") {
+		t.Fatalf("restored hidden slash keys did not hide their groups: %v", state.commands.hiddenGroups)
+	}
+	if !state.commandGroupVisible("Ops") || !state.commandGroupVisible("") {
+		t.Fatalf("unrelated groups were hidden: %v", state.commands.hiddenGroups)
+	}
+	// Only Ops (3) and ungrouped (4) remain visible.
+	if got := state.commandDisplayOrder(); !slices.Equal(got, []int{3, 4}) {
+		t.Fatalf("visible order after restoring hidden slash keys = %v, want [3 4]", got)
+	}
+	for _, key := range []string{"ci/cd", "ci/deploy", "／", ""} {
+		if !state.commands.collapsedGroups[key] {
+			t.Fatalf("collapsed key %q was not restored: %v", key, state.commands.collapsedGroups)
+		}
+	}
+
+	// Restoring a collapsed parent key folds its nested descendants too.
+	state.restoreTerminalTools(savedState{
+		Snippets: []savedSnippet{
+			{Name: "build", Command: "make", Group: "CI/CD"},
+			{Name: "deploy", Command: "deploy", Group: "CI/Deploy"},
+		},
+		CommandsCollapsedGroups: []string{"CI"},
+	})
+	sections := state.commandSections()
+	if len(sections) != 3 || !sections[0].collapsed || !sections[1].ancestorCollapsed || !sections[2].ancestorCollapsed {
+		t.Fatalf("restored collapsed parent did not fold descendants: %+v", sections)
+	}
+}

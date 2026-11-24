@@ -52,7 +52,7 @@ func localStartupKey(program string) string {
 // localStartupCommand is the line typed once into a new shell of program, or "".
 func (state *State) localStartupCommand(program string) string {
 	command := state.localStartupCommands[localStartupKey(program)]
-	if !validLoginCommand(command) {
+	if !validSingleLineCommand(command) {
 		return ""
 	}
 	return strings.TrimSpace(command)
@@ -61,7 +61,7 @@ func (state *State) localStartupCommand(program string) string {
 // setLocalStartupCommand stores the command for program, or forgets it when
 // empty.
 func (state *State) setLocalStartupCommand(program, command string) {
-	if !validLocalShell(program) || !validLoginCommand(command) {
+	if !validLocalShell(program) || !validSingleLineCommand(command) {
 		return
 	}
 	program = localStartupKey(program)
@@ -86,7 +86,7 @@ func (state *State) setLocalStartupCommand(program, command string) {
 func cleanLocalStartupCommands(commands map[string]string) map[string]string {
 	var kept map[string]string
 	for program, command := range commands {
-		if !validLocalShell(program) || !validLoginCommand(command) {
+		if !validLocalShell(program) || !validSingleLineCommand(command) {
 			continue
 		}
 		command = strings.TrimSpace(command)
@@ -157,7 +157,7 @@ func (state *State) openLocalStartupCommandDialog(shell localshell.Choice) {
 func (state *State) submitLocalStartupCommandDialog() {
 	dialog := &state.localStartupDialog
 	command := strings.TrimSpace(dialog.editor.String())
-	if !validLoginCommand(command) {
+	if !validSingleLineCommand(command) {
 		state.dialogError = state.messages.SettingsLocalStartupInvalid
 		return
 	}

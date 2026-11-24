@@ -33,11 +33,12 @@ type sftpWindowDrag struct {
 // server window, or the tab of another server. A file tab names a state
 // and a session; the target folder is read when the release happens.
 type sftpDragTarget struct {
-	kind  uint8 // sftpDragNone, sftpDragPeer, sftpDragTab
+	kind  uint8 // sftpDragNone, sftpDragPeer, sftpDragTab, sftpDragMove
 	peer  *sftpWindow
 	local bool // the target pane is this computer's
 	dir   string
 	row   int
+	move  sftpMoveTarget
 	state *State
 	tab   uint32
 }
@@ -46,6 +47,7 @@ const (
 	sftpDragNone uint8 = iota
 	sftpDragPeer
 	sftpDragTab
+	sftpDragMove
 )
 
 func (w *sftpWindow) cancelDrag() {
@@ -96,6 +98,11 @@ func (w *sftpWindow) trackFileDrag(event gfx.PointerEvent) {
 		if local, target, row, valid := w.dropTarget(event.X, event.Y, w.drag.fromLocal); valid {
 			w.setDragPeerHighlight(nil, false, false, "", -1)
 			w.drag.target = sftpDragTarget{kind: sftpDragPeer, peer: w, local: local, dir: target, row: row}
+			return
+		}
+		if move := w.sameSideMoveTarget(event.X, event.Y); move.kind != sftpMoveTargetNone {
+			w.setDragPeerHighlight(nil, false, false, "", -1)
+			w.drag.target = sftpDragTarget{kind: sftpDragMove, peer: w, local: w.drag.fromLocal, dir: move.dir, row: move.row, move: move}
 			return
 		}
 	}
@@ -168,6 +175,12 @@ func (w *sftpWindow) dropFileDrag() {
 			return
 		}
 		w.dropOnPeer(target)
+	case sftpDragMove:
+		if target.local {
+			w.owner.moveLocalEntries(w.view, w.drag.sourceDir, w.drag.entries, target.dir)
+		} else {
+			w.owner.moveSFTPEntries(w.view, w.drag.sourceDir, w.drag.entries, target.dir)
+		}
 	case sftpDragTab:
 		w.dropOnTab(target)
 	}
@@ -224,6 +237,10 @@ func (w *sftpWindow) reportRemoteCopy(queued, rejected int, target string) {
 func (view *sftpView) deferDraggedListing(local bool, apply func()) bool {
 	if w := view.detached; w != nil && (w.drag.armed || w.drag.active) {
 		w.deferredListings[sideIndex(local)] = apply
+		return true
+	}
+	if view.panelDrag.state.Dragging() {
+		view.deferredPanelListings[sideIndex(local)] = apply
 		return true
 	}
 	return false
@@ -379,6 +396,80 @@ func (w *sftpWindow) dropTargetSide(local bool, x, y float32) (target string, ro
 	return
 }
 
+// sameSideMoveTarget resolves a folder destination on the source side of a
+// file drag: a subfolder row in the list, a directory tree node, or an ancestor
+// breadcrumb.
+func (w *sftpWindow) sameSideMoveTarget(x, y float32) sftpMoveTarget {
+	if !w.drag.active || len(w.drag.entries) == 0 {
+		return sftpMoveTarget{}
+	}
+	local := w.drag.fromLocal
+	if w.navigationBusy() || w.bookmark.open || w.view.dialog != sftpDialogNone || w.closeConfirm || w.externalConflict != 0 || w.view.bookmarksOpen || w.ui.menuOpen || w.headerMenuOpen() {
+		return sftpMoveTarget{}
+	}
+	if local && w.view.localBusy {
+		return sftpMoveTarget{}
+	}
+	if !local && (!w.connected() || w.view.busy) {
+		return sftpMoveTarget{}
+	}
+	side := sideIndex(local)
+	folder := w.folder(local)
+	if folder.path == "" {
+		return sftpMoveTarget{}
+	}
+	// 1. Subfolder row in the same pane's file list.
+	if pointInRect(x, y, w.ui.list[side]) {
+		index := int((y - w.ui.list[side].Y + w.ui.offset[side]) / sftpRowHeight)
+		if index >= 0 && index < len(folder.rows) {
+			entry := folder.rows[index].entry
+			if entry.IsDir() && !entry.LinkBroken {
+				targetDir := joinSFTPPath(local, folder.path, entry.Name)
+				if validFileMoveTarget(local, w.drag.sourceDir, w.drag.entries, targetDir) {
+					return sftpMoveTarget{
+						kind: sftpMoveTargetRow,
+						dir:  targetDir,
+						row:  index,
+						rect: gfx.Rect{
+							X:      w.ui.list[side].X,
+							Y:      w.ui.list[side].Y + float32(index)*sftpRowHeight - w.ui.offset[side],
+							Width:  w.ui.list[side].Width,
+							Height: sftpRowHeight,
+						},
+						clip: w.ui.list[side],
+					}
+				}
+			}
+		}
+		return sftpMoveTarget{}
+	}
+	// 2. Directory tree node on the same side.
+	tree := &w.directoryTree[side]
+	if tree.enabled && tree.bounds.Width > 0 && tree.bounds.Height > 0 && pointInRect(x, y, tree.bounds) {
+		index := int((y - tree.bounds.Y + tree.scrollOffset) / sftpDirectoryTreeRowHeight)
+		if index >= 0 && index < len(tree.visible) {
+			node := tree.visible[index].node
+			if node != nil && validFileMoveTarget(local, w.drag.sourceDir, w.drag.entries, node.path) {
+				return sftpMoveTarget{
+					kind: sftpMoveTargetTree,
+					dir:  node.path,
+					row:  index,
+					rect: gfx.Rect{
+						X:      tree.bounds.X,
+						Y:      tree.bounds.Y + float32(index)*sftpDirectoryTreeRowHeight - tree.scrollOffset,
+						Width:  tree.bounds.Width,
+						Height: sftpDirectoryTreeRowHeight,
+					},
+					clip: tree.bounds,
+				}
+			}
+		}
+		return sftpMoveTarget{}
+	}
+	// 3. Ancestor breadcrumb in the same pane's address bar.
+	return sftpBreadcrumbMoveTarget(folder, local, w.drag.sourceDir, w.drag.entries, x, y)
+}
+
 // pointer sends a pointer event to the window's hand-painted chrome: the split,
 // the scroll bars, the row drags and drops, and the popups. The panes' Lists are
 // part of the window page now, so their clicks complete there first.
@@ -445,12 +536,17 @@ func (w *sftpWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
 		switch event.Kind {
 		case gfx.PointerMove:
 			if !w.drag.active && math.Hypot(float64(event.X-w.drag.start.X), float64(event.Y-w.drag.start.Y)) >= 6 {
-				w.drag.active = true
+				w.drag.entries = w.drag.entries[:0]
 				for _, row := range w.folder(w.drag.fromLocal).rows {
 					if row.selected {
 						w.drag.entries = append(w.drag.entries, row.entry)
 					}
 				}
+				if len(w.drag.entries) == 0 {
+					w.cancelDrag()
+					return handled
+				}
+				w.drag.active = true
 			}
 			if w.drag.active {
 				w.trackFileDrag(event)
@@ -513,7 +609,8 @@ func (w *sftpWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
 	if !folder.rows[index].selected || event.Modifiers != 0 {
 		folder.selectRow(index, event.Modifiers)
 	}
-	if w.connected() && !w.view.busy && w.pendingLocal == "" {
+	canDrag := (!local && w.connected() && !w.view.busy) || (local && !w.view.localBusy && w.pendingLocal == "")
+	if canDrag {
 		w.drag = sftpWindowDrag{armed: true, fromLocal: local, start: gfx.Point{X: event.X, Y: event.Y}, at: gfx.Point{X: event.X, Y: event.Y}, sourceDir: folder.path}
 	}
 	return handled

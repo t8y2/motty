@@ -14,6 +14,10 @@ type workspaceFocusTabLabels struct {
 }
 
 type workspaceFocusTabs struct {
+	ghostDraw func(*ui.DrawContext)
+	drag      workspaceFocusDrag
+	bounds    [layoutcore.MaxPanes]gfx.Rect
+	scroll    *ui.ScrollState
 	labels    [layoutcore.MaxPanes]workspaceFocusTabLabels
 	workspace layoutcore.WorkspaceID
 	pane      layoutcore.PaneID
@@ -22,6 +26,9 @@ type workspaceFocusTabs struct {
 
 func (state *State) declareWorkspaceFocusTabs(c ui.C, content gfx.Rect) {
 	id := state.deck.ActiveWorkspace()
+	if state.focusTabs.drag.pane != 0 && !state.workspaceFocusDragValid() {
+		state.focusTabs.drag = workspaceFocusDrag{}
+	}
 	if !state.terminalPage() || !state.deck.PaneMaximized(id) {
 		return
 	}
@@ -33,6 +40,8 @@ func (state *State) declareWorkspaceFocusTabs(c ui.C, content gfx.Rect) {
 	ui.Stack(c).Absolute().Left(frame.X).Top(frame.Y).Size(frame.Width, frame.Height).Background(state.pal.workspace).Children(func() {
 		ui.Slot(c).Absolute().Left(0).Top(0).Size(frame.Width, 1).Background(state.pal.line)
 		area := ui.Scroll(c).Fill().Sideways().Scrollbars()
+		state.focusTabs.scroll = area.ScrollState()
+		state.scrollWorkspaceFocusDrag()
 		if changed || area.ScrollState().ContentWidth == 0 {
 			for index, pane := range state.panes {
 				if pane.ID != active {
@@ -70,14 +79,16 @@ func (state *State) declareWorkspaceFocusTab(c ui.C, index int, pane Pane) {
 	}
 	label := cached.label
 	fill := state.pal.workspace
-	if pane.Active {
+	if pane.Active || state.focusTabs.drag.active && state.focusTabs.drag.pane == pane.ID {
 		fill = withAlpha(state.pal.accent, .12)
 	}
 	ui.Row(c).Width(workspacePaneTabWidth).Height(workspacePaneTabsHeight-4).MarginSides(2, 0, 2, 0).
 		PadX(10).Gap(6).Items(ui.Center).Background(fill).Radius(4).
 		Hover(ui.Look{}.Background(withAlpha(state.pal.accent, .08))).
 		HitWith(hitWorkspaceFocusTab.At(int(pane.ID)), label, gfx.HitOptions{Role: gfx.RoleTab, Selected: pane.Active}).
-		Tooltip(cached.tooltip).Children(func() {
+		Tooltip(cached.tooltip).Draw(func(d *ui.DrawContext) {
+		state.drawWorkspaceFocusTabDrag(d, index)
+	}).Children(func() {
 		ui.Text(c, strconv.Itoa(index+1)).FontSize(metrics.FontSizeS).Color(state.pal.muted).Shrink(0)
 		if pane.Active {
 			ui.Text(c, "●").FontSize(9).Color(state.pal.success).Shrink(0)

@@ -551,7 +551,11 @@ func (state *State) describeTransfer(entry *transferEntry) {
 	}
 	entry.elapsed = "—"
 	if !started.IsZero() {
-		entry.elapsed = max(ended.Sub(started), 0).Round(time.Second).String()
+		elapsed := max(ended.Sub(started), 0)
+		if elapsed >= time.Millisecond {
+			elapsed = elapsed.Round(time.Millisecond)
+		}
+		entry.elapsed = elapsed.String()
 	}
 	entry.outcome = entry.status
 	switch {

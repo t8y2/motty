@@ -8,7 +8,7 @@ description: Local, remote, SOCKS5 and HTTP CONNECT rules, jump routes, proxies 
 
 Local, remote, SOCKS5 and HTTP CONNECT rules are:
 
-- **loopback-only**: they listen on the loopback interface,
+- **bind address**: `127.0.0.1` by default; choose `0.0.0.0` or a specific IP to let other machines reach the listener (kept on this device, not synced),
 - **persisted** with the host,
 - **started explicitly**.
 

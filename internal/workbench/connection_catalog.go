@@ -271,6 +271,8 @@ func (catalog *hostCatalog) authenticationFor(host Host) sshconn.Authentication 
 			if identity, ok := catalog.identityForFingerprint(fingerprint); ok {
 				authentication.IdentityFiles = []string{identity.Path}
 			}
+		} else if host.SSHOptions != nil && len(host.SSHOptions.IdentityFiles) > 0 {
+			authentication.IdentityFiles = host.SSHOptions.IdentityFiles
 		} else {
 			authentication.AdditionalIdentityFiles = catalog.identityPaths()
 		}
@@ -535,7 +537,12 @@ func (catalog *hostCatalog) keepAliveFor(host Host) sshconn.KeepAliveConfig {
 		return config
 	}
 	if catalog.connectionKeepAlive > 0 {
-		return sshconn.KeepAliveConfig{Interval: catalog.connectionKeepAlive, Timeout: 10 * time.Second, UseTCP: host.InteractiveOnly}
+		// A background app can miss a round or two while the system throttles
+		// it; three probes match OpenSSH's retry before a transport is declared
+		// dead. An interactive-only host uses the same count for its TCP
+		// keepalive.
+		count := 3
+		return sshconn.KeepAliveConfig{Interval: catalog.connectionKeepAlive, CountMax: &count, UseTCP: host.InteractiveOnly}
 	}
 	return sshconn.KeepAliveConfig{}
 }
@@ -556,7 +563,7 @@ func (catalog *hostCatalog) addRelays(config *sshconn.Config, route *connectionR
 			continue
 		}
 		jump := chain[index+1]
-		relay := sshconn.Relay{Prelude: jump.LoginCommand, Command: record.relayCommand()}
+		relay := sshconn.Relay{Prelude: jump.relayPrelude(), Command: record.relayCommand()}
 		if config.Relays == nil {
 			config.Relays = make(map[sshconn.Endpoint]sshconn.Relay, 1)
 		}

@@ -52,6 +52,7 @@ type savedState struct {
 	HiddenNav                  []string                `json:"hidden_nav,omitempty"`
 	VerticalTabsAutoHide       bool                    `json:"vertical_tabs_auto_hide,omitempty"`
 	VerticalTabsGrouping       bool                    `json:"vertical_tabs_grouping,omitempty"`
+	FullscreenBarAutoHide      bool                    `json:"desktop_fullscreen_bar_auto_hide,omitempty"`
 	NetworkProxy               string                  `json:"network_proxy,omitempty"`
 	TerminalOption             string                  `json:"terminalOption,omitempty"`
 	LocalShell                 string                  `json:"local_shell,omitempty"`
@@ -93,9 +94,11 @@ type savedState struct {
 	// StartupDisabled is the feature switch of what a launch opens, stored
 	// negated so that a fresh install without this key has the feature on.
 	StartupDisabled bool `json:"startup_disabled,omitempty"`
-	// StartupNoReuse is the launch's reuse switch, stored negated so that a
-	// fresh install without this key reuses what is already open.
-	StartupNoReuse          bool                `json:"startup_no_reuse,omitempty"`
+	// StartupReuse is the reuse switch: when on, connecting a host or opening
+	// sessions at launch switches to an existing session in this window. It
+	// is off by default, so a state without this key opens a separate session
+	// each time; the older negated "startup_no_reuse" key is no longer read.
+	StartupReuse            bool                `json:"startup_reuse,omitempty"`
 	TerminalClipboard       string              `json:"terminal_clipboard,omitempty"`
 	TerminalCursorSteady    bool                `json:"terminal_cursor_steady,omitempty"`
 	TerminalCursorThickness string              `json:"terminal_cursor_thickness,omitempty"`
@@ -201,12 +204,17 @@ type savedState struct {
 	// AgentHosts are the catalog ids of the hosts an agent may use without a
 	// window. AgentHostMode records the last bulk choice and the default for new
 	// hosts. Both belong to this computer, not to the hosts that sync.
-	AgentHosts    []string            `json:"agent_hosts,omitempty"`
-	AgentHostMode string              `json:"agent_host_mode,omitempty"`
-	Forwards      []savedForward      `json:"forwards,omitempty"`
-	Proxies       []savedProxy        `json:"proxies,omitempty"`
-	Sessions      []savedSession      `json:"sessions,omitempty"`
-	Deck          *layoutcore.DeckDTO `json:"deck,omitempty"`
+	AgentHosts    []string       `json:"agent_hosts,omitempty"`
+	AgentHostMode string         `json:"agent_host_mode,omitempty"`
+	Forwards      []savedForward `json:"forwards,omitempty"`
+	// ForwardBindAddresses holds the listener address of forwards whose bind
+	// is not loopback, by forward identity. Opening a listener to a network is
+	// this computer's decision: a forward that arrives through sync keeps the
+	// loopback default until someone chooses an address here.
+	ForwardBindAddresses map[string]string   `json:"forward_bind_addresses,omitempty"`
+	Proxies              []savedProxy        `json:"proxies,omitempty"`
+	Sessions             []savedSession      `json:"sessions,omitempty"`
+	Deck                 *layoutcore.DeckDTO `json:"deck,omitempty"`
 	// An empty array distinguishes a new snapshot with no managed workspaces
 	// from an older snapshot that never recorded workspace identity.
 	WorkspaceLayouts []savedWorkspaceLayout `json:"workspace_layouts,omitzero"`
@@ -359,6 +367,7 @@ type savedProxy struct {
 }
 
 type savedSession struct {
+	CustomTitle      *bool            `json:"custom_title,omitempty"`
 	WorkspaceCommand WorkspaceCommand `json:"workspace_command,omitzero"`
 	Label            string           `json:"label,omitempty"`
 	// Mention is the session's unique @ name; absent in older files and then
@@ -549,6 +558,7 @@ func (state *State) snapshot() savedState {
 		HiddenNav:                  state.hiddenNav.savedKeys(),
 		VerticalTabsAutoHide:       state.verticalTabs.autoHide,
 		VerticalTabsGrouping:       state.verticalTabs.grouping,
+		FullscreenBarAutoHide:      state.desktopBar.autoHide,
 		NetworkProxy:               state.networkProxy.String(),
 		SSHBrowser:                 string(state.sshBrowser),
 		TerminalOption:             state.terminalOption.String(),
@@ -585,7 +595,7 @@ func (state *State) snapshot() savedState {
 		StartupShell:               state.startupShell,
 		StartupHosts:               slices.Clone(state.startupHosts),
 		StartupDisabled:            !state.startupEnabled,
-		StartupNoReuse:             !state.startupReuse,
+		StartupReuse:               state.startupReuse,
 		TerminalClipboard:          state.terminalClipboard.String(),
 		TerminalCursorSteady:       state.terminalCursorSteady,
 		TerminalCursorThickness:    state.terminalCursorThickness.String(),
@@ -696,9 +706,12 @@ func (state *State) snapshot() savedState {
 	saved.CommandsSide = state.commands.placement == commandsPlacementSide
 	saved.CommandsSort = state.commands.sort.String()
 	saved.CommandsWidth = state.commands.width
-	for key := range state.commands.hiddenGroups {
-		saved.CommandsHiddenGroups = append(saved.CommandsHiddenGroups, key)
+	for key, hidden := range state.commands.hiddenGroups {
+		if hidden {
+			saved.CommandsHiddenGroups = append(saved.CommandsHiddenGroups, key)
+		}
 	}
+	slices.Sort(saved.CommandsHiddenGroups)
 	for key, collapsed := range state.commands.collapsedGroups {
 		if collapsed {
 			saved.CommandsCollapsedGroups = append(saved.CommandsCollapsedGroups, key)
@@ -728,9 +741,17 @@ func (state *State) snapshot() savedState {
 	}
 	// A host that is gone takes its opening with it: a host added later at the
 	// same address must not come back already open to agents.
-	for id := range state.agentHosts {
-		if !slices.ContainsFunc(state.hosts, func(host Host) bool { return host.isSSH() && host.CatalogID == id }) {
-			delete(state.agentHosts, id)
+	if len(state.agentHosts) > 0 {
+		sshHostIDs := make(map[string]struct{}, len(state.hosts))
+		for _, host := range state.hosts {
+			if host.isSSH() {
+				sshHostIDs[host.CatalogID] = struct{}{}
+			}
+		}
+		for id := range state.agentHosts {
+			if _, ok := sshHostIDs[id]; !ok {
+				delete(state.agentHosts, id)
+			}
 		}
 	}
 	for _, host := range state.hosts {
@@ -757,6 +778,12 @@ func (state *State) snapshot() savedState {
 			DestinationHost: forward.DestinationHost, DestinationPort: forward.DestinationPort,
 			Resume: forward.Resume, AutoStart: forward.AutoStart, ViaShell: forward.ViaShell, Relay: forward.Relay,
 		})
+		if address := bindAddressForSave(strings.TrimSpace(forward.BindAddress)); address != "" {
+			if saved.ForwardBindAddresses == nil {
+				saved.ForwardBindAddresses = make(map[string]string)
+			}
+			saved.ForwardBindAddresses[forwardBindKey(forward)] = address
+		}
 	}
 	for _, route := range state.proxies {
 		target, targetOK := state.hostByID(route.TargetID)
@@ -776,14 +803,14 @@ func (state *State) snapshot() savedState {
 			continue
 		}
 		if session.isLocal() {
-			saved.Sessions = append(saved.Sessions, savedSession{Label: session.Title, Mention: session.Mention, Local: true, LocalDirectory: session.localDirectory, LocalShell: session.host.localShell})
+			saved.Sessions = append(saved.Sessions, savedSession{CustomTitle: savedCustomSessionTitle(session.customTitle), Label: session.Title, Mention: session.Mention, Local: true, LocalDirectory: session.localDirectory, LocalShell: session.host.localShell})
 			if session.ID == state.activeSessionID {
 				saved.ActiveSession = len(saved.Sessions)
 			}
 			continue
 		}
 		saved.Sessions = append(saved.Sessions, savedSession{
-			Label: session.Title, Mention: session.Mention, Address: session.host.Address, User: session.host.User,
+			CustomTitle: savedCustomSessionTitle(session.customTitle), Label: session.Title, Mention: session.Mention, Address: session.host.Address, User: session.host.User,
 			Port: session.host.Port, System: session.host.System.String(), SavedHost: session.HostID != 0,
 			CatalogID: session.savedCatalogID(), RemoteDirectory: session.startDirectory,
 			WorkspaceCommand: session.workspaceCommand,
@@ -1164,7 +1191,7 @@ func (state *State) restoreLocal(saved savedState) {
 	state.startupShell = saved.StartupShell
 	state.startupHosts = cleanStartupHosts(saved.StartupHosts)
 	state.startupEnabled = !saved.StartupDisabled
-	state.startupReuse = !saved.StartupNoReuse
+	state.startupReuse = saved.StartupReuse
 	state.ai.panelWidth = saved.AIPanelWidth
 	if saved.AIComposerHeight > 0 {
 		state.ai.composerHeight = saved.AIComposerHeight
@@ -1254,6 +1281,7 @@ func (state *State) restoreShared(saved savedState) {
 		state.tabTitleMode = tabTitleConnection
 	}
 	state.terminalShowLatency = saved.TerminalShowLatency
+	state.desktopBar.autoHide = saved.FullscreenBarAutoHide
 	state.terminalBellOff = saved.TerminalBellOff
 	state.pasteConfirmOff = saved.TerminalPasteConfirmOff
 	state.terminalInputClickOff = saved.TerminalInputClickOff
@@ -1346,7 +1374,7 @@ func (state *State) restoreShared(saved savedState) {
 		}
 		state.hostGroups = append(state.hostGroups, hostGroup{Name: name, Expanded: !entry.Collapsed, Explicit: entry.Explicit, Pinned: entry.Pinned, Order: max(0, entry.Order)})
 	}
-	state.restoreForwards(saved.Forwards)
+	state.restoreForwardsWithBindAddresses(saved.Forwards, saved.ForwardBindAddresses)
 	state.restoreProxies(saved.Proxies)
 	if (saved.AIProviders != nil || saved.AICLIProviders != nil) && !state.starting {
 		state.importAIProviderCollections(saved.AIProviders, saved.AICLIProviders)
@@ -1522,8 +1550,9 @@ func (state *State) restoreSessions(entries []savedSession, active int) []uint32
 		}
 		state.sessions = append(state.sessions, Session{
 			ID: state.nextSessionID, HostID: host.ID, Title: title, Mention: entry.Mention,
-			Address: state.sessionAddress(host),
-			host:    host, phase: sshconn.PhaseClosed, restored: true, paneSlot: state.claimPaneSlot(),
+			customTitle: restoredCustomSessionTitle(entry.CustomTitle, title, host.Label),
+			Address:     state.sessionAddress(host),
+			host:        host, phase: sshconn.PhaseClosed, restored: true, paneSlot: state.claimPaneSlot(),
 		})
 		session := &state.sessions[len(state.sessions)-1]
 		if workspaceCommandHost(host) {

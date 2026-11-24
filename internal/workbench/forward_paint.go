@@ -223,6 +223,9 @@ func (state *State) declareForwardDialog(c ui.C) {
 			bodyHeight += dialogRowHeight(c.Theme())
 		}
 	}
+	if state.forwardEditor.bindExposed() {
+		bodyHeight += 38
+	}
 	viewport := dialogViewport(c)
 	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 560, messages.ForwardDialogDescription, bodyHeight)
 	// No scrim dismiss: a press beside the form must not discard its input.
@@ -271,7 +274,9 @@ func (state *State) declareForwardDialogBody(c ui.C) {
 			if mode == portforward.ModeRemote {
 				portTitle = messages.ForwardFieldRemotePort
 			}
-			state.declareForwardDialogField(c, hitForwardDialogLocalPort, forwardFieldLocalPort, portTitle, "").Grow(24)
+			state.declareForwardDialogField(c, hitForwardDialogBindAddress, forwardFieldBindAddress, messages.ForwardFieldBindAddress, messages.ForwardBindPlaceholder).Grow(30)
+			ui.Spacer(c).Grow(3)
+			state.declareForwardDialogField(c, hitForwardDialogLocalPort, forwardFieldLocalPort, portTitle, "").Grow(20)
 			ui.Spacer(c).Grow(4)
 			if !modeUsesClientDestination(mode) {
 				placeholder := messages.ForwardDestinationPlaceholder
@@ -287,6 +292,10 @@ func (state *State) declareForwardDialogBody(c ui.C) {
 				})
 			}
 		})
+		if editor.bindExposed() {
+			ui.Wrap(c, messages.ForwardBindWarning).Height(38).FontSize(c.Theme().Metrics.FontSizeS).
+				Weight(gfx.WeightMedium).Color(state.pal.danger).MarginSides(6, 0, 0, 0)
+		}
 		if modeUsesServerDestination(mode) {
 			_, b.viaShellHelp = state.declareDialogCheckHelp(c, hitForwardDialogViaShell, messages.ForwardFieldViaShell, state.forwardEditor.viaShell, dialogCheckGapAbove, dialogCheckGapBelow)
 			if editor.viaShell {

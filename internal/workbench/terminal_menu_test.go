@@ -462,4 +462,13 @@ func TestALocalTerminalPathOpensInTheSystemFileManager(t *testing.T) {
 	if got := state.terminalMenu.found[0].kind; got != actionFiles {
 		t.Fatalf("a WSL terminal offered %v, want the file panel", got)
 	}
+
+	// Before shell integration reports a folder, a local terminal still resolves
+	// relative names against its remembered localDirectory.
+	remembered := &Session{ID: 4, HostID: localHostID, localDirectory: folder, conn: newLocalConn("", networkProxyDirect), term: &terminal{screen: screen}}
+	state.terminalMenu = terminalMenu{open: true, session: remembered.ID}
+	state.offerActionsAt(remembered, term.Position{Row: 0, Column: 2})
+	if state.terminalMenu.count != 1 || state.terminalMenu.found[0].kind != actionReveal || state.terminalMenu.found[0].target != file {
+		t.Fatalf("remembered localDirectory actions = %+v, want reveal %q", state.terminalMenu.found[:state.terminalMenu.count], file)
+	}
 }

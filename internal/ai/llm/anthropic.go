@@ -297,6 +297,7 @@ func (p *anthropic) Stream(ctx context.Context, req Request) (<-chan Event, erro
 		r.Header.Set("Content-Type", "application/json")
 		r.Header.Set("Accept", "text/event-stream")
 		p.headers(r)
+		sessionHeader(r, req.SessionID)
 	})
 	if err != nil {
 		return nil, err

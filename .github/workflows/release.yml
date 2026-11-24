@@ -4,10 +4,10 @@
 # those same notes, and the draft release is created from them by whoever pushes
 # the tag — this workflow waits for that draft before it builds anything. The
 # macOS packages are built on a Mac and signed, notarized and stapled when the
-# secrets below are set;
-# the Linux and Windows ones are cross-built on Ubuntu, with the Windows programs
-# and installer signed when a certificate is set. Without a secret the matching
-# step simply does not sign.
+# secrets below are set; the Linux ones are cross-built on Ubuntu. The Windows
+# ones are built on a Windows runner, so a certificate whose key lives in a cloud
+# signing service can sign the programs and installers there. Without a secret
+# the matching step simply does not sign.
 #
 # The tag is the approval: *Checksums* refuses the release unless it is exactly
 # the eighteen assets, its SHA256SUMS matches the files, every signature verifies
@@ -141,7 +141,7 @@ jobs:
       matrix:
         include:
           - { name: macOS, os: macos-15, platforms: mac }
-          - { name: Linux and Windows, os: ubuntu-24.04, platforms: "linux,windows" }
+          - { name: Linux, os: ubuntu-24.04, platforms: linux }
     steps:
       # Motty builds against the Viva checkout beside it (replace viva => ../viva).
       - uses: actions/checkout@v7
@@ -158,31 +158,6 @@ jobs:
         with:
           go-version-file: motty/go.mod
           cache-dependency-path: motty/go.sum
-
-      - name: Install NSIS and osslsigncode, for the Windows installer and its signature
-        if: runner.os == 'Linux'
-        run: |
-          set -euo pipefail
-          # The hosted runner's default mirror (azure.archive.ubuntu.com) sometimes
-          # fails to resolve for a while. Retry the install with short network
-          # timeouts, and from the fourth attempt use the main Ubuntu archive
-          # instead of that mirror, so a DNS outage on one host does not block a
-          # release whose macOS assets are already built.
-          options=(-o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 -o Acquire::Retries=0)
-          for attempt in $(seq 1 10); do
-            if [ "$attempt" -eq 4 ] && [ -f /etc/apt/apt-mirrors.txt ]; then
-              echo "::warning::the azure apt mirror is unreachable; falling back to archive.ubuntu.com"
-              sudo sed -i 's|azure.archive.ubuntu.com|archive.ubuntu.com|g' /etc/apt/apt-mirrors.txt
-            fi
-            if sudo apt-get "${options[@]}" update &&
-              sudo apt-get "${options[@]}" install -y nsis osslsigncode; then
-              exit 0
-            fi
-            echo "::warning::NSIS/osslsigncode install failed (attempt $attempt); retrying in 30s"
-            sleep 30
-          done
-          echo "::error::could not install NSIS/osslsigncode after 10 attempts"
-          exit 1
 
       # A signed but un-notarized image would be blocked by Gatekeeper all the same,
       # so a certificate without notary credentials stops the build here.
@@ -208,16 +183,6 @@ jobs:
           echo "::error::APPLE_CERTIFICATE is set but there are no notarization credentials: set APPLE_ID, APPLE_PASSWORD and APPLE_TEAM_ID, or APPLE_API_KEY_P8, APPLE_API_KEY_ID and APPLE_API_ISSUER"
           exit 1
 
-      - name: Note an unsigned Windows build
-        if: runner.os == 'Linux'
-        env:
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          WINDOWS_SIGN_COMMAND: ${{ secrets.WINDOWS_SIGN_COMMAND }}
-        run: |
-          if [ -z "$WINDOWS_CERTIFICATE" ] && [ -z "$WINDOWS_SIGN_COMMAND" ]; then
-            echo "::warning::No WINDOWS_CERTIFICATE or WINDOWS_SIGN_COMMAND: the Windows packages will not be signed"
-          fi
-
       # notarytool reads an API key from a file; the secret holds its contents.
       - name: Write the notary API key
         if: runner.os == 'macOS'
@@ -241,19 +206,26 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          # Windows: a .pfx as base64, or a command for a key in a signing service.
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-          WINDOWS_SIGN_COMMAND: ${{ secrets.WINDOWS_SIGN_COMMAND }}
           # The minisign key the updater checks; the packages are signed with it
           # before they are uploaded.
           MOTTY_UPDATE_SIGNING_KEY: ${{ secrets.MOTTY_UPDATE_SIGNING_KEY }}
         working-directory: motty
         run: tools/release.sh --platforms "${{ matrix.platforms }}" --viva-ref "${{ needs.viva.outputs.commit }}" --ref "$GITHUB_SHA" --upload "$GITHUB_REF_NAME"
 
+  # The Windows programs and installers are built and signed on a Windows runner;
+  # see windows-package.yml, which windows-package-check.yml also runs.
+  build-windows:
+    name: Windows
+    needs: [release-ready, viva]
+    uses: ./.github/workflows/windows-package.yml
+    with:
+      viva: ${{ needs.viva.outputs.commit }}
+      upload: true
+    secrets: inherit
+
   checksums:
     name: Checksums
-    needs: [build, viva]
+    needs: [build, build-windows, viva]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

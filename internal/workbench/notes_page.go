@@ -216,11 +216,15 @@ func (s *State) declareNoteTreeRow(n *notesUI, i int) {
 	if c == nil {
 		return
 	}
-	if e.id == "" {
-		// The row a new folder or note is being named in.
+	if e.id == "" || e.id == n.view.inlineID {
+		// New items and existing items being renamed share the same field.
 		p.inline.Bind(&n.view.inline)
 		field := ui.TextFieldID(c, hitNoteInline, &p.inline, s.noteText("Name", "名称"), s.noteText("Name", "名称")).
 			FillWidth().Height(noteTreeRowHeight-4).MarginSides(0, 4, 2, 0)
+		if n.view.focus == hitNoteInline {
+			c.Canvas().RequestFocus(hitNoteInline)
+			n.view.focus = gfx.ID{}
+		}
 		if field.Submitted() {
 			c.After(func() { s.commitNoteInline() })
 		}
@@ -592,7 +596,6 @@ func (s *State) declareNoteLibrary(c ui.C, n *notesUI, width float32) {
 		icon  gfx.Icon
 	}{
 		{hitNoteSearchToggle, s.noteText("Search notes", "搜索笔记"), icons.Search},
-		{hitNoteAdd, s.noteText("New note", "新建笔记"), icons.SquarePen},
 		{hitNoteFolderAdd, s.noteText("New folder", "新建文件夹"), icons.FolderPlus},
 		{hitNoteImport, s.noteText("Import Markdown", "导入 Markdown"), icons.Upload},
 		{hitNoteLinkFile, s.noteText("Link Markdown file", "链接 Markdown 文件"), icons.Link},
@@ -611,6 +614,8 @@ func (s *State) declareNoteLibrary(c ui.C, n *notesUI, width float32) {
 			s.declareNoteToolbarButton(c, a.id, a.label, a.icon, disabled)
 		}
 	})
+	ui.Button(c, s.noteText("New note", "新建笔记")).Icon(icons.SquarePen).
+		FillWidth().Height(36).MarginSides(8, 8, 0, 8).Hit(hitNoteAdd, s.noteText("New note", "新建笔记"))
 	if v.searchOpen {
 		p.query.Bind(&n.query)
 		field := ui.TextFieldID(c, hitNoteSearch, &p.query, s.noteText("Search title, body and tags", "搜索标题、正文和标签"), s.noteText("Search title, body and tags", "搜索标题、正文和标签")).
@@ -623,16 +628,16 @@ func (s *State) declareNoteLibrary(c ui.C, n *notesUI, width float32) {
 	area := ui.Column(c).Grow(1).FillWidth().MarginSides(6, 6, 6, 6).
 		HitWith(hitNoteListScroll, s.noteText("Scroll notes", "滚动笔记"), gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true})
 	area.Children(func() {
-		ui.Tree(c, &p.tree, len(rows), p.label, p.content).Grow(1).FillWidth().Scrollbars().
-			Label(s.noteText("Scroll notes", "滚动笔记"))
-		s.noteTreeChanges(n, false)
 		if len(rows) == 0 {
-			message := s.noteText("No notes yet. Create one above.", "暂无笔记，可点击上方新建。")
+			message := s.noteText("Your first working note starts here.", "第一条工作记录，从这里开始。")
 			if n.query.String() != "" {
 				message = s.noteText("No matching notes.", "没有匹配的笔记。")
 			}
-			ui.Text(c, message).FontSize(12).Color(s.pal.muted).MarginSides(8, 0, 0, 0)
+			ui.Text(c, message).FontSize(12).Color(s.pal.muted).FillWidth().Ellipsis().MarginSides(8, 0, 0, 0)
 		}
+		ui.Tree(c, &p.tree, len(rows), p.label, p.content).Grow(1).FillWidth().Scrollbars().
+			Label(s.noteText("Scroll notes", "滚动笔记"))
+		s.noteTreeChanges(n, false)
 	})
 }
 
@@ -690,8 +695,19 @@ func (s *State) declareNoteEditor(c ui.C, n *notesUI, width float32, window bool
 		ui.Row(c).Height(28).MarginSides(8, 16, 0, 18).Children(func() {
 			s.declareNoteToolbarButton(c, hitNoteTreeToggle, s.noteText("Toggle library", "显示 / 隐藏目录"), icons.PanelLeft, false)
 		})
-		ui.Text(c, s.noteText("Select a note or create one to begin.", "选择笔记，或新建一篇笔记。")).
-			FontSize(16).Color(s.pal.muted).MarginSides(88, 16, 0, 18)
+		theme := s.Theme()
+		contentWidth := min(max(0, width-40), 384)
+		ui.Column(c).Grow(1).FillWidth().Center().Pad(20).Clip().Children(func() {
+			ui.Column(c).Width(contentWidth).Items(ui.Center).Children(func() {
+				ui.Column(c).Size(40, 40).Center().Radius(theme.Metrics.RadiusSurface).Background(theme.Muted).Children(func() {
+					ui.Icon(c, icons.Notebook).Size(24, 24).Color(theme.Foreground)
+				})
+				ui.Text(c, s.noteText("Start with a note", "从一篇笔记开始")).
+					FontSize(18).Weight(gfx.WeightMedium).Color(theme.Foreground).FillWidth().TextCenter().MarginSides(16, 0, 0, 0)
+				ui.Paragraph(c, s.noteText("Select a note from the library or create a new one to capture commands, investigations, and solutions.", "从目录选择一篇笔记，或创建新笔记来记录命令、排查过程与解决方案。"), 6).
+					FontSize(13).LineHeight(21).Color(theme.MutedForeground).FillWidth().TextCenter().MarginSides(8, 0, 0, 0)
+			})
+		})
 		return
 	}
 	s.declareNoteEditorHeader(c, n, width, false)
@@ -926,12 +942,13 @@ func (s *State) notePreviewLayoutHeight(c ui.C, n *notesUI, width float32) {
 // content height.
 func (s *State) notePreviewLayout(canvas *gfx.Canvas, n *notesUI, width float32) {
 	source := n.body.String()
+	declared := width
 	width = max(1, width-12)
 	cache := &n.previewLayout
 	if !cache.ready || cache.source != source || cache.width != width || cache.face != s.terminalFontFace || cache.main != s.fonts.main || cache.bold != s.fonts.bold {
 		n.doc.Parse(source)
 		height := n.rendered.Layout(canvas, noteMarkdownStyle(s), &n.doc, width)
-		*cache = notePreviewLayout{ready: true, source: source, width: width, face: s.terminalFontFace, main: s.fonts.main, bold: s.fonts.bold, height: height}
+		*cache = notePreviewLayout{ready: true, source: source, width: width, declared: declared, face: s.terminalFontFace, main: s.fonts.main, bold: s.fonts.bold, height: height}
 	}
 	images := float32(0)
 	if n.imageSource == source {
@@ -954,8 +971,22 @@ func (s *State) drawNotePreview(d *ui.DrawContext, n *notesUI) {
 		n.previewScroll = st.Offset
 		n.page.previewContent = st.Content
 	}
+	s.notePreviewFresh(d.Canvas, n)
 	s.paintNotePreviewAt(d.Canvas, d.Rect, viewport, n)
 	s.syncNoteScroll(d.Canvas, n)
+}
+
+// notePreviewFresh lays the preview out again when the note's text changed
+// after the page laid it out. A narrow card declares the library drawer after
+// the editor, so choosing a note there replaces the text in the middle of the
+// declaration that measured it; the draw that follows must paint a layout of
+// the text it shows, not the previous note's layout with the new note's text.
+func (s *State) notePreviewFresh(canvas *gfx.Canvas, n *notesUI) {
+	cache := &n.previewLayout
+	if !cache.ready || cache.source == n.body.String() {
+		return
+	}
+	s.notePreviewLayout(canvas, n, cache.declared)
 }
 
 // noteMarkdownStyle is the style the preview lays out with.

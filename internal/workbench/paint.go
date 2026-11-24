@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"math"
 	"strings"
 
 	"github.com/vivaui/viva/app"
@@ -123,6 +124,9 @@ const (
 	iconFolderSolidOpen
 	iconPaneMaximize
 	iconPaneRestore
+	// The fullscreen desktop bar's pin: pinned, it keeps the bar visible.
+	iconPin
+	iconPinOff
 )
 
 // terminalPage reports whether the window shows the panes of a workspace rather
@@ -595,6 +599,7 @@ func (state *State) declareShell(c ui.C) {
 		state.declareDesktopBody(c, session, gfx.Rect{Width: state.viewport.Width, Height: state.viewport.Height})
 		state.declareTransferProgressCards(c)
 		state.declareDashboardDialog(c)
+		state.declareAgentHostsDialog(c)
 		state.declareDashboardAddMenu(c)
 		return
 	}
@@ -682,9 +687,11 @@ func (state *State) declareShell(c ui.C) {
 	// The dashboard's own dialog and its hosts-page add menu are page controls
 	// too: they are open over whatever section asked for them.
 	state.declareDashboardDialog(c)
+	state.declareAgentHostsDialog(c)
 	state.declareDashboardAddMenu(c)
 	// The drag overlay is hitless and paints over the page on the drag layer.
 	state.declareTabDragOverlays(c)
+	state.declareWorkspaceFocusDragOverlay(c)
 	state.declareWorkspaceCardDragOverlay(c)
 	state.declareToolbarDockDragOverlay(c)
 	state.declareTransferProgressCards(c)
@@ -2730,6 +2737,8 @@ var lucideIcons = [...]gfx.Icon{
 	iconChevronDown:      icons.ChevronDown,
 	iconPaneMaximize:     remoteLogExpandIcon,
 	iconPaneRestore:      remoteLogRestoreIcon,
+	iconPin:              icons.Pin,
+	iconPinOff:           icons.PinOff,
 	iconChevronsExpand:   icons.ChevronsUpDown,
 	iconChevronsCollapse: icons.ChevronsDownUp,
 	iconSliders:          icons.SlidersHorizontal,
@@ -3312,6 +3321,9 @@ func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
 	if b.algo.Valid() {
 		state.rememberHostChoice(canvas, b.algo.Rect(), &editor.form.choiceIDs.algo, state.hostAlgoChoiceLabel(editor.algoMode))
 	}
+	if editor.form.algoBody.loginPolicy.Valid() {
+		state.rememberHostChoice(canvas, editor.form.algoBody.loginPolicy.Rect(), &editor.form.choiceIDs.loginPolicy, state.hostLoginPolicyChoiceLabel(editor.loginFailurePolicy))
+	}
 	editor.form.clipped = false
 }
 
@@ -3390,25 +3402,51 @@ func (state *State) declareMoveHostGroupDialog(c ui.C) {
 	})
 }
 
+// The delete-a-group dialog's body is the two choice rows; a refusal notice,
+// when shown, adds its measured lines above them.
+const (
+	groupDeleteChoiceRows = float32(130)
+	groupDeleteNoticeLine = float32(20)
+	groupDeleteNoticeGap  = float32(4)
+)
+
 // declareHostGroupDeleteDialog declares the delete-group variant of the group
 // dialog: two radio choices for what happens to the hosts in it.
 func (state *State) declareHostGroupDeleteDialog(c ui.C) {
 	m := state.messages.HostGroupActions
-	layout := dialogContentRect(c.Canvas(), *c.Theme(), dialogViewport(c), 480, "", 130)
+	body := groupDeleteChoiceRows
+	if state.dialogError != "" {
+		// The reason can name a host, so it may wrap: give it as many lines as its
+		// words take at the body's width, measured the way it is drawn.
+		probe := dialogContentRect(c.Canvas(), *c.Theme(), dialogViewport(c), 480, "", body)
+		var scratch [8]string
+		lines := c.Canvas().WrapLines(scratch[:0], state.dialogError, metrics.FontSizeS, gfx.WeightMedium, max(probe.Body.Width, 1), math.MaxInt32)
+		body += float32(len(lines))*groupDeleteNoticeLine + groupDeleteNoticeGap
+	}
+	layout := dialogContentRect(c.Canvas(), *c.Theme(), dialogViewport(c), 480, "", body)
 	description := elide(c.Canvas(), state.groupActions.path, c.Theme().Metrics.FontSizeM, gfx.WeightRegular, layout.Header.Width)
 	viewport := dialogViewport(c)
-	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 480, description, 130)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 480, description, body)
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: m.Delete, Description: description, Width: 480, Height: height, Layer: dialogLayer,
 		Scope: dialogScope, DismissID: hitMoveGroupDismiss, CloseID: hitMoveGroupClose, InitialFocusID: hitGroupDeleteParent,
 	})
 	dialog.Body(func() {
 		choices := state.groupDeleteChoices()
-		// The body's 130 pixels are the two choices' rows, as the hand-painted
-		// group stretched them: a radio centres its circle and label in the row.
-		ui.RadioGroup(c).Fill().Children(func() {
-			ui.RadioID(c, hitGroupDeleteParent, &state.groupActions.ungroup, false, choices[0]).Grow(1)
-			ui.RadioID(c, hitGroupDeleteUngroup, &state.groupActions.ungroup, true, choices[1]).Grow(1)
+		ui.Column(c).Fill().Children(func() {
+			// A deletion the parent group cannot take is refused, and the dialog
+			// is the only place that can say why: it stays open, so the reason
+			// goes here rather than into the status line behind the scrim.
+			if state.dialogError != "" {
+				ui.Paragraph(c, state.dialogError, 0).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(groupDeleteNoticeLine)
+			}
+			// The body's remaining 130 pixels are the two choices' rows, as the
+			// hand-painted group stretched them: a radio centres its circle and
+			// label in the row.
+			ui.RadioGroup(c).Fill().Children(func() {
+				ui.RadioID(c, hitGroupDeleteParent, &state.groupActions.ungroup, false, choices[0]).Grow(1)
+				ui.RadioID(c, hitGroupDeleteUngroup, &state.groupActions.ungroup, true, choices[1]).Grow(1)
+			})
 		})
 	})
 	dialog.Footer(func() {

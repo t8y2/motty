@@ -38,7 +38,7 @@ type WorkspaceCommand struct {
 }
 
 func (command WorkspaceCommand) normalized() WorkspaceCommand {
-	command.Command = restoredLoginCommand(command.Command)
+	command.Command = restoredSingleLineCommand(command.Command)
 	return command
 }
 

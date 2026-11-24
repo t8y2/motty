@@ -62,6 +62,7 @@ func (c *canvas) Fill(x, y, width, height int, blue, green, red byte) {
 
 func (c *canvas) Bell()                  { c.mu.Lock(); c.bells++; c.mu.Unlock() }
 func (c *canvas) ServerText(text string) { c.mu.Lock(); c.text = text; c.mu.Unlock() }
+func (c *canvas) Flush()                 {}
 
 func (c *canvas) at(x, y int) [3]byte {
 	c.mu.Lock()

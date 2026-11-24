@@ -517,3 +517,131 @@ func TestUpdateNotesDragDoesNotSurviveReopen(t *testing.T) {
 		t.Fatalf("reopened update dialog retained an old drag: modal %v, notes %+v", state.modal, notes)
 	}
 }
+
+func TestSwitchingUpdateSourceInDialogKeepsDialogAndChecks(t *testing.T) {
+	updater, quits, opened := &fakeUpdater{}, 0, []string(nil)
+	release1 := offeredRelease
+	release2 := update.Release{Version: "0.0.1"}
+	checkSource := update.SourceOfficial
+
+	_, options := newWorld(t)
+	options.Invalidate = func() {}
+	options.CheckUpdate = func() (update.Release, error) {
+		if checkSource == update.SourceOfficial {
+			return release1, nil
+		}
+		return release2, nil
+	}
+	options.Updater = updater
+	options.Quit = func() { quits++ }
+	options.OpenURL = func(url string) error { opened = append(opened, url); return nil }
+	state := newTestState(t, options)
+	state.Click(hitSettingsUpdateCheck)
+	waitUpdate(t, state, func() bool { return state.modal == modalUpdate })
+
+	// Initial state: release1 is shown in dialog
+	_, texts := paintedTexts(state)
+	if !contains(texts, fmt.Sprintf(state.messages.Tools.UpdateDialogTitleFmt, release1.Version)) {
+		t.Fatalf("dialog does not show release 1: %q", texts)
+	}
+
+	// Switch update source to CNB
+	checkSource = update.SourceCNB
+	state.update.source = update.SourceCNB
+	state.changeUpdateSource()
+
+	// Dialog MUST NOT close: it stays in modalUpdate
+	if state.modal != modalUpdate {
+		t.Fatalf("modal was closed on changing update source: %v", state.modal)
+	}
+
+	// Once check finishes, it reports latest version
+	waitUpdate(t, state, func() bool { return !state.update.checking })
+	if state.modal != modalUpdate {
+		t.Fatalf("modal was closed after checking finished: %v", state.modal)
+	}
+	if state.update.available {
+		t.Fatalf("update should not be available for CNB: %+v", state.update)
+	}
+	_, texts = paintedTexts(state)
+	latestMsg := fmt.Sprintf(state.messages.Tools.UpdateLatestFmt, update.Current)
+	if !contains(texts, latestMsg) {
+		t.Fatalf("dialog does not show latest version message %q: %q", latestMsg, texts)
+	}
+	if !contains(texts, state.messages.LabelWindowClose) {
+		t.Fatalf("dialog does not offer close button: %q", texts)
+	}
+
+	// Switch back to official source which has an update
+	checkSource = update.SourceOfficial
+	state.update.source = update.SourceOfficial
+	state.changeUpdateSource()
+
+	if state.modal != modalUpdate {
+		t.Fatalf("modal was closed on switching back: %v", state.modal)
+	}
+	waitUpdate(t, state, func() bool { return !state.update.checking && state.update.available })
+	if state.modal != modalUpdate {
+		t.Fatalf("modal was closed when update became available: %v", state.modal)
+	}
+	_, texts = paintedTexts(state)
+	if !contains(texts, fmt.Sprintf(state.messages.Tools.UpdateDialogTitleFmt, release1.Version)) {
+		t.Fatalf("dialog does not show release 1 after switching back: %q", texts)
+	}
+	if !contains(texts, state.messages.Tools.UpdateInstall) {
+		t.Fatalf("dialog does not offer install button: %q", texts)
+	}
+
+	// Clicking install directly triggers install
+	state.Click(hitUpdateInstall)
+	waitUpdate(t, state, func() bool { return quits == 1 })
+	if updater.launches() != 1 {
+		t.Fatalf("updater was not launched: %d", updater.launches())
+	}
+}
+
+func TestSwitchingUpdateSourceShowsCheckingState(t *testing.T) {
+	updater := &fakeUpdater{}
+	gate := make(chan struct{})
+	defer close(gate)
+
+	_, options := newWorld(t)
+	options.Invalidate = func() {}
+	options.CheckUpdate = func() (update.Release, error) {
+		<-gate
+		return offeredRelease, nil
+	}
+	options.Updater = updater
+	state := newTestState(t, options)
+	state.modal = modalUpdate
+	state.update.available = true
+	state.update.release = offeredRelease
+
+	// Change source
+	state.update.source = update.SourceCNB
+	state.changeUpdateSource()
+
+	if state.modal != modalUpdate {
+		t.Fatalf("modal closed: %v", state.modal)
+	}
+	if !state.update.checking {
+		t.Fatalf("state is not checking: %+v", state.update)
+	}
+
+	_, texts := paintedTexts(state)
+	if !contains(texts, state.messages.Tools.UpdateChecking) {
+		t.Fatalf("checking text not painted: %q", texts)
+	}
+	if !contains(texts, state.messages.Cancel) {
+		t.Fatalf("cancel button not painted: %q", texts)
+	}
+
+	// User cancels while checking
+	state.Click(hitUpdateLater)
+	if state.modal != modalNone {
+		t.Fatalf("modal not closed on cancel: %v", state.modal)
+	}
+	if state.update.checking {
+		t.Fatalf("checking not reset on cancel: %+v", state.update)
+	}
+}

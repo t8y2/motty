@@ -222,36 +222,116 @@ func (state *State) commandsSidebarBounds(size gfx.Size) gfx.Rect {
 }
 
 // commandGroupKey is how a snippet's group is told apart from another's: groups
-// are the same when they differ only in case or surrounding space, and the empty
-// key is the ungrouped commands.
+// are the same when they differ only in case or surrounding space around "/",
+// and the empty key is the ungrouped commands.
 func commandGroupKey(group string) string {
-	return strings.ToLower(strings.TrimSpace(group))
+	return strings.ToLower(normalizeSnippetGroupPath(group))
 }
 
-// commandGroupVisible reports whether a snippet's group is shown in the bar.
+// commandGroupVisible reports whether a snippet's group (and every ancestor
+// folder in its path) is shown in the bar.
 func (state *State) commandGroupVisible(group string) bool {
-	return !state.commands.hiddenGroups[commandGroupKey(group)]
+	if len(state.commands.hiddenGroups) == 0 {
+		return true
+	}
+	key := commandGroupKey(group)
+	if key == "" {
+		return !state.commands.hiddenGroups[""]
+	}
+	for path := key; path != ""; path = snippetGroupParent(path) {
+		if state.commands.hiddenGroups[path] {
+			return false
+		}
+	}
+	return true
 }
 
-// commandGroups returns the distinct groups the snippets name, each in the
-// spelling of the first snippet that names it, sorted by name. hasUngrouped says
-// whether any snippet names none.
+// toggleCommandGroupVisible flips a group (and its subtree) in the bar's group
+// filter. Hiding a parent hides its descendants; showing a child inside a
+// hidden parent expands that ancestor's hidden state onto its other siblings so
+// only the chosen branch becomes visible.
+func (state *State) toggleCommandGroupVisible(group string) {
+	key := commandGroupKey(group)
+	if key == "" {
+		return
+	}
+	if state.commands.hiddenGroups == nil {
+		state.commands.hiddenGroups = make(map[string]bool)
+	}
+	if state.commandGroupVisible(group) {
+		state.commands.hiddenGroups[key] = true
+		for existing := range state.commands.hiddenGroups {
+			if existing != "" && existing != key && snippetGroupWithin(existing, key) {
+				delete(state.commands.hiddenGroups, existing)
+			}
+		}
+		return
+	}
+	var ancestors []string
+	for parent := snippetGroupParent(key); parent != ""; parent = snippetGroupParent(parent) {
+		ancestors = append(ancestors, parent)
+	}
+	groups, _ := state.commandGroups()
+	splitting := false
+	for i := len(ancestors) - 1; i >= 0; i-- {
+		ancestor := ancestors[i]
+		if state.commands.hiddenGroups[ancestor] {
+			delete(state.commands.hiddenGroups, ancestor)
+			splitting = true
+		}
+		if !splitting {
+			continue
+		}
+		keepBranch := key
+		if i > 0 {
+			keepBranch = ancestors[i-1]
+		}
+		for _, candidate := range groups {
+			ckey := commandGroupKey(candidate)
+			if snippetGroupParent(ckey) == ancestor && ckey != keepBranch {
+				state.commands.hiddenGroups[ckey] = true
+			}
+		}
+	}
+	for existing := range state.commands.hiddenGroups {
+		if existing != "" && snippetGroupWithin(existing, key) {
+			delete(state.commands.hiddenGroups, existing)
+		}
+	}
+}
+
+// commandGroups returns the distinct groups the snippets name (plus every
+// ancestor folder in their slash-separated paths), each in the spelling of the
+// first snippet that introduces it, sorted in pre-order tree order.
+// hasUngrouped says whether any snippet names none.
 func (state *State) commandGroups() (groups []string, hasUngrouped bool) {
-	seen := make(map[string]int)
+	seen := make(map[string]bool)
+	add := func(group string) {
+		group = normalizeSnippetGroupPath(group)
+		if group == "" {
+			return
+		}
+		lower := strings.ToLower(group)
+		if seen[lower] {
+			return
+		}
+		seen[lower] = true
+		groups = append(groups, group)
+	}
 	for _, s := range state.snippets.list {
 		if s.Group == "" {
 			hasUngrouped = true
 			continue
 		}
-		lower := strings.ToLower(s.Group)
-		if _, ok := seen[lower]; ok {
-			continue
+		add(s.Group)
+	}
+	for index := 0; index < len(groups); index++ {
+		for parent := snippetGroupParent(groups[index]); parent != ""; parent = snippetGroupParent(parent) {
+			add(parent)
 		}
-		seen[lower] = len(groups)
-		groups = append(groups, s.Group)
 	}
 	sort.SliceStable(groups, func(i, j int) bool {
-		return strings.ToLower(groups[i]) < strings.ToLower(groups[j])
+		return snippetGroupLess(groups[i], groups[j])
 	})
 	return
 }
@@ -261,37 +341,106 @@ func (state *State) commandGroups() (groups []string, hasUngrouped bool) {
 type commandSection struct {
 	// key is the group's commandGroupKey; "" is the ungrouped commands.
 	key string
-	// label is the heading: the group in the spelling of its first snippet, or
-	// the language's word for ungrouped.
+	// label is the heading: the leaf folder name in the spelling of its first
+	// snippet, or the language's word for ungrouped.
 	label string
-	// collapsed hides the commands and leaves the heading.
+	// depth is the folder nesting level (0 for top-level and ungrouped).
+	depth uint8
+	// collapsed hides the commands (and any descendant groups) and leaves the
+	// heading.
 	collapsed bool
-	items     []int
+	// ancestorCollapsed is true when an ancestor folder is collapsed, hiding
+	// this section and its commands from view.
+	ancestorCollapsed bool
+	items             []int
+}
+
+func commandSectionAncestorCollapsed(collapsed map[string]bool, key string) bool {
+	if len(collapsed) == 0 || key == "" {
+		return false
+	}
+	for parent := snippetGroupParent(key); parent != ""; parent = snippetGroupParent(parent) {
+		if collapsed[parent] {
+			return true
+		}
+	}
+	return false
+}
+
+// commandSectionOrderLess orders two named sections in pre-order tree order,
+// using firstSeen at the first differing sibling so child groups always stay
+// nested under their parent even in creation order.
+func commandSectionOrderLess(left, right string, firstSeen map[string]int) bool {
+	lpath, rpath := left, right
+	for {
+		l, lrest, lmore := strings.Cut(left, "/")
+		r, rrest, rmore := strings.Cut(right, "/")
+		if l != r {
+			lp, rp := lpath, rpath
+			if lmore {
+				lp = lpath[:len(lpath)-len(lrest)-1]
+			}
+			if rmore {
+				rp = rpath[:len(rpath)-len(rrest)-1]
+			}
+			if lo, ro := firstSeen[lp], firstSeen[rp]; lo != ro {
+				return lo < ro
+			}
+			return snippetGroupLess(left, right)
+		}
+		if !lmore || !rmore {
+			return !lmore && rmore
+		}
+		left, right = lrest, rrest
+	}
 }
 
 // commandSections groups the snippets the filter lets through, in the order the
-// bar shows them. A group's place and its commands' order follow the chosen sort:
-// the list order the user arranged by default, or by name. Ungrouped commands
-// always come last, so the named groups stay at the top where they are looked for.
+// bar shows them. Nested slash-separated paths materialize their ancestor
+// folders in pre-order tree order; a group's place and its commands' order
+// follow the chosen sort. Ungrouped commands always come last, so the named
+// groups stay at the top where they are looked for.
 func (state *State) commandSections() []commandSection {
 	list := state.snippets.list
 	sections := make([]commandSection, 0, 4)
 	at := make(map[string]int)
+	firstSeen := make(map[string]int)
+	ensure := func(path string, order int) int {
+		key := commandGroupKey(path)
+		if n, ok := at[key]; ok {
+			return n
+		}
+		n := len(sections)
+		at[key] = n
+		firstSeen[key] = order
+		label := snippetGroupLeaf(path)
+		if key == "" {
+			label = state.messages.Tools.CommandsUngrouped
+		}
+		sections = append(sections, commandSection{
+			key:               key,
+			label:             label,
+			depth:             snippetGroupDepth(key),
+			collapsed:         state.commands.collapsedGroups[key],
+			ancestorCollapsed: commandSectionAncestorCollapsed(state.commands.collapsedGroups, key),
+		})
+		return n
+	}
 	for i := range list {
 		if !state.commandGroupVisible(list[i].Group) {
 			continue
 		}
-		key := commandGroupKey(list[i].Group)
-		n, ok := at[key]
-		if !ok {
-			n = len(sections)
-			at[key] = n
-			label := strings.TrimSpace(list[i].Group)
-			if key == "" {
-				label = state.messages.Tools.CommandsUngrouped
+		path := normalizeSnippetGroupPath(list[i].Group)
+		if path != "" {
+			var ancestors []string
+			for parent := snippetGroupParent(path); parent != ""; parent = snippetGroupParent(parent) {
+				ancestors = append(ancestors, parent)
 			}
-			sections = append(sections, commandSection{key: key, label: label, collapsed: state.commands.collapsedGroups[key]})
+			for j := len(ancestors) - 1; j >= 0; j-- {
+				ensure(ancestors[j], i)
+			}
 		}
+		n := ensure(path, i)
 		sections[n].items = append(sections[n].items, i)
 	}
 	byName := state.commands.sort != commandsSortCreated
@@ -299,7 +448,10 @@ func (state *State) commandSections() []commandSection {
 		if (sections[a].key == "") != (sections[b].key == "") {
 			return sections[b].key == ""
 		}
-		return byName && sections[a].key < sections[b].key
+		if byName {
+			return snippetGroupLess(sections[a].key, sections[b].key)
+		}
+		return commandSectionOrderLess(sections[a].key, sections[b].key, firstSeen)
 	})
 	if state.commands.sort == commandsSortName {
 		for i := range sections {
@@ -504,7 +656,8 @@ func (state *State) paintCommandChips(canvas *gfx.Canvas, bounds gfx.Rect) {
 		if y >= bounds.Y+bounds.Height || y+height <= bounds.Y {
 			return
 		}
-		rect := gfx.Rect{X: bounds.X, Y: y, Width: bounds.Width, Height: height}
+		indent := float32(min(int(sections[section].depth), 6)) * 12
+		rect := gfx.Rect{X: bounds.X + indent, Y: y, Width: max(bounds.Width-indent, 40), Height: height}
 		if index < 0 {
 			state.paintCommandHeading(canvas, rect, sections[section], hitCommandsGroupHeading.At(section), true)
 			return
@@ -522,15 +675,20 @@ func (state *State) paintCommandChips(canvas *gfx.Canvas, bounds gfx.Rect) {
 // and its height.
 func (state *State) layoutCommandRows(sections []commandSection, grouped bool, visit func(section, index int, top, height float32)) float32 {
 	y := float32(0)
+	shown := 0
 	for si, section := range sections {
+		if grouped && section.ancestorCollapsed {
+			continue
+		}
 		if grouped {
-			if si > 0 {
+			if shown > 0 && section.depth == 0 {
 				y += commandsSectionGap
 			}
 			if visit != nil {
 				visit(si, -1, y, commandsHeadingHeight)
 			}
 			y += commandsHeadingHeight + commandsTagGap
+			shown++
 		}
 		if grouped && section.collapsed {
 			continue
@@ -614,8 +772,12 @@ func (state *State) paintCommandChipsBar(canvas *gfx.Canvas, bar gfx.Rect, x, wi
 // layoutCommandRows does for the sidebar.
 func (state *State) layoutCommandStrip(canvas *gfx.Canvas, sections []commandSection, grouped bool, visit func(section, index int, left, width float32)) float32 {
 	x := float32(0)
+	shown := 0
 	for si, section := range sections {
-		if si > 0 {
+		if grouped && section.ancestorCollapsed {
+			continue
+		}
+		if shown > 0 {
 			x += commandsSectionGapX
 		}
 		if grouped {
@@ -624,8 +786,9 @@ func (state *State) layoutCommandStrip(canvas *gfx.Canvas, sections []commandSec
 				visit(si, -1, x, w)
 			}
 			x += w + commandsTagGap
+			shown++
 		}
-		if grouped && section.collapsed {
+		if grouped && (section.collapsed || len(section.items) == 0) {
 			x -= commandsTagGap
 			continue
 		}
@@ -742,8 +905,9 @@ func (state *State) declareCommandsFilterMenu(c ui.C, bar, trigger gfx.Rect) {
 		})
 	}
 	for i, g := range groups {
+		label := strings.Repeat("  ", min(int(snippetGroupDepth(g)), 6)) + snippetGroupLeaf(g)
 		choices = append(choices, components.DropdownMenuItem{
-			ID: hitCommandsGroupToggle.At(i), Label: g,
+			ID: hitCommandsGroupToggle.At(i), Label: label,
 			Kind: components.DropdownMenuCheckbox, Checked: state.commandGroupVisible(g),
 		})
 	}
@@ -941,23 +1105,33 @@ func (state *State) clickCommandsDrawer(id gfx.ID) bool {
 		state.commands.hiddenGroups = hidden
 		state.save()
 	case id == hitCommandsGroupUngrouped:
-		state.commands.hiddenGroups[""] = !state.commands.hiddenGroups[""]
+		if state.commands.hiddenGroups[""] {
+			delete(state.commands.hiddenGroups, "")
+		} else {
+			if state.commands.hiddenGroups == nil {
+				state.commands.hiddenGroups = make(map[string]bool)
+			}
+			state.commands.hiddenGroups[""] = true
+		}
 		state.save()
 	case id.Scope() == hitCommandsGroupToggle:
 		groups, _ := state.commandGroups()
 		if index := item(id); index >= 0 && index < len(groups) {
-			key := strings.ToLower(groups[index])
-			state.commands.hiddenGroups[key] = !state.commands.hiddenGroups[key]
+			state.toggleCommandGroupVisible(groups[index])
 			state.save()
 		}
 	case id.Scope() == hitCommandsGroupHeading:
 		sections := state.commandSections()
 		if index := item(id); index >= 0 && index < len(sections) {
 			key := sections[index].key
-			if state.commands.collapsedGroups == nil {
-				state.commands.collapsedGroups = make(map[string]bool)
+			if state.commands.collapsedGroups[key] {
+				delete(state.commands.collapsedGroups, key)
+			} else {
+				if state.commands.collapsedGroups == nil {
+					state.commands.collapsedGroups = make(map[string]bool)
+				}
+				state.commands.collapsedGroups[key] = true
 			}
-			state.commands.collapsedGroups[key] = !state.commands.collapsedGroups[key]
 			state.save()
 		}
 	case id.Scope() == hitCommandsTag:

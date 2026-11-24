@@ -81,7 +81,8 @@ the project, the packages and how to build it.
     </td>
     <td width="50%" valign="top">
       <p><strong>Tunnels you can see.</strong> Local, remote, SOCKS5 and HTTP CONNECT
-      rules bind to loopback only, are saved, and start when you say so. A tunnel
+      rules bind to loopback by default (a listen address is a per-device choice),
+      are saved, and start when you say so. A tunnel
       stops with the SSH tab that owns it.</p>
     </td>
   </tr>

@@ -32,6 +32,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net"
 	"strconv"
 	"sync"
@@ -823,8 +824,8 @@ func (c *Client) mcsConnect() error {
 		}
 		// Compute physical dimensions: width_px * 25.4 / (96 * scaleFactor/100)
 		dpi := float64(96) * float64(c.opts.DesktopScaleFactor) / 100.0
-		coreData.DesktopPhysicalWidth = uint32(float64(c.opts.Width) * 25.4 / dpi)
-		coreData.DesktopPhysicalHeight = uint32(float64(c.opts.Height) * 25.4 / dpi)
+		coreData.DesktopPhysicalWidth = uint32(math.Round(float64(c.opts.Width) * 25.4 / dpi))
+		coreData.DesktopPhysicalHeight = uint32(math.Round(float64(c.opts.Height) * 25.4 / dpi))
 	}
 
 	// Per MS-RDPBCGR 2.2.1.3.3: when RDP_NEG_REQ was sent in the X.224 CR,
@@ -910,8 +911,8 @@ func (c *Client) mcsConnect() error {
 		// Recompute physical dimensions with updated desktop size.
 		if c.opts.DesktopScaleFactor > 0 {
 			dpi := float64(96) * float64(c.opts.DesktopScaleFactor) / 100.0
-			coreData.DesktopPhysicalWidth = uint32(float64(c.opts.Width) * 25.4 / dpi)
-			coreData.DesktopPhysicalHeight = uint32(float64(c.opts.Height) * 25.4 / dpi)
+			coreData.DesktopPhysicalWidth = uint32(math.Round(float64(c.opts.Width) * 25.4 / dpi))
+			coreData.DesktopPhysicalHeight = uint32(math.Round(float64(c.opts.Height) * 25.4 / dpi))
 		}
 	}
 

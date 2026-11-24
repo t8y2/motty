@@ -510,8 +510,8 @@ func (state *State) proxyDialogBodyHeight(theme *base.Theme) float32 {
 
 // proxyRelayNote says what is typed on the jump host before the relay starts.
 func (state *State) proxyRelayNote() string {
-	if jump, ok := state.hostByID(state.proxyEditor.jumpID); ok && jump.LoginCommand != "" {
-		return fmt.Sprintf(state.messages.ProxyRelayPreludeFmt, jump.LoginCommand)
+	if jump, ok := state.hostByID(state.proxyEditor.jumpID); ok && jump.relayPrelude() != "" {
+		return fmt.Sprintf(state.messages.ProxyRelayPreludeFmt, jump.relayPrelude())
 	}
 	return state.messages.ProxyRelayNoPrelude
 }

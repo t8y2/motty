@@ -273,6 +273,7 @@ func TestChoosingASavedHostOpensItInTheVisibleWindow(t *testing.T) {
 	if productionHost.ID == 0 || opened.HostID != productionHost.ID {
 		t.Fatalf("opened host %d, want Production %d", opened.HostID, productionHost.ID)
 	}
+	fixture.second.startupReuse = true
 	production.OnSelect()
 	if len(fixture.second.sessions) != before+1 || fixture.second.activeSessionID != opened.ID || fixture.firstView.shows != 0 {
 		t.Fatal("choosing the host again must reuse it in the visible window")

@@ -82,6 +82,9 @@ type Config struct {
 	StepTimeout     time.Duration
 	MaxTokens       int
 	ReasoningEffort string
+	// SessionID names the conversation every request of the run belongs to,
+	// so providers that route on it keep one conversation on one cache.
+	SessionID string
 	// MaxToolResultBytes cuts longer tool output, keeping head and tail
 	// (default 32 KiB).
 	MaxToolResultBytes int
@@ -258,6 +261,7 @@ func Run(ctx context.Context, cfg Config, history []llm.Message, userText string
 			MaxTokens:       cfg.MaxTokens,
 			Temperature:     cfg.Temperature,
 			ReasoningEffort: cfg.ReasoningEffort,
+			SessionID:       cfg.SessionID,
 		}
 		switch {
 		case final:

@@ -1,6 +1,8 @@
 package workbench
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -300,5 +302,142 @@ func TestFolderFollowOffAndUnknownSessionDoNotMovePanel(t *testing.T) {
 	state.Wake()
 	if session.files.path != "/home/test" {
 		t.Fatal("disabled or unknown-session report moved the panel")
+	}
+}
+
+func sftpHasRow(view *sftpView, name string) bool {
+	if view == nil {
+		return false
+	}
+	for _, row := range view.rows {
+		if row.entry.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func TestTerminalCommandRefreshesDockedSFTPPanelInSameDirectory(t *testing.T) {
+	state, session, fake, remote := openTestSFTP(t)
+	token := session.term.folderToken
+	// Initial prompt establishes shell integration without triggering an extra refresh.
+	beforeInitial := remote.readCount("/home/test")
+	fake.shell(t).say(fmt.Sprintf("\x1b]133;A;motty=%s\a\x1b]7;file://box/home/test\a\x1b]133;B;motty=%s\a", token, token))
+	state.Wake()
+	if remote.readCount("/home/test") != beforeInitial {
+		t.Fatal("initial prompt triggered an unnecessary SFTP refresh")
+	}
+
+	// Simulate `mkdir created && touch added.txt` in the terminal without changing cwd.
+	if err := remote.Mkdir("/home/test/created"); err != nil {
+		t.Fatal(err)
+	}
+	remote.mu.Lock()
+	remote.entries["/home/test"] = append(remote.entries["/home/test"], workbenchFileInfo{name: "added.txt", mode: 0o644})
+	remote.mu.Unlock()
+
+	fake.shell(t).say(fmt.Sprintf(
+		"\x1b]133;C;motty=%s\a\x1b]133;D;0;motty=%s\a\x1b]133;A;motty=%s\a\x1b]7;file://box/home/test\a\x1b]133;B;motty=%s\a",
+		token, token, token, token,
+	))
+	waitSFTP(t, state, session, func(view *sftpView) bool {
+		return sftpHasRow(view, "created") && sftpHasRow(view, "added.txt")
+	})
+}
+
+func TestTerminalCommandRefreshesDockedSFTPWithoutCommandMarkers(t *testing.T) {
+	state, session, fake, remote := openTestSFTP(t)
+	token := session.term.folderToken
+	// Shells like POSIX sh or PowerShell emit prompt-start (133;A) + cwd without 133;C/D.
+	fake.shell(t).say(fmt.Sprintf("\x1b]133;A;motty=%s\a\x1b]7;file://box/home/test\a", token))
+	state.Wake()
+
+	// A prompt redrawn with nothing typed since the last one ran no command.
+	before := remote.readCount("/home/test")
+	fake.shell(t).say(fmt.Sprintf("\x1b]133;A;motty=%s\a\x1b]7;file://box/home/test\a", token))
+	state.Wake()
+	if remote.readCount("/home/test") != before {
+		t.Fatal("a prompt with no input since the last one refreshed the listing")
+	}
+
+	if err := remote.Mkdir("/home/test/shdir"); err != nil {
+		t.Fatal(err)
+	}
+	session.term.keyedSincePrompt = true // a command was typed and run
+	fake.shell(t).say(fmt.Sprintf("\x1b]133;A;motty=%s\a\x1b]7;file://box/home/test\a", token))
+	waitSFTP(t, state, session, func(view *sftpView) bool {
+		return sftpHasRow(view, "shdir")
+	})
+}
+
+func TestTerminalCommandRefreshesDockedSFTPEvenWhenFolderFollowOff(t *testing.T) {
+	state, session, fake, remote := openTestSFTP(t)
+	state.sftpFollowOff = true
+	token := session.term.folderToken
+	fake.shell(t).say(fmt.Sprintf("\x1b]133;A;motty=%s\a\x1b]7;file://box/home/test\a\x1b]133;B;motty=%s\a", token, token))
+	state.Wake()
+
+	if err := remote.Mkdir("/home/test/kept"); err != nil {
+		t.Fatal(err)
+	}
+	fake.shell(t).say(fmt.Sprintf(
+		"\x1b]133;C;motty=%s\a\x1b]133;D;0;motty=%s\a\x1b]133;A;motty=%s\a\x1b]7;file://box/home/test\a\x1b]133;B;motty=%s\a",
+		token, token, token, token,
+	))
+	waitSFTP(t, state, session, func(view *sftpView) bool {
+		return view.path == "/home/test" && sftpHasRow(view, "kept")
+	})
+}
+
+func TestTerminalCommandRefreshLeavesDockedPanelDialogInCharge(t *testing.T) {
+	state, session, fake, remote := openTestSFTP(t)
+	token := session.term.folderToken
+	fake.shell(t).say(fmt.Sprintf("\x1b]133;A;motty=%s\a\x1b]7;file://box/home/test\a\x1b]133;B;motty=%s\a", token, token))
+	state.Wake()
+
+	session.files.dialog = sftpDialogCreateDirectory
+	before := remote.readCount("/home/test")
+	if err := remote.Mkdir("/home/test/blocked"); err != nil {
+		t.Fatal(err)
+	}
+	fake.shell(t).say(fmt.Sprintf(
+		"\x1b]133;C;motty=%s\a\x1b]133;D;0;motty=%s\a\x1b]133;A;motty=%s\a\x1b]7;file://box/home/test\a\x1b]133;B;motty=%s\a",
+		token, token, token, token,
+	))
+	state.Wake()
+	if remote.readCount("/home/test") != before {
+		t.Fatal("terminal command refresh disturbed an open SFTP dialog")
+	}
+	session.files.dialog = sftpDialogNone
+}
+
+func TestTerminalCommandRefreshesLocalDockedPanel(t *testing.T) {
+	dir := t.TempDir()
+	state, session, _, _ := openTestSFTP(t)
+	session.files.local, session.files.localOnly = true, true
+	session.HostID = localHostID
+	session.conn = nil
+	if err := state.listLocal(session.files, dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "localdir"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "local.txt"), []byte("hi"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	session.term.sftpRefreshPending = true
+	state.followTerminalDirectory(session)
+	hasDir, hasFile := false, false
+	for _, row := range session.files.lfolder.rows {
+		switch row.entry.Name {
+		case "localdir":
+			hasDir = true
+		case "local.txt":
+			hasFile = true
+		}
+	}
+	if !hasDir || !hasFile {
+		t.Fatalf("local docked panel did not refresh after terminal command: rows=%d hasDir=%v hasFile=%v", len(session.files.lfolder.rows), hasDir, hasFile)
 	}
 }

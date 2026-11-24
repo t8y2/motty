@@ -29,6 +29,16 @@ type dashboardRow struct {
 	clock                                           func([]byte, float32) []byte
 	label, cpu, memory, capacity, down, up, updated string
 	disks                                           []remotestats.Disk
+	visible                                         [5]bool
+	graphs                                          [4]int
+	graphCount                                      int
+	infoOpen                                        bool
+	gpuKey, gpuPrepared                             string
+	gpuChoice                                       int
+	gpuX                                            []float32
+	gpuValues                                       [2][]float32
+	gpuCharts                                       [2]dashboardChart
+	gpuChartIDs                                     [2]gfx.ID
 }
 
 type dashboardChart struct {
@@ -58,6 +68,9 @@ func (s *State) dashboardRow(p *monitoring.Panel, id string, width int) *dashboa
 		for i := range r.chartIDs {
 			r.chartIDs[i] = tree.ID(dashboardHits, fmt.Sprintf("chart-%s-%s-%d", p.ID, id, i))
 		}
+		for i := range r.gpuChartIDs {
+			r.gpuChartIDs[i] = tree.ID(dashboardHits, fmt.Sprintf("gpu-chart-%s-%s-%d", p.ID, id, i))
+		}
 		d.rows[key] = r
 	}
 	version := r.snapshot.Version
@@ -66,6 +79,7 @@ func (s *State) dashboardRow(p *monitoring.Panel, id string, width int) *dashboa
 	}
 	if snap, changed := d.engine.Read(p.ID, id, max(1, width/8), version); changed {
 		r.snapshot = snap
+		r.gpuPrepared = ""
 		r.width = width
 		r.cpu = "—"
 		r.memory = "—"
@@ -124,6 +138,8 @@ func (s *State) dashboardRow(p *monitoring.Panel, id string, width int) *dashboa
 			}
 		}
 	}
+	r.configureDisplay(p, id)
+	r.prepareGPU()
 	return r
 }
 func dashboardRate(n uint64) string {
@@ -164,21 +180,28 @@ func (s *State) declareDashboardEmpty(c ui.C) ui.Box {
 // dashboardHostHeight is a detailed card's height for a row width.
 func dashboardHostHeight(r *dashboardRow, w float32) float32 {
 	header := dashboardHeadingHeight(w)
+	if r.page == 3 {
+		return header + dashboardGPUSummaryHeight(r, w) + dashboardGPUPlotHeight(w) + 54
+	}
 	if r.page == 1 {
 		return header + 178 + float32(max(1, len(r.snapshot.Details.Disks)))*38 + 44
 	}
 	if r.page == 2 {
 		return header + 178 + float32(max(1, len(r.snapshot.Details.Networks)))*38 + 44
 	}
-	cols := 2
-	if w < 760 {
-		cols = 1
+	charts := float32((r.graphCount+dashboardGraphColumns(r, w)-1)/dashboardGraphColumns(r, w)) * 164
+	if r.graphCount == 0 {
+		charts = 44
 	}
-	charts := float32(164)
-	if w < 760 {
-		charts = 3*164 + 16
+	if r.visible[4] {
+		charts += dashboardGPUSummaryHeight(r, w)
 	}
-	return header + charts + float32(max(1, (len(r.disks)+cols-1)/cols))*48 + 18
+	disks := float32(0)
+	if r.visible[3] {
+		cols := dashboardDiskColumns(w, len(r.disks))
+		disks = float32(max(1, (len(r.disks)+cols-1)/cols)) * 40
+	}
+	return header + charts + disks + 18
 }
 
 func dashboardBar(canvas *gfx.Canvas, b gfx.Rect, value float64, color, track gfx.Color) {
@@ -203,7 +226,15 @@ func (s *State) dashboardHeadingRects(c *gfx.Canvas, h Host, b gfx.Rect) dashboa
 	source := s.dashboard.sources[h.CatalogID]
 	canSudo := source != nil && source.session.phase == sshconn.PhaseConnected && source.session.host.System != sshconn.SystemWindows
 	y := b.Y
+	displayW := float32(32)
 	nameW := min(float32(190), c.TextWidthWeight(h.Label, 15, gfx.WeightSemibold)+4)
+	if b.Width < 600 {
+		reserve := displayW + 194
+		if canSudo {
+			reserve += 36
+		}
+		nameW = min(nameW, max(64, b.Width-reserve))
+	}
 	port := h.Port
 	if port == 0 {
 		port = 22
@@ -212,11 +243,11 @@ func (s *State) dashboardHeadingRects(c *gfx.Canvas, h Host, b gfx.Rect) dashboa
 	addrX := b.X + 42 + nameW + 12
 	addrW := min(float32(220), c.TextWidthWeight(address, 12, gfx.WeightRegular)+4)
 	if b.Width < 600 {
-		reserve := float32(114)
+		end := b.X + b.Width - displayW - 46
 		if canSudo {
-			reserve += 36
+			end -= 36
 		}
-		addrW = min(addrW, max(90, b.Width-nameW-reserve))
+		addrW = min(addrW, max(0, end-addrX))
 	}
 	tabsX, tabsY := addrX+addrW+16, y+5
 	if b.Width < 900 {
@@ -225,95 +256,121 @@ func (s *State) dashboardHeadingRects(c *gfx.Canvas, h Host, b gfx.Rect) dashboa
 	}
 	options := s.dashboardViewOptions(h.ID, false)
 	tabsW := float32(210)
+	count := 0
 	for _, option := range options {
-		tabsW = max(tabsW, (c.TextWidthWeight(option.Label, 12, gfx.WeightMedium)+44)*3)
+		if !option.Disabled {
+			count++
+		}
+	}
+	// Native tabs share the strip equally, so every slot must fit its longest
+	// translated label at the control's actual font size, including its icon.
+	for _, option := range options {
+		if option.Disabled {
+			continue
+		}
+		tabsW = max(tabsW, (c.TextWidthWeight(option.Label, s.Theme().Metrics.FontSizeM, gfx.WeightMedium)+44)*float32(count)+6)
 	}
 	statusX := tabsX + tabsW + 8
 	if b.Width < 900 {
 		statusX = addrX + addrW + 12
 	}
-	statusEnd := b.X + b.Width - 44
+	statusEnd := b.X + b.Width - displayW - 46
 	if canSudo {
 		statusEnd -= 36
 	}
 	statusW := min(float32(125), max(0, statusEnd-statusX))
 	out.tabs = gfx.Rect{X: tabsX, Y: tabsY, Width: tabsW, Height: 30}
 	out.retry = gfx.Rect{X: statusX, Y: y + 7, Width: statusW, Height: 28}
-	out.terminal = gfx.Rect{X: b.X + b.Width - 38, Y: y + 5, Width: 32, Height: 32}
-	out.sudo = gfx.Rect{X: b.X + b.Width - 74, Y: y + 5, Width: 32, Height: 32}
+	out.terminal = gfx.Rect{X: b.X + b.Width - 32, Y: y + 5, Width: 32, Height: 32}
+	out.display = gfx.Rect{X: out.terminal.X - 38, Y: y + 5, Width: displayW, Height: 32}
+	out.sudo = gfx.Rect{X: out.display.X - 36, Y: y + 5, Width: 32, Height: 32}
 	return out
 }
 
 func (s *State) paintDashboardHost(c *gfx.Canvas, p *monitoring.Panel, h Host, r *dashboardRow, b gfx.Rect) {
-	_, _, dashboardAmber := s.dashboardColors()
+	_, _, amber := s.dashboardColors()
 	m, pal := s.messages.Dashboard, s.pal
 	header := s.paintDashboardHeading(c, p, h, r, b)
-	if r.page != 0 {
-		s.paintDashboardDeviceView(c, p, h, r, gfx.Rect{X: b.X, Y: b.Y + header, Width: b.Width, Height: b.Height - header})
+	body := gfx.Rect{X: b.X, Y: b.Y + header, Width: b.Width, Height: b.Height - header}
+	if r.page == 3 {
+		s.paintDashboardGPUView(c, r, body)
 		return
 	}
-	y := b.Y + header
-	chartW := (b.Width - 16) / 3
-	vertical := b.Width < 760
-	if vertical {
-		chartW = b.Width
+	if r.page != 0 {
+		s.paintDashboardDeviceView(c, p, h, r, body)
+		return
 	}
-	for i, label := range []string{m.CPU, m.Memory, m.Network} {
-		box := gfx.Rect{X: b.X + float32(i)*(chartW+8), Y: y, Width: chartW, Height: 156}
-		if vertical {
-			box.X = b.X
-			box.Y = y + float32(i)*172
-		}
+	y := body.Y
+	cols := dashboardGraphColumns(r, b.Width)
+	chartW := (b.Width - float32(cols-1)*8) / float32(cols)
+	labels := [5]string{m.CPU, m.Memory, m.Network, m.Disk, s.messages.Monitor.GPU}
+	glyphs := [5]gfx.Icon{icons.Cpu, icons.MemoryStick, icons.Wifi, icons.HardDrive, icons.Cpu}
+	for n, metric := range r.graphs[:r.graphCount] {
+		box := gfx.Rect{X: b.X + float32(n%cols)*(chartW+8), Y: y + float32(n/cols)*164, Width: chartW, Height: 156}
 		if !s.dashboardShown(box) {
 			continue
 		}
 		c.RoundedBorder(box, 7, 1, pal.line, pal.workspace)
-		c.DrawIcon([]gfx.Icon{icons.Cpu, icons.MemoryStick, icons.Wifi}[i], gfx.Rect{X: box.X + 12, Y: box.Y + 13, Width: 14, Height: 14}, pal.muted)
-		monitorLabel(c, label, gfx.Rect{X: box.X + 34, Y: box.Y + 6, Width: 74, Height: 28}, 13, pal.text, gfx.WeightMedium)
+		c.DrawIcon(glyphs[metric], gfx.Rect{X: box.X + 12, Y: box.Y + 13, Width: 14, Height: 14}, pal.muted)
+		if metric != 4 {
+			monitorLabel(c, labels[metric], gfx.Rect{X: box.X + 34, Y: box.Y + 6, Width: 74, Height: 28}, 13, pal.text, gfx.WeightMedium)
+		}
 		value := r.cpu
-		if i == 1 {
-			value = r.memory
-		}
-		if i == 2 {
-			value = "↓ " + r.down + "   ↑ " + r.up
-		}
 		font := float32(20)
-		if i == 2 {
+		switch metric {
+		case 1:
+			value = r.memory
+		case 2:
+			value = "↓ " + r.down + "   ↑ " + r.up
 			font = 12
+		case 4:
+			g, present := r.gpu()
+			value = dashboardGPUPercent(g, present)
 		}
 		monitorRight(c, value, gfx.Rect{X: box.X + 85, Y: box.Y + 6, Width: max(0, box.Width-97), Height: 28}, font, pal.text, gfx.WeightSemibold)
-		// The memory card names its used and total size below the percentage,
-		// the way the simple row does, so the amount behind the ratio is on the
-		// same card. Every card starts its plot below that line to stay level.
-		if i == 1 && r.capacity != "" {
-			monitorRight(c, r.capacity, gfx.Rect{X: box.X + 34, Y: box.Y + 33, Width: max(0, box.Width-46), Height: 16}, 11, pal.muted, gfx.WeightRegular)
+		if metric == 1 && r.capacity != "" {
+			monitorRight(c, r.capacity, gfx.Rect{X: box.X + 34, Y: box.Y + 33, Width: box.Width - 46, Height: 16}, 11, pal.muted, gfx.WeightRegular)
+		}
+		if metric == 4 {
+			g, present := r.gpu()
+			memory, temp, _, _ := dashboardGPUReading(g, present)
+			monitorRight(c, s.messages.Monitor.GPUMemory+" "+memory+" · "+temp, gfx.Rect{X: box.X + 12, Y: box.Y + 33, Width: box.Width - 24, Height: 16}, 11, pal.muted, gfx.WeightRegular)
 		}
 		plot := gfx.Rect{X: box.X + 4, Y: box.Y + 52, Width: box.Width - 8, Height: box.Height - 56}
-		s.paintDashboardChart(c, p, h, r, plot, i, label)
+		if metric == 4 {
+			s.paintDashboardGPUChart(c, r, plot, 0)
+		} else {
+			s.paintDashboardChart(c, p, h, r, plot, metric, labels[metric])
+		}
 	}
-	y += 164
-	if vertical {
-		y += 344
-	}
-	cols := 2
-	if vertical {
-		cols = 1
-	}
-	diskW := (b.Width - float32(cols-1)*8) / float32(cols)
-	if len(r.disks) == 0 || r.snapshot.DetailsFailed {
-		monitorLabel(c, s.dashboardDiskMessage(r), gfx.Rect{X: b.X + 12, Y: y, Width: b.Width - 24, Height: 40}, 12, pal.muted, gfx.WeightRegular)
+	if r.graphCount == 0 {
+		monitorLabel(c, m.NoDisplay, gfx.Rect{X: b.X + 12, Y: y, Width: b.Width - 24, Height: 40}, 12, pal.muted, gfx.WeightRegular)
+		y += 44
 	} else {
-		for i, disk := range r.disks {
-			box := gfx.Rect{X: b.X + float32(i%cols)*(diskW+8), Y: y + float32(i/cols)*48, Width: diskW, Height: 40}
-			if !s.dashboardShown(box) {
-				continue
+		y += float32((r.graphCount+cols-1)/cols) * 164
+	}
+	if r.visible[4] {
+		s.paintDashboardGPUSummary(c, r, gfx.Rect{X: b.X, Y: y, Width: b.Width})
+		y += dashboardGPUSummaryHeight(r, b.Width)
+	}
+	if r.visible[3] {
+		cols := dashboardDiskColumns(b.Width, len(r.disks))
+		diskW := (b.Width - float32(cols-1)*8) / float32(cols)
+		if len(r.disks) == 0 || r.snapshot.DetailsFailed {
+			monitorLabel(c, s.dashboardDiskMessage(r), gfx.Rect{X: b.X + 12, Y: y, Width: b.Width - 24, Height: 34}, 12, pal.muted, gfx.WeightRegular)
+		} else {
+			for i, disk := range r.disks {
+				box := gfx.Rect{X: b.X + float32(i%cols)*(diskW+8), Y: y + float32(i/cols)*40, Width: diskW, Height: 34}
+				if !s.dashboardShown(box) {
+					continue
+				}
+				c.RoundedBorder(box, 6, 1, pal.line, pal.workspace)
+				c.DrawIcon(icons.HardDrive, gfx.Rect{X: box.X + 8, Y: box.Y + 10, Width: 14, Height: 14}, amber)
+				monitorLabel(c, disk.Path, gfx.Rect{X: box.X + 28, Y: box.Y, Width: max(40, box.Width-242), Height: 34}, 12, pal.text, gfx.WeightMedium)
+				monitorRight(c, fmt.Sprintf("%.0f%%", disk.Percent), gfx.Rect{X: box.X + box.Width - 210, Y: box.Y, Width: 38, Height: 34}, 13, pal.text, gfx.WeightSemibold)
+				dashboardBar(c, gfx.Rect{X: box.X + box.Width - 160, Y: box.Y + 14, Width: 58, Height: 5}, disk.Percent, amber, pal.line)
+				monitorRight(c, monitorCapacity(disk.Used, disk.Total), gfx.Rect{X: box.X + box.Width - 96, Y: box.Y, Width: 88, Height: 34}, 11, pal.muted, gfx.WeightRegular)
 			}
-			c.RoundedBorder(box, 6, 1, pal.line, pal.workspace)
-			c.DrawIcon(icons.HardDrive, gfx.Rect{X: box.X + 10, Y: box.Y + 13, Width: 14, Height: 14}, dashboardAmber)
-			monitorLabel(c, disk.Path, gfx.Rect{X: box.X + 32, Y: box.Y, Width: max(0, box.Width*.18-24), Height: 40}, 12, pal.text, gfx.WeightMedium)
-			monitorLabel(c, fmt.Sprintf("%.0f%%", disk.Percent), gfx.Rect{X: box.X + box.Width*.2, Y: box.Y, Width: 52, Height: 40}, 16, pal.text, gfx.WeightSemibold)
-			dashboardBar(c, gfx.Rect{X: box.X + box.Width*.35, Y: box.Y + 17, Width: box.Width * .3, Height: 6}, disk.Percent, dashboardAmber, pal.line)
-			monitorRight(c, monitorCapacity(disk.Used, disk.Total), gfx.Rect{X: box.X + box.Width*.67, Y: box.Y, Width: box.Width*.31 - 8, Height: 40}, 11, pal.muted, gfx.WeightRegular)
 		}
 	}
 	c.Fill(gfx.Rect{X: b.X, Y: b.Y + b.Height - 6, Width: b.Width, Height: 1}, pal.line)

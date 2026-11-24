@@ -25,6 +25,7 @@ type dashboardSectionUI struct {
 // dashboardRowControls is where a host card's page controls sit inside its row.
 type dashboardRowControls struct {
 	tabs, terminal, sudo, retry gfx.Rect
+	display                     gfx.Rect
 	retryShown                  bool
 }
 
@@ -368,26 +369,30 @@ func (state *State) declareDashboardRowControls(c ui.C, p *monitoring.Panel, ids
 		}
 		row := gfx.Rect{X: 0, Y: y, Width: rowW - 12, Height: rowHeight}
 		controls := state.dashboardRowControlRects(c.Canvas(), p, h, r, row, exists, p.Simple)
-		state.declareDashboardRowControlBoxes(c, p, h, r, controls, p.Simple, y)
+		state.declareDashboardRowControlBoxes(c, p, h, r, controls, p.Simple, y, row.Width)
 		y += rowHeight
 	}
 }
 
 // declareDashboardRowControlBoxes puts a row's controls at their content
 // offsets, over the painted card.
-func (state *State) declareDashboardRowControlBoxes(c ui.C, p *monitoring.Panel, h Host, r *dashboardRow, controls dashboardRowControls, simple bool, y float32) {
+func (state *State) declareDashboardRowControlBoxes(c ui.C, p *monitoring.Panel, h Host, r *dashboardRow, controls dashboardRowControls, simple bool, y, rowWidth float32) {
 	m := state.messages.Dashboard
-	labels := [3]string{state.messages.Monitor.Overview, state.messages.Monitor.Disks, state.messages.Monitor.Network}
+	labels := [4]string{state.messages.Monitor.Overview, state.messages.Monitor.Disks, state.messages.Monitor.Network, state.messages.Monitor.GPU}
 	view := func(index int) string { return labels[index] }
+	values := dashboardViewValues(r, simple)
+	icon := func(index int) gfx.Icon { return dashboardViewIcons(values[index]) }
 	if simple {
 		// The view column is 40 wide: the strip shows only its icons, and the
 		// labels stay its accessible names and hover hints.
-		ui.Tabs(c, &r.simplePage, []int{0, 1, 2}, view).TabIcons(dashboardViewIcons).TabIconOnly().Vertical().
+		ui.Tabs(c, &r.simplePage, values, view).TabIcons(icon).TabIconOnly().Vertical().
 			Absolute().Left(controls.tabs.X).Top(y+controls.tabs.Y).Size(controls.tabs.Width, controls.tabs.Height)
 	} else {
-		ui.Tabs(c, &r.page, []int{0, 1, 2}, view).TabIcons(dashboardViewIcons).
+		ui.Tabs(c, &r.page, values, view).TabIcons(icon).
 			Absolute().Left(controls.tabs.X).Top(y+controls.tabs.Y).Size(controls.tabs.Width, controls.tabs.Height)
 	}
+	state.declareDashboardDisplay(c, p, h, r, controls.display, y)
+	state.declareDashboardGPUControls(c, p, h, r, gfx.Rect{Width: rowWidth}, y)
 	if h.ID != 0 {
 		state.declareIconButton(c, hitDashboardTerminalList.At(int(h.ID)), iconTerminal, m.Terminal, false, iconButtonQuiet).
 			Absolute().Left(controls.terminal.X).Top(y+controls.terminal.Y).Size(controls.terminal.Width, controls.terminal.Height)
@@ -416,8 +421,12 @@ func (state *State) dashboardRowControlRects(canvas *gfx.Canvas, p *monitoring.P
 		controls := dashboardRowControls{
 			tabs: gfx.Rect{X: tabs, Y: dashboardSimpleTabInset, Width: 40,
 				Height: dashboardSimpleRowLeast - 2*dashboardSimpleTabInset},
-			terminal: gfx.Rect{X: row.Width - 38, Y: 24, Width: 32, Height: 32},
+			terminal: gfx.Rect{X: row.Width - 38, Y: 64, Width: 32, Height: 32},
+			display:  gfx.Rect{X: row.Width - 38, Y: 24, Width: 32, Height: 32},
 			sudo:     gfx.Rect{X: row.Width - 74, Y: 24, Width: 32, Height: 32},
+		}
+		if r.visible[4] {
+			controls.tabs.Height = 146 - 2*dashboardSimpleTabInset
 		}
 		controls.retryShown = dashboardRetryShown(state, p, h, r)
 		controls.retry = gfx.Rect{X: 54, Y: 75, Width: max(tabs-64, 40), Height: 24}
@@ -464,7 +473,7 @@ func (state *State) dashboardLiveState(p *monitoring.Panel, running bool, width 
 	live := 0
 	for _, id := range p.Hosts {
 		r := state.dashboardRow(p, id, width)
-		if r.snapshot.Status == monitoring.Live && running {
+		if r.snapshot.Status == monitoring.Live && running && p.Metrics(id) != 0 {
 			live++
 		}
 	}
@@ -844,10 +853,11 @@ func (state *State) declareDashboardOrderList(c ui.C) {
 	e.orderList.Reorder = func(rows []int, to int) {
 		state.moveDashboardHost(rows, to)
 	}
-	list := ui.List(c, &e.orderList, len(e.selected), state.declareDashboardOrderRow).
-		Grow(1).Basis(0).MinHeight(0).Scrollbars().ScrollbarSize(catalogBarGutter).Label(m.OrderTab)
-	list.DrawOver(func(d *ui.DrawContext) {
-		e.bounds = list.Rect()
+	ui.Column(c).Grow(1).Basis(0).MinHeight(0).Children(func() {
+		ui.List(c, &e.orderList, len(e.selected), state.declareDashboardOrderRow).
+			Grow(1).Basis(0).MinHeight(0).Scrollbars().ScrollbarSize(catalogBarGutter).Label(m.OrderTab)
+	}).DrawOver(func(d *ui.DrawContext) {
+		e.bounds = d.Rect
 	})
 	if len(e.selected) == 0 {
 		ui.Text(c, m.HostsRequired).FontSize(12).Color(state.pal.muted)

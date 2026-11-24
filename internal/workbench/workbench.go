@@ -193,6 +193,7 @@ var (
 	hitForwardDialogCancel          = tree.ID(forwardsHits, "forward-dialog-cancel")
 	hitForwardDialogSubmit          = tree.ID(forwardsHits, "forward-dialog-submit")
 	hitForwardDialogLabel           = tree.ID(forwardsHits, "forward-dialog-label")
+	hitForwardDialogBindAddress     = tree.ID(forwardsHits, "forward-dialog-bind-address")
 	hitForwardDialogLocalPort       = tree.ID(forwardsHits, "forward-dialog-local-port")
 	hitForwardDialogDestination     = tree.ID(forwardsHits, "forward-dialog-destination")
 	hitForwardDialogDestinationPort = tree.ID(forwardsHits, "forward-dialog-destination-port")
@@ -603,6 +604,10 @@ type State struct {
 	windowVisible      func() bool
 	systemKeys         systemKeyCapture
 	winChrome          windowChrome
+	// desktopBar is a fullscreen remote desktop's floating bar: whether its pin
+	// keeps it visible, and where the pointer is in the band at the top edge
+	// that reveals it. See desktop_fullscreen.go.
+	desktopBar desktopFullscreenBar
 	// desktopAwake says this window already holds the sleep request for a visible
 	// remote desktop; see keepAwakeForDesktop.
 	desktopAwake    bool
@@ -760,6 +765,9 @@ type State struct {
 	terminalScrollback int
 	terminalFindPrefs  terminalFindPreferences
 	findSettingsUI     terminalFindSettingsUI
+	// terminalZoomSaveTimer coalesces a primary+wheel burst into one save once the
+	// gesture settles; see scheduleTerminalZoomSave.
+	terminalZoomSaveTimer *time.Timer
 	// interfaceTextSize is the body text size the user chose, in logical pixels:
 	// the size the whole window's text is drawn at, apart from the terminal's own
 	// font size.
@@ -1173,6 +1181,9 @@ func (state *State) Close() {
 	}
 	state.stopNetworkWatch()
 	state.closeWindowChrome()
+	// The window's save above already carried any applied font size, so a wheel
+	// save still waiting is dropped rather than fired after the store closes.
+	state.stopTerminalZoomSave()
 	state.closeAI()
 	state.closeHistory()
 	state.stopSyncTimer()
@@ -1239,7 +1250,7 @@ func New(options Options) *State {
 		terminalFindPrefs:  defaultTerminalFindPreferences,
 		tabTitleMode:       tabTitleConnection,
 		tabDoubleClick:     tabDoubleClickRename,
-		startupReuse:       true,
+		startupReuse:       false,
 		startupEnabled:     true,
 		// The defaults a fresh window starts from, before the saved state is
 		// read: the same ones a state file that says nothing gets.
@@ -1462,6 +1473,9 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 	if editor := state.dashboardEditorFor(hit); editor != nil {
 		return editor
 	}
+	if editor := state.agentHostsEditor(hit); editor != nil {
+		return editor
+	}
 	if _, local, ok := state.decodePaneHit(hit); ok {
 		hit = local
 	}
@@ -1536,7 +1550,8 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 			return &state.proxyBatch.query
 		}
 	case modalNewForward:
-		if hit == hitForwardDialogLabel || hit == hitForwardDialogLocalPort || hit == hitForwardDialogDestination || hit == hitForwardDialogDestinationPort {
+		if hit == hitForwardDialogLabel || hit == hitForwardDialogBindAddress || hit == hitForwardDialogLocalPort ||
+			hit == hitForwardDialogDestination || hit == hitForwardDialogDestinationPort {
 			return state.forwardEditor.field(forwardDialogField(hit))
 		}
 		if hit == hitForwardDialogRelay && state.forwardEditor.viaShell {
@@ -1728,6 +1743,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		state.pressIconMotion(id)
 	}
 	if state.clickDashboard(id) {
+		return
+	}
+	if state.clickAgentHosts(id) {
 		return
 	}
 	if state.clickRemoteLogs(id) {
@@ -2638,6 +2656,11 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if state.trackHostListBar(event) {
 		defer func() { outcome.Repaint = true }()
 	}
+	// A fullscreen desktop's unpinned bar appears while the pointer reaches the
+	// top edge, before the pointer's press can land on the picture there.
+	if state.trackDesktopFullscreenBar(event) {
+		defer func() { outcome.Repaint = true }()
+	}
 	if event.Kind == gfx.PointerDown && !workspaceInlineOwns(event.Target) {
 		state.workspaceCommandEdit = workspaceCommandInline{}
 	}
@@ -2716,6 +2739,9 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 		return result
 	}
 	if result, handled := state.tabMiddlePointer(event); handled {
+		return result
+	}
+	if result, handled := state.workspaceFocusTabsPointer(event); handled {
 		return result
 	}
 	if result, handled := state.tabDragPointer(event); handled {
@@ -3093,6 +3119,9 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	if result := state.dashboardKey(event); result.Handled {
 		return result
 	}
+	if result := state.agentHostsKey(event); result.Handled {
+		return result
+	}
 	if result, handled := state.remoteProcessDetailsKey(event); handled {
 		return result
 	}
@@ -3209,7 +3238,7 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	if result, handled := state.hostManagementKey(event); handled {
 		return result
 	}
-	if state.modal == modalNewHost && event.Key == gfx.KeyEnter && event.Modifiers == 0 && state.EditorFor(event.Target) != nil {
+	if state.modal == modalNewHost && event.Key == gfx.KeyEnter && event.Modifiers == 0 && event.Target != hitDialogLoginCommand && state.EditorFor(event.Target) != nil {
 		_, composing := state.EditorFor(event.Target).Composition()
 		if !event.Repeat && !composing {
 			state.submitHostDialog()

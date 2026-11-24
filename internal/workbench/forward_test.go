@@ -49,6 +49,11 @@ func TestForwardDialogValidatesConfiguration(t *testing.T) {
 			want:    func(state *State) string { return state.messages.ErrForwardPortInvalid },
 		},
 		{
+			name:    "bind address invalid",
+			prepare: func(state *State) { replaceForwardField(state, hitForwardDialogBindAddress, "localhost") },
+			want:    func(state *State) string { return state.messages.ErrForwardBindInvalid },
+		},
+		{
 			name:    "destination required",
 			prepare: func(state *State) { replaceForwardField(state, hitForwardDialogDestination, "bad host") },
 			want:    func(state *State) string { return state.messages.ErrForwardDestinationRequired },
@@ -101,6 +106,165 @@ func TestForwardDialogPersistsWithoutStarting(t *testing.T) {
 	}
 	if restored.cells[4] != restarted.messages.ForwardStopped {
 		t.Fatalf("restored status = %q", restored.cells[4])
+	}
+}
+
+func TestForwardDialogSavesACustomBindAddress(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	openForwardEditor(t, state)
+	replaceForwardField(state, hitForwardDialogLabel, "LAN")
+	replaceForwardField(state, hitForwardDialogBindAddress, "0.0.0.0")
+	localPort := freePort(t)
+	replaceForwardField(state, hitForwardDialogLocalPort, fmt.Sprint(localPort))
+	replaceForwardField(state, hitForwardDialogDestination, "web.internal")
+	replaceForwardField(state, hitForwardDialogDestinationPort, "8080")
+	if _, texts := paintedTexts(state); !contains(texts, state.messages.ForwardBindWarning) {
+		t.Fatalf("non-loopback bind dialog does not warn: %v", texts)
+	}
+	if result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogDestinationPort}); !result.Handled {
+		t.Fatal("Enter did not submit the forward dialog")
+	}
+	if state.modal != modalNone || state.forwardDialogError != "" {
+		t.Fatalf("forward submit modal=%d error=%q", state.modal, state.forwardDialogError)
+	}
+	if len(state.forwards) != 1 || state.forwards[0].BindAddress != "0.0.0.0" {
+		t.Fatalf("created forward = %+v", state.forwards)
+	}
+	if got, want := state.forwards[0].listenAddress(), fmt.Sprintf("0.0.0.0:%d", localPort); got != want {
+		t.Fatalf("listen address = %q, want %q", got, want)
+	}
+	restarted := newTestState(t, options)
+	if len(restarted.forwards) != 1 {
+		t.Fatalf("restored forwards = %+v", restarted.forwards)
+	}
+	if got, want := restarted.forwards[0].listenAddress(), fmt.Sprintf("0.0.0.0:%d", localPort); got != want {
+		t.Fatalf("restored listen address = %q, want %q", got, want)
+	}
+}
+
+func TestACustomBindAddressListensOnTheNetwork(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	fake := connect(t, state, world)
+	fake.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	target := forwardEchoServer(t)
+	fake.dial = func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "tcp", target.Addr().String())
+	}
+	port := freePort(t)
+	addForwardRuleWithBind(t, state, "LAN", "0.0.0.0", port, "web.internal", 80)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
+	forward := &state.forwards[0]
+	if forward.runner == nil {
+		t.Fatalf("forward did not start: %+v", *forward)
+	}
+	host, _, err := net.SplitHostPort(forward.runner.Status().ListenAddress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ip := net.ParseIP(host); ip == nil || !ip.IsUnspecified() {
+		t.Fatalf("listener = %q, want a wildcard address", forward.runner.Status().ListenAddress)
+	}
+	client, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	if _, err := client.Write([]byte("hello")); err != nil {
+		t.Fatal(err)
+	}
+	reply := make([]byte, 5)
+	if _, err := io.ReadFull(client, reply); err != nil || string(reply) != "HELLO" {
+		t.Fatalf("echo = %q, %v", reply, err)
+	}
+}
+
+func TestForwardBindAddressStaysOutOfSharedRecords(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	addForwardRuleWithBind(t, state, "LAN", "0.0.0.0", freePort(t), "web.internal", 80)
+	snapshot := state.snapshot()
+	if len(snapshot.ForwardBindAddresses) != 1 {
+		t.Fatalf("device-local bind addresses = %+v", snapshot.ForwardBindAddresses)
+	}
+	entries, local, _, err := splitState(snapshot, newConfigBase(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.Contains(string(entry.Payload), "bind_address") {
+			t.Fatalf("shared record %s/%s contains a bind address: %s", entry.Kind, entry.ID, entry.Payload)
+		}
+	}
+	if !strings.Contains(string(local), "forward_bind_addresses") {
+		t.Fatalf("device document does not carry the bind address: %s", local)
+	}
+	other := newTestState(t, testOptions(t))
+	other.restoreForwards(snapshot.Forwards)
+	if len(other.forwards) != 1 || other.forwards[0].listenHost() != defaultForwardBindAddress {
+		t.Fatalf("a forward restored without this device's map = %+v", other.forwards)
+	}
+}
+
+// A forward renamed on another device is still the same forward: the shared
+// record's identity has no label, so this device keeps its listen address for it.
+func TestForwardBindAddressSurvivesARenameFromAnotherDevice(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	host := state.hosts[0]
+	saved := savedForward{
+		Label: "Database", Mode: "local", HostLabel: host.Label, HostAddress: host.Address,
+		HostUser: host.User, HostPort: host.Port, LocalPort: 9000,
+		DestinationHost: "db.internal", DestinationPort: 5432,
+	}
+	state.restoreForwards([]savedForward{saved})
+	key := forwardBindKey(state.forwards[0])
+	renamed := saved
+	renamed.Label = "Database (renamed elsewhere)"
+	state.restoreForwardsWithBindAddresses([]savedForward{renamed}, map[string]string{key: "192.168.1.100"})
+	if got, want := state.forwards[0].listenAddress(), "192.168.1.100:9000"; got != want {
+		t.Fatalf("listen address after a rename = %q, want this device's %q", got, want)
+	}
+}
+
+func TestForwardBindAddressDefaultsToLoopback(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	host := state.hosts[0]
+	saved := savedForward{
+		Label: "Legacy", Mode: "local", HostLabel: host.Label, HostAddress: host.Address,
+		HostUser: host.User, HostPort: host.Port, LocalPort: 9000,
+		DestinationHost: "db.internal", DestinationPort: 5432,
+	}
+	state.restoreForwards([]savedForward{saved})
+	if len(state.forwards) != 1 {
+		t.Fatalf("restored forwards = %+v", state.forwards)
+	}
+	if got, want := state.forwards[0].listenAddress(), "127.0.0.1:9000"; got != want {
+		t.Fatalf("listen address = %q, want %q", got, want)
+	}
+	if got := bindAddressForSave(state.forwards[0].listenHost()); got != "" {
+		t.Fatalf("default bind address saved as %q, want the omitted default", got)
+	}
+
+	key := forwardBindKey(state.forwards[0])
+	state.restoreForwardsWithBindAddresses([]savedForward{saved}, map[string]string{key: "not an address"})
+	if got, want := state.forwards[0].listenAddress(), "127.0.0.1:9000"; got != want {
+		t.Fatalf("damaged local bind address = %q, want the loopback default %q", got, want)
+	}
+	state.restoreForwardsWithBindAddresses([]savedForward{saved}, map[string]string{key: "192.168.1.100"})
+	if got, want := state.forwards[0].listenAddress(), "192.168.1.100:9000"; got != want {
+		t.Fatalf("custom listen address = %q, want %q", got, want)
+	}
+	state.restoreForwardsWithBindAddresses([]savedForward{saved}, map[string]string{key: "192.168.1.100"})
+	if got, want := state.forwards[0].listenAddress(), "192.168.1.100:9000"; got != want {
+		t.Fatalf("a reload with the device address lost it: %q, want %q", got, want)
+	}
+	if got := state.snapshot().ForwardBindAddresses[key]; got != "192.168.1.100" {
+		t.Fatalf("saved device-local bind address = %q", got)
+	}
+	state.restoreForwards([]savedForward{saved})
+	if got, want := state.forwards[0].listenAddress(), "127.0.0.1:9000"; got != want {
+		t.Fatalf("shared record without a device address = %q, want %q", got, want)
 	}
 }
 
@@ -489,6 +653,29 @@ func activateChoice(t testing.TB, state *State, id gfx.ID) {
 	canvas.BeginEventPass(id, gfx.ClickInfo{})
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	canvas.EndEventPass()
+}
+
+func TestForwardListenersOverlapOnlyWhenTheyWouldTakeOneSocket(t *testing.T) {
+	tests := []struct {
+		name  string
+		one   forwardRecord
+		other forwardRecord
+		want  bool
+	}{
+		{name: "same loopback", one: forwardRecord{LocalPort: 8080}, other: forwardRecord{LocalPort: 8080}, want: true},
+		{name: "wildcard and loopback", one: forwardRecord{LocalPort: 8080, BindAddress: "0.0.0.0"}, other: forwardRecord{LocalPort: 8080}, want: true},
+		{name: "wildcard and a specific address", one: forwardRecord{LocalPort: 8080, BindAddress: "0.0.0.0"}, other: forwardRecord{LocalPort: 8080, BindAddress: "192.168.1.100"}, want: true},
+		{name: "ipv6 wildcard and a specific address", one: forwardRecord{LocalPort: 8080, BindAddress: "::"}, other: forwardRecord{LocalPort: 8080, BindAddress: "192.168.1.100"}, want: true},
+		{name: "two specific addresses", one: forwardRecord{LocalPort: 8080, BindAddress: "127.0.0.1"}, other: forwardRecord{LocalPort: 8080, BindAddress: "192.168.1.100"}},
+		{name: "different ports", one: forwardRecord{LocalPort: 8080, BindAddress: "0.0.0.0"}, other: forwardRecord{LocalPort: 8081}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := forwardListenersOverlap(test.one, test.other); got != test.want {
+				t.Fatalf("forwardListenersOverlap(%+v, %+v) = %t, want %t", test.one, test.other, got, test.want)
+			}
+		})
+	}
 }
 
 // A local port can be saved on several forwards, but only one of them listens
@@ -1410,6 +1597,22 @@ func addForwardRule(t testing.TB, state *State, label string, localPort uint16, 
 	t.Helper()
 	openForwardEditor(t, state)
 	replaceForwardField(state, hitForwardDialogLabel, label)
+	replaceForwardField(state, hitForwardDialogLocalPort, fmt.Sprint(localPort))
+	replaceForwardField(state, hitForwardDialogDestination, destination)
+	replaceForwardField(state, hitForwardDialogDestinationPort, fmt.Sprint(destinationPort))
+	if result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogDestinationPort}); !result.Handled {
+		t.Fatal("Enter did not submit the forward dialog")
+	}
+	if state.modal != modalNone || state.forwardDialogError != "" {
+		t.Fatalf("forward submit modal=%d error=%q", state.modal, state.forwardDialogError)
+	}
+}
+
+func addForwardRuleWithBind(t testing.TB, state *State, label, bind string, localPort uint16, destination string, destinationPort uint16) {
+	t.Helper()
+	openForwardEditor(t, state)
+	replaceForwardField(state, hitForwardDialogLabel, label)
+	replaceForwardField(state, hitForwardDialogBindAddress, bind)
 	replaceForwardField(state, hitForwardDialogLocalPort, fmt.Sprint(localPort))
 	replaceForwardField(state, hitForwardDialogDestination, destination)
 	replaceForwardField(state, hitForwardDialogDestinationPort, fmt.Sprint(destinationPort))

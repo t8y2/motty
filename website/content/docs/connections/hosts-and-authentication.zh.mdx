@@ -81,8 +81,8 @@ TOTP 和 HOTP 种子可以存进保险库，服务器要求验证码时自动填
 点击**导入 > 从其他软件导入**，选择来源客户端，再选取它保存的文件或文件夹。Motty 读取每个
 会话的名称、文件夹、地址、端口和用户；打不开的协议会计入“已跳过”。Electerm 和
 Netcatty 的导出还可能含可读取的 SSH 登录密码，此时可以选择存入 Motty 保险库，
-或只导入连接。私钥口令、私钥和其他软件加密的密码暂不导入。地址、用户和端口均相同的
-主机不会重复创建；重新导入只会补齐尚无密码的主机，不会覆盖已有密码。
+或只导入连接。Tabby 的私钥和保险库导入方式见下文。名称、地址、用户和端口均相同的
+主机只会创建一次。导入的密码只补齐空缺，已有密码会保留。
 
 | 来源 | 要选择的文件 |
 | --- | --- |
@@ -96,6 +96,16 @@ Netcatty 的导出还可能含可读取的 SSH 登录密码，此时可以选择
 | FinalShell | FinalShell 的数据文件夹：Linux 为 `~/.finalshell`，macOS 为 `~/Library/FinalShell`，Windows 上通常是 FinalShell 的安装目录。 |
 | Xterminal | Xterminal 的数据文件夹：macOS 为 `~/Library/Application Support/XTerminal`，Windows 为 `%APPDATA%\XTerminal`，Linux 为 `~/.config/XTerminal`；免安装版的数据在 `xt_data\userData` 下。 |
 | XPipe | XPipe 的数据文件夹（`~/.xpipe`）或其下的 `storage` 子目录，也可以是它同步用的 git 仓库副本。导入 SSH、RDP 和 VNC 连接，XPipe 的其他条目类型不导入。 |
+| Tabby | `config.yaml`，macOS 位于 `~/Library/Application Support/tabby`，Windows 位于 `%APPDATA%/Tabby`，Linux 位于 `~/.config/tabby`。 |
+
+Tabby 导入会保留 SSH 主机和多级分组。使用跳板或代理的主机会跳过，需要在 Motty 中另行配置路由。
+选择**保存本地凭据**可以把本地私钥、配套用户证书和 Tabby 配置文件中的 SSH 密码存入 Motty 保险库。
+选择**仅导入连接**会保留对原私钥文件的引用。系统钥匙串中的密码和口令可在 Motty 首次需要时输入。
+
+选择单个 Tabby 配置文件后，Motty 会检测其中的 Vault，并提供本机解锁。主机配置可直接读取时，
+可以选择**跳过解锁**。如果 Tabby 加密了整份配置，解锁后即可读取 SSH 主机列表。
+Motty 会预览可保存的 SSH 登录密码数量，只补齐匹配主机的空缺密码。
+Tabby Vault 内的私钥和私钥口令需要另行配置。
 
 Electerm 和 Netcatty 会把已保存的密码以明文写进导出文件。选择保存密码后，
 合格的 SSH 密码进入 Motty 保险库，但源文件不会被删除；用完请妥善保管或删除。

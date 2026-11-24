@@ -60,11 +60,11 @@ func (client *Client) decodeCopyRect(sink Sink, x, y, width, height int) error {
 
 // readPixel reads one pixel in the format asked for and returns its colour.
 func (client *Client) readPixel() (blue, green, red byte, err error) {
-	var pixel [4]byte
-	if _, err = io.ReadFull(client.r, pixel[:client.format.size()]); err != nil {
+	sz := client.format.size()
+	if _, err = io.ReadFull(client.r, client.pixelBuf[:sz]); err != nil {
 		return 0, 0, 0, err
 	}
-	blue, green, red = client.format.bgr(pixel[:])
+	blue, green, red = client.format.bgr(client.pixelBuf[:])
 	return blue, green, red, nil
 }
 
@@ -197,9 +197,24 @@ func (source *zrleSource) Read(p []byte) (int, error) {
 }
 
 func (source *zrleSource) ReadByte() (byte, error) {
+	if source.remaining <= 0 {
+		return 0, io.EOF
+	}
+	if br, ok := source.r.(io.ByteReader); ok {
+		b, err := br.ReadByte()
+		if err != nil {
+			return 0, err
+		}
+		source.remaining--
+		return b, nil
+	}
 	var one [1]byte
-	if _, err := io.ReadFull(source, one[:]); err != nil {
+	n, err := source.Read(one[:])
+	if err != nil {
 		return 0, err
+	}
+	if n == 0 {
+		return 0, io.EOF
 	}
 	return one[0], nil
 }
@@ -209,6 +224,8 @@ type zrleState struct {
 	inflate io.Reader
 	tile    [64 * 64 * 4]byte
 	palette [128][3]byte
+	rawBuf  []byte
+	reader  zrleReader
 }
 
 func (client *Client) decodeZRLE(sink Sink, x, y, width, height int) error {
@@ -237,7 +254,11 @@ func (client *Client) decodeZRLE(sink Sink, x, y, width, height int) error {
 	// Whatever the structure below does not consume, the stream must still be
 	// left at the end of this rectangle's bytes.
 	defer func() { _, _ = io.CopyN(io.Discard, client.r, int64(state.source.remaining)) }()
-	inflated := &zrleReader{r: state.inflate, format: client.format}
+	state.reader.r = state.inflate
+	state.reader.format = client.format
+	state.reader.pos = 0
+	state.reader.end = 0
+	inflated := &state.reader
 	for top := 0; top < height; top += 64 {
 		tileHeight := min(64, height-top)
 		for left := 0; left < width; left += 64 {
@@ -256,32 +277,76 @@ func (client *Client) decodeZRLE(sink Sink, x, y, width, height int) error {
 type zrleReader struct {
 	r      io.Reader
 	format PixelFormat
+	buf    [4096]byte
+	pos    int
+	end    int
+	wire   [4]byte
+}
+
+func (reader *zrleReader) fill() error {
+	n, err := reader.r.Read(reader.buf[:])
+	if n > 0 {
+		reader.pos = 0
+		reader.end = n
+		return nil
+	}
+	if err == io.EOF {
+		return io.ErrUnexpectedEOF
+	}
+	if err != nil {
+		return err
+	}
+	return io.ErrUnexpectedEOF
 }
 
 func (reader *zrleReader) ReadByte() (byte, error) {
-	var one [1]byte
-	if _, err := io.ReadFull(reader, one[:]); err != nil {
-		return 0, err
+	if reader.pos >= reader.end {
+		if err := reader.fill(); err != nil {
+			return 0, err
+		}
 	}
-	return one[0], nil
+	b := reader.buf[reader.pos]
+	reader.pos++
+	return b, nil
 }
 
 func (reader *zrleReader) Read(p []byte) (int, error) {
-	n, err := reader.r.Read(p)
-	if err == io.EOF && n == 0 {
-		return 0, io.ErrUnexpectedEOF
+	if len(p) == 0 {
+		return 0, nil
 	}
-	return n, err
+	if reader.pos < reader.end {
+		n := copy(p, reader.buf[reader.pos:reader.end])
+		reader.pos += n
+		return n, nil
+	}
+	if len(p) >= len(reader.buf) {
+		n, err := reader.r.Read(p)
+		if err == io.EOF && n == 0 {
+			return 0, io.ErrUnexpectedEOF
+		}
+		return n, err
+	}
+	if err := reader.fill(); err != nil {
+		return 0, err
+	}
+	n := copy(p, reader.buf[reader.pos:reader.end])
+	reader.pos += n
+	return n, nil
 }
 
 // pixel reads a compressed pixel of the format asked for (see
 // PixelFormat.compressedSize) and returns its colour as blue, green, red.
 func (reader *zrleReader) pixel() (pixel [3]byte, err error) {
-	var wire [3]byte
-	if _, err = io.ReadFull(reader, wire[:reader.format.compressedSize()]); err != nil {
+	sz := reader.format.compressedSize()
+	if reader.end-reader.pos >= sz {
+		pixel[0], pixel[1], pixel[2] = reader.format.bgr(reader.buf[reader.pos : reader.pos+sz])
+		reader.pos += sz
+		return pixel, nil
+	}
+	if _, err = io.ReadFull(reader, reader.wire[:sz]); err != nil {
 		return pixel, err
 	}
-	pixel[0], pixel[1], pixel[2] = reader.format.bgr(wire[:])
+	pixel[0], pixel[1], pixel[2] = reader.format.bgr(reader.wire[:sz])
 	return pixel, nil
 }
 
@@ -302,12 +367,32 @@ func (state *zrleState) tileDecode(reader *zrleReader, width, height int) error 
 	rle := mode&0x80 != 0
 	switch {
 	case mode == 0:
-		for offset := 0; offset < len(out); offset += 4 {
-			pixel, err := reader.pixel()
-			if err != nil {
-				return err
+		sz := reader.format.compressedSize()
+		need := pixels * sz
+		if cap(state.rawBuf) < need {
+			state.rawBuf = make([]byte, need)
+		}
+		raw := state.rawBuf[:need]
+		if _, err := io.ReadFull(reader, raw); err != nil {
+			return err
+		}
+		if sz == 3 && reader.format == Pixel32 {
+			for i, o := 0, 0; i < need; i += 3 {
+				out[o] = raw[i]
+				out[o+1] = raw[i+1]
+				out[o+2] = raw[i+2]
+				out[o+3] = 0
+				o += 4
 			}
-			put(offset, pixel)
+		} else {
+			for i, o := 0, 0; i < need; i += sz {
+				b, g, r := reader.format.bgr(raw[i : i+sz])
+				out[o] = b
+				out[o+1] = g
+				out[o+2] = r
+				out[o+3] = 0
+				o += 4
+			}
 		}
 	case mode == 1:
 		pixel, err := reader.pixel()

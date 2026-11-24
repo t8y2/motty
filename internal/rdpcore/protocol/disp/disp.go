@@ -154,35 +154,23 @@ func (h *Handler) Caps() *CapsPDU {
 	return h.caps
 }
 
+// physicalDimensionMM returns the physical length in millimeters for pixels at
+// the given desktop scale percentage (100% = 96 DPI), matching Windows' own
+// RDP client and FreeRDP (MS-RDPBCGR 2.2.1.3.2, MS-RDPEDISP 2.2.2.2.1).
+func physicalDimensionMM(pixels, desktopScale uint32) uint32 {
+	if desktopScale == 0 {
+		desktopScale = 100
+	}
+	dpi := float64(96) * float64(desktopScale) / 100.0
+	return uint32(math.Round(float64(pixels) * 25.4 / dpi))
+}
+
 // Resize sends a monitor layout PDU requesting a single-monitor resize.
 // Width is forced to even (per MS-RDPEDISP requirement) and both
 // dimensions are clamped to [200, 8192]. Physical dimensions are computed
-// assuming 75 DPI.
+// at 96 DPI (100% scale).
 func (h *Handler) Resize(width, height uint32) error {
-	if !h.ready {
-		return fmt.Errorf("disp: not ready (no server caps received)")
-	}
-	// Clamp and force even width (MS-RDPEDISP 2.2.2.2.1)
-	width = clampDim(width)
-	height = clampDim(height)
-	width &^= 1 // force even
-
-	// Physical dimensions in mm assuming 75 DPI
-	physW := uint32(math.Round(float64(width) / 75.0 * 25.4))
-	physH := uint32(math.Round(float64(height) / 75.0 * 25.4))
-
-	monitors := []MonitorLayout{{
-		Flags:              0x01, // primary
-		Width:              width,
-		Height:             height,
-		PhysicalWidth:      physW,
-		PhysicalHeight:     physH,
-		DesktopScaleFactor: 100,
-		DeviceScaleFactor:  100,
-	}}
-	data := EncodeMonitorLayout(monitors)
-	h.log.LogAttrs(context.Background(), slog.LevelDebug, "sending monitor layout", slog.Int("width", int(width)), slog.Int("height", int(height)), slog.Int("physW", int(physW)), slog.Int("physH", int(physH)))
-	return h.sendFn(data)
+	return h.ResizeWithDPI(width, height, 100, 100)
 }
 
 // clampDim clamps a dimension to [200, 8192].
@@ -202,7 +190,8 @@ const MonitorLayoutPrimary uint32 = 0x01
 // ResizeMulti sends a monitor layout PDU for multiple monitors.
 // Exactly one monitor must have the PRIMARY flag (0x01). Each monitor's
 // width is forced even, dimensions are clamped to [200, 8192], and physical
-// dimensions are computed from 75 DPI when missing.
+// dimensions are computed from the monitor's desktop scale (default 100% = 96 DPI)
+// when missing.
 func (h *Handler) ResizeMulti(monitors []MonitorLayout) error {
 	if !h.ready {
 		return fmt.Errorf("disp: not ready (no server caps received)")
@@ -222,18 +211,17 @@ func (h *Handler) ResizeMulti(monitors []MonitorLayout) error {
 		m.Height = clampDim(m.Height)
 		m.Width &^= 1 // force even
 
-		// Physical dimensions from 75 DPI: px * 25.4 / 75 = px * 254 / 750
-		if m.PhysicalWidth == 0 {
-			m.PhysicalWidth = (m.Width*254 + 375) / 750
-		}
-		if m.PhysicalHeight == 0 {
-			m.PhysicalHeight = (m.Height*254 + 375) / 750
-		}
 		if m.DesktopScaleFactor == 0 {
 			m.DesktopScaleFactor = 100
 		}
 		if m.DeviceScaleFactor == 0 {
 			m.DeviceScaleFactor = 100
+		}
+		if m.PhysicalWidth == 0 {
+			m.PhysicalWidth = physicalDimensionMM(m.Width, m.DesktopScaleFactor)
+		}
+		if m.PhysicalHeight == 0 {
+			m.PhysicalHeight = physicalDimensionMM(m.Height, m.DesktopScaleFactor)
 		}
 	}
 	if primaryCount != 1 {
@@ -261,9 +249,8 @@ func (h *Handler) ResizeWithDPI(width, height, desktopScale, deviceScale uint32)
 	height = clampDim(height)
 	width &^= 1
 	// Compute physical dimensions from DPI scale
-	dpi := float64(96) * float64(desktopScale) / 100.0
-	physW := uint32(math.Round(float64(width) * 25.4 / dpi))
-	physH := uint32(math.Round(float64(height) * 25.4 / dpi))
+	physW := physicalDimensionMM(width, desktopScale)
+	physH := physicalDimensionMM(height, desktopScale)
 
 	monitors := []MonitorLayout{{
 		Flags:              0x01, // primary
@@ -275,5 +262,6 @@ func (h *Handler) ResizeWithDPI(width, height, desktopScale, deviceScale uint32)
 		DeviceScaleFactor:  deviceScale,
 	}}
 	data := EncodeMonitorLayout(monitors)
+	h.log.LogAttrs(context.Background(), slog.LevelDebug, "sending monitor layout", slog.Int("width", int(width)), slog.Int("height", int(height)), slog.Int("physW", int(physW)), slog.Int("physH", int(physH)), slog.Int("desktopScale", int(desktopScale)), slog.Int("deviceScale", int(deviceScale)))
 	return h.sendFn(data)
 }

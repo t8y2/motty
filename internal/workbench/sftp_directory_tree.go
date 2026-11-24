@@ -67,6 +67,8 @@ type sftpDirectoryTree struct {
 	// scroll offset and the keys. c, label and content are the paint's context
 	// and the functions it asked for, made once.
 	tree           ui.TreeState
+	treeBox        ui.Box
+	scrollOffset   float32
 	c              ui.C
 	label          func(int) string
 	content        func(int)
@@ -663,11 +665,10 @@ func (w *sftpWindow) observeDirectoryTreeListing(local bool, directory string, e
 	// The panel can name a local folder by an 8.3 alias while the node holds
 	// the long name its listing recorded; resolve it as navigation does.
 	node := directoryTreeResolveNode(tree, local, directory)
-	if node == nil {
-		return
+	if node != nil {
+		cancelDirectoryTreeRead(tree, local, node)
+		w.setDirectoryTreeChildren(tree, local, node, entries, len(entries) > maxDirectoryTreeChildren)
 	}
-	cancelDirectoryTreeRead(tree, local, node)
-	w.setDirectoryTreeChildren(tree, local, node, entries, len(entries) > maxDirectoryTreeChildren)
 	w.loadExpandedDirectoryTree(local)
 	w.invalidate()
 }
@@ -771,7 +772,7 @@ func (w *sftpWindow) declareDirectoryTreePane(c ui.C, side int, width float32) u
 			return
 		}
 		tree.c = c
-		ui.Tree(c, &tree.tree, len(rows), tree.label, tree.content).Grow(1).AlwaysScrollbars().ScrollbarSize(10).
+		tree.treeBox = ui.Tree(c, &tree.tree, len(rows), tree.label, tree.content).Grow(1).AlwaysScrollbars().ScrollbarSize(10).
 			ScrollbarIDs(sftpWindowTreeBar[side], gfx.ID{}).ScrollbarLabels(w.owner.messages.SFTPWindow.DirectoryTree, "")
 		w.directoryTreeChanges(side, rows)
 		tree.c = nil
@@ -918,4 +919,26 @@ func (w *sftpWindow) chooseDirectoryTreeRow(side, index int) {
 		w.navigate(side == 0, node.path)
 	}
 	w.invalidate()
+}
+
+// refreshDirectoryTreeNode invalidates a cached tree node after a move touches
+// it, reloading its children immediately when it is expanded on screen.
+func (w *sftpWindow) refreshDirectoryTreeNode(local bool, dir string) {
+	if dir == "" {
+		return
+	}
+	side := sideIndex(local)
+	tree := &w.directoryTree[side]
+	if !tree.enabled || len(tree.nodes) == 0 {
+		return
+	}
+	node := directoryTreeResolveNode(tree, local, dir)
+	if node == nil {
+		return
+	}
+	node.loaded = false
+	node.err = ""
+	if node.expanded {
+		w.loadDirectoryTreeNode(side, node)
+	}
 }

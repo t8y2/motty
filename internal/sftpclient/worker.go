@@ -2296,7 +2296,12 @@ func (worker *Worker) finalizeUpload(generation, transferID uint64, stage string
 	defer timer.Stop()
 	select {
 	case err := <-done:
-		return err
+		if err != nil {
+			// Name the request that failed: a gateway's generic failure status
+			// otherwise cannot be told apart between close, rename and the rest.
+			return fmt.Errorf("sftp %s: %w", stage, err)
+		}
+		return nil
 	case <-timer.C:
 		worker.interruptIfAlone(generation, transferID)
 		return fmt.Errorf("%w: %s did not answer within %s", ErrUploadFinalizeTimeout, stage, timeout)
@@ -2905,9 +2910,156 @@ func (worker *Worker) uploadPipelinedTo(destination io.WriterAt, source io.Reade
 	return pipeline.run(sink)
 }
 
-// uploadCopy moves a local file to a remote writer. A destination that takes
-// writes at offsets, which is every SFTP file, gets the sliding window; any other
-// is written sequentially.
+// concurrentReaderFrom is implemented by *sftp.File. Unlike calling WriteAt
+// from many goroutines, ReadFromWithConcurrency dispatches every SSH_FXP_WRITE
+// packet from one goroutine in strictly ascending offset order while keeping a
+// sliding window of requests in flight.
+type concurrentReaderFrom interface {
+	ReadFromWithConcurrency(io.Reader, int) (int64, error)
+}
+
+type orderedUploadReader struct {
+	worker     *Worker
+	source     io.Reader
+	generation uint64
+	transferID uint64
+	sink       progressSink
+	stop       <-chan struct{}
+
+	readMu     sync.Mutex
+	readBytes  int64
+	reported   int64
+	lastNotify time.Time
+}
+
+func (r *orderedUploadReader) Read(p []byte) (int, error) {
+	if r.transferID != 0 {
+		if !r.worker.holdWhilePaused(r.generation, r.transferID) {
+			return 0, ErrCanceled
+		}
+	} else if r.worker.canceled(r.generation) {
+		return 0, ErrCanceled
+	}
+	r.readMu.Lock()
+	defer r.readMu.Unlock()
+	select {
+	case <-r.stop:
+		return 0, ErrCanceled
+	default:
+	}
+	n, err := r.source.Read(p)
+	if n > 0 {
+		r.readBytes += int64(n)
+		if r.transferID != 0 {
+			if now := r.worker.clock(); now.Sub(r.lastNotify) >= progressFrameInterval {
+				r.lastNotify = now
+				delta := r.readBytes - r.reported
+				r.reported = r.readBytes
+				r.sink.addBytes(delta)
+			}
+		}
+	}
+	return n, err
+}
+
+// uploadOrderedTo uploads through ReadFromWithConcurrency so SSH_FXP_WRITE
+// packets leave the client in strictly ascending offset order (as FileZilla and
+// OpenSSH sftp send them) while keeping uploadWindow requests pipelined.
+func (worker *Worker) uploadOrderedTo(destination concurrentReaderFrom, seeker io.Seeker, source io.Reader, generation, transferID uint64, resumed int64, sink progressSink) (int64, error) {
+	stop := make(chan struct{})
+	var stopOnce sync.Once
+	halt := func() { stopOnce.Do(func() { close(stop) }) }
+	reader := &orderedUploadReader{
+		worker:     worker,
+		source:     source,
+		generation: generation,
+		transferID: transferID,
+		sink:       sink,
+		stop:       stop,
+		lastNotify: worker.clock(),
+	}
+	type result struct {
+		read int64
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		n, err := destination.ReadFromWithConcurrency(reader, uploadWindow)
+		done <- result{read: n, err: err}
+	}()
+
+	var (
+		res       result
+		finished  bool
+		aborted   bool
+		abandoned bool
+		grace     <-chan time.Time
+		abandon   <-chan time.Time
+	)
+	wake := worker.wakeChannel()
+	check := true
+	for !finished && !abandoned {
+		if check && !aborted {
+			check = false
+			if worker.stopped(generation, transferID) {
+				aborted = true
+				halt()
+				timer := time.NewTimer(worker.cancelGrace)
+				defer timer.Stop()
+				grace = timer.C
+			}
+		}
+		select {
+		case res = <-done:
+			finished = true
+		case <-wake:
+			wake = worker.wakeChannel()
+			check = true
+		case <-grace:
+			grace = nil
+			if worker.interruptIfAlone(generation, transferID) {
+				timer := time.NewTimer(worker.cancelGrace)
+				defer timer.Stop()
+				abandon = timer.C
+			}
+		case <-abandon:
+			abandoned = true
+		}
+	}
+	halt()
+	if abandoned {
+		// Wait for any in-flight source.Read to finish before the caller closes
+		// source; stop is already closed so no later Read can touch source.
+		reader.readMu.Lock()
+		reported := reader.reported
+		reader.readMu.Unlock()
+		if transferID != 0 && reported > 0 {
+			sink.addBytes(-reported)
+		}
+		return 0, errors.Join(ErrCanceled, errUploadAbandoned)
+	}
+	confirmed := res.read
+	if res.err != nil {
+		confirmed = 0
+		if seeker != nil {
+			if pos, seekErr := seeker.Seek(0, io.SeekCurrent); seekErr == nil && pos >= resumed {
+				confirmed = pos - resumed
+			}
+		}
+	}
+	if transferID != 0 {
+		sink.addBytes(confirmed - reader.reported)
+	}
+	if aborted {
+		return confirmed, ErrCanceled
+	}
+	return confirmed, res.err
+}
+
+// uploadCopy moves a local file to a remote writer. A real SFTP file uses
+// ReadFromWithConcurrency so pipelined writes are dispatched in ascending
+// offset order; other WriterAt destinations use the sliding window pipeline,
+// and plain writers fall back to sequential copy.
 func (worker *Worker) uploadCopy(destination io.Writer, source io.Reader, generation, transferID uint64, filesDone int, bytesBefore, resumed int64) (int64, error) {
 	sink := newFileSink(worker, transferID, filesDone, bytesBefore)
 	sink.addResumed(resumed)
@@ -2915,6 +3067,10 @@ func (worker *Worker) uploadCopy(destination io.Writer, source io.Reader, genera
 }
 
 func (worker *Worker) uploadCopyTo(destination io.Writer, source io.Reader, generation, transferID uint64, resumed int64, sink progressSink) (int64, error) {
+	if ordered, ok := destination.(concurrentReaderFrom); ok {
+		seeker, _ := destination.(io.Seeker)
+		return worker.uploadOrderedTo(ordered, seeker, source, generation, transferID, resumed, sink)
+	}
 	if writerAt, ok := destination.(io.WriterAt); ok {
 		return worker.uploadPipelinedTo(writerAt, source, generation, transferID, resumed, sink)
 	}

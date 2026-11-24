@@ -163,6 +163,17 @@ func (state *State) tabDragPointer(event gfx.PointerEvent) (gfx.EventResult, boo
 					}
 				}
 			}
+		} else if state.modal == modalNone && state.activeSection == sectionTerminal &&
+			state.deck.PaneMaximized(state.deck.ActiveWorkspace()) &&
+			(event.Button == gfx.PointerButtonPrimary || event.Button == gfx.PointerButtonNone) &&
+			event.ClickCount == 2 && event.Target.Scope() == hitWorkspaceFocusTab {
+			pane, ok := state.deck.Pane(state.deck.ActiveWorkspace(), layoutcore.PaneID(item(event.Target)))
+			if ok {
+				if session, exists := state.sessionByIDPointer(uint32(pane.SessionID)); exists {
+					state.openTerminalRename(session)
+					return gfx.EventResult{Handled: true, Repaint: true}, true
+				}
+			}
 		} else if pane, session, ok := state.paneBarAt(event); ok {
 			if event.ClickCount == 2 && (session.term == nil || !session.term.find.open) {
 				// A double click on the bar names the pane, as it does in a tab
@@ -931,7 +942,7 @@ var tearOffCorners = func() [4]gfx.Path {
 // own ground. Only the bar starts a drag; the terminal below it keeps selecting
 // text.
 func (state *State) paneBarAt(event gfx.PointerEvent) (layoutcore.PaneID, *Session, bool) {
-	if state.deck.PaneMaximized(state.deck.ActiveWorkspace()) || state.modal != modalNone || state.activeSection != sectionTerminal ||
+	if (state.deck.PaneMaximized(state.deck.ActiveWorkspace()) && event.ClickCount != 2) || state.modal != modalNone || state.activeSection != sectionTerminal ||
 		(event.Button != gfx.PointerButtonPrimary && event.Button != gfx.PointerButtonNone) ||
 		event.Target.Scope() != hitPaneActivateList {
 		return 0, nil, false

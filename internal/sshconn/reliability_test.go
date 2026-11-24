@@ -547,6 +547,65 @@ func TestPingSendsNothingWhileAnEarlierProbeIsUnanswered(t *testing.T) {
 	}
 }
 
+// The count-based keepalive shares the one global request slot with Ping. While
+// its probe is unanswered, a latency probe reports ErrPingPending instead of
+// queueing behind it and timing the wait as round-trip time.
+func TestCountKeepAliveHoldsTheProbeSlot(t *testing.T) {
+	held := make(chan *ssh.Request, 64)
+	server := startServer(t, func(server *testServer) {
+		server.password = "secret"
+		server.request = func(_ *ssh.ServerConn, request *ssh.Request) {
+			held <- request
+		}
+	})
+	count := 3
+	harness := dial(t, server, func(config *Config) {
+		config.KeepAlive = KeepAliveConfig{Interval: 10 * time.Millisecond, CountMax: &count}
+	})
+	harness.phase(PhaseHostKeyPrompt)
+	harness.conn.TrustHostKey(false)
+	harness.phase(PhasePasswordPrompt)
+	harness.conn.SubmitPassword("secret")
+	harness.phase(PhaseConnected)
+
+	var request *ssh.Request
+	select {
+	case request = <-held:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the count keepalive sent no probe")
+	}
+	if _, err := harness.conn.Ping(context.Background()); !errors.Is(err, ErrPingPending) {
+		t.Fatalf("Ping while the keepalive probe is unanswered = %v, want ErrPingPending", err)
+	}
+	if err := request.Reply(true, nil); err != nil {
+		t.Fatal(err)
+	}
+	// Every later probe, including the one Ping sends, must be answered or the
+	// keepalive counts it as a lost transport while this test waits.
+	go func() {
+		for request := range held {
+			_ = request.Reply(true, nil)
+		}
+	}()
+	for deadline := time.Now().Add(2 * time.Second); ; {
+		rtt, err := harness.conn.Ping(context.Background())
+		if err == nil {
+			if rtt <= 0 {
+				t.Fatalf("Ping returned %v", rtt)
+			}
+			break
+		}
+		if !errors.Is(err, ErrPingPending) {
+			t.Fatalf("Ping after the reply = %v", err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the keepalive never released the probe slot")
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	harness.conn.Close()
+}
+
 func TestVerifyNotConnected(t *testing.T) {
 	conn := &Conn{}
 	if err := conn.Verify(context.Background()); err == nil {

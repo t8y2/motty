@@ -50,6 +50,7 @@ func (w *sftpWindow) connect() {
 	s.err, s.hostKey, s.identity = nil, sshconn.HostKeyInfo{}, ""
 	s.pendingSecretName, s.pendingSecretValue = "", ""
 	s.endpoint = sshconn.Endpoint{Host: s.host.Address, Port: s.host.Port, User: state.login(s.host)}
+	s.freezeDialedSSHPolicy(s.host)
 	config, valid := state.sshConfigFor(s, s.host)
 	if !valid {
 		s.phase, s.err = sshconn.PhaseFailed, errors.New(state.status)

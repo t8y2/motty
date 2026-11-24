@@ -47,6 +47,11 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		"background": true, "snippet_shortcuts": true,
 		"background_output_alerts": true,
 		"tab_orientation":          true, "vertical_tabs_auto_hide": true,
+
+		// Whether the fullscreen desktop's bar stays pinned is this computer's
+		// own presentation choice, like the sidebar's auto-hide above.
+		"desktop_fullscreen_bar_auto_hide": true,
+
 		"tab_double_click":       true,
 		"tab_numbers":            true,
 		"vertical_tabs_grouping": true,
@@ -54,7 +59,8 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		"sftp_local_bookmarks":   true,
 		"sftp_columns":           true, "sftp_download_directory": true, "default_editor": true,
 		"sftp_window_order": true, "sftp_open_mode": true, "sftp_directory_tree": true, "custom_editor_path": true,
-		"sftp_transfer_filter": true,
+		"sftp_transfer_filter":   true,
+		"forward_bind_addresses": true,
 		// Whether the new-tab picker lists its shells expanded is this
 		// computer's own picker layout, like the hidden shells below.
 		"local_shells_expanded": true,
@@ -71,7 +77,7 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		"hidden_shells": true,
 		// What a launch opens is chosen per computer: the shells and hosts of
 		// this machine, not a preference to carry across devices.
-		"startup_disabled": true, "startup_local": true, "startup_shell": true, "startup_hosts": true, "startup_no_reuse": true,
+		"startup_disabled": true, "startup_local": true, "startup_shell": true, "startup_hosts": true, "startup_reuse": true,
 		"window_x": true, "window_y": true, "window_width": true, "window_height": true, "window_maximized": true,
 		// The session journal switch belongs to this computer: another device
 		// keeps its own choice, and an older build must not silently drop it.
@@ -107,24 +113,25 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 func richState() savedState {
 	return savedState{
 		Version: stateFileVersion, HostCatalogVersion: hostCatalogSchemaVersion, ShortcutVersion: shortcutSchemaVersion,
-		Language: "zh-CN", Theme: "dark", NetworkProxy: "system", TabOrientation: "vertical", VerticalTabsAutoHide: true, LocalShell: "/opt/local-shell/bin/shell", LocalStartupCommands: map[string]string{"/opt/local-shell/bin/shell": "export LANG=zh_CN.UTF-8"}, TerminalFontSize: 15, TerminalScrollback: 5000, TerminalPadding: "roomy", TerminalWordSeparators: "-/", HiddenHostTags: []string{"dev", "prod"},
+		Language: "zh-CN", Theme: "dark", NetworkProxy: "system", TabOrientation: "vertical", VerticalTabsAutoHide: true, FullscreenBarAutoHide: true, LocalShell: "/opt/local-shell/bin/shell", LocalStartupCommands: map[string]string{"/opt/local-shell/bin/shell": "export LANG=zh_CN.UTF-8"}, TerminalFontSize: 15, TerminalScrollback: 5000, TerminalPadding: "roomy", TerminalWordSeparators: "-/", HiddenHostTags: []string{"dev", "prod"},
 		RecentConnectSort: true, RecentConnections: map[string]time.Time{"host_b": time.Date(2026, 11, 3, 8, 0, 0, 0, time.UTC)},
 		SFTPParallel: 2, SFTPTerminalFollow: true, SFTPTransferFilter: 1, CommandHistory: true,
 		Hosts: []savedHost{
 			{ID: "host_b", Label: "Beta", Address: "b.example.com", User: "me", Port: 22, Group: "prod"},
 			{ID: "host_a", Label: "Alpha", Address: "a.example.com", User: "me", Port: 2222, Group: "dev"},
 		},
-		HostGroups:    []savedHostGroup{{Name: "prod", Collapsed: true}, {Name: "dev"}},
-		Snippets:      []savedSnippet{{Name: "update", Command: "apt update"}, {Name: "update", Command: "brew update"}, {Name: "zzz", Command: "ls"}},
-		Highlights:    []savedHighlight{{Pattern: "ERROR", Color: "red"}, {Pattern: "warn", CaseSensitive: true, Color: "amber"}},
-		Forwards:      []savedForward{{Label: "db", HostAddress: "b.example.com", HostUser: "me", HostPort: 22, LocalPort: 5432, DestinationHost: "localhost", DestinationPort: 5432}},
-		Proxies:       []savedProxy{{TargetAddress: "a.example.com", TargetUser: "me", TargetPort: 2222, JumpAddress: "b.example.com", JumpUser: "me", JumpPort: 22}},
-		Autofill:      []savedAutofill{{ID: "r1", Name: "sudo", Pattern: "password", Send: "vault"}},
-		SFTPBookmarks: []savedBookmark{{Host: "host_a", Path: "/var/log"}},
-		Shortcuts:     []savedShortcut{{Action: "new-tab", Key: "t", Modifiers: 1}},
-		OutboundProxy: &savedOutboundProxy{Kind: "socks5", Address: "127.0.0.1:1080"},
-		IdentityFiles: []string{"/Users/me/.ssh/id_ed25519"},
-		Workspace:     "settings",
+		HostGroups:           []savedHostGroup{{Name: "prod", Collapsed: true}, {Name: "dev"}},
+		Snippets:             []savedSnippet{{Name: "update", Command: "apt update"}, {Name: "update", Command: "brew update"}, {Name: "zzz", Command: "ls"}},
+		Highlights:           []savedHighlight{{Pattern: "ERROR", Color: "red"}, {Pattern: "warn", CaseSensitive: true, Color: "amber"}},
+		Forwards:             []savedForward{{Label: "db", HostAddress: "b.example.com", HostUser: "me", HostPort: 22, LocalPort: 5432, DestinationHost: "localhost", DestinationPort: 5432}},
+		ForwardBindAddresses: map[string]string{"web": "0.0.0.0"},
+		Proxies:              []savedProxy{{TargetAddress: "a.example.com", TargetUser: "me", TargetPort: 2222, JumpAddress: "b.example.com", JumpUser: "me", JumpPort: 22}},
+		Autofill:             []savedAutofill{{ID: "r1", Name: "sudo", Pattern: "password", Send: "vault"}},
+		SFTPBookmarks:        []savedBookmark{{Host: "host_a", Path: "/var/log"}},
+		Shortcuts:            []savedShortcut{{Action: "new-tab", Key: "t", Modifiers: 1}},
+		OutboundProxy:        &savedOutboundProxy{Kind: "socks5", Address: "127.0.0.1:1080"},
+		IdentityFiles:        []string{"/Users/me/.ssh/id_ed25519"},
+		Workspace:            "settings",
 	}
 }
 

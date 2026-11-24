@@ -33,6 +33,17 @@ func (palette *commandPalette) groupExpanded(key string) bool {
 	return slices.Contains(palette.expandedGroups, key)
 }
 
+// groupAncestorsExpanded reports whether every ancestor folder of path is open.
+// A top-level group has no ancestors and is always visible in the picker tree.
+func (palette *commandPalette) groupAncestorsExpanded(path string) bool {
+	for parent := snippetGroupParent(path); parent != ""; parent = snippetGroupParent(parent) {
+		if !palette.groupExpanded(strings.ToLower(parent)) {
+			return false
+		}
+	}
+	return true
+}
+
 // foldSnippetGroup opens or closes one group of the picker and keeps the list
 // where it was, with the group's row still the one selected.
 func (state *State) foldSnippetGroup(key string, expand bool) {
@@ -68,41 +79,43 @@ func (state *State) rebuildSnippetPicker() {
 	// The bar's show/hide checkbox is chrome of the picker, declared above the
 	// search field. Nothing here belongs to the searchable list: the entries
 	// are snippets only, so a query never has to account for a setting.
-	// folded is set while a group is closed: its snippets then answer a search
-	// without being listed.
+	// folded is set while a group or any of its ancestors is closed: its
+	// snippets still answer a search without appearing in the unfiltered tree.
 	folded := false
-	add := func(index int) {
+	add := func(index int, depth uint8) {
 		entry := &state.snippets.list[index]
 		palette.addDetailed(entry.Name, snippetDetail(entry), hitSnippetSendList.At(index))
 		last := &palette.entries[len(palette.entries)-1]
 		last.search += " " + strings.ToLower(entry.Command)
 		last.searchOnly = folded
+		last.depth = depth
 	}
-	header := func(label, key string, count int) {
+	header := func(label, key string, count int, depth uint8) {
 		palette.addHeader(label, strconv.Itoa(count))
 		last := &palette.entries[len(palette.entries)-1]
-		last.foldKey, last.expanded = key, palette.groupExpanded(key)
+		last.foldKey, last.expanded, last.depth = key, palette.groupExpanded(key), depth
 		folded = !last.expanded
 	}
 	form := &state.snippets
 	if len(form.groups) == 0 {
 		for index := range form.list {
-			add(index)
+			add(index, 0)
 		}
 	} else {
-		// With groups, the unfiltered list is sectioned by them, the ungrouped
-		// last; a search drops the headings and still matches the group name.
+		// With groups, the unfiltered list is a collapsible tree in pre-order,
+		// the ungrouped last; a search drops the headings and still matches
+		// every snippet and its full group path.
 		for _, group := range form.groups {
-			count := 0
-			for index := range form.list {
-				if sameSnippetGroup(form.list[index].Group, group) {
-					count++
-				}
+			key := strings.ToLower(group)
+			depth := snippetGroupDepth(group)
+			if palette.groupAncestorsExpanded(group) {
+				header(snippetGroupLeaf(group), key, form.groupCounts[group], depth)
+			} else {
+				folded = true
 			}
-			header(group, strings.ToLower(group), count)
 			for index := range form.list {
 				if sameSnippetGroup(form.list[index].Group, group) {
-					add(index)
+					add(index, depth+1)
 				}
 			}
 		}
@@ -113,10 +126,10 @@ func (state *State) rebuildSnippetPicker() {
 					count++
 				}
 			}
-			header(state.messages.Tools.SnippetFilterNone, ungroupedFoldKey, count)
+			header(state.messages.Tools.SnippetFilterNone, ungroupedFoldKey, count, 0)
 			for index := range form.list {
 				if form.list[index].Group == "" {
-					add(index)
+					add(index, 1)
 				}
 			}
 		}

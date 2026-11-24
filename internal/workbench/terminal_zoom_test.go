@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"testing"
+	"time"
 
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
@@ -111,6 +112,131 @@ func TestZoomShortcutsAreCustomisableLikeTheOthers(t *testing.T) {
 	}
 	if _, ok := state.shortcuts.bind(shortcutZoomOut, keymap.Chord{Modifiers: keymap.Primary, Char: '='}); !ok {
 		t.Fatal("zoom out could not take the freed chord")
+	}
+}
+
+// A primary+wheel (Command on macOS, Control on Windows and Linux) resizes the
+// terminal's font, the same change the primary+/- shortcuts make: a wheel notch is
+// one point, a trackpad gesture accumulates before it steps, primary+Shift stays
+// with the terminal's scrolling, and the ends of the range and the saved state are
+// shared with the keyboard path.
+func TestPrimaryWheelResizesTheTerminalFont(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.sessions = append(state.sessions, Session{ID: 1, term: newTerminal(80, 24)})
+	state.activeSessionID = 1
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	session := &state.sessions[0]
+	start := state.terminalFontSize
+
+	if result := state.terminalScroll(session, gfx.ScrollEvent{Modifiers: keymap.Primary, DeltaY: -120}); !result.Handled || !result.Repaint {
+		t.Fatalf("wheel up: %+v", result)
+	}
+	if state.terminalFontSize != start+1 {
+		t.Fatalf("after wheel up = %v, want %v", state.terminalFontSize, start+1)
+	}
+	state.terminalScroll(session, gfx.ScrollEvent{Modifiers: keymap.Primary, DeltaY: 120})
+	if state.terminalFontSize != start {
+		t.Fatalf("after wheel down = %v, want %v", state.terminalFontSize, start)
+	}
+
+	// Half a precise unit does nothing; a full one steps a single point.
+	session.term.zoomWheel = 0
+	state.terminalScroll(session, gfx.ScrollEvent{Modifiers: keymap.Primary, DeltaY: -30, Precise: true})
+	if state.terminalFontSize != start {
+		t.Fatalf("half a unit already zoomed to %v", state.terminalFontSize)
+	}
+	state.terminalScroll(session, gfx.ScrollEvent{Modifiers: keymap.Primary, DeltaY: -30, Precise: true})
+	if state.terminalFontSize != start+1 {
+		t.Fatalf("a full precise unit did not zoom: %v, want %v", state.terminalFontSize, start+1)
+	}
+
+	// Primary+Shift+wheel scrolls the terminal, it does not zoom.
+	state.terminalScroll(session, gfx.ScrollEvent{Modifiers: keymap.Primary | gfx.ModifierShift, DeltaY: -120})
+	if state.terminalFontSize != start+1 {
+		t.Fatalf("primary+Shift changed the size to %v, want %v", state.terminalFontSize, start+1)
+	}
+
+	options := freshOptions(t)
+	options.Keystore = &memKeys{}
+	bounded := newTestState(t, options)
+	bounded.sessions = append(bounded.sessions, Session{ID: 1, term: newTerminal(80, 24)})
+	bounded.activeSessionID = 1
+	var frame gfx.Canvas
+	bounded.Paint(&frame, gfx.Size{Width: 1400, Height: 900})
+	saved := bounded.terminalFontSize
+	for range 40 {
+		bounded.terminalScroll(&bounded.sessions[0], gfx.ScrollEvent{Modifiers: keymap.Primary, DeltaY: -120})
+	}
+	if bounded.terminalFontSize != terminalFontSizeMax {
+		t.Fatalf("zoomed in without end: %v", bounded.terminalFontSize)
+	}
+	// The gesture is still going. A burst writes once the wheel settles rather than
+	// on every notch, so forty notches have cost the store nothing yet.
+	if restored := newTestState(t, options); restored.terminalFontSize != saved {
+		t.Fatalf("a wheel burst wrote mid-gesture: %v, want the saved %v", restored.terminalFontSize, saved)
+	}
+	// Once it settles the single write lands, with the window still open.
+	deadline := time.Now().Add(5 * time.Second)
+	for bounded.terminalZoomSaveTimer != nil {
+		if time.Now().After(deadline) {
+			t.Fatal("the wheel never released its pending save")
+		}
+		bounded.Wake()
+		time.Sleep(20 * time.Millisecond)
+	}
+	if restored := newTestState(t, options); restored.terminalFontSize != terminalFontSizeMax {
+		t.Fatalf("the settled size never reached the store: %v", restored.terminalFontSize)
+	}
+}
+
+// The wheel is keyed on the application's own modifier alone, so the other one is
+// left to whatever the platform does with it: a bare Control+wheel on macOS stays
+// the system's zoom gesture, and a Command+wheel on Windows or Linux stays the
+// shell's. Neither one resizes this terminal's font.
+func TestWheelWithTheOtherModifierDoesNotResize(t *testing.T) {
+	other := gfx.ModifierMeta
+	if keymap.Primary == gfx.ModifierMeta {
+		other = gfx.ModifierControl
+	}
+	state := newTestState(t, testOptions(t))
+	state.sessions = append(state.sessions, Session{ID: 1, term: newTerminal(80, 24)})
+	state.activeSessionID = 1
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	session := &state.sessions[0]
+	start := state.terminalFontSize
+
+	state.terminalScroll(session, gfx.ScrollEvent{Modifiers: other, DeltaY: -120})
+	state.terminalScroll(session, gfx.ScrollEvent{Modifiers: other, DeltaY: -120, Precise: true})
+	if state.terminalFontSize != start {
+		t.Fatalf("%v+wheel resized the font to %v, want %v", other, state.terminalFontSize, start)
+	}
+	// Nothing of the zoom happened: no write pending.
+	if state.terminalZoomSaveTimer != nil {
+		t.Fatalf("%v+wheel scheduled a save", other)
+	}
+}
+
+// The trackpad's leftover travel belongs to the pane it was made in: half a step in
+// one pane and half in another make no step in either.
+func TestTrackpadZoomTravelDoesNotCarryToAnotherPane(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.sessions = append(state.sessions, Session{ID: 1, term: newTerminal(80, 24)}, Session{ID: 2, term: newTerminal(80, 24)})
+	state.activeSessionID = 1
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	start := state.terminalFontSize
+	half := gfx.ScrollEvent{Modifiers: keymap.Primary, DeltaY: -terminalZoomTrackpadUnit / 2, Precise: true}
+
+	state.terminalScroll(&state.sessions[0], half)
+	state.terminalScroll(&state.sessions[1], half)
+	if state.terminalFontSize != start {
+		t.Fatalf("half a step in each of two panes zoomed to %v, want %v", state.terminalFontSize, start)
+	}
+	state.terminalScroll(&state.sessions[1], half)
+	if state.terminalFontSize != start+1 {
+		t.Fatalf("a full step in one pane zoomed to %v, want %v", state.terminalFontSize, start+1)
 	}
 }
 

@@ -57,6 +57,8 @@ type DesktopMessages struct {
 	Actual                    string
 	Fullscreen                string
 	ExitFullscreen            string
+	FullscreenBarPin          string
+	FullscreenBarAutoHide     string
 	FullscreenUnavailable     string
 	FullscreenFailedFmt       string
 	ShowLatency               string

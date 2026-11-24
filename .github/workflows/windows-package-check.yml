@@ -1,0 +1,32 @@
+# Tries the Windows packaging on a runner without publishing anything: build and
+# sign the installers and zips, check the signatures, keep the packages for a day.
+# Run it before tagging a release that touches the Windows build or the signing.
+name: Windows package check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  viva:
+    name: Pin viva
+    runs-on: ubuntu-latest
+    outputs:
+      commit: ${{ steps.resolve.outputs.commit }}
+    steps:
+      - name: Resolve vivaui/viva main
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.REED_REPO_TOKEN || github.token }}
+        run: echo "commit=$(gh api repos/vivaui/viva/commits/main --jq .sha)" >> "$GITHUB_OUTPUT"
+
+  windows:
+    name: Windows
+    needs: viva
+    uses: ./.github/workflows/windows-package.yml
+    with:
+      viva: ${{ needs.viva.outputs.commit }}
+      upload: false
+    secrets: inherit

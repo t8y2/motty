@@ -16,14 +16,22 @@ import (
 	"motty/internal/sshconn"
 )
 
+// defaultForwardBindAddress keeps a newly created forward private to this
+// computer. A record without an address means the same.
+const defaultForwardBindAddress = "127.0.0.1"
+
 type forwardRecord struct {
-	ID              uint32
-	Label           string
-	Mode            portforward.Mode
-	HostLabel       string
-	HostAddress     string
-	HostUser        string
-	HostPort        uint16
+	ID          uint32
+	Label       string
+	Mode        portforward.Mode
+	HostLabel   string
+	HostAddress string
+	HostUser    string
+	HostPort    uint16
+	// BindAddress is the address this device's listener binds to. Empty means
+	// defaultForwardBindAddress; a non-loopback address comes only from this
+	// device's ForwardBindAddresses or the user editing the dialog here.
+	BindAddress     string
 	LocalPort       uint16
 	DestinationHost string
 	DestinationPort uint16
@@ -142,8 +150,41 @@ func (state *State) forwardListKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	}, true
 }
 
+// listenHost is the address the listener binds to, with older records that
+// saved no address kept on loopback.
+func (forward *forwardRecord) listenHost() string {
+	if forward.BindAddress == "" {
+		return defaultForwardBindAddress
+	}
+	return forward.BindAddress
+}
+
 func (forward *forwardRecord) listenAddress() string {
-	return net.JoinHostPort("127.0.0.1", strconv.Itoa(int(forward.LocalPort)))
+	return net.JoinHostPort(forward.listenHost(), strconv.Itoa(int(forward.LocalPort)))
+}
+
+// forwardBindKey names a forward in the device-local listener map. It is the
+// identity the shared records carry (see the "forwards" record key), so renaming a
+// forward on another device does not detach this device's address from it.
+func forwardBindKey(forward forwardRecord) string {
+	return joinKey(forward.savedMode(), forward.HostAddress, forward.HostUser,
+		strconv.Itoa(int(forward.HostPort)), strconv.Itoa(int(forward.LocalPort)),
+		forward.DestinationHost, strconv.Itoa(int(forward.DestinationPort)))
+}
+
+// bindAddressForSave keeps the default out of the device document, so a forward
+// that never changed the setting needs no local entry.
+func bindAddressForSave(address string) string {
+	if address == defaultForwardBindAddress {
+		return ""
+	}
+	return address
+}
+
+// validForwardBindAddress reports whether address is a literal IP address, the
+// only form the listener accepts. An empty address means the default.
+func validForwardBindAddress(address string) bool {
+	return address == "" || net.ParseIP(address) != nil
 }
 
 func (forward *forwardRecord) destination() string {
@@ -269,6 +310,7 @@ func (forward *forwardRecord) hold() {
 
 type forwardEditor struct {
 	label           text.Editor
+	bindAddress     text.Editor
 	localPort       text.Editor
 	destinationHost text.Editor
 	destinationPort text.Editor
@@ -309,6 +351,7 @@ type forwardField uint8
 
 const (
 	forwardFieldLabel forwardField = iota
+	forwardFieldBindAddress
 	forwardFieldLocalPort
 	forwardFieldDestinationHost
 	forwardFieldDestinationPort
@@ -320,6 +363,8 @@ func (editor *forwardEditor) field(field forwardField) *text.Editor {
 	switch field {
 	case forwardFieldLabel:
 		return &editor.label
+	case forwardFieldBindAddress:
+		return &editor.bindAddress
 	case forwardFieldLocalPort:
 		return &editor.localPort
 	case forwardFieldDestinationHost:
@@ -340,6 +385,7 @@ func (editor *forwardEditor) reset(hostID uint32) {
 	digits := func(value rune) bool { return value >= '0' && value <= '9' }
 	editor.localPort.Restrict(digits, 5)
 	editor.destinationPort.Restrict(digits, 5)
+	editor.bindAddress.Insert(defaultForwardBindAddress)
 	editor.localPort.Insert("8080")
 	editor.destinationPort.Insert("80")
 	editor.relay.Insert(defaultRelayCommand)
@@ -360,6 +406,7 @@ func (editor *forwardEditor) load(forward forwardRecord, hostID uint32) {
 	editor.localPort.Restrict(digits, 5)
 	editor.destinationPort.Restrict(digits, 5)
 	editor.label.Insert(forward.Label)
+	editor.bindAddress.Insert(forward.listenHost())
 	editor.localPort.Insert(strconv.Itoa(int(forward.LocalPort)))
 	if forward.DestinationHost != "" {
 		editor.destinationHost.Insert(forward.DestinationHost)
@@ -404,6 +451,23 @@ func (editor *forwardEditor) port(field forwardField) (uint16, bool) {
 	return uint16(value), true
 }
 
+// bindHost is the address the editor will bind to, with an empty field falling
+// back to the private default.
+func (editor *forwardEditor) bindHost() string {
+	if value := editor.value(forwardFieldBindAddress); value != "" {
+		return value
+	}
+	return defaultForwardBindAddress
+}
+
+// bindExposed reports whether the chosen address reaches beyond this computer
+// (or beyond the SSH server, for a remote forward), which is what the dialog
+// warns about.
+func (editor *forwardEditor) bindExposed() bool {
+	ip := net.ParseIP(editor.bindHost())
+	return ip != nil && !ip.IsLoopback()
+}
+
 func (editor *forwardEditor) validate(state *State) string {
 	if editor.value(forwardFieldLabel) == "" {
 		return state.messages.ErrForwardNameRequired
@@ -413,6 +477,9 @@ func (editor *forwardEditor) validate(state *State) string {
 			return state.messages.ErrForwardHostMissing
 		}
 		return state.messages.ErrForwardHostRequired
+	}
+	if !validForwardBindAddress(editor.value(forwardFieldBindAddress)) {
+		return state.messages.ErrForwardBindInvalid
 	}
 	if _, ok := editor.port(forwardFieldLocalPort); !ok {
 		return state.messages.ErrForwardPortInvalid
@@ -449,7 +516,8 @@ func (editor *forwardEditor) record(id uint32, host Host) forwardRecord {
 	forward := forwardRecord{
 		ID: id, Label: editor.value(forwardFieldLabel), Mode: editor.mode,
 		HostLabel: host.Label, HostAddress: host.Address, HostUser: host.User, HostPort: host.Port,
-		LocalPort: localPort, Resume: editor.resume, AutoStart: editor.autoStart,
+		BindAddress: bindAddressForSave(editor.bindHost()),
+		LocalPort:   localPort, Resume: editor.resume, AutoStart: editor.autoStart,
 	}
 	if editor.viaShell && modeUsesServerDestination(editor.mode) {
 		forward.ViaShell, forward.Relay = true, editor.relayCommand()
@@ -561,6 +629,7 @@ func (state *State) submitForwardDialog() {
 			f.HostAddress = host.Address
 			f.HostUser = host.User
 			f.HostPort = host.Port
+			f.BindAddress = bindAddressForSave(state.forwardEditor.bindHost())
 			f.LocalPort = localPort
 			f.Resume = state.forwardEditor.resume
 			f.AutoStart = state.forwardEditor.autoStart
@@ -725,7 +794,7 @@ func (state *State) toggleForwardByID(id uint32) {
 func (state *State) forwardPortConflict(forward forwardRecord) string {
 	for index := range state.forwards {
 		other := &state.forwards[index]
-		if other.ID == forward.ID || other.runner == nil || other.LocalPort != forward.LocalPort {
+		if other.ID == forward.ID || other.runner == nil || !forwardListenersOverlap(*other, forward) {
 			continue
 		}
 		if forward.Mode == portforward.ModeRemote {
@@ -740,6 +809,21 @@ func (state *State) forwardPortConflict(forward forwardRecord) string {
 		}
 	}
 	return ""
+}
+
+// forwardListenersOverlap reports whether two listeners compete for one socket:
+// they share a port, and either bind the same address or one binds every
+// interface.
+func forwardListenersOverlap(one, other forwardRecord) bool {
+	if one.LocalPort != other.LocalPort {
+		return false
+	}
+	oneHost, otherHost := one.listenHost(), other.listenHost()
+	if oneHost == otherHost {
+		return true
+	}
+	oneIP, otherIP := net.ParseIP(oneHost), net.ParseIP(otherHost)
+	return oneIP == nil || otherIP == nil || oneIP.IsUnspecified() || otherIP.IsUnspecified()
 }
 
 // failForward leaves a forward that could not start stopped, with the reason on
@@ -778,11 +862,12 @@ func (state *State) startForward(forward *forwardRecord, session *Session) {
 		}
 	}
 	runner, err := portforward.Start(portforward.Config{
-		ListenAddress: forward.listenAddress(),
-		Destination:   forward.destination(),
-		Mode:          forward.Mode,
-		Dial:          dial,
-		Notify:        state.options.Invalidate,
+		ListenAddress:    forward.listenAddress(),
+		Destination:      forward.destination(),
+		Mode:             forward.Mode,
+		AllowNonLoopback: true,
+		Dial:             dial,
+		Notify:           state.options.Invalidate,
 	})
 	if err != nil {
 		state.failForward(forward, err.Error())
@@ -809,12 +894,13 @@ func (state *State) startRemoteForward(forward *forwardRecord, session *Session)
 	listen := session.conn.Listen
 	go func() {
 		runner, err := portforward.Start(portforward.Config{
-			ListenAddress: listenAddress,
-			Destination:   destination,
-			Mode:          portforward.ModeRemote,
-			Listen:        listen,
-			Dial:          (&net.Dialer{}).DialContext,
-			Notify:        state.options.Invalidate,
+			ListenAddress:    listenAddress,
+			Destination:      destination,
+			Mode:             portforward.ModeRemote,
+			AllowNonLoopback: true,
+			Listen:           listen,
+			Dial:             (&net.Dialer{}).DialContext,
+			Notify:           state.options.Invalidate,
 		})
 		state.forwardStarts <- forwardStartResult{forwardID: forwardID, startID: startID, runner: runner, err: err}
 		if state.options.Invalidate != nil {
@@ -954,13 +1040,35 @@ func (state *State) pumpForwardStarts() {
 	}
 }
 
-// restoreForwards replaces the list of forwards with a saved one. A forward that
-// is in both keeps the number it was saved with and whatever it is running, so a
-// list that changes under a forward that is still wanted does not stop it; one
-// that is gone is stopped. A forward whose saved configuration differs from the
-// one that was running under the same number is stopped and restored fresh: its
-// tunnel listens on the old settings.
+// forwardBindAddressFrom is the device-local address this forward should use,
+// or "" when this device has no custom address for it. A value that is not a
+// literal IP is ignored, so a damaged local document leaves the listener on
+// loopback instead of failing to start.
+func forwardBindAddressFrom(forward forwardRecord, addresses map[string]string) string {
+	if len(addresses) == 0 {
+		return ""
+	}
+	address := strings.TrimSpace(addresses[forwardBindKey(forward)])
+	if !validForwardBindAddress(address) || address == "" || address == defaultForwardBindAddress {
+		return ""
+	}
+	return address
+}
+
+// restoreForwards replaces the list of forwards with the shared records alone,
+// leaving every listener on loopback.
 func (state *State) restoreForwards(saved []savedForward) {
+	state.restoreForwardsWithBindAddresses(saved, nil)
+}
+
+// restoreForwardsWithBindAddresses replaces the list of forwards with a saved
+// one, applying the addresses this device keeps. A forward that is in both
+// keeps the number it was saved with and whatever it is running, so a list that
+// changes under a forward that is still wanted does not stop it; one that is
+// gone is stopped. A forward whose saved configuration differs from the one that
+// was running under the same number is stopped and restored fresh: its tunnel
+// listens on the old settings.
+func (state *State) restoreForwardsWithBindAddresses(saved []savedForward, addresses map[string]string) {
 	previous := state.forwards
 	state.forwards = nil
 	wanted := make([]uint32, len(saved))
@@ -992,6 +1100,7 @@ func (state *State) restoreForwards(saved []savedForward) {
 			forward.DestinationHost = entry.DestinationHost
 			forward.DestinationPort = entry.DestinationPort
 		}
+		forward.BindAddress = forwardBindAddressFrom(forward, addresses)
 		// A number tells which record this is; an older save without one falls
 		// back to recognising the forward by what it listens on and where it goes.
 		match := -1
@@ -1042,7 +1151,7 @@ func highestRecordNumber(forwards []forwardRecord) uint32 {
 // where it goes, whatever it is called.
 func (forward forwardRecord) sameAs(other forwardRecord) bool {
 	return forward.Mode == other.Mode && forward.HostAddress == other.HostAddress && forward.HostUser == other.HostUser &&
-		forward.HostPort == other.HostPort && forward.LocalPort == other.LocalPort &&
+		forward.HostPort == other.HostPort && forward.listenHost() == other.listenHost() && forward.LocalPort == other.LocalPort &&
 		forward.DestinationHost == other.DestinationHost && forward.DestinationPort == other.DestinationPort &&
 		forward.ViaShell == other.ViaShell && forward.relayCommand() == other.relayCommand()
 }
@@ -1122,6 +1231,8 @@ func (state *State) forwardLabel(id uint32) string {
 
 func forwardDialogField(id gfx.ID) forwardField {
 	switch id {
+	case hitForwardDialogBindAddress:
+		return forwardFieldBindAddress
 	case hitForwardDialogLocalPort:
 		return forwardFieldLocalPort
 	case hitForwardDialogDestination:
