@@ -472,6 +472,7 @@ var TraditionalMessages = Messages{
 	CopyAddressAndPort:                     "複製 IP:PORT",
 	CopyConnectionName:                     "複製連線名稱",
 	MenuPaste:                              "貼上",
+	MenuPasteSelection:                     "貼上選取內容",
 	MenuSelectAll:                          "全選",
 	MenuClearScreen:                        "清空螢幕",
 	MenuClearScrollback:                    "清除捲動歷史",

@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
@@ -56,6 +57,37 @@ type terminalMenu struct {
 func (state *State) openTerminalMenu(session *Session) {
 	state.ghostMenu.open = false
 	state.terminalMenu = terminalMenu{open: true, session: session.ID, at: state.terminalMenu.pointer, pointer: state.terminalMenu.pointer}
+}
+
+// Install the mnemonics outside ui.Configure: the page's own menu typeahead
+// gets printable keys before the base handlers and can consume C or E.
+func (state *State) configureTerminalMenuKeys(config *app.Config) {
+	config.CaptureMenuKeys = func() bool { return state.terminalMenu.open && state.modal == modalNone }
+	keys, shortcuts := config.OnKey, config.OnShortcut
+	menu := func(event gfx.KeyEvent) gfx.EventResult {
+		if result, ok := state.terminalMenuKey(event); ok {
+			state.afterEvent(&result)
+			return result
+		}
+		if result, ok := state.windowPage().MenuKey(event); ok {
+			return result
+		}
+		// The runtime activates a focused row on Enter or Space. Other keys
+		// left unclaimed by the menu must not reach an underlying shell.
+		return gfx.EventResult{Handled: event.Key != gfx.KeyEnter && event.Key != gfx.KeySpace}
+	}
+	config.OnShortcut = func(event gfx.KeyEvent) gfx.EventResult {
+		if state.terminalMenu.open && state.modal == modalNone {
+			return menu(event)
+		}
+		return shortcuts(event)
+	}
+	config.OnKey = func(event gfx.KeyEvent) gfx.EventResult {
+		if state.terminalMenu.open && state.modal == modalNone {
+			return menu(event)
+		}
+		return keys(event)
+	}
 }
 
 // offerActionsAt lets the open menu offer what can be done with the text at a
@@ -242,10 +274,11 @@ func (state *State) declareTerminalMenu(c ui.C) {
 		rows.add(components.ContextMenuItem{ID: hitTerminalMenuAction[index], Label: state.actionLabel(found), Icon: icon(actionIcon(found.kind))})
 	}
 	rows.separate()
-	rows.add(components.ContextMenuItem{ID: hitTerminalMenuCopy, Label: messages.MenuCopy, Icon: icon(iconCopy), Disabled: !hasSelection})
+	rows.add(components.ContextMenuItem{ID: hitTerminalMenuCopy, Label: messages.MenuCopy, Mnemonic: "C", Icon: icon(iconCopy), Disabled: !hasSelection})
 	rows.chord(chord(shortcutCopy))
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuPaste, Label: messages.MenuPaste, Icon: icon(iconPaste), Disabled: !live})
 	rows.chord(chord(shortcutPaste))
+	rows.add(components.ContextMenuItem{ID: hitTerminalMenuPasteSelection, Label: messages.MenuPasteSelection, Mnemonic: "E", Icon: icon(iconPaste), Disabled: !live || !hasSelection})
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuSelectAll, Label: messages.MenuSelectAll, Icon: icon(iconSelectAll)})
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuClearScreen, Label: messages.MenuClearScreen, Icon: icon(iconEraser), Disabled: session.term.screen.Modes().AltScreen})
 	rows.chord(chord(shortcutClearScreen))
@@ -337,6 +370,8 @@ func (state *State) chooseTerminalMenu(id gfx.ID) {
 		}
 	case hitTerminalMenuPaste:
 		state.pasteIntoTerminal(session)
+	case hitTerminalMenuPasteSelection:
+		state.pasteSelectionIntoTerminal(session)
 	case hitTerminalMenuSelectAll:
 		cols, rows := session.term.screen.Size()
 		session.term.selection.selectRange(
@@ -384,4 +419,56 @@ func (state *State) chooseTerminalMenu(id gfx.ID) {
 	case hitTerminalMenuDisconnect:
 		state.askSessionLink(session, true)
 	}
+}
+
+// terminalMenuKey handles the two selection actions before generic menu
+// typeahead. They are intentionally scoped to this menu so C and E remain
+// ordinary terminal input everywhere else.
+func (state *State) terminalMenuKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if !state.terminalMenu.open || event.Release || event.Repeat || event.Modifiers != 0 {
+		return gfx.EventResult{}, false
+	}
+	if event.Key == gfx.KeyEscape {
+		state.terminalMenu.open = false
+		return gfx.EventResult{Handled: true, Repaint: true}, true
+	}
+	var id gfx.ID
+	switch event.Text {
+	case "c", "C":
+		id = hitTerminalMenuCopy
+	case "e", "E":
+		id = hitTerminalMenuPasteSelection
+	default:
+		return gfx.EventResult{}, false
+	}
+	if session, ok := state.terminalMenuTarget(); !ok {
+		state.terminalMenu.open = false
+		return gfx.EventResult{Handled: true, Repaint: true}, true
+	} else if (id == hitTerminalMenuCopy && !session.term.selection.selected) ||
+		(id == hitTerminalMenuPasteSelection && (session.term.shell == nil || !session.term.selection.selected)) {
+		return gfx.EventResult{Handled: true, Repaint: true}, true
+	}
+	state.chooseTerminalMenu(id)
+	state.terminalMenu.open = false
+	return gfx.EventResult{Handled: true, Repaint: true}, true
+}
+
+// pasteSelectionIntoTerminal sends the terminal's current selection as a
+// paste payload, retaining the same review and input checks as clipboard paste.
+func (state *State) pasteSelectionIntoTerminal(session *Session) {
+	if session == nil || session.term == nil || session.term.shell == nil || state.modal != modalNone || !session.term.selection.selected {
+		return
+	}
+	value := session.term.selection.text(session.term.screen)
+	if value == "" {
+		return
+	}
+	state.cancelPasteQueue(session.term)
+	if state.reviewTerminalPaste(session, value) {
+		return
+	}
+	if state.guardTerminalText(session, app.TextEvent{Kind: app.TextPaste, Text: value}) {
+		return
+	}
+	state.typed(session, encodeTerminalPaste(value, session.term))
 }

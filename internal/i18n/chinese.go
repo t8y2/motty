@@ -472,6 +472,7 @@ var ChineseMessages = Messages{
 	CopyAddressAndPort:                     "复制 IP:PORT",
 	CopyConnectionName:                     "复制连接名称",
 	MenuPaste:                              "粘贴",
+	MenuPasteSelection:                     "粘贴选定内容",
 	MenuSelectAll:                          "全选",
 	MenuClearScreen:                        "清空屏幕",
 	MenuClearScrollback:                    "清除滚动历史",

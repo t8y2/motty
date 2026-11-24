@@ -472,6 +472,7 @@ var EnglishMessages = Messages{
 	CopyAddressAndPort:                     "Copy IP:PORT",
 	CopyConnectionName:                     "Copy Connection Name",
 	MenuPaste:                              "Paste",
+	MenuPasteSelection:                     "Paste Selection",
 	MenuSelectAll:                          "Select All",
 	MenuClearScreen:                        "Clear Screen",
 	MenuClearScrollback:                    "Clear Scrollback",

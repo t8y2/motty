@@ -452,6 +452,7 @@ type Messages struct {
 	CopyAddressAndPort                     string
 	CopyConnectionName                     string
 	MenuPaste                              string
+	MenuPasteSelection                     string
 	MenuSelectAll                          string
 	MenuClearScreen                        string
 	MenuClearScrollback                    string

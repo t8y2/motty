@@ -104,6 +104,9 @@ func (state *State) menuPointer(event gfx.PointerEvent) (gfx.EventResult, bool) 
 // menuKey moves the keyboard through the open menu with the arrow, Home, End and
 // Page keys, scrolling the item it reaches into view.
 func (state *State) menuKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if result, handled := state.terminalMenuKey(event); handled {
+		return result, true
+	}
 	if state.sftpHeaderMenuOwns(state.popups.owner) {
 		if w := state.activeSFTPWindow(); w != nil {
 			if w.view == nil || w.view.dialog != sftpDialogNone || w.view.editPath != "" {

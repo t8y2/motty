@@ -521,6 +521,7 @@ func (state *State) WindowConfig(base app.Config) app.Config {
 			}
 		}
 	}
+	state.configureTerminalMenuKeys(&config)
 	// The assistant owns the wheel over its own panel: its lists keep their
 	// offsets in the page, but a modal dialog must still keep them still, which
 	// the page's generic scroll-area routing does not know. Everything else the
