@@ -38,6 +38,11 @@ type Sender struct {
 	block []byte
 	eots  int
 	sent  int
+	// handshake is set while block 1 of an XMODEM file is in flight and
+	// unacknowledged: the receiver keeps sending its start NAK until it sees
+	// SOH, so NAKs queued before the block arrived are not complaints about it.
+	// A real NAK is recovered by Timeout.
+	handshake bool
 }
 
 var errShort = errors.New("xymodem: the file is shorter than it was when the transfer began")
@@ -130,13 +135,16 @@ func (s *Sender) reply(value byte) {
 		switch value {
 		case ack:
 			s.retries = 0
+			s.handshake = false
 			if s.offset >= s.files[s.index].Size {
 				s.sendEOT()
 			} else {
 				s.sendData()
 			}
 		case nak:
-			s.resend()
+			if !s.handshake {
+				s.resend()
+			}
 		}
 	case sWaitEOTAck:
 		switch value {
@@ -267,6 +275,7 @@ func (s *Sender) sendData() {
 		pad = 0
 	}
 	s.sendBlock(s.frame(s.number, data, length, pad))
+	s.handshake = s.number == 1 && s.mode != YMODEM
 	s.state = sWaitAck
 }
 

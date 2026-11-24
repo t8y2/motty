@@ -316,3 +316,22 @@ func TestTwoCANBytesInsideABlockAreData(t *testing.T) {
 		t.Fatalf("err %v, got %d bytes", receiver.Err(), target.files["f"].Len())
 	}
 }
+
+// A receiver sends its start NAK every second until it sees SOH, so a backlog
+// of them can arrive after the first block is out; they are not damage reports.
+func TestXmodemSenderIgnoresQueuedStartNAKs(t *testing.T) {
+	random := rand.New(rand.NewSource(3))
+	list := files(random, 300)
+	sender := NewSender(XMODEM, list)
+	sender.Feed(bytes.Repeat([]byte{nak}, 20))
+	if sender.Err() != nil || sender.Finished() {
+		t.Fatalf("a backlog of start NAKs ended the transfer: %v", sender.Err())
+	}
+	if got := len(sender.TakeOutput(nil)); got != 3+128+1 {
+		t.Fatalf("sent %d bytes, want exactly one 128-byte block", got)
+	}
+	sender.Timeout() // a real NAK for block 1 is recovered by the timeout
+	if got := len(sender.TakeOutput(nil)); got != 3+128+1 {
+		t.Fatalf("timeout resent %d bytes", got)
+	}
+}
