@@ -60,13 +60,14 @@ const (
 	EncodingRRE         int32 = 2
 	EncodingHextile     int32 = 5
 	EncodingZRLE        int32 = 16
+	encodingCursor      int32 = -239
 	encodingLastRect    int32 = -224
 	encodingDesktopSize int32 = -223
 )
 
 // DefaultEncodings is the preference order sent to the server: the most
 // compact first, Raw last as what every server must support.
-var DefaultEncodings = []int32{EncodingZRLE, EncodingHextile, EncodingRRE, EncodingCopyRect, EncodingRaw, encodingDesktopSize, encodingExtendedClipboard}
+var DefaultEncodings = []int32{EncodingZRLE, EncodingHextile, EncodingRRE, EncodingCopyRect, EncodingRaw, encodingDesktopSize, encodingExtendedClipboard, encodingCursor}
 
 // PreferEncoding is DefaultEncodings with encoding moved to the front, which is
 // how a client tells the server which one to use when it supports several. The
@@ -108,6 +109,9 @@ type Sink interface {
 	// Flush marks the end of a FramebufferUpdate, waking the presenter once
 	// rather than for each decoded rectangle.
 	Flush()
+	// Cursor informs the sink of a pointer shape and its hotspot, or an empty
+	// shape when width or height is zero.
+	Cursor(hotX, hotY, width, height int, bgra []byte)
 }
 
 // Config describes how to connect.
@@ -751,6 +755,11 @@ func (client *Client) update(sink Sink) error {
 			client.mu.Unlock()
 			sink.Resize(width, height)
 			resized = true
+			continue
+		case encodingCursor:
+			if err := client.decodeCursor(sink, x, y, width, height); err != nil {
+				return err
+			}
 			continue
 		}
 		if x+width > client.width || y+height > client.height {

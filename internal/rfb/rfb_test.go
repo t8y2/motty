@@ -22,6 +22,11 @@ type canvas struct {
 	bells         int
 	text          string
 	updates       int
+	cursorHotX    int
+	cursorHotY    int
+	cursorWidth   int
+	cursorHeight  int
+	cursorBGRA    []byte
 }
 
 func (c *canvas) Resize(width, height int) {
@@ -63,6 +68,14 @@ func (c *canvas) Fill(x, y, width, height int, blue, green, red byte) {
 func (c *canvas) Bell()                  { c.mu.Lock(); c.bells++; c.mu.Unlock() }
 func (c *canvas) ServerText(text string) { c.mu.Lock(); c.text = text; c.mu.Unlock() }
 func (c *canvas) Flush()                 {}
+
+func (c *canvas) Cursor(hotX, hotY, width, height int, bgra []byte) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.cursorHotX, c.cursorHotY = hotX, hotY
+	c.cursorWidth, c.cursorHeight = width, height
+	c.cursorBGRA = append([]byte(nil), bgra...)
+}
 
 func (c *canvas) at(x, y int) [3]byte {
 	c.mu.Lock()
@@ -863,4 +876,67 @@ func TestVNCResponseMatchesAnIndependentDESImplementation(t *testing.T) {
 	if vncResponse(challenge, "password-and-more") != want {
 		t.Fatal("bytes past the eighth changed the response")
 	}
+}
+
+func TestCursorPseudoEncoding(t *testing.T) {
+	sink := &canvas{}
+	clientSide, serverSide := pair(t)
+	s := &server{t: t, conn: serverSide}
+	go s.handshake("008", 1, "", 30, 30)
+	client, err := Connect(clientSide, Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := run(client, sink)
+	s.readRequest()
+
+	// 2x2 cursor at hotspot (1, 1).
+	// Pixel bytes in 32-bit: 4 pixels, 4 bytes each = 16 bytes.
+	// Mask: 2x2 pixels -> (2+7)/8 = 1 byte per scanline -> 2 bytes.
+	cursorPixels := []byte{
+		10, 20, 30, 0, // (0,0)
+		99, 99, 99, 0, // (1,0)
+		88, 88, 88, 0, // (0,1)
+		40, 50, 60, 0, // (1,1)
+	}
+	cursorMask := []byte{0b10000000, 0b01000000}
+	cursorBody := append(cursorPixels, cursorMask...)
+
+	s.write(update(rect(1, 1, 2, 2, encodingCursor, cursorBody...)))
+	s.readRequest()
+
+	sink.mu.Lock()
+	hotX, hotY := sink.cursorHotX, sink.cursorHotY
+	width, height := sink.cursorWidth, sink.cursorHeight
+	bgra := append([]byte(nil), sink.cursorBGRA...)
+	sink.mu.Unlock()
+
+	if hotX != 1 || hotY != 1 || width != 2 || height != 2 {
+		t.Fatalf("cursor = %dx%d at %d,%d; want 2x2 at 1,1", width, height, hotX, hotY)
+	}
+	wantBGRA := []byte{
+		10, 20, 30, 255,
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		40, 50, 60, 255,
+	}
+	if !bytes.Equal(bgra, wantBGRA) {
+		t.Fatalf("cursor BGRA = %v, want %v", bgra, wantBGRA)
+	}
+
+	// 0x0 cursor hides the cursor
+	s.write(update(rect(0, 0, 0, 0, encodingCursor)))
+	s.readRequest()
+
+	sink.mu.Lock()
+	width, height = sink.cursorWidth, sink.cursorHeight
+	bgra = sink.cursorBGRA
+	sink.mu.Unlock()
+
+	if width != 0 || height != 0 || len(bgra) != 0 {
+		t.Fatalf("empty cursor = %dx%d, bgra len %d; want 0x0 empty", width, height, len(bgra))
+	}
+
+	client.Close()
+	wait(t, done)
 }
