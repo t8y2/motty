@@ -2016,7 +2016,7 @@ var englishTools = ToolsMessages{
 	FontFallbackPickerTitle: "Fallback font",
 
 	NotifyRow:         "Desktop notifications",
-	NotifyDescription: "Show a system notification when a program in the terminal asks for one (OSC 9, 777 and 99). At most one a second per terminal.",
+	NotifyDescription: "Show a system notification when a program in the terminal asks for one (OSC 9, 777 and 99).",
 
 	PasteImageRow:           "Paste images into terminals",
 	PasteImageDescription:   "When the clipboard holds only an image, save it to the local cache or upload it to ~/.cache/motty/paste on the SSH server, then paste its path for programs such as Codex. Files are kept for a week.",
@@ -2028,7 +2028,7 @@ var englishTools = ToolsMessages{
 	PasteConfirmDescription: "Show a preview before text containing line breaks reaches the shell. Turn off to paste multi-line text at once, as before.",
 
 	PasswordHintRow:         "Password prompt assist",
-	PasswordHintDescription: "Lists saved passwords at sudo, su and SSH/SCP account password prompts, including in local terminals and nested SSH sessions. Use ↑/↓ then Enter, or click a password to send it. Save identities in Settings > Security > Identities.",
+	PasswordHintDescription: "Lists saved passwords at sudo, su and SSH/SCP password prompts. Nothing is sent until you choose one. Save identities in Settings > Security > Identities.",
 	CloseConfirmRow:         "Confirm before closing running sessions",
 	CloseConfirmDescription: "Asks first when a tab or pane that is still connected is closed. Sessions that have ended close without asking.",
 
@@ -2200,13 +2200,13 @@ var englishTools = ToolsMessages{
 	FilesPathBreadcrumbs:          "Breadcrumbs",
 	FilesPathInput:                "Input field",
 	FilesPanelAutoOpen:            "Show file transfer panel by default",
-	FilesPanelAutoOpenDescription: "Open the panel in new workspaces and those restored at startup. It can still be closed at any time.",
+	FilesPanelAutoOpenDescription: "Open the panel in new workspaces and those restored at startup.",
 	FilesDirectoryTree:            "Show the directory tree in dual-pane file transfer by default",
-	FilesDirectoryTreeDescription: "Show a directory tree beside the local and server file lists. Folders load only when expanded, and each transfer window can override this setting.",
+	FilesDirectoryTreeDescription: "Show a directory tree beside the local and server file lists.",
 	FilesPreviewLimit:             "Preview size limit",
 	FilesPreviewLimitDescription:  "The largest file a document window loads, in MB. Type a number or use the stepper; there is no upper limit. A change applies to files opened afterwards; images are also limited to 16 megapixels.",
 	FilesPanelPosition:            "Default panel position",
-	FilesPanelPositionDescription: "Used for new or restored workspaces. The panel header can move it without changing this default.",
+	FilesPanelPositionDescription: "Used for new and restored workspaces.",
 	FilesPanelLeft:                "Left", FilesPanelRight: "Right",
 	FilesWindowOrder:                     "Pane order",
 	FilesWindowOrderDescription:          "Controls which side of the two-column file transfer is shown first. All open transfer windows and tabs change immediately.",
@@ -3211,7 +3211,7 @@ var englishCompletion = CompletionMessages{
 	AcceptHintAction:      "Accept suggestion key",
 	AcceptHintBadge:       "Change the key that accepts the suggestion",
 	AcceptHintRow:         "Suggestion key hint",
-	AcceptHintDescription: "Show which key accepts the gray inline suggestion beside it. Choose another key from the badge, or turn this off to hide it.",
+	AcceptHintDescription: "Show which key accepts the gray inline suggestion.",
 	AcceptHintCustom:      "Custom…",
 	AcceptHintTurnOff:     "Turn off this hint",
 }

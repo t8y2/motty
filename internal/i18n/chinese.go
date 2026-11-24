@@ -2025,7 +2025,7 @@ var chineseTools = ToolsMessages{
 	PasteConfirmDescription: "粘贴包含换行的文本时先显示预览，可选择整段或逐行发送。关闭后按原样一次粘贴。",
 
 	PasswordHintRow:         "密码提示辅助",
-	PasswordHintDescription: "在 sudo、su 和 SSH/SCP 的账户密码提示处列出已保存的密码，支持本地终端和嵌套 SSH 会话。用 ↑/↓ 选择后按 Enter，或点击候选才会发送。身份在「设置 > 安全 > 身份」中保存。",
+	PasswordHintDescription: "在 sudo、su 和 SSH/SCP 的密码提示处列出已保存的密码，选择后才会发送。身份在「设置 > 安全 > 身份」中保存。",
 	CloseConfirmRow:         "关闭运行中的会话前确认",
 	CloseConfirmDescription: "关闭仍处于连接状态的标签页或分屏时先询问。已结束的会话直接关闭。",
 
@@ -2033,7 +2033,7 @@ var chineseTools = ToolsMessages{
 	CloseWindowConfirmDescription: "窗口还有打开的会话时，关闭前先询问。关闭后这些会话会断开连接。",
 
 	NotifyRow:         "桌面通知",
-	NotifyDescription: "终端里的程序请求通知时（OSC 9、777、99），显示系统通知。每个终端每秒最多一条。",
+	NotifyDescription: "终端里的程序请求通知时（OSC 9、777、99），显示系统通知。",
 
 	ProxyRow:                    "出站代理",
 	ProxyConfigure:              "配置",
@@ -2200,13 +2200,13 @@ var chineseTools = ToolsMessages{
 	FilesPathBreadcrumbs:          "面包屑",
 	FilesPathInput:                "输入框",
 	FilesPanelAutoOpen:            "默认显示文件传输面板",
-	FilesPanelAutoOpenDescription: "新建或重进应用后恢复终端工作区时自动展开，进入后仍可随时关闭。",
+	FilesPanelAutoOpenDescription: "新建或重进应用后恢复终端工作区时自动展开。",
 	FilesDirectoryTree:            "双栏文件传输默认显示目录树",
-	FilesDirectoryTreeDescription: "在本地与服务器文件列表左侧显示目录树。目录只在展开时读取，也可在文件传输窗口中临时切换。",
+	FilesDirectoryTreeDescription: "在本地与服务器文件列表左侧显示目录树。",
 	FilesPreviewLimit:             "文件预览上限",
 	FilesPreviewLimitDescription:  "文件窗口一次载入内存的最大大小（MB）。可直接输入数字或点按步进器，没有上限。改动对之后打开的文件生效；图片另受 1600 万像素限制。",
 	FilesPanelPosition:            "默认面板位置",
-	FilesPanelPositionDescription: "新建或恢复工作区时使用此位置；面板顶栏可临时调整，不修改默认设置。",
+	FilesPanelPositionDescription: "新建或恢复工作区时使用此位置。",
 	FilesPanelLeft:                "左侧", FilesPanelRight: "右侧",
 	FilesWindowOrder:                     "文件传输位置",
 	FilesWindowOrderDescription:          "设置文件传输双栏中哪一侧显示在左边。所有已打开的传输窗口和页签会立即换位。",
@@ -3211,7 +3211,7 @@ var chineseCompletion = CompletionMessages{
 	AcceptHintAction:      "接受补全的按键",
 	AcceptHintBadge:       "更改接受补全建议的按键",
 	AcceptHintRow:         "补全按键提示",
-	AcceptHintDescription: "在灰色行内建议旁显示接受它的按键。可点按钮改用其他键；关闭后不显示提示。",
+	AcceptHintDescription: "在灰色行内建议旁显示接受它的按键。",
 	AcceptHintCustom:      "自定义…",
 	AcceptHintTurnOff:     "关闭此提示",
 }

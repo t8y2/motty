@@ -2025,7 +2025,7 @@ var traditionalTools = ToolsMessages{
 	PasteConfirmDescription: "貼上包含換行的文字時先顯示預覽，可選擇整段或逐行傳送。關閉後按原樣一次貼上。",
 
 	PasswordHintRow:         "密碼提示輔助",
-	PasswordHintDescription: "在 sudo、su 和 SSH/SCP 的帳戶密碼提示處列出已儲存的密碼，支援本機終端和巢狀 SSH 工作階段。用 ↑/↓ 選擇後按 Enter，或點選候選才會傳送。身份在「設定 > 安全 > 身份」中儲存。",
+	PasswordHintDescription: "在 sudo、su 和 SSH/SCP 的密碼提示處列出已儲存的密碼，選擇後才會傳送。身份在「設定 > 安全 > 身份」中儲存。",
 	CloseConfirmRow:         "關閉執行中的工作階段前確認",
 	CloseConfirmDescription: "關閉仍處於連線狀態的分頁或分割窗格時先詢問。已結束的工作階段直接關閉。",
 
@@ -2033,7 +2033,7 @@ var traditionalTools = ToolsMessages{
 	CloseWindowConfirmDescription: "視窗還有開啟的工作階段時，關閉前先詢問。關閉後這些工作階段會中斷連線。",
 
 	NotifyRow:         "桌面通知",
-	NotifyDescription: "終端機裡的程式請求通知時（OSC 9、777、99），顯示系統通知。每個終端機每秒最多一條。",
+	NotifyDescription: "終端機裡的程式請求通知時（OSC 9、777、99），顯示系統通知。",
 
 	ProxyRow:                    "出站代理",
 	ProxyConfigure:              "設定",
@@ -2200,13 +2200,13 @@ var traditionalTools = ToolsMessages{
 	FilesPathBreadcrumbs:          "麵包屑",
 	FilesPathInput:                "輸入框",
 	FilesPanelAutoOpen:            "預設顯示檔案傳輸面板",
-	FilesPanelAutoOpenDescription: "新增或重進應用後恢復終端機工作區時自動展開，進入後仍可隨時關閉。",
+	FilesPanelAutoOpenDescription: "新增或重進應用後恢復終端機工作區時自動展開。",
 	FilesDirectoryTree:            "雙欄檔案傳輸預設顯示目錄樹",
-	FilesDirectoryTreeDescription: "在本機與伺服器檔案清單左側顯示目錄樹。目錄只在展開時讀取，也可在檔案傳輸視窗中臨時切換。",
+	FilesDirectoryTreeDescription: "在本機與伺服器檔案清單左側顯示目錄樹。",
 	FilesPreviewLimit:             "檔案預覽上限",
 	FilesPreviewLimitDescription:  "檔案視窗一次載入記憶體的最大大小（MB）。可直接輸入數字或點按步進器，沒有上限。改動對之後開啟的檔案生效；圖片另受 1600 萬畫素限制。",
 	FilesPanelPosition:            "預設面板位置",
-	FilesPanelPositionDescription: "新增或恢復工作區時使用此位置；面板頂部列可臨時調整，不修改預設設定。",
+	FilesPanelPositionDescription: "新增或恢復工作區時使用此位置。",
 	FilesPanelLeft:                "左側", FilesPanelRight: "右側",
 	FilesWindowOrder:                     "檔案傳輸位置",
 	FilesWindowOrderDescription:          "設定檔案傳輸雙欄中哪一側顯示在左邊。所有已開啟的傳輸視窗和分頁會立即換位。",
@@ -3211,7 +3211,7 @@ var traditionalCompletion = CompletionMessages{
 	AcceptHintAction:      "接受補全的按鍵",
 	AcceptHintBadge:       "變更接受補全建議的按鍵",
 	AcceptHintRow:         "補全按鍵提示",
-	AcceptHintDescription: "在灰色行內建議旁顯示接受它的按鍵。可點按鈕改用其他按鍵；關閉後不顯示提示。",
+	AcceptHintDescription: "在灰色行內建議旁顯示接受它的按鍵。",
 	AcceptHintCustom:      "自訂…",
 	AcceptHintTurnOff:     "關閉此提示",
 }
