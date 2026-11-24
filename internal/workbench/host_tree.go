@@ -104,20 +104,27 @@ func (state *State) hostListFns() *hostCatalogList {
 	list.tree.Key = list.key
 	list.tree.CanDrop = list.canDrop
 	list.tree.Indent = hostTreeIndent
+	list.tree.Glide = rowGlideMotion
 	return list
 }
 
-// hostListKey names a visible row of the hosts tree by its place in the model,
-// so the Tree keeps a row's focus as rows above it open and close. Groups are
+// hostListKey names a visible row of the hosts tree: a host by its ID and a
+// group by its place in the model, so the Tree keeps a row's focus, and glides
+// it to its new place, as rows above it open, close, move or go away. Groups are
 // odd and hosts even: the two ranges never meet, and the key says which kind a
-// row is when a pointer event names it.
+// row is when a pointer event names it. A key is below 2^31, so a host ID is
+// kept to its low 30 bits.
 func (state *State) hostListKey(i int) int {
 	entry := state.hostTreeRows[i]
 	if entry.Kind == hostTreeGroup {
 		return 2*entry.GroupIndex + 1
 	}
-	return 2 * entry.HostIndex
+	return hostListHostKey(state.hosts[entry.HostIndex].ID)
 }
+
+func hostListHostKey(id uint32) int { return 2 * int(id&hostListKeyMask) }
+
+const hostListKeyMask = 1<<30 - 1
 
 // hostListNode describes row i for the Tree. Each row carries its own height:
 // group rows are compact and host rows full, and the list measures each of them
@@ -279,9 +286,10 @@ func (state *State) hostListRowFromHit(id gfx.ID) (hostTreeRow, bool) {
 		}
 		return hostTreeRow{}, false
 	}
-	index := key / 2
-	if index >= 0 && index < len(state.hosts) {
-		return hostTreeRow{Kind: hostTreeHost, GroupIndex: -1, HostIndex: index}, true
+	for index := range state.hosts {
+		if hostListHostKey(state.hosts[index].ID) == key {
+			return hostTreeRow{Kind: hostTreeHost, GroupIndex: -1, HostIndex: index}, true
+		}
 	}
 	return hostTreeRow{}, false
 }

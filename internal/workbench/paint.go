@@ -417,6 +417,10 @@ const (
 // under the pointer never overshoots it.
 var tabGlideMotion = gfx.SpringMotion(220*time.Millisecond, 0)
 
+// rowGlideMotion is how list rows slide to the place a reorder, a move to another
+// group, an add or a delete gave them.
+var rowGlideMotion = gfx.SpringMotion(220*time.Millisecond, 0)
+
 // windowBar keeps the places the window bar's own painters need once it is laid
 // out: the assistant's button, the room the active session's name is drawn in,
 // and, for each tab, where its system and its light go.
