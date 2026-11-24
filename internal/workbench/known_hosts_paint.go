@@ -46,7 +46,8 @@ func (state *State) declareKnownHostsWorkspace(c ui.C) {
 	if view.errorText != "" {
 		statusColor = pal.danger
 	}
-	paginated := len(view.visible) > knownHostsPageSize
+	pageSize := state.knownHostsPageSize()
+	paginated := len(view.visible) > pageSize
 	emptyTitle, emptyDescription, emptyIconKind := "", "", uint8(iconKnown)
 	emptyDescriptionColor := pal.muted
 	empty := view.errorText != "" || len(view.rows) == 0 || len(view.visible) == 0
@@ -122,27 +123,35 @@ func (state *State) declareKnownHostsWorkspace(c ui.C) {
 				})
 				start, end := state.knownHostsPageRange()
 				ui.List(c, &view.list, end-start, view.rowDecl).Grow(1).Shrink(1).MinHeight(0).FillWidth().
-					Label(messages.KnownHostsTitle)
+					Scrollbars().Label(messages.KnownHostsTitle)
 			})
 		}
 		ui.Divider(c).Background(pal.line)
-		// The footer's columns narrow with the card so the status keeps its room.
-		countWidth := min(168, (bounds.Width-2*knownHostsSidePad)*0.30)
-		selectionWidth := min(138, (bounds.Width-2*knownHostsSidePad)*0.22)
-		ui.Row(c).Height(49).Gap(12).Items(ui.Center).Children(func() {
+		// The footer's columns narrow with the card so the status, page-size switcher and pagination keep their room.
+		countWidth := min(136, (bounds.Width-2*knownHostsSidePad)*0.22)
+		selectionWidth := min(116, (bounds.Width-2*knownHostsSidePad)*0.18)
+		ui.Row(c).Height(49).Gap(10).Items(ui.Center).Children(func() {
 			ui.Text(c, view.countText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Width(countWidth).Ellipsis()
 			ui.Text(c, view.selectionText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).Width(selectionWidth).Ellipsis()
 			ui.Text(c, view.status).FontSize(metrics.FontSizeS).Color(statusColor).Grow(1).Ellipsis()
+			if len(view.rows) > 0 {
+				ui.Row(c).Height(30).Gap(6).Items(ui.Center).Shrink(0).Children(func() {
+					ui.Text(c, messages.KnownHostsPerPage).FontSize(metrics.FontSizeS).Color(pal.muted).Shrink(0)
+					view.pageSizeChoice = view.pageSize
+					if ui.Choice(c, &view.pageSizeChoice, knownHostsPageSizes[:], knownHostsPageSizeLabel).Height(30).Shrink(0).Changed() {
+						state.setKnownHostsPageSize(view.pageSizeChoice)
+					}
+				})
+			}
 			if paginated {
-				pages := (len(view.visible) + knownHostsPageSize - 1) / knownHostsPageSize
-				// The items carry the application's identities, so the central
-				// click handler keeps turning the pages as it did for the old
-				// paint-time chooser.
-				ui.Pagination(c, []ui.PaginationItem{
+				pages := (len(view.visible) + pageSize - 1) / pageSize
+				ui.Text(c, view.pageText).FontSize(metrics.FontSizeS).Color(pal.muted).Shrink(0)
+				view.paginationItems = [3]ui.PaginationItem{
 					{ID: hitKnownHostsPrevious, Label: messages.KnownHostsPrevious, Kind: ui.PaginationPrevious, Disabled: view.page == 0},
-					{Label: view.pageText, Kind: ui.PaginationPage, Current: true},
+					{Label: view.pageNumberText, Kind: ui.PaginationPage, Current: true},
 					{ID: hitKnownHostsNext, Label: messages.KnownHostsNext, Kind: ui.PaginationNext, Disabled: view.page+1 >= pages},
-				}).Size(242, 30).Shrink(0)
+				}
+				ui.Pagination(c, view.paginationItems[:]).Height(30).Shrink(0)
 			}
 		})
 	})

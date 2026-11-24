@@ -19,7 +19,7 @@ import (
 func writeKnownHostsPages(t *testing.T, state *State) int {
 	t.Helper()
 	key := workbenchKnownHostKey(t)
-	count := 2*knownHostsPageSize + 1
+	count := 2*defaultKnownHostsPageSize + 1
 	var data strings.Builder
 	for index := range count {
 		data.WriteString(sshknownhosts.Line([]string{fmt.Sprintf("host-%02d.example.com", index)}, key))

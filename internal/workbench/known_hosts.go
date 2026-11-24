@@ -16,10 +16,15 @@ import (
 )
 
 const (
-	knownHostsPageSize = 15
-	knownHostsColumns  = 7
+	defaultKnownHostsPageSize = 15
+	knownHostsColumns         = 7
 	// knownHostsSidePad is the page's padding beside the table, on each side.
 	knownHostsSidePad = float32(18)
+)
+
+var (
+	knownHostsPageSizes      = [...]int{15, 30, 50, 100}
+	knownHostsPageSizeLabels = [...]string{"15", "30", "50", "100"}
 )
 
 type knownHostsAction uint8
@@ -62,24 +67,30 @@ type knownHostsView struct {
 	visible []int
 	search  text.Editor
 	// searchField is the page's text field over search, bound when first declared.
-	searchField       ui.Field
-	searchBound       bool
-	visibleQuery      string
-	visibleLanguage   i18n.Language
-	synced            bool
-	page              int
+	searchField     ui.Field
+	searchBound     bool
+	visibleQuery    string
+	visibleLanguage i18n.Language
+	synced          bool
+	page            int
+	pageSize        int
+	// pageSizeChoice is what the page-size switcher edits; pageSize changes only
+	// through setKnownHostsPageSize.
+	pageSizeChoice    int
 	selected          int
 	countText         string
 	selectionText     string
 	pageText          string
+	pageNumberText    string
 	status            string
 	errorText         string
 	action            knownHostsAction
 	dialogDescription string
 	dialogError       string
-	// header, list and rowDecl are the page's table: its headings, its rows and
-	// the builder that declares one. columns and headings are set on each paint
-	// so the list's cells line up with the header's.
+	paginationItems   [3]ui.PaginationItem
+	// list and rowDecl are the page's table: its rows and the builder that
+	// declares one. columns and headings are set on each paint so the list's
+	// cells line up with the header's.
 	list     ui.ListState
 	rowDecl  func(ui.ListRow)
 	columns  [knownHostsColumns]components.TableColumn
@@ -89,6 +100,7 @@ type knownHostsView struct {
 func (state *State) initKnownHosts() {
 	view := &state.knownHosts
 	view.file = knownhosts.New(state.options.KnownHostsPath)
+	view.pageSize = defaultKnownHostsPageSize
 	view.rowDecl = state.declareKnownHostRow
 	view.list.Key = func(row int) int {
 		start, _ := state.knownHostsPageRange()
@@ -155,11 +167,13 @@ func (state *State) refreshKnownHosts(report bool) {
 	}
 	view.selected = 0
 	view.page = 0
+	view.list.Select(-1)
+	view.list.ScrollTo(0, ui.ListStart)
 	view.synced = false
 	view.errorText = ""
 	state.syncKnownHostsVisible()
 	if report {
-		view.status = fmt.Sprintf(state.messages.KnownHostsLoadedFmt, len(view.rows))
+		view.status = ""
 	}
 }
 
@@ -176,6 +190,8 @@ func (state *State) syncKnownHostsVisible() {
 	view.synced = true
 	if queryChanged {
 		view.page = 0
+		view.list.Select(-1)
+		view.list.ScrollTo(0, ui.ListStart)
 		needle := strings.ToLower(strings.TrimSpace(query))
 		view.visible = view.visible[:0]
 		if view.visible == nil {
@@ -190,13 +206,52 @@ func (state *State) syncKnownHostsVisible() {
 	state.clampKnownHostsPage()
 	state.refreshKnownHostsSummaries()
 	if languageChanged && view.errorText == "" {
-		view.status = fmt.Sprintf(state.messages.KnownHostsLoadedFmt, len(view.rows))
+		view.status = ""
 	}
+}
+
+func (state *State) knownHostsPageSize() int {
+	size := state.knownHosts.pageSize
+	if size <= 0 {
+		return defaultKnownHostsPageSize
+	}
+	return size
+}
+
+func (state *State) setKnownHostsPageSize(size int) {
+	valid := false
+	for _, option := range knownHostsPageSizes {
+		if option == size {
+			valid = true
+			break
+		}
+	}
+	if !valid || state.knownHosts.pageSize == size {
+		return
+	}
+	state.knownHosts.pageSize = size
+	state.knownHosts.page = 0
+	state.knownHosts.list.Select(-1)
+	state.knownHosts.list.ScrollTo(0, ui.ListStart)
+	state.clampKnownHostsPage()
+	state.refreshKnownHostsSummaries()
+}
+
+// knownHostsPageSizeLabel names a page size without allocating: the switcher asks
+// for the labels on every paint.
+func knownHostsPageSizeLabel(size int) string {
+	for i, option := range knownHostsPageSizes {
+		if option == size {
+			return knownHostsPageSizeLabels[i]
+		}
+	}
+	return strconv.Itoa(size)
 }
 
 func (state *State) clampKnownHostsPage() {
 	view := &state.knownHosts
-	pages := max(1, (len(view.visible)+knownHostsPageSize-1)/knownHostsPageSize)
+	pageSize := state.knownHostsPageSize()
+	pages := max(1, (len(view.visible)+pageSize-1)/pageSize)
 	view.page = min(max(0, view.page), pages-1)
 }
 
@@ -208,14 +263,17 @@ func (state *State) refreshKnownHostsSummaries() {
 		view.countText = fmt.Sprintf(state.messages.KnownHostsFilteredCountFmt, len(view.visible), len(view.rows))
 	}
 	view.selectionText = fmt.Sprintf(state.messages.KnownHostsSelectedFmt, view.selected)
-	pages := max(1, (len(view.visible)+knownHostsPageSize-1)/knownHostsPageSize)
+	pageSize := state.knownHostsPageSize()
+	pages := max(1, (len(view.visible)+pageSize-1)/pageSize)
 	view.pageText = fmt.Sprintf(state.messages.KnownHostsPageFmt, view.page+1, pages)
+	view.pageNumberText = strconv.Itoa(view.page + 1)
 }
 
 func (state *State) knownHostsPageRange() (int, int) {
 	view := &state.knownHosts
-	start := min(view.page*knownHostsPageSize, len(view.visible))
-	return start, min(start+knownHostsPageSize, len(view.visible))
+	pageSize := state.knownHostsPageSize()
+	start := min(view.page*pageSize, len(view.visible))
+	return start, min(start+pageSize, len(view.visible))
 }
 
 func (state *State) clickKnownHosts(id gfx.ID) bool {
@@ -238,13 +296,18 @@ func (state *State) clickKnownHosts(id gfx.ID) bool {
 	case hitKnownHostsPrevious:
 		if view.page > 0 {
 			view.page--
+			view.list.Select(-1)
+			view.list.ScrollTo(0, ui.ListStart)
 			state.refreshKnownHostsSummaries()
 		}
 		return true
 	case hitKnownHostsNext:
-		pages := max(1, (len(view.visible)+knownHostsPageSize-1)/knownHostsPageSize)
+		pageSize := state.knownHostsPageSize()
+		pages := max(1, (len(view.visible)+pageSize-1)/pageSize)
 		if view.page+1 < pages {
 			view.page++
+			view.list.Select(-1)
+			view.list.ScrollTo(0, ui.ListStart)
 			state.refreshKnownHostsSummaries()
 		}
 		return true
@@ -257,7 +320,6 @@ func (state *State) clickKnownHosts(id gfx.ID) bool {
 			view.selected--
 		}
 		state.refreshKnownHostsSummaries()
-		view.status = view.selectionText
 		return true
 	}
 	return false
@@ -345,8 +407,8 @@ func (state *State) knownHostsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 		state.syncKnownHostsVisible()
 		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	if index, ok := state.knownHostIndexForHit(event.Target); ok && (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) {
-		state.clickKnownHosts(hitKnownHostRowList.At(index))
+	if _, ok := state.knownHostIndexForHit(event.Target); ok && (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) {
+		state.clickKnownHosts(event.Target)
 		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	if event.Key == gfx.KeyDelete && view.selected > 0 {
