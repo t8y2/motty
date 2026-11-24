@@ -117,12 +117,7 @@ type sftpFolder struct {
 	crumbBoxes       []sftpCrumbBox // ancestor breadcrumb boxes in the last paint
 	listScroll       *ui.ScrollState
 	listReady        bool
-	pathField        sftpPathField
-	// pathUI is the page field over pathField's editor, bound where the path is
-	// declared so the platform edits the same draft the model submits. The
-	// bound marks keep binding from resetting what Changed compares.
-	pathUI         ui.Field
-	pathUIEditor   *text.Editor
+	pathField      sftpPathField
 	filterEditor   text.Editor
 	filterInput    app.TextInput
 	filterUI       ui.Field

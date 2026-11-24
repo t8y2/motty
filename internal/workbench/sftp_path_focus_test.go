@@ -300,3 +300,42 @@ func TestSFTPPathEscapeAbandonsAPendingNavigation(t *testing.T) {
 		t.Fatalf("abandoned navigation moved the panel to %q", view.path)
 	}
 }
+
+func TestSFTPPathLongInputUsesPlatformEditingForHorizontalScrollAndCaret(t *testing.T) {
+	state, session, _, _ := openTestSFTP(t)
+	view := session.files
+	longPath := "/tmp/systemd-private-f1317be7e2274b868a6079aa96f6be32-ModemManager.service-ohi6Kq"
+	view.path = longPath
+	view.crumbs = prepareSFTPCrumbs(view.crumbs, longPath)
+	driver := sftpPathFocusDriver(t, state)
+	clickSFTPPathFocusHit(t, driver, contextID(hitSFTPPathEdit))
+	if driver.Snapshot().Focused != contextID(hitSFTPPath) {
+		t.Fatalf("clicking breadcrumb bar focused %v, want %v", driver.Snapshot().Focused, contextID(hitSFTPPath))
+	}
+	hit := hitOf(t, driver, contextID(hitSFTPPath))
+	if hit.HideNativeOverlays {
+		t.Fatal("focused SFTP path input hid native overlays, blocking platform horizontal scrolling")
+	}
+	if err := driver.Type("/tmp"); err != nil {
+		t.Fatal(err)
+	}
+	editor := state.EditorFor(contextID(hitSFTPPath))
+	if got := editor.String(); got != longPath+"/tmp" {
+		t.Fatalf("typed suffix lost on long path: got %q", got)
+	}
+	if err := driver.Key(gfx.KeyHome, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.Key(gfx.KeyRight, 0); err != nil {
+		t.Fatal(err)
+	}
+	if caret := editor.Caret(); caret != 1 {
+		t.Fatalf("caret after Home + Right = %d, want 1", caret)
+	}
+	if err := driver.Key(gfx.KeyEnd, 0); err != nil {
+		t.Fatal(err)
+	}
+	if caret := editor.Caret(); caret != editor.RuneCount() {
+		t.Fatalf("caret after End = %d, want %d", caret, editor.RuneCount())
+	}
+}

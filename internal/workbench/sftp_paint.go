@@ -829,11 +829,23 @@ func (state *State) declareSFTPAddressWithDrag(c ui.C, folder *sftpFolder, field
 				Border(1, theme.Input).Radius(theme.Metrics.RadiusControl).
 				HitWith(fieldID, label, gfx.HitOptions{Role: gfx.RoleTextField})
 		}
-		if folder.pathUIEditor != editor {
-			folder.pathUI.Bind(editor)
-			folder.pathUIEditor = editor
-		}
-		return ui.TextFieldID(c, fieldID, &folder.pathUI, label, placeholder).Height(32).Grow(1)
+		// Paint with PlatformEditing so long directory paths scroll horizontally
+		// with the caret and native pointer hit-testing stays aligned with the
+		// visible text.
+		value := editor.String()
+		theme := state.Theme()
+		return ui.Slot(c).Height(32).Grow(1).Draw(func(d *ui.DrawContext) {
+			focused := d.Canvas.Focused() == fieldID
+			components.PaintInput(d.Canvas, theme, d.Rect, components.InputSnapshot{
+				ID:              fieldID,
+				Label:           label,
+				Value:           value,
+				Placeholder:     placeholder,
+				Hint:            placeholder,
+				Focused:         focused,
+				PlatformEditing: focused && value != "",
+			})
+		})
 	}
 	return state.declareSFTPBreadcrumbs(c, folder, editID, links, width, placeholder, drag)
 }
