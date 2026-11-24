@@ -353,7 +353,7 @@ func (state *State) declareVerticalTabsRows(c ui.C, width float32, compact bool)
 			return
 		}
 		for index, workspace := range state.workspaceTabs {
-			view.tabs = append(view.tabs, state.declareWorkspaceTab(c, workspace, width, verticalTabHeight, 0, true, compact, index+1))
+			view.tabs = append(view.tabs, state.declareWorkspaceTab(c, workspace, width, verticalTabHeight, 0, 0, true, compact, index+1))
 		}
 	})
 }
@@ -433,6 +433,12 @@ func (state *State) paintWorkspaceTabParts(canvas *gfx.Canvas, strip gfx.Rect, t
 	defer canvas.Unclip()
 	for index := range tabs {
 		tab := &tabs[index]
+		if tab.glided {
+			// The parts move with the tab they sit on: the same place, so the
+			// same offset, as the tab's own group.
+			rect := tab.box.Rect()
+			canvas.BeginGlide(tab.id, 0, gfx.Point{X: rect.X + tab.glideScroll, Y: rect.Y}, tabGlideMotion)
+		}
 		editing := !tab.compact && state.tabInlineEditing(tab.workspace.ID)
 		if tab.pathLabel != "" && tab.output == outputAlertNone && !editing {
 			bounds := tab.title.Rect()
@@ -476,6 +482,9 @@ func (state *State) paintWorkspaceTabParts(canvas *gfx.Canvas, strip gfx.Rect, t
 		}
 		if tab.workspace.ID != 0 {
 			state.openTabMenuOn(canvas, tab.workspace.ID, tab.id, tab.closeID)
+		}
+		if tab.glided {
+			canvas.EndPose()
 		}
 	}
 }
