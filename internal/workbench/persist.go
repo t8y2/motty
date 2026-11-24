@@ -878,6 +878,9 @@ func (state *State) saveWithResultWithoutRefresh() (saveErr error) {
 }
 
 func (state *State) saveWithResultModeRecovery(flushSync, refreshConflict, notify bool) (saveErr error) {
+	if state.appAccessBlocked() {
+		return errAppLocked
+	}
 	defer func() {
 		message := state.noteSaveFailure()
 		unsaved := state.hasUnsavedNotes()
@@ -1135,42 +1138,10 @@ func (state *State) restoreLocal(saved savedState) {
 	// unknown rather than becoming another editor.
 	state.defaultEditor = ExternalEditor(strings.TrimSpace(saved.DefaultEditor))
 	state.sshAgent = agentChoiceFromSaved(saved.SSHAgent, saved.SSHAgentPath)
-	// A saved language is the user's choice. Without one (a first run, or a state
-	// from before the choice was told apart) the system's language decides, and
-	// stays undecided so a change of system language is followed.
-	switch saved.Language {
-	case i18n.Chinese.String():
-		state.language, state.languageChosen = i18n.Chinese, true
-	case i18n.TraditionalChinese.String():
-		state.language, state.languageChosen = i18n.TraditionalChinese, true
-	case i18n.English.String():
-		state.language, state.languageChosen = i18n.English, true
-	default:
-		state.language, state.languageChosen = state.systemLanguage(), false
-	}
-	state.messages = i18n.For(state.language)
-	state.appearanceMode = appearanceModeFromString(saved.Theme)
-	state.setIconColor(iconColorFromString(saved.IconColor))
 	state.networkProxy = networkProxyModeFromString(saved.NetworkProxy)
 	state.sshBrowser = sshbrowser.ParseFamily(saved.SSHBrowser)
-	state.syncNativeAppearance()
-	// The theme setAppearance builds copies the metrics by value, so the saved
-	// text size must be in effect before it runs.
-	state.interfaceTextSize = normalizeInterfaceTextSize(saved.InterfaceTextSize)
-	if saved.InterfaceTextSize == 0 {
-		// A state from before the size was kept in pixels names one of three
-		// steps only: it becomes the body size that step drew.
-		if legacy, ok := interfaceTextSizeFromLegacy(saved.TextScale); ok {
-			state.interfaceTextSize = legacy
-		}
-	}
-	applyTextMetrics(state.interfaceTextSize.factor())
-	state.setAppearance(state.resolveAppearance())
+	state.restoreWindowAppearance(saved)
 	state.setTerminalFontSize(float32(saved.TerminalFontSize))
-	// Only the choice: what is in effect is decided once the window starts, when
-	// the platform has been asked what it can follow (validateInterfaceFont).
-	state.uiFont.family = strings.TrimSpace(saved.InterfaceFont)
-	state.uiFont.main, state.uiFont.bold = saved.InterfaceFontMain, saved.InterfaceFontBold
 	state.fonts.family, state.fonts.classic = "", terminalFontFaceFromString(saved.TerminalFontFace) == gfx.MonoClassic
 	if family := strings.TrimSpace(saved.TerminalFontFamily); family != "" && gfx.MonoFamily(family) != gfx.MonoSystem {
 		state.fonts.family, state.fonts.classic = family, false
@@ -1637,4 +1608,41 @@ func (state *State) savedLanguage() string {
 		return ""
 	}
 	return state.language.String()
+}
+
+// restoreWindowAppearance also applies the small set of preferences readable before unlock.
+func (state *State) restoreWindowAppearance(saved savedState) {
+	// A saved language is the user's choice. Without one (a first run, or a state
+	// from before the choice was told apart) the system's language decides, and
+	// stays undecided so a change of system language is followed.
+	switch saved.Language {
+	case i18n.Chinese.String():
+		state.language, state.languageChosen = i18n.Chinese, true
+	case i18n.TraditionalChinese.String():
+		state.language, state.languageChosen = i18n.TraditionalChinese, true
+	case i18n.English.String():
+		state.language, state.languageChosen = i18n.English, true
+	default:
+		state.language, state.languageChosen = state.systemLanguage(), false
+	}
+	state.messages = i18n.For(state.language)
+	state.appearanceMode = appearanceModeFromString(saved.Theme)
+	state.setIconColor(iconColorFromString(saved.IconColor))
+	state.syncNativeAppearance()
+	// The theme setAppearance builds copies the metrics by value, so the saved
+	// text size must be in effect before it runs.
+	state.interfaceTextSize = normalizeInterfaceTextSize(saved.InterfaceTextSize)
+	if saved.InterfaceTextSize == 0 {
+		// A state from before the size was kept in pixels names one of three
+		// steps only: it becomes the body size that step drew.
+		if legacy, ok := interfaceTextSizeFromLegacy(saved.TextScale); ok {
+			state.interfaceTextSize = legacy
+		}
+	}
+	applyTextMetrics(state.interfaceTextSize.factor())
+	state.setAppearance(state.resolveAppearance())
+	// Only the choice: what is in effect is decided once the window starts, when
+	// the platform has been asked what it can follow (validateInterfaceFont).
+	state.uiFont.family = strings.TrimSpace(saved.InterfaceFont)
+	state.uiFont.main, state.uiFont.bold = saved.InterfaceFontMain, saved.InterfaceFontBold
 }

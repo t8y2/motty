@@ -80,7 +80,7 @@ func RestoreWindowCount(path string) (int, error) {
 // closed does not come back at the next launch. It runs after the window wrote
 // what it had and closed its store, so it opens the store again for one delete.
 func (state *State) DropWindowRecord() {
-	if state.configBase == nil {
+	if state.configBase == nil || state.appAccessBlocked() {
 		return
 	}
 	name := state.configBase.windowName

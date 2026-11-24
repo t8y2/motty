@@ -66,7 +66,7 @@ func (err *TooNewError) Is(target error) bool { return target == ErrTooNew }
 // MaxPayload bounds one record's payload, written or received.
 const MaxPayload = 1 << 20
 
-const schemaVersion = 1
+const schemaVersion = 2
 
 var migrations = [schemaVersion]string{
 	`CREATE TABLE records (
@@ -146,6 +146,7 @@ type Store struct {
 	// holders; both are guarded by registry.mu.
 	shared  string
 	holders int
+	codec   *codec
 }
 
 // registry holds the stores opened with OpenShared.
@@ -210,7 +211,12 @@ func Open(path string, format int) (*Store, error) {
 	db.SetMaxIdleConns(1)
 	db.SetConnMaxLifetime(0)
 
-	store := &Store{db: db, format: format, now: time.Now}
+	crypt, err := openCodec(db, path)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	store := &Store{db: db, format: format, now: time.Now, codec: crypt}
 	if err := store.init(); err != nil {
 		db.Close()
 		return nil, err
@@ -273,7 +279,9 @@ func (s *Store) init() error {
 	if version > schemaVersion {
 		return &TooNewError{Found: fmt.Sprintf("schema %d", version), Supported: fmt.Sprintf("schema %d", schemaVersion)}
 	}
-	for v := version; v < schemaVersion; v++ {
+	// Unprotected databases stay at schema 1. Schema 2 is deliberately an
+	// old-client guard reserved for protected storage.
+	for v := version; v < 1; v++ {
 		tx, err := s.db.BeginTx(ctx, nil)
 		if err != nil {
 			return fmt.Errorf("config store: migrate: %w", err)
@@ -340,7 +348,7 @@ func (s *Store) init() error {
 	return nil
 }
 
-func metaValue(ctx context.Context, tx *sql.Tx, key string) (string, error) {
+func metaValue(ctx context.Context, tx queryer, key string) (string, error) {
 	var value string
 	err := tx.QueryRowContext(ctx, `SELECT value FROM meta WHERE key=?`, key).Scan(&value)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -360,6 +368,9 @@ func setMeta(ctx context.Context, tx *sql.Tx, key, value string) error {
 }
 
 func (s *Store) checkWritable(ctx context.Context, tx *sql.Tx) error {
+	if err := s.codec.ready(); err != nil {
+		return err
+	}
 	var schema int
 	if err := tx.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&schema); err != nil {
 		return err
@@ -402,6 +413,9 @@ func (s *Store) prepareWrite(ctx context.Context, tx *sql.Tx) error {
 func (s *Store) Snapshot() ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.codec.ready(); err != nil {
+		return nil, err
+	}
 	file, err := os.CreateTemp("", "motty-config-snapshot-*")
 	if err != nil {
 		return nil, err
@@ -453,21 +467,37 @@ func (s *Store) Format() int { return s.format }
 
 // Load returns every live record and this device's own values.
 func (s *Store) Load() (entries []Entry, local map[string][]byte, err error) {
-	return load(context.Background(), s.db)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.codec.ready(); err != nil {
+		return nil, nil, err
+	}
+	return load(context.Background(), s.db, s.codec)
 }
 
 // load reads the live records and this device's values from db.
-func load(ctx context.Context, db *sql.DB) (entries []Entry, local map[string][]byte, err error) {
-	rows, err := db.QueryContext(ctx, `SELECT kind, id, payload FROM records WHERE deleted=0 ORDER BY kind, id`)
+func load(ctx context.Context, db *sql.DB, codecs ...*codec) (entries []Entry, local map[string][]byte, err error) {
+	var crypt *codec
+	if len(codecs) > 0 {
+		crypt = codecs[0]
+	}
+	rows, err := db.QueryContext(ctx, `SELECT kind, id, stamp, payload FROM records WHERE deleted=0 ORDER BY kind, id`)
 	if err != nil {
 		return nil, nil, storeError("load", err)
 	}
 	for rows.Next() {
 		var entry Entry
-		if err := rows.Scan(&entry.Kind, &entry.ID, &entry.Payload); err != nil {
+		var stamp Stamp
+		if err := rows.Scan(&entry.Kind, &entry.ID, &stamp, &entry.Payload); err != nil {
 			rows.Close()
 			return nil, nil, storeError("load", err)
 		}
+		decoded, err := crypt.decodeRecord(Record{Kind: entry.Kind, ID: entry.ID, Stamp: stamp, Payload: entry.Payload})
+		if err != nil {
+			rows.Close()
+			return nil, nil, err
+		}
+		entry.ID, entry.Payload = decoded.ID, decoded.Payload
 		entries = append(entries, entry)
 	}
 	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
@@ -484,6 +514,11 @@ func load(ctx context.Context, db *sql.DB) (entries []Entry, local map[string][]
 		if err := rows.Scan(&key, &value); err != nil {
 			rows.Close()
 			return nil, nil, storeError("load", err)
+		}
+		key, value, err = crypt.decodeLocal(key, value)
+		if err != nil {
+			rows.Close()
+			return nil, nil, err
 		}
 		local[key] = value
 	}
@@ -507,7 +542,11 @@ func ReadOnly(path string, format int) (entries []Entry, local map[string][]byte
 		return nil, nil, err
 	}
 	defer db.Close()
-	return load(context.Background(), db)
+	crypt, err := openCodec(db, path)
+	if err != nil {
+		return nil, nil, err
+	}
+	return load(context.Background(), db, crypt)
 }
 
 // ReadLocal reads one device-local value without reading the records: a caller
@@ -519,14 +558,23 @@ func ReadLocal(ctx context.Context, path string, format int, key string) (value 
 		return nil, err
 	}
 	defer db.Close()
-	err = db.QueryRowContext(ctx, `SELECT value FROM local WHERE key=?`, key).Scan(&value)
+	crypt, err := openCodec(db, path)
+	if err != nil {
+		return nil, err
+	}
+	id, err := crypt.identifier("local", key)
+	if err != nil {
+		return nil, err
+	}
+	err = db.QueryRowContext(ctx, `SELECT value FROM local WHERE key=?`, id).Scan(&value)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, storeError("local", err)
 	}
-	return value, nil
+	_, value, err = crypt.decodeLocal(id, value)
+	return value, err
 }
 
 // openReadOnly opens the store at path without changing it and checks its
@@ -603,6 +651,11 @@ func isBusyError(err error) bool {
 // Records returns every record, tombstones included: what a device sends to the
 // others.
 func (s *Store) Records() ([]Record, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.codec.ready(); err != nil {
+		return nil, err
+	}
 	rows, err := s.db.QueryContext(context.Background(), `SELECT kind, id, stamp, deleted, payload FROM records ORDER BY kind, id`)
 	if err != nil {
 		return nil, fmt.Errorf("config store: records: %w", err)
@@ -617,8 +670,14 @@ func (s *Store) Records() ([]Record, error) {
 			return nil, fmt.Errorf("config store: records: %w", err)
 		}
 		record.Deleted = deleted != 0
-		if !record.Deleted {
-			record.Payload = payload
+		record.Payload = payload
+		record, err = s.codec.decodeRecord(record)
+		if err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if record.Deleted {
+			record.Payload = nil
 		}
 		records = append(records, record)
 	}
@@ -632,30 +691,54 @@ type queryer interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-func existing(ctx context.Context, tx queryer, kind, id string) (stamp Stamp, deleted bool, payload []byte, found bool, err error) {
+func existing(ctx context.Context, tx queryer, kind, id string, codecs ...*codec) (stamp Stamp, deleted bool, payload []byte, found bool, err error) {
+	var crypt *codec
+	if len(codecs) > 0 {
+		crypt = codecs[0]
+	}
+	physicalID, err := crypt.identifier("record/"+kind, id)
+	if err != nil {
+		return "", false, nil, false, err
+	}
 	var flag int
-	err = tx.QueryRowContext(ctx, `SELECT stamp, deleted, payload FROM records WHERE kind=? AND id=?`, kind, id).Scan(&stamp, &flag, &payload)
+	err = tx.QueryRowContext(ctx, `SELECT stamp, deleted, payload FROM records WHERE kind=? AND id=?`, kind, physicalID).Scan(&stamp, &flag, &payload)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil, false, nil
 	}
 	if err != nil {
 		return "", false, nil, false, fmt.Errorf("config store: read record: %w", err)
 	}
-	return stamp, flag != 0, payload, true, nil
+	decoded, err := crypt.decodeRecord(Record{Kind: kind, ID: physicalID, Stamp: stamp, Deleted: flag != 0, Payload: payload})
+	if err != nil {
+		return "", false, nil, false, err
+	}
+	return stamp, flag != 0, decoded.Payload, true, nil
 }
 
-func writeRecord(ctx context.Context, tx *sql.Tx, record Record) error {
+func writeRecord(ctx context.Context, tx *sql.Tx, record Record, codecs ...*codec) error {
+	var crypt *codec
+	if len(codecs) > 0 {
+		crypt = codecs[0]
+	}
+	var err error
+	record, err = crypt.encodeRecord(record)
+	if err != nil {
+		return err
+	}
 	var payload []byte
 	deleted := 0
 	if record.Deleted {
 		deleted = 1
+		if crypt != nil {
+			payload = record.Payload
+		}
 	} else {
 		payload = record.Payload
 		if payload == nil {
 			payload = []byte{}
 		}
 	}
-	_, err := tx.ExecContext(ctx, `INSERT INTO records(kind,id,stamp,deleted,payload) VALUES(?,?,?,?,?)
+	_, err = tx.ExecContext(ctx, `INSERT INTO records(kind,id,stamp,deleted,payload) VALUES(?,?,?,?,?)
 		ON CONFLICT(kind,id) DO UPDATE SET stamp=excluded.stamp, deleted=excluded.deleted, payload=excluded.payload`,
 		record.Kind, record.ID, string(record.Stamp), deleted, payload)
 	if err != nil {
@@ -703,7 +786,7 @@ func (s *Store) Commit(change Change) (written int, err error) {
 		return 0, err
 	}
 	for key, expected := range change.Expected {
-		_, deleted, payload, found, err := existing(ctx, tx, key.Kind, key.ID)
+		_, deleted, payload, found, err := existing(ctx, tx, key.Kind, key.ID, s.codec)
 		if err != nil {
 			return 0, err
 		}
@@ -715,7 +798,7 @@ func (s *Store) Commit(change Change) (written int, err error) {
 		}
 	}
 	for kind, expected := range change.ExpectedKinds {
-		rows, e := tx.QueryContext(ctx, `SELECT id,payload FROM records WHERE kind=? AND deleted=0`, kind)
+		rows, e := tx.QueryContext(ctx, `SELECT id,stamp,payload FROM records WHERE kind=? AND deleted=0`, kind)
 		if e != nil {
 			return 0, e
 		}
@@ -731,10 +814,17 @@ func (s *Store) Commit(change Change) (written int, err error) {
 		for rows.Next() {
 			var id string
 			var payload []byte
-			if e = rows.Scan(&id, &payload); e != nil {
+			var stamp Stamp
+			if e = rows.Scan(&id, &stamp, &payload); e != nil {
 				rows.Close()
 				return 0, e
 			}
+			decoded, decodeErr := s.codec.decodeRecord(Record{Kind: kind, ID: id, Stamp: stamp, Payload: payload})
+			if decodeErr != nil {
+				rows.Close()
+				return 0, decodeErr
+			}
+			id, payload = decoded.ID, decoded.Payload
 			v, ok := want[id]
 			if !ok || !sameJSON(v, payload) {
 				matches = false
@@ -752,8 +842,7 @@ func (s *Store) Commit(change Change) (written int, err error) {
 	}
 	now := s.now()
 	for key, expected := range change.ExpectedLocal {
-		var current []byte
-		err := tx.QueryRowContext(ctx, `SELECT value FROM local WHERE key=?`, key).Scan(&current)
+		current, err := s.readLocal(ctx, tx, key)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return 0, err
 		}
@@ -765,7 +854,7 @@ func (s *Store) Commit(change Change) (written int, err error) {
 		if !validName(patch.Kind) || !validName(patch.ID) || !json.Valid(patch.Before) || !json.Valid(patch.After) {
 			return 0, errors.New("config store: invalid record patch")
 		}
-		_, deleted, current, found, err := existing(ctx, tx, patch.Kind, patch.ID)
+		_, deleted, current, found, err := existing(ctx, tx, patch.Kind, patch.ID, s.codec)
 		if err != nil {
 			return 0, err
 		}
@@ -782,13 +871,13 @@ func (s *Store) Commit(change Change) (written int, err error) {
 		if sameJSON(current, payload) {
 			continue
 		}
-		if err := writeRecord(ctx, tx, Record{Kind: patch.Kind, ID: patch.ID, Stamp: s.clock.next(now), Payload: payload}); err != nil {
+		if err := writeRecord(ctx, tx, Record{Kind: patch.Kind, ID: patch.ID, Stamp: s.clock.next(now), Payload: payload}, s.codec); err != nil {
 			return 0, err
 		}
 		written++
 	}
 	for _, entry := range change.Put {
-		_, deleted, payload, found, err := existing(ctx, tx, entry.Kind, entry.ID)
+		_, deleted, payload, found, err := existing(ctx, tx, entry.Kind, entry.ID, s.codec)
 		if err != nil {
 			return 0, err
 		}
@@ -796,20 +885,20 @@ func (s *Store) Commit(change Change) (written int, err error) {
 			continue
 		}
 		record := Record{Kind: entry.Kind, ID: entry.ID, Stamp: s.clock.next(now), Payload: entry.Payload}
-		if err := writeRecord(ctx, tx, record); err != nil {
+		if err := writeRecord(ctx, tx, record, s.codec); err != nil {
 			return 0, err
 		}
 		written++
 	}
 	for _, key := range change.Delete {
-		_, deleted, _, found, err := existing(ctx, tx, key.Kind, key.ID)
+		_, deleted, _, found, err := existing(ctx, tx, key.Kind, key.ID, s.codec)
 		if err != nil {
 			return 0, err
 		}
 		if !found || deleted {
 			continue
 		}
-		if err := writeRecord(ctx, tx, Record{Kind: key.Kind, ID: key.ID, Stamp: s.clock.next(now), Deleted: true}); err != nil {
+		if err := writeRecord(ctx, tx, Record{Kind: key.Kind, ID: key.ID, Stamp: s.clock.next(now), Deleted: true}, s.codec); err != nil {
 			return 0, err
 		}
 		written++
@@ -818,11 +907,7 @@ func (s *Store) Commit(change Change) (written int, err error) {
 		if !validName(key) {
 			return 0, errors.New("config store: a local value needs a name")
 		}
-		if len(value) == 0 {
-			_, err = tx.ExecContext(ctx, `DELETE FROM local WHERE key=?`, key)
-		} else {
-			_, err = tx.ExecContext(ctx, `INSERT INTO local(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, value)
-		}
+		err = s.writeLocal(ctx, tx, key, value)
 		if err != nil {
 			return 0, fmt.Errorf("config store: write %s: %w", key, err)
 		}
@@ -831,8 +916,7 @@ func (s *Store) Commit(change Change) (written int, err error) {
 		if !validName(key) || !json.Valid(patch.Before) || !json.Valid(patch.After) {
 			return 0, errors.New("config store: invalid local patch")
 		}
-		var current []byte
-		err := tx.QueryRowContext(ctx, `SELECT value FROM local WHERE key=?`, key).Scan(&current)
+		current, err := s.readLocal(ctx, tx, key)
 		if errors.Is(err, sql.ErrNoRows) {
 			current = []byte("{}")
 		} else if err != nil {
@@ -848,7 +932,7 @@ func (s *Store) Commit(change Change) (written int, err error) {
 				return 0, fmt.Errorf("config store: merge %s: %w", key, err)
 			}
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO local(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, value); err != nil {
+		if err := s.writeLocal(ctx, tx, key, value); err != nil {
 			return 0, fmt.Errorf("config store: write %s: %w", key, err)
 		}
 	}
@@ -911,14 +995,14 @@ func (s *Store) Merge(received []Record) (result MergeResult, err error) {
 			record.Payload = nil
 		}
 		s.clock.observe(record.Stamp)
-		stamp, _, _, found, err := existing(ctx, tx, record.Kind, record.ID)
+		stamp, _, _, found, err := existing(ctx, tx, record.Kind, record.ID, s.codec)
 		if err != nil {
 			return MergeResult{}, err
 		}
 		if found && stamp >= record.Stamp {
 			continue
 		}
-		if err := writeRecord(ctx, tx, record); err != nil {
+		if err := writeRecord(ctx, tx, record, s.codec); err != nil {
 			return MergeResult{}, err
 		}
 		result.Applied = append(result.Applied, record)

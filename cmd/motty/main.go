@@ -4,6 +4,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"math"
@@ -45,6 +46,14 @@ func main() {
 	// single instance and open a window.
 	if os.Getenv("MOTTY_FIDO_ASKPASS") == "1" {
 		os.Exit(runFidoAskpass(os.Args[1:]))
+	}
+	if len(os.Args) > 1 && os.Args[1] == "recover-profile-backup" {
+		attachRecoveryConsole()
+		if err := recoverProfileBackup(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "mcp-bridge" {
 		os.Exit(runMCPBridge(os.Args[2:]))
@@ -97,11 +106,13 @@ func main() {
 		windowGroup.SetTransferProgress(func(_ int, fraction float32) {
 			application.SetProgress(fraction)
 		})
+		deferRestore := windowGroup.PrepareProfile(stateDatabasePath(), keystore())
 		firstWindow := true
 		// openWindowAt opens the window filed under id. A new window takes the
 		// next number, which is what the New Window command and a torn-off tab
 		// do; a window restored at start keeps the number its record is under.
 		var openWindowAt func(int) error
+		var restoreAfterUnlock func()
 		openWindowAt = func(id int) error {
 			// A window restored at start is numbered by its record; the counter
 			// follows it, so the next new window takes a number no record has.
@@ -114,7 +125,7 @@ func main() {
 			firstWindow = false
 			return openWorkbenchWindow(application, status, hub, func() error {
 				return openWindowAt(nextWindowID())
-			}, hidden, placement{windowID: id, rememberFrame: first})
+			}, hidden, placement{windowID: id, rememberFrame: first, profileUnlocked: restoreAfterUnlock})
 		}
 		if err := hub.Reconfigure(); err != nil {
 			log.Printf("motty: external agent access: %v", err)
@@ -135,7 +146,23 @@ func main() {
 		// login, open a single window: autostart must not put a screenful of
 		// hidden windows up.
 		restored := 1
-		if !background && len(args) == 0 {
+		if !background && len(args) == 0 && deferRestore {
+			restoreAfterUnlock = func() {
+				restoreAfterUnlock = nil
+				count, err := workbench.RestoreWindowCount(stateDatabasePath())
+				if err != nil {
+					log.Printf("motty: restore protected windows: %v", err)
+					return
+				}
+				application.Post(func() {
+					for id := 2; id <= count; id++ {
+						if err := openWindowAt(id); err != nil {
+							log.Printf("motty: restore window %d: %v", id, err)
+						}
+					}
+				})
+			}
+		} else if !background && len(args) == 0 {
 			count, err := workbench.RestoreWindowCount(stateDatabasePath())
 			if err != nil {
 				log.Printf("motty: windows of the last run: %v", err)
@@ -310,9 +337,10 @@ var windowGroup = workbench.NewGroup()
 // placement says how a window is opened when it is not the usual new window: a
 // torn-off tab opens one where the pointer let go, empty but for the tab.
 type placement struct {
-	origin *gfx.Point
-	adopt  func(*workbench.State)
-	blank  bool
+	profileUnlocked func()
+	origin          *gfx.Point
+	adopt           func(*workbench.State)
+	blank           bool
 	// windowID is which window of this run it is. Zero takes the next number,
 	// which is what a torn-off window and the New Window command want; a window
 	// restored at start is given the number its record is filed under.
@@ -391,6 +419,7 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 	}
 	state = workbench.New(workbench.Options{
 		DevelopmentSource: importSource,
+		ProfileUnlocked:   place.profileUnlocked,
 		Invalidate:        invalidate, Invalidator: &invalidator, NewWindow: newWindow,
 		Post:              application.Post,
 		PostAfter:         application.PostAfter,
@@ -457,6 +486,13 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 
 	var nativeInput app.TextInput
 	resolveInput := func(context app.TextInputContext) *app.TextInput {
+		if state.ProfileLocked() {
+			if editor := state.EditorFor(context.ID); editor != nil {
+				nativeInput = app.TextInput{Editor: editor, NavigationKeys: context.NavigationKeys}
+				return &nativeInput
+			}
+			return nil
+		}
 		if context.Terminal {
 			return state.TerminalInput(context)
 		}

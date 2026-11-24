@@ -44,6 +44,7 @@ var (
 	ErrNeedsConversion = errors.New("vault: protected by a master password from an earlier version")
 	// ErrWrongPassword means the master password did not open the vault.
 	ErrWrongPassword = errors.New("vault: wrong master password")
+	ErrLocked        = errors.New("vault: profile is locked")
 	// ErrKeyLost means the file holds records but the system store has lost the
 	// key that opens them. Clear the vault to start again.
 	ErrKeyLost = errors.New("vault: the key for the saved secrets is gone")
@@ -88,6 +89,7 @@ type record struct {
 
 type fileData struct {
 	Version    int        `json:"version"`
+	Protection string     `json:"protection,omitempty"`
 	KDF        *kdfParams `json:"kdf,omitempty"`
 	WrappedKey []byte     `json:"wrapped_key,omitempty"`
 	Records    []record   `json:"records"`
@@ -113,10 +115,11 @@ type Vault struct {
 	path string
 	keys Keystore
 
-	mu      sync.Mutex
-	file    fileData
-	key     []byte
-	stamper func() (string, error)
+	mu         sync.Mutex
+	file       fileData
+	key        []byte
+	stamper    func() (string, error)
+	superseded bool
 }
 
 // Secret is one saved secret as it travels between devices: its name, its value
@@ -173,6 +176,7 @@ func (vault *Vault) openAll() ([]plainRecord, error) {
 // that is not a vault is ErrCorrupt. Nothing is asked of the system's store yet.
 func Open(path string, keys Keystore) (*Vault, error) {
 	vault := &Vault{path: path, keys: keys, file: fileData{Version: fileVersion}}
+	rememberVault(vault)
 	info, err := os.Stat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return vault, nil
@@ -191,7 +195,7 @@ func Open(path string, keys Keystore) (*Vault, error) {
 	if err := json.Unmarshal(data, &file); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrCorrupt, err)
 	}
-	if file.Version != fileVersion {
+	if file.Version != fileVersion && !(file.Version == 2 && file.Protection != "" && file.KDF == nil && len(file.WrappedKey) == 0) {
 		return nil, fmt.Errorf("%w: version %d", ErrCorrupt, file.Version)
 	}
 	if (file.KDF == nil) != (len(file.WrappedKey) == 0) {
@@ -202,6 +206,7 @@ func Open(path string, keys Keystore) (*Vault, error) {
 		return nil, fmt.Errorf("%w: unusable key derivation settings", ErrCorrupt)
 	}
 	vault.file = file
+	rememberVault(vault)
 	return vault, nil
 }
 
@@ -243,6 +248,23 @@ func (vault *Vault) Prepare() error {
 }
 
 func (vault *Vault) prepare(create bool) error {
+	if vault.superseded {
+		return ErrLocked
+	}
+	if vault.file.Version == 2 {
+		key := protectedKey(vault.path)
+		if len(key) == 0 {
+			clear(vault.key)
+			vault.key = nil
+			return ErrLocked
+		}
+		if vault.key == nil {
+			vault.key = key
+		} else {
+			clear(key)
+		}
+		return nil
+	}
 	if vault.key != nil {
 		return nil
 	}
@@ -681,7 +703,7 @@ func (vault *Vault) Clear() error {
 	}
 	clear(vault.key)
 	vault.key = nil
-	if vault.keys != nil {
+	if vault.keys != nil && vault.file.Version != 2 {
 		_ = vault.keys.Delete(KeyService, KeyAccount)
 	}
 	return nil
@@ -689,7 +711,14 @@ func (vault *Vault) Clear() error {
 
 // write saves a new state of the file, atomically, and adopts it on success.
 func (vault *Vault) write(records []record) error {
+	if vault.superseded {
+		return ErrLocked
+	}
 	file := fileData{Version: fileVersion, Records: records}
+	if vault.file.Version == 2 {
+		file.Version = 2
+		file.Protection = vault.file.Protection
+	}
 	if file.Records == nil {
 		file.Records = []record{}
 	}

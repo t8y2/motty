@@ -1022,6 +1022,29 @@ func (state *State) closeFileWindows() {
 // ConfirmDocumentClose serializes dirty-document confirmation before closing a
 // source window or quitting. Cancel leaves the application and edits alive.
 func (state *State) ConfirmDocumentClose(allow func()) bool {
+	if state.appAccessBlocked() {
+		dirty := state.hasUnsavedNotes()
+		for _, d := range state.fileWindows.documents {
+			if d != nil && (d.dirty() || d.busy) {
+				dirty = true
+				break
+			}
+		}
+		if !dirty {
+			return false
+		}
+		state.lockUI.error = state.noteText("Unlock Motty to review unsaved changes.", "请先解锁 Motty，再处理尚未保存的更改。")
+		if state.options.Raise != nil {
+			state.options.Raise()
+		}
+		state.afterProfileUnlock = func() {
+			if !state.ConfirmDocumentClose(allow) {
+				allow()
+			}
+		}
+		state.invalidateWindow()
+		return true
+	}
 	if state.confirmNoteClose(func() {
 		if !state.ConfirmDocumentClose(allow) {
 			allow()

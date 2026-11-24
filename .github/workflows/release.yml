@@ -194,6 +194,19 @@ jobs:
             echo "APPLE_API_KEY=$RUNNER_TEMP/AuthKey.p8" >> "$GITHUB_ENV"
           fi
 
+      - name: Prepare the optional macOS device-unlock provisioning profile
+        if: runner.os == 'macOS'
+        env:
+          MOTTY_PROFILE_BASE64: ${{ secrets.APPLE_PROVISION_PROFILE_BASE64 }}
+        shell: bash
+        run: |
+          if [[ -n "$MOTTY_PROFILE_BASE64" ]]; then
+            umask 077
+            profile="$RUNNER_TEMP/motty.provisionprofile"
+            printf '%s' "$MOTTY_PROFILE_BASE64" | /usr/bin/base64 -D > "$profile"
+            echo "APPLE_PROVISION_PROFILE=$profile" >> "$GITHUB_ENV"
+          fi
+
       - name: Build and upload
         env:
           GH_TOKEN: ${{ github.token }}

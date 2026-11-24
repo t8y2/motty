@@ -178,6 +178,8 @@ type DragPreview interface {
 }
 
 type Options struct {
+	// ProfileUnlocked runs once when a protected cold launch can restore its windows.
+	ProfileUnlocked func()
 	// DevelopmentSource offers a one-way import into an unused development
 	// profile. Nil disables discovery, including for explicit test profiles.
 	DevelopmentSource *DevelopmentSource
@@ -592,6 +594,7 @@ const (
 	modalPasteReview
 	modalIconColorPicker
 	modalAgentHosts
+	modalAppLock
 )
 
 // tone colors a session's headline.
@@ -619,6 +622,9 @@ func (state *State) startConnection(session *Session, host Host) {
 }
 
 func (state *State) startConnectionMode(session *Session, host Host, automatic bool) {
+	if state.appAccessBlocked() {
+		return
+	}
 	if workspaceID, _, ok := state.deck.PaneForSession(layoutcore.SessionID(session.ID)); ok {
 		state.clearWorkspaceBroadcast(workspaceID)
 	}
@@ -885,6 +891,20 @@ func (state *State) finishStartingConnection(session *Session, automatic bool) {
 // connection goroutine asked for, so Paint only ever reads state. It does
 // nothing for sessions whose status is unchanged and whose shell is quiet.
 func (state *State) Wake() {
+	state.drainAppLockResults()
+	if state.appAccessBlocked() {
+		// File transfers the user already accepted may consume their protocol
+		// stream. All other terminal output is left for the normal wake on unlock.
+		for i := range state.sessions {
+			s := &state.sessions[i]
+			if (s.transfer.phase == transferRunning || s.transfer.phase == transferClosing) && s.term != nil && s.term.shell != nil {
+				rx := s.term.shell.Drain(s.term.rx)
+				s.term.rx = state.feedTransfer(s, rx)
+				state.pumpSessionTransfer(s)
+			}
+		}
+		return
+	}
 	defer state.syncDesktopFullscreen()
 	defer state.syncMenuBar()
 	defer state.syncDesktopSleep()
@@ -1450,6 +1470,11 @@ func (state *State) showNextPrompt() {
 }
 
 func (state *State) closeModal() {
+	if state.modal == modalAppLock {
+		state.lockUI.formFields = [3]appLockFormField{}
+		state.lockUI.formCount = 0
+		state.lockUI.error = ""
+	}
 	returnToRules := state.ruleManager.returning && (state.modal == modalHighlightRule || state.modal == modalAutofillRule || state.modal == modalDeleteRule)
 	returnToSnippetGroups := state.snippetGroups.returning && (state.modal == modalSnippetGroupRename || state.modal == modalSnippetGroupDelete)
 	returnToSnippet := state.modal == modalSnippetGroups && state.snippetGroups.returnToSnippet

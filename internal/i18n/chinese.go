@@ -3,6 +3,23 @@ package i18n
 // The Chinese catalog lives here, one file per language.
 
 var ChineseMessages = Messages{
+	AppLock: AppLockMessages{
+		Protection: "主密码保护", ChangeAction: "修改", SystemBeforePassword: "请先启用主密码，再设置此设备的系统快捷解锁。",
+		UpdatingDescription: "数据保护正在更新，请稍候。",
+		DeviceCleanup:       "主密码保护已关闭，但系统凭据尚未移除。",
+		WrongPassword:       "主密码不正确，请重试。", Corrupt: "无法读取保护配置，请保留数据并检查备份。", MigrationPending: "数据保护需要恢复，请使用主密码解锁后继续。", SystemMissing: "系统快捷解锁已失效，请使用主密码，解锁后可重新启用。", DevicePassword: "系统验证",
+		Lock: "锁定 Motty", Title: "Motty 已锁定", Description: "验证身份，回到当前会话", ColdDescription: "解锁 Motty，恢复你的工作区",
+		KeepRunning: "现有连接保持运行", RestoreAfterUnlock: "解锁后恢复工作区",
+		Password: "主密码", PasswordPlaceholder: "请输入主密码", UnlockPassword: "使用主密码解锁", UnlockSystem: "使用 %s 解锁", Divider: "或使用主密码",
+		Working: "正在验证…", Required: "请输入主密码。", Mismatch: "两次输入的新密码不一致。", NewPassword: "新主密码", ConfirmPassword: "确认主密码", CurrentPassword: "当前主密码",
+		SettingsTitle: "应用锁定", SettingsDescription: "已启用主密码，启动 Motty 后需要解锁。", DisabledDescription: "设置主密码，保护 Motty 的访问及已保存的凭据。",
+		SetPassword: "设置主密码", ChangePassword: "修改主密码", Disable: "关闭保护", LockNow: "立即锁定", LockNowDescription: "锁定所有 Motty 窗口，现有连接保持运行。",
+		SystemTitle: "系统解锁", SystemDescription: "使用本机系统验证快捷解锁，仍可随时使用主密码。", SystemDisabled: "确认一次主密码，即可在此设备启用系统快捷解锁。", SystemUnavailable: "此设备暂不支持系统验证，请使用主密码解锁。",
+		EnableSystem: "启用", DisableSystem: "移除", EnableTitle: "设置主密码", ChangeTitle: "修改主密码", DisableTitle: "关闭应用锁定",
+		EnableDescription: "请设置至少 8 个字符的密码并妥善保管，Motty 无法找回遗忘的主密码。", ChangeDescription: "输入当前主密码，再设置一个新的主密码。", DisableDescription: "关闭后不再要求输入主密码，已保存的凭据恢复为当前设备原有的存储保护。",
+		EnrollTitle: "启用系统解锁", EnrollDescription: "确认主密码，在此设备启用系统验证。", RevokeTitle: "移除系统解锁", RevokeDescription: "确认主密码，移除此设备的系统快捷解锁。",
+		Save: "保存", Cancel: "取消", Error: "验证失败，请重试。", Minimum: "主密码至少需要 8 个字符。", SystemCanceled: "已取消系统验证，你也可以使用主密码。", Updating: "正在更新保护…",
+	},
 	RemoteLogs:     chineseRemoteLogs,
 	HostsPanel:     chineseHostsPanel,
 	ActionFeedback: chineseActionFeedback,

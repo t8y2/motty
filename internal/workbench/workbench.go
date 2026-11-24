@@ -431,7 +431,15 @@ const (
 // Paint reads it synchronously and never starts work or allocates background
 // resources.
 type State struct {
-	dashboard dashboardState
+	lockUI             appLockUI
+	cancelLockAction   context.CancelFunc
+	cancelSync         context.CancelFunc
+	syncGeneration     uint64
+	appProtection      *applicationProtection
+	profileDeferred    bool
+	afterProfileUnlock func()
+	protectedChildren  []*app.ContentWindow
+	dashboard          dashboardState
 	// clipboardDirty says the system clipboard changed since the desktop
 	// sessions were last offered it. It is set from any goroutine
 	// (ClipboardChanged) and cleared on the window's thread (Wake).
@@ -1141,6 +1149,10 @@ func (state *State) Close() {
 	if state == nil || state.closed {
 		return
 	}
+	if state.cancelLockAction != nil {
+		state.cancelLockAction()
+	}
+	state.cancelProfileSync()
 	state.keepAwakeForDesktop(false)
 	state.flushNoteDraft()
 	state.noteActiveLocalDirectory()
@@ -1219,6 +1231,10 @@ func (state *State) Close() {
 		state.forwards[index].stop()
 	}
 	state.closeForwardTunnels()
+	if p := state.appProtection; p != nil && p.enabled && !p.busy && len(state.profileWindows()) == 0 {
+		p.gate.Lock()
+		p.locked.Store(true)
+	}
 	memoryTrim.request()
 }
 
@@ -1282,9 +1298,34 @@ func New(options Options) *State {
 	state.tooltip.ShowOnFocus()
 	state.setAppearance(appearanceDark)
 	state.recompileHighlights()
+	state.attachProtection()
+	if state.appLocked() || state.appMigrating() {
+		state.initAI()
+		state.profileDeferred = true
+		prefs, _ := configstore.ReadLockPreferences(state.options.StatePath, configFormat)
+		state.restoreWindowAppearance(savedState{Language: prefs.Language, Theme: prefs.Theme, IconColor: prefs.IconColor, TextScale: prefs.TextScale, InterfaceTextSize: prefs.InterfaceTextSize, InterfaceFont: prefs.InterfaceFont, InterfaceFontMain: prefs.InterfaceFontMain, InterfaceFontBold: prefs.InterfaceFontBold})
+		state.validateInterfaceFont()
+		if state.appProtection.openErr != nil {
+			state.lockUI.error = state.appProtection.openErr.Error()
+		}
+	} else {
+		if err := state.loadApplicationProfile(); err != nil {
+			state.profileDeferred = true
+			state.appProtection.gate.Lock()
+			state.appProtection.updateStatus()
+			state.lockUI.error = err.Error()
+		}
+	}
+	if state.options.Group != nil {
+		state.options.Group.join(state)
+	}
+	return state
+}
+
+// loadApplicationProfile runs once per window, after the profile can be read.
+func (state *State) loadApplicationProfile() error {
 	state.initKnownHosts()
 	state.initSecrets()
-
 	state.starting = true
 	// A fresh window's completion is the automatic list: the menu opens as the
 	// user types, and the inline suggestion is a choice in Settings. Capturing
@@ -1295,19 +1336,18 @@ func New(options Options) *State {
 	state.initForwardList()
 	state.initProxyList()
 	state.configDefaults = defaultsOf(state.snapshot())
-	config, saved, configBase, report, err := openConfig(state.options.StatePath, state.windowID)
-	state.config, state.configBase = config, configBase
-	if config != nil && state.secrets.vault != nil {
-		// Saved passwords are versioned by the same clock as the records.
-		state.secrets.vault.SetStamper(func() (string, error) {
-			stamp, err := config.NextStamp()
-			if err == nil {
-				// A password changed: it is shared, so other computers will want it.
-				state.requestSync()
-			}
-			return string(stamp), err
-		})
+	config, saved, configBase, report, err := openConfigWithRecovery(state.options.StatePath, state.windowID, !state.appLockEnabled())
+	if state.appLockEnabled() && (err != nil || config == nil || state.secrets.vault == nil) {
+		if config != nil {
+			config.Close()
+		}
+		if err != nil {
+			return err
+		}
+		return fmt.Errorf("cannot open the protected configuration or vault")
 	}
+	state.config, state.configBase = config, configBase
+	state.bindVaultClock()
 	if config != nil {
 		// A deletion is remembered for a sync window; start is the right moment to
 		// let the ones past it go, since sync prunes only when it runs.
@@ -1348,7 +1388,9 @@ func New(options Options) *State {
 	state.syncVisible()
 	state.refreshHostGroups()
 	state.refreshHostSelection()
-	state.initAI()
+	if state.ai.inbox == nil {
+		state.initAI()
+	}
 	if state.bg.waiting {
 		state.decodeBackground(state.bg.serial)
 	}
@@ -1356,12 +1398,9 @@ func New(options Options) *State {
 	state.validateInterfaceFont()
 	state.loginOn = state.settingsLoginEnabled()
 	state.starting = false
-	if state.options.Group != nil {
-		state.options.Group.join(state)
-	}
 	state.sshSyncStart()
 	state.offerDevelopmentImport()
-	return state
+	return nil
 }
 
 // setAppearance selects the palette and rebuilds the component theme once, so
@@ -1459,6 +1498,9 @@ func (state *State) Messages() i18n.Messages {
 // not an open dialog's field. The runtime reports which hit holds keyboard
 // focus; this maps it to the text it edits.
 func (state *State) EditorFor(hit gfx.ID) *text.Editor {
+	if state.appAccessBlocked() || state.modal == modalAppLock {
+		return state.appLockEditor(hit)
+	}
 	if state.noteExit != nil {
 		return nil
 	}
@@ -1712,6 +1754,13 @@ func (state *State) WindowControlsStyle() app.WindowControlsStyle {
 
 // Click applies one stable hit action and plays the motion of the row's icon.
 func (state *State) Click(id gfx.ID) {
+	if state.appAccessBlocked() || state.modal == modalAppLock {
+		state.clickAppLock(id)
+		return
+	}
+	if state.clickAppLock(id) {
+		return
+	}
 	if !state.clickNoteExit(id) {
 		state.click(id, true)
 		state.keepKeyboardOnDesktop()
@@ -2622,6 +2671,18 @@ func (state *State) hostForRow(id gfx.ID) (Host, bool) {
 // Pointer handles the pointer events the runtime does not turn into clicks. A
 // double click on a host row connects to it.
 func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
+	if state.modal == modalAppLock && !state.appAccessBlocked() {
+		if appLockOwns(event.Target) {
+			return gfx.EventResult{}
+		}
+		return gfx.EventResult{Handled: true}
+	}
+	if state.appAccessBlocked() {
+		if !state.appMigrating() && appLockOwns(event.Target) {
+			return gfx.EventResult{}
+		}
+		return gfx.EventResult{Handled: true}
+	}
 	// A drag owns the pointer from the press it captures to its release: the
 	// panes may change size on every motion, and the shells wait for the end.
 	switch event.Kind {
@@ -3001,6 +3062,14 @@ func fieldForDialogHit(id gfx.ID) hostField {
 
 // Key provides roving keyboard focus for terminal tabs.
 func (state *State) Key(event gfx.KeyEvent) (outcome gfx.EventResult) {
+	if state.modal == modalAppLock && !state.appAccessBlocked() {
+		return state.appLockFormKey(event)
+	}
+	if state.appAccessBlocked() {
+		result := state.appLockKey(event)
+		result.Handled = true
+		return result
+	}
 	if state.noteExit != nil {
 		return state.noteExitKey(event)
 	}

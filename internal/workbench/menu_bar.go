@@ -19,7 +19,7 @@ func (state *State) MenuBar() []app.Menu {
 		return app.MenuBarItem{
 			Title:    state.shortcutActionLabel(action),
 			Shortcut: state.shortcuts.chords.Chord(action),
-			Disabled: disabled,
+			Disabled: disabled || state.appAccessBlocked(),
 			OnSelect: func() gfx.EventResult { return state.runMenuAction(action) },
 		}
 	}
@@ -60,7 +60,7 @@ func (state *State) syncMenuBar() {
 	if state.setMenuBar == nil {
 		return
 	}
-	signature := fmt.Sprintf("%t|%d|%s|%d", state.menuBarHasSession(), state.activeSessionID, state.messages.MenuFile, state.shortcuts.revision)
+	signature := fmt.Sprintf("%t|%t|%d|%s|%d", state.appAccessBlocked(), state.menuBarHasSession(), state.activeSessionID, state.messages.MenuFile, state.shortcuts.revision)
 	if signature == state.menuBarSig {
 		return
 	}
@@ -81,7 +81,7 @@ func (state *State) menuBarHasSession() bool {
 // result out on the window, so a command chosen from the menu moves the
 // keyboard exactly as its shortcut does.
 func (state *State) runMenuAction(action shortcutAction) gfx.EventResult {
-	if state.closed || state.callbacksClosed.Load() {
+	if state.closed || state.callbacksClosed.Load() || state.appAccessBlocked() {
 		return gfx.EventResult{}
 	}
 	result := state.executeShortcut(action)

@@ -1183,14 +1183,18 @@ func writeEntries(store *configstore.Store, base *configBase, entries []configst
 // openConfig opens the store at path and reads the state in it, including the
 // record of window id. A file that is not a store is set aside and a new one is
 // started; one from a newer build is left alone and reported, with no store.
-func openConfig(path string, id int) (store *configstore.Store, saved savedState, base *configBase, report loadReport, err error) {
+func openConfig(path string, id int) (*configstore.Store, savedState, *configBase, loadReport, error) {
+	return openConfigWithRecovery(path, id, true)
+}
+
+func openConfigWithRecovery(path string, id int, allowRecovery bool) (store *configstore.Store, saved savedState, base *configBase, report loadReport, err error) {
 	fresh := savedState{Version: stateFileVersion, HostCatalogVersion: hostCatalogSchemaVersion, ShortcutVersion: shortcutSchemaVersion}
 	store, err = configstore.OpenShared(path, configFormat)
 	var tooNew *configstore.TooNewError
 	switch {
 	case errors.As(err, &tooNew):
 		return nil, fresh, newConfigBase(), loadReport{outcome: loadTooNew, found: tooNew.Found, supported: tooNew.Supported}, nil
-	case errors.Is(err, configstore.ErrCorrupt):
+	case errors.Is(err, configstore.ErrCorrupt) && allowRecovery:
 		kept, renameErr := setAside(path)
 		if renameErr != nil {
 			return nil, fresh, newConfigBase(), loadReport{outcome: loadUnreadable}, fmt.Errorf("keep unreadable %s: %w", path, renameErr)
@@ -1242,6 +1246,10 @@ func openConfig(path string, id int) (store *configstore.Store, saved savedState
 				base.developmentDamaged = report.workspaceErr != nil
 			}
 		}
+	}
+	if err != nil && (!allowRecovery || errors.Is(err, configstore.ErrLocked) || errors.Is(err, configstore.ErrAuthentication)) {
+		store.Close()
+		return nil, fresh, newConfigBase(), loadReport{}, err
 	}
 	if err != nil {
 		// The records were read but make no state: as damaged as an unreadable file.

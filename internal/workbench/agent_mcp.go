@@ -114,6 +114,11 @@ func (options AgentOptions) withDefaults() AgentOptions {
 // agent is not served unrecorded.
 func ServeAgentMCP(ctx context.Context, in io.Reader, out io.Writer, options AgentOptions) error {
 	options = options.withDefaults()
+	lease, err := profileLease(options.StatePath, false)
+	if err != nil {
+		return err
+	}
+	defer lease.Close()
 	catalog, err := readAgentCatalog(options.StatePath)
 	if err != nil {
 		return err
@@ -214,6 +219,8 @@ func readAgentCatalog(statePath string) (hostCatalog, error) {
 	entries, local, err := configstore.ReadOnly(statePath, configFormat)
 	var tooNew *configstore.TooNewError
 	switch {
+	case errors.Is(err, configstore.ErrLocked):
+		return hostCatalog{}, fmt.Errorf("the standalone server cannot unlock a protected profile; use the running Motty window's MCP connection after unlocking: %w", err)
 	case errors.Is(err, os.ErrNotExist):
 		return hostCatalog{}, fmt.Errorf("no saved hosts at %s: start Motty once and add a host", statePath)
 	case errors.As(err, &tooNew):

@@ -166,7 +166,7 @@ host that syncs in from another device starts closed.
 | Commands | Run through an SSH exec channel: no terminal, and nothing carries over from one call to the next. |
 | Read only | The default. **Commands** lets agents run commands rated low risk. Anything that would need your approval is refused, because nobody is there to ask. |
 | Allow all | Saved and selected only after risk confirmation. Runs commands of any risk level and writes or deletes files on authorized hosts without approval. Configured separately from HTTP; applies the next time the client starts the service. |
-| Sign in | From what Motty saved: keys, ssh-agent, and passwords or key passphrases in the saved passwords. A master password locks those out; use a key. A server that asks for a one-time code cannot be used. |
+| Sign in | From what Motty saved: keys, ssh-agent, and passwords or key passphrases in the saved passwords. For a master-password-protected profile, unlock a Motty window and connect to its MCP server. A server that asks for a one-time code cannot be used. |
 | Host keys | Only keys Motty already trusts. An unknown or changed key is refused; connect to the host once from the window. The agent never trusts a key. |
 | Activity | Settings > MCP lists the latest calls (host, tool, command or path, and how it ended) for 30 days. Output is never kept. |
 

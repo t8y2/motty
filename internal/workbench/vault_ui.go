@@ -113,7 +113,7 @@ func (state *State) initSecrets() {
 		keys = defaultKeystore(path)
 	}
 	opened, err := vault.OpenShared(path, keys)
-	if errors.Is(err, vault.ErrCorrupt) {
+	if errors.Is(err, vault.ErrCorrupt) && !state.appLockEnabled() {
 		aside := path + ".bad-" + time.Now().Format("20060102-150405")
 		if os.Rename(path, aside) == nil {
 			vault.Forget(path)
@@ -496,6 +496,7 @@ func (state *State) clickVaultSettings(id gfx.ID) bool {
 func (state *State) paintSecuritySettings(page *settingsPage) {
 	m := state.messages
 	page.groups(func() {
+		state.paintAppLockSettings(page)
 		state.paintCredentialSettings(page)
 		state.paintSessionLogSettingsGroup(page)
 		vaultFile := state.secrets.vault

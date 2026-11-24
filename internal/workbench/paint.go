@@ -155,6 +155,11 @@ func (state *State) paintsHostsPage() bool {
 func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	defer state.devEndPaint(canvas, size)
 	canvas.SetTree(&tree)
+	if state.appLocked() || state.appMigrating() {
+		state.paintAppLockPage(canvas, size)
+		return
+	}
+	state.lockUI.active = false
 	state.autosaveNotes(canvas)
 	state.syncNoteWindows()
 	state.workspaceCardRegions = state.workspaceCardRegions[:0]
@@ -469,7 +474,7 @@ func (state *State) windowPage() *ui.Page {
 	chrome := &state.chrome
 	if chrome.windowPage == nil {
 		chrome.windowPage = ui.NewPage(ui.PageConfig{
-			Tree: &tree, Root: shellPageRoot, Theme: &state.theme, View: state.declareShell,
+			Tree: &tree, Root: shellPageRoot, Theme: &state.theme, View: state.declareWorkbenchPage,
 			ScrollbarSize: catalogBarGutter, Styles: &ui.Styles{Switch: state.switchLook},
 		})
 	}
@@ -497,6 +502,59 @@ func (state *State) WindowConfig(base app.Config) app.Config {
 			w.activate()
 		}
 	}
+	// A lock may arrive between the previous paint and the next input. Do not
+	// let a stale business control in the page consume that event before the
+	// workbench handler can check the profile lock.
+	key, shortcut, pointer, input := config.OnKey, config.OnShortcut, config.OnPointer, config.TextInput
+	config.OnKey = func(event gfx.KeyEvent) gfx.EventResult {
+		if state.modal == modalAppLock && state.appLockBusy() {
+			return gfx.EventResult{Handled: true}
+		}
+		if state.appAccessBlocked() && (state.appMigrating() || !event.Target.IsZero() && !appLockOwns(event.Target)) {
+			return gfx.EventResult{Handled: true}
+		}
+		if state.appLocked() && event.Target.IsZero() {
+			result := state.appLockKey(event)
+			result.Handled = true
+			return result
+		}
+		result := key(event)
+		if state.appAccessBlocked() {
+			result.Handled = true
+		}
+		return result
+	}
+	config.OnShortcut = func(event gfx.KeyEvent) gfx.EventResult {
+		if state.modal == modalAppLock && state.appLockBusy() {
+			return gfx.EventResult{Handled: true}
+		}
+		if state.appAccessBlocked() && (state.appMigrating() || !appLockOwns(event.Target)) {
+			return gfx.EventResult{Handled: true}
+		}
+		result := shortcut(event)
+		if state.appAccessBlocked() {
+			result.Handled = true
+		}
+		return result
+	}
+	config.OnPointer = func(event gfx.PointerEvent) gfx.EventResult {
+		if state.modal == modalAppLock && state.appLockBusy() {
+			return gfx.EventResult{Handled: true}
+		}
+		if state.appAccessBlocked() && (state.appMigrating() || !appLockOwns(event.Target)) {
+			return gfx.EventResult{Handled: true}
+		}
+		return pointer(event)
+	}
+	config.TextInput = func(context app.TextInputContext) *app.TextInput {
+		if state.modal == modalAppLock && state.appLockBusy() {
+			return nil
+		}
+		if state.appAccessBlocked() && (state.appMigrating() || !appLockOwns(context.ID) || state.appLockBusy()) {
+			return nil
+		}
+		return input(context)
+	}
 	return config
 }
 
@@ -505,6 +563,9 @@ func (state *State) WindowConfig(base app.Config) app.Config {
 // the wheel over its backdrop: the panel keeps still behind it, as it did when
 // its list was painted by hand and the window's own handler saw the event first.
 func (state *State) scrollWindow(event gfx.ScrollEvent) gfx.EventResult {
+	if state.appAccessBlocked() {
+		return gfx.EventResult{Handled: true}
+	}
 	if state.hostGroupMenu {
 		// The move picker and its backdrop own the wheel over the host list.
 		return state.Scroll(event)
@@ -1369,6 +1430,9 @@ func (state *State) declareNavigation(c ui.C) {
 		// A shell on this computer needs no host, so its way in is always at hand:
 		// above the Settings, at the bottom of the sidebar. A dev build also puts
 		// the component gallery there (see devDeclareNavigation).
+		if state.appLockEnabled() {
+			state.navigationItem(c, hitAppLock, iconLock, m.AppLock.Lock, false, 4)
+		}
 		state.navigationItem(c, hitLocalTerminal, iconTerminal, m.LocalTerminal, false, 4)
 		state.openLocalShellPickerOn(c.Canvas(), hitLocalTerminal, false)
 		state.devDeclareNavigation(c)
@@ -2859,6 +2923,8 @@ func dialogViewport(c ui.C) gfx.Rect {
 // dispatches.
 func (state *State) declareDialogs(c ui.C) {
 	switch state.modal {
+	case modalAppLock:
+		state.declareAppLockDialog(c)
 	case modalOpenLink:
 		state.declareLaunchDialog(c)
 	case modalStateNotice:

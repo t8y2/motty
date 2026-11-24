@@ -431,6 +431,12 @@ func shortcutActionFromString(value string) shortcutAction {
 // to app.Config.OnShortcut so ordinary pages can own shortcuts without moving
 // text insertion, dead keys, or IME composition out of the native text path.
 func (state *State) Shortcut(event gfx.KeyEvent) (outcome gfx.EventResult) {
+	if state.modal == modalAppLock {
+		return gfx.EventResult{Handled: true}
+	}
+	if state.appAccessBlocked() || state.modal == modalAppLock {
+		return gfx.EventResult{Handled: true}
+	}
 	if state.noteExit != nil {
 		return gfx.EventResult{Handled: true}
 	}

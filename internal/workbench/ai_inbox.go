@@ -110,6 +110,10 @@ func aiCall[T any](state *State, ctx context.Context, fn func() (T, error)) (T, 
 	}
 	done := make(chan reply, 1)
 	if !state.aiPost(func(*State) {
+		if state.appAccessBlocked() {
+			done <- reply{err: errAppLocked}
+			return
+		}
 		value, err := fn()
 		done <- reply{value, err}
 	}) {

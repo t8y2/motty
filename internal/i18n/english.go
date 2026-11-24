@@ -3,6 +3,23 @@ package i18n
 // The English catalog lives here, one file per language.
 
 var EnglishMessages = Messages{
+	AppLock: AppLockMessages{
+		Protection: "Master-password protection", ChangeAction: "Change", SystemBeforePassword: "Set a master password before enabling system unlock on this device.",
+		UpdatingDescription: "Please wait while Motty updates your data protection.",
+		DeviceCleanup:       "Master-password protection is off, but the system credential could not be removed.",
+		WrongPassword:       "The master password is incorrect. Try again.", Corrupt: "The protection settings could not be read. Keep your data and check your backup.", MigrationPending: "Protection needs recovery. Unlock with your master password to continue.", SystemMissing: "Quick unlock is no longer available. Use your master password and enroll this device again.", DevicePassword: "system verification",
+		Lock: "Lock Motty", Title: "Motty is locked", Description: "Verify your identity to return to your sessions", ColdDescription: "Unlock Motty to restore your workspace",
+		KeepRunning: "Existing connections keep running", RestoreAfterUnlock: "Your workspace will resume after you unlock",
+		Password: "Master password", PasswordPlaceholder: "Enter your master password", UnlockPassword: "Unlock with master password", UnlockSystem: "Unlock with %s", Divider: "or use your master password",
+		Working: "Verifying…", Required: "Enter your master password.", Mismatch: "The new passwords do not match.", NewPassword: "New master password", ConfirmPassword: "Confirm master password", CurrentPassword: "Current master password",
+		SettingsTitle: "Application lock", SettingsDescription: "Your master password is required when Motty starts.", DisabledDescription: "Set a master password to protect access to Motty and its saved secrets.",
+		SetPassword: "Set master password", ChangePassword: "Change password", Disable: "Turn off", LockNow: "Lock now", LockNowDescription: "Lock all Motty windows while keeping existing connections running.",
+		SystemTitle: "System unlock", SystemDescription: "Use this device’s verification to unlock. Your master password remains available.", SystemDisabled: "Enter your master password once to enable quick unlock on this device.", SystemUnavailable: "System verification is not available on this device. Use your master password.",
+		EnableSystem: "Enable", DisableSystem: "Remove", EnableTitle: "Set a master password", ChangeTitle: "Change master password", DisableTitle: "Turn off application lock",
+		EnableDescription: "Choose a password with at least 8 characters. Keep it safe: Motty cannot recover a forgotten master password.", ChangeDescription: "Enter your current password, then choose a new master password.", DisableDescription: "This removes the master-password requirement and returns saved secrets to this device’s previous storage protection.",
+		EnrollTitle: "Enable system unlock", EnrollDescription: "Confirm your master password to enable system verification on this device.", RevokeTitle: "Remove system unlock", RevokeDescription: "Confirm your master password to remove quick unlock from this device.",
+		Save: "Save", Cancel: "Cancel", Error: "Verification failed. Try again.", Minimum: "Use at least 8 characters for your master password.", SystemCanceled: "System verification was canceled. You can use your master password.", Updating: "Updating protection…",
+	},
 	RemoteLogs:     remoteLogsEnglish,
 	HostsPanel:     hostsPanelEnglish,
 	ActionFeedback: englishActionFeedback,
