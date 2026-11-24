@@ -1,10 +1,14 @@
 package workbench
 
 import (
-	"motty/internal/i18n"
+	"fmt"
+	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
+
+	"motty/internal/i18n"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
@@ -18,7 +22,7 @@ func TestLocalDirectoryPickerShortcutHistoryAndBrowse(t *testing.T) {
 	first, second := t.TempDir(), t.TempDir()
 	state.localDirectoryHistory = []string{first, second}
 	chord := state.shortcuts.chords.Chord(shortcutAddLocalTerminal)
-	if chord != (keymap.Chord{Modifiers: gfx.ModifierControl, Char: 'n'}) {
+	if chord != (keymap.Chord{Modifiers: gfx.ModifierAlt | gfx.ModifierShift, Char: 'n'}) {
 		t.Fatalf("chord = %+v", chord)
 	}
 	pressChord(state, chord)
@@ -158,5 +162,100 @@ func TestLocalDirectoryPickerShortcutCustomizationPersists(t *testing.T) {
 	restored := newTestState(t, options)
 	if restored.shortcuts.chords.Chord(shortcutAddLocalTerminal) != chord {
 		t.Fatal("custom shortcut did not persist")
+	}
+}
+
+func TestLocalDirectoryPickerMenuAndPalette(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	label := state.messages.AddLocalTerminal
+	found := false
+	for _, menu := range state.MenuBar() {
+		for _, item := range menu.Items {
+			if item.Title == label {
+				found = true
+				item.OnSelect()
+				if state.modal != modalLocalDirectory {
+					t.Fatal("menu did not open directory picker")
+				}
+			}
+		}
+	}
+	if !found {
+		t.Fatal("directory picker missing from menu")
+	}
+	state.modal = modalNone
+	state.openCommandPalette()
+	for _, entry := range state.commandPalette.entries {
+		if entry.label == label && entry.target == hitLocalDirectoryOpen {
+			return
+		}
+	}
+	t.Fatal("directory picker missing from command palette")
+}
+
+func TestLocalDirectoryPickerRestoresPreparedLayout(t *testing.T) {
+	for _, maximized := range []bool{false, true} {
+		state, _, _ := twoLivePanes(t)
+		workspace := state.deck.ActiveWorkspace()
+		state.deck.SetPaneMaximized(workspace, maximized)
+		before := state.deck.DTO()
+		session, _ := state.sessionByIDPointer(state.activeSessionID)
+		rollback := state.localDirectoryLayoutRollback(session)
+		if !state.prepareAdjacentTerminal(session, state.messages.AddLocalTerminal) {
+			t.Fatal("could not prepare adjacent pane")
+		}
+		rollback()
+		if !reflect.DeepEqual(state.deck.DTO(), before) {
+			t.Fatal("rollback changed layout, focus, or maximize state")
+		}
+	}
+}
+
+func TestLocalDirectoryHistoryRestoreKeepsRecentUniquePaths(t *testing.T) {
+	options := freshOptions(t)
+	state := newTestState(t, options)
+	root := t.TempDir()
+	for i := range localDirectoryHistoryLimit + 10 {
+		directory := filepath.Join(root, fmt.Sprint(i))
+		state.localDirectoryHistory = append(state.localDirectoryHistory, directory, directory)
+	}
+	state.save()
+	restored := newTestState(t, options)
+	if len(restored.localDirectoryHistory) != localDirectoryHistoryLimit {
+		t.Fatalf("restored %d paths", len(restored.localDirectoryHistory))
+	}
+	for i, directory := range restored.localDirectoryHistory {
+		if directory != filepath.Join(root, fmt.Sprint(i)) {
+			t.Fatalf("recent path order changed at %d", i)
+		}
+	}
+}
+
+func TestLocalDirectoryPickerScrollKeepsSelectionVisible(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	for i := range 30 {
+		state.localDirectoryHistory = append(state.localDirectoryHistory, filepath.Join(t.TempDir(), fmt.Sprint(i)))
+	}
+	state.openLocalDirectoryPicker()
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 900, Height: 700}
+	state.Paint(&canvas, size)
+	picker := &state.localDirectoryPicker
+	for i := 0; i < len(picker.visible)-1; i++ {
+		state.localDirectoryKey(gfx.KeyEvent{Key: gfx.KeyDown})
+		canvas.Reset()
+		state.Paint(&canvas, size)
+		top := float32(picker.selected) * (picker.rowHeight + picker.rowGap)
+		if top < picker.scroll.Offset-1 || top+picker.rowHeight > picker.scroll.Offset+picker.scroll.Viewport+1 {
+			t.Fatalf("selected row %d is outside viewport", picker.selected)
+		}
+	}
+	for i := len(picker.visible) - 1; i > 0; i-- {
+		state.localDirectoryKey(gfx.KeyEvent{Key: gfx.KeyUp})
+		canvas.Reset()
+		state.Paint(&canvas, size)
+	}
+	if picker.scroll.Offset != 0 {
+		t.Fatalf("first row did not return to top: %v", picker.scroll.Offset)
 	}
 }

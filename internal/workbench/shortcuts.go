@@ -89,7 +89,7 @@ func defaultShortcuts() shortcutMap {
 	shortcuts := newShortcutMap()
 	shortcuts.chords.Set(shortcutCommandPalette, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 'p'})
 	shortcuts.chords.Set(shortcutNewWindow, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 'n'})
-	shortcuts.chords.Set(shortcutAddLocalTerminal, keymap.Chord{Modifiers: gfx.ModifierControl, Char: 'n'})
+	shortcuts.chords.Set(shortcutAddLocalTerminal, keymap.Chord{Modifiers: gfx.ModifierAlt | gfx.ModifierShift, Char: 'n'})
 	shortcuts.chords.Set(shortcutFind, keymap.Chord{Modifiers: primary, Char: 'f'})
 	shortcuts.chords.Set(shortcutCopy, keymap.Chord{Modifiers: primary, Char: 'c'})
 	shortcuts.chords.Set(shortcutPaste, keymap.Chord{Modifiers: primary, Char: 'v'})

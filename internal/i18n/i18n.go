@@ -137,10 +137,8 @@ type Messages struct {
 	LocalDirectoryTitle       string
 	LocalDirectorySearch      string
 	LocalDirectoryBrowse      string
-	LocalDirectoryHistory     string
 	LocalDirectoryEmpty       string
 	LocalDirectoryRemove      string
-	LocalDirectoryHint        string
 	LocalDirectoryUnavailable string
 	NewWindow                 string
 

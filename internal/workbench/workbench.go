@@ -2125,6 +2125,8 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		state.openHostDialog()
 	case id == hitImportSSHConfig:
 		state.importSSHConfig()
+	case id == hitLocalDirectoryOpen:
+		state.openLocalDirectoryPicker()
 	case id == hitLocalTerminal || id == hitWindowLocalTerminal:
 		state.openLocalTerminal()
 	case id == hitGitHub:

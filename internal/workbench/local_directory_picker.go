@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 
+	layoutcore "motty/internal/workspace"
+
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
@@ -14,6 +16,7 @@ import (
 
 var localDirectoryHits = tree.Feature("local-directory")
 var (
+	hitLocalDirectoryOpen   = tree.ID(localDirectoryHits, "open")
 	hitLocalDirectorySearch = tree.ID(localDirectoryHits, "search")
 	hitLocalDirectoryBrowse = tree.ID(localDirectoryHits, "browse")
 	hitLocalDirectoryClose  = tree.ID(localDirectoryHits, "close")
@@ -30,6 +33,8 @@ type localDirectoryPicker struct {
 	target    uint32
 	errorText string
 	scroll    *ui.ScrollState
+	rowHeight float32
+	rowGap    float32
 }
 
 func (state *State) openLocalDirectoryPicker() {
@@ -102,8 +107,10 @@ func (state *State) chooseLocalDirectory(directory string) {
 		return
 	}
 	directory = filepath.Clean(directory)
+	rollback := func() {}
 	state.pendingWorkspace, state.pendingPane = 0, 0
 	if session, ok := state.sessionByIDPointer(picker.target); ok {
+		rollback = state.localDirectoryLayoutRollback(session)
 		if !state.prepareAdjacentTerminal(session, state.messages.AddLocalTerminal) {
 			return
 		}
@@ -111,13 +118,72 @@ func (state *State) chooseLocalDirectory(directory string) {
 	workspace := state.pendingWorkspace
 	state.pendingDirectory = directory
 	if state.openLocalTerminal() == nil {
+		rollback()
+		state.pendingWorkspace, state.pendingPane, state.pendingDirectory = 0, 0, ""
+		picker.errorText = state.messages.LocalDirectoryUnavailable
 		return
 	}
 	if workspace != 0 {
 		state.rebuildManagedWorkspace(workspace)
 	}
 	state.localDirectoryHistory = slices.DeleteFunc(state.localDirectoryHistory, func(value string) bool { return value == directory })
-	state.localDirectoryHistory = append([]string{directory}, state.localDirectoryHistory...)
+	state.localDirectoryHistory = normalizeLocalDirectoryHistory(append([]string{directory}, state.localDirectoryHistory...))
 	state.modal = modalNone
 	state.save()
+}
+
+const localDirectoryHistoryLimit = 50
+
+func normalizeLocalDirectoryHistory(history []string) []string {
+	result := make([]string, 0, min(len(history), localDirectoryHistoryLimit))
+	seen := make(map[string]bool)
+	for _, directory := range history {
+		if !validLocalDirectory(directory) {
+			continue
+		}
+		directory = filepath.Clean(directory)
+		if seen[directory] {
+			continue
+		}
+		seen[directory] = true
+		result = append(result, directory)
+		if len(result) == localDirectoryHistoryLimit {
+			break
+		}
+	}
+	return result
+}
+
+// localDirectoryLayoutRollback 保留拆分前的布局、焦点及显示模式。
+func (state *State) localDirectoryLayoutRollback(session *Session) func() {
+	workspace, _, _ := state.deck.PaneForSession(layoutcore.SessionID(session.ID))
+	layout, _ := state.deck.Layout(workspace)
+	spec := layout.Spec()
+	panes := state.deck.Panes(workspace, nil)
+	order := make([]layoutcore.PaneID, len(panes))
+	for i, pane := range panes {
+		order[i] = pane.ID
+	}
+	active, maximized := state.deck.ActivePane(workspace), state.deck.PaneMaximized(workspace)
+	managed, hasManaged := state.managedWorkspaceLayouts[workspace]
+	temporary, hasTemporary := state.temporaryWorkspaceLayouts[workspace]
+	return func() {
+		for _, pane := range state.deck.Panes(workspace, nil) {
+			if !slices.Contains(order, pane.ID) && pane.SessionID == 0 {
+				state.deck.ClosePane(workspace, pane.ID)
+			}
+		}
+		state.deck.SetLayout(workspace, order, spec)
+		state.deck.ActivatePane(workspace, active)
+		state.deck.SetPaneMaximized(workspace, maximized)
+		if hasManaged {
+			state.managedWorkspaceLayouts[workspace] = managed
+		}
+		if hasTemporary {
+			state.temporaryWorkspaceLayouts[workspace] = temporary
+		}
+		state.syncActiveSession()
+		state.refreshWorkspaceViews()
+		state.fitTerminals()
+	}
 }

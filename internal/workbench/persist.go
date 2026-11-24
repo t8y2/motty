@@ -1187,7 +1187,7 @@ func (state *State) restoreLocal(saved savedState) {
 	state.applyTerminalFace()
 	state.restoreConnect = restoreConnectPolicyFromString(saved.RestoreConnect)
 	state.localStart = localStartPolicyFromString(saved.LocalStart)
-	state.localDirectoryHistory = slices.Clone(saved.LocalDirectoryHistory)
+	state.localDirectoryHistory = normalizeLocalDirectoryHistory(saved.LocalDirectoryHistory)
 	state.lastLocalDirectory = ""
 	if validLocalDirectory(saved.LastLocalDirectory) {
 		state.lastLocalDirectory = filepath.Clean(saved.LastLocalDirectory)
