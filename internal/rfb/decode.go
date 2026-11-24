@@ -551,4 +551,3 @@ func (client *Client) decodeCursor(sink Sink, hotX, hotY, width, height int) err
 	sink.Cursor(hotX, hotY, width, height, bgra)
 	return nil
 }
-
