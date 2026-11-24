@@ -23,8 +23,13 @@ func realTempDir(t *testing.T) string {
 func closeShells(t *testing.T, state *State) {
 	t.Cleanup(func() {
 		for index := range state.sessions {
-			if session := &state.sessions[index]; session.term != nil && session.term.shell != nil {
-				session.term.shell.Close()
+			if session := &state.sessions[index]; session.term != nil {
+				// A local shell now opens in the background, so cleanup must also
+				// close one that arrives after the test has returned.
+				session.term.abandonShell()
+				if session.term.shell != nil {
+					session.term.shell.Close()
+				}
 			}
 		}
 	})

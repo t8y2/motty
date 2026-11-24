@@ -89,6 +89,14 @@ func (state *State) resolveLocalShell(host Host) string {
 	if state.localShell != "" {
 		return state.localShell
 	}
+	// The first local terminal is prepared before the native window exists so
+	// its terminal hit can receive IME focus in the first frame. Shell discovery
+	// may inspect slow or unavailable locations on Windows; let the shell backend
+	// choose the platform default on its background open instead of delaying that
+	// frame. The settings picker still discovers the complete list when visited.
+	if state.preparingInitialLocal {
+		return ""
+	}
 	if !state.localShellMenu.loaded {
 		state.refreshLocalShells()
 	}

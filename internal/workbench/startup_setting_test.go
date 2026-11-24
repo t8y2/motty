@@ -8,6 +8,50 @@ import (
 	"motty/internal/localshell"
 )
 
+func TestPreparedLocalStartupIsNotOpenedAgainOnFirstWake(t *testing.T) {
+	state := newTabState(t)
+	closeShells(t, state)
+	state.startupLocal = true
+	state.startupReuse = false
+	state.restorePending = true
+	state.PrepareInitialLocalSessions()
+	prepared := len(state.sessions)
+	if prepared != 1 || state.startupLocalPrepared == 0 {
+		t.Fatalf("prepared sessions=%d marker=%d, want one prepared local session", prepared, state.startupLocalPrepared)
+	}
+	state.Wake()
+	if len(state.sessions) != prepared {
+		t.Fatalf("first Wake opened a duplicate local session: %d -> %d", prepared, len(state.sessions))
+	}
+	if state.startupLocalPrepared != 0 {
+		t.Fatal("first Wake did not consume the prepared local session")
+	}
+}
+
+func TestInitialLocalPrepareDoesNotDiscoverShellsBeforeTheWindow(t *testing.T) {
+	state := newTabState(t)
+	closeShells(t, state)
+	state.startupLocal = true
+	state.startupReuse = false
+	state.restorePending = true
+	state.localShell = ""
+	state.localShellMenu.loaded = false
+	discovered := false
+	state.localShellMenu.discover = func() []localshell.Choice {
+		discovered = true
+		return []localshell.Choice{{Name: "slow shell", Path: "/bin/sh", Default: true}}
+	}
+	state.localShellMenu.discoverWSL = func(context.Context) []localshell.Choice { return nil }
+
+	state.PrepareInitialLocalSessions()
+	if discovered {
+		t.Fatal("preparing the first local terminal synchronously discovered shells")
+	}
+	if len(state.sessions) != 1 || state.sessions[0].host.localShell != "" {
+		t.Fatalf("prepared local session = %+v, want one session using the platform default shell", state.sessions)
+	}
+}
+
 // TestStartupOpensWhatTheSettingsAsk checks that the first Wake opens the local
 // terminal and the chosen hosts, and drops a host that left the catalog.
 func TestStartupOpensWhatTheSettingsAsk(t *testing.T) {

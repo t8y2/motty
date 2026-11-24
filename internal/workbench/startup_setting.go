@@ -199,6 +199,52 @@ func (state *State) startupWanted() bool {
 		(state.startupEnabled && (state.startupLocal || state.startupShell != "" || len(state.startupHosts) > 0))
 }
 
+// PrepareInitialLocalSessions starts local tabs that can be opened without a
+// native window. It runs between State construction and the first Paint so a
+// restored local terminal can publish its text-input surface in that first
+// frame. Remote sessions remain owned by openStartupSessions, which runs from
+// the first window Wake after the connection callbacks are wired.
+func (state *State) PrepareInitialLocalSessions() {
+	if !state.restorePending {
+		return
+	}
+	state.preparingInitialLocal = true
+	defer func() { state.preparingInitialLocal = false }()
+	state.startRestoredLocalSessions()
+	if !state.startupEnabled || (!state.startupLocal && state.startupShell == "") {
+		return
+	}
+	shell := state.startupShell
+	var shown *Session
+	for index := range state.sessions {
+		session := &state.sessions[index]
+		if session.HostID != localHostID || !strings.EqualFold(session.host.localShell, shell) {
+			continue
+		}
+		if state.startupReuse {
+			shown = session
+		}
+		break
+	}
+	if shown == nil {
+		state.pendingWorkspace, state.pendingPane = 0, 0
+		if shell != "" {
+			// The persisted path is already the user's explicit choice. Resolving
+			// it through the picker here would synchronously rediscover every shell
+			// before the first native frame; the picker can refresh after startup.
+			shown = state.openLocalTerminalWith(localshell.Choice{Path: shell, Name: filepath.Base(shell)})
+		} else {
+			shown = state.openLocalTerminal()
+		}
+	}
+	if shown == nil {
+		return
+	}
+	state.startupLocalPrepared = shown.ID
+	state.activeSection = sectionTerminal
+	state.ActivatePane(shown.ID)
+}
+
 // openStartupSessions opens what the settings ask a launch to open: a local
 // terminal, then the chosen hosts. Like the restored tabs' dialing, it runs
 // once, from the first Wake, where the window exists and the catalog is loaded.
@@ -225,16 +271,22 @@ func (state *State) openStartupSessions() {
 		return nil
 	}
 	var shown *Session
+	preparedLocal := state.startupLocalPrepared != 0
 	if state.startupLocal || state.startupShell != "" {
-		shell := state.startupShell
-		if existing := locate(localHostID, shell); existing != nil && state.startupReuse {
-			shown = existing
+		if state.startupLocalPrepared != 0 {
+			shown, _ = state.sessionByIDPointer(state.startupLocalPrepared)
+			state.startupLocalPrepared = 0
 		} else {
-			state.pendingWorkspace, state.pendingPane = 0, 0
-			if shell != "" {
-				shown = state.openLocalTerminalWith(state.resolveStartupShell())
+			shell := state.startupShell
+			if existing := locate(localHostID, shell); existing != nil && state.startupReuse {
+				shown = existing
 			} else {
-				shown = state.openLocalTerminal()
+				state.pendingWorkspace, state.pendingPane = 0, 0
+				if shell != "" {
+					shown = state.openLocalTerminalWith(state.resolveStartupShell())
+				} else {
+					shown = state.openLocalTerminal()
+				}
 			}
 		}
 	}
@@ -256,5 +308,11 @@ func (state *State) openStartupSessions() {
 	if shown != nil {
 		state.setActiveSection(sectionTerminal)
 		state.ActivatePane(shown.ID)
+		// createHostSession deliberately skips persistence while the first
+		// terminal is prepared before OpenWindow. Save after that window has
+		// presented its first frame, keeping startup I/O off the capture path.
+		if preparedLocal {
+			state.save()
+		}
 	}
 }

@@ -824,6 +824,10 @@ type State struct {
 	// startupEnabled is the feature switch of what a launch opens: off, the
 	// launch opens nothing but the choices are kept for when it turns on again.
 	startupEnabled bool
+	// startupLocalPrepared names the local session opened before the native
+	// window's first paint. The first Wake consumes it so it does not open a
+	// duplicate local tab or focus a different restored tab.
+	startupLocalPrepared uint32
 	// startupReuse also applies to ordinary host opens. An explicit new tab,
 	// pane, or duplicate still starts a separate session.
 	startupReuse  bool
@@ -911,6 +915,7 @@ type State struct {
 	tooltip                 components.HoverTooltip
 	selectTypeahead         selectTypeahead
 	restorePending          bool // restored tabs have not yet been connected (see connectRestoredSessions)
+	preparingInitialLocal   bool // local startup sessions use the background shell path
 	terminalClipboard       terminalClipboardPolicy
 	terminalIntense         terminalIntense
 
@@ -3675,7 +3680,9 @@ func (state *State) createHostSessionWithConnection(host Host, address string, c
 	state.fitTerminals()
 	state.fitSFTP(state.viewport)
 	state.rebuildTabOptions()
-	state.save()
+	if !state.preparingInitialLocal {
+		state.save()
+	}
 	return session
 }
 

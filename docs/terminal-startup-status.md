@@ -22,6 +22,34 @@ what wakes the application. Remote connection progress remains available where
 applicable; a local terminal no longer offers the remote progress-page button.
 Remote-desktop status retains its existing lifecycle.
 
+## Local shell and text input
+
+Starting a local shell can wait on the desktop shell, profile scripts, or a
+system proxy lookup. During startup restoration, Motty opens local shells
+through the background path used for remote shell requests. The terminal screen
+and its native text-input surface are published as soon as the local connection
+is created; the shell is attached by a later window wake. This keeps the first
+Chinese or other IME composition from waiting on process startup while
+preserving the existing shell and output lifecycle. A local terminal opened by
+an explicit user action keeps its existing synchronous path unless it follows
+the system proxy. The first-frame path also avoids synchronously enumerating
+installed shells or writing the session store; the platform default is resolved
+by the background shell start, and startup persistence runs after the window is
+available.
+
+### Windows Pinyin cold-start check
+
+Enable a local terminal at startup and select Microsoft Pinyin in Chinese mode.
+Quit Motty completely. Launch it again and, as soon as the local pane appears,
+type `ni` without clicking or waiting for the shell prompt. Check that the
+candidate window appears at the terminal cursor and the composition survives
+the shell becoming ready. Then choose 你 and verify it appears once at the
+prompt. Repeat by restoring a saved local tab, checking that it opens only once.
+
+For a PR, record the Windows build, IME, local shell and what happened on each
+launch. The automated test checks that the text-input surface exists before the
+first wake; it cannot observe the native candidate window.
+
 ## Verification (2026-10-22)
 
 - A blocked shell-opening test reproduces the old premature connected status and

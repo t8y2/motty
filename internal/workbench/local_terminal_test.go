@@ -8,12 +8,38 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/localshell"
 	"motty/internal/remotestats"
 	"motty/internal/sshconn"
 	"motty/internal/systemproxy"
 )
+
+func TestLocalShellOpeningDoesNotBlockTheWindow(t *testing.T) {
+	conn := newLocalConn("shell", networkProxyDirect)
+	conn.backgroundShell = true
+	opener, ok := interface{}(conn).(slowShellOpener)
+	if !ok || !opener.opensShellSlowly() {
+		t.Fatal("local shell opening must use the background shell path")
+	}
+}
+
+func TestInitialLocalRestorePublishesTextInputBeforeTheFirstWindowWake(t *testing.T) {
+	state := newTestState(t, savedLocalTabs(t, restoreConnectOff, localStartRemember, realTempDir(t)))
+	closeShells(t, state)
+	state.PrepareInitialLocalSessions()
+	session := &state.sessions[0]
+	if session.restored || session.term == nil {
+		t.Fatalf("initial local session = restored %v, term %v", session.restored, session.term != nil)
+	}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	input := state.TerminalInput(app.TextInputContext{ID: terminalTestHit(state, session), Terminal: true})
+	if input == nil || input.OnEvent == nil {
+		t.Fatal("initial local restore did not publish a terminal text input")
+	}
+}
 
 func localShellOutput(t *testing.T, state *State, session *Session, want string) {
 	t.Helper()
@@ -333,15 +359,17 @@ func TestWindowBarHasALocalTerminalButtonThatOpensAShell(t *testing.T) {
 	})
 }
 
-// Following the system proxy runs the platform's settings tool, so only that
-// mode opens its shell off the window's thread, and a shell that cannot start
-// comes back as no shell at all, not as a nil pointer the caller would close.
-func TestLocalTerminalOpensOffTheWindowOnlyWhenItAsksTheSystem(t *testing.T) {
+// Following the system proxy runs the platform's settings tool, so that mode
+// opens its shell off the window's thread. Startup restores opt in separately;
+// ordinary direct local terminals retain their synchronous path. A shell that
+// cannot start still comes back as no shell at all, not as a nil pointer the
+// caller would close.
+func TestLocalTerminalOpensOffTheWindowWhenNeeded(t *testing.T) {
 	if newLocalConn("", networkProxyDirect).opensShellSlowly() {
-		t.Fatal("a terminal that sets no proxy opens slowly")
+		t.Fatal("a direct terminal opens synchronously")
 	}
 	if !newLocalConn("", networkProxySystem).opensShellSlowly() {
-		t.Fatal("a terminal that follows the system proxy opens on the window's thread")
+		t.Fatal("a terminal that follows the system proxy must open slowly")
 	}
 	missing := newLocalConn(filepath.Join(t.TempDir(), "no-such-shell"), networkProxyDirect)
 	if shell, err := missing.OpenShell(sshconn.ShellConfig{Cols: 80, Rows: 24}); err == nil || shell != nil {

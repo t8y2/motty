@@ -488,6 +488,10 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 	if place.adopt != nil {
 		place.adopt(state)
 	}
+	// Local shells need no native window or network callback to start. Prepare
+	// them before the first paint so the initial frame can publish terminal text
+	// input; remote sessions remain deferred until the window is ready to wake.
+	state.PrepareInitialLocalSessions()
 	width, height := 1400, 900
 	origin := place.origin
 	maximized := false
