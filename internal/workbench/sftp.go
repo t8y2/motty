@@ -1661,6 +1661,16 @@ func (view *sftpView) recordTransferTargetDir(dir string) {
 	}
 }
 
+// transferDir is the folder a finished transfer wrote into. A path that is the
+// shown folder itself, or has no folder part, belongs to the shown folder.
+func (view *sftpView) transferDir(resultPath string) string {
+	dir := path.Dir(resultPath)
+	if view.path == resultPath || dir == "." || dir == "" {
+		return view.path
+	}
+	return dir
+}
+
 func (state *State) sftpViewsForSession(view *sftpView) []*sftpView {
 	if view == nil {
 		return nil
@@ -2705,7 +2715,16 @@ func (state *State) pumpSFTP(session *Session) {
 		state.resumeInterruptedTransfers(view)
 	}
 	state.refreshSFTPTransfers(view)
+	// Folders that received a finished transfer in this pass. They are read
+	// again once the pass has drained its results, while other transfers may
+	// still be running.
 	var batchTargetDirs []string
+	noteBatchDir := func(dir string) {
+		clean := path.Clean(dir)
+		if clean != "" && clean != "." && !slices.Contains(batchTargetDirs, clean) {
+			batchTargetDirs = append(batchTargetDirs, clean)
+		}
+	}
 	for {
 		select {
 		case result, ok := <-view.worker.Results():
@@ -2773,30 +2792,18 @@ func (state *State) pumpSFTP(session *Session) {
 					view.refreshStatus = fmt.Sprintf(state.messages.SFTPUploadedFmt, formatBytes(result.Bytes), result.Path)
 					view.status = view.refreshStatus
 					if result.Path != "" {
-						dir := path.Dir(result.Path)
-						if view.path == result.Path || dir == "." || dir == "" {
-							dir = view.path
-						}
+						dir := view.transferDir(result.Path)
 						view.recordTransferTargetDir(dir)
-						clean := path.Clean(dir)
-						if clean != "" && !slices.Contains(batchTargetDirs, clean) {
-							batchTargetDirs = append(batchTargetDirs, clean)
-						}
+						noteBatchDir(dir)
 					}
 				} else if result.Operation == sftpclient.OperationRemoteCopy {
 					view.refreshAfterTransfers = true
 					view.refreshStatus = fmt.Sprintf(state.messages.SFTPCopiedFmt, formatBytes(result.Bytes), result.Path)
 					view.status = view.refreshStatus
 					if result.Path != "" {
-						dir := path.Dir(result.Path)
-						if view.path == result.Path || dir == "." || dir == "" {
-							dir = view.path
-						}
+						dir := view.transferDir(result.Path)
 						view.recordTransferTargetDir(dir)
-						clean := path.Clean(dir)
-						if clean != "" && !slices.Contains(batchTargetDirs, clean) {
-							batchTargetDirs = append(batchTargetDirs, clean)
-						}
+						noteBatchDir(dir)
 					}
 				} else {
 					view.status = fmt.Sprintf(state.messages.SFTPDownloadedFmt, formatBytes(result.Bytes), result.LocalPath)
@@ -2940,12 +2947,7 @@ func (state *State) pumpSFTP(session *Session) {
 			case sftpclient.OperationUpload:
 				view.refreshStatus = fmt.Sprintf(state.messages.SFTPUploadedFmt, formatBytes(result.Bytes), result.Path)
 				if result.Path != "" {
-					dir := path.Dir(result.Path)
-					if view.path == result.Path || dir == "." || dir == "" {
-						dir = view.path
-					}
-					view.recordTransferTargetDir(dir)
-					state.refreshSFTPViewsForDirectory(view, dir)
+					view.recordTransferTargetDir(view.transferDir(result.Path))
 				}
 				state.refreshSFTPViewsAfterTransfers(view)
 			case sftpclient.OperationCreateFile:
