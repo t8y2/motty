@@ -8,6 +8,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
+	"github.com/vivaui/viva/text"
 	"motty/internal/term"
 )
 
@@ -590,6 +591,9 @@ func (state *State) shortcut(event gfx.KeyEvent, chord keymap.Chord) gfx.EventRe
 	if result, handled := state.sftpClipboardShortcut(event, action); handled {
 		return result
 	}
+	if result, handled := state.sftpEditorClipboardShortcut(event, action); handled {
+		return result
+	}
 	if action == shortcutNone {
 		if index := state.snippetFor(chord, -1); index >= 0 && state.activeSection == sectionTerminal {
 			if !event.Repeat {
@@ -924,4 +928,60 @@ func (state *State) pasteIntoTerminal(session *Session) {
 func (state *State) clipboardHoldsImage() bool {
 	_, err := state.options.ClipboardImagePNG()
 	return err == nil || errors.Is(err, app.ErrTooLarge)
+}
+
+func editorSelectedText(editor *text.Editor) string {
+	if editor == nil {
+		return ""
+	}
+	selection := editor.Selection()
+	if selection.Start == selection.End {
+		return ""
+	}
+	return editor.String()[editor.ByteOffset(selection.Start):editor.ByteOffset(selection.End)]
+}
+
+// sftpEditorClipboardShortcut handles copy/paste while the docked SFTP editor
+// or dialog is open, keeping non-editor panel focus from leaking to the
+// terminal command line or multi-line paste review modal.
+func (state *State) sftpEditorClipboardShortcut(event gfx.KeyEvent, action shortcutAction) (gfx.EventResult, bool) {
+	if (action != shortcutCopy && action != shortcutPaste) ||
+		state.activeSection != sectionTerminal || state.modal != modalNone || !state.filesPanelShown() {
+		return gfx.EventResult{}, false
+	}
+	session, ok := state.sessionByIDPointer(state.activeSessionID)
+	if !ok || session.files == nil || (session.files.editPath == "" && session.files.dialog == sftpDialogNone) {
+		return gfx.EventResult{}, false
+	}
+	_, target, embedded := state.decodePaneHit(event.Target)
+	if !embedded {
+		target = event.Target
+	}
+	if state.terminalSession(target) != nil || state.terminalPageSession(target) != nil {
+		return gfx.EventResult{}, false
+	}
+	if event.Repeat {
+		return gfx.EventResult{Handled: true}, true
+	}
+	if editor := state.sftpEditor(target); editor != nil && !session.files.busy {
+		if action == shortcutPaste {
+			if state.options.ClipboardText != nil {
+				value, err := state.options.ClipboardText()
+				if err == nil && value != "" {
+					if target == hitSFTPEditor {
+						value = strings.ReplaceAll(strings.ReplaceAll(value, "\r\n", "\n"), "\r", "\n")
+					} else {
+						value = text.SingleLine(value)
+					}
+					app.TextEvent{Kind: app.TextPaste, Text: value}.Apply(editor)
+					return gfx.EventResult{Handled: true, Repaint: true}, true
+				}
+			}
+			return gfx.EventResult{Handled: true}, true
+		}
+		if selected := editorSelectedText(editor); selected != "" {
+			return gfx.EventResult{Handled: true, ClipboardText: selected}, true
+		}
+	}
+	return gfx.EventResult{Handled: true}, true
 }

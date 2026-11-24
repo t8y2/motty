@@ -11,6 +11,8 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/keymap"
+	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/filecontent"
 )
@@ -759,6 +761,9 @@ func (d *fileDocument) key(event gfx.KeyEvent) gfx.EventResult {
 		}
 		return gfx.EventResult{}
 	}
+	if result, ok := d.clipboardShortcut(event, false); ok {
+		return result
+	}
 	if result, ok := d.codeKey(event); ok {
 		return result
 	}
@@ -776,6 +781,9 @@ func (d *fileDocument) comparisonKey(event gfx.KeyEvent) gfx.EventResult {
 			return handled
 		}
 		return gfx.EventResult{}
+	}
+	if result, ok := d.clipboardShortcut(event, true); ok {
+		return result
 	}
 	if event.Target == hitDocumentInput {
 		if command, ok := components.CodeEditorCommandForKey(event); ok && d.ready && !d.busy && command.Apply(&d.editor) {
@@ -799,6 +807,72 @@ func (d *fileDocument) comparisonKey(event gfx.KeyEvent) gfx.EventResult {
 	return gfx.EventResult{}
 }
 
+func (d *fileDocument) clipboardEditor(target gfx.ID) *text.Editor {
+	switch target {
+	case hitDocumentInput:
+		return &d.editor
+	case hitDocumentFind:
+		return &d.edit.find.Query
+	case hitDocumentReplace:
+		return &d.edit.find.Replacement
+	case hitDocumentGoTo:
+		return &d.edit.goEditor
+	default:
+		return nil
+	}
+}
+
+// clipboardShortcut handles copy and paste for the document's editor and its
+// find, replace and go-to fields. comparison selects the diff view's input and
+// caret reveal instead of the code editor's.
+func (d *fileDocument) clipboardShortcut(event gfx.KeyEvent, comparison bool) (gfx.EventResult, bool) {
+	if d.owner == nil || event.Release {
+		return gfx.EventResult{}, false
+	}
+	chord, ok := keymap.FromEvent(event)
+	if !ok {
+		return gfx.EventResult{}, false
+	}
+	action := d.owner.shortcuts.actionFor(chord)
+	if action != shortcutPaste && action != shortcutCopy {
+		return gfx.EventResult{}, false
+	}
+	if event.Repeat {
+		return gfx.EventResult{Handled: true}, true
+	}
+	context := app.TextInputContext{ID: event.Target}
+	input := d.textInput(context)
+	if comparison {
+		input = d.comparisonTextInput(context)
+	}
+	if input != nil {
+		if action == shortcutPaste {
+			if d.owner.options.ClipboardText != nil && input.OnEvent != nil {
+				value, err := d.owner.options.ClipboardText()
+				if err == nil && value != "" {
+					_, _ = input.OnEvent(app.TextEvent{Kind: app.TextPaste, Text: value})
+					if event.Target == hitDocumentInput {
+						if comparison {
+							d.comparison.ui.diff.RevealCaret(d.editor.String(), d.editor.ByteOffset(d.editor.Caret()))
+						} else {
+							d.ui.code.Reveal(d.editor.ByteOffset(d.editor.Caret()))
+						}
+					}
+					return gfx.EventResult{Handled: true, Repaint: true}, true
+				}
+			}
+			return gfx.EventResult{Handled: true}, true
+		}
+		if selected := editorSelectedText(d.clipboardEditor(event.Target)); selected != "" {
+			return gfx.EventResult{Handled: true, ClipboardText: selected}, true
+		}
+		return gfx.EventResult{Handled: true}, true
+	}
+	// Focus is outside any text input of this file window: consume copy/paste
+	// so the menu bar fallback never forwards it to the main terminal window.
+	return gfx.EventResult{Handled: true}, true
+}
+
 func (d *fileDocument) shortcut(event gfx.KeyEvent) gfx.EventResult {
 	if d.owner.noteExit != nil {
 		return gfx.EventResult{Handled: true, Repaint: true}
@@ -807,6 +881,9 @@ func (d *fileDocument) shortcut(event gfx.KeyEvent) gfx.EventResult {
 		return d.noteWindowShortcut(event)
 	}
 
+	if result, ok := d.clipboardShortcut(event, false); ok {
+		return result
+	}
 	if event.Modifiers&(gfx.ModifierControl|gfx.ModifierMeta) == 0 || event.Release {
 		return gfx.EventResult{}
 	}
@@ -827,7 +904,13 @@ func (d *fileDocument) shortcut(event gfx.KeyEvent) gfx.EventResult {
 }
 
 func (d *fileDocument) comparisonShortcut(event gfx.KeyEvent) gfx.EventResult {
-	if event.Modifiers&(gfx.ModifierControl|gfx.ModifierMeta) == 0 || event.Release || !d.comparison.active {
+	if event.Release || !d.comparison.active {
+		return gfx.EventResult{}
+	}
+	if result, ok := d.clipboardShortcut(event, true); ok {
+		return result
+	}
+	if event.Modifiers&(gfx.ModifierControl|gfx.ModifierMeta) == 0 {
 		return gfx.EventResult{}
 	}
 	if command, ok := components.CodeEditorCommandForKey(event); ok && event.Target == hitDocumentInput && d.ready && !d.busy && !d.comparison.confirm && command.Apply(&d.editor) {
