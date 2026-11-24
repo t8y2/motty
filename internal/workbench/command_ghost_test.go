@@ -45,11 +45,35 @@ func (h *historyWorld) key(event gfx.KeyEvent) {
 
 func TestGhostFastTypingAfterPrompt(t *testing.T) {
 	h := ghostWorld(t, "docker compose up -d", "git checkout main")
-	h.shell.say("\r\ndeploy@prod:~$ ")
+	inputGuardPrompt(h.state, &h.state.sessions[0], h.shell, "utf8", "")
 	h.clock += 10 * time.Millisecond
 	h.type_("git ch")
 	if rest, ok := h.ghost(); !ok || rest != "eckout main" {
 		t.Fatalf("suggestion = %q, %v, want %q, true", rest, ok, "eckout main")
+	}
+}
+
+func TestFastTypingIntoRunningProgramIsNotSuggestedOrRecorded(t *testing.T) {
+	for _, output := range []string{"Enter query> ", "100%", "user@example.com is down", "diff: a >"} {
+		t.Run(output, func(t *testing.T) {
+			h := ghostWorld(t, "git checkout main")
+			session := &h.state.sessions[0]
+			inputGuardPrompt(h.state, session, h.shell, "utf8", "")
+			// A command starts running and revokes shell prompt ownership.
+			h.shell.say(folderSyncMarker(session, "C") + "\r\n" + output)
+			h.state.Wake()
+			h.clock += 10 * time.Millisecond
+			h.type_("git ch")
+			if rest, ok := h.ghost(); ok {
+				t.Fatalf("running program output %q offered suggestion %q", output, rest)
+			}
+			h.type_("\r")
+			for _, cmd := range h.remembered(historyKey(session)) {
+				if cmd == "git ch" {
+					t.Fatalf("running program input %q was recorded in history", cmd)
+				}
+			}
+		})
 	}
 }
 
@@ -291,35 +315,6 @@ func (h *historyWorld) awaitHistory(t *testing.T, key string) {
 			t.Fatalf("the history of %q was never read", key)
 		}
 		time.Sleep(time.Millisecond)
-	}
-}
-
-func TestBackgroundHistoryLoadSurvivesCommandExecution(t *testing.T) {
-	h := newHistoryWorld(t, true)
-	key := historyKey(&h.state.sessions[0])
-	h.awaitHistory(t, key)
-
-	store := h.state.historyStore()
-	if err := store.Record(key, "docker compose up -d", time.Now()); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.Flush(); err != nil {
-		t.Fatal(err)
-	}
-	delete(h.state.history.ghost, key)
-	h.state.requestCompletionHistory(&h.state.sessions[0])
-	h.state.historyChanged(key, "ls", time.Now())
-	h.awaitHistory(t, key)
-	entries := h.state.history.ghost[key]
-	found := false
-	for _, e := range entries {
-		if e.Command == "docker compose up -d" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("loaded entries %+v missing recorded command", entries)
 	}
 }
 

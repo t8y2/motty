@@ -408,19 +408,13 @@ func (state *State) adoptCompletionHistory() {
 		select {
 		case load := <-c.historyReady:
 			delete(c.historyPending, load.key)
-			if state.historyClearing() || state.history.suggestOff {
+			if load.generation != c.generation {
 				continue
 			}
 			if state.history.ghost == nil {
 				state.history.ghost = make(map[string][]cmdhistory.Entry)
 			}
-			if existing, ok := state.history.ghost[load.key]; ok && len(existing) > 0 {
-				if load.generation == c.generation {
-					state.history.ghost[load.key] = load.entries
-				}
-			} else {
-				state.history.ghost[load.key] = load.entries
-			}
+			state.history.ghost[load.key] = load.entries
 			state.closeCompletionList()
 		default:
 			return

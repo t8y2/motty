@@ -80,6 +80,7 @@ func (s *shell) wantNothing() {
 func TestFastTypingAfterPromptCanBeSuggestedAndRecorded(t *testing.T) {
 	s := newShell(t, 80)
 	s.out("\r\nuser@host:~$ ")
+	s.rec.SetPromptOwned(true)
 	s.now += 15 * time.Millisecond
 	s.typeEchoed("git pull")
 	line, ok := s.rec.Line(TermScreen{s.screen})
@@ -87,6 +88,19 @@ func TestFastTypingAfterPromptCanBeSuggestedAndRecorded(t *testing.T) {
 		t.Fatalf("Line() = %q, %v, want %q, true", line, ok, "git pull")
 	}
 	s.wantRecorded("git pull")
+}
+
+func TestFastTypingIntoRunningProgramIsNotSuggestedOrRecorded(t *testing.T) {
+	for _, output := range []string{"Enter query> ", "100%", "user@example.com is down", "diff: a >"} {
+		s := newShell(t, 80)
+		s.out("\r\n" + output)
+		s.now += 15 * time.Millisecond
+		s.typeEchoed("git pull")
+		if line, ok := s.rec.Line(TermScreen{s.screen}); ok {
+			t.Fatalf("output %q: Line() = %q, true; want false", output, line)
+		}
+		s.wantNothing()
+	}
 }
 
 func TestACommandAtAPromptIsRecorded(t *testing.T) {
