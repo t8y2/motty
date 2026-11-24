@@ -52,16 +52,16 @@ edit(win / "window_windows.go",
      "				posted, _, _ := postMessage.Call(state.window, wmRedraw, 0, 0)",
      '				trace("post")\n				posted, _, _ := postMessage.Call(state.window, wmRedraw, 0, 0)')
 edit(win / "window_windows.go",
-     "			frame, redrawErr := state.config.OnRedraw()\n			state.frame(frame, redrawErr)",
-     '			trace("redraw-begin")\n			frame, redrawErr := state.config.OnRedraw()\n			trace("redraw-onredraw-done")\n			state.frame(frame, redrawErr)\n			trace("redraw-end")')
+     "				frame, redrawErr := state.config.OnRedraw()\n				if err := state.frameWithText(frame, redrawErr, false); err != nil || state.window == 0 {\n					return 0\n				}\n			}\n		}\n		var paint paintStruct",
+     '				trace("redraw-begin")\n				frame, redrawErr := state.config.OnRedraw()\n				trace("redraw-onredraw-done")\n				if err := state.frameWithText(frame, redrawErr, false); err != nil || state.window == 0 {\n					return 0\n				}\n				trace("redraw-end")\n			}\n		}\n		var paint paintStruct')
 edit(win / "window_windows.go",
      "		err := state.present(int(bounds.Right), int(bounds.Bottom))\n",
      '		trace("paint-begin")\n		err := state.present(int(bounds.Right), int(bounds.Bottom))\n		trace("paint-presented")\n')
 edit(win / "window_windows.go", "	case wmChar:\n", '	case wmChar:\n		trace("char %d", first)\n')
 edit(win / "window_windows.go", "	case wmKeyDown, wmSysKeyDown:\n", '	case wmKeyDown, wmSysKeyDown:\n		trace("keydown %d", first)\n')
 edit(win / "renderer_windows.go",
-     "	return hresult(comCall(renderer.swap, 8, sync, 0))\n}",
-     '	trace("draw-done")\n	status := comCall(renderer.swap, 8, sync, 0)\n	trace("Present-returned")\n	return hresult(status)\n}')
+     "	return hresult(comCall2(renderer.swap, 8, sync, 0))\n}",
+     '	trace("draw-done")\n	status := comCall2(renderer.swap, 8, sync, 0)\n	trace("Present-returned")\n	return hresult(status)\n}')
 
 (motty / "internal/workbench/trace_tmp.go").write_text(tracer("workbench", "traceTmp", "MOTTY_PUMP_TRACE"))
 edit(motty / "internal/workbench/terminal.go",
