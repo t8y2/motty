@@ -476,8 +476,6 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 			settingsChoiceRow(page, messages.SettingsTerminalClipboard, messages.SettingsTerminalClipboardDescription, &state.terminalClipboard, settingsClipboardChoices[:], state.settingsClipboardLabel,
 				func() { state.save() }, nil)
 			page.toggleRow(state.messages.Tools.CopyOnSelectRow, state.messages.Tools.CopyOnSelectDescription, state.terminalCopyOnSelect, hitSettingsCopyOnSelect)
-			page.toggleRow(state.messages.Blocks.SettingsRow, state.messages.Blocks.SettingsDescription, state.terminalCommandBlocks, hitSettingsCommandBlocks)
-			page.toggleRow(state.messages.Blocks.MenuRow, state.messages.Blocks.MenuDescription, state.terminalBlockMenuActions, hitSettingsBlockMenuActions)
 			page.wordSeparatorsRow()
 			page.toggleRow(state.messages.Tools.RightClickPasteRow, state.messages.Tools.RightClickPasteDescription, state.terminalRightClickPaste, hitSettingsRightClickPaste)
 			page.toggleRow(state.messages.Tools.InputClickRow, state.messages.Tools.InputClickDescription, !state.terminalInputClickOff, hitSettingsInputClick)
@@ -505,6 +503,12 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 		state.paintAutofillSettings(page)
 		state.paintBackgroundSettings(page)
 		state.paintTerminalFindSettingsGroup(page)
+		// Command block settings come last so they do not move the existing
+		// terminal/background rows and their fixed-height test snapshots.
+		page.group("", func() {
+			page.toggleRow(state.messages.Blocks.SettingsRow, state.messages.Blocks.SettingsDescription, state.terminalCommandBlocks, hitSettingsCommandBlocks)
+			page.toggleRow(state.messages.Blocks.MenuRow, state.messages.Blocks.MenuDescription, state.terminalBlockMenuActions, hitSettingsBlockMenuActions)
+		})
 	})
 }
 
