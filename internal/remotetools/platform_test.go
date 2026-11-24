@@ -5,6 +5,10 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"unicode/utf16"
@@ -103,7 +107,7 @@ func (r *captureRunner) RunCommand(_ context.Context, c string, _ int) ([]byte, 
 func TestDockerCommandSurvivesWindowsDefaultShellAndMissingCLI(t *testing.T) {
 	r := &captureRunner{output: []byte("motty-docker-missing\n"), err: errors.New("exit 127")}
 	_, err := Containers(context.Background(), ForSystem(r, "windows"))
-	if !errors.Is(err, ErrNoDocker) {
+	if !errors.Is(err, ErrNoContainerRuntime) {
 		t.Fatal(err)
 	}
 	script := decodePowerShell(t, r.command)
@@ -130,7 +134,7 @@ func TestDarwinSnapshotSkipsProcfsAndDockerFindsDesktop(t *testing.T) {
 
 func TestDarwinMissingDockerMarksTheCommandOutput(t *testing.T) {
 	r := &captureRunner{output: []byte("motty-docker-missing\n"), err: errors.New("exit 127")}
-	if _, err := Containers(context.Background(), ForSystem(r, "darwin")); !errors.Is(err, ErrNoDocker) {
+	if _, err := Containers(context.Background(), ForSystem(r, "darwin")); !errors.Is(err, ErrNoContainerRuntime) {
 		t.Fatalf("missing macOS Docker = %v", err)
 	}
 	// A command runner returns standard output only, so the marker must not be
@@ -138,5 +142,99 @@ func TestDarwinMissingDockerMarksTheCommandOutput(t *testing.T) {
 	// status instead of the explicit "not installed" state.
 	if strings.Contains(r.command, ">&2") || !strings.Contains(r.command, "printf 'motty-docker-missing") {
 		t.Fatalf("missing-CLI marker is not on stdout: %s", r.command)
+	}
+}
+
+// fakeEngineDir holds a script named after one engine that prints its own name
+// and arguments, so the chain a server would run is executed, not just read.
+func fakeEngineDir(t *testing.T, names ...string) string {
+	t.Helper()
+	dir := t.TempDir()
+	for _, name := range names {
+		script := "#!/bin/sh\necho \"" + name + " $*\"\n"
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+type localShellRunner struct{ path string }
+
+func (r localShellRunner) RunCommand(ctx context.Context, command string, _ int) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
+	cmd.Env = []string{"PATH=" + r.path}
+	return cmd.Output()
+}
+
+func skipWithoutUnixEngines(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the POSIX engine chain runs on the remote Unix shell")
+	}
+	for _, path := range []string{"/usr/local/bin/docker", "/usr/local/bin/podman"} {
+		if _, err := os.Stat(path); err == nil {
+			t.Skip(path + " exists on this machine and would answer instead of the fixture")
+		}
+	}
+}
+
+func TestContainerCommandFallsBackToPodmanOnAUnixServer(t *testing.T) {
+	skipWithoutUnixEngines(t)
+	runner := ForSystem(localShellRunner{path: fakeEngineDir(t, "podman")}, "linux")
+	output, err := runner.RunCommand(context.Background(), "docker ps -a", 1024)
+	if err != nil || strings.TrimSpace(string(output)) != "podman ps -a" {
+		t.Fatalf("output=%q err=%v", output, err)
+	}
+	if got, err := DetectRuntime(context.Background(), runner); err != nil || got != RuntimePodman {
+		t.Fatalf("runtime=%v err=%v", got, err)
+	}
+}
+
+func TestContainerCommandPrefersDockerWhenBothExist(t *testing.T) {
+	skipWithoutUnixEngines(t)
+	runner := ForSystem(localShellRunner{path: fakeEngineDir(t, "docker", "podman")}, "linux")
+	output, err := runner.RunCommand(context.Background(), "docker ps -a", 1024)
+	if err != nil || strings.TrimSpace(string(output)) != "docker ps -a" {
+		t.Fatalf("output=%q err=%v", output, err)
+	}
+	if got, err := DetectRuntime(context.Background(), runner); err != nil || got != RuntimeDocker {
+		t.Fatalf("runtime=%v err=%v", got, err)
+	}
+}
+
+func TestNeitherEngineIsReportedAsMissingRuntime(t *testing.T) {
+	skipWithoutUnixEngines(t)
+	runner := ForSystem(localShellRunner{path: t.TempDir()}, "linux")
+	if _, err := Containers(context.Background(), runner); !errors.Is(err, ErrNoContainerRuntime) {
+		t.Fatalf("Containers = %v", err)
+	}
+	if _, err := DetectRuntime(context.Background(), runner); !errors.Is(err, ErrNoContainerRuntime) {
+		t.Fatalf("DetectRuntime = %v", err)
+	}
+}
+
+func TestWindowsProbeAndCommandShareTheEngineSearch(t *testing.T) {
+	r := &captureRunner{output: []byte("podman\n")}
+	if got, err := DetectRuntime(context.Background(), ForSystem(r, "windows")); err != nil || got != RuntimePodman {
+		t.Fatalf("runtime=%v err=%v", got, err)
+	}
+	script := decodePowerShell(t, r.command)
+	if !strings.Contains(script, "podman") || !strings.Contains(script, "WriteLine($engine)") {
+		t.Fatal("the probe does not search for Podman")
+	}
+}
+
+func TestTerminalCommandsUseTheDetectedEngine(t *testing.T) {
+	if command, ok := LogsCommand(RuntimePodman, "web-1"); !ok || command != "podman logs -f --tail 200 web-1" {
+		t.Fatalf("logs: %q", command)
+	}
+	if command, ok := PullCommand(RuntimePodman, "nginx:1"); !ok || command != "podman pull nginx:1" {
+		t.Fatalf("pull: %q", command)
+	}
+	full := "0f1e2d3c4b5a" + strings.Repeat("0", 52)
+	command, err := ShellCommand(context.Background(), &shellProbeRunner{}, RuntimePodman, full)
+	if err != nil || command != "podman exec -it "+full+" sh" {
+		t.Fatalf("shell: %q %v", command, err)
 	}
 }

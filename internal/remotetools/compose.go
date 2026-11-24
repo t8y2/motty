@@ -35,8 +35,8 @@ func Compose(ctx context.Context, runner Runner) ([]ComposeProject, error) {
 			strings.Contains(text, "unknown command \"ls\"") {
 			return nil, ErrComposeListUnsupported
 		}
-		if missingDockerCLI(output) {
-			return nil, ErrNoDocker
+		if missingContainerCLI(output) {
+			return nil, ErrNoContainerRuntime
 		}
 		if text == "" {
 			return nil, err

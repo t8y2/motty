@@ -41,7 +41,7 @@ func TestReadContainerEnvironmentRejectsUnsafeIDsBeforeRunningACommand(t *testin
 
 func TestReadContainerEnvironmentClassifiesDockerAndMalformedOutput(t *testing.T) {
 	missing := &environmentRunner{output: []byte("sh: docker: not found"), err: errors.New("exit status 127")}
-	if _, err := ReadContainerEnvironment(context.Background(), missing, "0f1e2d3c4b5a"); !errors.Is(err, ErrNoDocker) {
+	if _, err := ReadContainerEnvironment(context.Background(), missing, "0f1e2d3c4b5a"); !errors.Is(err, ErrNoContainerRuntime) {
 		t.Fatalf("missing docker err=%v", err)
 	}
 	refused := &environmentRunner{output: []byte("permission denied\nsecond line"), err: errors.New("exit status 1")}

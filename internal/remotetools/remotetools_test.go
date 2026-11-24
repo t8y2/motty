@@ -227,7 +227,7 @@ func TestParsingTheContainerListPutsRunningOnesFirst(t *testing.T) {
 
 func TestContainersExplainAMissingOrRefusedDocker(t *testing.T) {
 	missing := &fixedRunner{output: "sh: 1: docker: not found\n", err: errors.New("exit status 127")}
-	if _, err := Containers(context.Background(), missing); !errors.Is(err, ErrNoDocker) {
+	if _, err := Containers(context.Background(), missing); !errors.Is(err, ErrNoContainerRuntime) {
 		t.Fatalf("missing docker: %v", err)
 	}
 	refused := &fixedRunner{output: "permission denied while trying to connect to the Docker daemon socket\nsecond line\n", err: errors.New("exit status 1")}
@@ -340,7 +340,7 @@ func (runner *shellProbeRunner) RunCommand(_ context.Context, command string, _ 
 
 func TestContainerShellUsesAPresentShWithoutLoginFlags(t *testing.T) {
 	runner := &shellProbeRunner{}
-	command, err := ShellCommand(context.Background(), runner, "0f1e2d3c4b5a")
+	command, err := ShellCommand(context.Background(), runner, RuntimeDocker, "0f1e2d3c4b5a")
 	full := "0f1e2d3c4b5a" + strings.Repeat("0", 52)
 	if err != nil || command != "docker exec -it "+full+" sh" || len(runner.commands) != 2 ||
 		runner.commands[0] != "docker inspect --format '{{.Id}}' 0f1e2d3c4b5a 2>&1" ||
@@ -351,13 +351,13 @@ func TestContainerShellUsesAPresentShWithoutLoginFlags(t *testing.T) {
 
 func TestContainerShellFallsBackOnlyBeforeTheInteractiveSessionStarts(t *testing.T) {
 	runner := &shellProbeRunner{missing: map[string]bool{"sh": true}}
-	command, err := ShellCommand(context.Background(), runner, "0f1e2d3c4b5a")
+	command, err := ShellCommand(context.Background(), runner, RuntimeDocker, "0f1e2d3c4b5a")
 	full := "0f1e2d3c4b5a" + strings.Repeat("0", 52)
 	if err != nil || command != "docker exec -it "+full+" bash" || len(runner.commands) != 3 {
 		t.Fatalf("command=%q probes=%q err=%v", command, runner.commands, err)
 	}
 	runner.missing = map[string]bool{"sh": true, "bash": true, "ash": true}
-	if command, err := ShellCommand(context.Background(), runner, "0f1e2d3c4b5a"); command != "" || !errors.Is(err, ErrNoShell) {
+	if command, err := ShellCommand(context.Background(), runner, RuntimeDocker, "0f1e2d3c4b5a"); command != "" || !errors.Is(err, ErrNoShell) {
 		t.Fatalf("shell-less container returned %q, %v", command, err)
 	}
 }
@@ -365,7 +365,7 @@ func TestContainerShellFallsBackOnlyBeforeTheInteractiveSessionStarts(t *testing
 func TestContainerShellRefusesBadIDsAndDaemonErrors(t *testing.T) {
 	runner := &shellProbeRunner{}
 	for _, id := range []string{"web", "a;exit", "-f", "ABCDEF123456"} {
-		if command, err := ShellCommand(context.Background(), runner, id); command != "" || err == nil {
+		if command, err := ShellCommand(context.Background(), runner, RuntimeDocker, id); command != "" || err == nil {
 			t.Fatalf("invalid ID %q: command=%q err=%v", id, command, err)
 		}
 	}
@@ -373,14 +373,14 @@ func TestContainerShellRefusesBadIDsAndDaemonErrors(t *testing.T) {
 		t.Fatalf("invalid IDs reached the host: %q", runner.commands)
 	}
 	runner.refused = true
-	if command, err := ShellCommand(context.Background(), runner, "0f1e2d3c4b5a"); command != "" || err == nil || errors.Is(err, ErrNoShell) || len(runner.commands) != 2 {
+	if command, err := ShellCommand(context.Background(), runner, RuntimeDocker, "0f1e2d3c4b5a"); command != "" || err == nil || errors.Is(err, ErrNoShell) || len(runner.commands) != 2 {
 		t.Fatalf("daemon error became no-shell: command=%q err=%v probes=%q", command, err, runner.commands)
 	}
 }
 
 func TestContainerShellDoesNotMisreportADeletedWorkingDirectoryAsNoShell(t *testing.T) {
 	runner := &shellProbeRunner{runtimeError: "OCI runtime exec failed: chdir to cwd /app: no such file or directory"}
-	command, err := ShellCommand(context.Background(), runner, "0f1e2d3c4b5a")
+	command, err := ShellCommand(context.Background(), runner, RuntimeDocker, "0f1e2d3c4b5a")
 	if command != "" || err == nil || errors.Is(err, ErrNoShell) || len(runner.commands) != 2 || !strings.Contains(err.Error(), "chdir to cwd") {
 		t.Fatalf("runtime failure hidden as shell absence: command=%q err=%v probes=%q", command, err, runner.commands)
 	}
@@ -392,7 +392,7 @@ func TestContainerActionsOnlyTakeValidNames(t *testing.T) {
 		if err := Do(context.Background(), runner, Stop, id); err == nil {
 			t.Fatalf("%q was accepted", id)
 		}
-		if _, ok := LogsCommand(id); ok {
+		if _, ok := LogsCommand(RuntimeDocker, id); ok {
 			t.Fatalf("logs for %q", id)
 		}
 	}
@@ -404,7 +404,7 @@ func TestContainerActionsOnlyTakeValidNames(t *testing.T) {
 			t.Fatalf("%q, %v", runner.asked, err)
 		}
 	}
-	if command, ok := LogsCommand("web-1"); !ok || command != "docker logs -f --tail 200 web-1" {
+	if command, ok := LogsCommand(RuntimeDocker, "web-1"); !ok || command != "docker logs -f --tail 200 web-1" {
 		t.Fatalf("logs: %q", command)
 	}
 }
@@ -483,11 +483,11 @@ func TestLegacyResourceRetriesOnlyTemplateFieldFailures(t *testing.T) {
 		t.Fatalf("failed fallback=%v commands=%q", err, runner.commands)
 	}
 	runner = &scriptedRunner{results: []scriptedResult{{output: "Error response from daemon: No such file or directory", err: errors.New("exit status 1")}}}
-	if _, err := Resources(context.Background(), runner, Images); errors.Is(err, ErrNoDocker) {
+	if _, err := Resources(context.Background(), runner, Images); errors.Is(err, ErrNoContainerRuntime) {
 		t.Fatalf("daemon error misdiagnosed as a missing Docker executable: %v", err)
 	}
 	runner = &scriptedRunner{results: []scriptedResult{{output: "sh: 1: docker: not found", err: errors.New("exit status 127")}}}
-	if _, err := Resources(context.Background(), runner, Images); !errors.Is(err, ErrNoDocker) {
+	if _, err := Resources(context.Background(), runner, Images); !errors.Is(err, ErrNoContainerRuntime) {
 		t.Fatalf("missing Docker executable was not identified: %v", err)
 	}
 }
@@ -604,11 +604,11 @@ func TestCreatingAVolumeOrNetworkRunsOneFixedCommandAndRefusesUnsafeNames(t *tes
 }
 
 func TestPullCommandIsOnlyBuiltForAnImageReference(t *testing.T) {
-	if command, ok := PullCommand("ghcr.io/org/app:1.2@sha256:abc"); !ok || command != "docker pull ghcr.io/org/app:1.2@sha256:abc" {
+	if command, ok := PullCommand(RuntimeDocker, "ghcr.io/org/app:1.2@sha256:abc"); !ok || command != "docker pull ghcr.io/org/app:1.2@sha256:abc" {
 		t.Errorf("got %q, %v", command, ok)
 	}
 	for _, reference := range []string{"nginx; reboot", "a b", "--all-tags", "", "$(id)"} {
-		if command, ok := PullCommand(reference); ok {
+		if command, ok := PullCommand(RuntimeDocker, reference); ok {
 			t.Errorf("%q became %q", reference, command)
 		}
 	}

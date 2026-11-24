@@ -46,8 +46,8 @@ func TestParseContainerUsagesRejectsMalformedLines(t *testing.T) {
 
 func TestContainerUsagesReportsAMissingDockerCLI(t *testing.T) {
 	runner := &fixedRunner{output: "sh: 1: docker: not found", err: errors.New("exit status 127")}
-	if _, err := ContainerUsages(context.Background(), runner); !errors.Is(err, ErrNoDocker) {
-		t.Fatalf("err = %v, want ErrNoDocker", err)
+	if _, err := ContainerUsages(context.Background(), runner); !errors.Is(err, ErrNoContainerRuntime) {
+		t.Fatalf("err = %v, want ErrNoContainerRuntime", err)
 	}
 	if !strings.HasPrefix(runner.asked, "docker stats --no-stream ") {
 		t.Fatalf("asked %q", runner.asked)

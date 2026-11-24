@@ -28,8 +28,8 @@ func ContainerUsages(ctx context.Context, runner Runner) ([]ContainerUsage, erro
 	output, err := runner.RunCommand(ctx, containerUsageCommand, maxOutput)
 	if err != nil {
 		text := strings.TrimSpace(string(output))
-		if missingDockerCLI(output) {
-			return nil, ErrNoDocker
+		if missingContainerCLI(output) {
+			return nil, ErrNoContainerRuntime
 		}
 		if text == "" {
 			return nil, err

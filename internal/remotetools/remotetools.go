@@ -1,5 +1,5 @@
-// Package remotetools lists and acts on a server's processes and Docker
-// containers over an authenticated connection. Every command is fixed text;
+// Package remotetools lists and acts on a server's processes and Docker or
+// Podman containers over an authenticated connection. Every command is fixed text;
 // what varies is a number or a validated container name, never free text, so
 // nothing the server prints or the user types can become shell syntax.
 package remotetools
@@ -24,8 +24,8 @@ type Runner interface {
 var (
 	// ErrUnsupported means the server's ps does not understand the options used.
 	ErrUnsupported = errors.New("remotetools: this server's ps is not supported")
-	// ErrNoDocker means Docker is not installed on the server.
-	ErrNoDocker = errors.New("remotetools: docker is not installed")
+	// ErrNoContainerRuntime means the server has neither Docker nor Podman.
+	ErrNoContainerRuntime = errors.New("remotetools: neither docker nor podman is installed")
 	// ErrNoShell means none of the supported interactive shells could start.
 	ErrNoShell = errors.New("remotetools: no supported shell inside this container")
 	// ErrMalformed means the output was not what the command prints.
@@ -276,8 +276,8 @@ func Containers(ctx context.Context, runner Runner) ([]Container, error) {
 	}
 	if err != nil {
 		text := strings.TrimSpace(string(output))
-		if missingDockerCLI(output) {
-			return nil, ErrNoDocker
+		if missingContainerCLI(output) {
+			return nil, ErrNoContainerRuntime
 		}
 		if text == "" {
 			return nil, err
@@ -390,16 +390,16 @@ func Do(ctx context.Context, runner Runner, action Action, id string) error {
 
 // LogsCommand is the command line that follows a container's log, for the user
 // to run in their own terminal.
-func LogsCommand(id string) (string, bool) {
+func LogsCommand(runtime Runtime, id string) (string, bool) {
 	if !validName(id) {
 		return "", false
 	}
-	return "docker logs -f --tail 200 " + id, true
+	return runtime.CLI() + " logs -f --tail 200 " + id, true
 }
 
 // ShellCommand probes a fixed set of shells before opening a PTY. A shell's
 // later exit status belongs to the user and never triggers another candidate.
-func ShellCommand(ctx context.Context, runner Runner, id string) (string, error) {
+func ShellCommand(ctx context.Context, runner Runner, runtime Runtime, id string) (string, error) {
 	if !containerIDPattern.MatchString(id) {
 		return "", fmt.Errorf("remotetools: %q is not a container id", id)
 	}
@@ -420,7 +420,7 @@ func ShellCommand(ctx context.Context, runner Runner, id string) (string, error)
 	for _, shell := range [...]string{"sh", "bash", "ash"} {
 		output, err := runner.RunCommand(ctx, "docker exec "+id+" "+shell+" -c : 2>&1", maxOutput)
 		if err == nil {
-			return "docker exec -it " + id + " " + shell, nil
+			return runtime.CLI() + " exec -it " + id + " " + shell, nil
 		}
 		message := strings.ToLower(string(output))
 		if strings.Contains(message, "exec: \""+shell+"\"") &&

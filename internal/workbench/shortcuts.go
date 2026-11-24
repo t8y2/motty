@@ -51,6 +51,7 @@ const (
 	shortcutPaneMaximize
 	shortcutSettings
 	shortcutBroadcast
+	shortcutBroadcastAll
 	shortcutActionCount
 )
 
@@ -79,9 +80,10 @@ func newShortcutMap() shortcutMap {
 // goldens: production takes this platform's chords, while a golden pins one
 // platform's so the same snapshots hold everywhere.
 var (
-	primaryModifier = keymap.Primary
-	paneSplitChords = defaultPaneSplitChords
-	broadcastChord  = defaultBroadcastChord
+	primaryModifier   = keymap.Primary
+	paneSplitChords   = defaultPaneSplitChords
+	broadcastChord    = defaultBroadcastChord
+	broadcastAllChord = defaultBroadcastAllChord
 )
 
 func defaultShortcuts() shortcutMap {
@@ -133,6 +135,7 @@ func defaultShortcuts() shortcutMap {
 	shortcuts.chords.Set(shortcutAcceptSuggestion, keymap.Chord{Key: gfx.KeyRight})
 	shortcuts.chords.Set(shortcutSettings, keymap.Chord{Modifiers: primary, Char: ','})
 	shortcuts.chords.Set(shortcutBroadcast, broadcastChord())
+	shortcuts.chords.Set(shortcutBroadcastAll, broadcastAllChord())
 	shortcuts.refreshLabels()
 	return shortcuts
 }
@@ -417,6 +420,8 @@ func (action shortcutAction) String() string {
 		return "settings"
 	case shortcutBroadcast:
 		return "broadcast_input"
+	case shortcutBroadcastAll:
+		return "broadcast_input_all"
 	default:
 		return ""
 	}
@@ -887,6 +892,11 @@ func (state *State) executeShortcut(action shortcutAction) gfx.EventResult {
 			return gfx.EventResult{}
 		}
 		state.toggleBroadcast()
+	case shortcutBroadcastAll:
+		if state.activeSection != sectionTerminal {
+			return gfx.EventResult{}
+		}
+		state.toggleBroadcastAll()
 	}
 	return result
 }

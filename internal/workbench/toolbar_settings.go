@@ -223,7 +223,7 @@ func (state *State) toolbarLabel(id gfx.ID) string {
 	case hitWindowSettings:
 		return m.NavSettings
 	case hitBroadcast:
-		return m.Tools.BroadcastStart
+		return m.Tools.BroadcastTip
 	case hitTerminalSnippets:
 		return m.Tools.SnippetTip
 	case hitPaneSplitHorizontal:

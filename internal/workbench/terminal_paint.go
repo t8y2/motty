@@ -136,9 +136,10 @@ func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools
 	tools = append(tools, barTool{id: hitTerminalSnippets, icon: iconSnippets, hint: state.messages.Tools.SnippetTip, disabled: session.term.shell == nil, style: iconButtonQuiet})
 	tools = append(tools, barTool{id: hitPaneSplitVertical, icon: iconRows2, hint: state.messages.PaneSplitVertical, disabled: verticalDisabled, style: iconButtonQuiet, groupEnd: !inSplit})
 	tools = append(tools, barTool{id: hitPaneSplitHorizontal, icon: iconColumns2, hint: state.messages.PaneSplitHorizontal, disabled: horizontalDisabled, style: iconButtonQuiet})
-	if inSplit && !managed {
-		hint, style := state.messages.Tools.BroadcastStart, iconButtonQuiet
-		enabled := workspaceCanBroadcast(state.workspaceConnectionState(state.deck.ActiveWorkspace()))
+	if !managed {
+		hint, style := state.messages.Tools.BroadcastTip, iconButtonQuiet
+		tabReady, allReady := state.broadcastAvailable()
+		enabled := tabReady || allReady
 		if state.broadcasting(session.ID) {
 			hint, style = state.messages.Tools.BroadcastStop, iconButtonActive
 			enabled = true

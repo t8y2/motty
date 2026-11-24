@@ -43,7 +43,7 @@ func TestWorkspaceBroadcastWaitsForEveryAttemptAndTwoShells(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	state.Click(hitBroadcast)
+	state.Click(hitBroadcastTab)
 	if state.broadcast != 0 || state.status != state.messages.Tools.StatusBroadcastWait {
 		t.Fatalf("early broadcast = %d, status = %q", state.broadcast, state.status)
 	}
@@ -54,14 +54,14 @@ func TestWorkspaceBroadcastWaitsForEveryAttemptAndTwoShells(t *testing.T) {
 	state.Wake()
 	first, _ := state.sessionByIDPointer(sessions[0].ID)
 	first.term.live = true
-	state.Click(hitBroadcast)
+	state.Click(hitBroadcastTab)
 	if state.broadcast != 0 || state.status != state.messages.Tools.StatusBroadcastWait {
 		t.Fatalf("shell-wait broadcast = %d, status = %q", state.broadcast, state.status)
 	}
 
 	second, _ := state.sessionByIDPointer(sessions[1].ID)
 	second.term.live = true
-	state.Click(hitBroadcast)
+	state.Click(hitBroadcastTab)
 	if state.broadcast != workspaceID || state.status == state.messages.Tools.StatusBroadcastWait {
 		t.Fatalf("ready broadcast = %d, status = %q", state.broadcast, state.status)
 	}
@@ -101,7 +101,7 @@ func TestWorkspaceBroadcastNeedsTwoConnectedShellsAfterFailuresSettle(t *testing
 	if workspaceCanBroadcast(state.workspaceConnectionState(workspaceID)) {
 		t.Fatal("one connected shell could broadcast")
 	}
-	state.Click(hitBroadcast)
+	state.Click(hitBroadcastTab)
 	if state.broadcast != 0 || state.status != state.messages.Tools.StatusBroadcastNeedsTwo {
 		t.Fatalf("broadcast = %d, status = %q", state.broadcast, state.status)
 	}
@@ -131,7 +131,7 @@ func TestWorkspaceBroadcastClearsOnTabChangeLeaveAndNewLaunch(t *testing.T) {
 		testWorkspaceHost("web", "web.example.com"),
 		testWorkspaceHost("db", "db.example.com"),
 	})
-	state.Click(hitBroadcast)
+	state.Click(hitBroadcastTab)
 	if state.broadcast != workspaceID {
 		t.Fatalf("broadcast = %d", state.broadcast)
 	}
@@ -151,7 +151,7 @@ func TestWorkspaceBroadcastClearsOnTabChangeLeaveAndNewLaunch(t *testing.T) {
 		session, _ := state.sessionByIDPointer(launched.ID)
 		session.term.live = true
 	}
-	state.Click(hitBroadcast)
+	state.Click(hitBroadcastTab)
 	expected := state.broadcast
 	state.activeSection = sectionHosts
 	state.leaveTerminalSection()
@@ -160,7 +160,7 @@ func TestWorkspaceBroadcastClearsOnTabChangeLeaveAndNewLaunch(t *testing.T) {
 	}
 
 	state.activeSection = sectionTerminal
-	state.Click(hitBroadcast)
+	state.Click(hitBroadcastTab)
 	if _, _, err := state.launchWorkspace(WorkspaceLaunchPlan{
 		Hosts:  []Host{testWorkspaceHost("api", "api.example.com"), testWorkspaceHost("cache", "cache.example.com")},
 		Layout: layoutcore.GridSpec(2),
@@ -193,7 +193,7 @@ func TestWorkspaceBroadcastClearsWhenAPaneReconnects(t *testing.T) {
 		session, _ := state.sessionByIDPointer(launched.ID)
 		session.term.live = true
 	}
-	state.Click(hitBroadcast)
+	state.Click(hitBroadcastTab)
 	if state.broadcast != workspaceID {
 		t.Fatalf("broadcast = %d", state.broadcast)
 	}
@@ -231,7 +231,7 @@ func TestWorkspaceBroadcastSkipsAFailedShellAndStopsOnReconnect(t *testing.T) {
 		status.Err = errTestWorkspaceFailure
 	})
 	state.Wake()
-	state.Click(hitBroadcast)
+	state.Click(hitBroadcastTab)
 	if state.broadcast != workspaceID {
 		t.Fatalf("broadcast = %d", state.broadcast)
 	}

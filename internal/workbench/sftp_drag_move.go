@@ -336,8 +336,34 @@ func (state *State) ensureSFTPPanelDrag(view *sftpView) *sftpPanelDrag {
 		drag.drop = func(source, target gfx.ID) {
 			state.sftpPanelDragDrop(view, source, target)
 		}
+		drag.state.OnMove = func(event gfx.PointerEvent) {
+			state.sftpPanelDragMoved(view, event)
+		}
 	}
 	return drag
+}
+
+// sftpPanelDragMoved lets a drag of a row leave the application: once the
+// pointer is outside every Motty window, the desktop takes the gesture and the
+// files are offered to it. Until then the panel keeps its own move targets.
+func (state *State) sftpPanelDragMoved(view *sftpView, event gfx.PointerEvent) {
+	if event.Kind != gfx.PointerMove || !pointOutsideViewport(event) || !view.panelDrag.state.Dragging() {
+		return
+	}
+	if state.ownWindowAt(gfx.Point{X: event.ScreenX, Y: event.ScreenY}, nil) {
+		return
+	}
+	folder := view.active()
+	if !state.sftpPanelCanDrag(view, folder) {
+		return
+	}
+	entries := state.sftpPanelDraggedEntries(view, view.panelDrag.state.Source())
+	if len(entries) == 0 {
+		return
+	}
+	directory, local := folder.path, view.local
+	view.cancelPanelDrag()
+	state.dragFilesOut(nil, view, entries, directory, local)
 }
 
 func (state *State) sftpPanelDraggedEntries(view *sftpView, source gfx.ID) []sftpclient.Entry {

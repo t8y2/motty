@@ -112,7 +112,7 @@ func TestReadContainerDetailsBoundsTheInspectPayload(t *testing.T) {
 
 func TestReadContainerDetailsReportsAMissingDockerCLI(t *testing.T) {
 	runner := &fixedRunner{output: "sh: 1: docker: not found", err: errors.New("exit status 127")}
-	if _, err := ReadContainerDetails(context.Background(), runner, "0f1e2d3c4b5a"); !errors.Is(err, ErrNoDocker) {
-		t.Fatalf("err = %v, want ErrNoDocker", err)
+	if _, err := ReadContainerDetails(context.Background(), runner, "0f1e2d3c4b5a"); !errors.Is(err, ErrNoContainerRuntime) {
+		t.Fatalf("err = %v, want ErrNoContainerRuntime", err)
 	}
 }
