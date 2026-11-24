@@ -117,16 +117,16 @@ type sftpFolder struct {
 	crumbBoxes       []sftpCrumbBox // ancestor breadcrumb boxes in the last paint
 	listScroll       *ui.ScrollState
 	listReady        bool
-	pathField      sftpPathField
-	filterEditor   text.Editor
-	filterInput    app.TextInput
-	filterUI       ui.Field
-	filterUIBound  bool
-	filterReady    bool
-	filterOpen     bool
-	showHidden     bool
-	pathEditing    bool
-	headerMenuOpen bool
+	pathField        sftpPathField
+	filterEditor     text.Editor
+	filterInput      app.TextInput
+	filterUI         ui.Field
+	filterUIBound    bool
+	filterReady      bool
+	filterOpen       bool
+	showHidden       bool
+	pathEditing      bool
+	headerMenuOpen   bool
 	// menuWindow is the window view a docked panel's More menu is declared
 	// through: the page owns the menu, but its rows and actions are the
 	// window's. Made when the menu first opens.
