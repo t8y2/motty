@@ -476,7 +476,7 @@ func (state *State) paintWorkspaceLibraryRow(canvas *gfx.Canvas, bounds gfx.Rect
 	if expanded {
 		target = float32(math.Pi)
 	}
-	transform := gfx.IconTransform{Rotate: canvas.Animate(rowID, 0, target, gfx.Motion{Duration: 160 * time.Millisecond, Easing: gfx.EaseOut})}
+	transform := gfx.IconTransform{Rotate: canvas.Animate(rowID, 0, target, gfx.SpringMotion(220*time.Millisecond, 0))}
 	canvas.DrawIconTransformed(lucideIcons[iconChevronDown], gfx.Rect{
 		X: bounds.X + 16, Y: bounds.Y + 30, Width: 16, Height: 16,
 	}, chevronColor, transform)
