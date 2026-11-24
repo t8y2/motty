@@ -893,13 +893,15 @@ func (state *State) finishStartingConnection(session *Session, automatic bool) {
 func (state *State) Wake() {
 	state.drainAppLockResults()
 	if state.appAccessBlocked() {
-		// File transfers the user already accepted may consume their protocol
-		// stream. All other terminal output is left for the normal wake on unlock.
+		// Keep connected programs moving while their screens are concealed. The
+		// regular pump bounds its backlog and suppresses interactive effects
+		// while locked; new shells and automation wait for the normal wake.
 		for i := range state.sessions {
 			s := &state.sessions[i]
-			if (s.transfer.phase == transferRunning || s.transfer.phase == transferClosing) && s.term != nil && s.term.shell != nil {
-				rx := s.term.shell.Drain(s.term.rx)
-				s.term.rx = state.feedTransfer(s, rx)
+			if s.term != nil && s.term.shell != nil {
+				state.pump(s)
+			}
+			if s.transfer.phase == transferRunning || s.transfer.phase == transferClosing {
 				state.pumpSessionTransfer(s)
 			}
 		}
