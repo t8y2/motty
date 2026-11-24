@@ -296,10 +296,11 @@ can read and alter the session, including the password: the switch states that,
 and the status line reports the connection as **Not encrypted** (a tunneled host
 still reports the SSH protection). Go leaves the TLS suites that use RSA key
 exchange out of its defaults; a server that offers nothing newer is reached by
-the host's **Allow legacy TLS** switch, or by **Retry with legacy TLS** on the
-failure page, which turns that switch on and saves it. Either adds those
-AES-CBC and AES-GCM suites to the offer. It is off by default because RSA key
-exchange has no forward secrecy and CBC has known weaknesses. NLA starts with
+the host's **TLS compatibility mode** switch, or by **Retry with TLS
+compatibility mode** on the failure page, which turns that switch on and saves
+it. Either adds those AES-CBC, AES-GCM and 3DES suites to the offer and probes
+down to TLS 1.0 when needed. It is off by default because RSA key exchange has
+no forward secrecy and CBC/3DES have known weaknesses. NLA starts with
 SPNEGO; if token negotiation fails before credentials are sent, it reconnects
 once using raw NTLM tokens for older WinPR servers such as GNOME Remote Desktop
 on Ubuntu 22.04. Both paths keep certificate checks, NTLMv2 MIC/channel binding

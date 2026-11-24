@@ -374,12 +374,37 @@ func (c *Client) Connect() error {
 	if c.selectedProtocol != x224.ProtocolRDP {
 		c.setState(StateTLSHandshake)
 		if err := c.upgradeTLS(); err != nil {
-			if c.selectedProtocol != x224.ProtocolHybrid || errors.Is(err, ErrCertificateRejected) {
+			if errors.Is(err, ErrCertificateRejected) {
 				c.Close()
 				return err
 			}
-			// CredSSP path — initial TLS failed, will probe below.
-			initialTLSErr = err
+			if c.selectedProtocol == x224.ProtocolHybrid {
+				// CredSSP path — initial TLS failed, will probe below.
+				initialTLSErr = err
+			} else if c.opts.LegacyTLS {
+				// ProtocolSSL: probe pinned TLS versions (1.2 -> 1.1 -> 1.0) only when LegacyTLS is enabled.
+				tlsFallbackOK := false
+				tlsVersions := []uint16{tls.VersionTLS12, tls.VersionTLS11, tls.VersionTLS10}
+				tlsNames := []string{"TLS 1.2", "TLS 1.1", "TLS 1.0"}
+				for i, tlsVer := range tlsVersions {
+					c.log.LogAttrs(context.Background(), slog.LevelInfo, "retrying TLS-only",
+						slog.String("tls", tlsNames[i]))
+					if reconnErr := c.reconnectWithTLS(x224.ProtocolSSL, tlsVer, tlsVer); reconnErr == nil {
+						tlsFallbackOK = true
+						break
+					} else if errors.Is(reconnErr, ErrCertificateRejected) {
+						c.Close()
+						return reconnErr
+					}
+				}
+				if !tlsFallbackOK {
+					c.Close()
+					return err
+				}
+			} else {
+				c.Close()
+				return err
+			}
 		}
 	}
 
@@ -638,9 +663,7 @@ func (c *Client) negotiateX224(requestedProtos uint32) error {
 // the TLS 1.0-1.2 suites of the default offer plus the RSA key exchange ones a
 // server that predates ECDHE may require. Go leaves the RSA key exchange suites
 // out of its defaults (GODEBUG tlsrsakex) and the CBC-SHA256 one out of every
-// list it builds, so naming them in CipherSuites is what re-enables them. 3DES
-// and RC4 stay out even here: no Windows server that speaks TLS for RDP needs
-// them.
+// list it builds, so naming them in CipherSuites is what re-enables them.
 func legacyTLSCipherSuites() []uint16 {
 	suites := make([]uint16, 0, 16)
 	for _, suite := range tls.CipherSuites() {
@@ -657,6 +680,7 @@ func legacyTLSCipherSuites() []uint16 {
 		tls.TLS_RSA_WITH_AES_128_CBC_SHA,
 		tls.TLS_RSA_WITH_AES_256_CBC_SHA,
 		tls.TLS_RSA_WITH_AES_128_CBC_SHA256,
+		tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
 	)
 }
 
@@ -686,15 +710,15 @@ func (c *Client) upgradeTLS() error {
 		},
 	}
 
-	// Apply version overrides from TLS probing, or cap at 1.2 for CredSSP.
+	// Apply version overrides from TLS probing, or cap at 1.2 for RDP.
 	if c.tlsMinVersion != 0 {
 		tlsConfig.MinVersion = c.tlsMinVersion
 	}
 	if c.tlsMaxVersion != 0 {
 		tlsConfig.MaxVersion = c.tlsMaxVersion
 	} else if c.selectedProtocol == x224.ProtocolHybrid {
-		// Cap TLS at 1.2 when CredSSP/NLA is selected. Some Windows servers
-		// fail to process CredSSP over TLS 1.3 (MS-CSSP was designed for 1.2).
+		// Cap TLS at 1.2 when CredSSP/NLA is selected (MS-CSSP was designed for 1.2;
+		// some Windows servers fail over 1.3).
 		tlsConfig.MaxVersion = tls.VersionTLS12
 	}
 	if c.opts.LegacyTLS {
