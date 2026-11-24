@@ -364,11 +364,13 @@ func TestSetQualityOfAHiddenDesktopWaitsForNothing(t *testing.T) {
 	s.write(update(rect(0, 0, 1, 1, EncodingRaw, 1, 2, 3, 0))) // arrives while hidden: no request follows
 	// Whether the client has read it is seen from outside by the next call: the
 	// change is queued or sent at once, and either way arrives before any request.
-	if err := client.SetQuality(Pixel8, nil); err != nil {
-		t.Fatal(err)
-	}
+	qualityErr := make(chan error, 1)
+	go func() { qualityErr <- client.SetQuality(Pixel8, nil) }()
 	if bits, first := s.readQuality(); bits != 8 || first != EncodingZRLE {
 		t.Fatalf("change sent: %d bits, first encoding %d", bits, first)
+	}
+	if err := <-qualityErr; err != nil {
+		t.Fatal(err)
 	}
 	go client.SetActive(true) // writes the request: the pipe has no buffer
 	if incremental, _, _ := s.readRequest(); incremental {

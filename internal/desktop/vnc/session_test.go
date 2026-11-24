@@ -287,3 +287,152 @@ func TestSessionFlushesOncePerUpdate(t *testing.T) {
 	case <-time.After(50 * time.Millisecond):
 	}
 }
+
+func TestSessionPointerSource(t *testing.T) {
+	woken := make(chan struct{}, 16)
+	session, server := open(t, desktop.Options{Notify: func() { woken <- struct{}{} }})
+	defer session.Close()
+
+	// Initial pointer shape is PointerSystem
+	kind, shape, version := session.PointerShape()
+	if kind != desktop.PointerSystem || version != 1 {
+		t.Fatalf("initial pointer = %v, version %d; want PointerSystem, version 1", kind, version)
+	}
+
+	// Drain initial resize notify
+	select {
+	case <-woken:
+	case <-time.After(time.Second):
+		t.Fatal("no initial notify")
+	}
+
+	io.ReadFull(server, make([]byte, 10)) // first FramebufferUpdateRequest
+
+	// Send cursor update: 2x2 cursor at hotspot (1, 0)
+	// Encoding -239 (0xFFFFFF11)
+	update := []byte{0, 0, 0, 1}
+	// x=1, y=0, w=2, h=2, encoding=-239
+	update = append(update, 0, 1, 0, 0, 0, 2, 0, 2, 0xff, 0xff, 0xff, 0x11)
+	// 4 pixels (32-bit: B, G, R, pad)
+	update = append(update,
+		1, 2, 3, 0,
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		4, 5, 6, 0,
+	)
+	// 2 mask bytes (stride = (2+7)/8 = 1 byte):
+	// row 0: pixel 0 opaque, pixel 1 transparent -> 0x80
+	// row 1: pixel 0 transparent, pixel 1 opaque -> 0x40
+	update = append(update, 0x80, 0x40)
+
+	server.Write(update)
+	io.ReadFull(server, make([]byte, 10)) // request after update
+
+	select {
+	case <-woken:
+	case <-time.After(time.Second):
+		t.Fatal("no notify after cursor update")
+	}
+
+	kind, shape, version = session.PointerShape()
+	if kind != desktop.PointerBitmap || version != 2 {
+		t.Fatalf("pointer = %v, version %d; want PointerBitmap, version 2", kind, version)
+	}
+	if shape.Width != 2 || shape.Height != 2 || shape.HotX != 1 || shape.HotY != 0 {
+		t.Fatalf("shape geometry = %dx%d at %d,%d; want 2x2 at 1,0", shape.Width, shape.Height, shape.HotX, shape.HotY)
+	}
+	wantBGRA := []byte{
+		1, 2, 3, 255,
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		4, 5, 6, 255,
+	}
+	if !bytes.Equal(shape.BGRA, wantBGRA) {
+		t.Fatalf("shape BGRA = %v, want %v", shape.BGRA, wantBGRA)
+	}
+
+	// Send 0x0 cursor (hidden)
+	hideUpdate := []byte{0, 0, 0, 1}
+	hideUpdate = append(hideUpdate, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0x11)
+	server.Write(hideUpdate)
+	io.ReadFull(server, make([]byte, 10))
+
+	select {
+	case <-woken:
+	case <-time.After(time.Second):
+		t.Fatal("no notify after cursor hide")
+	}
+
+	kind, shape, version = session.PointerShape()
+	if kind != desktop.PointerHidden || version != 3 {
+		t.Fatalf("pointer = %v, version %d; want PointerHidden, version 3", kind, version)
+	}
+
+	session.Close()
+	select {
+	case <-session.Done():
+	case <-time.After(time.Second):
+		t.Fatal("session did not end after close")
+	}
+	kind, _, version = session.PointerShape()
+	if kind != desktop.PointerSystem || version != 4 {
+		t.Fatalf("pointer after close = %v, version %d; want PointerSystem, version 4", kind, version)
+	}
+}
+
+func TestSessionSendPointerDeduplicates(t *testing.T) {
+	session, server := open(t, desktop.Options{})
+	defer session.Close()
+
+	io.ReadFull(server, make([]byte, 10)) // first FramebufferUpdateRequest
+
+	readPointerEvent := func() (x, y int, buttons uint8) {
+		t.Helper()
+		var msg [6]byte
+		server.SetReadDeadline(time.Now().Add(time.Second))
+		if _, err := io.ReadFull(server, msg[:]); err != nil {
+			t.Fatalf("read pointer event: %v", err)
+		}
+		if msg[0] != 5 {
+			t.Fatalf("message type = %d, want 5 (PointerEvent)", msg[0])
+		}
+		return int(binary.BigEndian.Uint16(msg[2:])), int(binary.BigEndian.Uint16(msg[4:])), msg[1]
+	}
+
+	// 1. Send first pointer event
+	if err := session.SendPointer(100, 200, desktop.ButtonLeft); err != nil {
+		t.Fatal(err)
+	}
+	x, y, buttons := readPointerEvent()
+	if x != 100 || y != 200 || buttons != 1 {
+		t.Fatalf("pointer event = %d,%d, btn %d; want 100,200, btn 1", x, y, buttons)
+	}
+
+	// 2. Send same pointer event again -> should be deduplicated (no wire write)
+	if err := session.SendPointer(100, 200, desktop.ButtonLeft); err != nil {
+		t.Fatal(err)
+	}
+	server.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
+	var dummy [1]byte
+	if _, err := server.Read(dummy[:]); err == nil {
+		t.Fatal("expected no data on wire for duplicate pointer event")
+	}
+
+	// 3. Send moved coordinate
+	if err := session.SendPointer(105, 200, desktop.ButtonLeft); err != nil {
+		t.Fatal(err)
+	}
+	x, y, buttons = readPointerEvent()
+	if x != 105 || y != 200 || buttons != 1 {
+		t.Fatalf("pointer event = %d,%d, btn %d; want 105,200, btn 1", x, y, buttons)
+	}
+
+	// 4. Send button change
+	if err := session.SendPointer(105, 200, 0); err != nil {
+		t.Fatal(err)
+	}
+	x, y, buttons = readPointerEvent()
+	if x != 105 || y != 200 || buttons != 0 {
+		t.Fatalf("pointer event = %d,%d, btn %d; want 105,200, btn 0", x, y, buttons)
+	}
+}
