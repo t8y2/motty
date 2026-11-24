@@ -58,6 +58,7 @@ var (
 	hitAISetConfirmCancel   = tree.ID(aiSettingsHits, "ai-set-confirm-cancel")
 	hitAISetConfirmAction   = tree.ID(aiSettingsHits, "ai-set-confirm-action")
 	hitAISetFetchModels     = tree.ID(aiSettingsHits, "ai-set-fetch-models")
+	hitAISetModelSearch     = tree.ID(aiSettingsHits, "ai-set-model-search")
 	hitAISetModelInput      = tree.ID(aiSettingsHits, "ai-set-model-input")
 	hitAISetModelAdd        = tree.ID(aiSettingsHits, "ai-set-model-add")
 	hitAISetModelPrev       = tree.ID(aiSettingsHits, "ai-set-model-prev")
@@ -197,15 +198,17 @@ type aiSettingsUI struct {
 	// deleteID is the provider the delete question is about.
 	deleteID string
 
-	selected    string // provider whose models are listed
-	page        int    // page of that provider's models
-	modelFilter aiModelFilter
-	modelSort   aiModelSort
-	modelInput  text.Editor
-	stepsInput  text.Editor
-	// modelField and stepsField are the page's handles on those editors, bound
-	// once before the page declares them.
-	modelField, stepsField ui.Field
+	selected        string // provider whose models are listed
+	page            int    // page of that provider's models
+	modelFilter     aiModelFilter
+	modelSort       aiModelSort
+	modelSearch     text.Editor
+	modelSearchLast string
+	modelInput      text.Editor
+	stepsInput      text.Editor
+	// modelSearchField, modelField and stepsField are the page's handles on those
+	// editors, bound once before the page declares them.
+	modelSearchField, modelField, stepsField ui.Field
 	// stepsEditing says the step field is being typed into; the stored setting
 	// changes when the edit is committed.
 	stepsEditing bool
@@ -319,6 +322,37 @@ func newModelInput() text.Editor {
 	var model text.Editor
 	model.Restrict(modelNameRune, 200)
 	return model
+}
+
+// newModelSearch returns an empty model search editor with single-line and length limits.
+func newModelSearch() text.Editor {
+	var search text.Editor
+	search.Restrict(printableLine, 200)
+	return search
+}
+
+// aiModelSearchQuery returns the normalized search query for the model list.
+func (state *State) aiModelSearchQuery() string {
+	return strings.ToLower(strings.TrimSpace(state.ai.cfg.modelSearch.String()))
+}
+
+// aiModelMatchesSearch reports whether a model's name or localized label matches
+// every whitespace-separated token in query (case-insensitively).
+func aiModelMatchesSearch(name, displayLabel, query string) bool {
+	if query == "" {
+		return true
+	}
+	lowerName := strings.ToLower(name)
+	lowerLabel := ""
+	if displayLabel != "" && displayLabel != name {
+		lowerLabel = strings.ToLower(displayLabel)
+	}
+	for _, token := range strings.Fields(query) {
+		if !strings.Contains(lowerName, token) && (lowerLabel == "" || !strings.Contains(lowerLabel, token)) {
+			return false
+		}
+	}
+	return true
 }
 
 // aiSetSteps stores a step count, clamped to the range the field accepts.
@@ -687,6 +721,17 @@ func (state *State) aiSettingsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 				return gfx.EventResult{Handled: true, Repaint: true}, true
 			}
 		}
+		if event.Target == hitAISetModelSearch && event.Key == gfx.KeyEscape {
+			if _, composing := cfg.modelSearch.Composition(); composing {
+				return gfx.EventResult{Handled: true}, true
+			}
+			if cfg.modelSearch.RuneCount() > 0 {
+				cfg.modelSearch = newModelSearch()
+				cfg.modelSearchLast = ""
+				cfg.page = 0
+				return gfx.EventResult{Handled: true, Repaint: true, Focus: hitAISetModelSearch}, true
+			}
+		}
 	}
 	if event.Key == gfx.KeyEnter && !event.Repeat {
 		switch {
@@ -777,6 +822,7 @@ func (state *State) aiSelectProvider(index int) {
 		cfg.selected, cfg.page, cfg.modelErr = state.ai.providers[index].ID, 0, ""
 		cfg.fetched, cfg.fetchErr = false, ""
 		cfg.modelInput = newModelInput()
+		cfg.modelSearch, cfg.modelSearchLast = newModelSearch(), ""
 		cfg.modelFilter, cfg.modelSort = aiModelFilterAll, aiModelSortDefault
 	}
 }
@@ -1001,6 +1047,7 @@ func (state *State) aiDeleteProvider(id string) {
 	}
 	if cfg.selected == id {
 		cfg.selected, cfg.page, cfg.fetched, cfg.modelErr = "", 0, false, ""
+		cfg.modelSearch, cfg.modelSearchLast = newModelSearch(), ""
 	}
 	state.aiWrote()
 }
@@ -1019,10 +1066,33 @@ func (state *State) aiModelsOf(providerID string) (total, enabled int) {
 	return total, enabled
 }
 
-// aiModelCounts reports the total, available, failed and enabled model counts.
+// aiModelMatchesQuery reports whether model matches the normalized search query,
+// including the localized display label for CLI default models.
+func (state *State) aiModelMatchesQuery(isCLI bool, model store.Model, query string) bool {
+	if query == "" {
+		return true
+	}
+	label := model.Name
+	if isCLI && model.Name == "default" {
+		label = state.messages.AISettings.CLIDefaultModel
+	}
+	return aiModelMatchesSearch(model.Name, label, query)
+}
+
+// aiModelCounts reports the total, available, failed and enabled model counts
+// within the current search query.
 func (state *State) aiModelCounts(providerID string) (total, available, failed, enabled int) {
+	query := state.aiModelSearchQuery()
+	isCLI := false
+	if query != "" {
+		provider, _ := state.aiProviderByID(providerID)
+		isCLI = store.IsCLIKind(provider.Kind)
+	}
 	for _, model := range state.ai.models {
 		if model.ProviderID == providerID && probe.IsChatOrReasoningModel(model.Name) {
+			if !state.aiModelMatchesQuery(isCLI, model, query) {
+				continue
+			}
 			total++
 			if model.Enabled {
 				enabled++
@@ -1086,6 +1156,19 @@ func (state *State) aiFilteredModels(providerID string) []store.Model {
 		}
 	default:
 		filtered = append([]store.Model(nil), base...)
+	}
+
+	// 1.5 Filter by search query
+	if query := state.aiModelSearchQuery(); query != "" {
+		provider, _ := state.aiProviderByID(providerID)
+		isCLI := store.IsCLIKind(provider.Kind)
+		matched := filtered[:0]
+		for _, m := range filtered {
+			if state.aiModelMatchesQuery(isCLI, m, query) {
+				matched = append(matched, m)
+			}
+		}
+		filtered = matched
 	}
 
 	// 2. Sort
@@ -1283,6 +1366,11 @@ func (state *State) aiAddModel() {
 		}
 	}
 	cfg.modelInput = newModelInput()
+	if query := state.aiModelSearchQuery(); query != "" && !aiModelMatchesSearch(name, "", query) {
+		cfg.modelSearch = newModelSearch()
+		cfg.modelSearchLast = ""
+		cfg.page = 0
+	}
 	state.aiWrote()
 }
 
