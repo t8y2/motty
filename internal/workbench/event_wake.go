@@ -21,3 +21,26 @@ func (state *State) scheduleWake(d time.Duration) func() {
 		}
 	})
 }
+
+// postWake asks the window's event loop to run Wake without waiting for a
+// paint, falling back to Invalidate when the host provides no Post callback.
+func (state *State) postWake() {
+	if state.callbacksClosed.Load() {
+		return
+	}
+	if state.options.Post != nil {
+		state.options.Post(func() {
+			if state.callbacksClosed.Load() {
+				return
+			}
+			state.Wake()
+			if state.options.Invalidate != nil {
+				state.options.Invalidate()
+			}
+		})
+		return
+	}
+	if invalidate := state.options.Invalidate; invalidate != nil {
+		invalidate()
+	}
+}

@@ -54,6 +54,26 @@ func (state *State) linkWatchNeeded() bool {
 		}
 		return true
 	}
+	for _, tunnel := range state.forwardTunnels {
+		if tunnel.closed {
+			continue
+		}
+		if tunnel.retryPending {
+			return true
+		}
+		if tunnel.session.conn != nil &&
+			tunnel.session.phase != sshconn.PhaseFailed &&
+			tunnel.session.phase != sshconn.PhaseClosed {
+			return true
+		}
+	}
+	if state.connectionReconnect != reconnectOff {
+		for index := range state.forwards {
+			if state.forwards[index].reviveTunnel && state.forwards[index].Resume {
+				return true
+			}
+		}
+	}
 	return false
 }
 
@@ -88,14 +108,12 @@ func (state *State) stopNetworkWatch() {
 // records the change and wakes the window; sessions are touched from Wake, on
 // the window's own thread.
 func (state *State) linkChanged(change linkwatch.Change) {
-	if state.closed {
+	if state.closed || state.callbacksClosed.Load() {
 		return
 	}
 	state.linkUp.Store(change.Up)
 	state.linkPending.Store(true)
-	if invalidate := state.options.Invalidate; invalidate != nil {
-		invalidate()
-	}
+	state.postWake()
 }
 
 // applyLinkChange acts on the change Wake found. Every established connection is
@@ -112,6 +130,11 @@ func (state *State) applyLinkChange() {
 	}
 	for index := range state.sessions {
 		state.verifyLink(&state.sessions[index])
+	}
+	for _, tunnel := range state.forwardTunnels {
+		if !tunnel.closed {
+			state.verifyLink(&tunnel.session)
+		}
 	}
 }
 
@@ -132,6 +155,9 @@ func (state *State) verifyLink(session *Session) {
 		defer cancel()
 		if err := conn.Verify(ctx); err != nil {
 			notify()
+			if state.options.Post != nil {
+				state.postWake()
+			}
 		}
 	}()
 }
@@ -144,6 +170,7 @@ func (state *State) verifyLink(session *Session) {
 // so it is bounded by how often the network path changes: each change buys one
 // policy's worth of attempts, never a loop.
 func (state *State) restartReconnects() {
+	now := state.now()
 	for index := range state.sessions {
 		session := &state.sessions[index]
 		pending := session.reconnectPending
@@ -154,11 +181,23 @@ func (state *State) restartReconnects() {
 		session.reconnectExhausted = false
 		session.reconnectText = ""
 		if pending {
-			session.reconnectDue = state.now()
+			session.reconnectDue = now
 			continue
 		}
-		if state.connectionReconnect != reconnectOff {
-			state.queueReconnect(session)
+		if state.connectionReconnect != reconnectOff && state.queueReconnect(session) {
+			state.reviveSessionForwards(session.ID)
 		}
 	}
+	for _, tunnel := range state.forwardTunnels {
+		if tunnel.closed || !tunnel.retryPending {
+			continue
+		}
+		tunnel.retryAttempt = 0
+		if tunnel.retryStop != nil {
+			tunnel.retryStop()
+			tunnel.retryStop = nil
+		}
+		tunnel.retryDue = now
+	}
+	state.reviveTunnelForwards()
 }
