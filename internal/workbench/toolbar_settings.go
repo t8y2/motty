@@ -148,6 +148,17 @@ func normalizeToolbar(group toolbarGroup, entries []toolbarEntry) []toolbarEntry
 	if group == toolbarTerminal && !slices.ContainsFunc(result, func(entry toolbarEntry) bool { return entry.Key == "latency" }) {
 		result = slices.Insert(result, 0, toolbarEntry{Key: "latency", Enabled: toolbarDefaultEnabled(group, "latency")})
 	}
+	// A saved files bar predates New File. Put it beside New Directory, where
+	// the catalog places them, rather than appending a newer action after the
+	// user's chosen layout.
+	if group == toolbarSFTP && !slices.ContainsFunc(result, func(entry toolbarEntry) bool { return entry.Key == "new-file" }) {
+		entry := toolbarEntry{Key: "new-file", Enabled: toolbarDefaultEnabled(group, "new-file")}
+		if index := slices.IndexFunc(result, func(other toolbarEntry) bool { return other.Key == "new-folder" }); index >= 0 {
+			result = slices.Insert(result, index, entry)
+		} else {
+			result = append(result, entry)
+		}
+	}
 	// New entries become available after an upgrade; existing hidden entries
 	// remain hidden. Unknown/duplicate IDs cannot create phantom controls.
 	for _, entry := range toolbarDefaults[group] {

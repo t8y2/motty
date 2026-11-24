@@ -1199,6 +1199,9 @@ func (w *sftpWindow) shortcut(event gfx.KeyEvent) gfx.EventResult {
 	if event.Modifiers&(gfx.ModifierControl|gfx.ModifierMeta) == 0 {
 		return gfx.EventResult{}
 	}
+	if result, handled := w.newFileShortcut(event); handled {
+		return result
+	}
 	if w.view.worker == nil && strings.ToLower(event.Text) != "w" {
 		return gfx.EventResult{}
 	}

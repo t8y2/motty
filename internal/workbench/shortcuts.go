@@ -588,6 +588,9 @@ func (state *State) shortcut(event gfx.KeyEvent, chord keymap.Chord) gfx.EventRe
 		return result
 	}
 	action := state.shortcuts.actionFor(chord)
+	if result, handled := state.sftpNewFileShortcut(event, action); handled {
+		return result
+	}
 	if result, handled := state.sftpClipboardShortcut(event, action); handled {
 		return result
 	}
