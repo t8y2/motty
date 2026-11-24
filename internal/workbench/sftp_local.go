@@ -579,45 +579,31 @@ func (state *State) downloadHere(view *sftpView) {
 
 // submitLocalFile makes a file in the local folder on show.
 func (state *State) submitLocalFile(view *sftpView, name string) bool {
-	if name == "" {
-		view.dialogError = state.messages.SFTPErrFileRequired
-		return false
-	}
-	if strings.ContainsAny(name, `/\`) || name == "." || name == ".." {
-		view.dialogError = state.messages.SFTPErrRenameInvalid
-		return false
-	}
-	if view.lfolder.hasEntry(name) {
-		view.dialogError = state.messages.SFTPErrDirectoryExists
-		return false
-	}
-	target := filepath.Join(view.lfolder.path, name)
-	file, err := os.OpenFile(target, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o644)
-	if err != nil {
-		if errors.Is(err, os.ErrExist) {
-			view.dialogError = state.messages.SFTPErrDirectoryExists
-		} else if errors.Is(err, os.ErrPermission) {
-			view.dialogError = state.messages.SFTPErrPermissionDenied
-		} else {
-			view.dialogError = err.Error()
-		}
-		return false
-	}
-	file.Close()
-	state.closeSFTPDialog(view)
-	state.listLocal(view, view.lfolder.path)
-	view.status = fmt.Sprintf(state.messages.SFTPFileCreatedFmt, target)
-	return true
+	return state.submitLocalEntry(view, name, state.messages.SFTPErrFileRequired, state.messages.SFTPErrRenameInvalid,
+		state.messages.SFTPFileCreatedFmt, func(target string) error {
+			file, err := os.OpenFile(target, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o644)
+			if err != nil {
+				return err
+			}
+			return file.Close()
+		})
 }
 
 // submitLocalDirectory makes a folder in the local folder on show.
 func (state *State) submitLocalDirectory(view *sftpView, name string) bool {
+	return state.submitLocalEntry(view, name, state.messages.SFTPErrDirectoryRequired, state.messages.Tools.ExtractErrorFolder,
+		state.messages.SFTPDirectoryCreatedFmt, func(target string) error { return os.Mkdir(target, 0o755) })
+}
+
+// submitLocalEntry checks the name typed in a create dialog, makes the entry
+// with create, and shows the folder again; a failure stays in the dialog.
+func (state *State) submitLocalEntry(view *sftpView, name, required, invalid, createdFmt string, create func(target string) error) bool {
 	if name == "" {
-		view.dialogError = state.messages.SFTPErrDirectoryRequired
+		view.dialogError = required
 		return false
 	}
 	if strings.ContainsAny(name, `/\`) || name == "." || name == ".." {
-		view.dialogError = state.messages.Tools.ExtractErrorFolder
+		view.dialogError = invalid
 		return false
 	}
 	if view.lfolder.hasEntry(name) {
@@ -625,19 +611,20 @@ func (state *State) submitLocalDirectory(view *sftpView, name string) bool {
 		return false
 	}
 	target := filepath.Join(view.lfolder.path, name)
-	if err := os.Mkdir(target, 0o755); err != nil {
-		if errors.Is(err, os.ErrExist) {
+	if err := create(target); err != nil {
+		switch {
+		case errors.Is(err, os.ErrExist):
 			view.dialogError = state.messages.SFTPErrDirectoryExists
-		} else if errors.Is(err, os.ErrPermission) {
+		case errors.Is(err, os.ErrPermission):
 			view.dialogError = state.messages.SFTPErrPermissionDenied
-		} else {
+		default:
 			view.dialogError = err.Error()
 		}
 		return false
 	}
 	state.closeSFTPDialog(view)
 	state.listLocal(view, view.lfolder.path)
-	view.status = fmt.Sprintf(state.messages.SFTPDirectoryCreatedFmt, target)
+	view.status = fmt.Sprintf(createdFmt, target)
 	return true
 }
 

@@ -3609,7 +3609,17 @@ func createFile(client Remote, remotePath string) error {
 		return fmt.Errorf("%w: %s", ErrDestinationExists, remotePath)
 	}
 	if fileCreator, ok := client.(interface{ CreateFile(string) error }); ok {
-		return fileCreator.CreateFile(remotePath)
+		err := fileCreator.CreateFile(remotePath)
+		if err != nil {
+			// The path appeared after the check above: that is an existing
+			// destination, not a failure of the server.
+			if linker, ok := client.(remoteLinker); ok {
+				if _, statErr := linker.Lstat(remotePath); statErr == nil {
+					return fmt.Errorf("%w: %s", ErrDestinationExists, remotePath)
+				}
+			}
+		}
+		return err
 	}
 	creator, ok := client.(remoteCreator)
 	if !ok {

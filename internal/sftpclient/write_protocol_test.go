@@ -198,6 +198,40 @@ func TestWorkerCreatesFileOverSFTP(t *testing.T) {
 	}
 }
 
+// A file that appears between the existence check and the create is reported as
+// existing and keeps its content: create never truncates.
+func TestWorkerCreateFileNeverTruncatesAFileCreatedInTheMeantime(t *testing.T) {
+	worker, root := newProtocolWorkerOn(t, nil, func(base remote) Remote {
+		return &blindFirstLstat{remote: base}
+	})
+	if err := os.WriteFile(filepath.Join(root, "raced.txt"), []byte("keep me"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	result := requireQueuedResult(t, worker.CreateFile("raced.txt"), worker, OperationCreateFile)
+	if !errors.Is(result.Err, ErrDestinationExists) {
+		t.Fatalf("expected ErrDestinationExists, got %v", result.Err)
+	}
+	if content, err := os.ReadFile(filepath.Join(root, "raced.txt")); err != nil || string(content) != "keep me" {
+		t.Fatalf("content after a raced create = %q, %v", content, err)
+	}
+}
+
+// blindFirstLstat reports the first path it is asked about as missing, as it
+// was when the caller looked, and tells the truth afterwards.
+type blindFirstLstat struct {
+	remote
+	looked bool
+}
+
+func (r *blindFirstLstat) Lstat(path string) (os.FileInfo, error) {
+	if !r.looked {
+		r.looked = true
+		return nil, os.ErrNotExist
+	}
+	return r.remote.Lstat(path)
+}
+
 func TestWorkerRenamesAndMovesOverSFTP(t *testing.T) {
 	worker, root := newProtocolWorker(t)
 	if err := os.Mkdir(filepath.Join(root, "archive"), 0o755); err != nil {

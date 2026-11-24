@@ -70,6 +70,17 @@ func (client remote) Create(path string) (io.WriteCloser, error) {
 	return client.Client.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
 }
 
+// CreateFile creates an empty file and fails if the path already exists: the
+// server enforces O_EXCL, so a file created between a caller's check and this
+// call is never truncated.
+func (client remote) CreateFile(path string) error {
+	file, err := client.Client.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
+	if err != nil {
+		return err
+	}
+	return file.Close()
+}
+
 // Chown changes a path's numeric owner and group. Servers enforce root for
 // this; the elevated subsystem is what makes it usable on a normal account.
 func (client remote) Chown(path string, uid, gid uint32) error {
