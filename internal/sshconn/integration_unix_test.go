@@ -431,6 +431,12 @@ func TestIntegrationReportsRealShellDirectoriesWithoutChangingProfiles(t *testin
 			if reportedHome != home {
 				t.Fatalf("reported home = %q, want %q", reportedHome, home)
 			}
+			// The first prompt of a shell Motty starts is on a fresh line. Zsh's
+			// PROMPT_SP mark would be sized by the width the shell started with and
+			// leave a stray "%" when the pane is narrower by the time it arrives.
+			if strings.Contains(output, "\x1b[7m%") {
+				t.Fatalf("first prompt printed the PROMPT_SP mark: %q", output)
+			}
 			beforeReady := ready
 			shell.Write([]byte("false\r"))
 			await("failed command status", func() bool { return ready > beforeReady })

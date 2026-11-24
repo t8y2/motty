@@ -271,6 +271,7 @@ fi
 done
 cat >> "$_motty_dir/.zlogin" <<'MOTTY_ZSH'
 ` + zshIntegration(report) + `
+` + firstPromptSPOffZsh + `
 if [[ -z $_motty_user_zdotdir_set && $ZDOTDIR == $HOME ]]; then unset ZDOTDIR; fi
 rm -rf -- "$_motty_runtime"
 unset _motty_runtime _motty_user_zdotdir _motty_user_zdotdir_set
@@ -417,8 +418,17 @@ __motty_home_report() {
 // one behind. The option is put back before the prompt after it.
 const (
 	firstPromptEraseBash = `_motty_first_prompt_erase='\[\e]7777;motty-first-prompt\a\r\e[2K\]'; _motty_first_prompt=1`
-	firstPromptEraseZsh  = `_motty_first_prompt_erase=$'%{\e]7777;motty-first-prompt\a\r\033[2K%}'; _motty_first_prompt=1; _motty_prompt_sp_was=; [[ -o prompt_sp ]] && _motty_prompt_sp_was=1; unsetopt prompt_sp; _motty_prompt_sp_hold=1`
+	firstPromptEraseZsh  = `_motty_first_prompt_erase=$'%{\e]7777;motty-first-prompt\a\r\033[2K%}'; _motty_first_prompt=1; ` + firstPromptSPOffZsh
 )
+
+// firstPromptSPOffZsh keeps PROMPT_SP off for the next prompt only; the
+// __motty_prompt_sp precmd hook puts the user's setting back after it. A shell
+// the integration starts itself prints that prompt on a fresh line, so the mark
+// has nothing to protect, and it is not safe to print: it is a row of spaces
+// sized by the width the shell started with, and a terminal that is narrower by
+// the time they arrive (the pane is still being laid out) wraps them and leaves
+// a stray reverse-video % above the prompt.
+const firstPromptSPOffZsh = `_motty_prompt_sp_was=; [[ -o prompt_sp ]] && _motty_prompt_sp_was=1; unsetopt prompt_sp; _motty_prompt_sp_hold=1`
 
 // Encode bytes, not characters: file URI reserved characters and non-ASCII
 // paths must round-trip through the terminal parser without shell evaluation.
