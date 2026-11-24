@@ -1094,8 +1094,16 @@ func (state *State) releaseWaitingForwards() {
 		if ok && (session.reconnectPending || session.phase != sshconn.PhaseClosed && session.phase != sshconn.PhaseFailed) {
 			continue
 		}
+		// A tab whose retries just ran out (a stricter reconnect policy took
+		// effect) is revived by the next network recovery, so its Resume
+		// forwards stay attached to it, as stopSessionForwards does.
+		sessionID := forward.sessionID
+		revive := ok && session.reconnectExhausted && forward.Resume
 		forward.stop()
 		forward.lastError = state.messages.ForwardConnectionClosed
+		if revive {
+			forward.reviveSessionID = sessionID
+		}
 		forward.refresh(state.messages, state.forwardHostAvailable(*forward))
 	}
 }

@@ -193,6 +193,48 @@ func TestSessionForwardRevivesAfterRetriesExhaustedWhenNetworkRecovers(t *testin
 	}
 }
 
+func TestForwardHeldByAReconnectRevivesWhenAStricterPolicyGivesUp(t *testing.T) {
+	state, world, watcher := linkTestState(t)
+	now := 10 * time.Second
+	state.options.Now = func() time.Duration { return now }
+	state.connectionReconnect = reconnectForever
+
+	connection := world.connectFirst(t, state)
+	forward := addResumingForward(t, state, "Database")
+	state.Click(hitForwardRowToggleList.At(int(forward.ID)))
+	if forward.runner == nil {
+		t.Fatalf("started forward = %+v", *forward)
+	}
+
+	// The tab keeps retrying, so the forward waits for it.
+	disconnectEstablished(connection, state)
+	for _, delay := range []time.Duration{time.Second, 2 * time.Second, 4 * time.Second} {
+		now += delay
+		state.Wake()
+		world.conns[len(world.conns)-1].set(func(status *sshconn.Status) {
+			status.Phase = sshconn.PhaseFailed
+			status.Err = errors.New("network unreachable")
+		})
+		state.Wake()
+	}
+	if !forward.pending || !state.sessions[0].reconnectPending {
+		t.Fatalf("forward should wait for the retrying tab: %+v", *forward)
+	}
+
+	// A stricter policy gives the tab up; the forward stops with it.
+	state.setReconnectPolicy(reconnectThree)
+	if !state.sessions[0].reconnectExhausted || forward.pending {
+		t.Fatalf("after the policy change: exhausted=%v forward=%+v", state.sessions[0].reconnectExhausted, *forward)
+	}
+
+	// The network returns: the tab revives and the forward comes back with it.
+	watcher.fire(linkwatch.Change{At: time.Now(), Up: true})
+	state.Wake()
+	if !state.sessions[0].reconnectPending || !forward.pending || forward.sessionID != state.sessions[0].ID {
+		t.Fatalf("forward did not re-attach to the reviving tab: %+v", *forward)
+	}
+}
+
 func TestLinkChangeDispatchesThroughPostWhenAvailable(t *testing.T) {
 	world, options := newSharingWorld(t)
 	watcher := &linkWatcher{}
