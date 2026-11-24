@@ -674,6 +674,14 @@ func (w *sftpWindow) click(id gfx.ID) {
 			w.cancelDrag()
 			w.owner.openSFTPDialog(w.view, sftpDialogCreateDirectory)
 			return
+		case sftpWindowNewFile[side]:
+			if w.browse.pending != nil || local && w.pendingLocal != "" || !local && (w.view.busy || !w.connected() || w.view.approximate) {
+				return
+			}
+			w.activeLocal, w.view.local = local, local
+			w.cancelDrag()
+			w.owner.openSFTPNewFileDialog(w.view)
+			return
 		}
 	}
 	switch {
@@ -1093,6 +1101,34 @@ func (w *sftpWindow) shortcut(event gfx.KeyEvent) gfx.EventResult {
 	}
 	if event.Modifiers&(gfx.ModifierControl|gfx.ModifierMeta) == 0 {
 		return gfx.EventResult{}
+	}
+	chord := keymap.Chord{Modifiers: keymap.Primary | gfx.ModifierShift, Char: 'n'}
+	if event.Modifiers == chord.Modifiers && strings.EqualFold(event.Text, "n") {
+		focused := false
+		for side := range 2 {
+			_, action := event.Target.In(sftpWindowActions[side])
+			_, row := event.Target.In(sftpWindowRows[side])
+			_, listRow := event.Target.In(sftpWindowListRows[side])
+			if event.Target == sftpWindowList[side] || action || row || listRow ||
+				event.Target == sftpWindowMore[side] || event.Target == sftpWindowUp[side] ||
+				event.Target == sftpWindowRefresh[side] || event.Target == sftpWindowNewFile[side] {
+				focused = true
+				w.activeLocal, w.view.local = side == 0, side == 0
+				break
+			}
+		}
+		if focused {
+			handled := gfx.EventResult{Handled: true, Repaint: true}
+			if event.Release || event.Repeat || w.browse.pending != nil || w.pendingLocal != "" || w.view.localBusy ||
+				w.view.dialog != sftpDialogNone || w.fileProperties.open || w.bookmark.open || w.closeConfirm || w.externalConflict != 0 || w.headerMenuOpen() ||
+				!w.activeLocal && (w.view.busy || !w.connected() || w.view.approximate) {
+				return handled
+			}
+			w.cancelDrag()
+			w.owner.openSFTPNewFileDialog(w.view)
+			handled.Focus, handled.FocusVisible = hitSFTPDialogField, true
+			return handled
+		}
 	}
 	if w.view.worker == nil && strings.ToLower(event.Text) != "w" {
 		return gfx.EventResult{}

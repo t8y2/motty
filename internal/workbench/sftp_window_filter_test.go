@@ -278,7 +278,7 @@ func TestSFTPWindowHeaderMenuHasUniqueHitsAndNarrowTransfers(t *testing.T) {
 	}
 	for _, label := range []string{
 		w.owner.messages.Tools.FilesFilterLabel, w.owner.messages.SFTPWindow.Upload,
-		w.owner.messages.SFTPWindow.Download, w.owner.messages.SFTPNewDirectory,
+		w.owner.messages.SFTPWindow.Download, w.owner.messages.SFTPNewDirectory, w.owner.messages.SFTPNewFile,
 		w.owner.messages.Tools.TipNewLink,
 	} {
 		dualHitLabel(t, view, label)
@@ -374,6 +374,49 @@ func TestSFTPWindowFilterLayoutVariants(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestSFTPWindowNewFileShortcutAndHeaderMenu(t *testing.T) {
+	state, w, _, host, _ := dualSFTPFixture(t, 1)
+	view := host.windows[0].view
+	for _, local := range []bool{true, false} {
+		dualClickID(t, view, dualRow(t, w, local, map[bool]string{true: "中文上传.yml", false: "notes.txt"}[local]))
+		if _, err := view.Driver().ShortcutChord(keymap.Primary|gfx.ModifierShift, 'n'); err != nil {
+			t.Fatal(err)
+		}
+		if w.view.dialog != sftpDialogCreateFile || w.view.local != local {
+			t.Fatalf("shortcut local=%t dialog=%d active local=%t", local, w.view.dialog, w.view.local)
+		}
+		if err := view.Keys("escape"); err != nil {
+			t.Fatal(err)
+		}
+		if w.view.dialog != sftpDialogNone {
+			t.Fatal("Escape did not close the new-file dialog")
+		}
+	}
+
+	dualClickID(t, view, sftpWindowMore[1])
+	hit := dualHitLabel(t, view, state.messages.SFTPNewFile)
+	folderHit := dualHitLabel(t, view, state.messages.SFTPNewDirectory)
+	if hit.Y+hit.Height > folderHit.Y {
+		t.Fatalf("header menu New File=%+v must precede New Directory=%+v", hit, folderHit)
+	}
+	if err := view.Click(hit.X+hit.Width/2, hit.Y+hit.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if w.view.dialog != sftpDialogCreateFile || w.view.local || w.headerMenuOpen() {
+		t.Fatalf("header New File dialog=%d local=%t menu=%t", w.view.dialog, w.view.local, w.headerMenuOpen())
+	}
+	w.view.dialogEditor.Insert("window.yml")
+	w.click(hitSFTPDialogSubmit)
+	dualWait(t, state, w, view, func() bool {
+		for _, row := range w.view.rows {
+			if row.entry.Name == "window.yml" && row.entry.Mode.IsRegular() {
+				return true
+			}
+		}
+		return false
+	})
 }
 
 func BenchmarkSFTPWindowFilter(b *testing.B) {

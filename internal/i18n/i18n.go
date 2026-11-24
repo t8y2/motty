@@ -1123,6 +1123,7 @@ type Messages struct {
 	SFTPUpload           string
 	SFTPUploadDirectory  string
 	SFTPNewDirectory     string
+	SFTPNewFile          string
 	SFTPSudoEnable       string
 	SFTPSudoDisable      string
 	SFTPModeToggle       string
@@ -1183,6 +1184,13 @@ type Messages struct {
 	SFTPErrPermissionDenied     string
 	SFTPCreatingDirectoryFmt    string
 	SFTPDirectoryCreatedFmt     string
+	SFTPNewFileTitle            string
+	SFTPFileName                string
+	SFTPCreateFile              string
+	SFTPErrFileNameRequired     string
+	SFTPErrFileExists           string
+	SFTPCreatingFileFmt         string
+	SFTPFileCreatedFmt          string
 	SFTPRenameTitle             string
 	SFTPRenameDescription       string
 	SFTPNewName                 string

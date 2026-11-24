@@ -62,6 +62,7 @@ const (
 	OperationDownload
 	OperationUpload
 	OperationCreateDirectory
+	OperationCreateFile
 	OperationRename
 	OperationRemoveFile
 	OperationRemoveDirectory
@@ -534,6 +535,11 @@ func (worker *Worker) QueueRemoteCopy(copy RemoteCopyRequest) (uint64, bool) {
 
 func (worker *Worker) CreateDirectory(remotePath string) bool {
 	return worker.enqueue(request{operation: OperationCreateDirectory, remote: remotePath})
+}
+
+// CreateFile creates an empty remote file without replacing an existing entry.
+func (worker *Worker) CreateFile(remotePath string) bool {
+	return worker.enqueue(request{operation: OperationCreateFile, remote: remotePath})
 }
 
 // CreateDirectories creates a matching navigation path, including missing
@@ -1328,6 +1334,8 @@ func (worker *Worker) execute(next request) Result {
 		} else {
 			result.Err = createDirectory(client, next.remote)
 		}
+	case OperationCreateFile:
+		result.Err = WriteFile(client, next.remote, nil, false)
 	case OperationRename:
 		result.Err = rename(client, next.remote, next.destination)
 	case OperationMoveSelection:

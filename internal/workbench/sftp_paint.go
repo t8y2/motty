@@ -164,10 +164,12 @@ func (state *State) declareSFTPPanel(c ui.C) {
 		headerTools = append(headerTools, barTool{id: id, icon: glyph, hint: hint, disabled: disabled, style: toolStyle})
 	}
 	if local {
+		addHeader(hitSFTPNewFile, iconPlus, messages.SFTPNewFile, view.localBusy)
 		addHeader(hitSFTPNewDirectory, iconFolderPlus, messages.SFTPNewDirectory, view.localBusy)
 	} else {
 		addHeader(hitSFTPUpload, iconUpload, messages.SFTPUpload, view.busy)
 		addHeader(hitSFTPUploadDirectory, iconFolderUp, messages.SFTPUploadDirectory, view.busy)
+		addHeader(hitSFTPNewFile, iconPlus, messages.SFTPNewFile, view.busy || view.worker == nil || view.approximate)
 		addHeader(hitSFTPNewDirectory, iconFolderPlus, messages.SFTPNewDirectory, view.busy)
 		addHeader(hitSFTPNewLink, iconLink, messages.Tools.TipNewLink, view.busy)
 	}
@@ -982,6 +984,10 @@ func (state *State) declareSFTPDialog(c ui.C, viewport gfx.Rect, view *sftpView)
 		title = messages.SFTPNewDirectoryTitle
 		fieldLabel = messages.SFTPDirectoryName
 		submitLabel = messages.SFTPCreateDirectory
+	case sftpDialogCreateFile:
+		title = messages.SFTPNewFileTitle
+		fieldLabel = messages.SFTPFileName
+		submitLabel = messages.SFTPCreateFile
 	case sftpDialogRename:
 		title = messages.SFTPRenameTitle
 		description = messages.SFTPRenameDescription

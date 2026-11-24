@@ -440,6 +440,8 @@ func (state *State) clickSFTPLocal(session *Session, view *sftpView, id gfx.ID) 
 		}
 	case id == hitSFTPNewDirectory:
 		state.openSFTPDialog(view, sftpDialogCreateDirectory)
+	case id == hitSFTPNewFile:
+		state.openSFTPNewFileDialog(view)
 	case id == hitSFTPOpenEntry:
 		state.openLocalSelected(view)
 	case id == hitSFTPEditExternal:
@@ -600,6 +602,42 @@ func (state *State) submitLocalDirectory(view *sftpView, name string) bool {
 	state.closeSFTPDialog(view)
 	state.listLocal(view, view.lfolder.path)
 	view.status = fmt.Sprintf(state.messages.SFTPDirectoryCreatedFmt, target)
+	return true
+}
+
+// submitLocalFile creates an empty file exclusively, preserving any entry that
+// already uses the requested name.
+func (state *State) submitLocalFile(view *sftpView, name string) bool {
+	if name == "" {
+		view.dialogError = state.messages.SFTPErrFileNameRequired
+		return false
+	}
+	if strings.ContainsAny(name, `/\`) || name == "." || name == ".." {
+		view.dialogError = state.messages.Tools.ExtractErrorFolder
+		return false
+	}
+	if view.lfolder.hasEntry(name) {
+		view.dialogError = state.messages.SFTPErrFileExists
+		return false
+	}
+	target := filepath.Join(view.lfolder.path, name)
+	file, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			view.dialogError = state.messages.SFTPErrFileExists
+		} else {
+			view.dialogError = err.Error()
+		}
+		return false
+	}
+	if err = file.Close(); err != nil {
+		_ = os.Remove(target)
+		view.dialogError = err.Error()
+		return false
+	}
+	state.closeSFTPDialog(view)
+	state.listLocal(view, view.lfolder.path)
+	view.status = fmt.Sprintf(state.messages.SFTPFileCreatedFmt, target)
 	return true
 }
 

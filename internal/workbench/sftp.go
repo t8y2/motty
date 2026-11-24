@@ -16,6 +16,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
@@ -49,6 +50,7 @@ type sftpDialogKind uint8
 const (
 	sftpDialogNone sftpDialogKind = iota
 	sftpDialogCreateDirectory
+	sftpDialogCreateFile
 	sftpDialogRename
 	sftpDialogMove
 	sftpDialogDelete
@@ -69,7 +71,7 @@ const (
 // name, a destination, an octal mode, an owner and a group, or a link.
 func sftpDialogShowsField(kind sftpDialogKind) bool {
 	switch kind {
-	case sftpDialogCreateDirectory, sftpDialogRename, sftpDialogMove, sftpDialogChmod,
+	case sftpDialogCreateDirectory, sftpDialogCreateFile, sftpDialogRename, sftpDialogMove, sftpDialogChmod,
 		sftpDialogChown, sftpDialogSymlink, sftpDialogExtract, sftpDialogCompress:
 		return true
 	}
@@ -597,6 +599,8 @@ func (state *State) clickSFTP(id gfx.ID) {
 		state.uploadSFTPDirectory(view)
 	case id == hitSFTPNewDirectory && !view.busy:
 		state.openSFTPDialog(view, sftpDialogCreateDirectory)
+	case id == hitSFTPNewFile && !view.busy:
+		state.openSFTPNewFileDialog(view)
 	case id == hitSFTPOpenEntry && !view.busy:
 		state.openSelectedSFTP(view)
 	case id == hitSFTPEditExternal && !view.busy:
@@ -1811,7 +1815,7 @@ func (state *State) openSFTPDialog(view *sftpView, dialog sftpDialogKind) {
 	view.dialogEntries = nil
 	view.dialogError = ""
 	view.deleteMethod = sftpDeleteNormal
-	if dialog != sftpDialogCreateDirectory {
+	if dialog != sftpDialogCreateDirectory && dialog != sftpDialogCreateFile {
 		if dialog == sftpDialogDelete || dialog == sftpDialogMove {
 			for _, row := range selectedSFTPRows(view) {
 				view.dialogEntries = append(view.dialogEntries, row.entry)
@@ -1854,6 +1858,51 @@ func (state *State) openSFTPDialog(view *sftpView, dialog sftpDialogKind) {
 		view.ownership.lastQuery = [2]string{owner, group}
 	}
 	view.dialog = dialog
+}
+
+// openSFTPNewFileDialog opens the same kind of naming dialog as New Folder,
+// without requiring a selection. SCP's fallback transport cannot create files.
+func (state *State) openSFTPNewFileDialog(view *sftpView) {
+	if view.localBusy || view.dialog != sftpDialogNone || view.editPath != "" ||
+		!view.local && (view.busy || view.worker == nil || view.approximate) {
+		return
+	}
+	state.openSFTPDialog(view, sftpDialogCreateFile)
+}
+
+// sftpNewFileShortcut keeps Ctrl+Shift+N's global New Window behavior outside
+// the file manager. Inside a list or its toolbar it creates a file instead.
+func (state *State) sftpNewFileShortcut(event gfx.KeyEvent, chord keymap.Chord) (gfx.EventResult, bool) {
+	want := keymap.Chord{Modifiers: keymap.Primary | gfx.ModifierShift, Char: 'n'}
+	if chord != want || state.modal != modalNone || state.activeSection != sectionTerminal {
+		return gfx.EventResult{}, false
+	}
+	session, ok := state.sessionByIDPointer(state.activeSessionID)
+	if !ok || session.files == nil || session.files.detached != nil {
+		return gfx.EventResult{}, false
+	}
+	view := session.files
+	focused := event.Target == hitSFTPListBackground || event.Target.Scope() == hitSFTPEntryList
+	if !focused {
+		for _, spec := range toolbarCatalog[toolbarSFTP] {
+			if event.Target == spec.id {
+				focused = true
+				break
+			}
+		}
+	}
+	if !focused {
+		return gfx.EventResult{}, false
+	}
+	result := gfx.EventResult{Handled: true, Repaint: true}
+	if event.Release || event.Repeat {
+		return result, true
+	}
+	state.openSFTPNewFileDialog(view)
+	if view.dialog == sftpDialogCreateFile {
+		result.Focus, result.FocusVisible = hitSFTPDialogField, true
+	}
+	return result, true
 }
 
 // openSFTPDeleteForce asks once more before the forced removal: the first
@@ -2518,6 +2567,27 @@ func (state *State) submitSFTPDialog(view *sftpView) {
 		queued = view.worker.CreateDirectory(remotePath)
 		operation = sftpclient.OperationCreateDirectory
 		status = fmt.Sprintf(state.messages.SFTPCreatingDirectoryFmt, remotePath)
+	case sftpDialogCreateFile:
+		if view.local {
+			state.submitLocalFile(view, value)
+			return
+		}
+		if value == "" {
+			view.dialogError = state.messages.SFTPErrFileNameRequired
+			return
+		}
+		if !validRemoteBaseName(value) {
+			view.dialogError = state.messages.SFTPErrRenameInvalid
+			return
+		}
+		if view.worker == nil {
+			view.dialogError = state.messages.SFTPUnavailable
+			return
+		}
+		remotePath := sftpRemotePath(view.path, value)
+		queued = view.worker.CreateFile(remotePath)
+		operation = sftpclient.OperationCreateFile
+		status = fmt.Sprintf(state.messages.SFTPCreatingFileFmt, remotePath)
 	case sftpDialogRename:
 		if !validRemoteBaseName(value) {
 			view.dialogError = state.messages.SFTPErrRenameInvalid
@@ -2868,6 +2938,10 @@ func (state *State) pumpSFTP(session *Session) {
 				view.forgetListings()
 				view.refreshStatus = fmt.Sprintf(state.messages.SFTPDirectoryCreatedFmt, result.Path)
 				state.listSFTP(view, view.path)
+			case sftpclient.OperationCreateFile:
+				view.forgetListings()
+				view.refreshStatus = fmt.Sprintf(state.messages.SFTPFileCreatedFmt, result.Path)
+				state.listSFTP(view, view.path)
 			case sftpclient.OperationRename:
 				view.forgetListings()
 				if view.moveAfterRename {
@@ -3078,6 +3152,9 @@ func (state *State) formatSFTPError(err error) string {
 	}
 	if errors.Is(err, sftpclient.ErrDestinationExists) || errors.Is(err, os.ErrExist) {
 		return fmt.Sprintf(state.messages.SFTPErrorFmt, state.messages.SFTPErrDirectoryExists)
+	}
+	if errors.Is(err, sftpclient.ErrExists) {
+		return fmt.Sprintf(state.messages.SFTPErrorFmt, state.messages.SFTPErrFileExists)
 	}
 	var status *sftp.StatusError
 	if errors.As(err, &status) {

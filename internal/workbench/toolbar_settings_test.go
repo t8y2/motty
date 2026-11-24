@@ -68,6 +68,28 @@ func TestToolbarRestoreIgnoresUnknownAndDuplicateKeys(t *testing.T) {
 	}
 }
 
+func TestToolbarRestoreInsertsNewFileBeforeNewDirectory(t *testing.T) {
+	entries := normalizeToolbar(toolbarSFTP, []toolbarEntry{
+		{Key: "refresh", Enabled: false},
+		{Key: "new-folder", Enabled: false},
+	})
+	file, folder := -1, -1
+	for index, entry := range entries {
+		switch entry.Key {
+		case "new-file":
+			file = index
+			if !entry.Enabled {
+				t.Fatal("the newly introduced action should follow its default visibility")
+			}
+		case "new-folder":
+			folder = index
+		}
+	}
+	if file < 0 || folder < 0 || file >= folder || entries[0].Key != "refresh" || entries[0].Enabled {
+		t.Fatalf("migrated SFTP toolbar = %+v", entries)
+	}
+}
+
 func TestToolbarRestoreReturnsTheLatencyReadoutToTheRailTop(t *testing.T) {
 	entries := normalizeToolbar(toolbarTerminal, []toolbarEntry{{Key: "notes", Enabled: true}, {Key: "files", Enabled: false}})
 	if len(entries) != len(toolbarCatalog[toolbarTerminal]) || entries[0].Key != "latency" || entries[0].Enabled {

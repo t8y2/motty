@@ -451,6 +451,9 @@ func (state *State) Shortcut(event gfx.KeyEvent) (outcome gfx.EventResult) {
 		}
 		return gfx.EventResult{}
 	}
+	if result, handled := state.sftpNewFileShortcut(event, chord); handled {
+		return result
+	}
 	if result, handled := state.popupTypeaheadShortcut(event, chord); handled {
 		return result
 	}

@@ -59,7 +59,7 @@ func (w *sftpWindow) targetSide(id gfx.ID) (bool, bool) {
 		if _, ok := id.In(sftpWindowActions[side]); ok {
 			return side == 0, true
 		}
-		for _, ids := range [][2]gfx.ID{sftpWindowPath, sftpWindowFilter, sftpWindowList, sftpWindowMore, sftpWindowFilterClear, sftpWindowFilterToggle, sftpWindowHidden, sftpWindowHeaderHidden, sftpWindowRefresh, sftpWindowUp, sftpWindowNewFolder, sftpWindowTreeBar} {
+		for _, ids := range [][2]gfx.ID{sftpWindowPath, sftpWindowFilter, sftpWindowList, sftpWindowMore, sftpWindowFilterClear, sftpWindowFilterToggle, sftpWindowHidden, sftpWindowHeaderHidden, sftpWindowRefresh, sftpWindowUp, sftpWindowNewFolder, sftpWindowNewFile, sftpWindowTreeBar} {
 			if id == ids[side] {
 				return side == 0, true
 			}
@@ -178,6 +178,7 @@ func (w *sftpWindow) headerMenuRows(side int, paneWidth float32) menuRows {
 		ID:    sftpWindowActions[side].At(sftpWindowActionIndex(hitSFTPCalculateDirectorySize)),
 		Label: m.SFTPWindow.CalculateDirectorySize, Icon: lucideIcons[iconInfo], Disabled: folder.path == "" || !local && w.view.openFiles == nil,
 	})
+	rows.add(components.ContextMenuItem{ID: sftpWindowNewFile[side], Label: m.SFTPNewFile, Icon: lucideIcons[iconPlus], Disabled: busy || !local && w.view.approximate})
 	rows.add(components.ContextMenuItem{ID: sftpWindowNewFolder[side], Label: m.SFTPNewDirectory, Icon: lucideIcons[iconFolderPlus], Disabled: busy})
 	if !local {
 		rows.add(components.ContextMenuItem{ID: hitSFTPNewLink, Label: tools.TipNewLink, Icon: lucideIcons[iconLink], Disabled: busy})
@@ -206,7 +207,13 @@ func (w *sftpWindow) declareHeaderMenus(c ui.C, anchors *[2]ui.Box) {
 		}
 		rows := w.headerMenuRows(side, w.ui.panes[side].bounds.Width)
 		w.owner.declareMenuOn(c, &folder.headerMenuOpen, anchors[side], &rows, func(id gfx.ID) {
-			w.clickFilterControl(id)
+			if index, ok := id.In(sftpWindowActions[side]); ok && index < len(sftpWindowActionIDs) {
+				w.fileAction(side == 0, sftpWindowActionIDs[index])
+				return
+			}
+			if !w.clickFilterControl(id) {
+				w.click(id)
+			}
 		})
 	}
 }

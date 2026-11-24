@@ -50,7 +50,7 @@ var toolbarCatalog = [3][]toolbarSpec{
 	},
 	toolbarSFTP: {
 		{"upload-file", hitSFTPUpload, iconUpload}, {"upload-folder", hitSFTPUploadDirectory, iconFolderUp},
-		{"new-folder", hitSFTPNewDirectory, iconFolderPlus}, {"new-link", hitSFTPNewLink, iconLink},
+		{"new-file", hitSFTPNewFile, iconPlus}, {"new-folder", hitSFTPNewDirectory, iconFolderPlus}, {"new-link", hitSFTPNewLink, iconLink},
 		{"local-remote", hitSFTPPaneToggle, iconHosts}, {"refresh", hitSFTPRefresh, iconRefresh},
 		{"follow-folder", hitSFTPFollowToggle, iconFollowFolder},
 		{"locate-terminal", hitSFTPLocateTerminal, iconTerminal},
@@ -147,6 +147,16 @@ func normalizeToolbar(group toolbarGroup, entries []toolbarEntry) []toolbarEntry
 	// entry below every action.
 	if group == toolbarTerminal && !slices.ContainsFunc(result, func(entry toolbarEntry) bool { return entry.Key == "latency" }) {
 		result = slices.Insert(result, 0, toolbarEntry{Key: "latency", Enabled: toolbarDefaultEnabled(group, "latency")})
+	}
+	// New File belongs immediately before New Directory, including in layouts
+	// saved before the action existed. Other custom ordering remains untouched.
+	if group == toolbarSFTP && !slices.ContainsFunc(result, func(entry toolbarEntry) bool { return entry.Key == "new-file" }) {
+		entry := toolbarEntry{Key: "new-file", Enabled: toolbarDefaultEnabled(group, "new-file")}
+		if index := slices.IndexFunc(result, func(other toolbarEntry) bool { return other.Key == "new-folder" }); index >= 0 {
+			result = slices.Insert(result, index, entry)
+		} else {
+			result = append(result, entry)
+		}
 	}
 	// New entries become available after an upgrade; existing hidden entries
 	// remain hidden. Unknown/duplicate IDs cannot create phantom controls.
@@ -264,6 +274,8 @@ func (state *State) toolbarLabel(id gfx.ID) string {
 		return m.SFTPUploadDirectory
 	case hitSFTPNewDirectory:
 		return m.SFTPNewDirectory
+	case hitSFTPNewFile:
+		return m.SFTPNewFile
 	case hitSFTPNewLink:
 		return m.Tools.TipNewLink
 	case hitSFTPPaneToggle:

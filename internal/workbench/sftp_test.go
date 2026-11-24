@@ -250,10 +250,19 @@ func (remote *workbenchSFTPRemote) Create(remotePath string) (io.WriteCloser, er
 func (remote *workbenchSFTPRemote) OpenTransferFile(remotePath string, flags int) (sftpclient.TransferFile, error) {
 	remote.mu.Lock()
 	content, exists := remote.files[remotePath]
-	remote.mu.Unlock()
-	if flags&os.O_EXCL != 0 && exists {
-		return nil, os.ErrExist
+	if flags&os.O_EXCL != 0 {
+		if _, directory := remote.entries[remotePath]; directory || exists {
+			remote.mu.Unlock()
+			return nil, os.ErrExist
+		}
+		for _, entry := range remote.entries[path.Dir(remotePath)] {
+			if entry.Name() == path.Base(remotePath) {
+				remote.mu.Unlock()
+				return nil, os.ErrExist
+			}
+		}
 	}
+	remote.mu.Unlock()
 	if flags == os.O_RDONLY && !exists {
 		return nil, os.ErrNotExist
 	}
@@ -565,6 +574,7 @@ func clickSFTPPageButton(t testing.TB, state *State, label string) {
 	var pass gfx.Canvas
 	pass.BeginEventPass(hit.ID, gfx.ClickInfo{})
 	state.Paint(&pass, size)
+	pass.RunAfterPaint()
 	pass.EndEventPass()
 }
 

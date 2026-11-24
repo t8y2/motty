@@ -44,6 +44,7 @@ var (
 	sftpWindowUp                 = [2]gfx.ID{tree.ID(sftpWindowLocal, "up"), tree.ID(sftpWindowRemote, "up")}
 	sftpWindowRefresh            = [2]gfx.ID{tree.ID(sftpWindowLocal, "refresh"), tree.ID(sftpWindowRemote, "refresh")}
 	sftpWindowNewFolder          = [2]gfx.ID{tree.ID(sftpWindowLocal, "new-folder"), tree.ID(sftpWindowRemote, "new-folder")}
+	sftpWindowNewFile            = [2]gfx.ID{tree.ID(sftpWindowLocal, "new-file"), tree.ID(sftpWindowRemote, "new-file")}
 	hitSFTPWindowSplit           = tree.ID(sftpWindowHits, "split")
 	hitSFTPWindowUpload          = tree.ID(sftpWindowHits, "upload")
 	hitSFTPWindowDownload        = tree.ID(sftpWindowHits, "download")

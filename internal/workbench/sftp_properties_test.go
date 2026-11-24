@@ -28,7 +28,7 @@ func TestSinglePaneMenuSharesFileActionsPathsAndProperties(t *testing.T) {
 
 	ids := sftpMenuRowIDs(state.sftpMenuRows(session, view))
 	for _, id := range []gfx.ID{
-		hitSFTPNewDirectory, hitSFTPUpload, hitSFTPUploadDirectory, hitSFTPNewLink,
+		hitSFTPNewDirectory, hitSFTPUpload, hitSFTPUploadDirectory, hitSFTPNewFile, hitSFTPNewLink,
 		hitSFTPCopyPath, hitSFTPProperties,
 	} {
 		if !ids[id] {
@@ -74,7 +74,7 @@ func TestSinglePaneMenuSharesFileActionsPathsAndProperties(t *testing.T) {
 	openLocalPane(t, state, session, localDir)
 	clickSFTPLocalRow(t, state, view, "report.txt")
 	ids = sftpMenuRowIDs(state.sftpMenuRows(session, view))
-	for _, id := range []gfx.ID{hitSFTPNewDirectory, hitSFTPCopyPath, hitSFTPProperties} {
+	for _, id := range []gfx.ID{hitSFTPNewDirectory, hitSFTPNewFile, hitSFTPCopyPath, hitSFTPProperties} {
 		if !ids[id] {
 			t.Errorf("single-pane local menu lacks action %v", id)
 		}

@@ -299,6 +299,7 @@ var (
 	hitSFTPUpload          = tree.ID(sftpHits, "sftp-upload")
 	hitSFTPUploadDirectory = tree.ID(sftpHits, "sftp-upload-directory")
 	hitSFTPNewDirectory    = tree.ID(sftpHits, "sftp-new-directory")
+	hitSFTPNewFile         = tree.ID(sftpHits, "sftp-new-file")
 	hitSFTPOpenEntry       = tree.ID(sftpHits, "sftp-open-entry")
 	hitSFTPRename          = tree.ID(sftpHits, "sftp-rename")
 	hitSFTPMove            = tree.ID(sftpHits, "sftp-move")

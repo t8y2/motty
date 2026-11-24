@@ -13,7 +13,7 @@ import (
 	layoutcore "motty/internal/workspace"
 )
 
-func TestSFTPPanelBackgroundMenuOpensNewFolder(t *testing.T) {
+func TestSFTPPanelBackgroundMenuOpensCreateDialogs(t *testing.T) {
 	for _, local := range []bool{false, true} {
 		t.Run(fmt.Sprintf("local-%t", local), func(t *testing.T) {
 			state, session, _, _ := openTestSFTP(t)
@@ -40,28 +40,41 @@ func TestSFTPPanelBackgroundMenuOpensNewFolder(t *testing.T) {
 			if !ok {
 				t.Fatal("missing file-list background")
 			}
-			if err := preview.RightClick(list.Bounds.X+24, list.Bounds.Y+list.Bounds.Height-12); err != nil {
-				t.Fatal(err)
-			}
-			if err := preview.Rest(); err != nil {
-				t.Fatal(err)
-			}
-			if !state.sftpMenu.open || selectedSFTPCount(view) != 0 {
-				t.Fatal("right-click did not open the menu for the current directory")
-			}
-			for _, hit := range preview.Snapshot().Hits {
-				if hit.Role != gfx.RoleMenuItem || hit.Label != state.messages.SFTPNewDirectory || hit.Disabled {
-					continue
-				}
-				if err := preview.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+			for _, action := range []struct {
+				label  string
+				dialog sftpDialogKind
+			}{
+				{state.messages.SFTPNewDirectory, sftpDialogCreateDirectory},
+				{state.messages.SFTPNewFile, sftpDialogCreateFile},
+			} {
+				if err := preview.RightClick(list.Bounds.X+24, list.Bounds.Y+list.Bounds.Height-12); err != nil {
 					t.Fatal(err)
 				}
-				if view.dialog != sftpDialogCreateDirectory || view.local != local {
-					t.Fatalf("New Folder opened dialog %v with local=%t", view.dialog, view.local)
+				if err := preview.Rest(); err != nil {
+					t.Fatal(err)
 				}
-				return
+				if !state.sftpMenu.open || selectedSFTPCount(view) != 0 {
+					t.Fatal("right-click did not open the menu for the current directory")
+				}
+				found := false
+				for _, hit := range preview.Snapshot().Hits {
+					if hit.Role != gfx.RoleMenuItem || hit.Label != action.label || hit.Disabled {
+						continue
+					}
+					found = true
+					if err := preview.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+						t.Fatal(err)
+					}
+					if view.dialog != action.dialog || view.local != local {
+						t.Fatalf("%s opened dialog %v with local=%t", action.label, view.dialog, view.local)
+					}
+					state.closeSFTPDialog(view)
+					break
+				}
+				if !found {
+					t.Fatalf("missing enabled %s menu item", action.label)
+				}
 			}
-			t.Fatal("missing enabled New Folder menu item")
 		})
 	}
 }

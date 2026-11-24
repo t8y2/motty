@@ -63,6 +63,10 @@ func TestSFTPBackgroundMenuCreatesFolderInClickedPane(t *testing.T) {
 				if !ok || mkdir.Disabled {
 					t.Fatalf("local=%t: New Folder is missing or disabled (menu open=%t)", local, w.ui.menuOpen)
 				}
+				newFile, ok := actionHit(hitSFTPNewFile)
+				if !ok || newFile.Disabled {
+					t.Fatalf("local=%t: New File is missing or disabled (menu open=%t)", local, w.ui.menuOpen)
+				}
 				if _, ok := actionHit(hitSFTPDelete); ok {
 					t.Fatalf("local=%t: blank-space menu offered Delete", local)
 				}
@@ -80,6 +84,32 @@ func TestSFTPBackgroundMenuCreatesFolderInClickedPane(t *testing.T) {
 				waitSFTPTab(t, state, w, func() bool {
 					for _, row := range folder.rows {
 						if row.entry.Name == "from-context-menu" && row.entry.IsDir() {
+							return true
+						}
+					}
+					return false
+				})
+				if err := preview.RightClick(list.X+24, list.Y+list.Height-12); err != nil {
+					t.Fatal(err)
+				}
+				if err := preview.Rest(); err != nil {
+					t.Fatal(err)
+				}
+				newFile, ok = actionHit(hitSFTPNewFile)
+				if !ok || newFile.Disabled {
+					t.Fatalf("local=%t: New File disappeared from the reopened menu", local)
+				}
+				if err := preview.Click(newFile.Bounds.X+newFile.Bounds.Width/2, newFile.Bounds.Y+newFile.Bounds.Height/2); err != nil {
+					t.Fatal(err)
+				}
+				if w.view.dialog != sftpDialogCreateFile || w.view.local != local {
+					t.Fatalf("local=%t: new-file dialog=%v active local=%t", local, w.view.dialog, w.view.local)
+				}
+				w.view.dialogEditor.Insert("from-context-menu.txt")
+				w.click(hitSFTPDialogSubmit)
+				waitSFTPTab(t, state, w, func() bool {
+					for _, row := range folder.rows {
+						if row.entry.Name == "from-context-menu.txt" && row.entry.Mode.IsRegular() {
 							return true
 						}
 					}
