@@ -452,7 +452,7 @@ type barTab struct {
 	// glided marks a tab that slides to a new place; glideScroll is how far the
 	// strip is scrolled, which is not a move.
 	glided      bool
-	glideScroll float32
+	glideScroll gfx.Point
 }
 
 // barGeometry is what a first pass over the window bar says about its tabs: the
@@ -858,7 +858,7 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool
 								first, firstPending = -scroll, false
 							}
 							number := state.windowTabIndex(windowTab{kind: windowTabWorkspace, id: uint32(workspace.ID)}) + 1
-							entry := state.declareWorkspaceTab(c, workspace, geometry.tabWidth, barTabHeight, first, scroll, false, false, number)
+							entry := state.declareWorkspaceTab(c, workspace, geometry.tabWidth, barTabHeight, first, gfx.Point{X: scroll}, false, false, number)
 							bar.tabs = append(bar.tabs, entry)
 						}
 						if settingsPlace == index+1 {
@@ -918,7 +918,7 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool
 								first, firstPending = -scroll, false
 							}
 							label := state.sftpFileTabTitle(fileTab)
-							entry.glided, entry.glideScroll = true, scroll
+							entry.glided, entry.glideScroll = true, gfx.Point{X: scroll}
 							entry.box = ui.Row(c).Size(geometry.tabWidth, barTabHeight).Shrink(0).MarginSides(0, barGap, 0, first).
 								Glide(tabGlideMotion, gfx.Point{X: scroll}).HitOutset(barTabReach, 0, barTabReach, 0).PadSides(0, 3, 0, 4).Items(ui.Center).Radius(radius.item).Border(1, edge).Background(fill).
 								HitWith(id, label, gfx.HitOptions{Role: gfx.RoleTab, Selected: active, Hint: label}).Children(func() {
@@ -971,7 +971,7 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool
 // declareWorkspaceTab shares tab styling and hit identities between both
 // orientations. number is the tab's place in the number row, zero for a tab no
 // number key reaches.
-func (state *State) declareWorkspaceTab(c ui.C, workspace layoutcore.WorkspaceInfo, width, height, first, scroll float32, vertical, compact bool, number int) barTab {
+func (state *State) declareWorkspaceTab(c ui.C, workspace layoutcore.WorkspaceInfo, width, height, first float32, scroll gfx.Point, vertical, compact bool, number int) barTab {
 	m, pal := state.messages, state.pal
 	id, closeID := hitTabList.At(int(workspace.ID)), hitTabCloseList.At(int(workspace.ID))
 	entry := barTab{workspace: workspace, id: id, closeID: closeID}
@@ -1038,9 +1038,9 @@ func (state *State) declareWorkspaceTab(c ui.C, workspace layoutcore.WorkspaceIn
 		row.MarginSides(first, 0, barGap, 0)
 	} else {
 		row.MarginSides(0, barGap, 0, first).HitOutset(barTabReach, 0, barTabReach, 0)
-		row.Glide(tabGlideMotion, gfx.Point{X: scroll})
-		entry.box, entry.glided, entry.glideScroll = row, true, scroll
 	}
+	row.Glide(tabGlideMotion, scroll)
+	entry.box, entry.glided, entry.glideScroll = row, true, scroll
 	row.
 		PadSides(0, 3, 0, 4).Items(ui.Center).Radius(radius.item).Border(1, edge).Background(fill).
 		HitWith(id, label, tabOptions).Children(func() {

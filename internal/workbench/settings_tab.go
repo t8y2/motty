@@ -129,7 +129,7 @@ func (state *State) declareSettingsTab(c ui.C, probe bool, geometry barGeometry,
 	entry.base, entry.background, entry.foreground = fill, fill, foreground
 	label := m.NavSettings
 	entry.label = label
-	entry.glided, entry.glideScroll = true, scroll
+	entry.glided, entry.glideScroll = true, gfx.Point{X: scroll}
 	entry.box = ui.Row(c).Size(geometry.tabWidth, barTabHeight).Shrink(0).MarginSides(0, barGap, 0, first).
 		Glide(tabGlideMotion, gfx.Point{X: scroll}).HitOutset(barTabReach, 0, barTabReach, 0).PadSides(0, 3, 0, 4).Items(ui.Center).Radius(radius.item).Border(1, edge).Background(fill).
 		HitWith(hitSettingsTab, label, gfx.HitOptions{Role: gfx.RoleTab, Selected: active, Hint: label}).Children(func() {
