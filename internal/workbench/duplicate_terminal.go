@@ -11,20 +11,34 @@ func (state *State) duplicateTerminal(target gfx.ID) gfx.EventResult {
 	if session == nil {
 		return gfx.EventResult{}
 	}
-	workspaceID, paneID, _ := state.deck.PaneForSession(layoutcore.SessionID(session.ID))
-	if len(state.deck.Panes(workspaceID, nil)) >= layoutcore.MaxPanes {
-		state.showActionWarning(state.messages.ShortcutDuplicateTerminal, state.messages.WorkspaceDraftLimit)
-		return gfx.EventResult{Handled: true, Repaint: true}
-	}
-	// 创建会话可能重新分配 sessions，提前复制源信息。
 	host, directory := session.host, session.splitDirectory()
 	title, custom := session.Title, session.customTitle
+	if !state.prepareAdjacentTerminal(session, state.messages.ShortcutDuplicateTerminal) {
+		return gfx.EventResult{Handled: true, Repaint: true}
+	}
+	workspaceID := state.pendingWorkspace
+	state.pendingDirectory = directory
+	if copied := state.newHostSession(host); copied != nil && custom {
+		state.renameSession(copied, title)
+		copied.customTitle = true
+	}
+	state.rebuildManagedWorkspace(workspaceID)
+	return gfx.EventResult{Handled: true, Repaint: true, Focus: state.activeTerminalFocusHit()}
+}
+
+// prepareAdjacentTerminal 统一新增和复制终端的布局及最大化处理。
+func (state *State) prepareAdjacentTerminal(session *Session, title string) bool {
+	workspaceID, paneID, _ := state.deck.PaneForSession(layoutcore.SessionID(session.ID))
+	if len(state.deck.Panes(workspaceID, nil)) >= layoutcore.MaxPanes {
+		state.showActionWarning(title, state.messages.WorkspaceDraftLimit)
+		return false
+	}
 	balanced := state.duplicateTerminalUsesGrid(workspaceID)
 	previousPane := state.deck.ActivePane(workspaceID)
 	maximized := state.deck.PaneMaximized(workspaceID)
 	created, err := state.deck.Split(workspaceID, paneID, layoutcore.Vertical)
 	if err != nil {
-		return gfx.EventResult{Handled: true}
+		return false
 	}
 	panes := state.deck.Panes(workspaceID, nil)
 	order := make([]layoutcore.PaneID, len(panes))
@@ -40,7 +54,7 @@ func (state *State) duplicateTerminal(target gfx.ID) gfx.EventResult {
 			state.deck.ClosePane(workspaceID, created)
 			state.deck.ActivatePane(workspaceID, previousPane)
 			state.deck.SetPaneMaximized(workspaceID, maximized)
-			return gfx.EventResult{Handled: true}
+			return false
 		}
 	}
 	if state.workspaceTabbed(workspaceID) {
@@ -56,13 +70,7 @@ func (state *State) duplicateTerminal(target gfx.ID) gfx.EventResult {
 	state.syncActiveSession()
 	state.refreshWorkspaceViews()
 	state.pendingWorkspace, state.pendingPane = workspaceID, created
-	state.pendingDirectory = directory
-	if copied := state.newHostSession(host); copied != nil && custom {
-		state.renameSession(copied, title)
-		copied.customTitle = true
-	}
-	state.rebuildManagedWorkspace(workspaceID)
-	return gfx.EventResult{Handled: true, Repaint: true, Focus: state.activeTerminalFocusHit()}
+	return true
 }
 
 // focusedShortcutTerminal 解析快捷键的终端焦点，排除其他页面和工作区。
