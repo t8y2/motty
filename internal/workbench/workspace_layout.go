@@ -341,6 +341,28 @@ func (state *State) ensureContextSFTP() {
 	}
 }
 
+// ensureSessionContextSFTP opens the file list for session when its workspace
+// has the files panel open. This allows background tabs with an open file panel
+// to load SFTP in the background upon connection instead of waiting for tab activation.
+func (state *State) ensureSessionContextSFTP(session *Session) {
+	if session == nil || session.files != nil {
+		return
+	}
+	if session.ID == state.activeSessionID {
+		state.ensureContextSFTP()
+		return
+	}
+	workspaceID, _, ok := state.deck.PaneForSession(layoutcore.SessionID(session.ID))
+	if !ok {
+		return
+	}
+	context, ok := state.deck.Context(workspaceID)
+	if !ok || !context.Open || context.Kind != layoutcore.ContextSFTP {
+		return
+	}
+	state.openSFTP(session)
+}
+
 func (state *State) activeWorkspaceLayout() (layoutcore.WorkspaceID, *layoutcore.Layout) {
 	state.ensureWorkspaceDeck()
 	workspaceID := state.deck.ActiveWorkspace()

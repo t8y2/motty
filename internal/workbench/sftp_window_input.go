@@ -821,7 +821,6 @@ func (w *sftpWindow) activate() {
 	}
 	w.refresh(true)
 	if w.connected() && w.view.path != "" {
-		w.view.forgetListings()
 		w.owner.refreshSFTPDirectory(w.view, w.view.path)
 	}
 }

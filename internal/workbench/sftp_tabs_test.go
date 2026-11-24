@@ -12,6 +12,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/sftpclient"
+	"motty/internal/sshconn"
 )
 
 func openSFTPTabFixture(t *testing.T) (*State, *Session, *sftpWindow, *workbenchSFTPRemote, string) {
@@ -730,5 +731,150 @@ func TestSFTPFileTabIsRuntimeOnlyAndSourceCloseRemovesIt(t *testing.T) {
 	source.files = nil // openTestSFTP's cleanup must not close the deleted source twice
 	if len(state.sftpTabs) != 0 || !w.closed {
 		t.Fatal("closing the source terminal did not close its runtime file tab")
+	}
+}
+
+func TestSFTPTabActivationKeepsListingsWithoutDroppingCache(t *testing.T) {
+	state, source, w, _, _ := openSFTPTabFixture(t)
+	key := path.Clean(w.view.path)
+	if _, ok := w.view.listing(key); !ok {
+		t.Fatal("opened tab did not remember its initial listing")
+	}
+
+	// Switch away to another section
+	state.activeSection = sectionWorkspaces
+
+	// Switch back to SFTP tab
+	if !state.activateSFTPTab(source.ID) {
+		t.Fatal("file tab could not be activated")
+	}
+
+	// It must keep its remembered listing rather than wiping it
+	if _, ok := w.view.listing(key); !ok {
+		t.Fatal("activating file tab dropped remembered listings")
+	}
+}
+
+func TestBackgroundSessionConnectionLoadsContextSFTP(t *testing.T) {
+	_, options := newWorld(t)
+	options.Invalidate = func() {}
+	state := newTestState(t, options)
+	state.sftpPanelAutoOpen = true
+
+	// Open Tab A
+	state.activeSection = sectionHosts
+	sessionA := state.createHostSession(state.hosts[0], state.sessionAddress(state.hosts[0]))
+	if sessionA == nil {
+		t.Fatal("failed to create session A")
+	}
+
+	// Open Tab B (Tab A becomes a background tab)
+	state.activeSection = sectionHosts
+	sessionB := state.createHostSession(state.hosts[0], state.sessionAddress(state.hosts[0]))
+	if sessionB == nil {
+		t.Fatal("failed to create session B")
+	}
+	if sessionA.ID == sessionB.ID {
+		t.Fatal("sessions should be different")
+	}
+	if state.activeSessionID != sessionB.ID {
+		t.Fatalf("active session should be session B (%d), got %d", sessionB.ID, state.activeSessionID)
+	}
+
+	// Tab A finishes connecting while Tab B is active (Tab A is in background)
+	fakeA, ok := sessionA.conn.(*fakeConn)
+	if !ok || fakeA == nil {
+		t.Fatal("session A connection is not fakeConn")
+	}
+	fakeA.mu.Lock()
+	fakeA.sftp = &workbenchSFTPRemote{
+		cwd: "/home/test",
+		entries: map[string][]os.FileInfo{
+			"/home/test": {
+				workbenchFileInfo{name: "notes.txt", size: 11, mode: 0o644, when: time.Unix(1_700_000_000, 0)},
+			},
+		},
+	}
+	fakeA.mu.Unlock()
+	fakeA.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+
+	// Tab A's SFTP should be loaded in the background
+	sessionAPtr, ok := state.sessionByIDPointer(sessionA.ID)
+	if !ok || sessionAPtr == nil {
+		t.Fatal("session A not found in state")
+	}
+	if sessionAPtr.files == nil {
+		t.Fatal("session connecting in the background with open panel did not load SFTP")
+	}
+	waitSFTP(t, state, sessionAPtr, func(view *sftpView) bool { return !view.busy && len(view.rows) == 1 })
+}
+
+func TestSwitchingTabsKeepsSFTPDirectoriesLoaded(t *testing.T) {
+	_, options := newWorld(t)
+	options.Invalidate = func() {}
+	state := newTestState(t, options)
+	state.sftpPanelAutoOpen = true
+
+	// Open Tab A
+	sessionA := state.createHostSession(state.hosts[0], state.sessionAddress(state.hosts[0]))
+	if sessionA == nil {
+		t.Fatal("failed to create session A")
+	}
+	fakeA := sessionA.conn.(*fakeConn)
+	fakeA.mu.Lock()
+	fakeA.sftp = &workbenchSFTPRemote{
+		cwd: "/home/test",
+		entries: map[string][]os.FileInfo{
+			"/home/test": {
+				workbenchFileInfo{name: "fileA.txt", size: 10, mode: 0o644, when: time.Unix(1_700_000_000, 0)},
+			},
+		},
+	}
+	fakeA.mu.Unlock()
+	fakeA.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	waitSFTP(t, state, sessionA, func(view *sftpView) bool { return !view.busy && len(view.rows) == 1 })
+
+	// Open Tab B (same host)
+	sessionB := state.createHostSession(state.hosts[0], state.sessionAddress(state.hosts[0]))
+	if sessionB == nil {
+		t.Fatal("failed to create session B")
+	}
+	fakeB := sessionB.conn.(*fakeConn)
+	fakeB.mu.Lock()
+	fakeB.sftp = &workbenchSFTPRemote{
+		cwd: "/home/test",
+		entries: map[string][]os.FileInfo{
+			"/home/test": {
+				workbenchFileInfo{name: "fileB.txt", size: 20, mode: 0o644, when: time.Unix(1_700_000_000, 0)},
+			},
+		},
+	}
+	fakeB.mu.Unlock()
+	fakeB.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	waitSFTP(t, state, sessionB, func(view *sftpView) bool { return !view.busy && len(view.rows) == 1 })
+
+	// Tab B is active, Tab A is in the background. Verify Tab A's SFTP remains loaded in background!
+	sessionAPtr, ok := state.sessionByIDPointer(sessionA.ID)
+	if !ok || sessionAPtr.files == nil || len(sessionAPtr.files.rows) != 1 {
+		t.Fatalf("session A SFTP not kept in background: %+v", sessionAPtr.files)
+	}
+
+	// Switch back to Tab A
+	if !state.ActivatePane(sessionA.ID) {
+		t.Fatal("failed to switch back to tab A")
+	}
+	if state.activeSessionID != sessionA.ID {
+		t.Fatalf("active session = %d, want session A %d", state.activeSessionID, sessionA.ID)
+	}
+
+	// Tab A's files must still be loaded immediately (not wiped to empty or lost)
+	if sessionAPtr.files == nil || sessionAPtr.files.path != "/home/test" || len(sessionAPtr.files.rows) != 1 {
+		t.Fatalf("switching back to tab A reloaded/lost SFTP: %+v", sessionAPtr.files)
+	}
+	if sessionAPtr.files.rows[0].entry.Name != "fileA.txt" {
+		t.Fatalf("session A rows = %v, want fileA.txt", sessionAPtr.files.rows[0].entry.Name)
 	}
 }
