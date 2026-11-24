@@ -62,6 +62,10 @@ func reconnectTerminalError(err error) bool {
 }
 
 func (state *State) cancelReconnect(session *Session) {
+	if session.reconnectStop != nil {
+		session.reconnectStop()
+		session.reconnectStop = nil
+	}
 	if session.reconnectPending {
 		state.reconnectWaiters--
 	}
@@ -79,6 +83,10 @@ func (state *State) queueReconnect(session *Session) bool {
 	}
 	next := session.reconnectAttempt + 1
 	if !state.connectionReconnect.permits(next) {
+		if session.reconnectStop != nil {
+			session.reconnectStop()
+			session.reconnectStop = nil
+		}
 		session.reconnectPending = false
 		session.reconnectDue = 0
 		session.reconnectExhausted = session.reconnectAttempt > 0
@@ -86,14 +94,19 @@ func (state *State) queueReconnect(session *Session) bool {
 		state.recordConnectionEvent(session, connectionEventReconnectStopped, "")
 		return false
 	}
+	delay := reconnectDelay(next)
 	session.reconnectAttempt = next
-	session.reconnectDue = state.now() + reconnectDelay(next)
+	session.reconnectDue = state.now() + delay
 	session.reconnectPending = true
 	state.reconnectWaiters++
 	session.reconnectExhausted = false
 	session.reconnectText = ""
 	session.showLog = false
 	state.recordConnectionEvent(session, connectionEventReconnectWaiting, "")
+	if session.reconnectStop != nil {
+		session.reconnectStop()
+	}
+	session.reconnectStop = state.scheduleWake(delay)
 	return true
 }
 
@@ -144,6 +157,10 @@ func (state *State) advanceReconnects() {
 		session := &state.sessions[index]
 		if !session.reconnectPending || now < session.reconnectDue {
 			continue
+		}
+		if session.reconnectStop != nil {
+			session.reconnectStop()
+			session.reconnectStop = nil
 		}
 		session.reconnectPending = false
 		state.reconnectWaiters--
@@ -210,6 +227,10 @@ func (state *State) applyReconnectPolicy() {
 			continue
 		}
 		if policy == reconnectThree && session.reconnectAttempt >= 3 && session.reconnectPending {
+			if session.reconnectStop != nil {
+				session.reconnectStop()
+				session.reconnectStop = nil
+			}
 			session.reconnectPending = false
 			state.reconnectWaiters--
 			session.reconnectDue = 0

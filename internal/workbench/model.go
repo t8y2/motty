@@ -364,6 +364,7 @@ type Session struct {
 	reconnectAttempt   int
 	reconnectDue       time.Duration
 	reconnectPending   bool
+	reconnectStop      func()
 	reconnectExhausted bool
 	reconnectText      string
 	reconnectSecond    int64

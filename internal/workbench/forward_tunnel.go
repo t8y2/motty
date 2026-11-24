@@ -24,6 +24,7 @@ type forwardTunnel struct {
 	// waiting.
 	retryAttempt int
 	retryDue     time.Duration
+	retryStop    func()
 	closed       bool
 }
 
@@ -80,6 +81,10 @@ func (state *State) dialForwardTunnel(tunnel *forwardTunnel) {
 	session.hostKey, session.err = sshconn.HostKeyInfo{}, nil
 	session.endpoint = sshconn.Endpoint{Host: tunnel.host.Address, Port: tunnel.host.Port, User: state.login(tunnel.host)}
 	tunnel.connected = false
+	if tunnel.retryStop != nil {
+		tunnel.retryStop()
+		tunnel.retryStop = nil
+	}
 	tunnel.retryDue = 0
 	if !tunnel.host.isSSH() || tunnel.host.mosh() {
 		state.failForwardTunnel(tunnel, errors.New(state.messages.ForwardHostUnavailable))
@@ -210,8 +215,13 @@ func (state *State) failForwardTunnel(tunnel *forwardTunnel, err error) {
 	}
 	if waiting > 0 {
 		tunnel.retryAttempt++
-		tunnel.retryDue = state.now() + reconnectDelay(tunnel.retryAttempt)
+		delay := reconnectDelay(tunnel.retryAttempt)
+		tunnel.retryDue = state.now() + delay
 		tunnel.connected = false
+		if tunnel.retryStop != nil {
+			tunnel.retryStop()
+		}
+		tunnel.retryStop = state.scheduleWake(delay)
 		if tunnel.session.conn != nil {
 			tunnel.session.conn.Cancel()
 			tunnel.session.conn = nil
@@ -265,6 +275,10 @@ func (state *State) closeForwardTunnel(tunnel *forwardTunnel) {
 	}
 	tunnel.closed = true
 	tunnel.connected = false
+	if tunnel.retryStop != nil {
+		tunnel.retryStop()
+		tunnel.retryStop = nil
+	}
 	tunnel.retryDue = 0
 	if tunnel.session.conn != nil {
 		tunnel.session.conn.Cancel()
