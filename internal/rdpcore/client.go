@@ -380,8 +380,8 @@ func (c *Client) Connect() error {
 			if c.selectedProtocol == x224.ProtocolHybrid {
 				// CredSSP path — initial TLS failed, will probe below.
 				initialTLSErr = err
-			} else {
-				// ProtocolSSL: probe pinned TLS versions (1.2 -> 1.1 -> 1.0).
+			} else if c.opts.LegacyTLS {
+				// ProtocolSSL: probe pinned TLS versions (1.2 -> 1.1 -> 1.0) only when LegacyTLS is enabled.
 				tlsFallbackOK := false
 				tlsVersions := []uint16{tls.VersionTLS12, tls.VersionTLS11, tls.VersionTLS10}
 				tlsNames := []string{"TLS 1.2", "TLS 1.1", "TLS 1.0"}
@@ -400,6 +400,9 @@ func (c *Client) Connect() error {
 					c.Close()
 					return err
 				}
+			} else {
+				c.Close()
+				return err
 			}
 		}
 	}
@@ -712,9 +715,9 @@ func (c *Client) upgradeTLS() error {
 	}
 	if c.tlsMaxVersion != 0 {
 		tlsConfig.MaxVersion = c.tlsMaxVersion
-	} else if c.selectedProtocol == x224.ProtocolHybrid || c.opts.LegacyTLS {
+	} else if c.selectedProtocol == x224.ProtocolHybrid {
 		// Cap TLS at 1.2 when CredSSP/NLA is selected (MS-CSSP was designed for 1.2;
-		// some Windows servers fail over 1.3), or when legacy TLS compatibility mode is requested.
+		// some Windows servers fail over 1.3).
 		tlsConfig.MaxVersion = tls.VersionTLS12
 	}
 	if c.opts.LegacyTLS {
