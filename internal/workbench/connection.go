@@ -4,9 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/vivaui/viva/gfx"
-	"motty/internal/diag"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,11 +13,13 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"motty/internal/ai/llm"
 	"motty/internal/ai/store"
 	"motty/internal/aiproviderimport"
 	"motty/internal/buildinfo"
+	"motty/internal/diag"
 	"motty/internal/linkwatch"
 	"motty/internal/localshell"
 	"motty/internal/sftpclient"
@@ -253,8 +254,8 @@ type Options struct {
 	// SetTrayIcon shows or hides the application's status-area icon, the choice
 	// the General settings offer beside starting at login. Nil hides the setting.
 	SetTrayIcon func(visible bool)
-	// CheckUpdate asks the release feed for the newest version. Nil asks GitHub.
-	CheckUpdate func() (update.Release, error)
+	// CheckUpdate asks the release feed for the newest version using the given HTTP client (or default when nil).
+	CheckUpdate func(*http.Client) (update.Release, error)
 	// Updater installs a newer release over the running program. Nil, or a nil
 	// Quit, offers only the download page.
 	Updater Updater

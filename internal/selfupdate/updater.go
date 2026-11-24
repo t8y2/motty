@@ -105,9 +105,13 @@ func (updater *Updater) clean() {
 // Prepare downloads the release's package and checks it against the running
 // program: its checksum, and where there is a signature, who signed it. Nothing
 // is changed on the system; a failure or a cancelled context leaves it as it was.
-func (updater *Updater) Prepare(ctx context.Context, release update.Release, progress func(Progress), phase func(Phase)) (Staged, error) {
+// When client is nil, updater.Client is used.
+func (updater *Updater) Prepare(ctx context.Context, client *http.Client, release update.Release, progress func(Progress), phase func(Phase)) (Staged, error) {
 	if updater.reason != ReasonNone || !release.Asset.Has() {
 		return Staged{}, ErrUnsupported
+	}
+	if client == nil {
+		client = updater.Client
 	}
 	install := updater.install
 	// Who signed the running program decides who may sign its replacement, and
@@ -144,7 +148,7 @@ func (updater *Updater) Prepare(ctx context.Context, release update.Release, pro
 	// update: the full archive is downloaded instead.
 	if release.Asset.FeedVerified {
 		if patch, ok := release.Asset.PatchFrom(update.Current); ok {
-			if staged, err := updater.preparePatch(ctx, release, patch, progress, phase); err == nil {
+			if staged, err := updater.preparePatch(ctx, client, release, patch, progress, phase); err == nil {
 				return staged, nil
 			}
 		}
@@ -159,7 +163,7 @@ func (updater *Updater) Prepare(ctx context.Context, release update.Release, pro
 	}
 	archive := filepath.Join(dir, release.Asset.Name)
 	if install.Kind != KindLinuxDeb || ctx.Err() != nil || verifyCachedPackage(archive, release) != nil {
-		archive, err = Download(ctx, updater.Client, release.Asset, dir, progress)
+		archive, err = Download(ctx, client, release.Asset, dir, progress)
 	}
 	if err != nil {
 		return Staged{}, err
@@ -229,7 +233,7 @@ func (updater *Updater) Prepare(ctx context.Context, release update.Release, pro
 // preparePatch downloads a delta and applies it to the running installation in
 // a staging directory. Nothing installed is changed; the platform installer
 // swaps the payload in when the application quits.
-func (updater *Updater) preparePatch(ctx context.Context, release update.Release, patch update.Patch, progress func(Progress), phase func(Phase)) (Staged, error) {
+func (updater *Updater) preparePatch(ctx context.Context, client *http.Client, release update.Release, patch update.Patch, progress func(Progress), phase func(Phase)) (Staged, error) {
 	dir := filepath.Join(updater.Dir, release.Version+".patch")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return Staged{}, err
@@ -240,7 +244,7 @@ func (updater *Updater) preparePatch(ctx context.Context, release update.Release
 	if progress != nil {
 		progress(Progress{Done: 0, Size: patch.Size})
 	}
-	path, err := update.DownloadPatch(ctx, updater.Client, release.Asset, patch, dir, func(done, total int64) {
+	path, err := update.DownloadPatch(ctx, client, release.Asset, patch, dir, func(done, total int64) {
 		if progress != nil {
 			progress(Progress{Done: done, Size: total})
 		}

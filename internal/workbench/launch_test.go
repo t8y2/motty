@@ -2,6 +2,8 @@ package workbench
 
 import (
 	"errors"
+	"fmt"
+	"net/http"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -9,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/app/proxy"
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 	"motty/internal/update"
@@ -175,7 +178,7 @@ func TestCheckingForUpdatesOffersTheDownloadOfANewerVersion(t *testing.T) {
 	world, options := newWorld(t)
 	_ = world
 	options.Invalidate = func() {}
-	options.CheckUpdate = func() (update.Release, error) {
+	options.CheckUpdate = func(*http.Client) (update.Release, error) {
 		return update.Release{Version: "99.0.0", URL: "https://example.com/release"}, nil
 	}
 	var opened []string
@@ -205,7 +208,7 @@ func TestCheckingForUpdatesOffersTheDownloadOfANewerVersion(t *testing.T) {
 func TestANewVersionIsOfferedInADialogWithItsNotesAsMarkdown(t *testing.T) {
 	_, options := newWorld(t)
 	options.Invalidate = func() {}
-	options.CheckUpdate = func() (update.Release, error) {
+	options.CheckUpdate = func(*http.Client) (update.Release, error) {
 		return update.Release{Version: "99.0.0", URL: "https://example.com/release", Notes: "## Fixed\n- the thing"}, nil
 	}
 	var opened []string
@@ -240,7 +243,7 @@ func TestANewVersionIsOfferedInADialogWithItsNotesAsMarkdown(t *testing.T) {
 func TestALinkInTheReleaseNotesOpensInTheBrowser(t *testing.T) {
 	_, options := newWorld(t)
 	options.Invalidate = func() {}
-	options.CheckUpdate = func() (update.Release, error) {
+	options.CheckUpdate = func(*http.Client) (update.Release, error) {
 		return update.Release{
 			Version: "99.0.0", URL: "https://example.com/release",
 			Notes: "See [#12](https://example.com/12) for the details.",
@@ -265,7 +268,7 @@ func TestASkippedVersionStaysQuietAtStartupButNotWhenAsked(t *testing.T) {
 	_, options := newWorld(t)
 	options.Invalidate = func() {}
 	version := "99.0.0"
-	options.CheckUpdate = func() (update.Release, error) {
+	options.CheckUpdate = func(*http.Client) (update.Release, error) {
 		return update.Release{Version: version, URL: "https://example.com/r"}, nil
 	}
 	state := New(options)
@@ -306,7 +309,7 @@ func TestASkippedVersionStaysQuietAtStartupButNotWhenAsked(t *testing.T) {
 func TestAnAvailableUpdateStaysInTheBarUntilThereIsNone(t *testing.T) {
 	_, options := newWorld(t)
 	options.Invalidate = func() {}
-	options.CheckUpdate = func() (update.Release, error) {
+	options.CheckUpdate = func(*http.Client) (update.Release, error) {
 		return update.Release{Version: "99.0.0", URL: "https://example.com/r"}, nil
 	}
 	state := newTestState(t, options)
@@ -343,7 +346,7 @@ func TestCheckingForUpdatesSaysSoWhenCurrentOrFailed(t *testing.T) {
 	options.Invalidate = func() {}
 	answer := update.Release{Version: update.Current, URL: "https://example.com/r"}
 	var failure error
-	options.CheckUpdate = func() (update.Release, error) { return answer, failure }
+	options.CheckUpdate = func(*http.Client) (update.Release, error) { return answer, failure }
 	state := newTestState(t, options)
 	state.Click(hitSettingsUpdateCheck)
 	waitUpdate(t, state, func() bool { return !state.update.checking })
@@ -361,7 +364,7 @@ func TestCheckingForUpdatesSaysSoWhenCurrentOrFailed(t *testing.T) {
 func TestTheAutoCheckIsOnByDefaultRunsAndCanBeTurnedOff(t *testing.T) {
 	_, options := newWorld(t)
 	options.Invalidate = func() {}
-	options.CheckUpdate = func() (update.Release, error) {
+	options.CheckUpdate = func(*http.Client) (update.Release, error) {
 		return update.Release{Version: "99.0.0", URL: "https://example.com/r"}, nil
 	}
 	state := New(options)
@@ -392,7 +395,7 @@ func TestTheAutoCheckAsksAgainAfterItsInterval(t *testing.T) {
 	_, options := newWorld(t)
 	options.Invalidate = func() {}
 	var calls atomic.Int32
-	options.CheckUpdate = func() (update.Release, error) {
+	options.CheckUpdate = func(*http.Client) (update.Release, error) {
 		calls.Add(1)
 		return update.Release{Version: update.Current, URL: "https://example.com/r"}, nil
 	}
@@ -624,7 +627,7 @@ func TestAWaitingRequestStartsWhenTheDialogIsClosedByAKey(t *testing.T) {
 func TestAMissingReleaseIsSaidPlainlyNotAsAFailure(t *testing.T) {
 	_, options := newWorld(t)
 	options.Invalidate = func() {}
-	options.CheckUpdate = func() (update.Release, error) { return update.Release{}, update.ErrNoRelease }
+	options.CheckUpdate = func(*http.Client) (update.Release, error) { return update.Release{}, update.ErrNoRelease }
 	state := newTestState(t, options)
 	state.Click(hitSettingsUpdateCheck)
 	waitUpdate(t, state, func() bool { return !state.update.checking })
@@ -872,5 +875,67 @@ func TestAFailedLinkDoesNotShowItsPassword(t *testing.T) {
 	state.Wake()
 	if strings.Contains(state.status, "secret") || !strings.Contains(state.status, "***") {
 		t.Fatalf("status %q", state.status)
+	}
+}
+
+func TestUpdateCheckOffersDirectRetryWhenProxyUnavailable(t *testing.T) {
+	_, options := newWorld(t)
+	options.Invalidate = func() {}
+	var (
+		gotClient *http.Client
+		checkErr  error
+	)
+	options.CheckUpdate = func(client *http.Client) (update.Release, error) {
+		gotClient = client
+		if checkErr != nil {
+			return update.Release{}, checkErr
+		}
+		return update.Release{Version: update.Current}, nil
+	}
+	state := newTestState(t, options)
+	openAboutSettings(state)
+
+	// 1. Initial state: no direct retry button
+	_, texts := paintedTexts(state)
+	if contains(texts, state.messages.Tools.GeneralUpdateDirectRetry) {
+		t.Fatal("direct retry button must not appear before a proxy failure")
+	}
+
+	// 2. Normal check fails with proxy.ErrUnavailable.
+	checkErr = fmt.Errorf("%w: proxy settings cannot be read", proxy.ErrUnavailable)
+	state.Click(hitSettingsUpdateCheck)
+	waitUpdate(t, state, func() bool { return !state.update.checking })
+	if !state.update.proxyFailed {
+		t.Fatal("expected proxyFailed = true")
+	}
+
+	// 3. UI now shows direct retry button
+	_, texts = paintedTexts(state)
+	if !contains(texts, state.messages.Tools.GeneralUpdateDirectRetry) {
+		t.Fatalf("expected direct retry button in texts: %q", texts)
+	}
+
+	// 4. Click direct retry button: should use direct client (Proxy == nil)
+	checkErr = nil
+	state.Click(hitSettingsUpdateDirectRetry)
+	waitUpdate(t, state, func() bool { return !state.update.checking })
+	if gotClient == nil {
+		t.Fatal("expected direct retry to pass a client")
+	}
+	tr, ok := gotClient.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected *http.Transport, got %T", gotClient.Transport)
+	}
+	if tr.Proxy != nil {
+		t.Fatal("expected direct client to have nil Proxy")
+	}
+
+	// 5. Successful check clears proxyFailed and hides direct retry button
+	if state.update.proxyFailed {
+		t.Fatal("expected proxyFailed = false after successful retry")
+	}
+	_, texts = paintedTexts(state)
+	if contains(texts, state.messages.Tools.GeneralUpdateDirectRetry) {
+		t.Fatal("direct retry button must disappear after successful check")
 	}
 }

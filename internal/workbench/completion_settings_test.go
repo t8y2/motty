@@ -17,6 +17,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/vivaui/viva/app/proxy"
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/completion"
 	"motty/internal/configstore"
@@ -730,4 +731,53 @@ func canvasHasText(canvas *gfx.Canvas, value string) bool {
 		}
 	}
 	return false
+}
+
+func TestCompletionUpdateOffersDirectRetryWhenProxyUnavailable(t *testing.T) {
+	w := newCompletionWorld(t)
+	state := w.state
+	c := &state.completion
+
+	state.Click(hitSettings)
+	state.selectSettingsCategory(settingsTerminal)
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 2400})
+	if canvasHasText(&canvas, state.messages.Completion.CheckDirect) {
+		t.Fatal("direct retry button must not appear before proxy failure")
+	}
+
+	// 1. Proxy unavailable failure
+	c.updateReady = make(chan completionUpdateResult, 1)
+	c.updateReady <- completionUpdateResult{err: fmt.Errorf("%w: cannot read proxy", proxy.ErrUnavailable)}
+	state.adoptCompletionUpdate()
+	if !c.proxyFailed {
+		t.Fatal("expected proxyFailed = true")
+	}
+
+	// 2. Direct retry button now rendered
+	canvas.Reset()
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 2400})
+	if !canvasHasText(&canvas, state.messages.Completion.CheckDirect) {
+		t.Fatal("expected direct retry button to be rendered")
+	}
+
+	// 3. Click direct retry button triggers updateCompletionsDirect
+	state.Click(hitCompletionUpdateDirectRetry)
+	if !c.updating {
+		t.Fatal("expected updating = true after direct retry click")
+	}
+
+	// 4. Successful update clears proxyFailed and hides direct retry button
+	c.updateReady = make(chan completionUpdateResult, 1)
+	c.updateReady <- completionUpdateResult{installed: true}
+	state.adoptCompletionUpdate()
+	if c.proxyFailed {
+		t.Fatal("expected proxyFailed = false after success")
+	}
+
+	canvas.Reset()
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 2400})
+	if canvasHasText(&canvas, state.messages.Completion.CheckDirect) {
+		t.Fatal("direct retry button must disappear after successful update")
+	}
 }

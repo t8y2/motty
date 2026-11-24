@@ -698,6 +698,7 @@ type ToolsMessages struct {
 	GeneralUpdate                   string
 	GeneralUpdateDescription        string
 	GeneralUpdateCheck              string
+	GeneralUpdateDirectRetry        string
 	GeneralUpdateDownload           string
 	GeneralUpdateSource             string
 	GeneralUpdateSourceDescription  string

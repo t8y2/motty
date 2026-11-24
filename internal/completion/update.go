@@ -306,19 +306,30 @@ func allowedUpdateHost(host string) bool {
 // GitHub or the fixed fallback over https.
 func UpdateClient() *http.Client {
 	client := netclient.Client(updateTimeout)
-	client.CheckRedirect = func(request *http.Request, via []*http.Request) error {
-		if len(via) >= 5 {
-			return errors.New("too many redirects")
-		}
-		if request.URL.Scheme != "https" {
-			return errors.New("only https downloads are followed")
-		}
-		if !allowedUpdateHost(request.URL.Hostname()) && request.URL.Hostname() != updateMirror {
-			return fmt.Errorf("the redirect leaves GitHub for %q", request.URL.Hostname())
-		}
-		return nil
-	}
+	client.CheckRedirect = checkUpdateRedirect
 	return client
+}
+
+// DirectUpdateClient returns an HTTP client that connects directly, bypassing
+// the desktop proxy settings. It is used when the user explicitly chooses to
+// retry a catalog check directly after a proxy failure.
+func DirectUpdateClient() *http.Client {
+	client := netclient.DirectClient(updateTimeout)
+	client.CheckRedirect = checkUpdateRedirect
+	return client
+}
+
+func checkUpdateRedirect(request *http.Request, via []*http.Request) error {
+	if len(via) >= 5 {
+		return errors.New("too many redirects")
+	}
+	if request.URL.Scheme != "https" {
+		return errors.New("only https downloads are followed")
+	}
+	if !allowedUpdateHost(request.URL.Hostname()) && request.URL.Hostname() != updateMirror {
+		return fmt.Errorf("the redirect leaves GitHub for %q", request.URL.Hostname())
+	}
+	return nil
 }
 
 // readUpdate retries the fixed public catalog only after a complete HTTP attempt

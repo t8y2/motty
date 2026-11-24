@@ -248,6 +248,23 @@ func TestUpdateClientBoundsRedirects(t *testing.T) {
 	}
 }
 
+func TestDirectUpdateClient(t *testing.T) {
+	client := DirectUpdateClient()
+	if client.Timeout != updateTimeout {
+		t.Fatalf("timeout = %v", client.Timeout)
+	}
+	tr, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected *http.Transport, got %T", client.Transport)
+	}
+	if tr.Proxy != nil {
+		t.Fatal("expected nil Proxy on direct transport")
+	}
+	if client.CheckRedirect == nil {
+		t.Fatal("expected CheckRedirect to be set")
+	}
+}
+
 func TestUpdateFallbackRetriesOnlyCatalogGitHubFailures(t *testing.T) {
 	for _, status := range []int{http.StatusForbidden, http.StatusTooManyRequests, http.StatusBadGateway} {
 		t.Run(http.StatusText(status), func(t *testing.T) {

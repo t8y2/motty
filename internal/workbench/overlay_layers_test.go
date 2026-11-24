@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 
@@ -16,7 +17,7 @@ import (
 func TestTheAssistantDrawerKeepsItsOwnLayerUnderADialog(t *testing.T) {
 	world, options := newWorld(t)
 	options.Invalidate = func() {}
-	options.CheckUpdate = func() (update.Release, error) {
+	options.CheckUpdate = func(*http.Client) (update.Release, error) {
 		return update.Release{Version: "99.0.0", URL: "https://example.com/release"}, nil
 	}
 	state := newTestState(t, options)
