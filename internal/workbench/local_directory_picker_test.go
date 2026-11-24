@@ -22,7 +22,7 @@ func TestLocalDirectoryPickerShortcutHistoryAndBrowse(t *testing.T) {
 	first, second := t.TempDir(), t.TempDir()
 	state.localDirectoryHistory = []string{first, second}
 	chord := state.shortcuts.chords.Chord(shortcutAddLocalTerminal)
-	if chord != (keymap.Chord{Modifiers: gfx.ModifierAlt | gfx.ModifierShift, Char: 'n'}) {
+	if chord != (keymap.Chord{Modifiers: primaryModifier | gfx.ModifierShift, Char: 'o'}) {
 		t.Fatalf("chord = %+v", chord)
 	}
 	pressChord(state, chord)
