@@ -13,6 +13,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
+	"github.com/vivaui/viva/ui"
 )
 
 func TestLocalDirectoryPickerShortcutHistoryAndBrowse(t *testing.T) {
@@ -116,11 +117,34 @@ func TestLocalDirectoryPickerPaintAndNavigation(t *testing.T) {
 			t.Fatalf("missing visible control: %v", id)
 		}
 	}
+	assertSelection := func(index int) {
+		t.Helper()
+		canvas.Reset()
+		state.Paint(&canvas, size)
+		for i := range 2 {
+			hit, ok := hitByID(&canvas, hitLocalDirectoryRows.At(i))
+			if !ok || hit.Selected != (i == index) {
+				t.Fatalf("row %d selection did not follow keyboard", i)
+			}
+			accent := false
+			for _, rect := range canvas.Rectangles() {
+				if rect.Bounds == hit.Bounds && rect.Color == state.pal.accent {
+					accent = true
+				}
+			}
+			if accent != (i == index) {
+				t.Fatalf("row %d highlight did not follow keyboard", i)
+			}
+		}
+	}
+	assertSelection(0)
 	state.localDirectoryKey(gfx.KeyEvent{Key: gfx.KeyDown})
+	assertSelection(1)
 	if state.localDirectoryPicker.selected != 1 {
 		t.Fatal("down did not select second directory")
 	}
 	state.localDirectoryKey(gfx.KeyEvent{Key: gfx.KeyUp})
+	assertSelection(0)
 	if state.localDirectoryPicker.selected != 0 {
 		t.Fatal("up did not select first directory")
 	}
@@ -154,6 +178,30 @@ func TestLocalDirectoryPickerLongPathsAndLanguages(t *testing.T) {
 		remove, ok := hitByID(&canvas, hitLocalDirectoryRemove.At(0))
 		if !ok || remove.Bounds.X+remove.Bounds.Width > 800 || remove.Bounds.X < row.Bounds.X || remove.Bounds.X+remove.Bounds.Width > row.Bounds.X+row.Bounds.Width {
 			t.Fatal("long path displaced delete button")
+		}
+		truncated := false
+		for _, text := range canvas.Texts() {
+			if strings.HasPrefix(text.Value, "/workspace/") && strings.HasSuffix(text.Value, "…") {
+				truncated = true
+				if text.Bounds.X+text.Bounds.Width > remove.Bounds.X {
+					t.Fatal("truncated path overlaps delete button")
+				}
+			}
+		}
+		if !truncated {
+			t.Fatal("long path was not ellipsized")
+		}
+		canvas.Reset()
+		canvas.SetInteraction(hitLocalDirectoryRows.At(0), gfx.ID{}, gfx.ID{}, false)
+		state.Paint(&canvas, gfx.Size{Width: 800, Height: 700})
+		var tooltip strings.Builder
+		for _, text := range canvas.Texts() {
+			if text.Layer == ui.TooltipLayer {
+				tooltip.WriteString(text.Value)
+			}
+		}
+		if tooltip.String() != directory {
+			t.Fatalf("hover directory = %q, want %q", tooltip.String(), directory)
 		}
 		if state.shortcutActionLabel(shortcutAddLocalTerminal) != state.messages.AddLocalTerminal {
 			t.Fatal("shortcut label is not localized")

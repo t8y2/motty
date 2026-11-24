@@ -38,7 +38,7 @@ func (state *State) declareLocalDirectoryPicker(c ui.C) {
 						if !selected {
 							row.Hover(ui.Look{}.Background(state.pal.surfaceHot))
 						}
-						row.HitWith(id, directory, gfx.HitOptions{Role: gfx.RoleButton, SkipTab: true, Selected: selected}).Children(func() {
+						row.HitWith(id, directory, gfx.HitOptions{Role: gfx.RoleButton, SkipTab: true, Selected: selected}).Tooltip(directory).Children(func() {
 							ui.Row(c).Grow(1).Shrink(1).MinWidth(0).Height(picker.rowHeight).PadX(10).Gap(8).Items(ui.Center).Children(func() {
 								ui.Icon(c, lucideIcons[iconFolderOpen]).Size(16, 16).Shrink(0).Color(foreground)
 								ui.Text(c, directory).FontSize(metrics.FontSizeM).Ellipsis().Grow(1).Shrink(1).MinWidth(0).Color(foreground)
