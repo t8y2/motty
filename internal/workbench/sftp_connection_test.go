@@ -9,6 +9,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
 )
 
@@ -155,5 +156,30 @@ func TestFilePanelDoesNotDialSeparatelyForOtherFailures(t *testing.T) {
 	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.errorText != "" })
 	if len(world.configs) != 1 {
 		t.Fatalf("a failed file backend dialed %d connections, want the terminal's only", len(world.configs))
+	}
+}
+
+// A server whose session setup prints a line on every new channel of a
+// connection that already has a shell accepts the channel, and the file protocol
+// then cannot start. The panel gets around it the way it does a refused channel:
+// a connection of its own, which has no shell.
+func TestFilePanelOpensItsOwnConnectionWhenTheTerminalTransportCarriesNoise(t *testing.T) {
+	state, world, fake, _ := liveSession(t)
+	fake.mu.Lock()
+	fake.sftpErr = fmt.Errorf("sftp: start subsystem: %w: packet too long", sftpclient.ErrChannelNoise)
+	fake.mu.Unlock()
+	state.Click(hitSFTPOpen)
+	session, _ := state.sessionByIDPointer(state.activeSessionID)
+	waitUntil(t, state, "the panel's own connection", func() bool { return len(world.configs) == 2 })
+	dedicated := world.conns[1]
+	dedicated.mu.Lock()
+	dedicated.sftp = separateConnectionRemote()
+	dedicated.mu.Unlock()
+	dedicated.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	waitSFTP(t, state, session, func(view *sftpView) bool {
+		return !view.busy && sftpRowIndexOrNegative(view, "alpha.txt") >= 0
+	})
+	if !session.fileConnectionSeparate {
+		t.Fatal("the session did not remember to open files on a connection of their own")
 	}
 }

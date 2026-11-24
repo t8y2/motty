@@ -2,9 +2,11 @@
 package sftpclient
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
@@ -46,6 +48,19 @@ type remote struct {
 	*sftp.Client
 }
 
+// ErrChannelNoise marks a file channel that opened but carried text before the
+// protocol began: a login banner or an error line the server's session setup
+// writes to every new session once the connection has a shell. Neither SFTP nor
+// SCP can be spoken over such a channel, though the same account usually can on
+// a connection with no shell.
+var ErrChannelNoise = errors.New("the server wrote text on the file channel before the protocol began")
+
+// IsChannelNoise reports that err comes from a file channel carrying text ahead
+// of the protocol, found while the backend was starting.
+func IsChannelNoise(err error) bool {
+	return errors.Is(err, ErrChannelNoise)
+}
+
 // Open starts one SFTP subsystem over an authenticated SSH connection.
 func Open(client *ssh.Client) (Remote, error) {
 	if client == nil {
@@ -53,6 +68,12 @@ func Open(client *ssh.Client) (Remote, error) {
 	}
 	opened, err := sftp.NewClient(client)
 	if err != nil {
+		// Any text ahead of the version packet reads as a length far past the
+		// limit, and the library reports only that: it keeps no unexported type
+		// to match, so the message is the one signal there is.
+		if strings.Contains(err.Error(), "packet too long") {
+			return nil, fmt.Errorf("sftp: start subsystem: %w: %w", ErrChannelNoise, err)
+		}
 		return nil, fmt.Errorf("sftp: start subsystem: %w", err)
 	}
 	return remote{Client: opened}, nil

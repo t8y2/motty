@@ -90,12 +90,25 @@ func (state *State) startFileConnection(session *Session, view *sftpView, path s
 	state.options.Invalidate()
 }
 
-// separateFileConnection takes over a file worker error that says the session's
-// transport refused a session channel. It starts the panel's own connection and
+// needsSeparateFileConnection reports a file worker error that a connection of
+// the panel's own can get around: the server refused a session channel on the
+// terminal's transport, or accepted one but wrote text on it before the
+// protocol began, as servers do whose session setup prints to every session of
+// a connection that already has a shell. The second only counts while the panel
+// is starting; a transfer already under way is never started over.
+func needsSeparateFileConnection(result sftpclient.Result) bool {
+	if sshconn.IsChannelRefused(result.Err) {
+		return true
+	}
+	return result.Operation == sftpclient.OperationList && sftpclient.IsChannelNoise(result.Err)
+}
+
+// separateFileConnection takes over a file worker error that a connection of the
+// panel's own can get around (see needsSeparateFileConnection). It starts the panel's own connection and
 // reports that the error was handled; the listing is asked for again once that
 // connection is up.
 func (state *State) separateFileConnection(session *Session, view *sftpView, result sftpclient.Result) bool {
-	if view.dedicated != nil || view.transport == nil || !sshconn.IsChannelRefused(result.Err) {
+	if view.dedicated != nil || view.transport == nil || !needsSeparateFileConnection(result) {
 		return false
 	}
 	path := view.path

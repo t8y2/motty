@@ -144,7 +144,15 @@ func (r *scpRemote) Getwd() (string, error) {
 	}
 	directory := strings.TrimSpace(string(out))
 	if !path.IsAbs(directory) {
-		return "", fmt.Errorf("scp: the server did not report a working directory")
+		if directory == "" {
+			return "", fmt.Errorf("scp: the server did not report a working directory")
+		}
+		// pwd answered, so whatever else came first is text the server wrote.
+		sample := directory
+		if len(sample) > 80 {
+			sample = sample[:80]
+		}
+		return "", fmt.Errorf("scp: the server did not report a working directory: %w: %q", ErrChannelNoise, sample)
 	}
 	return directory, nil
 }

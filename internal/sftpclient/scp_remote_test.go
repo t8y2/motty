@@ -91,3 +91,34 @@ func TestSCPRemovalKeepsARealFailure(t *testing.T) {
 		t.Fatalf("SCP Remove of a refused path = %v", err)
 	}
 }
+
+// outputChannel is a command whose standard output is fixed text.
+type outputChannel struct {
+	commandChannel
+	out io.Reader
+}
+
+func (c *outputChannel) Read(p []byte) (int, error) { return c.out.Read(p) }
+
+// A server that prints a line of its own ahead of pwd's answer is told apart
+// from one that printed nothing: the first is a channel the file panel can
+// replace with a connection of its own, the second is just an unusable server.
+func TestSCPWorkingDirectoryNamesTextAheadOfTheAnswer(t *testing.T) {
+	answer := func(output string) error {
+		remote := NewSCP(func(string) (scpclient.Channel, error) {
+			return &outputChannel{out: strings.NewReader(output)}, nil
+		})
+		_, err := remote.Getwd()
+		return err
+	}
+	err := answer("fail to get port from linx_config\n/root\n")
+	if !IsChannelNoise(err) || !strings.Contains(err.Error(), "linx_config") {
+		t.Fatalf("noisy pwd output: %v", err)
+	}
+	if err := answer(""); err == nil || IsChannelNoise(err) {
+		t.Fatalf("empty pwd output: %v", err)
+	}
+	if err := answer("/root\n"); err != nil {
+		t.Fatalf("clean pwd output: %v", err)
+	}
+}
