@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -111,6 +112,44 @@ func dualSFTPFixtureWith(t *testing.T, scale float64, referenceText bool) (*Stat
 	w.navigate(true, localDir)
 	dualWait(t, state, w, host.windows[0].view, func() bool { return !w.view.busy && len(w.view.rows) == 2 && w.view.lfolder.path == localDir })
 	return state, w, remote, host, localDir
+}
+
+// The transfer center lives in the main window even when the file window that
+// started an upload is detached. A transfer change must wake both windows, or
+// its row stays on "uploading" until the file window is closed.
+func TestDetachedWindowTransferWakesTheMainWindow(t *testing.T) {
+	state, source, _, _ := openTestSFTP(t)
+	host := &sftpNativeHost{scale: 1}
+	app.UseApplicationRunner(func(start func(app.Host) error) error { return start(host) })
+	t.Cleanup(func() { host.Quit(); app.UseApplicationRunner(nil) })
+
+	var mainWakes atomic.Int32
+	var w *sftpWindow
+	if err := app.RunApplication(func(application *app.Application) error {
+		state.options.OpenContentWindow = application.OpenContentWindow
+		state.options.Invalidate = func() { mainWakes.Add(1) }
+		state.openSFTPWindow(source)
+		w = state.sftpWindows[source.ID]
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if w == nil {
+		t.Fatal("no native transfer window")
+	}
+	dualWait(t, state, w, host.windows[0].view, func() bool { return !w.view.busy })
+
+	local := filepath.Join(t.TempDir(), "upload.txt")
+	if err := os.WriteFile(local, []byte("hello"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	before := mainWakes.Load()
+	if _, queued := w.view.worker.QueueUpload(local, "/home/test/upload.txt", false, sftpclient.ExistingFail); !queued {
+		t.Fatal("upload was not queued")
+	}
+	if got := mainWakes.Load(); got <= before {
+		t.Fatalf("detached transfer did not wake the main window: wakes %d -> %d", before, got)
+	}
 }
 
 func dualWait(t *testing.T, state *State, w *sftpWindow, view *headless.Session, done func() bool) {
