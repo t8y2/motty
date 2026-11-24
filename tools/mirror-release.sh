@@ -320,13 +320,26 @@ publish_viva_feed() {
 	previous_tags=$(gh release list --exclude-drafts --limit 10 --json tagName --jq '.[].tagName' 2>/dev/null \
 		| grep -vx "$tag" | head -n "$patch_bases")
 	patch_args=()
+	# Only the six archives a patch is cut from are needed, not the installers or
+	# packages; the bases download side by side, since each is a separate request.
+	for previous_tag in $previous_tags; do
+		prev_version=${previous_tag#v}
+		version_lt "$prev_version" "$version" || continue
+		mkdir -p "$work/previous/$prev_version"
+		(
+			gh release download "$previous_tag" --dir "$work/previous/$prev_version" \
+				--pattern 'motty-*-darwin-*.zip' --pattern 'motty-*-linux-*.tar.gz' \
+				--pattern 'motty-*-windows-*.zip' 2>/dev/null ||
+				touch "$work/previous/$prev_version.failed"
+		) &
+	done
+	wait
 	for previous_tag in $previous_tags; do
 		prev_version=${previous_tag#v}
 		# Only an older release can be the base; a re-announced old tag sees newer ones in the list.
 		version_lt "$prev_version" "$version" || continue
 		basedir=$work/previous/$prev_version
-		mkdir -p "$basedir"
-		if ! gh release download "$previous_tag" --dir "$basedir" --pattern 'motty-*' 2>/dev/null; then
+		if [ -e "$basedir.failed" ]; then
 			echo "Viva update feed: could not download $previous_tag; its patches are skipped" >&2
 			continue
 		fi
@@ -359,7 +372,7 @@ publish_viva_feed() {
 	viva_dir=$work/viva
 	mkdir -p "$viva_dir"
 	module_dir=$(cd "$(dirname "$0")/.." && pwd)
-	echo "Viva update feed: $tag ($viva_ref)"
+	echo "Viva update feed: $tag ($viva_ref), bases ready after ${SECONDS}s"
 	if ! (cd "$work" && go run "github.com/vivaui/viva/cmd/viva@$viva_ref" feed \
 		-C "$module_dir" -dir "$dir" -base-url "$mirror/releases/$tag" -version "$version" -app "dev.motty.app" \
 		-channel stable -key "$viva_key" -out "$viva_dir/latest.json" \
@@ -367,6 +380,7 @@ publish_viva_feed() {
 		echo "Viva update feed: viva feed failed" >&2
 		return 1
 	fi
+	echo "Viva update feed: feed built after ${SECONDS}s"
 	upload viva/latest.json "$viva_dir/latest.json" application/json 'public, max-age=300'
 	upload viva/latest.json.sig "$viva_dir/latest.json.sig" 'text/plain; charset=utf-8' 'public, max-age=300'
 	for patch in "$dir"/motty-*.patch; do
