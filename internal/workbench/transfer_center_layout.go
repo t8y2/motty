@@ -1,12 +1,19 @@
 package workbench
 
 import (
+	"strconv"
+	"strings"
+
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
 
-const transferRowHeight = float32(38)
+const (
+	transferRowHeight   = float32(38)
+	transferCenterGap   = float32(8)
+	transferCenterInset = float32(12)
+)
 
 func (state *State) declareTransferCenter(c ui.C) {
 	center := &state.transfers
@@ -15,34 +22,153 @@ func (state *State) declareTransferCenter(c ui.C) {
 		return
 	}
 	center.handlers(state)
-	viewport, anchor := c.Bounds(), center.anchor
-	if anchor.Width <= 0 {
+	viewport := c.Bounds()
+	anchor := center.anchor
+	width, preferredHeight := max(0, min(1180, viewport.Width-24)), float32(760)
+	roomArea, margin := viewport, transferCenterGap
+	if center.compact {
+		area := state.transferCenterArea()
+		anchor = gfx.Rect{
+			X: area.X + area.Width - transferCenterInset - 1, Y: area.Y + transferCenterInset,
+			Width: 1, Height: 1,
+		}
+		width, preferredHeight = max(0, min(360, area.Width-2*transferCenterInset)), 148
+		if center.active == 0 {
+			preferredHeight = 108
+		}
+		roomArea, margin = area, transferCenterInset
+	} else if anchor.Width <= 0 {
 		anchor = gfx.Rect{X: max(viewport.Width-16, 0), Y: windowBarHeight, Width: 1, Height: 1}
 	}
-	width := max(0, min(1180, viewport.Width-24))
 	padding := c.Theme().Metrics.PadSurface
-	// Size the panel for the side it opens on, including its padding. A panel
-	// taller than the room below the toolbar would clamp back over its toggle.
-	const gap, margin = float32(8), float32(8)
-	room := viewport.Y + viewport.Height - margin - anchor.Y - anchor.Height - gap
+	// Only the compact notice hangs from the terminal content. The full center
+	// keeps its toolbar anchor and original viewport sizing.
+	room := roomArea.Y + roomArea.Height - margin - anchor.Y - anchor.Height - transferCenterGap
 	side := components.PopoverBottom
-	if above := anchor.Y - gap - (viewport.Y + margin); room < 760+2*padding && above > room {
+	if above := anchor.Y - transferCenterGap - (roomArea.Y + margin); room < preferredHeight+2*padding && above > room {
 		room, side = above, components.PopoverTop
 	}
-	height := max(0, min(760, room-2*padding))
+	height := max(0, min(preferredHeight, room-2*padding))
 	center.listWidth = max(0, width-2*padding)
 	origin := ui.Slot(c).Absolute().Left(anchor.X).Top(anchor.Y).Width(max(anchor.Width, 1)).Height(max(anchor.Height, 1))
 	spec := ui.PopoverSpec{
-		Scope: hitTransfersScope, DismissID: hitTransfersDismiss, InitialFocusID: hitTransfersList,
-		Side: side, Align: ui.End, Offset: gap, Width: width,
+		Scope: hitTransfersScope, DismissID: hitTransfersDismiss,
+		Side: side, Align: ui.End, Offset: transferCenterGap, Width: width,
 	}
-	if ui.PopoverWith(c, origin, &center.open, spec, func() { state.declareTransferBody(c, height) }) {
+	body := func() { state.declareTransferBody(c, height) }
+	if center.compact {
+		body = func() { state.declareTransferCompact(c, height) }
+	} else {
+		spec.InitialFocusID = hitTransfersList
+	}
+	if ui.PopoverWith(c, origin, &center.open, spec, body) {
 		center.close()
 		return
 	}
 	if len(center.batch.targets) > 0 {
 		state.declareTransferBatchDialog(c, &center.batch, hitTransfersBulkCancel, hitTransfersBulkConfirm)
 	}
+}
+
+// transferCenterArea is the content rectangle the progress notice floats in.
+// On the terminal page it excludes the pane header, side panels and assistant;
+// file-manager tabs and section pages use their own visible content instead.
+func (state *State) transferCenterArea() gfx.Rect {
+	switch {
+	case state.terminalPage():
+		return state.workspacePixelBounds(state.viewport)
+	case state.activeSFTPWindow() != nil:
+		return state.fileManagerPixelBounds(state.viewport)
+	default:
+		if area := state.chrome.workspaceSlot.Rect(); area.Width > 0 && area.Height > 0 {
+			return area
+		}
+	}
+	area := state.windowRect()
+	area.Y += windowBarHeight
+	area.Height = max(0, area.Height-windowBarHeight)
+	return area
+}
+
+// declareTransferCompact keeps a queued transfer visible without covering the
+// workspace with the full history. The body is one button; closing and expanding
+// stay separate so the card remains usable with the keyboard.
+func (state *State) declareTransferCompact(c ui.C, height float32) {
+	center, m, pal := &state.transfers, state.messages.Transfers, state.pal
+	overview := center.overview
+	status, detail, ink := center.summary, overview.amount, pal.text
+	if center.active == 0 {
+		status, detail = m.Idle, ""
+		outcomes := []struct {
+			label string
+			count int
+		}{
+			{m.Failed, center.failed},
+			{m.Interrupted, center.interrupted},
+			{m.Canceled, center.canceled},
+			{m.Completed, center.completed},
+		}
+		parts := make([]string, 0, len(outcomes))
+		for _, outcome := range outcomes {
+			if outcome.count > 0 {
+				parts = append(parts, outcome.label+" · "+strconv.Itoa(outcome.count))
+			}
+		}
+		known := center.failed + center.interrupted + center.canceled + center.completed
+		if known < center.ended {
+			parts = append(parts, m.Ended+" · "+strconv.Itoa(center.ended-known))
+		}
+		if len(parts) > 0 {
+			status = strings.Join(parts, " · ")
+		}
+		switch {
+		case center.failed > 0:
+			ink = pal.danger
+		case center.interrupted > 0:
+			ink = pal.warning
+		case center.completed > 0:
+			ink = pal.success
+		case center.canceled > 0:
+			ink = pal.muted
+		}
+	} else if detail == "" {
+		detail = overview.title
+	}
+	padding := c.Theme().Metrics.PadSurface
+	center.list = gfx.Rect{}
+	ui.Column(c).FillWidth().Height(height).Gap(8).Children(func() {
+		ui.Row(c).Height(28).Shrink(0).Gap(8).Items(ui.Center).Children(func() {
+			ui.Icon(c, lucideIcons[iconTransfer]).Size(16, 16).Color(state.transferBlue()).Shrink(0)
+			ui.Text(c, m.Title).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).Shrink(0)
+			ui.Spacer(c)
+			state.declareIconButton(c, hitTransfersClose, iconClose, m.Close, false, iconButtonQuiet).Size(26, 26)
+		})
+		ui.Column(c).FillWidth().Grow(1).MinHeight(0).Pad(10).Gap(6).Radius(radius.surface).
+			Border(1, pal.line).Background(withAlpha(pal.surfaceHot, 0.28)).
+			Hover(ui.Look{}.Background(withAlpha(pal.surfaceHot, 0.5).Over(pal.surface))).
+			Focus(ui.Look{}.Ring(1.5, pal.accent)).
+			HitWith(hitTransfersExpand, m.Details, gfx.HitOptions{Role: gfx.RoleButton, Hint: m.Details}).Children(func() {
+			ui.Row(c).Height(22).Shrink(0).FillWidth().Gap(6).Items(ui.Center).Children(func() {
+				ui.Text(c, status).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(ink).Grow(1).MinWidth(0).Ellipsis()
+				if overview.amount != "" && center.active > 0 {
+					ui.Text(c, overview.percent).FontSize(metrics.FontSizeM).Weight(gfx.WeightBold).Color(ink).Shrink(0)
+				}
+			})
+			if detail != "" {
+				ui.Text(c, detail).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().FillWidth()
+			}
+			if overview.amount != "" && center.active > 0 {
+				state.declareTransferProgress(c, overview.fraction, 6, 40)
+			}
+			ui.Spacer(c)
+			ui.Row(c).Height(18).Shrink(0).FillWidth().Gap(4).Items(ui.Center).Children(func() {
+				ui.Text(c, m.Details).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).Grow(1)
+				ui.Icon(c, lucideIcons[iconChevronRight]).Size(14, 14).Color(pal.muted).Shrink(0)
+			})
+		})
+	}).DrawOver(func(d *ui.DrawContext) {
+		center.surface = gfx.Rect{X: d.Rect.X - padding, Y: d.Rect.Y - padding, Width: d.Rect.Width + 2*padding, Height: d.Rect.Height + 2*padding}
+	})
 }
 
 func (state *State) declareTransferBody(c ui.C, height float32) {

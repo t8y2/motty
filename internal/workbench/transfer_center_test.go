@@ -20,6 +20,11 @@ func transferPreviewState(t testing.TB) *State {
 	t.Helper()
 	_, options := newWorld(t)
 	state := newTestState(t, options)
+	populateTransferPreview(state)
+	return state
+}
+
+func populateTransferPreview(state *State) {
 	state.setLanguage(i18n.Chinese)
 	when := time.Date(2026, 10, 27, 10, 30, 0, 0, time.Local)
 	for index, phase := range []sftpclient.TransferState{sftpclient.TransferCompleted, sftpclient.TransferFailed, sftpclient.TransferPaused, sftpclient.TransferRunning} {
@@ -48,7 +53,6 @@ func transferPreviewState(t testing.TB) *State {
 	state.transfers.nextID = 4
 	state.transfers.open = true
 	state.describeTransferSummary()
-	return state
 }
 
 func TestTransferCenterUsesReadableUnitsAndKeepsOtherConnections(t *testing.T) {
@@ -261,6 +265,27 @@ func (remote *centerGatedRemote) Close() error {
 	return remote.workbenchSFTPRemote.Close()
 }
 
+func TestTransferCenterQueuedCardExpandsAndClosesWithoutCanceling(t *testing.T) {
+	state := transferPreviewState(t)
+	state.transfers.close()
+	state.openTransferCenterForQueued()
+	if !state.transfers.open || !state.transfers.compact {
+		t.Fatal("queued transfer did not open the compact progress card")
+	}
+	state.Click(hitTransfersExpand)
+	if !state.transfers.open || state.transfers.compact {
+		t.Fatal("expanding the card did not open the full transfer center")
+	}
+	state.Click(hitTransfersClose)
+	if state.transfers.open || state.transfers.compact || state.transfers.active != 2 {
+		t.Fatal("closing the card changed its presentation reset or active tasks")
+	}
+	state.Click(hitTransferCenter)
+	if !state.transfers.open || state.transfers.compact {
+		t.Fatal("toolbar did not reopen the full transfer center")
+	}
+}
+
 func TestTransferCenterHidingAndNavigatingDoesNotCancelACopy(t *testing.T) {
 	state, session, _, remote := openTestSFTP(t)
 	view := session.files
@@ -277,12 +302,12 @@ func TestTransferCenterHidingAndNavigatingDoesNotCancelACopy(t *testing.T) {
 	}
 	state.refreshSFTPTransfers(view)
 	id := view.transfers[0].ID
-	if !state.transfers.open || state.transfers.badge != "1" {
-		t.Fatalf("queued download: open=%v badge=%q", state.transfers.open, state.transfers.badge)
+	if !state.transfers.open || !state.transfers.compact || state.transfers.badge != "1" {
+		t.Fatalf("queued download: open=%v compact=%v badge=%q", state.transfers.open, state.transfers.compact, state.transfers.badge)
 	}
 	state.Click(hitTransfersClose)
-	if state.transfers.open || state.transfers.badge != "1" {
-		t.Fatal("closing the popup changed the task count")
+	if state.transfers.open || state.transfers.compact || state.transfers.badge != "1" {
+		t.Fatal("closing the card changed the task count or presentation reset")
 	}
 	state.Click(hitSFTPClose)
 	state.Click(hitHome)
@@ -321,8 +346,8 @@ func TestTransferCenterWorkerIDsAreScopedAndRemovalDoesNotReappear(t *testing.T)
 	state, session, _, _ := openTestSFTP(t)
 	view := session.files
 	state.queueSFTPDownload(view, view.rows[1].entry, filepath.Join(t.TempDir(), "notes.txt"))
-	if !state.transfers.open {
-		t.Fatal("download did not open the transfer center")
+	if !state.transfers.open || !state.transfers.compact {
+		t.Fatal("download did not open the compact transfer card")
 	}
 	waitSFTP(t, state, session, func(view *sftpView) bool {
 		return len(view.transfers) == 1 && view.transfers[0].State == sftpclient.TransferCompleted
@@ -387,8 +412,8 @@ func TestTransferCenterUploadOpensAndPreservesTheFilter(t *testing.T) {
 	}
 	state.transfers.filter, state.transfers.scroll = transferFilterWaiting, 100
 	state.queueSFTPUpload(session.files, local, false)
-	if !state.transfers.open || state.transfers.filter != transferFilterWaiting || state.transfers.scroll != 0 {
-		t.Fatalf("upload did not preserve filter: open=%v filter=%d scroll=%v", state.transfers.open, state.transfers.filter, state.transfers.scroll)
+	if !state.transfers.open || !state.transfers.compact || state.transfers.filter != transferFilterWaiting || state.transfers.scroll != 0 {
+		t.Fatalf("upload did not preserve filter: open=%v compact=%v filter=%d scroll=%v", state.transfers.open, state.transfers.compact, state.transfers.filter, state.transfers.scroll)
 	}
 	waitSFTP(t, state, session, func(view *sftpView) bool {
 		return len(view.transfers) == 1 && view.transfers[0].State == sftpclient.TransferCompleted
