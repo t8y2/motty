@@ -60,6 +60,7 @@ type savedState struct {
 	LocalStartupCommands       map[string]string       `json:"local_startup_commands,omitempty"` // the line each shell types when it starts, by choice path; this computer's own
 	HiddenShells               []string                `json:"hidden_shells,omitempty"`
 	LocalStart                 string                  `json:"local_start,omitempty"`
+	LocalDirectoryHistory      []string                `json:"local_directory_history,omitempty"`
 	LastLocalDirectory         string                  `json:"last_local_directory,omitempty"`
 	SSHAgent                   string                  `json:"ssh_agent,omitempty"`
 	SSHAgentPath               string                  `json:"ssh_agent_path,omitempty"`
@@ -568,6 +569,7 @@ func (state *State) snapshot() savedState {
 		LocalStartupCommands:       maps.Clone(state.localStartupCommands),
 		HiddenShells:               slices.Clone(state.hiddenShells),
 		LocalStart:                 state.localStart.String(),
+		LocalDirectoryHistory:      slices.Clone(state.localDirectoryHistory),
 		LastLocalDirectory:         state.lastLocalDirectory,
 		RecentConnectSort:          state.recentConnectSort,
 		LocalShellsExpanded:        state.localShellsExpanded,
@@ -1185,6 +1187,7 @@ func (state *State) restoreLocal(saved savedState) {
 	state.applyTerminalFace()
 	state.restoreConnect = restoreConnectPolicyFromString(saved.RestoreConnect)
 	state.localStart = localStartPolicyFromString(saved.LocalStart)
+	state.localDirectoryHistory = slices.Clone(saved.LocalDirectoryHistory)
 	state.lastLocalDirectory = ""
 	if validLocalDirectory(saved.LastLocalDirectory) {
 		state.lastLocalDirectory = filepath.Clean(saved.LastLocalDirectory)

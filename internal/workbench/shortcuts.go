@@ -18,6 +18,7 @@ const (
 	shortcutNone shortcutAction = iota
 	shortcutCommandPalette
 	shortcutNewWindow
+	shortcutAddLocalTerminal
 	shortcutFind
 	shortcutCopy
 	shortcutPaste
@@ -88,6 +89,7 @@ func defaultShortcuts() shortcutMap {
 	shortcuts := newShortcutMap()
 	shortcuts.chords.Set(shortcutCommandPalette, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 'p'})
 	shortcuts.chords.Set(shortcutNewWindow, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 'n'})
+	shortcuts.chords.Set(shortcutAddLocalTerminal, keymap.Chord{Modifiers: gfx.ModifierControl, Char: 'n'})
 	shortcuts.chords.Set(shortcutFind, keymap.Chord{Modifiers: primary, Char: 'f'})
 	shortcuts.chords.Set(shortcutCopy, keymap.Chord{Modifiers: primary, Char: 'c'})
 	shortcuts.chords.Set(shortcutPaste, keymap.Chord{Modifiers: primary, Char: 'v'})
@@ -347,6 +349,8 @@ func (action shortcutAction) String() string {
 	switch action {
 	case shortcutCommandPalette:
 		return "command_palette"
+	case shortcutAddLocalTerminal:
+		return "add_local_terminal"
 	case shortcutNewWindow:
 		return "new_window"
 	case shortcutFind:
@@ -782,6 +786,9 @@ func (state *State) executeShortcut(action shortcutAction) gfx.EventResult {
 	case shortcutSnippetPicker:
 		state.openSnippetPicker()
 		result.Focus = hitCommandPaletteSearch
+	case shortcutAddLocalTerminal:
+		state.openLocalDirectoryPicker()
+		result.Focus = hitLocalDirectorySearch
 	case shortcutNewWindow:
 		state.openNewWindow()
 	case shortcutFind:

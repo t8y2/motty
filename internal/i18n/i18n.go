@@ -133,6 +133,15 @@ type Messages struct {
 	CommandPalettePlaceholder string
 	CommandPaletteEmpty       string
 	CommandSwitchSessionFmt   string
+	AddLocalTerminal          string
+	LocalDirectoryTitle       string
+	LocalDirectorySearch      string
+	LocalDirectoryBrowse      string
+	LocalDirectoryHistory     string
+	LocalDirectoryEmpty       string
+	LocalDirectoryRemove      string
+	LocalDirectoryHint        string
+	LocalDirectoryUnavailable string
 	NewWindow                 string
 
 	// Saved multi-host workspace templates.
