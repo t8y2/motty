@@ -75,6 +75,7 @@ func (state *State) cancelReconnect(session *Session) {
 	session.reconnectExhausted = false
 	session.reconnectText = ""
 	session.reconnectSecond = 0
+	state.clearRevivingForwardsForSession(session.ID)
 }
 
 func (state *State) queueReconnect(session *Session) bool {
@@ -180,7 +181,7 @@ func (state *State) requestReconnectFrames(canvas *gfx.Canvas) {
 	}
 	// A tunnel waiting for its own retry is a waiter too, even when no tab is.
 	for _, tunnel := range state.forwardTunnels {
-		if tunnel.retryDue == 0 {
+		if !tunnel.retryPending {
 			continue
 		}
 		canvas.RequestFrameIn(max(tunnel.retryDue-now, time.Millisecond))
@@ -239,6 +240,10 @@ func (state *State) applyReconnectPolicy() {
 		}
 	}
 	// Forwards that waited for a retry this change took away stop now.
+	if policy == reconnectOff {
+		state.clearAllRevivingForwards()
+	}
 	state.releaseWaitingForwards()
 	state.settleForwardTunnelReconnects()
+	state.syncLinkWatch()
 }
