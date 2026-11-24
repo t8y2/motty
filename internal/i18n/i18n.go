@@ -1122,6 +1122,7 @@ type Messages struct {
 	SFTPDownload         string
 	SFTPUpload           string
 	SFTPUploadDirectory  string
+	SFTPNewFile          string
 	SFTPNewDirectory     string
 	SFTPSudoEnable       string
 	SFTPSudoDisable      string
@@ -1175,6 +1176,12 @@ type Messages struct {
 	SFTPOverwriteTitle          string
 	SFTPOverwriteDescriptionFmt string
 	SFTPOverwriteConfirm        string
+	SFTPNewFileTitle            string
+	SFTPFileName                string
+	SFTPCreateFile              string
+	SFTPErrFileRequired         string
+	SFTPCreatingFileFmt         string
+	SFTPFileCreatedFmt          string
 	SFTPNewDirectoryTitle       string
 	SFTPDirectoryName           string
 	SFTPCreateDirectory         string

@@ -212,6 +212,13 @@ func (r *scpRemote) run(format string, args ...string) error {
 
 func (r *scpRemote) Mkdir(name string) error { return r.run("mkdir -p -- {}", name) }
 
+// CreateFile creates an empty file and fails if the path already exists. The
+// redirection runs under sh with noclobber, whatever the login shell is, so a
+// file created in the meantime is never truncated.
+func (r *scpRemote) CreateFile(name string) error {
+	return r.run(`sh -c 'set -C; : > "$1"' sh {}`, name)
+}
+
 // Remove and RemoveDirectory run under the C locale like the listing commands:
 // their errors are matched by message, and a localized server would not say the
 // English words scpclient maps to os.ErrNotExist (and IsPathNotFound looks for).

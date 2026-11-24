@@ -62,6 +62,7 @@ const (
 	OperationDownload
 	OperationUpload
 	OperationCreateDirectory
+	OperationCreateFile
 	OperationRename
 	OperationRemoveFile
 	OperationRemoveDirectory
@@ -534,6 +535,11 @@ func (worker *Worker) QueueRemoteCopy(copy RemoteCopyRequest) (uint64, bool) {
 
 func (worker *Worker) CreateDirectory(remotePath string) bool {
 	return worker.enqueue(request{operation: OperationCreateDirectory, remote: remotePath})
+}
+
+// CreateFile creates an empty file at remotePath.
+func (worker *Worker) CreateFile(remotePath string) bool {
+	return worker.enqueue(request{operation: OperationCreateFile, remote: remotePath})
 }
 
 // CreateDirectories creates a matching navigation path, including missing
@@ -1328,6 +1334,8 @@ func (worker *Worker) execute(next request) Result {
 		} else {
 			result.Err = createDirectory(client, next.remote)
 		}
+	case OperationCreateFile:
+		result.Err = createFile(client, next.remote)
 	case OperationRename:
 		result.Err = rename(client, next.remote, next.destination)
 	case OperationMoveSelection:
@@ -3587,6 +3595,46 @@ func createDirectory(client Remote, remotePath string) error {
 		}
 	}
 	return err
+}
+
+func createFile(client Remote, remotePath string) error {
+	if remotePath == "" {
+		return fmt.Errorf("sftp: create file requires a remote path")
+	}
+	if linker, ok := client.(remoteLinker); ok {
+		if _, statErr := linker.Lstat(remotePath); statErr == nil {
+			return fmt.Errorf("%w: %s", ErrDestinationExists, remotePath)
+		}
+	} else if _, statErr := client.ReadDir(remotePath); statErr == nil {
+		return fmt.Errorf("%w: %s", ErrDestinationExists, remotePath)
+	}
+	if fileCreator, ok := client.(interface{ CreateFile(string) error }); ok {
+		err := fileCreator.CreateFile(remotePath)
+		if err != nil {
+			// The path appeared after the check above: that is an existing
+			// destination, not a failure of the server.
+			if linker, ok := client.(remoteLinker); ok {
+				if _, statErr := linker.Lstat(remotePath); statErr == nil {
+					return fmt.Errorf("%w: %s", ErrDestinationExists, remotePath)
+				}
+			}
+		}
+		return err
+	}
+	creator, ok := client.(remoteCreator)
+	if !ok {
+		return fmt.Errorf("sftp: create file is not supported by the remote")
+	}
+	file, err := creator.Create(remotePath)
+	if err != nil {
+		if linker, ok := client.(remoteLinker); ok {
+			if _, statErr := linker.Lstat(remotePath); statErr == nil {
+				return fmt.Errorf("%w: %s", ErrDestinationExists, remotePath)
+			}
+		}
+		return err
+	}
+	return file.Close()
 }
 
 func createDirectories(client Remote, remotePath string) error {

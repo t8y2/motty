@@ -218,6 +218,42 @@ func TestLocalNewFolderIsMadeOnThisComputer(t *testing.T) {
 	}
 }
 
+func TestLocalNewFileIsMadeOnThisComputer(t *testing.T) {
+	state, session, _, remote := openTestSFTP(t)
+	dir := localFixture(t)
+	view := openLocalPane(t, state, session, dir)
+	state.Click(hitSFTPNewFile)
+	if view.dialog != sftpDialogCreateFile {
+		t.Fatalf("dialog = %d", view.dialog)
+	}
+	replaceSFTPDialogText(t, state, "../escape.txt")
+	state.Click(hitSFTPDialogSubmit)
+	if view.dialog == sftpDialogNone {
+		t.Fatal("a name with a slash was accepted")
+	}
+	replaceSFTPDialogText(t, state, "fresh.txt")
+	state.Click(hitSFTPDialogSubmit)
+	if info, err := os.Stat(filepath.Join(dir, "fresh.txt")); err != nil || info.IsDir() {
+		t.Fatalf("no local file: %v", err)
+	}
+	if view.dialog != sftpDialogNone || len(view.lfolder.rows) != 4 {
+		t.Fatalf("dialog %d rows %d", view.dialog, len(view.lfolder.rows))
+	}
+	remote.mu.Lock()
+	_, onServer := remote.files["/home/test/fresh.txt"]
+	remote.mu.Unlock()
+	if onServer {
+		t.Fatal("the file was made on the server")
+	}
+
+	state.Click(hitSFTPNewFile)
+	replaceSFTPDialogText(t, state, "report.txt")
+	state.Click(hitSFTPDialogSubmit)
+	if view.dialog == sftpDialogNone || view.dialogError != state.messages.SFTPErrDirectoryExists {
+		t.Fatalf("duplicate local file allowed or wrong error: dialog=%d error=%q", view.dialog, view.dialogError)
+	}
+}
+
 func TestLocalPaneSteadyPaintDoesNotAllocate(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	// This test measures painting, not the platform icon service. A failed

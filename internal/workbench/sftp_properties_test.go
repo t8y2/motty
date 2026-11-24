@@ -28,7 +28,7 @@ func TestSinglePaneMenuSharesFileActionsPathsAndProperties(t *testing.T) {
 
 	ids := sftpMenuRowIDs(state.sftpMenuRows(session, view))
 	for _, id := range []gfx.ID{
-		hitSFTPNewDirectory, hitSFTPUpload, hitSFTPUploadDirectory, hitSFTPNewLink,
+		hitSFTPNewFile, hitSFTPNewDirectory, hitSFTPUpload, hitSFTPUploadDirectory, hitSFTPNewLink,
 		hitSFTPCopyPath, hitSFTPProperties,
 	} {
 		if !ids[id] {

@@ -763,6 +763,14 @@ func (w *sftpWindow) click(id gfx.ID) {
 			}
 			w.navigate(local, parent)
 			return
+		case sftpWindowNewFile[side]:
+			if w.browse.pending != nil || local && w.pendingLocal != "" || !local && (w.view.busy || !w.connected()) {
+				return
+			}
+			w.activeLocal, w.view.local = local, local
+			w.cancelDrag()
+			w.owner.openSFTPDialog(w.view, sftpDialogCreateFile)
+			return
 		case sftpWindowNewFolder[side]:
 			if w.browse.pending != nil || local && w.pendingLocal != "" || !local && (w.view.busy || !w.connected()) {
 				return

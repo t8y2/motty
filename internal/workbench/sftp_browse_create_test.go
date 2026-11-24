@@ -141,7 +141,7 @@ func TestSFTPBrowsePendingPairDoesNotOpenAnotherFileDialog(t *testing.T) {
 		t.Fatal("paired navigation did not start")
 	}
 	w.fileAction(true, hitSFTPNewDirectory)
-	for _, id := range []gfx.ID{sftpWindowNewFolder[0], sftpWindowNewFolder[1], hitSFTPLocationProfiles} {
+	for _, id := range []gfx.ID{sftpWindowNewFile[0], sftpWindowNewFile[1], sftpWindowNewFolder[0], sftpWindowNewFolder[1], hitSFTPLocationProfiles} {
 		w.click(id)
 		if w.view.dialog != sftpDialogNone || w.bookmark.open {
 			t.Fatalf("%v opened a competing dialog during paired navigation", id)

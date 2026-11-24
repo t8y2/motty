@@ -79,7 +79,7 @@ func sftpMenuAction(id gfx.ID) (gfx.ID, bool) {
 		return hitSFTPCopyFiles, true
 	case hitSFTPMenuPasteFiles:
 		return hitSFTPPasteFiles, true
-	case hitSFTPNewDirectory, hitSFTPUpload, hitSFTPUploadDirectory, hitSFTPNewLink,
+	case hitSFTPNewFile, hitSFTPNewDirectory, hitSFTPUpload, hitSFTPUploadDirectory, hitSFTPNewLink,
 		hitSFTPCopyPath, hitSFTPProperties, hitSFTPCopyFiles, hitSFTPPasteFiles:
 		return id, true
 	}
@@ -235,6 +235,7 @@ func (state *State) sftpMenuRows(session *Session, view *sftpView) menuRows {
 		rows.add(components.ContextMenuItem{ID: hitSFTPMenuDelete, Label: messages.SFTPDelete, Icon: icon(iconTrash), Variant: components.ContextMenuItemDestructive, Disabled: busy})
 	}
 	rows.separate()
+	rows.add(components.ContextMenuItem{ID: hitSFTPNewFile, Label: messages.SFTPNewFile, Icon: icon(iconFile), Disabled: busy})
 	rows.add(components.ContextMenuItem{ID: hitSFTPNewDirectory, Label: messages.SFTPNewDirectory, Icon: icon(iconFolderPlus), Disabled: busy})
 	if !local {
 		rows.add(components.ContextMenuItem{ID: hitSFTPUpload, Label: messages.SFTPUpload, Icon: icon(iconUpload), Disabled: busy})

@@ -966,6 +966,24 @@ func TestSFTPCreateRenameChmodAndRefresh(t *testing.T) {
 		t.Fatal("directory was not created")
 	}
 
+	state.Click(hitSFTPNewFile)
+	if view.dialog != sftpDialogCreateFile || state.EditorFor(hitSFTPDialogField) == nil {
+		t.Fatalf("create file dialog = %+v", view)
+	}
+	replaceSFTPDialogText(t, state, "todo.txt")
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitSFTPDialogField}); !result.Handled {
+		t.Fatalf("create file Enter = %+v", result)
+	}
+	waitSFTP(t, state, session, func(view *sftpView) bool {
+		return !view.busy && sftpRowIndexOrNegative(view, "todo.txt") >= 0
+	})
+	remote.mu.Lock()
+	_, fileCreated := remote.files["/home/test/todo.txt"]
+	remote.mu.Unlock()
+	if !fileCreated {
+		t.Fatal("file was not created")
+	}
+
 	clickSFTPRow(t, state, view, "notes.txt")
 	state.Click(hitSFTPRename)
 	if view.dialog != sftpDialogRename || view.dialogEditor.String() != "notes.txt" {

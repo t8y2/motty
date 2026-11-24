@@ -50,7 +50,7 @@ var toolbarCatalog = [3][]toolbarSpec{
 	},
 	toolbarSFTP: {
 		{"upload-file", hitSFTPUpload, iconUpload}, {"upload-folder", hitSFTPUploadDirectory, iconFolderUp},
-		{"new-folder", hitSFTPNewDirectory, iconFolderPlus}, {"new-link", hitSFTPNewLink, iconLink},
+		{"new-file", hitSFTPNewFile, iconFile}, {"new-folder", hitSFTPNewDirectory, iconFolderPlus}, {"new-link", hitSFTPNewLink, iconLink},
 		{"local-remote", hitSFTPPaneToggle, iconHosts}, {"refresh", hitSFTPRefresh, iconRefresh},
 		{"follow-folder", hitSFTPFollowToggle, iconFollowFolder},
 		{"locate-terminal", hitSFTPLocateTerminal, iconTerminal},
@@ -262,6 +262,8 @@ func (state *State) toolbarLabel(id gfx.ID) string {
 		return m.SFTPUpload
 	case hitSFTPUploadDirectory:
 		return m.SFTPUploadDirectory
+	case hitSFTPNewFile:
+		return m.SFTPNewFile
 	case hitSFTPNewDirectory:
 		return m.SFTPNewDirectory
 	case hitSFTPNewLink:
