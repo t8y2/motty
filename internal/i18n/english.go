@@ -2459,6 +2459,7 @@ var englishTools = ToolsMessages{
 	ActionReveal:                    "Show in folder",
 	ActionRevealFailed:              "Could not start the file manager. Try again later.",
 	ActionRevealMissing:             "The file or folder was moved or deleted, so its location cannot be opened.",
+	GoToLinkTarget:                  "Go to link target",
 	ActionExtractFmt:                "Unpack %s",
 	ActionCopyFmt:                   "Copy %s",
 	DiagnosticsRow:                  "Diagnostics report",

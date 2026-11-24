@@ -21,6 +21,7 @@ var (
 	hitFilePropertiesClose   = tree.ID(filePropertiesHits, "close")
 
 	hitSFTPCopyPath               = tree.ID(sftpHits, "copy-path")
+	hitSFTPGoToLink               = tree.ID(sftpHits, "go-to-link")
 	hitSFTPProperties             = tree.ID(sftpHits, "properties")
 	hitSFTPCalculateDirectorySize = tree.ID(sftpHits, "calculate-directory-size")
 	hitSFTPCopyFiles              = tree.ID(sftpHits, "copy-files")

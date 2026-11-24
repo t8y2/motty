@@ -738,6 +738,7 @@ type ToolsMessages struct {
 	ActionReveal                    string
 	ActionRevealFailed              string
 	ActionRevealMissing             string
+	GoToLinkTarget                  string
 	ActionExtractFmt                string
 	ActionCopyFmt                   string
 	DiagnosticsRow                  string

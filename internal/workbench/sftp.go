@@ -603,6 +603,10 @@ func (state *State) clickSFTP(id gfx.ID) {
 		state.openSFTPDialog(view, sftpDialogCreateDirectory)
 	case id == hitSFTPOpenEntry && !view.busy:
 		state.openSelectedSFTP(view)
+	case id == hitSFTPGoToLink && !view.busy:
+		if entry, ok := state.selectedSFTPEntry(view); ok && sftpLinkJumpable(entry) {
+			state.navigateSFTPDirectory(view, sftpLinkDestination(view.path, entry))
+		}
 	case id == hitSFTPEditExternal && !view.busy:
 		state.startExternalEdit(session, view)
 	case id == hitSFTPRename && !view.busy:

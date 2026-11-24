@@ -2459,6 +2459,7 @@ var traditionalTools = ToolsMessages{
 	ActionReveal:                    "開啟所在位置",
 	ActionRevealFailed:              "無法啟動檔案管理器，請稍後重試。",
 	ActionRevealMissing:             "檔案或資料夾已移動或刪除，無法開啟所在位置。",
+	GoToLinkTarget:                  "前往連結目標",
 	ActionExtractFmt:                "解壓縮 %s",
 	ActionCopyFmt:                   "複製 %s",
 	DiagnosticsRow:                  "診斷報告",

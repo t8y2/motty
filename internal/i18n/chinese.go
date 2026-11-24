@@ -2459,6 +2459,7 @@ var chineseTools = ToolsMessages{
 	ActionReveal:                    "打开所在位置",
 	ActionRevealFailed:              "无法启动文件管理器，请稍后重试。",
 	ActionRevealMissing:             "文件或文件夹已移动或删除，无法打开所在位置。",
+	GoToLinkTarget:                  "转到链接目标",
 	ActionExtractFmt:                "解压 %s",
 	ActionCopyFmt:                   "复制 %s",
 	DiagnosticsRow:                  "诊断报告",
