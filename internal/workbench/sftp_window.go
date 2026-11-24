@@ -140,7 +140,11 @@ func (w *sftpWindow) startBrowser() {
 	connection, mode := w.session.conn, w.session.host.Transfer
 	w.clearDirectoryTreeRequests()
 	w.view.openFiles = func() (sftpclient.Remote, error) { return openRemoteFiles(connection, mode) }
-	w.view.worker = sftpclient.NewWorker(w.view.openFiles, w.invalidate)
+	// Wake both windows when a transfer changes. w.invalidate alone only
+	// repaints the detached window, leaving the transfer center in the main
+	// window showing a completed upload as still running until some other
+	// event invalidates it (closing the file window used to be that event).
+	w.view.worker = sftpclient.NewWorker(w.view.openFiles, state.notifyForView(&w.session, w.view))
 	state.configureSFTPWorker(w.view)
 	state.listLocal(w.view, w.initialLocal)
 	state.listSFTP(w.view, w.initialRemote)
