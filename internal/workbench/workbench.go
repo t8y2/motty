@@ -280,7 +280,6 @@ var (
 	hitKnownHostsRetrust       = tree.ID(knownHostsHits, "known-hosts-retrust")
 	hitKnownHostsPrevious      = tree.ID(knownHostsHits, "known-hosts-previous")
 	hitKnownHostsNext          = tree.ID(knownHostsHits, "known-hosts-next")
-	hitKnownHostsScrollThumb   = tree.ID(knownHostsHits, "known-hosts-scroll-thumb")
 	hitKnownHostsDialogDismiss = tree.ID(knownHostsHits, "known-hosts-dialog-dismiss")
 	hitKnownHostsDialogClose   = tree.ID(knownHostsHits, "known-hosts-dialog-close")
 	hitKnownHostsDialogCancel  = tree.ID(knownHostsHits, "known-hosts-dialog-cancel")
@@ -3160,11 +3159,6 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	}
 	if result, handled := state.proxyListKey(event); handled {
 		return result
-	}
-	if state.activeSection == sectionKnownHosts && state.modal == modalNone && state.knownHosts.action == knownHostsActionNone {
-		if result := state.knownHosts.table.Key(event); result.Handled {
-			return result
-		}
 	}
 	if result, handled := state.snippetGroupKey(event); handled {
 		return result

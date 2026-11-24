@@ -41,8 +41,8 @@ func TestKnownHostsWorkspacePaintsEntriesAndInteractiveHits(t *testing.T) {
 	if hit, _ := hitByID(canvas, hitKnownHostsDelete); !hit.Disabled {
 		t.Fatal("Delete is enabled without a selection")
 	}
-	if hit, _ := hitByID(canvas, hitKnownHostRowList.At(0)); hit.Label == "" {
-		t.Fatal("row hit has empty label")
+	if hit, _ := hitByID(canvas, hitKnownHostRowList.At(0)); hit.Label != knownHostRowLabel(state.knownHosts.rows[0].cells) {
+		t.Fatalf("row names only part of itself: %q", hit.Label)
 	}
 	// The table is one page tall and has no scrollbar of its own.
 	if _, ok := hitByLabel(canvas, "Vertical scrollbar"); ok {
@@ -96,7 +96,7 @@ func TestKnownHostsSearchAndKeyboardSelection(t *testing.T) {
 		t.Fatalf("visible=%v", state.knownHosts.visible)
 	}
 	index := state.knownHosts.visible[0]
-	result := state.Key(gfx.KeyEvent{Target: hitKnownHostRowList.At(0), Key: gfx.KeySpace})
+	result := state.Key(gfx.KeyEvent{Target: hitKnownHostRowList.At(index), Key: gfx.KeySpace})
 	if !result.Handled || !state.knownHosts.rows[index].selected {
 		t.Fatalf("space result=%+v selected=%v", result, state.knownHosts.rows[index].selected)
 	}
@@ -235,26 +235,49 @@ func TestKnownHostsPaginationKeepsEveryEntryReachable(t *testing.T) {
 		t.Fatalf("pagination text %q was not painted", state.knownHosts.pageText)
 	}
 
+	state.knownHosts.list.Select(2)
 	state.Click(hitKnownHostsNext)
+	if got := state.knownHosts.list.Selected(); got != -1 {
+		t.Fatalf("paging did not clear list selection: got %d, want -1", got)
+	}
 	canvas, texts = paintedTexts(state)
 	if !contains(texts, fmt.Sprintf("host-%02d.example.com", defaultKnownHostsPageSize)) {
 		t.Fatal("last entry is not reachable on the second page")
 	}
-	if _, ok := hitByID(canvas, hitKnownHostRowList.At(0)); !ok {
+	if _, ok := hitByID(canvas, hitKnownHostRowList.At(defaultKnownHostsPageSize)); !ok {
 		t.Fatal("second page first row has no hit")
 	}
 	if _, ok := hitByID(canvas, hitKnownHostsPrevious); !ok {
 		t.Fatal("second page has no Previous hit")
 	}
 
-	// 切换每页显示数量枚举为 30 后，所有记录应在第一页直接可见且不再分页。
+	// 切换每页显示数量枚举为 30 后，所有记录应在第一页直接可见、不再分页且清除列表选中行。
+	state.knownHosts.list.Select(0)
 	state.setKnownHostsPageSize(30)
+	if got := state.knownHosts.list.Selected(); got != -1 {
+		t.Fatalf("changing page size did not clear list selection: got %d, want -1", got)
+	}
 	canvas, texts = paintedTexts(state)
 	if _, ok := hitByID(canvas, hitKnownHostsNext); ok {
 		t.Fatal("pagination should be hidden when page size covers all rows")
 	}
 	if !contains(texts, fmt.Sprintf("host-%02d.example.com", defaultKnownHostsPageSize+1)) {
 		t.Fatal("last entry is not visible after increasing page size to 30")
+	}
+
+	// 刷新与筛选时同样清除列表选中行。
+	state.knownHosts.list.Select(3)
+	state.refreshKnownHosts(true)
+	if got := state.knownHosts.list.Selected(); got != -1 {
+		t.Fatalf("refresh did not clear list selection: got %d, want -1", got)
+	}
+	state.knownHosts.list.Select(1)
+	if editor := state.EditorFor(hitKnownHostsSearch); editor != nil {
+		app.TextEvent{Kind: app.TextInsert, Text: "host-00"}.Apply(editor)
+		state.syncKnownHostsVisible()
+		if got := state.knownHosts.list.Selected(); got != -1 {
+			t.Fatalf("filtering did not clear list selection: got %d, want -1", got)
+		}
 	}
 }
 

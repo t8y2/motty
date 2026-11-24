@@ -211,20 +211,47 @@ func TestCatalogPagesScrollLongLists(t *testing.T) {
 		const pageCount = 50
 		for index := range pageCount {
 			hosts := fmt.Sprintf("kh-%03d.internal", index)
+			cells := [7]string{"", fmt.Sprintf("%d", index+1), hosts, "", "ssh-ed25519", "SHA256:test", ""}
 			state.knownHosts.rows = append(state.knownHosts.rows, knownHostRecord{
-				cells:       [7]string{"", fmt.Sprintf("%d", index+1), hosts, "", "ssh-ed25519", "SHA256:test", ""},
+				cells:       cells,
 				searchText:  hosts,
 				selectLabel: hosts,
+				rowLabel:    knownHostRowLabel(cells),
 			})
 		}
 		state.setKnownHostsPageSize(pageCount)
 		state.knownHosts.synced = false
 		state.activeSection = sectionKnownHosts
 		view := openCatalogWindow(t, state)
-		assertTableScrolls(t, state, view, &state.knownHosts.table, pageCount,
-			hitKnownHostRowList.At(0), hitKnownHostRowList.At(pageCount-1), hitKnownHostsScrollThumb,
-			state.messages.KnownHostsListScroll, state.messages.KnownHostsColumnFingerprint,
-			func(state *State) {})
+		first, ok := findSnapshotHit(view.Snapshot(), hitKnownHostRowList.At(0))
+		if !ok {
+			t.Fatal("the first row is not painted")
+		}
+		if _, ok := findSnapshotHit(view.Snapshot(), hitKnownHostRowList.At(pageCount-1)); ok {
+			t.Fatal("the list fits every row without scrolling")
+		}
+		at := gfx.Point{X: first.Bounds.X + first.Bounds.Width/2, Y: first.Bounds.Y + first.Bounds.Height/2}
+		if err := view.Move(at.X, at.Y); err != nil {
+			t.Fatal(err)
+		}
+		bar, ok := findSnapshotLabel(view.Snapshot(), "Vertical scrollbar")
+		if !ok {
+			t.Fatal("a list taller than its viewport has no scrollbar under the pointer")
+		}
+		headerAboveRows(t, view.Snapshot(), state.messages.KnownHostsColumnFingerprint, bar.Bounds)
+
+		if err := view.Scroll(gfx.ScrollEvent{X: at.X, Y: at.Y, DeltaY: 10000, Precise: true}); err != nil {
+			t.Fatal(err)
+		}
+		if firstVis, _ := state.knownHosts.list.Visible(); firstVis <= 0 {
+			t.Fatalf("wheel left the list at first visible row %d", firstVis)
+		}
+		if _, ok := findSnapshotHit(view.Snapshot(), hitKnownHostRowList.At(pageCount-1)); !ok {
+			t.Fatal("the last row is still unreachable at the end of the list")
+		}
+		if _, ok := findSnapshotHit(view.Snapshot(), hitKnownHostRowList.At(0)); ok {
+			t.Fatal("the first row is still painted at the end of the list")
+		}
 	})
 
 	t.Run("snippets", func(t *testing.T) {
