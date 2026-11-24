@@ -16,6 +16,7 @@ func TestSnippetPickerFlatOrderFollowsManualOrder(t *testing.T) {
 		snippet{Name: "AI", Command: "codex", Group: "ai"},
 		snippet{Name: "Git second", Command: "git diff", Group: "git"},
 	)
+	state.snippets.pickerGrouped = false
 	state.openSnippetPicker()
 	if got := pickerShape(state); !sameShape(got, []string{"Git first", "AI", "Git second"}) {
 		t.Fatalf("default order = %v", got)
@@ -45,23 +46,23 @@ func TestSnippetPickerGroupingTogglePersistsAndKeepsSearch(t *testing.T) {
 	state.openSnippetPicker()
 	state.commandPalette.search.Insert("git")
 	state.Click(hitSnippetPickerGrouped)
-	if !state.snippets.pickerGrouped || state.modal != modalCommandPalette ||
+	if state.snippets.pickerGrouped || state.modal != modalCommandPalette ||
 		state.commandPalette.search.String() != "git" || !sameShape(pickerShape(state), []string{"Git"}) {
 		t.Fatalf("toggle lost search or results: %v", pickerShape(state))
 	}
 	restored := newTestState(t, options)
 	restored.openSnippetPicker()
-	if !restored.snippets.pickerGrouped || !sameShape(pickerShape(restored), []string{"#ai", "#git"}) {
+	if restored.snippets.pickerGrouped || !sameShape(pickerShape(restored), []string{"Git", "AI"}) {
 		t.Fatalf("restored grouping = %v", pickerShape(restored))
 	}
 	state.commandPalette.search = text.Editor{}
 	state.Click(hitSnippetPickerGrouped)
-	if state.snippets.pickerGrouped || !sameShape(pickerShape(state), []string{"Git", "AI"}) {
+	if !state.snippets.pickerGrouped || !sameShape(pickerShape(state), []string{"#ai", "#git"}) {
 		t.Fatalf("flat toggle = %v", pickerShape(state))
 	}
 	restored = newTestState(t, options)
-	if restored.snippets.pickerGrouped {
-		t.Fatal("flat preference was not saved")
+	if !restored.snippets.pickerGrouped {
+		t.Fatal("grouped preference was not saved")
 	}
 }
 
@@ -71,7 +72,7 @@ func TestSnippetPickerGroupingCheckboxIsBesideBarToggle(t *testing.T) {
 	view := openPickerView(t, state, 1)
 	bar, barOK := hitByIDSnapshot(view.Snapshot().Hits, hitCommandsBarToggle)
 	group, groupOK := hitByIDSnapshot(view.Snapshot().Hits, hitSnippetPickerGrouped)
-	if !barOK || !groupOK || group.Role != gfx.RoleCheckbox || group.Checked ||
+	if !barOK || !groupOK || group.Role != gfx.RoleCheckbox || !group.Checked ||
 		group.Bounds.Y != bar.Bounds.Y || group.Bounds.X < bar.Bounds.X+bar.Bounds.Width {
 		t.Fatalf("checkbox layout: bar=%+v group=%+v", bar, group)
 	}
@@ -79,7 +80,7 @@ func TestSnippetPickerGroupingCheckboxIsBesideBarToggle(t *testing.T) {
 		t.Fatal(err)
 	}
 	group, groupOK = hitByIDSnapshot(view.Snapshot().Hits, hitSnippetPickerGrouped)
-	if !groupOK || !group.Checked {
+	if !groupOK || group.Checked {
 		t.Fatal("group checkbox did not toggle")
 	}
 }

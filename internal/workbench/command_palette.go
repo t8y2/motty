@@ -507,6 +507,9 @@ func (state *State) commandPaletteKey(event gfx.KeyEvent) (gfx.EventResult, bool
 	if !inSearch && !inItems {
 		return gfx.EventResult{}, false
 	}
+	if result, handled := state.snippetPickerOrderKey(event); handled {
+		return result, true
+	}
 	if inSearch && event.Key == gfx.KeyEnter && !event.Repeat {
 		state.executeCommandPalette(palette.selected)
 		return gfx.EventResult{Handled: true, Repaint: true, Focus: state.modalReturnFocus()}, true

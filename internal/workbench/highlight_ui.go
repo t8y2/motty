@@ -500,7 +500,7 @@ func (state *State) restoreTerminalTools(saved savedState) {
 		}
 	}
 	state.refreshSnippets()
-	state.snippets.pickerGrouped = saved.SnippetPickerGrouped
+	state.snippets.pickerGrouped = !saved.SnippetPickerFlat
 	state.commands.shown = saved.CommandsShown
 	state.commands.sidebarLeft = saved.CommandsSidebarLeft
 	state.commands.placement = commandsPlacementBottom

@@ -14,6 +14,7 @@ func TestSnippetPickerDragPersistsManualOrderWithoutSending(t *testing.T) {
 	shell := world.conns[0].shell(t)
 	addTestSnippets(state, snippet{Name: "First", Command: "one", Group: "git"},
 		snippet{Name: "Second", Command: "two", Group: "ai"}, snippet{Name: "Third", Command: "three", Group: "git"})
+	state.snippets.pickerGrouped = false
 	state.snippets.filter = snippetFilter{group: "ai"}
 	state.snippets.sort = components.TableSortState{Column: 0, Direction: components.TableSortAscending}
 	state.refreshSnippets()

@@ -83,24 +83,27 @@ func (state *State) declareSnippetMenu(c ui.C) {
 			rows.add(components.ContextMenuItem{ID: hitSnippetPickList.At(int(session.ID)), Label: session.Title, Icon: icon(iconTerminal), Shortcut: current})
 		}
 	} else {
-		state.snippetActionRows(&rows, !menu.fromBar && !menu.fromPicker)
+		state.snippetActionRows(&rows, !menu.fromBar)
 	}
 	state.declareRowsMenu(c, &menu.open, menu.at, hitSnippetMenuDismiss, &rows, state.chooseSnippetMenu)
 }
 
-// snippetActionRows is what a snippet row's menu offers. Moving reorders by the
-// Snippets page's own filter and sort, so from the command bar only the actions
-// that make sense without the page are offered.
+// snippetActionRows 根据来源提供操作；选择器按自身可见顺序移动，
+// 设置页沿用其筛选规则，命令栏不提供排序操作。
 func (state *State) snippetActionRows(rows *menuRows, moves bool) {
 	m := state.messages.Tools
 	icon := func(kind uint8) gfx.Icon { return lucideIcons[kind] }
 	if !state.snippetMenu.fromPicker {
 		rows.add(components.ContextMenuItem{ID: hitSnippetMenuSend, Label: m.SnippetSend, Icon: icon(iconPlay)})
 	}
+	neighbor := state.snippetNeighbor
+	if state.snippetMenu.fromPicker {
+		neighbor = state.snippetPickerNeighbor
+	}
 	if moves {
 		rows.separate()
-		rows.add(components.ContextMenuItem{ID: hitSnippetMenuUp, Label: m.SnippetMoveUp, Icon: icon(iconArrowUp), Disabled: state.snippetNeighbor(state.snippetMenu.index, -1) < 0})
-		rows.add(components.ContextMenuItem{ID: hitSnippetMenuDown, Label: m.SnippetMoveDown, Icon: icon(iconChevronDown), Disabled: state.snippetNeighbor(state.snippetMenu.index, 1) < 0})
+		rows.add(components.ContextMenuItem{ID: hitSnippetMenuUp, Label: m.SnippetMoveUp, Icon: icon(iconArrowUp), Disabled: neighbor(state.snippetMenu.index, -1) < 0})
+		rows.add(components.ContextMenuItem{ID: hitSnippetMenuDown, Label: m.SnippetMoveDown, Icon: icon(iconChevronDown), Disabled: neighbor(state.snippetMenu.index, 1) < 0})
 	}
 	rows.separate()
 	if !moves {
@@ -134,9 +137,17 @@ func (state *State) chooseSnippetMenu(id gfx.ID) {
 		}
 		state.focusInlineSnippet(index)
 	case hitSnippetMenuUp:
-		state.moveSnippet(index, -1)
+		if menu.fromPicker {
+			state.moveSnippetPicker(index, -1)
+		} else {
+			state.moveSnippet(index, -1)
+		}
 	case hitSnippetMenuDown:
-		state.moveSnippet(index, 1)
+		if menu.fromPicker {
+			state.moveSnippetPicker(index, 1)
+		} else {
+			state.moveSnippet(index, 1)
+		}
 	case hitSnippetMenuDelete:
 		state.commandPalette.returnToPicker = menu.fromPicker
 		state.openSnippetDelete(index)

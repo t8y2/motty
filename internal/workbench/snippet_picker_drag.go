@@ -57,17 +57,8 @@ func (state *State) snippetPickerDragPointer(event gfx.PointerEvent) gfx.EventRe
 		saved := *drag
 		*drag = snippetPickerDrag{}
 		if saved.moved && saved.valid && saved.source < len(state.snippets.list) &&
-			state.snippets.list[saved.source].Name == saved.name && state.moveSnippetInOrder(saved.source, saved.to) {
-			scroll := palette.scroll
-			state.rebuildCommandPalette()
-			palette.scroll = min(scroll, palette.maxScroll())
-			for row, index := range palette.visible {
-				if palette.entries[index].target == hitSnippetSendList.At(state.snippets.selected) {
-					palette.selected = row
-					break
-				}
-			}
-			palette.follow()
+			state.snippets.list[saved.source].Name == saved.name {
+			state.reorderSnippetPicker(saved.source, saved.to)
 		}
 	}
 	return gfx.EventResult{Handled: true, Repaint: true}
