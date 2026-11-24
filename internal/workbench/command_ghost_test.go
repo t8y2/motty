@@ -43,6 +43,40 @@ func (h *historyWorld) key(event gfx.KeyEvent) {
 	h.state.Wake()
 }
 
+func TestGhostFastTypingAfterPrompt(t *testing.T) {
+	h := ghostWorld(t, "docker compose up -d", "git checkout main")
+	inputGuardPrompt(h.state, &h.state.sessions[0], h.shell, "utf8", "")
+	h.clock += 10 * time.Millisecond
+	h.type_("git ch")
+	if rest, ok := h.ghost(); !ok || rest != "eckout main" {
+		t.Fatalf("suggestion = %q, %v, want %q, true", rest, ok, "eckout main")
+	}
+}
+
+func TestFastTypingIntoRunningProgramIsNotSuggestedOrRecorded(t *testing.T) {
+	for _, output := range []string{"Enter query> ", "100%", "user@example.com is down", "diff: a >"} {
+		t.Run(output, func(t *testing.T) {
+			h := ghostWorld(t, "git checkout main")
+			session := &h.state.sessions[0]
+			inputGuardPrompt(h.state, session, h.shell, "utf8", "")
+			// A command starts running and revokes shell prompt ownership.
+			h.shell.say(folderSyncMarker(session, "C") + "\r\n" + output)
+			h.state.Wake()
+			h.clock += 10 * time.Millisecond
+			h.type_("git ch")
+			if rest, ok := h.ghost(); ok {
+				t.Fatalf("running program output %q offered suggestion %q", output, rest)
+			}
+			h.type_("\r")
+			for _, cmd := range h.remembered(historyKey(session)) {
+				if cmd == "git ch" {
+					t.Fatalf("running program input %q was recorded in history", cmd)
+				}
+			}
+		})
+	}
+}
+
 func TestTypingTheStartOfAKnownCommandSuggestsTheRestAndRightArrowTakesIt(t *testing.T) {
 	h := ghostWorld(t, "docker compose up -d", "git checkout main")
 	h.prompt("deploy@prod:~$ ")

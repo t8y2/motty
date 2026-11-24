@@ -856,6 +856,9 @@ func (t *terminal) sendLogicalInput(p, logical []byte, drain, typing, unknown bo
 	if !feed && t.completionFeed != nil {
 		feed = t.completionFeed()
 	}
+	if feed {
+		t.recorder.SetPromptOwned(t.inputGuard.active)
+	}
 	if feed && unknown {
 		t.recorder.UnknownInput(cmdhistory.TermScreen{Term: t.screen}, t.recordingNow())
 	} else if feed && len(logical) > 0 {

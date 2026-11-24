@@ -22,8 +22,9 @@ const (
 // command line that is safe to remember. It owns no clock and no goroutine: the
 // caller tells it about output and gives it the screen when keys are sent.
 type Recorder struct {
-	lastOutput time.Duration
-	heard      bool
+	lastOutput  time.Duration
+	heard       bool
+	promptOwned bool // the terminal's shell integration vouches that the shell owns the prompt
 
 	armed bool // the first key of the line has been seen
 	skip  bool // the line cannot be recorded, whatever is typed in it
@@ -43,10 +44,15 @@ type Recorder struct {
 // Output tells the recorder the terminal has just received output.
 func (r *Recorder) Output(now time.Duration) { r.lastOutput, r.heard = now, true }
 
+// SetPromptOwned tells the recorder whether the terminal's shell integration
+// vouches that the shell owns the current prompt. When true, the QuietBefore
+// wait is bypassed because the shell itself announced the end of the prompt.
+func (r *Recorder) SetPromptOwned(owned bool) { r.promptOwned = owned }
+
 // Reset forgets the line being typed. Call it when recording is turned off or
 // the terminal changes hands, so a half-seen line is not finished later.
 func (r *Recorder) Reset() {
-	r.armed, r.skip, r.multi, r.tainted, r.inPaste = false, false, false, false, false
+	r.armed, r.skip, r.multi, r.tainted, r.inPaste, r.promptOwned = false, false, false, false, false, false
 	r.typed = r.typed[:0]
 }
 
@@ -132,7 +138,11 @@ func (r *Recorder) edit() {
 
 // begin looks at the screen when the first key of a line is pressed.
 func (r *Recorder) begin(screen Screen, now time.Duration) {
-	if screen.Alt() || screen.Scrolled() || r.heard && now-r.lastOutput < QuietBefore {
+	if screen.Alt() || screen.Scrolled() {
+		r.skip = true
+		return
+	}
+	if !r.promptOwned && r.heard && now-r.lastOutput < QuietBefore {
 		r.skip = true
 		return
 	}
