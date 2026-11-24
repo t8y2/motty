@@ -195,7 +195,7 @@ func Open(path string, keys Keystore) (*Vault, error) {
 	if err := json.Unmarshal(data, &file); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrCorrupt, err)
 	}
-	if file.Version != fileVersion && !(file.Version == 2 && file.Protection != "" && file.KDF == nil && len(file.WrappedKey) == 0) {
+	if !(file.Version == fileVersion && file.Protection == "") && !(file.Version == 2 && file.Protection != "" && file.KDF == nil && len(file.WrappedKey) == 0 && file.Records != nil) {
 		return nil, fmt.Errorf("%w: version %d", ErrCorrupt, file.Version)
 	}
 	if (file.KDF == nil) != (len(file.WrappedKey) == 0) {
@@ -206,7 +206,6 @@ func Open(path string, keys Keystore) (*Vault, error) {
 		return nil, fmt.Errorf("%w: unusable key derivation settings", ErrCorrupt)
 	}
 	vault.file = file
-	rememberVault(vault)
 	return vault, nil
 }
 
@@ -247,6 +246,32 @@ func (vault *Vault) Prepare() error {
 	return vault.prepare(false)
 }
 
+// loadOrdinaryKey handles profiles saved during a system-store outage. If the
+// system later returns with another profile's key, only adopt the local key
+// after a record authenticates with it. A denied system request stays denied.
+func loadOrdinaryKey(file fileData, keys Keystore) ([]byte, error) {
+	key, err := keys.Load(KeyService, KeyAccount)
+	if err != nil || len(file.Records) == 0 {
+		return key, err
+	}
+	if len(key) == keySize {
+		if _, err := open(key, file.Records[0]); err == nil {
+			return key, nil
+		}
+	}
+	clear(key)
+	if fallback, ok := keys.(FallbackKeystore); ok {
+		local, err := fallback.File.Load(KeyService, KeyAccount)
+		if err == nil && len(local) == keySize {
+			if _, err := open(local, file.Records[0]); err == nil {
+				return local, nil
+			}
+		}
+		clear(local)
+	}
+	return nil, ErrCorrupt
+}
+
 func (vault *Vault) prepare(create bool) error {
 	if vault.superseded {
 		return ErrLocked
@@ -258,7 +283,8 @@ func (vault *Vault) prepare(create bool) error {
 			vault.key = nil
 			return ErrLocked
 		}
-		if vault.key == nil {
+		if !hmac.Equal(vault.key, key) {
+			clear(vault.key)
 			vault.key = key
 		} else {
 			clear(key)
@@ -274,7 +300,7 @@ func (vault *Vault) prepare(create bool) error {
 	if vault.keys == nil {
 		return ErrUnavailable
 	}
-	key, err := vault.keys.Load(KeyService, KeyAccount)
+	key, err := loadOrdinaryKey(vault.file, vault.keys)
 	switch {
 	case err == nil && len(key) == keySize:
 		vault.key = key
@@ -698,6 +724,11 @@ func (vault *Vault) Names() ([]string, error) {
 func (vault *Vault) Clear() error {
 	vault.mu.Lock()
 	defer vault.mu.Unlock()
+	if vault.file.Version == 2 {
+		if err := vault.prepare(false); err != nil {
+			return err
+		}
+	}
 	if err := vault.write(nil); err != nil {
 		return err
 	}
@@ -804,6 +835,7 @@ func seal(key []byte, plain plainRecord) (record, error) {
 	if _, err := rand.Read(nonce); err != nil {
 		return record{}, err
 	}
+	defer clear(data)
 	return record{ID: id, Data: gcm.Seal(nonce, nonce, data, id)}, nil
 }
 
@@ -820,6 +852,7 @@ func open(key []byte, entry record) (plainRecord, error) {
 	if err != nil {
 		return plainRecord{}, ErrCorrupt
 	}
+	defer clear(data)
 	var plain plainRecord
 	if err := json.Unmarshal(data, &plain); err != nil || !hmac.Equal(recordID(key, plain.Name), entry.ID) {
 		return plainRecord{}, ErrCorrupt

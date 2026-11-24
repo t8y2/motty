@@ -106,14 +106,14 @@ func passphraseSecretName(identity string) string { return "passphrase:" + ident
 
 // initSecrets opens the vault next to the state file. A file that cannot be read
 // is set aside, not overwritten: it may hold what a later release can open.
-func (state *State) initSecrets() {
+func (state *State) initSecrets(allowRecovery bool) error {
 	path := filepath.Join(filepath.Dir(state.options.StatePath), "vault.json")
 	keys := state.options.Keystore
 	if keys == nil {
 		keys = defaultKeystore(path)
 	}
 	opened, err := vault.OpenShared(path, keys)
-	if errors.Is(err, vault.ErrCorrupt) && !state.appLockEnabled() {
+	if errors.Is(err, vault.ErrCorrupt) && allowRecovery {
 		aside := path + ".bad-" + time.Now().Format("20060102-150405")
 		if os.Rename(path, aside) == nil {
 			vault.Forget(path)
@@ -122,9 +122,10 @@ func (state *State) initSecrets() {
 		}
 	}
 	if err != nil {
-		return // no saved passwords this run; the rest of the application is unaffected
+		return err
 	}
 	state.secrets.vault = opened
+	return nil
 }
 
 // isPasswordQuestion reports the one secret question that asks for the account

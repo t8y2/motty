@@ -1147,6 +1147,12 @@ type State struct {
 // Close releases connections, transfers, monitors, and forwards owned by this
 // window. It is idempotent and is called by app.Config.OnClosed.
 func (state *State) Close() {
+	state.CloseKeepingRecord(true)
+}
+
+// CloseKeepingRecord applies the window's restore policy while its profile
+// is still open, before the last window releases the master key.
+func (state *State) CloseKeepingRecord(keep bool) {
 	if state == nil || state.closed {
 		return
 	}
@@ -1158,6 +1164,9 @@ func (state *State) Close() {
 	state.flushNoteDraft()
 	state.noteActiveLocalDirectory()
 	state.save()
+	if !keep {
+		state.DropWindowRecord()
+	}
 	state.closeNoteWatches()
 	state.cancelNoteImages()
 	for id := range state.noteSidebars {
@@ -1232,9 +1241,8 @@ func (state *State) Close() {
 		state.forwards[index].stop()
 	}
 	state.closeForwardTunnels()
-	if p := state.appProtection; p != nil && p.enabled && !p.busy && len(state.profileWindows()) == 0 {
-		p.gate.Lock()
-		p.locked.Store(true)
+	if p := state.appProtection; p != nil && (p.enabled || p.busy) && len(state.profileWindows()) == 0 {
+		state.sealProfile()
 	}
 	memoryTrim.request()
 }
@@ -1303,18 +1311,31 @@ func New(options Options) *State {
 	if state.appLocked() || state.appMigrating() {
 		state.initAI()
 		state.profileDeferred = true
-		prefs, _ := configstore.ReadLockPreferences(state.options.StatePath, configFormat)
+		p := state.appProtection
+		prefs := p.lockPreferences
+		if !p.migrating.Load() && !p.busy && p.openErr == nil && !p.recoveryPending {
+			prefs, _ = configstore.ReadLockPreferences(state.options.StatePath, configFormat)
+			p.lockPreferences = prefs
+		}
 		state.restoreWindowAppearance(savedState{Language: prefs.Language, Theme: prefs.Theme, Corners: prefs.Corners, IconColor: prefs.IconColor, TextScale: prefs.TextScale, InterfaceTextSize: prefs.InterfaceTextSize, InterfaceFont: prefs.InterfaceFont, InterfaceFontMain: prefs.InterfaceFontMain, InterfaceFontBold: prefs.InterfaceFontBold})
 		state.validateInterfaceFont()
 		if state.appProtection.openErr != nil {
 			state.lockUI.error = state.appLockErrorText(state.appProtection.openErr)
+		} else if p.recoveryPending {
+			state.lockUI.error = state.messages.AppLock.MigrationPending
 		}
 	} else {
-		if err := state.loadApplicationProfile(); err != nil {
+		var err error
+		if state.appLockEnabled() {
+			err = state.checkProfileFiles()
+		}
+		if err == nil {
+			err = state.loadApplicationProfile(state.appLockEnabled())
+		}
+		if err != nil {
 			state.profileDeferred = true
-			state.appProtection.gate.Lock()
-			state.appProtection.updateStatus()
-			state.lockUI.error = err.Error()
+			state.sealProfile()
+			state.lockUI.error = state.appLockErrorText(err)
 		}
 	}
 	if state.options.Group != nil {
@@ -1324,9 +1345,11 @@ func New(options Options) *State {
 }
 
 // loadApplicationProfile runs once per window, after the profile can be read.
-func (state *State) loadApplicationProfile() error {
+func (state *State) loadApplicationProfile(strict bool) error {
 	state.initKnownHosts()
-	state.initSecrets()
+	if err := state.initSecrets(!strict); err != nil && strict {
+		return err
+	}
 	state.starting = true
 	// A fresh window's completion is the automatic list: the menu opens as the
 	// user types, and the inline suggestion is a choice in Settings. Capturing
@@ -1337,15 +1360,16 @@ func (state *State) loadApplicationProfile() error {
 	state.initForwardList()
 	state.initProxyList()
 	state.configDefaults = defaultsOf(state.snapshot())
-	config, saved, configBase, report, err := openConfigWithRecovery(state.options.StatePath, state.windowID, !state.appLockEnabled())
-	if state.appLockEnabled() && (err != nil || config == nil || state.secrets.vault == nil) {
+	config, saved, configBase, report, err := openConfigWithRecovery(state.options.StatePath, state.windowID, !strict)
+	if strict && (err != nil || config == nil) {
+		state.starting = false
 		if config != nil {
 			config.Close()
 		}
 		if err != nil {
 			return err
 		}
-		return fmt.Errorf("cannot open the protected configuration or vault")
+		return fmt.Errorf("cannot reopen the configuration")
 	}
 	state.config, state.configBase = config, configBase
 	state.bindVaultClock()

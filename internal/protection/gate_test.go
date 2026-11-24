@@ -448,11 +448,8 @@ func TestFailedRecoveryCanRollbackAndRetryWithoutLosingTheProfile(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := cold.Unlock(password); err == nil || !cold.PendingMigration() || !cold.Locked() {
-		t.Fatal("incomplete migration appeared successful")
-	}
-	if err := cold.Rollback(password); err != nil {
-		t.Fatal(err)
+	if err := cold.Unlock(password); !errors.Is(err, ErrMigrationRolledBack) || cold.PendingMigration() || cold.Enabled() {
+		t.Fatalf("interrupted enable failed to restore ordinary mode: %v", err)
 	}
 	after, err := os.ReadFile(g.options.ConfigPath)
 	if err != nil || !bytes.Equal(before, after) {

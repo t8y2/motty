@@ -11,14 +11,12 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/app/devicekey"
 	"github.com/vivaui/viva/gfx"
+	"motty/internal/configstore"
 	"motty/internal/protection"
 	"motty/internal/vault"
 )
 
-var (
-	errAppLocked     = errors.New("Motty is locked")
-	errDeviceCleanup = errors.New("master password protection was disabled, but the device credential could not be removed")
-)
+var errAppLocked = errors.New("Motty is locked")
 
 type appLockAction uint8
 
@@ -38,11 +36,17 @@ type applicationProtection struct {
 	path                   string
 	gate                   *protection.Gate
 	openErr                error
+	recoveryPending        bool
 	enabled, systemEnabled bool
 	locked                 atomic.Bool
 	migrating              atomic.Bool
 	busy                   bool
 	lockAfterOperation     bool
+	cancel                 context.CancelFunc
+	retryOpen              bool
+	expectVault            bool
+	lockPreferences        configstore.LockPreferences
+	droppedWindows         map[string][]byte
 	supportChecked         bool
 	systemMethod           devicekey.VerificationMethod
 	results                chan func()
@@ -53,16 +57,39 @@ func newApplicationProtection(path string, keys vault.Keystore) *applicationProt
 		keys = defaultKeystore(filepath.Join(filepath.Dir(path), "vault.json"))
 	}
 	p := &applicationProtection{path: path, results: make(chan func(), 1)}
-	p.gate, p.openErr = protection.Open(protection.Options{Directory: filepath.Dir(path), ConfigPath: path, ConfigFormat: configFormat, Keystore: keys, DeviceStore: systemKeystore{}})
+	opts := protection.Options{
+		Directory: filepath.Dir(path), ConfigPath: path, ConfigFormat: configFormat,
+		Keystore: keys, DeviceStore: systemKeystore{},
+		RevokeDevice: func(profile string, blob []byte) error {
+			return revokeDevice(context.Background(), devicekey.Options{Service: keyService("Motty application lock"), Account: profile}, blob)
+		},
+	}
+	p.gate, p.openErr = protection.Open(opts)
 	if p.openErr == nil && p.gate.PendingMigration() {
 		// A terminated disable operation can leave a plaintext staging copy.
 		// Never clean a different process's live migration.
 		if lease, err := profileLease(path, true); err == nil {
-			p.openErr = p.gate.CleanupPreparation()
+			// Unlock retries a failed cleanup under its own exclusive lease.
+			_ = p.gate.CleanupPreparation()
 			lease.Close()
 		}
 	}
 	p.updateStatus()
+	if p.openErr == nil && p.gate.HasDeviceCleanup() {
+		// An unavailable OS credential store may have outlived the committed
+		// disable. Retry on a separate gate so no native call holds the UI's
+		// gate mutex while the user opens or locks a window.
+		go func() {
+			lease, err := profileLease(path, true)
+			if err != nil {
+				return
+			}
+			defer lease.Close()
+			if cleanup, err := protection.Open(opts); err == nil {
+				_ = cleanup.RetryDeviceCleanup()
+			}
+		}()
+	}
 	return p
 }
 
@@ -72,17 +99,19 @@ func (p *applicationProtection) updateStatus() {
 		return
 	}
 	p.enabled = p.gate.Enabled()
-	p.systemEnabled = p.enabled && len(p.gate.DeviceBlob()) > 0
-	p.locked.Store(p.gate.Locked())
+	p.recoveryPending = p.gate.PendingMigration()
+	p.systemEnabled = !p.recoveryPending && p.enabled && len(p.gate.DeviceBlob()) > 0
+	p.locked.Store(p.gate.Locked() || p.recoveryPending)
 }
 
 // PrepareProfile probes protection before the launcher compacts window records.
 // As for window creation itself, callers run this on the UI thread.
 func (group *Group) PrepareProfile(path string, keys vault.Keystore) bool {
+	path = filepath.Clean(path)
 	if group.protection == nil || group.protection.path != path {
 		group.protection = newApplicationProtection(path, keys)
 	}
-	return group.protection.locked.Load()
+	return group.protection.locked.Load() || group.protection.migrating.Load()
 }
 
 func (s *State) attachProtection() {
@@ -90,6 +119,7 @@ func (s *State) attachProtection() {
 	if g := s.options.Group; g != nil {
 		g.PrepareProfile(path, keys)
 		s.appProtection = g.protection
+		s.options.StatePath = g.protection.path
 	} else {
 		s.appProtection = newApplicationProtection(path, keys)
 	}
@@ -163,7 +193,6 @@ func (s *State) bindVaultClock() {
 }
 
 func (s *State) lockApplication() {
-	p := s.appProtection
 	if !s.appLockEnabled() || s.appAccessBlocked() {
 		return
 	}
@@ -172,14 +201,25 @@ func (s *State) lockApplication() {
 		w.flushNoteDraft()
 		w.save()
 	}
+	s.sealProfile()
+}
+
+// Stop readers immediately, including when a native prompt or a KDF will
+// deliver its result later. Migration already holds all data files exclusively.
+func (s *State) sealProfile() {
+	p := s.appProtection
 	p.locked.Store(true)
 	p.supportChecked = false
 	if p.busy {
 		p.lockAfterOperation = true
-	} else {
+		if p.cancel != nil {
+			p.cancel()
+		}
+	}
+	if !p.migrating.Load() && p.gate != nil {
 		p.gate.Lock()
 	}
-	for _, w := range windows {
+	for _, w := range s.profileWindows() {
 		if w.modal == modalAppLock {
 			w.closeModal()
 		}
@@ -215,20 +255,57 @@ func (s *State) prepareMigration() error {
 			return err
 		}
 	}
-	s.appProtection.migrating.Store(true)
+	p := s.appProtection
+	_, vaultErr := os.Stat(filepath.Join(filepath.Dir(p.path), "vault.json"))
+	if vaultErr != nil && !errors.Is(vaultErr, os.ErrNotExist) {
+		return vaultErr
+	}
+	p.expectVault = vaultErr == nil || p.enabled
+	p.lockPreferences = configstore.LockPreferences{
+		Language: s.savedLanguage(), Theme: s.appearanceMode.saved(),
+		Corners: s.cornerStyle.saved(), IconColor: s.iconColor.saved(),
+		InterfaceTextSize: int(s.interfaceTextSize), InterfaceFont: s.uiFont.family,
+		InterfaceFontMain: s.uiFont.main, InterfaceFontBold: s.uiFont.bold,
+	}
+	p.migrating.Store(true)
+	var closeErr error
 	for _, w := range windows {
 		w.stopSyncTimer()
 		w.cancelProfileSync()
+		if w.ai.run != nil {
+			w.ai.run.cancel()
+		}
 		for _, child := range w.protectedChildren {
 			child.SetConcealed(true)
 		}
-		w.config.Close()
+		closeErr = errors.Join(closeErr, w.config.Close())
 		w.config = nil
 		w.secrets.vault = nil
+		w.syncShortcutCapture()
 		w.syncMenuBar()
 		w.invalidateWindow()
 	}
-	return nil
+	return closeErr
+}
+
+// OpenShared normally creates a missing profile on first launch. A window
+// rebinding to an existing generation must never create an empty replacement.
+func (s *State) checkProfileFiles() error {
+	p := s.appProtection
+	if p.enabled {
+		return p.gate.ValidateProtectedFiles()
+	}
+	info, err := os.Stat(p.path)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() || info.Size() < 100 { // SQLite database header
+		return configstore.ErrCorrupt
+	}
+	if p.expectVault {
+		_, err = os.Stat(filepath.Join(filepath.Dir(p.path), "vault.json"))
+	}
+	return err
 }
 
 // Rebind existing windows to the new files without restoring or redialing their
@@ -236,22 +313,29 @@ func (s *State) prepareMigration() error {
 func (s *State) resumeProfile() error {
 	var result error
 	windows := s.profileWindows()
+	if len(windows) > 0 {
+		if err := s.checkProfileFiles(); err != nil {
+			return err
+		}
+	}
 	for _, w := range windows {
 		if w.profileDeferred && w.options.ProfileUnlocked != nil {
-			w.options.ProfileUnlocked()
+			if err := w.options.ProfileUnlocked(); err != nil {
+				return err
+			}
 			w.options.ProfileUnlocked = nil
 		}
 	}
 	for _, w := range windows {
 		switch {
 		case w.profileDeferred:
-			if err := w.loadApplicationProfile(); err != nil {
+			if err := w.loadApplicationProfile(true); err != nil {
 				result = errors.Join(result, err)
 				continue
 			}
 			w.profileDeferred = false
 		case w.config == nil:
-			db, _, base, report, err := openConfigWithRecovery(w.options.StatePath, w.windowID, false)
+			db, _, _, report, err := openConfigWithRecovery(w.options.StatePath, w.windowID, false)
 			if err == nil && (db == nil || report.outcome == loadTooNew) {
 				err = errors.New("cannot reopen the profile after migration")
 			}
@@ -259,13 +343,15 @@ func (s *State) resumeProfile() error {
 				result = errors.Join(result, err)
 				continue
 			}
-			w.initSecrets()
-			if w.secrets.vault == nil {
+			if err := w.initSecrets(false); err != nil {
 				db.Close()
-				result = errors.Join(result, errors.New("cannot reopen the saved credentials after migration"))
+				result = errors.Join(result, err)
 				continue
 			}
-			w.config, w.configBase = db, base
+			// The model still corresponds to its own pre-migration baseline.
+			// Adopting a peer's newer snapshot here would turn its edits into
+			// apparent changes made by this window at its next save.
+			w.config = db
 			w.bindVaultClock()
 		}
 		w.syncPending = w.sync.configured() && !w.sync.manual
@@ -308,7 +394,12 @@ func (s *State) runAppLockAction(action appLockAction, current, next string, don
 	}
 	migrate := action == appLockEnable || action == appLockDisable
 	var lease *os.File
-	recovery := unlock && p.gate.PendingMigration()
+	var preparationErr error
+	recovery := unlock && p.recoveryPending
+	if recovery && action == appLockSystemUnlock {
+		done(protection.ErrMigrationPending)
+		return
+	}
 	if migrate || recovery {
 		var err error
 		lease, err = profileLease(s.options.StatePath, true)
@@ -317,48 +408,80 @@ func (s *State) runAppLockAction(action appLockAction, current, next string, don
 			return
 		}
 		if migrate {
-			if err := s.prepareMigration(); err != nil {
+			preparationErr = s.prepareMigration()
+			if preparationErr != nil && !p.migrating.Load() {
 				lease.Close()
-				done(err)
+				done(preparationErr)
 				return
 			}
 		}
 	}
 	p.busy = true
+	if recovery {
+		p.migrating.Store(true)
+	}
 	for _, w := range s.profileWindows() {
 		w.invalidateWindow()
 	}
 	opts := devicekey.Options{Service: keyService("Motty application lock"), Account: p.gate.ProfileID(), Reason: s.noteText("Unlock Motty", "解锁 Motty")}
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancelLockAction = cancel
+	p.cancel = cancel
 	post, invalidate := s.post, s.options.Invalidate
 	go func() {
-		err := performAppLockAction(ctx, p.gate, action, current, next, opts)
+		err := preparationErr
+		if err == nil {
+			err = performAppLockAction(ctx, p.gate, action, current, next, opts)
+		}
 		cancel()
 		finish := func() {
 			s.cancelLockAction = nil
 			p.busy = false
-			p.migrating.Store(false)
+			p.cancel = nil
+			// External readers must stay blocked until every window has a
+			// validated store and all deferred windows have loaded.
+			p.migrating.Store(true)
 			if p.lockAfterOperation || (unlock && s.closed) {
 				p.gate.Lock()
 				p.lockAfterOperation = false
-				if unlock {
-					err = context.Canceled
+				if unlock && p.gate.Enabled() {
+					err = errors.Join(context.Canceled, err)
 				}
 			}
 			p.updateStatus()
-			if lease != nil {
-				defer lease.Close()
-			}
-			if !p.locked.Load() && (migrate || unlock && err == nil) {
+			ordinaryRecovery := !p.enabled && !p.recoveryPending &&
+				(errors.Is(err, protection.ErrMigrationRolledBack) || errors.Is(err, protection.ErrDeviceCleanup))
+			if unlock && err != nil && !ordinaryRecovery && !p.locked.Load() {
+				p.gate.Lock()
+				s.sealProfile()
+			} else if !p.locked.Load() && (migrate || unlock) {
+				p.retryOpen = false
+				if recovery && !p.enabled && (err == nil || errors.Is(err, protection.ErrDeviceCleanup)) {
+					p.expectVault = true // a recovered disable wrote an ordinary vault
+				}
 				if resumeErr := s.resumeProfile(); resumeErr != nil {
 					err = errors.Join(err, resumeErr)
-					if p.enabled {
-						p.gate.Lock()
-						p.locked.Store(true)
+					p.retryOpen = !p.enabled
+					p.gate.Lock()
+					s.sealProfile()
+				} else {
+					for _, w := range s.profileWindows() {
+						if w != s {
+							if w.modal == modalAppLock {
+								w.closeModal()
+							}
+							w.resetAppLockUI()
+						}
 					}
 				}
 			}
+			if !p.locked.Load() && len(p.droppedWindows) != 0 {
+				s.flushDroppedWindowRecords()
+			}
+			if lease != nil {
+				lease.Close()
+			}
+			p.migrating.Store(false)
 			if !s.closed {
 				done(err)
 			}
@@ -367,6 +490,18 @@ func (s *State) runAppLockAction(action appLockAction, current, next string, don
 				p.locked.Store(true)
 			}
 			for _, w := range s.profileWindows() {
+				if w.closed {
+					continue // a preceding afterProfileUnlock callback closed this window
+				}
+				if w != s && !p.retryOpen && (errors.Is(err, protection.ErrMigrationRolledBack) || errors.Is(err, protection.ErrDeviceCleanup)) {
+					message := w.appLockErrorText(err)
+					if p.locked.Load() {
+						w.lockUI.error = message
+					} else {
+						w.lockUI.notice, w.status = message, message
+					}
+				}
+				w.syncShortcutCapture()
 				w.syncMenuBar()
 				w.invalidateWindow()
 				if next := w.afterProfileUnlock; next != nil && !w.appAccessBlocked() {
@@ -393,16 +528,7 @@ func performAppLockAction(ctx context.Context, g *protection.Gate, action appLoc
 	case appLockChange:
 		return g.ChangePassword(current, next)
 	case appLockDisable:
-		blob := g.DeviceBlob()
-		if err := g.Disable(current); err != nil {
-			return err
-		}
-		if len(blob) > 0 {
-			if err := revokeDevice(ctx, opts, blob); err != nil {
-				return errors.Join(errDeviceCleanup, err)
-			}
-		}
-		return nil
+		return g.Disable(current)
 	case appLockUnlock:
 		return g.Unlock(current)
 	case appLockEnroll:
@@ -425,8 +551,14 @@ func performAppLockAction(ctx context.Context, g *protection.Gate, action appLoc
 			return err
 		}
 		clear(key)
-		if err := revokeDevice(ctx, opts, g.DeviceBlob()); err != nil {
+		blob, err := g.DeviceForRemoval()
+		if err != nil {
 			return err
+		}
+		if len(blob) > 0 {
+			if err := revokeDevice(ctx, opts, blob); err != nil {
+				return err
+			}
 		}
 		return g.SetDeviceBlob(nil)
 	case appLockSystemUnlock:

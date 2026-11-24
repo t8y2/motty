@@ -4,6 +4,7 @@ package i18n
 type AppLockMessages struct {
 	Protection, ChangeAction, SystemBeforePassword                             string
 	UpdatingDescription                                                        string
+	MigrationRolledBack, ReopenTitle, ReopenDescription                        string
 	DeviceCleanup, ProfileInUse, LargeRecoveryBackup                           string
 	WrongPassword, Corrupt, MigrationPending, SystemMissing, DevicePassword    string
 	Lock, Title, Description, ColdDescription, KeepRunning, RestoreAfterUnlock string

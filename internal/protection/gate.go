@@ -25,11 +25,13 @@ import (
 const MinPasswordLength = 8
 
 var (
-	ErrWrongPassword    = errors.New("protection: incorrect master password")
-	ErrWeakPassword     = errors.New("protection: master password must have at least eight characters")
-	ErrLocked           = errors.New("protection: profile is locked")
-	ErrCorrupt          = errors.New("protection: protection metadata is missing or damaged")
-	ErrMigrationPending = errors.New("protection: migration needs recovery; unlock with the master password")
+	ErrMigrationRolledBack = errors.New("protection: interrupted migration was rolled back")
+	ErrDeviceCleanup       = errors.New("protection: profile restored to ordinary storage but device credential cleanup failed")
+	ErrWrongPassword       = errors.New("protection: incorrect master password")
+	ErrWeakPassword        = errors.New("protection: master password must have at least eight characters")
+	ErrLocked              = errors.New("protection: profile is locked")
+	ErrCorrupt             = errors.New("protection: protection metadata is missing or damaged")
+	ErrMigrationPending    = errors.New("protection: migration needs recovery; unlock with the master password")
 )
 
 type Options struct {
@@ -39,6 +41,7 @@ type Options struct {
 	ConfigFormat int
 	Keystore     vault.Keystore
 	DeviceStore  vault.Keystore
+	RevokeDevice func(profile string, blob []byte) error
 }
 
 type kdf struct {
@@ -56,21 +59,24 @@ type envelope struct {
 	Check   []byte `json:"key_check"`
 }
 type device struct {
-	Version int    `json:"version"`
-	Profile string `json:"profile"`
-	Blob    []byte `json:"blob"`
+	Version    int    `json:"version"`
+	Profile    string `json:"profile"`
+	Blob       []byte `json:"blob,omitempty"`
+	CleanupKey []byte `json:"cleanup_key,omitempty"`
 }
 
 var kdfCost = kdf{Name: "argon2id", Time: 3, MemoryKiB: 64 * 1024, Threads: 4}
 
 type Gate struct {
-	mu           sync.Mutex
-	options      Options
-	envelope     *envelope
-	key          []byte
-	device       []byte
-	pending      *migration
-	orphanStages []string
+	mu               sync.Mutex
+	options          Options
+	envelope         *envelope
+	key              []byte
+	device           []byte
+	deviceVersion    int
+	pending          *migration
+	orphanStages     []string
+	hasDeviceCleanup bool
 }
 
 // Open is read-only. A protected database without its envelope never falls back
@@ -107,7 +113,13 @@ func Open(options Options) (*Gate, error) {
 	if options.Keystore == nil {
 		options.Keystore = vault.FileKeystore{Path: filepath.Join(options.Directory, "vault.key")}
 	}
+	if options.RevokeDevice != nil && options.DeviceStore == nil {
+		return nil, errors.New("protection: native revocation requires a device credential store")
+	}
 	g := &Gate{options: options}
+	if _, err := os.Lstat(g.path(cleanupDirectory)); err == nil {
+		g.hasDeviceCleanup = true
+	}
 	if data, readErr := os.ReadFile(g.path("protection-migration.json")); readErr == nil {
 		var pending migration
 		if len(data) > 1<<20 || json.Unmarshal(data, &pending) != nil || !validEnvelope(&pending.Envelope) {
@@ -178,7 +190,7 @@ func (g *Gate) Enabled() bool           { g.mu.Lock(); defer g.mu.Unlock(); retu
 func (g *Gate) Locked() bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.envelope != nil && len(g.key) == 0
+	return g.envelope != nil && (g.pending != nil || len(g.key) == 0)
 }
 func (g *Gate) ProfileID() string {
 	g.mu.Lock()
@@ -202,7 +214,7 @@ func (g *Gate) DeviceBlob() []byte {
 func (g *Gate) SetDeviceBlob(blob []byte) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.envelope == nil || len(g.key) != 32 {
+	if g.envelope == nil || len(g.key) != 32 || g.pending != nil {
 		return ErrLocked
 	}
 	if len(blob) > 1<<20 {
@@ -214,6 +226,9 @@ func (g *Gate) SetDeviceBlob(blob []byte) error {
 func (g *Gate) Lock() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	g.lock()
+}
+func (g *Gate) lock() {
 	configstore.LockProtection(g.options.ConfigPath)
 	vault.LockProtection(g.options.VaultPath)
 	clear(g.key)
@@ -252,22 +267,44 @@ func (g *Gate) unlock(key []byte) error {
 	}
 	if g.pending != nil {
 		if err := g.finishMigration(key); err != nil {
-			return err
+			if g.pending == nil || (!errors.Is(err, ErrCorrupt) && !errors.Is(err, os.ErrNotExist)) {
+				return err
+			}
+			if rollbackErr := g.rollbackMigration(key); rollbackErr != nil {
+				g.lock()
+				return errors.Join(ErrMigrationPending, err, rollbackErr)
+			}
+			return errors.Join(ErrMigrationRolledBack, err)
 		}
 		if g.envelope == nil {
 			return nil
 		}
 	}
-	if err := g.validateProtectedFiles(); err != nil {
-		return err
-	}
 	if err := configstore.SetProtectionKey(g.options.ConfigPath, key); err != nil {
-		return err
+		g.lock()
+		return errors.Join(ErrCorrupt, err)
 	}
-	vault.SetProtectionKey(g.options.VaultPath, key)
+	if err := vault.SetProtectionKey(g.options.VaultPath, key, g.envelope.Profile); err != nil {
+		g.lock()
+		return errors.Join(ErrCorrupt, err)
+	}
 	clear(g.key)
 	g.key = append([]byte(nil), key...)
 	return nil
+}
+
+// ValidateProtectedFiles checks the active storage generation before a new
+// window can open shared handles. It never installs a key or creates a file.
+func (g *Gate) ValidateProtectedFiles() error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.pending != nil {
+		return ErrMigrationPending
+	}
+	if g.envelope == nil {
+		return nil
+	}
+	return g.validateProtectedFiles()
 }
 
 func (g *Gate) validateProtectedFiles() error {
@@ -325,7 +362,7 @@ func (g *Gate) validateProtectedFiles() error {
 func (g *Gate) EnrollmentKey(currentPassword string) ([]byte, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.envelope == nil || len(g.key) != 32 {
+	if g.envelope == nil || len(g.key) != 32 || g.pending != nil {
 		return nil, ErrLocked
 	}
 	return unwrap(*g.envelope, currentPassword)
@@ -334,7 +371,7 @@ func (g *Gate) EnrollmentKey(currentPassword string) ([]byte, error) {
 func (g *Gate) ChangePassword(current, next string) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.envelope == nil {
+	if g.envelope == nil || len(g.key) == 0 || g.pending != nil {
 		return ErrLocked
 	}
 	key, err := unwrap(*g.envelope, current)
@@ -358,7 +395,11 @@ func (g *Gate) ChangePassword(current, next string) error {
 }
 
 func validEnvelope(e *envelope) bool {
-	return e != nil && e.Version == 1 && len(e.Profile) == 32 && e.KDF.Name == "argon2id" && e.KDF.Time >= 1 && e.KDF.Time <= 16 && e.KDF.MemoryKiB >= 8 && e.KDF.MemoryKiB <= 256*1024 && e.KDF.Threads >= 1 && e.KDF.Threads <= 16 && len(e.KDF.Salt) == 16 && len(e.Wrapped) == 60 && len(e.Check) >= 28
+	if e == nil || len(e.Profile) != 32 {
+		return false
+	}
+	_, err := hex.DecodeString(e.Profile)
+	return err == nil && e.Version == 1 && e.KDF.Name == "argon2id" && e.KDF.Time >= 1 && e.KDF.Time <= 16 && e.KDF.MemoryKiB >= 8 && e.KDF.MemoryKiB <= 256*1024 && e.KDF.Threads >= 1 && e.KDF.Threads <= 16 && len(e.KDF.Salt) == 16 && len(e.Wrapped) == 60 && len(e.Check) == 28+len("motty protected profile")
 }
 func derive(password string, params kdf) []byte {
 	return argon2.IDKey([]byte(password), params.Salt, params.Time, params.MemoryKiB, params.Threads, 32)
@@ -395,7 +436,7 @@ func open(key []byte, purpose string, data []byte) ([]byte, error) {
 	}
 	plain, err := aead.Open(nil, data[:aead.NonceSize()], data[aead.NonceSize():], []byte("motty protection/v1/"+purpose))
 	if err != nil {
-		return nil, ErrWrongPassword
+		return nil, ErrCorrupt
 	}
 	return plain, nil
 }
@@ -459,10 +500,13 @@ func authenticate(key, data []byte) []byte {
 }
 
 func writeAtomic(path string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+	return writeAtomicFrom(filepath.Dir(path), path, data)
+}
+func writeAtomicFrom(directory, path string, data []byte) error {
+	if err := os.MkdirAll(directory, 0700); err != nil {
 		return err
 	}
-	file, err := os.CreateTemp(filepath.Dir(path), ".motty-protection-*")
+	file, err := os.CreateTemp(directory, ".motty-protection-*")
 	if err != nil {
 		return err
 	}
@@ -503,6 +547,9 @@ func (g *Gate) Disable(password string) error {
 	defer g.mu.Unlock()
 	if g.envelope == nil {
 		return nil
+	}
+	if len(g.key) == 0 || g.pending != nil {
+		return ErrLocked
 	}
 	return g.migrate(password, false)
 }

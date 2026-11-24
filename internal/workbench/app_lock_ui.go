@@ -117,7 +117,7 @@ func (state *State) paintAppLockPage(canvas *gfx.Canvas, size gfx.Size) {
 	if state.appLockCold() {
 		footer = state.messages.AppLock.RestoreAfterUnlock
 	}
-	if state.appMigrating() {
+	if state.appMigrating() || state.appProtection.retryOpen {
 		footer = ""
 	}
 	if footer != "" {
@@ -133,6 +133,7 @@ func (state *State) declareAppLockPage(c ui.C) {
 	}
 	u.field.Secure, u.field.Invalid = !u.shown, u.error != ""
 	busy := state.appLockBusy()
+	retry := state.appProtection != nil && state.appProtection.retryOpen
 	system := state.appSystemEnabled() && state.appSystemAvailable() && !u.systemFailed
 	scale := min(metrics.FontSizeM/14, max(float32(.72), (c.Bounds().Height-windowBarHeight-96)/500))
 	width := min(float32(400)*metrics.FontSizeM/14, max(c.Bounds().Width-48, 0))
@@ -148,6 +149,9 @@ func (state *State) declareAppLockPage(c ui.C) {
 		ui.Column(c).Width(width).MarginTop(top).Children(func() {
 			u.logo = ui.Slot(c).Size(210*scale, 55*scale).Self(ui.Center)
 			title := m.Title
+			if retry {
+				title = m.ReopenTitle
+			}
 			if state.appMigrating() {
 				title = m.Updating
 			}
@@ -156,12 +160,19 @@ func (state *State) declareAppLockPage(c ui.C) {
 			if state.appLockCold() {
 				description = m.ColdDescription
 			}
+			if retry {
+				description = m.ReopenDescription
+			}
 			if state.appMigrating() {
 				description = m.UpdatingDescription
 			}
 			ui.Text(c, description).FillWidth().TextCenter().FontSize(metrics.FontSizeM + 1).Color(pal.muted).LineHeight(24 * scale).MarginTop(8 * scale)
 			if state.appMigrating() {
 				ui.Spinner(c).Size(24, 24).Self(ui.Center).MarginTop(30 * scale)
+				return
+			}
+			if retry {
+				ui.Button(c, state.messages.ConnRetry).Height(44).FillWidth().MarginTop(24).Disabled(busy).Hit(hitAppLockSubmit, state.messages.ConnRetry)
 				return
 			}
 			if system {
@@ -203,7 +214,11 @@ func (state *State) declareAppLockPage(c ui.C) {
 	})
 	if !u.active && !busy {
 		u.active = true
-		c.Canvas().RequestFocus(hitAppLockPassword)
+		if retry {
+			c.Canvas().RequestFocus(hitAppLockSubmit)
+		} else {
+			c.Canvas().RequestFocus(hitAppLockPassword)
+		}
 	}
 }
 
@@ -224,7 +239,7 @@ func (state *State) appLockKey(event gfx.KeyEvent) gfx.EventResult {
 
 func (state *State) appLockEditor(hit gfx.ID) *text.Editor {
 	if state.appLocked() || state.appMigrating() {
-		if hit == hitAppLockPassword && !state.appLockBusy() {
+		if hit == hitAppLockPassword && !state.appLockBusy() && !state.appProtection.retryOpen {
 			return &state.lockUI.password
 		}
 		return nil
@@ -265,6 +280,10 @@ func (state *State) clickAppLock(id gfx.ID) bool {
 	if state.appLocked() {
 		switch id {
 		case hitAppLockSubmit:
+			if state.appProtection.retryOpen {
+				state.startAppLockUIAction(appLockUnlock, "", "")
+				return true
+			}
 			password := u.password.String()
 			if password == "" {
 				u.error = m.Required
@@ -325,11 +344,12 @@ func (state *State) startAppLockUIAction(action appLockAction, current, next str
 	u.busy, u.error, u.notice = true, "", ""
 	state.runAppLockAction(action, current, next, func(err error) {
 		u.busy = false
-		if errors.Is(err, errDeviceCleanup) {
+		if !state.appLocked() && (errors.Is(err, protection.ErrDeviceCleanup) || errors.Is(err, protection.ErrMigrationRolledBack)) {
 			if state.modal == modalAppLock {
 				state.closeModal()
 			}
-			u.notice = state.messages.AppLock.DeviceCleanup
+			u.notice = state.appLockErrorText(err)
+			state.status = u.notice
 		} else if err != nil {
 			u.error = state.appLockErrorText(err)
 			if action == appLockSystemUnlock && (errors.Is(err, devicekey.ErrUnavailable) || errors.Is(err, devicekey.ErrNotFound)) {
@@ -351,8 +371,10 @@ func (state *State) startAppLockUIAction(action appLockAction, current, next str
 func (state *State) appLockErrorText(err error) string {
 	m := state.messages.AppLock
 	switch {
-	case errors.Is(err, errDeviceCleanup):
+	case errors.Is(err, protection.ErrDeviceCleanup):
 		return m.DeviceCleanup
+	case errors.Is(err, protection.ErrMigrationRolledBack):
+		return m.MigrationRolledBack
 	case errors.Is(err, protection.ErrWrongPassword):
 		return m.WrongPassword
 	case errors.Is(err, protection.ErrHistoricalBackupTooLarge):

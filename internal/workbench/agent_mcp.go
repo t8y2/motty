@@ -119,6 +119,9 @@ func ServeAgentMCP(ctx context.Context, in io.Reader, out io.Writer, options Age
 		return err
 	}
 	defer lease.Close()
+	if err := requireOrdinaryProfile(options.StatePath); err != nil {
+		return fmt.Errorf("standalone MCP requires an ordinary profile; open Motty to unlock or recover it: %w", err)
+	}
 	catalog, err := readAgentCatalog(options.StatePath)
 	if err != nil {
 		return err

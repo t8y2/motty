@@ -77,33 +77,48 @@ func RestoreWindowCount(path string) (int, error) {
 }
 
 // DropWindowRecord removes this window's own saved state, so a window the user
-// closed does not come back at the next launch. It runs after the window wrote
-// what it had and closed its store, so it opens the store again for one delete.
+// closed does not come back at the next launch. Queue it if the key is locked
+// or a migration has exclusive access to the store.
 func (state *State) DropWindowRecord() {
-	if state.configBase == nil || state.appAccessBlocked() {
+	if state.configBase == nil {
 		return
 	}
 	name := state.configBase.windowName
 	if name == "" || state.options.StatePath == "" {
 		return
 	}
-	store, err := configstore.OpenShared(state.options.StatePath, configFormat)
-	if err != nil {
-		state.logWindowRecord(name, err)
-		return
+	p := state.appProtection
+	if p.droppedWindows == nil {
+		p.droppedWindows = make(map[string][]byte)
 	}
-	defer store.Close()
-	if _, err := store.Commit(configstore.Change{Writer: configWriter(), Local: map[string][]byte{name: nil}}); err != nil {
-		state.logWindowRecord(name, err)
+	p.droppedWindows[name] = nil // configstore deletes local records with a nil value
+	if !state.appAccessBlocked() {
+		state.flushDroppedWindowRecords()
 	}
 }
 
-// logWindowRecord reports a record that could not be dropped. Losing it only
-// means one stale window comes back at the next launch, so it is logged rather
-// than shown.
-func (state *State) logWindowRecord(name string, err error) {
+func (state *State) flushDroppedWindowRecords() {
+	drops := state.appProtection.droppedWindows
+	if len(drops) == 0 {
+		return
+	}
+	store, err := configstore.OpenShared(state.options.StatePath, configFormat)
+	if err != nil {
+		state.logWindowRecordError(err)
+		return
+	}
+	defer store.Close()
+	if _, err := store.Commit(configstore.Change{Writer: configWriter(), Local: drops}); err != nil {
+		state.logWindowRecordError(err)
+		return
+	}
+	clear(drops)
+}
+
+// A stale window can return at the next launch, so log a failed deletion.
+func (state *State) logWindowRecordError(err error) {
 	if state.options.Log == nil {
 		return
 	}
-	fmt.Fprintf(state.options.Log, "motty: window record %s: %v\n", name, err)
+	fmt.Fprintf(state.options.Log, "motty: delete window records: %v\n", err)
 }

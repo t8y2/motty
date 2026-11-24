@@ -178,8 +178,9 @@ type DragPreview interface {
 }
 
 type Options struct {
-	// ProfileUnlocked runs once when a protected cold launch can restore its windows.
-	ProfileUnlocked func()
+	// ProfileUnlocked prepares the saved window records before a cold restore.
+	// A temporary failure keeps restoration pending for the next unlock.
+	ProfileUnlocked func() error
 	// DevelopmentSource offers a one-way import into an unused development
 	// profile. Nil disables discovery, including for explicit test profiles.
 	DevelopmentSource *DevelopmentSource

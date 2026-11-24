@@ -23,6 +23,7 @@ type migrationStep struct {
 	Previous string `json:"previous,omitempty"`
 	Existed  bool   `json:"existed"`
 	Remove   bool   `json:"remove,omitempty"`
+	Sealed   bool   `json:"sealed,omitempty"`
 }
 type migration struct {
 	Version  int             `json:"version"`
@@ -69,11 +70,11 @@ func (g *Gate) migrate(password string, enable bool) error {
 			return err
 		}
 		defer clear(root)
-		next = *g.envelope
-		if err := configstore.SetProtectionKey(g.options.ConfigPath, root); err != nil {
+		if err := g.validateProtectedFiles(); err != nil {
+			g.lock()
 			return err
 		}
-		vault.SetProtectionKey(g.options.VaultPath, root)
+		next = *g.envelope
 	}
 	stageID, err := identifier()
 	if err != nil {
@@ -98,24 +99,20 @@ func (g *Gate) migrate(password string, enable bool) error {
 		return err
 	}
 	m := &migration{Version: 1, Enable: enable, Envelope: next, Stage: stageName}
-	if oldKey, err := g.options.Keystore.Load(vault.KeyService, vault.KeyAccount); err == nil {
-		m.OldKey, err = seal(root, "migration-old-key/"+stageName, oldKey)
-		clear(oldKey)
-		if err != nil {
-			return err
-		}
-	} else if !errors.Is(err, vault.ErrKeystoreNotFound) && !errors.Is(err, vault.ErrKeystoreUnavailable) {
-		return err
-	}
 	configTarget := filepath.Base(g.options.ConfigPath)
 	vaultTarget := filepath.Base(g.options.VaultPath)
-	for _, target := range []string{configTarget, vaultTarget, "protection.json", "protection-device.json"} {
+	for _, target := range []string{configTarget, vaultTarget, "protection.json", deviceFile, "vault.key"} {
 		if info, err := os.Lstat(g.path(target)); err == nil && !info.Mode().IsRegular() {
 			return fmt.Errorf("protection: refusing non-regular profile file %s", target)
 		} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		step := migrationStep{Target: target, Staged: target + ".next"}
+		if target == configTarget {
+			if err := configstore.CheckpointForMigration(g.options.ConfigPath); err != nil {
+				return err
+			}
+		}
+		step := migrationStep{Target: target, Staged: target + ".next", Sealed: !enable && target == configTarget}
 		if old, readErr := os.ReadFile(g.path(target)); readErr == nil {
 			encrypted, sealErr := seal(root, "migration-before/"+target, old)
 			clear(old)
@@ -130,30 +127,46 @@ func (g *Gate) migrate(password string, enable bool) error {
 		} else if !errors.Is(readErr, os.ErrNotExist) {
 			return readErr
 		}
-		if target == "protection-device.json" || target == "protection.json" && !enable {
+		if target == deviceFile || target == "protection.json" && !enable || target == "vault.key" {
 			step.Remove = true
 			step.Staged = ""
 		}
 		m.Steps = append(m.Steps, step)
 	}
-	var key []byte
+	configStage := filepath.Join(stage, configTarget+".next")
 	if enable {
-		key = root
-	}
-	if err := configstore.BuildCopy(g.options.ConfigPath, filepath.Join(stage, configTarget+".next"), g.options.ConfigFormat, key); err != nil {
-		return err
-	}
-	if enable {
+		if err := configstore.BuildCopy(g.options.ConfigPath, configStage, g.options.ConfigFormat, root); err != nil {
+			return err
+		}
 		if err := vault.BuildProtectedCopy(g.options.VaultPath, filepath.Join(stage, vaultTarget+".next"), g.options.Keystore, root, next.Profile); err != nil {
 			return err
 		}
 	} else {
+		image, err := configstore.BuildUnprotectedImage(g.options.ConfigPath, g.options.ConfigFormat)
+		if err != nil {
+			return err
+		}
+		sum := sha256.Sum256(image)
+		sealed, err := seal(root, "migration-after/"+configTarget, image)
+		clear(image)
+		if err != nil {
+			return err
+		}
+		if err := writeAtomic(configStage, sealed); err != nil {
+			return err
+		}
+		for index, step := range m.Steps {
+			if step.Sealed {
+				m.Steps[index].Hash = hex.EncodeToString(sum[:])
+				break
+			}
+		}
 		targetKey, keyErr := g.normalVaultKey()
 		if keyErr != nil {
 			return keyErr
 		}
 		defer clear(targetKey)
-		newKey, err := vault.BuildUnprotectedCopy(g.options.VaultPath, filepath.Join(stage, vaultTarget+".next"), g.options.Keystore, targetKey)
+		newKey, err := vault.BuildUnprotectedCopy(g.options.VaultPath, filepath.Join(stage, vaultTarget+".next"), g.options.Keystore, next.Profile, targetKey)
 		if err != nil {
 			return err
 		}
@@ -174,7 +187,7 @@ func (g *Gate) migrate(password string, enable bool) error {
 	}
 	for index := range m.Steps {
 		step := &m.Steps[index]
-		if step.Remove {
+		if step.Remove || step.Sealed {
 			continue
 		}
 		data, err := os.ReadFile(filepath.Join(stage, step.Staged))
@@ -196,9 +209,20 @@ func (g *Gate) migrate(password string, enable bool) error {
 	prepared = true
 	g.pending = m
 	g.envelope = &m.Envelope
+	g.lock()
+	// An ordinary handle can reload its OS key. Retire that generation before
+	// the first replacement, even when an interrupted commit stays pending.
+	vault.RetireProtection(g.options.VaultPath)
+	vault.Forget(g.options.VaultPath)
 	if err := g.finishMigration(root); err != nil {
+		if g.pending == nil {
+			return err
+		}
 		if rollbackErr := g.rollbackMigration(root); rollbackErr != nil {
 			return errors.Join(err, fmt.Errorf("%w: %v", ErrMigrationPending, rollbackErr))
+		}
+		if !enable {
+			err = errors.Join(err, g.unlock(root))
 		}
 		return err
 	}
@@ -216,7 +240,7 @@ func (g *Gate) validateMigration(root []byte) error {
 	if m.Version != 1 || !strings.HasPrefix(m.Stage, ".motty-protection-stage-") || filepath.Base(m.Stage) != m.Stage || !hmac.Equal(m.MAC, authenticate(root, m.signedBytes())) {
 		return fmt.Errorf("%w: migration signature or stage name", ErrCorrupt)
 	}
-	allowed := map[string]bool{filepath.Base(g.options.ConfigPath): true, filepath.Base(g.options.VaultPath): true, "protection.json": true, "protection-device.json": true}
+	allowed := map[string]bool{filepath.Base(g.options.ConfigPath): true, filepath.Base(g.options.VaultPath): true, "protection.json": true, deviceFile: true, "vault.key": true}
 	for _, step := range m.Steps {
 		if (!allowed[step.Target] && !g.backupTarget(step.Target)) || filepath.Base(step.Target) != step.Target || step.Staged != "" && filepath.Base(step.Staged) != step.Staged || step.Previous != "" && filepath.Base(step.Previous) != step.Previous {
 			return fmt.Errorf("%w: invalid migration target %s", ErrCorrupt, step.Target)
@@ -257,6 +281,11 @@ func (g *Gate) finishMigration(root []byte) error {
 	for _, step := range m.Steps {
 		target := g.path(step.Target)
 		if step.Remove {
+			// Disable persists the ordinary vault key separately. Keep the enrollment
+			// marker for OS cleanup after the committed transition.
+			if !m.Enable && (step.Target == "vault.key" || step.Target == deviceFile) {
+				continue
+			}
 			if err := os.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
 				return err
 			}
@@ -274,12 +303,24 @@ func (g *Gate) finishMigration(root []byte) error {
 		if err != nil {
 			return err
 		}
+		if step.Sealed {
+			data, err = open(root, "migration-after/"+step.Target, data)
+			if err != nil {
+				return err
+			}
+		}
 		sum := sha256.Sum256(data)
-		clear(data)
 		if hex.EncodeToString(sum[:]) != step.Hash {
+			clear(data)
 			return fmt.Errorf("%w: staged file checksum %s", ErrCorrupt, step.Target)
 		}
-		if err := os.Rename(staged, target); err != nil {
+		if step.Sealed {
+			err = writeAtomicFrom(stage, target, data)
+		} else {
+			err = os.Rename(staged, target)
+		}
+		clear(data)
+		if err != nil {
 			return err
 		}
 		syncDirectory(g.options.Directory)
@@ -291,7 +332,7 @@ func (g *Gate) finishMigration(root []byte) error {
 			return err
 		}
 	}
-	if err := g.persistDevice(nil); err != nil {
+	if err := g.prepareDeviceCleanup(m, root); err != nil {
 		return err
 	}
 	if err := os.Remove(g.path("protection-migration.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -300,6 +341,10 @@ func (g *Gate) finishMigration(root []byte) error {
 	_ = os.RemoveAll(stage)
 	syncDirectory(g.options.Directory)
 	g.pending = nil
+	var cleanupErr error
+	if !m.Enable && g.hasDeviceCleanup {
+		cleanupErr = g.retryDeviceCleanup()
+	}
 	clear(g.device)
 	g.device = nil
 	vault.RetireProtection(g.options.VaultPath)
@@ -314,6 +359,9 @@ func (g *Gate) finishMigration(root []byte) error {
 		clear(g.key)
 		g.key = nil
 	}
+	if cleanupErr != nil {
+		return errors.Join(ErrDeviceCleanup, cleanupErr)
+	}
 	return nil
 }
 
@@ -326,7 +374,17 @@ func (g *Gate) rollbackMigration(root []byte) error {
 		return nil
 	}
 	stage := g.path(m.Stage)
+	if info, err := os.Lstat(stage); err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return ErrCorrupt
+	}
+	if err := configstore.EnsureClosed(g.options.ConfigPath); err != nil {
+		return err
+	}
+	hasKeySnapshot := false
 	for _, step := range m.Steps {
+		if step.Target == "vault.key" {
+			hasKeySnapshot = true
+		}
 		if !step.Existed {
 			if err := os.Remove(g.path(step.Target)); err != nil && !errors.Is(err, os.ErrNotExist) {
 				return err
@@ -341,13 +399,13 @@ func (g *Gate) rollbackMigration(root []byte) error {
 		if err != nil {
 			return err
 		}
-		err = writeAtomic(g.path(step.Target), plain)
+		err = writeAtomicFrom(stage, g.path(step.Target), plain)
 		clear(plain)
 		if err != nil {
 			return err
 		}
 	}
-	if len(m.OldKey) > 0 {
+	if !hasKeySnapshot && len(m.OldKey) > 0 {
 		key, err := open(root, "migration-old-key/"+m.Stage, m.OldKey)
 		if err != nil {
 			return err
@@ -358,10 +416,16 @@ func (g *Gate) rollbackMigration(root []byte) error {
 			return err
 		}
 	}
+	if !m.Enable {
+		if err := g.cancelDeviceCleanup(m.Envelope.Profile); err != nil {
+			return err
+		}
+	}
 	if err := os.Remove(g.path("protection-migration.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	_ = os.RemoveAll(stage)
+	syncDirectory(g.options.Directory)
 	g.pending = nil
 	vault.RetireProtection(g.options.VaultPath)
 	vault.Forget(g.options.VaultPath)
@@ -374,6 +438,9 @@ func (g *Gate) rollbackMigration(root []byte) error {
 	} else {
 		restored := m.Envelope
 		g.envelope = &restored
+		g.lock()
+		g.device = nil
+		return g.loadDeviceStore()
 	}
 	return nil
 }

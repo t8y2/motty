@@ -170,6 +170,9 @@ func OpenShared(path string, format int) (*Store, error) {
 		if store.format != format {
 			return nil, errors.New("config store: opened with another format")
 		}
+		if err := store.codec.ready(); err != nil {
+			return nil, err
+		}
 		store.holders++
 		return store, nil
 	}
@@ -379,6 +382,9 @@ func (s *Store) checkWritable(ctx context.Context, tx *sql.Tx) error {
 	if schema > schemaVersion {
 		return &TooNewError{Found: fmt.Sprintf("schema %d", schema), Supported: fmt.Sprintf("schema %d", schemaVersion)}
 	}
+	if (schema == 2) != (s.codec != nil) {
+		return ErrAuthentication
+	}
 	text, err := metaValue(ctx, tx, "format")
 	if err != nil {
 		return err
@@ -481,26 +487,34 @@ func (s *Store) Load() (entries []Entry, local map[string][]byte, err error) {
 }
 
 // load reads the live records and this device's values from db.
-func load(ctx context.Context, db *sql.DB, codecs ...*codec) (entries []Entry, local map[string][]byte, err error) {
+func load(ctx context.Context, db queryer, codecs ...*codec) (entries []Entry, local map[string][]byte, err error) {
 	var crypt *codec
 	if len(codecs) > 0 {
 		crypt = codecs[0]
 	}
-	rows, err := db.QueryContext(ctx, `SELECT kind, id, stamp, payload FROM records WHERE deleted=0 ORDER BY kind, id`)
+	query := "SELECT kind, id, stamp, deleted, payload FROM records"
+	if crypt == nil {
+		query += " WHERE deleted=0"
+	}
+	rows, err := db.QueryContext(ctx, query+" ORDER BY kind, id")
 	if err != nil {
 		return nil, nil, storeError("load", err)
 	}
 	for rows.Next() {
 		var entry Entry
 		var stamp Stamp
-		if err := rows.Scan(&entry.Kind, &entry.ID, &stamp, &entry.Payload); err != nil {
+		var deleted bool
+		if err := rows.Scan(&entry.Kind, &entry.ID, &stamp, &deleted, &entry.Payload); err != nil {
 			rows.Close()
 			return nil, nil, storeError("load", err)
 		}
-		decoded, err := crypt.decodeRecord(Record{Kind: entry.Kind, ID: entry.ID, Stamp: stamp, Payload: entry.Payload})
+		decoded, err := crypt.decodeRecord(Record{Kind: entry.Kind, ID: entry.ID, Stamp: stamp, Deleted: deleted, Payload: entry.Payload})
 		if err != nil {
 			rows.Close()
 			return nil, nil, err
+		}
+		if decoded.Deleted {
+			continue
 		}
 		entry.ID, entry.Payload = decoded.ID, decoded.Payload
 		entries = append(entries, entry)
@@ -508,29 +522,34 @@ func load(ctx context.Context, db *sql.DB, codecs ...*codec) (entries []Entry, l
 	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
 		return nil, nil, storeError("load", err)
 	}
-	rows, err = db.QueryContext(ctx, `SELECT key, value FROM local`)
+	local, err = readLocals(ctx, db, crypt)
+	return entries, local, err
+}
+
+func readLocals(ctx context.Context, db queryer, crypt *codec) (map[string][]byte, error) {
+	rows, err := db.QueryContext(ctx, `SELECT key, value FROM local`)
 	if err != nil {
-		return nil, nil, storeError("load", err)
+		return nil, storeError("load", err)
 	}
-	local = map[string][]byte{}
+	local := map[string][]byte{}
 	for rows.Next() {
 		var key string
 		var value []byte
 		if err := rows.Scan(&key, &value); err != nil {
 			rows.Close()
-			return nil, nil, storeError("load", err)
+			return nil, storeError("load", err)
 		}
 		key, value, err = crypt.decodeLocal(key, value)
 		if err != nil {
 			rows.Close()
-			return nil, nil, err
+			return nil, err
 		}
 		local[key] = value
 	}
 	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
-		return nil, nil, storeError("load", err)
+		return nil, storeError("load", err)
 	}
-	return entries, local, nil
+	return local, nil
 }
 
 // ReadOnly reads the live records and this device's values of the store at path
@@ -661,7 +680,11 @@ func (s *Store) Records() ([]Record, error) {
 	if err := s.codec.ready(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(context.Background(), `SELECT kind, id, stamp, deleted, payload FROM records ORDER BY kind, id`)
+	return readRecords(context.Background(), s.db, s.codec, "ORDER BY kind, id")
+}
+
+func readRecords(ctx context.Context, db queryer, crypt *codec, filter string, args ...any) ([]Record, error) {
+	rows, err := db.QueryContext(ctx, `SELECT kind, id, stamp, deleted, payload FROM records `+filter, args...)
 	if err != nil {
 		return nil, fmt.Errorf("config store: records: %w", err)
 	}
@@ -676,7 +699,7 @@ func (s *Store) Records() ([]Record, error) {
 		}
 		record.Deleted = deleted != 0
 		record.Payload = payload
-		record, err = s.codec.decodeRecord(record)
+		record, err = crypt.decodeRecord(record)
 		if err != nil {
 			rows.Close()
 			return nil, err
@@ -693,6 +716,7 @@ func (s *Store) Records() ([]Record, error) {
 }
 
 type queryer interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
@@ -1060,6 +1084,11 @@ func (s *Store) Prune(keep time.Duration) (int, error) {
 		return 0, err
 	}
 	cutoff := CutoffStamp(s.now().Add(-keep))
+	if s.codec != nil {
+		if _, err := readRecords(ctx, tx, s.codec, "WHERE deleted=1 AND stamp < ?", string(cutoff)); err != nil {
+			return 0, err
+		}
+	}
 	result, err := tx.ExecContext(ctx, `DELETE FROM records WHERE deleted=1 AND stamp < ?`, string(cutoff))
 	if err != nil {
 		return 0, fmt.Errorf("config store: prune: %w", err)

@@ -87,8 +87,16 @@ func (state *State) offerDevelopmentImport() {
 		return
 	}
 	path := filepath.Join(source.Directory, "config.db")
-	entries, _, err = configstore.ReadOnly(path, configFormat)
+	err = source.withOrdinaryProfile(func() error {
+		var loadErr error
+		entries, _, loadErr = configstore.ReadOnly(path, configFormat)
+		return loadErr
+	})
 	if errors.Is(err, os.ErrNotExist) || err == nil && len(entries) == 0 {
+		return
+	}
+	if err != nil {
+		state.showDevelopmentImport(0, false, err)
 		return
 	}
 	hosts := 0
@@ -111,6 +119,50 @@ func (state *State) showDevelopmentImport(hosts int, records bool, err error) {
 // The source is opened independently, without a stamper. Export consequently
 // reads old secrets without stamping or rewriting them.
 func (source DevelopmentSource) read(passwords bool) (backup.Document, error) {
+	var document backup.Document
+	err := source.withOrdinaryProfile(func() error {
+		var readErr error
+		document, readErr = source.readDocument(passwords)
+		return readErr
+	})
+	if err != nil {
+		return backup.Document{}, err
+	}
+	return document, nil
+}
+
+// Import must not create a lock file in the release profile. If its first
+// migration starts during an import, the permanent lease file appears and
+// the resulting snapshot is discarded before it can reach the destination.
+func (source DevelopmentSource) withOrdinaryProfile(read func() error) error {
+	config := filepath.Join(source.Directory, "config.db")
+	path := profileLeasePath(config)
+	lease, err := os.Open(path)
+	if err == nil {
+		defer lease.Close()
+		if err := lockProfileFile(lease, false); err != nil {
+			return errors.Join(errProfileInUse, err)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := requireOrdinaryProfile(config); err != nil {
+		return err
+	}
+	if err := read(); err != nil {
+		return err
+	}
+	if lease == nil {
+		if _, err := os.Lstat(path); err == nil {
+			return errProfileInUse
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
+}
+
+func (source DevelopmentSource) readDocument(passwords bool) (backup.Document, error) {
 	entries, _, err := configstore.ReadOnly(filepath.Join(source.Directory, "config.db"), configFormat)
 	if err != nil {
 		return backup.Document{}, err

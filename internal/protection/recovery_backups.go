@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"motty/internal/vault"
 )
 
 const maxHistoricalBackupSize = 128 << 20
@@ -137,8 +139,8 @@ func (g *Gate) prepareBackups(root []byte, password string, m *migration, stage 
 			target = fmt.Sprintf("%s.protected.%d", name, number)
 		}
 		var oldVaultKey []byte
-		if strings.HasPrefix(name, filepath.Base(g.options.VaultPath)) && len(m.OldKey) > 0 {
-			oldVaultKey, err = open(root, "migration-old-key/"+m.Stage, m.OldKey)
+		if strings.HasPrefix(name, filepath.Base(g.options.VaultPath)) {
+			oldVaultKey, err = vault.RecoveryKey(plain, g.options.Keystore)
 			if err != nil {
 				clear(plain)
 				return err

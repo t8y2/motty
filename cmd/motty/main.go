@@ -112,7 +112,7 @@ func main() {
 		// next number, which is what the New Window command and a torn-off tab
 		// do; a window restored at start keeps the number its record is under.
 		var openWindowAt func(int) error
-		var restoreAfterUnlock func()
+		var restoreAfterUnlock func() error
 		openWindowAt = func(id int) error {
 			// A window restored at start is numbered by its record; the counter
 			// follows it, so the next new window takes a number no record has.
@@ -147,20 +147,25 @@ func main() {
 		// hidden windows up.
 		restored := 1
 		if !background && len(args) == 0 && deferRestore {
-			restoreAfterUnlock = func() {
-				restoreAfterUnlock = nil
+			restoreAfterUnlock = func() error {
+				if restoreAfterUnlock == nil {
+					return nil
+				}
 				count, err := workbench.RestoreWindowCount(stateDatabasePath())
 				if err != nil {
-					log.Printf("motty: restore protected windows: %v", err)
-					return
+					return fmt.Errorf("restore protected windows: %w", err)
 				}
+				restoreAfterUnlock = nil
+				firstMissing := max(2, windowIDs+1)
+				windowIDs = max(windowIDs, count)
 				application.Post(func() {
-					for id := 2; id <= count; id++ {
+					for id := firstMissing; id <= count; id++ {
 						if err := openWindowAt(id); err != nil {
 							log.Printf("motty: restore window %d: %v", id, err)
 						}
 					}
 				})
+				return nil
 			}
 		} else if !background && len(args) == 0 {
 			count, err := workbench.RestoreWindowCount(stateDatabasePath())
@@ -337,7 +342,7 @@ var windowGroup = workbench.NewGroup()
 // placement says how a window is opened when it is not the usual new window: a
 // torn-off tab opens one where the pointer let go, empty but for the tab.
 type placement struct {
-	profileUnlocked func()
+	profileUnlocked func() error
 	origin          *gfx.Point
 	adopt           func(*workbench.State)
 	blank           bool
@@ -577,10 +582,7 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 			quitting := windows.isQuitting()
 			remaining := windows.count()
 			keepRecord := keepWindowRecordOnClose(quitting, windows.keepsWindowsOnQuit(), remaining, state.DiscardsWindowsOnExit())
-			state.Close()
-			if !keepRecord {
-				state.DropWindowRecord()
-			}
+			state.CloseKeepingRecord(keepRecord)
 			if status != nil {
 				status.list.Remove(state)
 				status.refresh()
@@ -625,6 +627,8 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		// Wake once now that connections can reach the window: this is when
 		// restored tabs are connected (see workbench.State.Wake).
 		invalidator.Invalidate()
+	} else {
+		state.Close()
 	}
 	return err
 }

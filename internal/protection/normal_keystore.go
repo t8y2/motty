@@ -46,5 +46,16 @@ func (g *Gate) storeNormalVaultKey(key []byte) error {
 	if !errors.Is(err, vault.ErrKeystoreNotFound) {
 		return err
 	}
-	return g.options.Keystore.Store(vault.KeyService, vault.KeyAccount, key)
+	if err := g.options.Keystore.Store(vault.KeyService, vault.KeyAccount, key); err != nil {
+		return err
+	}
+	saved, err := g.options.Keystore.Load(vault.KeyService, vault.KeyAccount)
+	defer clear(saved)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(saved, key) {
+		return errors.New("ordinary vault key storage verification failed")
+	}
+	return nil
 }
