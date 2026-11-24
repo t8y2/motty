@@ -1039,6 +1039,11 @@ func (state *State) declareWorkspaceTab(c ui.C, workspace layoutcore.WorkspaceIn
 	} else {
 		row.MarginSides(0, barGap, 0, first).HitOutset(barTabReach, 0, barTabReach, 0)
 	}
+	if id == state.tabLanding {
+		// A tab dropped by the pointer slides from where it was let go.
+		c.Canvas().GlideFrom(id, 0, state.tabGhost)
+		state.tabLanding = gfx.ID{}
+	}
 	row.Glide(tabGlideMotion, scroll)
 	entry.box, entry.glided, entry.glideScroll = row, true, scroll
 	row.

@@ -599,12 +599,16 @@ type State struct {
 	hostGridDrag       hostGridDrag
 	hostsScroll        float32
 	tabDrag            tabDrag
-	tabPreview         tabPreview
-	foreign            tabDrag // another window's tab being dragged over this one
-	frame              func() (gfx.Rect, bool)
-	windowVisible      func() bool
-	systemKeys         systemKeyCapture
-	winChrome          windowChrome
+	// tabGhost is where the dragged tab was last drawn, and tabLanding the tab
+	// just dropped, which slides from there to its slot on the next paint.
+	tabGhost      gfx.Point
+	tabLanding    gfx.ID
+	tabPreview    tabPreview
+	foreign       tabDrag // another window's tab being dragged over this one
+	frame         func() (gfx.Rect, bool)
+	windowVisible func() bool
+	systemKeys    systemKeyCapture
+	winChrome     windowChrome
 	// desktopBar is a fullscreen remote desktop's floating bar: whether its pin
 	// keeps it visible, and where the pointer is in the band at the top edge
 	// that reveals it. See desktop_fullscreen.go.
