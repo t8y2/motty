@@ -23,6 +23,7 @@ var (
 	hitTransferCenter     = tree.ID(transferCenterHits, "toggle")
 	hitTransfersDismiss   = tree.ID(transferCenterHits, "dismiss")
 	hitTransfersClose     = tree.ID(transferCenterHits, "close")
+	hitTransfersExpand    = tree.ID(transferCenterHits, "expand")
 	hitTransfersScope     = tree.ID(transferCenterHits, "scope")
 	hitTransfersList      = tree.ID(transferCenterHits, "list")
 	hitTransfersClear     = tree.ID(transferCenterHits, "clear")
@@ -105,6 +106,9 @@ type transferCenter struct {
 	badge         string
 	buttonLabel   string
 	active, ended int
+	failed        int
+	completed     int
+	canceled      int
 	// interrupted counts rows a lost connection stopped, so a view that comes
 	// back does not scan the history when there is nothing to continue.
 	interrupted int
@@ -137,6 +141,8 @@ type transferCenter struct {
 	// the offset the List reported after the last layout.
 	scroll float32
 	count  int
+
+	compact bool // a newly queued transfer opens the small progress card first
 
 	host                        *transferHost
 	hosts                       []*transferHost
@@ -582,7 +588,7 @@ func (state *State) rebuildTransferCenter() {
 func (state *State) describeTransferSummary() {
 	center := &state.transfers
 	center.revision++
-	center.active, center.ended, center.interrupted = 0, 0, 0
+	center.active, center.ended, center.failed, center.completed, center.canceled, center.interrupted = 0, 0, 0, 0, 0, 0
 	var rate, done, total, runningDone, runningTotal int64
 	running := 0
 	knownSize := true
@@ -606,6 +612,15 @@ func (state *State) describeTransferSummary() {
 			total += entry.snapshot.BytesTotal
 		} else {
 			center.ended++
+			if entry.snapshot.State == sftpclient.TransferFailed {
+				center.failed++
+			}
+			if entry.snapshot.State == sftpclient.TransferCompleted {
+				center.completed++
+			}
+			if entry.snapshot.State == sftpclient.TransferCanceled {
+				center.canceled++
+			}
 		}
 	}
 	// A transfer that moves bytes keeps the machine out of idle sleep; one that
@@ -690,10 +705,15 @@ func (state *State) clickTransferCenter(id gfx.ID) bool {
 	case hitTransferCenter:
 		center.open = !center.open
 		if center.open {
+			center.compact = false
 			state.rebuildTransferCenter()
 		} else {
 			center.close()
 		}
+		return true
+	case hitTransfersExpand:
+		center.compact = false
+		state.rebuildTransferCenter()
 		return true
 	case hitTransfersDismiss, hitTransfersClose:
 		center.close()
@@ -746,7 +766,7 @@ func (state *State) clickTransferCenter(id gfx.ID) bool {
 }
 
 func (center *transferCenter) close() {
-	center.open = false
+	center.open, center.compact = false, false
 	center.batch = transferBatch{}
 	center.details.dismiss()
 }

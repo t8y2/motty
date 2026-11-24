@@ -99,7 +99,7 @@ func (state *State) openTransferCenterForQueued() {
 		!transferFilterShows(center.filter, sftpclient.TransferSnapshot{State: sftpclient.TransferQueued}) {
 		return
 	}
-	center.open, center.scroll = true, 0
+	center.open, center.compact, center.scroll = true, true, 0
 }
 
 func (state *State) showTransferConflict() {
@@ -109,7 +109,7 @@ func (state *State) showTransferConflict() {
 	center.search.SetText("")
 	center.details.dismiss()
 	center.groups[transferFilterFailed].collapsed = false
-	center.open, center.scroll = true, 0
+	center.open, center.compact, center.scroll = true, false, 0
 	state.describeTransferScope()
 }
 
