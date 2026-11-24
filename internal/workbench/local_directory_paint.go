@@ -34,7 +34,7 @@ func (state *State) declareLocalDirectoryPicker(c ui.C) {
 						} else if c.Canvas().Hovered() == hitLocalDirectoryRemove.At(index) {
 							background = state.pal.surfaceHot
 						}
-						row := ui.Row(c).FillWidth().Height(picker.rowHeight).Gap(picker.rowGap).Radius(radius.item).Background(background)
+						row := ui.Row(c).FillWidth().Height(picker.rowHeight).Gap(picker.rowGap).Radius(radius.item).Background(background).Transition()
 						if !selected {
 							row.Hover(ui.Look{}.Background(state.pal.surfaceHot))
 						}
