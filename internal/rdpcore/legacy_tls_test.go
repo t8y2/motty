@@ -14,9 +14,10 @@ import (
 	"motty/internal/rdpcore/protocol/x224"
 )
 
-// legacyTLSServer finishes the X.224 negotiation and then offers exactly one
-// suite across the requested TLS versions. The handshake error, if any, says
-// whether the client offered that suite.
+// legacyTLSServerVersion finishes the X.224 negotiation and then offers exactly
+// one suite across the requested TLS versions, as a Windows server whose cipher
+// policy leaves only that suite does. The handshake error, if any, says whether
+// the client offered it.
 func legacyTLSServerVersion(t *testing.T, minVer, maxVer uint16, suite uint16) (string, <-chan error) {
 	t.Helper()
 	certificateServer := httptest.NewTLSServer(nil)
@@ -64,6 +65,7 @@ func legacyTLSServerVersion(t *testing.T, minVer, maxVer uint16, suite uint16) (
 	return listener.Addr().String(), done
 }
 
+// legacyTLSServer is legacyTLSServerVersion pinned to TLS 1.2.
 func legacyTLSServer(t *testing.T, suite uint16) (string, <-chan error) {
 	return legacyTLSServerVersion(t, tls.VersionTLS12, tls.VersionTLS12, suite)
 }
@@ -71,9 +73,8 @@ func legacyTLSServer(t *testing.T, suite uint16) (string, <-chan error) {
 // A server that leaves only an RSA key exchange suite reachable is refused by
 // default and reached when the host allows legacy TLS. This is the Windows
 // server of issue #1176: Go's default offer has no suite in common with it.
-// Turning the switch on must not downgrade a server that still speaks ECDHE,
-// preserves TLS 1.3 for modern servers, and reaches TLS 1.0 servers (including
-// AES-CBC and 3DES).
+// Turning the switch on must not downgrade a server that still speaks ECDHE or
+// TLS 1.3, and it reaches TLS 1.0 servers (AES-CBC and 3DES).
 func TestLegacyTLSControlsTheRSAKeyExchangeOffer(t *testing.T) {
 	const rsaSuite = tls.TLS_RSA_WITH_AES_128_CBC_SHA256
 	const ecdheSuite = tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
