@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vivaui/viva/app"
 )
@@ -62,8 +63,6 @@ func TestSendingToARealRzThroughALocalShell(t *testing.T) {
 	state.options.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return []string{file}, nil }
 
 	session.term.send([]byte("cd " + dest + " && " + rzPath + " --binary --quiet --overwrite\n"))
-	waitUntil(t, state, "the offer", func() bool { return state.modal == modalFileTransfer })
-	state.Click(hitTransferChoose)
 	waitUntil(t, state, "the end", func() bool { return session.transfer.phase == transferNone })
 	// rz writes the file as it finishes; give the shell a moment to come back.
 	waitUntil(t, state, "the file", func() bool {
@@ -90,15 +89,18 @@ func TestSendingAfterTheReceiverRepeatsItsRequest(t *testing.T) {
 	file := filepath.Join(source, "repeated.bin")
 	os.WriteFile(file, payload, 0o644)
 	dest := t.TempDir()
-	state.options.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return []string{file}, nil }
+	// The native picker blocks the window while the user decides, long enough
+	// for rz to repeat its request.
+	state.options.OpenFiles = func(app.OpenFileOptions) ([]string, error) {
+		time.Sleep(2500 * time.Millisecond)
+		return []string{file}, nil
+	}
 
 	session.term.send([]byte("cd " + dest + " && " + rzPath + " --binary --quiet --overwrite --timeout 10\n"))
-	waitUntil(t, state, "the offer", func() bool { return state.modal == modalFileTransfer })
-	waitUntil(t, state, "the receiver to ask again", func() bool {
-		return bytes.Count(session.transfer.held, []byte("**\x18B01")) >= 2
+	waitUntil(t, state, "the file", func() bool {
+		got, _ := os.ReadFile(filepath.Join(dest, "repeated.bin"))
+		return bytes.Equal(got, payload) && session.transfer.phase == transferNone
 	})
-	state.Click(hitTransferChoose)
-	waitUntil(t, state, "the end", func() bool { return session.transfer.phase == transferNone })
 	got, err := os.ReadFile(filepath.Join(dest, "repeated.bin"))
 	if err != nil || !bytes.Equal(got, payload) {
 		t.Fatalf("received %d bytes (%v); screen %q", len(got), err, screenText(state, 0))

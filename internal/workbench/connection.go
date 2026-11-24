@@ -1434,7 +1434,7 @@ func (state *State) showNextPrompt() {
 		return
 	}
 	for index := range state.sessions {
-		if state.sessions[index].transfer.phase != transferOffered {
+		if state.sessions[index].transfer.phase != transferOffered || state.sessions[index].transfer.choosesDirectly() {
 			continue
 		}
 		state.modal = modalFileTransfer

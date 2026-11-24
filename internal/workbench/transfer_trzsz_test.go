@@ -182,11 +182,6 @@ func TestTrzszUploadIsChosenFromFiles(t *testing.T) {
 	script := &trzszScript{t: t, shell: shell, sending: true}
 	shell.onWrite = func(p []byte) { script.write(p) }
 	shell.say(strings.Replace(trzszAnnouncement, "%c", "R", 1))
-	waitUntil(t, state, "the TRZSZ offer", func() bool { return state.modal == modalFileTransfer })
-	if !session.transfer.sending {
-		t.Fatal("a trz announcement was read as a download")
-	}
-	state.Click(hitTransferChoose)
 	waitUntil(t, state, "the transfer to end", func() bool { return session.transfer.phase == transferNone })
 	if script.step != 6 {
 		t.Fatalf("the script stopped at step %d", script.step)

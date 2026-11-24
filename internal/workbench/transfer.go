@@ -107,6 +107,14 @@ type transferText struct {
 	line       string
 }
 
+// choosesDirectly reports whether an offer is answered by the system file
+// picker alone. Sending needs no confirmation first: picking files is the
+// consent, and cancelling the picker declines. Once the picker has failed the
+// offer falls back to the dialog, which shows the error.
+func (transfer *fileTransfer) choosesDirectly() bool {
+	return transfer.phase == transferOffered && transfer.sending && transfer.dialogError == ""
+}
+
 // transferBusy reports whether a file transfer owns this shell, whether the
 // remote program is still being started or bytes are already moving. An armed
 // rz/sz job holds the shell the same way a running engine does.
@@ -390,6 +398,10 @@ func (state *State) pumpSessionTransfer(session *Session) {
 	}
 	now := state.now()
 	switch transfer.phase {
+	case transferOffered:
+		if transfer.choosesDirectly() && state.modal == modalNone {
+			state.pickFilesToSend(session)
+		}
 	case transferRunning:
 		if now-transfer.lastActive >= transferQuiet {
 			transfer.lastActive = now
@@ -607,6 +619,22 @@ func (state *State) chooseFolderToReceive(session *Session, downloads bool) {
 	session.transfer.target = &folderTarget{dir: dir}
 	state.closeModal()
 	state.startTransfer(session, zmodem.NewReceiver(session.transfer.target))
+	state.showNextPrompt()
+}
+
+// pickFilesToSend opens the file picker for an upload offer. Cancelling it
+// declines the offer; a failure leaves the offer to the dialog.
+func (state *State) pickFilesToSend(session *Session) {
+	state.chooseFilesToSend(session)
+	transfer := &session.transfer
+	if transfer.phase != transferOffered {
+		return
+	}
+	if transfer.dialogError != "" {
+		state.showNextPrompt()
+		return
+	}
+	state.declineTransfer(session)
 	state.showNextPrompt()
 }
 
