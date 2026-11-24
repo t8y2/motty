@@ -118,20 +118,15 @@ type sftpFolder struct {
 	listScroll       *ui.ScrollState
 	listReady        bool
 	pathField        sftpPathField
-	// pathUI is the page field over pathField's editor, bound where the path is
-	// declared so the platform edits the same draft the model submits. The
-	// bound marks keep binding from resetting what Changed compares.
-	pathUI         ui.Field
-	pathUIEditor   *text.Editor
-	filterEditor   text.Editor
-	filterInput    app.TextInput
-	filterUI       ui.Field
-	filterUIBound  bool
-	filterReady    bool
-	filterOpen     bool
-	showHidden     bool
-	pathEditing    bool
-	headerMenuOpen bool
+	filterEditor     text.Editor
+	filterInput      app.TextInput
+	filterUI         ui.Field
+	filterUIBound    bool
+	filterReady      bool
+	filterOpen       bool
+	showHidden       bool
+	pathEditing      bool
+	headerMenuOpen   bool
 	// menuWindow is the window view a docked panel's More menu is declared
 	// through: the page owns the menu, but its rows and actions are the
 	// window's. Made when the menu first opens.
