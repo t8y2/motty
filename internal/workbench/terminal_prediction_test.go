@@ -483,3 +483,39 @@ func TestTerminalPredictionKeepsUnacknowledgedMoshInput(t *testing.T) {
 		t.Fatal("an acknowledged guess that never echoed stayed on screen")
 	}
 }
+
+// Tab sent while the echoes of the typed text are still in flight must not pull
+// the shown text back to where the screen is; the completion then ends the guess.
+func TestTerminalPredictionKeepsTheGuessAcrossTabUntilTheCompletionArrives(t *testing.T) {
+	screen := term.New(80, 24, 0)
+	var prediction terminalPrediction
+	now := time.Second
+	for _, r := range "abc" { // three echoes verified: the guess may be shown
+		prediction.input(screen, []byte(string(r)), now, false, 0)
+		echoed(screen, &prediction, string(r), now+300*time.Millisecond)
+		now += 400 * time.Millisecond
+	}
+	for _, r := range "de" {
+		prediction.input(screen, []byte(string(r)), now, false, 0)
+		now += 50 * time.Millisecond
+	}
+	if text, visible := visibleAt(&prediction, now); !visible || text != "de" {
+		t.Fatalf("guess before Tab = %q, visible=%v", text, visible)
+	}
+	prediction.tab()
+	if text, visible := visibleAt(&prediction, now); !visible || text != "de" {
+		t.Fatalf("Tab withdrew the guess ahead of its echoes: %q, visible=%v", text, visible)
+	}
+	prediction.input(screen, []byte("x"), now, false, 0)
+	if text, _ := visibleAt(&prediction, now); text != "de" {
+		t.Fatalf("input after Tab changed the guess to %q", text)
+	}
+	echoed(screen, &prediction, "d", now)
+	if text, visible := visibleAt(&prediction, now); !visible || text != "e" {
+		t.Fatalf("partial echo left %q, visible=%v", text, visible)
+	}
+	echoed(screen, &prediction, "efgh", now) // the echo and a completion longer than the guess
+	if _, visible := visibleAt(&prediction, now); visible {
+		t.Fatal("a completion left the guess on screen")
+	}
+}

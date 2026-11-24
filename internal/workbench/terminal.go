@@ -2175,7 +2175,12 @@ func (state *State) terminalKey(session *Session, event gfx.KeyEvent) gfx.EventR
 			return handled
 		}
 		scrolled := t.screen.ViewOffset() > 0
-		predictionChanged := t.prediction.reset()
+		var predictionChanged bool
+		if !win32Key && len(bytes) == 1 && bytes[0] == '\t' {
+			predictionChanged = t.prediction.tab()
+		} else {
+			predictionChanged = t.prediction.reset()
+		}
 		if win32Key {
 			state.typedWin32Key(session, bytes, term.Win32LogicalKey(event), true)
 		} else {

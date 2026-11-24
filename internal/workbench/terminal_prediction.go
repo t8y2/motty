@@ -65,6 +65,10 @@ type terminalPrediction struct {
 	// blocked withdraws the prompt proof until the shell draws its next prompt:
 	// a proven guess failed on this line, so the line is not what it seemed.
 	blocked bool
+	// sealed keeps a shown guess after Tab: the echoes of what it holds are still
+	// on their way and the completion can only follow them. It takes no more
+	// input, and goes the way every guess goes once the server answers.
+	sealed bool
 
 	data   [maxTerminalPredictionBytes]byte
 	length int
@@ -105,6 +109,7 @@ func (prediction *terminalPrediction) reset() bool {
 	changed := prediction.visible()
 	prediction.phase = terminalPredictionIdle
 	prediction.proven = false
+	prediction.sealed = false
 	prediction.length = 0
 	prediction.cells = 0
 	prediction.chunks = 0
@@ -114,6 +119,19 @@ func (prediction *terminalPrediction) reset() bool {
 	prediction.runCount = 0
 	prediction.inputID = 0
 	return changed
+}
+
+// tab is the Tab key. What the server does with it happens after the echoes of
+// the text already typed, so a shown guess stays until they arrive instead of
+// vanishing ahead of them and drawing the line back to where the screen is;
+// the completion, being more than the guess holds, then takes it back. Without
+// a shown guess it is any other control key.
+func (prediction *terminalPrediction) tab() bool {
+	if !prediction.visible() {
+		return prediction.reset()
+	}
+	prediction.sealed = true
+	return false
 }
 
 // fail takes a guess back because the server did not do what it predicted. A
@@ -205,6 +223,9 @@ func (prediction *terminalPrediction) input(screen *term.Terminal, input []byte,
 		prediction.reset()
 	case prediction.proven && !proof:
 		prediction.reset() // the line was left
+	}
+	if prediction.sealed {
+		return false // a completion may follow: nothing more is known about the line
 	}
 	if !predictionContextSafe(screen) {
 		prediction.reset()
