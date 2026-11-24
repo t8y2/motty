@@ -1984,7 +1984,7 @@ var chineseTools = ToolsMessages{
 	WordSeparatorsDescription:  "双击选词时作为分隔符的字符；留空使用默认规则，空格始终分隔。",
 	WordSeparatorsPlaceholder:  "默认",
 	RightClickPasteRow:         "右键粘贴",
-	RightClickPasteDescription: "选中文本时右键复制，未选中时右键粘贴；按住 Shift 右键打开菜单。",
+	RightClickPasteDescription: "选中文本时右键直接粘贴选中内容，未选中时右键粘贴剪贴板内容；按住 Shift 右键打开菜单。",
 	InputClickRow:              "单击移动输入光标",
 	InputClickDescription:      "在终端的命令行上单击，光标会移到点击处。需要 Motty 的 Shell 集成；全屏程序和命令运行期间不生效。拖动仍然是选择。",
 	LinkPlainClickRow:          "单击直接打开链接",
