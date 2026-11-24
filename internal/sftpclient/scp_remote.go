@@ -212,6 +212,8 @@ func (r *scpRemote) run(format string, args ...string) error {
 
 func (r *scpRemote) Mkdir(name string) error { return r.run("mkdir -p -- {}", name) }
 
+func (r *scpRemote) CreateFile(name string) error { return r.run("touch -- {}", name) }
+
 // Remove and RemoveDirectory run under the C locale like the listing commands:
 // their errors are matched by message, and a localized server would not say the
 // English words scpclient maps to os.ErrNotExist (and IsPathNotFound looks for).

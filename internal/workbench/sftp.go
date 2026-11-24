@@ -49,6 +49,7 @@ type sftpDialogKind uint8
 const (
 	sftpDialogNone sftpDialogKind = iota
 	sftpDialogCreateDirectory
+	sftpDialogCreateFile
 	sftpDialogRename
 	sftpDialogMove
 	sftpDialogDelete
@@ -69,7 +70,7 @@ const (
 // name, a destination, an octal mode, an owner and a group, or a link.
 func sftpDialogShowsField(kind sftpDialogKind) bool {
 	switch kind {
-	case sftpDialogCreateDirectory, sftpDialogRename, sftpDialogMove, sftpDialogChmod,
+	case sftpDialogCreateDirectory, sftpDialogCreateFile, sftpDialogRename, sftpDialogMove, sftpDialogChmod,
 		sftpDialogChown, sftpDialogSymlink, sftpDialogExtract, sftpDialogCompress:
 		return true
 	}
@@ -599,6 +600,8 @@ func (state *State) clickSFTP(id gfx.ID) {
 		state.uploadSFTP(view)
 	case id == hitSFTPUploadDirectory && !view.busy:
 		state.uploadSFTPDirectory(view)
+	case id == hitSFTPNewFile && !view.busy:
+		state.openSFTPDialog(view, sftpDialogCreateFile)
 	case id == hitSFTPNewDirectory && !view.busy:
 		state.openSFTPDialog(view, sftpDialogCreateDirectory)
 	case id == hitSFTPOpenEntry && !view.busy:
@@ -1820,7 +1823,7 @@ func (state *State) openSFTPDialog(view *sftpView, dialog sftpDialogKind) {
 	view.dialogEntries = nil
 	view.dialogError = ""
 	view.deleteMethod = sftpDeleteNormal
-	if dialog != sftpDialogCreateDirectory {
+	if dialog != sftpDialogCreateDirectory && dialog != sftpDialogCreateFile {
 		if dialog == sftpDialogDelete || dialog == sftpDialogMove {
 			for _, row := range selectedSFTPRows(view) {
 				view.dialogEntries = append(view.dialogEntries, row.entry)
@@ -2510,6 +2513,23 @@ func (state *State) submitSFTPDialog(view *sftpView) {
 	case sftpDialogCompress:
 		state.submitSFTPCompress(view)
 		return
+	case sftpDialogCreateFile:
+		if view.local {
+			state.submitLocalFile(view, value)
+			return
+		}
+		if value == "" {
+			view.dialogError = state.messages.SFTPErrFileRequired
+			return
+		}
+		if !validRemoteBaseName(value) {
+			view.dialogError = state.messages.SFTPErrRenameInvalid
+			return
+		}
+		remotePath := sftpRemotePath(view.path, value)
+		queued = view.worker.CreateFile(remotePath)
+		operation = sftpclient.OperationCreateFile
+		status = fmt.Sprintf(state.messages.SFTPCreatingFileFmt, remotePath)
 	case sftpDialogCreateDirectory:
 		if view.local {
 			state.submitLocalDirectory(view, value)
@@ -2879,6 +2899,10 @@ func (state *State) pumpSFTP(session *Session) {
 					view.recordTransferTargetDir(path.Dir(result.Path))
 				}
 				state.refreshSFTPViewsAfterTransfers(view)
+			case sftpclient.OperationCreateFile:
+				view.forgetListings()
+				view.refreshStatus = fmt.Sprintf(state.messages.SFTPFileCreatedFmt, result.Path)
+				state.listSFTP(view, view.path)
 			case sftpclient.OperationCreateDirectory:
 				view.forgetListings()
 				view.refreshStatus = fmt.Sprintf(state.messages.SFTPDirectoryCreatedFmt, result.Path)
@@ -3100,6 +3124,9 @@ func (state *State) formatSFTPError(err error) string {
 	}
 	if errors.Is(err, sftpclient.ErrDestinationExists) || errors.Is(err, os.ErrExist) {
 		return fmt.Sprintf(state.messages.SFTPErrorFmt, state.messages.SFTPErrDirectoryExists)
+	}
+	if errors.Is(err, os.ErrPermission) {
+		return fmt.Sprintf(state.messages.SFTPErrorFmt, state.messages.SFTPErrPermissionDenied)
 	}
 	var status *sftp.StatusError
 	if errors.As(err, &status) {

@@ -177,6 +177,27 @@ func TestWorkerCreatesDirectoryOverSFTP(t *testing.T) {
 	requireProtocolError(t, result, nil)
 }
 
+func TestWorkerCreatesFileOverSFTP(t *testing.T) {
+	worker, root := newProtocolWorker(t)
+	if err := os.Mkdir(filepath.Join(root, "projects"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	result := requireQueuedResult(t, worker.CreateFile("projects/file.txt"), worker, OperationCreateFile)
+	if result.Err != nil || result.Path != "projects/file.txt" {
+		t.Fatalf("create file result = %+v", result)
+	}
+	info, err := os.Stat(filepath.Join(root, "projects", "file.txt"))
+	if err != nil || info.IsDir() {
+		t.Fatalf("created file = %+v, %v", info, err)
+	}
+
+	result = requireQueuedResult(t, worker.CreateFile("projects/file.txt"), worker, OperationCreateFile)
+	if !errors.Is(result.Err, ErrDestinationExists) {
+		t.Fatalf("expected ErrDestinationExists, got %v", result.Err)
+	}
+}
+
 func TestWorkerRenamesAndMovesOverSFTP(t *testing.T) {
 	worker, root := newProtocolWorker(t)
 	if err := os.Mkdir(filepath.Join(root, "archive"), 0o755); err != nil {

@@ -278,7 +278,7 @@ func TestSFTPWindowHeaderMenuHasUniqueHitsAndNarrowTransfers(t *testing.T) {
 	}
 	for _, label := range []string{
 		w.owner.messages.Tools.FilesFilterLabel, w.owner.messages.SFTPWindow.Upload,
-		w.owner.messages.SFTPWindow.Download, w.owner.messages.SFTPNewDirectory,
+		w.owner.messages.SFTPWindow.Download, w.owner.messages.SFTPNewFile, w.owner.messages.SFTPNewDirectory,
 		w.owner.messages.Tools.TipNewLink,
 	} {
 		dualHitLabel(t, view, label)

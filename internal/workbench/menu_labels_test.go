@@ -273,6 +273,8 @@ func menuLabelOf(state *State, id gfx.ID) string {
 		return w.CopyFiles
 	case hitSFTPMenuPasteFiles:
 		return w.PasteFiles
+	case hitSFTPNewFile:
+		return m.SFTPNewFile
 	case hitSFTPNewDirectory:
 		return m.SFTPNewDirectory
 	case hitSFTPUpload:

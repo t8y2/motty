@@ -439,6 +439,8 @@ func (state *State) clickSFTPLocal(session *Session, view *sftpView, id gfx.ID) 
 		if parent := filepath.Dir(folder.path); parent != folder.path {
 			state.navigateLocalDirectory(view, parent)
 		}
+	case id == hitSFTPNewFile:
+		state.openSFTPDialog(view, sftpDialogCreateFile)
 	case id == hitSFTPNewDirectory:
 		state.openSFTPDialog(view, sftpDialogCreateDirectory)
 	case id == hitSFTPOpenEntry:
@@ -575,6 +577,39 @@ func (state *State) downloadHere(view *sftpView) {
 	state.queueSFTPDownloads(view, requests)
 }
 
+// submitLocalFile makes a file in the local folder on show.
+func (state *State) submitLocalFile(view *sftpView, name string) bool {
+	if name == "" {
+		view.dialogError = state.messages.SFTPErrFileRequired
+		return false
+	}
+	if strings.ContainsAny(name, `/\`) || name == "." || name == ".." {
+		view.dialogError = state.messages.SFTPErrRenameInvalid
+		return false
+	}
+	if view.lfolder.hasEntry(name) {
+		view.dialogError = state.messages.SFTPErrDirectoryExists
+		return false
+	}
+	target := filepath.Join(view.lfolder.path, name)
+	file, err := os.OpenFile(target, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			view.dialogError = state.messages.SFTPErrDirectoryExists
+		} else if errors.Is(err, os.ErrPermission) {
+			view.dialogError = state.messages.SFTPErrPermissionDenied
+		} else {
+			view.dialogError = err.Error()
+		}
+		return false
+	}
+	file.Close()
+	state.closeSFTPDialog(view)
+	state.listLocal(view, view.lfolder.path)
+	view.status = fmt.Sprintf(state.messages.SFTPFileCreatedFmt, target)
+	return true
+}
+
 // submitLocalDirectory makes a folder in the local folder on show.
 func (state *State) submitLocalDirectory(view *sftpView, name string) bool {
 	if name == "" {
@@ -593,6 +628,8 @@ func (state *State) submitLocalDirectory(view *sftpView, name string) bool {
 	if err := os.Mkdir(target, 0o755); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			view.dialogError = state.messages.SFTPErrDirectoryExists
+		} else if errors.Is(err, os.ErrPermission) {
+			view.dialogError = state.messages.SFTPErrPermissionDenied
 		} else {
 			view.dialogError = err.Error()
 		}
