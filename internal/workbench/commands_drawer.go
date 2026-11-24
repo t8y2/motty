@@ -15,7 +15,8 @@ import (
 var commandsHits = tree.Feature("commands")
 
 var (
-	hitCommandsAdd = tree.ID(commandsHits, "add")
+	hitCommandsAdd  = tree.ID(commandsHits, "add")
+	hitCommandsMove = tree.ID(commandsHits, "move")
 	// hitCommandsClose hides the whole bar. Its tooltip points at the snippet
 	// picker, which is where the way back lives while the bar is hidden.
 	hitCommandsClose = tree.ID(commandsHits, "close")
@@ -103,7 +104,8 @@ type commandsUI struct {
 	shown bool
 	// placement is where the bar docks while shown; the zero value is the
 	// bottom strip.
-	placement commandsPlacement
+	placement   commandsPlacement
+	sidebarLeft bool
 	// filterOpen is whether the group-filter dropdown is showing.
 	filterOpen bool
 	// sortOpen is whether the order dropdown is showing.
@@ -193,17 +195,19 @@ func (state *State) commandsSidebarExtent(size gfx.Size) float32 {
 	if !state.commandsBarAvailable() || !state.commands.shown || state.commands.placement != commandsPlacementSide {
 		return 0
 	}
-	frame := state.toolbarDockFrame(size, true)
-	if frame.Width <= 0 {
-		return 0
-	}
-	least := min(commandsSidebarMin, frame.Width)
-	most := max(frame.Width-commandsMinContent, least)
+	frameWidth := state.toolbarDockFrame(size, true).Width
+	least, most := state.commandsSidebarWidthLimits(frameWidth)
 	width := state.commands.width
 	if width <= 0 {
-		width = min(commandsSidebarWidth, frame.Width*0.24)
+		width = min(commandsSidebarWidth, frameWidth*0.24)
 	}
 	return min(max(width, least), most)
+}
+
+func (state *State) commandsSidebarWidthLimits(frameWidth float32) (least, most float32) {
+	available := max(frameWidth-state.hostsPanelExtent(frameWidth), 0)
+	least = min(commandsSidebarMin, available)
+	return least, max(available-commandsMinContent, least)
 }
 
 // commandsSidebarBounds places the bar inside the dock frame, so the terminal
@@ -215,8 +219,12 @@ func (state *State) commandsSidebarBounds(size gfx.Size) gfx.Rect {
 		return gfx.Rect{}
 	}
 	frame := state.toolbarDockFrame(size, true)
+	x := frame.X + frame.Width - width
+	if state.commands.sidebarLeft {
+		x = frame.X + state.hostsPanelExtent(frame.Width)
+	}
 	return gfx.Rect{
-		X: frame.X + frame.Width - width, Y: windowBarHeight,
+		X: x, Y: windowBarHeight,
 		Width: width, Height: max(size.Height-windowBarHeight, 0),
 	}
 }
@@ -556,47 +564,48 @@ func (state *State) paintCommandsSidebar(canvas *gfx.Canvas) {
 		return
 	}
 	canvas.Fill(bar, withAlpha(state.pal.shell, 0.6))
-	canvas.Fill(gfx.Rect{X: bar.X, Y: bar.Y, Width: 1, Height: bar.Height}, state.pal.line)
-
 	m := state.messages.Tools
 	// The inner edge drags the bar's width. The strip is wider than the line it
 	// sits on, so it is easy to grab without moving anything until it is pulled.
-	if state.commands.resizing || canvas.Hovered() == hitCommandsResize {
-		canvas.Fill(gfx.Rect{X: bar.X, Y: bar.Y, Width: 1, Height: bar.Height}, state.pal.accent)
+	edge := gfx.Rect{X: bar.X, Y: bar.Y, Width: 1, Height: bar.Height}
+	grip := gfx.Rect{X: bar.X, Y: bar.Y, Width: min(8, bar.Width), Height: bar.Height}
+	if state.commands.sidebarLeft {
+		edge.X = bar.X + bar.Width - edge.Width
+		grip.X = bar.X + bar.Width - grip.Width
 	}
-	canvas.HitWithOptions(hitCommandsResize, gfx.Rect{X: bar.X, Y: bar.Y, Width: 8, Height: bar.Height}, m.CommandsResize, gfx.HitOptions{Cursor: gfx.PointerCursorResizeHorizontal})
+	line := state.pal.line
+	if state.commands.resizing || canvas.Hovered() == hitCommandsResize {
+		line = state.pal.accent
+	}
+	canvas.Fill(edge, line)
+	canvas.HitWithOptions(hitCommandsResize, grip, m.CommandsResize, gfx.HitOptions{Cursor: gfx.PointerCursorResizeHorizontal})
 	iconColor := state.pal.muted
-	cy := bar.Y + (commandsHeaderHeight-commandsIconSize)/2
 
-	closeX := bar.X + bar.Width - commandsDrawerPadding - commandsIconSize
-	addX := closeX - commandsButtonGap - commandsIconSize
-	sortX := addX - commandsLeadGap - commandsIconSize
-	filterX := sortX - commandsLeadGap - commandsIconSize
-	title := gfx.Rect{X: bar.X + commandsDrawerPadding, Y: bar.Y, Width: filterX - bar.X - commandsDrawerPadding - commandsFilterGap, Height: commandsHeaderHeight}
+	filterBtn, sortBtn, add, moveBtn, closeBtn := commandsSidebarHeaderButtons(bar)
+	title := gfx.Rect{X: bar.X + commandsDrawerPadding, Y: bar.Y, Width: filterBtn.X - bar.X - commandsDrawerPadding - commandsFilterGap, Height: commandsHeaderHeight}
 	if title.Width > 24 {
 		canvas.Label(m.SnippetsTitle, title, gfx.TextStyle{Size: state.Theme().Metrics.FontSizeS, Weight: gfx.WeightMedium, Color: state.pal.text})
 	}
 
-	filterBtn := gfx.Rect{X: filterX, Y: cy, Width: commandsIconSize, Height: commandsIconSize}
 	filterActive := state.commands.filterOpen || len(state.commands.hiddenGroups) > 0
 	state.paintCommandsLeadButton(canvas, filterBtn, hitCommandsFilter, iconSliders, m.CommandsFilter, filterActive)
 
 	// Order button right beside it, lit the same way while its menu is open or a
 	// non-default order is in effect.
-	sortBtn := gfx.Rect{X: sortX, Y: cy, Width: commandsIconSize, Height: commandsIconSize}
 	sortActive := state.commands.sortOpen || state.commands.sort != commandsSortCreated
 	state.paintCommandsLeadButton(canvas, sortBtn, hitCommandsSort, iconArrowUpDown, m.CommandsSortRow, sortActive)
 
-	// Add (+) and close (×) grouped together on the right; each lifts or reddens
-	// on hover so the pair reads as controls.
-	add := gfx.Rect{X: addX, Y: cy, Width: commandsIconSize, Height: commandsIconSize}
 	addColor := iconColor
 	if canvas.Hovered() == hitCommandsAdd {
 		addColor = state.pal.text
 	}
 	canvas.DrawIcon(lucideIcons[iconPlus], add, addColor)
 	canvas.HitWithOptions(hitCommandsAdd, add, m.CommandsAdd, gfx.HitOptions{Role: gfx.RoleButton})
-	closeBtn := gfx.Rect{X: closeX, Y: cy, Width: commandsIconSize, Height: commandsIconSize}
+	moveIcon, moveHint := uint8(iconChevronLeft), m.CommandsMoveLeft
+	if state.commands.sidebarLeft {
+		moveIcon, moveHint = iconChevronRight, m.CommandsMoveRight
+	}
+	state.paintCommandsLeadButton(canvas, moveBtn, hitCommandsMove, moveIcon, moveHint, false)
 	closeColor := iconColor
 	if canvas.Hovered() == hitCommandsClose {
 		closeColor = state.pal.danger
@@ -611,6 +620,20 @@ func (state *State) paintCommandsSidebar(canvas *gfx.Canvas) {
 	if list.Width > 0 && list.Height > 0 {
 		state.paintCommandChips(canvas, list)
 	}
+}
+
+func commandsSidebarHeaderButtons(bar gfx.Rect) (filter, order, add, move, close gfx.Rect) {
+	close = gfx.Rect{X: bar.X + bar.Width - commandsDrawerPadding - commandsIconSize,
+		Y: bar.Y + (commandsHeaderHeight-commandsIconSize)/2, Width: commandsIconSize, Height: commandsIconSize}
+	move = close
+	move.X -= commandsIconSize + commandsButtonGap
+	add = move
+	add.X -= commandsIconSize + commandsButtonGap
+	order = add
+	order.X -= commandsIconSize + commandsLeadGap
+	filter = order
+	filter.X -= commandsIconSize + commandsLeadGap
+	return
 }
 
 // paintCommandsLeadButton draws one of the bar's two leading icon buttons: a
@@ -850,16 +873,12 @@ func (state *State) declareCommandsMenus(c ui.C) {
 	if bar.Width <= 0 {
 		return
 	}
-	cy := bar.Y + (commandsHeaderHeight-commandsIconSize)/2
-	closeX := bar.X + bar.Width - commandsDrawerPadding - commandsIconSize
-	addX := closeX - commandsButtonGap - commandsIconSize
-	sortX := addX - commandsLeadGap - commandsIconSize
-	filterX := sortX - commandsLeadGap - commandsIconSize
+	filterButton, sortButton, _, _, _ := commandsSidebarHeaderButtons(bar)
 	if state.commands.filterOpen {
-		state.declareCommandsFilterMenu(c, bar, gfx.Rect{X: filterX, Y: cy, Width: commandsIconSize, Height: commandsIconSize})
+		state.declareCommandsFilterMenu(c, bar, filterButton)
 	}
 	if state.commands.sortOpen {
-		state.declareCommandsSortMenu(c, bar, gfx.Rect{X: sortX, Y: cy, Width: commandsIconSize, Height: commandsIconSize})
+		state.declareCommandsSortMenu(c, bar, sortButton)
 	}
 }
 
@@ -867,8 +886,15 @@ func (state *State) declareCommandsMenus(c ui.C) {
 // bottom bar, depending on where the bar is docked, and declares its rows.
 func (state *State) declareCommandsMenu(c ui.C, bar, trigger gfx.Rect, open *bool, width float32, rows func(*ui.MenuItems)) {
 	if state.commands.placement == commandsPlacementSide {
-		width = min(width, max(0, bar.X-18))
-		anchor := gfx.Rect{X: bar.X - width - 6, Y: bar.Y + commandsHeaderHeight}
+		var x float32
+		if state.commands.sidebarLeft {
+			x = bar.X + bar.Width + 6
+			width = min(width, max(0, state.windowRect().Width-x-12))
+		} else {
+			width = min(width, max(0, bar.X-18))
+			x = bar.X - width - 6
+		}
+		anchor := gfx.Rect{X: x, Y: bar.Y + commandsHeaderHeight}
 		ui.MenuAt(c, open, anchor, func(menu *ui.MenuItems) {
 			menu.WidthRange(width, width)
 			rows(menu)
@@ -1080,6 +1106,14 @@ func (state *State) clickCommandsDrawer(id gfx.ID) bool {
 		return false
 	}
 	switch {
+	case id == hitCommandsMove && state.commands.placement == commandsPlacementSide:
+		state.commands.sidebarLeft = !state.commands.sidebarLeft
+		state.commands.filterOpen = false
+		state.commands.sortOpen = false
+		state.commands.resizing = false
+		state.fitTerminals()
+		state.fitSFTP(state.viewport)
+		state.save()
 	case id == hitCommandsFilter:
 		state.commands.filterOpen = !state.commands.filterOpen
 		state.commands.sortOpen = false
@@ -1182,10 +1216,12 @@ func (state *State) commandsDrawerResize(event gfx.PointerEvent) gfx.EventResult
 	}
 	switch event.Kind {
 	case gfx.PointerMove, gfx.PointerUp:
-		frame := state.toolbarDockFrame(event.Viewport, true)
-		least := min(commandsSidebarMin, frame.Width)
-		most := max(frame.Width-commandsMinContent, least)
-		width := min(max(commands.dragStart+commands.dragFrom-event.X, least), most)
+		least, most := state.commandsSidebarWidthLimits(state.toolbarDockFrame(event.Viewport, true).Width)
+		delta := event.X - commands.dragFrom
+		if !commands.sidebarLeft {
+			delta = -delta
+		}
+		width := min(max(commands.dragStart+delta, least), most)
 		if width != commands.width {
 			commands.width = width
 			state.fitTerminals()

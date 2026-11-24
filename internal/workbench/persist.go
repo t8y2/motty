@@ -258,6 +258,7 @@ type savedState struct {
 	// CommandsSide is the sidebar dock; false is the bottom strip, which is
 	// also what settings written before the sidebar mean.
 	CommandsSide         bool     `json:"commands_side,omitempty"`
+	CommandsSidebarLeft  bool     `json:"commands_sidebar_left,omitempty"`
 	CommandsHiddenGroups []string `json:"commands_hidden_groups,omitempty"`
 	// CommandsCollapsedGroups are the groups folded to their heading in the bar.
 	CommandsCollapsedGroups []string `json:"commands_collapsed_groups,omitempty"`
@@ -734,6 +735,7 @@ func (state *State) snapshot() savedState {
 	}
 	saved.CommandsShown = state.commands.shown
 	saved.CommandsSide = state.commands.placement == commandsPlacementSide
+	saved.CommandsSidebarLeft = state.commands.sidebarLeft
 	saved.CommandsSort = state.commands.sort.String()
 	saved.CommandsWidth = state.commands.width
 	for key, hidden := range state.commands.hiddenGroups {
