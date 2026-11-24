@@ -331,16 +331,19 @@ func TestReconnectCountdownIsFullyVisible(t *testing.T) {
 	}
 }
 
+// The armed wake runs on the window loop and actually redials, so a timer that
+// only remembers a deadline cannot pass this test.
 func TestBackgroundReconnectTimerDispatchesThroughPost(t *testing.T) {
-	posted := make(chan func(), 1)
 	world, options := newWorld(t)
 	now := 10 * time.Second
 	options.Now = func() time.Duration { return now }
-	options.Post = func(fn func()) {
-		select {
-		case posted <- fn:
-		default:
+	var wake func()
+	options.PostAfter = func(d time.Duration, fn func()) func() {
+		if d <= 0 {
+			t.Fatalf("delay = %v, want the reconnect backoff", d)
 		}
+		wake = fn
+		return func() { wake = nil }
 	}
 	state := newTestState(t, options)
 	state.connectionReconnect = reconnectThree
@@ -352,12 +355,38 @@ func TestBackgroundReconnectTimerDispatchesThroughPost(t *testing.T) {
 	if !state.sessions[0].reconnectPending {
 		t.Fatal("session is not pending reconnect")
 	}
-	if state.sessions[0].reconnectTimer == nil {
-		t.Fatal("reconnect timer was not scheduled")
+	if wake == nil || state.sessions[0].reconnectStop == nil {
+		t.Fatal("reconnect wake was not scheduled")
 	}
 
+	dialed := len(world.conns)
+	now += time.Hour
+	wake()
+	if state.sessions[0].reconnectPending {
+		t.Fatal("the wake did not advance the reconnect")
+	}
+	if len(world.conns) != dialed+1 {
+		t.Fatalf("the wake dialed %d connections, want one more", len(world.conns)-dialed)
+	}
+}
+
+func TestCancelReconnectStopsTheScheduledWake(t *testing.T) {
+	world, options := newWorld(t)
+	now := 10 * time.Second
+	options.Now = func() time.Duration { return now }
+	stopped := false
+	options.PostAfter = func(time.Duration, func()) func() {
+		return func() { stopped = true }
+	}
+	state := newTestState(t, options)
+	state.connectionReconnect = reconnectThree
+	connection := connect(t, state, world)
+	connection.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	disconnectEstablished(connection, state)
+
 	state.cancelReconnect(&state.sessions[0])
-	if state.sessions[0].reconnectTimer != nil {
-		t.Fatal("cancelReconnect did not clean up reconnectTimer")
+	if !stopped || state.sessions[0].reconnectStop != nil {
+		t.Fatalf("stopped=%v wake set=%v after cancelReconnect", stopped, state.sessions[0].reconnectStop != nil)
 	}
 }

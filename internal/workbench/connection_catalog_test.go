@@ -224,4 +224,11 @@ func TestKeepAliveUsesCountMaxByDefault(t *testing.T) {
 	if keepAlive.CountMax == nil || *keepAlive.CountMax != 3 {
 		t.Fatalf("CountMax = %v, want 3", keepAlive.CountMax)
 	}
+
+	// An interactive-only host keeps its liveness on the socket, so the same
+	// count becomes the TCP keepalive count as well.
+	interactive := catalog.keepAliveFor(Host{Address: "example.com", Port: 22, InteractiveOnly: true})
+	if !interactive.UseTCP || interactive.CountMax == nil || *interactive.CountMax != 3 {
+		t.Fatalf("interactive keepalive = %+v, want TCP with CountMax 3", interactive)
+	}
 }

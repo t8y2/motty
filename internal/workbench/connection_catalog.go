@@ -537,6 +537,10 @@ func (catalog *hostCatalog) keepAliveFor(host Host) sshconn.KeepAliveConfig {
 		return config
 	}
 	if catalog.connectionKeepAlive > 0 {
+		// A background app can miss a round or two while the system throttles
+		// it; three probes match OpenSSH's retry before a transport is declared
+		// dead. An interactive-only host uses the same count for its TCP
+		// keepalive.
 		count := 3
 		return sshconn.KeepAliveConfig{Interval: catalog.connectionKeepAlive, CountMax: &count, UseTCP: host.InteractiveOnly}
 	}

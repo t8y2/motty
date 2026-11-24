@@ -393,6 +393,7 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		DevelopmentSource: importSource,
 		Invalidate:        invalidate, Invalidator: &invalidator, NewWindow: newWindow,
 		Post:              application.Post,
+		PostAfter:         application.PostAfter,
 		SetMenuBar:        application.SetMenuBar,
 		OpenContentWindow: application.OpenContentWindow,
 		Group:             windowGroup, Blank: place.blank, Log: recentLog,

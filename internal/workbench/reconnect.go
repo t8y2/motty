@@ -62,9 +62,9 @@ func reconnectTerminalError(err error) bool {
 }
 
 func (state *State) cancelReconnect(session *Session) {
-	if session.reconnectTimer != nil {
-		session.reconnectTimer.Stop()
-		session.reconnectTimer = nil
+	if session.reconnectStop != nil {
+		session.reconnectStop()
+		session.reconnectStop = nil
 	}
 	if session.reconnectPending {
 		state.reconnectWaiters--
@@ -83,9 +83,9 @@ func (state *State) queueReconnect(session *Session) bool {
 	}
 	next := session.reconnectAttempt + 1
 	if !state.connectionReconnect.permits(next) {
-		if session.reconnectTimer != nil {
-			session.reconnectTimer.Stop()
-			session.reconnectTimer = nil
+		if session.reconnectStop != nil {
+			session.reconnectStop()
+			session.reconnectStop = nil
 		}
 		session.reconnectPending = false
 		session.reconnectDue = 0
@@ -103,27 +103,10 @@ func (state *State) queueReconnect(session *Session) bool {
 	session.reconnectText = ""
 	session.showLog = false
 	state.recordConnectionEvent(session, connectionEventReconnectWaiting, "")
-	if session.reconnectTimer != nil {
-		session.reconnectTimer.Stop()
+	if session.reconnectStop != nil {
+		session.reconnectStop()
 	}
-	invalidate := state.options.Invalidate
-	wake := func() {
-		if state.post != nil {
-			state.post(func() {
-				state.Wake()
-				if invalidate != nil {
-					invalidate()
-				}
-			})
-			return
-		}
-		if invalidate != nil {
-			invalidate()
-		}
-	}
-	if state.post != nil || invalidate != nil {
-		session.reconnectTimer = time.AfterFunc(delay, wake)
-	}
+	session.reconnectStop = state.scheduleWake(delay)
 	return true
 }
 
@@ -175,9 +158,9 @@ func (state *State) advanceReconnects() {
 		if !session.reconnectPending || now < session.reconnectDue {
 			continue
 		}
-		if session.reconnectTimer != nil {
-			session.reconnectTimer.Stop()
-			session.reconnectTimer = nil
+		if session.reconnectStop != nil {
+			session.reconnectStop()
+			session.reconnectStop = nil
 		}
 		session.reconnectPending = false
 		state.reconnectWaiters--
@@ -244,6 +227,10 @@ func (state *State) applyReconnectPolicy() {
 			continue
 		}
 		if policy == reconnectThree && session.reconnectAttempt >= 3 && session.reconnectPending {
+			if session.reconnectStop != nil {
+				session.reconnectStop()
+				session.reconnectStop = nil
+			}
 			session.reconnectPending = false
 			state.reconnectWaiters--
 			session.reconnectDue = 0

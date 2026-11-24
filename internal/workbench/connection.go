@@ -197,6 +197,12 @@ type Options struct {
 	// window's own inbox, which Wake drains; a window opened by the application
 	// passes Viva's app.Application.Post.
 	Post func(func())
+	// PostAfter runs work on the window thread after a delay, from any
+	// goroutine. It does not wait for a paint, so a timer advances the state of
+	// a hidden, minimized, or covered window too. Nil means the host has no
+	// event loop to schedule on, and a headless test drives Wake itself; a
+	// window opened by the application passes Viva's app.Application.PostAfter.
+	PostAfter func(time.Duration, func()) (stop func())
 	// SetMenuBar installs the application's own menus; nil leaves the menu bar
 	// to the host platform. Non-macOS hosts report app.ErrUnsupported.
 	SetMenuBar func([]app.Menu) error

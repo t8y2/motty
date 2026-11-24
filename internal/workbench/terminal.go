@@ -264,11 +264,11 @@ type terminal struct {
 	idleLastInput time.Duration
 	// idleInterval and idlePayload are the probe this shell was opened with.
 	// They are frozen here so editing the host changes only the next connection,
-	// as its settings already do. idleTimer holds the wake that keeps probing
+	// as its settings already do. idleStop holds the wake that keeps probing
 	// while the window is not painting.
 	idleInterval time.Duration
 	idlePayload  []byte
-	idleTimer    *time.Timer
+	idleStop     func()
 	idleTimerAt  time.Duration
 
 	// exec is the command the assistant is waiting on in this terminal.

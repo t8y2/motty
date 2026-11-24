@@ -183,21 +183,55 @@ func (conn *Conn) startCountKeepAlive(client *ssh.Client, socket *aliveSocket, c
 				missed = 0
 				timer.Reset(config.Interval)
 			case <-timer.C:
+				if pending {
+					// This worker's own probe is still unanswered: count the
+					// round exactly as before, so an unresponsive server is
+					// still declared dead after CountMax missed rounds.
+					missed++
+					if missed > *config.CountMax {
+						if conn.recordDisconnect(fmt.Errorf("%w: %w", ErrDisconnected, ErrKeepAliveTimeout)) {
+							conn.cancel()
+							_ = client.Close()
+						}
+						return
+					}
+					timer.Reset(config.Interval)
+					continue
+				}
+				// A latency Ping holds the one global request the transport
+				// may have out. Waiting behind it would measure that wait, so
+				// this worker claims the same slot sendKeepAlive does and only
+				// counts a missed round when it owns the request.
+				owner := conn
+				if conn.owner != nil {
+					owner = conn.owner
+				}
+				if claimed, busy := owner.beginProbe(); !claimed {
+					if busy >= config.Interval*time.Duration(*config.CountMax) {
+						if conn.recordDisconnect(fmt.Errorf("%w: %w", ErrDisconnected, ErrKeepAliveTimeout)) {
+							conn.cancel()
+							_ = client.Close()
+						}
+						return
+					}
+					timer.Reset(config.Interval)
+					continue
+				}
 				missed++
 				if missed > *config.CountMax {
+					owner.endProbe()
 					if conn.recordDisconnect(fmt.Errorf("%w: %w", ErrDisconnected, ErrKeepAliveTimeout)) {
 						conn.cancel()
 						_ = client.Close()
 					}
 					return
 				}
-				if !pending {
-					pending = true
-					go func() {
-						_, _, err := client.SendRequest(keepAliveRequest, true, nil)
-						replies <- err
-					}()
-				}
+				pending = true
+				go func() {
+					_, _, err := client.SendRequest(keepAliveRequest, true, nil)
+					owner.endProbe()
+					replies <- err
+				}()
 				timer.Reset(config.Interval)
 			}
 		}

@@ -360,7 +360,7 @@ type Session struct {
 	reconnectAttempt   int
 	reconnectDue       time.Duration
 	reconnectPending   bool
-	reconnectTimer     *time.Timer
+	reconnectStop      func()
 	reconnectExhausted bool
 	reconnectText      string
 	reconnectSecond    int64
