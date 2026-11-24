@@ -311,45 +311,50 @@ publish_viva_feed() {
 	viva_key=$work/update.key
 	(umask 077 && printf '%s\n' "$MOTTY_VIVA_UPDATE_KEY" >"$viva_key")
 
-	# The previous published release is the base of every patch. A first release,
-	# or a failed download, leaves the feed with full archives only.
-	previous_tag=$(gh release list --exclude-drafts --limit 10 --json tagName --jq '.[].tagName' 2>/dev/null | grep -vx "$tag" | head -1)
-	prevdir=
+	# The most recent published releases are each the base of a patch, so a
+	# client a few versions behind still updates by delta; releases come out
+	# several times a day and one base would strand most of them on the full
+	# package. A first release, or a failed download, leaves the feed with full
+	# archives only. viva feed drops any patch too large to be worth downloading.
+	patch_bases=3
+	previous_tags=$(gh release list --exclude-drafts --limit 10 --json tagName --jq '.[].tagName' 2>/dev/null \
+		| grep -vx "$tag" | head -n "$patch_bases")
 	patch_args=()
-	if [ -n "$previous_tag" ]; then
-		prevdir=$work/previous
-		mkdir -p "$prevdir"
-		if gh release download "$previous_tag" --dir "$prevdir" --pattern 'motty-*' 2>/dev/null; then
-			prev_version=${previous_tag#v}
-			for file in "$dir"/motty-*; do
-				[ -f "$file" ] || continue
-				name=$(basename "$file")
-				case $name in
-				motty-"$version"-darwin-arm64.zip | motty-"$version"-darwin-amd64.zip | \
-					motty-"$version"-linux-arm64.tar.gz | motty-"$version"-linux-amd64.tar.gz | \
-					motty-"$version"-windows-arm64.zip | motty-"$version"-windows-amd64.zip) ;;
-				*) continue ;;
-				esac
-				target=$(printf '%s' "$name" | sed -E "s/^motty-${version_re}-//")
-				old=$prevdir/motty-$prev_version-$target
-				[ -f "$old" ] || continue
-				case $name in
-				*-darwin-*) os=darwin ;;
-				*-linux-*) os=linux ;;
-				*-windows-*) os=windows ;;
-				*) continue ;;
-				esac
-				if [ "$os" = windows ] && version_lt "$prev_version" "$first_windows_delta_version"; then
-					continue
-				fi
-				arch=$(printf '%s' "$name" | sed -E "s/^motty-${version_re}-(darwin|linux|windows)-//; s/\.(zip|tar\.gz)$//")
-				patch_args+=(--patch-from "$os/$arch=$prev_version=$old")
-			done
-		else
-			echo "Viva update feed: could not download $previous_tag; patches are skipped" >&2
-			prevdir=
+	for previous_tag in $previous_tags; do
+		prev_version=${previous_tag#v}
+		# Only an older release can be the base; a re-announced old tag sees newer ones in the list.
+		version_lt "$prev_version" "$version" || continue
+		basedir=$work/previous/$prev_version
+		mkdir -p "$basedir"
+		if ! gh release download "$previous_tag" --dir "$basedir" --pattern 'motty-*' 2>/dev/null; then
+			echo "Viva update feed: could not download $previous_tag; its patches are skipped" >&2
+			continue
 		fi
-	fi
+		for file in "$dir"/motty-*; do
+			[ -f "$file" ] || continue
+			name=$(basename "$file")
+			case $name in
+			motty-"$version"-darwin-arm64.zip | motty-"$version"-darwin-amd64.zip | \
+				motty-"$version"-linux-arm64.tar.gz | motty-"$version"-linux-amd64.tar.gz | \
+				motty-"$version"-windows-arm64.zip | motty-"$version"-windows-amd64.zip) ;;
+			*) continue ;;
+			esac
+			target=$(printf '%s' "$name" | sed -E "s/^motty-${version_re}-//")
+			old=$basedir/motty-$prev_version-$target
+			[ -f "$old" ] || continue
+			case $name in
+			*-darwin-*) os=darwin ;;
+			*-linux-*) os=linux ;;
+			*-windows-*) os=windows ;;
+			*) continue ;;
+			esac
+			if [ "$os" = windows ] && version_lt "$prev_version" "$first_windows_delta_version"; then
+				continue
+			fi
+			arch=$(printf '%s' "$name" | sed -E "s/^motty-${version_re}-(darwin|linux|windows)-//; s/\.(zip|tar\.gz)$//")
+			patch_args+=(--patch-from "$os/$arch=$prev_version=$old")
+		done
+	done
 
 	viva_dir=$work/viva
 	mkdir -p "$viva_dir"
@@ -358,7 +363,7 @@ publish_viva_feed() {
 	if ! (cd "$work" && go run "github.com/vivaui/viva/cmd/viva@$viva_ref" feed \
 		-C "$module_dir" -dir "$dir" -base-url "$mirror/releases/$tag" -version "$version" -app "dev.motty.app" \
 		-channel stable -key "$viva_key" -out "$viva_dir/latest.json" \
-		--patch-exclude motty-data "${patch_args[@]}"); then
+		--patch-exclude motty-data --patch-max-ratio 0.6 "${patch_args[@]}"); then
 		echo "Viva update feed: viva feed failed" >&2
 		return 1
 	fi
