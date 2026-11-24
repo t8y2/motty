@@ -75,6 +75,10 @@ const (
 	OperationSaveDocument
 	OperationReadDocument
 	OperationMoveSelection
+	// OperationOpenBinary and OperationSaveBinary carry a file the system's
+	// editor opens as bytes, within MaxExternalEditBytes.
+	OperationOpenBinary
+	OperationSaveBinary
 	// OperationRemoteCopy copies files from another server into this worker's
 	// server. The source is read through its own subsystem opener; the data
 	// never goes through this computer's disk.
@@ -633,6 +637,19 @@ func (worker *Worker) ReadDocument(remotePath string) bool {
 // back for the revision comparison.
 func (worker *Worker) SaveDocument(remotePath string, data []byte, revision Revision, limit int) bool {
 	return worker.enqueue(request{operation: OperationSaveDocument, remote: remotePath, data: append([]byte(nil), data...), revision: revision, limit: limit})
+}
+
+// OpenBinary reads one remote file as bytes, for the system's editor, when it
+// is not text the built-in editor takes. The file's revision is the SHA-256 of
+// the bytes returned.
+func (worker *Worker) OpenBinary(remotePath string) bool {
+	return worker.enqueue(request{operation: OperationOpenBinary, remote: remotePath})
+}
+
+// SaveBinary replaces a file opened with OpenBinary when the server's copy still
+// has revision. The result carries the bytes that were saved.
+func (worker *Worker) SaveBinary(remotePath string, data []byte, revision Revision) bool {
+	return worker.enqueue(request{operation: OperationSaveBinary, remote: remotePath, data: append([]byte(nil), data...), revision: revision})
 }
 
 // SaveText atomically replaces one previously opened remote text file when its
@@ -1385,6 +1402,13 @@ func (worker *Worker) execute(next request) Result {
 		result.Data, result.Err = worker.readFileBytes(client, next.remote, generation, next.limit)
 	case OperationReadDocument:
 		result.Data, result.Err = worker.readFileBytes(client, next.remote, generation, MaxEditFileBytes)
+	case OperationOpenBinary:
+		result.Data, result.Err = worker.readFileBytes(client, next.remote, generation, MaxExternalEditBytes)
+	case OperationSaveBinary:
+		result.Err = worker.replaceDocumentBytes(client, next.remote, next.data, next.revision, MaxExternalEditBytes, generation)
+		if result.Err == nil {
+			result.Data = next.data
+		}
 	case OperationSaveDocument:
 		result.Err = worker.replaceDocumentBytes(client, next.remote, next.data, next.revision, next.limit, generation)
 		if result.Err == nil {

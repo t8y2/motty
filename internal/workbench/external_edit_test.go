@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -484,4 +485,94 @@ func TestOversizedExternalEditIsReportedAndCanBeCorrected(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, state, func() bool { return remoteText(remote, "/home/test/notes.txt") == "fixed" })
+}
+
+// A spreadsheet is not text, and often passes the text limit too. It still opens
+// in the system's editor, and what the editor saves reaches the server unchanged,
+// byte for byte (issue #1031).
+func TestAFileThatIsNotTextOpensAndSavesBackAsBytes(t *testing.T) {
+	state, session, remote, opened := externalEditSetup(t)
+	original := append([]byte("PK\x03\x04\x00\xff\xfe"), make([]byte, sftpclient.MaxEditFileBytes+10)...)
+	remote.mu.Lock()
+	remote.files["/home/test/notes.txt"] = original
+	remote.mu.Unlock()
+
+	edit := startExternalEditOf(t, state, session, "notes.txt")
+	if !edit.binary || len(opened.paths) != 1 {
+		t.Fatalf("binary %v, opened %v, error %q", edit.binary, opened.paths, session.files.errorText)
+	}
+	if data, err := os.ReadFile(edit.local); err != nil || !bytes.Equal(data, original) {
+		t.Fatalf("local copy differs from the server's bytes: %d bytes, %v", len(data), err)
+	}
+
+	saved := append([]byte("PK\x03\x04\x00\x80"), make([]byte, 4096)...)
+	if err := os.WriteFile(edit.local, saved, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, state, func() bool {
+		remote.mu.Lock()
+		defer remote.mu.Unlock()
+		return bytes.Equal(remote.files["/home/test/notes.txt"], saved) && !state.edits.list[0].saving
+	})
+	if session.files.status != fmt.Sprintf(state.messages.Tools.ExtEditSentFmt, "notes.txt") {
+		t.Fatalf("status %q", session.files.status)
+	}
+
+	// The next save goes on the identity the first one left, with no conflict.
+	again := append([]byte{0, 1, 2}, saved...)
+	if err := os.WriteFile(edit.local, again, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, state, func() bool {
+		remote.mu.Lock()
+		defer remote.mu.Unlock()
+		return bytes.Equal(remote.files["/home/test/notes.txt"], again)
+	})
+	if state.modal != modalNone {
+		t.Fatalf("modal %d", state.modal)
+	}
+}
+
+func TestABinaryFileThatChangedOnTheServerIsNotReplacedUnasked(t *testing.T) {
+	state, session, remote, _ := externalEditSetup(t)
+	remote.mu.Lock()
+	remote.files["/home/test/notes.txt"] = []byte{0xff, 0x00, 0x01}
+	remote.mu.Unlock()
+	edit := startExternalEditOf(t, state, session, "notes.txt")
+	someone := []byte{0xfe, 0x00, 0x02}
+	remote.mu.Lock()
+	remote.files["/home/test/notes.txt"] = someone
+	remote.mu.Unlock()
+	if err := os.WriteFile(edit.local, []byte{0xff, 0x00, 0x03}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, state, func() bool { return state.modal == modalForm })
+	if state.form.title != state.messages.Tools.ExtEditConflictTitle {
+		t.Fatalf("form %q", state.form.title)
+	}
+	remote.mu.Lock()
+	defer remote.mu.Unlock()
+	if !bytes.Equal(remote.files["/home/test/notes.txt"], someone) {
+		t.Fatalf("the server's file was replaced: %v", remote.files["/home/test/notes.txt"])
+	}
+}
+
+func TestABinaryEditPastTheLimitIsReportedAndNotSent(t *testing.T) {
+	state, session, remote, _ := externalEditSetup(t)
+	remote.mu.Lock()
+	remote.files["/home/test/notes.txt"] = []byte{0xff, 0x00, 0x01}
+	remote.mu.Unlock()
+	edit := startExternalEditOf(t, state, session, "notes.txt")
+	if err := os.WriteFile(edit.local, make([]byte, sftpclient.MaxExternalEditBytes+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, state, func() bool { return edit.badFile && session.files.errorText != "" })
+	if session.files.errorText != fmt.Sprintf(state.messages.Tools.ExtEditTooLargeFmt, "notes.txt") {
+		t.Fatalf("error %q", session.files.errorText)
+	}
+	remote.mu.Lock()
+	defer remote.mu.Unlock()
+	if !bytes.Equal(remote.files["/home/test/notes.txt"], []byte{0xff, 0x00, 0x01}) {
+		t.Fatal("an oversized file changed the server")
+	}
 }

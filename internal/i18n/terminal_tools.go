@@ -1067,6 +1067,7 @@ type ToolsMessages struct {
 	ExtEditGoneFmt                    string
 	ExtEditSendFailedFmt              string
 	ExtEditBadFmt                     string
+	ExtEditTooLargeFmt                string
 	ExtEditRefused                    string
 	ExtEditOpenFailedFmt              string
 	ExtEditConflictTitle              string

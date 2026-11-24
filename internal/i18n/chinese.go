@@ -2804,6 +2804,7 @@ var chineseTools = ToolsMessages{
 	ExtEditGoneFmt:                    "无法把 %s 传回服务器：连接已关闭。修改还留在这份本地副本里。",
 	ExtEditSendFailedFmt:              "无法把 %s 传回服务器：%s",
 	ExtEditBadFmt:                     "%s 现在不是 UTF-8 文本，没有传回服务器。",
+	ExtEditTooLargeFmt:                "%s 超过 32 MiB，没有传回服务器。",
 	ExtEditRefused:                    "这类文件会被直接运行而不是编辑，请使用内置编辑器。",
 	ExtEditOpenFailedFmt:              "无法用系统编辑器打开 %s：%s",
 	ExtEditConflictTitle:              "服务器上的文件已改变",

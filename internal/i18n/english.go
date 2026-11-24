@@ -2804,6 +2804,7 @@ var englishTools = ToolsMessages{
 	ExtEditGoneFmt:                    "Could not send %s back: the connection is closed. Your changes are still in the local copy.",
 	ExtEditSendFailedFmt:              "Could not send %s back: %s",
 	ExtEditBadFmt:                     "%s is not UTF-8 text now, so it was not sent back.",
+	ExtEditTooLargeFmt:                "%s is over 32 MiB, so it was not sent back.",
 	ExtEditRefused:                    "This kind of file would be run, not edited. Use the built-in editor.",
 	ExtEditOpenFailedFmt:              "Could not open %s in the system editor: %s",
 	ExtEditConflictTitle:              "The server's file changed",

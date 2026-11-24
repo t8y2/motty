@@ -2804,6 +2804,7 @@ var traditionalTools = ToolsMessages{
 	ExtEditGoneFmt:                    "無法把 %s 傳回伺服器：連線已關閉。修改還留在這份本機副本裡。",
 	ExtEditSendFailedFmt:              "無法把 %s 傳回伺服器：%s",
 	ExtEditBadFmt:                     "%s 現在不是 UTF-8 文字，沒有傳回伺服器。",
+	ExtEditTooLargeFmt:                "%s 超過 32 MiB，沒有傳回伺服器。",
 	ExtEditRefused:                    "這類檔案會被直接執行而不是編輯，請使用內建編輯器。",
 	ExtEditOpenFailedFmt:              "無法用系統編輯器開啟 %s：%s",
 	ExtEditConflictTitle:              "伺服器上的檔案已改變",
