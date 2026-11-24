@@ -6,6 +6,8 @@ var ChineseMessages = Messages{
 	AppLock: AppLockMessages{
 		Protection: "主密码保护", ChangeAction: "修改", SystemBeforePassword: "请先启用主密码，再设置此设备的系统快捷解锁。",
 		UpdatingDescription: "数据保护正在更新，请稍候。",
+		LargeRecoveryBackup: "有历史副本超过 128 MiB。请先将该副本妥善保存在此数据目录之外，然后重试。",
+		ProfileInUse:        "请先关闭正在使用这个数据目录的其他进程（包括独立 MCP 服务），然后重试。",
 		DeviceCleanup:       "主密码保护已关闭，但系统凭据尚未移除。",
 		WrongPassword:       "主密码不正确，请重试。", Corrupt: "无法读取保护配置，请保留数据并检查备份。", MigrationPending: "数据保护需要恢复，请使用主密码解锁后继续。", SystemMissing: "系统快捷解锁已失效，请使用主密码，解锁后可重新启用。", DevicePassword: "系统验证",
 		Lock: "锁定 Motty", Title: "Motty 已锁定", Description: "验证身份，回到当前会话", ColdDescription: "解锁 Motty，恢复你的工作区",

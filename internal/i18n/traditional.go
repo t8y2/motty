@@ -6,6 +6,8 @@ var TraditionalMessages = Messages{
 	AppLock: AppLockMessages{
 		Protection: "主密碼保護", ChangeAction: "修改", SystemBeforePassword: "請先啟用主密碼，再設定此裝置的系統快速解鎖。",
 		UpdatingDescription: "資料保護正在更新，請稍候。",
+		LargeRecoveryBackup: "有歷史副本超過 128 MiB。請先將該副本妥善儲存在這個資料目錄之外，然後重試。",
+		ProfileInUse:        "請先關閉正在使用這個資料目錄的其他程序（包括獨立 MCP 服務），然後重試。",
 		DeviceCleanup:       "主密碼保護已關閉，但系統認證尚未移除。",
 		WrongPassword:       "主密碼不正確，請重試。", Corrupt: "無法讀取保護設定，請保留資料並檢查備份。", MigrationPending: "資料保護需要復原，請使用主密碼解鎖後繼續。", SystemMissing: "系統快速解鎖已失效，請使用主密碼，解鎖後可重新啟用。", DevicePassword: "系統驗證",
 		Lock: "鎖定 Motty", Title: "Motty 已鎖定", Description: "驗證身分，回到目前工作階段", ColdDescription: "解鎖 Motty，還原你的工作區",

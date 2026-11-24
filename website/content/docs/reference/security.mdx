@@ -30,7 +30,7 @@ password. Turning protection off restores the ordinary connection database and s
 
 SSH known hosts, remote desktop certificate pins, session logs, external private-key files, and previously exported backups
 retain their own storage formats. Exported backups keep the password chosen at export. Local recovery copies archived during migration use the master password in effect when they were archived. Keep that password if you may need those copies after a password change.
-To extract one, run `motty recover-profile-backup <archive> <new-directory>` in a terminal and enter the archive's master password. This writes the original file and any key material it needs into the new directory.
+To extract one, run `motty recover-profile-backup <archive> <new-directory>` in a terminal and enter the archive's master password. This writes the original file and any key material it needs into the new directory. If an individual historical copy exceeds 128 MiB, migration prompts you to handle that copy before changing the profile.
 
 ## What it does not do
 

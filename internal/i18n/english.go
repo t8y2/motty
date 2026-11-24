@@ -6,6 +6,8 @@ var EnglishMessages = Messages{
 	AppLock: AppLockMessages{
 		Protection: "Master-password protection", ChangeAction: "Change", SystemBeforePassword: "Set a master password before enabling system unlock on this device.",
 		UpdatingDescription: "Please wait while Motty updates your data protection.",
+		LargeRecoveryBackup: "A historical copy exceeds 128 MiB. Keep it in a safe location outside this data directory and retry.",
+		ProfileInUse:        "Close other processes using this profile, including standalone MCP, then try again.",
 		DeviceCleanup:       "Master-password protection is off, but the system credential could not be removed.",
 		WrongPassword:       "The master password is incorrect. Try again.", Corrupt: "The protection settings could not be read. Keep your data and check your backup.", MigrationPending: "Protection needs recovery. Unlock with your master password to continue.", SystemMissing: "Quick unlock is no longer available. Use your master password and enroll this device again.", DevicePassword: "system verification",
 		Lock: "Lock Motty", Title: "Motty is locked", Description: "Verify your identity to return to your sessions", ColdDescription: "Unlock Motty to restore your workspace",

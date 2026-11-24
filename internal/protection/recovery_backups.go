@@ -11,6 +11,10 @@ import (
 	"strings"
 )
 
+const maxHistoricalBackupSize = 128 << 20
+
+var ErrHistoricalBackupTooLarge = errors.New("protection: a historical backup exceeds 128 MiB")
+
 type recoveryBackup struct {
 	Version         int      `json:"version"`
 	Name            string   `json:"name"`
@@ -111,8 +115,8 @@ func (g *Gate) prepareBackups(root []byte, password string, m *migration, stage 
 		if !info.Mode().IsRegular() {
 			return fmt.Errorf("protection: refusing non-regular backup %s", name)
 		}
-		if info.Size() > 128<<20 {
-			return errors.New("protection: historical backup is too large")
+		if info.Size() > maxHistoricalBackupSize {
+			return fmt.Errorf("%w: %s", ErrHistoricalBackupTooLarge, name)
 		}
 		plain, err := os.ReadFile(g.path(name))
 		if err != nil {

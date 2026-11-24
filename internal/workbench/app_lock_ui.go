@@ -10,7 +10,9 @@ import (
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/configstore"
 	"motty/internal/protection"
+	"motty/internal/vault"
 )
 
 var appLockHits = tree.Feature("app-lock")
@@ -353,6 +355,12 @@ func (state *State) appLockErrorText(err error) string {
 		return m.DeviceCleanup
 	case errors.Is(err, protection.ErrWrongPassword):
 		return m.WrongPassword
+	case errors.Is(err, protection.ErrHistoricalBackupTooLarge):
+		return m.LargeRecoveryBackup
+	case errors.Is(err, vault.ErrNeedsConversion):
+		return state.messages.VaultNeedsConversion
+	case errors.Is(err, errProfileInUse), errors.Is(err, configstore.ErrBusy):
+		return m.ProfileInUse
 	case errors.Is(err, protection.ErrWeakPassword):
 		return m.Minimum
 	case errors.Is(err, protection.ErrCorrupt):
