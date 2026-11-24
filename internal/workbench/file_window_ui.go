@@ -761,11 +761,7 @@ func (d *fileDocument) key(event gfx.KeyEvent) gfx.EventResult {
 		}
 		return gfx.EventResult{}
 	}
-	if result, ok := d.clipboardShortcut(event, d.textInput(app.TextInputContext{ID: event.Target}), func() {
-		if event.Target == hitDocumentInput {
-			d.ui.code.Reveal(d.editor.ByteOffset(d.editor.Caret()))
-		}
-	}); ok {
+	if result, ok := d.clipboardShortcut(event, false); ok {
 		return result
 	}
 	if result, ok := d.codeKey(event); ok {
@@ -786,11 +782,7 @@ func (d *fileDocument) comparisonKey(event gfx.KeyEvent) gfx.EventResult {
 		}
 		return gfx.EventResult{}
 	}
-	if result, ok := d.clipboardShortcut(event, d.comparisonTextInput(app.TextInputContext{ID: event.Target}), func() {
-		if event.Target == hitDocumentInput {
-			d.comparison.ui.diff.RevealCaret(d.editor.String(), d.editor.ByteOffset(d.editor.Caret()))
-		}
-	}); ok {
+	if result, ok := d.clipboardShortcut(event, true); ok {
 		return result
 	}
 	if event.Target == hitDocumentInput {
@@ -830,7 +822,10 @@ func (d *fileDocument) clipboardEditor(target gfx.ID) *text.Editor {
 	}
 }
 
-func (d *fileDocument) clipboardShortcut(event gfx.KeyEvent, input *app.TextInput, reveal func()) (gfx.EventResult, bool) {
+// clipboardShortcut handles copy and paste for the document's editor and its
+// find, replace and go-to fields. comparison selects the diff view's input and
+// caret reveal instead of the code editor's.
+func (d *fileDocument) clipboardShortcut(event gfx.KeyEvent, comparison bool) (gfx.EventResult, bool) {
 	if d.owner == nil || event.Release {
 		return gfx.EventResult{}, false
 	}
@@ -845,14 +840,23 @@ func (d *fileDocument) clipboardShortcut(event gfx.KeyEvent, input *app.TextInpu
 	if event.Repeat {
 		return gfx.EventResult{Handled: true}, true
 	}
+	context := app.TextInputContext{ID: event.Target}
+	input := d.textInput(context)
+	if comparison {
+		input = d.comparisonTextInput(context)
+	}
 	if input != nil {
 		if action == shortcutPaste {
 			if d.owner.options.ClipboardText != nil && input.OnEvent != nil {
 				value, err := d.owner.options.ClipboardText()
 				if err == nil && value != "" {
 					_, _ = input.OnEvent(app.TextEvent{Kind: app.TextPaste, Text: value})
-					if reveal != nil {
-						reveal()
+					if event.Target == hitDocumentInput {
+						if comparison {
+							d.comparison.ui.diff.RevealCaret(d.editor.String(), d.editor.ByteOffset(d.editor.Caret()))
+						} else {
+							d.ui.code.Reveal(d.editor.ByteOffset(d.editor.Caret()))
+						}
 					}
 					return gfx.EventResult{Handled: true, Repaint: true}, true
 				}
@@ -877,11 +881,7 @@ func (d *fileDocument) shortcut(event gfx.KeyEvent) gfx.EventResult {
 		return d.noteWindowShortcut(event)
 	}
 
-	if result, ok := d.clipboardShortcut(event, d.textInput(app.TextInputContext{ID: event.Target}), func() {
-		if event.Target == hitDocumentInput {
-			d.ui.code.Reveal(d.editor.ByteOffset(d.editor.Caret()))
-		}
-	}); ok {
+	if result, ok := d.clipboardShortcut(event, false); ok {
 		return result
 	}
 	if event.Modifiers&(gfx.ModifierControl|gfx.ModifierMeta) == 0 || event.Release {
@@ -907,11 +907,7 @@ func (d *fileDocument) comparisonShortcut(event gfx.KeyEvent) gfx.EventResult {
 	if event.Release || !d.comparison.active {
 		return gfx.EventResult{}
 	}
-	if result, ok := d.clipboardShortcut(event, d.comparisonTextInput(app.TextInputContext{ID: event.Target}), func() {
-		if event.Target == hitDocumentInput {
-			d.comparison.ui.diff.RevealCaret(d.editor.String(), d.editor.ByteOffset(d.editor.Caret()))
-		}
-	}); ok {
+	if result, ok := d.clipboardShortcut(event, true); ok {
 		return result
 	}
 	if event.Modifiers&(gfx.ModifierControl|gfx.ModifierMeta) == 0 {
