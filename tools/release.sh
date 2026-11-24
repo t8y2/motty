@@ -346,8 +346,9 @@ build_package() {
 	if [ "$target" = windows ]; then
 		go run ./tools/portablezip -program "$program" -time "$commit_time" \
 			-o "$out/motty-$version-windows-$arch.zip" "${portable[@]+"${portable[@]}"}" || return
-		unzip -l "$out/motty-$version-windows-$arch.zip" > "$work/zip-list-$arch.txt" || return
-		if ! grep -q ' conpty/' "$work/zip-list-$arch.txt"; then
+		# Entry names are stored uncompressed in the zip headers, so grep reads
+		# them without an unzip, which a Windows runner's bash does not have.
+		if ! grep -aq 'conpty/' "$out/motty-$version-windows-$arch.zip"; then
 			echo "   the portable zip is missing its conpty files" >&2
 			return 1
 		fi

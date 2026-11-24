@@ -1,0 +1,114 @@
+# Builds, signs and checks the Windows packages. Release calls it with upload set,
+# so the packages join the draft; windows-package-check calls it without, to try
+# the Windows runner, NSIS and the signing service without publishing anything.
+# Both run these same steps.
+name: Windows package
+
+on:
+  workflow_call:
+    inputs:
+      viva:
+        description: The vivaui/viva commit to build against
+        required: true
+        type: string
+      upload:
+        description: Upload the packages to the release draft of this tag
+        required: true
+        type: boolean
+
+jobs:
+  build:
+    name: Windows
+    # The Windows programs and installers are signed here, on a Windows runner,
+    # because the signing service's client only runs on Windows. The environment
+    # holds the signing secrets and can require an approval.
+    environment: release-signing
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: motty
+      - uses: actions/checkout@v7
+        with:
+          repository: vivaui/viva
+          ref: ${{ inputs.viva }}
+          path: viva
+          token: ${{ secrets.REED_REPO_TOKEN || github.token }}
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: motty/go.mod
+          cache-dependency-path: motty/go.sum
+
+      # The arm64 installer needs makensis 3.10 or newer.
+      - name: Install NSIS
+        run: |
+          choco install nsis -y --no-progress
+          echo "C:\Program Files (x86)\NSIS" >> "$GITHUB_PATH"
+          "/c/Program Files (x86)/NSIS/makensis.exe" -VERSION
+
+      # With VSIGN_SERVER unset this only warns and the packages are unsigned.
+      # With it set, a missing setting stops the build: a half-configured
+      # signature must not become an unsigned release.
+      - name: Set up VSign
+        shell: pwsh
+        env:
+          VSIGN_SERVER: ${{ vars.VSIGN_SERVER }}
+          VSIGN_CERT_HASH: ${{ vars.VSIGN_CERT_HASH }}
+          VSIGN_OPERATOR_NAME: ${{ vars.VSIGN_OPERATOR_NAME }}
+          VSIGN_OPERATOR_SHA1: ${{ vars.VSIGN_OPERATOR_SHA1 }}
+          VSIGN_TOOL_URL: ${{ vars.VSIGN_TOOL_URL }}
+          VSIGN_TOOL_SHA256: ${{ vars.VSIGN_TOOL_SHA256 }}
+          VSIGN_OPERATOR_PFX_B64: ${{ secrets.VSIGN_OPERATOR_PFX_B64 }}
+          VSIGN_OPERATOR_PWD: ${{ secrets.VSIGN_OPERATOR_PWD }}
+          VSIGN_KEY_PIN: ${{ secrets.VSIGN_KEY_PIN }}
+        run: motty/tools/vsign/setup.ps1
+
+      - name: Build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Read by sign.ps1, which viva package runs for each file to sign.
+          VSIGN_SERVER: ${{ vars.VSIGN_SERVER }}
+          VSIGN_CERT_HASH: ${{ vars.VSIGN_CERT_HASH }}
+          VSIGN_OPERATOR_NAME: ${{ vars.VSIGN_OPERATOR_NAME }}
+          VSIGN_KEY_PIN: ${{ secrets.VSIGN_KEY_PIN }}
+          MOTTY_UPDATE_SIGNING_KEY: ${{ secrets.MOTTY_UPDATE_SIGNING_KEY }}
+          UPLOAD: ${{ inputs.upload }}
+        working-directory: motty
+        run: |
+          if [ "$UPLOAD" = true ]; then
+            tools/release.sh --platforms windows --viva-ref "${{ inputs.viva }}" --ref "$GITHUB_SHA" --upload "$GITHUB_REF_NAME"
+          else
+            tools/release.sh --platforms windows --viva-ref "${{ inputs.viva }}" --ref "$GITHUB_SHA" --out "$RUNNER_TEMP/packages"
+          fi
+
+      # The same check runs on a release: a signature that did not take stops the
+      # job before Checksums, so an unsigned installer is not published.
+      - name: Check the signatures
+        shell: pwsh
+        env:
+          VSIGN_SERVER: ${{ vars.VSIGN_SERVER }}
+          VSIGN_CERT_HASH: ${{ vars.VSIGN_CERT_HASH }}
+          UPLOAD: ${{ inputs.upload }}
+        run: |
+          $directory = if ($env:UPLOAD -eq "true") { (Get-ChildItem motty/build -Directory -Filter "release-*" | Select-Object -First 1).FullName } else { Join-Path $env:RUNNER_TEMP "packages" }
+          motty/tools/vsign/verify.ps1 $directory
+
+      # The trial run keeps its packages for a day, to install one and look at it.
+      - name: Keep the packages of a trial run
+        if: ${{ !inputs.upload }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-packages
+          path: ${{ runner.temp }}/packages/motty-*
+          retention-days: 1
+
+      # The operator key is a file on a runner that is discarded, but removing it
+      # keeps it out of any later step and out of a self-hosted runner.
+      - name: Remove the VSign operator key
+        if: always()
+        shell: pwsh
+        run: |
+          if ($env:SSIGNCODE_OPERATOR_DIR) { Remove-Item -LiteralPath $env:SSIGNCODE_OPERATOR_DIR -Recurse -Force -ErrorAction SilentlyContinue }

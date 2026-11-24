@@ -62,7 +62,8 @@ need only the libraries they load at run time: Vulkan, XCB and Cairo.
 | Pin viva | Ubuntu | resolves `vivaui/viva` main to one commit |
 | Release draft ready | Ubuntu | checks the tag body is the committed notes, waits for the draft release, and holds its body to those notes |
 | macOS | macOS 15 (arm64) | `.dmg` and `.zip` for arm64 and amd64; signed, notarized and stapled |
-| Linux and Windows | Ubuntu | `.tar.gz` and `.deb` (amd64, arm64), a `PKGBUILD` and `.SRCINFO` for each Linux architecture, and an NSIS installer for Windows amd64 and arm64; the Windows programs and the installers signed |
+| Linux | Ubuntu | `.tar.gz` and `.deb` (amd64, arm64), and a `PKGBUILD` and `.SRCINFO` for each architecture; not code-signed |
+| Windows | Windows Server 2022 | an NSIS installer and a portable zip for amd64 and arm64; the programs and the installers signed, then checked to carry the certificate's signature (`windows-package.yml`) |
 | Checksums | Ubuntu | signs every package of the release, writes `SIGNATURES` and `SHA256SUMS`, and verifies the whole release |
 | Publish | Ubuntu | copies the packages to the mirror, publishes the verified draft, then flips `latest.json` |
 
@@ -209,6 +210,33 @@ fails the job rather than shipping an image Gatekeeper would block.
 | --- | --- |
 | `WINDOWS_CERTIFICATE`, `WINDOWS_CERTIFICATE_PASSWORD` | a code signing certificate as a `.pfx` (`base64 -i code-signing.pfx`) and its password |
 | `WINDOWS_SIGN_COMMAND` | instead: a command that signs `{file}` in place, for a key that lives in a token or a service such as Azure Trusted Signing. It runs on the Ubuntu runner, which has no `signtool`, so it must be something that runs there |
+
+The Windows job runs on a Windows runner, so a signing service whose client only
+runs on Windows can be used. TrustAsia VSign is wired in through the
+`release-signing` environment (`tools/vsign/`). The workflow passes only these
+settings to the Windows job, not `WINDOWS_CERTIFICATE` or `WINDOWS_SIGN_COMMAND`
+(Viva refuses a certificate and a sign command together); those two remain for
+a local `tools/release.sh` run.
+
+| Setting | What |
+| --- | --- |
+| variable `VSIGN_SERVER` | the signing service URL (`https://vsign.trustasia.com`); leave it unset to build unsigned |
+| variables `VSIGN_CERT_HASH`, `VSIGN_OPERATOR_NAME`, `VSIGN_OPERATOR_SHA1` | the SHA1 of the certificate in the order, the operator's name, and the SHA1 of the operator's own certificate (the two hashes are different values) |
+| variables `VSIGN_TOOL_URL`, `VSIGN_TOOL_SHA256` | an HTTPS address that serves the vendor's `ssigncode.exe`, and its SHA256; the file is refused if the hash differs |
+| secrets `VSIGN_OPERATOR_PFX_B64`, `VSIGN_OPERATOR_PWD`, `VSIGN_KEY_PIN` | the operator's `.pfx` as base64, its password, and the key PIN set in the order |
+
+The Windows job lives in `.github/workflows/windows-package.yml`, which the release
+and the manually started *Windows package check* both run. The check builds and
+signs the installers and zips, verifies their signatures, keeps the packages for a
+day, and publishes nothing: run it before tagging a release that touches the
+Windows build or the signing.
+
+Create the operator in the certificate order; one order can serve several
+repositories, but give each its own operator so its signing log and revocation
+stay separate. An operator certificate expires (a year), and the secret must be
+replaced before then. With `VSIGN_SERVER` set, a missing setting stops the
+build rather than shipping an unsigned package. Each signed file is checked to
+be valid and to carry the order's certificate before it replaces the original.
 
 Current certificates mostly keep the key where a file cannot reach it; check what
 your certificate authority issues before buying one. Packages are timestamped by
