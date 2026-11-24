@@ -36,7 +36,8 @@ import (
 	"sync"
 	"time"
 
-	_ "modernc.org/sqlite" // registers the "sqlite" driver
+	"modernc.org/sqlite" // registers the "sqlite" driver
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 var (
@@ -583,14 +584,18 @@ func storeError(op string, err error) error {
 	return fmt.Errorf("config store: %s: %w", op, err)
 }
 
-// isBusyError reports SQLite's lock contention. It maps to ErrBusy for callers
-// that must tell a passing lock from a store that is not readable.
+// isBusyError reports SQLite's lock contention by result code, so a changed
+// driver message cannot turn a passing lock into ErrCorrupt. It maps to ErrBusy
+// for callers that must tell a passing lock from a store that is not readable.
 func isBusyError(err error) bool {
-	message := strings.ToLower(err.Error())
-	for _, marker := range []string{"sqlite_busy", "database is locked", "database table is locked", "database schema is locked"} {
-		if strings.Contains(message, marker) {
-			return true
-		}
+	var sqliteErr *sqlite.Error
+	if !errors.As(err, &sqliteErr) {
+		return false
+	}
+	// The low byte is the primary result code; the rest is the extended code.
+	switch sqliteErr.Code() & 0xff {
+	case sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED:
+		return true
 	}
 	return false
 }
