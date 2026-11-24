@@ -245,7 +245,7 @@ var TraditionalMessages = Messages{
 	SettingsLanguageEnglish:                "English",
 	SettingsLanguageChinese:                "简体中文",
 	SettingsLanguageTraditionalChinese:     "繁體中文",
-	SettingsAppearance:                     "外觀",
+	SettingsAppearance:                     "主題",
 	SettingsAppearanceSystem:               "跟隨系統",
 	SettingsAppearanceDark:                 "深色",
 	SettingsAppearanceLight:                "淺色",
@@ -1934,6 +1934,7 @@ var traditionalTools = ToolsMessages{
 	CommandsSortName:    "字母順序",
 	CommandsSortGroup:   "按分組",
 
+	CatAppearance: "外觀",
 	CatGeneral:    "通用",
 	CatTerminal:   "終端機",
 	CatConnection: "連線",

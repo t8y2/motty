@@ -245,7 +245,7 @@ var EnglishMessages = Messages{
 	SettingsLanguageEnglish:                "English",
 	SettingsLanguageChinese:                "简体中文",
 	SettingsLanguageTraditionalChinese:     "繁體中文",
-	SettingsAppearance:                     "Appearance",
+	SettingsAppearance:                     "Theme",
 	SettingsAppearanceSystem:               "System",
 	SettingsAppearanceDark:                 "Dark",
 	SettingsAppearanceLight:                "Light",
@@ -1934,6 +1934,7 @@ var englishTools = ToolsMessages{
 	CommandsSortName:    "Alphabetical",
 	CommandsSortGroup:   "By group",
 
+	CatAppearance: "Appearance",
 	CatGeneral:    "General",
 	CatTerminal:   "Terminal",
 	CatConnection: "Connection",

@@ -245,7 +245,7 @@ var ChineseMessages = Messages{
 	SettingsLanguageEnglish:                "English",
 	SettingsLanguageChinese:                "简体中文",
 	SettingsLanguageTraditionalChinese:     "繁體中文",
-	SettingsAppearance:                     "外观",
+	SettingsAppearance:                     "主题",
 	SettingsAppearanceSystem:               "跟随系统",
 	SettingsAppearanceDark:                 "深色",
 	SettingsAppearanceLight:                "浅色",
@@ -1934,6 +1934,7 @@ var chineseTools = ToolsMessages{
 	CommandsSortName:    "字母顺序",
 	CommandsSortGroup:   "按分组",
 
+	CatAppearance: "外观",
 	CatGeneral:    "通用",
 	CatTerminal:   "终端",
 	CatConnection: "连接",
