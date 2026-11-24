@@ -2089,7 +2089,12 @@ func (worker *Worker) uploadStream(client transferRemote, openSource func() (io.
 		}
 		return written, resumed, err
 	}
-	if err := worker.finalizeUpload(generation, transferID, "flush", destination.Sync); err != nil && !isUnsupportedSFTP(err) {
+	// fsync@openssh.com only asks the server to commit to disk early; close
+	// still reports a failed write and OpenSSH's sftp does not fsync a put by
+	// default. Gateways that advertise the extension often answer it with a
+	// generic failure, so a refusal is not fatal; a timeout is, because the
+	// subsystem was discarded to end the request.
+	if err := worker.finalizeUpload(generation, transferID, "flush", destination.Sync); errors.Is(err, ErrUploadFinalizeTimeout) {
 		return written, resumed, err
 	}
 	if err := worker.finalizeUpload(generation, transferID, "close", destination.Close); err != nil {
