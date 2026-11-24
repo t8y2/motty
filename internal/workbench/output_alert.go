@@ -132,7 +132,7 @@ func (state *State) paintOutputAlertTitle(canvas *gfx.Canvas, tab *barTab, strip
 		if backing.Alpha == 0 {
 			backing = state.pal.tab
 		}
-		canvas.Rounded(bounds, 4, backing)
+		canvas.Rounded(bounds, cornerPx(4), backing)
 	}
 	style := gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: state.pal.success}
 	label := canvas.FitLine(tab.label, style.Size, style.Weight, bounds.Width)

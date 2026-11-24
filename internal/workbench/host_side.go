@@ -699,8 +699,8 @@ func (state *State) paintHostDragGhost(canvas *gfx.Canvas, bounds gfx.Rect) {
 	rect := gfx.Rect{X: at.X + hostDragGhostOffsetX, Y: at.Y - hostDragGhostOffsetY, Width: width, Height: hostDragGhostHeight}
 	rect.X = min(max(rect.X, bounds.X+8), max(bounds.X+bounds.Width-width-8, bounds.X+8))
 	rect.Y = min(max(rect.Y, bounds.Y+8), max(bounds.Y+bounds.Height-hostDragGhostHeight-8, bounds.Y+8))
-	canvas.Elevate(rect, hostDragGhostRadius, gfx.ShadowMD)
-	canvas.RoundedBorder(rect, hostDragGhostRadius, 1, state.pal.line, state.pal.surface)
+	canvas.Elevate(rect, cornerPx(hostDragGhostRadius), gfx.ShadowMD)
+	canvas.RoundedBorder(rect, cornerPx(hostDragGhostRadius), 1, state.pal.line, state.pal.surface)
 	canvas.Label(label, gfx.Rect{X: rect.X + hostDragGhostPadX, Y: rect.Y, Width: rect.Width - 2*hostDragGhostPadX, Height: hostDragGhostHeight},
 		gfx.TextStyle{Size: hostDragGhostFontSize, Color: state.pal.text})
 }

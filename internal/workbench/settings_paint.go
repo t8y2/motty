@@ -319,6 +319,8 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 				})
 			settingsChoiceRow(page, messages.SettingsAppearance, "", &state.appearanceMode, settingsAppearanceChoices[:], state.settingsAppearanceLabel,
 				func() { state.chooseAppearanceMode(state.appearanceMode); state.save() }, nil)
+			settingsChoiceRow(page, messages.SettingsCorners, "", &state.cornerStyle, settingsCornerChoices[:], state.settingsCornerLabel,
+				func() { state.applyMetrics(); state.save() }, nil)
 			state.paintIconColorSetting(page)
 			page.actionRow(messages.SettingsTextSize, messages.SettingsTextSizeDescription, false,
 				components.ButtonAction{ID: hitSettingsTextSizeDown, Label: "−", Variant: components.ButtonOutline},

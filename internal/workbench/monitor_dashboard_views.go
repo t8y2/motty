@@ -161,7 +161,7 @@ func (s *State) paintDashboardDeviceView(c *gfx.Canvas, p *monitoring.Panel, h H
 	}
 	chart := gfx.Rect{X: b.X, Y: b.Y, Width: b.Width, Height: 170}
 	if s.dashboardShown(chart) {
-		c.RoundedBorder(chart, 7, 1, pal.line, pal.workspace)
+		c.RoundedBorder(chart, cornerPx(7), 1, pal.line, pal.workspace)
 		c.DrawIcon([]gfx.Icon{icons.Wifi, icons.HardDrive}[r.page%2], gfx.Rect{X: chart.X + 12, Y: chart.Y + 11, Width: 14, Height: 14}, pal.muted)
 		monitorLabel(c, label, gfx.Rect{X: chart.X + 34, Y: chart.Y + 4, Width: 180, Height: 28}, 13, pal.text, gfx.WeightMedium)
 		s.paintDashboardChart(c, p, h, r, gfx.Rect{X: chart.X + 8, Y: chart.Y + 33, Width: chart.Width - 16, Height: chart.Height - 36}, metric, label)

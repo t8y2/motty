@@ -58,7 +58,7 @@ func (state *State) desktopLatencyBadge(canvas *gfx.Canvas, view *desktopView) (
 // as the hover hint. The same identity the overlay and chromeless presentations
 // use names the badge.
 func (state *State) paintDesktopLatency(canvas *gfx.Canvas, bounds gfx.Rect, badge desktopLatencyUI, id gfx.ID) {
-	canvas.Rounded(bounds, 4, withAlpha(badge.color, 0.14))
+	canvas.Rounded(bounds, cornerPx(4), withAlpha(badge.color, 0.14))
 	canvas.Label(badge.label, gfx.Rect{X: bounds.X + 6, Y: bounds.Y, Width: badge.width, Height: bounds.Height},
 		gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: badge.color})
 	canvas.HitWithOptions(id, bounds, badge.label,

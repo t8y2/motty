@@ -94,10 +94,10 @@ func (state *State) paintHostInfoText(canvas *gfx.Canvas, b gfx.Rect, session *S
 					background := colors.surface
 					if canvas.Hovered() == ids[i] || canvas.Pressed() == ids[i] {
 						background = state.pal.surfaceSoft
-						canvas.Rounded(bounds, 4, background)
+						canvas.Rounded(bounds, cornerPx(4), background)
 					}
 					if canvas.FocusVisible() == ids[i] {
-						canvas.RoundedBorder(bounds, 4, 1, colors.cpu, background)
+						canvas.RoundedBorder(bounds, cornerPx(4), 1, colors.cpu, background)
 					}
 					textBounds = bounds.Inset(gfx.Insets{Left: 4, Right: 4})
 					color = colors.cpu

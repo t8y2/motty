@@ -724,6 +724,7 @@ type State struct {
 	menuBarSig      string
 	appearance      appearance
 	appearanceMode  appearanceMode
+	cornerStyle     cornerStyle
 	iconColor       iconColor
 	iconColorChoice iconColor // the unconfirmed selection in the icon picker
 	networkProxy    networkProxyMode

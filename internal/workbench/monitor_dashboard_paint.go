@@ -310,7 +310,7 @@ func (s *State) paintDashboardHost(c *gfx.Canvas, p *monitoring.Panel, h Host, r
 		if !s.dashboardShown(box) {
 			continue
 		}
-		c.RoundedBorder(box, 7, 1, pal.line, pal.workspace)
+		c.RoundedBorder(box, cornerPx(7), 1, pal.line, pal.workspace)
 		c.DrawIcon(glyphs[metric], gfx.Rect{X: box.X + 12, Y: box.Y + 13, Width: 14, Height: 14}, pal.muted)
 		if metric != 4 {
 			monitorLabel(c, labels[metric], gfx.Rect{X: box.X + 34, Y: box.Y + 6, Width: 74, Height: 28}, 13, pal.text, gfx.WeightMedium)
@@ -364,7 +364,7 @@ func (s *State) paintDashboardHost(c *gfx.Canvas, p *monitoring.Panel, h Host, r
 				if !s.dashboardShown(box) {
 					continue
 				}
-				c.RoundedBorder(box, 6, 1, pal.line, pal.workspace)
+				c.RoundedBorder(box, cornerPx(6), 1, pal.line, pal.workspace)
 				c.DrawIcon(icons.HardDrive, gfx.Rect{X: box.X + 8, Y: box.Y + 10, Width: 14, Height: 14}, amber)
 				monitorLabel(c, disk.Path, gfx.Rect{X: box.X + 28, Y: box.Y, Width: max(40, box.Width-242), Height: 34}, 12, pal.text, gfx.WeightMedium)
 				monitorRight(c, fmt.Sprintf("%.0f%%", disk.Percent), gfx.Rect{X: box.X + box.Width - 210, Y: box.Y, Width: 38, Height: 34}, 13, pal.text, gfx.WeightSemibold)

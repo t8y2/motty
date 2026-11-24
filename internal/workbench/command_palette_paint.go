@@ -225,7 +225,7 @@ func (state *State) declareCommandPaletteBarToggle(c ui.C) {
 		if checked {
 			fill, boxBorder = pal.accent, pal.accent
 		}
-		ui.Stack(c).Size(side, side).Shrink(0).Radius(4).Background(fill).Border(1, boxBorder).Children(func() {
+		ui.Stack(c).Size(side, side).Shrink(0).Radius(cornerPx(4)).Background(fill).Border(1, boxBorder).Children(func() {
 			if checked {
 				ui.Icon(c, lucideIcons[iconCheck]).Size(10, 10).Color(pal.onAccent)
 			}

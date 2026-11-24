@@ -145,7 +145,7 @@ func (state *State) paintIconButtonWithOptions(canvas *gfx.Canvas, id gfx.ID, ic
 	// surface behind it, then what the style and the pointer add, and the glyph.
 	if focused {
 		ring := gfx.Rect{X: bounds.X - 1.5, Y: bounds.Y - 1.5, Width: bounds.Width + 3, Height: bounds.Height + 3}
-		canvas.RoundedBorder(ring, shape+1.5, 1.5, withAlpha(pal.accent, 0.5), gfx.Color{})
+		canvas.RoundedBorder(ring, gfx.RadiusOutset(shape, 1.5), 1.5, withAlpha(pal.accent, 0.5), gfx.Color{})
 	}
 	if soft.Alpha > 0 {
 		canvas.Rounded(bounds, shape, soft)

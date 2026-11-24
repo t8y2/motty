@@ -687,7 +687,7 @@ func (w *sftpWindow) declarePane(c ui.C, s *sftpWindowScratch) {
 			// The frame around the rows, as the panel has always drawn it: the
 			// List sits two pixels in so its rows and scrollbar stay clear of
 			// the rounded edge.
-			frame := ui.Column(c).Grow(1).Pad(1).Background(theme.Background).Radius(6).Border(1, theme.Border.Mix(theme.MutedForeground, .4))
+			frame := ui.Column(c).Grow(1).Pad(1).Background(theme.Background).Radius(cornerPx(6)).Border(1, theme.Border.Mix(theme.MutedForeground, .4))
 			frame.Children(func() {
 				folder.prepareSFTPList()
 				folder.seedSFTPListChoice()
@@ -792,7 +792,7 @@ func (w *sftpWindow) declareListRow(row ui.ListRow, side int, paneWidth, rowWidt
 	if entry.mono {
 		tint = pal.muted
 	}
-	box := row.Element.Height(sftpRowHeight).Shrink(0).Width(rowWidth).Gap(8).PadX(8).Items(ui.Center).Background(background).Radius(4)
+	box := row.Element.Height(sftpRowHeight).Shrink(0).Width(rowWidth).Gap(8).PadX(8).Items(ui.Center).Background(background).Radius(cornerPx(4))
 	if row.Focused() {
 		box = box.Border(1, pal.accent)
 	}

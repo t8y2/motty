@@ -173,7 +173,7 @@ func monitorLoginsHeight(p *monitorView, currentSSHUser string) float32 {
 func (s *State) paintMonitorLogins(c *gfx.Canvas, p *monitorView, currentSSHUser string, b, viewport gfx.Rect) {
 	colors, messages := s.monitorColors(), s.messages.Monitor
 	if monitorRowVisible(viewport, b.Y, b.Height) {
-		c.RoundedBorder(b, 10, 1, colors.border, colors.surface)
+		c.RoundedBorder(b, cornerPx(10), 1, colors.border, colors.surface)
 	}
 	s.monitorSection(c, hitMonitorLogins, gfx.Rect{X: b.X, Y: b.Y, Width: b.Width, Height: 32}, messages.Logins, icons.Activity, colors.cpu, !p.loginsClosed)
 	if p.loginsClosed {
@@ -226,9 +226,9 @@ func (s *State) monitorSection(c *gfx.Canvas, id gfx.ID, b gfx.Rect, label strin
 	if c.Hovered() == id {
 		bg = s.pal.surfaceSoft
 	}
-	c.Rounded(b, 9, bg)
+	c.Rounded(b, cornerPx(9), bg)
 	if c.FocusVisible() == id {
-		c.RoundedBorder(b, 9, 1.5, p.cpu, bg)
+		c.RoundedBorder(b, cornerPx(9), 1.5, p.cpu, bg)
 	}
 	c.DrawIcon(icon, gfx.Rect{X: b.X + 10, Y: b.Y + (b.Height-14)/2, Width: 14, Height: 14}, tint)
 	monitorLabel(c, label, gfx.Rect{X: b.X + 31, Y: b.Y, Width: b.Width - 62, Height: b.Height}, 12, p.text, gfx.WeightSemibold)
@@ -242,7 +242,7 @@ func (s *State) monitorSection(c *gfx.Canvas, id gfx.ID, b gfx.Rect, label strin
 
 func (s *State) monitorTile(c *gfx.Canvas, p *monitorView, b gfx.Rect, label, value, note string, icon gfx.Icon, tint gfx.Color, metric int) {
 	colors := s.monitorColors()
-	c.RoundedBorder(b, 10, 1, colors.border, colors.surface)
+	c.RoundedBorder(b, cornerPx(10), 1, colors.border, colors.surface)
 	c.DrawIcon(icon, gfx.Rect{X: b.X + 10, Y: b.Y + 12, Width: 14, Height: 14}, tint)
 	monitorLabel(c, label, gfx.Rect{X: b.X + 30, Y: b.Y + 9, Width: b.Width - 40, Height: 20}, 12, colors.muted, gfx.WeightMedium)
 	monitorLabel(c, value, gfx.Rect{X: b.X + 10, Y: b.Y + 32, Width: b.Width - 20, Height: 27}, 22, tint, gfx.WeightSemibold)
@@ -252,7 +252,7 @@ func (s *State) monitorTile(c *gfx.Canvas, p *monitorView, b gfx.Rect, label, va
 
 func (s *State) paintMonitorSummary(c *gfx.Canvas, p *monitorView, b gfx.Rect, session *Session) {
 	colors, m := s.monitorColors(), s.messages.Monitor
-	c.RoundedBorder(b, 10, 1, colors.border, colors.surface)
+	c.RoundedBorder(b, cornerPx(10), 1, colors.border, colors.surface)
 	host := b.Inset(gfx.Insets{Left: 10, Right: 10, Top: 7})
 	host.Height = 18
 	s.paintHostInfoText(c, host, session)
@@ -286,7 +286,7 @@ func (s *State) monitorMore(c *gfx.Canvas, id gfx.ID, label string, b gfx.Rect) 
 
 func (s *State) paintMonitorCores(c *gfx.Canvas, p *monitorView, b, viewport gfx.Rect) {
 	colors, m := s.monitorColors(), s.messages.Monitor
-	c.RoundedBorder(b, 10, 1, colors.border, colors.surface)
+	c.RoundedBorder(b, cornerPx(10), 1, colors.border, colors.surface)
 	s.monitorSection(c, hitMonitorCores, gfx.Rect{X: b.X, Y: b.Y, Width: b.Width, Height: 32}, p.coresTitle, icons.Cpu, colors.cpu, !p.coresCollapsed)
 	if p.coresCollapsed {
 		return
@@ -395,7 +395,7 @@ func (s *State) monitorMetricColor(value float64) gfx.Color {
 
 func (s *State) paintMonitorDisks(c *gfx.Canvas, p *monitorView, b, viewport gfx.Rect) {
 	colors, m := s.monitorColors(), s.messages.Monitor
-	c.RoundedBorder(b, 10, 1, colors.border, colors.surface)
+	c.RoundedBorder(b, cornerPx(10), 1, colors.border, colors.surface)
 	s.monitorSection(c, hitMonitorDisksCollapse, gfx.Rect{X: b.X, Y: b.Y, Width: b.Width, Height: 32}, m.DiskSection, icons.HardDrive, colors.disk, !p.disksCollapsed)
 	if p.disksCollapsed {
 		return
@@ -476,7 +476,7 @@ func monitorHardwareFact(c *gfx.Canvas, b gfx.Rect, label, value string, colors 
 func (s *State) paintMonitorHardware(c *gfx.Canvas, p *monitorView, session *Session, b, viewport gfx.Rect) {
 	colors, m := s.monitorColors(), s.messages.Monitor
 	if monitorRowVisible(viewport, b.Y, b.Height) {
-		c.RoundedBorder(b, 10, 1, colors.border, colors.surface)
+		c.RoundedBorder(b, cornerPx(10), 1, colors.border, colors.surface)
 	}
 	s.monitorSection(c, hitMonitorHardware, gfx.Rect{X: b.X, Y: b.Y, Width: b.Width, Height: monitorHardwareHeaderHeight}, m.Hardware, icons.Cpu, colors.muted, p.hardwareOpen)
 	if !p.hardwareOpen {
@@ -531,7 +531,7 @@ func (s *State) paintMonitorHardware(c *gfx.Canvas, p *monitorView, session *Ses
 
 func (s *State) paintMonitorNetworkTile(c *gfx.Canvas, p *monitorView, b gfx.Rect, large bool) {
 	colors, m := s.monitorColors(), s.messages.Monitor
-	c.RoundedBorder(b, 10, 1, colors.border, colors.surface)
+	c.RoundedBorder(b, cornerPx(10), 1, colors.border, colors.surface)
 	c.DrawIcon(icons.Wifi, gfx.Rect{X: b.X + 10, Y: b.Y + 12, Width: 14, Height: 14}, colors.network)
 	monitorLabel(c, m.Network, gfx.Rect{X: b.X + 30, Y: b.Y + 9, Width: b.Width - 40, Height: 20}, 12, colors.muted, gfx.WeightMedium)
 	size := float32(12)
@@ -588,7 +588,7 @@ func (s *State) paintMonitorSections(c *gfx.Canvas, session *Session, v *remoteS
 		s.paintMonitorNetworkTile(c, p, gfx.Rect{X: x, Y: y, Width: w, Height: 142}, true)
 		y += 142 + monitorGap
 		h := float32(32 + max(1, len(p.networks))*34 + 8)
-		c.RoundedBorder(gfx.Rect{X: x, Y: y, Width: w, Height: h}, 10, 1, colors.border, colors.surface)
+		c.RoundedBorder(gfx.Rect{X: x, Y: y, Width: w, Height: h}, cornerPx(10), 1, colors.border, colors.surface)
 		monitorLabel(c, m.NetworkSection, gfx.Rect{X: x + 10, Y: y, Width: w - 20, Height: 32}, 12, colors.text, gfx.WeightSemibold)
 		y += 32
 		if len(p.networks) == 0 {

@@ -1173,7 +1173,7 @@ func (state *State) declareSFTPChmodBit(c ui.C, id gfx.ID, label string, checked
 			border.Alpha *= .4
 			ink.Alpha *= .4
 		}
-		d.Canvas.Rounded(box, 3, fill)
+		d.Canvas.Rounded(box, cornerPx(3), fill)
 		d.Canvas.RoundedOutline(box, 3, 1, border)
 		if checked {
 			d.Canvas.DrawIcon(lucideIcons[iconCheck], gfx.Rect{X: box.X + 2, Y: box.Y + 2, Width: 12, Height: 12}, ink)
