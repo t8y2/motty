@@ -915,3 +915,66 @@ func checkExportedPromptCommand(t *testing.T, profile string) {
 		t.Fatal("the shell did not exit")
 	}
 }
+
+// A site audit hook can make PROMPT_COMMAND readonly (issue #1031). The folder
+// must still be reported for every prompt, and the audit hook must keep running.
+func TestIntegrationReadonlyPromptCommandStillReportsFolders(t *testing.T) {
+	program, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash unavailable")
+	}
+	home, runtimeDir := t.TempDir(), t.TempDir()
+	target := filepath.Join(home, "opt dir")
+	if err := os.Mkdir(target, 0700); err != nil {
+		t.Fatal(err)
+	}
+	profile := "PS1='user-prompt> '\nPROMPT_COMMAND='printf \"audit-hook\\n\"'\nreadonly PROMPT_COMMAND\n"
+	if err := os.WriteFile(filepath.Join(home, ".bash_profile"), []byte(profile), 0600); err != nil {
+		t.Fatal(err)
+	}
+	shell, err := localshell.Start(localshell.Config{
+		Shell: "/bin/sh", Args: []string{"-c", integrationScript(program, "readonly-token"), "sh", program}, Dir: home,
+		Env:  []string{"HOME=" + home, "SHELL=" + program, "TMPDIR=" + runtimeDir, "LANG=en_US.UTF-8"},
+		Cols: 120, Rows: 24,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(shell.Close)
+	screen := term.New(120, 24, 0)
+	screen.SetPromptToken("readonly-token")
+	var folders []string
+	screen.SetCwdReport(func(cwd term.Cwd) { folders = append(folders, cwd.Path) })
+	output := ""
+	await := func(what string, done func() bool) {
+		t.Helper()
+		deadline := time.Now().Add(8 * time.Second)
+		for time.Now().Before(deadline) {
+			data := shell.Drain(nil)
+			output += string(data)
+			screen.Write(data)
+			if done() {
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		t.Fatalf("waiting for %s (folders %q): %q", what, folders, output)
+	}
+	reported := func(directory string) bool {
+		for _, folder := range folders {
+			if folder == directory || strings.HasSuffix(folder, directory) {
+				return true
+			}
+		}
+		return false
+	}
+	await("first folder", func() bool { return len(folders) > 0 })
+	shell.Write([]byte("cd 'opt dir'\r"))
+	await("folder after cd", func() bool { return reported("/opt dir") })
+	if !strings.Contains(output, "audit-hook\r\n") {
+		t.Fatalf("the readonly PROMPT_COMMAND stopped running: %q", output)
+	}
+	if strings.Contains(output, "readonly variable") {
+		t.Fatalf("the integration assigned to the readonly PROMPT_COMMAND: %q", output)
+	}
+}

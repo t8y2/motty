@@ -490,14 +490,33 @@ _motty_active=1
 # exported, su's shell would inherit the gate switched on and the wrapped
 # entries would run again. Keep it local whatever the profile asked for.
 export -n _motty_active
-case $(declare -p PROMPT_COMMAND 2>/dev/null) in
-    'declare -a '*) PROMPT_COMMAND=('${_motty_active:+__motty_command_finished}' "${PROMPT_COMMAND[@]}" '${_motty_active:+__motty_report}') ;;
-    *) PROMPT_COMMAND='${_motty_active:+__motty_command_finished}'$'\n'${PROMPT_COMMAND:+$PROMPT_COMMAND$'\n'}'${_motty_active:+__motty_report}' ;;
-esac
+# A site audit hook can make PROMPT_COMMAND readonly, and assigning to it then
+# fails whatever the profile asked for. The reports move into PS1's own command
+# substitution, which Bash expands for every prompt: it runs in a subshell, so it
+# can print the reports but keep no state between prompts. Command-start reports
+# need that state on Bash before 4.4, so only the prompt and folder are reported
+# there; PS0 still reports command starts where it exists.
+_motty_pc_flags=$(declare -p PROMPT_COMMAND 2>/dev/null)
+_motty_pc_flags=${_motty_pc_flags#declare -}
+_motty_pc_flags=${_motty_pc_flags%% *}
+_motty_ps1_flags=$(declare -p PS1 2>/dev/null)
+_motty_ps1_flags=${_motty_ps1_flags#declare -}
+_motty_ps1_flags=${_motty_ps1_flags%% *}
+if [[ $_motty_pc_flags == *r* ]]; then
+    if [[ $_motty_ps1_flags != *r* ]]; then
+        shopt -s promptvars
+        PS1='\[$(__motty_command_finished; __motty_report)\]'$PS1$_motty_prompt_marker
+    fi
+else
+    case $(declare -p PROMPT_COMMAND 2>/dev/null) in
+        'declare -a '*) PROMPT_COMMAND=('${_motty_active:+__motty_command_finished}' "${PROMPT_COMMAND[@]}" '${_motty_active:+__motty_report}') ;;
+        *) PROMPT_COMMAND='${_motty_active:+__motty_command_finished}'$'\n'${PROMPT_COMMAND:+$PROMPT_COMMAND$'\n'}'${_motty_active:+__motty_report}' ;;
+    esac
+fi
 if (( __MOTTY_FORCE__ == 0 && (BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4)) )); then
     PS0=$'\e]133;C__MOTTY_SUFFIX__\a'${PS0-}
     printf '\033]133;C__MOTTY_SUFFIX__\007'
-else
+elif [[ $_motty_pc_flags != *r* ]]; then
     # No PS0 before Bash 4.4: report the start of a command line from a DEBUG
     # trap, which runs before every simple command. PROMPT_COMMAND ends by
     # arming it, and the first command after that reports once and disarms.
@@ -535,7 +554,7 @@ else
     esac
 fi
 rm -rf -- "$_motty_runtime"
-unset _motty_runtime _motty_profile`
+unset _motty_runtime _motty_profile _motty_pc_flags _motty_ps1_flags`
 
 func zshIntegration(report string) string {
 	return inputEnvironmentFunction + homeReportFunction + commandFinishedFunction + report + zshIntegrationTail
