@@ -917,6 +917,9 @@ func (state *State) saveWithResultModeRecovery(flushSync, refreshConflict, notif
 		}
 	}()
 	defer func() {
+		if saveErr == nil && state.config != nil && state.pauseSave == 0 {
+			state.stopInlineSnippetSave()
+		}
 		if flushSync && saveErr == nil {
 			state.sshSyncFlush()
 		}

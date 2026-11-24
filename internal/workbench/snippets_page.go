@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
@@ -21,10 +22,10 @@ const (
 	snippetEditorMinWidth   = float32(360)
 	snippetTreeRowHeight    = float32(30)
 	snippetTreeIndent       = float32(16)
+	// snippetInlineSaveDelay coalesces rapid typing in the Snippets page's
+	// inline editor into one store write once typing settles.
+	snippetInlineSaveDelay = 400 * time.Millisecond
 )
-
-// enterKeyLabel is the keycap of a snippet that presses Enter after it is sent.
-const enterKeyLabel = "↵"
 
 // refreshSnippets updates derived display cells, group counts, tree rows,
 // selection, and the inline editor after the snippet list or language changes.
@@ -416,18 +417,6 @@ func (state *State) clickSnippetsPage(id gfx.ID) bool {
 	if state.clickSnippetInlineGroup(id) {
 		return true
 	}
-	if id.Scope() == hitSnippetSort {
-		column := item(id)
-		if column >= 0 && column < len(snippet{}.cells) && len(form.list) > 0 {
-			if form.sort.Column == column && form.sort.Direction == components.TableSortDescending {
-				form.sort = components.TableSortState{}
-			} else {
-				form.sort = form.sort.Toggle(column)
-			}
-			state.refreshSnippets()
-		}
-		return true
-	}
 	if id.Scope() == hitSnippetFolderMore {
 		token := item(id)
 		for _, row := range form.treeRows {
@@ -470,6 +459,7 @@ func (state *State) clickSnippetsPage(id gfx.ID) bool {
 			form.treeCollapsed = !form.treeCollapsed
 		}
 	case hitSnippetTreeSearchToggle:
+		state.flushInlineSnippetSave()
 		form.treeSearchOpen = !form.treeSearchOpen
 		if form.treeSearchOpen {
 			form.treeFocus = hitSnippetTreeSearch
@@ -508,6 +498,7 @@ func (state *State) clickSnippetsPage(id gfx.ID) bool {
 			state.save()
 		}
 	case hitSnippetInlineShortcut:
+		state.flushInlineSnippetSave()
 		form.inline.capturing = !form.inline.capturing
 		form.inline.error = ""
 		state.refreshInlineShortcutLabel()
@@ -672,9 +663,13 @@ func (state *State) snippetTreeChanges() {
 	if i, ok := form.tree.Chosen(); ok && i >= 0 && i < len(rows) {
 		e := rows[i]
 		if e.folder {
+			state.flushInlineSnippetSave()
 			form.selectedFolder = e.group
 			state.toggleSnippetTreeFolder(e.groupKey)
 		} else if e.snippet >= 0 && e.snippet < len(form.list) {
+			if e.snippet != form.selected {
+				state.flushInlineSnippetSave()
+			}
 			form.selected = e.snippet
 			form.selectedFolder = form.list[e.snippet].Group
 			form.treeDrawer = false
@@ -869,6 +864,12 @@ func (state *State) declareSnippetInlineEditor(c ui.C, width float32, narrow boo
 	if form.selected < 0 || form.selected >= len(form.list) {
 		return
 	}
+	focused := c.Canvas().Focused()
+	prevFocus := inline.lastFocus
+	inline.lastFocus = focused
+	if inline.dirty && (prevFocus == hitSnippetInlineName || prevFocus == hitSnippetInlineCommand) && focused != prevFocus {
+		state.flushInlineSnippetSave()
+	}
 	entry := &form.list[form.selected]
 	condensed := width < 520
 	sendWidth, sendIcon := toolbarButtonLayout(c.Canvas(), m.SnippetSend, iconPlay, iconPlay, condensed)
@@ -897,7 +898,7 @@ func (state *State) declareSnippetInlineEditor(c ui.C, width float32, narrow boo
 			ui.FormField(c, &inline.nameForm, m.SnippetName).FillWidth().Height(dialogRowHeight(c.Theme())).Children(func() {
 				field := ui.TextFieldID(c, hitSnippetInlineName, &inline.nameField, m.SnippetName, m.SnippetNamePlaceholder)
 				if field.Changed() {
-					c.After(state.applyInlineSnippetEdits)
+					state.applyInlineSnippetEdits()
 				}
 			})
 
@@ -913,7 +914,7 @@ func (state *State) declareSnippetInlineEditor(c ui.C, width float32, narrow boo
 				ui.Text(c, m.SnippetCommand).FontSize(theme.Metrics.FontSizeM).Weight(gfx.WeightMedium).Color(theme.Foreground).LineHeight(theme.Metrics.FontSizeM + 4).Ellipsis().LabelFor(hitSnippetInlineCommand)
 				area := ui.TextAreaID(c, hitSnippetInlineCommand, &inline.commandArea.input, m.SnippetCommand, m.SnippetCommandPlaceholder).FillWidth().Grow(1)
 				if area.Changed() {
-					c.After(state.applyInlineSnippetEdits)
+					state.applyInlineSnippetEdits()
 				}
 			})
 
@@ -1067,8 +1068,9 @@ func (inline *snippetInlineEditor) abandonOther(target gfx.ID) {
 	}
 }
 
-// applyInlineSnippetEdits validates and immediately persists text edits made in
-// the Snippets page's right-pane editor.
+// applyInlineSnippetEdits validates and applies text edits made in the Snippets
+// page's right-pane editor in memory, coalescing the store write until typing
+// settles, the field blurs, or the selection changes.
 func (state *State) applyInlineSnippetEdits() {
 	form, m := &state.snippets, state.messages.Tools
 	inline := &form.inline
@@ -1097,6 +1099,54 @@ func (state *State) applyInlineSnippetEdits() {
 	form.list[form.selected] = candidate
 	inline.loadedSnap = candidate
 	state.refreshSnippets()
+	inline.dirty = true
+	state.scheduleInlineSnippetSave()
+}
+
+// scheduleInlineSnippetSave writes inline editor text edits once rapid typing
+// settles. Each edit re-arms the timer so a typing burst produces one store
+// write. Edits are already in memory, so flush/Close saves carry them at once.
+func (state *State) scheduleInlineSnippetSave() {
+	inline := &state.snippets.inline
+	if inline.saveTimer != nil {
+		inline.saveTimer.Stop()
+	}
+	inline.saveSeq++
+	seq := inline.saveSeq
+	inline.saveTimer = time.AfterFunc(snippetInlineSaveDelay, func() {
+		state.aiPost(func(state *State) {
+			if state.snippets.inline.saveSeq != seq {
+				return
+			}
+			state.snippets.inline.saveTimer = nil
+			if !state.closed && state.snippets.inline.dirty {
+				state.flushInlineSnippetSave()
+			}
+		})
+	})
+}
+
+// stopInlineSnippetSave cancels any pending coalesced inline save and clears
+// the dirty flag.
+func (state *State) stopInlineSnippetSave() {
+	inline := &state.snippets.inline
+	if inline.saveTimer != nil {
+		inline.saveTimer.Stop()
+		inline.saveTimer = nil
+	}
+	inline.saveSeq++
+	inline.dirty = false
+}
+
+// flushInlineSnippetSave persists pending inline editor edits immediately when
+// the user leaves the field, switches selection, or triggers an action.
+func (state *State) flushInlineSnippetSave() {
+	inline := &state.snippets.inline
+	if !inline.dirty {
+		state.stopInlineSnippetSave()
+		return
+	}
+	state.stopInlineSnippetSave()
 	state.save()
 }
 

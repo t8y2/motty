@@ -7,9 +7,9 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 )
 
 // "cd " and "ssh " are sent to be finished by hand: the space the user typed
@@ -84,7 +84,7 @@ func addTestSnippets(state *State, entries ...snippet) {
 	state.refreshSnippets()
 }
 
-func TestSnippetManualOrderPersistsThroughSortingAndFiltering(t *testing.T) {
+func TestSnippetManualOrderPersistsThroughTreeReorder(t *testing.T) {
 	options := freshOptions(t)
 	state := newTestState(t, options)
 	state.activeSection = sectionSnippets
@@ -93,11 +93,10 @@ func TestSnippetManualOrderPersistsThroughSortingAndFiltering(t *testing.T) {
 		snippet{Name: "alpha", Command: "echo a", Group: "dev"},
 		snippet{Name: "beta", Command: "echo b", Group: "ops"},
 	)
-	state.Click(hitSnippetSort.At(0))
 	state.snippets.filter = snippetFilter{group: "ops"}
 	state.refreshSnippets()
-	if !state.moveSnippet(2, -1) || state.snippets.sort.Direction != 0 || state.snippets.selected != 0 {
-		t.Fatalf("move in filtered table: visible=%v selected=%d sort=%+v", state.snippets.visible, state.snippets.selected, state.snippets.sort)
+	if !state.moveSnippet(2, -1) || state.snippets.selected != 0 {
+		t.Fatalf("move in filtered list: visible=%v selected=%d", state.snippets.visible, state.snippets.selected)
 	}
 	if got := []string{state.snippets.list[0].Name, state.snippets.list[1].Name, state.snippets.list[2].Name}; !slices.Equal(got, []string{"beta", "alpha", "zulu"}) {
 		t.Fatalf("reordered list = %v", got)
@@ -109,17 +108,17 @@ func TestSnippetManualOrderPersistsThroughSortingAndFiltering(t *testing.T) {
 	if state.snippets.tree.RowID(0).IsZero() {
 		t.Fatal("directory tree did not declare its rows")
 	}
-	if !state.moveSnippetTo(0, 2) || state.snippets.list[1].Name != "beta" {
-		t.Fatalf("reorder: order=%v", state.snippets.list)
-	}
-	if err := state.saveWithResult(); err != nil {
-		t.Fatalf("persist reorder: %v", err)
+	// Tree rows: dev(0), alpha(1), ops(2), beta(3), zulu(4).
+	// Dragging zulu before beta reorders within ops and persists across reloads.
+	state.dropSnippetTreeRow(ui.TreeMove{From: 4, To: 3, Where: ui.TreeDropBefore})
+	if got := []string{state.snippets.list[0].Name, state.snippets.list[1].Name, state.snippets.list[2].Name}; !slices.Equal(got, []string{"zulu", "beta", "alpha"}) {
+		t.Fatalf("tree reorder: order=%v", got)
 	}
 	if !slices.Equal(state.snippets.visible, []int{0, 1, 2}) {
 		t.Fatalf("manual order visible = %v", state.snippets.visible)
 	}
 	loaded := newTestState(t, options)
-	if got := []string{loaded.snippets.list[0].Name, loaded.snippets.list[1].Name, loaded.snippets.list[2].Name}; !slices.Equal(got, []string{"alpha", "beta", "zulu"}) {
+	if got := []string{loaded.snippets.list[0].Name, loaded.snippets.list[1].Name, loaded.snippets.list[2].Name}; !slices.Equal(got, []string{"zulu", "beta", "alpha"}) {
 		t.Fatalf("restored order = %v", got)
 	}
 }
@@ -161,41 +160,6 @@ func BenchmarkPaintSnippetsPage(b *testing.B) {
 	for b.Loop() {
 		canvas.Reset()
 		state.Paint(&canvas, size)
-	}
-}
-
-func TestSnippetTableSortKeepsActionsOnTheirOriginalRows(t *testing.T) {
-	state := newTestState(t, freshOptions(t))
-	state.activeSection = sectionSnippets
-	addTestSnippets(state,
-		snippet{Name: "zeta", Command: "echo z", Group: "Ops"},
-		snippet{Name: "alpha", Command: "echo a", Group: "dev"},
-		snippet{Name: "beta", Command: "echo b", Group: "Ops"},
-	)
-	form := &state.snippets
-	form.selected = 0
-	state.Click(hitSnippetSort.At(0))
-	if got := form.visible; !slices.Equal(got, []int{1, 2, 0}) || form.selected != 0 {
-		t.Fatalf("ascending names: visible=%v selected=%d", got, form.selected)
-	}
-	state.Click(hitSnippetSort.At(0))
-	if got := form.visible; !slices.Equal(got, []int{0, 2, 1}) || form.selected != 0 {
-		t.Fatalf("descending names: visible=%v selected=%d", got, form.selected)
-	}
-	state.Click(hitSnippetSort.At(0))
-	if got := form.visible; !slices.Equal(got, []int{0, 1, 2}) || form.sort.Direction != components.TableSortNone {
-		t.Fatalf("restored manual order: visible=%v sort=%+v", got, form.sort)
-	}
-	state.Click(hitSnippetSort.At(0))
-	state.Click(hitSnippetSort.At(0))
-	form.filter = snippetFilter{group: "Ops"}
-	state.refreshSnippets()
-	if got := form.visible; !slices.Equal(got, []int{0, 2}) {
-		t.Fatalf("filtered descending names: %v", got)
-	}
-	state.Click(hitSnippetSort.At(3))
-	if got := form.visible; !slices.Equal(got, []int{2, 0}) || form.list[form.selected].Name != "zeta" {
-		t.Fatalf("ascending commands: visible=%v selected=%d", got, form.selected)
 	}
 }
 

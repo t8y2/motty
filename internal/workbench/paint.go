@@ -156,6 +156,12 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	defer state.devEndPaint(canvas, size)
 	canvas.SetTree(&tree)
 	state.autosaveNotes(canvas)
+	if state.activeSection != sectionSnippets {
+		state.snippets.inline.lastFocus = gfx.ID{}
+		if state.snippets.inline.dirty {
+			state.flushInlineSnippetSave()
+		}
+	}
 	state.syncNoteWindows()
 	state.workspaceCardRegions = state.workspaceCardRegions[:0]
 	state.pixelScale = canvas.PixelScale()

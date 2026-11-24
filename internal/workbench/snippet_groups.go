@@ -7,7 +7,6 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
-	"github.com/vivaui/viva/ui"
 )
 
 // A snippet may belong to one group, a name or slash-separated path
@@ -20,8 +19,6 @@ import (
 const maxSnippetGroup = 512
 
 var (
-	hitSnippetFilter = tree.ID(snippetsHits, "snippet-filter")
-
 	hitSnippetGroup        = tree.ID(snippetsHits, "snippet-group")
 	hitSnippetGroupTrigger = tree.ID(snippetsHits, "snippet-group-trigger")
 	hitSnippetGroupClear   = tree.ID(snippetsHits, "snippet-group-clear")
@@ -260,95 +257,17 @@ func (form *snippetsUI) refreshSnippetGroups() {
 			form.visible = append(form.visible, index)
 		}
 	}
-	if form.sort.Direction != components.TableSortNone {
-		column := form.sort.Column
-		slices.SortStableFunc(form.visible, func(a, b int) int {
-			comparison := strings.Compare(strings.ToLower(form.list[a].cells[column]), strings.ToLower(form.list[b].cells[column]))
-			if form.sort.Direction == components.TableSortDescending {
-				return -comparison
-			}
-			return comparison
-		})
-	}
 	if len(form.visible) > 0 && !slices.Contains(form.visible, form.selected) {
 		form.selected = form.visible[0]
 	}
 }
 
 // showSnippet makes the page show the snippet at index, which the filter may
-// have hidden: a snippet just saved must not vanish from the table.
+// have hidden: a snippet just saved must not vanish from the tree.
 func (form *snippetsUI) showSnippet(index int) {
 	if index >= 0 && index < len(form.list) && !form.filter.matches(&form.list[index]) {
 		form.filter = snippetFilter{}
 	}
-}
-
-// The page's group filter is a Select over the groups there are: a negative
-// choice is all groups or the ones in none, and a group's index is itself.
-const (
-	snippetFilterAllChoice       = -2
-	snippetFilterUngroupedChoice = -1
-)
-
-// declareSnippetFilter declares the select that narrows the table to one group.
-func (state *State) declareSnippetFilter(c ui.C) ui.Box {
-	form := &state.snippets
-	label := state.messages.FieldGroup
-	choices := append(form.filterChoices[:0], snippetFilterAllChoice)
-	if form.hasUngrouped {
-		choices = append(choices, snippetFilterUngroupedChoice)
-	}
-	for index := range form.groups {
-		choices = append(choices, index)
-	}
-	form.filterChoices = choices
-	form.filterChoice = snippetFilterAllChoice
-	switch {
-	case form.filter.ungrouped:
-		form.filterChoice = snippetFilterUngroupedChoice
-	case form.filter.group != "":
-		for index, group := range form.groups {
-			if sameSnippetGroup(group, form.filter.group) {
-				form.filterChoice = index
-			}
-		}
-	}
-	selector := ui.Select(c, &form.filterChoice, choices, state.snippetFilterChoiceLabel).
-		Label(label)
-	if selector.Changed() {
-		choice := form.filterChoice
-		c.After(func() { state.chooseSnippetFilter(choice) })
-	}
-	return selector
-}
-
-// snippetFilterChoiceLabel names one choice of the filter.
-func (state *State) snippetFilterChoiceLabel(choice int) string {
-	form, m := &state.snippets, state.messages.Tools
-	switch {
-	case choice == snippetFilterAllChoice:
-		return m.SnippetFilterAll
-	case choice == snippetFilterUngroupedChoice:
-		return m.SnippetFilterNone
-	case choice >= 0 && choice < len(form.groups):
-		return form.groups[choice]
-	}
-	return ""
-}
-
-// chooseSnippetFilter narrows the page to the chosen group, once the paint that
-// delivered the choice is over.
-func (state *State) chooseSnippetFilter(choice int) {
-	form := &state.snippets
-	switch {
-	case choice == snippetFilterUngroupedChoice:
-		form.filter = snippetFilter{ungrouped: true}
-	case choice >= 0 && choice < len(form.groups):
-		form.filter = snippetFilter{group: form.groups[choice]}
-	default:
-		form.filter = snippetFilter{}
-	}
-	state.refreshSnippets()
 }
 
 // The group field of the dialog: pick one of the groups, or type a new one.

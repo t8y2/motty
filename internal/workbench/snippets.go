@@ -3,6 +3,7 @@ package workbench
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/field"
@@ -79,11 +80,11 @@ var (
 	hitTerminalSnippets = tree.ID(snippetsHits, "terminal-snippets")
 
 	// Tree panel controls on the Snippets page.
-	hitSnippetTreeToggle       = tree.ID(snippetsHits, "snippet-tree-toggle")
-	hitSnippetTreeSearchToggle = tree.ID(snippetsHits, "snippet-tree-search-toggle")
-	hitSnippetTreeSearch       = tree.ID(snippetsHits, "snippet-tree-search")
-	hitSnippetTreeExpandAll    = tree.ID(snippetsHits, "snippet-tree-expand-all")
-	hitSnippetTreeScroll       = tree.ID(snippetsHits, "snippet-tree-scroll")
+	hitSnippetTreeToggle         = tree.ID(snippetsHits, "snippet-tree-toggle")
+	hitSnippetTreeSearchToggle   = tree.ID(snippetsHits, "snippet-tree-search-toggle")
+	hitSnippetTreeSearch         = tree.ID(snippetsHits, "snippet-tree-search")
+	hitSnippetTreeExpandAll      = tree.ID(snippetsHits, "snippet-tree-expand-all")
+	hitSnippetTreeScroll         = tree.ID(snippetsHits, "snippet-tree-scroll")
 	hitSnippetFolderMenuDismiss  = tree.ID(snippetsHits, "snippet-folder-menu-dismiss")
 	hitSnippetFolderMenuAdd      = tree.ID(snippetsHits, "snippet-folder-menu-add")
 	hitSnippetFolderMenuNewChild = tree.ID(snippetsHits, "snippet-folder-menu-new-child")
@@ -109,30 +110,23 @@ var (
 )
 
 var (
-	hitSnippetExpandList         = tree.Sub(snippetsHits, tree.Name("snippet-expand")) // + snippet index
-	hitSnippetSort               = tree.Sub(snippetsHits, tree.Name("snippet-sort"))   // + column index
-	hitSnippetSendList           = tree.Sub(snippetsHits, tree.Name("snippet-send"))   // the command palette's entries
-	hitSnippetPickList           = tree.Sub(snippetsHits, tree.Name("snippet-pick"))   // + session ID: the terminals to send to
+	hitSnippetSendList           = tree.Sub(snippetsHits, tree.Name("snippet-send")) // the command palette's entries
+	hitSnippetPickList           = tree.Sub(snippetsHits, tree.Name("snippet-pick")) // + session ID: the terminals to send to
 	hitSnippetFolderMore         = tree.Sub(snippetsHits, tree.Name("snippet-folder-more"))
 	hitSnippetInlineGroupChoices = tree.Sub(snippetsHits, tree.Name("snippet-inline-group-option"))
-	// hitSnippetHoverCard is the preview card the pointer rests on to keep open.
-	hitSnippetHoverCard = tree.ID(snippetsHits, "snippet-hover-card")
 )
 
 type snippetsUI struct {
 	list []snippet
 
-	// The page's group filter: the groups there are, how many snippets each
-	// names, the list indices it shows in the order it shows them, and the
-	// integer choices its Select is over.
-	customGroups  []string
-	groups        []string
-	groupCounts   map[string]int
-	hasUngrouped  bool
-	visible       []int
-	filter        snippetFilter
-	filterChoice  int
-	filterChoices []int
+	// The page's group state: the groups there are, how many snippets each
+	// names, and the list indices visible under the active filter/search.
+	customGroups []string
+	groups       []string
+	groupCounts  map[string]int
+	hasUngrouped bool
+	visible      []int
+	filter       snippetFilter
 
 	// The dialog: which snippet it edits (-1 adds one) and the fields.
 	editing     int
@@ -156,7 +150,6 @@ type snippetsUI struct {
 
 	// The page: the selected snippet and the count under the tree.
 	selected  int
-	sort      components.TableSortState
 	countText string
 	// sendAt is where the menu of terminals opens from the Send button.
 	sendAt gfx.Point
@@ -238,6 +231,10 @@ type snippetInlineEditor struct {
 	error       string
 	breadcrumb  string
 	shortcutLbl string
+	dirty       bool
+	saveTimer   *time.Timer
+	saveSeq     uint64
+	lastFocus   gfx.ID
 }
 
 // resetSnippetPreview resets transient previews/menus after the list changes.
@@ -357,6 +354,7 @@ func (state *State) openSnippetDialog(index int) {
 }
 
 func (state *State) openSnippetDialogWithGroup(index int, defaultGroup string) {
+	state.flushInlineSnippetSave()
 	form := &state.snippets
 	form.editing = index
 	form.name, form.command = text.Editor{}, text.Editor{}
@@ -532,6 +530,7 @@ func (state *State) deleteSnippet(index int) {
 // openSnippetDelete asks before deleting a snippet: a saved command may be the
 // only copy the user has.
 func (state *State) openSnippetDelete(index int) {
+	state.flushInlineSnippetSave()
 	if index < 0 || index >= len(state.snippets.list) {
 		return
 	}
@@ -574,53 +573,10 @@ func (state *State) moveSnippet(index, direction int) bool {
 	form := &state.snippets
 	form.list[index], form.list[target] = form.list[target], form.list[index]
 	form.selected = target
-	form.sort = components.TableSortState{}
 	form.resetSnippetPreview()
 	state.refreshSnippets()
 	state.save()
 	return true
-}
-
-// moveSnippetTo puts the snippet at source before position to in the manual
-// order, as ListState.Reorder says: to is the row it goes before, len(list) for
-// the end. It is the page's reorder callback.
-func (state *State) moveSnippetTo(source, to int) bool {
-	form := &state.snippets
-	n := len(form.list)
-	if source < 0 || source >= n || to < 0 || to > n || source == to ||
-		form.sort.Direction != components.TableSortNone || !form.filter.all() {
-		return false
-	}
-	entry := form.list[source]
-	if source < to {
-		to--
-		if to == source {
-			return false
-		}
-		copy(form.list[source:to], form.list[source+1:to+1])
-	} else {
-		copy(form.list[to+1:source+1], form.list[to:source])
-	}
-	form.list[to] = entry
-	form.selected = to
-	form.resetSnippetPreview()
-	state.refreshSnippets()
-	state.save()
-	return true
-}
-
-// moveSnippetRows is the ListState.Reorder callback: it moves the rows the list
-// carries, given by their place in visible, to before place to.
-func (state *State) moveSnippetRows(rows []int, to int) {
-	form := &state.snippets
-	if len(rows) == 0 || form.sort.Direction != components.TableSortNone || !form.filter.all() {
-		return
-	}
-	source := rows[0]
-	if source < 0 || source >= len(form.visible) {
-		return
-	}
-	state.moveSnippetTo(form.visible[source], to)
 }
 
 // sendSnippet types a snippet into the active terminal, and into the other panes
@@ -679,6 +635,7 @@ func (state *State) sendSnippetTo(index int, session *Session) bool {
 // terminal it went to is shown; when nothing can be sent the page stays, with the
 // reason in a global notice.
 func (state *State) sendSnippetFromPage(index int, at gfx.Point) {
+	state.flushInlineSnippetSave()
 	if index < 0 || index >= len(state.snippets.list) {
 		return
 	}

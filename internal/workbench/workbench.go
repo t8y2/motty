@@ -1185,6 +1185,7 @@ func (state *State) Close() {
 	// The window's save above already carried any applied font size, so a wheel
 	// save still waiting is dropped rather than fired after the store closes.
 	state.stopTerminalZoomSave()
+	state.stopInlineSnippetSave()
 	state.closeAI()
 	state.closeHistory()
 	state.stopSyncTimer()

@@ -4,6 +4,7 @@ package workbench
 
 import (
 	"testing"
+	"time"
 
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
@@ -192,5 +193,103 @@ func TestSnippetsTreeBlankRightClickCreatesPersistedEmptyGroup(t *testing.T) {
 	state.deleteSnippetGroup("Ops")
 	if len(state.snippets.groups) != 0 {
 		t.Fatalf("groups after delete = %v", state.snippets.groups)
+	}
+}
+
+func TestSnippetsInlineEditorCoalescesSavesAndFlushesOnBlurAndSwitch(t *testing.T) {
+	options := freshOptions(t)
+	state := newTestState(t, options)
+	state.snippets.list = []snippet{
+		{Name: "First", Group: "Ops", Command: "echo one", Run: true},
+		{Name: "Second", Group: "Ops", Command: "echo two", Run: true},
+	}
+	state.refreshSnippets()
+	state.save()
+	state.activeSection = sectionSnippets
+
+	var canvas gfx.Canvas
+	canvas.Reset()
+	canvas.SetInteraction(gfx.ID{}, gfx.ID{}, hitSnippetInlineName, false)
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+
+	// Rapid keystrokes update memory immediately without writing to disk on each key.
+	for _, suffix := range []string{" a", "b", "c"} {
+		state.snippets.inline.name.Insert(suffix)
+		state.applyInlineSnippetEdits()
+	}
+	if got := state.snippets.list[0].Name; got != "First abc" {
+		t.Fatalf("in-memory name = %q, want %q", got, "First abc")
+	}
+	if !state.snippets.inline.dirty || state.snippets.inline.saveTimer == nil {
+		t.Fatalf("expected dirty inline state with pending timer, got dirty=%v timer=%v", state.snippets.inline.dirty, state.snippets.inline.saveTimer)
+	}
+	if reloaded := newTestState(t, options); reloaded.snippets.list[0].Name != "First" {
+		t.Fatalf("inline edit wrote to store mid-typing: got %q, want %q", reloaded.snippets.list[0].Name, "First")
+	}
+
+	// Blurring the inline editor flushes the pending edit immediately.
+	canvas.Reset()
+	canvas.SetInteraction(gfx.ID{}, gfx.ID{}, gfx.ID{}, false)
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	if state.snippets.inline.dirty || state.snippets.inline.saveTimer != nil {
+		t.Fatalf("blur did not flush inline save: dirty=%v timer=%v", state.snippets.inline.dirty, state.snippets.inline.saveTimer)
+	}
+	if reloaded := newTestState(t, options); reloaded.snippets.list[0].Name != "First abc" {
+		t.Fatalf("reloaded name after blur = %q, want %q", reloaded.snippets.list[0].Name, "First abc")
+	}
+
+	// Switching selection in the tree flushes pending edits before loading the next snippet.
+	state.snippets.inline.command.Insert(" && true")
+	state.applyInlineSnippetEdits()
+	if !state.snippets.inline.dirty {
+		t.Fatal("expected dirty state after command edit")
+	}
+	if reloaded := newTestState(t, options); reloaded.snippets.list[0].Command != "echo one" {
+		t.Fatalf("command edit wrote before flush: got %q", reloaded.snippets.list[0].Command)
+	}
+	secondRow := -1
+	for i, row := range state.snippets.treeRows {
+		if !row.folder && row.snippet == 1 {
+			secondRow = i
+			break
+		}
+	}
+	if secondRow < 0 {
+		t.Fatalf("second snippet row not found in %+v", state.snippets.treeRows)
+	}
+	rowID := state.snippets.tree.RowID(secondRow)
+	canvas.Reset()
+	canvas.BeginEventPass(rowID, gfx.ClickInfo{})
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	canvas.EndEventPass()
+	if state.snippets.selected != 1 {
+		t.Fatalf("clicking second row left selected=%d, want 1", state.snippets.selected)
+	}
+	if state.snippets.inline.dirty || state.snippets.inline.saveTimer != nil {
+		t.Fatalf("selection switch did not flush inline save: dirty=%v timer=%v", state.snippets.inline.dirty, state.snippets.inline.saveTimer)
+	}
+	if reloaded := newTestState(t, options); reloaded.snippets.list[0].Command != "echo one && true" {
+		t.Fatalf("reloaded command after switch = %q, want %q", reloaded.snippets.list[0].Command, "echo one && true")
+	}
+
+	// Settling without blur or selection switch writes once via the coalesced timer.
+	state.snippets.inline.name.Insert(" settled")
+	state.applyInlineSnippetEdits()
+	if reloaded := newTestState(t, options); reloaded.snippets.list[1].Name != "Second" {
+		t.Fatalf("second snippet wrote before debounce settled: got %q", reloaded.snippets.list[1].Name)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for state.snippets.inline.saveTimer != nil {
+		if time.Now().After(deadline) {
+			t.Fatal("coalesced inline snippet save timer did not fire")
+		}
+		state.Wake()
+		time.Sleep(20 * time.Millisecond)
+	}
+	if state.snippets.inline.dirty {
+		t.Fatal("dirty flag remained set after coalesced save")
+	}
+	if reloaded := newTestState(t, options); reloaded.snippets.list[1].Name != "Second settled" {
+		t.Fatalf("reloaded name after debounce = %q, want %q", reloaded.snippets.list[1].Name, "Second settled")
 	}
 }
