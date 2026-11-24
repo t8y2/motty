@@ -389,6 +389,7 @@ func (state *State) submitHostDialog() {
 		}
 		if commitErr != nil {
 			rollbackAgentAccess()
+			state.editor.vaultKeyLost = errors.Is(commitErr, vault.ErrKeyLost)
 			var saveErr *hostConfigCommitError
 			switch {
 			case errors.As(commitErr, &saveErr):
@@ -401,6 +402,7 @@ func (state *State) submitHostDialog() {
 			}
 			return
 		}
+		state.editor.vaultKeyLost = false
 		// The secret is already in the vault transaction. Say so only after
 		// that call has released the lock, and in the same order as a new host.
 		state.noteOTPCommit(candidate)
@@ -438,6 +440,7 @@ func (state *State) submitHostDialog() {
 		}
 	}
 	if commitErr != nil {
+		state.editor.vaultKeyLost = errors.Is(commitErr, vault.ErrKeyLost)
 		var saveErr *hostConfigCommitError
 		if errors.As(commitErr, &saveErr) {
 			state.dialogError = fmt.Sprintf(state.messages.HostSaveFailedFmt, commitErr)
@@ -448,6 +451,7 @@ func (state *State) submitHostDialog() {
 		}
 		return
 	}
+	state.editor.vaultKeyLost = false
 	host := candidate
 	state.editor.password, state.editor.passphrase = text.Editor{}, text.Editor{}
 	state.editor.proxyPassword = ""
@@ -732,6 +736,10 @@ func (state *State) appendStatusNote(note string) {
 
 func (state *State) hostPasswordSaveError(err error) string {
 	return fmt.Sprintf(state.messages.VaultSaveFailedFmt, state.vaultErrorText(err))
+}
+
+func (state *State) isHostDialogKeyLost() bool {
+	return state.dialogError != "" && (state.editor.vaultKeyLost || state.dialogError == state.hostPasswordSaveError(vault.ErrKeyLost))
 }
 
 func (state *State) hostIndex(id uint32) int {

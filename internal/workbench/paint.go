@@ -3208,6 +3208,13 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 				if state.dialogError != "" {
 					// The serial line's error is long: up to two lines.
 					ui.Paragraph(c, state.dialogError, 2).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(16)
+					if state.isHostDialogKeyLost() {
+						ui.Row(c).Height(30).Items(ui.Center).MarginSides(8, 0, 0, 0).Children(func() {
+							ui.Button(c, state.messages.SettingsVaultForgetAll).Small().
+								DestructiveOutline().
+								Hit(hitDialogVaultForget, state.messages.SettingsVaultForgetAll)
+						})
+					}
 				}
 				// The choices are declared after the rows they sit in: the frame that
 				// delivers a click lays out what it did before it, the choice writes

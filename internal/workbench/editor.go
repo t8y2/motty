@@ -35,6 +35,7 @@ type hostEditor struct {
 	// passwordSaved says the password field was filled from the vault when the
 	// dialog opened, so that emptying it means taking the password away.
 	passwordSaved bool
+	vaultKeyLost  bool
 	group         text.Editor
 	groupPicker   hostGroupPicker
 	tags          text.Editor
@@ -333,6 +334,7 @@ func (editor *hostEditor) load(host Host) {
 	editor.address = text.Editor{}
 	editor.user = text.Editor{}
 	editor.password, editor.passphrase, editor.passphraseFor, editor.passwordSaved = text.Editor{}, text.Editor{}, "", false
+	editor.vaultKeyLost = false
 	editor.group = text.Editor{}
 	editor.tags = text.Editor{}
 	editor.tagPicker = hostTagPicker{}
@@ -484,6 +486,7 @@ func (editor *hostEditor) reset() {
 	editor.address = text.Editor{}
 	editor.user = text.Editor{}
 	editor.password, editor.passphrase, editor.passphraseFor, editor.passwordSaved = text.Editor{}, text.Editor{}, "", false
+	editor.vaultKeyLost = false
 	editor.group = text.Editor{}
 	editor.tags = text.Editor{}
 	editor.tagPicker = hostTagPicker{}

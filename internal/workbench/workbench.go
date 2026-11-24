@@ -75,6 +75,7 @@ var (
 	hitDialogClose             = tree.ID(shellHits, "dialog-close")
 	hitDialogCancel            = tree.ID(shellHits, "dialog-cancel")
 	hitDialogSubmit            = tree.ID(shellHits, "dialog-submit")
+	hitDialogVaultForget       = tree.ID(shellHits, "dialog-vault-forget")
 	hitDialogLabel             = tree.ID(shellHits, "dialog-label")
 	hitDialogAddress           = tree.ID(shellHits, "dialog-address")
 	hitDialogUser              = tree.ID(shellHits, "dialog-user")
@@ -2456,6 +2457,8 @@ func (state *State) clickHostDialog(id gfx.ID) {
 		state.restoreAfterHostDialog()
 	case hitDialogSubmit:
 		state.submitHostDialog()
+	case hitDialogVaultForget:
+		state.openVaultForgetFromHostDialog()
 	case hitDialogTest:
 		state.startHostTest()
 	case hitHostProxyConfigure:
