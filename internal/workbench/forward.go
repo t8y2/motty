@@ -58,13 +58,9 @@ type forwardRecord struct {
 	// exhausted its attempts while this Resume forward was waiting, so a later
 	// network recovery that revives that tab re-attaches the forward too.
 	reviveSessionID uint32
-	// reviveTunnel reports that this Resume forward was stopped when its
-	// background tunnel exhausted its reconnect attempts, so a later network
-	// recovery starts a fresh tunnel for it.
-	reviveTunnel bool
-	lastError    string
-	detail       string
-	cells        [5]string
+	lastError       string
+	detail          string
+	cells           [5]string
 }
 
 type forwardStartResult struct {
@@ -305,7 +301,6 @@ func (forward *forwardRecord) stop() {
 	forward.starting = false
 	forward.startID = 0
 	forward.reviveSessionID = 0
-	forward.reviveTunnel = false
 }
 
 // hold closes what the forward runs and leaves it waiting for its session to
@@ -763,7 +758,6 @@ func (state *State) toggleForwardByID(id uint32) {
 		return
 	}
 	forward.reviveSessionID = 0
-	forward.reviveTunnel = false
 	host, ok := state.forwardHost(*forward)
 	if !ok {
 		forward.lastError = state.messages.ForwardHostUnavailable
@@ -851,7 +845,6 @@ func (state *State) failForward(forward *forwardRecord, message string) {
 	forward.starting = false
 	forward.startID = 0
 	forward.reviveSessionID = 0
-	forward.reviveTunnel = false
 	forward.lastError = message
 	forward.refresh(state.messages, state.forwardHostAvailable(*forward))
 	state.releaseForwardTunnel(tunnelID)
@@ -861,7 +854,6 @@ func (state *State) failForward(forward *forwardRecord, message string) {
 func (state *State) startForward(forward *forwardRecord, session *Session) {
 	forward.pending = false
 	forward.reviveSessionID = 0
-	forward.reviveTunnel = false
 	forward.lastError = ""
 	if message := state.forwardPortConflict(*forward); message != "" {
 		state.failForward(forward, message)
@@ -998,7 +990,6 @@ func (state *State) clearRevivingForwardsForSession(sessionID uint32) {
 func (state *State) clearAllRevivingForwards() {
 	for index := range state.forwards {
 		state.forwards[index].reviveSessionID = 0
-		state.forwards[index].reviveTunnel = false
 	}
 }
 
@@ -1016,46 +1007,6 @@ func (state *State) reviveSessionForwards(sessionID uint32) {
 		forward.pending = true
 		forward.lastError = ""
 		forward.refresh(state.messages, state.forwardHostAvailable(*forward))
-	}
-}
-
-// reviveTunnelForwards restarts Resume forwards whose background tunnel gave up
-// while the network was down, now that the network has returned.
-func (state *State) reviveTunnelForwards() {
-	if state.connectionReconnect == reconnectOff {
-		return
-	}
-	for index := range state.forwards {
-		forward := &state.forwards[index]
-		if !forward.reviveTunnel || !forward.Resume ||
-			forward.runner != nil || forward.pending || forward.starting {
-			continue
-		}
-		forward.reviveTunnel = false
-		host, ok := state.forwardHost(*forward)
-		if !ok {
-			continue
-		}
-		if session := state.connectedSessionForHost(host); session != nil {
-			state.startForward(forward, session)
-			continue
-		}
-		if tunnel := state.connectedForwardTunnel(host); tunnel != nil {
-			state.startForward(forward, &tunnel.session)
-			continue
-		}
-		tunnel := state.forwardTunnelForHost(host)
-		fresh := tunnel == nil
-		if fresh {
-			tunnel = state.newForwardTunnel(host)
-		}
-		forward.pending = true
-		forward.lastError = ""
-		forward.sessionID = tunnel.id
-		forward.refresh(state.messages, true)
-		if fresh {
-			state.dialForwardTunnel(tunnel)
-		}
 	}
 }
 

@@ -179,8 +179,11 @@ func (state *State) startForwardTunnelForwards(tunnel *forwardTunnel) {
 }
 
 // failForwardTunnel answers a lost or refused transport. Forwards that asked to
-// resume stay waiting while the automatic reconnect settings allow another
-// attempt; every other one stops where it is.
+// resume stay waiting while automatic reconnect is on; every other one stops
+// where it is. A background forward is a service, so its wait does not end with
+// the tab retry budget: a latency spike can outlast those attempts while the
+// network path stays the same, which is why the next attempt is always
+// scheduled rather than left to a link change.
 func (state *State) failForwardTunnel(tunnel *forwardTunnel, err error) {
 	if tunnel == nil || tunnel.closed {
 		return
@@ -198,8 +201,7 @@ func (state *State) failForwardTunnel(tunnel *forwardTunnel, err error) {
 			forward.runnerVersion = 0
 		}
 		forward.starting, forward.startID = false, 0
-		if forward.Resume && retryable && state.connectionReconnect != reconnectOff &&
-			state.connectionReconnect.permits(tunnel.retryAttempt+1) {
+		if forward.Resume && retryable && state.connectionReconnect != reconnectOff {
 			forward.pending = true
 			forward.lastError = ""
 			forward.refresh(state.messages, state.forwardHostAvailable(*forward))
@@ -210,10 +212,8 @@ func (state *State) failForwardTunnel(tunnel *forwardTunnel, err error) {
 		if !tunnel.connected && err != nil {
 			lastError = err.Error()
 		}
-		revive := forward.Resume && retryable && state.connectionReconnect != reconnectOff
 		forward.stop()
 		forward.lastError = lastError
-		forward.reviveTunnel = revive
 		forward.refresh(state.messages, state.forwardHostAvailable(*forward))
 	}
 	if waiting > 0 {
@@ -241,16 +241,14 @@ func (state *State) failForwardTunnel(tunnel *forwardTunnel, err error) {
 
 // abandonForwardTunnel stops the forwards of a tunnel that will not be retried,
 // as when the reconnect setting is turned off while it waits.
-func (state *State) abandonForwardTunnel(tunnel *forwardTunnel, revivable bool) {
+func (state *State) abandonForwardTunnel(tunnel *forwardTunnel) {
 	for index := range state.forwards {
 		forward := &state.forwards[index]
 		if forward.sessionID != tunnel.id {
 			continue
 		}
-		revive := revivable && forward.Resume
 		forward.stop()
 		forward.lastError = state.messages.ForwardConnectionClosed
-		forward.reviveTunnel = revive
 		forward.refresh(state.messages, state.forwardHostAvailable(*forward))
 	}
 	state.closeForwardTunnel(tunnel)
@@ -310,8 +308,8 @@ func (state *State) closeForwardTunnels() {
 	}
 }
 
-// settleForwardTunnelReconnects stops the tunnels that wait for an automatic
-// retry the current policy no longer allows.
+// settleForwardTunnelReconnects stops the tunnels that wait for a retry when
+// automatic reconnect is turned off.
 func (state *State) settleForwardTunnelReconnects() {
 	for index := 0; index < len(state.forwardTunnels); {
 		tunnel := state.forwardTunnels[index]
@@ -320,11 +318,7 @@ func (state *State) settleForwardTunnelReconnects() {
 			continue
 		}
 		if state.connectionReconnect == reconnectOff {
-			state.abandonForwardTunnel(tunnel, false)
-			continue
-		}
-		if state.connectionReconnect == reconnectThree && tunnel.retryAttempt >= 3 {
-			state.abandonForwardTunnel(tunnel, true)
+			state.abandonForwardTunnel(tunnel)
 			continue
 		}
 		index++
