@@ -342,9 +342,7 @@ func (state *State) detachWorkspace(id layoutcore.WorkspaceID) (*tabPayload, boo
 		if files := session.files; files != nil && files.dedicated != nil && state.modalSession == files.dedicated.session.ID {
 			state.closeModal()
 		}
-		if state.broadcast == id {
-			state.broadcast = 0
-		}
+		state.clearWorkspaceBroadcast(id)
 	}
 	if state.sessionLogs.queue != nil {
 		fence := state.sessionLogs.queue.Fence()

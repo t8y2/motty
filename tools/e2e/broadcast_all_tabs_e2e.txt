@@ -1,0 +1,56 @@
+# End to end: broadcast input to all tabs. Two servers opened one tab each, then
+# one command typed in the second tab runs in both, and the broadcast is still
+# on after going back to the first tab. Against the loopback SSH fixture on
+# port 2222 (the same server twice stands for two hosts):
+#
+#   (cd tools/e2esshd && go build -o /tmp/e2esshd . && /tmp/e2esshd 2222 &)
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/broadcast_all_tabs_e2e.txt
+# lang: en
+
+click "Search"
+type tester@127.0.0.1:2222
+click "Connect"
+waitfor "Trust" 3000
+click "Trust and Save"
+waitfor "Password" 3000
+type secret
+key enter
+waitfor "tester@e2e" 8000
+
+# One tab, no split: the broadcast button is there but disabled.
+expect state "Broadcast input" disabled
+shot /tmp/broadcast-single-tab.png
+
+click "Hosts"
+click "Search"
+type tester@localhost:2222
+click "Connect"
+waitfor "Trust" 3000
+click "Trust and Save"
+waitfor "Password" 3000
+type secret
+key enter
+waitfor "tester@e2e" 8000
+
+click "Broadcast input"
+settle 300
+shot /tmp/broadcast-menu.png
+click "Start broadcast"
+settle 300
+shot /tmp/broadcast-all-on.png
+type echo bcast-$((6*7))
+key enter
+waitfor "bcast-42" 4000
+
+# The other tab ran it too, and the broadcast is still on there.
+click "127.0.0.1:2222"
+settle 300
+expect text "bcast-42" within 3000
+shot /tmp/broadcast-all-first-tab.png
+click "Broadcast input"
+settle 300
+shot /tmp/broadcast-menu-on.png
+click "Stop broadcast"
+settle 300
+shot /tmp/broadcast-all-off.png

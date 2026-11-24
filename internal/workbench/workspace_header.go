@@ -85,10 +85,14 @@ func (state *State) planWorkspaceHeader(canvas *gfx.Canvas, size gfx.Size) (work
 	plan.light, plan.color = state.workspaceConnectionLight(plan.status)
 	plan.color = state.workspaceStatusInk(plan.color)
 	connectionWidth := canvas.TextWidthWeight(plan.connection, metrics.FontSizeS, gfx.WeightMedium) + 28
-	plan.broadcasting = state.broadcast == workspaceID
+	plan.broadcasting = state.broadcastAll || state.broadcast == workspaceID
 	plan.broadcastLabel = m.WorkspaceHeaderBroadcast
 	if plan.broadcasting {
-		plan.broadcastLabel = fmt.Sprintf(m.WorkspaceHeaderBroadcastingFmt, plan.status.Connected)
+		connected := plan.status.Connected
+		if state.broadcastAll {
+			connected, _ = state.broadcastAllStatus()
+		}
+		plan.broadcastLabel = fmt.Sprintf(m.WorkspaceHeaderBroadcastingFmt, connected)
 	}
 	plan.broadcastWidth = canvas.TextWidthWeight(plan.broadcastLabel, workspaceHeaderLabelSize, gfx.WeightMedium) + 36
 	plan.layoutLabel = m.WorkspaceHeaderLayout

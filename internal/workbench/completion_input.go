@@ -31,7 +31,7 @@ func (state *State) captureSuggestion(session *Session, line string) suggestionS
 
 func (state *State) suggestionOwner(snapshot suggestionSnapshot) *Session {
 	session := state.inputOwnerAfterDrain(snapshot.sessionID, snapshot.owner)
-	if session == nil || state.broadcast != 0 || state.historyClearing() || state.history.suggestOff {
+	if session == nil || state.broadcastOn() || state.historyClearing() || state.history.suggestOff {
 		return nil
 	}
 	t := session.term

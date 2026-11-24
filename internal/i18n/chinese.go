@@ -2144,6 +2144,13 @@ var chineseTools = ToolsMessages{
 
 	BroadcastStart:            "开启广播输入：同时输入到当前标签页的所有已连接终端",
 	BroadcastStop:             "停止广播输入",
+	BroadcastScopeAll:         "所有标签页",
+	BroadcastScopeTab:         "当前标签页",
+	BroadcastGo:               "开始广播",
+	BroadcastEnd:              "停止广播",
+	BroadcastTip:              "广播输入",
+	BroadcastAllStart:         "开启广播输入：同时输入到所有标签页的已连接终端",
+	StatusBroadcastAllOnFmt:   "广播已开启：输入将发送到所有标签页的 %d 个已连接终端。",
 	StatusBroadcastOnFmt:      "广播已开启：输入将发送到当前标签页的 %d 个已连接终端。",
 	StatusBroadcastOff:        "广播已关闭。",
 	StatusBroadcastNeedsSplit: "请先将终端分屏，再开启广播输入。",

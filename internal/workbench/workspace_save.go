@@ -85,7 +85,7 @@ func (state *State) submitWorkspaceSave() {
 	state.selectedWorkspaceTemplateID = template.ID
 	state.workspaceLibraryExpanded = true
 	delete(state.temporaryWorkspaceLayouts, save.workspace)
-	previousBroadcast := state.broadcast
+	previousBroadcast := state.broadcastScope()
 	previousStatus := state.status
 	state.clearBroadcast()
 	state.status = state.messages.Tools.StatusBroadcastOff
@@ -96,7 +96,7 @@ func (state *State) submitWorkspaceSave() {
 		state.selectedWorkspaceTemplateID = previousSelected
 		state.workspaceLibraryExpanded = previousExpanded
 		state.temporaryWorkspaceLayouts[save.workspace] = save.layout
-		state.broadcast = previousBroadcast
+		state.restoreBroadcast(previousBroadcast)
 		state.status = previousStatus
 		state.activeSection = previousSection
 		save.error = state.messages.WorkspaceSaveFailed

@@ -2144,6 +2144,13 @@ var traditionalTools = ToolsMessages{
 
 	BroadcastStart:            "開啟廣播輸入：同時輸入到目前分頁的所有已連線終端機",
 	BroadcastStop:             "停止廣播輸入",
+	BroadcastScopeAll:         "所有分頁",
+	BroadcastScopeTab:         "目前分頁",
+	BroadcastGo:               "開始廣播",
+	BroadcastEnd:              "停止廣播",
+	BroadcastTip:              "廣播輸入",
+	BroadcastAllStart:         "開啟廣播輸入：同時輸入到所有分頁的已連線終端機",
+	StatusBroadcastAllOnFmt:   "廣播已開啟：輸入將傳送到所有分頁的 %d 個已連線終端機。",
 	StatusBroadcastOnFmt:      "廣播已開啟：輸入將傳送到目前分頁的 %d 個已連線終端機。",
 	StatusBroadcastOff:        "廣播已關閉。",
 	StatusBroadcastNeedsSplit: "請先將終端機分割畫面，再開啟廣播輸入。",

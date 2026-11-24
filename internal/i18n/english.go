@@ -2144,6 +2144,13 @@ var englishTools = ToolsMessages{
 
 	BroadcastStart:            "Broadcast input to all connected terminals in this tab",
 	BroadcastStop:             "Stop broadcast input",
+	BroadcastScopeAll:         "All tabs",
+	BroadcastScopeTab:         "This tab",
+	BroadcastGo:               "Start broadcast",
+	BroadcastEnd:              "Stop broadcast",
+	BroadcastTip:              "Broadcast input",
+	BroadcastAllStart:         "Broadcast input to all connected terminals in all tabs",
+	StatusBroadcastAllOnFmt:   "Broadcast is on: input goes to %d connected terminals in all tabs.",
 	StatusBroadcastOnFmt:      "Broadcast is on: input goes to %d connected terminals in this tab.",
 	StatusBroadcastOff:        "Broadcast is off.",
 	StatusBroadcastNeedsSplit: "Split the terminal before enabling broadcast input.",

@@ -246,7 +246,7 @@ func (state *State) activateWorkspace(id layoutcore.WorkspaceID) bool {
 	if !state.deck.ActivateWorkspace(id) {
 		return false
 	}
-	state.clearBroadcast()
+	state.clearTabBroadcast()
 	state.workspaceHeaderMenu = workspaceHeaderMenuNone
 	state.workspaceCardDrag = workspaceCardDrag{}
 	state.syncActiveSession()

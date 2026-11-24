@@ -96,7 +96,7 @@ func (state *State) commandGhostSource(session *Session) (rest string, fromCatal
 	}
 	// Accepting is checked against one terminal's prompt and never typed into
 	// several at once, so a suggestion that could not be accepted is not shown.
-	if state.broadcast != 0 {
+	if state.broadcastOn() {
 		return "", false, false
 	}
 	t := session.term

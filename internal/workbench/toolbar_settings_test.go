@@ -213,8 +213,8 @@ func TestToolbarCustomOrderAppearsInTheThreeRealToolbars(t *testing.T) {
 			t.Fatalf("saved order was not applied: %+v %+v", first, second)
 		}
 	}
-	if _, ok := hitByID(&canvas, hitBroadcast); ok {
-		t.Fatal("customizing the toolbar invented an unavailable split-pane action")
+	if hit, ok := hitByID(&canvas, hitBroadcast); ok && !hit.Disabled {
+		t.Fatal("customizing the toolbar enabled a broadcast there is nobody to send to")
 	}
 	if hit, ok := hitByID(&canvas, hitTerminalRecordingExport); !ok || !hit.Disabled {
 		t.Fatal("reordering enabled an unavailable recording export")

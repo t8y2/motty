@@ -1042,6 +1042,11 @@ type State struct {
 	completion       completionUI
 	// broadcast is the tab whose panes type together, or zero.
 	broadcast layoutcore.WorkspaceID
+	// broadcastAll sends typing to every connected pane of every tab.
+	broadcastAll bool
+	// broadcastTabs narrows broadcastAll to some tabs; nil is every tab.
+	broadcastTabs []layoutcore.WorkspaceID
+	broadcastMenu broadcastMenu
 
 	// wrapped is scratch for text broken into lines while painting.
 	wrapped [failureLines]string
@@ -3459,7 +3464,7 @@ func (state *State) openHostSession(host Host) *Session {
 		return state.createHostSession(host, address)
 	}
 	if state.deck.ActiveWorkspace() != previous {
-		state.clearBroadcast()
+		state.clearTabBroadcast()
 	}
 	if state.canReconnect(existing) {
 		state.startConnection(existing, host)
