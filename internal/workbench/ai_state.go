@@ -218,6 +218,9 @@ type aiState struct {
 	mcpAddr, mcpToken string
 	// agentAudit is the latest calls agents made without the window.
 	agentAudit []store.AuditEntry
+	// agentTransferRoots are the local directories the stdio server may
+	// transfer files within.
+	agentTransferRoots []string
 	// agentSummary caches what the page shows about them.
 	agentSummary agentSummary
 	// cfg is the settings section's own state (ai_settings.go).
@@ -369,6 +372,8 @@ func (state *State) reloadAISettings() {
 	read("ai.mcp.enabled", func(v string) { settings.mcpEnabled = v == "on" })
 	read("ai.mcp.mode", func(v string) { settings.mcpMode = mcpModeFromSetting(v) })
 	read(agentModeSetting, func(v string) { settings.agentMode = mcpModeFromSetting(v) })
+	var transferRoots []string
+	read(agentTransferRootsSetting, func(v string) { transferRoots = parseTransferRoots(v) })
 	// Export client choices live beside the settings in ai.db but not in
 	// aiSettings: they change which configuration the page shows, not what the
 	// assistant or the MCP servers do.
@@ -381,6 +386,7 @@ func (state *State) reloadAISettings() {
 	}
 	if !failed {
 		ai.settings = settings
+		ai.agentTransferRoots = transferRoots
 	}
 	// Model reasoning settings can change in another window while this panel stays open.
 	if models, err := ai.store.Models(); err == nil {

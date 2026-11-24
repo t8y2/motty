@@ -8,9 +8,12 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/gate"
@@ -26,7 +29,19 @@ var (
 	hitAISetAgentCopy      = tree.ID(aiSettingsHits, "ai-set-agent-copy")
 	hitAISetAgentClear     = tree.ID(aiSettingsHits, "ai-set-agent-clear")
 	hitAISetAgentHostsView = tree.ID(aiSettingsHits, "ai-set-agent-hosts-view")
+
+	hitAISetAgentTransferAdd    = tree.ID(aiSettingsHits, "ai-set-agent-transfer-add")
+	hitAISetAgentTransferRemove = func() (ids [maxAgentTransferRoots]gfx.ID) {
+		for i := range ids {
+			ids[i] = tree.ID(aiSettingsHits, "ai-set-agent-transfer-remove-"+strconv.Itoa(i))
+		}
+		return
+	}()
 )
+
+// maxAgentTransferRoots bounds the folder list so every row has a fixed control
+// identity.
+const maxAgentTransferRoots = 8
 
 // agentAuditShown is how many of the latest calls the page lists.
 const agentAuditShown = 5
@@ -66,10 +81,53 @@ func (state *State) aiAgentClick(id gfx.ID) bool {
 		}
 	case hitAISetAgentHostsView:
 		state.openAgentHostsView()
+	case hitAISetAgentTransferAdd:
+		state.addAgentTransferRoot()
 	default:
+		for index, remove := range hitAISetAgentTransferRemove {
+			if id == remove {
+				state.removeAgentTransferRoot(index)
+				return true
+			}
+		}
 		return false
 	}
 	return true
+}
+
+// addAgentTransferRoot lets the user pick a local folder agents may transfer
+// files within. A canceled picker changes nothing.
+func (state *State) addAgentTransferRoot() {
+	roots := state.ai.agentTransferRoots
+	if len(roots) >= maxAgentTransferRoots {
+		return
+	}
+	directory, err := state.options.OpenDirectory(app.OpenDirectoryOptions{Title: state.messages.AISettings.AgentTransferChoose})
+	if err != nil || directory == "" {
+		return
+	}
+	directory = filepath.Clean(directory)
+	if slices.Contains(roots, directory) {
+		return
+	}
+	state.putAgentTransferRoots(append(slices.Clone(roots), directory))
+}
+
+func (state *State) removeAgentTransferRoot(index int) {
+	roots := state.ai.agentTransferRoots
+	if index < 0 || index >= len(roots) {
+		return
+	}
+	state.putAgentTransferRoots(slices.Delete(slices.Clone(roots), index, index+1))
+}
+
+func (state *State) putAgentTransferRoots(roots []string) {
+	value := ""
+	if len(roots) > 0 {
+		encoded, _ := json.Marshal(roots)
+		value = string(encoded)
+	}
+	state.aiPut(agentTransferRootsSetting, value)
 }
 
 // applyAIAgentMode stores the stdio server's access level the choice already
@@ -180,6 +238,7 @@ func (state *State) paintAIAgents(page *settingsPage) {
 		controlWidth := max(min(float32(300), max(float32(190), page.width*0.40)), settingsChoiceWidth(page, choices, state.agentHostModeLabel))
 		controlWidth = min(controlWidth, max(page.width-60, 0))
 		page.mcpAgentHostsFrame(controlWidth)
+		state.paintAgentTransferRoots(page)
 		page.separator()
 		state.paintMCPConfigBlock(page, aiMCPConfigView{
 			title: m.AgentConfig, description: m.AgentConfigDesc,
@@ -323,3 +382,25 @@ func shellWord(word string) string {
 
 // executableOf is Options.Executable's default.
 func executableOf() (string, error) { return os.Executable() }
+
+// paintAgentTransferRoots is the list of local folders agents may transfer files
+// within. The rows are offered under any access level so the setting can be
+// found, but the service uses them only under full access.
+func (state *State) paintAgentTransferRoots(page *settingsPage) {
+	c, pal, m := page.c, state.pal, state.messages.AISettings
+	roots := state.ai.agentTransferRoots
+	description := m.AgentTransferDesc
+	if len(roots) == 0 {
+		description = m.AgentTransferNoneDesc
+	}
+	page.mcpFrame(m.AgentTransfer, description, pal.muted, func() {
+		page.button(hitAISetAgentTransferAdd, m.AgentTransferAdd, aiButtonOutline, len(roots) >= maxAgentTransferRoots)
+	})
+	for index, root := range roots[:min(len(roots), maxAgentTransferRoots)] {
+		page.separator()
+		ui.Row(c).FillWidth().PadSides(8, 18, 8, 18).Gap(12).Items(ui.Center).Children(func() {
+			ui.Wrap(c, root).FontSize(metrics.FontSizeS).LineHeight(16).Color(pal.text).Grow(1)
+			page.button(hitAISetAgentTransferRemove[index], m.AgentTransferRemove, aiButtonOutline, false).Shrink(0)
+		})
+	}
+}

@@ -42,6 +42,10 @@ const (
 	// agentModeSetting is the stdio access level in ai.db: observe, ask, or
 	// allow-all. Unknown values remain read-only.
 	agentModeSetting = "ai.mcp.stdio.mode"
+	// agentTransferRootsSetting is the JSON list of absolute local directories
+	// the user allowed file transfers within, set on the settings page. It adds
+	// to --transfer-root and has effect only under full access.
+	agentTransferRootsSetting = "ai.mcp.stdio.transfer_roots"
 	// AgentModeCommands is the value of that setting that allows commands.
 	AgentModeCommands = "ask"
 	// AgentModeReadOnly is the value that allows only reading.
@@ -123,6 +127,8 @@ func ServeAgentMCP(ctx context.Context, in io.Reader, out io.Writer, options Age
 
 	value, _, _ := log.Setting(agentModeSetting)
 	mode := mcpModeFromSetting(value)
+	value, _, _ = log.Setting(agentTransferRootsSetting)
+	options.TransferRoots = mergeTransferRoots(options.TransferRoots, savedTransferRoots(value, options.Log))
 	backend := newAgentBackend(catalog, options)
 	defer backend.Close()
 	if backend.transferRootError != nil {
@@ -145,7 +151,7 @@ func ServeAgentMCP(ctx context.Context, in io.Reader, out io.Writer, options Age
 	if mode == gate.ModeAllowAll {
 		instructions += " The user enabled full access for these hosts. Commands and file changes run without approval. Note edits also write the Markdown file a linked note points to."
 		if len(backend.transferRoots) == 0 {
-			instructions += " File transfer tools (sftp_upload, sftp_download, transfer_cancel) are off: start the server with --transfer-root <local directory> to offer them."
+			instructions += " File transfer tools (sftp_upload, sftp_download, transfer_cancel) are off: the user can allow a local directory under Settings > Without Motty open, or start the server with --transfer-root <local directory>."
 		}
 	} else {
 		instructions += " Nobody can approve anything here, so a call that would need approval is refused."
@@ -164,6 +170,42 @@ func ServeAgentMCP(ctx context.Context, in io.Reader, out io.Writer, options Age
 		CallTimeout:  mcpCallTimeout,
 		Instructions: instructions,
 	})
+}
+
+// parseTransferRoots decodes the saved list; anything unreadable is no roots.
+func parseTransferRoots(value string) []string {
+	var roots []string
+	if value == "" || json.Unmarshal([]byte(value), &roots) != nil {
+		return nil
+	}
+	return roots
+}
+
+// savedTransferRoots are the directories allowed on the settings page that can
+// still be used. One that was deleted or moved since is skipped with a note
+// instead of ending the server, which the command-line roots do.
+func savedTransferRoots(value string, log io.Writer) []string {
+	var usable []string
+	for _, root := range parseTransferRoots(value) {
+		if _, err := validateTransferRoots([]string{root}); err != nil {
+			fmt.Fprintln(log, "motty mcp-serve: ignoring the allowed transfer directory:", err)
+			continue
+		}
+		usable = append(usable, root)
+	}
+	return usable
+}
+
+// mergeTransferRoots appends the roots of extra that first does not already
+// name.
+func mergeTransferRoots(first, extra []string) []string {
+	merged := slices.Clone(first)
+	for _, root := range extra {
+		if !slices.Contains(merged, root) {
+			merged = append(merged, root)
+		}
+	}
+	return merged
 }
 
 // readAgentCatalog reads the saved state without changing it and builds the
