@@ -199,6 +199,7 @@ type ToolsMessages struct {
 	CommandsSortGroup   string
 
 	// The categories of the settings page, and what each holds.
+	CatAppearance string
 	CatGeneral    string
 	CatTerminal   string
 	CatConnection string

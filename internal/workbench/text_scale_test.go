@@ -12,7 +12,7 @@ import (
 // its own.
 
 func TestInterfaceTextSizeStepsTheWholeWindow(t *testing.T) {
-	defer applyTextMetrics(interfaceTextSizeDefault.factor()) // the package's tokens are shared with every other test
+	defer applyMetrics(interfaceTextSizeDefault.factor(), cornersRounded) // the package's tokens are shared with every other test
 	state := newTestState(t, testOptions(t))
 	if state.interfaceTextSize != interfaceTextSizeDefault || metrics.FontSizeS != gfx.DefaultMetrics().FontSizeS {
 		t.Fatalf("the window opens at the default size: %v %v", state.interfaceTextSize, metrics.FontSizeS)
@@ -64,8 +64,8 @@ func TestInterfaceTextSizeStepsTheWholeWindow(t *testing.T) {
 // and its captions the window's caption size, so the interface text size reaches
 // it like it reaches the settings pages.
 func TestAITextFollowsTheInterfaceTextSize(t *testing.T) {
-	applyTextMetrics(interfaceTextSizeDefault.factor())
-	defer applyTextMetrics(interfaceTextSizeDefault.factor())
+	applyMetrics(interfaceTextSizeDefault.factor(), cornersRounded)
+	defer applyMetrics(interfaceTextSizeDefault.factor(), cornersRounded)
 	state := newTestState(t, testOptions(t))
 	before := aiSizes
 	if before.body != gfx.DefaultMetrics().FontSizeM || before.small != gfx.DefaultMetrics().FontSizeS {
@@ -111,7 +111,7 @@ func TestInterfaceTextSizeTravelsThroughTheStateFile(t *testing.T) {
 	if saved.TextScale != "" {
 		t.Fatalf("the state still writes the retired text scale %q", saved.TextScale)
 	}
-	defer applyTextMetrics(interfaceTextSizeDefault.factor())
+	defer applyMetrics(interfaceTextSizeDefault.factor(), cornersRounded)
 	second := newTestState(t, options)
 	if second.interfaceTextSize != 12 || metrics.FontSizeM >= gfx.DefaultMetrics().FontSizeM {
 		t.Fatalf("the saved size came back as %v at size %v", second.interfaceTextSize, metrics.FontSizeM)

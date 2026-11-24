@@ -499,7 +499,7 @@ func paintSFTPBreadcrumbDropHighlight(canvas *gfx.Canvas, rect gfx.Rect, pal *pa
 	}
 	canvas.PushLayer(popupLayer)
 	defer canvas.PopLayer()
-	canvas.Rounded(rect, 4, withAlpha(pal.accent, 0.14))
+	canvas.Rounded(rect, cornerPx(4), withAlpha(pal.accent, 0.14))
 	canvas.RoundedOutline(rect, 4, 1.5, pal.accent)
 }
 
@@ -523,7 +523,7 @@ func paintSFTPDragBadge(canvas *gfx.Canvas, at gfx.Point, entries []sftpclient.E
 	}
 	canvas.PushLayer(tooltipLayer)
 	defer canvas.PopLayer()
-	canvas.RoundedBorder(pill, 6, 1, pal.accent, withAlpha(pal.surface, 0.96))
+	canvas.RoundedBorder(pill, cornerPx(6), 1, pal.accent, withAlpha(pal.surface, 0.96))
 	glyph := uint8(iconFile)
 	if entries[0].IsDir() {
 		glyph = iconFolderOpen

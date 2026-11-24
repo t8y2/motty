@@ -732,6 +732,7 @@ type State struct {
 	menuBarSig      string
 	appearance      appearance
 	appearanceMode  appearanceMode
+	cornerStyle     cornerStyle
 	iconColor       iconColor
 	iconColorChoice iconColor // the unconfirmed selection in the icon picker
 	networkProxy    networkProxyMode
@@ -1303,10 +1304,10 @@ func New(options Options) *State {
 		state.initAI()
 		state.profileDeferred = true
 		prefs, _ := configstore.ReadLockPreferences(state.options.StatePath, configFormat)
-		state.restoreWindowAppearance(savedState{Language: prefs.Language, Theme: prefs.Theme, IconColor: prefs.IconColor, TextScale: prefs.TextScale, InterfaceTextSize: prefs.InterfaceTextSize, InterfaceFont: prefs.InterfaceFont, InterfaceFontMain: prefs.InterfaceFontMain, InterfaceFontBold: prefs.InterfaceFontBold})
+		state.restoreWindowAppearance(savedState{Language: prefs.Language, Theme: prefs.Theme, Corners: prefs.Corners, IconColor: prefs.IconColor, TextScale: prefs.TextScale, InterfaceTextSize: prefs.InterfaceTextSize, InterfaceFont: prefs.InterfaceFont, InterfaceFontMain: prefs.InterfaceFontMain, InterfaceFontBold: prefs.InterfaceFontBold})
 		state.validateInterfaceFont()
 		if state.appProtection.openErr != nil {
-			state.lockUI.error = state.appProtection.openErr.Error()
+			state.lockUI.error = state.appLockErrorText(state.appProtection.openErr)
 		}
 	} else {
 		if err := state.loadApplicationProfile(); err != nil {

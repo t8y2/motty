@@ -276,7 +276,7 @@ func (state *State) declareRemoteLogPaths(c ui.C, session *Session, view *remote
 			if live {
 				label += " · " + m.Live
 			}
-			row.Element.Height(48).PadX(8).Label(label).Radius(6)
+			row.Element.Height(48).PadX(8).Label(label).Radius(cornerPx(6))
 			if row.Index == selected {
 				row.Element.Background(p.surfaceSoft)
 			}

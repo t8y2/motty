@@ -794,11 +794,11 @@ func paintDashboardCardCheck(canvas *gfx.Canvas, b gfx.Rect, checked bool) {
 	side := min(b.Width, b.Height)
 	box := gfx.Rect{X: b.X, Y: b.Y + (b.Height-side)/2, Width: side, Height: side}
 	if checked {
-		canvas.Rounded(box, 4, gfx.RGB(99, 180, 248))
+		canvas.Rounded(box, cornerPx(4), gfx.RGB(99, 180, 248))
 		canvas.DrawIcon(lucideIcons[iconCheck], gfx.Rect{X: box.X + 3, Y: box.Y + 3, Width: side - 6, Height: side - 6}, gfx.RGB(255, 255, 255))
 		return
 	}
-	canvas.RoundedBorder(box, 4, 1.5, gfx.RGB(150, 158, 170), gfx.Color{})
+	canvas.RoundedBorder(box, cornerPx(4), 1.5, gfx.RGB(150, 158, 170), gfx.Color{})
 }
 
 // declareDashboardOrderMode declares the sort-mode select of the order tab.

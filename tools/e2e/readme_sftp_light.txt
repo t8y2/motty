@@ -26,6 +26,8 @@ resize 1560 975
 settle 600
 click "Settings"
 settle 900
+click "Appearance"
+settle 600
 click "Light"
 settle 900
 click "Hosts"

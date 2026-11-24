@@ -284,6 +284,8 @@ func (state *State) paintSettingsCategory(page *settingsPage) {
 	switch state.settingsCategory {
 	case settingsGeneral:
 		state.paintGeneralSettings(page)
+	case settingsAppearance:
+		state.paintAppearanceSettings(page)
 	case settingsTerminal:
 		state.paintTerminalSettings(page)
 	case settingsConnection:
@@ -317,17 +319,6 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 						state.save()
 					}
 				})
-			settingsChoiceRow(page, messages.SettingsAppearance, "", &state.appearanceMode, settingsAppearanceChoices[:], state.settingsAppearanceLabel,
-				func() { state.chooseAppearanceMode(state.appearanceMode); state.save() }, nil)
-			state.paintIconColorSetting(page)
-			page.actionRow(messages.SettingsTextSize, messages.SettingsTextSizeDescription, false,
-				components.ButtonAction{ID: hitSettingsTextSizeDown, Label: "−", Variant: components.ButtonOutline},
-				components.ButtonAction{ID: hitSettingsTextSizeReset, Label: state.interfaceTextSizeLabel(), Variant: components.ButtonGhost},
-				components.ButtonAction{ID: hitSettingsTextSizeUp, Label: "+", Variant: components.ButtonOutline})
-			settingsChoiceRow(page, messages.SettingsToolbarPosition, messages.SettingsToolbarPositionDescription, &state.terminalToolbarPosition, settingsToolbarPositionChoices[:], state.settingsToolbarPositionLabel,
-				func() { state.applyTerminalToolbarPosition(); state.save() }, nil)
-			settingsChoiceRow(page, messages.SettingsTabOrientation, messages.SettingsTabOrientationDescription, &state.tabOrientation, settingsTabOrientationChoices[:], state.settingsTabOrientationLabel,
-				func() { state.applyTabOrientation(); state.save() }, nil)
 			settingsChoiceRow(page, messages.SettingsTabDoubleClick, messages.SettingsTabDoubleClickDescription, &state.tabDoubleClick, settingsTabDoubleClickChoices[:], state.settingsTabDoubleClickLabel,
 				func() { state.save() }, nil)
 			page.toggleRow(messages.SettingsTabNumbers, messages.SettingsTabNumbersDescription, state.tabNumbers, hitSettingsTabNumbers)
@@ -335,14 +326,6 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 			settingsChoiceRow(page, messages.SettingsTabNumberKeys, messages.SettingsTabNumberKeysDescription, &numberKey, tabNumberChoices[:], state.tabNumberChoiceLabel,
 				func() { state.setTabNumberModifier(numberKey.id()); state.save() }, nil)
 			page.toggleRow(messages.SettingsOutputAlerts, messages.SettingsOutputAlertsDescription, state.backgroundOutputAlerts, hitSettingsOutputAlerts)
-			if state.tabOrientation == tabsVertical {
-				page.toggleRow(messages.SettingsTabsAutoHide, messages.SettingsTabsAutoHideDescription, state.verticalTabs.autoHide, hitSettingsVerticalTabsAutoHide)
-				page.toggleRow(messages.SettingsTabsGrouping, messages.SettingsTabsGroupingDescription, state.verticalTabs.grouping, hitSettingsVerticalTabsGrouping)
-			}
-			if state.interfaceFontRowVisible() {
-				page.valueActionRow(messages.SettingsInterfaceFont, state.interfaceFontDescription(), state.interfaceFontInEffect(), !state.uiFont.supported,
-					components.ButtonAction{ID: hitInterfaceFontChoose, Label: state.messages.Tools.FontChoose, Variant: components.ButtonOutline})
-			}
 			if state.options.StartAtLogin != nil {
 				state.paintLoginSetting(page)
 			}
@@ -360,6 +343,35 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 			state.paintSidebarSettingsRow(page)
 		})
 		state.paintDiagnosticsSetting(page)
+	})
+}
+
+func (state *State) paintAppearanceSettings(page *settingsPage) {
+	messages := state.messages
+	page.groups(func() {
+		page.group("", func() {
+			settingsChoiceRow(page, messages.SettingsAppearance, "", &state.appearanceMode, settingsAppearanceChoices[:], state.settingsAppearanceLabel,
+				func() { state.chooseAppearanceMode(state.appearanceMode); state.save() }, nil)
+			settingsChoiceRow(page, messages.SettingsCorners, "", &state.cornerStyle, settingsCornerChoices[:], state.settingsCornerLabel,
+				func() { state.applyMetrics(); state.save() }, nil)
+			state.paintIconColorSetting(page)
+			page.actionRow(messages.SettingsTextSize, messages.SettingsTextSizeDescription, false,
+				components.ButtonAction{ID: hitSettingsTextSizeDown, Label: "−", Variant: components.ButtonOutline},
+				components.ButtonAction{ID: hitSettingsTextSizeReset, Label: state.interfaceTextSizeLabel(), Variant: components.ButtonGhost},
+				components.ButtonAction{ID: hitSettingsTextSizeUp, Label: "+", Variant: components.ButtonOutline})
+			if state.interfaceFontRowVisible() {
+				page.valueActionRow(messages.SettingsInterfaceFont, state.interfaceFontDescription(), state.interfaceFontInEffect(), !state.uiFont.supported,
+					components.ButtonAction{ID: hitInterfaceFontChoose, Label: state.messages.Tools.FontChoose, Variant: components.ButtonOutline})
+			}
+			settingsChoiceRow(page, messages.SettingsToolbarPosition, messages.SettingsToolbarPositionDescription, &state.terminalToolbarPosition, settingsToolbarPositionChoices[:], state.settingsToolbarPositionLabel,
+				func() { state.applyTerminalToolbarPosition(); state.save() }, nil)
+			settingsChoiceRow(page, messages.SettingsTabOrientation, messages.SettingsTabOrientationDescription, &state.tabOrientation, settingsTabOrientationChoices[:], state.settingsTabOrientationLabel,
+				func() { state.applyTabOrientation(); state.save() }, nil)
+			if state.tabOrientation == tabsVertical {
+				page.toggleRow(messages.SettingsTabsAutoHide, messages.SettingsTabsAutoHideDescription, state.verticalTabs.autoHide, hitSettingsVerticalTabsAutoHide)
+				page.toggleRow(messages.SettingsTabsGrouping, messages.SettingsTabsGroupingDescription, state.verticalTabs.grouping, hitSettingsVerticalTabsGrouping)
+			}
+		})
 	})
 }
 

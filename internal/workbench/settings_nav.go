@@ -12,6 +12,7 @@ type settingsCategory uint8
 
 const (
 	settingsGeneral settingsCategory = iota
+	settingsAppearance
 	settingsTerminal
 	settingsConnection
 	settingsFiles
@@ -50,6 +51,8 @@ const (
 
 func (category settingsCategory) icon() uint8 {
 	switch category {
+	case settingsAppearance:
+		return iconSun
 	case settingsTerminal:
 		return iconTerminal
 	case settingsConnection:
@@ -76,6 +79,8 @@ func (category settingsCategory) icon() uint8 {
 func (state *State) settingsCategoryName(category settingsCategory) string {
 	m := state.messages.Tools
 	switch category {
+	case settingsAppearance:
+		return m.CatAppearance
 	case settingsTerminal:
 		return m.CatTerminal
 	case settingsConnection:

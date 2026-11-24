@@ -393,7 +393,7 @@ func (state *State) paintProxyHops(canvas *gfx.Canvas, c4 gfx.Rect, route *proxy
 	canvas.Clip(c4)
 	for i, hop := range hops {
 		nodeX := c4.X + 6 + float32(i)*(cardW+flowW)
-		canvas.Rounded(gfx.Rect{X: nodeX, Y: cardY, Width: cardW, Height: cardH}, 6, state.pal.surfaceSoft.WithAlpha(0.55))
+		canvas.Rounded(gfx.Rect{X: nodeX, Y: cardY, Width: cardW, Height: cardH}, cornerPx(6), state.pal.surfaceSoft.WithAlpha(0.55))
 		canvas.Label(hop.Label, gfx.Rect{X: nodeX + 8, Y: cardY + 4, Width: cardW - 16, Height: 15},
 			gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: state.pal.text})
 		canvas.Label(hop.Address, gfx.Rect{X: nodeX + 8, Y: cardY + 20, Width: cardW - 16, Height: 13},

@@ -761,7 +761,7 @@ func (w *sftpWindow) declareDirectoryTreePane(c ui.C, side int, width float32) u
 		}
 		tree.revealSelected = false
 	}
-	frame := ui.Column(c).Width(width).Grow(1).Pad(2).Background(theme.Background).Radius(6).
+	frame := ui.Column(c).Width(width).Grow(1).Pad(2).Background(theme.Background).Radius(cornerPx(6)).
 		Border(1, theme.Border.Mix(theme.MutedForeground, .35))
 	frame.Children(func() {
 		if len(rows) == 0 {

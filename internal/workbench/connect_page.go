@@ -518,7 +518,7 @@ func (state *State) declareConnectionBody(c ui.C, session *Session, frame gfx.Re
 		// The card is a stack so its edge is a layer of its own: a border drawn by
 		// the content column would take a pixel from the layout.
 		ui.Stack(c).Width(width).Shrink(0).Children(func() {
-			ui.Column(c).Fill().Background(pal.surface).Radius(18).Border(1, cardEdge)
+			ui.Column(c).Fill().Background(pal.surface).Radius(cornerPx(18)).Border(1, cardEdge)
 			ui.Column(c).PadX(cardPad).Children(func() {
 				ui.Row(c).Height(headerHeight).Shrink(0).PadSides(avatarTop, 0, 0, 0).Gap(16).Children(func() {
 					s.avatar = ui.Slot(c).Size(avatarSize, avatarSize).Shrink(0)
@@ -532,8 +532,8 @@ func (state *State) declareConnectionBody(c ui.C, session *Session, frame gfx.Re
 					// There is no journey left to draw: the rail says nothing once
 					// the connection has ended, so the panel gives its width to the
 					// result instead, with the time it took on the other edge.
-					ui.Stack(c).Height(failureHeight).Shrink(0).Background(panelFill).Radius(14).Children(func() {
-						ui.Column(c).Fill().Background(ending).Radius(14)
+					ui.Stack(c).Height(failureHeight).Shrink(0).Background(panelFill).Radius(cornerPx(14)).Children(func() {
+						ui.Column(c).Fill().Background(ending).Radius(cornerPx(14))
 						ui.Row(c).Fill().PadSides(16, 16, 16, 16).Gap(12).Items(ui.Center).Children(func() {
 							s.failing = ui.Slot(c).Size(20, 20).Shrink(0)
 							ui.Column(c).Grow(1).Justify(ui.Center).Gap(3).Children(func() {
@@ -546,8 +546,8 @@ func (state *State) declareConnectionBody(c ui.C, session *Session, frame gfx.Re
 						})
 					})
 				} else {
-					ui.Stack(c).Height(statusHeight).Shrink(0).Background(panelFill).Radius(14).Children(func() {
-						ui.Column(c).Fill().Background(ending).Radius(14)
+					ui.Stack(c).Height(statusHeight).Shrink(0).Background(panelFill).Radius(cornerPx(14)).Children(func() {
+						ui.Column(c).Fill().Background(ending).Radius(cornerPx(14))
 						s.track = ui.Slot(c).Height(46).FillWidth().MarginSides(12, 18, 0, 18)
 						s.track.Children(func() {
 							ui.Row(c).Fill().Items(ui.Center).Children(func() {

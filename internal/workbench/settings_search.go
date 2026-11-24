@@ -149,20 +149,10 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 		add(settingsEntry{category: category, label: label, description: description, anchor: anchor})
 	}
 	row(settingsGeneral, m.SettingsLanguage, "")
-	row(settingsGeneral, m.SettingsAppearance, "")
-	rowSearch(settingsGeneral, m.SettingsIconColor, m.SettingsIconColorDescription, "logo icon taskbar dock tray")
-	row(settingsGeneral, m.SettingsTabOrientation, m.SettingsTabOrientationDescription)
 	row(settingsGeneral, m.SettingsTabDoubleClick, m.SettingsTabDoubleClickDescription)
 	row(settingsGeneral, m.SettingsTabNumbers, m.SettingsTabNumbersDescription)
 	row(settingsGeneral, m.SettingsTabNumberKeys, m.SettingsTabNumberKeysDescription)
 	row(settingsGeneral, m.SettingsOutputAlerts, m.SettingsOutputAlertsDescription)
-	if state.tabOrientation == tabsVertical {
-		row(settingsGeneral, m.SettingsTabsAutoHide, m.SettingsTabsAutoHideDescription)
-		row(settingsGeneral, m.SettingsTabsGrouping, m.SettingsTabsGroupingDescription)
-	}
-	if state.interfaceFontRowVisible() {
-		row(settingsGeneral, m.SettingsInterfaceFont, "")
-	}
 
 	if state.options.StartAtLogin != nil {
 		row(settingsGeneral, tools.GeneralLogin, tools.GeneralLoginDescription)
@@ -179,6 +169,19 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	}
 	row(settingsGeneral, m.SettingsSidebar, m.SettingsSidebarHint)
 	row(settingsGeneral, tools.DiagnosticsRow, tools.DiagnosticsDescription)
+	row(settingsAppearance, m.SettingsAppearance, "")
+	rowSearch(settingsAppearance, m.SettingsCorners, "", "round square rounded corner radius")
+	rowSearch(settingsAppearance, m.SettingsIconColor, m.SettingsIconColorDescription, "logo icon taskbar dock tray")
+	row(settingsAppearance, m.SettingsTextSize, m.SettingsTextSizeDescription)
+	if state.interfaceFontRowVisible() {
+		row(settingsAppearance, m.SettingsInterfaceFont, "")
+	}
+	row(settingsAppearance, m.SettingsToolbarPosition, m.SettingsToolbarPositionDescription)
+	row(settingsAppearance, m.SettingsTabOrientation, m.SettingsTabOrientationDescription)
+	if state.tabOrientation == tabsVertical {
+		row(settingsAppearance, m.SettingsTabsAutoHide, m.SettingsTabsAutoHideDescription)
+		row(settingsAppearance, m.SettingsTabsGrouping, m.SettingsTabsGroupingDescription)
+	}
 	row(settingsTerminal, m.SettingsTerminalOption, m.SettingsTerminalOptionDescription)
 	row(settingsTerminal, m.SettingsTerminalFontSize, m.SettingsTerminalFontSizeDescription)
 	row(settingsTerminal, m.SettingsTerminalFontFamily, tools.FontPickerDescription)

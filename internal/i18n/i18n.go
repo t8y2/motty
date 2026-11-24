@@ -276,6 +276,9 @@ type Messages struct {
 	SettingsAppearanceSystem               string
 	SettingsAppearanceDark                 string
 	SettingsAppearanceLight                string
+	SettingsCorners                        string
+	SettingsCornersRounded                 string
+	SettingsCornersSquare                  string
 	SettingsIconColor                      string
 	SettingsIconColorDescription           string
 	SettingsIconMint                       string

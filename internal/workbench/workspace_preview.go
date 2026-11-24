@@ -43,7 +43,7 @@ func (state *State) paintWorkspacePreviewNode(canvas *gfx.Canvas, bounds gfx.Rec
 		return
 	}
 	box := bounds.Inset(gfx.All(2))
-	canvas.RoundedBorder(box, 4, 1, state.pal.line, state.pal.terminal)
+	canvas.RoundedBorder(box, cornerPx(4), 1, state.pal.line, state.pal.terminal)
 	index := int(node.Session) - 1
 	color := state.pal.muted
 	label := fmt.Sprintf("%d", index+1)

@@ -11,6 +11,7 @@ import (
 type LockPreferences struct {
 	Language          string `json:"language,omitempty"`
 	Theme             string `json:"theme,omitempty"`
+	Corners           string `json:"corners,omitempty"`
 	IconColor         string `json:"icon_color,omitempty"`
 	TextScale         string `json:"text_scale,omitempty"`
 	InterfaceTextSize int    `json:"interface_text_size,omitempty"`

@@ -45,6 +45,7 @@ type savedState struct {
 	Language                   string                  `json:"language,omitempty"`
 	Theme                      string                  `json:"theme,omitempty"`
 	IconColor                  string                  `json:"icon_color,omitempty"`
+	Corners                    string                  `json:"corners,omitempty"`
 	BackgroundOutputAlerts     bool                    `json:"background_output_alerts,omitempty"`
 	TabOrientation             string                  `json:"tab_orientation,omitempty"`
 	TabDoubleClick             string                  `json:"tab_double_click,omitempty"`
@@ -551,6 +552,7 @@ func (state *State) snapshot() savedState {
 		Language:                   state.savedLanguage(),
 		Theme:                      state.appearanceMode.saved(),
 		IconColor:                  state.iconColor.saved(),
+		Corners:                    state.cornerStyle.saved(),
 		BackgroundOutputAlerts:     state.backgroundOutputAlerts,
 		TabOrientation:             state.tabOrientation.String(),
 		TabDoubleClick:             state.tabDoubleClick.String(),
@@ -1639,7 +1641,8 @@ func (state *State) restoreWindowAppearance(saved savedState) {
 			state.interfaceTextSize = legacy
 		}
 	}
-	applyTextMetrics(state.interfaceTextSize.factor())
+	state.cornerStyle = cornerStyleFromString(saved.Corners)
+	applyMetrics(state.interfaceTextSize.factor(), state.cornerStyle)
 	state.setAppearance(state.resolveAppearance())
 	// Only the choice: what is in effect is decided once the window starts, when
 	// the platform has been asked what it can follow (validateInterfaceFont).

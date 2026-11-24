@@ -28,7 +28,7 @@ func (w *sftpWindow) paintConnectingDetails(canvas *gfx.Canvas) {
 		tint = pal.danger
 		icon = iconAlert
 	}
-	canvas.Rounded(gfx.Rect{X: cx - 25, Y: cy - 25, Width: 50, Height: 50}, 14, withAlpha(tint, .12))
+	canvas.Rounded(gfx.Rect{X: cx - 25, Y: cy - 25, Width: 50, Height: 50}, cornerPx(14), withAlpha(tint, .12))
 	paintIcon(canvas, icon, gfx.Rect{X: cx - 12, Y: cy - 12, Width: 24, Height: 24}, tint)
 	if !failed {
 		paintConnectionRing(canvas, cx, cy, 32, tint)

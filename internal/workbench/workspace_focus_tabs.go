@@ -83,7 +83,7 @@ func (state *State) declareWorkspaceFocusTab(c ui.C, index int, pane Pane) {
 		fill = withAlpha(state.pal.accent, .12)
 	}
 	ui.Row(c).Width(workspacePaneTabWidth).Height(workspacePaneTabsHeight-4).MarginSides(2, 0, 2, 0).
-		PadX(10).Gap(6).Items(ui.Center).Background(fill).Radius(4).
+		PadX(10).Gap(6).Items(ui.Center).Background(fill).Radius(cornerPx(4)).
 		Hover(ui.Look{}.Background(withAlpha(state.pal.accent, .08))).
 		HitWith(hitWorkspaceFocusTab.At(int(pane.ID)), label, gfx.HitOptions{Role: gfx.RoleTab, Selected: pane.Active}).
 		Tooltip(cached.tooltip).Draw(func(d *ui.DrawContext) {

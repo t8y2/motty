@@ -115,7 +115,7 @@ func (state *State) declareEmptyPageContent(c ui.C) {
 	e := &state.empty
 	pal := state.pal
 	contentWidth := min(max(e.bounds.Width-44, 0), 560)
-	ui.Column(c).Size(emptyStateTileSize, emptyStateTileSize).Center().Radius(emptyStateTileRadius).Background(pal.surface).Children(func() {
+	ui.Column(c).Size(emptyStateTileSize, emptyStateTileSize).Center().Radius(cornerPx(emptyStateTileRadius)).Background(pal.surface).Children(func() {
 		e.iconBox = ui.Slot(c).Size(emptyStateIconSize, emptyStateIconSize)
 	})
 	ui.Text(c, e.title).FontSize(emptyStateTitleSize).Weight(gfx.WeightSemibold).Color(pal.text).Width(contentWidth).TextCenter().Ellipsis().MarginSides(20, 0, 0, 0)
