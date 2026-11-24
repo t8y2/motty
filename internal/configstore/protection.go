@@ -24,6 +24,38 @@ var (
 
 const protectionMeta = "protection-v1"
 
+var activeStores struct {
+	sync.Mutex
+	paths map[string]map[*Store]struct{}
+}
+
+func trackStore(path string, s *Store) {
+	activeStores.Lock()
+	defer activeStores.Unlock()
+	path = canonicalPath(path)
+	if activeStores.paths == nil {
+		activeStores.paths = map[string]map[*Store]struct{}{}
+	}
+	if activeStores.paths[path] == nil {
+		activeStores.paths[path] = map[*Store]struct{}{}
+	}
+	activeStores.paths[path][s] = struct{}{}
+}
+
+func untrackStore(s *Store) {
+	activeStores.Lock()
+	defer activeStores.Unlock()
+	for path, stores := range activeStores.paths {
+		if _, exists := stores[s]; exists {
+			delete(stores, s)
+			if len(stores) == 0 {
+				delete(activeStores.paths, path)
+			}
+			return
+		}
+	}
+}
+
 func (s *Store) readLocal(ctx context.Context, tx queryer, key string) ([]byte, error) {
 	id, err := s.codec.identifier("local", key)
 	if err != nil {
@@ -61,9 +93,9 @@ func (s *Store) writeLocal(ctx context.Context, tx *sql.Tx, key string, value []
 
 // EnsureClosed refuses migration while a shared application handle is open.
 func EnsureClosed(path string) error {
-	registry.mu.Lock()
-	defer registry.mu.Unlock()
-	if s := registry.stores[canonicalPath(path)]; s != nil && s.holders > 0 {
+	activeStores.Lock()
+	defer activeStores.Unlock()
+	if len(activeStores.paths[canonicalPath(path)]) > 0 {
 		return ErrBusy
 	}
 	return nil

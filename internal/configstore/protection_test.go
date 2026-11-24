@@ -114,3 +114,27 @@ func TestProtectedAuthenticationFailureIsNotAnEmptyProfile(t *testing.T) {
 		t.Fatalf("tampered record did not fail closed: %v", err)
 	}
 }
+
+func TestClosedOrdinaryStoresLeaveNoMigrationRegistryEntry(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.db")
+	store, err := Open(path, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureClosed(path); !errors.Is(err, ErrBusy) {
+		store.Close()
+		t.Fatalf("ordinary handle not tracked: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureClosed(path); err != nil {
+		t.Fatal(err)
+	}
+	activeStores.Lock()
+	_, retained := activeStores.paths[canonicalPath(path)]
+	activeStores.Unlock()
+	if retained {
+		t.Fatal("closed path retained by migration registry")
+	}
+}

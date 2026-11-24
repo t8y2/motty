@@ -298,6 +298,28 @@ func TestLostEnvelopeNeverCreatesAnUnprotectedProfile(t *testing.T) {
 	}
 }
 
+func TestUnsharedStoreMustCloseBeforeProfileMigration(t *testing.T) {
+	g, _ := fixture(t)
+	store, err := configstore.Open(g.options.ConfigPath, g.options.ConfigFormat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := g.Enable("master password"); !errors.Is(err, configstore.ErrBusy) {
+		store.Close()
+		t.Fatalf("migration ignored an ordinary open handle: %v", err)
+	}
+	if g.Enabled() {
+		store.Close()
+		t.Fatal("busy migration changed protection mode")
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.Enable("master password"); err != nil {
+		t.Fatalf("migration after Close: %v", err)
+	}
+}
+
 func TestInterruptedCommitRecoversFromAnAlreadyMovedDatabase(t *testing.T) {
 	g, dir := fixture(t)
 	root := bytes.Repeat([]byte{7}, 32)

@@ -221,6 +221,7 @@ func Open(path string, format int) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	trackStore(path, store)
 	return store, nil
 }
 
@@ -442,7 +443,11 @@ func (s *Store) Close() error {
 		}
 		delete(registry.stores, s.shared)
 	}
-	return s.db.Close()
+	err := s.db.Close()
+	if err == nil {
+		untrackStore(s)
+	}
+	return err
 }
 
 // DataVersion reports SQLite's data_version: it changes when another
