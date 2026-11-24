@@ -6,6 +6,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -305,6 +306,13 @@ func (d *fileDocument) noteWindowShortcut(e gfx.KeyEvent) gfx.EventResult {
 	}
 	if n.view.popup != "" && e.Target != hitNotePicker {
 		return gfx.EventResult{Handled: true}
+	}
+	if d.owner != nil && !e.Release {
+		if chord, ok := keymap.FromEvent(e); ok {
+			if action := d.owner.shortcuts.actionFor(chord); (action == shortcutPaste || action == shortcutCopy) && d.noteWindowTextInput(app.TextInputContext{ID: e.Target}) == nil {
+				return gfx.EventResult{Handled: true}
+			}
+		}
 	}
 	if e.Modifiers&(gfx.ModifierControl|gfx.ModifierMeta) != 0 && !e.Release {
 		switch strings.ToLower(e.Text) {
