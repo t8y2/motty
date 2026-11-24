@@ -365,3 +365,62 @@ func TestAClipboardWithNeitherTextNorPictureSaysWhyOnAReadError(t *testing.T) {
 		t.Fatalf("typed %q, status %q", got, state.status)
 	}
 }
+
+func TestStuckPastingImageTimesOut(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	session, _ := state.sessionByIDPointer(state.activeSessionID)
+	session.pastingImage = true
+	session.pastingImageAt = time.Now().Add(-20 * time.Second)
+	state.options.ClipboardText = func() (string, error) { return "", nil }
+	state.options.ClipboardImagePNG = func() ([]byte, error) { return pastedPNG, nil }
+
+	pasteInto(t, state, shell, true)
+	if session.pastingImage {
+		t.Fatal("session.pastingImage still true after paste finished")
+	}
+}
+
+func TestImagePasteFailureFallsBackToBracketedPasteForOpenCode(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	shell.say("\x1b[?2004h")
+	state.Wake()
+	state.options.ClipboardText = func() (string, error) { return "", nil }
+	state.options.ClipboardImagePNG = func() ([]byte, error) { return nil, errors.New("corrupt clipboard PNG") }
+	session, _ := state.sessionByIDPointer(state.activeSessionID)
+
+	state.pasteIntoTerminal(session)
+	if got := shell.typed(); got != "\x1b[200~\x1b[201~" {
+		t.Fatalf("typed %q, want empty bracketed paste fallback for OpenCode", got)
+	}
+}
+
+func TestDetachedAndAttachedSessionResetsPastingImage(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	session, ok := state.sessionByIDPointer(state.activeSessionID)
+	if !ok {
+		t.Fatal("sessionByIDPointer failed")
+	}
+	session.pastingImage = true
+	session.pastingImageAt = time.Now()
+	activeWorkspace := state.deck.ActiveWorkspace()
+	payload, ok := state.detachWorkspace(activeWorkspace)
+	if !ok || payload == nil {
+		t.Fatal("detachWorkspace failed")
+	}
+	for _, s := range payload.sessions {
+		if s.pastingImage {
+			t.Fatal("detached session still has pastingImage = true")
+		}
+	}
+	payload.sessions[0].pastingImage = true
+	if !state.attachPayload(payload, tabDrop{kind: dropReorder, boundary: 0}) {
+		t.Fatal("attachPayload failed")
+	}
+	attachedSession, ok := state.sessionByIDPointer(state.activeSessionID)
+	if !ok {
+		t.Fatal("cannot find attached session")
+	}
+	if attachedSession.pastingImage {
+		t.Fatal("attached session still has pastingImage = true")
+	}
+}

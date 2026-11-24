@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/completion"
@@ -345,6 +346,8 @@ func (state *State) detachWorkspace(id layoutcore.WorkspaceID) (*tabPayload, boo
 		if state.broadcast == id {
 			state.broadcast = 0
 		}
+		session.pastingImage = false
+		session.pastingImageAt = time.Time{}
 	}
 	if state.sessionLogs.queue != nil {
 		fence := state.sessionLogs.queue.Fence()
@@ -411,6 +414,8 @@ func (state *State) attachPayload(payload *tabPayload, drop tabDrop) bool {
 		state.nextSessionID++
 		renamed[layoutcore.SessionID(old)] = layoutcore.SessionID(session.ID)
 		session.paneSlot = 0
+		session.pastingImage = false
+		session.pastingImageAt = time.Time{}
 		if session.relay == nil {
 			session.relay = newNotifyRelay(state.options.Invalidate)
 		} else {

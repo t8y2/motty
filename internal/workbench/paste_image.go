@@ -61,8 +61,13 @@ func (state *State) pasteClipboardImage(session *Session) bool {
 	}
 	m := state.messages.Tools
 	if session.pastingImage {
-		state.status = m.PasteImageUploading
-		return true
+		if !session.pastingImageAt.IsZero() && time.Since(session.pastingImageAt) > 15*time.Second {
+			session.pastingImage = false
+			session.pastingImageAt = time.Time{}
+		} else {
+			state.status = m.PasteImageUploading
+			return true
+		}
 	}
 	data, err := state.options.ClipboardImagePNG()
 	switch {
@@ -73,12 +78,20 @@ func (state *State) pasteClipboardImage(session *Session) bool {
 		return true
 	case err != nil:
 		state.status = fmt.Sprintf(m.PasteImageFailedFmt, err)
-		return true
+		return false
 	}
 	session.pastingImage = true
+	session.pastingImageAt = time.Now()
 	state.status = m.PasteImageUploading
 	id, connection, transfer, local := session.ID, session.conn, session.host.Transfer, session.isLocal()
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				state.aiPost(func(state *State) {
+					state.finishPasteImage(id, "", fmt.Errorf("paste panicked: %v", r))
+				})
+			}
+		}()
 		var target string
 		var err error
 		if local {
@@ -175,6 +188,7 @@ func (state *State) finishPasteImage(sessionID uint32, remote string, err error)
 		return
 	}
 	session.pastingImage = false
+	session.pastingImageAt = time.Time{}
 	if err != nil {
 		state.status = fmt.Sprintf(m.PasteImageFailedFmt, err)
 		return

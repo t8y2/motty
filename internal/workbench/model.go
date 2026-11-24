@@ -309,7 +309,8 @@ type Session struct {
 	// Idle pane history lives with this session, not its worker.
 	fileHistory [2]sftpSavedHistory
 	// pastingImage is set while a pasted image is on its way to the server.
-	pastingImage bool
+	pastingImage   bool
+	pastingImageAt time.Time
 	// agent is the coding agent in this local terminal's foreground, and
 	// agentWatch is when that was last read; both are cleared when the shell ends.
 	agent      codingAgent
