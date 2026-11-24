@@ -591,6 +591,7 @@ type State struct {
 	hostActionIDs      []uint32
 	hostGroups         []hostGroup
 	hostSide           hostCatalogSide
+	systemUserHint     systemUserHintCache
 	hostsPanel         hostsPanel
 	hostSideRows       []hostSideRow
 	hostTreeRows       []hostTreeRow

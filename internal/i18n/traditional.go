@@ -513,6 +513,7 @@ var TraditionalMessages = Messages{
 	FieldAddressPlaceholder:     "主機名或 IP",
 	FieldUser:                   "使用者",
 	FieldUserPlaceholder:        "登入帳戶",
+	FieldUserDefaultFmt:         "預設 %s",
 	FieldPassword:               "密碼",
 	FieldPasswordHint:           "可選 · 加密儲存",
 	FieldPasswordKeepHint:       "留空則保留",

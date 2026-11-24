@@ -513,6 +513,7 @@ var EnglishMessages = Messages{
 	FieldAddressPlaceholder:     "Hostname or IP",
 	FieldUser:                   "User",
 	FieldUserPlaceholder:        "Login account",
+	FieldUserDefaultFmt:         "Default %s",
 	FieldPassword:               "Password",
 	FieldPasswordHint:           "Optional · encrypted",
 	FieldPasswordKeepHint:       "Leave empty to keep",

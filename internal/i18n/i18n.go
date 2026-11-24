@@ -535,6 +535,7 @@ type Messages struct {
 	FieldAddressPlaceholder string
 	FieldUser               string
 	FieldUserPlaceholder    string
+	FieldUserDefaultFmt     string
 	FieldPassword           string
 	FieldPasswordHint       string
 	FieldPasswordKeepHint   string

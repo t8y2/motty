@@ -566,3 +566,21 @@ func (state *State) clickHostCredential(id gfx.ID) bool {
 	state.dialogError = ""
 	return true
 }
+
+// hostSystemUserHint is the hint of a login field whose empty value signs in as
+// the system account: it names that account instead of leaving the user to guess
+// what an empty field means. It is built again only when the language changes,
+// because it is asked for on every painted frame.
+func (state *State) hostSystemUserHint() string {
+	m := state.messages
+	if state.hostCatalog.systemUser == "" {
+		return m.FieldUserPlaceholder
+	}
+	if cache := &state.systemUserHint; cache.format != m.FieldUserDefaultFmt || cache.user != state.hostCatalog.systemUser {
+		*cache = systemUserHintCache{format: m.FieldUserDefaultFmt, user: state.hostCatalog.systemUser}
+		cache.text = fmt.Sprintf(cache.format, cache.user)
+	}
+	return state.systemUserHint.text
+}
+
+type systemUserHintCache struct{ format, user, text string }

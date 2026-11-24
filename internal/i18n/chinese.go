@@ -513,6 +513,7 @@ var ChineseMessages = Messages{
 	FieldAddressPlaceholder:     "主机名或 IP",
 	FieldUser:                   "用户",
 	FieldUserPlaceholder:        "登录账户",
+	FieldUserDefaultFmt:         "默认 %s",
 	FieldPassword:               "密码",
 	FieldPasswordHint:           "可选 · 加密保存",
 	FieldPasswordKeepHint:       "留空则保留",

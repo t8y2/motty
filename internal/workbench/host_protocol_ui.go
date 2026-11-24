@@ -262,7 +262,7 @@ func (state *State) declareHostEndpointSlots(c ui.C, parent ui.Box, rowHeight fl
 				hint := state.hostUserHint(state.messages.Desktop.VNCUserHint)
 				if editor.viaSSH {
 					label = state.messages.Desktop.FieldSSHUser
-					hint = state.hostUserHint(m.FieldUserPlaceholder)
+					hint = state.hostUserHint(state.hostSystemUserHint())
 				}
 				state.declareHostTextField(c, slots.second, &form.fieldUser, hitDialogUser, &editor.user, label, hint, false, rowHeight)
 				slots.password = ui.Slot(c).Grow(1)
@@ -277,7 +277,7 @@ func (state *State) declareHostEndpointSlots(c ui.C, parent ui.Box, rowHeight fl
 			})
 			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
 				slots.second = ui.Slot(c).Grow(1)
-				state.declareHostTextField(c, slots.second, &form.fieldUser, hitDialogUser, &editor.user, m.FieldUser, state.hostUserHint(m.FieldUserPlaceholder), false, rowHeight)
+				state.declareHostTextField(c, slots.second, &form.fieldUser, hitDialogUser, &editor.user, m.FieldUser, state.hostUserHint(state.hostSystemUserHint()), false, rowHeight)
 				slots.authentication = ui.Slot(c).Grow(1)
 				state.declareHostAuthenticationChoice(c, slots.authentication, rowHeight)
 				if editor.auth == authPrivateKey {
@@ -313,7 +313,7 @@ func (state *State) declareHostEndpointSlots(c ui.C, parent ui.Box, rowHeight fl
 			})
 			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
 				slots.second = ui.Slot(c).Grow(1)
-				state.declareHostTextField(c, slots.second, &form.fieldUser, hitDialogUser, &editor.user, m.FieldUser, state.hostUserHint(m.FieldUserPlaceholder), false, rowHeight)
+				state.declareHostTextField(c, slots.second, &form.fieldUser, hitDialogUser, &editor.user, m.FieldUser, state.hostUserHint(state.hostSystemUserHint()), false, rowHeight)
 				slots.password = ui.Slot(c).Grow(1)
 				state.declareHostPasswordField(c, slots.password, m.FieldPassword)
 			})

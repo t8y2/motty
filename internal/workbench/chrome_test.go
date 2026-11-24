@@ -494,7 +494,7 @@ func TestDialogFieldsShowEachHintOnlyOnce(t *testing.T) {
 	state.Click(hitAddHost)
 	_, texts := paintedTexts(state)
 	m := state.messages
-	for _, placeholder := range []string{m.FieldLabelPlaceholder, m.FieldAddressPlaceholder, m.FieldUserPlaceholder, m.FieldGroupPlaceholder} {
+	for _, placeholder := range []string{m.FieldLabelPlaceholder, m.FieldAddressPlaceholder, state.hostSystemUserHint(), m.FieldGroupPlaceholder} {
 		count := 0
 		for _, value := range texts {
 			if value == placeholder {
