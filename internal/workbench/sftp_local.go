@@ -103,6 +103,7 @@ func (state *State) localPanelStart(session *Session) string {
 // toggleSFTPPane switches the panel between the server's files and this
 // computer's.
 func (state *State) toggleSFTPPane(view *sftpView) {
+	view.cancelPanelDrag()
 	view.local = !view.local
 	view.bookmarksOpen = false
 	view.errorText = ""

@@ -30,7 +30,7 @@ var EnglishMessages = Messages{
 		BookmarkInvalid: "Enter valid absolute directory paths and a name when saving. The local directory can be empty.", BookmarkLimit: "The location profile limit has been reached. Remove an unused profile first.",
 		ConnectingFmt: "Connecting to %s…",
 		Authenticate:  "Authenticate in main window", AuthenticationHint: "Confirm the host key or complete authentication in the main window.",
-		DropUploadHint: "Drop here to upload", DropDownloadHint: "Drop here to download", DropCopyHint: "Drop here to copy",
+		DropUploadHint: "Drop here to upload", DropDownloadHint: "Drop here to download", DropCopyHint: "Drop here to copy", DropMoveHint: "Drop here to move",
 		QueueRejectedFmt: "%d items could not be queued. Try again later.",
 		SelectedFmt:      "%d selected", CopyPath: "Copy full path", CopyFiles: "Copy files", PasteFiles: "Paste files",
 		PropertiesTitle: "File properties", PropertiesName: "Name", PropertiesPath: "Full path", PropertiesType: "Type", PropertiesSize: "Size", PropertiesModified: "Modified",

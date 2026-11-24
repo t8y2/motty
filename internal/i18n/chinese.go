@@ -30,7 +30,7 @@ var ChineseMessages = Messages{
 		BookmarkInvalid: "请填写有效的绝对目录路径；保存档案时还需填写名称。本地目录可以留空。", BookmarkLimit: "位置档案数量已达上限，请先删除不再使用的档案。",
 		ConnectingFmt: "正在连接 %s…",
 		Authenticate:  "前往主窗口认证", AuthenticationHint: "请在主窗口确认主机密钥或完成身份验证。",
-		DropUploadHint: "拖动到此处上传", DropDownloadHint: "拖动到此处下载", DropCopyHint: "拖动到此处复制",
+		DropUploadHint: "拖动到此处上传", DropDownloadHint: "拖动到此处下载", DropCopyHint: "拖动到此处复制", DropMoveHint: "拖动到此处移动",
 		QueueRejectedFmt: "有 %d 个项目未能加入传输队列，请稍后重试。",
 		SelectedFmt:      "已选择 %d 项", CopyPath: "复制完整路径", CopyFiles: "复制文件", PasteFiles: "粘贴文件",
 		PropertiesTitle: "文件属性", PropertiesName: "名称", PropertiesPath: "完整路径", PropertiesType: "类型", PropertiesSize: "大小", PropertiesModified: "修改时间",
