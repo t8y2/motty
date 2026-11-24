@@ -1,6 +1,8 @@
 package workbench
 
 import (
+	"time"
+
 	"github.com/vivaui/viva/base"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
@@ -115,6 +117,12 @@ func (state *State) setVerticalTabsAutoHide(autoHide bool) bool {
 	state.fitSFTP(state.viewport)
 	return true
 }
+
+// verticalTabsWidthSlot is the animated width of the auto-hide sidebar among the
+// values the canvas keeps for hitVerticalTabs.
+const verticalTabsWidthSlot = 1
+
+var verticalTabsSlideMotion = gfx.SpringMotion(200*time.Millisecond, 0)
 
 // Hover expansion overlays the workspace; it must never resize a running PTY.
 func (state *State) verticalTabsReserve(size gfx.Size) float32 {
@@ -235,8 +243,18 @@ func (state *State) declareVerticalTabsOverlay(c ui.C) {
 	size := gfx.Size{Width: c.Bounds().Width, Height: c.Bounds().Height}
 	width := state.verticalTabsReserve(size)
 	compact := view.autoHide && !view.over && !state.tabMenu.open && !state.tabDrag.pressed && !verticalTabsKeyboardFocused(c.Canvas()) && !state.tabInlineActive()
-	if view.autoHide && !compact {
-		width = min(verticalTabsWidth, size.Width*0.6)
+	if view.autoHide {
+		// The sidebar overlays the workspace, so its width may move without
+		// resizing a PTY: it opens and closes with a spring that keeps its
+		// velocity when the pointer comes back mid-way. The content stays full
+		// until the bar has closed to its rail, so it does not rearrange while
+		// it narrows.
+		target := width
+		if !compact {
+			target = min(verticalTabsWidth, size.Width*0.6)
+		}
+		width = c.Canvas().Animate(hitVerticalTabs, verticalTabsWidthSlot, target, verticalTabsSlideMotion)
+		compact = compact && width <= target+0.5
 	}
 	if width <= 0 {
 		view.bounds = gfx.Rect{}
