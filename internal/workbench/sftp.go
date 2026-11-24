@@ -1661,11 +1661,20 @@ func (view *sftpView) recordTransferTargetDir(dir string) {
 	}
 }
 
-func (state *State) refreshSFTPViewsAfterTransfers(view *sftpView) {
-	view.refreshAfterTransfers = false
-	targetDirs := view.transferTargetDirs
-	view.transferTargetDirs = nil
+// transferDir is the folder a finished transfer wrote into. A path that is the
+// shown folder itself, or has no folder part, belongs to the shown folder.
+func (view *sftpView) transferDir(resultPath string) string {
+	dir := path.Dir(resultPath)
+	if view.path == resultPath || dir == "." || dir == "" {
+		return view.path
+	}
+	return dir
+}
 
+func (state *State) sftpViewsForSession(view *sftpView) []*sftpView {
+	if view == nil {
+		return nil
+	}
 	session, _ := state.sftpSession(view)
 	var views []*sftpView
 	if session != nil {
@@ -1681,6 +1690,34 @@ func (state *State) refreshSFTPViewsAfterTransfers(view *sftpView) {
 	if !slices.Contains(views, view) {
 		views = append(views, view)
 	}
+	return views
+}
+
+func (state *State) refreshSFTPViewsForDirectory(view *sftpView, targetDir string) {
+	if view == nil || targetDir == "" {
+		return
+	}
+	for _, v := range state.sftpViewsForSession(view) {
+		if v.worker != nil {
+			if v.path == targetDir {
+				if v.busy && v.navigation.id != 0 && v.navigation.path == targetDir {
+					v.refreshAfterListing = targetDir
+				} else {
+					state.refreshSFTPDirectory(v, targetDir)
+				}
+			} else {
+				state.refreshSFTPDirectory(v, targetDir)
+			}
+		}
+	}
+}
+
+func (state *State) refreshSFTPViewsAfterTransfers(view *sftpView) {
+	view.refreshAfterTransfers = false
+	targetDirs := view.transferTargetDirs
+	view.transferTargetDirs = nil
+
+	views := state.sftpViewsForSession(view)
 
 	for _, v := range views {
 		v.forgetListings()
@@ -2678,6 +2715,16 @@ func (state *State) pumpSFTP(session *Session) {
 		state.resumeInterruptedTransfers(view)
 	}
 	state.refreshSFTPTransfers(view)
+	// Folders that received a finished transfer in this pass. They are read
+	// again once the pass has drained its results, while other transfers may
+	// still be running.
+	var batchTargetDirs []string
+	noteBatchDir := func(dir string) {
+		clean := path.Clean(dir)
+		if clean != "" && clean != "." && !slices.Contains(batchTargetDirs, clean) {
+			batchTargetDirs = append(batchTargetDirs, clean)
+		}
+	}
 	for {
 		select {
 		case result, ok := <-view.worker.Results():
@@ -2745,14 +2792,18 @@ func (state *State) pumpSFTP(session *Session) {
 					view.refreshStatus = fmt.Sprintf(state.messages.SFTPUploadedFmt, formatBytes(result.Bytes), result.Path)
 					view.status = view.refreshStatus
 					if result.Path != "" {
-						view.recordTransferTargetDir(path.Dir(result.Path))
+						dir := view.transferDir(result.Path)
+						view.recordTransferTargetDir(dir)
+						noteBatchDir(dir)
 					}
 				} else if result.Operation == sftpclient.OperationRemoteCopy {
 					view.refreshAfterTransfers = true
 					view.refreshStatus = fmt.Sprintf(state.messages.SFTPCopiedFmt, formatBytes(result.Bytes), result.Path)
 					view.status = view.refreshStatus
 					if result.Path != "" {
-						view.recordTransferTargetDir(path.Dir(result.Path))
+						dir := view.transferDir(result.Path)
+						view.recordTransferTargetDir(dir)
+						noteBatchDir(dir)
 					}
 				} else {
 					view.status = fmt.Sprintf(state.messages.SFTPDownloadedFmt, formatBytes(result.Bytes), result.LocalPath)
@@ -2896,7 +2947,7 @@ func (state *State) pumpSFTP(session *Session) {
 			case sftpclient.OperationUpload:
 				view.refreshStatus = fmt.Sprintf(state.messages.SFTPUploadedFmt, formatBytes(result.Bytes), result.Path)
 				if result.Path != "" {
-					view.recordTransferTargetDir(path.Dir(result.Path))
+					view.recordTransferTargetDir(view.transferDir(result.Path))
 				}
 				state.refreshSFTPViewsAfterTransfers(view)
 			case sftpclient.OperationCreateFile:
@@ -2956,6 +3007,9 @@ func (state *State) pumpSFTP(session *Session) {
 				state.refreshSFTPAfterRemoteSave(view, result.Path)
 			}
 		default:
+			for _, dir := range batchTargetDirs {
+				state.refreshSFTPViewsForDirectory(view, dir)
+			}
 			state.refreshSFTPTransfers(view)
 			if view.refreshAfterTransfers && !view.busy && !sftpTransfersActive(view.transfers) {
 				state.refreshSFTPViewsAfterTransfers(view)
