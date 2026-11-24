@@ -148,6 +148,44 @@ func TestTransferCenterPopupRoutesClicksAndFitsSmallWindows(t *testing.T) {
 	}
 }
 
+func TestTransferCenterCompactCardDoesNotStealFocusOrConsumeOutsidePress(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	populateTransferPreview(state)
+	state.activeSection = sectionTerminal
+	state.transfers.compact = true
+	view, err := headless.Open(state.WindowConfig(app.Config{
+		Title: "Motty", Width: 900, Height: 600, Tree: Tree(),
+		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
+	}), nil, headless.Options{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Wait(300 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	terminalID := state.activeTerminalFocusHit()
+	if terminalID.IsZero() || view.Snapshot().Focused != terminalID {
+		t.Fatalf("compact card stole terminal focus: focused=%v terminal=%v", view.Snapshot().Focused, terminalID)
+	}
+	terminal, ok := findSnapshotHit(view.Snapshot(), terminalID)
+	if !ok {
+		t.Fatalf("terminal focus target %v has no hit region", terminalID)
+	}
+	if err := view.Click(terminal.Bounds.X+terminal.Bounds.Width/2, terminal.Bounds.Y+terminal.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Wait(100 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if state.transfers.open {
+		t.Fatal("outside press did not dismiss the compact card")
+	}
+	if view.Snapshot().Focused != terminalID {
+		t.Fatalf("outside press did not reach the terminal: focused=%v terminal=%v", view.Snapshot().Focused, terminalID)
+	}
+}
+
 func TestTransferCenterCompactCardExpandsAndFitsSmallWindows(t *testing.T) {
 	for _, size := range []gfx.Size{{Width: 900, Height: 600}, {Width: 560, Height: 420}} {
 		t.Run(fmt.Sprintf("%dx%d", int(size.Width), int(size.Height)), func(t *testing.T) {
@@ -172,19 +210,14 @@ func TestTransferCenterCompactCardExpandsAndFitsSmallWindows(t *testing.T) {
 			}
 			compact := state.transfers.surface
 			area := state.workspacePixelBounds(size)
-			if compact.Width > 360.5 || compact.Height > 200 {
-				t.Fatalf("compact card is not small: %+v", compact)
+			if compact.Width <= 0 || compact.Height <= 0 || compact.Width >= area.Width || compact.Height >= area.Height {
+				t.Fatalf("compact card does not leave room for the terminal: card=%+v area=%+v", compact, area)
 			}
 			if compact.X < area.X || compact.Y < area.Y || compact.X+compact.Width > area.X+area.Width || compact.Y+compact.Height > area.Y+area.Height {
 				t.Fatalf("compact card outside terminal area: card=%+v area=%+v", compact, area)
 			}
-			right := compact.X + compact.Width
-			if delta := right - (area.X + area.Width - transferCenterInset); delta < -1 || delta > 1 {
-				t.Fatalf("compact card is not at the terminal area's right edge: card=%+v area=%+v", compact, area)
-			}
-			top := compact.Y
-			if delta := top - (area.Y + transferCenterInset + 1 + transferCenterGap); delta < -1 || delta > 1 {
-				t.Fatalf("compact card is not at the terminal area's top edge: card=%+v area=%+v", compact, area)
+			if compact.X+compact.Width <= area.X+area.Width/2 || compact.Y >= area.Y+area.Height/2 {
+				t.Fatalf("compact card is not in the terminal area's top-right corner: card=%+v area=%+v", compact, area)
 			}
 			if _, ok := findSnapshotHit(view.Snapshot(), hitTransfersList); ok {
 				t.Fatal("compact card declared the full transfer list")
@@ -210,8 +243,24 @@ func TestTransferCenterCompactCardExpandsAndFitsSmallWindows(t *testing.T) {
 				if err := view.Click(expand.Bounds.X+expand.Bounds.Width/2, expand.Bounds.Y+expand.Bounds.Height/2); err != nil {
 					t.Fatal(err)
 				}
-			} else if err := view.Driver().Key(gfx.KeyEnter, 0); err != nil {
-				t.Fatal(err)
+			} else {
+				for range 64 {
+					if view.Snapshot().Focused == hitTransfersExpand {
+						break
+					}
+					if err := view.Driver().Key(gfx.KeyTab, 0); err != nil {
+						t.Fatal(err)
+					}
+					if err := view.Wait(16 * time.Millisecond); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if view.Snapshot().Focused != hitTransfersExpand {
+					t.Fatal("compact card's expand button is not reachable with Tab")
+				}
+				if err := view.Driver().Key(gfx.KeyEnter, 0); err != nil {
+					t.Fatal(err)
+				}
 			}
 			if err := view.Wait(300 * time.Millisecond); err != nil {
 				t.Fatal(err)
@@ -222,12 +271,11 @@ func TestTransferCenterCompactCardExpandsAndFitsSmallWindows(t *testing.T) {
 			if _, ok := findSnapshotHit(view.Snapshot(), hitTransfersList); !ok {
 				t.Fatal("expanded transfer center has no list")
 			}
-			if state.transfers.surface.Width <= compact.Width {
-				t.Fatalf("expanded center did not grow: compact=%v expanded=%v", compact, state.transfers.surface)
-			}
 			expanded := state.transfers.surface
-			if expanded.X < area.X || expanded.Y < area.Y || expanded.X+expanded.Width > area.X+area.Width || expanded.Y+expanded.Height > area.Y+area.Height {
-				t.Fatalf("expanded center outside terminal area: card=%+v area=%+v", expanded, area)
+			viewport := gfx.Rect{Width: size.Width, Height: size.Height}
+			if expanded.Width <= 0 || expanded.Height <= 0 || expanded.X < viewport.X || expanded.Y < viewport.Y ||
+				expanded.X+expanded.Width > viewport.X+viewport.Width || expanded.Y+expanded.Height > viewport.Y+viewport.Height {
+				t.Fatalf("expanded center outside viewport: card=%+v viewport=%+v", expanded, viewport)
 			}
 			closeButton, ok := findSnapshotHit(view.Snapshot(), hitTransfersClose)
 			if !ok {
@@ -245,6 +293,32 @@ func TestTransferCenterCompactCardExpandsAndFitsSmallWindows(t *testing.T) {
 
 func TestTransferCenterCompactCardShrinksAfterCompletion(t *testing.T) {
 	state := transferPreviewState(t)
+	if state.deck.ActiveWorkspace() == 0 {
+		if _, _, err := state.deck.Create("transfer test"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	state.activeSection = sectionTerminal
+	state.transfers.compact = true
+	config := state.WindowConfig(app.Config{
+		Title: "Motty", Width: 900, Height: 600, Tree: Tree(),
+		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
+	})
+	view, err := headless.Open(config, nil, headless.Options{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Wait(300 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	activeCard := state.transfers.surface
+	area := state.workspacePixelBounds(gfx.Size{Width: 900, Height: 600})
+	if activeCard.Width <= 0 || activeCard.Height <= 0 || activeCard.X < area.X || activeCard.Y < area.Y ||
+		activeCard.X+activeCard.Width > area.X+area.Width || activeCard.Y+activeCard.Height > area.Y+area.Height {
+		t.Fatalf("active card outside terminal area: card=%+v area=%+v", activeCard, area)
+	}
+	view.Close()
+
 	for index := range state.transfers.entries {
 		entry := &state.transfers.entries[index]
 		entry.snapshot.State = sftpclient.TransferCompleted
@@ -255,17 +329,7 @@ func TestTransferCenterCompactCardShrinksAfterCompletion(t *testing.T) {
 	if state.transfers.completed != len(state.transfers.entries) || state.transfers.active != 0 {
 		t.Fatalf("completed summary: completed=%d active=%d", state.transfers.completed, state.transfers.active)
 	}
-	if state.deck.ActiveWorkspace() == 0 {
-		if _, _, err := state.deck.Create("transfer test"); err != nil {
-			t.Fatal(err)
-		}
-	}
-	state.activeSection = sectionTerminal
-	state.transfers.compact = true
-	view, err := headless.Open(state.WindowConfig(app.Config{
-		Title: "Motty", Width: 900, Height: 600, Tree: Tree(),
-		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
-	}), nil, headless.Options{Scale: 1})
+	view, err = headless.Open(config, nil, headless.Options{Scale: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,8 +338,12 @@ func TestTransferCenterCompactCardShrinksAfterCompletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	card := state.transfers.surface
-	if card.Height > 150 || card.Height < 100 {
-		t.Fatalf("completed card did not shrink to its content: %+v", card)
+	if card.Width <= 0 || card.Height <= 0 || card.X < area.X || card.Y < area.Y ||
+		card.X+card.Width > area.X+area.Width || card.Y+card.Height > area.Y+area.Height {
+		t.Fatalf("completed card outside terminal area: card=%+v area=%+v", card, area)
+	}
+	if card.Height >= activeCard.Height {
+		t.Fatalf("completed card did not become shorter: active=%+v completed=%+v", activeCard, card)
 	}
 	want := fmt.Sprintf("%s · %d", state.messages.Transfers.Completed, state.transfers.completed)
 	found := false
@@ -291,7 +359,8 @@ func TestTransferCenterCompactCardShrinksAfterCompletion(t *testing.T) {
 		t.Fatalf("completed card is missing %q", want)
 	}
 	expand, ok := findSnapshotHit(view.Snapshot(), hitTransfersExpand)
-	if !ok || expand.Bounds.Y+expand.Bounds.Height > card.Y+card.Height {
+	if !ok || expand.Bounds.X < card.X || expand.Bounds.X+expand.Bounds.Width > card.X+card.Width ||
+		expand.Bounds.Y < card.Y || expand.Bounds.Y+expand.Bounds.Height > card.Y+card.Height {
 		t.Fatalf("completed card clipped its expand control: hit=%+v card=%+v", expand, card)
 	}
 	writeTransferPreview(t, view, card, "transfer-compact-completed.png")

@@ -20,6 +20,11 @@ func transferPreviewState(t testing.TB) *State {
 	t.Helper()
 	_, options := newWorld(t)
 	state := newTestState(t, options)
+	populateTransferPreview(state)
+	return state
+}
+
+func populateTransferPreview(state *State) {
 	state.setLanguage(i18n.Chinese)
 	when := time.Date(2026, 10, 27, 10, 30, 0, 0, time.Local)
 	for index, phase := range []sftpclient.TransferState{sftpclient.TransferCompleted, sftpclient.TransferFailed, sftpclient.TransferPaused, sftpclient.TransferRunning} {
@@ -48,7 +53,6 @@ func transferPreviewState(t testing.TB) *State {
 	state.transfers.nextID = 4
 	state.transfers.open = true
 	state.describeTransferSummary()
-	return state
 }
 
 func TestTransferCenterUsesReadableUnitsAndKeepsOtherConnections(t *testing.T) {

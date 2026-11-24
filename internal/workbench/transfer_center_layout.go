@@ -22,39 +22,44 @@ func (state *State) declareTransferCenter(c ui.C) {
 		return
 	}
 	center.handlers(state)
-	area := state.transferCenterArea()
-	anchor := gfx.Rect{
-		X: area.X + area.Width - transferCenterInset - 1, Y: area.Y + transferCenterInset,
-		Width: 1, Height: 1,
-	}
-	width, preferredHeight := max(0, min(1180, area.Width-2*transferCenterInset)), float32(760)
+	viewport := c.Bounds()
+	anchor := center.anchor
+	width, preferredHeight := max(0, min(1180, viewport.Width-24)), float32(760)
+	roomArea, margin := viewport, transferCenterGap
 	if center.compact {
+		area := state.transferCenterArea()
+		anchor = gfx.Rect{
+			X: area.X + area.Width - transferCenterInset - 1, Y: area.Y + transferCenterInset,
+			Width: 1, Height: 1,
+		}
 		width, preferredHeight = max(0, min(360, area.Width-2*transferCenterInset)), 148
 		if center.active == 0 {
 			preferredHeight = 108
 		}
+		roomArea, margin = area, transferCenterInset
+	} else if anchor.Width <= 0 {
+		anchor = gfx.Rect{X: max(viewport.Width-16, 0), Y: windowBarHeight, Width: 1, Height: 1}
 	}
 	padding := c.Theme().Metrics.PadSurface
-	// The card hangs from the terminal area's top-right corner like a notice,
-	// rather than from the toolbar's transfer button. Size the expanded panel
-	// for the room the panes leave, including the popover's padding.
-	room := area.Y + area.Height - transferCenterInset - anchor.Y - anchor.Height - transferCenterGap
+	// Only the compact notice hangs from the terminal content. The full center
+	// keeps its toolbar anchor and original viewport sizing.
+	room := roomArea.Y + roomArea.Height - margin - anchor.Y - anchor.Height - transferCenterGap
 	side := components.PopoverBottom
-	if above := anchor.Y - transferCenterGap - (area.Y + transferCenterInset); room < preferredHeight+2*padding && above > room {
+	if above := anchor.Y - transferCenterGap - (roomArea.Y + margin); room < preferredHeight+2*padding && above > room {
 		room, side = above, components.PopoverTop
 	}
 	height := max(0, min(preferredHeight, room-2*padding))
 	center.listWidth = max(0, width-2*padding)
-	origin := ui.Slot(c).Absolute().Left(anchor.X).Top(anchor.Y).Width(1).Height(1)
+	origin := ui.Slot(c).Absolute().Left(anchor.X).Top(anchor.Y).Width(max(anchor.Width, 1)).Height(max(anchor.Height, 1))
 	spec := ui.PopoverSpec{
-		Scope: hitTransfersScope, DismissID: hitTransfersDismiss, InitialFocusID: hitTransfersList,
+		Scope: hitTransfersScope, DismissID: hitTransfersDismiss,
 		Side: side, Align: ui.End, Offset: transferCenterGap, Width: width,
-		ConsumeOutsidePress: true,
 	}
 	body := func() { state.declareTransferBody(c, height) }
 	if center.compact {
-		spec.InitialFocusID = hitTransfersExpand
 		body = func() { state.declareTransferCompact(c, height) }
+	} else {
+		spec.InitialFocusID = hitTransfersList
 	}
 	if ui.PopoverWith(c, origin, &center.open, spec, body) {
 		center.close()
