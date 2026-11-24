@@ -36,12 +36,15 @@ import (
 	"sync"
 	"time"
 
-	_ "modernc.org/sqlite" // registers the "sqlite" driver
+	"modernc.org/sqlite" // registers the "sqlite" driver
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 var (
 	// ErrCorrupt means the file is not a usable database of this store.
 	ErrCorrupt = errors.New("config store: database is corrupt or not a config database")
+	// ErrBusy means another process holds the store; a later read may succeed.
+	ErrBusy = errors.New("database is busy")
 	// ErrTooNew means the file was written by a newer build. The error returned
 	// is a *TooNewError, which says which versions.
 	ErrTooNew = errors.New("config store: database is newer than this build")
@@ -457,22 +460,22 @@ func (s *Store) Load() (entries []Entry, local map[string][]byte, err error) {
 func load(ctx context.Context, db *sql.DB) (entries []Entry, local map[string][]byte, err error) {
 	rows, err := db.QueryContext(ctx, `SELECT kind, id, payload FROM records WHERE deleted=0 ORDER BY kind, id`)
 	if err != nil {
-		return nil, nil, fmt.Errorf("config store: load: %w", err)
+		return nil, nil, storeError("load", err)
 	}
 	for rows.Next() {
 		var entry Entry
 		if err := rows.Scan(&entry.Kind, &entry.ID, &entry.Payload); err != nil {
 			rows.Close()
-			return nil, nil, fmt.Errorf("config store: load: %w", err)
+			return nil, nil, storeError("load", err)
 		}
 		entries = append(entries, entry)
 	}
 	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
-		return nil, nil, fmt.Errorf("config store: load: %w", err)
+		return nil, nil, storeError("load", err)
 	}
 	rows, err = db.QueryContext(ctx, `SELECT key, value FROM local`)
 	if err != nil {
-		return nil, nil, fmt.Errorf("config store: load: %w", err)
+		return nil, nil, storeError("load", err)
 	}
 	local = map[string][]byte{}
 	for rows.Next() {
@@ -480,12 +483,12 @@ func load(ctx context.Context, db *sql.DB) (entries []Entry, local map[string][]
 		var value []byte
 		if err := rows.Scan(&key, &value); err != nil {
 			rows.Close()
-			return nil, nil, fmt.Errorf("config store: load: %w", err)
+			return nil, nil, storeError("load", err)
 		}
 		local[key] = value
 	}
 	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
-		return nil, nil, fmt.Errorf("config store: load: %w", err)
+		return nil, nil, storeError("load", err)
 	}
 	return entries, local, nil
 }
@@ -499,14 +502,44 @@ func load(ctx context.Context, db *sql.DB) (entries []Entry, local map[string][]
 // *TooNewError; an older schema is read as it is, and reports an error if it
 // lacks a table this build needs.
 func ReadOnly(path string, format int) (entries []Entry, local map[string][]byte, err error) {
+	db, err := openReadOnly(context.Background(), path, format)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer db.Close()
+	return load(context.Background(), db)
+}
+
+// ReadLocal reads one device-local value without reading the records: a caller
+// that only needs a setting saved on this device does not pay for the whole
+// state. Its errors mean what ReadOnly's do.
+func ReadLocal(ctx context.Context, path string, format int, key string) (value []byte, err error) {
+	db, err := openReadOnly(ctx, path, format)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	err = db.QueryRowContext(ctx, `SELECT value FROM local WHERE key=?`, key).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, storeError("local", err)
+	}
+	return value, nil
+}
+
+// openReadOnly opens the store at path without changing it and checks its
+// format. The caller closes the database.
+func openReadOnly(ctx context.Context, path string, format int) (*sql.DB, error) {
 	if path == "" {
-		return nil, nil, errors.New("config store: bad database path")
+		return nil, errors.New("config store: bad database path")
 	}
 	if _, err := os.Stat(path); err != nil {
-		return nil, nil, fmt.Errorf("config store: %w", err)
+		return nil, fmt.Errorf("config store: %w", err)
 	}
 	if err := checkHeader(path); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	slashed := filepath.ToSlash(path)
 	if !strings.HasPrefix(slashed, "/") {
@@ -515,27 +548,56 @@ func ReadOnly(path string, format int) (entries []Entry, local map[string][]byte
 	uri := url.URL{Scheme: "file", Path: slashed, RawQuery: "mode=ro&_pragma=busy_timeout(5000)&_pragma=query_only(1)"}
 	db, err := sql.Open("sqlite", uri.String())
 	if err != nil {
-		return nil, nil, fmt.Errorf("config store: open: %w", err)
+		return nil, fmt.Errorf("config store: open: %w", err)
 	}
-	defer db.Close()
 	db.SetMaxOpenConns(1)
-	ctx := context.Background()
 	var stored string
 	err = db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='format'`).Scan(&stored)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 	case err != nil:
-		return nil, nil, ErrCorrupt
+		db.Close()
+		if isBusyError(err) {
+			return nil, fmt.Errorf("config store: %w", errors.Join(ErrBusy, err))
+		}
+		return nil, ErrCorrupt
 	default:
 		var found int
 		if _, err := fmt.Sscanf(stored, "%d", &found); err != nil {
-			return nil, nil, ErrCorrupt
+			db.Close()
+			return nil, ErrCorrupt
 		}
 		if found > format {
-			return nil, nil, &TooNewError{Found: fmt.Sprintf("format %d", found), Supported: fmt.Sprintf("format %d", format)}
+			db.Close()
+			return nil, &TooNewError{Found: fmt.Sprintf("format %d", found), Supported: fmt.Sprintf("format %d", format)}
 		}
 	}
-	return load(ctx, db)
+	return db, nil
+}
+
+// storeError reports a failed query, keeping a busy store distinct so a caller
+// can retry instead of treating the whole store as gone.
+func storeError(op string, err error) error {
+	if isBusyError(err) {
+		return fmt.Errorf("config store: %s: %w", op, errors.Join(ErrBusy, err))
+	}
+	return fmt.Errorf("config store: %s: %w", op, err)
+}
+
+// isBusyError reports SQLite's lock contention by result code, so a changed
+// driver message cannot turn a passing lock into ErrCorrupt. It maps to ErrBusy
+// for callers that must tell a passing lock from a store that is not readable.
+func isBusyError(err error) bool {
+	var sqliteErr *sqlite.Error
+	if !errors.As(err, &sqliteErr) {
+		return false
+	}
+	// The low byte is the primary result code; the rest is the extended code.
+	switch sqliteErr.Code() & 0xff {
+	case sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED:
+		return true
+	}
+	return false
 }
 
 // Records returns every record, tombstones included: what a device sends to the

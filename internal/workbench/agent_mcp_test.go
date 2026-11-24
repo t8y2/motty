@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -352,6 +353,193 @@ func TestAgentHostListEmptyWithoutPermission(t *testing.T) {
 	}
 	if connections, _ := world.server.counts(); connections != 0 {
 		t.Fatalf("listing hosts opened %d SSH connections", connections)
+	}
+}
+
+// TestListHostsFollowsTheSavedState keeps the server's host list in step with
+// the saved state: a host the user opens to agents in Motty while the server is
+// running is listed without restarting the client's server, and a host closed
+// again drops out.
+func TestListHostsFollowsTheSavedState(t *testing.T) {
+	world := newAgentWorld(t)
+	saveAgentState(t, world, false)
+	catalog, err := readAgentCatalog(world.options.StatePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := newAgentBackend(catalog, world.options.withDefaults())
+	t.Cleanup(backend.Close)
+	list := func() string {
+		return (gate.Gate{Backend: backend}).Run(context.Background(), tools.NameListHosts, []byte(`{}`)).Text
+	}
+	if got := list(); got != "no hosts are open to agents" {
+		t.Fatalf("before a host is opened, list_hosts = %q", got)
+	}
+	saveAgentState(t, world, true)
+	if got := list(); !strings.Contains(got, "host_web: web ") {
+		t.Fatalf("after a host is opened, list_hosts = %q, want it to list host_web", got)
+	}
+	if _, err := backend.resolve("host_web"); err != nil {
+		t.Fatalf("the newly opened host cannot be resolved: %v", err)
+	}
+	if _, err := backend.Exec(context.Background(), tools.TerminalExecArgs{Session: "host_web", Command: "echo hello"}); err != nil {
+		t.Fatalf("the newly opened host cannot run a command: %v", err)
+	}
+	saveAgentState(t, world, false)
+	if got := list(); got != "no hosts are open to agents" {
+		t.Fatalf("after a host is closed, list_hosts = %q", got)
+	}
+	if _, err := backend.resolve("host_web"); err == nil {
+		t.Fatal("a host closed to agents still resolves")
+	}
+	if len(backend.entries) != 0 {
+		t.Fatalf("a host closed to agents kept %d connections", len(backend.entries))
+	}
+
+	// A call already using a connection keeps it to the end of that call: the
+	// connection is only closed once the last use releases it, so the read in
+	// progress never sees it drop underneath.
+	saveAgentState(t, world, true)
+	backend.RefreshPermissions(context.Background())
+	held, err := backend.acquire(context.Background(), "host_web")
+	if err != nil {
+		t.Fatalf("the reopened host cannot be acquired: %v", err)
+	}
+	saveAgentState(t, world, false)
+	backend.RefreshPermissions(context.Background())
+	backend.currentHosts()
+	held.mu.Lock()
+	keptConnection, revoked := held.conn != nil, held.revoked
+	held.mu.Unlock()
+	if !keptConnection || !revoked {
+		t.Fatalf("a connection in use was closed under its call: conn=%v revoked=%v", keptConnection, revoked)
+	}
+	held.release()
+	held.mu.Lock()
+	closed := held.conn == nil
+	held.mu.Unlock()
+	if !closed {
+		t.Fatal("the connection stayed open after its last use ended")
+	}
+
+	// Listings and state changes come from different goroutines in the app, so
+	// they must not race while the file is rewritten under them.
+	var group sync.WaitGroup
+	for worker := 0; worker < 8; worker++ {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			for round := 0; round < 5; round++ {
+				list()
+			}
+		}()
+	}
+	for round := 0; round < 5; round++ {
+		saveAgentState(t, world, round%2 == 0)
+	}
+	group.Wait()
+}
+
+// TestClosingAHostCancelsItsJobsAndTransfers checks a host closed to agents does
+// not keep running background work: its jobs and transfers are canceled, not
+// just left to finish.
+func TestClosingAHostCancelsItsJobsAndTransfers(t *testing.T) {
+	world := newAgentWorld(t)
+	saveAgentState(t, world, true)
+	catalog, err := readAgentCatalog(world.options.StatePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := newAgentBackend(catalog, world.options.withDefaults())
+	t.Cleanup(backend.Close)
+	host := backend.allHosts[0]
+	entry := &agentEntry{backend: backend, host: host}
+	backend.entries[host.CatalogID] = entry
+	jobCanceled, transferCanceled := false, false
+	backend.jobs = map[string]*agentJob{"job": {entry: entry, cancel: func() { jobCanceled = true }}}
+	backend.transfers = []*agentTransfer{{value: gate.Transfer{Session: host.CatalogID}, cancel: func() { transferCanceled = true }}}
+
+	saveAgentState(t, world, false)
+	backend.RefreshPermissions(context.Background())
+
+	if !jobCanceled || !transferCanceled {
+		t.Fatalf("a closed host kept its work: job=%v transfer=%v", jobCanceled, transferCanceled)
+	}
+	if len(backend.entries) != 0 {
+		t.Fatalf("a closed host kept %d entries", len(backend.entries))
+	}
+}
+
+// TestWorkIsCanceledEvenWithoutAnEntry checks the cancel pass looks at the new
+// set, not at the entries it dropped: a transfer never writes an entry, and a
+// job can outlive the entry it started on.
+func TestWorkIsCanceledEvenWithoutAnEntry(t *testing.T) {
+	world := newAgentWorld(t)
+	saveAgentState(t, world, true)
+	catalog, err := readAgentCatalog(world.options.StatePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := newAgentBackend(catalog, world.options.withDefaults())
+	t.Cleanup(backend.Close)
+	host := backend.allHosts[0]
+	jobCanceled, transferCanceled := false, false
+	backend.jobs = map[string]*agentJob{"job": {
+		entry:  &agentEntry{backend: backend, host: host},
+		cancel: func() { jobCanceled = true },
+	}}
+	backend.transfers = []*agentTransfer{{value: gate.Transfer{Session: host.CatalogID}, cancel: func() { transferCanceled = true }}}
+	if len(backend.entries) != 0 {
+		t.Fatal("the test was meant to start with no entry")
+	}
+
+	saveAgentState(t, world, false)
+	backend.RefreshPermissions(context.Background())
+
+	if !jobCanceled || !transferCanceled {
+		t.Fatalf("work with no entry kept running: job=%v transfer=%v", jobCanceled, transferCanceled)
+	}
+}
+
+// TestACorruptStateClosesEveryHost checks an unreadable state is a definite
+// answer: a permission boundary must not fail open just because the file cannot
+// be parsed.
+func TestACorruptStateClosesEveryHost(t *testing.T) {
+	world := newAgentWorld(t)
+	saveAgentState(t, world, true)
+	catalog, err := readAgentCatalog(world.options.StatePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := newAgentBackend(catalog, world.options.withDefaults())
+	t.Cleanup(backend.Close)
+	if len(*backend.permitted.Load()) == 0 {
+		t.Fatal("the test started with no host open")
+	}
+
+	if err := os.WriteFile(world.options.StatePath, []byte("not a config store"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	backend.RefreshPermissions(context.Background())
+	if got := len(*backend.permitted.Load()); got != 0 {
+		t.Fatalf("a corrupt state kept %d hosts open", got)
+	}
+}
+
+// TestOnlyABusyStoreIsATransientFailure keeps the two failures apart by type: a
+// busy store keeps the last set, every other read failure closes every host.
+func TestOnlyABusyStoreIsATransientFailure(t *testing.T) {
+	if !errors.Is(fmt.Errorf("config store: load: %w", configstore.ErrBusy), configstore.ErrBusy) {
+		t.Fatal("a busy store was taken for a definite answer")
+	}
+	for _, err := range []error{
+		configstore.ErrCorrupt,
+		&configstore.TooNewError{Found: "format 9", Supported: "format 8"},
+		errors.New("device values: unexpected end of JSON input"),
+	} {
+		if errors.Is(err, configstore.ErrBusy) {
+			t.Fatalf("%v was taken for a passing error", err)
+		}
 	}
 }
 

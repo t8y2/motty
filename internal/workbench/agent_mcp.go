@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"motty/internal/ai/gate"
@@ -129,7 +130,7 @@ func ServeAgentMCP(ctx context.Context, in io.Reader, out io.Writer, options Age
 	}
 	backend.allowWrites = mode == gate.ModeAllowAll
 	backend.auditLog = log
-	if len(backend.hosts) == 0 {
+	if len(backend.currentHosts()) == 0 {
 		fmt.Fprintln(options.Log, "motty mcp-serve: no host is open to agents; turn it on in the host's settings in Motty")
 	}
 	// Only the separately confirmed full-access mode skips approvals. In other
@@ -189,10 +190,14 @@ func readAgentCatalog(statePath string) (hostCatalog, error) {
 // the first time a call needs it and stays connected while calls keep coming.
 type agentBackend struct {
 	catalog hostCatalog
-	hosts   []Host
-	options AgentOptions
+	// allHosts is every host in the catalog, permitted or not. Never hand it to
+	// a tool: currentHosts is the only way out, because it applies the
+	// permission set.
+	allHosts []Host
+	options  AgentOptions
 
 	mu                sync.Mutex
+	refreshMu         sync.Mutex
 	entries           map[string]*agentEntry
 	jobs              map[string]*agentJob
 	jobGroup          sync.WaitGroup
@@ -208,16 +213,29 @@ type agentBackend struct {
 	transferRootError error
 	auditLog          *store.Store
 	notes             *headlessNotes
+
+	// permitted holds the catalog ids of the hosts open to agents right now. It
+	// is refreshed from the saved state once per tool call (RefreshPermissions),
+	// so a host opened or closed in Motty takes effect without restarting this
+	// server. A transient read error leaves the last good set in place; a state
+	// that says its format is newer than this build, or that is gone, closes
+	// everything, because that is a definite answer rather than a passing one.
+	permitted atomic.Pointer[map[string]bool]
+	// stateKnown records that the saved state existed when this server started.
+	// A state that exists and then disappears is a definite "closed", while a
+	// state this backend was built without (tests, an embedded catalog) is not.
+	stateKnown bool
 }
 
 var _ gate.Backend = (*agentBackend)(nil)
+var _ gate.PermissionsRefresher = (*agentBackend)(nil)
 
 func newAgentBackend(catalog hostCatalog, options AgentOptions) *agentBackend {
 	ctx, cancel := context.WithCancel(context.Background())
 	roots, rootError := validateTransferRoots(options.TransferRoots)
-	return &agentBackend{
+	backend := &agentBackend{
 		catalog:           catalog,
-		hosts:             catalog.agentHostList(),
+		allHosts:          catalog.hosts,
 		options:           options,
 		entries:           make(map[string]*agentEntry),
 		transferCtx:       ctx,
@@ -227,6 +245,165 @@ func newAgentBackend(catalog hostCatalog, options AgentOptions) *agentBackend {
 		transferRootError: rootError,
 		notes:             newHeadlessNotes(options.StatePath),
 	}
+	initial := make(map[string]bool, len(catalog.agentHosts))
+	for _, host := range catalog.hosts {
+		if host.isSSH() && catalog.agentHosts[host.CatalogID] {
+			initial[host.CatalogID] = true
+		}
+	}
+	backend.permitted.Store(&initial)
+	_, statErr := os.Stat(options.StatePath)
+	backend.stateKnown = statErr == nil
+	return backend
+}
+
+// currentHosts returns the hosts of the catalog this server started with that
+// are still open to agents. The catalog stays as read at startup, so the
+// run-local number a host was given stays the same and a jump route keeps
+// pointing at the same host; a host created after the server started is picked
+// up when the client restarts it. It reads no file: RefreshPermissions does
+// that once per tool call.
+func (b *agentBackend) currentHosts() []Host {
+	permitted := *b.permitted.Load()
+	hosts := make([]Host, 0, len(b.allHosts))
+	for _, host := range b.allHosts {
+		if host.isSSH() && permitted[host.CatalogID] {
+			hosts = append(hosts, host)
+		}
+	}
+	return hosts
+}
+
+// RefreshPermissions re-reads the hosts open to agents from the saved state.
+// The gate calls it once at the start of each tool call, so one call does one
+// read however many times it consults the list. It never trusts a cached stamp:
+// this set is a permission boundary, and a write that leaves the file's size
+// and modification time looking the same must not keep a host open.
+func (b *agentBackend) RefreshPermissions(ctx context.Context) error {
+	// One read at a time: otherwise an older snapshot can land after a newer
+	// one and reopen a host the user just closed.
+	b.refreshMu.Lock()
+	if ctx != nil && ctx.Err() != nil {
+		b.refreshMu.Unlock()
+		return ctx.Err()
+	}
+	permitted, err := readAgentPermissions(ctx, b.options.StatePath)
+	if err != nil {
+		// Only a passing failure keeps the last set. Everything else — a store
+		// that is not this store, a malformed page, a parse error, a file that
+		// is gone when it existed at startup, a newer format — is a definite
+		// answer, because a permission boundary must not fail open.
+		transient := errors.Is(err, configstore.ErrBusy)
+		if errors.Is(err, os.ErrNotExist) {
+			// A state this backend was built without (tests, an embedded
+			// catalog) keeps its startup set: it never had a file to lose, and
+			// a missing file is not a failure to report.
+			if !b.stateKnown {
+				b.refreshMu.Unlock()
+				return nil
+			}
+			transient = false
+		}
+		if transient {
+			// A passing read error (a busy lock, a half-written file) keeps the
+			// last good set; closing on it would flap every open host. Say so:
+			// a state that stays unreadable must not fail open in silence.
+			if b.options.Log != nil {
+				fmt.Fprintf(b.options.Log, "motty mcp-serve: keeping the hosts open to agents: %v\n", err)
+			}
+			b.refreshMu.Unlock()
+			// The caller must be able to refuse the call: a permission set that
+			// could not be read is not a permission set that allows anything.
+			return err
+		}
+		permitted = map[string]bool{}
+	}
+	b.permitted.Store(&permitted)
+	// Enforce the new set right away: a poll or stop call that never lists hosts
+	// must not leave a closed host's command running.
+	dropped := b.closeUnpermitted(permitted)
+	// Closing a connection can wait on a dial that holds entry.mu, so do it
+	// after releasing refreshMu: otherwise a call with no host work at all waits
+	// behind that dial.
+	b.refreshMu.Unlock()
+	b.finishClosing(dropped)
+	return nil
+}
+
+// closeUnpermitted closes a host that is no longer open to agents: its jobs and
+// transfers are canceled, and its connection is closed. A host that a call is
+// using right now is marked revoked instead: dropping its connection under that
+// call would race with the read it is in the middle of, so release closes it
+// when the last use ends.
+func (b *agentBackend) closeUnpermitted(permitted map[string]bool) []*agentEntry {
+	b.mu.Lock()
+	var dropped []*agentEntry
+	for id, entry := range b.entries {
+		if !permitted[id] {
+			delete(b.entries, id)
+			dropped = append(dropped, entry)
+		}
+	}
+	// Work is canceled by the new set, not by the entries that were dropped: a
+	// transfer never writes an entry, so a host whose only work is an upload or
+	// a download would otherwise keep running after it was closed.
+	for _, job := range b.jobs {
+		if job.entry != nil && !permitted[job.entry.host.CatalogID] {
+			job.cancel()
+		}
+	}
+	for _, task := range b.transfers {
+		if task.cancel == nil {
+			continue
+		}
+		// A transfer's session is always its host's catalog id
+		// (agent_transfers.go:180), so comparing labels would only reach
+		// another host whose label happens to equal this id.
+		if !permitted[task.value.Session] {
+			task.cancel()
+		}
+	}
+	b.mu.Unlock()
+	return dropped
+}
+
+// finishClosing stops the entries closeUnpermitted dropped. It runs without
+// refreshMu so a busy dial only delays the host being closed, not every call.
+func (b *agentBackend) finishClosing(dropped []*agentEntry) {
+	for _, entry := range dropped {
+		entry.mu.Lock()
+		if entry.active > 0 {
+			entry.revoked = true
+		} else {
+			entry.stopIdle()
+			entry.drop()
+		}
+		entry.mu.Unlock()
+	}
+}
+
+// readAgentPermissions reads only the hosts the saved state opens to agents. It
+// is cheaper than the whole catalog: no identity key file is inspected.
+func readAgentPermissions(ctx context.Context, statePath string) (map[string]bool, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	raw, err := configstore.ReadLocal(ctx, statePath, configFormat, localKey)
+	if err != nil {
+		return nil, err
+	}
+	// agent_hosts is a device-local field, so the local record holds it on its
+	// own: reading that one row avoids loading every record and note.
+	if len(raw) == 0 {
+		return map[string]bool{}, nil
+	}
+	var state struct {
+		AgentHosts []string `json:"agent_hosts,omitempty"`
+	}
+	if err := json.Unmarshal(raw, &state); err != nil {
+		return nil, err
+	}
+	return agentHostSet(state.AgentHosts), nil
 }
 
 // agentEntry is one host's connection and what it has open.
@@ -239,6 +416,9 @@ type agentEntry struct {
 	remote sftpclient.Remote
 	active int // calls using the connection
 	timer  *time.Timer
+	// revoked is set when the host was closed to agents while a call was using
+	// the connection; release drops it once that call is done.
+	revoked bool
 }
 
 // Close ends every connection and every background job running on one.
@@ -280,22 +460,23 @@ var (
 // resolve finds the host a handle names: its id, or its label when that is
 // unambiguous. An empty handle is the only host there is.
 func (b *agentBackend) resolve(handle string) (Host, error) {
+	hosts := b.currentHosts()
 	if handle == "" {
-		if len(b.hosts) == 1 {
-			return b.hosts[0], nil
+		if len(hosts) == 1 {
+			return hosts[0], nil
 		}
-		if len(b.hosts) == 0 {
+		if len(hosts) == 0 {
 			return Host{}, errAgentNoHost
 		}
 		return Host{}, errAgentWhichHost
 	}
-	for _, host := range b.hosts {
+	for _, host := range hosts {
 		if host.CatalogID == handle {
 			return host, nil
 		}
 	}
 	var found []Host
-	for _, host := range b.hosts {
+	for _, host := range hosts {
 		if host.Label == handle {
 			found = append(found, host)
 		}
@@ -311,6 +492,11 @@ func (b *agentBackend) entryFor(host Host) (*agentEntry, error) {
 	defer b.mu.Unlock()
 	if b.closed {
 		return nil, errAgentClosed
+	}
+	// The permission set can change between resolve and here: a host closed in
+	// that window must not get an entry.
+	if !(*b.permitted.Load())[host.CatalogID] {
+		return nil, errAgentNoHost
 	}
 	entry := b.entries[host.CatalogID]
 	if entry == nil {
@@ -333,6 +519,11 @@ func (b *agentBackend) acquire(ctx context.Context, handle string) (*agentEntry,
 	}
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
+	// A close can land while this call waited for entry.mu: check the set again
+	// before dialing, so no connection is opened on a host that is now closed.
+	if !(*b.permitted.Load())[host.CatalogID] {
+		return nil, errAgentNoHost
+	}
 	if entry.conn == nil || entry.conn.Status().Phase != sshconn.PhaseConnected {
 		entry.drop()
 		conn, err := b.dial(ctx, host)
@@ -350,7 +541,10 @@ func (entry *agentEntry) release() {
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
 	entry.active--
-	if entry.active == 0 && entry.conn != nil {
+	if entry.active == 0 && entry.revoked {
+		entry.stopIdle()
+		entry.drop()
+	} else if entry.active == 0 && entry.conn != nil {
 		entry.timer = time.AfterFunc(entry.backend.options.Idle, entry.expire)
 	}
 }
@@ -413,8 +607,9 @@ func (entry *agentEntry) dropFiles() {
 }
 
 func (b *agentBackend) Sessions(context.Context) ([]gate.SessionInfo, error) {
-	sessions := make([]gate.SessionInfo, len(b.hosts))
-	for index, host := range b.hosts {
+	listed := b.currentHosts()
+	sessions := make([]gate.SessionInfo, len(listed))
+	for index, host := range listed {
 		sessions[index] = gate.SessionInfo{
 			ID: host.CatalogID, Title: host.Label, Ready: true,
 			Address: b.catalog.login(host) + "@" + host.Address + ":" + strconv.Itoa(int(host.Port)),
@@ -424,8 +619,9 @@ func (b *agentBackend) Sessions(context.Context) ([]gate.SessionInfo, error) {
 }
 
 func (b *agentBackend) Hosts(context.Context) ([]gate.HostInfo, error) {
-	hosts := make([]gate.HostInfo, 0, len(b.hosts))
-	for _, host := range b.hosts {
+	listed := b.currentHosts()
+	hosts := make([]gate.HostInfo, 0, len(listed))
+	for _, host := range listed {
 		hosts = append(hosts, gate.HostInfo{
 			ID: host.CatalogID, Title: host.Label,
 			Address: b.catalog.login(host) + "@" + host.Address + ":" + strconv.Itoa(int(host.Port)),

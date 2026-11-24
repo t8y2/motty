@@ -23,6 +23,43 @@ func (hostListBackend) Hosts(context.Context) ([]HostInfo, error) {
 	return []HostInfo{{ID: "saved-id", Title: "Saved", Address: "ops@host.invalid:22"}}, nil
 }
 
+// refreshingBackend counts the permission reads the gate asks for.
+type refreshingBackend struct {
+	*hostListBackend
+	refreshes  atomic.Int32
+	refreshErr error
+}
+
+func (b *refreshingBackend) RefreshPermissions(context.Context) error {
+	b.refreshes.Add(1)
+	return b.refreshErr
+}
+
+func TestAHostToolIsRefusedWhenPermissionsCannotBeRead(t *testing.T) {
+	backend := &refreshingBackend{hostListBackend: &hostListBackend{&fakeBackend{}}, refreshErr: errors.New("database is busy")}
+	result := (Gate{Backend: backend, Mode: ModeObserve}).Run(context.Background(), tools.NameListHosts, []byte(`{}`))
+	if !result.IsError || !strings.Contains(result.Text, "database is busy") {
+		t.Fatalf("a stale permission set was used: %+v", result)
+	}
+}
+
+func TestAHostToolRefreshesPermissionsAndANoteToolDoesNot(t *testing.T) {
+	ctx := context.Background()
+	backend := &refreshingBackend{hostListBackend: &hostListBackend{&fakeBackend{}}}
+	gate := Gate{Backend: backend, Mode: ModeObserve}
+	if result := gate.Run(ctx, tools.NameListHosts, []byte(`{}`)); result.IsError {
+		t.Fatalf("list_hosts = %+v", result)
+	}
+	if got := backend.refreshes.Load(); got != 1 {
+		t.Fatalf("a host tool refreshed %d times, want 1", got)
+	}
+	// A note tool never touches a host, so it must not read the state.
+	gate.Run(ctx, tools.NameNoteQuery, []byte(`{}`))
+	if got := backend.refreshes.Load(); got != 1 {
+		t.Fatalf("a note tool refreshed %d times, want 0 more", got-1)
+	}
+}
+
 func TestListHostsRequiresAnAuthorizedListerAndClosedArguments(t *testing.T) {
 	ctx := context.Background()
 	backend := hostListBackend{&fakeBackend{}}

@@ -144,6 +144,10 @@ func (b *agentBackend) StartTransfer(ctx context.Context, args tools.TransferArg
 	if b.closed {
 		return gate.Transfer{}, errAgentClosed
 	}
+	// resolve read a snapshot; a close since then must refuse the transfer.
+	if !(*b.permitted.Load())[host.CatalogID] {
+		return gate.Transfer{}, errAgentNoHost
+	}
 	active, oldestDone := 0, -1
 	for index, task := range b.transfers {
 		task.mu.Lock()
