@@ -22,7 +22,7 @@ func TestLocalDirectoryPickerShortcutHistoryAndBrowse(t *testing.T) {
 	first, second := t.TempDir(), t.TempDir()
 	state.localDirectoryHistory = []string{first, second}
 	chord := state.shortcuts.chords.Chord(shortcutAddLocalTerminal)
-	if chord != (keymap.Chord{Modifiers: primaryModifier | gfx.ModifierShift, Char: 'o'}) {
+	if chord != (keymap.Chord{Modifiers: gfx.ModifierControl | gfx.ModifierAlt, Char: 'n'}) {
 		t.Fatalf("chord = %+v", chord)
 	}
 	pressChord(state, chord)
@@ -165,7 +165,7 @@ func TestLocalDirectoryPickerShortcutCustomizationPersists(t *testing.T) {
 	options := freshOptions(t)
 	state := newTestState(t, options)
 	state.openShortcutCapture(shortcutAddLocalTerminal)
-	chord := keymap.Chord{Modifiers: gfx.ModifierControl | gfx.ModifierAlt, Char: 'n'}
+	chord := keymap.Chord{Modifiers: gfx.ModifierControl | gfx.ModifierAlt | gfx.ModifierShift, Char: 'n'}
 	state.captureShortcut(gfx.KeyEvent{}, chord)
 	restored := newTestState(t, options)
 	if restored.shortcuts.chords.Chord(shortcutAddLocalTerminal) != chord {
