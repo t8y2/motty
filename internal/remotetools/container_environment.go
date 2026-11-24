@@ -21,8 +21,8 @@ func ReadContainerEnvironment(ctx context.Context, runner Runner, id string) ([]
 		maxContainerEnvironmentOutput,
 	)
 	if err != nil {
-		if missingDockerCLI(output) {
-			return nil, ErrNoDocker
+		if missingContainerCLI(output) {
+			return nil, ErrNoContainerRuntime
 		}
 		// RunCommand returns the retained prefix together with its error when
 		// the peer wrote beyond the limit. Never copy that potentially large

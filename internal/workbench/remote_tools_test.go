@@ -560,7 +560,7 @@ func TestRemoteToolsExplainWhyThereIsNothingToShow(t *testing.T) {
 	if !state.remote.failed || state.remote.status != state.messages.Tools.RemoteErrNoDocker || len(state.remote.rows) != 0 {
 		t.Fatalf("status %q, rows %d", state.remote.status, len(state.remote.rows))
 	}
-	text := state.remoteErrorText(remotetools.ErrNoDocker)
+	text := state.remoteErrorText(remotetools.ErrNoContainerRuntime)
 	if text != state.messages.Tools.RemoteErrNoDocker {
 		t.Fatalf("text %q", text)
 	}
