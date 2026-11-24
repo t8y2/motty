@@ -78,9 +78,9 @@ func DefaultAPIBaseFor(provider Provider) string {
 	return DefaultAPIBase
 }
 
-// MaxFileBytes is the most text a Gitee snippet file is allowed here. GitHub
-// takes bigger gist files; the API cuts a file bigger than 1 MB in its answer,
-// so Get reads such a file back from its raw URL instead.
+// MaxFileBytes is the historic 1 MB limit for a gist or snippet file. GitHub and
+// Gitee both take larger files; when the API answers a truncated file, Get reads
+// it back from its raw URL instead.
 const MaxFileBytes = 1_000_000
 
 // maxRawBytes bounds what one raw download may hold in memory.
@@ -330,7 +330,7 @@ func failure(provider Provider, response *http.Response) error {
 
 // decodeGist accepts both GitHub's object and Gitee's one-element array.
 func decodeGist(reader io.Reader) (apiGist, error) {
-	data, err := io.ReadAll(io.LimitReader(reader, 8*MaxFileBytes))
+	data, err := io.ReadAll(io.LimitReader(reader, maxRawBytes))
 	if err != nil {
 		return apiGist{}, err
 	}
@@ -423,12 +423,17 @@ func (client *Client) Get(ctx context.Context) (data []byte, tag string, err err
 	if err != nil {
 		return nil, "", errors.New("gist: the file is not a Motty backup")
 	}
-	return data, client.tag(g), nil
+	tag = client.tag(g)
+	if tag == "" && client.config.Provider == Gitee && content != "" {
+		tag = contentTag(content)
+	}
+	return data, tag, nil
 }
 
 // raw downloads a file the API truncated, from the raw URL it names, which holds
-// the whole file. The URL is a secret address on the file host, so the token is
-// not sent with it.
+// the whole file. For GitHub, the URL is a secret address on the file host, so
+// the token is not sent with it. For Gitee, the token is sent as a query parameter
+// when accessing Gitee's own domain.
 func (client *Client) raw(ctx context.Context, file gistFile) (string, error) {
 	if file.RawURL == "" {
 		return "", cloudsync.ErrTooLarge
@@ -439,6 +444,14 @@ func (client *Client) raw(ctx context.Context, file gistFile) (string, error) {
 	}
 	if err := cloudsync.CheckAddress(target, false); err != nil {
 		return "", err
+	}
+	if client.config.Provider == Gitee && target.Query().Get("access_token") == "" && (target.Host == client.base.Host || target.Host == "gitee.com") {
+		token, _ := client.token(ctx)
+		if token != "" {
+			query := target.Query()
+			query.Set("access_token", token)
+			target.RawQuery = query.Encode()
+		}
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
 	if err != nil {
@@ -477,8 +490,8 @@ func (client *Client) Put(ctx context.Context, data []byte, previous string) (ta
 		return "", err
 	}
 	content := base64.StdEncoding.EncodeToString(data)
-	if client.config.Provider == Gitee && len(content) > MaxFileBytes {
-		return "", fmt.Errorf("%w: a snippet file holds at most 1 MB, and this backup is %d KB as text", cloudsync.ErrTooLarge, len(content)/1000+1)
+	if len(content) > maxRawBytes {
+		return "", cloudsync.ErrTooLarge
 	}
 	files := map[string]map[string]string{client.config.File: {"content": content}}
 	method, route := http.MethodPatch, "/gists/"+client.config.ID
@@ -494,8 +507,14 @@ func (client *Client) Put(ctx context.Context, data []byte, previous string) (ta
 		if err != nil {
 			return "", err
 		}
-		_, has := g.Files[client.config.File]
-		if previous != "" && (!found || client.tag(g) != previous) || previous == "" && found && has {
+		file, has := g.Files[client.config.File]
+		tag = client.tag(g)
+		if tag == "" && client.config.Provider == Gitee && has && (file.Truncated || g.Truncated) && file.RawURL != "" {
+			if rawContent, err := client.raw(ctx, file); err == nil {
+				tag = contentTag(rawContent)
+			}
+		}
+		if previous != "" && (!found || tag != previous) || previous == "" && found && has {
 			return "", cloudsync.ErrChanged
 		}
 	}
@@ -514,7 +533,7 @@ func (client *Client) Put(ctx context.Context, data []byte, previous string) (ta
 	if client.config.ID == "" {
 		client.config.ID = g.ID
 	}
-	if tag := client.tag(g); tag != "" {
+	if tag = client.tag(g); tag != "" {
 		return tag, nil
 	}
 	// A service may answer an update without the file body. The content just
