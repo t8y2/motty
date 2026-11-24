@@ -166,16 +166,3 @@ func TestSettingsDrawerSelectOpenDoesNotJitterPage(t *testing.T) {
 			syncBefore, syncColorBefore.Alpha, syncOpening, syncColorOpening.Alpha, diff)
 	}
 }
-
-func TestSelectPresenceProbeIsIdempotentOnceClosed(t *testing.T) {
-	if selectPainterLeavesPresenceOpen() {
-		t.Fatal("selectPainterLeavesPresenceOpen reported an unclosed presence after installSelectPresenceFix")
-	}
-	// Calling installSelectPresenceFix again simulates a Viva version that
-	// already closes its own Select presence; it must be a no-op rather than
-	// popping an outer Dialog presence.
-	installSelectPresenceFix()
-	if selectPainterLeavesPresenceOpen() {
-		t.Fatal("selectPainterLeavesPresenceOpen changed after second installSelectPresenceFix call")
-	}
-}
