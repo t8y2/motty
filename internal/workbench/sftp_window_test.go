@@ -281,6 +281,96 @@ func TestSFTPWindowConflictNeedsConfirmation(t *testing.T) {
 	}
 }
 
+type selectiveStalledSFTPRemote struct {
+	*workbenchSFTPRemote
+	stalledName         string
+	opened, release     chan struct{}
+	openOnce, closeOnce sync.Once
+}
+
+func (r *selectiveStalledSFTPRemote) OpenTransferFile(name string, flags int) (sftpclient.TransferFile, error) {
+	if strings.Contains(name, r.stalledName) && flags&(os.O_WRONLY|os.O_RDWR) != 0 {
+		r.openOnce.Do(func() { close(r.opened) })
+		<-r.release
+	}
+	return r.workbenchSFTPRemote.OpenTransferFile(name, flags)
+}
+
+func (r *selectiveStalledSFTPRemote) Close() error {
+	r.closeOnce.Do(func() { close(r.release) })
+	return nil
+}
+
+func TestSFTPUploadRefreshesDirectoryWhileOtherTransfersActive(t *testing.T) {
+	state, w, remote, host, localDir := dualSFTPFixture(t, 1)
+	view := host.windows[0].view
+	if err := os.WriteFile(filepath.Join(localDir, "fast.txt"), []byte("fast payload"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(localDir, "slow.txt"), []byte("slow payload"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	w.view.worker.Close()
+	stalled := &selectiveStalledSFTPRemote{
+		workbenchSFTPRemote: remote,
+		stalledName:         "slow.txt",
+		opened:              make(chan struct{}),
+		release:             make(chan struct{}),
+	}
+	t.Cleanup(func() { stalled.Close() })
+	w.view.worker = sftpclient.NewWorker(func() (sftpclient.Remote, error) { return stalled, nil }, w.window.Invalidate)
+
+	w.queueEntries(true, []sftpclient.Entry{{Name: "fast.txt"}, {Name: "slow.txt"}}, localDir, w.view.path)
+
+	select {
+	case <-stalled.opened:
+	case <-time.After(3 * time.Second):
+		t.Fatal("slow upload did not start")
+	}
+
+	fastCompletedAndListed := func() bool {
+		completed := false
+		for _, tr := range w.view.transfers {
+			if strings.Contains(tr.Source, "fast.txt") && tr.State == sftpclient.TransferCompleted {
+				completed = true
+				break
+			}
+		}
+		if !completed {
+			return false
+		}
+		for _, row := range w.folder(false).rows {
+			if row.entry.Name == "fast.txt" {
+				return true
+			}
+		}
+		return false
+	}
+	dualWait(t, state, w, view, fastCompletedAndListed)
+
+	// fast.txt finished uploading while slow.txt is still active.
+	if !sftpTransfersActive(w.view.transfers) {
+		t.Fatal("expected slow transfer to still be active")
+	}
+
+	// Release slow upload and verify everything settles with both files listed.
+	stalled.Close()
+	dualWait(t, state, w, view, func() bool {
+		return len(w.view.transfers) == 2 && !sftpTransfersActive(w.view.transfers) &&
+			!w.view.busy && !w.view.refreshAfterTransfers && w.pendingLocal == "" && !w.localRefresh
+	})
+	slowFound := false
+	for _, row := range w.folder(false).rows {
+		if row.entry.Name == "slow.txt" {
+			slowFound = true
+			break
+		}
+	}
+	if !slowFound {
+		t.Fatal("remote listing missing slow.txt after completion")
+	}
+}
+
 type stalledSFTPRemote struct {
 	*workbenchSFTPRemote
 	opened, release     chan struct{}

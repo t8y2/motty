@@ -296,7 +296,7 @@ func (state *State) declareGroupedVerticalTabs(c ui.C, width float32, compact bo
 			if indent > 0 {
 				ui.Slot(c).Width(indent).Shrink(0)
 			}
-			state.verticalTabs.tabs = append(state.verticalTabs.tabs, state.declareWorkspaceTab(c, state.workspaceTabs[row.tab], max(width-indent, 0), verticalTabHeight, 0, true, compact, row.number))
+			state.verticalTabs.tabs = append(state.verticalTabs.tabs, state.declareWorkspaceTab(c, state.workspaceTabs[row.tab], max(width-indent, 0), verticalTabHeight, 0, gfx.Point{Y: state.verticalTabs.scroll}, true, compact, row.number))
 		})
 	}
 }

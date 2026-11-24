@@ -575,6 +575,9 @@ func (state *State) dropTab(drag tabDrag) {
 			final--
 		}
 		if state.deck.MoveWorkspace(drag.workspace, final) == nil {
+			if state.tabOrientation == tabsHorizontal && !drag.outside {
+				state.tabLanding = hitTabList.At(int(drag.workspace))
+			}
 			state.rebuildTabOptions()
 			state.activateWorkspace(drag.workspace)
 			state.save()
@@ -810,6 +813,7 @@ func (state *State) declareTabDragOverlays(c ui.C) {
 		width := tabGhostWidth(canvas, drag.title)
 		state.tabPreview.width = width
 		ghost := state.popupAt(canvas, viewport, gfx.Point{X: drag.at.X - width/2, Y: drag.at.Y - barTabHeight/2}, width, barTabHeight, 0)
+		state.tabGhost = gfx.Point{X: ghost.X, Y: ghost.Y}
 		slot(ghost, chrome.tabDragGhostDraw)
 		if tearOff {
 			hint := state.messages.TabTearOffHint
