@@ -129,6 +129,21 @@ func (s *State) attachProtection() {
 			if s.appAccessBlocked() {
 				return nil, errAppLocked
 			}
+			forward := func(next func(gfx.KeyEvent) gfx.EventResult) func(gfx.KeyEvent) gfx.EventResult {
+				return func(event gfx.KeyEvent) gfx.EventResult {
+					if s.appAccessBlocked() {
+						return gfx.EventResult{Handled: true}
+					}
+					if result := s.appLockShortcut(event, &config); result.Handled {
+						return result
+					}
+					if next != nil {
+						return next(event)
+					}
+					return gfx.EventResult{}
+				}
+			}
+			config.OnKey, config.OnShortcut = forward(config.OnKey), forward(config.OnShortcut)
 			w, err := open(config, canvas)
 			if w != nil && err == nil {
 				s.protectedChildren = slices.DeleteFunc(s.protectedChildren, (*app.ContentWindow).Closed)

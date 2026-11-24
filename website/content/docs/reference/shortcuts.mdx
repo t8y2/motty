@@ -16,6 +16,7 @@ can be changed in settings.
     { action: 'Command completions', mac: 'Command+Shift+J', other: 'Control+Shift+J' },
     { action: 'File panel', mac: 'Command+Shift+S', other: 'Control+Shift+S' },
     { action: 'New window', mac: 'Command+Shift+N', other: 'Control+Shift+N' },
+    { action: 'Lock Motty', mac: 'Command+Shift+L', other: 'Control+Shift+L' },
     { action: 'Open local terminal', mac: 'Command+Shift+T', other: 'Control+Shift+T' },
     { action: 'Duplicate terminal', mac: 'Alt+Shift+T', other: 'Alt+Shift+T' },
     { action: 'Next tab', mac: 'Control+Tab', other: 'Control+Tab' },
@@ -40,6 +41,8 @@ on the tabs. On Windows and Linux, when no tab sits at that position the key sta
 with the terminal, where Control plus a digit can be a control code; if a terminal
 program needs Control plus a digit, rebind the number keys to Alt or Control+Shift,
 or delete the binding.
+
+With master password protection enabled, pressing the lock shortcut in a Motty window locks all windows using the same profile. Change or remove the binding in **Settings → Keyboard shortcuts → Lock Motty**.
 
 Clearing the screen also drops the scrollback above it, but the line the cursor
 is on stays, so a command being typed is not lost.

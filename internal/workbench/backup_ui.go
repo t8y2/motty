@@ -408,7 +408,7 @@ func (state *State) applyBackupScope(document backup.Document, scope syncScope) 
 		for _, entry := range preferences.Shortcuts {
 			saved = append(saved, savedShortcut{Action: entry.Action, Key: entry.Key, Modifiers: entry.Modifiers})
 		}
-		state.shortcuts = restoreShortcuts(saved)
+		state.shortcuts = restoreShortcuts(saved, state.snippets.list...)
 		if preferences.DefaultsGeneration < shortcutDefaultsGeneration && len(saved) > 0 {
 			state.shortcuts.migrateChangedDefaults(func(chord keymap.Chord) bool { return state.snippetNamed(chord) != "" })
 		}

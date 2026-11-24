@@ -1231,7 +1231,8 @@ func (state *State) restoreShared(saved savedState) {
 	state.restoreNotes(saved.Notes, saved.NoteFolders)
 	state.noteLinksRestored()
 	state.terminalOption = terminalOptionModeFromString(saved.TerminalOption)
-	state.shortcuts = restoreShortcuts(saved.Shortcuts)
+	recorded, specified := recordedShortcuts(saved.Shortcuts)
+	state.shortcuts = recorded
 	state.setTerminalScrollback(normalizeTerminalScrollback(saved.TerminalScrollback))
 	state.terminalCursorStyle = terminalCursorStyleFromString(saved.TerminalCursor)
 	state.connectionTimeout, state.connectionKeepAlive = connectionTimes(saved)
@@ -1292,6 +1293,7 @@ func (state *State) restoreShared(saved savedState) {
 	state.restoreSFTPSettings(saved)
 	state.proxy = decodeOutboundProxy(saved.OutboundProxy)
 	state.restoreTerminalTools(saved)
+	state.shortcuts.fillDefaultShortcuts(specified, state.snippets.list)
 	state.restoreAutofill(saved)
 	state.restoreCredentials(saved)
 	state.restoreProxyProfiles(saved)
@@ -1405,8 +1407,13 @@ func (state *State) workspaceName() string {
 // given a chord, rather than quietly moving a shortcut the user chose. An entry
 // with no key is an action the user removed: it stays unbound instead of taking
 // its default back.
-func restoreShortcuts(saved []savedShortcut) shortcutMap {
-	defaults := defaultShortcuts()
+func restoreShortcuts(saved []savedShortcut, snippets ...snippet) shortcutMap {
+	shortcuts, specified := recordedShortcuts(saved)
+	shortcuts.fillDefaultShortcuts(specified, snippets)
+	return shortcuts
+}
+
+func recordedShortcuts(saved []savedShortcut) (shortcutMap, [shortcutActionCount]bool) {
 	shortcuts := newShortcutMap()
 	var specified [shortcutActionCount]bool
 	for _, entry := range saved {
@@ -1427,14 +1434,20 @@ func restoreShortcuts(saved []savedShortcut) shortcutMap {
 			specified[action] = true
 		}
 	}
+	return shortcuts, specified
+}
+
+// Defaults added by newer builds must also leave existing snippet chords alone.
+func (shortcuts *shortcutMap) fillDefaultShortcuts(specified [shortcutActionCount]bool, snippets []snippet) {
+	defaults := defaultShortcuts()
 	for action := shortcutAction(1); action < shortcutActionCount; action++ {
-		if specified[action] || shortcuts.chords.Chord(action).Valid() {
+		chord := defaults.chords.Chord(action)
+		if specified[action] || slices.ContainsFunc(snippets, func(entry snippet) bool { return entry.Shortcut == chord }) {
 			continue
 		}
-		shortcuts.bind(action, defaults.chords.Chord(action))
+		shortcuts.bind(action, chord)
 	}
 	shortcuts.refreshLabels()
-	return shortcuts
 }
 
 func (state *State) restoreWorkspace(workspace string) {

@@ -3087,6 +3087,9 @@ func fieldForDialogHit(id gfx.ID) hostField {
 
 // Key provides roving keyboard focus for terminal tabs.
 func (state *State) Key(event gfx.KeyEvent) (outcome gfx.EventResult) {
+	if result := state.appLockShortcut(event, nil); result.Handled {
+		return result
+	}
 	if state.modal == modalAppLock && !state.appAccessBlocked() {
 		return state.appLockFormKey(event)
 	}

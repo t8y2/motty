@@ -16,6 +16,7 @@ description: 默认快捷键，全部可以修改。
     { action: '命令补全', mac: 'Command+Shift+J', other: 'Control+Shift+J' },
     { action: '文件面板', mac: 'Command+Shift+S', other: 'Control+Shift+S' },
     { action: '新建窗口', mac: 'Command+Shift+N', other: 'Control+Shift+N' },
+    { action: '锁定 Motty', mac: 'Command+Shift+L', other: 'Control+Shift+L' },
     { action: '打开本地终端', mac: 'Command+Shift+T', other: 'Control+Shift+T' },
     { action: '复制终端', mac: 'Alt+Shift+T', other: 'Alt+Shift+T' },
     { action: '下一个标签页', mac: 'Control+Tab', other: 'Control+Tab' },
@@ -29,6 +30,8 @@ description: 默认快捷键，全部可以修改。
 录制时按 Esc 取消，点击「删除」移除绑定；Esc 本身可搭配修饰键绑定。重复的绑定会提示冲突。绑定的按键在终端中优先触发对应操作，无 Control/Command 的组合在普通文本框中仍用于编辑。
 弹窗里的「恢复默认」仅重置当前快捷键，页面顶部的「恢复默认」重置全部快捷键。单项重置时，若默认组合已被其他操作占用，会提示冲突。
 在 macOS 上 Command+1 到 Command+9、在 Windows 和 Linux 上 Control+1 到 Control+9 可以直接跳到第一到第九个标签页，不依赖设置里的「显示标签编号」。在 Windows 和 Linux 上，该位置没有标签页时按键仍交给终端，因为 Control 加数字在终端里可能是控制字符；若终端程序需要 Control 加数字，可在设置中把编号快捷键改绑为 Alt 或 Control+Shift，或删除该绑定。
+
+开启主密码保护后，在 Motty 窗口按锁定快捷键会锁定同一资料目录的所有窗口。可在 **设置 → 键盘快捷键 → 锁定 Motty** 中改键或移除绑定。
 
 清空屏幕会同时清掉它上方的滚动历史，但光标所在的那一行会保留，正在输入的命令不会丢。
 
