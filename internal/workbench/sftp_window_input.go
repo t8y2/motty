@@ -120,6 +120,17 @@ func (w *sftpWindow) trackFileDrag(event gfx.PointerEvent) {
 			}
 		}
 	}
+	// The pointer is outside this window and over no other Motty window: the
+	// drag leaves the application, and the desktop takes it from here. Only a
+	// held move starts it; the release that follows is the desktop's.
+	if event.Kind == gfx.PointerMove && !w.owner.ownWindowAt(w.drag.screen, w) {
+		entries := w.drag.entries
+		directory := w.drag.sourceDir
+		fromLocal := w.drag.fromLocal
+		w.cancelDrag()
+		w.owner.dragFilesOut(w, w.view, entries, directory, fromLocal)
+		return
+	}
 	w.setDragPeerHighlight(nil, false, false, "", -1)
 	w.drag.target = sftpDragTarget{}
 }

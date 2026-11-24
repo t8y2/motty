@@ -39,7 +39,7 @@ var EnglishMessages = Messages{
 		CalculatingSize: "Calculating…", FolderSizeIncompleteFmt: "%s (incomplete, %d unreadable folders)", FolderSizePartialFmt: "%s (incomplete, some folders were unreadable)",
 		CalculateDirectorySize: "Calculate subdirectory sizes",
 		Open:                   "File transfer", Title: "File transfer", Local: "Local", Remote: "Server", Path: "Directory path", Name: "Name", Size: "Size", Modified: "Modified",
-		Upload: "Upload →", Download: "← Download", DragHint: "Drag files or folders to the other side to copy them", DropUpload: "Upload to", DropDownload: "Download to",
+		Upload: "Upload →", Download: "← Download", DragHint: "Drag files or folders to the other side to copy them", DropUpload: "Upload to", DropDownload: "Download to", DragOutFailed: "Could not prepare the dragged files",
 		CloseTitle: "Tasks are still active", CloseDescription: "Closing stops unfinished transfers, archive extraction and external editor synchronization in this window.", CloseTabDescription: "Closing this tab stops unfinished transfers, archive extraction and external editor synchronization in it.", CloseTransfers: "Stop tasks and close", Disconnected: "The original connection is closed. Reconnect and open a new file transfer window.",
 	},
 	FileWindow: FileWindowMessages{
