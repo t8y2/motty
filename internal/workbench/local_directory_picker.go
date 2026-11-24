@@ -77,7 +77,9 @@ func (state *State) clickLocalDirectory(id gfx.ID) {
 	case hitLocalDirectoryClose:
 		state.modal = modalNone
 	case hitLocalDirectoryBrowse:
-		directory, err := state.options.OpenDirectory(app.OpenDirectoryOptions{Title: state.messages.LocalDirectoryTitle})
+		directory, err := state.options.OpenDirectory(app.OpenDirectoryOptions{
+			Title: state.messages.LocalDirectoryTitle, InitialDirectory: state.localDirectoryBrowseStart(),
+		})
 		if err != nil {
 			picker.errorText = state.messages.LocalDirectoryUnavailable
 			return
@@ -186,4 +188,18 @@ func (state *State) localDirectoryLayoutRollback(session *Session) func() {
 		state.refreshWorkspaceViews()
 		state.fitTerminals()
 	}
+}
+
+// localDirectoryBrowseStart 复用最近一次选择，失效时交给系统选择默认位置。
+func (state *State) localDirectoryBrowseStart() string {
+	if len(state.localDirectoryHistory) == 0 {
+		return ""
+	}
+	directory := state.localDirectoryHistory[0]
+	if validLocalDirectory(directory) {
+		if info, err := os.Stat(directory); err == nil && info.IsDir() {
+			return filepath.Clean(directory)
+		}
+	}
+	return ""
 }

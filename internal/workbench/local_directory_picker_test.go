@@ -34,7 +34,12 @@ func TestLocalDirectoryPickerShortcutHistoryAndBrowse(t *testing.T) {
 	if !slices.Equal(state.localDirectoryPicker.visible, []string{second}) {
 		t.Fatal("search did not filter history")
 	}
-	state.options.OpenDirectory = func(app.OpenDirectoryOptions) (string, error) { return second, nil }
+	state.options.OpenDirectory = func(options app.OpenDirectoryOptions) (string, error) {
+		if options.InitialDirectory != first {
+			t.Fatalf("browse started at %q, want %q", options.InitialDirectory, first)
+		}
+		return second, nil
+	}
 	state.Click(hitLocalDirectoryBrowse)
 	session, _ := state.sessionByIDPointer(state.activeSessionID)
 	if session == nil || !session.isLocal() || session.localDirectory != second {
@@ -46,6 +51,9 @@ func TestLocalDirectoryPickerShortcutHistoryAndBrowse(t *testing.T) {
 	restored := newTestState(t, options)
 	if !slices.Equal(restored.localDirectoryHistory, state.localDirectoryHistory) {
 		t.Fatal("history did not persist")
+	}
+	if restored.localDirectoryBrowseStart() != second {
+		t.Fatal("browse did not remember the last directory after restart")
 	}
 	state.openLocalDirectoryPicker()
 	state.Click(hitLocalDirectoryRemove.At(1))
