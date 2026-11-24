@@ -79,6 +79,13 @@ type ToolsMessages struct {
 	SnippetFilterAll          string
 	SnippetFilterNone         string
 	SnippetGroupsManage       string
+	SnippetTreeToggle         string
+	SnippetTreeResize         string
+	SnippetTreeExpandAll      string
+	SnippetTreeCollapseAll    string
+	SnippetTreeSearch         string
+	SnippetFolderAdd          string
+	SnippetFolderMore         string
 	SnippetGroupsTitle        string
 	SnippetGroupsDescription  string
 	SnippetGroupCountFmt      string

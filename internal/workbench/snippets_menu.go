@@ -52,6 +52,8 @@ func (state *State) openSnippetBarMenuOn(canvas *gfx.Canvas, id gfx.ID, index in
 }
 
 func (state *State) declareSnippetMenu(c ui.C) {
+	state.declareSnippetFolderMenu(c)
+	state.declareSnippetBlankMenu(c)
 	menu := &state.snippetMenu
 	if !menu.open {
 		return

@@ -231,6 +231,11 @@ func (form *snippetsUI) refreshSnippetGroups() {
 			form.groupCounts[known]++
 		}
 	}
+	for _, group := range form.customGroups {
+		for path := group; path != ""; path = snippetGroupParent(path) {
+			add(path)
+		}
+	}
 	slices.SortStableFunc(form.groups, func(a, b string) int {
 		switch {
 		case snippetGroupLess(a, b):
@@ -408,6 +413,10 @@ func isSnippetGroupTarget(id gfx.ID) bool {
 	return id == hitSnippetGroup || id == hitSnippetGroupTrigger || id == hitSnippetGroupClear || id == hitSnippetGroupScroll || id.Scope() == hitSnippetGroupChoices
 }
 
+func isSnippetInlineGroupTarget(id gfx.ID) bool {
+	return id == hitSnippetInlineGroup || id == hitSnippetInlineGroupTrigger || id == hitSnippetInlineGroupClear || id == hitSnippetInlineGroupScroll || id.Scope() == hitSnippetInlineGroupChoices
+}
+
 func (state *State) clickSnippetGroup(id gfx.ID) bool {
 	control := &state.snippets.groupPicker
 	switch {
@@ -428,25 +437,103 @@ func (state *State) clickSnippetGroup(id gfx.ID) bool {
 	return true
 }
 
+func (state *State) clickSnippetInlineGroup(id gfx.ID) bool {
+	control := &state.snippets.inline.groupPicker
+	changed := false
+	switch {
+	case id == hitSnippetInlineGroup:
+		control.Open = true
+	case id == hitSnippetInlineGroupTrigger:
+		control.Open = !control.Open
+	case id == hitSnippetInlineGroupClear:
+		control.Clear()
+		changed = true
+	case id == hitSnippetInlineGroupDismiss:
+		control.Open = false
+	case id.Scope() == hitSnippetInlineGroupChoices:
+		control.Choose(item(id))
+		changed = true
+	default:
+		return false
+	}
+	if state.snippets.inline.groupPicker.Query.String() == "" && state.snippets.inline.error == state.messages.ErrHostGroupInvalid {
+		state.snippets.inline.error = ""
+	}
+	if changed {
+		state.applyInlineSnippetGroup()
+	}
+	return true
+}
+
 // snippetGroupPointer keeps a press outside the open list from reaching the
 // dialog: it only closes the list.
 func (state *State) snippetGroupPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	control := &state.snippets.groupPicker
-	if state.modal != modalSnippet || !control.Open {
+	if state.modal == modalSnippet {
+		control := &state.snippets.groupPicker
+		if !control.Open {
+			return gfx.EventResult{}, false
+		}
+		if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary && !isSnippetGroupTarget(event.Target) {
+			control.Open = false
+			return gfx.EventResult{Handled: true, Repaint: true}, true
+		}
+		if result := control.Pointer(event); result.Handled {
+			return result, true
+		}
 		return gfx.EventResult{}, false
 	}
-	if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary && !isSnippetGroupTarget(event.Target) {
-		control.Open = false
-		return gfx.EventResult{Handled: true, Repaint: true}, true
-	}
-	if result := control.Pointer(event); result.Handled {
-		return result, true
+	if state.modal == modalNone && state.activeSection == sectionSnippets {
+		control := &state.snippets.inline.groupPicker
+		if !control.Open {
+			return gfx.EventResult{}, false
+		}
+		if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary && !isSnippetInlineGroupTarget(event.Target) {
+			control.Open = false
+			return gfx.EventResult{Handled: true, Repaint: true}, true
+		}
+		if result := control.Pointer(event); result.Handled {
+			return result, true
+		}
 	}
 	return gfx.EventResult{}, false
 }
 
 func (state *State) snippetGroupKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	form := &state.snippets
+	if state.modal == modalNone && state.activeSection == sectionSnippets && !form.inline.capturing {
+		control := &form.inline.groupPicker
+		if event.Target != hitSnippetInlineGroup && (!control.Open || event.Key != gfx.KeyEscape && event.Key != gfx.KeyTab) {
+			return gfx.EventResult{}, false
+		}
+		if event.Target == hitSnippetInlineGroup && event.Key == gfx.KeyEnter && event.Modifiers == 0 && !event.Release {
+			if _, composing := control.Query.Composition(); composing || event.Repeat {
+				return gfx.EventResult{Handled: true, Repaint: true}, true
+			}
+			if strings.TrimSpace(control.Query.String()) == "" {
+				if control.Open {
+					control.Dismiss()
+					return gfx.EventResult{Handled: true, Repaint: true}, true
+				}
+				return gfx.EventResult{}, false
+			}
+			if !control.CommitQuery() {
+				form.inline.error = state.messages.ErrHostGroupInvalid
+				return gfx.EventResult{Handled: true, Repaint: true}, true
+			}
+			form.inline.error = ""
+			state.applyInlineSnippetGroup()
+			return gfx.EventResult{Handled: true, Repaint: true}, true
+		}
+		before := control.Value()
+		result := control.Key(event)
+		if control.Query.String() == "" && form.inline.error == state.messages.ErrHostGroupInvalid {
+			form.inline.error = ""
+		}
+		if control.Value() != before {
+			state.applyInlineSnippetGroup()
+		}
+		return result, result.Handled || result.Repaint
+	}
 	control := &form.groupPicker
 	if state.modal != modalSnippet || form.capturing {
 		return gfx.EventResult{}, false
@@ -484,5 +571,24 @@ func (state *State) paintSnippetGroupField(canvas *gfx.Canvas, bounds gfx.Rect) 
 		InputID: hitSnippetGroup, TriggerID: hitSnippetGroupTrigger, ClearID: hitSnippetGroupClear, DismissID: hitSnippetGroupDismiss, Scope: snippetGroupScope, ScrollID: hitSnippetGroupScroll, OptionIDs: hitSnippetGroupChoices,
 		Label: state.messages.FieldGroup, Placeholder: state.messages.FieldGroupPlaceholder, EmptyLabel: state.messages.HostGroupsEmpty, CreatePrefix: state.messages.HostGroupCreatePrefix, ClearLabel: state.messages.MoveGroupNone,
 		Viewport: gfx.Rect{Width: state.viewport.Width, Height: state.viewport.Height}, Layer: dialogLayer + 2, Invalid: query != "" && !validSnippetGroup(query),
+	})
+}
+
+func (state *State) paintSnippetInlineGroupField(canvas *gfx.Canvas, bounds gfx.Rect) {
+	if bounds.Width <= 0 || bounds.Height <= 0 {
+		return
+	}
+	form, theme := &state.snippets, state.Theme()
+	control := &form.inline.groupPicker
+	input := components.BeginField(canvas, theme, bounds).For(hitSnippetInlineGroup).Paint(state.messages.FieldGroup, "", "")
+	invalid := false
+	if control.Query.RuneCount() > 0 {
+		query := strings.TrimSpace(control.Query.String())
+		invalid = query != "" && !validSnippetGroup(query)
+	}
+	components.PaintSingleSelect(canvas, theme, input, control, components.SingleSelectOptions{
+		InputID: hitSnippetInlineGroup, TriggerID: hitSnippetInlineGroupTrigger, ClearID: hitSnippetInlineGroupClear, DismissID: hitSnippetInlineGroupDismiss, Scope: snippetInlineGroupScope, ScrollID: hitSnippetInlineGroupScroll, OptionIDs: hitSnippetInlineGroupChoices,
+		Label: state.messages.FieldGroup, Placeholder: state.messages.FieldGroupPlaceholder, EmptyLabel: state.messages.HostGroupsEmpty, CreatePrefix: state.messages.HostGroupCreatePrefix, ClearLabel: state.messages.MoveGroupNone,
+		Viewport: gfx.Rect{Width: state.viewport.Width, Height: state.viewport.Height}, Layer: dialogLayer + 2, Invalid: invalid,
 	})
 }

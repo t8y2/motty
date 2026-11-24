@@ -166,6 +166,7 @@ type savedState struct {
 	HighlightBuiltin        string              `json:"highlight_builtin,omitempty"`
 	Highlights              []savedHighlight    `json:"highlights,omitempty"`
 	Snippets                []savedSnippet      `json:"snippets,omitempty"`
+	SnippetGroups           []string            `json:"snippet_groups,omitempty"`
 	SnippetShortcuts        []savedSnippetKey   `json:"snippet_shortcuts,omitempty"`
 	Autofill                []savedAutofill     `json:"autofill_rules,omitempty"`
 	Credentials             []savedCredential   `json:"credentials,omitempty"`
@@ -701,6 +702,9 @@ func (state *State) snapshot() savedState {
 				Name: entry.Name, Key: string([]byte{entry.Shortcut.Char}), Modifiers: uint8(entry.Shortcut.Modifiers),
 			})
 		}
+	}
+	if len(state.snippets.customGroups) > 0 {
+		saved.SnippetGroups = append([]string(nil), state.snippets.customGroups...)
 	}
 	saved.CommandsShown = state.commands.shown
 	saved.CommandsSide = state.commands.placement == commandsPlacementSide

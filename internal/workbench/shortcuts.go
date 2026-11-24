@@ -445,6 +445,9 @@ func (state *State) Shortcut(event gfx.KeyEvent) (outcome gfx.EventResult) {
 	if state.modal == modalSnippet && state.snippets.capturing {
 		return state.captureSnippetShortcut(event, chord, ok)
 	}
+	if state.modal == modalNone && state.activeSection == sectionSnippets && state.snippets.inline.capturing {
+		return state.captureInlineSnippetShortcut(event, chord, ok)
+	}
 	if !ok {
 		if state.modal == modalShortcutCapture && !event.Release {
 			state.shortcutError = state.messages.ShortcutsInvalid

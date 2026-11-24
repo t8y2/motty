@@ -1506,6 +1506,18 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 		if hit == hitSessionLogsSearch && state.activeSection == sectionSessionLogs {
 			return &state.sessionLogs.view.search
 		}
+		if state.activeSection == sectionSnippets {
+			switch hit {
+			case hitSnippetTreeSearch:
+				return &state.snippets.treeSearch
+			case hitSnippetInlineName:
+				return &state.snippets.inline.name
+			case hitSnippetInlineCommand:
+				return &state.snippets.inline.command
+			case hitSnippetInlineGroup:
+				return &state.snippets.inline.groupPicker.Query
+			}
+		}
 	case modalNewHost:
 		if hit == hitDialogTags {
 			return &state.hostTagPicker().control.Query
@@ -2865,7 +2877,13 @@ func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
 	if state.modal == modalSnippet && event.Kind == gfx.PointerDown {
 		state.snippets.abandonOther(event.Target)
 	}
+	if state.modal == modalNone && state.activeSection == sectionSnippets && event.Kind == gfx.PointerDown {
+		state.snippets.inline.abandonOther(event.Target)
+	}
 	if result, handled := state.snippetGroupPointer(event); handled {
+		return result
+	}
+	if result, handled := state.snippetBlankPointer(event); handled {
 		return result
 	}
 	if state.modal == modalSnippet && event.Kind == gfx.PointerDown && (event.Button == gfx.PointerButtonPrimary || event.Button == gfx.PointerButtonNone) && event.Target == hitSnippetSubmit {
@@ -3205,6 +3223,11 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	}
 	if state.modal == modalSnippet && state.snippets.capturing && event.Key == gfx.KeyEscape && !event.Repeat {
 		state.snippets.capturing = false
+		return gfx.EventResult{Handled: true, Repaint: true}
+	}
+	if state.modal == modalNone && state.activeSection == sectionSnippets && state.snippets.inline.capturing && event.Key == gfx.KeyEscape && !event.Repeat {
+		state.snippets.inline.capturing = false
+		state.refreshInlineShortcutLabel()
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if result, handled := state.aiKey(event); handled {

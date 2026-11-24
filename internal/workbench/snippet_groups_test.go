@@ -106,20 +106,14 @@ func TestSnippetManualOrderPersistsThroughSortingAndFiltering(t *testing.T) {
 	state.refreshSnippets()
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if state.snippets.rows.RowID(0).IsZero() {
-		t.Fatal("manual ordering did not declare the list rows")
+	if state.snippets.tree.RowID(0).IsZero() {
+		t.Fatal("directory tree did not declare its rows")
 	}
-	first := state.snippets.rows.RowID(0)
-	config := state.WindowConfig(app.Config{
-		Title: "Motty", Width: 1400, Height: 900, Tree: Tree(),
-		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
-	})
-	result := config.OnKey(gfx.KeyEvent{Target: first, Key: gfx.KeyDown, Modifiers: gfx.ModifierAlt})
-	if !result.Handled || result.Focus != state.snippets.rows.RowID(1) || state.snippets.list[1].Name != "beta" {
-		t.Fatalf("keyboard reorder: handled=%v focus=%s order=%v", result.Handled, tree.Text(result.Focus), state.snippets.list)
+	if !state.moveSnippetTo(0, 2) || state.snippets.list[1].Name != "beta" {
+		t.Fatalf("reorder: order=%v", state.snippets.list)
 	}
 	if err := state.saveWithResult(); err != nil {
-		t.Fatalf("persist keyboard reorder: %v", err)
+		t.Fatalf("persist reorder: %v", err)
 	}
 	if !slices.Equal(state.snippets.visible, []int{0, 1, 2}) {
 		t.Fatalf("manual order visible = %v", state.snippets.visible)
@@ -268,13 +262,15 @@ func TestSnippetFilterIsChosenFromThePage(t *testing.T) {
 		snippet{Name: "a", Command: "a", Group: "Ops"},
 		snippet{Name: "b", Command: "b"},
 	)
-	chooseSelectOption(t, state, state.messages.FieldGroup, "Ops")
-	if state.snippets.filter.group != "Ops" || len(state.snippets.visible) != 1 {
-		t.Fatalf("filter = %+v visible=%v", state.snippets.filter, state.snippets.visible)
+	state.Click(hitSnippetTreeSearchToggle)
+	state.snippets.treeSearch.Insert("Ops")
+	state.rebuildSnippetTreeRows()
+	if len(state.snippets.visible) != 1 || state.snippets.list[state.snippets.visible[0]].Name != "a" {
+		t.Fatalf("search Ops: visible=%v", state.snippets.visible)
 	}
-	chooseSelectOption(t, state, state.messages.FieldGroup, state.messages.Tools.SnippetFilterAll)
-	if !state.snippets.filter.all() || len(state.snippets.visible) != 2 {
-		t.Fatalf("All groups left filter %+v", state.snippets.filter)
+	state.Click(hitSnippetTreeSearchToggle)
+	if len(state.snippets.visible) != 2 {
+		t.Fatalf("closing search left visible=%v", state.snippets.visible)
 	}
 }
 

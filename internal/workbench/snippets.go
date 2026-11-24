@@ -2,11 +2,10 @@ package workbench
 
 import (
 	"fmt"
-	"slices"
 	"strings"
-	"time"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/field"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/text"
@@ -78,13 +77,44 @@ var (
 	// hitTerminalSnippets is the terminal toolbar's button that lists the
 	// snippets to send to that terminal.
 	hitTerminalSnippets = tree.ID(snippetsHits, "terminal-snippets")
+
+	// Tree panel controls on the Snippets page.
+	hitSnippetTreeToggle       = tree.ID(snippetsHits, "snippet-tree-toggle")
+	hitSnippetTreeSearchToggle = tree.ID(snippetsHits, "snippet-tree-search-toggle")
+	hitSnippetTreeSearch       = tree.ID(snippetsHits, "snippet-tree-search")
+	hitSnippetTreeExpandAll    = tree.ID(snippetsHits, "snippet-tree-expand-all")
+	hitSnippetTreeScroll       = tree.ID(snippetsHits, "snippet-tree-scroll")
+	hitSnippetFolderMenuDismiss  = tree.ID(snippetsHits, "snippet-folder-menu-dismiss")
+	hitSnippetFolderMenuAdd      = tree.ID(snippetsHits, "snippet-folder-menu-add")
+	hitSnippetFolderMenuNewChild = tree.ID(snippetsHits, "snippet-folder-menu-new-child")
+	hitSnippetFolderMenuRename   = tree.ID(snippetsHits, "snippet-folder-menu-rename")
+	hitSnippetFolderMenuDelete   = tree.ID(snippetsHits, "snippet-folder-menu-delete")
+	hitSnippetBlankMenuDismiss   = tree.ID(snippetsHits, "snippet-blank-menu-dismiss")
+	hitSnippetBlankNewGroup      = tree.ID(snippetsHits, "snippet-blank-new-group")
+	hitSnippetBlankNewSnippet    = tree.ID(snippetsHits, "snippet-blank-new-snippet")
+
+	// Inline editor controls on the Snippets page.
+	hitSnippetInlineName         = tree.ID(snippetsHits, "snippet-inline-name")
+	hitSnippetInlineCommand      = tree.ID(snippetsHits, "snippet-inline-command")
+	hitSnippetInlineGroup        = tree.ID(snippetsHits, "snippet-inline-group")
+	hitSnippetInlineGroupTrigger = tree.ID(snippetsHits, "snippet-inline-group-trigger")
+	hitSnippetInlineGroupClear   = tree.ID(snippetsHits, "snippet-inline-group-clear")
+	hitSnippetInlineGroupDismiss = tree.ID(snippetsHits, "snippet-inline-group-dismiss")
+	hitSnippetInlineGroupScroll  = tree.ID(snippetsHits, "snippet-inline-group-scroll")
+	snippetInlineGroupScope      = tree.ID(snippetsHits, "snippet-inline-group-scope")
+	hitSnippetInlineRun          = tree.ID(snippetsHits, "snippet-inline-run")
+	hitSnippetInlineLines        = tree.ID(snippetsHits, "snippet-inline-lines")
+	hitSnippetInlineShortcut     = tree.ID(snippetsHits, "snippet-inline-shortcut")
+	hitSnippetInlineShortcutOff  = tree.ID(snippetsHits, "snippet-inline-shortcut-clear")
 )
 
 var (
-	hitSnippetExpandList = tree.Sub(snippetsHits, tree.Name("snippet-expand")) // + snippet index
-	hitSnippetSort       = tree.Sub(snippetsHits, tree.Name("snippet-sort"))   // + column index
-	hitSnippetSendList   = tree.Sub(snippetsHits, tree.Name("snippet-send"))   // the command palette's entries
-	hitSnippetPickList   = tree.Sub(snippetsHits, tree.Name("snippet-pick"))   // + session ID: the terminals to send to
+	hitSnippetExpandList         = tree.Sub(snippetsHits, tree.Name("snippet-expand")) // + snippet index
+	hitSnippetSort               = tree.Sub(snippetsHits, tree.Name("snippet-sort"))   // + column index
+	hitSnippetSendList           = tree.Sub(snippetsHits, tree.Name("snippet-send"))   // the command palette's entries
+	hitSnippetPickList           = tree.Sub(snippetsHits, tree.Name("snippet-pick"))   // + session ID: the terminals to send to
+	hitSnippetFolderMore         = tree.Sub(snippetsHits, tree.Name("snippet-folder-more"))
+	hitSnippetInlineGroupChoices = tree.Sub(snippetsHits, tree.Name("snippet-inline-group-option"))
 	// hitSnippetHoverCard is the preview card the pointer rests on to keep open.
 	hitSnippetHoverCard = tree.ID(snippetsHits, "snippet-hover-card")
 )
@@ -95,6 +125,7 @@ type snippetsUI struct {
 	// The page's group filter: the groups there are, how many snippets each
 	// names, the list indices it shows in the order it shows them, and the
 	// integer choices its Select is over.
+	customGroups  []string
 	groups        []string
 	groupCounts   map[string]int
 	hasUngrouped  bool
@@ -123,97 +154,107 @@ type snippetsUI struct {
 	dialogGroup    ui.Box
 	dialogShortcut ui.Box
 
-	// The page: the selected row and the count under the table.
+	// The page: the selected snippet and the count under the tree.
 	selected  int
 	sort      components.TableSortState
 	countText string
-	// selectedRow is the place selected occupies in visible as of this paint,
-	// so the first paint shows a choice the list has not been told yet.
-	selectedRow int
-	// rows is the page's list: its rows are the snippets the filter shows, and
-	// are dragged or moved with Alt and the arrows while the page shows its
-	// manual order. rowDecl, reorder and the row hooks are made once, so a paint
-	// does not allocate them again.
-	rows         ui.ListState
-	rowDecl      func(ui.ListRow)
-	reorder      func(rows []int, to int)
-	handleDraw   func(*ui.DrawContext)
-	detailAccent func(*ui.DrawContext)
-	// detailHeight and detailLineHeight are the band the expanded command takes,
-	// measured when the page declares the scroll area.
-	detailHeight     float32
-	detailLineHeight float32
 	// sendAt is where the menu of terminals opens from the Send button.
 	sendAt gfx.Point
 	// deleting is the snippet index plus one the delete confirmation asks about;
 	// zero means no confirmation is open.
 	deleting int
 
-	// expanded is the snippet index plus one whose command shows below its row;
-	// zero hides every detail. detailLines and detailCache are the wrapped
-	// command, reused across paints.
-	expanded    int
-	detailLines []string
-	detailCache gfx.EllipsisCache
+	// Directory-tree browser state on the Snippets page.
+	tree                ui.TreeState
+	treeWidth           float32
+	treeCollapsed       bool
+	treeDrawer          bool
+	treeSplitter        ui.SplitterState
+	treeSearchOpen      bool
+	treeSearching       bool
+	treeSearch          text.Editor
+	treeSearchField     ui.Field
+	treeSearchBound     bool
+	treeFocus           gfx.ID
+	treeRows            []snippetTreeEntry
+	treeCollapsedGroups map[string]bool
+	treeFolderTokens    map[string]int
+	selectedFolder      string
+	treeC               ui.C
+	treeNode            func(int) ui.TreeNode
+	treeLabel           func(int) string
+	treeContent         func(int)
+	treeKey             func(int) int
+	treeCanDrop         func(int, int, ui.TreeDrop) bool
+	treeAfterLayout     func(*ui.DrawContext)
+	drawInlineFields    func(*ui.DrawContext)
+	folderMenu          snippetFolderMenu
+	blankMenu           snippetBlankMenu
 
-	// The command preview that opens after the pointer rests on a multi-line
-	// row: hoverTarget and hoverSince time the rest, while hoverOpen, hoverRow
-	// and hoverAnchor keep the card painted when the pointer moves onto it.
-	hoverTarget gfx.ID
-	hoverSince  time.Duration
-	hoverOpen   bool
-	hoverRow    int
-	hoverAnchor ui.Box
-	cardLines   []string
-	cardCache   gfx.EllipsisCache
-	// hoverCandidate and hoverCandidateAnchor are the row the pointer is on in
-	// this paint, before the rest has opened the card. hoverName, hoverLineHeight
-	// and hoverBody are what the popover shows.
-	hoverCandidate       int
-	hoverCandidateAnchor ui.Box
-	hoverC               ui.C
-	hoverName            string
-	hoverLineHeight      float32
-	hoverBody            func()
-	// detailName and detailCommand name the expanded row for assistive
-	// technology, without a closure per paint.
-	detailName    string
-	detailCommand string
+	// Inline editor state on the Snippets page.
+	inline snippetInlineEditor
 }
 
-// resetSnippetPreview closes the expanded row and the command preview after the
-// list changed, so neither still points at a command the user no longer has.
+// snippetTreeEntry is one visible row in the Snippets directory tree: either a
+// group folder or a snippet leaf.
+type snippetTreeEntry struct {
+	folder    bool
+	group     string
+	groupKey  string
+	label     string
+	countText string
+	depth     int
+	snippet   int // index into snippetsUI.list, or -1 for folders
+}
+
+// snippetFolderMenu is the context menu for a folder row in the Snippets tree.
+type snippetFolderMenu struct {
+	open  bool
+	group string
+	at    gfx.Point
+}
+
+// snippetBlankMenu is the context menu opened by right-clicking the blank area
+// of the Snippets directory tree.
+type snippetBlankMenu struct {
+	open bool
+	at   gfx.Point
+}
+
+// snippetInlineEditor holds the Snippets page's right-pane inline editor state.
+type snippetInlineEditor struct {
+	loadedValid bool
+	loadedIndex int
+	loadedSnap  snippet
+	name        text.Editor
+	command     text.Editor
+	nameForm    ui.FormFieldState
+	nameField   ui.Field
+	nameBound   bool
+	commandArea dialogArea
+	groupPicker components.SingleSelectState
+	groupSlot   ui.Box
+	capturing   bool
+	error       string
+	breadcrumb  string
+	shortcutLbl string
+}
+
+// resetSnippetPreview resets transient previews/menus after the list changes.
 func (form *snippetsUI) resetSnippetPreview() {
-	form.expanded = 0
-	form.hoverTarget, form.hoverOpen, form.hoverRow = gfx.ID{}, false, 0
-	form.hoverAnchor = ui.Box{}
+	form.inline.capturing = false
+	form.inline.error = ""
+	form.folderMenu.open = false
+	form.blankMenu.open = false
 }
 
-// syncRowSelection makes the list's keyboard row follow selected after the list
-// or its order changed; a user's own choice is read back from the list instead.
+// syncRowSelection keeps the tree's selection aligned with form.selected.
 func (form *snippetsUI) syncRowSelection() {
-	row := slices.Index(form.visible, form.selected)
-	form.rows.Select(row)
-}
-
-// prepareSnippetRows makes the list's callbacks once, so a paint reuses them.
-func (form *snippetsUI) prepareSnippetRows(state *State) {
-	if form.rowDecl != nil {
-		return
-	}
-	form.rowDecl = state.declareSnippetRow
-	form.reorder = func(rows []int, to int) { state.moveSnippetRows(rows, to) }
-	form.handleDraw = state.paintSnippetHandle
-	form.detailAccent = state.paintSnippetDetailAccent
-	form.rows.NoTypeahead = true
-	// Rows are named by their place, not by the snippet's index: reordering
-	// changes an index's owner, and the list's Alt+arrow focus follows the place.
-	form.rows.Key = nil
-	form.rows.Label = func(i int) string {
-		if i < 0 || i >= len(form.visible) {
-			return ""
+	for i, row := range form.treeRows {
+		if !row.folder && row.snippet == form.selected {
+			form.tree.Select(i)
+			return
 		}
-		return form.list[form.visible[i]].Name
 	}
 }
 
@@ -312,12 +353,16 @@ func (state *State) dropSnippetChordsTaken() {
 }
 
 func (state *State) openSnippetDialog(index int) {
+	state.openSnippetDialogWithGroup(index, "")
+}
+
+func (state *State) openSnippetDialogWithGroup(index int, defaultGroup string) {
 	form := &state.snippets
 	form.editing = index
 	form.name, form.command = text.Editor{}, text.Editor{}
 	form.commandArea = dialogArea{}
 	form.run, form.lines = true, false
-	group := ""
+	group := defaultGroup
 	form.shortcut, form.capturing = keymap.Chord{}, false
 	form.dialogError = ""
 	if index >= 0 && index < len(form.list) {
@@ -758,11 +803,15 @@ func (state *State) declareSnippetDialogBody(c ui.C) {
 			form.commandArea.declare(c, hitSnippetCommand, &form.command, m.SnippetCommand, m.SnippetCommandPlaceholder, 140)
 		})
 		if len(form.groups) > 0 {
-			ui.Row(c).Height(62).MarginSides(0, 0, 6, 0).Gap(8).Items(ui.Center).Children(func() {
+			fieldMetrics := c.Theme().Metrics
+			inputTop := field.TitleHeight(fieldMetrics) + field.Gap(fieldMetrics)
+			ui.Row(c).Height(62).MarginSides(0, 0, 6, 0).Gap(8).Items(ui.Start).Children(func() {
 				form.dialogGroup = ui.Slot(c).Grow(1).Height(62)
 				groupsWidth := toolbarButtonWidth(c.Canvas(), m.SnippetGroupsManage, false)
 				dialogButton(c, m.SnippetGroupsManage, components.ButtonGhost, false).
-					Hit(hitSnippetDialogGroups, m.SnippetGroupsManage).Width(groupsWidth).Height(32)
+					Hit(hitSnippetDialogGroups, m.SnippetGroupsManage).
+					Width(groupsWidth).Height(fieldMetrics.ControlHeight).
+					MarginSides(inputTop, 0, 0, 0)
 			})
 		} else {
 			form.dialogGroup = ui.Slot(c).Height(62).MarginSides(0, 0, 6, 0)
