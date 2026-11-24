@@ -65,43 +65,88 @@ func (state *State) paintDesktopLatency(canvas *gfx.Canvas, bounds gfx.Rect, bad
 		gfx.HitOptions{Role: gfx.RoleStatus, SkipFocus: true, Hint: badge.hint})
 }
 
-// declareDesktopFullscreenControls declares the fullscreen view's bar in the
-// page: the exit button, the keyboard switch, and the room the latency badge
-// takes, over the top-left corner of the picture. The badge's text is painted
-// after the page, as the status strip's own badge is.
+// declareDesktopFullscreenControls declares the fullscreen view's bar over the
+// top of the picture, centred like the platform remote desktop client's
+// connection bar: the pin, the exit button, the keyboard switch and the room the
+// latency badge takes. A bar set to auto-hide is declared only while the pointer
+// reaches the top edge or the keyboard is on one of its controls; otherwise a
+// press there belongs to the remote picture, as it does in the platform client.
 func (state *State) declareDesktopFullscreenControls(c ui.C, view *desktopView, session *Session) {
 	m := state.messages.Desktop
 	canvas := c.Canvas()
 	label := m.ExitFullscreen + " · " + desktopFullscreenChord
-	width := canvas.TextWidthWeight(label, metrics.FontSizeS, gfx.WeightMedium) + 24
-	bar := gfx.Rect{X: 8, Y: 8, Width: width + barToolSize + 12, Height: barToolSize + 8}
+	labelWidth := canvas.TextWidthWeight(label, metrics.FontSizeS, gfx.WeightMedium) + 24
 	latency, color, hint := "", gfx.Color{}, ""
+	latencyWidth := float32(0)
 	if state.terminalShowLatency {
 		latency, color, hint = state.desktopLatency(view)
 		if latency != "" {
-			bar.Width += canvas.TextWidthWeight(latency, metrics.FontSizeS, gfx.WeightMedium) + 20
+			latencyWidth = canvas.TextWidthWeight(latency, metrics.FontSizeS, gfx.WeightMedium) + 12
 		}
 	}
+	const pad = float32(4)
+	width := 2*pad + 2*barToolSize + 2*barToolGap + labelWidth
+	if latencyWidth > 0 {
+		width += barToolGap + latencyWidth
+	}
+	area := view.area
+	bar := gfx.Rect{X: max((area.Width-width)/2, 8), Y: 8, Width: width, Height: barToolSize + 8}
 	s := state.paneBody(session)
-	s.fullscreenText, s.fullscreenColor, s.fullscreenHint = latency, color, hint
+	s.fullscreenText, s.fullscreenColor, s.fullscreenHint = "", gfx.Color{}, ""
 	s.fullscreenLatency = gfx.Rect{}
+	// The band that reveals an unpinned bar, for the pointer tracking to read on
+	// the next event. It follows the bar even while the bar is hidden, so the
+	// paint after the pointer arrives can show it.
+	state.desktopBar.zone = gfx.Rect{
+		X: area.X, Y: area.Y, Width: area.Width,
+		Height: bar.Y + bar.Height + fullscreenBarRevealSlack,
+	}
+	ids := [3]gfx.ID{
+		state.paneIdentity(session, hitDesktopBarPin),
+		state.paneIdentity(session, hitDesktopFullscreen),
+		state.paneIdentity(session, hitDesktopCapture),
+	}
+	if state.desktopBar.autoHide && !state.desktopBar.over && !desktopBarFocused(canvas, ids) {
+		return
+	}
 	if latency != "" {
-		x := bar.X + 4 + width + 4 + barToolSize + 4
-		s.fullscreenLatency = gfx.Rect{X: x, Y: bar.Y + 4, Width: bar.Width - (x - bar.X) - barToolSize - 8, Height: barToolSize}
+		s.fullscreenText, s.fullscreenColor, s.fullscreenHint = latency, color, hint
+		left := bar.X + pad + barToolSize + barToolGap + labelWidth + barToolGap + barToolSize + barToolGap
+		s.fullscreenLatency = gfx.Rect{X: left, Y: bar.Y + pad, Width: latencyWidth, Height: barToolSize}
 	}
 	if s.fullscreenBarDraw == nil {
 		s.fullscreenBarDraw = state.paintDesktopFullscreenBar
 	}
 	ui.Slot(c).Absolute().Left(bar.X).Top(bar.Y).Width(bar.Width).Height(bar.Height).Draw(s.fullscreenBarDraw)
-	ui.Row(c).Absolute().Left(bar.X + 4).Top(bar.Y + 4).Width(width).Height(barToolSize).Items(ui.Center).Justify(ui.End).Children(func() {
-		ui.Button(c, label).XSmall().Ghost().Hit(state.paneIdentity(session, hitDesktopFullscreen), label)
+	at := bar.X + pad
+	pinHint, pinIcon := m.FullscreenBarAutoHide, iconPin
+	if state.desktopBar.autoHide {
+		pinHint, pinIcon = m.FullscreenBarPin, iconPinOff
+	}
+	state.declareIconButton(c, ids[0], pinIcon, pinHint, false, iconButtonQuiet).
+		Absolute().Left(at).Top(bar.Y+pad).Size(barToolSize, barToolSize)
+	at += barToolSize + barToolGap
+	ui.Row(c).Absolute().Left(at).Top(bar.Y + pad).Width(labelWidth).Height(barToolSize).Items(ui.Center).Justify(ui.End).Children(func() {
+		ui.Button(c, label).XSmall().Ghost().Hit(ids[1], label)
 	})
+	at += labelWidth + barToolGap
 	captureHint, style := fmt.Sprintf(m.TipCapture, desktopEscapeChord), iconButtonActive
 	if view.released {
 		captureHint, style = fmt.Sprintf(m.TipRelease, desktopEscapeChord), iconButtonQuiet
 	}
-	state.declareIconButton(c, state.paneIdentity(session, hitDesktopCapture), iconKeyboard, captureHint, view.ended, style).
-		Absolute().Left(bar.X+4+width+4).Top(bar.Y+4).Size(barToolSize, barToolSize)
+	state.declareIconButton(c, ids[2], iconKeyboard, captureHint, view.ended, style).
+		Absolute().Left(at).Top(bar.Y+pad).Size(barToolSize, barToolSize)
+}
+
+// desktopBarFocused reports whether the keyboard is on one of the fullscreen
+// bar's controls. An unpinned bar then stays out, as the auto-hidden sidebar
+// does while one of its rows has the keyboard.
+func desktopBarFocused(canvas *gfx.Canvas, ids [3]gfx.ID) bool {
+	if canvas == nil {
+		return false
+	}
+	focus := canvas.FocusVisible()
+	return focus == ids[0] || focus == ids[1] || focus == ids[2]
 }
 
 // paintDesktopFullscreenBar paints the fullscreen bar's surface under its

@@ -3073,6 +3073,8 @@ var chineseDesktop = DesktopMessages{
 	Actual:                    "100%",
 	Fullscreen:                "全屏",
 	ExitFullscreen:            "退出全屏",
+	FullscreenBarPin:          "固定显示浮条",
+	FullscreenBarAutoHide:     "自动隐藏浮条",
 	FullscreenUnavailable:     "此窗口不支持全屏。",
 	FullscreenFailedFmt:       "无法切换全屏模式：%s",
 	ShowLatency:               "显示网络延迟（RTT）",

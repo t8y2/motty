@@ -3073,6 +3073,8 @@ var englishDesktop = DesktopMessages{
 	Actual:                    "100%",
 	Fullscreen:                "Fullscreen",
 	ExitFullscreen:            "Exit fullscreen",
+	FullscreenBarPin:          "Keep the bar visible",
+	FullscreenBarAutoHide:     "Auto-hide the bar",
 	FullscreenUnavailable:     "This window cannot enter fullscreen.",
 	FullscreenFailedFmt:       "Could not change fullscreen mode: %s",
 	ShowLatency:               "Show network latency (RTT)",

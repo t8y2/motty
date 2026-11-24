@@ -36,6 +36,7 @@ var (
 	hitDesktopCtrlAltDel = tree.ID(desktopHits, "ctrl-alt-del")
 	hitDesktopReconnect  = tree.ID(desktopHits, "reconnect")
 	hitDesktopFullscreen = tree.ID(desktopHits, "fullscreen")
+	hitDesktopBarPin     = tree.ID(desktopHits, "bar-pin")
 	hitDesktopLatency    = tree.ID(desktopHits, "latency")
 	hitDesktopQuality    = tree.ID(desktopHits, "quality")
 )
@@ -1009,6 +1010,8 @@ func (state *State) clickDesktop(id gfx.ID) bool {
 		view.fit = false
 	case hitDesktopFullscreen:
 		state.toggleDesktopFullscreen(session)
+	case hitDesktopBarPin:
+		state.setDesktopFullscreenBarAutoHide(!state.desktopBar.autoHide)
 	case hitDesktopQuality:
 		if !view.ended {
 			view.qualityMenu = !view.qualityMenu

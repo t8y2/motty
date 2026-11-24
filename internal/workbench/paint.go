@@ -124,6 +124,9 @@ const (
 	iconFolderSolidOpen
 	iconPaneMaximize
 	iconPaneRestore
+	// The fullscreen desktop bar's pin: pinned, it keeps the bar visible.
+	iconPin
+	iconPinOff
 )
 
 // terminalPage reports whether the window shows the panes of a workspace rather
@@ -2734,6 +2737,8 @@ var lucideIcons = [...]gfx.Icon{
 	iconChevronDown:      icons.ChevronDown,
 	iconPaneMaximize:     remoteLogExpandIcon,
 	iconPaneRestore:      remoteLogRestoreIcon,
+	iconPin:              icons.Pin,
+	iconPinOff:           icons.PinOff,
 	iconChevronsExpand:   icons.ChevronsUpDown,
 	iconChevronsCollapse: icons.ChevronsDownUp,
 	iconSliders:          icons.SlidersHorizontal,

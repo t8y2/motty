@@ -3073,6 +3073,8 @@ var traditionalDesktop = DesktopMessages{
 	Actual:                    "100%",
 	Fullscreen:                "全螢幕",
 	ExitFullscreen:            "退出全螢幕",
+	FullscreenBarPin:          "固定顯示浮條",
+	FullscreenBarAutoHide:     "自動隱藏浮條",
 	FullscreenUnavailable:     "此視窗不支援全螢幕。",
 	FullscreenFailedFmt:       "無法切換全螢幕模式：%s",
 	ShowLatency:               "顯示網路延遲（RTT）",

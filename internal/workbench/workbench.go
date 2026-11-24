@@ -603,6 +603,10 @@ type State struct {
 	windowVisible      func() bool
 	systemKeys         systemKeyCapture
 	winChrome          windowChrome
+	// desktopBar is a fullscreen remote desktop's floating bar: whether its pin
+	// keeps it visible, and where the pointer is in the band at the top edge
+	// that reveals it. See desktop_fullscreen.go.
+	desktopBar desktopFullscreenBar
 	// desktopAwake says this window already holds the sleep request for a visible
 	// remote desktop; see keepAwakeForDesktop.
 	desktopAwake    bool
@@ -2649,6 +2653,11 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 		return state.pasteReview.code.Pointer(event)
 	}
 	if state.trackHostListBar(event) {
+		defer func() { outcome.Repaint = true }()
+	}
+	// A fullscreen desktop's unpinned bar appears while the pointer reaches the
+	// top edge, before the pointer's press can land on the picture there.
+	if state.trackDesktopFullscreenBar(event) {
 		defer func() { outcome.Repaint = true }()
 	}
 	if event.Kind == gfx.PointerDown && !workspaceInlineOwns(event.Target) {

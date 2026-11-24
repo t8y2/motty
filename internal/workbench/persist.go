@@ -52,6 +52,7 @@ type savedState struct {
 	HiddenNav                  []string                `json:"hidden_nav,omitempty"`
 	VerticalTabsAutoHide       bool                    `json:"vertical_tabs_auto_hide,omitempty"`
 	VerticalTabsGrouping       bool                    `json:"vertical_tabs_grouping,omitempty"`
+	FullscreenBarAutoHide      bool                    `json:"desktop_fullscreen_bar_auto_hide,omitempty"`
 	NetworkProxy               string                  `json:"network_proxy,omitempty"`
 	TerminalOption             string                  `json:"terminalOption,omitempty"`
 	LocalShell                 string                  `json:"local_shell,omitempty"`
@@ -557,6 +558,7 @@ func (state *State) snapshot() savedState {
 		HiddenNav:                  state.hiddenNav.savedKeys(),
 		VerticalTabsAutoHide:       state.verticalTabs.autoHide,
 		VerticalTabsGrouping:       state.verticalTabs.grouping,
+		FullscreenBarAutoHide:      state.desktopBar.autoHide,
 		NetworkProxy:               state.networkProxy.String(),
 		SSHBrowser:                 string(state.sshBrowser),
 		TerminalOption:             state.terminalOption.String(),
@@ -1279,6 +1281,7 @@ func (state *State) restoreShared(saved savedState) {
 		state.tabTitleMode = tabTitleConnection
 	}
 	state.terminalShowLatency = saved.TerminalShowLatency
+	state.desktopBar.autoHide = saved.FullscreenBarAutoHide
 	state.terminalBellOff = saved.TerminalBellOff
 	state.pasteConfirmOff = saved.TerminalPasteConfirmOff
 	state.terminalInputClickOff = saved.TerminalInputClickOff
