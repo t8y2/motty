@@ -318,12 +318,16 @@ func (state *State) terminalPointer(session *Session, event gfx.PointerEvent) gf
 			if state.terminalRightClickPaste && event.Modifiers&gfx.ModifierShift == 0 && terminal.selection.selected {
 				state.terminalMenu.open = false
 				if err := state.options.SetClipboardText(terminal.selection.text(terminal.screen)); err != nil {
+					// A failed copy keeps the selection and pastes nothing, so
+					// nothing is silently replaced; the status line says why.
 					state.status = err.Error()
 				} else {
-					// The Windows Terminal convention: the copy consumes the
-					// selection, so the next right-click pastes. A failed copy
-					// keeps it, and the status line says why.
+					// The selection was copied, so paste it now rather than
+					// making the user right-click a second time. Clearing it
+					// first keeps a plain right-click from copying it again,
+					// and a failed copy above left it for the user to retry.
 					terminal.selection.clear()
+					state.pasteIntoTerminal(session)
 				}
 				return gfx.EventResult{Handled: true, Repaint: true}
 			}
