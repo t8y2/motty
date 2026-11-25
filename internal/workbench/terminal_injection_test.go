@@ -3,6 +3,7 @@ package workbench
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"motty/internal/ai/llm"
 	"motty/internal/ai/tools"
@@ -333,5 +334,109 @@ func TestInjectionIsNotTypedIntoAFullScreenProgram(t *testing.T) {
 	}
 	if got := string(shell.input); got != "typed\r" {
 		t.Fatalf("shell received %q, want only the released input and no activation line", got)
+	}
+}
+
+type setKindShell struct {
+	*fakeShell
+	kind shellkind.Kind
+}
+
+func (shell *setKindShell) Kind() shellkind.Kind     { return shell.kind }
+func (shell *setKindShell) SetKind(k shellkind.Kind) { shell.kind = k }
+
+// Non-POSIX shells such as nushell and fish must never upload or inject the
+// bash/zsh integration script, even when ProbeShell saw a non-empty $SHELL.
+func TestUnsupportedShellsAreNotUploadedOrInjected(t *testing.T) {
+	for _, kind := range []shellkind.Kind{shellkind.Nushell, shellkind.Fish, shellkind.Cmd, shellkind.Console} {
+		called := false
+		line, err := activationLine(kind, "/bin/bash", "tok", "", 0, func() (string, error) {
+			called = true
+			return "bash line", nil
+		})
+		if err != nil || line != "" || called {
+			t.Fatalf("%v: line=%q err=%v called=%v, want empty without upload", kind, line, err, called)
+		}
+	}
+}
+
+// A login shell whose startup files launch nushell ("exec nu" in .bashrc)
+// leaves the non-interactive probe reporting POSIX, while the screen shows
+// nushell's startup banner. Injection must stop before typing bash syntax.
+func TestInjectionSkipsNushellBanner(t *testing.T) {
+	screen := term.New(80, 24, 0)
+	screen.Write([]byte("Welcome to Nushell,\r\nbased on the type of data you love!\r\n~/project> "))
+	t0 := &terminal{screen: screen, folderToken: "nu-token", integrated: true}
+	shell := &setKindShell{fakeShell: &fakeShell{}}
+	t0.shell = shell
+	session := &Session{term: t0}
+	state := &State{}
+	t0.injection = terminalInjection{
+		phase:  injectionWaiting,
+		probed: true,
+		probe:  shellProbe{path: "/bin/bash", kind: shellkind.POSIX, line: " : motty-nu-token; _motty_hist_on=\n"},
+	}
+	t0.injection.queue([]byte("ls\r"))
+
+	state.beginInjection(session)
+	if t0.injection.phase != injectionFailed || t0.integrated {
+		t.Fatalf("phase = %v integrated = %v, want failed unintegrated injection", t0.injection.phase, t0.integrated)
+	}
+	if shell.kind != shellkind.Nushell {
+		t.Fatalf("shell kind = %v, want nushell", shell.kind)
+	}
+	if got := string(shell.input); got != "ls\r" {
+		t.Fatalf("shell received %q, want only queued input and no bash activation line", got)
+	}
+}
+
+// When nushell starts with show_banner: false from a POSIX login profile, the
+// first hidden parse error reveals nushell so injection keeps the error off the
+// screen and settles after injectionQuiet instead of waiting injectionTimeout.
+func TestInjectionFailsFastOnNushellParseError(t *testing.T) {
+	screen := term.New(80, 24, 0)
+	screen.Write([]byte("~/project> "))
+	t0 := &terminal{screen: screen, folderToken: "nu-quiet-token", integrated: true}
+	shell := &setKindShell{fakeShell: &fakeShell{}}
+	t0.shell = shell
+	session := &Session{term: t0}
+	state := &State{}
+	t0.injection = terminalInjection{
+		phase:   injectionSuppressing,
+		token:   "nu-quiet-token",
+		marker:  sshconn.IntegrationReadyMarker("nu-quiet-token"),
+		echoTag: sshconn.IntegrationEchoTag("nu-quiet-token"),
+		probe:   shellProbe{path: "/bin/bash", kind: shellkind.POSIX},
+		started: state.now(),
+	}
+	if !t0.writeShellInput([]byte("pwd\r")) {
+		t.Fatal("input typed during injection was refused")
+	}
+
+	if rest, applied := state.applyInjection(session, []byte("Error: nu::parser::parse_mismatch\r\n")); applied || len(rest) != 0 {
+		t.Fatalf("unexpected release on nushell error: rest=%q applied=%v", rest, applied)
+	}
+	if !t0.injection.nushellDetected || shell.kind != shellkind.Nushell {
+		t.Fatalf("detected=%v kind=%v, want nushell detected and recorded", t0.injection.nushellDetected, shell.kind)
+	}
+	if rest, applied := state.applyInjection(session, []byte("  × Expected keyword\r\n~/project> ")); applied || len(rest) != 0 {
+		t.Fatalf("follow-up error chunk was released: rest=%q applied=%v", rest, applied)
+	}
+
+	// Still suppressing just before injectionQuiet, then settles cleanly at injectionQuiet.
+	state.advanceInjection(session, t0.injection.lastOutput+injectionQuiet-time.Millisecond)
+	if t0.injection.phase != injectionSuppressing {
+		t.Fatalf("settled early at phase %v", t0.injection.phase)
+	}
+	state.advanceInjection(session, t0.injection.lastOutput+injectionQuiet)
+	if t0.injection.phase != injectionFailed || t0.integrated || len(t0.injection.echoTag) != 0 {
+		t.Fatalf("phase=%v integrated=%v echoTag=%q, want failed unintegrated with cleared tag",
+			t0.injection.phase, t0.integrated, t0.injection.echoTag)
+	}
+	if got := string(shell.input); got != "pwd\r" {
+		t.Fatalf("queued input = %q, want pwd\\r released on settle", got)
+	}
+	if text := screen.Text(); strings.Contains(text, "nu::parser::") || strings.Contains(text, "Expected keyword") {
+		t.Fatalf("nushell parse error leaked to screen:\n%s", text)
 	}
 }

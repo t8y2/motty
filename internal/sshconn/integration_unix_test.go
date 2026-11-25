@@ -15,6 +15,7 @@ import (
 	"github.com/creack/pty"
 	"golang.org/x/crypto/ssh"
 	"motty/internal/localshell"
+	"motty/internal/shellkind"
 	"motty/internal/term"
 )
 
@@ -982,5 +983,41 @@ func TestIntegrationReadonlyPromptCommandStillReportsFolders(t *testing.T) {
 	}
 	if strings.Contains(output, "readonly variable") {
 		t.Fatalf("the integration assigned to the readonly PROMPT_COMMAND: %q", output)
+	}
+}
+
+// A server whose login shell is nushell must be probed as Nushell and refused
+// by UploadIntegration rather than receiving bash/zsh integration syntax.
+func TestProbeShellRealNushell(t *testing.T) {
+	program, err := exec.LookPath("nu")
+	if err != nil {
+		t.Skip("nu unavailable")
+	}
+	home := t.TempDir()
+	server := startServer(t, func(server *testServer) {
+		server.password, server.shell = "secret", echoShell
+		server.version = "SSH-2.0-OpenSSH_9.6"
+		server.command = func(command string, channel ssh.Channel) {
+			defer channel.Close()
+			cmd := exec.Command(program, "-c", command)
+			cmd.Env = append(os.Environ(), "HOME="+home, "SHELL=/bin/bash")
+			cmd.Stdout = channel
+			cmd.Stderr = channel
+			status := uint32(0)
+			if err := cmd.Run(); err != nil {
+				status = 1
+			}
+			_, _ = channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{status}))
+		}
+	})
+	h := connect(t, server)
+	w := openShellWith(t, h, ShellConfig{Cols: 80, Rows: 24})
+	w.until("welcome", func(output string) bool { return strings.Contains(output, "welcome") })
+	path, kind := h.conn.ProbeShell(context.Background())
+	if kind != shellkind.Nushell {
+		t.Fatalf("ProbeShell = (%q, %v), want kind %v", path, kind, shellkind.Nushell)
+	}
+	if _, err := h.conn.UploadIntegration(context.Background(), path, "nu-token", ""); err == nil {
+		t.Fatalf("UploadIntegration(%q) succeeded, want refusal for nushell", path)
 	}
 }
