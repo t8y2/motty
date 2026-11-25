@@ -229,6 +229,22 @@ func TestAppLockSystemVerificationRequiresLocalEnrollment(t *testing.T) {
 	}
 }
 
+func TestAppLockQuitPreservesWindowsWhenItCannotAsk(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.keepWindows = keepWindowsAsk
+	const password = "long fixture password"
+	if err := finishAppLock(t, state, appLockEnable, "", password); err != nil {
+		t.Fatal(err)
+	}
+	if !state.AsksAboutWindowsOnExit() {
+		t.Fatal("unlocked window should ask before quitting")
+	}
+	state.lockApplication()
+	if state.AsksAboutWindowsOnExit() || !state.KeepsWindowsOnExit() {
+		t.Fatal("quitting from the lock screen should preserve the saved windows")
+	}
+}
+
 func TestAppLockPrintableInputDoesNotFallThroughToWorkspace(t *testing.T) {
 	s := newTestState(t, testOptions(t))
 	s.openAppLockForm(appLockEnable)

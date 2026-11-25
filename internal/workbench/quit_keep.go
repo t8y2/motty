@@ -30,8 +30,10 @@ type quitKeepWindowsPrompt struct {
 }
 
 // KeepsWindowsOnExit reports whether a quit leaves this window's record for the
-// next launch.
-func (state *State) KeepsWindowsOnExit() bool { return state.keepWindows == keepWindowsAlways }
+// next launch. Preserve records when a locked window cannot ask the user.
+func (state *State) KeepsWindowsOnExit() bool {
+	return state.keepWindows == keepWindowsAlways || state.keepWindows == keepWindowsAsk && state.appAccessBlocked()
+}
 
 // AsksAboutWindowsOnExit reports whether a quit with windows open must ask
 // whether to keep them.
