@@ -108,6 +108,10 @@ func TestPrivateKeyFilesTravelInABackupAndComeBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var file envelope
+	if err := json.Unmarshal(sealed, &file); err != nil || file.Version != version {
+		t.Fatalf("a backup with keys has version %d: %v", file.Version, err)
+	}
 	if bytes.Contains(sealed, []byte("private")) {
 		t.Fatal("the sealed file shows the private key")
 	}
@@ -117,6 +121,23 @@ func TestPrivateKeyFilesTravelInABackupAndComeBack(t *testing.T) {
 	}
 	if !reflect.DeepEqual(opened.Keys, document.Keys) {
 		t.Fatalf("keys = %+v", opened.Keys)
+	}
+}
+
+func TestABackupWithoutKeyFilesStaysReadableByOlderVersions(t *testing.T) {
+	sealed, err := Seal(sample(), "correct horse")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var file envelope
+	if err := json.Unmarshal(sealed, &file); err != nil {
+		t.Fatal(err)
+	}
+	if file.Version != 2 {
+		t.Fatalf("a backup without keys has version %d, want 2", file.Version)
+	}
+	if _, err := Open(sealed, "correct horse"); err != nil {
+		t.Fatal(err)
 	}
 }
 

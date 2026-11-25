@@ -150,7 +150,9 @@ func newGCM(key []byte) (cipher.AEAD, error) {
 	return cipher.NewGCM(block)
 }
 
-// Seal encrypts the document under the password.
+// Seal encrypts the document under the password. The envelope keeps version 2
+// when the document carries no private key files, so an older Motty can still
+// open it; only a backup that actually carries keys needs version 3.
 func Seal(document Document, password string) ([]byte, error) {
 	plain, err := json.Marshal(document)
 	if err != nil {
@@ -170,7 +172,11 @@ func SealEnvelope(format string, version int, plain []byte, password string) ([]
 	if len(plain) > MaxSize {
 		return nil, ErrTooLarge
 	}
-	file := envelope{Format: format, Version: version, KDF: defaultKDF}
+	fileVersion := 2
+	if len(document.Keys) > 0 {
+		fileVersion = version
+	}
+	file := envelope{Format: format, Version: fileVersion, KDF: defaultKDF}
 	file.KDF.Salt = make([]byte, saltSize)
 	if _, err := rand.Read(file.KDF.Salt); err != nil {
 		return nil, err
@@ -196,6 +202,9 @@ func Open(data []byte, password string) (Document, error) {
 	}
 	var document Document
 	if err := json.Unmarshal(plain, &document); err != nil {
+		return Document{}, ErrNotBackup
+	}
+	if file.Version < 3 && len(document.Keys) > 0 {
 		return Document{}, ErrNotBackup
 	}
 	if err := document.checkKeys(); err != nil {
