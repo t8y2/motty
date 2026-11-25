@@ -296,6 +296,8 @@ var EnglishMessages = Messages{
 	SettingsAppearanceSystem:               "System",
 	SettingsAppearanceDark:                 "Dark",
 	SettingsAppearanceLight:                "Light",
+	SettingsTransparency:                   "Terminal background transparency",
+	SettingsTransparencyDescription:        "Reveal the desktop behind terminal text. At 0%, your usual background or picture is shown.",
 	SettingsCorners:                        "Corners",
 	SettingsCornersRounded:                 "Rounded",
 	SettingsCornersSquare:                  "Square",

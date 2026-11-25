@@ -213,6 +213,7 @@ var (
 
 // Settings: its explicit choices.
 var (
+	hitTerminalTransparency    = tree.ID(settingsHits, "terminal-transparency")
 	hitSettingsTextSizeDown    = tree.ID(settingsHits, "settings-text-size-down")
 	hitSettingsTextSizeReset   = tree.ID(settingsHits, "settings-text-size-reset")
 	hitSettingsTextSizeUp      = tree.ID(settingsHits, "settings-text-size-up")
@@ -735,14 +736,15 @@ type State struct {
 	post func(func())
 	// setMenuBar installs the macOS menu bar; menuBarSig is the state it was
 	// built for, so Wake rebuilds it only when enablement or language changed.
-	setMenuBar      func([]app.Menu) error
-	menuBarSig      string
-	appearance      appearance
-	appearanceMode  appearanceMode
-	cornerStyle     cornerStyle
-	iconColor       iconColor
-	iconColorChoice iconColor // the unconfirmed selection in the icon picker
-	networkProxy    networkProxyMode
+	setMenuBar           func([]app.Menu) error
+	menuBarSig           string
+	appearance           appearance
+	appearanceMode       appearanceMode
+	cornerStyle          cornerStyle
+	terminalTransparency ui.SliderState
+	iconColor            iconColor
+	iconColorChoice      iconColor // the unconfirmed selection in the icon picker
+	networkProxy         networkProxyMode
 	// sshBrowser is the Chromium-family browser the SSH tab's browser opens.
 	// Automatic takes the first one installed.
 	sshBrowser          sshbrowser.Family

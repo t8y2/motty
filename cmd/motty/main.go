@@ -419,8 +419,9 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		closeWindow()
 	}
 	state = workbench.New(workbench.Options{
-		DevelopmentSource: importSource,
-		Invalidate:        invalidate, Invalidator: &invalidator, NewWindow: newWindow,
+		DevelopmentSource:    importSource,
+		TerminalTransparency: runtime.GOOS == "darwin",
+		Invalidate:           invalidate, Invalidator: &invalidator, NewWindow: newWindow,
 		Post:              application.Post,
 		PostAfter:         application.PostAfter,
 		SetMenuBar:        application.SetMenuBar,

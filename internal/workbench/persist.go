@@ -45,6 +45,7 @@ type savedState struct {
 	Language                   string                  `json:"language,omitempty"`
 	Theme                      string                  `json:"theme,omitempty"`
 	IconColor                  string                  `json:"icon_color,omitempty"`
+	TerminalTransparency       int                     `json:"terminal_transparency,omitempty"`
 	Corners                    string                  `json:"corners,omitempty"`
 	BackgroundOutputAlerts     bool                    `json:"background_output_alerts,omitempty"`
 	TabOrientation             string                  `json:"tab_orientation,omitempty"`
@@ -554,6 +555,7 @@ func (state *State) snapshot() savedState {
 		Theme:                      state.appearanceMode.saved(),
 		IconColor:                  state.iconColor.saved(),
 		Corners:                    state.cornerStyle.saved(),
+		TerminalTransparency:       int(state.terminalTransparency.Value),
 		BackgroundOutputAlerts:     state.backgroundOutputAlerts,
 		TabOrientation:             state.tabOrientation.String(),
 		TabDoubleClick:             state.tabDoubleClick.String(),
@@ -1147,6 +1149,7 @@ func (state *State) restoreLocal(saved savedState) {
 	state.networkProxy = networkProxyModeFromString(saved.NetworkProxy)
 	state.sshBrowser = sshbrowser.ParseFamily(saved.SSHBrowser)
 	state.restoreWindowAppearance(saved)
+	state.terminalTransparency.Value = float32(min(max(saved.TerminalTransparency, 0), 100))
 	state.setTerminalFontSize(float32(saved.TerminalFontSize))
 	state.fonts.family, state.fonts.classic = "", terminalFontFaceFromString(saved.TerminalFontFace) == gfx.MonoClassic
 	if family := strings.TrimSpace(saved.TerminalFontFamily); family != "" && gfx.MonoFamily(family) != gfx.MonoSystem {
