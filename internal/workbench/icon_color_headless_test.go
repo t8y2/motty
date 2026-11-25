@@ -22,6 +22,7 @@ func TestLogoColorSelectionThroughDriver(t *testing.T) {
 				state := newTestState(t, freshOptions(t))
 				state.setLanguage(language)
 				state.Click(hitSettings)
+				state.selectSettingsCategory(settingsAppearance)
 				view, err := headless.Open(state.WindowConfig(app.Config{
 					Title: "Logo colors", Width: width, Height: 900, Tree: Tree(),
 					Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnResize: state.Resize,

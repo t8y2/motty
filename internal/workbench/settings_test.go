@@ -50,6 +50,16 @@ func settingsChoiceHit(t testing.TB, state *State, label string) gfx.Hit {
 	if hit, ok := settingsChoiceIn(&canvas, label); ok {
 		return hit
 	}
+	// The choice may live on another category's page: look through them all,
+	// stopping on the one that offers it.
+	for category := settingsGeneral; category < settingsCategoryCount; category++ {
+		state.selectSettingsCategory(category)
+		canvas = gfx.Canvas{}
+		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 3400})
+		if hit, ok := settingsChoiceIn(&canvas, label); ok {
+			return hit
+		}
+	}
 	var offered []string
 	for _, hit := range canvas.Hits() {
 		if hit.Role == gfx.RoleRadio {
