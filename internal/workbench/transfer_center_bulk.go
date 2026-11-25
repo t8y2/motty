@@ -240,18 +240,71 @@ func transferOrderTime(group int, snapshot *sftpclient.TransferSnapshot) time.Ti
 	return snapshot.QueuedAt
 }
 
+// moreThanOneServer says the visible tasks come from more than one server, so
+// naming them is worth a row each.
+func (center *transferCenter) moreThanOneServer() bool {
+	first := ""
+	seen := false
+	for index := range center.entries {
+		entry := &center.entries[index]
+		if entry.removed {
+			continue
+		}
+		label := center.entryHostLabel(entry)
+		if label == "" {
+			continue
+		}
+		if !seen {
+			first, seen = label, true
+			continue
+		}
+		if label != first {
+			return true
+		}
+	}
+	return false
+}
+
 func (center *transferCenter) rebuildRows() {
 	center.rows = center.rows[:0]
+	// With every server in view, name each one inside a section: the history of
+	// two servers otherwise reads as one list and the reader cannot tell whose
+	// task is whose. A single chosen server needs no headers.
+	byHost := center.host == nil && center.moreThanOneServer()
 	for _, group := range transferGroups {
 		section := &center.groups[group]
 		if len(section.members) == 0 || center.filter != transferFilterAll && center.filter != group {
 			continue
 		}
 		center.rows = append(center.rows, transferRow{group: group, entry: -1})
-		if !section.collapsed {
+		if section.collapsed {
+			continue
+		}
+		if !byHost {
 			for _, index := range section.members {
 				center.rows = append(center.rows, transferRow{group: group, entry: index})
 			}
+			continue
+		}
+		members := slices.Clone(section.members)
+		slices.SortStableFunc(members, func(a, b int) int {
+			left, right := center.entryHostLabel(&center.entries[a]), center.entryHostLabel(&center.entries[b])
+			if left != right {
+				return strings.Compare(left, right)
+			}
+			return compareTransferOrder(group, &center.entries[a], &center.entries[b])
+		})
+		last := ""
+		for _, index := range members {
+			label := center.entryHostLabel(&center.entries[index])
+			if label != "" && label != last {
+				center.rows = append(center.rows, transferRow{
+					group: group, entry: -1, host: label, hostHeader: true,
+					hostKey: center.hostHeaderKey(group, label),
+				})
+				last = label
+			}
+			center.rows = append(center.rows, transferRow{group: group, entry: index})
 		}
 	}
 }
