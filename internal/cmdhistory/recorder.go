@@ -277,7 +277,15 @@ func escapeLength(p []byte) int {
 // right-hand prompt seen at the first key (a shell's own suggestion), or the
 // alternate screen.
 func (r *Recorder) Line(screen Screen) (string, bool) {
-	line, _, ok := r.lineAt(screen)
+	line, _, ok := r.lineAt(screen, false)
+	return line, ok
+}
+
+// LineAllowingSuggestion is Line, except that a shell's own grey suggestion
+// after the cursor does not hide the line. The completion list sits above or
+// below the line and does not collide with inline shell predictions.
+func (r *Recorder) LineAllowingSuggestion(screen Screen) (string, bool) {
+	line, _, ok := r.lineAt(screen, true)
 	return line, ok
 }
 
@@ -286,11 +294,17 @@ func (r *Recorder) Line(screen Screen) (string, bool) {
 // dropped. Callers that must tell a shell's prompt from a program's are the
 // ones that need it; it reports false exactly when Line does.
 func (r *Recorder) LinePrompt(screen Screen) (line, prompt string, ok bool) {
-	return r.lineAt(screen)
+	return r.lineAt(screen, false)
+}
+
+// LinePromptAllowingSuggestion is LinePrompt, except that a shell's own grey
+// suggestion after the cursor does not hide the line.
+func (r *Recorder) LinePromptAllowingSuggestion(screen Screen) (line, prompt string, ok bool) {
+	return r.lineAt(screen, true)
 }
 
 // lineAt reads the current line and its prompt in one pass; see Line.
-func (r *Recorder) lineAt(screen Screen) (line, promptText string, ok bool) {
+func (r *Recorder) lineAt(screen Screen, allowSuggestion bool) (line, promptText string, ok bool) {
 	if !r.armed || r.skip || r.multi || r.inPaste || screen.Alt() || screen.Scrolled() {
 		return "", "", false
 	}
@@ -302,7 +316,11 @@ func (r *Recorder) lineAt(screen Screen) (line, promptText string, ok bool) {
 	if first+r.promptRows != y || x < r.promptX || screen.Wrapped(y) {
 		return "", "", false
 	}
-	if strings.TrimSpace(screen.Span(y, x, -1, false)) != r.rightShown {
+	if allowSuggestion {
+		if strings.TrimSpace(screen.Span(y, x, -1, true)) != r.right {
+			return "", "", false
+		}
+	} else if strings.TrimSpace(screen.Span(y, x, -1, false)) != r.rightShown {
 		return "", "", false
 	}
 	prompt := screen.Span(y, 0, r.promptX, true)

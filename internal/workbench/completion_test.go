@@ -789,3 +789,55 @@ func TestAnUntypableQuickCommandIsNotListed(t *testing.T) {
 		})
 	}
 }
+
+// When the shell itself draws a grey line prediction after the cursor (fish,
+// zsh-autosuggestions, PSReadLine), the inline ghost stays out of its way,
+// while the completion list still opens and accepts candidates (#1562).
+func TestTheListOpensAndAcceptsBesideAShellPrediction(t *testing.T) {
+	w := newCompletionWorld(t)
+	w.state.history.inlineOff = true // automatic-list mode
+	w.shell.onWrite = func(p []byte) {
+		s := string(p)
+		w.shell.say(strings.ReplaceAll(s, "\r", "\r\n"))
+		if strings.HasSuffix(s, "s") {
+			w.shell.say("\x1b[90mtatus\x1b[0m\x1b[5D")
+		} else if strings.HasSuffix(s, "tage") {
+			w.shell.say("\x1b[90m --all\x1b[0m\x1b[6D")
+		}
+	}
+	w.type_("git s")
+	waitCompletionList(t, w)
+	if !w.state.completion.list.auto || w.state.completion.list.candidates[0].Text != "stage" {
+		t.Fatalf("list auto=%v candidates=%v", w.state.completion.list.auto, w.state.completion.list.candidates)
+	}
+	if rest, ok := w.state.commandGhost(w.session); ok {
+		t.Fatalf("the inline ghost offered %q beside the shell's own prediction", rest)
+	}
+	before := w.shell.typed()
+	w.state.Click(hitCompletionList.At(0))
+	if got := w.shell.typed(); got != before+"tage" {
+		t.Fatalf("typed %q, want %q", got, before+"tage")
+	}
+	w.state.Wake()
+	if w.session.term.suggestionPending != nil {
+		t.Fatal("suggestionPending was not reconciled beside the shell's prediction")
+	}
+
+	// Also verify explicit open and automatic list in a nested shell without OSC 133.
+	w2 := newCompletionWorld(t)
+	w2.state.history.inlineOff = true
+	w2.enterNestedShell("root@host:~# ")
+	w2.shell.onWrite = func(p []byte) {
+		s := string(p)
+		w2.shell.say(strings.ReplaceAll(s, "\r", "\r\n"))
+		if strings.HasSuffix(s, "s") {
+			w2.shell.say("\x1b[90mtatus\x1b[0m\x1b[5D")
+		}
+	}
+	w2.type_("git s")
+	waitCompletionList(t, w2)
+	w2.state.openCompletions()
+	if !w2.state.completion.list.active {
+		t.Fatal("explicit open failed in a nested shell with shell prediction")
+	}
+}
