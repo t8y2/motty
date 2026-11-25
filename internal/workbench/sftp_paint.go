@@ -382,7 +382,7 @@ func (state *State) declareSFTPPanel(c ui.C) {
 					if view.localOnly {
 						add(hitSFTPInsertPath, iconTerminal, messages.SFTPInsertPath, session.term == nil || session.term.shell == nil)
 					} else if local {
-						add(hitSFTPSend, iconUpload, messages.Tools.SendToServer, false)
+						add(hitSFTPSend, iconSFTPUpload, messages.Tools.SendToServer, false)
 					} else {
 						add(hitSFTPDownload, iconDownload, messages.SFTPDownload, false)
 						if view.lfolder.path != "" {

@@ -913,7 +913,7 @@ func (w *sftpWindow) paintDrag(canvas *gfx.Canvas) {
 		defer canvas.Unclip()
 		label, glyph := w.owner.messages.SFTPWindow.DropDownloadHint, uint8(iconDownload)
 		if w.drag.fromLocal {
-			label, glyph = w.owner.messages.SFTPWindow.DropUploadHint, iconUpload
+			label, glyph = w.owner.messages.SFTPWindow.DropUploadHint, iconSFTPUpload
 		}
 		w.owner.paintSFTPTransferDrop(canvas, bounds, label, target, glyph)
 		return
@@ -943,7 +943,7 @@ func (w *sftpWindow) paintForeignDrag(canvas *gfx.Canvas) {
 		bounds.Y += float32(w.foreign.row)*sftpRowHeight - w.ui.offset[side]
 		bounds.Height = sftpRowHeight
 	}
-	label, glyph := w.owner.messages.SFTPWindow.DropUploadHint, uint8(iconUpload)
+	label, glyph := w.owner.messages.SFTPWindow.DropUploadHint, uint8(iconSFTPUpload)
 	switch {
 	case !w.foreign.fromLocal && w.foreign.local:
 		label, glyph = w.owner.messages.SFTPWindow.DropDownloadHint, iconDownload
