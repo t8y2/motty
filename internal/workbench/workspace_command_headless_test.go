@@ -150,8 +150,9 @@ func TestWorkspaceCommandLayouts(t *testing.T) {
 					if label.Bounds.X >= button.Bounds.X || label.Bounds.Bottom() < button.Bounds.Y || label.Bounds.Y >= field.Bounds.Y {
 						continue
 					}
+					visibleName, elided := strings.CutSuffix(label.Value, "…")
 					switch {
-					case strings.HasPrefix(label.Value, "Workspace SSH"):
+					case label.Value == host.Label || elided && visibleName != "" && strings.HasPrefix(host.Label, visibleName):
 						title = label.Bounds
 					case label.Value == state.sessionAddress(*host):
 						address = label.Bounds
