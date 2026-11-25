@@ -17,9 +17,10 @@ var hitTabInline = tree.ID(shellHits, "tab-inline")
 // typed over and the editor holding the draft. blink is the phase of the caret
 // the tab paints itself.
 type tabInline struct {
-	workspace layoutcore.WorkspaceID
-	editor    text.Editor
-	blink     components.CaretBlink
+	workspace    layoutcore.WorkspaceID
+	editor       text.Editor
+	blink        components.CaretBlink
+	focusPending bool
 }
 
 // tabInlineActive says a tab is being renamed in place right now.
@@ -41,7 +42,7 @@ func (state *State) beginTabInline(id layoutcore.WorkspaceID) {
 	if !ok || state.modal != modalNone {
 		return
 	}
-	state.tabInline = tabInline{workspace: id}
+	state.tabInline = tabInline{workspace: id, focusPending: true}
 	state.tabInline.editor.Insert(state.tabBaseLabel(state.workspaceTabs[index]))
 	state.tabInline.editor.SetSelection(text.Range{End: state.tabInline.editor.RuneCount()})
 }
@@ -132,6 +133,11 @@ func tabInlineScroll(canvas *gfx.Canvas, title gfx.Rect, value string, caret int
 // rename opens (the whole name selected), so a field that let the platform draw
 // it would show no caret where the user is about to type.
 func (state *State) paintTabInlineField(canvas *gfx.Canvas, title gfx.Rect) {
+	// 菜单关闭后，将焦点交给新显示的名称输入框，仅请求一次。
+	if state.tabInline.focusPending {
+		canvas.RequestFocusOnce(hitTabInline)
+		state.tabInline.focusPending = false
+	}
 	focused := canvas.Focused() == hitTabInline
 	editor := &state.tabInline.editor
 	value := editor.String()

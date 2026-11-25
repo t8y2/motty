@@ -20,6 +20,9 @@ func openTabInlineSession(t *testing.T, state *State) *headless.Session {
 		Title: "tab inline rename", Width: 1400, Height: 900,
 		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnResize: state.Resize,
 		TextInput: func(context app.TextInputContext) *app.TextInput {
+			if context.Terminal {
+				return state.TerminalInput(context)
+			}
 			editor := state.EditorFor(context.ID)
 			if editor == nil {
 				return nil
@@ -200,5 +203,49 @@ func TestTheTabMenuOpensTheSameInlineField(t *testing.T) {
 	}
 	if got := state.tabInline.editor.String(); got != state.tabLabel(state.workspaceTabs[2]) {
 		t.Fatalf("the field starts with %q, want the tab's label %q", got, state.tabLabel(state.workspaceTabs[2]))
+	}
+	if err := session.Type("Build box"); err != nil {
+		t.Fatal(err)
+	}
+	if got := state.tabInline.editor.String(); got != "Build box" {
+		t.Fatalf("typing did not reach the rename field: %q", got)
+	}
+	if err := session.Keys("Enter"); err != nil {
+		t.Fatal(err)
+	}
+	if state.tabInlineActive() || state.tabLabel(state.workspaceTabs[2]) != "Build box" {
+		t.Fatal("Enter did not save the renamed tab")
+	}
+}
+
+func TestTabMenuRenameTakesFocusFromTerminal(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	session := openTabInlineSession(t, state)
+	x, y := tabHitCenter(t, session, state.activeTerminalFocusHit())
+	if err := session.Click(x, y); err != nil {
+		t.Fatal(err)
+	}
+	if session.Snapshot().Focused != state.activeTerminalFocusHit() {
+		t.Fatal("the terminal did not receive initial focus")
+	}
+	workspace := state.deck.ActiveWorkspace()
+	x, y = tabHitCenter(t, session, hitTabList.At(int(workspace)))
+	if err := session.RightClick(x, y); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.ClickLabel(state.messages.MenuRenameTab); err != nil {
+		t.Fatal(err)
+	}
+	if session.Snapshot().Focused != hitTabInline {
+		t.Fatal("rename did not take focus from the terminal")
+	}
+	if err := session.Type("Build box"); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Keys("Enter"); err != nil {
+		t.Fatal(err)
+	}
+	if state.tabInlineActive() || state.tabLabel(state.workspaceTabs[0]) != "Build box" {
+		t.Fatal("typing and Enter did not rename the terminal tab")
 	}
 }
