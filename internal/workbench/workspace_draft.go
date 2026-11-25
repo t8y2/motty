@@ -941,11 +941,16 @@ func (state *State) declareWorkspaceDraftRow(row ui.ListRow) {
 			ui.Column(c).FillWidth().Children(func() {
 				head := ui.Row(c).Height(56).FillWidth().Items(ui.Center)
 				head.Children(func() {
-					ui.Slot(c).Grow(1)
 					if selected && workspaceCommandHost(host) {
-						ui.Button(c, m.WorkspaceCommandField).XSmall().Outline().Shrink(0).
-							Hit(hitWorkspaceCommandEdit.At(int(host.ID)), m.WorkspaceCommandField).
-							Size(90, 26).MarginSides(0, 44, 0, 0)
+						ui.Row(c).Grow(1).MinWidth(0).Height(24).MarginSides(4, 8, 28, 46).
+							Items(ui.Center).Gap(8).Children(func() {
+							ui.Text(c, host.Label).FontSize(13).Weight(gfx.WeightSemibold).Color(state.pal.text).
+								Ellipsis().Shrink(1).MinWidth(0)
+							ui.Button(c, m.WorkspaceCommandField).XSmall().Outline().Height(24).Shrink(0).
+								Hit(hitWorkspaceCommandEdit.At(int(host.ID)), m.WorkspaceCommandField)
+						})
+					} else {
+						ui.Slot(c).Grow(1)
 					}
 					ui.Checkbox(c, state.pageFlag(selected), "").Shrink(0).MarginSides(0, 8, 0, 0).
 						Hit(id, host.Label).Disabled(disabled)
@@ -1059,15 +1064,15 @@ func (state *State) paintWorkspaceDraftHost(d *ui.DrawContext, host Host, id gfx
 		canvas.RoundedBorder(header, radius.control, 1.5, pal.accent, background)
 	}
 	state.paintHostCatalogIcon(canvas, host, gfx.Rect{X: header.X + 10, Y: header.Y + 16, Width: 24, Height: 24}, background)
-	color := pal.text
-	if disabled {
-		color = pal.faint
-	}
 	width := max(0, header.Width-86)
-	if selected && workspaceCommandHost(host) {
-		width = max(0, width-100)
+	// A selected SSH host lays out its name together with the command button.
+	if !selected || !workspaceCommandHost(host) {
+		color := pal.text
+		if disabled {
+			color = pal.faint
+		}
+		monitorLabel(canvas, host.Label, gfx.Rect{X: header.X + 46, Y: header.Y + 7, Width: width, Height: 22}, 13, color, gfx.WeightSemibold)
 	}
-	monitorLabel(canvas, elide(canvas, host.Label, 13, gfx.WeightSemibold, width), gfx.Rect{X: header.X + 46, Y: header.Y + 7, Width: width, Height: 22}, 13, color, gfx.WeightSemibold)
 	detail := state.sessionAddress(host)
 	if host.ID == localHostID {
 		detail = state.messages.WorkspaceLocalTerminalHint
