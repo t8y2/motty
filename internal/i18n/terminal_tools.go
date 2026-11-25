@@ -817,6 +817,10 @@ type ToolsMessages struct {
 	BackupExportSave                string
 	BackupSaveTitle                 string
 	BackupSavedFmt                  string
+	BackupSavedKeysLeftOutFmt       string
+	BackupKeys                      string
+	BackupKeysDescription           string
+	BackupKeysFailedFmt             string
 	BackupFailedFmt                 string
 	BackupRestoreTitle              string
 	BackupRestoreDescription        string
@@ -858,6 +862,7 @@ type ToolsMessages struct {
 	SyncRunFailedFmt                string
 	SyncWorking                     string
 	SyncDone                        string
+	SyncDoneKeysFailedFmt           string
 	SyncErrNoStore                  string
 	SyncTestOK                      string
 	SyncFailedFmt                   string

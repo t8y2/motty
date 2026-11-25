@@ -235,7 +235,10 @@ type savedState struct {
 	// SyncExcluded is this computer's selection of what cloud sync exchanges,
 	// stored as the closed categories. It is device-local: it never becomes a
 	// shared record, and a computer without it syncs everything.
-	SyncExcluded           []syncCategory   `json:"sync_excluded,omitempty"`
+	SyncExcluded []syncCategory `json:"sync_excluded,omitempty"`
+	// BackupKeys includes this computer's private key files in backups and sync.
+	// It is device-local and off unless the user turns it on.
+	BackupKeys             bool             `json:"backup_keys,omitempty"`
 	HostView               string           `json:"host_view,omitempty"`
 	HostOrder              string           `json:"host_order,omitempty"`
 	HostSideWidth          float32          `json:"host_side_width,omitempty"`
@@ -864,6 +867,7 @@ func (state *State) snapshot() savedState {
 	saved.AICLIProviders = state.savedAICLIProviders()
 	saved.Sync = state.savedSyncValue()
 	saved.SyncExcluded = state.syncScope.excludedCopy()
+	saved.BackupKeys = state.backupKeys
 	saved.HostView = state.hostView.saved()
 	saved.HostOrder = state.hostOrder.saved()
 	saved.HostSideWidth = state.hostSide.width
@@ -1227,6 +1231,7 @@ func (state *State) restoreLocal(saved savedState) {
 	state.agentHostMode = agentHostModeFromSaved(saved.AgentHostMode)
 	state.restoreSync(saved.Sync)
 	state.syncScope = newSyncScope(saved.SyncExcluded)
+	state.backupKeys = saved.BackupKeys
 	state.hostView = hostViewFromString(saved.HostView)
 	if saved.HostSideWidth >= hostSideMinWidth && saved.HostSideWidth <= hostSideMaxWidth {
 		state.hostSide.width = saved.HostSideWidth

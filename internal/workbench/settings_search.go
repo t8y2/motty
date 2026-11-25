@@ -316,6 +316,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	} {
 		row(settingsBackup, entry.label, entry.description)
 	}
+	row(settingsBackup, tools.BackupKeys, tools.BackupKeysDescription)
 
 	row(settingsAssistant, ai.ProvidersTitle, ai.Description)
 	row(settingsAssistant, ai.ModelsTitle, "")

@@ -46,7 +46,7 @@ func TestVNCIdentityAndAccountPasswordSurviveRestartOutsideHostRecord(t *testing
 	if got := <-answers; got != [2]string{"alice", "account password"} {
 		t.Fatalf("source credentials = %q", got)
 	}
-	document, err := source.backupDocument()
+	document, _, err := source.backupDocument()
 	if err != nil {
 		t.Fatal(err)
 	}

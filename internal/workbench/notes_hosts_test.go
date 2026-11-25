@@ -207,7 +207,7 @@ func TestNotesHostTagsArriveThroughSyncAndBackup(t *testing.T) {
 	a := newTestState(t, freshOptions(t))
 	a.notes.list = []savedNote{{ID: "synced", Body: "body", Tags: []string{"ordinary", encodeNoteHost(noteHost{CatalogID: "foreign-host"})}}}
 	a.save()
-	document, err := a.backupDocument()
+	document, _, err := a.backupDocument()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +219,7 @@ func TestNotesHostTagsArriveThroughSyncAndBackup(t *testing.T) {
 		t.Fatal("sync lost host association")
 	}
 	b.save()
-	document, err = b.backupDocument()
+	document, _, err = b.backupDocument()
 	if err != nil {
 		t.Fatal(err)
 	}

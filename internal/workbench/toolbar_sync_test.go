@@ -161,7 +161,7 @@ func TestToolbarPreferencesKeepLayoutPositionAndSizeTogether(t *testing.T) {
 func TestToolbarPreferencesRoundTripThroughEncryptedBackup(t *testing.T) {
 	source, _, _ := backupTestState(t)
 	setCustomSyncToolbars(source)
-	document, err := source.backupDocument()
+	document, _, err := source.backupDocument()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func TestToolbarPreferencesRoundTripThroughEncryptedBackup(t *testing.T) {
 
 	source.toolbars = toolbarPreferences{}
 	source.terminalToolbarPosition, source.terminalToolbarSize = terminalToolbarRight, terminalToolbarSmall
-	document, err = source.backupDocument()
+	document, _, err = source.backupDocument()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +211,7 @@ func TestToolbarPreferencesRestoreFromTheCloud(t *testing.T) {
 
 func TestUntouchedToolbarDefaultsRoundTripThroughBackup(t *testing.T) {
 	source, _, _ := backupTestState(t)
-	document, err := source.backupDocument()
+	document, _, err := source.backupDocument()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,7 +247,7 @@ func TestUntouchedToolbarDefaultsRoundTripThroughBackup(t *testing.T) {
 func TestOldBackupWithoutToolbarRecordsKeepsCurrentLayout(t *testing.T) {
 	source, _, _ := backupTestState(t)
 	source.terminalScrollback = 10000
-	document, err := source.backupDocument()
+	document, _, err := source.backupDocument()
 	if err != nil {
 		t.Fatal(err)
 	}

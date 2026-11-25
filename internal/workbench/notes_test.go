@@ -198,7 +198,7 @@ func TestNotesRefreshProtectsAnotherWindowsDraftAndBackupRestoresNotes(t *testin
 	if !bodies["base A"] || !bodies["base B"] {
 		t.Fatalf("window refresh lost draft: %+v", b.notes.list)
 	}
-	document, err := b.backupDocument()
+	document, _, err := b.backupDocument()
 	if err != nil {
 		t.Fatal(err)
 	}
