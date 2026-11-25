@@ -519,6 +519,26 @@ func (state *State) hostsWorkspaceSize() (width, height float32) {
 	return max(width, 0), max(height, 0)
 }
 
+// hostListRowAtOffset names the row whose top the given offset has reached, or
+// -1 when the list is at its top or past its end.
+func (state *State) hostListRowAtOffset(offset float32) int {
+	if offset <= 0 {
+		return -1
+	}
+	top := float32(0)
+	for index, entry := range state.hostTreeRows {
+		height := float32(hostRowHeight)
+		if entry.Kind == hostTreeGroup {
+			height = hostGroupRowHeight
+		}
+		if top+height > offset {
+			return index
+		}
+		top += height
+	}
+	return -1
+}
+
 // applyHostListScroll applies an offset another part of the page asked for, and
 // a row to reveal, to the Tree's scroll state before the Tree lays its rows out
 // again. scrollLive says the state is the one the last paint declared.
@@ -526,6 +546,15 @@ func (state *State) applyHostListScroll(canvas *gfx.Canvas, content float32) {
 	list := &state.hostList
 	live := list.pendingLive
 	list.pendingLive = false
+	// The scroll state lives with the area, and an area another page declared in
+	// the meantime comes back at its top. The reader's offset is still in
+	// state.hostsScroll, so ask the Tree for the row it reached: the request is
+	// kept on the Tree, which places the rows at that row before they are laid out.
+	if state.hostsScroll > 0 && (list.scroll == nil || list.scroll.Content <= 0) {
+		if row := state.hostListRowAtOffset(state.hostsScroll); row >= 0 {
+			list.tree.ScrollTo(row, ui.ListStart)
+		}
+	}
 	if live && list.scroll != nil && state.hostsScroll != list.applied {
 		list.scroll.ScrollTo(state.hostsScroll)
 	}
