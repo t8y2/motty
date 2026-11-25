@@ -848,6 +848,9 @@ func (w *sftpWindow) textInput(context app.TextInputContext) *app.TextInput {
 		}
 		return nil
 	}
+	if context.ID == hitSFTPInlineRename && w.view.rename != nil {
+		return &w.view.rename.input
+	}
 	for side, id := range sftpWindowFilter {
 		folder := w.folder(side == 0)
 		if context.ID == id && folder.filterOpen && !w.headerMenuOpen() && !w.ui.menuOpen && !w.view.bookmarksOpen {

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
@@ -21,8 +22,11 @@ type sftpInlineRename struct {
 	directory, original string
 	editor              text.Editor
 	field               ui.Field
+	input               app.TextInput
 	row                 gfx.ID
 	focus               bool
+	scroll              float32
+	rejectedName        string
 }
 
 func (state *State) beginSFTPRename(view *sftpView) bool {
@@ -51,6 +55,7 @@ func (state *State) beginSFTPRename(view *sftpView) bool {
 	}
 	edit.editor.SetSelection(text.Range{End: utf8.RuneCountInString(stem)})
 	edit.field.Bind(&edit.editor)
+	edit.input.Editor = &edit.editor
 	view.rename = edit
 	view.list.ScrollIntoView(sftpRowNameIndex(view.rows, entry.Name))
 	return true
@@ -71,18 +76,47 @@ func (state *State) declareSFTPRename(c ui.C, view *sftpView, row gfx.ID, entry 
 		return false
 	}
 	edit.row = row
-	field := ui.TextFieldID(c, hitSFTPInlineRename, &edit.field, state.messages.SFTPNewName, "").
-		Grow(1).Height(26).OnKey(func(event gfx.KeyEvent) gfx.EventResult {
-		return state.sftpRenameKey(view, event)
+	ui.Slot(c).Grow(1).Height(26).Draw(func(d *ui.DrawContext) {
+		edit.paint(d, state.messages.SFTPNewName)
 	})
-	if field.Changed() {
-		edit.field.Invalid = false
-	}
 	if edit.focus {
 		c.Canvas().RequestFocusOnce(hitSFTPInlineRename)
 		edit.focus = false
 	}
 	return true
+}
+
+const sftpRenameInset = float32(4)
+
+func (edit *sftpInlineRename) paint(d *ui.DrawContext, label string) {
+	canvas, bounds := d.Canvas, d.Rect
+	if edit.field.Invalid && edit.editor.String() != edit.rejectedName {
+		edit.field.Invalid = false
+	}
+	snapshot := edit.field.Snapshot(d.Frame, hitSFTPInlineRename, label, "")
+	look := components.TextEntryRecipe(*d.Theme, gfx.State{
+		Focused: snapshot.Focused, Invalid: snapshot.Invalid, Hovered: canvas.Hovered() == snapshot.ID,
+	})
+	canvas.RoundedBorder(bounds, look.Radius, look.BorderWidth, look.Border, look.Fill)
+	viewport := bounds.Inset(gfx.Insets{Left: sftpRenameInset, Right: sftpRenameInset})
+	if viewport.Width <= 0 {
+		return
+	}
+
+	// Keep the full shaped line at a shifted origin. Its clipped text and the
+	// text bounds reported to the platform then share the same mouse geometry.
+	style := snapshot.Text.TextStyle(d.Theme)
+	line := viewport
+	line.Width = max(viewport.Width, canvas.TextWidthStyle(snapshot.Value, style)+1)
+	caret := canvas.LabelOrigin(snapshot.Value, line, style, gfx.AlignStart) - line.X +
+		canvas.TextCaretStyle(snapshot.Value, style, snapshot.Caret)
+	edit.scroll = min(edit.scroll, caret)
+	edit.scroll = max(edit.scroll, caret-viewport.Width+1)
+	edit.scroll = min(max(edit.scroll, 0), line.Width-viewport.Width)
+	line.X -= edit.scroll
+	canvas.Clip(viewport)
+	components.PaintInputContent(canvas, *d.Theme, bounds, line, snapshot)
+	canvas.Unclip()
 }
 
 func (state *State) sftpRenameKey(view *sftpView, event gfx.KeyEvent) gfx.EventResult {
@@ -116,6 +150,7 @@ func (state *State) submitSFTPRename(view *sftpView, edit *sftpInlineRename) boo
 	}
 	fail := func(detail string) bool {
 		edit.field.Invalid = true
+		edit.rejectedName = name
 		state.fileOpenNotice(view.detached, state.messages.SFTPRename, detail, components.ToastError)
 		return false
 	}

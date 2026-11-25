@@ -41,6 +41,12 @@ func TestSFTPInlineRenameThroughTheFileLists(t *testing.T) {
 					Title: "Inline rename", Width: 1400, Height: 850, Tree: Tree(),
 					Paint: state.Paint, OnKey: state.Key, OnPointer: state.Pointer,
 					OnShortcut: state.Shortcut, OnResize: state.Resize, OnWake: state.Wake,
+					TextInput: func(context app.TextInputContext) *app.TextInput {
+						if mode == "tab" {
+							return state.SFTPTabInput(context)
+						}
+						return state.SFTPInput(context)
+					},
 				}), nil, headless.Options{Scale: 1.5})
 				if err != nil {
 					t.Fatal(err)
@@ -102,6 +108,49 @@ func TestSFTPInlineRenameThroughTheFileLists(t *testing.T) {
 			if view.rename != nil || view.busy || sftpRowNameIndex(view.rows, "notes.txt") < 0 {
 				t.Fatal("Escape did not discard the edit")
 			}
+
+			begin()
+			key(gfx.KeyEnd)
+			if err := preview.Type(strings.Repeat("-long", 32) + "-末尾"); err != nil {
+				t.Fatal(err)
+			}
+			nameLine := func() (gfx.Text, float32) {
+				t.Helper()
+				rest()
+				snapshot := preview.Snapshot()
+				for i, line := range snapshot.Texts {
+					if line.Value == view.rename.editor.String() {
+						return line, snapshot.TextWidths[i]
+					}
+				}
+				t.Fatal("rename text was not painted")
+				return gfx.Text{}, 0
+			}
+			field := dualHit(t, preview, hitSFTPInlineRename)
+			line, width := nameLine()
+			tail := line.Bounds.X + width
+			right := field.X + field.Width
+			if !line.HasClip || line.Bounds.X >= field.X || tail > right+0.5 || tail < right-2 {
+				t.Fatalf("end of the filename is not visible: origin=%v end=%v field=%+v", line.Bounds.X, tail, field)
+			}
+			// Coordinate-based text placement in the headless runtime uses the
+			// same published text bounds the desktop uses for mouse selection.
+			x, y := field.X+field.Width/2, field.Y+field.Height/2
+			if err := preview.Driver().TouchDown(1, x, y); err != nil {
+				t.Fatal(err)
+			}
+			if err := preview.Driver().TouchUp(1, x, y); err != nil {
+				t.Fatal(err)
+			}
+			if caret, length := view.rename.editor.Caret(), view.rename.editor.RuneCount(); caret <= length/2 || caret >= length {
+				t.Fatalf("press in the scrolled name placed caret at %d in %d runes", caret, length)
+			}
+			key(gfx.KeyHome)
+			line, _ = nameLine()
+			if line.Bounds.X != field.X {
+				t.Fatalf("Home did not reveal the start of the filename: origin=%v field=%+v", line.Bounds.X, field)
+			}
+			key(gfx.KeyEscape)
 
 			begin()
 			if err := preview.Type("discard"); err != nil {

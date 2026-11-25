@@ -49,8 +49,8 @@ func (folder *sftpFolder) selectFilterQuery() {
 	editor.SetSelection(text.Range{Start: 0, End: editor.RuneCount()})
 }
 
-// SFTPInput resolves the native editor used by the current side's file filter.
-// The callback derives visible rows after each text-system mutation.
+// SFTPInput resolves the sidebar's inline name and filter editors.
+// The filter callback derives visible rows after each text-system mutation.
 func (state *State) SFTPInput(context app.TextInputContext) *app.TextInput {
 	session, localID, ok := state.decodePaneHit(context.ID)
 	if ok {
@@ -58,10 +58,16 @@ func (state *State) SFTPInput(context app.TextInputContext) *app.TextInput {
 	} else {
 		session, ok = state.sessionByIDPointer(state.activeSessionID)
 	}
-	if !ok || context.ID != hitSFTPFilter || session.files == nil || state.activeSection != sectionTerminal || state.modal != modalNone {
+	if !ok || session.files == nil || state.activeSection != sectionTerminal || state.modal != modalNone {
 		return nil
 	}
 	view := session.files
+	if context.ID == hitSFTPInlineRename && view.rename != nil {
+		return &view.rename.input
+	}
+	if context.ID != hitSFTPFilter {
+		return nil
+	}
 	local := view.local
 	folder := view.active()
 	if !folder.filterOpen || view.dialog != sftpDialogNone || view.editPath != "" {
