@@ -354,6 +354,10 @@ type Conn struct {
 	closersClosed bool
 	// disconnectErr records why an established connection was force-closed.
 	disconnectErr error
+	// disconnectLocal is true when the client itself closed the transport
+	// (such as a keepalive timeout or link change), so an aborted auxiliary
+	// probe must not be attributed to server refusal.
+	disconnectLocal bool
 	// tcpKeepAlive reports that the target transport is probed by the operating
 	// system's TCP keepalive instead of keepalive@openssh.com requests. It is
 	// written by the target handshake and read by the keepalive worker and the
@@ -685,14 +689,16 @@ func (conn *Conn) run() {
 		// A gateway that permits only an interactive login answers the client's
 		// own probes by ending the transport. Whether a probe reports the refusal
 		// or the connection's own end is woken first is a race, so the reports
-		// get a bounded moment to name the cause.
-		probeRefused := closedErr != nil && conn.probeState().settle(auxiliaryProbeSettle)
+		// get a bounded moment to name the cause. A client-initiated close
+		// (keepalive timeout or link change) aborts in-flight probes too, so it
+		// must not be mistaken for a server refusal.
+		probeRefused := closedErr != nil && !conn.isLocalDisconnect() && conn.probeState().settle(auxiliaryProbeSettle)
 		conn.update(func(status *Status) {
 			status.Phase = PhaseClosed
 			status.Err = closedErr
 			status.ProbeRefused = probeRefused
 		})
-		conn.endShares(closedErr)
+		conn.endShares(closedErr, probeRefused)
 		return
 	}
 	if conn.ctx.Err() != nil && !errors.Is(err, ErrHostKeyChanged) {

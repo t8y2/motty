@@ -1,6 +1,8 @@
 package sshconn
 
 import (
+	"context"
+	"errors"
 	"sync"
 	"time"
 )
@@ -102,4 +104,19 @@ func (conn *Conn) probeState() *auxiliaryProbes {
 		return conn.owner.probes
 	}
 	return conn.probes
+}
+
+// probeFailure filters out client-side timeouts and cancellations so they are
+// not mistaken for a server refusing auxiliary probes.
+func probeFailure(ctx, connCtx context.Context, err error) error {
+	if err == nil || errors.Is(err, ErrCanceled) {
+		return nil
+	}
+	if ctx != nil && ctx.Err() != nil {
+		return nil
+	}
+	if connCtx != nil && connCtx.Err() != nil {
+		return nil
+	}
+	return err
 }

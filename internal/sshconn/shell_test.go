@@ -2,6 +2,7 @@ package sshconn
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -569,6 +570,105 @@ func TestOpenShellNeedsAConnectedConn(t *testing.T) {
 	h.phase(PhaseHostKeyPrompt)
 	if _, err := h.conn.OpenShell(ShellConfig{Cols: 80, Rows: 24}); err == nil {
 		t.Fatal("OpenShell succeeded before the connection was ready")
+	}
+}
+
+func TestKeepAliveTimeoutWhileProbeIsInFlightDoesNotReportProbeRefused(t *testing.T) {
+	probeStarted := make(chan struct{}, 1)
+	releaseProbe := make(chan struct{})
+	t.Cleanup(func() { close(releaseProbe) })
+	server := startServer(t, func(server *testServer) {
+		server.password = "secret"
+		server.version = "SSH-2.0-OpenSSH_8.9p1"
+		server.shell = echoShell
+		server.exec = func(string) (string, uint32) { return "Linux\n", 0 }
+		server.request = func(_ *ssh.ServerConn, _ *ssh.Request) {
+			// Simulate ultra-high RTT / unresponsive keepalive without replying.
+		}
+		server.command = func(_ string, channel ssh.Channel) {
+			select {
+			case probeStarted <- struct{}{}:
+			default:
+			}
+			<-releaseProbe
+			_ = channel.Close()
+		}
+	})
+	h := dial(t, server, func(config *Config) {
+		config.KeepAlive = KeepAliveConfig{Interval: 10 * time.Millisecond, Timeout: 30 * time.Millisecond}
+	})
+	h.phase(PhaseHostKeyPrompt)
+	h.conn.TrustHostKey(false)
+	h.phase(PhasePasswordPrompt)
+	h.conn.SubmitPassword("secret")
+	h.phase(PhaseConnected)
+
+	probeDone := make(chan struct{})
+	go func() {
+		defer close(probeDone)
+		h.conn.ProbeShell(context.Background())
+	}()
+	select {
+	case <-probeStarted:
+	case <-time.After(time.Second):
+		t.Fatal("ProbeShell did not start")
+	}
+
+	status := h.phase(PhaseClosed)
+	<-probeDone
+	if !errors.Is(status.Err, ErrKeepAliveTimeout) {
+		t.Fatalf("close error = %v, want ErrKeepAliveTimeout", status.Err)
+	}
+	if status.ProbeRefused {
+		t.Fatalf("keepalive timeout while probe was in flight falsely reported ProbeRefused: %+v", status)
+	}
+}
+
+func TestTimedOutShellProbeBeforeNetworkDropDoesNotReportProbeRefused(t *testing.T) {
+	probeStarted := make(chan struct{}, 1)
+	releaseProbe := make(chan struct{})
+	t.Cleanup(func() { close(releaseProbe) })
+	var serverConn atomic.Pointer[ssh.ServerConn]
+	server := startServer(t, func(server *testServer) {
+		server.password = "secret"
+		server.version = "SSH-2.0-OpenSSH_8.9p1"
+		server.shell = echoShell
+		server.exec = func(string) (string, uint32) { return "Linux\n", 0 }
+		server.request = func(conn *ssh.ServerConn, request *ssh.Request) {
+			serverConn.Store(conn)
+			_ = request.Reply(true, nil)
+		}
+		server.command = func(_ string, channel ssh.Channel) {
+			select {
+			case probeStarted <- struct{}{}:
+			default:
+			}
+			<-releaseProbe
+			_ = channel.Close()
+		}
+	})
+	h := dial(t, server, nil)
+	h.phase(PhaseHostKeyPrompt)
+	h.conn.TrustHostKey(false)
+	h.phase(PhasePasswordPrompt)
+	h.conn.SubmitPassword("secret")
+	h.phase(PhaseConnected)
+	if _, err := h.conn.Ping(context.Background()); err != nil {
+		t.Fatalf("Ping: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	h.conn.ProbeShell(ctx)
+
+	if conn := serverConn.Load(); conn != nil {
+		_ = conn.Close()
+	} else {
+		t.Fatal("serverConn was not captured")
+	}
+	status := h.phase(PhaseClosed)
+	if status.ProbeRefused {
+		t.Fatalf("timed-out ProbeShell before disconnect falsely reported ProbeRefused: %+v", status)
 	}
 }
 

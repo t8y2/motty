@@ -29,7 +29,7 @@ func (conn *Conn) ProbeShell(ctx context.Context) (path string, kind shellkind.K
 	probes := conn.probeState()
 	probes.begin()
 	data, err := conn.RunCommand(ctx, shellProbe, 4096)
-	probes.end(err)
+	probes.end(probeFailure(ctx, conn.ctx, err))
 	if err != nil {
 		return "", shellkind.Unknown
 	}
@@ -111,7 +111,7 @@ func (conn *Conn) UploadIntegration(ctx context.Context, shellPath, token, direc
 	probes := conn.probeState()
 	probes.begin()
 	output, err := conn.RunCommandInput(ctx, upload, []byte(body), 4096)
-	probes.end(err)
+	probes.end(probeFailure(ctx, conn.ctx, err))
 	if err != nil {
 		return "", err
 	}
