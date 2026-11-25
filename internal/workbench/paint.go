@@ -128,6 +128,12 @@ const (
 	// The fullscreen desktop bar's pin: pinned, it keeps the bar visible.
 	iconPin
 	iconPinOff
+	// The dedicated SFTP file operation glyphs: up directory, upload, upload folder, new file, new folder.
+	iconSFTPUp
+	iconSFTPUpload
+	iconSFTPUploadDirectory
+	iconSFTPNewFile
+	iconSFTPNewDirectory
 )
 
 // terminalPage reports whether the window shows the panes of a workspace rather
@@ -2806,7 +2812,12 @@ var lucideIcons = [...]gfx.Icon{
 	iconSFTPProfiles:     icons.SftpProfiles,
 	iconFileClock:        icons.FileClock,
 	iconClock:            icons.Clock3,
-	iconFollowFolder:     icons.LocateFixed,
+	iconFollowFolder:        icons.LocateFixed,
+	iconSFTPUp:              icons.SftpUp,
+	iconSFTPUpload:          icons.SftpUpload,
+	iconSFTPUploadDirectory: icons.SftpUploadFolder,
+	iconSFTPNewFile:         icons.SftpNewFile,
+	iconSFTPNewDirectory:    icons.SftpNewFolder,
 }
 
 func paintIcon(canvas *gfx.Canvas, kind uint8, bounds gfx.Rect, foreground gfx.Color) {
