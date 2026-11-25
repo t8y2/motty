@@ -488,6 +488,23 @@ func TestRefusesWhatIsNotRFBAndOversizeDesktops(t *testing.T) {
 	}
 }
 
+func TestAcceptsLargeMultiMonitorDesktop(t *testing.T) {
+	client, err := connect(t, Config{}, func(s *server) {
+		s.write([]byte("RFB 003.008\n"))
+		s.read(12)
+		s.write([]byte{1, 1})
+		s.read(1)
+		s.write(u32(0))
+		s.read(1)
+		s.write(serverInit(3840, 12960, "multi-monitor"))
+		s.read(20 + 4 + 4*len(DefaultEncodings))
+	})
+	if err != nil {
+		t.Fatalf("connect(3840x12960) err = %v", err)
+	}
+	client.Close()
+}
+
 // pixels returns n pixels of one color in wire order.
 func pixels(n int, blue, green, red byte) []byte {
 	return bytes.Repeat([]byte{blue, green, red, 0}, n)
