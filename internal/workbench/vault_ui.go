@@ -429,6 +429,13 @@ func (state *State) clickVaultForget(id gfx.ID) {
 		if state.secrets.vault != nil {
 			if err := state.secrets.vault.Clear(); err != nil {
 				state.status = fmt.Sprintf(state.messages.VaultSaveFailedFmt, state.vaultErrorText(err))
+				if returningHost {
+					// The form is still the user's work: say why on it, not behind it.
+					state.modal = modalNewHost
+					state.dialogError = state.status
+					state.editor.keyLostError = ""
+					return
+				}
 				state.closeModal()
 				state.showNextPrompt()
 				return
@@ -439,7 +446,7 @@ func (state *State) clickVaultForget(id gfx.ID) {
 		if returningHost {
 			state.modal = modalNewHost
 			state.dialogError = ""
-			state.editor.vaultKeyLost = false
+			state.editor.keyLostError = ""
 			state.submitHostDialog()
 			return
 		}

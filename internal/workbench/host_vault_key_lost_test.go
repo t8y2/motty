@@ -2,7 +2,11 @@ package workbench
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/vivaui/viva/text"
 
 	"motty/internal/vault"
 )
@@ -155,5 +159,90 @@ func TestHostDialogNewHostKeyLostOffersForgetAllAndRecovers(t *testing.T) {
 	}
 	if !found || savedValue != "root-password" {
 		t.Fatalf("saved password = %q (found=%v), want %q", savedValue, found, "root-password")
+	}
+}
+
+// The recovery button answers the key-lost error only: once another error
+// replaces it, offering to empty the vault would be a destructive button under
+// a message that has nothing to do with it.
+func TestHostDialogKeyLostButtonGoesWithItsError(t *testing.T) {
+	_, options := newWorld(t)
+	keys := &memKeys{}
+	options.Keystore = keys
+	state := newTestState(t, options)
+	if err := state.secrets.vault.Set("initial-secret", "initial-value"); err != nil {
+		t.Fatal(err)
+	}
+	state.secrets.vault.DropKeyForTests()
+	if err := keys.Delete(vault.KeyService, vault.KeyAccount); err != nil {
+		t.Fatal(err)
+	}
+
+	state.hostDialogMode = hostDialogEdit
+	first := state.hosts[0]
+	state.hostDialogID = first.ID
+	state.editor.load(first)
+	state.modal = modalNewHost
+	typeInto(state, hitDialogPassword, "new-secret-password")
+	state.Click(hitDialogSubmit)
+	if !state.isHostDialogKeyLost() {
+		t.Fatal("the key-lost error did not offer the recovery button")
+	}
+
+	// Emptying a required field turns the error into a validation one.
+	state.editor.address = text.Editor{}
+	state.Click(hitDialogSubmit)
+	if state.dialogError == "" {
+		t.Fatal("an empty address was accepted")
+	}
+	if state.isHostDialogKeyLost() {
+		t.Fatalf("the recovery button stayed under an unrelated error: %q", state.dialogError)
+	}
+}
+
+// When the vault cannot be cleared the form the user filled in stays, with the
+// reason on it.
+func TestHostDialogKeyLostForgetFailureKeepsTheForm(t *testing.T) {
+	_, options := newWorld(t)
+	keys := &memKeys{}
+	options.Keystore = keys
+	state := newTestState(t, options)
+	if err := state.secrets.vault.Set("initial-secret", "initial-value"); err != nil {
+		t.Fatal(err)
+	}
+	state.secrets.vault.DropKeyForTests()
+	if err := keys.Delete(vault.KeyService, vault.KeyAccount); err != nil {
+		t.Fatal(err)
+	}
+
+	state.openHostDialog()
+	typeInto(state, hitDialogLabel, "New Server")
+	typeInto(state, hitDialogAddress, "new.example.com")
+	typeInto(state, hitDialogUser, "root")
+	typeInto(state, hitDialogPassword, "root-password")
+	state.Click(hitDialogSubmit)
+	if !state.isHostDialogKeyLost() {
+		t.Fatal("the key-lost error did not offer the recovery button")
+	}
+
+	// A directory where the vault file is makes every write of it fail.
+	path := filepath.Join(filepath.Dir(options.StatePath), "vault.json")
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	state.Click(hitDialogVaultForget)
+	state.Click(hitVaultForgetConfirm)
+	if state.modal != modalNewHost {
+		t.Fatalf("modal after a failed forget = %d, want the host dialog", state.modal)
+	}
+	if state.dialogError == "" {
+		t.Fatal("the failure was not shown on the form")
+	}
+	if state.editor.password.String() != "root-password" {
+		t.Fatalf("the typed password was lost: %q", state.editor.password.String())
 	}
 }
