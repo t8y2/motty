@@ -59,10 +59,10 @@ their first connection after upgrading.
 
 ## Protocol and cryptographic boundaries
 
-The known RealVNC `RFB 005.000` banner negotiates to `RFB 003.008`. Existing RFB
-3.3, 3.7, 3.8 and newer 3.x minor-version negotiation is preserved. Other major
-versions, including `RFB 004.001`, are rejected. RA2 requires RFB 3.7 or newer;
-RFB 3.3 supports only None/VNC Authentication.
+The known `RFB 004.000`, RealVNC `RFB 004.001`, and RealVNC `RFB 005.000`
+banners negotiate to `RFB 003.008`. Existing RFB 3.3, 3.7, 3.8 and newer 3.x
+minor-version negotiation is preserved. Other major versions are rejected. RA2
+requires RFB 3.7 or newer; RFB 3.3 supports only None/VNC Authentication.
 
 RA2 exchanges RSAES-PKCS1-v1.5-encrypted 16-byte random values and binds the
 public keys with authenticated transcript proofs. Each attempt generates a

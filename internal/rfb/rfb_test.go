@@ -411,6 +411,7 @@ func TestServerRefusalUsesTheNegotiatedVersionSecurityFormat(t *testing.T) {
 		{"RFB 003.003\n", "RFB 003.003\n", u32(0)},
 		{"RFB 003.007\n", "RFB 003.007\n", []byte{0}},
 		{"RFB 003.008\n", "RFB 003.008\n", []byte{0}},
+		{"RFB 004.001\n", "RFB 003.008\n", []byte{0}},
 		{"RFB 005.000\n", "RFB 003.008\n", []byte{0}},
 	} {
 		t.Run(version.banner[:11], func(t *testing.T) {

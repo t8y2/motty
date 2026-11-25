@@ -249,21 +249,20 @@ func (client *Client) handshake(config Config) error {
 	if !ok {
 		return fmt.Errorf("%w: not an RFB server (%q)", ErrProtocol, printable(banner[:]))
 	}
-	if major == 5 && minor == 0 {
-		// RealVNC announces its proprietary 5.0 version but accepts client 3.8.
-		// Only this known banner is downgraded; other major versions are refused.
+	switch {
+	case major == 4 && (minor == 0 || minor == 1), major == 5 && minor == 0:
+		// RealVNC (4.1, 5.0) and Intel AMT KVM / RealVNC 4.0 announce higher
+		// protocol versions, but accept client 3.8. Only these known banners
+		// are downgraded; other major versions are refused.
 		client.Version = 8
-	} else if major != 3 {
+	case major != 3:
 		return fmt.Errorf("%w: protocol version %d.%d", ErrUnsupported, major, minor)
-	} else {
-		switch {
-		case minor >= 8:
-			client.Version = 8
-		case minor == 7:
-			client.Version = 7
-		default:
-			client.Version = 3
-		}
+	case minor >= 8:
+		client.Version = 8
+	case minor == 7:
+		client.Version = 7
+	default:
+		client.Version = 3
 	}
 	if _, err := fmt.Fprintf(client.conn, "RFB 003.%03d\n", client.Version); err != nil {
 		return err
