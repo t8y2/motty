@@ -3509,6 +3509,9 @@ func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
 	if b.algo.Valid() {
 		state.rememberHostChoice(canvas, b.algo.Rect(), &editor.form.choiceIDs.algo, state.hostAlgoChoiceLabel(editor.algoMode))
 	}
+	if editor.form.algoBody.loginMode.Valid() {
+		state.rememberHostChoice(canvas, editor.form.algoBody.loginMode.Rect(), &editor.form.choiceIDs.loginMode, state.hostLoginModeChoiceLabel(editor.loginCommandMode))
+	}
 	if editor.form.algoBody.loginPolicy.Valid() {
 		state.rememberHostChoice(canvas, editor.form.algoBody.loginPolicy.Rect(), &editor.form.choiceIDs.loginPolicy, state.hostLoginPolicyChoiceLabel(editor.loginFailurePolicy))
 	}

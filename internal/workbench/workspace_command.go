@@ -132,7 +132,7 @@ func (state *State) clickWorkspaceCommand(id gfx.ID) bool {
 			t.takeOutput()
 		}
 		if session.term == t && t.folderToken == token && workspaceCommandPending(session) {
-			state.sendInitializationCommand(t)
+			state.sendInitializationCommand(session, t)
 		}
 	}
 	state.fitTerminals()

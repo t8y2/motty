@@ -42,6 +42,8 @@ var (
 	hitDialogBaud                 = tree.ID(hostProtocolUiHits, "dialog-baud")
 	hitDialogAlgorithms           = tree.ID(hostProtocolUiHits, "dialog-algorithms")
 	hitDialogLoginCommand         = tree.ID(hostProtocolUiHits, "dialog-login-command")
+	hitDialogLoginCommandMode     = tree.ID(hostProtocolUiHits, "dialog-login-command-mode")
+	hitDialogLoginCommandInterval = tree.ID(hostProtocolUiHits, "dialog-login-command-interval")
 	hitDialogLoginCommandPolicy   = tree.ID(hostProtocolUiHits, "dialog-login-command-policy")
 	hitDialogAdvanced             = tree.ID(hostProtocolUiHits, "dialog-advanced")
 	hitDialogForwardX11           = tree.ID(hostProtocolUiHits, "dialog-forward-x11")
@@ -132,6 +134,7 @@ var (
 	hostFlowChoices        = [...]serial.Flow{serial.FlowNone, serial.FlowHardware, serial.FlowSoftware}
 	hostBackspaceChoices   = [...]backspaceKey{backspaceDEL, backspaceCtrlH}
 	hostAlgoChoices        = [...]algoMode{algoDefault, algoCompatible, algoCustom}
+	hostLoginModeChoices   = [...]loginSendMode{loginSendWaitPrompt, loginSendFixedInterval}
 	hostLoginPolicyChoices = [...]loginFailurePolicy{loginFailureStop, loginFailureContinue}
 )
 
@@ -192,6 +195,16 @@ func (state *State) hostAlgoChoiceLabel(mode algoMode) string {
 		return state.messages.Tools.AlgoCustom
 	default:
 		return state.messages.Tools.AlgoDefault
+	}
+}
+
+// hostLoginModeChoiceLabel names one post-login send mode as the form's choice shows it.
+func (state *State) hostLoginModeChoiceLabel(mode loginSendMode) string {
+	switch mode {
+	case loginSendFixedInterval:
+		return state.messages.Tools.LoginCommandModeFixedInterval
+	default:
+		return state.messages.Tools.LoginCommandModeWaitPrompt
 	}
 }
 
@@ -613,6 +626,12 @@ func (state *State) clickHostProtocol(id gfx.ID) bool {
 		editor.identitiesOnly = !editor.identitiesOnly
 	case id == hitDialogNoHistory:
 		editor.noHistory = !editor.noHistory
+	case id == hitDialogLoginCommandMode:
+		if editor.loginCommandMode == loginSendWaitPrompt {
+			editor.loginCommandMode = loginSendFixedInterval
+		} else {
+			editor.loginCommandMode = loginSendWaitPrompt
+		}
 	case id == hitDialogLoginCommandPolicy:
 		if editor.loginFailurePolicy == loginFailureStop {
 			editor.loginFailurePolicy = loginFailureContinue
@@ -869,8 +888,8 @@ type hostVNCRowsBody struct {
 
 // hostAlgoRowsBody is where the SSH algorithm rows put each control.
 type hostAlgoRowsBody struct {
-	algo, custom, login, loginPolicy, backspace, otp, scan, paste, remove ui.Box
-	identitiesOnlyHelp, agentHelp                                         ui.Box
+	algo, custom, login, loginMode, loginInterval, loginPolicy, backspace, otp, scan, paste, remove ui.Box
+	identitiesOnlyHelp, agentHelp                                                                   ui.Box
 }
 
 // paintAlgorithmRows draws the SSH algorithm choice and, for a custom one, the
@@ -909,6 +928,14 @@ func (state *State) declareHostAlgoRows(c ui.C) {
 		}
 		b.login = ui.Slot(c).Height(loginCommandAreaHeight)
 		state.declareHostTextAreaField(c, b.login, &form.fieldLoginCommand, hitDialogLoginCommand, &editor.loginCommand, m.LoginCommandField, m.LoginCommandPlaceholder, loginCommandAreaHeight)
+		ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+			b.loginMode = hostFormChoice(c, m.LoginCommandModeField, rowHeight, &editor.loginCommandMode, hostLoginModeChoices[:], state.hostLoginModeChoiceLabel)
+			if b.loginMode.Changed() {
+				state.dialogError = ""
+			}
+			b.loginInterval = ui.Slot(c).Grow(1)
+			state.declareHostTextField(c, b.loginInterval, &form.fieldLoginCommandInterval, hitDialogLoginCommandInterval, &editor.loginCommandInterval, m.LoginCommandIntervalField, m.LoginCommandIntervalPlaceholder, false, rowHeight)
+		})
 		b.loginPolicy = hostFormChoice(c, m.LoginCommandPolicyField, rowHeight, &editor.loginFailurePolicy, hostLoginPolicyChoices[:], state.hostLoginPolicyChoiceLabel)
 		if b.loginPolicy.Changed() {
 			state.dialogError = ""

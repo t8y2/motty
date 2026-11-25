@@ -32,14 +32,14 @@ type hostFormScroll struct {
 	// fieldLabel, fieldAddress, fieldUser, fieldPassphrase and fieldPort are the
 	// endpoint text fields the page declares; fieldIdleInterval and
 	// fieldIdleCustomInput are the probe's custom values.
-	fieldLabel, fieldAddress, fieldUser, fieldPassphrase, fieldPort dialogField
-	fieldIdleInterval, fieldIdleCustomInput                         dialogField
-	fieldAlgoCustom, fieldLoginCommand, fieldOTP                    dialogField
-	fieldResolution                                                 dialogField
-	wslUserField, wslDirectoryField, wslCommandField                dialogField
-	wslDistroField                                                  ui.FormFieldState
-	wslDistroBox                                                    ui.Box
-	wslDistroChoices                                                []string
+	fieldLabel, fieldAddress, fieldUser, fieldPassphrase, fieldPort         dialogField
+	fieldIdleInterval, fieldIdleCustomInput                                 dialogField
+	fieldAlgoCustom, fieldLoginCommand, fieldLoginCommandInterval, fieldOTP dialogField
+	fieldResolution                                                         dialogField
+	wslUserField, wslDirectoryField, wslCommandField                        dialogField
+	wslDistroField                                                          ui.FormFieldState
+	wslDistroBox                                                            ui.Box
+	wslDistroChoices                                                        []string
 	// authField and portsField are the page form fields of the authentication
 	// choice and the detected serial ports; authBox is the choice itself, kept
 	// for the form's tab ring.
@@ -121,7 +121,7 @@ type hostFormScroll struct {
 
 // hostFormChoiceIDs is the chosen option hit of each Choice of the host form.
 type hostFormChoiceIDs struct {
-	protocol, flow, backspace, algo, transfer, loginPolicy gfx.ID
+	protocol, flow, backspace, algo, transfer, loginMode, loginPolicy gfx.ID
 }
 
 // hostFormBody is where the host form's body put each control: the slots it
