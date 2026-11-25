@@ -277,10 +277,10 @@ func TestRightClickingACommandChipOpensItsMenu(t *testing.T) {
 		t.Fatal("a command-bar menu offers Move up, which reorders by the Snippets page")
 	}
 	chooseMenu(t, state, hitSnippetMenuEdit)
-	if state.modal != modalSnippet {
-		t.Fatalf("edit from the bar opened modal %d, want the snippet form", state.modal)
+	if state.activeSection != sectionSnippets || state.snippets.selected != 1 || state.pendingFocus != hitSnippetInlineName {
+		t.Fatalf("edit from the bar: section=%d selected=%d focus=%v", state.activeSection, state.snippets.selected, state.pendingFocus)
 	}
-	state.modal = modalNone
+	state.activeSection = sectionTerminal
 	state.snippetMenu = snippetMenu{}
 
 	pointer(state, event)

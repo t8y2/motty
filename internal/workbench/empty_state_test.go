@@ -265,8 +265,8 @@ func TestCatalogEmptyStateActionsTakeRealPresses(t *testing.T) {
 			name: "snippets", section: sectionSnippets, action: hitSnippetAdd,
 			prepare: func(*State) {},
 			check: func(state *State) error {
-				if state.modal != modalSnippet {
-					return fmt.Errorf("modal = %d, want the snippet dialog", state.modal)
+				if !state.snippets.inline.draft {
+					return fmt.Errorf("inline draft did not open")
 				}
 				return nil
 			},

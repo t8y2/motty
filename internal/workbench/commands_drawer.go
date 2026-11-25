@@ -1144,7 +1144,7 @@ func (state *State) clickCommandsDrawer(id gfx.ID) bool {
 			}
 		}
 	case id == hitCommandsAdd:
-		state.openSnippetDialog(-1)
+		state.startInlineSnippetDraft("")
 	case id == hitCommandsClose:
 		state.commands.shown = false
 		state.commands.filterOpen = false

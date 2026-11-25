@@ -1645,15 +1645,6 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 		if hit == hitHighlightPattern {
 			return &state.highlighting.pattern
 		}
-	case modalSnippet:
-		switch hit {
-		case hitSnippetName:
-			return &state.snippets.name
-		case hitSnippetCommand:
-			return &state.snippets.command
-		case hitSnippetGroup:
-			return &state.snippets.groupPicker.Query
-		}
 	case modalSnippetGroupRename:
 		if hit == hitSnippetGroupRenameField {
 			return &state.snippetGroups.editor
@@ -1896,9 +1887,6 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		return
 	case modalDeleteRule:
 		state.clickDeleteRuleDialog(id)
-		return
-	case modalSnippet:
-		state.clickSnippetDialog(id)
 		return
 	case modalSnippetDelete:
 		state.clickSnippetDeleteDialog(id)
@@ -2875,9 +2863,6 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 }
 
 func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
-	if state.modal == modalSnippet && event.Kind == gfx.PointerDown {
-		state.snippets.abandonOther(event.Target)
-	}
 	if state.modal == modalNone && state.activeSection == sectionSnippets && event.Kind == gfx.PointerDown {
 		state.snippets.inline.abandonOther(event.Target)
 	}
@@ -2886,13 +2871,6 @@ func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
 	}
 	if result, handled := state.snippetBlankPointer(event); handled {
 		return result
-	}
-	if state.modal == modalSnippet && event.Kind == gfx.PointerDown && (event.Button == gfx.PointerButtonPrimary || event.Button == gfx.PointerButtonNone) && event.Target == hitSnippetSubmit {
-		if target := state.snippets.composingTarget(); !target.IsZero() {
-			// Keep the composition and its field focused; swallowing this press
-			// prevents the focus change from committing the preedit before Save.
-			return gfx.EventResult{Handled: true, Repaint: true, Focus: target}
-		}
 	}
 	if result, handled := state.updateDialogPointer(event); handled {
 		return result
@@ -3222,14 +3200,13 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	if result, handled := state.restoredPageKey(event); handled {
 		return result
 	}
-	if state.modal == modalSnippet && state.snippets.capturing && event.Key == gfx.KeyEscape && !event.Repeat {
-		state.snippets.capturing = false
-		return gfx.EventResult{Handled: true, Repaint: true}
-	}
 	if state.modal == modalNone && state.activeSection == sectionSnippets && state.snippets.inline.capturing && event.Key == gfx.KeyEscape && !event.Repeat {
 		state.snippets.inline.capturing = false
 		state.refreshInlineShortcutLabel()
 		return gfx.EventResult{Handled: true, Repaint: true}
+	}
+	if result, handled := state.snippetTreeKeyEvent(event); handled {
+		return result
 	}
 	if result, handled := state.aiKey(event); handled {
 		return result
@@ -3364,12 +3341,6 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	}
 	if state.modal == modalHighlightRule && event.Key == gfx.KeyEnter && event.Target == hitHighlightPattern && !event.Repeat {
 		state.submitHighlightRule()
-		return gfx.EventResult{Handled: true, Repaint: true}
-	}
-	if state.modal == modalSnippet && event.Key == gfx.KeyEnter && (event.Target == hitSnippetName || event.Target == hitSnippetGroup) && !event.Repeat {
-		// submitSnippet refuses while either field is composing: that Enter
-		// belongs to the input method, and the preedit is not the text to save.
-		state.submitSnippet()
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if state.modal == modalSnippetGroupRename && event.Key == gfx.KeyEnter && event.Target == hitSnippetGroupRenameField && !event.Repeat {

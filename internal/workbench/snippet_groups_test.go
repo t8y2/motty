@@ -16,11 +16,12 @@ import (
 // after them is part of the command, through saving, restoring and sending.
 func TestSnippetCommandKeepsItsSurroundingSpace(t *testing.T) {
 	state := newTestState(t, freshOptions(t))
-	state.openSnippetDialog(-1)
-	state.snippets.name.Insert("  go to  ")
-	state.snippets.command.Insert(" cd ")
-	state.snippets.run = false
-	state.Click(hitSnippetSubmit)
+	state.startInlineSnippetDraft("")
+	state.snippets.inline.name.Insert("  go to  ")
+	state.snippets.inline.command.Insert(" cd ")
+	state.Click(hitSnippetInlineRun)
+	state.applyInlineSnippetEdits()
+	state.flushInlineSnippetSave()
 	if len(state.snippets.list) != 1 {
 		t.Fatal("the snippet was not saved")
 	}
@@ -28,8 +29,8 @@ func TestSnippetCommandKeepsItsSurroundingSpace(t *testing.T) {
 		t.Fatalf("saved name %q, command %q", got.Name, got.Command)
 	}
 
-	state.openSnippetDialog(0)
-	if got := state.snippets.command.String(); got != " cd " {
+	state.focusInlineSnippet(0)
+	if got := state.snippets.inline.command.String(); got != " cd " {
 		t.Fatalf("editing shows command %q", got)
 	}
 
@@ -42,11 +43,11 @@ func TestSnippetCommandKeepsItsSurroundingSpace(t *testing.T) {
 
 func TestSnippetCommandOfOnlySpaceIsRefused(t *testing.T) {
 	state := newTestState(t, freshOptions(t))
-	state.openSnippetDialog(-1)
-	state.snippets.name.Insert("blank")
-	state.snippets.command.Insert("   ")
-	state.Click(hitSnippetSubmit)
-	if state.modal != modalSnippet || len(state.snippets.list) != 0 || state.snippets.dialogError == "" {
+	state.startInlineSnippetDraft("")
+	state.snippets.inline.name.Insert("blank")
+	state.snippets.inline.command.Insert("   ")
+	state.applyInlineSnippetEdits()
+	if !state.snippets.inline.draft || len(state.snippets.list) != 0 || state.snippets.inline.error == "" {
 		t.Fatal("a command of only space was saved")
 	}
 }
@@ -54,13 +55,14 @@ func TestSnippetCommandOfOnlySpaceIsRefused(t *testing.T) {
 func TestMultilineSnippetKeepsLinesAndSendsAsPaste(t *testing.T) {
 	world, options := newSharingWorld(t)
 	state := newTestState(t, options)
-	state.openSnippetDialog(-1)
-	state.snippets.name.Insert("deploy")
-	state.snippets.command.Insert("echo one\r\necho two")
-	if result := state.Key(gfx.KeyEvent{Target: hitSnippetCommand, Key: gfx.KeyEnter}); result.Handled || state.modal != modalSnippet {
-		t.Fatalf("Enter in multiline command: result=%+v modal=%d", result, state.modal)
+	state.startInlineSnippetDraft("")
+	state.snippets.inline.name.Insert("deploy")
+	state.snippets.inline.command.Insert("echo one\r\necho two")
+	if result := state.Key(gfx.KeyEvent{Target: hitSnippetInlineCommand, Key: gfx.KeyEnter}); result.Handled {
+		t.Fatalf("Enter in multiline command: result=%+v", result)
 	}
-	state.Click(hitSnippetSubmit)
+	state.applyInlineSnippetEdits()
+	state.flushInlineSnippetSave()
 	if len(state.snippets.list) != 1 || state.snippets.list[0].Command != "echo one\necho two" || state.snippets.list[0].cells[3] != "echo one ↵ echo two" {
 		t.Fatalf("saved multiline snippet = %+v", state.snippets.list)
 	}
@@ -68,6 +70,7 @@ func TestMultilineSnippetKeepsLinesAndSendsAsPaste(t *testing.T) {
 	if len(loaded.snippets.list) != 1 || loaded.snippets.list[0].Command != "echo one\necho two" {
 		t.Fatalf("restored multiline snippet = %+v", loaded.snippets.list)
 	}
+	loaded.activeSection = sectionHosts
 	world.connectFirst(t, loaded)
 	shell := world.conns[0].shell(t)
 	if !loaded.sendSnippetTo(0, &loaded.sessions[0]) || shell.typed() != "echo one\recho two\r" {
@@ -245,12 +248,13 @@ func TestSavedSnippetStaysVisibleUnderTheFilter(t *testing.T) {
 	state.snippets.filter = snippetFilter{group: "Ops"}
 	state.refreshSnippets()
 
-	state.openSnippetDialog(-1)
-	state.snippets.name.Insert("c")
-	state.snippets.command.Insert("c")
-	state.Click(hitSnippetSubmit)
-	if state.modal != modalNone {
-		t.Fatalf("save failed: %q", state.snippets.dialogError)
+	state.startInlineSnippetDraft("")
+	state.snippets.inline.name.Insert("c")
+	state.snippets.inline.command.Insert("c")
+	state.applyInlineSnippetEdits()
+	state.flushInlineSnippetSave()
+	if state.snippets.inline.error != "" {
+		t.Fatalf("save failed: %q", state.snippets.inline.error)
 	}
 	if !containsInt(state.snippets.visible, state.snippets.selected) {
 		t.Fatal("the snippet just saved is hidden by the filter")
@@ -262,36 +266,38 @@ func TestSnippetGroupIsChosenOrCreatedInTheDialog(t *testing.T) {
 	addTestSnippets(state, snippet{Name: "a", Command: "a", Group: "Ops"})
 
 	// An existing group, picked by a different spelling, keeps its one name.
-	state.openSnippetDialog(-1)
-	state.snippets.name.Insert("b")
-	state.snippets.command.Insert("b")
-	state.snippets.groupPicker.Query.Insert("ops")
-	state.Click(hitSnippetSubmit)
-	if state.modal != modalNone || state.snippets.list[1].Group != "Ops" {
-		t.Fatalf("group = %q, modal %v", state.snippets.list[1].Group, state.modal)
+	state.startInlineSnippetDraft("")
+	state.snippets.inline.name.Insert("b")
+	state.snippets.inline.command.Insert("b")
+	state.snippets.inline.groupPicker.Query.Insert("ops")
+	state.Key(gfx.KeyEvent{Target: hitSnippetInlineGroup, Key: gfx.KeyEnter})
+	state.applyInlineSnippetEdits()
+	state.flushInlineSnippetSave()
+	if state.snippets.inline.draft || state.snippets.list[1].Group != "Ops" {
+		t.Fatalf("group = %q, draft %v", state.snippets.list[1].Group, state.snippets.inline.draft)
 	}
 
-	// A new group is created by typing it, with Enter or Save.
-	state.openSnippetDialog(-1)
-	state.snippets.name.Insert("c")
-	state.snippets.command.Insert("c")
-	state.snippets.groupPicker.Query.Insert("Dev")
-	state.Key(gfx.KeyEvent{Target: hitSnippetGroup, Key: gfx.KeyEnter})
-	if state.modal != modalSnippet || state.snippets.groupPicker.Value() != "Dev" {
-		t.Fatalf("Enter in the group field: modal %v, value %q", state.modal, state.snippets.groupPicker.Value())
+	// A new group is created by typing it and pressing Enter.
+	state.startInlineSnippetDraft("")
+	state.snippets.inline.name.Insert("c")
+	state.snippets.inline.command.Insert("c")
+	state.snippets.inline.groupPicker.Query.Insert("Dev")
+	state.Key(gfx.KeyEvent{Target: hitSnippetInlineGroup, Key: gfx.KeyEnter})
+	if state.snippets.inline.groupPicker.Value() != "Dev" {
+		t.Fatalf("Enter in the group field: value %q", state.snippets.inline.groupPicker.Value())
 	}
-	state.Key(gfx.KeyEvent{Target: hitSnippetGroup, Key: gfx.KeyEnter})
-	if state.modal != modalNone || state.snippets.list[2].Group != "Dev" {
-		t.Fatalf("second Enter did not save into Dev: %+v", state.snippets.list[2])
+	state.applyInlineSnippetEdits()
+	state.flushInlineSnippetSave()
+	if state.snippets.inline.draft || state.snippets.list[2].Group != "Dev" {
+		t.Fatalf("saving into Dev failed: %+v", state.snippets.list[2])
 	}
 
 	// Editing shows the group, and clearing it ungroups the snippet.
-	state.openSnippetDialog(2)
-	if state.snippets.groupPicker.Value() != "Dev" {
-		t.Fatalf("editing shows group %q", state.snippets.groupPicker.Value())
+	state.focusInlineSnippet(2)
+	if state.snippets.inline.groupPicker.Value() != "Dev" {
+		t.Fatalf("editing shows group %q", state.snippets.inline.groupPicker.Value())
 	}
-	state.Click(hitSnippetGroupClear)
-	state.Click(hitSnippetSubmit)
+	state.Click(hitSnippetInlineGroupClear)
 	if state.snippets.list[2].Group != "" {
 		t.Fatalf("group after clearing = %q", state.snippets.list[2].Group)
 	}
@@ -465,9 +471,10 @@ func TestNestedSnippetGroupPathsNormalizeMaterializeAndFilterDescendants(t *test
 		t.Fatalf("leaf filter visible = %v, want [0]", form.visible)
 	}
 
-	// The editor's group picker uses "/" hierarchy navigation like hosts.
-	if picker := state.snippetGroupPicker("Clients/Acme/Production"); picker.Separator != "/" {
-		t.Fatalf("snippet group picker separator = %q, want /", picker.Separator)
+	// The inline editor's group picker uses "/" hierarchy navigation like hosts.
+	state.initInlineGroupPicker("Clients/Acme/Production")
+	if state.snippets.inline.groupPicker.Separator != "/" {
+		t.Fatalf("snippet group picker separator = %q, want /", state.snippets.inline.groupPicker.Separator)
 	}
 }
 

@@ -195,77 +195,75 @@ func TestCancellingSnippetGroupRenameKeepsTheName(t *testing.T) {
 	}
 }
 
-// The editor's own Manage groups button opens the same manager and comes back
-// to the editor with its unsaved text: a group renamed or deleted while there
-// follows the group field it was opened from.
+// Opening Manage groups while the inline editor is open updates the editor's
+// group field when a group is renamed or deleted while preserving unsaved text.
 func TestSnippetGroupManagerFromTheEditorReturnsToTheEditor(t *testing.T) {
 	state := snippetGroupsManagerState(t)
-	state.openSnippetDialog(1) // "logs", in Ops
-	state.snippets.name.Insert(" updated")
-	state.Click(hitSnippetDialogGroups)
-	if state.modal != modalSnippetGroups || !state.snippetGroups.returnToSnippet {
-		t.Fatalf("the editor's button opened modal %d (return to snippet %v)", state.modal, state.snippetGroups.returnToSnippet)
+	state.focusInlineSnippet(1) // "logs", in Ops
+	state.snippets.inline.name.Insert(" updated")
+	state.applyInlineSnippetEdits()
+	state.Click(hitSnippetGroups)
+	if state.modal != modalSnippetGroups {
+		t.Fatalf("Manage groups opened modal %d", state.modal)
 	}
 	state.Click(hitSnippetGroupRenameList.At(snippetGroupAt(t, state, "Ops")))
 	state.snippetGroups.editor.ReplaceRange(text.Range{Start: 0, End: state.snippetGroups.editor.RuneCount()}, "Prod")
 	state.Click(hitSnippetGroupRenameSubmit)
 	state.Click(hitSnippetGroupsDone)
-	if state.modal != modalSnippet {
-		t.Fatalf("closing the manager did not return to the editor: modal %d", state.modal)
+	if state.modal != modalNone {
+		t.Fatalf("closing the manager left modal %d", state.modal)
 	}
-	if state.snippets.groupPicker.Value() != "Prod" {
-		t.Fatalf("the editor's group field = %q, want the renamed group", state.snippets.groupPicker.Value())
+	if state.snippets.inline.groupPicker.Value() != "Prod" {
+		t.Fatalf("the editor's group field = %q, want the renamed group", state.snippets.inline.groupPicker.Value())
 	}
-	if state.snippets.name.String() != "logs updated" {
-		t.Fatalf("the editor lost its unsaved name: %q", state.snippets.name.String())
+	if state.snippets.inline.name.String() != "logs updated" {
+		t.Fatalf("the editor lost its edited name: %q", state.snippets.inline.name.String())
 	}
-	state.Click(hitSnippetSubmit)
-	if state.modal != modalNone || state.snippets.list[1].Group != "Prod" || state.snippets.list[1].Name != "logs updated" {
+	if state.snippets.list[1].Group != "Prod" || state.snippets.list[1].Name != "logs updated" {
 		t.Fatalf("the edited snippet was not saved into the renamed group: %+v", state.snippets.list[1])
 	}
 }
 
 func TestSnippetGroupManagerFromTheEditorClearsADeletedGroup(t *testing.T) {
 	state := snippetGroupsManagerState(t)
-	state.openSnippetDialog(0) // "deploy", in Ops
-	state.Click(hitSnippetDialogGroups)
+	state.focusInlineSnippet(0) // "deploy", in Ops
+	state.Click(hitSnippetGroups)
 	state.Click(hitSnippetGroupDeleteList.At(snippetGroupAt(t, state, "Ops")))
 	state.Click(hitSnippetGroupDeleteConfirm)
 	state.Click(hitSnippetGroupsDone)
-	if state.modal != modalSnippet {
-		t.Fatalf("closing the manager did not return to the editor: modal %d", state.modal)
+	if state.modal != modalNone {
+		t.Fatalf("closing the manager left modal %d", state.modal)
 	}
-	if state.snippets.groupPicker.Value() != "" {
-		t.Fatalf("the editor's group field = %q, want none", state.snippets.groupPicker.Value())
+	if state.snippets.inline.groupPicker.Value() != "" {
+		t.Fatalf("the editor's group field = %q, want none", state.snippets.inline.groupPicker.Value())
 	}
-	state.Click(hitSnippetSubmit)
 	if state.snippets.list[0].Group != "" || state.snippets.list[0].Name != "deploy" {
 		t.Fatalf("the edited snippet was not saved as ungrouped: %+v", state.snippets.list[0])
 	}
 }
 
-// Coming back to the editor also refreshes the group list it offers: a group
-// deleted while the manager was open is gone from the field's choices, while an
-// unfinished group name the user typed is kept.
+// Coming back from the manager also refreshes the group list the inline editor
+// offers: a group deleted while the manager was open is gone from the choices,
+// while an unfinished group name the user typed is kept.
 func TestSnippetGroupManagerFromTheEditorRefreshesItsChoices(t *testing.T) {
 	state := snippetGroupsManagerState(t)
-	state.openSnippetDialog(0) // "deploy", in Ops
-	state.snippets.groupPicker.Query.Insert("new-group")
-	state.Click(hitSnippetDialogGroups)
+	state.focusInlineSnippet(0) // "deploy", in Ops
+	state.snippets.inline.groupPicker.Query.Insert("new-group")
+	state.Click(hitSnippetGroups)
 	state.Click(hitSnippetGroupDeleteList.At(snippetGroupAt(t, state, "dev")))
 	state.Click(hitSnippetGroupDeleteConfirm)
 	state.Click(hitSnippetGroupsDone)
-	if state.modal != modalSnippet {
-		t.Fatalf("closing the manager did not return to the editor: modal %d", state.modal)
+	if state.modal != modalNone {
+		t.Fatalf("closing the manager left modal %d", state.modal)
 	}
-	for _, option := range state.snippets.groupPicker.Options {
+	for _, option := range state.snippets.inline.groupPicker.Options {
 		if option.Value == "dev" {
-			t.Fatalf("the deleted group is still offered: %+v", state.snippets.groupPicker.Options)
+			t.Fatalf("the deleted group is still offered: %+v", state.snippets.inline.groupPicker.Options)
 		}
 	}
-	if state.snippets.groupPicker.Value() != "Ops" || state.snippets.groupPicker.Query.String() != "new-group" {
+	if state.snippets.inline.groupPicker.Value() != "Ops" || state.snippets.inline.groupPicker.Query.String() != "new-group" {
 		t.Fatalf("value %q, query %q: the editor lost its place or its typed group",
-			state.snippets.groupPicker.Value(), state.snippets.groupPicker.Query.String())
+			state.snippets.inline.groupPicker.Value(), state.snippets.inline.groupPicker.Query.String())
 	}
 }
 

@@ -167,7 +167,14 @@ func TestSnippetsTreeBlankRightClickCreatesPersistedEmptyGroup(t *testing.T) {
 	var canvas gfx.Canvas
 	paintSnippetsPage(state, &canvas)
 
-	secondary := gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitSnippetTreeScroll, X: 80, Y: 400}
+	treeRect := state.sectionBodies.snippets.tree.Rect()
+	secondary := gfx.PointerEvent{
+		Kind:   gfx.PointerDown,
+		Button: gfx.PointerButtonSecondary,
+		Target: hitSnippetTreeScroll,
+		X:      treeRect.X + treeRect.Width/2,
+		Y:      treeRect.Y + treeRect.Height - 40,
+	}
 	if got := pointer(state, secondary); !got.Handled || !state.snippets.blankMenu.open {
 		t.Fatalf("blank right-click did not open menu: handled=%v menu=%+v", got.Handled, state.snippets.blankMenu)
 	}
@@ -189,16 +196,134 @@ func TestSnippetsTreeBlankRightClickCreatesPersistedEmptyGroup(t *testing.T) {
 		t.Fatalf("reloaded groups = %v", reloaded.snippets.groups)
 	}
 
-	// Deleting the empty group removes it cleanly.
-	state.deleteSnippetGroup("Ops")
-	if len(state.snippets.groups) != 0 {
-		t.Fatalf("groups after delete = %v", state.snippets.groups)
+	// Deleting the empty group through the folder confirmation dialog removes it cleanly.
+	state.openSnippetGroupDeleteDirect("Ops")
+	if state.modal != modalSnippetGroupDelete || state.snippetGroups.target != "Ops" {
+		t.Fatalf("delete empty group opened modal=%d target=%q", state.modal, state.snippetGroups.target)
+	}
+	state.Click(hitSnippetGroupDeleteConfirm)
+	if state.modal != modalNone || len(state.snippets.groups) != 0 {
+		t.Fatalf("after confirm: modal=%d groups=%v", state.modal, state.snippets.groups)
+	}
+}
+
+func TestSnippetsTreeFolderDeleteConfirmation(t *testing.T) {
+	options := freshOptions(t)
+	state := newTestState(t, options)
+	state.snippets.list = []snippet{
+		{Name: "Restart", Group: "Ops/Web", Command: "systemctl restart nginx"},
+		{Name: "Status", Group: "Ops", Command: "uptime"},
+	}
+	state.refreshSnippets()
+	state.save()
+	state.activeSection = sectionSnippets
+
+	var canvas gfx.Canvas
+	paintSnippetsPage(state, &canvas)
+
+	// Open the folder menu for "Ops" and choose Delete.
+	state.snippets.folderMenu = snippetFolderMenu{open: true, group: "Ops", at: gfx.Point{X: 100, Y: 100}}
+	state.chooseSnippetFolderMenu(hitSnippetFolderMenuDelete)
+	if state.modal != modalSnippetGroupDelete || state.snippetGroups.target != "Ops" {
+		t.Fatalf("folder delete opened modal=%d target=%q", state.modal, state.snippetGroups.target)
+	}
+
+	// Canceling keeps the group and its snippets intact.
+	state.Click(hitSnippetGroupDeleteCancel)
+	if state.modal != modalNone {
+		t.Fatalf("cancel left modal=%d", state.modal)
+	}
+	if state.snippets.list[0].Group != "Ops/Web" || state.snippets.list[1].Group != "Ops" {
+		t.Fatalf("cancel modified groups: %+v", state.snippets.list)
+	}
+
+	// Confirming ungroups the subtree, closes back to the page, and persists.
+	state.snippets.folderMenu = snippetFolderMenu{open: true, group: "Ops", at: gfx.Point{X: 100, Y: 100}}
+	state.chooseSnippetFolderMenu(hitSnippetFolderMenuDelete)
+	state.Click(hitSnippetGroupDeleteConfirm)
+	if state.modal != modalNone {
+		t.Fatalf("confirm left modal=%d, want modalNone", state.modal)
+	}
+	if len(state.snippets.groups) != 0 || state.snippets.list[0].Group != "" || state.snippets.list[1].Group != "" {
+		t.Fatalf("after delete confirm: groups=%v list=%+v", state.snippets.groups, state.snippets.list)
+	}
+	if reloaded := newTestState(t, options); len(reloaded.snippets.groups) != 0 || reloaded.snippets.list[0].Group != "" {
+		t.Fatalf("reloaded after delete confirm: groups=%v list=%+v", reloaded.snippets.groups, reloaded.snippets.list)
+	}
+}
+
+func TestSnippetsTreeAltArrowReordersSiblingsAndFollowsFocus(t *testing.T) {
+	options := freshOptions(t)
+	state := newTestState(t, options)
+	state.snippets.list = []snippet{
+		{Name: "First", Group: "Ops", Command: "echo 1"},
+		{Name: "Other", Group: "Dev", Command: "echo other"},
+		{Name: "Second", Group: "Ops", Command: "echo 2"},
+	}
+	state.refreshSnippets()
+	state.save()
+	state.activeSection = sectionSnippets
+
+	var canvas gfx.Canvas
+	paintSnippetsPage(state, &canvas)
+
+	// Find the tree row for "Second" (snippet index 2, inside Ops).
+	secondRow := -1
+	for i, row := range state.snippets.treeRows {
+		if !row.folder && row.snippet == 2 {
+			secondRow = i
+			break
+		}
+	}
+	if secondRow < 0 {
+		t.Fatalf("Second row not found in %+v", state.snippets.treeRows)
+	}
+
+	// Alt+Up swaps Second with its Ops sibling First (skipping Dev's Other) and
+	// keeps keyboard focus on the moved row.
+	res := state.Key(gfx.KeyEvent{
+		Target:    state.snippets.tree.RowID(secondRow),
+		Key:       gfx.KeyUp,
+		Modifiers: gfx.ModifierAlt,
+	})
+	if !res.Handled || !res.Repaint {
+		t.Fatalf("Alt+Up result = %+v", res)
+	}
+	if state.snippets.list[0].Name != "Second" || state.snippets.list[1].Name != "Other" || state.snippets.list[2].Name != "First" {
+		t.Fatalf("order after Alt+Up = %+v", state.snippets.list)
+	}
+	if wantFocus := state.snippetTreeRowIDForSnippet(0); res.Focus != wantFocus {
+		t.Fatalf("focus after Alt+Up = %v, want %v", res.Focus, wantFocus)
+	}
+
+	// Alt+Down moves it back down using the returned focus target.
+	res = state.Key(gfx.KeyEvent{
+		Target:    res.Focus,
+		Key:       gfx.KeyDown,
+		Modifiers: gfx.ModifierAlt,
+	})
+	if !res.Handled || state.snippets.list[0].Name != "First" || state.snippets.list[2].Name != "Second" {
+		t.Fatalf("after Alt+Down: res=%+v list=%+v", res, state.snippets.list)
+	}
+
+	// Persists across reload.
+	res = state.Key(gfx.KeyEvent{
+		Target:    res.Focus,
+		Key:       gfx.KeyUp,
+		Modifiers: gfx.ModifierAlt,
+	})
+	if !res.Handled {
+		t.Fatalf("second Alt+Up not handled")
+	}
+	if reloaded := newTestState(t, options); reloaded.snippets.list[0].Name != "Second" || reloaded.snippets.list[2].Name != "First" {
+		t.Fatalf("reloaded order after Alt+Up = %+v", reloaded.snippets.list)
 	}
 }
 
 func TestSnippetsInlineEditorCoalescesSavesAndFlushesOnBlurAndSwitch(t *testing.T) {
 	options := freshOptions(t)
 	state := newTestState(t, options)
+	state.snippets.inline.saveDelay = 15 * time.Millisecond
 	state.snippets.list = []snippet{
 		{Name: "First", Group: "Ops", Command: "echo one", Run: true},
 		{Name: "Second", Group: "Ops", Command: "echo two", Run: true},
@@ -272,19 +397,19 @@ func TestSnippetsInlineEditorCoalescesSavesAndFlushesOnBlurAndSwitch(t *testing.
 		t.Fatalf("reloaded command after switch = %q, want %q", reloaded.snippets.list[0].Command, "echo one && true")
 	}
 
-	// Settling without blur or selection switch writes once via the coalesced timer.
+	// Settling without blur or selection switch writes once via the injected debounce timer.
 	state.snippets.inline.name.Insert(" settled")
 	state.applyInlineSnippetEdits()
 	if reloaded := newTestState(t, options); reloaded.snippets.list[1].Name != "Second" {
 		t.Fatalf("second snippet wrote before debounce settled: got %q", reloaded.snippets.list[1].Name)
 	}
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(2 * time.Second)
 	for state.snippets.inline.saveTimer != nil {
 		if time.Now().After(deadline) {
 			t.Fatal("coalesced inline snippet save timer did not fire")
 		}
 		state.Wake()
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond)
 	}
 	if state.snippets.inline.dirty {
 		t.Fatal("dirty flag remained set after coalesced save")

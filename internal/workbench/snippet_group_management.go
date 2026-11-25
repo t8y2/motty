@@ -16,8 +16,7 @@ import (
 // page opens this manager from the button beside its group filter.
 
 var (
-	hitSnippetGroups       = tree.ID(snippetsHits, "snippet-groups")
-	hitSnippetDialogGroups = tree.ID(snippetsHits, "snippet-dialog-groups")
+	hitSnippetGroups = tree.ID(snippetsHits, "snippet-groups")
 
 	hitSnippetGroupsClose        = tree.ID(snippetsHits, "snippet-groups-close")
 	hitSnippetGroupsDone         = tree.ID(snippetsHits, "snippet-groups-done")
@@ -43,20 +42,12 @@ type snippetGroupsUI struct {
 	error    string
 	// returning reopens the manager after the rename or delete dialog closes.
 	returning bool
-	// returnToSnippet reopens the snippet editor the manager was opened from.
-	returnToSnippet bool
 	// bounds is the manager's scroll area, for the wheel.
 	bounds gfx.Rect
 }
 
 func (state *State) openSnippetGroupsManager() {
-	state.openSnippetGroupsManagerFor(false)
-}
-
-// openSnippetGroupsManagerFor opens the manager, remembering whether the
-// snippet editor underneath should come back when it closes.
-func (state *State) openSnippetGroupsManagerFor(fromSnippet bool) {
-	state.snippetGroups = snippetGroupsUI{returnToSnippet: fromSnippet}
+	state.snippetGroups = snippetGroupsUI{}
 	state.modal = modalSnippetGroups
 }
 
@@ -249,12 +240,14 @@ func (state *State) renameSnippetGroup(from, to string) bool {
 	if state.snippets.selectedFolder != "" && snippetGroupWithin(state.snippets.selectedFolder, from) {
 		state.snippets.selectedFolder = remapSnippetGroupPath(state.snippets.selectedFolder, from, to)
 	}
+	if form.inline.draft && snippetGroupWithin(form.inline.loadedSnap.Group, from) {
+		form.inline.loadedSnap.Group = remapSnippetGroupPath(form.inline.loadedSnap.Group, from, to)
+	}
 	manager.error = ""
 	state.refreshSnippets()
-	if manager.returnToSnippet {
-		if current := state.snippets.groupPicker.Value(); snippetGroupWithin(current, from) {
-			state.snippetGroupPicker(remapSnippetGroupPath(current, from, to))
-		}
+	if form.inline.draft {
+		state.refreshInlineGroupOptions(form.inline.loadedSnap.Group)
+		state.refreshInlineMeta(form.inline.loadedSnap)
 	}
 	state.save()
 	state.status = fmt.Sprintf(m.StatusGroupRenamedFmt, from, to)
@@ -266,7 +259,7 @@ func (state *State) renameSnippetGroup(from, to string) bool {
 // group or a descendant shows everything again, as it does for a group that is
 // gone for any other reason.
 func (state *State) deleteSnippetGroup(group string) {
-	form, manager, m := &state.snippets, &state.snippetGroups, state.messages.Tools
+	form, m := &state.snippets, state.messages.Tools
 	count := 0
 	for index := range form.list {
 		if snippetGroupWithin(form.list[index].Group, group) {
@@ -296,9 +289,13 @@ func (state *State) deleteSnippetGroup(group string) {
 	if state.snippets.selectedFolder != "" && snippetGroupWithin(state.snippets.selectedFolder, group) {
 		state.snippets.selectedFolder = ""
 	}
+	if form.inline.draft && snippetGroupWithin(form.inline.loadedSnap.Group, group) {
+		form.inline.loadedSnap.Group = ""
+	}
 	state.refreshSnippets()
-	if manager.returnToSnippet && snippetGroupWithin(state.snippets.groupPicker.Value(), group) {
-		state.snippetGroupPicker("")
+	if form.inline.draft {
+		state.refreshInlineGroupOptions(form.inline.loadedSnap.Group)
+		state.refreshInlineMeta(form.inline.loadedSnap)
 	}
 	state.save()
 	state.status = fmt.Sprintf(m.StatusGroupDeletedFmt, group, count)

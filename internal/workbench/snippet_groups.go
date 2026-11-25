@@ -18,16 +18,6 @@ import (
 
 const maxSnippetGroup = 512
 
-var (
-	hitSnippetGroup        = tree.ID(snippetsHits, "snippet-group")
-	hitSnippetGroupTrigger = tree.ID(snippetsHits, "snippet-group-trigger")
-	hitSnippetGroupClear   = tree.ID(snippetsHits, "snippet-group-clear")
-	hitSnippetGroupDismiss = tree.ID(snippetsHits, "snippet-group-dismiss")
-	hitSnippetGroupScroll  = tree.ID(snippetsHits, "snippet-group-scroll")
-	snippetGroupScope      = tree.ID(snippetsHits, "snippet-group-scope")
-	hitSnippetGroupChoices = tree.Sub(snippetsHits, tree.Name("snippet-group-option"))
-)
-
 // snippetFilter is which snippets the page shows: all of them, one group's, or
 // the ones that belong to none.
 type snippetFilter struct {
@@ -270,90 +260,10 @@ func (form *snippetsUI) showSnippet(index int) {
 	}
 }
 
-// The group field of the dialog: pick one of the groups, or type a new one.
-
-// snippetGroupPicker is the dialog's group control, set up to the groups there
-// are and to the group of the snippet being edited.
-func (state *State) snippetGroupPicker(value string) *components.SingleSelectState {
-	control := &state.snippets.groupPicker
-	control.AllowCreate = true
-	// A group has one name: typing "ops" over "Ops" selects the existing group.
-	control.MatchCaseInsensitive = true
-	// Groups nest by "/": browse one level at a time, with typing as the flat
-	// search over full paths, matching hostGroupPicker.
-	control.Separator = "/"
-	control.SetValidateCreate(validSnippetGroup)
-	options := make([]components.SingleSelectOption, len(state.snippets.groups))
-	for index, group := range state.snippets.groups {
-		options[index] = components.SingleSelectOption{Value: group}
-	}
-	control.SetOptions(options)
-	control.SetValue(value)
-	control.Open = false
-	return control
-}
-
-// refreshSnippetGroupPicker rebuilds the editor's group choices after the
-// manager changed a group, keeping what the user typed or chose.
-func (state *State) refreshSnippetGroupPicker() {
-	control := &state.snippets.groupPicker
-	value, query := control.Value(), control.Query.String()
-	state.snippetGroupPicker(value)
-	if query != "" {
-		control.Query.Insert(query)
-	}
-}
-
-func (state *State) syncSnippetGroupError() {
-	form := &state.snippets
-	if form.groupPicker.Query.String() == "" && form.dialogError == state.messages.ErrHostGroupInvalid {
-		form.dialogError = ""
-	}
-}
-
-// commitSnippetGroupQuery makes the group that was typed the one chosen. It is
-// false, with the reason shown, when what was typed cannot name a group.
-func (state *State) commitSnippetGroupQuery() bool {
-	form := &state.snippets
-	if _, composing := form.groupPicker.Query.Composition(); composing {
-		return true
-	}
-	if strings.TrimSpace(form.groupPicker.Query.String()) == "" {
-		return true
-	}
-	if !form.groupPicker.CommitQuery() {
-		form.dialogError = state.messages.ErrHostGroupInvalid
-		return false
-	}
-	return true
-}
-
-func isSnippetGroupTarget(id gfx.ID) bool {
-	return id == hitSnippetGroup || id == hitSnippetGroupTrigger || id == hitSnippetGroupClear || id == hitSnippetGroupScroll || id.Scope() == hitSnippetGroupChoices
-}
+// The group field of the inline editor: pick one of the groups, or type a new one.
 
 func isSnippetInlineGroupTarget(id gfx.ID) bool {
 	return id == hitSnippetInlineGroup || id == hitSnippetInlineGroupTrigger || id == hitSnippetInlineGroupClear || id == hitSnippetInlineGroupScroll || id.Scope() == hitSnippetInlineGroupChoices
-}
-
-func (state *State) clickSnippetGroup(id gfx.ID) bool {
-	control := &state.snippets.groupPicker
-	switch {
-	case id == hitSnippetGroup:
-		control.Open = true
-	case id == hitSnippetGroupTrigger:
-		control.Open = !control.Open
-	case id == hitSnippetGroupClear:
-		control.Clear()
-	case id == hitSnippetGroupDismiss:
-		control.Open = false
-	case id.Scope() == hitSnippetGroupChoices:
-		control.Choose(item(id))
-	default:
-		return false
-	}
-	state.syncSnippetGroupError()
-	return true
 }
 
 func (state *State) clickSnippetInlineGroup(id gfx.ID) bool {
@@ -385,22 +295,8 @@ func (state *State) clickSnippetInlineGroup(id gfx.ID) bool {
 }
 
 // snippetGroupPointer keeps a press outside the open list from reaching the
-// dialog: it only closes the list.
+// page: it only closes the list.
 func (state *State) snippetGroupPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	if state.modal == modalSnippet {
-		control := &state.snippets.groupPicker
-		if !control.Open {
-			return gfx.EventResult{}, false
-		}
-		if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary && !isSnippetGroupTarget(event.Target) {
-			control.Open = false
-			return gfx.EventResult{Handled: true, Repaint: true}, true
-		}
-		if result := control.Pointer(event); result.Handled {
-			return result, true
-		}
-		return gfx.EventResult{}, false
-	}
 	if state.modal == modalNone && state.activeSection == sectionSnippets {
 		control := &state.snippets.inline.groupPicker
 		if !control.Open {
@@ -419,50 +315,14 @@ func (state *State) snippetGroupPointer(event gfx.PointerEvent) (gfx.EventResult
 
 func (state *State) snippetGroupKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	form := &state.snippets
-	if state.modal == modalNone && state.activeSection == sectionSnippets && !form.inline.capturing {
-		control := &form.inline.groupPicker
-		if event.Target != hitSnippetInlineGroup && (!control.Open || event.Key != gfx.KeyEscape && event.Key != gfx.KeyTab) {
-			return gfx.EventResult{}, false
-		}
-		if event.Target == hitSnippetInlineGroup && event.Key == gfx.KeyEnter && event.Modifiers == 0 && !event.Release {
-			if _, composing := control.Query.Composition(); composing || event.Repeat {
-				return gfx.EventResult{Handled: true, Repaint: true}, true
-			}
-			if strings.TrimSpace(control.Query.String()) == "" {
-				if control.Open {
-					control.Dismiss()
-					return gfx.EventResult{Handled: true, Repaint: true}, true
-				}
-				return gfx.EventResult{}, false
-			}
-			if !control.CommitQuery() {
-				form.inline.error = state.messages.ErrHostGroupInvalid
-				return gfx.EventResult{Handled: true, Repaint: true}, true
-			}
-			form.inline.error = ""
-			state.applyInlineSnippetGroup()
-			return gfx.EventResult{Handled: true, Repaint: true}, true
-		}
-		before := control.Value()
-		result := control.Key(event)
-		if control.Query.String() == "" && form.inline.error == state.messages.ErrHostGroupInvalid {
-			form.inline.error = ""
-		}
-		if control.Value() != before {
-			state.applyInlineSnippetGroup()
-		}
-		return result, result.Handled || result.Repaint
-	}
-	control := &form.groupPicker
-	if state.modal != modalSnippet || form.capturing {
+	if state.modal != modalNone || state.activeSection != sectionSnippets || form.inline.capturing {
 		return gfx.EventResult{}, false
 	}
-	if event.Target != hitSnippetGroup && (!control.Open || event.Key != gfx.KeyEscape && event.Key != gfx.KeyTab) {
+	control := &form.inline.groupPicker
+	if event.Target != hitSnippetInlineGroup && (!control.Open || event.Key != gfx.KeyEscape && event.Key != gfx.KeyTab) {
 		return gfx.EventResult{}, false
 	}
-	if event.Target == hitSnippetGroup && event.Key == gfx.KeyEnter && event.Modifiers == 0 && !event.Release {
-		// Enter takes what is typed; with nothing typed it is the dialog's Enter
-		// and saves, which the list must not consume for a group it did not choose.
+	if event.Target == hitSnippetInlineGroup && event.Key == gfx.KeyEnter && event.Modifiers == 0 && !event.Release {
 		if _, composing := control.Query.Composition(); composing || event.Repeat {
 			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
@@ -473,24 +333,23 @@ func (state *State) snippetGroupKey(event gfx.KeyEvent) (gfx.EventResult, bool) 
 			}
 			return gfx.EventResult{}, false
 		}
-		state.commitSnippetGroupQuery()
+		if !control.CommitQuery() {
+			form.inline.error = state.messages.ErrHostGroupInvalid
+			return gfx.EventResult{Handled: true, Repaint: true}, true
+		}
+		form.inline.error = ""
+		state.applyInlineSnippetGroup()
 		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
+	before := control.Value()
 	result := control.Key(event)
-	state.syncSnippetGroupError()
+	if control.Query.String() == "" && form.inline.error == state.messages.ErrHostGroupInvalid {
+		form.inline.error = ""
+	}
+	if control.Value() != before {
+		state.applyInlineSnippetGroup()
+	}
 	return result, result.Handled || result.Repaint
-}
-
-func (state *State) paintSnippetGroupField(canvas *gfx.Canvas, bounds gfx.Rect) {
-	form, theme := &state.snippets, state.Theme()
-	control := &form.groupPicker
-	input := components.BeginField(canvas, theme, bounds).For(hitSnippetGroup).Paint(state.messages.FieldGroup, "", "")
-	query := strings.TrimSpace(control.Query.String())
-	components.PaintSingleSelect(canvas, theme, input, control, components.SingleSelectOptions{
-		InputID: hitSnippetGroup, TriggerID: hitSnippetGroupTrigger, ClearID: hitSnippetGroupClear, DismissID: hitSnippetGroupDismiss, Scope: snippetGroupScope, ScrollID: hitSnippetGroupScroll, OptionIDs: hitSnippetGroupChoices,
-		Label: state.messages.FieldGroup, Placeholder: state.messages.FieldGroupPlaceholder, EmptyLabel: state.messages.HostGroupsEmpty, CreatePrefix: state.messages.HostGroupCreatePrefix, ClearLabel: state.messages.MoveGroupNone,
-		Viewport: gfx.Rect{Width: state.viewport.Width, Height: state.viewport.Height}, Layer: dialogLayer + 2, Invalid: query != "" && !validSnippetGroup(query),
-	})
 }
 
 func (state *State) paintSnippetInlineGroupField(canvas *gfx.Canvas, bounds gfx.Rect) {

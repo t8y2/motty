@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/field"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/text"
@@ -57,19 +56,9 @@ const (
 var snippetsHits = tree.Feature("snippets")
 
 var (
-	hitSnippetAdd         = tree.ID(snippetsHits, "snippet-add")
-	hitSnippetEdit        = tree.ID(snippetsHits, "snippet-edit")
-	hitSnippetSend        = tree.ID(snippetsHits, "snippet-send")
-	hitSnippetRemove      = tree.ID(snippetsHits, "snippet-remove")
-	hitSnippetName        = tree.ID(snippetsHits, "snippet-name")
-	hitSnippetCommand     = tree.ID(snippetsHits, "snippet-command")
-	hitSnippetRun         = tree.ID(snippetsHits, "snippet-run")
-	hitSnippetLines       = tree.ID(snippetsHits, "snippet-lines")
-	hitSnippetShortcut    = tree.ID(snippetsHits, "snippet-shortcut")
-	hitSnippetShortcutOff = tree.ID(snippetsHits, "snippet-shortcut-clear")
-	hitSnippetSubmit      = tree.ID(snippetsHits, "snippet-submit")
-	hitSnippetCancel      = tree.ID(snippetsHits, "snippet-cancel")
-	hitSnippetClose       = tree.ID(snippetsHits, "snippet-close")
+	hitSnippetAdd    = tree.ID(snippetsHits, "snippet-add")
+	hitSnippetSend   = tree.ID(snippetsHits, "snippet-send")
+	hitSnippetRemove = tree.ID(snippetsHits, "snippet-remove")
 	// The delete confirmation's buttons.
 	hitSnippetDeleteDismiss = tree.ID(snippetsHits, "snippet-delete-dismiss")
 	hitSnippetDeleteClose   = tree.ID(snippetsHits, "snippet-delete-close")
@@ -127,26 +116,6 @@ type snippetsUI struct {
 	hasUngrouped bool
 	visible      []int
 	filter       snippetFilter
-
-	// The dialog: which snippet it edits (-1 adds one) and the fields.
-	editing     int
-	name        text.Editor
-	command     text.Editor
-	commandArea dialogArea
-	run         bool
-	lines       bool
-	groupPicker components.SingleSelectState
-	shortcut    keymap.Chord
-	capturing   bool // the next chord pressed becomes shortcut
-	dialogError string
-
-	// nameForm and nameText are the name field's row and text, bound to name. The boxes are
-	// the slots the dialog body paints the other controls in.
-	nameForm       ui.FormFieldState
-	nameText       ui.Field
-	nameBound      bool
-	dialogGroup    ui.Box
-	dialogShortcut ui.Box
 
 	// The page: the selected snippet and the count under the tree.
 	selected  int
@@ -216,6 +185,7 @@ type snippetBlankMenu struct {
 
 // snippetInlineEditor holds the Snippets page's right-pane inline editor state.
 type snippetInlineEditor struct {
+	draft       bool
 	loadedValid bool
 	loadedIndex int
 	loadedSnap  snippet
@@ -233,6 +203,7 @@ type snippetInlineEditor struct {
 	shortcutLbl string
 	dirty       bool
 	saveTimer   *time.Timer
+	saveDelay   time.Duration
 	saveSeq     uint64
 	lastFocus   gfx.ID
 }
@@ -349,172 +320,6 @@ func (state *State) dropSnippetChordsTaken() {
 	state.refreshSnippets()
 }
 
-func (state *State) openSnippetDialog(index int) {
-	state.openSnippetDialogWithGroup(index, "")
-}
-
-func (state *State) openSnippetDialogWithGroup(index int, defaultGroup string) {
-	state.flushInlineSnippetSave()
-	form := &state.snippets
-	form.editing = index
-	form.name, form.command = text.Editor{}, text.Editor{}
-	form.commandArea = dialogArea{}
-	form.run, form.lines = true, false
-	group := defaultGroup
-	form.shortcut, form.capturing = keymap.Chord{}, false
-	form.dialogError = ""
-	if index >= 0 && index < len(form.list) {
-		form.name.Insert(form.list[index].Name)
-		form.command.Insert(form.list[index].Command)
-		form.run = form.list[index].Run
-		form.lines = form.list[index].Lines
-		form.shortcut = form.list[index].Shortcut
-		group = form.list[index].Group
-	}
-	state.snippetGroupPicker(group)
-	state.modal = modalSnippet
-}
-
-func (state *State) clickSnippetDialog(id gfx.ID) {
-	form := &state.snippets
-	if state.clickSnippetGroup(id) {
-		return
-	}
-	switch id {
-	case hitSnippetSubmit:
-		state.submitSnippet()
-	case hitSnippetCancel, hitSnippetClose:
-		state.closeModal()
-	case hitSnippetRun:
-		form.run = !form.run
-		form.groupPicker.Open = false
-	case hitSnippetLines:
-		form.lines = !form.lines
-		form.groupPicker.Open = false
-	case hitSnippetShortcut:
-		form.capturing = !form.capturing
-		form.dialogError = ""
-	case hitSnippetShortcutOff:
-		form.shortcut, form.capturing = keymap.Chord{}, false
-		form.dialogError = ""
-	case hitSnippetDialogGroups:
-		state.openSnippetGroupsManagerFor(true)
-	}
-}
-
-// captureSnippetShortcut takes the chord pressed while the dialog waits for one.
-// ok is false for a key that is no chord at all, which is refused the same way
-// as a chord a snippet may not use.
-func (state *State) captureSnippetShortcut(event gfx.KeyEvent, chord keymap.Chord, ok bool) gfx.EventResult {
-	form, m := &state.snippets, state.messages
-	result := gfx.EventResult{Handled: true, Repaint: true}
-	if event.Repeat {
-		return gfx.EventResult{Handled: true}
-	}
-	if !ok || !validForSnippet(chord) {
-		form.dialogError = m.Tools.SnippetShortcutInvalid
-		return result
-	}
-	if owner := state.chordOwner(chord, form.editing); owner != "" {
-		form.dialogError = fmt.Sprintf(m.ShortcutsConflictFmt, owner)
-		return result
-	}
-	form.shortcut, form.capturing = chord, false
-	form.dialogError = ""
-	return result
-}
-
-// composingTarget returns the field whose input method still holds marked
-// text. Saving then would persist the preedit verbatim, so the dialog waits for
-// the input method to commit it; an empty range marks nothing to protect.
-func (form *snippetsUI) composingTarget() gfx.ID {
-	fields := [...]struct {
-		id     gfx.ID
-		editor *text.Editor
-	}{{hitSnippetName, &form.name}, {hitSnippetCommand, &form.command}, {hitSnippetGroup, &form.groupPicker.Query}}
-	for _, field := range fields {
-		if marked, composing := field.editor.Composition(); composing && marked.Start != marked.End {
-			return field.id
-		}
-	}
-	return gfx.ID{}
-}
-
-func (form *snippetsUI) composing() bool {
-	return form.composingTarget() != gfx.ID{}
-}
-
-// abandonOther ends the composition of the field the pointer is leaving. The
-// input method drops its marked text when the text input moves; the editor has
-// to drop it too, or the field the user left keeps composing and blocks every
-// later save. Unmark keeps the text, which is what the user already sees.
-func (form *snippetsUI) abandonOther(target gfx.ID) {
-	switch target {
-	case hitSnippetName, hitSnippetCommand, hitSnippetGroup:
-	default:
-		return
-	}
-	if target != hitSnippetName {
-		form.name.Unmark()
-	}
-	if target != hitSnippetCommand {
-		form.command.Unmark()
-	}
-	if target != hitSnippetGroup {
-		form.groupPicker.Query.Unmark()
-	}
-}
-
-// snippetOrder is the place the edited snippet occupies, or the place a new one
-// would take. It is part of the record the save measures.
-func (form *snippetsUI) snippetOrder() int {
-	if form.editing >= 0 && form.editing < len(form.list) {
-		return form.editing
-	}
-	return len(form.list)
-}
-
-func (state *State) submitSnippet() {
-	form, m := &state.snippets, state.messages.Tools
-	if form.composing() || !state.commitSnippetGroupQuery() {
-		return
-	}
-	entry := snippet{
-		Group:    cleanSnippetGroup(form.groupPicker.Value()),
-		Name:     cleanSnippetText(form.name.String(), maxSnippetName),
-		Command:  sanitizeSnippetCommand(form.command.String()),
-		Run:      form.run,
-		Lines:    form.lines,
-		Shortcut: form.shortcut,
-	}
-	switch {
-	case entry.Name == "":
-		form.dialogError = m.SnippetErrorName
-		return
-	case strings.TrimSpace(entry.Command) == "":
-		form.dialogError = m.SnippetErrorCommand
-		return
-	case len(entry.Command) > maxSnippetCommand || !snippetRecordFits(entry, form.snippetOrder()):
-		form.dialogError = m.SnippetErrorTooLong
-		return
-	}
-	if form.editing >= 0 && form.editing < len(form.list) {
-		form.list[form.editing] = entry
-		form.selected = form.editing
-	} else if len(form.list) >= maxSnippets {
-		form.dialogError = m.SnippetErrorTooMany
-		return
-	} else {
-		form.list = append(form.list, entry)
-		form.selected = len(form.list) - 1
-	}
-	form.showSnippet(form.selected)
-	form.resetSnippetPreview()
-	state.refreshSnippets()
-	state.closeModal()
-	state.save()
-}
-
 func (state *State) deleteSnippet(index int) {
 	list := state.snippets.list
 	if index < 0 || index >= len(list) {
@@ -557,8 +362,9 @@ func (state *State) snippetNeighbor(index, direction int) int {
 	if index < 0 || index >= len(form.list) {
 		return -1
 	}
+	group := form.list[index].Group
 	for target := index + direction; target >= 0 && target < len(form.list); target += direction {
-		if form.filter.matches(&form.list[target]) {
+		if form.filter.matches(&form.list[target]) && sameSnippetGroup(form.list[target].Group, group) {
 			return target
 		}
 	}
@@ -712,96 +518,4 @@ func (state *State) declareSnippetDeleteDialog(c ui.C) {
 			components.ButtonAction{ID: hitSnippetDeleteConfirm, Label: m.SnippetDeleteConfirm, Variant: components.ButtonDestructive},
 		)
 	})
-}
-
-// declareSnippetDialog declares the snippet editor as a dialog of the workbench
-// page.
-func (state *State) declareSnippetDialog(c ui.C) {
-	m := state.messages.Tools
-	form := &state.snippets
-	title := m.SnippetDialogAddTitle
-	if form.editing >= 0 {
-		title = m.SnippetDialogEditTitle
-	}
-	viewport := dialogViewport(c)
-	// The name row, then the command box and the rows under it.
-	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 560, "", withError(282+dialogRowHeight(c.Theme())+dialogCheckGapAbove+dialogCheckHeight, form.dialogError))
-	// No scrim dismiss: a press beside the form must not discard its input.
-	dialog := ui.Dialog(c, ui.DialogSpec{
-		Title: title, Width: 560, Height: height, Layer: dialogLayer,
-		Scope: dialogScope, CloseID: hitSnippetClose, InitialFocusID: hitSnippetName,
-	})
-	dialog.Body(func() { state.declareSnippetDialogBody(c) })
-	dialog.Footer(func() {
-		if dialogButton(c, state.messages.Cancel, components.ButtonSecondary, false).Clicked() {
-			c.After(func() { state.clickSnippetDialog(hitSnippetCancel) })
-		}
-		if dialogButton(c, m.SnippetSave, components.ButtonDefault, false).Clicked() {
-			c.After(func() { state.clickSnippetDialog(hitSnippetSubmit) })
-		}
-	})
-}
-
-// declareSnippetDialogBody lays out the snippet editor: name, command, group,
-// the run box and the shortcut row, and paints the fields into their slots.
-func (state *State) declareSnippetDialogBody(c ui.C) {
-	form, m := &state.snippets, state.messages.Tools
-	column := ui.Column(c).Fill().PadSides(2, 4, 0, 4)
-	column.Children(func() {
-		if !form.nameBound {
-			form.nameText.Bind(&form.name)
-			form.nameBound = true
-		}
-		form.nameText.Invalid = form.dialogError != ""
-		ui.FormField(c, &form.nameForm, m.SnippetName).FillWidth().Height(dialogRowHeight(c.Theme())).Children(func() {
-			ui.TextFieldID(c, hitSnippetName, &form.nameText, m.SnippetName, m.SnippetNamePlaceholder)
-		})
-		ui.Column(c).Height(140).MarginSides(0, 0, 6, 0).Children(func() {
-			form.commandArea.declare(c, hitSnippetCommand, &form.command, m.SnippetCommand, m.SnippetCommandPlaceholder, 140)
-		})
-		if len(form.groups) > 0 {
-			fieldMetrics := c.Theme().Metrics
-			inputTop := field.TitleHeight(fieldMetrics) + field.Gap(fieldMetrics)
-			ui.Row(c).Height(62).MarginSides(0, 0, 6, 0).Gap(8).Items(ui.Start).Children(func() {
-				form.dialogGroup = ui.Slot(c).Grow(1).Height(62)
-				groupsWidth := toolbarButtonWidth(c.Canvas(), m.SnippetGroupsManage, false)
-				dialogButton(c, m.SnippetGroupsManage, components.ButtonGhost, false).
-					Hit(hitSnippetDialogGroups, m.SnippetGroupsManage).
-					Width(groupsWidth).Height(fieldMetrics.ControlHeight).
-					MarginSides(inputTop, 0, 0, 0)
-			})
-		} else {
-			form.dialogGroup = ui.Slot(c).Height(62).MarginSides(0, 0, 6, 0)
-		}
-		state.declareDialogCheck(c, hitSnippetRun, m.SnippetRun, form.run, 7, 0)
-		state.declareDialogCheck(c, hitSnippetLines, m.SnippetLines, form.lines, dialogCheckGapAbove, 0)
-		ui.Row(c).Height(32).Items(ui.Center).MarginSides(12, 0, 0, 2).Children(func() {
-			ui.Text(c, m.SnippetShortcut).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).LineHeight(20).Grow(1)
-			label := m.SnippetShortcutNone
-			switch {
-			case form.capturing:
-				label = m.SnippetShortcutRecording
-			case form.shortcut.Valid():
-				label = chordLabel(form.shortcut)
-			}
-			form.dialogShortcut = ui.Row(c).Size(240, 32).Shrink(0).Justify(ui.End).Gap(8)
-			form.dialogShortcut.Children(func() {
-				// The shortcut row's buttons keep the height they had when the
-				// row was painted by hand.
-				ui.Button(c, label).Outline().Height(28).Hit(hitSnippetShortcut, label)
-				ui.Button(c, m.SnippetShortcutClear).Ghost().Height(28).Disabled(!form.shortcut.Valid() && !form.capturing).Hit(hitSnippetShortcutOff, m.SnippetShortcutClear)
-			})
-		})
-		if form.dialogError != "" {
-			ui.Text(c, form.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(18).MarginSides(15, 0, 0, 0)
-		}
-	})
-	column.DrawOver(func(d *ui.DrawContext) { state.paintSnippetDialogFields(d.Canvas) })
-}
-
-// paintSnippetDialogFields paints the snippet editor's group picker into the
-// slot the body laid out; the shortcut is page buttons.
-func (state *State) paintSnippetDialogFields(canvas *gfx.Canvas) {
-	form := &state.snippets
-	state.paintSnippetGroupField(canvas, form.dialogGroup.Rect())
 }

@@ -158,6 +158,10 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	state.autosaveNotes(canvas)
 	if state.activeSection != sectionSnippets {
 		state.snippets.inline.lastFocus = gfx.ID{}
+		if state.snippets.inline.draft {
+			state.snippets.inline.draft = false
+			state.snippets.inline.loadedValid = false
+		}
 		if state.snippets.inline.dirty {
 			state.flushInlineSnippetSave()
 		}
@@ -2957,8 +2961,6 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareProxyBatchDeleteConfirmDialog(c)
 	case modalXYTransfer:
 		state.declareXYDialog(c)
-	case modalSnippet:
-		state.declareSnippetDialog(c)
 	case modalSnippetDelete:
 		state.declareSnippetDeleteDialog(c)
 	case modalSnippetGroups:

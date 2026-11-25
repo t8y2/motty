@@ -437,15 +437,21 @@ func (state *State) clickSnippetsPage(id gfx.ID) bool {
 	}
 	switch id {
 	case hitSnippetAdd:
-		state.openSnippetDialogWithGroup(-1, form.selectedFolder)
+		state.startInlineSnippetDraft(form.selectedFolder)
 	case hitSnippetGroups:
 		state.openSnippetGroupsManager()
 	case hitSnippetSend:
+		if form.inline.draft {
+			return true
+		}
 		state.commitInlineSnippetPendingGroup()
 		state.sendSnippetFromPage(form.selected, form.sendAt)
-	case hitSnippetEdit:
-		state.openSnippetDialog(form.selected)
 	case hitSnippetRemove:
+		if form.inline.draft {
+			form.inline.draft = false
+			state.syncInlineSnippet(true)
+			return true
+		}
 		state.openSnippetDelete(form.selected)
 	case hitSnippetTreeToggle:
 		bounds := state.catalogSectionBounds()
@@ -484,14 +490,20 @@ func (state *State) clickSnippetsPage(id gfx.ID) bool {
 		state.rebuildSnippetTreeRows()
 		form.syncRowSelection()
 	case hitSnippetInlineRun:
-		if form.selected >= 0 && form.selected < len(form.list) {
+		if form.inline.draft {
+			form.inline.groupPicker.Open = false
+			form.inline.loadedSnap.Run = !form.inline.loadedSnap.Run
+		} else if form.selected >= 0 && form.selected < len(form.list) {
 			form.inline.groupPicker.Open = false
 			form.list[form.selected].Run = !form.list[form.selected].Run
 			form.inline.loadedSnap.Run = form.list[form.selected].Run
 			state.save()
 		}
 	case hitSnippetInlineLines:
-		if form.selected >= 0 && form.selected < len(form.list) {
+		if form.inline.draft {
+			form.inline.groupPicker.Open = false
+			form.inline.loadedSnap.Lines = !form.inline.loadedSnap.Lines
+		} else if form.selected >= 0 && form.selected < len(form.list) {
 			form.inline.groupPicker.Open = false
 			form.list[form.selected].Lines = !form.list[form.selected].Lines
 			form.inline.loadedSnap.Lines = form.list[form.selected].Lines
@@ -503,7 +515,12 @@ func (state *State) clickSnippetsPage(id gfx.ID) bool {
 		form.inline.error = ""
 		state.refreshInlineShortcutLabel()
 	case hitSnippetInlineShortcutOff:
-		if form.selected >= 0 && form.selected < len(form.list) {
+		if form.inline.draft {
+			form.inline.loadedSnap.Shortcut = keymap.Chord{}
+			form.inline.capturing = false
+			form.inline.error = ""
+			state.refreshInlineShortcutLabel()
+		} else if form.selected >= 0 && form.selected < len(form.list) {
 			form.list[form.selected].Shortcut = keymap.Chord{}
 			form.inline.capturing = false
 			form.inline.error = ""
@@ -531,7 +548,7 @@ func (state *State) declareSnippetsWorkspace(c ui.C) {
 	}
 	view.draw = draw
 
-	if len(form.list) == 0 {
+	if len(form.list) == 0 && !form.inline.draft {
 		body := ui.Column(c).Fill().PadSides(12, 18, 0, 18)
 		body.Children(func() {
 			ui.Row(c).MinHeight(58).Gap(10).MarginSides(0, 0, 12, 0).Items(ui.Start).Children(func() {
@@ -549,7 +566,7 @@ func (state *State) declareSnippetsWorkspace(c ui.C) {
 	}
 
 	state.prepareSnippetTree()
-	if !form.inline.loadedValid || form.inline.loadedIndex != form.selected {
+	if !form.inline.draft && (!form.inline.loadedValid || form.inline.loadedIndex != form.selected) {
 		state.syncInlineSnippet(false)
 	}
 	width := form.treeWidth
@@ -670,6 +687,7 @@ func (state *State) snippetTreeChanges() {
 			if e.snippet != form.selected {
 				state.flushInlineSnippetSave()
 			}
+			form.inline.draft = false
 			form.selected = e.snippet
 			form.selectedFolder = form.list[e.snippet].Group
 			form.treeDrawer = false
@@ -785,7 +803,7 @@ func (state *State) chooseSnippetFolderMenu(id gfx.ID) {
 	}
 	switch id {
 	case hitSnippetFolderMenuAdd:
-		state.openSnippetDialogWithGroup(-1, group)
+		state.startInlineSnippetDraft(group)
 	case hitSnippetFolderMenuNewChild:
 		state.openSnippetGroupCreate(group + "/")
 	case hitSnippetFolderMenuRename:
@@ -851,7 +869,7 @@ func (state *State) chooseSnippetBlankMenu(id gfx.ID) {
 	case hitSnippetBlankNewGroup:
 		state.openSnippetGroupCreate("")
 	case hitSnippetBlankNewSnippet:
-		state.openSnippetDialogWithGroup(-1, "")
+		state.startInlineSnippetDraft("")
 	}
 }
 
@@ -861,8 +879,14 @@ func (state *State) declareSnippetInlineEditor(c ui.C, width float32, narrow boo
 	form, m, pal := &state.snippets, state.messages.Tools, state.pal
 	view := &state.sectionBodies.snippets
 	inline := &form.inline
-	if form.selected < 0 || form.selected >= len(form.list) {
-		return
+	var entry *snippet
+	if inline.draft {
+		entry = &inline.loadedSnap
+	} else {
+		if form.selected < 0 || form.selected >= len(form.list) {
+			return
+		}
+		entry = &form.list[form.selected]
 	}
 	focused := c.Canvas().Focused()
 	prevFocus := inline.lastFocus
@@ -870,18 +894,21 @@ func (state *State) declareSnippetInlineEditor(c ui.C, width float32, narrow boo
 	if inline.dirty && (prevFocus == hitSnippetInlineName || prevFocus == hitSnippetInlineCommand) && focused != prevFocus {
 		state.flushInlineSnippetSave()
 	}
-	entry := &form.list[form.selected]
 	condensed := width < 520
 	sendWidth, sendIcon := toolbarButtonLayout(c.Canvas(), m.SnippetSend, iconPlay, iconPlay, condensed)
-	removeWidth, removeIcon := toolbarButtonLayout(c.Canvas(), m.SnippetDelete, 0, iconTrash, condensed)
+	removeLabel := m.SnippetDelete
+	if inline.draft {
+		removeLabel = state.messages.Cancel
+	}
+	removeWidth, removeIcon := toolbarButtonLayout(c.Canvas(), removeLabel, 0, iconTrash, condensed)
 
 	// Editor header bar.
 	ui.Row(c).Height(44).FillWidth().PadSides(6, 16, 6, 12).Gap(8).Items(ui.Center).Children(func() {
 		state.declareNoteToolbarButton(c, hitSnippetTreeToggle, m.SnippetTreeToggle, icons.PanelLeft, false)
 		ui.Text(c, inline.breadcrumb).FontSize(13).Weight(gfx.WeightMedium).Color(pal.muted).Grow(1).Ellipsis()
-		view.send = state.declareButtonSized(c, hitSnippetSend, m.SnippetSend, sendIcon, true, false, true, toolbarFont, condensed).Size(sendWidth, toolbarHeight)
+		view.send = state.declareButtonSized(c, hitSnippetSend, m.SnippetSend, sendIcon, true, false, !inline.draft, toolbarFont, condensed).Size(sendWidth, toolbarHeight)
 		view.send.Shrink(0)
-		state.declareButtonSized(c, hitSnippetRemove, m.SnippetDelete, removeIcon, false, false, true, toolbarFont, condensed).Size(removeWidth, toolbarHeight).Shrink(0)
+		state.declareButtonSized(c, hitSnippetRemove, removeLabel, removeIcon, false, false, true, toolbarFont, condensed).Size(removeWidth, toolbarHeight).Shrink(0)
 	})
 	ui.Divider(c).Height(1).Background(pal.line)
 
@@ -950,9 +977,105 @@ func (state *State) paintSnippetsWorkspace(canvas *gfx.Canvas) {
 	if view.send.Valid() {
 		form.sendAt = gfx.Point{X: view.send.Rect().X, Y: view.send.Rect().Y + toolbarHeight + 4}
 	}
-	if len(form.list) == 0 {
+	if len(form.list) == 0 && !form.inline.draft {
 		state.drawReservedEmptyPage(canvas, view.empty, iconSnippets)
 	}
+}
+
+// startInlineSnippetDraft opens a blank snippet in the inline editor so adding
+// a command uses the same single editing surface as editing an existing one.
+func (state *State) startInlineSnippetDraft(defaultGroup string) {
+	state.flushInlineSnippetSave()
+	form, m := &state.snippets, state.messages.Tools
+	if len(form.list) >= maxSnippets {
+		form.inline.error = m.SnippetErrorTooMany
+		return
+	}
+	group := cleanSnippetGroup(defaultGroup)
+	state.activeSection = sectionSnippets
+	inline := &form.inline
+	inline.draft = true
+	inline.loadedValid = true
+	inline.loadedIndex = -1
+	inline.loadedSnap = snippet{Group: group, Run: true}
+	inline.name = text.Editor{}
+	inline.command = text.Editor{}
+	inline.commandArea = dialogArea{}
+	inline.capturing = false
+	inline.error = ""
+	form.treeDrawer = false
+	state.initInlineGroupPicker(group)
+	state.refreshInlineMeta(inline.loadedSnap)
+	state.pendingFocus = hitSnippetInlineName
+}
+
+// focusInlineSnippet switches to the Snippets page and focuses the inline
+// editor on the snippet at index (used when editing a chip from the command bar).
+func (state *State) focusInlineSnippet(index int) {
+	state.flushInlineSnippetSave()
+	form := &state.snippets
+	if index < 0 || index >= len(form.list) {
+		return
+	}
+	state.activeSection = sectionSnippets
+	form.inline.draft = false
+	form.selected = index
+	form.selectedFolder = form.list[index].Group
+	form.treeDrawer = false
+	state.snippetTreeExpandAncestors(form.list[index].Group)
+	state.rebuildSnippetTreeRows()
+	form.syncRowSelection()
+	state.syncInlineSnippet(true)
+	state.pendingFocus = hitSnippetInlineName
+}
+
+func (state *State) snippetTreeRowForTarget(id gfx.ID) int {
+	if id.IsZero() {
+		return -1
+	}
+	for i := range state.snippets.treeRows {
+		if state.snippets.tree.RowID(i) == id {
+			return i
+		}
+	}
+	return -1
+}
+
+func (state *State) snippetTreeRowIDForSnippet(index int) gfx.ID {
+	for i, row := range state.snippets.treeRows {
+		if !row.folder && row.snippet == index {
+			return state.snippets.tree.RowID(i)
+		}
+	}
+	return gfx.ID{}
+}
+
+// snippetTreeKeyEvent handles Alt+Up/Alt+Down on a focused snippet row in the
+// directory tree, preserving keyboard reordering alongside drag-and-drop.
+func (state *State) snippetTreeKeyEvent(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	form := &state.snippets
+	if state.modal != modalNone || state.activeSection != sectionSnippets || form.inline.capturing || event.Release {
+		return gfx.EventResult{}, false
+	}
+	if event.Modifiers != gfx.ModifierAlt || (event.Key != gfx.KeyUp && event.Key != gfx.KeyDown) {
+		return gfx.EventResult{}, false
+	}
+	rowIdx := state.snippetTreeRowForTarget(event.Target)
+	if rowIdx < 0 || rowIdx >= len(form.treeRows) {
+		return gfx.EventResult{}, false
+	}
+	row := form.treeRows[rowIdx]
+	if row.folder || strings.TrimSpace(form.treeSearch.String()) != "" {
+		return gfx.EventResult{Handled: true}, true
+	}
+	dir := -1
+	if event.Key == gfx.KeyDown {
+		dir = 1
+	}
+	if !state.moveSnippet(row.snippet, dir) {
+		return gfx.EventResult{Handled: true}, true
+	}
+	return gfx.EventResult{Handled: true, Repaint: true, Focus: state.snippetTreeRowIDForSnippet(form.selected)}, true
 }
 
 func snippetsSameContent(a, b snippet) bool {
@@ -965,6 +1088,11 @@ func snippetsSameContent(a, b snippet) bool {
 func (state *State) syncInlineSnippet(force bool) {
 	form := &state.snippets
 	inline := &form.inline
+	if inline.draft {
+		state.refreshInlineGroupOptions(inline.loadedSnap.Group)
+		state.refreshInlineMeta(inline.loadedSnap)
+		return
+	}
 	if len(form.list) == 0 || form.selected < 0 || form.selected >= len(form.list) {
 		inline.loadedValid = false
 		inline.capturing = false
@@ -1009,6 +1137,14 @@ func (state *State) refreshInlineShortcutLabel() {
 	m := state.messages.Tools
 	if inline.capturing {
 		inline.shortcutLbl = m.SnippetShortcutRecording
+		return
+	}
+	if inline.draft {
+		if inline.loadedSnap.Shortcut.Valid() {
+			inline.shortcutLbl = chordLabel(inline.loadedSnap.Shortcut)
+			return
+		}
+		inline.shortcutLbl = m.SnippetShortcutNone
 		return
 	}
 	if form.selected >= 0 && form.selected < len(form.list) && form.list[form.selected].Shortcut.Valid() {
@@ -1074,10 +1210,20 @@ func (inline *snippetInlineEditor) abandonOther(target gfx.ID) {
 func (state *State) applyInlineSnippetEdits() {
 	form, m := &state.snippets, state.messages.Tools
 	inline := &form.inline
-	if form.selected < 0 || form.selected >= len(form.list) || inline.composing() {
+	if inline.composing() {
 		return
 	}
-	current := form.list[form.selected]
+	if !inline.draft && (form.selected < 0 || form.selected >= len(form.list)) {
+		return
+	}
+	var current snippet
+	order := form.selected
+	if inline.draft {
+		current = inline.loadedSnap
+		order = len(form.list)
+	} else {
+		current = form.list[form.selected]
+	}
 	candidate := current
 	candidate.Name = cleanSnippetText(inline.name.String(), maxSnippetName)
 	candidate.Command = sanitizeSnippetCommand(inline.command.String())
@@ -1088,11 +1234,29 @@ func (state *State) applyInlineSnippetEdits() {
 	case strings.TrimSpace(candidate.Command) == "":
 		inline.error = m.SnippetErrorCommand
 		return
-	case len(candidate.Command) > maxSnippetCommand || !snippetRecordFits(candidate, form.selected):
+	case len(candidate.Command) > maxSnippetCommand || !snippetRecordFits(candidate, order):
 		inline.error = m.SnippetErrorTooLong
 		return
 	}
 	inline.error = ""
+	if inline.draft {
+		if len(form.list) >= maxSnippets {
+			inline.error = m.SnippetErrorTooMany
+			return
+		}
+		form.list = append(form.list, candidate)
+		form.selected = len(form.list) - 1
+		form.selectedFolder = candidate.Group
+		inline.draft = false
+		inline.loadedIndex = form.selected
+		inline.loadedSnap = candidate
+		form.showSnippet(form.selected)
+		state.snippetTreeExpandAncestors(candidate.Group)
+		state.refreshSnippets()
+		inline.dirty = true
+		state.scheduleInlineSnippetSave()
+		return
+	}
 	if snippetsSameContent(current, candidate) {
 		return
 	}
@@ -1101,6 +1265,13 @@ func (state *State) applyInlineSnippetEdits() {
 	state.refreshSnippets()
 	inline.dirty = true
 	state.scheduleInlineSnippetSave()
+}
+
+func (state *State) inlineSnippetSaveDelay() time.Duration {
+	if delay := state.snippets.inline.saveDelay; delay > 0 {
+		return delay
+	}
+	return snippetInlineSaveDelay
 }
 
 // scheduleInlineSnippetSave writes inline editor text edits once rapid typing
@@ -1113,7 +1284,7 @@ func (state *State) scheduleInlineSnippetSave() {
 	}
 	inline.saveSeq++
 	seq := inline.saveSeq
-	inline.saveTimer = time.AfterFunc(snippetInlineSaveDelay, func() {
+	inline.saveTimer = time.AfterFunc(state.inlineSnippetSaveDelay(), func() {
 		state.aiPost(func(state *State) {
 			if state.snippets.inline.saveSeq != seq {
 				return
@@ -1166,10 +1337,16 @@ func (state *State) commitInlineSnippetPendingGroup() {
 func (state *State) applyInlineSnippetGroup() {
 	form := &state.snippets
 	inline := &form.inline
+	nextGroup := cleanSnippetGroup(inline.groupPicker.Value())
+	if inline.draft {
+		inline.loadedSnap.Group = nextGroup
+		form.selectedFolder = nextGroup
+		state.refreshInlineMeta(inline.loadedSnap)
+		return
+	}
 	if form.selected < 0 || form.selected >= len(form.list) {
 		return
 	}
-	nextGroup := cleanSnippetGroup(inline.groupPicker.Value())
 	if sameSnippetGroup(form.list[form.selected].Group, nextGroup) && form.list[form.selected].Group == nextGroup {
 		return
 	}
@@ -1188,7 +1365,7 @@ func (state *State) captureInlineSnippetShortcut(event gfx.KeyEvent, chord keyma
 	if event.Repeat {
 		return gfx.EventResult{Handled: true}
 	}
-	if form.selected < 0 || form.selected >= len(form.list) {
+	if !inline.draft && (form.selected < 0 || form.selected >= len(form.list)) {
 		inline.capturing = false
 		return result
 	}
@@ -1196,8 +1373,19 @@ func (state *State) captureInlineSnippetShortcut(event gfx.KeyEvent, chord keyma
 		inline.error = m.Tools.SnippetShortcutInvalid
 		return result
 	}
-	if owner := state.chordOwner(chord, form.selected); owner != "" {
+	skip := form.selected
+	if inline.draft {
+		skip = -1
+	}
+	if owner := state.chordOwner(chord, skip); owner != "" {
 		inline.error = fmt.Sprintf(m.ShortcutsConflictFmt, owner)
+		return result
+	}
+	if inline.draft {
+		inline.loadedSnap.Shortcut = chord
+		inline.capturing = false
+		inline.error = ""
+		state.refreshInlineShortcutLabel()
 		return result
 	}
 	form.list[form.selected].Shortcut = chord

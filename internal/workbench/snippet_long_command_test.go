@@ -22,12 +22,13 @@ func TestLongSnippetCommandSurvivesSaveAndReload(t *testing.T) {
 	options := freshOptions(t)
 	state := newTestState(t, options)
 	command := longSnippetCommand()
-	state.openSnippetDialog(-1)
-	state.snippets.name.Insert("long")
-	state.snippets.command.Insert(command)
-	state.Click(hitSnippetSubmit)
-	if state.modal != modalNone {
-		t.Fatalf("save failed: %q", state.snippets.dialogError)
+	state.startInlineSnippetDraft("")
+	state.snippets.inline.name.Insert("long")
+	state.snippets.inline.command.Insert(command)
+	state.applyInlineSnippetEdits()
+	state.flushInlineSnippetSave()
+	if state.snippets.inline.error != "" {
+		t.Fatalf("save failed: %q", state.snippets.inline.error)
 	}
 	if len(state.snippets.list) != 1 || state.snippets.list[0].Command != command {
 		t.Fatalf("saved command has %d bytes, want %d", commandLength(state.snippets.list), len(command))
@@ -38,8 +39,8 @@ func TestLongSnippetCommandSurvivesSaveAndReload(t *testing.T) {
 		t.Fatalf("restored command has %d bytes, want %d", commandLength(loaded.snippets.list), len(command))
 	}
 
-	loaded.openSnippetDialog(0)
-	if got := loaded.snippets.command.String(); got != command {
+	loaded.focusInlineSnippet(0)
+	if got := loaded.snippets.inline.command.String(); got != command {
 		t.Fatalf("the editor reopened with %d bytes, want %d", len(got), len(command))
 	}
 }
@@ -57,13 +58,15 @@ func TestLongSnippetCommandIsSentWhole(t *testing.T) {
 	world, options := newSharingWorld(t)
 	state := newTestState(t, options)
 	command := longSnippetCommand()
-	state.openSnippetDialog(-1)
-	state.snippets.name.Insert("long send")
-	state.snippets.command.Insert(command)
-	state.Click(hitSnippetSubmit)
-	if state.modal != modalNone {
-		t.Fatalf("save failed: %q", state.snippets.dialogError)
+	state.startInlineSnippetDraft("")
+	state.snippets.inline.name.Insert("long send")
+	state.snippets.inline.command.Insert(command)
+	state.applyInlineSnippetEdits()
+	state.flushInlineSnippetSave()
+	if state.snippets.inline.error != "" {
+		t.Fatalf("save failed: %q", state.snippets.inline.error)
 	}
+	state.activeSection = sectionHosts
 	world.connectFirst(t, state)
 	shell := world.conns[0].shell(t)
 	if !state.sendSnippetTo(0, &state.sessions[0]) {
@@ -81,12 +84,13 @@ func TestSnippetCommandNearOneMegabytePersists(t *testing.T) {
 	options := freshOptions(t)
 	state := newTestState(t, options)
 	command := strings.Repeat("echo line\n", 90000)
-	state.openSnippetDialog(-1)
-	state.snippets.name.Insert("big script")
-	state.snippets.command.Insert(command)
-	state.Click(hitSnippetSubmit)
-	if state.modal != modalNone {
-		t.Fatalf("save failed: %q", state.snippets.dialogError)
+	state.startInlineSnippetDraft("")
+	state.snippets.inline.name.Insert("big script")
+	state.snippets.inline.command.Insert(command)
+	state.applyInlineSnippetEdits()
+	state.flushInlineSnippetSave()
+	if state.snippets.inline.error != "" {
+		t.Fatalf("save failed: %q", state.snippets.inline.error)
 	}
 	if len(state.snippets.list) != 1 || state.snippets.list[0].Command != command {
 		t.Fatalf("saved command has %d bytes, want %d", commandLength(state.snippets.list), len(command))
@@ -98,42 +102,42 @@ func TestSnippetCommandNearOneMegabytePersists(t *testing.T) {
 }
 
 // A command can be under the 1 MiB text limit and still not fit one JSON
-// record: HTML-heavy text expands when the state is encoded. The dialog must
-// refuse that too rather than let the store reject it after the dialog closed.
+// record: HTML-heavy text expands when the state is encoded. The editor must
+// refuse that too rather than let the store reject it.
 func TestSnippetCommandTooLargeForItsRecordIsRefused(t *testing.T) {
 	state := newTestState(t, freshOptions(t))
 	command := strings.Repeat("<", 300000)
 	if len(command) >= maxSnippetCommand {
 		t.Fatalf("the test command is %d bytes, not under the text limit", len(command))
 	}
-	state.openSnippetDialog(-1)
-	state.snippets.name.Insert("too wide")
-	state.snippets.command.Insert(command)
-	state.Click(hitSnippetSubmit)
-	if state.modal != modalSnippet || len(state.snippets.list) != 0 {
-		t.Fatalf("the command was saved: modal=%d snippets=%d", state.modal, len(state.snippets.list))
+	state.startInlineSnippetDraft("")
+	state.snippets.inline.name.Insert("too wide")
+	state.snippets.inline.command.Insert(command)
+	state.applyInlineSnippetEdits()
+	if !state.snippets.inline.draft || len(state.snippets.list) != 0 {
+		t.Fatalf("the command was saved: draft=%v snippets=%d", state.snippets.inline.draft, len(state.snippets.list))
 	}
-	if state.snippets.dialogError != state.messages.Tools.SnippetErrorTooLong {
-		t.Fatalf("dialog error = %q", state.snippets.dialogError)
+	if state.snippets.inline.error != state.messages.Tools.SnippetErrorTooLong {
+		t.Fatalf("inline error = %q", state.snippets.inline.error)
 	}
 }
 
-// A command too large for one state record is refused in the dialog, with the
+// A command too large for one state record is refused in the editor, with the
 // text still there to shorten: it must never be cut down and saved as if whole.
 func TestOversizedSnippetCommandStaysInTheDialog(t *testing.T) {
 	state := newTestState(t, freshOptions(t))
 	command := strings.Repeat("a", maxSnippetCommand+1)
-	state.openSnippetDialog(-1)
-	state.snippets.name.Insert("too long")
-	state.snippets.command.Insert(command)
-	state.Click(hitSnippetSubmit)
-	if state.modal != modalSnippet || len(state.snippets.list) != 0 {
-		t.Fatalf("the oversized command was saved: modal=%d snippets=%d", state.modal, len(state.snippets.list))
+	state.startInlineSnippetDraft("")
+	state.snippets.inline.name.Insert("too long")
+	state.snippets.inline.command.Insert(command)
+	state.applyInlineSnippetEdits()
+	if !state.snippets.inline.draft || len(state.snippets.list) != 0 {
+		t.Fatalf("the oversized command was saved: draft=%v snippets=%d", state.snippets.inline.draft, len(state.snippets.list))
 	}
-	if state.snippets.dialogError != state.messages.Tools.SnippetErrorTooLong {
-		t.Fatalf("dialog error = %q", state.snippets.dialogError)
+	if state.snippets.inline.error != state.messages.Tools.SnippetErrorTooLong {
+		t.Fatalf("inline error = %q", state.snippets.inline.error)
 	}
-	if got := state.snippets.command.String(); got != command {
+	if got := state.snippets.inline.command.String(); got != command {
 		t.Fatalf("the editor kept %d bytes, want %d", len(got), len(command))
 	}
 }

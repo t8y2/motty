@@ -442,9 +442,6 @@ func (state *State) Shortcut(event gfx.KeyEvent) (outcome gfx.EventResult) {
 		return result
 	}
 	chord, ok := keymap.FromEvent(event)
-	if state.modal == modalSnippet && state.snippets.capturing {
-		return state.captureSnippetShortcut(event, chord, ok)
-	}
 	if state.modal == modalNone && state.activeSection == sectionSnippets && state.snippets.inline.capturing {
 		return state.captureInlineSnippetShortcut(event, chord, ok)
 	}

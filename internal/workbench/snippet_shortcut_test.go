@@ -21,26 +21,27 @@ func TestASnippetShortcutSendsItFromTheTerminalAndIsKeptOnThisDevice(t *testing.
 
 	state.Click(hitSnippets)
 	state.Click(hitSnippetAdd)
-	typeInto(state, hitSnippetName, "Restart nginx")
-	typeInto(state, hitSnippetCommand, "systemctl restart nginx")
-	state.Click(hitSnippetShortcut)
-	if !state.snippets.capturing {
+	typeInto(state, hitSnippetInlineName, "Restart nginx")
+	typeInto(state, hitSnippetInlineCommand, "systemctl restart nginx")
+	state.Click(hitSnippetInlineShortcut)
+	if !state.snippets.inline.capturing {
 		t.Fatal("the shortcut button did not start waiting for a chord")
 	}
 	pressChord(state, keymap.Chord{Modifiers: gfx.ModifierControl, Char: 'r'})
-	if !state.snippets.capturing || state.snippets.dialogError != state.messages.Tools.SnippetShortcutInvalid {
-		t.Fatalf("Ctrl+R alone belongs to the terminal: capturing=%v error=%q", state.snippets.capturing, state.snippets.dialogError)
+	if !state.snippets.inline.capturing || state.snippets.inline.error != state.messages.Tools.SnippetShortcutInvalid {
+		t.Fatalf("Ctrl+R alone belongs to the terminal: capturing=%v error=%q", state.snippets.inline.capturing, state.snippets.inline.error)
 	}
 	taken := state.shortcuts.chords.Chord(shortcutFind)
 	pressChord(state, taken)
-	if !state.snippets.capturing || state.snippets.dialogError == "" {
-		t.Fatalf("a built-in chord was taken: capturing=%v error=%q", state.snippets.capturing, state.snippets.dialogError)
+	if !state.snippets.inline.capturing || state.snippets.inline.error == "" {
+		t.Fatalf("a built-in chord was taken: capturing=%v error=%q", state.snippets.inline.capturing, state.snippets.inline.error)
 	}
 	pressChord(state, chord)
-	if state.snippets.capturing || state.snippets.shortcut != chord || state.snippets.dialogError != "" {
-		t.Fatalf("capturing=%v shortcut=%+v error=%q", state.snippets.capturing, state.snippets.shortcut, state.snippets.dialogError)
+	if state.snippets.inline.capturing || state.snippets.inline.loadedSnap.Shortcut != chord || state.snippets.inline.error != "" {
+		t.Fatalf("capturing=%v shortcut=%+v error=%q", state.snippets.inline.capturing, state.snippets.inline.loadedSnap.Shortcut, state.snippets.inline.error)
 	}
-	state.Click(hitSnippetSubmit)
+	state.applyInlineSnippetEdits()
+	state.flushInlineSnippetSave()
 	if got := state.snippets.list[0].Shortcut; got != chord {
 		t.Fatalf("saved shortcut = %+v", got)
 	}
@@ -70,9 +71,7 @@ func TestASnippetShortcutSendsItFromTheTerminalAndIsKeptOnThisDevice(t *testing.
 		t.Fatalf("restored snippets = %+v", restarted.snippets.list)
 	}
 	state.Click(hitSnippets)
-	state.Click(hitSnippetEdit)
-	state.Click(hitSnippetShortcutOff)
-	state.Click(hitSnippetSubmit)
+	state.Click(hitSnippetInlineShortcutOff)
 	if got := pressChord(state, chord); got.Handled {
 		t.Fatal("a cleared shortcut still fired")
 	}
@@ -87,11 +86,11 @@ func TestAChordTwoSnippetsWantGoesToTheFirst(t *testing.T) {
 	chord := keymap.Chord{Modifiers: gfx.ModifierMeta | gfx.ModifierShift, Char: '2'}
 	state.snippets.list = []snippet{{Name: "a", Command: "ls", Shortcut: chord}, {Name: "b", Command: "pwd"}}
 
-	state.openSnippetDialog(1)
-	state.Click(hitSnippetShortcut)
+	state.focusInlineSnippet(1)
+	state.Click(hitSnippetInlineShortcut)
 	pressChord(state, chord)
-	if !state.snippets.capturing || state.snippets.dialogError == "" || state.snippets.shortcut.Valid() {
-		t.Fatalf("a chord of snippet a was given to b: %+v", state.snippets)
+	if !state.snippets.inline.capturing || state.snippets.inline.error == "" || state.snippets.list[1].Shortcut.Valid() {
+		t.Fatalf("a chord of snippet a was given to b: %+v", state.snippets.inline)
 	}
 }
 

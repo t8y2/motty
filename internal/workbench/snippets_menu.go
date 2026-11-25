@@ -98,7 +98,9 @@ func (state *State) snippetActionRows(rows *menuRows, moves bool) {
 		rows.add(components.ContextMenuItem{ID: hitSnippetMenuDown, Label: m.SnippetMoveDown, Icon: icon(iconChevronDown), Disabled: state.snippetNeighbor(state.snippetMenu.index, 1) < 0})
 	}
 	rows.separate()
-	rows.add(components.ContextMenuItem{ID: hitSnippetMenuEdit, Label: m.SnippetEdit, Icon: icon(iconPencil)})
+	if !moves {
+		rows.add(components.ContextMenuItem{ID: hitSnippetMenuEdit, Label: m.SnippetEdit, Icon: icon(iconPencil)})
+	}
 	rows.add(components.ContextMenuItem{ID: hitSnippetMenuDelete, Label: m.SnippetDelete, Icon: icon(iconTrash), Variant: components.ContextMenuItemDestructive})
 }
 
@@ -122,7 +124,7 @@ func (state *State) chooseSnippetMenu(id gfx.ID) {
 			state.sendSnippetFromPage(index, menu.at)
 		}
 	case hitSnippetMenuEdit:
-		state.openSnippetDialog(index)
+		state.focusInlineSnippet(index)
 	case hitSnippetMenuUp:
 		state.moveSnippet(index, -1)
 	case hitSnippetMenuDown:

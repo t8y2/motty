@@ -395,19 +395,20 @@ func TestSnippetsAreAddedEditedSentAndKept(t *testing.T) {
 
 	state.Click(hitSnippets)
 	state.Click(hitSnippetAdd)
-	state.Click(hitSnippetSubmit)
-	if state.modal != modalSnippet || state.snippets.dialogError != state.messages.Tools.SnippetErrorName {
-		t.Fatalf("modal %d, error %q", state.modal, state.snippets.dialogError)
+	state.applyInlineSnippetEdits()
+	if !state.snippets.inline.draft || state.snippets.inline.error != state.messages.Tools.SnippetErrorName {
+		t.Fatalf("draft %v, error %q", state.snippets.inline.draft, state.snippets.inline.error)
 	}
-	typeInto(state, hitSnippetName, "Restart nginx")
-	state.Click(hitSnippetSubmit)
-	if state.snippets.dialogError != state.messages.Tools.SnippetErrorCommand {
-		t.Fatalf("error = %q", state.snippets.dialogError)
+	typeInto(state, hitSnippetInlineName, "Restart nginx")
+	state.applyInlineSnippetEdits()
+	if state.snippets.inline.error != state.messages.Tools.SnippetErrorCommand {
+		t.Fatalf("error = %q", state.snippets.inline.error)
 	}
-	typeInto(state, hitSnippetCommand, "systemctl restart nginx")
-	state.Click(hitSnippetSubmit)
-	if state.modal != modalNone || len(state.snippets.list) != 1 {
-		t.Fatalf("modal %d, snippets %+v", state.modal, state.snippets.list)
+	typeInto(state, hitSnippetInlineCommand, "systemctl restart nginx")
+	state.applyInlineSnippetEdits()
+	state.flushInlineSnippetSave()
+	if state.snippets.inline.draft || len(state.snippets.list) != 1 {
+		t.Fatalf("draft %v, snippets %+v", state.snippets.inline.draft, state.snippets.list)
 	}
 	if got := state.snippets.list[0]; got.Name != "Restart nginx" || got.Command != "systemctl restart nginx" || !got.Run {
 		t.Fatalf("snippet = %+v", got)
@@ -433,13 +434,11 @@ func TestSnippetsAreAddedEditedSentAndKept(t *testing.T) {
 		t.Fatalf("status = %q", state.status)
 	}
 
-	// Edited without Enter, it only types.
-	state.Click(hitSnippetEdit)
-	if state.modal != modalSnippet || state.snippets.name.String() != "Restart nginx" {
-		t.Fatalf("editing opened modal %d with name %q", state.modal, state.snippets.name.String())
+	// Edited inline without Enter, it only types.
+	if state.snippets.inline.name.String() != "Restart nginx" {
+		t.Fatalf("inline editor name = %q", state.snippets.inline.name.String())
 	}
-	state.Click(hitSnippetRun)
-	state.Click(hitSnippetSubmit)
+	state.Click(hitSnippetInlineRun)
 	state.Click(hitSnippetSendList.At(0))
 	if got := shell.typed(); got != "systemctl restart nginx\rsystemctl restart nginx" {
 		t.Fatalf("the shell heard %q", got)
