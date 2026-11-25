@@ -399,6 +399,68 @@ func TestInstallingAsksBeforeDroppingOpenSessions(t *testing.T) {
 	waitUpdate(t, state, func() bool { return quits == 1 })
 }
 
+// A tab whose connection already ended has nothing left to disconnect, so a
+// restart loses only the tab's place in the workspace, not a live session. The
+// install must not stop to ask about those tabs.
+func TestInstallingDoesNotAskAboutTabsWhoseConnectionsHaveEnded(t *testing.T) {
+	updater, quits, opened := &fakeUpdater{}, 0, []string(nil)
+	state := updateWindow(t, updater, &quits, &opened)
+	ended := newTerminal(80, 24)
+	ended.ended = true
+	state.sessions = []Session{
+		{ID: 1, Title: "restored", phase: sshconn.PhaseClosed, restored: true},
+		{ID: 2, Title: "ended", phase: sshconn.PhaseClosed, term: ended},
+	}
+	state.Click(hitUpdateInstall)
+	waitUpdate(t, state, func() bool { return quits == 1 })
+	if updater.launches() != 1 || state.update.install.phase != installRestarting {
+		t.Fatalf("launches %d, phase %d", updater.launches(), state.update.install.phase)
+	}
+}
+
+// The prompt is about what the restart would end, so it names only the sessions
+// that are still connecting or connected; an ended tab beside them is not one.
+func TestInstallingNamesOnlyTheSessionsTheRestartWouldEnd(t *testing.T) {
+	updater, quits, opened := &fakeUpdater{}, 0, []string(nil)
+	state := updateWindow(t, updater, &quits, &opened)
+	state.sessions = []Session{
+		{ID: 1, Title: "restored", phase: sshconn.PhaseClosed, restored: true},
+		{ID: 2, Title: "connected", phase: sshconn.PhaseConnected},
+		{ID: 3, Title: "connecting", phase: sshconn.PhaseConnecting},
+	}
+	state.Click(hitUpdateInstall)
+	if state.modal != modalForm || !strings.HasPrefix(state.form.description, "2 ") || updater.launches() != 0 {
+		t.Fatalf("question = %q, modal %d, launches %d", state.form.description, state.modal, updater.launches())
+	}
+}
+
+// A file panel can keep a session's connection after its shell ended; a
+// restart ends that panel's transfers, so the prompt still names the session.
+func TestInstallingCountsASessionItsFilePanelKeepsAlive(t *testing.T) {
+	updater, quits, opened := &fakeUpdater{}, 0, []string(nil)
+	state := updateWindow(t, updater, &quits, &opened)
+	ended := newTerminal(80, 24)
+	ended.ended, ended.live = true, true
+	state.sessions = []Session{
+		{ID: 1, Title: "files", phase: sshconn.PhaseConnected, term: ended, keptAfterShell: true},
+	}
+	state.Click(hitUpdateInstall)
+	if state.modal != modalForm || !strings.HasPrefix(state.form.description, "1 ") {
+		t.Fatalf("question = %q, modal %d", state.form.description, state.modal)
+	}
+}
+
+func TestTheInstallPromptCountsLiveSessionsAcrossWindows(t *testing.T) {
+	group := NewGroup()
+	group.members = []*State{
+		{sessions: []Session{{phase: sshconn.PhaseConnected}}},
+		{sessions: []Session{{phase: sshconn.PhaseClosed, restored: true}}},
+	}
+	if count := group.liveSessionCount(); count != 1 {
+		t.Fatalf("live sessions = %d, want 1", count)
+	}
+}
+
 func TestAnUpdateThatDidNotFinishIsReportedOnTheNextStart(t *testing.T) {
 	_, options := newWorld(t)
 	options.Invalidate = func() {}
