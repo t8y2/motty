@@ -1090,9 +1090,7 @@ func (state *State) apply(session *Session, status sshconn.Status) {
 		}
 		// After the connected line: a saved or failed save is what the user needs to read.
 		state.rememberSecret(session)
-		if session.ID == state.activeSessionID {
-			state.ensureContextSFTP()
-		}
+		state.ensureSessionContextSFTP(session)
 	case sshconn.PhaseClosed:
 		session.closeSSHBrowser()
 		session.stopRemoteLogs()
