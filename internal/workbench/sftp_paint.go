@@ -166,13 +166,13 @@ func (state *State) declareSFTPPanel(c ui.C) {
 		headerTools = append(headerTools, barTool{id: id, icon: glyph, hint: hint, disabled: disabled, style: toolStyle})
 	}
 	if local {
-		addHeader(hitSFTPNewFile, iconFile, messages.SFTPNewFile, view.localBusy)
-		addHeader(hitSFTPNewDirectory, iconFolderPlus, messages.SFTPNewDirectory, view.localBusy)
+		addHeader(hitSFTPNewFile, iconSFTPNewFile, messages.SFTPNewFile, view.localBusy)
+		addHeader(hitSFTPNewDirectory, iconSFTPNewDirectory, messages.SFTPNewDirectory, view.localBusy)
 	} else {
-		addHeader(hitSFTPUpload, iconUpload, messages.SFTPUpload, view.busy)
-		addHeader(hitSFTPUploadDirectory, iconFolderUp, messages.SFTPUploadDirectory, view.busy)
-		addHeader(hitSFTPNewFile, iconFile, messages.SFTPNewFile, view.busy)
-		addHeader(hitSFTPNewDirectory, iconFolderPlus, messages.SFTPNewDirectory, view.busy)
+		addHeader(hitSFTPUpload, iconSFTPUpload, messages.SFTPUpload, view.busy)
+		addHeader(hitSFTPUploadDirectory, iconSFTPUploadDirectory, messages.SFTPUploadDirectory, view.busy)
+		addHeader(hitSFTPNewFile, iconSFTPNewFile, messages.SFTPNewFile, view.busy)
+		addHeader(hitSFTPNewDirectory, iconSFTPNewDirectory, messages.SFTPNewDirectory, view.busy)
 		addHeader(hitSFTPNewLink, iconLink, messages.Tools.TipNewLink, view.busy)
 	}
 	if !view.localOnly {
@@ -253,7 +253,7 @@ func (state *State) declareSFTPPanel(c ui.C) {
 		// fit. The bookmark controls close the row on the right: the list of the
 		// folders kept, and a star for this one.
 		ui.Row(c).Height(sftpButton).Shrink(0).Gap(4).Items(ui.Center).MarginSides(6, 0, 0, 0).Children(func() {
-			icon(sftpButton, hitSFTPUp, iconArrowUp, messages.SFTPUp, !local && view.busy || folder.path == "/" || folder.path == "", iconButtonQuiet)
+			icon(sftpButton, hitSFTPUp, iconSFTPUp, messages.SFTPUp, !local && view.busy || folder.path == "/" || folder.path == "", iconButtonQuiet)
 			height := float32(24)
 			if state.sftpPathVisible(folder) {
 				height = sftpButton
@@ -383,7 +383,7 @@ func (state *State) declareSFTPPanel(c ui.C) {
 					if view.localOnly {
 						add(hitSFTPInsertPath, iconTerminal, messages.SFTPInsertPath, session.term == nil || session.term.shell == nil)
 					} else if local {
-						add(hitSFTPSend, iconUpload, messages.Tools.SendToServer, false)
+						add(hitSFTPSend, iconSFTPUpload, messages.Tools.SendToServer, false)
 					} else {
 						add(hitSFTPDownload, iconDownload, messages.SFTPDownload, false)
 						if view.lfolder.path != "" {

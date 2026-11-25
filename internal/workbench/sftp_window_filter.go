@@ -178,13 +178,13 @@ func (w *sftpWindow) headerMenuRows(side int, paneWidth float32) menuRows {
 		ID:    sftpWindowActions[side].At(sftpWindowActionIndex(hitSFTPCalculateDirectorySize)),
 		Label: m.SFTPWindow.CalculateDirectorySize, Icon: lucideIcons[iconInfo], Disabled: folder.path == "" || !local && w.view.openFiles == nil,
 	})
-	rows.add(components.ContextMenuItem{ID: sftpWindowNewFile[side], Label: m.SFTPNewFile, Icon: lucideIcons[iconFile], Disabled: busy})
-	rows.add(components.ContextMenuItem{ID: sftpWindowNewFolder[side], Label: m.SFTPNewDirectory, Icon: lucideIcons[iconFolderPlus], Disabled: busy})
+	rows.add(components.ContextMenuItem{ID: sftpWindowNewFile[side], Label: m.SFTPNewFile, Icon: lucideIcons[iconSFTPNewFile], Disabled: busy})
+	rows.add(components.ContextMenuItem{ID: sftpWindowNewFolder[side], Label: m.SFTPNewDirectory, Icon: lucideIcons[iconSFTPNewDirectory], Disabled: busy})
 	if !local {
 		rows.add(components.ContextMenuItem{ID: hitSFTPNewLink, Label: tools.TipNewLink, Icon: lucideIcons[iconLink], Disabled: busy})
 		narrow := paneWidth < 400
 		if narrow {
-			rows.add(components.ContextMenuItem{ID: hitSFTPWindowUpload, Label: m.SFTPWindow.Upload, Icon: lucideIcons[iconUpload], Disabled: !w.canTransfer(true)})
+			rows.add(components.ContextMenuItem{ID: hitSFTPWindowUpload, Label: m.SFTPWindow.Upload, Icon: lucideIcons[iconSFTPUpload], Disabled: !w.canTransfer(true)})
 			rows.add(components.ContextMenuItem{ID: hitSFTPWindowDownload, Label: m.SFTPWindow.Download, Icon: lucideIcons[iconDownload], Disabled: !w.canTransfer(false)})
 		}
 	}

@@ -570,11 +570,11 @@ func (w *sftpWindow) declarePane(c ui.C, s *sftpWindowScratch) {
 			}
 			icon(sftpWindowTreeToggle[sideIndex(local)], iconDirectoryTree, treeHint, treeDisabled, treeStyle)
 			if !local && bounds.Width >= 420 {
-				icon(hitSFTPWindowUpload, iconUpload, m.SFTPWindow.Upload, !w.canTransfer(true), iconButtonQuiet)
+				icon(hitSFTPWindowUpload, iconSFTPUpload, m.SFTPWindow.Upload, !w.canTransfer(true), iconButtonQuiet)
 				icon(hitSFTPWindowDownload, iconDownload, m.SFTPWindow.Download, !w.canTransfer(false), iconButtonQuiet)
 			}
 			if local || bounds.Width >= 340 {
-				icon(sftpWindowUp[sideIndex(local)], iconArrowUp, m.SFTPUp, folder.path == "" || !local && (w.view.busy || !w.connected()), iconButtonQuiet)
+				icon(sftpWindowUp[sideIndex(local)], iconSFTPUp, m.SFTPUp, folder.path == "" || !local && (w.view.busy || !w.connected()), iconButtonQuiet)
 				icon(sftpWindowRefresh[sideIndex(local)], iconRefresh, m.SFTPRefresh, !local && (w.view.busy || !w.connected()), iconButtonQuiet)
 			}
 			if folder.showHidden {
@@ -918,7 +918,7 @@ func (w *sftpWindow) paintDrag(canvas *gfx.Canvas) {
 		defer canvas.Unclip()
 		label, glyph := w.owner.messages.SFTPWindow.DropDownloadHint, uint8(iconDownload)
 		if w.drag.fromLocal {
-			label, glyph = w.owner.messages.SFTPWindow.DropUploadHint, iconUpload
+			label, glyph = w.owner.messages.SFTPWindow.DropUploadHint, iconSFTPUpload
 		}
 		w.owner.paintSFTPTransferDrop(canvas, bounds, label, target, glyph)
 		return
@@ -948,7 +948,7 @@ func (w *sftpWindow) paintForeignDrag(canvas *gfx.Canvas) {
 		bounds.Y += float32(w.foreign.row)*sftpRowHeight - w.ui.offset[side]
 		bounds.Height = sftpRowHeight
 	}
-	label, glyph := w.owner.messages.SFTPWindow.DropUploadHint, uint8(iconUpload)
+	label, glyph := w.owner.messages.SFTPWindow.DropUploadHint, uint8(iconSFTPUpload)
 	switch {
 	case !w.foreign.fromLocal && w.foreign.local:
 		label, glyph = w.owner.messages.SFTPWindow.DropDownloadHint, iconDownload
