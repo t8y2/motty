@@ -432,15 +432,19 @@ func (state *State) aiAdoptKeys() {
 	}
 }
 
-// aiKeyedProvider returns provider with its API key in memory. When the key is
-// in a vault that is locked it asks for the master password, runs retry once it
-// has been given, and reports false: nothing may be sent without the key.
+// aiKeyedProvider returns provider with its API key and proxy password in
+// memory. When a secret is in a vault that is locked it asks for the master
+// password, runs retry once it has been given, and reports false: nothing may be
+// sent without the credentials.
 func (state *State) aiKeyedProvider(provider store.Provider, retry func()) (store.Provider, bool) {
 	if store.IsCLIKind(provider.Kind) {
 		provider.APIKey, provider.HasKey = "", false
+		provider.ProxyPassword, provider.HasProxyPassword = "", false
 		return provider, true
 	}
-	if provider.APIKey != "" || !provider.HasKey {
+	needKey := provider.APIKey == "" && provider.HasKey
+	needProxyPassword := provider.ProxyURL != "" && provider.HasProxyPassword
+	if !needKey && !needProxyPassword {
 		return provider, true
 	}
 	opened := state.secrets.vault
@@ -454,8 +458,15 @@ func (state *State) aiKeyedProvider(provider store.Provider, retry func()) (stor
 		})
 		return provider, false
 	}
-	if key, found, err := opened.Get(aiKeySecretName(provider.ID)); err == nil && found {
-		provider.APIKey = key
+	if needKey {
+		if key, found, err := opened.Get(aiKeySecretName(provider.ID)); err == nil && found {
+			provider.APIKey = key
+		}
+	}
+	if needProxyPassword {
+		if password, found, err := opened.Get(aiProxyPasswordSecretName(provider.ID)); err == nil && found {
+			provider.ProxyPassword = password
+		}
 	}
 	return provider, true
 }
@@ -550,7 +561,11 @@ func (state *State) aiProvider(provider store.Provider) llm.Provider {
 	if store.IsCLIKind(provider.Kind) || !store.ValidProviderKind(provider.Kind) {
 		return cli.New(provider.Kind, provider.CLIPath)
 	}
-	config := llm.Config{BaseURL: provider.BaseURL, ModelsURL: provider.ModelsURL, APIKey: provider.APIKey, AuthStyle: provider.AuthStyle}
+	config := llm.Config{
+		BaseURL: provider.BaseURL, ModelsURL: provider.ModelsURL,
+		APIKey: provider.APIKey, AuthStyle: provider.AuthStyle,
+		ProxyURL: provider.ProxyURL, ProxyPassword: provider.ProxyPassword,
+	}
 	if provider.Kind == store.KindAnthropic {
 		return llm.NewAnthropic(config)
 	}

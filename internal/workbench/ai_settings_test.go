@@ -454,6 +454,21 @@ func TestAIProviderFormValidates(t *testing.T) {
 	for range "ftp://host" {
 		state.EditorFor(hitAISetFormURL).DeleteBackward()
 	}
+	world.typeInto(t, hitAISetFormProxy, "ftp://proxy")
+	state.Click(hitAISetFormSubmit)
+	if state.ai.cfg.formErr != m.ErrFormProxyURL {
+		t.Fatalf("bad proxy: err=%q", state.ai.cfg.formErr)
+	}
+	if state.ai.cfg.formFocus != aiFormFocusProxy {
+		t.Fatalf("bad proxy focused %d, want the proxy field", state.ai.cfg.formFocus)
+	}
+	canvas, texts = world.paint()
+	if got := canvas.FocusRequest(); got != hitAISetFormProxy {
+		t.Fatalf("bad proxy requested focus %v, want the proxy field", got)
+	}
+	for range "ftp://proxy" {
+		state.EditorFor(hitAISetFormProxy).DeleteBackward()
+	}
 	state.Click(hitAISetFormSubmit)
 	if state.ai.cfg.formErr != m.ErrFormKey {
 		t.Fatalf("official endpoint without key: err=%q", state.ai.cfg.formErr)

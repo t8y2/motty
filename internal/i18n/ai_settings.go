@@ -50,6 +50,10 @@ type AISettingsMessages struct {
 	FormBaseURLClaude        string
 	FormModelsURL            string
 	FormModelsURLPH          string
+	FormProxy                string
+	FormProxyPH              string
+	FormProxyHelp            string
+	FormProxySaved           string
 	FormKey                  string
 	FormKeyPH                string
 	FormKeySaved             string
@@ -58,6 +62,7 @@ type AISettingsMessages struct {
 	ErrFormName              string
 	ErrFormBaseURL           string
 	ErrFormModelsURL         string
+	ErrFormProxyURL          string
 	ErrFormKey               string
 	ErrFormSaveFmt           string
 	ErrModelName             string

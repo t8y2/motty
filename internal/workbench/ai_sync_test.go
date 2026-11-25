@@ -70,6 +70,43 @@ func TestAProviderWithItsModelsAndKeyReachesTheOtherComputer(t *testing.T) {
 	}
 }
 
+func TestAProviderProxyReachesTheOtherComputerWithoutItsPassword(t *testing.T) {
+	server, _ := newFakeDAV(t)
+	first, _, _ := backupTestState(t)
+	second, _, _ := backupTestState(t)
+	configureSync(t, first, server)
+	configureSync(t, second, server)
+	done := first.messages.Tools.SyncDone
+
+	db, err := first.aiStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := first.secrets.vault.Set(aiProxyPasswordSecretName("proxy"), "s3cret"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SaveProvider(store.Provider{
+		ID: "proxy", Name: "Proxy", Kind: store.KindOpenAI, BaseURL: "https://api.example.com/v1",
+		ProxyURL: "socks5://alice@127.0.0.1:1080", HasProxyPassword: true, Enabled: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	first.reloadAI()
+	syncAndWait(t, first, hitSyncNow, done)
+	syncAndWait(t, second, hitSyncNow, done)
+
+	if got := providerNames(second); len(got) != 1 || got[0] != "Proxy" {
+		t.Fatalf("the other computer has providers %v", got)
+	}
+	provider := second.ai.providers[0]
+	if provider.ProxyURL != "socks5://alice@127.0.0.1:1080" || !provider.HasProxyPassword {
+		t.Fatalf("the provider arrived as %+v", provider)
+	}
+	if password, found, _ := second.secrets.vault.Get(aiProxyPasswordSecretName("proxy")); !found || password != "s3cret" {
+		t.Fatalf("the proxy password did not arrive: %q %v", password, found)
+	}
+}
+
 func TestAProviderKeepsItsAuthStyleAcrossTheOtherComputer(t *testing.T) {
 	server, _ := newFakeDAV(t)
 	first, _, _ := backupTestState(t)

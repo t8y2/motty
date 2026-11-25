@@ -40,6 +40,7 @@ func (cfg *aiSettingsUI) bindAIFormFields() {
 	cfg.formCLIPath.Bind(&cfg.cliPath)
 	cfg.formBaseURL.Bind(&cfg.baseURL)
 	cfg.formModelsURL.Bind(&cfg.modelsURL)
+	cfg.formProxyURL.Bind(&cfg.proxyURL)
 	cfg.formAPIKey.Bind(&cfg.apiKey)
 }
 
@@ -79,7 +80,9 @@ func (state *State) aiProviderFormGeometry() (title, description, submit string,
 	if cfg.kind == store.KindOpenAI {
 		formatHeight = 84
 	}
-	height = 2 + presetHeight + 4*60 + authHeight + formatHeight + keyHeight + 4
+	// name, kind, base URL, models URL and proxy take five rows; the proxy's
+	// hint makes it 18 points taller than the others.
+	height = 2 + presetHeight + 5*60 + 18 + authHeight + formatHeight + keyHeight + 4
 	return title, description, submit, height
 }
 
@@ -151,6 +154,11 @@ func (state *State) declareAIProviderForm(c ui.C, height float32) {
 			}
 			state.aiFormField(c, hitAISetFormURL, &cfg.formBaseURL, m.FormBaseURL, placeholder, "", 60, aiFormFocusURL)
 			state.aiFormField(c, hitAISetFormModelsURL, &cfg.formModelsURL, m.FormModelsURL, m.FormModelsURLPH, "", 60, aiFormFocusModelsURL)
+			proxyHint := m.FormProxyHelp
+			if cfg.proxyHadPassword {
+				proxyHint = m.FormProxySaved
+			}
+			state.aiFormField(c, hitAISetFormProxy, &cfg.formProxyURL, m.FormProxy, m.FormProxyPH, proxyHint, 78, aiFormFocusProxy)
 			if kind == store.KindOpenAI {
 				cfg.formFormat = cfg.apiFormat
 				if cfg.formFormat != store.APIFormatResponses {

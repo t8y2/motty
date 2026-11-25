@@ -103,6 +103,11 @@ func (state *State) otpSecretName(session *Session) string {
 // ID is random, so the name is the same on every computer the vault syncs to.
 func aiKeySecretName(providerID string) string { return "aikey:" + providerID }
 
+// aiProxyPasswordSecretName is where a provider's proxy password is kept. It
+// shares the aikey: prefix so the sync engine treats it as AI configuration and
+// reloads the providers when it changes.
+func aiProxyPasswordSecretName(providerID string) string { return "aikey:" + providerID + ":proxy" }
+
 func passphraseSecretName(identity string) string { return "passphrase:" + identity }
 
 // initSecrets opens the vault next to the state file. A file that cannot be read
