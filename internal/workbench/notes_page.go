@@ -170,13 +170,15 @@ func (n *notesUI) noteTreeKey(i int) int {
 		return 0
 	}
 	e := rows[i]
-	if e.folder {
-		return 1<<20 + n.view.folderTokens[e.id]
-	}
+	// Viva keys are nonnegative. Reserve zero for the inline creation row,
+	// and use distinct keys for notes and folders that have the same token.
 	if e.id == "" {
-		return -2
+		return 0
 	}
-	return n.view.noteTokens[e.id]
+	if e.folder {
+		return 2*n.view.folderTokens[e.id] + 2
+	}
+	return 2*n.view.noteTokens[e.id] + 1
 }
 
 func (s *State) noteTreeNode(n *notesUI, i int) ui.TreeNode {

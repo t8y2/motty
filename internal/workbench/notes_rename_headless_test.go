@@ -171,3 +171,39 @@ func TestNotesRenameFolderUsesFocusedField(t *testing.T) {
 		t.Fatal("renaming a folder did not persist its name or changed the note")
 	}
 }
+
+func TestNotesCreateNestedFolderUsesFocusedField(t *testing.T) {
+	s, v := openNotesRenameSession(t, "Original title", false)
+	addFolder := s.noteText("New folder", "新建文件夹")
+	createFolder := func(name string) {
+		t.Helper()
+		if err := v.ClickLabel(addFolder); err != nil {
+			t.Fatal(err)
+		}
+		if v.Snapshot().Focused != hitNoteInline {
+			t.Fatal("creating a folder did not focus the name field")
+		}
+		if err := v.Type(name); err != nil {
+			t.Fatal(err)
+		}
+		if err := v.Keys("Enter"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	createFolder("Parent folder")
+	if len(s.notes.folders) != 1 {
+		t.Fatal("the parent folder was not created")
+	}
+	parentID := s.notes.folders[0].ID
+	if err := v.ClickLabel("Parent folder"); err != nil {
+		t.Fatal(err)
+	}
+	createFolder("Child folder")
+	childID := s.notes.folder
+
+	reopened := newTestState(t, s.options)
+	child, ok := reopened.noteFolder(childID)
+	if !ok || child.Name != "Child folder" || child.Parent != parentID {
+		t.Fatalf("the child folder was not saved under %q: %+v", parentID, child)
+	}
+}
