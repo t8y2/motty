@@ -14,6 +14,7 @@ var EnglishMessages = Messages{
 		Title:                "Locked",
 		KeepRunning:          "Existing connections keep running",
 		RestoreAfterUnlock:   "Your workspace will resume after you unlock",
+		UnlockToReview:       "Unlock Motty to review unsaved changes.",
 		Password:             "Master password",
 		PasswordPlaceholder:  "Enter your master password",
 		UnlockPassword:       "Unlock with master password",

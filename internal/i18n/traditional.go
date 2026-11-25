@@ -14,6 +14,7 @@ var TraditionalMessages = Messages{
 		Title:                "已鎖定",
 		KeepRunning:          "現有連線保持執行",
 		RestoreAfterUnlock:   "解鎖後還原工作區",
+		UnlockToReview:       "請先解鎖 Motty，再處理尚未儲存的變更。",
 		Password:             "主密碼",
 		PasswordPlaceholder:  "請輸入主密碼",
 		UnlockPassword:       "使用主密碼解鎖",

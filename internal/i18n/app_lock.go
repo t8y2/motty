@@ -6,6 +6,7 @@ type AppLockMessages struct {
 	WrongPassword, Corrupt, DevicePassword                                     string
 	Lock, Title                                                                string
 	KeepRunning, RestoreAfterUnlock                                            string
+	UnlockToReview                                                             string
 	Password, PasswordPlaceholder, UnlockPassword, UnlockSystem, Divider       string
 	Working, Required, Mismatch, NewPassword, ConfirmPassword, CurrentPassword string
 	SettingsTitle, SettingsDescription, DisabledDescription, ChangePassword    string

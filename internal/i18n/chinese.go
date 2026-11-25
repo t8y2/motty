@@ -14,6 +14,7 @@ var ChineseMessages = Messages{
 		Title:                "已锁定",
 		KeepRunning:          "现有连接保持运行",
 		RestoreAfterUnlock:   "解锁后恢复工作区",
+		UnlockToReview:       "请先解锁 Motty，再处理尚未保存的更改。",
 		Password:             "主密码",
 		PasswordPlaceholder:  "请输入主密码",
 		UnlockPassword:       "使用主密码解锁",

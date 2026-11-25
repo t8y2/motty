@@ -1033,7 +1033,7 @@ func (state *State) ConfirmDocumentClose(allow func()) bool {
 		if !dirty {
 			return false
 		}
-		state.lockUI.error = state.noteText("Unlock Motty to review unsaved changes.", "请先解锁 Motty，再处理尚未保存的更改。")
+		state.lockUI.error = state.messages.AppLock.UnlockToReview
 		if state.options.Raise != nil {
 			state.options.Raise()
 		}
