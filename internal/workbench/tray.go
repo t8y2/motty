@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strconv"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"motty/internal/buildinfo"
+	"motty/internal/configstore"
 	"motty/internal/update"
 	layoutcore "motty/internal/workspace"
 )
@@ -57,6 +59,39 @@ func (tray *Tray) Remove(state *State) {
 
 // WindowCount is how many windows are listed, hidden ones included.
 func (tray *Tray) WindowCount() int { return len(tray.members) }
+
+// ShowHidden brings back every window hiding in the status area. It runs before
+// the icon goes away, so no window is left with no way back.
+func (tray *Tray) ShowHidden() {
+	for _, member := range tray.members {
+		if member.window.Hidden() {
+			member.window.Show()
+		}
+	}
+}
+
+// TrayIconHidden reports whether the settings saved on this computer ask for no
+// status-area icon. The launcher reads it once at start, before any window
+// exists, so an icon the user turned off is never put up. A store that cannot be
+// read keeps the icon: the default is to show it.
+func TrayIconHidden(path string) bool {
+	store, err := configstore.OpenShared(path, configFormat)
+	if err != nil {
+		return false
+	}
+	defer store.Close()
+	_, local, err := store.Load()
+	if err != nil {
+		return false
+	}
+	var saved struct {
+		TrayIconOff bool `json:"tray_icon_off"`
+	}
+	if err := json.Unmarshal(local[localKey], &saved); err != nil {
+		return false
+	}
+	return saved.TrayIconOff
+}
 
 // SessionCount is how many sessions are open in all windows.
 func (tray *Tray) SessionCount() int {

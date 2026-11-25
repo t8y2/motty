@@ -2412,6 +2412,8 @@ var chineseTools = ToolsMessages{
 	LaunchXshellEmptyFmt:            "%s 里没有可打开的 SSH 或 Telnet 会话。",
 	GeneralLogin:                    "开机自启",
 	GeneralLoginDescription:         "登录后在后台启动。",
+	GeneralTrayIcon:                 "显示系统托盘图标",
+	GeneralTrayIconDescription:      "关闭后，托盘图标将被隐藏；此时关闭窗口将直接退出应用。",
 	GeneralClose:                    "关闭窗口时",
 	GeneralCloseDescription:         "关闭最后一个窗口后，留在托盘继续运行，或直接退出。",
 	GeneralCloseTray:                "留在托盘",

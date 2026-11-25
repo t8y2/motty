@@ -157,6 +157,9 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	if state.options.StartAtLogin != nil {
 		row(settingsGeneral, tools.GeneralLogin, tools.GeneralLoginDescription)
 	}
+	if state.options.SetTrayIcon != nil {
+		row(settingsGeneral, tools.GeneralTrayIcon, tools.GeneralTrayIconDescription)
+	}
 	if state.closeActionVisible() {
 		row(settingsGeneral, tools.GeneralClose, tools.GeneralCloseDescription)
 	}

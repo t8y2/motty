@@ -329,6 +329,9 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 			if state.options.StartAtLogin != nil {
 				state.paintLoginSetting(page)
 			}
+			if state.options.SetTrayIcon != nil {
+				state.paintTrayIconSetting(page)
+			}
 			if state.closeActionVisible() {
 				settingsChoiceRow(page, messages.Tools.GeneralClose, messages.Tools.GeneralCloseDescription, &state.closeAction, settingsCloseChoices[:], state.settingsCloseLabel,
 					func() { state.save() }, nil)

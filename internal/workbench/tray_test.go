@@ -480,6 +480,19 @@ func TestShowWindowBringsBackAHiddenWindowOnlyWhenNoneIsVisible(t *testing.T) {
 	}
 }
 
+func TestShowHiddenBringsBackEveryHiddenWindowAndLeavesTheRest(t *testing.T) {
+	fixture := newTrayFixture(t)
+	fixture.firstView.hidden = true
+	fixture.tray.ShowHidden()
+	if fixture.firstView.shows != 1 || fixture.secondView.shows != 0 {
+		t.Fatalf("shows: first %d, second %d", fixture.firstView.shows, fixture.secondView.shows)
+	}
+	fixture.tray.ShowHidden()
+	if fixture.firstView.shows != 1 || fixture.secondView.shows != 0 {
+		t.Fatalf("a visible window was shown again: first %d, second %d", fixture.firstView.shows, fixture.secondView.shows)
+	}
+}
+
 func TestWindowWithSessionsWantsToStayAndOneWithoutDoesNot(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	if state.WantsToStay() {
