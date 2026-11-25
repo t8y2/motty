@@ -144,13 +144,37 @@ func (group *Group) assistantChoicesChanged(origin *State) {
 	}
 }
 
-// sessionCount is how many sessions are open in all the windows.
-func (group *Group) sessionCount() int {
+// liveSessionCount is how many sessions in all the windows still hold a
+// connection a restart would end. A tab whose connection already ended is not
+// one: it is restored after the restart and has nothing left to disconnect.
+func (group *Group) liveSessionCount() int {
 	group.mu.Lock()
 	defer group.mu.Unlock()
 	count := 0
 	for _, member := range group.members {
-		count += len(member.sessions)
+		count += member.liveSessionCount()
+	}
+	return count
+}
+
+// liveSessionCount is how many of this window's sessions a restart would end:
+// one that is connecting or connected, or one whose shell ended but whose file
+// panel still uses the connection. An ended connection leaves only a tab to
+// restore, so it is not counted.
+func (state *State) liveSessionCount() int {
+	count := 0
+	for index := range state.sessions {
+		session := &state.sessions[index]
+		switch workspaceSessionState(session) {
+		case workspacePanePending, workspacePaneConnected:
+			count++
+		case workspacePaneSettled:
+			// The shell ended, but a file panel may still be transferring over
+			// the same connection; a restart ends that work too.
+			if session.keptAfterShell {
+				count++
+			}
+		}
 	}
 	return count
 }
