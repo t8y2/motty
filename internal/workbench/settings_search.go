@@ -269,6 +269,9 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsFiles, tools.FilesTerminalFollow, tools.FilesTerminalFollowDescription)
 	row(settingsFiles, tools.FilesFollowSetup, tools.FilesFollowSetupDescription)
 
+	rowSearch(settingsSecurity, m.AppLock.Protection, m.AppLock.SettingsDescription, "master password lock unlock 锁屏 主密码")
+	row(settingsSecurity, m.AppLock.ChangePassword, "")
+	rowSearch(settingsSecurity, m.AppLock.SystemTitle, m.AppLock.SystemDescription, "Windows Hello Touch ID fingerprint biometric 系统解锁 指纹")
 	row(settingsSecurity, m.SessionLogs.SettingsCaptureRow, m.SessionLogs.SettingsCaptureDescription)
 	row(settingsSecurity, m.SessionLogs.SettingsStorageRow, m.SessionLogs.SettingsStorageDescription)
 	row(settingsSecurity, m.SessionLogs.ClearUnfavorited, m.SessionLogs.ClearUnfavoritedPrompt)

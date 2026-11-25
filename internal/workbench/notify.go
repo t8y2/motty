@@ -32,7 +32,7 @@ func (state *State) setNotifications(on bool) bool {
 
 // terminalNotification is what a terminal's program asked to show.
 func (state *State) terminalNotification(sessionID uint32, note term.Notification) {
-	if state.notifyOff {
+	if state.notifyOff || state.appAccessBlocked() {
 		return
 	}
 	session, ok := state.sessionByIDPointer(sessionID)

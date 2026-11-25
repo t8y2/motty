@@ -360,6 +360,9 @@ func (state *State) receiveInputEnvironment(sessionID uint32, environment term.I
 		g.environment = environment
 		if g.repairing {
 			g.repairing = false
+			if state.appAccessBlocked() {
+				return
+			}
 			message, kind := state.messages.TerminalInput.LocaleFailed, components.ToastWarning
 			if environment.Charset == "utf8" {
 				message, kind = state.messages.TerminalInput.LocaleSuccess, components.ToastSuccess

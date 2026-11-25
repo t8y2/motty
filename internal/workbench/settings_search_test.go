@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/text"
 	"motty/internal/i18n"
 )
@@ -15,6 +16,42 @@ func searchSettings(t *testing.T, state *State, query string) *gfx.Canvas {
 	typeInto(state, hitSettingsSearch, query)
 	canvas, _ := paintedTexts(state)
 	return canvas
+}
+
+func TestSearchOpensLockShortcutSettingsRow(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	state.setLanguage(i18n.Chinese)
+	name := state.messages.AppLock.Lock
+	searchSettings(t, state, name)
+	found := false
+	for index, row := range state.settings.results[:state.settings.count] {
+		if row.category == settingsShortcuts && row.label == name {
+			state.Click(hitSettingsResultList.At(index))
+			found = true
+			break
+		}
+	}
+	if !found || state.settingsCategory != settingsShortcuts {
+		t.Fatalf("could not reach the keyboard shortcut for %q", name)
+	}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1200, Height: 840}
+	state.Paint(&canvas, size)
+	canvas = gfx.Canvas{}
+	state.Paint(&canvas, size)
+	chord := keymap.Chord{Modifiers: primaryModifier | gfx.ModifierShift, Char: 'l'}
+	action := state.shortcuts.actionFor(chord)
+	if action == shortcutNone || state.shortcutActionLabel(action) != name {
+		t.Fatal("the default lock shortcut is missing")
+	}
+	row, ok := hitByID(&canvas, hitShortcutRowList.At(int(action-1)))
+	if !ok || row.Label != chord.Label() || row.Bounds.Y < 0 || row.Bounds.Y >= size.Height {
+		t.Fatal("the lock shortcut is not visible after selecting its search result")
+	}
+	state.Click(row.ID)
+	if state.modal != modalShortcutCapture || state.shortcutCapture != action {
+		t.Fatal("the lock shortcut row did not open the key recorder")
+	}
 }
 
 func TestSearchingSettingsListsMatchesFromEveryCategoryWithTheirCategory(t *testing.T) {

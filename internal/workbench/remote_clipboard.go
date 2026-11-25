@@ -62,6 +62,9 @@ type remoteClipboardRequest struct {
 }
 
 func (state *State) remoteClipboardWrite(sessionID uint32, write term.ClipboardWrite) {
+	if state.appAccessBlocked() {
+		return
+	}
 	switch state.terminalClipboard {
 	case terminalClipboardBlock:
 		state.status = state.messages.StatusClipboardBlocked

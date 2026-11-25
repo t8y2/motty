@@ -35,7 +35,9 @@ func (state *State) KeepsWindowsOnExit() bool { return state.keepWindows == keep
 
 // AsksAboutWindowsOnExit reports whether a quit with windows open must ask
 // whether to keep them.
-func (state *State) AsksAboutWindowsOnExit() bool { return state.keepWindows == keepWindowsAsk }
+func (state *State) AsksAboutWindowsOnExit() bool {
+	return !state.appAccessBlocked() && state.keepWindows == keepWindowsAsk
+}
 
 // DiscardsWindowsOnExit reports whether a quit throws the windows away without
 // asking.
