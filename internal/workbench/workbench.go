@@ -18,6 +18,7 @@ import (
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/buildinfo"
 	"motty/internal/configstore"
 	"motty/internal/highlight"
 	"motty/internal/i18n"
@@ -1311,10 +1312,15 @@ func New(options Options) *State {
 	state.attachProtection()
 	if state.appLocked() {
 		state.profileDeferred = true
-		_, prefs, _ := configstore.ReadOnly(state.options.StatePath, configFormat)
+		prefs, _ := configstore.ReadLocal(context.Background(), state.options.StatePath, configFormat, localKey)
 		var saved savedState
-		_ = json.Unmarshal(prefs[localKey], &saved)
+		_ = json.Unmarshal(prefs, &saved)
+		if state.winChrome.remember {
+			window, _ := configstore.ReadLocal(context.Background(), state.options.StatePath, configFormat, windowKey(state.windowID, buildinfo.Development))
+			state.restoreWindowPlacement(applyWindowState(saved, window, state.windowID))
+		}
 		state.restoreWindowAppearance(saved)
+		state.initAI()
 		state.stopAppearanceWatch = state.options.WatchSystemAppearance(state.systemAppearanceChanged)
 		state.validateInterfaceFont()
 		if err := state.appProtection.openErr; err != nil {

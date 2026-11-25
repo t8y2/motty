@@ -1195,6 +1195,12 @@ func (state *State) restoreLocal(saved savedState) {
 	state.hostPrivacy.maskName = !saved.HostPrivacyShowName
 	state.hostPrivacy.maskAddress = !saved.HostPrivacyShowAddress
 	state.hostPrivacy.maskUser = !saved.HostPrivacyShowUser
+	if !state.profileDeferred {
+		state.restoreWindowPlacement(saved)
+	}
+}
+
+func (state *State) restoreWindowPlacement(saved savedState) {
 	if saved.WindowWidth > 0 && saved.WindowHeight > 0 {
 		state.restoreWindowFrame(gfx.Rect{
 			X: float32(saved.WindowX), Y: float32(saved.WindowY),

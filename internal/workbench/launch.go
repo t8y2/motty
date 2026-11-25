@@ -98,7 +98,7 @@ func (state *State) Launch(args []string) {
 	args = append([]string(nil), args...)
 	state.aiPost(func(state *State) {
 		state.launchBacklog = append(state.launchBacklog, args)
-		if state.appAccessBlocked() && state.options.Raise != nil {
+		if state.appAccessBlocked() && state.options.Raise != nil && !slices.Contains(args, "--background") {
 			state.options.Raise()
 		}
 		state.runLaunches()

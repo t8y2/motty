@@ -118,8 +118,12 @@ func TestAppLockColdAppearance(t *testing.T) {
 	for _, mode := range []appearanceMode{appearancePinnedLight, appearancePinnedDark} {
 		t.Run(map[appearanceMode]string{appearancePinnedLight: "light", appearancePinnedDark: "dark"}[mode], func(t *testing.T) {
 			opts := testOptions(t)
+			opts.RememberWindowFrame = true
 			first := newTestState(t, opts)
 			first.chooseAppearanceMode(mode)
+			frame := gfx.Rect{X: 120, Y: 80, Width: 1234, Height: 777}
+			first.NoteWindowFrame(frame)
+			first.SetWindowMaximized(true)
 			first.save()
 			const password = "long fixture password"
 			if err := finishAppLock(t, first, appLockEnable, "", password); err != nil {
@@ -130,16 +134,30 @@ func TestAppLockColdAppearance(t *testing.T) {
 			if !cold.appLocked() || !cold.profileDeferred || cold.appearanceMode != mode {
 				t.Fatal("saved appearance was not restored on lock screen")
 			}
+			if got, ok := cold.RestoredWindowFrame(); !ok || got != frame || !cold.RestoredWindowMaximized() {
+				t.Fatalf("locked startup restored frame %+v, maximized=%v", got, cold.RestoredWindowMaximized())
+			}
 			var canvas gfx.Canvas
 			cold.Paint(&canvas, gfx.Size{Width: 1100, Height: 760})
 			if _, ok := hitByID(&canvas, hitAppLockPassword); !ok {
 				t.Fatal("no password field")
 			}
+			frame.X += 20
+			cold.SetWindowMaximized(false)
+			cold.NoteWindowFrame(frame)
+			cold.Launch([]string{"ssh://person@example.invalid"})
 			if err := finishAppLock(t, cold, appLockUnlock, password, ""); err != nil {
 				t.Fatal(err)
 			}
 			if cold.appLocked() || cold.appearanceMode != mode {
 				t.Fatal("unlock discarded appearance")
+			}
+			if got, ok := cold.RestoredWindowFrame(); !ok || got != frame || cold.RestoredWindowMaximized() {
+				t.Fatalf("unlock discarded changes to the window: frame %+v, maximized=%v", got, cold.RestoredWindowMaximized())
+			}
+			cold.Wake()
+			if cold.modal != modalOpenLink {
+				t.Fatal("launch request received while locked was lost")
 			}
 		})
 	}
