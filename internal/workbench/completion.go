@@ -681,7 +681,7 @@ func (state *State) completionScreenPrompt(session *Session) bool {
 	if t.inputGuard.active || !state.terminalOwnedByShell(session) {
 		return false
 	}
-	line, prompt, ok := t.recorder.LinePrompt(cmdhistory.TermScreen{Term: t.screen})
+	line, prompt, ok := t.recorder.LinePromptAllowingSuggestion(cmdhistory.TermScreen{Term: t.screen})
 	if !ok || strings.TrimSpace(line) == "" {
 		return false
 	}
@@ -784,7 +784,7 @@ func (state *State) openCompletions() {
 // read opens with its loading row.
 func (state *State) openCompletionList(session *Session) {
 	t := session.term
-	line, ok := t.recorder.Line(cmdhistory.TermScreen{Term: t.screen})
+	line, ok := t.recorder.LineAllowingSuggestion(cmdhistory.TermScreen{Term: t.screen})
 	if !ok || strings.TrimSpace(line) == "" {
 		return
 	}
@@ -810,7 +810,7 @@ func (state *State) closeCompletionList() {
 // path context so typing more of the same argument does not reopen it.
 func (state *State) dismissCompletion(session *Session) {
 	if state.completion.list.auto && session != nil && session.term != nil {
-		if line, ok := session.term.recorder.Line(cmdhistory.TermScreen{Term: session.term.screen}); ok {
+		if line, ok := session.term.recorder.LineAllowingSuggestion(cmdhistory.TermScreen{Term: session.term.screen}); ok {
 			if ctx, ok := pathcomp.Parse(line); ok {
 				key := ""
 				if ctx.Path {
@@ -838,7 +838,7 @@ func (state *State) completionRebuild(session *Session) {
 		state.closeCompletionList()
 		return
 	}
-	line, ok := t.recorder.Line(cmdhistory.TermScreen{Term: t.screen})
+	line, ok := t.recorder.LineAllowingSuggestion(cmdhistory.TermScreen{Term: t.screen})
 	if !ok || strings.TrimSpace(line) == "" {
 		state.closeCompletionList()
 		return
@@ -910,7 +910,7 @@ func (state *State) completionRefresh(session *Session) {
 		state.closeCompletionList()
 		return
 	}
-	line, ok := t.recorder.Line(cmdhistory.TermScreen{Term: t.screen})
+	line, ok := t.recorder.LineAllowingSuggestion(cmdhistory.TermScreen{Term: t.screen})
 	if !ok {
 		state.closeCompletionList()
 		return
@@ -945,7 +945,7 @@ func (state *State) completionMaybeAuto(session *Session) {
 		return
 	}
 	t := session.term
-	line, ok := t.recorder.Line(cmdhistory.TermScreen{Term: t.screen})
+	line, ok := t.recorder.LineAllowingSuggestion(cmdhistory.TermScreen{Term: t.screen})
 	if !ok || strings.TrimSpace(line) == "" || cmdhistory.Secret(line) {
 		return
 	}
