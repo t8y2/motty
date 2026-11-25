@@ -21,7 +21,7 @@ func (state *State) declareLocalDirectoryPicker(c ui.C) {
 		ui.Column(c).Fill().Gap(8).Children(func() {
 			ui.TextFieldID(c, hitLocalDirectorySearch, &picker.field, m.LocalDirectorySearch, m.LocalDirectorySearch).Height(36).FillWidth().Shrink(0).NavigationKeys()
 			ui.Button(c, m.LocalDirectoryBrowse).Icon(lucideIcons[iconFolderOpen]).Hit(hitLocalDirectoryBrowse, m.LocalDirectoryBrowse).Height(36).FillWidth().Shrink(0)
-			list := ui.Scroll(c).FillWidth().Grow(1).Scrollbars()
+			list := pickerListScroll(c).FillWidth().Grow(1)
 			picker.scroll = list.ScrollState()
 			list.Children(func() {
 				ui.Column(c).FillWidth().Gap(picker.rowGap).Children(func() {

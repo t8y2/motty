@@ -307,3 +307,86 @@ func TestLocalDirectoryPickerScrollKeepsSelectionVisible(t *testing.T) {
 		t.Fatalf("first row did not return to top: %v", picker.scroll.Offset)
 	}
 }
+
+func TestLocalDirectoryPickerMouseWheelScrollsList(t *testing.T) {
+	for _, precise := range []bool{false, true} {
+		t.Run(fmt.Sprintf("precise=%t", precise), func(t *testing.T) {
+			state := newTestState(t, testOptions(t))
+			root := t.TempDir()
+			for i := range 30 {
+				state.localDirectoryHistory = append(state.localDirectoryHistory, filepath.Join(root, fmt.Sprint(i)))
+			}
+			state.openLocalDirectoryPicker()
+			driver := modalEventDriverSize(t, state, 900, 700)
+			var row gfx.Hit
+			for _, hit := range driver.Snapshot().Hits {
+				if hit.ID == hitLocalDirectoryRows.At(0) {
+					row = hit
+					break
+				}
+			}
+			if row.Bounds.Width <= 0 {
+				t.Fatal("directory row is not visible")
+			}
+			picker := &state.localDirectoryPicker
+			before, selected := picker.scroll.Offset, picker.selected
+			event := gfx.ScrollEvent{X: row.Bounds.X + row.Bounds.Width/2, Y: row.Bounds.Y + row.Bounds.Height/2, DeltaY: 120, Precise: precise}
+			if err := driver.Scroll(event); err != nil {
+				t.Fatal(err)
+			}
+			down := picker.scroll.Offset
+			if down <= before {
+				t.Fatal("mouse wheel did not scroll the directory list down")
+			}
+			event.DeltaY = -120
+			if err := driver.Scroll(event); err != nil {
+				t.Fatal(err)
+			}
+			if picker.scroll.Offset >= down || picker.selected != selected || state.modal != modalLocalDirectory {
+				t.Fatal("wheel did not scroll up while preserving selection and dialog")
+			}
+			var bar gfx.Hit
+			for _, hit := range driver.Snapshot().Hits {
+				if hit.Label == "Vertical scrollbar" {
+					bar = hit
+				}
+			}
+			if bar.Bounds.Width <= 0 {
+				t.Fatal("directory scrollbar is not visible")
+			}
+			x, bottom := bar.Bounds.X+bar.Bounds.Width/2, bar.Bounds.Y+bar.Bounds.Height-2
+			if err := driver.Press(x, bar.Bounds.Y+2, gfx.PointerButtonPrimary); err != nil {
+				t.Fatal(err)
+			}
+			if err := driver.Move(x, bottom); err != nil {
+				t.Fatal(err)
+			}
+			if err := driver.Release(x, bottom, gfx.PointerButtonPrimary); err != nil {
+				t.Fatal(err)
+			}
+			if picker.scroll.Offset != picker.scroll.Max() {
+				t.Fatal("scrollbar drag did not reach the end of the list")
+			}
+		})
+	}
+}
+
+func TestLocalDirectoryPickerScrollbarLeavesRoomForRemove(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	for i := range 30 {
+		state.localDirectoryHistory = append(state.localDirectoryHistory, "/workspace/"+strings.Repeat("long-folder/", 20)+fmt.Sprint(i))
+	}
+	state.openLocalDirectoryPicker()
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 900, Height: 700})
+	bar, ok := hitByLabelRoleLast(&canvas, "Vertical scrollbar", gfx.RoleSeparator)
+	if !ok || bar.Bounds.Width != commandPaletteBarWidth {
+		t.Fatalf("scrollbar width = %v, want %v", bar.Bounds.Width, commandPaletteBarWidth)
+	}
+	row, _ := hitByID(&canvas, hitLocalDirectoryRows.At(0))
+	remove, _ := hitByID(&canvas, hitLocalDirectoryRemove.At(0))
+	if bar.Bounds.X-(row.Bounds.X+row.Bounds.Width) < commandPaletteBarGap ||
+		bar.Bounds.X-(remove.Bounds.X+remove.Bounds.Width) < commandPaletteBarGap {
+		t.Fatal("scrollbar overlaps the directory row or its remove button")
+	}
+}
