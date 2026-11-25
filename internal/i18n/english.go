@@ -119,7 +119,7 @@ var EnglishMessages = Messages{
 	CommandPalettePlaceholder: "Type a command…",
 	CommandPaletteEmpty:       "No matching commands",
 	CommandSwitchSessionFmt:   "Switch to %s",
-	AddLocalTerminal:          "Open local terminal in folder…",
+	AddLocalTerminal:          "Open local terminal in folder",
 	LocalDirectoryTitle:       "Choose working directory",
 	LocalDirectorySearch:      "Search directory history…",
 	LocalDirectoryBrowse:      "Browse folders…",

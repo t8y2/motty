@@ -119,7 +119,7 @@ var ChineseMessages = Messages{
 	CommandPalettePlaceholder: "输入命令…",
 	CommandPaletteEmpty:       "没有匹配的命令",
 	CommandSwitchSessionFmt:   "切换到 %s",
-	AddLocalTerminal:          "在目录中打开本地终端…",
+	AddLocalTerminal:          "在目录中打开本地终端",
 	LocalDirectoryTitle:       "选择工作目录",
 	LocalDirectorySearch:      "搜索历史目录…",
 	LocalDirectoryBrowse:      "浏览文件夹…",

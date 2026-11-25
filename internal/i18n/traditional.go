@@ -119,7 +119,7 @@ var TraditionalMessages = Messages{
 	CommandPalettePlaceholder: "輸入指令…",
 	CommandPaletteEmpty:       "沒有符合的指令",
 	CommandSwitchSessionFmt:   "切換到 %s",
-	AddLocalTerminal:          "在目錄中開啟本機終端機…",
+	AddLocalTerminal:          "在目錄中開啟本機終端機",
 	LocalDirectoryTitle:       "選擇工作目錄",
 	LocalDirectorySearch:      "搜尋歷史目錄…",
 	LocalDirectoryBrowse:      "瀏覽資料夾…",
