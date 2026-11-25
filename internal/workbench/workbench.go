@@ -439,6 +439,8 @@ type State struct {
 	// hostCatalog is the hosts, jump routes, keys, outbound proxy and timeouts a
 	// connection is resolved from; the headless MCP server builds one too.
 	hostCatalog
+	hostKeyDeploy     hostKeyDeployment
+	hostKeyDeployView hostKeyDeployView
 	fileWindows       fileWindowManager
 	fileNotices       fileNotices
 	revealResults     chan revealResult
@@ -1151,6 +1153,7 @@ func (state *State) Close() {
 	if state == nil || state.closed {
 		return
 	}
+	state.cancelHostKeyDeployment()
 	state.keepAwakeForDesktop(false)
 	state.flushNoteDraft()
 	state.noteActiveLocalDirectory()
@@ -1754,6 +1757,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		state.pressIconMotion(id)
 	}
 	if state.clickDashboard(id) {
+		return
+	}
+	if state.clickHostKeyManagement(id) {
 		return
 	}
 	if state.clickAgentHosts(id) {
@@ -3128,6 +3134,9 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		return result
 	}
 	if result := state.dashboardKey(event); result.Handled {
+		return result
+	}
+	if result := state.hostKeyDeployKey(event); result.Handled {
 		return result
 	}
 	if result := state.agentHostsKey(event); result.Handled {

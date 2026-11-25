@@ -2296,6 +2296,11 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if result := state.dashboardScroll(event); result.Handled {
 		return result
 	}
+	if state.modal == modalHostKeyDeploy {
+		result := state.windowPage().Wheel(event)
+		result.Handled = true
+		return result
+	}
 	if result := state.agentHostsScroll(event); result.Handled {
 		return result
 	}

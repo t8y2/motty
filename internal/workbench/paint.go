@@ -708,6 +708,7 @@ func (state *State) declareShell(c ui.C) {
 	// too: they are open over whatever section asked for them.
 	state.declareDashboardDialog(c)
 	state.declareAgentHostsDialog(c)
+	state.declareHostKeyDeployment(c)
 	state.declareDashboardAddMenu(c)
 	// The drag overlay is hitless and paints over the page on the drag layer.
 	state.declareTabDragOverlays(c)
@@ -1346,18 +1347,18 @@ type hostsHeaderAction struct {
 // shown while hosts are checked. It is kept in chromeLayout between the header's
 // declaration and its painting.
 type hostsHeaderPlan struct {
-	condensed                    bool
-	connectWidth, importWidth    float32
-	newHostWidth                 float32
-	connectIcon, importIcon      uint8
-	newHostIcon                  uint8
-	anySelected                  bool
-	actions                      [7]hostsHeaderAction
-	actionWidths                 [7]float32
-	actionsCondensed             bool
-	showChips, showGroupControls bool
-	compactHostControls          bool
-	sideVisible                  bool
+	condensed                              bool
+	connectWidth, importWidth, manageWidth float32
+	newHostWidth                           float32
+	connectIcon, importIcon, manageIcon    uint8
+	newHostIcon                            uint8
+	anySelected                            bool
+	actions                                [7]hostsHeaderAction
+	actionWidths                           [7]float32
+	actionsCondensed                       bool
+	showChips, showGroupControls           bool
+	compactHostControls                    bool
+	sideVisible                            bool
 }
 
 // hostsHeaderBoxes are the slots the hosts header's declaration leaves for the
@@ -1502,9 +1503,11 @@ func (state *State) hostsHeaderPlan(canvas *gfx.Canvas, layout hostsLayout) host
 	// keeps the least width it works at.
 	labeled := searchLeast + buttonGap + toolbarButtonWidth(canvas, m.Connect, false) +
 		buttonGap + toolbarButtonWidth(canvas, m.ImportMenu, true) +
+		buttonGap + toolbarButtonWidth(canvas, state.hostKeyManagementLabel(), true) +
 		buttonGap + toolbarButtonWidth(canvas, m.NewHost, true)
 	plan.condensed = labeled > layout.pageWidth-2*toolbarMargin
 	plan.connectWidth, plan.connectIcon = toolbarButtonLayout(canvas, m.Connect, 0, iconPlug, plan.condensed)
+	plan.manageWidth, plan.manageIcon = toolbarButtonLayout(canvas, state.hostKeyManagementLabel(), iconKey, iconKey, plan.condensed)
 	plan.importWidth, plan.importIcon = toolbarButtonLayout(canvas, m.ImportMenu, iconDownload, iconDownload, plan.condensed)
 	plan.newHostWidth, plan.newHostIcon = toolbarButtonLayout(canvas, m.NewHost, iconPlus, iconPlus, plan.condensed)
 	plan.anySelected = layout.anySelected
@@ -1604,6 +1607,7 @@ func (state *State) declareHostsToolbar(c ui.C, width float32, plan hostsHeaderP
 		})
 		b.connect = state.declareButtonSized(c, hitConnect, m.Connect, plan.connectIcon, false, false, state.typedQuery() != "", toolbarFont, plan.condensed).Size(plan.connectWidth, toolbarHeight).MarginSides(0, buttonGap, 0, 0)
 		ui.Spacer(c)
+		state.declareButtonSized(c, hitHostKeyManage, state.hostKeyManagementLabel(), plan.manageIcon, false, false, !state.hostSort.enabled, toolbarFont, plan.condensed).Size(plan.manageWidth, toolbarHeight).MarginSides(0, buttonGap, 0, 0)
 		b.importButton = state.declareButtonSized(c, hitImportMenu, m.ImportMenu, plan.importIcon, false, false, true, toolbarFont, plan.condensed).Size(plan.importWidth, toolbarHeight).MarginSides(0, buttonGap, 0, 0)
 		state.declareImportMenu(c, b.importButton)
 		b.newHost = state.declareButtonSized(c, hitAddHost, m.NewHost, plan.newHostIcon, true, false, true, toolbarFont, plan.condensed).Size(plan.newHostWidth, toolbarHeight)
