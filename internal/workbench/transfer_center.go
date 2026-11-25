@@ -45,6 +45,10 @@ var (
 
 const maxTransferHistory = 500
 
+// gfx.Index names list rows with numbers from 0, so the server headings keep
+// their keys far above the task ids.
+const transferHostHeaderKeyBase = 1 << 30
+
 // Keep the saved indices of the original four filters. Waiting is displayed
 // between Running and Ended, regardless of its persisted value.
 const (
@@ -147,6 +151,8 @@ type transferCenter struct {
 	host                        *transferHost
 	hosts                       []*transferHost
 	hostChoices                 []*transferHost // nil (all hosts) followed by hosts
+	hostHeaderKeys              map[string]int
+	nextHostHeaderKey           int
 	hostLabel, scopeLabel       string
 	cancelLabel, clearLabel     string
 	pauseLabel                  string
@@ -174,6 +180,12 @@ type transferGroup struct {
 type transferRow struct {
 	group int
 	entry int // index in entries, or -1 for a group header
+
+	// When a section lists more than one server, each server's tasks sit under
+	// its own header row so the reader can tell them apart.
+	host       string
+	hostHeader bool
+	hostKey    int
 }
 
 // transferBody keeps the page List that shows the rows.
@@ -192,10 +204,42 @@ func (center *transferCenter) handlers(state *State) {
 // The low keys name section headers; all other keys follow the transfer.
 func (center *transferCenter) keyOf(index int) int {
 	row := center.rows[index]
+	if row.hostHeader {
+		return row.hostKey
+	}
 	if row.entry < 0 {
 		return row.group
 	}
 	return center.entries[row.entry].id + transferFilterCount
+}
+
+// hostHeaderKey gives each server header a stable key, so collapsing and
+// scrolling do not jump when a row is rebuilt. A server named in two sections
+// needs two keys: sibling rows in one List must not share one.
+func (center *transferCenter) hostHeaderKey(group int, label string) int {
+	if center.hostHeaderKeys == nil {
+		center.hostHeaderKeys = map[string]int{}
+	}
+	name := strconv.Itoa(group) + "\x00" + label
+	if key, ok := center.hostHeaderKeys[name]; ok {
+		return key
+	}
+	center.nextHostHeaderKey++
+	// gfx.Index names the rows with non-negative numbers, so server headings take
+	// a range far above the task ids rather than a negative number.
+	key := transferHostHeaderKeyBase + center.nextHostHeaderKey
+	center.hostHeaderKeys[name] = key
+	return key
+}
+
+func (center *transferCenter) entryHostLabel(entry *transferEntry) string {
+	if entry.host != nil {
+		return entry.host.label
+	}
+	if entry.server != "" && entry.address != "" {
+		return entry.server + " · " + entry.address
+	}
+	return entry.server
 }
 
 func transferActive(snapshot sftpclient.TransferSnapshot) bool {
