@@ -84,7 +84,7 @@ func (state *State) SplitPane(target, session uint32, axis layoutcore.Axis, plac
 		return err
 	}
 	state.syncActiveSession()
-	state.activeSection = sectionTerminal
+	state.setActiveSection(sectionTerminal)
 	state.syncMonitorTarget()
 	return nil
 }
@@ -106,7 +106,7 @@ func (state *State) MovePane(session, target uint32, axis layoutcore.Axis, ratio
 		return err
 	}
 	state.syncActiveSession()
-	state.activeSection = sectionTerminal
+	state.setActiveSection(sectionTerminal)
 	state.syncMonitorTarget()
 	return nil
 }
@@ -225,7 +225,7 @@ func (state *State) activatePane(workspaceID layoutcore.WorkspaceID, paneID layo
 		return false
 	}
 	state.syncActiveSession()
-	state.activeSection = sectionTerminal
+	state.setActiveSection(sectionTerminal)
 	state.syncMonitorTarget()
 	if previous != paneID {
 		// The candidate list belongs to the terminal that opened it.
@@ -250,7 +250,7 @@ func (state *State) activateWorkspace(id layoutcore.WorkspaceID) bool {
 	state.workspaceHeaderMenu = workspaceHeaderMenuNone
 	state.workspaceCardDrag = workspaceCardDrag{}
 	state.syncActiveSession()
-	state.activeSection = sectionTerminal
+	state.setActiveSection(sectionTerminal)
 	state.syncMonitorTarget()
 	state.closeCompletionList()
 	if state.viewport.Width > 0 && state.viewport.Height > 0 {

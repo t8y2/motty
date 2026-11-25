@@ -487,7 +487,7 @@ func (s *State) clickNotes(id gfx.ID) bool {
 			return true
 		}
 		s.noteLinksRecheck()
-		s.activeSection = sectionNotes
+		s.setActiveSection(sectionNotes)
 		s.refreshNoteHosts()
 		s.save()
 		return true

@@ -60,7 +60,7 @@ func (s *State) clickDashboardManagement(id gfx.ID) bool {
 				d.active = p.ID
 				d.search = text.Editor{}
 				d.scroll = 0
-				s.activeSection = sectionDashboard
+				s.setActiveSection(sectionDashboard)
 				s.closeModal()
 				s.reconcileDashboard()
 				s.save()

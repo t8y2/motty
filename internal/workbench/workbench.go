@@ -2057,14 +2057,14 @@ func (state *State) click(id gfx.ID, feedback bool) {
 			state.releaseIdleSFTP(session)
 		}
 		state.clearBroadcast()
-		state.activeSection = sectionHosts
+		state.setActiveSection(sectionHosts)
 		state.save()
 	case id == hitWorkspaces:
 		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
 			state.releaseIdleSFTP(session)
 		}
 		state.clearBroadcast()
-		state.activeSection = sectionWorkspaces
+		state.setActiveSection(sectionWorkspaces)
 		state.save()
 	case id == hitNewTab || id == hitVerticalTabsNew:
 		state.openConnectPicker()
@@ -2077,20 +2077,20 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		// Pressing the box only focuses it; the runtime already did.
 	case id == hitKeychain:
 		state.clearBroadcast()
-		state.activeSection = sectionKeys
+		state.setActiveSection(sectionKeys)
 		state.save()
 	case id == hitProxies:
 		state.clearBroadcast()
-		state.activeSection = sectionProxies
+		state.setActiveSection(sectionProxies)
 		state.save()
 	case id == hitPortForwarding:
 		state.clearBroadcast()
-		state.activeSection = sectionForwards
+		state.setActiveSection(sectionForwards)
 		state.save()
 	case state.clickNotes(id):
 	case id == hitSnippets:
 		state.clearBroadcast()
-		state.activeSection = sectionSnippets
+		state.setActiveSection(sectionSnippets)
 		state.save()
 	case id == hitKnownHosts:
 		state.openKnownHosts()
@@ -2315,7 +2315,7 @@ func (state *State) closeSession(id uint32) {
 	state.sessions = slices.Delete(state.sessions, index, index+1)
 	state.syncActiveSession()
 	if state.deck.ActiveWorkspace() == 0 {
-		state.activeSection = sectionHosts
+		state.setActiveSection(sectionHosts)
 	}
 	state.fitTerminals()
 	state.fitSFTP(state.viewport)
@@ -2325,7 +2325,7 @@ func (state *State) closeSession(id uint32) {
 	}
 	if len(state.sessions) == 0 {
 		state.activeSessionID = 0
-		state.activeSection = sectionHosts
+		state.setActiveSection(sectionHosts)
 		return
 	}
 	state.activeSessionID = state.sessions[min(index, len(state.sessions)-1)].ID
@@ -2407,9 +2407,9 @@ func (state *State) closeWorkspaceNow(id layoutcore.WorkspaceID) {
 	state.syncActiveSession()
 	state.rebuildTabOptions()
 	if state.deck.ActiveWorkspace() == 0 {
-		state.activeSection = sectionHosts
+		state.setActiveSection(sectionHosts)
 	} else {
-		state.activeSection = sectionTerminal
+		state.setActiveSection(sectionTerminal)
 	}
 	state.save()
 }
@@ -3492,7 +3492,7 @@ func (state *State) createHostSessionWithConnection(host Host, address string, c
 	}
 	session.setStartDirectory(directory)
 	state.activeSessionID = session.ID
-	state.activeSection = sectionTerminal
+	state.setActiveSection(sectionTerminal)
 	state.status = state.messages.StatusOpened + session.Title
 	if conn == nil {
 		state.startConnection(session, host)
@@ -3521,7 +3521,7 @@ func (state *State) bindWorkspaceSession(workspaceID layoutcore.WorkspaceID, pan
 		return nil
 	}
 	state.activeSessionID = session.ID
-	state.activeSection = sectionTerminal
+	state.setActiveSection(sectionTerminal)
 	state.status = state.messages.StatusOpened + session.Title
 	return session
 }

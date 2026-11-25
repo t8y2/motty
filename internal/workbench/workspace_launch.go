@@ -99,7 +99,7 @@ func (state *State) launchWorkspaceWithIdentity(
 	// first.
 	state.deck.ActivatePane(workspaceID, paneIDs[0])
 	state.syncActiveSession()
-	state.activeSection = sectionTerminal
+	state.setActiveSection(sectionTerminal)
 	state.refreshWorkspaceViews()
 	state.rebuildTabOptions()
 	state.fitTerminals()
@@ -174,7 +174,7 @@ func (state *State) rollbackWorkspaceLaunch(
 	}
 	state.nextSessionID = previousNextSessionID
 	state.activeSessionID = previousSessionID
-	state.activeSection = previousSection
+	state.setActiveSection(previousSection)
 	state.refreshWorkspaceViews()
 	state.rebuildTabOptions()
 	state.pauseSave = previousPauseSave

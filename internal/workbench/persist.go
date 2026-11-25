@@ -166,7 +166,7 @@ type savedState struct {
 	HighlightBuiltin        string              `json:"highlight_builtin,omitempty"`
 	Highlights              []savedHighlight    `json:"highlights,omitempty"`
 	Snippets                []savedSnippet      `json:"snippets,omitempty"`
-	SnippetGroups           []string            `json:"snippet_groups,omitempty"`
+	SnippetGroups           []savedSnippetGroup `json:"snippet_groups,omitempty"`
 	SnippetShortcuts        []savedSnippetKey   `json:"snippet_shortcuts,omitempty"`
 	Autofill                []savedAutofill     `json:"autofill_rules,omitempty"`
 	Credentials             []savedCredential   `json:"credentials,omitempty"`
@@ -280,6 +280,12 @@ type savedSnippet struct {
 	Lines   bool   `json:"lines,omitempty"`
 	Group   string `json:"group,omitempty"`
 	Order   int    `json:"order,omitempty"`
+}
+
+// savedSnippetGroup is an explicit snippet folder kept even while it has no
+// snippets, so empty folders travel across devices with the snippets category.
+type savedSnippetGroup struct {
+	Name string `json:"name"`
 }
 
 // savedSnippetKey is the shortcut of the snippet of that name. It lives apart
@@ -703,8 +709,8 @@ func (state *State) snapshot() savedState {
 			})
 		}
 	}
-	if len(state.snippets.customGroups) > 0 {
-		saved.SnippetGroups = append([]string(nil), state.snippets.customGroups...)
+	for _, group := range state.snippets.customGroups {
+		saved.SnippetGroups = append(saved.SnippetGroups, savedSnippetGroup{Name: group})
 	}
 	saved.CommandsShown = state.commands.shown
 	saved.CommandsSide = state.commands.placement == commandsPlacementSide

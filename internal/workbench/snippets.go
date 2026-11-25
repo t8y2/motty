@@ -36,6 +36,9 @@ type snippet struct {
 
 	// cells is what the page's table shows of it, made by refreshSnippets.
 	cells [4]string
+	// inlineDraft keeps unvalidated edits made in the Snippets page's inline
+	// editor so switching selection or leaving the page does not discard them.
+	inlineDraft *snippetInlineDraft
 }
 
 const (
@@ -183,9 +186,27 @@ type snippetBlankMenu struct {
 	at   gfx.Point
 }
 
+// snippetInlineDraft preserves unvalidated inline editor text for an existing
+// snippet across selection switches and page changes.
+type snippetInlineDraft struct {
+	name    string
+	command string
+	error   string
+}
+
+// snippetNewDraft preserves an unsaved new-snippet draft when the user switches
+// to view another snippet before finishing it.
+type snippetNewDraft struct {
+	name    string
+	command string
+	snap    snippet
+	error   string
+}
+
 // snippetInlineEditor holds the Snippets page's right-pane inline editor state.
 type snippetInlineEditor struct {
 	draft       bool
+	savedDraft  *snippetNewDraft
 	loadedValid bool
 	loadedIndex int
 	loadedSnap  snippet
@@ -475,7 +496,7 @@ func (state *State) sendSnippetPicked(index int, session *Session) {
 	}
 	if state.sendResolvedSnippet(entry, entry.Command, session) {
 		state.ActivatePane(session.ID)
-		state.activeSection = sectionTerminal
+		state.setActiveSection(sectionTerminal)
 		// The page had the keyboard, and the page is what the click was on. The
 		// terminal is now on screen, so ask the next paint for its keyboard;
 		// otherwise the command arrives but typing goes nowhere until a click.

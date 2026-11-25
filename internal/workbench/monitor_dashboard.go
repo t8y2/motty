@@ -520,7 +520,7 @@ func (s *State) submitDashboard() {
 	}
 	d.active = p.ID
 	if e.fromHosts {
-		s.activeSection = sectionDashboard
+		s.setActiveSection(sectionDashboard)
 	}
 	d.search = text.Editor{}
 	d.scroll = 0
@@ -629,7 +629,7 @@ func (s *State) clickDashboard(id gfx.ID) bool {
 		return true
 	}
 	if id == hitDashboard && s.modal == modalNone {
-		s.activeSection = sectionDashboard
+		s.setActiveSection(sectionDashboard)
 		s.save()
 		return true
 	}

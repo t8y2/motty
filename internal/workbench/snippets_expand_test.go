@@ -8,6 +8,7 @@ import (
 
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
+	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -352,10 +353,11 @@ func TestSnippetsInlineEditorCoalescesSavesAndFlushesOnBlurAndSwitch(t *testing.
 		t.Fatalf("inline edit wrote to store mid-typing: got %q, want %q", reloaded.snippets.list[0].Name, "First")
 	}
 
-	// Blurring the inline editor flushes the pending edit immediately.
+	// Blurring the inline editor schedules a flush outside Paint.
 	canvas.Reset()
 	canvas.SetInteraction(gfx.ID{}, gfx.ID{}, gfx.ID{}, false)
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	state.Wake()
 	if state.snippets.inline.dirty || state.snippets.inline.saveTimer != nil {
 		t.Fatalf("blur did not flush inline save: dirty=%v timer=%v", state.snippets.inline.dirty, state.snippets.inline.saveTimer)
 	}
@@ -416,5 +418,120 @@ func TestSnippetsInlineEditorCoalescesSavesAndFlushesOnBlurAndSwitch(t *testing.
 	}
 	if reloaded := newTestState(t, options); reloaded.snippets.list[1].Name != "Second settled" {
 		t.Fatalf("reloaded name after debounce = %q, want %q", reloaded.snippets.list[1].Name, "Second settled")
+	}
+}
+
+func TestSnippetsInlineEditorPreservesInvalidDraftAcrossSwitchAndLeave(t *testing.T) {
+	options := freshOptions(t)
+	state := newTestState(t, options)
+	state.snippets.inline.saveDelay = time.Hour
+	state.snippets.list = []snippet{
+		{Name: "First", Group: "Ops", Command: "echo one", Run: true},
+		{Name: "Second", Group: "Ops", Command: "echo two", Run: true},
+	}
+	state.refreshSnippets()
+	state.save()
+	state.Click(hitSnippets)
+
+	var canvas gfx.Canvas
+	paint := func() {
+		canvas.Reset()
+		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+		canvas.RunAfterPaint()
+	}
+	clickRow := func(snippetIndex int) {
+		t.Helper()
+		rowIdx := -1
+		for i, row := range state.snippets.treeRows {
+			if !row.folder && row.snippet == snippetIndex {
+				rowIdx = i
+				break
+			}
+		}
+		if rowIdx < 0 {
+			t.Fatalf("snippet %d row not found", snippetIndex)
+		}
+		canvas.Reset()
+		canvas.BeginEventPass(state.snippets.tree.RowID(rowIdx), gfx.ClickInfo{})
+		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+		canvas.EndEventPass()
+		canvas.RunAfterPaint()
+	}
+
+	paint()
+
+	// Clear the name of the first snippet so validation fails, then switch away
+	// to the second snippet and back: the unvalidated edit and error must stay.
+	state.snippets.inline.name = text.Editor{}
+	state.snippets.inline.command = text.Editor{}
+	state.snippets.inline.command.Insert("echo edited-but-unnamed")
+	state.applyInlineSnippetEdits()
+	if state.snippets.inline.error != state.messages.Tools.SnippetErrorName {
+		t.Fatalf("error = %q, want %q", state.snippets.inline.error, state.messages.Tools.SnippetErrorName)
+	}
+	clickRow(1)
+	if state.snippets.selected != 1 || state.snippets.inline.name.String() != "Second" || state.snippets.inline.error != "" {
+		t.Fatalf("second snippet state = selected:%d name:%q err:%q", state.snippets.selected, state.snippets.inline.name.String(), state.snippets.inline.error)
+	}
+	clickRow(0)
+	if state.snippets.inline.name.String() != "" || state.snippets.inline.command.String() != "echo edited-but-unnamed" || state.snippets.inline.error != state.messages.Tools.SnippetErrorName {
+		t.Fatalf("switching back lost unvalidated draft: name=%q cmd=%q err=%q",
+			state.snippets.inline.name.String(), state.snippets.inline.command.String(), state.snippets.inline.error)
+	}
+
+	// Leaving the Snippets page and returning must keep the unvalidated draft.
+	state.Click(hitHosts)
+	paint()
+	state.Click(hitSnippets)
+	paint()
+	if state.snippets.inline.name.String() != "" || state.snippets.inline.command.String() != "echo edited-but-unnamed" || state.snippets.inline.error != state.messages.Tools.SnippetErrorName {
+		t.Fatalf("leaving section lost unvalidated draft: name=%q cmd=%q err=%q",
+			state.snippets.inline.name.String(), state.snippets.inline.command.String(), state.snippets.inline.error)
+	}
+
+	// Fixing the name clears the draft error, and leaving the section flushes
+	// the pending save at the section-switch entry point without Paint.
+	state.snippets.inline.name.Insert("First fixed")
+	state.applyInlineSnippetEdits()
+	if state.snippets.inline.error != "" || !state.snippets.inline.dirty {
+		t.Fatalf("after fix: error=%q dirty=%v", state.snippets.inline.error, state.snippets.inline.dirty)
+	}
+	state.Click(hitHosts)
+	if state.snippets.inline.dirty {
+		t.Fatal("leaving Snippets section did not flush pending inline save")
+	}
+	if reloaded := newTestState(t, options); reloaded.snippets.list[0].Name != "First fixed" || reloaded.snippets.list[0].Command != "echo edited-but-unnamed" {
+		t.Fatalf("reloaded snippet after section leave = %+v", reloaded.snippets.list[0])
+	}
+
+	// New-snippet draft survives leaving the section and switching to another
+	// snippet, and is only cleared when explicitly cancelled.
+	state.Click(hitSnippets)
+	state.Click(hitSnippetAdd)
+	state.snippets.inline.name.Insert("Draft Name")
+	state.applyInlineSnippetEdits()
+	if !state.snippets.inline.draft || state.snippets.inline.error != state.messages.Tools.SnippetErrorCommand {
+		t.Fatalf("new draft state: draft=%v err=%q", state.snippets.inline.draft, state.snippets.inline.error)
+	}
+	state.Click(hitHosts)
+	paint()
+	state.Click(hitSnippets)
+	paint()
+	if !state.snippets.inline.draft || state.snippets.inline.name.String() != "Draft Name" || state.snippets.inline.error != state.messages.Tools.SnippetErrorCommand {
+		t.Fatalf("leaving section lost new draft: draft=%v name=%q err=%q",
+			state.snippets.inline.draft, state.snippets.inline.name.String(), state.snippets.inline.error)
+	}
+	clickRow(1)
+	if state.snippets.inline.draft {
+		t.Fatal("clicking an existing snippet should leave draft mode")
+	}
+	state.Click(hitSnippetAdd)
+	if !state.snippets.inline.draft || state.snippets.inline.name.String() != "Draft Name" {
+		t.Fatalf("re-opening new draft did not restore stashed draft: draft=%v name=%q",
+			state.snippets.inline.draft, state.snippets.inline.name.String())
+	}
+	state.Click(hitSnippetRemove)
+	if state.snippets.inline.draft || state.snippets.inline.savedDraft != nil {
+		t.Fatalf("cancelling new draft left draft=%v savedDraft=%v", state.snippets.inline.draft, state.snippets.inline.savedDraft)
 	}
 }

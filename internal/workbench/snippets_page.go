@@ -449,6 +449,7 @@ func (state *State) clickSnippetsPage(id gfx.ID) bool {
 	case hitSnippetRemove:
 		if form.inline.draft {
 			form.inline.draft = false
+			form.inline.savedDraft = nil
 			state.syncInlineSnippet(true)
 			return true
 		}
@@ -684,7 +685,9 @@ func (state *State) snippetTreeChanges() {
 			form.selectedFolder = e.group
 			state.toggleSnippetTreeFolder(e.groupKey)
 		} else if e.snippet >= 0 && e.snippet < len(form.list) {
-			if e.snippet != form.selected {
+			if form.inline.draft {
+				state.stashInlineSnippetDraft()
+			} else if e.snippet != form.selected {
 				state.flushInlineSnippetSave()
 			}
 			form.inline.draft = false
@@ -892,7 +895,11 @@ func (state *State) declareSnippetInlineEditor(c ui.C, width float32, narrow boo
 	prevFocus := inline.lastFocus
 	inline.lastFocus = focused
 	if inline.dirty && (prevFocus == hitSnippetInlineName || prevFocus == hitSnippetInlineCommand) && focused != prevFocus {
-		state.flushInlineSnippetSave()
+		state.aiPost(func(state *State) {
+			if !state.closed && state.snippets.inline.dirty {
+				state.flushInlineSnippetSave()
+			}
+		})
 	}
 	condensed := width < 520
 	sendWidth, sendIcon := toolbarButtonLayout(c.Canvas(), m.SnippetSend, iconPlay, iconPlay, condensed)
@@ -982,6 +989,47 @@ func (state *State) paintSnippetsWorkspace(canvas *gfx.Canvas) {
 	}
 }
 
+// setActiveSection switches the active workbench section and flushes any
+// pending inline snippet edits when leaving the Snippets page.
+func (state *State) setActiveSection(section uint8) {
+	if state.activeSection == sectionSnippets && section != sectionSnippets {
+		state.leaveSnippetsSection()
+	}
+	state.activeSection = section
+}
+
+// leaveSnippetsSection flushes coalesced inline snippet saves and clears
+// transient focus/capture state when leaving the Snippets page, while keeping
+// any in-progress draft or unvalidated edits intact.
+func (state *State) leaveSnippetsSection() {
+	inline := &state.snippets.inline
+	inline.lastFocus = gfx.ID{}
+	inline.capturing = false
+	inline.groupPicker.Open = false
+	state.snippets.folderMenu.open = false
+	state.snippets.blankMenu.open = false
+	if inline.dirty {
+		state.flushInlineSnippetSave()
+	}
+}
+
+// stashInlineSnippetDraft preserves an unfinished new-snippet draft when the
+// user switches away to view another snippet in the tree.
+func (state *State) stashInlineSnippetDraft() {
+	inline := &state.snippets.inline
+	if !inline.draft {
+		return
+	}
+	if inline.name.String() != "" || inline.command.String() != "" {
+		inline.savedDraft = &snippetNewDraft{
+			name:    inline.name.String(),
+			command: inline.command.String(),
+			snap:    inline.loadedSnap,
+			error:   inline.error,
+		}
+	}
+}
+
 // startInlineSnippetDraft opens a blank snippet in the inline editor so adding
 // a command uses the same single editing surface as editing an existing one.
 func (state *State) startInlineSnippetDraft(defaultGroup string) {
@@ -991,20 +1039,28 @@ func (state *State) startInlineSnippetDraft(defaultGroup string) {
 		form.inline.error = m.SnippetErrorTooMany
 		return
 	}
-	group := cleanSnippetGroup(defaultGroup)
-	state.activeSection = sectionSnippets
+	state.setActiveSection(sectionSnippets)
 	inline := &form.inline
 	inline.draft = true
 	inline.loadedValid = true
 	inline.loadedIndex = -1
-	inline.loadedSnap = snippet{Group: group, Run: true}
 	inline.name = text.Editor{}
 	inline.command = text.Editor{}
 	inline.commandArea = dialogArea{}
 	inline.capturing = false
-	inline.error = ""
+	if saved := inline.savedDraft; saved != nil {
+		inline.loadedSnap = saved.snap
+		inline.name.Insert(saved.name)
+		inline.command.Insert(saved.command)
+		inline.error = saved.error
+		inline.savedDraft = nil
+	} else {
+		group := cleanSnippetGroup(defaultGroup)
+		inline.loadedSnap = snippet{Group: group, Run: true}
+		inline.error = ""
+	}
 	form.treeDrawer = false
-	state.initInlineGroupPicker(group)
+	state.initInlineGroupPicker(inline.loadedSnap.Group)
 	state.refreshInlineMeta(inline.loadedSnap)
 	state.pendingFocus = hitSnippetInlineName
 }
@@ -1012,12 +1068,16 @@ func (state *State) startInlineSnippetDraft(defaultGroup string) {
 // focusInlineSnippet switches to the Snippets page and focuses the inline
 // editor on the snippet at index (used when editing a chip from the command bar).
 func (state *State) focusInlineSnippet(index int) {
-	state.flushInlineSnippetSave()
+	if state.snippets.inline.draft {
+		state.stashInlineSnippetDraft()
+	} else {
+		state.flushInlineSnippetSave()
+	}
 	form := &state.snippets
 	if index < 0 || index >= len(form.list) {
 		return
 	}
-	state.activeSection = sectionSnippets
+	state.setActiveSection(sectionSnippets)
 	form.inline.draft = false
 	form.selected = index
 	form.selectedFolder = form.list[index].Group
@@ -1111,12 +1171,18 @@ func (state *State) syncInlineSnippet(force bool) {
 	inline.loadedIndex = form.selected
 	inline.loadedSnap = entry
 	inline.name = text.Editor{}
-	inline.name.Insert(entry.Name)
 	inline.command = text.Editor{}
-	inline.command.Insert(entry.Command)
 	inline.commandArea = dialogArea{}
 	inline.capturing = false
-	inline.error = ""
+	if draft := entry.inlineDraft; draft != nil {
+		inline.name.Insert(draft.name)
+		inline.command.Insert(draft.command)
+		inline.error = draft.error
+	} else {
+		inline.name.Insert(entry.Name)
+		inline.command.Insert(entry.Command)
+		inline.error = ""
+	}
 	state.initInlineGroupPicker(entry.Group)
 	state.refreshInlineMeta(entry)
 }
@@ -1227,15 +1293,24 @@ func (state *State) applyInlineSnippetEdits() {
 	candidate := current
 	candidate.Name = cleanSnippetText(inline.name.String(), maxSnippetName)
 	candidate.Command = sanitizeSnippetCommand(inline.command.String())
+	var validationErr string
 	switch {
 	case candidate.Name == "":
-		inline.error = m.SnippetErrorName
-		return
+		validationErr = m.SnippetErrorName
 	case strings.TrimSpace(candidate.Command) == "":
-		inline.error = m.SnippetErrorCommand
-		return
+		validationErr = m.SnippetErrorCommand
 	case len(candidate.Command) > maxSnippetCommand || !snippetRecordFits(candidate, order):
-		inline.error = m.SnippetErrorTooLong
+		validationErr = m.SnippetErrorTooLong
+	}
+	if validationErr != "" {
+		inline.error = validationErr
+		if !inline.draft {
+			form.list[form.selected].inlineDraft = &snippetInlineDraft{
+				name:    inline.name.String(),
+				command: inline.command.String(),
+				error:   validationErr,
+			}
+		}
 		return
 	}
 	inline.error = ""
@@ -1244,10 +1319,12 @@ func (state *State) applyInlineSnippetEdits() {
 			inline.error = m.SnippetErrorTooMany
 			return
 		}
+		candidate.inlineDraft = nil
 		form.list = append(form.list, candidate)
 		form.selected = len(form.list) - 1
 		form.selectedFolder = candidate.Group
 		inline.draft = false
+		inline.savedDraft = nil
 		inline.loadedIndex = form.selected
 		inline.loadedSnap = candidate
 		form.showSnippet(form.selected)
@@ -1257,9 +1334,11 @@ func (state *State) applyInlineSnippetEdits() {
 		state.scheduleInlineSnippetSave()
 		return
 	}
+	form.list[form.selected].inlineDraft = nil
 	if snippetsSameContent(current, candidate) {
 		return
 	}
+	candidate.inlineDraft = nil
 	form.list[form.selected] = candidate
 	inline.loadedSnap = candidate
 	state.refreshSnippets()

@@ -41,7 +41,7 @@ func (state *State) openMarkdownFiles(paths []string) {
 	if !state.flushNoteDraft() {
 		return
 	}
-	state.activeSection = sectionNotes
+	state.setActiveSection(sectionNotes)
 	state.noteLinksRecheck()
 	state.refreshNoteHosts()
 	state.linkNotePaths(paths)

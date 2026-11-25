@@ -455,7 +455,7 @@ func (state *State) restoreTerminalTools(saved savedState) {
 	state.snippets.list = state.snippets.list[:0]
 	state.snippets.customGroups = state.snippets.customGroups[:0]
 	for _, group := range saved.SnippetGroups {
-		if clean := restoreSnippetGroup(group); clean != "" {
+		if clean := restoreSnippetGroup(group.Name); clean != "" {
 			state.snippets.customGroups = append(state.snippets.customGroups, clean)
 		}
 	}

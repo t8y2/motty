@@ -74,11 +74,11 @@ func (state *State) closeSettingsTab() {
 		switch {
 		case len(state.sftpTabs) > 0:
 			state.activeSFTPTab = state.sftpTabs[len(state.sftpTabs)-1].session.ID
-			state.activeSection = sectionSFTP
+			state.setActiveSection(sectionSFTP)
 		case state.deck.ActiveWorkspace() != 0:
-			state.activeSection = sectionTerminal
+			state.setActiveSection(sectionTerminal)
 		default:
-			state.activeSection = sectionHosts
+			state.setActiveSection(sectionHosts)
 		}
 	}
 	state.save()
