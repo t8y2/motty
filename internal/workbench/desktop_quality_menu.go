@@ -14,12 +14,14 @@ import (
 
 // setDesktopQuality changes the quality choices of a session's host, saves them
 // and gives them to the session: VNC applies them to the running connection,
-// anything else asks to reconnect.
+// anything else asks to reconnect. The resolution menu changes a host the same
+// way.
 func (state *State) setDesktopQuality(session *Session, change func(*Host)) {
 	host := session.host
 	change(&host)
 	if host.ColorDepth == session.host.ColorDepth && host.PreferredEncoding == session.host.PreferredEncoding &&
-		host.desktopEffects() == session.host.desktopEffects() {
+		host.desktopEffects() == session.host.desktopEffects() &&
+		host.DesktopWidth == session.host.DesktopWidth && host.DesktopHeight == session.host.DesktopHeight {
 		return
 	}
 	if index := state.hostIndex(session.HostID); index >= 0 {
@@ -46,6 +48,7 @@ func (state *State) setDesktopQuality(session *Session, change func(*Host)) {
 // the saved host is taken from the session's copy.
 func hostWithQuality(saved, chosen Host) Host {
 	saved.ColorDepth, saved.PreferredEncoding, saved.Effects = chosen.ColorDepth, chosen.PreferredEncoding, chosen.Effects
+	saved.DesktopWidth, saved.DesktopHeight = chosen.DesktopWidth, chosen.DesktopHeight
 	return saved
 }
 

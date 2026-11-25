@@ -766,6 +766,9 @@ type State struct {
 	localStartupCommands map[string]string
 	// localStartupDialog is the popup that edits one shell's startup command.
 	localStartupDialog localStartupDialog
+	// desktopResolution is the popup that types a custom remote resolution for
+	// an open RDP session.
+	desktopResolution  desktopResolutionDialog
 	localStart         localStartPolicy
 	lastLocalDirectory string // where a local shell last was; a new local terminal starts there when no local tab is in front
 	localShellMenu     localShellSelect
@@ -1589,6 +1592,10 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 		if hit == hitTabRenameField {
 			return &state.tabRename.editor
 		}
+	case modalDesktopResolution:
+		if hit == hitDesktopResolutionField {
+			return &state.desktopResolution.editor
+		}
 	case modalLocalStartupCommand:
 		if hit == hitLocalStartupField {
 			return &state.localStartupDialog.editor
@@ -1883,6 +1890,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		return
 	case modalLocalStartupCommand:
 		state.clickLocalStartupCommandDialog(id)
+		return
+	case modalDesktopResolution:
+		state.clickDesktopResolutionDialog(id)
 		return
 	case modalAIRename:
 		state.clickAIRenameDialog(id)
@@ -3335,6 +3345,9 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		return result
 	}
 	if result, handled := state.localStartupCommandKey(event); handled {
+		return result
+	}
+	if result, handled := state.desktopResolutionKey(event); handled {
 		return result
 	}
 	if result, handled := state.tabRenameKey(event); handled {

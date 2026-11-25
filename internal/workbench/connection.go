@@ -568,6 +568,7 @@ const (
 	modalOpenLink
 	modalRenameTab
 	modalLocalStartupCommand
+	modalDesktopResolution
 	modalAIRename
 	modalCloseTabs
 	modalQuitKeepWindows

@@ -5,6 +5,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 
 	"motty/internal/desktop/rdp"
@@ -134,4 +137,128 @@ func (state *State) declareResolutionCustom(c ui.C, rowHeight float32) {
 	form.resolutionBody.custom = ui.Slot(c).Height(rowHeight)
 	state.declareHostTextField(c, form.resolutionBody.custom, &form.fieldResolution, hitDialogResolution, &editor.resolutionCustom,
 		state.messages.Desktop.ResolutionCustomField, desktopSizeChoices[3].String(), false, rowHeight)
+}
+
+var (
+	hitDesktopResolutionClose  = tree.ID(desktopHits, "resolution-close")
+	hitDesktopResolutionCancel = tree.ID(desktopHits, "resolution-cancel")
+	hitDesktopResolutionSubmit = tree.ID(desktopHits, "resolution-submit")
+	hitDesktopResolutionField  = tree.ID(desktopHits, "resolution-field")
+)
+
+// desktopResolutionDialog types the custom remote resolution of an open RDP
+// session, from its quality menu.
+type desktopResolutionDialog struct {
+	session uint32
+	editor  text.Editor
+	form    ui.FormFieldState
+	input   ui.Field
+	bound   bool
+}
+
+// openDesktopResolutionDialog asks for a resolution, starting from the one the
+// host has.
+func (state *State) openDesktopResolutionDialog(session *Session) {
+	if state.modal != modalNone {
+		return
+	}
+	state.desktopResolution = desktopResolutionDialog{session: session.ID}
+	size, fixed := session.host.fixedDesktopSize()
+	if !fixed {
+		size = desktopSizeChoices[3]
+	}
+	state.desktopResolution.editor.Insert(size.String())
+	state.desktopResolution.editor.SetSelection(text.Range{End: state.desktopResolution.editor.RuneCount()})
+	state.dialogError = ""
+	state.modal = modalDesktopResolution
+}
+
+func (state *State) clickDesktopResolutionDialog(id gfx.ID) {
+	switch id {
+	case hitDesktopResolutionClose, hitDesktopResolutionCancel:
+		state.modal = modalNone
+		state.dialogError = ""
+	case hitDesktopResolutionSubmit:
+		size, ok := parseDesktopSize(state.desktopResolution.editor.String())
+		if !ok {
+			state.dialogError = state.messages.Desktop.ErrResolution
+			return
+		}
+		state.modal = modalNone
+		state.dialogError = ""
+		if session, found := state.sessionByIDPointer(state.desktopResolution.session); found {
+			state.setDesktopQuality(session, func(host *Host) { host.DesktopWidth, host.DesktopHeight = size.width, size.height })
+		}
+	}
+}
+
+// desktopResolutionKey makes Enter in the field, or on the button, apply.
+func (state *State) desktopResolutionKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if state.modal != modalDesktopResolution || event.Key != gfx.KeyEnter || event.Repeat {
+		return gfx.EventResult{}, false
+	}
+	if event.Target != hitDesktopResolutionField && event.Target != hitDesktopResolutionSubmit {
+		return gfx.EventResult{}, false
+	}
+	state.clickDesktopResolutionDialog(hitDesktopResolutionSubmit)
+	return gfx.EventResult{Handled: true, Repaint: true}, true
+}
+
+func (state *State) declareDesktopResolutionDialog(c ui.C) {
+	m := state.messages.Desktop
+	dialog := &state.desktopResolution
+	// No scrim dismiss: a press beside the form must not discard its input.
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 460, m.QualityReconnectNote, dialogRowHeight(c.Theme()))
+	box := ui.Dialog(c, ui.DialogSpec{
+		Title: m.ResolutionField, Description: m.QualityReconnectNote, Width: 460, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, CloseID: hitDesktopResolutionClose, InitialFocusID: hitDesktopResolutionField,
+	})
+	box.Body(func() {
+		if !dialog.bound {
+			dialog.input.Bind(&dialog.editor)
+			dialog.bound = true
+		}
+		dialog.form.For, dialog.form.Error, dialog.form.Invalid = hitDesktopResolutionField, state.dialogError, state.dialogError != ""
+		ui.FormField(c, &dialog.form, m.ResolutionCustomField).FillWidth().Height(dialogRowHeight(c.Theme())).Children(func() {
+			ui.TextField(c, &dialog.input, m.ResolutionCustomField, desktopSizeChoices[3].String(), ui.WithID(hitDesktopResolutionField))
+		})
+	})
+	box.Footer(func() {
+		state.dialogActionFooter(c,
+			components.ButtonAction{ID: hitDesktopResolutionCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
+			components.ButtonAction{ID: hitDesktopResolutionSubmit, Label: m.ResolutionApply, Variant: components.ButtonDefault},
+		)
+	})
+}
+
+// declareDesktopResolutionMenu declares the menu under the bar's resolution
+// button of an RDP session: the sizes the host editor offers. A choice is saved
+// with the host and asks to connect again.
+func (state *State) declareDesktopResolutionMenu(c ui.C, session *Session, view *desktopView, anchor ui.Box) {
+	if !view.resolutionMenu {
+		return
+	}
+	m := state.messages.Desktop
+	current := desktopSize{}
+	if size, fixed := session.host.fixedDesktopSize(); fixed {
+		current = desktopSizeChoice(size)
+	}
+	ui.PopupLayer(c, dialogLayer)
+	ui.Menu(c, anchor, &view.resolutionMenu, func(menu *ui.MenuItems) {
+		menu.WidthRange(240, 240)
+		menu.Label(m.QualityReconnectNote)
+		for _, choice := range desktopSizeChoices {
+			if !menu.Item(state.desktopSizeLabel(choice)).Chosen(current == choice).Clicked() {
+				continue
+			}
+			if choice == customDesktopSize {
+				c.After(func() { state.openDesktopResolutionDialog(session) })
+				continue
+			}
+			c.After(func() {
+				state.setDesktopQuality(session, func(host *Host) { host.DesktopWidth, host.DesktopHeight = choice.width, choice.height })
+			})
+		}
+	})
 }

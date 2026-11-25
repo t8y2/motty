@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/text"
 	"motty/internal/desktop"
 )
 
@@ -299,5 +300,56 @@ func TestFixedResolutionIsAskedOnceAndScaledToThePane(t *testing.T) {
 	}
 	if w, h := session.desk.width, session.desk.height; w != 1920 || h != 1080 {
 		t.Fatalf("the picture is %dx%d", w, h)
+	}
+}
+
+// A resolution chosen on an open RDP session is saved with its host and asks to
+// connect again, since the size is fixed in the handshake; one that is not a
+// size is refused and keeps the dialog open.
+func TestResolutionChosenOnAnOpenSessionIsSavedAndReconnects(t *testing.T) {
+	size := gfx.Size{Width: 1400, Height: 900}
+	state, session, _, _, _ := followState(t, 2, true, size)
+	state.openDesktopResolutionDialog(session)
+	if state.modal != modalDesktopResolution {
+		t.Fatalf("the dialog did not open: modal %v", state.modal)
+	}
+	state.desktopResolution.editor = text.Editor{}
+	state.desktopResolution.editor.Insert("wide")
+	state.clickDesktopResolutionDialog(hitDesktopResolutionSubmit)
+	if state.modal != modalDesktopResolution || state.dialogError == "" {
+		t.Fatal("a text that is not a size was accepted")
+	}
+	state.desktopResolution.editor = text.Editor{}
+	state.desktopResolution.editor.Insert("1600 x 900")
+	state.clickDesktopResolutionDialog(hitDesktopResolutionSubmit)
+	if state.modal != modalSessionLink {
+		t.Fatalf("a new resolution did not ask to connect again: modal %v", state.modal)
+	}
+	if index := state.hostIndex(session.HostID); index < 0 || state.hosts[index].DesktopWidth != 1600 || state.hosts[index].DesktopHeight != 900 {
+		t.Fatalf("the resolution was not saved with the host: %+v", state.hosts)
+	}
+}
+
+// The resolution menu of an RDP session lists the choices, and the quality menu
+// leaves them out: a resolution is not a quality.
+func TestResolutionMenuOffersTheChoices(t *testing.T) {
+	size := gfx.Size{Width: 1400, Height: 900}
+	host := Host{Label: "Win", Address: "win.example.com", User: "alice", Protocol: protocolRDP, DesktopWidth: 1920, DesktopHeight: 1080}
+	_, session, _, _, screen := followStateOf(t, 1, true, size, host)
+	m := screen.state.messages.Desktop
+	session.desk.qualityMenu = true
+	screen.canvas.Reset()
+	screen.paint(size, 10*time.Millisecond)
+	if texts := canvasTexts(&screen.canvas); hasText(texts, m.ResolutionAuto) || hasText(texts, "1280 × 720") {
+		t.Errorf("the quality menu offers resolutions: %v", texts)
+	}
+	session.desk.qualityMenu, session.desk.resolutionMenu = false, true
+	screen.canvas.Reset()
+	screen.paint(size, 20*time.Millisecond)
+	texts := canvasTexts(&screen.canvas)
+	for _, want := range []string{m.ResolutionAuto, "1280 × 720", "1920 × 1080", m.ResolutionCustom} {
+		if !hasText(texts, want) {
+			t.Errorf("the resolution menu does not offer %q: %v", want, texts)
+		}
 	}
 }

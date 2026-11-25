@@ -2962,6 +2962,8 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareTabRenameDialog(c)
 	case modalLocalStartupCommand:
 		state.declareLocalStartupCommandDialog(c)
+	case modalDesktopResolution:
+		state.declareDesktopResolutionDialog(c)
 	case modalAIRename:
 		state.declareAIRenameDialog(c)
 	case modalHostImportResult:
