@@ -82,11 +82,15 @@ func (state *State) declareKeysWorkspace(c ui.C) {
 		if len(state.identities) == 0 {
 			view.empty = state.reserveEmptyPage(c, bounds, messages.KeyEmpty, messages.KeyEmptySub, messages.KeyAdd, hitKeysAdd, iconKey, true)
 		} else {
-			state.keysColumns = [...]components.TableColumn{{Width: 190}, {Width: 150}, {Width: 120}, {Width: 105}, {Width: 0}}
-			state.keysHeadings = [...]string{messages.KeyColumnName, messages.KeyColumnType, messages.KeyColumnProtection, messages.KeyColumnCertificate, messages.KeyColumnFingerprint}
-			components.FitTableHeadings(canvas, state.Theme(), state.keysColumns[:], state.keysHeadings[:])
+			state.keysColumns = [...]components.TableColumn{
+				{Title: messages.KeyColumnName, Width: 190},
+				{Title: messages.KeyColumnType, Width: 150},
+				{Title: messages.KeyColumnProtection, Width: 120},
+				{Title: messages.KeyColumnCertificate, Width: 105},
+				{Title: messages.KeyColumnFingerprint},
+			}
 			ui.Table(c, &state.keysTable, ui.TableSpec{
-				Rows: hitKeyRowList, Columns: state.keysColumns[:], Headers: state.keysHeadings[:], Source: &state.keysRows,
+				Rows: hitKeyRowList, Columns: state.keysColumns[:], FitHeadings: true, Source: &state.keysRows,
 				Scrollbar: hitKeysScrollThumb, ScrollbarLabel: messages.KeyListScroll,
 				ScrollbarGutter: catalogBarGutter,
 			}).Grow(1).Shrink(1)

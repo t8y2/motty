@@ -565,7 +565,6 @@ type State struct {
 	forwardColumns         [6]components.TableColumn
 	forwardHeadings        [6]string
 	keysColumns            [5]components.TableColumn
-	keysHeadings           [5]string
 	proxyColumns           [6]components.TableColumn
 	proxyHeadings          [6]string
 	proxyFilteredIndices   []int
