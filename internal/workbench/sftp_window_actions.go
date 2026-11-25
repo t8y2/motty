@@ -173,7 +173,7 @@ func (w *sftpWindow) fileAction(local bool, id gfx.ID) {
 		}
 	case hitSFTPRename:
 		if !local {
-			w.owner.openSFTPDialog(w.view, sftpDialogRename)
+			w.owner.beginSFTPRename(w.view)
 		}
 	case hitSFTPMove:
 		if !local {

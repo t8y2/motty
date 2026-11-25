@@ -108,6 +108,7 @@ func (state *State) beginSFTPNavigation(view *sftpView, local bool, directory st
 	nav.reveal, folder.reveal = folder.reveal, sftpReveal{}
 	folder.navigation = nav
 	if !local {
+		view.rename = nil
 		view.remoteSeq++
 		view.preparingID = 0
 		view.preparingPath, view.followUpPath, view.followUpEntries = "", "", nil

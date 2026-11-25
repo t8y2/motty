@@ -522,6 +522,9 @@ func (w *sftpWindow) declareSudoToggle(c ui.C) ui.Box {
 // side even when the panes swap places.
 func (w *sftpWindow) declarePane(c ui.C, s *sftpWindowScratch) {
 	local := s.local
+	if !local {
+		w.view.reconcileSFTPRename(c.Canvas(), !w.listBlocked() && w.connected())
+	}
 	side := sideIndex(local)
 	folder := w.folder(local)
 	theme, m := w.owner.Theme(), w.owner.messages
@@ -803,25 +806,27 @@ func (w *sftpWindow) declareListRow(row ui.ListRow, side int, paneWidth, rowWidt
 	}
 	box.Children(func() {
 		w.owner.declareSFTPRowIcon(c, entry, tint)
-		name := ui.Text(c, entry.entry.Name).Color(color).Ellipsis().Grow(1)
-		// The row spends its padding, the icon and the gaps before the name text;
-		// a name wider than what is left is the one the tooltip is for.
-		available := rowWidth - 16 - sftpColumnIconWidth - 3*sftpColumnNameGap - sizeWidth - modifiedWidth
-		if !resizable {
-			available = rowWidth - 16 - sftpColumnIconWidth - sftpColumnNameGap
-			for _, column := range w.owner.sftpColumns.entries[1:] {
-				if column.Enabled {
-					available -= sftpColumnNameGap
-					if column.Key == sftpColumnSize {
-						available -= sizeWidth
-					} else if column.Key == sftpColumnModified {
-						available -= modifiedWidth
+		if side == 0 || !w.owner.declareSFTPRename(c, w.view, row.ID, entry.entry) {
+			name := ui.Text(c, entry.entry.Name).Color(color).Ellipsis().Grow(1)
+			// The row spends its padding, the icon and the gaps before the name text;
+			// a name wider than what is left is the one the tooltip is for.
+			available := rowWidth - 16 - sftpColumnIconWidth - 3*sftpColumnNameGap - sizeWidth - modifiedWidth
+			if !resizable {
+				available = rowWidth - 16 - sftpColumnIconWidth - sftpColumnNameGap
+				for _, column := range w.owner.sftpColumns.entries[1:] {
+					if column.Enabled {
+						available -= sftpColumnNameGap
+						if column.Key == sftpColumnSize {
+							available -= sizeWidth
+						} else if column.Key == sftpColumnModified {
+							available -= modifiedWidth
+						}
 					}
 				}
 			}
-		}
-		if available > 0 && c.Canvas().TextWidth(entry.entry.Name, metrics.FontSizeM) > available {
-			name = name.HitWith(row.ID, entry.entry.Name, gfx.HitOptions{Hint: entry.entry.Name, SkipFocus: true})
+			if available > 0 && c.Canvas().TextWidth(entry.entry.Name, metrics.FontSizeM) > available {
+				name = name.HitWith(row.ID, entry.entry.Name, gfx.HitOptions{Hint: entry.entry.Name, SkipFocus: true})
+			}
 		}
 		for _, column := range w.owner.sftpColumns.entries[1:] {
 			if !column.Enabled {
