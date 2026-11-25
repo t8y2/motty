@@ -62,7 +62,7 @@ func (conn *Conn) Shared() bool {
 func (conn *Conn) letGo() bool {
 	if conn.owner != nil {
 		conn.owner.release(conn)
-		conn.endShare(nil)
+		conn.endShare(nil, false)
 		return true
 	}
 	conn.mu.Lock()
@@ -99,7 +99,7 @@ func (conn *Conn) release(child *Conn) {
 
 // endShare is the end of a shared tab: closed, with the reason if it did not
 // choose to leave.
-func (conn *Conn) endShare(err error) {
+func (conn *Conn) endShare(err error, probeRefused bool) {
 	conn.mu.Lock()
 	if conn.status.Phase == PhaseClosed {
 		conn.mu.Unlock()
@@ -108,7 +108,7 @@ func (conn *Conn) endShare(err error) {
 	conn.status.Version++
 	conn.status.Phase = PhaseClosed
 	conn.status.Err = err
-	conn.status.ProbeRefused = err != nil && conn.probeState().refused()
+	conn.status.ProbeRefused = probeRefused
 	conn.mu.Unlock()
 	conn.cancel()
 	conn.notify()
@@ -116,13 +116,13 @@ func (conn *Conn) endShare(err error) {
 }
 
 // endShares ends every tab that borrowed this connection, now that it is gone.
-func (conn *Conn) endShares(err error) {
+func (conn *Conn) endShares(err error, probeRefused bool) {
 	conn.mu.Lock()
 	conn.terminated = true
 	shares := conn.shares
 	conn.shares = nil
 	conn.mu.Unlock()
 	for _, share := range shares {
-		share.endShare(err)
+		share.endShare(err, probeRefused)
 	}
 }

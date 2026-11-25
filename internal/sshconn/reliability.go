@@ -189,7 +189,7 @@ func (conn *Conn) startCountKeepAlive(client *ssh.Client, socket *aliveSocket, c
 					// still declared dead after CountMax missed rounds.
 					missed++
 					if missed > *config.CountMax {
-						if conn.recordDisconnect(fmt.Errorf("%w: %w", ErrDisconnected, ErrKeepAliveTimeout)) {
+						if conn.recordLocalDisconnect(fmt.Errorf("%w: %w", ErrDisconnected, ErrKeepAliveTimeout)) {
 							conn.cancel()
 							_ = client.Close()
 						}
@@ -208,7 +208,7 @@ func (conn *Conn) startCountKeepAlive(client *ssh.Client, socket *aliveSocket, c
 				}
 				if claimed, busy := owner.beginProbe(); !claimed {
 					if busy >= config.Interval*time.Duration(*config.CountMax) {
-						if conn.recordDisconnect(fmt.Errorf("%w: %w", ErrDisconnected, ErrKeepAliveTimeout)) {
+						if conn.recordLocalDisconnect(fmt.Errorf("%w: %w", ErrDisconnected, ErrKeepAliveTimeout)) {
 							conn.cancel()
 							_ = client.Close()
 						}
@@ -220,7 +220,7 @@ func (conn *Conn) startCountKeepAlive(client *ssh.Client, socket *aliveSocket, c
 				missed++
 				if missed > *config.CountMax {
 					owner.endProbe()
-					if conn.recordDisconnect(fmt.Errorf("%w: %w", ErrDisconnected, ErrKeepAliveTimeout)) {
+					if conn.recordLocalDisconnect(fmt.Errorf("%w: %w", ErrDisconnected, ErrKeepAliveTimeout)) {
 						conn.cancel()
 						_ = client.Close()
 					}
@@ -277,7 +277,7 @@ func (conn *Conn) sendKeepAlive(client *ssh.Client) bool {
 	claimed, busy := owner.beginProbe()
 	if !claimed {
 		if busy >= conn.config.KeepAlive.Timeout {
-			if conn.recordDisconnect(fmt.Errorf("%w: %w", ErrDisconnected, ErrKeepAliveTimeout)) {
+			if conn.recordLocalDisconnect(fmt.Errorf("%w: %w", ErrDisconnected, ErrKeepAliveTimeout)) {
 				_ = client.Close()
 			}
 			return false
@@ -287,7 +287,7 @@ func (conn *Conn) sendKeepAlive(client *ssh.Client) bool {
 	defer owner.endProbe()
 	timedOut := make(chan struct{})
 	timer := time.AfterFunc(conn.config.KeepAlive.Timeout, func() {
-		if conn.recordDisconnect(fmt.Errorf("%w: %w", ErrDisconnected, ErrKeepAliveTimeout)) {
+		if conn.recordLocalDisconnect(fmt.Errorf("%w: %w", ErrDisconnected, ErrKeepAliveTimeout)) {
 			_ = client.Close()
 		}
 		close(timedOut)
@@ -329,13 +329,28 @@ func (conn *Conn) endProbe() {
 }
 
 func (conn *Conn) recordDisconnect(err error) bool {
+	return conn.recordDisconnectWithOrigin(err, false)
+}
+
+func (conn *Conn) recordLocalDisconnect(err error) bool {
+	return conn.recordDisconnectWithOrigin(err, true)
+}
+
+func (conn *Conn) recordDisconnectWithOrigin(err error, local bool) bool {
 	conn.mu.Lock()
 	defer conn.mu.Unlock()
 	if conn.ctx.Err() != nil || conn.disconnectErr != nil {
 		return false
 	}
 	conn.disconnectErr = err
+	conn.disconnectLocal = local
 	return true
+}
+
+func (conn *Conn) isLocalDisconnect() bool {
+	conn.mu.Lock()
+	defer conn.mu.Unlock()
+	return conn.disconnectLocal
 }
 
 func (conn *Conn) closedError(waitErr error) error {
@@ -420,7 +435,7 @@ func (conn *Conn) Verify(ctx context.Context) error {
 	}
 	// One reason per transport, and no close when the connection was already
 	// ending for another one: recordDisconnect answers false in both cases.
-	if owner.recordDisconnect(fmt.Errorf("%w: link changed: %w", ErrDisconnected, err)) {
+	if owner.recordLocalDisconnect(fmt.Errorf("%w: link changed: %w", ErrDisconnected, err)) {
 		_ = client.Close()
 	}
 	return err
