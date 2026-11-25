@@ -3159,6 +3159,7 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 						form.fieldLabel.declare(c, state, &editor.label, dialogFieldSpec{
 							ID: hitDialogLabel, Label: state.messages.FieldLabel, Placeholder: state.messages.FieldLabelPlaceholder, Height: rowHeight,
 						})
+						state.declareHostFieldPaste(c, form.fieldLabel.box, &editor.label, false)
 					})
 					b.addField(hitDialogLabel, &form.fieldLabel)
 					b.colorField = ui.Slot(c).Grow(1)

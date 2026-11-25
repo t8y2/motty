@@ -346,6 +346,9 @@ func (state *State) declareHostEndpointSlots(c ui.C, parent ui.Box, rowHeight fl
 func (state *State) declareHostTextField(c ui.C, parent ui.Box, field *dialogField, id gfx.ID, editor *text.Editor, label, placeholder string, secret bool, height float32) {
 	parent.Children(func() {
 		field.declare(c, state, editor, dialogFieldSpec{ID: id, Label: label, Placeholder: placeholder, Secret: secret, Height: height})
+		if !secret && id != hitDialogOTP {
+			state.declareHostFieldPaste(c, field.box, editor, false)
+		}
 	})
 	state.editor.form.body.addField(id, field)
 }
@@ -353,8 +356,35 @@ func (state *State) declareHostTextField(c ui.C, parent ui.Box, field *dialogFie
 func (state *State) declareHostTextAreaField(c ui.C, parent ui.Box, field *dialogField, id gfx.ID, editor *text.Editor, label, placeholder string, height float32) {
 	parent.Children(func() {
 		field.declare(c, state, editor, dialogFieldSpec{ID: id, Label: label, Placeholder: placeholder, Multiline: true, Height: height})
+		state.declareHostFieldPaste(c, field.box, editor, true)
 	})
 	state.editor.form.body.addField(id, field)
+}
+
+func (state *State) declareHostFieldPaste(c ui.C, box ui.Box, editor *text.Editor, multiline bool) {
+	ui.ContextMenu(c, box, func(menu *ui.MenuItems) {
+		if menu.Item(state.messages.MenuPaste).Clicked() {
+			box.RequestFocus()
+			c.After(func() {
+				readClipboard := state.options.ClipboardText
+				if readClipboard == nil {
+					return
+				}
+				if value, err := readClipboard(); err == nil {
+					if value = hostFieldPasteText(value, multiline); value != "" {
+						editor.Paste(value)
+					}
+				}
+			})
+		}
+	})
+}
+
+func hostFieldPasteText(value string, multiline bool) string {
+	if multiline {
+		return normalizePasteText(value)
+	}
+	return text.SingleLine(value)
 }
 
 // declareHostAuthenticationChoice declares the authentication policy as a page
