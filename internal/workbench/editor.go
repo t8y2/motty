@@ -323,7 +323,11 @@ func (editor *hostEditor) validate(hosts []Host, ignoreID uint32, messages i18n.
 		editor.advancedOpen = true
 		return messages.Tools.ErrLoginCommand
 	}
-	if editor.protocol == protocolSSH {
+	if editor.protocol == protocolSSH && !validLoginCommandDirectives(editor.value(fieldLoginCommand)) {
+		editor.advancedOpen = true
+		return messages.Tools.ErrLoginCommandDirective
+	}
+	if editor.protocol == protocolSSH && editor.loginCommandMode == loginSendFixedInterval {
 		if _, ok := parseLoginCommandInterval(editor.value(fieldLoginCommandInterval)); !ok {
 			editor.advancedOpen = true
 			return messages.Tools.ErrLoginCommandInterval
@@ -542,8 +546,12 @@ func (editor *hostEditor) host(id uint32) Host {
 		host.NoHistory = editor.noHistory
 		host.LoginCommand = editor.value(fieldLoginCommand)
 		host.LoginCommandMode = editor.loginCommandMode
-		if interval, ok := parseLoginCommandInterval(editor.value(fieldLoginCommandInterval)); ok {
-			host.LoginCommandInterval = interval
+		if host.LoginCommandMode == loginSendFixedInterval {
+			if interval, ok := parseLoginCommandInterval(editor.value(fieldLoginCommandInterval)); ok {
+				host.LoginCommandInterval = interval
+			}
+		} else {
+			host.LoginCommandInterval = 0
 		}
 		host.LoginCommandPolicy = editor.loginFailurePolicy
 		host.RemoteLogPaths = editor.remoteLogPaths

@@ -621,6 +621,9 @@ func TestMultilineLoginCommandFixedIntervalSendsLineByLineWithPasswordPrompt(t *
 	if shell.typed() != want2 {
 		t.Fatalf("step 2 typed %q, want %q", shell.typed(), want2)
 	}
+	if strings.Contains(state.status, "secret-pass") {
+		t.Fatalf("status leaked secret password: %q", state.status)
+	}
 
 	// After another 500ms, line 3 is sent and sequence completes.
 	*now += 500 * time.Millisecond
@@ -637,9 +640,12 @@ func TestMultilineLoginCommandFixedIntervalSendsLineByLineWithPasswordPrompt(t *
 		t.Fatalf("results = %+v, want 3", results)
 	}
 	for i, r := range results {
-		if !r.Success || r.Step != i+1 || r.Total != 3 {
+		if !r.Success || r.Step != i+1 || r.Total != 3 || r.HasExitCode || r.ExitCode != -1 || r.Command != "***" {
 			t.Fatalf("result[%d] = %+v", i, r)
 		}
+	}
+	if strings.Contains(state.status, "secret-pass") || strings.Contains(state.status, "whoami") {
+		t.Fatalf("final status leaked command text: %q", state.status)
 	}
 }
 
@@ -716,6 +722,60 @@ func TestMultilineLoginCommandExpectFeedbackAndTimeout(t *testing.T) {
 		if session.LoginCommandAborted() != "" {
 			t.Fatalf("unexpected abort: %q", session.LoginCommandAborted())
 		}
+		results := session.LoginCommandResults()
+		if len(results) < 2 {
+			t.Fatalf("results = %+v", results)
+		}
+		if results[0].HasExitCode || results[0].ExitCode != -1 {
+			t.Fatalf("step 1 still running at password prompt must not report exit code 0: %+v", results[0])
+		}
+		if results[1].Command != "***" || strings.Contains(state.status, "secret-pass") {
+			t.Fatalf("secret line leaked: result=%+v status=%q", results[1], state.status)
+		}
+	})
+
+	t.Run("ignores stale screen text before step is sent", func(t *testing.T) {
+		script := "echo password: done\n# @expect $\necho next\n# @expect password:\nsuper-secret"
+		state, shell, _ := loginCommandSessionWithOptions(t, script, "wait", "", "")
+		session := &state.sessions[0]
+		token := session.term.folderToken
+
+		// Screen already contains "$" and earlier "password:" before step 1 runs.
+		shell.say("old password: \r\n\x1b]133;C;motty=" + token + "\x07\x1b]133;A;motty=" + token + "\x07$ \x1b]133;B;motty=" + token + "\x07")
+		state.Wake()
+		if shell.typed() != "echo password: done\r" {
+			t.Fatalf("step 1 typed %q", shell.typed())
+		}
+
+		// Echoing step 1 without a new "$" prompt must NOT trigger step 2.
+		shell.say("echo password: done\r\n")
+		state.Wake()
+		if shell.typed() != "echo password: done\r" {
+			t.Fatalf("matched stale $ prompt: %q", shell.typed())
+		}
+
+		// New prompt "$" arrives after step 1 -> step 2 is sent.
+		shell.say("$ ")
+		state.Wake()
+		want2 := "echo password: done\recho next\r"
+		if shell.typed() != want2 {
+			t.Fatalf("step 2 typed %q, want %q", shell.typed(), want2)
+		}
+
+		// Stale "password:" from before step 2 must NOT trigger step 3.
+		shell.say("echo next\r\nrunning...\r\n")
+		state.Wake()
+		if shell.typed() != want2 {
+			t.Fatalf("matched stale password: prompt: %q", shell.typed())
+		}
+
+		// New "password:" arrives after step 2 -> step 3 is sent.
+		shell.say("sudo password: ")
+		state.Wake()
+		want3 := want2 + "super-secret\r"
+		if shell.typed() != want3 {
+			t.Fatalf("step 3 typed %q, want %q", shell.typed(), want3)
+		}
 	})
 
 	t.Run("expect timeout aborts with clear reason", func(t *testing.T) {
@@ -747,8 +807,22 @@ func TestHostFormSavesAndReEditsLoginCommandModeAndInterval(t *testing.T) {
 	typeInto(state, hitDialogLabel, "Timed")
 	typeInto(state, hitDialogAddress, "timed.example.com")
 	typeInto(state, hitDialogUser, "ops")
-	typeInto(state, hitDialogLoginCommand, "ssh 10.0.0.2\nsecret")
+	// Interval editor is unavailable while mode is Wait for feedback.
+	if state.EditorFor(hitDialogLoginCommandInterval) != nil {
+		t.Fatal("interval editor should be unavailable in wait mode")
+	}
+	typeInto(state, hitDialogLoginCommand, "# @deliy 500ms\necho hi")
+	state.Click(hitDialogSubmit)
+	if state.modal != modalNewHost || state.dialogError != state.messages.Tools.ErrLoginCommandDirective {
+		t.Fatalf("invalid directive accepted: modal=%v err=%q", state.modal, state.dialogError)
+	}
+
+	state.editor.loginCommand = text.Editor{}
+	typeInto(state, hitDialogLoginCommand, "ssh 10.0.0.2\n# @secret\nsecret")
 	state.Click(hitDialogLoginCommandMode)
+	if state.EditorFor(hitDialogLoginCommandInterval) == nil {
+		t.Fatal("interval editor unavailable in fixed-interval mode")
+	}
 	typeInto(state, hitDialogLoginCommandInterval, "bad")
 	state.Click(hitDialogSubmit)
 	if state.modal != modalNewHost || state.dialogError != state.messages.Tools.ErrLoginCommandInterval {
@@ -781,4 +855,134 @@ func TestHostFormSavesAndReEditsLoginCommandModeAndInterval(t *testing.T) {
 	if got := reloaded.editor.value(fieldLoginCommandInterval); got != "500ms" {
 		t.Fatalf("echoed interval = %q", got)
 	}
+}
+
+func TestMultilineLoginCommandSecretRedaction(t *testing.T) {
+	script := "sudo -i\n# @secret\nmy-top-secret-pw"
+	state, shell, _ := loginCommandSessionWithOptions(t, script, "wait", "", "")
+	session := &state.sessions[0]
+	token := session.term.folderToken
+
+	shell.say("\x1b]133;C;motty=" + token + "\x07\x1b]133;A;motty=" + token + "\x07$ \x1b]133;B;motty=" + token + "\x07")
+	state.Wake()
+	shell.say("sudo -i\r\n\x1b]133;D;0;motty=" + token + "\x07\x1b]133;A;motty=" + token + "\x07$ \x1b]133;B;motty=" + token + "\x07")
+	state.Wake()
+	if shell.typed() != "sudo -i\rmy-top-secret-pw\r" {
+		t.Fatalf("typed %q", shell.typed())
+	}
+
+	// Simulate failure on the secret step -> must never leak secret into status, screen, or results.
+	shell.say("\r\nSorry, try again.\r\n\x1b]133;D;1;motty=" + token + "\x07\x1b]133;A;motty=" + token + "\x07$ \x1b]133;B;motty=" + token + "\x07")
+	state.Wake()
+
+	results := session.LoginCommandResults()
+	if len(results) != 2 || results[1].Command != "***" {
+		t.Fatalf("results leaked secret: %+v", results)
+	}
+	screenText := string(session.term.screen.AppendRetainedText(nil))
+	if strings.Contains(screenText, "my-top-secret-pw") || strings.Contains(state.status, "my-top-secret-pw") {
+		t.Fatalf("secret leaked in screen=%q or status=%q", screenText, state.status)
+	}
+}
+
+func TestMultilineLoginCommandFixedIntervalWithWorkspaceCommand(t *testing.T) {
+	state, shell, now := loginCommandSessionWithOptions(t, "ssh ops@10.0.0.2\nsecret-pass", "interval", "500ms", "")
+	session := &state.sessions[0]
+	session.workspaceCommand = WorkspaceCommand{Command: "cd /srv/app"}
+	session.term.armInitialization(state, session)
+	token := session.term.folderToken
+
+	// Initial prompt sends login step 1.
+	shell.say("\x1b]133;C;motty=" + token + "\x07\x1b]133;A;motty=" + token + "\x07$ \x1b]133;B;motty=" + token + "\x07")
+	state.Wake()
+	if shell.typed() != "ssh ops@10.0.0.2\r" {
+		t.Fatalf("step 1 typed %q", shell.typed())
+	}
+
+	// 500ms later sends login step 2, then waits for remote prompt before workspace command.
+	*now += 500 * time.Millisecond
+	state.Wake()
+	want2 := "ssh ops@10.0.0.2\rsecret-pass\r"
+	if shell.typed() != want2 {
+		t.Fatalf("step 2 typed %q, want %q", shell.typed(), want2)
+	}
+
+	// Remote shell reports prompt -> workspace command runs.
+	shell.say("\x1b]133;D;0;motty=" + token + "\x07\x1b]133;A;motty=" + token + "\x07$ \x1b]133;B;motty=" + token + "\x07")
+	state.Wake()
+	want3 := want2 + "cd /srv/app\r"
+	if shell.typed() != want3 {
+		t.Fatalf("workspace step typed %q, want %q", shell.typed(), want3)
+	}
+	results := session.LoginCommandResults()
+	if len(results) != 2 || results[0].Command != "***" || results[1].Command != "***" {
+		t.Fatalf("unexpected results: %+v", results)
+	}
+}
+
+func TestMultilineLoginCommandPauseAndDisconnectDuringWait(t *testing.T) {
+	t.Run("pause on user input during delay", func(t *testing.T) {
+		state, shell, now := loginCommandSessionWithOptions(t, "echo first\n# @delay 1s\necho second", "interval", "500ms", "")
+		session := &state.sessions[0]
+		token := session.term.folderToken
+
+		shell.say("\x1b]133;C;motty=" + token + "\x07\x1b]133;A;motty=" + token + "\x07$ \x1b]133;B;motty=" + token + "\x07")
+		state.Wake()
+		if shell.typed() != "echo first\r" {
+			t.Fatalf("step 1 typed %q", shell.typed())
+		}
+
+		// User types manually while waiting for step 2's delay.
+		session.term.send([]byte("ls\r"))
+		*now += 2 * time.Second
+		state.Wake()
+		if shell.typed() != "echo first\rls\r" {
+			t.Fatalf("automated step 2 fired after user input paused it: %q", shell.typed())
+		}
+
+		// Closing a paused session must not raise a spurious disconnect abort.
+		state.closeDisconnectedShell(session)
+		if session.LoginCommandAborted() != "" {
+			t.Fatalf("paused session raised disconnect abort: %q", session.LoginCommandAborted())
+		}
+	})
+
+	t.Run("disconnect during delay", func(t *testing.T) {
+		state, shell, _ := loginCommandSessionWithOptions(t, "ssh ops@10.0.0.2\n# @secret\nhidden-pw", "interval", "500ms", "")
+		session := &state.sessions[0]
+		token := session.term.folderToken
+
+		shell.say("\x1b]133;C;motty=" + token + "\x07\x1b]133;A;motty=" + token + "\x07$ \x1b]133;B;motty=" + token + "\x07")
+		state.Wake()
+		if shell.typed() != "ssh ops@10.0.0.2\r" {
+			t.Fatalf("step 1 typed %q", shell.typed())
+		}
+
+		state.closeDisconnectedShell(session)
+		if session.LoginCommandAborted() == "" {
+			t.Fatal("expected disconnect abort during delay wait")
+		}
+		if strings.Contains(session.LoginCommandAborted(), "hidden-pw") {
+			t.Fatalf("abort notice leaked secret: %q", session.LoginCommandAborted())
+		}
+	})
+
+	t.Run("disconnect during expect wait", func(t *testing.T) {
+		state, shell, _ := loginCommandSessionWithOptions(t, "ssh ops@10.0.0.2\n# @expect password:\nhidden-pw", "wait", "", "")
+		session := &state.sessions[0]
+		token := session.term.folderToken
+
+		shell.say("\x1b]133;C;motty=" + token + "\x07\x1b]133;A;motty=" + token + "\x07$ \x1b]133;B;motty=" + token + "\x07")
+		state.Wake()
+		shell.say("ssh ops@10.0.0.2\r\nConnecting...\r\n")
+		state.Wake()
+
+		state.closeDisconnectedShell(session)
+		if session.LoginCommandAborted() == "" {
+			t.Fatal("expected disconnect abort during expect wait")
+		}
+		if strings.Contains(session.LoginCommandAborted(), "hidden-pw") {
+			t.Fatalf("abort notice leaked secret: %q", session.LoginCommandAborted())
+		}
+	})
 }

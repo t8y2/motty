@@ -157,16 +157,50 @@ type loginStep struct {
 	expect        string
 	hasTimeout    bool
 	expectTimeout time.Duration
+	secret        bool
 }
 
-// parseLoginSteps splits a single-line or multi-line login command
-// configuration into executable steps in order, ignoring blank lines and
-// regular comment lines while honoring per-line directive comments:
+func isSecretExpect(pattern string) bool {
+	if pattern == "" {
+		return false
+	}
+	if cmdhistory.PasswordPrompt(pattern) {
+		return true
+	}
+	lower := strings.ToLower(pattern)
+	for _, kw := range []string{"password", "passphrase", "passcode", "secret", "token", "pin", "otp", "密码", "口令"} {
+		if strings.Contains(lower, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+func redactedLoginCommand(cmd string, secret bool) string {
+	if secret {
+		return "***"
+	}
+	return cmd
+}
+
+func scrubSecretFromOutput(output, secret string) string {
+	if output == "" || secret == "" {
+		return output
+	}
+	return strings.ReplaceAll(output, secret, "***")
+}
+
+// parseLoginStepsWithValidation parses a single-line or multi-line login
+// command configuration into executable steps and reports whether all # @
+// directives are valid and followed by a command line.
+//
+// Supported directives:
 //
 //	# @delay <duration>          (or @wait / @interval)
 //	# @expect <substring>
 //	# @expect-timeout <duration>
-func parseLoginSteps(value string) []loginStep {
+//	# @secret
+func parseLoginStepsWithValidation(value string) ([]loginStep, bool) {
 	value = strings.ReplaceAll(strings.ReplaceAll(value, "\r\n", "\n"), "\r", "\n")
 	var steps []loginStep
 	var pendingDelay time.Duration
@@ -174,6 +208,8 @@ func parseLoginSteps(value string) []loginStep {
 	var pendingExpect string
 	var pendingTimeout time.Duration
 	var hasPendingTimeout bool
+	var pendingSecret bool
+	valid := true
 	for _, raw := range strings.Split(value, "\n") {
 		line := strings.TrimSpace(raw)
 		if line == "" {
@@ -182,23 +218,45 @@ func parseLoginSteps(value string) []loginStep {
 		if strings.HasPrefix(line, "#") {
 			directive := strings.TrimSpace(strings.TrimPrefix(line, "#"))
 			if strings.HasPrefix(directive, "@") {
-				key, arg, _ := strings.Cut(directive, " ")
+				key, arg, hasArg := strings.Cut(directive, " ")
 				arg = strings.TrimSpace(arg)
 				switch strings.ToLower(key) {
 				case "@delay", "@wait", "@interval":
+					if !hasArg || arg == "" {
+						valid = false
+						continue
+					}
 					if d, ok := parseLoginCommandInterval(arg); ok {
 						pendingDelay = d
 						hasPendingDelay = true
+					} else {
+						valid = false
 					}
 				case "@expect":
-					if arg != "" {
-						pendingExpect = arg
+					if !hasArg || arg == "" {
+						valid = false
+						continue
 					}
+					pendingExpect = arg
 				case "@expect-timeout":
+					if !hasArg || arg == "" {
+						valid = false
+						continue
+					}
 					if d, err := time.ParseDuration(arg); err == nil && d > 0 && d <= maxLoginCommandExpectTimeout {
 						pendingTimeout = d
 						hasPendingTimeout = true
+					} else {
+						valid = false
 					}
+				case "@secret":
+					if arg != "" {
+						valid = false
+						continue
+					}
+					pendingSecret = true
+				default:
+					valid = false
 				}
 			}
 			continue
@@ -210,14 +268,29 @@ func parseLoginSteps(value string) []loginStep {
 			expect:        pendingExpect,
 			hasTimeout:    hasPendingTimeout,
 			expectTimeout: pendingTimeout,
+			secret:        pendingSecret || isSecretExpect(pendingExpect),
 		})
 		pendingDelay = 0
 		hasPendingDelay = false
 		pendingExpect = ""
 		pendingTimeout = 0
 		hasPendingTimeout = false
+		pendingSecret = false
 	}
+	if hasPendingDelay || pendingExpect != "" || hasPendingTimeout || pendingSecret {
+		valid = false
+	}
+	return steps, valid
+}
+
+func parseLoginSteps(value string) []loginStep {
+	steps, _ := parseLoginStepsWithValidation(value)
 	return steps
+}
+
+func validLoginCommandDirectives(value string) bool {
+	_, ok := parseLoginStepsWithValidation(value)
+	return ok
 }
 
 // parseLoginCommands splits a single-line or multi-line login command
@@ -244,13 +317,14 @@ func (host Host) relayPrelude() string {
 
 // LoginCommandResult records the outcome of one executed post-login command line.
 type LoginCommandResult struct {
-	Step     int
-	Total    int
-	Command  string
-	Output   string
-	ExitCode int
-	Success  bool
-	Aborted  string
+	Step        int
+	Total       int
+	Command     string
+	Output      string
+	ExitCode    int
+	HasExitCode bool
+	Success     bool
+	Aborted     string
 }
 
 // LoginCommandResults returns the execution results of post-login commands in
@@ -328,18 +402,21 @@ type loginCommand struct {
 	local bool
 
 	// Active running post-login command tracking.
-	running        bool
-	activeIndex    int
-	activeLine     string
-	sentAt         time.Duration
-	commandStarted bool
-	hasExitCode    bool
-	exitCode       int
-	beforeLines    []string
-	beforePrompt   string
-	outputCaptured bool
-	capturedOutput string
-	results        []LoginCommandResult
+	running         bool
+	activeIndex     int
+	activeLine      string
+	activeSecret    bool
+	sentAt          time.Duration
+	commandStarted  bool
+	hasExitCode     bool
+	exitCode        int
+	beforeLines     []string
+	beforePrompt    string
+	outputCaptured  bool
+	capturedOutput  string
+	expectBuf       string
+	expectANSIState uint8
+	results         []LoginCommandResult
 }
 
 func (login *loginCommand) arm(line string) {
@@ -422,16 +499,107 @@ func (login *loginCommand) nextExpectTimeout() time.Duration {
 	return loginCommandExecTimeout
 }
 
-func (login *loginCommand) matchesExpect(t *terminal, pattern string) bool {
-	if pattern == "" || t == nil || t.screen == nil {
+const maxLoginExpectBuf = 16 * 1024
+
+func (login *loginCommand) appendExpectData(data []byte) {
+	if len(data) == 0 {
+		return
+	}
+	var b strings.Builder
+	b.Grow(len(data))
+	for _, ch := range data {
+		switch login.expectANSIState {
+		case 0:
+			switch {
+			case ch == 0x1b:
+				login.expectANSIState = 1
+			case ch == '\r' || ch == '\n' || ch == '\t' || (ch >= 0x20 && ch != 0x7f):
+				b.WriteByte(ch)
+			}
+		case 1:
+			switch ch {
+			case '[':
+				login.expectANSIState = 2
+			case ']', 'P', 'X', '^', '_':
+				login.expectANSIState = 3
+			default:
+				login.expectANSIState = 0
+			}
+		case 2:
+			if ch >= 0x40 && ch <= 0x7e {
+				login.expectANSIState = 0
+			}
+		case 3:
+			if ch == 0x07 {
+				login.expectANSIState = 0
+			} else if ch == 0x1b {
+				login.expectANSIState = 4
+			}
+		case 4:
+			if ch == '\\' {
+				login.expectANSIState = 0
+			} else if ch != 0x1b {
+				login.expectANSIState = 3
+			}
+		}
+	}
+	if b.Len() == 0 {
+		return
+	}
+	login.expectBuf += b.String()
+	if len(login.expectBuf) > maxLoginExpectBuf {
+		login.expectBuf = login.expectBuf[len(login.expectBuf)-maxLoginExpectBuf:]
+	}
+}
+
+func (login *loginCommand) expectText() string {
+	if login.expectBuf == "" {
+		return ""
+	}
+	text := strings.ReplaceAll(strings.ReplaceAll(login.expectBuf, "\r\n", "\n"), "\r", "\n")
+	if login.activeLine != "" {
+		trimmed := strings.TrimLeft(text, " \t\n")
+		if strings.HasPrefix(trimmed, login.activeLine) {
+			rest := strings.TrimPrefix(trimmed, login.activeLine)
+			// Only consume the echoed command line once a newline or trailing separator follows it
+			// (or if it is the complete echoed line so far, don't match the command against itself).
+			if rest == "" || strings.HasPrefix(rest, "\n") {
+				text = strings.TrimLeft(rest, "\n")
+			}
+		}
+	}
+	return text
+}
+
+func (login *loginCommand) matchesExpect(pattern string) bool {
+	if pattern == "" {
 		return false
 	}
-	needle := strings.ToLower(pattern)
-	if out := login.extractOutput(t, false); out != "" && strings.Contains(strings.ToLower(out), needle) {
+	text := login.expectText()
+	if text == "" {
+		return false
+	}
+	return strings.Contains(strings.ToLower(text), strings.ToLower(pattern))
+}
+
+func (login *loginCommand) isSecretStepAtSend(t *terminal, step loginStep) bool {
+	if step.secret || login.mode == loginSendFixedInterval || isSecretExpect(step.expect) {
 		return true
 	}
-	rowText := t.screen.RowText(t.screen.Cursor().Y)
-	return strings.Contains(strings.ToLower(rowText), needle)
+	if t != nil && t.screen != nil {
+		if cmdhistory.PasswordPrompt(t.screen.RowText(t.screen.Cursor().Y)) {
+			return true
+		}
+	}
+	if text := strings.TrimSpace(login.expectText()); text != "" {
+		lines := strings.Split(text, "\n")
+		for i := len(lines) - 1; i >= 0; i-- {
+			if trimmed := strings.TrimSpace(lines[i]); trimmed != "" {
+				return cmdhistory.PasswordPrompt(trimmed)
+			}
+		}
+	}
+	return false
 }
 
 // armLocal freezes a local shell's startup command.
@@ -463,13 +631,16 @@ func (login *loginCommand) hasRemainingSteps() bool {
 	if login.running {
 		return login.line != ""
 	}
-	return len(login.lines) > 1 || (len(login.lines) == 1 && login.workspace != "" && login.loginFirst)
+	return login.waitingDelay || len(login.lines) > 1 || (len(login.lines) == 1 && login.workspace != "" && login.loginFirst)
 }
 
 // output notes that the shell wrote something at now, while a command waits or runs.
-func (login *loginCommand) output(now time.Duration) {
+func (login *loginCommand) output(data []byte, now time.Duration) {
 	if login.line != "" || login.running {
 		login.last, login.seen = now, true
+	}
+	if login.running && !login.isWorkspaceStep {
+		login.appendExpectData(data)
 	}
 }
 
@@ -587,7 +758,7 @@ func (state *State) loginStepFinished(session *Session, now time.Duration) bool 
 		return false
 	}
 	if expect := t.login.nextExpect(); expect != "" {
-		return t.login.matchesExpect(t, expect)
+		return t.login.matchesExpect(expect)
 	}
 	if t.login.mode == loginSendFixedInterval && !t.login.isWorkspaceStep {
 		return !t.login.waitingDelay || now >= t.login.delayUntil
@@ -641,26 +812,41 @@ func (state *State) completeLoginStep(session *Session) bool {
 	if total == 0 {
 		total = 1
 	}
-	cmd := t.login.activeLine
-	code := t.login.exitCode
+	rawCmd := t.login.activeLine
+	secret := t.login.activeSecret
+	cmd := redactedLoginCommand(rawCmd, secret)
+	matchedExpect := t.login.nextExpect() != ""
+	hasExit := t.login.hasExitCode || (!matchedExpect && t.login.mode != loginSendFixedInterval)
+	code := -1
+	success := true
+	if hasExit {
+		code = t.login.exitCode
+		success = code == 0
+	}
 	output := t.login.finalOutput(t)
-	success := code == 0
+	if secret {
+		output = scrubSecretFromOutput(output, rawCmd)
+	}
 	result := LoginCommandResult{
-		Step:     step,
-		Total:    total,
-		Command:  cmd,
-		Output:   output,
-		ExitCode: code,
-		Success:  success,
+		Step:        step,
+		Total:       total,
+		Command:     cmd,
+		Output:      output,
+		ExitCode:    code,
+		HasExitCode: hasExit,
+		Success:     success,
 	}
 	t.login.results = append(t.login.results, result)
 	session.loginResults = append(session.loginResults[:0], t.login.results...)
 	t.login.running = false
 	t.login.activeLine = ""
+	t.login.activeSecret = false
 	t.login.hasExitCode = false
 	t.login.exitCode = 0
 	t.login.outputCaptured = false
 	t.login.capturedOutput = ""
+	t.login.expectBuf = ""
+	t.login.expectANSIState = 0
 
 	m := state.messages.Tools
 	if !success {
@@ -686,8 +872,11 @@ func (state *State) completeLoginStep(session *Session) bool {
 	}
 
 	if total > 1 {
-		msg := fmt.Sprintf(m.LoginCommandStepSuccessFmt, step, total, code, cmd)
-		state.status = msg
+		if hasExit {
+			state.status = fmt.Sprintf(m.LoginCommandStepSuccessFmt, step, total, code, cmd)
+		} else {
+			state.status = fmt.Sprintf(m.LoginCommandStepSentFmt, step, total)
+		}
 	}
 	return t.login.line != ""
 }
@@ -717,13 +906,19 @@ func (state *State) abortLoginCommands(session *Session, reason loginAbortReason
 		return
 	}
 	step := t.login.next + 1
-	cmd := t.login.line
+	rawCmd := t.login.line
+	secret := t.login.isSecretStepAtSend(t, t.login.stepAt(t.login.next))
 	output := ""
 	if t.login.running {
 		step = t.login.activeIndex + 1
-		cmd = t.login.activeLine
+		rawCmd = t.login.activeLine
+		secret = t.login.activeSecret
 		output = t.login.finalOutput(t)
+		if secret {
+			output = scrubSecretFromOutput(output, rawCmd)
+		}
 	}
+	cmd := redactedLoginCommand(rawCmd, secret)
 	total := len(t.login.lines)
 	if total == 0 {
 		total = 1
@@ -768,7 +963,7 @@ func (state *State) abortLoginOnDisconnect(session *Session) {
 	t := session.term
 	// An unexecuted login command, or a multi-line batch still in flight when
 	// the shell drops, was cut short by the disconnect.
-	if !t.login.local && !t.login.isWorkspaceStep && t.login.hasRemainingSteps() {
+	if !t.login.local && !t.login.paused && !t.login.isWorkspaceStep && t.login.hasRemainingSteps() {
 		state.abortLoginCommands(session, loginAbortDisconnected)
 	}
 }
@@ -810,7 +1005,7 @@ func (state *State) runLoginCommand(session *Session) {
 					t.login.waitingDelay = true
 					t.login.delayUntil = now + delay
 					t.login.waitPrompt = false
-					state.status = fmt.Sprintf(state.messages.Tools.LoginCommandWaitingIntervalFmt, t.login.next+1, max(len(t.login.lines), 1), delay.String(), t.login.line)
+					state.status = fmt.Sprintf(state.messages.Tools.LoginCommandWaitingIntervalFmt, t.login.next+1, max(len(t.login.lines), 1), delay.String())
 					return
 				}
 			}
@@ -822,7 +1017,7 @@ func (state *State) runLoginCommand(session *Session) {
 		} else {
 			if !t.login.isWorkspaceStep {
 				if expect := t.login.nextExpect(); expect != "" {
-					state.status = fmt.Sprintf(state.messages.Tools.LoginCommandWaitingExpectFmt, t.login.next+1, max(len(t.login.lines), 1), expect, t.login.line)
+					state.status = fmt.Sprintf(state.messages.Tools.LoginCommandWaitingExpectFmt, t.login.next+1, max(len(t.login.lines), 1), expect)
 					if now-t.login.sentAt >= t.login.nextExpectTimeout() {
 						state.abortLoginCommands(session, loginAbortExpectTimeout)
 					}
@@ -926,7 +1121,7 @@ func (state *State) runLoginCommand(session *Session) {
 		if delay := t.login.delayForStep(0); delay > 0 {
 			t.login.waitingDelay = true
 			t.login.delayUntil = now + delay
-			state.status = fmt.Sprintf(state.messages.Tools.LoginCommandWaitingIntervalFmt, 1, max(len(t.login.lines), 1), delay.String(), t.login.line)
+			state.status = fmt.Sprintf(state.messages.Tools.LoginCommandWaitingIntervalFmt, 1, max(len(t.login.lines), 1), delay.String())
 			return
 		}
 	}
@@ -1006,13 +1201,18 @@ func (t *terminal) armInitialization(state *State, session *Session) {
 func (t *terminal) pauseInitialization() {
 	if t.login.local {
 		t.login = loginCommand{} // never interleave startup with user/assistant input
-	} else if t.login.workspace != "" {
+	} else if t.login.workspace != "" || t.login.hasPendingOrRunningLogin() {
 		t.login.paused = true
+		t.login.waitingDelay = false
 	}
 }
 
 func (state *State) sendInitializationCommand(session *Session, t *terminal) {
 	login := t.login
+	wasAtPrompt := t.promptReady
+	prevSubmitted := t.submittedLines
+	step := login.stepAt(login.next)
+	secret := login.isSecretStepAtSend(t, step)
 	singleLine := len(login.lines) <= 1 && (login.workspace == "" || !login.loginFirst)
 	if !login.local && !login.isWorkspaceStep && !singleLine {
 		t.login.snapshotBeforeSend(t)
@@ -1028,6 +1228,9 @@ func (state *State) sendInitializationCommand(session *Session, t *terminal) {
 		}
 		return
 	}
+	if login.next > 0 && !wasAtPrompt {
+		t.submittedLines = prevSubmitted
+	}
 	if login.local || login.isWorkspaceStep || (singleLine && login.mode != loginSendFixedInterval) {
 		t.login = loginCommand{results: t.login.results}
 		return
@@ -1039,21 +1242,24 @@ func (state *State) sendInitializationCommand(session *Session, t *terminal) {
 	}
 	if login.mode == loginSendFixedInterval && login.next+1 >= len(login.lines) && (login.workspace == "" || !login.loginFirst) {
 		t.login.results = append(t.login.results, LoginCommandResult{
-			Step:    login.next + 1,
-			Total:   total,
-			Command: login.line,
-			Success: true,
+			Step:        login.next + 1,
+			Total:       total,
+			Command:     redactedLoginCommand(login.line, secret),
+			ExitCode:    -1,
+			HasExitCode: false,
+			Success:     true,
 		})
 		if session != nil {
 			session.loginResults = append(session.loginResults[:0], t.login.results...)
 		}
-		state.status = fmt.Sprintf(state.messages.Tools.LoginCommandStepSentFmt, login.next+1, total, login.line)
+		state.status = fmt.Sprintf(state.messages.Tools.LoginCommandStepSentFmt, login.next+1, total)
 		t.login = loginCommand{results: t.login.results}
 		return
 	}
 	t.login.running = true
 	t.login.activeIndex = t.login.next
 	t.login.activeLine = login.line
+	t.login.activeSecret = secret
 	t.login.sentAt = now
 	t.login.promptVersion = t.promptVersion
 	t.login.commandStarted = false
@@ -1061,6 +1267,8 @@ func (state *State) sendInitializationCommand(session *Session, t *terminal) {
 	t.login.exitCode = 0
 	t.login.outputCaptured = false
 	t.login.capturedOutput = ""
+	t.login.expectBuf = ""
+	t.login.expectANSIState = 0
 	t.login.seen = false
 	t.login.waitingDelay = false
 	t.login.next++
@@ -1072,22 +1280,23 @@ func (state *State) sendInitializationCommand(session *Session, t *terminal) {
 			if delay > 0 {
 				t.login.waitingDelay = true
 				t.login.delayUntil = now + delay
-				state.status = fmt.Sprintf(state.messages.Tools.LoginCommandWaitingIntervalFmt, t.login.next+1, total, delay.String(), t.login.line)
+				state.status = fmt.Sprintf(state.messages.Tools.LoginCommandWaitingIntervalFmt, t.login.next+1, total, delay.String())
 				return
 			}
 		}
 		if expect := t.login.nextExpect(); expect != "" {
-			state.status = fmt.Sprintf(state.messages.Tools.LoginCommandWaitingExpectFmt, t.login.next+1, total, expect, t.login.line)
+			state.status = fmt.Sprintf(state.messages.Tools.LoginCommandWaitingExpectFmt, t.login.next+1, total, expect)
 		} else {
-			state.status = fmt.Sprintf(state.messages.Tools.LoginCommandStepSentFmt, t.login.activeIndex+1, total, t.login.activeLine)
+			state.status = fmt.Sprintf(state.messages.Tools.LoginCommandStepSentFmt, t.login.activeIndex+1, total)
 		}
 	} else if t.login.workspace != "" && t.login.loginFirst {
 		t.login.line = t.login.workspace
 		t.login.isWorkspaceStep = true
 		t.login.waitPrompt = true
+		state.status = fmt.Sprintf(state.messages.Tools.LoginCommandStepSentFmt, t.login.activeIndex+1, total)
 	} else {
 		t.login.line = ""
 		t.login.waitPrompt = true
-		state.status = fmt.Sprintf(state.messages.Tools.LoginCommandStepSentFmt, t.login.activeIndex+1, total, t.login.activeLine)
+		state.status = fmt.Sprintf(state.messages.Tools.LoginCommandStepSentFmt, t.login.activeIndex+1, total)
 	}
 }

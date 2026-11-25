@@ -1530,7 +1530,7 @@ func (state *State) applyOutput(session *Session, data []byte, wasExec bool) {
 	if !hidden {
 		state.notePasswordPrompt(session)
 	}
-	t.login.output(state.now())
+	t.login.output(data, state.now())
 	if t.injection.phase == injectionWaiting {
 		t.injection.lastOutput, t.injection.outputSeen = state.now(), true
 	}

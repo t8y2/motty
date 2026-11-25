@@ -97,7 +97,8 @@ type hostFormScroll struct {
 	randomColorBox   ui.Box
 	// algoLayout is the algorithm mode this frame's advanced rows were laid out
 	// for, before the page's choice writes the mode a click chose.
-	algoLayout algoMode
+	algoLayout      algoMode
+	loginModeLayout loginSendMode
 	// layoutProtocol is the protocol this frame's body was laid out for, before
 	// the page's choice writes the protocol a click chose.
 	layoutProtocol hostProtocol

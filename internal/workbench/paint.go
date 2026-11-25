@@ -3227,6 +3227,7 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 	// algorithm mode they were laid out for.
 	form.layoutProtocol = editor.protocol
 	form.algoLayout = editor.algoMode
+	form.loginModeLayout = editor.loginCommandMode
 	*b = hostFormBody{}
 	// The page controls this form declared last paint are stale now; a box is
 	// valid only until the end of the paint that made it.

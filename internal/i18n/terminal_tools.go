@@ -1193,6 +1193,7 @@ type ToolsMessages struct {
 	LoginCommandField                 string
 	LoginCommandPlaceholder           string
 	ErrLoginCommand                   string
+	ErrLoginCommandDirective          string
 	LoginCommandModeField             string
 	LoginCommandModeWaitPrompt        string
 	LoginCommandModeFixedInterval     string

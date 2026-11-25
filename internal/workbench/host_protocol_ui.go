@@ -919,6 +919,7 @@ func (state *State) declareHostAlgoRows(c ui.C) {
 	b := &editor.form.algoBody
 	*b = hostAlgoRowsBody{}
 	customMode := editor.form.algoLayout == algoCustom
+	fixedIntervalMode := editor.form.loginModeLayout == loginSendFixedInterval
 	rowHeight := float32(hostFormRowHeight)
 	ui.Column(c).FillWidth().Children(func() {
 		b.algo = ui.Slot(c).Height(rowHeight)
@@ -933,8 +934,10 @@ func (state *State) declareHostAlgoRows(c ui.C) {
 			if b.loginMode.Changed() {
 				state.dialogError = ""
 			}
-			b.loginInterval = ui.Slot(c).Grow(1)
-			state.declareHostTextField(c, b.loginInterval, &form.fieldLoginCommandInterval, hitDialogLoginCommandInterval, &editor.loginCommandInterval, m.LoginCommandIntervalField, m.LoginCommandIntervalPlaceholder, false, rowHeight)
+			if fixedIntervalMode {
+				b.loginInterval = ui.Slot(c).Grow(1)
+				state.declareHostTextField(c, b.loginInterval, &form.fieldLoginCommandInterval, hitDialogLoginCommandInterval, &editor.loginCommandInterval, m.LoginCommandIntervalField, m.LoginCommandIntervalPlaceholder, false, rowHeight)
+			}
 		})
 		b.loginPolicy = hostFormChoice(c, m.LoginCommandPolicyField, rowHeight, &editor.loginFailurePolicy, hostLoginPolicyChoices[:], state.hostLoginPolicyChoiceLabel)
 		if b.loginPolicy.Changed() {
