@@ -936,7 +936,7 @@ func (state *State) declareWorkspaceDraftRow(row ui.ListRow) {
 	id := hitWorkspaceDraftHostList.At(r.hostIndex)
 	row.Element.Height(height).MarginSides(0, 0, 0, workspaceDraftHostIndent).
 		HitWith(id, host.Label, gfx.HitOptions{Role: gfx.RoleCheckbox, Checked: selected, Disabled: disabled}).
-		Draw(func(d *ui.DrawContext) { state.paintWorkspaceDraftHost(d, host, id, selected, disabled, configurable) }).
+		Draw(func(d *ui.DrawContext) { state.paintWorkspaceDraftHost(d, host, id, selected, disabled) }).
 		Children(func() {
 			ui.Column(c).FillWidth().Children(func() {
 				head := ui.Row(c).Height(56).FillWidth().Items(ui.Center)
@@ -1039,9 +1039,8 @@ func (state *State) paintWorkspaceDraftGroup(canvas *gfx.Canvas, group workspace
 	monitorLabel(canvas, count, gfx.Rect{X: x + labelWidth + 6, Y: center - 11, Width: countWidth + 4, Height: 22}, 12, pal.faint, gfx.WeightRegular)
 }
 
-// paintWorkspaceDraftHost draws one host row: its background, icon, name and
-// address, and the hint over the command field when it is open.
-func (state *State) paintWorkspaceDraftHost(d *ui.DrawContext, host Host, id gfx.ID, selected, disabled, configurable bool) {
+// paintWorkspaceDraftHost draws the host row's background, icon, name and address.
+func (state *State) paintWorkspaceDraftHost(d *ui.DrawContext, host Host, id gfx.ID, selected, disabled bool) {
 	canvas, bounds, pal := d.Canvas, d.Rect, state.pal
 	header := bounds
 	header.Height = min(header.Height, 56)
@@ -1076,10 +1075,6 @@ func (state *State) paintWorkspaceDraftHost(d *ui.DrawContext, host Host, id gfx
 		}
 	}
 	monitorLabel(canvas, elide(canvas, detail, 12, gfx.WeightRegular, width), gfx.Rect{X: header.X + 46, Y: header.Y + 29, Width: width, Height: 20}, 12, pal.muted.Mix(pal.text, .08*amount), gfx.WeightRegular)
-	if configurable {
-		hint := state.messages.WorkspaceCommandOrderHint
-		monitorLabel(canvas, elide(canvas, hint, 12, gfx.WeightRegular, max(0, bounds.Width-16)), gfx.Rect{X: bounds.X + 8, Y: bounds.Y + 60, Width: max(0, bounds.Width-16), Height: 22}, 12, pal.text, gfx.WeightRegular)
-	}
 }
 
 func (state *State) workspaceDraftKey(event gfx.KeyEvent) gfx.EventResult {
