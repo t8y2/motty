@@ -10,6 +10,7 @@ import (
 	"github.com/vivaui/viva/app/systemauth"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
+	"github.com/vivaui/viva/text"
 	"motty/internal/i18n"
 )
 
@@ -44,6 +45,11 @@ func TestAppLockHeadlessEnableLockAndPasswordUnlock(t *testing.T) {
 	typeField := func(id gfx.ID, value string) {
 		t.Helper()
 		click(id)
+		editor := s.appLockEditor(id)
+		if editor == nil {
+			t.Fatal("missing password editor")
+		}
+		editor.SetSelection(text.Range{Start: 0, End: editor.RuneCount()})
 		// Deliver key events through OnShortcut before the text event, as
 		// a Windows keyboard does. Type inserts text directly and bypasses it.
 		for _, r := range value {
@@ -55,8 +61,7 @@ func TestAppLockHeadlessEnableLockAndPasswordUnlock(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		editor := s.appLockEditor(id)
-		if editor == nil || editor.String() != value {
+		if editor.String() != value {
 			t.Fatal("password field did not receive keyboard input")
 		}
 	}
@@ -79,7 +84,13 @@ func TestAppLockHeadlessEnableLockAndPasswordUnlock(t *testing.T) {
 	if err := view.Wait(250 * time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
-	const password = "native UI fixture password"
+	const password = "test12"
+	typeField(hitAppLockFormFields.At(0), "test1")
+	typeField(hitAppLockFormFields.At(1), "test1")
+	click(hitAppLockFormSubmit)
+	if s.appLockBusy() || s.lockUI.error != s.messages.AppLock.Minimum {
+		t.Fatal("accepted a five-character password")
+	}
 	typeField(hitAppLockFormFields.At(0), password)
 	typeField(hitAppLockFormFields.At(1), password)
 	click(hitAppLockFormSubmit)
@@ -92,9 +103,21 @@ func TestAppLockHeadlessEnableLockAndPasswordUnlock(t *testing.T) {
 		t.Fatal(err)
 	}
 	const changedPassword = "Changed fixture password 2"
-	typeField(hitAppLockFormFields.At(0), password)
+	const incorrect = "incorrect"
+	typeField(hitAppLockFormFields.At(0), incorrect)
 	typeField(hitAppLockFormFields.At(1), changedPassword)
 	typeField(hitAppLockFormFields.At(2), changedPassword)
+	click(hitAppLockFormSubmit)
+	waitOperation()
+	if s.modal != modalAppLock || s.lockUI.error != s.messages.AppLock.WrongPassword {
+		t.Fatal("wrong current password did not leave the change form open")
+	}
+	for i, want := range []string{incorrect, changedPassword, changedPassword} {
+		if s.lockUI.formFields[i].editor.String() != want {
+			t.Fatalf("password field %d was cleared after failed verification", i)
+		}
+	}
+	typeField(hitAppLockFormFields.At(0), password)
 	click(hitAppLockFormSubmit)
 	waitOperation()
 	if s.modal != modalNone {

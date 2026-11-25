@@ -149,12 +149,12 @@ func TestAppLockSystemVerificationRequiresLocalEnrollment(t *testing.T) {
 	opts := testOptions(t)
 	state := newTestState(t, opts)
 	promptErr := error(systemauth.ErrCanceled)
-	prompts := 0
+	prompts, markerReads := 0, 0
 	markers := map[string][]byte{}
 	state.appProtection.system = appLockSystem{
 		method: func() systemauth.VerificationMethod { return systemauth.VerificationWindowsHello },
 		verify: func(context.Context, string) error { prompts++; return promptErr },
-		load:   func(_, id string) ([]byte, error) { return markers[id], nil },
+		load:   func(_, id string) ([]byte, error) { markerReads++; return markers[id], nil },
 		store:  func(_, id string, data []byte) error { markers[id] = data; return nil },
 		remove: func(_, id string) error { delete(markers, id); return nil },
 	}
@@ -173,6 +173,13 @@ func TestAppLockSystemVerificationRequiresLocalEnrollment(t *testing.T) {
 		t.Fatalf("enrollment: %v", err)
 	}
 	state.lockApplication()
+	if err := finishAppLock(t, state, appLockUnlock, password, ""); err != nil {
+		t.Fatalf("password unlock with system unlock configured: %v", err)
+	}
+	if markerReads != 0 {
+		t.Fatal("password unlock depended on a read from the system credential store")
+	}
+	state.lockApplication()
 	promptErr = systemauth.ErrCanceled
 	if err := finishAppLock(t, state, appLockSystemUnlock, "", ""); !errors.Is(err, systemauth.ErrCanceled) || !state.appLocked() {
 		t.Fatalf("canceled unlock: %v", err)
@@ -181,8 +188,19 @@ func TestAppLockSystemVerificationRequiresLocalEnrollment(t *testing.T) {
 	if err := finishAppLock(t, state, appLockSystemUnlock, "", ""); err != nil || state.appLocked() {
 		t.Fatalf("system unlock: %v", err)
 	}
-	if err := finishAppLock(t, state, appLockRevoke, password, ""); err != nil || state.appSystemEnabled() || len(markers) != 0 {
-		t.Fatalf("remove system unlock: %v", err)
+	verified := prompts
+	state.clickAppLock(hitAppLockSystemToggle)
+	if state.modal == modalAppLock || !state.appLockBusy() {
+		t.Fatal("the system unlock switch did not disable directly")
+	}
+	select {
+	case finish := <-state.appProtection.results:
+		finish()
+	case <-time.After(10 * time.Second):
+		t.Fatal("system unlock disable timed out")
+	}
+	if state.appSystemEnabled() || state.appProtection.record.SystemID != "" || len(markers) != 0 || prompts != verified {
+		t.Fatal("disabling system unlock did not remove the marker without prompting")
 	}
 	state.lockApplication()
 	if err := finishAppLock(t, state, appLockSystemUnlock, "", ""); !errors.Is(err, systemauth.ErrUnavailable) || !state.appLocked() {

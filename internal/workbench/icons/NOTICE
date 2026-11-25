@@ -16,3 +16,4 @@ The session-log glyph is Lucide's file-clock, pinned from lucide-static v0.469.0
 It is ISC licensed like the other Lucide icons above.
 The Alibaba Cloud glyph is pinned from Simple Icons
 (https://github.com/simple-icons/simple-icons/blob/521c96fd04b0ea93034db8715eda5a4de27a58bb/icons/alibabacloud.svg).
+The fingerprint glyph uses the SVG supplied for the application lock.

@@ -51,7 +51,6 @@ type applicationProtection struct {
 	path, verifierPath string
 	record             lockVerifier
 	openErr            error
-	systemEnabled      bool
 	locked             atomic.Bool
 	busy               bool
 	generation         uint64
@@ -68,7 +67,6 @@ func newApplicationProtection(config string) *applicationProtection {
 	p.verifierPath = filepath.Join(filepath.Dir(config), "app-lock.json")
 	p.record, p.openErr = readLockVerifier(p.verifierPath)
 	p.locked.Store(p.openErr != nil || p.record.Version != 0)
-	p.systemEnabled = p.system.enabled(p.record.SystemID)
 	return p
 }
 
@@ -131,7 +129,9 @@ func (s *State) ProfileLocked() bool    { return s.appLocked() }
 func (s *State) appLockCold() bool      { return s.profileDeferred }
 
 func (s *State) appSystemEnabled() bool {
-	return s.appProtection != nil && s.appProtection.systemEnabled
+	// Reading the OS credential store can display a prompt or block.
+	// Only a deliberate system unlock needs to load its local marker.
+	return s.appProtection != nil && s.appProtection.record.SystemID != ""
 }
 func (s *State) appSystemMethod() systemauth.VerificationMethod {
 	p := s.appProtection
@@ -254,12 +254,10 @@ func (s *State) runAppLockAction(action appLockAction, current, next string, don
 	go func() {
 		defer cancel()
 		updated, err := system.perform(ctx, record, path, action, current, next, reason)
-		systemEnabled := system.enabled(updated.SystemID)
 		finish := func() {
 			s.cancelLockAction = nil
 			p.busy = false
 			p.record = updated
-			p.systemEnabled = systemEnabled
 			windows := s.profileWindows()
 			if err == nil {
 				if unlock && (s.closed || generation != p.generation) {
@@ -298,7 +296,8 @@ func (s *State) runAppLockAction(action appLockAction, current, next string, don
 
 func (system appLockSystem) perform(ctx context.Context, record lockVerifier, path string, action appLockAction, current, next, reason string) (lockVerifier, error) {
 	service := keyService(appLockSystemService)
-	if action != appLockEnable && action != appLockSystemUnlock {
+	switch action {
+	case appLockChange, appLockDisable, appLockEnroll, appLockUnlock:
 		if err := record.verify(current); err != nil {
 			return record, err
 		}

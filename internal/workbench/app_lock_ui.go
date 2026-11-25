@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"unicode/utf8"
 
 	"github.com/vivaui/viva/app/systemauth"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/workbench/icons"
 )
 
 var appLockHits = tree.Feature("app-lock")
@@ -33,6 +33,7 @@ var (
 
 type appLockUI struct {
 	systemFailed               bool
+	systemError                string
 	password                   text.Editor
 	field                      ui.Field
 	bound, shown, active       bool
@@ -99,7 +100,6 @@ func (state *State) paintAppLockPage(canvas *gfx.Canvas, size gfx.Size) {
 	state.titlebarLeading, state.titlebarTrailing = canvas.TitlebarInsets()
 	canvas.Fill(gfx.Rect{Width: size.Width, Height: size.Height}, state.pal.workspace)
 	canvas.Fill(gfx.Rect{Width: size.Width, Height: windowBarHeight}, state.pal.shell)
-	canvas.LabelCenter("Motty", gfx.Rect{Width: size.Width, Height: windowBarHeight}, gfx.TextStyle{Size: metrics.FontSizeM, Weight: gfx.WeightSemibold, Color: state.pal.text})
 	state.windowPage().Draw(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, state.declareWorkbenchPage)
 	if state.lockUI.logo.Rect().Width > 0 {
 		state.paintLockup(canvas, state.lockUI.logo.Rect())
@@ -127,10 +127,10 @@ func (state *State) declareAppLockPage(c ui.C) {
 	}
 	u.field.Secure, u.field.Invalid = !u.shown, u.error != ""
 	busy := state.appLockBusy()
-	system := state.appSystemEnabled() && !u.systemFailed
+	system := state.appSystemEnabled() && !u.systemFailed && state.appSystemAvailable()
 	scale := min(metrics.FontSizeM/14, max(float32(.72), (c.Bounds().Height-windowBarHeight-96)/500))
 	width := min(float32(400)*metrics.FontSizeM/14, max(c.Bounds().Width-48, 0))
-	height := float32(500) * scale
+	height := float32(468) * scale
 	if !system {
 		height -= 112 * scale
 	}
@@ -138,19 +138,13 @@ func (state *State) declareAppLockPage(c ui.C) {
 	ui.Column(c).FillWidth().Items(ui.Center).Children(func() {
 		ui.Column(c).Width(width).MarginTop(top).Children(func() {
 			u.logo = ui.Slot(c).Size(210*scale, 55*scale).Self(ui.Center)
-			title := m.Title
-			ui.Text(c, title).FillWidth().TextCenter().FontSize(30 * scale).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(40 * scale).MarginTop(34 * scale)
-			description := m.Description
-			if state.appLockCold() {
-				description = m.ColdDescription
-			}
-			ui.Text(c, description).FillWidth().TextCenter().FontSize(metrics.FontSizeM + 1).Color(pal.muted).LineHeight(24 * scale).MarginTop(8 * scale)
+			ui.Text(c, m.Title).FillWidth().TextCenter().FontSize(30 * scale).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(40 * scale).MarginTop(34 * scale)
 			if system {
 				label := fmt.Sprintf(m.UnlockSystem, state.appLockSystemName())
 				if busy {
 					label = m.Working
 				}
-				icon := appLockFingerprint
+				icon := icons.Fingerprint
 				if state.appSystemMethod() == systemauth.VerificationDevicePassword {
 					icon = lucideIcons[iconKey]
 				}
@@ -297,7 +291,7 @@ func (state *State) clickAppLock(id gfx.ID) bool {
 	case hitAppLockSystemToggle:
 		if state.appLockEnabled() {
 			if state.appProtection.record.SystemID != "" {
-				state.openAppLockForm(appLockRevoke)
+				state.startAppLockUIAction(appLockRevoke, "", "")
 			} else if state.appSystemAvailable() {
 				state.openAppLockForm(appLockEnroll)
 			}
@@ -316,9 +310,11 @@ func (state *State) clickAppLock(id gfx.ID) bool {
 
 func (state *State) startAppLockUIAction(action appLockAction, current, next string) {
 	u := &state.lockUI
-	u.error = ""
+	u.error, u.systemError = "", ""
 	state.runAppLockAction(action, current, next, func(err error) {
-		if err != nil {
+		if err != nil && action == appLockRevoke {
+			u.systemError = state.appLockErrorText(err)
+		} else if err != nil {
 			u.error = state.appLockErrorText(err)
 			if action == appLockSystemUnlock && errors.Is(err, systemauth.ErrUnavailable) {
 				u.systemFailed = true
@@ -343,6 +339,8 @@ func (state *State) appLockErrorText(err error) string {
 		return m.WrongPassword
 	case errors.Is(err, errLockCorrupt):
 		return m.Corrupt
+	case errors.Is(err, errLockPasswordTooShort):
+		return m.Minimum
 	case errors.Is(err, errLockPasswordTooLong):
 		return m.PasswordTooLong
 	case errors.Is(err, systemauth.ErrCanceled), errors.Is(err, context.Canceled):
@@ -371,8 +369,6 @@ func (state *State) openAppLockForm(action appLockAction) {
 		u.formTitle, u.formDescription = m.DisableTitle, m.DisableDescription
 	case appLockEnroll:
 		u.formTitle, u.formDescription = m.EnrollTitle, m.EnrollDescription
-	case appLockRevoke:
-		u.formTitle, u.formDescription = m.RevokeTitle, m.RevokeDescription
 	}
 	state.modal = modalAppLock
 }
@@ -389,12 +385,8 @@ func (state *State) submitAppLockForm() {
 			index = 1
 		}
 		next = u.formFields[index].editor.String()
-		if len(next) > lockPasswordMaxBytes {
-			u.error = m.PasswordTooLong
-			return
-		}
-		if utf8.RuneCountInString(next) < 8 {
-			u.error = m.Minimum
+		if err := validateNewLockPassword(next); err != nil {
+			u.error = state.appLockErrorText(err)
 			return
 		}
 		if next != u.formFields[index+1].editor.String() {
@@ -408,9 +400,6 @@ func (state *State) submitAppLockForm() {
 	if current == "" && u.formAction != appLockEnable {
 		u.error = m.Required
 		return
-	}
-	for index := range u.formFields {
-		u.formFields[index].editor = text.Editor{}
 	}
 	state.startAppLockUIAction(u.formAction, current, next)
 }
@@ -481,16 +470,10 @@ func (state *State) paintAppLockSettings(page *settingsPage) {
 		page.lineFor(hitAppLockSystemToggle, m.SystemTitle, description, aiSwitchWidth, func() {
 			page.switchSlot(hitAppLockSystemToggle, registered, busy || !enabled || !registered && !state.appSystemAvailable(), m.SystemTitle)
 		})
+		if message := state.lockUI.systemError; message != "" {
+			page.growRow().PadX(18).Children(func() {
+				state.problemLineC(page.c, message)
+			})
+		}
 	})
 }
-
-// A small native vector glyph keeps the quick-unlock action recognizable on
-// every platform without introducing a bitmap or another icon parser.
-var appLockFingerprint = gfx.Icon{ViewBox: 24, Stroke: 1.7, Cap: gfx.CapRound, Join: gfx.JoinRound, Commands: []gfx.PathCommand{
-	gfx.MoveTo(4, 10), gfx.CubicTo(4, 5, 7.5, 2, 12, 2), gfx.CubicTo(16.5, 2, 20, 5, 20, 10),
-	gfx.MoveTo(7, 19), gfx.CubicTo(9, 16, 8, 13, 8, 10), gfx.CubicTo(8, 5, 16, 5, 16, 10), gfx.CubicTo(16, 15, 15.5, 19, 13.5, 22),
-	gfx.MoveTo(3, 15), gfx.CubicTo(5, 13, 5, 11, 5, 10),
-	gfx.MoveTo(11, 21), gfx.CubicTo(13, 17, 12, 13, 12, 10),
-	gfx.MoveTo(17.5, 20), gfx.CubicTo(19, 16, 19, 13, 19, 10),
-	gfx.MoveTo(5, 21), gfx.LineTo(6, 19),
-}}

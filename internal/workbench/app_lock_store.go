@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"unicode/utf8"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -16,13 +17,15 @@ const (
 	lockVerifierVersion  = 1
 	lockSaltBytes        = 16
 	lockHashBytes        = 32
+	lockPasswordMinRunes = 6
 	lockPasswordMaxBytes = 1024
 )
 
 var (
-	errLockWrongPassword   = errors.New("incorrect application lock password")
-	errLockCorrupt         = errors.New("invalid application lock settings")
-	errLockPasswordTooLong = errors.New("application lock password is too long")
+	errLockWrongPassword    = errors.New("incorrect application lock password")
+	errLockCorrupt          = errors.New("invalid application lock settings")
+	errLockPasswordTooShort = errors.New("application lock password is too short")
+	errLockPasswordTooLong  = errors.New("application lock password is too long")
 )
 
 type lockVerifier struct {
@@ -65,9 +68,19 @@ func deriveLockHash(password string, salt []byte) []byte {
 	return argon2.IDKey(passwordBytes, salt, 3, 64*1024, 4, lockHashBytes)
 }
 
-func newLockVerifier(password, systemID string) (lockVerifier, error) {
+func validateNewLockPassword(password string) error {
 	if len(password) > lockPasswordMaxBytes {
-		return lockVerifier{}, errLockPasswordTooLong
+		return errLockPasswordTooLong
+	}
+	if utf8.RuneCountInString(password) < lockPasswordMinRunes {
+		return errLockPasswordTooShort
+	}
+	return nil
+}
+
+func newLockVerifier(password, systemID string) (lockVerifier, error) {
+	if err := validateNewLockPassword(password); err != nil {
+		return lockVerifier{}, err
 	}
 	salt := make([]byte, lockSaltBytes)
 	if _, err := rand.Read(salt); err != nil {
