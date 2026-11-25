@@ -168,7 +168,7 @@ func TestSFTPWindowToolbarAndNativeFileActions(t *testing.T) {
 	w.fileAction(false, hitSFTPRename)
 	view.Driver().Pump()
 	view.Rest()
-	field := dualHit(t, view, hitSFTPDialogField)
+	field := dualHit(t, view, hitSFTPInlineRename)
 	view.Click(field.X+20, field.Y+10)
 	modifier := gfx.ModifierControl
 	if runtime.GOOS == "darwin" {

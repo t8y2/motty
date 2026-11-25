@@ -130,6 +130,7 @@ func (state *State) declareSFTPPanel(c ui.C) {
 	pal, messages := state.pal, state.messages
 	folder, local := view.active(), view.local
 	session := s.session
+	view.reconcileSFTPRename(c.Canvas(), !local && state.modal == modalNone)
 
 	// What the page shows decides its parts. The selection bar and the file
 	// actions are as tall as what they hold; the list takes what they leave.
@@ -673,6 +674,9 @@ func (state *State) declareSFTPListRow(row ui.ListRow, folder *sftpFolder, view 
 		state.declareSFTPRowIcon(c, entry, tint)
 		label := ui.Row(c).Grow(1).Clip().Items(ui.Center).MarginSides(0, 0, 0, 8)
 		label.Children(func() {
+			if !view.local && !result && state.declareSFTPRename(c, view, row.ID, entry.entry) {
+				return
+			}
 			if result {
 				state.declareSFTPResultLabel(c, entry, nameColor, rowWidth)
 				return
@@ -726,7 +730,7 @@ func (state *State) declareSFTPListRow(row ui.ListRow, folder *sftpFolder, view 
 		}
 	}
 	box := row.Element.Height(sftpRowHeight).Shrink(0).Width(rowWidth).Items(ui.Center)
-	if !result && state.sftpPanelCanDrag(view, folder) {
+	if view.rename == nil && !result && state.sftpPanelCanDrag(view, folder) {
 		drag := state.ensureSFTPPanelDrag(view)
 		box = box.DragSource(&drag.state)
 		if entry.entry.IsDir() && !entry.entry.LinkBroken {
@@ -1024,11 +1028,6 @@ func (state *State) declareSFTPDialog(c ui.C, viewport gfx.Rect, view *sftpView)
 		title = messages.SFTPNewDirectoryTitle
 		fieldLabel = messages.SFTPDirectoryName
 		submitLabel = messages.SFTPCreateDirectory
-	case sftpDialogRename:
-		title = messages.SFTPRenameTitle
-		description = messages.SFTPRenameDescription
-		fieldLabel = messages.SFTPNewName
-		submitLabel = messages.SFTPRenameSubmit
 	case sftpDialogMove:
 		title = messages.SFTPMoveTitle
 		description = messages.SFTPMoveDescription

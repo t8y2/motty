@@ -925,6 +925,9 @@ func (w *sftpWindow) key(event gfx.KeyEvent) gfx.EventResult {
 	if event.Release {
 		return gfx.EventResult{}
 	}
+	if result := w.owner.sftpRenameKey(w.view, event); result.Handled {
+		return result
+	}
 	// The List submits Enter to the window; opening the row is the window's.
 	// Take it before the List's key route so a folder is entered once, not
 	// twice.
@@ -1132,11 +1135,11 @@ func (w *sftpWindow) key(event gfx.KeyEvent) gfx.EventResult {
 			return handled
 		}
 	case gfx.KeyF2:
-		if !w.activeLocal && !w.view.busy && w.connected() {
-			w.cancelDrag()
+		if !w.activeLocal && !w.listBlocked() && !event.Repeat && event.Modifiers == 0 {
 			w.view.local = false
-			w.owner.openSFTPDialog(w.view, sftpDialogRename)
-			return handled
+			if w.owner.beginSFTPRename(w.view) {
+				return handled
+			}
 		}
 	case gfx.KeyDelete:
 		if w.activeLocal {
@@ -1197,7 +1200,7 @@ func (w *sftpWindow) key(event gfx.KeyEvent) gfx.EventResult {
 }
 
 func (w *sftpWindow) shortcut(event gfx.KeyEvent) gfx.EventResult {
-	if event.Release {
+	if event.Release || event.Target == hitSFTPInlineRename {
 		return gfx.EventResult{}
 	}
 	// A printable key while a List row has the keyboard is the List's typeahead.

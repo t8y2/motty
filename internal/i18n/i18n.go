@@ -1194,12 +1194,8 @@ type Messages struct {
 	SFTPErrPermissionDenied     string
 	SFTPCreatingDirectoryFmt    string
 	SFTPDirectoryCreatedFmt     string
-	SFTPRenameTitle             string
-	SFTPRenameDescription       string
 	SFTPNewName                 string
-	SFTPRenameSubmit            string
 	SFTPErrRenameInvalid        string
-	SFTPErrRenameSame           string
 	SFTPRenamingFmt             string
 	SFTPRenamedFmt              string
 	SFTPMoveTitle               string
