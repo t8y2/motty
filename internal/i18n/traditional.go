@@ -296,6 +296,8 @@ var TraditionalMessages = Messages{
 	SettingsAppearanceSystem:               "跟隨系統",
 	SettingsAppearanceDark:                 "深色",
 	SettingsAppearanceLight:                "淺色",
+	SettingsTransparency:                   "終端機背景透明度",
+	SettingsTransparencyDescription:        "透過終端機背景查看桌面。調回 0% 即可恢復原有底色或背景圖片。",
 	SettingsCorners:                        "邊角",
 	SettingsCornersRounded:                 "圓角",
 	SettingsCornersSquare:                  "直角",

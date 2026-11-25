@@ -296,6 +296,8 @@ var ChineseMessages = Messages{
 	SettingsAppearanceSystem:               "跟随系统",
 	SettingsAppearanceDark:                 "深色",
 	SettingsAppearanceLight:                "浅色",
+	SettingsTransparency:                   "终端背景透明度",
+	SettingsTransparencyDescription:        "透过终端背景查看桌面。调回 0% 即可恢复原有底色或背景图片。",
 	SettingsCorners:                        "边角",
 	SettingsCornersRounded:                 "圆角",
 	SettingsCornersSquare:                  "直角",

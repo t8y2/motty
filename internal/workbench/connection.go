@@ -178,6 +178,8 @@ type DragPreview interface {
 }
 
 type Options struct {
+	// TerminalTransparency enables per-pixel desktop compositing for the main window.
+	TerminalTransparency bool
 	// DevelopmentSource offers a one-way import into an unused development
 	// profile. Nil disables discovery, including for explicit test profiles.
 	DevelopmentSource *DevelopmentSource
