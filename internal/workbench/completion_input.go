@@ -31,7 +31,7 @@ func (state *State) captureSuggestion(session *Session, line string) suggestionS
 
 func (state *State) suggestionOwner(snapshot suggestionSnapshot) *Session {
 	session := state.inputOwnerAfterDrain(snapshot.sessionID, snapshot.owner)
-	if session == nil || state.broadcast != 0 || state.historyClearing() || state.history.suggestOff {
+	if session == nil || state.broadcastOn() || state.historyClearing() || state.history.suggestOff {
 		return nil
 	}
 	t := session.term
@@ -44,7 +44,7 @@ func (state *State) suggestionOwner(snapshot suggestionSnapshot) *Session {
 	if len(t.rx) > 0 {
 		return nil
 	}
-	line, ok := t.recorder.Line(cmdhistory.TermScreen{Term: t.screen})
+	line, ok := t.recorder.LineAllowingSuggestion(cmdhistory.TermScreen{Term: t.screen})
 	if !ok || line != snapshot.line || cmdhistory.Secret(line) {
 		return nil
 	}
@@ -70,7 +70,7 @@ func (state *State) sendSuggestion(session *Session, suffix string, fromCatalog 
 	}
 	// Draining again here could invalidate the proof after checking it. The
 	// owner was drained immediately above, and broadcasting is not permitted.
-	line, ok := session.term.recorder.Line(cmdhistory.TermScreen{Term: session.term.screen})
+	line, ok := session.term.recorder.LineAllowingSuggestion(cmdhistory.TermScreen{Term: session.term.screen})
 	if !ok {
 		return
 	}
@@ -97,7 +97,7 @@ func (state *State) reconcileSuggestionEcho(session *Session) {
 		t.suggestionPending = nil
 		return
 	}
-	line, ok := t.recorder.Line(cmdhistory.TermScreen{Term: t.screen})
+	line, ok := t.recorder.LineAllowingSuggestion(cmdhistory.TermScreen{Term: t.screen})
 	if !ok {
 		return
 	}
@@ -123,7 +123,7 @@ func (state *State) sendPathSuggestion(session *Session, suffix string) {
 	if strings.IndexFunc(body, unicode.IsControl) >= 0 || !pathcomp.SafeInsert(body) {
 		return
 	}
-	line, ok := session.term.recorder.Line(cmdhistory.TermScreen{Term: session.term.screen})
+	line, ok := session.term.recorder.LineAllowingSuggestion(cmdhistory.TermScreen{Term: session.term.screen})
 	if !ok {
 		return
 	}

@@ -442,6 +442,15 @@ func (state *State) paintAIModels(page *settingsPage) {
 		if total == 0 {
 			page.aiText(aiModelRowHeight, m.ModelsEmpty, metrics.FontSizeS, gfx.WeightRegular, pal.muted)
 		} else {
+			page.rowOf(46).PadX(18).Gap(10).Children(func() {
+				state.declareAIModelSearchField(c)
+			})
+			if query := state.aiModelSearchQuery(); query != cfg.modelSearchLast {
+				cfg.modelSearchLast = query
+				cfg.page = 0
+			}
+			state.aiClampModelPage()
+
 			totalCnt, availCnt, failCnt, _ := state.aiModelCounts(provider.ID)
 			filterName := func(filter aiModelFilter) string {
 				switch filter {
@@ -513,7 +522,11 @@ func (state *State) paintAIModels(page *settingsPage) {
 		filteredTotal := len(filteredModels)
 		shown := min(max(filteredTotal-cfg.page*aiModelPageSize, 0), aiModelPageSize)
 		if filteredTotal == 0 && total > 0 {
-			page.aiText(aiModelRowHeight, m.ModelsEmpty, metrics.FontSizeS, gfx.WeightRegular, pal.muted)
+			emptyText := m.ModelsEmpty
+			if cfg.modelSearchLast != "" {
+				emptyText = m.ModelsSearchEmpty
+			}
+			page.aiText(aiModelRowHeight, emptyText, metrics.FontSizeS, gfx.WeightRegular, pal.muted)
 		}
 		const defaultColWidth = float32(76)
 		const probeColWidth = float32(92)
@@ -655,8 +668,10 @@ func (state *State) bindAIInputFields() {
 		return
 	}
 	cfg.inputBound = true
+	cfg.modelSearch.Restrict(printableLine, 200)
 	cfg.modelInput.Restrict(modelNameRune, 200)
 	cfg.stepsInput.Restrict(stepDigit, 3)
+	cfg.modelSearchField.Bind(&cfg.modelSearch)
 	cfg.modelField.Bind(&cfg.modelInput)
 	// Seed the count before binding, so the first paint shows the stored value
 	// instead of reporting the seed as an edit. An edit already open (a press
@@ -670,11 +685,30 @@ func (state *State) bindAIInputFields() {
 	cfg.stepsField.Alignment = gfx.AlignCenter
 }
 
+// declareAIModelSearchField declares the search field used to filter models in
+// the selected provider's list.
+func (state *State) declareAIModelSearchField(c ui.C) ui.Box {
+	state.bindAIInputFields()
+	cfg := &state.ai.cfg
+	m := state.messages.AISettings
+	field := ui.TextField(c, &cfg.modelSearchField, m.ModelSearchPH, m.ModelSearchPH, ui.WithID(hitAISetModelSearch)).
+		Icon(lucideIcons[iconSearch]).Grow(1).MinWidth(40).Height(32)
+	if cfg.modelSearch.RuneCount() > 0 {
+		field = field.Action(lucideIcons[iconClose], state.messages.SearchClear)
+		if field.ActionClicked() {
+			cfg.modelSearch = newModelSearch()
+			cfg.modelSearchLast = ""
+			cfg.page = 0
+		}
+	}
+	return field
+}
+
 // declareAIModelField declares the field a model is added by name in.
 func (state *State) declareAIModelField(c ui.C) ui.Box {
 	state.bindAIInputFields()
 	m := state.messages.AISettings
-	return ui.TextFieldID(c, hitAISetModelInput, &state.ai.cfg.modelField, m.ModelAddPH, m.ModelAddPH).
+	return ui.TextField(c, &state.ai.cfg.modelField, m.ModelAddPH, m.ModelAddPH, ui.WithID(hitAISetModelInput)).
 		Grow(1).MinWidth(40).Height(32)
 }
 
@@ -700,7 +734,7 @@ func (state *State) declareAIStepsField(c ui.C) ui.Box {
 			cfg.stepsInput.Insert(stored)
 		}
 	}
-	return ui.TextFieldID(c, hitAISetStepsValue, &cfg.stepsField, state.messages.AISettings.MaxSteps, "").
+	return ui.TextField(c, &cfg.stepsField, state.messages.AISettings.MaxSteps, "", ui.WithID(hitAISetStepsValue)).
 		Size(aiStepsValueWidth, 32)
 }
 

@@ -76,6 +76,9 @@ type menuEntry struct {
 	// trailing, when set, paints the area TrailingWidth reserved at the row's end.
 	trailing func(*gfx.Canvas, gfx.Rect, gfx.Theme)
 	height   float32
+	// stay keeps the menu open when the row is chosen, for settings changed
+	// several at a time.
+	stay bool
 }
 
 // menuRows collects the rows of a context menu before it is painted, so its
@@ -90,6 +93,14 @@ func (rows *menuRows) add(item components.ContextMenuItem) {
 	if rows.count < len(rows.entries) {
 		rows.entries[rows.count] = menuEntry{item: item}
 		rows.count++
+	}
+}
+
+// addStay adds a row whose choice leaves the menu open.
+func (rows *menuRows) addStay(item components.ContextMenuItem) {
+	rows.add(item)
+	if rows.count > 0 && rows.entries[rows.count-1].item.ID == item.ID {
+		rows.entries[rows.count-1].stay = true
 	}
 }
 
@@ -229,7 +240,11 @@ func (rows *menuRows) declare(c ui.C, menu *ui.MenuItems, choose func(gfx.ID)) {
 		case components.ContextMenuRadio:
 			item = item.Chosen(row.Selected)
 		}
-		if item.Clicked() {
+		chosen := item.Clicked()
+		if entry.stay {
+			chosen = item.Toggled()
+		}
+		if chosen {
 			id := row.ID
 			c.After(func() { choose(id) })
 		}

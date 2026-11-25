@@ -522,6 +522,9 @@ func (w *sftpWindow) declareSudoToggle(c ui.C) ui.Box {
 // side even when the panes swap places.
 func (w *sftpWindow) declarePane(c ui.C, s *sftpWindowScratch) {
 	local := s.local
+	if !local {
+		w.view.reconcileSFTPRename(c.Canvas(), !w.listBlocked() && w.connected())
+	}
 	side := sideIndex(local)
 	folder := w.folder(local)
 	theme, m := w.owner.Theme(), w.owner.messages
@@ -567,11 +570,11 @@ func (w *sftpWindow) declarePane(c ui.C, s *sftpWindowScratch) {
 			}
 			icon(sftpWindowTreeToggle[sideIndex(local)], iconDirectoryTree, treeHint, treeDisabled, treeStyle)
 			if !local && bounds.Width >= 420 {
-				icon(hitSFTPWindowUpload, iconUpload, m.SFTPWindow.Upload, !w.canTransfer(true), iconButtonQuiet)
+				icon(hitSFTPWindowUpload, iconSFTPUpload, m.SFTPWindow.Upload, !w.canTransfer(true), iconButtonQuiet)
 				icon(hitSFTPWindowDownload, iconDownload, m.SFTPWindow.Download, !w.canTransfer(false), iconButtonQuiet)
 			}
 			if local || bounds.Width >= 340 {
-				icon(sftpWindowUp[sideIndex(local)], iconArrowUp, m.SFTPUp, folder.path == "" || !local && (w.view.busy || !w.connected()), iconButtonQuiet)
+				icon(sftpWindowUp[sideIndex(local)], iconSFTPUp, m.SFTPUp, folder.path == "" || !local && (w.view.busy || !w.connected()), iconButtonQuiet)
 				icon(sftpWindowRefresh[sideIndex(local)], iconRefresh, m.SFTPRefresh, !local && (w.view.busy || !w.connected()), iconButtonQuiet)
 			}
 			if folder.showHidden {
@@ -687,7 +690,7 @@ func (w *sftpWindow) declarePane(c ui.C, s *sftpWindowScratch) {
 			// The frame around the rows, as the panel has always drawn it: the
 			// List sits two pixels in so its rows and scrollbar stay clear of
 			// the rounded edge.
-			frame := ui.Column(c).Grow(1).Pad(1).Background(theme.Background).Radius(6).Border(1, theme.Border.Mix(theme.MutedForeground, .4))
+			frame := ui.Column(c).Grow(1).Pad(1).Background(theme.Background).Radius(cornerPx(6)).Border(1, theme.Border.Mix(theme.MutedForeground, .4))
 			frame.Children(func() {
 				folder.prepareSFTPList()
 				folder.seedSFTPListChoice()
@@ -792,7 +795,7 @@ func (w *sftpWindow) declareListRow(row ui.ListRow, side int, paneWidth, rowWidt
 	if entry.mono {
 		tint = pal.muted
 	}
-	box := row.Element.Height(sftpRowHeight).Shrink(0).Width(rowWidth).Gap(8).PadX(8).Items(ui.Center).Background(background).Radius(4)
+	box := row.Element.Height(sftpRowHeight).Shrink(0).Width(rowWidth).Gap(8).PadX(8).Items(ui.Center).Background(background).Radius(cornerPx(4))
 	if row.Focused() {
 		box = box.Border(1, pal.accent)
 	}
@@ -803,25 +806,27 @@ func (w *sftpWindow) declareListRow(row ui.ListRow, side int, paneWidth, rowWidt
 	}
 	box.Children(func() {
 		w.owner.declareSFTPRowIcon(c, entry, tint)
-		name := ui.Text(c, entry.entry.Name).Color(color).Ellipsis().Grow(1)
-		// The row spends its padding, the icon and the gaps before the name text;
-		// a name wider than what is left is the one the tooltip is for.
-		available := rowWidth - 16 - sftpColumnIconWidth - 3*sftpColumnNameGap - sizeWidth - modifiedWidth
-		if !resizable {
-			available = rowWidth - 16 - sftpColumnIconWidth - sftpColumnNameGap
-			for _, column := range w.owner.sftpColumns.entries[1:] {
-				if column.Enabled {
-					available -= sftpColumnNameGap
-					if column.Key == sftpColumnSize {
-						available -= sizeWidth
-					} else if column.Key == sftpColumnModified {
-						available -= modifiedWidth
+		if side == 0 || !w.owner.declareSFTPRename(c, w.view, row.ID, entry.entry) {
+			name := ui.Text(c, entry.entry.Name).Color(color).Ellipsis().Grow(1)
+			// The row spends its padding, the icon and the gaps before the name text;
+			// a name wider than what is left is the one the tooltip is for.
+			available := rowWidth - 16 - sftpColumnIconWidth - 3*sftpColumnNameGap - sizeWidth - modifiedWidth
+			if !resizable {
+				available = rowWidth - 16 - sftpColumnIconWidth - sftpColumnNameGap
+				for _, column := range w.owner.sftpColumns.entries[1:] {
+					if column.Enabled {
+						available -= sftpColumnNameGap
+						if column.Key == sftpColumnSize {
+							available -= sizeWidth
+						} else if column.Key == sftpColumnModified {
+							available -= modifiedWidth
+						}
 					}
 				}
 			}
-		}
-		if available > 0 && c.Canvas().TextWidth(entry.entry.Name, metrics.FontSizeM) > available {
-			name = name.HitWith(row.ID, entry.entry.Name, gfx.HitOptions{Hint: entry.entry.Name, SkipFocus: true})
+			if available > 0 && c.Canvas().TextWidth(entry.entry.Name, metrics.FontSizeM) > available {
+				name = name.HitWith(row.ID, entry.entry.Name, gfx.HitOptions{Hint: entry.entry.Name, SkipFocus: true})
+			}
 		}
 		for _, column := range w.owner.sftpColumns.entries[1:] {
 			if !column.Enabled {
@@ -913,7 +918,7 @@ func (w *sftpWindow) paintDrag(canvas *gfx.Canvas) {
 		defer canvas.Unclip()
 		label, glyph := w.owner.messages.SFTPWindow.DropDownloadHint, uint8(iconDownload)
 		if w.drag.fromLocal {
-			label, glyph = w.owner.messages.SFTPWindow.DropUploadHint, iconUpload
+			label, glyph = w.owner.messages.SFTPWindow.DropUploadHint, iconSFTPUpload
 		}
 		w.owner.paintSFTPTransferDrop(canvas, bounds, label, target, glyph)
 		return
@@ -943,7 +948,7 @@ func (w *sftpWindow) paintForeignDrag(canvas *gfx.Canvas) {
 		bounds.Y += float32(w.foreign.row)*sftpRowHeight - w.ui.offset[side]
 		bounds.Height = sftpRowHeight
 	}
-	label, glyph := w.owner.messages.SFTPWindow.DropUploadHint, uint8(iconUpload)
+	label, glyph := w.owner.messages.SFTPWindow.DropUploadHint, uint8(iconSFTPUpload)
 	switch {
 	case !w.foreign.fromLocal && w.foreign.local:
 		label, glyph = w.owner.messages.SFTPWindow.DropDownloadHint, iconDownload

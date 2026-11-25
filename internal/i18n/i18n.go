@@ -66,6 +66,7 @@ func ChineseVariant(tag string) Language {
 // Messages is the complete set of user-visible workbench strings. Adding a
 // language means adding one field initialization, not touching call sites.
 type Messages struct {
+	AppLock        AppLockMessages
 	RemoteLogs     RemoteLogMessages
 	HostsPanel     HostsPanelMessages
 	ActionFeedback ActionFeedbackMessages
@@ -275,6 +276,9 @@ type Messages struct {
 	SettingsAppearanceSystem               string
 	SettingsAppearanceDark                 string
 	SettingsAppearanceLight                string
+	SettingsCorners                        string
+	SettingsCornersRounded                 string
+	SettingsCornersSquare                  string
 	SettingsIconColor                      string
 	SettingsIconColorDescription           string
 	SettingsIconMint                       string
@@ -1191,12 +1195,8 @@ type Messages struct {
 	SFTPErrPermissionDenied     string
 	SFTPCreatingDirectoryFmt    string
 	SFTPDirectoryCreatedFmt     string
-	SFTPRenameTitle             string
-	SFTPRenameDescription       string
 	SFTPNewName                 string
-	SFTPRenameSubmit            string
 	SFTPErrRenameInvalid        string
-	SFTPErrRenameSame           string
 	SFTPRenamingFmt             string
 	SFTPRenamedFmt              string
 	SFTPMoveTitle               string

@@ -23,14 +23,22 @@ type Session struct {
 	err  error
 	// remote is the server's clipboard not yet taken, bells the rings not yet
 	// counted.
-	remote  string
-	hasText bool
-	bells   int
-	closed  bool
+	remote         string
+	hasText        bool
+	bells          int
+	closed         bool
+	pointerKind    desktop.PointerKind
+	pointerShape   desktop.PointerShape
+	pointerVersion int
+	lastX          int
+	lastY          int
+	lastButtons    desktop.Buttons
+	hasPointer     bool
 }
 
 var _ desktop.Session = (*Session)(nil)
 var _ desktop.QualityAdjuster = (*Session)(nil)
+var _ desktop.PointerSource = (*Session)(nil)
 
 // SetQuality changes the colour depth and the preferred encoding of the
 // running connection.
@@ -70,7 +78,10 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 		}
 		return nil, err
 	}
-	session := &Session{client: client, opts: opts, done: make(chan struct{})}
+	session := &Session{
+		client: client, opts: opts, done: make(chan struct{}),
+		pointerKind: desktop.PointerSystem, pointerVersion: 1,
+	}
 	session.frame = desktop.NewFrame(nil)
 	session.info = desktop.Info{Protocol: "VNC", Name: client.Name, Encrypted: opts.Encrypted || client.Encrypted}
 	go session.run(conn)
@@ -125,6 +136,26 @@ func (s sink) Bell() {
 	s.session.wake()
 }
 
+func (s sink) Cursor(hotX, hotY, width, height int, bgra []byte) {
+	s.session.mu.Lock()
+	if width == 0 || height == 0 {
+		s.session.pointerKind = desktop.PointerHidden
+		s.session.pointerShape = desktop.PointerShape{}
+	} else {
+		s.session.pointerKind = desktop.PointerBitmap
+		s.session.pointerShape = desktop.PointerShape{
+			Width:  width,
+			Height: height,
+			HotX:   hotX,
+			HotY:   hotY,
+			BGRA:   bgra,
+		}
+	}
+	s.session.pointerVersion++
+	s.session.mu.Unlock()
+	s.session.wake()
+}
+
 func (s sink) ServerText(text string) {
 	if !s.session.opts.Clipboard {
 		return
@@ -148,10 +179,20 @@ func (session *Session) run(conn net.Conn) {
 	if session.closed {
 		err = nil
 	}
+	session.pointerKind = desktop.PointerSystem
+	session.pointerShape = desktop.PointerShape{}
+	session.pointerVersion++
 	session.err = err
 	session.mu.Unlock()
 	close(session.done)
 	session.wake()
+}
+
+// PointerShape implements desktop.PointerSource.
+func (session *Session) PointerShape() (desktop.PointerKind, desktop.PointerShape, int) {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return session.pointerKind, session.pointerShape, session.pointerVersion
 }
 
 func (session *Session) Info() desktop.Info                 { return session.info }
@@ -223,6 +264,14 @@ func rfbButtons(buttons desktop.Buttons) uint8 {
 }
 
 func (session *Session) SendPointer(x, y int, buttons desktop.Buttons) error {
+	session.mu.Lock()
+	if session.hasPointer && session.lastX == x && session.lastY == y && session.lastButtons == buttons {
+		session.mu.Unlock()
+		return nil
+	}
+	session.hasPointer = true
+	session.lastX, session.lastY, session.lastButtons = x, y, buttons
+	session.mu.Unlock()
 	return session.client.SendPointer(x, y, rfbButtons(buttons))
 }
 

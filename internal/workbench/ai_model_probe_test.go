@@ -357,3 +357,129 @@ func TestAIModelDefaultPinnedToTop(t *testing.T) {
 		t.Fatalf("expected model-fast at index 1, got %s", filtered[1].Name)
 	}
 }
+
+func TestAIModelSearchFiltersResetsPageAndClears(t *testing.T) {
+	world := newSettingsWorld(t, newLister())
+	state := world.state
+	p1 := world.addOpenAI(t, "Alpha", "https://api.example.com/v1", "key-123")
+	p2 := world.addOpenAI(t, "Zulu", "https://backup.example.com/v1", "key-456")
+
+	db, err := state.aiStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	models := []store.Model{
+		{ProviderID: p1.ID, Name: "anthropic/claude-opus-4", Enabled: false},
+		{ProviderID: p1.ID, Name: "anthropic/claude-sonnet-4", Enabled: true},
+		{ProviderID: p1.ID, Name: "google/gemini-2.5-pro", Enabled: true},
+		{ProviderID: p1.ID, Name: "openai/gpt-4o", Enabled: true},
+		{ProviderID: p1.ID, Name: "openai/gpt-4.1", Enabled: true},
+		{ProviderID: p1.ID, Name: "openai/o3", Enabled: true},
+		{ProviderID: p1.ID, Name: "meta/llama-3.3-70b", Enabled: true},
+		{ProviderID: p1.ID, Name: "mistral/mistral-large", Enabled: true},
+		{ProviderID: p1.ID, Name: "qwen/qwen-2.5-72b", Enabled: true},
+		{ProviderID: p1.ID, Name: "deepseek/deepseek-chat", Enabled: true},
+	}
+	if err := db.SaveModels(p1.ID, models); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SaveModels(p2.ID, []store.Model{
+		{ProviderID: p2.ID, Name: "gpt-4o-mini", Enabled: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	state.reloadAI()
+	state.Click(hitAISetProviderRow.At(0))
+	world.paint()
+
+	// Move to page 2 first; typing a search query should reset page back to 0.
+	state.Click(hitAISetModelNext)
+	if state.ai.cfg.page != 1 {
+		t.Fatalf("expected page 1 before search, got %d", state.ai.cfg.page)
+	}
+
+	world.typeInto(t, hitAISetModelSearch, "CLAUDE 4")
+	_, texts := world.paint()
+	if state.ai.cfg.page != 0 {
+		t.Fatalf("expected search to reset page to 0, got %d", state.ai.cfg.page)
+	}
+	if total, _, _, enabled := state.aiModelCounts(p1.ID); total != 2 || enabled != 1 {
+		t.Fatalf("expected synced filter counts total=2 enabled=1, got total=%d enabled=%d", total, enabled)
+	}
+	wantAllTab := fmt.Sprintf("%s (2)", state.messages.AISettings.ModelFilterAll)
+	foundAllTab := false
+	for _, txt := range texts {
+		if txt == wantAllTab {
+			foundAllTab = true
+			break
+		}
+	}
+	if !foundAllTab {
+		t.Fatalf("expected filter tab %q to sync with search in %v", wantAllTab, texts)
+	}
+	filtered := state.aiFilteredModels(p1.ID)
+	if len(filtered) != 2 || filtered[0].Name != "anthropic/claude-opus-4" || filtered[1].Name != "anthropic/claude-sonnet-4" {
+		t.Fatalf("unexpected search results: %v", filtered)
+	}
+
+	// Combine search with the Enabled filter.
+	state.Click(hitAISetFilterEnabled)
+	filtered = state.aiFilteredModels(p1.ID)
+	if len(filtered) != 1 || filtered[0].Name != "anthropic/claude-sonnet-4" {
+		t.Fatalf("expected only enabled claude 4 model, got %v", filtered)
+	}
+
+	// Row action must act on the filtered model, not the unfiltered index 0.
+	state.Click(hitAISetModelUse.At(0))
+	if state.ai.settings.defaultModel != "anthropic/claude-sonnet-4" {
+		t.Fatalf("expected default model to switch to anthropic/claude-sonnet-4, got %q", state.ai.settings.defaultModel)
+	}
+
+	// Non-matching query displays the dedicated empty search message.
+	state.Click(hitAISetFilterAll)
+	state.ai.cfg.modelSearch = newModelSearch()
+	world.typeInto(t, hitAISetModelSearch, "nonexistent-model")
+	canvas, texts := world.paint()
+	wantEmpty := state.messages.AISettings.ModelsSearchEmpty
+	foundEmpty := false
+	for _, txt := range texts {
+		if txt == wantEmpty {
+			foundEmpty = true
+			break
+		}
+	}
+	if !foundEmpty {
+		t.Fatalf("expected search empty text %q in %v", wantEmpty, texts)
+	}
+
+	// Clicking the clear button empties the search query.
+	clearHit, ok := hitByLabelAny(canvas, state.messages.SearchClear)
+	if !ok {
+		t.Fatalf("expected search clear button %q to be painted", state.messages.SearchClear)
+	}
+	clickInEventPass(t, state, gfx.Size{Width: 1400, Height: 3200}, clearHit.ID)
+	world.paint()
+	if got := state.ai.cfg.modelSearch.String(); got != "" {
+		t.Fatalf("expected search to clear via clear button, got %q", got)
+	}
+	if len(state.aiFilteredModels(p1.ID)) != len(models) {
+		t.Fatalf("expected all %d models after clearing search, got %d", len(models), len(state.aiFilteredModels(p1.ID)))
+	}
+
+	// Escape on the search box clears a non-empty query.
+	world.typeInto(t, hitAISetModelSearch, "qwen")
+	world.paint()
+	if res := state.Key(gfx.KeyEvent{Target: hitAISetModelSearch, Key: gfx.KeyEscape}); !res.Handled {
+		t.Fatal("expected Escape on non-empty model search to be handled")
+	}
+	if got := state.ai.cfg.modelSearch.String(); got != "" {
+		t.Fatalf("expected Escape to clear search, got %q", got)
+	}
+
+	// Switching providers clears any active model search query.
+	world.typeInto(t, hitAISetModelSearch, "deepseek")
+	state.Click(hitAISetProviderRow.At(1))
+	if got := state.ai.cfg.modelSearch.String(); got != "" {
+		t.Fatalf("expected provider switch to clear model search, got %q", got)
+	}
+}

@@ -211,7 +211,7 @@ func (state *State) declareLocalStartupCommandDialog(c ui.C) {
 		}
 		dialog.form.For, dialog.form.Error, dialog.form.Invalid = hitLocalStartupField, state.dialogError, state.dialogError != ""
 		ui.FormField(c, &dialog.form, messages.SettingsLocalStartupCommand).FillWidth().Height(dialogRowHeight(c.Theme())).Children(func() {
-			ui.TextFieldID(c, hitLocalStartupField, &dialog.input, messages.SettingsLocalStartupCommand, startupCommandExample(dialog.shell.Path))
+			ui.TextField(c, &dialog.input, messages.SettingsLocalStartupCommand, startupCommandExample(dialog.shell.Path), ui.WithID(hitLocalStartupField))
 		})
 	})
 	box.Footer(func() {

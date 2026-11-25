@@ -18,6 +18,11 @@ func defaultPaneSplitChords() (horizontal, vertical keymap.Chord) {
 
 // defaultBroadcastChord is the broadcast-input binding this platform ships.
 // Command+Option+I is clear of Motty's other defaults and of the menu bar.
+// defaultBroadcastAllChord adds Shift to it for the broadcast to all tabs.
+func defaultBroadcastAllChord() keymap.Chord {
+	return keymap.Chord{Modifiers: gfx.ModifierMeta | gfx.ModifierAlt | gfx.ModifierShift, Char: 'i'}
+}
+
 func defaultBroadcastChord() keymap.Chord {
 	return keymap.Chord{Modifiers: gfx.ModifierMeta | gfx.ModifierAlt, Char: 'i'}
 }

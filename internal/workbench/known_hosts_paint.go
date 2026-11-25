@@ -82,7 +82,7 @@ func (state *State) declareKnownHostsWorkspace(c ui.C) {
 				view.searchField.Bind(&view.search)
 				view.searchBound = true
 			}
-			ui.TextFieldID(c, hitKnownHostsSearch, &view.searchField, messages.NavSearch, messages.KnownHostsSearchPlaceholder).
+			ui.TextField(c, &view.searchField, messages.NavSearch, messages.KnownHostsSearchPlaceholder, ui.WithID(hitKnownHostsSearch)).
 				Icon(lucideIcons[iconSearch]).Grow(1).MaxWidth(470).MinWidth(searchLeast).Height(40)
 			ui.Spacer(c)
 			layout.refresh = state.declareButtonSized(c, hitKnownHostsRefresh, messages.KnownHostsRefresh, refreshIcon, false, false, true, toolbarFont, condensed).Size(refreshWidth, toolbarHeight)

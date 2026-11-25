@@ -165,6 +165,8 @@ func TestProbeShellAnswersFromTheLoginShell(t *testing.T) {
 		"posix":      {"\x1emotty-shell:/bin/bash\x1f\nmotty-shell:\n", "/bin/bash", shellkind.POSIX},
 		"powershell": {"motty-shell:System.Management.Automation.PSVersionHashtable\r\n", "", shellkind.PowerShell},
 		"cmd":        {"\"motty-shell:$PSVersionTable$FISH_VERSION\"\r\n", "", shellkind.Cmd},
+		"nushell":    {"\x1emotty-shell:$SHELL\x1f\nmotty-shell:$PSVersionTable$FISH_VERSION\n", "$SHELL", shellkind.Nushell},
+		"fish":       {"\x1emotty-shell:/bin/bash\x1f\nmotty-shell:3.7.1\n", "/bin/bash", shellkind.Fish},
 		"garbage":    {"unexpected", "", shellkind.Unknown},
 	}
 	for name, answer := range answers {
@@ -200,6 +202,10 @@ func TestIntegrationActivationStartsWithTheEchoTag(t *testing.T) {
 		if want := " " + string(IntegrationEchoTag(token)) + "; "; !strings.HasPrefix(line, want) {
 			t.Fatalf("%s activation = %q, want it to start with %q", name, line, want)
 		}
+	}
+	zshLine := integrationActivation("zsh", token, "/tmp/motty-shell.x/init", "/tmp/motty-shell.x")
+	if !strings.Contains(zshLine, "[[ -n ${ZSH_VERSION-} ]] && printf") {
+		t.Fatalf("zsh activation must guard the ready marker on ZSH_VERSION, got %q", zshLine)
 	}
 }
 

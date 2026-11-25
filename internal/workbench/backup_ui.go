@@ -186,6 +186,9 @@ func excludedFromBackup(name string) bool {
 // shortcuts, trusted keys and saved passwords. A locked vault is
 // reported as vault.ErrNeedsConversion, since the passwords cannot be read.
 func (state *State) backupDocument() (backup.Document, error) {
+	if state.appAccessBlocked() {
+		return backup.Document{}, errAppLocked
+	}
 	if !state.flushNoteDraft() {
 		return backup.Document{}, errors.New(state.noteText("Finish composing or resolve the note save error before backing up.", "请完成输入法输入或处理笔记保存错误后再备份。"))
 	}
@@ -317,6 +320,9 @@ func (state *State) applyBackup(document backup.Document) (hosts int, err error)
 // records, passwords and host keys of a closed category are left as they are.
 // A zero scope restores everything, which is what a backup file does.
 func (state *State) applyBackupScope(document backup.Document, scope syncScope) (hosts int, err error) {
+	if state.appAccessBlocked() {
+		return 0, errAppLocked
+	}
 	m := state.messages.Tools
 	if len(state.sessions) > 0 {
 		return 0, errors.New(m.BackupErrSessions)
@@ -402,7 +408,7 @@ func (state *State) applyBackupScope(document backup.Document, scope syncScope) 
 		for _, entry := range preferences.Shortcuts {
 			saved = append(saved, savedShortcut{Action: entry.Action, Key: entry.Key, Modifiers: entry.Modifiers})
 		}
-		state.shortcuts = restoreShortcuts(saved)
+		state.shortcuts = restoreShortcuts(saved, state.snippets.list...)
 		if preferences.DefaultsGeneration < shortcutDefaultsGeneration && len(saved) > 0 {
 			state.shortcuts.migrateChangedDefaults(func(chord keymap.Chord) bool { return state.snippetNamed(chord) != "" })
 		}

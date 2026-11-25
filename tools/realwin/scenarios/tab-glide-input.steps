@@ -1,0 +1,18 @@
+# Type while a closed tab's neighbours are still sliding: the keys must not wait for the animation.
+place 200 100 2000 1300
+focus
+sleep 1500
+newlocal
+sleep 800
+newlocal
+sleep 800
+clickw 100 18
+sleep 400
+clickw 202 18
+sleep 500
+mark glide
+clickw 690 404
+sleep 40
+keys abcdef
+sleep 700
+mark glide-end

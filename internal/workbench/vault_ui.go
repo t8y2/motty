@@ -35,8 +35,9 @@ type secretsUI struct {
 	// worked out when it opened, and save whether the box is ticked.
 	canSave, save bool
 
-	unlock      text.Editor
-	dialogError string
+	unlock       text.Editor
+	dialogError  string
+	forgetReturn modalKind
 	// after is what to do once the vault is unlocked from Settings.
 	after func()
 	// actions is where Settings lays out its buttons, so painting them keeps no
@@ -396,7 +397,7 @@ func (state *State) declareVaultUnlockBody(c ui.C) {
 	secrets.unlockText.Invalid = secrets.dialogError != ""
 	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Gap(12).Children(func() {
 		ui.FormField(c, &secrets.unlockForm, m.VaultUnlockLabel).FillWidth().Height(dialogRowHeight(c.Theme())).Children(func() {
-			box := ui.TextFieldID(c, hitVaultUnlockField, &secrets.unlockText, m.VaultUnlockLabel, "")
+			box := ui.TextField(c, &secrets.unlockText, m.VaultUnlockLabel, "", ui.WithID(hitVaultUnlockField))
 			icon, label := lucideIcons[iconEye], m.ShowSecret
 			if secrets.unlockShown {
 				icon, label = lucideIcons[iconEyeOff], m.HideSecret
@@ -410,25 +411,52 @@ func (state *State) declareVaultUnlockBody(c ui.C) {
 	})
 }
 
+func (state *State) openVaultForgetFromHostDialog() {
+	state.secrets.forgetReturn = state.modal
+	state.openVaultForget()
+}
+
 func (state *State) openVaultForget() {
 	state.modal = modalVaultForget
 	state.secrets.dialogError = ""
 }
 
 func (state *State) clickVaultForget(id gfx.ID) {
+	returningHost := state.secrets.forgetReturn == modalNewHost
+	state.secrets.forgetReturn = modalNone
 	switch id {
 	case hitVaultForgetConfirm:
 		if state.secrets.vault != nil {
 			if err := state.secrets.vault.Clear(); err != nil {
 				state.status = fmt.Sprintf(state.messages.VaultSaveFailedFmt, state.vaultErrorText(err))
-			} else {
-				state.status = state.messages.VaultCleared
+				if returningHost {
+					// The form is still the user's work: say why on it, not behind it.
+					state.modal = modalNewHost
+					state.dialogError = state.status
+					state.editor.keyLostError = ""
+					return
+				}
+				state.closeModal()
+				state.showNextPrompt()
+				return
 			}
+			state.status = state.messages.VaultCleared
 			state.reloadStoredIdentities()
+		}
+		if returningHost {
+			state.modal = modalNewHost
+			state.dialogError = ""
+			state.editor.keyLostError = ""
+			state.submitHostDialog()
+			return
 		}
 		state.closeModal()
 		state.showNextPrompt()
 	case hitVaultForgetCancel, hitVaultForgetClose, hitVaultForgetDismiss:
+		if returningHost {
+			state.modal = modalNewHost
+			return
+		}
 		state.closeModal()
 		state.showNextPrompt()
 	}
@@ -496,6 +524,7 @@ func (state *State) clickVaultSettings(id gfx.ID) bool {
 func (state *State) paintSecuritySettings(page *settingsPage) {
 	m := state.messages
 	page.groups(func() {
+		state.paintAppLockSettings(page)
 		state.paintCredentialSettings(page)
 		state.paintSessionLogSettingsGroup(page)
 		vaultFile := state.secrets.vault

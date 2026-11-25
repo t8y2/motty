@@ -41,7 +41,7 @@ type aiTextMetrics struct {
 	approval, approvalLine float32
 }
 
-// aiSizes is the panel's text at the current metrics; applyTextMetrics rebuilds
+// aiSizes is the panel's text at the current metrics; applyMetrics rebuilds
 // it together with the metrics it was derived from.
 var aiSizes = aiTextMetricsAt(metrics)
 

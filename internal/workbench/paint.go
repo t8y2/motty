@@ -3,6 +3,7 @@ package workbench
 import (
 	"math"
 	"strings"
+	"time"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
@@ -127,6 +128,12 @@ const (
 	// The fullscreen desktop bar's pin: pinned, it keeps the bar visible.
 	iconPin
 	iconPinOff
+	// The dedicated SFTP file operation glyphs: up directory, upload, upload folder, new file, new folder.
+	iconSFTPUp
+	iconSFTPUpload
+	iconSFTPUploadDirectory
+	iconSFTPNewFile
+	iconSFTPNewDirectory
 )
 
 // terminalPage reports whether the window shows the panes of a workspace rather
@@ -155,6 +162,11 @@ func (state *State) paintsHostsPage() bool {
 func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	defer state.devEndPaint(canvas, size)
 	canvas.SetTree(&tree)
+	if state.appLocked() {
+		state.paintAppLockPage(canvas, size)
+		return
+	}
+	state.lockUI.active = false
 	state.autosaveNotes(canvas)
 	state.syncNoteWindows()
 	state.workspaceCardRegions = state.workspaceCardRegions[:0]
@@ -411,6 +423,15 @@ const (
 	barTabMax   = float32(170)
 )
 
+// tabGlideMotion is how a horizontal tab slides to the place its neighbours'
+// closing, adding or reordering gave it: quick and without bounce, so the tab
+// under the pointer never overshoots it.
+var tabGlideMotion = gfx.SpringMotion(220*time.Millisecond, 0)
+
+// rowGlideMotion is how list rows slide to the place a reorder, a move to another
+// group, an add or a delete gave them.
+var rowGlideMotion = gfx.SpringMotion(220*time.Millisecond, 0)
+
 // windowBar keeps the places the window bar's own painters need once it is laid
 // out: the assistant's button, the room the active session's name is drawn in,
 // and, for each tab, where its system and its light go.
@@ -443,6 +464,10 @@ type barTab struct {
 	base    gfx.Color
 	tint    string
 	compact bool
+	// glided marks a tab that slides to a new place; glideScroll is how far the
+	// strip is scrolled, which is not a move.
+	glided      bool
+	glideScroll gfx.Point
 }
 
 // barGeometry is what a first pass over the window bar says about its tabs: the
@@ -469,7 +494,7 @@ func (state *State) windowPage() *ui.Page {
 	chrome := &state.chrome
 	if chrome.windowPage == nil {
 		chrome.windowPage = ui.NewPage(ui.PageConfig{
-			Tree: &tree, Root: shellPageRoot, Theme: &state.theme, View: state.declareShell,
+			Tree: &tree, Root: shellPageRoot, Theme: &state.theme, View: state.declareWorkbenchPage,
 			ScrollbarSize: catalogBarGutter, Styles: &ui.Styles{Switch: state.switchLook},
 		})
 	}
@@ -497,6 +522,49 @@ func (state *State) WindowConfig(base app.Config) app.Config {
 			w.activate()
 		}
 	}
+	// A lock may arrive between the previous paint and the next input. Do not
+	// let a stale business control in the page consume that event before the
+	// workbench handler can check the profile lock.
+	key, shortcut, pointer, input := config.OnKey, config.OnShortcut, config.OnPointer, config.TextInput
+	config.OnKey = func(event gfx.KeyEvent) gfx.EventResult {
+		if state.modal == modalAppLock && state.appLockBusy() {
+			return gfx.EventResult{Handled: true}
+		}
+		if state.appAccessBlocked() && (!event.Target.IsZero() && !appLockOwns(event.Target)) {
+			return gfx.EventResult{Handled: true}
+		}
+		if state.appLocked() && event.Target.IsZero() {
+			result := state.appLockKey(event)
+			result.Handled = true
+			return result
+		}
+		result := key(event)
+		if state.appAccessBlocked() {
+			result.Handled = true
+		}
+		return result
+	}
+	config.OnShortcut = func(event gfx.KeyEvent) gfx.EventResult {
+		if state.appAccessBlocked() || state.modal == modalAppLock {
+			return state.Shortcut(event)
+		}
+		return shortcut(event)
+	}
+	config.OnPointer = func(event gfx.PointerEvent) gfx.EventResult {
+		if state.modal == modalAppLock && state.appLockBusy() {
+			return gfx.EventResult{Handled: true}
+		}
+		if state.appAccessBlocked() && (!appLockOwns(event.Target)) {
+			return gfx.EventResult{Handled: true}
+		}
+		return pointer(event)
+	}
+	config.TextInput = func(context app.TextInputContext) *app.TextInput {
+		if (state.appAccessBlocked() || state.modal == modalAppLock) && state.appLockEditor(context.ID) == nil {
+			return nil
+		}
+		return input(context)
+	}
 	return config
 }
 
@@ -505,6 +573,9 @@ func (state *State) WindowConfig(base app.Config) app.Config {
 // the wheel over its backdrop: the panel keeps still behind it, as it did when
 // its list was painted by hand and the window's own handler saw the event first.
 func (state *State) scrollWindow(event gfx.ScrollEvent) gfx.EventResult {
+	if state.appAccessBlocked() {
+		return gfx.EventResult{Handled: true}
+	}
 	if state.hostGroupMenu {
 		// The move picker and its backdrop own the wheel over the host list.
 		return state.Scroll(event)
@@ -819,7 +890,7 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool
 						if firstPending {
 							first, firstPending = -scroll, false
 						}
-						bar.tabs = append(bar.tabs, state.declareSettingsTab(c, probe, geometry, first))
+						bar.tabs = append(bar.tabs, state.declareSettingsTab(c, probe, geometry, first, scroll))
 						settingsDeclared = true
 					}
 					for index := range state.workspaceTabs {
@@ -848,11 +919,11 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool
 								first, firstPending = -scroll, false
 							}
 							number := state.windowTabIndex(windowTab{kind: windowTabWorkspace, id: uint32(workspace.ID)}) + 1
-							entry := state.declareWorkspaceTab(c, workspace, geometry.tabWidth, barTabHeight, first, false, false, number)
+							entry := state.declareWorkspaceTab(c, workspace, geometry.tabWidth, barTabHeight, first, gfx.Point{X: scroll}, false, false, number)
 							bar.tabs = append(bar.tabs, entry)
 						}
 						if settingsPlace == index+1 {
-							bar.tabs = append(bar.tabs, state.declareSettingsTab(c, probe, geometry, 0))
+							bar.tabs = append(bar.tabs, state.declareSettingsTab(c, probe, geometry, 0, scroll))
 							settingsDeclared = true
 						}
 					}
@@ -908,8 +979,9 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool
 								first, firstPending = -scroll, false
 							}
 							label := state.sftpFileTabTitle(fileTab)
+							entry.glided, entry.glideScroll = true, gfx.Point{X: scroll}
 							entry.box = ui.Row(c).Size(geometry.tabWidth, barTabHeight).Shrink(0).MarginSides(0, barGap, 0, first).
-								HitOutset(barTabReach, 0, barTabReach, 0).PadSides(0, 3, 0, 4).Items(ui.Center).Radius(radius.item).Border(1, edge).Background(fill).
+								Glide(tabGlideMotion, gfx.Point{X: scroll}).HitOutset(barTabReach, 0, barTabReach, 0).PadSides(0, 3, 0, 4).Items(ui.Center).Radius(radius.item).Border(1, edge).Background(fill).
 								HitWith(id, label, gfx.HitOptions{Role: gfx.RoleTab, Selected: active, Hint: label}).Children(func() {
 								entry.badge = ui.Slot(c).Size(20, 20).MarginSides(0, 7, 0, 0)
 								if state.tabNumbers && entry.number != "" {
@@ -939,12 +1011,12 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool
 							bar.tabs = append(bar.tabs, entry)
 						}
 						if settingsPlace == baseIndex+1 {
-							bar.tabs = append(bar.tabs, state.declareSettingsTab(c, probe, geometry, 0))
+							bar.tabs = append(bar.tabs, state.declareSettingsTab(c, probe, geometry, 0, scroll))
 							settingsDeclared = true
 						}
 					}
 					if settingsPlace >= 0 && !settingsDeclared {
-						bar.tabs = append(bar.tabs, state.declareSettingsTab(c, probe, geometry, 0))
+						bar.tabs = append(bar.tabs, state.declareSettingsTab(c, probe, geometry, 0, scroll))
 					}
 				})
 				state.barButton(c, probe, hitNewTab, iconPlus, m.LabelNewTab)
@@ -960,7 +1032,7 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool
 // declareWorkspaceTab shares tab styling and hit identities between both
 // orientations. number is the tab's place in the number row, zero for a tab no
 // number key reaches.
-func (state *State) declareWorkspaceTab(c ui.C, workspace layoutcore.WorkspaceInfo, width, height, first float32, vertical, compact bool, number int) barTab {
+func (state *State) declareWorkspaceTab(c ui.C, workspace layoutcore.WorkspaceInfo, width, height, first float32, scroll gfx.Point, vertical, compact bool, number int) barTab {
 	m, pal := state.messages, state.pal
 	id, closeID := hitTabList.At(int(workspace.ID)), hitTabCloseList.At(int(workspace.ID))
 	entry := barTab{workspace: workspace, id: id, closeID: closeID}
@@ -1028,6 +1100,13 @@ func (state *State) declareWorkspaceTab(c ui.C, workspace layoutcore.WorkspaceIn
 	} else {
 		row.MarginSides(0, barGap, 0, first).HitOutset(barTabReach, 0, barTabReach, 0)
 	}
+	if id == state.tabLanding {
+		// A tab dropped by the pointer slides from where it was let go.
+		c.Canvas().GlideFrom(id, 0, state.tabGhost)
+		state.tabLanding = gfx.ID{}
+	}
+	row.Glide(tabGlideMotion, scroll)
+	entry.box, entry.glided, entry.glideScroll = row, true, scroll
 	row.
 		PadSides(0, 3, 0, 4).Items(ui.Center).Radius(radius.item).Border(1, edge).Background(fill).
 		HitWith(id, label, tabOptions).Children(func() {
@@ -1369,6 +1448,9 @@ func (state *State) declareNavigation(c ui.C) {
 		// A shell on this computer needs no host, so its way in is always at hand:
 		// above the Settings, at the bottom of the sidebar. A dev build also puts
 		// the component gallery there (see devDeclareNavigation).
+		if state.appLockEnabled() {
+			state.navigationItem(c, hitAppLock, iconLock, m.AppLock.Lock, false, 4)
+		}
 		state.navigationItem(c, hitLocalTerminal, iconTerminal, m.LocalTerminal, false, 4)
 		state.openLocalShellPickerOn(c.Canvas(), hitLocalTerminal, false)
 		state.devDeclareNavigation(c)
@@ -1565,7 +1647,7 @@ func (state *State) declareHostsToolbar(c ui.C, width float32, plan hostsHeaderP
 				state.chrome.searchBound = true
 			}
 			state.chrome.searchField.Disabled = state.hostSort.enabled
-			field := ui.TextFieldID(c, hitSearch, &state.chrome.searchField, m.NavSearch, m.SearchPlaceholder).
+			field := ui.TextField(c, &state.chrome.searchField, m.NavSearch, m.SearchPlaceholder, ui.WithID(hitSearch)).
 				Icon(lucideIcons[iconSearch]).FillWidth().Height(toolbarHeight).Disabled(state.hostSort.enabled)
 			if state.search.RuneCount() > 0 && !state.hostSort.enabled {
 				field = field.Action(lucideIcons[iconClose], m.SearchClear)
@@ -2729,62 +2811,67 @@ var lucideIcons = [...]gfx.Icon{
 	iconRows2:           icons.Rows2,
 	iconGrid2x2:         icons.Grid2x2,
 
-	iconBot:              icons.Bot,
-	iconHistory:          icons.History,
-	iconCopy:             icons.Copy,
-	iconChevronRight:     icons.ChevronRight,
-	iconChevronLeft:      icons.ChevronLeft,
-	iconChevronDown:      icons.ChevronDown,
-	iconPaneMaximize:     remoteLogExpandIcon,
-	iconPaneRestore:      remoteLogRestoreIcon,
-	iconPin:              icons.Pin,
-	iconPinOff:           icons.PinOff,
-	iconChevronsExpand:   icons.ChevronsUpDown,
-	iconChevronsCollapse: icons.ChevronsDownUp,
-	iconSliders:          icons.SlidersHorizontal,
-	iconAlert:            icons.CircleAlert,
-	iconCircleCheck:      icons.CircleCheck,
-	iconRadio:            icons.RadioTower,
-	iconKeyboard:         icons.Keyboard,
-	iconStar:             icons.Star,
-	iconStarSolid:        icons.StarSolid,
-	iconArchive:          icons.Archive,
-	iconHardDrive:        icons.HardDrive,
-	iconExternal:         icons.SquarePen,
-	iconPlug:             icons.Plug,
-	iconPaperclip:        icons.Paperclip,
-	iconImage:            icons.Image,
-	iconSave:             icons.Download,
-	iconPaste:            icons.ClipboardPaste,
-	iconSelectAll:        icons.SquareDashed,
-	iconEraser:           icons.Eraser,
-	iconEye:              icons.Eye,
-	iconEyeOff:           icons.EyeOff,
-	iconEllipsis:         icons.Ellipsis,
-	iconWrench:           icons.Wrench,
-	iconProcess:          icons.Process,
-	iconDirectoryTree:    icons.PanelLeft,
-	iconListTree:         icons.ListTree,
-	iconArrowUpDown:      icons.ArrowUpDown,
-	iconCloseOthers:      icons.ListX,
-	iconCloseRight:       icons.ArrowRightToLine,
-	iconSparkles:         icons.Sparkles,
-	iconTransfer:         icons.ArrowUpDown,
-	iconBug:              icons.Bug,
-	iconInfo:             icons.Info,
-	iconQQ:               icons.Qq,
-	iconWeChat:           icons.Wechat,
-	iconDiscord:          icons.Discord,
-	iconGitHub:           icons.Github,
-	iconNotebook:         icons.Notebook,
-	iconSnippets:         icons.Zap,
-	iconLocalProxy:       icons.Waypoints,
-	iconSFTPTransfer:     icons.SftpTransfer,
-	iconSFTPBrowseSync:   icons.SftpSync,
-	iconSFTPProfiles:     icons.SftpProfiles,
-	iconFileClock:        icons.FileClock,
-	iconClock:            icons.Clock3,
-	iconFollowFolder:     icons.LocateFixed,
+	iconBot:                 icons.Bot,
+	iconHistory:             icons.History,
+	iconCopy:                icons.Copy,
+	iconChevronRight:        icons.ChevronRight,
+	iconChevronLeft:         icons.ChevronLeft,
+	iconChevronDown:         icons.ChevronDown,
+	iconPaneMaximize:        remoteLogExpandIcon,
+	iconPaneRestore:         remoteLogRestoreIcon,
+	iconPin:                 icons.Pin,
+	iconPinOff:              icons.PinOff,
+	iconChevronsExpand:      icons.ChevronsUpDown,
+	iconChevronsCollapse:    icons.ChevronsDownUp,
+	iconSliders:             icons.SlidersHorizontal,
+	iconAlert:               icons.CircleAlert,
+	iconCircleCheck:         icons.CircleCheck,
+	iconRadio:               icons.RadioTower,
+	iconKeyboard:            icons.Keyboard,
+	iconStar:                icons.Star,
+	iconStarSolid:           icons.StarSolid,
+	iconArchive:             icons.Archive,
+	iconHardDrive:           icons.HardDrive,
+	iconExternal:            icons.SquarePen,
+	iconPlug:                icons.Plug,
+	iconPaperclip:           icons.Paperclip,
+	iconImage:               icons.Image,
+	iconSave:                icons.Download,
+	iconPaste:               icons.ClipboardPaste,
+	iconSelectAll:           icons.SquareDashed,
+	iconEraser:              icons.Eraser,
+	iconEye:                 icons.Eye,
+	iconEyeOff:              icons.EyeOff,
+	iconEllipsis:            icons.Ellipsis,
+	iconWrench:              icons.Wrench,
+	iconProcess:             icons.Process,
+	iconDirectoryTree:       icons.PanelLeft,
+	iconListTree:            icons.ListTree,
+	iconArrowUpDown:         icons.ArrowUpDown,
+	iconCloseOthers:         icons.ListX,
+	iconCloseRight:          icons.ArrowRightToLine,
+	iconSparkles:            icons.Sparkles,
+	iconTransfer:            icons.ArrowUpDown,
+	iconBug:                 icons.Bug,
+	iconInfo:                icons.Info,
+	iconQQ:                  icons.Qq,
+	iconWeChat:              icons.Wechat,
+	iconDiscord:             icons.Discord,
+	iconGitHub:              icons.Github,
+	iconNotebook:            icons.Notebook,
+	iconSnippets:            icons.Zap,
+	iconLocalProxy:          icons.Waypoints,
+	iconSFTPTransfer:        icons.SftpTransfer,
+	iconSFTPBrowseSync:      icons.SftpSync,
+	iconSFTPProfiles:        icons.SftpProfiles,
+	iconFileClock:           icons.FileClock,
+	iconClock:               icons.Clock3,
+	iconFollowFolder:        icons.LocateFixed,
+	iconSFTPUp:              icons.SftpUp,
+	iconSFTPUpload:          icons.SftpUpload,
+	iconSFTPUploadDirectory: icons.SftpUploadFolder,
+	iconSFTPNewFile:         icons.SftpNewFile,
+	iconSFTPNewDirectory:    icons.SftpNewFolder,
 }
 
 func paintIcon(canvas *gfx.Canvas, kind uint8, bounds gfx.Rect, foreground gfx.Color) {
@@ -2859,6 +2946,8 @@ func dialogViewport(c ui.C) gfx.Rect {
 // dispatches.
 func (state *State) declareDialogs(c ui.C) {
 	switch state.modal {
+	case modalAppLock:
+		state.declareAppLockDialog(c)
 	case modalOpenLink:
 		state.declareLaunchDialog(c)
 	case modalStateNotice:
@@ -3184,6 +3273,13 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 				if state.dialogError != "" {
 					// The serial line's error is long: up to two lines.
 					ui.Paragraph(c, state.dialogError, 2).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(16)
+					if state.isHostDialogKeyLost() {
+						ui.Row(c).Height(30).Items(ui.Center).MarginSides(8, 0, 0, 0).Children(func() {
+							ui.Button(c, state.messages.SettingsVaultForgetAll).Small().
+								DestructiveOutline().
+								Hit(hitDialogVaultForget, state.messages.SettingsVaultForgetAll)
+						})
+					}
 				}
 				// The choices are declared after the rows they sit in: the frame that
 				// delivers a click lays out what it did before it, the choice writes
@@ -3442,8 +3538,8 @@ func (state *State) declareHostGroupDeleteDialog(c ui.C) {
 			// hand-painted group stretched them: a radio centres its circle and
 			// label in the row.
 			ui.RadioGroup(c).Fill().Children(func() {
-				ui.RadioID(c, hitGroupDeleteParent, &state.groupActions.ungroup, false, choices[0]).Grow(1)
-				ui.RadioID(c, hitGroupDeleteUngroup, &state.groupActions.ungroup, true, choices[1]).Grow(1)
+				ui.Radio(c, &state.groupActions.ungroup, false, choices[0], ui.WithID(hitGroupDeleteParent)).Grow(1)
+				ui.Radio(c, &state.groupActions.ungroup, true, choices[1], ui.WithID(hitGroupDeleteUngroup)).Grow(1)
 			})
 		})
 	})

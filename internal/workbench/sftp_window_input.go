@@ -120,6 +120,17 @@ func (w *sftpWindow) trackFileDrag(event gfx.PointerEvent) {
 			}
 		}
 	}
+	// The pointer is outside this window and over no other Motty window: the
+	// drag leaves the application, and the desktop takes it from here. Only a
+	// held move starts it; the release that follows is the desktop's.
+	if event.Kind == gfx.PointerMove && !w.owner.ownWindowAt(w.drag.screen, w) {
+		entries := w.drag.entries
+		directory := w.drag.sourceDir
+		fromLocal := w.drag.fromLocal
+		w.cancelDrag()
+		w.owner.dragFilesOut(w, w.view, entries, directory, fromLocal)
+		return
+	}
 	w.setDragPeerHighlight(nil, false, false, "", -1)
 	w.drag.target = sftpDragTarget{}
 }
@@ -810,7 +821,6 @@ func (w *sftpWindow) activate() {
 	}
 	w.refresh(true)
 	if w.connected() && w.view.path != "" {
-		w.view.forgetListings()
 		w.owner.refreshSFTPDirectory(w.view, w.view.path)
 	}
 }
@@ -836,6 +846,9 @@ func (w *sftpWindow) textInput(context app.TextInputContext) *app.TextInput {
 			return &w.input
 		}
 		return nil
+	}
+	if context.ID == hitSFTPInlineRename && w.view.rename != nil {
+		return &w.view.rename.input
 	}
 	for side, id := range sftpWindowFilter {
 		folder := w.folder(side == 0)
@@ -913,6 +926,9 @@ func (w *sftpWindow) moveSplitter(event gfx.KeyEvent) (gfx.EventResult, bool) {
 func (w *sftpWindow) key(event gfx.KeyEvent) gfx.EventResult {
 	if event.Release {
 		return gfx.EventResult{}
+	}
+	if result := w.owner.sftpRenameKey(w.view, event); result.Handled {
+		return result
 	}
 	// The List submits Enter to the window; opening the row is the window's.
 	// Take it before the List's key route so a folder is entered once, not
@@ -1121,11 +1137,11 @@ func (w *sftpWindow) key(event gfx.KeyEvent) gfx.EventResult {
 			return handled
 		}
 	case gfx.KeyF2:
-		if !w.activeLocal && !w.view.busy && w.connected() {
-			w.cancelDrag()
+		if !w.activeLocal && !w.listBlocked() && !event.Repeat && event.Modifiers == 0 {
 			w.view.local = false
-			w.owner.openSFTPDialog(w.view, sftpDialogRename)
-			return handled
+			if w.owner.beginSFTPRename(w.view) {
+				return handled
+			}
 		}
 	case gfx.KeyDelete:
 		if w.activeLocal {
@@ -1186,7 +1202,7 @@ func (w *sftpWindow) key(event gfx.KeyEvent) gfx.EventResult {
 }
 
 func (w *sftpWindow) shortcut(event gfx.KeyEvent) gfx.EventResult {
-	if event.Release {
+	if event.Release || event.Target == hitSFTPInlineRename {
 		return gfx.EventResult{}
 	}
 	// A printable key while a List row has the keyboard is the List's typeahead.

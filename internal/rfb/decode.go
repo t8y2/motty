@@ -504,3 +504,50 @@ func (reader *zrleReader) runLength() (int, error) {
 		}
 	}
 }
+
+const maxCursorDimension = 512
+
+// decodeCursor reads a cursor shape pseudo-rectangle of width*height pixels
+// followed by a 1-bit transparency mask, converts it to BGRA, and hands it
+// to the sink. A width or height of zero indicates a hidden or cleared cursor.
+func (client *Client) decodeCursor(sink Sink, hotX, hotY, width, height int) error {
+	if width == 0 || height == 0 {
+		sink.Cursor(hotX, hotY, 0, 0, nil)
+		return nil
+	}
+	if width > maxCursorDimension || height > maxCursorDimension {
+		return fmt.Errorf("%w: a %dx%d cursor is larger than the %d pixels accepted", ErrProtocol, width, height, maxCursorDimension)
+	}
+	size := client.format.size()
+	pixelBytes := width * height * size
+	maskStride := (width + 7) / 8
+	maskBytes := maskStride * height
+	totalBytes := pixelBytes + maskBytes
+
+	buf := make([]byte, totalBytes)
+	if _, err := io.ReadFull(client.r, buf); err != nil {
+		return err
+	}
+	pixelData := buf[:pixelBytes]
+	maskData := buf[pixelBytes:]
+
+	bgra := make([]byte, width*height*4)
+	for row := range height {
+		maskRow := maskData[row*maskStride : (row+1)*maskStride]
+		for col := range width {
+			bit := (maskRow[col/8] >> (7 - (col % 8))) & 1
+			offset := (row*width + col) * 4
+			if bit == 0 {
+				continue
+			}
+			pixelOffset := (row*width + col) * size
+			b, g, r := client.format.bgr(pixelData[pixelOffset:])
+			bgra[offset] = b
+			bgra[offset+1] = g
+			bgra[offset+2] = r
+			bgra[offset+3] = 0xff
+		}
+	}
+	sink.Cursor(hotX, hotY, width, height, bgra)
+	return nil
+}

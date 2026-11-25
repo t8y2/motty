@@ -364,7 +364,7 @@ func (state *State) credentialField(c ui.C, id gfx.ID, field *ui.Field, title, p
 	field.Secure = secret && !form.passwordShown
 	ui.Column(c).Height(height).MarginSides(0, 0, 6, 0).Children(func() {
 		ui.Text(c, title).FontSize(m.FontSizeM).Weight(gfx.WeightMedium).Color(theme.Foreground).LineHeight(m.FontSizeM + 4).Ellipsis()
-		box := ui.TextFieldID(c, id, field, title, placeholder).Height(m.ControlHeight).MarginSides(gap, 0, 0, 0)
+		box := ui.TextField(c, field, title, placeholder, ui.WithID(id)).Height(m.ControlHeight).MarginSides(gap, 0, 0, 0)
 		if secret {
 			icon, label := lucideIcons[iconEye], state.messages.ShowSecret
 			if form.passwordShown {

@@ -80,8 +80,8 @@ func Resources(ctx context.Context, runner Runner, kind Kind) ([]Resource, error
 	}
 	if err != nil {
 		text := strings.TrimSpace(string(output))
-		if missingDockerCLI(output) {
-			return nil, ErrNoDocker
+		if missingContainerCLI(output) {
+			return nil, ErrNoContainerRuntime
 		}
 		if text == "" {
 			return nil, err
@@ -166,12 +166,15 @@ func ValidName(name string) bool { return validName(name) }
 // PullCommand is the command line that pulls an image, for the user to run in
 // their own terminal: a pull takes as long as the network does, prints its
 // progress, and the user may want to stop it.
-func PullCommand(reference string) (string, bool) {
-	if !referencePattern.MatchString(reference) {
+func PullCommand(runtime Runtime, reference string) (string, bool) {
+	if !ValidReference(reference) {
 		return "", false
 	}
-	return "docker pull " + reference, true
+	return runtime.CLI() + " pull " + reference, true
 }
+
+// ValidReference reports whether reference is acceptable as an image reference.
+func ValidReference(reference string) bool { return referencePattern.MatchString(reference) }
 
 // CreateResource creates an empty volume or a network (the default bridge
 // driver) with the given name. Docker refuses a name in use; its one-line

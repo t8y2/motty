@@ -506,7 +506,7 @@ func (w *sftpWindow) declareBookmarkField(c ui.C, i int) ui.Box {
 	}
 	b.fieldRows[i].For = id
 	field := ui.FormField(c, &b.fieldRows[i], label).FillWidth().Height(56)
-	field.Children(func() { ui.TextFieldID(c, id, &b.fieldTexts[i], label, "") })
+	field.Children(func() { ui.TextField(c, &b.fieldTexts[i], label, "", ui.WithID(id)) })
 	return field
 }
 

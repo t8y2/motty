@@ -986,16 +986,23 @@ func TestSFTPCreateRenameChmodAndRefresh(t *testing.T) {
 
 	clickSFTPRow(t, state, view, "notes.txt")
 	state.Click(hitSFTPRename)
-	if view.dialog != sftpDialogRename || view.dialogEditor.String() != "notes.txt" {
-		t.Fatalf("rename dialog = %+v", view)
+	if view.dialog != sftpDialogNone || view.rename == nil || view.rename.editor.String() != "notes.txt" {
+		t.Fatal("rename did not open the inline name field")
 	}
-	replaceSFTPDialogText(t, state, "docs/renamed.txt")
-	state.Click(hitSFTPDialogSubmit)
-	if view.dialog != sftpDialogRename || view.dialogError != state.messages.SFTPErrRenameInvalid {
-		t.Fatalf("rename accepted a path: dialog=%d error=%q", view.dialog, view.dialogError)
+	enter := gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitSFTPInlineRename}
+	notices := len(state.fileNotices.items)
+	state.Key(enter)
+	if view.rename != nil || view.busy || len(state.fileNotices.items) != notices {
+		t.Fatal("unchanged rename queued work or announced a result")
 	}
-	replaceSFTPDialogText(t, state, "renamed.txt")
-	state.Click(hitSFTPDialogSubmit)
+	state.Click(hitSFTPRename)
+	view.rename.field.SetText("docs/renamed.txt")
+	state.Key(enter)
+	if view.rename == nil || !view.rename.field.Invalid || view.busy {
+		t.Fatal("rename accepted a path or discarded the invalid draft")
+	}
+	view.rename.field.SetText("renamed.txt")
+	state.Key(enter)
 	waitSFTP(t, state, session, func(view *sftpView) bool {
 		return !view.busy && sftpRowIndexOrNegative(view, "renamed.txt") >= 0
 	})
@@ -1006,8 +1013,11 @@ func TestSFTPCreateRenameChmodAndRefresh(t *testing.T) {
 	if !renamed || oldRemains {
 		t.Fatalf("rename state: renamed=%v old=%v", renamed, oldRemains)
 	}
+	last := state.fileNotices.items[len(state.fileNotices.items)-1]
+	if last.kind != components.ToastSuccess || !strings.Contains(last.detail, "renamed.txt") {
+		t.Fatalf("rename success toast = %+v", last)
+	}
 
-	clickSFTPRow(t, state, view, "renamed.txt")
 	state.Click(hitSFTPChmod)
 	if view.dialogEditor.String() != "644" {
 		t.Fatalf("chmod initial value = %q", view.dialogEditor.String())

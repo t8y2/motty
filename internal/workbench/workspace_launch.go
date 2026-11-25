@@ -41,7 +41,7 @@ func (state *State) launchWorkspaceWithIdentity(
 		title = plan.Hosts[0].Label
 	}
 
-	previousBroadcast := state.broadcast
+	previousBroadcast := state.broadcastScope()
 	previousWorkspace := state.deck.ActiveWorkspace()
 	previousSessionID := state.activeSessionID
 	previousSection := state.activeSection
@@ -148,7 +148,7 @@ func (state *State) rollbackWorkspaceLaunch(
 	previousSessionID uint32,
 	previousSection uint8,
 	previousNextSessionID uint32,
-	previousBroadcast layoutcore.WorkspaceID,
+	previousBroadcast broadcastScope,
 	previousPauseSave int,
 ) {
 	if len(sessionIDs) > 0 {
@@ -168,7 +168,7 @@ func (state *State) rollbackWorkspaceLaunch(
 	_, _ = state.deck.RemoveWorkspace(workspaceID, nil)
 	delete(state.temporaryWorkspaceLayouts, workspaceID)
 	delete(state.managedWorkspaceLayouts, workspaceID)
-	state.broadcast = previousBroadcast
+	state.restoreBroadcast(previousBroadcast)
 	if previousWorkspace != 0 {
 		state.deck.ActivateWorkspace(previousWorkspace)
 	}

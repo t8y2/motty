@@ -419,7 +419,7 @@ func (state *State) declareAIApproval(c ui.C, body *aiBody) {
 					panel.confirmField.Bind(&ai.confirm)
 					panel.confirmBound = true
 				}
-				ui.TextFieldID(c, hitAIConfirm, &panel.confirmField, m.ConfirmField, request.Confirm).Height(aiConfirmField)
+				ui.TextField(c, &panel.confirmField, m.ConfirmField, request.Confirm, ui.WithID(hitAIConfirm)).Height(aiConfirmField)
 			})
 		}
 		ui.Row(c).Height(aiButtonHeight).Gap(8).Items(ui.Center).Children(func() {

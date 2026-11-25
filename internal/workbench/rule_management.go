@@ -185,7 +185,7 @@ func (state *State) declareRuleManagerRow(c ui.C, index int) {
 			ui.Checkbox(c, &selected, "").Absolute().Left(0).Top(0).Size(side, side).Hit(hitRuleManagerSelect.At(index), name)
 		})
 		if manager.kind == ruleDeleteHighlight {
-			ui.Slot(c).Size(10, 24).Shrink(0).Background(state.ruleColor(state.highlighting.rules[index].Color)).Radius(2)
+			ui.Slot(c).Size(10, 24).Shrink(0).Background(state.ruleColor(state.highlighting.rules[index].Color)).Radius(cornerPx(2))
 		}
 		ui.Column(c).Grow(1).Basis(0).Gap(4).Children(func() {
 			ui.Text(c, name).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).MaxLines(1)

@@ -5,8 +5,9 @@ description: What Motty protects, what it does not, and how to report a problem.
 ## What Motty does
 
 - Host-key verification happens before any credential is sent.
-- Saved passwords and passphrases are stored in an AES-256-GCM vault. Its key is in
-  the system secret store, or wrapped by an Argon2id master password.
+- Saved passwords and passphrases use an AES-256-GCM vault. The system secret
+  store or a local key file holds the vault key. If you still use a legacy vault
+  password, convert it once in Settings → Security → Saved passwords.
 - AI provider keys are in the vault. Terminal context is redacted by default, and
   agent commands pass through the approval gate.
 - The MCP server is off by default, loopback-only and bearer-token protected.
@@ -16,6 +17,14 @@ description: What Motty protects, what it does not, and how to report a problem.
 - RDP certificates are pinned only after an explicit trust decision.
 - Motty has no analytics. The optional update check contacts GitHub Releases and is
   off by default.
+
+## Application lock
+
+Set a master password of at least six characters in **Settings → Security → Application lock**. Click the lock button above the local terminal or press `Ctrl+Shift+L` (`Command+Shift+L` on macOS) to hide all Motty windows using the same profile. After a restart, unlock before resuming the workspace.
+
+Use the same settings group to change the password or enable Windows Hello, Touch ID, or the system password on a supported device. The master password remains available if system verification is canceled or fails. You can turn off system unlock directly in Settings.
+
+Application lock controls access to Motty's interface. Motty stores a local password verifier. Connection settings and credentials use their existing storage, and other software can read the profile with its existing file permissions.
 
 ## What it does not do
 

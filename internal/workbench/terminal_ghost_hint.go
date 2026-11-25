@@ -75,7 +75,7 @@ func (state *State) paintGhostHint(canvas *gfx.Canvas, session *Session, geometr
 		line = withAlpha(state.termPal.termFG, 0.55)
 		fill = withAlpha(state.termPal.termFG, 0.08)
 	}
-	radius := min(height/2, float32(4))
+	radius := min(height/2, cornerPx(4))
 	if fill.Alpha > 0 {
 		canvas.Rounded(pill, radius, fill)
 	}

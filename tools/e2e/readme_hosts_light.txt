@@ -7,7 +7,7 @@
 # The appearance is chosen in Settings, not by the `appearance` line alone: Motty
 # opens pinned to dark and ignores the system appearance until the reader asks
 # for another look, so `appearance light` on its own changes nothing visible.
-# The light palette comes from Settings > General > Appearance > Light.
+# The light palette comes from Settings > Appearance > Theme > Light.
 #
 # The host catalog is the same fixture as the dark shot, so the pair reads as one
 # interface in two looks rather than two different products.
@@ -15,6 +15,8 @@ resize 1560 975
 settle 600
 click "Settings"
 settle 900
+click "Appearance"
+settle 600
 click "Light"
 settle 900
 click "Hosts"

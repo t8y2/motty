@@ -149,3 +149,50 @@ func TestTheRemotePointerIsTheCursorOverThePicture(t *testing.T) {
 		t.Fatalf("after connection ends: cursor=%v image=%v, want default arrow cursor", hit.Cursor, hit.CursorImage)
 	}
 }
+
+func TestVNCPointerIsSystemByDefaultAndBitmapWhenNamed(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	state.options.Invalidate = func() {}
+	state.connectionReconnect = reconnectOff
+	var remote *pointingDesktop
+	state.dialDesktop = func(context.Context, desktopRequest) (desktop.Session, error) {
+		remote = &pointingDesktop{
+			followingDesktop: newFollowingDesktop(1024, 768, false),
+			kind:             desktop.PointerSystem,
+			version:          1,
+		}
+		return remote, nil
+	}
+	size := gfx.Size{Width: 1400, Height: 900}
+	screen := newFrames(state, 2)
+	screen.paint(size, 0)
+	eventCanvases[state] = &screen.canvas
+	addStreamHost(state, Host{Label: "VNC Host", Address: "vnc.example.com:5900", Protocol: protocolVNC})
+	openHost(state)
+	session, _ := state.sessionByIDPointer(state.activeSessionID)
+	waitUntil(t, state, "the picture", func() bool { return session.desk != nil && session.desk.width > 0 })
+
+	cursorOverPicture := func() gfx.Hit {
+		t.Helper()
+		state.Wake()
+		screen.paint(size, 0)
+		hits := screen.canvas.Hits()
+		for index := len(hits) - 1; index >= 0; index-- {
+			if hits[index].ID == hitTerminalList.At(int(session.ID)) {
+				return hits[index]
+			}
+		}
+		t.Fatal("the desktop page has no hit")
+		return gfx.Hit{}
+	}
+
+	if hit := cursorOverPicture(); hit.Cursor != gfx.PointerCursorDefault || hit.CursorImage != nil {
+		t.Fatalf("VNC initial cursor: %v, %v; want PointerCursorDefault", hit.Cursor, hit.CursorImage)
+	}
+
+	remote.say(desktop.PointerBitmap, pointerShapeOf(32, 32, 2, 2))
+	if hit := cursorOverPicture(); hit.Cursor != gfx.PointerCursorImage || hit.CursorImage == nil {
+		t.Fatalf("VNC named shape cursor: %v, %v; want PointerCursorImage", hit.Cursor, hit.CursorImage)
+	}
+}

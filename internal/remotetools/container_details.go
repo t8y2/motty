@@ -53,8 +53,8 @@ func ReadContainerDetails(ctx context.Context, runner Runner, id string) (Contai
 	}
 	output, err := runner.RunCommand(ctx, "docker inspect "+id+" 2>&1", maxContainerDetailsOutput)
 	if err != nil {
-		if missingDockerCLI(output) {
-			return ContainerDetails{}, ErrNoDocker
+		if missingContainerCLI(output) {
+			return ContainerDetails{}, ErrNoContainerRuntime
 		}
 		// Never copy a retained over-limit prefix into an error the UI paints.
 		if len(output) >= maxContainerDetailsOutput {

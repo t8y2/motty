@@ -202,7 +202,7 @@ func (state *State) declareFindColor(c ui.C, foreground bool) ui.Box {
 	row := ui.Row(c).Grow(1).Gap(8).Items(ui.Center)
 	row.Children(func() {
 		ui.Text(c, hex).FontSize(metrics.FontSizeS).Mono().Color(state.pal.muted).Grow(1).Ellipsis()
-		ui.ColorPickerID(c, pickerID, picker, target, label).
+		ui.ColorPicker(c, picker, target, label, ui.WithID(pickerID)).
 			PanelLabels(components.ColorPickerLabels{
 				Color: label, Saturation: m.ColorPickerSV, Hue: m.ColorPickerHue,
 				Hex: m.FieldColorCustom, Clear: m.FindSettings.Reset, Cancel: m.Cancel, Apply: m.ColorPickerApply,
@@ -251,7 +251,7 @@ func (state *State) declareFindPreference(c ui.C, which findPreference) ui.Box {
 		percent := strconv.Itoa(state.terminalFindPrefs.Opacity) + "%"
 		row := ui.Row(c).Grow(1).Gap(8).Items(ui.Center)
 		row.Children(func() {
-			slider := ui.Slider(c, &v.opacity).Range(0, 100).Step(1).Label(m.Opacity).Hit(hitFindSettingsOpacity, m.Opacity).Grow(1)
+			slider := ui.Slider(c, &v.opacity).Range(0, 100).Step(1).Label(m.Opacity).Hit(hitFindSettingsOpacity, m.Opacity).Grow(1).Shrink(1)
 			if slider.Changed() {
 				opacity := int(v.opacity.Value)
 				c.After(func() {
@@ -311,7 +311,7 @@ func (state *State) declareFindSettingsPopover(c ui.C, anchor ui.Box) {
 	if !v.open || !state.findSettingsOnBar() {
 		return
 	}
-	dismissed := ui.PopoverWith(c, anchor, &v.open, ui.PopoverSpec{
+	dismissed := ui.Popover(c, anchor, &v.open, ui.PopoverSpec{
 		Scope: hitFindSettingsDismiss, DismissID: hitFindSettingsDismiss,
 		Align: ui.End, Offset: 6, Width: 370, Title: m.Title,
 		ConsumeOutsidePress: true,

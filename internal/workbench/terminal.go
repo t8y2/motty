@@ -1308,7 +1308,10 @@ func (state *State) pump(session *Session) {
 
 // pumpFor is pump with the time it may spend parsing; see pumpBudget.
 func (state *State) pumpFor(session *Session, budget time.Duration) {
-	state.collectShell(session)
+	hidden := state.appAccessBlocked()
+	if !hidden {
+		state.collectShell(session)
+	}
 	t := session.term
 	if t == nil {
 		return
@@ -1319,7 +1322,9 @@ func (state *State) pumpFor(session *Session, budget time.Duration) {
 	if t.shell == nil {
 		return
 	}
-	t.observePredictionInput()
+	if !hidden {
+		t.observePredictionInput()
+	}
 	backlogged := len(t.rx) >= maxPumpBacklog
 	if !backlogged {
 		t.rx = t.shell.Drain(t.rx) // keep what an earlier frame could not parse
@@ -1334,7 +1339,7 @@ func (state *State) pumpFor(session *Session, budget time.Duration) {
 	}
 	data := t.rx
 	wasExec := t.exec != nil
-	sliced := !finished && !wasExec && state.options.Invalidate != nil
+	sliced := !finished && (!wasExec || hidden) && state.options.Invalidate != nil
 	started := time.Now()
 	consumed := 0
 	for consumed < len(data) {
@@ -1350,7 +1355,7 @@ func (state *State) pumpFor(session *Session, budget time.Duration) {
 			break
 		}
 	}
-	if state.autofillRules.armed || state.passwordAssistOn() {
+	if !hidden && (state.autofillRules.armed || state.passwordAssistOn()) {
 		state.scanAutofill(session)
 	}
 	switch {
@@ -1373,11 +1378,13 @@ func (state *State) pumpFor(session *Session, budget time.Duration) {
 		// when this one parsed all of rx.
 		state.options.Invalidate()
 	}
-	state.syncAgentIcon(session, hadOutput, finished)
-	if !finished && len(t.rx) == 0 {
+	if !hidden {
+		state.syncAgentIcon(session, hadOutput, finished)
+	}
+	if !hidden && !finished && len(t.rx) == 0 {
 		state.reconcileSuggestionEcho(session)
 	}
-	if !finished && len(t.rx) == 0 {
+	if !hidden && !finished && len(t.rx) == 0 {
 		state.completionAfterOutput(session)
 	}
 	if finished {
@@ -1389,6 +1396,12 @@ func (state *State) pumpFor(session *Session, budget time.Duration) {
 // the screen and whatever watches the output.
 func (state *State) applyOutput(session *Session, data []byte, wasExec bool) {
 	t := session.term
+	hidden := state.appAccessBlocked()
+	if hidden {
+		// An integration handshake may finish while locked. Preserve its
+		// parser state, but never release queued typing into the hidden shell.
+		t.injection.queued = nil
+	}
 	if !wasExec && t.injection.phase == injectionSuppressing {
 		rest, applied := state.applyInjection(session, data)
 		if !applied {
@@ -1418,7 +1431,15 @@ func (state *State) applyOutput(session *Session, data []byte, wasExec bool) {
 		data = append(data[:0], t.feedExec(data)...)
 	}
 	if len(data) > 0 {
-		data = state.scanTransfer(session, data)
+		if !hidden {
+			data = state.scanTransfer(session, data)
+		} else if session.transfer.phase != transferNone {
+			// Existing transfers keep their protocol stream; discovering or
+			// automatically accepting a new transfer requires an unlocked UI.
+			data = state.feedTransfer(session, data)
+		} else {
+			t.zmodemTail = t.zmodemTail[:0]
+		}
 	}
 	if len(data) == 0 {
 		return
@@ -1438,10 +1459,12 @@ func (state *State) applyOutput(session *Session, data []byte, wasExec bool) {
 		t.markAIBlock(t.exec == nil)
 	}
 	t.recorder.Output(state.now())
-	if state.autofillRules.armed || state.passwordAssistOn() {
+	if !hidden && (state.autofillRules.armed || state.passwordAssistOn()) {
 		t.autofill.Output(state.now())
 	}
-	state.notePasswordPrompt(session)
+	if !hidden {
+		state.notePasswordPrompt(session)
+	}
 	t.login.output(state.now())
 	if t.injection.phase == injectionWaiting {
 		t.injection.lastOutput, t.injection.outputSeen = state.now(), true
@@ -2175,7 +2198,12 @@ func (state *State) terminalKey(session *Session, event gfx.KeyEvent) gfx.EventR
 			return handled
 		}
 		scrolled := t.screen.ViewOffset() > 0
-		predictionChanged := t.prediction.reset()
+		var predictionChanged bool
+		if !win32Key && len(bytes) == 1 && bytes[0] == '\t' {
+			predictionChanged = t.prediction.tab()
+		} else {
+			predictionChanged = t.prediction.reset()
+		}
 		if win32Key {
 			state.typedWin32Key(session, bytes, term.Win32LogicalKey(event), true)
 		} else {
@@ -2246,7 +2274,7 @@ func (state *State) terminalToolbarKey(session *Session, event gfx.KeyEvent) (gf
 // whether or not its action applies to the focused target.
 func (state *State) shortcutBound(event gfx.KeyEvent) bool {
 	chord, ok := keymap.FromEvent(event)
-	return ok && state.shortcuts.actionFor(chord) != shortcutNone
+	return ok && state.workspaceShortcut(chord) != shortcutNone
 }
 
 func (state *State) copySelection(session *Session) gfx.EventResult {

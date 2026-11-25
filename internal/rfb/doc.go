@@ -7,8 +7,8 @@
 // and VNC Authentication, RSA-AES (type 5) with server-key verification and
 // AES-128-EAX session encryption, and Apple Remote Desktop authentication
 // (type 30) for macOS Screen Sharing, which encrypts the credentials but not
-// the session that follows. A RealVNC 5.0 banner is negotiated down
-// to 3.8. A 32-bit true-colour pixel format is requested from the
+// the session that follows. Known 4.0, RealVNC 4.1, and RealVNC 5.0 banners
+// are negotiated down to 3.8. A 32-bit true-colour pixel format is requested from the
 // server by default, so no pixel is converted; Config.PixelFormat asks for 16
 // or 8 bits to save bandwidth, and the decoders widen each pixel back to 32.
 // Supported encodings are Raw, CopyRect, RRE, Hextile and ZRLE; the DesktopSize

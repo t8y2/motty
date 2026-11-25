@@ -61,7 +61,7 @@ func (w *sftpWindow) selectionActions(local bool) []sftpWindowAction {
 		if count == 1 && folder.rows[selected].entry.Mode.IsRegular() {
 			add(hitSFTPEditExternal, iconExternal, m.Tools.ExtEditButton)
 		}
-		add(hitSFTPSend, iconUpload, m.Tools.SendToServer)
+		add(hitSFTPSend, iconSFTPUpload, m.Tools.SendToServer)
 		if count > 0 {
 			add(hitSFTPDelete, iconTrash, m.SFTPDelete)
 		}
@@ -173,7 +173,7 @@ func (w *sftpWindow) fileAction(local bool, id gfx.ID) {
 		}
 	case hitSFTPRename:
 		if !local {
-			w.owner.openSFTPDialog(w.view, sftpDialogRename)
+			w.owner.beginSFTPRename(w.view)
 		}
 	case hitSFTPMove:
 		if !local {

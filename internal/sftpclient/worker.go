@@ -75,6 +75,10 @@ const (
 	OperationSaveDocument
 	OperationReadDocument
 	OperationMoveSelection
+	// OperationOpenBinary and OperationSaveBinary carry a file the system's
+	// editor opens as bytes, within MaxExternalEditBytes.
+	OperationOpenBinary
+	OperationSaveBinary
 	// OperationRemoteCopy copies files from another server into this worker's
 	// server. The source is read through its own subsystem opener; the data
 	// never goes through this computer's disk.
@@ -633,6 +637,19 @@ func (worker *Worker) ReadDocument(remotePath string) bool {
 // back for the revision comparison.
 func (worker *Worker) SaveDocument(remotePath string, data []byte, revision Revision, limit int) bool {
 	return worker.enqueue(request{operation: OperationSaveDocument, remote: remotePath, data: append([]byte(nil), data...), revision: revision, limit: limit})
+}
+
+// OpenBinary reads one remote file as bytes, for the system's editor, when it
+// is not text the built-in editor takes. The file's revision is the SHA-256 of
+// the bytes returned.
+func (worker *Worker) OpenBinary(remotePath string) bool {
+	return worker.enqueue(request{operation: OperationOpenBinary, remote: remotePath})
+}
+
+// SaveBinary replaces a file opened with OpenBinary when the server's copy still
+// has revision. The result carries the bytes that were saved.
+func (worker *Worker) SaveBinary(remotePath string, data []byte, revision Revision) bool {
+	return worker.enqueue(request{operation: OperationSaveBinary, remote: remotePath, data: append([]byte(nil), data...), revision: revision})
 }
 
 // SaveText atomically replaces one previously opened remote text file when its
@@ -1385,6 +1402,13 @@ func (worker *Worker) execute(next request) Result {
 		result.Data, result.Err = worker.readFileBytes(client, next.remote, generation, next.limit)
 	case OperationReadDocument:
 		result.Data, result.Err = worker.readFileBytes(client, next.remote, generation, MaxEditFileBytes)
+	case OperationOpenBinary:
+		result.Data, result.Err = worker.readFileBytes(client, next.remote, generation, MaxExternalEditBytes)
+	case OperationSaveBinary:
+		result.Err = worker.replaceDocumentBytes(client, next.remote, next.data, next.revision, MaxExternalEditBytes, generation)
+		if result.Err == nil {
+			result.Data = next.data
+		}
 	case OperationSaveDocument:
 		result.Err = worker.replaceDocumentBytes(client, next.remote, next.data, next.revision, next.limit, generation)
 		if result.Err == nil {
@@ -2065,7 +2089,12 @@ func (worker *Worker) uploadStream(client transferRemote, openSource func() (io.
 		}
 		return written, resumed, err
 	}
-	if err := worker.finalizeUpload(generation, transferID, "flush", destination.Sync); err != nil && !isUnsupportedSFTP(err) {
+	// fsync@openssh.com only asks the server to commit to disk early; close
+	// still reports a failed write and OpenSSH's sftp does not fsync a put by
+	// default. Gateways that advertise the extension often answer it with a
+	// generic failure, so a refusal is not fatal; a timeout is, because the
+	// subsystem was discarded to end the request.
+	if err := worker.finalizeUpload(generation, transferID, "flush", destination.Sync); errors.Is(err, ErrUploadFinalizeTimeout) {
 		return written, resumed, err
 	}
 	if err := worker.finalizeUpload(generation, transferID, "close", destination.Close); err != nil {
@@ -3415,12 +3444,23 @@ func ensureLocalDirectory(localPath string, mode os.FileMode) error {
 	return os.MkdirAll(localPath, mode.Perm())
 }
 
+// commitRemote moves a finished upload's partial file onto its final name.
+// SFTP v3's rename refuses to replace an existing file; only the OpenSSH
+// posix-rename extension does. Replacing a destination on a server that does
+// not announce it therefore removes the old file first, as clients that stage
+// uploads through a partial name do. The completed partial stays on the server,
+// so a failed replace can be resumed instead of losing the upload.
 func commitRemote(client transferRemote, partial, final string, finalExists bool) error {
 	if supportsPosixRename(client) {
 		if err := client.PosixRename(partial, final); err == nil {
 			return nil
 		} else if finalExists {
 			return fmt.Errorf("sftp: atomic remote replacement is unavailable: %w", err)
+		}
+	}
+	if finalExists {
+		if err := client.Remove(final); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
 		}
 	}
 	return client.Rename(partial, final)

@@ -1035,7 +1035,7 @@ func (state *State) drawToolbarDockDrag(d *ui.DrawContext) {
 	}
 	canvas := d.Canvas
 	for _, bounds := range state.toolbarDockDropZones() {
-		canvas.Rounded(bounds.Inset(gfx.All(1)), 4, withAlpha(state.pal.accent, 0.06))
+		canvas.Rounded(bounds.Inset(gfx.All(1)), cornerPx(4), withAlpha(state.pal.accent, 0.06))
 	}
 	if drag.drop.valid {
 		bounds := state.toolbarDockDropZones()[toolbarDockZoneIndex(drag.drop.zone)]
@@ -1046,13 +1046,13 @@ func (state *State) drawToolbarDockDrag(d *ui.DrawContext) {
 				bounds = state.toolbarDockSideBounds(state.viewport)
 			}
 		}
-		canvas.Rounded(bounds.Inset(gfx.All(1)), 4, withAlpha(state.pal.accent, 0.10))
+		canvas.Rounded(bounds.Inset(gfx.All(1)), cornerPx(4), withAlpha(state.pal.accent, 0.10))
 		canvas.Rounded(drag.drop.marker, 1, state.pal.accent)
 	}
 	box := gfx.Rect{X: drag.at.X + 12, Y: drag.at.Y + 12, Width: 36, Height: 36}
 	box.X = min(box.X, state.viewport.Width-box.Width-4)
 	box.Y = min(box.Y, state.viewport.Height-box.Height-4)
-	canvas.RoundedBorder(box, 7, 1, state.pal.accent, state.pal.workspace)
+	canvas.RoundedBorder(box, cornerPx(7), 1, state.pal.accent, state.pal.workspace)
 	if drag.tool.id == hitToolbarLatency {
 		if session, ok := state.terminalSideRailSession(); ok {
 			if text, color, ok := state.latencyInfo(session); ok {

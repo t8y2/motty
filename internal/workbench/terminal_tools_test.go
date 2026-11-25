@@ -499,7 +499,7 @@ func TestBroadcastTypesIntoEveryPaneOfTheTabUntilItIsTurnedOff(t *testing.T) {
 		t.Fatalf("before broadcast: first %q, second %q", first.typed(), second.typed())
 	}
 
-	state.Click(hitBroadcast)
+	state.Click(hitBroadcastTab)
 	if state.broadcast == 0 || !state.broadcasting(firstID) || !state.broadcasting(secondID) {
 		t.Fatalf("broadcast = %d", state.broadcast)
 	}
@@ -522,7 +522,7 @@ func TestBroadcastTypesIntoEveryPaneOfTheTabUntilItIsTurnedOff(t *testing.T) {
 		t.Fatalf("Enter did not reach the other pane: %q", second.typed())
 	}
 
-	state.Click(hitBroadcast)
+	state.Click(hitBroadcastTab)
 	if state.broadcast != 0 {
 		t.Fatal("broadcast stayed on")
 	}
@@ -537,13 +537,13 @@ func TestBroadcastNeedsAtLeastTwoPanes(t *testing.T) {
 	world, options := newSharingWorld(t)
 	state := newTestState(t, options)
 	world.connectFirst(t, state)
-	state.Click(hitBroadcast)
+	state.Click(hitBroadcastTab)
 	if state.broadcast != 0 || state.status != state.messages.Tools.StatusBroadcastNeedsSplit {
 		t.Fatalf("broadcast %d, status %q", state.broadcast, state.status)
 	}
 	canvas, _ := paintedTexts(state)
-	if _, ok := hitByID(canvas, hitBroadcast); ok {
-		t.Fatal("a tab with one pane offers a broadcast button")
+	if hit, ok := hitByID(canvas, hitBroadcast); !ok || !hit.Disabled {
+		t.Fatalf("a lone tab without a split: broadcast button %+v, present=%v; want it there and disabled", hit, ok)
 	}
 }
 
@@ -554,7 +554,7 @@ func TestBroadcastStaysInItsTabAndNeverCarriesProtocolReplies(t *testing.T) {
 	firstSession, _ := state.sessionByIDPointer(state.activeSessionID)
 	state.Click(hitPaneSplitHorizontal)
 	secondID := state.activeSessionID
-	state.Click(hitBroadcast)
+	state.Click(hitBroadcastTab)
 
 	// Another tab, on a connection of its own.
 	state.shareConnections = shareConnectionsOff

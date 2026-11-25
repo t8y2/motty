@@ -1003,6 +1003,97 @@ func TestForwardBackgroundTunnelResumesAfterItsConnectionDrops(t *testing.T) {
 	}
 }
 
+// A background forward is a service: a latency spike can outlast the session
+// retry budget, and the transport must keep trying on its own rather than park
+// the forward on "action required" until the network path changes.
+func TestBackgroundForwardTunnelKeepsRetryingPastTheReconnectBudget(t *testing.T) {
+	world, options := newWorld(t)
+	now := 10 * time.Second
+	options.Now = func() time.Duration { return now }
+	state := newTestState(t, options)
+	state.connectionReconnect = reconnectThree
+	addForwardRule(t, state, "Database", freePort(t), "database.internal", 5432)
+	state.Click(hitForwardRowEditList.At(int(state.selectedForwardID)))
+	state.Click(hitForwardDialogResume)
+	state.Click(hitForwardDialogSubmit)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
+	forward := &state.forwards[0]
+	world.conns[0].set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+
+	// The RTT spike trips keepalive; every retry inside the budget times out
+	// while the network path itself stays the same.
+	world.conns[0].set(func(status *sshconn.Status) {
+		status.Phase = sshconn.PhaseClosed
+		status.Err = errors.Join(sshconn.ErrDisconnected, sshconn.ErrKeepAliveTimeout)
+	})
+	state.Wake()
+	for _, delay := range []time.Duration{time.Second, 2 * time.Second, 4 * time.Second} {
+		now += delay
+		state.Wake()
+		world.conns[len(world.conns)-1].set(func(status *sshconn.Status) {
+			status.Phase = sshconn.PhaseFailed
+			status.Err = errors.New("i/o timeout")
+		})
+		state.Wake()
+	}
+
+	if forward.runner != nil || !forward.pending || len(state.forwardTunnels) != 1 {
+		t.Fatalf("after the retry budget: forward=%+v tunnels=%d", *forward, len(state.forwardTunnels))
+	}
+	if forward.cells[4] != state.messages.ForwardWaiting {
+		t.Fatalf("status after the retry budget = %q, want the waiting state", forward.cells[4])
+	}
+	tunnel := state.forwardTunnels[0]
+	if !tunnel.retryPending || tunnel.retryDue <= now {
+		t.Fatalf("tunnel retry pending=%v due=%v now=%v", tunnel.retryPending, tunnel.retryDue, now)
+	}
+
+	// With no link change, the tunnel retries on its own, and the forward comes
+	// back once the path is fast again.
+	dialed := len(world.conns)
+	now = tunnel.retryDue
+	state.Wake()
+	if len(world.conns) != dialed+1 {
+		t.Fatalf("self retry dialed %d connections, want %d", len(world.conns), dialed+1)
+	}
+	world.conns[len(world.conns)-1].set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	if forward.runner == nil || forward.pending {
+		t.Fatalf("forward after self recovery = %+v", *forward)
+	}
+}
+
+// Retrying is for a transport that can come back: a rejected login still stops
+// the forward and asks the user, however long it waits.
+func TestBackgroundForwardTunnelStopsOnRejectedCredentials(t *testing.T) {
+	world, options := newWorld(t)
+	now := 10 * time.Second
+	options.Now = func() time.Duration { return now }
+	state := newTestState(t, options)
+	state.connectionReconnect = reconnectForever
+	addForwardRule(t, state, "Database", freePort(t), "database.internal", 5432)
+	state.Click(hitForwardRowEditList.At(int(state.selectedForwardID)))
+	state.Click(hitForwardDialogResume)
+	state.Click(hitForwardDialogSubmit)
+	state.Click(hitForwardRowToggleList.At(int(state.selectedForwardID)))
+	forward := &state.forwards[0]
+
+	world.conns[0].set(func(status *sshconn.Status) {
+		status.Phase = sshconn.PhaseFailed
+		status.Err = sshconn.ErrAuthFailed
+	})
+	state.Wake()
+	if len(state.forwardTunnels) != 0 || forward.pending || forward.cells[4] != state.messages.ForwardStoppedError {
+		t.Fatalf("forward after a rejected login: forward=%+v tunnels=%d", *forward, len(state.forwardTunnels))
+	}
+	now += 30 * time.Second
+	state.Wake()
+	if len(world.conns) != 1 {
+		t.Fatalf("rejected login dialed %d connections, want no retry", len(world.conns))
+	}
+}
+
 func TestForwardBackgroundTunnelStopsWhenReconnectIsOff(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)

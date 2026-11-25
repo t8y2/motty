@@ -50,6 +50,8 @@ const (
 	shortcutPaneMaximize
 	shortcutSettings
 	shortcutBroadcast
+	shortcutBroadcastAll
+	shortcutAppLock
 	shortcutActionCount
 )
 
@@ -78,9 +80,10 @@ func newShortcutMap() shortcutMap {
 // goldens: production takes this platform's chords, while a golden pins one
 // platform's so the same snapshots hold everywhere.
 var (
-	primaryModifier = keymap.Primary
-	paneSplitChords = defaultPaneSplitChords
-	broadcastChord  = defaultBroadcastChord
+	primaryModifier   = keymap.Primary
+	paneSplitChords   = defaultPaneSplitChords
+	broadcastChord    = defaultBroadcastChord
+	broadcastAllChord = defaultBroadcastAllChord
 )
 
 func defaultShortcuts() shortcutMap {
@@ -131,6 +134,8 @@ func defaultShortcuts() shortcutMap {
 	shortcuts.chords.Set(shortcutAcceptSuggestion, keymap.Chord{Key: gfx.KeyRight})
 	shortcuts.chords.Set(shortcutSettings, keymap.Chord{Modifiers: primary, Char: ','})
 	shortcuts.chords.Set(shortcutBroadcast, broadcastChord())
+	shortcuts.chords.Set(shortcutBroadcastAll, broadcastAllChord())
+	shortcuts.chords.Set(shortcutAppLock, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 'l'})
 	shortcuts.refreshLabels()
 	return shortcuts
 }
@@ -413,6 +418,10 @@ func (action shortcutAction) String() string {
 		return "settings"
 	case shortcutBroadcast:
 		return "broadcast_input"
+	case shortcutBroadcastAll:
+		return "broadcast_input_all"
+	case shortcutAppLock:
+		return "lock_application"
 	default:
 		return ""
 	}
@@ -431,6 +440,15 @@ func shortcutActionFromString(value string) shortcutAction {
 // to app.Config.OnShortcut so ordinary pages can own shortcuts without moving
 // text insertion, dead keys, or IME composition out of the native text path.
 func (state *State) Shortcut(event gfx.KeyEvent) (outcome gfx.EventResult) {
+	if state.appAccessBlocked() || state.modal == modalAppLock && state.appLockBusy() {
+		return state.appLockInputShortcut(event)
+	}
+	if result := state.appLockShortcut(event, nil); result.Handled {
+		return result
+	}
+	if state.modal == modalAppLock {
+		return state.appLockInputShortcut(event)
+	}
 	if state.noteExit != nil {
 		return gfx.EventResult{Handled: true}
 	}
@@ -458,6 +476,52 @@ func (state *State) Shortcut(event gfx.KeyEvent) (outcome gfx.EventResult) {
 	return state.shortcut(event, chord)
 }
 
+// Lock is offered before ordinary workspace routing. If it declined the
+// event (including on an unprotected profile), the focused control keeps it.
+func (state *State) workspaceShortcut(chord keymap.Chord) shortcutAction {
+	action := state.shortcuts.actionFor(chord)
+	if action == shortcutAppLock {
+		return shortcutNone
+	}
+	return action
+}
+
+// The foreground window processes this before its local actions. Recorders
+// and captured remote desktops keep keyboard ownership in the main window.
+func (state *State) appLockShortcut(event gfx.KeyEvent, child *app.Config) gfx.EventResult {
+	if !state.appLockEnabled() || state.appAccessBlocked() {
+		return gfx.EventResult{}
+	}
+	chord, ok := keymap.FromEvent(event)
+	if !ok || chord != state.shortcuts.chords.Chord(shortcutAppLock) {
+		return gfx.EventResult{}
+	}
+	if child == nil {
+		if state.modal == modalShortcutCapture ||
+			state.modal == modalNone && state.activeSection == sectionSnippets && state.snippets.inline.capturing {
+			return gfx.EventResult{}
+		}
+		if _, view := state.focusedDesktop(event.Target); view != nil && (!view.released || isEscapeChord(event)) {
+			return gfx.EventResult{}
+		}
+	}
+	functionKey := chord.Key >= gfx.KeyF1 && chord.Key <= gfx.KeyF12
+	if !functionKey && chord.Modifiers&(gfx.ModifierControl|gfx.ModifierMeta) == 0 {
+		if child == nil && (state.shortcutTextInput(event.Target) || state.terminalPage() && state.terminalHasMetaChords(event.Target)) ||
+			child != nil && child.TextInput != nil && child.TextInput(app.TextInputContext{ID: event.Target}) != nil {
+			return gfx.EventResult{}
+		}
+	}
+	if event.Repeat || event.Release {
+		return gfx.EventResult{Handled: true}
+	}
+	state.lockApplication()
+	if child != nil && state.options.Raise != nil {
+		state.options.Raise()
+	}
+	return gfx.EventResult{Handled: true, Repaint: true}
+}
+
 // popupTypeaheadShortcut routes a printable key that no binding or snippet
 // claims to the typeahead of the open popup menu or closed select it lands on.
 // A window offers printable keys to OnShortcut when nothing edits text, and
@@ -469,7 +533,7 @@ func (state *State) popupTypeaheadShortcut(event gfx.KeyEvent, chord keymap.Chor
 		event.Modifiers&^(gfx.ModifierShift) != 0 {
 		return gfx.EventResult{}, false
 	}
-	if state.shortcuts.actionFor(chord) != shortcutNone || state.snippetFor(chord, -1) >= 0 {
+	if state.workspaceShortcut(chord) != shortcutNone || state.snippetFor(chord, -1) >= 0 {
 		return gfx.EventResult{}, false
 	}
 	// A field that edits text owns its letters through the text system, and a
@@ -488,6 +552,7 @@ func (state *State) popupTypeaheadShortcut(event gfx.KeyEvent, chord keymap.Chor
 
 // shortcut shares contextual routing between printable and named bindings.
 func (state *State) shortcut(event gfx.KeyEvent, chord keymap.Chord) gfx.EventResult {
+	action := state.workspaceShortcut(chord)
 	// The accept-suggestion key is terminal input, not an application action:
 	// the terminal's own key path matches it against a live suggestion, and
 	// every other context keeps the key. Returning unhandled here leaves text
@@ -499,7 +564,7 @@ func (state *State) shortcut(event gfx.KeyEvent, chord keymap.Chord) gfx.EventRe
 	// close-tab binding. Decline both the press and the release before shortcut
 	// routing consumes them; terminalKey encodes the program's keyboard mode.
 	if chord.Modifiers == gfx.ModifierControl && chord.Char == 'w' &&
-		state.shortcuts.actionFor(chord) == shortcutCloseTab && state.modal == modalNone && state.terminalPage() {
+		action == shortcutCloseTab && state.modal == modalNone && state.terminalPage() {
 		_, target, embedded := state.decodePaneHit(event.Target)
 		if !embedded {
 			target = event.Target
@@ -513,7 +578,6 @@ func (state *State) shortcut(event gfx.KeyEvent, chord keymap.Chord) gfx.EventRe
 		}
 	}
 	if state.notesVisible() && (state.notes.view.menu != "" || state.notes.view.popup != "" || state.notes.view.drawer || state.notes.confirm != "") {
-		action := state.shortcuts.actionFor(chord)
 		if action == shortcutCopy || action == shortcutPaste || action == shortcutNone {
 			return gfx.EventResult{}
 		}
@@ -523,22 +587,22 @@ func (state *State) shortcut(event gfx.KeyEvent, chord keymap.Chord) gfx.EventRe
 		// Swallow the release of every press this routing consumed, a snippet
 		// chord included, so a terminal that asked for releases is not sent the
 		// end of a press it never saw.
-		consumed := state.shortcuts.actionFor(chord) != shortcutNone ||
+		consumed := action != shortcutNone ||
 			state.activeSection == sectionTerminal && state.snippetFor(chord, -1) >= 0
 		return gfx.EventResult{Handled: consumed}
 	}
 	if state.modal == modalShortcutCapture {
 		return state.captureShortcut(event, chord)
 	}
-	if chord.Char == '+' && state.shortcuts.actionFor(chord) == shortcutNone && state.snippetNamed(chord) == "" {
+	if chord.Char == '+' && action == shortcutNone && state.snippetNamed(chord) == "" {
 		// Preserve the default zoom-in alias without collapsing a custom + binding.
 		alias := keymap.Chord{Modifiers: chord.Modifiers &^ gfx.ModifierShift, Char: '='}
 		if state.shortcuts.actionFor(alias) == shortcutZoomIn {
 			chord = alias
+			action = shortcutZoomIn
 		}
 	}
 	if login := state.ai.login; login != nil && state.ai.cfg.dialog == aiDialogCLILogin {
-		action := state.shortcuts.actionFor(chord)
 		if action == shortcutNone {
 			return gfx.EventResult{}
 		}
@@ -581,13 +645,12 @@ func (state *State) shortcut(event gfx.KeyEvent, chord keymap.Chord) gfx.EventRe
 	if result := state.notePreviewShortcut(event); result.Handled {
 		return result
 	}
-	if state.noteSidebarVisible() && tree.Within(event.Target.Scope(), notesHits) && event.Target != hitNoteSearch && (state.shortcuts.actionFor(chord) == shortcutPaste || state.shortcuts.actionFor(chord) == shortcutCopy) {
+	if state.noteSidebarVisible() && tree.Within(event.Target.Scope(), notesHits) && event.Target != hitNoteSearch && (action == shortcutPaste || action == shortcutCopy) {
 		return gfx.EventResult{Handled: true}
 	}
 	if result, handled := state.aiPanelShortcut(event); handled {
 		return result
 	}
-	action := state.shortcuts.actionFor(chord)
 	if result, handled := state.sftpClipboardShortcut(event, action); handled {
 		return result
 	}
@@ -880,6 +943,11 @@ func (state *State) executeShortcut(action shortcutAction) gfx.EventResult {
 			return gfx.EventResult{}
 		}
 		state.toggleBroadcast()
+	case shortcutBroadcastAll:
+		if state.activeSection != sectionTerminal {
+			return gfx.EventResult{}
+		}
+		state.toggleBroadcastAll()
 	}
 	return result
 }

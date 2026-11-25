@@ -810,7 +810,7 @@ func (state *State) syncShortcutCapture() {
 	if capture.take == nil {
 		return
 	}
-	if want := state.desktopHoldsTheKeyboard(); want != capture.taken {
+	if want := !state.appAccessBlocked() && state.desktopHoldsTheKeyboard(); want != capture.taken {
 		capture.taken = want
 		if err := capture.take(want); err != nil && want {
 			// A platform that cannot take them leaves them with the system, as before.

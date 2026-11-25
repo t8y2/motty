@@ -12,6 +12,7 @@ type settingsCategory uint8
 
 const (
 	settingsGeneral settingsCategory = iota
+	settingsAppearance
 	settingsTerminal
 	settingsConnection
 	settingsFiles
@@ -50,6 +51,8 @@ const (
 
 func (category settingsCategory) icon() uint8 {
 	switch category {
+	case settingsAppearance:
+		return iconSun
 	case settingsTerminal:
 		return iconTerminal
 	case settingsConnection:
@@ -76,6 +79,8 @@ func (category settingsCategory) icon() uint8 {
 func (state *State) settingsCategoryName(category settingsCategory) string {
 	m := state.messages.Tools
 	switch category {
+	case settingsAppearance:
+		return m.CatAppearance
 	case settingsTerminal:
 		return m.CatTerminal
 	case settingsConnection:
@@ -108,6 +113,9 @@ func (state *State) openSettingsCategory(category settingsCategory) {
 }
 
 func (state *State) selectSettingsCategory(category settingsCategory) bool {
+	if category == settingsSecurity && state.settingsCategory != category && state.appProtection != nil {
+		state.appProtection.supportChecked = false
+	}
 	if category >= settingsCategoryCount {
 		return false
 	}
@@ -143,7 +151,7 @@ func (page *settingsPage) nav(width float32, searching bool) {
 			view.searchField.Bind(&view.search)
 			view.searchBound = true
 		}
-		ui.TextFieldID(c, hitSettingsSearch, &view.searchField, m.Tools.SearchPlaceholder, m.Tools.SearchPlaceholder).
+		ui.TextField(c, &view.searchField, m.Tools.SearchPlaceholder, m.Tools.SearchPlaceholder, ui.WithID(hitSettingsSearch)).
 			Icon(lucideIcons[iconSearch]).Height(38).MarginSides(0, 12, 12, 12).Shrink(0)
 		page.navList = ui.ScrollAt(c, view.navShown).FillWidth().Grow(1).Basis(0)
 		page.navList.Children(func() {

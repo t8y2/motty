@@ -9,6 +9,7 @@ import (
 
 	"motty/internal/shellkind"
 	"motty/internal/sshconn"
+	"motty/internal/term"
 )
 
 // Shell integration over SSH is installed after the shell starts, not by
@@ -85,8 +86,12 @@ type terminalInjection struct {
 	// lateEcho marks a window reopened by a recognized echo, so its own failure
 	// gives up instead of looking for an echo that will not come again.
 	lateEcho bool
-	buf      []byte
-	queued   [][]byte
+	// nushellDetected marks a hidden window that saw a Nushell error for the
+	// injected script, so it settles after injectionQuiet instead of waiting out
+	// the full injectionTimeout.
+	nushellDetected bool
+	buf             []byte
+	queued          [][]byte
 
 	since      time.Duration // when the shell opened
 	lastOutput time.Duration // when it last wrote while this was waiting
@@ -148,7 +153,7 @@ func activationLine(kind shellkind.Kind, path, token, directory string, row int,
 	switch {
 	case kind == shellkind.PowerShell:
 		return sshconn.PowerShellActivation(token, directory, row), nil
-	case path != "":
+	case (kind == shellkind.POSIX || kind == shellkind.Unknown) && path != "":
 		return upload()
 	}
 	return "", nil
@@ -183,6 +188,12 @@ func (state *State) advanceInjection(session *Session, now time.Duration) {
 		}
 		state.beginInjection(session)
 	case injectionSuppressing:
+		if injection.nushellDetected && now-injection.lastOutput >= injectionQuiet {
+			injection.echoTag = nil
+			injection.lateEcho = false
+			state.failInjection(session)
+			return
+		}
 		if now-injection.started >= injectionTimeout {
 			state.failInjection(session)
 		}
@@ -193,6 +204,9 @@ func (state *State) advanceInjection(session *Session, now time.Duration) {
 func (state *State) beginInjection(session *Session) {
 	t := session.term
 	injection := &t.injection
+	if setter, ok := t.shell.(interface{ SetKind(shellkind.Kind) }); ok && injection.probe.kind != shellkind.Unknown {
+		setter.SetKind(injection.probe.kind)
+	}
 	if injection.probe.line == "" || injection.probe.err != nil || t.shell == nil {
 		state.failInjection(session)
 		return
@@ -206,6 +220,15 @@ func (state *State) beginInjection(session *Session) {
 		state.failInjection(session)
 		return
 	}
+	// Login profiles that start Nushell interactively (such as "exec nu" in
+	// .bashrc or .zshrc) leave the non-interactive SSH probe seeing POSIX.
+	if (injection.probe.kind == shellkind.POSIX || injection.probe.kind == shellkind.Unknown) && screenShowsNushell(t.screen) {
+		if setter, ok := t.shell.(interface{ SetKind(shellkind.Kind) }); ok {
+			setter.SetKind(shellkind.Nushell)
+		}
+		state.failInjection(session)
+		return
+	}
 	if injection.probe.kind == shellkind.PowerShell {
 		// The line is built now, not when the shell was probed: it names the
 		// screen row the prompt is on, which the startup output has moved.
@@ -215,10 +238,8 @@ func (state *State) beginInjection(session *Session) {
 	injection.echoTag = sshconn.IntegrationEchoTag(injection.token)
 	injection.phase = injectionSuppressing
 	injection.started = state.now()
+	injection.nushellDetected = false
 	injection.buf = injection.buf[:0]
-	if setter, ok := t.shell.(interface{ SetKind(shellkind.Kind) }); ok {
-		setter.SetKind(injection.probe.kind)
-	}
 	// Typed directly: this is not the user's input and must not be recorded,
 	// predicted or queued behind itself. The activation line is short enough
 	// for the pty's canonical input buffer.
@@ -234,6 +255,9 @@ func (state *State) applyInjection(session *Session, data []byte) (rest []byte, 
 	t := session.term
 	injection := &t.injection
 	injection.buf = append(injection.buf, data...)
+	if injection.nushellDetected && len(data) > 0 {
+		injection.lastOutput = state.now()
+	}
 	if index := bytes.Index(injection.buf, injection.marker); index >= 0 {
 		// Bash reports command-start support while the activation output is
 		// still hidden. Retain that capability so the first prompt can own input.
@@ -255,6 +279,7 @@ func (state *State) applyInjection(session *Session, data []byte) (rest []byte, 
 		// The echo arrived, however late: the shell is integrated after all.
 		injection.echoTag = nil
 		injection.lateEcho = false
+		injection.nushellDetected = false
 		if !t.integrated {
 			t.integrated = true
 		}
@@ -265,10 +290,28 @@ func (state *State) applyInjection(session *Session, data []byte) (rest []byte, 
 		t.flushInjectionInput()
 		return rest, true
 	}
+	if injection.probe.kind != shellkind.PowerShell && !injection.nushellDetected && outputShowsNushellError(injection.buf) {
+		injection.nushellDetected = true
+		injection.lastOutput = state.now()
+		if setter, ok := t.shell.(interface{ SetKind(shellkind.Kind) }); ok {
+			setter.SetKind(shellkind.Nushell)
+		}
+	}
 	if len(injection.buf) > injectionBufferLimit {
 		state.failInjection(session)
 	}
 	return nil, false
+}
+
+func screenShowsNushell(screen *term.Terminal) bool {
+	if screen == nil {
+		return false
+	}
+	return bytes.Contains(screen.AppendRetainedText(nil), []byte("Welcome to Nushell"))
+}
+
+func outputShowsNushellError(data []byte) bool {
+	return bytes.Contains(data, []byte("nu::parser::")) || bytes.Contains(data, []byte("nu::shell::"))
 }
 
 // catchLateEcho recognizes the activation line's echo in a failed window's
@@ -302,6 +345,7 @@ func (state *State) failInjection(session *Session) {
 	}
 	injection.phase = injectionFailed
 	injection.buf = injection.buf[:0]
+	injection.nushellDetected = false
 	// The first failure keeps looking for the activation line's echo: a link
 	// that stalled past the deadline delivers it later. A window reopened by
 	// that echo has seen it already, so its failure stops the search.
@@ -349,7 +393,11 @@ func (state *State) requestInjectionFrames(canvas *gfx.Canvas) {
 				canvas.RequestFrameIn(max(injection.since+injectionGrace-now, time.Millisecond))
 			}
 		case injectionSuppressing:
-			canvas.RequestFrameIn(max(injection.started+injectionTimeout-now, time.Millisecond))
+			deadline := injection.started + injectionTimeout
+			if injection.nushellDetected {
+				deadline = min(deadline, injection.lastOutput+injectionQuiet)
+			}
+			canvas.RequestFrameIn(max(deadline-now, time.Millisecond))
 		}
 	}
 }

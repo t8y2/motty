@@ -148,7 +148,7 @@ func (state *State) declareRemoteToolsSearch(c ui.C) {
 	}
 	query := search.queryEditor().String()
 	ui.Column(c).Height(remoteSearchHeight).Shrink(0).MarginSides(8, 0, 0, 0).Children(func() {
-		field := ui.TextFieldID(c, hitRemoteSearch, &search.field, m.RemoteSearch, m.RemoteSearchPlaceholder).
+		field := ui.TextField(c, &search.field, m.RemoteSearch, m.RemoteSearchPlaceholder, ui.WithID(hitRemoteSearch)).
 			Height(32).FillWidth().Shrink(0).Icon(lucideIcons[iconSearch]).NavigationKeys()
 		if query != "" {
 			field = field.Action(lucideIcons[iconClose], m.RemoteSearchClear)

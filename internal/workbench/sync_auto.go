@@ -58,7 +58,7 @@ func (state *State) scheduleSync() {
 // then the oldest window still open takes the request.
 func (state *State) requestSync() {
 	target := state
-	if state.closed && state.options.Group != nil {
+	if state.callbacksClosed.Load() && state.options.Group != nil {
 		target = state.options.Group.first()
 	}
 	if target != nil {
@@ -130,7 +130,7 @@ func syncRetryable(err error) bool {
 // first is the oldest window still open.
 func (group *Group) first() *State {
 	for _, window := range group.windows() {
-		if !window.closed {
+		if !window.callbacksClosed.Load() {
 			return window
 		}
 	}

@@ -238,7 +238,13 @@ func (state *State) setInterfaceTextSize(size interfaceTextSize) bool {
 // rebuilt too — it copied the metrics by value — so framework components, menus
 // and dialogs follow the choice and not just workbench text.
 func (state *State) applyInterfaceTextSize() {
-	applyTextMetrics(state.interfaceTextSize.factor())
+	state.applyMetrics()
+}
+
+// applyMetrics rebuilds the tokens from the chosen text size and corner style
+// and the theme with them, then the windows that draw with both.
+func (state *State) applyMetrics() {
+	applyMetrics(state.interfaceTextSize.factor(), state.cornerStyle)
 	state.theme = state.pal.theme()
 	state.invalidateRemoteToolsWindows()
 }
@@ -635,6 +641,7 @@ func (state *State) applyTerminalScrollback() {
 var (
 	settingsLanguageChoices        = [...]i18n.Language{i18n.English, i18n.Chinese, i18n.TraditionalChinese}
 	settingsAppearanceChoices      = [...]appearanceMode{appearanceFollowSystem, appearancePinnedDark, appearancePinnedLight}
+	settingsCornerChoices          = [...]cornerStyle{cornersRounded, cornersSquare}
 	settingsToolbarPositionChoices = [...]terminalToolbarPosition{terminalToolbarLeft, terminalToolbarRight}
 	settingsTabOrientationChoices  = [...]tabOrientation{tabsHorizontal, tabsVertical}
 	settingsTabDoubleClickChoices  = [...]tabDoubleClickAction{tabDoubleClickRename, tabDoubleClickDuplicate, tabDoubleClickNone}
@@ -670,6 +677,13 @@ func (state *State) settingsAppearanceLabel(mode appearanceMode) string {
 		return state.messages.SettingsAppearanceLight
 	}
 	return state.messages.SettingsAppearanceSystem
+}
+
+func (state *State) settingsCornerLabel(style cornerStyle) string {
+	if style == cornersSquare {
+		return state.messages.SettingsCornersSquare
+	}
+	return state.messages.SettingsCornersRounded
 }
 
 func (state *State) settingsToolbarPositionLabel(position terminalToolbarPosition) string {

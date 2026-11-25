@@ -96,7 +96,7 @@ func settingsTabHit(id gfx.ID) bool {
 // the look of the file-manager tabs beside it: the same fill, edge, number and
 // close button. With probe set only the place is declared, for the bar's
 // geometry.
-func (state *State) declareSettingsTab(c ui.C, probe bool, geometry barGeometry, first float32) barTab {
+func (state *State) declareSettingsTab(c ui.C, probe bool, geometry barGeometry, first, scroll float32) barTab {
 	chrome := &state.chrome
 	if probe {
 		minimum := barTabMin
@@ -129,8 +129,9 @@ func (state *State) declareSettingsTab(c ui.C, probe bool, geometry barGeometry,
 	entry.base, entry.background, entry.foreground = fill, fill, foreground
 	label := m.NavSettings
 	entry.label = label
+	entry.glided, entry.glideScroll = true, gfx.Point{X: scroll}
 	entry.box = ui.Row(c).Size(geometry.tabWidth, barTabHeight).Shrink(0).MarginSides(0, barGap, 0, first).
-		HitOutset(barTabReach, 0, barTabReach, 0).PadSides(0, 3, 0, 4).Items(ui.Center).Radius(radius.item).Border(1, edge).Background(fill).
+		Glide(tabGlideMotion, gfx.Point{X: scroll}).HitOutset(barTabReach, 0, barTabReach, 0).PadSides(0, 3, 0, 4).Items(ui.Center).Radius(radius.item).Border(1, edge).Background(fill).
 		HitWith(hitSettingsTab, label, gfx.HitOptions{Role: gfx.RoleTab, Selected: active, Hint: label}).Children(func() {
 		entry.badge = ui.Slot(c).Size(20, 20).MarginSides(0, 7, 0, 0)
 		if entry.number != "" {

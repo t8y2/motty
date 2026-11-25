@@ -16,8 +16,9 @@ import (
 const (
 	// MaxDimension is the largest width or height accepted, in pixels.
 	MaxDimension = 16384
-	// MaxPixels is the largest framebuffer accepted: 8K UHD, 133 MB of BGRA.
-	MaxPixels = 7680 * 4320
+	// MaxPixels is the largest framebuffer accepted: 512 MiB of BGRA, enough
+	// for multi-monitor 4K/8K desktops while still bounding server allocations.
+	MaxPixels = 128 << 20
 
 	maxNameLength   = 4096
 	maxReasonLength = 4096
@@ -60,13 +61,14 @@ const (
 	EncodingRRE         int32 = 2
 	EncodingHextile     int32 = 5
 	EncodingZRLE        int32 = 16
+	encodingCursor      int32 = -239
 	encodingLastRect    int32 = -224
 	encodingDesktopSize int32 = -223
 )
 
 // DefaultEncodings is the preference order sent to the server: the most
 // compact first, Raw last as what every server must support.
-var DefaultEncodings = []int32{EncodingZRLE, EncodingHextile, EncodingRRE, EncodingCopyRect, EncodingRaw, encodingDesktopSize, encodingExtendedClipboard}
+var DefaultEncodings = []int32{EncodingZRLE, EncodingHextile, EncodingRRE, EncodingCopyRect, EncodingRaw, encodingDesktopSize, encodingExtendedClipboard, encodingCursor}
 
 // PreferEncoding is DefaultEncodings with encoding moved to the front, which is
 // how a client tells the server which one to use when it supports several. The
@@ -108,6 +110,9 @@ type Sink interface {
 	// Flush marks the end of a FramebufferUpdate, waking the presenter once
 	// rather than for each decoded rectangle.
 	Flush()
+	// Cursor informs the sink of a pointer shape and its hotspot, or an empty
+	// shape when width or height is zero.
+	Cursor(hotX, hotY, width, height int, bgra []byte)
 }
 
 // Config describes how to connect.
@@ -244,21 +249,20 @@ func (client *Client) handshake(config Config) error {
 	if !ok {
 		return fmt.Errorf("%w: not an RFB server (%q)", ErrProtocol, printable(banner[:]))
 	}
-	if major == 5 && minor == 0 {
-		// RealVNC announces its proprietary 5.0 version but accepts client 3.8.
-		// Only this known banner is downgraded; other major versions are refused.
+	switch {
+	case major == 4 && (minor == 0 || minor == 1), major == 5 && minor == 0:
+		// RealVNC (4.1, 5.0) and Intel AMT KVM / RealVNC 4.0 announce higher
+		// protocol versions, but accept client 3.8. Only these known banners
+		// are downgraded; other major versions are refused.
 		client.Version = 8
-	} else if major != 3 {
+	case major != 3:
 		return fmt.Errorf("%w: protocol version %d.%d", ErrUnsupported, major, minor)
-	} else {
-		switch {
-		case minor >= 8:
-			client.Version = 8
-		case minor == 7:
-			client.Version = 7
-		default:
-			client.Version = 3
-		}
+	case minor >= 8:
+		client.Version = 8
+	case minor == 7:
+		client.Version = 7
+	default:
+		client.Version = 3
 	}
 	if _, err := fmt.Fprintf(client.conn, "RFB 003.%03d\n", client.Version); err != nil {
 		return err
@@ -751,6 +755,11 @@ func (client *Client) update(sink Sink) error {
 			client.mu.Unlock()
 			sink.Resize(width, height)
 			resized = true
+			continue
+		case encodingCursor:
+			if err := client.decodeCursor(sink, x, y, width, height); err != nil {
+				return err
+			}
 			continue
 		}
 		if x+width > client.width || y+height > client.height {

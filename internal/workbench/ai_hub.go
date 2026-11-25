@@ -178,7 +178,7 @@ func (hub *AIHub) start(token string, mode gate.Mode, port int) error {
 	catalog := tools.All()
 	catalog = append(catalog, tools.ExternalNotes(mode == gate.ModeAllowAll)...)
 	server, err := mcp.New(mcp.Config{
-		Token: token, Gate: hub.gate, ServerName: "motty", Version: "1",
+		Token: token, Dispatch: hub.dispatch, ServerName: "motty", Version: "1",
 		CallTimeout: mcpCallTimeout, Tools: catalog,
 	})
 	if err != nil {
@@ -340,6 +340,17 @@ func (hub *AIHub) publishEndpoint() {
 	for _, window := range windows {
 		window.state.setMCPEndpoint(addr, token)
 	}
+}
+
+// dispatch checks the profile before serving even cached tool outputs.
+func (hub *AIHub) dispatch(ctx context.Context, name string, raw []byte) gate.Result {
+	hub.mu.Lock()
+	locked := len(hub.windows) == 0 || hub.windows[0].state.appAccessBlocked()
+	hub.mu.Unlock()
+	if locked {
+		return gate.Result{Text: errAppLocked.Error(), IsError: true, Denied: true}
+	}
+	return hub.gate().Run(ctx, name, raw)
 }
 
 // gate is the Gate for the next request: the hub's backend over all windows, an

@@ -20,7 +20,7 @@ type SFTPWindowMessages struct {
 	DropUploadHint, DropDownloadHint, DropCopyHint, DropMoveHint                                            string
 	QueueRejectedFmt                                                                                        string
 	Open, Title, Local, Remote, Path, Name, Size, Modified                                                  string
-	Upload, Download, DragHint, DropUpload, DropDownload                                                    string
+	Upload, Download, DragHint, DragOutFailed, DropUpload, DropDownload                                     string
 	SelectedFmt, CopyPath, CopyFiles, PasteFiles                                                            string
 	CalculatingSize, FolderSizeIncompleteFmt, FolderSizePartialFmt                                          string
 	CalculateDirectorySize                                                                                  string

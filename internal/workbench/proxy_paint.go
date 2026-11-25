@@ -393,7 +393,7 @@ func (state *State) paintProxyHops(canvas *gfx.Canvas, c4 gfx.Rect, route *proxy
 	canvas.Clip(c4)
 	for i, hop := range hops {
 		nodeX := c4.X + 6 + float32(i)*(cardW+flowW)
-		canvas.Rounded(gfx.Rect{X: nodeX, Y: cardY, Width: cardW, Height: cardH}, 6, state.pal.surfaceSoft.WithAlpha(0.55))
+		canvas.Rounded(gfx.Rect{X: nodeX, Y: cardY, Width: cardW, Height: cardH}, cornerPx(6), state.pal.surfaceSoft.WithAlpha(0.55))
 		canvas.Label(hop.Label, gfx.Rect{X: nodeX + 8, Y: cardY + 4, Width: cardW - 16, Height: 15},
 			gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: state.pal.text})
 		canvas.Label(hop.Address, gfx.Rect{X: nodeX + 8, Y: cardY + 20, Width: cardW - 16, Height: 13},
@@ -478,7 +478,7 @@ func (state *State) declareProxyDialogBody(c ui.C) {
 				editor.relayBound = true
 			}
 			ui.FormField(c, &editor.relayRow, messages.ProxyFieldRelay).FillWidth().Height(rowHeight).Children(func() {
-				ui.TextFieldID(c, hitProxyDialogRelay, &editor.relayText, messages.ProxyFieldRelay, messages.ProxyRelayPlaceholder)
+				ui.TextField(c, &editor.relayText, messages.ProxyFieldRelay, messages.ProxyRelayPlaceholder, ui.WithID(hitProxyDialogRelay))
 			})
 			ui.Paragraph(c, state.proxyRelayNote(), 2).FontSize(metrics.FontSizeS).Color(state.pal.muted).MarginSides(0, 6, 0, 6)
 		}

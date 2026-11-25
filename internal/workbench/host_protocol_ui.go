@@ -594,6 +594,9 @@ func (state *State) hostFormHeight() float32 {
 	}
 	if state.dialogError != "" {
 		height += 32
+		if state.isHostDialogKeyLost() {
+			height += 38
+		}
 	}
 	return height
 }

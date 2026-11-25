@@ -520,17 +520,22 @@ func (state *State) askPullImage() {
 			if state.remote.stale || state.remote.loading || state.remote.collectedAt.IsZero() {
 				return m.RemoteRefreshRequired
 			}
-			command, ok := remotetools.PullCommand(strings.TrimSpace(form.value(0)))
-			if !ok {
+			reference := strings.TrimSpace(form.value(0))
+			if !remotetools.ValidReference(reference) {
 				return m.RemoteBadImage
 			}
-			session, found := state.remoteSession()
-			if !found || !state.typeRemoteCommand(session, command) {
-				return state.messages.History.StatusNotConnected
-			}
-			state.status = command
-			state.remote.serial++
-			state.finishRemoteTerminalAction()
+			state.runContainerTerminalAction(remoteImages, "",
+				func(_ context.Context, _ remotetools.Runner, runtime remotetools.Runtime) (string, error) {
+					command, _ := remotetools.PullCommand(runtime, reference)
+					return command, nil
+				},
+				func(state *State, session *Session, command string) error {
+					if !state.typeRemoteCommand(session, command) {
+						return errors.New(state.messages.History.StatusNotConnected)
+					}
+					state.status = command
+					return nil
+				})
 			return ""
 		},
 		cancel: back,
@@ -663,7 +668,7 @@ func (state *State) refreshRemoteTools() {
 			}
 			view.loading = false
 			if tab != remoteProcesses {
-				view.noDocker = errors.Is(err, remotetools.ErrNoDocker)
+				view.noDocker = errors.Is(err, remotetools.ErrNoContainerRuntime)
 			}
 			if err != nil {
 				view.failed, view.status = true, state.remoteErrorText(err)
@@ -780,7 +785,7 @@ func (state *State) remoteErrorText(err error) string {
 		return m.RemoteErrNoCompose
 	case errors.Is(err, remotetools.ErrComposeListUnsupported):
 		return m.RemoteErrComposeListUnsupported
-	case errors.Is(err, remotetools.ErrNoDocker):
+	case errors.Is(err, remotetools.ErrNoContainerRuntime):
 		return m.RemoteErrNoDocker
 	case errors.Is(err, remotetools.ErrNoShell):
 		return m.RemoteErrNoShell
@@ -793,6 +798,44 @@ func (state *State) remoteErrorText(err error) string {
 }
 
 func (state *State) openContainerShell(container remotetools.Container) {
+	state.runContainerTerminalAction(remoteContainers, container.ID,
+		func(ctx context.Context, runner remotetools.Runner, runtime remotetools.Runtime) (string, error) {
+			return remotetools.ShellCommand(ctx, runner, runtime, container.ID)
+		},
+		func(state *State, session *Session, command string) error {
+			return state.openRemoteContainerTab(session.ID, container.Name, command)
+		})
+}
+
+// followContainerLog types the log command into the session's terminal, where
+// the user can read, scroll and stop it as they would any command.
+func (state *State) followContainerLog(container remotetools.Container) {
+	state.runContainerTerminalAction(remoteContainers, container.ID,
+		func(_ context.Context, _ remotetools.Runner, runtime remotetools.Runtime) (string, error) {
+			command, ok := remotetools.LogsCommand(runtime, container.ID)
+			if !ok {
+				return "", fmt.Errorf("remotetools: %q is not a container id", container.ID)
+			}
+			return command, nil
+		},
+		func(state *State, session *Session, command string) error {
+			if !state.typeRemoteCommand(session, command) {
+				return errors.New(state.messages.History.StatusNotConnected)
+			}
+			state.status = fmt.Sprintf(state.messages.Tools.RemoteLogsFmt, container.Name)
+			return nil
+		})
+}
+
+// runContainerTerminalAction finds the container engine the server runs, builds
+// a terminal command for it off the window thread, and applies the command
+// where the tab's selection still holds. An empty selected means the action
+// does not target a row.
+func (state *State) runContainerTerminalAction(
+	tab remoteTab, selected string,
+	build func(context.Context, remotetools.Runner, remotetools.Runtime) (string, error),
+	apply func(*State, *Session, string) error,
+) {
 	view := &state.remote
 	session, ok := state.remoteSession()
 	if !ok {
@@ -805,18 +848,26 @@ func (state *State) openContainerShell(container remotetools.Container) {
 	go func() {
 		ctx, cancel := context.WithTimeout(state.remoteToolsContext(), remoteTimeout)
 		defer cancel()
-		command, err := remotetools.ShellCommand(ctx, runner, container.ID)
+		var command string
+		runtime, err := remotetools.DetectRuntime(ctx, runner)
+		if err == nil {
+			command, err = build(ctx, runner, runtime)
+		}
 		state.postRemoteToolsUpdate(func(state *State) {
 			view := &state.remote
-			if !state.remoteToolsVisible() || view.serial != serial || view.session != sourceID || view.tab != remoteContainers {
+			if !state.remoteToolsVisible() || view.serial != serial || view.session != sourceID || view.tab != tab {
 				return
 			}
 			view.loading = false
-			if view.selected != container.ID || state.activeSessionID != sourceID {
+			if selected != "" && view.selected != selected || state.activeSessionID != sourceID {
 				return
 			}
 			if err == nil {
-				err = state.openRemoteContainerTab(sourceID, container.Name, command)
+				if session, found := state.remoteSession(); found {
+					err = apply(state, session, command)
+				} else {
+					err = errors.New(state.messages.History.StatusNotConnected)
+				}
 			}
 			if err != nil {
 				view.failed, view.status = true, state.remoteErrorText(err)
@@ -826,19 +877,6 @@ func (state *State) openContainerShell(container remotetools.Container) {
 			state.finishRemoteTerminalAction()
 		})
 	}()
-}
-
-// followContainerLog types the log command into the session's terminal, where
-// the user can read, scroll and stop it as they would any command.
-func (state *State) followContainerLog(container remotetools.Container) {
-	session, ok := state.remoteSession()
-	command, valid := remotetools.LogsCommand(container.ID)
-	if !ok || !valid || !state.typeRemoteCommand(session, command) {
-		return
-	}
-	state.status = fmt.Sprintf(state.messages.Tools.RemoteLogsFmt, container.Name)
-	state.remote.serial++
-	state.finishRemoteTerminalAction()
 }
 
 func (state *State) rebuildRemoteRows() {

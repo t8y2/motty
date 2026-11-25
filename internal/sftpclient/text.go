@@ -14,20 +14,29 @@ import (
 
 const MaxEditFileBytes = 1 << 20
 
+// MaxExternalEditBytes bounds a file opened in the system's editor as bytes,
+// for formats such as spreadsheets that are not text. The built-in editor keeps
+// MaxEditFileBytes.
+const MaxExternalEditBytes = 32 << 20
+
 var ErrPreviewFileTooLarge = errors.New("file exceeds the preview size limit")
 var ErrNotRegularFile = errors.New("sftp: preview requires a regular file")
 
 func editSizeError(limit int) error {
-	if limit == MaxEditFileBytes {
+	switch limit {
+	case MaxEditFileBytes:
 		return ErrEditFileTooLarge
+	case MaxExternalEditBytes:
+		return ErrExternalEditTooLarge
 	}
 	return ErrPreviewFileTooLarge
 }
 
 var (
-	ErrEditFileTooLarge    = errors.New("sftp: remote text file exceeds 1 MiB")
-	ErrUnsupportedEncoding = errors.New("sftp: remote file is not UTF-8 text")
-	ErrRemoteChanged       = errors.New("sftp: remote file changed since it was opened")
+	ErrEditFileTooLarge     = errors.New("sftp: remote text file exceeds 1 MiB")
+	ErrExternalEditTooLarge = errors.New("sftp: remote file exceeds 32 MiB")
+	ErrUnsupportedEncoding  = errors.New("sftp: remote file is not UTF-8 text")
+	ErrRemoteChanged        = errors.New("sftp: remote file changed since it was opened")
 )
 
 var utf8ByteOrderMark = []byte{0xef, 0xbb, 0xbf}
@@ -194,7 +203,7 @@ func (worker *Worker) replaceDocumentInPlace(client Remote, advanced transferRem
 }
 
 func editReadMeansConflict(err error) bool {
-	return errors.Is(err, os.ErrNotExist) || errors.Is(err, ErrEditFileTooLarge) || errors.Is(err, ErrPreviewFileTooLarge) || errors.Is(err, ErrUnsupportedEncoding) || errors.Is(err, ErrNotRegularFile)
+	return errors.Is(err, os.ErrNotExist) || errors.Is(err, ErrEditFileTooLarge) || errors.Is(err, ErrExternalEditTooLarge) || errors.Is(err, ErrPreviewFileTooLarge) || errors.Is(err, ErrUnsupportedEncoding) || errors.Is(err, ErrNotRegularFile)
 }
 
 func (worker *Worker) readEditBytes(client Remote, remotePath string, generation uint64) ([]byte, error) {

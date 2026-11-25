@@ -347,6 +347,7 @@ func TestRA2WrongPasswordRemainsAuthFailure(t *testing.T) {
 		{"RFB 003.007\n", "RFB 003.007\n", false},
 		{"RFB 003.008\n", "RFB 003.008\n", true},
 		{"RFB 003.009\n", "RFB 003.008\n", true},
+		{"RFB 004.001\n", "RFB 003.008\n", true},
 		{"RFB 005.000\n", "RFB 003.008\n", true},
 	} {
 		for _, subtype := range []byte{ra2UserPass, ra2Password} {
@@ -388,6 +389,7 @@ func TestRA2StandardVersionsAndCredentialSubtypes(t *testing.T) {
 		{"RFB 003.007\n", 7},
 		{"RFB 003.008\n", 8},
 		{"RFB 003.009\n", 8},
+		{"RFB 004.001\n", 8},
 	} {
 		for _, subtype := range []byte{ra2UserPass, ra2Password} {
 			t.Run(fmt.Sprintf("%s/subtype%d", strings.TrimSpace(version.banner), subtype), func(t *testing.T) {
@@ -539,31 +541,33 @@ func TestRA2RejectsEncryptedRandomLengthBeforeCredentials(t *testing.T) {
 }
 
 func TestRealVNCBannerDowngradePreservesLegacyAuthentication(t *testing.T) {
-	for _, security := range []byte{1, 2} {
-		t.Run(fmt.Sprint(security), func(t *testing.T) {
-			client, err := connect(t, Config{Password: "legacy"}, func(s *server) {
-				s.write([]byte("RFB 005.000\n"))
-				if got := s.read(12); string(got) != "RFB 003.008\n" {
-					t.Errorf("version=%q", got)
-				}
-				s.write([]byte{1, security})
-				s.read(1)
-				if security == 2 {
-					challenge := [16]byte{1, 2, 3}
-					s.write(challenge[:])
-					want := vncResponse(challenge, "legacy")
-					if got := s.read(16); !bytes.Equal(got, want[:]) {
-						t.Error("legacy response changed")
+	for _, banner := range []string{"RFB 004.000\n", "RFB 004.001\n", "RFB 005.000\n"} {
+		for _, security := range []byte{1, 2} {
+			t.Run(fmt.Sprintf("%s/%d", strings.TrimSpace(banner), security), func(t *testing.T) {
+				client, err := connect(t, Config{Password: "legacy"}, func(s *server) {
+					s.write([]byte(banner))
+					if got := s.read(12); string(got) != "RFB 003.008\n" {
+						t.Errorf("version=%q", got)
 					}
+					s.write([]byte{1, security})
+					s.read(1)
+					if security == 2 {
+						challenge := [16]byte{1, 2, 3}
+						s.write(challenge[:])
+						want := vncResponse(challenge, "legacy")
+						if got := s.read(16); !bytes.Equal(got, want[:]) {
+							t.Error("legacy response changed")
+						}
+					}
+					finishRA2Peer(s)
+				})
+				if err != nil || client.Version != 8 || client.Security != int(security) || client.Encrypted {
+					t.Fatalf("client=%v error=%v", client, err)
 				}
-				finishRA2Peer(s)
 			})
-			if err != nil || client.Version != 8 || client.Security != int(security) || client.Encrypted {
-				t.Fatalf("client=%v error=%v", client, err)
-			}
-		})
+		}
 	}
-	for _, banner := range []string{"RFB 004.000\n", "RFB 004.001\n", "RFB 005.001\n", "RFB 006.000\n"} {
+	for _, banner := range []string{"RFB 004.002\n", "RFB 005.001\n", "RFB 006.000\n"} {
 		_, err := connect(t, Config{}, func(s *server) { s.write([]byte(banner)) })
 		if !errors.Is(err, ErrUnsupported) {
 			t.Errorf("%q:error=%v", banner, err)

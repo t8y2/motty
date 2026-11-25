@@ -91,7 +91,7 @@ func (state *State) declareAIRenameDialog(c ui.C) {
 		}
 		rename.form.For, rename.form.Error, rename.form.Invalid = hitAIRenameField, state.dialogError, state.dialogError != ""
 		ui.FormField(c, &rename.form, m.RenameField).FillWidth().Height(dialogRowHeight(c.Theme())).Children(func() {
-			ui.TextFieldID(c, hitAIRenameField, &rename.input, m.RenameField, m.RenamePlaceholder)
+			ui.TextField(c, &rename.input, m.RenameField, m.RenamePlaceholder, ui.WithID(hitAIRenameField))
 		})
 	})
 	dialog.Footer(func() {

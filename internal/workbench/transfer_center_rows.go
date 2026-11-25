@@ -12,6 +12,10 @@ func (state *State) declareTransferRow(row ui.ListRow) {
 	item := center.rows[row.Index]
 	width := max(center.listWidth-10, 0) // leave the scrollbar clear of row actions
 	row.Element.Width(width).Height(transferRowHeight).PadX(8).Gap(9).Items(ui.Center)
+	if item.hostHeader {
+		state.declareTransferHostHeader(row, item.host)
+		return
+	}
 	if item.entry < 0 {
 		state.declareTransferGroup(row, item.group)
 		return
@@ -89,6 +93,19 @@ func (state *State) declareTransferGroup(row ui.ListRow, group int) {
 			ui.Icon(c, glyph).Size(16, 16).Color(tint)
 			ui.Text(c, section.label).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text)
 		})
+}
+
+// declareTransferHostHeader names the server a run of tasks belongs to. It is a
+// label rather than a control, so it never takes focus or a click of its own.
+func (state *State) declareTransferHostHeader(row ui.ListRow, label string) {
+	pal, c := state.pal, row.C
+	row.Element.PadX(22).Radius(radius.control).
+		HitWith(hitTransfersList, label, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true})
+	row.Element.Children(func() {
+		ui.Icon(c, icons.Monitor).Size(13, 13).Color(pal.muted).Shrink(0)
+		ui.Text(c, label).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.muted).
+			Ellipsis().Grow(1).MinWidth(0)
+	})
 }
 
 func (state *State) transferGroupLook(group int) (gfx.Icon, gfx.Color) {

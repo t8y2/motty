@@ -175,7 +175,7 @@ func (s *State) declareNoteFindBar(c ui.C, n *notesUI) {
 	height := components.FindBarHeight(s.Theme(), false)
 	ui.Row(c).Height(height).FillWidth().MarginSides(0, 16, 6, 16).Gap(6).Items(ui.Center).Children(func() {
 		p.find.Bind(&f.Query)
-		field := ui.TextFieldID(c, hitNoteFind, &p.find, s.noteText("Find in note", "在当前笔记中查找"), s.noteText("Find in note", "在当前笔记中查找")).
+		field := ui.TextField(c, &p.find, s.noteText("Find in note", "在当前笔记中查找"), s.noteText("Find in note", "在当前笔记中查找"), ui.WithID(hitNoteFind)).
 			Height(height - 6).Grow(1)
 		if field.Submitted() {
 			s.stepNoteFind(n, true)

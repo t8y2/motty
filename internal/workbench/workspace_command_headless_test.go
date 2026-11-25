@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,6 +59,17 @@ func TestWorkspaceCommandThroughWindowDriver(t *testing.T) {
 	click := func(id gfx.ID) { t.Helper(); clickWorkspaceCommandHit(t, view, id) }
 	click(workspaceDraftHostID(0))
 	click(hitWorkspaceCommandEdit.At(int(state.hosts[0].ID)))
+	hints := 0
+	hint := state.messages.WorkspaceCommandOrderHint
+	for _, label := range view.Snapshot().Texts {
+		visibleHint, elided := strings.CutSuffix(label.Value, "…")
+		if label.Value == hint || elided && visibleHint != "" && strings.HasPrefix(hint, visibleHint) {
+			hints++
+		}
+	}
+	if hints != 1 {
+		t.Fatalf("command order hint painted %d times, want 1", hints)
+	}
 	click(hitWorkspaceCommandField.At(int(state.hosts[0].ID)))
 	if err := view.Type("cd /srv"); err != nil {
 		t.Fatal(err)
@@ -125,13 +137,43 @@ func TestWorkspaceCommandLayouts(t *testing.T) {
 			t.Run(fmt.Sprintf("%s-%d", language, width), func(t *testing.T) {
 				state := templateManagementState(t, 1)
 				state.setLanguage(language)
-				state.templates[0].Commands = map[string]WorkspaceCommand{state.hosts[0].CatalogID: {Command: "cd /srv"}}
+				host := &state.hosts[0]
+				host.Label = "Workspace SSH"
+				if width == MinimumWindowWidth {
+					host.Label += " " + strings.Repeat("long host name ", 10)
+				}
+				host.User, host.Address, host.Port = "operator", "workbench.example.test", 22022
+				state.templates[0].Commands = map[string]WorkspaceCommand{host.CatalogID: {Command: "cd /srv"}}
 				state.openWorkspaceDraftEdit(state.templates[0].ID)
-				state.workspaceDraft.commandHost = state.hosts[0].ID
+				state.workspaceDraft.commandHost = host.ID
 				view := openWorkspaceCommandWindow(t, state, width)
-				field, ok := hitByIDSnapshot(view.Snapshot().Hits, hitWorkspaceCommandField.At(int(state.hosts[0].ID)))
+				snapshot := view.Snapshot()
+				field, ok := hitByIDSnapshot(snapshot.Hits, hitWorkspaceCommandField.At(int(host.ID)))
 				if !ok || field.Bounds.Width <= 0 || field.Bounds.X < state.workspaceDraft.bounds.X || field.Bounds.X+field.Bounds.Width > state.workspaceDraft.bounds.X+state.workspaceDraft.bounds.Width {
 					t.Fatal("command field outside host list")
+				}
+				button, ok := hitByIDSnapshot(snapshot.Hits, hitWorkspaceCommandEdit.At(int(host.ID)))
+				if !ok || button.Bounds.Width <= 0 {
+					t.Fatal("workspace command button is missing")
+				}
+				var title, address gfx.Rect
+				for _, label := range snapshot.Texts {
+					if label.Bounds.X >= button.Bounds.X || label.Bounds.Bottom() < button.Bounds.Y || label.Bounds.Y >= field.Bounds.Y {
+						continue
+					}
+					visibleName, elided := strings.CutSuffix(label.Value, "…")
+					switch {
+					case label.Value == host.Label || elided && visibleName != "" && strings.HasPrefix(host.Label, visibleName):
+						title = label.Bounds
+					case label.Value == state.sessionAddress(*host):
+						address = label.Bounds
+					}
+				}
+				if title.Width == 0 || title.Right() > button.Bounds.X || title.Y >= button.Bounds.Bottom() {
+					t.Errorf("workspace command button %v should follow the host name %v", button.Bounds, title)
+				}
+				if address.Width == 0 || address.Y < button.Bounds.Bottom() {
+					t.Errorf("full host address and port should fit below the button: address %v, button %v", address, button.Bounds)
 				}
 				if dir := os.Getenv("MOTTY_COMMAND_SCREENSHOTS"); dir != "" {
 					if err := os.MkdirAll(dir, 0700); err != nil {

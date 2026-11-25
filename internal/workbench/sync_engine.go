@@ -38,6 +38,9 @@ func (state *State) syncNow() { state.runSync(false) }
 // runSync starts a sync unless one is running. A quiet one, started by a change
 // or at start, never opens a dialog and keeps the status line as it is.
 func (state *State) runSync(quiet bool) {
+	if state.appAccessBlocked() {
+		return
+	}
 	if state.sync.working {
 		return
 	}
@@ -58,10 +61,21 @@ func (state *State) runSync(quiet bool) {
 	state.syncRound(store, password, 1)
 }
 
+func (state *State) cancelProfileSync() {
+	if state.cancelSync != nil {
+		state.cancelSync()
+		state.cancelSync = nil
+		state.syncGeneration++
+		state.sync.working = false
+	}
+}
+
 // syncRound downloads the server's file.
 func (state *State) syncRound(store cloudsync.Store, password string, attempt int) {
+	ctx, cancel := context.WithTimeout(context.Background(), syncTimeout)
+	state.cancelSync = cancel
+	generation := state.syncGeneration
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), syncTimeout)
 		defer cancel()
 		var remote backup.Document
 		data, tag, err := store.Get(ctx)
@@ -72,7 +86,11 @@ func (state *State) syncRound(store cloudsync.Store, password string, attempt in
 		case err == nil:
 			remote, err = backup.Open(data, password)
 		}
-		state.aiPost(func(state *State) { state.syncMerge(store, password, attempt, remote, tag, missing, err) })
+		state.aiPost(func(state *State) {
+			if generation == state.syncGeneration {
+				state.syncMerge(store, password, attempt, remote, tag, missing, err)
+			}
+		})
 	}()
 }
 
@@ -92,8 +110,10 @@ func (state *State) syncMerge(store cloudsync.Store, password string, attempt in
 		state.syncDone(tag, "")
 		return
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), syncTimeout)
+	state.cancelSync = cancel
+	generation := state.syncGeneration
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), syncTimeout)
 		defer cancel()
 		sealed, err := backup.Seal(*upload, password)
 		newTag := ""
@@ -111,6 +131,9 @@ func (state *State) syncMerge(store cloudsync.Store, password string, attempt in
 			created = holder.ID() // a first upload makes the gist; remember where
 		}
 		state.aiPost(func(state *State) {
+			if generation != state.syncGeneration {
+				return
+			}
 			switch {
 			case errors.Is(err, cloudsync.ErrChanged) && attempt < syncAttempts:
 				state.syncRound(store, password, attempt+1)
@@ -141,6 +164,9 @@ func (state *State) syncDone(tag, created string) {
 // mergeRemote takes the server's data into this computer. It returns the
 // document to upload, or nil when the server already holds everything here.
 func (state *State) mergeRemote(remote backup.Document, missing bool) (*backup.Document, error) {
+	if state.appAccessBlocked() {
+		return nil, errAppLocked
+	}
 	if state.config == nil {
 		return nil, errors.New(state.messages.Tools.SyncErrNoStore)
 	}

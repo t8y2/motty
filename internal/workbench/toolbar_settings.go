@@ -49,8 +49,8 @@ var toolbarCatalog = [3][]toolbarSpec{
 		{"remote-logs", hitServerLogs, iconFileClock},
 	},
 	toolbarSFTP: {
-		{"upload-file", hitSFTPUpload, iconUpload}, {"upload-folder", hitSFTPUploadDirectory, iconFolderUp},
-		{"new-file", hitSFTPNewFile, iconFile}, {"new-folder", hitSFTPNewDirectory, iconFolderPlus}, {"new-link", hitSFTPNewLink, iconLink},
+		{"upload-file", hitSFTPUpload, iconSFTPUpload}, {"upload-folder", hitSFTPUploadDirectory, iconSFTPUploadDirectory},
+		{"new-file", hitSFTPNewFile, iconSFTPNewFile}, {"new-folder", hitSFTPNewDirectory, iconSFTPNewDirectory}, {"new-link", hitSFTPNewLink, iconLink},
 		{"local-remote", hitSFTPPaneToggle, iconHosts}, {"refresh", hitSFTPRefresh, iconRefresh},
 		{"follow-folder", hitSFTPFollowToggle, iconFollowFolder},
 		{"locate-terminal", hitSFTPLocateTerminal, iconTerminal},
@@ -223,7 +223,7 @@ func (state *State) toolbarLabel(id gfx.ID) string {
 	case hitWindowSettings:
 		return m.NavSettings
 	case hitBroadcast:
-		return m.Tools.BroadcastStart
+		return m.Tools.BroadcastTip
 	case hitTerminalSnippets:
 		return m.Tools.SnippetTip
 	case hitPaneSplitHorizontal:

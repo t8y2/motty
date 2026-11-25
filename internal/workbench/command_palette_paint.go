@@ -131,7 +131,7 @@ func (state *State) declareCommandPaletteBody(c ui.C) {
 				ui.Spacer(c).Height(6).Shrink(0)
 			}
 		}
-		ui.TextFieldID(c, hitCommandPaletteSearch, &palette.searchField, palette.searchLabel, palette.searchPlace).
+		ui.TextField(c, &palette.searchField, palette.searchLabel, palette.searchPlace, ui.WithID(hitCommandPaletteSearch)).
 			Height(36).FillWidth().Shrink(0).NavigationKeys()
 		if count == 0 {
 			palette.listRect = gfx.Rect{}
@@ -225,7 +225,7 @@ func (state *State) declareCommandPaletteBarToggle(c ui.C) {
 		if checked {
 			fill, boxBorder = pal.accent, pal.accent
 		}
-		ui.Stack(c).Size(side, side).Shrink(0).Radius(4).Background(fill).Border(1, boxBorder).Children(func() {
+		ui.Stack(c).Size(side, side).Shrink(0).Radius(cornerPx(4)).Background(fill).Border(1, boxBorder).Children(func() {
 			if checked {
 				ui.Icon(c, lucideIcons[iconCheck]).Size(10, 10).Color(pal.onAccent)
 			}

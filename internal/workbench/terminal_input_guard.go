@@ -196,7 +196,7 @@ func (state *State) terminalOwnedByShell(session *Session) bool {
 		return false
 	}
 	t := session.term
-	return state.modal == modalNone && state.activeSection == sectionTerminal && state.activeSessionID == session.ID && state.broadcast == 0 && !state.transfers.open && state.knownHosts.action == knownHostsActionNone &&
+	return state.modal == modalNone && state.activeSection == sectionTerminal && state.activeSessionID == session.ID && !state.broadcastOn() && !state.transfers.open && state.knownHosts.action == knownHostsActionNone &&
 		t.shell != nil && !t.ended && t.exec == nil && len(t.rx) == 0 &&
 		session.desk == nil && session.containerCommand == "" && !t.screen.Modes().AltScreen && t.screen.KeyboardFlags() == 0 &&
 		!session.transferBusy()
@@ -360,6 +360,9 @@ func (state *State) receiveInputEnvironment(sessionID uint32, environment term.I
 		g.environment = environment
 		if g.repairing {
 			g.repairing = false
+			if state.appAccessBlocked() {
+				return
+			}
 			message, kind := state.messages.TerminalInput.LocaleFailed, components.ToastWarning
 			if environment.Charset == "utf8" {
 				message, kind = state.messages.TerminalInput.LocaleSuccess, components.ToastSuccess

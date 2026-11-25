@@ -67,13 +67,6 @@ func (state *State) linkWatchNeeded() bool {
 			return true
 		}
 	}
-	if state.connectionReconnect != reconnectOff {
-		for index := range state.forwards {
-			if state.forwards[index].reviveTunnel && state.forwards[index].Resume {
-				return true
-			}
-		}
-	}
 	return false
 }
 
@@ -199,5 +192,4 @@ func (state *State) restartReconnects() {
 		}
 		tunnel.retryDue = now
 	}
-	state.reviveTunnelForwards()
 }

@@ -625,7 +625,7 @@ func (state *State) paintCommandsLeadButton(canvas *gfx.Canvas, rect gfx.Rect, i
 		canvas.Rounded(gfx.Rect{
 			X: rect.X - commandsButtonInset, Y: rect.Y - commandsButtonInset,
 			Width: rect.Width + commandsButtonInset*2, Height: rect.Height + commandsButtonInset*2,
-		}, 6, fill)
+		}, cornerPx(6), fill)
 	}
 	color := state.pal.muted
 	if active {
@@ -713,7 +713,7 @@ func (state *State) paintCommandHeading(canvas *gfx.Canvas, rect gfx.Rect, secti
 	if canvas.Hovered() == id {
 		color = state.pal.text
 		if hoverFill {
-			canvas.Rounded(rect, 6, withAlpha(state.pal.surfaceHot, 0.6))
+			canvas.Rounded(rect, cornerPx(6), withAlpha(state.pal.surfaceHot, 0.6))
 		}
 	}
 	icon, hint := iconChevronDown, state.messages.Tools.CommandsCollapse
@@ -1022,7 +1022,7 @@ func (state *State) paintCommandTag(canvas *gfx.Canvas, rect gfx.Rect, entry sni
 		fill = withAlpha(state.pal.accent, 0.16)
 		border = withAlpha(state.pal.accent, 0.55)
 	}
-	canvas.RoundedBorder(rect, commandsChipRadius, 1, border, fill)
+	canvas.RoundedBorder(rect, cornerPx(commandsChipRadius), 1, border, fill)
 	label := gfx.Rect{X: rect.X + commandsTagPaddingX, Y: rect.Y, Width: rect.Width - commandsTagPaddingX*2, Height: rect.Height}
 	canvas.Label(entry.Name, label, gfx.TextStyle{Size: theme.Metrics.FontSizeS, Weight: gfx.WeightMedium, Color: state.pal.text})
 	canvas.HitWithOptions(id, rect, entry.Name, gfx.HitOptions{Role: gfx.RoleButton, Hint: entry.Command})

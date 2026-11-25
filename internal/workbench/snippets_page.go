@@ -639,7 +639,7 @@ func (state *State) declareSnippetsTree(c ui.C, width float32) {
 			form.treeSearchField.Bind(&form.treeSearch)
 			form.treeSearchBound = true
 		}
-		field := ui.TextFieldID(c, hitSnippetTreeSearch, &form.treeSearchField, m.SnippetPickerPlaceholder, m.SnippetPickerPlaceholder).
+		field := ui.TextField(c, &form.treeSearchField, m.SnippetPickerPlaceholder, m.SnippetPickerPlaceholder, ui.WithID(hitSnippetTreeSearch)).
 			Height(30).FillWidth().MarginSides(8, 8, 0, 8)
 		if form.treeFocus == hitSnippetTreeSearch {
 			c.Canvas().RequestFocus(hitSnippetTreeSearch)
@@ -930,7 +930,7 @@ func (state *State) declareSnippetInlineEditor(c ui.C, width float32, narrow boo
 			}
 			inline.nameField.Invalid = inline.error == m.SnippetErrorName
 			ui.FormField(c, &inline.nameForm, m.SnippetName).FillWidth().Height(dialogRowHeight(c.Theme())).Children(func() {
-				field := ui.TextFieldID(c, hitSnippetInlineName, &inline.nameField, m.SnippetName, m.SnippetNamePlaceholder)
+				field := ui.TextField(c, &inline.nameField, m.SnippetName, m.SnippetNamePlaceholder, ui.WithID(hitSnippetInlineName))
 				if field.Changed() {
 					state.applyInlineSnippetEdits()
 				}
@@ -946,7 +946,7 @@ func (state *State) declareSnippetInlineEditor(c ui.C, width float32, narrow boo
 			theme := c.Theme()
 			ui.Column(c).FillWidth().Height(cmdHeight).Shrink(0).Gap(theme.Metrics.GapItem / 2).Children(func() {
 				ui.Text(c, m.SnippetCommand).FontSize(theme.Metrics.FontSizeM).Weight(gfx.WeightMedium).Color(theme.Foreground).LineHeight(theme.Metrics.FontSizeM + 4).Ellipsis().LabelFor(hitSnippetInlineCommand)
-				area := ui.TextAreaID(c, hitSnippetInlineCommand, &inline.commandArea.input, m.SnippetCommand, m.SnippetCommandPlaceholder).FillWidth().Grow(1)
+				area := ui.TextArea(c, &inline.commandArea.input, m.SnippetCommand, m.SnippetCommandPlaceholder, ui.WithID(hitSnippetInlineCommand)).FillWidth().Grow(1)
 				if area.Changed() {
 					state.applyInlineSnippetEdits()
 				}

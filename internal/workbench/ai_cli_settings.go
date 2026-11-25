@@ -205,7 +205,7 @@ func (state *State) aiFormField(c ui.C, id gfx.ID, field *ui.Field, title, place
 	gap := m.GapItem / 2
 	ui.Column(c).Height(height).Children(func() {
 		ui.Text(c, title).FontSize(m.FontSizeM).Weight(gfx.WeightMedium).Color(theme.Foreground).LineHeight(m.FontSizeM + 4).Ellipsis()
-		box := ui.TextFieldID(c, id, field, title, placeholder).Height(m.ControlHeight).MarginSides(gap, 0, 0, 0)
+		box := ui.TextField(c, field, title, placeholder, ui.WithID(id)).Height(m.ControlHeight).MarginSides(gap, 0, 0, 0)
 		ui.FocusBind(box, &state.ai.cfg.formFocus, focus)
 		if hint != "" {
 			ui.Text(c, hint).FontSize(m.FontSizeM).Color(theme.MutedForeground).LineHeight(m.FontSizeM+7).MarginSides(gap, 0, 0, 0)
@@ -223,7 +223,7 @@ func (state *State) aiFormKeyField(c ui.C, id gfx.ID, field *ui.Field, title, pl
 	field.Secure = !cfg.formKeyShown
 	ui.Column(c).Height(height).Children(func() {
 		ui.Text(c, title).FontSize(m.FontSizeM).Weight(gfx.WeightMedium).Color(theme.Foreground).LineHeight(m.FontSizeM + 4).Ellipsis()
-		box := ui.TextFieldID(c, id, field, title, placeholder).Height(m.ControlHeight).MarginSides(gap, 0, 0, 0)
+		box := ui.TextField(c, field, title, placeholder, ui.WithID(id)).Height(m.ControlHeight).MarginSides(gap, 0, 0, 0)
 		ui.FocusBind(box, &state.ai.cfg.formFocus, focus)
 		icon, label := lucideIcons[iconEye], state.messages.ShowSecret
 		if cfg.formKeyShown {

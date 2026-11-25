@@ -106,8 +106,8 @@ func TestRightClickingAFileRowOpensItsMenu(t *testing.T) {
 		}
 	}
 	chooseMenu(t, state, hitSFTPMenuRename)
-	if state.sftpMenu.open || view.dialog != sftpDialogRename {
-		t.Fatalf("after choosing Rename: menu open %v, dialog %v", state.sftpMenu.open, view.dialog)
+	if state.sftpMenu.open || view.dialog != sftpDialogNone || view.rename == nil {
+		t.Fatalf("after choosing Rename: menu open %v, dialog %v, editing %v", state.sftpMenu.open, view.dialog, view.rename != nil)
 	}
 }
 

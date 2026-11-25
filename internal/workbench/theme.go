@@ -246,25 +246,65 @@ type radii struct {
 	surface float32 // a dialog or a large panel
 }
 
-var metrics, radius = workbenchMetrics(1)
+var metrics, radius = workbenchMetrics(1, cornersRounded)
 
 // barTitleSize is the size of the name in a pane's bar. It follows the interface
 // text size, as every text the window paints does.
 var barTitleSize = float32(13)
 
-func workbenchMetrics(scale float32) (gfx.Metrics, radii) {
+func workbenchMetrics(scale float32, corners cornerStyle) (gfx.Metrics, radii) {
 	m := gfx.DefaultMetrics()
 	m.FontSizeS *= scale
 	m.FontSizeM *= scale
 	m.FontSizeL *= scale
+	if corners == cornersSquare {
+		m.RadiusControl, m.RadiusSurface = 0, 0
+	}
 	return m, radii{item: m.RadiusItem(), control: m.RadiusControl, popup: m.RadiusPopup(), surface: m.RadiusSurface}
 }
 
-// applyTextMetrics rebuilds the size tokens every component paints with, for a
-// scale the user has just chosen. Everything that follows the metrics or the
-// tokens derived from them changes in the next paint; nothing cached survives.
-func applyTextMetrics(scale float32) {
-	metrics, radius = workbenchMetrics(scale)
+// cornerPx is a corner the workbench draws at a radius of its own, a card or a
+// chip's box that no framework token names: px as designed, or square when the
+// user chose square corners. Pills, dots and hairlines keep their literal radius;
+// they are shapes, not corners.
+func cornerPx(px float32) float32 {
+	if radius.control == 0 {
+		return 0
+	}
+	return px
+}
+
+// cornerStyle is whether the window's corners are rounded or square. Square
+// zeroes the framework's radius tokens, and everything derived from them with
+// it, so no control, row or card keeps a rounded corner.
+type cornerStyle uint8
+
+const (
+	cornersRounded cornerStyle = iota // the default
+	cornersSquare
+)
+
+// saved is the style as the state file keeps it: the default as nothing.
+func (c cornerStyle) saved() string {
+	if c == cornersSquare {
+		return "square"
+	}
+	return ""
+}
+
+func cornerStyleFromString(value string) cornerStyle {
+	if value == "square" {
+		return cornersSquare
+	}
+	return cornersRounded
+}
+
+// applyMetrics rebuilds the size and corner tokens every component paints with,
+// for a text scale and corner style the user has just chosen. Everything that
+// follows the metrics or the tokens derived from them changes in the next paint;
+// nothing cached survives.
+func applyMetrics(scale float32, corners cornerStyle) {
+	metrics, radius = workbenchMetrics(scale, corners)
 	barTitleSize = 13 * scale
 	aiSizes = aiTextMetricsAt(metrics)
 }

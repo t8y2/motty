@@ -253,7 +253,7 @@ func (state *State) declareSudoSFTPDialog(c ui.C) {
 	dialog.Body(func() {
 		ui.Column(c).Height(sudoDialogBody(c.Theme())).PadSides(2, 4, 0, 4).Children(func() {
 			ui.FormField(c, &dialogState.row, m.SFTPSudoPassword).FillWidth().Height(dialogRowHeight(c.Theme())).Children(func() {
-				ui.TextFieldID(c, hitSudoSFTPPassword, &dialogState.field, m.SFTPSudoPassword, "").
+				ui.TextField(c, &dialogState.field, m.SFTPSudoPassword, "", ui.WithID(hitSudoSFTPPassword)).
 					FillWidth().Secure().AutoFocus()
 			})
 		})

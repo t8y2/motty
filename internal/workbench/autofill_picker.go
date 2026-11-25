@@ -421,7 +421,7 @@ func (state *State) declareAutofillPick(c ui.C, session *Session, bounds gfx.Rec
 		Width:            state.passwordPickWidth(c.Canvas(), pick.candidates),
 		KeepOpenOnAnchor: true,
 	}
-	if ui.PopoverWith(c, anchor, &pick.open, spec, pick.body) {
+	if ui.Popover(c, anchor, &pick.open, spec, pick.body) {
 		pick.open = false
 	}
 }

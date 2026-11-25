@@ -545,7 +545,7 @@ func (state *State) declareLocalProxyMainBody(c ui.C, snapshot localProxySnapsho
 	proxy.portForm.For, proxy.portForm.Description = hitLocalProxyPort, description
 	proxy.portText.Disabled, proxy.portText.Hint = locked, hint
 	ui.FormField(c, &proxy.portForm, m.PortLabel).FillWidth().Height(fieldHeight).Children(func() {
-		ui.TextFieldID(c, hitLocalProxyPort, &proxy.portText, m.PortLabel, strconv.Itoa(int(defaultLocalProxyPort)))
+		ui.TextField(c, &proxy.portText, m.PortLabel, strconv.Itoa(int(defaultLocalProxyPort)), ui.WithID(hitLocalProxyPort))
 	})
 	ui.Wrap(c, m.ScopeWarning).FontSize(theme.Metrics.FontSizeS).Color(pal.muted).LineHeight(18)
 	ui.Wrap(c, m.AccessWarning).FontSize(theme.Metrics.FontSizeS).Color(pal.muted).LineHeight(18)

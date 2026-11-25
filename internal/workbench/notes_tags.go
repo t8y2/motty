@@ -315,13 +315,13 @@ func (s *State) declareNoteTagPopup(c ui.C, n *notesUI) {
 		return
 	}
 	open := true
-	ui.PopoverWith(c, anchor, &open, ui.PopoverSpec{
+	ui.Popover(c, anchor, &open, ui.PopoverSpec{
 		Scope: hitNoteDismiss, DismissID: hitNoteDismiss, ConsumeOutsidePress: true,
 		Side: s.notePopoverSide(), Align: ui.Start, Width: width, InitialFocusID: hitNotePicker,
 	}, func() {
 		ui.Row(c).Gap(6).Children(func() {
 			p.picker.Bind(&v.picker)
-			field := ui.TextFieldID(c, hitNotePicker, &p.picker, s.noteText("Search or add", "搜索或添加"), s.noteText("Search or add", "搜索或添加")).
+			field := ui.TextField(c, &p.picker, s.noteText("Search or add", "搜索或添加"), s.noteText("Search or add", "搜索或添加"), ui.WithID(hitNotePicker)).
 				Height(30).Grow(1)
 			if field.Submitted() && hasNew {
 				c.After(func() { s.click(hitNoteTagSubmit, true) })

@@ -149,23 +149,16 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 		add(settingsEntry{category: category, label: label, description: description, anchor: anchor})
 	}
 	row(settingsGeneral, m.SettingsLanguage, "")
-	row(settingsGeneral, m.SettingsAppearance, "")
-	rowSearch(settingsGeneral, m.SettingsIconColor, m.SettingsIconColorDescription, "logo icon taskbar dock tray")
-	row(settingsGeneral, m.SettingsTabOrientation, m.SettingsTabOrientationDescription)
 	row(settingsGeneral, m.SettingsTabDoubleClick, m.SettingsTabDoubleClickDescription)
 	row(settingsGeneral, m.SettingsTabNumbers, m.SettingsTabNumbersDescription)
 	row(settingsGeneral, m.SettingsTabNumberKeys, m.SettingsTabNumberKeysDescription)
 	row(settingsGeneral, m.SettingsOutputAlerts, m.SettingsOutputAlertsDescription)
-	if state.tabOrientation == tabsVertical {
-		row(settingsGeneral, m.SettingsTabsAutoHide, m.SettingsTabsAutoHideDescription)
-		row(settingsGeneral, m.SettingsTabsGrouping, m.SettingsTabsGroupingDescription)
-	}
-	if state.interfaceFontRowVisible() {
-		row(settingsGeneral, m.SettingsInterfaceFont, "")
-	}
 
 	if state.options.StartAtLogin != nil {
 		row(settingsGeneral, tools.GeneralLogin, tools.GeneralLoginDescription)
+	}
+	if state.options.SetTrayIcon != nil {
+		row(settingsGeneral, tools.GeneralTrayIcon, tools.GeneralTrayIconDescription)
 	}
 	if state.closeActionVisible() {
 		row(settingsGeneral, tools.GeneralClose, tools.GeneralCloseDescription)
@@ -179,6 +172,19 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	}
 	row(settingsGeneral, m.SettingsSidebar, m.SettingsSidebarHint)
 	row(settingsGeneral, tools.DiagnosticsRow, tools.DiagnosticsDescription)
+	row(settingsAppearance, m.SettingsAppearance, "")
+	rowSearch(settingsAppearance, m.SettingsCorners, "", "round square rounded corner radius")
+	rowSearch(settingsAppearance, m.SettingsIconColor, m.SettingsIconColorDescription, "logo icon taskbar dock tray")
+	row(settingsAppearance, m.SettingsTextSize, m.SettingsTextSizeDescription)
+	if state.interfaceFontRowVisible() {
+		row(settingsAppearance, m.SettingsInterfaceFont, "")
+	}
+	row(settingsAppearance, m.SettingsToolbarPosition, m.SettingsToolbarPositionDescription)
+	row(settingsAppearance, m.SettingsTabOrientation, m.SettingsTabOrientationDescription)
+	if state.tabOrientation == tabsVertical {
+		row(settingsAppearance, m.SettingsTabsAutoHide, m.SettingsTabsAutoHideDescription)
+		row(settingsAppearance, m.SettingsTabsGrouping, m.SettingsTabsGroupingDescription)
+	}
 	row(settingsTerminal, m.SettingsTerminalOption, m.SettingsTerminalOptionDescription)
 	row(settingsTerminal, m.SettingsTerminalFontSize, m.SettingsTerminalFontSizeDescription)
 	row(settingsTerminal, m.SettingsTerminalFontFamily, tools.FontPickerDescription)
@@ -266,6 +272,9 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsFiles, tools.FilesTerminalFollow, tools.FilesTerminalFollowDescription)
 	row(settingsFiles, tools.FilesFollowSetup, tools.FilesFollowSetupDescription)
 
+	rowSearch(settingsSecurity, m.AppLock.Protection, m.AppLock.SettingsDescription, "master password lock unlock 锁屏 主密码")
+	row(settingsSecurity, m.AppLock.ChangePassword, "")
+	rowSearch(settingsSecurity, m.AppLock.SystemTitle, m.AppLock.SystemDescription, "Windows Hello Touch ID fingerprint biometric 系统解锁 指纹")
 	row(settingsSecurity, m.SessionLogs.SettingsCaptureRow, m.SessionLogs.SettingsCaptureDescription)
 	row(settingsSecurity, m.SessionLogs.SettingsStorageRow, m.SessionLogs.SettingsStorageDescription)
 	row(settingsSecurity, m.SessionLogs.ClearUnfavorited, m.SessionLogs.ClearUnfavoritedPrompt)

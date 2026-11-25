@@ -91,55 +91,6 @@ func TestBackgroundForwardTunnelWaitingRetryRestartsOnNetworkRecovery(t *testing
 	}
 }
 
-func TestBackgroundForwardTunnelRevivesAfterRetriesExhaustedWhenNetworkRecovers(t *testing.T) {
-	state, world, watcher := linkTestState(t)
-	now := 10 * time.Second
-	state.options.Now = func() time.Duration { return now }
-	state.connectionReconnect = reconnectThree
-	forward := addResumingForward(t, state, "Database")
-
-	state.Click(hitForwardRowToggleList.At(int(forward.ID)))
-	world.conns[0].set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
-	state.Wake()
-
-	// Screen off / sleep: connection drops and all 3 retries fail while network is down.
-	world.conns[0].set(func(status *sshconn.Status) {
-		status.Phase = sshconn.PhaseClosed
-		status.Err = errors.Join(sshconn.ErrDisconnected, errors.New("network lost"))
-	})
-	state.Wake()
-	for _, delay := range []time.Duration{time.Second, 2 * time.Second, 4 * time.Second} {
-		now += delay
-		state.Wake()
-		world.conns[len(world.conns)-1].set(func(status *sshconn.Status) {
-			status.Phase = sshconn.PhaseFailed
-			status.Err = errors.New("network unreachable")
-		})
-		state.Wake()
-	}
-
-	if forward.runner != nil || forward.pending || len(state.forwardTunnels) != 0 {
-		t.Fatalf("forward after exhausting retries = %+v tunnels=%d", *forward, len(state.forwardTunnels))
-	}
-	if _, _, active := watcher.counts(); active != 1 {
-		t.Fatalf("watcher active = %d after exhausting retries, want 1", active)
-	}
-
-	// Screen wakes up and network comes back.
-	dialedBefore := len(world.conns)
-	watcher.fire(linkwatch.Change{At: time.Now(), Up: true})
-	state.Wake()
-	if len(world.conns) != dialedBefore+1 || !forward.pending || len(state.forwardTunnels) != 1 {
-		t.Fatalf("after network recovery: dials=%d want %d, forward=%+v tunnels=%d",
-			len(world.conns), dialedBefore+1, *forward, len(state.forwardTunnels))
-	}
-	world.conns[len(world.conns)-1].set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
-	state.Wake()
-	if forward.runner == nil || forward.pending {
-		t.Fatalf("forward did not resume after tunnel reconnected: %+v", *forward)
-	}
-}
-
 func TestSessionForwardRevivesAfterRetriesExhaustedWhenNetworkRecovers(t *testing.T) {
 	state, world, watcher := linkTestState(t)
 	now := 10 * time.Second
@@ -253,7 +204,7 @@ func TestLinkChangeDispatchesThroughPostWhenAvailable(t *testing.T) {
 	waitForVerifies(t, fake, 1)
 }
 
-func TestTurningReconnectOffClearsRevivingForwardAndStopsWatcher(t *testing.T) {
+func TestTurningReconnectOffStopsAWaitingTunnelAndTheWatcher(t *testing.T) {
 	state, world, watcher := linkTestState(t)
 	now := 10 * time.Second
 	state.options.Now = func() time.Duration { return now }
@@ -286,7 +237,7 @@ func TestTurningReconnectOffClearsRevivingForwardAndStopsWatcher(t *testing.T) {
 		t.Fatalf("watcher after turning reconnect off: starts=%d stops=%d, want 1/1", starts, stops)
 	}
 	watcher.waitInactive(t)
-	if forward.reviveTunnel {
-		t.Fatal("reviveTunnel remained set after turning reconnect off")
+	if len(state.forwardTunnels) != 0 {
+		t.Fatalf("tunnels after turning reconnect off = %d, want 0", len(state.forwardTunnels))
 	}
 }

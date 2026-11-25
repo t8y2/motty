@@ -68,12 +68,12 @@ func (f *dialogField) declare(c ui.C, state *State, editor *text.Editor, spec di
 		metrics := theme.Metrics
 		ui.Column(c).FillWidth().Height(spec.Height).Shrink(0).PadSides(0, 0, dialogRowGap, 0).Gap(metrics.GapItem / 2).Children(func() {
 			ui.Text(c, spec.Label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(theme.Foreground).LineHeight(metrics.FontSizeM + 4).Ellipsis().LabelFor(spec.ID)
-			f.box = ui.TextAreaID(c, spec.ID, &f.input, spec.Label, spec.Placeholder).FillWidth().Grow(1)
+			f.box = ui.TextArea(c, &f.input, spec.Label, spec.Placeholder, ui.WithID(spec.ID)).FillWidth().Grow(1)
 		})
 		return
 	}
 	ui.FormField(c, &f.row, spec.Label).FillWidth().Height(spec.Height).Children(func() {
-		box := ui.TextFieldID(c, spec.ID, &f.input, spec.Label, spec.Placeholder)
+		box := ui.TextField(c, &f.input, spec.Label, spec.Placeholder, ui.WithID(spec.ID))
 		f.box = box
 		if spec.Secret {
 			icon, name := lucideIcons[iconEye], state.messages.ShowSecret
@@ -185,6 +185,6 @@ func (a *dialogArea) declare(c ui.C, id gfx.ID, editor *text.Editor, label, plac
 	metrics := theme.Metrics
 	ui.Column(c).FillWidth().Height(height).Shrink(0).Gap(metrics.GapItem / 2).Children(func() {
 		ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(theme.Foreground).LineHeight(metrics.FontSizeM + 4).Ellipsis().LabelFor(id)
-		ui.TextAreaID(c, id, &a.input, label, placeholder).FillWidth().Grow(1)
+		ui.TextArea(c, &a.input, label, placeholder, ui.WithID(id)).FillWidth().Grow(1)
 	})
 }

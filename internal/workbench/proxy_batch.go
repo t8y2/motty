@@ -289,7 +289,7 @@ func (state *State) declareProxyBatchDialog(c ui.C) {
 					dialog.search.Bind(&dialog.query)
 					dialog.searchBound = true
 				}
-				ui.TextFieldID(c, hitProxyBatchSearch, &dialog.search, "", messages.ProxyBatchSelectPlaceholder).Grow(1)
+				ui.TextField(c, &dialog.search, "", messages.ProxyBatchSelectPlaceholder, ui.WithID(hitProxyBatchSearch)).Grow(1)
 				if dialogButton(c, messages.ProxyBatchCheckAll, components.ButtonSecondary, false).Clicked() {
 					state.batchCheckAllEligible()
 				}

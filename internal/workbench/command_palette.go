@@ -201,12 +201,13 @@ func (state *State) rebuildCommandPalette() {
 		palette.add(messages.Completion.Title, hitCompletionOpen)
 		palette.add(messages.ConnRetry, hitConnRetry)
 		palette.add(messages.ConnExportLog, hitConnExport)
-		if state.paneInSplit(state.activeSessionID) {
-			label := messages.Tools.BroadcastStart
-			if state.broadcasting(state.activeSessionID) {
-				label = messages.Tools.BroadcastStop
+		if state.broadcastOn() {
+			palette.add(messages.Tools.BroadcastStop, hitBroadcastTab)
+		} else {
+			if state.paneInSplit(state.activeSessionID) {
+				palette.add(messages.Tools.BroadcastStart, hitBroadcastTab)
 			}
-			palette.add(label, hitBroadcast)
+			palette.add(messages.Tools.BroadcastAllStart, hitBroadcastAll)
 		}
 		for index, entry := range state.snippets.list {
 			palette.addDetailed(fmt.Sprintf(messages.Tools.SnippetPaletteFmt, entry.Name), snippetDetail(&entry), hitSnippetSendList.At(index))

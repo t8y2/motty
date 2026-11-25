@@ -36,6 +36,7 @@ func (s *nullSink) Fill(x, y, width, height int, _, _, _ byte) { s.inside(x, y, 
 func (s *nullSink) Bell()                                      {}
 func (s *nullSink) ServerText(string)                          {}
 func (s *nullSink) Flush()                                     {}
+func (s *nullSink) Cursor(int, int, int, int, []byte)          {}
 
 type discardConn struct{ net.Conn }
 

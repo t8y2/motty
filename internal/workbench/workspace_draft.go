@@ -723,7 +723,7 @@ func (state *State) declareWorkspaceDraft(c ui.C) {
 				ui.Column(c).Height(60).MarginSides(0, 0, 8, 0).Children(func() {
 					ui.Text(c, m.WorkspaceDraftName).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).
 						Color(theme.Foreground).LineHeight(metrics.FontSizeM + 4).Ellipsis()
-					ui.TextFieldID(c, hitWorkspaceDraftName, &draft.nameField, m.WorkspaceDraftName, m.WorkspaceDraftNamePlaceholder).
+					ui.TextField(c, &draft.nameField, m.WorkspaceDraftName, m.WorkspaceDraftNamePlaceholder, ui.WithID(hitWorkspaceDraftName)).
 						Height(metrics.ControlHeight).MarginSides(gap, 0, 0, 0)
 				})
 			}
@@ -845,7 +845,7 @@ func (state *State) declareWorkspaceDraftPreview(c ui.C, width float32) {
 // list below it.
 func (state *State) declareWorkspaceDraftHostPane(c ui.C, width, paneHeight float32) {
 	draft, m := &state.workspaceDraft, state.messages
-	ui.TextFieldID(c, hitWorkspaceDraftSearch, &draft.queryField, m.WorkspaceDraftHostSearch, m.WorkspaceDraftHostSearch).
+	ui.TextField(c, &draft.queryField, m.WorkspaceDraftHostSearch, m.WorkspaceDraftHostSearch, ui.WithID(hitWorkspaceDraftSearch)).
 		Icon(icons.Search).Height(34).MarginSides(0, 0, 12, 0)
 	state.adoptWSLDistros() // the distributions join the list when wsl.exe answers
 	rows := state.workspaceDraftRows()
@@ -936,16 +936,21 @@ func (state *State) declareWorkspaceDraftRow(row ui.ListRow) {
 	id := hitWorkspaceDraftHostList.At(r.hostIndex)
 	row.Element.Height(height).MarginSides(0, 0, 0, workspaceDraftHostIndent).
 		HitWith(id, host.Label, gfx.HitOptions{Role: gfx.RoleCheckbox, Checked: selected, Disabled: disabled}).
-		Draw(func(d *ui.DrawContext) { state.paintWorkspaceDraftHost(d, host, id, selected, disabled, configurable) }).
+		Draw(func(d *ui.DrawContext) { state.paintWorkspaceDraftHost(d, host, id, selected, disabled) }).
 		Children(func() {
 			ui.Column(c).FillWidth().Children(func() {
 				head := ui.Row(c).Height(56).FillWidth().Items(ui.Center)
 				head.Children(func() {
-					ui.Slot(c).Grow(1)
 					if selected && workspaceCommandHost(host) {
-						ui.Button(c, m.WorkspaceCommandField).XSmall().Outline().Shrink(0).
-							Hit(hitWorkspaceCommandEdit.At(int(host.ID)), m.WorkspaceCommandField).
-							Size(90, 26).MarginSides(0, 44, 0, 0)
+						ui.Row(c).Grow(1).MinWidth(0).Height(24).MarginSides(4, 8, 28, 46).
+							Items(ui.Center).Gap(8).Children(func() {
+							ui.Text(c, host.Label).FontSize(13).Weight(gfx.WeightSemibold).Color(state.pal.text).
+								Ellipsis().Shrink(1).MinWidth(0)
+							ui.Button(c, m.WorkspaceCommandField).XSmall().Outline().Height(24).Shrink(0).
+								Hit(hitWorkspaceCommandEdit.At(int(host.ID)), m.WorkspaceCommandField)
+						})
+					} else {
+						ui.Slot(c).Grow(1)
 					}
 					ui.Checkbox(c, state.pageFlag(selected), "").Shrink(0).MarginSides(0, 8, 0, 0).
 						Hit(id, host.Label).Disabled(disabled)
@@ -953,8 +958,8 @@ func (state *State) declareWorkspaceDraftRow(row ui.ListRow) {
 				if configurable {
 					ui.Text(c, m.WorkspaceCommandOrderHint).FontSize(12).Color(state.pal.text).LineHeight(22).
 						Ellipsis().Height(22).Shrink(0).MarginSides(0, 8, 0, 8)
-					ui.TextFieldID(c, hitWorkspaceCommandField.At(int(host.ID)), draft.commandField(host.CatalogID),
-						m.WorkspaceCommandField, m.Tools.LoginCommandPlaceholder).Height(32).MarginSides(8, 8, 0, 8)
+					ui.TextField(c, draft.commandField(host.CatalogID),
+						m.WorkspaceCommandField, m.Tools.LoginCommandPlaceholder, ui.WithID(hitWorkspaceCommandField.At(int(host.ID)))).Height(32).MarginSides(8, 8, 0, 8)
 				}
 			})
 		})
@@ -1039,9 +1044,8 @@ func (state *State) paintWorkspaceDraftGroup(canvas *gfx.Canvas, group workspace
 	monitorLabel(canvas, count, gfx.Rect{X: x + labelWidth + 6, Y: center - 11, Width: countWidth + 4, Height: 22}, 12, pal.faint, gfx.WeightRegular)
 }
 
-// paintWorkspaceDraftHost draws one host row: its background, icon, name and
-// address, and the hint over the command field when it is open.
-func (state *State) paintWorkspaceDraftHost(d *ui.DrawContext, host Host, id gfx.ID, selected, disabled, configurable bool) {
+// paintWorkspaceDraftHost draws the host row's background, icon, name and address.
+func (state *State) paintWorkspaceDraftHost(d *ui.DrawContext, host Host, id gfx.ID, selected, disabled bool) {
 	canvas, bounds, pal := d.Canvas, d.Rect, state.pal
 	header := bounds
 	header.Height = min(header.Height, 56)
@@ -1059,15 +1063,15 @@ func (state *State) paintWorkspaceDraftHost(d *ui.DrawContext, host Host, id gfx
 		canvas.RoundedBorder(header, radius.control, 1.5, pal.accent, background)
 	}
 	state.paintHostCatalogIcon(canvas, host, gfx.Rect{X: header.X + 10, Y: header.Y + 16, Width: 24, Height: 24}, background)
-	color := pal.text
-	if disabled {
-		color = pal.faint
-	}
 	width := max(0, header.Width-86)
-	if selected && workspaceCommandHost(host) {
-		width = max(0, width-100)
+	// A selected SSH host lays out its name together with the command button.
+	if !selected || !workspaceCommandHost(host) {
+		color := pal.text
+		if disabled {
+			color = pal.faint
+		}
+		monitorLabel(canvas, host.Label, gfx.Rect{X: header.X + 46, Y: header.Y + 7, Width: width, Height: 22}, 13, color, gfx.WeightSemibold)
 	}
-	monitorLabel(canvas, elide(canvas, host.Label, 13, gfx.WeightSemibold, width), gfx.Rect{X: header.X + 46, Y: header.Y + 7, Width: width, Height: 22}, 13, color, gfx.WeightSemibold)
 	detail := state.sessionAddress(host)
 	if host.ID == localHostID {
 		detail = state.messages.WorkspaceLocalTerminalHint
@@ -1076,10 +1080,6 @@ func (state *State) paintWorkspaceDraftHost(d *ui.DrawContext, host Host, id gfx
 		}
 	}
 	monitorLabel(canvas, elide(canvas, detail, 12, gfx.WeightRegular, width), gfx.Rect{X: header.X + 46, Y: header.Y + 29, Width: width, Height: 20}, 12, pal.muted.Mix(pal.text, .08*amount), gfx.WeightRegular)
-	if configurable {
-		hint := state.messages.WorkspaceCommandOrderHint
-		monitorLabel(canvas, elide(canvas, hint, 12, gfx.WeightRegular, max(0, bounds.Width-16)), gfx.Rect{X: bounds.X + 8, Y: bounds.Y + 60, Width: max(0, bounds.Width-16), Height: 22}, 12, pal.text, gfx.WeightRegular)
-	}
 }
 
 func (state *State) workspaceDraftKey(event gfx.KeyEvent) gfx.EventResult {

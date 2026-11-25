@@ -371,7 +371,7 @@ func (state *State) declareHighlightDialogBody(c ui.C) {
 		}
 		form.patternText.Invalid = form.dialogError != ""
 		ui.FormField(c, &form.patternForm, m.HighlightPattern).FillWidth().Height(dialogRowHeight(c.Theme())).Children(func() {
-			ui.TextFieldID(c, hitHighlightPattern, &form.patternText, m.HighlightPattern, m.HighlightPatternPlaceholder)
+			ui.TextField(c, &form.patternText, m.HighlightPattern, m.HighlightPatternPlaceholder, ui.WithID(hitHighlightPattern))
 		})
 		state.declareDialogCheck(c, hitHighlightRegex, m.HighlightRegex, form.regex, 11, 0)
 		state.declareDialogCheck(c, hitHighlightCase, m.HighlightCase, form.folded, 12, 0)
@@ -386,7 +386,7 @@ func (state *State) declareHighlightDialogBody(c ui.C) {
 					form.colorValue = state.ruleColor(color)
 				}
 			}
-			ui.ColorPickerID(c, hitHighlightCustomColor, &form.colorPicker, &form.colorValue, m.HighlightCustomColor).
+			ui.ColorPicker(c, &form.colorPicker, &form.colorValue, m.HighlightCustomColor, ui.WithID(hitHighlightCustomColor)).
 				RoundTrigger().TriggerIcon(&icons.Pipette).NoColor(!form.color.IsCustom()).Size(30, 30).
 				PanelLabels(components.ColorPickerLabels{
 					Color: m.HighlightCustomColor, Saturation: state.messages.ColorPickerSV, Hue: state.messages.ColorPickerHue,

@@ -399,8 +399,10 @@ func (state *State) submitHostDialog() {
 			default:
 				state.dialogError = state.hostPasswordSaveError(commitErr)
 			}
+			state.noteKeyLostError(commitErr)
 			return
 		}
+		state.editor.keyLostError = ""
 		// The secret is already in the vault transaction. Say so only after
 		// that call has released the lock, and in the same order as a new host.
 		state.noteOTPCommit(candidate)
@@ -446,8 +448,10 @@ func (state *State) submitHostDialog() {
 		} else {
 			state.dialogError = state.hostPasswordSaveError(commitErr)
 		}
+		state.noteKeyLostError(commitErr)
 		return
 	}
+	state.editor.keyLostError = ""
 	host := candidate
 	state.editor.password, state.editor.passphrase = text.Editor{}, text.Editor{}
 	state.editor.proxyPassword = ""
@@ -732,6 +736,21 @@ func (state *State) appendStatusNote(note string) {
 
 func (state *State) hostPasswordSaveError(err error) string {
 	return fmt.Sprintf(state.messages.VaultSaveFailedFmt, state.vaultErrorText(err))
+}
+
+// noteKeyLostError remembers the error the dialog now shows when the save failed
+// because the vault's key is gone.
+func (state *State) noteKeyLostError(err error) {
+	state.editor.keyLostError = ""
+	if errors.Is(err, vault.ErrKeyLost) {
+		state.editor.keyLostError = state.dialogError
+	}
+}
+
+// isHostDialogKeyLost reports whether the error on screen is the key-lost one,
+// the only one the vault's "forget all" way out answers.
+func (state *State) isHostDialogKeyLost() bool {
+	return state.dialogError != "" && (state.dialogError == state.editor.keyLostError || state.dialogError == state.hostPasswordSaveError(vault.ErrKeyLost))
 }
 
 func (state *State) hostIndex(id uint32) int {

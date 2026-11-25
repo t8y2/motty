@@ -481,7 +481,7 @@ func TestRightClickPastesOnlyWhenChosenAndShiftKeepsTheMenu(t *testing.T) {
 	}
 }
 
-func TestRightClickCopiesSelectionInsteadOfPasting(t *testing.T) {
+func TestRightClickCopiesAndPastesTheSelectionInOnePress(t *testing.T) {
 	state, session, geometry := selectionState()
 	shell := &fakeShell{done: make(chan struct{})}
 	session.term.shell = shell
@@ -490,9 +490,9 @@ func TestRightClickCopiesSelectionInsteadOfPasting(t *testing.T) {
 		session.term.screen.PointAt(term.Position{Row: 0, Column: 0}),
 		session.term.screen.PointAt(term.Position{Row: 0, Column: 4}),
 	)
-	var copied string
-	state.options.SetClipboardText = func(value string) error { copied = value; return nil }
-	state.options.ClipboardText = func() (string, error) { return "paste", nil }
+	clipboard := "paste"
+	state.options.SetClipboardText = func(value string) error { clipboard = value; return nil }
+	state.options.ClipboardText = func() (string, error) { return clipboard, nil }
 	state.terminalRightClickPaste = true
 	x, y := cellPoint(geometry, 0, 8, state.cellWidth, state.cellHeight)
 	click := func(modifiers gfx.Modifiers) {
@@ -500,15 +500,15 @@ func TestRightClickCopiesSelectionInsteadOfPasting(t *testing.T) {
 			Target: terminalTestHit(state, session), X: x, Y: y, Viewport: state.viewport})
 	}
 	click(0)
-	if copied != "hello" || len(shell.input) != 0 || state.terminalMenu.open {
-		t.Fatalf("selected right click: copied=%q input=%q menu=%v", copied, shell.input, state.terminalMenu.open)
+	if clipboard != "hello" || string(shell.input) != "hello" || state.terminalMenu.open {
+		t.Fatalf("selected right click: clipboard=%q input=%q menu=%v", clipboard, shell.input, state.terminalMenu.open)
 	}
 	if session.term.selection.selected {
 		t.Fatal("the copy left the selection behind, so the next right click would copy again instead of pasting")
 	}
 	click(gfx.ModifierShift)
-	if !state.terminalMenu.open || len(shell.input) != 0 {
-		t.Fatal("Shift+right click did not open the menu")
+	if !state.terminalMenu.open || string(shell.input) != "hello" {
+		t.Fatalf("Shift+right click did not open the menu: menu=%v input=%q", state.terminalMenu.open, shell.input)
 	}
 }
 

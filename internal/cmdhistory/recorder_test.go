@@ -410,6 +410,17 @@ func TestNoLineIsOfferedWhereAnythingSecretOrNotTheShellsOwnCouldBe(t *testing.T
 	if line, ok := s.line(); ok {
 		t.Fatalf("with the shell suggesting, line = %q", line)
 	}
+	if line, ok := s.rec.LineAllowingSuggestion(TermScreen{s.screen}); !ok || line != "git " {
+		t.Fatalf("LineAllowingSuggestion() = %q, %v, want %q, true", line, ok, "git ")
+	}
+	if line, prompt, ok := s.rec.LinePromptAllowingSuggestion(TermScreen{s.screen}); !ok || line != "git " || prompt != "$" {
+		t.Fatalf("LinePromptAllowingSuggestion() = %q, %q, %v, want %q, %q, true", line, prompt, ok, "git ", "$")
+	}
+	// Moving left into normal text is still not at the end of the line.
+	s.out("checkout\x1b[8D")
+	if line, ok := s.rec.LineAllowingSuggestion(TermScreen{s.screen}); ok {
+		t.Fatalf("with normal text after cursor, LineAllowingSuggestion() = %q", line)
+	}
 	// A full-screen program owns the screen.
 	s = newShell(t, 80)
 	s.prompt("$ ")

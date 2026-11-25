@@ -877,7 +877,7 @@ func (state *State) declareSessionLogsWorkspace(c ui.C) {
 				view.searchField.Bind(&view.search)
 				view.searchBound = true
 			}
-			ui.TextFieldID(c, hitSessionLogsSearch, &view.searchField, m.Search, m.SearchPlaceholder).
+			ui.TextField(c, &view.searchField, m.Search, m.SearchPlaceholder, ui.WithID(hitSessionLogsSearch)).
 				Icon(lucideIcons[iconSearch]).Size(searchWidth, toolbarHeight)
 			if !separateFilters {
 				ui.Spacer(c)

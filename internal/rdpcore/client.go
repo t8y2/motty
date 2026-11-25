@@ -2046,16 +2046,18 @@ func (c *Client) sendDataPDU(pduType2 uint8, payload []byte) error {
 }
 
 // handleFinalization performs the RDP connection finalization sequence.
-// Matches MS-RDPBCGR 1.3.1.1 and the proven sequence from working implementations:
-//  1. Send Synchronize, Control Cooperate, Control Request Control
-//  2. Read 3 server responses (Synchronize, Control Cooperate, Control Granted)
+// Matches MS-RDPBCGR 1.3.1.1 and what mstsc and FreeRDP do:
+//  1. Send Synchronize, Control Cooperate, Control Request Control and Font List
+//     back to back, without waiting for the server in between
+//  2. Read the server's Synchronize, Control Cooperate, Control Granted and Font Map
 //  3. Send Input Synchronize
-//  4. Send Font List
-//  5. Read Font Map response
+//
+// The client must not hold the Font List back until the server has answered:
+// acceptors such as IronRDP answer nothing before they have the Font List and
+// would wait on each other until the server drops the connection.
 func (c *Client) handleFinalization() error {
 	c.log.LogAttrs(context.Background(), slog.LevelInfo, "connection finalization")
 
-	// Phase 1: Send 3 PDUs
 	if err := c.sendDataPDU(pdu.PDUType2Synchronize, pdu.EncodeSynchronize(c.userChannelID)); err != nil {
 		return fmt.Errorf("%w: sending synchronize: %v", ErrFinalizationFailed, err)
 	}
@@ -2065,18 +2067,13 @@ func (c *Client) handleFinalization() error {
 	if err := c.sendDataPDU(pdu.PDUType2Control, pdu.EncodeControl(pdu.ControlRequestControl)); err != nil {
 		return fmt.Errorf("%w: sending control request: %v", ErrFinalizationFailed, err)
 	}
+	if err := c.sendDataPDU(pdu.PDUType2FontList, pdu.EncodeFontList()); err != nil {
+		return fmt.Errorf("%w: sending font list: %v", ErrFinalizationFailed, err)
+	}
 
-	c.log.LogAttrs(context.Background(), slog.LevelDebug, "sent 3 finalization PDUs, reading server responses")
+	c.log.LogAttrs(context.Background(), slog.LevelDebug, "sent 4 finalization PDUs, reading server responses")
 
-	// Phase 2: Read 3 server responses (Synchronize, Control, Control)
-	const (
-		gotSync    = 1 << 0
-		gotControl = 1 << 1
-		phase2All  = gotSync | gotControl
-	)
-	var received uint8
-
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 16; i++ {
 		channelID, userData, err := c.readDecryptedPDU()
 		if err != nil {
 			return fmt.Errorf("%w: reading server finalization PDU: %v", ErrFinalizationFailed, err)
@@ -2108,74 +2105,13 @@ func (c *Client) handleFinalization() error {
 		switch sdHdr.PDUType2 {
 		case pdu.PDUType2Synchronize:
 			c.logPdu.LogAttrs(context.Background(), slog.LevelDebug, "received server Synchronize")
-			received |= gotSync
 		case pdu.PDUType2Control:
 			c.logPdu.LogAttrs(context.Background(), slog.LevelDebug, "received server Control")
-			received |= gotControl
-		case pdu.PDUType2SetErrorInfo:
-			errCode := uint32(0)
-			if len(sdPayload) >= 4 {
-				errCode = binary.LittleEndian.Uint32(sdPayload[:4])
-			}
-			if errCode != 0 {
-				return fmt.Errorf("%w: server error info: 0x%08X (%s)", ErrFinalizationFailed, errCode, pdu.ErrorInfoName(errCode))
-			}
-			c.logPdu.LogAttrs(context.Background(), slog.LevelDebug, "received Set Error Info", util.Hex8("code", errCode))
-		default:
-			c.logPdu.LogAttrs(context.Background(), slog.LevelDebug, "finalization phase2: ignoring pduType2", slog.Int("pduType2", int(sdHdr.PDUType2)))
-		}
-
-		if received&phase2All == phase2All {
-			break
-		}
-	}
-	if received&phase2All != phase2All {
-		return fmt.Errorf("%w: did not receive Sync+Control responses (got mask=0x%02X)", ErrFinalizationFailed, received)
-	}
-
-	// Phase 3: Send Input Synchronize (before fonts, per MS-RDPBCGR 1.3.1.1)
-	c.sendInputSynchronize()
-
-	// Phase 4: Send Font List
-	if err := c.sendDataPDU(pdu.PDUType2FontList, pdu.EncodeFontList()); err != nil {
-		return fmt.Errorf("%w: sending font list: %v", ErrFinalizationFailed, err)
-	}
-
-	c.log.LogAttrs(context.Background(), slog.LevelDebug, "sent input sync + font list, reading font map")
-
-	// Phase 5: Read Font Map response
-	for i := 0; i < 10; i++ {
-		channelID, userData, err := c.readDecryptedPDU()
-		if err != nil {
-			return fmt.Errorf("%w: reading font map: %v", ErrFinalizationFailed, err)
-		}
-
-		if channelID != c.ioChannelID {
-			c.handleVirtualChannelData(channelID, userData)
-			continue
-		}
-
-		_, scRest, err := pdu.DecodeShareControlHeader(c.logPdu, userData)
-		if err != nil {
-			return fmt.Errorf("%w: %v", ErrFinalizationFailed, err)
-		}
-
-		sdHdr, sdPayload, err := pdu.DecodeShareDataHeader(c.logPdu, scRest)
-		if err != nil {
-			return fmt.Errorf("%w: %v", ErrFinalizationFailed, err)
-		}
-
-		if sdHdr.CompressedType&mppc.FlagCompressed != 0 {
-			if compType := sdHdr.CompressedType & 0x0F; compType <= mppc.TypeRDP5 {
-				if decompressed, derr := c.mppcDecomp.Decompress(sdPayload, sdHdr.CompressedType); derr == nil {
-					sdPayload = decompressed
-				}
-			}
-		}
-
-		switch sdHdr.PDUType2 {
 		case pdu.PDUType2FontMap:
 			c.logPdu.LogAttrs(context.Background(), slog.LevelDebug, "received server Font Map")
+			// The server accepts input once it has answered; this is the first
+			// point at which the lock-key state is certain to be applied.
+			c.sendInputSynchronize()
 			c.log.LogAttrs(context.Background(), slog.LevelInfo, "finalization complete")
 			return nil
 		case pdu.PDUType2SetErrorInfo:
@@ -2186,8 +2122,9 @@ func (c *Client) handleFinalization() error {
 			if errCode != 0 {
 				return fmt.Errorf("%w: server error info: 0x%08X (%s)", ErrFinalizationFailed, errCode, pdu.ErrorInfoName(errCode))
 			}
+			c.logPdu.LogAttrs(context.Background(), slog.LevelDebug, "received Set Error Info", util.Hex8("code", errCode))
 		default:
-			c.logPdu.LogAttrs(context.Background(), slog.LevelDebug, "finalization phase5: ignoring pduType2", slog.Int("pduType2", int(sdHdr.PDUType2)))
+			c.logPdu.LogAttrs(context.Background(), slog.LevelDebug, "finalization: ignoring pduType2", slog.Int("pduType2", int(sdHdr.PDUType2)))
 		}
 	}
 

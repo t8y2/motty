@@ -130,6 +130,7 @@ func (state *State) declareSFTPPanel(c ui.C) {
 	pal, messages := state.pal, state.messages
 	folder, local := view.active(), view.local
 	session := s.session
+	view.reconcileSFTPRename(c.Canvas(), !local && state.modal == modalNone)
 
 	// What the page shows decides its parts. The selection bar and the file
 	// actions are as tall as what they hold; the list takes what they leave.
@@ -165,13 +166,13 @@ func (state *State) declareSFTPPanel(c ui.C) {
 		headerTools = append(headerTools, barTool{id: id, icon: glyph, hint: hint, disabled: disabled, style: toolStyle})
 	}
 	if local {
-		addHeader(hitSFTPNewFile, iconFile, messages.SFTPNewFile, view.localBusy)
-		addHeader(hitSFTPNewDirectory, iconFolderPlus, messages.SFTPNewDirectory, view.localBusy)
+		addHeader(hitSFTPNewFile, iconSFTPNewFile, messages.SFTPNewFile, view.localBusy)
+		addHeader(hitSFTPNewDirectory, iconSFTPNewDirectory, messages.SFTPNewDirectory, view.localBusy)
 	} else {
-		addHeader(hitSFTPUpload, iconUpload, messages.SFTPUpload, view.busy)
-		addHeader(hitSFTPUploadDirectory, iconFolderUp, messages.SFTPUploadDirectory, view.busy)
-		addHeader(hitSFTPNewFile, iconFile, messages.SFTPNewFile, view.busy)
-		addHeader(hitSFTPNewDirectory, iconFolderPlus, messages.SFTPNewDirectory, view.busy)
+		addHeader(hitSFTPUpload, iconSFTPUpload, messages.SFTPUpload, view.busy)
+		addHeader(hitSFTPUploadDirectory, iconSFTPUploadDirectory, messages.SFTPUploadDirectory, view.busy)
+		addHeader(hitSFTPNewFile, iconSFTPNewFile, messages.SFTPNewFile, view.busy)
+		addHeader(hitSFTPNewDirectory, iconSFTPNewDirectory, messages.SFTPNewDirectory, view.busy)
 		addHeader(hitSFTPNewLink, iconLink, messages.Tools.TipNewLink, view.busy)
 	}
 	if !view.localOnly {
@@ -252,7 +253,7 @@ func (state *State) declareSFTPPanel(c ui.C) {
 		// fit. The bookmark controls close the row on the right: the list of the
 		// folders kept, and a star for this one.
 		ui.Row(c).Height(sftpButton).Shrink(0).Gap(4).Items(ui.Center).MarginSides(6, 0, 0, 0).Children(func() {
-			icon(sftpButton, hitSFTPUp, iconArrowUp, messages.SFTPUp, !local && view.busy || folder.path == "/" || folder.path == "", iconButtonQuiet)
+			icon(sftpButton, hitSFTPUp, iconSFTPUp, messages.SFTPUp, !local && view.busy || folder.path == "/" || folder.path == "", iconButtonQuiet)
 			height := float32(24)
 			if state.sftpPathVisible(folder) {
 				height = sftpButton
@@ -382,7 +383,7 @@ func (state *State) declareSFTPPanel(c ui.C) {
 					if view.localOnly {
 						add(hitSFTPInsertPath, iconTerminal, messages.SFTPInsertPath, session.term == nil || session.term.shell == nil)
 					} else if local {
-						add(hitSFTPSend, iconUpload, messages.Tools.SendToServer, false)
+						add(hitSFTPSend, iconSFTPUpload, messages.Tools.SendToServer, false)
 					} else {
 						add(hitSFTPDownload, iconDownload, messages.SFTPDownload, false)
 						if view.lfolder.path != "" {
@@ -673,6 +674,9 @@ func (state *State) declareSFTPListRow(row ui.ListRow, folder *sftpFolder, view 
 		state.declareSFTPRowIcon(c, entry, tint)
 		label := ui.Row(c).Grow(1).Clip().Items(ui.Center).MarginSides(0, 0, 0, 8)
 		label.Children(func() {
+			if !view.local && !result && state.declareSFTPRename(c, view, row.ID, entry.entry) {
+				return
+			}
 			if result {
 				state.declareSFTPResultLabel(c, entry, nameColor, rowWidth)
 				return
@@ -726,7 +730,7 @@ func (state *State) declareSFTPListRow(row ui.ListRow, folder *sftpFolder, view 
 		}
 	}
 	box := row.Element.Height(sftpRowHeight).Shrink(0).Width(rowWidth).Items(ui.Center)
-	if !result && state.sftpPanelCanDrag(view, folder) {
+	if view.rename == nil && !result && state.sftpPanelCanDrag(view, folder) {
 		drag := state.ensureSFTPPanelDrag(view)
 		box = box.DragSource(&drag.state)
 		if entry.entry.IsDir() && !entry.entry.LinkBroken {
@@ -829,11 +833,23 @@ func (state *State) declareSFTPAddressWithDrag(c ui.C, folder *sftpFolder, field
 				Border(1, theme.Input).Radius(theme.Metrics.RadiusControl).
 				HitWith(fieldID, label, gfx.HitOptions{Role: gfx.RoleTextField})
 		}
-		if folder.pathUIEditor != editor {
-			folder.pathUI.Bind(editor)
-			folder.pathUIEditor = editor
-		}
-		return ui.TextFieldID(c, fieldID, &folder.pathUI, label, placeholder).Height(32).Grow(1)
+		// Paint with PlatformEditing so long directory paths scroll horizontally
+		// with the caret and native pointer hit-testing stays aligned with the
+		// visible text.
+		value := editor.String()
+		theme := state.Theme()
+		return ui.Slot(c).Height(32).Grow(1).Draw(func(d *ui.DrawContext) {
+			focused := d.Canvas.Focused() == fieldID
+			components.PaintInput(d.Canvas, theme, d.Rect, components.InputSnapshot{
+				ID:              fieldID,
+				Label:           label,
+				Value:           value,
+				Placeholder:     placeholder,
+				Hint:            placeholder,
+				Focused:         focused,
+				PlatformEditing: focused && value != "",
+			})
+		})
 	}
 	return state.declareSFTPBreadcrumbs(c, folder, editID, links, width, placeholder, drag)
 }
@@ -960,7 +976,7 @@ func (state *State) declareSFTPEditor(c ui.C) {
 		ui.Text(c, messages.SFTPEditSafety).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(22).MarginSides(10, 0, 6, 0)
 		view.editField.Bind(&view.editEditor)
 		view.editField.Disabled = view.busy
-		editor.textarea = ui.TextAreaID(c, hitSFTPEditor, &view.editField, messages.SFTPEditLabel, "").Grow(1).MinHeight(64)
+		editor.textarea = ui.TextArea(c, &view.editField, messages.SFTPEditLabel, "", ui.WithID(hitSFTPEditor)).Grow(1).MinHeight(64)
 		ui.Row(c).Height(28).Shrink(0).Gap(8).Items(ui.Center).MarginSides(14, 0, 0, 0).Children(func() {
 			if view.busy {
 				ui.Spinner(c).Size(16, 16)
@@ -1012,11 +1028,6 @@ func (state *State) declareSFTPDialog(c ui.C, viewport gfx.Rect, view *sftpView)
 		title = messages.SFTPNewDirectoryTitle
 		fieldLabel = messages.SFTPDirectoryName
 		submitLabel = messages.SFTPCreateDirectory
-	case sftpDialogRename:
-		title = messages.SFTPRenameTitle
-		description = messages.SFTPRenameDescription
-		fieldLabel = messages.SFTPNewName
-		submitLabel = messages.SFTPRenameSubmit
 	case sftpDialogMove:
 		title = messages.SFTPMoveTitle
 		description = messages.SFTPMoveDescription
@@ -1173,7 +1184,7 @@ func (state *State) declareSFTPChmodBit(c ui.C, id gfx.ID, label string, checked
 			border.Alpha *= .4
 			ink.Alpha *= .4
 		}
-		d.Canvas.Rounded(box, 3, fill)
+		d.Canvas.Rounded(box, cornerPx(3), fill)
 		d.Canvas.RoundedOutline(box, 3, 1, border)
 		if checked {
 			d.Canvas.DrawIcon(lucideIcons[iconCheck], gfx.Rect{X: box.X + 2, Y: box.Y + 2, Width: 12, Height: 12}, ink)
@@ -1203,7 +1214,7 @@ func (state *State) declareSFTPDialogField(c ui.C, view *sftpView, i int, label 
 		row.Error = view.dialogError
 	}
 	ui.FormField(c, row, label).FillWidth().Height(dialogRowHeight(c.Theme())).Shrink(0).Children(func() {
-		ui.TextFieldID(c, id, &view.dialogTexts[i], label, "")
+		ui.TextField(c, &view.dialogTexts[i], label, "", ui.WithID(id))
 	})
 }
 
@@ -1233,7 +1244,7 @@ func (state *State) declareSFTPOwnershipFields(c ui.C, view *sftpView) {
 		}
 		var input ui.Box
 		ui.FormField(c, row, labels[field]).FillWidth().Height(dialogRowHeight(c.Theme())).Shrink(0).Children(func() {
-			input = ui.TextFieldID(c, id, &view.chownTexts[field], labels[field], "").Height(32)
+			input = ui.TextField(c, &view.chownTexts[field], labels[field], "", ui.WithID(id)).Height(32)
 			// A typed change opens the suggestions; the field reports an edit,
 			// and a suggestion the program wrote is not one.
 			if input.Changed() && editor.String() != view.ownership.lastQuery[field] {
@@ -1270,7 +1281,7 @@ func (state *State) declareSFTPOwnershipPopup(c ui.C, view *sftpView, field int,
 		Scope: dialogScope, DismissID: hitSFTPChownDismiss,
 		Side: components.PopoverBottom, Align: ui.Start, Offset: 8, Width: width,
 	}
-	ui.PopoverWith(c, anchor, &view.ownership.open[field], spec, func() {
+	ui.Popover(c, anchor, &view.ownership.open[field], spec, func() {
 		ui.Column(c).Gap(2).Children(func() {
 			if len(matches) == 0 {
 				ui.Text(c, messages.SFTPOwnershipNoMatches).FontSize(metrics.FontSizeS).

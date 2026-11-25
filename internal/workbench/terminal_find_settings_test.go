@@ -107,6 +107,10 @@ func TestTerminalFindSettingsSharedControlsAndPersistence(t *testing.T) {
 	}
 
 	slider := hit(hitFindSettingsOpacity)
+	resetBtn := hit(hitFindSettingsReset)
+	if right := slider.X + slider.Width + 8 + 36; right > resetBtn.X+resetBtn.Width+1 {
+		t.Fatalf("popover opacity row overflows right edge: opacityRight=%.1f resetRight=%.1f", right, resetBtn.X+resetBtn.Width)
+	}
 	must(view.Driver().Press(slider.X+slider.Width/2, slider.Y+slider.Height/2, gfx.PointerButtonPrimary))
 	must(view.Driver().Move(slider.X-20, slider.Y+slider.Height/2))
 	must(view.Driver().Release(slider.X-20, slider.Y+slider.Height/2, gfx.PointerButtonPrimary))
@@ -131,6 +135,11 @@ func TestTerminalFindSettingsSharedControlsAndPersistence(t *testing.T) {
 	must(view.Rest())
 	click(hitSettingsResultList.At(0))
 	screenshot("find-settings-page")
+	pageSlider := hit(hitFindSettingsOpacity)
+	pageReset := hit(hitFindSettingsReset)
+	if right := pageSlider.X + pageSlider.Width + 8 + 36; right > pageReset.X+pageReset.Width+1 {
+		t.Fatalf("settings page opacity row overflows right edge: opacityRight=%.1f resetRight=%.1f", right, pageReset.X+pageReset.Width)
+	}
 	clickLabel(gfx.RoleButton, state.messages.FindSettings.Background)
 	clickLabel(gfx.RoleTextField, state.messages.FieldColorCustom)
 	must(view.Keys("Cmd+A"))

@@ -1,0 +1,19 @@
+# Close the first window-bar tab (through the running-session confirmation) and look at the bar after. Window-relative logical coordinates assume the 1000-wide placement below.
+place 200 100 2000 1300
+focus
+sleep 1500
+newlocal
+sleep 800
+newlocal
+sleep 800
+clickw 100 18
+sleep 400
+shot tab-glide-before
+clickw 202 18
+sleep 500
+shot tab-glide-dialog
+mark glide
+clickw 690 404
+sleep 700
+mark glide-end
+shot tab-glide-after

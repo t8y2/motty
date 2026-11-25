@@ -40,6 +40,7 @@ var (
 
 var (
 	hitSettingsLoginToggle       = tree.ID(launchHits, "settings-login")
+	hitSettingsTrayIconToggle    = tree.ID(launchHits, "settings-tray-icon")
 	hitSettingsUpdateCheck       = tree.ID(launchHits, "settings-update-check")
 	hitSettingsUpdateDownload    = tree.ID(launchHits, "settings-update-download")
 	hitUpdateNoticeAction        = tree.ID(launchHits, "update-notice-action")
@@ -98,6 +99,9 @@ func (state *State) Launch(args []string) {
 	args = append([]string(nil), args...)
 	state.aiPost(func(state *State) {
 		state.launchBacklog = append(state.launchBacklog, args)
+		if state.appAccessBlocked() && state.options.Raise != nil && !slices.Contains(args, "--background") {
+			state.options.Raise()
+		}
 		state.runLaunches()
 	})
 }
@@ -126,7 +130,7 @@ func (state *State) runLaunches() bool {
 }
 
 func (state *State) launchReady() bool {
-	return state.modal == modalNone && state.knownHosts.action == knownHostsActionNone
+	return !state.appAccessBlocked() && state.modal == modalNone && state.knownHosts.action == knownHostsActionNone
 }
 
 func (state *State) openLaunch(args []string) {
@@ -313,6 +317,12 @@ func (state *State) paintLoginSetting(page *settingsPage) {
 	page.toggleRow(m.GeneralLogin, m.GeneralLoginDescription, state.loginOn, hitSettingsLoginToggle)
 }
 
+// paintTrayIconSetting is the status-area icon row, under start at login.
+func (state *State) paintTrayIconSetting(page *settingsPage) {
+	m := state.messages.Tools
+	page.toggleRow(m.GeneralTrayIcon, m.GeneralTrayIconDescription, !state.trayIconOff, hitSettingsTrayIconToggle)
+}
+
 // paintUpdateRows declares the update controls as rows of a settings card. They
 // are the About page's, beside the version facts they act on.
 func (state *State) paintUpdateRows(page *settingsPage) {
@@ -356,6 +366,12 @@ func (state *State) clickLaunchSettings(id gfx.ID) bool {
 		} else {
 			state.loginOn = want
 		}
+	case hitSettingsTrayIconToggle:
+		state.trayIconOff = !state.trayIconOff
+		if state.options.SetTrayIcon != nil {
+			state.options.SetTrayIcon(!state.trayIconOff)
+		}
+		state.save()
 	case hitSettingsUpdateStartToggle:
 		state.updateAtStart = !state.updateAtStart
 		if state.updateAtStart {

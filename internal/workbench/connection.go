@@ -250,6 +250,9 @@ type Options struct {
 	// area, which is what makes "stay there on close" a choice. Nil, or false,
 	// hides the setting.
 	StatusArea func() bool
+	// SetTrayIcon shows or hides the application's status-area icon, the choice
+	// the General settings offer beside starting at login. Nil hides the setting.
+	SetTrayIcon func(visible bool)
 	// CheckUpdate asks the release feed for the newest version. Nil asks GitHub.
 	CheckUpdate func() (update.Release, error)
 	// Updater installs a newer release over the running program. Nil, or a nil
@@ -591,6 +594,7 @@ const (
 	modalPasteReview
 	modalIconColorPicker
 	modalAgentHosts
+	modalAppLock
 )
 
 // tone colors a session's headline.
@@ -618,6 +622,9 @@ func (state *State) startConnection(session *Session, host Host) {
 }
 
 func (state *State) startConnectionMode(session *Session, host Host, automatic bool) {
+	if state.appAccessBlocked() {
+		return
+	}
 	if workspaceID, _, ok := state.deck.PaneForSession(layoutcore.SessionID(session.ID)); ok {
 		state.clearWorkspaceBroadcast(workspaceID)
 	}
@@ -884,6 +891,22 @@ func (state *State) finishStartingConnection(session *Session, automatic bool) {
 // connection goroutine asked for, so Paint only ever reads state. It does
 // nothing for sessions whose status is unchanged and whose shell is quiet.
 func (state *State) Wake() {
+	state.drainAppLockResults()
+	if state.appAccessBlocked() {
+		// Keep connected programs moving while their screens are concealed. The
+		// regular pump bounds its backlog and suppresses interactive effects
+		// while locked; new shells and automation wait for the normal wake.
+		for i := range state.sessions {
+			s := &state.sessions[i]
+			if s.term != nil && s.term.shell != nil {
+				state.pump(s)
+			}
+			if s.transfer.phase == transferRunning || s.transfer.phase == transferClosing {
+				state.pumpSessionTransfer(s)
+			}
+		}
+		return
+	}
 	defer state.syncDesktopFullscreen()
 	defer state.syncMenuBar()
 	defer state.syncDesktopSleep()
@@ -1066,9 +1089,7 @@ func (state *State) apply(session *Session, status sshconn.Status) {
 		}
 		// After the connected line: a saved or failed save is what the user needs to read.
 		state.rememberSecret(session)
-		if session.ID == state.activeSessionID {
-			state.ensureContextSFTP()
-		}
+		state.ensureSessionContextSFTP(session)
 	case sshconn.PhaseClosed:
 		session.closeSSHBrowser()
 		session.stopRemoteLogs()
@@ -1449,9 +1470,15 @@ func (state *State) showNextPrompt() {
 }
 
 func (state *State) closeModal() {
+	if state.modal == modalAppLock {
+		state.lockUI.formFields = [3]appLockFormField{}
+		state.lockUI.formCount = 0
+		state.lockUI.error = ""
+	}
 	returnToRules := state.ruleManager.returning && (state.modal == modalHighlightRule || state.modal == modalAutofillRule || state.modal == modalDeleteRule)
 	returnToSnippetGroups := state.snippetGroups.returning && (state.modal == modalSnippetGroupRename || state.modal == modalSnippetGroupDelete)
 	returnToHost := state.modal == modalCredential && state.credentialReturn != modalNone
+	returnToHostFromVault := state.modal == modalVaultForget && state.secrets.forgetReturn != modalNone
 	if state.modal == modalRuleManager {
 		state.ruleManager = ruleManagerUI{}
 	}
@@ -1530,6 +1557,10 @@ func (state *State) closeModal() {
 	if returnToHost {
 		state.modal = state.credentialReturn
 		state.credentialReturn = modalNone
+	}
+	if returnToHostFromVault {
+		state.modal = state.secrets.forgetReturn
+		state.secrets.forgetReturn = modalNone
 	}
 	state.modalSession = 0
 	state.reveal.reset()

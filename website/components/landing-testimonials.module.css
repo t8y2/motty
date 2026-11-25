@@ -1,0 +1,80 @@
+/* Two rows of real replies, drifting in opposite directions. The track holds the
+   same group twice and slides by exactly one group width, so the seam never
+   shows; hovering or focusing the row pauses it. */
+
+.wall {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  mask-image: linear-gradient(to right, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+}
+
+.marquee {
+  overflow: hidden;
+}
+
+.marquee:focus-visible {
+  outline: 2px solid var(--color-fd-ring);
+  outline-offset: 4px;
+  border-radius: 10px;
+}
+
+.track {
+  display: flex;
+  width: max-content;
+  animation: scroll var(--marquee-duration, 70s) linear infinite;
+}
+
+.marquee[data-direction='right'] .track {
+  animation-direction: reverse;
+}
+
+.marquee:hover .track,
+.marquee:focus-within .track {
+  animation-play-state: paused;
+}
+
+.group {
+  display: flex;
+  gap: 14px;
+  padding-right: 14px;
+}
+
+.card {
+  display: flex;
+  flex: 0 0 340px;
+  flex-direction: column;
+  margin: 0;
+  padding: 22px;
+  border: 1px solid var(--color-fd-border);
+  border-radius: 16px;
+  background: var(--color-fd-card);
+}
+
+@keyframes scroll {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (max-width: 760px) {
+  .card {
+    flex-basis: 286px;
+    padding: 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .track {
+    animation: none;
+  }
+
+  .marquee {
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .group[aria-hidden='true'] {
+    display: none;
+  }
+}

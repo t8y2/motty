@@ -303,7 +303,7 @@ func (s *State) paintDashboardGPUSummary(c *gfx.Canvas, r *dashboardRow, b gfx.R
 			continue
 		}
 		memory, temp, _, _ := dashboardGPUReading(g.Device, g.Present)
-		c.RoundedBorder(box, 6, 1, s.pal.line, s.pal.workspace)
+		c.RoundedBorder(box, cornerPx(6), 1, s.pal.line, s.pal.workspace)
 		monitorLabel(c, fmt.Sprintf("%s   %s · %s · %s", dashboardGPUName(g.Device), dashboardGPUPercent(g.Device, g.Present), memory, temp), box.Inset(gfx.All(7)), 12, s.pal.text, gfx.WeightRegular)
 	}
 }
@@ -321,7 +321,7 @@ func (s *State) paintDashboardGPUView(c *gfx.Canvas, r *dashboardRow, b gfx.Rect
 		if !s.dashboardShown(box) {
 			continue
 		}
-		c.RoundedBorder(box, 7, 1, s.pal.line, s.pal.workspace)
+		c.RoundedBorder(box, cornerPx(7), 1, s.pal.line, s.pal.workspace)
 		monitorLabel(c, label, gfx.Rect{X: box.X + 12, Y: box.Y + 6, Width: box.Width / 2, Height: 28}, 13, s.pal.text, gfx.WeightMedium)
 		value := dashboardGPUPercent(g, present)
 		if i == 1 {
@@ -332,7 +332,7 @@ func (s *State) paintDashboardGPUView(c *gfx.Canvas, r *dashboardRow, b gfx.Rect
 	}
 	y += dashboardGPUPlotHeight(b.Width)
 	stats := gfx.Rect{X: b.X, Y: y, Width: b.Width, Height: 36}
-	c.RoundedBorder(stats, 6, 1, s.pal.line, s.pal.workspace)
+	c.RoundedBorder(stats, cornerPx(6), 1, s.pal.line, s.pal.workspace)
 	for i, text := range [3]string{s.messages.Monitor.Temperature + " " + temp, s.messages.Monitor.Power + " " + power, s.messages.Dashboard.Fan + " " + fan} {
 		box := gfx.Rect{X: b.X + float32(i)*b.Width/3, Y: y, Width: b.Width / 3, Height: 36}
 		monitorCenter(c, text, box, 13, s.pal.text, gfx.WeightMedium)

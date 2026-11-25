@@ -20,7 +20,7 @@ import (
 // row under the pointer remains the target of the eventual system drop. label
 // says what the drop will do.
 func (state *State) paintSFTPDropOverlay(canvas *gfx.Canvas, bounds gfx.Rect, label string) {
-	state.paintSFTPDropOverlayWithIcon(canvas, bounds, label, iconUpload)
+	state.paintSFTPDropOverlayWithIcon(canvas, bounds, label, iconSFTPUpload)
 }
 
 func (state *State) paintSFTPDropOverlayWithIcon(canvas *gfx.Canvas, bounds gfx.Rect, label string, glyph uint8) {
@@ -141,6 +141,9 @@ type terminalDrop struct {
 
 // FileDrop receives files dragged from the system over the window.
 func (state *State) FileDrop(event gfx.FileDropEvent) gfx.EventResult {
+	if state.appAccessBlocked() {
+		return gfx.EventResult{Handled: true}
+	}
 	if state.modal == modalFileProperties {
 		return gfx.EventResult{Handled: true}
 	}
