@@ -577,15 +577,22 @@ func TestKeepAliveTimeoutWhileProbeIsInFlightDoesNotReportProbeRefused(t *testin
 	probeStarted := make(chan struct{}, 1)
 	releaseProbe := make(chan struct{})
 	t.Cleanup(func() { close(releaseProbe) })
+	// Keepalives are answered until the probe is in flight, then go silent like
+	// a link whose round trip exceeds the timeout. The timeout can therefore
+	// only expire with the probe already running, however slow the runner is.
+	var probing atomic.Bool
 	server := startServer(t, func(server *testServer) {
 		server.password = "secret"
 		server.version = "SSH-2.0-OpenSSH_8.9p1"
 		server.shell = echoShell
 		server.exec = func(string) (string, uint32) { return "Linux\n", 0 }
-		server.request = func(_ *ssh.ServerConn, _ *ssh.Request) {
-			// Simulate ultra-high RTT / unresponsive keepalive without replying.
+		server.request = func(_ *ssh.ServerConn, request *ssh.Request) {
+			if !probing.Load() {
+				_ = request.Reply(true, nil)
+			}
 		}
 		server.command = func(_ string, channel ssh.Channel) {
+			probing.Store(true)
 			select {
 			case probeStarted <- struct{}{}:
 			default:
