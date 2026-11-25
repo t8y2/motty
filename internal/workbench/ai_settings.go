@@ -1021,7 +1021,11 @@ func (state *State) aiSubmitProvider() {
 		}
 	}
 	if err != nil {
-		cfg.formErr = fmt.Sprintf(m.ErrFormSaveFmt, state.aiScrub(state.aiScrub(err.Error(), key), proxyPassword))
+		message := state.aiScrub(err.Error(), key)
+		if proxyPassword != "" {
+			message = strings.ReplaceAll(message, proxyPassword, "***")
+		}
+		cfg.formErr = fmt.Sprintf(m.ErrFormSaveFmt, message)
 		return
 	}
 	if cfg.editID == "" {
