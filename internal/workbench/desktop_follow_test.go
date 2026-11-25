@@ -108,6 +108,11 @@ func (f *frames) paint(size gfx.Size, at time.Duration) {
 
 func followState(t *testing.T, scale float32, can bool, size gfx.Size) (*State, *Session, *followingDesktop, *desktopRequest, *frames) {
 	t.Helper()
+	return followStateOf(t, scale, can, size, Host{Label: "Win", Address: "win.example.com", User: "alice", Protocol: protocolRDP})
+}
+
+func followStateOf(t *testing.T, scale float32, can bool, size gfx.Size, host Host) (*State, *Session, *followingDesktop, *desktopRequest, *frames) {
+	t.Helper()
 	_, options := newWorld(t)
 	state := newTestState(t, options)
 	state.options.Invalidate = func() {}
@@ -126,7 +131,7 @@ func followState(t *testing.T, scale float32, can bool, size gfx.Size) (*State, 
 	screen := newFrames(state, scale)
 	screen.paint(size, 0)
 	eventCanvases[state] = &screen.canvas // events go through the canvas that knows the scale
-	addStreamHost(state, Host{Label: "Win", Address: "win.example.com", User: "alice", Protocol: protocolRDP})
+	addStreamHost(state, host)
 	openHost(state)
 	session, _ := state.sessionByIDPointer(state.activeSessionID)
 	waitUntil(t, state, "the picture", func() bool { return session.desk != nil && session.desk.width > 0 })
@@ -270,5 +275,29 @@ func TestActualSizeKeepsAPictureThatCannotFollowOnDevicePixels(t *testing.T) {
 	want := [2]int{int(math.Round(100 * float64(deviceScale))), int(math.Round(50 * float64(deviceScale)))}
 	if got := server.pointer[len(server.pointer)-1]; got != want {
 		t.Fatalf("a point 100x50 logical pixels into the picture reached remote %v, want %v", got, want)
+	}
+}
+
+// A host with a chosen resolution asks for exactly that size at 100% whatever
+// the pane or the display is, is never asked to follow the pane afterwards even
+// by a server that could, and shows the picture scaled to the pane.
+func TestFixedResolutionIsAskedOnceAndScaledToThePane(t *testing.T) {
+	size := gfx.Size{Width: 1400, Height: 900}
+	host := Host{Label: "Win", Address: "win.example.com", User: "alice", Protocol: protocolRDP, DesktopWidth: 1920, DesktopHeight: 1080}
+	_, session, server, request, screen := followStateOf(t, 2, true, size, host)
+	if request.Width != 1920 || request.Height != 1080 || request.Scale != 1 {
+		t.Fatalf("the server was asked for %dx%d at %v, want 1920x1080 at 1", request.Width, request.Height, request.Scale)
+	}
+	screen.paint(size, 10*time.Millisecond)
+	screen.paint(gfx.Size{Width: 900, Height: 700}, 20*time.Millisecond)
+	screen.paint(gfx.Size{Width: 900, Height: 700}, time.Second)
+	if got := server.asked(); len(got) != 0 {
+		t.Fatalf("a fixed resolution was asked to follow the pane: %v", got)
+	}
+	if session.desk.oneToOne() {
+		t.Fatal("a fixed picture is shown pixel for pixel instead of scaled to the pane")
+	}
+	if w, h := session.desk.width, session.desk.height; w != 1920 || h != 1080 {
+		t.Fatalf("the picture is %dx%d", w, h)
 	}
 }

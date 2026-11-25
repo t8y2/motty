@@ -433,6 +433,11 @@ func (state *State) openDesktop(session *Session) {
 		session.desk.close()
 	}
 	session.desk = newDesktopView(remote, session.host.Clipboard)
+	if _, fixed := session.host.fixedDesktopSize(); fixed {
+		// A host with a chosen resolution keeps it: the server is never asked
+		// to follow the pane, so the picture is scaled to the pane instead.
+		session.desk.resizer = nil
+	}
 	session.desk.chromeless = session.host.Chromeless
 	session.term.ended = false
 	session.desk.active = state.desktopVisible(session)

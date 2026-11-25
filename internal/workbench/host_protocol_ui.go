@@ -23,6 +23,7 @@ var (
 	hitDialogStandardSecurityHelp = tree.ID(hostProtocolUiHits, "dialog-standard-security-help")
 	hitDialogLegacyTLS            = tree.ID(hostProtocolUiHits, "dialog-legacy-tls")
 	hitDialogLegacyTLSHelp        = tree.ID(hostProtocolUiHits, "dialog-legacy-tls-help")
+	hitDialogResolution           = tree.ID(hostProtocolUiHits, "dialog-resolution")
 	hitDialogEffectWallpaper      = tree.ID(hostProtocolUiHits, "dialog-effect-wallpaper")
 	hitDialogEffectFontSmoothing  = tree.ID(hostProtocolUiHits, "dialog-effect-font-smoothing")
 	hitDialogEffectComposition    = tree.ID(hostProtocolUiHits, "dialog-effect-composition")
@@ -849,9 +850,9 @@ const rdpRowsHeight = vncRowsHeight + 4*(12+20)
 // desktopRowsHeight is the room paintVNCRows takes for the protocol on screen.
 func (state *State) desktopRowsHeight() float32 {
 	if state.editor.protocol == protocolRDP {
-		return rdpRowsHeight + desktopQualityRowsHeight(protocolRDP)
+		return rdpRowsHeight + desktopQualityRowsHeight(protocolRDP, state.editor.resolution == customDesktopSize)
 	}
-	return vncRowsHeight + desktopQualityRowsHeight(protocolVNC)
+	return vncRowsHeight + desktopQualityRowsHeight(protocolVNC, false)
 }
 
 // paintVNCRows paints the switches of a VNC or RDP host in the slots the host

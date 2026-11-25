@@ -38,6 +38,11 @@ type DesktopMessages struct {
 	ColorDepthField           string
 	ColorDepthFmt             string
 	ColorDepthDefaultFmt      string
+	ResolutionField           string
+	ResolutionAuto            string
+	ResolutionCustom          string
+	ResolutionCustomField     string
+	ErrResolution             string
 	EncodingPreferenceField   string
 	EncodingAuto              string
 	EncodingZRLE              string

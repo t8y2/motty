@@ -3044,7 +3044,7 @@ func isHostTagsTarget(id gfx.ID) bool {
 func isDialogField(id gfx.ID) bool {
 	switch id {
 	case hitDialogLabel, hitDialogAddress, hitDialogUser, hitDialogPassword, hitDialogPassphrase, hitDialogGroup, hitDialogPort, hitDialogTags,
-		hitDialogIdleInterval, hitDialogIdleCustomInput:
+		hitDialogIdleInterval, hitDialogIdleCustomInput, hitDialogResolution:
 		return true
 	}
 	return false
@@ -3071,6 +3071,8 @@ func fieldForDialogHit(id gfx.ID) hostField {
 		return fieldIdleInterval
 	case hitDialogIdleCustomInput:
 		return fieldIdleInputCustom
+	case hitDialogResolution:
+		return fieldResolution
 	default:
 		return fieldPort
 	}

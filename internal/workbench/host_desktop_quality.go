@@ -74,11 +74,15 @@ func (state *State) desktopEncodingLabel(encoding desktop.Encoding) string {
 
 // desktopQualityRowsHeight is the room of the quality section for a protocol: a
 // heading, then one row of selects (VNC: the depth and the encoding side by
-// side) or the depth and the effect switches in two columns (RDP).
-func desktopQualityRowsHeight(protocol hostProtocol) float32 {
+// side; RDP: the depth and the resolution, and a row for a custom resolution)
+// and for RDP the effect switches in two columns.
+func desktopQualityRowsHeight(protocol hostProtocol, customResolution bool) float32 {
 	height := float32(groupHeadingHeight + qualityHeadingGap + hostFormRowHeight + 16)
 	if protocol == protocolRDP {
 		height += effectRows * (12 + dialogCheckHeight)
+		if customResolution {
+			height += hostFormRowHeight
+		}
 	}
 	return height
 }
@@ -133,12 +137,14 @@ func (state *State) declareDesktopQualityRows(c ui.C) {
 	editor, form, m := &state.editor, &state.editor.form, state.messages.Desktop
 	b := &form.qualityBody
 	*b = hostQualityBody{}
+	form.resolutionBody = hostResolutionBody{}
 	rowHeight := float32(hostFormRowHeight)
 	rdp := editor.form.layoutProtocol == protocolRDP
 	depths := vncColorDepths[:]
 	if rdp {
 		depths = rdpColorDepths[:]
 	}
+	customResolution := rdp && editor.resolution == customDesktopSize
 	depthSelect := func() {
 		b.depthChoice = colorDepthOrDefault(editor.colorDepth)
 		ui.FormField(c, &b.depthField, m.ColorDepthField).FillWidth().Height(rowHeight).Children(func() {
@@ -156,7 +162,13 @@ func (state *State) declareDesktopQualityRows(c ui.C) {
 		})
 		ui.Slot(c).Height(qualityHeadingGap)
 		if rdp {
-			depthSelect()
+			ui.Row(c).FillWidth().Height(rowHeight).Gap(8).Children(func() {
+				ui.Column(c).Grow(1).Children(depthSelect)
+				ui.Column(c).Grow(1).Children(func() { state.declareResolutionSelect(c, rowHeight) })
+			})
+			if customResolution {
+				state.declareResolutionCustom(c, rowHeight)
+			}
 			effects := state.effectSwitches()
 			ui.Row(c).FillWidth().Height(effectRows * (12 + dialogCheckHeight)).Gap(8).Children(func() {
 				for column := range 2 {

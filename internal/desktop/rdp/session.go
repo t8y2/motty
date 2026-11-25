@@ -326,6 +326,13 @@ func clampSize(width, height int) (int, int) {
 	return min(max(width, minSize), maxSize) &^ 1, min(max(height, minSize), maxSize)
 }
 
+// ValidSize reports whether a width x height desktop is one a caller may ask
+// for: each side within what the display channel accepts. Session rounds an
+// odd width down.
+func ValidSize(width, height int) bool {
+	return width >= minSize && width <= maxSize && height >= minSize && height <= maxSize
+}
+
 // scaleLevels are the interface scales Windows offers, in percent.
 var scaleLevels = [...]uint32{100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500}
 

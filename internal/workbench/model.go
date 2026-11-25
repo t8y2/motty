@@ -128,6 +128,9 @@ type Host struct {
 	ColorDepth        int
 	PreferredEncoding desktop.Encoding
 	Effects           *desktop.Effects
+	// DesktopWidth and DesktopHeight are the remote resolution an RDP host asks
+	// for; zero lets the desktop follow the pane.
+	DesktopWidth, DesktopHeight int
 
 	// localShell is the shell a local terminal was opened with: a program path,
 	// or a WSL distribution as localshell.WSLShell names it. Empty starts the
@@ -155,6 +158,8 @@ type reuseHostPolicy struct {
 	colorDepth       int
 	desktopEncoding  desktop.Encoding
 	effects          desktop.Effects
+	desktopWidth     int
+	desktopHeight    int
 }
 
 func reusePolicyFor(host Host) reuseHostPolicy {
@@ -162,7 +167,8 @@ func reusePolicyFor(host Host) reuseHostPolicy {
 		localShell: host.localShell, viaSSH: host.ViaSSH, clipboard: host.Clipboard,
 		console: host.Console, noAudio: host.NoAudio, standardSecurity: host.StandardSecurity,
 		legacyTLS: host.LegacyTLS, interactiveOnly: host.InteractiveOnly,
-		colorDepth: host.ColorDepth, desktopEncoding: host.PreferredEncoding, effects: host.desktopEffects()}
+		colorDepth: host.ColorDepth, desktopEncoding: host.PreferredEncoding, effects: host.desktopEffects(),
+		desktopWidth: host.DesktopWidth, desktopHeight: host.DesktopHeight}
 }
 
 // desktopEffects is the effects an RDP host asks for: its own, or the defaults.

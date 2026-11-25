@@ -215,6 +215,9 @@ type savedTransport struct {
 	ColorDepth      int              `json:"color_depth,omitempty"`
 	DesktopEncoding desktop.Encoding `json:"desktop_encoding,omitempty"`
 	Effects         *desktop.Effects `json:"effects,omitempty"`
+	// DesktopWidth and DesktopHeight are an RDP host's fixed remote resolution.
+	DesktopWidth  int `json:"desktop_width,omitempty"`
+	DesktopHeight int `json:"desktop_height,omitempty"`
 }
 
 func (host Host) transport() savedTransport {
@@ -250,6 +253,7 @@ func (host Host) transport() savedTransport {
 		transport.LegacyTLS = host.LegacyTLS
 		transport.ColorDepth = host.ColorDepth
 		transport.Effects = host.Effects
+		transport.DesktopWidth, transport.DesktopHeight = savedDesktopSize(host.DesktopWidth, host.DesktopHeight)
 		return transport
 	case protocolSerial:
 		transport.Proxy, transport.Protocol, transport.Line = nil, "serial", host.Line.String()
@@ -358,6 +362,7 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 		host.LegacyTLS = transport.LegacyTLS
 		host.ColorDepth = rdpColorDepth(transport.ColorDepth)
 		host.Effects = transport.Effects
+		host.DesktopWidth, host.DesktopHeight = savedDesktopSize(transport.DesktopWidth, transport.DesktopHeight)
 	case "serial":
 		host.Proxy, host.Credential = nil, ""
 		flow := serial.FlowNone

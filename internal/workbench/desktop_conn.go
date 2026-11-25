@@ -717,6 +717,11 @@ func (state *State) newDesktopConn(session *Session, host Host) *desktopConn {
 		}
 	}
 	target := state.desktopTargetFor(session)
+	if size, fixed := host.fixedDesktopSize(); fixed {
+		// The server's own interface scale stays 100%: the fixed size is a
+		// resolution, and the picture is scaled to the pane on this side.
+		target = desktopTarget{width: size.width, height: size.height, scale: 1}
+	}
 	conn.request.Width, conn.request.Height, conn.request.Scale = target.width, target.height, target.scale
 	var config sshconn.Config
 	tunneled := false
