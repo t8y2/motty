@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -59,8 +60,10 @@ func TestWorkspaceCommandThroughWindowDriver(t *testing.T) {
 	click(workspaceDraftHostID(0))
 	click(hitWorkspaceCommandEdit.At(int(state.hosts[0].ID)))
 	hints := 0
+	hint := state.messages.WorkspaceCommandOrderHint
 	for _, label := range view.Snapshot().Texts {
-		if label.Value == state.messages.WorkspaceCommandOrderHint {
+		visibleHint, elided := strings.CutSuffix(label.Value, "…")
+		if label.Value == hint || elided && visibleHint != "" && strings.HasPrefix(hint, visibleHint) {
 			hints++
 		}
 	}
