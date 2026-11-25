@@ -157,7 +157,7 @@ func integrationActivation(name, token, file, dir string) string {
 	case "zsh":
 		// The leading space lets a shell with HIST_IGNORE_SPACE keep the one
 		// line it records out of its history; Zsh offers no entry deletion.
-		return " " + tag + "fc -p 2>/dev/null\n" + install + "; " + ready + "; fc -P 2>/dev/null\n"
+		return " " + tag + "fc -p 2>/dev/null\n" + install + "; [[ -n ${ZSH_VERSION-} ]] && " + ready + "; fc -P 2>/dev/null\n"
 	}
 	return ""
 }
