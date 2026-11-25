@@ -58,6 +58,15 @@ func TestWorkspaceCommandThroughWindowDriver(t *testing.T) {
 	click := func(id gfx.ID) { t.Helper(); clickWorkspaceCommandHit(t, view, id) }
 	click(workspaceDraftHostID(0))
 	click(hitWorkspaceCommandEdit.At(int(state.hosts[0].ID)))
+	hints := 0
+	for _, label := range view.Snapshot().Texts {
+		if label.Value == state.messages.WorkspaceCommandOrderHint {
+			hints++
+		}
+	}
+	if hints != 1 {
+		t.Fatalf("command order hint painted %d times, want 1", hints)
+	}
 	click(hitWorkspaceCommandField.At(int(state.hosts[0].ID)))
 	if err := view.Type("cd /srv"); err != nil {
 		t.Fatal(err)
