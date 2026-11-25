@@ -151,7 +151,7 @@ func (page *settingsPage) nav(width float32, searching bool) {
 			view.searchField.Bind(&view.search)
 			view.searchBound = true
 		}
-		ui.TextFieldID(c, hitSettingsSearch, &view.searchField, m.Tools.SearchPlaceholder, m.Tools.SearchPlaceholder).
+		ui.TextField(c, &view.searchField, m.Tools.SearchPlaceholder, m.Tools.SearchPlaceholder, ui.WithID(hitSettingsSearch)).
 			Icon(lucideIcons[iconSearch]).Height(38).MarginSides(0, 12, 12, 12).Shrink(0)
 		page.navList = ui.ScrollAt(c, view.navShown).FillWidth().Grow(1).Basis(0)
 		page.navList.Children(func() {

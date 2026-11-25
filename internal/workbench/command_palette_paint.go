@@ -131,7 +131,7 @@ func (state *State) declareCommandPaletteBody(c ui.C) {
 				ui.Spacer(c).Height(6).Shrink(0)
 			}
 		}
-		ui.TextFieldID(c, hitCommandPaletteSearch, &palette.searchField, palette.searchLabel, palette.searchPlace).
+		ui.TextField(c, &palette.searchField, palette.searchLabel, palette.searchPlace, ui.WithID(hitCommandPaletteSearch)).
 			Height(36).FillWidth().Shrink(0).NavigationKeys()
 		if count == 0 {
 			palette.listRect = gfx.Rect{}

@@ -158,7 +158,7 @@ func (state *State) declareAppLockPage(c ui.C) {
 				ui.Row(c).Height(36 * scale)
 			}
 			ui.Text(c, m.Password).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(20)
-			field := ui.TextFieldID(c, hitAppLockPassword, &u.field, m.Password, m.PasswordPlaceholder).FillWidth().Height(max(34, 44*scale)).MarginTop(8 * scale).Disabled(busy).OnKey(state.appLockKey)
+			field := ui.TextField(c, &u.field, m.Password, m.PasswordPlaceholder, ui.WithID(hitAppLockPassword)).FillWidth().Height(max(34, 44*scale)).MarginTop(8 * scale).Disabled(busy).OnKey(state.appLockKey)
 			icon, label := lucideIcons[iconEye], state.messages.ShowSecret
 			if u.shown {
 				icon, label = lucideIcons[iconEyeOff], state.messages.HideSecret
@@ -421,7 +421,7 @@ func (state *State) declareAppLockDialog(c ui.C) {
 				field.field.Secure, field.field.Invalid = !field.shown, u.error != ""
 				ui.Column(c).Height(72).Children(func() {
 					ui.Text(c, field.label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text)
-					box := ui.TextFieldID(c, hitAppLockFormFields.At(index), &field.field, field.label, "").Height(metrics.ControlHeight).MarginTop(7).Disabled(busy)
+					box := ui.TextField(c, &field.field, field.label, "", ui.WithID(hitAppLockFormFields.At(index))).Height(metrics.ControlHeight).MarginTop(7).Disabled(busy)
 					icon, label := lucideIcons[iconEye], state.messages.ShowSecret
 					if field.shown {
 						icon, label = lucideIcons[iconEyeOff], state.messages.HideSecret

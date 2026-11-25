@@ -549,7 +549,7 @@ func (state *State) declareSnippetHoverCard(c ui.C) {
 	if form.hoverBody == nil {
 		form.hoverBody = state.declareSnippetHoverBody
 	}
-	ui.PopoverWith(c, form.hoverAnchor, &form.hoverOpen, ui.PopoverSpec{
+	ui.Popover(c, form.hoverAnchor, &form.hoverOpen, ui.PopoverSpec{
 		Side: components.PopoverBottom, Align: ui.Start, Offset: 4, KeepOpenOnAnchor: true,
 		Title: entry.Name, Width: snippetCardWidth,
 	}, form.hoverBody)

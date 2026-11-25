@@ -133,7 +133,7 @@ func (s *State) declareNoteSidebarTree(c ui.C, n *notesUI, width, height float32
 			s.noteIconButton(c, hitNoteSideExpand, expandIcon, expandLabel, 28, false).
 				Disabled(disabled)
 			p.query.Bind(&n.query)
-			field := ui.TextFieldID(c, hitNoteSearch, &p.query, s.noteText("Search title, body and tags", "搜索标题、正文和标签"), s.noteText("Search title, body and tags", "搜索标题、正文和标签")).
+			field := ui.TextField(c, &p.query, s.noteText("Search title, body and tags", "搜索标题、正文和标签"), s.noteText("Search title, body and tags", "搜索标题、正文和标签"), ui.WithID(hitNoteSearch)).
 				Height(30).Grow(1)
 			if field.Changed() {
 				s.noteSearchChanged(n)

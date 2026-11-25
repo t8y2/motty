@@ -207,7 +207,7 @@ func (state *State) declareAgentHostsDialog(c ui.C) {
 			view.queryField.Bind(&view.query)
 			view.queryBound = true
 		}
-		ui.TextFieldID(c, hitAgentHostsQuery, &view.queryField, m.AgentHostsSearch, m.AgentHostsSearch).
+		ui.TextField(c, &view.queryField, m.AgentHostsSearch, m.AgentHostsSearch, ui.WithID(hitAgentHostsQuery)).
 			Icon(lucideIcons[iconSearch]).Height(34).FillWidth().Shrink(0)
 		if len(view.rows) == 0 {
 			ui.Text(c, m.AgentHostsSearchEmpty).FontSize(12).Color(state.pal.muted).Grow(1).Basis(0).MinHeight(0)

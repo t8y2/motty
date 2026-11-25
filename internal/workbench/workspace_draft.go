@@ -723,7 +723,7 @@ func (state *State) declareWorkspaceDraft(c ui.C) {
 				ui.Column(c).Height(60).MarginSides(0, 0, 8, 0).Children(func() {
 					ui.Text(c, m.WorkspaceDraftName).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).
 						Color(theme.Foreground).LineHeight(metrics.FontSizeM + 4).Ellipsis()
-					ui.TextFieldID(c, hitWorkspaceDraftName, &draft.nameField, m.WorkspaceDraftName, m.WorkspaceDraftNamePlaceholder).
+					ui.TextField(c, &draft.nameField, m.WorkspaceDraftName, m.WorkspaceDraftNamePlaceholder, ui.WithID(hitWorkspaceDraftName)).
 						Height(metrics.ControlHeight).MarginSides(gap, 0, 0, 0)
 				})
 			}
@@ -845,7 +845,7 @@ func (state *State) declareWorkspaceDraftPreview(c ui.C, width float32) {
 // list below it.
 func (state *State) declareWorkspaceDraftHostPane(c ui.C, width, paneHeight float32) {
 	draft, m := &state.workspaceDraft, state.messages
-	ui.TextFieldID(c, hitWorkspaceDraftSearch, &draft.queryField, m.WorkspaceDraftHostSearch, m.WorkspaceDraftHostSearch).
+	ui.TextField(c, &draft.queryField, m.WorkspaceDraftHostSearch, m.WorkspaceDraftHostSearch, ui.WithID(hitWorkspaceDraftSearch)).
 		Icon(icons.Search).Height(34).MarginSides(0, 0, 12, 0)
 	state.adoptWSLDistros() // the distributions join the list when wsl.exe answers
 	rows := state.workspaceDraftRows()
@@ -958,8 +958,8 @@ func (state *State) declareWorkspaceDraftRow(row ui.ListRow) {
 				if configurable {
 					ui.Text(c, m.WorkspaceCommandOrderHint).FontSize(12).Color(state.pal.text).LineHeight(22).
 						Ellipsis().Height(22).Shrink(0).MarginSides(0, 8, 0, 8)
-					ui.TextFieldID(c, hitWorkspaceCommandField.At(int(host.ID)), draft.commandField(host.CatalogID),
-						m.WorkspaceCommandField, m.Tools.LoginCommandPlaceholder).Height(32).MarginSides(8, 8, 0, 8)
+					ui.TextField(c, draft.commandField(host.CatalogID),
+						m.WorkspaceCommandField, m.Tools.LoginCommandPlaceholder, ui.WithID(hitWorkspaceCommandField.At(int(host.ID)))).Height(32).MarginSides(8, 8, 0, 8)
 				}
 			})
 		})

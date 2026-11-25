@@ -170,7 +170,7 @@ func (state *State) declareSnippetVariablesDialogBody(c ui.C, preview string) {
 				// A labelled form field, as the hand-painted dialog showed each
 				// variable's name above its input.
 				ui.FormField(c, &prompt.rows[i], def.Name).Height(dialogRowHeight(c.Theme())).FillWidth().Children(func() {
-					ui.TextFieldID(c, hitSnippetVarList.At(i), &prompt.fields[i], def.Name, placeholder).FillWidth()
+					ui.TextField(c, &prompt.fields[i], def.Name, placeholder, ui.WithID(hitSnippetVarList.At(i))).FillWidth()
 				})
 			}
 		})

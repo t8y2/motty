@@ -976,7 +976,7 @@ func (state *State) declareSFTPEditor(c ui.C) {
 		ui.Text(c, messages.SFTPEditSafety).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(22).MarginSides(10, 0, 6, 0)
 		view.editField.Bind(&view.editEditor)
 		view.editField.Disabled = view.busy
-		editor.textarea = ui.TextAreaID(c, hitSFTPEditor, &view.editField, messages.SFTPEditLabel, "").Grow(1).MinHeight(64)
+		editor.textarea = ui.TextArea(c, &view.editField, messages.SFTPEditLabel, "", ui.WithID(hitSFTPEditor)).Grow(1).MinHeight(64)
 		ui.Row(c).Height(28).Shrink(0).Gap(8).Items(ui.Center).MarginSides(14, 0, 0, 0).Children(func() {
 			if view.busy {
 				ui.Spinner(c).Size(16, 16)
@@ -1214,7 +1214,7 @@ func (state *State) declareSFTPDialogField(c ui.C, view *sftpView, i int, label 
 		row.Error = view.dialogError
 	}
 	ui.FormField(c, row, label).FillWidth().Height(dialogRowHeight(c.Theme())).Shrink(0).Children(func() {
-		ui.TextFieldID(c, id, &view.dialogTexts[i], label, "")
+		ui.TextField(c, &view.dialogTexts[i], label, "", ui.WithID(id))
 	})
 }
 
@@ -1244,7 +1244,7 @@ func (state *State) declareSFTPOwnershipFields(c ui.C, view *sftpView) {
 		}
 		var input ui.Box
 		ui.FormField(c, row, labels[field]).FillWidth().Height(dialogRowHeight(c.Theme())).Shrink(0).Children(func() {
-			input = ui.TextFieldID(c, id, &view.chownTexts[field], labels[field], "").Height(32)
+			input = ui.TextField(c, &view.chownTexts[field], labels[field], "", ui.WithID(id)).Height(32)
 			// A typed change opens the suggestions; the field reports an edit,
 			// and a suggestion the program wrote is not one.
 			if input.Changed() && editor.String() != view.ownership.lastQuery[field] {
@@ -1281,7 +1281,7 @@ func (state *State) declareSFTPOwnershipPopup(c ui.C, view *sftpView, field int,
 		Scope: dialogScope, DismissID: hitSFTPChownDismiss,
 		Side: components.PopoverBottom, Align: ui.Start, Offset: 8, Width: width,
 	}
-	ui.PopoverWith(c, anchor, &view.ownership.open[field], spec, func() {
+	ui.Popover(c, anchor, &view.ownership.open[field], spec, func() {
 		ui.Column(c).Gap(2).Children(func() {
 			if len(matches) == 0 {
 				ui.Text(c, messages.SFTPOwnershipNoMatches).FontSize(metrics.FontSizeS).

@@ -147,7 +147,7 @@ func (w *remoteToolsWindow) declareSearch(c ui.C) {
 	}
 	query := search.queryEditor().String()
 	ui.Column(c).Height(remoteSearchHeight).Shrink(0).MarginSides(8, 0, 0, 0).Children(func() {
-		field := ui.TextFieldID(c, hitRemoteSearch, &search.field, m.RemoteSearch, m.RemoteSearchPlaceholder).
+		field := ui.TextField(c, &search.field, m.RemoteSearch, m.RemoteSearchPlaceholder, ui.WithID(hitRemoteSearch)).
 			Height(32).FillWidth().Shrink(0).Icon(lucideIcons[iconSearch]).NavigationKeys()
 		if query != "" {
 			field = field.Action(lucideIcons[iconClose], m.RemoteSearchClear)
@@ -346,7 +346,7 @@ func (w *remoteToolsWindow) declareFormDialog(c ui.C) {
 					field.pageField.Bind(&field.editor)
 					field.pageBound = true
 				}
-				box := ui.TextFieldID(c, hitFormFieldList.At(index), &field.pageField, field.label, field.placeholder).
+				box := ui.TextField(c, &field.pageField, field.label, field.placeholder, ui.WithID(hitFormFieldList.At(index))).
 					Height(62).FillWidth().MarginBottom(4)
 				if field.secure {
 					box.Secure()
@@ -420,7 +420,7 @@ func (w *remoteToolsWindow) declareSudoDialog(c ui.C) {
 	dialog.Body(func() {
 		ui.Column(c).Height(sudoDialogBody(c.Theme())).PadSides(2, 4, 0, 4).Children(func() {
 			ui.FormField(c, &dialogState.row, m.SFTPSudoPassword).FillWidth().Height(dialogRowHeight(c.Theme())).Children(func() {
-				ui.TextFieldID(c, hitSudoSFTPPassword, &dialogState.field, m.SFTPSudoPassword, "").
+				ui.TextField(c, &dialogState.field, m.SFTPSudoPassword, "", ui.WithID(hitSudoSFTPPassword)).
 					FillWidth().Secure().AutoFocus()
 			})
 		})

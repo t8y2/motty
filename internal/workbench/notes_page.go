@@ -221,7 +221,7 @@ func (s *State) declareNoteTreeRow(n *notesUI, i int) {
 	if e.id == "" || e.id == n.view.inlineID {
 		// New items and existing items being renamed share the same field.
 		p.inline.Bind(&n.view.inline)
-		field := ui.TextFieldID(c, hitNoteInline, &p.inline, s.noteText("Name", "名称"), s.noteText("Name", "名称")).
+		field := ui.TextField(c, &p.inline, s.noteText("Name", "名称"), s.noteText("Name", "名称"), ui.WithID(hitNoteInline)).
 			FillWidth().Height(noteTreeRowHeight-4).MarginSides(0, 4, 2, 0)
 		if n.view.focus == hitNoteInline {
 			c.Canvas().RequestFocus(hitNoteInline)
@@ -620,7 +620,7 @@ func (s *State) declareNoteLibrary(c ui.C, n *notesUI, width float32) {
 		FillWidth().Height(36).MarginSides(8, 8, 0, 8).Hit(hitNoteAdd, s.noteText("New note", "新建笔记"))
 	if v.searchOpen {
 		p.query.Bind(&n.query)
-		field := ui.TextFieldID(c, hitNoteSearch, &p.query, s.noteText("Search title, body and tags", "搜索标题、正文和标签"), s.noteText("Search title, body and tags", "搜索标题、正文和标签")).
+		field := ui.TextField(c, &p.query, s.noteText("Search title, body and tags", "搜索标题、正文和标签"), s.noteText("Search title, body and tags", "搜索标题、正文和标签"), ui.WithID(hitNoteSearch)).
 			Height(30).FillWidth().MarginSides(8, 8, 0, 8)
 		if field.Changed() {
 			s.noteSearchChanged(n)
@@ -737,7 +737,7 @@ func (s *State) declareNoteEditorHeader(c ui.C, n *notesUI, width float32, windo
 	}
 	title := func() {
 		p.title.Bind(&n.title)
-		field := ui.TextFieldID(c, hitNoteTitle, &p.title, s.noteText("Title", "标题"), s.noteText("Untitled", "无标题")).
+		field := ui.TextField(c, &p.title, s.noteText("Title", "标题"), s.noteText("Untitled", "无标题"), ui.WithID(hitNoteTitle)).
 			Height(28).FontSize(16).Grow(1)
 		if stacked {
 			field.MarginSides(0, 0, 0, 6)

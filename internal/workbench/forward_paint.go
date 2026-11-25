@@ -366,6 +366,6 @@ func (state *State) declareForwardDialogField(c ui.C, id gfx.ID, field forwardFi
 		editor.bound = true
 	}
 	return ui.FormField(c, &editor.rows[field], title).Height(dialogRowHeight(c.Theme())).Children(func() {
-		ui.TextFieldID(c, id, &editor.texts[field], title, placeholder)
+		ui.TextField(c, &editor.texts[field], title, placeholder, ui.WithID(id))
 	})
 }

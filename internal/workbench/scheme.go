@@ -663,7 +663,7 @@ func (state *State) declareSchemeDrawerBody(c ui.C, columns int) {
 	scheme := &state.scheme
 	body := ui.Column(c).Fill().DrawOver(func(d *ui.DrawContext) { scheme.body = d.Rect })
 	body.Children(func() {
-		ui.TextFieldID(c, hitSchemeSearch, &scheme.field, m.SchemeSearchPlaceholder, m.SchemeSearchPlaceholder).
+		ui.TextField(c, &scheme.field, m.SchemeSearchPlaceholder, m.SchemeSearchPlaceholder, ui.WithID(hitSchemeSearch)).
 			Icon(lucideIcons[iconSearch]).Height(schemeSearchHeight).FillWidth().MarginSides(0, 0, 10, 0).Shrink(0)
 		ui.Paragraph(c, fmt.Sprintf(m.SchemeDirHintFmt, state.schemesDir()), 2).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18).MarginSides(0, 0, 8, 0)
 		scroll := ui.Scroll(c).Grow(1).Basis(0)

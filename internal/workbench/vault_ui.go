@@ -397,7 +397,7 @@ func (state *State) declareVaultUnlockBody(c ui.C) {
 	secrets.unlockText.Invalid = secrets.dialogError != ""
 	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Gap(12).Children(func() {
 		ui.FormField(c, &secrets.unlockForm, m.VaultUnlockLabel).FillWidth().Height(dialogRowHeight(c.Theme())).Children(func() {
-			box := ui.TextFieldID(c, hitVaultUnlockField, &secrets.unlockText, m.VaultUnlockLabel, "")
+			box := ui.TextField(c, &secrets.unlockText, m.VaultUnlockLabel, "", ui.WithID(hitVaultUnlockField))
 			icon, label := lucideIcons[iconEye], m.ShowSecret
 			if secrets.unlockShown {
 				icon, label = lucideIcons[iconEyeOff], m.HideSecret

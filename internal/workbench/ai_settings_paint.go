@@ -691,7 +691,7 @@ func (state *State) declareAIModelSearchField(c ui.C) ui.Box {
 	state.bindAIInputFields()
 	cfg := &state.ai.cfg
 	m := state.messages.AISettings
-	field := ui.TextFieldID(c, hitAISetModelSearch, &cfg.modelSearchField, m.ModelSearchPH, m.ModelSearchPH).
+	field := ui.TextField(c, &cfg.modelSearchField, m.ModelSearchPH, m.ModelSearchPH, ui.WithID(hitAISetModelSearch)).
 		Icon(lucideIcons[iconSearch]).Grow(1).MinWidth(40).Height(32)
 	if cfg.modelSearch.RuneCount() > 0 {
 		field = field.Action(lucideIcons[iconClose], state.messages.SearchClear)
@@ -708,7 +708,7 @@ func (state *State) declareAIModelSearchField(c ui.C) ui.Box {
 func (state *State) declareAIModelField(c ui.C) ui.Box {
 	state.bindAIInputFields()
 	m := state.messages.AISettings
-	return ui.TextFieldID(c, hitAISetModelInput, &state.ai.cfg.modelField, m.ModelAddPH, m.ModelAddPH).
+	return ui.TextField(c, &state.ai.cfg.modelField, m.ModelAddPH, m.ModelAddPH, ui.WithID(hitAISetModelInput)).
 		Grow(1).MinWidth(40).Height(32)
 }
 
@@ -734,7 +734,7 @@ func (state *State) declareAIStepsField(c ui.C) ui.Box {
 			cfg.stepsInput.Insert(stored)
 		}
 	}
-	return ui.TextFieldID(c, hitAISetStepsValue, &cfg.stepsField, state.messages.AISettings.MaxSteps, "").
+	return ui.TextField(c, &cfg.stepsField, state.messages.AISettings.MaxSteps, "", ui.WithID(hitAISetStepsValue)).
 		Size(aiStepsValueWidth, 32)
 }
 

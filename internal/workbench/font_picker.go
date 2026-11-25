@@ -774,7 +774,7 @@ func (state *State) declareFontPickerBody(c ui.C) {
 			fonts.searchField.Bind(&fonts.search)
 			fonts.searchBound = true
 		}
-		ui.TextFieldID(c, hitFontPickerSearch, &fonts.searchField, state.fontPickerTitle(), m.FontPickerPlaceholder).
+		ui.TextField(c, &fonts.searchField, state.fontPickerTitle(), m.FontPickerPlaceholder, ui.WithID(hitFontPickerSearch)).
 			NavigationKeys().Height(36)
 		ui.Column(c).Height(fontPickerListHeight).Shrink(0).MarginSides(10, 0, 0, 0).Children(func() {
 			switch {

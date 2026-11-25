@@ -344,7 +344,7 @@ func (state *State) declareWorkspaceInlineEditor(c ui.C, contentWidth float32, r
 	edit.field.Invalid = edit.error != ""
 	buttons := min(float32(116), editor.Width*.45)
 	ui.Row(c).Absolute().Left(editor.X).Top(editor.Y).Width(editor.Width).Height(52).Gap(8).Items(ui.Start).Children(func() {
-		ui.TextFieldID(c, hitWorkspaceInlineField, &edit.field, m.WorkspaceCommandField, "").Height(32).Grow(1)
+		ui.TextField(c, &edit.field, m.WorkspaceCommandField, "", ui.WithID(hitWorkspaceInlineField)).Height(32).Grow(1)
 		ui.Row(c).Width(buttons).Height(26).Shrink(0).MarginTop(3).Gap(8).Items(ui.Center).Justify(ui.End).Children(func() {
 			ui.Button(c, m.WorkspaceCommandSave).XSmall().Outline().Shrink(0).
 				Hit(hitWorkspaceInlineSave, m.WorkspaceCommandSave)

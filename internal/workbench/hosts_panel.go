@@ -340,7 +340,7 @@ func (state *State) declareHostsPanel(c ui.C) {
 			}
 		})
 		ui.Row(c).Height(hostsPanelSearch).Shrink(0).FillWidth().PadSides(0, 8, 6, 8).Gap(2).Items(ui.Center).Children(func() {
-			input := ui.TextFieldID(c, hitHostsPanelSearch, &panel.search, m.NavSearch, m.SearchPlaceholder).
+			input := ui.TextField(c, &panel.search, m.NavSearch, m.SearchPlaceholder, ui.WithID(hitHostsPanelSearch)).
 				Icon(lucideIcons[iconSearch]).FontSize(metrics.FontSizeS).Height(28).Grow(1).MinWidth(0)
 			if panel.search.Text() != "" {
 				input = input.Action(lucideIcons[iconClose], m.SearchClear)

@@ -752,7 +752,7 @@ func (state *State) declareSnippetDialogBody(c ui.C) {
 		}
 		form.nameText.Invalid = form.dialogError != ""
 		ui.FormField(c, &form.nameForm, m.SnippetName).FillWidth().Height(dialogRowHeight(c.Theme())).Children(func() {
-			ui.TextFieldID(c, hitSnippetName, &form.nameText, m.SnippetName, m.SnippetNamePlaceholder)
+			ui.TextField(c, &form.nameText, m.SnippetName, m.SnippetNamePlaceholder, ui.WithID(hitSnippetName))
 		})
 		ui.Column(c).Height(140).MarginSides(0, 0, 6, 0).Children(func() {
 			form.commandArea.declare(c, hitSnippetCommand, &form.command, m.SnippetCommand, m.SnippetCommandPlaceholder, 140)

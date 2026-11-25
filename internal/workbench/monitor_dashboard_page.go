@@ -220,7 +220,7 @@ func (state *State) declareDashboardModeAndSearch(c ui.C, p *monitoring.Panel, i
 			d.searchField.Bind(&d.search)
 			d.searchBound = true
 		}
-		return ui.TextFieldID(c, hitDashboardSearch, &d.searchField, m.Search, m.Search).
+		return ui.TextField(c, &d.searchField, m.Search, m.Search, ui.WithID(hitDashboardSearch)).
 			Icon(lucideIcons[iconSearch]).Height(34).Width(width)
 	}
 	if inner < 860 {
@@ -685,7 +685,7 @@ func (state *State) declareDashboardPickerFilters(c ui.C, groups []dashboardPick
 			e.queryField.Bind(&e.query)
 			e.queryBound = true
 		}
-		ui.TextFieldID(c, hitDashboardHostQuery, &e.queryField, m.HostSearch, m.HostSearch).
+		ui.TextField(c, &e.queryField, m.HostSearch, m.HostSearch, ui.WithID(hitDashboardHostQuery)).
 			Icon(lucideIcons[iconSearch]).Height(34).MinWidth(80).Grow(1)
 		choices := e.groupChoices[:0]
 		for index := range e.groups {

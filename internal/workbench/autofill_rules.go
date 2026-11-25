@@ -626,7 +626,7 @@ func (state *State) declareAutofillField(c ui.C, i int, id gfx.ID, label, placeh
 	field.Invalid = form.dialogError != ""
 	field.Secure = secret && !form.fixedShown
 	ui.FormField(c, &form.rows[i], label).FillWidth().Height(dialogRowHeight(c.Theme())).Children(func() {
-		box := ui.TextFieldID(c, id, field, label, placeholder)
+		box := ui.TextField(c, field, label, placeholder, ui.WithID(id))
 		if secret {
 			icon, name := lucideIcons[iconEye], m.ShowSecret
 			if form.fixedShown {

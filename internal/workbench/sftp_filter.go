@@ -209,7 +209,7 @@ func (state *State) declareSFTPFilterField(c ui.C, folder *sftpFolder, id gfx.ID
 	if folder.deep {
 		placeholder = messages.FilesSearchPlaceholder
 	}
-	field := ui.TextFieldID(c, id, &folder.filterUI, messages.FilesFilterLabel, placeholder).
+	field := ui.TextField(c, &folder.filterUI, messages.FilesFilterLabel, placeholder, ui.WithID(id)).
 		Icon(lucideIcons[iconSearch])
 	if folder.filterInputEditor().String() != "" {
 		field = field.Action(lucideIcons[iconClose], messages.FilesFilterClear)

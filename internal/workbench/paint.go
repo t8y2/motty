@@ -1647,7 +1647,7 @@ func (state *State) declareHostsToolbar(c ui.C, width float32, plan hostsHeaderP
 				state.chrome.searchBound = true
 			}
 			state.chrome.searchField.Disabled = state.hostSort.enabled
-			field := ui.TextFieldID(c, hitSearch, &state.chrome.searchField, m.NavSearch, m.SearchPlaceholder).
+			field := ui.TextField(c, &state.chrome.searchField, m.NavSearch, m.SearchPlaceholder, ui.WithID(hitSearch)).
 				Icon(lucideIcons[iconSearch]).FillWidth().Height(toolbarHeight).Disabled(state.hostSort.enabled)
 			if state.search.RuneCount() > 0 && !state.hostSort.enabled {
 				field = field.Action(lucideIcons[iconClose], m.SearchClear)
@@ -3540,8 +3540,8 @@ func (state *State) declareHostGroupDeleteDialog(c ui.C) {
 			// hand-painted group stretched them: a radio centres its circle and
 			// label in the row.
 			ui.RadioGroup(c).Fill().Children(func() {
-				ui.RadioID(c, hitGroupDeleteParent, &state.groupActions.ungroup, false, choices[0]).Grow(1)
-				ui.RadioID(c, hitGroupDeleteUngroup, &state.groupActions.ungroup, true, choices[1]).Grow(1)
+				ui.Radio(c, &state.groupActions.ungroup, false, choices[0], ui.WithID(hitGroupDeleteParent)).Grow(1)
+				ui.Radio(c, &state.groupActions.ungroup, true, choices[1], ui.WithID(hitGroupDeleteUngroup)).Grow(1)
 			})
 		})
 	})

@@ -478,7 +478,7 @@ func (state *State) declareProxyDialogBody(c ui.C) {
 				editor.relayBound = true
 			}
 			ui.FormField(c, &editor.relayRow, messages.ProxyFieldRelay).FillWidth().Height(rowHeight).Children(func() {
-				ui.TextFieldID(c, hitProxyDialogRelay, &editor.relayText, messages.ProxyFieldRelay, messages.ProxyRelayPlaceholder)
+				ui.TextField(c, &editor.relayText, messages.ProxyFieldRelay, messages.ProxyRelayPlaceholder, ui.WithID(hitProxyDialogRelay))
 			})
 			ui.Paragraph(c, state.proxyRelayNote(), 2).FontSize(metrics.FontSizeS).Color(state.pal.muted).MarginSides(0, 6, 0, 6)
 		}

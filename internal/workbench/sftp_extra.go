@@ -425,7 +425,7 @@ func (state *State) declareFilePreviewField(c ui.C) ui.Box {
 			edit.input.Insert(stored)
 		}
 	}
-	return ui.TextFieldID(c, hitSettingsPreviewValue, &edit.field, state.messages.Tools.FilesPreviewLimit, "").
+	return ui.TextField(c, &edit.field, state.messages.Tools.FilesPreviewLimit, "", ui.WithID(hitSettingsPreviewValue)).
 		Size(filePreviewValueWidth, 32)
 }
 

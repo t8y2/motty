@@ -115,7 +115,7 @@ func (state *State) declareTabRenameDialog(c ui.C) {
 		}
 		rename.form.For, rename.form.Error, rename.form.Invalid = hitTabRenameField, state.dialogError, state.dialogError != ""
 		ui.FormField(c, &rename.form, messages.RenameTabField).FillWidth().Height(dialogRowHeight(c.Theme())).Children(func() {
-			ui.TextFieldID(c, hitTabRenameField, &rename.input, messages.RenameTabField, messages.RenameTerminalPlaceholder)
+			ui.TextField(c, &rename.input, messages.RenameTabField, messages.RenameTerminalPlaceholder, ui.WithID(hitTabRenameField))
 		})
 	})
 	dialog.Footer(func() {

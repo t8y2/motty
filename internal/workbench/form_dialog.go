@@ -366,7 +366,7 @@ func (state *State) declareFormField(c ui.C, i int) {
 	}
 	field.pageField.Secure = field.secure && !field.shown
 	ui.FormField(c, &field.row, field.label).FillWidth().Height(dialogRowHeight(c.Theme())).Children(func() {
-		box := ui.TextFieldID(c, hitFormFieldList.At(i), &field.pageField, field.label, field.placeholder)
+		box := ui.TextField(c, &field.pageField, field.label, field.placeholder, ui.WithID(hitFormFieldList.At(i)))
 		if field.secure {
 			icon, name := lucideIcons[iconEye], m.ShowSecret
 			if field.shown {

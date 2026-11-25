@@ -61,7 +61,7 @@ func (state *State) declareTransferCenter(c ui.C) {
 	} else {
 		spec.InitialFocusID = hitTransfersList
 	}
-	if ui.PopoverWith(c, origin, &center.open, spec, body) {
+	if ui.Popover(c, origin, &center.open, spec, body) {
 		center.close()
 		return
 	}
@@ -314,7 +314,7 @@ func (state *State) declareTransferFilters(c ui.C, width float32) {
 				center.details.dismiss()
 				state.describeTransferScope()
 			}
-			input := ui.TextFieldID(c, hitTransfersSearch, &center.search, m.Search, m.Search).
+			input := ui.TextField(c, &center.search, m.Search, m.Search, ui.WithID(hitTransfersSearch)).
 				Icon(lucideIcons[iconSearch]).FontSize(metrics.FontSizeS).Height(30).MinWidth(52).MaxWidth(340).Grow(5)
 			if input.Changed() {
 				state.updateTransferSearch()

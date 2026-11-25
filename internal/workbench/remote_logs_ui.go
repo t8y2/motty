@@ -469,9 +469,9 @@ func (state *State) declareRemoteLogForm(c ui.C, session *Session, view *remoteL
 				ui.Text(c, fmt.Sprintf(m.RemovePrompt, view.formOriginal.Path)).FillWidth().Ellipsis()
 			} else {
 				ui.Text(c, m.Name)
-				ui.TextFieldID(c, hitRemoteLogName, &view.name, m.Name, "").Height(32)
+				ui.TextField(c, &view.name, m.Name, "", ui.WithID(hitRemoteLogName)).Height(32)
 				ui.Text(c, m.Path)
-				ui.TextFieldID(c, hitRemoteLogPath, &view.path, m.Path, "/var/log/app.log").Height(32)
+				ui.TextField(c, &view.path, m.Path, "/var/log/app.log", ui.WithID(hitRemoteLogPath)).Height(32)
 			}
 			if view.formError != "" {
 				ui.Text(c, view.formError).Color(state.pal.danger).FillWidth()

@@ -203,7 +203,7 @@ func (state *State) declareWorkspaceSave(c ui.C) {
 			ui.Column(c).Height(62).Children(func() {
 				ui.Text(c, messages.WorkspaceDraftName).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).
 					Color(theme.Foreground).LineHeight(metrics.FontSizeM + 4).Ellipsis()
-				ui.TextFieldID(c, hitWorkspaceSaveName, &save.nameField, messages.WorkspaceDraftName, messages.WorkspaceDraftNamePlaceholder).
+				ui.TextField(c, &save.nameField, messages.WorkspaceDraftName, messages.WorkspaceDraftNamePlaceholder, ui.WithID(hitWorkspaceSaveName)).
 					Height(metrics.ControlHeight).MarginSides(gap, 0, 0, 0)
 				if save.error != "" {
 					ui.Text(c, save.error).FontSize(metrics.FontSizeM).Color(theme.Danger).

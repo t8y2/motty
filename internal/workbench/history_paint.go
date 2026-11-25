@@ -36,7 +36,7 @@ func (state *State) declareHistoryBody(c ui.C) {
 	m := state.messages.History
 	ui.Column(c).Fill().Children(func() {
 		ui.Row(c).Height(36).Gap(8).Shrink(0).Children(func() {
-			ui.TextFieldID(c, hitHistorySearch, &h.field, m.Title, m.Placeholder).
+			ui.TextField(c, &h.field, m.Title, m.Placeholder, ui.WithID(hitHistorySearch)).
 				Grow(1).Height(36).NavigationKeys()
 			ui.Slot(c).Width(210).Height(36).Self(ui.Center).Children(func() {
 				if ui.Choice(c, &h.all, historyScopeChoices[:], state.historyScopeLabel).Fill().Changed() {
