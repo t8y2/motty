@@ -16,8 +16,9 @@ import (
 const (
 	// MaxDimension is the largest width or height accepted, in pixels.
 	MaxDimension = 16384
-	// MaxPixels is the largest framebuffer accepted: 8K UHD, 133 MB of BGRA.
-	MaxPixels = 7680 * 4320
+	// MaxPixels is the largest framebuffer accepted: 512 MiB of BGRA, enough
+	// for multi-monitor 4K/8K desktops while still bounding server allocations.
+	MaxPixels = 128 << 20
 
 	maxNameLength   = 4096
 	maxReasonLength = 4096
