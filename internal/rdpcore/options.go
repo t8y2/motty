@@ -43,8 +43,8 @@ const (
 // Motty divergence from upstream: Dial and VerifyCertificate replace the
 // hard-coded net.DialTimeout and tls.Config{InsecureSkipVerify: true}; the
 // drive, printer, serial, parallel, smartcard, USB and camera options are gone
-// with their packages. Audio output is the one redirection Motty exposes,
-// through Sound. See ../../docs/remote-desktop.md.
+// with their packages. Audio output (Sound) and microphone input (AudioInput)
+// are the redirections Motty exposes. See ../../docs/remote-desktop.md.
 type Options struct {
 	// Connection
 	Host string // Target hostname or IP (TLS server name, NLA target)
@@ -105,6 +105,14 @@ type Options struct {
 	// connection ends. Nil asks the server for no audio. The server may still
 	// send compressed formats, which are not offered and therefore not used.
 	Sound func(sampleRate uint32, channels uint16) (io.WriteCloser, error)
+	// AudioInput, when set, redirects the local microphone to the server over
+	// the AUDIO_INPUT dynamic virtual channel (MS-RDPEAI). It is called when
+	// the server opens a recording stream with the negotiated 16-bit signed
+	// little-endian PCM format and the desired frames per packet; the client
+	// reads whole captured frames from the returned reader and closes it when
+	// recording stops or the connection ends. Nil asks the server for no
+	// microphone redirection.
+	AudioInput func(sampleRate uint32, channels uint16, framesPerPacket uint32) (io.ReadCloser, error)
 
 	// Session
 	ConsoleSession bool // Connect to the console (admin) session

@@ -41,6 +41,7 @@ import (
 	"time"
 	"unicode/utf16"
 
+	"motty/internal/rdpcore/protocol/audin"
 	"motty/internal/rdpcore/protocol/ber"
 	"motty/internal/rdpcore/protocol/caps"
 	"motty/internal/rdpcore/protocol/clearcodec"
@@ -202,6 +203,9 @@ type Client struct {
 	// the dynamic one.
 	soundHandler *rdpsnd.Handler
 	soundDVC     *dvc.DynChannel
+
+	// Audio input (MS-RDPEAI) over the AUDIO_INPUT dynamic virtual channel.
+	audinHandler atomic.Pointer[audin.Handler]
 
 	// RDPGFX graphics pipeline (MS-RDPEGFX)
 	egfxHandler *egfx.Handler
@@ -1096,21 +1100,23 @@ func (c *Client) mcsConnect() error {
 	if c.opts.Clipboard {
 		channelDefs = append(channelDefs, mcs.ChannelDef{Name: "cliprdr", Options: mcs.ChannelOptionInitialized | mcs.ChannelOptionEncryptRDP | mcs.ChannelOptionCompressRDP | mcs.ChannelOptionShowProtocol})
 	}
-	if c.opts.Sound != nil {
-		// Windows creates the session's audio endpoint through the device
-		// redirection subsystem, and it sends no sound formats unless the
-		// rdpdr channel exists. No device is announced and the handshake is
-		// not answered: verified against Windows 11, which sends PCM over
-		// AUDIO_PLAYBACK_DVC with only the channel joined, and sends nothing
-		// when it is absent.
+	if c.opts.Sound != nil || c.opts.AudioInput != nil {
+		// Windows creates the session's audio endpoints through the device
+		// redirection subsystem, and it sends no sound or audio input formats
+		// unless the rdpdr channel exists. No device is announced and the
+		// handshake is not answered: verified against Windows 11, which sends
+		// PCM over AUDIO_PLAYBACK_DVC with only the channel joined, and sends
+		// nothing when it is absent.
 		channelDefs = append(channelDefs, mcs.ChannelDef{Name: "rdpdr", Options: mcs.ChannelOptionInitialized | mcs.ChannelOptionEncryptRDP | mcs.ChannelOptionCompressRDP | mcs.ChannelOptionShowProtocol})
+	}
+	if c.opts.Sound != nil {
 		channelDefs = append(channelDefs, mcs.ChannelDef{Name: "rdpsnd", Options: mcs.ChannelOptionInitialized | mcs.ChannelOptionEncryptRDP | mcs.ChannelOptionCompressRDP | mcs.ChannelOptionShowProtocol})
 	}
 	// drdynvc must be the last static channel (matches MS reference client ordering).
 	channelDefs = append(channelDefs, mcs.ChannelDef{Name: "drdynvc", Options: mcs.ChannelOptionInitialized | mcs.ChannelOptionCompress})
-	// Audio travels over the rdpsnd static channel above; the newer
-	// AUDIO_PLAYBACK_DVC dynamic channel is accepted when the server opens it
-	// (Windows 11 uses it), and AUDIO_INPUT is never advertised.
+	// Audio output travels over the rdpsnd static channel above or the
+	// AUDIO_PLAYBACK_DVC dynamic channel (Windows 11 uses it); audio input
+	// travels over the AUDIO_INPUT dynamic channel when AudioInput is set.
 	netData := &mcs.ClientNetworkData{
 		Channels: channelDefs,
 	}
@@ -1465,6 +1471,27 @@ func (c *Client) mcsConnect() error {
 			ch.Reject()
 			return
 		}
+		if name == audin.ChannelName {
+			h := c.audinHandler.Load()
+			if c.opts.AudioInput == nil || h == nil {
+				ch.Reject()
+				return
+			}
+			channels := c.dvc
+			h.SetSendFn(func(pdu []byte) error {
+				if channels == nil {
+					return fmt.Errorf("dvc closed")
+				}
+				return channels.SendData(ch.ID, pdu)
+			})
+			ch.SetHandler(func(data []byte) {
+				h.ProcessPDU(data)
+			})
+			ch.OnClose(func() {
+				h.Reset()
+			})
+			return
+		}
 		if fn := c.loadOnDynChannel(); fn != nil {
 			fn(name, ch)
 		}
@@ -1527,12 +1554,18 @@ func (c *Client) mcsConnect() error {
 		})
 	}
 
-	// The rdpdr channel is present for the audio endpoint, not for device
+	// The rdpdr channel is present for the audio endpoints, not for device
 	// redirection: its PDUs are read and ignored.
-	if c.opts.Sound != nil {
+	if c.opts.Sound != nil || c.opts.AudioInput != nil {
 		c.registerChannelHandler("rdpdr", func(_ uint16, data []byte) {
 			c.log.LogAttrs(context.Background(), slog.LevelDebug, "rdpdr data ignored", slog.Int("bytes", len(data)))
 		})
+	}
+
+	if c.opts.AudioInput != nil {
+		c.audinHandler.Store(audin.NewHandler(nil, c.opts.AudioInput, c.log.With("component", "AUDIN")))
+	} else {
+		c.audinHandler.Store(nil)
 	}
 
 	// Initialize the rdpsnd handler on the "rdpsnd" static channel.
@@ -1747,7 +1780,7 @@ func (c *Client) sendClientInfo() error {
 		Username:            username,
 		Password:            password,
 		PerfFlags:           perfFlags,
-		AudioInput:          false,
+		AudioInput:          c.opts.AudioInput != nil,
 		RemoteAudio:         false,
 		NoAudioPlayback:     c.opts.Sound == nil,
 		AutoReconnectCookie: c.arcCookie,
@@ -2729,6 +2762,9 @@ func (c *Client) resetForReconnect() {
 		c.soundHandler.Close()
 	}
 	c.soundHandler = nil
+	if h := c.audinHandler.Swap(nil); h != nil {
+		h.Close()
+	}
 	c.dispHandler = nil
 	c.dispReady.Store(false)
 	c.vcReassembly = nil
@@ -6169,6 +6205,9 @@ func (c *Client) Close() error {
 	}
 	if c.soundHandler != nil {
 		c.soundHandler.Close()
+	}
+	if h := c.audinHandler.Load(); h != nil {
+		h.Close()
 	}
 
 	c.log.LogAttrs(context.Background(), slog.LevelInfo, "connection closed")

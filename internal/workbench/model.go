@@ -115,7 +115,9 @@ type Host struct {
 	// the clipboard is shared with the remote desktop. Console is an RDP host's:
 	// it asks Windows for its console (administrative) session instead of a new
 	// one. NoAudio is an RDP host's too: the server is asked for no audio, and
-	// this computer opens no output device for the session. StandardSecurity is
+	// this computer opens no output device for the session. Microphone is an
+	// RDP host's too: this computer's default microphone is redirected to the
+	// server when a remote application records. StandardSecurity is
 	// an RDP host's as well: the connection uses Standard RDP Security alone,
 	// with no TLS or NLA, for a server that requires it. LegacyTLS is an RDP
 	// host's too: the TLS offer includes the RSA key exchange suites (AES-CBC
@@ -126,6 +128,7 @@ type Host struct {
 	Clipboard        bool
 	Console          bool
 	NoAudio          bool
+	Microphone       bool
 	StandardSecurity bool
 	LegacyTLS        bool
 	Chromeless       bool
@@ -166,6 +169,7 @@ type reuseHostPolicy struct {
 	clipboard        bool
 	console          bool
 	noAudio          bool
+	microphone       bool
 	standardSecurity bool
 	legacyTLS        bool
 	interactiveOnly  bool
@@ -179,7 +183,7 @@ type reuseHostPolicy struct {
 func reusePolicyFor(host Host) reuseHostPolicy {
 	policy := reuseHostPolicy{line: host.Line, backspace: host.Backspace, encoding: host.Encoding, user: host.User,
 		localShell: host.localShell, viaSSH: host.ViaSSH, clipboard: host.Clipboard,
-		console: host.Console, noAudio: host.NoAudio, standardSecurity: host.StandardSecurity,
+		console: host.Console, noAudio: host.NoAudio, microphone: host.Microphone, standardSecurity: host.StandardSecurity,
 		legacyTLS: host.LegacyTLS, interactiveOnly: host.InteractiveOnly,
 		colorDepth: host.ColorDepth, desktopEncoding: host.PreferredEncoding, effects: host.desktopEffects(),
 		desktopWidth: host.DesktopWidth, desktopHeight: host.DesktopHeight}

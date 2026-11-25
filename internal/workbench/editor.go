@@ -138,11 +138,11 @@ type hostEditor struct {
 	// backspace is the byte the Backspace key of a host that asks for it sends.
 	backspace backspaceKey
 	// viaSSH, clipboard and chromeless are the switches of a VNC or RDP host;
-	// console, noAudio, standardSecurity and legacyTLS are RDP's own: the
-	// server's console (administrative) session, muting remote sound, Standard
-	// RDP Security without TLS or NLA, and the RSA key exchange TLS suites an
-	// old server needs.
-	viaSSH, clipboard, console, noAudio, standardSecurity, legacyTLS, chromeless bool
+	// console, noAudio, microphone, standardSecurity and legacyTLS are RDP's
+	// own: the server's console (administrative) session, muting remote sound,
+	// forwarding the local microphone, Standard RDP Security without TLS or NLA,
+	// and the RSA key exchange TLS suites an old server needs.
+	viaSSH, clipboard, console, noAudio, microphone, standardSecurity, legacyTLS, chromeless bool
 	// colorDepth, desktopEncoding and effects are a desktop host's quality
 	// choices: the bits per pixel (zero is 32), the VNC encoding listed first,
 	// and the visual effects an RDP server may render.
@@ -423,6 +423,7 @@ func (editor *hostEditor) load(host Host) {
 	editor.viaSSH, editor.clipboard, editor.chromeless = host.ViaSSH, host.Clipboard, host.Chromeless
 	editor.console = host.Protocol == protocolRDP && host.Console
 	editor.noAudio = host.Protocol == protocolRDP && host.NoAudio
+	editor.microphone = host.Protocol == protocolRDP && host.Microphone
 	editor.standardSecurity = host.Protocol == protocolRDP && host.StandardSecurity
 	editor.legacyTLS = host.Protocol == protocolRDP && host.LegacyTLS
 	editor.colorDepth, editor.desktopEncoding, editor.effects = 0, desktop.EncodingAuto, desktop.DefaultEffects()
@@ -496,6 +497,7 @@ func (editor *hostEditor) host(id uint32) Host {
 	if editor.protocol == protocolRDP {
 		host.Console = editor.console
 		host.NoAudio = editor.noAudio
+		host.Microphone = editor.microphone
 		host.StandardSecurity = editor.standardSecurity
 		host.LegacyTLS = editor.legacyTLS
 		host.ColorDepth = rdpColorDepth(editor.colorDepth)
@@ -590,7 +592,7 @@ func (editor *hostEditor) reset() {
 	editor.port.Insert(strconv.Itoa(defaultPort))
 	editor.protocol, editor.terminal, editor.flow = protocolSSH, terminalSSH, serial.FlowNone
 	editor.backspace = backspaceDEL
-	editor.viaSSH, editor.clipboard, editor.console, editor.noAudio, editor.standardSecurity, editor.legacyTLS, editor.chromeless = false, false, false, false, false, false, false
+	editor.viaSSH, editor.clipboard, editor.console, editor.noAudio, editor.microphone, editor.standardSecurity, editor.legacyTLS, editor.chromeless = false, false, false, false, false, false, false, false
 	editor.colorDepth, editor.desktopEncoding, editor.effects = 0, desktop.EncodingAuto, desktop.DefaultEffects()
 }
 

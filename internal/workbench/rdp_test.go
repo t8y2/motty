@@ -466,3 +466,66 @@ func TestRDPRemoteAudioIsAnRDPOnlySwitch(t *testing.T) {
 		t.Fatalf("restored = %+v", restored)
 	}
 }
+
+// Microphone forwarding is an RDP-only switch and is off by default:
+// existing hosts keep it off until turned on.
+func TestRDPMicrophoneIsAnRDPOnlySwitch(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.openHostDialog()
+	state.editor.setProtocol(protocolVNC)
+	canvas, _ := paintAt(state, gfx.Size{Width: 1200, Height: 1000})
+	if _, ok := hitByID(canvas, hitDialogMicrophone); ok {
+		t.Fatal("a VNC host was offered microphone forwarding")
+	}
+
+	// A new RDP host leaves microphone forwarding off by default.
+	state.editor.setProtocol(protocolRDP)
+	canvas, _ = paintAt(state, gfx.Size{Width: 1200, Height: 1000})
+	if _, ok := hitByID(canvas, hitDialogMicrophone); !ok {
+		t.Fatal("an RDP host was not offered microphone forwarding")
+	}
+	typeInto(state, hitDialogLabel, "MutedMic")
+	typeInto(state, hitDialogAddress, "muted-mic.example.com")
+	typeInto(state, hitDialogUser, `CORP\alice`)
+	state.Click(hitDialogSubmit)
+	if state.modal != modalNone || state.dialogError != "" {
+		t.Fatalf("submit: modal=%d error=%q", state.modal, state.dialogError)
+	}
+	index := state.hostIndexByEndpoint(Host{Protocol: protocolRDP, Address: "muted-mic.example.com", User: `CORP\alice`, Port: 3389})
+	if index < 0 {
+		t.Fatal("the RDP host was not added")
+	}
+	if muted := state.hosts[index]; muted.Microphone {
+		t.Fatal("a new RDP host had microphone forwarding enabled by default")
+	} else {
+		var restored Host
+		if !restored.applyTransport(muted.transport()) || restored.Microphone {
+			t.Fatalf("restored = %+v", restored)
+		}
+	}
+
+	// Turning it on is saved with the host and survives incremental persistence.
+	state.openHostDialog()
+	state.editor.setProtocol(protocolRDP)
+	canvas, _ = paintAt(state, gfx.Size{Width: 1200, Height: 1000})
+	state.Click(hitDialogMicrophone)
+	typeInto(state, hitDialogLabel, "LiveMic")
+	typeInto(state, hitDialogAddress, "live-mic.example.com")
+	typeInto(state, hitDialogUser, `CORP\alice`)
+	state.Click(hitDialogSubmit)
+	if state.modal != modalNone || state.dialogError != "" {
+		t.Fatalf("submit: modal=%d error=%q", state.modal, state.dialogError)
+	}
+	index = state.hostIndexByEndpoint(Host{Protocol: protocolRDP, Address: "live-mic.example.com", User: `CORP\alice`, Port: 3389})
+	if index < 0 {
+		t.Fatal("the microphone RDP host was not added")
+	}
+	live := state.hosts[index]
+	if !live.Microphone {
+		t.Fatal("the microphone switch was not saved with the host")
+	}
+	var restored Host
+	if !restored.applyTransport(live.transport()) || !restored.Microphone {
+		t.Fatalf("restored = %+v", restored)
+	}
+}

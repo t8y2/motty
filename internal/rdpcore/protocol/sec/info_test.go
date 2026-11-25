@@ -118,6 +118,18 @@ func TestEncodeClientInfo_EmptyFields(t *testing.T) {
 	}
 }
 
+func TestEncodeClientInfo_AudioCaptureFlag(t *testing.T) {
+	off := EncodeClientInfo(&ClientInfo{Username: "user"})
+	if flags := binary.LittleEndian.Uint32(off[4:8]); flags&InfoAudioCapture != 0 {
+		t.Fatalf("flags = %#x, did not expect InfoAudioCapture", flags)
+	}
+
+	on := EncodeClientInfo(&ClientInfo{Username: "user", AudioInput: true})
+	if flags := binary.LittleEndian.Uint32(on[4:8]); flags&InfoAudioCapture == 0 {
+		t.Fatalf("flags = %#x, want InfoAudioCapture (%#x)", flags, InfoAudioCapture)
+	}
+}
+
 func TestEncodeUTF16LE(t *testing.T) {
 	tests := []struct {
 		input string

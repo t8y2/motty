@@ -3194,6 +3194,7 @@ var chineseDesktop = DesktopMessages{
 	ShareClipboard:            "与远程桌面共享剪贴板",
 	HideBars:                  "只显示画面（隐藏顶栏与状态栏）",
 	RemoteAudio:               "播放远程音频",
+	Microphone:                "转发本地麦克风",
 	ConsoleSession:            "连接控制台（管理员）会话",
 	StandardSecurity:          "使用标准 RDP 安全层（不使用 TLS/NLA）",
 	StandardSecurityNote:      "仅在服务器要求时使用。标准 RDP 安全层使用服务器从未证明其持有的密钥加密，网络中的任何人都能读取或篡改会话内容，包括你的密码。状态栏会显示为未加密。",
