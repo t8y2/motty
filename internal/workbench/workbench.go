@@ -742,9 +742,12 @@ type State struct {
 	appearanceMode       appearanceMode
 	cornerStyle          cornerStyle
 	terminalTransparency ui.SliderState
-	iconColor            iconColor
-	iconColorChoice      iconColor // the unconfirmed selection in the icon picker
-	networkProxy         networkProxyMode
+	// windowComposited is whether the desktop really shows through the window,
+	// as the platform reported when it opened: the setting means nothing without it.
+	windowComposited atomic.Bool
+	iconColor        iconColor
+	iconColorChoice  iconColor // the unconfirmed selection in the icon picker
+	networkProxy     networkProxyMode
 	// sshBrowser is the Chromium-family browser the SSH tab's browser opens.
 	// Automatic takes the first one installed.
 	sshBrowser          sshbrowser.Family

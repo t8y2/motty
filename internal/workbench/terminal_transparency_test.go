@@ -12,6 +12,7 @@ import (
 func TestTerminalTransparencyAppearanceSlider(t *testing.T) {
 	state, _, _, _ := liveSession(t)
 	state.options.TerminalTransparency = true
+	state.windowComposited.Store(true)
 	driver := paneDriver(t, state, gfx.Size{Width: 1200, Height: 800})
 	clickPaintedHit(t, driver, hitWindowSettings)
 	clickPaintedHit(t, driver, hitSettingsCategoryList.At(int(settingsAppearance)))
@@ -46,6 +47,7 @@ func TestTerminalTransparencyAppearanceSlider(t *testing.T) {
 func TestTerminalTransparencyPaint(t *testing.T) {
 	state, _, _, shell := liveSession(t)
 	state.options.TerminalTransparency = true
+	state.windowComposited.Store(true)
 	shell.say("\x1b[48;2;9;29;73mANSI\x1b[0m normal text\r\n")
 	state.Wake()
 	size := gfx.Size{Width: 1200, Height: 800}
@@ -107,9 +109,33 @@ func TestTerminalTransparencyPaint(t *testing.T) {
 	}
 }
 
+// A window the platform could not composite shows no desktop, so the setting
+// must not make the terminal translucent over a black surface.
+func TestTerminalTransparencyNeedsACompositedWindow(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	state.options.TerminalTransparency = true
+	state.terminalTransparency.Value = 50
+	config := state.WindowConfig(app.Config{})
+	if !config.Transparent || config.OnTransparentChange == nil {
+		t.Fatalf("the window did not ask for transparency: %+v", config)
+	}
+	if state.desktopTransparency() != 0 {
+		t.Fatal("transparency applied before the platform composited the window")
+	}
+	config.OnTransparentChange(true)
+	if state.desktopTransparency() == 0 {
+		t.Fatal("transparency not applied once the window is composited")
+	}
+	config.OnTransparentChange(false)
+	if state.desktopTransparency() != 0 {
+		t.Fatal("transparency stayed on after the platform reported no compositing")
+	}
+}
+
 func TestTerminalTransparencyKeepsAppLockOpaque(t *testing.T) {
 	state, _, _, _ := liveSession(t)
 	state.options.TerminalTransparency = true
+	state.windowComposited.Store(true)
 	state.terminalTransparency.Value = 100
 	if err := finishAppLock(t, state, appLockEnable, "", "fixture password"); err != nil {
 		t.Fatal(err)

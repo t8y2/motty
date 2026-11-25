@@ -357,7 +357,7 @@ func (state *State) paintAppearanceSettings(page *settingsPage) {
 		page.group("", func() {
 			settingsChoiceRow(page, messages.SettingsAppearance, "", &state.appearanceMode, settingsAppearanceChoices[:], state.settingsAppearanceLabel,
 				func() { state.chooseAppearanceMode(state.appearanceMode); state.save() }, nil)
-			if state.options.TerminalTransparency {
+			if state.terminalTransparent() {
 				state.paintTerminalTransparencySetting(page)
 			}
 			settingsChoiceRow(page, messages.SettingsCorners, "", &state.cornerStyle, settingsCornerChoices[:], state.settingsCornerLabel,

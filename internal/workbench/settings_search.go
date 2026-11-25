@@ -173,7 +173,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsGeneral, m.SettingsSidebar, m.SettingsSidebarHint)
 	row(settingsGeneral, tools.DiagnosticsRow, tools.DiagnosticsDescription)
 	row(settingsAppearance, m.SettingsAppearance, "")
-	if state.options.TerminalTransparency {
+	if state.terminalTransparent() {
 		rowSearch(settingsAppearance, m.SettingsTransparency, m.SettingsTransparencyDescription, "opacity transparency translucent")
 	}
 	rowSearch(settingsAppearance, m.SettingsCorners, "", "round square rounded corner radius")

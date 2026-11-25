@@ -322,10 +322,16 @@ func (state *State) ground(color gfx.Color) gfx.Color {
 	return color
 }
 
+// terminalTransparent reports whether this window can show the desktop through
+// the terminal: the host offers it and the platform composited the window.
+func (state *State) terminalTransparent() bool {
+	return state.options.TerminalTransparency && state.windowComposited.Load()
+}
+
 // desktopTransparency is the fraction of the desktop visible through the
 // default terminal background. Auxiliary windows and unsupported hosts stay solid.
 func (state *State) desktopTransparency() float32 {
-	if !state.options.TerminalTransparency {
+	if !state.terminalTransparent() {
 		return 0
 	}
 	return state.terminalTransparency.Value / 100
@@ -367,7 +373,7 @@ func (state *State) paintBackground(canvas *gfx.Canvas, size gfx.Size) bool {
 		source.Y = (float32(bg.height) - source.Height) / 2
 	}
 	bitmap := gfx.Bitmap{Pix: bg.pix, Width: bg.width, Height: bg.height, Stride: bg.width * 4, ID: bg.id}
-	if state.options.TerminalTransparency {
+	if state.terminalTransparent() {
 		// A PNG can itself contain clear pixels. At 0% they should reveal the
 		// shell color that used to be the native clear, not the desktop.
 		canvas.Fill(area, state.WindowColor())

@@ -513,6 +513,12 @@ func (state *State) WindowConfig(base app.Config) app.Config {
 		// window itself must composite: nothing under the shell is opaque.
 		config.Transparent = true
 		config.ClearColor = app.Color{}
+		config.OnTransparentChange = func(active bool) {
+			state.windowComposited.Store(active)
+			if state.options.Invalidate != nil {
+				state.options.Invalidate()
+			}
+		}
 	}
 	// The assistant owns the wheel over its own panel: its lists keep their
 	// offsets in the page, but a modal dialog must still keep them still, which
