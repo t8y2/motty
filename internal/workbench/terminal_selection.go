@@ -302,11 +302,6 @@ func (state *State) terminalPointer(session *Session, event gfx.PointerEvent) gf
 	terminal.screen.SetWordSeparators(state.terminalWordSeparators)
 	selection := &terminal.selection
 	position := state.terminalPositionAt(session, event.X, event.Y)
-	if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonMiddle {
-		state.terminalMenu.open = false
-		state.pasteIntoTerminal(session)
-		return gfx.EventResult{Handled: true, Repaint: true}
-	}
 	if result, handled := state.terminalMousePointer(session, event, position); handled {
 		result.Repaint = terminal.links.clear() || result.Repaint
 		return result
@@ -319,6 +314,11 @@ func (state *State) terminalPointer(session *Session, event gfx.PointerEvent) gf
 	linksEnabled := terminal.screen.Modes().Mouse == term.MouseOff && state.terminalLinkOpens(event.Modifiers)
 	switch event.Kind {
 	case gfx.PointerDown:
+		if event.Button == gfx.PointerButtonMiddle {
+			state.terminalMenu.open = false
+			state.pasteIntoTerminal(session)
+			return gfx.EventResult{Handled: true, Repaint: true}
+		}
 		if event.Button == gfx.PointerButtonSecondary {
 			if state.terminalRightClickPaste && event.Modifiers&gfx.ModifierShift == 0 && terminal.selection.selected {
 				state.terminalMenu.open = false

@@ -462,7 +462,7 @@ func TestMiddleClickPastesClipboard(t *testing.T) {
 	}
 }
 
-func TestMiddleClickPastesWithTerminalMouseReporting(t *testing.T) {
+func TestMiddleClickWithTerminalMouseReporting(t *testing.T) {
 	state, session, geometry := selectionState()
 	shell := &fakeShell{done: make(chan struct{})}
 	session.term.shell = shell
@@ -470,16 +470,47 @@ func TestMiddleClickPastesWithTerminalMouseReporting(t *testing.T) {
 	state.options.ClipboardText = func() (string, error) { return "ls -la", nil }
 	x, y := cellPoint(geometry, 0, 3, state.cellWidth, state.cellHeight)
 
-	result := state.Pointer(gfx.PointerEvent{
+	down := state.Pointer(gfx.PointerEvent{
 		Kind: gfx.PointerDown, Button: gfx.PointerButtonMiddle,
 		Target: terminalTestHit(state, session), X: x, Y: y, Viewport: state.viewport,
 	})
+	up := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerUp, Button: gfx.PointerButtonMiddle,
+		Target: terminalTestHit(state, session), X: x, Y: y, Viewport: state.viewport,
+		Captured: true,
+	})
 
-	if !result.Handled {
-		t.Fatalf("middle click = %+v", result)
+	if !down.Handled || !up.Handled {
+		t.Fatalf("middle click = down %+v, up %+v", down, up)
 	}
-	if got := shell.typed(); got != "ls -la" {
-		t.Fatalf("middle click sent %q, want a clipboard paste", got)
+	if got, want := shell.typed(), "\x1b[<1;4;1M\x1b[<1;4;1m"; got != want {
+		t.Fatalf("middle click sent %q, want %q", got, want)
+	}
+}
+
+func TestShiftMiddleClickPastesWithTerminalMouseReporting(t *testing.T) {
+	state, session, geometry := selectionState()
+	shell := &fakeShell{done: make(chan struct{})}
+	session.term.shell = shell
+	session.term.screen.Write([]byte("\x1b[?1002h\x1b[?1006h"))
+	state.options.ClipboardText = func() (string, error) { return "ls -la", nil }
+	x, y := cellPoint(geometry, 0, 3, state.cellWidth, state.cellHeight)
+
+	down := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonMiddle, Modifiers: gfx.ModifierShift,
+		Target: terminalTestHit(state, session), X: x, Y: y, Viewport: state.viewport,
+	})
+	up := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerUp, Button: gfx.PointerButtonMiddle, Modifiers: gfx.ModifierShift,
+		Target: terminalTestHit(state, session), X: x, Y: y, Viewport: state.viewport,
+		Captured: true,
+	})
+
+	if !down.Handled || !down.Repaint || !up.Handled {
+		t.Fatalf("shift middle click = down %+v, up %+v", down, up)
+	}
+	if got, want := shell.typed(), "ls -la"; got != want {
+		t.Fatalf("shift middle click sent %q, want %q", got, want)
 	}
 }
 
