@@ -251,7 +251,7 @@ func (state *State) declareFindPreference(c ui.C, which findPreference) ui.Box {
 		percent := strconv.Itoa(state.terminalFindPrefs.Opacity) + "%"
 		row := ui.Row(c).Grow(1).Gap(8).Items(ui.Center)
 		row.Children(func() {
-			slider := ui.Slider(c, &v.opacity).Range(0, 100).Step(1).Label(m.Opacity).Hit(hitFindSettingsOpacity, m.Opacity).Grow(1)
+			slider := ui.Slider(c, &v.opacity).Range(0, 100).Step(1).Label(m.Opacity).Hit(hitFindSettingsOpacity, m.Opacity).Grow(1).Shrink(1)
 			if slider.Changed() {
 				opacity := int(v.opacity.Value)
 				c.After(func() {
