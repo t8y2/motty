@@ -141,6 +141,9 @@ type terminalDrop struct {
 
 // FileDrop receives files dragged from the system over the window.
 func (state *State) FileDrop(event gfx.FileDropEvent) gfx.EventResult {
+	if state.appAccessBlocked() {
+		return gfx.EventResult{Handled: true}
+	}
 	if state.modal == modalFileProperties {
 		return gfx.EventResult{Handled: true}
 	}

@@ -54,6 +54,9 @@ type sftpDedicated struct {
 // startFileConnection dials the connection a file panel uses in place of its
 // session's transport. path is what to list once it is up.
 func (state *State) startFileConnection(session *Session, view *sftpView, path string) {
+	if state.appAccessBlocked() {
+		return
+	}
 	host := session.host
 	dedicated := &sftpDedicated{path: path}
 	dedicated.session = Session{

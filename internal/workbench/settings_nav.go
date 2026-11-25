@@ -113,6 +113,9 @@ func (state *State) openSettingsCategory(category settingsCategory) {
 }
 
 func (state *State) selectSettingsCategory(category settingsCategory) bool {
+	if category == settingsSecurity && state.settingsCategory != category && state.appProtection != nil {
+		state.appProtection.supportChecked = false
+	}
 	if category >= settingsCategoryCount {
 		return false
 	}

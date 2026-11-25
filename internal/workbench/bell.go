@@ -22,7 +22,7 @@ var (
 const bellInterval = 200 * time.Millisecond
 
 func (state *State) terminalBell(sessionID uint32) {
-	if state.terminalBellOff {
+	if state.terminalBellOff || state.appAccessBlocked() {
 		return
 	}
 	session, ok := state.sessionByIDPointer(sessionID)

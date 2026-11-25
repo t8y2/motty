@@ -168,6 +168,9 @@ func (state *State) NoteHiddenToTray() {
 // or because the user turned the question off. Asking a second time while the
 // question is up closes, since the user insists.
 func (state *State) ConfirmClose(allow func()) bool {
+	if state.appAccessBlocked() {
+		return state.ConfirmDocumentClose(allow)
+	}
 	if state.ConfirmDocumentClose(func() {
 		if !state.ConfirmClose(allow) {
 			allow()
@@ -220,6 +223,12 @@ func (tray *Tray) Menu() []app.MenuItem {
 	}
 	member, _ := tray.visibleMember()
 	messages := tray.members[0].state.messages
+	if tray.members[0].state.appAccessBlocked() {
+		return []app.MenuItem{
+			{ID: "show-window", Title: productText(messages.TrayShowWindow), OnSelect: tray.ShowWindow},
+			{ID: "quit", Title: productText(messages.TrayQuit), OnSelect: tray.quit},
+		}
+	}
 	count := tray.SessionCount()
 	items := make([]app.MenuItem, 0, 10+count)
 	heading := messages.TrayEmpty
@@ -431,7 +440,7 @@ func (tray *Tray) sessionItem(member trayMember, session *Session) app.MenuItem 
 
 // reveal brings a window forward at one of its sessions.
 func (tray *Tray) reveal(member trayMember, id uint32) {
-	if !member.state.RevealSession(id) {
+	if member.state.appAccessBlocked() || !member.state.RevealSession(id) {
 		return
 	}
 	member.window.Show()
@@ -440,6 +449,10 @@ func (tray *Tray) reveal(member trayMember, id uint32) {
 
 // openHost connects a saved host and brings the selected window forward.
 func (tray *Tray) openHost(member trayMember, catalogID string) {
+	if member.state.appAccessBlocked() {
+		member.window.Show()
+		return
+	}
 	host, ok := member.state.hostByCatalogID(catalogID)
 	if !ok {
 		return
@@ -463,6 +476,10 @@ func (tray *Tray) invalidate(member trayMember) {
 // reports it over the window, which is shown either way.
 func (tray *Tray) openWorkspace(member trayMember, templateID string) {
 	state := member.state
+	if state.appAccessBlocked() {
+		member.window.Show()
+		return
+	}
 	if _, _, ok := state.workspaceTemplateByID(templateID); !ok {
 		return
 	}
@@ -491,6 +508,10 @@ func (tray *Tray) visibleMember() (trayMember, bool) {
 func (tray *Tray) openLocalTerminal() {
 	member, ok := tray.visibleMember()
 	if !ok {
+		return
+	}
+	if member.state.appAccessBlocked() {
+		member.window.Show()
 		return
 	}
 	member.state.openLocalTerminal()

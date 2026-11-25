@@ -99,6 +99,9 @@ func (state *State) Launch(args []string) {
 	args = append([]string(nil), args...)
 	state.aiPost(func(state *State) {
 		state.launchBacklog = append(state.launchBacklog, args)
+		if state.appAccessBlocked() && state.options.Raise != nil && !slices.Contains(args, "--background") {
+			state.options.Raise()
+		}
 		state.runLaunches()
 	})
 }
@@ -127,7 +130,7 @@ func (state *State) runLaunches() bool {
 }
 
 func (state *State) launchReady() bool {
-	return state.modal == modalNone && state.knownHosts.action == knownHostsActionNone
+	return !state.appAccessBlocked() && state.modal == modalNone && state.knownHosts.action == knownHostsActionNone
 }
 
 func (state *State) openLaunch(args []string) {

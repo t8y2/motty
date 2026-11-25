@@ -79,6 +79,8 @@ func (state *State) shortcutActionLabel(action shortcutAction) string {
 		return messages.Tools.BroadcastStart
 	case shortcutBroadcastAll:
 		return messages.Tools.BroadcastAllStart
+	case shortcutAppLock:
+		return messages.AppLock.Lock
 	default:
 		return ""
 	}

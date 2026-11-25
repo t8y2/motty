@@ -17,6 +17,7 @@ import (
 
 // Group is the windows of a process.
 type Group struct {
+	protection       *applicationProtection
 	mu               sync.Mutex
 	members          []*State
 	completionStores map[string]*completion.CatalogStore
