@@ -1454,6 +1454,7 @@ func (state *State) closeModal() {
 	returnToSnippetGroups := state.snippetGroups.returning && (state.modal == modalSnippetGroupRename || state.modal == modalSnippetGroupDelete)
 	returnToSnippet := state.modal == modalSnippetGroups && state.snippetGroups.returnToSnippet
 	returnToHost := state.modal == modalCredential && state.credentialReturn != modalNone
+	returnToHostFromVault := state.modal == modalVaultForget && state.secrets.forgetReturn != modalNone
 	if state.modal == modalRuleManager {
 		state.ruleManager = ruleManagerUI{}
 	}
@@ -1536,6 +1537,10 @@ func (state *State) closeModal() {
 	if returnToHost {
 		state.modal = state.credentialReturn
 		state.credentialReturn = modalNone
+	}
+	if returnToHostFromVault {
+		state.modal = state.secrets.forgetReturn
+		state.secrets.forgetReturn = modalNone
 	}
 	state.modalSession = 0
 	state.reveal.reset()

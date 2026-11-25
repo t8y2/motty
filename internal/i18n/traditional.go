@@ -365,7 +365,7 @@ var TraditionalMessages = Messages{
 	VaultForgetConfirm:                     "全部忘記",
 	VaultSavedFmt:                          "已儲存 %s 的密碼。",
 	VaultSaveFailedFmt:                     "無法儲存密碼：%v",
-	VaultKeyLost:                           "已儲存密碼的金鑰丟失了(系統鑰匙圈和資料目錄裡的 vault.key 裡都沒有)。請「全部忘記」後重新開始。",
+	VaultKeyLost:                           "已儲存密碼的金鑰已遺失。「全部忘記」會清空所有已儲存的密碼，之後可重新儲存。",
 	VaultTooLarge:                          "已儲存密碼的儲存檔案已達大小上限。請刪除不再使用的密碼後重試。",
 	VaultUnavailable:                       "無法在資料目錄裡建立儲存金鑰的檔案，所以不能儲存密碼。",
 	VaultCorruptFmt:                        "已儲存密碼的檔案無法讀取，已改名為 %s。",

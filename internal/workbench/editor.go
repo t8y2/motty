@@ -35,10 +35,14 @@ type hostEditor struct {
 	// passwordSaved says the password field was filled from the vault when the
 	// dialog opened, so that emptying it means taking the password away.
 	passwordSaved bool
-	group         text.Editor
-	groupPicker   hostGroupPicker
-	tags          text.Editor
-	tagPicker     hostTagPicker
+	// keyLostError is the dialog error a failed save put up because the vault's key
+	// is gone. The recovery button shows only while that error is still the one
+	// on screen, so a later, unrelated error does not keep offering it.
+	keyLostError string
+	group        text.Editor
+	groupPicker  hostGroupPicker
+	tags         text.Editor
+	tagPicker    hostTagPicker
 	// encoding is the remote charset the host's shells use: empty is UTF-8.
 	encoding string
 	icon     hostIcon
@@ -333,6 +337,7 @@ func (editor *hostEditor) load(host Host) {
 	editor.address = text.Editor{}
 	editor.user = text.Editor{}
 	editor.password, editor.passphrase, editor.passphraseFor, editor.passwordSaved = text.Editor{}, text.Editor{}, "", false
+	editor.keyLostError = ""
 	editor.group = text.Editor{}
 	editor.tags = text.Editor{}
 	editor.tagPicker = hostTagPicker{}
@@ -484,6 +489,7 @@ func (editor *hostEditor) reset() {
 	editor.address = text.Editor{}
 	editor.user = text.Editor{}
 	editor.password, editor.passphrase, editor.passphraseFor, editor.passwordSaved = text.Editor{}, text.Editor{}, "", false
+	editor.keyLostError = ""
 	editor.group = text.Editor{}
 	editor.tags = text.Editor{}
 	editor.tagPicker = hostTagPicker{}
