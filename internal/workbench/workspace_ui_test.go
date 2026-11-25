@@ -1117,3 +1117,32 @@ func TestTabbedWorkspacePaneTabsKeepOneWidth(t *testing.T) {
 		t.Fatalf("pane tab width %v, want one 160px page share", widths[0])
 	}
 }
+
+func TestContextPanelMaxWidthMatchesMonitor(t *testing.T) {
+	if layoutcore.MaxContextWidth != layoutcore.MaxMonitorWidth {
+		t.Fatalf("MaxContextWidth = %v, want %v (MaxMonitorWidth)", layoutcore.MaxContextWidth, layoutcore.MaxMonitorWidth)
+	}
+	state := threeVisiblePaneState(t)
+	workspaceID := state.deck.ActiveWorkspace()
+	if err := state.deck.SetContext(workspaceID, layoutcore.ContextState{
+		Kind:  layoutcore.ContextSFTP,
+		Open:  true,
+		Width: layoutcore.DefaultContextWidth,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	size := gfx.Size{Width: 1800, Height: 900}
+	state.Resize(size)
+	var canvas gfx.Canvas
+	state.Paint(&canvas, size)
+
+	base := state.baseWorkspacePixelBounds(size)
+	state.dragContextDivider(gfx.PointerEvent{Viewport: size, X: base.X + 900})
+	context, ok := state.deck.Context(workspaceID)
+	if !ok {
+		t.Fatal("missing workspace context")
+	}
+	if context.Width != layoutcore.MaxMonitorWidth {
+		t.Fatalf("dragged file sidebar width = %v, want %v", context.Width, layoutcore.MaxMonitorWidth)
+	}
+}
