@@ -1651,6 +1651,7 @@ func (state *State) restoreWindowAppearance(saved savedState) {
 		state.language, state.languageChosen = state.systemLanguage(), false
 	}
 	state.messages = i18n.For(state.language)
+	state.refreshEditMenu()
 	state.appearanceMode = appearanceModeFromString(saved.Theme)
 	state.setIconColor(iconColorFromString(saved.IconColor))
 	state.syncNativeAppearance()

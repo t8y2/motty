@@ -451,6 +451,7 @@ var TraditionalMessages = Messages{
 	TipFiles:                               "檔案：透過 SFTP 瀏覽和傳輸",
 	TipFilesLocal:                          "檔案：瀏覽本機檔案",
 	SFTPInsertPath:                         "把路徑輸入終端機",
+	MenuCut:                                "剪下",
 	MenuCopy:                               "複製",
 	MenuFile:                               "檔案",
 	MenuEdit:                               "編輯",

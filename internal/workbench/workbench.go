@@ -721,6 +721,7 @@ type State struct {
 	language           i18n.Language
 	languageChosen     bool // the user picked it; until then it follows the system
 	messages           i18n.Messages
+	editMenu           ui.EditMenuLabels // the words of every text field's edit menu, which each window's page points at
 	modal              modalKind
 	modalSession       uint32
 	dialogError        string
@@ -1304,6 +1305,7 @@ func New(options Options) *State {
 		update:                updateState{firstDelay: updateFirstDelayDefault, every: updateIntervalDefault},
 		winChrome:             windowChrome{remember: options.RememberWindowFrame},
 	}
+	state.refreshEditMenu()
 	// The command drawer shows by default; a saved state may close it.
 	// The reference cell stands in until the first paint measures the font on the
 	// window's canvas (measureTerminalCell).

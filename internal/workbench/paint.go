@@ -494,7 +494,7 @@ func (state *State) windowPage() *ui.Page {
 	chrome := &state.chrome
 	if chrome.windowPage == nil {
 		chrome.windowPage = ui.NewPage(ui.PageConfig{
-			Tree: &tree, Root: shellPageRoot, Theme: &state.theme, View: state.declareWorkbenchPage,
+			Tree: &tree, Root: shellPageRoot, Theme: &state.theme, EditMenu: &state.editMenu, View: state.declareWorkbenchPage,
 			ScrollbarSize: catalogBarGutter, Styles: &ui.Styles{Switch: state.switchLook},
 		})
 	}

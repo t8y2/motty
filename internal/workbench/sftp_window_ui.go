@@ -156,7 +156,7 @@ func (w *sftpWindow) pageRoot() string {
 // state and its two panes. Config takes it as the standalone window's page.
 func (w *sftpWindow) windowPage() *ui.Page {
 	if w.ui.windowPage == nil {
-		w.ui.windowPage = ui.NewPage(ui.PageConfig{Tree: &tree, Root: w.pageRoot(), Theme: &w.owner.theme, View: w.declareWindow})
+		w.ui.windowPage = ui.NewPage(ui.PageConfig{Tree: &tree, Root: w.pageRoot(), Theme: &w.owner.theme, EditMenu: &w.owner.editMenu, View: w.declareWindow})
 	}
 	return w.ui.windowPage
 }

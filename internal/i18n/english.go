@@ -451,6 +451,7 @@ var EnglishMessages = Messages{
 	TipFiles:                               "Files: browse and transfer over SFTP",
 	TipFilesLocal:                          "Files: browse this computer",
 	SFTPInsertPath:                         "Type the path into the terminal",
+	MenuCut:                                "Cut",
 	MenuCopy:                               "Copy",
 	MenuFile:                               "File",
 	MenuEdit:                               "Edit",

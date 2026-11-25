@@ -431,6 +431,7 @@ type Messages struct {
 	TipFiles                               string
 	TipFilesLocal                          string
 	SFTPInsertPath                         string
+	MenuCut                                string
 	MenuCopy                               string
 	MenuFile                               string
 	MenuEdit                               string

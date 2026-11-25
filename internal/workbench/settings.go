@@ -512,10 +512,17 @@ func (state *State) setLanguage(language i18n.Language) bool {
 	return true
 }
 
+// refreshEditMenu takes the words of the text fields' edit menu from the catalog.
+func (state *State) refreshEditMenu() {
+	m := &state.messages
+	state.editMenu = ui.EditMenuLabels{Cut: m.MenuCut, Copy: m.MenuCopy, Paste: m.MenuPaste, SelectAll: m.MenuSelectAll}
+}
+
 // applyLanguage applies the language the page's choice already wrote: the
 // catalog and everything built from it.
 func (state *State) applyLanguage() {
 	state.messages = i18n.For(state.language)
+	state.refreshEditMenu()
 	state.invalidateRemoteToolsWindows()
 	state.rebuildTransferCenter()
 	state.status = state.messages.StatusReadyIdle

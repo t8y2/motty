@@ -42,7 +42,7 @@ func (w *remoteToolsWindow) windowPage() *ui.Page {
 		w.refreshDraw = w.ui.drawRemoteRefreshControl
 		w.autoDraw = w.ui.drawRemoteAutoControl
 		w.page = ui.NewPage(ui.PageConfig{
-			Tree: &tree, Root: w.pageRoot(), Theme: &w.ui.theme, View: w.declareWindow,
+			Tree: &tree, Root: w.pageRoot(), Theme: &w.ui.theme, EditMenu: &w.owner.editMenu, View: w.declareWindow,
 		})
 	}
 	return w.page

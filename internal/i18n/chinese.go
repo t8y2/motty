@@ -451,6 +451,7 @@ var ChineseMessages = Messages{
 	TipFiles:                               "文件:通过 SFTP 浏览和传输",
 	TipFilesLocal:                          "文件:浏览本机文件",
 	SFTPInsertPath:                         "把路径输入终端",
+	MenuCut:                                "剪切",
 	MenuCopy:                               "复制",
 	MenuFile:                               "文件",
 	MenuEdit:                               "编辑",
