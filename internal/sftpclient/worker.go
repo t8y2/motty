@@ -3444,12 +3444,23 @@ func ensureLocalDirectory(localPath string, mode os.FileMode) error {
 	return os.MkdirAll(localPath, mode.Perm())
 }
 
+// commitRemote moves a finished upload's partial file onto its final name.
+// SFTP v3's rename refuses to replace an existing file; only the OpenSSH
+// posix-rename extension does. Replacing a destination on a server that does
+// not announce it therefore removes the old file first, as clients that stage
+// uploads through a partial name do. The completed partial stays on the server,
+// so a failed replace can be resumed instead of losing the upload.
 func commitRemote(client transferRemote, partial, final string, finalExists bool) error {
 	if supportsPosixRename(client) {
 		if err := client.PosixRename(partial, final); err == nil {
 			return nil
 		} else if finalExists {
 			return fmt.Errorf("sftp: atomic remote replacement is unavailable: %w", err)
+		}
+	}
+	if finalExists {
+		if err := client.Remove(final); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
 		}
 	}
 	return client.Rename(partial, final)

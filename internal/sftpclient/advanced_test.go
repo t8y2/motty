@@ -396,6 +396,7 @@ type extensionRenameRemote struct {
 	advertised  bool
 	posixCalls  int
 	renameCalls int
+	removeCalls int
 }
 
 func (remote *extensionRenameRemote) HasExtension(name string) (string, bool) {
@@ -415,21 +416,26 @@ func (remote *extensionRenameRemote) Rename(string, string) error {
 	return nil
 }
 
+func (remote *extensionRenameRemote) Remove(string) error {
+	remote.removeCalls++
+	return nil
+}
+
 func TestRemoteCommitUsesPosixRenameOnlyWhenAdvertised(t *testing.T) {
 	plain := &extensionRenameRemote{traversalRemote: &traversalRemote{}}
 	if err := commitRemote(plain, ".part", "new", false); err != nil {
 		t.Fatal(err)
 	}
-	if plain.posixCalls != 0 || plain.renameCalls != 1 {
-		t.Fatalf("unadvertised commit: posix = %d, rename = %d", plain.posixCalls, plain.renameCalls)
+	if plain.posixCalls != 0 || plain.renameCalls != 1 || plain.removeCalls != 0 {
+		t.Fatalf("unadvertised commit: posix = %d, rename = %d, remove = %d", plain.posixCalls, plain.renameCalls, plain.removeCalls)
 	}
 
 	advertised := &extensionRenameRemote{traversalRemote: &traversalRemote{}, advertised: true}
 	if err := commitRemote(advertised, ".part", "final", true); err != nil {
 		t.Fatal(err)
 	}
-	if advertised.posixCalls != 1 || advertised.renameCalls != 0 {
-		t.Fatalf("advertised commit: posix = %d, rename = %d", advertised.posixCalls, advertised.renameCalls)
+	if advertised.posixCalls != 1 || advertised.renameCalls != 0 || advertised.removeCalls != 0 {
+		t.Fatalf("advertised commit: posix = %d, rename = %d, remove = %d", advertised.posixCalls, advertised.renameCalls, advertised.removeCalls)
 	}
 }
 
@@ -487,6 +493,68 @@ func TestUploadCompletesWhenServerDoesNotAdvertisePosixRename(t *testing.T) {
 	}
 	if got, err := os.ReadFile(filepath.Join(root, "payload.txt")); err != nil || !bytes.Equal(got, content) {
 		t.Fatalf("uploaded content = %q, err %v", got, err)
+	}
+	requireExists(t, filepath.Join(root, remotePartialPath("payload.txt", source)), false)
+}
+
+// strictRenameRemote is a server that does not announce posix-rename and
+// enforces SFTP v3's rename: a destination that already exists is refused, as
+// OpenSSH's sftp-server and the gateway in #1558 do.
+type strictRenameRemote struct {
+	remote
+	calls []string
+}
+
+func (remote *strictRenameRemote) HasExtension(name string) (string, bool) {
+	if name == posixRenameExtension {
+		return "", false
+	}
+	return remote.remote.HasExtension(name)
+}
+
+func (remote *strictRenameRemote) Rename(oldPath, newPath string) error {
+	remote.calls = append(remote.calls, "rename "+newPath)
+	if _, err := remote.remote.Lstat(newPath); err == nil {
+		// SSH_FX_FILE_ALREADY_EXISTS: the generic status an SFTP v3 server
+		// returns for a rename onto an existing name.
+		return &sftp.StatusError{Code: 11}
+	}
+	return remote.remote.Rename(oldPath, newPath)
+}
+
+func (remote *strictRenameRemote) Remove(path string) error {
+	remote.calls = append(remote.calls, "remove "+path)
+	return remote.remote.Remove(path)
+}
+
+func TestUploadReplacesExistingFileWhenServerRefusesRenameOverIt(t *testing.T) {
+	strict := &strictRenameRemote{}
+	worker, root := newProtocolWorkerOn(t, nil, func(base remote) Remote {
+		strict.remote = base
+		return strict
+	})
+	target := filepath.Join(root, "payload.txt")
+	if err := os.WriteFile(target, []byte("old content"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	content := []byte("replacement content\n")
+	source := filepath.Join(t.TempDir(), "payload.txt")
+	if err := os.WriteFile(source, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	id, queued := worker.QueueUpload(source, "payload.txt", false, ExistingReplace)
+	if !queued {
+		t.Fatal("upload was not queued")
+	}
+	result := resultWithin(t, worker, 10*time.Second)
+	if result.TransferID != id || result.Err != nil {
+		t.Fatalf("result = %+v", result)
+	}
+	if len(strict.calls) != 2 || strict.calls[0] != "remove payload.txt" || strict.calls[1] != "rename payload.txt" {
+		t.Fatalf("replace calls = %v", strict.calls)
+	}
+	if got, err := os.ReadFile(target); err != nil || !bytes.Equal(got, content) {
+		t.Fatalf("replaced content = %q, err %v", got, err)
 	}
 	requireExists(t, filepath.Join(root, remotePartialPath("payload.txt", source)), false)
 }
