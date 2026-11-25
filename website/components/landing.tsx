@@ -3,6 +3,7 @@ import { Bot, FolderTree, KeyRound, MonitorPlay, Terminal, Waypoints, type Lucid
 import { landing } from '@/lib/landing-content';
 import { resolveLang } from '@/lib/i18n';
 import { LandingShowcase } from '@/components/landing-showcase';
+import { LandingTestimonials } from '@/components/landing-testimonials';
 
 const icons: Record<(typeof landing.en.features)[number]['icon'], LucideIcon> = {
   terminal: Terminal,
@@ -104,20 +105,11 @@ export function Landing({ lang }: { lang: string }) {
         </div>
       </section>
 
-      <section className="mx-auto max-w-5xl px-4 py-16">
-        <h2 className="mb-10 text-center text-2xl font-semibold tracking-tight">{c.principlesTitle}</h2>
-        <div className="grid gap-px overflow-hidden rounded-2xl border bg-fd-border sm:grid-cols-3">
-          {c.principles.map((p, index) => (
-            <div key={p.title} className="bg-fd-card p-6">
-              <span className="mb-3 block font-mono text-xs tracking-widest text-fd-primary/70">
-                {String(index + 1).padStart(2, '0')}
-              </span>
-              <h3 className="mb-1.5 font-medium">{p.title}</h3>
-              <p className="text-sm leading-relaxed text-fd-muted-foreground">{p.body}</p>
-            </div>
-          ))}
-        </div>
-      </section>
+      <LandingTestimonials
+        title={c.testimonialsTitle}
+        items={c.testimonials}
+        label={l === 'zh' ? '用户评价' : 'Testimonials'}
+      />
 
       <section className="mx-auto max-w-3xl px-4 py-16">
         <h2 className="mb-6 text-2xl font-semibold tracking-tight">{c.aboutTitle}</h2>

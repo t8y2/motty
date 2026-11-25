@@ -14,8 +14,6 @@ export type LandingContent = {
   features: { icon: 'terminal' | 'key' | 'folder' | 'network' | 'monitor' | 'bot'; title: string; body: string }[];
   screensTitle: string;
   screens: { title: string; body: string; image: string; alt: string }[];
-  principlesTitle: string;
-  principles: { title: string; body: string }[];
   faqTitle: string;
   /**
    * The answer-shaped paragraph: one self-contained block of 120-160 words that
@@ -24,11 +22,138 @@ export type LandingContent = {
    */
   aboutTitle: string;
   about: string;
+  /**
+   * Replies from real users of the launch thread. `post` is the reply's number
+   * in that topic, kept as a stable key and so a quote can be traced back to
+   * its source; `avatar` is a downloaded copy of the forum avatar.
+   */
+  testimonialsTitle: string;
+  testimonials: { quote: string; author: string; avatar: string; post: number }[];
   faq: { q: string; a: string }[];
   // The page's foot: who made it, on what, under what. Kept apart from the
   // license link so the line reads as two facts rather than one claim.
   footer: { copyright: string; platforms: string; license: string };
 };
+
+type TestimonialSource = {
+  post: number;
+  author: string;
+  avatar: string;
+  zh: string;
+  en: string;
+};
+
+// One entry per person; the quote is the only part that changes with language,
+// so the avatar and the traceable reply number are not duplicated per locale.
+const testimonialSources: TestimonialSource[] = [
+  {
+    post: 49,
+    author: 'onlyxx',
+    avatar: '/avatars/onlyxx.webp',
+    zh: '刚刚体验了，启动太丝滑了，秒起都不是，是眨眼起。',
+    en: 'Just tried it: startup is not merely fast — you blink and it is there.',
+  },
+  {
+    post: 14,
+    author: 'lizhiangg',
+    avatar: '/avatars/lizhiangg.webp',
+    zh: 'Beta 版完成度惊人，做本地终端软件也足够了。',
+    en: 'Astonishingly complete for a beta — already enough as a local terminal.',
+  },
+  {
+    post: 244,
+    author: 'usr',
+    avatar: '/avatars/usr.webp',
+    zh: '看了图和介绍，火速下载试用，是我想要的。……我能想到的基本都有了，且长得好看、也不算臃肿。',
+    en: 'Saw the screenshots and the description and downloaded it right away — exactly what I wanted. … Everything I can think of is there, it looks good, and it is not bloated.',
+  },
+  {
+    post: 130,
+    author: 'amminxing',
+    avatar: '/avatars/amminxing.webp',
+    zh: '已体验，非常的丝滑，感谢大佬开源。',
+    en: 'Tried it — very smooth. Thanks for open-sourcing it.',
+  },
+  {
+    post: 291,
+    author: 'Wolfsoft',
+    avatar: '/avatars/wolfsoft.webp',
+    zh: '这终端是真好用，我现在连我那堆服务器基本都用这个了。',
+    en: 'This terminal is genuinely good — I use it for basically all my servers now.',
+  },
+  {
+    post: 184,
+    author: 'Isaacwen12138',
+    avatar: '/avatars/isaacwen12138.webp',
+    zh: 'Motty 是真的好用，而且更新速度也很惊人啊。',
+    en: 'Motty is genuinely good, and the update pace is astonishing.',
+  },
+  {
+    post: 297,
+    author: 'zedcoyo',
+    avatar: '/avatars/zedcoyo.webp',
+    zh: '目前这个 Motty 挺好用的，资源占用也低。',
+    en: 'Motty works well for me, and it uses very little memory.',
+  },
+  {
+    post: 44,
+    author: 'ReiGao',
+    avatar: '/avatars/lingborei.webp',
+    zh: '用上了 Motty，用起来很丝滑，喜欢，准备长期使用。',
+    en: 'Been using Motty and it feels very smooth. I like it, and I plan to keep it.',
+  },
+  {
+    post: 63,
+    author: 'timnottom',
+    avatar: '/avatars/timnottom.webp',
+    zh: '我去我去，爱了爱了。',
+    en: 'Oh wow — I love it.',
+  },
+  {
+    post: 246,
+    author: 'superj',
+    avatar: '/avatars/superj.webp',
+    zh: '已经体验了好几天了，佬的更新速度惊人……用起来丝滑不卡顿。',
+    en: 'Used it for days now — the update pace is remarkable — and it runs smoothly, without stutter.',
+  },
+  {
+    post: 284,
+    author: 'yiii123',
+    avatar: '/avatars/yiii123.webp',
+    zh: '一周前下了，重度使用了几天，非常好用。',
+    en: 'Downloaded it a week ago and used it heavily for days — very good.',
+  },
+  {
+    post: 178,
+    author: 'ioaicwj',
+    avatar: '/avatars/ioaicwj.webp',
+    zh: '这几天用过，很不错。',
+    en: 'Used it over the past few days — very good.',
+  },
+  {
+    post: 133,
+    author: 'whq',
+    avatar: '/avatars/whq.webp',
+    zh: '真是好东西呀，已经标星了。',
+    en: 'A genuinely good thing — starred it already.',
+  },
+  {
+    post: 227,
+    author: 'MWBDTTH',
+    avatar: '/avatars/mwbdtth.webp',
+    zh: '已严肃使用，使用一段时间看看怎么样，目前整体感觉挺好的。',
+    en: 'Gave it a serious try for a while — so far it feels good overall.',
+  },
+];
+
+function pickTestimonials(lang: 'en' | 'zh') {
+  return testimonialSources.map((t) => ({
+    post: t.post,
+    author: t.author,
+    avatar: t.avatar,
+    quote: lang === 'zh' ? t.zh : t.en,
+  }));
+}
 
 export const landing: Record<'en' | 'zh', LandingContent> = {
   en: {
@@ -125,15 +250,11 @@ export const landing: Record<'en' | 'zh', LandingContent> = {
         alt: 'Motty\'s port forwarding list',
       },
     ],
-    principlesTitle: 'Principles',
-    principles: [
-      { title: 'Native by construction', body: 'Metal, Direct3D and Vulkan directly. Fast to start, nothing running while idle.' },
-      { title: 'Built for the keyboard', body: 'Tabs, splits, SFTP and the assistant are palette commands. The mouse is optional.' },
-      { title: 'Honest about limits', body: 'These docs say what was verified and what was not, including protocol gaps.' },
-    ],
     aboutTitle: 'What Motty is',
     about:
-      'Motty is a free, open-source SSH client for macOS, Windows and Linux that puts a terminal, a file panel, port forwarding, remote desktops and an AI assistant in one native window. It is written in Go on the Viva desktop framework, so there is no Electron runtime and no embedded browser: the window draws through Metal, Direct3D or Vulkan, starts in under a second, and schedules nothing while it sits idle. Host keys are verified against Motty\'s own known_hosts before any credential is sent, and the vault is AES-256-GCM with its key in the system secret store. The same window carries SFTP and SCP with a resumable queue, local, remote, SOCKS5 and HTTP CONNECT forwarding with X11, jump chains that verify every hop, and VNC and RDP tabs whose certificates can be pinned. Each release ships ten packages across the three platforms, from a 10.8 MB macOS disk image on Apple silicon to an 11.8 MB one on Intel. Motty is Apache-2.0 licensed and needs no account.',
+      'Motty is a free, open-source SSH client for macOS, Windows and Linux that puts a terminal, a file panel, port forwarding, remote desktops and an AI assistant in one native window. It is written in Go on the Viva desktop framework, so there is no Electron runtime and no embedded browser: the window draws through Metal, Direct3D or Vulkan, starts in under a second, and schedules nothing while it sits idle. Host keys are verified against Motty\'s own known_hosts before any credential is sent, and the vault is AES-256-GCM with its key in the system secret store. The same window carries SFTP and SCP with a resumable queue, local, remote, SOCKS5 and HTTP CONNECT forwarding with X11, jump chains that verify every hop, and VNC and RDP tabs whose certificates can be pinned.',
+    testimonialsTitle: 'What users say',
+    testimonials: pickTestimonials('en'),
     faqTitle: 'Frequently asked questions',
     // Answers run 40-60 words: long enough to be a self-contained citation, short
     // enough that an answer engine can lift one without trimming it. Keep that
@@ -272,15 +393,11 @@ export const landing: Record<'en' | 'zh', LandingContent> = {
         alt: 'Motty 的端口转发列表',
       },
     ],
-    principlesTitle: '原则',
-    principles: [
-      { title: '原生，不是网页', body: '直接调用 Metal、Direct3D 和 Vulkan。启动快，空闲时不空转。' },
-      { title: '为键盘而生', body: '标签页、分屏、SFTP 和助手都是命令面板里的命令，鼠标是可选的。' },
-      { title: '如实说明限制', body: '文档会写明哪些已验证、哪些没有，包括协议缺口。' },
-    ],
     aboutTitle: 'Motty 是什么',
     about:
-      'Motty 是面向 macOS、Windows 和 Linux 的免费开源 SSH 客户端，把终端、文件面板、端口转发、远程桌面和 AI 助手放进同一个原生窗口。它用 Go 写于 Viva 桌面框架之上，因此没有 Electron 运行时，也没有内嵌浏览器：窗口经 Metal、Direct3D 或 Vulkan 直接绘制，启动不到一秒，空闲时不调度任何工作。主机密钥在发送任何凭据之前先与 Motty 自己的 known_hosts 核对，保险库使用 AES-256-GCM，密钥存放在系统密钥库。同一个窗口里还有带可续传队列的 SFTP 与 SCP、本地/远程/SOCKS5/HTTP CONNECT 转发与 X11、逐跳校验的跳板链，以及可固定证书的 VNC 与 RDP 标签页。每个版本为三个平台提供 10 个安装包，Apple 芯片的 macOS 磁盘映像 10.8 MB、Intel 版 11.8 MB。Motty 以 Apache-2.0 许可发布，不需要账号。',
+      'Motty 是面向 macOS、Windows 和 Linux 的免费开源 SSH 客户端，把终端、文件面板、端口转发、远程桌面和 AI 助手放进同一个原生窗口。它用 Go 写于 Viva 桌面框架之上，因此没有 Electron 运行时，也没有内嵌浏览器：窗口经 Metal、Direct3D 或 Vulkan 直接绘制，启动不到一秒，空闲时不调度任何工作。主机密钥在发送任何凭据之前先与 Motty 自己的 known_hosts 核对，保险库使用 AES-256-GCM，密钥存放在系统密钥库。同一个窗口里还有带可续传队列的 SFTP 与 SCP、本地/远程/SOCKS5/HTTP CONNECT 转发与 X11、逐跳校验的跳板链，以及可固定证书的 VNC 与 RDP 标签页。',
+    testimonialsTitle: '用户怎么说',
+    testimonials: pickTestimonials('zh'),
     faqTitle: '常见问题',
     faq: [
       {
