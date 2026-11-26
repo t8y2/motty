@@ -123,6 +123,7 @@ func TestHostBulkKeyboardAndSubsetExport(t *testing.T) {
 	exportPath := filepath.Join(t.TempDir(), "selected.json")
 	state.options.SaveFile = func(app.SaveFileOptions) (string, error) { return exportPath, nil }
 	state.Click(hitExportHosts)
+	state.Click(hitFormBack)
 	document, err := readHostCatalog(exportPath)
 	if err != nil {
 		t.Fatal(err)

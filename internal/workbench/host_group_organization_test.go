@@ -54,6 +54,7 @@ func TestHostGroupCatalogKeepsPinOrderAndEmptyGroupsInAnExistingCatalog(t *testi
 	path := filepath.Join(t.TempDir(), "catalog.json")
 	state.options.SaveFile = func(app.SaveFileOptions) (string, error) { return path, nil }
 	state.exportHostCatalog()
+	state.Click(hitFormBack)
 	document, err := readHostCatalog(path)
 	if err != nil {
 		t.Fatal(err)
@@ -85,6 +86,7 @@ func TestHostGroupCatalogPreservesEmptyAncestorMetadata(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "catalog.json")
 	state.options.SaveFile = func(app.SaveFileOptions) (string, error) { return path, nil }
 	state.exportHostCatalog()
+	state.Click(hitFormBack)
 	document, err := readHostCatalog(path)
 	if err != nil {
 		t.Fatal(err)

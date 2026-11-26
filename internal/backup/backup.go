@@ -135,6 +135,12 @@ func Seal(document Document, password string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	return SealEnvelope(format, version, plain, password)
+}
+
+// SealEnvelope encrypts plain under password inside an authenticated envelope
+// carrying format and version.
+func SealEnvelope(format string, version int, plain []byte, password string) ([]byte, error) {
 	if len(plain) > MaxSize {
 		return nil, ErrTooLarge
 	}
@@ -158,34 +164,44 @@ func Seal(document Document, password string) ([]byte, error) {
 // Open decrypts a backup. A file that is not a backup, or is one of another
 // version, is told apart from a wrong password.
 func Open(data []byte, password string) (Document, error) {
-	if len(data) > MaxSize+1<<16 {
-		return Document{}, ErrTooLarge
-	}
-	var file envelope
-	if err := json.Unmarshal(data, &file); err != nil || file.Format != format {
-		return Document{}, ErrNotBackup
-	}
-	if file.Version > version {
-		return Document{}, ErrTooNew
-	}
-	params := file.KDF
-	// Costs read from a file are bounded, so a crafted file cannot ask for hours
-	// or gigabytes of work.
-	if params.Name != "argon2id" || params.Time == 0 || params.Time > 16 || params.MemoryKiB < 8 ||
-		params.MemoryKiB > 1<<20 || params.Threads == 0 || params.Threads > 16 || len(params.Salt) < 8 {
-		return Document{}, ErrNotBackup
-	}
-	gcm, err := newGCM(params.key(password))
-	if err != nil || len(file.Nonce) != gcm.NonceSize() {
-		return Document{}, ErrNotBackup
-	}
-	plain, err := gcm.Open(nil, file.Nonce, file.Data, file.additional())
+	plain, err := OpenEnvelope(format, version, data, password)
 	if err != nil {
-		return Document{}, ErrWrongPassword
+		return Document{}, err
 	}
 	var document Document
 	if err := json.Unmarshal(plain, &document); err != nil {
 		return Document{}, ErrNotBackup
 	}
 	return document, nil
+}
+
+// OpenEnvelope decrypts an envelope produced by SealEnvelope, verifying format
+// and maxVersion before deriving the key.
+func OpenEnvelope(format string, maxVersion int, data []byte, password string) ([]byte, error) {
+	if len(data) > MaxSize+1<<16 {
+		return nil, ErrTooLarge
+	}
+	var file envelope
+	if err := json.Unmarshal(data, &file); err != nil || file.Format != format || file.Version < 1 {
+		return nil, ErrNotBackup
+	}
+	if file.Version > maxVersion {
+		return nil, ErrTooNew
+	}
+	params := file.KDF
+	// Costs read from a file are bounded, so a crafted file cannot ask for hours
+	// or gigabytes of work.
+	if params.Name != "argon2id" || params.Time == 0 || params.Time > 16 || params.MemoryKiB < 8 ||
+		params.MemoryKiB > 1<<20 || params.Threads == 0 || params.Threads > 16 || len(params.Salt) < 8 {
+		return nil, ErrNotBackup
+	}
+	gcm, err := newGCM(params.key(password))
+	if err != nil || len(file.Nonce) != gcm.NonceSize() {
+		return nil, ErrNotBackup
+	}
+	plain, err := gcm.Open(nil, file.Nonce, file.Data, file.additional())
+	if err != nil {
+		return nil, ErrWrongPassword
+	}
+	return plain, nil
 }
