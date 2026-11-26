@@ -331,21 +331,30 @@ const (
 // PointerShape is a pointer as the remote system paints it: BGRA rows, top
 // down, the color not multiplied by alpha, with the hotspot that names which
 // pixel of it is the pointer's point.
+//
+// Invert, when not empty, holds one entry per pixel for those that show the
+// inverse of the picture behind them instead of a color: the remote's
+// monochrome inverting pointer, whose body is white over a dark picture and
+// black over a light one. No system can draw such a cursor from a static
+// image, so the workbench paints those pixels over the picture itself; the
+// BGRA entry there is transparent and says nothing.
 type PointerShape struct {
 	Width, Height int
 	HotX, HotY    int
 	BGRA          []byte
+	Invert        []bool
 }
 
 // PointerSource is a Session whose remote system names its pointer's shape.
-// The workbench has the system draw the bitmap as the local pointer over the
-// picture, the way a native client of that system would.
+// The workbench shows the bitmap as the local pointer over the picture: the
+// system draws it, except the inverting pixels, which it paints itself.
 type PointerSource interface {
 	Session
 	// PointerShape returns what the remote last said about its pointer, the
 	// shape itself when the kind is PointerBitmap, and a version that changes
-	// whenever the answer does. The BGRA bytes belong to the caller: a session
-	// makes new ones for every shape and never writes to them again.
+	// whenever the answer does. The BGRA bytes and the invert mask belong to
+	// the caller: a session makes new ones for every shape and never writes to
+	// them again.
 	PointerShape() (PointerKind, PointerShape, int)
 }
 

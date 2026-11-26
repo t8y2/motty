@@ -105,6 +105,14 @@ type desktopView struct {
 	pointerVersion int
 	cursorImage    *gfx.CursorImage
 	cursorScale    float32
+	// inverting is whether the remote's pointer shows the picture through its
+	// body (see desktop.PointerShape.Invert). No system can draw such a shape
+	// as a cursor, so over the picture the workbench paints it itself from
+	// pointerPixels: the shape, with each inverting pixel replaced by the
+	// inverse of the picture under it.
+	inverting     bool
+	pointerInside bool // whether the pointer is over the picture, not the bars
+	pointerPixels []byte
 	// pixelScale is the device pixels per logical pixel as last painted, and area
 	// where the picture was shown, in the page's coordinates.
 	pixelScale float32
@@ -264,15 +272,36 @@ func (view *desktopView) presentPointer() {
 	}
 	view.pointerVersion, view.pointerKind, view.pointerShape = version, kind, shape
 	view.cursorImage = nil
+	view.inverting = pointerShapeInverts(kind, shape)
+}
+
+// pointerShapeInverts reports whether the remote's shape has pixels that show
+// the inverse of the picture behind them, the one thing a system cursor image
+// cannot express.
+func pointerShapeInverts(kind desktop.PointerKind, shape desktop.PointerShape) bool {
+	if kind != desktop.PointerBitmap || shape.Width < 1 || shape.Height < 1 ||
+		shape.Width > gfx.MaxCursorImageSize || shape.Height > gfx.MaxCursorImageSize ||
+		len(shape.BGRA) != shape.Width*shape.Height*4 || len(shape.Invert) != shape.Width*shape.Height {
+		return false
+	}
+	for _, inverts := range shape.Invert {
+		if inverts {
+			return true
+		}
+	}
+	return false
 }
 
 // pointerCursor is the cursor over the remote's picture: the system draws the
 // shape the remote names as its own pointer, hides it where the remote hides
 // its own, and shows the ordinary one where the remote asks for it. The
-// crosshair stays for a remote that has named nothing. scale is the device
-// pixels per logical pixel the shape is made for: the remote's pixels are the
-// screen's.
-func (view *desktopView) pointerCursor(scale float32) (gfx.PointerCursor, *gfx.CursorImage) {
+// crosshair stays for a remote that has named nothing. An inverting shape is
+// not one a system can draw, so over the picture the workbench paints it itself
+// and hides the system's pointer (over: the picture is what the pointer is
+// over); off the picture, where the workbench paints nothing, the ordinary
+// pointer stays. scale is the device pixels per logical pixel the shape is
+// made for: the remote's pixels are the screen's.
+func (view *desktopView) pointerCursor(scale float32, over bool) (gfx.PointerCursor, *gfx.CursorImage) {
 	if view.ended {
 		return gfx.PointerCursorDefault, nil
 	}
@@ -282,6 +311,12 @@ func (view *desktopView) pointerCursor(scale float32) (gfx.PointerCursor, *gfx.C
 	case desktop.PointerSystem:
 		return gfx.PointerCursorDefault, nil
 	case desktop.PointerBitmap:
+		if view.inverting {
+			if over {
+				return gfx.PointerCursorHidden, nil
+			}
+			return gfx.PointerCursorDefault, nil
+		}
 		if view.cursorImage == nil || view.cursorScale != scale {
 			shape := view.pointerShape
 			hotX, hotY := min(max(shape.HotX, 0), shape.Width-1), min(max(shape.HotY, 0), shape.Height-1)
@@ -294,6 +329,67 @@ func (view *desktopView) pointerCursor(scale float32) (gfx.PointerCursor, *gfx.C
 		return gfx.PointerCursorImage, view.cursorImage
 	}
 	return gfx.PointerCursorCrosshair, nil
+}
+
+// paintPointer paints the remote's pointer over the picture when its shape
+// shows the picture through its body. An inverting pointer has no image a
+// system could draw as a cursor, so the workbench paints it: the shape's own
+// pixels, with each inverting pixel the inverse of the picture beneath it.
+// over says whether the pointer is over the picture and no control it is not
+// over holds the press, because the pointer a press belongs to stays with that
+// control. origin and scale are where one remote pixel sits and how many page
+// pixels it takes (see place).
+func (view *desktopView) paintPointer(canvas *gfx.Canvas, origin gfx.Point, scale float32, over bool) {
+	shape := view.pointerShape
+	pictureWidth, pictureHeight := view.surface.Size()
+	if !view.inverting || !view.pointerInside || view.ended || !over ||
+		shape.Width < 1 || shape.Height < 1 || pictureWidth < 1 || pictureHeight < 1 {
+		return
+	}
+	if scale <= 0 {
+		scale = 1
+	}
+	// One pointer pixel is one logical pixel, as with the shape the system draws;
+	// the picture under it is read one device pixel at a time, so the inverse
+	// follows the picture at the resolution it is shown in.
+	pixelScale := canvas.PixelScale()
+	hotX, hotY := min(max(shape.HotX, 0), shape.Width-1), min(max(shape.HotY, 0), shape.Height-1)
+	left := int(math.Floor(float64((view.pointer.X-float32(hotX))*pixelScale) + 0.5))
+	top := int(math.Floor(float64((view.pointer.Y-float32(hotY))*pixelScale) + 0.5))
+	width := int(math.Floor(float64(shape.Width)*float64(pixelScale) + 0.5))
+	height := int(math.Floor(float64(shape.Height)*float64(pixelScale) + 0.5))
+	if width < 1 || height < 1 {
+		return
+	}
+	needed := width * height * 4
+	if cap(view.pointerPixels) < needed {
+		view.pointerPixels = make([]byte, needed)
+	}
+	pixels := view.pointerPixels[:needed]
+	for y := range height {
+		pageY := (float64(top+y) + 0.5) / float64(pixelScale)
+		remoteY := min(max(int(math.Floor((pageY-float64(origin.Y))/float64(scale))), 0), pictureHeight-1)
+		row := min(y*shape.Height/height, shape.Height-1)
+		for x := range width {
+			at := (y*width + x) * 4
+			column := min(x*shape.Width/width, shape.Width-1)
+			index := row*shape.Width + column
+			if !shape.Invert[index] {
+				copy(pixels[at:at+4], shape.BGRA[index*4:index*4+4])
+				continue
+			}
+			pageX := (float64(left+x) + 0.5) / float64(pixelScale)
+			remoteX := min(max(int(math.Floor((pageX-float64(origin.X))/float64(scale))), 0), pictureWidth-1)
+			blue, green, red, _, ok := view.surface.Pixel(remoteX, remoteY)
+			if !ok {
+				pixels[at], pixels[at+1], pixels[at+2], pixels[at+3] = 0, 0, 0, 0
+				continue
+			}
+			pixels[at], pixels[at+1], pixels[at+2], pixels[at+3] = 255-blue, 255-green, 255-red, 255
+		}
+	}
+	canvas.DrawBitmapPixels(gfx.Bitmap{Pix: pixels, Width: width, Height: height, Stride: width * 4},
+		gfx.Point{X: float32(left) / pixelScale, Y: float32(top) / pixelScale})
 }
 
 // desktopGeometry is where a remote-desktop page puts things, in the page's own
@@ -461,6 +557,7 @@ func (state *State) endDesktop(session *Session) {
 	}
 	session.desk.ended = true
 	session.desk.pointerKind = desktop.PointerSystem
+	session.desk.inverting = false
 	session.desk.cursorImage = nil
 	session.desk.releaseInput()
 	session.term.ended = true
@@ -893,16 +990,21 @@ func (state *State) desktopKey(session *Session, event gfx.KeyEvent) gfx.EventRe
 // desktopPointer sends the pointer to the remote desktop.
 func (state *State) desktopPointer(session *Session, event gfx.PointerEvent) gfx.EventResult {
 	view := session.desk
-	if view.ended || event.Kind == gfx.PointerExit {
+	if view.ended {
 		return gfx.EventResult{}
 	}
-	geometry := state.desktopGeometryAtSize(session, event.Viewport)
-	panned := false
-	if !view.fit {
-		before := view.pointer
-		view.pointer = gfx.Point{X: event.X, Y: event.Y}
-		panned = view.pointer != before
+	if event.Kind == gfx.PointerExit {
+		// The pointer left the picture: a pointer the workbench paints goes with it.
+		gone, repaint := view.pointerInside, view.inverting
+		view.pointerInside = false
+		return gfx.EventResult{Repaint: gone && repaint}
 	}
+	geometry := state.desktopGeometryAtSize(session, event.Viewport)
+	before := view.pointer
+	view.pointer = gfx.Point{X: event.X, Y: event.Y}
+	view.pointerInside = true
+	moved := view.pointer != before
+	panned := moved && !view.fit
 	x, y := view.remote(geometry.area, event.X, event.Y)
 	var button desktop.Buttons
 	switch event.Button {
@@ -921,7 +1023,7 @@ func (state *State) desktopPointer(session *Session, event gfx.PointerEvent) gfx
 		view.buttons &^= button
 	}
 	_ = view.session.SendPointer(x, y, view.buttons)
-	return gfx.EventResult{Handled: event.Kind != gfx.PointerMove, Repaint: panned && view.width > 0}
+	return gfx.EventResult{Handled: event.Kind != gfx.PointerMove, Repaint: (panned || view.inverting && moved) && view.width > 0}
 }
 
 // desktopScroll turns scrolling into wheel notches.
@@ -1306,7 +1408,8 @@ func (state *State) paintDesktopDetails(canvas *gfx.Canvas, session *Session, bo
 
 // paintDesktopPicture paints the picture in the slot the page declared for it:
 // the ground, the picture clipped to its area, the end notice over it, the
-// chromeless capture note, and the hit and focus of the picture itself.
+// chromeless capture note, the remote pointer where the workbench draws it, and
+// the hit and focus of the picture itself.
 func (state *State) paintDesktopPicture(d *ui.DrawContext, session *Session) {
 	m := state.messages
 	view := session.desk
@@ -1323,8 +1426,10 @@ func (state *State) paintDesktopPicture(d *ui.DrawContext, session *Session) {
 		canvas.Fill(area, state.ground(state.termPal.terminal))
 	}
 	canvas.Clip(area)
+	var origin gfx.Point
+	var scale float32 = 1
 	if view.width > 0 && view.height > 0 {
-		origin, scale := view.place(area)
+		origin, scale = view.place(area)
 		if view.oneToOne() {
 			view.surface.DrawPixels(canvas, origin)
 		} else {
@@ -1334,10 +1439,12 @@ func (state *State) paintDesktopPicture(d *ui.DrawContext, session *Session) {
 	if view.chromeless && !view.fullscreen && !view.released && !view.ended {
 		state.paintDesktopCaptureNote(canvas, view, session, area)
 	}
+	picture := hitTerminalList.At(int(session.ID))
+	view.paintPointer(canvas, origin, scale, canvas.Hovered() == picture && (canvas.Pressed().IsZero() || canvas.Pressed() == picture))
 	canvas.Unclip()
 
 	name := fmt.Sprintf(m.Desktop.AccessibleFmt, session.Address)
-	cursor, cursorImage := view.pointerCursor(view.pixelScale)
+	cursor, cursorImage := view.pointerCursor(view.pixelScale, canvas.Hovered() == hitTerminalList.At(int(session.ID)))
 	if view.ended {
 		cursor, cursorImage = gfx.PointerCursorDefault, nil
 	}

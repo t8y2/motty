@@ -350,6 +350,26 @@ the pane's device pixels and display scale (1600x900 only when the caller suppli
 no size). A server with the RDPEDISP display-control channel follows the pane
 in Fit mode, including fullscreen transitions; otherwise the picture is scaled.
 
+### The pointer
+
+The server names the pointer's shape and Motty shows it as this system's
+cursor, so the remote's arrow, I-beam and resize shapes are the ones the
+remote system drew (`internal/desktop/rdp/session.go`, `desktop.PointerShape`).
+A hidden pointer hides this one; a system pointer is the ordinary arrow.
+
+One kind of shape a system cursor cannot draw: the monochrome inverting
+pointers of Windows' **Windows Inverted** schemes, whose body shows the inverse
+of whatever is behind it (MS-RDPBCGR's AND/XOR masks, `XOR=1` over `AND=1`).
+Motty keeps those pixels apart in the decode
+(`internal/rdpcore/protocol/pointer`: `PointerUpdate.Invert`) instead of
+picking a color for them, and over the picture it hides the system cursor and
+paints the shape itself, each inverting pixel the inverse of the picture under
+it read from the presented surface (`gfx.Surface.Pixel`). Over the bars the
+ordinary arrow is shown, since the picture is not there to be inverted. This
+is the only pointer Motty paints rather than hands to the system; every other
+shape is still the system's own cursor, and the painted one follows the
+picture at the display's device pixels.
+
 ### Quality and bandwidth
 
 The host editor's **Quality and bandwidth** section chooses the session's colour
@@ -553,7 +573,13 @@ the rest of the session — it answers the network auto-detect PDU with
 On the **Windows 11 test VM** (`tools/winenv`), with clipboard sharing on: a picture
 copied on this computer reached the session's clipboard (`Clipboard.GetImage`
 returned the same 320x200 picture, corner pixels included) and pasted into the
-remote Paint, shown in a capture of the session.
+remote Paint, shown in a capture of the session. The same VM, with the **Windows
+Inverted** pointer scheme (its `*_i.cur` files) applied: the headless Motty build
+showed the arrow's body as the inverse of the wallpaper under it — orange over the
+blue wallpaper, near-black over the light taskbar — instead of the black body with
+a white edge it drew before; the shape decoded from that session is
+`internal/rdpcore/protocol/pointer/testdata/inverted-arrow.bin`, and the session
+reported the system cursor hidden over the picture (`cursor` -> `shape=11`).
 The workbench's certificate question (new, trusted, changed, rejected) is
 covered by a unit test with a fake server. Not exercised: a domain-joined server,
 Windows Server editions, Windows 10, an RD Gateway, Kerberos, a real window,
