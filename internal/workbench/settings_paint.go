@@ -406,8 +406,11 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 	page.groups(func() {
 		page.group(messages.Completion.Group, func() {
 			status, _ := state.completionCatalogStatus()
-			page.actionRow(messages.Completion.CatalogRow, status, false,
-				components.ButtonAction{ID: hitCompletionUpdate, Label: messages.Completion.Check, Variant: components.ButtonOutline})
+			actions := []components.ButtonAction{{ID: hitCompletionUpdate, Label: messages.Completion.Check, Variant: components.ButtonOutline}}
+			if state.completion.proxyFailed && !state.completion.updating {
+				actions = append(actions, components.ButtonAction{ID: hitCompletionUpdateDirectRetry, Label: messages.Completion.CheckDirect, Variant: components.ButtonOutline})
+			}
+			page.actionRow(messages.Completion.CatalogRow, status, false, actions...)
 			completion := state.completionMode()
 			settingsChoiceRow(page, messages.History.SuggestRow, messages.History.SuggestDescription, &completion, settingsCompletionChoices[:], state.settingsCompletionLabel,
 				func() { state.setCompletionMode(completion); state.save() }, nil)

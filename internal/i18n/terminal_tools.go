@@ -701,6 +701,8 @@ type ToolsMessages struct {
 	GeneralUpdate                   string
 	GeneralUpdateDescription        string
 	GeneralUpdateCheck              string
+	GeneralUpdateDirectRetry        string
+	GeneralUpdateDirectRetryNote    string
 	GeneralUpdateDownload           string
 	GeneralUpdateSource             string
 	GeneralUpdateSourceDescription  string

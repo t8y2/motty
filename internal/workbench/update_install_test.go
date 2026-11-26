@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/vivaui/viva/app/proxy"
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/selfupdate"
 	"motty/internal/sshconn"
@@ -22,7 +24,8 @@ type fakeUpdater struct {
 	mu          sync.Mutex
 	reason      selfupdate.Reason
 	packageType update.Package
-	prepare     func(ctx context.Context, progress func(selfupdate.Progress), phase func(selfupdate.Phase)) (selfupdate.Staged, error)
+	prepare     func(ctx context.Context, client *http.Client, progress func(selfupdate.Progress), phase func(selfupdate.Phase)) (selfupdate.Staged, error)
+	client      *http.Client
 	launch      func(staged selfupdate.Staged, quit func()) error
 	launched    int
 	failure     string
@@ -31,11 +34,21 @@ type fakeUpdater struct {
 func (updater *fakeUpdater) Support() selfupdate.Reason { return updater.reason }
 func (updater *fakeUpdater) Package() update.Package    { return updater.packageType }
 
-func (updater *fakeUpdater) Prepare(ctx context.Context, _ update.Release, progress func(selfupdate.Progress), phase func(selfupdate.Phase)) (selfupdate.Staged, error) {
-	if updater.prepare != nil {
-		return updater.prepare(ctx, progress, phase)
+func (updater *fakeUpdater) Prepare(ctx context.Context, client *http.Client, _ update.Release, progress func(selfupdate.Progress), phase func(selfupdate.Phase)) (selfupdate.Staged, error) {
+	updater.mu.Lock()
+	updater.client = client
+	prepare := updater.prepare
+	updater.mu.Unlock()
+	if prepare != nil {
+		return prepare(ctx, client, progress, phase)
 	}
 	return selfupdate.Staged{Version: "99.0.0"}, nil
+}
+
+func (updater *fakeUpdater) prepareClient() *http.Client {
+	updater.mu.Lock()
+	defer updater.mu.Unlock()
+	return updater.client
 }
 
 func (updater *fakeUpdater) Launch(staged selfupdate.Staged, quit func()) error {
@@ -81,7 +94,7 @@ func updateWindowOffering(t *testing.T, release update.Release, updater *fakeUpd
 	t.Helper()
 	_, options := newWorld(t)
 	options.Invalidate = func() {}
-	options.CheckUpdate = func() (update.Release, error) { return release, nil }
+	options.CheckUpdate = func(*http.Client) (update.Release, error) { return release, nil }
 	options.Updater = updater
 	options.Quit = func() { *quits++ }
 	options.OpenURL = func(url string) error { *opened = append(*opened, url); return nil }
@@ -93,7 +106,7 @@ func updateWindowOffering(t *testing.T, release update.Release, updater *fakeUpd
 
 func TestAnUpdateThatCanBeInstalledIsInstalledAndTheApplicationQuits(t *testing.T) {
 	updater, quits, opened := &fakeUpdater{}, 0, []string(nil)
-	updater.prepare = func(_ context.Context, progress func(selfupdate.Progress), phase func(selfupdate.Phase)) (selfupdate.Staged, error) {
+	updater.prepare = func(_ context.Context, _ *http.Client, progress func(selfupdate.Progress), phase func(selfupdate.Phase)) (selfupdate.Staged, error) {
 		phase(selfupdate.PhaseDownloading)
 		progress(selfupdate.Progress{Done: 5, Size: 10})
 		phase(selfupdate.PhaseVerifying)
@@ -117,7 +130,7 @@ func TestAnUpdateThatCanBeInstalledIsInstalledAndTheApplicationQuits(t *testing.
 func TestTheDialogSaysWhatTheUpdateIsDoingAfterTheDownload(t *testing.T) {
 	updater, quits, opened := &fakeUpdater{}, 0, []string(nil)
 	prepared, continuePrepare := make(chan struct{}), make(chan struct{})
-	updater.prepare = func(_ context.Context, progress func(selfupdate.Progress), phase func(selfupdate.Phase)) (selfupdate.Staged, error) {
+	updater.prepare = func(_ context.Context, _ *http.Client, progress func(selfupdate.Progress), phase func(selfupdate.Phase)) (selfupdate.Staged, error) {
 		phase(selfupdate.PhaseDownloading)
 		progress(selfupdate.Progress{Done: 10, Size: 10})
 		phase(selfupdate.PhaseVerifying)
@@ -246,7 +259,7 @@ func TestARegisteredCustomWindowsInstallUsesTheInAppUpdater(t *testing.T) {
 		Writable: func(path string) bool { return path == dir },
 	})
 	updater, quits, opened := &fakeUpdater{reason: reason}, 0, []string(nil)
-	updater.prepare = func(context.Context, func(selfupdate.Progress), func(selfupdate.Phase)) (selfupdate.Staged, error) {
+	updater.prepare = func(context.Context, *http.Client, func(selfupdate.Progress), func(selfupdate.Phase)) (selfupdate.Staged, error) {
 		return selfupdate.Staged{Install: install, Version: "99.0.0"}, nil
 	}
 	state := updateWindow(t, updater, &quits, &opened)
@@ -305,7 +318,7 @@ func TestASystemInstalledCopyPointsAtThePackageManager(t *testing.T) {
 
 func TestAnInstallThatFailsStaysOnTheDialogWithItsReasonAndTheReleasePage(t *testing.T) {
 	updater, quits, opened := &fakeUpdater{}, 0, []string(nil)
-	updater.prepare = func(context.Context, func(selfupdate.Progress), func(selfupdate.Phase)) (selfupdate.Staged, error) {
+	updater.prepare = func(context.Context, *http.Client, func(selfupdate.Progress), func(selfupdate.Phase)) (selfupdate.Staged, error) {
 		return selfupdate.Staged{}, errors.New("checksum differs")
 	}
 	state := updateWindow(t, updater, &quits, &opened)
@@ -330,7 +343,7 @@ func TestAnInstallThatFailsStaysOnTheDialogWithItsReasonAndTheReleasePage(t *tes
 // release page at hand instead of quoting the system.
 func TestAUpdateTheSystemRefusesIsExplainedInsteadOfQuoted(t *testing.T) {
 	updater, quits, opened := &fakeUpdater{}, 0, []string(nil)
-	updater.prepare = func(context.Context, func(selfupdate.Progress), func(selfupdate.Phase)) (selfupdate.Staged, error) {
+	updater.prepare = func(context.Context, *http.Client, func(selfupdate.Progress), func(selfupdate.Phase)) (selfupdate.Staged, error) {
 		return selfupdate.Staged{}, fmt.Errorf("%w: Motty.app: rejected", selfupdate.ErrNotAccepted)
 	}
 	state := updateWindow(t, updater, &quits, &opened)
@@ -354,7 +367,7 @@ func TestAUpdateTheSystemRefusesIsExplainedInsteadOfQuoted(t *testing.T) {
 func TestCancellingADownloadStopsItAndInstallsNothing(t *testing.T) {
 	updater, quits, opened := &fakeUpdater{}, 0, []string(nil)
 	started, stopped := make(chan struct{}), make(chan struct{})
-	updater.prepare = func(ctx context.Context, _ func(selfupdate.Progress), _ func(selfupdate.Phase)) (selfupdate.Staged, error) {
+	updater.prepare = func(ctx context.Context, _ *http.Client, _ func(selfupdate.Progress), _ func(selfupdate.Phase)) (selfupdate.Staged, error) {
 		close(started)
 		<-ctx.Done()
 		close(stopped)
@@ -375,7 +388,7 @@ func TestInstallingAsksBeforeDroppingOpenSessions(t *testing.T) {
 	world, options := newWorld(t)
 	options.Invalidate = func() {}
 	updater, quits := &fakeUpdater{}, 0
-	options.CheckUpdate = func() (update.Release, error) { return offeredRelease, nil }
+	options.CheckUpdate = func(*http.Client) (update.Release, error) { return offeredRelease, nil }
 	options.Updater, options.Quit = updater, func() { quits++ }
 	state := newTestState(t, options)
 	fake := connect(t, state, world)
@@ -588,7 +601,7 @@ func TestSwitchingUpdateSourceInDialogKeepsDialogAndChecks(t *testing.T) {
 
 	_, options := newWorld(t)
 	options.Invalidate = func() {}
-	options.CheckUpdate = func() (update.Release, error) {
+	options.CheckUpdate = func(*http.Client) (update.Release, error) {
 		if checkSource == update.SourceOfficial {
 			return release1, nil
 		}
@@ -669,7 +682,7 @@ func TestSwitchingUpdateSourceShowsCheckingState(t *testing.T) {
 
 	_, options := newWorld(t)
 	options.Invalidate = func() {}
-	options.CheckUpdate = func() (update.Release, error) {
+	options.CheckUpdate = func(*http.Client) (update.Release, error) {
 		<-gate
 		return offeredRelease, nil
 	}
@@ -706,4 +719,105 @@ func TestSwitchingUpdateSourceShowsCheckingState(t *testing.T) {
 	if state.update.checking {
 		t.Fatalf("checking not reset on cancel: %+v", state.update)
 	}
+}
+
+func assertDirectTransportClient(t *testing.T, client *http.Client) {
+	t.Helper()
+	if client == nil {
+		t.Fatal("expected non-nil direct client")
+	}
+	if client.Timeout != 0 {
+		t.Fatalf("expected direct download client Timeout = 0, got %v", client.Timeout)
+	}
+	tr, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected *http.Transport, got %T", client.Transport)
+	}
+	if tr.Proxy != nil {
+		t.Fatal("expected direct client to have nil Proxy")
+	}
+}
+
+func TestDownloadUsesDirectClientAfterDirectCheck(t *testing.T) {
+	_, options := newWorld(t)
+	options.Invalidate = func() {}
+	updater, quits := &fakeUpdater{}, 0
+	var checkErr error
+	options.CheckUpdate = func(client *http.Client) (update.Release, error) {
+		if checkErr != nil {
+			return update.Release{}, checkErr
+		}
+		if client == nil {
+			// Default proxy path fails when proxy is unavailable; test both below.
+			return offeredRelease, nil
+		}
+		return offeredRelease, nil
+	}
+	options.Updater = updater
+	options.Quit = func() { quits++ }
+	state := newTestState(t, options)
+
+	// 1. Check via system proxy fails with ErrUnavailable.
+	checkErr = fmt.Errorf("%w: proxy unavailable", proxy.ErrUnavailable)
+	state.Click(hitSettingsUpdateCheck)
+	waitUpdate(t, state, func() bool { return !state.update.checking })
+	if !state.update.proxyFailed {
+		t.Fatal("expected proxyFailed = true")
+	}
+
+	// 2. Direct retry check succeeds and offers the release.
+	checkErr = nil
+	state.Click(hitSettingsUpdateDirectRetry)
+	waitUpdate(t, state, func() bool { return state.modal == modalUpdate })
+	if !state.update.direct {
+		t.Fatal("expected state.update.direct = true after direct check")
+	}
+
+	// 3. Installing the offered release must pass a direct client (Proxy == nil, Timeout == 0).
+	state.Click(hitUpdateInstall)
+	waitUpdate(t, state, func() bool { return quits == 1 })
+	assertDirectTransportClient(t, updater.prepareClient())
+
+	// 4. Subsequent check via default proxy resets state.update.direct back to false.
+	state.modal = modalNone
+	state.Click(hitSettingsUpdateCheck)
+	waitUpdate(t, state, func() bool { return state.modal == modalUpdate })
+	if state.update.direct {
+		t.Fatal("expected state.update.direct = false after normal proxy check")
+	}
+	state.Click(hitUpdateInstall)
+	waitUpdate(t, state, func() bool { return quits == 2 })
+	if updater.prepareClient() != nil {
+		t.Fatalf("expected nil client (default proxy) after normal check, got %v", updater.prepareClient())
+	}
+}
+
+func TestDownloadFailureDueToProxyOffersDirectRetry(t *testing.T) {
+	updater, quits, opened := &fakeUpdater{}, 0, []string(nil)
+	updater.prepare = func(_ context.Context, client *http.Client, _ func(selfupdate.Progress), _ func(selfupdate.Phase)) (selfupdate.Staged, error) {
+		if client == nil {
+			return selfupdate.Staged{}, fmt.Errorf("%w: proxy unavailable", proxy.ErrUnavailable)
+		}
+		return selfupdate.Staged{Version: "99.0.0"}, nil
+	}
+	state := updateWindow(t, updater, &quits, &opened)
+	if state.update.direct {
+		t.Fatal("expected direct = false initially")
+	}
+
+	// Install via default proxy fails with proxy.ErrUnavailable.
+	state.Click(hitUpdateInstall)
+	waitUpdate(t, state, func() bool { return state.update.install.phase == installFailed })
+	_, texts := paintedTexts(state)
+	if !contains(texts, state.messages.Tools.GeneralUpdateDirectRetry) {
+		t.Fatalf("expected direct retry button on proxy failure dialog: %q", texts)
+	}
+
+	// Clicking direct retry passes direct client to Prepare and completes install.
+	state.Click(hitUpdateProgressDirectRetry)
+	waitUpdate(t, state, func() bool { return quits == 1 })
+	if !state.update.direct {
+		t.Fatal("expected direct = true after direct install retry")
+	}
+	assertDirectTransportClient(t, updater.prepareClient())
 }

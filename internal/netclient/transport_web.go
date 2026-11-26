@@ -9,3 +9,7 @@ import "net/http"
 func newTransport() *http.Transport {
 	return http.DefaultTransport.(*http.Transport).Clone()
 }
+
+func newDirectTransport() *http.Transport {
+	return http.DefaultTransport.(*http.Transport).Clone()
+}

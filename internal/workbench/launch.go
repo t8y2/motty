@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"runtime"
 	"slices"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/netclient"
 	"motty/internal/update"
 )
 
@@ -42,6 +44,7 @@ var (
 	hitSettingsLoginToggle       = tree.ID(launchHits, "settings-login")
 	hitSettingsTrayIconToggle    = tree.ID(launchHits, "settings-tray-icon")
 	hitSettingsUpdateCheck       = tree.ID(launchHits, "settings-update-check")
+	hitSettingsUpdateDirectRetry = tree.ID(launchHits, "settings-update-direct-retry")
 	hitSettingsUpdateDownload    = tree.ID(launchHits, "settings-update-download")
 	hitUpdateNoticeAction        = tree.ID(launchHits, "update-notice-action")
 	hitUpdateToolbar             = tree.ID(launchHits, "update-toolbar")
@@ -283,7 +286,9 @@ const (
 )
 
 type updateState struct {
-	checking bool
+	checking    bool
+	proxyFailed bool
+	direct      bool
 	// source is where checks and downloads go: the official mirror or the CNB
 	// copy. It belongs to this computer, like the check itself.
 	source update.Source
@@ -334,6 +339,9 @@ func (state *State) paintUpdateRows(page *settingsPage) {
 		description = state.update.text
 	}
 	actions := []components.ButtonAction{{ID: hitSettingsUpdateCheck, Label: m.GeneralUpdateCheck, Variant: components.ButtonOutline, Disabled: state.update.checking}}
+	if state.update.proxyFailed && !state.update.checking {
+		actions = append(actions, components.ButtonAction{ID: hitSettingsUpdateDirectRetry, Label: m.GeneralUpdateDirectRetry, Variant: components.ButtonOutline})
+	}
 	if state.update.available {
 		label := m.GeneralUpdateDownload
 		if state.canInstallUpdate() {
@@ -382,6 +390,8 @@ func (state *State) clickLaunchSettings(id gfx.ID) bool {
 		state.save()
 	case hitSettingsUpdateCheck:
 		state.checkForUpdates(true)
+	case hitSettingsUpdateDirectRetry:
+		state.checkForUpdatesDirect(true)
 	case hitSettingsDiagnostics:
 		state.openExportDiagnostics()
 	case hitUpdateNoticeAction, hitUpdateToolbar:
@@ -452,6 +462,14 @@ func (state *State) stopUpdateCheck() {
 }
 
 func (state *State) checkForUpdates(asked bool) {
+	state.checkForUpdatesWithClient(asked, false)
+}
+
+func (state *State) checkForUpdatesDirect(asked bool) {
+	state.checkForUpdatesWithClient(asked, true)
+}
+
+func (state *State) checkForUpdatesWithClient(asked bool, direct bool) {
 	if state.update.checking {
 		return
 	}
@@ -461,20 +479,24 @@ func (state *State) checkForUpdates(asked bool) {
 	if asked {
 		state.update.text = state.messages.Tools.UpdateChecking
 	}
+	var client *http.Client
+	if direct {
+		client = netclient.DirectClient(30 * time.Second)
+	}
 	check := state.options.CheckUpdate
 	if check == nil {
 		pkg := update.PackageArchive
 		if state.options.Updater != nil {
 			pkg = state.options.Updater.Package()
 		}
-		check = func() (update.Release, error) {
+		check = func(client *http.Client) (update.Release, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), update.CheckBudget)
 			defer cancel()
-			return update.CheckPackageFrom(ctx, nil, runtime.GOOS, updateArch(), pkg, state.update.source)
+			return update.CheckPackageFrom(ctx, client, runtime.GOOS, updateArch(), pkg, state.update.source)
 		}
 	}
 	go func() {
-		release, err := check()
+		release, err := check(client)
 		state.aiPost(func(state *State) {
 			if state.closed || serial != state.update.checkSerial {
 				return // the window is gone, or the source changed under it
@@ -483,18 +505,30 @@ func (state *State) checkForUpdates(asked bool) {
 			m := state.messages.Tools
 			switch {
 			case errors.Is(err, update.ErrNoRelease):
+				state.update.proxyFailed = false
+				state.update.direct = false
 				if asked {
 					state.update.text = m.UpdateNoReleaseText
 				} else {
 					state.update.text = ""
 				}
 			case err != nil:
+				// The retry bypasses the proxy, so it is offered only beside a
+				// failure the user asked about and can read, never after a
+				// silent startup check.
+				state.update.direct = false
+				state.update.proxyFailed = asked && netclient.IsProxyUnavailable(err)
 				if asked {
 					state.update.text = fmt.Sprintf(m.UpdateFailedFmt, err)
+					if state.update.proxyFailed {
+						state.update.text += " " + m.GeneralUpdateDirectRetryNote
+					}
 				} else {
 					state.update.text = ""
 				}
 			case update.Newer(update.Current, release.Version):
+				state.update.proxyFailed = false
+				state.update.direct = direct
 				state.update.release, state.update.available = release, true
 				state.update.notes = updateNotes{text: release.Notes}
 				state.update.text = fmt.Sprintf(m.UpdateAvailableFmt, release.Version)
@@ -515,6 +549,8 @@ func (state *State) checkForUpdates(asked bool) {
 					state.announceUpdate(release.Version)
 				}
 			default:
+				state.update.proxyFailed = false
+				state.update.direct = false
 				state.update.available = false
 				if asked {
 					state.update.text = fmt.Sprintf(m.UpdateLatestFmt, update.Current)
@@ -539,6 +575,8 @@ func (state *State) changeUpdateSource() {
 	inDialog := state.modal == modalUpdate
 	state.update.checkSerial++
 	state.update.checking = false
+	state.update.proxyFailed = false
+	state.update.direct = false
 	state.update.available = false
 	state.update.release = update.Release{}
 	state.update.offer = false

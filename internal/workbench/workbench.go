@@ -2228,6 +2228,8 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		state.save()
 	case id == hitCompletionUpdate:
 		state.updateCompletions()
+	case id == hitCompletionUpdateDirectRetry:
+		state.updateCompletionsDirect()
 	case id == hitSettingsHistoryClear:
 		state.askClearHistory()
 	case id == hitPanePrevious:

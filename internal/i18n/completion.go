@@ -30,6 +30,7 @@ type CompletionMessages struct {
 	CatalogLoading        string
 	CatalogOff            string
 	Check                 string
+	CheckDirect           string
 	Updating              string
 	UpToDate              string
 	UpdatedFmt            string

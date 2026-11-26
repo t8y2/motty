@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"net/http"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -426,7 +427,7 @@ func TestChoosingCheckForUpdatesAsksInAVisibleWindowAndOffersTheRelease(t *testi
 	fixture := newTrayFixture(t)
 	fixture.firstView.hidden, fixture.secondView.hidden = true, true
 	release := update.Release{Version: "99.0.0", URL: "https://example.com/release"}
-	fixture.first.options.CheckUpdate = func() (update.Release, error) { return release, nil }
+	fixture.first.options.CheckUpdate = func(*http.Client) (update.Release, error) { return release, nil }
 	item := findItem(fixture.tray.Menu(), "Check for Updates…")
 	if item == nil || item.OnSelect == nil || item.Disabled {
 		t.Fatalf("item = %+v", item)

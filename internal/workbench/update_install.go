@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/netclient"
 	"motty/internal/selfupdate"
 	"motty/internal/update"
 )
@@ -20,7 +22,7 @@ type Updater interface {
 	Support() selfupdate.Reason
 	Package() update.Package
 	// Prepare downloads the release's package and checks it; it changes nothing.
-	Prepare(ctx context.Context, release update.Release, progress func(selfupdate.Progress), phase func(selfupdate.Phase)) (selfupdate.Staged, error)
+	Prepare(ctx context.Context, client *http.Client, release update.Release, progress func(selfupdate.Progress), phase func(selfupdate.Phase)) (selfupdate.Staged, error)
 	// Launch stages the release and starts the helper that replaces the program
 	// once this process has quit. It copies the new application and checks its
 	// signature, so it must run off the window's thread; quit is called when the
@@ -65,10 +67,11 @@ type updateInstall struct {
 }
 
 var (
-	hitUpdateInstall        = tree.ID(launchHits, "update-install")
-	hitUpdateProgressDimiss = tree.ID(launchHits, "update-progress-dismiss")
-	hitUpdateProgressCancel = tree.ID(launchHits, "update-progress-cancel")
-	hitUpdateProgressPage   = tree.ID(launchHits, "update-progress-page")
+	hitUpdateInstall             = tree.ID(launchHits, "update-install")
+	hitUpdateProgressDimiss      = tree.ID(launchHits, "update-progress-dismiss")
+	hitUpdateProgressCancel      = tree.ID(launchHits, "update-progress-cancel")
+	hitUpdateProgressDirectRetry = tree.ID(launchHits, "update-progress-direct-retry")
+	hitUpdateProgressPage        = tree.ID(launchHits, "update-progress-page")
 )
 
 // canInstallUpdate reports whether the offered release can replace this program.
@@ -144,8 +147,12 @@ func (state *State) startInstall() {
 	install.cancel = cancel
 	state.modal = modalUpdateProgress
 	release, updater := state.update.release, state.options.Updater
+	var client *http.Client
+	if state.update.direct {
+		client = netclient.DirectClient(0)
+	}
 	go func() {
-		staged, err := updater.Prepare(ctx, release,
+		staged, err := updater.Prepare(ctx, client, release,
 			func(progress selfupdate.Progress) {
 				state.aiPost(func(state *State) {
 					if install := &state.update.install; install.serial == serial {
@@ -246,6 +253,11 @@ func (state *State) clickUpdateProgress(id gfx.ID) {
 			state.closeModal()
 			state.showNextPrompt()
 		}
+	case hitUpdateProgressDirectRetry:
+		if install.phase == installFailed && netclient.IsProxyUnavailable(install.err) {
+			state.update.direct = true
+			state.startInstall()
+		}
 	case hitUpdateProgressPage:
 		if install.phase == installFailed {
 			state.openExternal(state.update.release.URL)
@@ -279,14 +291,22 @@ func (state *State) declareUpdateProgress(c ui.C) {
 	if install.phase == installFailed {
 		dialog.Body(func() {
 			ui.Column(c).Fill().Children(func() {
-				ui.Paragraph(c, fmt.Sprintf(m.UpdateFailedBodyFmt, install.failure), 4).FontSize(metrics.FontSizeS).Color(pal.danger).LineHeight(20).MarginSides(4, 0, 0, 0)
+				body := fmt.Sprintf(m.UpdateFailedBodyFmt, install.failure)
+				if netclient.IsProxyUnavailable(install.err) {
+					body += "\n\n" + m.GeneralUpdateDirectRetryNote
+				}
+				ui.Paragraph(c, body, 4).FontSize(metrics.FontSizeS).Color(pal.danger).LineHeight(20).MarginSides(4, 0, 0, 0)
 			})
 		})
+		actions := []components.ButtonAction{
+			{ID: hitUpdateProgressCancel, Label: state.messages.LabelWindowClose, Variant: components.ButtonSecondary},
+		}
+		if netclient.IsProxyUnavailable(install.err) {
+			actions = append(actions, components.ButtonAction{ID: hitUpdateProgressDirectRetry, Label: m.GeneralUpdateDirectRetry, Variant: components.ButtonOutline})
+		}
+		actions = append(actions, components.ButtonAction{ID: hitUpdateProgressPage, Label: m.UpdateOpenPage})
 		dialog.Footer(func() {
-			state.dialogActionFooter(c,
-				components.ButtonAction{ID: hitUpdateProgressCancel, Label: state.messages.LabelWindowClose, Variant: components.ButtonSecondary},
-				components.ButtonAction{ID: hitUpdateProgressPage, Label: m.UpdateOpenPage},
-			)
+			state.dialogActionFooter(c, actions...)
 		})
 	} else {
 		line, fraction := "", float32(1)

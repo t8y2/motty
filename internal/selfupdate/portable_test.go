@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -99,7 +101,7 @@ func TestSignedPortableUpgradePreservesTheDataAndReplacesTheProgramAndConpty(t *
 	if updater.Package() != update.PackagePortable {
 		t.Fatal("the installed copy did not select the portable package")
 	}
-	staged, err := updater.Prepare(context.Background(), update.Release{Version: "1.2.3", Asset: asset}, nil, nil)
+	staged, err := updater.Prepare(context.Background(), nil, update.Release{Version: "1.2.3", Asset: asset}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,3 +169,59 @@ func TestPortableUpgradeRejectsUnexpectedContentsAndArchitecture(t *testing.T) {
 		t.Fatal("an unsupported update changed the program")
 	}
 }
+
+func TestUpdaterPrepareUsesExplicitClient(t *testing.T) {
+	root := t.TempDir()
+	exe := filepath.Join(root, "motty.exe")
+	dataDir := filepath.Join(root, "motty-data")
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(exe, portableImage(runtime.GOARCH), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	image := portableImage(runtime.GOARCH)
+	archive := portableArchive(t, map[string][]byte{
+		"motty.exe":             image,
+		"motty-data/README.txt": []byte("marker"),
+	})
+	public, private, err := minisign.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previousKey, previousRun := releaseKey, run
+	releaseKey = func() minisign.PublicKey { return public }
+	run = func(context.Context, []string, string, ...string) (string, error) { return "NotSigned\n", nil }
+	t.Cleanup(func() { releaseKey, run = previousKey, previousRun })
+
+	server := serve(t, archive)
+	asset := assetFor(server, archive)
+	asset.Name = "motty-1.2.3-windows-" + runtime.GOARCH + ".zip"
+	asset.Signature, err = updatesign.Sign(private, bytes.NewReader(archive), "1.2.3", asset.Name, time.Unix(1_700_000_000, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// updater.Client points to a closing error transport, while explicitClient points to server.
+	failingClient := &http.Client{
+		Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return nil, errors.New("updater.Client must not be used when Prepare is passed an explicit client")
+		}),
+	}
+	updater := &Updater{
+		Dir:     filepath.Join(dataDir, "updates"),
+		Client:  failingClient,
+		install: Install{Kind: KindWindowsPortable, Root: root, Exe: exe},
+	}
+	staged, err := updater.Prepare(context.Background(), server.Client(), update.Release{Version: "1.2.3", Asset: asset}, nil, nil)
+	if err != nil {
+		t.Fatalf("Prepare with explicit client failed: %v", err)
+	}
+	if staged.Version != "1.2.3" {
+		t.Fatalf("staged.Version = %q, want 1.2.3", staged.Version)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

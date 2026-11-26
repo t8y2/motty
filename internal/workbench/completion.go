@@ -3,6 +3,7 @@ package workbench
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,6 +15,7 @@ import (
 	"motty/internal/cmdhistory"
 	"motty/internal/completion"
 	"motty/internal/i18n"
+	"motty/internal/netclient"
 	"motty/internal/pathcomp"
 )
 
@@ -32,10 +34,11 @@ import (
 var completionHits = tree.Feature("command-completion")
 
 var (
-	hitCompletionOpen    = tree.ID(completionHits, "completion-open")
-	hitCompletionDismiss = tree.ID(completionHits, "completion-dismiss")
-	hitCompletionList    = tree.Sub(completionHits, tree.Name("completion-list"))
-	hitCompletionUpdate  = tree.ID(completionHits, "completion-update")
+	hitCompletionOpen              = tree.ID(completionHits, "completion-open")
+	hitCompletionDismiss           = tree.ID(completionHits, "completion-dismiss")
+	hitCompletionList              = tree.Sub(completionHits, tree.Name("completion-list"))
+	hitCompletionUpdate            = tree.ID(completionHits, "completion-update")
+	hitCompletionUpdateDirectRetry = tree.ID(completionHits, "completion-update-direct-retry")
 
 	hitSettingsCompletionOff  = tree.ID(settingsHits, "settings-completion-off")
 	hitSettingsCompletionList = tree.ID(settingsHits, "settings-completion-list")
@@ -159,6 +162,7 @@ type completionUI struct {
 	// against had loaded; it starts when the load finishes.
 	updatePending bool
 	updateErr     error
+	proxyFailed   bool
 	// updateStats belongs to the catalog this window holds; it is adopted
 	// together with the catalog from the shared store, so every window shows
 	// the counters of the same generation.
@@ -379,6 +383,7 @@ func (state *State) adoptCompletionUpdate() {
 			c.cancelUpdate = nil
 		}
 		c.updateErr = result.err
+		c.proxyFailed = netclient.IsProxyUnavailable(result.err)
 		state.adoptCompletionCatalog()
 		installed := result.err == nil && result.installed && c.catalog != nil
 		if installed {
@@ -506,18 +511,32 @@ func (state *State) forgetCompletionHistory() {
 // updateCompletions only starts once the baseline is available. The shared
 // store serializes download, validation and installation across all windows.
 func (state *State) updateCompletions() {
+	state.updateCompletionsWithClient(nil)
+}
+
+// updateCompletionsDirect retries the catalog update bypassing the desktop
+// proxy settings when the previous attempt failed due to proxy unavailability.
+func (state *State) updateCompletionsDirect() {
+	state.updateCompletionsWithClient(completion.DirectUpdateClient())
+}
+
+func (state *State) updateCompletionsWithClient(client *http.Client) {
 	c := &state.completion
 	if c.updating {
 		return
 	}
 	if completion.CatalogPath(state.options.StatePath) == "" {
 		c.updateErr = fmt.Errorf("%s", state.messages.Completion.NoDataDir)
+		c.proxyFailed = false
 		return
 	}
 	if c.catalog == nil || c.store == nil {
 		c.updatePending = true
 		state.loadCompletionCatalog()
 		return
+	}
+	if client == nil {
+		client = completion.UpdateClient()
 	}
 	ctx, cancel := context.WithCancel(state.completionContext())
 	c.updating, c.updateErr, c.cancelUpdate = true, nil, cancel
@@ -538,7 +557,7 @@ func (state *State) updateCompletions() {
 	}
 	go func() {
 		defer c.workers.Done()
-		_, _, _, installed, err := store.Update(ctx, completion.UpdateClient())
+		_, _, _, installed, err := store.Update(ctx, client)
 		ready <- completionUpdateResult{err: err, installed: installed}
 		for _, invalidate := range wake {
 			invalidate()
