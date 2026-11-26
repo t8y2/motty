@@ -173,7 +173,7 @@ func TestForegroundPickerFailuresUseTheSFTPToastQueue(t *testing.T) {
 	for _, test := range []struct {
 		name string
 		run  func(*State)
-	}{{"SSH import", (*State).importSSHConfig}, {"session import", func(s *State) { s.importSessions(sessionimport.Xshell) }}, {"catalog import", (*State).importHostCatalog}, {"catalog export", (*State).exportHostCatalog}, {"key import", (*State).importKeys}, {"backup restore", (*State).openRestoreBackup}, {"diagnostics export", (*State).openExportDiagnostics}, {"output export", func(s *State) {
+	}{{"SSH import", (*State).importSSHConfig}, {"session import", func(s *State) { s.importSessions(sessionimport.Xshell) }}, {"catalog import", (*State).importHostCatalog}, {"catalog export", func(s *State) { s.exportHostCatalog(); s.Click(hitFormBack) }}, {"key import", (*State).importKeys}, {"backup restore", (*State).openRestoreBackup}, {"diagnostics export", (*State).openExportDiagnostics}, {"output export", func(s *State) {
 		session := &Session{term: newTerminal(80, 24)}
 		session.term.write([]byte("output"))
 		s.saveTerminalOutput(session)
@@ -204,7 +204,7 @@ func TestForegroundPickerFailuresUseTheSFTPToastQueue(t *testing.T) {
 }
 
 func TestCanceledPickersAndValidDialogsDoNotShowWarning(t *testing.T) {
-	for _, run := range []func(*State){(*State).importKeys, (*State).importHostCatalog, (*State).exportHostCatalog, (*State).importSSHConfig, func(s *State) { s.importSessions(sessionimport.Xshell) }, (*State).openRestoreBackup, (*State).openExportDiagnostics} {
+	for _, run := range []func(*State){(*State).importKeys, (*State).importHostCatalog, func(s *State) { s.exportHostCatalog(); s.Click(hitFormBack) }, (*State).importSSHConfig, func(s *State) { s.importSessions(sessionimport.Xshell) }, (*State).openRestoreBackup, (*State).openExportDiagnostics} {
 		_, o := newWorld(t)
 		o.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return nil, app.ErrCanceled }
 		o.SaveFile = func(app.SaveFileOptions) (string, error) { return "", app.ErrCanceled }

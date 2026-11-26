@@ -88,6 +88,7 @@ func TestHostCatalogControlsNativeSelectionOrderingAndExport(t *testing.T) {
 							t.Fatal("native group selection missed offscreen hosts")
 						}
 						click(hitExportHosts)
+						click(hitFormBack)
 						document, err := readHostCatalog(exportPath)
 						if err != nil || len(document.Hosts) != 7 {
 							t.Fatalf("native group export: hosts=%d err=%v", len(document.Hosts), err)
@@ -118,6 +119,7 @@ func TestHostCatalogControlsNativeSelectionOrderingAndExport(t *testing.T) {
 							t.Fatalf("native search select-all = %v", state.hostSelections)
 						}
 						click(hitExportHosts)
+						click(hitFormBack)
 						document, err = readHostCatalog(exportPath)
 						if err != nil || len(document.Hosts) != 3 {
 							t.Fatalf("native filtered export: hosts=%d err=%v", len(document.Hosts), err)

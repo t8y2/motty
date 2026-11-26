@@ -13,6 +13,8 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"motty/internal/backup"
+	"motty/internal/i18n"
 	"motty/internal/sshconn"
 	"motty/internal/workbench/icons"
 )
@@ -96,6 +98,10 @@ func TestHostCatalogExportImportRoundTripContainsNoSecrets(t *testing.T) {
 	servers := state.hostGroupIndex("Servers")
 	state.toggleHostGroup(servers)
 	state.Click(hitExportHosts)
+	if state.modal != modalForm {
+		t.Fatalf("export dialog did not open: %v", state.modal)
+	}
+	state.Click(hitFormBack)
 	if saveOptions.DefaultExtension != "json" || saveOptions.SuggestedName != "motty-hosts.json" {
 		t.Fatalf("save options = %+v", saveOptions)
 	}
@@ -165,6 +171,7 @@ func TestHostCatalogExportsCheckedSubsetAndHandlesPickerErrors(t *testing.T) {
 	state := newTestState(t, options)
 	state.Click(hitHostCheckList.At(int(state.hosts[1].ID)))
 	state.Click(hitExportHosts)
+	state.Click(hitFormBack)
 	document, err := readHostCatalog(path)
 	if err != nil {
 		t.Fatal(err)
@@ -179,6 +186,338 @@ func TestHostCatalogExportsCheckedSubsetAndHandlesPickerErrors(t *testing.T) {
 	state.Click(hitImportHostCatalog)
 	if len(state.hosts) != 0 || state.status != state.messages.ActionFeedback.FilePickerFailed {
 		t.Fatalf("failed import hosts=%d status=%q", len(state.hosts), state.status)
+	}
+}
+
+func TestHostCatalogEncryptedExportImportRoundTripWithPasswords(t *testing.T) {
+	exportPath := filepath.Join(t.TempDir(), "motty-hosts-encrypted.json")
+	options := testOptions(t)
+	options.SaveFile = func(app.SaveFileOptions) (string, error) { return exportPath, nil }
+	state := newTestState(t, options)
+
+	// Set up hosts covering SSH password + OTP + inline proxy password, VNC system password,
+	// RDP password, shared credential, and shared proxy profile.
+	sshHost := state.hosts[0]
+	sshHost.Auth = authPassword
+	sshHost.Proxy = &outboundProxy{kind: sshconn.ProxySOCKS5, address: "127.0.0.1:1080", user: "proxy-user"}
+	state.hosts[0] = sshHost
+
+	vncHost := Host{
+		ID: state.nextHostID, CatalogID: "host_vnc_sys", Label: "Desktop VNC",
+		Protocol: protocolVNC, Address: "vnc.example.com", User: "pi", Port: 5900,
+		Credential: "cred_shared",
+	}
+	vncHost.finish()
+	state.nextHostID++
+
+	rdpHost := Host{
+		ID: state.nextHostID, CatalogID: "host_rdp_prof", Label: "Office RDP",
+		Protocol: protocolRDP, Address: "rdp.example.com", User: "corp\\admin", Port: 3389,
+		ProxyProfile: "prof_corp",
+	}
+	rdpHost.finish()
+	state.nextHostID++
+
+	state.hosts = append(state.hosts, vncHost, rdpHost)
+	state.credentials = append(state.credentials, credential{ID: "cred_shared", Name: "Shared Login", User: "shared-user"})
+	state.proxyProfiles = append(state.proxyProfiles, proxyProfile{ID: "prof_corp", Name: "Corp SOCKS", Kind: sshconn.ProxySOCKS5, Address: "proxy.corp.local:1080", User: "corp-proxy"})
+	state.hostDataChanged()
+	state.save()
+
+	wantSecrets := map[string]string{
+		hostSecretName(sshHost.CatalogID, hostPasswordPart):            "ssh-secret-pw",
+		hostSecretName(sshHost.CatalogID, hostOTPPart):                 "JBSWY3DPEHPK3PXP",
+		hostProxyPasswordSecret(sshHost.CatalogID, sshHost.Proxy):      "inline-proxy-pw",
+		hostSecretName(vncHost.CatalogID, vncSystemPasswordPart("pi")): "vnc-pi-pw",
+		hostSecretName(rdpHost.CatalogID, hostPasswordPart):            "rdp-secret-pw",
+		credentialSecretName("cred_shared"):                            "shared-cred-pw",
+		proxyProfileSecretName("prof_corp"):                            "corp-proxy-pw",
+	}
+	for name, val := range wantSecrets {
+		if err := state.secrets.vault.Set(name, val); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	state.Click(hitExportHosts)
+	if state.modal != modalForm {
+		t.Fatalf("modal = %v, want modalForm", state.modal)
+	}
+	// Empty password is rejected.
+	state.Click(hitFormSubmit)
+	if state.modal != modalForm || state.form.dialogError != state.messages.HostCatalogErrPasswordEmpty {
+		t.Fatalf("empty password error = %q, modal=%v", state.form.dialogError, state.modal)
+	}
+	// A password shorter than a backup's is refused too: the file holds every
+	// saved password of the exported hosts, and nothing else protects it.
+	fillForm(state, "short", "short")
+	state.Click(hitFormSubmit)
+	if state.modal != modalForm || state.form.dialogError != state.messages.Tools.BackupErrPasswordShort {
+		t.Fatalf("short password error = %q, modal=%v", state.form.dialogError, state.modal)
+	}
+	state.form.set(0, "")
+	state.form.set(1, "")
+	// Mismatched confirmation is rejected.
+	fillForm(state, "export-pass-1", "export-pass-2")
+	state.Click(hitFormSubmit)
+	if state.modal != modalForm || state.form.dialogError != state.messages.Tools.BackupErrPasswordMismatch {
+		t.Fatalf("mismatch error = %q, modal=%v", state.form.dialogError, state.modal)
+	}
+	// Matching password exports an encrypted file containing zero plaintext secrets or hosts.
+	state.form.set(0, "export-pass-123")
+	state.form.set(1, "export-pass-123")
+	state.Click(hitFormSubmit)
+	if state.modal != modalNone {
+		t.Fatalf("encrypted export failed: %q", state.form.dialogError)
+	}
+	sealed, err := os.ReadFile(exportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range wantSecrets {
+		if strings.Contains(string(sealed), secret) {
+			t.Fatalf("encrypted export leaked secret %q", secret)
+		}
+	}
+	if strings.Contains(string(sealed), "vnc.example.com") || strings.Contains(string(sealed), "rdp.example.com") {
+		t.Fatal("encrypted export leaked host addresses")
+	}
+
+	// Import into a fresh instance: prompts for password, rejects wrong one, accepts right one.
+	importOptions := freshOptions(t)
+	importOptions.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return []string{exportPath}, nil }
+	imported := New(importOptions)
+	t.Cleanup(imported.Close)
+
+	imported.Click(hitImportHostCatalog)
+	if imported.modal != modalForm {
+		t.Fatalf("encrypted import did not ask for password: modal=%v", imported.modal)
+	}
+	fillForm(imported, "wrong-password")
+	imported.Click(hitFormSubmit)
+	if imported.modal != modalForm || imported.form.dialogError != imported.messages.Tools.BackupErrWrong {
+		t.Fatalf("wrong password error = %q, modal=%v", imported.form.dialogError, imported.modal)
+	}
+	if len(imported.hosts) != 0 {
+		t.Fatalf("wrong password modified hosts: %+v", imported.hosts)
+	}
+
+	imported.form.set(0, "export-pass-123")
+	imported.Click(hitFormSubmit)
+	if imported.modal != modalNone {
+		t.Fatalf("valid password import failed: %q", imported.form.dialogError)
+	}
+	if len(imported.hosts) != len(state.hosts) {
+		t.Fatalf("imported hosts = %d, want %d", len(imported.hosts), len(state.hosts))
+	}
+	if _, ok := imported.credentialByID("cred_shared"); !ok {
+		t.Fatal("shared credential was not imported")
+	}
+	if _, ok := imported.proxyProfileByID("prof_corp"); !ok {
+		t.Fatal("shared proxy profile was not imported")
+	}
+	for name, want := range wantSecrets {
+		got, found, err := imported.secrets.vault.Get(name)
+		if err != nil || !found || got != want {
+			t.Fatalf("vault secret %q = (%q, %v, %v), want %q", name, got, found, err, want)
+		}
+	}
+
+	// Verify persistence across restart.
+	restarted := newTestState(t, importOptions)
+	for name, want := range wantSecrets {
+		got, found, err := restarted.secrets.vault.Get(name)
+		if err != nil || !found || got != want {
+			t.Fatalf("after restart secret %q = (%q, %v, %v), want %q", name, got, found, err, want)
+		}
+	}
+}
+
+func TestHostCatalogEncryptedImportRemapsCollidingCatalogIDsAndExportsSubset(t *testing.T) {
+	exportPath := filepath.Join(t.TempDir(), "subset-encrypted.json")
+	options := testOptions(t)
+	options.SaveFile = func(app.SaveFileOptions) (string, error) { return exportPath, nil }
+	state := newTestState(t, options)
+	state.hosts[1].Proxy = &outboundProxy{kind: sshconn.ProxySOCKS5, address: "127.0.0.1:1080", user: "u"}
+	state.save()
+	wantPW := "staging-pw"
+	wantProxyPW := "staging-proxy-pw"
+	if err := state.secrets.vault.Set(hostSecretName(state.hosts[1].CatalogID, hostPasswordPart), wantPW); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.secrets.vault.Set(hostProxyPasswordSecret(state.hosts[1].CatalogID, state.hosts[1].Proxy), wantProxyPW); err != nil {
+		t.Fatal(err)
+	}
+	// A host that is not part of the export keeps its password to itself.
+	if err := state.secrets.vault.Set(hostSecretName(state.hosts[0].CatalogID, hostPasswordPart), "unselected-pw"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Export only the checked host (hosts[1]).
+	state.Click(hitHostCheckList.At(int(state.hosts[1].ID)))
+	state.Click(hitExportHosts)
+	fillForm(state, "subset-pass", "subset-pass")
+	state.Click(hitFormSubmit)
+	if state.modal != modalNone {
+		t.Fatalf("subset encrypted export failed: %q", state.form.dialogError)
+	}
+	sealed, err := os.ReadFile(exportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, err := backup.OpenEnvelope(hostCatalogEncryptedFormat, hostCatalogEncryptedVersion, sealed, "subset-pass")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var exported hostCatalogDocument
+	if err := json.Unmarshal(plain, &exported); err != nil {
+		t.Fatal(err)
+	}
+	if len(exported.Hosts) != 1 || exported.Hosts[0].ID != state.hosts[1].CatalogID {
+		t.Fatalf("exported hosts = %+v, want only %q", exported.Hosts, state.hosts[1].CatalogID)
+	}
+	own, ownProxy := "host:"+state.hosts[1].CatalogID+":", hostProxyPasswordPrefix+state.hosts[1].CatalogID+":"
+	for _, secret := range exported.Secrets {
+		if !strings.HasPrefix(secret.Name, own) && !strings.HasPrefix(secret.Name, ownProxy) {
+			t.Errorf("the file holds a secret that is not the exported host's: %q", secret.Name)
+		}
+	}
+	if strings.Contains(string(sealed), "unselected-pw") {
+		t.Fatal("the encrypted export leaked a password")
+	}
+
+	// Target already has a DIFFERENT host occupying the same CatalogID.
+	targetOptions := freshOptions(t)
+	targetOptions.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return []string{exportPath}, nil }
+	target := New(targetOptions)
+	t.Cleanup(target.Close)
+	occupier := Host{
+		ID: target.nextHostID, CatalogID: state.hosts[1].CatalogID, Label: "Different Host",
+		Address: "other.example.com", User: "root", Port: 22,
+	}
+	occupier.finish()
+	target.nextHostID++
+	target.hosts = append(target.hosts, occupier)
+	target.hostDataChanged()
+	if err := target.secrets.vault.Set(hostSecretName(occupier.CatalogID, hostPasswordPart), "occupier-pw"); err != nil {
+		t.Fatal(err)
+	}
+
+	target.Click(hitImportHostCatalog)
+	fillForm(target, "subset-pass")
+	target.Click(hitFormSubmit)
+	if target.modal != modalNone {
+		t.Fatalf("import failed: %q", target.form.dialogError)
+	}
+	if len(target.hosts) != 2 {
+		t.Fatalf("hosts = %d, want 2", len(target.hosts))
+	}
+	importedHost := target.hosts[1]
+	if importedHost.CatalogID == occupier.CatalogID {
+		t.Fatalf("colliding CatalogID was not remapped: %q", importedHost.CatalogID)
+	}
+	if got, found, err := target.secrets.vault.Get(hostSecretName(importedHost.CatalogID, hostPasswordPart)); err != nil || !found || got != wantPW {
+		t.Fatalf("remapped host password = (%q, %v, %v), want %q", got, found, err, wantPW)
+	}
+	if got, found, err := target.secrets.vault.Get(hostProxyPasswordSecret(importedHost.CatalogID, importedHost.Proxy)); err != nil || !found || got != wantProxyPW {
+		t.Fatalf("remapped proxy password = (%q, %v, %v), want %q", got, found, err, wantProxyPW)
+	}
+	if got, found, err := target.secrets.vault.Get(hostSecretName(occupier.CatalogID, hostPasswordPart)); err != nil || !found || got != "occupier-pw" {
+		t.Fatalf("occupier password was overwritten: (%q, %v, %v)", got, found, err)
+	}
+}
+
+// The two exports are not mistaken for each other on disk: they are offered
+// under different names, and the import's picker still lists both.
+func TestHostCatalogPlainAndEncryptedExportsAreOfferedUnderDifferentNames(t *testing.T) {
+	var offered []app.SaveFileOptions
+	options := testOptions(t)
+	options.SaveFile = func(got app.SaveFileOptions) (string, error) {
+		offered = append(offered, got)
+		return filepath.Join(t.TempDir(), "catalog.json"), nil
+	}
+	state := newTestState(t, options)
+	state.Click(hitExportHosts)
+	state.Click(hitFormBack) // without passwords
+	state.Click(hitExportHosts)
+	fillForm(state, testBackupPassword, testBackupPassword)
+	state.Click(hitFormSubmit)
+	if state.modal != modalNone || len(offered) != 2 {
+		t.Fatalf("modal %d, save dialogs %d, error %q", state.modal, len(offered), state.form.dialogError)
+	}
+	plain, encrypted := offered[0], offered[1]
+	if plain.SuggestedName == encrypted.SuggestedName || filepath.Ext(plain.SuggestedName) != filepath.Ext(encrypted.SuggestedName) {
+		t.Fatalf("plain export %q, encrypted export %q: not told apart, or not the same kind of file", plain.SuggestedName, encrypted.SuggestedName)
+	}
+
+	var picker app.OpenFileOptions
+	importing := newTestState(t, freshOptions(t))
+	importing.options.OpenFiles = func(got app.OpenFileOptions) ([]string, error) { picker = got; return nil, app.ErrCanceled }
+	importing.Click(hitImportHostCatalog)
+	for _, name := range []string{plain.SuggestedName, encrypted.SuggestedName} {
+		listed := false
+		for _, filter := range picker.Filters {
+			if matched, _ := filepath.Match(filter.Pattern, name); matched {
+				listed = true
+			}
+		}
+		if !listed {
+			t.Errorf("the import picker's filters %+v do not list %q", picker.Filters, name)
+		}
+	}
+}
+
+func TestHostCatalogPlainImportIgnoresInjectedSecrets(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "plain-with-secrets.json")
+	payload := `{"format":"motty-host-catalog","version":4,"hosts":[{"id":"host_injected","label":"Injected","address":"inj.example.com","port":22}],"secrets":[{"name":"host:host_injected:password","value":"injected-pw"}]}`
+	if err := os.WriteFile(path, []byte(payload), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	options := freshOptions(t)
+	options.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return []string{path}, nil }
+	state := New(options)
+	t.Cleanup(state.Close)
+	state.Click(hitImportHostCatalog)
+	if len(state.hosts) != 1 {
+		t.Fatalf("hosts = %d, want 1", len(state.hosts))
+	}
+	if _, found, err := state.secrets.vault.Get(hostSecretName("host_injected", hostPasswordPart)); err != nil || found {
+		t.Fatalf("plain import should ignore secrets: found=%v err=%v", found, err)
+	}
+}
+
+func TestHostCatalogExportDialogButtonsFitAcrossLanguages(t *testing.T) {
+	for _, lang := range []i18n.Language{i18n.English, i18n.Chinese, i18n.TraditionalChinese} {
+		t.Run(lang.String(), func(t *testing.T) {
+			state := newTestState(t, testOptions(t))
+			state.setLanguage(lang)
+			state.Click(hitExportHosts)
+			if state.modal != modalForm {
+				t.Fatalf("modal = %v, want modalForm", state.modal)
+			}
+			canvas, _ := paintedTexts(state)
+			var dialogRect gfx.Rect
+			for _, hit := range canvas.Hits() {
+				if hit.Block {
+					dialogRect = hit.Bounds
+				}
+			}
+			m := state.messages
+			var prevRight float32
+			for index, label := range []string{m.Cancel, m.HostCatalogExportPlain, m.HostCatalogExportEncrypted} {
+				hit, ok := hitByLabel(canvas, label)
+				if !ok {
+					t.Fatalf("button %q is not painted", label)
+				}
+				if index > 0 && hit.Bounds.X < prevRight {
+					t.Fatalf("button %q overlaps previous button (x=%.1f < prevRight=%.1f)", label, hit.Bounds.X, prevRight)
+				}
+				if hit.Bounds.X+hit.Bounds.Width > dialogRect.X+dialogRect.Width {
+					t.Fatalf("button %q overflows dialog (right=%.1f > dialogRight=%.1f)", label, hit.Bounds.X+hit.Bounds.Width, dialogRect.X+dialogRect.Width)
+				}
+				prevRight = hit.Bounds.X + hit.Bounds.Width
+			}
+		})
 	}
 }
 

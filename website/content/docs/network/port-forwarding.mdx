@@ -24,8 +24,9 @@ own host key and credentials.
 A global outbound SOCKS5 or HTTP CONNECT proxy can carry the initial connection.
 In **New Host** or **Edit Host**, a network host can inherit that setting, force a
 direct connection, or define its own proxy address, optional login and bypass
-list. A host-specific password stays in the encrypted password vault and is not
-included in host catalog exports.
+list. A host-specific password stays in the encrypted password vault: a plain
+host catalog export never includes it, and an encrypted one carries it under the
+export password.
 
 A host can also connect through a **proxy command**, as OpenSSH's `ProxyCommand`
 does: Motty starts the program when the host connects and carries the connection

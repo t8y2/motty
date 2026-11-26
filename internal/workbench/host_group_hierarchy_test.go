@@ -125,6 +125,7 @@ func TestHostGroupChildCreationAndCatalogRoundTrip(t *testing.T) {
 	exportPath := filepath.Join(t.TempDir(), "groups.json")
 	state.options.SaveFile = func(app.SaveFileOptions) (string, error) { return exportPath, nil }
 	state.exportHostCatalog()
+	state.Click(hitFormBack)
 	document, err := readHostCatalog(exportPath)
 	if err != nil {
 		t.Fatal(err)
