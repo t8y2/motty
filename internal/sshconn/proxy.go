@@ -129,7 +129,7 @@ func (proxy *Proxy) DialAs(ctx context.Context, timeout time.Duration, address, 
 	if proxy.Kind == ProxyCommand {
 		return proxy.dialCommand(ctx, host, port, user)
 	}
-	dialer := net.Dialer{Timeout: timeout}
+	dialer := tcpDialer(timeout)
 	socket, err := dialer.DialContext(ctx, "tcp", proxy.Address)
 	if err != nil {
 		return nil, fmt.Errorf("connect to the proxy %s: %w", proxy.Address, err)

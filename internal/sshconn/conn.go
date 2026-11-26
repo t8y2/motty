@@ -810,6 +810,13 @@ func (conn *Conn) detectSystem(client *ssh.Client, serverVersion string) {
 	conn.notify()
 }
 
+// tcpDialer leaves keepalive policy to the SSH transport. A zero KeepAlive
+// enables Go's implicit operating-system keepalive, which can time out before
+// the configured SSH probes and bypass the application's keepalive settings.
+func tcpDialer(timeout time.Duration) net.Dialer {
+	return net.Dialer{Timeout: timeout, KeepAlive: -1}
+}
+
 // dialTCP opens the first connection of a route: straight to the endpoint, or
 // through the outbound proxy when one is set for it.
 func (conn *Conn) dialTCP(endpoint Endpoint) (net.Conn, error) {
@@ -817,7 +824,7 @@ func (conn *Conn) dialTCP(endpoint Endpoint) (net.Conn, error) {
 	if conn.config.Proxy.Uses(address) {
 		return conn.config.Proxy.DialAs(conn.ctx, conn.config.DialTimeout, address, endpoint.User)
 	}
-	dialer := net.Dialer{Timeout: conn.config.DialTimeout}
+	dialer := tcpDialer(conn.config.DialTimeout)
 	return dialer.DialContext(conn.ctx, "tcp", address)
 }
 

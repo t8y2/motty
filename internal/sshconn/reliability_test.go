@@ -50,6 +50,16 @@ func TestInvalidReliabilityConfigFailsBeforeConnecting(t *testing.T) {
 	}
 }
 
+func TestTCPDialerDisablesImplicitKeepAlive(t *testing.T) {
+	dialer := tcpDialer(time.Second)
+	if dialer.KeepAlive >= 0 {
+		t.Fatalf("KeepAlive = %v, want implicit operating-system keepalive disabled", dialer.KeepAlive)
+	}
+	if dialer.Timeout != time.Second {
+		t.Fatalf("Timeout = %v, want %v", dialer.Timeout, time.Second)
+	}
+}
+
 func TestKeepAliveDisabledStartsNoWorkerOrRequests(t *testing.T) {
 	requests := make(chan string, 1)
 	server := startServer(t, func(server *testServer) {
