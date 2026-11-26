@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"errors"
 	"testing"
 
 	"motty/internal/ai/store"
@@ -82,5 +83,23 @@ func TestAIProviderProxyPasswordFollowsTheSavedAddress(t *testing.T) {
 	}
 	if _, found, err := state.secrets.vault.Get(aiProxyPasswordSecretName(saved.ID)); err != nil || found {
 		t.Fatalf("old proxy password found %t, err %v", found, err)
+	}
+}
+
+func TestDeletingSecretsStopsAtTheFirstFailure(t *testing.T) {
+	failure := errors.New("vault write failed")
+	var tried []string
+	err := deleteSecretsUntilError([]string{"key", "proxy"}, func(name string) error {
+		tried = append(tried, name)
+		if name == "key" {
+			return failure
+		}
+		return nil
+	})
+	if !errors.Is(err, failure) {
+		t.Fatalf("err = %v, want the first failure to survive a later success", err)
+	}
+	if len(tried) != 1 {
+		t.Fatalf("tried %v after the first deletion failed", tried)
 	}
 }

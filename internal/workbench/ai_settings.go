@@ -998,7 +998,7 @@ func (state *State) aiSubmitProvider() {
 	if proxyPassword != "" {
 		provider.HasProxyPassword = true
 		proxyChanges = append(proxyChanges, vault.Change{Name: aiProxyPasswordSecretName(provider.ID), Value: proxyPassword})
-	} else if editing && proxyRaw == old.ProxyURL {
+	} else if editing && proxyAddress == old.ProxyURL {
 		provider.HasProxyPassword = old.HasProxyPassword
 	} else if editing && old.HasProxyPassword {
 		proxyChanges = append(proxyChanges, vault.Change{Name: aiProxyPasswordSecretName(provider.ID), Delete: true})
@@ -1055,6 +1055,17 @@ func (state *State) aiSaveKey(providerID, key string) error {
 	return nil
 }
 
+// deleteSecretsUntilError deletes the named secrets in order and stops at the
+// first failure, so that a later success cannot hide it.
+func deleteSecretsUntilError(names []string, del func(string) error) error {
+	for _, name := range names {
+		if err := del(name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (state *State) aiDeleteProvider(id string) {
 	if state.ai.login != nil && state.ai.login.provider.ID == id {
 		state.aiStopCLILogin()
@@ -1079,14 +1090,12 @@ func (state *State) aiDeleteProvider(id string) {
 			}
 			// The secrets go first, so a failure leaves the provider whole. A
 			// locked vault is opened and the deletion tried again.
-			for _, name := range names {
-				switch err = opened.Delete(name); {
-				case errors.Is(err, vault.ErrNeedsConversion):
-					state.openVaultUnlock(nil, func() { state.aiDeleteProvider(id) })
-					return
-				case err != nil:
-					err = errors.New(state.vaultErrorText(err))
-				}
+			switch err = deleteSecretsUntilError(names, opened.Delete); {
+			case errors.Is(err, vault.ErrNeedsConversion):
+				state.openVaultUnlock(nil, func() { state.aiDeleteProvider(id) })
+				return
+			case err != nil:
+				err = errors.New(state.vaultErrorText(err))
 			}
 		}
 	}
