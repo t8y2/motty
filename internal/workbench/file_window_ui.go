@@ -172,6 +172,9 @@ func (d *fileDocument) declareEditWindow(c ui.C) {
 					d.pageButton(c, "zoom-in", hitDocumentZoomIn, "+").Small().Outline()
 				}
 				if d.image == nil && d.ready {
+					if d.canFormatConfig() {
+						d.pageButton(c, "format", hitDocumentFormat, d.owner.messages.CodeEditor.Format).Small().Outline().Disabled(!d.canEditCode())
+					}
 					wrap := d.owner.messages.CodeEditor.WrapOn
 					if d.edit.noWrap {
 						wrap = d.owner.messages.CodeEditor.WrapOff

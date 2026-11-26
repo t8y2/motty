@@ -19,6 +19,11 @@ type CodeEditorMessages struct {
 	PositionFmt, SelectedFmt string
 	IndentTabs, IndentSpaces string
 	WrapOn, WrapOff          string
+	Format                   string
+	Formatted                string
+	FormatNoChanges          string
+	FormatErrorFmt           string
+	FoldCollapse, FoldExpand string
 }
 
 var englishCodeEditor = CodeEditorMessages{
@@ -33,6 +38,9 @@ var englishCodeEditor = CodeEditorMessages{
 	PositionFmt: "Ln %d, Col %d", SelectedFmt: "%d selected",
 	IndentTabs: "Tabs", IndentSpaces: "Spaces: %d",
 	WrapOn: "Wrap", WrapOff: "No wrap",
+	Format: "Format", Formatted: "Formatted", FormatNoChanges: "Already formatted",
+	FormatErrorFmt: "Format failed (line %d, col %d): %s",
+	FoldCollapse:   "Collapse block", FoldExpand: "Expand block",
 }
 
 var chineseCodeEditor = CodeEditorMessages{
@@ -47,4 +55,7 @@ var chineseCodeEditor = CodeEditorMessages{
 	PositionFmt: "行 %d，列 %d", SelectedFmt: "已选 %d",
 	IndentTabs: "制表符", IndentSpaces: "空格：%d",
 	WrapOn: "自动换行", WrapOff: "不换行",
+	Format: "格式化", Formatted: "已格式化", FormatNoChanges: "格式已规范",
+	FormatErrorFmt: "格式化失败（第 %d 行，第 %d 列）：%s",
+	FoldCollapse:   "折叠代码块", FoldExpand: "展开代码块",
 }

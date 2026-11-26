@@ -7,6 +7,7 @@ require (
 	github.com/Microsoft/go-winio v0.6.4
 	github.com/creack/pty v1.1.24
 	github.com/makiuchi-d/gozxing v0.1.1
+	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/pkg/sftp v1.13.11
 	github.com/vivaui/viva v0.0.0
 	golang.org/x/crypto v0.59.0

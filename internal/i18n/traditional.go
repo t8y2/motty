@@ -3393,6 +3393,9 @@ var traditionalCodeEditor = CodeEditorMessages{
 	PositionFmt: "行 %d，列 %d", SelectedFmt: "已選 %d",
 	IndentTabs: "定位字元", IndentSpaces: "空格：%d",
 	WrapOn: "自動換行", WrapOff: "不換行",
+	Format: "格式化", Formatted: "已格式化", FormatNoChanges: "格式已規範",
+	FormatErrorFmt: "格式化失敗（第 %d 行，第 %d 列）：%s",
+	FoldCollapse:   "摺疊區塊", FoldExpand: "展開區塊",
 }
 
 var traditionalDashboard = DashboardMessages{
