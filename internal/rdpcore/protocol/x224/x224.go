@@ -17,6 +17,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"motty/internal/rdpcore/util"
 )
@@ -64,10 +65,16 @@ type ConnectionRequest struct {
 	Class   byte   // Class and options (always 0 for RDP)
 
 	// RDP Negotiation Request (optional)
-	Cookie           string // Routing token or cookie (mstshash value)
+	Cookie           string // Cookie field: "Cookie: mstshash=" + cookie (MS-RDPBCGR 2.2.1.1)
 	SendCookie       bool   // Always send Cookie header, even if Cookie is empty
 	NegotiationFlags byte   // Request flags
 	RequestedProtos  uint32 // Requested security protocols
+
+	// RoutingToken is the complete routingToken field of a reconnection: the
+	// LoadBalanceInfo of a Server Redirection PDU, ending in CRLF. It takes
+	// the place of the Cookie field, which the two exclude (MS-RDPBCGR
+	// 3.2.5.3.1).
+	RoutingToken string
 }
 
 // ConnectionConfirm represents an X.224 Connection Confirm TPDU
@@ -97,7 +104,15 @@ type DataTPDU struct {
 func (cr *ConnectionRequest) Encode() []byte {
 	// Calculate variable data size up front
 	varLen := 8 // RDP_NEG_REQ is always 8 bytes
-	sendCookie := cr.SendCookie || cr.Cookie != ""
+	token := cr.RoutingToken
+	if token != "" && !strings.HasSuffix(token, "\r\n") {
+		token += "\r\n" // the routingToken field ends in CRLF
+	}
+	// A routing token and a cookie are mutually exclusive (MS-RDPBCGR 3.2.5.3.1)
+	sendCookie := token == "" && (cr.SendCookie || cr.Cookie != "")
+	if token != "" {
+		varLen += len(token)
+	}
 	if sendCookie {
 		varLen += 17 + len(cr.Cookie) + 2 // "Cookie: mstshash=" + cookie + "\r\n"
 	}
@@ -115,6 +130,9 @@ func (cr *ConnectionRequest) Encode() []byte {
 
 	// Variable part
 	offset := 7
+	if token != "" {
+		offset += copy(buf[offset:], token)
+	}
 	if sendCookie {
 		offset += copy(buf[offset:], "Cookie: mstshash=")
 		offset += copy(buf[offset:], cr.Cookie)

@@ -25,6 +25,7 @@
 package rdp
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/tls"
@@ -38,6 +39,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf16"
 
 	"motty/internal/rdpcore/protocol/ber"
 	"motty/internal/rdpcore/protocol/caps"
@@ -219,6 +221,13 @@ type Client struct {
 	// certErr is why Options.VerifyCertificate refused the server (Motty addition).
 	certErr error
 
+	// redirection is the Server Redirection PDU the connection being
+	// established follows (MS-RDPBCGR 2.2.13.1): read while dialing,
+	// authenticating and naming the session, and nil once connected.
+	// redirections counts how many redirections the current chain followed.
+	redirection  *pdu.RedirectInfo
+	redirections int
+
 	// Reusable send buffer (zero allocs in steady state)
 	sendBuf []byte
 
@@ -340,12 +349,136 @@ func (c *Client) dialConn(addr string) (net.Conn, error) {
 	return d.DialContext(ctx, "tcp", addr)
 }
 
-// Connect establishes the RDP connection
+// maxRedirections bounds how many Server Redirection PDUs one connection
+// follows: a server that keeps redirecting must not keep the client forever.
+const maxRedirections = 8
+
+// maxRoutingToken is the longest routingToken an X.224 Connection Request
+// carries: its length indicator is one byte, and the RDP Negotiation Request
+// and the token's CRLF take the rest of the variable part.
+const maxRoutingToken = 239
+
+// Connect establishes the RDP connection. A Server Redirection PDU is followed:
+// reference clients reconnect as told and the session continues on the server
+// named, which is how GNOME Remote Desktop's remote login hands a client from
+// the system daemon to the user's session (MS-RDPBCGR 2.2.13.1, 3.2.5.2.2).
 func (c *Client) Connect() error {
+	c.redirections = 0
+	return c.connectFollowing()
+}
+
+// connectFollowing establishes the connection for the redirection in
+// c.redirection, or for Options when there is none, and follows the
+// redirection the server answers with.
+func (c *Client) connectFollowing() error {
+	for {
+		err := c.connect()
+		var redirect *RedirectError
+		if !errors.As(err, &redirect) {
+			if err != nil {
+				// A connection that did not come up has no receive loop, so
+				// nothing runs beside: say which redirection it was to serve.
+				inFlight := c.redirection
+				c.redirection = nil
+				if inFlight != nil {
+					err = fmt.Errorf("%v: %w", &RedirectError{Info: inFlight}, err)
+				}
+			}
+			return err
+		}
+		if c.redirections++; c.redirections > maxRedirections {
+			c.redirection = nil // no connection came of it
+			return fmt.Errorf("%w: the server redirected %d times in a row", ErrServerRedirect, c.redirections)
+		}
+		c.logRedirection(redirect.Info)
+		c.resetForReconnect()
+		c.redirection = redirect.Info
+	}
+}
+
+// targetHost is the server the connection in flight goes to: the one the
+// redirection names, else Options.Host.
+func (c *Client) targetHost() string {
+	if c.redirection != nil {
+		return c.redirection.Server
+	}
+	return c.opts.Host
+}
+
+// targetAddr is targetHost on the session's port. A redirection names no port
+// (MS-RDPBCGR 2.2.13.1), so the redirected session keeps the port it reached
+// the redirecting server on.
+func (c *Client) targetAddr() string {
+	return net.JoinHostPort(c.targetHost(), strconv.Itoa(c.opts.Port))
+}
+
+// credentials are the account the connection in flight authenticates with:
+// the ones the redirection supplies, else Options. A redirection without a
+// domain leaves the domain the user gave.
+func (c *Client) credentials() (domain, username, password string) {
+	if c.redirection == nil {
+		return c.opts.Domain, c.opts.Username, c.opts.Password
+	}
+	domain = c.opts.Domain
+	if c.redirection.Flags&pdu.LBDomain != 0 {
+		domain = c.redirection.Domain
+	}
+	if c.redirection.Flags&pdu.LBUsername != 0 {
+		username = c.redirection.Username
+	}
+	if c.redirection.Flags&pdu.LBPassword != 0 {
+		password = redirectPassword(c.redirection)
+	}
+	return domain, username, password
+}
+
+// redirectPassword is the password of a redirection as text, or empty when the
+// field is not one. With LB_PASSWORD_IS_PK_ENCRYPTED the field is a cookie
+// for MS-RDSTLS, which this client does not speak; GNOME Remote Desktop sets
+// that flag anyway and puts the session's cleartext password there, so the
+// text is used as the password and only an unreadable blob is refused.
+func redirectPassword(ri *pdu.RedirectInfo) string {
+	if len(ri.Password) < 4 || len(ri.Password)%2 != 0 {
+		return ""
+	}
+	units := make([]uint16, len(ri.Password)/2)
+	for i := range units {
+		units[i] = binary.LittleEndian.Uint16(ri.Password[i*2:])
+	}
+	// The cleartext password is Unicode with a null terminator.
+	if units[len(units)-1] != 0 {
+		return ""
+	}
+	units = units[:len(units)-1]
+	for _, unit := range units {
+		if unit == 0 {
+			return ""
+		}
+	}
+	return string(utf16.Decode(units))
+}
+
+// logRedirection records where the server sends the client.
+func (c *Client) logRedirection(ri *pdu.RedirectInfo) {
+	target := ri.Server
+	if target == "" {
+		target = "the redirecting server"
+	}
+	c.log.LogAttrs(context.Background(), slog.LevelInfo, "following server redirection",
+		slog.String("target", target),
+		slog.Bool("routingToken", len(ri.LoadBalanceInfo) > 0),
+		slog.String("username", ri.Username),
+		slog.Bool("hasPassword", len(ri.Password) > 0),
+		slog.Bool("hasTargetCertificate", len(ri.TargetCertificate) > 0),
+		slog.Uint64("sessionID", uint64(ri.SessionID)))
+}
+
+// connect establishes the connection; see Connect for the redirections.
+func (c *Client) connect() error {
 	c.setState(StateConnecting)
 
 	// Step 1: TCP connection
-	addr := net.JoinHostPort(c.opts.Host, strconv.Itoa(c.opts.Port))
+	addr := c.targetAddr()
 	c.log.LogAttrs(context.Background(), slog.LevelInfo, "connecting", slog.String("addr", addr))
 
 	conn, err := c.dialConn(addr)
@@ -552,6 +685,14 @@ func (c *Client) Connect() error {
 	c.log.LogAttrs(context.Background(), slog.LevelInfo, "connection established", slog.String("state", c.State().String()))
 	c.setState(StateConnected)
 
+	// From here on the receive loop reports through handleDisconnect, which
+	// the reconnection paths hold off while they are still connecting. A
+	// redirection this connection followed is spent; under the lock, because
+	// the receive loop may hand over the next one from its own goroutine.
+	c.closeMu.Lock()
+	c.redirection = nil
+	c.reconnecting = false
+	c.closeMu.Unlock()
 	c.receiveLoopDone = make(chan struct{})
 	go c.receiveLoop()
 	if c.opts.HeartbeatTimeout > 0 {
@@ -590,8 +731,7 @@ func (c *Client) negotiateX224WithFallback() error {
 		if i > 0 {
 			// Reconnect TCP for the retry — server closed the previous socket.
 			c.conn.Close()
-			addr := net.JoinHostPort(c.opts.Host, strconv.Itoa(c.opts.Port))
-			conn, err := c.dialConn(addr)
+			conn, err := c.dialConn(c.targetAddr())
 			if err != nil {
 				return fmt.Errorf("%w: reconnect for %s: %v", ErrConnectionFailed, a.label, err)
 			}
@@ -634,6 +774,15 @@ func (c *Client) negotiateX224(requestedProtos uint32) error {
 		Cookie:          cookie,
 		SendCookie:      true,
 		RequestedProtos: requestedProtos,
+	}
+	if c.redirection != nil {
+		// The redirection's LoadBalanceInfo is the routingToken of the
+		// reconnection, as the server spelled it (MS-RDPBCGR 3.2.5.3.1).
+		token := c.redirection.LoadBalanceInfo
+		if len(token) > maxRoutingToken {
+			return fmt.Errorf("%w: the server's routing token is %d bytes, more than a connection request carries", ErrNegotiationFailed, len(token))
+		}
+		cr.RoutingToken = string(token)
 	}
 
 	crBytes := cr.Encode()
@@ -696,7 +845,7 @@ func (c *Client) upgradeTLS() error {
 		// the caller pins the certificate itself through Options.VerifyCertificate
 		// (Motty divergence: upstream accepted anything).
 		InsecureSkipVerify: true,
-		ServerName:         c.opts.Host,
+		ServerName:         c.targetHost(),
 		MinVersion:         tls.VersionTLS10, // Some RDP servers only support TLS 1.0
 		VerifyConnection: func(cs tls.ConnectionState) error {
 			if c.opts.VerifyCertificate == nil {
@@ -704,6 +853,14 @@ func (c *Client) upgradeTLS() error {
 			}
 			if len(cs.PeerCertificates) == 0 {
 				return errors.New("server presented no certificate")
+			}
+			// A redirection names the certificate its target presents inside a
+			// connection the caller already accepted (LB_TARGET_CERTIFICATE):
+			// it is the server the redirection leads to, not one to ask about.
+			if c.redirection != nil && len(c.redirection.TargetCertificate) > 0 &&
+				bytes.Equal(cs.PeerCertificates[0].Raw, c.redirection.TargetCertificate) {
+				c.log.LogAttrs(context.Background(), slog.LevelInfo, "server certificate is the target of the redirection")
+				return nil
 			}
 			if err := c.opts.VerifyCertificate(cs.PeerCertificates[0].Raw); err != nil {
 				c.certErr = err
@@ -778,8 +935,7 @@ func canRetryCredSSP(err error) bool {
 // constraints. Pass minVer=0,maxVer=0 to use defaults.
 func (c *Client) reconnectWithTLS(x224Protos uint32, minVer, maxVer uint16) error {
 	c.conn.Close()
-	addr := net.JoinHostPort(c.opts.Host, strconv.Itoa(c.opts.Port))
-	conn, err := c.dialConn(addr)
+	conn, err := c.dialConn(c.targetAddr())
 	if err != nil {
 		return fmt.Errorf("%w: reconnect: %v", ErrConnectionFailed, err)
 	}
@@ -811,7 +967,8 @@ func (c *Client) credsspAuth() error {
 	if c.rawNTLM {
 		authenticate = nla.AuthenticateRawNTLM
 	}
-	if err := authenticate(c.tlsConn, c.logNla, c.opts.Host, c.opts.Domain, c.opts.Username, c.opts.Password, ver); err != nil {
+	domain, username, password := c.credentials()
+	if err := authenticate(c.tlsConn, c.logNla, c.targetHost(), domain, username, password, ver); err != nil {
 		// Motty divergence: %w, so that nla.ErrCredentialsFatal survives and the
 		// caller stops at the first refusal. Upstream wrapped with %v, which hid it
 		// and made one wrong password into 14 logon attempts (an account lockout
@@ -869,6 +1026,11 @@ func (c *Client) mcsConnect() error {
 	}
 	clusterData := &mcs.ClientClusterData{
 		Flags: clusterFlags,
+	}
+	if c.redirection != nil && c.redirection.SessionID != 0 {
+		// A redirection reconnects to the session the server named.
+		clusterData.Flags |= mcs.RedirectedSessionIDFieldValid
+		clusterData.RedirectedSessionID = c.redirection.SessionID
 	}
 	var channelDefs []mcs.ChannelDef
 	if c.opts.Clipboard {
@@ -1506,10 +1668,11 @@ func (c *Client) sendClientInfo() error {
 		perfFlags |= sec.PerfDisablePlaybackSounds
 	}
 
+	domain, username, password := c.credentials()
 	info := &sec.ClientInfo{
-		Domain:              c.opts.Domain,
-		Username:            c.opts.Username,
-		Password:            c.opts.Password,
+		Domain:              domain,
+		Username:            username,
+		Password:            password,
 		PerfFlags:           perfFlags,
 		AudioInput:          false,
 		RemoteAudio:         false,
@@ -1581,7 +1744,7 @@ func (c *Client) readDecryptedPDU() (channelID uint16, payload []byte, err error
 		}
 
 		// Decrypt (centralized, matching receiveLoop)
-		userData = c.decryptSlowPath(userData)
+		userData = c.receiveSlowPath(userData)
 		if userData == nil {
 			return 0, nil, fmt.Errorf("decryption failed")
 		}
@@ -1604,6 +1767,23 @@ func (c *Client) readLicensingPDU() (lic.Preamble, []byte, error) {
 	if channelID != c.ioChannelID {
 		return lic.Preamble{}, nil, fmt.Errorf("%w: licensing PDU on unexpected channel %d (expected %d)",
 			ErrLicensingFailed, channelID, c.ioChannelID)
+	}
+
+	// A redirection may end any phase of the connection sequence
+	// (MS-RDPBCGR 1.3.2): Connect follows it. The Standard Security variant
+	// arrives behind its security header, as it does everywhere else.
+	var ri *pdu.RedirectInfo
+	var redirectErr error
+	if len(userData) >= 4 && binary.LittleEndian.Uint16(userData[0:2])&sec.RedirectionPkt != 0 {
+		ri, redirectErr = pdu.DecodeRedirectPDU(userData[4:], false)
+	} else if len(userData) >= 6 {
+		ri, redirectErr = parseShareRedirection(binary.LittleEndian.Uint16(userData[2:4]), userData[6:])
+	}
+	if redirectErr != nil {
+		return lic.Preamble{}, nil, fmt.Errorf("%w: parsing server redirection: %v", ErrLicensingFailed, redirectErr)
+	}
+	if ri != nil {
+		return lic.Preamble{}, nil, c.redirectionToFollow(ri)
 	}
 
 	hdr, licData, err := sec.DecodeBasicSecurityHeader(userData)
@@ -1994,23 +2174,42 @@ func (c *Client) handleOutOfSequenceData(data []byte) error {
 		ErrCapabilitiesFailed, sdHdr.PDUType2)
 }
 
-// outOfSequenceRedirect parses a redirection that arrived before the Demand
-// Active so the caller can reconnect to the target rather than report the
-// redirection PDU as a protocol error.
+// parseShareRedirection decodes the Server Redirection Packet of a share PDU
+// when rest is one; enhanced says which of the two variants the type names.
+func parseShareRedirection(pduType uint16, rest []byte) (*pdu.RedirectInfo, error) {
+	switch pduType & 0x000F {
+	case pdu.TypeRedirect & 0x000F:
+		return pdu.DecodeRedirectPDU(rest, false)
+	case pdu.TypeEnhancedRedirect & 0x000F:
+		return pdu.DecodeRedirectPDU(rest, true)
+	}
+	return nil, nil
+}
+
+// redirectionToFollow keeps a Server Redirect PDU as the error that makes the
+// connection follow it, or nil when the PDU only tells where the session
+// lives (LB_NOREDIRECT).
+func (c *Client) redirectionToFollow(ri *pdu.RedirectInfo) error {
+	if ri.Flags&pdu.LBNoRedirect != 0 {
+		c.logPdu.LogAttrs(context.Background(), slog.LevelDebug, "redirect PDU with LB_NOREDIRECT; ignoring")
+		return nil
+	}
+	c.logRedirection(ri)
+	return &RedirectError{Info: ri}
+}
+
+// outOfSequenceRedirect reads a redirection that arrived before the Demand
+// Active so the caller follows it rather than report a protocol error.
 func (c *Client) outOfSequenceRedirect(data []byte, enhanced bool) error {
-	ri, err := pdu.DecodeRedirectPDU(data, enhanced)
+	pduType := pdu.TypeRedirect
+	if enhanced {
+		pduType = pdu.TypeEnhancedRedirect
+	}
+	ri, err := parseShareRedirection(pduType, data)
 	if err != nil {
 		return fmt.Errorf("%w: parsing server redirection: %v", ErrCapabilitiesFailed, err)
 	}
-	if ri.Flags&pdu.LBNoRedirect != 0 {
-		c.logPdu.LogAttrs(context.Background(), slog.LevelDebug, "server redirection before the Demand Active with LB_NOREDIRECT; ignoring")
-		return nil
-	}
-	c.logPdu.LogAttrs(context.Background(), slog.LevelInfo, "server redirection before the Demand Active",
-		slog.String("server", ri.Server),
-		slog.String("username", ri.Username),
-		slog.Bool("hasLBInfo", len(ri.LoadBalanceInfo) > 0))
-	return &RedirectError{Info: ri}
+	return c.redirectionToFollow(ri)
 }
 
 // sendConfirmActive builds and sends the Confirm Active PDU with our capability sets.
@@ -2202,9 +2401,20 @@ func (c *Client) handleFinalization() error {
 			continue
 		}
 
-		_, scRest, err := pdu.DecodeShareControlHeader(c.logPdu, userData)
+		header, scRest, err := pdu.DecodeShareControlHeader(c.logPdu, userData)
 		if err != nil {
 			return fmt.Errorf("%w: %v", ErrFinalizationFailed, err)
+		}
+		// A redirection may end any phase of the connection sequence
+		// (MS-RDPBCGR 1.3.2): Connect follows it.
+		if ri, err := parseShareRedirection(header.PDUType, scRest); ri != nil || err != nil {
+			if err != nil {
+				return fmt.Errorf("%w: parsing server redirection: %v", ErrFinalizationFailed, err)
+			}
+			if err := c.redirectionToFollow(ri); err != nil {
+				return err
+			}
+			continue
 		}
 
 		sdHdr, sdPayload, err := pdu.DecodeShareDataHeader(c.logPdu, scRest)
@@ -2315,7 +2525,7 @@ func (c *Client) dispatchPacket(pktType tpkt.PacketType, actionByte byte, data [
 			// Centralized security-layer decryption for ALL channels
 			// (MS-RDPBCGR 5.3.6). The RC4 stream must be advanced for
 			// every encrypted packet to stay in sync.
-			userData = c.decryptSlowPath(userData)
+			userData = c.receiveSlowPath(userData)
 			if err := c.autodetect.received(len(userData)); err != nil {
 				c.handleDisconnect(err)
 				return true
@@ -2581,6 +2791,18 @@ func (c *Client) handleDisconnect(err error) {
 	// Close done to stop receiveLoop, keepAliveLoop, heartbeatLoop.
 	close(c.done)
 
+	// A Server Redirection PDU is the server moving the session to another
+	// endpoint: it is not an ending. The redirection is followed from another
+	// goroutine because this one may be inside the receive loop it has to wait
+	// for.
+	var redirect *RedirectError
+	if errors.As(err, &redirect) {
+		c.reconnecting = true
+		c.closeMu.Unlock()
+		go c.followRedirection(redirect.Info)
+		return
+	}
+
 	// Server-initiated disconnect (logoff, admin kick) — don't reconnect.
 	if c.opts.AutoReconnect && !errors.Is(err, ErrDisconnected) {
 		c.reconnecting = true
@@ -2616,6 +2838,40 @@ func (c *Client) decryptSlowPath(data []byte) []byte {
 		}
 	}
 	return rest
+}
+
+// receiveSlowPath strips the Standard RDP Security header and decrypts, as
+// decryptSlowPath does. A Server Redirection PDU of that security layer is
+// recognized by its security header alone (MS-RDPBCGR 2.2.13.2.1) and given
+// the Share Control Header the share PDU handlers dispatch on.
+func (c *Client) receiveSlowPath(data []byte) []byte {
+	if c.crypto == nil || !hasRedirectionSecurityHeader(data) {
+		return c.decryptSlowPath(data)
+	}
+	packet := c.decryptSlowPath(data)
+	if packet == nil {
+		return nil
+	}
+	return wrapStandardRedirection(packet)
+}
+
+// hasRedirectionSecurityHeader says whether an undecrypted slow-path PDU
+// starts with a Basic Security Header flagging SEC_REDIRECTION_PKT.
+func hasRedirectionSecurityHeader(data []byte) bool {
+	return len(data) >= 4 && binary.LittleEndian.Uint16(data[0:2])&sec.RedirectionPkt != 0
+}
+
+// wrapStandardRedirection puts a Share Control Header of type
+// PDUTYPE_SERVER_REDIR_PDU in front of a decrypted Standard Security Server
+// Redirection PDU. That variant has neither the header nor the two padding
+// octets of the Enhanced one, so its packet is the standard variant to the
+// decoders.
+func wrapStandardRedirection(packet []byte) []byte {
+	share := make([]byte, 6+len(packet))
+	binary.LittleEndian.PutUint16(share[0:2], uint16(len(share)))
+	binary.LittleEndian.PutUint16(share[2:4], pdu.TypeRedirect)
+	copy(share[6:], packet)
+	return share
 }
 
 // handleSlowPathPDU decodes a Share Control + Share Data PDU and dispatches
@@ -2755,41 +3011,101 @@ func (c *Client) handleSaveSessionInfo(data []byte) {
 	c.logPdu.LogAttrs(context.Background(), slog.LevelInfo, "saved auto-reconnect cookie", slog.Int("logonID", int(arc.LogonID)))
 }
 
-// handleRedirectPDU parses a Server Redirection PDU and disconnects with
-// a RedirectError so the caller can reconnect to the target server.
+// handleRedirectPDU reads a Server Redirection PDU. The server hands the
+// session to another endpoint, so the connection ends with the redirection
+// and handleDisconnect follows it. LB_NOREDIRECT makes the PDU a
+// description of the session's placement that needs no reconnection.
 func (c *Client) handleRedirectPDU(data []byte, enhanced bool) {
-	ri, err := pdu.DecodeRedirectPDU(data, enhanced)
+	pduType := pdu.TypeRedirect
+	if enhanced {
+		pduType = pdu.TypeEnhancedRedirect
+	}
+	ri, err := parseShareRedirection(pduType, data)
 	if err != nil {
 		c.logPdu.LogAttrs(context.Background(), slog.LevelWarn, "failed to parse redirect PDU", slog.Any("err", err))
 		return
 	}
-	if ri.Server == "" {
-		c.logPdu.LogAttrs(context.Background(), slog.LevelDebug, "redirect PDU with LB_NOREDIRECT, ignoring")
-		return
+	if err := c.redirectionToFollow(ri); err != nil {
+		c.handleDisconnect(err)
 	}
-	c.logPdu.LogAttrs(context.Background(), slog.LevelInfo, "server redirection",
-		slog.String("server", ri.Server),
-		slog.String("domain", ri.Domain),
-		slog.String("username", ri.Username),
-		slog.Bool("hasLBInfo", len(ri.LoadBalanceInfo) > 0),
-		slog.Bool("hasPassword", len(ri.Password) > 0))
-
-	c.handleDisconnect(&RedirectError{Info: ri})
 }
 
-// RedirectError wraps a server redirection with the parsed redirect info.
-// Callers can check for this with errors.As to extract the RedirectInfo
-// and reconnect to the target server.
+// RedirectError reports a Server Redirection PDU so the connection can be
+// re-established as it says; the client follows it itself, and a caller sees
+// it only when following fails.
 type RedirectError struct {
 	Info *pdu.RedirectInfo
 }
 
 func (e *RedirectError) Error() string {
-	return fmt.Sprintf("%s: %s", ErrServerRedirect, e.Info.Server)
+	if e.Info.Server == "" {
+		return fmt.Sprintf("%s to the same server", ErrServerRedirect)
+	}
+	return fmt.Sprintf("%s to %s", ErrServerRedirect, e.Info.Server)
 }
 
 func (e *RedirectError) Unwrap() error {
 	return ErrServerRedirect
+}
+
+// followRedirection reconnects as the Server Redirection PDU asks. It runs
+// outside the receive loop, which ends the connection with the redirection
+// and may still be inside the packet it read it from. Until the redirected
+// connection is up, closing is held off and the loops of the old connection
+// ending are not reports of the new one failing (see handleDisconnect).
+func (c *Client) followRedirection(ri *pdu.RedirectInfo) {
+	c.closeTransport()
+	recvDone := c.receiveLoopDone
+	if recvDone != nil {
+		<-recvDone
+	}
+
+	if fn := c.loadOnReconnecting(); fn != nil {
+		fn()
+	}
+
+	c.resetForReconnect()
+	// The session that sent the redirection is over: its auto-reconnect cookie
+	// names a session the next server does not have.
+	c.arcCookie = nil
+	c.redirection = ri
+	err := c.connectFollowing()
+
+	c.closeMu.Lock()
+	c.reconnecting = false
+	if err != nil {
+		c.closed = true
+	}
+	c.closeMu.Unlock()
+	if err != nil {
+		c.log.LogAttrs(context.Background(), slog.LevelError, "redirected connection failed", slog.Any("err", err))
+		if fn := c.loadOnDisconnect(); fn != nil {
+			fn(err)
+		}
+		return
+	}
+	c.log.LogAttrs(context.Background(), slog.LevelInfo, "redirected connection established")
+
+	// The redirected session is a new one at the server and has not been told
+	// that nobody is looking at the desktop.
+	if c.outputSuppressed.Load() {
+		_ = c.sendDataPDU(pdu.PDUType2SuppressOutput, pdu.EncodeSuppressOutput(false, 0, 0, 0, 0))
+	}
+	if fn := c.loadOnReconnected(); fn != nil {
+		fn()
+	}
+}
+
+// closeTransport shuts the connection, so that reads and writes in flight
+// fail instead of waiting.
+func (c *Client) closeTransport() {
+	c.closeMu.Lock()
+	defer c.closeMu.Unlock()
+	if c.tlsConn != nil {
+		c.tlsConn.Close()
+	} else if c.conn != nil {
+		c.conn.Close()
+	}
 }
 
 // handleReactivation handles server deactivation/reactivation.

@@ -161,15 +161,7 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 	session := &Session{opts: opts, done: make(chan struct{}), width: width, height: height, sized: true}
 	session.dirty = append(session.dirty, desktop.Rect{X: 0, Y: 0, Width: width, Height: height})
 
-	var connMu sync.Mutex
-	var current net.Conn
-	setDeadline := func(deadline time.Time) {
-		connMu.Lock()
-		defer connMu.Unlock()
-		if current != nil {
-			current.SetDeadline(deadline)
-		}
-	}
+	transport := newSessionTransport(dial, address)
 	config := rdpcore.DefaultOptions()
 	config.Host, config.Port = host, port
 	config.Username, config.Domain, config.Password = opts.Username, opts.Domain, opts.Password
@@ -191,29 +183,15 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 			return audio.Open(audio.Format{SampleRate: int(sampleRate), Channels: int(channels)})
 		}
 	}
-	handshakeEnds := time.Now().Add(handshakeTimeout)
-	config.Dial = func(dialCtx context.Context, network, _ string) (net.Conn, error) {
-		// The address the library asks for is the host's own name; the caller says
-		// where the bytes really go (the SSH server's loopback, a proxy).
-		conn, err := dial(dialCtx, network, address)
-		if err != nil {
-			return nil, err
-		}
-		conn.SetDeadline(handshakeEnds)
-		connMu.Lock()
-		current = conn
-		connMu.Unlock()
-		return conn, nil
-	}
+	config.Dial = transport.dialConn
 	// The user is asked while the handshake waits, so its timeout is suspended
 	// for the question. The certificate comes first and the password after it,
 	// as with an SSH host key: nothing secret is sent to a server that was not
 	// accepted, and the library reads the password only when it authenticates.
 	asking := func(ask func() error) error {
-		setDeadline(time.Time{})
+		resume := transport.suspend()
 		err := ask()
-		handshakeEnds = time.Now().Add(handshakeTimeout)
-		setDeadline(handshakeEnds)
+		resume()
 		return err
 	}
 	config.VerifyCertificate = func(der []byte) error {
@@ -250,13 +228,7 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 		return nil, err
 	}
 	session.client = client
-	session.closeTransport = func() {
-		connMu.Lock()
-		defer connMu.Unlock()
-		if current != nil {
-			current.Close()
-		}
-	}
+	session.closeTransport = transport.close
 	client.OnBitmap(session.onBitmap)
 	client.OnStridedBitmap(session.onStrided)
 	client.OnResize(func(width, height int) {
@@ -293,12 +265,18 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 		client.OnClipboardFilesProgress(session.onFilesProgress)
 	}
 
+	// A reconnection, and a server redirection (GNOME Remote Desktop's remote
+	// login hands the session to the user session's daemon), connects again
+	// without Open: the window ends there too, the library's heartbeat
+	// watches the open connection.
+	client.OnReconnected(transport.connected)
+
 	// Cancelling the context must end a handshake that is waiting on the network.
 	stop := context.AfterFunc(ctx, func() { client.Close() })
 	err = client.Connect()
 	cancelled := !stop()
 	if err == nil {
-		setDeadline(time.Time{}) // the heartbeat watches the open connection
+		transport.connected()
 	}
 	if err == nil && cancelled {
 		err = ctx.Err()
@@ -318,6 +296,82 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 		session.finish(nil)
 	}()
 	return session, nil
+}
+
+// sessionTransport opens the connections of a session and bounds each of
+// its handshakes. The first shares one window with the password prompt. A
+// connection the library makes later on its own (a reconnection, a server
+// redirection) gets a window of its own, by which time the first one would
+// be running out. Once a session is up its deadline is lifted: from then on
+// the library's heartbeat watches the link.
+type sessionTransport struct {
+	dial    desktop.Dialer
+	address string
+
+	mu       sync.Mutex
+	current  net.Conn
+	deadline time.Time // when the handshake in flight must be done; zero once the window ended
+	opened   bool      // the first handshake is over
+}
+
+func newSessionTransport(dial desktop.Dialer, address string) *sessionTransport {
+	return &sessionTransport{dial: dial, address: address, deadline: time.Now().Add(handshakeTimeout)}
+}
+
+func (t *sessionTransport) dialConn(ctx context.Context, network, _ string) (net.Conn, error) {
+	// The address the library asks for is the host's own name; the caller says
+	// where the bytes really go (the SSH server's loopback, a proxy).
+	conn, err := t.dial(ctx, network, t.address)
+	if err != nil {
+		return nil, err
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	deadline := t.deadline
+	if t.opened {
+		deadline = time.Now().Add(handshakeTimeout)
+	}
+	conn.SetDeadline(deadline)
+	t.current, t.deadline = conn, deadline
+	return conn, nil
+}
+
+// suspend lifts the window while the user answers a question; the returned
+// function restarts the window from then.
+func (t *sessionTransport) suspend() (resume func()) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.current != nil {
+		t.current.SetDeadline(time.Time{})
+	}
+	return func() {
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		t.deadline = time.Now().Add(handshakeTimeout)
+		if t.current != nil {
+			t.current.SetDeadline(t.deadline)
+		}
+	}
+}
+
+// connected ends the window of the handshake in flight.
+func (t *sessionTransport) connected() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.opened = true
+	if t.current != nil {
+		t.current.SetDeadline(time.Time{})
+	}
+}
+
+// close shuts the connection the library dialed last: when the library ends
+// a connection on its own account it leaves the socket open.
+func (t *sessionTransport) close() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.current != nil {
+		t.current.Close()
+	}
 }
 
 // clampSize holds a requested desktop to what the server's display channel

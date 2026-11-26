@@ -1,16 +1,19 @@
-// Server Redirection PDU decoding (MS-RDPBCGR 2.2.13.1).
+// Server Redirection Packet decoding (MS-RDPBCGR 2.2.13.1).
 package pdu
 
 import (
+	"encoding/base64"
 	"encoding/binary"
 	"fmt"
+	"strings"
 	"unicode/utf16"
 )
 
-// Share Control PDU types for server redirection.
+// Share Control PDU types of the Server Redirection PDUs (MS-RDPBCGR
+// 2.2.13.2, 2.2.13.3.1).
 const (
-	TypeRedirect         uint16 = 0x0014 // type=4, version=0x0010
-	TypeEnhancedRedirect uint16 = 0x001A // type=10, version=0x0010
+	TypeRedirect         uint16 = 0x0015 // PDUTYPE_SERVER_REDIR_PDU (5), version 0x0010
+	TypeEnhancedRedirect uint16 = 0x001A // PDUTYPE_SERVER_REDIR_PDU (10), version 0x0010
 )
 
 // Redirection flags (MS-RDPBCGR 2.2.13.1).
@@ -33,49 +36,63 @@ const (
 	LBTargetCertificate     uint32 = 0x00010000
 )
 
-// RedirectInfo holds parsed Server Redirection PDU fields.
+// secRedirectionPkt is the value of the packet's Flags field and of the
+// security header flag that fronts the Standard Security variant.
+const secRedirectionPkt uint16 = 0x0400
+
+// RedirectInfo holds the parsed Server Redirection Packet.
 type RedirectInfo struct {
-	SessionID       uint32 // only set for enhanced redirect
-	Flags           uint32
-	Server          string // target server (from LBTargetNetAddress or LBTargetFQDN)
-	Domain          string
-	Username        string
-	Password        []byte // opaque redirection password/cookie
-	LoadBalanceInfo []byte // load balancer routing token
+	SessionID uint32 // session the client must reconnect to
+	Flags     uint32 // LB_* flags saying which fields the server supplied
+
+	// Server is where to reconnect: LB_TARGET_NET_ADDRESS, LB_TARGET_FQDN or
+	// LB_TARGET_NETBIOS_NAME, in that order of preference. It is empty for a
+	// routing token redirection, which leads back to the redirecting server.
+	Server          string
+	TargetAddresses []string // LB_TARGET_NET_ADDRESSES, in the server's order
+
+	Username string
+	Domain   string
+	Password []byte // cleartext password or opaque cookie; see LB_PASSWORD
+
+	// LoadBalanceInfo is the routingToken of the next X.224 Connection Request,
+	// as the server spelled it.
+	LoadBalanceInfo []byte
+
+	// TargetCertificate is the DER certificate of the server to reconnect to
+	// (LB_TARGET_CERTIFICATE); nil when the server supplied none.
+	TargetCertificate []byte
 }
 
-// DecodeRedirectPDU parses a Server Redirection PDU payload.
-// enhanced indicates whether this is a Standard (type 4) or Enhanced (type 10) redirect.
-// data starts after the Share Control Header.
+// DecodeRedirectPDU parses a Server Redirection Packet.
+//
+// data starts after the Share Control Header. enhanced selects the Enhanced
+// Security Server Redirection PDU, whose packet follows two padding octets;
+// the Standard Security variant carries the packet directly (MS-RDPBCGR
+// 2.2.13.2.1, 2.2.13.3.1).
 func DecodeRedirectPDU(data []byte, enhanced bool) (*RedirectInfo, error) {
-	off := 0
-
-	// 2 bytes padding
-	if off+2 > len(data) {
-		return nil, fmt.Errorf("redirect PDU too short for padding")
-	}
-	off += 2
-
-	ri := &RedirectInfo{}
-
 	if enhanced {
-		// Enhanced: redirectIdentifier(u16) + totalLength(u16) + sessionID(u32)
-		if off+8 > len(data) {
-			return nil, fmt.Errorf("redirect PDU too short for enhanced header")
+		if len(data) < 2 {
+			return nil, fmt.Errorf("redirection packet too short for padding")
 		}
-		off += 2 // redirectIdentifier (0x0400)
-		off += 2 // totalLength
-		ri.SessionID = binary.LittleEndian.Uint32(data[off : off+4])
-		off += 4
+		data = data[2:]
 	}
 
-	// redirFlags(u32)
-	if off+4 > len(data) {
-		return nil, fmt.Errorf("redirect PDU too short for flags")
+	// Flags (2), Length (2) and SessionID (4) precede RedirFlags. Length
+	// describes the whole packet, which the PDU boundaries already give.
+	if len(data) < 12 {
+		return nil, fmt.Errorf("redirection packet too short for header")
 	}
-	ri.Flags = binary.LittleEndian.Uint32(data[off : off+4])
-	off += 4
+	if flags := binary.LittleEndian.Uint16(data[0:2]); flags != secRedirectionPkt {
+		return nil, fmt.Errorf("redirection packet flags 0x%04X, want 0x%04X", flags, secRedirectionPkt)
+	}
 
+	ri := &RedirectInfo{
+		SessionID: binary.LittleEndian.Uint32(data[4:8]),
+		Flags:     binary.LittleEndian.Uint32(data[8:12]),
+	}
+
+	off := 12
 	if ri.Flags&LBTargetNetAddress != 0 {
 		s, n, err := readRedirectUTF16(data, off)
 		if err != nil {
@@ -126,8 +143,59 @@ func DecodeRedirectPDU(data []byte, enhanced bool) (*RedirectInfo, error) {
 		if err != nil {
 			return nil, fmt.Errorf("TargetFQDN: %w", err)
 		}
-		// FQDN overrides NetAddress
+		// A name says more than the address it resolved to on the server side.
 		ri.Server = s
+		off += n
+	}
+
+	if ri.Flags&LBTargetNetBIOS != 0 {
+		s, n, err := readRedirectUTF16(data, off)
+		if err != nil {
+			return nil, fmt.Errorf("TargetNetBiosName: %w", err)
+		}
+		if ri.Server == "" {
+			ri.Server = s
+		}
+		off += n
+	}
+
+	if ri.Flags&LBClientTSVURL != 0 {
+		// The URL is checked against a TsvUrl the client would have sent with
+		// its load balance information, which this client never does.
+		_, n, err := readRedirectBlob(data, off)
+		if err != nil {
+			return nil, fmt.Errorf("TsvUrl: %w", err)
+		}
+		off += n
+	}
+
+	if ri.Flags&LBRedirectionGUID != 0 {
+		_, n, err := readRedirectBlob(data, off)
+		if err != nil {
+			return nil, fmt.Errorf("RedirectionGuid: %w", err)
+		}
+		off += n
+	}
+
+	if ri.Flags&LBTargetCertificate != 0 {
+		cert, n, err := readRedirectCertificate(data, off)
+		if err != nil {
+			return nil, fmt.Errorf("TargetCertificate: %w", err)
+		}
+		ri.TargetCertificate = cert
+		off += n
+	}
+
+	if ri.Flags&LBTargetNetAddresses != 0 {
+		addresses, n, err := readRedirectAddresses(data, off)
+		if err != nil {
+			return nil, fmt.Errorf("TargetNetAddresses: %w", err)
+		}
+		ri.TargetAddresses = addresses
+		if ri.Server == "" && len(addresses) > 0 {
+			// The list is the target when the server named no single one.
+			ri.Server = addresses[0]
+		}
 		off += n
 	}
 
@@ -139,34 +207,109 @@ func DecodeRedirectPDU(data []byte, enhanced bool) (*RedirectInfo, error) {
 }
 
 // readRedirectBlob reads a length(u32)-prefixed opaque blob.
-// Returns the data and total bytes consumed (4 + length).
+// It returns the data and the bytes it takes in the packet (4 + length).
 func readRedirectBlob(data []byte, off int) ([]byte, int, error) {
-	if off+4 > len(data) {
+	if off < 0 || off+4 > len(data) || off+4 < 0 {
 		return nil, 0, fmt.Errorf("truncated at length")
 	}
-	blobLen := binary.LittleEndian.Uint32(data[off : off+4])
-	off2 := off + 4
-	if off2+int(blobLen) > len(data) {
-		return nil, 0, fmt.Errorf("truncated at data (need %d, have %d)", blobLen, len(data)-off2)
+	blobLen := int(binary.LittleEndian.Uint32(data[off : off+4]))
+	off += 4
+	if blobLen < 0 || off+blobLen > len(data) {
+		return nil, 0, fmt.Errorf("truncated at data (need %d, have %d)", blobLen, len(data)-off)
 	}
 	b := make([]byte, blobLen)
-	copy(b, data[off2:off2+int(blobLen)])
-	return b, 4 + int(blobLen), nil
+	copy(b, data[off:off+blobLen])
+	return b, 4 + blobLen, nil
 }
 
-// readRedirectUTF16 reads a length(u32)-prefixed null-terminated UTF-16LE string.
-// Returns the Go string and total bytes consumed (4 + length).
+// readRedirectUTF16 reads a length(u32)-prefixed null-terminated UTF-16LE
+// string. It returns the Go string and the bytes it takes (4 + length).
 func readRedirectUTF16(data []byte, off int) (string, int, error) {
-	if off+4 > len(data) {
+	if off < 0 || off+4 > len(data) || off+4 < 0 {
 		return "", 0, fmt.Errorf("truncated at length")
 	}
-	strLen := binary.LittleEndian.Uint32(data[off : off+4])
-	off2 := off + 4
-	if off2+int(strLen) > len(data) {
-		return "", 0, fmt.Errorf("truncated at data (need %d, have %d)", strLen, len(data)-off2)
+	strLen := int(binary.LittleEndian.Uint32(data[off : off+4]))
+	off += 4
+	if strLen < 0 || off+strLen > len(data) || strLen%2 != 0 {
+		return "", 0, fmt.Errorf("truncated or odd-length data (need %d, have %d)", strLen, len(data)-off)
 	}
-	s := decodeUTF16(data[off2 : off2+int(strLen)])
-	return s, 4 + int(strLen), nil
+	return decodeUTF16(data[off : off+strLen]), 4 + strLen, nil
+}
+
+// Certificate container element types and encodings (MS-RDPBCGR 2.2.13.1.2).
+const (
+	certElementCertificate uint32 = 32
+	certEncodingDER        uint32 = 1
+)
+
+// readRedirectCertificate reads LB_TARGET_CERTIFICATE: a length-prefixed
+// Base64 text in UTF-16LE that encodes the certificate container elements of
+// MS-RDPBCGR 2.2.13.1.2. It returns the DER certificate of the first
+// certificate element.
+func readRedirectCertificate(data []byte, off int) ([]byte, int, error) {
+	text, n, err := readRedirectUTF16(data, off)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// The text is line-wrapped; each line decodes on its own (FreeRDP decodes
+	// the tokens it splits at CR and LF). Ignore the newlines and decode at
+	// once, since the Base64 alphabet has neither.
+	encoded := strings.Map(func(r rune) rune {
+		if r == '\r' || r == '\n' {
+			return -1
+		}
+		return r
+	}, text)
+	container, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, 0, fmt.Errorf("Base64: %w", err)
+	}
+
+	for pos := 0; pos+12 <= len(container); {
+		elementType := binary.LittleEndian.Uint32(container[pos:])
+		encoding := binary.LittleEndian.Uint32(container[pos+4:])
+		length := int(binary.LittleEndian.Uint32(container[pos+8:]))
+		pos += 12
+		if pos+length > len(container) {
+			break
+		}
+		if elementType == certElementCertificate && encoding == certEncodingDER && length > 0 {
+			der := make([]byte, length)
+			copy(der, container[pos:pos+length])
+			return der, n, nil
+		}
+		pos += length
+	}
+	return nil, 0, fmt.Errorf("no DER certificate element")
+}
+
+// readRedirectAddresses reads LB_TARGET_NET_ADDRESSES: a count followed by
+// that many length-prefixed UTF-16LE addresses.
+func readRedirectAddresses(data []byte, off int) ([]string, int, error) {
+	blob, n, err := readRedirectBlob(data, off)
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(blob) < 4 {
+		return nil, 0, fmt.Errorf("truncated at count")
+	}
+	count := int(binary.LittleEndian.Uint32(blob))
+	blob = blob[4:]
+	// Each address takes at least its four-byte length.
+	if count < 0 || count > len(blob)/4 {
+		return nil, 0, fmt.Errorf("address count %d exceeds %d bytes", count, len(blob))
+	}
+	addresses := make([]string, 0, count)
+	for range count {
+		address, used, err := readRedirectUTF16(blob, 0)
+		if err != nil {
+			return nil, 0, err
+		}
+		addresses = append(addresses, address)
+		blob = blob[used:]
+	}
+	return addresses, n, nil
 }
 
 // decodeUTF16 converts a null-terminated UTF-16LE byte slice to a Go string.

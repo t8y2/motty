@@ -333,3 +333,33 @@ func TestFailureReason(t *testing.T) {
 		}
 	}
 }
+
+// A routingToken takes the place of the cookie and is written as the
+// redirection spelled it; one that lacks its CRLF gets it (MS-RDPBCGR
+// 2.2.1.1, 3.2.5.3.1). GNOME Remote Desktop's remote login and RD Connection
+// Brokers tell the reconnected client apart by it.
+func TestConnectionRequestEncodeWithRoutingToken(t *testing.T) {
+	cr := &ConnectionRequest{
+		Cookie:          "alice",
+		SendCookie:      true,
+		RequestedProtos: ProtocolSSL | ProtocolHybrid,
+		RoutingToken:    "Cookie: msts=2134026432.15629.000\r\n",
+	}
+	data := cr.Encode()
+	want := "Cookie: msts=2134026432.15629.000\r\n"
+	if !bytes.Contains(data, []byte(want)) || bytes.Contains(data, []byte("mstshash")) {
+		t.Errorf("encoded %q, want the routingToken and no cookie", data)
+	}
+	variable := data[7 : len(data)-8]
+	if string(variable) != want {
+		t.Errorf("variable part = %q, want %q", variable, want)
+	}
+	if int(data[0])+1 != len(data) || binary.LittleEndian.Uint32(data[len(data)-4:]) != ProtocolSSL|ProtocolHybrid {
+		t.Errorf("length indicator %d with %d bytes, or the negotiation request moved", data[0], len(data))
+	}
+
+	data = (&ConnectionRequest{SendCookie: true, RoutingToken: "Cookie: msts=1"}).Encode()
+	if variable := data[7 : len(data)-8]; string(variable) != "Cookie: msts=1\r\n" {
+		t.Errorf("variable part = %q, want the token terminated with CRLF", variable)
+	}
+}

@@ -434,6 +434,24 @@ Windows' decision, not the client's. Only Windows has a console session; xrdp
 ignores the field and always starts a new session, so the switch does nothing
 there.
 
+**Server redirection.** Some servers log the client on in one place and move the
+session elsewhere: GNOME Remote Desktop's remote login (Ubuntu 24.04) takes the
+connection in its system daemon and, once the user session is up, hands the client
+to that session's daemon with a Server Redirection PDU — a routing token, an
+account and that daemon's certificate, naming no other host. The client follows
+it as FreeRDP-based clients do (`internal/rdpcore/client.go`, `Connect`): it
+reconnects with the routing token as `routingToken`, authenticates with the
+redirection's account over NLA, accepts the redirection's certificate without
+asking again (it came over a connection already accepted), and the session
+continues there; a redirection may end any phase of the connection sequence. A
+redirection that names another host reconnects there on the same port, at most
+eight in a row. MS-RDSTLS is not spoken: a redirection password flagged
+`LB_PASSWORD_IS_PK_ENCRYPTED` is used only when it is a terminated Unicode string,
+which is what GNOME Remote Desktop sends, and refused otherwise. The handover is
+replayed by a scripted server (`redirection_test.go`, which checks the NTLM
+response, the sealed credentials and the routing token), not by a live GNOME
+Remote Desktop machine.
+
 ### Copying files to the server
 
 Files go from this computer to the server through the clipboard, the way
@@ -518,7 +536,8 @@ Audio input (microphone redirection), drive/printer/smartcard/USB redirection,
 multiple monitors, dynamic resolution change from the client, RD Gateway,
 Kerberos or certificate-based logon
 (NTLM only), network-level authentication to a domain server that disables NTLM,
-H.264, clipboard formats other than text, images and files. A fresh Windows logon
+H.264, clipboard formats other than text, images and files, MS-RDSTLS (see server
+redirection). A fresh Windows logon
 that finds the user signed in elsewhere asks the usual "sign out the other user?"
 question inside the picture, and a console session is disconnected when the same
 user signs in remotely (that is Windows policy, `fSingleSessionPerUser`).
