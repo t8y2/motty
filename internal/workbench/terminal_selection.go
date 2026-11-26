@@ -30,6 +30,10 @@ type terminalSelection struct {
 	// between them. It is set by the press that began the selection and kept by
 	// the drags and Shift-clicks that continue it.
 	block bool
+	// copied is the text copy-on-select last put on the clipboard for this
+	// selection, so a right-click does not copy it again over whatever the user
+	// copied since. A selection made another way (Select All) was never copied.
+	copied string
 }
 
 // terminalBlockModifiers is the chord held to start a block selection, by the
@@ -316,17 +320,22 @@ func (state *State) terminalPointer(session *Session, event gfx.PointerEvent) gf
 	case gfx.PointerDown:
 		if event.Button == gfx.PointerButtonSecondary {
 			if state.terminalRightClickPaste && event.Modifiers&gfx.ModifierShift == 0 && terminal.selection.selected {
+				// The Windows Terminal convention. Without copy-on-select the
+				// right-click is the copy: it consumes the selection, and the
+				// next right-click pastes. With copy-on-select the selection is
+				// already on the clipboard, so the right-click pastes at once.
 				state.terminalMenu.open = false
-				if err := state.options.SetClipboardText(terminal.selection.text(terminal.screen)); err != nil {
-					// A failed copy keeps the selection and pastes nothing, so
-					// nothing is silently replaced; the status line says why.
-					state.status = err.Error()
-				} else {
-					// The selection was copied, so paste it now rather than
-					// making the user right-click a second time. Clearing it
-					// first keeps a plain right-click from copying it again,
-					// and a failed copy above left it for the user to retry.
-					terminal.selection.clear()
+				text := selection.text(terminal.screen)
+				if !state.terminalCopyOnSelect || text != selection.copied {
+					if err := state.options.SetClipboardText(text); err != nil {
+						// A failed copy keeps the selection and pastes nothing,
+						// so nothing is silently replaced; the status line says why.
+						state.status = err.Error()
+						return gfx.EventResult{Handled: true, Repaint: true}
+					}
+				}
+				selection.clear()
+				if state.terminalCopyOnSelect {
 					state.pasteIntoTerminal(session)
 				}
 				return gfx.EventResult{Handled: true, Repaint: true}
@@ -360,6 +369,7 @@ func (state *State) terminalPointer(session *Session, event gfx.PointerEvent) gf
 			result := gfx.EventResult{Handled: true, Repaint: true}
 			if state.terminalCopyOnSelect {
 				result.ClipboardText = selection.text(terminal.screen)
+				selection.copied = result.ClipboardText
 			}
 			return result
 		}
@@ -444,6 +454,7 @@ func (state *State) terminalPointer(session *Session, event gfx.PointerEvent) gf
 		result := gfx.EventResult{Handled: true, Repaint: changed}
 		if state.terminalCopyOnSelect && selection.selected {
 			result.ClipboardText = selection.text(terminal.screen)
+			selection.copied = result.ClipboardText
 		}
 		return result
 	}

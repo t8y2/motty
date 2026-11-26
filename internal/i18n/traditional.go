@@ -2057,7 +2057,7 @@ var traditionalTools = ToolsMessages{
 	WordSeparatorsDescription:  "雙擊選詞時作為分隔符的字元；留空使用預設規則，空格始終分隔。",
 	WordSeparatorsPlaceholder:  "預設",
 	RightClickPasteRow:         "右鍵貼上",
-	RightClickPasteDescription: "選取文字時按右鍵直接貼上選取內容，未選取時按右鍵貼上剪貼簿內容；按住 Shift 點右鍵開啟選單。",
+	RightClickPasteDescription: "選取文字時按右鍵複製，未選取時按右鍵貼上；開啟「選取即複製」後選取時按右鍵直接貼上。按住 Shift 點右鍵開啟選單。",
 	InputClickRow:              "單擊移動輸入游標",
 	InputClickDescription:      "在終端機的命令列上單擊，游標會移到點擊處。需要 Motty 的 Shell 整合；全螢幕程式和命令執行期間不生效。拖曳仍然是選取。",
 	LinkPlainClickRow:          "單擊直接開啟連結",

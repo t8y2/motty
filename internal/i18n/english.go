@@ -2057,7 +2057,7 @@ var englishTools = ToolsMessages{
 	WordSeparatorsDescription:  "Characters that split words on double-click. Empty uses the default; spaces always split words.",
 	WordSeparatorsPlaceholder:  "Default",
 	RightClickPasteRow:         "Right-click to paste",
-	RightClickPasteDescription: "Right-click pastes the selected text, or the clipboard when nothing is selected. Shift+right-click opens the menu.",
+	RightClickPasteDescription: "Right-click copies selected text, or pastes when nothing is selected. With Copy on select, it pastes the selection at once. Shift+right-click opens the menu.",
 	InputClickRow:              "Click to move the input cursor",
 	InputClickDescription:      "A click on the command line in the terminal moves the cursor there. Needs Motty's shell integration; does nothing in full-screen programs or while a command runs. Dragging still selects.",
 	LinkPlainClickRow:          "Open links with a plain click",

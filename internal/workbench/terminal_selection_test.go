@@ -481,7 +481,7 @@ func TestRightClickPastesOnlyWhenChosenAndShiftKeepsTheMenu(t *testing.T) {
 	}
 }
 
-func TestRightClickCopiesAndPastesTheSelectionInOnePress(t *testing.T) {
+func TestRightClickCopiesTheSelectionAndTheNextOnePastes(t *testing.T) {
 	state, session, geometry := selectionState()
 	shell := &fakeShell{done: make(chan struct{})}
 	session.term.shell = shell
@@ -500,15 +500,56 @@ func TestRightClickCopiesAndPastesTheSelectionInOnePress(t *testing.T) {
 			Target: terminalTestHit(state, session), X: x, Y: y, Viewport: state.viewport})
 	}
 	click(0)
-	if clipboard != "hello" || string(shell.input) != "hello" || state.terminalMenu.open {
+	if clipboard != "hello" || len(shell.input) != 0 || state.terminalMenu.open {
 		t.Fatalf("selected right click: clipboard=%q input=%q menu=%v", clipboard, shell.input, state.terminalMenu.open)
 	}
 	if session.term.selection.selected {
 		t.Fatal("the copy left the selection behind, so the next right click would copy again instead of pasting")
 	}
+	click(0)
+	if string(shell.input) != "hello" {
+		t.Fatalf("the second right click did not paste the copy: input=%q", shell.input)
+	}
 	click(gfx.ModifierShift)
 	if !state.terminalMenu.open || string(shell.input) != "hello" {
 		t.Fatalf("Shift+right click did not open the menu: menu=%v input=%q", state.terminalMenu.open, shell.input)
+	}
+}
+
+func TestRightClickPastesAtOnceWithCopyOnSelect(t *testing.T) {
+	state, session, geometry := selectionState()
+	shell := &fakeShell{done: make(chan struct{})}
+	session.term.shell = shell
+	session.term.write([]byte("alpha beta\r\n"))
+	clipboard := ""
+	state.options.SetClipboardText = func(value string) error { clipboard = value; return nil }
+	state.options.ClipboardText = func() (string, error) { return clipboard, nil }
+	state.terminalRightClickPaste, state.terminalCopyOnSelect = true, true
+	hit := terminalTestHit(state, session)
+	startX, startY := cellPoint(geometry, 0, 0, state.cellWidth, state.cellHeight)
+	endX, endY := cellPoint(geometry, 0, 4, state.cellWidth, state.cellHeight)
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hit, X: startX, Y: startY, Viewport: state.viewport})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true, X: endX, Y: endY, Viewport: state.viewport})
+	result := state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true, X: endX, Y: endY, Viewport: state.viewport})
+	clipboard = result.ClipboardText
+	rightClick := func() {
+		state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hit, X: endX, Y: endY, Viewport: state.viewport})
+	}
+	rightClick()
+	if clipboard != "alpha" || string(shell.input) != "alpha" || session.term.selection.selected {
+		t.Fatalf("one right click: clipboard=%q input=%q selected=%v", clipboard, shell.input, session.term.selection.selected)
+	}
+
+	// Text copied elsewhere after the selection was made is what the user
+	// means to paste; the right-click must not copy the selection over it.
+	shell.input = nil
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hit, X: startX, Y: startY, Viewport: state.viewport})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true, X: endX, Y: endY, Viewport: state.viewport})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true, X: endX, Y: endY, Viewport: state.viewport})
+	clipboard = "from elsewhere"
+	rightClick()
+	if clipboard != "from elsewhere" || string(shell.input) != "from elsewhere" {
+		t.Fatalf("right click recopied the selection: clipboard=%q input=%q", clipboard, shell.input)
 	}
 }
 
